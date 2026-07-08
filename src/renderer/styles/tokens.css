@@ -1,0 +1,26 @@
+/* src/renderer/styles/tokens.css
+ *
+ * Global pixel/retro design tokens. Imported once (by
+ * pixel.css or the app entry point) and referenced by var(...) everywhere
+ * else — no hardcoded colors/spacing outside this file.
+ *
+ * 테마 시스템: 색 토큰의 테마별 실값은 src/renderer/theme/themes.ts의
+ * THEMES 레지스트리가 단일 원천이며, applyTheme()이 documentElement에
+ * `data-theme` 속성 + 인라인 커스텀 프로퍼티로 주입한다(main.tsx가 첫
+ * 페인트 전에 호출 → 잘못된 테마 플래시 없음). 아래 :root 블록은 기본
+ * 테마(daylight)와 동일한 값의 부트/무JS 폴백이다 — 색을 바꿀 때는 반드시
+ * themes.ts와 함께 수정할 것.
+ */
+:root {
+  --bg-base: #f2ede2;
+  --bg-panel: #fbf6ea;
+  --bg-panel-hi: #f3ead6;
+  --border-lite: #fffdf2;
+  --border-dark: #6b5c44;
+  --accent: #2f9e44;
+  --accent-warn: #d9770a;
+  --accent-error: #d6336c;
+  --text: #3a3428;
+  --text-dim: #857a66;
+  --unit: 4px; /* pixel grid unit */
+}

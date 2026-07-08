@@ -1,0 +1,54 @@
+/* src/renderer/styles/pixel.css
+ *
+ * Retro/pixel visual styling. Fonts are bundled locally
+ * under ./fonts/ (no CDN — offline guarantee); see
+ * ./fonts/README.md for exact provenance/licensing of each file. Each
+ * @font-face falls back to a system monospace stack via the trailing
+ * `monospace` in every consumer's `font-family` list, so text stays
+ * readable even before/if a font file fails to load.
+ */
+@import "./tokens.css";
+
+@font-face {
+  font-family: "DungGeunMo";
+  src: url("./fonts/DungGeunMo.woff2") format("woff2");
+  font-display: block;
+}
+@font-face {
+  font-family: "Galmuri11";
+  src: url("./fonts/Galmuri11.woff2") format("woff2");
+  font-display: block;
+}
+
+/* pixel.css — shared panel (2px border, stepped highlight/shadow) */
+.pixel-panel {
+  background: var(--bg-panel);
+  border: 2px solid var(--border-dark);
+  box-shadow:
+    inset 2px 2px 0 var(--border-lite), /* top-left highlight */
+    inset -2px -2px 0 var(--border-dark), /* bottom-right shadow */
+    0 0 0 2px var(--border-dark); /* outer hard line */
+  image-rendering: pixelated;
+  border-radius: 0; /* no rounding, ever */
+}
+.pixel-btn {
+  font-family: "DungGeunMo", monospace;
+  background: var(--bg-panel-hi);
+  color: var(--text);
+  border: 2px solid var(--border-dark);
+  box-shadow:
+    inset 2px 2px 0 var(--border-lite),
+    inset -2px -2px 0 var(--border-dark);
+  padding: calc(var(--unit) * 2) calc(var(--unit) * 3);
+  cursor: pointer;
+  border-radius: 0;
+}
+.pixel-btn:active {
+  box-shadow:
+    inset -2px -2px 0 var(--border-lite),
+    inset 2px 2px 0 var(--border-dark);
+}
+.pixel-btn.primary {
+  background: var(--accent);
+  color: #0a0b12;
+}

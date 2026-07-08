@@ -1,0 +1,50 @@
+[package]
+name = "agent-office"
+version = "0.1.0"
+description = "Agent Office"
+authors = ["bugcaptor"]
+license = "MIT"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "agent_office_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] } # Channel/이벤트/경로 API 포함
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "time",
+    "sync",
+    "process",
+    "io-util",
+] }
+axum = "0.7" # latest stable. hook HTTP 서버
+portable-pty = "0.8" # latest stable. wezterm PTY
+uuid = { version = "1", features = ["v4"] } # sessionId/notification id
+sha1_smol = "1" # dedupKey(순수 Rust, 추가 트랜지티브 의존 없음)
+base64 = "0.22" # 초상 PNG base64 IPC 왕복 디코드/인코드
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "json",
+] } # PixelLab API 호출
+
+[dev-dependencies]
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "time",
+    "test-util",
+] }

@@ -1,0 +1,201 @@
+// src/renderer/ipc/tauriApi.ts
+//
+// `AgentOfficeApi` (frozen contract, see src/shared/types.ts) implemented
+// thinly over `@tauri-apps/api`. Adapter only — no UI/store logic here
+// (that belongs to Phase 4).
+//
+// One `Channel<OutputChunk>` per agentId, fanned out to a JS-side callback
+// Set for `onData` (the frozen API allows multiple `onData` subscribers per
+// agent); `wrapListen` wraps `listen()`'s async `UnlistenFn` to match
+// `onData`'s synchronous unsubscribe contract. Test coverage (vitest) mocks
+// invoke/Channel to exercise onData fanout/unsubscribe refcounting and
+// wrapListen's pre-resolution unsubscribe path. Deviations from the
+// original reference implementation:
+// - Command/event names come from `@shared/ipc`'s `Commands`/`Events`
+//   constants rather than being re-typed as literals (keeps this file and
+//   the Rust backend from silently drifting on a typo).
+// - `onData` fanout and `wrapListen` both guard against a throwing
+//   subscriber: one bad callback must not stop delivery to the others, or
+//   kill the channel/listener for future events.
+// - `wrapListen`'s returned unsubscribe is idempotent (safe to call more
+//   than once) to match `onData`'s unsubscribe contract.
+
+import { invoke, Channel } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { Commands, Events } from "@shared/ipc";
+import type {
+  ActivityEvent,
+  AgentOfficeApi,
+  AppSettings,
+  NotificationClearedEvent,
+  NotificationEvent,
+  OutputChunk,
+  PersistedState,
+  SessionStateEvent,
+} from "@shared/types";
+
+/** One Channel per agentId, fanned out to however many onData callbacks are registered. */
+interface OutputSub {
+  channel: Channel<OutputChunk>;
+  cbs: Set<(data: string) => void>;
+}
+const outputSubs = new Map<string, OutputSub>();
+
+/** Invokes a subscriber and swallows/logs exceptions so one bad callback can't break the rest. */
+function safeInvoke<T>(cb: (payload: T) => void, payload: T): void {
+  try {
+    cb(payload);
+  } catch (err) {
+    console.error("tauriApi: subscriber callback threw", err);
+  }
+}
+
+export const tauriApi: AgentOfficeApi = {
+  async createSession(agentId, opts) {
+    // `autostartClaude` is not part of the frozen `opts` param — the backend
+    // defaults to a plain shell (no auto-launch) when omitted. Time-tracking
+    // hooks still fire because the spawned shell defines a `claude` wrapper
+    // that transparently injects `--settings "$AGENT_OFFICE_SETTINGS"`:
+    // Windows via a PowerShell wrapper function, macOS/Linux zsh via a
+    // ZDOTDIR shim. Other shells (bash, fish, ...) are not covered yet.
+    return await invoke(Commands.createSession, { agentId, opts: opts ?? null });
+  },
+
+  async disposeSession(agentId) {
+    await invoke(Commands.disposeSession, { agentId });
+  },
+
+  writeInput(agentId, data) {
+    void invoke(Commands.writeInput, { agentId, data }); // fire-and-forget
+  },
+
+  resize(agentId, cols, rows) {
+    void invoke(Commands.resize, { agentId, cols, rows });
+  },
+
+  clearNotifications(agentId, ids) {
+    void invoke(Commands.clearNotifications, { agentId, ids: ids ?? null });
+  },
+
+  async listNotifications(agentId) {
+    return await invoke(Commands.listNotifications, { agentId });
+  },
+
+  async loadState() {
+    return await invoke(Commands.loadState);
+  },
+
+  async saveState(state: PersistedState) {
+    await invoke(Commands.saveState, { state });
+  },
+
+  setBadgeCount(n) {
+    void invoke(Commands.setBadgeCount, { count: n });
+  },
+
+  async savePortrait(agentId, pngBase64) {
+    await invoke(Commands.savePortrait, { agentId, pngBase64 });
+  },
+
+  async loadPortrait(agentId) {
+    return await invoke(Commands.loadPortrait, { agentId });
+  },
+
+  async deletePortrait(agentId) {
+    await invoke(Commands.deletePortrait, { agentId });
+  },
+
+  async saveSprite(agentId, pngBase64) {
+    await invoke(Commands.saveSprite, { agentId, pngBase64 });
+  },
+
+  async loadSprite(agentId) {
+    return await invoke(Commands.loadSprite, { agentId });
+  },
+
+  async deleteSprite(agentId) {
+    await invoke(Commands.deleteSprite, { agentId });
+  },
+
+  async summarizeText(instruction, text) {
+    return await invoke(Commands.summarizeText, { instruction, text });
+  },
+
+  async generateSpriteImage(description) {
+    return await invoke(Commands.generateSpriteImage, { description });
+  },
+
+  async getAppSettings() {
+    return await invoke(Commands.getAppSettings);
+  },
+
+  async setAppSettings(settings: AppSettings) {
+    await invoke(Commands.setAppSettings, { settings });
+  },
+
+  onData(agentId, cb) {
+    let sub = outputSubs.get(agentId);
+    if (!sub) {
+      const channel = new Channel<OutputChunk>();
+      const created: OutputSub = { channel, cbs: new Set() };
+      channel.onmessage = (chunk) => {
+        for (const f of created.cbs) safeInvoke(f, chunk.data);
+      };
+      outputSubs.set(agentId, created);
+      // Subscribe before/alongside createSession settling — any output that
+      // arrives early is buffered by the backend's backlog.
+      void invoke(Commands.subscribeOutput, { agentId, channel });
+      sub = created;
+    }
+    sub.cbs.add(cb);
+
+    let unsubscribed = false;
+    return () => {
+      if (unsubscribed) return;
+      unsubscribed = true;
+      const s = outputSubs.get(agentId);
+      if (!s) return;
+      s.cbs.delete(cb);
+      if (s.cbs.size === 0) {
+        outputSubs.delete(agentId);
+        void invoke(Commands.unsubscribeOutput, { agentId });
+      }
+    };
+  },
+
+  onSessionState(cb) {
+    return wrapListen<SessionStateEvent>(Events.sessionState, cb);
+  },
+
+  onNotification(cb) {
+    return wrapListen<NotificationEvent>(Events.notificationNew, cb);
+  },
+
+  onNotificationCleared(cb) {
+    return wrapListen<NotificationClearedEvent>(Events.notificationCleared, cb);
+  },
+
+  onActivity(cb) {
+    return wrapListen<ActivityEvent>(Events.activityEvent, cb);
+  },
+};
+
+// `listen()` resolves asynchronously with an `UnlistenFn`, but the frozen API
+// contract wants a synchronous unsubscribe. If the caller unsubscribes before
+// the promise settles, tear the listener down as soon as it does (no leak).
+function wrapListen<T>(event: string, cb: (payload: T) => void): () => void {
+  let un: UnlistenFn | null = null;
+  let disposed = false;
+  listen<T>(event, (e) => safeInvoke(cb, e.payload)).then((f) => {
+    if (disposed) f();
+    else un = f;
+  });
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    if (un) {
+      un();
+      un = null;
+    }
+  };
+}

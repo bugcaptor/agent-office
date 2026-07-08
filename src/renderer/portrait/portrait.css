@@ -1,0 +1,161 @@
+/* src/renderer/portrait/portrait.css */
+@import "../styles/tokens.css";
+
+.portrait-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 320px;
+}
+
+.portrait-crop-frame {
+  position: relative;
+  width: 240px;
+  height: 320px;
+  align-self: center;
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--border-dark);
+  overflow: hidden;
+}
+
+.portrait-crop-canvas {
+  display: block;
+  width: 240px;
+  height: 320px;
+  image-rendering: pixelated;
+  cursor: grab;
+  touch-action: none;
+}
+
+.portrait-crop-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.portrait-retro-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.portrait-error {
+  color: #ff6b6b;
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.portrait-section {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.portrait-current img {
+  border: 2px solid var(--border-dark);
+  background: var(--bg-panel-hi);
+}
+
+.portrait-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sprite-custom-badge {
+  font-size: 11px;
+  opacity: 0.75;
+}
+.sprite-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-hover-card {
+  position: fixed;
+  z-index: 25;
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  background: var(--bg-panel);
+  border: 2px solid var(--border-dark);
+  pointer-events: none;
+  max-width: 220px;
+}
+
+.agent-hover-portrait {
+  width: 120px;
+  height: 160px;
+  object-fit: cover;
+  object-position: top center;
+  image-rendering: pixelated;
+  background: var(--bg-panel-hi);
+}
+
+.agent-hover-meta {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+
+.agent-hover-name {
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+.agent-hover-role {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+/* ---- sprite editor (SpriteEditor.tsx) ---- */
+.sprite-editor {
+  width: 360px;
+}
+.sprite-edit-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 8px 0;
+}
+.sprite-crop-frame {
+  position: relative;
+  width: 192px;
+  height: 192px;
+  border: 1px solid #555;
+  overflow: hidden;
+}
+.sprite-crop-canvas {
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+.sprite-preview-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.sprite-preview-box canvas {
+  width: 128px;
+  height: 128px;
+  image-rendering: pixelated;
+  border: 1px solid #555;
+  background: repeating-conic-gradient(#2a2a33 0% 25%, #1b1b24 0% 50%) 0 0 / 16px 16px;
+}
+.sprite-preview-label {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.sprite-sheet-note {
+  font-size: 12px;
+  opacity: 0.8;
+}

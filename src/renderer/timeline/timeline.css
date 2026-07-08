@@ -1,0 +1,78 @@
+/* src/renderer/timeline/timeline.css
+ *
+ * SessionTimePanel: 우상단 상시 표시·접기 가능. UI 크롬이므로
+ * 픽셀 감성 유지(패널 테두리/폰트). 라이브 경과 표시 전용.
+ *
+ * Final-review fix: this used to be its own `position: fixed` overlay,
+ * which visually overlapped `.ticker-column`'s cards and the TopBar stats
+ * at the same corner. It's now mounted as the first child of
+ * `.ticker-column` (see `UIChrome.tsx`), in normal document flow above
+ * `NotificationTicker` — no more fixed positioning/width here, it just
+ * fills the column. The column itself is `pointer-events: none`, so this
+ * panel opts back in to `pointer-events: auto` the same way `.ticker-card`
+ * does (see `ticker.css`).
+ */
+@import "../styles/tokens.css";
+
+.session-time-panel {
+  pointer-events: auto;
+  margin-bottom: calc(var(--unit) * 2);
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.75rem;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 2px solid var(--border-dark);
+}
+
+.stp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-bottom: 2px solid var(--border-dark);
+}
+
+.stp-title {
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+}
+
+.stp-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.stp-rows {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.stp-row {
+  display: grid;
+  grid-template-columns: auto 1em 4.5em 1fr;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.stp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 6em;
+}
+
+.stp-icon { text-align: center; }
+.stp-row.phase-working .stp-icon { color: var(--accent); }      /* tokens.css: green */
+.stp-row.phase-waiting .stp-icon { color: var(--accent-warn); } /* tokens.css: amber */
+.stp-row.phase-idle .stp-icon { color: var(--text-dim); }
+
+.stp-live { font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.stp-cum { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; }

@@ -1,0 +1,188 @@
+/* src/renderer/layout/layout.css
+ *
+ * App shell layering + bar styling. This is the
+ * one stylesheet the app entry point (`App.tsx`) imports; it pulls in the
+ * rest of the global CSS chain via `@import` (matching the convention
+ * already used by `styles/pixel.css` -> `tokens.css` and
+ * `notification/ticker.css` -> `tokens.css`), so `App.tsx` doesn't need a
+ * separate import line per stylesheet.
+ */
+@import "../styles/pixel.css";
+@import "../notification/ticker.css";
+@import "../terminal/terminal.css";
+@import "../timeline/timeline.css";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text);
+  font-family: "DungGeunMo", monospace;
+  overflow: hidden;
+}
+
+/* ---- 4-layer z-stack ---- */
+
+.app-root {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+/* Layer 0 (z:0) -- OfficeCanvas mount point (subsystem B, wired in App.tsx).
+   No explicit z-index needed: it's `app-root`'s first child in
+   document order and every other layer declares z-index >= 10, so it always
+   paints beneath them. */
+
+/* Layer 1 (z:10) -- UI chrome. `pointer-events: none` on the container so
+   empty space passes clicks through to the office canvas; only the bars and
+   ticker cards opt back in. */
+.ui-chrome {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.top-bar,
+.bottom-bar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  font-family: "DungGeunMo", monospace;
+  color: var(--text);
+}
+
+/* The top bar is a real <button> ("reopen terminal" target — TopBar.tsx), so
+   reset the UA button styles that .top-bar/.pixel-panel don't already cover
+   (font-size, text-align) to keep it pixel-identical to the old <header>. */
+.top-bar {
+  height: 40px;
+  justify-content: space-between;
+  padding: 0 calc(var(--unit) * 3);
+  width: 100%;
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.top-bar:disabled {
+  cursor: default;
+}
+
+.top-bar:hover:not(:disabled) .top-bar-title {
+  color: var(--accent);
+}
+
+.top-bar-stats {
+  display: flex;
+  gap: calc(var(--unit) * 3);
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.top-bar-badge {
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.bottom-bar {
+  height: 48px;
+  justify-content: space-between;
+  padding: 0 calc(var(--unit) * 3);
+  gap: calc(var(--unit) * 3);
+}
+
+.bottom-bar-status {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  flex: 1;
+  text-align: center;
+}
+
+.mute-btn[aria-pressed="true"] {
+  background: var(--accent-warn);
+  color: #0a0b12;
+}
+
+/* Right notification column: fixed width, between the two
+   bars, container passes clicks through -- individual `.ticker-card`s opt
+   back in (see ticker.css). */
+.ticker-column {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  bottom: 48px;
+  width: 280px;
+  padding: calc(var(--unit) * 2);
+  overflow-y: auto;
+  pointer-events: none;
+}
+
+/* Layer 2 (z:20) -- terminal overlay. The open/closed
+   toggle itself is an inline `display` style set by `TerminalOverlay.tsx`
+   (keep-alive invariant); this only fixes its position/size/z-index. */
+.terminal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 11, 18, 0.55);
+}
+
+.terminal-overlay-panel {
+  width: 72%;
+  height: 72%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+}
+
+/* Layer 3 (z:30) -- modal root. `display: contents` so the wrapper itself
+   never becomes a full-viewport pointer-events sink when no dialog is open
+   (`ProfileDialog` renders `null` in that case); `.modal-backdrop` (rendered
+   by ProfileDialog when open) carries the actual fixed positioning/z-index. */
+.modal-root {
+  display: contents;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 11, 18, 0.72);
+  padding: calc(var(--unit) * 4); /* keep dialogs off the viewport edges */
+}
+
+/* Short-viewport safety: cap the dialog to the padded backdrop and scroll
+   inside. With `align-items: center`, a child taller than the container
+   would clip at the top with no way to reach it -- capping max-height to
+   viewport minus the backdrop padding guarantees the child never exceeds
+   the container, so centering stays safe and the action row stays
+   reachable. */
+.profile-dialog {
+  box-sizing: border-box;
+  max-height: calc(100vh - var(--unit) * 8); /* fallback for older webviews */
+  max-height: calc(100dvh - var(--unit) * 8);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* 설정 폼(첫 실행/설정 다이얼로그 공유): 토글 + 설명 2단 구성 */
+.settings-form { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
+.settings-item { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.settings-item small { display: block; opacity: 0.75; margin-top: 2px; }

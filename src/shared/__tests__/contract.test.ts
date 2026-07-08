@@ -1,0 +1,185 @@
+// src/shared/__tests__/contract.test.ts
+//
+// Roundtrip snapshot tests for the shared TS contract:
+// - fixed JSON strings (as they would arrive from the Rust backend) must be
+//   assignable to the TS types without casts/`any`.
+// - `notificationType()` derivation matches the source->type mapping.
+// - `Commands`/`Events` name constants have no duplicate string values.
+
+import { describe, expect, it } from "vitest";
+import { Commands, Events } from "../ipc";
+import type {
+  ActivityEvent,
+  AgentProfile,
+  CreateSessionResult,
+  GeneratedSpriteImage,
+  GetAppSettingsResult,
+  NotificationEvent,
+  OutputChunk,
+  PersistedState,
+  SessionExitInfo,
+  SessionState,
+  SessionStateEvent,
+  SessionStatus,
+} from "../types";
+import { notificationType } from "../types";
+
+describe("SessionState / SessionStatus", () => {
+  it("accepts exactly the four backend states", () => {
+    const states: SessionState[] = ["starting", "running", "exited", "disposed"];
+    expect(states).toHaveLength(4);
+  });
+
+  it("SessionStatus additionally allows 'idle'", () => {
+    const idle: SessionStatus = "idle";
+    const running: SessionStatus = "running";
+    expect(idle).toBe("idle");
+    expect(running).toBe("running");
+  });
+});
+
+describe("roundtrip: fixed JSON assignable to TS types", () => {
+  it("SessionStateEvent (no exit)", () => {
+    const json = '{"sessionId":"s1","agentId":"a1","state":"running","at":1720000000000}';
+    const parsed: SessionStateEvent = JSON.parse(json);
+    expect(parsed.state).toBe("running");
+    expect(parsed.exit).toBeUndefined();
+  });
+
+  it("SessionStateEvent (with exit)", () => {
+    const json =
+      '{"sessionId":"s1","agentId":"a1","state":"exited",' +
+      '"exit":{"sessionId":"s1","exitCode":1,"intentional":false},"at":1720000000001}';
+    const parsed: SessionStateEvent = JSON.parse(json);
+    const exit: SessionExitInfo | undefined = parsed.exit;
+    expect(exit?.exitCode).toBe(1);
+    expect(exit?.signal).toBeUndefined();
+    expect(exit?.intentional).toBe(false);
+  });
+
+  it("NotificationEvent", () => {
+    const json =
+      '{"id":"n1","sessionId":"s1","agentId":"a1","source":"hook",' +
+      '"message":"needs input","dedupKey":"hook:s1","at":1720000000002}';
+    const parsed: NotificationEvent = JSON.parse(json);
+    expect(parsed.source).toBe("hook");
+    expect(notificationType(parsed.source)).toBe("question");
+  });
+
+  it("OutputChunk", () => {
+    const json = '{"sessionId":"s1","agentId":"a1","data":"hello","frames":3,"seq":42}';
+    const parsed: OutputChunk = JSON.parse(json);
+    expect(parsed.agentId).toBe("a1");
+    expect(parsed.seq).toBe(42);
+  });
+
+  it("CreateSessionResult", () => {
+    const json = '{"sessionId":"s1","state":"starting"}';
+    const parsed: CreateSessionResult = JSON.parse(json);
+    expect(parsed.state).toBe("starting");
+  });
+
+  it("AgentProfile / PersistedState", () => {
+    const json =
+      '{"agents":[{"id":"p1","name":"Ada","role":"backend","note":"",' +
+      '"seed":"abc123","createdAt":1720000000003,"deskIndex":0}],"version":1}';
+    const parsed: PersistedState = JSON.parse(json);
+    const profile: AgentProfile = parsed.agents[0];
+    expect(parsed.version).toBe(1);
+    expect(profile.deskIndex).toBe(0);
+  });
+
+  it("AgentProfile / PersistedState without cwd (backward compat with files saved before the cwd field existed)", () => {
+    const json =
+      '{"agents":[{"id":"p1","name":"Ada","role":"backend","note":"",' +
+      '"seed":"abc123","createdAt":1720000000003,"deskIndex":0}],"version":1}';
+    const parsed: PersistedState = JSON.parse(json);
+    const profile: AgentProfile = parsed.agents[0];
+    expect(profile.cwd).toBeUndefined();
+  });
+
+  it("AgentProfile / PersistedState with cwd", () => {
+    const json =
+      '{"agents":[{"id":"p1","name":"Ada","role":"backend","note":"",' +
+      '"seed":"abc123","createdAt":1720000000003,"deskIndex":0,"cwd":"/tmp/proj"}],"version":1}';
+    const parsed: PersistedState = JSON.parse(json);
+    const profile: AgentProfile = parsed.agents[0];
+    expect(profile.cwd).toBe("/tmp/proj");
+  });
+
+  it("ActivityEvent without text (tool / legacy)", () => {
+    const json = '{"agentId":"a1","sessionId":"s1","kind":"tool","at":1720000000004}';
+    const parsed: ActivityEvent = JSON.parse(json);
+    expect(parsed.kind).toBe("tool");
+    expect(parsed.text).toBeUndefined();
+  });
+
+  it("ActivityEvent with prompt text", () => {
+    const json =
+      '{"agentId":"a1","sessionId":"s1","kind":"prompt","at":1720000000005,"text":"버그 고쳐줘"}';
+    const parsed: ActivityEvent = JSON.parse(json);
+    expect(parsed.text).toBe("버그 고쳐줘");
+  });
+
+  it("GeneratedSpriteImage", () => {
+    const json = '{"pngBase64":"AAAA","costUsd":0.02}';
+    const parsed: GeneratedSpriteImage = JSON.parse(json);
+    expect(parsed.pngBase64).toBe("AAAA");
+    expect(parsed.costUsd).toBe(0.02);
+    // cost_usd는 skip_serializing_if — 없는 형태도 유효해야 한다.
+    const noCost: GeneratedSpriteImage = JSON.parse('{"pngBase64":"BBBB"}');
+    expect(noCost.costUsd).toBeUndefined();
+  });
+});
+
+describe("notificationType derivation", () => {
+  it("hook -> question, stop -> done, bell -> info", () => {
+    expect(notificationType("hook")).toBe("question");
+    expect(notificationType("stop")).toBe("done");
+    expect(notificationType("bell")).toBe("info");
+  });
+});
+
+describe("Commands / Events name constants", () => {
+  it("match the exact snake_case/kebab-case wire strings the Rust backend emits", () => {
+    expect(Commands.createSession).toBe("create_session");
+    expect(Commands.disposeSession).toBe("dispose_session");
+    expect(Commands.writeInput).toBe("write_input");
+    expect(Commands.resize).toBe("resize_session");
+    expect(Commands.clearNotifications).toBe("clear_notifications");
+    expect(Commands.listNotifications).toBe("list_notifications");
+    expect(Commands.loadState).toBe("load_state");
+    expect(Commands.saveState).toBe("save_state");
+    expect(Commands.setBadgeCount).toBe("set_badge_count");
+    expect(Commands.subscribeOutput).toBe("subscribe_output");
+    expect(Commands.unsubscribeOutput).toBe("unsubscribe_output");
+    expect(Commands.summarizeText).toBe("summarize_text");
+
+    expect(Events.sessionState).toBe("session-state");
+    expect(Events.notificationNew).toBe("notification-new");
+    expect(Events.notificationCleared).toBe("notification-cleared");
+  });
+
+  it("has no duplicate values across Commands and Events combined", () => {
+    const allValues = [...Object.values(Commands), ...Object.values(Events)];
+    const unique = new Set(allValues);
+    expect(unique.size).toBe(allValues.length);
+  });
+});
+
+describe("AppSettings (opt-in 설정 계약)", () => {
+  it("Rust GetAppSettingsResult JSON이 TS 타입에 그대로 할당된다", () => {
+    const json =
+      '{"settings":{"version":1,"claudeCliEnabled":false,"claudeHooksEnabled":false},"firstRun":true}';
+    const parsed: GetAppSettingsResult = JSON.parse(json);
+    expect(parsed.firstRun).toBe(true);
+    expect(parsed.settings.claudeCliEnabled).toBe(false);
+    expect(parsed.settings.claudeHooksEnabled).toBe(false);
+    expect(parsed.settings.version).toBe(1);
+  });
+
+  it("커맨드 이름 상수가 등록되어 있다", () => {
+    expect(Commands.getAppSettings).toBe("get_app_settings");
+    expect(Commands.setAppSettings).toBe("set_app_settings");
+  });
+});

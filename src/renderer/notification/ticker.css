@@ -1,0 +1,99 @@
+/* src/renderer/notification/ticker.css
+ *
+ * Notification ticker visual styling. Plain
+ * global CSS + the shared `.pixel-panel` class (see `styles/pixel.css`),
+ * not CSS Modules — matching this repo's established convention
+ * (`styles/tokens.css`/`styles/pixel.css` are plain global stylesheets, and
+ * no other component here uses `*.module.css`). `border-radius: 0`
+ * everywhere per the pixel-panel aesthetic — `.pixel-panel` already
+ * enforces this, nothing here overrides it.
+ *
+ * Imported by `layout/layout.css` — wiring this into the app's CSS entry
+ * point was originally deferred until the bars/shell were assembled; that
+ * wiring adds this import, plus the `.ticker-card` `pointer-events: auto`
+ * override below (the ticker's ancestor `.ui-chrome` is
+ * `pointer-events: none` — only the individual cards opt back in).
+ */
+@import "../styles/tokens.css";
+
+.notification-ticker {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 2);
+  width: 280px;
+}
+
+.ticker-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--unit);
+  padding: calc(var(--unit) * 2);
+  font-family: "DungGeunMo", monospace;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  animation: tickerIn 180ms ease-out;
+  pointer-events: auto;
+}
+
+.ticker-card.type-question {
+  box-shadow:
+    inset 2px 2px 0 var(--border-lite),
+    inset -2px -2px 0 var(--border-dark),
+    0 0 0 2px var(--accent-warn);
+}
+
+.ticker-card.type-done {
+  box-shadow:
+    inset 2px 2px 0 var(--border-lite),
+    inset -2px -2px 0 var(--border-dark),
+    0 0 0 2px var(--accent);
+}
+
+.ticker-icon {
+  flex: none;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.ticker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ticker-name {
+  font-weight: bold;
+  color: var(--text);
+}
+
+.ticker-msg {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticker-time {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.ticker-overflow {
+  padding: calc(var(--unit) * 2);
+  font-family: "DungGeunMo", monospace;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+@keyframes tickerIn {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
