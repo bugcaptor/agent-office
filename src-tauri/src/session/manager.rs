@@ -134,11 +134,24 @@ impl SessionManager {
 
     /// 1 에이전트 1 세션 불변식. self: &Arc<Self>로 wait 스레드에 소유 이전.
     pub fn create(self: &Arc<Self>, req: CreateSessionRequest) -> Result<CreateSessionResult, String> {
-        // 살아있는 세션이 있으면 재사용, 새 PTY 안 만듦.
-        if let Some(s) = self.find(&req.agent_id) {
-            let st = *s.state.lock().unwrap();
-            if matches!(st, SessionState::Running | SessionState::Starting) {
-                return Ok(CreateSessionResult { session_id: s.session_id.clone(), state: st });
+        // 살아있는 세션이 있으면 재사용, 새 PTY 안 만듦. 단, dispose()로 kill이
+        // 요청된(=재시작 중인) 세션은 곧 사라질 예정이므로 재사용하지 않는다 —
+        // 그러지 않으면 PowerShell처럼 프로세스 reap(→ on_exit)이 느린 플랫폼에서
+        // 아직 Running으로 남은 "죽어가는 세션"을 재사용해 첫 재시작이 헛돌았다.
+        //
+        // 재사용하지 않을 세션은 이 임계구역 안에서 맵 슬롯을 즉시 비운다. 그래야
+        // 뒤늦게 도는 그 세션의 on_exit이 "이미 교체됨(superseded)"을 보고 새
+        // 세션의 맵 엔트리·sink를 지우지 않는다(아래 on_exit의 identity 가드 참조).
+        {
+            let mut map = self.sessions.lock().unwrap();
+            if let Some(s) = map.get(&req.agent_id) {
+                let st = *s.state.lock().unwrap();
+                let reusable = matches!(st, SessionState::Running | SessionState::Starting)
+                    && !s.kill_requested.load(Ordering::SeqCst);
+                if reusable {
+                    return Ok(CreateSessionResult { session_id: s.session_id.clone(), state: st });
+                }
+                map.remove(&req.agent_id);
             }
         }
 
@@ -267,9 +280,10 @@ impl SessionManager {
         // 때만(이미 종료됐다면 주입해봐야 의미 없음).
         if started && req.autostart_claude.unwrap_or(false) {
             // 훅 OFF면 --settings 없이 순수 claude 기동(주입할 설정 파일이 없음).
+            // 줄 끝은 CR('\r') — 아래 startup_command와 같은 이유(PowerShell 제출).
             let line = match &session.settings_path {
-                Some(p) => format!("claude --settings \"{}\"\n", p.display()),
-                None => "claude\n".to_string(),
+                Some(p) => format!("claude --settings \"{}\"\r", p.display()),
+                None => "claude\r".to_string(),
             };
             let _ = session.writer.lock().unwrap().write_all(line.as_bytes());
         }
@@ -281,7 +295,12 @@ impl SessionManager {
             if let Some(cmd) = req.startup_command.as_deref() {
                 let cmd = cmd.trim();
                 if !cmd.is_empty() {
-                    let line = format!("{cmd}\n");
+                    // 줄 끝은 LF가 아니라 CR('\r'). PowerShell/PSReadLine은 CR에서만
+                    // 라인을 제출한다 — 바로 LF를 보내면 명령이 실행되지 않고 `>>`
+                    // 연속 입력 프롬프트에 얹힌 채로 멈춘다. 실제 xterm의 Enter 키도
+                    // CR이며, 유닉스 PTY는 ICRNL로 CR->LF를 매핑하므로 CR 하나면
+                    // 모든 플랫폼에서 명령이 그대로 실행된다.
+                    let line = format!("{cmd}\r");
                     let _ = session.writer.lock().unwrap().write_all(line.as_bytes());
                 }
             }
@@ -352,23 +371,50 @@ impl SessionManager {
             intentional,
         };
         let next = if intentional { SessionState::Disposed } else { SessionState::Exited };
-        // state 락을 registry/emit까지 계속 쥐어 create()의 Running CAS와 상호
-        // 배제한다: 둘 중 하나만 완주 → 상태·이벤트 순서 일관성 보장.
+        // state 락을 registry.set_state까지 계속 쥐어 create()의 Running CAS와 상호
+        // 배제한다: 상태 전이는 Starting-게이트 CAS로 단조(monotonic) 보장 →
+        // "Exited 이후 Running" 역전 차단. (emit은 아래 superseded 판정 뒤로 뺀다 —
+        // 낡은 세션의 상태 이벤트가 프론트에서 새 세션을 덮어쓰지 않게 하기 위해.
+        // state→sessions 락 중첩은 create()의 sessions→state와 데드락이 되므로
+        // 여기서는 state 락을 먼저 놓고 sessions 락을 잡는다.)
         {
             let mut st = sess.state.lock().unwrap();
             *st = next;
             self.registry.set_state(&sess.session_id, next);
+        }
+
+        // 미해결 알림 정리(session_id 스코프 — 교체 여부와 무관).
+        self.hub.purge_session(&sess.session_id);
+
+        // 재시작 레이스 가드: dispose 직후 create()가 같은 agentId에 새 세션을
+        // 밀어넣었다면(create의 재사용 가드가 kill_requested 세션을 맵에서 떼어냄)
+        // 이 세션은 이미 "교체됨". 그때 맵/sink/상태이벤트를 건드리면 새 세션을
+        // 오염시키므로 건드리지 않는다. 맵 확인과 (미교체 시의) 제거를 하나의
+        // sessions 락 임계구역에서 수행 → create()의 맵 제거/삽입과 순서가 확정돼
+        // sink 오제거 레이스가 없다.
+        let is_current = {
+            let mut map = self.sessions.lock().unwrap();
+            let current = map
+                .get(&sess.agent_id)
+                .map(|s| s.session_id == sess.session_id)
+                .unwrap_or(false);
+            if current && next == SessionState::Disposed {
+                // 재사용 안 함 → 맵/sink에서 제거(레지스트리는 아래에서 제거).
+                map.remove(&sess.agent_id);
+                self.sinks.lock().unwrap().remove(&sess.agent_id);
+            }
+            current
+        };
+
+        // 여전히 이 agentId의 현재 세션일 때만 상태 이벤트를 방출한다 — 교체된
+        // 낡은 세션의 Disposed/Exited가 프론트(agentId 키)에서 새 세션의 상태를
+        // 덮어쓰지 않게 한다.
+        if is_current {
             self.emit_state(sess, next, Some(exit));
         }
 
-        // 미해결 알림 정리.
-        self.hub.purge_session(&sess.session_id);
-
         if next == SessionState::Disposed {
-            // 재사용 안 함 → 맵/레지스트리/sink에서 제거(이후 hook은 폐기).
-            self.sessions.lock().unwrap().remove(&sess.agent_id);
             self.registry.remove(&sess.session_id);
-            self.sinks.lock().unwrap().remove(&sess.agent_id);
         } else {
             // Exited(예기치 않은 종료)는 진단/재기동 위해 레지스트리에 유지하되,
             // 죽은 세션의 --settings 파일은 정리한다. 재기동 시 create()가
@@ -653,7 +699,7 @@ mod tests {
 
         let written = ctl.writes_utf8();
         assert!(
-            written.starts_with("claude --settings \"") && written.ends_with("\"\n"),
+            written.starts_with("claude --settings \"") && written.ends_with("\"\r"),
             "unexpected stdin injection: {written:?}"
         );
         assert!(written.contains(&format!("{}.settings.json", created.session_id)));
@@ -670,8 +716,11 @@ mod tests {
 
         assert_eq!(
             ctl.writes_utf8(),
-            "source ./init.sh\n",
-            "startup_command must be injected verbatim followed by a newline",
+            "source ./init.sh\r",
+            "startup_command must be injected verbatim followed by a carriage return \
+             (CR submits the line in PowerShell/PSReadLine; a bare LF leaves it at the \
+             `>>` continuation prompt. A real xterm Enter is also CR, and a unix PTY's \
+             ICRNL maps CR->LF, so CR runs the command on every platform.)",
         );
 
         cleanup(&ctl, &dir);
@@ -747,7 +796,7 @@ mod tests {
         let (mgr, _events, ctl, dir) = build_with_port(None);
         mgr.create(req("a1", Some(true))).unwrap();
 
-        assert_eq!(ctl.writes_utf8(), "claude\n", "hooks-OFF autostart must inject a bare `claude` with no --settings");
+        assert_eq!(ctl.writes_utf8(), "claude\r", "hooks-OFF autostart must inject a bare `claude` with no --settings");
 
         cleanup(&ctl, &dir);
     }
@@ -1081,6 +1130,109 @@ mod tests {
         // Same channel receives the new session's output — no re-attach.
         wait_for(|| captured.lock().unwrap().contains("from-second")).await;
 
+        ctl2.close_output();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- 재시작 레이스: dispose 직후 create (PowerShell 회귀) ----
+
+    /// Windows/PowerShell 재시작 회귀. 증상: 첫 재시작은 세션을 종료만 하고 새
+    /// 세션을 못 띄워, 한 번 더 재시작해야 떴다. 원인: dispose가 kill을 요청해도
+    /// 프로세스 reap(→ on_exit)이 느린 플랫폼에서는 create의 재사용 가드가 아직
+    /// Running으로 남은 "죽어가는 세션"을 재사용해버렸다. dispose로 kill이 요청된
+    /// 세션은 곧 사라질 예정이므로 재사용하지 말고 새 PTY를 띄워야 한다.
+    #[tokio::test]
+    async fn recreate_after_dispose_before_reap_spawns_fresh_session_not_reuse() {
+        let events = Arc::new(RecordingEvents::default());
+        let reg = registry();
+        let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
+        let (writer, dir) = scratch_hook_writer();
+        let factory = Arc::new(MultiFakePtyFactory::new());
+        let mgr = Arc::new(SessionManager::new(
+            factory.clone(),
+            writer,
+            reg,
+            events.clone() as Arc<dyn AppEvents>,
+            hub,
+            Arc::new(|| Some(12345u16)),
+        ));
+
+        let first = mgr.create(req("a1", Some(false))).unwrap();
+
+        // dispose: kill 요청(kill_requested=true) — 단, fire_exit는 하지 않는다.
+        // 즉 프로세스가 아직 reap되지 않아 on_exit이 실행되기 전 상태(세션은
+        // 맵에 Running으로 남아 있음)를 재현한다.
+        mgr.dispose("a1");
+
+        let second = mgr.create(req("a1", Some(false))).unwrap();
+
+        assert_ne!(
+            first.session_id, second.session_id,
+            "kill이 요청된(죽어가는) 세션을 재사용하면 안 된다 — 새 세션을 만들어야 한다"
+        );
+        assert_eq!(factory.controls().len(), 2, "재시작 시 새 PTY가 spawn돼야 한다");
+        assert_eq!(
+            mgr.session_id_for("a1"),
+            Some(second.session_id.clone()),
+            "agentId는 새 세션으로 resolve돼야 한다"
+        );
+
+        // cleanup: 두 세션 다 reap + 리더 종료.
+        for c in factory.controls() {
+            c.fire_exit(0);
+            c.close_output();
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 위 재시작 레이스의 후속: 뒤늦게 옛 세션이 reap돼 on_exit이 돌아도, 이미
+    /// 슬롯을 차지한 새 세션의 맵 엔트리·sink·출력 채널을 오염(evict)시키면 안 된다.
+    /// (on_exit은 자신이 여전히 해당 agentId의 현재 세션일 때만 맵/sink/이벤트를
+    /// 건드리는 identity 가드를 가진다.)
+    #[tokio::test]
+    async fn stale_on_exit_after_recreate_does_not_evict_replacement() {
+        let events = Arc::new(RecordingEvents::default());
+        let reg = registry();
+        let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
+        let (writer, dir) = scratch_hook_writer();
+        let factory = Arc::new(MultiFakePtyFactory::new());
+        let mgr = Arc::new(SessionManager::new(
+            factory.clone(),
+            writer,
+            reg,
+            events.clone() as Arc<dyn AppEvents>,
+            hub,
+            Arc::new(|| Some(12345u16)),
+        ));
+
+        let (channel, captured) = recording_channel();
+        mgr.attach_output("a1", channel); // 세션 수명과 독립인 agentId 채널.
+
+        let first = mgr.create(req("a1", Some(false))).unwrap();
+        mgr.dispose("a1"); // kill 요청, 아직 미reap.
+        let second = mgr.create(req("a1", Some(false))).unwrap();
+        let ctl1 = factory.controls()[0].clone();
+        let ctl2 = factory.controls()[1].clone();
+
+        // 옛 세션 뒤늦게 reap → on_exit(옛)이 실행된다. Disposed 경로이므로
+        // 레지스트리에서 옛 session_id가 제거되는 것을 on_exit 완료 신호로 쓴다.
+        ctl1.fire_exit(0);
+        wait_for(|| mgr.registry.resolve_agent(&first.session_id).is_none()).await;
+
+        // on_exit(옛)이 새 세션을 evict하지 않았다.
+        assert_eq!(
+            mgr.session_id_for("a1"),
+            Some(second.session_id.clone()),
+            "교체된 옛 세션의 on_exit이 새 세션의 맵 엔트리를 지우면 안 된다"
+        );
+        // 그리고 새 세션의 출력이 여전히 같은 채널로 흐른다(sink가 제거되지 않았다).
+        ctl2.push_output(b"after-restart");
+        wait_for(|| captured.lock().unwrap().contains("after-restart")).await;
+
+        assert_ne!(first.session_id, second.session_id);
+
+        ctl2.fire_exit(0);
+        ctl1.close_output();
         ctl2.close_output();
         let _ = std::fs::remove_dir_all(&dir);
     }
