@@ -179,13 +179,18 @@ fn dedup_key(session_id: &str, source: NotificationSource, message: &str) -> Str
 /// 라벨 표시용 프롬프트 원문 절단 상한(chars 기준 — 바이트 아님).
 pub const MAX_PROMPT_TEXT_CHARS: usize = 2000;
 
+/// bash 모드(!)·슬래시 명령(/)·메모리 추가(#) 프롬프트는 라벨 요약 대상이 아니다.
+fn is_command_prompt(trimmed: &str) -> bool {
+    trimmed.starts_with('!') || trimmed.starts_with('/') || trimmed.starts_with('#')
+}
+
 /// UserPromptSubmit hook body에서 `prompt` 문자열을 추출한다.
-/// 비JSON/필드 부재/공백뿐이면 None.
+/// 비JSON/필드 부재/공백뿐/명령성 프롬프트면 None.
 fn extract_prompt_text(body: &[u8]) -> Option<String> {
     let v: serde_json::Value = serde_json::from_slice(body).ok()?;
     let s = v.get("prompt")?.as_str()?;
     let t = s.trim();
-    if t.is_empty() {
+    if t.is_empty() || is_command_prompt(t) {
         return None;
     }
     Some(t.chars().take(MAX_PROMPT_TEXT_CHARS).collect())
@@ -260,7 +265,7 @@ pub mod fake {
 #[cfg(test)]
 mod tests {
     use super::fake::FakeClock;
-    use super::{dedup_key, extract_message, Clock, NotificationHub};
+    use super::{dedup_key, extract_message, is_command_prompt, Clock, NotificationHub};
     use crate::state::fake::RecordingEvents;
     use crate::state::SessionRegistry;
     use crate::types::*;
@@ -624,6 +629,28 @@ mod tests {
         hub.ingest_activity_with_body("s1", ActivityKind::Prompt, b"not json");
         hub.ingest_activity_with_body("s1", ActivityKind::Prompt, br#"{"session_id":"s1"}"#);
         hub.ingest_activity_with_body("s1", ActivityKind::Prompt, br#"{"prompt":"   "}"#);
+        let acts = events.activities();
+        assert_eq!(acts.len(), 3);
+        assert!(acts.iter().all(|a| a.text.is_none()));
+    }
+
+    #[test]
+    fn is_command_prompt_flags_bash_slash_and_memory_prefixes() {
+        assert!(is_command_prompt("!git status"));
+        assert!(is_command_prompt("/clear"));
+        assert!(is_command_prompt("#remember"));
+        assert!(!is_command_prompt("버그 고쳐줘"));
+        assert!(!is_command_prompt("git status"));
+        // 절대경로 텍스트도 '/'로 시작하면 명령으로 취급된다 — 감수하는 트레이드오프.
+        assert!(is_command_prompt("/home/x"));
+    }
+
+    #[test]
+    fn ingest_activity_with_body_drops_command_prompts() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_activity_with_body("s1", ActivityKind::Prompt, &prompt_body("!git status"));
+        hub.ingest_activity_with_body("s1", ActivityKind::Prompt, &prompt_body("/clear"));
+        hub.ingest_activity_with_body("s1", ActivityKind::Prompt, &prompt_body("#메모"));
         let acts = events.activities();
         assert_eq!(acts.len(), 3);
         assert!(acts.iter().all(|a| a.text.is_none()));

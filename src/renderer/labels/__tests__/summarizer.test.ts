@@ -8,6 +8,7 @@ import {
   CURRENT_SYSTEM_PROMPT,
   GOAL_SYSTEM_PROMPT,
   installTaskLabelSummarizer,
+  sanitizeSummary,
 } from "../summarizer";
 import type { ActivityEvent } from "@shared/types";
 
@@ -166,5 +167,70 @@ describe("installTaskLabelSummarizer", () => {
     await vi.waitFor(() =>
       expect(useAppStore.getState().taskLabels["a1"].currentSummary).toBe("새 요약")
     );
+  });
+
+  it("메타·깨짐 응답은 반영하지 않고 쿨다운 후 폴백", async () => {
+    let now = 0;
+    let broken = true;
+    const summarizeFn = vi.fn(async () => {
+      if (broken) return "죄송하지만 요약할 수 없습니다";
+      return "복구 요약";
+    });
+    teardown = installTaskLabelSummarizer({ summarizeFn, now: () => now });
+
+    useAppStore.getState().applyActivityEvent(promptEvent());
+    await vi.waitFor(() => expect(summarizeFn).toHaveBeenCalledTimes(2));
+    const failedCalls = 2;
+
+    expect(useAppStore.getState().taskLabels["a1"].goal).toBeUndefined();
+    expect(useAppStore.getState().taskLabels["a1"].currentSummary).toBeUndefined();
+
+    // 쿨다운 중: 새 프롬프트가 와도 호출하지 않는다
+    now = 10_000;
+    useAppStore.getState().applyActivityEvent(promptEvent({ text: "쿨다운 중 지시", at: 2000 }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(summarizeFn.mock.calls.length).toBe(failedCalls);
+
+    // 쿨다운 경과 후: 재시도해 성공 반영
+    now = 40_000;
+    broken = false;
+    useAppStore.getState().applyActivityEvent(promptEvent({ text: "재시도 지시", at: 3000 }));
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().taskLabels["a1"].currentSummary).toBe("복구 요약")
+    );
+  });
+});
+
+describe("sanitizeSummary", () => {
+  it("다중 줄 입력은 첫 줄만 취한다", () => {
+    expect(sanitizeSummary("버그 수정\n부가 설명 줄")).toBe("버그 수정");
+  });
+
+  it("따옴표를 제거한다", () => {
+    expect(sanitizeSummary('"버그 수정"')).toBe("버그 수정");
+  });
+
+  it("머리말(요약:/목표:)을 제거한다", () => {
+    expect(sanitizeSummary("요약: 버그 수정")).toBe("버그 수정");
+  });
+
+  it("메타 발언 응답은 null", () => {
+    expect(sanitizeSummary("죄송하지만 인코딩 오류로 요약할 수 없습니다")).toBeNull();
+  });
+
+  it("깨진 응답(물음표 반복)은 null", () => {
+    expect(sanitizeSummary("?? ??? ???")).toBeNull();
+  });
+
+  it("40자 초과 응답은 null", () => {
+    expect(sanitizeSummary("가".repeat(41))).toBeNull();
+  });
+
+  it("공백뿐인 응답은 null", () => {
+    expect(sanitizeSummary("   \n  ")).toBeNull();
+  });
+
+  it("치환 문자(U+FFFD) 포함 응답은 null", () => {
+    expect(sanitizeSummary("버그 � 수정")).toBeNull();
   });
 });

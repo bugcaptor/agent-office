@@ -32,9 +32,12 @@ fn permits() -> &'static Semaphore {
     PERMITS.get_or_init(|| Semaphore::new(2))
 }
 
+// PS 5.1의 `$OutputEncoding` 기본값(US-ASCII) 때문에 네이티브 파이프로
+// 한글이 깨지므로 BOM 없는 UTF-8로 고정한다.
 #[cfg(windows)]
 const WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
 [Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
+$OutputEncoding=New-Object System.Text.UTF8Encoding($false)
 $c = Get-Command claude -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 $in = [Console]::In.ReadToEnd()
@@ -142,6 +145,13 @@ mod tests {
     async fn rejects_empty_text() {
         let err = summarize("요약하라", "   ").await.unwrap_err();
         assert_eq!(err, "validation: text is empty");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_script_pins_bomless_utf8_output_encoding() {
+        assert!(WINDOWS_SCRIPT.contains("$OutputEncoding=New-Object System.Text.UTF8Encoding($false)"));
+        assert!(!WINDOWS_SCRIPT.contains("$OutputEncoding=[System.Text.Encoding]::UTF8"));
     }
 
     #[cfg(windows)]
