@@ -12,6 +12,8 @@ const MENU_MARGIN = 4;
 export interface ContextMenuItem {
   label: string;
   onSelect: () => void;
+  /** true면 회색 표시 + 클릭 무시(메뉴도 닫히지 않음). */
+  disabled?: boolean;
 }
 
 export function ContextMenu({
@@ -77,6 +79,7 @@ export function ContextMenu({
           type="button"
           role="menuitem"
           className="context-menu-item"
+          disabled={item.disabled}
           onClick={() => {
             item.onSelect();
             onClose();

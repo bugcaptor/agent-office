@@ -23,3 +23,10 @@
 .context-menu-item:hover {
   background: var(--bg-panel-hi);
 }
+.context-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.context-menu-item:disabled:hover {
+  background: none;
+}

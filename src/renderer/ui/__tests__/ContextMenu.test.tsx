@@ -43,4 +43,22 @@ describe("ContextMenu", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("disabled 항목은 클릭해도 onSelect/onClose가 호출되지 않는다", () => {
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <ContextMenu
+        x={10}
+        y={10}
+        items={[{ label: "비활성 항목", onSelect, disabled: true }]}
+        onClose={onClose}
+      />
+    );
+    const item = screen.getByRole("menuitem", { name: "비활성 항목" });
+    expect(item).toHaveProperty("disabled", true);
+    fireEvent.click(item);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

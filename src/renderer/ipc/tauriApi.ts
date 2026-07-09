@@ -137,6 +137,10 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.listAvailableShells);
   },
 
+  async openInVscode(path) {
+    await invoke(Commands.openInVscode, { path });
+  },
+
   onData(agentId, cb) {
     let sub = outputSubs.get(agentId);
     if (!sub) {

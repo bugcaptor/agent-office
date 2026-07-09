@@ -343,6 +343,14 @@ pub async fn set_app_settings(
     Ok(())
 }
 
+/// 에이전트 작업 폴더를 Visual Studio Code로 연다. `path`는 렌더러가
+/// 프로필의 `cwd`를 그대로 전달한다(미설정 시 메뉴가 비활성화되므로 폴백
+/// 없음). 구현/OS별 실행 전략은 `crate::vscode` 참조.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_in_vscode(path: String) -> Result<(), String> {
+    crate::vscode::open_dir_in_vscode(&path)
+}
+
 #[cfg(test)]
 mod tests {
     // Assert each command *body* delegates correctly into

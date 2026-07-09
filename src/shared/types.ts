@@ -303,6 +303,8 @@ export interface AgentOfficeApi {
   setAppSettings(settings: AppSettings): Promise<void>;
   /** 사용 가능한 셸 목록. Windows 외 플랫폼은 빈 배열. */
   listAvailableShells(): Promise<AvailableShell[]>;
+  /** 디렉터리를 Visual Studio Code로 연다. VS Code 미설치/경로 부재 시 reject. */
+  openInVscode(path: string): Promise<void>;
   /** Returns an unsubscribe function. */
   onData(agentId: string, cb: (data: string) => void): () => void;
   onSessionState(cb: (e: SessionStateEvent) => void): () => void;

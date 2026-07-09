@@ -14,6 +14,7 @@ pub mod pixellab;
 mod session;
 mod state;
 mod types;
+mod vscode;
 
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -141,6 +142,7 @@ pub fn run() {
             ipc::commands::generate_sprite_image,
             ipc::commands::get_app_settings,
             ipc::commands::set_app_settings,
+            ipc::commands::open_in_vscode,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build tauri app")

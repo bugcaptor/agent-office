@@ -32,6 +32,15 @@ vi.mock("../../office/gen/characterFactory", () => ({
   generateSpritePreview: (...args: unknown[]) => generateSpritePreview(...args),
 }));
 
+// `tauriApi`는 실제 @tauri-apps/api invoke를 부르므로 jsdom에서는 mock
+// (ProfileDialog 테스트와 동일한 관례). "VS Code로 열기" 경로 전달 검증용.
+const openInVscode = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../ipc/tauriApi", () => ({
+  tauriApi: {
+    openInVscode: (...args: unknown[]) => openInVscode(...args),
+  },
+}));
+
 const { AgentTabStrip } = await import("../AgentTabStrip");
 
 function mkProfile(id: string): AgentProfile {
@@ -51,6 +60,7 @@ const initialState = useAppStore.getState();
 beforeEach(() => {
   useAppStore.setState(initialState, true);
   generateSpritePreview.mockClear();
+  openInVscode.mockClear();
 });
 
 afterEach(() => cleanup());
@@ -291,5 +301,30 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
       agentId: "a1",
     });
     expect(queryByRole("menu")).toBeNull();
+  });
+
+  it("cwd가 있는 프로필: 'VS Code로 열기' 선택 시 해당 경로로 openInVscode를 호출하고 메뉴는 닫힌다", () => {
+    const s = useAppStore.getState();
+    s.addAgent({ ...mkProfile("a1"), cwd: "/Users/me/proj" });
+    s.openTerminal("a1");
+    const { getAllByRole, getByRole, queryByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    fireEvent.click(getByRole("menuitem", { name: "VS Code로 열기" }));
+
+    expect(openInVscode).toHaveBeenCalledWith("/Users/me/proj");
+    expect(queryByRole("menu")).toBeNull();
+  });
+
+  it("cwd 미설정 프로필: 'VS Code로 열기'가 비활성화되고 클릭해도 호출되지 않는다", () => {
+    seedThreeTabs(); // mkProfile은 cwd 미설정
+    const { getAllByRole, getByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    const item = getByRole("menuitem", { name: "VS Code로 열기" });
+    expect(item).toHaveProperty("disabled", true);
+
+    fireEvent.click(item);
+    expect(openInVscode).not.toHaveBeenCalled();
   });
 });

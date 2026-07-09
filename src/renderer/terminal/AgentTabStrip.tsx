@@ -17,6 +17,7 @@ import { useAppStore } from "../store/appStore";
 import { generateSpritePreview } from "../office/gen/characterFactory";
 import { resolveArchetype } from "../office/gen/archetypes";
 import { ContextMenu } from "../ui/ContextMenu";
+import { tauriApi } from "../ipc/tauriApi";
 
 export function AgentTabStrip() {
   const isOpen = useAppStore((s) => s.activeTerminalAgentId !== null);
@@ -124,6 +125,18 @@ export function AgentTabStrip() {
               label: "터미널 재시작",
               onSelect: () =>
                 openModal({ kind: "confirm-restart", agentId: menu.agentId }),
+            },
+            {
+              label: "VS Code로 열기",
+              // 작업 폴더(cwd) 미설정 프로필은 비활성화 — 홈 디렉터리 폴백 없음.
+              disabled: !agents[menu.agentId]?.cwd,
+              onSelect: () => {
+                const cwd = agents[menu.agentId]?.cwd;
+                if (!cwd) return;
+                void tauriApi
+                  .openInVscode(cwd)
+                  .catch((err) => console.warn("VS Code 열기 실패", err));
+              },
             },
             {
               label: "프로필 편집",

@@ -30,6 +30,7 @@ export const Commands = {
   getAppSettings: "get_app_settings",
   setAppSettings: "set_app_settings",
   listAvailableShells: "list_available_shells",
+  openInVscode: "open_in_vscode",
 } as const;
 
 export type CommandName = (typeof Commands)[keyof typeof Commands];
