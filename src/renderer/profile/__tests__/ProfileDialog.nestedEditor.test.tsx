@@ -28,6 +28,7 @@ vi.mock("../../ipc/tauriApi", () => ({
     createSession: (...args: unknown[]) => createSession(...args),
     deletePortrait: (...args: unknown[]) => deletePortrait(...args),
     savePortrait: (...args: unknown[]) => savePortrait(...args),
+    listAvailableShells: vi.fn().mockResolvedValue([]),
   },
 }));
 

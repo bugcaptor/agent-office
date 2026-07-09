@@ -29,6 +29,7 @@ export const Commands = {
   generateSpriteImage: "generate_sprite_image",
   getAppSettings: "get_app_settings",
   setAppSettings: "set_app_settings",
+  listAvailableShells: "list_available_shells",
 } as const;
 
 export type CommandName = (typeof Commands)[keyof typeof Commands];

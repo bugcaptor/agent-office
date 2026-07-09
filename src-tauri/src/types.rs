@@ -113,14 +113,17 @@ pub struct CreateSessionRequest {
     pub cols: Option<u16>,
     pub rows: Option<u16>,
     pub cwd: Option<String>,
+    /// 프로필의 셸 선택 id("powershell" | "pwsh" | "git-bash" | "wsl").
+    /// None이면 자동 선택(`session::shells::resolve`가 pwsh > powershell
+    /// 순으로 고른다). Windows 전용 기능 -- 다른 플랫폼에서는 무시된다.
+    pub shell: Option<String>,
     /// 동결 API opts에는 없음 → 프런트 어댑터는 항상 미지정(=false). 기본 false:
     /// 세션은 자동 실행 없이 셸만 띄운다. 그래도 셸이 `claude` 래퍼를 정의하므로
     /// 사용자가 그냥 `claude`만 입력해도 투명하게 `--settings
     /// "$AGENT_OFFICE_SETTINGS"`가 붙어 시간 집계 훅이 발화한다: Windows는
-    /// PowerShell 함수(`session::manager::CLAUDE_WRAPPER_PS`), macOS/Linux의
-    /// zsh는 ZDOTDIR 셈(`session::zsh_wrapper`)으로 주입한다. 그 외 셸(bash,
-    /// fish 등)은 아직 다루지 않는다(`session::manager::default_shell`의
-    /// TODO 참고).
+    /// PowerShell 함수(`session::shells::CLAUDE_WRAPPER_PS`) 또는 Git Bash의
+    /// `--rcfile` 심(`session::bash_wrapper`), macOS/Linux의 zsh는 ZDOTDIR
+    /// 셈(`session::zsh_wrapper`)으로 주입한다.
     pub autostart_claude: Option<bool>,
 }
 
@@ -180,6 +183,10 @@ pub struct AgentProfile {
     /// 캐릭터 아키타입(종족) id. 부재 = 레거시(로드 시 "human" 백필), 알 수 없음 = "human" 폴백.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub archetype: Option<String>,
+    /// 세션 셸 선택 id("powershell" | "pwsh" | "git-bash" | "wsl"). 없으면
+    /// 자동 선택(session::shells::resolve). Windows 전용 기능.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub shell: Option<String>,
 }
 
 /// 영속 상태. version은 리터럴 1.
@@ -464,6 +471,7 @@ mod tests {
             sprite_request: None,
             sprite_updated_at: None,
             archetype: None,
+            shell: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"cwd\":\"/tmp/proj\""));
@@ -485,6 +493,7 @@ mod tests {
             sprite_request: None,
             sprite_updated_at: None,
             archetype: None,
+            shell: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("cwd"));
@@ -517,6 +526,7 @@ mod tests {
             sprite_request: None,
             sprite_updated_at: None,
             archetype: None,
+            shell: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"appearance\":\"short black hair, glasses\""));
@@ -539,6 +549,7 @@ mod tests {
             sprite_request: None,
             sprite_updated_at: None,
             archetype: None,
+            shell: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("appearance"));
@@ -572,6 +583,7 @@ mod tests {
             sprite_request: Some("red cloak wizard".into()),
             sprite_updated_at: Some(1_720_000_000_888),
             archetype: None,
+            shell: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"spriteRequest\":\"red cloak wizard\""));
@@ -594,6 +606,7 @@ mod tests {
             sprite_request: None,
             sprite_updated_at: None,
             archetype: None,
+            shell: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("spriteRequest"));
@@ -616,6 +629,7 @@ mod tests {
             seed: "abc123".into(), created_at: 1, desk_index: 0, cwd: None, appearance: None,
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: Some("orc".into()),
+            shell: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"archetype\":\"orc\""));
@@ -628,9 +642,43 @@ mod tests {
             seed: "abc123".into(), created_at: 1, desk_index: 0, cwd: None, appearance: None,
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None,
+            shell: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("archetype"));
+    }
+
+    #[test]
+    fn agent_profile_deserializes_without_shell() {
+        // 레거시 profiles.json엔 shell 키가 없다 -> 파싱되고 None.
+        let json = "{\"id\":\"p1\",\"name\":\"Ada\",\"role\":\"backend\",\"note\":\"\",\
+                     \"seed\":\"abc123\",\"createdAt\":1720000000003,\"deskIndex\":0}";
+        let profile: AgentProfile = serde_json::from_str(json).unwrap();
+        assert_eq!(profile.shell, None);
+    }
+
+    #[test]
+    fn agent_profile_serializes_shell_when_present() {
+        let profile = AgentProfile {
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
+            seed: "abc123".into(), created_at: 1, desk_index: 0, cwd: None, appearance: None,
+            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
+            archetype: None, shell: Some("git-bash".into()),
+        };
+        let json = serde_json::to_string(&profile).unwrap();
+        assert!(json.contains("\"shell\":\"git-bash\""));
+    }
+
+    #[test]
+    fn agent_profile_omits_shell_when_none() {
+        let profile = AgentProfile {
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
+            seed: "abc123".into(), created_at: 1, desk_index: 0, cwd: None, appearance: None,
+            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
+            archetype: None, shell: None,
+        };
+        let json = serde_json::to_string(&profile).unwrap();
+        assert!(!json.contains("shell"));
     }
 
     #[test]

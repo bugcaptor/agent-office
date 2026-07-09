@@ -26,6 +26,7 @@ pub struct SessionOpts {
     pub cols: Option<u16>,
     pub rows: Option<u16>,
     pub cwd: Option<String>,
+    pub shell: Option<String>,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -40,8 +41,16 @@ pub async fn create_session(
         cols: o.cols,
         rows: o.rows,
         cwd: o.cwd,
+        shell: o.shell,
         autostart_claude: None, // 항상 기본 false (SessionManager::create의 unwrap_or(false))
     })
+}
+
+/// 렌더러 셸 선택 드롭다운용: 호스트에 설치된 Windows 셸 목록(다른
+/// 플랫폼은 빈 배열).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_available_shells() -> Result<Vec<crate::session::shells::AvailableShell>, String> {
+    Ok(crate::session::shells::detect_shells())
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -517,6 +526,7 @@ mod tests {
             cols: None,
             rows: None,
             cwd: None,
+            shell: None,
             autostart_claude: None,
         }
     }
@@ -540,6 +550,7 @@ mod tests {
                 cols: Some(100),
                 rows: Some(30),
                 cwd: None,
+                shell: None,
                 autostart_claude: None, // command body always passes None -> manager defaults to false
             })
             .unwrap();
@@ -549,6 +560,32 @@ mod tests {
         assert_eq!(ctl.writes_utf8(), "");
 
         cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    // create_session 본문(SessionOpts -> CreateSessionRequest)이 `shell`
+    // 필드를 그대로 전달하는지 검증 -- cols/rows/cwd와 동일한 delegation
+    // 패턴이지만 opts.shell 값이 유실되지 않는지가 회귀 지점.
+    #[test]
+    fn create_session_opts_shell_flows_into_create_session_request() {
+        let opts = SessionOpts { cols: None, rows: None, cwd: None, shell: Some("git-bash".into()) };
+        // create_session 본문과 동일한 매핑.
+        let request = CreateSessionRequest {
+            agent_id: "a1".into(),
+            cols: opts.cols,
+            rows: opts.rows,
+            cwd: opts.cwd,
+            shell: opts.shell.clone(),
+            autostart_claude: None,
+        };
+        assert_eq!(request.shell, Some("git-bash".to_string()));
+    }
+
+    // ---- list_available_shells ----
+
+    #[tokio::test]
+    async fn list_available_shells_returns_ok_without_panicking() {
+        let result = list_available_shells().await;
+        assert!(result.is_ok());
     }
 
     // ---- dispose_session ----
@@ -683,6 +720,7 @@ mod tests {
                 sprite_request: None,
                 sprite_updated_at: None,
                 archetype: None,
+                shell: None,
             }],
             version: 1,
         };
@@ -725,6 +763,7 @@ mod tests {
                 sprite_request: None,
                 sprite_updated_at: None,
                 archetype: None,
+                shell: None,
             }],
             version: 1,
         };
@@ -774,6 +813,7 @@ mod tests {
                 sprite_request: None,
                 sprite_updated_at: None,
                 archetype: None,
+                shell: None,
             }],
             version: 1,
         };

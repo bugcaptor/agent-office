@@ -25,11 +25,13 @@ vi.mock("../../office/gen/characterFactory", () => ({
 const createSession = vi.fn().mockResolvedValue({ sessionId: "s1", state: "starting" });
 const deletePortrait = vi.fn().mockResolvedValue(undefined);
 const deleteSprite = vi.fn().mockResolvedValue(undefined);
+const listAvailableShells = vi.fn().mockResolvedValue([]);
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     createSession: (...args: unknown[]) => createSession(...args),
     deletePortrait: (...args: unknown[]) => deletePortrait(...args),
     deleteSprite: (...args: unknown[]) => deleteSprite(...args),
+    listAvailableShells: (...args: unknown[]) => listAvailableShells(...args),
   },
 }));
 
@@ -64,6 +66,8 @@ beforeEach(() => {
   createSession.mockClear();
   deletePortrait.mockClear();
   deleteSprite.mockClear();
+  listAvailableShells.mockClear();
+  listAvailableShells.mockResolvedValue([]);
 });
 
 afterEach(() => cleanup());
@@ -272,6 +276,85 @@ describe("random initial values (profile-create)", () => {
     const agents = useAppStore.getState().agents;
     const created = Object.values(agents)[0];
     expect(created.archetype).toBe("orc");
+  });
+});
+
+describe("셸 선택 (list_available_shells)", () => {
+  const shells = [
+    { id: "pwsh", label: "PowerShell 7", path: "C:\\pwsh.exe", hooksSupported: true },
+    { id: "wsl", label: "WSL", path: "C:\\wsl.exe", hooksSupported: false },
+  ];
+
+  it("빈 셸 목록이면 셀렉터를 렌더하지 않는다 (create mode)", async () => {
+    useAppStore.getState().openModal({ kind: "profile-create" });
+    render(<ProfileDialog />);
+
+    await waitFor(() => expect(listAvailableShells).toHaveBeenCalledTimes(1));
+
+    expect(screen.queryByLabelText("셸")).toBeNull();
+  });
+
+  it("셸 목록이 있으면 자동(기본) + 셸 라벨을 렌더하고, hooksSupported가 false면 미지원 표기를 붙인다", async () => {
+    listAvailableShells.mockResolvedValue(shells);
+    useAppStore.getState().openModal({ kind: "profile-create" });
+    render(<ProfileDialog />);
+
+    const select = await screen.findByLabelText("셸");
+    const options = within(select).getAllByRole("option") as HTMLOptionElement[];
+    expect(options).toHaveLength(3);
+    expect(options[0].textContent).toBe("자동 (기본)");
+    expect(options[1].textContent).toBe("PowerShell 7");
+    expect(options[2].textContent).toBe("WSL (시간 추적 미지원)");
+  });
+
+  it("create mode: 셸을 선택하고 저장하면 createSession opts에 shell id가 포함된다", async () => {
+    listAvailableShells.mockResolvedValue(shells);
+    useAppStore.getState().openModal({ kind: "profile-create" });
+    const { getByLabelText, getByText } = render(<ProfileDialog />);
+
+    const select = await screen.findByLabelText("셸");
+    fireEvent.change(getByLabelText("이름"), { target: { value: "새 에이전트" } });
+    fireEvent.change(select, { target: { value: "wsl" } });
+
+    await act(async () => {
+      fireEvent.click(getByText("저장"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(useAppStore.getState().modal.kind).toBe("none"));
+
+    const state = useAppStore.getState();
+    const id = state.agentOrder[0];
+    expect(state.agents[id].shell).toBe("wsl");
+    expect(createSession).toHaveBeenCalledWith(id, { shell: "wsl" });
+  });
+
+  it("edit mode: 셸을 선택하고 저장하면 updateAgent 페이로드에 shell이 포함된다", async () => {
+    listAvailableShells.mockResolvedValue(shells);
+    useAppStore.getState().addAgent({
+      id: "a1",
+      name: "Existing",
+      role: "eng",
+      note: "",
+      seed: "existing-seed",
+      createdAt: Date.now(),
+      deskIndex: 0,
+    });
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+    const { getByText } = render(<ProfileDialog />);
+
+    const select = await screen.findByLabelText("셸");
+    fireEvent.change(select, { target: { value: "pwsh" } });
+
+    await act(async () => {
+      fireEvent.click(getByText("저장"));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(useAppStore.getState().modal.kind).toBe("none"));
+
+    expect(useAppStore.getState().agents["a1"].shell).toBe("pwsh");
   });
 });
 

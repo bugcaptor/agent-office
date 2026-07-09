@@ -88,6 +88,24 @@ describe("restartAgentSession 오케스트레이션", () => {
     expect(createSession).toHaveBeenCalledWith("a1", undefined);
   });
 
+  it("shell이 설정된 에이전트는 createSession opts에 shell을 포함한다", async () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1", { shell: "wsl" }));
+
+    await restartAgentSession("a1");
+
+    expect(createSession).toHaveBeenCalledWith("a1", { shell: "wsl" });
+  });
+
+  it("cwd와 shell이 모두 설정된 에이전트는 createSession opts에 둘 다 포함한다", async () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1", { cwd: "/work/a1", shell: "wsl" }));
+
+    await restartAgentSession("a1");
+
+    expect(createSession).toHaveBeenCalledWith("a1", { cwd: "/work/a1", shell: "wsl" });
+  });
+
   it("disposeSession이 실패해도 재시작은 계속 진행된다", async () => {
     disposeSession.mockRejectedValueOnce(new Error("no such session"));
     const s = useAppStore.getState();

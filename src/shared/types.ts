@@ -140,6 +140,8 @@ export interface CreateSessionOptions {
   cols?: number;
   rows?: number;
   cwd?: string;
+  /** 셸 id(예: "pwsh", "git-bash", "wsl", "powershell"). 부재 = 자동/기본 셸. */
+  shell?: string;
 }
 
 /**
@@ -200,6 +202,8 @@ export interface AgentProfile {
   deskIndex: number;
   /** Session working directory. Absent/undefined = backend falls back to the home dir. */
   cwd?: string;
+  /** 셸 id(예: "pwsh", "git-bash", "wsl", "powershell"). 부재 = 자동/기본 셸. */
+  shell?: string;
   /** 외모 묘사 힌트(자유 텍스트). 이미지 프롬프트에 반영. */
   appearance?: string;
   /** 초상 존재 표시 + 프론트 캐시 무효화 키(epoch ms). undefined = 초상 없음. */
@@ -245,6 +249,18 @@ export interface GetAppSettingsResult {
 }
 
 /**
+ * `list_available_shells` 응답 엔트리. Windows에서만 실제 목록을 반환하고,
+ * 그 외 플랫폼은 빈 배열. Mirrors Rust `AvailableShell` (camelCase).
+ */
+export interface AvailableShell {
+  id: string;
+  label: string;
+  path: string;
+  /** false면 시간 추적(hook) 미지원 셸. */
+  hooksSupported: boolean;
+}
+
+/**
  * Renderer-facing API surface (frozen). Implemented by
  * `src/renderer/ipc/tauriApi.ts` via Tauri commands (invoke) + events
  * (listen) + a dedicated output `Channel` (exact command/event names are
@@ -285,6 +301,8 @@ export interface AgentOfficeApi {
   getAppSettings(): Promise<GetAppSettingsResult>;
   /** 앱 전역 opt-in 설정 저장. */
   setAppSettings(settings: AppSettings): Promise<void>;
+  /** 사용 가능한 셸 목록. Windows 외 플랫폼은 빈 배열. */
+  listAvailableShells(): Promise<AvailableShell[]>;
   /** Returns an unsubscribe function. */
   onData(agentId: string, cb: (data: string) => void): () => void;
   onSessionState(cb: (e: SessionStateEvent) => void): () => void;

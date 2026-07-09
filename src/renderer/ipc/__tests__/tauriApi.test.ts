@@ -270,6 +270,18 @@ describe("command invocations", () => {
     });
   });
 
+  it("createSession forwards a shell opt as-is", async () => {
+    invoke.mockResolvedValueOnce({ sessionId: "s1", state: "starting" });
+    const tauriApi = await importTauriApi();
+
+    await tauriApi.createSession("a1", { cwd: "/tmp", shell: "wsl" });
+
+    expect(invoke).toHaveBeenCalledWith(Commands.createSession, {
+      agentId: "a1",
+      opts: { cwd: "/tmp", shell: "wsl" },
+    });
+  });
+
   it("disposeSession invokes dispose_session with agentId", async () => {
     const tauriApi = await importTauriApi();
     await tauriApi.disposeSession("a1");
@@ -404,5 +416,19 @@ describe("app settings commands", () => {
     await tauriApi.setAppSettings(s);
 
     expect(invoke).toHaveBeenCalledWith(Commands.setAppSettings, { settings: s });
+  });
+
+  it("listAvailableShells invokes list_available_shells with no args and returns the resolved list", async () => {
+    const shells = [
+      { id: "pwsh", label: "PowerShell 7", path: "C:\\pwsh.exe", hooksSupported: true },
+      { id: "wsl", label: "WSL", path: "C:\\wsl.exe", hooksSupported: false },
+    ];
+    invoke.mockResolvedValueOnce(shells);
+    const tauriApi = await importTauriApi();
+
+    const result = await tauriApi.listAvailableShells();
+
+    expect(invoke).toHaveBeenCalledWith(Commands.listAvailableShells);
+    expect(result).toEqual(shells);
   });
 });

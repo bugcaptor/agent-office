@@ -241,6 +241,30 @@ describe("officeBus.emitAgentClicked / ensureSession (Fix 1b)", () => {
     await flush();
   });
 
+  it("passes the profile's shell from the store when starting a session", async () => {
+    useAppStore
+      .getState()
+      .hydrate({ agents: [mkProfile({ id: "a1", shell: "wsl" })], version: 1 });
+    mockApi.createSession.mockResolvedValueOnce({ sessionId: "s1", state: "starting" });
+
+    officeBus.emitAgentClicked("a1");
+
+    expect(mockApi.createSession).toHaveBeenCalledWith("a1", { shell: "wsl" });
+    await flush();
+  });
+
+  it("passes both cwd and shell together when both are set on the profile", async () => {
+    useAppStore
+      .getState()
+      .hydrate({ agents: [mkProfile({ id: "a1", cwd: "/tmp/proj", shell: "wsl" })], version: 1 });
+    mockApi.createSession.mockResolvedValueOnce({ sessionId: "s1", state: "starting" });
+
+    officeBus.emitAgentClicked("a1");
+
+    expect(mockApi.createSession).toHaveBeenCalledWith("a1", { cwd: "/tmp/proj", shell: "wsl" });
+    await flush();
+  });
+
   it("does not start a session for an already-running agent", () => {
     useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
     useAppStore.getState().setSessionState({ agentId: "a1", status: "running" });

@@ -30,6 +30,7 @@ import type { SessionState } from "@shared/types";
 import type { LabelAnchor, OfficeBus } from "../office/bus";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "./tauriApi";
+import { sessionOptsFor } from "./sessionOpts";
 
 type NotifCb = (agentId: string, hasPending: boolean) => void;
 type StateCb = (agentId: string, state: SessionState) => void;
@@ -61,11 +62,11 @@ export function ensureSession(agentId: string): void {
   const needsStart = status === undefined || status === "idle" || status === "exited";
   if (!needsStart || startingInFlight.has(agentId)) return;
 
-  const cwd = agents[agentId]?.cwd;
+  const agent = agents[agentId];
   startingInFlight.add(agentId);
   setSessionState({ agentId, status: "starting" });
   tauriApi
-    .createSession(agentId, cwd ? { cwd } : undefined)
+    .createSession(agentId, sessionOptsFor(agent))
     .catch((err) => {
       useAppStore.getState().setSessionState({ agentId, status: "exited" });
       console.warn(`ensureSession: createSession failed for ${agentId}`, err);

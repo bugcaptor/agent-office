@@ -14,10 +14,12 @@ import { generateDraft, draftToProfile, type DraftProfile } from "./generate";
 import { generateSpritePreview } from "../office/gen/characterFactory";
 import { ARCHETYPE_SELECT_OPTIONS, resolveArchetype, pickArchetype } from "../office/gen/archetypes";
 import { tauriApi } from "../ipc/tauriApi";
+import { sessionOptsFor } from "../ipc/sessionOpts";
 import { buildPortraitPrompt, buildSpritePrompt, buildPixelLabSpriteDescription } from "../portrait/promptBuilder";
 import { PortraitEditor } from "../portrait/PortraitEditor";
 import { SpriteEditor } from "../sprite/SpriteEditor";
 import { clearSpriteOverride } from "../office/gen/spriteOverrides";
+import type { AvailableShell } from "@shared/types";
 import "../portrait/portrait.css";
 
 /** IPC 오류 문자열("{code}: {상세}") → 사용자 캡션. */
@@ -71,6 +73,12 @@ export function ProfileDialog() {
 
   const [draft, setDraft] = useState<DraftProfile>(() => generateDraft());
   const [spriteUrl, setSpriteUrl] = useState<string>("");
+  const [shells, setShells] = useState<AvailableShell[]>([]);
+
+  // 마운트 시 사용 가능한 셸 목록 조회 (Windows 외에는 빈 배열 → 셀렉터 미노출).
+  useEffect(() => {
+    tauriApi.listAvailableShells().then(setShells).catch(() => setShells([]));
+  }, []);
 
   // 편집 모드 진입 시 기존 값 로드.
   //
@@ -98,6 +106,7 @@ export function ProfileDialog() {
       note: agent.note,
       seed: agent.seed,
       cwd: agent.cwd ?? "",
+      shell: agent.shell ?? "",
       appearance: agent.appearance ?? "",
       spriteRequest: agent.spriteRequest ?? "",
       archetype: agent.archetype ?? "auto",
@@ -210,6 +219,7 @@ export function ProfileDialog() {
   const onSave = async () => {
     if (editing && editingAgent) {
       const trimmedCwd = (draft.cwd ?? "").trim();
+      const trimmedShell = (draft.shell ?? "").trim();
       const trimmedAppearance = (draft.appearance ?? "").trim();
       const trimmedSpriteRequest = (draft.spriteRequest ?? "").trim();
       const chosenArchetype =
@@ -221,6 +231,7 @@ export function ProfileDialog() {
         seed: draft.seed,
         archetype: chosenArchetype,
         cwd: trimmedCwd || undefined,
+        shell: trimmedShell || undefined,
         appearance: trimmedAppearance || undefined,
         spriteRequest: trimmedSpriteRequest || undefined,
       });
@@ -229,7 +240,7 @@ export function ProfileDialog() {
       addAgent(profile); // status: 'starting'
       // 캐릭터 등장은 profiles prop 변화 → B의 syncAgents가 처리 (정합화)
       try {
-        await tauriApi.createSession(profile.id, profile.cwd ? { cwd: profile.cwd } : undefined); // PTY 시작
+        await tauriApi.createSession(profile.id, sessionOptsFor(profile)); // PTY 시작
       } catch (err) {
         // The profile is already saved; mark the session exited so clicking the
         // character later retries via the bridge's ensureSession.
@@ -389,6 +400,23 @@ export function ProfileDialog() {
             placeholder="비워두면 홈 디렉터리"
           />
         </label>
+        {shells.length > 0 && (
+          <label>
+            셸
+            <select
+              value={draft.shell ?? ""}
+              onChange={(e) => setDraft({ ...draft, shell: e.target.value })}
+            >
+              <option value="">자동 (기본)</option>
+              {shells.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                  {!s.hooksSupported ? " (시간 추적 미지원)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="dialog-actions">
           {!editing && (
             <button className="pixel-btn" onClick={regenAll}>

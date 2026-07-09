@@ -17,6 +17,7 @@
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { terminalRegistry } from "../terminal/TerminalRegistry";
+import { sessionOptsFor } from "../ipc/sessionOpts";
 
 export async function restartAgentSession(agentId: string): Promise<void> {
   // ① 기존 PTY 종료 — 세션이 없거나 이미 죽었어도 재시작은 계속.
@@ -38,9 +39,8 @@ export async function restartAgentSession(agentId: string): Promise<void> {
   //    ensureSession이 중복 createSession을 만들지 않는다.
   const { agents, setSessionState } = useAppStore.getState();
   setSessionState({ agentId, status: "starting" });
-  const cwd = agents[agentId]?.cwd;
   try {
-    await tauriApi.createSession(agentId, cwd ? { cwd } : undefined);
+    await tauriApi.createSession(agentId, sessionOptsFor(agents[agentId]));
   } catch (err) {
     useAppStore.getState().setSessionState({ agentId, status: "exited" });
     console.warn(`restartAgentSession: createSession failed for ${agentId}`, err);

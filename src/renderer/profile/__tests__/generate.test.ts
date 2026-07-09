@@ -46,6 +46,11 @@ describe("generateDraft", () => {
     expect(draft.cwd).toBe("");
   });
 
+  it("initializes shell as an empty string", () => {
+    const draft = generateDraft();
+    expect(draft.shell).toBe("");
+  });
+
   it("varies name/role/note/seed across successive calls (real randomness, not memoized)", () => {
     const seen = new Set<string>();
     for (let i = 0; i < 20; i += 1) {
@@ -121,6 +126,31 @@ describe("draftToProfile cwd handling (Task 3)", () => {
     const profile = draftToProfile({ name: "Foo", role: "Bar", note: "note", seed: "seed" }, 0);
     expect(profile.cwd).toBeUndefined();
     expect("cwd" in profile).toBe(false);
+  });
+});
+
+describe("draftToProfile shell handling", () => {
+  it("includes trimmed shell when non-empty", () => {
+    const profile = draftToProfile(
+      { name: "Foo", role: "Bar", note: "note", seed: "seed", shell: "  pwsh  " },
+      0
+    );
+    expect(profile.shell).toBe("pwsh");
+  });
+
+  it("omits the shell field entirely when it is empty after trimming", () => {
+    const profile = draftToProfile(
+      { name: "Foo", role: "Bar", note: "note", seed: "seed", shell: "   " },
+      0
+    );
+    expect(profile.shell).toBeUndefined();
+    expect("shell" in profile).toBe(false);
+  });
+
+  it("omits the shell field entirely when it was never set (undefined draft.shell)", () => {
+    const profile = draftToProfile({ name: "Foo", role: "Bar", note: "note", seed: "seed" }, 0);
+    expect(profile.shell).toBeUndefined();
+    expect("shell" in profile).toBe(false);
   });
 });
 

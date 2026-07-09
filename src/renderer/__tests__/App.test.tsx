@@ -38,6 +38,7 @@ vi.mock("../ipc/tauriApi", () => ({
     resize: vi.fn(),
     clearNotifications: (...args: unknown[]) => clearNotifications(...args),
     onData: vi.fn(() => vi.fn()),
+    listAvailableShells: vi.fn().mockResolvedValue([]),
   },
 }));
 

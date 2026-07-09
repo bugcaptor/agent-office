@@ -16,6 +16,7 @@ use crate::notification::hook_settings::HookSettingsWriter;
 use crate::notification::hub::NotificationHub;
 use crate::session::output_batcher::{FlushSink, OutputBatcher, MAX_BYTES, WINDOW_MS};
 use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnOptions};
+use crate::session::shells;
 #[cfg(not(windows))]
 use crate::session::zsh_wrapper;
 use crate::state::{AppEvents, SessionRegistry};
@@ -86,7 +87,7 @@ pub struct SessionManager {
     /// 세션 재생성 시 채널 재사용을 위해 세션이 아니라 여기에 보관한다.
     sinks: Mutex<HashMap<AgentId, Arc<OutputSink>>>,
     get_hook_port: Arc<dyn Fn() -> Option<u16> + Send + Sync>,
-    shell_resolver: Arc<dyn Fn() -> (String, Vec<String>) + Send + Sync>,
+    shell_resolver: Arc<dyn Fn(shells::ShellRequest) -> shells::ResolvedShell + Send + Sync>,
 }
 
 impl SessionManager {
@@ -107,7 +108,7 @@ impl SessionManager {
             sessions: Mutex::new(HashMap::new()),
             sinks: Mutex::new(HashMap::new()),
             get_hook_port,
-            shell_resolver: Arc::new(default_shell),
+            shell_resolver: Arc::new(shells::resolve),
         }
     }
 
@@ -151,7 +152,12 @@ impl SessionManager {
             None => None,
         };
 
-        let (shell, base_args) = (self.shell_resolver)();
+        // hooks_on: 이번 세션에 AGENT_OFFICE_SETTINGS가 실제로 주입되는지 —
+        // 아래 env 주입 조건(port + settings_path 둘 다 Some)과 동일한 신호를
+        // 셸 리졸버에 미리 전달해, git-bash 분기가 --rcfile 심 설치 여부를
+        // 결정할 수 있게 한다.
+        let hooks_on = port.is_some() && settings_path.is_some();
+        let resolved = (self.shell_resolver)(shells::ShellRequest { selected: req.shell.as_deref(), hooks_on });
         let cwd = req.cwd.clone().map(expand_tilde).unwrap_or_else(home_dir);
         let mut env = vec![
             ("AGENT_OFFICE_SESSION".into(), session_id.clone()),
@@ -163,20 +169,22 @@ impl SessionManager {
             // macOS/Linux zsh time-tracking fix (Task B): inject a ZDOTDIR shim so
             // the spawned zsh defines a `claude` wrapper that transparently adds
             // `--settings $AGENT_OFFICE_SETTINGS` (see session::zsh_wrapper and
-            // the Windows CLAUDE_WRAPPER_PS sibling below). bash/fish etc remain
-            // unhandled — TODO(non-windows) in default_shell() below. 훅 OFF면 심을
-            // 설치하지 않는다(래퍼가 주입할 settings 파일 자체가 없음).
+            // the Windows CLAUDE_WRAPPER_PS sibling in session::shells). Windows
+            // PowerShell/pwsh and Git Bash get their own wrapper injection inside
+            // `session::shells::resolve_with`. 훅 OFF면 심을 설치하지 않는다
+            // (래퍼가 주입할 settings 파일 자체가 없음).
             #[cfg(not(windows))]
-            if zsh_wrapper::is_zsh(&shell) {
+            if zsh_wrapper::is_zsh(&resolved.program) {
                 match zsh_wrapper::ensure_zdotdir() {
                     Ok(dir) => env.push(("ZDOTDIR".into(), dir.to_string_lossy().into_owned())),
                     Err(e) => eprintln!("agent-office: failed to write zsh ZDOTDIR shim: {e}"),
                 }
             }
         }
+        env.extend(resolved.extra_env.iter().cloned());
         let spawned = match self.factory.spawn(PtySpawnOptions {
-            shell,
-            args: base_args,
+            shell: resolved.program,
+            args: resolved.args,
             cols: req.cols.unwrap_or(80),
             rows: req.rows.unwrap_or(24),
             cwd,
@@ -370,10 +378,14 @@ impl SessionManager {
 #[cfg(test)]
 impl SessionManager {
     /// Test-only hook to override `shell_resolver` (normally always
-    /// `default_shell`) so tests can exercise the zsh ZDOTDIR wiring in
-    /// `create()` without depending on the host's actual `$SHELL`. Must be
-    /// called before wrapping in `Arc::new` (consumes `self` by value).
-    fn with_shell_resolver(mut self, resolver: Arc<dyn Fn() -> (String, Vec<String>) + Send + Sync>) -> Self {
+    /// `shells::resolve`) so tests can exercise the zsh ZDOTDIR wiring in
+    /// `create()` without depending on the host's actual `$SHELL`, or record
+    /// what the resolver was invoked with. Must be called before wrapping in
+    /// `Arc::new` (consumes `self` by value).
+    fn with_shell_resolver(
+        mut self,
+        resolver: Arc<dyn Fn(shells::ShellRequest) -> shells::ResolvedShell + Send + Sync>,
+    ) -> Self {
         self.shell_resolver = resolver;
         self
     }
@@ -423,57 +435,6 @@ fn spawn_output_pump(
             }
         }
     });
-}
-
-/// Static PowerShell snippet defining a `claude` wrapper. Reads
-/// $env:AGENT_OFFICE_SETTINGS lazily at call time, so one encoded command
-/// works for every session. `-CommandType Application,ExternalScript`
-/// resolves the real claude (.cmd/.exe/.ps1) and never matches our Function,
-/// so no recursion. Skips injection when the user passes --settings.
-#[cfg(windows)]
-const CLAUDE_WRAPPER_PS: &str = r#"
-function claude {
-    $cmd = Get-Command claude -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $cmd) { Write-Error 'claude executable not found on PATH'; return }
-    if ($env:AGENT_OFFICE_SETTINGS -and ($args -notcontains '--settings')) {
-        & $cmd.Source --settings $env:AGENT_OFFICE_SETTINGS @args
-    } else {
-        & $cmd.Source @args
-    }
-}
-"#;
-
-/// PowerShell `-EncodedCommand` payload: Base64 of UTF-16LE bytes.
-#[cfg(windows)]
-fn encoded_command(script: &str) -> String {
-    use base64::Engine;
-    let utf16: Vec<u8> = script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
-    base64::engine::general_purpose::STANDARD.encode(utf16)
-}
-
-fn default_shell() -> (String, Vec<String>) {
-    #[cfg(windows)]
-    {
-        // 아키텍트 결정: Windows는 powershell, -l -i 없이. -NoExit로 대화형
-        // 유지, -NoProfile 없이 프로필 로드 후 claude 래퍼 함수를 정의해서
-        // 사용자가 정의한 동명 함수보다 우선하게 한다(시간 집계 훅 발화 보장).
-        (
-            "powershell.exe".to_string(),
-            vec!["-NoExit".to_string(), "-EncodedCommand".to_string(), encoded_command(CLAUDE_WRAPPER_PS)],
-        )
-    }
-    #[cfg(not(windows))]
-    {
-        // zsh gets a `claude` wrapper via a ZDOTDIR shim (see session::zsh_wrapper
-        // and the `is_zsh` check + ZDOTDIR env push in `create()` above) — the
-        // wrapper injects `--settings $AGENT_OFFICE_SETTINGS` the same way
-        // Windows's CLAUDE_WRAPPER_PS does.
-        // TODO(non-windows): other shells (bash, fish, ...) still get a plain
-        // login shell with no wrapper injected — hooks won't fire under them.
-        let shell = std::env::var("SHELL")
-            .unwrap_or_else(|_| if cfg!(target_os = "macos") { "/bin/zsh".into() } else { "/bin/bash".into() });
-        (shell, vec!["-l".into(), "-i".into()])
-    }
 }
 
 fn home_dir() -> String {
@@ -530,6 +491,7 @@ mod tests {
             cols: None,
             rows: None,
             cwd: None,
+            shell: None,
             autostart_claude: autostart,
         }
     }
@@ -540,6 +502,18 @@ mod tests {
             cols: None,
             rows: None,
             cwd,
+            shell: None,
+            autostart_claude: Some(false),
+        }
+    }
+
+    fn req_with_shell(agent_id: &str, shell: Option<String>) -> CreateSessionRequest {
+        CreateSessionRequest {
+            agent_id: agent_id.into(),
+            cols: None,
+            rows: None,
+            cwd: None,
+            shell,
             autostart_claude: Some(false),
         }
     }
@@ -717,7 +691,7 @@ mod tests {
     /// Like `build()`, but with an overridden `shell_resolver` so the test
     /// doesn't depend on the host's actual `$SHELL`.
     fn build_with_shell_resolver(
-        resolver: Arc<dyn Fn() -> (String, Vec<String>) + Send + Sync>,
+        resolver: Arc<dyn Fn(shells::ShellRequest) -> shells::ResolvedShell + Send + Sync>,
     ) -> (Arc<SessionManager>, Arc<RecordingEvents>, Arc<FakeControl>, PathBuf) {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
@@ -741,8 +715,13 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn create_pushes_zdotdir_env_when_shell_resolver_returns_zsh() {
-        let (mgr, _events, ctl, dir) =
-            build_with_shell_resolver(Arc::new(|| ("/bin/zsh".to_string(), vec!["-l".into(), "-i".into()])));
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver(Arc::new(|_req: shells::ShellRequest| {
+            shells::ResolvedShell {
+                program: "/bin/zsh".to_string(),
+                args: vec!["-l".to_string(), "-i".to_string()],
+                extra_env: vec![],
+            }
+        }));
         mgr.create(req("a1", None)).unwrap();
 
         let env = ctl.spawned_env();
@@ -762,8 +741,13 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn create_does_not_push_zdotdir_env_for_non_zsh_shells() {
-        let (mgr, _events, ctl, dir) =
-            build_with_shell_resolver(Arc::new(|| ("/bin/bash".to_string(), vec!["-l".into(), "-i".into()])));
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver(Arc::new(|_req: shells::ShellRequest| {
+            shells::ResolvedShell {
+                program: "/bin/bash".to_string(),
+                args: vec!["-l".to_string(), "-i".to_string()],
+                extra_env: vec![],
+            }
+        }));
         mgr.create(req("a1", None)).unwrap();
 
         let env = ctl.spawned_env();
@@ -1160,49 +1144,110 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ---- claude wrapper injection (Windows time-tracking fix) ----
+    // ---- shell selection: resolver receives selected id + hooks_on, extra_env is spliced into spawn env ----
 
-    #[cfg(windows)]
-    #[test]
-    fn default_shell_windows_wraps_claude_via_encoded_command() {
-        use base64::Engine;
-
-        let (shell, args) = default_shell();
-        assert_eq!(shell, "powershell.exe");
-        assert_eq!(args.len(), 3);
-        assert_eq!(args[0], "-NoExit");
-        assert_eq!(args[1], "-EncodedCommand");
-
-        let decoded_bytes = base64::engine::general_purpose::STANDARD
-            .decode(&args[2])
-            .expect("-EncodedCommand payload must be valid base64");
-        let utf16: Vec<u16> = decoded_bytes
-            .chunks_exact(2)
-            .map(|b| u16::from_le_bytes([b[0], b[1]]))
-            .collect();
-        let script = String::from_utf16(&utf16).expect("payload must decode as UTF-16LE");
-
-        assert!(script.contains("function claude"), "script must define a claude wrapper: {script}");
-        assert!(
-            script.contains("--settings $env:AGENT_OFFICE_SETTINGS"),
-            "script must inject --settings from AGENT_OFFICE_SETTINGS: {script}"
-        );
-        assert!(
-            script.contains("-CommandType Application,ExternalScript"),
-            "script must resolve the real claude binary, not recurse into the function: {script}"
-        );
+    /// What a recording resolver captured from its one `ShellRequest` call.
+    struct RecordedShellRequest {
+        selected: Option<String>,
+        hooks_on: bool,
     }
 
-    #[cfg(windows)]
-    #[test]
-    fn encoded_command_round_trips_utf16le_base64() {
-        use base64::Engine;
+    /// Builds a `shell_resolver` that copies `req.selected`/`req.hooks_on`
+    /// into `captured` (owned, so it outlives the borrowed `ShellRequest`)
+    /// and always resolves to a fixed, harmless `ResolvedShell` carrying
+    /// `extra_env` so both concerns (request plumbing + env splicing) can be
+    /// asserted from the same fixture.
+    fn recording_resolver(
+        captured: Arc<Mutex<Option<RecordedShellRequest>>>,
+        extra_env: Vec<(String, String)>,
+    ) -> Arc<dyn Fn(shells::ShellRequest) -> shells::ResolvedShell + Send + Sync> {
+        Arc::new(move |req: shells::ShellRequest| {
+            *captured.lock().unwrap() =
+                Some(RecordedShellRequest { selected: req.selected.map(|s| s.to_string()), hooks_on: req.hooks_on });
+            shells::ResolvedShell {
+                program: "/bin/sh".to_string(),
+                args: vec![],
+                extra_env: extra_env.clone(),
+            }
+        })
+    }
 
-        let encoded = encoded_command("AB");
-        let decoded = base64::engine::general_purpose::STANDARD
-            .decode(&encoded)
-            .expect("must be valid base64");
-        assert_eq!(decoded, vec![0x41, 0x00, 0x42, 0x00]);
+    /// Like `build_with_shell_resolver`, but lets the caller also choose the
+    /// hook port (so hooks-on/hooks-off variants can share one fixture).
+    fn build_with_shell_resolver_and_port(
+        resolver: Arc<dyn Fn(shells::ShellRequest) -> shells::ResolvedShell + Send + Sync>,
+        port: Option<u16>,
+    ) -> (Arc<SessionManager>, Arc<RecordingEvents>, Arc<FakeControl>, PathBuf) {
+        let events = Arc::new(RecordingEvents::default());
+        let reg = registry();
+        let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
+        let (writer, dir) = scratch_hook_writer();
+        let (fac, ctl) = FakePtyFactory::new();
+        let mgr = Arc::new(
+            SessionManager::new(
+                Arc::new(fac),
+                writer,
+                reg,
+                events.clone() as Arc<dyn AppEvents>,
+                hub,
+                Arc::new(move || port),
+            )
+            .with_shell_resolver(resolver),
+        );
+        (mgr, events, ctl, dir)
+    }
+
+    #[tokio::test]
+    async fn create_passes_selected_shell_and_hooks_on_true_to_resolver() {
+        let captured = Arc::new(Mutex::new(None));
+        let resolver = recording_resolver(captured.clone(), vec![]);
+        // build_with_shell_resolver defaults get_hook_port to Some(12345) -> hooks ON.
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver(resolver);
+
+        mgr.create(req_with_shell("a1", Some("git-bash".to_string()))).unwrap();
+
+        let rec = captured.lock().unwrap();
+        let rec = rec.as_ref().expect("resolver must have been called");
+        assert_eq!(rec.selected.as_deref(), Some("git-bash"));
+        assert!(rec.hooks_on, "hooks were enabled for this session -> hooks_on must be true");
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
+    async fn create_passes_hooks_on_false_to_resolver_when_hooks_disabled() {
+        let captured = Arc::new(Mutex::new(None));
+        let resolver = recording_resolver(captured.clone(), vec![]);
+        // get_hook_port -> None mirrors the hooks-opt-in-OFF path exercised by
+        // build_with_port(None) elsewhere in this file.
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver_and_port(resolver, None);
+
+        mgr.create(req_with_shell("a1", Some("git-bash".to_string()))).unwrap();
+
+        let rec = captured.lock().unwrap();
+        let rec = rec.as_ref().expect("resolver must have been called");
+        assert_eq!(rec.selected.as_deref(), Some("git-bash"));
+        assert!(!rec.hooks_on, "hooks are OFF for this session -> hooks_on must be false");
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
+    async fn create_appends_resolved_extra_env_to_spawn_env() {
+        let captured = Arc::new(Mutex::new(None));
+        let marker = ("AGENT_OFFICE_TEST_MARKER".to_string(), "shell-extra-env".to_string());
+        let resolver = recording_resolver(captured, vec![marker.clone()]);
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver(resolver);
+
+        mgr.create(req("a1", None)).unwrap();
+
+        let env = ctl.spawned_env();
+        assert!(
+            env.contains(&marker),
+            "resolved.extra_env pair must be appended to the spawned env: {env:?}"
+        );
+
+        cleanup(&ctl, &dir);
     }
 }
 
@@ -1281,6 +1326,7 @@ mod real_pty_smoke {
                 cols: Some(80),
                 rows: Some(24),
                 cwd: Some(cwd_dir.to_string_lossy().into_owned()),
+                shell: None,
                 autostart_claude: Some(false),
             })
             .expect("real PTY spawn should succeed");

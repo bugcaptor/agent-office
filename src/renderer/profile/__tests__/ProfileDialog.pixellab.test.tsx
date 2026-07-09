@@ -22,6 +22,7 @@ vi.mock("../../ipc/tauriApi", () => ({
     generateSpriteImage: (...args: unknown[]) => generateSpriteImage(...args),
     deletePortrait: vi.fn().mockResolvedValue(undefined),
     deleteSprite: vi.fn().mockResolvedValue(undefined),
+    listAvailableShells: vi.fn().mockResolvedValue([]),
   },
 }));
 

@@ -17,6 +17,8 @@ export interface DraftProfile {
   seed: string;
   /** 시작 폴더 입력 값. 빈 문자열 = 홈 디렉터리. */
   cwd?: string;
+  /** 셸 선택 값. 빈 문자열 = 자동/기본 셸. */
+  shell?: string;
   /** 외모 힌트(선택). 빈 문자열/공백 = 미지정. */
   appearance?: string;
   /** 픽셀아트 의뢰 문구(선택). 빈 문자열/공백 = 미지정. */
@@ -33,6 +35,7 @@ export function generateDraft(): DraftProfile {
     note: `${personality} 성격`,
     seed: nanoid(8),
     cwd: "",
+    shell: "",
     appearance: "",
     spriteRequest: "",
     archetype: "auto",
@@ -41,6 +44,7 @@ export function generateDraft(): DraftProfile {
 
 export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile {
   const cwd = (d.cwd ?? "").trim();
+  const shell = (d.shell ?? "").trim();
   const appearance = (d.appearance ?? "").trim();
   const spriteRequest = (d.spriteRequest ?? "").trim();
   const archetype = d.archetype && d.archetype !== "auto" ? d.archetype : pickArchetype(d.seed);
@@ -54,6 +58,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     deskIndex,
     archetype,
     ...(cwd ? { cwd } : {}),
+    ...(shell ? { shell } : {}),
     ...(appearance ? { appearance } : {}),
     ...(spriteRequest ? { spriteRequest } : {}),
   };

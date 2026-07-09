@@ -120,6 +120,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ipc::commands::create_session,
+            ipc::commands::list_available_shells,
             ipc::commands::dispose_session,
             ipc::commands::write_input,
             ipc::commands::resize_session,
