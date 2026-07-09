@@ -280,7 +280,23 @@ export const useAppStore = create<AppState>()(
         const agent = s.agents[agentId];
         if (!agent || !agent.clockedOut) return s;
         const { clockedOut: _drop, ...rest } = agent;
-        return { agents: { ...s.agents, [agentId]: rest as typeof agent } };
+        // clockOut이 지운 세션 런타임 엔트리를 되살린다 — 없으면
+        // setSessionState가 prev 부재로 no-op이 되어 상태가 영영
+        // starting/running으로 못 바뀌고, 머리 위 현황 UI가 (재시작 전까지)
+        // 뜨지 않는다. addAgent와 동일한 초기값으로 재생성.
+        return {
+          agents: { ...s.agents, [agentId]: rest as typeof agent },
+          sessions: {
+            ...s.sessions,
+            [agentId]: {
+              agentId,
+              status: "starting",
+              cols: 80,
+              rows: 24,
+              lastActivityAt: Date.now(),
+            },
+          },
+        };
       }),
 
     setSessionState: ({ agentId, status }) =>

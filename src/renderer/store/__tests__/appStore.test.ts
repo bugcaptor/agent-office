@@ -238,6 +238,20 @@ describe("clockIn (소환)", () => {
     expect("clockedOut" in agent).toBe(false);
   });
 
+  it("퇴근 때 지워진 세션 런타임을 되살려 상태 갱신이 다시 먹히게 한다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.clockOut("a1");
+    expect(useAppStore.getState().sessions.a1).toBeUndefined();
+
+    s.clockIn("a1");
+
+    // 세션 엔트리가 복원되어야 setSessionState가 no-op이 되지 않는다.
+    expect(useAppStore.getState().sessions.a1).toBeDefined();
+    s.setSessionState({ agentId: "a1", status: "running" });
+    expect(useAppStore.getState().sessions.a1.status).toBe("running");
+  });
+
   it("근무 중인 에이전트를 소환해도 아무 일도 하지 않는다", () => {
     const s = useAppStore.getState();
     s.addAgent(mkProfile({ id: "a1" }));
