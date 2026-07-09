@@ -1,12 +1,13 @@
 // src/renderer/layout/BottomBar.tsx
 //
 // Bottom bar: the primary "+ New Agent" entry point on the
-// left (opens `ProfileDialog` in create mode), next to it a "소환"
-// (re-summon) button showing the clocked-out count that opens a `ContextMenu`
+// left (opens `ProfileDialog` in create mode), next to it a "출근"
+// (clock-in) button showing the clocked-out count that opens a `ContextMenu`
 // listing clocked-out agents by name (selecting one calls `clockInAgent`),
-// and a "전체 퇴근" button that opens a `confirm-clock-out-all` modal
-// (`ConfirmClockOutDialog`) which, once confirmed, clocks out every on-duty
-// agent at once (`clockOutAll`). Then a running/pending status summary in
+// and a bulk clock button that toggles by state: when anyone is on duty it is
+// "전체 퇴근" (opens a `confirm-clock-out-all` modal → `clockOutAll`); when
+// everyone is clocked out it becomes "전체 출근" (calls `clockInAll` directly,
+// no confirm — clock-in is non-destructive). Then a running/pending status summary in
 // the center, a settings (⚙) button that
 // opens `SettingsDialog` (Claude Code 연동 opt-in 2종), and the mute toggle
 // on the right (flips `store.muted`; the actual badge resync on toggle lives
@@ -22,7 +23,7 @@ import {
 } from "../store/selectors";
 import { THEMES, nextThemeId } from "../theme/themes";
 import { ContextMenu } from "../ui/ContextMenu";
-import { clockInAgent } from "../agent/clockOut";
+import { clockInAgent, clockInAll } from "../agent/clockOut";
 
 export function BottomBar() {
   const openModal = useAppStore((s) => s.openModal);
@@ -55,16 +56,26 @@ export function BottomBar() {
           setSummonMenu({ x: rect.left, y: rect.top });
         }}
       >
-        🏠 소환 ({clockedOutCount})
+        🏠 출근 ({clockedOutCount})
       </button>
-      <button
-        type="button"
-        className="pixel-btn clock-out-all-btn"
-        disabled={onDutyCount === 0}
-        onClick={() => openModal({ kind: "confirm-clock-out-all" })}
-      >
-        전체 퇴근
-      </button>
+      {onDutyCount === 0 ? (
+        <button
+          type="button"
+          className="pixel-btn clock-in-all-btn"
+          disabled={clockedOutCount === 0}
+          onClick={() => clockInAll()}
+        >
+          전체 출근
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="pixel-btn clock-out-all-btn"
+          onClick={() => openModal({ kind: "confirm-clock-out-all" })}
+        >
+          전체 퇴근
+        </button>
+      )}
       {summonMenu && (
         <ContextMenu
           x={summonMenu.x}

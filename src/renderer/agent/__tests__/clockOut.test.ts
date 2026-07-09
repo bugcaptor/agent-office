@@ -13,9 +13,11 @@ import { useAppStore } from "../../store/appStore";
 import type { AgentProfile } from "../../store/types";
 
 const disposeSession = vi.fn().mockResolvedValue(undefined);
+const createSession = vi.fn().mockResolvedValue(undefined);
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     disposeSession: (...args: unknown[]) => disposeSession(...args),
+    createSession: (...args: unknown[]) => createSession(...args),
   },
 }));
 
@@ -33,7 +35,7 @@ vi.mock("../../ipc/sessionBridge", () => ({
   },
 }));
 
-const { clockOutAgent, clockOutAll, clockInAgent } = await import("../clockOut");
+const { clockOutAgent, clockOutAll, clockInAgent, clockInAll } = await import("../clockOut");
 
 function mkProfile(id: string): AgentProfile {
   return {
@@ -53,6 +55,8 @@ beforeEach(() => {
   useAppStore.setState(initialState, true);
   disposeSession.mockClear();
   disposeSession.mockResolvedValue(undefined);
+  createSession.mockClear();
+  createSession.mockResolvedValue(undefined);
   destroy.mockClear();
   emitAgentClicked.mockClear();
 });
@@ -125,6 +129,16 @@ describe("clockInAgent", () => {
     expect(emitAgentClicked).toHaveBeenCalledWith("a1");
   });
 
+  it("PTY를 직접 생성한다(createSession) — clockIn이 starting을 선점해 ensureSession이 스킵되므로", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1"));
+    s.clockOut("a1");
+
+    clockInAgent("a1");
+
+    expect(createSession.mock.calls.map((c) => c[0])).toContain("a1");
+  });
+
   it("터미널 에폭을 올려 TerminalMount를 강제 리마운트시킨다(재소환 시 빈 화면 방지)", () => {
     const s = useAppStore.getState();
     s.addAgent(mkProfile("a1"));
@@ -136,5 +150,33 @@ describe("clockInAgent", () => {
     const after = useAppStore.getState().terminalEpochs.a1 ?? 0;
     expect(after).toBeGreaterThan(before);
     expect(useAppStore.getState().agents.a1.clockedOut).toBeUndefined();
+  });
+});
+
+describe("clockInAll", () => {
+  it("퇴근한 에이전트만 전부 출근시키고, 근무 중인 에이전트는 건드리지 않는다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1"));
+    s.addAgent(mkProfile("a2"));
+    s.addAgent(mkProfile("a3"));
+    s.clockOut("a1");
+    s.clockOut("a3"); // a2만 근무 중
+
+    clockInAll();
+
+    const st = useAppStore.getState();
+    expect(st.agents.a1.clockedOut).toBeUndefined();
+    expect(st.agents.a3.clockedOut).toBeUndefined();
+    expect(st.agents.a2.clockedOut).toBeUndefined(); // 원래 근무 중이었음
+    const started = createSession.mock.calls.map((c) => c[0]);
+    expect(started).toContain("a1");
+    expect(started).toContain("a3");
+    expect(started).not.toContain("a2");
+  });
+
+  it("퇴근한 에이전트가 없으면 아무 것도 하지 않는다", () => {
+    useAppStore.getState().addAgent(mkProfile("a1")); // 근무 중
+    clockInAll();
+    expect(createSession).not.toHaveBeenCalled();
   });
 });
