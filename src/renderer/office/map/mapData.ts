@@ -20,7 +20,7 @@ export interface DeskSlot {
   index: number; // 0..N-1
   // 캐릭터가 앉는 타일(의자 위치) — 그리드 좌표
   seat: { tx: number; ty: number };
-  // 바라보는 방향 (데스크가 위에 있으므로 보통 'up')
+  // 바라보는 방향 (좌석이 책상 위쪽이므로 보통 'down' — 정면이 보인다)
   facing: 'up' | 'down' | 'left' | 'right';
 }
 
@@ -77,7 +77,8 @@ const GRID: Tile[][] = [
 /** 휴게 공간(탕비실) 내부의 걸을 수 있는 러그 라운지 사각형(타일 좌표). */
 export const BREAK_ROOM_RECT: TileRect = { x: 11, y: 10, w: 7, h: 2 };
 
-// 데스크 상판(ty=2,5)의 각 DeskTop 쌍마다 그 아래 타일을 seat으로 생성
+// 데스크 상판(ty=2,5)의 각 DeskTop 쌍마다 그 *위* 타일을 seat으로 생성 —
+// 캐릭터가 책상 뒤(북쪽)에 앉아 정면이 보이고, 랩탑은 뒷면이 보인다.
 function deriveDesks(grid: Tile[][]): DeskSlot[] {
   const desks: DeskSlot[] = [];
   let idx = 0;
@@ -85,7 +86,7 @@ function deriveDesks(grid: Tile[][]): DeskSlot[] {
     for (let tx = 0; tx < grid[ty].length; tx++) {
       // 데스크 쌍의 왼쪽 타일에서만 슬롯 생성 (오른쪽은 짝)
       if (grid[ty][tx] === Tile.DeskTop && grid[ty][tx - 1] !== Tile.DeskTop) {
-        desks.push({ index: idx++, seat: { tx, ty: ty + 1 }, facing: 'up' });
+        desks.push({ index: idx++, seat: { tx, ty: ty - 1 }, facing: 'down' });
       }
     }
   }

@@ -150,6 +150,64 @@ describe("removeAgent", () => {
   });
 });
 
+describe("assignDesk (책상 수동 지정)", () => {
+  it("지정한 에이전트에 assignedDeskIndex를 기록한다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+
+    s.assignDesk(3, "a1");
+
+    expect(useAppStore.getState().agents.a1.assignedDeskIndex).toBe(3);
+  });
+
+  it("같은 책상을 다른 에이전트에 지정하면 기존 주인 지정이 풀린다 (책상당 1명)", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.addAgent(mkProfile({ id: "a2" }));
+    s.assignDesk(3, "a1");
+
+    s.assignDesk(3, "a2");
+
+    const st = useAppStore.getState();
+    expect(st.agents.a2.assignedDeskIndex).toBe(3);
+    expect(st.agents.a1.assignedDeskIndex).toBeUndefined();
+  });
+
+  it("agentId=null이면 그 책상의 지정을 해제한다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.assignDesk(3, "a1");
+
+    s.assignDesk(3, null);
+
+    expect(useAppStore.getState().agents.a1.assignedDeskIndex).toBeUndefined();
+  });
+
+  it("다른 책상 지정은 건드리지 않는다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.addAgent(mkProfile({ id: "a2" }));
+    s.assignDesk(1, "a1");
+    s.assignDesk(2, "a2");
+
+    s.assignDesk(1, null);
+
+    const st = useAppStore.getState();
+    expect(st.agents.a1.assignedDeskIndex).toBeUndefined();
+    expect(st.agents.a2.assignedDeskIndex).toBe(2);
+  });
+
+  it("이미 다른 책상을 가진 에이전트를 새 책상에 지정하면 이전 지정을 대체한다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.assignDesk(1, "a1");
+
+    s.assignDesk(5, "a1");
+
+    expect(useAppStore.getState().agents.a1.assignedDeskIndex).toBe(5);
+  });
+});
+
 describe("bumpTerminalEpoch", () => {
   it("0에서 시작해 호출마다 1씩 증가한다", () => {
     const s = useAppStore.getState();

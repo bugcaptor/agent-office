@@ -11,9 +11,10 @@
 // structural/geometry contract `OfficeScene` relies on.
 
 import { describe, expect, it } from "vitest";
-import { Container } from "pixi.js";
+import { Container, type Graphics } from "pixi.js";
 import { TileRenderer } from "../TileRenderer";
 import { OFFICE_MAP, Tile, TILE_SIZE } from "../mapData";
+import { THEMES } from "../../../theme/themes";
 
 /** Tile types drawn in the y-sorted furniture layer (mirrors TileRenderer's own set). */
 const FURNITURE_TILES = new Set([Tile.DeskTop, Tile.Plant, Tile.Counter, Tile.Table]);
@@ -85,6 +86,32 @@ describe("TileRenderer.buildFurniture", () => {
     const r = new TileRenderer(OFFICE_MAP, TILE_SIZE);
     expect(r.buildFurniture().length).toBeGreaterThan(0);
     expect(r.buildFurniture().length).toBeGreaterThanOrEqual(OFFICE_MAP.desks.length * 2); // each desk slot is a 2-tile-wide pair, plus break-room decor
+  });
+
+  it("draws a laptop (back of the lid toward the viewer) on the left tile of each desk pair", () => {
+    // 좌석이 책상 위쪽이므로 랩탑 화면은 북쪽(캐릭터)을 향하고, 뷰어에게는
+    // 뚜껑 등판이 보인다. 랩탑은 좌석과 정렬된 왼쪽 타일에만 그린다 —
+    // 왼쪽 타일 Graphics는 오른쪽 짝보다 드로우 명령이 많아야 한다.
+    const r = new TileRenderer(OFFICE_MAP, TILE_SIZE);
+    const byTile = new Map<string, Graphics>();
+    for (const g of r.buildFurniture()) {
+      byTile.set(`${g.position.x / TILE_SIZE},${g.position.y / TILE_SIZE}`, g as Graphics);
+    }
+    for (const d of OFFICE_MAP.desks) {
+      const deskTy = d.seat.ty + 1; // 좌석 바로 아래(남쪽)가 책상 상판
+      const left = byTile.get(`${d.seat.tx},${deskTy}`)!;
+      const right = byTile.get(`${d.seat.tx + 1},${deskTy}`)!;
+      expect(left).toBeDefined();
+      expect(right).toBeDefined();
+      expect(left.context.instructions.length).toBeGreaterThan(right.context.instructions.length);
+    }
+  });
+
+  it("every theme palette defines the laptop colors", () => {
+    for (const theme of Object.values(THEMES)) {
+      expect(typeof theme.pixi.laptopLid).toBe("number");
+      expect(typeof theme.pixi.laptopBody).toBe("number");
+    }
   });
 
   it("draws each new decoration tile type (Plant/Counter/Table) without throwing", () => {

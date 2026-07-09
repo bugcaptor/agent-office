@@ -12,5 +12,7 @@ export interface AgentProfile {
   name: string;
   role: string;
   seed: string; // 생성 시드 (없으면 id로 대체)
+  /** 사용자가 수동 지정한 책상 인덱스. 없으면 자동(해시) 배정. */
+  assignedDeskIndex?: number;
   [k: string]: unknown;
 }

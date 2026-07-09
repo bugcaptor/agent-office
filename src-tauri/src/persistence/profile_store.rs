@@ -101,6 +101,7 @@ mod tests {
                 seed: "abc123".into(),
                 created_at: 1_720_000_000_003,
                 desk_index: 2,
+                assigned_desk_index: None,
                 cwd: None,
                 appearance: None,
                 portrait_updated_at: None,

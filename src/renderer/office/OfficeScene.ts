@@ -21,7 +21,7 @@
 // unconditionally (before the `started` guard) since it only unsubscribes
 // from `bus` and tears down entities — neither depends on the Pixi app being
 // initialized, and it must not leak listeners on the pre-init destroy path.
-import { Application, Container, type Ticker } from "pixi.js";
+import { Application, Container, Rectangle, type FederatedPointerEvent, type Ticker } from "pixi.js";
 import { TileRenderer } from "./map/TileRenderer";
 import { OFFICE_MAP, TILE_SIZE } from "./map/mapData";
 import { OfficeWorld } from "./world/OfficeWorld";
@@ -95,6 +95,7 @@ export class OfficeScene {
 
     // Static map render.
     this.buildMapLayers();
+    this.buildDeskHitAreas();
 
     this.applyCamera();
     this.started = true;
@@ -140,6 +141,27 @@ export class OfficeScene {
     this.floorLayer.addChild(this.floorTiles);
     this.furnitureTiles = tiles.buildFurniture();
     this.sortableLayer.addChild(...this.furnitureTiles);
+  }
+
+  /**
+   * 데스크 슬롯마다 데스크 쌍(2x1 타일)을 덮는 보이지 않는 히트영역을
+   * floorLayer(최하단)에 만든다 — 캐릭터·가구보다 아래라서 캐릭터 클릭이
+   * 항상 우선하고, 빈 책상 클릭만 여기로 떨어진다. 테마 전환과 무관하게
+   * 한 번만 생성(색이 없으므로 재베이크 불필요).
+   */
+  private buildDeskHitAreas(): void {
+    for (const desk of OFFICE_MAP.desks) {
+      const hit = new Container();
+      // 좌석은 데스크 상판 바로 위 타일 — 상판 행은 seat.ty + 1.
+      hit.position.set(desk.seat.tx * TILE_SIZE, (desk.seat.ty + 1) * TILE_SIZE);
+      hit.eventMode = "static";
+      hit.cursor = "pointer";
+      hit.hitArea = new Rectangle(0, 0, TILE_SIZE * 2, TILE_SIZE);
+      hit.on("pointertap", (e: FederatedPointerEvent) =>
+        this.opts.bus.emitDeskClicked(desk.index, e.global.x, e.global.y),
+      );
+      this.floorLayer.addChild(hit);
+    }
   }
 
   /**

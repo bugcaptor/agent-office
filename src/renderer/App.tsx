@@ -4,6 +4,7 @@ import { officeBus } from "./ipc/sessionBridge";
 import { OfficeCanvas } from "./office/OfficeCanvas";
 import type { AgentProfile as OfficeAgentProfile } from "./office/types";
 import { AgentHoverCard } from "./portrait/AgentHoverCard";
+import { DeskAssignMenu } from "./desk/DeskAssignMenu";
 import { ProfileDialog } from "./profile/ProfileDialog";
 import { ConfirmDeleteDialog } from "./agent/ConfirmDeleteDialog";
 import { ConfirmRestartDialog } from "./agent/ConfirmRestartDialog";
@@ -72,6 +73,7 @@ function App() {
       <TaskLabelLayer bus={officeBus} />
       <UIChrome />
       <AgentHoverCard />
+      <DeskAssignMenu />
       <TerminalOverlay />
       <div className="modal-root">
         <ProfileDialog />

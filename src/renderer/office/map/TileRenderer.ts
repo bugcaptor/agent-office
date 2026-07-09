@@ -89,6 +89,14 @@ export class TileRenderer {
         g.rect(0, 0, s, 4).fill(this.pal.deskTop); // bright top face
         g.rect(0, s - 2, s, 2).fill(this.pal.deskEdge); // bottom shadow
         g.rect(2, 6, s - 4, 1).fill(this.pal.deskEdge); // 1px wood grain
+        // 랩탑(뒷모습): 좌석과 정렬된 왼쪽 타일에만. 캐릭터가 책상 위쪽에
+        // 앉으므로 화면은 북쪽을 향하고, 뷰어에게는 뚜껑 등판이 보인다.
+        if (this.map.tiles[ty][tx - 1] !== Tile.DeskTop) {
+          g.rect(s * 0.2, s * 0.25, s * 0.6, 2).fill(this.pal.laptopBody); // 본체(키보드) 슬리버 — 뚜껑 뒤로 살짝
+          g.rect(s * 0.25, s * 0.3, s * 0.5, s * 0.45).fill(this.pal.laptopLid); // 뚜껑 등판
+          g.rect(s * 0.25, s * 0.3 + s * 0.45 - 1, s * 0.5, 1).fill(this.pal.laptopBody); // 하단 힌지 라인
+          g.rect(s * 0.45, s * 0.42, 2, 2).fill(this.pal.laptopBody); // 로고 도트
+        }
         break;
       case Tile.Rug:
         g.rect(0, 0, s, s).fill(this.pal.rug);

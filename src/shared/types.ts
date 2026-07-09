@@ -200,6 +200,9 @@ export interface AgentProfile {
   createdAt: number;
   /** Reference only; actual seating is decided by B's assignDesks (deterministic hash). */
   deskIndex: number;
+  /** 사용자가 책상 클릭으로 수동 지정한 책상 인덱스. 부재 = 자동(해시) 배정.
+   * 지정된 책상은 자동 배정 풀에서 제외된다(주인 전용). */
+  assignedDeskIndex?: number;
   /** Session working directory. Absent/undefined = backend falls back to the home dir. */
   cwd?: string;
   /** 셸 id(예: "pwsh", "git-bash", "wsl", "powershell"). 부재 = 자동/기본 셸. */

@@ -65,6 +65,12 @@ interface AppState {
   addAgent(profile: AgentProfile): void;
   updateAgent(agentId: string, patch: Partial<AgentProfile>): void;
   removeAgent(agentId: string): void;
+  /**
+   * 책상 수동 지정: `agentId`에게 `deskIndex`를 배정하고, 그 책상을 갖고
+   * 있던 다른 에이전트의 지정은 해제한다(책상당 주인 1명). `agentId=null`
+   * 이면 지정 해제만 한다. agents 객체가 바뀌므로 persist가 자동 저장.
+   */
+  assignDesk(deskIndex: number, agentId: string | null): void;
   setPortrait(agentId: string, dataUrl: string): void;
   removePortrait(agentId: string): void;
   setSpritePreview(agentId: string, dataUrl: string): void;
@@ -160,6 +166,27 @@ export const useAppStore = create<AppState>()(
           ? { agents: { ...s.agents, [agentId]: { ...s.agents[agentId], ...patch } } }
           : s
       ),
+
+    assignDesk: (deskIndex, agentId) =>
+      set((s) => {
+        const agents = { ...s.agents };
+        let changed = false;
+        for (const [id, a] of Object.entries(agents)) {
+          if (id === agentId) {
+            if (a.assignedDeskIndex !== deskIndex) {
+              agents[id] = { ...a, assignedDeskIndex: deskIndex };
+              changed = true;
+            }
+          } else if (a.assignedDeskIndex === deskIndex) {
+            // 이 책상의 기존 주인 — 지정 해제(필드 제거: undefined는 JSON
+            // 직렬화에서 빠져 Rust Option<None>과 일치).
+            const { assignedDeskIndex: _drop, ...rest } = a;
+            agents[id] = rest as typeof a;
+            changed = true;
+          }
+        }
+        return changed ? { agents } : s;
+      }),
 
     removeAgent: (agentId) =>
       set((s) => {

@@ -165,6 +165,9 @@ pub struct AgentProfile {
     pub seed: String,
     pub created_at: u64,
     pub desk_index: u32,
+    /// 사용자가 책상 클릭으로 수동 지정한 책상 인덱스. 없으면 자동(해시) 배정.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub assigned_desk_index: Option<u32>,
     /// 세션 작업 디렉터리. 미지정 시 백엔드가 홈 디렉터리로 폴백(manager.rs).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub cwd: Option<String>,
@@ -456,6 +459,27 @@ mod tests {
     }
 
     #[test]
+    fn agent_profile_roundtrips_assigned_desk_index_and_defaults_to_none() {
+        // 수동 책상 지정: 키 부재(레거시) -> None, None은 직렬화에서 생략.
+        let json = "{\"id\":\"p1\",\"name\":\"Ada\",\"role\":\"backend\",\"note\":\"\",\
+                     \"seed\":\"abc123\",\"createdAt\":1720000000003,\"deskIndex\":0}";
+        let profile: AgentProfile = serde_json::from_str(json).unwrap();
+        assert_eq!(profile.assigned_desk_index, None);
+        assert!(!serde_json::to_string(&profile)
+            .unwrap()
+            .contains("assignedDeskIndex"));
+
+        let json2 = "{\"id\":\"p1\",\"name\":\"Ada\",\"role\":\"backend\",\"note\":\"\",\
+                     \"seed\":\"abc123\",\"createdAt\":1720000000003,\"deskIndex\":0,\
+                     \"assignedDeskIndex\":5}";
+        let profile2: AgentProfile = serde_json::from_str(json2).unwrap();
+        assert_eq!(profile2.assigned_desk_index, Some(5));
+        assert!(serde_json::to_string(&profile2)
+            .unwrap()
+            .contains("\"assignedDeskIndex\":5"));
+    }
+
+    #[test]
     fn agent_profile_serializes_cwd_camel_case_when_present() {
         let profile = AgentProfile {
             id: "p1".into(),
@@ -465,6 +489,7 @@ mod tests {
             seed: "abc123".into(),
             created_at: 1_720_000_000_003,
             desk_index: 0,
+            assigned_desk_index: None,
             cwd: Some("/tmp/proj".into()),
             appearance: None,
             portrait_updated_at: None,
@@ -487,6 +512,7 @@ mod tests {
             seed: "abc123".into(),
             created_at: 1,
             desk_index: 0,
+            assigned_desk_index: None,
             cwd: None,
             appearance: None,
             portrait_updated_at: None,
@@ -520,6 +546,7 @@ mod tests {
             seed: "abc123".into(),
             created_at: 1,
             desk_index: 0,
+            assigned_desk_index: None,
             cwd: None,
             appearance: Some("short black hair, glasses".into()),
             portrait_updated_at: Some(1_720_000_000_777),
@@ -543,6 +570,7 @@ mod tests {
             seed: "abc123".into(),
             created_at: 1,
             desk_index: 0,
+            assigned_desk_index: None,
             cwd: None,
             appearance: None,
             portrait_updated_at: None,
@@ -577,6 +605,7 @@ mod tests {
             seed: "abc123".into(),
             created_at: 1,
             desk_index: 0,
+            assigned_desk_index: None,
             cwd: None,
             appearance: None,
             portrait_updated_at: None,
@@ -600,6 +629,7 @@ mod tests {
             seed: "abc123".into(),
             created_at: 1,
             desk_index: 0,
+            assigned_desk_index: None,
             cwd: None,
             appearance: None,
             portrait_updated_at: None,
@@ -626,7 +656,7 @@ mod tests {
     fn agent_profile_serializes_archetype_camel_case_when_present() {
         let profile = AgentProfile {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
-            seed: "abc123".into(), created_at: 1, desk_index: 0, cwd: None, appearance: None,
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: Some("orc".into()),
             shell: None,
@@ -639,7 +669,7 @@ mod tests {
     fn agent_profile_omits_archetype_when_none() {
         let profile = AgentProfile {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
-            seed: "abc123".into(), created_at: 1, desk_index: 0, cwd: None, appearance: None,
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None,
             shell: None,
@@ -661,7 +691,7 @@ mod tests {
     fn agent_profile_serializes_shell_when_present() {
         let profile = AgentProfile {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
-            seed: "abc123".into(), created_at: 1, desk_index: 0, cwd: None, appearance: None,
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: Some("git-bash".into()),
         };
@@ -673,7 +703,7 @@ mod tests {
     fn agent_profile_omits_shell_when_none() {
         let profile = AgentProfile {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
-            seed: "abc123".into(), created_at: 1, desk_index: 0, cwd: None, appearance: None,
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: None,
         };

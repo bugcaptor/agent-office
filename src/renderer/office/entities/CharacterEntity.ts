@@ -41,6 +41,11 @@ const ANIM_WALK_MS = 140;
 const ARRIVE_EPS_PX = 0.5;
 const APPARENT_CELL = 16; // 겉보기 셀 크기(px). 실제 텍스처 셀 N을 이 크기로 스케일.
 
+/** 착석 시 발 위치를 좌석 타일 하단보다 이만큼 내린다(px). 좌석이 책상
+ * *위쪽* 타일이므로(맵 데이터 계약), 남쪽의 책상(zIndex = 책상 하단 y)이
+ * 캐릭터 다리를 가려 "책상 뒤에 앉은" 모습이 된다. */
+export const SEAT_SINK_PX = 6;
+
 // "..." 생각 말풍선 점멸 주기(캐릭터마다 seeded rand로 편차를 둔다).
 const THINK_HIDDEN_MIN_MS = 4000;
 const THINK_HIDDEN_MAX_MS = 7000;
@@ -97,9 +102,9 @@ export class CharacterEntity {
     this.root.addChild(this.thinkOverlay.root);
     this.thinkOverlay.setVisible(false);
 
-    // Seated placement.
+    // Seated placement (feet sunk toward the desk so it overlaps the legs).
     const p = tileCenterPx(seat);
-    this.root.position.set(p.x, p.y + TILE_SIZE / 2); // feet at the seat tile's bottom edge
+    this.root.position.set(p.x, p.y + TILE_SIZE / 2 + SEAT_SINK_PX);
     this.root.zIndex = this.root.y;
 
     // Click hit test: eventMode + explicit hit area (the 16x16 sprite is
@@ -140,6 +145,18 @@ export class CharacterEntity {
   setSessionActive(v: boolean): void {
     if (this.state === "sitting" && this.sessionActive && !v) this.stateTimer = 0;
     this.sessionActive = v;
+  }
+
+  /** 좌석(책상 지정) 변경. 앉아 있거나 자리로 걸어가는 중이면 즉시 새
+   * 좌석으로 걸어간다. 휴식 중이면 그대로 두고, 복귀 시점에 새 좌석을 쓴다. */
+  setSeat(seat: GridPos): void {
+    if (seat.tx === this.seat.tx && seat.ty === this.seat.ty) return;
+    this.seat = seat;
+    if (this.state === "sitting" || (this.state === "walking" && this.targetKind === "seat")) {
+      this.setSeatTarget();
+      this.state = "walking";
+      this.stateTimer = 0;
+    }
   }
 
   /** dt: ms, ticker-supplied (never a real timer / Date.now internally). */
@@ -202,7 +219,7 @@ export class CharacterEntity {
   private setSeatTarget(): void {
     this.releaseBreakTile();
     const p = tileCenterPx(this.seat);
-    this.targetPx = { x: p.x, y: p.y + TILE_SIZE / 2 };
+    this.targetPx = { x: p.x, y: p.y + TILE_SIZE / 2 + SEAT_SINK_PX };
     this.targetKind = "seat";
   }
 

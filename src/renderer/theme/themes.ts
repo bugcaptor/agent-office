@@ -44,6 +44,8 @@ export const TILE_PALETTE_KEYS = [
   "counterTop",
   "table",
   "tableTop",
+  "laptopLid",
+  "laptopBody",
 ] as const;
 export type TilePaletteKey = (typeof TILE_PALETTE_KEYS)[number];
 
@@ -100,6 +102,8 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       counterTop: 0xf0e6cf, // 카운터 상판(밝은 스톤)
       table: 0xcaa06a, // 탕비실 테이블(밝은 우드)
       tableTop: 0xe0bc8a,
+      laptopLid: 0x525a6e, // 랩탑 뚜껑 등판(슬레이트)
+      laptopBody: 0x3a4050, // 랩탑 본체/디테일(더 어두운 슬레이트)
     },
   },
   // 테마 도입 이전의 기존 룩 — tokens.css/PAL/배경 0x1b1b24를 그대로 보존.
@@ -136,6 +140,8 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       counterTop: 0x3d4152,
       table: 0x5a3d24, // 탕비실 테이블(어두운 우드)
       tableTop: 0x6f4d2e,
+      laptopLid: 0x5b647e, // 랩탑 뚜껑 등판(어두운 배경 대비 살짝 밝은 슬레이트)
+      laptopBody: 0x424a60,
     },
   },
   // 파스텔 핑크 — 블러시 패널 + 플럼 텍스트.
@@ -172,6 +178,8 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       counterTop: 0xfbeef4,
       table: 0xc79482, // 탕비실 테이블(로즈 우드)
       tableTop: 0xdcb09c,
+      laptopLid: 0x6e5d73, // 랩탑 뚜껑 등판(플럼 그레이)
+      laptopBody: 0x504256,
     },
   },
 };

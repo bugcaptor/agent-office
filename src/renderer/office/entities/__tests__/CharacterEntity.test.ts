@@ -27,7 +27,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Rectangle, type Sprite } from "pixi.js";
 
-import { CharacterEntity } from "../CharacterEntity";
+import { CharacterEntity, SEAT_SINK_PX } from "../CharacterEntity";
 import { makeTestCharacterAssets } from "./helpers";
 import { OFFICE_MAP, Tile, TILE_SIZE, type OfficeMap } from "../../map/mapData";
 import { tileCenterPx } from "../../world/pathing";
@@ -41,8 +41,8 @@ const makeMap = (): OfficeMap => {
 
 const SEAT = { tx: 2, ty: 2 };
 
-// A real desk seat on OFFICE_MAP (ty=2 row's first DeskTop pair -> seat below at ty=3).
-const OFFICE_SEAT = { tx: 2, ty: 3 };
+// A real desk seat on OFFICE_MAP (ty=2 row's first DeskTop pair -> seat above at ty=1).
+const OFFICE_SEAT = { tx: 2, ty: 1 };
 
 /** Pops values off a fixed queue; returns `fallback` once exhausted. */
 const queueRand = (values: number[], fallback = 0.999): (() => number) => {
@@ -61,11 +61,11 @@ const tap = (sprite: Sprite): boolean =>
   (sprite as unknown as { emit(event: string, ...args: unknown[]): boolean }).emit("pointertap");
 
 describe("CharacterEntity: construction / seated placement", () => {
-  it("places root at the seat's pixel center, offset to feet-at-seat-bottom, with zIndex = y", () => {
+  it("places root at the seat's pixel center, feet sunk SEAT_SINK_PX below the seat tile so the desk (south) overlaps the legs, with zIndex = y", () => {
     const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), SEAT, makeMap(), () => 0.5);
     const seatCenter = tileCenterPx(SEAT);
     expect(e.root.x).toBe(seatCenter.x);
-    expect(e.root.y).toBe(seatCenter.y + TILE_SIZE / 2);
+    expect(e.root.y).toBe(seatCenter.y + TILE_SIZE / 2 + SEAT_SINK_PX);
     expect(e.root.zIndex).toBe(e.root.y);
   });
 
@@ -217,7 +217,7 @@ describe("CharacterEntity: FSM + movement wiring (break-room round trip, OFFICE_
     const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, rand);
 
     const seatPx = tileCenterPx(OFFICE_SEAT);
-    const seatFeet = { x: seatPx.x, y: seatPx.y + TILE_SIZE / 2 };
+    const seatFeet = { x: seatPx.x, y: seatPx.y + TILE_SIZE / 2 + SEAT_SINK_PX };
     const breakPx = tileCenterPx({ tx: 11, ty: 10 });
     const breakFeet = { x: breakPx.x, y: breakPx.y + TILE_SIZE / 2 };
 
@@ -260,7 +260,7 @@ describe("CharacterEntity: FSM + movement wiring (break-room round trip, OFFICE_
 
     e.update(2001); // crosses the linger threshold with a *small* dt -> partial step toward the break target
     const seatFeetPx = tileCenterPx(OFFICE_SEAT);
-    const seatFeet = { x: seatFeetPx.x, y: seatFeetPx.y + TILE_SIZE / 2 };
+    const seatFeet = { x: seatFeetPx.x, y: seatFeetPx.y + TILE_SIZE / 2 + SEAT_SINK_PX };
     expect(e.root.x).not.toBe(seatFeet.x); // moved away from the seat already
 
     e.setSessionActive(true);
@@ -413,6 +413,59 @@ describe("CharacterEntity: break-room tile reservations (no overlap while restin
     e.update(8000); // wants a break, but the room is full -> stays at its own (unique) seat
     expect(e.root.x).toBe(seatX);
     expect(e.root.y).toBe(seatY);
+  });
+});
+
+describe("CharacterEntity: setSeat (책상 지정 변경)", () => {
+  const feetOfSeat = (t: { tx: number; ty: number }) => {
+    const c = tileCenterPx(t);
+    return { x: c.x, y: c.y + TILE_SIZE / 2 + SEAT_SINK_PX };
+  };
+
+  it("walks to the new seat when reassigned while sitting", () => {
+    const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.999);
+    e.setSessionActive(true); // 착석 고정
+    const next = { tx: 6, ty: 1 }; // 두 번째 데스크 쌍의 좌석
+    e.setSeat(next);
+    e.update(8000); // 큰 dt: 한 틱에 도착
+    expect({ x: e.root.x, y: e.root.y }).toEqual(feetOfSeat(next));
+  });
+
+  it("is a no-op when reassigned to the same tile", () => {
+    const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.999);
+    e.setSessionActive(true);
+    const before = { x: e.root.x, y: e.root.y };
+    e.setSeat({ ...OFFICE_SEAT });
+    e.update(16);
+    expect({ x: e.root.x, y: e.root.y }).toEqual(before);
+  });
+
+  it("keeps resting in the break room on reassignment, then returns to the NEW seat when the session activates", () => {
+    const rand = queueRand([0.5, 0, 0], 0.999999); // 탕비실 (11,10) 도착 후 산책 없음
+    const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, rand);
+    e.update(8000); // 탕비실 도착(breakIdle)
+    const restPos = { x: e.root.x, y: e.root.y };
+
+    const next = { tx: 6, ty: 1 };
+    e.setSeat(next);
+    e.update(1000); // 여전히 휴식 중 — 움직이지 않는다
+    expect({ x: e.root.x, y: e.root.y }).toEqual(restPos);
+
+    e.setSessionActive(true);
+    e.update(20_000); // 복귀는 새 좌석으로
+    expect({ x: e.root.x, y: e.root.y }).toEqual(feetOfSeat(next));
+  });
+
+  it("retargets mid-walk when reassigned while returning to the seat", () => {
+    const rand = queueRand([0.5, 0, 0]);
+    const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, rand);
+    e.update(8000); // 탕비실 도착
+    e.setSessionActive(true);
+    e.update(16); // 원래 좌석으로 복귀 시작(도착 전)
+    const next = { tx: 6, ty: 1 };
+    e.setSeat(next);
+    e.update(20_000);
+    expect({ x: e.root.x, y: e.root.y }).toEqual(feetOfSeat(next));
   });
 });
 

@@ -33,6 +33,10 @@ export interface OfficeBus {
   emitLabelAnchorsChanged(anchors: ReadonlyMap<string, LabelAnchor>): void;
   /** C가 라벨 앵커를 구독. */
   onLabelAnchorsChanged(cb: (anchors: ReadonlyMap<string, LabelAnchor>) => void): () => void;
+  /** B가 책상(슬롯) 클릭을 알림 — 책상 주인 지정 메뉴용. 좌표는 화면 px. */
+  emitDeskClicked(deskIndex: number, screenX: number, screenY: number): void;
+  /** C가 책상 클릭을 구독. */
+  onDeskClicked(cb: (deskIndex: number, screenX: number, screenY: number) => void): () => void;
 }
 
 type NotificationListener = (agentId: string, hasPending: boolean) => void;
@@ -55,6 +59,7 @@ export function createMockOfficeBus(): MockOfficeBus {
     (agentId: string | null, x: number, y: number) => void
   >();
   const labelAnchorListeners = new Set<(a: ReadonlyMap<string, LabelAnchor>) => void>();
+  const deskClickListeners = new Set<(deskIndex: number, x: number, y: number) => void>();
   const clickedAgentIds: string[] = [];
 
   return {
@@ -82,6 +87,13 @@ export function createMockOfficeBus(): MockOfficeBus {
     onLabelAnchorsChanged(cb) {
       labelAnchorListeners.add(cb);
       return () => labelAnchorListeners.delete(cb);
+    },
+    emitDeskClicked(deskIndex, screenX, screenY) {
+      for (const cb of deskClickListeners) cb(deskIndex, screenX, screenY);
+    },
+    onDeskClicked(cb) {
+      deskClickListeners.add(cb);
+      return () => deskClickListeners.delete(cb);
     },
     triggerNotificationChanged(agentId, hasPending) {
       for (const cb of notificationListeners) cb(agentId, hasPending);

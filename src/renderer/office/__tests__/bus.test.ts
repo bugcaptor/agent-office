@@ -96,6 +96,21 @@ describe("createMockOfficeBus / emitAgentClicked", () => {
   });
 });
 
+describe("desk clicked channel", () => {
+  it("emitDeskClicked가 구독자에게 (deskIndex, screenX, screenY)를 전달하고, 해제가 동작한다", () => {
+    const bus = createMockOfficeBus();
+    const seen: Array<[number, number, number]> = [];
+    const off = bus.onDeskClicked((i, x, y) => seen.push([i, x, y]));
+
+    bus.emitDeskClicked(3, 120, 80);
+    expect(seen).toEqual([[3, 120, 80]]);
+
+    off();
+    bus.emitDeskClicked(1, 0, 0);
+    expect(seen).toEqual([[3, 120, 80]]);
+  });
+});
+
 describe("label anchors channel", () => {
   it("emitLabelAnchorsChanged가 구독자에게 같은 Map을 전달하고, 해제가 동작한다", () => {
     const bus = createMockOfficeBus();

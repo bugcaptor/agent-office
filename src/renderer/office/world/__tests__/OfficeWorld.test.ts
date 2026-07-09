@@ -152,6 +152,53 @@ describe("OfficeWorld.syncAgents: remove", () => {
   });
 });
 
+describe("OfficeWorld.syncAgents: 수동 책상 지정(assignedDeskIndex)", () => {
+  const withDesk = (id: string, deskIndex: number): AgentProfile => ({
+    ...profile(id),
+    assignedDeskIndex: deskIndex,
+  });
+
+  it("지정된 에이전트는 정확히 그 책상 좌석에 앉는다", () => {
+    const map = makeMap(2);
+    const { characterLayer, world } = makeWorld(map);
+    world.syncAgents([withDesk("a", 1)]);
+    const seat = map.desks[1].seat;
+    const entity = characterLayer.children[0];
+    expect(entity.x).toBe(seat.tx * 16 + 8);
+  });
+
+  it("지정이 바뀌면 기존 엔티티를 재생성하지 않고 setSeat으로 옮긴다", () => {
+    const map = makeMap(2);
+    const { characterLayer, world } = makeWorld(map);
+    world.syncAgents([withDesk("a", 0)]);
+    const entity = characterLayer.children[0];
+    const spy = vi.spyOn(CharacterEntity.prototype, "setSeat");
+    hoisted.createCharacterAssetsSpy.mockClear();
+
+    world.syncAgents([withDesk("a", 1)]);
+
+    expect(hoisted.createCharacterAssetsSpy).not.toHaveBeenCalled();
+    expect(characterLayer.children[0]).toBe(entity);
+    expect(spy).toHaveBeenCalledWith(map.desks[1].seat);
+    spy.mockRestore();
+  });
+
+  it("지정된 책상은 자동 배정 풀에서 제외된다 (자리 잃은 엔티티는 파괴)", () => {
+    const map = makeMap(1); // 책상 1개뿐
+    const { characterLayer, world } = makeWorld(map);
+    world.syncAgents([profile("a")]); // a가 자동 배정으로 유일한 책상 차지
+    const aEntity = characterLayer.children[0];
+
+    // b가 그 책상을 수동 지정받으면 a는 자리를 잃고 엔티티가 사라진다.
+    world.syncAgents([profile("a"), withDesk("b", 0)]);
+
+    expect(characterLayer.children.length).toBe(1);
+    expect(aEntity.destroyed).toBe(true);
+    const seat = map.desks[0].seat;
+    expect(characterLayer.children[0].x).toBe(seat.tx * 16 + 8);
+  });
+});
+
 describe("OfficeWorld: bus -> entity (setPending)", () => {
   it("relays onNotificationChanged to the matching entity's exclamation overlay", () => {
     const { bus, characterLayer, world } = makeWorld();

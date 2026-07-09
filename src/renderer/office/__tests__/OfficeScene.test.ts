@@ -196,6 +196,42 @@ describe("OfficeScene <-> OfficeWorld wiring (Task 3H)", () => {
   });
 });
 
+describe("desk click hit areas (책상 지정 메뉴)", () => {
+  it("init() 후 데스크 슬롯마다 인터랙티브 히트영역이 생기고, pointertap이 emitDeskClicked(index, 화면좌표)로 나간다", async () => {
+    const { OFFICE_MAP, TILE_SIZE } = await import("../map/mapData");
+    const bus = createMockOfficeBus();
+    const seen: Array<[number, number, number]> = [];
+    bus.onDeskClicked((i, x, y) => seen.push([i, x, y]));
+
+    const canvas = document.createElement("canvas");
+    const scene = new OfficeScene({ canvas, bus });
+    const initPromise = scene.init();
+    state.initResolvers.forEach((resolve) => resolve());
+    await initPromise;
+
+    // floorLayer(최하단 레이어)에 있는 인터랙티브 자식들 = 책상 히트영역.
+    // 캐릭터/가구보다 아래에 두어 캐릭터 클릭이 항상 우선한다.
+    const floorLayer = (
+      scene as unknown as { floorLayer: { children: Array<Record<string, unknown>> } }
+    ).floorLayer;
+    const hits = floorLayer.children.filter((c) => c.eventMode === "static");
+    expect(hits.length).toBe(OFFICE_MAP.desks.length);
+
+    // 첫 데스크의 히트영역을 찾아 탭 → (index, 화면좌표) 발행 확인.
+    const d0 = OFFICE_MAP.desks[0];
+    const hit = hits.find(
+      (c) =>
+        (c.position as { x: number; y: number }).x === d0.seat.tx * TILE_SIZE &&
+        (c.position as { x: number; y: number }).y === (d0.seat.ty + 1) * TILE_SIZE,
+    ) as unknown as { cursor: string; emit(ev: string, payload: unknown): boolean };
+    expect(hit).toBeDefined();
+    expect(hit.cursor).toBe("pointer");
+
+    hit.emit("pointertap", { global: { x: 33, y: 44 } });
+    expect(seen).toEqual([[d0.index, 33, 44]]);
+  });
+});
+
 describe("label anchor publishing (overhead-task-label)", () => {
   it("worldToScreen: 카메라 offset + scale을 적용한다", async () => {
     const { worldToScreen } = await import("../OfficeScene");

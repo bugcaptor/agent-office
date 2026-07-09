@@ -36,11 +36,13 @@ type NotifCb = (agentId: string, hasPending: boolean) => void;
 type StateCb = (agentId: string, state: SessionState) => void;
 type HoverCb = (agentId: string | null, screenX: number, screenY: number) => void;
 type LabelAnchorCb = (anchors: ReadonlyMap<string, LabelAnchor>) => void;
+type DeskClickCb = (deskIndex: number, screenX: number, screenY: number) => void;
 
 const notifCbs = new Set<NotifCb>();
 const stateCbs = new Set<StateCb>();
 const hoverCbs = new Set<HoverCb>();
 const labelAnchorCbs = new Set<LabelAnchorCb>();
+const deskClickCbs = new Set<DeskClickCb>();
 
 // Agents with an in-flight createSession, so a double-click (two
 // emitAgentClicked in a row) can only ever produce ONE createSession call.
@@ -99,6 +101,13 @@ export const officeBus: OfficeBus = {
   onLabelAnchorsChanged(cb) {
     labelAnchorCbs.add(cb);
     return () => labelAnchorCbs.delete(cb);
+  },
+  emitDeskClicked(deskIndex, screenX, screenY) {
+    deskClickCbs.forEach((cb) => cb(deskIndex, screenX, screenY));
+  },
+  onDeskClicked(cb) {
+    deskClickCbs.add(cb);
+    return () => deskClickCbs.delete(cb);
   },
   emitAgentClicked(agentId) {
     // 클릭 시 호버 카드 즉시 숨김.

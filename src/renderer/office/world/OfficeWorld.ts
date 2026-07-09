@@ -78,7 +78,13 @@ export class OfficeWorld {
   /** Diff the live entity set against `profiles`: destroy dropped agents, create new ones,
    * recreate agents whose appearance key changed, leave the rest untouched. */
   syncAgents(profiles: readonly AgentProfile[]): void {
-    const desks = assignDesks(this.o.map, profiles.map((p) => p.id));
+    // 수동 지정(assignedDeskIndex)은 우선 배정되고, 지정된 책상은 자동
+    // 배정 풀에서 빠진다 — 지정된 적 없는 책상만 자동 선점 대상.
+    const manual = new Map<string, number>();
+    for (const p of profiles) {
+      if (typeof p.assignedDeskIndex === "number") manual.set(p.id, p.assignedDeskIndex);
+    }
+    const desks = assignDesks(this.o.map, profiles.map((p) => p.id), manual);
     const next = new Set(profiles.map((p) => p.id));
 
     for (const [id, entity] of this.entities) {
@@ -96,6 +102,23 @@ export class OfficeWorld {
       if (this.appearanceKeys.get(p.id) === appearanceKey(p)) continue;
       entity.destroy();
       this.entities.delete(p.id);
+    }
+
+    // 좌석 변화 반영: 슬롯을 잃은 기존 엔티티는 파괴(sessionActive 캐시는
+    // 유지 — 에이전트 자체는 살아 있어 나중에 자리가 나면 재생성된다),
+    // 슬롯이 바뀐 엔티티는 새 좌석으로 걸어가게 한다(setSeat은 동일 타일이면
+    // no-op이라 매 sync 호출해도 안전).
+    for (const p of profiles) {
+      const entity = this.entities.get(p.id);
+      if (!entity) continue;
+      const slot = desks.get(p.id);
+      if (!slot) {
+        entity.destroy();
+        this.entities.delete(p.id);
+        this.appearanceKeys.delete(p.id);
+        continue;
+      }
+      entity.setSeat(slot.seat);
     }
 
     for (const p of profiles) {
