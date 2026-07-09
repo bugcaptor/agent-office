@@ -14,10 +14,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentProfile, NotificationEvent } from "../types";
 
-const { setAppSettingsMock } = vi.hoisted(() => ({
+const { setAppSettingsMock, appendSessionTurnMock } = vi.hoisted(() => ({
   setAppSettingsMock: vi.fn().mockResolvedValue(undefined),
+  appendSessionTurnMock: vi.fn(),
 }));
-vi.mock("../../ipc/tauriApi", () => ({ tauriApi: { setAppSettings: setAppSettingsMock } }));
+vi.mock("../../ipc/tauriApi", () => ({
+  tauriApi: { setAppSettings: setAppSettingsMock, appendSessionTurn: appendSessionTurnMock },
+}));
 
 import { useAppStore } from "../appStore";
 
@@ -55,6 +58,7 @@ const initialState = useAppStore.getState();
 beforeEach(() => {
   notifSeq = 0;
   setAppSettingsMock.mockClear();
+  appendSessionTurnMock.mockClear();
   useAppStore.setState(initialState, true);
 });
 
@@ -147,6 +151,107 @@ describe("removeAgent", () => {
     expect(st.recentAgentIds).not.toContain("a1");
     expect(st.notifications).toHaveLength(0);
     expect(st.activeTerminalAgentId).toBeNull();
+  });
+});
+
+describe("clockOut (퇴근)", () => {
+  it("clockedOut 플래그를 세우고 세션/최근탭에서 제거하되 프로필은 보존한다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.setPortrait("a1", "data:image/png;base64,AAA");
+    s.openTerminal("a1");
+
+    s.clockOut("a1");
+
+    const st = useAppStore.getState();
+    expect(st.agents.a1.clockedOut).toBe(true);
+    expect(st.agents.a1.name).toBe("Test Agent"); // 프로필은 보존
+    expect(st.sessions.a1).toBeUndefined();
+    expect(st.recentAgentIds).not.toContain("a1");
+    expect(st.agentOrder).toContain("a1"); // agentOrder는 그대로(삭제 아님)
+    expect(st.portraits.a1).toBe("data:image/png;base64,AAA"); // 초상 보존
+  });
+
+  it("활성 탭이면 이웃(다음, 없으면 이전) 탭으로 전환한다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.addAgent(mkProfile({ id: "a2" }));
+    s.addAgent(mkProfile({ id: "a3" }));
+    s.openTerminal("a3");
+    s.openTerminal("a2");
+    s.openTerminal("a1"); // recentAgentIds = [a1, a2, a3], active = a1
+
+    s.clockOut("a1");
+
+    expect(useAppStore.getState().activeTerminalAgentId).toBe("a2");
+  });
+
+  it("마지막 남은 탭을 퇴근시키면 활성 탭은 null이 된다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.openTerminal("a1");
+
+    s.clockOut("a1");
+
+    expect(useAppStore.getState().activeTerminalAgentId).toBeNull();
+  });
+
+  it("해당 에이전트의 미확인 알림을 지운다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.pushNotification(mkNotifEvent({ agentId: "a1" }));
+
+    s.clockOut("a1");
+
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+  });
+
+  it("이미 퇴근한 에이전트를 다시 퇴근시켜도 아무 일도 하지 않는다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.clockOut("a1");
+    const before = useAppStore.getState();
+
+    s.clockOut("a1");
+
+    expect(useAppStore.getState()).toBe(before);
+  });
+
+  it("존재하지 않는 agentId는 무시한다", () => {
+    const before = useAppStore.getState();
+    before.clockOut("ghost");
+    expect(useAppStore.getState()).toBe(before);
+  });
+});
+
+describe("clockIn (소환)", () => {
+  it("clockedOut 필드를 제거한다(JSON 직렬화에서 생략되도록)", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.clockOut("a1");
+    expect(useAppStore.getState().agents.a1.clockedOut).toBe(true);
+
+    s.clockIn("a1");
+
+    const agent = useAppStore.getState().agents.a1;
+    expect(agent.clockedOut).toBeUndefined();
+    expect("clockedOut" in agent).toBe(false);
+  });
+
+  it("근무 중인 에이전트를 소환해도 아무 일도 하지 않는다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    const before = useAppStore.getState();
+
+    s.clockIn("a1");
+
+    expect(useAppStore.getState()).toBe(before);
+  });
+
+  it("존재하지 않는 agentId는 무시한다", () => {
+    const before = useAppStore.getState();
+    before.clockIn("ghost");
+    expect(useAppStore.getState()).toBe(before);
   });
 });
 

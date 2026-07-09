@@ -103,6 +103,9 @@ pub fn run() {
             let store = ProfileStore::new(data_dir.join("profiles.json"));
             let portrait_store = PngStore::new(data_dir.join("portraits"), MAX_PORTRAIT_BYTES);
             let sprite_store = PngStore::new(data_dir.join("sprites"), MAX_SPRITE_BYTES);
+            let session_time_store = crate::persistence::session_time_store::SessionTimeStore::new(
+                data_dir.join("session-times.jsonl"),
+            );
 
             app.manage(AppState {
                 manager,
@@ -110,6 +113,7 @@ pub fn run() {
                 store,
                 portrait_store,
                 sprite_store,
+                session_time_store,
                 settings_store,
                 settings: settings_cache,
                 settings_first_run: std::sync::atomic::AtomicBool::new(settings_first_run),
@@ -143,6 +147,8 @@ pub fn run() {
             ipc::commands::get_app_settings,
             ipc::commands::set_app_settings,
             ipc::commands::open_in_vscode,
+            ipc::commands::append_session_turn,
+            ipc::commands::load_session_turns,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build tauri app")

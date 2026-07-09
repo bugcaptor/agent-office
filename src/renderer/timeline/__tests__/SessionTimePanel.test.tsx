@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 //
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// 턴 정산(prompt → stop)이 appendSessionTurn을 호출하므로 실 tauriApi(invoke)를
+// 타지 않도록 모킹(다른 시간추적 테스트와 동일 컨벤션).
+vi.mock("../../ipc/tauriApi", () => ({ tauriApi: { appendSessionTurn: vi.fn() } }));
+
 import { SessionTimePanel } from "../SessionTimePanel";
 import { useAppStore } from "../../store/appStore";
 import type { AgentProfile } from "../../store/types";

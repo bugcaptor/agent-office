@@ -1,14 +1,28 @@
 // src/renderer/layout/BottomBar.tsx
 //
 // Bottom bar: the primary "+ New Agent" entry point on the
-// left (opens `ProfileDialog` in create mode), a running/pending status
-// summary in the center, a settings (⚙) button that opens `SettingsDialog`
-// (Claude Code 연동 opt-in 2종), and the mute toggle on the right (flips
-// `store.muted`; the actual badge resync on toggle lives in
-// `ipc/sessionBridge.ts`'s `installSessionBridge`, not here).
+// left (opens `ProfileDialog` in create mode), next to it a "소환"
+// (re-summon) button showing the clocked-out count that opens a `ContextMenu`
+// listing clocked-out agents by name (selecting one calls `clockInAgent`),
+// and a "전체 퇴근" button that opens a `confirm-clock-out-all` modal
+// (`ConfirmClockOutDialog`) which, once confirmed, clocks out every on-duty
+// agent at once (`clockOutAll`). Then a running/pending status summary in
+// the center, a settings (⚙) button that
+// opens `SettingsDialog` (Claude Code 연동 opt-in 2종), and the mute toggle
+// on the right (flips `store.muted`; the actual badge resync on toggle lives
+// in `ipc/sessionBridge.ts`'s `installSessionBridge`, not here).
+import { useState } from "react";
 import { useAppStore } from "../store/appStore";
-import { usePendingCount, useRunningCount } from "../store/selectors";
+import {
+  useAgentList,
+  useClockedOutAgents,
+  useClockedOutCount,
+  usePendingCount,
+  useRunningCount,
+} from "../store/selectors";
 import { THEMES, nextThemeId } from "../theme/themes";
+import { ContextMenu } from "../ui/ContextMenu";
+import { clockInAgent } from "../agent/clockOut";
 
 export function BottomBar() {
   const openModal = useAppStore((s) => s.openModal);
@@ -18,6 +32,10 @@ export function BottomBar() {
   const setTheme = useAppStore((s) => s.setTheme);
   const runningCount = useRunningCount();
   const pendingCount = usePendingCount();
+  const onDutyCount = useAgentList().length;
+  const clockedOutAgents = useClockedOutAgents();
+  const clockedOutCount = useClockedOutCount();
+  const [summonMenu, setSummonMenu] = useState<{ x: number; y: number } | null>(null);
 
   return (
     <footer className="bottom-bar pixel-panel">
@@ -28,6 +46,36 @@ export function BottomBar() {
       >
         ＋ New Agent
       </button>
+      <button
+        type="button"
+        className="pixel-btn summon-btn"
+        disabled={clockedOutCount === 0}
+        onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setSummonMenu({ x: rect.left, y: rect.top });
+        }}
+      >
+        🏠 소환 ({clockedOutCount})
+      </button>
+      <button
+        type="button"
+        className="pixel-btn clock-out-all-btn"
+        disabled={onDutyCount === 0}
+        onClick={() => openModal({ kind: "confirm-clock-out-all" })}
+      >
+        전체 퇴근
+      </button>
+      {summonMenu && (
+        <ContextMenu
+          x={summonMenu.x}
+          y={summonMenu.y}
+          onClose={() => setSummonMenu(null)}
+          items={clockedOutAgents.map((agent) => ({
+            label: agent.name,
+            onSelect: () => clockInAgent(agent.id),
+          }))}
+        />
+      )}
       <span className="bottom-bar-status">
         {runningCount} running · {pendingCount} needs input
       </span>

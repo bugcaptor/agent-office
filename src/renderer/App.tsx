@@ -8,11 +8,12 @@ import { DeskAssignMenu } from "./desk/DeskAssignMenu";
 import { ProfileDialog } from "./profile/ProfileDialog";
 import { ConfirmDeleteDialog } from "./agent/ConfirmDeleteDialog";
 import { ConfirmRestartDialog } from "./agent/ConfirmRestartDialog";
+import { ConfirmClockOutDialog } from "./agent/ConfirmClockOutDialog";
 import { ConfirmQuitDialog } from "./agent/ConfirmQuitDialog";
 import { SettingsDialog } from "./settings/SettingsDialog";
 import { FirstRunDialog } from "./settings/FirstRunDialog";
 import { useAppStore } from "./store/appStore";
-import { useAgentList } from "./store/selectors";
+import { useAgentList, useLightsOff } from "./store/selectors";
 import { THEMES } from "./theme/themes";
 import { TaskLabelLayer } from "./labels/TaskLabelLayer";
 import { TerminalOverlay } from "./terminal/TerminalOverlay";
@@ -26,6 +27,10 @@ import { UIChrome } from "./layout/UIChrome";
 //                                     selector -- a stable reference across
 //                                     renders so B's `syncAgents` effect
 //                                     doesn't loop).
+//   Layer 0.4 (z:3) .office-lights-off -- 전원 퇴근 시(에이전트가 하나 이상
+//                                     있고 전부 clockedOut) 켜지는 소등
+//                                     오버레이(`useLightsOff`). 캔버스 위,
+//                                     라벨/UI 아래이며 클릭은 통과시킨다.
 //   Layer 0.5 (z:5) TaskLabelLayer   -- 머리 위 작업 라벨(DOM, pointer-events:none)
 //   Layer 1 (z:10) UIChrome        -- TopBar/SessionTimePanel/NotificationTicker/
 //                                     BottomBar, pointer-events:none container.
@@ -36,12 +41,12 @@ import { UIChrome } from "./layout/UIChrome";
 //   Layer 2 (z:20) TerminalOverlay -- always mounted (keep-alive); closed =
 //                                     display:none, never unmounted.
 //   Layer 3 (z:30) ModalRoot       -- ProfileDialog/ConfirmDeleteDialog/
-//                                     ConfirmRestartDialog/ConfirmQuitDialog/
-//                                     SettingsDialog/FirstRunDialog, all
-//                                     always mounted, each self-gated (`null`
-//                                     render) on `modal.kind` except
-//                                     FirstRunDialog which gates on
-//                                     `settingsFirstRun`.
+//                                     ConfirmRestartDialog/ConfirmClockOutDialog/
+//                                     ConfirmQuitDialog/SettingsDialog/
+//                                     FirstRunDialog, all always mounted,
+//                                     each self-gated (`null` render) on
+//                                     `modal.kind` except FirstRunDialog
+//                                     which gates on `settingsFirstRun`.
 function App() {
   const agents = useAgentList();
   // The store's `AgentProfile` (src/shared/types.ts) is structurally
@@ -61,6 +66,8 @@ function App() {
   // `applyTheme`(store.setTheme / main.tsx 부트)이 이미 처리한다.
   const themeId = useAppStore((s) => s.theme);
   const pixiPalette = THEMES[themeId].pixi;
+  // 에이전트가 하나 이상 있으나 전원 퇴근했을 때만 true(빈 새 사무실은 제외).
+  const lightsOff = useLightsOff();
 
   return (
     <div className="app-root">
@@ -70,6 +77,11 @@ function App() {
         resyncSignal={spritePreviews}
         pixiPalette={pixiPalette}
       />
+      {lightsOff && (
+        <div className="office-lights-off" aria-hidden="true">
+          <span className="office-lights-off-label">모두 퇴근했습니다</span>
+        </div>
+      )}
       <TaskLabelLayer bus={officeBus} />
       <UIChrome />
       <AgentHoverCard />
@@ -79,6 +91,7 @@ function App() {
         <ProfileDialog />
         <ConfirmDeleteDialog />
         <ConfirmRestartDialog />
+        <ConfirmClockOutDialog />
         <ConfirmQuitDialog />
         <SettingsDialog />
         <FirstRunDialog />

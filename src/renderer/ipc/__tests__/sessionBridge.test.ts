@@ -60,6 +60,7 @@ const { mockApi, capture } = vi.hoisted(() => {
       capture.onActivity = cb;
       return vi.fn();
     }),
+    appendSessionTurn: vi.fn(),
   };
   return { mockApi, capture };
 });

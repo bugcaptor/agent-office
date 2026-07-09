@@ -353,6 +353,23 @@ pub async fn open_in_vscode(path: String) -> Result<(), String> {
     crate::vscode::open_dir_in_vscode(&path)
 }
 
+/// 완료된 턴 1건을 로컬 시계열 로그(session-times.jsonl)에 append.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn append_session_turn(
+    app_state: State<'_, AppState>,
+    record: crate::types::SessionTurnRecord,
+) -> Result<(), String> {
+    app_state.session_time_store.append(&record).map_err(|e| e.to_string())
+}
+
+/// 누적된 세션 턴 기록 전체를 읽는다(통계용).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_session_turns(
+    app_state: State<'_, AppState>,
+) -> Result<Vec<crate::types::SessionTurnRecord>, String> {
+    Ok(app_state.session_time_store.load())
+}
+
 #[cfg(test)]
 mod tests {
     // Assert each command *body* delegates correctly into
@@ -509,6 +526,9 @@ mod tests {
 
         let settings_store =
             crate::persistence::settings_store::SettingsStore::new(profile_dir.join("settings.json"));
+        let session_time_store = crate::persistence::session_time_store::SessionTimeStore::new(
+            profile_dir.join("session-times.jsonl"),
+        );
 
         let state = AppState {
             manager,
@@ -516,6 +536,7 @@ mod tests {
             store,
             portrait_store,
             sprite_store,
+            session_time_store,
             settings_store,
             settings: Arc::new(std::sync::RwLock::new(
                 crate::persistence::settings_store::AppSettings::default(),
@@ -765,6 +786,7 @@ mod tests {
                 archetype: None,
                 shell: None,
                 startup_command: None,
+                clocked_out: None,
             }],
             version: 1,
         };
@@ -810,6 +832,7 @@ mod tests {
                 archetype: None,
                 shell: None,
                 startup_command: None,
+                clocked_out: None,
             }],
             version: 1,
         };
@@ -862,6 +885,7 @@ mod tests {
                 archetype: None,
                 shell: None,
                 startup_command: None,
+                clocked_out: None,
             }],
             version: 1,
         };
@@ -886,5 +910,34 @@ mod tests {
     async fn generate_sprite_image_rejects_empty_description() {
         let err = generate_sprite_image("   ".to_string()).await.unwrap_err();
         assert_eq!(err, "validation: description is empty");
+    }
+
+    // ---- append_session_turn / load_session_turns ----
+
+    #[tokio::test]
+    async fn append_then_load_session_turn_through_app_state() {
+        let (state, ctl, dir, profile_dir) = build("session-turn");
+        let record = SessionTurnRecord {
+            agent_id: "a1".into(),
+            started_at: 1_000,
+            ended_at: 4_000,
+            total_ms: 3_000,
+            worked_ms: 2_000,
+            waited_ms: 1_000,
+        };
+
+        // append_session_turn / load_session_turns 본문과 동일한 delegation.
+        state.session_time_store.append(&record).map_err(|e: std::io::Error| e.to_string()).unwrap();
+        let loaded = state.session_time_store.load();
+
+        assert_eq!(loaded, vec![record]);
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    #[tokio::test]
+    async fn load_session_turns_on_no_prior_appends_returns_empty() {
+        let (state, ctl, dir, profile_dir) = build("session-turn-empty");
+        assert!(state.session_time_store.load().is_empty());
+        cleanup(&ctl, &dir, &profile_dir);
     }
 }

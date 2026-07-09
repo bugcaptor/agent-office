@@ -2,9 +2,14 @@
 //
 // taskLabels 슬라이스: prompt 이벤트 축적, 세션 교체 리셋,
 // 요약 반영, removeAgent 정리.
-import { beforeEach, describe, expect, it } from "vitest";
-import { useAppStore } from "../appStore";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityEvent } from "@shared/types";
+
+// 일부 케이스(연속 prompt)는 턴을 정산하므로 appendSessionTurn이 호출된다 —
+// 실 tauriApi(invoke)를 타지 않도록 모킹(다른 시간추적 테스트와 동일 컨벤션).
+vi.mock("../../ipc/tauriApi", () => ({ tauriApi: { appendSessionTurn: vi.fn() } }));
+
+import { useAppStore } from "../appStore";
 
 function promptEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
   return { agentId: "a1", sessionId: "s1", kind: "prompt", at: 1000, text: "첫 지시", ...overrides };

@@ -84,6 +84,8 @@ pub struct AppState {
     pub store: ProfileStore,
     pub portrait_store: crate::persistence::png_store::PngStore,
     pub sprite_store: crate::persistence::png_store::PngStore,
+    /// 세션 턴 시계열 로그(session-times.jsonl) — 턴이 종료될 때마다 append.
+    pub session_time_store: crate::persistence::session_time_store::SessionTimeStore,
     /// 앱 전역 opt-in 설정 — 디스크 원본은 settings_store, 커맨드가 읽는
     /// 캐시는 settings(RwLock). set_app_settings가 저장+캐시 갱신을 함께 한다.
     /// `Arc`인 이유: lib.rs의 훅 포트 getter(`get_hook_port`)가 SessionManager

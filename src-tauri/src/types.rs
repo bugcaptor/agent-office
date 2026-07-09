@@ -105,6 +105,19 @@ pub struct ActivityEvent {
     pub text: Option<String>,
 }
 
+/// 완료된 턴 1건의 시계열 기록. TS `SessionTurnRecord` 미러.
+/// 모든 시각은 백엔드 epoch ms. append-only 로그(session-times.jsonl)의 한 줄.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionTurnRecord {
+    pub agent_id: AgentId,
+    pub started_at: u64,
+    pub ended_at: u64,
+    pub total_ms: u64,
+    pub worked_ms: u64,
+    pub waited_ms: u64,
+}
+
 /// renderer→backend 세션 생성 옵션. 프런트 AgentOfficeApi.createSession(agentId, opts?).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -197,6 +210,10 @@ pub struct AgentProfile {
     /// 예: "source ./init.sh", "mysetup.bat". 셸 문법은 사용자 책임.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub startup_command: Option<String>,
+    /// 퇴근(clock-out) 상태. Some(true)면 오피스/터미널에서 숨기고 소환 목록에만
+    /// 남긴다. 부재/false = 근무 중. TS `clockedOut?: boolean` 미러.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub clocked_out: Option<bool>,
 }
 
 /// 영속 상태. version은 리터럴 1.
@@ -505,6 +522,7 @@ mod tests {
             archetype: None,
             shell: None,
             startup_command: None,
+            clocked_out: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"cwd\":\"/tmp/proj\""));
@@ -529,6 +547,7 @@ mod tests {
             archetype: None,
             shell: None,
             startup_command: None,
+            clocked_out: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("cwd"));
@@ -564,6 +583,7 @@ mod tests {
             archetype: None,
             shell: None,
             startup_command: None,
+            clocked_out: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"appearance\":\"short black hair, glasses\""));
@@ -589,6 +609,7 @@ mod tests {
             archetype: None,
             shell: None,
             startup_command: None,
+            clocked_out: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("appearance"));
@@ -625,6 +646,7 @@ mod tests {
             archetype: None,
             shell: None,
             startup_command: None,
+            clocked_out: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"spriteRequest\":\"red cloak wizard\""));
@@ -650,6 +672,7 @@ mod tests {
             archetype: None,
             shell: None,
             startup_command: None,
+            clocked_out: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("spriteRequest"));
@@ -674,6 +697,7 @@ mod tests {
             archetype: Some("orc".into()),
             shell: None,
             startup_command: None,
+            clocked_out: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"archetype\":\"orc\""));
@@ -688,6 +712,7 @@ mod tests {
             archetype: None,
             shell: None,
             startup_command: None,
+            clocked_out: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("archetype"));
@@ -709,6 +734,7 @@ mod tests {
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: Some("git-bash".into()), startup_command: None,
+            clocked_out: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"shell\":\"git-bash\""));
@@ -721,9 +747,45 @@ mod tests {
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: None, startup_command: None,
+            clocked_out: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("shell"));
+    }
+
+    #[test]
+    fn agent_profile_deserializes_without_clocked_out() {
+        // 레거시 profiles.json엔 clockedOut 키가 없다 -> 파싱되고 None(=근무 중).
+        let json = "{\"id\":\"p1\",\"name\":\"Ada\",\"role\":\"backend\",\"note\":\"\",\
+                     \"seed\":\"abc123\",\"createdAt\":1720000000003,\"deskIndex\":0}";
+        let profile: AgentProfile = serde_json::from_str(json).unwrap();
+        assert_eq!(profile.clocked_out, None);
+    }
+
+    #[test]
+    fn agent_profile_serializes_clocked_out_when_present() {
+        let profile = AgentProfile {
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
+            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
+            archetype: None, shell: None, startup_command: None,
+            clocked_out: Some(true),
+        };
+        let json = serde_json::to_string(&profile).unwrap();
+        assert!(json.contains("\"clockedOut\":true"));
+    }
+
+    #[test]
+    fn agent_profile_omits_clocked_out_when_none() {
+        let profile = AgentProfile {
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
+            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
+            archetype: None, shell: None, startup_command: None,
+            clocked_out: None,
+        };
+        let json = serde_json::to_string(&profile).unwrap();
+        assert!(!json.contains("clockedOut"));
     }
 
     #[test]
@@ -745,5 +807,39 @@ mod tests {
         // Sanity bound: must be after 2020-01-01 and not absurdly far in the future.
         let ms = now_ms();
         assert!(ms > 1_577_836_800_000);
+    }
+
+    #[test]
+    fn session_turn_record_serializes_camel_case() {
+        let rec = SessionTurnRecord {
+            agent_id: "a1".into(),
+            started_at: 1_000,
+            ended_at: 4_000,
+            total_ms: 3_000,
+            worked_ms: 2_000,
+            waited_ms: 1_000,
+        };
+        let json = serde_json::to_string(&rec).unwrap();
+        assert!(json.contains("\"agentId\":\"a1\""), "{json}");
+        assert!(json.contains("\"startedAt\":1000"), "{json}");
+        assert!(json.contains("\"endedAt\":4000"), "{json}");
+        assert!(json.contains("\"totalMs\":3000"), "{json}");
+        assert!(json.contains("\"workedMs\":2000"), "{json}");
+        assert!(json.contains("\"waitedMs\":1000"), "{json}");
+    }
+
+    #[test]
+    fn session_turn_record_roundtrips() {
+        let rec = SessionTurnRecord {
+            agent_id: "a1".into(),
+            started_at: 1_000,
+            ended_at: 4_000,
+            total_ms: 3_000,
+            worked_ms: 2_000,
+            waited_ms: 1_000,
+        };
+        let json = serde_json::to_string(&rec).unwrap();
+        let parsed: SessionTurnRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, rec);
     }
 }

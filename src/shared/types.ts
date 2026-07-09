@@ -223,6 +223,9 @@ export interface AgentProfile {
   spriteUpdatedAt?: number;
   /** 캐릭터 아키타입(종족) id. 부재/알 수 없음 = "human" 폴백, "auto" = 시드 추첨(저장 시 확정). */
   archetype?: string;
+  /** 퇴근(clock-out) 상태. true면 오피스/터미널에서 사라지고 소환 목록에만 남는다.
+   * 부재/false = 근무 중. 되돌릴 수 있는 상태이며 프로필 자체는 보존된다. */
+  clockedOut?: boolean;
 }
 
 /**
@@ -240,6 +243,25 @@ export interface GeneratedSpriteImage {
   pngBase64: string;
   /** usage.type=="usd"일 때만 존재. 구독(generations) 차감이면 없음. */
   costUsd?: number;
+}
+
+/**
+ * 완료된 턴 1건의 시계열 기록. 턴이 종료(settle)될 때마다 append-only 로그
+ * (session-times.jsonl)에 추가된다. 나중에 통계용으로 읽는다.
+ * Mirrors Rust `SessionTurnRecord`. 모든 시각은 백엔드 epoch ms.
+ */
+export interface SessionTurnRecord {
+  agentId: AgentId;
+  /** 이 턴이 시작된 백엔드 epoch ms. */
+  startedAt: number;
+  /** 이 턴이 종료(settle)된 백엔드 epoch ms. */
+  endedAt: number;
+  /** 턴 전체 시간(endedAt - startedAt). */
+  totalMs: number;
+  /** 실작업 시간. */
+  workedMs: number;
+  /** 대기 시간. */
+  waitedMs: number;
 }
 
 /** 앱 전역 opt-in 설정 — Rust `persistence::settings_store::AppSettings` 미러. */
@@ -321,4 +343,8 @@ export interface AgentOfficeApi {
   onNotificationCleared(cb: (p: { agentId: string; ids: string[] }) => void): () => void;
   /** activity-event(prompt/tool) 구독. Returns an unsubscribe function. */
   onActivity(cb: (e: ActivityEvent) => void): () => void;
+  /** 완료된 턴 1건을 로컬 시계열 로그에 append (fire-and-forget). */
+  appendSessionTurn(record: SessionTurnRecord): void;
+  /** 누적된 세션 턴 기록 전체를 읽는다(통계용). 손상된 줄은 건너뛴다. */
+  loadSessionTurns(): Promise<SessionTurnRecord[]>;
 }

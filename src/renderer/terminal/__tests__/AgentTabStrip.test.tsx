@@ -327,4 +327,18 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
     fireEvent.click(item);
     expect(openInVscode).not.toHaveBeenCalled();
   });
+
+  it("'퇴근' 선택 시 confirm-clock-out 모달을 열고 메뉴는 닫힌다", () => {
+    seedThreeTabs();
+    const { getAllByRole, getByRole, queryByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]); // "Agent a1"
+    fireEvent.click(getByRole("menuitem", { name: "퇴근" }));
+
+    expect(useAppStore.getState().modal).toEqual({
+      kind: "confirm-clock-out",
+      agentId: "a1",
+    });
+    expect(queryByRole("menu")).toBeNull();
+  });
 });

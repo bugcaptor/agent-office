@@ -144,6 +144,11 @@ export function AgentTabStrip() {
                 openModal({ kind: "profile-edit", agentId: menu.agentId }),
             },
             {
+              label: "퇴근",
+              onSelect: () =>
+                openModal({ kind: "confirm-clock-out", agentId: menu.agentId }),
+            },
+            {
               label: "캐릭터 삭제",
               onSelect: () =>
                 openModal({ kind: "confirm-delete", agentId: menu.agentId }),

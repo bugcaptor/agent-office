@@ -110,6 +110,7 @@ mod tests {
                 archetype: None,
                 shell: None,
                 startup_command: None,
+                clocked_out: None,
             }],
             version: 1,
         }

@@ -26,6 +26,29 @@ import { tauriApi } from "../ipc/tauriApi";
 
 const MAX_EXCERPT = 80;
 
+/**
+ * 턴이 방금 종료됐으면(turns 증가) 그 턴의 시계열 기록을 로컬 로그에 append한다.
+ * 순수 reducer를 건드리지 않고 prev/next 델타로 기록을 복원한다:
+ * 시작=prev.turnStartedAt(닫힌 턴의 시작), 종료=at, 각 시간=next-prev 델타.
+ * fire-and-forget — 저장 실패는 콘솔 경고로만.
+ */
+function logSettledTurn(
+  agentId: string,
+  prev: AgentTurnState,
+  next: AgentTurnState,
+  at: number
+): void {
+  if (next.turns <= prev.turns) return;
+  tauriApi.appendSessionTurn({
+    agentId,
+    startedAt: prev.turnStartedAt ?? at,
+    endedAt: at,
+    totalMs: next.totalMs - prev.totalMs,
+    workedMs: next.workedMs - prev.workedMs,
+    waitedMs: next.waitedMs - prev.waitedMs,
+  });
+}
+
 interface AppState {
   // ---- data ----
   agents: Record<string, AgentProfile>;
@@ -79,6 +102,15 @@ interface AppState {
   // ---- session actions ----
   setSessionState(e: { agentId: string; status: SessionStatus }): void;
   setSessionSize(agentId: string, cols: number, rows: number): void;
+
+  // ---- clock in/out ----
+  /** 퇴근: 프로필을 clockedOut=true로, 세션 런타임/최근탭에서 제거하고,
+   * 활성 터미널이면 이웃 탭으로 전환(없으면 닫음). 프로필/초상/스프라이트/
+   * timeTracking은 보존(되돌릴 수 있음). agents가 바뀌므로 persist가 자동 저장. */
+  clockOut(agentId: string): void;
+  /** 소환: clockedOut 플래그를 해제(필드 제거)한다. 캔버스 재등장은
+   * useAgentList 필터가 처리하고, 세션/터미널 복구는 호출자(clockInAgent)가 한다. */
+  clockIn(agentId: string): void;
 
   // ---- notification actions ----
   pushNotification(e: NotificationEvent): void;
@@ -220,6 +252,37 @@ export const useAppStore = create<AppState>()(
         };
       }),
 
+    clockOut: (agentId) =>
+      set((s) => {
+        const agent = s.agents[agentId];
+        if (!agent || agent.clockedOut) return s;
+        const sessions = { ...s.sessions };
+        delete sessions[agentId];
+        // 활성 터미널이면 이웃(다음, 없으면 이전)으로 전환. 이웃도 퇴근 대상일
+        // 수는 없다(퇴근하는 건 agentId 하나뿐) — recentAgentIds에서 계산.
+        const recent = s.recentAgentIds.filter((id) => id !== agentId);
+        let active = s.activeTerminalAgentId;
+        if (active === agentId) {
+          const idx = s.recentAgentIds.indexOf(agentId);
+          active = s.recentAgentIds[idx + 1] ?? s.recentAgentIds[idx - 1] ?? null;
+        }
+        return {
+          agents: { ...s.agents, [agentId]: { ...agent, clockedOut: true } },
+          sessions,
+          recentAgentIds: recent,
+          activeTerminalAgentId: active,
+          notifications: s.notifications.filter((n) => n.agentId !== agentId),
+        };
+      }),
+
+    clockIn: (agentId) =>
+      set((s) => {
+        const agent = s.agents[agentId];
+        if (!agent || !agent.clockedOut) return s;
+        const { clockedOut: _drop, ...rest } = agent;
+        return { agents: { ...s.agents, [agentId]: rest as typeof agent } };
+      }),
+
     setSessionState: ({ agentId, status }) =>
       set((s) => {
         const prev = s.sessions[agentId];
@@ -323,13 +386,10 @@ export const useAppStore = create<AppState>()(
 
     applyActivityEvent: (e) =>
       set((s) => {
-        const timeTracking = {
-          ...s.timeTracking,
-          [e.agentId]: reduceTurn(
-            s.timeTracking[e.agentId] ?? initialTurnState(),
-            { kind: e.kind, at: e.at }
-          ),
-        };
+        const prevTurn = s.timeTracking[e.agentId] ?? initialTurnState();
+        const nextTurn = reduceTurn(prevTurn, { kind: e.kind, at: e.at });
+        logSettledTurn(e.agentId, prevTurn, nextTurn, e.at);
+        const timeTracking = { ...s.timeTracking, [e.agentId]: nextTurn };
         // 라벨 소스: text 실린 prompt만 반영. tool/text 없음 → 통과.
         if (e.kind !== "prompt" || !e.text) return { timeTracking };
         const prev = s.taskLabels[e.agentId];
@@ -362,30 +422,20 @@ export const useAppStore = create<AppState>()(
       set((s) => {
         // stop → 턴 종료, hook/bell → 대기 시작. (source는 이 셋뿐.)
         const kind: TurnInput["kind"] = e.source === "stop" ? "stop" : "notification";
-        return {
-          timeTracking: {
-            ...s.timeTracking,
-            [e.agentId]: reduceTurn(
-              s.timeTracking[e.agentId] ?? initialTurnState(),
-              { kind, at: e.at }
-            ),
-          },
-        };
+        const prev = s.timeTracking[e.agentId] ?? initialTurnState();
+        const next = reduceTurn(prev, { kind, at: e.at });
+        logSettledTurn(e.agentId, prev, next, e.at);
+        return { timeTracking: { ...s.timeTracking, [e.agentId]: next } };
       }),
 
     applySessionTiming: (agentId, state, at) =>
       set((s) => {
         // 세션 종료만 강제 정산 대상. 그 외 상태 전이는 턴 집계와 무관.
         if (state !== "exited" && state !== "disposed") return s;
-        return {
-          timeTracking: {
-            ...s.timeTracking,
-            [agentId]: reduceTurn(
-              s.timeTracking[agentId] ?? initialTurnState(),
-              { kind: "settle", at }
-            ),
-          },
-        };
+        const prev = s.timeTracking[agentId] ?? initialTurnState();
+        const next = reduceTurn(prev, { kind: "settle", at });
+        logSettledTurn(agentId, prev, next, at);
+        return { timeTracking: { ...s.timeTracking, [agentId]: next } };
       }),
 
     hydrate: (state) =>

@@ -13,10 +13,29 @@ import { useAppStore } from "./appStore";
 import { initialTurnState } from "../timeline/turnReducer";
 import type { TurnPhase } from "../timeline/turnReducer";
 
+/** 근무 중(퇴근하지 않은) 에이전트 목록, 생성 순서. 오피스 캔버스가 소비 —
+ * 퇴근한 에이전트는 여기서 빠지므로 캔버스/탕비실에서 사라진다. */
 export const useAgentList = () =>
-  useAppStore(useShallow((s) => s.agentOrder.map((id) => s.agents[id])));
+  useAppStore(
+    useShallow((s) => s.agentOrder.map((id) => s.agents[id]).filter((a) => !a.clockedOut))
+  );
+
+/** 퇴근한 에이전트 목록(소환 UI용), 생성 순서. */
+export const useClockedOutAgents = () =>
+  useAppStore(useShallow((s) => s.agentOrder.map((id) => s.agents[id]).filter((a) => a?.clockedOut)));
+
+/** 퇴근한 에이전트 수(소환 버튼 배지용). */
+export const useClockedOutCount = () =>
+  useAppStore((s) => s.agentOrder.reduce((n, id) => n + (s.agents[id]?.clockedOut ? 1 : 0), 0));
 
 export const useAgentCount = () => useAppStore((s) => s.agentOrder.length);
+
+/** 사무실 소등 여부: 에이전트가 하나 이상 있으나 전원 퇴근했을 때 true.
+ * (에이전트가 아예 없는 빈 새 사무실은 소등하지 않는다.) */
+export const useLightsOff = () =>
+  useAppStore(
+    (s) => s.agentOrder.length > 0 && s.agentOrder.every((id) => s.agents[id]?.clockedOut)
+  );
 
 export const useRunningCount = () =>
   useAppStore((s) => Object.values(s.sessions).filter((x) => x.status === "running").length);
@@ -50,7 +69,7 @@ export const useSessionTimeRows = (): SessionTimeRow[] => {
   const timeTracking = useAppStore((s) => s.timeTracking);
   return useMemo(
     () =>
-      agentOrder.map((id) => {
+      agentOrder.filter((id) => !agents[id]?.clockedOut).map((id) => {
         const t = timeTracking[id] ?? initialTurnState();
         return {
           agentId: id,

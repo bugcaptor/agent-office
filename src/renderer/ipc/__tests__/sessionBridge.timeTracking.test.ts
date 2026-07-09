@@ -14,6 +14,7 @@ vi.mock("../tauriApi", () => ({
     onNotificationCleared: () => () => {},
     onActivity: (cb: any) => ((captured.activity = cb), () => {}),
     setBadgeCount: vi.fn(),
+    appendSessionTurn: vi.fn(),
   },
 }));
 

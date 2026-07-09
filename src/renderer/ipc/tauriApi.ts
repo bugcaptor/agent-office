@@ -32,6 +32,7 @@ import type {
   OutputChunk,
   PersistedState,
   SessionStateEvent,
+  SessionTurnRecord,
 } from "@shared/types";
 
 /** One Channel per agentId, fanned out to however many onData callbacks are registered. */
@@ -139,6 +140,14 @@ export const tauriApi: AgentOfficeApi = {
 
   async openInVscode(path) {
     await invoke(Commands.openInVscode, { path });
+  },
+
+  appendSessionTurn(record: SessionTurnRecord) {
+    void invoke(Commands.appendSessionTurn, { record }); // fire-and-forget
+  },
+
+  async loadSessionTurns() {
+    return await invoke(Commands.loadSessionTurns);
   },
 
   onData(agentId, cb) {

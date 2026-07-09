@@ -181,6 +181,29 @@ describe("App shell", () => {
     expect(useAppStore.getState().modal).toEqual({ kind: "profile-create" });
   });
 
+  it("전원 퇴근 시에만 소등 오버레이(.office-lights-off)를 렌더한다", () => {
+    const { container } = render(<App />);
+    expect(container.querySelector(".office-lights-off")).toBeNull(); // 빈 새 사무실은 소등 안 함
+
+    act(() => {
+      useAppStore.getState().addAgent({
+        id: "a1",
+        name: "Agent",
+        role: "eng",
+        note: "",
+        seed: "seed-a1",
+        createdAt: Date.now(),
+        deskIndex: 0,
+      });
+    });
+    expect(container.querySelector(".office-lights-off")).toBeNull(); // 근무 중 -> 미소등
+
+    act(() => {
+      useAppStore.getState().clockOut("a1");
+    });
+    expect(container.querySelector(".office-lights-off")).not.toBeNull(); // 전원 퇴근 -> 소등
+  });
+
   it("opens the terminal overlay when an agent is created (activeTerminalAgentId set on addAgent+openTerminal flow)", () => {
     // addAgent alone doesn't open the overlay (that's openTerminal's job,
     // e.g. via an office-canvas click) -- confirm the overlay reacts to the

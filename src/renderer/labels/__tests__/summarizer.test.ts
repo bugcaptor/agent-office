@@ -3,6 +3,11 @@
 // 요약기: 첫 프롬프트 → goal+current 2호출, 캐시, stale 폐기,
 // claude-not-found 영구 비활성, 실패 백오프. summarizeFn/시계 전부 주입.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// 연속 prompt는 이전 턴을 정산하므로 appendSessionTurn이 호출된다 — 실
+// tauriApi(invoke)를 타지 않도록 모킹(다른 시간추적 테스트와 동일 컨벤션).
+vi.mock("../../ipc/tauriApi", () => ({ tauriApi: { appendSessionTurn: vi.fn() } }));
+
 import { useAppStore } from "../../store/appStore";
 import {
   CURRENT_SYSTEM_PROMPT,

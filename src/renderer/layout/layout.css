@@ -41,6 +41,25 @@ body {
    document order and every other layer declares z-index >= 10, so it always
    paints beneath them. */
 
+/* Layer 0.4 (z:3) -- 전원 퇴근 시 사무실 소등 오버레이. 캔버스 위, 라벨/UI
+   아래. 클릭은 통과(pointer-events:none). */
+.office-lights-off {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 5, 10, 0.72);
+}
+.office-lights-off-label {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  opacity: 0.75;
+}
+
 /* Layer 1 (z:10) -- UI chrome. `pointer-events: none` on the container so
    empty space passes clicks through to the office canvas; only the bars and
    ticker cards opt back in. */

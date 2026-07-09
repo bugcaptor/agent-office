@@ -76,6 +76,16 @@ describe("useSessionTimeRows", () => {
     expect(result.current[0].turnStartedAt).toBe(1000);
   });
 
+  it("퇴근한(clockedOut) 에이전트는 행에서 제외한다", () => {
+    act(() => {
+      useAppStore.getState().addAgent(mkProfile({ id: "a1", name: "Alpha" }));
+      useAppStore.getState().addAgent(mkProfile({ id: "a2", name: "Beta" }));
+      useAppStore.getState().clockOut("a1");
+    });
+    const { result } = renderHook(() => useSessionTimeRows());
+    expect(result.current.map((r) => r.agentId)).toEqual(["a2"]);
+  });
+
   it("falls back to the id as name when no agent profile exists", () => {
     // Seed timeTracking for an id that has no profile (agents record empty),
     // and put the id in agentOrder directly to exercise the `?? id` fallback.
