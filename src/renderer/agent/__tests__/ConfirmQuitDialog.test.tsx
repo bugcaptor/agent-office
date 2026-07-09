@@ -48,7 +48,7 @@ describe("ConfirmQuitDialog", () => {
     expect(screen.getByText("종료 확인")).toBeTruthy();
     expect(
       screen.getByText(
-        "진행 중인 작업이 있습니다. 지금 종료하면 실행 중인 세션이 모두 중단됩니다."
+        "아직 퇴근하지 않은 에이전트가 있습니다. 지금 종료하면 실행 중인 세션이 모두 중단됩니다."
       )
     ).toBeTruthy();
   });
