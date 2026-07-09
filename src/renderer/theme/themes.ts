@@ -24,7 +24,7 @@ export const CSS_TOKEN_KEYS = [
   "--text",
   "--text-dim",
 ] as const;
-export type CssTokenKey = (typeof CSS_TOKEN_KEYS)[number];
+type CssTokenKey = (typeof CSS_TOKEN_KEYS)[number];
 
 /** TileRenderer가 소비하는 타일 팔레트 키 전부(구 PAL 상수의 키셋). */
 export const TILE_PALETTE_KEYS = [
@@ -47,7 +47,7 @@ export const TILE_PALETTE_KEYS = [
   "laptopLid",
   "laptopBody",
 ] as const;
-export type TilePaletteKey = (typeof TILE_PALETTE_KEYS)[number];
+type TilePaletteKey = (typeof TILE_PALETTE_KEYS)[number];
 
 /** 타일 색만(0xRRGGBB). TileRenderer의 생성자 인자 타입. */
 export type OfficeTilePalette = Record<TilePaletteKey, number>;

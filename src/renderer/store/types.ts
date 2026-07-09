@@ -17,7 +17,7 @@ import type {
 } from "@shared/types";
 import { notificationType } from "@shared/types";
 
-export type { AgentProfile, NotificationEvent, NotificationType, PersistedState, SessionStatus };
+export type { AgentProfile, NotificationEvent, PersistedState, SessionStatus };
 export { notificationType };
 
 /**

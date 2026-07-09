@@ -51,7 +51,7 @@ export function appearanceKey(p: AgentProfile): string {
 }
 
 /** "starting"/"running" = actively working (character sits at its desk); "exited"/"disposed" = inactive (heads to the break room). */
-export function isSessionActive(state: SessionState): boolean {
+function isSessionActive(state: SessionState): boolean {
   return state === "starting" || state === "running";
 }
 

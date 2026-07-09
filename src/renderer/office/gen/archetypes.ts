@@ -18,11 +18,11 @@ import {
 } from "./parts";
 import {
   composeSpriteSheet, composeFramesSheet, defaultCanvasFactory,
-  type CharacterLayers, type FrameName, type FrameGrids,
+  type CharacterLayers, type FrameGrids,
   type SpriteSheetResult, type CanvasFactory,
 } from "./compositor";
 
-export interface ArchetypePromptDescriptor {
+interface ArchetypePromptDescriptor {
   humanoid: boolean;  // true -> "bishoujo"/"anime face" 문구 사용
   subject: string;    // 주제 서술자(예: "a green-skinned tusked orc"). human은 "".
   colorHints: string; // 색 힌트 라인(아키타입별 라벨)
@@ -32,7 +32,7 @@ export type ArchetypeSheet =
   | { kind: "layers"; layers: CharacterLayers }
   | { kind: "frames"; frames: FrameGrids };
 
-export interface ArchetypeBuild {
+interface ArchetypeBuild {
   sheet: ArchetypeSheet;
   descriptor: { hair: string; clothes: string; accessory: string };
 }
@@ -45,12 +45,12 @@ export interface Archetype {
   promptDescriptor(pal: CharacterPalette): ArchetypePromptDescriptor;
 }
 
-export function hex(rgb: number): string {
+function hex(rgb: number): string {
   return "#" + (rgb & 0xffffff).toString(16).padStart(6, "0");
 }
 
 /** 휴머노이드 공통 layers 조립(파츠 3종 픽 + 선택적 overlay/underlay). */
-export function humanoidBuild(
+function humanoidBuild(
   rng: Rng, overlay?: CharacterLayers["overlay"], underlay?: CharacterLayers["underlay"],
 ): ArchetypeBuild {
   const hair = rng.pick(HAIR_KEYS);
@@ -376,5 +376,3 @@ export function composeArchetypeSheet(
     ? composeSpriteSheet(sheet.layers, pal, factory)
     : composeFramesSheet(sheet.frames, pal, factory);
 }
-
-export type { FrameName };

@@ -35,8 +35,6 @@ export const Commands = {
   loadSessionTurns: "load_session_turns",
 } as const;
 
-export type CommandName = (typeof Commands)[keyof typeof Commands];
-
 /**
  * `emit()`/`listen()` event names. PTY output (highest-traffic stream) uses a
  * `Channel` instead, for ordering guarantees and to avoid broadcast overhead;
@@ -49,5 +47,3 @@ export const Events = {
   notificationCleared: "notification-cleared",
   activityEvent: "activity-event",
 } as const;
-
-export type EventName = (typeof Events)[keyof typeof Events];

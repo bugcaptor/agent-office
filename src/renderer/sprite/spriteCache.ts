@@ -48,7 +48,7 @@ export function sheetCanvasDims(w: number, h: number): { w: number; h: number } 
 
 /** base64 PNG → 4N×N 캔버스로 디코드. 저장물은 정규화된 시트이므로 원본 해상도를
  *  보존하되(N=min(h,256)) 256 초과 시 nearest 다운스케일, 예상 밖 크기는 64×16 폴백. */
-export function decodeSheet(b64: string): Promise<CanvasImageSource> {
+function decodeSheet(b64: string): Promise<CanvasImageSource> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {

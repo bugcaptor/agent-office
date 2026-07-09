@@ -27,7 +27,7 @@ export interface AgentTurnState {
   turns: number;
 }
 
-export type TurnInputKind = "prompt" | "tool" | "notification" | "stop" | "settle";
+type TurnInputKind = "prompt" | "tool" | "notification" | "stop" | "settle";
 export interface TurnInput {
   kind: TurnInputKind;
   /** Backend now_ms() epoch ms. */

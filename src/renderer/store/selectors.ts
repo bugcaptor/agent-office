@@ -43,8 +43,6 @@ export const useRunningCount = () =>
 export const usePendingCount = () =>
   useAppStore((s) => new Set(s.notifications.map((n) => n.agentId)).size);
 
-export const useActiveAgentId = () => useAppStore((s) => s.activeTerminalAgentId);
-
 export interface SessionTimeRow {
   agentId: string;
   name: string;
