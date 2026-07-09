@@ -59,6 +59,9 @@ export class OfficeWorld {
   private entities = new Map<string, CharacterEntity>();
   private appearanceKeys = new Map<string, string>();
   private sessionActive = new Map<string, boolean>();
+  // 탕비실 타일 예약(tileKey) — 전 엔티티 공유. 쉬는 캐릭터가 같은 타일에
+  // 겹쳐 서지 않게 한다. 엔티티가 예약/해제하고(destroy 포함) 여기서는 소유만.
+  private breakReservations = new Set<string>();
   private unsub: Array<() => void> = [];
 
   constructor(private o: OfficeWorldOptions) {
@@ -102,7 +105,7 @@ export class OfficeWorld {
 
       const assets = createCharacterAssets(p);
       const rand = mulberry32(hashStringToSeed(p.id) ^ MOVEMENT_RNG_SALT);
-      const entity = new CharacterEntity(p.id, assets, slot.seat, this.o.map, rand);
+      const entity = new CharacterEntity(p.id, assets, slot.seat, this.o.map, rand, this.breakReservations);
       entity.setSessionActive(this.sessionActive.get(p.id) ?? false);
       entity.onClicked((id) => this.o.bus.emitAgentClicked(id));
       entity.onHover((id, x, y) => this.o.bus.emitAgentHoverChanged(id, x, y));

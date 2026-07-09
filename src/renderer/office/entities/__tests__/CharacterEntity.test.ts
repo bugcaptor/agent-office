@@ -298,6 +298,124 @@ describe("CharacterEntity: FSM + movement wiring (break-room round trip, OFFICE_
   });
 });
 
+describe("CharacterEntity: break-room tile reservations (no overlap while resting)", () => {
+  const feetOf = (t: { tx: number; ty: number }) => {
+    const c = tileCenterPx(t);
+    return { x: c.x, y: c.y + TILE_SIZE / 2 };
+  };
+
+  it("two characters sharing a reservation set never rest on the same tile, even with colliding rand streams", () => {
+    const reservations = new Set<string>();
+    // Both rand streams would pick (11, 10) first (pickBreakTarget draws 0, 0).
+    const a = new CharacterEntity(
+      "agent-a",
+      makeTestCharacterAssets(),
+      OFFICE_SEAT,
+      OFFICE_MAP,
+      queueRand([0.5, 0, 0]),
+      reservations,
+    );
+    // b's first attempt (0, 0) -> (11, 10) is reserved by a; the retry draws
+    // (0.2, 0) -> tx = 11 + floor(0.2 * 7) = 12 -> rests at (12, 10).
+    const b = new CharacterEntity(
+      "agent-b",
+      makeTestCharacterAssets(),
+      { tx: 3, ty: 3 },
+      OFFICE_MAP,
+      queueRand([0.5, 0, 0, 0.2, 0]),
+      reservations,
+    );
+    a.update(8000); // linger + full walk in one large-dt tick -> rests at (11, 10)
+    b.update(8000);
+    expect({ x: a.root.x, y: a.root.y }).toEqual(feetOf({ tx: 11, ty: 10 }));
+    expect({ x: b.root.x, y: b.root.y }).toEqual(feetOf({ tx: 12, ty: 10 }));
+    expect(reservations).toEqual(new Set(["11,10", "12,10"]));
+  });
+
+  it("reserves the target tile as soon as it is picked (before arrival), so a walker also blocks it", () => {
+    const reservations = new Set<string>();
+    const e = new CharacterEntity(
+      "agent-a",
+      makeTestCharacterAssets(),
+      OFFICE_SEAT,
+      OFFICE_MAP,
+      queueRand([0.5, 0, 0]),
+      reservations,
+    );
+    e.update(2001); // crosses the linger with a small dt -> picked (11, 10), still walking
+    expect(reservations.has("11,10")).toBe(true);
+  });
+
+  it("moves its reservation when strolling to another break-room tile", () => {
+    const reservations = new Set<string>();
+    // Tick 1: [0.5] ctx + [0, 0] pick -> rests at (11, 10).
+    // Tick 2: [0] ctx draw < stroll probability for dt=8000 (~0.39) -> stroll;
+    //         [0.2, 0] pick -> (12, 10) (own tile (11, 10) is excluded as reserved).
+    const e = new CharacterEntity(
+      "agent-a",
+      makeTestCharacterAssets(),
+      OFFICE_SEAT,
+      OFFICE_MAP,
+      queueRand([0.5, 0, 0, 0, 0.2, 0]),
+      reservations,
+    );
+    e.update(8000);
+    expect(reservations).toEqual(new Set(["11,10"]));
+    e.update(8000);
+    expect(reservations).toEqual(new Set(["12,10"]));
+  });
+
+  it("releases its break tile when heading back to the desk", () => {
+    const reservations = new Set<string>();
+    const e = new CharacterEntity(
+      "agent-a",
+      makeTestCharacterAssets(),
+      OFFICE_SEAT,
+      OFFICE_MAP,
+      queueRand([0.5, 0, 0]),
+      reservations,
+    );
+    e.update(8000); // rests at (11, 10)
+    e.setSessionActive(true);
+    e.update(8000); // returns to the seat
+    expect(reservations.size).toBe(0);
+  });
+
+  it("releases its break tile on destroy", () => {
+    const reservations = new Set<string>();
+    const e = new CharacterEntity(
+      "agent-a",
+      makeTestCharacterAssets(),
+      OFFICE_SEAT,
+      OFFICE_MAP,
+      queueRand([0.5, 0, 0]),
+      reservations,
+    );
+    e.update(8000);
+    expect(reservations.size).toBe(1);
+    e.destroy();
+    expect(reservations.size).toBe(0);
+  });
+
+  it("stays seated (and retries later) when every break-room tile is reserved", () => {
+    const reservations = new Set<string>();
+    for (let ty = 10; ty < 12; ty++) for (let tx = 11; tx < 18; tx++) reservations.add(`${tx},${ty}`);
+    const e = new CharacterEntity(
+      "agent-a",
+      makeTestCharacterAssets(),
+      OFFICE_SEAT,
+      OFFICE_MAP,
+      () => 0.4,
+      reservations,
+    );
+    const seatX = e.root.x;
+    const seatY = e.root.y;
+    e.update(8000); // wants a break, but the room is full -> stays at its own (unique) seat
+    expect(e.root.x).toBe(seatX);
+    expect(e.root.y).toBe(seatY);
+  });
+});
+
 describe("CharacterEntity: idle animation", () => {
   it("swaps between the two idle frames over time while stationary", () => {
     const assets = makeTestCharacterAssets();

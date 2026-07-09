@@ -17,6 +17,9 @@ export const tileCenterPx = (p: GridPos) => ({
   y: p.ty * TILE_SIZE + TILE_SIZE / 2,
 });
 
+/** 타일 점유 집합(Set<string>)에서 쓰는 키. */
+export const tileKey = (tx: number, ty: number): string => `${tx},${ty}`;
+
 // Floor와 Rug(러그 = 바닥 마감재)는 걸을 수 있고, 그 외(벽/데스크/화분/
 // 카운터/테이블)는 통행 불가.
 export const isWalkable = (m: OfficeMap, tx: number, ty: number): boolean =>
@@ -42,13 +45,21 @@ export function pickWanderTarget(m: OfficeMap, near: GridPos, rand: () => number
  * 타일이라는 계약이 있으므로 보통 첫 시도에 성공하지만, 계약이 깨진
  * 경우를 대비해 pickWanderTarget과 같은 재시도(rejection sampling) 방식을
  * 쓰고 실패 시 null을 반환한다.
+ *
+ * `occupied`(tileKey 집합)에 든 타일은 다른 캐릭터가 예약한 자리이므로
+ * 후보에서 제외한다 — 쉬는 캐릭터끼리 같은 타일에 겹쳐 서지 않게 하는
+ * 유일한 방어선. 전부 점유라 실패하면 null(호출자가 다음 틱에 재시도).
  */
-export function pickBreakTarget(m: OfficeMap, rand: () => number): { x: number; y: number } | null {
+export function pickBreakTarget(
+  m: OfficeMap,
+  rand: () => number,
+  occupied?: ReadonlySet<string>,
+): { x: number; y: number } | null {
   const rect = BREAK_ROOM_RECT;
   for (let i = 0; i < 12; i++) {
     const tx = rect.x + Math.floor(rand() * rect.w);
     const ty = rect.y + Math.floor(rand() * rect.h);
-    if (isWalkable(m, tx, ty)) return tileCenterPx({ tx, ty });
+    if (isWalkable(m, tx, ty) && !occupied?.has(tileKey(tx, ty))) return tileCenterPx({ tx, ty });
   }
   return null;
 }

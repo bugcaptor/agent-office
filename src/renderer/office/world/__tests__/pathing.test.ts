@@ -9,7 +9,7 @@
 // are exercised deterministically.
 
 import { describe, expect, it } from "vitest";
-import { isWalkable, pickBreakTarget, pickWanderTarget, tileCenterPx } from "../pathing";
+import { isWalkable, pickBreakTarget, pickWanderTarget, tileCenterPx, tileKey } from "../pathing";
 import { BREAK_ROOM_RECT, OFFICE_MAP, Tile, TILE_SIZE, type OfficeMap } from "../../map/mapData";
 
 const makeMap = (rows: string[]): OfficeMap => {
@@ -124,6 +124,30 @@ describe("pickBreakTarget", () => {
       seen.add(`${Math.floor(target!.x / TILE_SIZE)},${Math.floor(target!.y / TILE_SIZE)}`);
     }
     expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it("skips tiles present in the occupied set and lands on a free one", () => {
+    // First attempt draws (0, 0) -> (11, 10), which is occupied; second
+    // attempt draws (0.2, 0) -> (12, 10), free -> returned.
+    const occupied = new Set([tileKey(11, 10)]);
+    const q = [0, 0, 0.2, 0];
+    const rand = () => (q.length ? q.shift()! : 0.999);
+    const target = pickBreakTarget(OFFICE_MAP, rand, occupied);
+    expect(target).not.toBeNull();
+    expect(Math.floor(target!.x / TILE_SIZE)).toBe(12);
+    expect(Math.floor(target!.y / TILE_SIZE)).toBe(10);
+  });
+
+  it("returns null when every break-room tile is occupied", () => {
+    const occupied = new Set<string>();
+    for (let ty = BREAK_ROOM_RECT.y; ty < BREAK_ROOM_RECT.y + BREAK_ROOM_RECT.h; ty++) {
+      for (let tx = BREAK_ROOM_RECT.x; tx < BREAK_ROOM_RECT.x + BREAK_ROOM_RECT.w; tx++) {
+        occupied.add(tileKey(tx, ty));
+      }
+    }
+    let i = 0;
+    const rand = () => ((i += 7) % 20) / 20; // spread of values, all attempts hit occupied tiles
+    expect(pickBreakTarget(OFFICE_MAP, rand, occupied)).toBeNull();
   });
 
   it("falls back to null when the rect has no walkable tile within the retry budget", () => {

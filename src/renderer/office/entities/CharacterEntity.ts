@@ -30,7 +30,7 @@ import { Container, Rectangle, Sprite } from "pixi.js";
 
 import type { CharacterAssets } from "../gen/characterFactory";
 import { OfficeMap, TILE_SIZE } from "../map/mapData";
-import { GridPos, pickBreakTarget, tileCenterPx } from "../world/pathing";
+import { GridPos, pickBreakTarget, tileCenterPx, tileKey } from "../world/pathing";
 import { BehaviorState, stepBehavior } from "./behaviorFsm";
 import { ExclamationOverlay } from "./ExclamationOverlay";
 import { ThinkingOverlay } from "./ThinkingOverlay";
@@ -63,6 +63,8 @@ export class CharacterEntity {
   private hasPending = false;
   private sessionActive = false;
   private spriteScale = 1; // 16 / cellSize, 좌우 반전과 결합할 배율 크기.
+  // 이 캐릭터가 breakReservations에 넣어 둔 탕비실 타일 키(예약 중이면 non-null).
+  private reservedBreakKey: string | null = null;
 
   // "..." 말풍선 점멸 사이클 상태 (dt 누적 기반, Date.now 사용 안 함).
   private thinkHidden = true;
@@ -75,6 +77,9 @@ export class CharacterEntity {
     private seat: GridPos,
     private map: OfficeMap,
     private rand: () => number,
+    // 월드가 소유한 탕비실 타일 예약 집합(tileKey). 모든 캐릭터가 공유해
+    // 쉬는 타일이 겹치지 않게 한다. 미주입 시(단독 테스트 등) 예약 없이 동작.
+    private breakReservations?: Set<string>,
   ) {
     this.sprite = new Sprite(assets.idle[0]);
     this.spriteScale = APPARENT_CELL / this.assets.cellSize;
@@ -188,12 +193,14 @@ export class CharacterEntity {
   }
 
   destroy(): void {
+    this.releaseBreakTile();
     this.overlay.destroy();
     this.thinkOverlay.destroy();
     this.root.destroy({ children: true });
   }
 
   private setSeatTarget(): void {
+    this.releaseBreakTile();
     const p = tileCenterPx(this.seat);
     this.targetPx = { x: p.x, y: p.y + TILE_SIZE / 2 };
     this.targetKind = "seat";
@@ -201,11 +208,22 @@ export class CharacterEntity {
 
   /** Returns false (and leaves targetPx/targetKind untouched) if no reachable break-room tile was found. */
   private setBreakTarget(): boolean {
-    const p = pickBreakTarget(this.map, this.rand);
+    const p = pickBreakTarget(this.map, this.rand, this.breakReservations);
     if (!p) return false;
+    // 도착 전(목적지 선정 시점)부터 예약해, 같은 타일로 동시에 걸어가는
+    // 경합까지 막는다. 이전 예약(산책 전 타일)은 이때 해제.
+    this.releaseBreakTile();
+    this.reservedBreakKey = tileKey(Math.floor(p.x / TILE_SIZE), Math.floor(p.y / TILE_SIZE));
+    this.breakReservations?.add(this.reservedBreakKey);
     this.targetPx = { x: p.x, y: p.y + TILE_SIZE / 2 };
     this.targetKind = "break";
     return true;
+  }
+
+  private releaseBreakTile(): void {
+    if (this.reservedBreakKey === null) return;
+    this.breakReservations?.delete(this.reservedBreakKey);
+    this.reservedBreakKey = null;
   }
 
   private moveToward(dt: number): void {
