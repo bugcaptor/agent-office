@@ -107,6 +107,25 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect(profile.cwd).toBe("/tmp/proj");
   });
 
+  it("AgentProfile / PersistedState with startupCommand", () => {
+    const json =
+      '{"agents":[{"id":"p1","name":"Ada","role":"backend","note":"",' +
+      '"seed":"abc123","createdAt":1720000000003,"deskIndex":0,' +
+      '"startupCommand":"source ./init.sh"}],"version":1}';
+    const parsed: PersistedState = JSON.parse(json);
+    const profile: AgentProfile = parsed.agents[0];
+    expect(profile.startupCommand).toBe("source ./init.sh");
+  });
+
+  it("AgentProfile without startupCommand (backward compat)", () => {
+    const json =
+      '{"agents":[{"id":"p1","name":"Ada","role":"backend","note":"",' +
+      '"seed":"abc123","createdAt":1720000000003,"deskIndex":0}],"version":1}';
+    const parsed: PersistedState = JSON.parse(json);
+    const profile: AgentProfile = parsed.agents[0];
+    expect(profile.startupCommand).toBeUndefined();
+  });
+
   it("ActivityEvent without text (tool / legacy)", () => {
     const json = '{"agentId":"a1","sessionId":"s1","kind":"tool","at":1720000000004}';
     const parsed: ActivityEvent = JSON.parse(json);

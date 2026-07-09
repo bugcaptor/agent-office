@@ -117,6 +117,9 @@ pub struct CreateSessionRequest {
     /// None이면 자동 선택(`session::shells::resolve`가 pwsh > powershell
     /// 순으로 고른다). Windows 전용 기능 -- 다른 플랫폼에서는 무시된다.
     pub shell: Option<String>,
+    /// 세션이 Running으로 전이한 뒤 셸 stdin에 `{command}\n`으로 주입할 시작 명령어.
+    /// None/공백이면 미주입. 셸 문법(bat/sh/pwsh 등)은 사용자가 선택 셸에 맞게 작성.
+    pub startup_command: Option<String>,
     /// 동결 API opts에는 없음 → 프런트 어댑터는 항상 미지정(=false). 기본 false:
     /// 세션은 자동 실행 없이 셸만 띄운다. 그래도 셸이 `claude` 래퍼를 정의하므로
     /// 사용자가 그냥 `claude`만 입력해도 투명하게 `--settings
@@ -190,6 +193,10 @@ pub struct AgentProfile {
     /// 자동 선택(session::shells::resolve). Windows 전용 기능.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub shell: Option<String>,
+    /// 새 세션이 뜰 때마다 셸 stdin에 주입할 시작 명령어. 없으면 미주입.
+    /// 예: "source ./init.sh", "mysetup.bat". 셸 문법은 사용자 책임.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub startup_command: Option<String>,
 }
 
 /// 영속 상태. version은 리터럴 1.
@@ -497,6 +504,7 @@ mod tests {
             sprite_updated_at: None,
             archetype: None,
             shell: None,
+            startup_command: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"cwd\":\"/tmp/proj\""));
@@ -520,6 +528,7 @@ mod tests {
             sprite_updated_at: None,
             archetype: None,
             shell: None,
+            startup_command: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("cwd"));
@@ -554,6 +563,7 @@ mod tests {
             sprite_updated_at: None,
             archetype: None,
             shell: None,
+            startup_command: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"appearance\":\"short black hair, glasses\""));
@@ -578,6 +588,7 @@ mod tests {
             sprite_updated_at: None,
             archetype: None,
             shell: None,
+            startup_command: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("appearance"));
@@ -613,6 +624,7 @@ mod tests {
             sprite_updated_at: Some(1_720_000_000_888),
             archetype: None,
             shell: None,
+            startup_command: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"spriteRequest\":\"red cloak wizard\""));
@@ -637,6 +649,7 @@ mod tests {
             sprite_updated_at: None,
             archetype: None,
             shell: None,
+            startup_command: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("spriteRequest"));
@@ -660,6 +673,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: Some("orc".into()),
             shell: None,
+            startup_command: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"archetype\":\"orc\""));
@@ -673,6 +687,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None,
             shell: None,
+            startup_command: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("archetype"));
@@ -693,7 +708,7 @@ mod tests {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
-            archetype: None, shell: Some("git-bash".into()),
+            archetype: None, shell: Some("git-bash".into()), startup_command: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"shell\":\"git-bash\""));
@@ -705,7 +720,7 @@ mod tests {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
-            archetype: None, shell: None,
+            archetype: None, shell: None, startup_command: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("shell"));

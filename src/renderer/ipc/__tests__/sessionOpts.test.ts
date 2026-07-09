@@ -25,7 +25,19 @@ describe("sessionOptsFor", () => {
     expect(sessionOptsFor({ cwd: "/a/b", shell: "wsl" })).toEqual({ cwd: "/a/b", shell: "wsl" });
   });
 
-  it("omits empty-string cwd/shell (falsy)", () => {
-    expect(sessionOptsFor({ cwd: "", shell: "" })).toBeUndefined();
+  it("includes only startupCommand when only startupCommand is set", () => {
+    expect(sessionOptsFor({ startupCommand: "source ./init.sh" })).toEqual({
+      startupCommand: "source ./init.sh",
+    });
+  });
+
+  it("includes cwd, shell and startupCommand when all are set", () => {
+    expect(
+      sessionOptsFor({ cwd: "/a/b", shell: "wsl", startupCommand: "mysetup.bat" }),
+    ).toEqual({ cwd: "/a/b", shell: "wsl", startupCommand: "mysetup.bat" });
+  });
+
+  it("omits empty-string cwd/shell/startupCommand (falsy)", () => {
+    expect(sessionOptsFor({ cwd: "", shell: "", startupCommand: "" })).toBeUndefined();
   });
 });

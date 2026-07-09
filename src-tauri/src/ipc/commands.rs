@@ -27,6 +27,7 @@ pub struct SessionOpts {
     pub rows: Option<u16>,
     pub cwd: Option<String>,
     pub shell: Option<String>,
+    pub startup_command: Option<String>,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -42,6 +43,7 @@ pub async fn create_session(
         rows: o.rows,
         cwd: o.cwd,
         shell: o.shell,
+        startup_command: o.startup_command,
         autostart_claude: None, // 항상 기본 false (SessionManager::create의 unwrap_or(false))
     })
 }
@@ -535,6 +537,7 @@ mod tests {
             rows: None,
             cwd: None,
             shell: None,
+            startup_command: None,
             autostart_claude: None,
         }
     }
@@ -559,6 +562,7 @@ mod tests {
                 rows: Some(30),
                 cwd: None,
                 shell: None,
+                startup_command: None,
                 autostart_claude: None, // command body always passes None -> manager defaults to false
             })
             .unwrap();
@@ -575,7 +579,13 @@ mod tests {
     // 패턴이지만 opts.shell 값이 유실되지 않는지가 회귀 지점.
     #[test]
     fn create_session_opts_shell_flows_into_create_session_request() {
-        let opts = SessionOpts { cols: None, rows: None, cwd: None, shell: Some("git-bash".into()) };
+        let opts = SessionOpts {
+            cols: None,
+            rows: None,
+            cwd: None,
+            shell: Some("git-bash".into()),
+            startup_command: None,
+        };
         // create_session 본문과 동일한 매핑.
         let request = CreateSessionRequest {
             agent_id: "a1".into(),
@@ -583,9 +593,33 @@ mod tests {
             rows: opts.rows,
             cwd: opts.cwd,
             shell: opts.shell.clone(),
+            startup_command: opts.startup_command.clone(),
             autostart_claude: None,
         };
         assert_eq!(request.shell, Some("git-bash".to_string()));
+    }
+
+    // create_session 본문이 opts.startup_command를 유실 없이 전달하는지 검증
+    // (shell 회귀 테스트와 동일 패턴 -- sessionOptsFor -> SessionOpts -> 요청).
+    #[test]
+    fn create_session_opts_startup_command_flows_into_create_session_request() {
+        let opts = SessionOpts {
+            cols: None,
+            rows: None,
+            cwd: None,
+            shell: None,
+            startup_command: Some("source ./init.sh".into()),
+        };
+        let request = CreateSessionRequest {
+            agent_id: "a1".into(),
+            cols: opts.cols,
+            rows: opts.rows,
+            cwd: opts.cwd,
+            shell: opts.shell.clone(),
+            startup_command: opts.startup_command.clone(),
+            autostart_claude: None,
+        };
+        assert_eq!(request.startup_command, Some("source ./init.sh".to_string()));
     }
 
     // ---- list_available_shells ----
@@ -730,6 +764,7 @@ mod tests {
                 sprite_updated_at: None,
                 archetype: None,
                 shell: None,
+                startup_command: None,
             }],
             version: 1,
         };
@@ -774,6 +809,7 @@ mod tests {
                 sprite_updated_at: None,
                 archetype: None,
                 shell: None,
+                startup_command: None,
             }],
             version: 1,
         };
@@ -825,6 +861,7 @@ mod tests {
                 sprite_updated_at: None,
                 archetype: None,
                 shell: None,
+                startup_command: None,
             }],
             version: 1,
         };

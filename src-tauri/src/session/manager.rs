@@ -274,6 +274,19 @@ impl SessionManager {
             let _ = session.writer.lock().unwrap().write_all(line.as_bytes());
         }
 
+        // 사용자 지정 시작 명령어: 세션이 실제로 Running으로 전이한 경우에만, 트림 후
+        // 빈 값이 아니면 셸 stdin에 한 줄 주입한다. autostart_claude와 동일한 stdin
+        // 주입 구조 — autostart는 실무상 항상 false라 두 주입이 겹칠 일은 없다.
+        if started {
+            if let Some(cmd) = req.startup_command.as_deref() {
+                let cmd = cmd.trim();
+                if !cmd.is_empty() {
+                    let line = format!("{cmd}\n");
+                    let _ = session.writer.lock().unwrap().write_all(line.as_bytes());
+                }
+            }
+        }
+
         let state = *session.state.lock().unwrap();
         Ok(CreateSessionResult { session_id, state })
     }
@@ -492,6 +505,7 @@ mod tests {
             rows: None,
             cwd: None,
             shell: None,
+            startup_command: None,
             autostart_claude: autostart,
         }
     }
@@ -503,6 +517,7 @@ mod tests {
             rows: None,
             cwd,
             shell: None,
+            startup_command: None,
             autostart_claude: Some(false),
         }
     }
@@ -514,6 +529,20 @@ mod tests {
             rows: None,
             cwd: None,
             shell,
+            startup_command: None,
+            autostart_claude: Some(false),
+        }
+    }
+
+    fn req_with_startup(agent_id: &str, startup_command: Option<String>) -> CreateSessionRequest {
+        CreateSessionRequest {
+            agent_id: agent_id.into(),
+            cols: None,
+            rows: None,
+            cwd: None,
+            shell: None,
+            startup_command,
+            // autostart OFF: startup_command 주입만 단독 검증(두 주입이 겹치지 않게).
             autostart_claude: Some(false),
         }
     }
@@ -628,6 +657,43 @@ mod tests {
             "unexpected stdin injection: {written:?}"
         );
         assert!(written.contains(&format!("{}.settings.json", created.session_id)));
+
+        cleanup(&ctl, &dir);
+    }
+
+    // ---- 시작 명령어(startup_command) stdin 주입 ----
+
+    #[tokio::test]
+    async fn create_startup_command_injects_trimmed_line_to_stdin() {
+        let (mgr, _events, ctl, dir) = build();
+        mgr.create(req_with_startup("a1", Some("source ./init.sh".into()))).unwrap();
+
+        assert_eq!(
+            ctl.writes_utf8(),
+            "source ./init.sh\n",
+            "startup_command must be injected verbatim followed by a newline",
+        );
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
+    async fn create_startup_command_blank_skips_injection() {
+        let (mgr, _events, ctl, dir) = build();
+        // 공백만 있는 명령어 -> 트림 후 빈 값 -> 주입하지 않는다.
+        mgr.create(req_with_startup("a1", Some("   ".into()))).unwrap();
+
+        assert_eq!(ctl.writes_utf8(), "", "blank startup_command must not write to stdin");
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
+    async fn create_startup_command_none_skips_injection() {
+        let (mgr, _events, ctl, dir) = build();
+        mgr.create(req_with_startup("a1", None)).unwrap();
+
+        assert_eq!(ctl.writes_utf8(), "", "absent startup_command must not write to stdin");
 
         cleanup(&ctl, &dir);
     }
@@ -1327,6 +1393,7 @@ mod real_pty_smoke {
                 rows: Some(24),
                 cwd: Some(cwd_dir.to_string_lossy().into_owned()),
                 shell: None,
+                startup_command: None,
                 autostart_claude: Some(false),
             })
             .expect("real PTY spawn should succeed");

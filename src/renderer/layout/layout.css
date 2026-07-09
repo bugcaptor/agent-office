@@ -180,6 +180,135 @@ body {
   max-height: calc(100dvh - var(--unit) * 8);
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* ── 프로필 편집 폼 리디자인: 고정 폭 + 세로 스택 + 섹션 간 여백 ── */
+  width: 560px;
+  max-width: calc(100vw - var(--unit) * 10);
+  padding: calc(var(--unit) * 5) calc(var(--unit) * 6);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 5);
+}
+
+/* ── 프로필 다이얼로그 헤더: 타이틀 + 한 줄 설명 ── */
+.profile-dialog-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--unit);
+}
+.profile-dialog .pixel-title {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: 1px;
+}
+.profile-dialog-sub {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+/* ── 폼 섹션: 소제목(라인 장식) + 필드 스택 ── */
+.profile-dialog .form-section {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 3);
+}
+.profile-dialog .form-section-title {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 2);
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-weight: normal;
+  letter-spacing: 2px;
+}
+/* 소제목 오른쪽으로 뻗는 픽셀 구분선 */
+.profile-dialog .form-section-title::after {
+  content: "";
+  flex: 1;
+  height: 2px;
+  background: var(--border-dark);
+  opacity: 0.3;
+}
+
+/* ── 필드: 라벨(위) + 컨트롤(아래) + 선택적 힌트 ── */
+.profile-dialog .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 1);
+  min-width: 0;
+}
+.profile-dialog .form-field > label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--unit);
+}
+.profile-dialog .form-label-text {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  letter-spacing: 1px;
+}
+.profile-dialog .form-hint {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+/* 이름/역할 2단 배치 — 좁은 뷰포트에서는 1단으로 붕괴 */
+.profile-dialog .form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(var(--unit) * 3);
+}
+@media (max-width: 520px) {
+  .profile-dialog .form-row-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── 폼 컨트롤: 픽셀 테마 인셋 박스 (중첩 에디터에는 미적용 — .profile-dialog 스코프) ── */
+.profile-dialog input,
+.profile-dialog textarea,
+.profile-dialog select {
+  box-sizing: border-box;
+  width: 100%;
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 0.88rem;
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--border-dark);
+  border-radius: 0;
+  padding: calc(var(--unit) * 2);
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.08);
+  outline: none;
+}
+.profile-dialog input:focus,
+.profile-dialog textarea:focus,
+.profile-dialog select:focus {
+  border-color: var(--accent);
+  background: var(--bg-panel);
+}
+.profile-dialog input::placeholder,
+.profile-dialog textarea::placeholder {
+  color: var(--text-dim);
+  opacity: 0.65;
+}
+.profile-dialog textarea {
+  resize: vertical;
+  min-height: calc(var(--unit) * 14);
+}
+
+/* ── 액션 행: 구분선 + 우측 정렬(보조 버튼은 좌측으로 밀착) ── */
+.profile-dialog .dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: calc(var(--unit) * 2);
+  padding-top: calc(var(--unit) * 3);
+  border-top: 2px solid var(--border-dark);
+}
+.profile-dialog .dialog-action-aux {
+  margin-right: auto;
 }
 
 /* 설정 폼(첫 실행/설정 다이얼로그 공유): 토글 + 설명 2단 구성 */

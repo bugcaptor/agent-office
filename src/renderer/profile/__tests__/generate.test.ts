@@ -51,6 +51,11 @@ describe("generateDraft", () => {
     expect(draft.shell).toBe("");
   });
 
+  it("initializes startupCommand as an empty string", () => {
+    const draft = generateDraft();
+    expect(draft.startupCommand).toBe("");
+  });
+
   it("varies name/role/note/seed across successive calls (real randomness, not memoized)", () => {
     const seen = new Set<string>();
     for (let i = 0; i < 20; i += 1) {
@@ -151,6 +156,31 @@ describe("draftToProfile shell handling", () => {
     const profile = draftToProfile({ name: "Foo", role: "Bar", note: "note", seed: "seed" }, 0);
     expect(profile.shell).toBeUndefined();
     expect("shell" in profile).toBe(false);
+  });
+});
+
+describe("draftToProfile startupCommand", () => {
+  it("includes trimmed startupCommand when non-empty", () => {
+    const profile = draftToProfile(
+      { name: "Foo", role: "Bar", note: "note", seed: "seed", startupCommand: "  source ./init.sh  " },
+      0,
+    );
+    expect(profile.startupCommand).toBe("source ./init.sh");
+  });
+
+  it("omits the startupCommand field entirely when it is empty after trimming", () => {
+    const profile = draftToProfile(
+      { name: "Foo", role: "Bar", note: "note", seed: "seed", startupCommand: "   " },
+      0,
+    );
+    expect(profile.startupCommand).toBeUndefined();
+    expect("startupCommand" in profile).toBe(false);
+  });
+
+  it("omits the startupCommand field entirely when it was never set", () => {
+    const profile = draftToProfile({ name: "Foo", role: "Bar", note: "note", seed: "seed" }, 0);
+    expect(profile.startupCommand).toBeUndefined();
+    expect("startupCommand" in profile).toBe(false);
   });
 });
 

@@ -195,6 +195,25 @@ describe("random initial values (profile-create)", () => {
     expect(createSession).toHaveBeenCalledWith(id, { cwd: "/a/b" });
   });
 
+  it("passes the trimmed 시작 명령어 value as createSession's startupCommand opt", async () => {
+    const { getByLabelText, getByText } = render(<ProfileDialog />);
+    fireEvent.change(getByLabelText("이름"), { target: { value: "새 에이전트" } });
+    fireEvent.change(getByLabelText("시작 명령어"), { target: { value: "  source ./init.sh  " } });
+
+    await act(async () => {
+      fireEvent.click(getByText("저장"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(useAppStore.getState().modal.kind).toBe("none"));
+
+    const state = useAppStore.getState();
+    const id = state.agentOrder[0];
+    expect(state.agents[id].startupCommand).toBe("source ./init.sh");
+    expect(createSession).toHaveBeenCalledWith(id, { startupCommand: "source ./init.sh" });
+  });
+
   it("calls createSession without a cwd opt when 시작 폴더 is left blank (Task 3)", async () => {
     const { getByLabelText, getByText } = render(<ProfileDialog />);
     fireEvent.change(getByLabelText("이름"), { target: { value: "새 에이전트" } });

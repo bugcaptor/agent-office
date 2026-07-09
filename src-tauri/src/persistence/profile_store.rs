@@ -109,6 +109,7 @@ mod tests {
                 sprite_updated_at: None,
                 archetype: None,
                 shell: None,
+                startup_command: None,
             }],
             version: 1,
         }

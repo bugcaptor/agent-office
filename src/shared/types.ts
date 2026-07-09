@@ -142,6 +142,9 @@ export interface CreateSessionOptions {
   cwd?: string;
   /** 셸 id(예: "pwsh", "git-bash", "wsl", "powershell"). 부재 = 자동/기본 셸. */
   shell?: string;
+  /** 세션이 뜬 뒤 셸 stdin에 `{command}\n`으로 주입할 시작 명령어. 부재/공백 = 미주입.
+   * 셸 문법(bat/sh/pwsh 등)은 선택한 셸에 맞게 사용자가 작성. */
+  startupCommand?: string;
 }
 
 /**
@@ -207,6 +210,9 @@ export interface AgentProfile {
   cwd?: string;
   /** 셸 id(예: "pwsh", "git-bash", "wsl", "powershell"). 부재 = 자동/기본 셸. */
   shell?: string;
+  /** 새 세션이 뜰 때마다 셸 stdin에 주입할 시작 명령어. 부재/공백 = 미주입.
+   * 예: "source ./init.sh", "mysetup.bat". 셸 문법은 사용자 책임. */
+  startupCommand?: string;
   /** 외모 묘사 힌트(자유 텍스트). 이미지 프롬프트에 반영. */
   appearance?: string;
   /** 초상 존재 표시 + 프론트 캐시 무효화 키(epoch ms). undefined = 초상 없음. */

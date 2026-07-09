@@ -107,6 +107,7 @@ export function ProfileDialog() {
       seed: agent.seed,
       cwd: agent.cwd ?? "",
       shell: agent.shell ?? "",
+      startupCommand: agent.startupCommand ?? "",
       appearance: agent.appearance ?? "",
       spriteRequest: agent.spriteRequest ?? "",
       archetype: agent.archetype ?? "auto",
@@ -220,6 +221,7 @@ export function ProfileDialog() {
     if (editing && editingAgent) {
       const trimmedCwd = (draft.cwd ?? "").trim();
       const trimmedShell = (draft.shell ?? "").trim();
+      const trimmedStartupCommand = (draft.startupCommand ?? "").trim();
       const trimmedAppearance = (draft.appearance ?? "").trim();
       const trimmedSpriteRequest = (draft.spriteRequest ?? "").trim();
       const chosenArchetype =
@@ -232,6 +234,7 @@ export function ProfileDialog() {
         archetype: chosenArchetype,
         cwd: trimmedCwd || undefined,
         shell: trimmedShell || undefined,
+        startupCommand: trimmedStartupCommand || undefined,
         appearance: trimmedAppearance || undefined,
         spriteRequest: trimmedSpriteRequest || undefined,
       });
@@ -271,155 +274,216 @@ export function ProfileDialog() {
       }}
     >
       <div className="pixel-panel profile-dialog">
-        <h2 className="pixel-title">{editing ? "에이전트 편집" : "새 에이전트"}</h2>
-        <div className="sprite-preview">
-          <img
-            src={spritePreviewUrl ?? spriteUrl}
-            alt="sprite"
-            width={96}
-            height={96}
-          />
-          <div className="sprite-buttons">
-            <button className="pixel-btn" onClick={regenSeed}>
-              스프라이트 재생성
-            </button>
-            {spritePreviewUrl && (
-              <span className="sprite-custom-badge">커스텀 사용 중 — 재생성은 외형에 영향 없음</span>
-            )}
-            <button className="pixel-btn" onClick={onCopySpritePrompt}>
-              픽셀아트 프롬프트 복사
-            </button>
-            {editing && editingAgent && (
-              <>
-                <button
-                  className="pixel-btn"
-                  onClick={onGeneratePixellab}
-                  disabled={pixellabBusy}
-                >
-                  {pixellabBusy ? "생성 중…" : "PixelLab로 생성"}
-                </button>
-                {pixellabNote && (
-                  <span className="sprite-custom-badge">{pixellabNote}</span>
-                )}
-                <button className="pixel-btn" onClick={() => setSpriteEditorOpen(true)}>
-                  {spritePreviewUrl ? "픽셀아트 변경" : "픽셀아트 업로드"}
+        {/* ── 헤더 ─────────────────────────────────────────────── */}
+        <header className="profile-dialog-header">
+          <h2 className="pixel-title">{editing ? "에이전트 편집" : "새 에이전트"}</h2>
+          <p className="profile-dialog-sub">
+            {editing
+              ? "프로필을 수정합니다. 저장하면 바로 반영됩니다."
+              : "새 에이전트의 프로필을 만듭니다. 저장하면 터미널 세션이 시작됩니다."}
+          </p>
+        </header>
+
+        {/* ── 정체성: 이름 · 역할 · 메모 · 아키타입 ────────────── */}
+        <section className="form-section">
+          <h3 className="form-section-title">정체성</h3>
+          <div className="form-row-2">
+            <div className="form-field">
+              <label>
+                <span className="form-label-text">이름</span>
+                <input
+                  value={draft.name}
+                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                />
+              </label>
+            </div>
+            <div className="form-field">
+              <label>
+                <span className="form-label-text">역할</span>
+                <input
+                  value={draft.role}
+                  onChange={(e) => setDraft({ ...draft, role: e.target.value })}
+                />
+              </label>
+            </div>
+          </div>
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">메모</span>
+              <textarea
+                value={draft.note}
+                onChange={(e) => setDraft({ ...draft, note: e.target.value })}
+              />
+            </label>
+            <p className="form-hint">에이전트를 설명하는 자유 메모 — 초상 프롬프트에 함께 반영됩니다.</p>
+          </div>
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">아키타입</span>
+              <select
+                value={draft.archetype ?? "auto"}
+                onChange={(e) => setDraft({ ...draft, archetype: e.target.value })}
+              >
+                {ARCHETYPE_SELECT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <p className="form-hint">스프라이트의 체형·의상 계열을 정합니다. “자동(시드)”이면 시드에 따라 선택됩니다.</p>
+          </div>
+        </section>
+
+        {/* ── 외형: 프리뷰 카드 + 외모 힌트 · 픽셀아트 의뢰 문구 ── */}
+        <section className="form-section">
+          <h3 className="form-section-title">외형</h3>
+          <div className="profile-previews">
+            <div className="sprite-preview">
+              <span className="preview-card-title">스프라이트</span>
+              <img
+                src={spritePreviewUrl ?? spriteUrl}
+                alt="sprite"
+                width={96}
+                height={96}
+              />
+              <div className="sprite-buttons">
+                <button className="pixel-btn" onClick={regenSeed}>
+                  스프라이트 재생성
                 </button>
                 {spritePreviewUrl && (
-                  <button className="pixel-btn" onClick={onRemoveSprite}>
-                    커스텀 제거
-                  </button>
+                  <span className="sprite-custom-badge">커스텀 사용 중 — 재생성은 외형에 영향 없음</span>
                 )}
-              </>
-            )}
-          </div>
-        </div>
-        <div className="portrait-section">
-          <div className="portrait-current">
-            <img
-              // 호버 카드와 동일한 폴백 체인(초상 > 커스텀 스프라이트 프리뷰 >
-              // 프로시저럴) — spritePreviewUrl 누락 시 PixelLab 생성 후에도
-              // 생성 전 프로시저럴 이미지가 잔존하는 버그.
-              src={portraitUrl ?? spritePreviewUrl ?? spriteUrl}
-              alt="portrait"
-              width={90}
-              height={120}
-              style={{ objectFit: "cover", objectPosition: "top center", imageRendering: "pixelated" }}
-            />
-          </div>
-          <div className="portrait-buttons">
-            <button className="pixel-btn" onClick={onCopyPrompt}>
-              초상 프롬프트 복사
-            </button>
-            {editing && editingAgent && (
-              <>
-                <button className="pixel-btn" onClick={() => setEditorOpen(true)}>
-                  {portraitUrl ? "이미지 변경" : "이미지 업로드"}
+                <button className="pixel-btn" onClick={onCopySpritePrompt}>
+                  픽셀아트 프롬프트 복사
                 </button>
-                {portraitUrl && (
-                  <button className="pixel-btn" onClick={onRemovePortrait}>
-                    제거
-                  </button>
+                {editing && editingAgent && (
+                  <>
+                    <button
+                      className="pixel-btn"
+                      onClick={onGeneratePixellab}
+                      disabled={pixellabBusy}
+                    >
+                      {pixellabBusy ? "생성 중…" : "PixelLab로 생성"}
+                    </button>
+                    {pixellabNote && (
+                      <span className="sprite-custom-badge">{pixellabNote}</span>
+                    )}
+                    <button className="pixel-btn" onClick={() => setSpriteEditorOpen(true)}>
+                      {spritePreviewUrl ? "픽셀아트 변경" : "픽셀아트 업로드"}
+                    </button>
+                    {spritePreviewUrl && (
+                      <button className="pixel-btn" onClick={onRemoveSprite}>
+                        커스텀 제거
+                      </button>
+                    )}
+                  </>
                 )}
-              </>
-            )}
+              </div>
+            </div>
+            <div className="portrait-section">
+              <span className="preview-card-title">초상화</span>
+              <div className="portrait-current">
+                <img
+                  // 호버 카드와 동일한 폴백 체인(초상 > 커스텀 스프라이트 프리뷰 >
+                  // 프로시저럴) — spritePreviewUrl 누락 시 PixelLab 생성 후에도
+                  // 생성 전 프로시저럴 이미지가 잔존하는 버그.
+                  src={portraitUrl ?? spritePreviewUrl ?? spriteUrl}
+                  alt="portrait"
+                  width={90}
+                  height={120}
+                  style={{ objectFit: "cover", objectPosition: "top center", imageRendering: "pixelated" }}
+                />
+              </div>
+              <div className="portrait-buttons">
+                <button className="pixel-btn" onClick={onCopyPrompt}>
+                  초상 프롬프트 복사
+                </button>
+                {editing && editingAgent && (
+                  <>
+                    <button className="pixel-btn" onClick={() => setEditorOpen(true)}>
+                      {portraitUrl ? "이미지 변경" : "이미지 업로드"}
+                    </button>
+                    {portraitUrl && (
+                      <button className="pixel-btn" onClick={onRemovePortrait}>
+                        제거
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-        <label>
-          이름
-          <input
-            value={draft.name}
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-          />
-        </label>
-        <label>
-          역할
-          <input
-            value={draft.role}
-            onChange={(e) => setDraft({ ...draft, role: e.target.value })}
-          />
-        </label>
-        <label>
-          메모
-          <textarea
-            value={draft.note}
-            onChange={(e) => setDraft({ ...draft, note: e.target.value })}
-          />
-        </label>
-        <label>
-          아키타입
-          <select
-            value={draft.archetype ?? "auto"}
-            onChange={(e) => setDraft({ ...draft, archetype: e.target.value })}
-          >
-            {ARCHETYPE_SELECT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          외모 힌트
-          <input
-            value={draft.appearance ?? ""}
-            onChange={(e) => setDraft({ ...draft, appearance: e.target.value })}
-            placeholder="예: 짧은 검은 머리, 안경 (선택)"
-          />
-        </label>
-        <label>
-          픽셀아트 의뢰 문구
-          <input
-            value={draft.spriteRequest ?? ""}
-            onChange={(e) => setDraft({ ...draft, spriteRequest: e.target.value })}
-            placeholder="예: 빨간 망토를 두른 마법사 (선택, 비면 외모 힌트 사용)"
-          />
-        </label>
-        <label>
-          시작 폴더
-          <input
-            value={draft.cwd ?? ""}
-            onChange={(e) => setDraft({ ...draft, cwd: e.target.value })}
-            placeholder="비워두면 홈 디렉터리"
-          />
-        </label>
-        {shells.length > 0 && (
-          <label>
-            셸
-            <select
-              value={draft.shell ?? ""}
-              onChange={(e) => setDraft({ ...draft, shell: e.target.value })}
-            >
-              <option value="">자동 (기본)</option>
-              {shells.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                  {!s.hooksSupported ? " (시간 추적 미지원)" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">외모 힌트</span>
+              <input
+                value={draft.appearance ?? ""}
+                onChange={(e) => setDraft({ ...draft, appearance: e.target.value })}
+                placeholder="예: 짧은 검은 머리, 안경 (선택)"
+              />
+            </label>
+          </div>
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">픽셀아트 의뢰 문구</span>
+              <input
+                value={draft.spriteRequest ?? ""}
+                onChange={(e) => setDraft({ ...draft, spriteRequest: e.target.value })}
+                placeholder="예: 빨간 망토를 두른 마법사 (선택, 비면 외모 힌트 사용)"
+              />
+            </label>
+            <p className="form-hint">프롬프트 복사와 PixelLab 생성에 그대로 반영됩니다.</p>
+          </div>
+        </section>
+
+        {/* ── 터미널: 시작 폴더 · 시작 명령어 · 셸 ─────────────── */}
+        <section className="form-section">
+          <h3 className="form-section-title">터미널</h3>
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">시작 폴더</span>
+              <input
+                value={draft.cwd ?? ""}
+                onChange={(e) => setDraft({ ...draft, cwd: e.target.value })}
+                placeholder="비워두면 홈 디렉터리"
+              />
+            </label>
+          </div>
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">시작 명령어</span>
+              <input
+                value={draft.startupCommand ?? ""}
+                onChange={(e) => setDraft({ ...draft, startupCommand: e.target.value })}
+                placeholder="예: source ./init.sh 또는 mysetup.bat (선택, 새 터미널마다 실행)"
+              />
+            </label>
+            <p className="form-hint">새 터미널 세션이 열릴 때마다 자동으로 실행됩니다.</p>
+          </div>
+          {shells.length > 0 && (
+            <div className="form-field">
+              <label>
+                <span className="form-label-text">셸</span>
+                <select
+                  value={draft.shell ?? ""}
+                  onChange={(e) => setDraft({ ...draft, shell: e.target.value })}
+                >
+                  <option value="">자동 (기본)</option>
+                  {shells.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                      {!s.hooksSupported ? " (시간 추적 미지원)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+        </section>
+
+        {/* ── 액션 ─────────────────────────────────────────────── */}
         <div className="dialog-actions">
           {!editing && (
-            <button className="pixel-btn" onClick={regenAll}>
+            <button className="pixel-btn dialog-action-aux" onClick={regenAll}>
               전체 랜덤
             </button>
           )}
