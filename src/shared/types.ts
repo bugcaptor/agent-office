@@ -271,6 +271,10 @@ export interface AppSettings {
   claudeCliEnabled: boolean;
   /** 세션에 Claude Code 훅 주입 + 로컬 훅 서버 기동(알림·시간측정). */
   claudeHooksEnabled: boolean;
+  /** 사무실 앰비언스 사운드(타이핑·효과음·공조음) 재생 여부. 기본 켜짐. */
+  soundEnabled: boolean;
+  /** 마스터 볼륨 0.0~1.0. 기본 0.5. */
+  soundVolume: number;
 }
 
 /** `get_app_settings` 응답. firstRun = settings.json 부재(첫 실행). */

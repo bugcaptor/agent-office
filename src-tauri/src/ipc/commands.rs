@@ -430,6 +430,8 @@ mod tests {
             version: 1,
             claude_cli_enabled: true,
             claude_hooks_enabled: false,
+            sound_enabled: true,
+            sound_volume: 0.5,
         };
 
         // ON이면 게이트를 통과해 claude_cli::summarize로 위임된다 -- 빈 텍스트라서
@@ -460,6 +462,8 @@ mod tests {
             version: 1,
             claude_cli_enabled: true,
             claude_hooks_enabled: false,
+            sound_enabled: true,
+            sound_volume: 0.5,
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
         // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.

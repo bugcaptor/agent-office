@@ -152,7 +152,11 @@ interface AppState {
   /** 부트 시 백엔드 getAppSettings 결과 반영. */
   hydrateSettings(settings: AppSettings, firstRun: boolean): void;
   /** 스토어 갱신 + 백엔드 저장(fire-and-forget). */
-  updateAppSettings(patch: Partial<Pick<AppSettings, "claudeCliEnabled" | "claudeHooksEnabled">>): void;
+  updateAppSettings(
+    patch: Partial<
+      Pick<AppSettings, "claudeCliEnabled" | "claudeHooksEnabled" | "soundEnabled" | "soundVolume">
+    >
+  ): void;
   /** 첫 실행 온보딩 선택 저장 + firstRun 종료. */
   completeFirstRun(choice: { claudeCliEnabled: boolean; claudeHooksEnabled: boolean }): void;
 }
@@ -173,7 +177,13 @@ export const useAppStore = create<AppState>()(
     timeTracking: {},
     taskLabels: {},
     terminalEpochs: {},
-    appSettings: { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false },
+    appSettings: {
+      version: 1,
+      claudeCliEnabled: false,
+      claudeHooksEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+    },
     settingsFirstRun: false,
 
     addAgent: (profile) =>

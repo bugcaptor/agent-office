@@ -1,7 +1,8 @@
 // src/renderer/bootstrap.ts
 //
 // App boot sequence: `loadState` -> `hydrate` -> `getAppSettings` ->
-// `installSessionBridge` -> `installPersistence` -> ... -> `installTaskLabelSummarizer`.
+// `installSessionBridge` -> `installPersistence` -> ... ->
+// `installTaskLabelSummarizer` -> `installQuitGuard` -> `installSoundManager`.
 //
 // Pulled out of `main.tsx` into its own function so it's unit-testable
 // without a real DOM root / ReactDOM.render. Order matters:
@@ -18,6 +19,7 @@ import { installPortraitCache } from "./portrait/portraitCache";
 import { installSpriteCache } from "./sprite/spriteCache";
 import { installTaskLabelSummarizer } from "./labels/summarizer";
 import { installQuitGuard } from "./quitGuard";
+import { installSoundManager } from "./sound/soundManager";
 import { tauriApi } from "./ipc/tauriApi";
 import type { PersistedState } from "./store/types";
 
@@ -58,6 +60,9 @@ export async function bootApp(): Promise<() => void> {
   const offSprites = installSpriteCache();
   const offSummarizer = installTaskLabelSummarizer();
   const offQuitGuard = installQuitGuard();
+  // 설정 하이드레이트 이후에 설치 — fireImmediately 구독이 최신 사운드
+  // 설정(soundEnabled/soundVolume)을 읽는다.
+  const offSound = installSoundManager();
 
   return () => {
     offBridge();
@@ -66,5 +71,6 @@ export async function bootApp(): Promise<() => void> {
     offSprites();
     offSummarizer();
     offQuitGuard();
+    offSound();
   };
 }

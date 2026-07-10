@@ -22,7 +22,7 @@ afterEach(() => cleanup());
 describe("FirstRunDialog", () => {
   it("settingsFirstRun이 false면 아무것도 렌더하지 않는다", () => {
     useAppStore.getState().hydrateSettings(
-      { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false },
+      { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false, soundEnabled: true, soundVolume: 0.5 },
       false,
     );
     const { container } = render(<FirstRunDialog />);
@@ -31,7 +31,7 @@ describe("FirstRunDialog", () => {
 
   it("firstRun일 때 렌더되고 시작하기가 선택값으로 completeFirstRun을 부른다", () => {
     useAppStore.getState().hydrateSettings(
-      { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false },
+      { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false, soundEnabled: true, soundVolume: 0.5 },
       true,
     );
     render(<FirstRunDialog />);
@@ -45,7 +45,7 @@ describe("FirstRunDialog", () => {
 
   it("백드롭 클릭으로 닫히지 않는다 (닫기 회피 불가)", () => {
     useAppStore.getState().hydrateSettings(
-      { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false },
+      { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false, soundEnabled: true, soundVolume: 0.5 },
       true,
     );
     const { container } = render(<FirstRunDialog />);

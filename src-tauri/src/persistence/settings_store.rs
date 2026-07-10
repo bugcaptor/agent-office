@@ -2,17 +2,23 @@
 //
 // 앱 전역 설정(`settings.json`, Tauri app data dir) 영속화. 파일 부재 =
 // 첫 실행(first_run=true) — 렌더러가 첫 실행 동의 다이얼로그를 띄우는
-// 신호다. 파손/버전 불일치는 기본값(전부 OFF)으로 폴백하되 first_run은
+// 신호다. 파손/버전 불일치는 기본값(Claude 기능 OFF, 사운드 ON)으로 폴백하되 first_run은
 // false(파일이 존재했다는 것 자체가 온보딩 완료의 증거 — 유저를 온보딩으로
 // 다시 괴롭히지 않는다). 쓰기는 ProfileStore와 같은 temp+rename 원자 쓰기.
 
 use std::fs;
 use std::path::PathBuf;
 
-/// 앱 전역 opt-in 설정. 기본값은 전부 false — Claude CLI 호출(라벨 요약)과
-/// Claude Code 훅 주입(알림/시간측정)은 유저가 명시적으로 켜기 전에는
-/// 동작하지 않는다.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+fn default_true() -> bool {
+    true
+}
+fn default_sound_volume() -> f32 {
+    0.5
+}
+
+/// 앱 전역 opt-in 설정. Claude 관련은 기본 false(명시적 opt-in),
+/// 사운드는 기본 켜짐(장식 기능 — 끄는 쪽이 opt-in).
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub version: u32,
@@ -20,11 +26,23 @@ pub struct AppSettings {
     pub claude_cli_enabled: bool,
     #[serde(default)]
     pub claude_hooks_enabled: bool,
+    /// 사무실 앰비언스 사운드(타이핑·효과음·공조음) 재생 여부.
+    #[serde(default = "default_true")]
+    pub sound_enabled: bool,
+    /// 마스터 볼륨 0.0~1.0.
+    #[serde(default = "default_sound_volume")]
+    pub sound_volume: f32,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
-        Self { version: 1, claude_cli_enabled: false, claude_hooks_enabled: false }
+        Self {
+            version: 1,
+            claude_cli_enabled: false,
+            claude_hooks_enabled: false,
+            sound_enabled: true,
+            sound_volume: 0.5,
+        }
     }
 }
 
@@ -92,7 +110,7 @@ mod tests {
     fn save_then_load_roundtrips_and_first_run_false() {
         let file = scratch_file();
         let store = SettingsStore::new(file.clone());
-        let s = AppSettings { version: 1, claude_cli_enabled: true, claude_hooks_enabled: true };
+        let s = AppSettings { version: 1, claude_cli_enabled: true, claude_hooks_enabled: true, sound_enabled: true, sound_volume: 0.5 };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
         assert_eq!(loaded, s);
@@ -145,5 +163,24 @@ mod tests {
         let json = serde_json::to_string(&AppSettings::default()).unwrap();
         assert!(json.contains("claudeCliEnabled"), "{json}");
         assert!(json.contains("claudeHooksEnabled"), "{json}");
+    }
+
+    // 하위 호환: 사운드 필드가 없는 기존 settings.json도 기본값(켜짐/0.5)으로
+    // 로드된다 — 버전 마이그레이션 없이 serde default로 처리.
+    #[test]
+    fn load_settings_without_sound_fields_falls_back_to_defaults() {
+        let file = scratch_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(
+            &file,
+            br#"{"version":1,"claudeCliEnabled":true,"claudeHooksEnabled":false}"#,
+        )
+        .unwrap();
+        let (s, first_run) = SettingsStore::new(file.clone()).load();
+        assert!(!first_run);
+        assert!(s.claude_cli_enabled);
+        assert!(s.sound_enabled, "부재 시 기본 켜짐");
+        assert_eq!(s.sound_volume, 0.5, "부재 시 기본 볼륨 0.5");
+        let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 }

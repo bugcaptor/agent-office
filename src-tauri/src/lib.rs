@@ -195,6 +195,8 @@ mod tests {
             version: 1,
             claude_cli_enabled: false,
             claude_hooks_enabled: true,
+            sound_enabled: true,
+            sound_volume: 0.5,
         }));
         let get_port = make_hook_port_getter(settings_cache.clone(), hook_port.clone());
 

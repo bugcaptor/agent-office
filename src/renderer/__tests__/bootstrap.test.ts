@@ -50,6 +50,11 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ onCloseRequested: mockOnCloseRequested }),
 }));
 
+// `installSoundManager`는 장식 기능 — node 테스트 환경엔 AudioContext가
+// 없어 목 없이도 통과하지만(backend가 null → no-op teardown), 의도를
+// 명시하기 위해 목을 건다.
+vi.mock("../sound/soundManager", () => ({ installSoundManager: () => () => {} }));
+
 import { useAppStore } from "../store/appStore";
 import { bootApp } from "../bootstrap";
 

@@ -465,7 +465,7 @@ describe("app settings slice", () => {
 
   it("hydrateSettings가 설정과 firstRun을 반영한다", () => {
     useAppStore.getState().hydrateSettings(
-      { version: 1, claudeCliEnabled: true, claudeHooksEnabled: false },
+      { version: 1, claudeCliEnabled: true, claudeHooksEnabled: false, soundEnabled: true, soundVolume: 0.5 },
       true
     );
     const s = useAppStore.getState();
@@ -483,12 +483,28 @@ describe("app settings slice", () => {
 
   it("completeFirstRun이 선택을 저장하고 firstRun을 끈다", () => {
     useAppStore.getState().hydrateSettings(
-      { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false },
+      { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false, soundEnabled: true, soundVolume: 0.5 },
       true
     );
     useAppStore.getState().completeFirstRun({ claudeCliEnabled: true, claudeHooksEnabled: true });
     const s = useAppStore.getState();
     expect(s.settingsFirstRun).toBe(false);
     expect(s.appSettings.claudeCliEnabled).toBe(true);
+  });
+
+  it("사운드 설정 기본값은 켜짐/0.5다", () => {
+    const s = useAppStore.getState();
+    expect(s.appSettings.soundEnabled).toBe(true);
+    expect(s.appSettings.soundVolume).toBe(0.5);
+  });
+
+  it("updateAppSettings가 사운드 설정을 갱신하고 백엔드에 저장한다", () => {
+    useAppStore.getState().updateAppSettings({ soundEnabled: false, soundVolume: 0.2 });
+    const s = useAppStore.getState();
+    expect(s.appSettings.soundEnabled).toBe(false);
+    expect(s.appSettings.soundVolume).toBe(0.2);
+    expect(setAppSettingsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ soundEnabled: false, soundVolume: 0.2 })
+    );
   });
 });

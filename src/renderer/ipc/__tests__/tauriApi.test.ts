@@ -410,7 +410,13 @@ describe("app settings commands", () => {
   });
 
   it("setAppSettings는 set_app_settings에 { settings }를 전달한다", async () => {
-    const s = { version: 1, claudeCliEnabled: true, claudeHooksEnabled: false };
+    const s = {
+      version: 1,
+      claudeCliEnabled: true,
+      claudeHooksEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+    };
     const tauriApi = await importTauriApi();
 
     await tauriApi.setAppSettings(s);

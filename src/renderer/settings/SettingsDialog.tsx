@@ -29,6 +29,35 @@ export function SettingsDialog() {
           }}
           onChange={updateAppSettings}
         />
+        <div className="settings-form">
+          <label className="settings-item">
+            <input
+              type="checkbox"
+              checked={appSettings.soundEnabled}
+              onChange={(e) => updateAppSettings({ soundEnabled: e.target.checked })}
+            />
+            <span>
+              <strong>사무실 사운드</strong>
+              <small>
+                에이전트가 일할 때 키보드 타이핑 소리와 알림·출퇴근 효과음을
+                재생합니다.
+              </small>
+            </span>
+          </label>
+          <label className="settings-item">
+            <span>
+              <strong>볼륨</strong>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(appSettings.soundVolume * 100)}
+              disabled={!appSettings.soundEnabled}
+              onChange={(e) => updateAppSettings({ soundVolume: Number(e.target.value) / 100 })}
+            />
+          </label>
+        </div>
         <div className="dialog-actions">
           <button className="pixel-btn" onClick={closeModal}>
             닫기

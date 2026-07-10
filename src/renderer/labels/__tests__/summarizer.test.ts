@@ -29,7 +29,7 @@ beforeEach(() => {
   useAppStore.setState({ taskLabels: {}, timeTracking: {} });
   // 기존 테스트들은 CLI ON을 전제 — opt-in 게이트 도입 이후 명시적으로 켜준다.
   useAppStore.getState().hydrateSettings(
-    { version: 1, claudeCliEnabled: true, claudeHooksEnabled: false },
+    { version: 1, claudeCliEnabled: true, claudeHooksEnabled: false, soundEnabled: true, soundVolume: 0.5 },
     false
   );
 });
@@ -141,7 +141,7 @@ describe("installTaskLabelSummarizer", () => {
 
   it("claudeCliEnabled=false면 라벨이 있어도 summarizeFn을 호출하지 않는다", async () => {
     useAppStore.getState().hydrateSettings(
-      { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false },
+      { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false, soundEnabled: true, soundVolume: 0.5 },
       false
     );
     const summarizeFn = vi.fn(async () => "요약");

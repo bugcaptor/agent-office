@@ -334,3 +334,5 @@ body {
 .settings-form { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
 .settings-item { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
 .settings-item small { display: block; opacity: 0.75; margin-top: 2px; }
+/* 볼륨 슬라이더 줄: 체크박스 줄과 달리 값 폭 채우기 + 세로 중앙 정렬 */
+.settings-item input[type="range"] { flex: 1; align-self: center; }
