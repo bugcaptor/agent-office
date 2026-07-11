@@ -46,6 +46,15 @@ export function useOfficeScene(
   // 최신값을 넘겨 마운트 시점의 현재 테마로 씬을 생성한다.
   const paletteRef = useRef(pixiPalette);
   paletteRef.current = pixiPalette;
+  // profiles도 같은 이유로 ref가 필요하다 — 간헐적 "빈 사무실" 레이스의
+  // 근본 원인: 실제 부팅에서는 App이 agents=[]로 먼저 렌더되고(bootApp의
+  // loadState는 비동기), Pixi `init()`이 끝나기 전에 hydrate가 profiles를
+  // 채울 수 있다. 그 사이 아래 `[profiles]` 이펙트의 syncAgents 호출은
+  // `OfficeScene.started` 가드에 걸려 드롭되므로, `init().then()`의 초기
+  // 동기화가 마운트 시점 클로저에 캡처된 빈 배열을 쓰면 캐릭터가 하나도
+  // 안 그려진 채 고정된다. 항상 최신 profiles로 초기 동기화해야 한다.
+  const profilesRef = useRef(profiles);
+  profilesRef.current = profiles;
 
   // Mount: create the scene exactly once (with StrictMode double-mount defense).
   useEffect(() => {
@@ -66,7 +75,7 @@ export function useOfficeScene(
         scene.destroy();
         return;
       }
-      scene.syncAgents(profiles); // initial sync
+      scene.syncAgents(profilesRef.current); // initial sync — 최신값(마운트 시점 캡처 아님)
     });
     return () => {
       disposed = true;

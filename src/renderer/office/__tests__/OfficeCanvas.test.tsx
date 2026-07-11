@@ -110,6 +110,26 @@ describe("OfficeCanvas / single mount (non-StrictMode)", () => {
     expect(state.instances[0].syncAgents).toHaveBeenLastCalledWith([profile("a1"), profile("a2")]);
   });
 
+  // Root-cause regression (간헐적 빈 사무실): 실제 부팅에서는 App이 먼저
+  // agents=[]로 렌더되고(bootApp의 loadState는 비동기), Pixi `init()`이
+  // 끝나기 전에 hydrate가 profiles를 채우는 경우가 있다. 그 사이의
+  // `[profiles]` sync 이펙트는 실제 OfficeScene에서 `started` 가드에
+  // 걸려 드롭되므로, `init().then()`의 초기 sync가 마운트 시점에 캡처된
+  // 빈 배열이 아니라 **최신** profiles를 넘겨야 한다. 안 그러면 캐릭터가
+  // 하나도 안 보이는 채로 고정된다(재시작 전까지).
+  it("syncs the LATEST profiles from init().then() when profiles changed before init resolved", async () => {
+    const bus = createMockOfficeBus();
+    const { rerender } = render(<OfficeCanvas bus={bus} profiles={[]} />);
+
+    // hydrate가 init보다 먼저 도착한 상황을 재현: init 미해결 상태에서 프로필 갱신.
+    rerender(<OfficeCanvas bus={bus} profiles={[profile("a1"), profile("a2")]} />);
+
+    act(() => state.instances[0].resolveInit());
+    await flushMicrotasks();
+
+    expect(state.instances[0].syncAgents).toHaveBeenLastCalledWith([profile("a1"), profile("a2")]);
+  });
+
   it("destroys the scene on unmount", async () => {
     const bus = createMockOfficeBus();
     const { unmount } = render(<OfficeCanvas bus={bus} profiles={[]} />);

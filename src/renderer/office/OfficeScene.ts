@@ -226,7 +226,10 @@ export class OfficeScene {
    * including the very first one, before `init()` has resolved. `useOfficeScene`
    * itself performs the actual initial sync from its `init().then(...)`
    * callback once `started` flips true, so dropping pre-init calls here is
-   * safe: they're always redundant with that first post-init sync.
+   * safe — but ONLY because that post-init sync reads the hook's
+   * `profilesRef` (latest render's profiles), not a mount-time closure
+   * capture. With a stale capture, a hydrate that lands mid-init would be
+   * dropped here and never replayed → 간헐적 "캐릭터 전원 미표시" 버그.
    */
   syncAgents(profiles: readonly AgentProfile[]): void {
     if (!this.started) return; // init() hasn't finished; nothing to sync into yet
