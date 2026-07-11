@@ -40,4 +40,29 @@ describe("sessionOptsFor", () => {
   it("omits empty-string cwd/shell/startupCommand (falsy)", () => {
     expect(sessionOptsFor({ cwd: "", shell: "", startupCommand: "" })).toBeUndefined();
   });
+
+  it("includes the profile snapshot used by session event analysis", () => {
+    expect(sessionOptsFor({ name: "Compiler", role: "Platform" })).toEqual({
+      agentName: "Compiler",
+      agentRole: "Platform",
+    });
+  });
+
+  it("keeps cwd shell and startup command with the profile snapshot", () => {
+    expect(
+      sessionOptsFor({
+        name: "Compiler",
+        role: "Platform",
+        cwd: "/work",
+        shell: "zsh",
+        startupCommand: "source ./init.sh",
+      }),
+    ).toEqual({
+      agentName: "Compiler",
+      agentRole: "Platform",
+      cwd: "/work",
+      shell: "zsh",
+      startupCommand: "source ./init.sh",
+    });
+  });
 });

@@ -145,11 +145,19 @@ export interface CreateSessionOptions {
   /** 세션이 뜬 뒤 셸 stdin에 `{command}\n`으로 주입할 시작 명령어. 부재/공백 = 미주입.
    * 셸 문법(bat/sh/pwsh 등)은 선택한 셸에 맞게 사용자가 작성. */
   startupCommand?: string;
+  /** Historical profile label copied into session_started analytics only. */
+  agentName?: string;
+  /** Historical profile role copied into session_started analytics only. */
+  agentRole?: string;
 }
 
 /**
  * Wire payload for the `create_session` command (camelCase args).
  * Mirrors Rust `CreateSessionRequest`.
+ *
+ * `agentName` and `agentRole` are consumed by the Tauri command for the
+ * session-start analytics snapshot; they are not part of Rust's PTY
+ * `CreateSessionRequest`.
  *
  * `autostartClaude` is not part of the frozen `AgentOfficeApi.createSession`
  * signature — the renderer adapter never sets it, so the backend

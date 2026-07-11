@@ -26,6 +26,7 @@ use crate::notification::hub::NotificationHub;
 use crate::session::output_batcher::{FlushSink, OutputBatcher, MAX_BYTES, WINDOW_MS};
 use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnOptions};
 use crate::session::shells;
+use crate::session_events::types::{AgentEventProfile, SessionStartedEvent};
 #[cfg(not(windows))]
 use crate::session::zsh_wrapper;
 use crate::state::{AppEvents, SessionRegistry};
@@ -140,8 +141,20 @@ impl SessionManager {
         self.find(agent_id).map(|s| s.session_id.clone())
     }
 
-    /// 1 에이전트 1 세션 불변식. self: &Arc<Self>로 wait 스레드에 소유 이전.
     pub fn create(self: &Arc<Self>, req: CreateSessionRequest) -> Result<CreateSessionResult, String> {
+        let fallback = AgentEventProfile {
+            name: req.agent_id.clone(),
+            role: None,
+        };
+        self.create_with_profile(req, fallback)
+    }
+
+    /// 1 에이전트 1 세션 불변식. self: &Arc<Self>로 wait 스레드에 소유 이전.
+    pub fn create_with_profile(
+        self: &Arc<Self>,
+        req: CreateSessionRequest,
+        profile: AgentEventProfile,
+    ) -> Result<CreateSessionResult, String> {
         // 살아있는 세션이 있으면 재사용, 새 PTY 안 만듦. 단, dispose()로 kill이
         // 요청된(=재시작 중인) 세션은 곧 사라질 예정이므로 재사용하지 않는다 —
         // 그러지 않으면 PowerShell처럼 프로세스 reap(→ on_exit)이 느린 플랫폼에서
@@ -223,6 +236,8 @@ impl SessionManager {
             }
         }
         env.extend(resolved.extra_env.iter().cloned());
+        let actual_shell = resolved.program.clone();
+        let actual_cwd = cwd.clone();
         let spawned = match self.factory.spawn(PtySpawnOptions {
             shell: resolved.program,
             args: resolved.args,
@@ -235,6 +250,16 @@ impl SessionManager {
             // spawn 실패: hook_file_guard가 --settings 파일을 정리한다.
             Err(e) => return Err(e.to_string()),
         };
+
+        self.events.session_started(&SessionStartedEvent {
+            agent_id: req.agent_id.clone(),
+            session_id: session_id.clone(),
+            agent_name: profile.name,
+            agent_role: profile.role,
+            cwd: actual_cwd,
+            shell: actual_shell,
+            at: now_ms(),
+        });
 
         // 세션 수명과 독립인 agentId sink 재사용: 이미 붙은 채널/백로그를
         // 그대로 이어받아 재생성 시 재구독이 필요 없다.
@@ -671,6 +696,68 @@ mod tests {
     }
 
     // ---- T-A: state transitions + intentional flag ----
+
+    #[tokio::test]
+    async fn successful_spawn_emits_session_started_with_profile_and_resolved_context() {
+        let events = Arc::new(RecordingEvents::default());
+        let reg = registry();
+        let hub = hub_for(reg.clone(), events.clone());
+        let (writer, dir) = scratch_hook_writer();
+        let (factory, control) = FakePtyFactory::new();
+        let manager = Arc::new(
+            SessionManager::new(
+                Arc::new(factory),
+                writer,
+                reg,
+                events.clone(),
+                hub,
+                Arc::new(|| None),
+            )
+            .with_shell_resolver(Arc::new(|_| shells::ResolvedShell {
+                program: "/bin/test-shell".into(),
+                args: Vec::new(),
+                extra_env: Vec::new(),
+            })),
+        );
+        manager
+            .create_with_profile(
+                req_with_cwd("a1", Some("/work".into())),
+                crate::session_events::types::AgentEventProfile {
+                    name: "Compiler".into(),
+                    role: Some("Platform".into()),
+                },
+            )
+            .unwrap();
+        let starts = events.session_starts();
+        assert_eq!(starts.len(), 1);
+        assert_eq!(starts[0].agent_name, "Compiler");
+        assert_eq!(starts[0].agent_role.as_deref(), Some("Platform"));
+        assert_eq!(starts[0].cwd, "/work");
+        assert_eq!(starts[0].shell, "/bin/test-shell");
+        assert_eq!(
+            &events.timeline()[..2],
+            &[
+                "session_started".to_string(),
+                "session_state:Starting".to_string(),
+            ],
+        );
+        manager
+            .create_with_profile(
+                req_with_cwd("a1", Some("/different-work".into())),
+                crate::session_events::types::AgentEventProfile {
+                    name: "Renamed".into(),
+                    role: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            events.session_starts().len(),
+            1,
+            "reusing a live session must not log a second start"
+        );
+        control.close_output();
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[tokio::test]
     async fn create_transitions_starting_running_then_exited_on_unexpected_exit() {
@@ -1546,6 +1633,10 @@ mod tests {
 
         let result = mgr.create(req("a1", Some(false)));
         assert!(result.is_err(), "spawn must fail with AlwaysFailPtyFactory");
+        assert!(
+            events.session_starts().is_empty(),
+            "a failed spawn must not emit session_started"
+        );
 
         // The --settings file write() happens before spawn(); on spawn failure
         // it must be cleaned up, leaving no leftover in the hook dir.

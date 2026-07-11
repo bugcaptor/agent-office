@@ -71,7 +71,7 @@ describe("restartAgentSession 오케스트레이션", () => {
     expect(order).toEqual([
       "dispose:a1",
       "destroy:a1",
-      'create:a1:{"cwd":"/work/a1"}',
+      'create:a1:{"agentName":"Agent a1","agentRole":"eng","cwd":"/work/a1"}',
       "status-at-create:starting",
       "epoch-at-create:1",
     ]);
@@ -79,13 +79,16 @@ describe("restartAgentSession 오케스트레이션", () => {
     expect(useAppStore.getState().sessions.a1.status).toBe("starting");
   });
 
-  it("cwd 없는 에이전트는 createSession을 opts 없이 호출한다", async () => {
+  it("cwd 없는 에이전트도 프로필 스냅샷으로 createSession을 호출한다", async () => {
     const s = useAppStore.getState();
     s.addAgent(mkProfile("a1"));
 
     await restartAgentSession("a1");
 
-    expect(createSession).toHaveBeenCalledWith("a1", undefined);
+    expect(createSession).toHaveBeenCalledWith("a1", {
+      agentName: "Agent a1",
+      agentRole: "eng",
+    });
   });
 
   it("shell이 설정된 에이전트는 createSession opts에 shell을 포함한다", async () => {
@@ -94,7 +97,11 @@ describe("restartAgentSession 오케스트레이션", () => {
 
     await restartAgentSession("a1");
 
-    expect(createSession).toHaveBeenCalledWith("a1", { shell: "wsl" });
+    expect(createSession).toHaveBeenCalledWith("a1", {
+      agentName: "Agent a1",
+      agentRole: "eng",
+      shell: "wsl",
+    });
   });
 
   it("cwd와 shell이 모두 설정된 에이전트는 createSession opts에 둘 다 포함한다", async () => {
@@ -103,7 +110,12 @@ describe("restartAgentSession 오케스트레이션", () => {
 
     await restartAgentSession("a1");
 
-    expect(createSession).toHaveBeenCalledWith("a1", { cwd: "/work/a1", shell: "wsl" });
+    expect(createSession).toHaveBeenCalledWith("a1", {
+      agentName: "Agent a1",
+      agentRole: "eng",
+      cwd: "/work/a1",
+      shell: "wsl",
+    });
   });
 
   it("disposeSession이 실패해도 재시작은 계속 진행된다", async () => {
@@ -115,7 +127,10 @@ describe("restartAgentSession 오케스트레이션", () => {
 
     expect(destroy).toHaveBeenCalledWith("a1");
     expect(useAppStore.getState().terminalEpochs.a1).toBe(1);
-    expect(createSession).toHaveBeenCalledWith("a1", undefined);
+    expect(createSession).toHaveBeenCalledWith("a1", {
+      agentName: "Agent a1",
+      agentRole: "eng",
+    });
     expect(useAppStore.getState().sessions.a1.status).toBe("starting");
   });
 
