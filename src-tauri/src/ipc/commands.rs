@@ -811,6 +811,7 @@ mod tests {
                 shell: None,
                 startup_command: None,
                 clocked_out: None,
+            keyboard_sound: None,
             }],
             version: 1,
         };
@@ -857,6 +858,7 @@ mod tests {
                 shell: None,
                 startup_command: None,
                 clocked_out: None,
+            keyboard_sound: None,
             }],
             version: 1,
         };
@@ -910,6 +912,7 @@ mod tests {
                 shell: None,
                 startup_command: None,
                 clocked_out: None,
+            keyboard_sound: None,
             }],
             version: 1,
         };

@@ -18,6 +18,24 @@ import type { AgentOfficeApi } from "@shared/types";
 
 const TICK_MS = 100;
 
+/** 설치된 backend — previewKeyboardSound(프로필 다이얼로그 미리듣기)용. */
+let activeBackend: SoundBackend | null = null;
+
+/**
+ * 키보드 사운드 팩 미리듣기 — 사람 타속(~9타/초)의 짧은 버스트.
+ * 사운드 매니저 미설치/사운드 불가 환경/해제 후에는 no-op.
+ * agentId를 주면 그 에이전트의 고유 피치로 들린다.
+ */
+export function previewKeyboardSound(packId?: string, agentId = "preview"): void {
+  const backend = activeBackend;
+  if (!backend) return;
+  for (let i = 0; i < 6; i++) {
+    setTimeout(() => {
+      if (activeBackend === backend) backend.playClicks(agentId, 1, packId);
+    }, i * 110);
+  }
+}
+
 export interface SoundManagerDeps {
   /** undefined면 createWebAudioBackend() 사용. null이면 사운드 불가 환경 시뮬레이션. */
   backend?: SoundBackend | null;
@@ -29,6 +47,7 @@ export interface SoundManagerDeps {
 export function installSoundManager(deps: SoundManagerDeps = {}): () => void {
   const backend = deps.backend !== undefined ? deps.backend : createWebAudioBackend();
   if (!backend) return () => {};
+  activeBackend = backend;
   const api = deps.api ?? tauriApi;
   const now = deps.now ?? (() => performance.now());
   const tickMs = deps.tickMs ?? TICK_MS;
@@ -86,11 +105,13 @@ export function installSoundManager(deps: SoundManagerDeps = {}): () => void {
   const timer = setInterval(() => {
     for (const [agentId, sched] of schedulers) {
       const n = sched.drain(now());
-      if (n > 0 && enabled) backend.playClicks(agentId, n);
+      if (n > 0 && enabled)
+        backend.playClicks(agentId, n, useAppStore.getState().agents[agentId]?.keyboardSound);
     }
   }, tickMs);
 
   return () => {
+    if (activeBackend === backend) activeBackend = null;
     clearInterval(timer);
     offSettings();
     offAgents();

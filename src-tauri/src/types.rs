@@ -214,6 +214,10 @@ pub struct AgentProfile {
     /// 남긴다. 부재/false = 근무 중. TS `clockedOut?: boolean` 미러.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub clocked_out: Option<bool>,
+    /// 키보드 사운드 팩 id (렌더러 sound/packs.ts 참고). 없음/무효 = 기본 팩.
+    /// TS `keyboardSound?: string` 미러.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub keyboard_sound: Option<String>,
 }
 
 /// 영속 상태. version은 리터럴 1.
@@ -523,6 +527,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"cwd\":\"/tmp/proj\""));
@@ -548,6 +553,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("cwd"));
@@ -584,6 +590,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"appearance\":\"short black hair, glasses\""));
@@ -610,6 +617,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("appearance"));
@@ -647,6 +655,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"spriteRequest\":\"red cloak wizard\""));
@@ -673,6 +682,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("spriteRequest"));
@@ -698,6 +708,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"archetype\":\"orc\""));
@@ -713,9 +724,51 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("archetype"));
+    }
+
+    #[test]
+    fn agent_profile_deserializes_without_keyboard_sound() {
+        // 레거시 profiles.json엔 keyboardSound 키가 없다 -> 파싱되고 None.
+        let json = "{\"id\":\"p1\",\"name\":\"Ada\",\"role\":\"backend\",\"note\":\"\",\
+                     \"seed\":\"abc123\",\"createdAt\":1720000000003,\"deskIndex\":0}";
+        let profile: AgentProfile = serde_json::from_str(json).unwrap();
+        assert_eq!(profile.keyboard_sound, None);
+    }
+
+    #[test]
+    fn agent_profile_serializes_keyboard_sound_camel_case_when_present() {
+        let profile = AgentProfile {
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
+            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
+            archetype: None,
+            shell: None,
+            startup_command: None,
+            clocked_out: None,
+                       keyboard_sound: Some("topre-hhkb".into()),
+        };
+        let json = serde_json::to_string(&profile).unwrap();
+        assert!(json.contains("\"keyboardSound\":\"topre-hhkb\""));
+    }
+
+    #[test]
+    fn agent_profile_omits_keyboard_sound_when_none() {
+        let profile = AgentProfile {
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
+            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
+            archetype: None,
+            shell: None,
+            startup_command: None,
+            clocked_out: None,
+                       keyboard_sound: None,
+        };
+        let json = serde_json::to_string(&profile).unwrap();
+        assert!(!json.contains("keyboardSound"));
     }
 
     #[test]
@@ -735,6 +788,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: Some("git-bash".into()), startup_command: None,
             clocked_out: None,
+        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"shell\":\"git-bash\""));
@@ -748,6 +802,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: None,
+        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("shell"));
@@ -770,6 +825,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: Some(true),
+        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"clockedOut\":true"));
@@ -783,6 +839,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: None,
+        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("clockedOut"));

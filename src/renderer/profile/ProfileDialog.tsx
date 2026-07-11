@@ -19,6 +19,8 @@ import { buildPortraitPrompt, buildSpritePrompt, buildPixelLabSpriteDescription 
 import { PortraitEditor } from "../portrait/PortraitEditor";
 import { SpriteEditor } from "../sprite/SpriteEditor";
 import { clearSpriteOverride } from "../office/gen/spriteOverrides";
+import { KEYBOARD_SOUND_PACK_OPTIONS } from "../sound/packs";
+import { previewKeyboardSound } from "../sound/soundManager";
 import type { AvailableShell } from "@shared/types";
 import "../portrait/portrait.css";
 
@@ -111,6 +113,7 @@ export function ProfileDialog() {
       appearance: agent.appearance ?? "",
       spriteRequest: agent.spriteRequest ?? "",
       archetype: agent.archetype ?? "auto",
+      keyboardSound: agent.keyboardSound ?? "",
     });
   }, [editingAgentId]);
 
@@ -224,6 +227,7 @@ export function ProfileDialog() {
       const trimmedStartupCommand = (draft.startupCommand ?? "").trim();
       const trimmedAppearance = (draft.appearance ?? "").trim();
       const trimmedSpriteRequest = (draft.spriteRequest ?? "").trim();
+      const trimmedKeyboardSound = (draft.keyboardSound ?? "").trim();
       const chosenArchetype =
         draft.archetype && draft.archetype !== "auto" ? draft.archetype : pickArchetype(draft.seed);
       updateAgent(editingAgent.id, {
@@ -237,6 +241,7 @@ export function ProfileDialog() {
         startupCommand: trimmedStartupCommand || undefined,
         appearance: trimmedAppearance || undefined,
         spriteRequest: trimmedSpriteRequest || undefined,
+        keyboardSound: trimmedKeyboardSound || undefined,
       });
     } else {
       const profile = draftToProfile(draft, agentOrder.length);
@@ -458,6 +463,24 @@ export function ProfileDialog() {
               />
             </label>
             <p className="form-hint">새 터미널 세션이 열릴 때마다 자동으로 실행됩니다.</p>
+          </div>
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">키보드 소리</span>
+              <select
+                value={draft.keyboardSound ?? ""}
+                onChange={(e) => {
+                  setDraft({ ...draft, keyboardSound: e.target.value });
+                  previewKeyboardSound(e.target.value || undefined, editingAgentId);
+                }}
+              >
+                <option value="">기본</option>
+                {KEYBOARD_SOUND_PACK_OPTIONS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
+            </label>
+            <p className="form-hint">이 에이전트가 타이핑할 때 나는 소리입니다. 고르면 미리 들려줍니다.</p>
           </div>
           {shells.length > 0 && (
             <div className="form-field">

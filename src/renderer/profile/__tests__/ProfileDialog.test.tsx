@@ -377,6 +377,52 @@ describe("셸 선택 (list_available_shells)", () => {
   });
 });
 
+describe("키보드 소리 선택", () => {
+  it("기본 옵션 + 발견된 팩 옵션을 렌더한다", async () => {
+    useAppStore.getState().openModal({ kind: "profile-create" });
+    render(<ProfileDialog />);
+    const select = await screen.findByLabelText("키보드 소리");
+    const options = within(select).getAllByRole("option") as HTMLOptionElement[];
+    // 실제 samples/ 디렉터리 기준: 기본 옵션(value="") + 팩 최소 1개(cherry-kc1000).
+    expect(options.length).toBeGreaterThanOrEqual(2);
+    expect(options[0].value).toBe("");
+    expect(options.some((o) => o.value === "cherry-kc1000")).toBe(true);
+  });
+
+  it("edit mode: 팩을 선택하고 저장하면 keyboardSound가 저장된다", async () => {
+    useAppStore.getState().addAgent(mkProfile());
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+    const { getByText } = render(<ProfileDialog />);
+
+    const select = await screen.findByLabelText("키보드 소리");
+    fireEvent.change(select, { target: { value: "cherry-kc1000" } });
+    await act(async () => {
+      fireEvent.click(getByText("저장"));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(useAppStore.getState().modal.kind).toBe("none"));
+
+    expect(useAppStore.getState().agents["a1"].keyboardSound).toBe("cherry-kc1000");
+  });
+
+  it("edit mode: 기존 선택을 로드하고, 기본으로 되돌리면 keyboardSound가 제거된다", async () => {
+    useAppStore.getState().addAgent(mkProfile({ keyboardSound: "cherry-kc1000" }));
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+    const { getByText } = render(<ProfileDialog />);
+
+    const select = (await screen.findByLabelText("키보드 소리")) as HTMLSelectElement;
+    expect(select.value).toBe("cherry-kc1000");
+    fireEvent.change(select, { target: { value: "" } });
+    await act(async () => {
+      fireEvent.click(getByText("저장"));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(useAppStore.getState().modal.kind).toBe("none"));
+
+    expect(useAppStore.getState().agents["a1"].keyboardSound).toBeUndefined();
+  });
+});
+
 describe("editing mode (profile-edit)", () => {
   beforeEach(() => {
     useAppStore.getState().addAgent(mkProfile());

@@ -27,6 +27,8 @@ export interface DraftProfile {
   spriteRequest?: string;
   /** 아키타입 선택. "auto" = 시드 추첨(저장 시 확정). 미지정도 "auto"로 취급. */
   archetype?: string;
+  /** 키보드 사운드 팩 id(선택). 빈 문자열 = 기본 팩. */
+  keyboardSound?: string;
 }
 
 export function generateDraft(): DraftProfile {
@@ -42,6 +44,7 @@ export function generateDraft(): DraftProfile {
     appearance: "",
     spriteRequest: "",
     archetype: "auto",
+    keyboardSound: "",
   };
 }
 
@@ -51,6 +54,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
   const startupCommand = (d.startupCommand ?? "").trim();
   const appearance = (d.appearance ?? "").trim();
   const spriteRequest = (d.spriteRequest ?? "").trim();
+  const keyboardSound = (d.keyboardSound ?? "").trim();
   const archetype = d.archetype && d.archetype !== "auto" ? d.archetype : pickArchetype(d.seed);
   return {
     id: nanoid(),
@@ -66,5 +70,6 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(startupCommand ? { startupCommand } : {}),
     ...(appearance ? { appearance } : {}),
     ...(spriteRequest ? { spriteRequest } : {}),
+    ...(keyboardSound ? { keyboardSound } : {}),
   };
 }

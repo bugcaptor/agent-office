@@ -226,6 +226,8 @@ export interface AgentProfile {
   /** 퇴근(clock-out) 상태. true면 오피스/터미널에서 사라지고 소환 목록에만 남는다.
    * 부재/false = 근무 중. 되돌릴 수 있는 상태이며 프로필 자체는 보존된다. */
   clockedOut?: boolean;
+  /** 키보드 사운드 팩 id (sound/packs.ts). 부재/무효 = 기본 팩. */
+  keyboardSound?: string;
 }
 
 /**

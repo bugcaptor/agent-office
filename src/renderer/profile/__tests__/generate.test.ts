@@ -217,6 +217,22 @@ describe("draftToProfile spriteRequest", () => {
   });
 });
 
+describe("draftToProfile keyboardSound", () => {
+  it("generateDraft는 빈 keyboardSound를 초기화한다", () => {
+    expect(generateDraft().keyboardSound).toBe("");
+  });
+
+  it("선택된 팩 id를 포함하고, 비면 필드를 생략한다", () => {
+    const base = { name: "Ada", role: "backend", note: "", seed: "s1" };
+    const withPack = draftToProfile({ ...base, keyboardSound: "topre-hhkb" }, 0);
+    expect(withPack.keyboardSound).toBe("topre-hhkb");
+    const without = draftToProfile({ ...base, keyboardSound: "" }, 0);
+    expect("keyboardSound" in without).toBe(false);
+    const unset = draftToProfile(base, 0);
+    expect("keyboardSound" in unset).toBe(false);
+  });
+});
+
 describe("draftToProfile archetype", () => {
   it("initializes generateDraft archetype as 'auto'", () => {
     expect(generateDraft().archetype).toBe("auto");

@@ -11,7 +11,7 @@ vi.mock("../../ipc/tauriApi", () => ({
 }));
 
 import { useAppStore } from "../../store/appStore";
-import { installSoundManager } from "../soundManager";
+import { installSoundManager, previewKeyboardSound } from "../soundManager";
 import type { SoundBackend } from "../backend";
 import type { NotificationEvent, SessionStateEvent } from "@shared/types";
 
@@ -131,6 +131,31 @@ describe("installSoundManager", () => {
     off();
   });
 
+  it("에이전트의 keyboardSound 팩 id가 playClicks에 전달된다", () => {
+    const { backend, m, off } = install();
+    useAppStore.getState().addAgent({ ...AGENT, keyboardSound: "topre" });
+    m.dataCbs.get("a1")!("x".repeat(600));
+    for (let i = 0; i < 10; i++) {
+      now += 100;
+      vi.advanceTimersByTime(100);
+    }
+    expect(backend.calls.playClicks?.[0]?.[2]).toBe("topre");
+    off();
+  });
+
+  it("keyboardSound 미지정이면 팩 id로 undefined를 전달한다 (backend가 기본 팩 해석)", () => {
+    const { backend, m, off } = install();
+    useAppStore.getState().addAgent(AGENT);
+    m.dataCbs.get("a1")!("x".repeat(600));
+    for (let i = 0; i < 10; i++) {
+      now += 100;
+      vi.advanceTimersByTime(100);
+    }
+    expect(backend.calls.playClicks?.[0]).toBeDefined();
+    expect(backend.calls.playClicks?.[0]?.[2]).toBeUndefined();
+    off();
+  });
+
   it("스피너 리페인트 같은 잡음 청크는 소리를 내지 않는다", () => {
     const { backend, m, off } = install();
     useAppStore.getState().addAgent(AGENT);
@@ -194,6 +219,23 @@ describe("installSoundManager", () => {
     m.dataCbs.get("a1"); // 없음
     now += 100;
     vi.advanceTimersByTime(200); // 틱이 죽었으므로 playClicks 없음
+    expect(backend.calls.playClicks).toBeUndefined();
+  });
+
+  it("previewKeyboardSound는 설치된 backend로 해당 팩의 클릭을 재생한다", () => {
+    const { backend, off } = install();
+    previewKeyboardSound("topre", "a1");
+    vi.advanceTimersByTime(1000);
+    expect(backend.calls.playClicks?.length).toBeGreaterThan(0);
+    expect(backend.calls.playClicks!.every((c) => c[0] === "a1" && c[2] === "topre")).toBe(true);
+    off();
+  });
+
+  it("previewKeyboardSound는 설치 해제 후에는 no-op", () => {
+    const { backend, off } = install();
+    off();
+    previewKeyboardSound("topre");
+    vi.advanceTimersByTime(1000);
     expect(backend.calls.playClicks).toBeUndefined();
   });
 
