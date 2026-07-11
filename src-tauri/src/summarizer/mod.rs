@@ -543,9 +543,9 @@ mod tests {
                 std::fs::write(
                     root.join("codex.ps1"),
                     r#"$ErrorActionPreference='Stop'
+[IO.File]::WriteAllText($env:AO_FAKE_PID, "$PID")
 [IO.File]::WriteAllLines($env:AO_FAKE_ARGS, [string[]]$args)
 [IO.File]::WriteAllText($env:AO_FAKE_STDIN, (@($input) -join [Environment]::NewLine))
-[IO.File]::WriteAllText($env:AO_FAKE_PID, "$PID")
 $count = 0
 if ([IO.File]::Exists($env:AO_FAKE_CALLS)) { $count = [int][IO.File]::ReadAllText($env:AO_FAKE_CALLS) }
 [IO.File]::WriteAllText($env:AO_FAKE_CALLS, "$($count + 1)")

@@ -107,10 +107,12 @@ impl ObserverAdapter for ClaudeAdapter {
             "SubagentStart" => Some(ObserverEvent::SubStart),
             "SubagentStop" => Some(ObserverEvent::SubStop),
             "Notification" => Some(ObserverEvent::Attention {
-                message: message(raw.body),
+                message: Some(
+                    message(raw.body).unwrap_or_else(|| "Claude needs your attention".into()),
+                ),
             }),
             "Stop" => Some(ObserverEvent::Stop {
-                message: message(raw.body),
+                message: Some(message(raw.body).unwrap_or_else(|| "Claude finished a task".into())),
             }),
             _ => None,
         }
@@ -120,7 +122,9 @@ impl ObserverAdapter for ClaudeAdapter {
 #[cfg(test)]
 mod tests {
     use super::ClaudeAdapter;
-    use crate::observer::{ObserverAdapter, ObserverSessionContext, WrapperArg};
+    use crate::observer::{
+        ObserverAdapter, ObserverEvent, ObserverSessionContext, RawObserverHook, WrapperArg,
+    };
 
     fn scratch_dir() -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
@@ -216,5 +220,35 @@ mod tests {
                 "curl.exe -sS -m 2 -X POST \"{url}\" -H \"Content-Type: application/json\" --data-binary @-"
             ),
         );
+    }
+
+    #[test]
+    fn claude_missing_messages_preserve_legacy_fallback_copy() {
+        let adapter = ClaudeAdapter::new(scratch_dir());
+
+        for body in [
+            b"{}".as_slice(),
+            b"not json".as_slice(),
+            br#"{"message":"   "}"#.as_slice(),
+        ] {
+            assert_eq!(
+                adapter.map_hook(&RawObserverHook {
+                    event_name: "Notification",
+                    body,
+                }),
+                Some(ObserverEvent::Attention {
+                    message: Some("Claude needs your attention".into()),
+                }),
+            );
+            assert_eq!(
+                adapter.map_hook(&RawObserverHook {
+                    event_name: "Stop",
+                    body,
+                }),
+                Some(ObserverEvent::Stop {
+                    message: Some("Claude finished a task".into()),
+                }),
+            );
+        }
     }
 }

@@ -345,7 +345,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn routes_claude_subagent_lifecycle_to_activity_events() {
+    async fn routes_subagent_lifecycle_for_both_providers() {
         let (runtime, events) = fixture();
         let state = ObserverServerState::default();
         let port = state.ensure(runtime).await.unwrap();
@@ -364,14 +364,32 @@ mod tests {
                 .unwrap();
         }
 
+        for event in ["SubagentStart", "SubagentStop"] {
+            client
+                .post(format!(
+                    "http://127.0.0.1:{port}/hook?session=s1&provider=codex"
+                ))
+                .body(format!(r#"{{"hook_event_name":"{event}"}}"#))
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+        }
+
         let activities = events.activities();
         assert_eq!(
-            activities.len(),
-            2,
-            "subagent hooks must reach activity-event"
+            activities
+                .iter()
+                .map(|activity| activity.kind)
+                .collect::<Vec<_>>(),
+            vec![
+                ActivityKind::SubStart,
+                ActivityKind::SubStop,
+                ActivityKind::SubStart,
+                ActivityKind::SubStop,
+            ],
         );
-        assert_eq!(activities[0].kind, ActivityKind::SubStart);
-        assert_eq!(activities[1].kind, ActivityKind::SubStop);
         assert!(events.notifications().is_empty());
         state.shutdown();
     }

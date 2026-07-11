@@ -13,6 +13,8 @@ const CODEX_PROMPT_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_USER_PROMPT";
 const CODEX_TOOL_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_POST_TOOL";
 const CODEX_ATTENTION_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_PERMISSION";
 const CODEX_STOP_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_STOP";
+const CODEX_SUBAGENT_START_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_SUBAGENT_START";
+const CODEX_SUBAGENT_STOP_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_SUBAGENT_STOP";
 
 fn powershell_encoded_command(script: &str) -> String {
     let bytes = script
@@ -62,7 +64,7 @@ impl CodexAdapter {
             );
             let encoded = powershell_encoded_command(&script);
             Ok(format!(
-                "powershell.exe -NoProfile -NonInteractive -EncodedCommand '{encoded}'"
+                "powershell.exe -NoProfile -NonInteractive -EncodedCommand {encoded}"
             ))
         } else {
             Ok(format!(
@@ -117,6 +119,14 @@ impl ObserverAdapter for CodexAdapter {
                 CODEX_STOP_CONFIG.into(),
                 Self::hook_config("Stop", false, &command),
             ),
+            (
+                CODEX_SUBAGENT_START_CONFIG.into(),
+                Self::hook_config("SubagentStart", false, &command),
+            ),
+            (
+                CODEX_SUBAGENT_STOP_CONFIG.into(),
+                Self::hook_config("SubagentStop", false, &command),
+            ),
         ];
         Ok(AdapterSessionPlan {
             env,
@@ -133,6 +143,10 @@ impl ObserverAdapter for CodexAdapter {
                     WrapperArg::Env(CODEX_ATTENTION_CONFIG.into()),
                     WrapperArg::Literal("-c".into()),
                     WrapperArg::Env(CODEX_STOP_CONFIG.into()),
+                    WrapperArg::Literal("-c".into()),
+                    WrapperArg::Env(CODEX_SUBAGENT_START_CONFIG.into()),
+                    WrapperArg::Literal("-c".into()),
+                    WrapperArg::Env(CODEX_SUBAGENT_STOP_CONFIG.into()),
                 ],
                 skip_if_present: vec![],
             }],
@@ -150,6 +164,8 @@ impl ObserverAdapter for CodexAdapter {
                 message: tool_description(raw.body),
             }),
             "Stop" => Some(ObserverEvent::Stop { message: None }),
+            "SubagentStart" => Some(ObserverEvent::SubStart),
+            "SubagentStop" => Some(ObserverEvent::SubStop),
             _ => None,
         }
     }
@@ -296,7 +312,7 @@ mod tests {
             first.env, second.env,
             "hook definitions must not contain session or port",
         );
-        assert_eq!(first.env.len(), 4);
+        assert_eq!(first.env.len(), 6);
         assert_eq!(
             first
                 .env
@@ -304,10 +320,12 @@ mod tests {
                 .map(|(name, _)| name.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                CODEX_PROMPT_CONFIG,
-                CODEX_TOOL_CONFIG,
-                CODEX_ATTENTION_CONFIG,
-                CODEX_STOP_CONFIG,
+                "AGENT_OFFICE_CODEX_HOOK_USER_PROMPT",
+                "AGENT_OFFICE_CODEX_HOOK_POST_TOOL",
+                "AGENT_OFFICE_CODEX_HOOK_PERMISSION",
+                "AGENT_OFFICE_CODEX_HOOK_STOP",
+                "AGENT_OFFICE_CODEX_HOOK_SUBAGENT_START",
+                "AGENT_OFFICE_CODEX_HOOK_SUBAGENT_STOP",
             ],
         );
 
@@ -340,6 +358,18 @@ mod tests {
                         "hooks.Stop=[{{hooks=[{{type=\"command\",command={command},timeout=2}}]}}]"
                     ),
                 ),
+                (
+                    "AGENT_OFFICE_CODEX_HOOK_SUBAGENT_START".into(),
+                    format!(
+                        "hooks.SubagentStart=[{{hooks=[{{type=\"command\",command={command},timeout=2}}]}}]"
+                    ),
+                ),
+                (
+                    "AGENT_OFFICE_CODEX_HOOK_SUBAGENT_STOP".into(),
+                    format!(
+                        "hooks.SubagentStop=[{{hooks=[{{type=\"command\",command={command},timeout=2}}]}}]"
+                    ),
+                ),
             ],
         );
         assert!(first.env.iter().all(|(_, config)| {
@@ -362,6 +392,10 @@ mod tests {
                 WrapperArg::Env(CODEX_ATTENTION_CONFIG.into()),
                 WrapperArg::Literal("-c".into()),
                 WrapperArg::Env(CODEX_STOP_CONFIG.into()),
+                WrapperArg::Literal("-c".into()),
+                WrapperArg::Env("AGENT_OFFICE_CODEX_HOOK_SUBAGENT_START".into()),
+                WrapperArg::Literal("-c".into()),
+                WrapperArg::Env("AGENT_OFFICE_CODEX_HOOK_SUBAGENT_STOP".into()),
             ],
         );
         assert!(wrapper.skip_if_present.is_empty());
@@ -411,6 +445,17 @@ mod tests {
             error.to_string(),
             "Codex observer forwarder path must be absolute",
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_hook_command_executes_spaced_forwarder_via_cmd() {
+        let fixture = HookCommandFixture::new();
+        let command = CodexAdapter::new(fixture.forwarder.clone())
+            .forwarder_command()
+            .unwrap();
+        let output = fixture.invoke(Path::new("cmd.exe"), &["/D", "/S", "/C"], &command);
+        fixture.assert_forwarded(&command, &output);
     }
 
     #[cfg(windows)]

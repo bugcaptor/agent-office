@@ -164,6 +164,20 @@ mod tests {
         );
         assert_eq!(
             adapter.map_hook(&RawObserverHook {
+                event_name: "SubagentStart",
+                body: b"{}",
+            }),
+            Some(ObserverEvent::SubStart),
+        );
+        assert_eq!(
+            adapter.map_hook(&RawObserverHook {
+                event_name: "SubagentStop",
+                body: b"{}",
+            }),
+            Some(ObserverEvent::SubStop),
+        );
+        assert_eq!(
+            adapter.map_hook(&RawObserverHook {
                 event_name: "Unknown",
                 body: b"{}",
             }),
@@ -172,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn both_adapters_satisfy_the_same_four_event_contract() {
+    fn both_adapters_satisfy_the_shared_observer_event_contract() {
         let dir = std::env::temp_dir().join(format!(
             "agent-office-shared-observer-adapter-test-{}",
             uuid::Uuid::new_v4(),

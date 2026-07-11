@@ -2461,7 +2461,9 @@ $payloads = @(
     '{"hook_event_name":"UserPromptSubmit","prompt":"codex-marker","session_id":"native-codex"}',
     '{"hook_event_name":"PostToolUse","session_id":"native-codex"}',
     '{"hook_event_name":"PermissionRequest","tool_input":{"description":"codex-attention"},"session_id":"native-codex"}',
-    '{"hook_event_name":"Stop","last_assistant_message":"must-not-surface","session_id":"native-codex"}'
+    '{"hook_event_name":"Stop","last_assistant_message":"must-not-surface","session_id":"native-codex"}',
+    '{"hook_event_name":"SubagentStart","session_id":"native-codex"}',
+    '{"hook_event_name":"SubagentStop","session_id":"native-codex"}'
 )
 foreach ($payload in $payloads) {
     $payload | & $env:AO_FAKE_FORWARDER --observer-forward codex
@@ -2486,7 +2488,9 @@ $events = @(
     [pscustomobject]@{ Name = 'UserPromptSubmit'; Body = '{"prompt":"claude-marker","session_id":"native-claude"}' },
     [pscustomobject]@{ Name = 'PostToolUse'; Body = '{"session_id":"native-claude"}' },
     [pscustomobject]@{ Name = 'Notification'; Body = '{"message":"claude-attention","session_id":"native-claude"}' },
-    [pscustomobject]@{ Name = 'Stop'; Body = '{"message":"claude-stop","session_id":"native-claude"}' }
+    [pscustomobject]@{ Name = 'Stop'; Body = '{"message":"claude-stop","session_id":"native-claude"}' },
+    [pscustomobject]@{ Name = 'SubagentStart'; Body = '{"session_id":"native-claude"}' },
+    [pscustomobject]@{ Name = 'SubagentStop'; Body = '{"session_id":"native-claude"}' }
 )
 foreach ($event in $events) {
     $group = $settings.hooks.PSObject.Properties[$event.Name].Value
@@ -2915,7 +2919,7 @@ return
         while {
             let activities = events.activities();
             let notifications = events.notifications();
-            activities.len() < 2
+            activities.len() < 4
                 || !activities
                     .iter()
                     .any(|event| event.text.as_deref() == Some("codex-marker"))
@@ -2950,6 +2954,11 @@ return
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
+        assert_eq!(
+            events.activities().len(),
+            4,
+            "Codex fake must emit the complete four-activity boundary before Claude starts",
+        );
         let codex_argv = std::fs::read_to_string(&codex_args)
             .unwrap()
             .lines()
@@ -2958,7 +2967,7 @@ return
         assert_eq!(&codex_argv[codex_argv.len() - 2..], ["resume", "--last"]);
         assert_eq!(
             codex_argv.iter().filter(|arg| arg.as_str() == "-c").count(),
-            4
+            6
         );
         assert_eq!(
             codex_argv
@@ -2967,7 +2976,7 @@ return
                     |arg| arg.contains("powershell.exe -NoProfile -NonInteractive -EncodedCommand")
                 )
                 .count(),
-            4,
+            6,
         );
         let rendered_codex_argv = codex_argv.join("\0");
         for forbidden in [
@@ -2993,7 +3002,7 @@ return
             || {
                 let activities = events.activities();
                 let notifications = events.notifications();
-                activities.len() >= 4
+                activities.len() >= 8
                     && activities
                         .iter()
                         .any(|event| event.text.as_deref() == Some("claude-marker"))
@@ -3022,6 +3031,25 @@ return
 
         let activities = events.activities();
         let notifications = events.notifications();
+        assert_eq!(
+            activities.len(),
+            8,
+            "Codex and Claude fakes must emit eight activities total",
+        );
+        assert_eq!(
+            activities
+                .iter()
+                .filter(|event| event.kind == ActivityKind::SubStart)
+                .count(),
+            2,
+        );
+        assert_eq!(
+            activities
+                .iter()
+                .filter(|event| event.kind == ActivityKind::SubStop)
+                .count(),
+            2,
+        );
         assert!(activities
             .iter()
             .all(|event| event.session_id == created.session_id));
