@@ -48,6 +48,59 @@ const deskClickCbs = new Set<DeskClickCb>();
 // emitAgentClicked in a row) can only ever produce ONE createSession call.
 const startingInFlight = new Set<string>();
 
+/** createSession invoke가 settle되지 않을 때의 복구 한계선. 백엔드 커맨드가
+ * 패닉하면 Tauri invoke 프라미스는 영원히 settle되지 않는다(2026-07-11
+ * "터미널 영구 고착" 실사고) — 이 시간이 지나면 실패로 간주해 상태를
+ * exited로 되돌리고 재시도를 가능하게 한다. */
+export const CREATE_SESSION_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
+/**
+ * createSession 호출 공통 가드 — ensureSession과 restartAgentSession이 공유.
+ * 호출 전 상태를 "starting"으로 만든 뒤 불러야 한다.
+ *
+ * - 성공: 결과의 state를 반영한다(단, 스토어가 아직 "starting"일 때만 —
+ *   invoke 응답보다 먼저 도착한 백엔드 상태 이벤트를 덮어쓰지 않는다).
+ *   백엔드가 살아있는 세션을 재사용한 경우 상태 이벤트를 방출하지 않고
+ *   결과만 돌려주므로, 이 반영이 없으면 "starting"에 영구 고착된다.
+ * - 실패/타임아웃: exited로 되돌려 이후 클릭·재시작이 재시도할 수 있게 한다.
+ */
+export async function runGuardedCreateSession(agentId: string): Promise<void> {
+  const agent = useAppStore.getState().agents[agentId];
+  try {
+    const res = await withTimeout(
+      tauriApi.createSession(agentId, sessionOptsFor(agent)),
+      CREATE_SESSION_TIMEOUT_MS,
+      `createSession(${agentId})`,
+    );
+    const cur = useAppStore.getState().sessions[agentId]?.status;
+    if (cur === "starting" && res?.state) {
+      useAppStore.getState().setSessionState({
+        agentId,
+        status: res.state === "disposed" ? "exited" : res.state,
+      });
+    }
+  } catch (err) {
+    useAppStore.getState().setSessionState({ agentId, status: "exited" });
+    console.warn(`createSession failed for ${agentId}`, err);
+  }
+}
+
 /**
  * Ensures a live backend session exists for `agentId`. If the
  * store shows the agent as `idle`/`exited` (or has no session row yet), mark it
@@ -55,27 +108,20 @@ const startingInFlight = new Set<string>();
  * the renderer's already-attached output Channel on the backend (see
  * SessionManager sink re-keying), so no re-subscribe is needed here.
  *
- * Idempotent per agent while a start is in flight; on failure the status flips
- * to `exited` so a later click retries.
+ * Idempotent per agent while a start is in flight; on failure/timeout the
+ * status flips to `exited` so a later click retries.
  */
 export function ensureSession(agentId: string): void {
-  const { sessions, agents, setSessionState } = useAppStore.getState();
+  const { sessions, setSessionState } = useAppStore.getState();
   const status = sessions[agentId]?.status;
   const needsStart = status === undefined || status === "idle" || status === "exited";
   if (!needsStart || startingInFlight.has(agentId)) return;
 
-  const agent = agents[agentId];
   startingInFlight.add(agentId);
   setSessionState({ agentId, status: "starting" });
-  tauriApi
-    .createSession(agentId, sessionOptsFor(agent))
-    .catch((err) => {
-      useAppStore.getState().setSessionState({ agentId, status: "exited" });
-      console.warn(`ensureSession: createSession failed for ${agentId}`, err);
-    })
-    .finally(() => {
-      startingInFlight.delete(agentId);
-    });
+  void runGuardedCreateSession(agentId).finally(() => {
+    startingInFlight.delete(agentId);
+  });
 }
 
 /** Store-backed `OfficeBus` implementation injected into subsystem B (`<OfficeCanvas bus={officeBus} .../>`). */

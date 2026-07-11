@@ -17,7 +17,7 @@
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { terminalRegistry } from "../terminal/TerminalRegistry";
-import { sessionOptsFor } from "../ipc/sessionOpts";
+import { runGuardedCreateSession } from "../ipc/sessionBridge";
 
 export async function restartAgentSession(agentId: string): Promise<void> {
   // ① 기존 PTY 종료 — 세션이 없거나 이미 죽었어도 재시작은 계속.
@@ -36,13 +36,9 @@ export async function restartAgentSession(agentId: string): Promise<void> {
   useAppStore.getState().bumpTerminalEpoch(agentId);
 
   // ④ 새 세션 시작. 상태를 먼저 starting으로 만들어 두면 sessionBridge의
-  //    ensureSession이 중복 createSession을 만들지 않는다.
-  const { agents, setSessionState } = useAppStore.getState();
-  setSessionState({ agentId, status: "starting" });
-  try {
-    await tauriApi.createSession(agentId, sessionOptsFor(agents[agentId]));
-  } catch (err) {
-    useAppStore.getState().setSessionState({ agentId, status: "exited" });
-    console.warn(`restartAgentSession: createSession failed for ${agentId}`, err);
-  }
+  //    ensureSession이 중복 createSession을 만들지 않는다. 생성 자체는
+  //    공통 가드(runGuardedCreateSession)가 담당 — 결과 상태 반영 +
+  //    실패/타임아웃 시 exited 복구(2026-07-11 터미널 영구 고착 방지).
+  useAppStore.getState().setSessionState({ agentId, status: "starting" });
+  await runGuardedCreateSession(agentId);
 }

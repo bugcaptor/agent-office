@@ -49,6 +49,33 @@ fn make_hook_port_getter(
     })
 }
 
+/// 패닉 관측성: Finder에서 실행된 .app은 stderr가 어디에도 남지 않아
+/// 백그라운드 스레드/tokio 태스크의 패닉이 흔적 없이 사라진다(2026-07-11
+/// "터미널 영구 고착" 사고의 원인 규명 실패 지점). 기본 훅(stderr 출력)을
+/// 유지하면서 <app_data>/panic.log에 위치·메시지·백트레이스를 append한다.
+fn install_panic_logger(data_dir: std::path::PathBuf) {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let thread = std::thread::current().name().unwrap_or("<unnamed>").to_string();
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        let entry = format!("=== panic @{ts}ms thread={thread}\n{info}\n{backtrace}\n\n");
+        let _ = std::fs::create_dir_all(&data_dir);
+        use std::io::Write as _;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(data_dir.join("panic.log"))
+        {
+            let _ = f.write_all(entry.as_bytes());
+        }
+        previous(info); // 기본 stderr 출력도 유지(dev 실행 시 즉시 보임)
+    }));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -66,6 +93,7 @@ pub fn run() {
             ));
 
             let data_dir = app.path().app_data_dir()?; // (기존 위치에서 앞으로 이동)
+            install_panic_logger(data_dir.clone());
             let settings_store = SettingsStore::new(data_dir.join("settings.json"));
             let (settings, settings_first_run) = settings_store.load();
             // AppState가 갖는 캐시와 동일한 Arc를 훅 포트 getter 생성 전에

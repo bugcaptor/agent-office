@@ -7,7 +7,16 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+// std::sync::Mutex가 아니라 parking_lot::Mutex — poisoning이 없다. 실사고
+// (2026-07-11): 출력 채널 콜백 패닉 → channel 뮤텍스 poison → detach가 sinks
+// 락 보유 중 unwrap 패닉 → sinks poison → 이후 모든 create()가 sink_for에서
+// 패닉(훅 파일만 남기고 invoke 영구 미해결) → 앱 재시작까지 어떤 터미널도
+// 못 뜨는 벽돌 상태. parking_lot은 패닉한 스레드가 락을 풀고 지나가므로
+// 오염이 전파되지 않는다. (session_layer_survives_a_panicking_output_channel
+// 회귀 테스트 참조.)
+use parking_lot::Mutex;
 
 use tauri::ipc::Channel;
 use uuid::Uuid;
@@ -40,24 +49,24 @@ impl OutputSink {
     }
     fn attach(&self, ch: Channel<OutputChunk>) {
         // 락 순서 항상 channel → backlog (데드락 방지, emit과 동일 순서).
-        let mut c = self.channel.lock().unwrap();
-        let mut b = self.backlog.lock().unwrap();
+        let mut c = self.channel.lock();
+        let mut b = self.backlog.lock();
         for chunk in b.drain(..) {
             let _ = ch.send(chunk);
         }
         *c = Some(ch);
     }
     fn detach(&self) {
-        *self.channel.lock().unwrap() = None;
+        *self.channel.lock() = None;
     }
 }
 impl FlushSink for OutputSink {
     fn emit(&self, chunk: OutputChunk) {
-        let c = self.channel.lock().unwrap();
+        let c = self.channel.lock();
         if let Some(ch) = c.as_ref() {
             let _ = ch.send(chunk); // Channel 전송 실패(웹뷰 소멸)는 무시
         } else {
-            let mut b = self.backlog.lock().unwrap();
+            let mut b = self.backlog.lock();
             if b.len() >= BACKLOG_CAP {
                 b.pop_front();
             }
@@ -113,7 +122,7 @@ impl SessionManager {
     }
 
     fn find(&self, agent_id: &str) -> Option<Arc<Session>> {
-        self.sessions.lock().unwrap().get(agent_id).cloned()
+        self.sessions.lock().get(agent_id).cloned()
     }
 
     /// agentId의 출력 sink를 반환(없으면 생성). attach_output이 세션보다 먼저
@@ -122,7 +131,6 @@ impl SessionManager {
     fn sink_for(&self, agent_id: &str) -> Arc<OutputSink> {
         self.sinks
             .lock()
-            .unwrap()
             .entry(agent_id.to_string())
             .or_insert_with(|| Arc::new(OutputSink::new()))
             .clone()
@@ -143,9 +151,9 @@ impl SessionManager {
         // 뒤늦게 도는 그 세션의 on_exit이 "이미 교체됨(superseded)"을 보고 새
         // 세션의 맵 엔트리·sink를 지우지 않는다(아래 on_exit의 identity 가드 참조).
         {
-            let mut map = self.sessions.lock().unwrap();
+            let mut map = self.sessions.lock();
             if let Some(s) = map.get(&req.agent_id) {
-                let st = *s.state.lock().unwrap();
+                let st = *s.state.lock();
                 let reusable = matches!(st, SessionState::Running | SessionState::Starting)
                     && !s.kill_requested.load(Ordering::SeqCst);
                 if reusable {
@@ -164,6 +172,26 @@ impl SessionManager {
             Some(p) => Some(self.hook_writer.write(&session_id, p).map_err(|e| e.to_string())?),
             None => None,
         };
+
+        // RAII 정리 가드: 여기부터 create()가 어떤 경로로든(Err 반환뿐 아니라
+        // 스폰/하위 계층의 패닉 unwind까지) 완주하지 못하면 방금 쓴 훅 설정
+        // 파일을 지운다. 성공 시 아래에서 disarm. (2026-07-11 실사고: 시작
+        // 실패가 반복되는 동안 <tmp>/agent-office/hooks/에 파일이 시도마다
+        // 누적됐다 — 명시적 cleanup은 Err 경로 하나만 커버했기 때문.)
+        struct HookFileGuard<'a> {
+            writer: &'a HookSettingsWriter,
+            session_id: String, // 소유 — 반환값이 session_id를 move해도 가드가 살아있게
+            armed: bool,
+        }
+        impl Drop for HookFileGuard<'_> {
+            fn drop(&mut self) {
+                if self.armed {
+                    self.writer.cleanup(&self.session_id);
+                }
+            }
+        }
+        let mut hook_file_guard =
+            HookFileGuard { writer: &self.hook_writer, session_id: session_id.clone(), armed: true };
 
         // hooks_on: 이번 세션에 AGENT_OFFICE_SETTINGS가 실제로 주입되는지 —
         // 아래 env 주입 조건(port + settings_path 둘 다 Some)과 동일한 신호를
@@ -204,11 +232,8 @@ impl SessionManager {
             env,
         }) {
             Ok(s) => s,
-            Err(e) => {
-                // spawn 실패: 이미 디스크에 쓴 --settings 파일이 새지 않게 정리.
-                self.hook_writer.cleanup(&session_id);
-                return Err(e.to_string());
-            }
+            // spawn 실패: hook_file_guard가 --settings 파일을 정리한다.
+            Err(e) => return Err(e.to_string()),
         };
 
         // 세션 수명과 독립인 agentId sink 재사용: 이미 붙은 채널/백로그를
@@ -224,7 +249,10 @@ impl SessionManager {
             kill_requested: AtomicBool::new(false),
         });
 
-        self.sessions.lock().unwrap().insert(req.agent_id.clone(), session.clone());
+        self.sessions.lock().insert(req.agent_id.clone(), session.clone());
+        // 세션이 맵에 들어갔다 — 이후의 수명은 dispose()/on_exit()가 책임지므로
+        // 훅 파일 정리 가드를 해제한다.
+        hook_file_guard.armed = false;
         self.registry.insert(&session_id, &req.agent_id, SessionState::Starting);
         self.emit_state(&session, SessionState::Starting, None);
 
@@ -263,7 +291,7 @@ impl SessionManager {
         // 덮어쓰지 않는다. state 락을 registry.set_state/emit까지 계속 쥐어
         // on_exit의 전이와 상호 배제 → "Exited 이후 Running" 역전을 원천 차단.
         let started = {
-            let mut st = session.state.lock().unwrap();
+            let mut st = session.state.lock();
             if *st == SessionState::Starting {
                 *st = SessionState::Running;
                 self.registry.set_state(&session_id, SessionState::Running);
@@ -285,7 +313,7 @@ impl SessionManager {
                 Some(p) => format!("claude --settings \"{}\"\r", p.display()),
                 None => "claude\r".to_string(),
             };
-            let _ = session.writer.lock().unwrap().write_all(line.as_bytes());
+            let _ = session.writer.lock().write_all(line.as_bytes());
         }
 
         // 사용자 지정 시작 명령어: 세션이 실제로 Running으로 전이한 경우에만, 트림 후
@@ -301,26 +329,26 @@ impl SessionManager {
                     // CR이며, 유닉스 PTY는 ICRNL로 CR->LF를 매핑하므로 CR 하나면
                     // 모든 플랫폼에서 명령이 그대로 실행된다.
                     let line = format!("{cmd}\r");
-                    let _ = session.writer.lock().unwrap().write_all(line.as_bytes());
+                    let _ = session.writer.lock().write_all(line.as_bytes());
                 }
             }
         }
 
-        let state = *session.state.lock().unwrap();
+        let state = *session.state.lock();
         Ok(CreateSessionResult { session_id, state })
     }
 
     pub fn write_input(&self, agent_id: &str, data: &str) {
         if let Some(s) = self.find(agent_id) {
-            if *s.state.lock().unwrap() == SessionState::Running {
-                let _ = s.writer.lock().unwrap().write_all(data.as_bytes());
+            if *s.state.lock() == SessionState::Running {
+                let _ = s.writer.lock().write_all(data.as_bytes());
             }
         }
     }
 
     pub fn resize(&self, agent_id: &str, cols: u16, rows: u16) {
         if let Some(s) = self.find(agent_id) {
-            if *s.state.lock().unwrap() == SessionState::Running {
+            if *s.state.lock() == SessionState::Running {
                 let _ = s.control.resize(cols, rows);
             }
         }
@@ -337,7 +365,7 @@ impl SessionManager {
 
     /// 앱 quit: 모든 PTY kill + settings 정리(동기, 빠름).
     pub fn dispose_all(&self) {
-        let ids: Vec<AgentId> = self.sessions.lock().unwrap().keys().cloned().collect();
+        let ids: Vec<AgentId> = self.sessions.lock().keys().cloned().collect();
         for a in ids {
             self.dispose(&a);
         }
@@ -350,7 +378,7 @@ impl SessionManager {
         self.sink_for(agent_id).attach(channel);
     }
     pub fn detach_output(&self, agent_id: &str) {
-        if let Some(s) = self.sinks.lock().unwrap().get(agent_id) {
+        if let Some(s) = self.sinks.lock().get(agent_id) {
             s.detach();
         }
     }
@@ -378,7 +406,7 @@ impl SessionManager {
         // state→sessions 락 중첩은 create()의 sessions→state와 데드락이 되므로
         // 여기서는 state 락을 먼저 놓고 sessions 락을 잡는다.)
         {
-            let mut st = sess.state.lock().unwrap();
+            let mut st = sess.state.lock();
             *st = next;
             self.registry.set_state(&sess.session_id, next);
         }
@@ -388,20 +416,28 @@ impl SessionManager {
 
         // 재시작 레이스 가드: dispose 직후 create()가 같은 agentId에 새 세션을
         // 밀어넣었다면(create의 재사용 가드가 kill_requested 세션을 맵에서 떼어냄)
-        // 이 세션은 이미 "교체됨". 그때 맵/sink/상태이벤트를 건드리면 새 세션을
+        // 이 세션은 이미 "교체됨". 그때 맵/상태이벤트를 건드리면 새 세션을
         // 오염시키므로 건드리지 않는다. 맵 확인과 (미교체 시의) 제거를 하나의
-        // sessions 락 임계구역에서 수행 → create()의 맵 제거/삽입과 순서가 확정돼
-        // sink 오제거 레이스가 없다.
+        // sessions 락 임계구역에서 수행 → create()의 맵 제거/삽입과 순서가 확정된다.
+        //
+        // sink는 여기서 절대 제거하지 않는다(2026-07-11 "터미널이 재시작해도
+        // 영구히 안 뜸" 근본 원인). sink는 agentId 키의 세션-수명-독립 자원인데,
+        // 세션 수명 이벤트인 on_exit이 지우면 — 재시작 중 on_exit(Disposed)이
+        // 다음 create보다 먼저 완주하는(빠른 reap, macOS) 순서에서 — 프론트가
+        // attach해 둔 채널이 sink째로 버려진다. 프론트는 재시작 중 재구독
+        // IPC를 보내지 않으므로(사운드 매니저가 onData를 상시 구독) 이후의
+        // 어떤 재시작에도 출력이 채널에 닿지 않아 터미널이 영구 blank가 된다.
+        // 에이전트 삭제 후 남는 sink는 무해한 소량(detach된 채널 + 캡 있는
+        // 백로그)이므로 세션 수명과 묶지 않고 그대로 둔다.
         let is_current = {
-            let mut map = self.sessions.lock().unwrap();
+            let mut map = self.sessions.lock();
             let current = map
                 .get(&sess.agent_id)
                 .map(|s| s.session_id == sess.session_id)
                 .unwrap_or(false);
             if current && next == SessionState::Disposed {
-                // 재사용 안 함 → 맵/sink에서 제거(레지스트리는 아래에서 제거).
+                // 재사용 안 함 → 맵에서 제거(레지스트리는 아래에서 제거).
                 map.remove(&sess.agent_id);
-                self.sinks.lock().unwrap().remove(&sess.agent_id);
             }
             current
         };
@@ -1048,6 +1084,110 @@ mod tests {
         cleanup(&ctl, &dir);
     }
 
+    // ---- 패닉 격리: 세션 계층은 한 번의 패닉으로 벽돌이 되면 안 된다 ----
+
+    /// create()가 훅 설정 파일을 쓴 뒤 어떤 이유로든(스폰 내부 패닉 포함)
+    /// 완주하지 못하면 파일이 정리돼야 한다. 2026-07-11 실사고 흔적:
+    /// <tmp>/agent-office/hooks/에 재시작 시도마다 설정 파일이 1개씩 누적.
+    #[tokio::test]
+    async fn create_cleans_up_hook_settings_file_even_when_spawn_panics() {
+        let events = Arc::new(RecordingEvents::default());
+        let reg = registry();
+        let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
+        let (writer, dir) = scratch_hook_writer();
+        let mgr = Arc::new(SessionManager::new(
+            Arc::new(crate::session::pty_factory::fake::PanickingPtyFactory),
+            writer,
+            reg,
+            events.clone() as Arc<dyn AppEvents>,
+            hub,
+            Arc::new(|| Some(12345u16)),
+        ));
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            mgr.create(req("a1", Some(false)))
+        }));
+        assert!(result.is_err(), "spawn panic must propagate (converted at the command layer)");
+
+        let leftover = std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0);
+        assert_eq!(
+            leftover, 0,
+            "hook settings file must be cleaned up on the panic/unwind path too"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 2026-07-11 실사용 "터미널 영구 고착" 재현(메커니즘 검증): 출력 채널
+    /// 콜백이 패닉하면(웹뷰 측 전송 실패의 대역) 그 패닉이
+    ///   pump(emit, channel 락 보유 중 패닉 → channel 뮤텍스 poison)
+    ///   → detach_output(sinks 락 보유 중 channel.lock() unwrap 패닉 → sinks poison)
+    ///   → 이후 모든 create()가 sink_for의 sinks.lock()에서 패닉
+    /// 으로 전파되어, 훅 설정 파일만 쓰고(누적 잔존) 세션은 맵에 못 들어가며
+    /// invoke는 영원히 미해결 — 앱 재시작 전까지 어떤 에이전트도 터미널을 못
+    /// 띄우는 실사고 시그니처와 일치한다. 세션 계층은 채널 패닉 한 번에
+    /// 오염되지 말아야 한다: 이후의 detach/create는 정상 동작해야 한다.
+    #[tokio::test]
+    async fn session_layer_survives_a_panicking_output_channel() {
+        let events = Arc::new(RecordingEvents::default());
+        let reg = registry();
+        let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
+        let (writer, dir) = scratch_hook_writer();
+        let factory = Arc::new(MultiFakePtyFactory::new());
+        let mgr = Arc::new(SessionManager::new(
+            factory.clone(),
+            writer,
+            reg,
+            events.clone() as Arc<dyn AppEvents>,
+            hub,
+            Arc::new(|| Some(12345u16)),
+        ));
+
+        // 패닉하는 채널을 먼저 attach — 첫 emit(ch.send)에서 pump가 죽는다.
+        let bad: Channel<OutputChunk> =
+            Channel::new(|_| panic!("simulated channel-send failure"));
+        mgr.attach_output("a1", bad);
+
+        mgr.create(req("a1", Some(false))).expect("first create succeeds");
+        let ctl1 = factory.controls()[0].clone();
+        ctl1.push_output(b"trigger-pump-panic");
+
+        // pump가 emit 중 패닉할 시간을 준다(16ms flush 윈도 + 여유).
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // 실사고 경로 그대로: 프론트의 unsubscribe_output → detach_output.
+        // (수정 전: channel 뮤텍스 poison → 여기서 sinks 락 보유 중 패닉)
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            mgr.detach_output("a1")
+        }));
+
+        // 재시작 시나리오: dispose 후 재생성. 세션 계층이 오염됐다면 여기서
+        // 패닉(= invoke 영구 미해결 = 터미널 영구 고착)한다.
+        mgr.dispose("a1");
+        let second = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            mgr.create(req("a1", Some(false)))
+        }));
+        assert!(
+            second.is_ok(),
+            "create() must survive a prior channel panic — a single panicking \
+             channel callback must never brick session creation for the rest of the app run"
+        );
+        second.unwrap().expect("recreate after channel panic should return Ok");
+
+        // 멀쩡한 채널로 재구독하면 새 세션 출력도 정상 수신돼야 한다.
+        let (good, captured) = recording_channel();
+        let reattach = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            mgr.attach_output("a1", good)
+        }));
+        assert!(reattach.is_ok(), "attach_output must survive after the cascade");
+        let ctl2 = factory.controls()[1].clone();
+        ctl2.push_output(b"recovered-output");
+        wait_for(|| captured.lock().contains("recovered-output")).await;
+
+        ctl1.close_output();
+        ctl2.close_output();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // ---- agentId-keyed output sinks (pending attach + recreate reuse) ----
 
     /// A `tauri::ipc::Channel<OutputChunk>` that accumulates every emitted
@@ -1060,7 +1200,7 @@ mod tests {
             if let InvokeResponseBody::Json(s) = body {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
                     if let Some(data) = v.get("data").and_then(|d| d.as_str()) {
-                        sink_for_cb.lock().unwrap().push_str(data);
+                        sink_for_cb.lock().push_str(data);
                     }
                 }
             }
@@ -1083,7 +1223,7 @@ mod tests {
         mgr.create(req("a1", Some(false))).unwrap();
         ctl.push_output(b"hello-pending");
 
-        wait_for(|| captured.lock().unwrap().contains("hello-pending")).await;
+        wait_for(|| captured.lock().contains("hello-pending")).await;
 
         cleanup(&ctl, &dir);
     }
@@ -1115,7 +1255,7 @@ mod tests {
         mgr.create(req("a1", Some(false))).unwrap();
         let ctl1 = factory.controls()[0].clone();
         ctl1.push_output(b"from-first;");
-        wait_for(|| captured.lock().unwrap().contains("from-first;")).await;
+        wait_for(|| captured.lock().contains("from-first;")).await;
 
         // Unexpected exit -> Exited (session kept for restart).
         ctl1.fire_exit(1);
@@ -1128,7 +1268,7 @@ mod tests {
         ctl2.push_output(b"from-second");
 
         // Same channel receives the new session's output — no re-attach.
-        wait_for(|| captured.lock().unwrap().contains("from-second")).await;
+        wait_for(|| captured.lock().contains("from-second")).await;
 
         ctl2.close_output();
         let _ = std::fs::remove_dir_all(&dir);
@@ -1185,6 +1325,59 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 재시작 레이스의 반대 순서(macOS처럼 reap이 빠른 플랫폼): dispose 후
+    /// on_exit(Disposed)이 다음 create보다 **먼저** 완주한 경우에도, agentId에
+    /// 붙어 있던 출력 채널은 살아남아 새 세션의 출력을 받아야 한다.
+    ///
+    /// 2026-07-11 실사용 "터미널이 재시작해도 영구히 안 뜸" 근본 원인:
+    /// on_exit(Disposed, is_current)가 맵 엔트리와 함께 **sink까지 제거**해
+    /// 프론트가 attach해 둔 채널이 고아가 됐다. 이후 create는 채널 없는 새
+    /// sink를 만들고, 프론트(사운드 매니저가 onData를 상시 구독해 재시작 중
+    /// 재구독 IPC가 없음)는 끊긴 걸 모른 채 고아 sink에 붙어 있어 — 이후 몇
+    /// 번을 재시작해도 터미널이 blank(앱 재시작 전까지). sink는 설계상
+    /// "세션 수명과 독립"(agentId 키)이므로 세션 수명 이벤트인 on_exit이
+    /// 지워서는 안 된다. (실 PTY 병렬 부하에서
+    /// real_shell_restart_mash_never_wedges_and_never_leaks_hook_files로도 재현.)
+    #[tokio::test]
+    async fn restart_where_on_exit_wins_the_race_keeps_the_attached_channel() {
+        let events = Arc::new(RecordingEvents::default());
+        let reg = registry();
+        let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
+        let (writer, dir) = scratch_hook_writer();
+        let factory = Arc::new(MultiFakePtyFactory::new());
+        let mgr = Arc::new(SessionManager::new(
+            factory.clone(),
+            writer,
+            reg,
+            events.clone() as Arc<dyn AppEvents>,
+            hub,
+            Arc::new(|| Some(12345u16)),
+        ));
+
+        let (channel, captured) = recording_channel();
+        mgr.attach_output("a1", channel); // 프론트: 부팅 시 1회 구독, 이후 재구독 없음
+
+        mgr.create(req("a1", Some(false))).unwrap();
+        let ctl1 = factory.controls()[0].clone();
+
+        // 재시작 ①: dispose → (macOS: reap이 빨라) on_exit(Disposed)이 다음
+        // create보다 먼저 완주한다.
+        mgr.dispose("a1");
+        ctl1.fire_exit(0);
+        wait_for(|| events.states().contains(&SessionState::Disposed)).await;
+        ctl1.close_output();
+
+        // 재시작 ④: 새 세션 생성 — 처음 attach한 채널이 그대로 출력을 받아야 한다.
+        mgr.create(req("a1", Some(false))).unwrap();
+        let ctl2 = factory.controls()[1].clone();
+        ctl2.push_output(b"after-fast-reap-restart");
+
+        wait_for(|| captured.lock().contains("after-fast-reap-restart")).await;
+
+        ctl2.close_output();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// 위 재시작 레이스의 후속: 뒤늦게 옛 세션이 reap돼 on_exit이 돌아도, 이미
     /// 슬롯을 차지한 새 세션의 맵 엔트리·sink·출력 채널을 오염(evict)시키면 안 된다.
     /// (on_exit은 자신이 여전히 해당 agentId의 현재 세션일 때만 맵/sink/이벤트를
@@ -1227,7 +1420,7 @@ mod tests {
         );
         // 그리고 새 세션의 출력이 여전히 같은 채널로 흐른다(sink가 제거되지 않았다).
         ctl2.push_output(b"after-restart");
-        wait_for(|| captured.lock().unwrap().contains("after-restart")).await;
+        wait_for(|| captured.lock().contains("after-restart")).await;
 
         assert_ne!(first.session_id, second.session_id);
 
@@ -1257,7 +1450,7 @@ mod tests {
             if ev.state == SessionState::Starting && !self.fired.swap(true, Ordering::SeqCst) {
                 if let Some(mgr) = self.mgr.get().and_then(|w| w.upgrade()) {
                     if let Some(s) = mgr.find(&ev.agent_id) {
-                        *s.state.lock().unwrap() = SessionState::Exited;
+                        *s.state.lock() = SessionState::Exited;
                     }
                 }
             }
@@ -1305,7 +1498,7 @@ mod tests {
             "create() must not resurrect a session that exited during Starting"
         );
         assert_eq!(
-            mgr.find("a1").map(|s| *s.state.lock().unwrap()),
+            mgr.find("a1").map(|s| *s.state.lock()),
             Some(SessionState::Exited),
             "session state must stay Exited, never overwritten to Running"
         );
@@ -1380,7 +1573,7 @@ mod tests {
         extra_env: Vec<(String, String)>,
     ) -> Arc<dyn Fn(shells::ShellRequest) -> shells::ResolvedShell + Send + Sync> {
         Arc::new(move |req: shells::ShellRequest| {
-            *captured.lock().unwrap() =
+            *captured.lock() =
                 Some(RecordedShellRequest { selected: req.selected.map(|s| s.to_string()), hooks_on: req.hooks_on });
             shells::ResolvedShell {
                 program: "/bin/sh".to_string(),
@@ -1424,7 +1617,7 @@ mod tests {
 
         mgr.create(req_with_shell("a1", Some("git-bash".to_string()))).unwrap();
 
-        let rec = captured.lock().unwrap();
+        let rec = captured.lock();
         let rec = rec.as_ref().expect("resolver must have been called");
         assert_eq!(rec.selected.as_deref(), Some("git-bash"));
         assert!(rec.hooks_on, "hooks were enabled for this session -> hooks_on must be true");
@@ -1442,7 +1635,7 @@ mod tests {
 
         mgr.create(req_with_shell("a1", Some("git-bash".to_string()))).unwrap();
 
-        let rec = captured.lock().unwrap();
+        let rec = captured.lock();
         let rec = rec.as_ref().expect("resolver must have been called");
         assert_eq!(rec.selected.as_deref(), Some("git-bash"));
         assert!(!rec.hooks_on, "hooks are OFF for this session -> hooks_on must be false");
@@ -1559,7 +1752,7 @@ mod real_pty_smoke {
             if let InvokeResponseBody::Json(s) = body {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
                     if let Some(data) = v.get("data").and_then(|d| d.as_str()) {
-                        output_for_channel.lock().unwrap().push_str(data);
+                        output_for_channel.lock().push_str(data);
                     }
                 }
             }
@@ -1570,7 +1763,7 @@ mod real_pty_smoke {
         // 1) Real shell prompt bytes must arrive within 5s, and state must
         //    have gone Starting -> Running.
         wait_for_timeout(
-            || !output.lock().unwrap().is_empty(),
+            || !output.lock().is_empty(),
             Duration::from_secs(5),
             "no output arrived from the real shell within 5s -- check $SHELL / login-shell startup time",
         )
@@ -1581,7 +1774,7 @@ mod real_pty_smoke {
         // 2) Echo round-trip through real stdin -> shell -> stdout.
         mgr.write_input("smoke", "echo smoke-ok-12345\n");
         wait_for_timeout(
-            || output.lock().unwrap().contains("smoke-ok-12345"),
+            || output.lock().contains("smoke-ok-12345"),
             Duration::from_secs(5),
             "echoed marker 'smoke-ok-12345' never appeared in PTY output within 5s",
         )
@@ -1604,5 +1797,121 @@ mod real_pty_smoke {
 
         let _ = std::fs::remove_dir_all(&hook_dir);
         let _ = std::fs::remove_dir_all(&cwd_dir);
+    }
+
+    /// 실기기 재현 프로브: 사용자 "터미널 재시작 연타" 시나리오.
+    /// 프론트 restartAgentSession의 실제 IPC 순서(사운드 매니저가 onData를 상시
+    /// 구독하므로 재시작 중 재구독 IPC 없음) 그대로:
+    ///   attach(1회) → create → { dispose → 즉시 create } × N (반복 간 대기 없음)
+    /// 각 create가 워치독 내에 완료되고, 마지막 세션의 출력이 처음 attach한
+    /// 채널로 흘러야 하며, 훅 설정 파일이 누적되지 않아야 한다(살아있는 세션
+    /// 1개분만 잔존). 실패 시그니처(2026-07-11 실사용): 훅 파일이 재시작마다
+    /// 1개씩 누적 + dispose가 직전 세션을 못 찾음 + create가 영원히 미완료.
+    #[tokio::test]
+    #[ignore = "real PTY; run explicitly"]
+    async fn real_shell_restart_mash_never_wedges_and_never_leaks_hook_files() {
+        let events = Arc::new(RecordingEvents::default());
+        let registry = Arc::new(SessionRegistry::new());
+        let hub = Arc::new(NotificationHub::new(
+            registry.clone(),
+            events.clone() as Arc<dyn AppEvents>,
+            Arc::new(SystemClock),
+            Duration::from_millis(3000),
+        ));
+
+        let hook_dir = scratch_dir("hooks-mash");
+        let hook_writer = HookSettingsWriter::new(hook_dir.clone());
+
+        let mgr = Arc::new(SessionManager::new(
+            Arc::new(PortablePtyFactory),
+            hook_writer,
+            registry,
+            events.clone() as Arc<dyn AppEvents>,
+            hub,
+            Arc::new(|| Some(45999u16)),
+        ));
+
+        // 프론트처럼 채널은 최초 1회만 attach — 이후 재시작 동안 재구독 없음.
+        let output = Arc::new(Mutex::new(String::new()));
+        let output_for_channel = output.clone();
+        let channel: Channel<OutputChunk> = Channel::new(move |body| {
+            if let InvokeResponseBody::Json(s) = body {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                    if let Some(data) = v.get("data").and_then(|d| d.as_str()) {
+                        output_for_channel.lock().push_str(data);
+                    }
+                }
+            }
+            Ok(())
+        });
+        mgr.attach_output("mash", channel);
+
+        let req = || CreateSessionRequest {
+            agent_id: "mash".into(),
+            cols: Some(80),
+            rows: Some(24),
+            // 존재하지 않는 cwd — 사용자 최초 증상 재현 입력(portable-pty는 홈으로 폴백).
+            cwd: Some("/definitely/not/a/real/dir".into()),
+            shell: None,
+            startup_command: Some("echo mash-marker-$AGENT_OFFICE_SESSION".into()),
+            autostart_claude: Some(false),
+        };
+
+        // create()는 블로킹 함수 — 워치독은 spawn_blocking + timeout으로 건다.
+        let create_with_watchdog = |mgr: Arc<SessionManager>, label: String| async move {
+            let handle = tokio::task::spawn_blocking(move || mgr.create(req()));
+            match tokio::time::timeout(Duration::from_secs(10), handle).await {
+                Err(_) => panic!("create() wedged (>10s) at {label} — reproduces the stuck-terminal bug"),
+                Ok(join) => join
+                    .unwrap_or_else(|e| panic!("create() panicked at {label}: {e:?} — reproduces the stuck-terminal bug"))
+                    .unwrap_or_else(|e| panic!("create() returned Err at {label}: {e}")),
+            }
+        };
+
+        create_with_watchdog(mgr.clone(), "initial".into()).await;
+
+        for i in 0..6 {
+            mgr.dispose("mash"); // restartAgentSession ①
+            // ④ 즉시 재생성 — reap(on_exit)과 의도적으로 경합시킨다.
+            create_with_watchdog(mgr.clone(), format!("restart#{i}")).await;
+        }
+
+        // 마지막 세션이 실제로 살아 있고 출력이 최초 채널로 흐르는지.
+        // echo는 500ms마다 재전송(멱등) — 셸이 아직 프롬프트 전이면 단발
+        // write가 유실될 수 있는 실 PTY 타이밍 플레이크를 흡수한다.
+        output.lock().clear();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            mgr.write_input("mash", "echo final-alive-98765\n");
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            if output.lock().contains("final-alive-98765") {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "final session's output never reached the originally-attached channel \
+                 (last state event: {:?}, captured output bytes: {})",
+                events.states().last().copied(),
+                output.lock().len()
+            );
+        }
+
+        // 훅 파일 누적 없음: 살아있는 마지막 세션 1개분만 남아야 한다.
+        let leftover = std::fs::read_dir(&hook_dir)
+            .map(|d| d.count())
+            .unwrap_or(0);
+        assert!(
+            leftover <= 1,
+            "hook settings files accumulated across restarts: {leftover} files — dispose/on_exit cleanup is broken"
+        );
+
+        mgr.dispose("mash");
+        wait_for_timeout(
+            || matches!(events.states().last(), Some(SessionState::Disposed)),
+            Duration::from_secs(5),
+            "final dispose never completed",
+        )
+        .await;
+        let _ = std::fs::remove_dir_all(&hook_dir);
     }
 }

@@ -129,6 +129,37 @@ describe("restartAgentSession 오케스트레이션", () => {
     expect(useAppStore.getState().sessions.a1.status).toBe("exited");
   });
 
+  it("createSession 결과가 running이면 상태를 running으로 반영한다(재사용 경로 — 상태 이벤트 없음)", async () => {
+    createSession.mockResolvedValueOnce({ sessionId: "s1", state: "running" });
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1"));
+
+    await restartAgentSession("a1");
+
+    expect(useAppStore.getState().sessions.a1.status).toBe("running");
+  });
+
+  it("createSession invoke가 영원히 settle되지 않으면 타임아웃 후 exited로 복구된다", async () => {
+    vi.useFakeTimers();
+    try {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      createSession.mockReturnValueOnce(new Promise(() => {})); // 백엔드 패닉 = 영구 미해결
+      const s = useAppStore.getState();
+      s.addAgent(mkProfile("a1"));
+
+      const done = restartAgentSession("a1");
+      expect(useAppStore.getState().sessions.a1.status).toBe("starting");
+
+      await vi.advanceTimersByTimeAsync(15_001);
+      await done;
+
+      expect(useAppStore.getState().sessions.a1.status).toBe("exited");
+      warn.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("여러 번 재시작하면 에폭이 매번 증가한다", async () => {
     const s = useAppStore.getState();
     s.addAgent(mkProfile("a1"));

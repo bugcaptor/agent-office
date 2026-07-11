@@ -37,15 +37,35 @@ pub async fn create_session(
     opts: Option<SessionOpts>,
 ) -> Result<CreateSessionResult, String> {
     let o = opts.unwrap_or_default();
-    app_state.manager.create(CreateSessionRequest {
-        agent_id,
-        cols: o.cols,
-        rows: o.rows,
-        cwd: o.cwd,
-        shell: o.shell,
-        startup_command: o.startup_command,
-        autostart_claude: None, // 항상 기본 false (SessionManager::create의 unwrap_or(false))
-    })
+    // catch_unwind: Tauri에서 커맨드가 패닉하면 invoke 프라미스가 영원히
+    // settle되지 않는다 — 프론트는 "starting"에 고착되고 사용자는 앱 재시작
+    // 전까지 그 에이전트의 터미널을 못 띄운다(2026-07-11 실사고). create()
+    // 내부(스폰/하위 crate)의 잔여 패닉을 Err로 바꿔 프라미스를 반드시
+    // settle시키고, 프론트가 exited로 전환해 재시도할 수 있게 한다.
+    let manager = app_state.manager.clone();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        manager.create(CreateSessionRequest {
+            agent_id,
+            cols: o.cols,
+            rows: o.rows,
+            cwd: o.cwd,
+            shell: o.shell,
+            startup_command: o.startup_command,
+            autostart_claude: None, // 항상 기본 false (SessionManager::create의 unwrap_or(false))
+        })
+    }));
+    match result {
+        Ok(r) => r,
+        Err(panic) => {
+            let msg = panic
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic".into());
+            eprintln!("agent-office: create_session panicked: {msg}");
+            Err(format!("세션 생성 중 내부 오류(panic): {msg}"))
+        }
+    }
 }
 
 /// 렌더러 셸 선택 드롭다운용: 호스트에 설치된 Windows 셸 목록(다른

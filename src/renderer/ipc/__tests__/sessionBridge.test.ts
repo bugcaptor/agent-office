@@ -320,6 +320,78 @@ describe("officeBus.emitAgentClicked / ensureSession (Fix 1b)", () => {
   });
 });
 
+// 2026-07-11 "터미널 영구 고착" 실사고 복구 가드 2건:
+// ⓐ 백엔드가 기존 세션을 재사용하면 상태 이벤트를 방출하지 않고 결과만
+//    돌려준다 — 결과 상태를 반영하지 않으면 "starting"에 영원히 고착되어
+//    이후 클릭이 전부 no-op이 된다.
+// ⓑ 백엔드 커맨드가 패닉 등으로 invoke를 영원히 settle하지 않으면
+//    startingInFlight가 누수되고 상태도 "starting"에 고착된다 — 타임아웃으로
+//    exited 복구해 재시도가 가능해야 한다.
+describe("ensureSession 복구 가드 (터미널 영구 고착 방지)", () => {
+  it("createSession 결과가 running이면(백엔드 재사용 경로 — 상태 이벤트 없음) 상태를 running으로 반영한다", async () => {
+    useAppStore.getState().hydrate({ agents: [mkProfile({ id: "a1" })], version: 1 });
+    mockApi.createSession.mockResolvedValueOnce({ sessionId: "s1", state: "running" });
+
+    officeBus.emitAgentClicked("a1");
+
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().sessions.a1.status).toBe("running")
+    );
+  });
+
+  it("createSession 결과가 exited면(생성 직후 즉사) 상태를 exited로 반영해 재시도 가능하게 한다", async () => {
+    useAppStore.getState().hydrate({ agents: [mkProfile({ id: "a1" })], version: 1 });
+    mockApi.createSession.mockResolvedValueOnce({ sessionId: "s1", state: "exited" });
+
+    officeBus.emitAgentClicked("a1");
+
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().sessions.a1.status).toBe("exited")
+    );
+  });
+
+  it("결과 반영은 상태가 아직 starting일 때만 한다 — 먼저 도착한 백엔드 이벤트를 덮어쓰지 않는다", async () => {
+    useAppStore.getState().hydrate({ agents: [mkProfile({ id: "a1" })], version: 1 });
+    let resolveCreate: (v: unknown) => void = () => {};
+    mockApi.createSession.mockReturnValueOnce(
+      new Promise((r) => {
+        resolveCreate = r;
+      })
+    );
+
+    officeBus.emitAgentClicked("a1");
+    // invoke가 settle되기 전에 백엔드 이벤트가 exited를 먼저 반영한 상황.
+    capture.onSessionState?.({ sessionId: "s1", agentId: "a1", state: "exited", at: Date.now() });
+    resolveCreate({ sessionId: "s1", state: "running" }); // 낡은 결과
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(useAppStore.getState().sessions.a1.status).toBe("exited");
+  });
+
+  it("invoke가 영원히 settle되지 않으면 타임아웃 후 exited로 복구되고, 이후 클릭이 재시도한다", async () => {
+    vi.useFakeTimers();
+    try {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      useAppStore.getState().hydrate({ agents: [mkProfile({ id: "a1" })], version: 1 });
+      mockApi.createSession.mockReturnValueOnce(new Promise(() => {})); // 영구 미해결
+
+      officeBus.emitAgentClicked("a1");
+      expect(useAppStore.getState().sessions.a1.status).toBe("starting");
+
+      await vi.advanceTimersByTimeAsync(15_001);
+      expect(useAppStore.getState().sessions.a1.status).toBe("exited");
+
+      // in-flight 가드도 해제돼 다음 클릭이 실제로 재시도해야 한다.
+      mockApi.createSession.mockResolvedValueOnce({ sessionId: "s2", state: "starting" });
+      officeBus.emitAgentClicked("a1");
+      expect(mockApi.createSession).toHaveBeenCalledTimes(2);
+      warn.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("installSessionBridge / mute toggle (Task 4G)", () => {
   it("forces the badge to 0 the instant muted flips on, even with pending notifications", () => {
     useAppStore.getState().addAgent(mkProfile({ id: "a1" }));

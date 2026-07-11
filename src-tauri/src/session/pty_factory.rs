@@ -8,7 +8,12 @@
 // whatever `PtySpawnOptions` it is given.
 
 use std::io::{self, Read, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+// parking_lot::Mutex(poisoning 없음) — manager.rs와 같은 이유. RealControl의
+// resize/kill 경로가 다른 스레드의 패닉에 오염되지 않게 한다.
+// (테스트 전용 fake 모듈은 자체적으로 std::sync::Mutex를 임포트해 그대로 쓴다.)
+use parking_lot::Mutex;
 
 /// PTY spawn 결과 번들. 리더/라이터/제어/대기를 분리해 페이크 주입을 쉽게 한다.
 pub struct SpawnedPty {
@@ -61,12 +66,11 @@ impl PtyControl for RealControl {
     fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {
         self.master
             .lock()
-            .unwrap()
             .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| io::Error::other(e.to_string()))
     }
     fn kill(&self) -> io::Result<()> {
-        self.killer.lock().unwrap().kill()
+        self.killer.lock().kill()
     }
 }
 
@@ -413,6 +417,16 @@ pub mod fake {
     impl PtyFactory for AlwaysFailPtyFactory {
         fn spawn(&self, _opts: PtySpawnOptions) -> io::Result<SpawnedPty> {
             Err(io::Error::other("AlwaysFailPtyFactory: spawn always fails"))
+        }
+    }
+
+    /// `PtyFactory` whose `spawn` PANICS — for exercising create()'s
+    /// panic-safety (훅 설정 파일이 unwind 경로에서도 정리되는지).
+    pub struct PanickingPtyFactory;
+
+    impl PtyFactory for PanickingPtyFactory {
+        fn spawn(&self, _opts: PtySpawnOptions) -> io::Result<SpawnedPty> {
+            panic!("PanickingPtyFactory: simulated panic inside spawn")
         }
     }
 }
