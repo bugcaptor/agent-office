@@ -80,13 +80,19 @@ pub struct NotificationEvent {
     pub at: u64,
 }
 
-/// activity 신호 종류. TS ActivityKind와 동일(serde lowercase).
+/// activity 신호 종류. TS ActivityKind와 동일.
 /// prompt = UserPromptSubmit(턴 시작), tool = PostToolUse(하트비트).
+/// sub-start = PreToolUse:Task(서브에이전트 소환), sub-stop = SubagentStop(종료).
+/// 뒤 둘은 카운트 기반 미니 캐릭터 전용 — 시간 추적/시계열엔 기록하지 않는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ActivityKind {
     Prompt,
     Tool,
+    #[serde(rename = "sub-start")]
+    SubStart,
+    #[serde(rename = "sub-stop")]
+    SubStop,
 }
 
 /// 세션 시간 추적용 활동 이벤트. NotificationHub의 dedup/큐를 우회해
@@ -299,6 +305,20 @@ mod tests {
     fn activity_kind_serializes_lowercase() {
         assert_eq!(serde_json::to_string(&ActivityKind::Prompt).unwrap(), "\"prompt\"");
         assert_eq!(serde_json::to_string(&ActivityKind::Tool).unwrap(), "\"tool\"");
+    }
+
+    #[test]
+    fn activity_kind_serializes_subagent_variants_as_kebab() {
+        assert_eq!(serde_json::to_string(&ActivityKind::SubStart).unwrap(), "\"sub-start\"");
+        assert_eq!(serde_json::to_string(&ActivityKind::SubStop).unwrap(), "\"sub-stop\"");
+    }
+
+    #[test]
+    fn activity_kind_deserializes_subagent_variants_from_ts_literal() {
+        let a: ActivityKind = serde_json::from_str("\"sub-start\"").unwrap();
+        let b: ActivityKind = serde_json::from_str("\"sub-stop\"").unwrap();
+        assert_eq!(a, ActivityKind::SubStart);
+        assert_eq!(b, ActivityKind::SubStop);
     }
 
     #[test]

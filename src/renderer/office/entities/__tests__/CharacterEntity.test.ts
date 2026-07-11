@@ -555,6 +555,27 @@ describe("CharacterEntity: defensive out-of-bounds clamp", () => {
   });
 });
 
+describe("CharacterEntity: setSubagentCount / mini overlay", () => {
+  // 미니 오버레이 루트는 생성 순서상 마지막 자식(children[3]); 그 안의 보이는 Sprite 수를 센다.
+  const miniVisible = (e: CharacterEntity): number => {
+    const mini = e.root.children[3] as unknown as { children: { visible: boolean }[] };
+    return mini.children.filter((s) => s.visible).length;
+  };
+
+  it("setSubagentCount가 미니 표시 수를 바꾸고(0~3 캡) update/destroy가 안전하다", () => {
+    const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), SEAT, makeMap(), () => 0.5);
+    expect(miniVisible(e)).toBe(0); // 초기 0
+    e.setSubagentCount(2);
+    expect(miniVisible(e)).toBe(2);
+    e.setSubagentCount(9);
+    expect(miniVisible(e)).toBe(3); // 3 캡
+    e.update(16); // 예외 없이 bob 갱신
+    e.setSubagentCount(0);
+    expect(miniVisible(e)).toBe(0);
+    e.destroy(); // 미니까지 정리, 예외 없음
+  });
+});
+
 describe("CharacterEntity: destroy", () => {
   it("destroys the overlays and the root container (and its children)", () => {
     const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), SEAT, makeMap(), () => 0.5);

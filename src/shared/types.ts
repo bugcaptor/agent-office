@@ -106,7 +106,7 @@ export interface NotificationEvent {
  * (serde lowercase). `prompt` = UserPromptSubmit (turn start), `tool` =
  * PostToolUse (heartbeat / waiting→working signal).
  */
-export type ActivityKind = "prompt" | "tool";
+export type ActivityKind = "prompt" | "tool" | "sub-start" | "sub-stop";
 
 /**
  * Activity signal for session time tracking. Emitted as the `activity-event`

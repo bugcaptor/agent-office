@@ -42,6 +42,8 @@ async fn handle_hook(
     // source 라우팅:
     //  - stop  → Stop 알림(기존)
     //  - prompt/tool → activity 신호(dedup/큐 우회)
+    //  - sub-start/sub-stop → activity 신호로 SubStart/SubStop을 라우팅
+    //    (서브에이전트 미니 캐릭터 카운트용 — PreToolUse(Task)/SubagentStop 훅에서 옴)
     //  - hook 또는 빈 값 → Hook 알림(기존 기본값 보존)
     //  - 그 외 → 무시 + 경고(반쪽 데이터 방지). curl `|| true`가 실패를 삼키므로
     //    응답은 여전히 200으로 둔다.
@@ -49,6 +51,8 @@ async fn handle_hook(
         "stop" => hub.ingest_hook(&q.session, NotificationSource::Stop, &body),
         "prompt" => hub.ingest_activity_with_body(&q.session, ActivityKind::Prompt, &body),
         "tool" => hub.ingest_activity(&q.session, ActivityKind::Tool),
+        "sub-start" => hub.ingest_activity(&q.session, ActivityKind::SubStart),
+        "sub-stop" => hub.ingest_activity(&q.session, ActivityKind::SubStop),
         "" | "hook" => hub.ingest_hook(&q.session, NotificationSource::Hook, &body),
         other => eprintln!("hook_server: ignoring unknown hook source '{other}' (session={})", q.session),
     }
@@ -335,6 +339,49 @@ mod tests {
         wait_for(|| !events.activities().is_empty()).await;
         assert_eq!(events.activities().len(), 1);
         assert!(events.notifications().is_empty());
+
+        let _ = tx.send(());
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn hook_post_with_sub_start_source_emits_substart_activity() {
+        let (hub, events) = fixture();
+        let (tx, rx) = oneshot::channel();
+        let (port, handle) = serve(hub.clone(), rx).await.unwrap();
+
+        reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/hook?session=s1&source=sub-start"))
+            .body("")
+            .send()
+            .await
+            .unwrap();
+
+        wait_for(|| !events.activities().is_empty()).await;
+        let acts = events.activities();
+        assert_eq!(acts.len(), 1);
+        assert_eq!(acts[0].kind, crate::types::ActivityKind::SubStart);
+        assert!(events.notifications().is_empty());
+
+        let _ = tx.send(());
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn hook_post_with_sub_stop_source_emits_substop_activity() {
+        let (hub, events) = fixture();
+        let (tx, rx) = oneshot::channel();
+        let (port, handle) = serve(hub.clone(), rx).await.unwrap();
+
+        reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/hook?session=s1&source=sub-stop"))
+            .body("")
+            .send()
+            .await
+            .unwrap();
+
+        wait_for(|| !events.activities().is_empty()).await;
+        assert_eq!(events.activities()[0].kind, crate::types::ActivityKind::SubStop);
 
         let _ = tx.send(());
         handle.await.unwrap();

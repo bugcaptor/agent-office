@@ -74,6 +74,11 @@ impl HookSettingsWriter {
     /// Notification/Stop 알림 훅 + UserPromptSubmit/PostToolUse activity 훅.
     /// activity 훅은 시간 추적용 신호 — 알림과 동일한 curl 패턴,
     /// source 쿼리값만 prompt/tool로 다르다.
+    /// 추가로 SubagentStart/SubagentStop 훅도 등록한다 —
+    /// 서브에이전트 미니 캐릭터 카운트용 sub-start/sub-stop activity 신호.
+    /// (공식 훅 문서 기준 "When a subagent is spawned"/"When a subagent
+    /// finishes" 이벤트 쌍 — PreToolUse(matcher="Task")는 "Task"가 유효한
+    /// 툴 이름 매처가 아니라 실제로 발화하지 않으므로 사용하지 않는다.)
     pub fn build(&self, session_id: &str, port: u16) -> serde_json::Value {
         let entry = |source: &str| {
             json!([{
@@ -86,6 +91,9 @@ impl HookSettingsWriter {
             "Stop": entry("stop"),
             "UserPromptSubmit": entry("prompt"),
             "PostToolUse": entry("tool"),
+            // 서브에이전트 미니 캐릭터: 소환 = sub-start, 종료 = sub-stop.
+            "SubagentStart": entry("sub-start"),
+            "SubagentStop": entry("sub-stop"),
         } })
     }
 
@@ -320,5 +328,29 @@ mod tests {
         assert!(prompt_cmd.contains("session=sess-1") && prompt_cmd.contains("127.0.0.1:52413"));
         assert!(tool_cmd.contains("source=tool"), "tool hook source: {tool_cmd}");
         assert!(tool_cmd.contains("session=sess-1") && tool_cmd.contains("127.0.0.1:52413"));
+    }
+
+    #[test]
+    fn build_includes_subagentstart_and_subagentstop_hooks() {
+        let writer = HookSettingsWriter::new(scratch_dir());
+        let value = writer.build("sess-1", 52413);
+        let hooks = value.get("hooks").expect("top-level `hooks` key");
+
+        // SubagentStart: command에 source=sub-start
+        let start = &hooks["SubagentStart"][0];
+        let start_cmd = start["hooks"][0]["command"].as_str().unwrap();
+        assert!(start_cmd.contains("source=sub-start"), "{start_cmd}");
+
+        // SubagentStop: source=sub-stop
+        let stop = &hooks["SubagentStop"][0];
+        let stop_cmd = stop["hooks"][0]["command"].as_str().unwrap();
+        assert!(stop_cmd.contains("source=sub-stop"), "{stop_cmd}");
+
+        // PreToolUse(matcher="Task")는 유효한 훅이 아니었으므로 완전히 제거되어야 한다.
+        assert!(hooks.get("PreToolUse").is_none(), "PreToolUse hook must be removed");
+
+        // 기존 훅 유지 회귀 방지.
+        assert!(hooks.get("Notification").is_some());
+        assert!(hooks.get("PostToolUse").is_some());
     }
 }

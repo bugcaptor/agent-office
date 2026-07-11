@@ -37,6 +37,8 @@ export interface OfficeBus {
   emitDeskClicked(deskIndex: number, screenX: number, screenY: number): void;
   /** C가 책상 클릭을 구독. */
   onDeskClicked(cb: (deskIndex: number, screenX: number, screenY: number) => void): () => void;
+  /** B가 부모별 활성 서브에이전트 수 변화를 구독(미니 캐릭터 표시용). */
+  onSubagentCountChanged(cb: (agentId: string, count: number) => void): () => void;
 }
 
 type NotificationListener = (agentId: string, hasPending: boolean) => void;
@@ -47,6 +49,8 @@ export interface MockOfficeBus extends OfficeBus {
   /** Drives the A -> B direction from a test or manual harness. */
   triggerNotificationChanged(agentId: string, hasPending: boolean): void;
   triggerSessionStateChanged(agentId: string, state: SessionState): void;
+  /** Drives subagent-count changes from a test/manual harness. */
+  triggerSubagentCountChanged(agentId: string, count: number): void;
   /** Records every agentId passed to `emitAgentClicked` (B -> A/C direction), in order. */
   readonly clickedAgentIds: readonly string[];
 }
@@ -60,6 +64,7 @@ export function createMockOfficeBus(): MockOfficeBus {
   >();
   const labelAnchorListeners = new Set<(a: ReadonlyMap<string, LabelAnchor>) => void>();
   const deskClickListeners = new Set<(deskIndex: number, x: number, y: number) => void>();
+  const subagentCountListeners = new Set<(agentId: string, count: number) => void>();
   const clickedAgentIds: string[] = [];
 
   return {
@@ -94,6 +99,13 @@ export function createMockOfficeBus(): MockOfficeBus {
     onDeskClicked(cb) {
       deskClickListeners.add(cb);
       return () => deskClickListeners.delete(cb);
+    },
+    onSubagentCountChanged(cb) {
+      subagentCountListeners.add(cb);
+      return () => subagentCountListeners.delete(cb);
+    },
+    triggerSubagentCountChanged(agentId, count) {
+      for (const cb of subagentCountListeners) cb(agentId, count);
     },
     triggerNotificationChanged(agentId, hasPending) {
       for (const cb of notificationListeners) cb(agentId, hasPending);

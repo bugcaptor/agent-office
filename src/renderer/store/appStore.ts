@@ -412,6 +412,9 @@ export const useAppStore = create<AppState>()(
 
     applyActivityEvent: (e) =>
       set((s) => {
+        // 서브에이전트 카운트 신호는 시간 추적/라벨 대상이 아니다(카운트는
+        // sessionBridge가 별도 소유). reduceTurn의 TurnInputKind로 좁히기 위해서도 필요.
+        if (e.kind !== "prompt" && e.kind !== "tool") return {};
         const prevTurn = s.timeTracking[e.agentId] ?? initialTurnState();
         const nextTurn = reduceTurn(prevTurn, { kind: e.kind, at: e.at });
         logSettledTurn(e.agentId, prevTurn, nextTurn, e.at);
