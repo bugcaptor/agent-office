@@ -17,10 +17,12 @@ use crate::notification::hub::NotificationHub;
 use crate::persistence::profile_store::ProfileStore;
 use crate::persistence::settings_store::{AppSettings, SettingsStore};
 use crate::session::manager::SessionManager;
+use crate::session_events::types::SessionStartedEvent;
 use crate::types::*;
 
 /// 이벤트 방출 경계(테스트 주입점). 프로덕션=TauriEvents, 테스트=RecordingEvents.
 pub trait AppEvents: Send + Sync {
+    fn session_started(&self, _ev: &SessionStartedEvent) {}
     fn session_state(&self, ev: &SessionStateEvent);
     fn notification_new(&self, ev: &NotificationEvent);
     fn notification_cleared(&self, agent_id: &str, ids: &[String]);
@@ -114,11 +116,14 @@ pub struct AppState {
 #[cfg(test)]
 pub mod fake {
     use super::AppEvents;
+    use crate::session_events::types::SessionStartedEvent;
     use crate::types::{ActivityEvent, NotificationEvent, SessionState, SessionStateEvent};
     use std::sync::Mutex;
 
     #[derive(Default)]
     pub struct RecordingEvents {
+        session_starts: Mutex<Vec<SessionStartedEvent>>,
+        timeline: Mutex<Vec<String>>,
         states: Mutex<Vec<SessionStateEvent>>,
         notifications: Mutex<Vec<NotificationEvent>>,
         cleared: Mutex<Vec<(String, Vec<String>)>>,
@@ -126,8 +131,16 @@ pub mod fake {
     }
 
     impl AppEvents for RecordingEvents {
+        fn session_started(&self, ev: &SessionStartedEvent) {
+            self.session_starts.lock().unwrap().push(ev.clone());
+            self.timeline.lock().unwrap().push("session_started".into());
+        }
         fn session_state(&self, ev: &SessionStateEvent) {
             self.states.lock().unwrap().push(ev.clone());
+            self.timeline
+                .lock()
+                .unwrap()
+                .push(format!("session_state:{:?}", ev.state));
         }
         fn notification_new(&self, ev: &NotificationEvent) {
             self.notifications.lock().unwrap().push(ev.clone());
@@ -141,6 +154,12 @@ pub mod fake {
     }
 
     impl RecordingEvents {
+        pub fn session_starts(&self) -> Vec<SessionStartedEvent> {
+            self.session_starts.lock().unwrap().clone()
+        }
+        pub fn timeline(&self) -> Vec<String> {
+            self.timeline.lock().unwrap().clone()
+        }
         /// 지금까지 방출된 `session-state` 이벤트의 상태값 시퀀스.
         pub fn states(&self) -> Vec<SessionState> {
             self.states.lock().unwrap().iter().map(|e| e.state).collect()
