@@ -83,3 +83,22 @@ export const useSessionTimeRows = (): SessionTimeRow[] => {
     [agentOrder, agents, timeTracking]
   );
 };
+
+/**
+ * "오늘 일한 시간" 헤드라인. `todayWorkedBaseMs + (Σ메모리 workedMs -
+ * memoryWorkedBaselineMs)` — 부팅/자정 리셋 베이스라인 위에 이번 실행에서
+ * 새로 정산된 workedMs 델타만 더한다(이중 집계 없음). 계산 모델은
+ * docs/superpowers/specs/2026-07-11-today-worked-total-design.md 참고.
+ */
+export const useTodayWorkedMs = (): number => {
+  const base = useAppStore((s) => s.todayWorkedBaseMs);
+  const baseline = useAppStore((s) => s.memoryWorkedBaselineMs);
+  const timeTracking = useAppStore((s) => s.timeTracking);
+  return useMemo(
+    () =>
+      base +
+      Object.values(timeTracking).reduce((a, t) => a + t.workedMs, 0) -
+      baseline,
+    [base, baseline, timeTracking]
+  );
+};

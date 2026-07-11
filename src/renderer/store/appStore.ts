@@ -71,6 +71,15 @@ interface AppState {
   spritePreviews: Record<string, string>;
   /** 에이전트별 턴 집계(메모리 전용, 순수 리듀서 상태). */
   timeTracking: Record<string, AgentTurnState>;
+  /**
+   * "오늘 일한 시간" 헤드라인 베이스: 부팅 시 JSONL에서 산출한 오늘자 합
+   * (자정 리셋 시 0). `memoryWorkedBaselineMs`와 함께 이후 Σ메모리 workedMs
+   * 델타를 더해 오늘 총량을 구한다(계산은 selectors.useTodayWorkedMs).
+   * 런타임 전용 — persist.ts는 agents만 저장하므로 대상 아님.
+   */
+  todayWorkedBaseMs: number;
+  /** 위 베이스가 세팅된 시점의 Σ메모리 workedMs(이중 집계 방지 기준선). */
+  memoryWorkedBaselineMs: number;
   /** 머리 위 작업 라벨 소스 상태. 비영속. */
   taskLabels: Record<string, AgentTaskLabel>;
   /**
@@ -141,6 +150,11 @@ interface AppState {
   applyActivityEvent(e: ActivityEvent): void;
   applyNotificationTiming(e: NotificationEvent): void;
   applySessionTiming(agentId: string, state: SessionState, at: number): void;
+  /**
+   * "오늘" 헤드라인 베이스+기준선을 함께 세팅. 부팅 시 `(base, 0)`,
+   * 로컬 자정 리셋 시 `(0, 현재 Σ메모리 workedMs)`.
+   */
+  setTodayWorkedBase(baseMs: number, baselineMs: number): void;
 
   // ---- overhead task label ----
   setTaskLabelSummary(agentId: string, patch: { goal?: string; currentSummary?: string }): void;
@@ -175,6 +189,8 @@ export const useAppStore = create<AppState>()(
     portraits: {},
     spritePreviews: {},
     timeTracking: {},
+    todayWorkedBaseMs: 0,
+    memoryWorkedBaselineMs: 0,
     taskLabels: {},
     terminalEpochs: {},
     appSettings: {
@@ -466,6 +482,9 @@ export const useAppStore = create<AppState>()(
         logSettledTurn(agentId, prev, next, at);
         return { timeTracking: { ...s.timeTracking, [agentId]: next } };
       }),
+
+    setTodayWorkedBase: (baseMs, baselineMs) =>
+      set({ todayWorkedBaseMs: baseMs, memoryWorkedBaselineMs: baselineMs }),
 
     hydrate: (state) =>
       set(() => {

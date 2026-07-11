@@ -7,7 +7,7 @@
 // reducer; only the open-turn live elapsed uses the wall clock, and only for
 // display.
 import { useEffect, useState } from "react";
-import { useSessionTimeRows, type SessionTimeRow } from "../store/selectors";
+import { useSessionTimeRows, useTodayWorkedMs, type SessionTimeRow } from "../store/selectors";
 import { formatDuration } from "./format";
 
 const PHASE_ICON: Record<SessionTimeRow["phase"], string> = {
@@ -30,6 +30,7 @@ function useOneSecondTick(active: boolean): number {
 
 export function SessionTimePanel() {
   const rows = useSessionTimeRows();
+  const todayWorkedMs = useTodayWorkedMs();
   const [collapsed, setCollapsed] = useState(false);
   const anyOpen = rows.some((r) => r.phase !== "idle");
   const now = useOneSecondTick(anyOpen && !collapsed);
@@ -47,6 +48,7 @@ export function SessionTimePanel() {
           {collapsed ? "▸" : "▾"}
         </button>
       </div>
+      <div className="stp-today">오늘 {formatDuration(todayWorkedMs)}</div>
       {!collapsed && (
         <ul className="stp-rows">
           {rows.map((r) => {

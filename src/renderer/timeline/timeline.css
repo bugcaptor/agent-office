@@ -46,6 +46,14 @@
   line-height: 1;
 }
 
+.stp-today {
+  padding: 4px 8px;
+  border-bottom: 2px solid var(--border-dark);
+  color: var(--accent);
+  font-weight: bold;
+  letter-spacing: 0.03em;
+}
+
 .stp-rows {
   list-style: none;
   margin: 0;

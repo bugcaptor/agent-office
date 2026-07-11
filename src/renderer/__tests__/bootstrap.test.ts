@@ -35,6 +35,7 @@ const { mockApi } = vi.hoisted(() => ({
     onNotificationCleared: vi.fn(() => vi.fn()),
     onActivity: vi.fn(() => vi.fn()),
     appendSessionTurn: vi.fn(),
+    loadSessionTurns: vi.fn(),
   },
 }));
 
@@ -102,6 +103,7 @@ beforeEach(() => {
     settings: { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false },
     firstRun: false,
   });
+  mockApi.loadSessionTurns.mockResolvedValue([]);
   mockApi.onNotification.mockImplementation((cb: (e: NotificationEvent) => void) => {
     capturedOnNotification = cb;
     return vi.fn();
