@@ -173,7 +173,15 @@ export const officeBus: OfficeBus = {
  */
 export function installSessionBridge(): () => void {
   const offState = tauriApi.onSessionState((e) => {
-    useAppStore.getState().setSessionState({ agentId: e.agentId, status: e.state });
+    // 스토어에는 disposed를 exited로 흡수한다(runGuardedCreateSession과 동일).
+    // disposed가 스토어에 남으면 ensureSession(idle/exited만 재시작)과
+    // TerminalHost의 exited 배너가 막혀 재소환이 안 된다. 시간 정산과
+    // officeBus 릴레이에는 원본 e.state를 그대로 준다 — 둘 다 disposed를
+    // 이미 종료/비활성으로 처리한다.
+    useAppStore.getState().setSessionState({
+      agentId: e.agentId,
+      status: e.state === "disposed" ? "exited" : e.state,
+    });
     // 시간 추적: 세션 종료(exited/disposed) 시 열린 턴 강제 정산(백엔드 e.at 사용).
     useAppStore.getState().applySessionTiming(e.agentId, e.state, e.at);
     stateCbs.forEach((cb) => cb(e.agentId, e.state));

@@ -30,6 +30,7 @@ export function AgentTabStrip() {
   // across renders unless a profile actually changes.
   const tabIds = useAppStore(useShallow((s) => s.recentAgentIds));
   const agents = useAppStore((s) => s.agents);
+  const sessions = useAppStore((s) => s.sessions);
   const portraits = useAppStore((s) => s.portraits);
   const spritePreviews = useAppStore((s) => s.spritePreviews);
   const tabs = useMemo(
@@ -125,6 +126,16 @@ export function AgentTabStrip() {
               label: "터미널 재시작",
               onSelect: () =>
                 openModal({ kind: "confirm-restart", agentId: menu.agentId }),
+            },
+            {
+              label: "터미널 종료",
+              // PTY가 살아있을 때만 의미가 있다 — 이미 exited/idle이면 캐릭터는
+              // 탕비실(또는 재소환 대기)이므로 비활성화.
+              disabled: !["starting", "running"].includes(
+                sessions[menu.agentId]?.status ?? "idle"
+              ),
+              onSelect: () =>
+                openModal({ kind: "confirm-terminate", agentId: menu.agentId }),
             },
             {
               label: "VS Code로 열기",

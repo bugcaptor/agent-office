@@ -328,6 +328,37 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
     expect(openInVscode).not.toHaveBeenCalled();
   });
 
+  it("'터미널 종료'가 '터미널 재시작' 바로 다음 항목으로 보이고 선택 시 confirm-terminate 모달을 열고 메뉴는 닫힌다", () => {
+    seedThreeTabs(); // addAgent가 세션을 starting으로 시드 → 항목 활성
+    const { getAllByRole, getByRole, queryByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]); // "Agent a1"
+    const items = getAllByRole("menuitem");
+    expect(items[0].textContent).toBe("터미널 재시작");
+    expect(items[1].textContent).toBe("터미널 종료");
+
+    fireEvent.click(getByRole("menuitem", { name: "터미널 종료" }));
+
+    expect(useAppStore.getState().modal).toEqual({
+      kind: "confirm-terminate",
+      agentId: "a1",
+    });
+    expect(queryByRole("menu")).toBeNull();
+  });
+
+  it("세션이 exited면 '터미널 종료'가 비활성화되고 클릭해도 모달이 열리지 않는다", () => {
+    seedThreeTabs();
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "exited" });
+    const { getAllByRole, getByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    const item = getByRole("menuitem", { name: "터미널 종료" });
+    expect(item).toHaveProperty("disabled", true);
+
+    fireEvent.click(item);
+    expect(useAppStore.getState().modal).toEqual({ kind: "none" });
+  });
+
   it("'퇴근' 선택 시 confirm-clock-out 모달을 열고 메뉴는 닫힌다", () => {
     seedThreeTabs();
     const { getAllByRole, getByRole, queryByRole } = render(<AgentTabStrip />);

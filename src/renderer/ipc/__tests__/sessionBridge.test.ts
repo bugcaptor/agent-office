@@ -199,6 +199,37 @@ describe("installSessionBridge / onSessionState", () => {
 
     expect(listener).toHaveBeenCalledWith("a1", "exited");
   });
+
+  it("disposed 와이어 이벤트는 스토어에 exited로 정규화되어 저장된다", () => {
+    // 의도적 종료(disposeSession) 후 백엔드가 쏘는 disposed를 스토어에 그대로
+    // 두면 ensureSession(idle/exited만 재시작)과 TerminalHost 배너(exited만
+    // 표시)가 막힌다 — runGuardedCreateSession과 동일한 정규화를 적용한다.
+    useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
+
+    capture.onSessionState?.({
+      sessionId: "s1",
+      agentId: "a1",
+      state: "disposed",
+      at: Date.now(),
+    });
+
+    expect(useAppStore.getState().sessions.a1.status).toBe("exited");
+  });
+
+  it("disposed 이벤트도 officeBus 릴레이에는 원본 state로 전달된다", () => {
+    useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
+    const listener = vi.fn();
+    officeBus.onSessionStateChanged(listener);
+
+    capture.onSessionState?.({
+      sessionId: "s1",
+      agentId: "a1",
+      state: "disposed",
+      at: Date.now(),
+    });
+
+    expect(listener).toHaveBeenCalledWith("a1", "disposed");
+  });
 });
 
 describe("officeBus.emitAgentClicked", () => {
