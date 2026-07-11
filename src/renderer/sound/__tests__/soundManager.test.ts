@@ -117,12 +117,15 @@ describe("installSoundManager", () => {
     off();
   });
 
-  it("출력이 흐르면 틱마다 playClicks가 호출된다", () => {
+  it("출력이 흐르면 타이핑 시간 동안 playClicks가 호출된다", () => {
     const { backend, m, off } = install();
     useAppStore.getState().addAgent(AGENT);
-    m.dataCbs.get("a1")!("x".repeat(600)); // 에너지 충전
-    now += 100;
-    vi.advanceTimersByTime(100);
+    m.dataCbs.get("a1")!("x".repeat(600)); // 타이핑 시간 확보
+    // 차분한 타속(최저 초당 3클릭)이라 첫 클릭까지 몇 틱 걸릴 수 있다
+    for (let i = 0; i < 10; i++) {
+      now += 100;
+      vi.advanceTimersByTime(100);
+    }
     expect(backend.calls.playClicks?.[0]?.[0]).toBe("a1");
     expect(backend.calls.playClicks?.[0]?.[1]).toBeGreaterThan(0);
     off();

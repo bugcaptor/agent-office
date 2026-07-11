@@ -1,18 +1,23 @@
-// TypingScheduler 계약:
-// - push(letters)로 "타이핑 에너지"(클릭 수 환산)를 누적하되 MAX_ENERGY_CLICKS로 캡
-//   → 폭주 청크가 와도 출력 중단 후 잔여 타이핑이 짧게 끝난다.
-// - drain(now)은 직전 drain 이후 경과 시간만큼의 예산(MAX_CLICKS_PER_SEC)과
-//   에너지 중 작은 쪽을 정수로 반환. 예산의 소수 잔여분은 이월(carry).
+// TypingScheduler 계약(데드라인 방식):
+// - push(letters, now)는 출력량을 타이핑 시간으로 환산(typingDurationMs:
+//   MIN_TYPING_MS~MAX_TYPING_MS 클램프)해 deadline = max(기존, now+시간)으로
+//   연장한다 — 더 이른 데드라인으로 단축되지 않는다.
+// - drain(now)은 [직전 drain, min(now, deadline)] 구간에 대해 초당
+//   MIN_CLICKS_PER_SEC~MAX_CLICKS_PER_SEC 사이(주입 rng로 샘플)의 차분한
+//   속도로 클릭 수를 산출한다. 몰아서 나오지 않고 시간에 걸쳐 흩어진다.
 // meaningfulCount 계약: ANSI 이스케이프 제거 후 글자·숫자만 센다 — TUI
 // 리페인트(스피너·테두리)와 실제 본문 스트림을 구분하는 지표.
 import { describe, expect, it } from "vitest";
 import {
-  BYTES_PER_CLICK,
   MAX_CLICKS_PER_SEC,
-  MAX_ENERGY_CLICKS,
+  MAX_DRAIN_WINDOW_MS,
+  MAX_TYPING_MS,
   MIN_CHUNK_LETTERS,
+  MIN_CLICKS_PER_SEC,
+  MIN_TYPING_MS,
   TypingScheduler,
   meaningfulCount,
+  typingDurationMs,
 } from "../typing";
 
 describe("meaningfulCount", () => {
@@ -50,48 +55,101 @@ describe("meaningfulCount", () => {
   });
 });
 
+describe("typingDurationMs", () => {
+  it("임계치 수준의 작은 청크는 최소 시간으로 클램프된다", () => {
+    expect(typingDurationMs(MIN_CHUNK_LETTERS)).toBe(MIN_TYPING_MS);
+  });
+
+  it("거대한 청크는 최대 시간으로 클램프된다", () => {
+    expect(typingDurationMs(100_000)).toBe(MAX_TYPING_MS);
+  });
+
+  it("중간 크기는 출력량에 비례하며 클램프 범위 안이다", () => {
+    const mid = typingDurationMs(500);
+    expect(mid).toBeGreaterThan(MIN_TYPING_MS);
+    expect(mid).toBeLessThan(MAX_TYPING_MS);
+    expect(typingDurationMs(700)).toBeGreaterThan(mid); // 단조 증가
+  });
+});
+
+/** 100ms 틱으로 [fromMs, toMs] 구간을 drain하며 클릭 수를 합산한다. */
+function drainOver(s: TypingScheduler, fromMs: number, toMs: number): number {
+  let total = 0;
+  for (let t = fromMs; t <= toMs; t += 100) total += s.drain(t);
+  return total;
+}
+
 describe("TypingScheduler", () => {
-  it("대량 출력이 계속 들어와도 초당 클릭 상한을 넘지 않는다", () => {
-    const s = new TypingScheduler(0);
-    let total = 0;
-    // 1초 동안 100ms마다: 대형 청크 push + drain
-    for (let t = 100; t <= 1000; t += 100) {
-      s.push(10_000);
-      total += s.drain(t);
+  const midRng = () => 0.5; // 고정 rng — 초당 (MIN+MAX)/2 속도
+
+  it("임계 청크 하나로 최소 시간 동안 차분히 타이핑하고 멈춘다", () => {
+    const s = new TypingScheduler(0, midRng);
+    s.push(MIN_CHUNK_LETTERS, 0);
+    const rate = (MIN_CLICKS_PER_SEC + MAX_CLICKS_PER_SEC) / 2;
+    const expected = (MIN_TYPING_MS / 1000) * rate;
+    const total = drainOver(s, 100, MIN_TYPING_MS);
+    expect(total).toBeGreaterThanOrEqual(Math.floor(expected) - 1); // floor 손실 허용
+    expect(total).toBeLessThanOrEqual(Math.ceil(expected));
+    // 데드라인 이후엔 조용
+    expect(drainOver(s, MIN_TYPING_MS + 100, MIN_TYPING_MS + 2000)).toBe(0);
+  });
+
+  it("클릭이 한꺼번에 나오지 않고 구간 전체에 흩어진다", () => {
+    const s = new TypingScheduler(0, midRng);
+    s.push(100_000, 0); // 최대 시간(10초)짜리 대량 출력
+    // 첫 1초 동안은 최대 초당 속도 이하만 나온다 — "부왁" 금지
+    expect(drainOver(s, 100, 1000)).toBeLessThanOrEqual(MAX_CLICKS_PER_SEC);
+    // 마지막 1초에도 여전히 타이핑 중이다
+    expect(drainOver(s, MAX_TYPING_MS - 900, MAX_TYPING_MS)).toBeGreaterThan(0);
+    // 데드라인 이후엔 조용
+    expect(drainOver(s, MAX_TYPING_MS + 100, MAX_TYPING_MS + 2000)).toBe(0);
+  });
+
+  it("타건 속도는 rng 극단에서도 MIN~MAX clicks/sec 범위를 지킨다", () => {
+    for (const [rngVal, rate] of [
+      [0, MIN_CLICKS_PER_SEC],
+      [1, MAX_CLICKS_PER_SEC],
+    ] as const) {
+      const s = new TypingScheduler(0, () => rngVal);
+      s.push(MIN_CHUNK_LETTERS, 0);
+      const expected = (MIN_TYPING_MS / 1000) * rate;
+      const total = drainOver(s, 100, MIN_TYPING_MS);
+      expect(total).toBeGreaterThanOrEqual(Math.floor(expected) - 1); // floor 손실 허용
+      expect(total).toBeLessThanOrEqual(Math.ceil(expected));
     }
-    expect(total).toBeLessThanOrEqual(MAX_CLICKS_PER_SEC);
-    expect(total).toBeGreaterThanOrEqual(MAX_CLICKS_PER_SEC - 1); // floor 손실 1 이내
   });
 
-  it("출력이 멈추면 잔여 에너지(캡 이하)만 소진하고 0으로 수렴한다", () => {
-    const s = new TypingScheduler(0);
-    s.push(100_000); // 에너지는 MAX_ENERGY_CLICKS로 캡
-    let total = 0;
-    for (let t = 100; t <= 3000; t += 100) total += s.drain(t);
-    expect(total).toBe(MAX_ENERGY_CLICKS);
-    expect(s.drain(3100)).toBe(0); // 이후엔 조용
+  it("재생 중 새 출력이 오면 데드라인이 더 늦은 쪽으로 연장된다", () => {
+    const s = new TypingScheduler(0, midRng);
+    s.push(MIN_CHUNK_LETTERS, 0); // 데드라인 = MIN_TYPING_MS
+    drainOver(s, 100, 1500);
+    s.push(MIN_CHUNK_LETTERS, 1500); // 데드라인 = 1500 + MIN_TYPING_MS
+    // 원래 데드라인을 지나서도 타이핑이 이어진다
+    expect(drainOver(s, 1600, 1500 + MIN_TYPING_MS)).toBeGreaterThan(0);
+    expect(drainOver(s, 1500 + MIN_TYPING_MS + 100, 1500 + MIN_TYPING_MS + 2000)).toBe(0);
   });
 
-  it("작은 청크는 바이트 수에 비례한 클릭을 낸다", () => {
-    const s = new TypingScheduler(0);
-    s.push(BYTES_PER_CLICK * 3); // 정확히 3타 분량
-    // 충분한 시간(1초) 뒤 drain — 예산은 넉넉, 에너지가 바닥
-    expect(s.drain(1000)).toBe(3);
-    expect(s.drain(2000)).toBe(0);
+  it("나중 출력이 계산한 데드라인이 더 이르면 기존 데드라인을 단축하지 않는다", () => {
+    const s = new TypingScheduler(0, midRng);
+    s.push(100_000, 0); // 데드라인 = MAX_TYPING_MS(10초)
+    s.push(MIN_CHUNK_LETTERS, 100); // 후보 2.1초 — 무시되어야 한다
+    expect(drainOver(s, 200, 3000)).toBeGreaterThan(0);
+    // 5초대에도 여전히 타이핑 중
+    expect(drainOver(s, 5000, 6000)).toBeGreaterThan(0);
   });
 
-  it("drain 예산 이월은 1초치로 캡된다(오래 idle 후 몰아치기 방지)", () => {
-    const s = new TypingScheduler(0);
-    // 10초 idle 후 대량 push — 첫 drain이 10초치 예산을 쓰면 안 된다
-    s.push(100_000);
-    expect(s.drain(10_000)).toBeLessThanOrEqual(MAX_ENERGY_CLICKS);
-    // 캡(8) < 1초 예산(11)이라 에너지가 바닥나는 게 정상
-    expect(s.drain(10_100)).toBe(0);
+  it("틱이 오래 멈췄다 재개돼도(백그라운드 스로틀) 밀린 클릭을 몰아 내지 않는다", () => {
+    const s = new TypingScheduler(0, () => 1); // 최대 속도
+    s.push(100_000, 0); // 데드라인 = MAX_TYPING_MS
+    // 5초간 drain이 한 번도 안 불리다 재개 — 한 번의 drain은 짧은 창 분량만 낸다
+    expect(s.drain(5000)).toBeLessThanOrEqual(
+      Math.ceil((MAX_DRAIN_WINDOW_MS / 1000) * MAX_CLICKS_PER_SEC)
+    );
   });
 
   it("시간이 거꾸로 가도(now 역행) 예외 없이 0 이상을 반환한다", () => {
-    const s = new TypingScheduler(1000);
-    s.push(60);
+    const s = new TypingScheduler(1000, midRng);
+    s.push(MIN_CHUNK_LETTERS, 1000);
     expect(s.drain(500)).toBeGreaterThanOrEqual(0);
   });
 });

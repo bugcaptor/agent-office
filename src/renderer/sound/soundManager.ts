@@ -6,7 +6,7 @@
 //
 // 정책:
 // - soundEnabled=false여도 스케줄러는 계속 drain한다(버림) — 재활성 시
-//   묵은 에너지가 몰아치는 것을 방지.
+//   밀린 클릭이 몰아치는 것을 방지.
 // - 알림 딩은 무음 모드(store.muted)도 존중.
 // - disposed는 exited와 중복되는 정리 신호라 무음.
 import { useAppStore } from "../store/appStore";
@@ -46,9 +46,9 @@ export function installSoundManager(deps: SoundManagerDeps = {}): () => void {
         id,
         api.onData(id, (data) => {
           // TUI 스피너/상태줄 리페인트·키 에코는 무시 — 본문다운 청크만
-          // 에너지로 인정해 "텍스트가 많이 나올 때"만 타이핑 소리를 낸다.
+          // 타이핑 시간으로 인정해 "텍스트가 많이 나올 때"만 소리를 낸다.
           const letters = meaningfulCount(data);
-          if (letters >= MIN_CHUNK_LETTERS) sched.push(letters);
+          if (letters >= MIN_CHUNK_LETTERS) sched.push(letters, now());
         })
       );
     }
