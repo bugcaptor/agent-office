@@ -8,6 +8,7 @@
 pub mod api_keys;
 mod ipc;
 mod notification;
+mod observer;
 mod persistence;
 pub mod pixellab;
 mod session;
@@ -31,6 +32,27 @@ use crate::persistence::settings_store::{AppSettings, SettingsStore};
 use crate::session::manager::SessionManager;
 use crate::session::pty_factory::PortablePtyFactory;
 use crate::state::*;
+
+pub fn maybe_run_observer_forwarder<I, S>(args: I) -> Option<i32>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    let mut args = args.into_iter();
+    let _program = args.next();
+    let mode = args.next()?.as_ref().to_os_string();
+    let provider = args.next()?.as_ref().to_os_string();
+    if args.next().is_some() {
+        return None;
+    }
+    if mode.as_os_str() == std::ffi::OsStr::new("--observer-forward")
+        && provider.as_os_str() == std::ffi::OsStr::new("codex")
+    {
+        Some(observer::forwarder::run_codex_forwarder())
+    } else {
+        None
+    }
+}
 
 /// 세션에 넘길 훅 포트 getter를 만든다. 캐시(`settings_cache`)가 그 순간
 /// OFF면 서버가 이미 떠 있어(`hook_port`가 Some) 있어도 None을 돌려줘 새

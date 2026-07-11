@@ -16,8 +16,12 @@ use std::time::{Duration, Instant};
 
 use uuid::Uuid;
 
+use crate::observer::event::{message as observer_message, prompt_text, ObserverEvent};
 use crate::state::{AppEvents, SessionRegistry};
 use crate::types::*;
+
+const ATTENTION_FALLBACK: &str = "확인이 필요합니다";
+const STOP_FALLBACK: &str = "작업이 완료되었습니다.";
 
 /// 주입 가능한 시계. dedup 윈도우(Instant) + at 타임스탬프(epoch ms).
 pub trait Clock: Send + Sync {
@@ -63,7 +67,13 @@ impl NotificationHub {
 
     /// axum 핸들러가 호출: 원본 hook body에서 메시지 추출 후 ingest.
     pub fn ingest_hook(&self, session_id: &str, source: NotificationSource, body: &[u8]) {
-        let message = extract_message(body, source);
+        let message = observer_message(body).unwrap_or_else(|| {
+            match source {
+                NotificationSource::Stop => STOP_FALLBACK,
+                _ => ATTENTION_FALLBACK,
+            }
+            .to_string()
+        });
         self.ingest(session_id, source, message);
     }
 
@@ -76,7 +86,28 @@ impl NotificationHub {
     /// prompt 훅 전용: body(UserPromptSubmit 이벤트 JSON)에서 원문을 추출해 싣는다.
     /// 파싱 실패는 text=None으로 강등될 뿐, 이벤트 방출 자체는 항상 일어난다.
     pub fn ingest_activity_with_body(&self, session_id: &str, kind: ActivityKind, body: &[u8]) {
-        self.ingest_activity_inner(session_id, kind, extract_prompt_text(body));
+        self.ingest_activity_inner(session_id, kind, prompt_text(body));
+    }
+
+    pub fn ingest_observer(&self, session_id: &str, event: ObserverEvent) {
+        match event {
+            ObserverEvent::Prompt { text } => {
+                self.ingest_activity_inner(session_id, ActivityKind::Prompt, text)
+            }
+            ObserverEvent::Tool => self.ingest_activity(session_id, ActivityKind::Tool),
+            ObserverEvent::Attention { message } => self.ingest(
+                session_id,
+                NotificationSource::Hook,
+                message.filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| ATTENTION_FALLBACK.to_string()),
+            ),
+            ObserverEvent::Stop { message } => self.ingest(
+                session_id,
+                NotificationSource::Stop,
+                message.filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| STOP_FALLBACK.to_string()),
+            ),
+        }
     }
 
     fn ingest_activity_inner(&self, session_id: &str, kind: ActivityKind, text: Option<String>) {
@@ -176,41 +207,6 @@ fn dedup_key(session_id: &str, source: NotificationSource, message: &str) -> Str
     h.digest().to_string()
 }
 
-/// 라벨 표시용 프롬프트 원문 절단 상한(chars 기준 — 바이트 아님).
-pub const MAX_PROMPT_TEXT_CHARS: usize = 2000;
-
-/// bash 모드(!)·슬래시 명령(/)·메모리 추가(#) 프롬프트는 라벨 요약 대상이 아니다.
-fn is_command_prompt(trimmed: &str) -> bool {
-    trimmed.starts_with('!') || trimmed.starts_with('/') || trimmed.starts_with('#')
-}
-
-/// UserPromptSubmit hook body에서 `prompt` 문자열을 추출한다.
-/// 비JSON/필드 부재/공백뿐/명령성 프롬프트면 None.
-fn extract_prompt_text(body: &[u8]) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_slice(body).ok()?;
-    let s = v.get("prompt")?.as_str()?;
-    let t = s.trim();
-    if t.is_empty() || is_command_prompt(t) {
-        return None;
-    }
-    Some(t.chars().take(MAX_PROMPT_TEXT_CHARS).collect())
-}
-
-fn extract_message(body: &[u8], source: NotificationSource) -> String {
-    if let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) {
-        if let Some(m) = v.get("message").and_then(|m| m.as_str()) {
-            if !m.trim().is_empty() {
-                return m.to_string();
-            }
-        }
-    }
-    match source {
-        NotificationSource::Stop => "Claude finished a task",
-        _ => "Claude needs your attention",
-    }
-    .to_string()
-}
-
 // ── 테스트용 페이크 ────────────────────────────────────────────────────
 //
 // `FakeClock`(atomic ms 오프셋 + `advance()`) — dedup 윈도우를
@@ -265,7 +261,8 @@ pub mod fake {
 #[cfg(test)]
 mod tests {
     use super::fake::FakeClock;
-    use super::{dedup_key, extract_message, is_command_prompt, Clock, NotificationHub};
+    use super::{dedup_key, Clock, NotificationHub};
+    use crate::observer::event::ObserverEvent;
     use crate::state::fake::RecordingEvents;
     use crate::state::SessionRegistry;
     use crate::types::*;
@@ -287,6 +284,26 @@ mod tests {
             Duration::from_millis(3000),
         ));
         (hub, events, clock)
+    }
+
+    #[test]
+    fn observer_events_project_to_existing_public_contracts() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_observer("s1", ObserverEvent::Prompt { text: Some("버그 수정".into()) });
+        hub.ingest_observer("s1", ObserverEvent::Tool);
+        hub.ingest_observer("s1", ObserverEvent::Attention { message: None });
+        hub.ingest_observer("s1", ObserverEvent::Stop { message: None });
+
+        let activity = events.activities();
+        assert_eq!(activity[0].kind, ActivityKind::Prompt);
+        assert_eq!(activity[0].text.as_deref(), Some("버그 수정"));
+        assert_eq!(activity[1].kind, ActivityKind::Tool);
+
+        let notifications = events.notifications();
+        assert_eq!(notifications[0].source, NotificationSource::Hook);
+        assert_eq!(notifications[0].message, "확인이 필요합니다");
+        assert_eq!(notifications[1].source, NotificationSource::Stop);
+        assert_eq!(notifications[1].message, "작업이 완료되었습니다.");
     }
 
     fn msg(text: &str) -> Vec<u8> {
@@ -635,17 +652,6 @@ mod tests {
     }
 
     #[test]
-    fn is_command_prompt_flags_bash_slash_and_memory_prefixes() {
-        assert!(is_command_prompt("!git status"));
-        assert!(is_command_prompt("/clear"));
-        assert!(is_command_prompt("#remember"));
-        assert!(!is_command_prompt("버그 고쳐줘"));
-        assert!(!is_command_prompt("git status"));
-        // 절대경로 텍스트도 '/'로 시작하면 명령으로 취급된다 — 감수하는 트레이드오프.
-        assert!(is_command_prompt("/home/x"));
-    }
-
-    #[test]
     fn ingest_activity_with_body_drops_command_prompts() {
         let (hub, events, _clock) = fixture();
         hub.ingest_activity_with_body("s1", ActivityKind::Prompt, &prompt_body("!git status"));
@@ -663,32 +669,43 @@ mod tests {
         assert_eq!(events.activities()[0].text, None);
     }
 
-    // ---- extract_message fallback behavior (exercised indirectly via ingest_hook above; unit-test directly here) ----
+    // ---- temporary legacy hook entry point fallback behavior ----
 
     #[test]
-    fn extract_message_prefers_body_message_field() {
-        assert_eq!(extract_message(&msg("custom text"), NotificationSource::Hook), "custom text");
+    fn observer_legacy_ingest_hook_prefers_body_message_field() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("custom text"));
+        assert_eq!(events.notifications()[0].message, "custom text");
     }
 
     #[test]
-    fn extract_message_falls_back_for_stop_source_on_missing_field() {
-        assert_eq!(extract_message(b"{}", NotificationSource::Stop), "Claude finished a task");
+    fn observer_legacy_ingest_hook_uses_neutral_stop_fallback() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_hook("s1", NotificationSource::Stop, b"{}");
+        assert_eq!(events.notifications()[0].message, "작업이 완료되었습니다.");
     }
 
     #[test]
-    fn extract_message_falls_back_for_non_stop_source_on_missing_field() {
-        assert_eq!(extract_message(b"{}", NotificationSource::Hook), "Claude needs your attention");
-        assert_eq!(extract_message(b"{}", NotificationSource::Bell), "Claude needs your attention");
+    fn observer_legacy_ingest_hook_uses_neutral_attention_fallback() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_hook("s1", NotificationSource::Hook, b"{}");
+        hub.ingest_hook("s1", NotificationSource::Bell, b"{}");
+        assert_eq!(events.notifications()[0].message, "확인이 필요합니다");
+        assert_eq!(events.notifications()[1].message, "확인이 필요합니다");
     }
 
     #[test]
-    fn extract_message_falls_back_on_blank_message_field() {
-        assert_eq!(extract_message(&msg("   "), NotificationSource::Hook), "Claude needs your attention");
+    fn observer_legacy_ingest_hook_falls_back_on_blank_message_field() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("   "));
+        assert_eq!(events.notifications()[0].message, "확인이 필요합니다");
     }
 
     #[test]
-    fn extract_message_falls_back_on_invalid_json_body() {
-        assert_eq!(extract_message(b"not json", NotificationSource::Hook), "Claude needs your attention");
+    fn observer_legacy_ingest_hook_falls_back_on_invalid_json_body() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_hook("s1", NotificationSource::Hook, b"not json");
+        assert_eq!(events.notifications()[0].message, "확인이 필요합니다");
     }
 
     // ---- dedup_key sanity (used implicitly above; pin the algorithm's key inputs directly) ----
