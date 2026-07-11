@@ -8,7 +8,9 @@ $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
 $c = Get-Command codex -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 $in = [Console]::In.ReadToEnd()
-$in | & $c.Source exec --ignore-user-config --ignore-rules --ephemeral --sandbox read-only --model gpt-5.4-mini --config 'model_reasoning_effort=\"low\"' --skip-git-repo-check --color never -- $env:AO_INSTRUCTION
+$config = if ($c.CommandType -eq 'Application') { 'model_reasoning_effort=\"low\"' } else { 'model_reasoning_effort="low"' }
+$aoArgs = @('exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--sandbox', 'read-only', '--model', 'gpt-5.4-mini', '--config', $config, '--skip-git-repo-check', '--color', 'never', '--', $env:AO_INSTRUCTION)
+$in | & $c.Source @aoArgs
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
@@ -74,9 +76,6 @@ mod tests {
     fn codex_command_pins_low_cost_isolated_contract() {
         let spec = build("요약 지시");
         let rendered = command_debug(&spec.command);
-        #[cfg(windows)]
-        let config = "model_reasoning_effort=\\\"low\\\"";
-        #[cfg(not(windows))]
         let config = "model_reasoning_effort=\"low\"";
         for expected in [
             "exec",
@@ -116,7 +115,11 @@ mod tests {
             vec!["-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT]
         );
         assert!(
-            WINDOWS_SCRIPT.contains("--color never -- $env:AO_INSTRUCTION"),
+            WINDOWS_SCRIPT.contains("'never', '--', $env:AO_INSTRUCTION"),
+            "{WINDOWS_SCRIPT}"
+        );
+        assert!(
+            WINDOWS_SCRIPT.contains("& $c.Source @aoArgs"),
             "{WINDOWS_SCRIPT}"
         );
         let instruction = spec
@@ -152,6 +155,62 @@ mod tests {
         std::fs::write(
             dir.join("codex.cmd"),
             "@echo off\r\nnode \"%~dp0capture.js\" %*\r\nexit /b %ERRORLEVEL%\r\n",
+        )
+        .unwrap();
+
+        let original_path = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::env::join_paths(
+            std::iter::once(dir.clone()).chain(std::env::split_paths(&original_path)),
+        )
+        .unwrap();
+        let mut spec = build(DANGEROUS_INSTRUCTION);
+        spec.command.env("PATH", path);
+        spec.command.env("AO_CAPTURE_FILE", &capture);
+        let output = spec.command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let actual: Vec<String> =
+            serde_json::from_slice(&std::fs::read(&capture).unwrap()).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(
+            actual,
+            vec![
+                "exec",
+                "--ignore-user-config",
+                "--ignore-rules",
+                "--ephemeral",
+                "--sandbox",
+                "read-only",
+                "--model",
+                "gpt-5.4-mini",
+                "--config",
+                "model_reasoning_effort=\"low\"",
+                "--skip-git-repo-check",
+                "--color",
+                "never",
+                "--",
+                DANGEROUS_INSTRUCTION,
+            ]
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_powershell_script_boundary_preserves_exact_codex_argv() {
+        let dir = std::env::temp_dir().join(format!("ao-codex-ps1-argv-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let capture = dir.join("argv.json");
+        std::fs::write(
+            dir.join("codex.ps1"),
+            r#"@($input) | Out-Null
+[IO.File]::WriteAllText($env:AO_CAPTURE_FILE, (ConvertTo-Json -Compress -InputObject @($args)))
+exit 0
+"#,
         )
         .unwrap();
 

@@ -17,16 +17,7 @@ fn default_sound_volume() -> f32 {
 }
 
 /// 라벨 요약에 사용할 CLI 제공자. 기존 설정과의 호환을 위해 기본은 Claude.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Default,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SummaryProvider {
     #[default]
@@ -100,10 +91,9 @@ impl SettingsStore {
             fs::create_dir_all(parent)?;
         }
         let bytes = serde_json::to_vec_pretty(settings)?;
-        let tmp = self.file.with_file_name(format!(
-            "settings.json.tmp-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let tmp = self
+            .file
+            .with_file_name(format!("settings.json.tmp-{}", uuid::Uuid::new_v4()));
         fs::write(&tmp, &bytes)?;
         if let Err(e) = fs::rename(&tmp, &self.file) {
             let _ = fs::remove_file(&tmp);
@@ -121,7 +111,10 @@ mod tests {
 
     fn scratch_file() -> PathBuf {
         std::env::temp_dir()
-            .join(format!("agent-office-settings-store-test-{}", uuid::Uuid::new_v4()))
+            .join(format!(
+                "agent-office-settings-store-test-{}",
+                uuid::Uuid::new_v4()
+            ))
             .join("settings.json")
     }
 
@@ -174,7 +167,11 @@ mod tests {
     fn load_unknown_version_returns_defaults_and_first_run_false() {
         let file = scratch_file();
         fs::create_dir_all(file.parent().unwrap()).unwrap();
-        fs::write(&file, br#"{"version":2,"claudeCliEnabled":true,"claudeHooksEnabled":true}"#).unwrap();
+        fs::write(
+            &file,
+            br#"{"version":2,"claudeCliEnabled":true,"claudeHooksEnabled":true}"#,
+        )
+        .unwrap();
         let store = SettingsStore::new(file.clone());
         let (s, _) = store.load();
         assert_eq!(s, AppSettings::default());
@@ -250,14 +247,20 @@ mod tests {
         let file = scratch_file();
         fs::create_dir_all(file.parent().unwrap()).unwrap();
         fs::write(&file, br#"{"version":1,"summarizerEnabled":true}"#).unwrap();
-        assert_eq!(SettingsStore::new(file.clone()).load().0.summary_provider, SummaryProvider::Claude);
+        assert_eq!(
+            SettingsStore::new(file.clone()).load().0.summary_provider,
+            SummaryProvider::Claude
+        );
 
         fs::write(
             &file,
             br#"{"version":1,"summarizerEnabled":true,"summaryProvider":"unknown","observerEnabled":true}"#,
         )
         .unwrap();
-        assert_eq!(SettingsStore::new(file.clone()).load().0, AppSettings::default());
+        assert_eq!(
+            SettingsStore::new(file.clone()).load().0,
+            AppSettings::default()
+        );
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
@@ -271,7 +274,10 @@ mod tests {
             .map(|e| e.unwrap().file_name().into_string().unwrap())
             .collect();
         assert!(names.iter().any(|n| n == "settings.json"));
-        assert!(!names.iter().any(|n| n.contains(".tmp")), "no temp left: {names:?}");
+        assert!(
+            !names.iter().any(|n| n.contains(".tmp")),
+            "no temp left: {names:?}"
+        );
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 

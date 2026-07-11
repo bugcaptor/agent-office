@@ -100,13 +100,15 @@ impl NotificationHub {
             ObserverEvent::Attention { message } => self.ingest(
                 session_id,
                 NotificationSource::Hook,
-                message.filter(|value| !value.trim().is_empty())
+                message
+                    .filter(|value| !value.trim().is_empty())
                     .unwrap_or_else(|| ATTENTION_FALLBACK.to_string()),
             ),
             ObserverEvent::Stop { message } => self.ingest(
                 session_id,
                 NotificationSource::Stop,
-                message.filter(|value| !value.trim().is_empty())
+                message
+                    .filter(|value| !value.trim().is_empty())
                     .unwrap_or_else(|| STOP_FALLBACK.to_string()),
             ),
         }
@@ -128,7 +130,11 @@ impl NotificationHub {
 
     /// BEL 폴백: output pump가 0x07 감지 시.
     pub fn on_bell(&self, session_id: &str) {
-        self.ingest(session_id, NotificationSource::Bell, "Terminal bell".to_string());
+        self.ingest(
+            session_id,
+            NotificationSource::Bell,
+            "Terminal bell".to_string(),
+        );
     }
 
     fn ingest(&self, session_id: &str, source: NotificationSource, message: String) {
@@ -159,12 +165,22 @@ impl NotificationHub {
             dedup_key: key,
             at: self.clock.now_ms(),
         };
-        self.queues.lock().unwrap().entry(session_id.to_string()).or_default().push(ev.clone());
+        self.queues
+            .lock()
+            .unwrap()
+            .entry(session_id.to_string())
+            .or_default()
+            .push(ev.clone());
         self.events.notification_new(&ev);
     }
 
     pub fn pending(&self, session_id: &str) -> Vec<NotificationEvent> {
-        self.queues.lock().unwrap().get(session_id).cloned().unwrap_or_default()
+        self.queues
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// 터미널 열림 시 클리어. ids 없으면 세션 전체. cleared된 id 방출.
@@ -177,8 +193,11 @@ impl NotificationHub {
             match ids {
                 Some(ids) if !ids.is_empty() => {
                     let set: std::collections::HashSet<_> = ids.into_iter().collect();
-                    let hit: Vec<String> =
-                        list.iter().filter(|e| set.contains(&e.id)).map(|e| e.id.clone()).collect();
+                    let hit: Vec<String> = list
+                        .iter()
+                        .filter(|e| set.contains(&e.id))
+                        .map(|e| e.id.clone())
+                        .collect();
                     list.retain(|e| !set.contains(&e.id));
                     hit
                 }
@@ -229,7 +248,10 @@ pub mod fake {
 
     impl FakeClock {
         pub fn new() -> Self {
-            Self { base: Instant::now(), offset_ms: AtomicU64::new(0) }
+            Self {
+                base: Instant::now(),
+                offset_ms: AtomicU64::new(0),
+            }
         }
 
         /// 시계를 `ms` 밀리초 전진시킨다. `now()`/`now_ms()` 모두 동일하게 반영된다.
@@ -291,7 +313,12 @@ mod tests {
     #[test]
     fn observer_events_project_to_existing_public_contracts() {
         let (hub, events, _clock) = fixture();
-        hub.ingest_observer("s1", ObserverEvent::Prompt { text: Some("버그 수정".into()) });
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Prompt {
+                text: Some("버그 수정".into()),
+            },
+        );
         hub.ingest_observer("s1", ObserverEvent::Tool);
         hub.ingest_observer("s1", ObserverEvent::Attention { message: None });
         hub.ingest_observer("s1", ObserverEvent::Stop { message: None });
@@ -309,14 +336,19 @@ mod tests {
     }
 
     fn msg(text: &str) -> Vec<u8> {
-        serde_json::json!({ "message": text }).to_string().into_bytes()
+        serde_json::json!({ "message": text })
+            .to_string()
+            .into_bytes()
     }
 
     fn is_uuid_v4(s: &str) -> bool {
         // 8-4-4-4-12 hex groups, version nibble '4' at the start of the 3rd group.
         let parts: Vec<&str> = s.split('-').collect();
         parts.len() == 5
-            && [8, 4, 4, 4, 12].iter().zip(&parts).all(|(len, p)| p.len() == *len)
+            && [8, 4, 4, 4, 12]
+                .iter()
+                .zip(&parts)
+                .all(|(len, p)| p.len() == *len)
             && parts[2].starts_with('4')
             && s.chars().all(|c| c == '-' || c.is_ascii_hexdigit())
     }
@@ -342,13 +374,19 @@ mod tests {
         assert_eq!(pending[0].agent_id, "a1");
         assert_eq!(pending[0].source, NotificationSource::Hook);
         assert_eq!(pending[0].message, "need input");
-        assert_eq!(pending[0].dedup_key, dedup_key("s1", NotificationSource::Hook, "need input"));
+        assert_eq!(
+            pending[0].dedup_key,
+            dedup_key("s1", NotificationSource::Hook, "need input")
+        );
         assert_eq!(pending[0].at, 1_700_000_000_000); // clock.now_ms() at t=0
 
         // Second passing notification reflects the *slid* window, i.e. it
         // was emitted at t=5000, not t=0 or t=1000.
         assert_eq!(pending[1].at, 1_700_000_005_000);
-        assert_ne!(pending[0].id, pending[1].id, "each passing notification gets a fresh id");
+        assert_ne!(
+            pending[0].id, pending[1].id,
+            "each passing notification gets a fresh id"
+        );
         assert!(is_uuid_v4(&pending[0].id) && is_uuid_v4(&pending[1].id));
     }
 
@@ -376,7 +414,8 @@ mod tests {
         registry.insert("s2", "a2", SessionState::Running);
         let events = Arc::new(RecordingEvents::default());
         let clock = Arc::new(FakeClock::new());
-        let hub = NotificationHub::new(registry, events.clone(), clock, Duration::from_millis(3000));
+        let hub =
+            NotificationHub::new(registry, events.clone(), clock, Duration::from_millis(3000));
 
         hub.ingest_hook("s1", NotificationSource::Hook, &msg("need input"));
         hub.ingest_hook("s2", NotificationSource::Hook, &msg("need input")); // same message, different session: not suppressed
@@ -438,7 +477,10 @@ mod tests {
         assert_eq!(cleared_events.len(), 1);
         assert_eq!(cleared_events[0].0, "a1");
         assert_eq!(
-            cleared_events[0].1.iter().collect::<std::collections::HashSet<_>>(),
+            cleared_events[0]
+                .1
+                .iter()
+                .collect::<std::collections::HashSet<_>>(),
             ids.iter().collect::<std::collections::HashSet<_>>()
         );
     }
@@ -535,7 +577,8 @@ mod tests {
         let registry = Arc::new(SessionRegistry::new()); // "s1" never inserted
         let events = Arc::new(RecordingEvents::default());
         let clock = Arc::new(FakeClock::new());
-        let hub = NotificationHub::new(registry, events.clone(), clock, Duration::from_millis(3000));
+        let hub =
+            NotificationHub::new(registry, events.clone(), clock, Duration::from_millis(3000));
 
         hub.ingest_hook("s1", NotificationSource::Hook, &msg("need input"));
 
@@ -552,7 +595,12 @@ mod tests {
         registry.insert("s1", "a1", SessionState::Running);
         let events = Arc::new(RecordingEvents::default());
         let clock = Arc::new(FakeClock::new());
-        let hub = NotificationHub::new(registry.clone(), events.clone(), clock, Duration::from_millis(3000));
+        let hub = NotificationHub::new(
+            registry.clone(),
+            events.clone(),
+            clock,
+            Duration::from_millis(3000),
+        );
 
         hub.ingest_hook("s1", NotificationSource::Hook, &msg("first")); // registered, passes
         registry.remove("s1");
@@ -568,7 +616,8 @@ mod tests {
         let registry = Arc::new(SessionRegistry::new());
         let events = Arc::new(RecordingEvents::default());
         let clock = Arc::new(FakeClock::new());
-        let hub = NotificationHub::new(registry, events.clone(), clock, Duration::from_millis(3000));
+        let hub =
+            NotificationHub::new(registry, events.clone(), clock, Duration::from_millis(3000));
 
         hub.on_bell("unknown-session");
 
@@ -611,7 +660,8 @@ mod tests {
         let registry = Arc::new(SessionRegistry::new()); // s1 미등록
         let events = Arc::new(RecordingEvents::default());
         let clock = Arc::new(FakeClock::new());
-        let hub = NotificationHub::new(registry, events.clone(), clock, Duration::from_millis(3000));
+        let hub =
+            NotificationHub::new(registry, events.clone(), clock, Duration::from_millis(3000));
 
         hub.ingest_activity("s1", ActivityKind::Prompt);
 
@@ -621,7 +671,9 @@ mod tests {
     // ---- overhead-task-label: prompt 원문 추출 ----
 
     fn prompt_body(text: &str) -> Vec<u8> {
-        serde_json::json!({ "session_id": "s1", "prompt": text }).to_string().into_bytes()
+        serde_json::json!({ "session_id": "s1", "prompt": text })
+            .to_string()
+            .into_bytes()
     }
 
     #[test]
@@ -744,6 +796,9 @@ mod tests {
         let handle: Arc<dyn Clock> = clock;
 
         assert_eq!(handle.now_ms() - ms_before, 2000);
-        assert_eq!(handle.now().duration_since(instant_before), Duration::from_millis(2000));
+        assert_eq!(
+            handle.now().duration_since(instant_before),
+            Duration::from_millis(2000)
+        );
     }
 }

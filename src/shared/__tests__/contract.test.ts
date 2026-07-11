@@ -140,6 +140,28 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect(parsed.text).toBe("버그 고쳐줘");
   });
 
+  it("observer events keep their provider-neutral public shapes", () => {
+    const activity: ActivityEvent = {
+      agentId: "a1",
+      sessionId: "s1",
+      kind: "prompt",
+      at: 1,
+      text: "marker",
+    };
+    const notification: NotificationEvent = {
+      id: "n1",
+      sessionId: "s1",
+      agentId: "a1",
+      source: "hook",
+      message: "확인이 필요합니다",
+      dedupKey: "k1",
+      at: 2,
+    };
+
+    expect("provider" in activity).toBe(false);
+    expect("provider" in notification).toBe(false);
+  });
+
   it("GeneratedSpriteImage", () => {
     const json = '{"pngBase64":"AAAA","costUsd":0.02}';
     const parsed: GeneratedSpriteImage = JSON.parse(json);

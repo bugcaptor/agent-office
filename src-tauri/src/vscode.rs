@@ -37,7 +37,11 @@ impl LaunchCandidate {
 /// OS별 VS Code 실행 후보를 시도 순서대로 돌려준다. 순수 함수 --
 /// `os`는 `std::env::consts::OS` 값, `local_app_data`는 Windows의
 /// `%LOCALAPPDATA%`(다른 OS에서는 None).
-pub fn launch_candidates(os: &str, dir: &str, local_app_data: Option<&str>) -> Vec<LaunchCandidate> {
+pub fn launch_candidates(
+    os: &str,
+    dir: &str,
+    local_app_data: Option<&str>,
+) -> Vec<LaunchCandidate> {
     match os {
         "macos" => vec![
             LaunchCandidate::new("code", &[dir]),
@@ -108,7 +112,11 @@ mod tests {
 
     #[test]
     fn windows_candidates_include_user_and_system_installs() {
-        let v = launch_candidates("windows", "C:\\work\\proj", Some("C:\\Users\\me\\AppData\\Local"));
+        let v = launch_candidates(
+            "windows",
+            "C:\\work\\proj",
+            Some("C:\\Users\\me\\AppData\\Local"),
+        );
         assert_eq!(
             v,
             vec![
@@ -130,7 +138,10 @@ mod tests {
         let v = launch_candidates("windows", "C:\\work\\proj", None);
         assert_eq!(v.len(), 2);
         assert_eq!(v[0].program, "code.cmd");
-        assert_eq!(v[1].program, "C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd");
+        assert_eq!(
+            v[1].program,
+            "C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd"
+        );
     }
 
     #[test]

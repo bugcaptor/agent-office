@@ -95,7 +95,10 @@ pub fn parse_response(status: u16, body: &str) -> Result<GeneratedImage, PixelLa
                 .filter(|u| u.get("type").and_then(|t| t.as_str()) == Some("usd"))
                 .and_then(|u| u.get("usd"))
                 .and_then(|c| c.as_f64());
-            Ok(GeneratedImage { png_base64: png.to_string(), cost_usd })
+            Ok(GeneratedImage {
+                png_base64: png.to_string(),
+                cost_usd,
+            })
         }
         401 => Err(PixelLabError::InvalidApiKey),
         402 => Err(PixelLabError::InsufficientCredits),
@@ -162,7 +165,8 @@ mod tests {
 
     #[test]
     fn parse_200_with_usd_usage() {
-        let body = r#"{"image":{"type":"base64","base64":"AAAA"},"usage":{"type":"usd","usd":0.02}}"#;
+        let body =
+            r#"{"image":{"type":"base64","base64":"AAAA"},"usage":{"type":"usd","usd":0.02}}"#;
         let img = parse_response(200, body).unwrap();
         assert_eq!(img.png_base64, "AAAA");
         assert_eq!(img.cost_usd, Some(0.02));
@@ -178,8 +182,7 @@ mod tests {
 
     #[test]
     fn parse_200_with_generations_usage_has_no_cost() {
-        let body =
-            r#"{"image":{"base64":"CCCC"},"usage":{"type":"generations","generations":1}}"#;
+        let body = r#"{"image":{"base64":"CCCC"},"usage":{"type":"generations","generations":1}}"#;
         let img = parse_response(200, body).unwrap();
         assert_eq!(img.cost_usd, None);
     }
@@ -198,8 +201,14 @@ mod tests {
 
     #[test]
     fn parse_error_statuses() {
-        assert_eq!(parse_response(401, "").unwrap_err().code(), "invalid_api_key");
-        assert_eq!(parse_response(402, "").unwrap_err().code(), "insufficient_credits");
+        assert_eq!(
+            parse_response(401, "").unwrap_err().code(),
+            "invalid_api_key"
+        );
+        assert_eq!(
+            parse_response(402, "").unwrap_err().code(),
+            "insufficient_credits"
+        );
         assert_eq!(parse_response(429, "").unwrap_err().code(), "rate_limited");
         assert_eq!(parse_response(529, "").unwrap_err().code(), "rate_limited");
         assert_eq!(parse_response(500, "").unwrap_err().code(), "network");
@@ -219,15 +228,27 @@ mod tests {
             PixelLabError::MissingApiKey.to_ipc_string(),
             "missing_api_key: PIXELLAB_API_KEY is not set"
         );
-        assert!(parse_response(401, "").unwrap_err().to_ipc_string().starts_with("invalid_api_key: "));
+        assert!(parse_response(401, "")
+            .unwrap_err()
+            .to_ipc_string()
+            .starts_with("invalid_api_key: "));
     }
 
     #[test]
     fn generated_image_serializes_camel_case() {
-        let img = GeneratedImage { png_base64: "AAAA".into(), cost_usd: Some(0.02) };
+        let img = GeneratedImage {
+            png_base64: "AAAA".into(),
+            cost_usd: Some(0.02),
+        };
         let v = serde_json::to_value(&img).unwrap();
         assert_eq!(v, serde_json::json!({"pngBase64": "AAAA", "costUsd": 0.02}));
-        let none = GeneratedImage { png_base64: "B".into(), cost_usd: None };
-        assert_eq!(serde_json::to_value(&none).unwrap(), serde_json::json!({"pngBase64": "B"}));
+        let none = GeneratedImage {
+            png_base64: "B".into(),
+            cost_usd: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&none).unwrap(),
+            serde_json::json!({"pngBase64": "B"})
+        );
     }
 }

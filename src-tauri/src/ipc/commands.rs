@@ -103,7 +103,8 @@ async fn create_session_inner(
 /// 렌더러 셸 선택 드롭다운용: 호스트에 설치된 Windows 셸 목록(다른
 /// 플랫폼은 빈 배열).
 #[tauri::command(rename_all = "camelCase")]
-pub async fn list_available_shells() -> Result<Vec<crate::session::shells::AvailableShell>, String> {
+pub async fn list_available_shells() -> Result<Vec<crate::session::shells::AvailableShell>, String>
+{
     Ok(crate::session::shells::detect_shells())
 }
 
@@ -282,10 +283,7 @@ pub async fn load_sprite(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn delete_sprite(
-    app_state: State<'_, AppState>,
-    agent_id: String,
-) -> Result<(), String> {
+pub async fn delete_sprite(app_state: State<'_, AppState>, agent_id: String) -> Result<(), String> {
     app_state
         .sprite_store
         .delete(&agent_id)
@@ -404,7 +402,10 @@ pub async fn append_session_turn(
     app_state: State<'_, AppState>,
     record: crate::types::SessionTurnRecord,
 ) -> Result<(), String> {
-    app_state.session_time_store.append(&record).map_err(|e| e.to_string())
+    app_state
+        .session_time_store
+        .append(&record)
+        .map_err(|e| e.to_string())
 }
 
 /// 누적된 세션 턴 기록 전체를 읽는다(통계용).
@@ -470,8 +471,7 @@ mod tests {
         assert!(!state.settings.read().unwrap().summarizer_enabled);
 
         // summarize_text 본문과 동일한 게이트: OFF면 CLI 호출 전에 거절.
-        let result: Result<String, String> = if !state.settings.read().unwrap().summarizer_enabled
-        {
+        let result: Result<String, String> = if !state.settings.read().unwrap().summarizer_enabled {
             Err("summarizer-disabled".to_string())
         } else {
             crate::summarizer::summarize(SummaryProvider::Codex, "요약하라", "text").await
@@ -495,8 +495,7 @@ mod tests {
 
         // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
         // 실 프로세스 spawn 없이 그쪽의 자체 검증 에러로 되돌아오는 것으로 확인.
-        let result: Result<String, String> = if !state.settings.read().unwrap().summarizer_enabled
-        {
+        let result: Result<String, String> = if !state.settings.read().unwrap().summarizer_enabled {
             Err("summarizer-disabled".to_string())
         } else {
             crate::summarizer::summarize(SummaryProvider::Codex, "요약하라", "   ").await
@@ -513,7 +512,9 @@ mod tests {
     async fn set_app_settings_clears_first_run_flag_after_success() {
         let (state, ctl, dir, profile_dir) = build("first-run-flag");
         assert!(
-            state.settings_first_run.load(std::sync::atomic::Ordering::SeqCst),
+            state
+                .settings_first_run
+                .load(std::sync::atomic::Ordering::SeqCst),
             "build() 헬퍼는 부팅 시 settings.json 부재 상태를 흉내내므로 초기값은 true"
         );
 
@@ -539,7 +540,9 @@ mod tests {
             .settings_first_run
             .store(false, std::sync::atomic::Ordering::SeqCst);
 
-        assert!(!state.settings_first_run.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!state
+            .settings_first_run
+            .load(std::sync::atomic::Ordering::SeqCst));
         assert_eq!(*state.settings.read().unwrap(), new_settings);
         cleanup(&ctl, &dir, &profile_dir);
     }
@@ -659,8 +662,9 @@ mod tests {
             crate::persistence::png_store::MAX_SPRITE_BYTES,
         );
 
-        let settings_store =
-            crate::persistence::settings_store::SettingsStore::new(profile_dir.join("settings.json"));
+        let settings_store = crate::persistence::settings_store::SettingsStore::new(
+            profile_dir.join("settings.json"),
+        );
         let session_time_store = crate::persistence::session_time_store::SessionTimeStore::new(
             profile_dir.join("session-times.jsonl"),
         );
@@ -803,7 +807,10 @@ mod tests {
             startup_command: opts.startup_command.clone(),
             autostart_claude: None,
         };
-        assert_eq!(request.startup_command, Some("source ./init.sh".to_string()));
+        assert_eq!(
+            request.startup_command,
+            Some("source ./init.sh".to_string())
+        );
     }
 
     // ---- list_available_shells ----
@@ -950,7 +957,7 @@ mod tests {
                 shell: None,
                 startup_command: None,
                 clocked_out: None,
-            keyboard_sound: None,
+                keyboard_sound: None,
             }],
             version: 1,
         };
@@ -997,12 +1004,18 @@ mod tests {
                 shell: None,
                 startup_command: None,
                 clocked_out: None,
-            keyboard_sound: None,
+                keyboard_sound: None,
             }],
             version: 1,
         };
         state.store.save(&persisted).unwrap();
-        let ids: Vec<String> = state.store.load().agents.iter().map(|a| a.id.clone()).collect();
+        let ids: Vec<String> = state
+            .store
+            .load()
+            .agents
+            .iter()
+            .map(|a| a.id.clone())
+            .collect();
         let encoded = tiny_png_b64();
 
         // save_portrait 본문과 동일한 delegation.
@@ -1020,7 +1033,13 @@ mod tests {
     #[tokio::test]
     async fn save_portrait_maps_unknown_agent_to_err() {
         let (state, ctl, dir, profile_dir) = build("portrait-unknown");
-        let ids: Vec<String> = state.store.load().agents.iter().map(|a| a.id.clone()).collect();
+        let ids: Vec<String> = state
+            .store
+            .load()
+            .agents
+            .iter()
+            .map(|a| a.id.clone())
+            .collect();
         let result: Result<(), String> = state
             .portrait_store
             .save("ghost", &tiny_png_b64(), &ids)
@@ -1051,12 +1070,18 @@ mod tests {
                 shell: None,
                 startup_command: None,
                 clocked_out: None,
-            keyboard_sound: None,
+                keyboard_sound: None,
             }],
             version: 1,
         };
         state.store.save(&persisted).unwrap();
-        let ids: Vec<String> = state.store.load().agents.iter().map(|a| a.id.clone()).collect();
+        let ids: Vec<String> = state
+            .store
+            .load()
+            .agents
+            .iter()
+            .map(|a| a.id.clone())
+            .collect();
         let encoded = tiny_png_b64();
 
         // save_sprite / load_sprite / delete_sprite 본문과 동일한 delegation.
@@ -1093,7 +1118,11 @@ mod tests {
         };
 
         // append_session_turn / load_session_turns 본문과 동일한 delegation.
-        state.session_time_store.append(&record).map_err(|e: std::io::Error| e.to_string()).unwrap();
+        state
+            .session_time_store
+            .append(&record)
+            .map_err(|e: std::io::Error| e.to_string())
+            .unwrap();
         let loaded = state.session_time_store.load();
 
         assert_eq!(loaded, vec![record]);

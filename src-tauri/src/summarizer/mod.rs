@@ -490,6 +490,147 @@ mod tests {
 
     static PROCESS_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+    fn path_test_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    struct EnvGuard {
+        saved: Vec<(std::ffi::OsString, Option<std::ffi::OsString>)>,
+    }
+
+    impl EnvGuard {
+        fn set(values: &[(&str, std::ffi::OsString)]) -> Self {
+            let mut saved = Vec::with_capacity(values.len());
+            for (key, value) in values {
+                saved.push(((*key).into(), std::env::var_os(key)));
+                std::env::set_var(key, value);
+            }
+            Self { saved }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in self.saved.drain(..).rev() {
+                match value {
+                    Some(value) => std::env::set_var(&key, value),
+                    None => std::env::remove_var(&key),
+                }
+            }
+        }
+    }
+
+    struct FakeCliDir {
+        root: std::path::PathBuf,
+        args: std::path::PathBuf,
+        stdin: std::path::PathBuf,
+        pid: std::path::PathBuf,
+        calls: std::path::PathBuf,
+        claude_marker: std::path::PathBuf,
+    }
+
+    impl FakeCliDir {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "agent-office-fake-summarizer-{}",
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&root).unwrap();
+
+            #[cfg(windows)]
+            {
+                std::fs::write(
+                    root.join("codex.ps1"),
+                    r#"$ErrorActionPreference='Stop'
+[IO.File]::WriteAllLines($env:AO_FAKE_ARGS, [string[]]$args)
+[IO.File]::WriteAllText($env:AO_FAKE_STDIN, (@($input) -join [Environment]::NewLine))
+[IO.File]::WriteAllText($env:AO_FAKE_PID, "$PID")
+$count = 0
+if ([IO.File]::Exists($env:AO_FAKE_CALLS)) { $count = [int][IO.File]::ReadAllText($env:AO_FAKE_CALLS) }
+[IO.File]::WriteAllText($env:AO_FAKE_CALLS, "$($count + 1)")
+if ($env:AO_FAKE_SLEEP_SECONDS) { Start-Sleep -Seconds ([int]$env:AO_FAKE_SLEEP_SECONDS) }
+Write-Output 'Codex fake summary'
+exit ([int]$env:AO_FAKE_EXIT)
+"#,
+                )
+                .unwrap();
+                std::fs::write(
+                    root.join("claude.ps1"),
+                    "[IO.File]::WriteAllText($env:AO_FAKE_CLAUDE_MARKER, 'invoked')\nexit 0\n",
+                )
+                .unwrap();
+            }
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let codex = root.join("codex");
+                std::fs::write(
+                    &codex,
+                    r#"#!/bin/sh
+printf '%s\n' "$@" > "$AO_FAKE_ARGS"
+printf '%s' "$$" > "$AO_FAKE_PID"
+calls=0
+[ -f "$AO_FAKE_CALLS" ] && calls=$(cat "$AO_FAKE_CALLS")
+calls=$((calls + 1))
+printf '%s' "$calls" > "$AO_FAKE_CALLS"
+cat > "$AO_FAKE_STDIN"
+[ -n "$AO_FAKE_SLEEP_SECONDS" ] && sleep "$AO_FAKE_SLEEP_SECONDS"
+printf '%s\n' 'Codex fake summary'
+exit "$AO_FAKE_EXIT"
+"#,
+                )
+                .unwrap();
+                std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).unwrap();
+                let claude = root.join("claude");
+                std::fs::write(
+                    &claude,
+                    "#!/bin/sh\nprintf '%s' invoked > \"$AO_FAKE_CLAUDE_MARKER\"\nexit 0\n",
+                )
+                .unwrap();
+                std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+
+            Self {
+                args: root.join("codex.args"),
+                stdin: root.join("codex.stdin"),
+                pid: root.join("codex.pid"),
+                calls: root.join("codex.calls"),
+                claude_marker: root.join("claude-invoked.marker"),
+                root,
+            }
+        }
+
+        fn environment(&self, exit: &str, sleep_seconds: &str) -> EnvGuard {
+            let inherited_path = std::env::var_os("PATH").unwrap_or_default();
+            let path =
+                std::env::join_paths(std::iter::once(self.root.as_os_str().to_os_string()).chain(
+                    std::env::split_paths(&inherited_path).map(|path| path.into_os_string()),
+                ))
+                .unwrap();
+            EnvGuard::set(&[
+                ("PATH", path),
+                ("AO_FAKE_ARGS", self.args.as_os_str().to_os_string()),
+                ("AO_FAKE_STDIN", self.stdin.as_os_str().to_os_string()),
+                ("AO_FAKE_PID", self.pid.as_os_str().to_os_string()),
+                ("AO_FAKE_CALLS", self.calls.as_os_str().to_os_string()),
+                (
+                    "AO_FAKE_CLAUDE_MARKER",
+                    self.claude_marker.as_os_str().to_os_string(),
+                ),
+                ("AO_FAKE_EXIT", exit.into()),
+                ("AO_FAKE_SLEEP_SECONDS", sleep_seconds.into()),
+            ])
+        }
+    }
+
+    impl Drop for FakeCliDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
     struct DropSignal(Arc<AtomicBool>);
 
     impl Drop for DropSignal {
@@ -706,38 +847,6 @@ mod tests {
         .await;
     }
 
-    #[cfg(windows)]
-    struct EnvironmentRestore {
-        values: Vec<(&'static str, Option<std::ffi::OsString>)>,
-    }
-
-    #[cfg(windows)]
-    impl EnvironmentRestore {
-        fn set(values: &[(&'static str, std::ffi::OsString)]) -> Self {
-            let previous = values
-                .iter()
-                .map(|(key, _)| (*key, std::env::var_os(key)))
-                .collect();
-            for (key, value) in values {
-                std::env::set_var(key, value);
-            }
-            Self { values: previous }
-        }
-    }
-
-    #[cfg(windows)]
-    impl Drop for EnvironmentRestore {
-        fn drop(&mut self) {
-            for (key, value) in self.values.drain(..).rev() {
-                if let Some(value) = value {
-                    std::env::set_var(key, value);
-                } else {
-                    std::env::remove_var(key);
-                }
-            }
-        }
-    }
-
     fn command_that_does_not_read_stdin() -> ProviderCommand {
         #[cfg(windows)]
         use std::os::windows::process::CommandExt;
@@ -777,6 +886,46 @@ mod tests {
     }
 
     #[cfg(windows)]
+    fn process_is_running(pid: u32) -> bool {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let script = format!("Get-Process -Id {pid} -ErrorAction Stop | Out-Null");
+        std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+
+    #[cfg(unix)]
+    fn process_is_running(pid: u32) -> bool {
+        let proc_path = std::path::PathBuf::from(format!("/proc/{pid}"));
+        if std::path::Path::new("/proc").is_dir() {
+            return proc_path.exists();
+        }
+        let pid = pid.to_string();
+        std::process::Command::new("kill")
+            .args(["-0", &pid])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+
+    async fn wait_until_stopped(pid: u32) -> bool {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+        while process_is_running(pid) {
+            if tokio::time::Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        true
+    }
+
+    #[cfg(windows)]
     async fn wait_for_pid_files(root_file: &std::path::Path, descendant_file: &std::path::Path) {
         tokio::time::timeout(Duration::from_secs(5), async {
             while !(root_file.exists() && descendant_file.exists()) {
@@ -792,7 +941,7 @@ mod tests {
         dir: &std::path::Path,
         root_file: &std::path::Path,
         descendant_file: &std::path::Path,
-    ) -> EnvironmentRestore {
+    ) -> EnvGuard {
         std::fs::write(
             dir.join("fake-provider.ps1"),
             r#"$ErrorActionPreference='Stop'
@@ -814,7 +963,7 @@ Start-Sleep -Seconds 60"#,
             std::iter::once(dir.to_path_buf()).chain(std::env::split_paths(&original_path)),
         )
         .unwrap();
-        EnvironmentRestore::set(&[
+        EnvGuard::set(&[
             ("PATH", path),
             ("AO_ROOT_PID_FILE", root_file.as_os_str().to_os_string()),
             (
@@ -842,6 +991,114 @@ Start-Sleep -Seconds 60"#,
     fn error_detail_is_bounded() {
         let bounded = bounded_detail(&"x".repeat(ERROR_MAX_CHARS + 50));
         assert_eq!(bounded.chars().count(), ERROR_MAX_CHARS);
+    }
+
+    #[tokio::test]
+    async fn fake_cli_codex_dispatcher_preserves_exact_argv_stdin_and_summary() {
+        let _path_lock = path_test_lock().lock().unwrap();
+        let _process_lock = PROCESS_TEST_LOCK.lock().await;
+        let fake = FakeCliDir::new();
+        let _env = fake.environment("0", "");
+
+        let result = summarize(SummaryProvider::Codex, "요약 지시", "한글 원문")
+            .await
+            .unwrap();
+
+        assert_eq!(result, "Codex fake summary");
+        assert_eq!(std::fs::read_to_string(&fake.stdin).unwrap(), "한글 원문");
+        let args = std::fs::read_to_string(&fake.args)
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            args,
+            vec![
+                "exec",
+                "--ignore-user-config",
+                "--ignore-rules",
+                "--ephemeral",
+                "--sandbox",
+                "read-only",
+                "--model",
+                "gpt-5.4-mini",
+                "--config",
+                "model_reasoning_effort=\"low\"",
+                "--skip-git-repo-check",
+                "--color",
+                "never",
+                "--",
+                "요약 지시",
+            ]
+        );
+        assert_eq!(args.last().map(String::as_str), Some("요약 지시"));
+        assert_eq!(std::fs::read_to_string(&fake.calls).unwrap(), "1");
+    }
+
+    #[tokio::test]
+    async fn fake_cli_nonzero_codex_runs_once_without_claude_fallback() {
+        let _path_lock = path_test_lock().lock().unwrap();
+        let _process_lock = PROCESS_TEST_LOCK.lock().await;
+        let fake = FakeCliDir::new();
+        let _env = fake.environment("7", "");
+
+        let error = summarize(SummaryProvider::Codex, "요약 지시", "원문")
+            .await
+            .unwrap_err();
+
+        assert!(error.starts_with("codex exited 7:"), "{error}");
+        assert_eq!(
+            std::fs::read_to_string(&fake.calls).unwrap(),
+            "1",
+            "Codex must be invoked exactly once"
+        );
+        assert!(
+            !fake.claude_marker.exists(),
+            "Claude fallback must never run"
+        );
+    }
+
+    #[tokio::test]
+    async fn fake_cli_timeout_reaps_root_process_quickly() {
+        let _path_lock = path_test_lock().lock().unwrap();
+        let _process_lock = PROCESS_TEST_LOCK.lock().await;
+        let fake = FakeCliDir::new();
+        let _env = fake.environment("0", "60");
+        let spec = codex::build("요약 지시");
+        #[cfg(windows)]
+        let fake_timeout = Duration::from_millis(500);
+        #[cfg(unix)]
+        let fake_timeout = Duration::from_millis(50);
+
+        let started = std::time::Instant::now();
+        let error = run_with_timeout(spec, "원문", fake_timeout)
+            .await
+            .unwrap_err();
+
+        assert_eq!(error, "timeout");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "timeout boundary returned too slowly: {:?}",
+            started.elapsed()
+        );
+        assert!(
+            fake.pid.is_file(),
+            "timeout expired before the fake provider boundary recorded its root PID"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&fake.calls).unwrap(),
+            "1",
+            "timeout must cross the fake provider boundary exactly once"
+        );
+        let pid: u32 = std::fs::read_to_string(&fake.pid)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(
+            wait_until_stopped(pid).await,
+            "timed-out summarizer root process survived: {pid}"
+        );
     }
 
     #[tokio::test]
@@ -1027,6 +1284,7 @@ exit 0"#;
     #[cfg(windows)]
     #[tokio::test]
     async fn cancelling_summarize_kills_tree_before_releasing_permit_without_reader_hang() {
+        let _path_lock = path_test_lock().lock().unwrap();
         let _test_lock = PROCESS_TEST_LOCK.lock().await;
         let first_permit = permits().acquire().await.unwrap();
         let dir = std::env::temp_dir().join(format!("ao-cancel-tree-{}", uuid::Uuid::new_v4()));

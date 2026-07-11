@@ -152,8 +152,7 @@ mod tests {
         }
 
         let shim_dir = scratch_dir();
-        write_observer_shim(&shim_dir, &observer_wrappers())
-            .expect("write_observer_shim succeeds");
+        write_observer_shim(&shim_dir, &observer_wrappers()).expect("write_observer_shim succeeds");
         let empty_home = std::env::temp_dir().join(format!(
             "agent-office-zsh-wrapper-home-{}",
             uuid::Uuid::new_v4()

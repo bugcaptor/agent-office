@@ -40,7 +40,10 @@ impl AppEvents for TauriEvents {
         let _ = self.app.emit("notification-new", ev);
     }
     fn notification_cleared(&self, agent_id: &str, ids: &[String]) {
-        let payload = NotificationClearedEvent { agent_id: agent_id.to_string(), ids: ids.to_vec() };
+        let payload = NotificationClearedEvent {
+            agent_id: agent_id.to_string(),
+            ids: ids.to_vec(),
+        };
         let _ = self.app.emit("notification-cleared", &payload);
     }
     fn activity_event(&self, ev: &ActivityEvent) {
@@ -58,7 +61,10 @@ impl SessionRegistry {
         Self::default()
     }
     pub fn insert(&self, sid: &str, agent: &str, state: SessionState) {
-        self.map.write().unwrap().insert(sid.into(), (agent.into(), state));
+        self.map
+            .write()
+            .unwrap()
+            .insert(sid.into(), (agent.into(), state));
     }
     pub fn set_state(&self, sid: &str, state: SessionState) {
         if let Some(e) = self.map.write().unwrap().get_mut(sid) {
@@ -139,7 +145,10 @@ pub mod fake {
             self.notifications.lock().unwrap().push(ev.clone());
         }
         fn notification_cleared(&self, agent_id: &str, ids: &[String]) {
-            self.cleared.lock().unwrap().push((agent_id.to_string(), ids.to_vec()));
+            self.cleared
+                .lock()
+                .unwrap()
+                .push((agent_id.to_string(), ids.to_vec()));
         }
         fn activity_event(&self, ev: &ActivityEvent) {
             self.activities.lock().unwrap().push(ev.clone());
@@ -155,7 +164,12 @@ pub mod fake {
         }
         /// 지금까지 방출된 `session-state` 이벤트의 상태값 시퀀스.
         pub fn states(&self) -> Vec<SessionState> {
-            self.states.lock().unwrap().iter().map(|e| e.state).collect()
+            self.states
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|e| e.state)
+                .collect()
         }
         /// 가장 최근 `session-state` 이벤트 전체(예: `.exit` 상세 확인용).
         ///
@@ -223,7 +237,11 @@ mod tests {
 
         assert_eq!(
             events.states(),
-            vec![SessionState::Starting, SessionState::Running, SessionState::Exited]
+            vec![
+                SessionState::Starting,
+                SessionState::Running,
+                SessionState::Exited
+            ]
         );
     }
 

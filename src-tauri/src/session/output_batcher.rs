@@ -29,7 +29,13 @@ pub struct OutputBatcher {
 
 impl OutputBatcher {
     pub fn new(session_id: String, agent_id: String) -> Self {
-        Self { session_id, agent_id, buf: Vec::new(), frames: 0, seq: 0 }
+        Self {
+            session_id,
+            agent_id,
+            buf: Vec::new(),
+            frames: 0,
+            seq: 0,
+        }
     }
 
     pub fn pending_bytes(&self) -> usize {
@@ -239,8 +245,16 @@ mod tests {
         let mut b = batcher();
         b.push(&[0xED, 0x95]); // incomplete lead bytes
         b.flush(&sink);
-        assert_eq!(sink.len(), 0, "incomplete multibyte tail must not be emitted");
-        assert_eq!(b.pending_bytes(), 2, "incomplete bytes stay carried in the buffer");
+        assert_eq!(
+            sink.len(),
+            0,
+            "incomplete multibyte tail must not be emitted"
+        );
+        assert_eq!(
+            b.pending_bytes(),
+            2,
+            "incomplete bytes stay carried in the buffer"
+        );
 
         b.push(&[0x9C]); // completes the character
         b.flush(&sink);
@@ -308,8 +322,15 @@ mod tests {
         assert_eq!(sink.len(), 1);
         let data = sink.at(0).data;
         assert!(data.starts_with("ok"));
-        assert!(data.contains('\u{FFFD}'), "incomplete tail becomes the replacement character");
-        assert_eq!(b.pending_bytes(), 0, "flush_final must drain the entire buffer");
+        assert!(
+            data.contains('\u{FFFD}'),
+            "incomplete tail becomes the replacement character"
+        );
+        assert_eq!(
+            b.pending_bytes(),
+            0,
+            "flush_final must drain the entire buffer"
+        );
     }
 
     #[test]
@@ -334,7 +355,11 @@ mod tests {
 
         assert_eq!(sink.len(), 1, "invalid byte must be flushed, not stalled");
         assert!(sink.at(0).data.contains('\u{FFFD}'));
-        assert_eq!(b.pending_bytes(), 0, "invalid byte must be consumed, not parked forever");
+        assert_eq!(
+            b.pending_bytes(),
+            0,
+            "invalid byte must be consumed, not parked forever"
+        );
 
         // Subsequent valid output still flows on the next flush.
         b.push(b"ok");
@@ -366,7 +391,11 @@ mod tests {
 
         assert_eq!(sink.len(), 1);
         assert_eq!(sink.at(0).data, "a\u{FFFD}");
-        assert_eq!(b.pending_bytes(), 2, "incomplete tail is carried, not lossily emitted");
+        assert_eq!(
+            b.pending_bytes(),
+            2,
+            "incomplete tail is carried, not lossily emitted"
+        );
 
         b.push(&[0x9C]); // completes '한'
         b.flush(&sink);
@@ -382,7 +411,11 @@ mod tests {
         for _ in 0..100 {
             b.push(&[0xFF, 0xFE]);
             b.flush(&sink);
-            assert_eq!(b.pending_bytes(), 0, "buffer must never accumulate invalid bytes");
+            assert_eq!(
+                b.pending_bytes(),
+                0,
+                "buffer must never accumulate invalid bytes"
+            );
         }
         assert_eq!(sink.len(), 100);
     }

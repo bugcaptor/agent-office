@@ -365,7 +365,11 @@ mod tests {
         }
 
         let activities = events.activities();
-        assert_eq!(activities.len(), 2, "subagent hooks must reach activity-event");
+        assert_eq!(
+            activities.len(),
+            2,
+            "subagent hooks must reach activity-event"
+        );
         assert_eq!(activities[0].kind, ActivityKind::SubStart);
         assert_eq!(activities[1].kind, ActivityKind::SubStop);
         assert!(events.notifications().is_empty());

@@ -82,7 +82,10 @@ fn install_panic_logger(data_dir: std::path::PathBuf) {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis())
             .unwrap_or(0);
-        let thread = std::thread::current().name().unwrap_or("<unnamed>").to_string();
+        let thread = std::thread::current()
+            .name()
+            .unwrap_or("<unnamed>")
+            .to_string();
         let backtrace = std::backtrace::Backtrace::force_capture();
         let entry = format!("=== panic @{ts}ms thread={thread}\n{info}\n{backtrace}\n\n");
         let _ = std::fs::create_dir_all(&data_dir);

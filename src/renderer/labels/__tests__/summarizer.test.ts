@@ -77,7 +77,14 @@ describe("installTaskLabelSummarizer", () => {
     "%s provider도 첫 프롬프트에 정확히 두 번 호출한다",
     async (provider) => {
       useAppStore.getState().hydrateSettings(
-        { version: 1, summarizerEnabled: true, summaryProvider: provider, observerEnabled: false },
+        {
+          version: 1,
+          summarizerEnabled: true,
+          summaryProvider: provider,
+          observerEnabled: false,
+          soundEnabled: true,
+          soundVolume: 0.5,
+        },
         false,
       );
       const summarizeFn = vi.fn(async (_provider: SummaryProvider, instruction: string) =>

@@ -45,7 +45,10 @@ pub struct OutputSink {
 }
 impl OutputSink {
     fn new() -> Self {
-        Self { channel: Mutex::new(None), backlog: Mutex::new(Default::default()) }
+        Self {
+            channel: Mutex::new(None),
+            backlog: Mutex::new(Default::default()),
+        }
     }
     fn attach(&self, ch: Channel<OutputChunk>) {
         // 락 순서 항상 channel → backlog (데드락 방지, emit과 동일 순서).
@@ -96,9 +99,8 @@ pub struct SessionManager {
     /// agentId별 출력 sink — 세션 수명과 독립. subscribe 이전 pending attach와
     /// 세션 재생성 시 채널 재사용을 위해 세션이 아니라 여기에 보관한다.
     sinks: Mutex<HashMap<AgentId, Arc<OutputSink>>>,
-    shell_resolver: Arc<
-        dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync,
-    >,
+    shell_resolver:
+        Arc<dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync>,
 }
 
 impl SessionManager {
@@ -142,7 +144,10 @@ impl SessionManager {
         self.find(agent_id).map(|s| s.session_id.clone())
     }
 
-    pub fn create(self: &Arc<Self>, req: CreateSessionRequest) -> Result<CreateSessionResult, String> {
+    pub fn create(
+        self: &Arc<Self>,
+        req: CreateSessionRequest,
+    ) -> Result<CreateSessionResult, String> {
         let fallback = AgentEventProfile {
             name: req.agent_id.clone(),
             role: None,
@@ -171,7 +176,10 @@ impl SessionManager {
                 let reusable = matches!(st, SessionState::Running | SessionState::Starting)
                     && !s.kill_requested.load(Ordering::SeqCst);
                 if reusable {
-                    return Ok(CreateSessionResult { session_id: s.session_id.clone(), state: st });
+                    return Ok(CreateSessionResult {
+                        session_id: s.session_id.clone(),
+                        state: st,
+                    });
                 }
                 map.remove(&req.agent_id);
             }
@@ -279,11 +287,14 @@ impl SessionManager {
             kill_requested: AtomicBool::new(false),
         });
 
-        self.sessions.lock().insert(req.agent_id.clone(), session.clone());
+        self.sessions
+            .lock()
+            .insert(req.agent_id.clone(), session.clone());
         // 세션이 맵에 들어갔다 — 이후의 수명은 dispose()/on_exit()가 책임지므로
         // observer 파일 정리 가드를 해제한다.
         observer_plan_guard.armed = false;
-        self.registry.insert(&session_id, &req.agent_id, SessionState::Starting);
+        self.registry
+            .insert(&session_id, &req.agent_id, SessionState::Starting);
         self.emit_state(&session, SessionState::Starting, None);
 
         // 1) reader thread (블로킹 read → mpsc)
@@ -306,7 +317,13 @@ impl SessionManager {
         });
 
         // 2) output pump task (배칭 + BEL 감지 + Channel 방출)
-        spawn_output_pump(session_id.clone(), req.agent_id.clone(), rx, output, self.hub.clone());
+        spawn_output_pump(
+            session_id.clone(),
+            req.agent_id.clone(),
+            rx,
+            output,
+            self.hub.clone(),
+        );
 
         // 3) wait thread (블로킹 wait → 상태 전이)
         let me = Arc::clone(self);
@@ -429,7 +446,11 @@ impl SessionManager {
             signal: outcome.signal,
             intentional,
         };
-        let next = if intentional { SessionState::Disposed } else { SessionState::Exited };
+        let next = if intentional {
+            SessionState::Disposed
+        } else {
+            SessionState::Exited
+        };
         // state 락을 registry.set_state까지 계속 쥐어 create()의 Running CAS와 상호
         // 배제한다: 상태 전이는 Starting-게이트 CAS로 단조(monotonic) 보장 →
         // "Exited 이후 Running" 역전 차단. (emit은 아래 superseded 판정 뒤로 뺀다 —
@@ -615,7 +636,12 @@ mod tests {
     }
 
     fn hub_for(registry: Arc<SessionRegistry>, events: Arc<dyn AppEvents>) -> Arc<NotificationHub> {
-        Arc::new(NotificationHub::new(registry, events, Arc::new(SystemClock), Duration::from_millis(3000)))
+        Arc::new(NotificationHub::new(
+            registry,
+            events,
+            Arc::new(SystemClock),
+            Duration::from_millis(3000),
+        ))
     }
 
     /// Unique tempdir per test so parallel `cargo test` runs never collide.
@@ -684,7 +710,10 @@ mod tests {
     async fn wait_for<F: Fn() -> bool>(pred: F) {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
         while !pred() {
-            assert!(tokio::time::Instant::now() < deadline, "condition not met within timeout");
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "condition not met within timeout"
+            );
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
     }
@@ -695,7 +724,12 @@ mod tests {
     /// preparation; enabled sessions receive a deterministic endpoint.
     fn build_with_observer(
         enabled: bool,
-    ) -> (Arc<SessionManager>, Arc<RecordingEvents>, Arc<FakeControl>, PathBuf) {
+    ) -> (
+        Arc<SessionManager>,
+        Arc<RecordingEvents>,
+        Arc<FakeControl>,
+        PathBuf,
+    ) {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
@@ -714,7 +748,12 @@ mod tests {
         (mgr, events, ctl, dir)
     }
 
-    fn build() -> (Arc<SessionManager>, Arc<RecordingEvents>, Arc<FakeControl>, PathBuf) {
+    fn build() -> (
+        Arc<SessionManager>,
+        Arc<RecordingEvents>,
+        Arc<FakeControl>,
+        PathBuf,
+    ) {
         build_with_observer(true)
     }
 
@@ -756,7 +795,10 @@ mod tests {
             provider,
             result: Ok(AdapterSessionPlan {
                 env: if provider == ObserverProvider::Codex {
-                    vec![("AGENT_OFFICE_CODEX_HOOK_STOP".into(), "hooks.Stop=[]".into())]
+                    vec![(
+                        "AGENT_OFFICE_CODEX_HOOK_STOP".into(),
+                        "hooks.Stop=[]".into(),
+                    )]
                 } else {
                     vec![]
                 },
@@ -818,8 +860,7 @@ mod tests {
 
     #[tokio::test]
     async fn observer_off_spawns_without_observer_env_or_wrappers() {
-        let (manager, control, recorded_wrappers, scratch) =
-            build_observer_manager(false, vec![]);
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
         manager.create(req("a1", Some(false))).unwrap();
         let env = control.spawned_env();
         assert!(env.iter().all(|(key, _)| key != "AGENT_OFFICE_HOOK_URL"));
@@ -836,13 +877,9 @@ mod tests {
             plan_adapter(ObserverProvider::Claude, "claude"),
             plan_adapter(ObserverProvider::Codex, "codex"),
         ];
-        let (manager, control, recorded_wrappers, scratch) =
-            build_observer_manager(true, adapters);
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(true, adapters);
         manager
-            .create(req_with_startup(
-                "a1",
-                Some("codex resume --last".into()),
-            ))
+            .create(req_with_startup("a1", Some("codex resume --last".into())))
             .unwrap();
         let names = recorded_wrappers
             .lock()
@@ -866,8 +903,7 @@ mod tests {
             }),
             plan_adapter(ObserverProvider::Codex, "codex"),
         ];
-        let (manager, control, recorded_wrappers, scratch) =
-            build_observer_manager(true, adapters);
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(true, adapters);
         assert!(manager.create(req("a1", Some(false))).is_ok());
         assert_eq!(recorded_wrappers.lock()[0].command, "codex");
         assert!(control
@@ -1078,19 +1114,21 @@ mod tests {
             hub.clone(),
             vec![Arc::new(ClaudeAdapter::new(settings_dir.clone()))],
         ));
-        let manager = Arc::new(SessionManager::new(
-            Arc::new(AlwaysFailPtyFactory),
-            observer,
-            registry,
-            events,
-            hub,
-            Arc::new(|| Some("http://127.0.0.1:43123/hook".into())),
-        )
-        .with_shell_resolver(Arc::new(|_, _| shells::ResolvedShell {
-            program: "test-shell".into(),
-            args: vec![],
-            extra_env: vec![],
-        })));
+        let manager = Arc::new(
+            SessionManager::new(
+                Arc::new(AlwaysFailPtyFactory),
+                observer,
+                registry,
+                events,
+                hub,
+                Arc::new(|| Some("http://127.0.0.1:43123/hook".into())),
+            )
+            .with_shell_resolver(Arc::new(|_, _| shells::ResolvedShell {
+                program: "test-shell".into(),
+                args: vec![],
+                extra_env: vec![],
+            })),
+        );
 
         assert!(manager.create(req("a1", Some(false))).is_err());
         let remaining = std::fs::read_dir(&settings_dir)
@@ -1174,22 +1212,35 @@ mod tests {
 
         let created = mgr.create(req("a1", Some(false))).unwrap();
         assert_eq!(created.state, SessionState::Running);
-        assert_eq!(events.states(), vec![SessionState::Starting, SessionState::Running]);
+        assert_eq!(
+            events.states(),
+            vec![SessionState::Starting, SessionState::Running]
+        );
 
         ctl.fire_exit(1);
         wait_for(|| events.states().len() == 3).await;
 
         assert_eq!(
             events.states(),
-            vec![SessionState::Starting, SessionState::Running, SessionState::Exited]
+            vec![
+                SessionState::Starting,
+                SessionState::Running,
+                SessionState::Exited
+            ]
         );
         let last = events.last_state().exit.unwrap();
-        assert!(!last.intentional, "unexpected exit must not be marked intentional");
+        assert!(
+            !last.intentional,
+            "unexpected exit must not be marked intentional"
+        );
         assert_eq!(last.exit_code, Some(1));
 
         // unexpected exit keeps the session in bookkeeping (diagnosis/restart).
         assert_eq!(mgr.session_id_for("a1"), Some(created.session_id.clone()));
-        assert_eq!(mgr.registry.resolve_agent(&created.session_id), Some("a1".to_string()));
+        assert_eq!(
+            mgr.registry.resolve_agent(&created.session_id),
+            Some("a1".to_string())
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -1219,7 +1270,11 @@ mod tests {
         // the user runs `claude --settings "$AGENT_OFFICE_SETTINGS"` manually.
         mgr.create(req("a1", None)).unwrap();
 
-        assert_eq!(ctl.writes_utf8(), "", "autostartClaude omitted must not write to stdin");
+        assert_eq!(
+            ctl.writes_utf8(),
+            "",
+            "autostartClaude omitted must not write to stdin"
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -1244,7 +1299,8 @@ mod tests {
     #[tokio::test]
     async fn create_startup_command_injects_trimmed_line_to_stdin() {
         let (mgr, _events, ctl, dir) = build();
-        mgr.create(req_with_startup("a1", Some("source ./init.sh".into()))).unwrap();
+        mgr.create(req_with_startup("a1", Some("source ./init.sh".into())))
+            .unwrap();
 
         assert_eq!(
             ctl.writes_utf8(),
@@ -1262,9 +1318,14 @@ mod tests {
     async fn create_startup_command_blank_skips_injection() {
         let (mgr, _events, ctl, dir) = build();
         // 공백만 있는 명령어 -> 트림 후 빈 값 -> 주입하지 않는다.
-        mgr.create(req_with_startup("a1", Some("   ".into()))).unwrap();
+        mgr.create(req_with_startup("a1", Some("   ".into())))
+            .unwrap();
 
-        assert_eq!(ctl.writes_utf8(), "", "blank startup_command must not write to stdin");
+        assert_eq!(
+            ctl.writes_utf8(),
+            "",
+            "blank startup_command must not write to stdin"
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -1274,7 +1335,11 @@ mod tests {
         let (mgr, _events, ctl, dir) = build();
         mgr.create(req_with_startup("a1", None)).unwrap();
 
-        assert_eq!(ctl.writes_utf8(), "", "absent startup_command must not write to stdin");
+        assert_eq!(
+            ctl.writes_utf8(),
+            "",
+            "absent startup_command must not write to stdin"
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -1328,7 +1393,11 @@ mod tests {
         let (mgr, _events, ctl, dir) = build_with_observer(false);
         mgr.create(req("a1", Some(true))).unwrap();
 
-        assert_eq!(ctl.writes_utf8(), "claude\r", "hooks-OFF autostart must inject a bare `claude` with no --settings");
+        assert_eq!(
+            ctl.writes_utf8(),
+            "claude\r",
+            "hooks-OFF autostart must inject a bare `claude` with no --settings"
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -1341,7 +1410,12 @@ mod tests {
         resolver: Arc<
             dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync,
         >,
-    ) -> (Arc<SessionManager>, Arc<RecordingEvents>, Arc<FakeControl>, PathBuf) {
+    ) -> (
+        Arc<SessionManager>,
+        Arc<RecordingEvents>,
+        Arc<FakeControl>,
+        PathBuf,
+    ) {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
@@ -1370,8 +1444,8 @@ mod tests {
             Uuid::new_v4(),
         ));
         let shim_dir_for_resolver = shim_dir.clone();
-        let (mgr, _events, ctl, dir) = build_with_shell_resolver(Arc::new(
-            move |_selected, wrappers| {
+        let (mgr, _events, ctl, dir) =
+            build_with_shell_resolver(Arc::new(move |_selected, wrappers| {
                 let path = crate::session::zsh_wrapper::write_observer_shim(
                     &shim_dir_for_resolver,
                     wrappers,
@@ -1382,8 +1456,7 @@ mod tests {
                     args: vec!["-l".to_string(), "-i".to_string()],
                     extra_env: vec![("ZDOTDIR".into(), path.to_string_lossy().into_owned())],
                 }
-            },
-        ));
+            }));
         mgr.create(req("a1", None)).unwrap();
 
         let env = ctl.spawned_env();
@@ -1405,12 +1478,10 @@ mod tests {
     #[tokio::test]
     async fn create_does_not_push_zdotdir_env_for_non_zsh_shells() {
         let (mgr, _events, ctl, dir) =
-            build_with_shell_resolver(Arc::new(|_selected, _wrappers| {
-                shells::ResolvedShell {
-                    program: "/bin/bash".to_string(),
-                    args: vec!["-l".to_string(), "-i".to_string()],
-                    extra_env: vec![],
-                }
+            build_with_shell_resolver(Arc::new(|_selected, _wrappers| shells::ResolvedShell {
+                program: "/bin/bash".to_string(),
+                args: vec!["-l".to_string(), "-i".to_string()],
+                extra_env: vec![],
             }));
         mgr.create(req("a1", None)).unwrap();
 
@@ -1428,7 +1499,8 @@ mod tests {
     #[tokio::test]
     async fn create_expands_leading_tilde_slash_in_cwd() {
         let (mgr, _events, ctl, dir) = build();
-        mgr.create(req_with_cwd("a1", Some("~/some/dir".into()))).unwrap();
+        mgr.create(req_with_cwd("a1", Some("~/some/dir".into())))
+            .unwrap();
 
         assert_eq!(ctl.spawned_cwd(), format!("{}/some/dir", home_dir()));
 
@@ -1449,7 +1521,8 @@ mod tests {
     async fn create_does_not_expand_tilde_user_form() {
         // `~someuser/dir` is left untouched -- only bare `~` and `~/...` expand.
         let (mgr, _events, ctl, dir) = build();
-        mgr.create(req_with_cwd("a1", Some("~someuser/dir".into()))).unwrap();
+        mgr.create(req_with_cwd("a1", Some("~someuser/dir".into())))
+            .unwrap();
 
         assert_eq!(ctl.spawned_cwd(), "~someuser/dir");
 
@@ -1459,7 +1532,8 @@ mod tests {
     #[tokio::test]
     async fn create_passes_through_absolute_cwd_unchanged() {
         let (mgr, _events, ctl, dir) = build();
-        mgr.create(req_with_cwd("a1", Some("/abs/path".into()))).unwrap();
+        mgr.create(req_with_cwd("a1", Some("/abs/path".into())))
+            .unwrap();
 
         assert_eq!(ctl.spawned_cwd(), "/abs/path");
 
@@ -1511,7 +1585,11 @@ mod tests {
         ctl.fire_exit(0);
         wait_for(|| events.states().len() == 3).await;
 
-        assert_eq!(mgr.session_id_for("a1"), None, "disposed agent must not resolve to a session");
+        assert_eq!(
+            mgr.session_id_for("a1"),
+            None,
+            "disposed agent must not resolve to a session"
+        );
         let _ = created;
 
         cleanup(&ctl, &dir);
@@ -1524,20 +1602,33 @@ mod tests {
         let (mgr, events, ctl, dir) = build();
         let created = mgr.create(req("a1", Some(false))).unwrap();
         let settings = dir.join(format!("{}.settings.json", created.session_id));
-        assert!(settings.exists(), "settings file should exist while running");
+        assert!(
+            settings.exists(),
+            "settings file should exist while running"
+        );
 
         mgr.dispose("a1");
         assert_eq!(ctl.kill_count(), 1, "dispose must call PtyControl::kill");
-        assert!(!settings.exists(), "dispose must remove observer cleanup paths");
+        assert!(
+            !settings.exists(),
+            "dispose must remove observer cleanup paths"
+        );
 
         ctl.fire_exit(0);
         wait_for(|| events.states().len() == 3).await;
 
         let last = events.last_state();
         assert_eq!(last.state, SessionState::Disposed);
-        assert!(last.exit.as_ref().unwrap().intentional, "kill-triggered exit must be intentional");
+        assert!(
+            last.exit.as_ref().unwrap().intentional,
+            "kill-triggered exit must be intentional"
+        );
 
-        assert_eq!(mgr.session_id_for("a1"), None, "agentId must be removed from the sessions map");
+        assert_eq!(
+            mgr.session_id_for("a1"),
+            None,
+            "agentId must be removed from the sessions map"
+        );
         assert_eq!(
             mgr.registry.resolve_agent(&created.session_id),
             None,
@@ -1592,7 +1683,10 @@ mod tests {
         mgr.resize("a1", 10, 10);
 
         assert_eq!(ctl.writes_utf8(), "", "write after exit must be a no-op");
-        assert!(ctl.resize_calls().is_empty(), "resize after exit must be a no-op");
+        assert!(
+            ctl.resize_calls().is_empty(),
+            "resize after exit must be a no-op"
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -1628,7 +1722,10 @@ mod tests {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             mgr.create(req("a1", Some(false)))
         }));
-        assert!(result.is_err(), "spawn panic must propagate (converted at the command layer)");
+        assert!(
+            result.is_err(),
+            "spawn panic must propagate (converted at the command layer)"
+        );
 
         let leftover = std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0);
         assert_eq!(
@@ -1665,11 +1762,11 @@ mod tests {
         ));
 
         // 패닉하는 채널을 먼저 attach — 첫 emit(ch.send)에서 pump가 죽는다.
-        let bad: Channel<OutputChunk> =
-            Channel::new(|_| panic!("simulated channel-send failure"));
+        let bad: Channel<OutputChunk> = Channel::new(|_| panic!("simulated channel-send failure"));
         mgr.attach_output("a1", bad);
 
-        mgr.create(req("a1", Some(false))).expect("first create succeeds");
+        mgr.create(req("a1", Some(false)))
+            .expect("first create succeeds");
         let ctl1 = factory.controls()[0].clone();
         ctl1.push_output(b"trigger-pump-panic");
 
@@ -1678,9 +1775,7 @@ mod tests {
 
         // 실사고 경로 그대로: 프론트의 unsubscribe_output → detach_output.
         // (수정 전: channel 뮤텍스 poison → 여기서 sinks 락 보유 중 패닉)
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            mgr.detach_output("a1")
-        }));
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| mgr.detach_output("a1")));
 
         // 재시작 시나리오: dispose 후 재생성. 세션 계층이 오염됐다면 여기서
         // 패닉(= invoke 영구 미해결 = 터미널 영구 고착)한다.
@@ -1693,14 +1788,19 @@ mod tests {
             "create() must survive a prior channel panic — a single panicking \
              channel callback must never brick session creation for the rest of the app run"
         );
-        second.unwrap().expect("recreate after channel panic should return Ok");
+        second
+            .unwrap()
+            .expect("recreate after channel panic should return Ok");
 
         // 멀쩡한 채널로 재구독하면 새 세션 출력도 정상 수신돼야 한다.
         let (good, captured) = recording_channel();
         let reattach = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             mgr.attach_output("a1", good)
         }));
-        assert!(reattach.is_ok(), "attach_output must survive after the cascade");
+        assert!(
+            reattach.is_ok(),
+            "attach_output must survive after the cascade"
+        );
         let ctl2 = factory.controls()[1].clone();
         ctl2.push_output(b"recovered-output");
         wait_for(|| captured.lock().contains("recovered-output")).await;
@@ -1834,7 +1934,11 @@ mod tests {
             first.session_id, second.session_id,
             "kill이 요청된(죽어가는) 세션을 재사용하면 안 된다 — 새 세션을 만들어야 한다"
         );
-        assert_eq!(factory.controls().len(), 2, "재시작 시 새 PTY가 spawn돼야 한다");
+        assert_eq!(
+            factory.controls().len(),
+            2,
+            "재시작 시 새 PTY가 spawn돼야 한다"
+        );
         assert_eq!(
             mgr.session_id_for("a1"),
             Some(second.session_id.clone()),
@@ -2046,13 +2150,19 @@ mod tests {
         let (mgr, events, ctl, dir) = build();
         let created = mgr.create(req("a1", Some(false))).unwrap();
         let settings = dir.join(format!("{}.settings.json", created.session_id));
-        assert!(settings.exists(), "settings file should exist while running");
+        assert!(
+            settings.exists(),
+            "settings file should exist while running"
+        );
 
         ctl.fire_exit(1); // unexpected -> Exited
         wait_for(|| events.states().contains(&SessionState::Exited)).await;
         wait_for(|| !settings.exists()).await;
 
-        assert!(!settings.exists(), "unexpected exit must clean up the settings file");
+        assert!(
+            !settings.exists(),
+            "unexpected exit must clean up the settings file"
+        );
         cleanup(&ctl, &dir);
     }
 
@@ -2082,7 +2192,10 @@ mod tests {
         // The --settings file write() happens before spawn(); on spawn failure
         // it must be cleaned up, leaving no leftover in the hook dir.
         let leftovers = std::fs::read_dir(&dir).map(|rd| rd.count()).unwrap_or(0);
-        assert_eq!(leftovers, 0, "spawn failure must not leak the pre-written settings file");
+        assert_eq!(
+            leftovers, 0,
+            "spawn failure must not leak the pre-written settings file"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2103,9 +2216,8 @@ mod tests {
     fn recording_resolver(
         captured: Arc<Mutex<Option<RecordedResolverCall>>>,
         extra_env: Vec<(String, String)>,
-    ) -> Arc<
-        dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync,
-    > {
+    ) -> Arc<dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync>
+    {
         Arc::new(move |selected, wrappers| {
             *captured.lock() = Some(RecordedResolverCall {
                 selected: selected.map(str::to_owned),
@@ -2129,7 +2241,12 @@ mod tests {
             dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync,
         >,
         enabled: bool,
-    ) -> (Arc<SessionManager>, Arc<RecordingEvents>, Arc<FakeControl>, PathBuf) {
+    ) -> (
+        Arc<SessionManager>,
+        Arc<RecordingEvents>,
+        Arc<FakeControl>,
+        PathBuf,
+    ) {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
@@ -2157,7 +2274,8 @@ mod tests {
         let resolver = recording_resolver(captured.clone(), vec![]);
         let (mgr, _events, ctl, dir) = build_with_shell_resolver(resolver);
 
-        mgr.create(req_with_shell("a1", Some("git-bash".to_string()))).unwrap();
+        mgr.create(req_with_shell("a1", Some("git-bash".to_string())))
+            .unwrap();
 
         let rec = captured.lock();
         let rec = rec.as_ref().expect("resolver must have been called");
@@ -2171,10 +2289,10 @@ mod tests {
     async fn create_passes_no_wrappers_to_resolver_when_observer_disabled() {
         let captured = Arc::new(Mutex::new(None));
         let resolver = recording_resolver(captured.clone(), vec![]);
-        let (mgr, _events, ctl, dir) =
-            build_with_shell_resolver_and_observation(resolver, false);
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver_and_observation(resolver, false);
 
-        mgr.create(req_with_shell("a1", Some("git-bash".to_string()))).unwrap();
+        mgr.create(req_with_shell("a1", Some("git-bash".to_string())))
+            .unwrap();
 
         let rec = captured.lock();
         let rec = rec.as_ref().expect("resolver must have been called");
@@ -2227,7 +2345,10 @@ mod tests {
     #[tokio::test]
     async fn create_appends_resolved_extra_env_to_spawn_env() {
         let captured = Arc::new(Mutex::new(None));
-        let marker = ("AGENT_OFFICE_TEST_MARKER".to_string(), "shell-extra-env".to_string());
+        let marker = (
+            "AGENT_OFFICE_TEST_MARKER".to_string(),
+            "shell-extra-env".to_string(),
+        );
         let resolver = recording_resolver(captured, vec![marker.clone()]);
         let (mgr, _events, ctl, dir) = build_with_shell_resolver(resolver);
 
@@ -2291,8 +2412,7 @@ mod real_pty_smoke {
 
     #[cfg(windows)]
     fn observer_path_lock() -> &'static std::sync::Mutex<()> {
-        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> =
-            std::sync::OnceLock::new();
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
         LOCK.get_or_init(|| std::sync::Mutex::new(()))
     }
 
@@ -2465,7 +2585,10 @@ return
             "no output arrived from the real shell within 5s -- check $SHELL / login-shell startup time",
         )
         .await;
-        assert_eq!(events.states().first().copied(), Some(SessionState::Starting));
+        assert_eq!(
+            events.states().first().copied(),
+            Some(SessionState::Starting)
+        );
         assert!(events.states().contains(&SessionState::Running));
 
         // 2) Echo round-trip through real stdin -> shell -> stdout.
@@ -2640,35 +2763,17 @@ return
         .unwrap();
         let _env = ObserverEnvGuard::set(&[
             ("PATH", path),
-            (
-                "AO_FAKE_FORWARDER",
-                forwarder.as_os_str().to_os_string(),
-            ),
-            (
-                "AO_FAKE_CODEX_ARGS",
-                codex_args.as_os_str().to_os_string(),
-            ),
+            ("AO_FAKE_FORWARDER", forwarder.as_os_str().to_os_string()),
+            ("AO_FAKE_CODEX_ARGS", codex_args.as_os_str().to_os_string()),
             (
                 "AO_FAKE_CLAUDE_ARGS",
                 claude_args.as_os_str().to_os_string(),
             ),
-            (
-                "AO_FAKE_CODEX_PID",
-                codex_pid.as_os_str().to_os_string(),
-            ),
-            (
-                "AO_FAKE_CLAUDE_PID",
-                claude_pid.as_os_str().to_os_string(),
-            ),
+            ("AO_FAKE_CODEX_PID", codex_pid.as_os_str().to_os_string()),
+            ("AO_FAKE_CLAUDE_PID", claude_pid.as_os_str().to_os_string()),
             ("AO_FAKE_BYPASS", bypass.as_os_str().to_os_string()),
-            (
-                "AO_FAKE_SHELL_PID",
-                shell_pid.as_os_str().to_os_string(),
-            ),
-            (
-                "AO_FAKE_SHELL_ENV",
-                shell_env.as_os_str().to_os_string(),
-            ),
+            ("AO_FAKE_SHELL_PID", shell_pid.as_os_str().to_os_string()),
+            ("AO_FAKE_SHELL_ENV", shell_env.as_os_str().to_os_string()),
             (
                 "AO_FAKE_RESOLUTION",
                 command_resolution.as_os_str().to_os_string(),
@@ -2742,8 +2847,7 @@ return
             }),
         );
 
-        let (shell_program, shell_args, shell_extra_env) =
-            resolved_shell.lock().clone().unwrap();
+        let (shell_program, shell_args, shell_extra_env) = resolved_shell.lock().clone().unwrap();
         let decoded_wrapper = decode_observer_powershell_command(&shell_args).unwrap();
         assert!(decoded_wrapper.contains("function global:claude"));
         assert!(decoded_wrapper.contains("function global:codex"));
@@ -2752,8 +2856,7 @@ return
         wrapper_hash.update(decoded_wrapper.as_bytes());
         let wrapper_hash = wrapper_hash.digest().to_string();
 
-        let shell_marker_command =
-            "[IO.File]::WriteAllText($env:AO_FAKE_SHELL_PID, \"$PID\")\r";
+        let shell_marker_command = "[IO.File]::WriteAllText($env:AO_FAKE_SHELL_PID, \"$PID\")\r";
         manager.write_input("observer-pty", shell_marker_command);
         wait_for_timeout(
             || shell_pid.is_file(),
@@ -2852,24 +2955,38 @@ return
             .lines()
             .map(str::to_owned)
             .collect::<Vec<_>>();
+        assert_eq!(&codex_argv[codex_argv.len() - 2..], ["resume", "--last"]);
         assert_eq!(
-            &codex_argv[codex_argv.len() - 2..],
-            ["resume", "--last"]
+            codex_argv.iter().filter(|arg| arg.as_str() == "-c").count(),
+            4
         );
         assert_eq!(
             codex_argv
                 .iter()
-                .filter(|arg| arg.as_str() == "-c")
+                .filter(
+                    |arg| arg.contains("powershell.exe -NoProfile -NonInteractive -EncodedCommand")
+                )
                 .count(),
-            4
+            4,
         );
-        let escaped_forwarder = forwarder.to_string_lossy().replace('\\', "\\\\");
-        assert!(codex_argv
-            .iter()
-            .any(|arg| arg.contains(&escaped_forwarder)));
-        assert!(!codex_argv
-            .iter()
-            .any(|arg| arg.contains("ignore-user-config")));
+        let rendered_codex_argv = codex_argv.join("\0");
+        for forbidden in [
+            "dangerously-bypass-hook-trust",
+            "approval_policy",
+            "--approval-policy",
+            "sandbox_mode",
+            "--sandbox",
+            "model=",
+            "--model",
+            "model_reasoning_effort",
+            "--ignore-user-config",
+            "--ignore-rules",
+        ] {
+            assert!(
+                !rendered_codex_argv.contains(forbidden),
+                "captured Codex argv contained forbidden override {forbidden}: {codex_argv:?}"
+            );
+        }
 
         manager.write_input("observer-pty", "claude user-suffix\r");
         wait_for_timeout(
@@ -2896,10 +3013,7 @@ return
             .lines()
             .map(str::to_owned)
             .collect::<Vec<_>>();
-        assert_eq!(
-            claude_argv.last().map(String::as_str),
-            Some("user-suffix")
-        );
+        assert_eq!(claude_argv.last().map(String::as_str), Some("user-suffix"));
         let settings_index = claude_argv
             .iter()
             .position(|arg| arg == "--settings")

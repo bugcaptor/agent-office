@@ -111,7 +111,7 @@ mod tests {
                 shell: None,
                 startup_command: None,
                 clocked_out: None,
-            keyboard_sound: None,
+                keyboard_sound: None,
             }],
             version: 1,
         }
@@ -222,7 +222,10 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().into_string().unwrap())
             .collect();
-        assert!(names.iter().any(|n| n == "profiles.json"), "final file present: {names:?}");
+        assert!(
+            names.iter().any(|n| n == "profiles.json"),
+            "final file present: {names:?}"
+        );
         assert!(
             !names.iter().any(|n| n.contains(".tmp")),
             "no temp file should remain after save: {names:?}"

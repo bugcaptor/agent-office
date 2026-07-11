@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use base64::Engine as _;
+
 use super::event::{prompt_text, tool_description};
 use super::{
     AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError,
@@ -11,6 +13,14 @@ const CODEX_PROMPT_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_USER_PROMPT";
 const CODEX_TOOL_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_POST_TOOL";
 const CODEX_ATTENTION_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_PERMISSION";
 const CODEX_STOP_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_STOP";
+
+fn powershell_encoded_command(script: &str) -> String {
+    let bytes = script
+        .encode_utf16()
+        .flat_map(|unit| unit.to_le_bytes())
+        .collect::<Vec<_>>();
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
 
 pub struct CodexAdapter {
     forwarder_executable: PathBuf,
@@ -40,7 +50,20 @@ impl CodexAdapter {
                     "Codex observer forwarder path contains a quote",
                 ));
             }
-            Ok(format!("\"{path}\" --observer-forward codex"))
+            let path = path.replace('\'', "''");
+            let script = format!(
+                "$ErrorActionPreference='Stop'\n\
+                 & '{path}' '--observer-forward' 'codex'\n\
+                 $forwarderSucceeded=$?\n\
+                 $forwarderExit=$LASTEXITCODE\n\
+                 if ($null -ne $forwarderExit) {{ exit $forwarderExit }}\n\
+                 if ($forwarderSucceeded) {{ exit 0 }}\n\
+                 exit 1"
+            );
+            let encoded = powershell_encoded_command(&script);
+            Ok(format!(
+                "powershell.exe -NoProfile -NonInteractive -EncodedCommand '{encoded}'"
+            ))
         } else {
             Ok(format!(
                 "'{}' --observer-forward codex",
@@ -140,7 +163,102 @@ mod tests {
     };
     use crate::observer::claude::ClaudeAdapter;
     use crate::observer::{ObserverAdapter, ObserverSessionContext, WrapperArg};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
+
+    #[cfg(windows)]
+    const HOOK_BODY: &str = r#"{"hook_event_name":"UserPromptSubmit","prompt":"marker"}"#;
+
+    #[cfg(windows)]
+    struct HookCommandFixture {
+        dir: PathBuf,
+        forwarder: PathBuf,
+        args_file: PathBuf,
+        stdin_file: PathBuf,
+    }
+
+    #[cfg(windows)]
+    impl HookCommandFixture {
+        fn new() -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "Agent Office Codex Hook Test {}",
+                uuid::Uuid::new_v4(),
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            let forwarder = dir.join("capture forwarder.ps1");
+            let args_file = dir.join("forwarded args.txt");
+            let stdin_file = dir.join("forwarded stdin.txt");
+            std::fs::write(
+                &forwarder,
+                r#"[IO.File]::WriteAllLines($env:AO_CAPTURE_ARGS, [string[]]$args)
+[IO.File]::WriteAllText($env:AO_CAPTURE_STDIN, [Console]::In.ReadToEnd())
+"#,
+            )
+            .unwrap();
+            Self {
+                dir,
+                forwarder,
+                args_file,
+                stdin_file,
+            }
+        }
+
+        fn invoke(&self, shell: &Path, shell_args: &[&str], command: &str) -> std::process::Output {
+            use std::io::Write as _;
+            use std::process::{Command, Stdio};
+
+            let mut child = Command::new(shell)
+                .args(shell_args)
+                .arg(command)
+                .env("AO_CAPTURE_ARGS", &self.args_file)
+                .env("AO_CAPTURE_STDIN", &self.stdin_file)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(HOOK_BODY.as_bytes())
+                .unwrap();
+            child.wait_with_output().unwrap()
+        }
+
+        fn assert_forwarded(&self, command: &str, output: &std::process::Output) {
+            assert!(
+                output.status.success(),
+                "command={command:?} stdout={} stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+            assert_eq!(
+                std::fs::read_to_string(&self.args_file).unwrap(),
+                "--observer-forward\r\ncodex\r\n",
+            );
+            assert_eq!(
+                std::fs::read_to_string(&self.stdin_file).unwrap(),
+                HOOK_BODY,
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    impl Drop for HookCommandFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    #[cfg(windows)]
+    fn installed_git_bash() -> Option<PathBuf> {
+        ["ProgramFiles", "ProgramFiles(x86)"]
+            .into_iter()
+            .filter_map(std::env::var_os)
+            .map(PathBuf::from)
+            .map(|root| root.join("Git").join("bin").join("bash.exe"))
+            .find(|path| path.is_file())
+    }
 
     fn scratch_dir() -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -193,14 +311,7 @@ mod tests {
             ],
         );
 
-        let command = if cfg!(windows) {
-            format!(
-                "\"{}\" --observer-forward codex",
-                forwarder.to_str().unwrap()
-            )
-        } else {
-            format!("'{}' --observer-forward codex", forwarder.to_str().unwrap())
-        };
+        let command = adapter.forwarder_command().unwrap();
         let command = serde_json::to_string(&command).unwrap();
         assert_eq!(
             first.env,
@@ -232,10 +343,7 @@ mod tests {
             ],
         );
         assert!(first.env.iter().all(|(_, config)| {
-            config.contains("--observer-forward codex")
-                && !config.contains("ao-s1")
-                && !config.contains("ao-s2")
-                && !config.contains("127.0.0.1")
+            !config.contains("ao-s1") && !config.contains("ao-s2") && !config.contains("127.0.0.1")
         }));
 
         assert_eq!(first.wrappers.len(), 1);
@@ -303,6 +411,49 @@ mod tests {
             error.to_string(),
             "Codex observer forwarder path must be absolute",
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_hook_command_executes_spaced_forwarder_via_pwsh() {
+        let fixture = HookCommandFixture::new();
+        let command = CodexAdapter::new(fixture.forwarder.clone())
+            .forwarder_command()
+            .unwrap();
+        let output = fixture.invoke(
+            Path::new("pwsh.exe"),
+            &["-NoProfile", "-NonInteractive", "-Command"],
+            &command,
+        );
+        fixture.assert_forwarded(&command, &output);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_hook_command_executes_spaced_forwarder_via_windows_powershell() {
+        let fixture = HookCommandFixture::new();
+        let command = CodexAdapter::new(fixture.forwarder.clone())
+            .forwarder_command()
+            .unwrap();
+        let output = fixture.invoke(
+            Path::new("powershell.exe"),
+            &["-NoProfile", "-NonInteractive", "-Command"],
+            &command,
+        );
+        fixture.assert_forwarded(&command, &output);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires an installed Git Bash; run explicitly on Windows"]
+    fn windows_hook_command_executes_spaced_forwarder_via_git_bash() {
+        let bash = installed_git_bash().expect("Git Bash is not installed in a standard path");
+        let fixture = HookCommandFixture::new();
+        let command = CodexAdapter::new(fixture.forwarder.clone())
+            .forwarder_command()
+            .unwrap();
+        let output = fixture.invoke(&bash, &["--noprofile", "--norc", "-c"], &command);
+        fixture.assert_forwarded(&command, &output);
     }
 
     #[cfg(windows)]

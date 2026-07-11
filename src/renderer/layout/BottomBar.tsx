@@ -9,7 +9,7 @@
 // everyone is clocked out it becomes "전체 출근" (calls `clockInAll` directly,
 // no confirm — clock-in is non-destructive). Then a running/pending status summary in
 // the center, a settings (⚙) button that
-// opens `SettingsDialog` (Claude Code 연동 opt-in 2종), and the mute toggle
+// opens `SettingsDialog` (선택적 에이전트 연동 2종), and the mute toggle
 // on the right (flips `store.muted`; the actual badge resync on toggle lives
 // in `ipc/sessionBridge.ts`'s `installSessionBridge`, not here).
 import { useState } from "react";

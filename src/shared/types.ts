@@ -159,15 +159,15 @@ export interface CreateSessionOptions {
  * session-start analytics snapshot; they are not part of Rust's PTY
  * `CreateSessionRequest`.
  *
- * `autostartClaude` is not part of the frozen `AgentOfficeApi.createSession`
- * signature — the renderer adapter never sets it, so the backend
- * defaults to `false` when omitted: sessions start a plain shell with no
- * auto-launch. The shell still defines a `claude` wrapper, so typing plain
- * `claude` transparently becomes `claude --settings "$AGENT_OFFICE_SETTINGS"`
- * and time-tracking hooks still fire: on Windows via a PowerShell wrapper
- * function (`session::manager::CLAUDE_WRAPPER_PS`), on macOS/Linux zsh via a
- * ZDOTDIR shim (`session::zsh_wrapper`). Other shells (bash, fish, ...) are
- * not covered yet (see the TODO in `session::manager::default_shell`).
+ * `autostartClaude` is a frozen backward-compat wire field. It is not part of
+ * the frozen `AgentOfficeApi.createSession` options, so the renderer never sets
+ * it and omission defaults to `false`. Renderer-created sessions therefore do
+ * not auto-launch a provider; `startupCommand` decides which CLI starts.
+ *
+ * When observation is enabled, newly created supported terminals define both
+ * direct `claude` and `codex` wrappers: Windows PowerShell/`pwsh` functions,
+ * a Git Bash `--rcfile`, or the supported zsh ZDOTDIR shim. WSL does not support
+ * the observer wrapper.
  */
 export interface CreateSessionRequest extends CreateSessionOptions {
   agentId: AgentId;
