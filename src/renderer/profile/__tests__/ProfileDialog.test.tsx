@@ -173,7 +173,10 @@ describe("random initial values (profile-create)", () => {
     expect(state.agents[id].role).toBe("테스터");
     expect(state.agents[id].deskIndex).toBe(0);
     expect(state.sessions[id].status).toBe("starting");
-    expect(createSession).toHaveBeenCalledWith(id, undefined);
+    expect(createSession).toHaveBeenCalledWith(id, {
+      agentName: "새 에이전트",
+      agentRole: "테스터",
+    });
   });
 
   it("passes the trimmed 시작 폴더 value as createSession's cwd opt (Task 3)", async () => {
@@ -192,7 +195,11 @@ describe("random initial values (profile-create)", () => {
     const state = useAppStore.getState();
     const id = state.agentOrder[0];
     expect(state.agents[id].cwd).toBe("/a/b");
-    expect(createSession).toHaveBeenCalledWith(id, { cwd: "/a/b" });
+    expect(createSession).toHaveBeenCalledWith(id, {
+      agentName: "새 에이전트",
+      agentRole: state.agents[id].role,
+      cwd: "/a/b",
+    });
   });
 
   it("passes the trimmed 시작 명령어 value as createSession's startupCommand opt", async () => {
@@ -211,10 +218,14 @@ describe("random initial values (profile-create)", () => {
     const state = useAppStore.getState();
     const id = state.agentOrder[0];
     expect(state.agents[id].startupCommand).toBe("source ./init.sh");
-    expect(createSession).toHaveBeenCalledWith(id, { startupCommand: "source ./init.sh" });
+    expect(createSession).toHaveBeenCalledWith(id, {
+      agentName: "새 에이전트",
+      agentRole: state.agents[id].role,
+      startupCommand: "source ./init.sh",
+    });
   });
 
-  it("calls createSession without a cwd opt when 시작 폴더 is left blank (Task 3)", async () => {
+  it("omits cwd but keeps the profile snapshot when 시작 폴더 is blank (Task 3)", async () => {
     const { getByLabelText, getByText } = render(<ProfileDialog />);
     fireEvent.change(getByLabelText("이름"), { target: { value: "새 에이전트" } });
 
@@ -229,7 +240,10 @@ describe("random initial values (profile-create)", () => {
     const state = useAppStore.getState();
     const id = state.agentOrder[0];
     expect(state.agents[id].cwd).toBeUndefined();
-    expect(createSession).toHaveBeenCalledWith(id, undefined);
+    expect(createSession).toHaveBeenCalledWith(id, {
+      agentName: "새 에이전트",
+      agentRole: state.agents[id].role,
+    });
   });
 
   it("still closes the dialog and marks the session exited when createSession fails (Fix 3)", async () => {
@@ -346,7 +360,11 @@ describe("셸 선택 (list_available_shells)", () => {
     const state = useAppStore.getState();
     const id = state.agentOrder[0];
     expect(state.agents[id].shell).toBe("wsl");
-    expect(createSession).toHaveBeenCalledWith(id, { shell: "wsl" });
+    expect(createSession).toHaveBeenCalledWith(id, {
+      agentName: "새 에이전트",
+      agentRole: state.agents[id].role,
+      shell: "wsl",
+    });
   });
 
   it("edit mode: 셸을 선택하고 저장하면 updateAgent 페이로드에 shell이 포함된다", async () => {

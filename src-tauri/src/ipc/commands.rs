@@ -17,6 +17,7 @@
 use tauri::{ipc::Channel, AppHandle, Manager, State};
 
 use crate::persistence::settings_store::AppSettings;
+use crate::session_events::types::AgentEventProfile;
 use crate::state::AppState;
 use crate::types::*;
 
@@ -28,6 +29,18 @@ pub struct SessionOpts {
     pub cwd: Option<String>,
     pub shell: Option<String>,
     pub startup_command: Option<String>,
+    pub agent_name: Option<String>,
+    pub agent_role: Option<String>,
+}
+
+fn event_profile(agent_id: &str, opts: &SessionOpts) -> AgentEventProfile {
+    AgentEventProfile {
+        name: opts
+            .agent_name
+            .clone()
+            .unwrap_or_else(|| agent_id.to_string()),
+        role: opts.agent_role.clone(),
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -37,6 +50,7 @@ pub async fn create_session(
     opts: Option<SessionOpts>,
 ) -> Result<CreateSessionResult, String> {
     let o = opts.unwrap_or_default();
+    let profile = event_profile(&agent_id, &o);
     // catch_unwind: Tauri에서 커맨드가 패닉하면 invoke 프라미스가 영원히
     // settle되지 않는다 — 프론트는 "starting"에 고착되고 사용자는 앱 재시작
     // 전까지 그 에이전트의 터미널을 못 띄운다(2026-07-11 실사고). create()
@@ -44,15 +58,18 @@ pub async fn create_session(
     // settle시키고, 프론트가 exited로 전환해 재시도할 수 있게 한다.
     let manager = app_state.manager.clone();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-        manager.create(CreateSessionRequest {
-            agent_id,
-            cols: o.cols,
-            rows: o.rows,
-            cwd: o.cwd,
-            shell: o.shell,
-            startup_command: o.startup_command,
-            autostart_claude: None, // 항상 기본 false (SessionManager::create의 unwrap_or(false))
-        })
+        manager.create_with_profile(
+            CreateSessionRequest {
+                agent_id,
+                cols: o.cols,
+                rows: o.rows,
+                cwd: o.cwd,
+                shell: o.shell,
+                startup_command: o.startup_command,
+                autostart_claude: None, // 항상 기본 false (SessionManager::create의 unwrap_or(false))
+            },
+            profile,
+        )
     }));
     match result {
         Ok(r) => r,
@@ -595,6 +612,33 @@ mod tests {
 
     // ---- create_session ----
 
+    #[test]
+    fn create_session_opts_profile_snapshot_flows_to_manager() {
+        let opts = SessionOpts {
+            cols: None,
+            rows: None,
+            cwd: None,
+            shell: None,
+            startup_command: None,
+            agent_name: Some("Compiler".into()),
+            agent_role: Some("Platform".into()),
+        };
+        assert_eq!(
+            event_profile("a1", &opts),
+            crate::session_events::types::AgentEventProfile {
+                name: "Compiler".into(),
+                role: Some("Platform".into()),
+            },
+        );
+        assert_eq!(
+            event_profile("a1", &SessionOpts::default()),
+            crate::session_events::types::AgentEventProfile {
+                name: "a1".into(),
+                role: None,
+            },
+        );
+    }
+
     #[tokio::test]
     async fn create_session_delegates_to_manager_create_with_opts_and_default_autostart() {
         let (state, ctl, dir, profile_dir) = build("create");
@@ -630,6 +674,8 @@ mod tests {
             cwd: None,
             shell: Some("git-bash".into()),
             startup_command: None,
+            agent_name: None,
+            agent_role: None,
         };
         // create_session 본문과 동일한 매핑.
         let request = CreateSessionRequest {
@@ -654,6 +700,8 @@ mod tests {
             cwd: None,
             shell: None,
             startup_command: Some("source ./init.sh".into()),
+            agent_name: None,
+            agent_role: None,
         };
         let request = CreateSessionRequest {
             agent_id: "a1".into(),

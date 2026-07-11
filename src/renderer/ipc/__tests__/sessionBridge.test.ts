@@ -256,7 +256,10 @@ describe("officeBus.emitAgentClicked / ensureSession (Fix 1b)", () => {
     officeBus.emitAgentClicked("a1");
 
     expect(mockApi.createSession).toHaveBeenCalledTimes(1);
-    expect(mockApi.createSession).toHaveBeenCalledWith("a1", undefined);
+    expect(mockApi.createSession).toHaveBeenCalledWith("a1", {
+      agentName: "Test Agent",
+      agentRole: "backend",
+    });
     expect(useAppStore.getState().sessions.a1.status).toBe("starting");
     await flush();
   });
@@ -269,7 +272,11 @@ describe("officeBus.emitAgentClicked / ensureSession (Fix 1b)", () => {
 
     officeBus.emitAgentClicked("a1");
 
-    expect(mockApi.createSession).toHaveBeenCalledWith("a1", { cwd: "/tmp/proj" });
+    expect(mockApi.createSession).toHaveBeenCalledWith("a1", {
+      agentName: "Test Agent",
+      agentRole: "backend",
+      cwd: "/tmp/proj",
+    });
     await flush();
   });
 
@@ -281,7 +288,11 @@ describe("officeBus.emitAgentClicked / ensureSession (Fix 1b)", () => {
 
     officeBus.emitAgentClicked("a1");
 
-    expect(mockApi.createSession).toHaveBeenCalledWith("a1", { shell: "wsl" });
+    expect(mockApi.createSession).toHaveBeenCalledWith("a1", {
+      agentName: "Test Agent",
+      agentRole: "backend",
+      shell: "wsl",
+    });
     await flush();
   });
 
@@ -293,7 +304,12 @@ describe("officeBus.emitAgentClicked / ensureSession (Fix 1b)", () => {
 
     officeBus.emitAgentClicked("a1");
 
-    expect(mockApi.createSession).toHaveBeenCalledWith("a1", { cwd: "/tmp/proj", shell: "wsl" });
+    expect(mockApi.createSession).toHaveBeenCalledWith("a1", {
+      agentName: "Test Agent",
+      agentRole: "backend",
+      cwd: "/tmp/proj",
+      shell: "wsl",
+    });
     await flush();
   });
 

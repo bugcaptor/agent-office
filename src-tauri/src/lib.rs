@@ -12,6 +12,7 @@ mod notification;
 mod persistence;
 pub mod pixellab;
 mod session;
+mod session_events;
 mod state;
 mod types;
 mod vscode;
@@ -76,14 +77,30 @@ fn install_panic_logger(data_dir: std::path::PathBuf) {
     }));
 }
 
+fn session_event_root(data_dir: &std::path::Path) -> std::path::PathBuf {
+    data_dir.join("session-events").join("v1")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let handle = app.handle().clone();
-            let events: Arc<dyn AppEvents> = Arc::new(TauriEvents {
+            let data_dir = app.path().app_data_dir()?;
+            install_panic_logger(data_dir.clone());
+
+            let event_store = Arc::new(crate::session_events::store::SessionEventStore::new(
+                session_event_root(&data_dir),
+            ));
+            let tauri_events: Arc<dyn AppEvents> = Arc::new(TauriEvents {
                 app: handle.clone(),
             });
+            let events: Arc<dyn AppEvents> = Arc::new(
+                crate::session_events::recording_events::RecordingAppEvents::new(
+                    tauri_events,
+                    event_store,
+                ),
+            );
             let registry = Arc::new(SessionRegistry::new());
             let hub = Arc::new(NotificationHub::new(
                 registry.clone(),
@@ -92,8 +109,6 @@ pub fn run() {
                 Duration::from_millis(3000), // dedup 3s
             ));
 
-            let data_dir = app.path().app_data_dir()?; // (기존 위치에서 앞으로 이동)
-            install_panic_logger(data_dir.clone());
             let settings_store = SettingsStore::new(data_dir.join("settings.json"));
             let (settings, settings_first_run) = settings_store.load();
             // AppState가 갖는 캐시와 동일한 Arc를 훅 포트 getter 생성 전에
@@ -211,6 +226,12 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_event_root_is_versioned_under_app_data() {
+        let root = session_event_root(std::path::Path::new("/app-data"));
+        assert_eq!(root, std::path::Path::new("/app-data/session-events/v1"));
+    }
 
     // 회귀 테스트: 실행 중 훅 opt-in을 ON→OFF로 바꾸면(캐시만 갱신, 서버는
     // 유지) getter가 즉시 None을 돌려줘야 새 세션에 훅 배선이 주입되지
