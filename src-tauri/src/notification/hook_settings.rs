@@ -171,11 +171,14 @@ mod tests {
             "missing --data-binary @-: {cmd}"
         );
         assert!(cmd.contains("curl"), "missing curl invocation: {cmd}");
-        // 이 어서션은 호스트(macOS)의 cfg!(windows) 분기를 그대로 반영한다 —
-        // Windows CI가 없으므로 unix 변형만 여기서 실측 검증한다. Windows
-        // 변형은 아래 curl_command_windows_variant_* 유닛 테스트가 순수
-        // 함수를 직접 호출해 검증한다.
-        assert!(cmd.ends_with("|| true"), "missing trailing || true: {cmd}");
+        if cfg!(windows) {
+            assert!(
+                !cmd.contains("|| true"),
+                "unexpected || true on windows: {cmd}"
+            );
+        } else {
+            assert!(cmd.ends_with("|| true"), "missing trailing || true: {cmd}");
+        }
     }
 
     // ---- Task A: pure curl_command(windows, ...) — Windows-safe rewrite ----

@@ -100,7 +100,14 @@ beforeEach(() => {
   Object.values(mockApi).forEach((fn) => fn.mockClear());
   mockApi.loadState.mockResolvedValue(mkPersisted());
   mockApi.getAppSettings.mockResolvedValue({
-    settings: { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false },
+    settings: {
+      version: 1,
+      summarizerEnabled: false,
+      summaryProvider: "claude",
+      observerEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+    },
     firstRun: false,
   });
   mockApi.loadSessionTurns.mockResolvedValue([]);
@@ -134,14 +141,28 @@ describe("bootApp", () => {
 
   it("getAppSettings 결과를 부팅 전에 스토어에 반영한다", async () => {
     mockApi.getAppSettings.mockResolvedValue({
-      settings: { version: 1, claudeCliEnabled: true, claudeHooksEnabled: false },
+      settings: {
+        version: 1,
+        summarizerEnabled: true,
+        summaryProvider: "codex",
+        observerEnabled: false,
+        soundEnabled: true,
+        soundVolume: 0.5,
+      },
       firstRun: true,
     });
 
     teardown = await bootApp();
 
     const s = useAppStore.getState();
-    expect(s.appSettings.claudeCliEnabled).toBe(true);
+    expect(s.appSettings).toEqual({
+      version: 1,
+      summarizerEnabled: true,
+      summaryProvider: "codex",
+      observerEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+    });
     expect(s.settingsFirstRun).toBe(true);
   });
 
@@ -152,8 +173,14 @@ describe("bootApp", () => {
     teardown = await bootApp();
 
     const s = useAppStore.getState();
-    expect(s.appSettings.claudeCliEnabled).toBe(false);
-    expect(s.appSettings.claudeHooksEnabled).toBe(false);
+    expect(s.appSettings).toEqual({
+      version: 1,
+      summarizerEnabled: false,
+      summaryProvider: "claude",
+      observerEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+    });
     expect(s.settingsFirstRun).toBe(false);
     expect(warn).toHaveBeenCalledWith(
       "bootstrap: 앱 설정 로드 실패 — 기본값(전부 OFF)으로 진행",

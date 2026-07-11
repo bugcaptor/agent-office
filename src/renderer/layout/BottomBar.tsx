@@ -94,7 +94,7 @@ export function BottomBar() {
         type="button"
         className="pixel-btn settings-btn"
         aria-label="설정"
-        title="설정 (Claude Code 연동 opt-in)"
+        title="설정 (선택적 에이전트 연동)"
         onClick={() => openModal({ kind: "settings" })}
       >
         ⚙

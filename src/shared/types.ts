@@ -274,13 +274,18 @@ export interface SessionTurnRecord {
   waitedMs: number;
 }
 
+/** 라벨 요약에 사용할 로컬 CLI provider. Rust `SummaryProvider` 미러. */
+export type SummaryProvider = "claude" | "codex";
+
 /** 앱 전역 opt-in 설정 — Rust `persistence::settings_store::AppSettings` 미러. */
 export interface AppSettings {
   version: number;
-  /** 머리 위 라벨 요약용 로컬 `claude` CLI 호출 허용(구독 크레딧 소모). */
-  claudeCliEnabled: boolean;
-  /** 세션에 Claude Code 훅 주입 + 로컬 훅 서버 기동(알림·시간측정). */
-  claudeHooksEnabled: boolean;
+  /** 머리 위 라벨 요약용 로컬 CLI 호출 허용. */
+  summarizerEnabled: boolean;
+  /** 라벨 요약에 사용할 로컬 CLI provider. */
+  summaryProvider: SummaryProvider;
+  /** 세션 observer 주입 + 로컬 observer 서버 기동(알림·시간측정). */
+  observerEnabled: boolean;
   /** 사무실 앰비언스 사운드(타이핑·효과음·공조음) 재생 여부. 기본 켜짐. */
   soundEnabled: boolean;
   /** 마스터 볼륨 0.0~1.0. 기본 0.5. */
@@ -338,8 +343,12 @@ export interface AgentOfficeApi {
   loadSprite(agentId: string): Promise<string | null>;
   /** 스프라이트 파일 삭제(없어도 성공). */
   deleteSprite(agentId: string): Promise<void>;
-  /** 머리 위 라벨 요약: `claude -p`(haiku) 헤드리스 호출. 호출마다 사용자의 Claude 구독/크레딧을 소모한다. */
-  summarizeText(instruction: string, text: string): Promise<string>;
+  /** 머리 위 라벨 요약: 캡처한 provider의 로컬 CLI를 호출한다. 호출마다 사용자 구독/크레딧을 소모할 수 있다. */
+  summarizeText(
+    provider: SummaryProvider,
+    instruction: string,
+    text: string,
+  ): Promise<string>;
   /** PixelLab로 64×64 스프라이트 1장 생성. 동기 HTTP — 수십 초 걸릴 수 있다. */
   generateSpriteImage(description: string): Promise<GeneratedSpriteImage>;
   /** 앱 전역 opt-in 설정 로드. 인자 없음. */

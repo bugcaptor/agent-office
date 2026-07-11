@@ -6,7 +6,6 @@
 // invoke_handler for the renderer-facing commands -> graceful quit on
 // RunEvent::ExitRequested (dispose_all -> hook server shutdown).
 pub mod api_keys;
-mod claude_cli;
 mod ipc;
 mod notification;
 mod persistence;
@@ -14,6 +13,7 @@ pub mod pixellab;
 mod session;
 mod session_events;
 mod state;
+mod summarizer;
 mod types;
 mod vscode;
 
@@ -42,7 +42,7 @@ fn make_hook_port_getter(
     hook_port: Arc<RwLock<Option<u16>>>,
 ) -> Arc<dyn Fn() -> Option<u16> + Send + Sync> {
     Arc::new(move || {
-        if settings_cache.read().unwrap().claude_hooks_enabled {
+        if settings_cache.read().unwrap().observer_enabled {
             *hook_port.read().unwrap()
         } else {
             None
@@ -120,7 +120,7 @@ pub fn run() {
             // 훅 서버는 opt-in: 설정 ON일 때만 기동. OFF면 포트 None — 세션들은
             // 훅 배선 없이 뜬다. 실행 중 ON 전환은 set_app_settings의 지연 기동.
             let hook_port: Arc<std::sync::RwLock<Option<u16>>> = Arc::new(std::sync::RwLock::new(None));
-            let (shutdown_tx, server_handle) = if settings_cache.read().unwrap().claude_hooks_enabled {
+            let (shutdown_tx, server_handle) = if settings_cache.read().unwrap().observer_enabled {
                 let (port, tx, handle) = tauri::async_runtime::block_on(
                     hook_server::serve_with_retry(|rx| hook_server::serve(hub.clone(), rx)),
                 )?;
@@ -226,6 +226,7 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::persistence::settings_store::SummaryProvider;
 
     #[test]
     fn session_event_root_is_versioned_under_app_data() {
@@ -242,8 +243,9 @@ mod tests {
         let hook_port: Arc<RwLock<Option<u16>>> = Arc::new(RwLock::new(Some(4321)));
         let settings_cache = Arc::new(RwLock::new(AppSettings {
             version: 1,
-            claude_cli_enabled: false,
-            claude_hooks_enabled: true,
+            summarizer_enabled: false,
+            summary_provider: SummaryProvider::Claude,
+            observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,
         }));
@@ -254,7 +256,7 @@ mod tests {
 
         // 실행 중 OFF로 전환 -- 서버는 여전히 살아 있어 hook_port는 Some인
         // 채지만, getter는 캐시를 봐야 하므로 None을 돌려줘야 한다.
-        settings_cache.write().unwrap().claude_hooks_enabled = false;
+        settings_cache.write().unwrap().observer_enabled = false;
         assert_eq!(get_port(), None);
         assert!(
             hook_port.read().unwrap().is_some(),
@@ -262,7 +264,7 @@ mod tests {
         );
 
         // 다시 ON으로 전환하면 즉시 포트를 돌려준다(서버 재기동 없이 재사용).
-        settings_cache.write().unwrap().claude_hooks_enabled = true;
+        settings_cache.write().unwrap().observer_enabled = true;
         assert_eq!(get_port(), Some(4321));
     }
 }

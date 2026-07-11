@@ -12,33 +12,34 @@ import { SettingsForm } from "../SettingsForm";
 afterEach(() => cleanup());
 
 describe("SettingsForm", () => {
-  it("두 토글과 설명 문구를 렌더하고 변경을 콜백한다", () => {
+  it("요약 토글, provider 선택, 공통 observer 토글을 렌더한다", () => {
     const onChange = vi.fn();
     render(
       <SettingsForm
-        value={{ claudeCliEnabled: false, claudeHooksEnabled: false }}
+        value={{ summarizerEnabled: false, summaryProvider: "claude", observerEnabled: false }}
         onChange={onChange}
       />,
     );
-    const cli = screen.getByRole("checkbox", { name: /라벨 요약/ }) as HTMLInputElement;
-    const hooks = screen.getByRole("checkbox", { name: /알림·시간측정/ }) as HTMLInputElement;
-    expect(cli.checked).toBe(false);
-    expect(hooks.checked).toBe(false);
-    fireEvent.click(hooks);
-    expect(onChange).toHaveBeenCalledWith({ claudeHooksEnabled: true });
-    expect(screen.getByText(/구독 크레딧/)).toBeTruthy();
-    expect(screen.getByText(/127\.0\.0\.1/)).toBeTruthy();
+
+    expect((screen.getByRole("checkbox", { name: /라벨 요약/ }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("radio", { name: "Claude" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("radio", { name: "Codex" }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("checkbox", { name: /에이전트 관찰/ }) as HTMLInputElement).checked).toBe(false);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /에이전트 관찰/ }));
+    expect(onChange).toHaveBeenCalledWith({ summaryProvider: "codex" });
+    expect(onChange).toHaveBeenCalledWith({ observerEnabled: true });
   });
 
-  it("체크된 값을 그대로 반영한다", () => {
+  it("요약이 꺼져 있어도 provider를 미리 선택할 수 있다", () => {
     const onChange = vi.fn();
     render(
       <SettingsForm
-        value={{ claudeCliEnabled: true, claudeHooksEnabled: true }}
+        value={{ summarizerEnabled: false, summaryProvider: "codex", observerEnabled: false }}
         onChange={onChange}
       />,
     );
-    expect((screen.getByRole("checkbox", { name: /라벨 요약/ }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole("checkbox", { name: /알림·시간측정/ }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("radio", { name: "Codex" }) as HTMLInputElement).disabled).toBe(false);
   });
 });

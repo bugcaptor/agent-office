@@ -189,12 +189,17 @@ describe("Commands / Events name constants", () => {
 describe("AppSettings (opt-in 설정 계약)", () => {
   it("Rust GetAppSettingsResult JSON이 TS 타입에 그대로 할당된다", () => {
     const json =
-      '{"settings":{"version":1,"claudeCliEnabled":false,"claudeHooksEnabled":false},"firstRun":true}';
+      '{"settings":{"version":1,"summarizerEnabled":false,"summaryProvider":"claude","observerEnabled":false,"soundEnabled":true,"soundVolume":0.5},"firstRun":true}';
     const parsed: GetAppSettingsResult = JSON.parse(json);
     expect(parsed.firstRun).toBe(true);
-    expect(parsed.settings.claudeCliEnabled).toBe(false);
-    expect(parsed.settings.claudeHooksEnabled).toBe(false);
-    expect(parsed.settings.version).toBe(1);
+    expect(parsed.settings).toEqual({
+      version: 1,
+      summarizerEnabled: false,
+      summaryProvider: "claude",
+      observerEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+    });
   });
 
   it("커맨드 이름 상수가 등록되어 있다", () => {

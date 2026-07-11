@@ -24,15 +24,34 @@ describe("SettingsDialog", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("settings 모달일 때 렌더되고 토글 클릭이 updateAppSettings로 즉시 반영된다", () => {
+  it("settings 모달일 때 렌더되고 공통 설정 변경을 즉시 반영한다", () => {
+    useAppStore.getState().hydrateSettings(
+      {
+        version: 1,
+        summarizerEnabled: false,
+        summaryProvider: "claude",
+        observerEnabled: false,
+        soundEnabled: true,
+        soundVolume: 0.5,
+      },
+      false,
+    );
     useAppStore.getState().openModal({ kind: "settings" });
 
     render(<SettingsDialog />);
     expect(screen.getByText("설정")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("checkbox", { name: /라벨 요약/ }));
+    fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /에이전트 관찰/ }));
 
-    expect(useAppStore.getState().appSettings.claudeCliEnabled).toBe(true);
+    expect(useAppStore.getState().appSettings).toEqual({
+      version: 1,
+      summarizerEnabled: false,
+      summaryProvider: "codex",
+      observerEnabled: true,
+      soundEnabled: true,
+      soundVolume: 0.5,
+    });
   });
 
   it("닫기 버튼 클릭 시 closeModal을 부른다", () => {

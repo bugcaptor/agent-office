@@ -24,8 +24,9 @@ export function SettingsDialog() {
         <h2 className="pixel-title">설정</h2>
         <SettingsForm
           value={{
-            claudeCliEnabled: appSettings.claudeCliEnabled,
-            claudeHooksEnabled: appSettings.claudeHooksEnabled,
+            summarizerEnabled: appSettings.summarizerEnabled,
+            summaryProvider: appSettings.summaryProvider,
+            observerEnabled: appSettings.observerEnabled,
           }}
           onChange={updateAppSettings}
         />

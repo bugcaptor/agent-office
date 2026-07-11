@@ -43,6 +43,15 @@ reqwest = { version = "0.12", default-features = false, features = [
     "json",
 ] } # PixelLab API 호출
 
+[target.'cfg(windows)'.dependencies]
+# Minimal official Win32 bindings for cancellation-safe Job Object containment.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 tokio = { version = "1", features = [
     "rt-multi-thread",

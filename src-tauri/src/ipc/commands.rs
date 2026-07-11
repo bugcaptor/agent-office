@@ -277,19 +277,21 @@ pub async fn delete_sprite(
         .map_err(|e| e.to_string())
 }
 
-/// 머리 위 라벨 요약: `claude -p`(haiku) 헤드리스 호출. 유저 크레딧을
-/// 소모하므로 opt-in — 설정 OFF면 "claude-cli-disabled"로 거절하고
-/// 렌더러 summarizer가 원문 폴백으로 처리한다.
+/// 머리 위 라벨 요약: 요청 시작 시 렌더러가 캡처한 provider의 로컬 CLI를
+/// 호출한다. 유저 크레딧을 소모하므로 opt-in — 설정 OFF면
+/// "summarizer-disabled"로 거절하고 렌더러가 원문 폴백으로 처리한다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn summarize_text(
     app_state: State<'_, AppState>,
+    provider: crate::persistence::settings_store::SummaryProvider,
     instruction: String,
     text: String,
 ) -> Result<String, String> {
-    if !app_state.settings.read().unwrap().claude_cli_enabled {
-        return Err("claude-cli-disabled".to_string());
+    let enabled = app_state.settings.read().unwrap().summarizer_enabled;
+    if !enabled {
+        return Err("summarizer-disabled".to_string());
     }
-    crate::claude_cli::summarize(&instruction, &text).await
+    crate::summarizer::summarize(provider, &instruction, &text).await
 }
 
 /// PixelLab로 64×64 스프라이트 1장 생성. AppState 비의존
@@ -357,7 +359,7 @@ pub async fn set_app_settings(
         .settings_first_run
         .store(false, std::sync::atomic::Ordering::SeqCst);
 
-    let need_server = settings.claude_hooks_enabled
+    let need_server = settings.observer_enabled
         && app_state.hook_port.read().unwrap().is_none();
     if need_server {
         // 락은 .await 전에 전부 놓는다(파일 머리말의 no-lock-across-await 계약).
@@ -428,6 +430,7 @@ mod tests {
     use crate::notification::hook_settings::HookSettingsWriter;
     use crate::notification::hub::{NotificationHub, SystemClock};
     use crate::persistence::profile_store::ProfileStore;
+    use crate::persistence::settings_store::SummaryProvider;
     use crate::session::manager::SessionManager;
     use crate::session::pty_factory::fake::FakePtyFactory;
     use crate::state::fake::RecordingEvents;
@@ -442,42 +445,54 @@ mod tests {
     // 패턴으로, 본문의 게이트 로직을 real AppState를 통해 그대로 재현해
     // 검증한다.
 
+    #[test]
+    fn summarize_text_command_accepts_provider_snapshot() {
+        fn assert_signature<F, Fut>(_command: F)
+        where
+            F: Fn(State<'static, AppState>, SummaryProvider, String, String) -> Fut,
+        {
+        }
+
+        assert_signature(summarize_text);
+    }
+
     #[tokio::test]
-    async fn summarize_text_gate_rejects_when_cli_disabled() {
+    async fn summarize_text_gate_rejects_when_disabled() {
         let (state, ctl, dir, profile_dir) = build("summarize-disabled");
-        // AppSettings::default()의 claude_cli_enabled == false 전제.
-        assert!(!state.settings.read().unwrap().claude_cli_enabled);
+        // AppSettings::default()의 summarizer_enabled == false 전제.
+        assert!(!state.settings.read().unwrap().summarizer_enabled);
 
         // summarize_text 본문과 동일한 게이트: OFF면 CLI 호출 전에 거절.
-        let result: Result<String, String> = if !state.settings.read().unwrap().claude_cli_enabled
+        let result: Result<String, String> = if !state.settings.read().unwrap().summarizer_enabled
         {
-            Err("claude-cli-disabled".to_string())
+            Err("summarizer-disabled".to_string())
         } else {
-            crate::claude_cli::summarize("요약하라", "text").await
+            crate::summarizer::summarize(SummaryProvider::Codex, "요약하라", "text").await
         };
 
-        assert_eq!(result.unwrap_err(), "claude-cli-disabled");
+        assert_eq!(result.unwrap_err(), "summarizer-disabled");
         cleanup(&ctl, &dir, &profile_dir);
     }
 
     #[tokio::test]
-    async fn summarize_text_proceeds_to_claude_cli_when_enabled() {
+    async fn summarize_text_proceeds_to_selected_summarizer_when_enabled() {
         let (state, ctl, dir, profile_dir) = build("summarize-enabled");
         *state.settings.write().unwrap() = crate::persistence::settings_store::AppSettings {
             version: 1,
-            claude_cli_enabled: true,
-            claude_hooks_enabled: false,
+            summarizer_enabled: true,
+            summary_provider: SummaryProvider::Codex,
+            observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
         };
 
-        // ON이면 게이트를 통과해 claude_cli::summarize로 위임된다 -- 빈 텍스트라서
+        // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
         // 실 프로세스 spawn 없이 그쪽의 자체 검증 에러로 되돌아오는 것으로 확인.
-        let result: Result<String, String> = if !state.settings.read().unwrap().claude_cli_enabled
+        let result: Result<String, String> = if !state.settings.read().unwrap().summarizer_enabled
         {
-            Err("claude-cli-disabled".to_string())
+            Err("summarizer-disabled".to_string())
         } else {
-            crate::claude_cli::summarize("요약하라", "   ").await
+            crate::summarizer::summarize(SummaryProvider::Codex, "요약하라", "   ").await
         };
 
         assert_eq!(result.unwrap_err(), "validation: text is empty");
@@ -497,8 +512,9 @@ mod tests {
 
         let new_settings = crate::persistence::settings_store::AppSettings {
             version: 1,
-            claude_cli_enabled: true,
-            claude_hooks_enabled: false,
+            summarizer_enabled: true,
+            summary_provider: SummaryProvider::Claude,
+            observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
         };

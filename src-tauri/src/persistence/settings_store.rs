@@ -16,16 +16,44 @@ fn default_sound_volume() -> f32 {
     0.5
 }
 
-/// 앱 전역 opt-in 설정. Claude 관련은 기본 false(명시적 opt-in),
-/// 사운드는 기본 켜짐(장식 기능 — 끄는 쪽이 opt-in).
+/// 라벨 요약에 사용할 CLI 제공자. 기존 설정과의 호환을 위해 기본은 Claude.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum SummaryProvider {
+    #[default]
+    Claude,
+    Codex,
+}
+
+impl SummaryProvider {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+        }
+    }
+}
+
+/// 앱 전역 설정. 요약과 관찰자 연동은 기본 OFF이고, 사운드는 기본 ON이다.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub version: u32,
+    #[serde(default, alias = "claudeCliEnabled")]
+    pub summarizer_enabled: bool,
     #[serde(default)]
-    pub claude_cli_enabled: bool,
-    #[serde(default)]
-    pub claude_hooks_enabled: bool,
+    pub summary_provider: SummaryProvider,
+    #[serde(default, alias = "claudeHooksEnabled")]
+    pub observer_enabled: bool,
     /// 사무실 앰비언스 사운드(타이핑·효과음·공조음) 재생 여부.
     #[serde(default = "default_true")]
     pub sound_enabled: bool,
@@ -38,8 +66,9 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             version: 1,
-            claude_cli_enabled: false,
-            claude_hooks_enabled: false,
+            summarizer_enabled: false,
+            summary_provider: SummaryProvider::Claude,
+            observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
         }
@@ -101,8 +130,9 @@ mod tests {
         let store = SettingsStore::new(scratch_file());
         let (s, first_run) = store.load();
         assert_eq!(s, AppSettings::default());
-        assert!(!s.claude_cli_enabled);
-        assert!(!s.claude_hooks_enabled);
+        assert!(!s.summarizer_enabled);
+        assert_eq!(s.summary_provider, SummaryProvider::Claude);
+        assert!(!s.observer_enabled);
         assert!(first_run);
     }
 
@@ -110,7 +140,14 @@ mod tests {
     fn save_then_load_roundtrips_and_first_run_false() {
         let file = scratch_file();
         let store = SettingsStore::new(file.clone());
-        let s = AppSettings { version: 1, claude_cli_enabled: true, claude_hooks_enabled: true, sound_enabled: true, sound_volume: 0.5 };
+        let s = AppSettings {
+            version: 1,
+            summarizer_enabled: true,
+            summary_provider: SummaryProvider::Claude,
+            observer_enabled: true,
+            sound_enabled: true,
+            sound_volume: 0.5,
+        };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
         assert_eq!(loaded, s);
@@ -145,6 +182,86 @@ mod tests {
     }
 
     #[test]
+    fn legacy_true_fields_map_to_enabled_claude_without_version_migration() {
+        let file = scratch_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(
+            &file,
+            br#"{"version":1,"claudeCliEnabled":true,"claudeHooksEnabled":true}"#,
+        )
+        .unwrap();
+
+        let (settings, first_run) = SettingsStore::new(file.clone()).load();
+        assert!(!first_run);
+        assert!(settings.summarizer_enabled);
+        assert_eq!(settings.summary_provider, SummaryProvider::Claude);
+        assert!(settings.observer_enabled);
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn summary_provider_as_str_matches_serialized_values() {
+        assert_eq!(SummaryProvider::Claude.as_str(), "claude");
+        assert_eq!(SummaryProvider::Codex.as_str(), "codex");
+    }
+
+    #[test]
+    fn legacy_false_fields_map_to_disabled_claude() {
+        let file = scratch_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(
+            &file,
+            br#"{"version":1,"claudeCliEnabled":false,"claudeHooksEnabled":false}"#,
+        )
+        .unwrap();
+
+        let (settings, _) = SettingsStore::new(file.clone()).load();
+        assert!(!settings.summarizer_enabled);
+        assert_eq!(settings.summary_provider, SummaryProvider::Claude);
+        assert!(!settings.observer_enabled);
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn new_version_one_settings_round_trip_codex_and_neutral_keys() {
+        let file = scratch_file();
+        let store = SettingsStore::new(file.clone());
+        let settings = AppSettings {
+            version: 1,
+            summarizer_enabled: true,
+            summary_provider: SummaryProvider::Codex,
+            observer_enabled: true,
+            sound_enabled: true,
+            sound_volume: 0.5,
+        };
+        store.save(&settings).unwrap();
+        let json = fs::read_to_string(&file).unwrap();
+        assert!(json.contains("\"summarizerEnabled\""), "{json}");
+        assert!(json.contains("\"summaryProvider\": \"codex\""), "{json}");
+        assert!(json.contains("\"observerEnabled\""), "{json}");
+        assert!(!json.contains("claudeCliEnabled"), "{json}");
+        assert!(!json.contains("claudeHooksEnabled"), "{json}");
+        assert_eq!(store.load(), (settings, false));
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn missing_provider_defaults_to_claude_and_unknown_provider_fails_safe() {
+        let file = scratch_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, br#"{"version":1,"summarizerEnabled":true}"#).unwrap();
+        assert_eq!(SettingsStore::new(file.clone()).load().0.summary_provider, SummaryProvider::Claude);
+
+        fs::write(
+            &file,
+            br#"{"version":1,"summarizerEnabled":true,"summaryProvider":"unknown","observerEnabled":true}"#,
+        )
+        .unwrap();
+        assert_eq!(SettingsStore::new(file.clone()).load().0, AppSettings::default());
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
     fn save_is_atomic_and_leaves_no_temp_file() {
         let file = scratch_file();
         let store = SettingsStore::new(file.clone());
@@ -161,8 +278,9 @@ mod tests {
     #[test]
     fn serializes_camel_case() {
         let json = serde_json::to_string(&AppSettings::default()).unwrap();
-        assert!(json.contains("claudeCliEnabled"), "{json}");
-        assert!(json.contains("claudeHooksEnabled"), "{json}");
+        assert!(json.contains("summarizerEnabled"), "{json}");
+        assert!(json.contains("summaryProvider"), "{json}");
+        assert!(json.contains("observerEnabled"), "{json}");
     }
 
     // 하위 호환: 사운드 필드가 없는 기존 settings.json도 기본값(켜짐/0.5)으로
@@ -178,7 +296,9 @@ mod tests {
         .unwrap();
         let (s, first_run) = SettingsStore::new(file.clone()).load();
         assert!(!first_run);
-        assert!(s.claude_cli_enabled);
+        assert!(s.summarizer_enabled);
+        assert_eq!(s.summary_provider, SummaryProvider::Claude);
+        assert!(!s.observer_enabled);
         assert!(s.sound_enabled, "부재 시 기본 켜짐");
         assert_eq!(s.sound_volume, 0.5, "부재 시 기본 볼륨 0.5");
         let _ = fs::remove_dir_all(file.parent().unwrap());

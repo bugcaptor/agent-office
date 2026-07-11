@@ -118,8 +118,8 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.deleteSprite, { agentId });
   },
 
-  async summarizeText(instruction, text) {
-    return await invoke(Commands.summarizeText, { instruction, text });
+  async summarizeText(provider, instruction, text) {
+    return await invoke(Commands.summarizeText, { provider, instruction, text });
   },
 
   async generateSpriteImage(description) {

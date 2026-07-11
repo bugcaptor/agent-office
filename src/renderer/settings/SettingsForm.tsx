@@ -1,12 +1,14 @@
 // src/renderer/settings/SettingsForm.tsx
 //
-// Claude Code 연동 opt-in 토글 2개 — FirstRunDialog(첫 실행 동의)와
+// 선택적 에이전트 연동 설정 — FirstRunDialog(첫 실행 동의)와
 // SettingsDialog(상시 변경)가 공유한다. 폼은 상태를 소유하지 않는다:
 // value/onChange 순수 제어 컴포넌트.
-export interface SettingsFormValue {
-  claudeCliEnabled: boolean;
-  claudeHooksEnabled: boolean;
-}
+import type { AppSettings } from "@shared/types";
+
+export type SettingsFormValue = Pick<
+  AppSettings,
+  "summarizerEnabled" | "summaryProvider" | "observerEnabled"
+>;
 
 export function SettingsForm({
   value,
@@ -20,29 +22,51 @@ export function SettingsForm({
       <label className="settings-item">
         <input
           type="checkbox"
-          checked={value.claudeCliEnabled}
-          onChange={(e) => onChange({ claudeCliEnabled: e.target.checked })}
+          checked={value.summarizerEnabled}
+          onChange={(e) => onChange({ summarizerEnabled: e.target.checked })}
         />
         <span>
-          <strong>작업 라벨 요약 (claude CLI)</strong>
+          <strong>작업 라벨 요약</strong>
           <small>
-            머리 위 작업 라벨 요약에 로컬 claude CLI를 호출합니다. 호출마다
-            Claude 구독 크레딧을 소모합니다.
+            머리 위 작업 라벨을 선택한 CLI로 요약합니다. 선택한 CLI는 사용자의
+            해당 Claude 또는 Codex 계정 사용량을 소모합니다.
           </small>
         </span>
       </label>
+
+      <fieldset aria-label="요약기 선택">
+        <legend>요약기 선택</legend>
+        <label>
+          <input
+            type="radio"
+            name="summary-provider"
+            checked={value.summaryProvider === "claude"}
+            onChange={() => onChange({ summaryProvider: "claude" })}
+          />
+          Claude
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="summary-provider"
+            checked={value.summaryProvider === "codex"}
+            onChange={() => onChange({ summaryProvider: "codex" })}
+          />
+          Codex
+        </label>
+      </fieldset>
+
       <label className="settings-item">
         <input
           type="checkbox"
-          checked={value.claudeHooksEnabled}
-          onChange={(e) => onChange({ claudeHooksEnabled: e.target.checked })}
+          checked={value.observerEnabled}
+          onChange={(e) => onChange({ observerEnabled: e.target.checked })}
         />
         <span>
-          <strong>알림·시간측정 (CLI 훅 · Claude Code / Pi)</strong>
+          <strong>에이전트 관찰 (알림·시간측정)</strong>
           <small>
-            세션 안의 claude(--settings)와 pi(-e 확장)에 훅을 주입하고 127.0.0.1
-            로컬 서버로 알림을 받습니다. 꺼져 있으면 느낌표 알림과 세션 시간측정이
-            동작하지 않습니다. 변경은 새 세션부터 적용됩니다.
+            Claude, Codex, Pi의 알림과 시간측정은 새로 만든 터미널부터 적용됩니다.
+            꺼져 있으면 느낌표 알림과 세션 시간측정이 동작하지 않습니다.
           </small>
         </span>
       </label>

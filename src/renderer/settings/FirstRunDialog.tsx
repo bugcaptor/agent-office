@@ -1,6 +1,6 @@
 // src/renderer/settings/FirstRunDialog.tsx
 //
-// 첫 실행(설정 파일 부재) 동의 다이얼로그. Claude Code 연동 2종은 opt-in —
+// 첫 실행(설정 파일 부재) 동의 다이얼로그. 에이전트 연동 기능은 opt-in —
 // 기본 OFF로 제시하고 유저가 명시적으로 켠 것만 저장한다. 닫기 회피 불가:
 // 백드롭 클릭 핸들러를 달지 않는다(선택을 저장해야만 진행).
 import { useState } from "react";
@@ -11,8 +11,9 @@ export function FirstRunDialog() {
   const firstRun = useAppStore((s) => s.settingsFirstRun);
   const completeFirstRun = useAppStore((s) => s.completeFirstRun);
   const [value, setValue] = useState<SettingsFormValue>({
-    claudeCliEnabled: false,
-    claudeHooksEnabled: false,
+    summarizerEnabled: false,
+    summaryProvider: "claude",
+    observerEnabled: false,
   });
 
   if (!firstRun) return null;
@@ -22,8 +23,8 @@ export function FirstRunDialog() {
       <div className="pixel-panel first-run-dialog">
         <h2 className="pixel-title">Agent Office 시작하기</h2>
         <p>
-          Claude Code / Pi 연동 기능은 선택 사항입니다. 지금 끄고 시작해도 언제든
-          하단 바의 ⚙ 설정에서 켤 수 있습니다.
+          Claude Code / Codex / Pi 연동 기능은 선택 사항입니다. 지금 끄고 시작해도
+          언제든 하단 바의 ⚙ 설정에서 켤 수 있습니다.
         </p>
         <SettingsForm value={value} onChange={(p) => setValue((v) => ({ ...v, ...p }))} />
         <div className="dialog-actions">
