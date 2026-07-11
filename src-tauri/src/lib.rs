@@ -12,6 +12,7 @@ mod notification;
 mod persistence;
 pub mod pixellab;
 mod session;
+mod session_events;
 mod state;
 mod types;
 mod vscode;
