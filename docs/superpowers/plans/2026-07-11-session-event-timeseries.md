@@ -14,7 +14,7 @@
 - Every record contains `schemaVersion: 1`, one app-run UUID, a run-local sequence starting at 1, epoch-millisecond `at`, `agentId`, `sessionId`, and `kind`.
 - Store `session_started`, `session_state`, `prompt`, `tool`, `notification`, `bell`, and `stop` events.
 - Never serialize prompt text, prompt summaries, notification messages, dedup keys, terminal I/O, tool inputs/results, environment variables, or API keys.
-- A persistence failure must print a metadata-free `eprintln!` warning and must not block PTY, hook, notification, or renderer event delivery.
+- A persistence failure warning may include the store path and OS error, but must not include event payload, prompt/message text, `agentId`, `sessionId`, or other event metadata; it must not block PTY, hook, notification, or renderer event delivery.
 - Do not add analysis UI, query/export APIs, retention, compression, retries, or an in-memory retry queue.
 - Keep `session-times.jsonl`, `turnReducer`, Zustand `timeTracking`, and `SessionTimePanel` behavior unchanged.
 - Baseline exception: on macOS, `session::bash_wrapper::tests::is_bash_matches_bare_and_full_paths` is the only accepted pre-existing Rust failure; no new failures are allowed.
