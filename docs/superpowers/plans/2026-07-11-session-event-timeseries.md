@@ -80,6 +80,10 @@ mod tests {
         std::env::temp_dir().join(format!("agent-office-session-events-{}", uuid::Uuid::new_v4()))
     }
 
+    fn deterministic_store(root: PathBuf) -> SessionEventStore {
+        SessionEventStore { root, run_id: "run-1".into(), next_seq: Mutex::new(1) }
+    }
+
     fn draft(at: u64) -> SessionEventDraft {
         SessionEventDraft::simple("a1", "s1", SessionEventKind::Tool, at)
     }
@@ -95,7 +99,7 @@ mod tests {
     #[test]
     fn append_creates_a_v1_record_with_run_id_and_sequence() {
         let root = scratch_root();
-        let store = SessionEventStore::with_run_id(root.clone(), "run-1".into());
+        let store = deterministic_store(root.clone());
         let record = store.append(draft(AT_UTC_MIDNIGHT)).unwrap();
         assert_eq!(record.schema_version, 1);
         assert_eq!(record.run_id, "run-1");
@@ -107,7 +111,7 @@ mod tests {
     #[test]
     fn append_partitions_on_the_event_utc_date() {
         let root = scratch_root();
-        let store = SessionEventStore::with_run_id(root.clone(), "run-1".into());
+        let store = deterministic_store(root.clone());
         store.append(draft(BEFORE_UTC_MIDNIGHT)).unwrap();
         store.append(draft(AT_UTC_MIDNIGHT)).unwrap();
         assert_eq!(read_records(&root.join("2026-07-10.jsonl")).len(), 1);
@@ -118,7 +122,7 @@ mod tests {
     #[test]
     fn concurrent_appends_produce_complete_unique_lines() {
         let root = scratch_root();
-        let store = Arc::new(SessionEventStore::with_run_id(root.clone(), "run-1".into()));
+        let store = Arc::new(deterministic_store(root.clone()));
         let threads: Vec<_> = (0..32)
             .map(|_| {
                 let store = store.clone();
@@ -141,7 +145,7 @@ mod tests {
     fn failed_append_consumes_its_sequence_number() {
         let root = scratch_root();
         fs::write(&root, b"not a directory").unwrap();
-        let store = SessionEventStore::with_run_id(root.clone(), "run-1".into());
+        let store = deterministic_store(root.clone());
         assert!(store.append(draft(AT_UTC_MIDNIGHT)).is_err());
         fs::remove_file(&root).unwrap();
         let record = store.append(draft(AT_UTC_MIDNIGHT)).unwrap();
@@ -282,11 +286,6 @@ impl SessionEventStore {
         Self { root, run_id: Uuid::new_v4().to_string(), next_seq: Mutex::new(1) }
     }
 
-    #[cfg(test)]
-    pub(crate) fn with_run_id(root: PathBuf, run_id: String) -> Self {
-        Self { root, run_id, next_seq: Mutex::new(1) }
-    }
-
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -402,7 +401,7 @@ mod tests {
     fn maps_events_without_sensitive_payloads_and_forwards_once() {
         let root = scratch_root();
         let inner = Arc::new(RecordingEvents::default());
-        let store = Arc::new(SessionEventStore::with_run_id(root.clone(), "run-1".into()));
+        let store = Arc::new(SessionEventStore::new(root.clone()));
         let events = RecordingAppEvents::new(inner.clone(), store);
         events.activity_event(&ActivityEvent {
             agent_id: "a1".into(),
@@ -437,7 +436,7 @@ mod tests {
     fn maps_session_started_state_bell_stop_and_tool() {
         let root = scratch_root();
         let inner = Arc::new(RecordingEvents::default());
-        let store = Arc::new(SessionEventStore::with_run_id(root.clone(), "run-1".into()));
+        let store = Arc::new(SessionEventStore::new(root.clone()));
         let events = RecordingAppEvents::new(inner, store);
         events.session_started(&SessionStartedEvent {
             agent_id: "a1".into(), session_id: "s1".into(), agent_name: "Compiler".into(),
@@ -477,7 +476,7 @@ mod tests {
     fn preserves_every_session_state_value() {
         let root = scratch_root();
         let inner = Arc::new(RecordingEvents::default());
-        let store = Arc::new(SessionEventStore::with_run_id(root.clone(), "run-1".into()));
+        let store = Arc::new(SessionEventStore::new(root.clone()));
         let events = RecordingAppEvents::new(inner, store);
         let states = [
             SessionState::Starting,
@@ -503,7 +502,7 @@ mod tests {
         let root = scratch_root();
         fs::write(&root, b"not a directory").unwrap();
         let inner = Arc::new(RecordingEvents::default());
-        let store = Arc::new(SessionEventStore::with_run_id(root.clone(), "run-1".into()));
+        let store = Arc::new(SessionEventStore::new(root.clone()));
         let events = RecordingAppEvents::new(inner.clone(), store);
         events.activity_event(&ActivityEvent {
             agent_id: "a1".into(), session_id: "s1".into(), kind: ActivityKind::Tool,
