@@ -49,6 +49,21 @@ pub async fn create_session(
     agent_id: String,
     opts: Option<SessionOpts>,
 ) -> Result<CreateSessionResult, String> {
+    create_session_inner(&app_state, agent_id, opts).await
+}
+
+async fn create_session_inner(
+    app_state: &AppState,
+    agent_id: String,
+    opts: Option<SessionOpts>,
+) -> Result<CreateSessionResult, String> {
+    let observer_enabled = app_state.settings.read().unwrap().observer_enabled;
+    if observer_enabled {
+        let _ = app_state
+            .observer_server
+            .ensure(app_state.observer.clone())
+            .await;
+    }
     let o = opts.unwrap_or_default();
     let profile = event_profile(&agent_id, &o);
     // catch_unwind: Tauri에서 커맨드가 패닉하면 invoke 프라미스가 영원히
@@ -334,10 +349,10 @@ pub async fn get_app_settings(
     })
 }
 
-/// 저장 + 캐시 갱신. 훅 OFF→ON이면 훅 서버를 지연 기동한다(이미 떠 있으면
+/// 저장 + 캐시 갱신. Observer OFF→ON이면 서버를 지연 기동한다(이미 떠 있으면
 /// 재사용). ON→OFF는 서버 프로세스 자체를 내리지 않는다 — 이미 떠 있는
 /// 세션들의 훅 POST는 계속 수신된다. 다만 캐시가 OFF로 갱신된 뒤로는
-/// lib.rs의 훅 포트 getter가 (서버가 살아있어도) None을 돌려주므로, 이
+/// lib.rs의 observer URL getter가 (서버가 살아있어도) None을 돌려주므로, 이
 /// 시점 이후 새로 만드는 세션에는 훅 배선(--settings·env·ZDOTDIR)이 전혀
 /// 주입되지 않는다 -- "변경은 새 세션부터 적용" 정책의 실제 동작.
 #[tauri::command(rename_all = "camelCase")]
@@ -345,41 +360,32 @@ pub async fn set_app_settings(
     app_state: State<'_, AppState>,
     settings: AppSettings,
 ) -> Result<(), String> {
+    set_app_settings_inner(&app_state, settings).await
+}
+
+async fn set_app_settings_inner(app_state: &AppState, settings: AppSettings) -> Result<(), String> {
     // write 가드를 먼저 잡고 쥔 채 저장(동기, await 없음) 후 캐시를 갱신한다 --
     // 그래야 두 set_app_settings 호출이 겹쳐도 "디스크에 쓴 값"과 "캐시에 남는
     // 값"이 서로 다른 호출 것이 되는 경합이 없다. 가드는 .await 지점 전에
     // 스코프를 벗어나 해제되므로(파일 머리말의 no-lock-across-await 계약 유지),
-    // 아래 훅 서버 지연 기동 await는 락 없이 진행된다.
+    // 아래 observer 서버 지연 기동 await는 락 없이 진행된다.
     {
         let mut guard = app_state.settings.write().unwrap();
-        app_state.settings_store.save(&settings).map_err(|e| e.to_string())?;
+        app_state
+            .settings_store
+            .save(&settings)
+            .map_err(|e| e.to_string())?;
         *guard = settings;
     }
     app_state
         .settings_first_run
         .store(false, std::sync::atomic::Ordering::SeqCst);
 
-    let need_server = settings.observer_enabled
-        && app_state.hook_port.read().unwrap().is_none();
-    if need_server {
-        // 락은 .await 전에 전부 놓는다(파일 머리말의 no-lock-across-await 계약).
-        let hub = app_state.hub.clone();
-        let (port, tx, handle) = crate::notification::hook_server::serve_with_retry(|rx| {
-            crate::notification::hook_server::serve(hub.clone(), rx)
-        })
-        .await
-        .map_err(|e| e.to_string())?;
-        let mut guard = app_state.hook_port.write().unwrap();
-        if guard.is_none() {
-            *guard = Some(port);
-            drop(guard);
-            *app_state.hook_shutdown.lock().unwrap() = Some(tx);
-            *app_state.server_handle.lock().unwrap() = Some(handle);
-        } else {
-            // 동시 호출 경합으로 다른 쪽이 먼저 기동함 — 새로 띄운 서버는 종료.
-            drop(guard);
-            let _ = tx.send(());
-        }
+    if settings.observer_enabled {
+        let _ = app_state
+            .observer_server
+            .ensure(app_state.observer.clone())
+            .await;
     }
     Ok(())
 }
@@ -416,7 +422,7 @@ mod tests {
     // standalone (it borrows from a live `tauri::App`/`AppHandle`), so
     // instead of driving the `#[tauri::command]`-wrapped async fns directly,
     // these tests build a real `AppState` (fakes for PtyFactory/AppEvents,
-    // tempdir-backed ProfileStore/HookSettingsWriter -- the same seams
+    // tempdir-backed ProfileStore/ObserverRuntime -- the same seams
     // other test modules use) and call the exact `app_state.manager` /
     // `app_state.hub` / `app_state.store` method sequence each command body
     // above executes. Every command function is a one-line, non-`await`ing
@@ -427,8 +433,9 @@ mod tests {
     // to manual/E2E verification -- there is no seam for either without a
     // running Tauri app.
     use super::*;
-    use crate::notification::hook_settings::HookSettingsWriter;
     use crate::notification::hub::{NotificationHub, SystemClock};
+    use crate::observer::server::ObserverServerState;
+    use crate::observer::ObserverRuntime;
     use crate::persistence::profile_store::ProfileStore;
     use crate::persistence::settings_store::SummaryProvider;
     use crate::session::manager::SessionManager;
@@ -537,6 +544,67 @@ mod tests {
         cleanup(&ctl, &dir, &profile_dir);
     }
 
+    #[tokio::test]
+    async fn set_app_settings_keeps_enabled_setting_when_observer_server_is_unavailable() {
+        let (state, ctl, dir, profile_dir) = build("settings-observer-fail-open");
+        state.observer_server.shutdown();
+        let settings = crate::persistence::settings_store::AppSettings {
+            version: 1,
+            summarizer_enabled: false,
+            summary_provider: SummaryProvider::Claude,
+            observer_enabled: true,
+            sound_enabled: true,
+            sound_volume: 0.5,
+        };
+
+        assert!(set_app_settings_inner(&state, settings).await.is_ok());
+        assert_eq!(*state.settings.read().unwrap(), settings);
+        assert_eq!(state.settings_store.load().0, settings);
+        assert!(!state
+            .settings_first_run
+            .load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(state.observer_server.current_url(), None);
+
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    #[tokio::test]
+    async fn create_session_ensures_observer_server_before_preparing_new_pty() {
+        let (state, ctl, dir, profile_dir) = build("create-observer-ensure");
+        state.settings.write().unwrap().observer_enabled = true;
+
+        let created = create_session_inner(&state, "a1".into(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(created.state, SessionState::Running);
+        assert!(state.observer_server.current_url().is_some());
+        assert!(ctl
+            .spawned_env()
+            .iter()
+            .any(|(key, _)| key == "AGENT_OFFICE_HOOK_URL"));
+        state.observer_server.shutdown();
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    #[tokio::test]
+    async fn create_session_still_spawns_when_observer_server_cannot_start() {
+        let (state, ctl, dir, profile_dir) = build("create-observer-fail-open");
+        state.settings.write().unwrap().observer_enabled = true;
+        state.observer_server.shutdown();
+
+        let created = create_session_inner(&state, "a1".into(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(created.state, SessionState::Running);
+        assert!(ctl
+            .spawned_env()
+            .iter()
+            .all(|(key, _)| key != "AGENT_OFFICE_HOOK_URL"));
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
     /// Unique tempdir per test, matching the convention used throughout the
     /// other modules' tests (no `tempfile` dependency needed).
     fn scratch_dir(tag: &str) -> PathBuf {
@@ -559,16 +627,26 @@ mod tests {
             Arc::new(SystemClock),
             Duration::from_millis(3000),
         ));
-        let hook_dir = scratch_dir(&format!("{tag}-hooks"));
-        let writer = HookSettingsWriter::new(hook_dir.clone());
+        let observer_dir = scratch_dir(&format!("{tag}-observer"));
+        let observer = Arc::new(ObserverRuntime::production(
+            hub.clone(),
+            observer_dir.clone(),
+            std::env::current_exe().unwrap(),
+        ));
+        let observer_server = Arc::new(ObserverServerState::default());
+        let settings = Arc::new(std::sync::RwLock::new(
+            crate::persistence::settings_store::AppSettings::default(),
+        ));
+        let get_observer_url =
+            crate::make_observer_url_getter(settings.clone(), observer_server.clone());
         let (fac, ctl) = FakePtyFactory::new();
         let manager = Arc::new(SessionManager::new(
             Arc::new(fac),
-            writer,
+            observer.clone(),
             registry,
             events_dyn,
             hub.clone(),
-            Arc::new(|| Some(12345u16)),
+            get_observer_url,
         ));
         let profile_dir = scratch_dir(&format!("{tag}-profiles"));
         let store = ProfileStore::new(profile_dir.join("profiles.json"));
@@ -590,20 +668,17 @@ mod tests {
         let state = AppState {
             manager,
             hub,
+            observer,
+            observer_server,
             store,
             portrait_store,
             sprite_store,
             session_time_store,
             settings_store,
-            settings: Arc::new(std::sync::RwLock::new(
-                crate::persistence::settings_store::AppSettings::default(),
-            )),
+            settings,
             settings_first_run: std::sync::atomic::AtomicBool::new(true),
-            hook_port: Arc::new(std::sync::RwLock::new(None)),
-            hook_shutdown: std::sync::Mutex::new(None),
-            server_handle: std::sync::Mutex::new(None),
         };
-        (state, ctl, hook_dir, profile_dir)
+        (state, ctl, observer_dir, profile_dir)
     }
 
     type FakePtyFactoryControl = crate::session::pty_factory::fake::FakeControl;

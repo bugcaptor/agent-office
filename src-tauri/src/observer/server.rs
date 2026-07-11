@@ -15,8 +15,10 @@ use super::{ObserverProvider, ObserverRuntime, RawObserverHook};
 #[derive(Deserialize)]
 struct HookQuery {
     session: String,
-    provider: String,
+    provider: Option<String>,
     event: Option<String>,
+    source: Option<String>,
+    agent: Option<String>,
 }
 
 fn ok_response() -> impl IntoResponse {
@@ -32,7 +34,13 @@ async fn handle_hook(
     Query(query): Query<HookQuery>,
     body: Bytes,
 ) -> impl IntoResponse {
-    let Some(provider) = ObserverProvider::parse(&query.provider) else {
+    if query.agent.as_deref() == Some("pi") {
+        if let Some(source) = query.source.as_deref() {
+            runtime.ingest_pi_source(&query.session, source, &body);
+        }
+        return ok_response();
+    }
+    let Some(provider) = query.provider.as_deref().and_then(ObserverProvider::parse) else {
         return ok_response();
     };
     let body_event = || {
@@ -208,7 +216,7 @@ impl ObserverServerState {
 
 #[cfg(test)]
 mod tests {
-    use super::{serve_with_retry, ObserverServerState, StartedServer};
+    use super::{serve, serve_with_retry, ObserverServerState, StartedServer};
     use crate::notification::hub::{NotificationHub, SystemClock};
     use crate::observer::ObserverRuntime;
     use crate::state::fake::RecordingEvents;
@@ -296,6 +304,71 @@ mod tests {
             state.current_url().as_deref(),
             Some(format!("http://127.0.0.1:{port}/hook").as_str()),
         );
+        state.shutdown();
+    }
+
+    #[tokio::test]
+    async fn routes_existing_pi_source_query_contract() {
+        let (runtime, events) = fixture();
+        let state = ObserverServerState::default();
+        let port = state.ensure(runtime).await.unwrap();
+        let client = reqwest::Client::new();
+
+        for (source, body) in [
+            ("prompt", r#"{"prompt":"pi task"}"#),
+            ("tool", "{}"),
+            ("stop", r#"{"message":"Pi finished a task"}"#),
+        ] {
+            client
+                .post(format!(
+                    "http://127.0.0.1:{port}/hook?session=s1&source={source}&agent=pi"
+                ))
+                .body(body)
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+        }
+
+        let activities = events.activities();
+        assert_eq!(activities.len(), 2);
+        assert_eq!(activities[0].kind, ActivityKind::Prompt);
+        assert_eq!(activities[0].text.as_deref(), Some("pi task"));
+        assert_eq!(activities[1].kind, ActivityKind::Tool);
+
+        let notifications = events.notifications();
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].source, NotificationSource::Stop);
+        assert_eq!(notifications[0].message, "Pi finished a task");
+        state.shutdown();
+    }
+
+    #[tokio::test]
+    async fn routes_claude_subagent_lifecycle_to_activity_events() {
+        let (runtime, events) = fixture();
+        let state = ObserverServerState::default();
+        let port = state.ensure(runtime).await.unwrap();
+        let client = reqwest::Client::new();
+
+        for event in ["SubagentStart", "SubagentStop"] {
+            client
+                .post(format!(
+                    "http://127.0.0.1:{port}/hook?session=s1&provider=claude&event={event}"
+                ))
+                .body("{}")
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+        }
+
+        let activities = events.activities();
+        assert_eq!(activities.len(), 2, "subagent hooks must reach activity-event");
+        assert_eq!(activities[0].kind, ActivityKind::SubStart);
+        assert_eq!(activities[1].kind, ActivityKind::SubStop);
+        assert!(events.notifications().is_empty());
         state.shutdown();
     }
 
@@ -397,6 +470,34 @@ mod tests {
             .ensure_with(|| async { started_server(42001).await })
             .await;
         assert_eq!(recovered, Some(42001));
+        state.shutdown();
+    }
+
+    #[tokio::test]
+    async fn failed_server_start_returns_none_and_can_be_retried() {
+        let state = ObserverServerState::default();
+        let first = state
+            .ensure_with(|| async { Err(std::io::Error::other("injected bind failure")) })
+            .await;
+        assert_eq!(first, None);
+        assert_eq!(state.current_url(), None);
+
+        let registry = Arc::new(SessionRegistry::new());
+        let events: Arc<dyn AppEvents> = Arc::new(RecordingEvents::default());
+        let hub = Arc::new(NotificationHub::new(
+            registry,
+            events,
+            Arc::new(SystemClock),
+            Duration::from_millis(3_000),
+        ));
+        let runtime = Arc::new(ObserverRuntime::new(
+            hub,
+            Vec::<Arc<dyn crate::observer::ObserverAdapter>>::new(),
+        ));
+        let second = state
+            .ensure_with(|| serve_with_retry(|rx| serve(runtime.clone(), rx)))
+            .await;
+        assert!(second.is_some());
         state.shutdown();
     }
 

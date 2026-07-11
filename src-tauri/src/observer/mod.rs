@@ -79,6 +79,20 @@ impl ObserverRuntime {
         };
         self.hub.ingest_observer(session_id, event);
     }
+
+    pub fn ingest_pi_source(&self, session_id: &str, source: &str, body: &[u8]) {
+        let event = match source {
+            "prompt" => ObserverEvent::Prompt {
+                text: event::prompt_text(body),
+            },
+            "tool" => ObserverEvent::Tool,
+            "stop" => ObserverEvent::Stop {
+                message: event::message(body),
+            },
+            _ => return,
+        };
+        self.hub.ingest_observer(session_id, event);
+    }
 }
 
 #[cfg(test)]

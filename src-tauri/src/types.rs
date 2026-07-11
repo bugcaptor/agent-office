@@ -133,19 +133,16 @@ pub struct CreateSessionRequest {
     pub rows: Option<u16>,
     pub cwd: Option<String>,
     /// 프로필의 셸 선택 id("powershell" | "pwsh" | "git-bash" | "wsl").
-    /// None이면 자동 선택(`session::shells::resolve`가 pwsh > powershell
+    /// None이면 자동 선택(`session::shells::resolve_observed`가 pwsh > powershell
     /// 순으로 고른다). Windows 전용 기능 -- 다른 플랫폼에서는 무시된다.
     pub shell: Option<String>,
     /// 세션이 Running으로 전이한 뒤 셸 stdin에 `{command}\n`으로 주입할 시작 명령어.
     /// None/공백이면 미주입. 셸 문법(bat/sh/pwsh 등)은 사용자가 선택 셸에 맞게 작성.
     pub startup_command: Option<String>,
     /// 동결 API opts에는 없음 → 프런트 어댑터는 항상 미지정(=false). 기본 false:
-    /// 세션은 자동 실행 없이 셸만 띄운다. 그래도 셸이 `claude` 래퍼를 정의하므로
-    /// 사용자가 그냥 `claude`만 입력해도 투명하게 `--settings
-    /// "$AGENT_OFFICE_SETTINGS"`가 붙어 시간 집계 훅이 발화한다: Windows는
-    /// PowerShell 함수(`session::shells::AGENT_WRAPPER_PS`) 또는 Git Bash의
-    /// `--rcfile` 심(`session::bash_wrapper`), macOS/Linux의 zsh는 ZDOTDIR
-    /// 셈(`session::zsh_wrapper`)으로 주입한다.
+    /// 세션은 자동 실행 없이 셸만 띄운다. Observation이 켜진 세션은 adapter가
+    /// 제공한 command wrapper specs를 PowerShell 함수, Git Bash `--rcfile`,
+    /// 또는 zsh ZDOTDIR shim으로 렌더링한다.
     pub autostart_claude: Option<bool>,
 }
 

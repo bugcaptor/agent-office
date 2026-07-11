@@ -95,6 +95,8 @@ impl NotificationHub {
                 self.ingest_activity_inner(session_id, ActivityKind::Prompt, text)
             }
             ObserverEvent::Tool => self.ingest_activity(session_id, ActivityKind::Tool),
+            ObserverEvent::SubStart => self.ingest_activity(session_id, ActivityKind::SubStart),
+            ObserverEvent::SubStop => self.ingest_activity(session_id, ActivityKind::SubStop),
             ObserverEvent::Attention { message } => self.ingest(
                 session_id,
                 NotificationSource::Hook,

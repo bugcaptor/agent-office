@@ -52,6 +52,8 @@ impl ObserverCapabilities {
 pub enum ObserverEvent {
     Prompt { text: Option<String> },
     Tool,
+    SubStart,
+    SubStop,
     Attention { message: Option<String> },
     Stop { message: Option<String> },
 }

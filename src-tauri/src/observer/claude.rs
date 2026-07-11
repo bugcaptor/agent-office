@@ -71,6 +71,8 @@ impl ObserverAdapter for ClaudeAdapter {
                 "PostToolUse": entry("PostToolUse"),
                 "Notification": entry("Notification"),
                 "Stop": entry("Stop"),
+                "SubagentStart": entry("SubagentStart"),
+                "SubagentStop": entry("SubagentStop"),
             },
         });
         let contents = serde_json::to_vec_pretty(&settings)
@@ -102,6 +104,8 @@ impl ObserverAdapter for ClaudeAdapter {
                 text: prompt_text(raw.body),
             }),
             "PostToolUse" => Some(ObserverEvent::Tool),
+            "SubagentStart" => Some(ObserverEvent::SubStart),
+            "SubagentStop" => Some(ObserverEvent::SubStop),
             "Notification" => Some(ObserverEvent::Attention {
                 message: message(raw.body),
             }),
@@ -165,6 +169,30 @@ mod tests {
                     "http://127.0.0.1:43123/hook?session=ao-s1&provider=claude&event={event}"
                 )),
                 "wrong URL for {event}: {command}",
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn claude_plan_preserves_subagent_lifecycle_hooks_from_the_legacy_observer() {
+        let dir = scratch_dir();
+        let adapter = ClaudeAdapter::new(dir.clone());
+        let context = ObserverSessionContext::new("ao-s1", "http://127.0.0.1:43123/hook");
+
+        adapter.prepare_session(&context).unwrap();
+        let path = dir.join("ao-s1.settings.json");
+        let json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+
+        for event in ["SubagentStart", "SubagentStop"] {
+            let entry = &json["hooks"][event][0];
+            assert_eq!(entry["matcher"], "", "missing {event} hook: {json}");
+            let command = entry["hooks"][0]["command"].as_str().unwrap();
+            assert!(
+                command.contains(&format!("provider=claude&event={event}")),
+                "wrong {event} command: {command}",
             );
         }
 
