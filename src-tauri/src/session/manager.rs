@@ -27,7 +27,6 @@ use crate::session::output_batcher::{FlushSink, OutputBatcher, MAX_BYTES, WINDOW
 use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnOptions};
 use crate::session::shells;
 use crate::session_events::types::{AgentEventProfile, SessionStartedEvent};
-#[cfg(not(windows))]
 use crate::session::pi_extension;
 use crate::session::zsh_wrapper;
 use crate::state::{AppEvents, SessionRegistry};
