@@ -84,3 +84,63 @@
 
 .stp-live { font-variant-numeric: tabular-nums; color: var(--text-dim); }
 .stp-cum { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; }
+
+.stp-today {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stp-stats-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: normal;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+
+.stp-stats {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  border-bottom: 2px solid var(--border-dark);
+}
+
+.stp-stat-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.stp-stat-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 8em;
+}
+
+.stp-stat-row.departed .stp-stat-name { color: var(--text-dim); }
+
+.stp-stat-vals { font-variant-numeric: tabular-nums; color: var(--text-dim); }
+
+.stp-stats-msg {
+  padding: 6px 8px;
+  color: var(--text-dim);
+  border-bottom: 2px solid var(--border-dark);
+}
+
+.stp-stats-retry {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
