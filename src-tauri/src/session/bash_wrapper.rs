@@ -54,11 +54,19 @@ mod tests {
                 ],
                 skip_if_present: vec![],
             },
+            CommandWrapperSpec {
+                command: "pi".into(),
+                prefix_args: vec![
+                    WrapperArg::Literal("-e".into()),
+                    WrapperArg::Env("AGENT_OFFICE_PI_EXT".into()),
+                ],
+                skip_if_present: vec![],
+            },
         ]
     }
 
     #[test]
-    fn write_observer_shim_renders_both_provider_functions_dynamically() {
+    fn write_observer_shim_renders_all_command_functions() {
         let base = scratch_dir();
         let path = write_observer_shim(&base, &observer_wrappers()).unwrap();
         let bashrc = std::fs::read_to_string(path).unwrap();
@@ -66,8 +74,13 @@ mod tests {
         assert!(bashrc.contains(r#". "$HOME/.bashrc""#), "{bashrc}");
         assert!(bashrc.contains("claude() {"), "{bashrc}");
         assert!(bashrc.contains("codex() {"), "{bashrc}");
+        assert!(bashrc.contains("pi() {"), "{bashrc}");
         assert!(
             bashrc.contains("command codex '-c' \"${AGENT_OFFICE_CODEX_HOOK_STOP}\" \"$@\""),
+            "{bashrc}",
+        );
+        assert!(
+            bashrc.contains("command pi '-e' \"${AGENT_OFFICE_PI_EXT}\" \"$@\""),
             "{bashrc}",
         );
 

@@ -4,7 +4,6 @@ pub mod event;
 pub mod forwarder;
 pub mod server;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -13,14 +12,12 @@ use claude::ClaudeAdapter;
 use codex::CodexAdapter;
 
 pub use event::{
-    AdapterSessionPlan, CommandWrapperSpec, ObserverAdapterError, ObserverCapabilities,
-    ObserverEvent, ObserverProvider, ObserverSessionContext, RawObserverHook, ToolCoverage,
-    WrapperArg,
+    AdapterSessionPlan, CommandWrapperSpec, ObserverAdapterError, ObserverEvent, ObserverProvider,
+    ObserverSessionContext, RawObserverHook, WrapperArg,
 };
 
 pub trait ObserverAdapter: Send + Sync {
     fn provider(&self) -> ObserverProvider;
-    fn capabilities(&self) -> ObserverCapabilities;
     fn prepare_session(
         &self,
         context: &ObserverSessionContext,
@@ -30,7 +27,7 @@ pub trait ObserverAdapter: Send + Sync {
 
 pub struct ObserverRuntime {
     hub: Arc<NotificationHub>,
-    adapters: HashMap<ObserverProvider, Arc<dyn ObserverAdapter>>,
+    adapters: Vec<Arc<dyn ObserverAdapter>>,
 }
 
 impl ObserverRuntime {
@@ -49,16 +46,12 @@ impl ObserverRuntime {
     }
 
     pub fn new(hub: Arc<NotificationHub>, adapters: Vec<Arc<dyn ObserverAdapter>>) -> Self {
-        let adapters = adapters
-            .into_iter()
-            .map(|adapter| (adapter.provider(), adapter))
-            .collect();
         Self { hub, adapters }
     }
 
     pub fn prepare_session(&self, context: &ObserverSessionContext) -> AdapterSessionPlan {
         let mut merged = AdapterSessionPlan::default();
-        for adapter in self.adapters.values() {
+        for adapter in &self.adapters {
             match adapter.prepare_session(context) {
                 Ok(plan) => merged.merge(plan),
                 Err(error) => eprintln!(
@@ -71,7 +64,11 @@ impl ObserverRuntime {
     }
 
     pub fn ingest(&self, provider: ObserverProvider, session_id: &str, raw: RawObserverHook<'_>) {
-        let Some(adapter) = self.adapters.get(&provider) else {
+        let Some(adapter) = self
+            .adapters
+            .iter()
+            .find(|adapter| adapter.provider() == provider)
+        else {
             return;
         };
         let Some(event) = adapter.map_hook(&raw) else {
@@ -117,10 +114,6 @@ mod tests {
             self.provider
         }
 
-        fn capabilities(&self) -> ObserverCapabilities {
-            ObserverCapabilities::complete()
-        }
-
         fn prepare_session(
             &self,
             _context: &ObserverSessionContext,
@@ -142,6 +135,14 @@ mod tests {
             Arc::new(SystemClock),
             std::time::Duration::from_millis(3_000),
         ))
+    }
+
+    fn wrapper(command: &str) -> CommandWrapperSpec {
+        CommandWrapperSpec {
+            command: command.into(),
+            prefix_args: vec![],
+            skip_if_present: vec![],
+        }
     }
 
     fn assert_common_mapping(adapter: &dyn ObserverAdapter) {
@@ -233,9 +234,6 @@ mod tests {
             }),
             Some(ObserverEvent::Stop { message: None }),
         );
-        assert_eq!(codex.capabilities().tool, ToolCoverage::BestEffort);
-        assert_eq!(claude.capabilities().tool, ToolCoverage::Complete);
-
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -255,10 +253,10 @@ mod tests {
         assert_eq!(
             runtime
                 .adapters
-                .keys()
-                .copied()
-                .collect::<std::collections::HashSet<_>>(),
-            std::collections::HashSet::from([ObserverProvider::Claude, ObserverProvider::Codex,]),
+                .iter()
+                .map(|adapter| adapter.provider())
+                .collect::<Vec<_>>(),
+            vec![ObserverProvider::Claude, ObserverProvider::Codex],
         );
 
         let _ = std::fs::remove_dir_all(settings_dir);
@@ -276,7 +274,7 @@ mod tests {
             provider: ObserverProvider::Codex,
             plan: Ok(AdapterSessionPlan {
                 env: vec![("AO_CODEX".into(), "1".into())],
-                wrappers: vec![CommandWrapperSpec::new("codex")],
+                wrappers: vec![wrapper("codex")],
                 cleanup_paths: vec![],
             }),
             mapped: None,
@@ -303,7 +301,7 @@ mod tests {
             provider: ObserverProvider::Claude,
             plan: Ok(AdapterSessionPlan {
                 env: vec![("AGENT_OFFICE_SETTINGS".into(), "marker.json".into())],
-                wrappers: vec![CommandWrapperSpec::new("claude")],
+                wrappers: vec![wrapper("claude")],
                 cleanup_paths: vec![],
             }),
             mapped: None,
@@ -342,35 +340,6 @@ mod tests {
             "http://127.0.0.1:4000/hook",
         ));
         assert_eq!(plan, AdapterSessionPlan::default());
-    }
-
-    #[test]
-    fn cleanup_failure_does_not_block_later_cleanup_paths() {
-        let root = std::env::temp_dir().join(format!(
-            "agent-office-observer-cleanup-test-{}",
-            uuid::Uuid::new_v4(),
-        ));
-        let directory_path = root.join("cannot-remove-with-remove-file");
-        let removable_path = root.join("removable.settings.json");
-        std::fs::create_dir_all(&directory_path).unwrap();
-        std::fs::write(&removable_path, b"{}").unwrap();
-        let plan = AdapterSessionPlan {
-            env: vec![],
-            wrappers: vec![],
-            cleanup_paths: vec![directory_path.clone(), removable_path.clone()],
-        };
-
-        plan.cleanup();
-
-        assert!(
-            directory_path.is_dir(),
-            "the injected cleanup error must occur"
-        );
-        assert!(
-            !removable_path.exists(),
-            "later paths must still be removed"
-        );
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

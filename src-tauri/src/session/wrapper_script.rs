@@ -58,6 +58,12 @@ pub fn render_powershell(wrappers: &[CommandWrapperSpec]) -> String {
     for wrapper in wrappers {
         validate_wrapper(wrapper);
 
+        writeln!(
+            script,
+            "Remove-Item Alias:{} -Force -ErrorAction Ignore",
+            wrapper.command
+        )
+        .unwrap();
         writeln!(script, "function global:{} {{", wrapper.command).unwrap();
         writeln!(
             script,
@@ -108,6 +114,7 @@ pub fn render_posix(wrappers: &[CommandWrapperSpec]) -> String {
     for wrapper in wrappers {
         validate_wrapper(wrapper);
 
+        writeln!(script, "unalias '{}' 2>/dev/null || true", wrapper.command).unwrap();
         writeln!(script, "{}() {{", wrapper.command).unwrap();
         if !wrapper.skip_if_present.is_empty() {
             let patterns = wrapper
@@ -178,6 +185,10 @@ mod tests {
         assert!(script.contains("function global:claude"), "{script}");
         assert!(script.contains("function global:codex"), "{script}");
         assert!(
+            script.contains("Remove-Item Alias:codex -Force -ErrorAction Ignore"),
+            "{script}"
+        );
+        assert!(
             script.contains("-CommandType Application,ExternalScript"),
             "{script}"
         );
@@ -212,6 +223,10 @@ mod tests {
         assert!(script.contains("codex() {"), "{script}");
         assert!(script.contains("command claude"), "{script}");
         assert!(script.contains("command codex"), "{script}");
+        assert!(
+            script.contains("unalias 'codex' 2>/dev/null || true"),
+            "{script}"
+        );
         assert!(script.contains("\"$@\""), "{script}");
     }
 
@@ -262,7 +277,11 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid wrapper command")]
     fn powershell_renderer_rejects_command_identifier_injection() {
-        render_powershell(&[CommandWrapperSpec::new("claude; Remove-Item C:\\")]);
+        render_powershell(&[CommandWrapperSpec {
+            command: "claude; Remove-Item C:\\".into(),
+            prefix_args: vec![],
+            skip_if_present: vec![],
+        }]);
     }
 
     #[test]

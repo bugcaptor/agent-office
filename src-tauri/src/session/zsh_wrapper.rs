@@ -99,11 +99,19 @@ mod tests {
                 ],
                 skip_if_present: vec![],
             },
+            CommandWrapperSpec {
+                command: "pi".into(),
+                prefix_args: vec![
+                    WrapperArg::Literal("-e".into()),
+                    WrapperArg::Env("AGENT_OFFICE_PI_EXT".into()),
+                ],
+                skip_if_present: vec![],
+            },
         ]
     }
 
     #[test]
-    fn write_observer_shim_preserves_delegation_and_renders_both_provider_functions() {
+    fn write_observer_shim_preserves_delegation_and_renders_all_functions() {
         let base = scratch_dir();
         write_observer_shim(&base, &observer_wrappers()).unwrap();
         let zshrc = std::fs::read_to_string(base.join(".zshrc")).unwrap();
@@ -114,8 +122,13 @@ mod tests {
         );
         assert!(zshrc.contains("claude() {"), "{zshrc}");
         assert!(zshrc.contains("codex() {"), "{zshrc}");
+        assert!(zshrc.contains("pi() {"), "{zshrc}");
         assert!(
             zshrc.contains("command codex '-c' \"${AGENT_OFFICE_CODEX_HOOK_STOP}\" \"$@\""),
+            "{zshrc}",
+        );
+        assert!(
+            zshrc.contains("command pi '-e' \"${AGENT_OFFICE_PI_EXT}\" \"$@\""),
             "{zshrc}",
         );
         assert!(
@@ -145,7 +158,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn real_zsh_resolves_claude_as_a_function_and_restores_zdotdir() {
+    fn real_zsh_resolves_observer_functions_and_restores_zdotdir() {
         if !Path::new("/bin/zsh").exists() {
             eprintln!("skipping: /bin/zsh not present on this host");
             return;

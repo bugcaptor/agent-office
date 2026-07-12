@@ -508,6 +508,14 @@ mod tests {
                 ],
                 skip_if_present: vec![],
             },
+            CommandWrapperSpec {
+                command: "pi".into(),
+                prefix_args: vec![
+                    WrapperArg::Literal("-e".into()),
+                    WrapperArg::Env("AGENT_OFFICE_PI_EXT".into()),
+                ],
+                skip_if_present: vec![],
+            },
         ]
     }
 
@@ -563,7 +571,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn observer_on_powershell_encoded_script_contains_both_functions() {
+    fn observer_on_powershell_encoded_script_contains_all_functions() {
         let probe = FakeProbe::new()
             .with_system_root(r"C:\Windows")
             .with_file(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe");
@@ -572,6 +580,8 @@ mod tests {
         let script = decode_ps_script(&resolved.args[2]);
         assert!(script.contains("global:claude"), "{script}");
         assert!(script.contains("global:codex"), "{script}");
+        assert!(script.contains("global:pi"), "{script}");
+        assert!(script.contains("'-e' $env:AGENT_OFFICE_PI_EXT"), "{script}");
     }
 
     #[cfg(windows)]

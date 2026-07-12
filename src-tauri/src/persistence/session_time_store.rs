@@ -27,10 +27,7 @@ impl SessionTimeStore {
         }
         let mut line = serde_json::to_vec(record)?;
         line.push(b'\n');
-        let mut f = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.file)?;
+        let mut f = OpenOptions::new().create(true).append(true).open(&self.file)?;
         f.write_all(&line)?;
         Ok(())
     }
@@ -57,10 +54,7 @@ mod tests {
 
     fn scratch_file() -> PathBuf {
         std::env::temp_dir()
-            .join(format!(
-                "agent-office-session-time-store-test-{}",
-                uuid::Uuid::new_v4()
-            ))
+            .join(format!("agent-office-session-time-store-test-{}", uuid::Uuid::new_v4()))
             .join("session-times.jsonl")
     }
 
@@ -136,9 +130,7 @@ mod tests {
         assert!(!parent.exists());
 
         let store = SessionTimeStore::new(file.clone());
-        store
-            .append(&sample("a1", 1_000, 2_000))
-            .expect("append succeeds");
+        store.append(&sample("a1", 1_000, 2_000)).expect("append succeeds");
 
         assert!(parent.exists());
         assert!(file.exists());

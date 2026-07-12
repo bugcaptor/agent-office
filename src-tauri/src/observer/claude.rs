@@ -2,9 +2,8 @@ use std::path::PathBuf;
 
 use super::event::{message, prompt_text};
 use super::{
-    AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError,
-    ObserverCapabilities, ObserverEvent, ObserverProvider, ObserverSessionContext, RawObserverHook,
-    WrapperArg,
+    AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError, ObserverEvent,
+    ObserverProvider, ObserverSessionContext, RawObserverHook, WrapperArg,
 };
 
 pub struct ClaudeAdapter {
@@ -40,10 +39,6 @@ impl ClaudeAdapter {
 impl ObserverAdapter for ClaudeAdapter {
     fn provider(&self) -> ObserverProvider {
         ObserverProvider::Claude
-    }
-
-    fn capabilities(&self) -> ObserverCapabilities {
-        ObserverCapabilities::complete()
     }
 
     fn prepare_session(
@@ -107,12 +102,10 @@ impl ObserverAdapter for ClaudeAdapter {
             "SubagentStart" => Some(ObserverEvent::SubStart),
             "SubagentStop" => Some(ObserverEvent::SubStop),
             "Notification" => Some(ObserverEvent::Attention {
-                message: Some(
-                    message(raw.body).unwrap_or_else(|| "Claude needs your attention".into()),
-                ),
+                message: message(raw.body),
             }),
             "Stop" => Some(ObserverEvent::Stop {
-                message: Some(message(raw.body).unwrap_or_else(|| "Claude finished a task".into())),
+                message: message(raw.body),
             }),
             _ => None,
         }
@@ -223,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_missing_messages_preserve_legacy_fallback_copy() {
+    fn claude_missing_messages_defer_to_hub_fallback() {
         let adapter = ClaudeAdapter::new(scratch_dir());
 
         for body in [
@@ -236,18 +229,14 @@ mod tests {
                     event_name: "Notification",
                     body,
                 }),
-                Some(ObserverEvent::Attention {
-                    message: Some("Claude needs your attention".into()),
-                }),
+                Some(ObserverEvent::Attention { message: None }),
             );
             assert_eq!(
                 adapter.map_hook(&RawObserverHook {
                     event_name: "Stop",
                     body,
                 }),
-                Some(ObserverEvent::Stop {
-                    message: Some("Claude finished a task".into()),
-                }),
+                Some(ObserverEvent::Stop { message: None }),
             );
         }
     }

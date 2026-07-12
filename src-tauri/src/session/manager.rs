@@ -24,8 +24,8 @@ use uuid::Uuid;
 use crate::notification::hub::NotificationHub;
 use crate::observer::{CommandWrapperSpec, ObserverRuntime, ObserverSessionContext, WrapperArg};
 use crate::session::output_batcher::{FlushSink, OutputBatcher, MAX_BYTES, WINDOW_MS};
-use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnOptions};
 use crate::session::pi_extension;
+use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnOptions};
 use crate::session::shells;
 use crate::session_events::types::{AgentEventProfile, SessionStartedEvent};
 use crate::state::{AppEvents, SessionRegistry};
@@ -620,8 +620,7 @@ mod tests {
     use crate::observer::claude::ClaudeAdapter;
     use crate::observer::{
         AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError,
-        ObserverCapabilities, ObserverEvent, ObserverProvider, ObserverRuntime,
-        ObserverSessionContext, RawObserverHook,
+        ObserverEvent, ObserverProvider, ObserverRuntime, ObserverSessionContext, RawObserverHook,
     };
     use crate::session::pty_factory::fake::{
         AlwaysFailPtyFactory, FakeControl, FakePtyFactory, MultiFakePtyFactory,
@@ -774,10 +773,6 @@ mod tests {
             self.provider
         }
 
-        fn capabilities(&self) -> ObserverCapabilities {
-            ObserverCapabilities::complete()
-        }
-
         fn prepare_session(
             &self,
             _context: &ObserverSessionContext,
@@ -802,7 +797,11 @@ mod tests {
                 } else {
                     vec![]
                 },
-                wrappers: vec![CommandWrapperSpec::new(command)],
+                wrappers: vec![CommandWrapperSpec {
+                    command: command.into(),
+                    prefix_args: vec![],
+                    skip_if_present: vec![],
+                }],
                 cleanup_paths: vec![],
             }),
         })
@@ -888,7 +887,7 @@ mod tests {
             .collect::<std::collections::HashSet<_>>();
         assert_eq!(
             names,
-            std::collections::HashSet::from(["claude".into(), "codex".into()])
+            std::collections::HashSet::from(["claude".into(), "codex".into(), "pi".into(),])
         );
         assert_eq!(control.writes_utf8(), "codex resume --last\r");
         cleanup_observer_fixture(&control, &scratch);
@@ -1064,11 +1063,7 @@ mod tests {
                 .iter()
                 .cloned()
                 .collect::<std::collections::HashSet<_>>(),
-            std::collections::HashSet::from([
-                "claude".into(),
-                "codex".into(),
-                "pi".into(),
-            ]),
+            std::collections::HashSet::from(["claude".into(), "codex".into(), "pi".into(),]),
         );
         assert!(calls[2].is_empty());
         drop(calls);
@@ -2328,8 +2323,7 @@ mod tests {
         // observer OFF 세션은 AGENT_OFFICE_PI_EXT가 없어야 한다.
         let captured = Arc::new(Mutex::new(None));
         let resolver = recording_resolver(captured, vec![]);
-        let (mgr, _events, ctl, dir) =
-            build_with_shell_resolver_and_observation(resolver, false);
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver_and_observation(resolver, false);
 
         mgr.create(req("a1", None)).unwrap();
 

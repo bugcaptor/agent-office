@@ -23,31 +23,6 @@ impl ObserverProvider {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToolCoverage {
-    Complete,
-    BestEffort,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ObserverCapabilities {
-    pub prompt: bool,
-    pub attention: bool,
-    pub stop: bool,
-    pub tool: ToolCoverage,
-}
-
-impl ObserverCapabilities {
-    pub fn complete() -> Self {
-        Self {
-            prompt: true,
-            attention: true,
-            stop: true,
-            tool: ToolCoverage::Complete,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObserverEvent {
     Prompt { text: Option<String> },
@@ -74,16 +49,6 @@ pub struct CommandWrapperSpec {
     pub command: String,
     pub prefix_args: Vec<WrapperArg>,
     pub skip_if_present: Vec<String>,
-}
-
-impl CommandWrapperSpec {
-    pub fn new(command: impl Into<String>) -> Self {
-        Self {
-            command: command.into(),
-            prefix_args: vec![],
-            skip_if_present: vec![],
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,16 +78,6 @@ impl AdapterSessionPlan {
         self.env.append(&mut other.env);
         self.wrappers.append(&mut other.wrappers);
         self.cleanup_paths.append(&mut other.cleanup_paths);
-    }
-
-    pub fn cleanup(&self) {
-        for path in &self.cleanup_paths {
-            if let Err(error) = std::fs::remove_file(path) {
-                if error.kind() != std::io::ErrorKind::NotFound {
-                    eprintln!("observer cleanup failed for {}: {error}", path.display());
-                }
-            }
-        }
     }
 }
 
@@ -172,9 +127,16 @@ pub fn tool_description(body: &[u8]) -> Option<String> {
 mod tests {
     use super::{
         is_command_prompt, message, prompt_text, tool_description, AdapterSessionPlan,
-        CommandWrapperSpec, ObserverCapabilities, ObserverProvider, ObserverSessionContext,
-        ToolCoverage,
+        CommandWrapperSpec, ObserverProvider, ObserverSessionContext,
     };
+
+    fn wrapper(command: &str) -> CommandWrapperSpec {
+        CommandWrapperSpec {
+            command: command.into(),
+            prefix_args: vec![],
+            skip_if_present: vec![],
+        }
+    }
 
     #[test]
     fn observer_json_helpers_preserve_prompt_and_message_rules() {
@@ -230,16 +192,10 @@ mod tests {
         );
         assert_eq!(ObserverProvider::parse("other"), None);
 
-        let capabilities = ObserverCapabilities::complete();
-        assert!(capabilities.prompt);
-        assert!(capabilities.attention);
-        assert!(capabilities.stop);
-        assert_eq!(capabilities.tool, ToolCoverage::Complete);
-
-        let wrapper = CommandWrapperSpec::new("codex");
-        assert_eq!(wrapper.command, "codex");
-        assert!(wrapper.prefix_args.is_empty());
-        assert!(wrapper.skip_if_present.is_empty());
+        let codex_wrapper = wrapper("codex");
+        assert_eq!(codex_wrapper.command, "codex");
+        assert!(codex_wrapper.prefix_args.is_empty());
+        assert!(codex_wrapper.skip_if_present.is_empty());
 
         let context = ObserverSessionContext::new("s1", "http://127.0.0.1/hook");
         assert_eq!(context.session_id, "s1");
@@ -247,12 +203,12 @@ mod tests {
 
         let mut merged = AdapterSessionPlan {
             env: vec![("FIRST".into(), "1".into())],
-            wrappers: vec![CommandWrapperSpec::new("claude")],
+            wrappers: vec![wrapper("claude")],
             cleanup_paths: vec!["first.json".into()],
         };
         merged.merge(AdapterSessionPlan {
             env: vec![("SECOND".into(), "2".into())],
-            wrappers: vec![CommandWrapperSpec::new("codex")],
+            wrappers: vec![wrapper("codex")],
             cleanup_paths: vec!["second.json".into()],
         });
         assert_eq!(merged.env[1], ("SECOND".into(), "2".into()));

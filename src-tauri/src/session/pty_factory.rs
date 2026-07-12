@@ -66,12 +66,7 @@ impl PtyControl for RealControl {
     fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {
         self.master
             .lock()
-            .resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
+            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| io::Error::other(e.to_string()))
     }
     fn kill(&self) -> io::Result<()> {
@@ -85,14 +80,8 @@ struct RealWaiter {
 impl PtyWaiter for RealWaiter {
     fn wait(mut self: Box<Self>) -> ExitOutcome {
         match self.child.wait() {
-            Ok(status) => ExitOutcome {
-                exit_code: Some(status.exit_code() as i32),
-                signal: None,
-            },
-            Err(_) => ExitOutcome {
-                exit_code: None,
-                signal: None,
-            },
+            Ok(status) => ExitOutcome { exit_code: Some(status.exit_code() as i32), signal: None },
+            Err(_) => ExitOutcome { exit_code: None, signal: None },
         }
     }
 }
@@ -101,12 +90,7 @@ impl PtyFactory for PortablePtyFactory {
     fn spawn(&self, o: PtySpawnOptions) -> io::Result<SpawnedPty> {
         let sys = native_pty_system();
         let pair = sys
-            .openpty(PtySize {
-                rows: o.rows,
-                cols: o.cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
+            .openpty(PtySize { rows: o.rows, cols: o.cols, pixel_width: 0, pixel_height: 0 })
             .map_err(to_io)?;
 
         let mut cmd = CommandBuilder::new(&o.shell);
@@ -138,12 +122,7 @@ impl PtyFactory for PortablePtyFactory {
             killer: Mutex::new(killer),
         });
         let waiter = Box::new(RealWaiter { child });
-        Ok(SpawnedPty {
-            reader,
-            writer,
-            control,
-            waiter,
-        })
+        Ok(SpawnedPty { reader, writer, control, waiter })
     }
 }
 
@@ -224,10 +203,9 @@ pub mod fake {
 
     impl PtyWaiter for FakeWaiter {
         fn wait(self: Box<Self>) -> ExitOutcome {
-            self.rx.recv().unwrap_or(ExitOutcome {
-                exit_code: None,
-                signal: None,
-            })
+            self.rx
+                .recv()
+                .unwrap_or(ExitOutcome { exit_code: None, signal: None })
         }
     }
 
@@ -260,8 +238,7 @@ pub mod fake {
         /// decoded as UTF-8 lossily-free (panics on invalid UTF-8, which
         /// would itself indicate a test bug for our text-only protocol).
         pub fn writes_utf8(&self) -> String {
-            String::from_utf8(self.writes.lock().unwrap().clone())
-                .expect("writes were not valid UTF-8")
+            String::from_utf8(self.writes.lock().unwrap().clone()).expect("writes were not valid UTF-8")
         }
 
         /// Raw recorded writes, for tests that care about exact bytes.
@@ -294,10 +271,7 @@ pub mod fake {
         /// session's waiter thread. No-op if already fired.
         pub fn fire_exit(&self, exit_code: i32) {
             if let Some(tx) = self.exit_tx.lock().unwrap().take() {
-                let _ = tx.send(ExitOutcome {
-                    exit_code: Some(exit_code),
-                    signal: None,
-                });
+                let _ = tx.send(ExitOutcome { exit_code: Some(exit_code), signal: None });
             }
         }
 
@@ -305,10 +279,7 @@ pub mod fake {
         /// exit code.
         pub fn fire_exit_signal(&self, signal: i32) {
             if let Some(tx) = self.exit_tx.lock().unwrap().take() {
-                let _ = tx.send(ExitOutcome {
-                    exit_code: None,
-                    signal: Some(signal),
-                });
+                let _ = tx.send(ExitOutcome { exit_code: None, signal: Some(signal) });
             }
         }
 
@@ -371,22 +342,10 @@ pub mod fake {
         output_rx: mpsc::Receiver<Option<Vec<u8>>>,
         exit_rx: mpsc::Receiver<ExitOutcome>,
     ) -> SpawnedPty {
-        let reader = Box::new(PipeReader {
-            rx: output_rx,
-            buf: Vec::new(),
-            pos: 0,
-            eof: false,
-        });
-        let writer = Box::new(RecordingWriter {
-            buf: control.writes.clone(),
-        });
+        let reader = Box::new(PipeReader { rx: output_rx, buf: Vec::new(), pos: 0, eof: false });
+        let writer = Box::new(RecordingWriter { buf: control.writes.clone() });
         let waiter = Box::new(FakeWaiter { rx: exit_rx });
-        SpawnedPty {
-            reader,
-            writer,
-            control,
-            waiter,
-        }
+        SpawnedPty { reader, writer, control, waiter }
     }
 
     /// In-memory `PtyFactory` for unit tests. See module docs above.
@@ -414,14 +373,18 @@ pub mod fake {
         fn spawn(&self, opts: PtySpawnOptions) -> io::Result<SpawnedPty> {
             self.control.record_env(opts.env);
             self.control.record_cwd(opts.cwd);
-            let output_rx =
-                self.output_rx.lock().unwrap().take().ok_or_else(|| {
-                    io::Error::other("FakePtyFactory::spawn called more than once")
-                })?;
-            let exit_rx =
-                self.exit_rx.lock().unwrap().take().ok_or_else(|| {
-                    io::Error::other("FakePtyFactory::spawn called more than once")
-                })?;
+            let output_rx = self
+                .output_rx
+                .lock()
+                .unwrap()
+                .take()
+                .ok_or_else(|| io::Error::other("FakePtyFactory::spawn called more than once"))?;
+            let exit_rx = self
+                .exit_rx
+                .lock()
+                .unwrap()
+                .take()
+                .ok_or_else(|| io::Error::other("FakePtyFactory::spawn called more than once"))?;
 
             Ok(spawned_from(self.control.clone(), output_rx, exit_rx))
         }
@@ -515,10 +478,7 @@ mod tests {
     fn fake_records_writes() {
         let (fac, ctl) = FakePtyFactory::new();
         let mut spawned = fac.spawn(opts()).unwrap();
-        spawned
-            .writer
-            .write_all(b"claude --settings \"x\"\n")
-            .unwrap();
+        spawned.writer.write_all(b"claude --settings \"x\"\n").unwrap();
         assert_eq!(ctl.writes_utf8(), "claude --settings \"x\"\n");
     }
 
@@ -607,20 +567,13 @@ mod tests {
 
         let mut buf = [0u8; 16];
         let n = spawned.reader.read(&mut buf).unwrap();
-        assert_eq!(
-            &buf[..n],
-            b"data",
-            "read must skip the empty chunk and deliver the next data"
-        );
+        assert_eq!(&buf[..n], b"data", "read must skip the empty chunk and deliver the next data");
 
         // Only a genuine close yields Ok(0).
         ctl.push_output(b"");
         ctl.close_output();
         let n = spawned.reader.read(&mut buf).unwrap();
-        assert_eq!(
-            n, 0,
-            "Ok(0) only at real EOF, even with a trailing empty chunk"
-        );
+        assert_eq!(n, 0, "Ok(0) only at real EOF, even with a trailing empty chunk");
     }
 
     #[test]

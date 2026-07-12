@@ -193,9 +193,7 @@ mod tests {
         let dir = scratch_dir();
         let store = PngStore::new(dir.clone(), MAX_PORTRAIT_BYTES);
         let encoded = b64(&tiny_png_bytes());
-        let err = store
-            .save("nope", &encoded, &["p1".to_string()])
-            .unwrap_err();
+        let err = store.save("nope", &encoded, &["p1".to_string()]).unwrap_err();
         assert!(matches!(err, PngStoreError::UnknownAgent));
         // 파일이 만들어지지 않아야 한다.
         assert!(!dir.join("nope.png").exists());
@@ -243,10 +241,7 @@ mod tests {
         let encoded = b64(&tiny_png_bytes());
         for bad in ["../evil", "a/b", "a\\b", "..", ""] {
             let err = store.save(bad, &encoded, &[bad.to_string()]).unwrap_err();
-            assert!(
-                matches!(err, PngStoreError::InvalidId),
-                "id {bad:?} must be rejected"
-            );
+            assert!(matches!(err, PngStoreError::InvalidId), "id {bad:?} must be rejected");
             assert!(store.load(bad).is_err(), "load must also guard {bad:?}");
             assert!(store.delete(bad).is_err(), "delete must also guard {bad:?}");
         }
@@ -285,10 +280,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().into_string().unwrap())
             .collect();
-        assert!(
-            names.iter().any(|n| n == "p1.png"),
-            "final file present: {names:?}"
-        );
+        assert!(names.iter().any(|n| n == "p1.png"), "final file present: {names:?}");
         assert!(
             !names.iter().any(|n| n.contains(".tmp")),
             "no temp file should remain after save: {names:?}"
@@ -308,15 +300,11 @@ mod tests {
         let store = PngStore::new(dir.clone(), MAX_SPRITE_BYTES);
         let mut big = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
         big.resize(MAX_SPRITE_BYTES + 1, 0u8);
-        let err = store
-            .save("p1", &b64(&big), &["p1".to_string()])
-            .unwrap_err();
+        let err = store.save("p1", &b64(&big), &["p1".to_string()]).unwrap_err();
         assert!(matches!(err, PngStoreError::TooLarge(_)));
         // 같은 페이로드도 portraits 상한으로는 통과한다.
         let store2 = PngStore::new(dir.clone(), MAX_PORTRAIT_BYTES);
-        store2
-            .save("p1", &b64(&big), &["p1".to_string()])
-            .expect("2MiB 상한으로는 저장됨");
+        store2.save("p1", &b64(&big), &["p1".to_string()]).expect("2MiB 상한으로는 저장됨");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

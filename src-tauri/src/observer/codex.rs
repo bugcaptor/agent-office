@@ -4,9 +4,8 @@ use base64::Engine as _;
 
 use super::event::{prompt_text, tool_description};
 use super::{
-    AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError,
-    ObserverCapabilities, ObserverEvent, ObserverProvider, ObserverSessionContext, RawObserverHook,
-    ToolCoverage, WrapperArg,
+    AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError, ObserverEvent,
+    ObserverProvider, ObserverSessionContext, RawObserverHook, WrapperArg,
 };
 
 const CODEX_PROMPT_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_USER_PROMPT";
@@ -86,15 +85,6 @@ impl CodexAdapter {
 impl ObserverAdapter for CodexAdapter {
     fn provider(&self) -> ObserverProvider {
         ObserverProvider::Codex
-    }
-
-    fn capabilities(&self) -> ObserverCapabilities {
-        ObserverCapabilities {
-            prompt: true,
-            attention: true,
-            stop: true,
-            tool: ToolCoverage::BestEffort,
-        }
     }
 
     fn prepare_session(
