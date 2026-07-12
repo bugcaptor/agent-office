@@ -22,7 +22,7 @@ export function FirstRunDialog() {
       <div className="pixel-panel first-run-dialog">
         <h2 className="pixel-title">Agent Office 시작하기</h2>
         <p>
-          Claude Code 연동 기능은 선택 사항입니다. 지금 끄고 시작해도 언제든
+          Claude Code / Pi 연동 기능은 선택 사항입니다. 지금 끄고 시작해도 언제든
           하단 바의 ⚙ 설정에서 켤 수 있습니다.
         </p>
         <SettingsForm value={value} onChange={(p) => setValue((v) => ({ ...v, ...p }))} />

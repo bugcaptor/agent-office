@@ -1,7 +1,7 @@
 // src-tauri/src/session/bash_wrapper.rs
 //
 // Git Bash time-tracking fix (Windows shell-selection feature; see the
-// PowerShell `CLAUDE_WRAPPER_PS`/macOS-Linux `zsh_wrapper` siblings in
+// PowerShell `AGENT_WRAPPER_PS`/macOS-Linux `zsh_wrapper` siblings in
 // `session::shells`/`session::zsh_wrapper` for the same fix on those
 // shells): plain `claude` never gets `--settings <per-session file>`, so
 // hooks never fire. bash has a simple, direct fix zsh lacks: `bash -i
@@ -20,6 +20,13 @@ claude() {
     command claude --settings "$AGENT_OFFICE_SETTINGS" "$@"
   else
     command claude "$@"
+  fi
+}
+pi() {
+  if [ -n "$AGENT_OFFICE_PI_EXT" ]; then
+    command pi -e "$AGENT_OFFICE_PI_EXT" "$@"
+  else
+    command pi "$@"
   fi
 }
 "#;
@@ -96,6 +103,25 @@ mod tests {
         assert!(
             bashrc.contains(r#"" $* " != *" --settings "*"#),
             "must guard against double --settings injection: {bashrc}"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn bashrc_defines_a_pi_wrapper_function_that_injects_the_extension() {
+        let base = scratch_dir();
+        let path = write_shim(&base).unwrap();
+        let bashrc = std::fs::read_to_string(&path).unwrap();
+
+        assert!(bashrc.contains("pi() {"), "must define pi() function: {bashrc}");
+        assert!(
+            bashrc.contains("command pi -e \"$AGENT_OFFICE_PI_EXT\""),
+            "must inject -e from AGENT_OFFICE_PI_EXT: {bashrc}"
+        );
+        assert!(
+            bashrc.contains("command pi \"$@\""),
+            "must fall back to plain pi: {bashrc}"
         );
 
         let _ = std::fs::remove_dir_all(&base);

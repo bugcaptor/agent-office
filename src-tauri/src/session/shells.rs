@@ -11,7 +11,7 @@
 // 위해 부작용을 트레잇 뒤로 숨기는 것과 같은 패턴. 프로덕션은 `RealProbe`,
 // 테스트는 `FakeProbe`(아래 tests 모듈)를 주입한다.
 //
-// `CLAUDE_WRAPPER_PS`/`encoded_command`는 `session::manager`에 있던 것을
+// `AGENT_WRAPPER_PS`/`encoded_command`는 `session::manager`에 있던 것을
 // 그대로(verbatim) 옮겨왔다 -- Windows PowerShell 계열(powershell.exe,
 // pwsh.exe) 모두 동일한 래퍼 스크립트를 `-EncodedCommand`로 주입해
 // `claude` 호출 시 `--settings $env:AGENT_OFFICE_SETTINGS`를 투명하게
@@ -141,12 +141,21 @@ fn utf16le_to_string(bytes: &[u8]) -> String {
 /// so no recursion. Skips injection when the user passes --settings.
 /// (session::manager에서 verbatim 이전 -- powershell.exe/pwsh.exe 공용.)
 #[cfg(windows)]
-const CLAUDE_WRAPPER_PS: &str = r#"
+const AGENT_WRAPPER_PS: &str = r#"
 function claude {
     $cmd = Get-Command claude -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $cmd) { Write-Error 'claude executable not found on PATH'; return }
     if ($env:AGENT_OFFICE_SETTINGS -and ($args -notcontains '--settings')) {
         & $cmd.Source --settings $env:AGENT_OFFICE_SETTINGS @args
+    } else {
+        & $cmd.Source @args
+    }
+}
+function pi {
+    $cmd = Get-Command pi -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $cmd) { Write-Error 'pi executable not found on PATH'; return }
+    if ($env:AGENT_OFFICE_PI_EXT) {
+        & $cmd.Source -e $env:AGENT_OFFICE_PI_EXT @args
     } else {
         & $cmd.Source @args
     }
@@ -164,7 +173,7 @@ fn encoded_command(script: &str) -> String {
 
 #[cfg(windows)]
 fn ps_wrapper_args() -> Vec<String> {
-    vec!["-NoExit".to_string(), "-EncodedCommand".to_string(), encoded_command(CLAUDE_WRAPPER_PS)]
+    vec!["-NoExit".to_string(), "-EncodedCommand".to_string(), encoded_command(AGENT_WRAPPER_PS)]
 }
 
 #[cfg(windows)]
@@ -445,6 +454,8 @@ mod tests {
         assert!(script.contains("function claude"), "{script}");
         assert!(script.contains("--settings $env:AGENT_OFFICE_SETTINGS"), "{script}");
         assert!(script.contains("-CommandType Application,ExternalScript"), "{script}");
+        assert!(script.contains("function pi"), "{script}");
+        assert!(script.contains("-e $env:AGENT_OFFICE_PI_EXT"), "{script}");
     }
 
     // ---- resolve_with: powershell/pwsh ----

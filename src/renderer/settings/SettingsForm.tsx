@@ -38,11 +38,11 @@ export function SettingsForm({
           onChange={(e) => onChange({ claudeHooksEnabled: e.target.checked })}
         />
         <span>
-          <strong>알림·시간측정 (Claude Code 훅)</strong>
+          <strong>알림·시간측정 (CLI 훅 · Claude Code / Pi)</strong>
           <small>
-            세션 안의 claude에 훅 설정을 주입하고 127.0.0.1 로컬 서버로 알림을
-            받습니다. 꺼져 있으면 느낌표 알림과 세션 시간측정이 동작하지
-            않습니다. 변경은 새 세션부터 적용됩니다.
+            세션 안의 claude(--settings)와 pi(-e 확장)에 훅을 주입하고 127.0.0.1
+            로컬 서버로 알림을 받습니다. 꺼져 있으면 느낌표 알림과 세션 시간측정이
+            동작하지 않습니다. 변경은 새 세션부터 적용됩니다.
           </small>
         </span>
       </label>

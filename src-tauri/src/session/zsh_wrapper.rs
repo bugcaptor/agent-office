@@ -1,6 +1,6 @@
 // src-tauri/src/session/zsh_wrapper.rs
 //
-// macOS/Linux zsh time-tracking fix (see the Windows `CLAUDE_WRAPPER_PS`
+// macOS/Linux zsh time-tracking fix (see the Windows `AGENT_WRAPPER_PS`
 // sibling in session::manager for the same fix on that platform):
 // plain `claude` never gets `--settings <per-session file>`, so hooks never
 // fire. Windows solves this by injecting a `claude` PowerShell function into
@@ -42,12 +42,22 @@ const ZSHRC: &str = r#"[[ -f "$AGENT_OFFICE_REAL_ZDOTDIR/.zshrc" ]] && source "$
 
 # claude 래퍼: AGENT_OFFICE_SETTINGS가 있으면 --settings를 투명하게 주입.
 # 사용자 rc가 정의한 동명 함수/알리아스보다 나중에 정의되므로 우선한다.
-# (Windows의 CLAUDE_WRAPPER_PS와 동일한 의미론 — --settings를 이미 넘기면 주입 안 함)
+# (Windows의 AGENT_WRAPPER_PS와 동일한 의미론 — --settings를 이미 넘기면 주입 안 함)
 claude() {
   if [[ -n "$AGENT_OFFICE_SETTINGS" && " $* " != *" --settings "* ]]; then
     command claude --settings "$AGENT_OFFICE_SETTINGS" "$@"
   else
     command claude "$@"
+  fi
+}
+
+# pi(pi.dev) 래퍼: AGENT_OFFICE_PI_EXT가 있으면 확장을 -e로 투명 주입.
+# claude 래퍼와 동일 의미론 — pi의 -e는 반복 가능/additive라 이중주입 가드 불필요.
+pi() {
+  if [[ -n "$AGENT_OFFICE_PI_EXT" ]]; then
+    command pi -e "$AGENT_OFFICE_PI_EXT" "$@"
+  else
+    command pi "$@"
   fi
 }
 
@@ -134,6 +144,25 @@ mod tests {
     }
 
     #[test]
+    fn zshrc_defines_a_pi_wrapper_function_that_injects_the_extension() {
+        let base = scratch_dir();
+        write_shim(&base).unwrap();
+        let zshrc = std::fs::read_to_string(base.join(".zshrc")).unwrap();
+
+        assert!(zshrc.contains("pi() {"), "must define pi() function: {zshrc}");
+        assert!(
+            zshrc.contains("command pi -e \"$AGENT_OFFICE_PI_EXT\""),
+            "must inject -e from AGENT_OFFICE_PI_EXT: {zshrc}"
+        );
+        assert!(
+            zshrc.contains("command pi \"$@\""),
+            "must fall back to plain pi when the env is unset: {zshrc}"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn zshenv_sources_the_users_real_home_zshenv() {
         let base = scratch_dir();
         write_shim(&base).unwrap();
@@ -191,7 +220,7 @@ mod tests {
             .arg("-l")
             .arg("-i")
             .arg("-c")
-            .arg(r#"whence -w claude; print -r -- "ZDOTDIR=${ZDOTDIR:-unset}""#)
+            .arg(r#"whence -w claude; whence -w pi; print -r -- "ZDOTDIR=${ZDOTDIR:-unset}""#)
             .env_clear()
             .env("HOME", &empty_home)
             .env("TERM", "dumb")
@@ -204,6 +233,11 @@ mod tests {
         assert!(
             stdout.contains("claude: function"),
             "expected `claude: function` in zsh output, got: {stdout:?} (stderr: {:?})",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            stdout.contains("pi: function"),
+            "expected `pi: function` in zsh output, got: {stdout:?} (stderr: {:?})",
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(

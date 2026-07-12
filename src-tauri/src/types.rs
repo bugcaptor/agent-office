@@ -143,7 +143,7 @@ pub struct CreateSessionRequest {
     /// 세션은 자동 실행 없이 셸만 띄운다. 그래도 셸이 `claude` 래퍼를 정의하므로
     /// 사용자가 그냥 `claude`만 입력해도 투명하게 `--settings
     /// "$AGENT_OFFICE_SETTINGS"`가 붙어 시간 집계 훅이 발화한다: Windows는
-    /// PowerShell 함수(`session::shells::CLAUDE_WRAPPER_PS`) 또는 Git Bash의
+    /// PowerShell 함수(`session::shells::AGENT_WRAPPER_PS`) 또는 Git Bash의
     /// `--rcfile` 심(`session::bash_wrapper`), macOS/Linux의 zsh는 ZDOTDIR
     /// 셈(`session::zsh_wrapper`)으로 주입한다.
     pub autostart_claude: Option<bool>,

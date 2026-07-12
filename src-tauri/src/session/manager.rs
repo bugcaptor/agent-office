@@ -28,6 +28,7 @@ use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnO
 use crate::session::shells;
 use crate::session_events::types::{AgentEventProfile, SessionStartedEvent};
 #[cfg(not(windows))]
+use crate::session::pi_extension;
 use crate::session::zsh_wrapper;
 use crate::state::{AppEvents, SessionRegistry};
 use crate::types::*;
@@ -220,10 +221,22 @@ impl SessionManager {
         if let (Some(p), Some(sp)) = (port, settings_path.as_ref()) {
             env.push(("AGENT_OFFICE_HOOK_URL".into(), format!("http://127.0.0.1:{p}/hook")));
             env.push(("AGENT_OFFICE_SETTINGS".into(), sp.to_string_lossy().into_owned()));
+            // Pi(pi.dev) 지원: 정적 확장 파일을 쓰고 그 경로를 env로 넘긴다.
+            // `pi()` 셸 래퍼(zsh/bash/PowerShell)가 이 값을 `-e`로 로드해 Pi
+            // 라이프사이클 이벤트를 같은 /hook 엔드포인트로 POST한다. 전 플랫폼
+            // 공통(플랫폼별 주입은 셸 래퍼가 담당). 실패는 비치명 — zsh 심과
+            // 동일하게 eprintln! 후 계속하며, env 부재 시 래퍼는 `command pi`로
+            // 자동 폴백한다. (Claude `--settings`와 무관하게 병존.)
+            match pi_extension::ensure_extension() {
+                Ok(path) => {
+                    env.push(("AGENT_OFFICE_PI_EXT".into(), path.to_string_lossy().into_owned()))
+                }
+                Err(e) => eprintln!("agent-office: failed to write pi extension: {e}"),
+            }
             // macOS/Linux zsh time-tracking fix (Task B): inject a ZDOTDIR shim so
             // the spawned zsh defines a `claude` wrapper that transparently adds
             // `--settings $AGENT_OFFICE_SETTINGS` (see session::zsh_wrapper and
-            // the Windows CLAUDE_WRAPPER_PS sibling in session::shells). Windows
+            // the Windows AGENT_WRAPPER_PS sibling in session::shells). Windows
             // PowerShell/pwsh and Git Bash get their own wrapper injection inside
             // `session::shells::resolve_with`. 훅 OFF면 심을 설치하지 않는다
             // (래퍼가 주입할 settings 파일 자체가 없음).
@@ -1730,6 +1743,46 @@ mod tests {
         let rec = rec.as_ref().expect("resolver must have been called");
         assert_eq!(rec.selected.as_deref(), Some("git-bash"));
         assert!(!rec.hooks_on, "hooks are OFF for this session -> hooks_on must be false");
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
+    async fn create_pushes_pi_ext_env_when_hooks_on() {
+        // hooks ON(기본 port Some) 세션은 AGENT_OFFICE_PI_EXT를 spawn env에 실어야
+        // 한다 — `pi()` 셸 래퍼가 이 경로를 -e로 로드하는 신호.
+        let captured = Arc::new(Mutex::new(None));
+        let resolver = recording_resolver(captured, vec![]);
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver(resolver);
+
+        mgr.create(req("a1", None)).unwrap();
+
+        let env = ctl.spawned_env();
+        let pair = env.iter().find(|(k, _)| k == "AGENT_OFFICE_PI_EXT");
+        let (_, val) = pair.expect("AGENT_OFFICE_PI_EXT must be injected when hooks are ON");
+        assert!(
+            val.ends_with("agent-office-pi.ts"),
+            "AGENT_OFFICE_PI_EXT must point at the extension file, got: {val}"
+        );
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
+    async fn create_does_not_push_pi_ext_env_when_hooks_off() {
+        // hooks OFF(port None) 세션은 AGENT_OFFICE_PI_EXT가 없어야 하고, 그러면
+        // 래퍼가 `command pi`로 자동 폴백한다.
+        let captured = Arc::new(Mutex::new(None));
+        let resolver = recording_resolver(captured, vec![]);
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver_and_port(resolver, None);
+
+        mgr.create(req("a1", None)).unwrap();
+
+        let env = ctl.spawned_env();
+        assert!(
+            !env.iter().any(|(k, _)| k == "AGENT_OFFICE_PI_EXT"),
+            "AGENT_OFFICE_PI_EXT must NOT be injected when hooks are OFF: {env:?}"
+        );
 
         cleanup(&ctl, &dir);
     }
