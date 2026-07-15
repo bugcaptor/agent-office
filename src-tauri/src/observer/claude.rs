@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::event::{message, prompt_text};
+use super::event::{agent_id, message, prompt_text};
 use super::{
     AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError, ObserverEvent,
     ObserverProvider, ObserverSessionContext, RawObserverHook, WrapperArg,
@@ -94,6 +94,17 @@ impl ObserverAdapter for ClaudeAdapter {
     }
 
     fn map_hook(&self, raw: &RawObserverHook<'_>) -> Option<ObserverEvent> {
+        // Subagent-internal hooks (agent_id present) must never open or close the main
+        // turn boundary (opening via Prompt or closing via Stop). Every time a Task
+        // subagent finishes an internal turn, Claude Code fires a Stop hook with
+        // agent_id populated; treating that as main-session termination grays out the
+        // label. SubagentStart/Stop are lifecycle signals with agent_id normally
+        // present, so let them pass through. Tool (PostToolUse) / Attention
+        // (Notification) are heartbeat/attention signals, so let them pass through too.
+        if matches!(raw.event_name, "Stop" | "UserPromptSubmit") && agent_id(raw.body).is_some() {
+            return None;
+        }
+
         match raw.event_name {
             "UserPromptSubmit" => Some(ObserverEvent::Prompt {
                 text: prompt_text(raw.body),
@@ -239,5 +250,50 @@ mod tests {
                 Some(ObserverEvent::Stop { message: None }),
             );
         }
+    }
+
+    #[test]
+    fn subagent_internal_hooks_cannot_open_or_close_the_main_turn() {
+        let adapter = ClaudeAdapter::new(scratch_dir());
+        let map = |event_name, body| adapter.map_hook(&RawObserverHook { event_name, body });
+
+        assert_eq!(map("Stop", br#"{"agent_id":"sub-1","message":"m"}"#), None,);
+        assert_eq!(
+            map("Stop", br#"{"message":"m"}"#),
+            Some(ObserverEvent::Stop {
+                message: Some("m".into()),
+            }),
+        );
+        assert_eq!(
+            map("UserPromptSubmit", br#"{"agent_id":"sub-1","prompt":"x"}"#,),
+            None,
+        );
+        assert_eq!(
+            map("PostToolUse", br#"{"agent_id":"sub-1"}"#),
+            Some(ObserverEvent::Tool),
+        );
+        assert_eq!(
+            map(
+                "Notification",
+                br#"{"agent_id":"sub-1","message":"needs permission"}"#,
+            ),
+            Some(ObserverEvent::Attention {
+                message: Some("needs permission".into()),
+            }),
+        );
+        assert_eq!(
+            map("SubagentStart", br#"{"agent_id":"sub-1"}"#),
+            Some(ObserverEvent::SubStart),
+        );
+        assert_eq!(
+            map("SubagentStop", br#"{"agent_id":"sub-1"}"#),
+            Some(ObserverEvent::SubStop),
+        );
+        assert_eq!(
+            map("Stop", br#"{"agent_id":"","message":"m"}"#),
+            Some(ObserverEvent::Stop {
+                message: Some("m".into()),
+            }),
+        );
     }
 }

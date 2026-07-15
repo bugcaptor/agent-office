@@ -117,6 +117,12 @@ pub fn message(body: &[u8]) -> Option<String> {
     (!message.trim().is_empty()).then(|| message.to_string())
 }
 
+pub fn agent_id(body: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let agent_id = value.get("agent_id")?.as_str()?;
+    (!agent_id.trim().is_empty()).then(|| agent_id.to_string())
+}
+
 pub fn tool_description(body: &[u8]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
     let description = value.get("tool_input")?.get("description")?.as_str()?;
@@ -126,7 +132,7 @@ pub fn tool_description(body: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_command_prompt, message, prompt_text, tool_description, AdapterSessionPlan,
+        agent_id, is_command_prompt, message, prompt_text, tool_description, AdapterSessionPlan,
         CommandWrapperSpec, ObserverProvider, ObserverSessionContext,
     };
 
@@ -154,6 +160,20 @@ mod tests {
             tool_description(br#"{"tool_input":{"description":"approval detail"}}"#).as_deref(),
             Some("approval detail"),
         );
+    }
+
+    #[test]
+    fn agent_id_reads_only_non_empty_top_level_strings() {
+        assert_eq!(
+            agent_id(br#"{"agent_id":"uuid-123"}"#).as_deref(),
+            Some("uuid-123")
+        );
+        assert_eq!(agent_id(br#"{}"#), None);
+        assert_eq!(agent_id(b"not json"), None);
+        assert_eq!(agent_id(br#"{"agent_id":""}"#), None);
+        assert_eq!(agent_id(br#"{"agent_id":"   "}"#), None);
+        assert_eq!(agent_id(br#"{"agent_id":42}"#), None);
+        assert_eq!(agent_id(br#"{"agent_id":null}"#), None);
     }
 
     #[test]
