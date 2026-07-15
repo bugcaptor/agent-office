@@ -94,11 +94,19 @@ impl PtyFactory for PortablePtyFactory {
             .map_err(to_io)?;
 
         let mut cmd = CommandBuilder::new(&o.shell);
+        // portable-pty 0.8.1 rebuilds the Windows base environment from the
+        // registry after reading the live process environment, which replaces
+        // process-only overrides such as PATH. Re-apply the actual parent env
+        // so live parent values win just as they do for ordinary child processes.
+        #[cfg(windows)]
+        for (key, value) in std::env::vars_os() {
+            cmd.env(key, value);
+        }
         for a in &o.args {
             cmd.arg(a);
         }
         cmd.cwd(&o.cwd);
-        // portable-pty CommandBuilder는 기본적으로 부모 env를 상속한다. 우리는 override만 얹는다.
+        // Session-specific values take precedence over the inherited snapshot.
         for (k, v) in &o.env {
             cmd.env(k, v);
         }
@@ -403,8 +411,10 @@ pub mod fake {
     }
 
     impl PtyFactory for MultiFakePtyFactory {
-        fn spawn(&self, _opts: PtySpawnOptions) -> io::Result<SpawnedPty> {
+        fn spawn(&self, opts: PtySpawnOptions) -> io::Result<SpawnedPty> {
             let (control, output_rx, exit_rx) = fresh_control();
+            control.record_env(opts.env);
+            control.record_cwd(opts.cwd);
             self.controls.lock().unwrap().push(control.clone());
             Ok(spawned_from(control, output_rx, exit_rx))
         }
@@ -436,6 +446,22 @@ mod tests {
     use super::fake::FakePtyFactory;
     use super::{PtyFactory, PtySpawnOptions};
     use std::io::{Read, Write};
+
+    #[cfg(windows)]
+    static PROCESS_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[cfg(windows)]
+    struct PathRestore(Option<std::ffi::OsString>);
+
+    #[cfg(windows)]
+    impl Drop for PathRestore {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(value) => std::env::set_var("PATH", value),
+                None => std::env::remove_var("PATH"),
+            }
+        }
+    }
 
     fn opts() -> PtySpawnOptions {
         PtySpawnOptions {
@@ -555,5 +581,65 @@ mod tests {
         let (fac, _ctl) = FakePtyFactory::new();
         fac.spawn(opts()).unwrap();
         assert!(fac.spawn(opts()).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "spawns a real Windows PTY"]
+    fn portable_factory_preserves_live_parent_path() {
+        use super::PortablePtyFactory;
+
+        let _env_guard = PROCESS_ENV_LOCK.lock().unwrap();
+        let old_path = std::env::var_os("PATH");
+        let _restore = PathRestore(old_path.clone());
+        let marker = format!(
+            r"C:\agent-office-parent-path-sentinel-{}",
+            std::process::id()
+        );
+        let mut paths = vec![std::path::PathBuf::from(&marker)];
+        if let Some(old_path) = old_path {
+            paths.extend(std::env::split_paths(&old_path));
+        }
+        std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
+
+        let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+        let shell = std::path::Path::new(&system_root)
+            .join(r"System32\WindowsPowerShell\v1.0\powershell.exe")
+            .to_string_lossy()
+            .into_owned();
+        let output_path = std::env::temp_dir().join(format!(
+            "agent-office-parent-path-{}.txt",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&output_path);
+        let output_path_ps = output_path.to_string_lossy().replace('\'', "''");
+        let spawned = PortablePtyFactory
+            .spawn(PtySpawnOptions {
+                shell,
+                args: vec![
+                    "-NoLogo".into(),
+                    "-NoProfile".into(),
+                    "-NonInteractive".into(),
+                    "-Command".into(),
+                    format!("$env:Path | Set-Content -LiteralPath '{output_path_ps}' -NoNewline"),
+                ],
+                cols: 240,
+                rows: 24,
+                cwd: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+                env: vec![],
+            })
+            .unwrap();
+
+        let outcome = spawned.waiter.wait();
+        assert_eq!(outcome.exit_code, Some(0));
+        let output = std::fs::read_to_string(&output_path).unwrap();
+        assert!(
+            output.contains(&marker),
+            "live parent PATH marker was lost before the PTY child: {output:?}"
+        );
+        std::fs::remove_file(output_path).unwrap();
     }
 }

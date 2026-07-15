@@ -80,7 +80,7 @@ mod tests {
     use crate::types::AgentProfile;
 
     // Unique scratch dir under the OS temp dir, matching the convention
-    // used in notification/hook_settings.rs and session/manager.rs (no
+    // used in session/manager.rs and observer adapter tests (no
     // `tempfile` dependency needed -- `uuid` is already available).
     fn scratch_file() -> PathBuf {
         std::env::temp_dir()

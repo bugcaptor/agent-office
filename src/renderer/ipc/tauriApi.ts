@@ -53,12 +53,12 @@ function safeInvoke<T>(cb: (payload: T) => void, payload: T): void {
 
 export const tauriApi: AgentOfficeApi = {
   async createSession(agentId, opts) {
-    // `autostartClaude` is not part of the frozen `opts` param — the backend
-    // defaults to a plain shell (no auto-launch) when omitted. Time-tracking
-    // hooks still fire because the spawned shell defines a `claude` wrapper
-    // that transparently injects `--settings "$AGENT_OFFICE_SETTINGS"`:
-    // Windows via a PowerShell wrapper function, macOS/Linux zsh via a
-    // ZDOTDIR shim. Other shells (bash, fish, ...) are not covered yet.
+    // `autostartClaude` is a frozen backward-compat wire field, not part of
+    // these frozen renderer options; omission defaults to false, and the
+    // profile's startupCommand decides which CLI (if any) auto-launches.
+    // Observation-enabled new terminals define both direct `claude`/`codex`
+    // wrappers via Windows PowerShell/pwsh functions, a Git Bash rcfile, or the
+    // supported zsh ZDOTDIR shim. WSL observer wrapping remains unsupported.
     return await invoke(Commands.createSession, { agentId, opts: opts ?? null });
   },
 
@@ -118,8 +118,8 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.deleteSprite, { agentId });
   },
 
-  async summarizeText(instruction, text) {
-    return await invoke(Commands.summarizeText, { instruction, text });
+  async summarizeText(provider, instruction, text) {
+    return await invoke(Commands.summarizeText, { provider, instruction, text });
   },
 
   async generateSpriteImage(description) {

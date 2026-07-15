@@ -25,6 +25,14 @@ import type { ActivityEvent, AppSettings, SessionState } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 
 const MAX_EXCERPT = 80;
+const DEFAULT_APP_SETTINGS: AppSettings = {
+  version: 1,
+  summarizerEnabled: false,
+  summaryProvider: "claude",
+  observerEnabled: false,
+  soundEnabled: true,
+  soundVolume: 0.5,
+};
 
 /**
  * 턴이 방금 종료됐으면(turns 증가) 그 턴의 시계열 기록을 로컬 로그에 append한다.
@@ -168,11 +176,16 @@ interface AppState {
   /** 스토어 갱신 + 백엔드 저장(fire-and-forget). */
   updateAppSettings(
     patch: Partial<
-      Pick<AppSettings, "claudeCliEnabled" | "claudeHooksEnabled" | "soundEnabled" | "soundVolume">
-    >
+      Pick<
+        AppSettings,
+        "summarizerEnabled" | "summaryProvider" | "observerEnabled" | "soundEnabled" | "soundVolume"
+      >
+    >,
   ): void;
   /** 첫 실행 온보딩 선택 저장 + firstRun 종료. */
-  completeFirstRun(choice: { claudeCliEnabled: boolean; claudeHooksEnabled: boolean }): void;
+  completeFirstRun(
+    choice: Pick<AppSettings, "summarizerEnabled" | "summaryProvider" | "observerEnabled">,
+  ): void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -193,13 +206,7 @@ export const useAppStore = create<AppState>()(
     memoryWorkedBaselineMs: 0,
     taskLabels: {},
     terminalEpochs: {},
-    appSettings: {
-      version: 1,
-      claudeCliEnabled: false,
-      claudeHooksEnabled: false,
-      soundEnabled: true,
-      soundVolume: 0.5,
-    },
+    appSettings: DEFAULT_APP_SETTINGS,
     settingsFirstRun: false,
 
     addAgent: (profile) =>

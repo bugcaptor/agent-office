@@ -1,23 +1,22 @@
 // src/renderer/labels/summarizer.ts
 //
-// 머리 위 라벨용 LLM 요약기. 로컬 `claude` CLI 헤드리스 호출로
-// 요약한다(haiku, --max-turns 1 — src-tauri/src/claude_cli.rs). store의
-// taskLabels를 구독해 goal(세션 첫 프롬프트, 1회)/currentSummary(프롬프트
-// 마다)를 채운다.
+// 머리 위 라벨용 LLM 요약기. 설정에서 캡처한 로컬 CLI provider로 요약한다.
+// store의 taskLabels를 구독해 goal(세션 첫 프롬프트, 1회)/
+// currentSummary(프롬프트마다)를 채운다.
 //
-// 실패 정책: `claude` CLI 미설치("claude-not-found") → 앱 실행 동안 영구
-// 비활성(원문 폴백은 UI 몫). 그 외 호출 실패 → agent별 30초 쿨다운 후 다음
-// store 변화 때 재시도. 원문이 그 사이 바뀌면(stale) 결과를 폐기한다 —
-// store의 현재 값과 요청 당시 원문을 비교. 응답이 메타 발언·깨짐·과길이라
+// 실패 정책: 선택된 CLI 미설치("${provider}-not-found") → 그 provider만 앱
+// 실행 동안 비활성(원문 폴백은 UI 몫). 그 외 호출 실패 → agent별 30초
+// 쿨다운 후 다음 store 변화 때 재시도한다. 응답이 메타 발언·깨짐·과길이라
 // sanitizeSummary가 거부하면(null) 동일하게 30초 쿨다운 후 재시도한다.
 //
-// opt-in 게이트: appStore.appSettings.claudeCliEnabled=false면 요청 자체를
-// 보내지 않는다(원문 폴백). ON 상태에서 레이스로 "claude-cli-disabled"
+// opt-in 게이트: appStore.appSettings.summarizerEnabled=false면 요청 자체를
+// 보내지 않는다(원문 폴백). ON 상태에서 레이스로 "summarizer-disabled"
 // 에러를 받으면(설정이 막 꺼진 경합) 쿨다운/영구비활성 없이 그냥 무시한다 —
 // 스토어 설정이 단일 진실원이므로 다음 요청은 게이트가 이미 최신값으로 막거나 통과시킨다.
 import { useAppStore } from "../store/appStore";
 import type { AgentTaskLabel } from "../store/types";
 import { tauriApi } from "../ipc/tauriApi";
+import type { SummaryProvider } from "@shared/types";
 
 export const GOAL_SYSTEM_PROMPT =
   "너는 코딩 세션 라벨 생성기다. 아래 첫 사용자 지시에서 세션 목표를 한국어 명사구 하나로 뽑아라. 규칙: 12자 이내, 한 줄, 한국어만. 사과·설명·따옴표·머리말 금지. 명령어나 잡담이 섞이면 실제 의도만 추려라. 판단 불가면 정확히 '작업 중'만 출력. 예) 로그인 버그 고쳐줘 → 로그인 버그 수정";
@@ -39,75 +38,136 @@ export function sanitizeSummary(raw: string): string | null {
   return s;
 }
 
+type SummaryKind = "goal" | "current";
+
 export interface SummarizerDeps {
-  summarizeFn?: (instruction: string, text: string) => Promise<string>;
+  summarizeFn?: (
+    provider: SummaryProvider,
+    instruction: string,
+    text: string,
+  ) => Promise<string>;
   now?: () => number;
 }
 
-type SummaryKind = "goal" | "current";
+interface RequestIdentity {
+  agentId: string;
+  provider: SummaryProvider;
+  kind: SummaryKind;
+  sourceText: string;
+  sessionId: string;
+  latestPromptAt?: number;
+}
 
 /**
  * store 구독을 설치하고 해제 함수를 돌려준다. 앱 부트에서 1회 호출
  * (bootstrap.ts). deps는 테스트 주입용 — 실제 앱은 인자 없이 부른다.
  */
 export function installTaskLabelSummarizer(deps: SummarizerDeps = {}): () => void {
-  const summarizeFn = deps.summarizeFn ?? ((instruction, text) => tauriApi.summarizeText(instruction, text));
+  const summarizeFn =
+    deps.summarizeFn ??
+    ((provider, instruction, text) => tauriApi.summarizeText(provider, instruction, text));
   const now = deps.now ?? Date.now;
 
-  const cache = new Map<string, string>(); // `${kind}|${원문}` -> 요약
+  const cache = new Map<string, string>(); // `${provider}|${kind}|${원문}` -> 요약
   const inflight = new Set<string>(); // cache와 같은 키
+  // provider 변경과 무관한 Agent Office identity별 활성 요청 소유권.
+  const activeIdentityKeys = new Set<string>();
   const cooldownUntil = new Map<string, number>(); // agentId -> epoch ms
-  let disabled = false; // claude CLI 미설치 확인 시 true — 앱 실행 동안 영구
+  const disabledProviders = new Set<SummaryProvider>();
 
-  /** stale 가드를 통과할 때만 store에 반영한다. */
-  function apply(agentId: string, kind: SummaryKind, sourceText: string, summary: string): void {
-    const label = useAppStore.getState().taskLabels[agentId];
-    if (!label) return;
-    if (kind === "goal" && label.firstPromptText === sourceText) {
-      useAppStore.getState().setTaskLabelSummary(agentId, { goal: summary });
-    } else if (kind === "current" && label.latestPromptText === sourceText) {
-      useAppStore.getState().setTaskLabelSummary(agentId, { currentSummary: summary });
-    }
+  function activeIdentityKey(identity: RequestIdentity): string {
+    return JSON.stringify([
+      identity.agentId,
+      identity.kind,
+      identity.sessionId,
+      identity.sourceText,
+      identity.latestPromptAt ?? null,
+    ]);
+  }
+
+  function isCurrent(
+    identity: RequestIdentity,
+    label: AgentTaskLabel | undefined,
+  ): boolean {
+    if (!label || label.sessionId !== identity.sessionId) return false;
+    if (identity.kind === "goal") return label.firstPromptText === identity.sourceText;
+    return (
+      label.latestPromptText === identity.sourceText &&
+      label.latestPromptAt === identity.latestPromptAt
+    );
+  }
+
+  /** 캡처한 Agent Office identity가 그대로일 때만 store에 반영한다. */
+  function apply(identity: RequestIdentity, summary: string): void {
+    const label = useAppStore.getState().taskLabels[identity.agentId];
+    if (!isCurrent(identity, label)) return;
+    const patch =
+      identity.kind === "goal" ? { goal: summary } : { currentSummary: summary };
+    useAppStore.getState().setTaskLabelSummary(identity.agentId, patch);
   }
 
   function request(agentId: string, kind: SummaryKind, text: string): void {
-    if (!useAppStore.getState().appSettings.claudeCliEnabled) return; // opt-in OFF — 원문 폴백
-    if (disabled) return;
-    const key = `${kind}|${text}`;
+    const state = useAppStore.getState();
+    const settings = state.appSettings;
+    if (!settings.summarizerEnabled) return; // opt-in OFF — 원문 폴백
+    const provider = settings.summaryProvider;
+    if (disabledProviders.has(provider)) return;
+    const label = state.taskLabels[agentId];
+    if (!label) return;
+    const identity: RequestIdentity = {
+      agentId,
+      provider,
+      kind,
+      sourceText: text,
+      sessionId: label.sessionId,
+      latestPromptAt: kind === "current" ? label.latestPromptAt : undefined,
+    };
+    const identityKey = activeIdentityKey(identity);
+    if (activeIdentityKeys.has(identityKey)) return;
+    const key = `${identity.provider}|${identity.kind}|${identity.sourceText}`;
     const cached = cache.get(key);
     if (cached !== undefined) {
-      apply(agentId, kind, text, cached);
+      apply(identity, cached);
       return;
     }
     if (inflight.has(key)) return;
     if (now() < (cooldownUntil.get(agentId) ?? 0)) return;
     inflight.add(key);
+    activeIdentityKeys.add(identityKey);
     void (async () => {
       try {
-        const sys = kind === "goal" ? GOAL_SYSTEM_PROMPT : CURRENT_SYSTEM_PROMPT;
-        // 호출 1회당 사용자의 Claude 구독/크레딧을 소모한다(haiku, --max-turns 1).
-        const raw = await summarizeFn(sys, text);
+        const sys =
+          identity.kind === "goal" ? GOAL_SYSTEM_PROMPT : CURRENT_SYSTEM_PROMPT;
+        // 호출 1회당 선택 provider의 사용자 구독/크레딧을 소모할 수 있다.
+        const raw = await summarizeFn(identity.provider, sys, identity.sourceText);
         const summary = sanitizeSummary(raw);
         if (summary === null) {
           // 메타·깨짐·과길이 응답 — 실패로 처리(30초 쿨다운, 원문 폴백 표시).
-          cooldownUntil.set(agentId, now() + FAILURE_COOLDOWN_MS);
+          cooldownUntil.set(identity.agentId, now() + FAILURE_COOLDOWN_MS);
           return;
         }
         cache.set(key, summary);
-        apply(agentId, kind, text, summary);
+        apply(identity, summary);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (message.includes("claude-not-found")) {
-          disabled = true;
-          console.warn("taskLabels: claude CLI 미설치 — 요약 비활성(원문 폴백 표시)");
-        } else if (message.includes("claude-cli-disabled")) {
+        if (message.includes(`${identity.provider}-not-found`)) {
+          disabledProviders.add(identity.provider);
+          console.warn(
+            `taskLabels: ${identity.provider} CLI 미설치 — 해당 provider 요약 비활성(원문 폴백 표시)`,
+          );
+        } else if (message.includes("summarizer-disabled")) {
           // 설정 OFF 경합 — 스토어 게이트가 다음 요청을 막는다. 쿨다운 불필요.
         } else {
-          console.warn(`taskLabels: 요약 실패(kind=${kind}, agent=${agentId})`, err);
-          cooldownUntil.set(agentId, now() + FAILURE_COOLDOWN_MS);
+          console.warn(
+            `taskLabels: 요약 실패(kind=${identity.kind}, agent=${identity.agentId})`,
+            err,
+          );
+          cooldownUntil.set(identity.agentId, now() + FAILURE_COOLDOWN_MS);
         }
       } finally {
+        activeIdentityKeys.delete(identityKey);
         inflight.delete(key);
+        sweep(useAppStore.getState().taskLabels);
       }
     })();
   }
