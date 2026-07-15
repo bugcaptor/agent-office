@@ -214,6 +214,38 @@ impl SessionManager {
             }
         }
 
+        if let Some(personality_prompt) = req
+            .personality_prompt
+            .as_deref()
+            .filter(|prompt| !prompt.trim().is_empty())
+        {
+            plan.env.push((
+                "AGENT_OFFICE_PERSONA".into(),
+                personality_prompt.to_string(),
+            ));
+            let persona_args = [
+                WrapperArg::Literal("--append-system-prompt".into()),
+                WrapperArg::Env("AGENT_OFFICE_PERSONA".into()),
+            ];
+            let persona_skip_flags = ["--append-system-prompt", "--system-prompt"];
+            if let Some(claude) = plan
+                .wrappers
+                .iter_mut()
+                .find(|wrapper| wrapper.command == "claude")
+            {
+                claude.prefix_args.extend(persona_args);
+                claude
+                    .skip_if_present
+                    .extend(persona_skip_flags.map(str::to_string));
+            } else {
+                plan.wrappers.push(CommandWrapperSpec {
+                    command: "claude".into(),
+                    prefix_args: persona_args.into(),
+                    skip_if_present: persona_skip_flags.map(str::to_string).into(),
+                });
+            }
+        }
+
         // prepare_session이 파일을 만든 뒤 spawn이 Err 또는 panic으로 끝나도
         // observer 아티팩트가 남지 않게 한다. 세션 등록 성공 뒤에는 Session이
         // cleanup_paths를 인계받아 dispose/on_exit에서 정리한다.
@@ -663,6 +695,7 @@ mod tests {
             cwd: None,
             shell: None,
             startup_command: None,
+            personality_prompt: None,
             autostart_claude: autostart,
         }
     }
@@ -675,6 +708,7 @@ mod tests {
             cwd,
             shell: None,
             startup_command: None,
+            personality_prompt: None,
             autostart_claude: Some(false),
         }
     }
@@ -687,6 +721,7 @@ mod tests {
             cwd: None,
             shell,
             startup_command: None,
+            personality_prompt: None,
             autostart_claude: Some(false),
         }
     }
@@ -699,7 +734,24 @@ mod tests {
             cwd: None,
             shell: None,
             startup_command,
+            personality_prompt: None,
             // autostart OFF: startup_command 주입만 단독 검증(두 주입이 겹치지 않게).
+            autostart_claude: Some(false),
+        }
+    }
+
+    fn req_with_persona(
+        agent_id: &str,
+        personality_prompt: Option<String>,
+    ) -> CreateSessionRequest {
+        CreateSessionRequest {
+            agent_id: agent_id.into(),
+            cols: None,
+            rows: None,
+            cwd: None,
+            shell: None,
+            startup_command: None,
+            personality_prompt,
             autostart_claude: Some(false),
         }
     }
@@ -867,6 +919,94 @@ mod tests {
             .iter()
             .all(|(key, _)| !key.starts_with("AGENT_OFFICE_CODEX_HOOK_")));
         assert!(recorded_wrappers.lock().is_empty());
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn persona_merges_into_existing_claude_wrapper_when_observer_is_on() {
+        let adapters: Vec<Arc<dyn ObserverAdapter>> = vec![Arc::new(PlanAdapter {
+            provider: ObserverProvider::Claude,
+            result: Ok(AdapterSessionPlan {
+                env: vec![("AGENT_OFFICE_SETTINGS".into(), "settings.json".into())],
+                wrappers: vec![CommandWrapperSpec {
+                    command: "claude".into(),
+                    prefix_args: vec![
+                        WrapperArg::Literal("--settings".into()),
+                        WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+                    ],
+                    skip_if_present: vec!["--settings".into()],
+                }],
+                cleanup_paths: vec![],
+            }),
+        })];
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(true, adapters);
+        let prompt = "차분하게 답한다.\n근거를 먼저 제시한다.";
+        manager
+            .create(req_with_persona("a1", Some(prompt.into())))
+            .unwrap();
+
+        let wrappers = recorded_wrappers.lock();
+        let claude_wrappers = wrappers
+            .iter()
+            .filter(|wrapper| wrapper.command == "claude")
+            .collect::<Vec<_>>();
+        assert_eq!(claude_wrappers.len(), 1);
+        assert_eq!(
+            claude_wrappers[0].prefix_args,
+            vec![
+                WrapperArg::Literal("--settings".into()),
+                WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+                WrapperArg::Literal("--append-system-prompt".into()),
+                WrapperArg::Env("AGENT_OFFICE_PERSONA".into()),
+            ]
+        );
+        assert_eq!(
+            claude_wrappers[0].skip_if_present,
+            vec!["--settings", "--append-system-prompt", "--system-prompt"]
+        );
+        drop(wrappers);
+        assert!(control
+            .spawned_env()
+            .contains(&("AGENT_OFFICE_PERSONA".into(), prompt.into())));
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn persona_pushes_one_claude_wrapper_when_observer_is_off() {
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
+        manager
+            .create(req_with_persona("a1", Some("해적처럼 말한다.".into())))
+            .unwrap();
+
+        let wrappers = recorded_wrappers.lock();
+        assert_eq!(wrappers.len(), 1);
+        assert_eq!(wrappers[0].command, "claude");
+        assert_eq!(
+            wrappers[0].prefix_args,
+            vec![
+                WrapperArg::Literal("--append-system-prompt".into()),
+                WrapperArg::Env("AGENT_OFFICE_PERSONA".into()),
+            ]
+        );
+        drop(wrappers);
+        assert!(control
+            .spawned_env()
+            .contains(&("AGENT_OFFICE_PERSONA".into(), "해적처럼 말한다.".into())));
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn blank_persona_does_not_add_env_or_wrapper() {
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
+        manager
+            .create(req_with_persona("a1", Some(" \n\t ".into())))
+            .unwrap();
+
+        assert!(recorded_wrappers.lock().is_empty());
+        assert!(control
+            .spawned_env()
+            .iter()
+            .all(|(key, _)| key != "AGENT_OFFICE_PERSONA"));
         cleanup_observer_fixture(&control, &scratch);
     }
 
@@ -2554,6 +2694,7 @@ return
                 cwd: Some(cwd_dir.to_string_lossy().into_owned()),
                 shell: None,
                 startup_command: None,
+                personality_prompt: None,
                 autostart_claude: Some(false),
             })
             .expect("real PTY spawn should succeed");
@@ -2668,6 +2809,7 @@ return
             cwd: Some("/definitely/not/a/real/dir".into()),
             shell: None,
             startup_command: Some("echo mash-marker".into()),
+            personality_prompt: None,
             autostart_claude: Some(false),
         };
         let create_with_watchdog = |manager: Arc<SessionManager>, label: String| async move {

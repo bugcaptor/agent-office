@@ -139,6 +139,8 @@ pub struct CreateSessionRequest {
     /// 세션이 Running으로 전이한 뒤 셸 stdin에 `{command}\n`으로 주입할 시작 명령어.
     /// None/공백이면 미주입. 셸 문법(bat/sh/pwsh 등)은 사용자가 선택 셸에 맞게 작성.
     pub startup_command: Option<String>,
+    /// Claude Code에 `--append-system-prompt`로 전달할 캐릭터 성격 프롬프트.
+    pub personality_prompt: Option<String>,
     /// 동결 API opts에는 없음 → 프런트 어댑터는 항상 미지정(=false). 기본 false:
     /// 세션은 자동 실행 없이 셸만 띄운다. Observation이 켜진 세션은 adapter가
     /// 제공한 command wrapper specs를 PowerShell 함수, Git Bash `--rcfile`,
@@ -213,6 +215,9 @@ pub struct AgentProfile {
     /// 예: "source ./init.sh", "mysetup.bat". 셸 문법은 사용자 책임.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub startup_command: Option<String>,
+    /// Claude Code 세션에 추가 시스템 프롬프트로 주입할 캐릭터 성격(멀티라인 가능).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub personality_prompt: Option<String>,
     /// 퇴근(clock-out) 상태. Some(true)면 오피스/터미널에서 숨기고 소환 목록에만
     /// 남긴다. 부재/false = 근무 중. TS `clockedOut?: boolean` 미러.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -544,6 +549,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -570,6 +576,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -607,6 +614,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -634,6 +642,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -672,6 +681,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -699,6 +709,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -725,6 +736,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -741,6 +753,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -766,6 +779,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
                        keyboard_sound: Some("topre-hhkb".into()),
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -782,6 +796,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
                        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -805,6 +820,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: Some("git-bash".into()), startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -819,6 +835,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -842,6 +859,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: Some(true),
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -856,6 +874,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
