@@ -85,6 +85,7 @@ impl ObserverRuntime {
             "tool" => ObserverEvent::Tool,
             "stop" => ObserverEvent::Stop {
                 message: event::message(body),
+                running: None,
             },
             _ => return,
         };
@@ -216,6 +217,7 @@ mod tests {
             }),
             Some(ObserverEvent::Stop {
                 message: Some("claude stop".into()),
+                running: None,
             }),
         );
         assert_eq!(
@@ -232,7 +234,10 @@ mod tests {
                 event_name: "Stop",
                 body: br#"{"last_assistant_message":"must not surface"}"#,
             }),
-            Some(ObserverEvent::Stop { message: None }),
+            Some(ObserverEvent::Stop {
+                message: None,
+                running: None,
+            }),
         );
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -366,7 +371,10 @@ mod tests {
                 Arc::new(FakeAdapter {
                     provider: ObserverProvider::Codex,
                     plan: Ok(AdapterSessionPlan::default()),
-                    mapped: Some(ObserverEvent::Stop { message: None }),
+                    mapped: Some(ObserverEvent::Stop {
+                        message: None,
+                        running: None,
+                    }),
                 }),
             ],
         );

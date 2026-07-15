@@ -34,6 +34,23 @@ describe("SubagentCountTracker", () => {
     expect(cb.mock.calls).toEqual([["a", 0]]);
   });
 
+  it("setAbsolute는 음수를 0으로 클램프하고 실수를 내림한다", () => {
+    const t = new SubagentCountTracker();
+    t.setAbsolute("a", 3.9);
+    expect(t.get("a")).toBe(3);
+    t.setAbsolute("a", -2);
+    expect(t.get("a")).toBe(0);
+  });
+
+  it("setAbsolute는 동일한 절대값이면 통지하지 않는다", () => {
+    const t = new SubagentCountTracker();
+    const cb = vi.fn();
+    t.subscribe(cb);
+    t.setAbsolute("a", 2);
+    t.setAbsolute("a", 2.8);
+    expect(cb.mock.calls).toEqual([["a", 2]]);
+  });
+
   it("unsubscribe 후에는 통지하지 않는다", () => {
     const t = new SubagentCountTracker();
     const cb = vi.fn();

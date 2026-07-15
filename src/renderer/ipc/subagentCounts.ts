@@ -1,8 +1,8 @@
 // src/renderer/ipc/subagentCounts.ts
 //
 // 부모 agentId별 "활성 서브에이전트 수"를 소유하는 순수 렌더러 모듈.
-// 백엔드에는 카운트 상태가 없다 — sub-start/sub-stop activity로 여기서 증감하고,
-// 세션 종료/턴 종료(Stop)에서 reset한다. 카운트는 순수 시각 효과라 휘발이 정답.
+// sub-start/sub-stop activity의 증감과 sub-count 스냅샷의 절대값을 반영하고,
+// 세션 종료에서 reset한다. 카운트는 순수 시각 효과라 휘발이 정답.
 // zustand가 아닌 plain 콜백 릴레이(리렌더 불필요, Pixi 전용 신호).
 
 export type SubagentCountCb = (agentId: string, count: number) => void;
@@ -22,6 +22,10 @@ export class SubagentCountTracker {
 
   bump(agentId: string, delta: number): void {
     this.set(agentId, this.get(agentId) + delta);
+  }
+
+  setAbsolute(agentId: string, count: number): void {
+    this.set(agentId, Math.floor(count));
   }
 
   reset(agentId: string): void {

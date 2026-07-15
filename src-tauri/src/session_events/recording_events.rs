@@ -76,12 +76,12 @@ impl AppEvents for RecordingAppEvents {
     }
 
     fn activity_event(&self, event: &ActivityEvent) {
-        // 서브에이전트 카운트 신호(SubStart/SubStop)는 시각 효과 전용 —
+        // 서브에이전트 카운트 신호(SubStart/SubStop/SubCount)는 시각 효과 전용 —
         // 턴 시계열엔 기록하지 않고 렌더러 릴레이만 한다.
         let kind = match event.kind {
             ActivityKind::Prompt => Some(SessionEventKind::Prompt),
             ActivityKind::Tool => Some(SessionEventKind::Tool),
-            ActivityKind::SubStart | ActivityKind::SubStop => None,
+            ActivityKind::SubStart | ActivityKind::SubStop | ActivityKind::SubCount => None,
         };
         if let Some(kind) = kind {
             self.record(SessionEventDraft::simple(
@@ -142,6 +142,7 @@ mod tests {
             kind: ActivityKind::Prompt,
             at: 1_783_728_000_000,
             text: Some("do not persist this prompt".into()),
+            count: None,
         });
         events.notification_new(&NotificationEvent {
             id: "n1".into(),
@@ -207,6 +208,7 @@ mod tests {
             kind: ActivityKind::Tool,
             at: 1_783_728_000_004,
             text: None,
+            count: None,
         });
         let records = read(&root);
         assert_eq!(
@@ -270,6 +272,7 @@ mod tests {
             kind: ActivityKind::SubStart,
             at: 1_783_728_000_000,
             text: None,
+            count: None,
         });
         // inner(렌더러 릴레이)로는 전달된다.
         assert_eq!(inner.activities().len(), 1);
@@ -295,6 +298,7 @@ mod tests {
             kind: ActivityKind::Tool,
             at: 1_783_728_000_000,
             text: None,
+            count: None,
         });
         assert_eq!(inner.activities().len(), 1);
         fs::remove_file(root).unwrap();

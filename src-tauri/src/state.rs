@@ -303,6 +303,7 @@ mod tests {
             kind: ActivityKind::Prompt,
             at: 100,
             text: None,
+            count: None,
         });
         events.activity_event(&ActivityEvent {
             agent_id: "a1".into(),
@@ -310,6 +311,7 @@ mod tests {
             kind: ActivityKind::Tool,
             at: 200,
             text: None,
+            count: None,
         });
 
         let got = events.activities();

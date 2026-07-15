@@ -4,8 +4,8 @@
 // wiring. `subagentCounts` (a `SubagentCountTracker`) is module-private to
 // `sessionBridge.ts` — the only external observation point is
 // `officeBus.onSubagentCountChanged`. This test drives the three wire events
-// that touch it (onActivity sub-start/sub-stop, onSessionState
-// exited/disposed, onNotification source="stop") through captured callbacks
+// that touch it (onActivity sub-start/sub-stop/sub-count, onSessionState
+// exited/disposed) through captured callbacks
 // and asserts on the counts relayed through that seam, so a future typo in
 // any of the literal wire strings or a sign inversion in the bump delta
 // fails this test.
@@ -43,8 +43,8 @@ import { useAppStore } from "../../store/appStore";
 const initial = useAppStore.getState();
 let teardown: () => void;
 
-function mkActivity(agentId: string, kind: ActivityEvent["kind"]): ActivityEvent {
-  return { agentId, sessionId: "s1", kind, at: Date.now() };
+function mkActivity(agentId: string, kind: ActivityEvent["kind"], count?: number): ActivityEvent {
+  return { agentId, sessionId: "s1", kind, at: Date.now(), count };
 }
 
 function mkState(agentId: string, state: SessionStateEvent["state"]): SessionStateEvent {
@@ -134,7 +134,7 @@ describe("sessionBridge subagent-count glue seam", () => {
     expect(spy).toHaveBeenLastCalledWith("a5", 0);
   });
 
-  it("a notification with source=stop resets the count to 0", () => {
+  it("a notification with source=stop no longer touches the count", () => {
     const spy = vi.fn();
     officeBus.onSubagentCountChanged(spy);
 
@@ -143,7 +143,37 @@ describe("sessionBridge subagent-count glue seam", () => {
     spy.mockClear();
 
     captured.notif!(mkNotif("a6", "stop"));
-    expect(spy).toHaveBeenLastCalledWith("a6", 0);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("sub-count sets the absolute count up and down", () => {
+    const spy = vi.fn();
+    officeBus.onSubagentCountChanged(spy);
+
+    captured.activity!(mkActivity("a8", "sub-count", 4));
+    expect(spy).toHaveBeenLastCalledWith("a8", 4);
+    captured.activity!(mkActivity("a8", "sub-count", 1));
+    expect(spy).toHaveBeenLastCalledWith("a8", 1);
+  });
+
+  it("sub-count without count defaults to 0", () => {
+    const spy = vi.fn();
+    officeBus.onSubagentCountChanged(spy);
+
+    captured.activity!(mkActivity("a9", "sub-start"));
+    spy.mockClear();
+    captured.activity!(mkActivity("a9", "sub-count"));
+    expect(spy).toHaveBeenLastCalledWith("a9", 0);
+  });
+
+  it("sub-start increments from the latest absolute count", () => {
+    const spy = vi.fn();
+    officeBus.onSubagentCountChanged(spy);
+
+    captured.activity!(mkActivity("a10", "sub-count", 2));
+    spy.mockClear();
+    captured.activity!(mkActivity("a10", "sub-start"));
+    expect(spy).toHaveBeenLastCalledWith("a10", 3);
   });
 
   it("prompt/tool activity events do not touch the subagent count", () => {
