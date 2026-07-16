@@ -145,6 +145,8 @@ export interface CreateSessionOptions {
   /** 세션이 뜬 뒤 셸 stdin에 `{command}\n`으로 주입할 시작 명령어. 부재/공백 = 미주입.
    * 셸 문법(bat/sh/pwsh 등)은 선택한 셸에 맞게 사용자가 작성. */
   startupCommand?: string;
+  /** Claude Code에 `--append-system-prompt`로 전달할 캐릭터 성격 프롬프트. */
+  personalityPrompt?: string;
   /** Historical profile label copied into session_started analytics only. */
   agentName?: string;
   /** Historical profile role copied into session_started analytics only. */
@@ -221,6 +223,8 @@ export interface AgentProfile {
   /** 새 세션이 뜰 때마다 셸 stdin에 주입할 시작 명령어. 부재/공백 = 미주입.
    * 예: "source ./init.sh", "mysetup.bat". 셸 문법은 사용자 책임. */
   startupCommand?: string;
+  /** Claude Code 세션에 추가 시스템 프롬프트로 주입할 캐릭터 성격(멀티라인 가능). */
+  personalityPrompt?: string;
   /** 외모 묘사 힌트(자유 텍스트). 이미지 프롬프트에 반영. */
   appearance?: string;
   /** 초상 존재 표시 + 프론트 캐시 무효화 키(epoch ms). undefined = 초상 없음. */

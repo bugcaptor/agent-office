@@ -110,6 +110,7 @@ export function ProfileDialog() {
       cwd: agent.cwd ?? "",
       shell: agent.shell ?? "",
       startupCommand: agent.startupCommand ?? "",
+      personalityPrompt: agent.personalityPrompt ?? "",
       appearance: agent.appearance ?? "",
       spriteRequest: agent.spriteRequest ?? "",
       archetype: agent.archetype ?? "auto",
@@ -225,6 +226,7 @@ export function ProfileDialog() {
       const trimmedCwd = (draft.cwd ?? "").trim();
       const trimmedShell = (draft.shell ?? "").trim();
       const trimmedStartupCommand = (draft.startupCommand ?? "").trim();
+      const trimmedPersonalityPrompt = (draft.personalityPrompt ?? "").trim();
       const trimmedAppearance = (draft.appearance ?? "").trim();
       const trimmedSpriteRequest = (draft.spriteRequest ?? "").trim();
       const trimmedKeyboardSound = (draft.keyboardSound ?? "").trim();
@@ -239,6 +241,7 @@ export function ProfileDialog() {
         cwd: trimmedCwd || undefined,
         shell: trimmedShell || undefined,
         startupCommand: trimmedStartupCommand || undefined,
+        personalityPrompt: trimmedPersonalityPrompt || undefined,
         appearance: trimmedAppearance || undefined,
         spriteRequest: trimmedSpriteRequest || undefined,
         keyboardSound: trimmedKeyboardSound || undefined,
@@ -321,6 +324,16 @@ export function ProfileDialog() {
               />
             </label>
             <p className="form-hint">에이전트를 설명하는 자유 메모 — 초상 프롬프트에 함께 반영됩니다.</p>
+          </div>
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">성격 프롬프트</span>
+              <textarea
+                value={draft.personalityPrompt ?? ""}
+                onChange={(e) => setDraft({ ...draft, personalityPrompt: e.target.value })}
+              />
+            </label>
+            <p className="form-hint">Claude Code의 시스템 프롬프트에 덧붙일 캐릭터 성격입니다. 여러 줄을 그대로 사용할 수 있습니다.</p>
           </div>
           <div className="form-field">
             <label>

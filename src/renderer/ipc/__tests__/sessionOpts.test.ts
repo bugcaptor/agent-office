@@ -31,6 +31,12 @@ describe("sessionOptsFor", () => {
     });
   });
 
+  it("preserves a multiline personalityPrompt", () => {
+    expect(sessionOptsFor({ personalityPrompt: "차분하게 답한다.\n항상 근거를 든다." })).toEqual({
+      personalityPrompt: "차분하게 답한다.\n항상 근거를 든다.",
+    });
+  });
+
   it("includes cwd, shell and startupCommand when all are set", () => {
     expect(
       sessionOptsFor({ cwd: "/a/b", shell: "wsl", startupCommand: "mysetup.bat" }),

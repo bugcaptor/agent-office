@@ -204,4 +204,67 @@ mod tests {
         let _ = std::fs::remove_dir_all(&shim_dir);
         let _ = std::fs::remove_dir_all(&empty_home);
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_zsh_passes_multiline_persona_as_one_argument() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !Path::new("/bin/zsh").exists() {
+            eprintln!("skipping: /bin/zsh not present on this host");
+            return;
+        }
+
+        let shim_dir = scratch_dir();
+        let wrappers = vec![CommandWrapperSpec {
+            command: "claude".into(),
+            prefix_args: vec![
+                WrapperArg::Literal("--append-system-prompt".into()),
+                WrapperArg::Env("AGENT_OFFICE_PERSONA".into()),
+            ],
+            skip_if_present: vec!["--append-system-prompt".into(), "--system-prompt".into()],
+        }];
+        write_observer_shim(&shim_dir, &wrappers).expect("write_observer_shim succeeds");
+
+        let empty_home = scratch_dir();
+        let bin_dir = scratch_dir();
+        std::fs::create_dir_all(&empty_home).expect("create scratch HOME");
+        std::fs::create_dir_all(&bin_dir).expect("create scratch bin");
+        let fake_claude = bin_dir.join("claude");
+        std::fs::write(
+            &fake_claude,
+            "#!/bin/sh\nprintf 'argc=%s\\n' \"$#\"\nprintf 'arg1=<%s>\\n' \"$1\"\nprintf 'arg2=<%s>\\n' \"$2\"\nprintf 'arg3=<%s>\\n' \"$3\"\n",
+        )
+        .expect("write fake claude");
+        std::fs::set_permissions(&fake_claude, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod fake claude");
+
+        let prompt = "첫 줄: 차분하게\n둘째 줄: 근거를 제시해";
+        let output = std::process::Command::new("/bin/zsh")
+            .arg("-l")
+            .arg("-i")
+            .arg("-c")
+            .arg("claude user-arg")
+            .env_clear()
+            .env("HOME", &empty_home)
+            .env("PATH", &bin_dir)
+            .env("TERM", "dumb")
+            .env("ZDOTDIR", &shim_dir)
+            .env("AGENT_OFFICE_PERSONA", prompt)
+            .output()
+            .expect("spawn /bin/zsh");
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("argc=3"), "{stdout:?}");
+        assert!(
+            stdout.contains("arg1=<--append-system-prompt>"),
+            "{stdout:?}"
+        );
+        assert!(stdout.contains(&format!("arg2=<{prompt}>")), "{stdout:?}");
+        assert!(stdout.contains("arg3=<user-arg>"), "{stdout:?}");
+
+        let _ = std::fs::remove_dir_all(&shim_dir);
+        let _ = std::fs::remove_dir_all(&empty_home);
+        let _ = std::fs::remove_dir_all(&bin_dir);
+    }
 }

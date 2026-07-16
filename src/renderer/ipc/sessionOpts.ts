@@ -7,7 +7,14 @@ import type { CreateSessionOptions } from "@shared/types";
 
 /** 프로필 스냅샷과 런타임 옵션을 createSession opts로 변환. 전부 없으면 undefined. */
 export function sessionOptsFor(
-  a?: { name?: string; role?: string; cwd?: string; shell?: string; startupCommand?: string },
+  a?: {
+    name?: string;
+    role?: string;
+    cwd?: string;
+    shell?: string;
+    startupCommand?: string;
+    personalityPrompt?: string;
+  },
 ): CreateSessionOptions | undefined {
   if (!a) return undefined;
   const o: CreateSessionOptions = {};
@@ -16,5 +23,6 @@ export function sessionOptsFor(
   if (a.cwd) o.cwd = a.cwd;
   if (a.shell) o.shell = a.shell;
   if (a.startupCommand) o.startupCommand = a.startupCommand;
+  if (a.personalityPrompt) o.personalityPrompt = a.personalityPrompt;
   return Object.keys(o).length ? o : undefined;
 }

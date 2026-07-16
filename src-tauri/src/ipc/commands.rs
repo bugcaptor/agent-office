@@ -29,6 +29,7 @@ pub struct SessionOpts {
     pub cwd: Option<String>,
     pub shell: Option<String>,
     pub startup_command: Option<String>,
+    pub personality_prompt: Option<String>,
     pub agent_name: Option<String>,
     pub agent_role: Option<String>,
 }
@@ -81,6 +82,7 @@ async fn create_session_inner(
                 cwd: o.cwd,
                 shell: o.shell,
                 startup_command: o.startup_command,
+                personality_prompt: o.personality_prompt,
                 autostart_claude: None, // 항상 기본 false (SessionManager::create의 unwrap_or(false))
             },
             profile,
@@ -695,6 +697,7 @@ mod tests {
             cwd: None,
             shell: None,
             startup_command: None,
+            personality_prompt: None,
             autostart_claude: None,
         }
     }
@@ -715,6 +718,7 @@ mod tests {
             cwd: None,
             shell: None,
             startup_command: None,
+            personality_prompt: None,
             agent_name: Some("Compiler".into()),
             agent_role: Some("Platform".into()),
         };
@@ -747,6 +751,7 @@ mod tests {
                 cwd: None,
                 shell: None,
                 startup_command: None,
+                personality_prompt: None,
                 autostart_claude: None, // command body always passes None -> manager defaults to false
             })
             .unwrap();
@@ -769,6 +774,7 @@ mod tests {
             cwd: None,
             shell: Some("git-bash".into()),
             startup_command: None,
+            personality_prompt: None,
             agent_name: None,
             agent_role: None,
         };
@@ -780,6 +786,7 @@ mod tests {
             cwd: opts.cwd,
             shell: opts.shell.clone(),
             startup_command: opts.startup_command.clone(),
+            personality_prompt: opts.personality_prompt.clone(),
             autostart_claude: None,
         };
         assert_eq!(request.shell, Some("git-bash".to_string()));
@@ -795,6 +802,7 @@ mod tests {
             cwd: None,
             shell: None,
             startup_command: Some("source ./init.sh".into()),
+            personality_prompt: None,
             agent_name: None,
             agent_role: None,
         };
@@ -805,6 +813,7 @@ mod tests {
             cwd: opts.cwd,
             shell: opts.shell.clone(),
             startup_command: opts.startup_command.clone(),
+            personality_prompt: opts.personality_prompt.clone(),
             autostart_claude: None,
         };
         assert_eq!(
@@ -956,6 +965,7 @@ mod tests {
                 archetype: None,
                 shell: None,
                 startup_command: None,
+                personality_prompt: None,
                 clocked_out: None,
                 keyboard_sound: None,
             }],
@@ -1003,6 +1013,7 @@ mod tests {
                 archetype: None,
                 shell: None,
                 startup_command: None,
+                personality_prompt: None,
                 clocked_out: None,
                 keyboard_sound: None,
             }],
@@ -1069,6 +1080,7 @@ mod tests {
                 archetype: None,
                 shell: None,
                 startup_command: None,
+                personality_prompt: None,
                 clocked_out: None,
                 keyboard_sound: None,
             }],

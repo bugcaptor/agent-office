@@ -110,6 +110,7 @@ mod tests {
                 archetype: None,
                 shell: None,
                 startup_command: None,
+                personality_prompt: None,
                 clocked_out: None,
             keyboard_sound: None,
             }],
