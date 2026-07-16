@@ -227,21 +227,17 @@ impl SessionManager {
                 WrapperArg::Literal("--append-system-prompt".into()),
                 WrapperArg::Env("AGENT_OFFICE_PERSONA".into()),
             ];
-            let persona_skip_flags = ["--append-system-prompt", "--system-prompt"];
             if let Some(claude) = plan
                 .wrappers
                 .iter_mut()
                 .find(|wrapper| wrapper.command == "claude")
             {
                 claude.prefix_args.extend(persona_args);
-                claude
-                    .skip_if_present
-                    .extend(persona_skip_flags.map(str::to_string));
             } else {
                 plan.wrappers.push(CommandWrapperSpec {
                     command: "claude".into(),
                     prefix_args: persona_args.into(),
-                    skip_if_present: persona_skip_flags.map(str::to_string).into(),
+                    skip_if_present: vec![],
                 });
             }
         }
@@ -962,7 +958,7 @@ mod tests {
         );
         assert_eq!(
             claude_wrappers[0].skip_if_present,
-            vec!["--settings", "--append-system-prompt", "--system-prompt"]
+            vec!["--settings"]
         );
         drop(wrappers);
         assert!(control
@@ -988,6 +984,7 @@ mod tests {
                 WrapperArg::Env("AGENT_OFFICE_PERSONA".into()),
             ]
         );
+        assert!(wrappers[0].skip_if_present.is_empty());
         drop(wrappers);
         assert!(control
             .spawned_env()
