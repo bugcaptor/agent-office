@@ -619,7 +619,7 @@ fn spawn_output_pump(
     });
 }
 
-fn home_dir() -> String {
+pub(crate) fn home_dir() -> String {
     std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".into())
@@ -631,7 +631,9 @@ fn home_dir() -> String {
 /// but the 시작 폴더 UI invites `~/dev/foo`-style input. Only bare `~` and
 /// `~/...` are expanded; `~user/...` forms are left untouched (rare, and we
 /// have no portable way to resolve another user's home).
-fn expand_tilde(path: String) -> String {
+/// pub(crate): open_in_vscode/open_in_terminal/pick_directory 커맨드가
+/// 프로필 cwd를 그대로 받으므로 세션 생성과 동일한 확장을 공유한다.
+pub(crate) fn expand_tilde(path: String) -> String {
     if path == "~" {
         home_dir()
     } else if let Some(rest) = path.strip_prefix("~/") {

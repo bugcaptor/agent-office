@@ -15,6 +15,7 @@ mod session;
 mod session_events;
 mod state;
 mod summarizer;
+mod terminal;
 mod types;
 mod vscode;
 
@@ -108,6 +109,8 @@ fn session_event_root(data_dir: &std::path::Path) -> std::path::PathBuf {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 네이티브 폴더 선택 다이얼로그(pick_directory) — Rust 측에서만 사용.
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = app.handle().clone();
             let data_dir = app.path().app_data_dir()?;
@@ -219,6 +222,8 @@ pub fn run() {
             ipc::commands::get_app_settings,
             ipc::commands::set_app_settings,
             ipc::commands::open_in_vscode,
+            ipc::commands::open_in_terminal,
+            ipc::commands::pick_directory,
             ipc::commands::append_session_turn,
             ipc::commands::load_session_turns,
         ])
@@ -258,6 +263,7 @@ mod tests {
             observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,
+            external_terminal: Default::default(),
         }));
         let registry = Arc::new(SessionRegistry::new());
         let events: Arc<dyn AppEvents> = Arc::new(crate::state::fake::RecordingEvents::default());

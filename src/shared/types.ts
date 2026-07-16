@@ -283,6 +283,10 @@ export interface SessionTurnRecord {
 /** 라벨 요약에 사용할 로컬 CLI provider. Rust `SummaryProvider` 미러. */
 export type SummaryProvider = "claude" | "codex";
 
+/** "OS 터미널로 열기"가 사용할 외부 터미널 앱 — Rust `ExternalTerminal` 미러.
+ * macOS에서만 의미가 있다(다른 OS는 무시). */
+export type ExternalTerminalApp = "terminal" | "iterm";
+
 /** 앱 전역 opt-in 설정 — Rust `persistence::settings_store::AppSettings` 미러. */
 export interface AppSettings {
   version: number;
@@ -296,6 +300,8 @@ export interface AppSettings {
   soundEnabled: boolean;
   /** 마스터 볼륨 0.0~1.0. 기본 0.5. */
   soundVolume: number;
+  /** "OS 터미널로 열기"가 사용할 터미널 앱. 기본 Terminal.app(macOS 전용). */
+  externalTerminal: ExternalTerminalApp;
 }
 
 /** `get_app_settings` 응답. firstRun = settings.json 부재(첫 실행). */
@@ -365,6 +371,11 @@ export interface AgentOfficeApi {
   listAvailableShells(): Promise<AvailableShell[]>;
   /** 디렉터리를 Visual Studio Code로 연다. VS Code 미설치/경로 부재 시 reject. */
   openInVscode(path: string): Promise<void>;
+  /** 디렉터리를 OS 기본 터미널 앱으로 연다. 경로 부재/실행 실패 시 reject. */
+  openInTerminal(path: string): Promise<void>;
+  /** 네이티브 폴더 선택 다이얼로그. 선택한 절대 경로, 취소 시 null.
+   * `initialDir`이 실존 디렉터리면 거기서 시작한다(`~` 확장 포함). */
+  pickDirectory(initialDir?: string): Promise<string | null>;
   /** Returns an unsubscribe function. */
   onData(agentId: string, cb: (data: string) => void): () => void;
   onSessionState(cb: (e: SessionStateEvent) => void): () => void;

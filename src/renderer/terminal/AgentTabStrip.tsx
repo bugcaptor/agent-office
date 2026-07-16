@@ -150,6 +150,18 @@ export function AgentTabStrip() {
               },
             },
             {
+              // 인앱 PTY(터미널 재시작/종료)와 구분되는 외부 OS 터미널 앱.
+              label: "OS 터미널로 열기",
+              disabled: !agents[menu.agentId]?.cwd,
+              onSelect: () => {
+                const cwd = agents[menu.agentId]?.cwd;
+                if (!cwd) return;
+                void tauriApi
+                  .openInTerminal(cwd)
+                  .catch((err) => console.warn("OS 터미널 열기 실패", err));
+              },
+            },
+            {
               label: "프로필 편집",
               onSelect: () =>
                 openModal({ kind: "profile-edit", agentId: menu.agentId }),

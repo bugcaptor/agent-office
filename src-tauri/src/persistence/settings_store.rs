@@ -34,6 +34,17 @@ impl SummaryProvider {
     }
 }
 
+/// "OS 터미널로 열기"가 사용할 외부 터미널 앱. macOS에는 시스템 차원의
+/// "기본 터미널" 개념이 없어 앱 설정으로 고른다 — 기본은 OS 제공
+/// Terminal.app. macOS에서만 의미가 있다(다른 OS는 무시).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExternalTerminal {
+    #[default]
+    Terminal,
+    Iterm,
+}
+
 /// 앱 전역 설정. 요약과 관찰자 연동은 기본 OFF이고, 사운드는 기본 ON이다.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +62,9 @@ pub struct AppSettings {
     /// 마스터 볼륨 0.0~1.0.
     #[serde(default = "default_sound_volume")]
     pub sound_volume: f32,
+    /// "OS 터미널로 열기"가 사용할 외부 터미널 앱(macOS 전용).
+    #[serde(default)]
+    pub external_terminal: ExternalTerminal,
 }
 
 impl Default for AppSettings {
@@ -62,6 +76,7 @@ impl Default for AppSettings {
             observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
+            external_terminal: ExternalTerminal::Terminal,
         }
     }
 }
@@ -140,6 +155,7 @@ mod tests {
             observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,
+            external_terminal: ExternalTerminal::Terminal,
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -230,11 +246,13 @@ mod tests {
             observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,
+            external_terminal: ExternalTerminal::Iterm,
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();
         assert!(json.contains("\"summarizerEnabled\""), "{json}");
         assert!(json.contains("\"summaryProvider\": \"codex\""), "{json}");
+        assert!(json.contains("\"externalTerminal\": \"iterm\""), "{json}");
         assert!(json.contains("\"observerEnabled\""), "{json}");
         assert!(!json.contains("claudeCliEnabled"), "{json}");
         assert!(!json.contains("claudeHooksEnabled"), "{json}");
@@ -307,6 +325,11 @@ mod tests {
         assert!(!s.observer_enabled);
         assert!(s.sound_enabled, "부재 시 기본 켜짐");
         assert_eq!(s.sound_volume, 0.5, "부재 시 기본 볼륨 0.5");
+        assert_eq!(
+            s.external_terminal,
+            ExternalTerminal::Terminal,
+            "부재 시 기본 Terminal.app"
+        );
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 }

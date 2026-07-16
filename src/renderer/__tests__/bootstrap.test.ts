@@ -180,6 +180,7 @@ describe("bootApp", () => {
       observerEnabled: false,
       soundEnabled: true,
       soundVolume: 0.5,
+      externalTerminal: "terminal",
     });
     expect(s.settingsFirstRun).toBe(false);
     expect(warn).toHaveBeenCalledWith(

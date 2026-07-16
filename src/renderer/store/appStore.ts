@@ -32,6 +32,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   observerEnabled: false,
   soundEnabled: true,
   soundVolume: 0.5,
+  externalTerminal: "terminal",
 };
 
 /**
@@ -178,7 +179,12 @@ interface AppState {
     patch: Partial<
       Pick<
         AppSettings,
-        "summarizerEnabled" | "summaryProvider" | "observerEnabled" | "soundEnabled" | "soundVolume"
+        | "summarizerEnabled"
+        | "summaryProvider"
+        | "observerEnabled"
+        | "soundEnabled"
+        | "soundVolume"
+        | "externalTerminal"
       >
     >,
   ): void;
