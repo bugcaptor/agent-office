@@ -9,6 +9,11 @@ export type SubagentCountCb = (agentId: string, count: number) => void;
 
 export class SubagentCountTracker {
   private counts = new Map<string, number>();
+  // agentId별 "마지막으로 반영한 이벤트의 백엔드 at(ms)". 훅은 독립 HTTP+이벤트
+  // 채널로 흘러 순서 보장이 없으므로, 이 워터마크보다 오래된 절대 스냅샷(sub-count)은
+  // 무시해 재정렬 클로버링(오래된 스냅샷이 더 최신 델타를 덮어써 미니미 조기 소멸)을 막는다.
+  // 델타(bump)는 확정 이벤트라 항상 적용하되 워터마크는 전진시킨다.
+  private lastAt = new Map<string, number>();
   private cbs = new Set<SubagentCountCb>();
 
   subscribe(cb: SubagentCountCb): () => void {
@@ -20,16 +25,29 @@ export class SubagentCountTracker {
     return this.counts.get(agentId) ?? 0;
   }
 
-  bump(agentId: string, delta: number): void {
+  bump(agentId: string, delta: number, at?: number): void {
+    this.advance(agentId, at);
     this.set(agentId, this.get(agentId) + delta);
   }
 
-  setAbsolute(agentId: string, count: number): void {
+  /** 절대 스냅샷 반영. `at`이 이미 반영한 이벤트보다 오래되면 스테일로 간주해 무시. */
+  setAbsolute(agentId: string, count: number, at?: number): void {
+    if (typeof at === "number" && at < (this.lastAt.get(agentId) ?? -Infinity)) {
+      return; // 스테일 스냅샷 — 더 최신 이벤트가 이미 반영됨
+    }
+    this.advance(agentId, at);
     this.set(agentId, Math.floor(count));
   }
 
   reset(agentId: string): void {
+    this.lastAt.delete(agentId); // 세션 경계 — 워터마크도 초기화(다음 세션 스냅샷이 반영되게)
     this.set(agentId, 0);
+  }
+
+  private advance(agentId: string, at?: number): void {
+    if (typeof at !== "number") return;
+    const prev = this.lastAt.get(agentId) ?? -Infinity;
+    if (at > prev) this.lastAt.set(agentId, at);
   }
 
   private set(agentId: string, next: number): void {

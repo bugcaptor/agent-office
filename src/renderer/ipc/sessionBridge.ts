@@ -206,15 +206,15 @@ export function installSessionBridge(): () => void {
 
   const offActivity = tauriApi.onActivity((e) => {
     if (e.kind === "sub-start") {
-      subagentCounts.bump(e.agentId, +1);
+      subagentCounts.bump(e.agentId, +1, e.at);
       return;
     }
     if (e.kind === "sub-stop") {
-      subagentCounts.bump(e.agentId, -1);
+      subagentCounts.bump(e.agentId, -1, e.at);
       return;
     }
     if (e.kind === "sub-count") {
-      subagentCounts.setAbsolute(e.agentId, e.count ?? 0);
+      subagentCounts.setAbsolute(e.agentId, e.count ?? 0, e.at);
       return;
     }
     useAppStore.getState().applyActivityEvent(e);
