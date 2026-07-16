@@ -392,10 +392,69 @@ async fn set_app_settings_inner(app_state: &AppState, settings: AppSettings) -> 
 
 /// 에이전트 작업 폴더를 Visual Studio Code로 연다. `path`는 렌더러가
 /// 프로필의 `cwd`를 그대로 전달한다(미설정 시 메뉴가 비활성화되므로 폴백
-/// 없음). 구현/OS별 실행 전략은 `crate::vscode` 참조.
+/// 없음). 시작 폴더 UI가 `~/dev/foo`류 입력을 허용하므로 세션 생성과
+/// 동일한 틸드 확장을 거친다. 구현/OS별 실행 전략은 `crate::vscode` 참조.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn open_in_vscode(path: String) -> Result<(), String> {
-    crate::vscode::open_dir_in_vscode(&path)
+    crate::vscode::open_dir_in_vscode(&crate::session::manager::expand_tilde(path))
+}
+
+/// 에이전트 작업 폴더를 외부 터미널 앱으로 연다. 전달/확장 규칙은
+/// `open_in_vscode`와 동일. 어떤 앱을 쓸지는 앱 설정 `externalTerminal`
+/// (macOS 전용 — Terminal.app/iTerm)을 따른다. 구현/OS별 실행 전략은
+/// `crate::terminal` 참조.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_in_terminal(
+    app_state: State<'_, AppState>,
+    path: String,
+) -> Result<(), String> {
+    let prefer_iterm = matches!(
+        app_state.settings.read().unwrap().external_terminal,
+        crate::persistence::settings_store::ExternalTerminal::Iterm
+    );
+    crate::terminal::open_dir_in_terminal(
+        &crate::session::manager::expand_tilde(path),
+        prefer_iterm,
+    )
+}
+
+/// 네이티브 폴더 선택 다이얼로그를 띄운다. 사용자가 고른 절대 경로,
+/// 취소 시 None. `initial_dir`이 (틸드 확장 후) 실존 디렉터리면 거기서
+/// 시작한다 — 아니면 OS 기본 위치. 다이얼로그 표시의 메인 스레드 디스패치는
+/// tauri-plugin-dialog가 처리하므로 async 커맨드 스레드에서 안전하다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn pick_directory(
+    app: tauri::AppHandle,
+    initial_dir: Option<String>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let mut builder = app.dialog().file();
+    if let Some(dir) = initial_dir {
+        let expanded = crate::session::manager::expand_tilde(dir);
+        if std::path::Path::new(&expanded).is_dir() {
+            builder = builder.set_directory(expanded);
+        }
+    }
+
+    // 콜백 → oneshot 브리지: blocking_pick_folder는 async 런타임 스레드를
+    // 다이얼로그가 닫힐 때까지 점유하므로 쓰지 않는다.
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    builder.pick_folder(move |folder| {
+        let _ = tx.send(folder);
+    });
+    let picked = rx
+        .await
+        .map_err(|_| "폴더 선택 다이얼로그가 응답 없이 종료되었습니다".to_string())?;
+    match picked {
+        None => Ok(None),
+        Some(fp) => Ok(Some(
+            fp.into_path()
+                .map_err(|e| e.to_string())?
+                .to_string_lossy()
+                .into_owned(),
+        )),
+    }
 }
 
 /// 완료된 턴 1건을 로컬 시계열 로그(session-times.jsonl)에 append.
@@ -493,6 +552,7 @@ mod tests {
             observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
+            external_terminal: Default::default(),
         };
 
         // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
@@ -527,6 +587,7 @@ mod tests {
             observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
+            external_terminal: Default::default(),
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
         // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.
@@ -560,6 +621,7 @@ mod tests {
             observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,
+            external_terminal: Default::default(),
         };
 
         assert!(set_app_settings_inner(&state, settings).await.is_ok());

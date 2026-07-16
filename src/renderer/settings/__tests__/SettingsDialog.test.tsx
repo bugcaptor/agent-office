@@ -33,6 +33,7 @@ describe("SettingsDialog", () => {
         observerEnabled: false,
         soundEnabled: true,
         soundVolume: 0.5,
+        externalTerminal: "terminal",
       },
       false,
     );
@@ -51,7 +52,29 @@ describe("SettingsDialog", () => {
       observerEnabled: true,
       soundEnabled: true,
       soundVolume: 0.5,
+      externalTerminal: "terminal",
     });
+  });
+
+  it("외부 터미널 앱 셀렉터가 iTerm2 선택을 즉시 반영한다", () => {
+    useAppStore.getState().hydrateSettings(
+      {
+        version: 1,
+        summarizerEnabled: false,
+        summaryProvider: "claude",
+        observerEnabled: false,
+        soundEnabled: true,
+        soundVolume: 0.5,
+        externalTerminal: "terminal",
+      },
+      false,
+    );
+    useAppStore.getState().openModal({ kind: "settings" });
+
+    render(<SettingsDialog />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "iterm" } });
+
+    expect(useAppStore.getState().appSettings.externalTerminal).toBe("iterm");
   });
 
   it("닫기 버튼 클릭 시 closeModal을 부른다", () => {

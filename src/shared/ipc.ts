@@ -31,6 +31,8 @@ export const Commands = {
   setAppSettings: "set_app_settings",
   listAvailableShells: "list_available_shells",
   openInVscode: "open_in_vscode",
+  openInTerminal: "open_in_terminal",
+  pickDirectory: "pick_directory",
   appendSessionTurn: "append_session_turn",
   loadSessionTurns: "load_session_turns",
 } as const;

@@ -29,6 +29,7 @@ describe("FirstRunDialog", () => {
         observerEnabled: false,
         soundEnabled: true,
         soundVolume: 0.5,
+        externalTerminal: "terminal",
       },
       false,
     );
@@ -45,6 +46,7 @@ describe("FirstRunDialog", () => {
         observerEnabled: false,
         soundEnabled: true,
         soundVolume: 0.5,
+        externalTerminal: "terminal",
       },
       true,
     );
@@ -61,6 +63,7 @@ describe("FirstRunDialog", () => {
       observerEnabled: true,
       soundEnabled: true,
       soundVolume: 0.5,
+      externalTerminal: "terminal",
     });
   });
 
@@ -73,6 +76,7 @@ describe("FirstRunDialog", () => {
         observerEnabled: false,
         soundEnabled: true,
         soundVolume: 0.5,
+        externalTerminal: "terminal",
       },
       true,
     );

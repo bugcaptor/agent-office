@@ -127,6 +127,17 @@ export function ProfileDialog() {
   const regenSeed = () => setDraft((d) => ({ ...d, seed: nanoid(8) }));
   const regenAll = () => setDraft(generateDraft());
 
+  // 시작 폴더를 네이티브 폴더 선택 다이얼로그로 지정 — 텍스트 입력과 병행.
+  // 현재 입력값이 실존 폴더면 그 위치에서 다이얼로그를 연다.
+  const onBrowseCwd = async () => {
+    try {
+      const picked = await tauriApi.pickDirectory(draft.cwd?.trim() || undefined);
+      if (picked) setDraft((d) => ({ ...d, cwd: picked }));
+    } catch (err) {
+      console.warn("폴더 선택 다이얼로그 실패", err);
+    }
+  };
+
   const onCopyPrompt = async () => {
     const prompt = buildPortraitPrompt({
       name: draft.name,
@@ -459,11 +470,16 @@ export function ProfileDialog() {
           <div className="form-field">
             <label>
               <span className="form-label-text">시작 폴더</span>
-              <input
-                value={draft.cwd ?? ""}
-                onChange={(e) => setDraft({ ...draft, cwd: e.target.value })}
-                placeholder="비워두면 홈 디렉터리"
-              />
+              <div className="form-control-row">
+                <input
+                  value={draft.cwd ?? ""}
+                  onChange={(e) => setDraft({ ...draft, cwd: e.target.value })}
+                  placeholder="비워두면 홈 디렉터리 (직접 입력·붙여넣기 가능)"
+                />
+                <button type="button" className="pixel-btn" onClick={onBrowseCwd}>
+                  찾아보기…
+                </button>
+              </div>
             </label>
           </div>
           <div className="form-field">

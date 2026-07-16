@@ -4,6 +4,7 @@
 // 값을 직접 바인딩 — 토글 즉시 updateAppSettings로 저장된다(확인 버튼 없음).
 import { useAppStore } from "../store/appStore";
 import { SettingsForm } from "./SettingsForm";
+import type { ExternalTerminalApp } from "@shared/types";
 
 export function SettingsDialog() {
   const modal = useAppStore((s) => s.modal);
@@ -57,6 +58,26 @@ export function SettingsDialog() {
               disabled={!appSettings.soundEnabled}
               onChange={(e) => updateAppSettings({ soundVolume: Number(e.target.value) / 100 })}
             />
+          </label>
+          <label className="settings-item">
+            <span>
+              <strong>외부 터미널 앱</strong>
+              <small>
+                터미널 탭 우클릭 "OS 터미널로 열기"가 사용할 앱입니다. macOS
+                전용 — 다른 OS에서는 무시됩니다.
+              </small>
+            </span>
+            <select
+              value={appSettings.externalTerminal}
+              onChange={(e) =>
+                updateAppSettings({
+                  externalTerminal: e.target.value as ExternalTerminalApp,
+                })
+              }
+            >
+              <option value="terminal">Terminal (기본)</option>
+              <option value="iterm">iTerm2</option>
+            </select>
           </label>
         </div>
         <div className="dialog-actions">

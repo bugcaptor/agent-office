@@ -42,6 +42,7 @@ reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "json",
 ] } # PixelLab API 호출
+tauri-plugin-dialog = "2" # 프로필 시작 폴더의 네이티브 폴더 선택 다이얼로그 (Rust 측에서만 호출 — capability 불필요)
 
 [dev-dependencies]
 tokio = { version = "1", features = [
