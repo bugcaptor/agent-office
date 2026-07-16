@@ -196,8 +196,8 @@ export function installSessionBridge(): () => void {
   const offNotif = tauriApi.onNotification((e) => {
     useAppStore.getState().pushNotification(e);
     // 시간 추적은 pushNotification 억제와 무관하게 항상 공급(활성 터미널이어도 집계).
+    // Stop 카운트 reset 안전망은 백엔드 Stop→sub-count(0 fallback)로 이동했다.
     useAppStore.getState().applyNotificationTiming(e);
-    if (e.source === "stop") subagentCounts.reset(e.agentId);
   });
 
   const offCleared = tauriApi.onNotificationCleared(({ agentId, ids }) => {
@@ -206,11 +206,15 @@ export function installSessionBridge(): () => void {
 
   const offActivity = tauriApi.onActivity((e) => {
     if (e.kind === "sub-start") {
-      subagentCounts.bump(e.agentId, +1);
+      subagentCounts.bump(e.agentId, +1, e.at);
       return;
     }
     if (e.kind === "sub-stop") {
-      subagentCounts.bump(e.agentId, -1);
+      subagentCounts.bump(e.agentId, -1, e.at);
+      return;
+    }
+    if (e.kind === "sub-count") {
+      subagentCounts.setAbsolute(e.agentId, e.count ?? 0, e.at);
       return;
     }
     useAppStore.getState().applyActivityEvent(e);

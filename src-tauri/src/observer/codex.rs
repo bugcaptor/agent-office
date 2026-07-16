@@ -153,7 +153,10 @@ impl ObserverAdapter for CodexAdapter {
             "PermissionRequest" => Some(ObserverEvent::Attention {
                 message: tool_description(raw.body),
             }),
-            "Stop" => Some(ObserverEvent::Stop { message: None }),
+            "Stop" => Some(ObserverEvent::Stop {
+                message: None,
+                running: None,
+            }),
             "SubagentStart" => Some(ObserverEvent::SubStart),
             "SubagentStop" => Some(ObserverEvent::SubStop),
             _ => None,

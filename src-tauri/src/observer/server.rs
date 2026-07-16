@@ -287,11 +287,13 @@ mod tests {
             .unwrap();
 
         let activities = events.activities();
-        assert_eq!(activities.len(), 1);
+        assert_eq!(activities.len(), 2);
         assert_eq!(activities[0].session_id, "s1");
         assert_eq!(activities[0].agent_id, "a1");
         assert_eq!(activities[0].kind, ActivityKind::Prompt);
         assert_eq!(activities[0].text.as_deref(), Some("marker"));
+        assert_eq!(activities[1].kind, ActivityKind::SubCount);
+        assert_eq!(activities[1].count, Some(0));
 
         let notifications = events.notifications();
         assert_eq!(notifications.len(), 1);
@@ -332,10 +334,12 @@ mod tests {
         }
 
         let activities = events.activities();
-        assert_eq!(activities.len(), 2);
+        assert_eq!(activities.len(), 3);
         assert_eq!(activities[0].kind, ActivityKind::Prompt);
         assert_eq!(activities[0].text.as_deref(), Some("pi task"));
         assert_eq!(activities[1].kind, ActivityKind::Tool);
+        assert_eq!(activities[2].kind, ActivityKind::SubCount);
+        assert_eq!(activities[2].count, Some(0));
 
         let notifications = events.notifications();
         assert_eq!(notifications.len(), 1);

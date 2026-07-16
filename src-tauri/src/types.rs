@@ -82,8 +82,9 @@ pub struct NotificationEvent {
 
 /// activity 신호 종류. TS ActivityKind와 동일.
 /// prompt = UserPromptSubmit(턴 시작), tool = PostToolUse(하트비트).
-/// sub-start = PreToolUse:Task(서브에이전트 소환), sub-stop = SubagentStop(종료).
-/// 뒤 둘은 카운트 기반 미니 캐릭터 전용 — 시간 추적/시계열엔 기록하지 않는다.
+/// sub-start = PreToolUse:Task(서브에이전트 소환), sub-stop = SubagentStop(종료),
+/// sub-count = 현재 실행 중 서브에이전트 절대 수.
+/// 뒤 셋은 카운트 기반 미니 캐릭터 전용 — 시간 추적/시계열엔 기록하지 않는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ActivityKind {
@@ -93,6 +94,8 @@ pub enum ActivityKind {
     SubStart,
     #[serde(rename = "sub-stop")]
     SubStop,
+    #[serde(rename = "sub-count")]
+    SubCount,
 }
 
 /// 세션 시간 추적용 활동 이벤트. NotificationHub의 dedup/큐를 우회해
@@ -109,6 +112,9 @@ pub struct ActivityEvent {
     /// body 파싱 실패/부재 시 None — None이면 wire에서 필드 생략.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// kind=SubCount일 때 현재 실행 중 서브에이전트 절대 수.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
 }
 
 /// 완료된 턴 1건의 시계열 기록. TS `SessionTurnRecord` 미러.
@@ -319,8 +325,11 @@ mod tests {
     fn activity_kind_deserializes_subagent_variants_from_ts_literal() {
         let a: ActivityKind = serde_json::from_str("\"sub-start\"").unwrap();
         let b: ActivityKind = serde_json::from_str("\"sub-stop\"").unwrap();
+        let c: ActivityKind = serde_json::from_str("\"sub-count\"").unwrap();
         assert_eq!(a, ActivityKind::SubStart);
         assert_eq!(b, ActivityKind::SubStop);
+        assert_eq!(c, ActivityKind::SubCount);
+        assert_eq!(serde_json::to_string(&c).unwrap(), "\"sub-count\"");
     }
 
     #[test]
@@ -331,6 +340,7 @@ mod tests {
             kind: ActivityKind::Prompt,
             at: 1_720_000_000_000,
             text: None,
+            count: None,
         };
         let json = serde_json::to_string(&ev).unwrap();
         assert_eq!(
@@ -347,6 +357,7 @@ mod tests {
             kind: ActivityKind::Prompt,
             at: 1,
             text: None,
+            count: None,
         };
         let j = serde_json::to_string(&ev).unwrap();
         assert!(!j.contains("\"text\""), "None이면 필드 자체가 생략돼야 한다: {j}");
@@ -354,6 +365,27 @@ mod tests {
         let ev2 = ActivityEvent { text: Some("고쳐줘".into()), ..ev };
         let j2 = serde_json::to_string(&ev2).unwrap();
         assert!(j2.contains(r#""text":"고쳐줘""#), "{j2}");
+    }
+
+    #[test]
+    fn activity_event_omits_count_when_none_and_serializes_when_some() {
+        let ev = ActivityEvent {
+            agent_id: "a1".into(),
+            session_id: "s1".into(),
+            kind: ActivityKind::SubCount,
+            at: 1,
+            text: None,
+            count: None,
+        };
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(!json.contains("\"count\""), "{json}");
+
+        let counted = ActivityEvent {
+            count: Some(2),
+            ..ev
+        };
+        let counted_json = serde_json::to_string(&counted).unwrap();
+        assert!(counted_json.contains(r#""count":2"#), "{counted_json}");
     }
 
     // ---- Step 3: struct roundtrip snapshots (camelCase keys) ----

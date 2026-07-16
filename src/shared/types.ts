@@ -106,7 +106,7 @@ export interface NotificationEvent {
  * (serde lowercase). `prompt` = UserPromptSubmit (turn start), `tool` =
  * PostToolUse (heartbeat / waiting→working signal).
  */
-export type ActivityKind = "prompt" | "tool" | "sub-start" | "sub-stop";
+export type ActivityKind = "prompt" | "tool" | "sub-start" | "sub-stop" | "sub-count";
 
 /**
  * Activity signal for session time tracking. Emitted as the `activity-event`
@@ -122,6 +122,8 @@ export interface ActivityEvent {
   at: number;
   /** kind="prompt"일 때 사용자 프롬프트 원문(최대 2,000자 절단). 파싱 실패/부재 시 undefined. */
   text?: string;
+  /** kind="sub-count"일 때 현재 실행 중 서브에이전트 절대 수. */
+  count?: number;
 }
 
 /**

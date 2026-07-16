@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::event::{agent_id, message, prompt_text};
+use super::event::{agent_id, message, prompt_text, running_subagents};
 use super::{
     AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError, ObserverEvent,
     ObserverProvider, ObserverSessionContext, RawObserverHook, WrapperArg,
@@ -111,12 +111,19 @@ impl ObserverAdapter for ClaudeAdapter {
             }),
             "PostToolUse" => Some(ObserverEvent::Tool),
             "SubagentStart" => Some(ObserverEvent::SubStart),
-            "SubagentStop" => Some(ObserverEvent::SubStop),
+            // 절대 카운트는 self 제외를 위해 top-level agent_id가 반드시 있어야 신뢰할 수
+            // 있다(리뷰 지적: agent_id 부재 시 자기 자신까지 세어 off-by-one으로 미니미
+            // 잔존). agent_id 또는 background_tasks가 없으면 안전하게 SubStop 델타로 강등.
+            "SubagentStop" => Some(match (agent_id(raw.body), running_subagents(raw.body)) {
+                (Some(_), Some(running)) => ObserverEvent::SubCount { running },
+                _ => ObserverEvent::SubStop,
+            }),
             "Notification" => Some(ObserverEvent::Attention {
                 message: message(raw.body),
             }),
             "Stop" => Some(ObserverEvent::Stop {
                 message: message(raw.body),
+                running: running_subagents(raw.body),
             }),
             _ => None,
         }
@@ -247,7 +254,10 @@ mod tests {
                     event_name: "Stop",
                     body,
                 }),
-                Some(ObserverEvent::Stop { message: None }),
+                Some(ObserverEvent::Stop {
+                    message: None,
+                    running: None,
+                }),
             );
         }
     }
@@ -262,6 +272,7 @@ mod tests {
             map("Stop", br#"{"message":"m"}"#),
             Some(ObserverEvent::Stop {
                 message: Some("m".into()),
+                running: None,
             }),
         );
         assert_eq!(
@@ -285,6 +296,7 @@ mod tests {
             map("SubagentStart", br#"{"agent_id":"sub-1"}"#),
             Some(ObserverEvent::SubStart),
         );
+        // agent_id 있는 SubagentStop이라도 background_tasks가 없으면 SubStop 델타로 강등.
         assert_eq!(
             map("SubagentStop", br#"{"agent_id":"sub-1"}"#),
             Some(ObserverEvent::SubStop),
@@ -293,6 +305,51 @@ mod tests {
             map("Stop", br#"{"agent_id":"","message":"m"}"#),
             Some(ObserverEvent::Stop {
                 message: Some("m".into()),
+                running: None,
+            }),
+        );
+    }
+
+    #[test]
+    fn claude_maps_background_task_snapshots_to_absolute_counts() {
+        let adapter = ClaudeAdapter::new(scratch_dir());
+        let subagent_body = br#"{
+            "agent_id":"self",
+            "background_tasks":[
+                {"id":"self","type":"subagent","status":"running"},
+                {"id":"other","type":"subagent","status":"running"}
+            ]
+        }"#;
+        assert_eq!(
+            adapter.map_hook(&RawObserverHook {
+                event_name: "SubagentStop",
+                body: subagent_body,
+            }),
+            Some(ObserverEvent::SubCount { running: 1 }),
+        );
+        assert_eq!(
+            adapter.map_hook(&RawObserverHook {
+                event_name: "SubagentStop",
+                body: b"{}",
+            }),
+            Some(ObserverEvent::SubStop),
+        );
+
+        let stop_body = br#"{
+            "message":"done",
+            "background_tasks":[
+                {"id":"one","type":"subagent","status":"running"},
+                {"id":"two","type":"subagent","status":"running"}
+            ]
+        }"#;
+        assert_eq!(
+            adapter.map_hook(&RawObserverHook {
+                event_name: "Stop",
+                body: stop_body,
+            }),
+            Some(ObserverEvent::Stop {
+                message: Some("done".into()),
+                running: Some(2),
             }),
         );
     }

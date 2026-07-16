@@ -25,12 +25,22 @@ impl ObserverProvider {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObserverEvent {
-    Prompt { text: Option<String> },
+    Prompt {
+        text: Option<String>,
+    },
     Tool,
     SubStart,
     SubStop,
-    Attention { message: Option<String> },
-    Stop { message: Option<String> },
+    SubCount {
+        running: u32,
+    },
+    Attention {
+        message: Option<String>,
+    },
+    Stop {
+        message: Option<String>,
+        running: Option<u32>,
+    },
 }
 
 pub struct RawObserverHook<'a> {
@@ -123,6 +133,24 @@ pub fn agent_id(body: &[u8]) -> Option<String> {
     (!agent_id.trim().is_empty()).then(|| agent_id.to_string())
 }
 
+/// Claude Stop/SubagentStop body의 background_tasks에서 실행 중 서브에이전트 수를 센다.
+/// SubagentStop 스냅샷에는 정지 중인 자기 자신이 아직 "running"으로 포함되므로
+/// top-level agent_id와 id가 일치하는 엔트리는 제외한다. 배열 부재/파싱 실패 = None.
+pub fn running_subagents(body: &[u8]) -> Option<u32> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let tasks = value.get("background_tasks")?.as_array()?;
+    let self_id = value.get("agent_id").and_then(|v| v.as_str());
+    let count = tasks
+        .iter()
+        .filter(|t| {
+            t.get("type").and_then(|v| v.as_str()) == Some("subagent")
+                && t.get("status").and_then(|v| v.as_str()) == Some("running")
+                && (self_id.is_none() || t.get("id").and_then(|v| v.as_str()) != self_id)
+        })
+        .count();
+    Some(count as u32)
+}
+
 pub fn tool_description(body: &[u8]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
     let description = value.get("tool_input")?.get("description")?.as_str()?;
@@ -132,8 +160,8 @@ pub fn tool_description(body: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        agent_id, is_command_prompt, message, prompt_text, tool_description, AdapterSessionPlan,
-        CommandWrapperSpec, ObserverProvider, ObserverSessionContext,
+        agent_id, is_command_prompt, message, prompt_text, running_subagents, tool_description,
+        AdapterSessionPlan, CommandWrapperSpec, ObserverProvider, ObserverSessionContext,
     };
 
     fn wrapper(command: &str) -> CommandWrapperSpec {
@@ -174,6 +202,52 @@ mod tests {
         assert_eq!(agent_id(br#"{"agent_id":"   "}"#), None);
         assert_eq!(agent_id(br#"{"agent_id":42}"#), None);
         assert_eq!(agent_id(br#"{"agent_id":null}"#), None);
+    }
+
+    #[test]
+    fn running_subagents_excludes_matching_self_id() {
+        let body = br#"{
+            "agent_id":"self",
+            "background_tasks":[
+                {"id":"self","type":"subagent","status":"running"},
+                {"id":"other","type":"subagent","status":"running"}
+            ]
+        }"#;
+        assert_eq!(running_subagents(body), Some(1));
+    }
+
+    #[test]
+    fn running_subagents_stop_shape_without_agent_id_counts_all() {
+        let body = br#"{"background_tasks":[
+            {"id":"one","type":"subagent","status":"running"},
+            {"id":"two","type":"subagent","status":"running"}
+        ]}"#;
+        assert_eq!(running_subagents(body), Some(2));
+    }
+
+    #[test]
+    fn running_subagents_does_not_subtract_when_self_is_absent() {
+        let body = br#"{"agent_id":"missing","background_tasks":[
+            {"id":"other","type":"subagent","status":"running"}
+        ]}"#;
+        assert_eq!(running_subagents(body), Some(1));
+    }
+
+    #[test]
+    fn running_subagents_filters_status_and_type() {
+        let body = br#"{"background_tasks":[
+            {"id":"running-sub","type":"subagent","status":"running"},
+            {"id":"stopped-sub","type":"subagent","status":"stopped"},
+            {"id":"running-shell","type":"shell","status":"running"}
+        ]}"#;
+        assert_eq!(running_subagents(body), Some(1));
+    }
+
+    #[test]
+    fn running_subagents_distinguishes_missing_invalid_and_empty_arrays() {
+        assert_eq!(running_subagents(br#"{}"#), None);
+        assert_eq!(running_subagents(b"not-json"), None);
+        assert_eq!(running_subagents(br#"{"background_tasks":[]}"#), Some(0));
     }
 
     #[test]

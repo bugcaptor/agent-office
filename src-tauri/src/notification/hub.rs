@@ -97,6 +97,7 @@ impl NotificationHub {
             ObserverEvent::Tool => self.ingest_activity(session_id, ActivityKind::Tool),
             ObserverEvent::SubStart => self.ingest_activity(session_id, ActivityKind::SubStart),
             ObserverEvent::SubStop => self.ingest_activity(session_id, ActivityKind::SubStop),
+            ObserverEvent::SubCount { running } => self.ingest_subagent_count(session_id, running),
             ObserverEvent::Attention { message } => self.ingest(
                 session_id,
                 NotificationSource::Hook,
@@ -104,13 +105,16 @@ impl NotificationHub {
                     .filter(|value| !value.trim().is_empty())
                     .unwrap_or_else(|| ATTENTION_FALLBACK.to_string()),
             ),
-            ObserverEvent::Stop { message } => self.ingest(
-                session_id,
-                NotificationSource::Stop,
-                message
-                    .filter(|value| !value.trim().is_empty())
-                    .unwrap_or_else(|| STOP_FALLBACK.to_string()),
-            ),
+            ObserverEvent::Stop { message, running } => {
+                self.ingest_subagent_count(session_id, running.unwrap_or(0));
+                self.ingest(
+                    session_id,
+                    NotificationSource::Stop,
+                    message
+                        .filter(|value| !value.trim().is_empty())
+                        .unwrap_or_else(|| STOP_FALLBACK.to_string()),
+                )
+            }
         }
     }
 
@@ -124,6 +128,22 @@ impl NotificationHub {
             kind,
             at: self.clock.now_ms(),
             text,
+            count: None,
+        };
+        self.events.activity_event(&ev);
+    }
+
+    fn ingest_subagent_count(&self, session_id: &str, running: u32) {
+        let Some(agent_id) = self.registry.resolve_agent(session_id) else {
+            return;
+        };
+        let ev = ActivityEvent {
+            agent_id,
+            session_id: session_id.to_string(),
+            kind: ActivityKind::SubCount,
+            at: self.clock.now_ms(),
+            text: None,
+            count: Some(running),
         };
         self.events.activity_event(&ev);
     }
@@ -321,18 +341,89 @@ mod tests {
         );
         hub.ingest_observer("s1", ObserverEvent::Tool);
         hub.ingest_observer("s1", ObserverEvent::Attention { message: None });
-        hub.ingest_observer("s1", ObserverEvent::Stop { message: None });
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Stop {
+                message: None,
+                running: None,
+            },
+        );
 
         let activity = events.activities();
         assert_eq!(activity[0].kind, ActivityKind::Prompt);
         assert_eq!(activity[0].text.as_deref(), Some("버그 수정"));
         assert_eq!(activity[1].kind, ActivityKind::Tool);
+        assert_eq!(activity[2].kind, ActivityKind::SubCount);
+        assert_eq!(activity[2].count, Some(0));
 
         let notifications = events.notifications();
         assert_eq!(notifications[0].source, NotificationSource::Hook);
         assert_eq!(notifications[0].message, "확인이 필요합니다");
         assert_eq!(notifications[1].source, NotificationSource::Stop);
         assert_eq!(notifications[1].message, "작업이 완료되었습니다.");
+    }
+
+    #[test]
+    fn sub_count_emits_activity_without_notification() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_observer("s1", ObserverEvent::SubCount { running: 3 });
+
+        let activity = events.activities();
+        assert_eq!(activity.len(), 1);
+        assert_eq!(activity[0].kind, ActivityKind::SubCount);
+        assert_eq!(activity[0].count, Some(3));
+        assert!(events.notifications().is_empty());
+    }
+
+    #[test]
+    fn stop_emits_absolute_count_before_notification_and_defaults_to_zero() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Stop {
+                message: Some("first".into()),
+                running: Some(2),
+            },
+        );
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Stop {
+                message: Some("second".into()),
+                running: None,
+            },
+        );
+
+        let activity = events.activities();
+        assert_eq!(activity.len(), 2);
+        assert_eq!(activity[0].kind, ActivityKind::SubCount);
+        assert_eq!(activity[0].count, Some(2));
+        assert_eq!(activity[1].kind, ActivityKind::SubCount);
+        assert_eq!(activity[1].count, Some(0));
+        let notifications = events.notifications();
+        assert_eq!(notifications.len(), 2);
+        assert_eq!(notifications[0].message, "first");
+        assert_eq!(notifications[1].message, "second");
+    }
+
+    #[test]
+    fn stop_snapshot_preserves_two_running_subagents_after_delta_events() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_observer("s1", ObserverEvent::SubStart);
+        hub.ingest_observer("s1", ObserverEvent::SubStart);
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Stop {
+                message: None,
+                running: Some(2),
+            },
+        );
+
+        let activity = events.activities();
+        assert_eq!(activity.len(), 3);
+        assert_eq!(activity[0].kind, ActivityKind::SubStart);
+        assert_eq!(activity[1].kind, ActivityKind::SubStart);
+        assert_eq!(activity[2].kind, ActivityKind::SubCount);
+        assert_eq!(activity[2].count, Some(2));
     }
 
     fn msg(text: &str) -> Vec<u8> {
