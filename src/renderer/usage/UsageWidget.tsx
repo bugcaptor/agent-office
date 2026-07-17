@@ -6,12 +6,14 @@
 //
 // 폴링: 마운트 시 1회 + 60초 간격으로 loadUsageSnapshot을 invoke해 스토어에
 // 저장한다(설계 docs/usage-limits-design.md §3). 파일 읽기가 저비용이라
-// 백엔드 타이머/파일 워처 없이 단순 폴링으로 충분.
+// 백엔드 타이머/파일 워처 없이 단순 폴링으로 충분. 응답의 provider별 null은
+// mergeUsageSnapshot으로 이전 값 위에 덮어써(일시 파싱 실패가 유효 값을
+// 지우지 않게) 저장한다.
 import { useEffect } from "react";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import type { ProviderUsage } from "@shared/types";
-import { PROVIDER_SHORT, mostUrgentWindow, usageLevel } from "./usageView";
+import { PROVIDER_SHORT, mergeUsageSnapshot, mostUrgentWindow, usageLevel } from "./usageView";
 
 /** 폴링 주기(ms). */
 const POLL_INTERVAL_MS = 60_000;
@@ -55,7 +57,7 @@ export function UsageWidget() {
     const poll = async () => {
       try {
         const snap = await tauriApi.loadUsageSnapshot();
-        if (!cancelled) setUsage(snap);
+        if (!cancelled) setUsage(mergeUsageSnapshot(useAppStore.getState().usage, snap));
       } catch (err) {
         // 실패는 콘솔 경고로만 — 다음 폴링이 재시도한다(이전 값 유지).
         console.warn("usage: 스냅샷 로드 실패", err);

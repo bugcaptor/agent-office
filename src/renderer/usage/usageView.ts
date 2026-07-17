@@ -5,7 +5,7 @@
 // 임계 색상, 카운트다운·신선도 포맷 같은 해석·표시는 여기서 한다. React·스토어
 // 의존 없음 — 단위 테스트 대상(설계 §4).
 
-import type { ProviderUsage, UsageWindow } from "@shared/types";
+import type { ProviderUsage, UsageSnapshot, UsageWindow } from "@shared/types";
 
 /** 신선도가 이보다 오래되면(ms) stale로 보고 흐리게 표시한다. */
 export const STALE_THRESHOLD_MS = 30 * 60 * 1000;
@@ -84,4 +84,20 @@ export function formatFreshness(fetchedAtMs: number, now: number): string {
 /** 신선도가 STALE_THRESHOLD_MS를 넘었는지. */
 export function isStale(fetchedAtMs: number, now: number): boolean {
   return now - fetchedAtMs > STALE_THRESHOLD_MS;
+}
+
+/**
+ * 새 스냅샷의 provider별 null을 이전 값으로 메운다. 일시적 파싱 실패(예:
+ * `~/.claude.json` rewrite 도중 partial read)로 백엔드가 해당 provider를
+ * null로 반환해도 이전 유효 값을 화면에서 지우지 않고, 신선도 표시가 자연히
+ * 오래됨을 알려주게 한다.
+ */
+export function mergeUsageSnapshot(
+  prev: UsageSnapshot | null,
+  next: UsageSnapshot,
+): UsageSnapshot {
+  return {
+    claude: next.claude ?? prev?.claude ?? null,
+    codex: next.codex ?? prev?.codex ?? null,
+  };
 }

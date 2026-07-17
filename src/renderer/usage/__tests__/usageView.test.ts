@@ -4,12 +4,13 @@
 // 선택, 임계 색상, 카운트다운·신선도 포맷, stale 판정.
 
 import { describe, expect, it } from "vitest";
-import type { ProviderUsage, UsageWindow } from "@shared/types";
+import type { ProviderUsage, UsageSnapshot, UsageWindow } from "@shared/types";
 import {
   STALE_THRESHOLD_MS,
   formatCountdown,
   formatFreshness,
   isStale,
+  mergeUsageSnapshot,
   mostUrgentWindow,
   usageLevel,
   windowLabel,
@@ -120,5 +121,40 @@ describe("formatFreshness / isStale", () => {
   it("stale 임계는 30분 초과", () => {
     expect(isStale(NOW - STALE_THRESHOLD_MS, NOW)).toBe(false);
     expect(isStale(NOW - STALE_THRESHOLD_MS - 1, NOW)).toBe(true);
+  });
+});
+
+describe("mergeUsageSnapshot", () => {
+  const claudeUsage: ProviderUsage = provider([win({ usedPercent: 42 })]);
+  const codexUsage: ProviderUsage = {
+    provider: "codex",
+    fetchedAtMs: 100,
+    planLabel: null,
+    windows: [win({ usedPercent: 7 })],
+  };
+
+  it("새 값이 null이면 이전 값을 유지한다", () => {
+    const prev: UsageSnapshot = { claude: claudeUsage, codex: codexUsage };
+    const next: UsageSnapshot = { claude: null, codex: null };
+    expect(mergeUsageSnapshot(prev, next)).toEqual({ claude: claudeUsage, codex: codexUsage });
+  });
+
+  it("새 값이 있으면 교체한다", () => {
+    const prev: UsageSnapshot = { claude: claudeUsage, codex: codexUsage };
+    const newerClaude: ProviderUsage = provider([win({ usedPercent: 55 })]);
+    const next: UsageSnapshot = { claude: newerClaude, codex: null };
+    expect(mergeUsageSnapshot(prev, next)).toEqual({ claude: newerClaude, codex: codexUsage });
+  });
+
+  it("prev가 null이면 next를 그대로 쓴다", () => {
+    const next: UsageSnapshot = { claude: claudeUsage, codex: null };
+    expect(mergeUsageSnapshot(null, next)).toEqual({ claude: claudeUsage, codex: null });
+  });
+
+  it("prev도 next도 없는 provider는 null 그대로", () => {
+    expect(mergeUsageSnapshot(null, { claude: null, codex: null })).toEqual({
+      claude: null,
+      codex: null,
+    });
   });
 });
