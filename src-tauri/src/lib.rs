@@ -110,6 +110,23 @@ where
     None
 }
 
+/// 훅이 forwarder로 재실행할 자기 자신의 경로. Linux AppImage에서는
+/// `current_exe()`가 실행마다 바뀌는 `/tmp/.mount_*` 마운트 안을 가리켜, 세션
+/// 핸드오프 후 앱을 재시작하면 훅 설정에 박힌 forwarder 경로 자체가 스테일해진다
+/// (포트 스테일과 같은 §핵심 5 시나리오, PR #32 리뷰 지적). AppImage 런타임이
+/// 주는 `$APPIMAGE`(원본 .AppImage의 안정 경로)를 우선한다 — AppImage는 인자를
+/// 내부 바이너리로 그대로 전달하므로 `--observer-forward` 분기가 동일하게 동작한다.
+fn forwarder_executable_path() -> std::path::PathBuf {
+    if let Some(appimage) = std::env::var_os("APPIMAGE") {
+        let path = std::path::PathBuf::from(appimage);
+        // forwarder_shell_command가 절대 경로를 요구한다 — 이상한 값이면 무시.
+        if path.is_absolute() {
+            return path;
+        }
+    }
+    std::env::current_exe().unwrap_or_default()
+}
+
 /// Returns the live observer endpoint only when the latest settings snapshot
 /// enables observation and a server is currently installed.
 /// `#[cfg(test)]` 아래에서 이 함수를 직접 단위 테스트한다.
@@ -230,7 +247,7 @@ pub fn run() {
                 ObserverRuntime::production(
                     hub.clone(),
                     observer_temp,
-                    std::env::current_exe().unwrap_or_default(),
+                    forwarder_executable_path(),
                 )
                 .with_claude_session_sink(claude_resume_recorder),
             );
@@ -339,6 +356,51 @@ mod tests {
     fn session_event_root_is_versioned_under_app_data() {
         let root = session_event_root(std::path::Path::new("/app-data"));
         assert_eq!(root, std::path::Path::new("/app-data/session-events/v1"));
+    }
+
+    // APPIMAGE는 프로세스 전역 env — 병렬 테스트 경합 방지용 직렬화 락
+    // (observer/forwarder.rs의 ENV_LOCK과 동일 관례).
+    static APPIMAGE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn forwarder_executable_prefers_absolute_appimage_path() {
+        let _guard = APPIMAGE_ENV_LOCK.lock().unwrap();
+        let previous = std::env::var_os("APPIMAGE");
+
+        std::env::set_var("APPIMAGE", "/opt/apps/agent-office.AppImage");
+        assert_eq!(
+            forwarder_executable_path(),
+            std::path::PathBuf::from("/opt/apps/agent-office.AppImage"),
+        );
+
+        // 상대 경로 APPIMAGE는 무시하고 current_exe로 폴백한다
+        // (forwarder_shell_command가 절대 경로를 요구).
+        std::env::set_var("APPIMAGE", "relative.AppImage");
+        assert_eq!(
+            forwarder_executable_path(),
+            std::env::current_exe().unwrap_or_default(),
+        );
+
+        match previous {
+            Some(value) => std::env::set_var("APPIMAGE", value),
+            None => std::env::remove_var("APPIMAGE"),
+        }
+    }
+
+    #[test]
+    fn forwarder_executable_without_appimage_uses_current_exe() {
+        let _guard = APPIMAGE_ENV_LOCK.lock().unwrap();
+        let previous = std::env::var_os("APPIMAGE");
+        std::env::remove_var("APPIMAGE");
+
+        assert_eq!(
+            forwarder_executable_path(),
+            std::env::current_exe().unwrap_or_default(),
+        );
+
+        if let Some(value) = previous {
+            std::env::set_var("APPIMAGE", value);
+        }
     }
 
     // forwarder를 실제로 기동하는 Some 분기(codex, claude[+event])는 세션 env에
