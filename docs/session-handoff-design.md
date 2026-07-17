@@ -126,6 +126,12 @@ Running 세션 각각에 대해:
   공용 명령 빌더 `observer/hook_command.rs`)를 경유해 이 재시도 경로를 탄다. 예전
   claude는 훅 URL을 curl 명령에 직접 박아 넣어(스폰 시점 포트) 재시작 후 입양된
   세션의 훅이 전부 유실됐다 — 이슈 #30에서 forwarder 경유로 전환해 해소했다.
+- forwarder 경로 자체도 실행마다 안정해야 한다. Linux AppImage는 `current_exe()`가
+  실행별 `/tmp/.mount_*`를 가리키므로 `$APPIMAGE`(원본 경로)를 우선한다
+  (`lib.rs forwarder_executable_path()`). **알려진 한계**: macOS App Translocation
+  (격리 플래그 있는 앱을 Downloads/DMG에서 제자리 실행)에서는 `current_exe()`가
+  무작위 마운트라 같은 문제가 남는다 — 원본 경로 복원 API가 비공개라 완화하지
+  않았고, 로컬 빌드·/Applications 설치(격리 플래그 없음)에는 발동하지 않는다.
 
 ### 6. 프론트
 
