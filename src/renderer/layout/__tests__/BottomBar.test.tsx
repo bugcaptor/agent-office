@@ -93,6 +93,14 @@ describe("출근 버튼(🏠)", () => {
   });
 });
 
+describe("정보 버튼(ℹ)", () => {
+  it("클릭하면 about 모달을 연다", () => {
+    const { getByRole } = render(<BottomBar />);
+    fireEvent.click(getByRole("button", { name: "정보" }));
+    expect(useAppStore.getState().modal).toEqual({ kind: "about" });
+  });
+});
+
 describe("전체 퇴근/전체 출근 토글 버튼", () => {
   it("에이전트가 하나도 없으면 전체 출근(비활성)을 보여준다", () => {
     const { getByRole } = render(<BottomBar />);

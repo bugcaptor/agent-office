@@ -9,9 +9,11 @@
 // everyone is clocked out it becomes "전체 출근" (calls `clockInAll` directly,
 // no confirm — clock-in is non-destructive). Then a running/pending status summary in
 // the center, a settings (⚙) button that
-// opens `SettingsDialog` (선택적 에이전트 연동 2종), and the mute toggle
-// on the right (flips `store.muted`; the actual badge resync on toggle lives
-// in `ipc/sessionBridge.ts`'s `installSessionBridge`, not here).
+// opens `SettingsDialog` (선택적 에이전트 연동 2종), an info (ℹ) button
+// right after it that opens `AboutDialog` (앱 이름/버전/라이선스), and the
+// mute toggle on the right (flips `store.muted`; the actual badge resync on
+// toggle lives in `ipc/sessionBridge.ts`'s `installSessionBridge`, not
+// here).
 import { useState } from "react";
 import { useAppStore } from "../store/appStore";
 import {
@@ -109,6 +111,15 @@ export function BottomBar() {
         onClick={() => openModal({ kind: "settings" })}
       >
         ⚙
+      </button>
+      <button
+        type="button"
+        className="pixel-btn about-btn"
+        aria-label="정보"
+        title="Agent Office 정보"
+        onClick={() => openModal({ kind: "about" })}
+      >
+        ℹ
       </button>
       <button
         type="button"
