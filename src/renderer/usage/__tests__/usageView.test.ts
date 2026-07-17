@@ -147,6 +147,27 @@ describe("mergeUsageSnapshot", () => {
     expect(mergeUsageSnapshot(prev, next)).toEqual({ claude: newerClaude, codex: codexUsage });
   });
 
+  it("새 값이 이전 값보다 오래된 스냅샷이면(fetchedAtMs) 이전 값을 유지한다", () => {
+    // codex::load의 best-available 폴백: 최신 rollout이 일시적으로 못 읽히면
+    // 더 오래된 파일의 스냅샷이 온다 — 메모리상 신선한 값이 역행하면 안 된다.
+    const fresh: ProviderUsage = { ...codexUsage, fetchedAtMs: 200 };
+    const staleFallback: ProviderUsage = {
+      ...codexUsage,
+      fetchedAtMs: 100,
+      windows: [win({ usedPercent: 3 })],
+    };
+    const prev: UsageSnapshot = { claude: null, codex: fresh };
+    const next: UsageSnapshot = { claude: null, codex: staleFallback };
+    expect(mergeUsageSnapshot(prev, next)).toEqual({ claude: null, codex: fresh });
+  });
+
+  it("fetchedAtMs 동률이면 새 값을 쓴다", () => {
+    const sameTs: ProviderUsage = { ...codexUsage, windows: [win({ usedPercent: 9 })] };
+    const prev: UsageSnapshot = { claude: null, codex: codexUsage };
+    const next: UsageSnapshot = { claude: null, codex: sameTs };
+    expect(mergeUsageSnapshot(prev, next)).toEqual({ claude: null, codex: sameTs });
+  });
+
   it("prev가 null이면 next를 그대로 쓴다", () => {
     const next: UsageSnapshot = { claude: claudeUsage, codex: null };
     expect(mergeUsageSnapshot(null, next)).toEqual({ claude: claudeUsage, codex: null });

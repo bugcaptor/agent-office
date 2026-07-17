@@ -30,6 +30,13 @@
 // 디렉터리를 대상으로 하고(결정적 정렬이라 비용은 디렉터리 순회 정도),
 // 실제 파일 내용을 읽어 파싱하는 비용이 큰 작업만 상한을 둔다.
 //
+// 재폴링 캐시: load는 60초 폴링마다 다시 불리는데, rollout 파일은
+// append-only라 (mtime, len)이 그대로면 내용도 그대로다. 그래서 파일별
+// parse_file 결과를 (mtime, len) 키로 캐시해, 변경 없는 파일은 tail 스캔
+// 없이 이전 결과(None 포함)를 재사용한다. 이게 없으면 유효 스냅샷이 하나도
+// 없는 아카이브(API 키 사용자, rate_limits 도입 전 rollout)에서 매 폴링마다
+// 최대 MAX_PARSED_FILES × MAX_TAIL_SCAN_BYTES(=512MB)를 다시 읽게 된다.
+//
 // 파일 내부 스캔(parse_file): 장기 세션 rollout은 수백 MB가 될 수 있고
 // 60초 폴링마다 최대 MAX_PARSED_FILES개를 매번 `read_to_string`으로 통째로
 // 읽으면 I/O·메모리 낭비가 크다. 그래서 파일 끝에서부터 TAIL_CHUNK_BYTES
@@ -42,16 +49,19 @@
 // 항상 꼬리 근처에 있다는 것이 전제(그 이상 뒤져도 못 찾으면 이 파일은
 // 포기하고 다음 파일로 넘어간다).
 
+use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
 use super::{parse_iso8601_ms, Provider, ProviderUsage, UsageWindow, UsageWindowKind};
 
-/// parse_file 호출 횟수 상한(스캔 비용 상한). 이 개수만큼 파싱하고도 더 나은
-/// 후보를 못 찾으면(또는 아예 못 찾으면) 탐색을 중단한다.
+/// 폴링 1회당 parse_file 호출 횟수 상한(스캔 비용 상한). 캐시 적중은 여기에
+/// 세지 않는다 — 실제 tail 스캔이 일어나는 파일만 예산을 쓴다. 이 개수만큼
+/// 파싱하고도 더 나은 후보를 못 찾으면(또는 아예 못 찾으면) 탐색을 중단한다.
 const MAX_PARSED_FILES: usize = 64;
 
 /// 파일 끝에서부터 역방향으로 읽는 청크 크기.
@@ -63,14 +73,34 @@ const TAIL_CHUNK_BYTES: u64 = 64 * 1024;
 /// (다음 파일로) 넘어간다.
 const MAX_TAIL_SCAN_BYTES: u64 = 8 * 1024 * 1024;
 
+/// 파일 1개의 캐시된 파싱 결과. (mtime, len)이 스캔 당시와 같으면
+/// append-only rollout 특성상 내용도 같으므로 result를 재사용한다.
+/// result는 "유효 스냅샷 없음"(None)도 캐시한다 — 그게 이 캐시의 핵심
+/// 목적(스냅샷 없는 아카이브 재스캔 방지)이다.
+struct CacheEntry {
+    mtime: SystemTime,
+    len: u64,
+    result: Option<ProviderUsage>,
+}
+
+/// 프로세스 전역 parse_file 결과 캐시(모듈 상단 §재폴링 캐시). 삭제된
+/// 파일의 엔트리는 남지만 항목당 수백 바이트 수준이라 정리하지 않는다.
+fn parse_cache() -> &'static Mutex<HashMap<PathBuf, CacheEntry>> {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, CacheEntry>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 /// `<codex_root>/sessions`에서 가장 최근(스냅샷 timestamp 기준) non-null
 /// rate_limits 스냅샷을 찾는다. 없으면 None.
 pub fn load(codex_root: &Path) -> Option<ProviderUsage> {
     let sessions = codex_root.join("sessions");
     let files = all_rollout_files_by_mtime_desc(&sessions);
+    let mut cache = parse_cache()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut best: Option<ProviderUsage> = None;
     let mut parsed_count = 0usize;
-    for (mtime, file) in files {
+    for (mtime, len, file) in files {
         // 조기 종료: 남은 파일들은 mtime이 이 파일 이하이므로, 현재 최선
         // 후보의 스냅샷이 이 파일의 mtime보다도 이미 최신이면 더 볼 필요 없다.
         if let Some(best_usage) = &best {
@@ -78,11 +108,30 @@ pub fn load(codex_root: &Path) -> Option<ProviderUsage> {
                 break;
             }
         }
-        if parsed_count >= MAX_PARSED_FILES {
-            break;
-        }
-        parsed_count += 1;
-        if let Some(usage) = parse_file(&file) {
+        let cached = cache
+            .get(&file)
+            .filter(|e| e.mtime == mtime && e.len == len)
+            .map(|e| e.result.clone());
+        let usage = match cached {
+            Some(result) => result,
+            None => {
+                if parsed_count >= MAX_PARSED_FILES {
+                    break;
+                }
+                parsed_count += 1;
+                let result = parse_file(&file);
+                cache.insert(
+                    file,
+                    CacheEntry {
+                        mtime,
+                        len,
+                        result: result.clone(),
+                    },
+                );
+                result
+            }
+        };
+        if let Some(usage) = usage {
             let is_better = best
                 .as_ref()
                 .is_none_or(|b| usage.fetched_at_ms > b.fetched_at_ms);
@@ -141,10 +190,12 @@ fn parse_component<T: std::str::FromStr>(entry: &std::fs::DirEntry) -> Option<T>
     entry.file_name().to_str()?.parse::<T>().ok()
 }
 
-/// 모든 날짜 디렉터리를 통틀어 모든 `rollout-*.jsonl`을 모아 파일 mtime
-/// 내림차순으로(날짜 디렉터리 경계 없이 전역) 정렬한다.
-fn all_rollout_files_by_mtime_desc(sessions: &Path) -> Vec<(SystemTime, PathBuf)> {
-    let mut files: Vec<(SystemTime, PathBuf)> = Vec::new();
+/// 모든 날짜 디렉터리를 통틀어 모든 `rollout-*.jsonl`을 (mtime, len, 경로)로
+/// 모아 파일 mtime 내림차순으로(날짜 디렉터리 경계 없이 전역) 정렬한다.
+/// len은 캐시 키용 — mtime 해상도가 거친 파일시스템에서도 append는 len을
+/// 바꾸므로 (mtime, len) 쌍이면 변경 감지에 충분하다.
+fn all_rollout_files_by_mtime_desc(sessions: &Path) -> Vec<(SystemTime, u64, PathBuf)> {
+    let mut files: Vec<(SystemTime, u64, PathBuf)> = Vec::new();
     for dir in all_date_dirs(sessions) {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
@@ -155,11 +206,16 @@ fn all_rollout_files_by_mtime_desc(sessions: &Path) -> Vec<(SystemTime, PathBuf)
             if !name.starts_with("rollout-") || !name.ends_with(".jsonl") {
                 continue;
             }
-            let mtime = e.metadata().and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH);
-            files.push((mtime, e.path()));
+            let meta = e.metadata().ok();
+            let mtime = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .unwrap_or(UNIX_EPOCH);
+            let len = meta.map(|m| m.len()).unwrap_or(0);
+            files.push((mtime, len, e.path()));
         }
     }
-    files.sort_by(|a, b| b.0.cmp(&a.0));
+    files.sort_by_key(|f| std::cmp::Reverse(f.0));
     files
 }
 
@@ -570,6 +626,69 @@ mod tests {
     #[test]
     fn missing_sessions_dir_yields_none() {
         assert!(load(&scratch()).is_none());
+    }
+
+    /// 재폴링 캐시(§모듈 상단): (mtime, len)이 그대로면 tail 스캔을 건너뛰고
+    /// 이전 결과를 재사용한다. 내용을 같은 길이로 바꿔치기하고 mtime을
+    /// 원래대로 되돌리면(= append-only 전제에서는 일어나지 않는 변조) 캐시가
+    /// 적중해 예전 값이 그대로 나온다 — 재파싱이 생략됐다는 관찰 가능한 증거.
+    #[test]
+    fn unchanged_mtime_and_len_reuses_cached_result() {
+        let root = scratch();
+        let line_a = event(
+            "2026-07-17T11:20:17.595Z",
+            r#"{"primary":{"used_percent":11.0,"window_minutes":10080,"resets_at":1784786662},"secondary":null}"#,
+        );
+        write_rollout(&root, ("2026", "07", "17"), "rollout-a.jsonl", &line_a);
+        assert_eq!(load(&root).unwrap().windows[0].used_percent, 11.0);
+
+        let path = root
+            .join("sessions/2026/07/17")
+            .join("rollout-a.jsonl");
+        let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+        // used_percent만 11.0 → 22.0으로: 바이트 길이는 동일하다.
+        let line_b = line_a.replace("11.0", "22.0");
+        assert_eq!(line_a.len(), line_b.len());
+        std::fs::write(&path, &line_b).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(mtime)
+            .unwrap();
+
+        // (mtime, len) 불변 → 캐시 적중 → 예전 값 11.0 유지.
+        assert_eq!(load(&root).unwrap().windows[0].used_percent, 11.0);
+    }
+
+    /// 재폴링 캐시 무효화: append로 len이 바뀌면(mtime 해상도와 무관하게)
+    /// 재파싱해 새 스냅샷을 집는다. "스냅샷 없음"(None) 결과도 캐시되지만
+    /// 파일이 자라면 다시 스캔한다는 것을 함께 검증한다.
+    #[test]
+    fn append_invalidates_cache_even_for_cached_none() {
+        let root = scratch();
+        // 처음엔 유효 스냅샷 없음 → None(이 결과가 캐시된다).
+        write_rollout(
+            &root,
+            ("2026", "07", "17"),
+            "rollout-a.jsonl",
+            &event("2026-07-17T10:00:00.000Z", r#"{"primary":null,"secondary":null}"#),
+        );
+        assert!(load(&root).is_none());
+
+        // 유효 스냅샷 append → len 변경 → 캐시 미스 → 새로 파싱.
+        let path = root
+            .join("sessions/2026/07/17")
+            .join("rollout-a.jsonl");
+        let mut body = std::fs::read_to_string(&path).unwrap();
+        body.push('\n');
+        body.push_str(&event(
+            "2026-07-17T11:20:17.595Z",
+            r#"{"primary":{"used_percent":33.0,"window_minutes":10080,"resets_at":1784786662},"secondary":null}"#,
+        ));
+        std::fs::write(&path, &body).unwrap();
+
+        assert_eq!(load(&root).unwrap().windows[0].used_percent, 33.0);
     }
 
     /// 청크 경계 이어붙이기(§모듈 상단 스캔 전략): 유효 스냅샷 라인보다

@@ -56,13 +56,21 @@ export function UsageWidget() {
 
   useEffect(() => {
     let cancelled = false;
+    // 이전 폴링이 아직 진행 중이면(예: 첫 스캔이 60초를 넘김) 새 폴링을
+    // 건너뛴다 — 스캔이 겹쳐 쌓이는 것을 막는다. 응답 순서 역전 자체는
+    // mergeUsageSnapshot의 fetchedAtMs 비교가 막는다.
+    let inFlight = false;
     const poll = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const snap = await tauriApi.loadUsageSnapshot();
         if (!cancelled) setUsage(mergeUsageSnapshot(useAppStore.getState().usage, snap));
       } catch (err) {
         // 실패는 콘솔 경고로만 — 다음 폴링이 재시도한다(이전 값 유지).
         console.warn("usage: 스냅샷 로드 실패", err);
+      } finally {
+        inFlight = false;
       }
     };
     void poll();

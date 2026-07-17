@@ -87,17 +87,35 @@ export function isStale(fetchedAtMs: number, now: number): boolean {
 }
 
 /**
- * 새 스냅샷의 provider별 null을 이전 값으로 메운다. 일시적 파싱 실패(예:
+ * provider 하나에 대해 이전/새 값 중 신선한 쪽을 고른다. 새 값이 null이면
+ * 이전 값 유지, 둘 다 있으면 fetchedAtMs가 큰 쪽(동률은 새 값). 백엔드
+ * codex::load는 최신 rollout이 일시적으로 못 읽히면 더 오래된 파일의 유효
+ * 스냅샷을 반환할 수 있어(best-available), 단순 교체는 메모리상 더 신선한
+ * 값을 옛 값으로 되돌린다 — 그래서 timestamp 비교로만 교체한다. 폴링 응답이
+ * 겹쳐 순서가 뒤바뀌어도 같은 비교가 역행을 막는다.
+ */
+function fresherProvider(
+  prev: ProviderUsage | null,
+  next: ProviderUsage | null,
+): ProviderUsage | null {
+  if (!next) return prev;
+  if (!prev) return next;
+  return next.fetchedAtMs >= prev.fetchedAtMs ? next : prev;
+}
+
+/**
+ * 새 스냅샷을 provider별로 이전 값과 병합한다. 일시적 파싱 실패(예:
  * `~/.claude.json` rewrite 도중 partial read)로 백엔드가 해당 provider를
- * null로 반환해도 이전 유효 값을 화면에서 지우지 않고, 신선도 표시가 자연히
- * 오래됨을 알려주게 한다.
+ * null로 반환해도 이전 유효 값을 화면에서 지우지 않고, 새 값이 이전 값보다
+ * 오래된 스냅샷이면(fetchedAtMs 비교) 이전 값을 유지한다. 어느 쪽이든
+ * 신선도 표시가 자연히 오래됨을 알려준다.
  */
 export function mergeUsageSnapshot(
   prev: UsageSnapshot | null,
   next: UsageSnapshot,
 ): UsageSnapshot {
   return {
-    claude: next.claude ?? prev?.claude ?? null,
-    codex: next.codex ?? prev?.codex ?? null,
+    claude: fresherProvider(prev?.claude ?? null, next.claude),
+    codex: fresherProvider(prev?.codex ?? null, next.codex),
   };
 }
