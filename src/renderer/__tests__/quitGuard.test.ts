@@ -20,9 +20,17 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ onCloseRequested }),
 }));
 
+// `installQuitGuard`가 부팅 시 캐시하는 handoff_supported() 조회 — 실제
+// `@tauri-apps/api/core` invoke를 타지 않도록 tauriApi 자체를 모킹한다
+// (다른 tauriApi 메서드는 이 파일에서 쓰지 않으므로 전체 모킹으로 충분).
+const handoffSupported = vi.fn();
+vi.mock("../ipc/tauriApi", () => ({
+  tauriApi: { handoffSupported: (...args: unknown[]) => handoffSupported(...args) },
+}));
+
 import { useAppStore } from "../store/appStore";
 import type { AgentProfile } from "../store/types";
-import { installQuitGuard } from "../quitGuard";
+import { installQuitGuard, isHandoffSupported } from "../quitGuard";
 
 const initialState = useAppStore.getState();
 
@@ -43,6 +51,7 @@ beforeEach(() => {
   useAppStore.setState(initialState, true);
   onCloseRequested.mockClear();
   capturedHandler = undefined;
+  handoffSupported.mockReset().mockResolvedValue(false);
 });
 
 function fireCloseRequested(): { prevented: boolean } {
@@ -113,5 +122,37 @@ describe("installQuitGuard", () => {
     // The mocked onCloseRequested resolves to a fresh vi.fn(); we only assert
     // that calling the teardown doesn't throw and awaits cleanly.
     expect(true).toBe(true);
+  });
+});
+
+describe("isHandoffSupported cache", () => {
+  it("caches a resolved handoff_supported()=true after install", async () => {
+    handoffSupported.mockResolvedValue(true);
+    installQuitGuard();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(isHandoffSupported()).toBe(true);
+  });
+
+  it("caches false when handoff_supported() resolves false", async () => {
+    handoffSupported.mockResolvedValue(false);
+    installQuitGuard();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(isHandoffSupported()).toBe(false);
+  });
+
+  it("falls back to false when handoff_supported() rejects (unsupported/older backend)", async () => {
+    handoffSupported.mockRejectedValue(new Error("no such command"));
+    installQuitGuard();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(isHandoffSupported()).toBe(false);
   });
 });

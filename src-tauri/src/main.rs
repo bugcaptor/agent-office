@@ -2,5 +2,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    agent_office_lib::run()
+    if let Some(code) = agent_office_lib::maybe_run_observer_forwarder(std::env::args_os()) {
+        std::process::exit(code);
+    }
+    if let Some(code) = agent_office_lib::maybe_run_sessiond(std::env::args_os()) {
+        std::process::exit(code);
+    }
+    agent_office_lib::run();
 }

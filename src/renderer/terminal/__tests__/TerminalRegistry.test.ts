@@ -20,7 +20,7 @@
 // - `activate()`/`refit()` fit + report size + (activate only) focus, and
 //   are no-ops before the term has been opened.
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const openMock = vi.fn();
 const disposeMock = vi.fn();
@@ -78,8 +78,16 @@ class FakeFitAddon {
   fit = fitMock;
 }
 
+/** Minimal stand-in for `@xterm/addon-serialize`'s SerializeAddon — each
+ * instance owns its own `serialize` mock (a fresh `vi.fn()` per `new`) so
+ * tests can configure per-agent return values independently. */
+class FakeSerializeAddon {
+  serialize = vi.fn(() => "");
+}
+
 vi.mock("@xterm/xterm", () => ({ Terminal: FakeTerminal }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: FakeFitAddon }));
+vi.mock("@xterm/addon-serialize", () => ({ SerializeAddon: FakeSerializeAddon }));
 
 const writeInput = vi.fn();
 const resize = vi.fn();
@@ -311,6 +319,118 @@ describe("activate / refit", () => {
 
     expect(fitMock).not.toHaveBeenCalled();
     expect(onResize).not.toHaveBeenCalled();
+  });
+});
+
+describe("serializeAll (session handoff snapshot)", () => {
+  it("returns serialize() output for every live entry, keyed by agentId", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+    terminalRegistry.attach("a2", host);
+    const e1 = terminalRegistry.get("a1")! as unknown as { serialize: FakeSerializeAddon };
+    const e2 = terminalRegistry.get("a2")! as unknown as { serialize: FakeSerializeAddon };
+    e1.serialize.serialize.mockReturnValue("SCREEN-A1");
+    e2.serialize.serialize.mockReturnValue("SCREEN-A2");
+
+    const result = terminalRegistry.serializeAll();
+
+    expect(result).toEqual({ a1: "SCREEN-A1", a2: "SCREEN-A2" });
+  });
+
+  it("skips an entry whose serialize() throws, still returning the rest", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+    terminalRegistry.attach("a2", host);
+    const e1 = terminalRegistry.get("a1")! as unknown as { serialize: FakeSerializeAddon };
+    const e2 = terminalRegistry.get("a2")! as unknown as { serialize: FakeSerializeAddon };
+    e1.serialize.serialize.mockImplementation(() => {
+      throw new Error("serialize boom");
+    });
+    e2.serialize.serialize.mockReturnValue("SCREEN-A2");
+
+    const result = terminalRegistry.serializeAll();
+
+    expect(result).toEqual({ a2: "SCREEN-A2" });
+  });
+
+  it("returns an empty object when there are no live terminals", async () => {
+    const terminalRegistry = await importRegistry();
+    expect(terminalRegistry.serializeAll()).toEqual({});
+  });
+});
+
+describe("markAdopted / redraw nudge", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("does nothing extra on activate() for an agent that was never marked adopted", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+
+    terminalRegistry.activate("a1", vi.fn());
+
+    expect(resize).not.toHaveBeenCalled();
+    expect(fitMock).toHaveBeenCalledTimes(1); // just the normal activate() fit
+  });
+
+  it("adopted agent: first activate() fits, resizes to rows-1, then re-fits + reports real size after the delay", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+    terminalRegistry.markAdopted(["a1"]);
+
+    const onResize = vi.fn();
+    terminalRegistry.activate("a1", onResize);
+
+    // Normal activate() fit + report already happened synchronously (rAF is sync in tests).
+    expect(fitMock).toHaveBeenCalledTimes(1);
+    expect(onResize).toHaveBeenCalledWith(80, 24);
+    // The nudge fires the resize(cols, rows-1) call right away (before the 50ms wait).
+    expect(resize).toHaveBeenCalledWith("a1", 80, 23);
+
+    await vi.advanceTimersByTimeAsync(50);
+
+    // Second fit + onResize call restores the real size — 2 fits, 2 onResize calls total.
+    expect(fitMock).toHaveBeenCalledTimes(2);
+    expect(onResize).toHaveBeenCalledTimes(2);
+    expect(onResize).toHaveBeenLastCalledWith(80, 24);
+  });
+
+  it("only nudges once — a second activate() for the same agent does not re-trigger it", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+    terminalRegistry.markAdopted(["a1"]);
+
+    terminalRegistry.activate("a1", vi.fn());
+    await vi.advanceTimersByTimeAsync(50);
+    resize.mockClear();
+
+    terminalRegistry.activate("a1", vi.fn());
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(resize).not.toHaveBeenCalled();
+  });
+
+  it("keeps agents independent — marking a1 does not nudge a2", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+    terminalRegistry.attach("a2", host);
+    terminalRegistry.markAdopted(["a1"]);
+
+    terminalRegistry.activate("a2", vi.fn());
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(resize).not.toHaveBeenCalled();
   });
 });
 

@@ -274,6 +274,21 @@ body {
   opacity: 0.85;
 }
 
+/* 입력 + 보조 버튼(찾아보기 등)을 한 줄로 — 입력이 남는 폭을 차지 */
+.profile-dialog .form-control-row {
+  display: flex;
+  gap: var(--unit);
+  align-items: stretch;
+}
+.profile-dialog .form-control-row input {
+  flex: 1;
+  min-width: 0;
+}
+.profile-dialog .form-control-row .pixel-btn {
+  flex: none;
+  white-space: nowrap;
+}
+
 /* 이름/역할 2단 배치 — 좁은 뷰포트에서는 1단으로 붕괴 */
 .profile-dialog .form-row-2 {
   display: grid;

@@ -110,6 +110,7 @@ export function ProfileDialog() {
       cwd: agent.cwd ?? "",
       shell: agent.shell ?? "",
       startupCommand: agent.startupCommand ?? "",
+      personalityPrompt: agent.personalityPrompt ?? "",
       appearance: agent.appearance ?? "",
       spriteRequest: agent.spriteRequest ?? "",
       archetype: agent.archetype ?? "auto",
@@ -125,6 +126,17 @@ export function ProfileDialog() {
 
   const regenSeed = () => setDraft((d) => ({ ...d, seed: nanoid(8) }));
   const regenAll = () => setDraft(generateDraft());
+
+  // 시작 폴더를 네이티브 폴더 선택 다이얼로그로 지정 — 텍스트 입력과 병행.
+  // 현재 입력값이 실존 폴더면 그 위치에서 다이얼로그를 연다.
+  const onBrowseCwd = async () => {
+    try {
+      const picked = await tauriApi.pickDirectory(draft.cwd?.trim() || undefined);
+      if (picked) setDraft((d) => ({ ...d, cwd: picked }));
+    } catch (err) {
+      console.warn("폴더 선택 다이얼로그 실패", err);
+    }
+  };
 
   const onCopyPrompt = async () => {
     const prompt = buildPortraitPrompt({
@@ -225,6 +237,7 @@ export function ProfileDialog() {
       const trimmedCwd = (draft.cwd ?? "").trim();
       const trimmedShell = (draft.shell ?? "").trim();
       const trimmedStartupCommand = (draft.startupCommand ?? "").trim();
+      const trimmedPersonalityPrompt = (draft.personalityPrompt ?? "").trim();
       const trimmedAppearance = (draft.appearance ?? "").trim();
       const trimmedSpriteRequest = (draft.spriteRequest ?? "").trim();
       const trimmedKeyboardSound = (draft.keyboardSound ?? "").trim();
@@ -239,6 +252,7 @@ export function ProfileDialog() {
         cwd: trimmedCwd || undefined,
         shell: trimmedShell || undefined,
         startupCommand: trimmedStartupCommand || undefined,
+        personalityPrompt: trimmedPersonalityPrompt || undefined,
         appearance: trimmedAppearance || undefined,
         spriteRequest: trimmedSpriteRequest || undefined,
         keyboardSound: trimmedKeyboardSound || undefined,
@@ -321,6 +335,16 @@ export function ProfileDialog() {
               />
             </label>
             <p className="form-hint">에이전트를 설명하는 자유 메모 — 초상 프롬프트에 함께 반영됩니다.</p>
+          </div>
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">성격 프롬프트</span>
+              <textarea
+                value={draft.personalityPrompt ?? ""}
+                onChange={(e) => setDraft({ ...draft, personalityPrompt: e.target.value })}
+              />
+            </label>
+            <p className="form-hint">Claude Code의 시스템 프롬프트에 덧붙일 캐릭터 성격입니다. 여러 줄을 그대로 사용할 수 있습니다.</p>
           </div>
           <div className="form-field">
             <label>
@@ -446,11 +470,16 @@ export function ProfileDialog() {
           <div className="form-field">
             <label>
               <span className="form-label-text">시작 폴더</span>
-              <input
-                value={draft.cwd ?? ""}
-                onChange={(e) => setDraft({ ...draft, cwd: e.target.value })}
-                placeholder="비워두면 홈 디렉터리"
-              />
+              <div className="form-control-row">
+                <input
+                  value={draft.cwd ?? ""}
+                  onChange={(e) => setDraft({ ...draft, cwd: e.target.value })}
+                  placeholder="비워두면 홈 디렉터리 (직접 입력·붙여넣기 가능)"
+                />
+                <button type="button" className="pixel-btn" onClick={onBrowseCwd}>
+                  찾아보기…
+                </button>
+              </div>
             </label>
           </div>
           <div className="form-field">

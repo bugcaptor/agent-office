@@ -59,6 +59,7 @@ export class OfficeWorld {
   private entities = new Map<string, CharacterEntity>();
   private appearanceKeys = new Map<string, string>();
   private sessionActive = new Map<string, boolean>();
+  private subagentCounts = new Map<string, number>();
   // 탕비실 타일 예약(tileKey) — 전 엔티티 공유. 쉬는 캐릭터가 같은 타일에
   // 겹쳐 서지 않게 한다. 엔티티가 예약/해제하고(destroy 포함) 여기서는 소유만.
   private breakReservations = new Set<string>();
@@ -71,6 +72,12 @@ export class OfficeWorld {
         const active = isSessionActive(state);
         this.sessionActive.set(agentId, active);
         this.entities.get(agentId)?.setSessionActive(active);
+      }),
+    );
+    this.unsub.push(
+      o.bus.onSubagentCountChanged((agentId, count) => {
+        this.subagentCounts.set(agentId, count);
+        this.entities.get(agentId)?.setSubagentCount(count);
       }),
     );
   }
@@ -93,6 +100,7 @@ export class OfficeWorld {
       this.entities.delete(id);
       this.appearanceKeys.delete(id);
       this.sessionActive.delete(id);
+      this.subagentCounts.delete(id);
     }
 
     // 외형 키가 바뀐 기존 엔티티는 파괴해 아래 생성 루프에서 재생성한다.
@@ -130,6 +138,7 @@ export class OfficeWorld {
       const rand = mulberry32(hashStringToSeed(p.id) ^ MOVEMENT_RNG_SALT);
       const entity = new CharacterEntity(p.id, assets, slot.seat, this.o.map, rand, this.breakReservations);
       entity.setSessionActive(this.sessionActive.get(p.id) ?? false);
+      entity.setSubagentCount(this.subagentCounts.get(p.id) ?? 0);
       entity.onClicked((id) => this.o.bus.emitAgentClicked(id));
       entity.onHover((id, x, y) => this.o.bus.emitAgentHoverChanged(id, x, y));
       this.o.characterLayer.addChild(entity.root);
@@ -158,5 +167,6 @@ export class OfficeWorld {
     this.entities.clear();
     this.appearanceKeys.clear();
     this.sessionActive.clear();
+    this.subagentCounts.clear();
   }
 }

@@ -11,30 +11,19 @@
 // 위해 부작용을 트레잇 뒤로 숨기는 것과 같은 패턴. 프로덕션은 `RealProbe`,
 // 테스트는 `FakeProbe`(아래 tests 모듈)를 주입한다.
 //
-// `CLAUDE_WRAPPER_PS`/`encoded_command`는 `session::manager`에 있던 것을
-// 그대로(verbatim) 옮겨왔다 -- Windows PowerShell 계열(powershell.exe,
-// pwsh.exe) 모두 동일한 래퍼 스크립트를 `-EncodedCommand`로 주입해
-// `claude` 호출 시 `--settings $env:AGENT_OFFICE_SETTINGS`를 투명하게
-// 붙인다(시간 집계 훅 발화 보장). Git Bash는 PowerShell 함수 대신
-// `session::bash_wrapper`의 `--rcfile` 심으로 같은 일을 한다.
+// Adapter-provided wrapper specs are rendered for PowerShell, Git Bash, and
+// zsh without hard-coding a provider in shell selection.
+
+use crate::observer::CommandWrapperSpec;
 
 /// 탐지된 셸 1개. 렌더러 드롭다운에 그대로 보낸다(list_available_shells).
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AvailableShell {
-    pub id: String,           // "powershell" | "pwsh" | "git-bash" | "wsl"
-    pub label: String,        // 드롭다운 표시용
-    pub path: String,         // 실제 실행 프로그램(절대 경로 또는 "wsl.exe")
+    pub id: String,            // "powershell" | "pwsh" | "git-bash" | "wsl"
+    pub label: String,         // 드롭다운 표시용
+    pub path: String,          // 실제 실행 프로그램(절대 경로 또는 "wsl.exe")
     pub hooks_supported: bool, // wsl은 MVP에서 false
-}
-
-/// `resolve`/`resolve_with`에 넘기는 요청. `selected`는 프로필의 셸 id
-/// (None이면 자동 선택), `hooks_on`은 이번 세션에 AGENT_OFFICE_SETTINGS가
-/// 실제로 주입되는지 여부(훅 opt-in이 켜져 있고 --settings 파일이 쓰인
-/// 경우) -- git-bash 분기의 --rcfile 심 설치 여부를 결정한다.
-pub struct ShellRequest<'a> {
-    pub selected: Option<&'a str>,
-    pub hooks_on: bool,
 }
 
 /// 실제로 spawn할 프로그램/인자/추가 env.
@@ -91,6 +80,29 @@ impl ShellProbe for RealProbe {
     }
 }
 
+pub(crate) trait ObserverShimWriter: Send + Sync {
+    fn bashrc(&self, wrappers: &[CommandWrapperSpec]) -> std::io::Result<std::path::PathBuf>;
+    fn zdotdir(&self, wrappers: &[CommandWrapperSpec]) -> std::io::Result<std::path::PathBuf>;
+}
+
+struct RealObserverShimWriter;
+
+impl ObserverShimWriter for RealObserverShimWriter {
+    fn bashrc(&self, wrappers: &[CommandWrapperSpec]) -> std::io::Result<std::path::PathBuf> {
+        crate::session::bash_wrapper::write_observer_shim(
+            &std::env::temp_dir().join("agent-office"),
+            wrappers,
+        )
+    }
+
+    fn zdotdir(&self, wrappers: &[CommandWrapperSpec]) -> std::io::Result<std::path::PathBuf> {
+        crate::session::zsh_wrapper::write_observer_shim(
+            &std::env::temp_dir().join("agent-office").join("zdotdir"),
+            wrappers,
+        )
+    }
+}
+
 /// 프로브 명령의 raw stdout 바이트를 문자열로 디코드한다. `wsl -l -q`는
 /// UTF-16LE로 출력하므로(BOM `FF FE`가 있거나, ASCII 텍스트가 바이트마다
 /// NUL과 교차하는 패턴) 이를 감지해 UTF-16LE로 디코드하고, 아니면 평범한
@@ -131,40 +143,21 @@ fn utf16le_to_string(bytes: &[u8]) -> String {
         .chunks_exact(2)
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
-    String::from_utf16_lossy(&units).chars().filter(|&c| c != '\0').collect()
+    String::from_utf16_lossy(&units)
+        .chars()
+        .filter(|&c| c != '\0')
+        .collect()
 }
-
-/// Static PowerShell snippet defining a `claude` wrapper. Reads
-/// $env:AGENT_OFFICE_SETTINGS lazily at call time, so one encoded command
-/// works for every session. `-CommandType Application,ExternalScript`
-/// resolves the real claude (.cmd/.exe/.ps1) and never matches our Function,
-/// so no recursion. Skips injection when the user passes --settings.
-/// (session::manager에서 verbatim 이전 -- powershell.exe/pwsh.exe 공용.)
-#[cfg(windows)]
-const CLAUDE_WRAPPER_PS: &str = r#"
-function claude {
-    $cmd = Get-Command claude -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $cmd) { Write-Error 'claude executable not found on PATH'; return }
-    if ($env:AGENT_OFFICE_SETTINGS -and ($args -notcontains '--settings')) {
-        & $cmd.Source --settings $env:AGENT_OFFICE_SETTINGS @args
-    } else {
-        & $cmd.Source @args
-    }
-}
-"#;
 
 /// PowerShell `-EncodedCommand` payload: Base64 of UTF-16LE bytes.
-/// (session::manager에서 verbatim 이전.)
 #[cfg(windows)]
 fn encoded_command(script: &str) -> String {
     use base64::Engine;
-    let utf16: Vec<u8> = script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    let utf16: Vec<u8> = script
+        .encode_utf16()
+        .flat_map(|u| u.to_le_bytes())
+        .collect();
     base64::engine::general_purpose::STANDARD.encode(utf16)
-}
-
-#[cfg(windows)]
-fn ps_wrapper_args() -> Vec<String> {
-    vec!["-NoExit".to_string(), "-EncodedCommand".to_string(), encoded_command(CLAUDE_WRAPPER_PS)]
 }
 
 #[cfg(windows)]
@@ -227,7 +220,9 @@ fn find_git_bash(probe: &dyn ShellProbe) -> Option<String> {
 /// `{system_root}\System32\wsl.exe`의 경로(존재 여부는 호출부가 확인).
 #[cfg(windows)]
 fn wsl_exe_path(probe: &dyn ShellProbe) -> Option<String> {
-    probe.system_root().map(|root| format!(r"{root}\System32\wsl.exe"))
+    probe
+        .system_root()
+        .map(|root| format!(r"{root}\System32\wsl.exe"))
 }
 
 /// 탐지(detect_shells_with) 전용: `wsl.exe` 존재 + `wsl -l -q`가 배포판
@@ -235,7 +230,9 @@ fn wsl_exe_path(probe: &dyn ShellProbe) -> Option<String> {
 /// 제외).
 #[cfg(windows)]
 fn wsl_detected(probe: &dyn ShellProbe) -> bool {
-    let Some(path) = wsl_exe_path(probe) else { return false };
+    let Some(path) = wsl_exe_path(probe) else {
+        return false;
+    };
     if !probe.exists(&path) {
         return false;
     }
@@ -249,7 +246,9 @@ fn wsl_detected(probe: &dyn ShellProbe) -> bool {
 /// 파일 존재만 확인한다.
 #[cfg(windows)]
 fn wsl_exe_exists(probe: &dyn ShellProbe) -> bool {
-    wsl_exe_path(probe).map(|p| probe.exists(&p)).unwrap_or(false)
+    wsl_exe_path(probe)
+        .map(|p| probe.exists(&p))
+        .unwrap_or(false)
 }
 
 /// 호스트에 설치된 셸 목록(드롭다운용). 프로덕션 경로.
@@ -303,77 +302,118 @@ pub fn detect_shells_with(_probe: &dyn ShellProbe) -> Vec<AvailableShell> {
     Vec::new()
 }
 
-/// 선택된(또는 자동) 셸을 실제 spawn 가능한 프로그램/인자로 해석한다.
-/// 프로덕션 경로(`RealProbe` 사용).
-pub fn resolve(req: ShellRequest) -> ResolvedShell {
-    resolve_with(req, &RealProbe)
+/// Resolves a shell from provider-neutral command wrapper specs. Production
+/// session creation uses this resolver directly.
+pub fn resolve_observed(selected: Option<&str>, wrappers: &[CommandWrapperSpec]) -> ResolvedShell {
+    resolve_observed_with_shims(selected, wrappers, &RealProbe, &RealObserverShimWriter)
+}
+
+fn resolve_observed_with(
+    selected: Option<&str>,
+    wrappers: &[CommandWrapperSpec],
+    probe: &dyn ShellProbe,
+) -> ResolvedShell {
+    resolve_observed_with_shims(selected, wrappers, probe, &RealObserverShimWriter)
 }
 
 #[cfg(windows)]
-pub fn resolve_with(req: ShellRequest, probe: &dyn ShellProbe) -> ResolvedShell {
-    match req.selected {
-        Some("powershell") => ResolvedShell {
-            program: powershell_path(probe),
-            args: ps_wrapper_args(),
-            extra_env: vec![],
+pub(crate) fn resolve_observed_with_shims(
+    selected: Option<&str>,
+    wrappers: &[CommandWrapperSpec],
+    probe: &dyn ShellProbe,
+    shims: &dyn ObserverShimWriter,
+) -> ResolvedShell {
+    let powershell = |program: String| ResolvedShell {
+        program,
+        args: if wrappers.is_empty() {
+            vec!["-NoExit".into()]
+        } else {
+            vec![
+                "-NoExit".into(),
+                "-EncodedCommand".into(),
+                encoded_command(&crate::session::wrapper_script::render_powershell(wrappers)),
+            ]
         },
+        extra_env: vec![],
+    };
+    let auto = || powershell(find_pwsh(probe).unwrap_or_else(|| powershell_path(probe)));
+
+    match selected {
+        Some("powershell") => powershell(powershell_path(probe)),
         Some("pwsh") => match find_pwsh(probe) {
-            Some(program) => ResolvedShell { program, args: ps_wrapper_args(), extra_env: vec![] },
-            // pwsh를 선택했지만 이 호스트엔 없다 -- 자동 선택으로 폴백.
-            None => resolve_auto(probe),
+            Some(program) => powershell(program),
+            None => auto(),
         },
         Some("git-bash") => match find_git_bash(probe) {
             Some(program) => {
-                let args = if req.hooks_on {
-                    match crate::session::bash_wrapper::ensure_bashrc() {
-                        Ok(shim) => {
-                            vec!["--rcfile".to_string(), shim.to_string_lossy().into_owned(), "-i".to_string()]
-                        }
-                        Err(e) => {
-                            eprintln!("agent-office: failed to write bash rcfile shim: {e}");
-                            vec!["-i".to_string()]
+                let args = if wrappers.is_empty() {
+                    vec!["-i".into()]
+                } else {
+                    match shims.bashrc(wrappers) {
+                        Ok(path) => vec![
+                            "--rcfile".into(),
+                            path.to_string_lossy().into_owned(),
+                            "-i".into(),
+                        ],
+                        Err(error) => {
+                            eprintln!("agent-office: failed to write observer bash shim: {error}");
+                            vec!["-i".into()]
                         }
                     }
-                } else {
-                    vec!["-i".to_string()]
                 };
-                ResolvedShell { program, args, extra_env: vec![] }
+                ResolvedShell {
+                    program,
+                    args,
+                    extra_env: vec![],
+                }
             }
-            None => resolve_auto(probe),
+            None => auto(),
         },
-        Some("wsl") => {
-            if wsl_exe_exists(probe) {
-                ResolvedShell { program: "wsl.exe".to_string(), args: vec![], extra_env: vec![] }
-            } else {
-                resolve_auto(probe)
-            }
-        }
-        // None(자동) 또는 알 수 없는/미탐지 id -- 전부 자동 선택으로 수렴.
-        _ => resolve_auto(probe),
+        Some("wsl") if wsl_exe_exists(probe) => ResolvedShell {
+            program: "wsl.exe".into(),
+            args: vec![],
+            extra_env: vec![],
+        },
+        _ => auto(),
     }
 }
 
-#[cfg(windows)]
-fn resolve_auto(probe: &dyn ShellProbe) -> ResolvedShell {
-    // pwsh가 있으면 우선, 없으면 항상 존재하는 powershell.exe로 폴백.
-    let program = find_pwsh(probe).unwrap_or_else(|| powershell_path(probe));
-    ResolvedShell { program, args: ps_wrapper_args(), extra_env: vec![] }
-}
-
 #[cfg(not(windows))]
-pub fn resolve_with(_req: ShellRequest, _probe: &dyn ShellProbe) -> ResolvedShell {
-    // macOS/Linux: 오늘의 default_shell 동작을 그대로 보존한다(선택 UI는
-    // Windows 전용 기능이므로 selected는 무시). zsh ZDOTDIR 심은 여기서
-    // 다루지 않고 manager.rs의 create()가 계속 담당한다.
-    let shell = std::env::var("SHELL")
-        .unwrap_or_else(|_| if cfg!(target_os = "macos") { "/bin/zsh".into() } else { "/bin/bash".into() });
-    ResolvedShell { program: shell, args: vec!["-l".into(), "-i".into()], extra_env: vec![] }
+pub(crate) fn resolve_observed_with_shims(
+    _selected: Option<&str>,
+    wrappers: &[CommandWrapperSpec],
+    _probe: &dyn ShellProbe,
+    shims: &dyn ObserverShimWriter,
+) -> ResolvedShell {
+    let program = std::env::var("SHELL").unwrap_or_else(|_| {
+        if cfg!(target_os = "macos") {
+            "/bin/zsh".into()
+        } else {
+            "/bin/bash".into()
+        }
+    });
+    let mut extra_env = Vec::new();
+    if !wrappers.is_empty() && crate::session::zsh_wrapper::is_zsh(&program) {
+        match shims.zdotdir(wrappers) {
+            Ok(path) => extra_env.push(("ZDOTDIR".into(), path.to_string_lossy().into_owned())),
+            Err(error) => {
+                eprintln!("agent-office: failed to write observer zsh shim: {error}")
+            }
+        }
+    }
+    ResolvedShell {
+        program,
+        args: vec!["-l".into(), "-i".into()],
+        extra_env,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::observer::{CommandWrapperSpec, WrapperArg};
     use std::collections::{HashMap, HashSet};
+    use std::path::PathBuf;
 
     #[derive(Default)]
     struct FakeProbe {
@@ -405,7 +445,10 @@ mod tests {
             self
         }
         fn with_stdout(mut self, program: &str, args: &[&str], out: Option<&str>) -> Self {
-            let key = (program.to_string(), args.iter().map(|s| s.to_string()).collect());
+            let key = (
+                program.to_string(),
+                args.iter().map(|s| s.to_string()).collect(),
+            );
             self.stdout.insert(key, out.map(|s| s.to_string()));
             self
         }
@@ -425,152 +468,260 @@ mod tests {
             self.system_root.clone()
         }
         fn command_stdout(&self, program: &str, args: &[&str]) -> Option<String> {
-            let key = (program.to_string(), args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+            let key = (
+                program.to_string(),
+                args.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            );
             self.stdout.get(&key).cloned().flatten()
         }
     }
 
     fn decode_ps_script(encoded: &str) -> String {
         use base64::Engine;
-        let bytes = base64::engine::general_purpose::STANDARD.decode(encoded).expect("valid base64");
-        let utf16: Vec<u16> = bytes.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .expect("valid base64");
+        let utf16: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
         String::from_utf16(&utf16).expect("valid UTF-16LE")
     }
 
-    fn assert_ps_wrapper_args(args: &[String]) {
-        assert_eq!(args.len(), 3);
-        assert_eq!(args[0], "-NoExit");
-        assert_eq!(args[1], "-EncodedCommand");
-        let script = decode_ps_script(&args[2]);
-        assert!(script.contains("function claude"), "{script}");
-        assert!(script.contains("--settings $env:AGENT_OFFICE_SETTINGS"), "{script}");
-        assert!(script.contains("-CommandType Application,ExternalScript"), "{script}");
+    fn observer_wrappers() -> Vec<CommandWrapperSpec> {
+        vec![
+            CommandWrapperSpec {
+                command: "claude".into(),
+                prefix_args: vec![
+                    WrapperArg::Literal("--settings".into()),
+                    WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+                ],
+                skip_if_present: vec!["--settings".into()],
+            },
+            CommandWrapperSpec {
+                command: "codex".into(),
+                prefix_args: vec![
+                    WrapperArg::Literal("--enable".into()),
+                    WrapperArg::Literal("hooks".into()),
+                    WrapperArg::Literal("-c".into()),
+                    WrapperArg::Env("AGENT_OFFICE_CODEX_HOOK_STOP".into()),
+                ],
+                skip_if_present: vec![],
+            },
+            CommandWrapperSpec {
+                command: "pi".into(),
+                prefix_args: vec![
+                    WrapperArg::Literal("-e".into()),
+                    WrapperArg::Env("AGENT_OFFICE_PI_EXT".into()),
+                ],
+                skip_if_present: vec![],
+            },
+        ]
     }
 
-    // ---- resolve_with: powershell/pwsh ----
+    struct FailingShims;
+
+    impl ObserverShimWriter for FailingShims {
+        fn bashrc(&self, _wrappers: &[CommandWrapperSpec]) -> std::io::Result<PathBuf> {
+            Err(std::io::Error::other("injected bash shim failure"))
+        }
+
+        fn zdotdir(&self, _wrappers: &[CommandWrapperSpec]) -> std::io::Result<PathBuf> {
+            Err(std::io::Error::other("injected zsh shim failure"))
+        }
+    }
+
+    struct UnexpectedShims;
+
+    impl ObserverShimWriter for UnexpectedShims {
+        fn bashrc(&self, _wrappers: &[CommandWrapperSpec]) -> std::io::Result<PathBuf> {
+            panic!("bash shim must not be written")
+        }
+
+        fn zdotdir(&self, _wrappers: &[CommandWrapperSpec]) -> std::io::Result<PathBuf> {
+            panic!("zsh shim must not be written")
+        }
+    }
+
+    struct SuccessfulShims;
+
+    impl ObserverShimWriter for SuccessfulShims {
+        fn bashrc(&self, _wrappers: &[CommandWrapperSpec]) -> std::io::Result<PathBuf> {
+            Ok(PathBuf::from("observer-bashrc"))
+        }
+
+        fn zdotdir(&self, _wrappers: &[CommandWrapperSpec]) -> std::io::Result<PathBuf> {
+            Ok(PathBuf::from("observer-zdotdir"))
+        }
+    }
 
     #[cfg(windows)]
     #[test]
-    fn resolve_powershell_uses_encoded_command_wrapper() {
+    fn observer_off_powershell_has_no_encoded_observer_function() {
         let probe = FakeProbe::new()
             .with_system_root(r"C:\Windows")
             .with_file(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe");
-        let resolved = resolve_with(ShellRequest { selected: Some("powershell"), hooks_on: true }, &probe);
-        assert_eq!(resolved.program, r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe");
-        assert_ps_wrapper_args(&resolved.args);
+        let resolved = resolve_observed_with(Some("powershell"), &[], &probe);
+        assert_eq!(
+            resolved.program,
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+        );
+        assert_eq!(resolved.args, vec!["-NoExit"]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn observer_on_powershell_encoded_script_contains_all_functions() {
+        let probe = FakeProbe::new()
+            .with_system_root(r"C:\Windows")
+            .with_file(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe");
+        let resolved = resolve_observed_with(Some("powershell"), &observer_wrappers(), &probe);
+        assert_eq!(resolved.args[..2], ["-NoExit", "-EncodedCommand"]);
+        let script = decode_ps_script(&resolved.args[2]);
+        assert!(script.contains("global:claude"), "{script}");
+        assert!(script.contains("global:codex"), "{script}");
+        assert!(script.contains("global:pi"), "{script}");
+        assert!(script.contains("'-e' $env:AGENT_OFFICE_PI_EXT"), "{script}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn observer_off_git_bash_is_plain_interactive_and_writes_no_shim() {
+        let probe = FakeProbe::new()
+            .with_program_files(r"C:\Program Files")
+            .with_file(r"C:\Program Files\Git\bin\bash.exe");
+        let resolved = resolve_observed_with_shims(Some("git-bash"), &[], &probe, &UnexpectedShims);
+        assert_eq!(resolved.args, vec!["-i"]);
         assert!(resolved.extra_env.is_empty());
     }
 
     #[cfg(windows)]
     #[test]
-    fn resolve_pwsh_uses_encoded_command_wrapper() {
+    fn observer_git_bash_shim_failure_falls_back_to_usable_plain_interactive_shell() {
         let probe = FakeProbe::new()
             .with_program_files(r"C:\Program Files")
-            .with_file(r"C:\Program Files\PowerShell\7\pwsh.exe");
-        let resolved = resolve_with(ShellRequest { selected: Some("pwsh"), hooks_on: true }, &probe);
-        assert_eq!(resolved.program, r"C:\Program Files\PowerShell\7\pwsh.exe");
-        assert_ps_wrapper_args(&resolved.args);
+            .with_file(r"C:\Program Files\Git\bin\bash.exe");
+        let resolved = resolve_observed_with_shims(
+            Some("git-bash"),
+            &observer_wrappers(),
+            &probe,
+            &FailingShims,
+        );
+        assert_eq!(resolved.program, r"C:\Program Files\Git\bin\bash.exe");
+        assert_eq!(resolved.args, vec!["-i"]);
+        assert!(resolved.extra_env.is_empty());
     }
-
-    // ---- resolve_with: auto ----
 
     #[cfg(windows)]
     #[test]
-    fn resolve_auto_prefers_pwsh_when_present() {
+    fn observer_wsl_remains_unwrapped_even_when_specs_are_present() {
+        let probe = FakeProbe::new()
+            .with_system_root(r"C:\Windows")
+            .with_file(r"C:\Windows\System32\wsl.exe");
+        let resolved = resolve_observed_with_shims(
+            Some("wsl"),
+            &observer_wrappers(),
+            &probe,
+            &UnexpectedShims,
+        );
+        assert_eq!(resolved.program, "wsl.exe");
+        assert!(resolved.args.is_empty());
+        assert!(resolved.extra_env.is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn observer_pwsh_uses_adapter_wrapper_specs() {
+        let probe = FakeProbe::new()
+            .with_program_files(r"C:\Program Files")
+            .with_file(r"C:\Program Files\PowerShell\7\pwsh.exe");
+        let resolved = resolve_observed_with(Some("pwsh"), &observer_wrappers(), &probe);
+        assert_eq!(resolved.program, r"C:\Program Files\PowerShell\7\pwsh.exe");
+        assert_eq!(resolved.args[..2], ["-NoExit", "-EncodedCommand"]);
+        let script = decode_ps_script(&resolved.args[2]);
+        assert!(script.contains("global:claude"), "{script}");
+        assert!(script.contains("global:codex"), "{script}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn observer_auto_prefers_pwsh_when_present() {
         let probe = FakeProbe::new()
             .with_system_root(r"C:\Windows")
             .with_program_files(r"C:\Program Files")
             .with_file(r"C:\Program Files\PowerShell\7\pwsh.exe");
-        let resolved = resolve_with(ShellRequest { selected: None, hooks_on: false }, &probe);
+        let resolved = resolve_observed_with(None, &[], &probe);
         assert_eq!(resolved.program, r"C:\Program Files\PowerShell\7\pwsh.exe");
-        assert_ps_wrapper_args(&resolved.args);
+        assert_eq!(resolved.args, vec!["-NoExit"]);
     }
 
     #[cfg(windows)]
     #[test]
-    fn resolve_auto_falls_back_to_powershell_when_pwsh_absent() {
+    fn observer_auto_falls_back_to_powershell_when_pwsh_absent() {
         let probe = FakeProbe::new()
             .with_system_root(r"C:\Windows")
             .with_file(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe");
-        let resolved = resolve_with(ShellRequest { selected: None, hooks_on: false }, &probe);
-        assert_eq!(resolved.program, r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe");
-        assert_ps_wrapper_args(&resolved.args);
+        let resolved = resolve_observed_with(None, &[], &probe);
+        assert_eq!(
+            resolved.program,
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+        );
+        assert_eq!(resolved.args, vec!["-NoExit"]);
     }
 
     #[cfg(windows)]
     #[test]
-    fn resolve_auto_falls_back_to_literal_powershell_exe_when_system_root_missing() {
+    fn observer_auto_falls_back_to_literal_powershell_exe_when_system_root_missing() {
         let probe = FakeProbe::new();
-        let resolved = resolve_with(ShellRequest { selected: None, hooks_on: false }, &probe);
+        let resolved = resolve_observed_with(None, &[], &probe);
         assert_eq!(resolved.program, "powershell.exe");
     }
 
-    // ---- resolve_with: git-bash ----
-
     #[cfg(windows)]
     #[test]
-    fn resolve_git_bash_hooks_on_uses_rcfile_shim() {
+    fn observer_git_bash_with_wrappers_uses_rcfile_shim() {
         let probe = FakeProbe::new()
             .with_program_files(r"C:\Program Files")
             .with_file(r"C:\Program Files\Git\bin\bash.exe");
-        let resolved = resolve_with(ShellRequest { selected: Some("git-bash"), hooks_on: true }, &probe);
+        let resolved = resolve_observed_with_shims(
+            Some("git-bash"),
+            &observer_wrappers(),
+            &probe,
+            &SuccessfulShims,
+        );
         assert_eq!(resolved.program, r"C:\Program Files\Git\bin\bash.exe");
-        assert!(resolved.args.contains(&"--rcfile".to_string()), "{:?}", resolved.args);
-        assert!(resolved.args.contains(&"-i".to_string()), "{:?}", resolved.args);
+        assert_eq!(resolved.args, vec!["--rcfile", "observer-bashrc", "-i"]);
     }
 
     #[cfg(windows)]
     #[test]
-    fn resolve_git_bash_hooks_off_is_plain_interactive() {
-        let probe = FakeProbe::new()
-            .with_program_files(r"C:\Program Files")
-            .with_file(r"C:\Program Files\Git\bin\bash.exe");
-        let resolved = resolve_with(ShellRequest { selected: Some("git-bash"), hooks_on: false }, &probe);
-        assert_eq!(resolved.args, vec!["-i".to_string()]);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn resolve_git_bash_falls_back_to_program_files_x86_when_64bit_path_absent() {
+    fn observer_git_bash_falls_back_to_program_files_x86_when_64bit_path_absent() {
         // 32비트 Git 설치는 %ProgramFiles(x86)%\Git\bin\bash.exe에만 있다 --
         // %ProgramFiles%\Git\bin\bash.exe가 없어도 이 경로로 탐지돼야 한다.
         let probe = FakeProbe::new()
             .with_program_files(r"C:\Program Files")
             .with_program_files_x86(r"C:\Program Files (x86)")
             .with_file(r"C:\Program Files (x86)\Git\bin\bash.exe");
-        let resolved = resolve_with(ShellRequest { selected: Some("git-bash"), hooks_on: false }, &probe);
+        let resolved = resolve_observed_with(Some("git-bash"), &[], &probe);
         assert_eq!(resolved.program, r"C:\Program Files (x86)\Git\bin\bash.exe");
     }
 
     #[cfg(windows)]
     #[test]
-    fn resolve_git_bash_not_detected_falls_back_to_auto() {
+    fn observer_git_bash_not_detected_falls_back_to_auto() {
         let probe = FakeProbe::new().with_system_root(r"C:\Windows");
-        let resolved = resolve_with(ShellRequest { selected: Some("git-bash"), hooks_on: true }, &probe);
-        // 폴백된 자동 선택은 항상 powershell.exe 계열(-NoExit/-EncodedCommand).
-        assert_ps_wrapper_args(&resolved.args);
+        let resolved = resolve_observed_with(Some("git-bash"), &observer_wrappers(), &probe);
+        assert_eq!(resolved.program, "powershell.exe");
+        assert_eq!(resolved.args[..2], ["-NoExit", "-EncodedCommand"]);
     }
-
-    // ---- resolve_with: wsl ----
 
     #[cfg(windows)]
     #[test]
-    fn resolve_wsl_uses_bare_wsl_exe_with_no_args() {
-        let probe = FakeProbe::new().with_system_root(r"C:\Windows").with_file(r"C:\Windows\System32\wsl.exe");
-        let resolved = resolve_with(ShellRequest { selected: Some("wsl"), hooks_on: false }, &probe);
-        assert_eq!(resolved.program, "wsl.exe");
-        assert!(resolved.args.is_empty());
-        assert!(resolved.extra_env.is_empty());
-    }
-
-    // ---- resolve_with: unknown id ----
-
-    #[cfg(windows)]
-    #[test]
-    fn resolve_unknown_selected_id_falls_back_to_auto() {
+    fn observer_unknown_selected_id_falls_back_to_auto() {
         let probe = FakeProbe::new().with_system_root(r"C:\Windows");
-        let resolved = resolve_with(ShellRequest { selected: Some("bogus"), hooks_on: false }, &probe);
-        assert_ps_wrapper_args(&resolved.args);
+        let resolved = resolve_observed_with(Some("bogus"), &[], &probe);
+        assert_eq!(resolved.program, "powershell.exe");
+        assert_eq!(resolved.args, vec!["-NoExit"]);
     }
 
     // ---- detect_shells_with ----
@@ -604,20 +755,27 @@ mod tests {
     #[test]
     fn detect_shells_includes_wsl_only_when_exe_present_and_has_distros() {
         let probe_no_exe = FakeProbe::new().with_system_root(r"C:\Windows");
-        assert!(!detect_shells_with(&probe_no_exe).iter().any(|s| s.id == "wsl"));
+        assert!(!detect_shells_with(&probe_no_exe)
+            .iter()
+            .any(|s| s.id == "wsl"));
 
         let probe_no_distro = FakeProbe::new()
             .with_system_root(r"C:\Windows")
             .with_file(r"C:\Windows\System32\wsl.exe")
             .with_stdout("wsl", &["-l", "-q"], Some(""));
-        assert!(!detect_shells_with(&probe_no_distro).iter().any(|s| s.id == "wsl"));
+        assert!(!detect_shells_with(&probe_no_distro)
+            .iter()
+            .any(|s| s.id == "wsl"));
 
         let probe_ok = FakeProbe::new()
             .with_system_root(r"C:\Windows")
             .with_file(r"C:\Windows\System32\wsl.exe")
             .with_stdout("wsl", &["-l", "-q"], Some("Ubuntu\r\n"));
         let shells = detect_shells_with(&probe_ok);
-        let wsl = shells.iter().find(|s| s.id == "wsl").expect("wsl must be detected");
+        let wsl = shells
+            .iter()
+            .find(|s| s.id == "wsl")
+            .expect("wsl must be detected");
         assert_eq!(wsl.path, "wsl.exe");
         assert!(!wsl.hooks_supported);
     }

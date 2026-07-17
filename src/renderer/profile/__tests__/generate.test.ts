@@ -184,6 +184,31 @@ describe("draftToProfile startupCommand", () => {
   });
 });
 
+describe("draftToProfile personalityPrompt", () => {
+  it("trims only the edges and preserves internal newlines", () => {
+    const profile = draftToProfile(
+      {
+        name: "Foo",
+        role: "Bar",
+        note: "note",
+        seed: "seed",
+        personalityPrompt: "  차분하게 답한다.\n근거를 먼저 제시한다.  ",
+      },
+      0,
+    );
+    expect(profile.personalityPrompt).toBe("차분하게 답한다.\n근거를 먼저 제시한다.");
+  });
+
+  it("omits a whitespace-only personalityPrompt", () => {
+    const profile = draftToProfile(
+      { name: "Foo", role: "Bar", note: "note", seed: "seed", personalityPrompt: " \n " },
+      0,
+    );
+    expect(profile.personalityPrompt).toBeUndefined();
+    expect("personalityPrompt" in profile).toBe(false);
+  });
+});
+
 describe("draftToProfile appearance", () => {
   it("includes trimmed appearance when non-empty", () => {
     const p = draftToProfile(

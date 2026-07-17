@@ -80,13 +80,22 @@ pub struct NotificationEvent {
     pub at: u64,
 }
 
-/// activity 신호 종류. TS ActivityKind와 동일(serde lowercase).
+/// activity 신호 종류. TS ActivityKind와 동일.
 /// prompt = UserPromptSubmit(턴 시작), tool = PostToolUse(하트비트).
+/// sub-start = PreToolUse:Task(서브에이전트 소환), sub-stop = SubagentStop(종료),
+/// sub-count = 현재 실행 중 서브에이전트 절대 수.
+/// 뒤 셋은 카운트 기반 미니 캐릭터 전용 — 시간 추적/시계열엔 기록하지 않는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ActivityKind {
     Prompt,
     Tool,
+    #[serde(rename = "sub-start")]
+    SubStart,
+    #[serde(rename = "sub-stop")]
+    SubStop,
+    #[serde(rename = "sub-count")]
+    SubCount,
 }
 
 /// 세션 시간 추적용 활동 이벤트. NotificationHub의 dedup/큐를 우회해
@@ -103,6 +112,9 @@ pub struct ActivityEvent {
     /// body 파싱 실패/부재 시 None — None이면 wire에서 필드 생략.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// kind=SubCount일 때 현재 실행 중 서브에이전트 절대 수.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
 }
 
 /// 완료된 턴 1건의 시계열 기록. TS `SessionTurnRecord` 미러.
@@ -127,19 +139,18 @@ pub struct CreateSessionRequest {
     pub rows: Option<u16>,
     pub cwd: Option<String>,
     /// 프로필의 셸 선택 id("powershell" | "pwsh" | "git-bash" | "wsl").
-    /// None이면 자동 선택(`session::shells::resolve`가 pwsh > powershell
+    /// None이면 자동 선택(`session::shells::resolve_observed`가 pwsh > powershell
     /// 순으로 고른다). Windows 전용 기능 -- 다른 플랫폼에서는 무시된다.
     pub shell: Option<String>,
     /// 세션이 Running으로 전이한 뒤 셸 stdin에 `{command}\n`으로 주입할 시작 명령어.
     /// None/공백이면 미주입. 셸 문법(bat/sh/pwsh 등)은 사용자가 선택 셸에 맞게 작성.
     pub startup_command: Option<String>,
+    /// Claude Code에 `--append-system-prompt`로 전달할 캐릭터 성격 프롬프트.
+    pub personality_prompt: Option<String>,
     /// 동결 API opts에는 없음 → 프런트 어댑터는 항상 미지정(=false). 기본 false:
-    /// 세션은 자동 실행 없이 셸만 띄운다. 그래도 셸이 `claude` 래퍼를 정의하므로
-    /// 사용자가 그냥 `claude`만 입력해도 투명하게 `--settings
-    /// "$AGENT_OFFICE_SETTINGS"`가 붙어 시간 집계 훅이 발화한다: Windows는
-    /// PowerShell 함수(`session::shells::CLAUDE_WRAPPER_PS`) 또는 Git Bash의
-    /// `--rcfile` 심(`session::bash_wrapper`), macOS/Linux의 zsh는 ZDOTDIR
-    /// 셈(`session::zsh_wrapper`)으로 주입한다.
+    /// 세션은 자동 실행 없이 셸만 띄운다. Observation이 켜진 세션은 adapter가
+    /// 제공한 command wrapper specs를 PowerShell 함수, Git Bash `--rcfile`,
+    /// 또는 zsh ZDOTDIR shim으로 렌더링한다.
     pub autostart_claude: Option<bool>,
 }
 
@@ -149,6 +160,19 @@ pub struct CreateSessionRequest {
 pub struct CreateSessionResult {
     pub session_id: SessionId,
     pub state: SessionState,
+}
+
+/// 세션 핸드오프(docs/session-handoff-design.md): 부트스트랩 시
+/// `adopt_detached_sessions` 커맨드가 되찾은 세션 하나. 프론트는 이 목록으로
+/// 상태를 Running 시드하고, 터미널을 재부착할 때 rows/cols로 redraw nudge를
+/// 수행한다(§프론트).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdoptedSessionInfo {
+    pub agent_id: AgentId,
+    pub session_id: SessionId,
+    pub rows: u16,
+    pub cols: u16,
 }
 
 /// PTY 출력 청크(배치). backend→webview, tauri::ipc::Channel로 전송.
@@ -203,13 +227,16 @@ pub struct AgentProfile {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub archetype: Option<String>,
     /// 세션 셸 선택 id("powershell" | "pwsh" | "git-bash" | "wsl"). 없으면
-    /// 자동 선택(session::shells::resolve). Windows 전용 기능.
+    /// 자동 선택(session::shells::resolve_observed). Windows 전용 기능.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub shell: Option<String>,
     /// 새 세션이 뜰 때마다 셸 stdin에 주입할 시작 명령어. 없으면 미주입.
     /// 예: "source ./init.sh", "mysetup.bat". 셸 문법은 사용자 책임.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub startup_command: Option<String>,
+    /// Claude Code 세션에 추가 시스템 프롬프트로 주입할 캐릭터 성격(멀티라인 가능).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub personality_prompt: Option<String>,
     /// 퇴근(clock-out) 상태. Some(true)면 오피스/터미널에서 숨기고 소환 목록에만
     /// 남긴다. 부재/false = 근무 중. TS `clockedOut?: boolean` 미러.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -302,6 +329,23 @@ mod tests {
     }
 
     #[test]
+    fn activity_kind_serializes_subagent_variants_as_kebab() {
+        assert_eq!(serde_json::to_string(&ActivityKind::SubStart).unwrap(), "\"sub-start\"");
+        assert_eq!(serde_json::to_string(&ActivityKind::SubStop).unwrap(), "\"sub-stop\"");
+    }
+
+    #[test]
+    fn activity_kind_deserializes_subagent_variants_from_ts_literal() {
+        let a: ActivityKind = serde_json::from_str("\"sub-start\"").unwrap();
+        let b: ActivityKind = serde_json::from_str("\"sub-stop\"").unwrap();
+        let c: ActivityKind = serde_json::from_str("\"sub-count\"").unwrap();
+        assert_eq!(a, ActivityKind::SubStart);
+        assert_eq!(b, ActivityKind::SubStop);
+        assert_eq!(c, ActivityKind::SubCount);
+        assert_eq!(serde_json::to_string(&c).unwrap(), "\"sub-count\"");
+    }
+
+    #[test]
     fn activity_event_keys_are_camel_case() {
         let ev = ActivityEvent {
             agent_id: "a1".into(),
@@ -309,6 +353,7 @@ mod tests {
             kind: ActivityKind::Prompt,
             at: 1_720_000_000_000,
             text: None,
+            count: None,
         };
         let json = serde_json::to_string(&ev).unwrap();
         assert_eq!(
@@ -325,6 +370,7 @@ mod tests {
             kind: ActivityKind::Prompt,
             at: 1,
             text: None,
+            count: None,
         };
         let j = serde_json::to_string(&ev).unwrap();
         assert!(!j.contains("\"text\""), "None이면 필드 자체가 생략돼야 한다: {j}");
@@ -332,6 +378,27 @@ mod tests {
         let ev2 = ActivityEvent { text: Some("고쳐줘".into()), ..ev };
         let j2 = serde_json::to_string(&ev2).unwrap();
         assert!(j2.contains(r#""text":"고쳐줘""#), "{j2}");
+    }
+
+    #[test]
+    fn activity_event_omits_count_when_none_and_serializes_when_some() {
+        let ev = ActivityEvent {
+            agent_id: "a1".into(),
+            session_id: "s1".into(),
+            kind: ActivityKind::SubCount,
+            at: 1,
+            text: None,
+            count: None,
+        };
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(!json.contains("\"count\""), "{json}");
+
+        let counted = ActivityEvent {
+            count: Some(2),
+            ..ev
+        };
+        let counted_json = serde_json::to_string(&counted).unwrap();
+        assert!(counted_json.contains(r#""count":2"#), "{counted_json}");
     }
 
     // ---- Step 3: struct roundtrip snapshots (camelCase keys) ----
@@ -527,6 +594,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -553,6 +621,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -590,6 +659,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -617,6 +687,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -655,6 +726,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -682,6 +754,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -708,6 +781,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -724,6 +798,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -749,6 +824,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
                        keyboard_sound: Some("topre-hhkb".into()),
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -765,6 +841,7 @@ mod tests {
             shell: None,
             startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
                        keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -788,6 +865,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: Some("git-bash".into()), startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -802,6 +880,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -825,6 +904,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: Some(true),
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -839,6 +919,7 @@ mod tests {
             portrait_updated_at: None, sprite_request: None, sprite_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: None,
+            personality_prompt: None,
         keyboard_sound: None,
         };
         let json = serde_json::to_string(&profile).unwrap();

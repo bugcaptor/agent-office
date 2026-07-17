@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { Commands, Events } from "../ipc";
 import type {
   ActivityEvent,
+  AdoptedSessionInfo,
   AgentProfile,
   CreateSessionResult,
   GeneratedSpriteImage,
@@ -140,6 +141,36 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect(parsed.text).toBe("버그 고쳐줘");
   });
 
+  it("observer events keep their provider-neutral public shapes", () => {
+    const activity: ActivityEvent = {
+      agentId: "a1",
+      sessionId: "s1",
+      kind: "prompt",
+      at: 1,
+      text: "marker",
+    };
+    const notification: NotificationEvent = {
+      id: "n1",
+      sessionId: "s1",
+      agentId: "a1",
+      source: "hook",
+      message: "확인이 필요합니다",
+      dedupKey: "k1",
+      at: 2,
+    };
+
+    expect("provider" in activity).toBe(false);
+    expect("provider" in notification).toBe(false);
+  });
+
+  it("AdoptedSessionInfo", () => {
+    const json = '{"agentId":"a1","sessionId":"s1","rows":24,"cols":80}';
+    const parsed: AdoptedSessionInfo = JSON.parse(json);
+    expect(parsed.agentId).toBe("a1");
+    expect(parsed.rows).toBe(24);
+    expect(parsed.cols).toBe(80);
+  });
+
   it("GeneratedSpriteImage", () => {
     const json = '{"pngBase64":"AAAA","costUsd":0.02}';
     const parsed: GeneratedSpriteImage = JSON.parse(json);
@@ -173,6 +204,9 @@ describe("Commands / Events name constants", () => {
     expect(Commands.subscribeOutput).toBe("subscribe_output");
     expect(Commands.unsubscribeOutput).toBe("unsubscribe_output");
     expect(Commands.summarizeText).toBe("summarize_text");
+    expect(Commands.handoffSupported).toBe("handoff_supported");
+    expect(Commands.handoffSessions).toBe("handoff_sessions");
+    expect(Commands.adoptDetachedSessions).toBe("adopt_detached_sessions");
 
     expect(Events.sessionState).toBe("session-state");
     expect(Events.notificationNew).toBe("notification-new");
@@ -189,12 +223,18 @@ describe("Commands / Events name constants", () => {
 describe("AppSettings (opt-in 설정 계약)", () => {
   it("Rust GetAppSettingsResult JSON이 TS 타입에 그대로 할당된다", () => {
     const json =
-      '{"settings":{"version":1,"claudeCliEnabled":false,"claudeHooksEnabled":false},"firstRun":true}';
+      '{"settings":{"version":1,"summarizerEnabled":false,"summaryProvider":"claude","observerEnabled":false,"soundEnabled":true,"soundVolume":0.5,"externalTerminal":"terminal"},"firstRun":true}';
     const parsed: GetAppSettingsResult = JSON.parse(json);
     expect(parsed.firstRun).toBe(true);
-    expect(parsed.settings.claudeCliEnabled).toBe(false);
-    expect(parsed.settings.claudeHooksEnabled).toBe(false);
-    expect(parsed.settings.version).toBe(1);
+    expect(parsed.settings).toEqual({
+      version: 1,
+      summarizerEnabled: false,
+      summaryProvider: "claude",
+      observerEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+      externalTerminal: "terminal",
+    });
   });
 
   it("커맨드 이름 상수가 등록되어 있다", () => {

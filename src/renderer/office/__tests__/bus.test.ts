@@ -127,3 +127,16 @@ describe("label anchors channel", () => {
     expect(seen).toHaveLength(1);
   });
 });
+
+describe("OfficeBus: onSubagentCountChanged", () => {
+  it("구독자가 triggerSubagentCountChanged로 (agentId, count)를 받는다", () => {
+    const bus = createMockOfficeBus();
+    const cb = vi.fn();
+    const off = bus.onSubagentCountChanged(cb);
+    bus.triggerSubagentCountChanged("a1", 2);
+    expect(cb).toHaveBeenCalledWith("a1", 2);
+    off();
+    bus.triggerSubagentCountChanged("a1", 3);
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+});

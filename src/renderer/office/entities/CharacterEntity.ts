@@ -33,6 +33,7 @@ import { OfficeMap, TILE_SIZE } from "../map/mapData";
 import { GridPos, pickBreakTarget, tileCenterPx, tileKey } from "../world/pathing";
 import { BehaviorState, stepBehavior } from "./behaviorFsm";
 import { ExclamationOverlay } from "./ExclamationOverlay";
+import { MiniAgentsOverlay } from "./MiniAgentsOverlay";
 import { ThinkingOverlay } from "./ThinkingOverlay";
 
 const WALK_SPEED = 28; // px/sec
@@ -59,6 +60,7 @@ export class CharacterEntity {
   private sprite: Sprite;
   private overlay: ExclamationOverlay;
   private thinkOverlay: ThinkingOverlay;
+  private miniOverlay: MiniAgentsOverlay;
   private state: BehaviorState = "sitting";
   private stateTimer = 0;
   private animTimer = 0;
@@ -101,6 +103,10 @@ export class CharacterEntity {
     this.thinkOverlay.root.position.set(0, -TILE_SIZE - 2); // a couple px higher than the "!" badge
     this.root.addChild(this.thinkOverlay.root);
     this.thinkOverlay.setVisible(false);
+
+    this.miniOverlay = new MiniAgentsOverlay(this.assets.idle[0], this.spriteScale);
+    this.miniOverlay.root.position.set(0, -TILE_SIZE); // 머리 위(기존 오버레이와 동일 높이)
+    this.root.addChild(this.miniOverlay.root);
 
     // Seated placement (feet sunk toward the desk so it overlaps the legs).
     const p = tileCenterPx(seat);
@@ -145,6 +151,11 @@ export class CharacterEntity {
   setSessionActive(v: boolean): void {
     if (this.state === "sitting" && this.sessionActive && !v) this.stateTimer = 0;
     this.sessionActive = v;
+  }
+
+  /** 활성 서브에이전트 수 반영(0~3 미니 표시). */
+  setSubagentCount(n: number): void {
+    this.miniOverlay.setCount(n);
   }
 
   /** 좌석(책상 지정) 변경. 앉아 있거나 자리로 걸어가는 중이면 즉시 새
@@ -201,6 +212,7 @@ export class CharacterEntity {
     this.updateThinkingOverlay(dt);
     this.root.zIndex = this.root.y; // y-sort refresh
     this.overlay.update(dt);
+    this.miniOverlay.update(dt);
 
     // Belt-and-suspenders: never let a character leave the map rect.
     const mapPxW = this.map.width * TILE_SIZE;
@@ -213,6 +225,7 @@ export class CharacterEntity {
     this.releaseBreakTile();
     this.overlay.destroy();
     this.thinkOverlay.destroy();
+    this.miniOverlay.destroy();
     this.root.destroy({ children: true });
   }
 

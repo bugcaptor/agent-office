@@ -286,6 +286,41 @@ describe("OfficeWorld: bus -> entity (setSessionActive)", () => {
   });
 });
 
+describe("OfficeWorld: bus -> entity (setSubagentCount)", () => {
+  it("버스의 subagent count 변화를 해당 엔티티 미니 표시에 반영한다", () => {
+    const bus = createMockOfficeBus();
+    const characterLayer = new Container();
+    const world = new OfficeWorld({ bus, characterLayer, overlayLayer: new Container(), map: makeMap() });
+    world.syncAgents([profile("p1")]);
+
+    bus.triggerSubagentCountChanged("p1", 2);
+
+    // 엔티티 root = characterLayer의 첫 자식; 미니 루트 = 그 root의 children[3].
+    const entityRoot = characterLayer.children[0] as unknown as { children: { children: { visible: boolean }[] }[] };
+    const miniRoot = entityRoot.children[3];
+    expect(miniRoot.children.filter((s) => s.visible).length).toBe(2);
+
+    world.destroy();
+  });
+
+  it("카운트가 온 뒤 외형 변경으로 엔티티가 재생성돼도 카운트가 재적용된다", () => {
+    const bus = createMockOfficeBus();
+    const characterLayer = new Container();
+    const world = new OfficeWorld({ bus, characterLayer, overlayLayer: new Container(), map: makeMap() });
+    const p = profile("p1");
+    world.syncAgents([p]);
+    bus.triggerSubagentCountChanged("p1", 2);
+
+    // seed 변경 → appearanceKey 변경 → 엔티티 재생성.
+    world.syncAgents([{ ...p, seed: p.seed + "x" }]);
+
+    const entityRoot = characterLayer.children[0] as unknown as { children: { children: { visible: boolean }[] }[] };
+    expect(entityRoot.children[3].children.filter((s) => s.visible).length).toBe(2);
+
+    world.destroy();
+  });
+});
+
 describe("OfficeWorld: entity -> bus (emitAgentClicked)", () => {
   it("relays a clicked entity's agentId out through bus.emitAgentClicked", () => {
     const { bus, characterLayer, world } = makeWorld();

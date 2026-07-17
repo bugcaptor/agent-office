@@ -458,38 +458,86 @@ describe("timeTracking slice", () => {
 describe("app settings slice", () => {
   it("초기값: 전부 OFF, firstRun=false", () => {
     const s = useAppStore.getState();
-    expect(s.appSettings.claudeCliEnabled).toBe(false);
-    expect(s.appSettings.claudeHooksEnabled).toBe(false);
+    expect(s.appSettings).toEqual({
+      version: 1,
+      summarizerEnabled: false,
+      summaryProvider: "claude",
+      observerEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+      externalTerminal: "terminal",
+    });
     expect(s.settingsFirstRun).toBe(false);
   });
 
   it("hydrateSettings가 설정과 firstRun을 반영한다", () => {
     useAppStore.getState().hydrateSettings(
-      { version: 1, claudeCliEnabled: true, claudeHooksEnabled: false, soundEnabled: true, soundVolume: 0.5 },
+      {
+        version: 1,
+        summarizerEnabled: true,
+        summaryProvider: "codex",
+        observerEnabled: false,
+        soundEnabled: true,
+        soundVolume: 0.5,
+        externalTerminal: "terminal",
+      },
       true
     );
     const s = useAppStore.getState();
-    expect(s.appSettings.claudeCliEnabled).toBe(true);
+    expect(s.appSettings).toEqual({
+      version: 1,
+      summarizerEnabled: true,
+      summaryProvider: "codex",
+      observerEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+      externalTerminal: "terminal",
+    });
     expect(s.settingsFirstRun).toBe(true);
   });
 
   it("updateAppSettings가 스토어를 갱신하고 백엔드에 저장한다", () => {
-    useAppStore.getState().updateAppSettings({ claudeHooksEnabled: true });
-    expect(useAppStore.getState().appSettings.claudeHooksEnabled).toBe(true);
-    expect(setAppSettingsMock).toHaveBeenCalledWith(
-      expect.objectContaining({ claudeHooksEnabled: true })
-    );
+    useAppStore.getState().updateAppSettings({ summaryProvider: "codex", observerEnabled: true });
+    expect(setAppSettingsMock).toHaveBeenCalledWith({
+      version: 1,
+      summarizerEnabled: false,
+      summaryProvider: "codex",
+      observerEnabled: true,
+      soundEnabled: true,
+      soundVolume: 0.5,
+      externalTerminal: "terminal",
+    });
   });
 
   it("completeFirstRun이 선택을 저장하고 firstRun을 끈다", () => {
     useAppStore.getState().hydrateSettings(
-      { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false, soundEnabled: true, soundVolume: 0.5 },
+      {
+        version: 1,
+        summarizerEnabled: false,
+        summaryProvider: "claude",
+        observerEnabled: false,
+        soundEnabled: true,
+        soundVolume: 0.5,
+        externalTerminal: "terminal",
+      },
       true
     );
-    useAppStore.getState().completeFirstRun({ claudeCliEnabled: true, claudeHooksEnabled: true });
+    useAppStore.getState().completeFirstRun({
+      summarizerEnabled: true,
+      summaryProvider: "codex",
+      observerEnabled: true,
+    });
     const s = useAppStore.getState();
     expect(s.settingsFirstRun).toBe(false);
-    expect(s.appSettings.claudeCliEnabled).toBe(true);
+    expect(s.appSettings).toEqual({
+      version: 1,
+      summarizerEnabled: true,
+      summaryProvider: "codex",
+      observerEnabled: true,
+      soundEnabled: true,
+      soundVolume: 0.5,
+      externalTerminal: "terminal",
+    });
   });
 
   it("사운드 설정 기본값은 켜짐/0.5다", () => {

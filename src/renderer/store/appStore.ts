@@ -25,6 +25,15 @@ import type { ActivityEvent, AppSettings, SessionState } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 
 const MAX_EXCERPT = 80;
+const DEFAULT_APP_SETTINGS: AppSettings = {
+  version: 1,
+  summarizerEnabled: false,
+  summaryProvider: "claude",
+  observerEnabled: false,
+  soundEnabled: true,
+  soundVolume: 0.5,
+  externalTerminal: "terminal",
+};
 
 /**
  * 턴이 방금 종료됐으면(turns 증가) 그 턴의 시계열 기록을 로컬 로그에 append한다.
@@ -71,6 +80,15 @@ interface AppState {
   spritePreviews: Record<string, string>;
   /** 에이전트별 턴 집계(메모리 전용, 순수 리듀서 상태). */
   timeTracking: Record<string, AgentTurnState>;
+  /**
+   * "오늘 일한 시간" 헤드라인 베이스: 부팅 시 JSONL에서 산출한 오늘자 합
+   * (자정 리셋 시 0). `memoryWorkedBaselineMs`와 함께 이후 Σ메모리 workedMs
+   * 델타를 더해 오늘 총량을 구한다(계산은 selectors.useTodayWorkedMs).
+   * 런타임 전용 — persist.ts는 agents만 저장하므로 대상 아님.
+   */
+  todayWorkedBaseMs: number;
+  /** 위 베이스가 세팅된 시점의 Σ메모리 workedMs(이중 집계 방지 기준선). */
+  memoryWorkedBaselineMs: number;
   /** 머리 위 작업 라벨 소스 상태. 비영속. */
   taskLabels: Record<string, AgentTaskLabel>;
   /**
@@ -141,6 +159,11 @@ interface AppState {
   applyActivityEvent(e: ActivityEvent): void;
   applyNotificationTiming(e: NotificationEvent): void;
   applySessionTiming(agentId: string, state: SessionState, at: number): void;
+  /**
+   * "오늘" 헤드라인 베이스+기준선을 함께 세팅. 부팅 시 `(base, 0)`,
+   * 로컬 자정 리셋 시 `(0, 현재 Σ메모리 workedMs)`.
+   */
+  setTodayWorkedBase(baseMs: number, baselineMs: number): void;
 
   // ---- overhead task label ----
   setTaskLabelSummary(agentId: string, patch: { goal?: string; currentSummary?: string }): void;
@@ -154,11 +177,21 @@ interface AppState {
   /** 스토어 갱신 + 백엔드 저장(fire-and-forget). */
   updateAppSettings(
     patch: Partial<
-      Pick<AppSettings, "claudeCliEnabled" | "claudeHooksEnabled" | "soundEnabled" | "soundVolume">
-    >
+      Pick<
+        AppSettings,
+        | "summarizerEnabled"
+        | "summaryProvider"
+        | "observerEnabled"
+        | "soundEnabled"
+        | "soundVolume"
+        | "externalTerminal"
+      >
+    >,
   ): void;
   /** 첫 실행 온보딩 선택 저장 + firstRun 종료. */
-  completeFirstRun(choice: { claudeCliEnabled: boolean; claudeHooksEnabled: boolean }): void;
+  completeFirstRun(
+    choice: Pick<AppSettings, "summarizerEnabled" | "summaryProvider" | "observerEnabled">,
+  ): void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -175,15 +208,11 @@ export const useAppStore = create<AppState>()(
     portraits: {},
     spritePreviews: {},
     timeTracking: {},
+    todayWorkedBaseMs: 0,
+    memoryWorkedBaselineMs: 0,
     taskLabels: {},
     terminalEpochs: {},
-    appSettings: {
-      version: 1,
-      claudeCliEnabled: false,
-      claudeHooksEnabled: false,
-      soundEnabled: true,
-      soundVolume: 0.5,
-    },
+    appSettings: DEFAULT_APP_SETTINGS,
     settingsFirstRun: false,
 
     addAgent: (profile) =>
@@ -412,6 +441,9 @@ export const useAppStore = create<AppState>()(
 
     applyActivityEvent: (e) =>
       set((s) => {
+        // 서브에이전트 카운트 신호는 시간 추적/라벨 대상이 아니다(카운트는
+        // sessionBridge가 별도 소유). reduceTurn의 TurnInputKind로 좁히기 위해서도 필요.
+        if (e.kind !== "prompt" && e.kind !== "tool") return {};
         const prevTurn = s.timeTracking[e.agentId] ?? initialTurnState();
         const nextTurn = reduceTurn(prevTurn, { kind: e.kind, at: e.at });
         logSettledTurn(e.agentId, prevTurn, nextTurn, e.at);
@@ -463,6 +495,9 @@ export const useAppStore = create<AppState>()(
         logSettledTurn(agentId, prev, next, at);
         return { timeTracking: { ...s.timeTracking, [agentId]: next } };
       }),
+
+    setTodayWorkedBase: (baseMs, baselineMs) =>
+      set({ todayWorkedBaseMs: baseMs, memoryWorkedBaselineMs: baselineMs }),
 
     hydrate: (state) =>
       set(() => {

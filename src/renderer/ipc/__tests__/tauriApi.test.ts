@@ -353,6 +353,18 @@ describe("command invocations", () => {
     expect(invoke).toHaveBeenCalledWith(Commands.setBadgeCount, { count: 3 });
   });
 
+  it("summarizeText는 provider snapshot을 함께 전달한다", async () => {
+    const tauriApi = await importTauriApi();
+
+    await tauriApi.summarizeText("codex", "요약 지시", "원문");
+
+    expect(invoke).toHaveBeenCalledWith(Commands.summarizeText, {
+      provider: "codex",
+      instruction: "요약 지시",
+      text: "원문",
+    });
+  });
+
   it("generateSpriteImage는 generate_sprite_image를 description과 함께 invoke하고 결과를 반환한다", async () => {
     invoke.mockResolvedValueOnce({ pngBase64: "AAAA", costUsd: 0.02 });
     const { tauriApi } = await import("../tauriApi");
@@ -398,7 +410,12 @@ describe("portrait commands", () => {
 describe("app settings commands", () => {
   it("getAppSettings는 get_app_settings를 인자 없이 invoke한다", async () => {
     invoke.mockResolvedValueOnce({
-      settings: { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false },
+      settings: {
+        version: 1,
+        summarizerEnabled: false,
+        summaryProvider: "claude",
+        observerEnabled: false,
+      },
       firstRun: true,
     });
     const tauriApi = await importTauriApi();
@@ -412,10 +429,12 @@ describe("app settings commands", () => {
   it("setAppSettings는 set_app_settings에 { settings }를 전달한다", async () => {
     const s = {
       version: 1,
-      claudeCliEnabled: true,
-      claudeHooksEnabled: false,
+      summarizerEnabled: true,
+      summaryProvider: "codex" as const,
+      observerEnabled: false,
       soundEnabled: true,
       soundVolume: 0.5,
+      externalTerminal: "terminal" as const,
     };
     const tauriApi = await importTauriApi();
 
@@ -436,5 +455,39 @@ describe("app settings commands", () => {
 
     expect(invoke).toHaveBeenCalledWith(Commands.listAvailableShells);
     expect(result).toEqual(shells);
+  });
+});
+
+describe("session handoff commands", () => {
+  it("handoffSupported invokes handoff_supported with no args and returns the resolved boolean", async () => {
+    invoke.mockResolvedValueOnce(true);
+    const tauriApi = await importTauriApi();
+
+    const result = await tauriApi.handoffSupported();
+
+    expect(invoke).toHaveBeenCalledWith(Commands.handoffSupported);
+    expect(result).toBe(true);
+  });
+
+  it("handoffSessions invokes handoff_sessions with the snapshots map and returns the handed-off count", async () => {
+    invoke.mockResolvedValueOnce(3);
+    const tauriApi = await importTauriApi();
+    const snapshots = { a1: "SCREEN-A1", a2: "SCREEN-A2" };
+
+    const result = await tauriApi.handoffSessions(snapshots);
+
+    expect(invoke).toHaveBeenCalledWith(Commands.handoffSessions, { snapshots });
+    expect(result).toBe(3);
+  });
+
+  it("adoptDetachedSessions invokes adopt_detached_sessions with no args and returns the resolved list", async () => {
+    const sessions = [{ agentId: "a1", sessionId: "s1", rows: 24, cols: 80 }];
+    invoke.mockResolvedValueOnce(sessions);
+    const tauriApi = await importTauriApi();
+
+    const result = await tauriApi.adoptDetachedSessions();
+
+    expect(invoke).toHaveBeenCalledWith(Commands.adoptDetachedSessions);
+    expect(result).toEqual(sessions);
   });
 });

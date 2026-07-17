@@ -144,6 +144,37 @@ describe("rendering", () => {
     expect(cards[1].textContent).toContain("✅");
     expect(cards[2].textContent).toContain("ℹ️");
   });
+
+  it("renders provider-neutral observer fallback copy exactly", () => {
+    useAppStore.getState().addAgent(mkProfile("a1"));
+    useAppStore.getState().addAgent(mkProfile("a2"));
+    useAppStore.setState({
+      notifications: [
+        mkNotif({
+          agentId: "a1",
+          type: "question",
+          excerpt: "확인이 필요합니다",
+          createdAt: 2,
+        }),
+        mkNotif({
+          agentId: "a2",
+          type: "done",
+          excerpt: "작업이 완료되었습니다.",
+          createdAt: 1,
+        }),
+      ],
+    });
+
+    const { getAllByRole } = render(<NotificationTicker />);
+    const rendered = getAllByRole("button")
+      .map((card) => card.textContent ?? "")
+      .join("\n");
+
+    expect(rendered).toContain("확인이 필요합니다");
+    expect(rendered).toContain("작업이 완료되었습니다.");
+    expect(rendered).not.toContain("Claude");
+    expect(rendered).not.toContain("Codex");
+  });
 });
 
 describe("click routing", () => {

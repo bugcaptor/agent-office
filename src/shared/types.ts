@@ -106,7 +106,7 @@ export interface NotificationEvent {
  * (serde lowercase). `prompt` = UserPromptSubmit (turn start), `tool` =
  * PostToolUse (heartbeat / waiting→working signal).
  */
-export type ActivityKind = "prompt" | "tool";
+export type ActivityKind = "prompt" | "tool" | "sub-start" | "sub-stop" | "sub-count";
 
 /**
  * Activity signal for session time tracking. Emitted as the `activity-event`
@@ -122,6 +122,8 @@ export interface ActivityEvent {
   at: number;
   /** kind="prompt"일 때 사용자 프롬프트 원문(최대 2,000자 절단). 파싱 실패/부재 시 undefined. */
   text?: string;
+  /** kind="sub-count"일 때 현재 실행 중 서브에이전트 절대 수. */
+  count?: number;
 }
 
 /**
@@ -145,6 +147,8 @@ export interface CreateSessionOptions {
   /** 세션이 뜬 뒤 셸 stdin에 `{command}\n`으로 주입할 시작 명령어. 부재/공백 = 미주입.
    * 셸 문법(bat/sh/pwsh 등)은 선택한 셸에 맞게 사용자가 작성. */
   startupCommand?: string;
+  /** Claude Code에 `--append-system-prompt`로 전달할 캐릭터 성격 프롬프트. */
+  personalityPrompt?: string;
   /** Historical profile label copied into session_started analytics only. */
   agentName?: string;
   /** Historical profile role copied into session_started analytics only. */
@@ -159,15 +163,15 @@ export interface CreateSessionOptions {
  * session-start analytics snapshot; they are not part of Rust's PTY
  * `CreateSessionRequest`.
  *
- * `autostartClaude` is not part of the frozen `AgentOfficeApi.createSession`
- * signature — the renderer adapter never sets it, so the backend
- * defaults to `false` when omitted: sessions start a plain shell with no
- * auto-launch. The shell still defines a `claude` wrapper, so typing plain
- * `claude` transparently becomes `claude --settings "$AGENT_OFFICE_SETTINGS"`
- * and time-tracking hooks still fire: on Windows via a PowerShell wrapper
- * function (`session::manager::CLAUDE_WRAPPER_PS`), on macOS/Linux zsh via a
- * ZDOTDIR shim (`session::zsh_wrapper`). Other shells (bash, fish, ...) are
- * not covered yet (see the TODO in `session::manager::default_shell`).
+ * `autostartClaude` is a frozen backward-compat wire field. It is not part of
+ * the frozen `AgentOfficeApi.createSession` options, so the renderer never sets
+ * it and omission defaults to `false`. Renderer-created sessions therefore do
+ * not auto-launch a provider; `startupCommand` decides which CLI starts.
+ *
+ * When observation is enabled, newly created supported terminals define both
+ * direct `claude` and `codex` wrappers: Windows PowerShell/`pwsh` functions,
+ * a Git Bash `--rcfile`, or the supported zsh ZDOTDIR shim. WSL does not support
+ * the observer wrapper.
  */
 export interface CreateSessionRequest extends CreateSessionOptions {
   agentId: AgentId;
@@ -221,6 +225,8 @@ export interface AgentProfile {
   /** 새 세션이 뜰 때마다 셸 stdin에 주입할 시작 명령어. 부재/공백 = 미주입.
    * 예: "source ./init.sh", "mysetup.bat". 셸 문법은 사용자 책임. */
   startupCommand?: string;
+  /** Claude Code 세션에 추가 시스템 프롬프트로 주입할 캐릭터 성격(멀티라인 가능). */
+  personalityPrompt?: string;
   /** 외모 묘사 힌트(자유 텍스트). 이미지 프롬프트에 반영. */
   appearance?: string;
   /** 초상 존재 표시 + 프론트 캐시 무효화 키(epoch ms). undefined = 초상 없음. */
@@ -274,17 +280,28 @@ export interface SessionTurnRecord {
   waitedMs: number;
 }
 
+/** 라벨 요약에 사용할 로컬 CLI provider. Rust `SummaryProvider` 미러. */
+export type SummaryProvider = "claude" | "codex";
+
+/** "OS 터미널로 열기"가 사용할 외부 터미널 앱 — Rust `ExternalTerminal` 미러.
+ * macOS에서만 의미가 있다(다른 OS는 무시). */
+export type ExternalTerminalApp = "terminal" | "iterm";
+
 /** 앱 전역 opt-in 설정 — Rust `persistence::settings_store::AppSettings` 미러. */
 export interface AppSettings {
   version: number;
-  /** 머리 위 라벨 요약용 로컬 `claude` CLI 호출 허용(구독 크레딧 소모). */
-  claudeCliEnabled: boolean;
-  /** 세션에 Claude Code 훅 주입 + 로컬 훅 서버 기동(알림·시간측정). */
-  claudeHooksEnabled: boolean;
+  /** 머리 위 라벨 요약용 로컬 CLI 호출 허용. */
+  summarizerEnabled: boolean;
+  /** 라벨 요약에 사용할 로컬 CLI provider. */
+  summaryProvider: SummaryProvider;
+  /** 세션 observer 주입 + 로컬 observer 서버 기동(알림·시간측정). */
+  observerEnabled: boolean;
   /** 사무실 앰비언스 사운드(타이핑·효과음·공조음) 재생 여부. 기본 켜짐. */
   soundEnabled: boolean;
   /** 마스터 볼륨 0.0~1.0. 기본 0.5. */
   soundVolume: number;
+  /** "OS 터미널로 열기"가 사용할 터미널 앱. 기본 Terminal.app(macOS 전용). */
+  externalTerminal: ExternalTerminalApp;
 }
 
 /** `get_app_settings` 응답. firstRun = settings.json 부재(첫 실행). */
@@ -303,6 +320,18 @@ export interface AvailableShell {
   path: string;
   /** false면 시간 추적(hook) 미지원 셸. */
   hooksSupported: boolean;
+}
+
+/**
+ * `adopt_detached_sessions` 응답 엔트리 — 재시작 시 `sessiond` 데몬에서
+ * 되찾은 세션 1건. Mirrors Rust `AdoptedSessionInfo` (camelCase).
+ * 세션 핸드오프 설계: docs/session-handoff-design.md §커맨드.
+ */
+export interface AdoptedSessionInfo {
+  agentId: AgentId;
+  sessionId: SessionId;
+  rows: number;
+  cols: number;
 }
 
 /**
@@ -338,8 +367,12 @@ export interface AgentOfficeApi {
   loadSprite(agentId: string): Promise<string | null>;
   /** 스프라이트 파일 삭제(없어도 성공). */
   deleteSprite(agentId: string): Promise<void>;
-  /** 머리 위 라벨 요약: `claude -p`(haiku) 헤드리스 호출. 호출마다 사용자의 Claude 구독/크레딧을 소모한다. */
-  summarizeText(instruction: string, text: string): Promise<string>;
+  /** 머리 위 라벨 요약: 캡처한 provider의 로컬 CLI를 호출한다. 호출마다 사용자 구독/크레딧을 소모할 수 있다. */
+  summarizeText(
+    provider: SummaryProvider,
+    instruction: string,
+    text: string,
+  ): Promise<string>;
   /** PixelLab로 64×64 스프라이트 1장 생성. 동기 HTTP — 수십 초 걸릴 수 있다. */
   generateSpriteImage(description: string): Promise<GeneratedSpriteImage>;
   /** 앱 전역 opt-in 설정 로드. 인자 없음. */
@@ -350,6 +383,11 @@ export interface AgentOfficeApi {
   listAvailableShells(): Promise<AvailableShell[]>;
   /** 디렉터리를 Visual Studio Code로 연다. VS Code 미설치/경로 부재 시 reject. */
   openInVscode(path: string): Promise<void>;
+  /** 디렉터리를 OS 기본 터미널 앱으로 연다. 경로 부재/실행 실패 시 reject. */
+  openInTerminal(path: string): Promise<void>;
+  /** 네이티브 폴더 선택 다이얼로그. 선택한 절대 경로, 취소 시 null.
+   * `initialDir`이 실존 디렉터리면 거기서 시작한다(`~` 확장 포함). */
+  pickDirectory(initialDir?: string): Promise<string | null>;
   /** Returns an unsubscribe function. */
   onData(agentId: string, cb: (data: string) => void): () => void;
   onSessionState(cb: (e: SessionStateEvent) => void): () => void;
@@ -361,4 +399,13 @@ export interface AgentOfficeApi {
   appendSessionTurn(record: SessionTurnRecord): void;
   /** 누적된 세션 턴 기록 전체를 읽는다(통계용). 손상된 줄은 건너뛴다. */
   loadSessionTurns(): Promise<SessionTurnRecord[]>;
+  /** 세션 핸드오프(unix 전용) 지원 여부. Windows 등 미지원 플랫폼은 false. */
+  handoffSupported(): Promise<boolean>;
+  /** 종료 시 살아있는 세션들을 `sessiond` 데몬으로 넘긴다. `snapshots`는
+   * agentId -> 직렬화된 터미널 화면(스크롤백 포함, xterm SerializeAddon
+   * 출력) -- 데몬이 핸드오프 이전 화면을 보관할 방법이 이것뿐이므로 실어
+   * 보낸다. 넘긴 세션 수를 반환. */
+  handoffSessions(snapshots: Record<string, string>): Promise<number>;
+  /** 부팅 시 1회 — 데몬에 남아있던 세션을 되찾는다. 미지원/데몬 없음이면 빈 배열. */
+  adoptDetachedSessions(): Promise<AdoptedSessionInfo[]>;
 }

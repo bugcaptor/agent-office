@@ -7,13 +7,13 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use tauri::{AppHandle, Emitter};
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
 
 use crate::notification::hub::NotificationHub;
+use crate::observer::server::ObserverServerState;
+use crate::observer::ObserverRuntime;
 use crate::persistence::profile_store::ProfileStore;
 use crate::persistence::settings_store::{AppSettings, SettingsStore};
 use crate::session::manager::SessionManager;
@@ -40,7 +40,10 @@ impl AppEvents for TauriEvents {
         let _ = self.app.emit("notification-new", ev);
     }
     fn notification_cleared(&self, agent_id: &str, ids: &[String]) {
-        let payload = NotificationClearedEvent { agent_id: agent_id.to_string(), ids: ids.to_vec() };
+        let payload = NotificationClearedEvent {
+            agent_id: agent_id.to_string(),
+            ids: ids.to_vec(),
+        };
         let _ = self.app.emit("notification-cleared", &payload);
     }
     fn activity_event(&self, ev: &ActivityEvent) {
@@ -58,7 +61,10 @@ impl SessionRegistry {
         Self::default()
     }
     pub fn insert(&self, sid: &str, agent: &str, state: SessionState) {
-        self.map.write().unwrap().insert(sid.into(), (agent.into(), state));
+        self.map
+            .write()
+            .unwrap()
+            .insert(sid.into(), (agent.into(), state));
     }
     pub fn set_state(&self, sid: &str, state: SessionState) {
         if let Some(e) = self.map.write().unwrap().get_mut(sid) {
@@ -76,13 +82,11 @@ impl SessionRegistry {
 /// `tauri::Manager::manage()`가 보관하는 앱 전역 상태. 커맨드는 전부
 /// `State<'_, AppState>`를 통해 이 구조체의 필드로만 위임한다.
 ///
-/// `hook_shutdown`/`server_handle`은 `RunEvent::ExitRequested`에서
-/// 정확히 한 번 소비된다 -- oneshot sender는 `.take()`로 꺼내 보내고,
-/// join handle은 굳이 await하지 않는다(프로세스가 곧 종료되므로 wait 스레드가
-/// Disposed를 확정하고 OS가 자식을 reap).
 pub struct AppState {
     pub manager: Arc<SessionManager>,
     pub hub: Arc<NotificationHub>,
+    pub observer: Arc<ObserverRuntime>,
+    pub observer_server: Arc<ObserverServerState>,
     pub store: ProfileStore,
     pub portrait_store: crate::persistence::png_store::PngStore,
     pub sprite_store: crate::persistence::png_store::PngStore,
@@ -90,7 +94,7 @@ pub struct AppState {
     pub session_time_store: crate::persistence::session_time_store::SessionTimeStore,
     /// 앱 전역 opt-in 설정 — 디스크 원본은 settings_store, 커맨드가 읽는
     /// 캐시는 settings(RwLock). set_app_settings가 저장+캐시 갱신을 함께 한다.
-    /// `Arc`인 이유: lib.rs의 훅 포트 getter(`get_hook_port`)가 SessionManager
+    /// `Arc`인 이유: lib.rs의 observer URL getter가 SessionManager
     /// 생성 시점에 이 캐시를 미리 clone해 쥐고 있어야, 실행 중 ON→OFF 전환이
     /// (서버는 유지한 채) 새 세션 훅 배선에 즉시 반영된다.
     pub settings_store: SettingsStore,
@@ -99,11 +103,6 @@ pub struct AppState {
     /// `set_app_settings` 성공 시 false로 내려가야 웹뷰 리로드 후에도 첫
     /// 실행 다이얼로그가 다시 뜨지 않는다 -- `AtomicBool`로 이 갱신을 표현.
     pub settings_first_run: AtomicBool,
-    /// 훅 서버 포트. None = 훅 비활성(서버 미기동). 실행 중 ON 전환 시
-    /// set_app_settings가 지연 기동 후 Some으로 채운다.
-    pub hook_port: Arc<RwLock<Option<u16>>>,
-    pub hook_shutdown: Mutex<Option<oneshot::Sender<()>>>,
-    pub server_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
 // ── 테스트용 페이크 ────────────────────────────────────────────────────
@@ -146,7 +145,10 @@ pub mod fake {
             self.notifications.lock().unwrap().push(ev.clone());
         }
         fn notification_cleared(&self, agent_id: &str, ids: &[String]) {
-            self.cleared.lock().unwrap().push((agent_id.to_string(), ids.to_vec()));
+            self.cleared
+                .lock()
+                .unwrap()
+                .push((agent_id.to_string(), ids.to_vec()));
         }
         fn activity_event(&self, ev: &ActivityEvent) {
             self.activities.lock().unwrap().push(ev.clone());
@@ -162,7 +164,12 @@ pub mod fake {
         }
         /// 지금까지 방출된 `session-state` 이벤트의 상태값 시퀀스.
         pub fn states(&self) -> Vec<SessionState> {
-            self.states.lock().unwrap().iter().map(|e| e.state).collect()
+            self.states
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|e| e.state)
+                .collect()
         }
         /// 가장 최근 `session-state` 이벤트 전체(예: `.exit` 상세 확인용).
         ///
@@ -230,7 +237,11 @@ mod tests {
 
         assert_eq!(
             events.states(),
-            vec![SessionState::Starting, SessionState::Running, SessionState::Exited]
+            vec![
+                SessionState::Starting,
+                SessionState::Running,
+                SessionState::Exited
+            ]
         );
     }
 
@@ -292,6 +303,7 @@ mod tests {
             kind: ActivityKind::Prompt,
             at: 100,
             text: None,
+            count: None,
         });
         events.activity_event(&ActivityEvent {
             agent_id: "a1".into(),
@@ -299,6 +311,7 @@ mod tests {
             kind: ActivityKind::Tool,
             at: 200,
             text: None,
+            count: None,
         });
 
         let got = events.activities();

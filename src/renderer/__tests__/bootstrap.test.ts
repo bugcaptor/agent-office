@@ -35,10 +35,22 @@ const { mockApi } = vi.hoisted(() => ({
     onNotificationCleared: vi.fn(() => vi.fn()),
     onActivity: vi.fn(() => vi.fn()),
     appendSessionTurn: vi.fn(),
+    loadSessionTurns: vi.fn(),
+    handoffSupported: vi.fn(),
+    handoffSessions: vi.fn(),
+    adoptDetachedSessions: vi.fn(),
   },
 }));
 
 vi.mock("../ipc/tauriApi", () => ({ tauriApi: mockApi }));
+
+// `TerminalRegistry`는 실제 xterm(DOM 필요)을 구성한다 — node 환경인 이 테스트
+// 파일에서는 `installSoundManager`와 같은 이유로 목으로 대체하고, 입양 시드가
+// `markAdopted`를 호출하는지만 배선으로 검증한다.
+const markAdopted = vi.fn();
+vi.mock("../terminal/TerminalRegistry", () => ({
+  terminalRegistry: { markAdopted: (...args: unknown[]) => markAdopted(...args) },
+}));
 
 // `installQuitGuard` (Task: quit confirmation gate) talks to
 // `@tauri-apps/api/window` directly, not through `tauriApi` — mock it at
@@ -99,9 +111,21 @@ beforeEach(() => {
   Object.values(mockApi).forEach((fn) => fn.mockClear());
   mockApi.loadState.mockResolvedValue(mkPersisted());
   mockApi.getAppSettings.mockResolvedValue({
-    settings: { version: 1, claudeCliEnabled: false, claudeHooksEnabled: false },
+    settings: {
+      version: 1,
+      summarizerEnabled: false,
+      summaryProvider: "claude",
+      observerEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+    },
     firstRun: false,
   });
+  mockApi.loadSessionTurns.mockResolvedValue([]);
+  mockApi.handoffSupported.mockResolvedValue(false);
+  mockApi.handoffSessions.mockResolvedValue(0);
+  mockApi.adoptDetachedSessions.mockResolvedValue([]);
+  markAdopted.mockClear();
   mockApi.onNotification.mockImplementation((cb: (e: NotificationEvent) => void) => {
     capturedOnNotification = cb;
     return vi.fn();
@@ -132,14 +156,28 @@ describe("bootApp", () => {
 
   it("getAppSettings 결과를 부팅 전에 스토어에 반영한다", async () => {
     mockApi.getAppSettings.mockResolvedValue({
-      settings: { version: 1, claudeCliEnabled: true, claudeHooksEnabled: false },
+      settings: {
+        version: 1,
+        summarizerEnabled: true,
+        summaryProvider: "codex",
+        observerEnabled: false,
+        soundEnabled: true,
+        soundVolume: 0.5,
+      },
       firstRun: true,
     });
 
     teardown = await bootApp();
 
     const s = useAppStore.getState();
-    expect(s.appSettings.claudeCliEnabled).toBe(true);
+    expect(s.appSettings).toEqual({
+      version: 1,
+      summarizerEnabled: true,
+      summaryProvider: "codex",
+      observerEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+    });
     expect(s.settingsFirstRun).toBe(true);
   });
 
@@ -150,8 +188,15 @@ describe("bootApp", () => {
     teardown = await bootApp();
 
     const s = useAppStore.getState();
-    expect(s.appSettings.claudeCliEnabled).toBe(false);
-    expect(s.appSettings.claudeHooksEnabled).toBe(false);
+    expect(s.appSettings).toEqual({
+      version: 1,
+      summarizerEnabled: false,
+      summaryProvider: "claude",
+      observerEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+      externalTerminal: "terminal",
+    });
     expect(s.settingsFirstRun).toBe(false);
     expect(warn).toHaveBeenCalledWith(
       "bootstrap: 앱 설정 로드 실패 — 기본값(전부 OFF)으로 진행",
@@ -222,6 +267,70 @@ describe("bootApp", () => {
     // Persistence still installed: the addAgent above debounces a save.
     await vi.advanceTimersByTimeAsync(500);
     expect(mockApi.saveState).toHaveBeenCalledTimes(1);
+
+    warn.mockRestore();
+  });
+});
+
+describe("session-handoff adoption (bootApp)", () => {
+  it("seeds an adopted session's status/size and marks it for a terminal redraw nudge", async () => {
+    mockApi.adoptDetachedSessions.mockResolvedValue([
+      { agentId: "a1", sessionId: "s-old", rows: 40, cols: 120 },
+    ]);
+
+    teardown = await bootApp();
+
+    const session = useAppStore.getState().sessions.a1;
+    expect(session.status).toBe("running");
+    expect(session.cols).toBe(120);
+    expect(session.rows).toBe(40);
+    expect(markAdopted).toHaveBeenCalledWith(["a1"]);
+  });
+
+  it("does not touch the store or mark anything when adoptDetachedSessions resolves empty (default/unsupported)", async () => {
+    teardown = await bootApp();
+
+    // mkPersisted's a1 keeps its post-hydrate idle status untouched.
+    expect(useAppStore.getState().sessions.a1.status).toBe("idle");
+    expect(markAdopted).not.toHaveBeenCalled();
+  });
+
+  it("seeds every returned session when multiple sessions are adopted", async () => {
+    mockApi.loadState.mockResolvedValue({
+      agents: [
+        { id: "a1", name: "A1", role: "", note: "", seed: "s1", createdAt: 0, deskIndex: 0 },
+        { id: "a2", name: "A2", role: "", note: "", seed: "s2", createdAt: 0, deskIndex: 1 },
+      ],
+      version: 1,
+    });
+    mockApi.adoptDetachedSessions.mockResolvedValue([
+      { agentId: "a1", sessionId: "s-old-1", rows: 24, cols: 80 },
+      { agentId: "a2", sessionId: "s-old-2", rows: 30, cols: 100 },
+    ]);
+
+    teardown = await bootApp();
+
+    expect(useAppStore.getState().sessions.a1.status).toBe("running");
+    expect(useAppStore.getState().sessions.a2.status).toBe("running");
+    expect(markAdopted).toHaveBeenCalledWith(["a1", "a2"]);
+  });
+
+  it("continues booting (no half-boot) when adoptDetachedSessions rejects", async () => {
+    mockApi.adoptDetachedSessions.mockRejectedValue(new Error("no sessiond socket"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    teardown = await bootApp();
+
+    expect(useAppStore.getState().agentOrder).toEqual(["a1"]); // hydrate still ran
+    expect(markAdopted).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      "bootstrap: 세션 입양 실패 — 이전 세션 없이 진행",
+      expect.any(Error)
+    );
+
+    // Rest of boot still live (bridge + persistence).
+    capturedOnNotification?.(mkNotifEvent({ agentId: "a1" }));
+    expect(useAppStore.getState().notifications).toHaveLength(1);
 
     warn.mockRestore();
   });

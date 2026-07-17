@@ -1,8 +1,9 @@
 // src/renderer/bootstrap.ts
 //
 // App boot sequence: `loadState` -> `hydrate` -> `getAppSettings` ->
-// `installSessionBridge` -> `installPersistence` -> ... ->
-// `installTaskLabelSummarizer` -> `installQuitGuard` -> `installSoundManager`.
+// today-worked-total base load -> `installSessionBridge` -> `adoptDetachedSessions`
+// seed -> `installPersistence` -> ... -> `installTaskLabelSummarizer` ->
+// `installQuitGuard` -> `installSoundManager` -> `installDayRollover`.
 //
 // Pulled out of `main.tsx` into its own function so it's unit-testable
 // without a real DOM root / ReactDOM.render. Order matters:
@@ -12,6 +13,11 @@
 //   just-loaded-it save the moment `hydrate` populates `agents`).
 // - `installSessionBridge` before `installPersistence` is the established
 //   order; the two don't otherwise depend on each other.
+// - Session-handoff adoption runs right after the bridge is live: the
+//   backend's adopt path shares `install_session` with normal session
+//   creation, so it also emits its own `session-state` event — seeding here
+//   is a defensive, redundant fill (plus cols/rows, which that event doesn't
+//   carry) against any invoke/event-arrival race, not the sole source of truth.
 import { useAppStore } from "./store/appStore";
 import { installSessionBridge } from "./ipc/sessionBridge";
 import { installPersistence } from "./store/persist";
@@ -21,7 +27,59 @@ import { installTaskLabelSummarizer } from "./labels/summarizer";
 import { installQuitGuard } from "./quitGuard";
 import { installSoundManager } from "./sound/soundManager";
 import { tauriApi } from "./ipc/tauriApi";
+import { terminalRegistry } from "./terminal/TerminalRegistry";
 import type { PersistedState } from "./store/types";
+import { msUntilNextLocalMidnight, startOfLocalDay, sumWorkedSince } from "./timeline/todayTotal";
+
+/**
+ * 세션 핸드오프(docs/session-handoff-design.md §핵심 6) 입양: 데몬에 남아있던
+ * 세션들을 Running으로 스토어에 시드하고, 그 터미널이 처음 activate될 때
+ * redraw nudge(TerminalRegistry.markAdopted)를 태우도록 표시한다. 미지원
+ * 플랫폼/데몬 없음은 빈 배열 응답이라 자연히 no-op. 실패해도 부팅은 계속
+ * (loadState/getAppSettings와 동일한 폴백 패턴) — 최악의 경우 이전 세션을
+ * 못 되찾을 뿐, 새 세션 시작 자체는 영향받지 않는다.
+ */
+async function adoptDetachedSessions(): Promise<void> {
+  try {
+    const adopted = await tauriApi.adoptDetachedSessions();
+    if (adopted.length === 0) return;
+    for (const info of adopted) {
+      useAppStore.getState().setSessionState({ agentId: info.agentId, status: "running" });
+      useAppStore.getState().setSessionSize(info.agentId, info.cols, info.rows);
+    }
+    terminalRegistry.markAdopted(adopted.map((a) => a.agentId));
+  } catch (err) {
+    console.warn("bootstrap: 세션 입양 실패 — 이전 세션 없이 진행", err);
+  }
+}
+
+/**
+ * "오늘 일한 시간" 헤드라인의 로컬 자정 리셋 타이머. 발화 시 베이스를 0으로,
+ * 기준선을 그 시점의 Σ메모리 workedMs로 세팅(파일 재읽기 없음 — 계산 모델은
+ * docs/superpowers/specs/2026-07-11-today-worked-total-design.md 참고)한 뒤
+ * 다음 자정으로 재예약한다. `window.setTimeout`이 아니라 전역 `setTimeout`을
+ * 쓴다 — persist.ts의 디바운스 타이머와 동일 컨벤션이며, `window`가 없는
+ * Node 테스트 환경(bootstrap.test.ts)에서도 안전하다.
+ */
+function installDayRollover(): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const schedule = () => {
+    timer = setTimeout(() => {
+      const memorySum = Object.values(useAppStore.getState().timeTracking).reduce(
+        (a, t) => a + t.workedMs,
+        0
+      );
+      useAppStore.getState().setTodayWorkedBase(0, memorySum);
+      schedule();
+    }, msUntilNextLocalMidnight(Date.now()));
+  };
+  schedule();
+
+  return () => {
+    if (timer !== null) clearTimeout(timer);
+  };
+}
 
 /**
  * Runs the full boot sequence once. Returns a combined teardown (tests only —
@@ -54,7 +112,19 @@ export async function bootApp(): Promise<() => void> {
     console.warn("bootstrap: 앱 설정 로드 실패 — 기본값(전부 OFF)으로 진행", err);
   }
 
+  // "오늘 일한 시간" 헤드라인 베이스 — 실패해도 부팅 계속(base=0, loadState
+  // 실패 패턴과 동일). 부팅 스냅샷은 이후 재읽기 안 함(계산 모델은
+  // todayTotal.ts/설계 문서 참고) — 이번 실행 정산분은 메모리로만 누적된다.
+  try {
+    const records = await tauriApi.loadSessionTurns();
+    const base = sumWorkedSince(records, startOfLocalDay(Date.now()));
+    useAppStore.getState().setTodayWorkedBase(base, 0);
+  } catch (err) {
+    console.warn("bootstrap: 오늘 작업 시간 로드 실패 — 0으로 시작", err);
+  }
+
   const offBridge = installSessionBridge();
+  await adoptDetachedSessions();
   const offPersistence = installPersistence();
   const offPortraits = installPortraitCache();
   const offSprites = installSpriteCache();
@@ -63,6 +133,7 @@ export async function bootApp(): Promise<() => void> {
   // 설정 하이드레이트 이후에 설치 — fireImmediately 구독이 최신 사운드
   // 설정(soundEnabled/soundVolume)을 읽는다.
   const offSound = installSoundManager();
+  const offDayRollover = installDayRollover();
 
   return () => {
     offBridge();
@@ -72,5 +143,6 @@ export async function bootApp(): Promise<() => void> {
     offSummarizer();
     offQuitGuard();
     offSound();
+    offDayRollover();
   };
 }

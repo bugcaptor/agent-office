@@ -21,14 +21,13 @@ use parking_lot::Mutex;
 use tauri::ipc::Channel;
 use uuid::Uuid;
 
-use crate::notification::hook_settings::HookSettingsWriter;
 use crate::notification::hub::NotificationHub;
+use crate::observer::{CommandWrapperSpec, ObserverRuntime, ObserverSessionContext, WrapperArg};
 use crate::session::output_batcher::{FlushSink, OutputBatcher, MAX_BYTES, WINDOW_MS};
-use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnOptions};
+use crate::session::pi_extension;
+use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnOptions, SpawnedPty};
 use crate::session::shells;
 use crate::session_events::types::{AgentEventProfile, SessionStartedEvent};
-#[cfg(not(windows))]
-use crate::session::zsh_wrapper;
 use crate::state::{AppEvents, SessionRegistry};
 use crate::types::*;
 
@@ -46,7 +45,10 @@ pub struct OutputSink {
 }
 impl OutputSink {
     fn new() -> Self {
-        Self { channel: Mutex::new(None), backlog: Mutex::new(Default::default()) }
+        Self {
+            channel: Mutex::new(None),
+            backlog: Mutex::new(Default::default()),
+        }
     }
     fn attach(&self, ch: Channel<OutputChunk>) {
         // 락 순서 항상 channel → backlog (데드락 방지, emit과 동일 순서).
@@ -59,6 +61,20 @@ impl OutputSink {
     }
     fn detach(&self) {
         *self.channel.lock() = None;
+    }
+    /// 핸드오프 스냅샷 폴백(실증에서 발견된 빈틈): 프론트가 이 터미널을
+    /// 한 번도 구독하지 않은 채 종료하면 xterm 쪽 직렬화 스냅샷이 없다 --
+    /// 그 세션의 종료 전 출력은 여기 backlog에만 남아 있으므로, 원시
+    /// 바이트를 이어붙여 스냅샷 대용으로 쓴다. **드레인하지 않고 복사만
+    /// 한다** -- 핸드오프가 실패해도(데몬 연결 불가 등) 이 세션은 맵에
+    /// 그대로 남아 출력이 이어져야 하므로 backlog를 비우면 안 된다.
+    fn backlog_snapshot(&self) -> Vec<u8> {
+        self.backlog
+            .lock()
+            .iter()
+            .flat_map(|chunk| chunk.data.as_bytes())
+            .copied()
+            .collect()
     }
 }
 impl FlushSink for OutputSink {
@@ -82,13 +98,40 @@ struct Session {
     state: Mutex<SessionState>,
     writer: Mutex<Box<dyn Write + Send>>,
     control: Arc<dyn PtyControl>,
-    settings_path: Option<std::path::PathBuf>,
+    cleanup_paths: Vec<std::path::PathBuf>,
     kill_requested: AtomicBool,
+    /// 시작 작업 디렉터리(세션 수명 동안 불변 -- `cd`는 추적하지 않는다).
+    /// 핸드오프 시 Handoff 메시지의 진단/List용 메타데이터로 실어 보낸다.
+    cwd: String,
+    /// 현재 알려진 터미널 크기. resize()가 갱신 -- 핸드오프 시 Handoff
+    /// 메시지에 실어 데몬에 보내고, 입양 응답의 AdoptedSessionInfo로
+    /// 프론트에 되돌려줘 터미널 크기를 맞추는 데 쓴다.
+    size: Mutex<(u16, u16)>, // (cols, rows)
+    /// 세션 핸드오프(§핵심 3, 4). true면 on_exit/dispose가 즉시 return —
+    /// 이 세션의 실제 수명은 sessiond가 넘겨받았다(또는 넘겨받는 중이다).
+    /// 필드 자체는 크로스플랫폼으로 둬 cfg 분기를 최소화한다(Windows/Fake는
+    /// 항상 false로 남는 no-op).
+    handed_off: AtomicBool,
+    /// unix 전용: 핸드오프 시 리더 스레드를 확정적으로 멈추는 스위치와,
+    /// sessiond에 넘길 마스터 fd/pid/pgid. `create_with_profile`(팩토리
+    /// spawn)과 `adopt_detached`(assemble_adopted) 양쪽이 채운다 — Fake로
+    /// 만든 세션은 항상 None(핸드오프 불가능 세션).
+    #[cfg(unix)]
+    reader_interrupt: Mutex<Option<crate::session::poll_reader::ReaderInterrupt>>,
+    #[cfg(unix)]
+    handoff: Mutex<Option<crate::session::pty_factory::HandoffInfo>>,
+    /// 입양된 세션 한정(§핵심 4의 AdoptedReader 정지 게이트) -- 재핸드오프
+    /// 인터럽트 직전 true로 세팅해야 EofWaiter가 오발화하지 않는다.
+    /// create() 경로(RealWaiter가 독립적으로 exit 판정)는 항상 None. 타입
+    /// 자체는 크로스플랫폼이라 cfg 분기가 필요 없다(항상 컴파일되고, 비unix는
+    /// 그냥 항상 None으로 남는다).
+    eof_stop_gate: Option<Arc<AtomicBool>>,
 }
 
 pub struct SessionManager {
     factory: Arc<dyn PtyFactory>,
-    hook_writer: HookSettingsWriter, // Clone 가능(PathBuf만 보유)
+    observer: Arc<ObserverRuntime>,
+    get_observer_url: Arc<dyn Fn() -> Option<String> + Send + Sync>,
     registry: Arc<SessionRegistry>,
     events: Arc<dyn AppEvents>,
     hub: Arc<NotificationHub>,
@@ -96,30 +139,45 @@ pub struct SessionManager {
     /// agentId별 출력 sink — 세션 수명과 독립. subscribe 이전 pending attach와
     /// 세션 재생성 시 채널 재사용을 위해 세션이 아니라 여기에 보관한다.
     sinks: Mutex<HashMap<AgentId, Arc<OutputSink>>>,
-    get_hook_port: Arc<dyn Fn() -> Option<u16> + Send + Sync>,
-    shell_resolver: Arc<dyn Fn(shells::ShellRequest) -> shells::ResolvedShell + Send + Sync>,
+    shell_resolver:
+        Arc<dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync>,
+    /// 세션 핸드오프(unix 전용)와 `AGENT_OFFICE_APP_DATA` env 주입(§핵심 5)에
+    /// 쓰는 앱 데이터 디렉터리. 프로덕션은 `lib.rs`가 `with_app_data_dir`로
+    /// 채운다 — 미설정(None)이면 `handoff_all`/`adopt_detached`는 no-op(0/빈
+    /// 벡터)이고 env 주입도 생략된다(기존 테스트가 앱 데이터 경로 없이도
+    /// 그대로 통과해야 하므로 기본값은 None).
+    app_data_dir: Option<std::path::PathBuf>,
 }
 
 impl SessionManager {
     pub fn new(
         factory: Arc<dyn PtyFactory>,
-        hook_writer: HookSettingsWriter,
+        observer: Arc<ObserverRuntime>,
         registry: Arc<SessionRegistry>,
         events: Arc<dyn AppEvents>,
         hub: Arc<NotificationHub>,
-        get_hook_port: Arc<dyn Fn() -> Option<u16> + Send + Sync>,
+        get_observer_url: Arc<dyn Fn() -> Option<String> + Send + Sync>,
     ) -> Self {
         Self {
             factory,
-            hook_writer,
+            observer,
+            get_observer_url,
             registry,
             events,
             hub,
             sessions: Mutex::new(HashMap::new()),
             sinks: Mutex::new(HashMap::new()),
-            get_hook_port,
-            shell_resolver: Arc::new(shells::resolve),
+            shell_resolver: Arc::new(shells::resolve_observed),
+            app_data_dir: None,
         }
+    }
+
+    /// 앱 데이터 디렉터리를 지정한다(세션 핸드오프 소켓/로그 경로,
+    /// `AGENT_OFFICE_APP_DATA` env의 근거). `lib.rs`의 프로덕션 부트스트랩만
+    /// 호출 — 테스트는 기본 None으로 이 기능을 건드리지 않는다.
+    pub fn with_app_data_dir(mut self, dir: std::path::PathBuf) -> Self {
+        self.app_data_dir = Some(dir);
+        self
     }
 
     fn find(&self, agent_id: &str) -> Option<Arc<Session>> {
@@ -141,7 +199,10 @@ impl SessionManager {
         self.find(agent_id).map(|s| s.session_id.clone())
     }
 
-    pub fn create(self: &Arc<Self>, req: CreateSessionRequest) -> Result<CreateSessionResult, String> {
+    pub fn create(
+        self: &Arc<Self>,
+        req: CreateSessionRequest,
+    ) -> Result<CreateSessionResult, String> {
         let fallback = AgentEventProfile {
             name: req.agent_id.clone(),
             role: None,
@@ -170,74 +231,115 @@ impl SessionManager {
                 let reusable = matches!(st, SessionState::Running | SessionState::Starting)
                     && !s.kill_requested.load(Ordering::SeqCst);
                 if reusable {
-                    return Ok(CreateSessionResult { session_id: s.session_id.clone(), state: st });
+                    return Ok(CreateSessionResult {
+                        session_id: s.session_id.clone(),
+                        state: st,
+                    });
                 }
                 map.remove(&req.agent_id);
             }
         }
 
         let session_id = Uuid::new_v4().to_string(); // uuid는 URL-safe → hook 라우팅 키로 안전
-        // 훅 opt-in: 포트가 None이면(설정 OFF 또는 서버 미기동) --settings 파일·
-        // 훅 env·zsh ZDOTDIR 심을 전부 생략한다 — 세션은 순수한 셸로 뜨고,
-        // 알림/시간측정 훅은 발화하지 않는다(새 세션부터 적용 정책).
-        let port = (self.get_hook_port)();
-        let settings_path: Option<std::path::PathBuf> = match port {
-            Some(p) => Some(self.hook_writer.write(&session_id, p).map_err(|e| e.to_string())?),
-            None => None,
-        };
+        let observer_url = (self.get_observer_url)();
+        let mut plan = observer_url
+            .as_deref()
+            .map(|url| {
+                self.observer
+                    .prepare_session(&ObserverSessionContext::new(&session_id, url))
+            })
+            .unwrap_or_default();
+        if observer_url.is_some() {
+            match pi_extension::ensure_extension() {
+                Ok(path) => {
+                    plan.env.push((
+                        "AGENT_OFFICE_PI_EXT".into(),
+                        path.to_string_lossy().into_owned(),
+                    ));
+                    plan.wrappers.push(CommandWrapperSpec {
+                        command: "pi".into(),
+                        prefix_args: vec![
+                            WrapperArg::Literal("-e".into()),
+                            WrapperArg::Env("AGENT_OFFICE_PI_EXT".into()),
+                        ],
+                        skip_if_present: vec![],
+                    });
+                }
+                Err(error) => eprintln!("agent-office: failed to write pi extension: {error}"),
+            }
+        }
 
-        // RAII 정리 가드: 여기부터 create()가 어떤 경로로든(Err 반환뿐 아니라
-        // 스폰/하위 계층의 패닉 unwind까지) 완주하지 못하면 방금 쓴 훅 설정
-        // 파일을 지운다. 성공 시 아래에서 disarm. (2026-07-11 실사고: 시작
-        // 실패가 반복되는 동안 <tmp>/agent-office/hooks/에 파일이 시도마다
-        // 누적됐다 — 명시적 cleanup은 Err 경로 하나만 커버했기 때문.)
-        struct HookFileGuard<'a> {
-            writer: &'a HookSettingsWriter,
-            session_id: String, // 소유 — 반환값이 session_id를 move해도 가드가 살아있게
+        if let Some(personality_prompt) = req
+            .personality_prompt
+            .as_deref()
+            .filter(|prompt| !prompt.trim().is_empty())
+        {
+            plan.env.push((
+                "AGENT_OFFICE_PERSONA".into(),
+                personality_prompt.to_string(),
+            ));
+            let persona_args = [
+                WrapperArg::Literal("--append-system-prompt".into()),
+                WrapperArg::Env("AGENT_OFFICE_PERSONA".into()),
+            ];
+            if let Some(claude) = plan
+                .wrappers
+                .iter_mut()
+                .find(|wrapper| wrapper.command == "claude")
+            {
+                claude.prefix_args.extend(persona_args);
+            } else {
+                plan.wrappers.push(CommandWrapperSpec {
+                    command: "claude".into(),
+                    prefix_args: persona_args.into(),
+                    skip_if_present: vec![],
+                });
+            }
+        }
+
+        // prepare_session이 파일을 만든 뒤 spawn이 Err 또는 panic으로 끝나도
+        // observer 아티팩트가 남지 않게 한다. 세션 등록 성공 뒤에는 Session이
+        // cleanup_paths를 인계받아 dispose/on_exit에서 정리한다.
+        struct ObserverPlanGuard {
+            paths: Vec<std::path::PathBuf>,
             armed: bool,
         }
-        impl Drop for HookFileGuard<'_> {
+        impl Drop for ObserverPlanGuard {
             fn drop(&mut self) {
                 if self.armed {
-                    self.writer.cleanup(&self.session_id);
+                    cleanup_paths(&self.paths);
                 }
             }
         }
-        let mut hook_file_guard =
-            HookFileGuard { writer: &self.hook_writer, session_id: session_id.clone(), armed: true };
+        let mut observer_plan_guard = ObserverPlanGuard {
+            paths: plan.cleanup_paths.clone(),
+            armed: true,
+        };
 
-        // hooks_on: 이번 세션에 AGENT_OFFICE_SETTINGS가 실제로 주입되는지 —
-        // 아래 env 주입 조건(port + settings_path 둘 다 Some)과 동일한 신호를
-        // 셸 리졸버에 미리 전달해, git-bash 분기가 --rcfile 심 설치 여부를
-        // 결정할 수 있게 한다.
-        let hooks_on = port.is_some() && settings_path.is_some();
-        let resolved = (self.shell_resolver)(shells::ShellRequest { selected: req.shell.as_deref(), hooks_on });
+        let resolved = (self.shell_resolver)(req.shell.as_deref(), &plan.wrappers);
         let cwd = req.cwd.clone().map(expand_tilde).unwrap_or_else(home_dir);
         let mut env = vec![
             ("AGENT_OFFICE_SESSION".into(), session_id.clone()),
             ("TERM".into(), "xterm-256color".into()),
         ];
-        if let (Some(p), Some(sp)) = (port, settings_path.as_ref()) {
-            env.push(("AGENT_OFFICE_HOOK_URL".into(), format!("http://127.0.0.1:{p}/hook")));
-            env.push(("AGENT_OFFICE_SETTINGS".into(), sp.to_string_lossy().into_owned()));
-            // macOS/Linux zsh time-tracking fix (Task B): inject a ZDOTDIR shim so
-            // the spawned zsh defines a `claude` wrapper that transparently adds
-            // `--settings $AGENT_OFFICE_SETTINGS` (see session::zsh_wrapper and
-            // the Windows CLAUDE_WRAPPER_PS sibling in session::shells). Windows
-            // PowerShell/pwsh and Git Bash get their own wrapper injection inside
-            // `session::shells::resolve_with`. 훅 OFF면 심을 설치하지 않는다
-            // (래퍼가 주입할 settings 파일 자체가 없음).
-            #[cfg(not(windows))]
-            if zsh_wrapper::is_zsh(&resolved.program) {
-                match zsh_wrapper::ensure_zdotdir() {
-                    Ok(dir) => env.push(("ZDOTDIR".into(), dir.to_string_lossy().into_owned())),
-                    Err(e) => eprintln!("agent-office: failed to write zsh ZDOTDIR shim: {e}"),
-                }
-            }
+        if let Some(url) = observer_url {
+            env.push(("AGENT_OFFICE_HOOK_URL".into(), url));
         }
+        // §핵심 5: 재시작 후 입양된 세션의 훅이 스폰 시점의(죽은) 포트를
+        // 때리는 문제 완화 -- forwarder가 이 경로의 observer-port 파일을
+        // 읽어 재시도할 수 있게 셸 env에 앱 데이터 디렉터리를 실어 둔다.
+        if let Some(dir) = &self.app_data_dir {
+            env.push(("AGENT_OFFICE_APP_DATA".into(), dir.to_string_lossy().into_owned()));
+        }
+        env.extend(plan.env.iter().cloned());
         env.extend(resolved.extra_env.iter().cloned());
         let actual_shell = resolved.program.clone();
         let actual_cwd = cwd.clone();
+        let settings_path = env
+            .iter()
+            .rev()
+            .find(|(key, _)| key == "AGENT_OFFICE_SETTINGS")
+            .map(|(_, value)| std::path::PathBuf::from(value));
         let spawned = match self.factory.spawn(PtySpawnOptions {
             shell: resolved.program,
             args: resolved.args,
@@ -247,7 +349,7 @@ impl SessionManager {
             env,
         }) {
             Ok(s) => s,
-            // spawn 실패: hook_file_guard가 --settings 파일을 정리한다.
+            // spawn 실패: observer_plan_guard가 설정 파일을 정리한다.
             Err(e) => return Err(e.to_string()),
         };
 
@@ -256,76 +358,25 @@ impl SessionManager {
             session_id: session_id.clone(),
             agent_name: profile.name,
             agent_role: profile.role,
-            cwd: actual_cwd,
+            cwd: actual_cwd.clone(),
             shell: actual_shell,
             at: now_ms(),
         });
 
-        // 세션 수명과 독립인 agentId sink 재사용: 이미 붙은 채널/백로그를
-        // 그대로 이어받아 재생성 시 재구독이 필요 없다.
-        let output = self.sink_for(&req.agent_id);
-        let session = Arc::new(Session {
-            session_id: session_id.clone(),
-            agent_id: req.agent_id.clone(),
-            state: Mutex::new(SessionState::Starting),
-            writer: Mutex::new(spawned.writer),
-            control: spawned.control,
-            settings_path,
-            kill_requested: AtomicBool::new(false),
-        });
-
-        self.sessions.lock().insert(req.agent_id.clone(), session.clone());
+        let size = (req.cols.unwrap_or(80), req.rows.unwrap_or(24));
+        let (session, started) = self.install_session(
+            session_id.clone(),
+            req.agent_id.clone(),
+            plan.cleanup_paths,
+            actual_cwd,
+            size,
+            spawned,
+            None, // eof_stop_gate: create() 경로는 RealWaiter가 독립적으로 exit 판정
+            None, // initial_output: 새로 spawn한 세션엔 이어받을 과거 출력이 없다
+        );
         // 세션이 맵에 들어갔다 — 이후의 수명은 dispose()/on_exit()가 책임지므로
-        // 훅 파일 정리 가드를 해제한다.
-        hook_file_guard.armed = false;
-        self.registry.insert(&session_id, &req.agent_id, SessionState::Starting);
-        self.emit_state(&session, SessionState::Starting, None);
-
-        // 1) reader thread (블로킹 read → mpsc)
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ReaderMsg>();
-        let mut reader = spawned.reader;
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 8192];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if tx.send(ReaderMsg::Data(buf[..n].to_vec())).is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            let _ = tx.send(ReaderMsg::Eof);
-        });
-
-        // 2) output pump task (배칭 + BEL 감지 + Channel 방출)
-        spawn_output_pump(session_id.clone(), req.agent_id.clone(), rx, output, self.hub.clone());
-
-        // 3) wait thread (블로킹 wait → 상태 전이)
-        let me = Arc::clone(self);
-        let sess = session.clone();
-        let waiter = spawned.waiter;
-        std::thread::spawn(move || {
-            let outcome = waiter.wait();
-            me.on_exit(&sess, outcome);
-        });
-
-        // Running 전이 (CAS): wait 스레드가 이미 Exited/Disposed로 옮겼다면
-        // 덮어쓰지 않는다. state 락을 registry.set_state/emit까지 계속 쥐어
-        // on_exit의 전이와 상호 배제 → "Exited 이후 Running" 역전을 원천 차단.
-        let started = {
-            let mut st = session.state.lock();
-            if *st == SessionState::Starting {
-                *st = SessionState::Running;
-                self.registry.set_state(&session_id, SessionState::Running);
-                self.emit_state(&session, SessionState::Running, None);
-                true
-            } else {
-                false
-            }
-        };
+        // observer 파일 정리 가드를 해제한다.
+        observer_plan_guard.armed = false;
 
         // autostart(기본 false): 세션은 기본적으로 빈 로그인 셸만 띄운다. 사용자가
         // `claude --settings "$AGENT_OFFICE_SETTINGS"`로 직접 기동한다. 명시적으로
@@ -334,7 +385,7 @@ impl SessionManager {
         if started && req.autostart_claude.unwrap_or(false) {
             // 훅 OFF면 --settings 없이 순수 claude 기동(주입할 설정 파일이 없음).
             // 줄 끝은 CR('\r') — 아래 startup_command와 같은 이유(PowerShell 제출).
-            let line = match &session.settings_path {
+            let line = match &settings_path {
                 Some(p) => format!("claude --settings \"{}\"\r", p.display()),
                 None => "claude\r".to_string(),
             };
@@ -363,6 +414,108 @@ impl SessionManager {
         Ok(CreateSessionResult { session_id, state })
     }
 
+    /// spawn 이후 배선부 -- 세션 등록, sink 이어받기, reader/pump/wait 3스레드
+    /// 기동, Running CAS(§핵심 4: "create_with_profile의 spawn 이후 배선부를
+    /// install_session으로 추출해 create/adopt가 공유"). `create_with_profile`과
+    /// `adopt_detached` 둘 다 이 메서드로 수렴한다 -- 상태 머신·sink 재사용
+    /// 로직은 완전히 동일하게 유지된다.
+    ///
+    /// `initial_output`: 데몬이 보관해 둔 미전달 출력(입양 전용). reader
+    /// 스레드가 시작되기 *전에* pump 채널로 먼저 흘려보내 순서를 보장한다
+    /// (§핵심 4: "pump mpsc에 첫 ReaderMsg::Data로 주입").
+    #[allow(clippy::too_many_arguments)]
+    fn install_session(
+        self: &Arc<Self>,
+        session_id: SessionId,
+        agent_id: AgentId,
+        cleanup_paths: Vec<std::path::PathBuf>,
+        cwd: String,
+        size: (u16, u16),
+        spawned: SpawnedPty,
+        eof_stop_gate: Option<Arc<AtomicBool>>,
+        initial_output: Option<Vec<u8>>,
+    ) -> (Arc<Session>, bool) {
+        // 세션 수명과 독립인 agentId sink 재사용: 이미 붙은 채널/백로그를
+        // 그대로 이어받아 재생성/재입양 시 재구독이 필요 없다.
+        let output = self.sink_for(&agent_id);
+        let session = Arc::new(Session {
+            session_id: session_id.clone(),
+            agent_id: agent_id.clone(),
+            state: Mutex::new(SessionState::Starting),
+            writer: Mutex::new(spawned.writer),
+            control: spawned.control,
+            cleanup_paths,
+            kill_requested: AtomicBool::new(false),
+            cwd,
+            size: Mutex::new(size),
+            handed_off: AtomicBool::new(false),
+            #[cfg(unix)]
+            reader_interrupt: Mutex::new(spawned.reader_interrupt),
+            #[cfg(unix)]
+            handoff: Mutex::new(spawned.handoff),
+            eof_stop_gate,
+        });
+
+        self.sessions.lock().insert(agent_id.clone(), session.clone());
+        self.registry
+            .insert(&session_id, &agent_id, SessionState::Starting);
+        self.emit_state(&session, SessionState::Starting, None);
+
+        // 1) reader thread (블로킹 read → mpsc)
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ReaderMsg>();
+        if let Some(bytes) = initial_output.filter(|b| !b.is_empty()) {
+            // 리더 스레드보다 먼저 보내야 한다 -- unbounded 채널은 send() 호출
+            // 순서를 그대로 보존하므로, 아래 스레드 스폰보다 앞서 이 send가
+            // happens-before로 확정되면 순서가 깨지지 않는다.
+            let _ = tx.send(ReaderMsg::Data(bytes));
+        }
+        let mut reader = spawned.reader;
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if tx.send(ReaderMsg::Data(buf[..n].to_vec())).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let _ = tx.send(ReaderMsg::Eof);
+        });
+
+        // 2) output pump task (배칭 + BEL 감지 + Channel 방출)
+        spawn_output_pump(session_id.clone(), agent_id.clone(), rx, output, self.hub.clone());
+
+        // 3) wait thread (블로킹 wait → 상태 전이)
+        let me = Arc::clone(self);
+        let sess = session.clone();
+        let waiter = spawned.waiter;
+        std::thread::spawn(move || {
+            let outcome = waiter.wait();
+            me.on_exit(&sess, outcome);
+        });
+
+        // Running 전이 (CAS): wait 스레드가 이미 Exited/Disposed로 옮겼다면
+        // 덮어쓰지 않는다. state 락을 registry.set_state/emit까지 계속 쥐어
+        // on_exit의 전이와 상호 배제 → "Exited 이후 Running" 역전을 원천 차단.
+        let started = {
+            let mut st = session.state.lock();
+            if *st == SessionState::Starting {
+                *st = SessionState::Running;
+                self.registry.set_state(&session_id, SessionState::Running);
+                self.emit_state(&session, SessionState::Running, None);
+                true
+            } else {
+                false
+            }
+        };
+
+        (session, started)
+    }
+
     pub fn write_input(&self, agent_id: &str, data: &str) {
         if let Some(s) = self.find(agent_id) {
             if *s.state.lock() == SessionState::Running {
@@ -375,16 +528,22 @@ impl SessionManager {
         if let Some(s) = self.find(agent_id) {
             if *s.state.lock() == SessionState::Running {
                 let _ = s.control.resize(cols, rows);
+                *s.size.lock() = (cols, rows);
             }
         }
     }
 
     /// 의도적 종료. 최종 Disposed 전이는 wait 스레드의 on_exit에서 확정.
+    /// 핸드오프된 세션(§핵심 3)은 즉시 return — kill/cleanup 금지. 그
+    /// 세션의 실제 수명은 이제 sessiond가 책임진다.
     pub fn dispose(&self, agent_id: &str) {
         if let Some(s) = self.find(agent_id) {
+            if s.handed_off.load(Ordering::SeqCst) {
+                return;
+            }
             s.kill_requested.store(true, Ordering::SeqCst);
             let _ = s.control.kill();
-            self.hook_writer.cleanup(&s.session_id);
+            cleanup_paths(&s.cleanup_paths);
         }
     }
 
@@ -394,6 +553,239 @@ impl SessionManager {
         for a in ids {
             self.dispose(&a);
         }
+    }
+
+    /// 앱 quit(§핵심 3): Running 세션들을 sessiond로 넘긴다. `snapshots`는
+    /// agentId -> 프론트가 종료 직전 직렬화한 xterm 화면(스크롤백 포함) --
+    /// 데몬은 핸드오프 *이후* 출력만 링버퍼에 담으므로, 이게 없으면 재입양
+    /// 후 종료 전 화면(예: ls 결과)이 사라진다(실증에서 발견된 빈틈).
+    /// 반환값은 성공 개수 -- 프론트는 이 수와 무관하게 종료를 진행한다.
+    /// `app_data_dir`이 없으면(테스트 등) 0.
+    #[cfg(unix)]
+    pub fn handoff_all(&self, snapshots: &std::collections::HashMap<String, String>) -> usize {
+        let Some(app_data_dir) = self.app_data_dir.clone() else {
+            return 0;
+        };
+        let ids: Vec<AgentId> = {
+            let map = self.sessions.lock();
+            map.iter()
+                .filter(|(_, s)| *s.state.lock() == SessionState::Running)
+                .map(|(a, _)| a.clone())
+                .collect()
+        };
+        if ids.is_empty() {
+            return 0;
+        }
+
+        let socket_path = crate::sessiond::client::default_socket_path(&app_data_dir);
+        let log_path = crate::sessiond::client::default_log_path(&app_data_dir);
+        let exe_path = std::env::current_exe().unwrap_or_default();
+        let client =
+            match crate::sessiond::client::connect_or_spawn(&socket_path, &exe_path, &log_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("agent-office: handoff_all could not reach sessiond: {e}");
+                    return 0;
+                }
+            };
+
+        ids.iter()
+            .filter(|agent_id| {
+                let snapshot = snapshots
+                    .get(agent_id.as_str())
+                    .map(|s| s.clone().into_bytes())
+                    .unwrap_or_default();
+                self.handoff_one(agent_id, &client, snapshot)
+            })
+            .count()
+    }
+
+    #[cfg(not(unix))]
+    pub fn handoff_all(&self, _snapshots: &std::collections::HashMap<String, String>) -> usize {
+        0
+    }
+
+    /// 세션 하나를 넘긴다. 설계 문서 §핵심 3의 순서 그대로: 리더 인터럽트 →
+    /// handed_off set → 전송. 실패해도 세션은 그대로 둔다(맵에 남고
+    /// handed_off=true) -- 앱은 어차피 곧 종료되므로 마스터 fd가 닫히며
+    /// SIGHUP으로 자연 정리된다(설계 문서 "왜 이 방식인가" 참조).
+    ///
+    /// `snapshot`이 비어 있으면(프론트가 이 터미널을 한 번도 구독하지 않아
+    /// 직렬화 대상이 없었던 경우 등) sink의 backlog를 폴백으로 쓴다 --
+    /// 실증에서 발견된 빈틈 수정: 그래야 아직 한 번도 열지 않은 터미널도
+    /// 재입양 후 종료 전 출력이 최소한 backlog 분량만큼은 보존된다.
+    #[cfg(unix)]
+    fn handoff_one(
+        &self,
+        agent_id: &str,
+        client: &crate::sessiond::client::Client,
+        snapshot: Vec<u8>,
+    ) -> bool {
+        let Some(sess) = self.find(agent_id) else {
+            return false;
+        };
+        if sess.handed_off.load(Ordering::SeqCst) {
+            return false;
+        }
+        let Some(handoff) = sess.handoff.lock().take() else {
+            return false; // Fake/입양 조립 실패 등으로 handoff 정보가 없는 세션은 핸드오프 불가.
+        };
+
+        // 재핸드오프(입양 세션)라면 EofWaiter 오발화를 막는다.
+        if let Some(gate) = &sess.eof_stop_gate {
+            gate.store(true, Ordering::SeqCst);
+        }
+        if let Some(interrupt) = sess.reader_interrupt.lock().take() {
+            interrupt.interrupt();
+        }
+        // poll 기반 리더는 인터럽트를 수 ms 내 관측한다 -- fd를 보내기 전에
+        // 짧게 양보해 리더 스레드가 실제로 빠져나갈 시간을 준다(완료 채널을
+        // 새로 두는 것보다 훨씬 단순하고, 실패해도 안전 — 최악의 경우 데몬이
+        // 아주 잠깐 늦게 도착한 잔여 바이트를 이어 읽을 뿐 유실은 없다).
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        sess.handed_off.store(true, Ordering::SeqCst);
+
+        let pid = handoff.pid;
+        let pgid = handoff.pgid;
+        let master_fd = handoff.take_master_fd();
+        let (cols, rows) = *sess.size.lock();
+        let cleanup_paths = sess
+            .cleanup_paths
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        let snapshot = if snapshot.is_empty() {
+            self.sink_for(agent_id).backlog_snapshot()
+        } else {
+            snapshot
+        };
+
+        let result = client.handoff(crate::sessiond::client::HandoffRequest {
+            agent_id: agent_id.to_string(),
+            session_id: sess.session_id.clone(),
+            pid,
+            pgid,
+            rows,
+            cols,
+            cwd: sess.cwd.clone(),
+            cleanup_paths,
+            snapshot,
+            master_fd,
+        });
+
+        match result {
+            Ok(()) => {
+                self.sessions.lock().remove(agent_id);
+                self.registry.remove(&sess.session_id);
+                true
+            }
+            Err(e) => {
+                eprintln!("agent-office: handoff failed for {agent_id}: {e}");
+                let _ = nix::unistd::close(master_fd);
+                false
+            }
+        }
+    }
+
+    /// 부트스트랩(§핵심 4): sessiond에 남아 있는 세션들을 되찾는다.
+    /// `known_agent_ids`는 영속 프로필의 agentId 집합 -- 여기 없는 항목은
+    /// Kill 지시(삭제된 에이전트의 고아 claude 방지), exited 항목은 스킵.
+    /// 소켓이 없거나 연결 실패면 빈 벡터(데몬을 새로 스폰하지 않는다 --
+    /// 입양할 게 없으면 없는 대로다).
+    #[cfg(unix)]
+    pub fn adopt_detached(
+        self: &Arc<Self>,
+        known_agent_ids: &std::collections::HashSet<String>,
+    ) -> Vec<AdoptedSessionInfo> {
+        let Some(app_data_dir) = &self.app_data_dir else {
+            return Vec::new();
+        };
+        let socket_path = crate::sessiond::client::default_socket_path(app_data_dir);
+        if !socket_path.exists() {
+            return Vec::new();
+        }
+        let client = match crate::sessiond::client::Client::connect(&socket_path) {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        let sessions = match client.list() {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut adopted = Vec::new();
+        for info in sessions {
+            if info.exited {
+                continue;
+            }
+            if !known_agent_ids.contains(&info.agent_id) {
+                let _ = client.kill(&info.agent_id);
+                continue;
+            }
+            if let Some(result) = self.adopt_one(&info.agent_id, &client) {
+                adopted.push(result);
+            }
+        }
+        adopted
+    }
+
+    #[cfg(not(unix))]
+    pub fn adopt_detached(
+        self: &Arc<Self>,
+        _known_agent_ids: &std::collections::HashSet<String>,
+    ) -> Vec<AdoptedSessionInfo> {
+        Vec::new()
+    }
+
+    /// 세션 하나를 입양해 install_session으로 재배선한다. 실패하면 None --
+    /// 그 세션은 데몬 테이블에 그대로 남아 다음 재시작에서 다시 시도할 수
+    /// 있다(이번 연결에서 이미 Adopt를 보낸 뒤 실패했다면 데몬 쪽에선 이미
+    /// 테이블에서 빠진 상태이므로 fd 자체는 유실 -- assemble_adopted 실패는
+    /// 극히 드문 경로라 이 트레이드오프를 받아들인다).
+    #[cfg(unix)]
+    fn adopt_one(
+        self: &Arc<Self>,
+        agent_id: &str,
+        client: &crate::sessiond::client::Client,
+    ) -> Option<AdoptedSessionInfo> {
+        let adopted = client.adopt(agent_id).ok()?;
+        let (spawned, stop_gate) = match crate::session::pty_factory::assemble_adopted(
+            adopted.master_fd,
+            adopted.pid,
+            adopted.pgid,
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("agent-office: failed to assemble adopted session {agent_id}: {e}");
+                let _ = nix::unistd::close(adopted.master_fd);
+                return None;
+            }
+        };
+        let cleanup_paths = adopted.cleanup_paths.iter().map(std::path::PathBuf::from).collect();
+        let size = (adopted.cols, adopted.rows);
+        // 종료 직전 화면 스냅샷 -> 핸드오프 이후 링버퍼 순으로 이어붙인다
+        // (실증에서 발견된 빈틈 수정) -- 순서가 바뀌면 화면이 뒤죽박죽으로
+        // 재생된다. install_session이 빈 벡터는 initial_output 주입 자체를
+        // 건너뛰므로 둘 다 없을 때를 따로 가릴 필요가 없다.
+        let mut initial_output = adopted.snapshot;
+        initial_output.extend_from_slice(&adopted.buffer);
+        let (session, _started) = self.install_session(
+            adopted.session_id,
+            agent_id.to_string(),
+            cleanup_paths,
+            adopted.cwd,
+            size,
+            spawned,
+            Some(stop_gate),
+            Some(initial_output),
+        );
+        Some(AdoptedSessionInfo {
+            agent_id: agent_id.to_string(),
+            session_id: session.session_id.clone(),
+            rows: size.1,
+            cols: size.0,
+        })
     }
 
     /// subscribe_output 커맨드가 호출: agentId에 Channel 등록(+백로그 드레인).
@@ -416,6 +808,14 @@ impl SessionManager {
     }
 
     fn on_exit(&self, sess: &Arc<Session>, outcome: ExitOutcome) {
+        // 핸드오프된 세션(§핵심 3)은 즉시 return -- kill/cleanup/상태이벤트
+        // 금지. 실제로는 create()의 RealWaiter가 앱 프로세스 종료와 함께
+        // 죽으므로 프로덕션에서 이 가드가 실행 도달하는 일은 드물지만(핸드오프
+        // 직후 앱이 곧장 종료), dispose()와 대칭을 이루는 안전망이다.
+        if sess.handed_off.load(Ordering::SeqCst) {
+            return;
+        }
+        cleanup_paths(&sess.cleanup_paths);
         let intentional = sess.kill_requested.load(Ordering::SeqCst);
         let exit = SessionExitInfo {
             session_id: sess.session_id.clone(),
@@ -423,7 +823,11 @@ impl SessionManager {
             signal: outcome.signal,
             intentional,
         };
-        let next = if intentional { SessionState::Disposed } else { SessionState::Exited };
+        let next = if intentional {
+            SessionState::Disposed
+        } else {
+            SessionState::Exited
+        };
         // state 락을 registry.set_state까지 계속 쥐어 create()의 Running CAS와 상호
         // 배제한다: 상태 전이는 Starting-게이트 CAS로 단조(monotonic) 보장 →
         // "Exited 이후 Running" 역전 차단. (emit은 아래 superseded 판정 뒤로 뺀다 —
@@ -476,11 +880,6 @@ impl SessionManager {
 
         if next == SessionState::Disposed {
             self.registry.remove(&sess.session_id);
-        } else {
-            // Exited(예기치 않은 종료)는 진단/재기동 위해 레지스트리에 유지하되,
-            // 죽은 세션의 --settings 파일은 정리한다. 재기동 시 create()가
-            // 새 sessionId로 새 파일을 쓴다.
-            self.hook_writer.cleanup(&sess.session_id);
         }
     }
 
@@ -498,16 +897,28 @@ impl SessionManager {
 #[cfg(test)]
 impl SessionManager {
     /// Test-only hook to override `shell_resolver` (normally always
-    /// `shells::resolve`) so tests can exercise the zsh ZDOTDIR wiring in
+    /// `shells::resolve_observed`) so tests can exercise zsh ZDOTDIR wiring in
     /// `create()` without depending on the host's actual `$SHELL`, or record
     /// what the resolver was invoked with. Must be called before wrapping in
     /// `Arc::new` (consumes `self` by value).
     fn with_shell_resolver(
         mut self,
-        resolver: Arc<dyn Fn(shells::ShellRequest) -> shells::ResolvedShell + Send + Sync>,
+        resolver: Arc<
+            dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync,
+        >,
     ) -> Self {
         self.shell_resolver = resolver;
         self
+    }
+}
+
+fn cleanup_paths(paths: &[std::path::PathBuf]) {
+    for path in paths {
+        if let Err(error) = std::fs::remove_file(path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("observer cleanup failed for {}: {error}", path.display());
+            }
+        }
     }
 }
 
@@ -557,7 +968,7 @@ fn spawn_output_pump(
     });
 }
 
-fn home_dir() -> String {
+pub(crate) fn home_dir() -> String {
     std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".into())
@@ -569,7 +980,9 @@ fn home_dir() -> String {
 /// but the 시작 폴더 UI invites `~/dev/foo`-style input. Only bare `~` and
 /// `~/...` are expanded; `~user/...` forms are left untouched (rare, and we
 /// have no portable way to resolve another user's home).
-fn expand_tilde(path: String) -> String {
+/// pub(crate): open_in_vscode/open_in_terminal/pick_directory 커맨드가
+/// 프로필 cwd를 그대로 받으므로 세션 생성과 동일한 확장을 공유한다.
+pub(crate) fn expand_tilde(path: String) -> String {
     if path == "~" {
         home_dir()
     } else if let Some(rest) = path.strip_prefix("~/") {
@@ -583,11 +996,16 @@ fn expand_tilde(path: String) -> String {
 mod tests {
     use super::*;
     use crate::notification::hub::{NotificationHub, SystemClock};
+    use crate::observer::claude::ClaudeAdapter;
+    use crate::observer::{
+        AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError,
+        ObserverEvent, ObserverProvider, ObserverRuntime, ObserverSessionContext, RawObserverHook,
+    };
     use crate::session::pty_factory::fake::{
         AlwaysFailPtyFactory, FakeControl, FakePtyFactory, MultiFakePtyFactory,
     };
     use crate::state::fake::RecordingEvents;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::Duration;
     use tauri::ipc::{Channel, InvokeResponseBody};
 
@@ -596,13 +1014,24 @@ mod tests {
     }
 
     fn hub_for(registry: Arc<SessionRegistry>, events: Arc<dyn AppEvents>) -> Arc<NotificationHub> {
-        Arc::new(NotificationHub::new(registry, events, Arc::new(SystemClock), Duration::from_millis(3000)))
+        Arc::new(NotificationHub::new(
+            registry,
+            events,
+            Arc::new(SystemClock),
+            Duration::from_millis(3000),
+        ))
     }
 
     /// Unique tempdir per test so parallel `cargo test` runs never collide.
-    fn scratch_hook_writer() -> (HookSettingsWriter, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("agent-office-manager-test-{}", Uuid::new_v4()));
-        (HookSettingsWriter::new(dir.clone()), dir)
+    fn scratch_observer_dir() -> PathBuf {
+        std::env::temp_dir().join(format!("agent-office-manager-test-{}", Uuid::new_v4()))
+    }
+
+    fn claude_observer(hub: Arc<NotificationHub>, dir: PathBuf) -> Arc<ObserverRuntime> {
+        Arc::new(ObserverRuntime::new(
+            hub,
+            vec![Arc::new(ClaudeAdapter::new(dir))],
+        ))
     }
 
     fn req(agent_id: &str, autostart: Option<bool>) -> CreateSessionRequest {
@@ -613,6 +1042,7 @@ mod tests {
             cwd: None,
             shell: None,
             startup_command: None,
+            personality_prompt: None,
             autostart_claude: autostart,
         }
     }
@@ -625,6 +1055,7 @@ mod tests {
             cwd,
             shell: None,
             startup_command: None,
+            personality_prompt: None,
             autostart_claude: Some(false),
         }
     }
@@ -637,6 +1068,7 @@ mod tests {
             cwd: None,
             shell,
             startup_command: None,
+            personality_prompt: None,
             autostart_claude: Some(false),
         }
     }
@@ -649,7 +1081,24 @@ mod tests {
             cwd: None,
             shell: None,
             startup_command,
+            personality_prompt: None,
             // autostart OFF: startup_command 주입만 단독 검증(두 주입이 겹치지 않게).
+            autostart_claude: Some(false),
+        }
+    }
+
+    fn req_with_persona(
+        agent_id: &str,
+        personality_prompt: Option<String>,
+    ) -> CreateSessionRequest {
+        CreateSessionRequest {
+            agent_id: agent_id.into(),
+            cols: None,
+            rows: None,
+            cwd: None,
+            shell: None,
+            startup_command: None,
+            personality_prompt,
             autostart_claude: Some(false),
         }
     }
@@ -659,40 +1108,520 @@ mod tests {
     async fn wait_for<F: Fn() -> bool>(pred: F) {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
         while !pred() {
-            assert!(tokio::time::Instant::now() < deadline, "condition not met within timeout");
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "condition not met within timeout"
+            );
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
     }
 
     /// One `SessionManager` wired to a single-spawn `FakePtyFactory` (per
     /// the fake's own contract: one fake per session under test), with a
-    /// caller-chosen `get_hook_port` result — `None` exercises the hooks-OFF
-    /// (opt-in disabled) path, `Some(port)` the normal hooks-ON path.
-    fn build_with_port(port: Option<u16>) -> (Arc<SessionManager>, Arc<RecordingEvents>, Arc<FakeControl>, PathBuf) {
+    /// caller-chosen observation state. Disabled sessions skip observer
+    /// preparation; enabled sessions receive a deterministic endpoint.
+    fn build_with_observer(
+        enabled: bool,
+    ) -> (
+        Arc<SessionManager>,
+        Arc<RecordingEvents>,
+        Arc<FakeControl>,
+        PathBuf,
+    ) {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
-        let (writer, dir) = scratch_hook_writer();
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
         let (fac, ctl) = FakePtyFactory::new();
+        let endpoint = enabled.then(|| "http://127.0.0.1:12345/hook".to_string());
         let mgr = Arc::new(SessionManager::new(
             Arc::new(fac),
-            writer,
+            observer,
             reg,
             events.clone() as Arc<dyn AppEvents>,
             hub,
-            Arc::new(move || port),
+            Arc::new(move || endpoint.clone()),
         ));
         (mgr, events, ctl, dir)
     }
 
-    fn build() -> (Arc<SessionManager>, Arc<RecordingEvents>, Arc<FakeControl>, PathBuf) {
-        build_with_port(Some(12345))
+    fn build() -> (
+        Arc<SessionManager>,
+        Arc<RecordingEvents>,
+        Arc<FakeControl>,
+        PathBuf,
+    ) {
+        build_with_observer(true)
     }
 
     fn cleanup(ctl: &FakeControl, dir: &PathBuf) {
         // Let the reader thread observe EOF so it doesn't block forever.
         ctl.close_output();
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[derive(Clone)]
+    struct PlanAdapter {
+        provider: ObserverProvider,
+        result: Result<AdapterSessionPlan, ObserverAdapterError>,
+    }
+
+    impl ObserverAdapter for PlanAdapter {
+        fn provider(&self) -> ObserverProvider {
+            self.provider
+        }
+
+        fn prepare_session(
+            &self,
+            _context: &ObserverSessionContext,
+        ) -> Result<AdapterSessionPlan, ObserverAdapterError> {
+            self.result.clone()
+        }
+
+        fn map_hook(&self, _raw: &RawObserverHook<'_>) -> Option<ObserverEvent> {
+            None
+        }
+    }
+
+    fn plan_adapter(provider: ObserverProvider, command: &str) -> Arc<dyn ObserverAdapter> {
+        Arc::new(PlanAdapter {
+            provider,
+            result: Ok(AdapterSessionPlan {
+                env: if provider == ObserverProvider::Codex {
+                    vec![(
+                        "AGENT_OFFICE_CODEX_HOOK_STOP".into(),
+                        "hooks.Stop=[]".into(),
+                    )]
+                } else {
+                    vec![]
+                },
+                wrappers: vec![CommandWrapperSpec {
+                    command: command.into(),
+                    prefix_args: vec![],
+                    skip_if_present: vec![],
+                }],
+                cleanup_paths: vec![],
+            }),
+        })
+    }
+
+    fn build_observer_manager(
+        enabled: bool,
+        adapters: Vec<Arc<dyn ObserverAdapter>>,
+    ) -> (
+        Arc<SessionManager>,
+        Arc<FakeControl>,
+        Arc<Mutex<Vec<CommandWrapperSpec>>>,
+        PathBuf,
+    ) {
+        let events = Arc::new(RecordingEvents::default());
+        let registry = Arc::new(SessionRegistry::new());
+        let hub = Arc::new(NotificationHub::new(
+            registry.clone(),
+            events.clone(),
+            Arc::new(SystemClock),
+            Duration::from_millis(3_000),
+        ));
+        let observer = Arc::new(ObserverRuntime::new(hub.clone(), adapters));
+        let (factory, control) = FakePtyFactory::new();
+        let endpoint = enabled.then(|| "http://127.0.0.1:43123/hook".to_string());
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let recorded_for_resolver = recorded.clone();
+        let manager = SessionManager::new(
+            Arc::new(factory),
+            observer,
+            registry,
+            events,
+            hub,
+            Arc::new(move || endpoint.clone()),
+        )
+        .with_shell_resolver(Arc::new(move |_selected, wrappers| {
+            *recorded_for_resolver.lock() = wrappers.to_vec();
+            shells::ResolvedShell {
+                program: "test-shell".into(),
+                args: vec![],
+                extra_env: vec![],
+            }
+        }));
+        let scratch = std::env::temp_dir().join(format!(
+            "agent-office-observer-manager-test-{}",
+            Uuid::new_v4(),
+        ));
+        (Arc::new(manager), control, recorded, scratch)
+    }
+
+    fn cleanup_observer_fixture(control: &FakeControl, scratch: &Path) {
+        control.close_output();
+        let _ = std::fs::remove_dir_all(scratch);
+    }
+
+    #[tokio::test]
+    async fn observer_off_spawns_without_observer_env_or_wrappers() {
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
+        manager.create(req("a1", Some(false))).unwrap();
+        let env = control.spawned_env();
+        assert!(env.iter().all(|(key, _)| key != "AGENT_OFFICE_HOOK_URL"));
+        assert!(env
+            .iter()
+            .all(|(key, _)| !key.starts_with("AGENT_OFFICE_CODEX_HOOK_")));
+        assert!(recorded_wrappers.lock().is_empty());
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn persona_merges_into_existing_claude_wrapper_when_observer_is_on() {
+        let adapters: Vec<Arc<dyn ObserverAdapter>> = vec![Arc::new(PlanAdapter {
+            provider: ObserverProvider::Claude,
+            result: Ok(AdapterSessionPlan {
+                env: vec![("AGENT_OFFICE_SETTINGS".into(), "settings.json".into())],
+                wrappers: vec![CommandWrapperSpec {
+                    command: "claude".into(),
+                    prefix_args: vec![
+                        WrapperArg::Literal("--settings".into()),
+                        WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+                    ],
+                    skip_if_present: vec!["--settings".into()],
+                }],
+                cleanup_paths: vec![],
+            }),
+        })];
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(true, adapters);
+        let prompt = "차분하게 답한다.\n근거를 먼저 제시한다.";
+        manager
+            .create(req_with_persona("a1", Some(prompt.into())))
+            .unwrap();
+
+        let wrappers = recorded_wrappers.lock();
+        let claude_wrappers = wrappers
+            .iter()
+            .filter(|wrapper| wrapper.command == "claude")
+            .collect::<Vec<_>>();
+        assert_eq!(claude_wrappers.len(), 1);
+        assert_eq!(
+            claude_wrappers[0].prefix_args,
+            vec![
+                WrapperArg::Literal("--settings".into()),
+                WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+                WrapperArg::Literal("--append-system-prompt".into()),
+                WrapperArg::Env("AGENT_OFFICE_PERSONA".into()),
+            ]
+        );
+        assert_eq!(
+            claude_wrappers[0].skip_if_present,
+            vec!["--settings"]
+        );
+        drop(wrappers);
+        assert!(control
+            .spawned_env()
+            .contains(&("AGENT_OFFICE_PERSONA".into(), prompt.into())));
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn persona_pushes_one_claude_wrapper_when_observer_is_off() {
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
+        manager
+            .create(req_with_persona("a1", Some("해적처럼 말한다.".into())))
+            .unwrap();
+
+        let wrappers = recorded_wrappers.lock();
+        assert_eq!(wrappers.len(), 1);
+        assert_eq!(wrappers[0].command, "claude");
+        assert_eq!(
+            wrappers[0].prefix_args,
+            vec![
+                WrapperArg::Literal("--append-system-prompt".into()),
+                WrapperArg::Env("AGENT_OFFICE_PERSONA".into()),
+            ]
+        );
+        assert!(wrappers[0].skip_if_present.is_empty());
+        drop(wrappers);
+        assert!(control
+            .spawned_env()
+            .contains(&("AGENT_OFFICE_PERSONA".into(), "해적처럼 말한다.".into())));
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn blank_persona_does_not_add_env_or_wrapper() {
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
+        manager
+            .create(req_with_persona("a1", Some(" \n\t ".into())))
+            .unwrap();
+
+        assert!(recorded_wrappers.lock().is_empty());
+        assert!(control
+            .spawned_env()
+            .iter()
+            .all(|(key, _)| key != "AGENT_OFFICE_PERSONA"));
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn observed_session_merges_both_adapters_and_keeps_startup_command() {
+        let adapters = vec![
+            plan_adapter(ObserverProvider::Claude, "claude"),
+            plan_adapter(ObserverProvider::Codex, "codex"),
+        ];
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(true, adapters);
+        manager
+            .create(req_with_startup("a1", Some("codex resume --last".into())))
+            .unwrap();
+        let names = recorded_wrappers
+            .lock()
+            .iter()
+            .map(|wrapper| wrapper.command.clone())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(
+            names,
+            std::collections::HashSet::from(["claude".into(), "codex".into(), "pi".into(),])
+        );
+        assert_eq!(control.writes_utf8(), "codex resume --last\r");
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn adapter_preparation_failure_still_spawns_pty_with_successful_adapter() {
+        let adapters: Vec<Arc<dyn ObserverAdapter>> = vec![
+            Arc::new(PlanAdapter {
+                provider: ObserverProvider::Claude,
+                result: Err(ObserverAdapterError::new("injected Claude failure")),
+            }),
+            plan_adapter(ObserverProvider::Codex, "codex"),
+        ];
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(true, adapters);
+        assert!(manager.create(req("a1", Some(false))).is_ok());
+        assert_eq!(recorded_wrappers.lock()[0].command, "codex");
+        assert!(control
+            .spawned_env()
+            .iter()
+            .any(|(key, _)| key.starts_with("AGENT_OFFICE_CODEX_HOOK_")));
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[cfg(windows)]
+    struct ManagerGitBashProbe;
+
+    #[cfg(windows)]
+    impl shells::ShellProbe for ManagerGitBashProbe {
+        fn exists(&self, path: &str) -> bool {
+            path == r"C:\Program Files\Git\bin\bash.exe"
+        }
+
+        fn program_files(&self) -> Option<String> {
+            Some(r"C:\Program Files".into())
+        }
+
+        fn program_files_x86(&self) -> Option<String> {
+            None
+        }
+
+        fn system_root(&self) -> Option<String> {
+            None
+        }
+
+        fn command_stdout(&self, _program: &str, _args: &[&str]) -> Option<String> {
+            None
+        }
+    }
+
+    #[cfg(windows)]
+    struct ManagerFailingShims;
+
+    #[cfg(windows)]
+    impl shells::ObserverShimWriter for ManagerFailingShims {
+        fn bashrc(&self, _wrappers: &[CommandWrapperSpec]) -> std::io::Result<PathBuf> {
+            Err(std::io::Error::other("injected manager bash shim failure"))
+        }
+
+        fn zdotdir(&self, _wrappers: &[CommandWrapperSpec]) -> std::io::Result<PathBuf> {
+            Err(std::io::Error::other("injected manager zsh shim failure"))
+        }
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn shell_shim_failure_still_reaches_session_manager_pty_spawn() {
+        let adapters = vec![
+            plan_adapter(ObserverProvider::Claude, "claude"),
+            plan_adapter(ObserverProvider::Codex, "codex"),
+        ];
+        let events = Arc::new(RecordingEvents::default());
+        let registry = Arc::new(SessionRegistry::new());
+        let hub = Arc::new(NotificationHub::new(
+            registry.clone(),
+            events.clone(),
+            Arc::new(SystemClock),
+            Duration::from_millis(3_000),
+        ));
+        let observer = Arc::new(ObserverRuntime::new(hub.clone(), adapters));
+        let (factory, control) = FakePtyFactory::new();
+        let manager = Arc::new(
+            SessionManager::new(
+                Arc::new(factory),
+                observer,
+                registry,
+                events,
+                hub,
+                Arc::new(|| Some("http://127.0.0.1:43123/hook".into())),
+            )
+            .with_shell_resolver(Arc::new(|selected, wrappers| {
+                shells::resolve_observed_with_shims(
+                    selected,
+                    wrappers,
+                    &ManagerGitBashProbe,
+                    &ManagerFailingShims,
+                )
+            })),
+        );
+        let mut request = req("a1", Some(false));
+        request.shell = Some("git-bash".into());
+
+        assert!(manager.create(request).is_ok());
+        assert!(control
+            .spawned_env()
+            .iter()
+            .any(|(key, _)| key == "AGENT_OFFICE_HOOK_URL"));
+        control.close_output();
+    }
+
+    #[tokio::test]
+    async fn observer_toggle_changes_only_future_pty_preparation() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let enabled = Arc::new(AtomicBool::new(false));
+        let events = Arc::new(RecordingEvents::default());
+        let registry = Arc::new(SessionRegistry::new());
+        let hub = Arc::new(NotificationHub::new(
+            registry.clone(),
+            events.clone(),
+            Arc::new(SystemClock),
+            Duration::from_millis(3_000),
+        ));
+        let observer = Arc::new(ObserverRuntime::new(
+            hub.clone(),
+            vec![
+                plan_adapter(ObserverProvider::Claude, "claude"),
+                plan_adapter(ObserverProvider::Codex, "codex"),
+            ],
+        ));
+        let factory = Arc::new(MultiFakePtyFactory::new());
+        let enabled_for_url = enabled.clone();
+        let wrapper_calls = Arc::new(Mutex::new(Vec::<Vec<String>>::new()));
+        let wrapper_calls_for_resolver = wrapper_calls.clone();
+        let manager = Arc::new(
+            SessionManager::new(
+                factory.clone(),
+                observer,
+                registry,
+                events,
+                hub,
+                Arc::new(move || {
+                    enabled_for_url
+                        .load(Ordering::SeqCst)
+                        .then(|| "http://127.0.0.1:43123/hook".into())
+                }),
+            )
+            .with_shell_resolver(Arc::new(move |_selected, wrappers| {
+                wrapper_calls_for_resolver.lock().push(
+                    wrappers
+                        .iter()
+                        .map(|wrapper| wrapper.command.clone())
+                        .collect(),
+                );
+                shells::ResolvedShell {
+                    program: "test-shell".into(),
+                    args: vec![],
+                    extra_env: vec![],
+                }
+            })),
+        );
+
+        manager.create(req("off-before", Some(false))).unwrap();
+        enabled.store(true, Ordering::SeqCst);
+        manager.create(req("on-after", Some(false))).unwrap();
+        enabled.store(false, Ordering::SeqCst);
+        manager.create(req("off-again", Some(false))).unwrap();
+
+        let calls = wrapper_calls.lock();
+        assert!(calls[0].is_empty());
+        assert_eq!(
+            calls[1]
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>(),
+            std::collections::HashSet::from(["claude".into(), "codex".into(), "pi".into(),]),
+        );
+        assert!(calls[2].is_empty());
+        drop(calls);
+        let controls = factory.controls();
+        assert!(controls[0]
+            .spawned_env()
+            .iter()
+            .all(|(key, _)| key != "AGENT_OFFICE_HOOK_URL"));
+        assert!(controls[1]
+            .spawned_env()
+            .iter()
+            .any(|(key, _)| key == "AGENT_OFFICE_HOOK_URL"));
+        assert!(controls[2]
+            .spawned_env()
+            .iter()
+            .all(|(key, _)| key != "AGENT_OFFICE_HOOK_URL"));
+        assert!(controls[0]
+            .spawned_env()
+            .iter()
+            .all(|(key, _)| !key.starts_with("AGENT_OFFICE_CODEX_HOOK_")));
+
+        for control in controls {
+            control.close_output();
+            control.fire_exit(0);
+        }
+    }
+
+    #[tokio::test]
+    async fn pty_spawn_failure_removes_real_claude_settings_file() {
+        let settings_dir = std::env::temp_dir().join(format!(
+            "agent-office-observer-spawn-failure-{}",
+            Uuid::new_v4(),
+        ));
+        let events = Arc::new(RecordingEvents::default());
+        let registry = Arc::new(SessionRegistry::new());
+        let hub = Arc::new(NotificationHub::new(
+            registry.clone(),
+            events.clone(),
+            Arc::new(SystemClock),
+            Duration::from_millis(3_000),
+        ));
+        let observer = Arc::new(ObserverRuntime::new(
+            hub.clone(),
+            vec![Arc::new(ClaudeAdapter::new(settings_dir.clone()))],
+        ));
+        let manager = Arc::new(
+            SessionManager::new(
+                Arc::new(AlwaysFailPtyFactory),
+                observer,
+                registry,
+                events,
+                hub,
+                Arc::new(|| Some("http://127.0.0.1:43123/hook".into())),
+            )
+            .with_shell_resolver(Arc::new(|_, _| shells::ResolvedShell {
+                program: "test-shell".into(),
+                args: vec![],
+                extra_env: vec![],
+            })),
+        );
+
+        assert!(manager.create(req("a1", Some(false))).is_err());
+        let remaining = std::fs::read_dir(&settings_dir)
+            .map(|entries| entries.count())
+            .unwrap_or(0);
+        assert_eq!(
+            remaining, 0,
+            "spawn failure must remove adapter cleanup files"
+        );
+        let _ = std::fs::remove_dir_all(settings_dir);
     }
 
     // ---- T-A: state transitions + intentional flag ----
@@ -702,18 +1631,19 @@ mod tests {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone());
-        let (writer, dir) = scratch_hook_writer();
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
         let (factory, control) = FakePtyFactory::new();
         let manager = Arc::new(
             SessionManager::new(
                 Arc::new(factory),
-                writer,
+                observer,
                 reg,
                 events.clone(),
                 hub,
                 Arc::new(|| None),
             )
-            .with_shell_resolver(Arc::new(|_| shells::ResolvedShell {
+            .with_shell_resolver(Arc::new(|_, _| shells::ResolvedShell {
                 program: "/bin/test-shell".into(),
                 args: Vec::new(),
                 extra_env: Vec::new(),
@@ -765,22 +1695,35 @@ mod tests {
 
         let created = mgr.create(req("a1", Some(false))).unwrap();
         assert_eq!(created.state, SessionState::Running);
-        assert_eq!(events.states(), vec![SessionState::Starting, SessionState::Running]);
+        assert_eq!(
+            events.states(),
+            vec![SessionState::Starting, SessionState::Running]
+        );
 
         ctl.fire_exit(1);
         wait_for(|| events.states().len() == 3).await;
 
         assert_eq!(
             events.states(),
-            vec![SessionState::Starting, SessionState::Running, SessionState::Exited]
+            vec![
+                SessionState::Starting,
+                SessionState::Running,
+                SessionState::Exited
+            ]
         );
         let last = events.last_state().exit.unwrap();
-        assert!(!last.intentional, "unexpected exit must not be marked intentional");
+        assert!(
+            !last.intentional,
+            "unexpected exit must not be marked intentional"
+        );
         assert_eq!(last.exit_code, Some(1));
 
         // unexpected exit keeps the session in bookkeeping (diagnosis/restart).
         assert_eq!(mgr.session_id_for("a1"), Some(created.session_id.clone()));
-        assert_eq!(mgr.registry.resolve_agent(&created.session_id), Some("a1".to_string()));
+        assert_eq!(
+            mgr.registry.resolve_agent(&created.session_id),
+            Some("a1".to_string())
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -810,7 +1753,11 @@ mod tests {
         // the user runs `claude --settings "$AGENT_OFFICE_SETTINGS"` manually.
         mgr.create(req("a1", None)).unwrap();
 
-        assert_eq!(ctl.writes_utf8(), "", "autostartClaude omitted must not write to stdin");
+        assert_eq!(
+            ctl.writes_utf8(),
+            "",
+            "autostartClaude omitted must not write to stdin"
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -835,7 +1782,8 @@ mod tests {
     #[tokio::test]
     async fn create_startup_command_injects_trimmed_line_to_stdin() {
         let (mgr, _events, ctl, dir) = build();
-        mgr.create(req_with_startup("a1", Some("source ./init.sh".into()))).unwrap();
+        mgr.create(req_with_startup("a1", Some("source ./init.sh".into())))
+            .unwrap();
 
         assert_eq!(
             ctl.writes_utf8(),
@@ -853,9 +1801,14 @@ mod tests {
     async fn create_startup_command_blank_skips_injection() {
         let (mgr, _events, ctl, dir) = build();
         // 공백만 있는 명령어 -> 트림 후 빈 값 -> 주입하지 않는다.
-        mgr.create(req_with_startup("a1", Some("   ".into()))).unwrap();
+        mgr.create(req_with_startup("a1", Some("   ".into())))
+            .unwrap();
 
-        assert_eq!(ctl.writes_utf8(), "", "blank startup_command must not write to stdin");
+        assert_eq!(
+            ctl.writes_utf8(),
+            "",
+            "blank startup_command must not write to stdin"
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -865,7 +1818,11 @@ mod tests {
         let (mgr, _events, ctl, dir) = build();
         mgr.create(req_with_startup("a1", None)).unwrap();
 
-        assert_eq!(ctl.writes_utf8(), "", "absent startup_command must not write to stdin");
+        assert_eq!(
+            ctl.writes_utf8(),
+            "",
+            "absent startup_command must not write to stdin"
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -889,13 +1846,13 @@ mod tests {
         cleanup(&ctl, &dir);
     }
 
-    // ---- Task 7: hooks opt-in OFF (get_hook_port -> None) skips wiring ----
+    // ---- Observer opt-in OFF skips wiring ----
 
     #[tokio::test]
     async fn create_with_hooks_disabled_skips_settings_file_and_hook_env() {
-        // get_hook_port가 None을 주면(훅 opt-in OFF): --settings 파일을 쓰지
+        // URL getter가 None을 주면(옵저버 opt-in OFF): --settings 파일을 쓰지
         // 않고, AGENT_OFFICE_SETTINGS/AGENT_OFFICE_HOOK_URL env도 없다.
-        let (mgr, _events, ctl, dir) = build_with_port(None);
+        let (mgr, _events, ctl, dir) = build_with_observer(false);
         mgr.create(req("a1", None)).unwrap();
 
         // 훅 설정 파일이 안 쓰였다.
@@ -916,10 +1873,14 @@ mod tests {
 
     #[tokio::test]
     async fn create_autostart_with_hooks_disabled_injects_plain_claude() {
-        let (mgr, _events, ctl, dir) = build_with_port(None);
+        let (mgr, _events, ctl, dir) = build_with_observer(false);
         mgr.create(req("a1", Some(true))).unwrap();
 
-        assert_eq!(ctl.writes_utf8(), "claude\r", "hooks-OFF autostart must inject a bare `claude` with no --settings");
+        assert_eq!(
+            ctl.writes_utf8(),
+            "claude\r",
+            "hooks-OFF autostart must inject a bare `claude` with no --settings"
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -929,21 +1890,29 @@ mod tests {
     /// Like `build()`, but with an overridden `shell_resolver` so the test
     /// doesn't depend on the host's actual `$SHELL`.
     fn build_with_shell_resolver(
-        resolver: Arc<dyn Fn(shells::ShellRequest) -> shells::ResolvedShell + Send + Sync>,
-    ) -> (Arc<SessionManager>, Arc<RecordingEvents>, Arc<FakeControl>, PathBuf) {
+        resolver: Arc<
+            dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync,
+        >,
+    ) -> (
+        Arc<SessionManager>,
+        Arc<RecordingEvents>,
+        Arc<FakeControl>,
+        PathBuf,
+    ) {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
-        let (writer, dir) = scratch_hook_writer();
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
         let (fac, ctl) = FakePtyFactory::new();
         let mgr = Arc::new(
             SessionManager::new(
                 Arc::new(fac),
-                writer,
+                observer,
                 reg,
                 events.clone() as Arc<dyn AppEvents>,
                 hub,
-                Arc::new(|| Some(12345u16)),
+                Arc::new(|| Some("http://127.0.0.1:12345/hook".into())),
             )
             .with_shell_resolver(resolver),
         );
@@ -953,13 +1922,24 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn create_pushes_zdotdir_env_when_shell_resolver_returns_zsh() {
-        let (mgr, _events, ctl, dir) = build_with_shell_resolver(Arc::new(|_req: shells::ShellRequest| {
-            shells::ResolvedShell {
-                program: "/bin/zsh".to_string(),
-                args: vec!["-l".to_string(), "-i".to_string()],
-                extra_env: vec![],
-            }
-        }));
+        let shim_dir = std::env::temp_dir().join(format!(
+            "agent-office-manager-zdotdir-test-{}",
+            Uuid::new_v4(),
+        ));
+        let shim_dir_for_resolver = shim_dir.clone();
+        let (mgr, _events, ctl, dir) =
+            build_with_shell_resolver(Arc::new(move |_selected, wrappers| {
+                let path = crate::session::zsh_wrapper::write_observer_shim(
+                    &shim_dir_for_resolver,
+                    wrappers,
+                )
+                .unwrap();
+                shells::ResolvedShell {
+                    program: "/bin/zsh".to_string(),
+                    args: vec!["-l".to_string(), "-i".to_string()],
+                    extra_env: vec![("ZDOTDIR".into(), path.to_string_lossy().into_owned())],
+                }
+            }));
         mgr.create(req("a1", None)).unwrap();
 
         let env = ctl.spawned_env();
@@ -974,18 +1954,18 @@ mod tests {
         );
 
         cleanup(&ctl, &dir);
+        let _ = std::fs::remove_dir_all(shim_dir);
     }
 
     #[cfg(not(windows))]
     #[tokio::test]
     async fn create_does_not_push_zdotdir_env_for_non_zsh_shells() {
-        let (mgr, _events, ctl, dir) = build_with_shell_resolver(Arc::new(|_req: shells::ShellRequest| {
-            shells::ResolvedShell {
+        let (mgr, _events, ctl, dir) =
+            build_with_shell_resolver(Arc::new(|_selected, _wrappers| shells::ResolvedShell {
                 program: "/bin/bash".to_string(),
                 args: vec!["-l".to_string(), "-i".to_string()],
                 extra_env: vec![],
-            }
-        }));
+            }));
         mgr.create(req("a1", None)).unwrap();
 
         let env = ctl.spawned_env();
@@ -1002,7 +1982,8 @@ mod tests {
     #[tokio::test]
     async fn create_expands_leading_tilde_slash_in_cwd() {
         let (mgr, _events, ctl, dir) = build();
-        mgr.create(req_with_cwd("a1", Some("~/some/dir".into()))).unwrap();
+        mgr.create(req_with_cwd("a1", Some("~/some/dir".into())))
+            .unwrap();
 
         assert_eq!(ctl.spawned_cwd(), format!("{}/some/dir", home_dir()));
 
@@ -1023,7 +2004,8 @@ mod tests {
     async fn create_does_not_expand_tilde_user_form() {
         // `~someuser/dir` is left untouched -- only bare `~` and `~/...` expand.
         let (mgr, _events, ctl, dir) = build();
-        mgr.create(req_with_cwd("a1", Some("~someuser/dir".into()))).unwrap();
+        mgr.create(req_with_cwd("a1", Some("~someuser/dir".into())))
+            .unwrap();
 
         assert_eq!(ctl.spawned_cwd(), "~someuser/dir");
 
@@ -1033,7 +2015,8 @@ mod tests {
     #[tokio::test]
     async fn create_passes_through_absolute_cwd_unchanged() {
         let (mgr, _events, ctl, dir) = build();
-        mgr.create(req_with_cwd("a1", Some("/abs/path".into()))).unwrap();
+        mgr.create(req_with_cwd("a1", Some("/abs/path".into())))
+            .unwrap();
 
         assert_eq!(ctl.spawned_cwd(), "/abs/path");
 
@@ -1085,7 +2068,11 @@ mod tests {
         ctl.fire_exit(0);
         wait_for(|| events.states().len() == 3).await;
 
-        assert_eq!(mgr.session_id_for("a1"), None, "disposed agent must not resolve to a session");
+        assert_eq!(
+            mgr.session_id_for("a1"),
+            None,
+            "disposed agent must not resolve to a session"
+        );
         let _ = created;
 
         cleanup(&ctl, &dir);
@@ -1097,22 +2084,42 @@ mod tests {
     async fn dispose_kills_pty_and_on_exit_transitions_to_disposed_and_removes_bookkeeping() {
         let (mgr, events, ctl, dir) = build();
         let created = mgr.create(req("a1", Some(false))).unwrap();
+        let settings = dir.join(format!("{}.settings.json", created.session_id));
+        assert!(
+            settings.exists(),
+            "settings file should exist while running"
+        );
 
         mgr.dispose("a1");
         assert_eq!(ctl.kill_count(), 1, "dispose must call PtyControl::kill");
+        assert!(
+            !settings.exists(),
+            "dispose must remove observer cleanup paths"
+        );
 
         ctl.fire_exit(0);
         wait_for(|| events.states().len() == 3).await;
 
         let last = events.last_state();
         assert_eq!(last.state, SessionState::Disposed);
-        assert!(last.exit.as_ref().unwrap().intentional, "kill-triggered exit must be intentional");
+        assert!(
+            last.exit.as_ref().unwrap().intentional,
+            "kill-triggered exit must be intentional"
+        );
 
-        assert_eq!(mgr.session_id_for("a1"), None, "agentId must be removed from the sessions map");
+        assert_eq!(
+            mgr.session_id_for("a1"),
+            None,
+            "agentId must be removed from the sessions map"
+        );
         assert_eq!(
             mgr.registry.resolve_agent(&created.session_id),
             None,
             "Disposed session must be removed from the registry (E8: later hooks are discarded)"
+        );
+        assert!(
+            !settings.exists(),
+            "intentional exit cleanup must remain idempotent"
         );
 
         cleanup(&ctl, &dir);
@@ -1120,13 +2127,76 @@ mod tests {
 
     #[tokio::test]
     async fn dispose_all_kills_every_live_session() {
-        let (mgr, _events, ctl, dir) = build();
+        let (mgr, events, ctl, dir) = build();
         mgr.create(req("a1", Some(false))).unwrap();
 
         mgr.dispose_all();
 
         assert_eq!(ctl.kill_count(), 1);
         ctl.fire_exit(0);
+        wait_for(|| events.states().last() == Some(&SessionState::Disposed)).await;
+        cleanup(&ctl, &dir);
+    }
+
+    // ---- 세션 핸드오프(docs/session-handoff-design.md) 회귀: handed_off ----
+    //
+    // 실제 UDS/sessiond 왕복은 sessiond::protocol/daemon/client 유닛 테스트가
+    // 커버한다. 여기서는 핸드오프가 "성공했다고 치고" 세션에 handed_off를
+    // 직접 세팅해(Fake에는 handoff/reader_interrupt가 애초에 없으므로
+    // handoff_one 자체는 구동할 수 없다 -- private 필드에 직접 접근하는 이
+    // 시뮬레이션이 설계 문서가 말하는 "Fake에 handoff 시뮬레이션 훅") 그
+    // 이후 dispose_all/on_exit이 정말로 손을 떼는지만 검증한다.
+
+    #[tokio::test]
+    async fn handed_off_session_is_skipped_by_dispose_all_and_on_exit() {
+        let (mgr, events, ctl, dir) = build();
+        mgr.create(req("a1", Some(false))).unwrap();
+        let states_before = events.states().len();
+
+        {
+            let sess = mgr.find("a1").expect("session must exist right after create");
+            sess.handed_off.store(true, Ordering::SeqCst);
+        }
+
+        mgr.dispose_all();
+        assert_eq!(
+            ctl.kill_count(),
+            0,
+            "dispose_all must not kill a handed-off session"
+        );
+        assert!(
+            std::fs::read_dir(&dir)
+                .map(|mut entries| entries.next().is_some())
+                .unwrap_or(false),
+            "dispose_all must not remove a handed-off session's cleanup_paths"
+        );
+
+        // wait 스레드가 나중에 완주해도(on_exit 진입) 상태 전이가 없어야 한다.
+        ctl.fire_exit(0);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert_eq!(
+            events.states().len(),
+            states_before,
+            "on_exit must not emit a state transition for a handed-off session"
+        );
+
+        // 세션은 맵에 그대로 남는다 -- 제거는 handoff_one의 성공 경로 책임이지
+        // dispose_all/on_exit의 책임이 아니다.
+        assert!(mgr.find("a1").is_some());
+
+        ctl.close_output();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn dispose_ignores_handed_off_session_directly() {
+        let (mgr, _events, ctl, dir) = build();
+        mgr.create(req("a1", Some(false))).unwrap();
+        mgr.find("a1").unwrap().handed_off.store(true, Ordering::SeqCst);
+
+        mgr.dispose("a1");
+
+        assert_eq!(ctl.kill_count(), 0, "dispose() must skip a handed-off session");
         cleanup(&ctl, &dir);
     }
 
@@ -1158,7 +2228,10 @@ mod tests {
         mgr.resize("a1", 10, 10);
 
         assert_eq!(ctl.writes_utf8(), "", "write after exit must be a no-op");
-        assert!(ctl.resize_calls().is_empty(), "resize after exit must be a no-op");
+        assert!(
+            ctl.resize_calls().is_empty(),
+            "resize after exit must be a no-op"
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -1173,33 +2246,36 @@ mod tests {
 
     // ---- 패닉 격리: 세션 계층은 한 번의 패닉으로 벽돌이 되면 안 된다 ----
 
-    /// create()가 훅 설정 파일을 쓴 뒤 어떤 이유로든(스폰 내부 패닉 포함)
-    /// 완주하지 못하면 파일이 정리돼야 한다. 2026-07-11 실사고 흔적:
-    /// <tmp>/agent-office/hooks/에 재시작 시도마다 설정 파일이 1개씩 누적.
+    /// create()가 observer 설정 파일을 쓴 뒤 어떤 이유로든(스폰 내부 패닉 포함)
+    /// 완주하지 못하면 파일이 정리돼야 한다.
     #[tokio::test]
-    async fn create_cleans_up_hook_settings_file_even_when_spawn_panics() {
+    async fn create_cleans_up_observer_plan_even_when_spawn_panics() {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
-        let (writer, dir) = scratch_hook_writer();
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
         let mgr = Arc::new(SessionManager::new(
             Arc::new(crate::session::pty_factory::fake::PanickingPtyFactory),
-            writer,
+            observer,
             reg,
             events.clone() as Arc<dyn AppEvents>,
             hub,
-            Arc::new(|| Some(12345u16)),
+            Arc::new(|| Some("http://127.0.0.1:12345/hook".into())),
         ));
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             mgr.create(req("a1", Some(false)))
         }));
-        assert!(result.is_err(), "spawn panic must propagate (converted at the command layer)");
+        assert!(
+            result.is_err(),
+            "spawn panic must propagate (converted at the command layer)"
+        );
 
         let leftover = std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0);
         assert_eq!(
             leftover, 0,
-            "hook settings file must be cleaned up on the panic/unwind path too"
+            "observer cleanup file must be removed on the panic/unwind path too"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1218,23 +2294,24 @@ mod tests {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
-        let (writer, dir) = scratch_hook_writer();
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
         let factory = Arc::new(MultiFakePtyFactory::new());
         let mgr = Arc::new(SessionManager::new(
             factory.clone(),
-            writer,
+            observer,
             reg,
             events.clone() as Arc<dyn AppEvents>,
             hub,
-            Arc::new(|| Some(12345u16)),
+            Arc::new(|| Some("http://127.0.0.1:12345/hook".into())),
         ));
 
         // 패닉하는 채널을 먼저 attach — 첫 emit(ch.send)에서 pump가 죽는다.
-        let bad: Channel<OutputChunk> =
-            Channel::new(|_| panic!("simulated channel-send failure"));
+        let bad: Channel<OutputChunk> = Channel::new(|_| panic!("simulated channel-send failure"));
         mgr.attach_output("a1", bad);
 
-        mgr.create(req("a1", Some(false))).expect("first create succeeds");
+        mgr.create(req("a1", Some(false)))
+            .expect("first create succeeds");
         let ctl1 = factory.controls()[0].clone();
         ctl1.push_output(b"trigger-pump-panic");
 
@@ -1243,9 +2320,7 @@ mod tests {
 
         // 실사고 경로 그대로: 프론트의 unsubscribe_output → detach_output.
         // (수정 전: channel 뮤텍스 poison → 여기서 sinks 락 보유 중 패닉)
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            mgr.detach_output("a1")
-        }));
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| mgr.detach_output("a1")));
 
         // 재시작 시나리오: dispose 후 재생성. 세션 계층이 오염됐다면 여기서
         // 패닉(= invoke 영구 미해결 = 터미널 영구 고착)한다.
@@ -1258,14 +2333,19 @@ mod tests {
             "create() must survive a prior channel panic — a single panicking \
              channel callback must never brick session creation for the rest of the app run"
         );
-        second.unwrap().expect("recreate after channel panic should return Ok");
+        second
+            .unwrap()
+            .expect("recreate after channel panic should return Ok");
 
         // 멀쩡한 채널로 재구독하면 새 세션 출력도 정상 수신돼야 한다.
         let (good, captured) = recording_channel();
         let reattach = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             mgr.attach_output("a1", good)
         }));
-        assert!(reattach.is_ok(), "attach_output must survive after the cascade");
+        assert!(
+            reattach.is_ok(),
+            "attach_output must survive after the cascade"
+        );
         let ctl2 = factory.controls()[1].clone();
         ctl2.push_output(b"recovered-output");
         wait_for(|| captured.lock().contains("recovered-output")).await;
@@ -1324,15 +2404,16 @@ mod tests {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
-        let (writer, dir) = scratch_hook_writer();
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
         let factory = Arc::new(MultiFakePtyFactory::new());
         let mgr = Arc::new(SessionManager::new(
             factory.clone(),
-            writer,
+            observer,
             reg,
             events.clone() as Arc<dyn AppEvents>,
             hub,
-            Arc::new(|| Some(12345u16)),
+            Arc::new(|| Some("http://127.0.0.1:12345/hook".into())),
         ));
 
         let (channel, captured) = recording_channel();
@@ -1373,15 +2454,16 @@ mod tests {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
-        let (writer, dir) = scratch_hook_writer();
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
         let factory = Arc::new(MultiFakePtyFactory::new());
         let mgr = Arc::new(SessionManager::new(
             factory.clone(),
-            writer,
+            observer,
             reg,
             events.clone() as Arc<dyn AppEvents>,
             hub,
-            Arc::new(|| Some(12345u16)),
+            Arc::new(|| Some("http://127.0.0.1:12345/hook".into())),
         ));
 
         let first = mgr.create(req("a1", Some(false))).unwrap();
@@ -1397,7 +2479,11 @@ mod tests {
             first.session_id, second.session_id,
             "kill이 요청된(죽어가는) 세션을 재사용하면 안 된다 — 새 세션을 만들어야 한다"
         );
-        assert_eq!(factory.controls().len(), 2, "재시작 시 새 PTY가 spawn돼야 한다");
+        assert_eq!(
+            factory.controls().len(),
+            2,
+            "재시작 시 새 PTY가 spawn돼야 한다"
+        );
         assert_eq!(
             mgr.session_id_for("a1"),
             Some(second.session_id.clone()),
@@ -1430,15 +2516,16 @@ mod tests {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
-        let (writer, dir) = scratch_hook_writer();
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
         let factory = Arc::new(MultiFakePtyFactory::new());
         let mgr = Arc::new(SessionManager::new(
             factory.clone(),
-            writer,
+            observer,
             reg,
             events.clone() as Arc<dyn AppEvents>,
             hub,
-            Arc::new(|| Some(12345u16)),
+            Arc::new(|| Some("http://127.0.0.1:12345/hook".into())),
         ));
 
         let (channel, captured) = recording_channel();
@@ -1474,15 +2561,16 @@ mod tests {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
-        let (writer, dir) = scratch_hook_writer();
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
         let factory = Arc::new(MultiFakePtyFactory::new());
         let mgr = Arc::new(SessionManager::new(
             factory.clone(),
-            writer,
+            observer,
             reg,
             events.clone() as Arc<dyn AppEvents>,
             hub,
-            Arc::new(|| Some(12345u16)),
+            Arc::new(|| Some("http://127.0.0.1:12345/hook".into())),
         ));
 
         let (channel, captured) = recording_channel();
@@ -1563,15 +2651,16 @@ mod tests {
         });
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
-        let (writer, dir) = scratch_hook_writer();
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
         let (fac, ctl) = FakePtyFactory::new();
         let mgr = Arc::new(SessionManager::new(
             Arc::new(fac),
-            writer,
+            observer,
             reg,
             events.clone() as Arc<dyn AppEvents>,
             hub,
-            Arc::new(|| Some(12345u16)),
+            Arc::new(|| Some("http://127.0.0.1:12345/hook".into())),
         ));
         events.mgr.set(Arc::downgrade(&mgr)).ok();
 
@@ -1606,13 +2695,19 @@ mod tests {
         let (mgr, events, ctl, dir) = build();
         let created = mgr.create(req("a1", Some(false))).unwrap();
         let settings = dir.join(format!("{}.settings.json", created.session_id));
-        assert!(settings.exists(), "settings file should exist while running");
+        assert!(
+            settings.exists(),
+            "settings file should exist while running"
+        );
 
         ctl.fire_exit(1); // unexpected -> Exited
         wait_for(|| events.states().contains(&SessionState::Exited)).await;
         wait_for(|| !settings.exists()).await;
 
-        assert!(!settings.exists(), "unexpected exit must clean up the settings file");
+        assert!(
+            !settings.exists(),
+            "unexpected exit must clean up the settings file"
+        );
         cleanup(&ctl, &dir);
     }
 
@@ -1621,14 +2716,15 @@ mod tests {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
-        let (writer, dir) = scratch_hook_writer();
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
         let mgr = Arc::new(SessionManager::new(
             Arc::new(AlwaysFailPtyFactory),
-            writer,
+            observer,
             reg,
             events.clone() as Arc<dyn AppEvents>,
             hub,
-            Arc::new(|| Some(12345u16)),
+            Arc::new(|| Some("http://127.0.0.1:12345/hook".into())),
         ));
 
         let result = mgr.create(req("a1", Some(false)));
@@ -1641,31 +2737,40 @@ mod tests {
         // The --settings file write() happens before spawn(); on spawn failure
         // it must be cleaned up, leaving no leftover in the hook dir.
         let leftovers = std::fs::read_dir(&dir).map(|rd| rd.count()).unwrap_or(0);
-        assert_eq!(leftovers, 0, "spawn failure must not leak the pre-written settings file");
+        assert_eq!(
+            leftovers, 0,
+            "spawn failure must not leak the pre-written settings file"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ---- shell selection: resolver receives selected id + hooks_on, extra_env is spliced into spawn env ----
+    // ---- shell selection: resolver receives selected id + wrapper specs, extra_env is spliced into spawn env ----
 
-    /// What a recording resolver captured from its one `ShellRequest` call.
-    struct RecordedShellRequest {
+    /// What a recording resolver captured from its one call.
+    struct RecordedResolverCall {
         selected: Option<String>,
-        hooks_on: bool,
+        wrappers: Vec<String>,
     }
 
-    /// Builds a `shell_resolver` that copies `req.selected`/`req.hooks_on`
-    /// into `captured` (owned, so it outlives the borrowed `ShellRequest`)
+    /// Builds a `shell_resolver` that copies the selected id and wrapper names
+    /// into `captured` (owned, so it outlives the borrowed inputs)
     /// and always resolves to a fixed, harmless `ResolvedShell` carrying
     /// `extra_env` so both concerns (request plumbing + env splicing) can be
     /// asserted from the same fixture.
     fn recording_resolver(
-        captured: Arc<Mutex<Option<RecordedShellRequest>>>,
+        captured: Arc<Mutex<Option<RecordedResolverCall>>>,
         extra_env: Vec<(String, String)>,
-    ) -> Arc<dyn Fn(shells::ShellRequest) -> shells::ResolvedShell + Send + Sync> {
-        Arc::new(move |req: shells::ShellRequest| {
-            *captured.lock() =
-                Some(RecordedShellRequest { selected: req.selected.map(|s| s.to_string()), hooks_on: req.hooks_on });
+    ) -> Arc<dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync>
+    {
+        Arc::new(move |selected, wrappers| {
+            *captured.lock() = Some(RecordedResolverCall {
+                selected: selected.map(str::to_owned),
+                wrappers: wrappers
+                    .iter()
+                    .map(|wrapper| wrapper.command.clone())
+                    .collect(),
+            });
             shells::ResolvedShell {
                 program: "/bin/sh".to_string(),
                 args: vec![],
@@ -1674,25 +2779,34 @@ mod tests {
         })
     }
 
-    /// Like `build_with_shell_resolver`, but lets the caller also choose the
-    /// hook port (so hooks-on/hooks-off variants can share one fixture).
-    fn build_with_shell_resolver_and_port(
-        resolver: Arc<dyn Fn(shells::ShellRequest) -> shells::ResolvedShell + Send + Sync>,
-        port: Option<u16>,
-    ) -> (Arc<SessionManager>, Arc<RecordingEvents>, Arc<FakeControl>, PathBuf) {
+    /// Like `build_with_shell_resolver`, but lets the caller choose whether
+    /// observation is enabled so wrapped/unwrapped variants share one fixture.
+    fn build_with_shell_resolver_and_observation(
+        resolver: Arc<
+            dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync,
+        >,
+        enabled: bool,
+    ) -> (
+        Arc<SessionManager>,
+        Arc<RecordingEvents>,
+        Arc<FakeControl>,
+        PathBuf,
+    ) {
         let events = Arc::new(RecordingEvents::default());
         let reg = registry();
         let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
-        let (writer, dir) = scratch_hook_writer();
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
         let (fac, ctl) = FakePtyFactory::new();
+        let endpoint = enabled.then(|| "http://127.0.0.1:12345/hook".to_string());
         let mgr = Arc::new(
             SessionManager::new(
                 Arc::new(fac),
-                writer,
+                observer,
                 reg,
                 events.clone() as Arc<dyn AppEvents>,
                 hub,
-                Arc::new(move || port),
+                Arc::new(move || endpoint.clone()),
             )
             .with_shell_resolver(resolver),
         );
@@ -1700,36 +2814,74 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_passes_selected_shell_and_hooks_on_true_to_resolver() {
+    async fn create_passes_selected_shell_and_observer_wrappers_to_resolver() {
         let captured = Arc::new(Mutex::new(None));
         let resolver = recording_resolver(captured.clone(), vec![]);
-        // build_with_shell_resolver defaults get_hook_port to Some(12345) -> hooks ON.
         let (mgr, _events, ctl, dir) = build_with_shell_resolver(resolver);
 
-        mgr.create(req_with_shell("a1", Some("git-bash".to_string()))).unwrap();
+        mgr.create(req_with_shell("a1", Some("git-bash".to_string())))
+            .unwrap();
 
         let rec = captured.lock();
         let rec = rec.as_ref().expect("resolver must have been called");
         assert_eq!(rec.selected.as_deref(), Some("git-bash"));
-        assert!(rec.hooks_on, "hooks were enabled for this session -> hooks_on must be true");
+        assert_eq!(rec.wrappers, vec!["claude", "pi"]);
 
         cleanup(&ctl, &dir);
     }
 
     #[tokio::test]
-    async fn create_passes_hooks_on_false_to_resolver_when_hooks_disabled() {
+    async fn create_passes_no_wrappers_to_resolver_when_observer_disabled() {
         let captured = Arc::new(Mutex::new(None));
         let resolver = recording_resolver(captured.clone(), vec![]);
-        // get_hook_port -> None mirrors the hooks-opt-in-OFF path exercised by
-        // build_with_port(None) elsewhere in this file.
-        let (mgr, _events, ctl, dir) = build_with_shell_resolver_and_port(resolver, None);
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver_and_observation(resolver, false);
 
-        mgr.create(req_with_shell("a1", Some("git-bash".to_string()))).unwrap();
+        mgr.create(req_with_shell("a1", Some("git-bash".to_string())))
+            .unwrap();
 
         let rec = captured.lock();
         let rec = rec.as_ref().expect("resolver must have been called");
         assert_eq!(rec.selected.as_deref(), Some("git-bash"));
-        assert!(!rec.hooks_on, "hooks are OFF for this session -> hooks_on must be false");
+        assert!(rec.wrappers.is_empty());
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
+    async fn create_pushes_pi_ext_env_when_hooks_on() {
+        // hooks ON(기본 port Some) 세션은 AGENT_OFFICE_PI_EXT를 spawn env에 실어야
+        // 한다 — `pi()` 셸 래퍼가 이 경로를 -e로 로드하는 신호.
+        let captured = Arc::new(Mutex::new(None));
+        let resolver = recording_resolver(captured, vec![]);
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver(resolver);
+
+        mgr.create(req("a1", None)).unwrap();
+
+        let env = ctl.spawned_env();
+        let pair = env.iter().find(|(k, _)| k == "AGENT_OFFICE_PI_EXT");
+        let (_, val) = pair.expect("AGENT_OFFICE_PI_EXT must be injected when hooks are ON");
+        assert!(
+            val.ends_with("agent-office-pi.ts"),
+            "AGENT_OFFICE_PI_EXT must point at the extension file, got: {val}"
+        );
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
+    async fn create_does_not_push_pi_ext_env_when_hooks_off() {
+        // observer OFF 세션은 AGENT_OFFICE_PI_EXT가 없어야 한다.
+        let captured = Arc::new(Mutex::new(None));
+        let resolver = recording_resolver(captured, vec![]);
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver_and_observation(resolver, false);
+
+        mgr.create(req("a1", None)).unwrap();
+
+        let env = ctl.spawned_env();
+        assert!(
+            !env.iter().any(|(k, _)| k == "AGENT_OFFICE_PI_EXT"),
+            "AGENT_OFFICE_PI_EXT must NOT be injected when hooks are OFF: {env:?}"
+        );
 
         cleanup(&ctl, &dir);
     }
@@ -1737,7 +2889,10 @@ mod tests {
     #[tokio::test]
     async fn create_appends_resolved_extra_env_to_spawn_env() {
         let captured = Arc::new(Mutex::new(None));
-        let marker = ("AGENT_OFFICE_TEST_MARKER".to_string(), "shell-extra-env".to_string());
+        let marker = (
+            "AGENT_OFFICE_TEST_MARKER".to_string(),
+            "shell-extra-env".to_string(),
+        );
         let resolver = recording_resolver(captured, vec![marker.clone()]);
         let (mgr, _events, ctl, dir) = build_with_shell_resolver(resolver);
 
@@ -1756,8 +2911,8 @@ mod tests {
 // ---------------------------------------------------------------------
 // Phase 2 sign-off smoke: REAL PTY, end-to-end through the exact same
 // SessionManager wiring `lib.rs::run()` builds (only Tauri-runtime-bound
-// pieces -- AppEvents/hook server/app handle -- are swapped for local
-// doubles; PortablePtyFactory + SessionManager + HookSettingsWriter are the
+// pieces -- AppEvents/observer server/app handle -- are swapped for local
+// doubles; PortablePtyFactory + SessionManager + ObserverRuntime are the
 // real production types). Deliberately `#[ignore]`d: shell startup time and
 // `$SHELL` quirks make this env-dependent and too slow/flaky for the default
 // `cargo test` run. Run explicitly:
@@ -1766,7 +2921,7 @@ mod tests {
 // This lives inside `manager.rs` (rather than `src-tauri/tests/`) because
 // `mod session`/`mod state`/`mod notification` are private in `lib.rs` --
 // an external integration test crate can't name `SessionManager`,
-// `HookSettingsWriter`, or `state::fake::RecordingEvents` at all. Widening
+// `ObserverRuntime`, or `state::fake::RecordingEvents` at all. Widening
 // those to `pub`/`pub(crate)` just for this one smoke would be a bigger
 // surface change than necessary, so the smoke rides along as a sibling
 // `#[cfg(test)]` module instead, reusing the same private items the
@@ -1775,8 +2930,12 @@ mod tests {
 mod real_pty_smoke {
     use super::*;
     use crate::notification::hub::{NotificationHub, SystemClock};
+    use crate::observer::claude::ClaudeAdapter;
+    use crate::observer::server::ObserverServerState;
+    use crate::observer::ObserverRuntime;
     use crate::session::pty_factory::PortablePtyFactory;
     use crate::state::fake::RecordingEvents;
+    use std::path::{Path, PathBuf};
     use std::time::Duration;
     use tauri::ipc::{Channel, InvokeResponseBody};
 
@@ -1795,6 +2954,118 @@ mod real_pty_smoke {
         std::env::temp_dir().join(format!("agent-office-smoke-{label}-{}", Uuid::new_v4()))
     }
 
+    #[cfg(windows)]
+    fn observer_path_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    #[cfg(windows)]
+    struct ObserverEnvGuard {
+        saved: Vec<(std::ffi::OsString, Option<std::ffi::OsString>)>,
+    }
+
+    #[cfg(windows)]
+    impl ObserverEnvGuard {
+        fn set(values: &[(&str, std::ffi::OsString)]) -> Self {
+            let mut saved = Vec::with_capacity(values.len());
+            for (key, value) in values {
+                saved.push(((*key).into(), std::env::var_os(key)));
+                std::env::set_var(key, value);
+            }
+            Self { saved }
+        }
+    }
+
+    #[cfg(windows)]
+    impl Drop for ObserverEnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in self.saved.drain(..).rev() {
+                match value {
+                    Some(value) => std::env::set_var(&key, value),
+                    None => std::env::remove_var(&key),
+                }
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    fn write_observer_fake_clis(dir: &Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(
+            dir.join("codex.ps1"),
+            r#"
+[IO.File]::WriteAllLines($env:AO_FAKE_CODEX_ARGS, [string[]]$args)
+[IO.File]::WriteAllText($env:AO_FAKE_CODEX_PID, "$PID")
+if ($args -contains 'bypass-marker') {
+    [IO.File]::WriteAllText($env:AO_FAKE_BYPASS, 'bypassed')
+    return
+}
+$payloads = @(
+    '{"hook_event_name":"UserPromptSubmit","prompt":"codex-marker","session_id":"native-codex"}',
+    '{"hook_event_name":"PostToolUse","session_id":"native-codex"}',
+    '{"hook_event_name":"PermissionRequest","tool_input":{"description":"codex-attention"},"session_id":"native-codex"}',
+    '{"hook_event_name":"Stop","last_assistant_message":"must-not-surface","session_id":"native-codex"}',
+    '{"hook_event_name":"SubagentStart","session_id":"native-codex"}',
+    '{"hook_event_name":"SubagentStop","session_id":"native-codex"}'
+)
+foreach ($payload in $payloads) {
+    $payload | & $env:AO_FAKE_FORWARDER --observer-forward codex
+    if ($LASTEXITCODE -ne 0) { throw "forwarder failed: $LASTEXITCODE" }
+}
+return
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("claude.ps1"),
+            r#"
+[IO.File]::WriteAllLines($env:AO_FAKE_CLAUDE_ARGS, [string[]]$args)
+[IO.File]::WriteAllText($env:AO_FAKE_CLAUDE_PID, "$PID")
+$settingsPath = $null
+for ($i = 0; $i -lt ($args.Count - 1); $i++) {
+    if ($args[$i] -eq '--settings') { $settingsPath = $args[$i + 1]; break }
+}
+if (-not $settingsPath) { throw 'missing --settings path' }
+$settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+$events = @(
+    [pscustomobject]@{ Name = 'UserPromptSubmit'; Body = '{"prompt":"claude-marker","session_id":"native-claude"}' },
+    [pscustomobject]@{ Name = 'PostToolUse'; Body = '{"session_id":"native-claude"}' },
+    [pscustomobject]@{ Name = 'Notification'; Body = '{"message":"claude-attention","session_id":"native-claude"}' },
+    [pscustomobject]@{ Name = 'Stop'; Body = '{"message":"claude-stop","session_id":"native-claude"}' },
+    [pscustomobject]@{ Name = 'SubagentStart'; Body = '{"session_id":"native-claude"}' },
+    [pscustomobject]@{ Name = 'SubagentStop'; Body = '{"session_id":"native-claude"}' }
+)
+foreach ($event in $events) {
+    $group = $settings.hooks.PSObject.Properties[$event.Name].Value
+    $command = $group[0].hooks[0].command
+    $event.Body | & cmd.exe /d /s /c $command
+    if ($LASTEXITCODE -ne 0) { throw "hook command failed: $LASTEXITCODE" }
+}
+return
+"#,
+        )
+        .unwrap();
+    }
+
+    #[cfg(windows)]
+    fn decode_observer_powershell_command(args: &[String]) -> Option<String> {
+        use base64::Engine;
+
+        let encoded = args
+            .windows(2)
+            .find(|pair| pair[0] == "-EncodedCommand")?
+            .get(1)?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .ok()?;
+        let utf16 = bytes
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>();
+        String::from_utf16(&utf16).ok()
+    }
+
     #[tokio::test]
     #[ignore = "real PTY; run explicitly"]
     async fn real_shell_output_flows_end_to_end_and_disposes_cleanly() {
@@ -1807,19 +3078,22 @@ mod real_pty_smoke {
             Duration::from_millis(3000),
         ));
 
-        let hook_dir = scratch_dir("hooks");
-        let hook_writer = HookSettingsWriter::new(hook_dir.clone());
+        let observer_dir = scratch_dir("observer");
+        let observer = Arc::new(ObserverRuntime::new(
+            hub.clone(),
+            vec![Arc::new(ClaudeAdapter::new(observer_dir.clone()))],
+        ));
 
         let cwd_dir = scratch_dir("cwd");
         std::fs::create_dir_all(&cwd_dir).expect("create scratch cwd");
 
         let mgr = Arc::new(SessionManager::new(
             Arc::new(PortablePtyFactory),
-            hook_writer,
+            observer,
             registry,
             events.clone() as Arc<dyn AppEvents>,
             hub,
-            Arc::new(|| Some(45999u16)), // fake hook port; no real hook server needed for this smoke
+            Arc::new(|| Some("http://127.0.0.1:45999/hook".into())),
         ));
 
         let created = mgr
@@ -1830,6 +3104,7 @@ mod real_pty_smoke {
                 cwd: Some(cwd_dir.to_string_lossy().into_owned()),
                 shell: None,
                 startup_command: None,
+                personality_prompt: None,
                 autostart_claude: Some(false),
             })
             .expect("real PTY spawn should succeed");
@@ -1859,7 +3134,10 @@ mod real_pty_smoke {
             "no output arrived from the real shell within 5s -- check $SHELL / login-shell startup time",
         )
         .await;
-        assert_eq!(events.states().first().copied(), Some(SessionState::Starting));
+        assert_eq!(
+            events.states().first().copied(),
+            Some(SessionState::Starting)
+        );
         assert!(events.states().contains(&SessionState::Running));
 
         // 2) Echo round-trip through real stdin -> shell -> stdout.
@@ -1886,123 +3164,720 @@ mod real_pty_smoke {
             "dispose()-triggered exit must be reported intentional=true"
         );
 
-        let _ = std::fs::remove_dir_all(&hook_dir);
+        let _ = std::fs::remove_dir_all(&observer_dir);
         let _ = std::fs::remove_dir_all(&cwd_dir);
     }
 
-    /// 실기기 재현 프로브: 사용자 "터미널 재시작 연타" 시나리오.
-    /// 프론트 restartAgentSession의 실제 IPC 순서(사운드 매니저가 onData를 상시
-    /// 구독하므로 재시작 중 재구독 IPC 없음) 그대로:
-    ///   attach(1회) → create → { dispose → 즉시 create } × N (반복 간 대기 없음)
-    /// 각 create가 워치독 내에 완료되고, 마지막 세션의 출력이 처음 attach한
-    /// 채널로 흘러야 하며, 훅 설정 파일이 누적되지 않아야 한다(살아있는 세션
-    /// 1개분만 잔존). 실패 시그니처(2026-07-11 실사용): 훅 파일이 재시작마다
-    /// 1개씩 누적 + dispose가 직전 세션을 못 찾음 + create가 영원히 미완료.
+    /// 실 PTY + 실 sessiond 프로세스로 handoff_all -> adopt_detached 왕복
+    /// 전체를 검증한다(docs/session-handoff-design.md §핵심 3, 4). 데몬을
+    /// `client::connect_or_spawn`의 스폰 경로에 맡기지 않고 미리 띄워 둔다
+    /// -- `cargo test` 바이너리는 `--sessiond` 분기가 없는 별개의 실행
+    /// 파일이라 `spawn_daemon`(현재 실행 파일 재실행)을 여기서 구동할 수
+    /// 없다(그 경로 자체는 client.rs 유닛 테스트 + 수동 검증 항목이 커버).
+    /// 데몬이 이미 떠 있으면 `connect_or_spawn`의 첫 connect가 곧바로
+    /// 성공하므로, 이 테스트는 그 뒤의 실제 핸드오프/입양 배선(리더 인터럽트,
+    /// fd 전달, install_session 재조립)만 순수하게 검증한다.
+    ///
+    /// 실증에서 발견된 빈틈(데몬은 핸드오프 *이후* 출력만 보관 -- 종료 전
+    /// 화면은 스냅샷 없이는 사라진다) 회귀도 여기서 함께 검증한다: 세션
+    /// "a1"은 snapshots 맵에 명시적 스냅샷을 실어 보내고(그 텍스트가
+    /// initial_output의 맨 앞에 와야 한다), 세션 "a2"는 맵에서 빠뜨려
+    /// backlog 폴백 경로를 태운다(핸드오프 전 출력을 한 번도 구독하지
+    /// 않았을 때도 최소한 backlog 분량은 보존돼야 한다).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn handoff_all_then_adopt_detached_round_trips_a_real_session() {
+        use crate::session::pty_factory::PortablePtyFactory;
+        use std::collections::{HashMap, HashSet};
+
+        let app_data_dir = scratch_dir("appdata");
+        std::fs::create_dir_all(&app_data_dir).expect("create scratch app_data_dir");
+        let socket_path = crate::sessiond::client::default_socket_path(&app_data_dir);
+
+        let (shutdown_tx, _shutdown_rx) = std::sync::mpsc::channel::<()>();
+        let hook: crate::sessiond::daemon::ShutdownHook = Arc::new(move || {
+            let _ = shutdown_tx.send(());
+        });
+        let daemon_socket = socket_path.clone();
+        std::thread::spawn(move || {
+            let _ = crate::sessiond::daemon::run_daemon_inner(
+                daemon_socket,
+                Duration::from_secs(60),
+                hook,
+            );
+        });
+        wait_for_timeout(
+            || socket_path.exists(),
+            Duration::from_secs(2),
+            "sessiond never bound its socket",
+        )
+        .await;
+
+        let events1 = Arc::new(RecordingEvents::default());
+        let registry1 = Arc::new(SessionRegistry::new());
+        let hub1 = Arc::new(NotificationHub::new(
+            registry1.clone(),
+            events1.clone() as Arc<dyn AppEvents>,
+            Arc::new(SystemClock),
+            Duration::from_millis(3000),
+        ));
+        let observer1 = Arc::new(ObserverRuntime::new(hub1.clone(), vec![]));
+        let mgr1 = Arc::new(
+            SessionManager::new(
+                Arc::new(PortablePtyFactory),
+                observer1,
+                registry1,
+                events1.clone() as Arc<dyn AppEvents>,
+                hub1,
+                Arc::new(|| None), // observer off -- 실 PTY 핸드오프 배선만 검증하면 충분
+            )
+            .with_shell_resolver(Arc::new(|_, _| shells::ResolvedShell {
+                program: "/bin/sh".into(),
+                args: vec![],
+                extra_env: vec![],
+            }))
+            .with_app_data_dir(app_data_dir.clone()),
+        );
+
+        let created = mgr1
+            .create(CreateSessionRequest {
+                agent_id: "a1".into(),
+                cols: Some(80),
+                rows: Some(24),
+                cwd: None,
+                shell: None,
+                startup_command: None,
+                personality_prompt: None,
+                autostart_claude: Some(false),
+            })
+            .expect("real PTY spawn should succeed");
+        assert_eq!(created.state, SessionState::Running);
+
+        // "a2": 출력 채널을 한 번도 구독하지 않은 채 핸드오프한다 -- 스냅샷
+        // 폴백(backlog)이 실제로 쓰이는지 검증하기 위한 세션. 핸드오프 전에
+        // echo를 흘려보내 backlog에 쌓아 둔다(구독이 없으니 emit()이 채널
+        // 대신 backlog로 간다).
+        mgr1.create(CreateSessionRequest {
+            agent_id: "a2".into(),
+            cols: Some(80),
+            rows: Some(24),
+            cwd: None,
+            shell: None,
+            startup_command: None,
+            personality_prompt: None,
+            autostart_claude: Some(false),
+        })
+        .expect("real PTY spawn should succeed for a2");
+        mgr1.write_input("a2", "echo backlog-marker-24680\n");
+        wait_for_timeout(
+            || {
+                mgr1.sink_for("a2")
+                    .backlog_snapshot()
+                    .windows(b"backlog-marker-24680".len())
+                    .any(|w| w == b"backlog-marker-24680")
+            },
+            Duration::from_secs(5),
+            "a2's pre-handoff echo never landed in the sink backlog",
+        )
+        .await;
+
+        let mut snapshots = HashMap::new();
+        snapshots.insert("a1".to_string(), "SNAPSHOT-MARKER-13579\r\n".to_string());
+        // "a2"는 의도적으로 생략 -- 백로그 폴백 경로를 태운다.
+
+        let handed = mgr1.handoff_all(&snapshots);
+        assert_eq!(handed, 2, "both running real sessions must be handed off");
+        assert!(
+            mgr1.find("a1").is_none(),
+            "a successfully handed-off session must leave the manager's map"
+        );
+        assert!(mgr1.find("a2").is_none());
+
+        // "재시작": 새 매니저가 같은 app_data_dir/소켓을 상대로 되찾는다.
+        let events2 = Arc::new(RecordingEvents::default());
+        let registry2 = Arc::new(SessionRegistry::new());
+        let hub2 = Arc::new(NotificationHub::new(
+            registry2.clone(),
+            events2.clone() as Arc<dyn AppEvents>,
+            Arc::new(SystemClock),
+            Duration::from_millis(3000),
+        ));
+        let observer2 = Arc::new(ObserverRuntime::new(hub2.clone(), vec![]));
+        let mgr2 = Arc::new(
+            SessionManager::new(
+                Arc::new(PortablePtyFactory),
+                observer2,
+                registry2,
+                events2.clone() as Arc<dyn AppEvents>,
+                hub2,
+                Arc::new(|| None),
+            )
+            .with_app_data_dir(app_data_dir.clone()),
+        );
+
+        let known: HashSet<String> = ["a1".to_string(), "a2".to_string()].into_iter().collect();
+        let adopted = mgr2.adopt_detached(&known);
+        assert_eq!(adopted.len(), 2);
+        let adopted_ids: HashSet<String> = adopted.iter().map(|a| a.agent_id.clone()).collect();
+        assert_eq!(adopted_ids, known);
+        assert_eq!(mgr2.session_id_for("a1"), Some(created.session_id.clone()));
+        assert!(events2.states().contains(&SessionState::Running));
+
+        // 이어받은 세션들이 실제로 살아 있는지: echo 왕복으로 확인 + 스냅샷이
+        // initial_output 맨 앞에 왔는지 검증.
+        fn attach_collector(mgr: &Arc<SessionManager>, agent_id: &str) -> Arc<Mutex<String>> {
+            let output = Arc::new(Mutex::new(String::new()));
+            let output_for_channel = output.clone();
+            let channel: Channel<OutputChunk> = Channel::new(move |body| {
+                if let InvokeResponseBody::Json(s) = body {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                        if let Some(data) = v.get("data").and_then(|d| d.as_str()) {
+                            output_for_channel.lock().push_str(data);
+                        }
+                    }
+                }
+                Ok(())
+            });
+            mgr.attach_output(agent_id, channel);
+            output
+        }
+
+        let output_a1 = attach_collector(&mgr2, "a1");
+        let output_a2 = attach_collector(&mgr2, "a2");
+        mgr2.write_input("a1", "echo adopted-and-alive-98765\n");
+        wait_for_timeout(
+            || output_a1.lock().contains("adopted-and-alive-98765"),
+            Duration::from_secs(5),
+            "adopted a1 never echoed the write_input marker",
+        )
+        .await;
+        assert!(
+            output_a1.lock().starts_with("SNAPSHOT-MARKER-13579"),
+            "a1's explicit snapshot must be replayed before any post-adopt output: {:?}",
+            output_a1.lock()
+        );
+
+        // a2는 명시적 스냅샷이 없었으니 backlog 폴백으로 핸드오프 전 echo가
+        // 보존돼야 한다(드레인되지 않고 복사만 됐어야 하므로 mgr1 쪽
+        // backlog에도 영향이 없다 -- 여기서는 재입양된 mgr2 쪽만 확인).
+        wait_for_timeout(
+            || output_a2.lock().contains("backlog-marker-24680"),
+            Duration::from_secs(5),
+            "adopted a2 never replayed the backlog-fallback snapshot",
+        )
+        .await;
+
+        mgr2.dispose("a1");
+        mgr2.dispose("a2");
+        wait_for_timeout(
+            || {
+                events2.states().iter().filter(|s| **s == SessionState::Disposed).count() == 2
+            },
+            Duration::from_secs(5),
+            "both adopted sessions never reached Disposed within 5s after dispose()",
+        )
+        .await;
+
+        let _ = std::fs::remove_dir_all(&app_data_dir);
+    }
+
+    /// 실기기 재현 프로브: 프론트의 attach(1회) → create →
+    /// { dispose → 즉시 create } 반복에서도 create가 멈추지 않고, 최초 출력
+    /// 채널과 observer cleanup 계약이 유지되어야 한다.
     #[tokio::test]
     #[ignore = "real PTY; run explicitly"]
-    async fn real_shell_restart_mash_never_wedges_and_never_leaks_hook_files() {
+    async fn real_shell_restart_mash_never_wedges_and_never_leaks_observer_files() {
         let events = Arc::new(RecordingEvents::default());
         let registry = Arc::new(SessionRegistry::new());
         let hub = Arc::new(NotificationHub::new(
             registry.clone(),
             events.clone() as Arc<dyn AppEvents>,
             Arc::new(SystemClock),
-            Duration::from_millis(3000),
+            Duration::from_millis(3_000),
         ));
-
-        let hook_dir = scratch_dir("hooks-mash");
-        let hook_writer = HookSettingsWriter::new(hook_dir.clone());
-
-        let mgr = Arc::new(SessionManager::new(
+        let observer_dir = scratch_dir("observer-mash");
+        let observer = Arc::new(ObserverRuntime::new(
+            hub.clone(),
+            vec![Arc::new(ClaudeAdapter::new(observer_dir.clone()))],
+        ));
+        let manager = Arc::new(SessionManager::new(
             Arc::new(PortablePtyFactory),
-            hook_writer,
+            observer,
             registry,
             events.clone() as Arc<dyn AppEvents>,
             hub,
-            Arc::new(|| Some(45999u16)),
+            Arc::new(|| Some("http://127.0.0.1:45999/hook".into())),
         ));
 
-        // 프론트처럼 채널은 최초 1회만 attach — 이후 재시작 동안 재구독 없음.
         let output = Arc::new(Mutex::new(String::new()));
         let output_for_channel = output.clone();
-        let channel: Channel<OutputChunk> = Channel::new(move |body| {
-            if let InvokeResponseBody::Json(s) = body {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                    if let Some(data) = v.get("data").and_then(|d| d.as_str()) {
-                        output_for_channel.lock().push_str(data);
+        manager.attach_output(
+            "mash",
+            Channel::new(move |body| {
+                if let InvokeResponseBody::Json(json) = body {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) {
+                        if let Some(data) = value.get("data").and_then(|data| data.as_str()) {
+                            output_for_channel.lock().push_str(data);
+                        }
                     }
                 }
-            }
-            Ok(())
-        });
-        mgr.attach_output("mash", channel);
+                Ok(())
+            }),
+        );
 
-        let req = || CreateSessionRequest {
+        let request = || CreateSessionRequest {
             agent_id: "mash".into(),
             cols: Some(80),
             rows: Some(24),
-            // 존재하지 않는 cwd — 사용자 최초 증상 재현 입력(portable-pty는 홈으로 폴백).
             cwd: Some("/definitely/not/a/real/dir".into()),
             shell: None,
-            startup_command: Some("echo mash-marker-$AGENT_OFFICE_SESSION".into()),
+            startup_command: Some("echo mash-marker".into()),
+            personality_prompt: None,
             autostart_claude: Some(false),
         };
-
-        // create()는 블로킹 함수 — 워치독은 spawn_blocking + timeout으로 건다.
-        let create_with_watchdog = |mgr: Arc<SessionManager>, label: String| async move {
-            let handle = tokio::task::spawn_blocking(move || mgr.create(req()));
+        let create_with_watchdog = |manager: Arc<SessionManager>, label: String| async move {
+            let handle = tokio::task::spawn_blocking(move || manager.create(request()));
             match tokio::time::timeout(Duration::from_secs(10), handle).await {
-                Err(_) => panic!("create() wedged (>10s) at {label} — reproduces the stuck-terminal bug"),
+                Err(_) => panic!("create() wedged (>10s) at {label}"),
                 Ok(join) => join
-                    .unwrap_or_else(|e| panic!("create() panicked at {label}: {e:?} — reproduces the stuck-terminal bug"))
-                    .unwrap_or_else(|e| panic!("create() returned Err at {label}: {e}")),
+                    .unwrap_or_else(|error| panic!("create() panicked at {label}: {error:?}"))
+                    .unwrap_or_else(|error| panic!("create() returned Err at {label}: {error}")),
             }
         };
 
-        create_with_watchdog(mgr.clone(), "initial".into()).await;
-
-        for i in 0..6 {
-            mgr.dispose("mash"); // restartAgentSession ①
-            // ④ 즉시 재생성 — reap(on_exit)과 의도적으로 경합시킨다.
-            create_with_watchdog(mgr.clone(), format!("restart#{i}")).await;
+        create_with_watchdog(manager.clone(), "initial".into()).await;
+        for index in 0..6 {
+            manager.dispose("mash");
+            create_with_watchdog(manager.clone(), format!("restart#{index}")).await;
         }
 
-        // 마지막 세션이 실제로 살아 있고 출력이 최초 채널로 흐르는지.
-        // echo는 500ms마다 재전송(멱등) — 셸이 아직 프롬프트 전이면 단발
-        // write가 유실될 수 있는 실 PTY 타이밍 플레이크를 흡수한다.
         output.lock().clear();
         let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
         loop {
-            mgr.write_input("mash", "echo final-alive-98765\n");
+            manager.write_input("mash", "echo final-alive-98765\r");
             tokio::time::sleep(Duration::from_millis(500)).await;
             if output.lock().contains("final-alive-98765") {
                 break;
             }
             assert!(
                 tokio::time::Instant::now() < deadline,
-                "final session's output never reached the originally-attached channel \
-                 (last state event: {:?}, captured output bytes: {})",
-                events.states().last().copied(),
-                output.lock().len()
+                "final session output never reached the originally attached channel"
             );
         }
 
-        // 훅 파일 누적 없음: 살아있는 마지막 세션 1개분만 남아야 한다.
-        let leftover = std::fs::read_dir(&hook_dir)
-            .map(|d| d.count())
+        let leftovers = std::fs::read_dir(&observer_dir)
+            .map(|entries| entries.count())
             .unwrap_or(0);
         assert!(
-            leftover <= 1,
-            "hook settings files accumulated across restarts: {leftover} files — dispose/on_exit cleanup is broken"
+            leftovers <= 1,
+            "observer files accumulated across restarts: {leftovers}"
         );
 
-        mgr.dispose("mash");
+        manager.dispose("mash");
         wait_for_timeout(
             || matches!(events.states().last(), Some(SessionState::Disposed)),
             Duration::from_secs(5),
             "final dispose never completed",
         )
         .await;
-        let _ = std::fs::remove_dir_all(&hook_dir);
+        let _ = std::fs::remove_dir_all(observer_dir);
+    }
+
+    #[cfg(windows)]
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "real PowerShell PTY and built forwarder; no model call"]
+    async fn observed_powershell_fake_clis_cross_the_complete_local_boundary() {
+        let _path_lock = observer_path_lock().lock().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "Agent Office observer PTY test {}",
+            uuid::Uuid::new_v4(),
+        ));
+        let fake_dir = root.join("fake cli bin");
+        let settings_dir = root.join("settings with spaces");
+        let forwarder_dir = root.join("forwarder with spaces");
+        std::fs::create_dir_all(&forwarder_dir).unwrap();
+        write_observer_fake_clis(&fake_dir);
+
+        let built = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("debug")
+            .join("agent-office.exe");
+        assert!(
+            built.is_file(),
+            "run cargo build before this ignored test: {}",
+            built.display()
+        );
+        let forwarder = forwarder_dir.join("agent-office.exe");
+        std::fs::copy(&built, &forwarder).unwrap();
+
+        let codex_args = root.join("codex args.txt");
+        let claude_args = root.join("claude args.txt");
+        let codex_pid = root.join("codex pid.txt");
+        let claude_pid = root.join("claude pid.txt");
+        let bypass = root.join("bypass marker.txt");
+        let shell_pid = root.join("shell pid.txt");
+        let shell_env = root.join("shell env.txt");
+        let command_resolution = root.join("command resolution.txt");
+        let inherited_path = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::env::join_paths(
+            std::iter::once(fake_dir.as_os_str().to_os_string())
+                .chain(std::env::split_paths(&inherited_path).map(|p| p.into_os_string())),
+        )
+        .unwrap();
+        let _env = ObserverEnvGuard::set(&[
+            ("PATH", path),
+            ("AO_FAKE_FORWARDER", forwarder.as_os_str().to_os_string()),
+            ("AO_FAKE_CODEX_ARGS", codex_args.as_os_str().to_os_string()),
+            (
+                "AO_FAKE_CLAUDE_ARGS",
+                claude_args.as_os_str().to_os_string(),
+            ),
+            ("AO_FAKE_CODEX_PID", codex_pid.as_os_str().to_os_string()),
+            ("AO_FAKE_CLAUDE_PID", claude_pid.as_os_str().to_os_string()),
+            ("AO_FAKE_BYPASS", bypass.as_os_str().to_os_string()),
+            ("AO_FAKE_SHELL_PID", shell_pid.as_os_str().to_os_string()),
+            ("AO_FAKE_SHELL_ENV", shell_env.as_os_str().to_os_string()),
+            (
+                "AO_FAKE_RESOLUTION",
+                command_resolution.as_os_str().to_os_string(),
+            ),
+        ]);
+
+        let events = Arc::new(RecordingEvents::default());
+        let registry = Arc::new(SessionRegistry::new());
+        let hub = Arc::new(NotificationHub::new(
+            registry.clone(),
+            events.clone() as Arc<dyn AppEvents>,
+            Arc::new(SystemClock),
+            Duration::from_millis(3_000),
+        ));
+        let observer = Arc::new(ObserverRuntime::production(
+            hub.clone(),
+            settings_dir.clone(),
+            forwarder.clone(),
+        ));
+        let server = Arc::new(ObserverServerState::default());
+        assert!(server.ensure(observer.clone()).await.is_some());
+        let server_url = server.current_url();
+        let server_for_getter = server.clone();
+        let resolved_shell = Arc::new(Mutex::new(None));
+        let resolved_shell_for_resolver = resolved_shell.clone();
+        let manager = Arc::new(
+            SessionManager::new(
+                Arc::new(PortablePtyFactory),
+                observer,
+                registry,
+                events.clone() as Arc<dyn AppEvents>,
+                hub,
+                Arc::new(move || server_for_getter.current_url()),
+            )
+            .with_shell_resolver(Arc::new(move |selected, wrappers| {
+                let resolved = shells::resolve_observed(selected, wrappers);
+                *resolved_shell_for_resolver.lock() = Some((
+                    resolved.program.clone(),
+                    resolved.args.clone(),
+                    resolved.extra_env.clone(),
+                ));
+                resolved
+            })),
+        );
+
+        let created = manager
+            .create(CreateSessionRequest {
+                agent_id: "observer-pty".into(),
+                cols: Some(100),
+                rows: Some(40),
+                cwd: Some(root.to_string_lossy().into_owned()),
+                shell: Some("powershell".into()),
+                startup_command: None,
+                autostart_claude: Some(false),
+            })
+            .unwrap();
+
+        let output = Arc::new(Mutex::new(String::new()));
+        let output_for_channel = output.clone();
+        manager.attach_output(
+            "observer-pty",
+            Channel::new(move |body| {
+                if let InvokeResponseBody::Json(json) = body {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) {
+                        if let Some(data) = value.get("data").and_then(|data| data.as_str()) {
+                            output_for_channel.lock().push_str(data);
+                        }
+                    }
+                }
+                Ok(())
+            }),
+        );
+
+        let (shell_program, shell_args, shell_extra_env) = resolved_shell.lock().clone().unwrap();
+        let decoded_wrapper = decode_observer_powershell_command(&shell_args).unwrap();
+        assert!(decoded_wrapper.contains("function global:claude"));
+        assert!(decoded_wrapper.contains("function global:codex"));
+        assert!(shell_extra_env.is_empty());
+        let mut wrapper_hash = sha1_smol::Sha1::new();
+        wrapper_hash.update(decoded_wrapper.as_bytes());
+        let wrapper_hash = wrapper_hash.digest().to_string();
+
+        let shell_marker_command = "[IO.File]::WriteAllText($env:AO_FAKE_SHELL_PID, \"$PID\")\r";
+        manager.write_input("observer-pty", shell_marker_command);
+        wait_for_timeout(
+            || shell_pid.is_file(),
+            Duration::from_secs(5),
+            "PowerShell PTY did not execute the minimal marker",
+        )
+        .await;
+
+        let resolution_command = concat!(
+            "$ao = Get-Command codex -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1; ",
+            "[IO.File]::WriteAllText($env:AO_FAKE_RESOLUTION, [string]$ao.Source); ",
+            "[IO.File]::WriteAllText($env:AO_FAKE_SHELL_ENV, ($env:PATH + \"`n\" + $env:AO_FAKE_FORWARDER + \"`n\" + $env:AGENT_OFFICE_HOOK_URL + \"`n\" + $env:AGENT_OFFICE_SESSION))\r",
+        );
+        manager.write_input("observer-pty", resolution_command);
+        wait_for_timeout(
+            || command_resolution.is_file() && shell_env.is_file(),
+            Duration::from_secs(5),
+            "PowerShell PTY did not record command resolution and environment",
+        )
+        .await;
+        let resolved_command = std::fs::read_to_string(&command_resolution).unwrap();
+        let expected_fake = fake_dir
+            .join("codex.ps1")
+            .to_string_lossy()
+            .to_ascii_lowercase();
+        assert_eq!(
+            resolved_command.trim().to_ascii_lowercase(),
+            expected_fake,
+            "refusing to invoke codex because PowerShell did not resolve the fake CLI: {resolved_command:?}"
+        );
+        let shell_env_contents = std::fs::read_to_string(&shell_env).unwrap();
+        let mut shell_env_lines = shell_env_contents.lines();
+        assert!(shell_env_lines
+            .next()
+            .unwrap()
+            .to_ascii_lowercase()
+            .contains(&fake_dir.to_string_lossy().to_ascii_lowercase()));
+        assert_eq!(
+            shell_env_lines.next(),
+            Some(forwarder.to_string_lossy().as_ref())
+        );
+        assert_eq!(shell_env_lines.next(), server_url.as_deref());
+        assert_eq!(shell_env_lines.next(), Some(created.session_id.as_str()));
+        eprintln!(
+            "observer-pty boundary session={} serverUrl={:?} shellPid={} shellProgram={:?} wrapperSha1={} commandResolution={:?}",
+            created.session_id,
+            server_url,
+            std::fs::read_to_string(&shell_pid).unwrap().trim(),
+            shell_program,
+            wrapper_hash,
+            resolved_command,
+        );
+
+        manager.write_input("observer-pty", "codex resume --last\r");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while {
+            let activities = events.activities();
+            let notifications = events.notifications();
+            activities.len() < 4
+                || !activities
+                    .iter()
+                    .any(|event| event.text.as_deref() == Some("codex-marker"))
+                || !notifications
+                    .iter()
+                    .any(|event| event.message == "codex-attention")
+                || !notifications
+                    .iter()
+                    .any(|event| event.message == "작업이 완료되었습니다.")
+        } {
+            if tokio::time::Instant::now() >= deadline {
+                let pid = std::fs::read_to_string(&shell_pid).unwrap();
+                let process_status = std::process::Command::new("tasklist.exe")
+                    .args(["/FI", &format!("PID eq {}", pid.trim())])
+                    .output()
+                    .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+                    .unwrap_or_else(|error| format!("tasklist failed: {error}"));
+                eprintln!(
+                    "observer-pty failure shellProcess={:?} rawPtyOutput={:?} artifacts={{codexArgs:{},codexPid:{},bypass:{},settingsFiles:{}}} activities={:?} notifications={:?}",
+                    process_status,
+                    output.lock().clone(),
+                    codex_args.is_file(),
+                    codex_pid.is_file(),
+                    bypass.is_file(),
+                    std::fs::read_dir(&settings_dir)
+                        .map(|entries| entries.count())
+                        .unwrap_or(0),
+                    events.activities(),
+                    events.notifications(),
+                );
+                panic!("Codex fake did not cross wrapper/forwarder/server");
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            events.activities().len(),
+            4,
+            "Codex fake must emit the complete four-activity boundary before Claude starts",
+        );
+        let codex_argv = std::fs::read_to_string(&codex_args)
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(&codex_argv[codex_argv.len() - 2..], ["resume", "--last"]);
+        assert_eq!(
+            codex_argv.iter().filter(|arg| arg.as_str() == "-c").count(),
+            6
+        );
+        assert_eq!(
+            codex_argv
+                .iter()
+                .filter(
+                    |arg| arg.contains("powershell.exe -NoProfile -NonInteractive -EncodedCommand")
+                )
+                .count(),
+            6,
+        );
+        let rendered_codex_argv = codex_argv.join("\0");
+        for forbidden in [
+            "dangerously-bypass-hook-trust",
+            "approval_policy",
+            "--approval-policy",
+            "sandbox_mode",
+            "--sandbox",
+            "model=",
+            "--model",
+            "model_reasoning_effort",
+            "--ignore-user-config",
+            "--ignore-rules",
+        ] {
+            assert!(
+                !rendered_codex_argv.contains(forbidden),
+                "captured Codex argv contained forbidden override {forbidden}: {codex_argv:?}"
+            );
+        }
+
+        manager.write_input("observer-pty", "claude user-suffix\r");
+        wait_for_timeout(
+            || {
+                let activities = events.activities();
+                let notifications = events.notifications();
+                activities.len() >= 8
+                    && activities
+                        .iter()
+                        .any(|event| event.text.as_deref() == Some("claude-marker"))
+                    && notifications
+                        .iter()
+                        .any(|event| event.message == "claude-attention")
+                    && notifications
+                        .iter()
+                        .any(|event| event.message == "claude-stop")
+            },
+            Duration::from_secs(10),
+            "Claude fake did not cross wrapper/settings/curl/server",
+        )
+        .await;
+        let claude_argv = std::fs::read_to_string(&claude_args)
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(claude_argv.last().map(String::as_str), Some("user-suffix"));
+        let settings_index = claude_argv
+            .iter()
+            .position(|arg| arg == "--settings")
+            .unwrap();
+        assert!(Path::new(&claude_argv[settings_index + 1]).is_file());
+
+        let activities = events.activities();
+        let notifications = events.notifications();
+        assert_eq!(
+            activities.len(),
+            8,
+            "Codex and Claude fakes must emit eight activities total",
+        );
+        assert_eq!(
+            activities
+                .iter()
+                .filter(|event| event.kind == ActivityKind::SubStart)
+                .count(),
+            2,
+        );
+        assert_eq!(
+            activities
+                .iter()
+                .filter(|event| event.kind == ActivityKind::SubStop)
+                .count(),
+            2,
+        );
+        assert!(activities
+            .iter()
+            .all(|event| event.session_id == created.session_id));
+        assert!(notifications
+            .iter()
+            .all(|event| event.session_id == created.session_id));
+        assert!(activities
+            .iter()
+            .any(|event| event.text.as_deref() == Some("codex-marker")));
+        assert!(activities
+            .iter()
+            .any(|event| event.text.as_deref() == Some("claude-marker")));
+        assert!(notifications
+            .iter()
+            .any(|event| event.message == "codex-attention"));
+        assert!(notifications
+            .iter()
+            .any(|event| event.message == "claude-attention"));
+        assert!(notifications
+            .iter()
+            .any(|event| event.message == "작업이 완료되었습니다."));
+        assert!(notifications
+            .iter()
+            .any(|event| event.message == "claude-stop"));
+        assert!(!notifications
+            .iter()
+            .any(|event| event.message.contains("must-not-surface")));
+        assert!(codex_pid.is_file() && claude_pid.is_file());
+        let codex_host_pid = std::fs::read_to_string(&codex_pid).unwrap();
+        let claude_host_pid = std::fs::read_to_string(&claude_pid).unwrap();
+        let mut config_hash = sha1_smol::Sha1::new();
+        config_hash.update(codex_argv.join("\0").as_bytes());
+        let config_hash = config_hash.digest().to_string();
+        eprintln!(
+            "observer-pty session={} codexHostPid={} claudeHostPid={} configSha1={} codexArgv={:?} claudeArgv={:?}",
+            created.session_id,
+            codex_host_pid.trim(),
+            claude_host_pid.trim(),
+            config_hash,
+            codex_argv,
+            claude_argv,
+        );
+
+        let before = (activities.len(), notifications.len());
+        manager.write_input(
+            "observer-pty",
+            "$ao = Get-Command codex -CommandType Application,ExternalScript | Select-Object -First 1; & $ao.Source bypass-marker\r",
+        );
+        wait_for_timeout(
+            || bypass.is_file(),
+            Duration::from_secs(5),
+            "explicit external-command bypass did not execute",
+        )
+        .await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            (events.activities().len(), events.notifications().len()),
+            before
+        );
+
+        manager.dispose("observer-pty");
+        wait_for_timeout(
+            || matches!(events.states().last(), Some(SessionState::Disposed)),
+            Duration::from_secs(5),
+            "observed real PTY did not dispose",
+        )
+        .await;
+        server.shutdown();
+        drop(_env);
+        let _ = std::fs::remove_dir_all(root);
     }
 }

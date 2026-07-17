@@ -29,6 +29,7 @@ pub struct SessionOpts {
     pub cwd: Option<String>,
     pub shell: Option<String>,
     pub startup_command: Option<String>,
+    pub personality_prompt: Option<String>,
     pub agent_name: Option<String>,
     pub agent_role: Option<String>,
 }
@@ -49,6 +50,21 @@ pub async fn create_session(
     agent_id: String,
     opts: Option<SessionOpts>,
 ) -> Result<CreateSessionResult, String> {
+    create_session_inner(&app_state, agent_id, opts).await
+}
+
+async fn create_session_inner(
+    app_state: &AppState,
+    agent_id: String,
+    opts: Option<SessionOpts>,
+) -> Result<CreateSessionResult, String> {
+    let observer_enabled = app_state.settings.read().unwrap().observer_enabled;
+    if observer_enabled {
+        let _ = app_state
+            .observer_server
+            .ensure(app_state.observer.clone())
+            .await;
+    }
     let o = opts.unwrap_or_default();
     let profile = event_profile(&agent_id, &o);
     // catch_unwind: Tauri에서 커맨드가 패닉하면 invoke 프라미스가 영원히
@@ -66,29 +82,37 @@ pub async fn create_session(
                 cwd: o.cwd,
                 shell: o.shell,
                 startup_command: o.startup_command,
+                personality_prompt: o.personality_prompt,
                 autostart_claude: None, // 항상 기본 false (SessionManager::create의 unwrap_or(false))
             },
             profile,
         )
     }));
-    match result {
-        Ok(r) => r,
-        Err(panic) => {
-            let msg = panic
-                .downcast_ref::<&str>()
-                .map(|s| s.to_string())
-                .or_else(|| panic.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "unknown panic".into());
-            eprintln!("agent-office: create_session panicked: {msg}");
-            Err(format!("세션 생성 중 내부 오류(panic): {msg}"))
-        }
-    }
+    result.map_err(|panic| {
+        let msg = panic_message(&panic);
+        eprintln!("agent-office: create_session panicked: {msg}");
+        format!("세션 생성 중 내부 오류(panic): {msg}")
+    })?
+}
+
+/// `catch_unwind`가 잡은 패닉 페이로드에서 사람이 읽을 메시지를 뽑는다.
+/// `create_session`/`handoff_sessions`/`adopt_detached_sessions`가 공유 —
+/// Tauri 커맨드가 패닉하면 invoke 프라미스가 영원히 settle되지 않으므로
+/// (2026-07-11 실사고), 어떤 커맨드든 내부 패닉을 반드시 Err로 바꿔
+/// 돌려줘야 한다.
+fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
+    panic
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| panic.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".into())
 }
 
 /// 렌더러 셸 선택 드롭다운용: 호스트에 설치된 Windows 셸 목록(다른
 /// 플랫폼은 빈 배열).
 #[tauri::command(rename_all = "camelCase")]
-pub async fn list_available_shells() -> Result<Vec<crate::session::shells::AvailableShell>, String> {
+pub async fn list_available_shells() -> Result<Vec<crate::session::shells::AvailableShell>, String>
+{
     Ok(crate::session::shells::detect_shells())
 }
 
@@ -99,6 +123,63 @@ pub async fn dispose_session(
 ) -> Result<(), String> {
     app_state.manager.dispose(&agent_id);
     Ok(())
+}
+
+/// 세션 핸드오프 기능 지원 여부(docs/session-handoff-design.md). unix
+/// 전용 -- Windows는 항상 false(모달은 기존 2버튼 유지).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn handoff_supported() -> Result<bool, String> {
+    Ok(cfg!(unix))
+}
+
+/// 앱 종료 확인 모달에서 "터미널 유지하고 종료" 선택 시 호출. Running
+/// 세션들을 sessiond로 넘기고 넘긴 개수를 반환한다 -- 프론트는 이 수와
+/// 무관하게 창을 닫고 종료를 진행한다(§핵심 3). 비unix에서는
+/// `SessionManager::handoff_all`이 항상 0을 반환하는 no-op이다.
+///
+/// `snapshots`(agentId -> 직렬화된 xterm 화면)는 실증에서 발견된 빈틈 수정:
+/// 데몬은 핸드오프 *이후* 출력만 링버퍼에 담으므로, 종료 직전 화면(예: ls
+/// 결과)은 프론트가 xterm SerializeAddon으로 직렬화해 실어 보내지 않으면
+/// 재입양 후 사라진다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn handoff_sessions(
+    app_state: State<'_, AppState>,
+    snapshots: std::collections::HashMap<String, String>,
+) -> Result<usize, String> {
+    let manager = app_state.manager.clone();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        manager.handoff_all(&snapshots)
+    }));
+    result.map_err(|panic| {
+        let msg = panic_message(&panic);
+        eprintln!("agent-office: handoff_sessions panicked: {msg}");
+        format!("세션 핸드오프 중 내부 오류(panic): {msg}")
+    })
+}
+
+/// 부트스트랩 시 1회 호출: sessiond에 남아 있는 세션들을 되찾는다(§핵심 4).
+/// 영속 프로필에 없는 agentId는 데몬에 Kill 지시되고 반환되지 않는다.
+/// 비unix에서는 `SessionManager::adopt_detached`가 항상 빈 벡터를 반환한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn adopt_detached_sessions(
+    app_state: State<'_, AppState>,
+) -> Result<Vec<AdoptedSessionInfo>, String> {
+    let manager = app_state.manager.clone();
+    let known_agent_ids: std::collections::HashSet<String> = app_state
+        .store
+        .load()
+        .agents
+        .into_iter()
+        .map(|a| a.id)
+        .collect();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        manager.adopt_detached(&known_agent_ids)
+    }));
+    result.map_err(|panic| {
+        let msg = panic_message(&panic);
+        eprintln!("agent-office: adopt_detached_sessions panicked: {msg}");
+        format!("세션 입양 중 내부 오류(panic): {msg}")
+    })
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -267,29 +348,28 @@ pub async fn load_sprite(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn delete_sprite(
-    app_state: State<'_, AppState>,
-    agent_id: String,
-) -> Result<(), String> {
+pub async fn delete_sprite(app_state: State<'_, AppState>, agent_id: String) -> Result<(), String> {
     app_state
         .sprite_store
         .delete(&agent_id)
         .map_err(|e| e.to_string())
 }
 
-/// 머리 위 라벨 요약: `claude -p`(haiku) 헤드리스 호출. 유저 크레딧을
-/// 소모하므로 opt-in — 설정 OFF면 "claude-cli-disabled"로 거절하고
-/// 렌더러 summarizer가 원문 폴백으로 처리한다.
+/// 머리 위 라벨 요약: 요청 시작 시 렌더러가 캡처한 provider의 로컬 CLI를
+/// 호출한다. 유저 크레딧을 소모하므로 opt-in — 설정 OFF면
+/// "summarizer-disabled"로 거절하고 렌더러가 원문 폴백으로 처리한다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn summarize_text(
     app_state: State<'_, AppState>,
+    provider: crate::persistence::settings_store::SummaryProvider,
     instruction: String,
     text: String,
 ) -> Result<String, String> {
-    if !app_state.settings.read().unwrap().claude_cli_enabled {
-        return Err("claude-cli-disabled".to_string());
+    let enabled = app_state.settings.read().unwrap().summarizer_enabled;
+    if !enabled {
+        return Err("summarizer-disabled".to_string());
     }
-    crate::claude_cli::summarize(&instruction, &text).await
+    crate::summarizer::summarize(provider, &instruction, &text).await
 }
 
 /// PixelLab로 64×64 스프라이트 1장 생성. AppState 비의존
@@ -332,10 +412,10 @@ pub async fn get_app_settings(
     })
 }
 
-/// 저장 + 캐시 갱신. 훅 OFF→ON이면 훅 서버를 지연 기동한다(이미 떠 있으면
+/// 저장 + 캐시 갱신. Observer OFF→ON이면 서버를 지연 기동한다(이미 떠 있으면
 /// 재사용). ON→OFF는 서버 프로세스 자체를 내리지 않는다 — 이미 떠 있는
 /// 세션들의 훅 POST는 계속 수신된다. 다만 캐시가 OFF로 갱신된 뒤로는
-/// lib.rs의 훅 포트 getter가 (서버가 살아있어도) None을 돌려주므로, 이
+/// lib.rs의 observer URL getter가 (서버가 살아있어도) None을 돌려주므로, 이
 /// 시점 이후 새로 만드는 세션에는 훅 배선(--settings·env·ZDOTDIR)이 전혀
 /// 주입되지 않는다 -- "변경은 새 세션부터 적용" 정책의 실제 동작.
 #[tauri::command(rename_all = "camelCase")]
@@ -343,51 +423,101 @@ pub async fn set_app_settings(
     app_state: State<'_, AppState>,
     settings: AppSettings,
 ) -> Result<(), String> {
+    set_app_settings_inner(&app_state, settings).await
+}
+
+async fn set_app_settings_inner(app_state: &AppState, settings: AppSettings) -> Result<(), String> {
     // write 가드를 먼저 잡고 쥔 채 저장(동기, await 없음) 후 캐시를 갱신한다 --
     // 그래야 두 set_app_settings 호출이 겹쳐도 "디스크에 쓴 값"과 "캐시에 남는
     // 값"이 서로 다른 호출 것이 되는 경합이 없다. 가드는 .await 지점 전에
     // 스코프를 벗어나 해제되므로(파일 머리말의 no-lock-across-await 계약 유지),
-    // 아래 훅 서버 지연 기동 await는 락 없이 진행된다.
+    // 아래 observer 서버 지연 기동 await는 락 없이 진행된다.
     {
         let mut guard = app_state.settings.write().unwrap();
-        app_state.settings_store.save(&settings).map_err(|e| e.to_string())?;
+        app_state
+            .settings_store
+            .save(&settings)
+            .map_err(|e| e.to_string())?;
         *guard = settings;
     }
     app_state
         .settings_first_run
         .store(false, std::sync::atomic::Ordering::SeqCst);
 
-    let need_server = settings.claude_hooks_enabled
-        && app_state.hook_port.read().unwrap().is_none();
-    if need_server {
-        // 락은 .await 전에 전부 놓는다(파일 머리말의 no-lock-across-await 계약).
-        let hub = app_state.hub.clone();
-        let (port, tx, handle) = crate::notification::hook_server::serve_with_retry(|rx| {
-            crate::notification::hook_server::serve(hub.clone(), rx)
-        })
-        .await
-        .map_err(|e| e.to_string())?;
-        let mut guard = app_state.hook_port.write().unwrap();
-        if guard.is_none() {
-            *guard = Some(port);
-            drop(guard);
-            *app_state.hook_shutdown.lock().unwrap() = Some(tx);
-            *app_state.server_handle.lock().unwrap() = Some(handle);
-        } else {
-            // 동시 호출 경합으로 다른 쪽이 먼저 기동함 — 새로 띄운 서버는 종료.
-            drop(guard);
-            let _ = tx.send(());
-        }
+    if settings.observer_enabled {
+        let _ = app_state
+            .observer_server
+            .ensure(app_state.observer.clone())
+            .await;
     }
     Ok(())
 }
 
 /// 에이전트 작업 폴더를 Visual Studio Code로 연다. `path`는 렌더러가
 /// 프로필의 `cwd`를 그대로 전달한다(미설정 시 메뉴가 비활성화되므로 폴백
-/// 없음). 구현/OS별 실행 전략은 `crate::vscode` 참조.
+/// 없음). 시작 폴더 UI가 `~/dev/foo`류 입력을 허용하므로 세션 생성과
+/// 동일한 틸드 확장을 거친다. 구현/OS별 실행 전략은 `crate::vscode` 참조.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn open_in_vscode(path: String) -> Result<(), String> {
-    crate::vscode::open_dir_in_vscode(&path)
+    crate::vscode::open_dir_in_vscode(&crate::session::manager::expand_tilde(path))
+}
+
+/// 에이전트 작업 폴더를 외부 터미널 앱으로 연다. 전달/확장 규칙은
+/// `open_in_vscode`와 동일. 어떤 앱을 쓸지는 앱 설정 `externalTerminal`
+/// (macOS 전용 — Terminal.app/iTerm)을 따른다. 구현/OS별 실행 전략은
+/// `crate::terminal` 참조.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_in_terminal(
+    app_state: State<'_, AppState>,
+    path: String,
+) -> Result<(), String> {
+    let prefer_iterm = matches!(
+        app_state.settings.read().unwrap().external_terminal,
+        crate::persistence::settings_store::ExternalTerminal::Iterm
+    );
+    crate::terminal::open_dir_in_terminal(
+        &crate::session::manager::expand_tilde(path),
+        prefer_iterm,
+    )
+}
+
+/// 네이티브 폴더 선택 다이얼로그를 띄운다. 사용자가 고른 절대 경로,
+/// 취소 시 None. `initial_dir`이 (틸드 확장 후) 실존 디렉터리면 거기서
+/// 시작한다 — 아니면 OS 기본 위치. 다이얼로그 표시의 메인 스레드 디스패치는
+/// tauri-plugin-dialog가 처리하므로 async 커맨드 스레드에서 안전하다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn pick_directory(
+    app: tauri::AppHandle,
+    initial_dir: Option<String>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let mut builder = app.dialog().file();
+    if let Some(dir) = initial_dir {
+        let expanded = crate::session::manager::expand_tilde(dir);
+        if std::path::Path::new(&expanded).is_dir() {
+            builder = builder.set_directory(expanded);
+        }
+    }
+
+    // 콜백 → oneshot 브리지: blocking_pick_folder는 async 런타임 스레드를
+    // 다이얼로그가 닫힐 때까지 점유하므로 쓰지 않는다.
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    builder.pick_folder(move |folder| {
+        let _ = tx.send(folder);
+    });
+    let picked = rx
+        .await
+        .map_err(|_| "폴더 선택 다이얼로그가 응답 없이 종료되었습니다".to_string())?;
+    match picked {
+        None => Ok(None),
+        Some(fp) => Ok(Some(
+            fp.into_path()
+                .map_err(|e| e.to_string())?
+                .to_string_lossy()
+                .into_owned(),
+        )),
+    }
 }
 
 /// 완료된 턴 1건을 로컬 시계열 로그(session-times.jsonl)에 append.
@@ -396,7 +526,10 @@ pub async fn append_session_turn(
     app_state: State<'_, AppState>,
     record: crate::types::SessionTurnRecord,
 ) -> Result<(), String> {
-    app_state.session_time_store.append(&record).map_err(|e| e.to_string())
+    app_state
+        .session_time_store
+        .append(&record)
+        .map_err(|e| e.to_string())
 }
 
 /// 누적된 세션 턴 기록 전체를 읽는다(통계용).
@@ -414,7 +547,7 @@ mod tests {
     // standalone (it borrows from a live `tauri::App`/`AppHandle`), so
     // instead of driving the `#[tauri::command]`-wrapped async fns directly,
     // these tests build a real `AppState` (fakes for PtyFactory/AppEvents,
-    // tempdir-backed ProfileStore/HookSettingsWriter -- the same seams
+    // tempdir-backed ProfileStore/ObserverRuntime -- the same seams
     // other test modules use) and call the exact `app_state.manager` /
     // `app_state.hub` / `app_state.store` method sequence each command body
     // above executes. Every command function is a one-line, non-`await`ing
@@ -425,9 +558,11 @@ mod tests {
     // to manual/E2E verification -- there is no seam for either without a
     // running Tauri app.
     use super::*;
-    use crate::notification::hook_settings::HookSettingsWriter;
     use crate::notification::hub::{NotificationHub, SystemClock};
+    use crate::observer::server::ObserverServerState;
+    use crate::observer::ObserverRuntime;
     use crate::persistence::profile_store::ProfileStore;
+    use crate::persistence::settings_store::SummaryProvider;
     use crate::session::manager::SessionManager;
     use crate::session::pty_factory::fake::FakePtyFactory;
     use crate::state::fake::RecordingEvents;
@@ -442,42 +577,53 @@ mod tests {
     // 패턴으로, 본문의 게이트 로직을 real AppState를 통해 그대로 재현해
     // 검증한다.
 
+    #[test]
+    fn summarize_text_command_accepts_provider_snapshot() {
+        fn assert_signature<F, Fut>(_command: F)
+        where
+            F: Fn(State<'static, AppState>, SummaryProvider, String, String) -> Fut,
+        {
+        }
+
+        assert_signature(summarize_text);
+    }
+
     #[tokio::test]
-    async fn summarize_text_gate_rejects_when_cli_disabled() {
+    async fn summarize_text_gate_rejects_when_disabled() {
         let (state, ctl, dir, profile_dir) = build("summarize-disabled");
-        // AppSettings::default()의 claude_cli_enabled == false 전제.
-        assert!(!state.settings.read().unwrap().claude_cli_enabled);
+        // AppSettings::default()의 summarizer_enabled == false 전제.
+        assert!(!state.settings.read().unwrap().summarizer_enabled);
 
         // summarize_text 본문과 동일한 게이트: OFF면 CLI 호출 전에 거절.
-        let result: Result<String, String> = if !state.settings.read().unwrap().claude_cli_enabled
-        {
-            Err("claude-cli-disabled".to_string())
+        let result: Result<String, String> = if !state.settings.read().unwrap().summarizer_enabled {
+            Err("summarizer-disabled".to_string())
         } else {
-            crate::claude_cli::summarize("요약하라", "text").await
+            crate::summarizer::summarize(SummaryProvider::Codex, "요약하라", "text").await
         };
 
-        assert_eq!(result.unwrap_err(), "claude-cli-disabled");
+        assert_eq!(result.unwrap_err(), "summarizer-disabled");
         cleanup(&ctl, &dir, &profile_dir);
     }
 
     #[tokio::test]
-    async fn summarize_text_proceeds_to_claude_cli_when_enabled() {
+    async fn summarize_text_proceeds_to_selected_summarizer_when_enabled() {
         let (state, ctl, dir, profile_dir) = build("summarize-enabled");
         *state.settings.write().unwrap() = crate::persistence::settings_store::AppSettings {
             version: 1,
-            claude_cli_enabled: true,
-            claude_hooks_enabled: false,
+            summarizer_enabled: true,
+            summary_provider: SummaryProvider::Codex,
+            observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
+            external_terminal: Default::default(),
         };
 
-        // ON이면 게이트를 통과해 claude_cli::summarize로 위임된다 -- 빈 텍스트라서
+        // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
         // 실 프로세스 spawn 없이 그쪽의 자체 검증 에러로 되돌아오는 것으로 확인.
-        let result: Result<String, String> = if !state.settings.read().unwrap().claude_cli_enabled
-        {
-            Err("claude-cli-disabled".to_string())
+        let result: Result<String, String> = if !state.settings.read().unwrap().summarizer_enabled {
+            Err("summarizer-disabled".to_string())
         } else {
-            crate::claude_cli::summarize("요약하라", "   ").await
+            crate::summarizer::summarize(SummaryProvider::Codex, "요약하라", "   ").await
         };
 
         assert_eq!(result.unwrap_err(), "validation: text is empty");
@@ -491,16 +637,20 @@ mod tests {
     async fn set_app_settings_clears_first_run_flag_after_success() {
         let (state, ctl, dir, profile_dir) = build("first-run-flag");
         assert!(
-            state.settings_first_run.load(std::sync::atomic::Ordering::SeqCst),
+            state
+                .settings_first_run
+                .load(std::sync::atomic::Ordering::SeqCst),
             "build() 헬퍼는 부팅 시 settings.json 부재 상태를 흉내내므로 초기값은 true"
         );
 
         let new_settings = crate::persistence::settings_store::AppSettings {
             version: 1,
-            claude_cli_enabled: true,
-            claude_hooks_enabled: false,
+            summarizer_enabled: true,
+            summary_provider: SummaryProvider::Claude,
+            observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
+            external_terminal: Default::default(),
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
         // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.
@@ -516,8 +666,72 @@ mod tests {
             .settings_first_run
             .store(false, std::sync::atomic::Ordering::SeqCst);
 
-        assert!(!state.settings_first_run.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!state
+            .settings_first_run
+            .load(std::sync::atomic::Ordering::SeqCst));
         assert_eq!(*state.settings.read().unwrap(), new_settings);
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    #[tokio::test]
+    async fn set_app_settings_keeps_enabled_setting_when_observer_server_is_unavailable() {
+        let (state, ctl, dir, profile_dir) = build("settings-observer-fail-open");
+        state.observer_server.shutdown();
+        let settings = crate::persistence::settings_store::AppSettings {
+            version: 1,
+            summarizer_enabled: false,
+            summary_provider: SummaryProvider::Claude,
+            observer_enabled: true,
+            sound_enabled: true,
+            sound_volume: 0.5,
+            external_terminal: Default::default(),
+        };
+
+        assert!(set_app_settings_inner(&state, settings).await.is_ok());
+        assert_eq!(*state.settings.read().unwrap(), settings);
+        assert_eq!(state.settings_store.load().0, settings);
+        assert!(!state
+            .settings_first_run
+            .load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(state.observer_server.current_url(), None);
+
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    #[tokio::test]
+    async fn create_session_ensures_observer_server_before_preparing_new_pty() {
+        let (state, ctl, dir, profile_dir) = build("create-observer-ensure");
+        state.settings.write().unwrap().observer_enabled = true;
+
+        let created = create_session_inner(&state, "a1".into(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(created.state, SessionState::Running);
+        assert!(state.observer_server.current_url().is_some());
+        assert!(ctl
+            .spawned_env()
+            .iter()
+            .any(|(key, _)| key == "AGENT_OFFICE_HOOK_URL"));
+        state.observer_server.shutdown();
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    #[tokio::test]
+    async fn create_session_still_spawns_when_observer_server_cannot_start() {
+        let (state, ctl, dir, profile_dir) = build("create-observer-fail-open");
+        state.settings.write().unwrap().observer_enabled = true;
+        state.observer_server.shutdown();
+
+        let created = create_session_inner(&state, "a1".into(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(created.state, SessionState::Running);
+        assert!(ctl
+            .spawned_env()
+            .iter()
+            .all(|(key, _)| key != "AGENT_OFFICE_HOOK_URL"));
         cleanup(&ctl, &dir, &profile_dir);
     }
 
@@ -543,16 +757,26 @@ mod tests {
             Arc::new(SystemClock),
             Duration::from_millis(3000),
         ));
-        let hook_dir = scratch_dir(&format!("{tag}-hooks"));
-        let writer = HookSettingsWriter::new(hook_dir.clone());
+        let observer_dir = scratch_dir(&format!("{tag}-observer"));
+        let observer = Arc::new(ObserverRuntime::production(
+            hub.clone(),
+            observer_dir.clone(),
+            std::env::current_exe().unwrap(),
+        ));
+        let observer_server = Arc::new(ObserverServerState::default());
+        let settings = Arc::new(std::sync::RwLock::new(
+            crate::persistence::settings_store::AppSettings::default(),
+        ));
+        let get_observer_url =
+            crate::make_observer_url_getter(settings.clone(), observer_server.clone());
         let (fac, ctl) = FakePtyFactory::new();
         let manager = Arc::new(SessionManager::new(
             Arc::new(fac),
-            writer,
+            observer.clone(),
             registry,
             events_dyn,
             hub.clone(),
-            Arc::new(|| Some(12345u16)),
+            get_observer_url,
         ));
         let profile_dir = scratch_dir(&format!("{tag}-profiles"));
         let store = ProfileStore::new(profile_dir.join("profiles.json"));
@@ -565,8 +789,9 @@ mod tests {
             crate::persistence::png_store::MAX_SPRITE_BYTES,
         );
 
-        let settings_store =
-            crate::persistence::settings_store::SettingsStore::new(profile_dir.join("settings.json"));
+        let settings_store = crate::persistence::settings_store::SettingsStore::new(
+            profile_dir.join("settings.json"),
+        );
         let session_time_store = crate::persistence::session_time_store::SessionTimeStore::new(
             profile_dir.join("session-times.jsonl"),
         );
@@ -574,20 +799,17 @@ mod tests {
         let state = AppState {
             manager,
             hub,
+            observer,
+            observer_server,
             store,
             portrait_store,
             sprite_store,
             session_time_store,
             settings_store,
-            settings: Arc::new(std::sync::RwLock::new(
-                crate::persistence::settings_store::AppSettings::default(),
-            )),
+            settings,
             settings_first_run: std::sync::atomic::AtomicBool::new(true),
-            hook_port: Arc::new(std::sync::RwLock::new(None)),
-            hook_shutdown: std::sync::Mutex::new(None),
-            server_handle: std::sync::Mutex::new(None),
         };
-        (state, ctl, hook_dir, profile_dir)
+        (state, ctl, observer_dir, profile_dir)
     }
 
     type FakePtyFactoryControl = crate::session::pty_factory::fake::FakeControl;
@@ -600,6 +822,7 @@ mod tests {
             cwd: None,
             shell: None,
             startup_command: None,
+            personality_prompt: None,
             autostart_claude: None,
         }
     }
@@ -620,6 +843,7 @@ mod tests {
             cwd: None,
             shell: None,
             startup_command: None,
+            personality_prompt: None,
             agent_name: Some("Compiler".into()),
             agent_role: Some("Platform".into()),
         };
@@ -652,6 +876,7 @@ mod tests {
                 cwd: None,
                 shell: None,
                 startup_command: None,
+                personality_prompt: None,
                 autostart_claude: None, // command body always passes None -> manager defaults to false
             })
             .unwrap();
@@ -674,6 +899,7 @@ mod tests {
             cwd: None,
             shell: Some("git-bash".into()),
             startup_command: None,
+            personality_prompt: None,
             agent_name: None,
             agent_role: None,
         };
@@ -685,6 +911,7 @@ mod tests {
             cwd: opts.cwd,
             shell: opts.shell.clone(),
             startup_command: opts.startup_command.clone(),
+            personality_prompt: opts.personality_prompt.clone(),
             autostart_claude: None,
         };
         assert_eq!(request.shell, Some("git-bash".to_string()));
@@ -700,6 +927,7 @@ mod tests {
             cwd: None,
             shell: None,
             startup_command: Some("source ./init.sh".into()),
+            personality_prompt: None,
             agent_name: None,
             agent_role: None,
         };
@@ -710,9 +938,13 @@ mod tests {
             cwd: opts.cwd,
             shell: opts.shell.clone(),
             startup_command: opts.startup_command.clone(),
+            personality_prompt: opts.personality_prompt.clone(),
             autostart_claude: None,
         };
-        assert_eq!(request.startup_command, Some("source ./init.sh".to_string()));
+        assert_eq!(
+            request.startup_command,
+            Some("source ./init.sh".to_string())
+        );
     }
 
     // ---- list_available_shells ----
@@ -858,8 +1090,9 @@ mod tests {
                 archetype: None,
                 shell: None,
                 startup_command: None,
+                personality_prompt: None,
                 clocked_out: None,
-            keyboard_sound: None,
+                keyboard_sound: None,
             }],
             version: 1,
         };
@@ -905,13 +1138,20 @@ mod tests {
                 archetype: None,
                 shell: None,
                 startup_command: None,
+                personality_prompt: None,
                 clocked_out: None,
-            keyboard_sound: None,
+                keyboard_sound: None,
             }],
             version: 1,
         };
         state.store.save(&persisted).unwrap();
-        let ids: Vec<String> = state.store.load().agents.iter().map(|a| a.id.clone()).collect();
+        let ids: Vec<String> = state
+            .store
+            .load()
+            .agents
+            .iter()
+            .map(|a| a.id.clone())
+            .collect();
         let encoded = tiny_png_b64();
 
         // save_portrait 본문과 동일한 delegation.
@@ -929,7 +1169,13 @@ mod tests {
     #[tokio::test]
     async fn save_portrait_maps_unknown_agent_to_err() {
         let (state, ctl, dir, profile_dir) = build("portrait-unknown");
-        let ids: Vec<String> = state.store.load().agents.iter().map(|a| a.id.clone()).collect();
+        let ids: Vec<String> = state
+            .store
+            .load()
+            .agents
+            .iter()
+            .map(|a| a.id.clone())
+            .collect();
         let result: Result<(), String> = state
             .portrait_store
             .save("ghost", &tiny_png_b64(), &ids)
@@ -959,13 +1205,20 @@ mod tests {
                 archetype: None,
                 shell: None,
                 startup_command: None,
+                personality_prompt: None,
                 clocked_out: None,
-            keyboard_sound: None,
+                keyboard_sound: None,
             }],
             version: 1,
         };
         state.store.save(&persisted).unwrap();
-        let ids: Vec<String> = state.store.load().agents.iter().map(|a| a.id.clone()).collect();
+        let ids: Vec<String> = state
+            .store
+            .load()
+            .agents
+            .iter()
+            .map(|a| a.id.clone())
+            .collect();
         let encoded = tiny_png_b64();
 
         // save_sprite / load_sprite / delete_sprite 본문과 동일한 delegation.
@@ -1002,7 +1255,11 @@ mod tests {
         };
 
         // append_session_turn / load_session_turns 본문과 동일한 delegation.
-        state.session_time_store.append(&record).map_err(|e: std::io::Error| e.to_string()).unwrap();
+        state
+            .session_time_store
+            .append(&record)
+            .map_err(|e: std::io::Error| e.to_string())
+            .unwrap();
         let loaded = state.session_time_store.load();
 
         assert_eq!(loaded, vec![record]);

@@ -31,8 +31,15 @@ export const Commands = {
   setAppSettings: "set_app_settings",
   listAvailableShells: "list_available_shells",
   openInVscode: "open_in_vscode",
+  openInTerminal: "open_in_terminal",
+  pickDirectory: "pick_directory",
   appendSessionTurn: "append_session_turn",
   loadSessionTurns: "load_session_turns",
+  // 세션 핸드오프(docs/session-handoff-design.md) — unix 전용, 종료 시 PTY를
+  // sessiond 데몬으로 넘기고 재시작 시 되찾는다.
+  handoffSupported: "handoff_supported",
+  handoffSessions: "handoff_sessions",
+  adoptDetachedSessions: "adopt_detached_sessions",
 } as const;
 
 /**

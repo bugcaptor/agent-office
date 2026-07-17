@@ -31,6 +31,7 @@ import type { LabelAnchor, OfficeBus } from "../office/bus";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "./tauriApi";
 import { sessionOptsFor } from "./sessionOpts";
+import { SubagentCountTracker } from "./subagentCounts";
 
 type NotifCb = (agentId: string, hasPending: boolean) => void;
 type StateCb = (agentId: string, state: SessionState) => void;
@@ -43,6 +44,7 @@ const stateCbs = new Set<StateCb>();
 const hoverCbs = new Set<HoverCb>();
 const labelAnchorCbs = new Set<LabelAnchorCb>();
 const deskClickCbs = new Set<DeskClickCb>();
+const subagentCounts = new SubagentCountTracker();
 
 // Agents with an in-flight createSession, so a double-click (two
 // emitAgentClicked in a row) can only ever produce ONE createSession call.
@@ -155,6 +157,9 @@ export const officeBus: OfficeBus = {
     deskClickCbs.add(cb);
     return () => deskClickCbs.delete(cb);
   },
+  onSubagentCountChanged(cb) {
+    return subagentCounts.subscribe(cb);
+  },
   emitAgentClicked(agentId) {
     // 클릭 시 호버 카드 즉시 숨김.
     hoverCbs.forEach((cb) => cb(null, 0, 0));
@@ -185,11 +190,13 @@ export function installSessionBridge(): () => void {
     // 시간 추적: 세션 종료(exited/disposed) 시 열린 턴 강제 정산(백엔드 e.at 사용).
     useAppStore.getState().applySessionTiming(e.agentId, e.state, e.at);
     stateCbs.forEach((cb) => cb(e.agentId, e.state));
+    if (e.state === "exited" || e.state === "disposed") subagentCounts.reset(e.agentId);
   });
 
   const offNotif = tauriApi.onNotification((e) => {
     useAppStore.getState().pushNotification(e);
     // 시간 추적은 pushNotification 억제와 무관하게 항상 공급(활성 터미널이어도 집계).
+    // Stop 카운트 reset 안전망은 백엔드 Stop→sub-count(0 fallback)로 이동했다.
     useAppStore.getState().applyNotificationTiming(e);
   });
 
@@ -198,6 +205,18 @@ export function installSessionBridge(): () => void {
   });
 
   const offActivity = tauriApi.onActivity((e) => {
+    if (e.kind === "sub-start") {
+      subagentCounts.bump(e.agentId, +1, e.at);
+      return;
+    }
+    if (e.kind === "sub-stop") {
+      subagentCounts.bump(e.agentId, -1, e.at);
+      return;
+    }
+    if (e.kind === "sub-count") {
+      subagentCounts.setAbsolute(e.agentId, e.count ?? 0, e.at);
+      return;
+    }
     useAppStore.getState().applyActivityEvent(e);
   });
 

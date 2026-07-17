@@ -225,6 +225,32 @@ describe("random initial values (profile-create)", () => {
     });
   });
 
+  it("preserves internal newlines in the trimmed 성격 프롬프트", async () => {
+    const { getByLabelText, getByText } = render(<ProfileDialog />);
+    fireEvent.change(getByLabelText("이름"), { target: { value: "새 에이전트" } });
+    fireEvent.change(getByLabelText("성격 프롬프트"), {
+      target: { value: "  차분하게 답한다.\n근거를 먼저 제시한다.  " },
+    });
+
+    await act(async () => {
+      fireEvent.click(getByText("저장"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(useAppStore.getState().modal.kind).toBe("none"));
+
+    const state = useAppStore.getState();
+    const id = state.agentOrder[0];
+    const prompt = "차분하게 답한다.\n근거를 먼저 제시한다.";
+    expect(state.agents[id].personalityPrompt).toBe(prompt);
+    expect(createSession).toHaveBeenCalledWith(id, {
+      agentName: "새 에이전트",
+      agentRole: state.agents[id].role,
+      personalityPrompt: prompt,
+    });
+  });
+
   it("omits cwd but keeps the profile snapshot when 시작 폴더 is blank (Task 3)", async () => {
     const { getByLabelText, getByText } = render(<ProfileDialog />);
     fireEvent.change(getByLabelText("이름"), { target: { value: "새 에이전트" } });

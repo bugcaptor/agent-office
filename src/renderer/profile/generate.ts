@@ -21,6 +21,8 @@ export interface DraftProfile {
   shell?: string;
   /** 시작 명령어(선택). 빈 문자열/공백 = 미지정 → 세션에서 주입 안 함. */
   startupCommand?: string;
+  /** Claude Code에 추가할 캐릭터 성격 프롬프트. 빈 문자열/공백 = 미지정. */
+  personalityPrompt?: string;
   /** 외모 힌트(선택). 빈 문자열/공백 = 미지정. */
   appearance?: string;
   /** 픽셀아트 의뢰 문구(선택). 빈 문자열/공백 = 미지정. */
@@ -41,6 +43,7 @@ export function generateDraft(): DraftProfile {
     cwd: "",
     shell: "",
     startupCommand: "",
+    personalityPrompt: "",
     appearance: "",
     spriteRequest: "",
     archetype: "auto",
@@ -52,6 +55,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
   const cwd = (d.cwd ?? "").trim();
   const shell = (d.shell ?? "").trim();
   const startupCommand = (d.startupCommand ?? "").trim();
+  const personalityPrompt = (d.personalityPrompt ?? "").trim();
   const appearance = (d.appearance ?? "").trim();
   const spriteRequest = (d.spriteRequest ?? "").trim();
   const keyboardSound = (d.keyboardSound ?? "").trim();
@@ -68,6 +72,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(cwd ? { cwd } : {}),
     ...(shell ? { shell } : {}),
     ...(startupCommand ? { startupCommand } : {}),
+    ...(personalityPrompt ? { personalityPrompt } : {}),
     ...(appearance ? { appearance } : {}),
     ...(spriteRequest ? { spriteRequest } : {}),
     ...(keyboardSound ? { keyboardSound } : {}),
