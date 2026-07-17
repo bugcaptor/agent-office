@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { Commands, Events } from "../ipc";
 import type {
   ActivityEvent,
+  AdoptedSessionInfo,
   AgentProfile,
   CreateSessionResult,
   GeneratedSpriteImage,
@@ -162,6 +163,14 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect("provider" in notification).toBe(false);
   });
 
+  it("AdoptedSessionInfo", () => {
+    const json = '{"agentId":"a1","sessionId":"s1","rows":24,"cols":80}';
+    const parsed: AdoptedSessionInfo = JSON.parse(json);
+    expect(parsed.agentId).toBe("a1");
+    expect(parsed.rows).toBe(24);
+    expect(parsed.cols).toBe(80);
+  });
+
   it("GeneratedSpriteImage", () => {
     const json = '{"pngBase64":"AAAA","costUsd":0.02}';
     const parsed: GeneratedSpriteImage = JSON.parse(json);
@@ -195,6 +204,9 @@ describe("Commands / Events name constants", () => {
     expect(Commands.subscribeOutput).toBe("subscribe_output");
     expect(Commands.unsubscribeOutput).toBe("unsubscribe_output");
     expect(Commands.summarizeText).toBe("summarize_text");
+    expect(Commands.handoffSupported).toBe("handoff_supported");
+    expect(Commands.handoffSessions).toBe("handoff_sessions");
+    expect(Commands.adoptDetachedSessions).toBe("adopt_detached_sessions");
 
     expect(Events.sessionState).toBe("session-state");
     expect(Events.notificationNew).toBe("notification-new");

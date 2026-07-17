@@ -21,6 +21,51 @@ pub struct SpawnedPty {
     pub writer: Box<dyn Write + Send>,
     pub control: Arc<dyn PtyControl>, // resize + kill (여러 스레드 공유)
     pub waiter: Box<dyn PtyWaiter>,   // 블로킹 wait, 소유 이전
+    /// 세션 핸드오프(§핵심 1) — 리더 스레드를 확정적으로 멈추는 스위치.
+    /// unix에서만 Some. Fake/Windows는 None(핸드오프 자체가 unix 전용 기능).
+    #[cfg(unix)]
+    pub reader_interrupt: Option<crate::session::poll_reader::ReaderInterrupt>,
+    #[cfg(not(unix))]
+    pub reader_interrupt: Option<()>,
+    /// 세션 핸드오프(§핵심 2) — sessiond에 넘길 마스터 fd(dup 소유)/pid/pgid.
+    /// unix에서만 Some.
+    #[cfg(unix)]
+    pub handoff: Option<HandoffInfo>,
+    #[cfg(not(unix))]
+    pub handoff: Option<()>,
+}
+
+/// 핸드오프 시 sessiond에 전달할 마스터 fd(및 프로세스 식별자). `master_fd`는
+/// spawn 시점에 dup한 이 구조체만의 소유 fd — `RealControl`이 쥔 원본
+/// `MasterPty`의 수명과 분리해 두어야, 세션 맵에서 제거되며 `RealControl`이
+/// 드롭돼도(핸드오프 완료 후) 이 fd는 살아남는다. `take_master_fd()`로
+/// 소유권을 넘기지 않으면 Drop에서 닫힌다(핸드오프 안 하고 세션이 정상
+/// 종료되는 경우의 fd 누수 방지).
+#[cfg(unix)]
+pub struct HandoffInfo {
+    master_fd: std::os::unix::io::RawFd,
+    pub pid: Option<i32>,
+    pub pgid: Option<i32>,
+}
+
+#[cfg(unix)]
+impl HandoffInfo {
+    /// 소유권을 호출자에게 넘기고 Drop에서 닫지 않게 한다 — 이후 fd를 닫는
+    /// 책임은 전적으로 호출자(handoff_all의 sessiond 전송 경로)에게 있다.
+    pub fn take_master_fd(mut self) -> std::os::unix::io::RawFd {
+        let fd = self.master_fd;
+        self.master_fd = -1;
+        fd
+    }
+}
+
+#[cfg(unix)]
+impl Drop for HandoffInfo {
+    fn drop(&mut self) {
+        if self.master_fd >= 0 {
+            let _ = nix::unistd::close(self.master_fd);
+        }
+    }
 }
 
 pub trait PtyControl: Send + Sync {
@@ -114,7 +159,32 @@ impl PtyFactory for PortablePtyFactory {
         let child = pair.slave.spawn_command(cmd).map_err(to_io)?;
         drop(pair.slave); // slave는 spawn 후 즉시 닫는다(권장).
 
-        let reader = pair.master.try_clone_reader().map_err(to_io)?;
+        #[cfg(unix)]
+        let (reader, reader_interrupt, handoff): (
+            Box<dyn Read + Send>,
+            Option<crate::session::poll_reader::ReaderInterrupt>,
+            Option<HandoffInfo>,
+        ) = {
+            // try_clone_reader() 대신 as_raw_fd()를 poll 기반 리더로 직접 읽는다
+            // (§핵심 1) — 핸드오프 시 이 스레드를 확정적으로 멈춰야 커널 tty
+            // 버퍼에 남은 바이트를 데몬이 무손실로 이어받는다.
+            let raw_fd = pair
+                .master
+                .as_raw_fd()
+                .ok_or_else(|| io::Error::other("master pty has no raw fd"))?;
+            let (poll_reader, interrupt) = crate::session::poll_reader::spawn(raw_fd)?;
+            let dup_fd = nix::unistd::dup(raw_fd).map_err(to_io)?;
+            let handoff = HandoffInfo {
+                master_fd: dup_fd,
+                pid: child.process_id().map(|p| p as i32),
+                pgid: pair.master.process_group_leader(),
+            };
+            (Box::new(poll_reader), Some(interrupt), Some(handoff))
+        };
+        #[cfg(not(unix))]
+        let (reader, reader_interrupt, handoff): (Box<dyn Read + Send>, Option<()>, Option<()>) =
+            (pair.master.try_clone_reader().map_err(to_io)?, None, None);
+
         let writer = pair.master.take_writer().map_err(to_io)?;
         let killer = child.clone_killer(); // wait 스레드가 child를 소유해도 별도로 kill 가능
         let control = Arc::new(RealControl {
@@ -122,12 +192,160 @@ impl PtyFactory for PortablePtyFactory {
             killer: Mutex::new(killer),
         });
         let waiter = Box::new(RealWaiter { child });
-        Ok(SpawnedPty { reader, writer, control, waiter })
+        Ok(SpawnedPty {
+            reader,
+            writer,
+            control,
+            waiter,
+            reader_interrupt,
+            handoff,
+        })
     }
 }
 
 fn to_io(e: impl std::fmt::Display) -> io::Error {
     io::Error::other(e.to_string())
+}
+
+// ── 입양된(adopted) 세션 구성요소 (unix 전용, §핵심 4) ──────────────────
+//
+// sessiond가 되돌려준 fd로 `SpawnedPty`와 동형인 번들을 재조립한다. 자식을
+// 직접 spawn한 게 아니라 waitpid가 불가능하므로 `RealWaiter`(child.wait())
+// 대신 마스터 fd의 EOF를 종료 신호로 쓰는 `EofWaiter`를 쓴다.
+
+#[cfg(unix)]
+pub struct AdoptedControl {
+    master_fd: std::sync::atomic::AtomicI32, // -1 == 이미 닫힘
+    pgid: Option<libc::pid_t>,
+    pid: Option<libc::pid_t>,
+}
+
+#[cfg(unix)]
+impl PtyControl for AdoptedControl {
+    fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {
+        let fd = self.master_fd.load(std::sync::atomic::Ordering::SeqCst);
+        if fd < 0 {
+            return Ok(());
+        }
+        let ws = libc::winsize { ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0 };
+        // portable-pty의 unix.rs PtyFd::resize와 동일한 저수준 호출 -- 우리는
+        // MasterPty 트레잇 객체가 아니라 fd 정수 하나만 쥐고 있어 그쪽 구현을
+        // 재사용할 수 없다.
+        let rc = unsafe { libc::ioctl(fd, libc::TIOCSWINSZ as _, &ws as *const _) };
+        if rc != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
+    fn kill(&self) -> io::Result<()> {
+        use nix::sys::signal::{kill, killpg, Signal};
+        use nix::unistd::Pid;
+        // pgid 없으면 pid로 폴백(설계 문서 §핵심 4).
+        if let Some(pgid) = self.pgid {
+            let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
+        } else if let Some(pid) = self.pid {
+            let _ = kill(Pid::from_raw(pid), Signal::SIGKILL);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+impl Drop for AdoptedControl {
+    fn drop(&mut self) {
+        let fd = self.master_fd.swap(-1, std::sync::atomic::Ordering::SeqCst);
+        if fd >= 0 {
+            let _ = nix::unistd::close(fd);
+        }
+    }
+}
+
+/// 마스터 fd의 EOF까지 블로킹하는 대기자. 자식을 spawn하지 않았으므로
+/// waitpid는 불가 -- `ExitOutcome`은 항상 `{ None, None }`(exit code/signal
+/// 모름), on_exit이 kill_requested로 intentional 여부를 가린다.
+#[cfg(unix)]
+pub struct EofWaiter {
+    rx: std::sync::mpsc::Receiver<()>,
+}
+
+#[cfg(unix)]
+impl PtyWaiter for EofWaiter {
+    fn wait(self: Box<Self>) -> ExitOutcome {
+        let _ = self.rx.recv();
+        ExitOutcome { exit_code: None, signal: None }
+    }
+}
+
+/// 재핸드오프(입양된 세션을 다시 핸드오프)를 위한 의도적 인터럽트와, 진짜
+/// 프로세스 종료(마스터 EOF)를 구분하는 게이트. `stopping`이 true인 채로
+/// Ok(0)을 보면 EofWaiter에 신호를 보내지 않는다 -- 그러지 않으면 재핸드오프
+/// 인터럽트가 매번 세션을 "Exited"로 오판시킨다.
+#[cfg(unix)]
+struct AdoptedReader {
+    inner: crate::session::poll_reader::PollReader,
+    stopping: Arc<std::sync::atomic::AtomicBool>,
+    exit_tx: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+}
+
+#[cfg(unix)]
+impl Read for AdoptedReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if n == 0 && !self.stopping.load(std::sync::atomic::Ordering::SeqCst) {
+            if let Some(tx) = self.exit_tx.lock().take() {
+                let _ = tx.send(());
+            }
+        }
+        Ok(n)
+    }
+}
+
+/// `master_fd`(데몬에게서 SCM_RIGHTS로 받은, 호출자 소유의 fd)로부터
+/// `SpawnedPty`와 동형인 번들을 만든다. 반환된 `Arc<AtomicBool>`은
+/// "재핸드오프 정지 게이트" -- 이 세션을 다시 핸드오프할 때 `reader_interrupt`를
+/// 발화하기 *직전*에 반드시 `true`로 세팅해야 EofWaiter가 오발화하지 않는다.
+#[cfg(unix)]
+pub fn assemble_adopted(
+    master_fd: std::os::unix::io::RawFd,
+    pid: Option<i32>,
+    pgid: Option<i32>,
+) -> io::Result<(SpawnedPty, Arc<std::sync::atomic::AtomicBool>)> {
+    use std::os::unix::io::FromRawFd;
+
+    let (poll_reader, interrupt) = crate::session::poll_reader::spawn(master_fd)?;
+    let stopping = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (exit_tx, exit_rx) = std::sync::mpsc::channel();
+    let reader: Box<dyn Read + Send> = Box::new(AdoptedReader {
+        inner: poll_reader,
+        stopping: stopping.clone(),
+        exit_tx: Mutex::new(Some(exit_tx)),
+    });
+
+    let writer_fd = nix::unistd::dup(master_fd).map_err(io::Error::from)?;
+    let writer: Box<dyn Write + Send> = Box::new(unsafe { std::fs::File::from_raw_fd(writer_fd) });
+
+    let control = Arc::new(AdoptedControl {
+        master_fd: std::sync::atomic::AtomicI32::new(master_fd),
+        pgid,
+        pid,
+    });
+    let waiter: Box<dyn PtyWaiter> = Box::new(EofWaiter { rx: exit_rx });
+
+    let handoff_fd = nix::unistd::dup(master_fd).map_err(io::Error::from)?;
+    let handoff = Some(HandoffInfo { master_fd: handoff_fd, pid, pgid });
+
+    Ok((
+        SpawnedPty {
+            reader,
+            writer,
+            control,
+            waiter,
+            reader_interrupt: Some(interrupt),
+            handoff,
+        },
+        stopping,
+    ))
 }
 
 // ── 테스트용 Fake ──────────────────────────────────────────────────────
@@ -345,7 +563,16 @@ pub mod fake {
         let reader = Box::new(PipeReader { rx: output_rx, buf: Vec::new(), pos: 0, eof: false });
         let writer = Box::new(RecordingWriter { buf: control.writes.clone() });
         let waiter = Box::new(FakeWaiter { rx: exit_rx });
-        SpawnedPty { reader, writer, control, waiter }
+        // 핸드오프는 unix 전용 실제 PTY 기능 -- 페이크는 항상 None(설계 문서
+        // "Fake/Windows는 None").
+        SpawnedPty {
+            reader,
+            writer,
+            control,
+            waiter,
+            reader_interrupt: None,
+            handoff: None,
+        }
     }
 
     /// In-memory `PtyFactory` for unit tests. See module docs above.
@@ -641,5 +868,128 @@ mod tests {
             "live parent PATH marker was lost before the PTY child: {output:?}"
         );
         std::fs::remove_file(output_path).unwrap();
+    }
+
+    /// 설계 문서 §테스트: "poll reader: 실제 openpty + /bin/cat으로 인터럽트 시
+    /// 무손실 검증" — cat 대신 `yes | head -c`로 두 개의 독립된 청크(사이에
+    /// idle 구간)를 생성해, 첫 청크 도착 후 앱 쪽 poll 리더를 인터럽트하고
+    /// 나머지를 핸드오프 fd로 직접(데몬처럼) 이어 읽는다. 두 구간을 이어붙인
+    /// 결과가 기대 바이트열과 정확히 같아야 한다 — 유실도 중복도 없어야
+    /// "이중 리더 금지"(§핵심 1) 계약이 성립한다.
+    #[cfg(unix)]
+    #[test]
+    fn handoff_interrupt_then_raw_fd_continuation_loses_no_bytes() {
+        use super::PortablePtyFactory;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        const CHUNK: usize = 100_000;
+        let script = format!(
+            "yes AGENTOFFICEHANDOFFTEST | head -c {CHUNK}; sleep 0.3; yes AGENTOFFICEHANDOFFTEST | head -c {CHUNK}"
+        );
+        let mut spawned = PortablePtyFactory
+            .spawn(PtySpawnOptions {
+                shell: "/bin/sh".into(),
+                args: vec!["-c".into(), script],
+                cols: 80,
+                rows: 24,
+                cwd: ".".into(),
+                env: vec![],
+            })
+            .unwrap();
+
+        let interrupt = spawned
+            .reader_interrupt
+            .take()
+            .expect("unix spawn must produce a reader_interrupt");
+        let handoff = spawned
+            .handoff
+            .take()
+            .expect("unix spawn must produce handoff info");
+
+        // 자식을 백그라운드에서 reap -- 테스트가 좀비를 남기지 않게.
+        let waiter = spawned.waiter;
+        std::thread::spawn(move || {
+            waiter.wait();
+        });
+
+        let read_total = Arc::new(AtomicUsize::new(0));
+        let read_total_for_thread = read_total.clone();
+        let mut reader = spawned.reader;
+        let reader_handle = std::thread::spawn(move || {
+            let mut acc = Vec::new();
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        acc.extend_from_slice(&buf[..n]);
+                        read_total_for_thread.store(acc.len(), Ordering::SeqCst);
+                    }
+                    Err(_) => break,
+                }
+            }
+            acc
+        });
+
+        // 첫 청크가 완전히 도착할 때까지 대기 -- 스크립트의 `sleep 0.3`이
+        // 만드는 idle 구간에서 인터럽트해야 새 바이트 도착과 경합하지 않는다.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while read_total.load(Ordering::SeqCst) < CHUNK {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "first chunk never fully arrived"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        interrupt.interrupt();
+        let app_side = reader_handle.join().unwrap();
+
+        // 핸드오프 fd를 데몬처럼 그대로 이어 읽는다.
+        let master_fd = handoff.take_master_fd();
+        let mut daemon_side = Vec::new();
+        let mut buf = [0u8; 4096];
+        loop {
+            match nix::unistd::read(master_fd, &mut buf) {
+                Ok(0) => break,
+                Ok(n) => daemon_side.extend_from_slice(&buf[..n]),
+                Err(nix::errno::Errno::EIO) => break, // macOS: 슬레이브 전부 닫힘 == EOF
+                Err(e) => panic!("daemon-side read failed: {e}"),
+            }
+        }
+        let _ = nix::unistd::close(master_fd);
+
+        let mut combined = app_side;
+        combined.extend_from_slice(&daemon_side);
+
+        // `head -c CHUNK`가 만드는 원본 바이트열(줄바꿈은 LF)에, pty 라인
+        // 디시플린의 기본 출력 후처리(OPOST/ONLCR: LF -> CRLF)를 그대로
+        // 시뮬레이션해야 마스터에서 실제로 읽히는 바이트열과 일치한다.
+        let raw_chunk = |n: usize| -> Vec<u8> {
+            let pattern = b"AGENTOFFICEHANDOFFTEST\n";
+            let mut out = Vec::with_capacity(n);
+            while out.len() < n {
+                out.extend_from_slice(pattern);
+            }
+            out.truncate(n);
+            out
+        };
+        let onlcr = |raw: &[u8]| -> Vec<u8> {
+            let mut out = Vec::with_capacity(raw.len());
+            for &b in raw {
+                if b == b'\n' {
+                    out.push(b'\r');
+                }
+                out.push(b);
+            }
+            out
+        };
+        let mut expected = onlcr(&raw_chunk(CHUNK));
+        expected.extend_from_slice(&onlcr(&raw_chunk(CHUNK)));
+
+        assert_eq!(
+            combined, expected,
+            "handoff must not lose or duplicate bytes across the interrupt boundary"
+        );
     }
 }

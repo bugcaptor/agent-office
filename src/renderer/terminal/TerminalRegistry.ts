@@ -17,20 +17,32 @@
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { tauriApi } from "../ipc/tauriApi";
 import { XTERM_THEME } from "./theme";
 
 interface Entry {
   term: Terminal;
   fit: FitAddon;
+  // 세션 핸드오프(docs/session-handoff-design.md 빈틈 수정): 종료 시점의
+  // 화면(스크롤백 포함)을 직렬화해 데몬에 실어 보내는 데 쓴다 — 데몬은
+  // 핸드오프 *이후* 출력만 보관하므로, 그 이전 화면은 이 스냅샷이 아니면
+  // 재입양 후 사라진다.
+  serialize: SerializeAddon;
   disposeData: () => void; // onData unsubscribe
   container: HTMLDivElement; // the actual DOM node TerminalMount attaches
   opened: boolean; // has term.open() been called?
   bindComposition: () => void;
 }
 
+/** TIOCSWINSZ가 같은 크기면 SIGWINCH를 안 쏘는 문제를 강제 재도색으로 우회하는 데 걸리는 대기(ms). */
+const REDRAW_NUDGE_DELAY_MS = 50;
+
 class TerminalRegistry {
   private entries = new Map<string, Entry>();
+  // 입양(adopt_detached_sessions)된 세션 — 다음 activate()에서 1회
+  // redraw nudge(§핵심 6)를 태우고 스스로 제거한다.
+  private pendingNudge = new Set<string>();
 
   /** First open for a session: creates the Terminal. Already-open agents get the existing entry back (keep-alive guarantee). */
   ensure(agentId: string): Entry {
@@ -48,6 +60,8 @@ class TerminalRegistry {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    const serialize = new SerializeAddon();
+    term.loadAddon(serialize);
 
     // User input -> PTY, with a Hangul/IME double-input guard.
     //
@@ -139,13 +153,32 @@ class TerminalRegistry {
     const container = document.createElement("div");
     container.className = "terminal-mount-inner";
 
-    e = { term, fit, disposeData, container, opened: false, bindComposition };
+    e = { term, fit, serialize, disposeData, container, opened: false, bindComposition };
     this.entries.set(agentId, e);
     return e;
   }
 
   get(agentId: string): Entry | undefined {
     return this.entries.get(agentId);
+  }
+
+  /**
+   * 세션 핸드오프: 종료 확인 모달에서 "터미널 유지하고 종료"를 고를 때
+   * 호출 — 살아있는 모든 터미널의 화면(스크롤백 포함)을 직렬화해 agentId
+   * 키로 반환한다. 데몬은 핸드오프 *이후* 출력만 링버퍼에 담으므로, 이
+   * 스냅샷이 없으면 종료 직전 화면(예: ls 결과)이 재입양 후 사라진다.
+   * 한 터미널의 직렬화 실패가 나머지를 막지 않도록 개별 try/catch로 스킵.
+   */
+  serializeAll(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [agentId, e] of this.entries) {
+      try {
+        out[agentId] = e.serialize.serialize();
+      } catch {
+        /* 이 터미널만 스킵 -- 나머지 스냅샷은 정상 전달 */
+      }
+    }
+    return out;
   }
 
   has(agentId: string): boolean {
@@ -172,10 +205,44 @@ class TerminalRegistry {
         e.fit.fit();
         onResize(e.term.cols, e.term.rows);
         e.term.focus();
+        if (this.pendingNudge.delete(agentId)) this.redrawNudge(agentId, e, onResize);
       } catch {
         /* container measured 0 (e.g. hidden again before the frame ran) */
       }
     });
+  }
+
+  /**
+   * 입양된(adopt_detached_sessions) 세션들을 표시 — 각각 다음 activate()에서
+   * 1회 redraw nudge가 발화한다. 부팅 시(bootstrap.ts) 1회 호출.
+   */
+  markAdopted(agentIds: Iterable<string>): void {
+    for (const id of agentIds) this.pendingNudge.add(id);
+  }
+
+  /**
+   * TIOCSWINSZ는 크기가 그대로면 SIGWINCH를 쏘지 않는다 — 데몬에서 되찾은
+   * PTY 안의 TUI(vim/htop/claude 등)가 재시작 전 마지막 화면을 그대로 들고
+   * 있어 재도색이 안 된다. fit()으로 확정한 실제 rows보다 1 작은 값으로
+   * resize를 한 번 보내 강제로 다르게 만든 뒤, 살짝 기다렸다 다시 fit() +
+   * onResize()로 원래 크기로 되돌린다 — SIGWINCH 2회로 TUI를 재도색시킨다.
+   * 일반 셸에는 무해(그냥 프롬프트가 두 번 다시 그려질 뿐).
+   */
+  private redrawNudge(
+    agentId: string,
+    e: Entry,
+    onResize: (cols: number, rows: number) => void
+  ): void {
+    if (e.term.rows <= 1) return; // too small to shrink by one row — skip
+    tauriApi.resize(agentId, e.term.cols, e.term.rows - 1);
+    setTimeout(() => {
+      try {
+        e.fit.fit();
+        onResize(e.term.cols, e.term.rows);
+      } catch {
+        /* container gone by the time the nudge fired — harmless */
+      }
+    }, REDRAW_NUDGE_DELAY_MS);
   }
 
   /** ResizeObserver callback for the currently-active terminal only. */
@@ -194,6 +261,7 @@ class TerminalRegistry {
     e.term.dispose();
     e.container.remove();
     this.entries.delete(agentId);
+    this.pendingNudge.delete(agentId);
   }
 }
 

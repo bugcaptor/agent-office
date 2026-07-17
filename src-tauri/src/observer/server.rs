@@ -133,9 +133,34 @@ where
 pub struct ObserverServerState {
     start_gate: tokio::sync::Mutex<()>,
     lifecycle: Mutex<ServerLifecycle>,
+    /// §핵심 5(docs/session-handoff-design.md): 세션 env의 AGENT_OFFICE_HOOK_URL은
+    /// 스폰 시점 포트를 담는데, 재시작 후 입양된 세션은 옛 포트를 가리킨다.
+    /// `<app_data_dir>/observer-port`에 현재 포트를 기록해 forwarder가 1회
+    /// 재시도할 근거를 남긴다. `Default`(테스트 다수가 이 경로로 만든다)로는
+    /// None -- 포트 파일을 쓰지 않는 무해한 동작.
+    app_data_dir: Mutex<Option<std::path::PathBuf>>,
 }
 
 impl ObserverServerState {
+    /// 앱 데이터 디렉터리를 지정한다. `lib.rs`의 프로덕션 부트스트랩만
+    /// 호출 -- 테스트는 기본 None으로 포트 파일 기록을 건드리지 않는다.
+    pub fn set_app_data_dir(&self, dir: std::path::PathBuf) {
+        *self.app_data_dir.lock().unwrap() = Some(dir);
+    }
+
+    fn write_port_file(&self, port: u16) {
+        let Some(dir) = self.app_data_dir.lock().unwrap().clone() else {
+            return;
+        };
+        if let Err(error) = std::fs::create_dir_all(&dir) {
+            eprintln!("observer-port: failed to create {}: {error}", dir.display());
+            return;
+        }
+        if let Err(error) = std::fs::write(dir.join("observer-port"), port.to_string()) {
+            eprintln!("observer-port: failed to write in {}: {error}", dir.display());
+        }
+    }
+
     async fn ensure_with<F, Fut>(&self, start: F) -> Option<u16>
     where
         F: FnOnce() -> Fut,
@@ -183,6 +208,9 @@ impl ObserverServerState {
         }
         if let Some(error) = start_error {
             eprintln!("observer server unavailable: {error}");
+        }
+        if let Some(port) = port {
+            self.write_port_file(port);
         }
         port
     }
@@ -612,5 +640,45 @@ mod tests {
         assert_eq!(result, None);
         assert_eq!(attempts.load(Ordering::SeqCst), 0);
         assert_eq!(current_url, None);
+    }
+
+    // ---- §핵심 5: observer-port 파일(docs/session-handoff-design.md) ----
+
+    #[tokio::test]
+    async fn ensure_writes_the_observer_port_file_when_app_data_dir_is_set() {
+        let dir = std::env::temp_dir().join(format!(
+            "agent-office-observer-port-test-{}",
+            uuid::Uuid::new_v4(),
+        ));
+        let state = ObserverServerState::default();
+        state.set_app_data_dir(dir.clone());
+
+        let port = state
+            .ensure_with(|| async { started_server(51001).await })
+            .await
+            .unwrap();
+        assert_eq!(port, 51001);
+
+        let written = std::fs::read_to_string(dir.join("observer-port")).unwrap();
+        assert_eq!(written.trim(), "51001");
+
+        state.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn ensure_without_app_data_dir_does_not_write_a_port_file_anywhere_reachable() {
+        // 기본값(Default) -- 대부분의 다른 테스트가 쓰는 경로. app_data_dir을
+        // 세팅하지 않으면 포트 파일을 쓰려는 시도 자체가 없어야 한다(쓸 곳이
+        // 없으므로 write_port_file은 조용히 no-op).
+        let state = ObserverServerState::default();
+        let port = state
+            .ensure_with(|| async { started_server(51002).await })
+            .await
+            .unwrap();
+        assert_eq!(port, 51002);
+        state.shutdown();
+        // 관찰 가능한 유일한 계약: app_data_dir이 None이면 어떤 파일도 만들지
+        // 않는다는 것뿐이라(경로 자체가 없음) 패닉 없이 끝나면 충분하다.
     }
 }

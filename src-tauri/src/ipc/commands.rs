@@ -88,18 +88,24 @@ async fn create_session_inner(
             profile,
         )
     }));
-    match result {
-        Ok(r) => r,
-        Err(panic) => {
-            let msg = panic
-                .downcast_ref::<&str>()
-                .map(|s| s.to_string())
-                .or_else(|| panic.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "unknown panic".into());
-            eprintln!("agent-office: create_session panicked: {msg}");
-            Err(format!("세션 생성 중 내부 오류(panic): {msg}"))
-        }
-    }
+    result.map_err(|panic| {
+        let msg = panic_message(&panic);
+        eprintln!("agent-office: create_session panicked: {msg}");
+        format!("세션 생성 중 내부 오류(panic): {msg}")
+    })?
+}
+
+/// `catch_unwind`가 잡은 패닉 페이로드에서 사람이 읽을 메시지를 뽑는다.
+/// `create_session`/`handoff_sessions`/`adopt_detached_sessions`가 공유 —
+/// Tauri 커맨드가 패닉하면 invoke 프라미스가 영원히 settle되지 않으므로
+/// (2026-07-11 실사고), 어떤 커맨드든 내부 패닉을 반드시 Err로 바꿔
+/// 돌려줘야 한다.
+fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
+    panic
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| panic.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".into())
 }
 
 /// 렌더러 셸 선택 드롭다운용: 호스트에 설치된 Windows 셸 목록(다른
@@ -117,6 +123,63 @@ pub async fn dispose_session(
 ) -> Result<(), String> {
     app_state.manager.dispose(&agent_id);
     Ok(())
+}
+
+/// 세션 핸드오프 기능 지원 여부(docs/session-handoff-design.md). unix
+/// 전용 -- Windows는 항상 false(모달은 기존 2버튼 유지).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn handoff_supported() -> Result<bool, String> {
+    Ok(cfg!(unix))
+}
+
+/// 앱 종료 확인 모달에서 "터미널 유지하고 종료" 선택 시 호출. Running
+/// 세션들을 sessiond로 넘기고 넘긴 개수를 반환한다 -- 프론트는 이 수와
+/// 무관하게 창을 닫고 종료를 진행한다(§핵심 3). 비unix에서는
+/// `SessionManager::handoff_all`이 항상 0을 반환하는 no-op이다.
+///
+/// `snapshots`(agentId -> 직렬화된 xterm 화면)는 실증에서 발견된 빈틈 수정:
+/// 데몬은 핸드오프 *이후* 출력만 링버퍼에 담으므로, 종료 직전 화면(예: ls
+/// 결과)은 프론트가 xterm SerializeAddon으로 직렬화해 실어 보내지 않으면
+/// 재입양 후 사라진다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn handoff_sessions(
+    app_state: State<'_, AppState>,
+    snapshots: std::collections::HashMap<String, String>,
+) -> Result<usize, String> {
+    let manager = app_state.manager.clone();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        manager.handoff_all(&snapshots)
+    }));
+    result.map_err(|panic| {
+        let msg = panic_message(&panic);
+        eprintln!("agent-office: handoff_sessions panicked: {msg}");
+        format!("세션 핸드오프 중 내부 오류(panic): {msg}")
+    })
+}
+
+/// 부트스트랩 시 1회 호출: sessiond에 남아 있는 세션들을 되찾는다(§핵심 4).
+/// 영속 프로필에 없는 agentId는 데몬에 Kill 지시되고 반환되지 않는다.
+/// 비unix에서는 `SessionManager::adopt_detached`가 항상 빈 벡터를 반환한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn adopt_detached_sessions(
+    app_state: State<'_, AppState>,
+) -> Result<Vec<AdoptedSessionInfo>, String> {
+    let manager = app_state.manager.clone();
+    let known_agent_ids: std::collections::HashSet<String> = app_state
+        .store
+        .load()
+        .agents
+        .into_iter()
+        .map(|a| a.id)
+        .collect();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        manager.adopt_detached(&known_agent_ids)
+    }));
+    result.map_err(|panic| {
+        let msg = panic_message(&panic);
+        eprintln!("agent-office: adopt_detached_sessions panicked: {msg}");
+        format!("세션 입양 중 내부 오류(panic): {msg}")
+    })
 }
 
 #[tauri::command(rename_all = "camelCase")]

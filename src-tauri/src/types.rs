@@ -162,6 +162,19 @@ pub struct CreateSessionResult {
     pub state: SessionState,
 }
 
+/// 세션 핸드오프(docs/session-handoff-design.md): 부트스트랩 시
+/// `adopt_detached_sessions` 커맨드가 되찾은 세션 하나. 프론트는 이 목록으로
+/// 상태를 Running 시드하고, 터미널을 재부착할 때 rows/cols로 redraw nudge를
+/// 수행한다(§프론트).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdoptedSessionInfo {
+    pub agent_id: AgentId,
+    pub session_id: SessionId,
+    pub rows: u16,
+    pub cols: u16,
+}
+
 /// PTY 출력 청크(배치). backend→webview, tauri::ipc::Channel로 전송.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

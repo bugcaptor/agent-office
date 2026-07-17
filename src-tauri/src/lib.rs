@@ -13,6 +13,8 @@ mod persistence;
 pub mod pixellab;
 mod session;
 mod session_events;
+#[cfg(unix)]
+mod sessiond;
 mod state;
 mod summarizer;
 mod terminal;
@@ -53,6 +55,41 @@ where
     } else {
         None
     }
+}
+
+/// `--sessiond <socket_path>` 분기(unix 전용, docs/session-handoff-design.md
+/// §아키텍처) -- 앱이 종료 시 세션을 넘길 데몬으로 자기 자신을 재실행할 때의
+/// 진입점. `maybe_run_observer_forwarder`와 같은 패턴: 인자를 보고 데몬
+/// 모드가 아니면 `None`을 돌려줘 `main.rs`가 평범한 `run()`으로 진행하게 한다.
+#[cfg(unix)]
+pub fn maybe_run_sessiond<I, S>(args: I) -> Option<i32>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    let mut args = args.into_iter();
+    let _program = args.next();
+    let mode = args.next()?.as_ref().to_os_string();
+    if mode.as_os_str() != std::ffi::OsStr::new("--sessiond") {
+        return None;
+    }
+    let socket_path = args.next()?.as_ref().to_os_string();
+    if args.next().is_some() {
+        return None;
+    }
+    Some(sessiond::daemon::run_daemon(std::path::PathBuf::from(
+        socket_path,
+    )))
+}
+
+/// Windows/기타: 세션 핸드오프는 unix 전용 기능이라 데몬 모드 자체가 없다.
+#[cfg(not(unix))]
+pub fn maybe_run_sessiond<I, S>(_args: I) -> Option<i32>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    None
 }
 
 /// Returns the live observer endpoint only when the latest settings snapshot
@@ -145,6 +182,9 @@ pub fn run() {
             let settings_cache = Arc::new(std::sync::RwLock::new(settings));
 
             let observer_server = Arc::new(ObserverServerState::default());
+            // §핵심 5: 세션 재시작(입양) 후 훅이 스폰 시점의 죽은 포트를 치는
+            // 문제 완화 -- forwarder가 읽는 <app_data_dir>/observer-port의 근거.
+            observer_server.set_app_data_dir(data_dir.clone());
             let observer_temp = app
                 .path()
                 .temp_dir()
@@ -167,14 +207,19 @@ pub fn run() {
             let get_observer_url =
                 make_observer_url_getter(settings_cache.clone(), observer_server.clone());
 
-            let manager = Arc::new(SessionManager::new(
-                Arc::new(PortablePtyFactory),
-                observer.clone(),
-                registry.clone(),
-                events.clone(),
-                hub.clone(),
-                get_observer_url,
-            ));
+            let manager = Arc::new(
+                SessionManager::new(
+                    Arc::new(PortablePtyFactory),
+                    observer.clone(),
+                    registry.clone(),
+                    events.clone(),
+                    hub.clone(),
+                    get_observer_url,
+                )
+                // 세션 핸드오프(unix 전용, docs/session-handoff-design.md) 소켓/로그
+                // 경로와 AGENT_OFFICE_APP_DATA env 주입(§핵심 5)의 근거.
+                .with_app_data_dir(data_dir.clone()),
+            );
 
             let store = ProfileStore::new(data_dir.join("profiles.json"));
             let portrait_store = PngStore::new(data_dir.join("portraits"), MAX_PORTRAIT_BYTES);
@@ -202,6 +247,9 @@ pub fn run() {
             ipc::commands::create_session,
             ipc::commands::list_available_shells,
             ipc::commands::dispose_session,
+            ipc::commands::handoff_supported,
+            ipc::commands::handoff_sessions,
+            ipc::commands::adopt_detached_sessions,
             ipc::commands::write_input,
             ipc::commands::resize_session,
             ipc::commands::subscribe_output,
@@ -288,5 +336,25 @@ mod tests {
         settings_cache.write().unwrap().observer_enabled = true;
         assert_eq!(get_url(), expected_url);
         server.shutdown();
+    }
+
+    // maybe_run_sessiond의 실제 데몬 기동(Some 분기)은 daemon.rs/client.rs가
+    // run_daemon(_inner)를 직접 구동해 검증한다 -- 여기서는 인자 파싱이
+    // "데몬 모드 아님"을 정확히 판별하는지(None 분기)만 확인한다.
+    #[cfg(unix)]
+    #[test]
+    fn maybe_run_sessiond_returns_none_for_non_daemon_invocations() {
+        assert_eq!(maybe_run_sessiond(["agent-office"]), None);
+        assert_eq!(maybe_run_sessiond(["agent-office", "--observer-forward"]), None);
+        assert_eq!(maybe_run_sessiond(["agent-office", "--sessiond"]), None);
+        assert_eq!(
+            maybe_run_sessiond([
+                "agent-office",
+                "--sessiond",
+                "/tmp/x.sock",
+                "extra",
+            ]),
+            None
+        );
     }
 }
