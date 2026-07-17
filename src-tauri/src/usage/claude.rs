@@ -50,7 +50,10 @@ fn parse_usage(root: &Value) -> Option<ProviderUsage> {
 
 /// `utilization.limits[]` → 윈도 배열. 배열이 없거나 비어 있으면(또는 유효
 /// 항목이 하나도 없으면) None을 돌려 폴백을 유도한다.
-fn parse_limits(util: &Value) -> Option<Vec<UsageWindow>> {
+///
+/// pub(super): claude_live의 실시간 응답도 루트가 같은 모양이라 이 파서를
+/// 그대로 재사용한다(docs/claude-usage-live-fetch-design.md §2.1).
+pub(super) fn parse_limits(util: &Value) -> Option<Vec<UsageWindow>> {
     let arr = util.get("limits")?.as_array()?;
     let mut out = Vec::new();
     for item in arr {
@@ -95,7 +98,8 @@ fn parse_limits(util: &Value) -> Option<Vec<UsageWindow>> {
 }
 
 /// limits[] 부재 시 폴백: five_hour → session, seven_day → weekly.
-fn parse_fallback(util: &Value) -> Option<Vec<UsageWindow>> {
+/// pub(super): claude_live가 재사용(위 parse_limits 주석 참고).
+pub(super) fn parse_fallback(util: &Value) -> Option<Vec<UsageWindow>> {
     let mut out = Vec::new();
     if let Some(w) = simple_window(util.get("five_hour"), UsageWindowKind::Session) {
         out.push(w);

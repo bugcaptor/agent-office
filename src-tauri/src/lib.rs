@@ -293,6 +293,7 @@ pub fn run() {
                 settings: settings_cache,
                 settings_first_run: std::sync::atomic::AtomicBool::new(settings_first_run),
                 session_event_root: session_event_root(&data_dir),
+                live_usage: crate::usage::LiveUsageState::new(),
             });
             Ok(())
         })
