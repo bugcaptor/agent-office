@@ -71,6 +71,10 @@ struct SessionEntry {
     cols: u16,
     cwd: String,
     cleanup_paths: Vec<String>,
+    /// 종료 직전 xterm 화면 스냅샷(원본 바이트, base64 디코딩 완료). Adopt
+    /// 응답에 그대로 되돌려준다 — 데몬은 이 스냅샷을 해석/가공하지 않고
+    /// 불투명한 바이트열로만 보관한다.
+    snapshot: Vec<u8>,
     master_fd: RawFd,
     ring: Arc<Mutex<RingBuffer>>,
     exited: Arc<AtomicBool>,
@@ -165,6 +169,7 @@ fn handle_connection(fd: RawFd, table: &Table, ever_handoff: &AtomicBool) {
                 cols,
                 cwd,
                 cleanup_paths,
+                snapshot_b64,
             } => {
                 let Some(master_fd) = recv_fd else {
                     let _ = protocol::write_frame(
@@ -173,6 +178,16 @@ fn handle_connection(fd: RawFd, table: &Table, ever_handoff: &AtomicBool) {
                         None,
                     );
                     continue;
+                };
+                // 디코딩 실패(손상된 base64 등)는 스냅샷 없음으로 취급한다 --
+                // fd는 이미 받았으므로 핸드오프 자체를 거부하지 않는다(설계
+                // 문서: "핸드오프 실패 시에도 세션 표시가 깨지면 안 된다"와
+                // 같은 원칙).
+                let snapshot = {
+                    use base64::Engine;
+                    base64::engine::general_purpose::STANDARD
+                        .decode(&snapshot_b64)
+                        .unwrap_or_default()
                 };
                 let ring = Arc::new(Mutex::new(RingBuffer::new(RING_CAPACITY)));
                 let exited = Arc::new(AtomicBool::new(false));
@@ -187,6 +202,7 @@ fn handle_connection(fd: RawFd, table: &Table, ever_handoff: &AtomicBool) {
                             cols,
                             cwd,
                             cleanup_paths,
+                            snapshot,
                             master_fd,
                             ring,
                             exited,
@@ -245,6 +261,10 @@ fn handle_connection(fd: RawFd, table: &Table, ever_handoff: &AtomicBool) {
                             base64::engine::general_purpose::STANDARD
                                 .encode(entry.ring.lock().unwrap().snapshot())
                         };
+                        let snapshot_b64 = {
+                            use base64::Engine;
+                            base64::engine::general_purpose::STANDARD.encode(&entry.snapshot)
+                        };
                         let reply = Message::AdoptOk {
                             agent_id: agent_id.clone(),
                             session_id: entry.session_id.clone(),
@@ -255,6 +275,7 @@ fn handle_connection(fd: RawFd, table: &Table, ever_handoff: &AtomicBool) {
                             cwd: entry.cwd.clone(),
                             cleanup_paths: entry.cleanup_paths.clone(),
                             buffer_b64,
+                            snapshot_b64,
                         };
                         let _ = protocol::write_frame(fd, &reply, Some(entry.master_fd));
                         let _ = nix::unistd::close(entry.master_fd);
@@ -459,6 +480,7 @@ mod tests {
                 cols: 80,
                 cwd: "/tmp/work".into(),
                 cleanup_paths: vec!["/tmp/settings.json".into()],
+                snapshot_b64: String::new(),
             },
             Some(master_read),
         );
@@ -508,6 +530,7 @@ mod tests {
                 cols: 80,
                 cwd: "/tmp".into(),
                 cleanup_paths: vec![],
+                snapshot_b64: String::new(),
             },
             Some(master_read),
         );
@@ -549,6 +572,51 @@ mod tests {
         h.finish();
     }
 
+    /// 종료 직전 화면 스냅샷(§실증에서 발견된 빈틈 수정) 회귀: Handoff의
+    /// snapshot_b64가 그대로 테이블에 보관됐다가 Adopt 응답의 snapshot_b64로
+    /// 되돌아오는지 검증한다. 데몬은 이 바이트열을 전혀 해석하지 않고
+    /// 불투명하게 보관/반환만 한다.
+    #[test]
+    fn handoff_snapshot_is_stored_and_returned_via_adopt_ok() {
+        let h = Harness::new();
+        let (master_read, master_write) = pipe().unwrap();
+        use base64::Engine;
+        let snapshot_b64 =
+            base64::engine::general_purpose::STANDARD.encode(b"SCREEN-BEFORE-QUIT\r\n$ ls\r\n");
+
+        h.send(
+            &Message::Handoff {
+                agent_id: "a1".into(),
+                session_id: "s1".into(),
+                pid: Some(333),
+                pgid: Some(333),
+                rows: 24,
+                cols: 80,
+                cwd: "/tmp".into(),
+                cleanup_paths: vec![],
+                snapshot_b64: snapshot_b64.clone(),
+            },
+            Some(master_read),
+        );
+        let _ = close(master_read);
+        let (reply, _) = h.recv();
+        assert!(matches!(reply, Message::HandoffOk));
+
+        h.send(&Message::Adopt { agent_id: "a1".into() }, None);
+        let (reply, fd) = h.recv();
+        let adopted_fd = fd.expect("AdoptOk must carry the master fd");
+        match reply {
+            Message::AdoptOk { snapshot_b64: returned, .. } => {
+                assert_eq!(returned, snapshot_b64, "snapshot must round-trip unchanged");
+            }
+            other => panic!("unexpected reply: {other:?}"),
+        }
+
+        let _ = close(adopted_fd);
+        let _ = close(master_write);
+        h.finish();
+    }
+
     #[test]
     fn adopt_of_unknown_agent_returns_error() {
         let h = Harness::new();
@@ -573,6 +641,7 @@ mod tests {
                 cols: 80,
                 cwd: "/tmp".into(),
                 cleanup_paths: vec![],
+                snapshot_b64: String::new(),
             },
             Some(master_read),
         );
@@ -602,6 +671,7 @@ mod tests {
                 cols: 80,
                 cwd: "/tmp".into(),
                 cleanup_paths: vec![],
+                snapshot_b64: String::new(),
             },
             Some(master_read),
         );
@@ -634,6 +704,7 @@ mod tests {
                 cols: 80,
                 cwd: "/tmp".into(),
                 cleanup_paths: vec![],
+                snapshot_b64: String::new(),
             },
             Some(master_read),
         );
@@ -698,6 +769,7 @@ mod tests {
                 cols: 80,
                 cwd: "/tmp".into(),
                 cleanup_paths: vec![],
+                snapshot_b64: String::new(),
             },
             Some(master_read),
         )

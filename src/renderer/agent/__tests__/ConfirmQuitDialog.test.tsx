@@ -29,6 +29,11 @@ vi.mock("../../quitGuard", () => ({
   isHandoffSupported: () => isHandoffSupportedMock(),
 }));
 
+const serializeAllMock = vi.fn(() => ({}) as Record<string, string>);
+vi.mock("../../terminal/TerminalRegistry", () => ({
+  terminalRegistry: { serializeAll: () => serializeAllMock() },
+}));
+
 const { ConfirmQuitDialog } = await import("../ConfirmQuitDialog");
 
 const initialState = useAppStore.getState();
@@ -42,6 +47,7 @@ beforeEach(() => {
   destroy.mockClear();
   handoffSessions.mockReset().mockResolvedValue(0);
   isHandoffSupportedMock.mockReset().mockReturnValue(false);
+  serializeAllMock.mockReset().mockReturnValue({});
 });
 
 afterEach(() => cleanup());
@@ -153,8 +159,9 @@ describe("3버튼 분기 (핸드오프 지원 + Running 세션)", () => {
     expect(screen.queryByRole("button", { name: "종료" })).toBeNull();
   });
 
-  it("'터미널 유지하고 종료' 클릭 시 handoffSessions()를 기다린 뒤 destroy()를 호출한다", async () => {
+  it("'터미널 유지하고 종료' 클릭 시 serializeAll() 결과를 실어 handoffSessions()를 기다린 뒤 destroy()를 호출한다", async () => {
     isHandoffSupportedMock.mockReturnValue(true);
+    serializeAllMock.mockReturnValue({ a1: "SCREEN-BEFORE-QUIT" });
     let resolveHandoff!: (n: number) => void;
     handoffSessions.mockReturnValue(new Promise<number>((resolve) => (resolveHandoff = resolve)));
     useAppStore.setState({
@@ -168,6 +175,7 @@ describe("3버튼 분기 (핸드오프 지원 + Running 세션)", () => {
     fireEvent.click(screen.getByRole("button", { name: "터미널 유지하고 종료" }));
 
     expect(handoffSessions).toHaveBeenCalledTimes(1);
+    expect(handoffSessions).toHaveBeenCalledWith({ a1: "SCREEN-BEFORE-QUIT" });
     expect(destroy).not.toHaveBeenCalled(); // handoffSessions()가 아직 settle 전
 
     resolveHandoff(2);

@@ -19,6 +19,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { isHandoffSupported } from "../quitGuard";
+import { terminalRegistry } from "../terminal/TerminalRegistry";
 
 export function ConfirmQuitDialog() {
   const modal = useAppStore((s) => s.modal);
@@ -38,7 +39,9 @@ export function ConfirmQuitDialog() {
 
   const onKeepAndQuit = async () => {
     try {
-      await tauriApi.handoffSessions();
+      // 종료 직전 화면(스크롤백)을 실어 보낸다 -- 데몬은 핸드오프 *이후*
+      // 출력만 보관하므로, 이게 없으면 재입양 후 종료 전 화면이 사라진다.
+      await tauriApi.handoffSessions(terminalRegistry.serializeAll());
     } catch (err) {
       console.warn("종료 확인: 세션 핸드오프 실패 — 터미널 유지 없이 종료 진행", err);
     }

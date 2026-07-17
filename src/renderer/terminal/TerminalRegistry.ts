@@ -17,12 +17,18 @@
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { tauriApi } from "../ipc/tauriApi";
 import { XTERM_THEME } from "./theme";
 
 interface Entry {
   term: Terminal;
   fit: FitAddon;
+  // 세션 핸드오프(docs/session-handoff-design.md 빈틈 수정): 종료 시점의
+  // 화면(스크롤백 포함)을 직렬화해 데몬에 실어 보내는 데 쓴다 — 데몬은
+  // 핸드오프 *이후* 출력만 보관하므로, 그 이전 화면은 이 스냅샷이 아니면
+  // 재입양 후 사라진다.
+  serialize: SerializeAddon;
   disposeData: () => void; // onData unsubscribe
   container: HTMLDivElement; // the actual DOM node TerminalMount attaches
   opened: boolean; // has term.open() been called?
@@ -54,6 +60,8 @@ class TerminalRegistry {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    const serialize = new SerializeAddon();
+    term.loadAddon(serialize);
 
     // User input -> PTY, with a Hangul/IME double-input guard.
     //
@@ -145,13 +153,32 @@ class TerminalRegistry {
     const container = document.createElement("div");
     container.className = "terminal-mount-inner";
 
-    e = { term, fit, disposeData, container, opened: false, bindComposition };
+    e = { term, fit, serialize, disposeData, container, opened: false, bindComposition };
     this.entries.set(agentId, e);
     return e;
   }
 
   get(agentId: string): Entry | undefined {
     return this.entries.get(agentId);
+  }
+
+  /**
+   * 세션 핸드오프: 종료 확인 모달에서 "터미널 유지하고 종료"를 고를 때
+   * 호출 — 살아있는 모든 터미널의 화면(스크롤백 포함)을 직렬화해 agentId
+   * 키로 반환한다. 데몬은 핸드오프 *이후* 출력만 링버퍼에 담으므로, 이
+   * 스냅샷이 없으면 종료 직전 화면(예: ls 결과)이 재입양 후 사라진다.
+   * 한 터미널의 직렬화 실패가 나머지를 막지 않도록 개별 try/catch로 스킵.
+   */
+  serializeAll(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [agentId, e] of this.entries) {
+      try {
+        out[agentId] = e.serialize.serialize();
+      } catch {
+        /* 이 터미널만 스킵 -- 나머지 스냅샷은 정상 전달 */
+      }
+    }
+    return out;
   }
 
   has(agentId: string): boolean {

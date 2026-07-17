@@ -46,6 +46,10 @@ pub struct HandoffRequest {
     pub cols: u16,
     pub cwd: String,
     pub cleanup_paths: Vec<String>,
+    /// 종료 직전 xterm 화면 스냅샷(원본 UTF-8 바이트) -- 데몬은 핸드오프
+    /// *이후* 출력만 링버퍼에 담으므로, 이게 없으면 재입양 후 종료 전
+    /// 화면이 사라진다. `handoff()`가 base64로 인코딩해 실어 보낸다.
+    pub snapshot: Vec<u8>,
     /// 호출 성공/실패와 무관하게 이 fd의 소유권은 호출자에게 남는다 -- 데몬은
     /// SCM_RIGHTS로 받은 독립 사본을 쥔다. 호출자는 성공 후 이 fd를 닫아도
     /// 세션에 영향 없음(핸드오프 목적 그대로).
@@ -62,6 +66,10 @@ pub struct AdoptedSession {
     pub cwd: String,
     pub cleanup_paths: Vec<String>,
     pub buffer: Vec<u8>,
+    /// Handoff 때 실어 보낸 종료 직전 화면 스냅샷(원본 바이트, base64
+    /// 디코딩 완료) -- 호출자(`SessionManager::adopt_one`)가 `snapshot ++
+    /// buffer` 순으로 이어붙여 initial_output을 구성한다.
+    pub snapshot: Vec<u8>,
     pub master_fd: RawFd,
 }
 
@@ -98,6 +106,10 @@ impl Client {
     }
 
     pub fn handoff(&self, req: HandoffRequest) -> io::Result<()> {
+        let snapshot_b64 = {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.encode(&req.snapshot)
+        };
         protocol::write_frame(
             self.fd(),
             &Message::Handoff {
@@ -109,6 +121,7 @@ impl Client {
                 cols: req.cols,
                 cwd: req.cwd,
                 cleanup_paths: req.cleanup_paths,
+                snapshot_b64,
             },
             Some(req.master_fd),
         )?;
@@ -141,6 +154,7 @@ impl Client {
                 cwd,
                 cleanup_paths,
                 buffer_b64,
+                snapshot_b64,
                 ..
             } => {
                 let master_fd = fd.ok_or_else(|| io::Error::other("AdoptOk missing master fd"))?;
@@ -151,7 +165,24 @@ impl Client {
                         let _ = nix::unistd::close(master_fd);
                         io::Error::other(e)
                     })?;
-                Ok(AdoptedSession { session_id, pid, pgid, rows, cols, cwd, cleanup_paths, buffer, master_fd })
+                let snapshot = base64::engine::general_purpose::STANDARD
+                    .decode(snapshot_b64)
+                    .map_err(|e| {
+                        let _ = nix::unistd::close(master_fd);
+                        io::Error::other(e)
+                    })?;
+                Ok(AdoptedSession {
+                    session_id,
+                    pid,
+                    pgid,
+                    rows,
+                    cols,
+                    cwd,
+                    cleanup_paths,
+                    buffer,
+                    snapshot,
+                    master_fd,
+                })
             }
             Message::Error { message } => Err(io::Error::other(message)),
             other => Err(io::Error::other(format!("unexpected reply to Adopt: {other:?}"))),
@@ -290,6 +321,7 @@ mod tests {
                 cols: 80,
                 cwd: "/tmp".into(),
                 cleanup_paths: vec![],
+                snapshot: b"SCREEN-BEFORE-QUIT".to_vec(),
                 master_fd: master_read,
             })
             .unwrap();
@@ -306,6 +338,10 @@ mod tests {
         assert_eq!(adopted.session_id, "s1");
         assert_eq!(adopted.pid, Some(4242));
         assert_eq!(adopted.buffer, b"queued");
+        assert_eq!(
+            adopted.snapshot, b"SCREEN-BEFORE-QUIT",
+            "snapshot sent at handoff must round-trip through the daemon to adopt"
+        );
 
         nix::unistd::write(master_write, b"more").unwrap();
         let mut buf = [0u8; 16];

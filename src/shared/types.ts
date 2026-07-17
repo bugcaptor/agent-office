@@ -401,8 +401,11 @@ export interface AgentOfficeApi {
   loadSessionTurns(): Promise<SessionTurnRecord[]>;
   /** 세션 핸드오프(unix 전용) 지원 여부. Windows 등 미지원 플랫폼은 false. */
   handoffSupported(): Promise<boolean>;
-  /** 종료 시 살아있는 세션들을 `sessiond` 데몬으로 넘긴다. 넘긴 세션 수를 반환. */
-  handoffSessions(): Promise<number>;
+  /** 종료 시 살아있는 세션들을 `sessiond` 데몬으로 넘긴다. `snapshots`는
+   * agentId -> 직렬화된 터미널 화면(스크롤백 포함, xterm SerializeAddon
+   * 출력) -- 데몬이 핸드오프 이전 화면을 보관할 방법이 이것뿐이므로 실어
+   * 보낸다. 넘긴 세션 수를 반환. */
+  handoffSessions(snapshots: Record<string, string>): Promise<number>;
   /** 부팅 시 1회 — 데몬에 남아있던 세션을 되찾는다. 미지원/데몬 없음이면 빈 배열. */
   adoptDetachedSessions(): Promise<AdoptedSessionInfo[]>;
 }

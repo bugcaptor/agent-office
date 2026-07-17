@@ -45,6 +45,14 @@ pub enum Message {
         cols: u16,
         cwd: String,
         cleanup_paths: Vec<String>,
+        /// 종료 직전 xterm 화면(스크롤백 포함, 프론트 SerializeAddon
+        /// 직렬화 결과의 UTF-8 바이트를 base64) — 데몬은 핸드오프 *이후*
+        /// 출력만 링버퍼에 담으므로, 이게 없으면 재입양 후 종료 전 화면이
+        /// 사라진다(실증에서 발견된 빈틈). `#[serde(default)]`는 이 필드
+        /// 추가 전/후 빌드가 섞일 여지에 대비한 방어적 하위호환 — PROTO_VERSION
+        /// 자체는 앱/데몬이 항상 함께 배포되므로 그대로 1을 유지한다.
+        #[serde(default)]
+        snapshot_b64: String,
     },
     HandoffOk,
     List,
@@ -66,6 +74,12 @@ pub enum Message {
         cleanup_paths: Vec<String>,
         /// 데몬이 보관해 둔 미전달 출력(표준 base64).
         buffer_b64: String,
+        /// Handoff 때 받은 종료 직전 화면 스냅샷을 그대로 되돌려준다(표준
+        /// base64) — 입양 쪽이 `snapshot ++ buffer` 순으로 이어붙여
+        /// initial_output을 구성한다. `#[serde(default)]`: Handoff와 동일한
+        /// 이유의 방어적 하위호환.
+        #[serde(default)]
+        snapshot_b64: String,
     },
     Kill {
         agent_id: String,
@@ -240,6 +254,7 @@ mod tests {
             cols: 80,
             cwd: "/tmp".into(),
             cleanup_paths: vec!["/tmp/x.json".into()],
+            snapshot_b64: "c2NyZWVuLXNuYXBzaG90".into(), // "screen-snapshot"
         };
         write_frame(a, &msg, Some(carried_read)).unwrap();
         // 전송측은 SCM_RIGHTS 전달 후 자기 쪽 사본을 닫아도 무방(수신측이
@@ -253,7 +268,17 @@ mod tests {
         // 아래에서 이 fd로 실제 데이터를 읽을 수 있는지다.
 
         match decoded {
-            Message::Handoff { agent_id, session_id, pid, pgid, rows, cols, cwd, cleanup_paths } => {
+            Message::Handoff {
+                agent_id,
+                session_id,
+                pid,
+                pgid,
+                rows,
+                cols,
+                cwd,
+                cleanup_paths,
+                snapshot_b64,
+            } => {
                 assert_eq!(agent_id, "a1");
                 assert_eq!(session_id, "s1");
                 assert_eq!(pid, Some(123));
@@ -262,6 +287,7 @@ mod tests {
                 assert_eq!(cols, 80);
                 assert_eq!(cwd, "/tmp");
                 assert_eq!(cleanup_paths, vec!["/tmp/x.json".to_string()]);
+                assert_eq!(snapshot_b64, "c2NyZWVuLXNuYXBzaG90");
             }
             other => panic!("unexpected message: {other:?}"),
         }
@@ -339,6 +365,7 @@ mod tests {
             cwd: "/tmp".into(),
             cleanup_paths: vec![],
             buffer_b64: big.clone(),
+            snapshot_b64: "c25hcHNob3Q=".into(), // "snapshot"
         };
 
         let writer = std::thread::spawn(move || {
@@ -349,7 +376,10 @@ mod tests {
         writer.join().unwrap();
         assert!(fd.is_none());
         match decoded {
-            Message::AdoptOk { buffer_b64, .. } => assert_eq!(buffer_b64, big),
+            Message::AdoptOk { buffer_b64, snapshot_b64, .. } => {
+                assert_eq!(buffer_b64, big);
+                assert_eq!(snapshot_b64, "c25hcHNob3Q=");
+            }
             other => panic!("unexpected message: {other:?}"),
         }
         let _ = close(b);

@@ -78,8 +78,16 @@ class FakeFitAddon {
   fit = fitMock;
 }
 
+/** Minimal stand-in for `@xterm/addon-serialize`'s SerializeAddon — each
+ * instance owns its own `serialize` mock (a fresh `vi.fn()` per `new`) so
+ * tests can configure per-agent return values independently. */
+class FakeSerializeAddon {
+  serialize = vi.fn(() => "");
+}
+
 vi.mock("@xterm/xterm", () => ({ Terminal: FakeTerminal }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: FakeFitAddon }));
+vi.mock("@xterm/addon-serialize", () => ({ SerializeAddon: FakeSerializeAddon }));
 
 const writeInput = vi.fn();
 const resize = vi.fn();
@@ -311,6 +319,45 @@ describe("activate / refit", () => {
 
     expect(fitMock).not.toHaveBeenCalled();
     expect(onResize).not.toHaveBeenCalled();
+  });
+});
+
+describe("serializeAll (session handoff snapshot)", () => {
+  it("returns serialize() output for every live entry, keyed by agentId", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+    terminalRegistry.attach("a2", host);
+    const e1 = terminalRegistry.get("a1")! as unknown as { serialize: FakeSerializeAddon };
+    const e2 = terminalRegistry.get("a2")! as unknown as { serialize: FakeSerializeAddon };
+    e1.serialize.serialize.mockReturnValue("SCREEN-A1");
+    e2.serialize.serialize.mockReturnValue("SCREEN-A2");
+
+    const result = terminalRegistry.serializeAll();
+
+    expect(result).toEqual({ a1: "SCREEN-A1", a2: "SCREEN-A2" });
+  });
+
+  it("skips an entry whose serialize() throws, still returning the rest", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+    terminalRegistry.attach("a2", host);
+    const e1 = terminalRegistry.get("a1")! as unknown as { serialize: FakeSerializeAddon };
+    const e2 = terminalRegistry.get("a2")! as unknown as { serialize: FakeSerializeAddon };
+    e1.serialize.serialize.mockImplementation(() => {
+      throw new Error("serialize boom");
+    });
+    e2.serialize.serialize.mockReturnValue("SCREEN-A2");
+
+    const result = terminalRegistry.serializeAll();
+
+    expect(result).toEqual({ a2: "SCREEN-A2" });
+  });
+
+  it("returns an empty object when there are no live terminals", async () => {
+    const terminalRegistry = await importRegistry();
+    expect(terminalRegistry.serializeAll()).toEqual({});
   });
 });
 

@@ -162,8 +162,8 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.handoffSupported);
   },
 
-  async handoffSessions() {
-    return await invoke(Commands.handoffSessions);
+  async handoffSessions(snapshots: Record<string, string>) {
+    return await invoke(Commands.handoffSessions, { snapshots });
   },
 
   async adoptDetachedSessions() {

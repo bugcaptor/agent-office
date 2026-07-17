@@ -469,13 +469,14 @@ describe("session handoff commands", () => {
     expect(result).toBe(true);
   });
 
-  it("handoffSessions invokes handoff_sessions with no args and returns the handed-off count", async () => {
+  it("handoffSessions invokes handoff_sessions with the snapshots map and returns the handed-off count", async () => {
     invoke.mockResolvedValueOnce(3);
     const tauriApi = await importTauriApi();
+    const snapshots = { a1: "SCREEN-A1", a2: "SCREEN-A2" };
 
-    const result = await tauriApi.handoffSessions();
+    const result = await tauriApi.handoffSessions(snapshots);
 
-    expect(invoke).toHaveBeenCalledWith(Commands.handoffSessions);
+    expect(invoke).toHaveBeenCalledWith(Commands.handoffSessions, { snapshots });
     expect(result).toBe(3);
   });
 

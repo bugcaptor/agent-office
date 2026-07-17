@@ -62,6 +62,20 @@ impl OutputSink {
     fn detach(&self) {
         *self.channel.lock() = None;
     }
+    /// 핸드오프 스냅샷 폴백(실증에서 발견된 빈틈): 프론트가 이 터미널을
+    /// 한 번도 구독하지 않은 채 종료하면 xterm 쪽 직렬화 스냅샷이 없다 --
+    /// 그 세션의 종료 전 출력은 여기 backlog에만 남아 있으므로, 원시
+    /// 바이트를 이어붙여 스냅샷 대용으로 쓴다. **드레인하지 않고 복사만
+    /// 한다** -- 핸드오프가 실패해도(데몬 연결 불가 등) 이 세션은 맵에
+    /// 그대로 남아 출력이 이어져야 하므로 backlog를 비우면 안 된다.
+    fn backlog_snapshot(&self) -> Vec<u8> {
+        self.backlog
+            .lock()
+            .iter()
+            .flat_map(|chunk| chunk.data.as_bytes())
+            .copied()
+            .collect()
+    }
 }
 impl FlushSink for OutputSink {
     fn emit(&self, chunk: OutputChunk) {
@@ -541,11 +555,14 @@ impl SessionManager {
         }
     }
 
-    /// 앱 quit(§핵심 3): Running 세션들을 sessiond로 넘긴다. 반환값은 성공
-    /// 개수 -- 프론트는 이 수와 무관하게 종료를 진행한다. `app_data_dir`이
-    /// 없으면(테스트 등) 0.
+    /// 앱 quit(§핵심 3): Running 세션들을 sessiond로 넘긴다. `snapshots`는
+    /// agentId -> 프론트가 종료 직전 직렬화한 xterm 화면(스크롤백 포함) --
+    /// 데몬은 핸드오프 *이후* 출력만 링버퍼에 담으므로, 이게 없으면 재입양
+    /// 후 종료 전 화면(예: ls 결과)이 사라진다(실증에서 발견된 빈틈).
+    /// 반환값은 성공 개수 -- 프론트는 이 수와 무관하게 종료를 진행한다.
+    /// `app_data_dir`이 없으면(테스트 등) 0.
     #[cfg(unix)]
-    pub fn handoff_all(&self) -> usize {
+    pub fn handoff_all(&self, snapshots: &std::collections::HashMap<String, String>) -> usize {
         let Some(app_data_dir) = self.app_data_dir.clone() else {
             return 0;
         };
@@ -573,12 +590,18 @@ impl SessionManager {
             };
 
         ids.iter()
-            .filter(|agent_id| self.handoff_one(agent_id, &client))
+            .filter(|agent_id| {
+                let snapshot = snapshots
+                    .get(agent_id.as_str())
+                    .map(|s| s.clone().into_bytes())
+                    .unwrap_or_default();
+                self.handoff_one(agent_id, &client, snapshot)
+            })
             .count()
     }
 
     #[cfg(not(unix))]
-    pub fn handoff_all(&self) -> usize {
+    pub fn handoff_all(&self, _snapshots: &std::collections::HashMap<String, String>) -> usize {
         0
     }
 
@@ -586,8 +609,18 @@ impl SessionManager {
     /// handed_off set → 전송. 실패해도 세션은 그대로 둔다(맵에 남고
     /// handed_off=true) -- 앱은 어차피 곧 종료되므로 마스터 fd가 닫히며
     /// SIGHUP으로 자연 정리된다(설계 문서 "왜 이 방식인가" 참조).
+    ///
+    /// `snapshot`이 비어 있으면(프론트가 이 터미널을 한 번도 구독하지 않아
+    /// 직렬화 대상이 없었던 경우 등) sink의 backlog를 폴백으로 쓴다 --
+    /// 실증에서 발견된 빈틈 수정: 그래야 아직 한 번도 열지 않은 터미널도
+    /// 재입양 후 종료 전 출력이 최소한 backlog 분량만큼은 보존된다.
     #[cfg(unix)]
-    fn handoff_one(&self, agent_id: &str, client: &crate::sessiond::client::Client) -> bool {
+    fn handoff_one(
+        &self,
+        agent_id: &str,
+        client: &crate::sessiond::client::Client,
+        snapshot: Vec<u8>,
+    ) -> bool {
         let Some(sess) = self.find(agent_id) else {
             return false;
         };
@@ -622,6 +655,11 @@ impl SessionManager {
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
+        let snapshot = if snapshot.is_empty() {
+            self.sink_for(agent_id).backlog_snapshot()
+        } else {
+            snapshot
+        };
 
         let result = client.handoff(crate::sessiond::client::HandoffRequest {
             agent_id: agent_id.to_string(),
@@ -632,6 +670,7 @@ impl SessionManager {
             cols,
             cwd: sess.cwd.clone(),
             cleanup_paths,
+            snapshot,
             master_fd,
         });
 
@@ -725,6 +764,12 @@ impl SessionManager {
         };
         let cleanup_paths = adopted.cleanup_paths.iter().map(std::path::PathBuf::from).collect();
         let size = (adopted.cols, adopted.rows);
+        // 종료 직전 화면 스냅샷 -> 핸드오프 이후 링버퍼 순으로 이어붙인다
+        // (실증에서 발견된 빈틈 수정) -- 순서가 바뀌면 화면이 뒤죽박죽으로
+        // 재생된다. install_session이 빈 벡터는 initial_output 주입 자체를
+        // 건너뛰므로 둘 다 없을 때를 따로 가릴 필요가 없다.
+        let mut initial_output = adopted.snapshot;
+        initial_output.extend_from_slice(&adopted.buffer);
         let (session, _started) = self.install_session(
             adopted.session_id,
             agent_id.to_string(),
@@ -733,7 +778,7 @@ impl SessionManager {
             size,
             spawned,
             Some(stop_gate),
-            Some(adopted.buffer),
+            Some(initial_output),
         );
         Some(AdoptedSessionInfo {
             agent_id: agent_id.to_string(),
@@ -3132,11 +3177,18 @@ return
     /// 데몬이 이미 떠 있으면 `connect_or_spawn`의 첫 connect가 곧바로
     /// 성공하므로, 이 테스트는 그 뒤의 실제 핸드오프/입양 배선(리더 인터럽트,
     /// fd 전달, install_session 재조립)만 순수하게 검증한다.
+    ///
+    /// 실증에서 발견된 빈틈(데몬은 핸드오프 *이후* 출력만 보관 -- 종료 전
+    /// 화면은 스냅샷 없이는 사라진다) 회귀도 여기서 함께 검증한다: 세션
+    /// "a1"은 snapshots 맵에 명시적 스냅샷을 실어 보내고(그 텍스트가
+    /// initial_output의 맨 앞에 와야 한다), 세션 "a2"는 맵에서 빠뜨려
+    /// backlog 폴백 경로를 태운다(핸드오프 전 출력을 한 번도 구독하지
+    /// 않았을 때도 최소한 backlog 분량은 보존돼야 한다).
     #[cfg(unix)]
     #[tokio::test]
     async fn handoff_all_then_adopt_detached_round_trips_a_real_session() {
         use crate::session::pty_factory::PortablePtyFactory;
-        use std::collections::HashSet;
+        use std::collections::{HashMap, HashSet};
 
         let app_data_dir = scratch_dir("appdata");
         std::fs::create_dir_all(&app_data_dir).expect("create scratch app_data_dir");
@@ -3201,12 +3253,45 @@ return
             .expect("real PTY spawn should succeed");
         assert_eq!(created.state, SessionState::Running);
 
-        let handed = mgr1.handoff_all();
-        assert_eq!(handed, 1, "the one running real session must be handed off");
+        // "a2": 출력 채널을 한 번도 구독하지 않은 채 핸드오프한다 -- 스냅샷
+        // 폴백(backlog)이 실제로 쓰이는지 검증하기 위한 세션. 핸드오프 전에
+        // echo를 흘려보내 backlog에 쌓아 둔다(구독이 없으니 emit()이 채널
+        // 대신 backlog로 간다).
+        mgr1.create(CreateSessionRequest {
+            agent_id: "a2".into(),
+            cols: Some(80),
+            rows: Some(24),
+            cwd: None,
+            shell: None,
+            startup_command: None,
+            personality_prompt: None,
+            autostart_claude: Some(false),
+        })
+        .expect("real PTY spawn should succeed for a2");
+        mgr1.write_input("a2", "echo backlog-marker-24680\n");
+        wait_for_timeout(
+            || {
+                mgr1.sink_for("a2")
+                    .backlog_snapshot()
+                    .windows(b"backlog-marker-24680".len())
+                    .any(|w| w == b"backlog-marker-24680")
+            },
+            Duration::from_secs(5),
+            "a2's pre-handoff echo never landed in the sink backlog",
+        )
+        .await;
+
+        let mut snapshots = HashMap::new();
+        snapshots.insert("a1".to_string(), "SNAPSHOT-MARKER-13579\r\n".to_string());
+        // "a2"는 의도적으로 생략 -- 백로그 폴백 경로를 태운다.
+
+        let handed = mgr1.handoff_all(&snapshots);
+        assert_eq!(handed, 2, "both running real sessions must be handed off");
         assert!(
             mgr1.find("a1").is_none(),
             "a successfully handed-off session must leave the manager's map"
         );
+        assert!(mgr1.find("a2").is_none());
 
         // "재시작": 새 매니저가 같은 app_data_dir/소켓을 상대로 되찾는다.
         let events2 = Arc::new(RecordingEvents::default());
@@ -3230,40 +3315,66 @@ return
             .with_app_data_dir(app_data_dir.clone()),
         );
 
-        let known: HashSet<String> = ["a1".to_string()].into_iter().collect();
+        let known: HashSet<String> = ["a1".to_string(), "a2".to_string()].into_iter().collect();
         let adopted = mgr2.adopt_detached(&known);
-        assert_eq!(adopted.len(), 1);
-        assert_eq!(adopted[0].agent_id, "a1");
+        assert_eq!(adopted.len(), 2);
+        let adopted_ids: HashSet<String> = adopted.iter().map(|a| a.agent_id.clone()).collect();
+        assert_eq!(adopted_ids, known);
         assert_eq!(mgr2.session_id_for("a1"), Some(created.session_id.clone()));
         assert!(events2.states().contains(&SessionState::Running));
 
-        // 이어받은 세션이 실제로 살아 있는지: echo 왕복으로 확인.
-        let output = Arc::new(Mutex::new(String::new()));
-        let output_for_channel = output.clone();
-        let channel: Channel<OutputChunk> = Channel::new(move |body| {
-            if let InvokeResponseBody::Json(s) = body {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
-                    if let Some(data) = v.get("data").and_then(|d| d.as_str()) {
-                        output_for_channel.lock().push_str(data);
+        // 이어받은 세션들이 실제로 살아 있는지: echo 왕복으로 확인 + 스냅샷이
+        // initial_output 맨 앞에 왔는지 검증.
+        fn attach_collector(mgr: &Arc<SessionManager>, agent_id: &str) -> Arc<Mutex<String>> {
+            let output = Arc::new(Mutex::new(String::new()));
+            let output_for_channel = output.clone();
+            let channel: Channel<OutputChunk> = Channel::new(move |body| {
+                if let InvokeResponseBody::Json(s) = body {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                        if let Some(data) = v.get("data").and_then(|d| d.as_str()) {
+                            output_for_channel.lock().push_str(data);
+                        }
                     }
                 }
-            }
-            Ok(())
-        });
-        mgr2.attach_output("a1", channel);
+                Ok(())
+            });
+            mgr.attach_output(agent_id, channel);
+            output
+        }
+
+        let output_a1 = attach_collector(&mgr2, "a1");
+        let output_a2 = attach_collector(&mgr2, "a2");
         mgr2.write_input("a1", "echo adopted-and-alive-98765\n");
         wait_for_timeout(
-            || output.lock().contains("adopted-and-alive-98765"),
+            || output_a1.lock().contains("adopted-and-alive-98765"),
             Duration::from_secs(5),
-            "adopted session never echoed the write_input marker",
+            "adopted a1 never echoed the write_input marker",
+        )
+        .await;
+        assert!(
+            output_a1.lock().starts_with("SNAPSHOT-MARKER-13579"),
+            "a1's explicit snapshot must be replayed before any post-adopt output: {:?}",
+            output_a1.lock()
+        );
+
+        // a2는 명시적 스냅샷이 없었으니 backlog 폴백으로 핸드오프 전 echo가
+        // 보존돼야 한다(드레인되지 않고 복사만 됐어야 하므로 mgr1 쪽
+        // backlog에도 영향이 없다 -- 여기서는 재입양된 mgr2 쪽만 확인).
+        wait_for_timeout(
+            || output_a2.lock().contains("backlog-marker-24680"),
+            Duration::from_secs(5),
+            "adopted a2 never replayed the backlog-fallback snapshot",
         )
         .await;
 
         mgr2.dispose("a1");
+        mgr2.dispose("a2");
         wait_for_timeout(
-            || matches!(events2.states().last(), Some(SessionState::Disposed)),
+            || {
+                events2.states().iter().filter(|s| **s == SessionState::Disposed).count() == 2
+            },
             Duration::from_secs(5),
-            "adopted session never reached Disposed within 5s after dispose()",
+            "both adopted sessions never reached Disposed within 5s after dispose()",
         )
         .await;
 

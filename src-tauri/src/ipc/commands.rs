@@ -136,11 +136,20 @@ pub async fn handoff_supported() -> Result<bool, String> {
 /// 세션들을 sessiond로 넘기고 넘긴 개수를 반환한다 -- 프론트는 이 수와
 /// 무관하게 창을 닫고 종료를 진행한다(§핵심 3). 비unix에서는
 /// `SessionManager::handoff_all`이 항상 0을 반환하는 no-op이다.
+///
+/// `snapshots`(agentId -> 직렬화된 xterm 화면)는 실증에서 발견된 빈틈 수정:
+/// 데몬은 핸드오프 *이후* 출력만 링버퍼에 담으므로, 종료 직전 화면(예: ls
+/// 결과)은 프론트가 xterm SerializeAddon으로 직렬화해 실어 보내지 않으면
+/// 재입양 후 사라진다.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn handoff_sessions(app_state: State<'_, AppState>) -> Result<usize, String> {
+pub async fn handoff_sessions(
+    app_state: State<'_, AppState>,
+    snapshots: std::collections::HashMap<String, String>,
+) -> Result<usize, String> {
     let manager = app_state.manager.clone();
-    let result =
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || manager.handoff_all()));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        manager.handoff_all(&snapshots)
+    }));
     result.map_err(|panic| {
         let msg = panic_message(&panic);
         eprintln!("agent-office: handoff_sessions panicked: {msg}");
