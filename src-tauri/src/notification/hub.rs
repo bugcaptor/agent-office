@@ -106,14 +106,22 @@ impl NotificationHub {
                     .unwrap_or_else(|| ATTENTION_FALLBACK.to_string()),
             ),
             ObserverEvent::Stop { message, running } => {
-                self.ingest_subagent_count(session_id, running.unwrap_or(0));
-                self.ingest(
-                    session_id,
-                    NotificationSource::Stop,
-                    message
-                        .filter(|value| !value.trim().is_empty())
-                        .unwrap_or_else(|| STOP_FALLBACK.to_string()),
-                )
+                let running = running.unwrap_or(0);
+                self.ingest_subagent_count(session_id, running);
+                // 백그라운드 서브에이전트가 아직 도는 중의 Stop은 턴 경계일 뿐
+                // 완료가 아니다 — 알림을 내지 않는다(이슈 #27). 렌더러의 턴
+                // 정산도 이 알림 이벤트로만 일어나므로, 억제하면 서브에이전트가
+                // 일하는 동안 "일하는 중" 표시가 유지된다(이슈 #25). 최종
+                // Stop(running=0)에서만 알림·정산한다.
+                if running == 0 {
+                    self.ingest(
+                        session_id,
+                        NotificationSource::Stop,
+                        message
+                            .filter(|value| !value.trim().is_empty())
+                            .unwrap_or_else(|| STOP_FALLBACK.to_string()),
+                    )
+                }
             }
         }
     }
@@ -399,10 +407,43 @@ mod tests {
         assert_eq!(activity[0].count, Some(2));
         assert_eq!(activity[1].kind, ActivityKind::SubCount);
         assert_eq!(activity[1].count, Some(0));
+        // running=2인 첫 Stop은 완료가 아니므로 알림이 억제되고, running 부재
+        // (=0 간주)인 두 번째 Stop만 알림된다.
         let notifications = events.notifications();
-        assert_eq!(notifications.len(), 2);
-        assert_eq!(notifications[0].message, "first");
-        assert_eq!(notifications[1].message, "second");
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].message, "second");
+    }
+
+    #[test]
+    fn stop_with_running_subagents_suppresses_completion_notification() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Stop {
+                message: Some("아직 서브에이전트 진행 중".into()),
+                running: Some(1),
+            },
+        );
+
+        // 카운트 스냅샷은 그대로 흘려보내되 완료 알림은 내지 않는다(#27).
+        let activity = events.activities();
+        assert_eq!(activity.len(), 1);
+        assert_eq!(activity[0].kind, ActivityKind::SubCount);
+        assert_eq!(activity[0].count, Some(1));
+        assert!(events.notifications().is_empty());
+
+        // 최종 Stop(running=0)은 평소대로 알림된다.
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Stop {
+                message: None,
+                running: Some(0),
+            },
+        );
+        let notifications = events.notifications();
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].source, NotificationSource::Stop);
+        assert_eq!(notifications[0].message, "작업이 완료되었습니다.");
     }
 
     #[test]
