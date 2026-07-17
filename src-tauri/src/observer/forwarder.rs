@@ -1,7 +1,11 @@
 use std::io::Read;
 use std::time::Duration;
 
-pub fn run_codex_forwarder() -> i32 {
+/// 앱 바이너리 forwarder 진입점. 세션 PTY env(`AGENT_OFFICE_SESSION`,
+/// `AGENT_OFFICE_HOOK_URL`, `AGENT_OFFICE_APP_DATA`)를 상속한 훅 프로세스가
+/// stdin의 훅 body를 옵저버 서버로 POST한다. `provider`/`event`는 CLI 인자에서
+/// 온다(claude=이벤트명 동반, codex=없음).
+pub fn run_forwarder(provider: &str, event: Option<&str>) -> i32 {
     let session = match std::env::var("AGENT_OFFICE_SESSION") {
         Ok(value) if !value.is_empty() => value,
         _ => return 0,
@@ -38,7 +42,7 @@ pub fn run_codex_forwarder() -> i32 {
     };
 
     let primary: Result<reqwest::Response, reqwest::Error> =
-        runtime.block_on(post(&client, parsed_url.clone(), &session, &body));
+        runtime.block_on(post(&client, parsed_url.clone(), &session, provider, event, &body));
 
     // §핵심 5(docs/session-handoff-design.md): 세션 env의 AGENT_OFFICE_HOOK_URL은
     // 스폰 시점 포트를 담는다 -- 재시작 후 입양된 세션은 죽은 포트를 친다.
@@ -48,7 +52,9 @@ pub fn run_codex_forwarder() -> i32 {
     // 반영하지 않는다(기존 계약 유지).
     if primary.as_ref().err().is_some_and(reqwest::Error::is_connect) {
         if let Some(retry_url) = retry_url_from_port_file(&parsed_url) {
-            let _ = runtime.block_on(post(&client, retry_url, &session, &body));
+            let _ = runtime.block_on(post(
+                &client, retry_url, &session, provider, event, &body,
+            ));
         }
     }
     0
@@ -58,11 +64,17 @@ async fn post(
     client: &reqwest::Client,
     url: reqwest::Url,
     session: &str,
+    provider: &str,
+    event: Option<&str>,
     body: &[u8],
 ) -> Result<reqwest::Response, reqwest::Error> {
+    let mut query = vec![("session", session), ("provider", provider)];
+    if let Some(event) = event {
+        query.push(("event", event));
+    }
     client
         .post(url)
-        .query(&[("session", session), ("provider", "codex")])
+        .query(&query)
         .body(body.to_vec())
         .send()
         .await

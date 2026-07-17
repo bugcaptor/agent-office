@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
-use base64::Engine as _;
-
 use super::event::{prompt_text, tool_description};
+use super::hook_command::forwarder_shell_command;
 use super::{
     AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError, ObserverEvent,
     ObserverProvider, ObserverSessionContext, RawObserverHook, WrapperArg,
@@ -14,14 +13,6 @@ const CODEX_ATTENTION_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_PERMISSION";
 const CODEX_STOP_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_STOP";
 const CODEX_SUBAGENT_START_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_SUBAGENT_START";
 const CODEX_SUBAGENT_STOP_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_SUBAGENT_STOP";
-
-fn powershell_encoded_command(script: &str) -> String {
-    let bytes = script
-        .encode_utf16()
-        .flat_map(|unit| unit.to_le_bytes())
-        .collect::<Vec<_>>();
-    base64::engine::general_purpose::STANDARD.encode(bytes)
-}
 
 pub struct CodexAdapter {
     forwarder_executable: PathBuf,
@@ -35,42 +26,8 @@ impl CodexAdapter {
     }
 
     fn forwarder_command(&self) -> Result<String, ObserverAdapterError> {
-        if self.forwarder_executable.as_os_str().is_empty()
-            || !self.forwarder_executable.is_absolute()
-        {
-            return Err(ObserverAdapterError::new(
-                "Codex observer forwarder path must be absolute",
-            ));
-        }
-        let path = self.forwarder_executable.to_str().ok_or_else(|| {
-            ObserverAdapterError::new("Codex observer forwarder path must be Unicode")
-        })?;
-        if cfg!(windows) {
-            if path.contains('"') {
-                return Err(ObserverAdapterError::new(
-                    "Codex observer forwarder path contains a quote",
-                ));
-            }
-            let path = path.replace('\'', "''");
-            let script = format!(
-                "$ErrorActionPreference='Stop'\n\
-                 & '{path}' '--observer-forward' 'codex'\n\
-                 $forwarderSucceeded=$?\n\
-                 $forwarderExit=$LASTEXITCODE\n\
-                 if ($null -ne $forwarderExit) {{ exit $forwarderExit }}\n\
-                 if ($forwarderSucceeded) {{ exit 0 }}\n\
-                 exit 1"
-            );
-            let encoded = powershell_encoded_command(&script);
-            Ok(format!(
-                "powershell.exe -NoProfile -NonInteractive -EncodedCommand {encoded}"
-            ))
-        } else {
-            Ok(format!(
-                "'{}' --observer-forward codex",
-                path.replace('\'', "'\"'\"'"),
-            ))
-        }
+        // codex는 이벤트명을 body에서 얻으므로 forwarder에 이벤트 인자를 넘기지 않는다.
+        forwarder_shell_command(&self.forwarder_executable, &["codex"])
     }
 
     fn hook_config(event: &str, matcher: bool, command: &str) -> String {
@@ -415,11 +372,11 @@ mod tests {
         let context = ObserverSessionContext::new("ao-s1", "http://127.0.0.1:43123/hook");
         assert_eq!(
             codex.prepare_session(&context).unwrap_err().to_string(),
-            "Codex observer forwarder path must be absolute",
+            "observer forwarder path must be absolute",
         );
 
         let dir = scratch_dir();
-        let claude = ClaudeAdapter::new(dir.clone());
+        let claude = ClaudeAdapter::new(dir.clone(), std::env::current_exe().unwrap());
         assert!(claude.prepare_session(&context).is_ok());
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -436,7 +393,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "Codex observer forwarder path must be absolute",
+            "observer forwarder path must be absolute",
         );
     }
 
@@ -509,7 +466,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "Codex observer forwarder path contains a quote",
+            "observer forwarder path contains a quote",
         );
     }
 

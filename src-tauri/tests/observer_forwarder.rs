@@ -182,8 +182,59 @@ fn run_forwarder(session: Option<&str>, url: &str, body: &[u8]) -> (u32, std::pr
     run_forwarder_configured(session, url, body, |_| {})
 }
 
+/// claude 훅 경로: `--observer-forward claude <event>`. codex와 forward 기제는
+/// 같고 provider/event 쿼리만 다르다.
+fn run_claude_forwarder(
+    session: &str,
+    event: &str,
+    url: &str,
+    body: &[u8],
+) -> std::process::Output {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_agent-office"));
+    command
+        .args(["--observer-forward", "claude", event])
+        .env("AGENT_OFFICE_HOOK_URL", url)
+        .env("AGENT_OFFICE_SESSION", session)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    for name in PROXY_ENV.iter().chain(NO_PROXY_ENV) {
+        command.env_remove(name);
+    }
+    let mut child = command.spawn().unwrap();
+    std::io::Write::write_all(child.stdin.as_mut().unwrap(), body).unwrap();
+    drop(child.stdin.take());
+    child.wait_with_output().unwrap()
+}
+
+/// 이슈 #30: claude 훅도 forwarder를 경유한다. provider=claude와 event 쿼리가
+/// 그대로 옵저버 서버에 도달하고, stdin의 훅 body가 원문 그대로 전달돼야 한다.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn built_binary_claude_forwarder_relays_provider_and_event_query() {
+    let capture = CaptureServer::start().await;
+    let body = br#"{"hook_event_name":"Stop","last_assistant_message":"done"}"#;
+    let output = run_claude_forwarder("ao-claude-session", "Stop", capture.url(), body);
+
+    assert!(output.status.success(), "stderr={:?}", output.stderr);
+    assert!(output.stdout.is_empty(), "stdout={:?}", output.stdout);
+    assert!(output.stderr.is_empty(), "stderr={:?}", output.stderr);
+
+    let request = capture.one_request().await;
+    assert_eq!(request.session, "ao-claude-session");
+    assert_eq!(request.provider, "claude");
+    assert_eq!(
+        request.query,
+        b"session=ao-claude-session&provider=claude&event=Stop",
+    );
+    assert_eq!(request.body, body);
+}
+
+// forwarder 인자 문법: `--observer-forward codex` 또는
+// `--observer-forward claude [event]`. 여기서는 forwarder를 실제로 기동하지 않는
+// None 분기(문법 위반)만 확인한다 — Some 분기는 세션 env에 의존해 stdin을 읽으므로
+// built-binary 테스트로 검증한다.
 #[test]
-fn forwarder_mode_requires_the_exact_complete_argument_vector() {
+fn forwarder_mode_rejects_ill_formed_argument_vectors() {
     use agent_office_lib::maybe_run_observer_forwarder;
 
     assert_eq!(maybe_run_observer_forwarder(["agent-office"]), None);
@@ -191,12 +242,25 @@ fn forwarder_mode_requires_the_exact_complete_argument_vector() {
         maybe_run_observer_forwarder(["agent-office", "--observer-forward"]),
         None,
     );
+    // 알 수 없는 provider는 None.
     assert_eq!(
-        maybe_run_observer_forwarder(["agent-office", "--observer-forward", "claude"]),
+        maybe_run_observer_forwarder(["agent-office", "--observer-forward", "bogus"]),
         None,
     );
+    // codex는 이벤트 인자를 받지 않는다.
     assert_eq!(
         maybe_run_observer_forwarder(["agent-office", "--observer-forward", "codex", "extra",]),
+        None,
+    );
+    // claude는 이벤트가 최대 1개다 — 2개 이상이면 None.
+    assert_eq!(
+        maybe_run_observer_forwarder([
+            "agent-office",
+            "--observer-forward",
+            "claude",
+            "Stop",
+            "extra",
+        ]),
         None,
     );
 }
