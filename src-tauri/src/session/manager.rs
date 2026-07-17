@@ -1030,7 +1030,10 @@ mod tests {
     fn claude_observer(hub: Arc<NotificationHub>, dir: PathBuf) -> Arc<ObserverRuntime> {
         Arc::new(ObserverRuntime::new(
             hub,
-            vec![Arc::new(ClaudeAdapter::new(dir))],
+            vec![Arc::new(ClaudeAdapter::new(
+                dir,
+                std::env::current_exe().unwrap(),
+            ))],
         ))
     }
 
@@ -1595,7 +1598,10 @@ mod tests {
         ));
         let observer = Arc::new(ObserverRuntime::new(
             hub.clone(),
-            vec![Arc::new(ClaudeAdapter::new(settings_dir.clone()))],
+            vec![Arc::new(ClaudeAdapter::new(
+                settings_dir.clone(),
+                std::env::current_exe().unwrap(),
+            ))],
         ));
         let manager = Arc::new(
             SessionManager::new(
@@ -3081,7 +3087,10 @@ return
         let observer_dir = scratch_dir("observer");
         let observer = Arc::new(ObserverRuntime::new(
             hub.clone(),
-            vec![Arc::new(ClaudeAdapter::new(observer_dir.clone()))],
+            vec![Arc::new(ClaudeAdapter::new(
+                observer_dir.clone(),
+                std::env::current_exe().unwrap(),
+            ))],
         ));
 
         let cwd_dir = scratch_dir("cwd");
@@ -3398,7 +3407,10 @@ return
         let observer_dir = scratch_dir("observer-mash");
         let observer = Arc::new(ObserverRuntime::new(
             hub.clone(),
-            vec![Arc::new(ClaudeAdapter::new(observer_dir.clone()))],
+            vec![Arc::new(ClaudeAdapter::new(
+                observer_dir.clone(),
+                std::env::current_exe().unwrap(),
+            ))],
         ));
         let manager = Arc::new(SessionManager::new(
             Arc::new(PortablePtyFactory),

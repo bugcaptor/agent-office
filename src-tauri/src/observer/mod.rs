@@ -3,6 +3,7 @@ pub mod claude_resume_recorder;
 pub mod codex;
 pub mod event;
 pub mod forwarder;
+pub mod hook_command;
 pub mod server;
 
 use std::path::PathBuf;
@@ -49,7 +50,7 @@ impl ObserverRuntime {
         Self::new(
             hub,
             vec![
-                Arc::new(ClaudeAdapter::new(settings_dir)),
+                Arc::new(ClaudeAdapter::new(settings_dir, forwarder_executable.clone())),
                 Arc::new(CodexAdapter::new(forwarder_executable)),
             ],
         )
@@ -225,7 +226,7 @@ mod tests {
             "agent-office-shared-observer-adapter-test-{}",
             uuid::Uuid::new_v4(),
         ));
-        let claude = ClaudeAdapter::new(dir.clone());
+        let claude = ClaudeAdapter::new(dir.clone(), std::env::current_exe().unwrap());
         let codex = CodexAdapter::new(std::env::current_exe().unwrap());
 
         assert_eq!(claude.provider(), ObserverProvider::Claude);

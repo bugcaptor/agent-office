@@ -122,7 +122,10 @@ Running 세션 각각에 대해:
 - 서버 기동 시 `app_data_dir()/observer-port` 파일에 현재 포트 기록.
 - forwarder(`observer/forwarder.rs`)가 env URL로 POST 실패(연결 거부) 시 포트 파일을
   읽어 같은 경로로 1회 재시도.
-- 셸 래퍼가 URL을 직접 치는 경로(codex 등)는 v1 베스트에포트로 남기고 문서화.
+- codex·claude 훅 모두 앱 바이너리 forwarder(`--observer-forward <provider> [event]`,
+  공용 명령 빌더 `observer/hook_command.rs`)를 경유해 이 재시도 경로를 탄다. 예전
+  claude는 훅 URL을 curl 명령에 직접 박아 넣어(스폰 시점 포트) 재시작 후 입양된
+  세션의 훅이 전부 유실됐다 — 이슈 #30에서 forwarder 경유로 전환해 해소했다.
 
 ### 6. 프론트
 

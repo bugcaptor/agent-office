@@ -45,16 +45,33 @@ where
     let mut args = args.into_iter();
     let _program = args.next();
     let mode = args.next()?.as_ref().to_os_string();
+    if mode.as_os_str() != std::ffi::OsStr::new("--observer-forward") {
+        return None;
+    }
     let provider = args.next()?.as_ref().to_os_string();
+    // event는 claude만 동반한다(예: `--observer-forward claude Stop`).
+    let event = args.next().map(|arg| arg.as_ref().to_os_string());
+    // 잉여 인자가 있으면 알 수 없는 호출로 보고 forwarder를 타지 않는다.
     if args.next().is_some() {
         return None;
     }
-    if mode.as_os_str() == std::ffi::OsStr::new("--observer-forward")
-        && provider.as_os_str() == std::ffi::OsStr::new("codex")
-    {
-        Some(observer::forwarder::run_codex_forwarder())
-    } else {
-        None
+    match provider.to_str() {
+        // codex는 이벤트명을 body의 hook_event_name에서 얻으므로 인자로 받지 않는다.
+        Some("codex") if event.is_none() => {
+            Some(observer::forwarder::run_forwarder("codex", None))
+        }
+        Some("claude") => {
+            // 이벤트가 있으면 유효한 유니코드여야 한다(비유니코드/파싱 실패는 무시).
+            let event = match &event {
+                Some(event) => match event.to_str() {
+                    Some(event) => Some(event),
+                    None => return None,
+                },
+                None => None,
+            };
+            Some(observer::forwarder::run_forwarder("claude", event))
+        }
+        _ => None,
     }
 }
 
@@ -322,6 +339,43 @@ mod tests {
     fn session_event_root_is_versioned_under_app_data() {
         let root = session_event_root(std::path::Path::new("/app-data"));
         assert_eq!(root, std::path::Path::new("/app-data/session-events/v1"));
+    }
+
+    // forwarder를 실제로 기동하는 Some 분기(codex, claude[+event])는 세션 env에
+    // 의존하므로 여기서는 "forwarder 모드 아님"을 정확히 판별하는 None 분기만 본다.
+    #[test]
+    fn maybe_run_observer_forwarder_rejects_non_forwarder_invocations() {
+        // --observer-forward가 아니거나 provider가 없으면 None.
+        assert_eq!(maybe_run_observer_forwarder(["agent-office"]), None);
+        assert_eq!(
+            maybe_run_observer_forwarder(["agent-office", "--observer-forward"]),
+            None,
+        );
+        assert_eq!(
+            maybe_run_observer_forwarder(["agent-office", "--sessiond", "codex"]),
+            None,
+        );
+        // 알 수 없는 provider는 None.
+        assert_eq!(
+            maybe_run_observer_forwarder(["agent-office", "--observer-forward", "unknown"]),
+            None,
+        );
+        // codex는 이벤트 인자를 받지 않는다(잉여 인자 → None).
+        assert_eq!(
+            maybe_run_observer_forwarder(["agent-office", "--observer-forward", "codex", "Stop"]),
+            None,
+        );
+        // claude라도 이벤트가 2개 이상이면 None.
+        assert_eq!(
+            maybe_run_observer_forwarder([
+                "agent-office",
+                "--observer-forward",
+                "claude",
+                "Stop",
+                "extra",
+            ]),
+            None,
+        );
     }
 
     #[tokio::test]
