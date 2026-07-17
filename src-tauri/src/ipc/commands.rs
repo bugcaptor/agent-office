@@ -597,6 +597,20 @@ fn resolve_usage_roots(
     (codex_root, claude_root)
 }
 
+/// Claude 자격증명(.credentials.json)·스코프 Keychain의 기준 디렉터리
+/// (docs/claude-usage-live-fetch-design.md §2.2). `.claude.json`을 읽는
+/// `claude_root`와 다르다: CLAUDE_CONFIG_DIR가 설정되면 그 경로, 미설정이면
+/// `~/.claude`(claude_root=홈과 구분됨). 빈 문자열 env는 미설정 취급.
+fn resolve_claude_config_dir(
+    home: &std::path::Path,
+    claude_config_env: Option<&str>,
+) -> std::path::PathBuf {
+    claude_config_env
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| home.join(".claude"))
+}
+
 /// 구독 사용량(rate limit) 스냅샷을 읽는다(인자 없음,
 /// docs/usage-limits-design.md). Claude(`.claude.json`)와 Codex
 /// (`sessions/`)를 각각 독립 파싱하므로 한쪽 소스가 실패해도 커맨드는
@@ -604,8 +618,22 @@ fn resolve_usage_roots(
 /// AppState가 필요 없다 -- 루트 경로만 `resolve_usage_roots`로 유도해 usage
 /// 모듈에 넘긴다. 기본은 홈 디렉터리 하위(`~/.codex`, `~/.claude.json`)이고,
 /// `CODEX_HOME`/`CLAUDE_CONFIG_DIR` 환경변수가 설정돼 있으면 그쪽을 우선한다.
+/// 이슈 #33: 실시간 조회를 얹었다. 스로틀 상태(`AppState::live_usage`)를
+/// 넘겨 렌더러 60초 폴링에 얹혀 리셋 경계 후 실제 값을 빠르게 반영한다.
+/// 실시간 경로가 실패하면 현행과 동일하게 파일 캐시 미러만 반환한다.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn load_usage_snapshot() -> Result<crate::usage::UsageSnapshot, String> {
+pub async fn load_usage_snapshot(
+    app_state: State<'_, AppState>,
+) -> Result<crate::usage::UsageSnapshot, String> {
+    Ok(load_usage_snapshot_body(&app_state.live_usage, chrono::Utc::now().timestamp_millis()).await)
+}
+
+/// 커맨드 본체(AppState 없이 호출 가능 — 기존 커맨드 테스트 관례). 전역 env를
+/// 여기서만 읽고 순수 리졸버로 경로를 유도한 뒤 usage 모듈에 위임한다.
+async fn load_usage_snapshot_body(
+    live: &crate::usage::LiveUsageState,
+    now_ms: i64,
+) -> crate::usage::UsageSnapshot {
     let home = std::path::PathBuf::from(crate::session::manager::home_dir());
     let codex_home_env = std::env::var("CODEX_HOME").ok();
     let claude_config_env = std::env::var("CLAUDE_CONFIG_DIR").ok();
@@ -614,7 +642,15 @@ pub async fn load_usage_snapshot() -> Result<crate::usage::UsageSnapshot, String
         codex_home_env.as_deref(),
         claude_config_env.as_deref(),
     );
-    Ok(crate::usage::load_usage_snapshot(&claude_root, &codex_root))
+    let claude_config_dir = resolve_claude_config_dir(&home, claude_config_env.as_deref());
+    crate::usage::load_usage_snapshot_with_live(
+        live,
+        &claude_root,
+        &claude_config_dir,
+        &codex_root,
+        now_ms,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -891,6 +927,7 @@ mod tests {
             settings,
             settings_first_run: std::sync::atomic::AtomicBool::new(true),
             session_event_root: profile_dir.join("session-events").join("v1"),
+            live_usage: crate::usage::LiveUsageState::new(),
         };
         (state, ctl, observer_dir, profile_dir)
     }
@@ -1457,5 +1494,54 @@ mod tests {
         let (codex_root, claude_root) = resolve_usage_roots(&home, Some(""), Some(""));
         assert_eq!(codex_root, PathBuf::from("/home/u/.codex"));
         assert_eq!(claude_root, PathBuf::from("/home/u"));
+    }
+
+    // ---- resolve_claude_config_dir ----
+    //
+    // 자격증명 디렉터리는 claude_root와 달리 미설정 시 ~/.claude로 내려간다
+    // (docs/claude-usage-live-fetch-design.md §2.2).
+
+    #[test]
+    fn resolve_claude_config_dir_defaults_to_dot_claude_under_home() {
+        let home = PathBuf::from("/home/u");
+        assert_eq!(
+            resolve_claude_config_dir(&home, None),
+            PathBuf::from("/home/u/.claude")
+        );
+    }
+
+    #[test]
+    fn resolve_claude_config_dir_prefers_env_when_set() {
+        let home = PathBuf::from("/home/u");
+        assert_eq!(
+            resolve_claude_config_dir(&home, Some("/custom/claude")),
+            PathBuf::from("/custom/claude")
+        );
+    }
+
+    #[test]
+    fn resolve_claude_config_dir_treats_empty_env_as_unset() {
+        let home = PathBuf::from("/home/u");
+        assert_eq!(
+            resolve_claude_config_dir(&home, Some("")),
+            PathBuf::from("/home/u/.claude")
+        );
+    }
+
+    // ---- load_usage_snapshot_body (스로틀 상태 위임) ----
+    //
+    // 커맨드 본체가 AppState 없이 호출 가능하고 파일 캐시 미러 폴백으로 항상
+    // 성공하는지만 확인한다. 개발 머신엔 실 자격증명이 있을 수 있으므로 live
+    // 경로(Keychain 자식 프로세스·실 API 호출)는 스로틀 선점으로 결정적으로
+    // 차단한다 — 이 테스트는 네트워크·Keychain에 절대 닿지 않아야 한다.
+    #[tokio::test]
+    async fn load_usage_snapshot_body_delegates_and_never_errors() {
+        let live = crate::usage::LiveUsageState::new();
+        let now = 1_784_281_391_475;
+        // 스로틀 선점: 직전에 시도한 것으로 기록해 5분 하한에 걸리게 한다.
+        assert!(live.begin_attempt_if_due(now - 1));
+        // 두 번 호출해도(폴링 흉내) 패닉/에러 없이 스냅샷을 돌려준다.
+        let _snap = load_usage_snapshot_body(&live, now).await;
+        let _snap2 = load_usage_snapshot_body(&live, now + 60_000).await;
     }
 }

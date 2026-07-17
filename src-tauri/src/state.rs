@@ -112,6 +112,10 @@ pub struct AppState {
     /// `set_app_settings` 성공 시 false로 내려가야 웹뷰 리로드 후에도 첫
     /// 실행 다이얼로그가 다시 뜨지 않는다 -- `AtomicBool`로 이 갱신을 표현.
     pub settings_first_run: AtomicBool,
+    /// Claude 사용량 실시간 조회(이슈 #33)의 메모리 상태. `load_usage_snapshot`
+    /// 커맨드가 스로틀 판단·직전 성공 스냅샷을 여기 보관해, 렌더러 60초 폴링에
+    /// 얹혀 리셋 경계 후 빠르게 실제 값을 갱신한다(docs/claude-usage-live-fetch-design.md).
+    pub live_usage: crate::usage::LiveUsageState,
 }
 
 // ── 테스트용 페이크 ────────────────────────────────────────────────────

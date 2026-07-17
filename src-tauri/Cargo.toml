@@ -37,6 +37,7 @@ portable-pty = "0.8" # latest stable. wezterm PTY
 parking_lot = "0.12" # 세션 계층 뮤텍스 — poisoning 없음(패닉 1회가 세션 관리를 앱 재시작까지 벽돌로 만드는 케스케이드 차단)
 uuid = { version = "1", features = ["v4"] } # sessionId/notification id
 sha1_smol = "1" # dedupKey(순수 Rust, 추가 트랜지티브 의존 없음)
+sha2 = "0.10" # Claude Code 스코프 Keychain 서비스명(CLAUDE_CONFIG_DIR sha256 앞 8자). 이미 Cargo.lock에 트랜지티브로 존재.
 base64 = "0.22" # 초상 PNG base64 IPC 왕복 디코드/인코드
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
