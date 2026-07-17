@@ -44,6 +44,9 @@ export const Commands = {
   // Claude 세션 이어하기(docs/claude-session-resume-design.md) — 캡처된
   // native 세션 ID를 agentId별로 돌려준다.
   listClaudeResumeSessions: "list_claude_resume_sessions",
+  // 구독 사용량(rate limit) 스냅샷(docs/usage-limits-design.md) — 홈 디렉터리의
+  // Claude/Codex 로컬 캐시를 읽어 정규화한 원시 스냅샷.
+  loadUsageSnapshot: "load_usage_snapshot",
 } as const;
 
 /**

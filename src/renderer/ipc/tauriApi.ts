@@ -178,6 +178,10 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.listClaudeResumeSessions);
   },
 
+  async loadUsageSnapshot() {
+    return await invoke(Commands.loadUsageSnapshot);
+  },
+
   onData(agentId, cb) {
     let sub = outputSubs.get(agentId);
     if (!sub) {

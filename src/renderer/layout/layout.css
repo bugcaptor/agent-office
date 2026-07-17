@@ -12,6 +12,7 @@
 @import "../terminal/terminal.css";
 @import "../timeline/timeline.css";
 @import "../analytics/analytics.css";
+@import "../usage/usage.css";
 
 html,
 body,
@@ -119,15 +120,39 @@ body {
 .bottom-bar {
   height: 48px;
   justify-content: space-between;
-  padding: 0 calc(var(--unit) * 3);
-  gap: calc(var(--unit) * 3);
+  padding: 0 var(--unit);
+  gap: var(--unit);
+  /* `.pixel-btn` 자식들은 아래에서 flex-shrink:0(줄바꿈 방지)이라, 창이
+   * 800px보다도 훨씬 좁아지면(창에 최소 크기 제약이 없다 — tauri.conf.json)
+   * 버튼 합계가 바 자체보다 넓어질 수 있다. overflow 없이 두면 오른쪽 끝
+   * 버튼(예: 음소거)이 창 밖으로 밀려나 아예 클릭할 수 없게 된다 — 가로
+   * 스크롤을 열어 항상 스크롤로라도 닿을 수 있게 한다(모든 컨트롤 접근성
+   * 보장이 줄바꿈 없음보다 우선).
+   */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* 기본 창 폭 800px(tauri.conf.json)에서 버튼들이 줄바꿈되지 않게 고정폭
+ * 유지: 이 규칙이 없으면 flexbox 기본 shrink가 버튼 텍스트를 여러 줄로
+ * 접어 바 전체가 깨진다(usage-limits-design.md §3 BottomBar 참고). 폭이
+ * 줄어들 때 흡수하는 쪽은 `.bottom-bar-status`(말줄임)와
+ * `.usage-widget`(usage.css 미디어 쿼리)뿐이다.
+ */
+.bottom-bar > .pixel-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .bottom-bar-status {
   color: var(--text-dim);
   font-size: 0.8rem;
   flex: 1;
+  min-width: 0;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mute-btn[aria-pressed="true"] {

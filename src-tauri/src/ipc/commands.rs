@@ -573,6 +573,50 @@ pub async fn list_claude_resume_sessions(
     Ok(app_state.claude_resume_store.load_all())
 }
 
+/// 사용량 소스 루트 결정의 순수 계산부. 전역 `std::env::var` 접근과
+/// 분리해 두어야 단위 테스트에서 프로세스 전역 env에 손대지 않고 조합을
+/// 검증할 수 있다(docs/usage-limits-design.md §2). 실제 CLI가 존중하는
+/// 표준 오버라이드를 그대로 따른다: Codex는 `CODEX_HOME`(설정되면
+/// `<CODEX_HOME>/sessions`를 읽음), Claude는 `CLAUDE_CONFIG_DIR`(설정되면
+/// `<CLAUDE_CONFIG_DIR>/.claude.json`을 읽음 -- claude.rs::load의 파일명
+/// 결합 로직은 그대로 두고 루트만 바꾼다). 빈 문자열 env는 미설정으로
+/// 취급(일부 셸/런처가 unset 대신 빈 문자열을 넘기는 경우 대비).
+fn resolve_usage_roots(
+    home: &std::path::Path,
+    codex_home_env: Option<&str>,
+    claude_config_env: Option<&str>,
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    let codex_root = codex_home_env
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| home.join(".codex"));
+    let claude_root = claude_config_env
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| home.to_path_buf());
+    (codex_root, claude_root)
+}
+
+/// 구독 사용량(rate limit) 스냅샷을 읽는다(인자 없음,
+/// docs/usage-limits-design.md). Claude(`.claude.json`)와 Codex
+/// (`sessions/`)를 각각 독립 파싱하므로 한쪽 소스가 실패해도 커맨드는
+/// 성공하고 실패한 provider만 `null`이 된다. 상태를 건드리지 않는 순수 읽기라
+/// AppState가 필요 없다 -- 루트 경로만 `resolve_usage_roots`로 유도해 usage
+/// 모듈에 넘긴다. 기본은 홈 디렉터리 하위(`~/.codex`, `~/.claude.json`)이고,
+/// `CODEX_HOME`/`CLAUDE_CONFIG_DIR` 환경변수가 설정돼 있으면 그쪽을 우선한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_usage_snapshot() -> Result<crate::usage::UsageSnapshot, String> {
+    let home = std::path::PathBuf::from(crate::session::manager::home_dir());
+    let codex_home_env = std::env::var("CODEX_HOME").ok();
+    let claude_config_env = std::env::var("CLAUDE_CONFIG_DIR").ok();
+    let (codex_root, claude_root) = resolve_usage_roots(
+        &home,
+        codex_home_env.as_deref(),
+        claude_config_env.as_deref(),
+    );
+    Ok(crate::usage::load_usage_snapshot(&claude_root, &codex_root))
+}
+
 #[cfg(test)]
 mod tests {
     // Assert each command *body* delegates correctly into
@@ -1364,5 +1408,54 @@ mod tests {
         );
         assert!(loaded.is_empty());
         cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    // ---- resolve_usage_roots ----
+    //
+    // 전역 `std::env::var` 없이 순수 계산만 검증(load_usage_snapshot 본문과
+    // 동일 로직). docs/usage-limits-design.md §2 CODEX_HOME/CLAUDE_CONFIG_DIR
+    // 오버라이드 계약.
+
+    #[test]
+    fn resolve_usage_roots_defaults_to_home_when_no_env_set() {
+        let home = PathBuf::from("/home/u");
+        let (codex_root, claude_root) = resolve_usage_roots(&home, None, None);
+        assert_eq!(codex_root, PathBuf::from("/home/u/.codex"));
+        assert_eq!(claude_root, PathBuf::from("/home/u"));
+    }
+
+    #[test]
+    fn resolve_usage_roots_prefers_codex_home_env_when_set() {
+        let home = PathBuf::from("/home/u");
+        let (codex_root, claude_root) =
+            resolve_usage_roots(&home, Some("/custom/codex"), None);
+        assert_eq!(codex_root, PathBuf::from("/custom/codex"));
+        assert_eq!(claude_root, PathBuf::from("/home/u"));
+    }
+
+    #[test]
+    fn resolve_usage_roots_prefers_claude_config_dir_env_when_set() {
+        let home = PathBuf::from("/home/u");
+        let (codex_root, claude_root) =
+            resolve_usage_roots(&home, None, Some("/custom/claude"));
+        assert_eq!(codex_root, PathBuf::from("/home/u/.codex"));
+        assert_eq!(claude_root, PathBuf::from("/custom/claude"));
+    }
+
+    #[test]
+    fn resolve_usage_roots_honors_both_env_vars_independently() {
+        let home = PathBuf::from("/home/u");
+        let (codex_root, claude_root) =
+            resolve_usage_roots(&home, Some("/custom/codex"), Some("/custom/claude"));
+        assert_eq!(codex_root, PathBuf::from("/custom/codex"));
+        assert_eq!(claude_root, PathBuf::from("/custom/claude"));
+    }
+
+    #[test]
+    fn resolve_usage_roots_treats_empty_string_env_as_unset() {
+        let home = PathBuf::from("/home/u");
+        let (codex_root, claude_root) = resolve_usage_roots(&home, Some(""), Some(""));
+        assert_eq!(codex_root, PathBuf::from("/home/u/.codex"));
+        assert_eq!(claude_root, PathBuf::from("/home/u"));
     }
 }

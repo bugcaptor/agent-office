@@ -1,0 +1,215 @@
+/* src/renderer/usage/usage.css
+ *
+ * 구독 사용량 위젯(BottomBar 뱃지) + 상세 모달(UsageDialog). 전역
+ * modal-backdrop/pixel-panel/pixel-btn/dialog-actions 위에 얹는 전용 스타일.
+ * analytics.css와 같은 방식으로 styles/tokens.css 토큰만 쓴다(하드코딩 색 금지).
+ */
+@import "../styles/tokens.css";
+
+/* ── 임계 색상(위젯·바 공용) ─────────────────────────────── */
+.usage-level-normal {
+  --usage-color: var(--accent);
+}
+.usage-level-warn {
+  --usage-color: var(--accent-warn);
+}
+.usage-level-danger {
+  --usage-color: var(--accent-error);
+}
+
+/* ── BottomBar 위젯 ──────────────────────────────────────── */
+/* BottomBar는 기본 창 크기(tauri.conf.json 800×600)에서부터 이미 여유가
+ * 없다 — 실측(2026-07-17, 실제 렌더러를 800px 뷰포트로 띄워 측정):
+ * DungGeunMo 픽셀 폰트는 한글을 글자당 고정폭(≈16px)으로 그려 일반
+ * 산세리프보다 오히려 넓고, 기존 버튼(+New Agent/출근/전체 출근/분석/설정/
+ * 테마/알림)과 상태 텍스트("N running · M needs input", 자연폭 ≈160px)만
+ * 으로도 800px 폭을 거의 다 쓴다. 그래서 위젯의 "기본" 표현은 CL/CX
+ * 라벨 없이 퍼센트만 보이는 압축형이다 — 라벨(`usage-badge-label`)은
+ * 창이 충분히 넓어졌을 때(아래 min-width 쿼리)만 나타난다. 전체 정보는
+ * 항상 title 속성(호버)과 클릭 시 여는 상세 모달로 확인 가능하므로 정보
+ * 손실이 아니라 표시 축약이다. flex-shrink는 0으로 고정해 flexbox가
+ * 임의로 짓눌러 글자를 잘라내는 대신, 폭 변화는 아래 미디어 쿼리로만
+ * 단계적으로 일어나게 한다(레이아웃.css의 BottomBar flex-shrink:0 규칙과
+ * 대칭 — 다른 컨트롤과 상태 텍스트가 실제로 필요한 폭을 위젯이 먼저
+ * 내주는 구조).
+ */
+.usage-widget {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--unit) / 2);
+  padding: var(--unit);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.usage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  color: var(--usage-color, var(--text));
+  font-family: "DungGeunMo", monospace;
+  white-space: nowrap;
+}
+
+/* 기본은 숨김 — 위 주석 참고. 창이 넓을 때만 보인다. */
+.usage-badge-label {
+  display: none;
+}
+
+/* 800px 기본 폭보다 눈에 띄게 여유가 생기는 지점부터 라벨을 보여주고
+ * 뱃지 사이 간격도 넓힌다(실측 기준 900px면 라벨 포함해도 다른 컨트롤을
+ * 밀어내지 않을 정도의 여유가 생긴다). */
+@media (min-width: 900px) {
+  .usage-widget {
+    gap: calc(var(--unit) * 1.5);
+    padding: var(--unit) calc(var(--unit) * 2);
+  }
+  .usage-badge {
+    gap: calc(var(--unit) / 2);
+  }
+  .usage-badge-label {
+    display: inline;
+  }
+}
+
+.usage-badge-pct {
+  font-weight: bold;
+}
+
+.usage-badge-empty {
+  color: var(--text-dim);
+  opacity: 0.65;
+}
+
+/* ── 상세 모달 ───────────────────────────────────────────── */
+.usage-dialog {
+  width: min(460px, 92vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  font-family: "DungGeunMo", monospace;
+  color: var(--text);
+}
+
+.usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.usage-body {
+  flex: 1;
+  overflow-y: auto;
+  margin: calc(var(--unit) * 2) 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 4);
+}
+
+.usage-provider {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 2);
+}
+
+/* stale(>30분): provider 블록 전체를 흐리게. */
+.usage-stale {
+  opacity: 0.5;
+}
+
+.usage-provider-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: calc(var(--unit) * 2);
+  border-bottom: 2px solid var(--border-dark);
+  padding-bottom: var(--unit);
+}
+
+.usage-provider-name {
+  font-weight: bold;
+}
+
+.usage-plan {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.usage-empty-msg {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  margin: var(--unit) 0 0;
+}
+
+.usage-windows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 3);
+}
+
+.usage-window {
+  display: flex;
+  flex-direction: column;
+  gap: var(--unit);
+}
+
+.usage-window-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: calc(var(--unit) * 2);
+}
+
+.usage-window-label {
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--unit) * 1.5);
+}
+
+/* "지금 적용 중" 태그: is_active === true인 윈도에만. is_active는 유효성이
+ * 아니라 "지금 구속 중인 윈도" 표시라, weekly 한도는 이 태그가 없어도
+ * 여전히 유효하다(usage-limits-design.md §2 참고). */
+.usage-active-tag {
+  font-size: 0.6rem;
+  color: var(--bg-panel);
+  background: var(--accent);
+  border: 1px solid var(--border-dark);
+  padding: 0 calc(var(--unit) * 1.5);
+  white-space: nowrap;
+}
+
+.usage-window-pct {
+  font-weight: bold;
+}
+
+/* 픽셀 바(라이브러리 없이 자체 렌더). */
+.usage-bar {
+  position: relative;
+  width: 100%;
+  height: calc(var(--unit) * 3);
+  background: var(--bg-panel-hi);
+  border: 1px solid var(--border-dark);
+  overflow: hidden;
+}
+
+.usage-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--usage-color, var(--accent));
+  transition: width 0.3s ease-out;
+}
+
+.usage-countdown {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.usage-freshness {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  margin-top: var(--unit);
+}

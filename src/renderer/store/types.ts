@@ -63,7 +63,8 @@ export type ModalState =
   | { kind: "confirm-clock-out-all" }
   | { kind: "confirm-quit" }
   | { kind: "settings" }
-  | { kind: "analytics" };
+  | { kind: "analytics" }
+  | { kind: "usage" };
 
 /**
  * 머리 위 작업 라벨의 에이전트별 소스 상태. 비영속(런타임 전용).
