@@ -557,6 +557,22 @@ pub async fn load_session_events(
     ))
 }
 
+/// 에이전트별 최신 Claude native 세션(리줌) 스냅샷 전체를 읽는다(이어하기
+/// 메뉴용). 렌더러는 메뉴를 열 때만 조회하므로 이벤트 푸시가 필요 없다
+/// (docs/claude-session-resume-design.md §5). 반환은 항상 성공.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_claude_resume_sessions(
+    app_state: State<'_, AppState>,
+) -> Result<
+    std::collections::HashMap<
+        String,
+        crate::persistence::claude_resume_store::ClaudeResumeEntry,
+    >,
+    String,
+> {
+    Ok(app_state.claude_resume_store.load_all())
+}
+
 #[cfg(test)]
 mod tests {
     // Assert each command *body* delegates correctly into
@@ -812,6 +828,10 @@ mod tests {
         let session_time_store = crate::persistence::session_time_store::SessionTimeStore::new(
             profile_dir.join("session-times.jsonl"),
         );
+        let claude_resume_store =
+            Arc::new(crate::persistence::claude_resume_store::ClaudeResumeStore::new(
+                profile_dir.join("claude-resume.json"),
+            ));
 
         let state = AppState {
             manager,
@@ -822,6 +842,7 @@ mod tests {
             portrait_store,
             sprite_store,
             session_time_store,
+            claude_resume_store,
             settings_store,
             settings,
             settings_first_run: std::sync::atomic::AtomicBool::new(true),

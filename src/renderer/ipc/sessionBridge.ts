@@ -81,12 +81,18 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
  *   백엔드가 살아있는 세션을 재사용한 경우 상태 이벤트를 방출하지 않고
  *   결과만 돌려주므로, 이 반영이 없으면 "starting"에 영구 고착된다.
  * - 실패/타임아웃: exited로 되돌려 이후 클릭·재시작이 재시도할 수 있게 한다.
+ *
+ * `overrides.startupCommand`는 이번 1회 생성에만 프로필의 startupCommand를
+ * 대체한다(Claude 세션 이어하기 — resumeAgentSession). 부재면 프로필 그대로.
  */
-export async function runGuardedCreateSession(agentId: string): Promise<void> {
+export async function runGuardedCreateSession(
+  agentId: string,
+  overrides?: { startupCommand?: string },
+): Promise<void> {
   const agent = useAppStore.getState().agents[agentId];
   try {
     const res = await withTimeout(
-      tauriApi.createSession(agentId, sessionOptsFor(agent)),
+      tauriApi.createSession(agentId, sessionOptsFor(agent, overrides)),
       CREATE_SESSION_TIMEOUT_MS,
       `createSession(${agentId})`,
     );

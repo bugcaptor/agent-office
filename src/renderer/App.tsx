@@ -8,6 +8,7 @@ import { DeskAssignMenu } from "./desk/DeskAssignMenu";
 import { ProfileDialog } from "./profile/ProfileDialog";
 import { ConfirmDeleteDialog } from "./agent/ConfirmDeleteDialog";
 import { ConfirmRestartDialog } from "./agent/ConfirmRestartDialog";
+import { ConfirmResumeDialog } from "./agent/ConfirmResumeDialog";
 import { ConfirmTerminateDialog } from "./agent/ConfirmTerminateDialog";
 import { ConfirmClockOutDialog } from "./agent/ConfirmClockOutDialog";
 import { ConfirmQuitDialog } from "./agent/ConfirmQuitDialog";
@@ -93,6 +94,7 @@ function App() {
         <ProfileDialog />
         <ConfirmDeleteDialog />
         <ConfirmRestartDialog />
+        <ConfirmResumeDialog />
         <ConfirmTerminateDialog />
         <ConfirmClockOutDialog />
         <ConfirmQuitDialog />

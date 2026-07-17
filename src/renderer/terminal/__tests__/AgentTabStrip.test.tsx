@@ -35,9 +35,12 @@ vi.mock("../../office/gen/characterFactory", () => ({
 // `tauriApi`는 실제 @tauri-apps/api invoke를 부르므로 jsdom에서는 mock
 // (ProfileDialog 테스트와 동일한 관례). "VS Code로 열기" 경로 전달 검증용.
 const openInVscode = vi.fn().mockResolvedValue(undefined);
+// 컨텍스트 메뉴를 열면 이어하기 후보를 조회한다 — 기본은 빈 목록(항목 비활성).
+const listClaudeResumeSessions = vi.fn().mockResolvedValue({});
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     openInVscode: (...args: unknown[]) => openInVscode(...args),
+    listClaudeResumeSessions: (...args: unknown[]) => listClaudeResumeSessions(...args),
   },
 }));
 
@@ -61,6 +64,8 @@ beforeEach(() => {
   useAppStore.setState(initialState, true);
   generateSpritePreview.mockClear();
   openInVscode.mockClear();
+  listClaudeResumeSessions.mockClear();
+  listClaudeResumeSessions.mockResolvedValue({});
 });
 
 afterEach(() => cleanup());
@@ -328,14 +333,15 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
     expect(openInVscode).not.toHaveBeenCalled();
   });
 
-  it("'터미널 종료'가 '터미널 재시작' 바로 다음 항목으로 보이고 선택 시 confirm-terminate 모달을 열고 메뉴는 닫힌다", () => {
+  it("'터미널 종료'가 '터미널 재시작' → '이전 세션 이어하기' 다음 항목으로 보이고 선택 시 confirm-terminate 모달을 열고 메뉴는 닫힌다", () => {
     seedThreeTabs(); // addAgent가 세션을 starting으로 시드 → 항목 활성
     const { getAllByRole, getByRole, queryByRole } = render(<AgentTabStrip />);
 
     fireEvent.contextMenu(getAllByRole("tab")[0]); // "Agent a1"
     const items = getAllByRole("menuitem");
     expect(items[0].textContent).toBe("터미널 재시작");
-    expect(items[1].textContent).toBe("터미널 종료");
+    expect(items[1].textContent).toBe("이전 세션 이어하기");
+    expect(items[2].textContent).toBe("터미널 종료");
 
     fireEvent.click(getByRole("menuitem", { name: "터미널 종료" }));
 
@@ -357,6 +363,89 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
 
     fireEvent.click(item);
     expect(useAppStore.getState().modal).toEqual({ kind: "none" });
+  });
+
+  it("이어하기 후보가 없으면 '이전 세션 이어하기'가 비활성화된다", async () => {
+    seedThreeTabs(); // 기본 mock: 빈 목록
+    const { getAllByRole, findByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    // 조회 프라미스가 해소된 뒤에도 후보가 없으므로 계속 비활성.
+    const item = await findByRole("menuitem", { name: "이전 세션 이어하기" });
+    expect(item).toHaveProperty("disabled", true);
+  });
+
+  it("이어하기 후보가 있으면 항목이 활성화되고 선택 시 confirm-resume 모달을 sessionId와 함께 연다", async () => {
+    seedThreeTabs();
+    listClaudeResumeSessions.mockResolvedValue({
+      a1: { sessionId: "2f8c1a20-abcd", cwd: "/work/a1", updatedAt: 1 },
+    });
+    const { getAllByRole, findByRole, queryByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]); // "Agent a1"
+    // 조회 결과 반영을 기다렸다가(리렌더) 활성화된 항목을 클릭.
+    const item = await findByRole("menuitem", { name: "이전 세션 이어하기" });
+    expect(item).toHaveProperty("disabled", false);
+
+    fireEvent.click(item);
+
+    expect(useAppStore.getState().modal).toEqual({
+      kind: "confirm-resume",
+      agentId: "a1",
+      sessionId: "2f8c1a20-abcd",
+    });
+    expect(queryByRole("menu")).toBeNull();
+  });
+
+  it("메뉴를 다시 열면 이전 조회 결과가 비워지고, 조회 실패 시 비활성으로 남는다", async () => {
+    seedThreeTabs();
+    listClaudeResumeSessions.mockResolvedValueOnce({
+      a1: { sessionId: "2f8c1a20-abcd", cwd: "/work/a1", updatedAt: 1 },
+    });
+    const { getAllByRole, findByRole, getByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    const enabled = await findByRole("menuitem", { name: "이전 세션 이어하기" });
+    expect(enabled).toHaveProperty("disabled", false);
+
+    // 두 번째 열기: 조회가 거부되면 낡은 엔트리(2f8c1a20-abcd)가 남아
+    // 활성화되면 안 된다 — 열 때 비워지고 실패 후에도 비활성 유지.
+    listClaudeResumeSessions.mockRejectedValueOnce(new Error("ipc down"));
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    const item = getByRole("menuitem", { name: "이전 세션 이어하기" });
+    expect(item).toHaveProperty("disabled", true);
+    await Promise.resolve(); // 거부 settle
+    await Promise.resolve();
+    expect(
+      getByRole("menuitem", { name: "이전 세션 이어하기" })
+    ).toHaveProperty("disabled", true);
+  });
+
+  it("메뉴를 연달아 열면 늦게 도착한 이전 조회 응답은 무시된다", async () => {
+    seedThreeTabs();
+    let resolveFirst!: (v: Record<string, unknown>) => void;
+    const first = new Promise<Record<string, unknown>>((r) => {
+      resolveFirst = r;
+    });
+    listClaudeResumeSessions
+      .mockReturnValueOnce(first) // 첫 열기: 응답 지연
+      .mockResolvedValueOnce({}); // 두 번째 열기: 빈 목록(최신)
+    const { getAllByRole, findByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]); // 조회 1 (pending)
+    fireEvent.contextMenu(getAllByRole("tab")[0]); // 조회 2 → 빈 목록
+    const item = await findByRole("menuitem", { name: "이전 세션 이어하기" });
+    expect(item).toHaveProperty("disabled", true);
+
+    // 뒤늦게 도착한 조회 1 응답(낡은 ID)은 세대 가드에 걸려 무시돼야 한다.
+    resolveFirst({
+      a1: { sessionId: "0ld5e551-0000", cwd: "/work/a1", updatedAt: 1 },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(
+      (await findByRole("menuitem", { name: "이전 세션 이어하기" }))
+    ).toHaveProperty("disabled", true);
   });
 
   it("'퇴근' 선택 시 confirm-clock-out 모달을 열고 메뉴는 닫힌다", () => {

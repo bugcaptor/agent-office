@@ -57,6 +57,7 @@ export type ModalState =
   | { kind: "profile-edit"; agentId: string }
   | { kind: "confirm-delete"; agentId: string }
   | { kind: "confirm-restart"; agentId: string }
+  | { kind: "confirm-resume"; agentId: string; sessionId: string }
   | { kind: "confirm-terminate"; agentId: string }
   | { kind: "confirm-clock-out"; agentId: string }
   | { kind: "confirm-clock-out-all" }

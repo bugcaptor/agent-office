@@ -11,13 +11,14 @@
 // - Escape         -> deliberately NOT handled here. Claiming Escape would
 //   break TUI apps (vim etc.) that need a real Escape keystroke delivered to
 //   the shell; overlay close is header-X-button/Cmd+W only.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "../store/appStore";
 import { generateSpritePreview } from "../office/gen/characterFactory";
 import { resolveArchetype } from "../office/gen/archetypes";
 import { ContextMenu } from "../ui/ContextMenu";
 import { tauriApi } from "../ipc/tauriApi";
+import type { ClaudeResumeEntry } from "@shared/types";
 
 export function AgentTabStrip() {
   const isOpen = useAppStore((s) => s.activeTerminalAgentId !== null);
@@ -59,6 +60,14 @@ export function AgentTabStrip() {
   const closeTerminal = useAppStore((s) => s.closeTerminal);
   const openModal = useAppStore((s) => s.openModal);
   const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
+  // 메뉴를 열 때 조회한 Claude 이어하기 후보(agentId → 최신 1건). 엔트리가
+  // 있는 에이전트만 "이전 세션 이어하기"가 활성화된다. 열 때마다 비우고
+  // 응답 도착까지는 비활성 — 이전 조회의 낡은 ID(/clear 후 등)가 잠깐이라도
+  // 활성으로 노출되면 엉뚱한 대화를 이어버린다(Codex 리뷰 지적).
+  const [resumeEntries, setResumeEntries] = useState<Record<string, ClaudeResumeEntry>>({});
+  // 조회 세대 — 메뉴를 연달아 열 때 늦게 도착한 옛 응답이 최신 상태를
+  // 덮지 않게 최신 세대의 응답만 반영한다.
+  const resumeFetchSeq = useRef(0);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -100,6 +109,17 @@ export function AgentTabStrip() {
           onContextMenu={(e) => {
             e.preventDefault();
             setMenu({ agentId: tab.id, x: e.clientX, y: e.clientY });
+            // 메뉴가 열리는 동안 이어하기 후보를 조회한다. 응답이 오면
+            // 리렌더되어 해당 항목의 활성 여부가 갱신된다(약간의 지연 허용).
+            // 조회 전엔 항상 비운다 — 실패하면 비활성인 채로 남는다.
+            setResumeEntries({});
+            const seq = ++resumeFetchSeq.current;
+            void tauriApi
+              .listClaudeResumeSessions()
+              .then((entries) => {
+                if (resumeFetchSeq.current === seq) setResumeEntries(entries);
+              })
+              .catch((err) => console.warn("이어하기 후보 조회 실패", err));
           }}
         >
           {tab.thumb && (
@@ -126,6 +146,20 @@ export function AgentTabStrip() {
               label: "터미널 재시작",
               onSelect: () =>
                 openModal({ kind: "confirm-restart", agentId: menu.agentId }),
+            },
+            {
+              label: "이전 세션 이어하기",
+              // 캡처된 Claude native 세션이 있을 때만 활성 — 없으면 비활성.
+              disabled: !resumeEntries[menu.agentId],
+              onSelect: () => {
+                const entry = resumeEntries[menu.agentId];
+                if (!entry) return;
+                openModal({
+                  kind: "confirm-resume",
+                  agentId: menu.agentId,
+                  sessionId: entry.sessionId,
+                });
+              },
             },
             {
               label: "터미널 종료",

@@ -327,6 +327,21 @@ export interface SessionEventRecord {
   state?: SessionState;
 }
 
+/**
+ * Claude 세션 이어하기(resume) 엔트리 — 에이전트당 최신 1건. observer가 훅
+ * body의 native `session_id`(그리고 `cwd`)를 캡처해 저장한 값으로,
+ * `claude --resume <sessionId>` 재개에 쓴다. 설계: docs/claude-session-resume-design.md.
+ * Rust `ClaudeResumeEntry`(camelCase) 미러.
+ */
+export interface ClaudeResumeEntry {
+  /** Claude Code native 세션 ID(agent-office 자체 UUID가 아님). */
+  sessionId: SessionId;
+  /** 캡처 시점의 작업 디렉터리(참고용 — resume은 같은 프로젝트에서만 찾는다). */
+  cwd?: string;
+  /** 마지막으로 갱신된 백엔드 epoch ms. */
+  updatedAt: number;
+}
+
 /** 라벨 요약에 사용할 로컬 CLI provider. Rust `SummaryProvider` 미러. */
 export type SummaryProvider = "claude" | "codex";
 
@@ -458,4 +473,7 @@ export interface AgentOfficeApi {
   handoffSessions(snapshots: Record<string, string>): Promise<number>;
   /** 부팅 시 1회 — 데몬에 남아있던 세션을 되찾는다. 미지원/데몬 없음이면 빈 배열. */
   adoptDetachedSessions(): Promise<AdoptedSessionInfo[]>;
+  /** Claude 세션 이어하기 후보 목록(agentId → 최신 1건). 메뉴를 열 때 조회한다.
+   * 캡처된 적 없는 에이전트는 키가 없다(빈 객체 가능). */
+  listClaudeResumeSessions(): Promise<Record<AgentId, ClaudeResumeEntry>>;
 }

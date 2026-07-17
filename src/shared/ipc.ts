@@ -41,6 +41,9 @@ export const Commands = {
   handoffSupported: "handoff_supported",
   handoffSessions: "handoff_sessions",
   adoptDetachedSessions: "adopt_detached_sessions",
+  // Claude 세션 이어하기(docs/claude-session-resume-design.md) — 캡처된
+  // native 세션 ID를 agentId별로 돌려준다.
+  listClaudeResumeSessions: "list_claude_resume_sessions",
 } as const;
 
 /**

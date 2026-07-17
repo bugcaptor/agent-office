@@ -34,6 +34,32 @@ impl ClaudeAdapter {
     fn hook_command(context: &ObserverSessionContext, event: &str) -> String {
         Self::hook_command_for(cfg!(windows), context, event)
     }
+
+    /// SessionStart/SessionEnd처럼 훅 stdout이 대화 컨텍스트로 주입되는
+    /// 이벤트용 — 서버 응답({"ok":true})이 세션에 새어들지 않게 -o로 버린다.
+    fn silent_hook_command_for(
+        windows: bool,
+        context: &ObserverSessionContext,
+        event: &str,
+    ) -> String {
+        let url = format!(
+            "{}?session={}&provider=claude&event={event}",
+            context.hook_url, context.session_id,
+        );
+        if windows {
+            format!(
+                "curl.exe -sS -o NUL -m 2 -X POST \"{url}\" -H \"Content-Type: application/json\" --data-binary @-"
+            )
+        } else {
+            format!(
+                "curl -sS -o /dev/null -m 2 -X POST '{url}' -H 'Content-Type: application/json' --data-binary @- || true"
+            )
+        }
+    }
+
+    fn silent_hook_command(context: &ObserverSessionContext, event: &str) -> String {
+        Self::silent_hook_command_for(cfg!(windows), context, event)
+    }
 }
 
 impl ObserverAdapter for ClaudeAdapter {
@@ -60,6 +86,19 @@ impl ObserverAdapter for ClaudeAdapter {
                 }],
             }])
         };
+        let silent_entry = |event: &str| {
+            serde_json::json!([{
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": Self::silent_hook_command(context, event),
+                }],
+            }])
+        };
+        // SessionStart/SessionEnd는 map_hook에서 이벤트로 매핑되지 않지만(허브
+        // 무영향), ingest의 리줌 ID 캡처가 body를 본다 — 프롬프트 한 번 없이
+        // 시작·종료한 세션도 리줌 ID를 남기기 위한 등록(리뷰 지적 반영,
+        // docs/claude-session-resume-design.md §2).
         let settings = serde_json::json!({
             "hooks": {
                 "UserPromptSubmit": entry("UserPromptSubmit"),
@@ -68,6 +107,8 @@ impl ObserverAdapter for ClaudeAdapter {
                 "Stop": entry("Stop"),
                 "SubagentStart": entry("SubagentStart"),
                 "SubagentStop": entry("SubagentStop"),
+                "SessionStart": silent_entry("SessionStart"),
+                "SessionEnd": silent_entry("SessionEnd"),
             },
         });
         let contents = serde_json::to_vec_pretty(&settings)
@@ -212,6 +253,51 @@ mod tests {
         }
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn claude_plan_registers_session_lifecycle_hooks_with_silent_curl() {
+        let dir = scratch_dir();
+        let adapter = ClaudeAdapter::new(dir.clone());
+        let context = ObserverSessionContext::new("ao-s1", "http://127.0.0.1:43123/hook");
+
+        adapter.prepare_session(&context).unwrap();
+        let path = dir.join("ao-s1.settings.json");
+        let json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+
+        for event in ["SessionStart", "SessionEnd"] {
+            let entry = &json["hooks"][event][0];
+            assert_eq!(entry["matcher"], "", "missing {event} hook: {json}");
+            let command = entry["hooks"][0]["command"].as_str().unwrap();
+            assert!(
+                command.contains(&format!("provider=claude&event={event}")),
+                "wrong {event} command: {command}",
+            );
+            // SessionStart/End는 훅 stdout이 세션 컨텍스트로 주입되므로 응답
+            // body를 버려야 한다.
+            assert!(
+                command.contains("-o /dev/null") || command.contains("-o NUL"),
+                "{event} must discard the response body: {command}",
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn session_lifecycle_hooks_map_to_no_observer_event() {
+        // 리줌 ID 캡처 전용 등록 — 허브 이벤트(턴 경계·활동)에는 영향이 없어야 한다.
+        let adapter = ClaudeAdapter::new(scratch_dir());
+        for event_name in ["SessionStart", "SessionEnd"] {
+            assert_eq!(
+                adapter.map_hook(&RawObserverHook {
+                    event_name,
+                    body: br#"{"session_id":"native-1"}"#,
+                }),
+                None,
+            );
+        }
     }
 
     #[test]
