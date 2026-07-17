@@ -83,7 +83,7 @@ interface UsageWindow {
 interface ProviderUsage {
   provider: "claude" | "codex";
   fetchedAtMs: number;         // 신선도 기준 시각
-  planLabel: string | null;    // codex plan_type, claude organizationRateLimitTier 등
+  planLabel: string | null;    // codex plan_type, claude oauthAccount.organizationRateLimitTier(루트 폴백) 등
   windows: UsageWindow[];
 }
 interface UsageSnapshot { claude: ProviderUsage | null; codex: ProviderUsage | null; }

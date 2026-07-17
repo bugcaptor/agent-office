@@ -28,9 +28,13 @@ fn parse_usage(root: &Value) -> Option<ProviderUsage> {
     let fetched_at_ms = cached.get("fetchedAtMs")?.as_i64()?;
     let util = cached.get("utilization")?;
 
-    // 플랜 라벨은 best-effort — 없으면 null.
+    // 플랜 라벨은 best-effort — 없으면 null. 실측 위치는
+    // `oauthAccount.organizationRateLimitTier`(예: "default_claude_max_20x"),
+    // 루트 조회는 혹시 모를 구버전/변형 대비 폴백.
     let plan_label = root
-        .get("organizationRateLimitTier")
+        .get("oauthAccount")
+        .and_then(|a| a.get("organizationRateLimitTier"))
+        .or_else(|| root.get("organizationRateLimitTier"))
         .and_then(Value::as_str)
         .map(str::to_string);
 
@@ -149,7 +153,7 @@ mod tests {
         write_claude_json(
             &root,
             r#"{
-              "organizationRateLimitTier": "max_20x",
+              "oauthAccount": { "organizationRateLimitTier": "max_20x" },
               "cachedUsageUtilization": {
                 "fetchedAtMs": 1784281391475,
                 "utilization": {
@@ -183,6 +187,25 @@ mod tests {
         assert_eq!(usage.windows[0].is_active, Some(true));
         assert_eq!(usage.windows[1].is_active, Some(false));
         assert_eq!(usage.windows[2].is_active, Some(false));
+    }
+
+    #[test]
+    fn plan_label_falls_back_to_root_when_no_oauth_account() {
+        let root = scratch();
+        write_claude_json(
+            &root,
+            r#"{
+              "organizationRateLimitTier": "legacy_tier",
+              "cachedUsageUtilization": {
+                "fetchedAtMs": 1,
+                "utilization": {
+                  "limits": [ { "kind": "session", "percent": 5, "resets_at": "2026-07-17T09:50:00+00:00" } ]
+                }
+              }
+            }"#,
+        );
+        let usage = load(&root).unwrap();
+        assert_eq!(usage.plan_label.as_deref(), Some("legacy_tier"));
     }
 
     #[test]
