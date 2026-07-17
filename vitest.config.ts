@@ -1,11 +1,20 @@
 import { fileURLToPath, URL } from "node:url";
+import { createRequire } from "node:module";
 
 import { defineConfig, configDefaults } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
+// Kept in sync with vite.config.ts -- AboutDialog.test.tsx asserts on
+// `__APP_VERSION__`, so the test runner needs the same define the app build
+// gets.
+const pkg = createRequire(import.meta.url)("./package.json") as { version: string };
+
 // https://vitest.dev/config/
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   resolve: {
     // Kept in sync with tsconfig.json "paths" / vite.config.ts
     alias: {

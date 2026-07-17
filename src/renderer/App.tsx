@@ -16,6 +16,7 @@ import { SettingsDialog } from "./settings/SettingsDialog";
 import { FirstRunDialog } from "./settings/FirstRunDialog";
 import { AnalyticsDialog } from "./analytics/AnalyticsDialog";
 import { UsageDialog } from "./usage/UsageDialog";
+import { AboutDialog } from "./about/AboutDialog";
 import { useAppStore } from "./store/appStore";
 import { useAgentList, useLightsOff } from "./store/selectors";
 import { THEMES } from "./theme/themes";
@@ -47,10 +48,12 @@ import { UIChrome } from "./layout/UIChrome";
 //   Layer 3 (z:30) ModalRoot       -- ProfileDialog/ConfirmDeleteDialog/
 //                                     ConfirmRestartDialog/ConfirmClockOutDialog/
 //                                     ConfirmQuitDialog/SettingsDialog/
-//                                     FirstRunDialog, all always mounted,
-//                                     each self-gated (`null` render) on
-//                                     `modal.kind` except FirstRunDialog
-//                                     which gates on `settingsFirstRun`.
+//                                     FirstRunDialog/AnalyticsDialog/
+//                                     UsageDialog/AboutDialog, all always
+//                                     mounted, each self-gated (`null`
+//                                     render) on `modal.kind` except
+//                                     FirstRunDialog which gates on
+//                                     `settingsFirstRun`.
 function App() {
   const agents = useAgentList();
   // The store's `AgentProfile` (src/shared/types.ts) is structurally
@@ -103,6 +106,7 @@ function App() {
         <FirstRunDialog />
         <AnalyticsDialog />
         <UsageDialog />
+        <AboutDialog />
       </div>
     </div>
   );

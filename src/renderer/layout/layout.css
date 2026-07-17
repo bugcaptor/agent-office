@@ -371,6 +371,24 @@ body {
   margin-right: auto;
 }
 
+/* ── 정보(About) 다이얼로그: 텍스트만 있는 단순 패널이라 폭 제한 정도만 ── */
+.about-dialog {
+  width: min(360px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 2);
+}
+.about-dialog .pixel-title {
+  margin: 0;
+}
+.about-dialog p {
+  margin: 0;
+}
+.about-dialog .about-license {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
 /* 설정 폼(첫 실행/설정 다이얼로그 공유): 토글 + 설명 2단 구성 */
 .settings-form { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
 .settings-item { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }

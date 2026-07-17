@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from "node:url";
+import { createRequire } from "node:module";
 
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -6,9 +7,22 @@ import react from "@vitejs/plugin-react";
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
+// createRequire (not a JSON import) -- this config file is loaded by Vite's
+// own esbuild-based transform, which doesn't reliably support `import ...
+// with { type: "json" }` yet; require() of JSON is universally supported.
+const pkg = createRequire(import.meta.url)("./package.json") as { version: string };
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
+
+  // AboutDialog reads this to show the running app version without a
+  // separate IPC round-trip to the Tauri side -- package.json's `version`
+  // is the single source of truth (kept in sync with src-tauri via
+  // scripts/bump-version.mjs).
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
 
   resolve: {
     // Kept in sync with tsconfig.json "paths"
