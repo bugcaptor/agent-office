@@ -29,7 +29,20 @@
 // 호출 횟수 자체를 제한한다. 대상 파일 목록 수집·mtime 정렬은 전체 날짜
 // 디렉터리를 대상으로 하고(결정적 정렬이라 비용은 디렉터리 순회 정도),
 // 실제 파일 내용을 읽어 파싱하는 비용이 큰 작업만 상한을 둔다.
+//
+// 파일 내부 스캔(parse_file): 장기 세션 rollout은 수백 MB가 될 수 있고
+// 60초 폴링마다 최대 MAX_PARSED_FILES개를 매번 `read_to_string`으로 통째로
+// 읽으면 I/O·메모리 낭비가 크다. 그래서 파일 끝에서부터 TAIL_CHUNK_BYTES
+// 단위로 역방향 청크를 읽어, 완성된 라인을 뒤에서부터(EOF 쪽부터) 검사하고
+// 첫 non-null 스냅샷을 찾으면 즉시 반환한다 — 상주 메모리는 청크 1개 +
+// 청크 경계에 걸친 미완결 라인(carry) 수준으로 유지된다. 청크 경계에 걸린
+// 라인은 다음(더 앞쪽) 청크와 이어붙여 처리하므로 온전한 라인만 파싱 대상이
+// 된다. 총 스캔은 파일당 MAX_TAIL_SCAN_BYTES로 상한을 둔다 — rate_limits
+// 스냅샷은 token_count 이벤트마다 기록되므로, 유효한 파일이라면 스냅샷은
+// 항상 꼬리 근처에 있다는 것이 전제(그 이상 뒤져도 못 찾으면 이 파일은
+// 포기하고 다음 파일로 넘어간다).
 
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -40,6 +53,15 @@ use super::{parse_iso8601_ms, Provider, ProviderUsage, UsageWindow, UsageWindowK
 /// parse_file 호출 횟수 상한(스캔 비용 상한). 이 개수만큼 파싱하고도 더 나은
 /// 후보를 못 찾으면(또는 아예 못 찾으면) 탐색을 중단한다.
 const MAX_PARSED_FILES: usize = 64;
+
+/// 파일 끝에서부터 역방향으로 읽는 청크 크기.
+const TAIL_CHUNK_BYTES: u64 = 64 * 1024;
+
+/// 파일당 꼬리에서부터 스캔하는 총 상한(바이트). rate_limits 스냅샷은
+/// token_count 이벤트마다 기록되므로 유효한 파일이라면 꼬리 근처에 있다는
+/// 전제 — 이 상한을 넘도록 non-null 스냅샷을 못 찾으면 그 파일은 포기하고
+/// (다음 파일로) 넘어간다.
+const MAX_TAIL_SCAN_BYTES: u64 = 8 * 1024 * 1024;
 
 /// `<codex_root>/sessions`에서 가장 최근(스냅샷 timestamp 기준) non-null
 /// rate_limits 스냅샷을 찾는다. 없으면 None.
@@ -141,57 +163,97 @@ fn all_rollout_files_by_mtime_desc(sessions: &Path) -> Vec<(SystemTime, PathBuf)
     files
 }
 
-/// 파일 끝에서부터 마지막 non-null rate_limits 라인을 찾아 ProviderUsage로.
-/// non-null = rate_limits 객체가 있고 primary/secondary 중 하나 이상이 non-null.
+/// 파일 끝에서부터 TAIL_CHUNK_BYTES 단위로 역방향 청크를 읽어, 완성된
+/// 라인을 뒤에서부터 검사해 마지막 non-null rate_limits 라인을 찾는다.
+/// 파일 전체를 메모리에 올리지 않는다(모듈 상단 스캔 전략 주석 참고).
+/// 청크 경계에 걸린 라인은 `carry`에 담아 다음(더 앞쪽) 청크와 이어붙인
+/// 뒤에 처리한다. `MAX_TAIL_SCAN_BYTES`를 넘도록 못 찾으면 None.
 fn parse_file(path: &Path) -> Option<ProviderUsage> {
-    let content = std::fs::read_to_string(path).ok()?;
-    for line in content.lines().rev() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(v) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        let Some(rl) = v.get("payload").and_then(|p| p.get("rate_limits")) else {
-            continue;
-        };
-        if rl.is_null() {
-            continue;
-        }
-        let primary = rl.get("primary").filter(|x| !x.is_null());
-        let secondary = rl.get("secondary").filter(|x| !x.is_null());
-        if primary.is_none() && secondary.is_none() {
-            continue;
-        }
-        let Some(fetched_at_ms) = v
-            .get("timestamp")
-            .and_then(Value::as_str)
-            .and_then(parse_iso8601_ms)
-        else {
-            continue;
-        };
-        let plan_label = rl
-            .get("plan_type")
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        let mut windows = Vec::new();
-        for w in [primary, secondary].into_iter().flatten() {
-            if let Some(win) = parse_window(w) {
-                windows.push(win);
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+
+    let mut pos = len;
+    let mut scanned: u64 = 0;
+    // 왼쪽 경계(더 앞쪽 청크로 이어질 수 있는지)가 아직 확정되지 않은 라인
+    // 조각. 다음 청크를 읽으면 그 뒤에 붙여(파일상 순서: [새 청크][carry])
+    // 완결시킨다.
+    let mut carry: Vec<u8> = Vec::new();
+
+    while pos > 0 && scanned < MAX_TAIL_SCAN_BYTES {
+        let chunk_len = TAIL_CHUNK_BYTES.min(pos);
+        let start = pos - chunk_len;
+        file.seek(SeekFrom::Start(start)).ok()?;
+        let mut combined = vec![0u8; chunk_len as usize];
+        file.read_exact(&mut combined).ok()?;
+        scanned += chunk_len;
+        pos = start;
+        combined.extend_from_slice(&carry);
+        carry.clear();
+
+        let mut parts: Vec<&[u8]> = combined.split(|&b| b == b'\n').collect();
+        // pos(=start, 이 청크의 파일상 시작 오프셋) > 0이면 parts[0]은 더
+        // 앞쪽(왼쪽)으로 이어질 수 있는 미완결 조각이므로 이번 라운드에서는
+        // 건너뛰고 carry로 넘긴다. pos == 0(파일 시작에 도달)이면 parts[0]도
+        // 이제 완결된 라인이다.
+        let leftover = if pos > 0 { Some(parts.remove(0)) } else { None };
+
+        for line in parts.iter().rev() {
+            if let Some(usage) = parse_line(line) {
+                return Some(usage);
             }
         }
-        if windows.is_empty() {
-            continue;
+
+        match leftover {
+            Some(l) => carry = l.to_vec(),
+            None => return None, // 파일 시작까지 다 훑었는데 못 찾음.
         }
-        return Some(ProviderUsage {
-            provider: Provider::Codex,
-            fetched_at_ms,
-            plan_label,
-            windows,
-        });
     }
     None
+}
+
+/// `parse_file`이 뒤에서부터 검사하는 라인 1개를 ProviderUsage로. non-null =
+/// rate_limits 객체가 있고 primary/secondary 중 하나 이상이 non-null. UTF-8이
+/// 아닌 라인(청크 경계가 멀티바이트 문자 중간을 자른 경우는 없다 — carry
+/// 이어붙이기로 항상 `\n` 단위 완결 라인만 넘어오지만, 혹시 모를 손상 라인
+/// 대비)은 조용히 스킵.
+fn parse_line(line: &[u8]) -> Option<ProviderUsage> {
+    let line = std::str::from_utf8(line).ok()?.trim();
+    if line.is_empty() {
+        return None;
+    }
+    let v: Value = serde_json::from_str(line).ok()?;
+    let rl = v.get("payload").and_then(|p| p.get("rate_limits"))?;
+    if rl.is_null() {
+        return None;
+    }
+    let primary = rl.get("primary").filter(|x| !x.is_null());
+    let secondary = rl.get("secondary").filter(|x| !x.is_null());
+    if primary.is_none() && secondary.is_none() {
+        return None;
+    }
+    let fetched_at_ms = v
+        .get("timestamp")
+        .and_then(Value::as_str)
+        .and_then(parse_iso8601_ms)?;
+    let plan_label = rl
+        .get("plan_type")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let mut windows = Vec::new();
+    for w in [primary, secondary].into_iter().flatten() {
+        if let Some(win) = parse_window(w) {
+            windows.push(win);
+        }
+    }
+    if windows.is_empty() {
+        return None;
+    }
+    Some(ProviderUsage {
+        provider: Provider::Codex,
+        fetched_at_ms,
+        plan_label,
+        windows,
+    })
 }
 
 /// `{ "used_percent": n, "window_minutes": m, "resets_at": secs }` → 윈도.
@@ -508,5 +570,52 @@ mod tests {
     #[test]
     fn missing_sessions_dir_yields_none() {
         assert!(load(&scratch()).is_none());
+    }
+
+    /// 청크 경계 이어붙이기(§모듈 상단 스캔 전략): 유효 스냅샷 라인보다
+    /// 파일 끝(EOF) 쪽에 TAIL_CHUNK_BYTES(64KB)보다 긴 단일 패딩 라인을
+    /// 둔다. 뒤에서부터 역방향으로 읽으면 이 패딩 라인 하나를 완결시키는
+    /// 데만 최소 2번의 청크 읽기가 필요하다(carry로 이어붙임) — 그 과정이
+    /// 깨지면 패딩 라인 파싱 실패 자체는 문제 없지만(non-JSON이라 스킵),
+    /// 그 앞(더 왼쪽)의 유효 스냅샷 라인 경계가 잘못 잘려 못 찾거나 잘못된
+    /// 값을 주게 된다. 패딩 뒤(EOF 쪽)에 이 라인을 두고, 유효 스냅샷은 그
+    /// 앞(파일 시작 쪽)에 둔다 — 즉 스캔이 패딩을 다 넘어서야 도달한다.
+    #[test]
+    fn long_line_spanning_multiple_chunks_is_stitched_before_earlier_valid_snapshot() {
+        let root = scratch();
+        let valid_line = event(
+            "2026-07-17T11:20:17.595Z",
+            r#"{"primary":{"used_percent":33.0,"window_minutes":10080,"resets_at":1784786662},"secondary":null}"#,
+        );
+        // TAIL_CHUNK_BYTES(64KB)보다 확실히 긴 단일 라인(내부에 '\n' 없음) --
+        // 유효하지 않은 JSON이라 그 자체는 스냅샷으로 채택되지 않는다.
+        let padding_line = "x".repeat(70_000);
+        let body = format!("{valid_line}\n{padding_line}\n");
+        write_rollout(&root, ("2026", "07", "17"), "rollout-a.jsonl", &body);
+
+        let usage = load(&root).unwrap();
+        assert_eq!(usage.windows[0].used_percent, 33.0);
+    }
+
+    /// 스캔 상한(MAX_TAIL_SCAN_BYTES=8MB): 파일 끝에서부터 8MB를 넘는
+    /// 위치(파일 시작부)에만 유효 스냅샷이 있고, 마지막 8MB 구간은 '\n'이
+    /// 전혀 없는(따라서 한 줄도 완결되지 않는) 필러이면 스캔이 상한에서
+    /// 멈추고 앞쪽의 유효 스냅샷에 끝내 도달하지 못해 None을 돌려줘야
+    /// 한다.
+    #[test]
+    fn snapshot_beyond_max_tail_scan_bytes_yields_none() {
+        let root = scratch();
+        let valid_line = event(
+            "2026-07-17T11:20:17.595Z",
+            r#"{"primary":{"used_percent":77.0,"window_minutes":10080,"resets_at":1784786662},"secondary":null}"#,
+        );
+        // 8MB(MAX_TAIL_SCAN_BYTES)보다 넉넉히 큰, 개행이 전혀 없는 필러 --
+        // EOF 쪽에서부터 스캔해도 8MB 상한 안에서는 단 한 줄도 완결되지
+        // 않는다.
+        let filler = "z".repeat(9 * 1024 * 1024);
+        let body = format!("{valid_line}\n{filler}");
+        write_rollout(&root, ("2026", "07", "17"), "rollout-a.jsonl", &body);
+
+        assert!(load(&root).is_none());
     }
 }

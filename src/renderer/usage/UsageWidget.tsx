@@ -32,7 +32,7 @@ function ProviderBadge({
   if (!win) {
     return (
       <span className="usage-badge usage-badge-empty" title={`${short}: 데이터 없음`}>
-        {short} <span className="usage-badge-pct">—</span>
+        <span className="usage-badge-label">{short}</span> <span className="usage-badge-pct">—</span>
       </span>
     );
   }
@@ -42,7 +42,9 @@ function ProviderBadge({
       className={`usage-badge usage-level-${usageLevel(win.usedPercent)}`}
       title={`${short}: ${pct}% 사용`}
     >
-      {short} <span className="usage-badge-pct">{pct}%</span>
+      {/* usage-badge-label은 BottomBar가 좁을 때 usage.css 미디어 쿼리로
+          숨겨진다 — 좁은 폭에서는 퍼센트 숫자만 남긴다(레이아웃 §BottomBar 800px). */}
+      <span className="usage-badge-label">{short}</span> <span className="usage-badge-pct">{pct}%</span>
     </span>
   );
 }
