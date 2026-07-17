@@ -61,7 +61,8 @@ export type ModalState =
   | { kind: "confirm-clock-out"; agentId: string }
   | { kind: "confirm-clock-out-all" }
   | { kind: "confirm-quit" }
-  | { kind: "settings" };
+  | { kind: "settings" }
+  | { kind: "analytics" };
 
 /**
  * 머리 위 작업 라벨의 에이전트별 소스 상태. 비영속(런타임 전용).

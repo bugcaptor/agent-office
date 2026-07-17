@@ -240,6 +240,7 @@ pub fn run() {
                 settings_store,
                 settings: settings_cache,
                 settings_first_run: std::sync::atomic::AtomicBool::new(settings_first_run),
+                session_event_root: session_event_root(&data_dir),
             });
             Ok(())
         })
@@ -274,6 +275,7 @@ pub fn run() {
             ipc::commands::pick_directory,
             ipc::commands::append_session_turn,
             ipc::commands::load_session_turns,
+            ipc::commands::load_session_events,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build tauri app")

@@ -13,6 +13,7 @@ import { ConfirmClockOutDialog } from "./agent/ConfirmClockOutDialog";
 import { ConfirmQuitDialog } from "./agent/ConfirmQuitDialog";
 import { SettingsDialog } from "./settings/SettingsDialog";
 import { FirstRunDialog } from "./settings/FirstRunDialog";
+import { AnalyticsDialog } from "./analytics/AnalyticsDialog";
 import { useAppStore } from "./store/appStore";
 import { useAgentList, useLightsOff } from "./store/selectors";
 import { THEMES } from "./theme/themes";
@@ -97,6 +98,7 @@ function App() {
         <ConfirmQuitDialog />
         <SettingsDialog />
         <FirstRunDialog />
+        <AnalyticsDialog />
       </div>
     </div>
   );

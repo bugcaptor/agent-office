@@ -280,6 +280,53 @@ export interface SessionTurnRecord {
   waitedMs: number;
 }
 
+/**
+ * 세션 이벤트 시계열 레코드의 종류. Rust `SessionEventKind`(serde snake_case)
+ * 미러. 수집 설계 docs/session-event-timeseries-design.md §4.1 참조.
+ */
+export type SessionEventKind =
+  | "session_started"
+  | "session_state"
+  | "prompt"
+  | "tool"
+  | "notification"
+  | "bell"
+  | "stop";
+
+/**
+ * 세션 원천 이벤트 1건. `<app-data>/session-events/v1/YYYY-MM-DD.jsonl`에
+ * 한 줄씩 쌓인 레코드를 `loadSessionEvents`가 그대로 돌려준다(집계는 렌더러가
+ * 한다). Rust `SessionEventRecord`(camelCase envelope + 옵션 필드 +
+ * snake_case `kind`/`state`) 미러. 모든 시각은 백엔드 epoch ms.
+ *
+ * 옵션 필드는 `kind`에 따라만 존재한다: `agentName`/`agentRole`/`cwd`/`shell`은
+ * `session_started`에서만, `state`는 `session_state`에서만. 나머지 종류는
+ * envelope만 갖는다(선행 설계 §4.1).
+ */
+export interface SessionEventRecord {
+  /** 정수 스키마 버전. v1에서는 항상 1. */
+  schemaVersion: number;
+  /** 앱 프로세스 시작마다 생성하는 UUID. */
+  runId: string;
+  /** 해당 runId 안에서 1부터 증가하는 순번. */
+  seq: number;
+  /** 백엔드가 부여한 epoch ms. */
+  at: number;
+  agentId: AgentId;
+  sessionId: SessionId;
+  kind: SessionEventKind;
+  /** kind="session_started"일 때 세션 시작 당시 프로필 이름 스냅샷. */
+  agentName?: string;
+  /** kind="session_started"일 때 세션 시작 당시 역할 스냅샷. */
+  agentRole?: string;
+  /** kind="session_started"일 때 실제 세션 작업 디렉터리. */
+  cwd?: string;
+  /** kind="session_started"일 때 자동 선택까지 끝난 실제 실행 셸. */
+  shell?: string;
+  /** kind="session_state"일 때 전이한 세션 상태. */
+  state?: SessionState;
+}
+
 /** 라벨 요약에 사용할 로컬 CLI provider. Rust `SummaryProvider` 미러. */
 export type SummaryProvider = "claude" | "codex";
 
@@ -399,6 +446,9 @@ export interface AgentOfficeApi {
   appendSessionTurn(record: SessionTurnRecord): void;
   /** 누적된 세션 턴 기록 전체를 읽는다(통계용). 손상된 줄은 건너뛴다. */
   loadSessionTurns(): Promise<SessionTurnRecord[]>;
+  /** 세션 이벤트 시계열에서 `fromAt..=toAt`(epoch ms) 범위를 읽는다(분석 패널용).
+   * 없는 파일·손상 줄은 건너뛰며 항상 성공한다. `(at, runId, seq)` 정렬. */
+  loadSessionEvents(fromAt: number, toAt: number): Promise<SessionEventRecord[]>;
   /** 세션 핸드오프(unix 전용) 지원 여부. Windows 등 미지원 플랫폼은 false. */
   handoffSupported(): Promise<boolean>;
   /** 종료 시 살아있는 세션들을 `sessiond` 데몬으로 넘긴다. `snapshots`는

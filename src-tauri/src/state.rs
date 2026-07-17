@@ -99,6 +99,11 @@ pub struct AppState {
     /// (서버는 유지한 채) 새 세션 훅 배선에 즉시 반영된다.
     pub settings_store: SettingsStore,
     pub settings: Arc<RwLock<AppSettings>>,
+    /// 세션 이벤트 시계열 루트(`<app-data>/session-events/v1`). 수집 측
+    /// `SessionEventStore`가 쓰는 것과 같은 경로 — 분석 커맨드
+    /// (`load_session_events`)가 reader로 읽기만 하려고 경로를 따로 보관한다
+    /// (스토어는 쓰기 전용 원칙 유지, docs/session-analytics-design.md §4.1).
+    pub session_event_root: std::path::PathBuf,
     /// 부팅 시 settings.json 부재 여부 — 첫 실행 동의 다이얼로그 신호.
     /// `set_app_settings` 성공 시 false로 내려가야 웹뷰 리로드 후에도 첫
     /// 실행 다이얼로그가 다시 뜨지 않는다 -- `AtomicBool`로 이 갱신을 표현.

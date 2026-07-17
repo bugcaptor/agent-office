@@ -158,6 +158,10 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.loadSessionTurns);
   },
 
+  async loadSessionEvents(fromAt: number, toAt: number) {
+    return await invoke(Commands.loadSessionEvents, { fromAt, toAt });
+  },
+
   async handoffSupported() {
     return await invoke(Commands.handoffSupported);
   },
