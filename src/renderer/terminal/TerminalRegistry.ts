@@ -29,8 +29,14 @@ interface Entry {
   bindComposition: () => void;
 }
 
+/** TIOCSWINSZ가 같은 크기면 SIGWINCH를 안 쏘는 문제를 강제 재도색으로 우회하는 데 걸리는 대기(ms). */
+const REDRAW_NUDGE_DELAY_MS = 50;
+
 class TerminalRegistry {
   private entries = new Map<string, Entry>();
+  // 입양(adopt_detached_sessions)된 세션 — 다음 activate()에서 1회
+  // redraw nudge(§핵심 6)를 태우고 스스로 제거한다.
+  private pendingNudge = new Set<string>();
 
   /** First open for a session: creates the Terminal. Already-open agents get the existing entry back (keep-alive guarantee). */
   ensure(agentId: string): Entry {
@@ -172,10 +178,44 @@ class TerminalRegistry {
         e.fit.fit();
         onResize(e.term.cols, e.term.rows);
         e.term.focus();
+        if (this.pendingNudge.delete(agentId)) this.redrawNudge(agentId, e, onResize);
       } catch {
         /* container measured 0 (e.g. hidden again before the frame ran) */
       }
     });
+  }
+
+  /**
+   * 입양된(adopt_detached_sessions) 세션들을 표시 — 각각 다음 activate()에서
+   * 1회 redraw nudge가 발화한다. 부팅 시(bootstrap.ts) 1회 호출.
+   */
+  markAdopted(agentIds: Iterable<string>): void {
+    for (const id of agentIds) this.pendingNudge.add(id);
+  }
+
+  /**
+   * TIOCSWINSZ는 크기가 그대로면 SIGWINCH를 쏘지 않는다 — 데몬에서 되찾은
+   * PTY 안의 TUI(vim/htop/claude 등)가 재시작 전 마지막 화면을 그대로 들고
+   * 있어 재도색이 안 된다. fit()으로 확정한 실제 rows보다 1 작은 값으로
+   * resize를 한 번 보내 강제로 다르게 만든 뒤, 살짝 기다렸다 다시 fit() +
+   * onResize()로 원래 크기로 되돌린다 — SIGWINCH 2회로 TUI를 재도색시킨다.
+   * 일반 셸에는 무해(그냥 프롬프트가 두 번 다시 그려질 뿐).
+   */
+  private redrawNudge(
+    agentId: string,
+    e: Entry,
+    onResize: (cols: number, rows: number) => void
+  ): void {
+    if (e.term.rows <= 1) return; // too small to shrink by one row — skip
+    tauriApi.resize(agentId, e.term.cols, e.term.rows - 1);
+    setTimeout(() => {
+      try {
+        e.fit.fit();
+        onResize(e.term.cols, e.term.rows);
+      } catch {
+        /* container gone by the time the nudge fired — harmless */
+      }
+    }, REDRAW_NUDGE_DELAY_MS);
   }
 
   /** ResizeObserver callback for the currently-active terminal only. */
@@ -194,6 +234,7 @@ class TerminalRegistry {
     e.term.dispose();
     e.container.remove();
     this.entries.delete(agentId);
+    this.pendingNudge.delete(agentId);
   }
 }
 

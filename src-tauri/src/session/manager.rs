@@ -25,7 +25,7 @@ use crate::notification::hub::NotificationHub;
 use crate::observer::{CommandWrapperSpec, ObserverRuntime, ObserverSessionContext, WrapperArg};
 use crate::session::output_batcher::{FlushSink, OutputBatcher, MAX_BYTES, WINDOW_MS};
 use crate::session::pi_extension;
-use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnOptions};
+use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnOptions, SpawnedPty};
 use crate::session::shells;
 use crate::session_events::types::{AgentEventProfile, SessionStartedEvent};
 use crate::state::{AppEvents, SessionRegistry};
@@ -86,6 +86,32 @@ struct Session {
     control: Arc<dyn PtyControl>,
     cleanup_paths: Vec<std::path::PathBuf>,
     kill_requested: AtomicBool,
+    /// 시작 작업 디렉터리(세션 수명 동안 불변 -- `cd`는 추적하지 않는다).
+    /// 핸드오프 시 Handoff 메시지의 진단/List용 메타데이터로 실어 보낸다.
+    cwd: String,
+    /// 현재 알려진 터미널 크기. resize()가 갱신 -- 핸드오프 시 Handoff
+    /// 메시지에 실어 데몬에 보내고, 입양 응답의 AdoptedSessionInfo로
+    /// 프론트에 되돌려줘 터미널 크기를 맞추는 데 쓴다.
+    size: Mutex<(u16, u16)>, // (cols, rows)
+    /// 세션 핸드오프(§핵심 3, 4). true면 on_exit/dispose가 즉시 return —
+    /// 이 세션의 실제 수명은 sessiond가 넘겨받았다(또는 넘겨받는 중이다).
+    /// 필드 자체는 크로스플랫폼으로 둬 cfg 분기를 최소화한다(Windows/Fake는
+    /// 항상 false로 남는 no-op).
+    handed_off: AtomicBool,
+    /// unix 전용: 핸드오프 시 리더 스레드를 확정적으로 멈추는 스위치와,
+    /// sessiond에 넘길 마스터 fd/pid/pgid. `create_with_profile`(팩토리
+    /// spawn)과 `adopt_detached`(assemble_adopted) 양쪽이 채운다 — Fake로
+    /// 만든 세션은 항상 None(핸드오프 불가능 세션).
+    #[cfg(unix)]
+    reader_interrupt: Mutex<Option<crate::session::poll_reader::ReaderInterrupt>>,
+    #[cfg(unix)]
+    handoff: Mutex<Option<crate::session::pty_factory::HandoffInfo>>,
+    /// 입양된 세션 한정(§핵심 4의 AdoptedReader 정지 게이트) -- 재핸드오프
+    /// 인터럽트 직전 true로 세팅해야 EofWaiter가 오발화하지 않는다.
+    /// create() 경로(RealWaiter가 독립적으로 exit 판정)는 항상 None. 타입
+    /// 자체는 크로스플랫폼이라 cfg 분기가 필요 없다(항상 컴파일되고, 비unix는
+    /// 그냥 항상 None으로 남는다).
+    eof_stop_gate: Option<Arc<AtomicBool>>,
 }
 
 pub struct SessionManager {
@@ -101,6 +127,12 @@ pub struct SessionManager {
     sinks: Mutex<HashMap<AgentId, Arc<OutputSink>>>,
     shell_resolver:
         Arc<dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync>,
+    /// 세션 핸드오프(unix 전용)와 `AGENT_OFFICE_APP_DATA` env 주입(§핵심 5)에
+    /// 쓰는 앱 데이터 디렉터리. 프로덕션은 `lib.rs`가 `with_app_data_dir`로
+    /// 채운다 — 미설정(None)이면 `handoff_all`/`adopt_detached`는 no-op(0/빈
+    /// 벡터)이고 env 주입도 생략된다(기존 테스트가 앱 데이터 경로 없이도
+    /// 그대로 통과해야 하므로 기본값은 None).
+    app_data_dir: Option<std::path::PathBuf>,
 }
 
 impl SessionManager {
@@ -122,7 +154,16 @@ impl SessionManager {
             sessions: Mutex::new(HashMap::new()),
             sinks: Mutex::new(HashMap::new()),
             shell_resolver: Arc::new(shells::resolve_observed),
+            app_data_dir: None,
         }
+    }
+
+    /// 앱 데이터 디렉터리를 지정한다(세션 핸드오프 소켓/로그 경로,
+    /// `AGENT_OFFICE_APP_DATA` env의 근거). `lib.rs`의 프로덕션 부트스트랩만
+    /// 호출 — 테스트는 기본 None으로 이 기능을 건드리지 않는다.
+    pub fn with_app_data_dir(mut self, dir: std::path::PathBuf) -> Self {
+        self.app_data_dir = Some(dir);
+        self
     }
 
     fn find(&self, agent_id: &str) -> Option<Arc<Session>> {
@@ -270,6 +311,12 @@ impl SessionManager {
         if let Some(url) = observer_url {
             env.push(("AGENT_OFFICE_HOOK_URL".into(), url));
         }
+        // §핵심 5: 재시작 후 입양된 세션의 훅이 스폰 시점의(죽은) 포트를
+        // 때리는 문제 완화 -- forwarder가 이 경로의 observer-port 파일을
+        // 읽어 재시도할 수 있게 셸 env에 앱 데이터 디렉터리를 실어 둔다.
+        if let Some(dir) = &self.app_data_dir {
+            env.push(("AGENT_OFFICE_APP_DATA".into(), dir.to_string_lossy().into_owned()));
+        }
         env.extend(plan.env.iter().cloned());
         env.extend(resolved.extra_env.iter().cloned());
         let actual_shell = resolved.program.clone();
@@ -297,85 +344,25 @@ impl SessionManager {
             session_id: session_id.clone(),
             agent_name: profile.name,
             agent_role: profile.role,
-            cwd: actual_cwd,
+            cwd: actual_cwd.clone(),
             shell: actual_shell,
             at: now_ms(),
         });
 
-        // 세션 수명과 독립인 agentId sink 재사용: 이미 붙은 채널/백로그를
-        // 그대로 이어받아 재생성 시 재구독이 필요 없다.
-        let output = self.sink_for(&req.agent_id);
-        let session = Arc::new(Session {
-            session_id: session_id.clone(),
-            agent_id: req.agent_id.clone(),
-            state: Mutex::new(SessionState::Starting),
-            writer: Mutex::new(spawned.writer),
-            control: spawned.control,
-            cleanup_paths: plan.cleanup_paths,
-            kill_requested: AtomicBool::new(false),
-        });
-
-        self.sessions
-            .lock()
-            .insert(req.agent_id.clone(), session.clone());
+        let size = (req.cols.unwrap_or(80), req.rows.unwrap_or(24));
+        let (session, started) = self.install_session(
+            session_id.clone(),
+            req.agent_id.clone(),
+            plan.cleanup_paths,
+            actual_cwd,
+            size,
+            spawned,
+            None, // eof_stop_gate: create() 경로는 RealWaiter가 독립적으로 exit 판정
+            None, // initial_output: 새로 spawn한 세션엔 이어받을 과거 출력이 없다
+        );
         // 세션이 맵에 들어갔다 — 이후의 수명은 dispose()/on_exit()가 책임지므로
         // observer 파일 정리 가드를 해제한다.
         observer_plan_guard.armed = false;
-        self.registry
-            .insert(&session_id, &req.agent_id, SessionState::Starting);
-        self.emit_state(&session, SessionState::Starting, None);
-
-        // 1) reader thread (블로킹 read → mpsc)
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ReaderMsg>();
-        let mut reader = spawned.reader;
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 8192];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if tx.send(ReaderMsg::Data(buf[..n].to_vec())).is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            let _ = tx.send(ReaderMsg::Eof);
-        });
-
-        // 2) output pump task (배칭 + BEL 감지 + Channel 방출)
-        spawn_output_pump(
-            session_id.clone(),
-            req.agent_id.clone(),
-            rx,
-            output,
-            self.hub.clone(),
-        );
-
-        // 3) wait thread (블로킹 wait → 상태 전이)
-        let me = Arc::clone(self);
-        let sess = session.clone();
-        let waiter = spawned.waiter;
-        std::thread::spawn(move || {
-            let outcome = waiter.wait();
-            me.on_exit(&sess, outcome);
-        });
-
-        // Running 전이 (CAS): wait 스레드가 이미 Exited/Disposed로 옮겼다면
-        // 덮어쓰지 않는다. state 락을 registry.set_state/emit까지 계속 쥐어
-        // on_exit의 전이와 상호 배제 → "Exited 이후 Running" 역전을 원천 차단.
-        let started = {
-            let mut st = session.state.lock();
-            if *st == SessionState::Starting {
-                *st = SessionState::Running;
-                self.registry.set_state(&session_id, SessionState::Running);
-                self.emit_state(&session, SessionState::Running, None);
-                true
-            } else {
-                false
-            }
-        };
 
         // autostart(기본 false): 세션은 기본적으로 빈 로그인 셸만 띄운다. 사용자가
         // `claude --settings "$AGENT_OFFICE_SETTINGS"`로 직접 기동한다. 명시적으로
@@ -413,6 +400,108 @@ impl SessionManager {
         Ok(CreateSessionResult { session_id, state })
     }
 
+    /// spawn 이후 배선부 -- 세션 등록, sink 이어받기, reader/pump/wait 3스레드
+    /// 기동, Running CAS(§핵심 4: "create_with_profile의 spawn 이후 배선부를
+    /// install_session으로 추출해 create/adopt가 공유"). `create_with_profile`과
+    /// `adopt_detached` 둘 다 이 메서드로 수렴한다 -- 상태 머신·sink 재사용
+    /// 로직은 완전히 동일하게 유지된다.
+    ///
+    /// `initial_output`: 데몬이 보관해 둔 미전달 출력(입양 전용). reader
+    /// 스레드가 시작되기 *전에* pump 채널로 먼저 흘려보내 순서를 보장한다
+    /// (§핵심 4: "pump mpsc에 첫 ReaderMsg::Data로 주입").
+    #[allow(clippy::too_many_arguments)]
+    fn install_session(
+        self: &Arc<Self>,
+        session_id: SessionId,
+        agent_id: AgentId,
+        cleanup_paths: Vec<std::path::PathBuf>,
+        cwd: String,
+        size: (u16, u16),
+        spawned: SpawnedPty,
+        eof_stop_gate: Option<Arc<AtomicBool>>,
+        initial_output: Option<Vec<u8>>,
+    ) -> (Arc<Session>, bool) {
+        // 세션 수명과 독립인 agentId sink 재사용: 이미 붙은 채널/백로그를
+        // 그대로 이어받아 재생성/재입양 시 재구독이 필요 없다.
+        let output = self.sink_for(&agent_id);
+        let session = Arc::new(Session {
+            session_id: session_id.clone(),
+            agent_id: agent_id.clone(),
+            state: Mutex::new(SessionState::Starting),
+            writer: Mutex::new(spawned.writer),
+            control: spawned.control,
+            cleanup_paths,
+            kill_requested: AtomicBool::new(false),
+            cwd,
+            size: Mutex::new(size),
+            handed_off: AtomicBool::new(false),
+            #[cfg(unix)]
+            reader_interrupt: Mutex::new(spawned.reader_interrupt),
+            #[cfg(unix)]
+            handoff: Mutex::new(spawned.handoff),
+            eof_stop_gate,
+        });
+
+        self.sessions.lock().insert(agent_id.clone(), session.clone());
+        self.registry
+            .insert(&session_id, &agent_id, SessionState::Starting);
+        self.emit_state(&session, SessionState::Starting, None);
+
+        // 1) reader thread (블로킹 read → mpsc)
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ReaderMsg>();
+        if let Some(bytes) = initial_output.filter(|b| !b.is_empty()) {
+            // 리더 스레드보다 먼저 보내야 한다 -- unbounded 채널은 send() 호출
+            // 순서를 그대로 보존하므로, 아래 스레드 스폰보다 앞서 이 send가
+            // happens-before로 확정되면 순서가 깨지지 않는다.
+            let _ = tx.send(ReaderMsg::Data(bytes));
+        }
+        let mut reader = spawned.reader;
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if tx.send(ReaderMsg::Data(buf[..n].to_vec())).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let _ = tx.send(ReaderMsg::Eof);
+        });
+
+        // 2) output pump task (배칭 + BEL 감지 + Channel 방출)
+        spawn_output_pump(session_id.clone(), agent_id.clone(), rx, output, self.hub.clone());
+
+        // 3) wait thread (블로킹 wait → 상태 전이)
+        let me = Arc::clone(self);
+        let sess = session.clone();
+        let waiter = spawned.waiter;
+        std::thread::spawn(move || {
+            let outcome = waiter.wait();
+            me.on_exit(&sess, outcome);
+        });
+
+        // Running 전이 (CAS): wait 스레드가 이미 Exited/Disposed로 옮겼다면
+        // 덮어쓰지 않는다. state 락을 registry.set_state/emit까지 계속 쥐어
+        // on_exit의 전이와 상호 배제 → "Exited 이후 Running" 역전을 원천 차단.
+        let started = {
+            let mut st = session.state.lock();
+            if *st == SessionState::Starting {
+                *st = SessionState::Running;
+                self.registry.set_state(&session_id, SessionState::Running);
+                self.emit_state(&session, SessionState::Running, None);
+                true
+            } else {
+                false
+            }
+        };
+
+        (session, started)
+    }
+
     pub fn write_input(&self, agent_id: &str, data: &str) {
         if let Some(s) = self.find(agent_id) {
             if *s.state.lock() == SessionState::Running {
@@ -425,13 +514,19 @@ impl SessionManager {
         if let Some(s) = self.find(agent_id) {
             if *s.state.lock() == SessionState::Running {
                 let _ = s.control.resize(cols, rows);
+                *s.size.lock() = (cols, rows);
             }
         }
     }
 
     /// 의도적 종료. 최종 Disposed 전이는 wait 스레드의 on_exit에서 확정.
+    /// 핸드오프된 세션(§핵심 3)은 즉시 return — kill/cleanup 금지. 그
+    /// 세션의 실제 수명은 이제 sessiond가 책임진다.
     pub fn dispose(&self, agent_id: &str) {
         if let Some(s) = self.find(agent_id) {
+            if s.handed_off.load(Ordering::SeqCst) {
+                return;
+            }
             s.kill_requested.store(true, Ordering::SeqCst);
             let _ = s.control.kill();
             cleanup_paths(&s.cleanup_paths);
@@ -444,6 +539,208 @@ impl SessionManager {
         for a in ids {
             self.dispose(&a);
         }
+    }
+
+    /// 앱 quit(§핵심 3): Running 세션들을 sessiond로 넘긴다. 반환값은 성공
+    /// 개수 -- 프론트는 이 수와 무관하게 종료를 진행한다. `app_data_dir`이
+    /// 없으면(테스트 등) 0.
+    #[cfg(unix)]
+    pub fn handoff_all(&self) -> usize {
+        let Some(app_data_dir) = self.app_data_dir.clone() else {
+            return 0;
+        };
+        let ids: Vec<AgentId> = {
+            let map = self.sessions.lock();
+            map.iter()
+                .filter(|(_, s)| *s.state.lock() == SessionState::Running)
+                .map(|(a, _)| a.clone())
+                .collect()
+        };
+        if ids.is_empty() {
+            return 0;
+        }
+
+        let socket_path = crate::sessiond::client::default_socket_path(&app_data_dir);
+        let log_path = crate::sessiond::client::default_log_path(&app_data_dir);
+        let exe_path = std::env::current_exe().unwrap_or_default();
+        let client =
+            match crate::sessiond::client::connect_or_spawn(&socket_path, &exe_path, &log_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("agent-office: handoff_all could not reach sessiond: {e}");
+                    return 0;
+                }
+            };
+
+        ids.iter()
+            .filter(|agent_id| self.handoff_one(agent_id, &client))
+            .count()
+    }
+
+    #[cfg(not(unix))]
+    pub fn handoff_all(&self) -> usize {
+        0
+    }
+
+    /// 세션 하나를 넘긴다. 설계 문서 §핵심 3의 순서 그대로: 리더 인터럽트 →
+    /// handed_off set → 전송. 실패해도 세션은 그대로 둔다(맵에 남고
+    /// handed_off=true) -- 앱은 어차피 곧 종료되므로 마스터 fd가 닫히며
+    /// SIGHUP으로 자연 정리된다(설계 문서 "왜 이 방식인가" 참조).
+    #[cfg(unix)]
+    fn handoff_one(&self, agent_id: &str, client: &crate::sessiond::client::Client) -> bool {
+        let Some(sess) = self.find(agent_id) else {
+            return false;
+        };
+        if sess.handed_off.load(Ordering::SeqCst) {
+            return false;
+        }
+        let Some(handoff) = sess.handoff.lock().take() else {
+            return false; // Fake/입양 조립 실패 등으로 handoff 정보가 없는 세션은 핸드오프 불가.
+        };
+
+        // 재핸드오프(입양 세션)라면 EofWaiter 오발화를 막는다.
+        if let Some(gate) = &sess.eof_stop_gate {
+            gate.store(true, Ordering::SeqCst);
+        }
+        if let Some(interrupt) = sess.reader_interrupt.lock().take() {
+            interrupt.interrupt();
+        }
+        // poll 기반 리더는 인터럽트를 수 ms 내 관측한다 -- fd를 보내기 전에
+        // 짧게 양보해 리더 스레드가 실제로 빠져나갈 시간을 준다(완료 채널을
+        // 새로 두는 것보다 훨씬 단순하고, 실패해도 안전 — 최악의 경우 데몬이
+        // 아주 잠깐 늦게 도착한 잔여 바이트를 이어 읽을 뿐 유실은 없다).
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        sess.handed_off.store(true, Ordering::SeqCst);
+
+        let pid = handoff.pid;
+        let pgid = handoff.pgid;
+        let master_fd = handoff.take_master_fd();
+        let (cols, rows) = *sess.size.lock();
+        let cleanup_paths = sess
+            .cleanup_paths
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+
+        let result = client.handoff(crate::sessiond::client::HandoffRequest {
+            agent_id: agent_id.to_string(),
+            session_id: sess.session_id.clone(),
+            pid,
+            pgid,
+            rows,
+            cols,
+            cwd: sess.cwd.clone(),
+            cleanup_paths,
+            master_fd,
+        });
+
+        match result {
+            Ok(()) => {
+                self.sessions.lock().remove(agent_id);
+                self.registry.remove(&sess.session_id);
+                true
+            }
+            Err(e) => {
+                eprintln!("agent-office: handoff failed for {agent_id}: {e}");
+                let _ = nix::unistd::close(master_fd);
+                false
+            }
+        }
+    }
+
+    /// 부트스트랩(§핵심 4): sessiond에 남아 있는 세션들을 되찾는다.
+    /// `known_agent_ids`는 영속 프로필의 agentId 집합 -- 여기 없는 항목은
+    /// Kill 지시(삭제된 에이전트의 고아 claude 방지), exited 항목은 스킵.
+    /// 소켓이 없거나 연결 실패면 빈 벡터(데몬을 새로 스폰하지 않는다 --
+    /// 입양할 게 없으면 없는 대로다).
+    #[cfg(unix)]
+    pub fn adopt_detached(
+        self: &Arc<Self>,
+        known_agent_ids: &std::collections::HashSet<String>,
+    ) -> Vec<AdoptedSessionInfo> {
+        let Some(app_data_dir) = &self.app_data_dir else {
+            return Vec::new();
+        };
+        let socket_path = crate::sessiond::client::default_socket_path(app_data_dir);
+        if !socket_path.exists() {
+            return Vec::new();
+        }
+        let client = match crate::sessiond::client::Client::connect(&socket_path) {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        let sessions = match client.list() {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut adopted = Vec::new();
+        for info in sessions {
+            if info.exited {
+                continue;
+            }
+            if !known_agent_ids.contains(&info.agent_id) {
+                let _ = client.kill(&info.agent_id);
+                continue;
+            }
+            if let Some(result) = self.adopt_one(&info.agent_id, &client) {
+                adopted.push(result);
+            }
+        }
+        adopted
+    }
+
+    #[cfg(not(unix))]
+    pub fn adopt_detached(
+        self: &Arc<Self>,
+        _known_agent_ids: &std::collections::HashSet<String>,
+    ) -> Vec<AdoptedSessionInfo> {
+        Vec::new()
+    }
+
+    /// 세션 하나를 입양해 install_session으로 재배선한다. 실패하면 None --
+    /// 그 세션은 데몬 테이블에 그대로 남아 다음 재시작에서 다시 시도할 수
+    /// 있다(이번 연결에서 이미 Adopt를 보낸 뒤 실패했다면 데몬 쪽에선 이미
+    /// 테이블에서 빠진 상태이므로 fd 자체는 유실 -- assemble_adopted 실패는
+    /// 극히 드문 경로라 이 트레이드오프를 받아들인다).
+    #[cfg(unix)]
+    fn adopt_one(
+        self: &Arc<Self>,
+        agent_id: &str,
+        client: &crate::sessiond::client::Client,
+    ) -> Option<AdoptedSessionInfo> {
+        let adopted = client.adopt(agent_id).ok()?;
+        let (spawned, stop_gate) = match crate::session::pty_factory::assemble_adopted(
+            adopted.master_fd,
+            adopted.pid,
+            adopted.pgid,
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("agent-office: failed to assemble adopted session {agent_id}: {e}");
+                let _ = nix::unistd::close(adopted.master_fd);
+                return None;
+            }
+        };
+        let cleanup_paths = adopted.cleanup_paths.iter().map(std::path::PathBuf::from).collect();
+        let size = (adopted.cols, adopted.rows);
+        let (session, _started) = self.install_session(
+            adopted.session_id,
+            agent_id.to_string(),
+            cleanup_paths,
+            adopted.cwd,
+            size,
+            spawned,
+            Some(stop_gate),
+            Some(adopted.buffer),
+        );
+        Some(AdoptedSessionInfo {
+            agent_id: agent_id.to_string(),
+            session_id: session.session_id.clone(),
+            rows: size.1,
+            cols: size.0,
+        })
     }
 
     /// subscribe_output 커맨드가 호출: agentId에 Channel 등록(+백로그 드레인).
@@ -466,6 +763,13 @@ impl SessionManager {
     }
 
     fn on_exit(&self, sess: &Arc<Session>, outcome: ExitOutcome) {
+        // 핸드오프된 세션(§핵심 3)은 즉시 return -- kill/cleanup/상태이벤트
+        // 금지. 실제로는 create()의 RealWaiter가 앱 프로세스 종료와 함께
+        // 죽으므로 프로덕션에서 이 가드가 실행 도달하는 일은 드물지만(핸드오프
+        // 직후 앱이 곧장 종료), dispose()와 대칭을 이루는 안전망이다.
+        if sess.handed_off.load(Ordering::SeqCst) {
+            return;
+        }
         cleanup_paths(&sess.cleanup_paths);
         let intentional = sess.kill_requested.load(Ordering::SeqCst);
         let exit = SessionExitInfo {
@@ -1789,6 +2093,68 @@ mod tests {
         cleanup(&ctl, &dir);
     }
 
+    // ---- 세션 핸드오프(docs/session-handoff-design.md) 회귀: handed_off ----
+    //
+    // 실제 UDS/sessiond 왕복은 sessiond::protocol/daemon/client 유닛 테스트가
+    // 커버한다. 여기서는 핸드오프가 "성공했다고 치고" 세션에 handed_off를
+    // 직접 세팅해(Fake에는 handoff/reader_interrupt가 애초에 없으므로
+    // handoff_one 자체는 구동할 수 없다 -- private 필드에 직접 접근하는 이
+    // 시뮬레이션이 설계 문서가 말하는 "Fake에 handoff 시뮬레이션 훅") 그
+    // 이후 dispose_all/on_exit이 정말로 손을 떼는지만 검증한다.
+
+    #[tokio::test]
+    async fn handed_off_session_is_skipped_by_dispose_all_and_on_exit() {
+        let (mgr, events, ctl, dir) = build();
+        mgr.create(req("a1", Some(false))).unwrap();
+        let states_before = events.states().len();
+
+        {
+            let sess = mgr.find("a1").expect("session must exist right after create");
+            sess.handed_off.store(true, Ordering::SeqCst);
+        }
+
+        mgr.dispose_all();
+        assert_eq!(
+            ctl.kill_count(),
+            0,
+            "dispose_all must not kill a handed-off session"
+        );
+        assert!(
+            std::fs::read_dir(&dir)
+                .map(|mut entries| entries.next().is_some())
+                .unwrap_or(false),
+            "dispose_all must not remove a handed-off session's cleanup_paths"
+        );
+
+        // wait 스레드가 나중에 완주해도(on_exit 진입) 상태 전이가 없어야 한다.
+        ctl.fire_exit(0);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert_eq!(
+            events.states().len(),
+            states_before,
+            "on_exit must not emit a state transition for a handed-off session"
+        );
+
+        // 세션은 맵에 그대로 남는다 -- 제거는 handoff_one의 성공 경로 책임이지
+        // dispose_all/on_exit의 책임이 아니다.
+        assert!(mgr.find("a1").is_some());
+
+        ctl.close_output();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn dispose_ignores_handed_off_session_directly() {
+        let (mgr, _events, ctl, dir) = build();
+        mgr.create(req("a1", Some(false))).unwrap();
+        mgr.find("a1").unwrap().handed_off.store(true, Ordering::SeqCst);
+
+        mgr.dispose("a1");
+
+        assert_eq!(ctl.kill_count(), 0, "dispose() must skip a handed-off session");
+        cleanup(&ctl, &dir);
+    }
+
     // ---- write/resize: Running guard ----
 
     #[tokio::test]
@@ -2755,6 +3121,153 @@ return
 
         let _ = std::fs::remove_dir_all(&observer_dir);
         let _ = std::fs::remove_dir_all(&cwd_dir);
+    }
+
+    /// 실 PTY + 실 sessiond 프로세스로 handoff_all -> adopt_detached 왕복
+    /// 전체를 검증한다(docs/session-handoff-design.md §핵심 3, 4). 데몬을
+    /// `client::connect_or_spawn`의 스폰 경로에 맡기지 않고 미리 띄워 둔다
+    /// -- `cargo test` 바이너리는 `--sessiond` 분기가 없는 별개의 실행
+    /// 파일이라 `spawn_daemon`(현재 실행 파일 재실행)을 여기서 구동할 수
+    /// 없다(그 경로 자체는 client.rs 유닛 테스트 + 수동 검증 항목이 커버).
+    /// 데몬이 이미 떠 있으면 `connect_or_spawn`의 첫 connect가 곧바로
+    /// 성공하므로, 이 테스트는 그 뒤의 실제 핸드오프/입양 배선(리더 인터럽트,
+    /// fd 전달, install_session 재조립)만 순수하게 검증한다.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn handoff_all_then_adopt_detached_round_trips_a_real_session() {
+        use crate::session::pty_factory::PortablePtyFactory;
+        use std::collections::HashSet;
+
+        let app_data_dir = scratch_dir("appdata");
+        std::fs::create_dir_all(&app_data_dir).expect("create scratch app_data_dir");
+        let socket_path = crate::sessiond::client::default_socket_path(&app_data_dir);
+
+        let (shutdown_tx, _shutdown_rx) = std::sync::mpsc::channel::<()>();
+        let hook: crate::sessiond::daemon::ShutdownHook = Arc::new(move || {
+            let _ = shutdown_tx.send(());
+        });
+        let daemon_socket = socket_path.clone();
+        std::thread::spawn(move || {
+            let _ = crate::sessiond::daemon::run_daemon_inner(
+                daemon_socket,
+                Duration::from_secs(60),
+                hook,
+            );
+        });
+        wait_for_timeout(
+            || socket_path.exists(),
+            Duration::from_secs(2),
+            "sessiond never bound its socket",
+        )
+        .await;
+
+        let events1 = Arc::new(RecordingEvents::default());
+        let registry1 = Arc::new(SessionRegistry::new());
+        let hub1 = Arc::new(NotificationHub::new(
+            registry1.clone(),
+            events1.clone() as Arc<dyn AppEvents>,
+            Arc::new(SystemClock),
+            Duration::from_millis(3000),
+        ));
+        let observer1 = Arc::new(ObserverRuntime::new(hub1.clone(), vec![]));
+        let mgr1 = Arc::new(
+            SessionManager::new(
+                Arc::new(PortablePtyFactory),
+                observer1,
+                registry1,
+                events1.clone() as Arc<dyn AppEvents>,
+                hub1,
+                Arc::new(|| None), // observer off -- 실 PTY 핸드오프 배선만 검증하면 충분
+            )
+            .with_shell_resolver(Arc::new(|_, _| shells::ResolvedShell {
+                program: "/bin/sh".into(),
+                args: vec![],
+                extra_env: vec![],
+            }))
+            .with_app_data_dir(app_data_dir.clone()),
+        );
+
+        let created = mgr1
+            .create(CreateSessionRequest {
+                agent_id: "a1".into(),
+                cols: Some(80),
+                rows: Some(24),
+                cwd: None,
+                shell: None,
+                startup_command: None,
+                personality_prompt: None,
+                autostart_claude: Some(false),
+            })
+            .expect("real PTY spawn should succeed");
+        assert_eq!(created.state, SessionState::Running);
+
+        let handed = mgr1.handoff_all();
+        assert_eq!(handed, 1, "the one running real session must be handed off");
+        assert!(
+            mgr1.find("a1").is_none(),
+            "a successfully handed-off session must leave the manager's map"
+        );
+
+        // "재시작": 새 매니저가 같은 app_data_dir/소켓을 상대로 되찾는다.
+        let events2 = Arc::new(RecordingEvents::default());
+        let registry2 = Arc::new(SessionRegistry::new());
+        let hub2 = Arc::new(NotificationHub::new(
+            registry2.clone(),
+            events2.clone() as Arc<dyn AppEvents>,
+            Arc::new(SystemClock),
+            Duration::from_millis(3000),
+        ));
+        let observer2 = Arc::new(ObserverRuntime::new(hub2.clone(), vec![]));
+        let mgr2 = Arc::new(
+            SessionManager::new(
+                Arc::new(PortablePtyFactory),
+                observer2,
+                registry2,
+                events2.clone() as Arc<dyn AppEvents>,
+                hub2,
+                Arc::new(|| None),
+            )
+            .with_app_data_dir(app_data_dir.clone()),
+        );
+
+        let known: HashSet<String> = ["a1".to_string()].into_iter().collect();
+        let adopted = mgr2.adopt_detached(&known);
+        assert_eq!(adopted.len(), 1);
+        assert_eq!(adopted[0].agent_id, "a1");
+        assert_eq!(mgr2.session_id_for("a1"), Some(created.session_id.clone()));
+        assert!(events2.states().contains(&SessionState::Running));
+
+        // 이어받은 세션이 실제로 살아 있는지: echo 왕복으로 확인.
+        let output = Arc::new(Mutex::new(String::new()));
+        let output_for_channel = output.clone();
+        let channel: Channel<OutputChunk> = Channel::new(move |body| {
+            if let InvokeResponseBody::Json(s) = body {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                    if let Some(data) = v.get("data").and_then(|d| d.as_str()) {
+                        output_for_channel.lock().push_str(data);
+                    }
+                }
+            }
+            Ok(())
+        });
+        mgr2.attach_output("a1", channel);
+        mgr2.write_input("a1", "echo adopted-and-alive-98765\n");
+        wait_for_timeout(
+            || output.lock().contains("adopted-and-alive-98765"),
+            Duration::from_secs(5),
+            "adopted session never echoed the write_input marker",
+        )
+        .await;
+
+        mgr2.dispose("a1");
+        wait_for_timeout(
+            || matches!(events2.states().last(), Some(SessionState::Disposed)),
+            Duration::from_secs(5),
+            "adopted session never reached Disposed within 5s after dispose()",
+        )
+        .await;
+
+        let _ = std::fs::remove_dir_all(&app_data_dir);
     }
 
     /// 실기기 재현 프로브: 프론트의 attach(1회) → create →

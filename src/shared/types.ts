@@ -323,6 +323,18 @@ export interface AvailableShell {
 }
 
 /**
+ * `adopt_detached_sessions` 응답 엔트리 — 재시작 시 `sessiond` 데몬에서
+ * 되찾은 세션 1건. Mirrors Rust `AdoptedSessionInfo` (camelCase).
+ * 세션 핸드오프 설계: docs/session-handoff-design.md §커맨드.
+ */
+export interface AdoptedSessionInfo {
+  agentId: AgentId;
+  sessionId: SessionId;
+  rows: number;
+  cols: number;
+}
+
+/**
  * Renderer-facing API surface (frozen). Implemented by
  * `src/renderer/ipc/tauriApi.ts` via Tauri commands (invoke) + events
  * (listen) + a dedicated output `Channel` (exact command/event names are
@@ -387,4 +399,10 @@ export interface AgentOfficeApi {
   appendSessionTurn(record: SessionTurnRecord): void;
   /** 누적된 세션 턴 기록 전체를 읽는다(통계용). 손상된 줄은 건너뛴다. */
   loadSessionTurns(): Promise<SessionTurnRecord[]>;
+  /** 세션 핸드오프(unix 전용) 지원 여부. Windows 등 미지원 플랫폼은 false. */
+  handoffSupported(): Promise<boolean>;
+  /** 종료 시 살아있는 세션들을 `sessiond` 데몬으로 넘긴다. 넘긴 세션 수를 반환. */
+  handoffSessions(): Promise<number>;
+  /** 부팅 시 1회 — 데몬에 남아있던 세션을 되찾는다. 미지원/데몬 없음이면 빈 배열. */
+  adoptDetachedSessions(): Promise<AdoptedSessionInfo[]>;
 }

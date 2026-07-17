@@ -44,6 +44,14 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] } # PixelLab API 호출
 tauri-plugin-dialog = "2" # 프로필 시작 폴더의 네이티브 폴더 선택 다이얼로그 (Rust 측에서만 호출 — capability 불필요)
 
+# 세션 핸드오프(unix 전용, docs/session-handoff-design.md): poll 기반 인터럽트
+# 가능 리더, sessiond와의 UDS+SCM_RIGHTS(fd 전달), TIOCSWINSZ/killpg.
+# portable-pty 0.8이 이미 nix 0.25를 unix 구현에 쓰므로 같은 버전을 직접
+# 의존에 명시해 락파일 상의 nix 인스턴스를 하나로 유지한다.
+[target.'cfg(unix)'.dependencies]
+nix = "0.25"
+libc = "0.2" # TIOCSWINSZ ioctl(winsize) — portable-pty의 unix.rs와 동일한 저수준 호출
+
 [dev-dependencies]
 tokio = { version = "1", features = [
     "rt-multi-thread",

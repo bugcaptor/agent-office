@@ -338,3 +338,72 @@ async fn built_binary_forwarder_does_not_follow_loopback_redirect() {
     assert_eq!(initial_request.body, body);
     redirected.assert_no_request().await;
 }
+
+/// docs/session-handoff-design.md §핵심 5: 재시작 후 입양된 세션은
+/// AGENT_OFFICE_HOOK_URL이 스폰 시점의(죽은) 포트를 가리킨다. 실 빌드 바이너리를
+/// 죽은 포트로 1차 시도시키고, `AGENT_OFFICE_APP_DATA/observer-port`에 진짜
+/// observer 서버의 현재 포트를 심어 두면 forwarder가 1회 재시도해 결국 캡처
+/// 서버가 요청을 받아야 한다.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn built_binary_forwarder_retries_via_observer_port_file_when_primary_is_unreachable() {
+    let capture = CaptureServer::start().await;
+    let port = capture
+        .origin()
+        .rsplit(':')
+        .next()
+        .expect("capture origin must contain a port");
+
+    let app_data_dir = std::env::temp_dir().join(format!(
+        "agent-office-forwarder-port-file-test-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&app_data_dir).unwrap();
+    std::fs::write(app_data_dir.join("observer-port"), port).unwrap();
+
+    let body = br#"{"hook_event_name":"Stop","marker":"via-port-file-retry"}"#;
+    let (pid, output) = run_forwarder_configured(
+        Some("ao-port-file-retry"),
+        "http://127.0.0.1:0/hook", // 1차 시도는 반드시 실패하는 죽은 포트
+        body,
+        |command| {
+            command.env("AGENT_OFFICE_APP_DATA", &app_data_dir);
+        },
+    );
+
+    assert!(
+        output.status.success(),
+        "pid={pid}, stderr={:?}",
+        output.stderr
+    );
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+
+    let request = capture.one_request().await;
+    assert_eq!(request.session, "ao-port-file-retry");
+    assert_eq!(request.provider, "codex");
+    assert_eq!(request.body, body);
+
+    let _ = std::fs::remove_dir_all(&app_data_dir);
+}
+
+/// 포트 파일이 없거나(AGENT_OFFICE_APP_DATA 미설정) 재시도 자체가 불가능해도
+/// 여전히 조용히 종료해야 한다(베스트에포트, 기존 fail-open 계약 유지).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn built_binary_forwarder_fails_open_when_retry_port_file_is_absent() {
+    let (pid, output) = run_forwarder_configured(
+        Some("ao-no-port-file"),
+        "http://127.0.0.1:0/hook",
+        br#"{"hook_event_name":"Stop"}"#,
+        |command| {
+            command.env_remove("AGENT_OFFICE_APP_DATA");
+        },
+    );
+
+    assert!(
+        output.status.success(),
+        "pid={pid}, stderr={:?}",
+        output.stderr
+    );
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}

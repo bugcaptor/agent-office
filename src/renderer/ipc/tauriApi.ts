@@ -158,6 +158,18 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.loadSessionTurns);
   },
 
+  async handoffSupported() {
+    return await invoke(Commands.handoffSupported);
+  },
+
+  async handoffSessions() {
+    return await invoke(Commands.handoffSessions);
+  },
+
+  async adoptDetachedSessions() {
+    return await invoke(Commands.adoptDetachedSessions);
+  },
+
   onData(agentId, cb) {
     let sub = outputSubs.get(agentId);
     if (!sub) {
