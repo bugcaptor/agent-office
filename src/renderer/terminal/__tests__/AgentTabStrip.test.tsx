@@ -397,6 +397,57 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
     expect(queryByRole("menu")).toBeNull();
   });
 
+  it("메뉴를 다시 열면 이전 조회 결과가 비워지고, 조회 실패 시 비활성으로 남는다", async () => {
+    seedThreeTabs();
+    listClaudeResumeSessions.mockResolvedValueOnce({
+      a1: { sessionId: "2f8c1a20-abcd", cwd: "/work/a1", updatedAt: 1 },
+    });
+    const { getAllByRole, findByRole, getByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    const enabled = await findByRole("menuitem", { name: "이전 세션 이어하기" });
+    expect(enabled).toHaveProperty("disabled", false);
+
+    // 두 번째 열기: 조회가 거부되면 낡은 엔트리(2f8c1a20-abcd)가 남아
+    // 활성화되면 안 된다 — 열 때 비워지고 실패 후에도 비활성 유지.
+    listClaudeResumeSessions.mockRejectedValueOnce(new Error("ipc down"));
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    const item = getByRole("menuitem", { name: "이전 세션 이어하기" });
+    expect(item).toHaveProperty("disabled", true);
+    await Promise.resolve(); // 거부 settle
+    await Promise.resolve();
+    expect(
+      getByRole("menuitem", { name: "이전 세션 이어하기" })
+    ).toHaveProperty("disabled", true);
+  });
+
+  it("메뉴를 연달아 열면 늦게 도착한 이전 조회 응답은 무시된다", async () => {
+    seedThreeTabs();
+    let resolveFirst!: (v: Record<string, unknown>) => void;
+    const first = new Promise<Record<string, unknown>>((r) => {
+      resolveFirst = r;
+    });
+    listClaudeResumeSessions
+      .mockReturnValueOnce(first) // 첫 열기: 응답 지연
+      .mockResolvedValueOnce({}); // 두 번째 열기: 빈 목록(최신)
+    const { getAllByRole, findByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]); // 조회 1 (pending)
+    fireEvent.contextMenu(getAllByRole("tab")[0]); // 조회 2 → 빈 목록
+    const item = await findByRole("menuitem", { name: "이전 세션 이어하기" });
+    expect(item).toHaveProperty("disabled", true);
+
+    // 뒤늦게 도착한 조회 1 응답(낡은 ID)은 세대 가드에 걸려 무시돼야 한다.
+    resolveFirst({
+      a1: { sessionId: "0ld5e551-0000", cwd: "/work/a1", updatedAt: 1 },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(
+      (await findByRole("menuitem", { name: "이전 세션 이어하기" }))
+    ).toHaveProperty("disabled", true);
+  });
+
   it("'퇴근' 선택 시 confirm-clock-out 모달을 열고 메뉴는 닫힌다", () => {
     seedThreeTabs();
     const { getAllByRole, getByRole, queryByRole } = render(<AgentTabStrip />);

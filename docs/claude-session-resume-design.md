@@ -88,7 +88,10 @@
 ## 5. IPC·UI
 
 - 커맨드 `list_claude_resume_sessions() -> { [agentId]: { sessionId, cwd?, updatedAt } }`.
-  렌더러는 메뉴를 열 때 조회(이벤트 푸시 불필요).
+  렌더러는 메뉴를 열 때 조회(이벤트 푸시 불필요). 열 때마다 후보를 비우고
+  응답 도착까지 비활성으로 두며, 세대 가드로 늦게 도착한 옛 응답을 무시한다
+  — 이전 조회의 낡은 ID(/clear 후 등)로 엉뚱한 대화를 이어버리는 것 방지
+  (Codex 리뷰 지적).
 - 컨텍스트 메뉴에 "이전 세션 이어하기" — 해당 에이전트의 엔트리가 있을 때만
   활성. 확인 다이얼로그(ConfirmRestartDialog 패턴)에서 현재 세션 종료를 고지.
 - 플로우는 `restartAgentSession.ts` 변형: dispose → epoch bump → 생성 시
