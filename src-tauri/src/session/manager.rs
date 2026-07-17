@@ -4571,6 +4571,7 @@ return
                 cwd: Some(root.to_string_lossy().into_owned()),
                 shell: Some("powershell".into()),
                 startup_command: None,
+                personality_prompt: None,
                 autostart_claude: Some(false),
             })
             .unwrap();

@@ -29,6 +29,7 @@
 import type { SessionState } from "@shared/types";
 import type { LabelAnchor, OfficeBus } from "../office/bus";
 import { useAppStore } from "../store/appStore";
+import { pendingAgentIds } from "../store/selectors";
 import { tauriApi } from "./tauriApi";
 import { sessionOptsFor } from "./sessionOpts";
 import { SubagentCountTracker } from "./subagentCounts";
@@ -42,13 +43,22 @@ type StateCb = (agentId: string, state: SessionState) => void;
 type HoverCb = (agentId: string | null, screenX: number, screenY: number) => void;
 type LabelAnchorCb = (anchors: ReadonlyMap<string, LabelAnchor>) => void;
 type DeskClickCb = (deskIndex: number, screenX: number, screenY: number) => void;
+type VacationModeCb = (on: boolean) => void;
 
 const notifCbs = new Set<NotifCb>();
 const stateCbs = new Set<StateCb>();
 const hoverCbs = new Set<HoverCb>();
 const labelAnchorCbs = new Set<LabelAnchorCb>();
 const deskClickCbs = new Set<DeskClickCb>();
+const vacationModeCbs = new Set<VacationModeCb>();
 const subagentCounts = new SubagentCountTracker();
+
+// vacationMode -> officeBus relay. 모듈 스코프라 부팅 순서(hydrate ↔ 씬 마운트
+// ↔ 브리지 설치)와 무관하게 항상 살아 있다. 앱 수명 동안 해제하지 않는다.
+useAppStore.subscribe(
+  (s) => s.vacationMode,
+  (on) => vacationModeCbs.forEach((cb) => cb(on)),
+);
 
 // Agents with an in-flight createSession, so a double-click (two
 // emitAgentClicked in a row) can only ever produce ONE createSession call.
@@ -140,10 +150,16 @@ export function ensureSession(agentId: string): void {
 export const officeBus: OfficeBus = {
   onNotificationChanged(cb) {
     notifCbs.add(cb);
+    // 구독 즉시 pending 상태 replay — 재마운트된 씬이 대기 중 알림을 놓치지 않는다.
+    for (const id of pendingAgentIds(useAppStore.getState().notifications)) cb(id, true);
     return () => notifCbs.delete(cb);
   },
   onSessionStateChanged(cb) {
     stateCbs.add(cb);
+    // 구독 시점 replay — idle(세션 없음)은 SessionState가 아니라 생략.
+    for (const [id, rt] of Object.entries(useAppStore.getState().sessions)) {
+      if (rt.status !== "idle") cb(id, rt.status);
+    }
     return () => stateCbs.delete(cb);
   },
   onAgentHoverChanged(cb) {
@@ -169,6 +185,15 @@ export const officeBus: OfficeBus = {
   },
   onSubagentCountChanged(cb) {
     return subagentCounts.subscribe(cb);
+  },
+  onVacationModeChanged(cb) {
+    vacationModeCbs.add(cb);
+    // 늦게 마운트된 씬(구독 시점이 언제든)도 현재값을 즉시 받도록 동기 replay.
+    cb(useAppStore.getState().vacationMode);
+    return () => vacationModeCbs.delete(cb);
+  },
+  emitBossDeskClicked() {
+    useAppStore.getState().toggleVacationMode();
   },
   emitAgentClicked(agentId) {
     // 클릭 시 호버 카드 즉시 숨김.
@@ -248,7 +273,7 @@ export function installSessionBridge(): () => void {
   const offPending = useAppStore.subscribe(
     (s) => s.notifications,
     (notifications) => {
-      const pending = new Set(notifications.map((n) => n.agentId));
+      const pending = pendingAgentIds(notifications);
       const { agents, muted } = useAppStore.getState();
       for (const id of Object.keys(agents)) {
         notifCbs.forEach((cb) => cb(id, pending.has(id)));
@@ -264,8 +289,7 @@ export function installSessionBridge(): () => void {
   const offMuted = useAppStore.subscribe(
     (s) => s.muted,
     (muted) => {
-      const pending = new Set(useAppStore.getState().notifications.map((n) => n.agentId));
-      tauriApi.setBadgeCount(muted ? 0 : pending.size);
+      tauriApi.setBadgeCount(muted ? 0 : pendingAgentIds(useAppStore.getState().notifications).size);
     }
   );
 

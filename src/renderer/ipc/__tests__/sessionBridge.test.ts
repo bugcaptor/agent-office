@@ -458,6 +458,18 @@ describe("ensureSession 복구 가드 (터미널 영구 고착 방지)", () => {
   });
 });
 
+describe("officeBus.onVacationModeChanged / emitBossDeskClicked (vacation mode)", () => {
+  it("구독 즉시 현재값 방출 + 토글 relay, bossDeskClicked → toggle", () => {
+    const seen: boolean[] = [];
+    const off = officeBus.onVacationModeChanged((on) => seen.push(on));
+    expect(seen).toEqual([false]);
+    officeBus.emitBossDeskClicked();
+    expect(useAppStore.getState().vacationMode).toBe(true);
+    expect(seen).toEqual([false, true]);
+    off();
+  });
+});
+
 describe("installSessionBridge / mute toggle (Task 4G)", () => {
   it("forces the badge to 0 the instant muted flips on, even with pending notifications", () => {
     useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
@@ -482,6 +494,51 @@ describe("installSessionBridge / mute toggle (Task 4G)", () => {
 
     expect(useAppStore.getState().muted).toBe(false);
     expect(mockApi.setBadgeCount).toHaveBeenCalledWith(1);
+  });
+});
+
+describe("officeBus 구독 시점 상태 replay (씬 늦은 마운트/HMR 재마운트)", () => {
+  it("onNotificationChanged: 구독 즉시 에이전트별 현재 pending 상태를 replay한다", () => {
+    useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
+    useAppStore.getState().addAgent(mkProfile({ id: "a2" }));
+    capture.onNotification?.(mkNotifEvent({ agentId: "a1" }));
+
+    const seen: Array<[string, boolean]> = [];
+    const off = officeBus.onNotificationChanged((id, p) => seen.push([id, p]));
+
+    expect(seen).toContainEqual(["a1", true]);
+    expect(seen.map(([id]) => id)).not.toContain("a2");
+    off();
+  });
+
+  it("onSessionStateChanged: 구독 즉시 현재 세션 상태를 replay한다 (idle은 생략)", () => {
+    useAppStore.getState().hydrate({
+      agents: [mkProfile({ id: "a1" }), mkProfile({ id: "a2" })],
+      version: 1,
+    });
+    capture.onSessionState?.({ sessionId: "s1", agentId: "a1", state: "running", at: 1 });
+
+    const seen: Array<[string, string]> = [];
+    const off = officeBus.onSessionStateChanged((id, st) => seen.push([id, st]));
+
+    expect(seen).toContainEqual(["a1", "running"]);
+    expect(seen.map(([id]) => id)).not.toContain("a2");
+    off();
+  });
+});
+
+describe("boot-time vacationMode delivery (모듈 스코프 relay)", () => {
+  it("delivers hydrated vacationMode even when the scene subscribed before hydrate, bridge installed or not", () => {
+    cleanup(); // 브리지 미설치 상태 재현
+    const seen: boolean[] = [];
+    const off = officeBus.onVacationModeChanged((on) => seen.push(on));
+    seen.length = 0;
+
+    useAppStore.getState().hydrate({ agents: [], version: 1, vacationMode: true });
+
+    expect(seen).toContain(true);
+    cleanup = installSessionBridge();
+    off();
   });
 });
 

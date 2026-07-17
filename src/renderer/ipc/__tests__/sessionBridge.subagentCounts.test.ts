@@ -179,6 +179,7 @@ describe("sessionBridge subagent-count glue seam", () => {
   it("prompt/tool activity events do not touch the subagent count", () => {
     const spy = vi.fn();
     officeBus.onSubagentCountChanged(spy);
+    spy.mockClear();
 
     captured.activity!(mkActivity("a7", "prompt"));
     captured.activity!(mkActivity("a7", "tool"));

@@ -21,9 +21,10 @@
 // unconditionally (before the `started` guard) since it only unsubscribes
 // from `bus` and tears down entities — neither depends on the Pixi app being
 // initialized, and it must not leak listeners on the pre-init destroy path.
-import { Application, Container, Rectangle, type FederatedPointerEvent, type Ticker } from "pixi.js";
+import { Application, Container, Graphics, Rectangle, Text, type FederatedPointerEvent, type Ticker } from "pixi.js";
 import { TileRenderer } from "./map/TileRenderer";
-import { OFFICE_MAP, TILE_SIZE } from "./map/mapData";
+import { BOSS_DESK_RECT, OFFICE_MAP, TILE_SIZE } from "./map/mapData";
+import { tileCenterPx } from "./world/pathing";
 import { OfficeWorld } from "./world/OfficeWorld";
 import { THEMES } from "../theme/themes";
 import type { PixiThemePalette } from "../theme/themes";
@@ -56,6 +57,10 @@ export class OfficeScene {
   private palette: PixiThemePalette;
   private floorTiles?: Container;
   private furnitureTiles: Container[] = [];
+  private bossSign?: Container;
+  private bossSignBoard?: Graphics;
+  private bossSignLabel?: Text;
+  private offVacation?: () => void;
 
   constructor(opts: OfficeSceneOptions) {
     this.opts = opts;
@@ -96,6 +101,7 @@ export class OfficeScene {
     // Static map render.
     this.buildMapLayers();
     this.buildDeskHitAreas();
+    this.buildBossDesk();
 
     this.applyCamera();
     this.started = true;
@@ -164,6 +170,44 @@ export class OfficeScene {
     }
   }
 
+  /** 보스 책상: 클릭 히트영역(휴가 토글) + "휴가중" 표지판(휴가 모드일 때만 표시). */
+  private buildBossDesk(): void {
+    const hit = new Container();
+    hit.position.set(BOSS_DESK_RECT.x * TILE_SIZE, BOSS_DESK_RECT.y * TILE_SIZE);
+    hit.eventMode = "static";
+    hit.cursor = "pointer";
+    hit.hitArea = new Rectangle(0, 0, TILE_SIZE * BOSS_DESK_RECT.w, TILE_SIZE * BOSS_DESK_RECT.h);
+    hit.on("pointertap", () => this.opts.bus.emitBossDeskClicked());
+    this.floorLayer.addChild(hit); // 데스크 히트영역과 동일 레이어(캐릭터 클릭 우선)
+
+    // 책상 위 텐트 카드(/휴가중/\): 앞면 평행사변형 + 능선을 공유하는 뒤판 삼각형.
+    const sign = new Container();
+    const board = new Graphics();
+    board.position.x = -2.25; // 뒤판 포함 전체 폭(-7~11.5)의 중심을 앵커(책상 중앙)에 정렬
+    sign.addChild(board);
+    this.bossSignBoard = board;
+    // 글씨는 월드 배율에서 비정수 리샘플링으로 깨져, applyCamera가 1/scale로 상쇄한다.
+    const label = new Text({
+      text: "휴가중",
+      style: { fontFamily: "DungGeunMo", fontSize: 11, fill: this.palette.text },
+      resolution: 2,
+    });
+    label.anchor.set(0.5, 0.5);
+    label.position.set(1 - 2.25, -3.5);
+    sign.addChild(label);
+    this.bossSignLabel = label;
+    this.paintBossSign();
+    const p = tileCenterPx({ tx: BOSS_DESK_RECT.x, ty: BOSS_DESK_RECT.y + BOSS_DESK_RECT.h - 1 });
+    sign.position.set(p.x, p.y);
+    sign.visible = false;
+    this.overlayLayer.addChild(sign);
+    this.bossSign = sign;
+
+    this.offVacation = this.opts.bus.onVacationModeChanged((on) => {
+      if (this.bossSign) this.bossSign.visible = on;
+    });
+  }
+
   /**
    * 테마 전환: 배경색을 라이브로 갱신하고, `build()`가 한 장으로 베이크해 둔
    * 타일 텍스처를 파기 후 새 팔레트로 재베이크한다. 캐릭터 엔티티는
@@ -186,6 +230,19 @@ export class OfficeScene {
     }
     this.furnitureTiles = [];
     this.buildMapLayers();
+    this.paintBossSign();
+  }
+
+  /** 텐트 카드를 현재 팔레트로 (재)도색 — 타일 재베이크(setTheme)와 동기. */
+  private paintBossSign(): void {
+    if (!this.bossSignBoard || !this.bossSignLabel) return;
+    this.bossSignBoard
+      .clear()
+      .poly([9, -7, 11.5, 0, 7, 0])
+      .fill(this.palette.deskEdge)
+      .poly([-7, 0, 7, 0, 9, -7, -5, -7])
+      .fill(this.palette.counterTop);
+    this.bossSignLabel.style.fill = this.palette.text;
   }
 
   private applyCamera(): void {
@@ -215,6 +272,7 @@ export class OfficeScene {
     // 커스텀 고해상 시트를 이 정수 스케일에 맞춰 프리필터(이슈 #47). S가 바뀔
     // 때만 커스텀 엔티티 텍스처를 재생성한다(내부에서 no-op 가드).
     this.world.setRenderScale(scale);
+    this.bossSignLabel?.scale.set(1 / scale);
     // Center, snapped to integer position to preserve sharpness.
     this.worldContainer.position.set(
       Math.floor((w - mapPxW * scale) / 2),
@@ -261,6 +319,7 @@ export class OfficeScene {
       window.removeEventListener("focus", this.onWake);
       this.onWake = undefined;
     }
+    this.offVacation?.();
     this.world.destroy(); // unconditional: only unsubscribes bus + destroys entities, no Pixi dependency
     if (!this.started) return; // init() never completed -> nothing else to tear down yet
     this.started = false;

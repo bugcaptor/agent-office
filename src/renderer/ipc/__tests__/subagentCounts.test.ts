@@ -23,15 +23,18 @@ describe("SubagentCountTracker", () => {
     expect(cb.mock.calls).toEqual([["a", 1], ["a", 0]]);
   });
 
-  it("reset은 0으로 만들고, 0이 아니었을 때만 통지한다", () => {
+  it("reset은 0으로 만들고, 0이 아니었을 때만 통지한다 (구독 시 현재값 replay 포함)", () => {
     const t = new SubagentCountTracker();
     const cb = vi.fn();
     t.bump("a", +1);
     t.subscribe(cb);
-    t.reset("a"); // 1→0 통지
-    t.reset("a"); // 0→0 통지 안 함
+    t.reset("a");
+    t.reset("a");
     expect(t.get("a")).toBe(0);
-    expect(cb.mock.calls).toEqual([["a", 0]]);
+    expect(cb.mock.calls).toEqual([
+      ["a", 1],
+      ["a", 0],
+    ]);
   });
 
   it("setAbsolute는 음수를 0으로 클램프하고 실수를 내림한다", () => {

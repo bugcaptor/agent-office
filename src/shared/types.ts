@@ -289,6 +289,8 @@ export interface BotConfig {
 export interface PersistedState {
   agents: AgentProfile[];
   version: 1;
+  /** 휴가 모드(보스 책상). 부재 = false. */
+  vacationMode?: boolean;
 }
 
 /** PixelLab 생성 결과 (Rust pixellab::GeneratedImage 미러, camelCase). */

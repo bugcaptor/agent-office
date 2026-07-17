@@ -1466,6 +1466,7 @@ mod tests {
                 bot: None,
             }],
             version: 1,
+            vacation_mode: None,
         };
 
         // Mirrors `save_state`'s body: `store.save(&state).map_err(|e| e.to_string())`.
@@ -1515,6 +1516,7 @@ mod tests {
                 bot: None,
             }],
             version: 1,
+            vacation_mode: None,
         };
         state.store.save(&persisted).unwrap();
         let ids: Vec<String> = state
@@ -1583,6 +1585,7 @@ mod tests {
                 bot: None,
             }],
             version: 1,
+            vacation_mode: None,
         };
         state.store.save(&persisted).unwrap();
         let ids: Vec<String> = state

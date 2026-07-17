@@ -383,6 +383,9 @@ pub struct BotStatus {
 pub struct PersistedState {
     pub agents: Vec<AgentProfile>,
     pub version: u32,
+    /// 휴가 모드(보스 책상). TS `vacationMode?: boolean` 미러. 부재 = false.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub vacation_mode: Option<bool>,
 }
 
 impl PersistedState {
@@ -390,6 +393,7 @@ impl PersistedState {
         Self {
             agents: Vec::new(),
             version: 1,
+            vacation_mode: None,
         }
     }
 }
@@ -1102,6 +1106,20 @@ mod tests {
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("clockedOut"));
+    }
+
+    #[test]
+    fn persisted_state_vacation_mode_roundtrip_and_backcompat() {
+        // 필드 없는 기존 파일 로드
+        let legacy: PersistedState = serde_json::from_str("{\"agents\":[],\"version\":1}").unwrap();
+        assert_eq!(legacy.vacation_mode, None);
+        // None은 직렬화에서 생략(구버전과 파일 모양 동일)
+        assert!(!serde_json::to_string(&legacy).unwrap().contains("vacationMode"));
+        // true 라운드트립
+        let json = "{\"agents\":[],\"version\":1,\"vacationMode\":true}";
+        let parsed: PersistedState = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.vacation_mode, Some(true));
+        assert!(serde_json::to_string(&parsed).unwrap().contains("\"vacationMode\":true"));
     }
 
     #[test]
