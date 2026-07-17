@@ -1,0 +1,128 @@
+/* src/renderer/analytics/analytics.css
+ *
+ * 세션 활동 분석 패널(AnalyticsDialog). 전역 modal-backdrop/pixel-panel/
+ * pixel-btn/dialog-actions 위에 얹는 패널 전용 스타일. timeline.css와 같은
+ * 방식으로 styles/tokens.css 토큰을 재사용한다(하드코딩 색 금지).
+ */
+@import "../styles/tokens.css";
+
+.analytics-dialog {
+  width: min(720px, 92vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  font-family: "DungGeunMo", monospace;
+  color: var(--text);
+}
+
+.analytics-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--unit) * 3);
+  flex-wrap: wrap;
+}
+
+.analytics-period {
+  display: flex;
+  gap: var(--unit);
+}
+
+.analytics-period-btn.active {
+  background: var(--accent);
+  color: var(--border-lite);
+}
+
+.analytics-body {
+  flex: 1;
+  overflow-y: auto;
+  margin: calc(var(--unit) * 2) 0;
+}
+
+.analytics-msg {
+  padding: calc(var(--unit) * 6) calc(var(--unit) * 2);
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.analytics-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--unit) * 2);
+}
+
+/* ── 차트 ─────────────────────────────────────────────── */
+.analytics-chart-scroll {
+  overflow-x: auto; /* 30일 등 넓은 차트는 자체 스크롤 */
+  margin-bottom: calc(var(--unit) * 3);
+}
+
+.analytics-chart {
+  width: 100%;
+  min-width: 320px;
+  height: auto;
+  display: block;
+}
+
+.analytics-chart-grid {
+  stroke: var(--border-dark);
+  stroke-width: 1;
+  opacity: 0.2;
+}
+
+.analytics-chart-axis {
+  stroke: var(--border-dark);
+  stroke-width: 1;
+}
+
+.analytics-chart-ytick,
+.analytics-chart-xtick {
+  fill: var(--text-dim);
+  font-family: "DungGeunMo", monospace;
+  font-size: 10px;
+}
+
+/* ── 요약 표 ──────────────────────────────────────────── */
+.analytics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.analytics-table th,
+.analytics-table td {
+  padding: var(--unit) calc(var(--unit) * 2);
+  text-align: right;
+  border-bottom: 1px solid var(--border-dark);
+}
+
+.analytics-table thead th {
+  color: var(--text-dim);
+  border-bottom: 2px solid var(--border-dark);
+}
+
+.analytics-table th[scope="col"]:first-child,
+.analytics-agent {
+  text-align: left;
+}
+
+.analytics-agent {
+  display: flex;
+  align-items: center;
+  gap: var(--unit);
+  font-weight: normal;
+}
+
+.analytics-swatch {
+  display: inline-block;
+  width: calc(var(--unit) * 3);
+  height: calc(var(--unit) * 3);
+  border: 1px solid var(--border-dark);
+  flex: none;
+}
+
+.analytics-deleted {
+  color: var(--text-dim);
+  font-style: italic;
+}

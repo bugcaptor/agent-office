@@ -11,6 +11,7 @@
 @import "../notification/ticker.css";
 @import "../terminal/terminal.css";
 @import "../timeline/timeline.css";
+@import "../analytics/analytics.css";
 
 html,
 body,

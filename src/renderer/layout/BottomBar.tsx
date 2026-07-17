@@ -92,6 +92,15 @@ export function BottomBar() {
       </span>
       <button
         type="button"
+        className="pixel-btn analytics-btn"
+        aria-label="분석"
+        title="세션 활동 분석"
+        onClick={() => openModal({ kind: "analytics" })}
+      >
+        📊 분석
+      </button>
+      <button
+        type="button"
         className="pixel-btn settings-btn"
         aria-label="설정"
         title="설정 (선택적 에이전트 연동)"

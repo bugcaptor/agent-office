@@ -18,6 +18,7 @@ import type {
   NotificationEvent,
   OutputChunk,
   PersistedState,
+  SessionEventRecord,
   SessionExitInfo,
   SessionState,
   SessionStateEvent,
@@ -171,6 +172,45 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect(parsed.cols).toBe(80);
   });
 
+  it("SessionEventRecord (session_started, 옵션 필드 있음)", () => {
+    // 수집 측이 실제로 쓰는 형태: envelope + 세션 시작 스냅샷 필드들.
+    const json =
+      '{"schemaVersion":1,"runId":"run-1","seq":1,"at":1783728000000,' +
+      '"agentId":"a1","sessionId":"s1","kind":"session_started",' +
+      '"agentName":"Ada","agentRole":"backend","cwd":"/tmp/proj","shell":"/bin/zsh"}';
+    const parsed: SessionEventRecord = JSON.parse(json);
+    expect(parsed.kind).toBe("session_started");
+    expect(parsed.agentName).toBe("Ada");
+    expect(parsed.agentRole).toBe("backend");
+    expect(parsed.cwd).toBe("/tmp/proj");
+    expect(parsed.shell).toBe("/bin/zsh");
+    // session_state 전용 필드는 이 종류엔 없다(skip_serializing_if).
+    expect(parsed.state).toBeUndefined();
+  });
+
+  it("SessionEventRecord (tool, 옵션 필드 없음 = envelope만)", () => {
+    const json =
+      '{"schemaVersion":1,"runId":"run-1","seq":42,"at":1783728100000,' +
+      '"agentId":"a1","sessionId":"s1","kind":"tool"}';
+    const parsed: SessionEventRecord = JSON.parse(json);
+    expect(parsed.kind).toBe("tool");
+    expect(parsed.seq).toBe(42);
+    expect(parsed.agentName).toBeUndefined();
+    expect(parsed.agentRole).toBeUndefined();
+    expect(parsed.cwd).toBeUndefined();
+    expect(parsed.shell).toBeUndefined();
+    expect(parsed.state).toBeUndefined();
+  });
+
+  it("SessionEventRecord (session_state, state 필드 있음)", () => {
+    const json =
+      '{"schemaVersion":1,"runId":"run-1","seq":7,"at":1783728200000,' +
+      '"agentId":"a1","sessionId":"s1","kind":"session_state","state":"exited"}';
+    const parsed: SessionEventRecord = JSON.parse(json);
+    const state: SessionState | undefined = parsed.state;
+    expect(state).toBe("exited");
+  });
+
   it("GeneratedSpriteImage", () => {
     const json = '{"pngBase64":"AAAA","costUsd":0.02}';
     const parsed: GeneratedSpriteImage = JSON.parse(json);
@@ -207,6 +247,7 @@ describe("Commands / Events name constants", () => {
     expect(Commands.handoffSupported).toBe("handoff_supported");
     expect(Commands.handoffSessions).toBe("handoff_sessions");
     expect(Commands.adoptDetachedSessions).toBe("adopt_detached_sessions");
+    expect(Commands.loadSessionEvents).toBe("load_session_events");
 
     expect(Events.sessionState).toBe("session-state");
     expect(Events.notificationNew).toBe("notification-new");

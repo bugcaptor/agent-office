@@ -540,6 +540,23 @@ pub async fn load_session_turns(
     Ok(app_state.session_time_store.load())
 }
 
+/// 세션 이벤트 시계열에서 `from_at..=to_at`(epoch ms) 범위를 읽는다(분석 패널용).
+/// 읽기 전용 — 수집 측 `SessionEventStore`는 건드리지 않는다
+/// (docs/session-analytics-design.md §4.2). reader가 없는 파일·손상 줄을
+/// 건너뛰므로 반환은 항상 성공한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_session_events(
+    app_state: State<'_, AppState>,
+    from_at: u64,
+    to_at: u64,
+) -> Result<Vec<crate::session_events::types::SessionEventRecord>, String> {
+    Ok(crate::session_events::reader::load_session_events(
+        &app_state.session_event_root,
+        from_at,
+        to_at,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     // Assert each command *body* delegates correctly into
@@ -808,6 +825,7 @@ mod tests {
             settings_store,
             settings,
             settings_first_run: std::sync::atomic::AtomicBool::new(true),
+            session_event_root: profile_dir.join("session-events").join("v1"),
         };
         (state, ctl, observer_dir, profile_dir)
     }
@@ -1270,6 +1288,60 @@ mod tests {
     async fn load_session_turns_on_no_prior_appends_returns_empty() {
         let (state, ctl, dir, profile_dir) = build("session-turn-empty");
         assert!(state.session_time_store.load().is_empty());
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    // ---- load_session_events ----
+
+    #[tokio::test]
+    async fn load_session_events_reads_the_configured_root_in_range() {
+        use crate::session_events::types::{SessionEventKind, SessionEventRecord};
+        let (state, ctl, dir, profile_dir) = build("session-events");
+
+        // 커맨드 본문과 동일한 root를 써서 v1 디렉터리에 하루치 파일을 만든다.
+        std::fs::create_dir_all(&state.session_event_root).unwrap();
+        let record = SessionEventRecord {
+            schema_version: 1,
+            run_id: "r".into(),
+            seq: 1,
+            at: 1_783_728_000_000, // 2026-07-11 00:00 UTC
+            agent_id: "a1".into(),
+            session_id: "s1".into(),
+            kind: SessionEventKind::Tool,
+            agent_name: None,
+            agent_role: None,
+            cwd: None,
+            shell: None,
+            state: None,
+        };
+        let mut line = serde_json::to_string(&record).unwrap();
+        line.push('\n');
+        std::fs::write(
+            state.session_event_root.join("2026-07-11.jsonl"),
+            line,
+        )
+        .unwrap();
+
+        // load_session_events 본문과 동일한 delegation.
+        let loaded = crate::session_events::reader::load_session_events(
+            &state.session_event_root,
+            1_783_728_000_000,
+            1_783_728_000_001,
+        );
+
+        assert_eq!(loaded, vec![record]);
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    #[tokio::test]
+    async fn load_session_events_on_missing_root_returns_empty() {
+        let (state, ctl, dir, profile_dir) = build("session-events-empty");
+        let loaded = crate::session_events::reader::load_session_events(
+            &state.session_event_root,
+            0,
+            u64::MAX / 2,
+        );
+        assert!(loaded.is_empty());
         cleanup(&ctl, &dir, &profile_dir);
     }
 }
