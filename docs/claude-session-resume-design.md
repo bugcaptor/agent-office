@@ -43,6 +43,15 @@
   - ao_session별 마지막 native ID를 in-memory 캐시로 들고, **값이 바뀔 때만**
     스토어에 기록 — 훅마다 디스크 쓰기 방지. `/clear`·resume으로 native ID가
     갈리면 최신값이 이긴다.
+  - 캐시 갱신은 **디스크 반영 성공 시에만** 한다. 실패를 "기록됨"으로
+    표시하면 같은 ID의 후속 훅이 전부 dedup에 걸려 영영 재시도하지 않는다
+    (Codex 리뷰 지적).
+- 훅 등록: 기존 6종에 더해 `SessionStart`/`SessionEnd`를 등록한다 —
+  프롬프트 한 번 없이 시작·종료한 세션도 리줌 ID를 남기기 위함(Codex 리뷰
+  지적). 두 이벤트는 `map_hook`에서 매핑하지 않아 허브(턴 경계·활동)에는
+  무영향이고, ingest의 캡처만 body를 본다. 이 두 훅은 stdout이 대화
+  컨텍스트로 주입되는 이벤트라 curl 응답을 `-o /dev/null`(Windows `-o NUL`)로
+  버린다.
 
 ## 3. 저장 — claude-resume.json
 

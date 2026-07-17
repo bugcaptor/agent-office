@@ -50,14 +50,23 @@ impl ClaudeSessionSink for ClaudeResumeRecorder {
             return;
         };
         {
-            let mut seen = self.last_seen.lock().unwrap();
+            let seen = self.last_seen.lock().unwrap();
             if seen.get(ao_session_id).map(String::as_str) == Some(native_session_id) {
                 return; // 값 불변 — 디스크 쓰기 생략
             }
-            seen.insert(ao_session_id.to_string(), native_session_id.to_string());
         }
-        self.store
-            .record(&agent_id, native_session_id, cwd, (self.clock)());
+        // 디스크 반영에 성공했을 때만 "기록됨"으로 표시한다 — 실패를 표시해
+        // 버리면 같은 ID를 실어 오는 후속 훅이 전부 위의 dedup에 걸려 영영
+        // 재시도하지 않는다(리뷰 지적).
+        if self
+            .store
+            .record(&agent_id, native_session_id, cwd, (self.clock)())
+        {
+            self.last_seen
+                .lock()
+                .unwrap()
+                .insert(ao_session_id.to_string(), native_session_id.to_string());
+        }
     }
 }
 
@@ -120,6 +129,34 @@ mod tests {
         let all = store.load_all();
         assert_eq!(all["a1"].session_id, "native-2");
         assert_eq!(all["a1"].updated_at, 2);
+
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn failed_save_is_retried_on_the_next_hook_with_the_same_id() {
+        let file = scratch_file();
+        let registry = Arc::new(SessionRegistry::new());
+        registry.insert("s1", "a1", SessionState::Running);
+        let store = Arc::new(ClaudeResumeStore::new(file.clone()));
+        let recorder =
+            ClaudeResumeRecorder::with_clock(registry, store.clone(), ticking_clock());
+
+        // 대상 경로를 디렉터리로 막아 첫 저장을 실패시킨다.
+        std::fs::create_dir_all(&file).unwrap();
+        recorder.record("s1", "native-1", None);
+
+        // 장애 해소 후 같은 ID의 후속 훅 — dedup에 걸리지 않고 재시도해야 한다.
+        std::fs::remove_dir_all(&file).unwrap();
+        recorder.record("s1", "native-1", None);
+
+        let reloaded = ClaudeResumeStore::new(file.clone());
+        assert_eq!(reloaded.load_all()["a1"].session_id, "native-1");
+
+        // 성공 뒤에는 dedup이 다시 동작한다(updatedAt이 성공 시점 값에 머묾).
+        let persisted_at = store.load_all()["a1"].updated_at;
+        recorder.record("s1", "native-1", None);
+        assert_eq!(store.load_all()["a1"].updated_at, persisted_at);
 
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }

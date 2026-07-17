@@ -53,9 +53,11 @@ impl ClaudeResumeStore {
         }
     }
 
-    /// 에이전트의 최신 세션을 기록하고 디스크에 반영한다. 저장 실패는
-    /// 인메모리 상태를 유지한 채 stderr에만 남긴다(다음 record가 재시도).
-    pub fn record(&self, agent_id: &str, session_id: &str, cwd: Option<&str>, at_ms: u64) {
+    /// 에이전트의 최신 세션을 기록하고 디스크에 반영한다. 반환값은 디스크
+    /// 반영 성공 여부 — 실패해도 인메모리 상태는 유지되지만(load_all은 최신값),
+    /// 호출자(recorder)가 false를 보고 "기록됨" 처리를 미뤄야 다음 훅이
+    /// 같은 ID로 저장을 재시도한다(리뷰 지적: 일시적 IO 실패의 영구 유실 방지).
+    pub fn record(&self, agent_id: &str, session_id: &str, cwd: Option<&str>, at_ms: u64) -> bool {
         let mut guard = self.state.lock().unwrap();
         guard.agents.insert(
             agent_id.to_string(),
@@ -65,8 +67,12 @@ impl ClaudeResumeStore {
                 updated_at: at_ms,
             },
         );
-        if let Err(e) = Self::save_file(&self.file, &guard) {
-            eprintln!("claude-resume.json 저장 실패: {e}");
+        match Self::save_file(&self.file, &guard) {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("claude-resume.json 저장 실패: {e}");
+                false
+            }
         }
     }
 
@@ -170,6 +176,26 @@ mod tests {
         // fail-open 후에도 정상적으로 기록·저장돼야 한다.
         store.record("a1", "native-1", None, 3_000);
         assert_eq!(store.load_all()["a1"].session_id, "native-1");
+
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn record_reports_save_failure_but_keeps_in_memory_state() {
+        let file = scratch_file();
+        // 대상 경로 자체를 디렉터리로 만들어 tmp→rename을 실패시킨다.
+        fs::create_dir_all(&file).unwrap();
+
+        let store = ClaudeResumeStore::new(file.clone());
+        assert!(!store.record("a1", "native-1", None, 1_000));
+        // 디스크는 실패했어도 인메모리 미러는 최신값(load_all은 앱 수명 내 UI용).
+        assert_eq!(store.load_all()["a1"].session_id, "native-1");
+
+        // 장애 해소 후 재시도는 성공해야 한다.
+        fs::remove_dir_all(&file).unwrap();
+        assert!(store.record("a1", "native-1", None, 2_000));
+        let reloaded = ClaudeResumeStore::new(file.clone());
+        assert_eq!(reloaded.load_all()["a1"].session_id, "native-1");
 
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
