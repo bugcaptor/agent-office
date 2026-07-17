@@ -46,7 +46,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0;
-  color: var(--usage-color, var(--text));
+  color: var(--text);
   font-family: "DungGeunMo", monospace;
   white-space: nowrap;
 }
@@ -74,6 +74,13 @@
 
 .usage-badge-pct {
   font-weight: bold;
+  color: var(--usage-color, var(--text));
+}
+
+/* 두 퍼센트 병기 시 사이 가운뎃점. */
+.usage-badge-sep {
+  margin: 0 calc(var(--unit) / 2);
+  color: var(--text-dim);
 }
 
 .usage-badge-empty {

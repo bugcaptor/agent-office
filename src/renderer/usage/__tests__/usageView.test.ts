@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { ProviderUsage, UsageSnapshot, UsageWindow } from "@shared/types";
 import {
   STALE_THRESHOLD_MS,
+  badgeWindows,
   formatCountdown,
   formatFreshness,
   isStale,
@@ -68,6 +69,52 @@ describe("mostUrgentWindow", () => {
   it("null/빈 윈도는 null", () => {
     expect(mostUrgentWindow(null)).toBeNull();
     expect(mostUrgentWindow(provider([]))).toBeNull();
+  });
+});
+
+describe("badgeWindows", () => {
+  it("session+weekly 둘 다 있으면 [session, weekly] 순서", () => {
+    const u = provider([
+      win({ kind: "session", usedPercent: 12 }),
+      win({ kind: "weekly", usedPercent: 61 }),
+    ]);
+    expect(badgeWindows(u).map((w) => w.kind)).toEqual(["session", "weekly"]);
+  });
+
+  it("session이 없으면 가장 절박한 창 하나만", () => {
+    const u = provider([
+      win({ kind: "weekly", usedPercent: 18 }),
+      win({ kind: "weekly_model", usedPercent: 24 }),
+    ]);
+    const result = badgeWindows(u);
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe("weekly_model");
+    expect(result[0].usedPercent).toBe(24);
+  });
+
+  it("윈도가 없으면 빈 배열", () => {
+    expect(badgeWindows(null)).toEqual([]);
+    expect(badgeWindows(provider([]))).toEqual([]);
+  });
+
+  it("session만 있으면 [session] 하나", () => {
+    const u = provider([win({ kind: "session", usedPercent: 33 })]);
+    const result = badgeWindows(u);
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe("session");
+  });
+
+  it("weekly_model 여러 개 중 최대를 두 번째로 고른다", () => {
+    const u = provider([
+      win({ kind: "session", usedPercent: 12 }),
+      win({ kind: "weekly_model", label: "A", usedPercent: 40 }),
+      win({ kind: "weekly_model", label: "B", usedPercent: 70 }),
+      win({ kind: "weekly_model", label: "C", usedPercent: 55 }),
+    ]);
+    const result = badgeWindows(u);
+    expect(result.map((w) => w.kind)).toEqual(["session", "weekly_model"]);
+    expect(result[1].label).toBe("B");
+    expect(result[1].usedPercent).toBe(70);
   });
 });
 

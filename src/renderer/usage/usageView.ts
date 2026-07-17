@@ -34,6 +34,25 @@ export function mostUrgentWindow(usage: ProviderUsage | null): UsageWindow | nul
   return usage.windows.reduce((best, w) => (w.usedPercent > best.usedPercent ? w : best));
 }
 
+/**
+ * 뱃지에 표시할 윈도 목록(최대 2). [5시간(session) 창, 나머지 중 가장 절박한
+ * 창] 순서로 반환한다. session 창이 없으면 [가장 절박한 창] 하나만, 윈도
+ * 자체가 없으면 빈 배열(이슈 #36 — 주간 창이 더 절박할 때 5시간 창 변동이
+ * 뱃지에서 안 보이던 문제).
+ */
+export function badgeWindows(usage: ProviderUsage | null): UsageWindow[] {
+  if (!usage || usage.windows.length === 0) return [];
+  const session = usage.windows.find((w) => w.kind === "session") ?? null;
+  const rest = usage.windows.filter((w) => w.kind !== "session");
+  if (!session) {
+    const urgent = mostUrgentWindow(usage);
+    return urgent ? [urgent] : [];
+  }
+  if (rest.length === 0) return [session];
+  const urgentRest = rest.reduce((best, w) => (w.usedPercent > best.usedPercent ? w : best));
+  return [session, urgentRest];
+}
+
 /** 윈도 종류 한국어 라벨. weekly_model은 모델명(label)을 곁들인다. */
 export function windowLabel(w: UsageWindow): string {
   switch (w.kind) {
