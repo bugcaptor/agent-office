@@ -23,6 +23,7 @@ function win(partial: Partial<UsageWindow>): UsageWindow {
     usedPercent: 0,
     resetsAtMs: null,
     windowMinutes: null,
+    isActive: null,
     ...partial,
   };
 }

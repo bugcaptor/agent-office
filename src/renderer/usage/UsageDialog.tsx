@@ -52,7 +52,10 @@ function ProviderSection({ usage, now }: { usage: ProviderUsage; now: number }) 
           return (
             <li key={`${w.kind}-${w.label ?? ""}-${i}`} className="usage-window">
               <div className="usage-window-row">
-                <span className="usage-window-label">{windowLabel(w)}</span>
+                <span className="usage-window-label">
+                  {windowLabel(w)}
+                  {w.isActive === true && <span className="usage-active-tag">지금 적용 중</span>}
+                </span>
                 <span className="usage-window-pct">{pct}%</span>
               </div>
               <div

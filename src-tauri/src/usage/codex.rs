@@ -4,27 +4,31 @@
 // `token_count` 이벤트에 append된 `rate_limits` 스냅샷을 읽는다
 // (docs/usage-limits-design.md §2).
 //
-// 스캔 전략: 가장 최근 날짜 디렉터리 7개에서 모든 rollout 파일을 모아 파일
-// mtime 내림차순으로(날짜 디렉터리 경계 없이 전역) 정렬한 뒤, 각 파일에서
-// 마지막 non-null `rate_limits` 라인(스냅샷)을 파싱해 그 스냅샷의
-// `fetched_at_ms`(이벤트 timestamp)가 가장 큰 후보를 취한다. mtime이 아니라
-// 스냅샷 자체의 timestamp로 승자를 가리는 이유:
+// 스캔 전략: `sessions/YYYY/MM/DD` 아래 **모든** 날짜 디렉터리에서 rollout
+// 파일을 모아 파일 mtime 내림차순으로(날짜 디렉터리 경계 없이 전역) 정렬한
+// 뒤, 각 파일에서 마지막 non-null `rate_limits` 라인(스냅샷)을 파싱해 그
+// 스냅샷의 `fetched_at_ms`(이벤트 timestamp)가 가장 큰 후보를 취한다.
+// mtime이 아니라 스냅샷 자체의 timestamp로 승자를 가리는 이유:
 //   (a) 동시 세션 — mtime이 가장 최신인 파일이라도 파일 끝부분이 null
 //       rate_limits 이벤트로 끝나면, 그 파일의 마지막 유효 스냅샷은 다른
 //       파일의 스냅샷보다 오래될 수 있다.
 //   (b) 장기 세션 — rollout 파일은 세션 "시작" 날짜 디렉터리에 계속
 //       append되므로, 오래된 날짜 디렉터리의 파일이 실제로는 가장 신선한
-//       스냅샷을 담고 있을 수 있다.
+//       스냅샷을 담고 있을 수 있다. 예전에는 여기서 최근 날짜 디렉터리
+//       7개로 컷오프했는데, 그러면 장기 세션 도중 새 날짜 디렉터리가 7개
+//       이상 생기는 순간 mtime이 가장 최신인 파일(=가장 신선한 스냅샷을
+//       담은 파일)이 스캔에서 통째로 배제되는 버그가 있었다 — 그래서
+//       날짜 디렉터리 컷오프는 없앴다.
 // 조기 종료: 파일 내 스냅샷 timestamp는 그 파일의 mtime보다 늦을 수 없으므로,
 // 전역 mtime 내림차순 순회 중 현재 최선 후보의 fetched_at_ms가 다음 파일의
 // mtime(epoch ms) 이상이 되는 순간 나머지(mtime이 더 낮은) 파일들은 이를
 // 넘어설 수 없어 스캔을 중단한다. `window_minutes`로 윈도 종류를
 // 판별하고(300=5시간, 10080=주간), `resets_at`은 유닉스 초라 ms로 변환한다.
 //
-// 참고: 설계의 "최근 7일"은 스캔 비용 상한을 뜻한다. 벽시계 대신 실재하는
-// 날짜 디렉터리를 날짜 내림차순으로 정렬해 상위 7개를 취한다 — 결정적이라
-// tempdir 주입 테스트가 쉽고, CLI 미사용 구간에는 (신선도 표시와 함께) 조금
-// 오래된 실값이라도 보여줄 수 있다.
+// 스캔 비용 상한: 날짜 디렉터리 컷오프 대신 `MAX_PARSED_FILES`로 parse_file
+// 호출 횟수 자체를 제한한다. 대상 파일 목록 수집·mtime 정렬은 전체 날짜
+// 디렉터리를 대상으로 하고(결정적 정렬이라 비용은 디렉터리 순회 정도),
+// 실제 파일 내용을 읽어 파싱하는 비용이 큰 작업만 상한을 둔다.
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -33,15 +37,17 @@ use serde_json::Value;
 
 use super::{parse_iso8601_ms, Provider, ProviderUsage, UsageWindow, UsageWindowKind};
 
-/// 최근 스캔에서 훑을 날짜 디렉터리 개수 상한.
-const RECENT_DAYS: usize = 7;
+/// parse_file 호출 횟수 상한(스캔 비용 상한). 이 개수만큼 파싱하고도 더 나은
+/// 후보를 못 찾으면(또는 아예 못 찾으면) 탐색을 중단한다.
+const MAX_PARSED_FILES: usize = 64;
 
 /// `<codex_root>/sessions`에서 가장 최근(스냅샷 timestamp 기준) non-null
 /// rate_limits 스냅샷을 찾는다. 없으면 None.
 pub fn load(codex_root: &Path) -> Option<ProviderUsage> {
     let sessions = codex_root.join("sessions");
-    let files = all_rollout_files_by_mtime_desc(&sessions, RECENT_DAYS);
+    let files = all_rollout_files_by_mtime_desc(&sessions);
     let mut best: Option<ProviderUsage> = None;
+    let mut parsed_count = 0usize;
     for (mtime, file) in files {
         // 조기 종료: 남은 파일들은 mtime이 이 파일 이하이므로, 현재 최선
         // 후보의 스냅샷이 이 파일의 mtime보다도 이미 최신이면 더 볼 필요 없다.
@@ -50,6 +56,10 @@ pub fn load(codex_root: &Path) -> Option<ProviderUsage> {
                 break;
             }
         }
+        if parsed_count >= MAX_PARSED_FILES {
+            break;
+        }
+        parsed_count += 1;
         if let Some(usage) = parse_file(&file) {
             let is_better = best
                 .as_ref()
@@ -69,9 +79,11 @@ fn epoch_ms(t: SystemTime) -> i64 {
         .unwrap_or(0)
 }
 
-/// `sessions/YYYY/MM/DD` 디렉터리들을 날짜 내림차순으로 정렬해 상위 `limit`개.
-fn recent_date_dirs(sessions: &Path, limit: usize) -> Vec<PathBuf> {
-    let mut dated: Vec<(chrono::NaiveDate, PathBuf)> = Vec::new();
+/// `sessions/YYYY/MM/DD` 구조의 모든 날짜 디렉터리. 순서는 무관하다 —
+/// 파일 목록은 이후 mtime 기준 전역 정렬되므로, 여기서는 날짜 파싱을
+/// 디렉터리 구조 검증(유효한 캘린더 날짜인지)에만 쓴다.
+fn all_date_dirs(sessions: &Path) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
     let Ok(years) = std::fs::read_dir(sessions) else {
         return Vec::new();
     };
@@ -93,14 +105,13 @@ fn recent_date_dirs(sessions: &Path, limit: usize) -> Vec<PathBuf> {
                 let Some(day) = parse_component::<u32>(&d) else {
                     continue;
                 };
-                if let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, day) {
-                    dated.push((date, d.path()));
+                if chrono::NaiveDate::from_ymd_opt(year, month, day).is_some() {
+                    dirs.push(d.path());
                 }
             }
         }
     }
-    dated.sort_by(|a, b| b.0.cmp(&a.0));
-    dated.into_iter().take(limit).map(|(_, p)| p).collect()
+    dirs
 }
 
 /// 디렉터리 엔트리 이름을 정수로 파싱(YYYY/MM/DD 컴포넌트용).
@@ -108,14 +119,11 @@ fn parse_component<T: std::str::FromStr>(entry: &std::fs::DirEntry) -> Option<T>
     entry.file_name().to_str()?.parse::<T>().ok()
 }
 
-/// 최근 `limit_dirs`개 날짜 디렉터리를 통틀어 모든 `rollout-*.jsonl`을 모아
-/// 파일 mtime 내림차순으로(날짜 디렉터리 경계 없이 전역) 정렬한다.
-fn all_rollout_files_by_mtime_desc(
-    sessions: &Path,
-    limit_dirs: usize,
-) -> Vec<(SystemTime, PathBuf)> {
+/// 모든 날짜 디렉터리를 통틀어 모든 `rollout-*.jsonl`을 모아 파일 mtime
+/// 내림차순으로(날짜 디렉터리 경계 없이 전역) 정렬한다.
+fn all_rollout_files_by_mtime_desc(sessions: &Path) -> Vec<(SystemTime, PathBuf)> {
     let mut files: Vec<(SystemTime, PathBuf)> = Vec::new();
-    for dir in recent_date_dirs(sessions, limit_dirs) {
+    for dir in all_date_dirs(sessions) {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
@@ -206,6 +214,8 @@ fn parse_window(w: &Value) -> Option<UsageWindow> {
         used_percent,
         resets_at_ms,
         window_minutes,
+        // Codex rate_limits 스냅샷에는 is_active 개념이 없다.
+        is_active: None,
     })
 }
 
@@ -260,6 +270,8 @@ mod tests {
         assert_eq!(w.window_minutes, Some(10080));
         // 유닉스 초 → ms.
         assert_eq!(w.resets_at_ms, Some(1_784_786_662_000));
+        // Codex 스냅샷에는 is_active 개념이 없다 — 항상 null.
+        assert_eq!(w.is_active, None);
     }
 
     #[test]
@@ -426,6 +438,44 @@ mod tests {
         );
         let usage = load(&root).unwrap();
         assert_eq!(usage.windows[0].used_percent, 77.0);
+    }
+
+    /// 회귀: 예전에는 최근 7개 날짜 디렉터리로 컷오프해서, 더 새로운 날짜
+    /// 디렉터리가 8개 이상 생기면 훨씬 오래된 날짜 디렉터리(장기 세션 시작일)의
+    /// 파일이 스캔 대상에서 아예 빠졌다. 컷오프를 없앤 뒤에는 날짜 디렉터리
+    /// 개수와 무관하게 mtime이 가장 최신인 파일(=가장 신선한 스냅샷)이 이겨야
+    /// 한다.
+    #[test]
+    fn older_date_dir_wins_even_with_eight_or_more_newer_date_dirs() {
+        let root = scratch();
+        // 최신 쪽 날짜 디렉터리 9개(예전 RECENT_DAYS=7 컷오프라면 이 중
+        // 상위 7개만 스캔 대상이었을 것) — 전부 오래된 스냅샷.
+        for day in 9..=17 {
+            write_rollout(
+                &root,
+                ("2026", "07", &format!("{day:02}")),
+                "rollout-newdir.jsonl",
+                &event(
+                    "2026-07-17T08:00:00.000Z",
+                    r#"{"primary":{"used_percent":5.0,"window_minutes":10080,"resets_at":1784000000},"secondary":null}"#,
+                ),
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        // 훨씬 오래된 날짜 디렉터리(장기 세션 시작일): 컷오프가 있었다면
+        // 날짜 상위 7개에 들지 못해 아예 스캔되지 않았을 것. 파일은 나중에
+        // 쓰였고(mtime 최신) 스냅샷 timestamp도 최신 — 이게 이겨야 한다.
+        write_rollout(
+            &root,
+            ("2026", "06", "01"),
+            "rollout-olddir-longrunning.jsonl",
+            &event(
+                "2026-07-17T13:00:00.000Z",
+                r#"{"primary":{"used_percent":88.0,"window_minutes":10080,"resets_at":1784900000},"secondary":null}"#,
+            ),
+        );
+        let usage = load(&root).unwrap();
+        assert_eq!(usage.windows[0].used_percent, 88.0);
     }
 
     #[test]

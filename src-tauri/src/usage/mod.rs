@@ -46,6 +46,12 @@ pub struct UsageWindow {
     /// epoch ms로 정규화. 파싱 불가/부재 시 null.
     pub resets_at_ms: Option<i64>,
     pub window_minutes: Option<i64>,
+    /// "지금 구속 중인 윈도"인지(Claude `limits[]`에만 있음). **유효성이
+    /// 아니다** — 실측(`~/.claude.json`)상 weekly_all/weekly_scoped도 살아
+    /// 있는 한도인데 is_active:false로 온다. 걸러내는 용도로 쓰지 말 것,
+    /// 표시용 보조 정보로만 쓴다. Codex와 Claude five_hour/seven_day 폴백
+    /// 경로는 항상 null.
+    pub is_active: Option<bool>,
 }
 
 /// provider별 사용량. TS `ProviderUsage` 미러.

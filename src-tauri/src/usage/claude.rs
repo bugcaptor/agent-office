@@ -71,12 +71,16 @@ fn parse_limits(util: &Value) -> Option<Vec<UsageWindow>> {
             .get("resets_at")
             .and_then(Value::as_str)
             .and_then(parse_iso8601_ms);
+        // 있는 그대로 전달 — "지금 구속 중인 윈도" 표시일 뿐 유효성이
+        // 아니므로 여기서 필터링하지 않는다(모듈 상단 doc 참고).
+        let is_active = item.get("is_active").and_then(Value::as_bool);
         out.push(UsageWindow {
             kind,
             label,
             used_percent,
             resets_at_ms,
             window_minutes: None,
+            is_active,
         });
     }
     if out.is_empty() {
@@ -120,6 +124,8 @@ fn simple_window(v: Option<&Value>, kind: UsageWindowKind) -> Option<UsageWindow
         used_percent,
         resets_at_ms,
         window_minutes: None,
+        // five_hour/seven_day 폴백 경로에는 is_active가 없다.
+        is_active: None,
     })
 }
 
@@ -149,10 +155,10 @@ mod tests {
                 "utilization": {
                   "five_hour": { "utilization": 99, "resets_at": "2026-07-17T09:50:00+00:00" },
                   "limits": [
-                    { "kind": "session", "percent": 61, "resets_at": "2026-07-17T09:50:00.243466+00:00" },
-                    { "kind": "weekly_all", "percent": 18, "resets_at": "2026-07-21T04:00:00+00:00" },
+                    { "kind": "session", "percent": 61, "resets_at": "2026-07-17T09:50:00.243466+00:00", "is_active": true },
+                    { "kind": "weekly_all", "percent": 18, "resets_at": "2026-07-21T04:00:00+00:00", "is_active": false },
                     { "kind": "weekly_scoped", "percent": 24, "resets_at": "2026-07-21T04:00:00+00:00",
-                      "scope": { "model": { "id": null, "display_name": "Fable" } } }
+                      "scope": { "model": { "id": null, "display_name": "Fable" } }, "is_active": false }
                   ]
                 }
               }
@@ -171,6 +177,50 @@ mod tests {
         assert_eq!(usage.windows[2].label.as_deref(), Some("Fable"));
         // ISO → epoch ms 정규화(2026-07-17T09:50:00.243466Z → .243 ms 절단).
         assert_eq!(usage.windows[0].resets_at_ms, Some(1_784_281_800_243));
+        // is_active는 있는 그대로 전달된다 — "지금 구속 중인 윈도" 표시일
+        // 뿐이라 weekly_all/weekly_scoped가 살아있는 한도인데도 false로
+        // 올 수 있다(실측). 걸러내지 않고 그대로 넘긴다.
+        assert_eq!(usage.windows[0].is_active, Some(true));
+        assert_eq!(usage.windows[1].is_active, Some(false));
+        assert_eq!(usage.windows[2].is_active, Some(false));
+    }
+
+    #[test]
+    fn missing_is_active_in_limit_item_yields_none() {
+        let root = scratch();
+        write_claude_json(
+            &root,
+            r#"{
+              "cachedUsageUtilization": {
+                "fetchedAtMs": 1,
+                "utilization": {
+                  "limits": [ { "kind": "session", "percent": 5, "resets_at": "2026-07-17T09:50:00+00:00" } ]
+                }
+              }
+            }"#,
+        );
+        let usage = load(&root).unwrap();
+        assert_eq!(usage.windows[0].is_active, None);
+    }
+
+    #[test]
+    fn fallback_windows_have_null_is_active() {
+        let root = scratch();
+        write_claude_json(
+            &root,
+            r#"{
+              "cachedUsageUtilization": {
+                "fetchedAtMs": 1,
+                "utilization": {
+                  "five_hour": { "utilization": 5, "resets_at": "2026-07-17T09:50:00+00:00" },
+                  "seven_day": { "utilization": 3, "resets_at": "2026-07-21T04:00:00+00:00" }
+                }
+              }
+            }"#,
+        );
+        let usage = load(&root).unwrap();
+        assert_eq!(usage.windows[0].is_active, None);
+        assert_eq!(usage.windows[1].is_active, None);
     }
 
     #[test]

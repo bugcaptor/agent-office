@@ -127,6 +127,21 @@
 
 .usage-window-label {
   color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--unit) * 1.5);
+}
+
+/* "지금 적용 중" 태그: is_active === true인 윈도에만. is_active는 유효성이
+ * 아니라 "지금 구속 중인 윈도" 표시라, weekly 한도는 이 태그가 없어도
+ * 여전히 유효하다(usage-limits-design.md §2 참고). */
+.usage-active-tag {
+  font-size: 0.6rem;
+  color: var(--bg-panel);
+  background: var(--accent);
+  border: 1px solid var(--border-dark);
+  padding: 0 calc(var(--unit) * 1.5);
+  white-space: nowrap;
 }
 
 .usage-window-pct {

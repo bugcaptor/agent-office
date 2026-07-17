@@ -215,15 +215,15 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
 
   it("UsageSnapshot (both providers, limits[] + fallback shapes)", () => {
     // Rust load_usage_snapshot이 실제로 내보내는 형태: 정규화된 원시 스냅샷.
-    // resetsAtMs/label/windowMinutes/planLabel은 T | null(optional 아님).
+    // resetsAtMs/label/windowMinutes/planLabel/isActive는 T | null(optional 아님).
     const json =
       '{"claude":{"provider":"claude","fetchedAtMs":1784281391475,"planLabel":"max_20x",' +
       '"windows":[' +
-      '{"kind":"session","label":null,"usedPercent":61,"resetsAtMs":1784281800243,"windowMinutes":null},' +
-      '{"kind":"weekly_model","label":"Fable","usedPercent":24,"resetsAtMs":1784606400000,"windowMinutes":null}' +
+      '{"kind":"session","label":null,"usedPercent":61,"resetsAtMs":1784281800243,"windowMinutes":null,"isActive":true},' +
+      '{"kind":"weekly_model","label":"Fable","usedPercent":24,"resetsAtMs":1784606400000,"windowMinutes":null,"isActive":false}' +
       ']},' +
       '"codex":{"provider":"codex","fetchedAtMs":1784287217595,"planLabel":"prolite",' +
-      '"windows":[{"kind":"weekly","label":null,"usedPercent":11,"resetsAtMs":1784786662000,"windowMinutes":10080}]}}';
+      '"windows":[{"kind":"weekly","label":null,"usedPercent":11,"resetsAtMs":1784786662000,"windowMinutes":10080,"isActive":null}]}}';
     const parsed: UsageSnapshot = JSON.parse(json);
     expect(parsed.claude?.provider).toBe("claude");
     expect(parsed.claude?.windows).toHaveLength(2);
@@ -232,8 +232,13 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect(w0.label).toBeNull();
     expect(w0.resetsAtMs).toBe(1784281800243);
     expect(w0.windowMinutes).toBeNull();
+    expect(w0.isActive).toBe(true);
+    // weekly_model이 false로 와도(=is_active는 유효성이 아니라 "지금 구속
+    // 중인 윈도" 표시일 뿐) 걸러지지 않고 그대로 남아 있어야 한다.
     expect(parsed.claude?.windows[1].label).toBe("Fable");
+    expect(parsed.claude?.windows[1].isActive).toBe(false);
     expect(parsed.codex?.windows[0].windowMinutes).toBe(10080);
+    expect(parsed.codex?.windows[0].isActive).toBeNull();
     expect(parsed.codex?.planLabel).toBe("prolite");
   });
 
