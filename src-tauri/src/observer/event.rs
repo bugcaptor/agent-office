@@ -133,6 +133,23 @@ pub fn agent_id(body: &[u8]) -> Option<String> {
     (!agent_id.trim().is_empty()).then(|| agent_id.to_string())
 }
 
+/// Claude 훅 body의 top-level `session_id`(= native 리줌 ID). 모든 이벤트마다
+/// 실려 오므로 종료 전에도 캡처할 수 있다(docs/claude-session-resume-design.md §2).
+/// 공백/빈 값은 None.
+pub fn native_session_id(body: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let session_id = value.get("session_id")?.as_str()?;
+    (!session_id.trim().is_empty()).then(|| session_id.to_string())
+}
+
+/// Claude 훅 body의 top-level `cwd`(리줌은 같은 프로젝트 디렉터리에서만 가능해
+/// 함께 저장해 둔다). 공백/빈 값은 None.
+pub fn hook_cwd(body: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let cwd = value.get("cwd")?.as_str()?;
+    (!cwd.trim().is_empty()).then(|| cwd.to_string())
+}
+
 /// Claude Stop/SubagentStop body의 background_tasks에서 실행 중 서브에이전트 수를 센다.
 /// SubagentStop 스냅샷에는 정지 중인 자기 자신이 아직 "running"으로 포함되므로
 /// top-level agent_id와 id가 일치하는 엔트리는 제외한다. 배열 부재/파싱 실패 = None.
@@ -160,8 +177,9 @@ pub fn tool_description(body: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        agent_id, is_command_prompt, message, prompt_text, running_subagents, tool_description,
-        AdapterSessionPlan, CommandWrapperSpec, ObserverProvider, ObserverSessionContext,
+        agent_id, hook_cwd, is_command_prompt, message, native_session_id, prompt_text,
+        running_subagents, tool_description, AdapterSessionPlan, CommandWrapperSpec,
+        ObserverProvider, ObserverSessionContext,
     };
 
     fn wrapper(command: &str) -> CommandWrapperSpec {
@@ -202,6 +220,33 @@ mod tests {
         assert_eq!(agent_id(br#"{"agent_id":"   "}"#), None);
         assert_eq!(agent_id(br#"{"agent_id":42}"#), None);
         assert_eq!(agent_id(br#"{"agent_id":null}"#), None);
+    }
+
+    #[test]
+    fn native_session_id_reads_only_non_empty_top_level_strings() {
+        assert_eq!(
+            native_session_id(br#"{"session_id":"native-abc"}"#).as_deref(),
+            Some("native-abc")
+        );
+        assert_eq!(native_session_id(br#"{}"#), None);
+        assert_eq!(native_session_id(b"not json"), None);
+        assert_eq!(native_session_id(br#"{"session_id":""}"#), None);
+        assert_eq!(native_session_id(br#"{"session_id":"   "}"#), None);
+        assert_eq!(native_session_id(br#"{"session_id":42}"#), None);
+        assert_eq!(native_session_id(br#"{"session_id":null}"#), None);
+    }
+
+    #[test]
+    fn hook_cwd_reads_only_non_empty_top_level_strings() {
+        assert_eq!(
+            hook_cwd(br#"{"cwd":"/home/x/project"}"#).as_deref(),
+            Some("/home/x/project")
+        );
+        assert_eq!(hook_cwd(br#"{}"#), None);
+        assert_eq!(hook_cwd(b"not json"), None);
+        assert_eq!(hook_cwd(br#"{"cwd":""}"#), None);
+        assert_eq!(hook_cwd(br#"{"cwd":"  "}"#), None);
+        assert_eq!(hook_cwd(br#"{"cwd":5}"#), None);
     }
 
     #[test]

@@ -195,11 +195,27 @@ pub fn run() {
                 .join("agent-office")
                 .join("observer")
                 .join("claude");
-            let observer = Arc::new(ObserverRuntime::production(
-                hub.clone(),
-                observer_temp,
-                std::env::current_exe().unwrap_or_default(),
-            ));
+            // Claude 리줌 캡처(docs/claude-session-resume-design.md): 스토어 →
+            // 레코더(sink) → observer runtime 순으로 배선. sink는 builder로 주입해
+            // production() 시그니처를 건드리지 않는다.
+            let claude_resume_store = Arc::new(
+                crate::persistence::claude_resume_store::ClaudeResumeStore::new(
+                    data_dir.join("claude-resume.json"),
+                ),
+            );
+            let claude_resume_recorder =
+                Arc::new(crate::observer::claude_resume_recorder::ClaudeResumeRecorder::new(
+                    registry.clone(),
+                    claude_resume_store.clone(),
+                ));
+            let observer = Arc::new(
+                ObserverRuntime::production(
+                    hub.clone(),
+                    observer_temp,
+                    std::env::current_exe().unwrap_or_default(),
+                )
+                .with_claude_session_sink(claude_resume_recorder),
+            );
 
             if settings_cache.read().unwrap().observer_enabled {
                 let _ = tauri::async_runtime::block_on(observer_server.ensure(observer.clone()));
@@ -237,6 +253,7 @@ pub fn run() {
                 portrait_store,
                 sprite_store,
                 session_time_store,
+                claude_resume_store,
                 settings_store,
                 settings: settings_cache,
                 settings_first_run: std::sync::atomic::AtomicBool::new(settings_first_run),
@@ -276,6 +293,7 @@ pub fn run() {
             ipc::commands::append_session_turn,
             ipc::commands::load_session_turns,
             ipc::commands::load_session_events,
+            ipc::commands::list_claude_resume_sessions,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build tauri app")

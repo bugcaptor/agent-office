@@ -47,6 +47,48 @@ describe("sessionOptsFor", () => {
     expect(sessionOptsFor({ cwd: "", shell: "", startupCommand: "" })).toBeUndefined();
   });
 
+  describe("startupCommand override (Claude 이어하기)", () => {
+    it("override가 프로필 startupCommand를 대체하고 나머지 필드는 유지한다", () => {
+      expect(
+        sessionOptsFor(
+          {
+            name: "Compiler",
+            role: "Platform",
+            cwd: "/work",
+            shell: "zsh",
+            startupCommand: "source ./init.sh",
+            personalityPrompt: "차분히",
+          },
+          { startupCommand: "claude --resume abc-123" },
+        ),
+      ).toEqual({
+        agentName: "Compiler",
+        agentRole: "Platform",
+        cwd: "/work",
+        shell: "zsh",
+        startupCommand: "claude --resume abc-123",
+        personalityPrompt: "차분히",
+      });
+    });
+
+    it("프로필에 startupCommand가 없어도 override를 주입한다", () => {
+      expect(sessionOptsFor({ cwd: "/work" }, { startupCommand: "claude --resume x" })).toEqual({
+        cwd: "/work",
+        startupCommand: "claude --resume x",
+      });
+    });
+
+    it("빈 override는 프로필 startupCommand로 폴백한다", () => {
+      expect(
+        sessionOptsFor({ startupCommand: "source ./init.sh" }, { startupCommand: "" }),
+      ).toEqual({ startupCommand: "source ./init.sh" });
+    });
+
+    it("override가 undefined면 인자 하나짜리 호출과 동일하게 동작한다", () => {
+      expect(sessionOptsFor({ cwd: "/work" }, undefined)).toEqual({ cwd: "/work" });
+    });
+  });
+
   it("includes the profile snapshot used by session event analysis", () => {
     expect(sessionOptsFor({ name: "Compiler", role: "Platform" })).toEqual({
       agentName: "Compiler",

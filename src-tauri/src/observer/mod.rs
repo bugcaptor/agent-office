@@ -1,4 +1,5 @@
 pub mod claude;
+pub mod claude_resume_recorder;
 pub mod codex;
 pub mod event;
 pub mod forwarder;
@@ -25,9 +26,18 @@ pub trait ObserverAdapter: Send + Sync {
     fn map_hook(&self, raw: &RawObserverHook<'_>) -> Option<ObserverEvent>;
 }
 
+/// Claude 훅 body에서 뽑은 native 세션 ID를 소비하는 주입점(리줌 기능).
+/// 프로덕션 구현은 `claude_resume_recorder::ClaudeResumeRecorder`, 테스트는
+/// 페이크. 부재 시 `ingest`는 캡처를 no-op으로 건너뛴다.
+pub trait ClaudeSessionSink: Send + Sync {
+    /// ao_session_id = agent-office UUID(훅 라우팅 키), native = Claude 세션 ID.
+    fn record(&self, ao_session_id: &str, native_session_id: &str, cwd: Option<&str>);
+}
+
 pub struct ObserverRuntime {
     hub: Arc<NotificationHub>,
     adapters: Vec<Arc<dyn ObserverAdapter>>,
+    claude_session_sink: Option<Arc<dyn ClaudeSessionSink>>,
 }
 
 impl ObserverRuntime {
@@ -46,7 +56,18 @@ impl ObserverRuntime {
     }
 
     pub fn new(hub: Arc<NotificationHub>, adapters: Vec<Arc<dyn ObserverAdapter>>) -> Self {
-        Self { hub, adapters }
+        Self {
+            hub,
+            adapters,
+            claude_session_sink: None,
+        }
+    }
+
+    /// Claude 리줌 캡처 sink를 배선한다(builder 스타일 — production/new의
+    /// 기존 시그니처를 깨지 않으려고 선택 주입으로 뒀다).
+    pub fn with_claude_session_sink(mut self, sink: Arc<dyn ClaudeSessionSink>) -> Self {
+        self.claude_session_sink = Some(sink);
+        self
     }
 
     pub fn prepare_session(&self, context: &ObserverSessionContext) -> AdapterSessionPlan {
@@ -71,6 +92,17 @@ impl ObserverRuntime {
         else {
             return;
         };
+        // Claude 훅 body에는 모든 이벤트마다 native session_id가 실려 온다.
+        // map_hook이 None으로 걸러내는 서브에이전트 훅(agent_id 있는 Stop 등)이라도
+        // session_id는 메인 세션 것이므로 리줌 기록엔 유효 — map_hook 결과와
+        // 무관하게 여기서 먼저 캡처한다(docs/claude-session-resume-design.md §2).
+        if provider == ObserverProvider::Claude {
+            if let (Some(sink), Some(native)) =
+                (&self.claude_session_sink, event::native_session_id(raw.body))
+            {
+                sink.record(session_id, &native, event::hook_cwd(raw.body).as_deref());
+            }
+        }
         let Some(event) = adapter.map_hook(&raw) else {
             return;
         };
@@ -396,6 +428,120 @@ mod tests {
         );
         assert_eq!(recorded.activities()[0].session_id, "s1");
         assert_eq!(recorded.notifications()[0].session_id, "s1");
+    }
+
+    #[derive(Default)]
+    struct FakeSink {
+        calls: std::sync::Mutex<Vec<(String, String, Option<String>)>>,
+    }
+
+    impl ClaudeSessionSink for FakeSink {
+        fn record(&self, ao_session_id: &str, native_session_id: &str, cwd: Option<&str>) {
+            self.calls.lock().unwrap().push((
+                ao_session_id.to_string(),
+                native_session_id.to_string(),
+                cwd.map(str::to_string),
+            ));
+        }
+    }
+
+    impl FakeSink {
+        fn calls(&self) -> Vec<(String, String, Option<String>)> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    fn claude_runtime_with_sink(
+        mapped: Option<ObserverEvent>,
+        sink: Arc<FakeSink>,
+    ) -> ObserverRuntime {
+        ObserverRuntime::new(
+            test_hub(),
+            vec![Arc::new(FakeAdapter {
+                provider: ObserverProvider::Claude,
+                plan: Ok(AdapterSessionPlan::default()),
+                mapped,
+            })],
+        )
+        .with_claude_session_sink(sink)
+    }
+
+    #[test]
+    fn claude_hook_records_native_session_id_and_cwd_to_sink() {
+        let sink = Arc::new(FakeSink::default());
+        let runtime = claude_runtime_with_sink(Some(ObserverEvent::Tool), sink.clone());
+        runtime.ingest(
+            ObserverProvider::Claude,
+            "s1",
+            RawObserverHook {
+                event_name: "PostToolUse",
+                body: br#"{"session_id":"native-1","cwd":"/w/project"}"#,
+            },
+        );
+        assert_eq!(
+            sink.calls(),
+            vec![("s1".into(), "native-1".into(), Some("/w/project".into()))]
+        );
+    }
+
+    #[test]
+    fn claude_hook_records_even_when_map_hook_filters_the_event() {
+        // map_hook이 None을 반환해도(서브에이전트 훅 등) session_id는 캡처돼야 한다.
+        let sink = Arc::new(FakeSink::default());
+        let runtime = claude_runtime_with_sink(None, sink.clone());
+        runtime.ingest(
+            ObserverProvider::Claude,
+            "s1",
+            RawObserverHook {
+                event_name: "SubagentStop",
+                body: br#"{"session_id":"native-2","agent_id":"sub-a"}"#,
+            },
+        );
+        assert_eq!(
+            sink.calls(),
+            vec![("s1".into(), "native-2".into(), None)]
+        );
+    }
+
+    #[test]
+    fn codex_hook_does_not_record_to_claude_sink() {
+        let sink = Arc::new(FakeSink::default());
+        let runtime = ObserverRuntime::new(
+            test_hub(),
+            vec![Arc::new(FakeAdapter {
+                provider: ObserverProvider::Codex,
+                plan: Ok(AdapterSessionPlan::default()),
+                mapped: Some(ObserverEvent::Stop {
+                    message: None,
+                    running: None,
+                }),
+            })],
+        )
+        .with_claude_session_sink(sink.clone());
+        runtime.ingest(
+            ObserverProvider::Codex,
+            "s1",
+            RawObserverHook {
+                event_name: "Stop",
+                body: br#"{"session_id":"native-codex"}"#,
+            },
+        );
+        assert!(sink.calls().is_empty());
+    }
+
+    #[test]
+    fn claude_hook_without_session_id_is_a_sink_noop() {
+        let sink = Arc::new(FakeSink::default());
+        let runtime = claude_runtime_with_sink(Some(ObserverEvent::Tool), sink.clone());
+        runtime.ingest(
+            ObserverProvider::Claude,
+            "s1",
+            RawObserverHook {
+                event_name: "PostToolUse",
+                body: br#"{"cwd":"/w/project"}"#,
+            },
+        );
+        assert!(sink.calls().is_empty());
     }
 
     #[test]

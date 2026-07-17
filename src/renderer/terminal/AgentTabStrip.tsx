@@ -18,6 +18,7 @@ import { generateSpritePreview } from "../office/gen/characterFactory";
 import { resolveArchetype } from "../office/gen/archetypes";
 import { ContextMenu } from "../ui/ContextMenu";
 import { tauriApi } from "../ipc/tauriApi";
+import type { ClaudeResumeEntry } from "@shared/types";
 
 export function AgentTabStrip() {
   const isOpen = useAppStore((s) => s.activeTerminalAgentId !== null);
@@ -59,6 +60,9 @@ export function AgentTabStrip() {
   const closeTerminal = useAppStore((s) => s.closeTerminal);
   const openModal = useAppStore((s) => s.openModal);
   const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
+  // 메뉴를 열 때 조회한 Claude 이어하기 후보(agentId → 최신 1건). 엔트리가
+  // 있는 에이전트만 "이전 세션 이어하기"가 활성화된다.
+  const [resumeEntries, setResumeEntries] = useState<Record<string, ClaudeResumeEntry>>({});
 
   useEffect(() => {
     if (!isOpen) return;
@@ -100,6 +104,12 @@ export function AgentTabStrip() {
           onContextMenu={(e) => {
             e.preventDefault();
             setMenu({ agentId: tab.id, x: e.clientX, y: e.clientY });
+            // 메뉴가 열리는 동안 이어하기 후보를 조회한다. 응답이 오면
+            // 리렌더되어 해당 항목의 활성 여부가 갱신된다(약간의 지연 허용).
+            void tauriApi
+              .listClaudeResumeSessions()
+              .then(setResumeEntries)
+              .catch((err) => console.warn("이어하기 후보 조회 실패", err));
           }}
         >
           {tab.thumb && (
@@ -126,6 +136,20 @@ export function AgentTabStrip() {
               label: "터미널 재시작",
               onSelect: () =>
                 openModal({ kind: "confirm-restart", agentId: menu.agentId }),
+            },
+            {
+              label: "이전 세션 이어하기",
+              // 캡처된 Claude native 세션이 있을 때만 활성 — 없으면 비활성.
+              disabled: !resumeEntries[menu.agentId],
+              onSelect: () => {
+                const entry = resumeEntries[menu.agentId];
+                if (!entry) return;
+                openModal({
+                  kind: "confirm-resume",
+                  agentId: menu.agentId,
+                  sessionId: entry.sessionId,
+                });
+              },
             },
             {
               label: "터미널 종료",
