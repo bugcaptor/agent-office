@@ -19,6 +19,7 @@ mod state;
 mod summarizer;
 mod terminal;
 mod types;
+mod usage;
 mod vscode;
 
 use std::sync::{Arc, RwLock};
@@ -294,6 +295,7 @@ pub fn run() {
             ipc::commands::load_session_turns,
             ipc::commands::load_session_events,
             ipc::commands::list_claude_resume_sessions,
+            ipc::commands::load_usage_snapshot,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build tauri app")

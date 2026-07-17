@@ -24,6 +24,7 @@ import {
 import { THEMES, nextThemeId } from "../theme/themes";
 import { ContextMenu } from "../ui/ContextMenu";
 import { clockInAgent, clockInAll } from "../agent/clockOut";
+import { UsageWidget } from "../usage/UsageWidget";
 
 export function BottomBar() {
   const openModal = useAppStore((s) => s.openModal);
@@ -90,6 +91,7 @@ export function BottomBar() {
       <span className="bottom-bar-status">
         {runningCount} running · {pendingCount} needs input
       </span>
+      <UsageWidget />
       <button
         type="button"
         className="pixel-btn analytics-btn"

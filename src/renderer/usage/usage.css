@@ -1,0 +1,162 @@
+/* src/renderer/usage/usage.css
+ *
+ * 구독 사용량 위젯(BottomBar 뱃지) + 상세 모달(UsageDialog). 전역
+ * modal-backdrop/pixel-panel/pixel-btn/dialog-actions 위에 얹는 전용 스타일.
+ * analytics.css와 같은 방식으로 styles/tokens.css 토큰만 쓴다(하드코딩 색 금지).
+ */
+@import "../styles/tokens.css";
+
+/* ── 임계 색상(위젯·바 공용) ─────────────────────────────── */
+.usage-level-normal {
+  --usage-color: var(--accent);
+}
+.usage-level-warn {
+  --usage-color: var(--accent-warn);
+}
+.usage-level-danger {
+  --usage-color: var(--accent-error);
+}
+
+/* ── BottomBar 위젯 ──────────────────────────────────────── */
+.usage-widget {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--unit) * 2);
+  font-size: 0.8rem;
+}
+
+.usage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--unit) / 2);
+  color: var(--usage-color, var(--text));
+  font-family: "DungGeunMo", monospace;
+  white-space: nowrap;
+}
+
+.usage-badge-pct {
+  font-weight: bold;
+}
+
+.usage-badge-empty {
+  color: var(--text-dim);
+  opacity: 0.65;
+}
+
+/* ── 상세 모달 ───────────────────────────────────────────── */
+.usage-dialog {
+  width: min(460px, 92vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  font-family: "DungGeunMo", monospace;
+  color: var(--text);
+}
+
+.usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.usage-body {
+  flex: 1;
+  overflow-y: auto;
+  margin: calc(var(--unit) * 2) 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 4);
+}
+
+.usage-provider {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 2);
+}
+
+/* stale(>30분): provider 블록 전체를 흐리게. */
+.usage-stale {
+  opacity: 0.5;
+}
+
+.usage-provider-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: calc(var(--unit) * 2);
+  border-bottom: 2px solid var(--border-dark);
+  padding-bottom: var(--unit);
+}
+
+.usage-provider-name {
+  font-weight: bold;
+}
+
+.usage-plan {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.usage-empty-msg {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  margin: var(--unit) 0 0;
+}
+
+.usage-windows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 3);
+}
+
+.usage-window {
+  display: flex;
+  flex-direction: column;
+  gap: var(--unit);
+}
+
+.usage-window-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: calc(var(--unit) * 2);
+}
+
+.usage-window-label {
+  color: var(--text);
+}
+
+.usage-window-pct {
+  font-weight: bold;
+}
+
+/* 픽셀 바(라이브러리 없이 자체 렌더). */
+.usage-bar {
+  position: relative;
+  width: 100%;
+  height: calc(var(--unit) * 3);
+  background: var(--bg-panel-hi);
+  border: 1px solid var(--border-dark);
+  overflow: hidden;
+}
+
+.usage-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--usage-color, var(--accent));
+  transition: width 0.3s ease-out;
+}
+
+.usage-countdown {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.usage-freshness {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  margin-top: var(--unit);
+}

@@ -21,7 +21,7 @@ import { initialTurnState, reduceTurn } from "../timeline/turnReducer";
 import type { AgentTurnState, TurnInput } from "../timeline/turnReducer";
 import { applyTheme, loadStoredThemeId } from "../theme/applyTheme";
 import type { ThemeId } from "../theme/themes";
-import type { ActivityEvent, AppSettings, SessionState } from "@shared/types";
+import type { ActivityEvent, AppSettings, SessionState, UsageSnapshot } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 
 const MAX_EXCERPT = 80;
@@ -101,6 +101,9 @@ interface AppState {
   appSettings: AppSettings;
   /** true = settings.json 부재(첫 실행) — 온보딩 다이얼로그 표시 트리거. */
   settingsFirstRun: boolean;
+  /** 구독 사용량 스냅샷. null = 아직 로드 전. UsageWidget이 60초 폴링으로 채운다.
+   * 런타임 전용(비영속). */
+  usage: UsageSnapshot | null;
 
   // ---- profile actions ----
   addAgent(profile: AgentProfile): void;
@@ -171,6 +174,10 @@ interface AppState {
   // ---- persistence hydration ----
   hydrate(state: PersistedState): void;
 
+  // ---- usage ----
+  /** 폴링으로 받은 사용량 스냅샷 반영. */
+  setUsage(snapshot: UsageSnapshot): void;
+
   // ---- app settings ----
   /** 부트 시 백엔드 getAppSettings 결과 반영. */
   hydrateSettings(settings: AppSettings, firstRun: boolean): void;
@@ -214,6 +221,7 @@ export const useAppStore = create<AppState>()(
     terminalEpochs: {},
     appSettings: DEFAULT_APP_SETTINGS,
     settingsFirstRun: false,
+    usage: null,
 
     addAgent: (profile) =>
       set((s) => ({
@@ -517,6 +525,8 @@ export const useAppStore = create<AppState>()(
         }
         return { agents, sessions, agentOrder: state.agents.map((a) => a.id) };
       }),
+
+    setUsage: (snapshot) => set({ usage: snapshot }),
 
     hydrateSettings: (settings, firstRun) => set({ appSettings: settings, settingsFirstRun: firstRun }),
 

@@ -573,6 +573,18 @@ pub async fn list_claude_resume_sessions(
     Ok(app_state.claude_resume_store.load_all())
 }
 
+/// 구독 사용량(rate limit) 스냅샷을 홈 디렉터리에서 읽는다(인자 없음,
+/// docs/usage-limits-design.md). Claude(`~/.claude.json`)와 Codex
+/// (`~/.codex/sessions`)를 각각 독립 파싱하므로 한쪽 소스가 실패해도 커맨드는
+/// 성공하고 실패한 provider만 `null`이 된다. 상태를 건드리지 않는 순수 읽기라
+/// AppState가 필요 없다 — 홈 경로만 유도해 usage 모듈에 넘긴다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_usage_snapshot() -> Result<crate::usage::UsageSnapshot, String> {
+    let home = std::path::PathBuf::from(crate::session::manager::home_dir());
+    let codex_root = home.join(".codex");
+    Ok(crate::usage::load_usage_snapshot(&home, &codex_root))
+}
+
 #[cfg(test)]
 mod tests {
     // Assert each command *body* delegates correctly into

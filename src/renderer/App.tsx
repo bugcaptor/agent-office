@@ -15,6 +15,7 @@ import { ConfirmQuitDialog } from "./agent/ConfirmQuitDialog";
 import { SettingsDialog } from "./settings/SettingsDialog";
 import { FirstRunDialog } from "./settings/FirstRunDialog";
 import { AnalyticsDialog } from "./analytics/AnalyticsDialog";
+import { UsageDialog } from "./usage/UsageDialog";
 import { useAppStore } from "./store/appStore";
 import { useAgentList, useLightsOff } from "./store/selectors";
 import { THEMES } from "./theme/themes";
@@ -101,6 +102,7 @@ function App() {
         <SettingsDialog />
         <FirstRunDialog />
         <AnalyticsDialog />
+        <UsageDialog />
       </div>
     </div>
   );

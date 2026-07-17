@@ -23,6 +23,8 @@ import type {
   SessionState,
   SessionStateEvent,
   SessionStatus,
+  UsageSnapshot,
+  UsageWindow,
 } from "../types";
 import { notificationType } from "../types";
 
@@ -211,6 +213,38 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect(state).toBe("exited");
   });
 
+  it("UsageSnapshot (both providers, limits[] + fallback shapes)", () => {
+    // Rust load_usage_snapshot이 실제로 내보내는 형태: 정규화된 원시 스냅샷.
+    // resetsAtMs/label/windowMinutes/planLabel은 T | null(optional 아님).
+    const json =
+      '{"claude":{"provider":"claude","fetchedAtMs":1784281391475,"planLabel":"max_20x",' +
+      '"windows":[' +
+      '{"kind":"session","label":null,"usedPercent":61,"resetsAtMs":1784281800243,"windowMinutes":null},' +
+      '{"kind":"weekly_model","label":"Fable","usedPercent":24,"resetsAtMs":1784606400000,"windowMinutes":null}' +
+      ']},' +
+      '"codex":{"provider":"codex","fetchedAtMs":1784287217595,"planLabel":"prolite",' +
+      '"windows":[{"kind":"weekly","label":null,"usedPercent":11,"resetsAtMs":1784786662000,"windowMinutes":10080}]}}';
+    const parsed: UsageSnapshot = JSON.parse(json);
+    expect(parsed.claude?.provider).toBe("claude");
+    expect(parsed.claude?.windows).toHaveLength(2);
+    const w0: UsageWindow = parsed.claude!.windows[0];
+    expect(w0.kind).toBe("session");
+    expect(w0.label).toBeNull();
+    expect(w0.resetsAtMs).toBe(1784281800243);
+    expect(w0.windowMinutes).toBeNull();
+    expect(parsed.claude?.windows[1].label).toBe("Fable");
+    expect(parsed.codex?.windows[0].windowMinutes).toBe(10080);
+    expect(parsed.codex?.planLabel).toBe("prolite");
+  });
+
+  it("UsageSnapshot (a failed source is null, not omitted)", () => {
+    // 백엔드가 실패한 provider를 null로 직렬화한다(커맨드 자체는 성공).
+    const json = '{"claude":null,"codex":null}';
+    const parsed: UsageSnapshot = JSON.parse(json);
+    expect(parsed.claude).toBeNull();
+    expect(parsed.codex).toBeNull();
+  });
+
   it("GeneratedSpriteImage", () => {
     const json = '{"pngBase64":"AAAA","costUsd":0.02}';
     const parsed: GeneratedSpriteImage = JSON.parse(json);
@@ -248,6 +282,7 @@ describe("Commands / Events name constants", () => {
     expect(Commands.handoffSessions).toBe("handoff_sessions");
     expect(Commands.adoptDetachedSessions).toBe("adopt_detached_sessions");
     expect(Commands.loadSessionEvents).toBe("load_session_events");
+    expect(Commands.loadUsageSnapshot).toBe("load_usage_snapshot");
 
     expect(Events.sessionState).toBe("session-state");
     expect(Events.notificationNew).toBe("notification-new");

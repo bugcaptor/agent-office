@@ -12,6 +12,7 @@
 @import "../terminal/terminal.css";
 @import "../timeline/timeline.css";
 @import "../analytics/analytics.css";
+@import "../usage/usage.css";
 
 html,
 body,
