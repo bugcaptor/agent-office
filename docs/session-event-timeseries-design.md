@@ -1,9 +1,7 @@
 # 분석용 세션 이벤트 시계열 — 설계 스펙
 
-- 날짜: 2026-07-11
-- 상태: 승인됨 (구현 전)
-- 브랜치: `feature/session-event-timeseries`
-- 워크트리: `/private/tmp/agent-office-session-event-timeseries`
+- 날짜: 2026-07-11 (상태 갱신: 2026-07-17)
+- 상태: 구현 완료·main 반영. 이후 리팩터(observer 구조, `SubStart`/`SubStop`/`SubCount` ActivityKind 추가 등)로 본문 일부 상수·구조는 실제 코드와 다를 수 있음 — 코드가 정본.
 
 ## 1. 배경과 목표
 
