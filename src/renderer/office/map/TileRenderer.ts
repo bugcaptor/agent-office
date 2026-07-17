@@ -34,6 +34,7 @@ export class TileRenderer {
     Tile.Plant,
     Tile.Counter,
     Tile.Table,
+    Tile.BossDesk,
   ]);
 
   /** Static floor+wall layer. Checkerboard + 1px dot detail, baked into one texture. */
@@ -132,6 +133,19 @@ export class TileRenderer {
         g.rect(0, s - 2, s, 2).fill(this.pal.table); // bottom shadow (legs)
         g.rect(2, 6, s - 4, 1).fill(this.pal.tableTop); // 1px wood grain
         break;
+      case Tile.BossDesk: {
+        // 세로 책상(우측 벽 등짐) = 일반 책상의 90° 회전 — 가로 배치로
+        // 되돌리면 이 케이스도 다시 눕혀야 한다.
+        const north = this.map.tiles[ty - 1]?.[tx] === Tile.BossDesk;
+        g.rect(0, 0, s, s).fill(this.pal.desk);
+        g.rect(s - 4, 0, 4, s).fill(this.pal.deskTop); // 밝은 상판 얼굴(좌석 쪽 세로 밴드)
+        g.rect(0, 0, 2, s).fill(this.pal.deskEdge); // 전면 그림자(줄 쪽 세로 밴드)
+        g.rect(s - 7, 2, 1, s - 4).fill(this.pal.deskEdge); // 1px wood grain
+        if (!north) {
+          g.rect(s * 0.45, s * 0.25, 3, s * 0.5).fill(this.pal.counterTop); // 명패
+        }
+        break;
+      }
     }
     return g;
   }

@@ -13,11 +13,11 @@
 import { describe, expect, it } from "vitest";
 import { Container, type Graphics } from "pixi.js";
 import { TileRenderer } from "../TileRenderer";
-import { OFFICE_MAP, Tile, TILE_SIZE } from "../mapData";
+import { BOSS_DESK_RECT, OFFICE_MAP, Tile, TILE_SIZE } from "../mapData";
 import { THEMES } from "../../../theme/themes";
 
 /** Tile types drawn in the y-sorted furniture layer (mirrors TileRenderer's own set). */
-const FURNITURE_TILES = new Set([Tile.DeskTop, Tile.Plant, Tile.Counter, Tile.Table]);
+const FURNITURE_TILES = new Set([Tile.DeskTop, Tile.Plant, Tile.Counter, Tile.Table, Tile.BossDesk]);
 
 describe("TileRenderer.build", () => {
   it("adds one child per non-furniture tile, positioned on the grid", () => {
@@ -127,5 +127,19 @@ describe("TileRenderer.buildFurniture", () => {
     expect(drawnTypes.has(Tile.Plant)).toBe(true);
     expect(drawnTypes.has(Tile.Counter)).toBe(true);
     expect(drawnTypes.has(Tile.Table)).toBe(true);
+  });
+
+  it("renders boss desk tiles in the furniture (y-sort) layer", () => {
+    const out = new TileRenderer(OFFICE_MAP, TILE_SIZE).buildFurniture();
+    const atBossDesk = out.filter(
+      (g) => g.position.y >= BOSS_DESK_RECT.y * TILE_SIZE &&
+        g.position.y < (BOSS_DESK_RECT.y + BOSS_DESK_RECT.h) * TILE_SIZE &&
+        g.position.x >= BOSS_DESK_RECT.x * TILE_SIZE &&
+        g.position.x < (BOSS_DESK_RECT.x + BOSS_DESK_RECT.w) * TILE_SIZE,
+    );
+    expect(atBossDesk).toHaveLength(BOSS_DESK_RECT.w * BOSS_DESK_RECT.h);
+    for (const g of atBossDesk) {
+      expect(g.zIndex).toBe((g.position.y / TILE_SIZE + 1) * TILE_SIZE);
+    }
   });
 });
