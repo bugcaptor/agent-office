@@ -140,3 +140,79 @@ describe("OfficeBus: onSubagentCountChanged", () => {
     expect(cb).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("OfficeBus: emitBossDeskClicked", () => {
+  it("records every emitted click (B -> A/C direction), in order", () => {
+    const bus = createMockOfficeBus();
+    expect(bus.bossDeskClickCount).toBe(0);
+
+    bus.emitBossDeskClicked();
+    bus.emitBossDeskClicked();
+
+    expect(bus.bossDeskClickCount).toBe(2);
+  });
+});
+
+describe("OfficeBus: 구독 시점 상태 replay (알림·세션)", () => {
+  it("onNotificationChanged: 구독 전에 트리거된 마지막 pending 상태를 replay한다", () => {
+    const bus = createMockOfficeBus();
+    bus.triggerNotificationChanged("a", true);
+
+    const cb = vi.fn();
+    bus.onNotificationChanged(cb);
+
+    expect(cb).toHaveBeenCalledWith("a", true);
+  });
+
+  it("onSessionStateChanged: 구독 전에 트리거된 마지막 세션 상태를 replay한다", () => {
+    const bus = createMockOfficeBus();
+    bus.triggerSessionStateChanged("a", "running");
+
+    const cb = vi.fn();
+    bus.onSessionStateChanged(cb);
+
+    expect(cb).toHaveBeenCalledWith("a", "running");
+  });
+});
+
+describe("OfficeBus: onVacationModeChanged", () => {
+  it("replays the current value immediately on subscribe (contract: late-mounting scene)", () => {
+    const bus = createMockOfficeBus();
+    bus.triggerVacationModeChanged(true);
+
+    const late = vi.fn();
+    bus.onVacationModeChanged(late);
+
+    expect(late).toHaveBeenCalledTimes(1);
+    expect(late).toHaveBeenCalledWith(true);
+  });
+
+  it("delivers a triggered event to every subscribed listener", () => {
+    const bus = createMockOfficeBus();
+    const a = vi.fn();
+    const b = vi.fn();
+    bus.onVacationModeChanged(a);
+    bus.onVacationModeChanged(b);
+
+    bus.triggerVacationModeChanged(true);
+
+    expect(a).toHaveBeenCalledWith(true);
+    expect(b).toHaveBeenCalledWith(true);
+  });
+
+  it("stops delivering to a listener after it unsubscribes, without affecting others", () => {
+    const bus = createMockOfficeBus();
+    const a = vi.fn();
+    const b = vi.fn();
+    const unsubA = bus.onVacationModeChanged(a);
+    bus.onVacationModeChanged(b);
+    a.mockClear();
+    b.mockClear();
+
+    unsubA();
+    bus.triggerVacationModeChanged(false);
+
+    expect(a).not.toHaveBeenCalled();
+    expect(b).toHaveBeenCalledWith(false);
+  });
+});

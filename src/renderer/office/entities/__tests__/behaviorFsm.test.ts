@@ -26,6 +26,7 @@ import { stepBehavior, type FsmContext } from "../behaviorFsm";
 const ctx = (overrides: Partial<FsmContext> = {}): FsmContext => ({
   hasPending: false,
   sessionActive: false,
+  shouldQueue: false,
   timerMs: 0,
   rand: 0.999, // 기본값: "전이 안 함" 쪽으로 치우친 난수
   ...overrides,
@@ -105,5 +106,30 @@ describe("stepBehavior: breakIdle", () => {
 
     const short = stepBehavior("breakIdle", ctx({ rand: 0.05 }), 1);
     expect(short).toEqual({ next: "breakIdle" });
+  });
+});
+
+describe("queueing (보스 책상 줄서기)", () => {
+  it("sitting: shouldQueue → walking + requestQueueSlot (린저·세션 상태 무시, 즉시)", () => {
+    const r = stepBehavior("sitting", ctx({ shouldQueue: true, sessionActive: true, hasPending: true, timerMs: 0 }), 16);
+    expect(r).toEqual({ next: "walking", requestQueueSlot: true });
+  });
+
+  it("breakIdle: shouldQueue는 복귀 요청보다 우선한다", () => {
+    const r = stepBehavior("breakIdle", ctx({ shouldQueue: true, hasPending: true }), 16);
+    expect(r).toEqual({ next: "walking", requestQueueSlot: true });
+  });
+
+  it("queueing: shouldQueue 유지 중엔 그대로 서 있는다", () => {
+    expect(stepBehavior("queueing", ctx({ shouldQueue: true, timerMs: 99999, rand: 0 }), 16)).toEqual({ next: "queueing" });
+  });
+
+  it("queueing: shouldQueue 해제 → 자리로 복귀", () => {
+    const r = stepBehavior("queueing", ctx({ shouldQueue: false }), 16);
+    expect(r).toEqual({ next: "walking", requestReturnToDesk: true });
+  });
+
+  it("sitting: 휴가 모드(shouldQueue=false) + hasPending → 기존처럼 자리 고정", () => {
+    expect(stepBehavior("sitting", ctx({ hasPending: true, timerMs: 99999 }), 16)).toEqual({ next: "sitting" });
   });
 });

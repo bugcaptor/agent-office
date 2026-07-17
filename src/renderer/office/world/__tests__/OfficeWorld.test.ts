@@ -18,7 +18,8 @@ import { BufferImageSource, Container, Texture } from "pixi.js";
 
 import type { CharacterAssets } from "../../gen/characterFactory";
 import { setSpriteOverride, resetSpriteOverrides } from "../../gen/spriteOverrides";
-import { Tile, type OfficeMap } from "../../map/mapData";
+import { OFFICE_MAP, QUEUE_SLOTS, Tile, TILE_SIZE, type OfficeMap } from "../../map/mapData";
+import { tileCenterPx } from "../pathing";
 import { createMockOfficeBus } from "../../bus";
 import type { AgentProfile } from "../../types";
 import { CharacterEntity } from "../../entities/CharacterEntity";
@@ -29,7 +30,7 @@ vi.mock("../../gen/characterFactory", () => ({
   createCharacterAssets: hoisted.createCharacterAssetsSpy,
 }));
 
-const { OfficeWorld, appearanceKey } = await import("../OfficeWorld");
+const { OfficeWorld, appearanceKey, LABEL_ANCHOR_OFFSET_Y } = await import("../OfficeWorld");
 
 const solidTexture = (label: string): Texture =>
   new Texture({
@@ -91,6 +92,27 @@ function makeWorld(map: OfficeMap = makeMap()) {
   const world = new OfficeWorld({ bus, characterLayer, overlayLayer, map });
   return { bus, characterLayer, overlayLayer, world };
 }
+
+/** id -> current world position, via the only public per-id position accessor
+ * (`collectLabelAnchors`); undoes its head-offset so callers get raw root x/y. */
+function posOf(world: InstanceType<typeof OfficeWorld>, id: string): { x: number; y: number } {
+  const anchors = new Map<string, { x: number; y: number }>();
+  world.collectLabelAnchors(anchors);
+  const a = anchors.get(id);
+  if (!a) throw new Error(`posOf: no live entity for id "${id}"`);
+  return { x: Math.round(a.x), y: Math.round(a.y + LABEL_ANCHOR_OFFSET_Y) };
+}
+
+/** Runs enough 16ms ticks for any in-map walk (even boss-queue-slot length) to finish.
+ * 가장 긴 맵 횡단도 수백 tick이면 끝난다 — 1000이면 넉넉한 여유. */
+function settle(world: InstanceType<typeof OfficeWorld>): void {
+  for (let i = 0; i < 1000; i++) world.update(16);
+}
+
+const queuePos = (slot: number) => {
+  const t = tileCenterPx(QUEUE_SLOTS[slot]);
+  return { x: Math.round(t.x), y: Math.round(t.y + TILE_SIZE / 2) };
+};
 
 beforeEach(() => {
   hoisted.createCharacterAssetsSpy.mockReset();
@@ -283,6 +305,37 @@ describe("OfficeWorld: bus -> entity (setSessionActive)", () => {
 
     expect(spy).toHaveBeenCalledWith(false);
     spy.mockRestore();
+  });
+});
+
+describe("OfficeWorld: 외형 재생성 시 pending 복원 (Finding 2)", () => {
+  it("pending 중 외형 키가 바뀌어도 재생성된 엔티티에 pending(! 오버레이)이 복원된다", () => {
+    const { bus, characterLayer, world } = makeWorld();
+    const p = mkProfile({ id: "a1", seed: "s1" });
+    world.syncAgents([p]);
+    bus.triggerNotificationChanged("a1", true);
+    const overlayBefore = characterLayer.children[0].children[1];
+    expect(overlayBefore.visible).toBe(true);
+
+    world.syncAgents([{ ...p, seed: "s2" }]); // 외형 키 변경 -> 파괴 후 재생성
+
+    const overlayAfter = characterLayer.children[0].children[1];
+    expect(overlayAfter.visible).toBe(true);
+  });
+});
+
+describe("OfficeWorld: 책상 없이 대기 중이던 에이전트의 pendingIds 정리 (Finding 3)", () => {
+  it("엔티티 없이 대기 중이던 에이전트가 프로필에서 사라지면 pendingIds에서도 제거된다", () => {
+    const { bus, characterLayer, world } = makeWorld(makeMap(1)); // 책상 1개
+    world.syncAgents([profile("a"), profile("extra")]); // "extra"는 책상 없음 → 엔티티 없음
+    bus.triggerNotificationChanged("extra", true);
+
+    world.syncAgents([profile("a")]); // extra 완전 퇴장
+    world.syncAgents([profile("extra")]); // 재등장 — 이번엔 책상을 받아 엔티티 생성
+
+    // sweep이 안 됐다면 stale pendingIds로 "!"가 잘못 복원된다.
+    const overlay = characterLayer.children[0].children[1] as { visible: boolean };
+    expect(overlay.visible).toBe(false);
   });
 });
 
@@ -503,5 +556,106 @@ describe("OfficeWorld.destroy", () => {
     world.syncAgents([profile("a")]);
     world.destroy();
     expect(() => world.destroy()).not.toThrow();
+  });
+});
+
+// 실제 OFFICE_MAP 사용 — 픽스처 맵에서는 QUEUE_SLOTS 좌표가 map-rect 클램프에 걸린다.
+describe("boss desk queue orchestration", () => {
+  it("알림 대기 → 도착 순서대로 줄 슬롯 0,1 배정", () => {
+    const { world, bus } = makeWorld(OFFICE_MAP);
+    world.syncAgents([profile("a"), profile("b")]);
+    bus.triggerNotificationChanged("a", true);
+    bus.triggerNotificationChanged("b", true);
+    settle(world);
+    expect(posOf(world, "a")).toEqual(queuePos(0));
+    expect(posOf(world, "b")).toEqual(queuePos(1));
+  });
+
+  it("알림 해제 → 줄에서 빠지고 뒷사람이 슬롯 0으로 당겨진다", () => {
+    const { world, bus } = makeWorld(OFFICE_MAP);
+    world.syncAgents([profile("a"), profile("b")]);
+    bus.triggerNotificationChanged("a", true);
+    bus.triggerNotificationChanged("b", true);
+    settle(world);
+    bus.triggerNotificationChanged("a", false);
+    settle(world);
+    expect(posOf(world, "b")).toEqual(queuePos(0));
+    expect(posOf(world, "a")).not.toEqual(queuePos(0)); // a는 자리로 복귀
+  });
+
+  it("휴가 모드 on → 전원 줄 이탈, off → 대기 중 에이전트 재배정", () => {
+    const { world, bus } = makeWorld(OFFICE_MAP);
+    world.syncAgents([profile("a")]);
+    bus.triggerNotificationChanged("a", true);
+    settle(world);
+    bus.triggerVacationModeChanged(true);
+    settle(world);
+    expect(posOf(world, "a")).not.toEqual(queuePos(0));
+    bus.triggerVacationModeChanged(false);
+    settle(world);
+    expect(posOf(world, "a")).toEqual(queuePos(0));
+  });
+
+  it("syncAgents로 제거된 에이전트는 큐에서도 빠진다", () => {
+    const { world, bus } = makeWorld(OFFICE_MAP);
+    world.syncAgents([profile("a"), profile("b")]);
+    bus.triggerNotificationChanged("a", true);
+    bus.triggerNotificationChanged("b", true);
+    settle(world);
+    world.syncAgents([profile("b")]); // a 퇴장
+    settle(world);
+    expect(posOf(world, "b")).toEqual(queuePos(0));
+  });
+
+  it("외형 키 변경으로 재생성된 엔티티는 큐 멤버십을 유지한다", () => {
+    const { world, bus } = makeWorld(OFFICE_MAP);
+    const p = mkProfile({ id: "a", seed: "s1" });
+    world.syncAgents([p]);
+    bus.triggerNotificationChanged("a", true);
+    settle(world);
+    expect(posOf(world, "a")).toEqual(queuePos(0));
+
+    world.syncAgents([{ ...p, seed: "s2" }]); // 외형 키 변경 -> 파괴 후 재생성
+    settle(world);
+
+    expect(posOf(world, "a")).toEqual(queuePos(0));
+  });
+
+  it("책상이 없어(엔티티 없음) 대기 중인 에이전트는 줄 슬롯을 차지하지 않는다", () => {
+    const { world, bus } = makeWorld(OFFICE_MAP);
+    // 책상 8개를 전부 수동 지정으로 채워 extra는 자리를 못 받게 한다.
+    const desked = Array.from({ length: 8 }, (_, i) => ({ ...profile(`d${i}`), assignedDeskIndex: i }));
+    const extra = profile("extra");
+    world.syncAgents([...desked, extra]);
+
+    bus.triggerNotificationChanged("extra", true);
+    bus.triggerNotificationChanged("d0", true);
+    settle(world);
+
+    expect(() => posOf(world, "extra")).toThrow();
+    expect(posOf(world, "d0")).toEqual(queuePos(0)); // 유령 슬롯 없음 — d0이 슬롯 0
+  });
+
+  it("대기 중 책상을 잃었다가(엔티티 파괴) 되찾으면(엔티티 재생성) 줄로 복귀한다", () => {
+    const { world, bus } = makeWorld(OFFICE_MAP);
+    const d = Array.from({ length: 7 }, (_, i) => ({ ...profile(`d${i + 1}`), assignedDeskIndex: i + 1 }));
+    const a = { ...profile("a"), assignedDeskIndex: 0 };
+    world.syncAgents([a, ...d]);
+
+    bus.triggerNotificationChanged("a", true);
+    settle(world);
+    expect(posOf(world, "a")).toEqual(queuePos(0));
+
+    // "0z" < "a" 정렬이라 blocker의 수동 지정이 desk 0을 뺏는다(폴백 책상도 전부 점유됨).
+    const blocker = { ...profile("0z"), assignedDeskIndex: 0 };
+    world.syncAgents([a, ...d, blocker]);
+    settle(world);
+    expect(() => posOf(world, "a")).toThrow();
+
+    // blocker 제거 → 재생성. pending 유지라 recomputeQueue가 큐 멤버십을 복원해야 한다.
+    world.syncAgents([a, ...d]);
+    settle(world);
+
+    expect(posOf(world, "a")).toEqual(queuePos(0));
   });
 });
