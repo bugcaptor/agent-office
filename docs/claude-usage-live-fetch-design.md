@@ -42,6 +42,12 @@ User-Agent: claude-code/2.1.0
 - Keychain 읽기는 `security find-generic-password -s <service> -a $USER -w`
   자식 프로세스로 (비-macOS는 파일만). 값 JSON 모양은 세 출처 공통:
   `{"claudeAiOauth":{"accessToken":"..."}}`.
+- Keychain 자식 프로세스는 **5초 타임아웃**(tokio::process + kill_on_drop) —
+  잠긴 Keychain·방치된 권한 다이얼로그로 `security`가 매달려도 폴링 경로가
+  막히지 않고 파일→캐시 폴백으로 강등된다(PR #34 리뷰 P2 반영).
+- `anthropic-version` 헤더는 보내지 않는다 — 참고 구현(orca)이 동일 헤더
+  구성으로 프로덕션 동작 중이고, CLI 흉내 계약상 CLI가 안 보내는 헤더를
+  추가하지 않는다. 실 계약은 `#[ignore]` smoke로 확인.
 - 로컬 `expiresAt`으로 만료 판정하지 않는다 — orca 실측상 만료시각 후에도
   인증되는 사례가 있어 서버 401이 판정자다. 401이면 그냥 실패(→폴백).
 - **토큰을 로그·에러 메시지에 절대 포함하지 않는다.**

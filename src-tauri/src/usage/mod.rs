@@ -112,7 +112,7 @@ pub async fn load_usage_snapshot_with_live(
 
     // 락 안에서 스로틀 판단 + last_attempt 갱신(중복 fetch 차단) → 락 해제 후 fetch.
     if live.begin_attempt_if_due(now_ms) {
-        if let Some(token) = claude_live::read_access_token(claude_config_dir) {
+        if let Some(token) = claude_live::read_access_token(claude_config_dir).await {
             if let Some(windows) = claude_live::fetch_live(&token).await {
                 live.record_success(claude_live::live_provider_usage(windows, now_ms));
             }

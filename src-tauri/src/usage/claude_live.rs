@@ -26,6 +26,14 @@ const OAUTH_BETA: &str = "oauth-2025-04-20";
 const CLIENT_USER_AGENT: &str = "claude-code/2.1.0";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Keychain 자식 프로세스(`security`) 대기 상한. Keychain이 잠겨 있거나 권한
+/// 다이얼로그가 응답 없이 방치되면 `security`가 무한정 매달릴 수 있는데,
+/// 그 동안 `load_usage_snapshot` invoke가 pending으로 남아 파일/Codex 폴백조차
+/// 못 돌려주게 된다(PR #34 리뷰 P2). 상한 초과 시 자식을 죽이고 None → 다음
+/// 폴백으로 강등한다.
+#[cfg(target_os = "macos")]
+const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// 레거시 Keychain 서비스명(CLAUDE_CONFIG_DIR 미설정 시).
 #[cfg(target_os = "macos")]
 const KEYCHAIN_LEGACY_SERVICE: &str = "Claude Code-credentials";
@@ -56,17 +64,18 @@ pub(super) fn parse_access_token(json: &str) -> Option<String> {
 /// `config_dir`은 CLAUDE_CONFIG_DIR(설정 시) 또는 `~/.claude`(미설정 시)다.
 /// 스코프 Keychain 서비스명은 이 경로 문자열의 sha256 앞 8자로 만든다 —
 /// 미설정 케이스에선 그 항목이 존재하지 않아 조용히 레거시로 강등된다.
-pub fn read_access_token(config_dir: &Path) -> Option<String> {
+pub async fn read_access_token(config_dir: &Path) -> Option<String> {
     #[cfg(target_os = "macos")]
     {
         // 1) 스코프 항목(CLAUDE_CONFIG_DIR 설정 시 Claude Code가 쓰는 위치).
         let scoped = scoped_keychain_service(&config_dir.to_string_lossy());
-        if let Some(tok) = read_keychain(&scoped).and_then(|j| parse_access_token(&j)) {
+        if let Some(tok) = read_keychain(&scoped).await.and_then(|j| parse_access_token(&j)) {
             return Some(tok);
         }
         // 2) 레거시 항목.
-        if let Some(tok) =
-            read_keychain(KEYCHAIN_LEGACY_SERVICE).and_then(|j| parse_access_token(&j))
+        if let Some(tok) = read_keychain(KEYCHAIN_LEGACY_SERVICE)
+            .await
+            .and_then(|j| parse_access_token(&j))
         {
             return Some(tok);
         }
@@ -101,13 +110,24 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// `security find-generic-password -s <service> -a $USER -w`로 Keychain 값을
 /// 읽는다(설계 §2.2). 항목 부재·권한 거부는 비영 종료 → None. 표준출력의
 /// 값(JSON)만 돌려주고 stderr는 무시한다(토큰 노출 방지).
+///
+/// 비동기 + KEYCHAIN_TIMEOUT 상한: 잠긴 Keychain·방치된 권한 다이얼로그로
+/// `security`가 매달려도 폴링 경로가 막히지 않는다. kill_on_drop이라 타임아웃
+/// 시 자식도 정리된다.
 #[cfg(target_os = "macos")]
-fn read_keychain(service: &str) -> Option<String> {
+async fn read_keychain(service: &str) -> Option<String> {
     let user = std::env::var("USER").ok()?;
-    let output = std::process::Command::new("security")
-        .args(["find-generic-password", "-s", service, "-a", &user, "-w"])
-        .output()
-        .ok()?;
+    let output = tokio::time::timeout(
+        KEYCHAIN_TIMEOUT,
+        tokio::process::Command::new("security")
+            .args(["find-generic-password", "-s", service, "-a", &user, "-w"])
+            .stdin(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
     if !output.status.success() {
         return None;
     }
@@ -421,7 +441,7 @@ mod tests {
         let config_dir = std::env::var("CLAUDE_CONFIG_DIR")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| home.join(".claude"));
-        let token = read_access_token(&config_dir).expect("토큰을 찾지 못함");
+        let token = read_access_token(&config_dir).await.expect("토큰을 찾지 못함");
         let windows = fetch_live(&token).await.expect("실시간 사용량 조회 실패");
         assert!(!windows.is_empty(), "윈도가 하나 이상 있어야 함");
     }
