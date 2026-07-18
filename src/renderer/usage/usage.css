@@ -210,8 +210,12 @@
   font-weight: bold;
 }
 
-/* 픽셀 바(라이브러리 없이 자체 렌더). */
+/* 픽셀 바(라이브러리 없이 자체 렌더). 전역 box-sizing 리셋이 없는
+ * 코드베이스라 content-box 기본값이면 width:100% + 1px 테두리가 컨테이너를
+ * 2px 초과해, overflow-y:auto인 .usage-body에 가로 스크롤이 생긴다 —
+ * border-box로 테두리를 폭 안에 포함시킨다. */
 .usage-bar {
+  box-sizing: border-box;
   position: relative;
   width: 100%;
   height: calc(var(--unit) * 3);
