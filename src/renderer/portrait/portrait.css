@@ -164,7 +164,13 @@
 
 /* ---- sprite editor (SpriteEditor.tsx) ---- */
 .sprite-editor {
-  width: 360px;
+  /* 크롭+미리보기 행(≈336px)이 공통 모달 padding(#35) 안에 들어가도록
+     padding(48)+border(4) 포함 외곽 412px로 내용 폭 360px 확보.
+     content-box 오버라이드는 공통 max-height까지 내용 기준으로 만들어
+     짧은/좁은 창에서 도로 잘리므로 border-box 유지가 전제. 좁은 창에서는
+     max-width로 줄고 공통 overflow가 스크롤을 연다. */
+  width: calc(360px + var(--unit) * 12 + 4px);
+  max-width: 100%;
 }
 .sprite-edit-row {
   display: flex;
