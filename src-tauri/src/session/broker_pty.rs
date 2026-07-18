@@ -170,6 +170,28 @@ impl Read for CountingReader {
     }
 }
 
+/// broker data 소켓을 결정적으로 닫는 detach 핸들(§#50 선결, §P1 보강). detach
+/// 시 `shutdown(Both)`를 호출하면:
+///   1. 앱 reader 스레드의 블로킹 `read()`가 EOF(Ok(0))로 풀려 스레드가 확정
+///      종료된다 -- 그래야 CountingReader가 detach 시점 이후로 더 증가하지 않아
+///      스냅샷 offset이 확정값이 된다(§P1 오버슛 차단).
+///   2. 데몬 쪽으로 FIN이 가 `run_data_conn` 입력 펌프가 EOF를 관측 -> conn을
+///      떼어내 List의 `attached`가 false로 돌아간다 -- 그래야 재시작/크래시 후
+///      다음 인스턴스가 그 세션을 안전히 입양한다(§#50).
+/// `shutdown`은 소켓(연결) 단위 연산이라, reader/writer clone이 아직 살아 있어도
+/// 연결 전체에 즉시 적용된다. 별도 clone fd 하나를 쥐며 Drop에서 닫힌다.
+pub struct BrokerDataShutdown {
+    stream: UnixStream,
+}
+
+impl BrokerDataShutdown {
+    /// data 연결의 양방향을 shutdown한다. 두 번 이상 호출해도 안전(이미 닫혔으면
+    /// 에러가 나지만 무시). detach 경로에서만 호출한다.
+    pub fn shutdown(&self) {
+        let _ = self.stream.shutdown(std::net::Shutdown::Both);
+    }
+}
+
 /// data/wait 연결 번들. 조립 실패 롤백(P2-a)을 위해 control 연결 소비와
 /// 분리해 둔다 -- 이게 실패하면 호출자가 아직 control을 쥐고 있어 Kill로
 /// 되돌릴 수 있다.
@@ -179,6 +201,8 @@ struct BrokerIoBundle {
     wait_client: Client,
     /// data reader의 누적 수신 카운터(스냅샷 offset 동봉용).
     stream_offset: Arc<AtomicU64>,
+    /// detach 시 data 소켓을 결정적으로 닫는 핸들(§#50 선결).
+    shutdown: BrokerDataShutdown,
 }
 
 /// data(DataAttach 후 raw 스트림) + wait 연결을 연다. control 연결은 건드리지
@@ -193,10 +217,12 @@ fn open_broker_io(socket_path: &Path, agent_id: &str) -> io::Result<BrokerIoBund
         inner: data_stream.try_clone()?,
         counter: counter.clone(),
     });
+    // detach용 clone은 writer로 data_stream을 소비하기 전에 떠 둔다(같은 소켓).
+    let shutdown = BrokerDataShutdown { stream: data_stream.try_clone()? };
     let writer: Box<dyn Write + Send> = Box::new(data_stream);
     // wait 연결: 종료까지 블로킹하는 전용 연결.
     let wait_client = Client::connect(socket_path)?;
-    Ok(BrokerIoBundle { reader, writer, wait_client, stream_offset: counter })
+    Ok(BrokerIoBundle { reader, writer, wait_client, stream_offset: counter, shutdown })
 }
 
 /// control 연결 + IO 번들로 `SpawnedPty`를 조립한다. `broker_owned: true` --
@@ -220,6 +246,7 @@ fn build_broker_spawned(control: Client, agent_id: &str, io: BrokerIoBundle) -> 
         handoff: None,
         broker_owned: true,
         broker_stream_offset: Some(io.stream_offset),
+        broker_data_shutdown: Some(io.shutdown),
     }
 }
 

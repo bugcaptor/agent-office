@@ -134,6 +134,13 @@ struct Session {
     /// 값을 offset으로 동봉해 데몬 수신 시점 ring.total()과의 간극(유실 창)을
     /// 없앤다. 브로커 세션만 Some.
     broker_stream_offset: Option<Arc<std::sync::atomic::AtomicU64>>,
+    /// detach 시 data 소켓을 결정적으로 닫는 핸들(§#50 선결). broker_owned 세션의
+    /// detach에서 shutdown하면 앱 reader 스레드가 EOF로 종료되고 데몬 conn이 정리돼
+    /// List `attached`가 false로 돌아간다 — adopt가 라이브 원격 소유 세션을
+    /// 가로채지 않게 하는 근거(현재 인스턴스가 살아 붙어 있으면 attached=true 유지).
+    /// 브로커 세션만 Some(unix).
+    #[cfg(unix)]
+    broker_data_shutdown: Mutex<Option<crate::session::broker_pty::BrokerDataShutdown>>,
 }
 
 pub struct SessionManager {
@@ -492,6 +499,8 @@ impl SessionManager {
             eof_stop_gate,
             broker_owned,
             broker_stream_offset,
+            #[cfg(unix)]
+            broker_data_shutdown: Mutex::new(spawned.broker_data_shutdown),
         });
 
         self.sessions.lock().insert(agent_id.clone(), session.clone());
@@ -780,6 +789,18 @@ impl SessionManager {
                     let _ = client.update_snapshot(&agent_id, snap.as_bytes(), offset);
                 }
                 sess.handed_off.store(true, Ordering::SeqCst);
+                // data 소켓을 결정적으로 shutdown: reader 스레드를 EOF로 종료시키고
+                // 데몬에 FIN을 보내 conn을 정리시킨다(§#50 선결). 이게 없으면 reader
+                // 스레드가 clone fd를 프로세스 종료까지 쥐어 데몬 conn이 살아 있고
+                // List `attached`가 stale-true로 고착돼, 다음 인스턴스가 라이브 소유로
+                // 오판하거나 같은 프로세스 재입양이 깨진다.
+                if let Some(sd) = sess.broker_data_shutdown.lock().take() {
+                    sd.shutdown();
+                }
+                // 데몬이 FIN을 관측해 conn을 떼어낼 짧은 여유(handoff_one과 동일 패턴).
+                // 실제 앱 종료 시엔 이후 프로세스가 죽어 무관하나, 같은 프로세스에서
+                // 곧바로 재입양하는 경우 attached=false로 수렴할 시간을 준다.
+                std::thread::sleep(std::time::Duration::from_millis(20));
                 self.sessions.lock().remove(&agent_id);
                 self.registry.remove(&sess.session_id);
                 count += 1;
@@ -859,12 +880,23 @@ impl SessionManager {
                 }
                 continue;
             }
-            // NOTE(follow-up): 다른 앱 인스턴스가 이미 붙여 둔 세션(info.attached)을
-            // 여기서 입양하면 그 인스턴스의 data conn이 교체·shutdown돼 원본
-            // 터미널이 먹통이 된다(앱은 단일 인스턴스가 아니다). 안전한 스킵은
-            // detach 시 reader 소켓을 확실히 닫아 stale conn과 라이브 소유를
-            // 구분하는 설계가 함께 필요하므로 별도 이슈에서 처리한다(현재는
-            // attached 필드만 노출).
+            // §#50: 다른 앱 인스턴스가 지금 활성 data conn을 붙여 둔 세션
+            // (info.attached)은 입양하지 않는다 -- 입양하면 DataAttach 교체로
+            // 데몬이 그 인스턴스의 data 소켓을 shutdown해 원본 터미널이 먹통이
+            // 된다(앱은 단일 인스턴스 강제가 없다). detach가 이제 소켓을 결정적
+            // shutdown하므로(broker_data_shutdown) 정상 재시작/크래시(프로세스
+            // 종료로 OS가 fd를 닫음)면 데몬이 conn을 정리해 attached=false가 되어
+            // 여기서 정상 입양된다. attached=true는 "살아 있는 다른 인스턴스 소유".
+            // v1 세션은 데몬이 항상 attached=false로 주므로 영향 없다.
+            // TOCTOU(List~DataAttach 창)는 수용: 두 인스턴스가 ms 창에서 같은
+            // 미소유 세션을 경합해도 데몬 gen 직렬화로 크래시 없이 last-wins 수렴.
+            if info.attached {
+                eprintln!(
+                    "agent-office: skip adopt of {} — attached by another live instance",
+                    info.agent_id
+                );
+                continue;
+            }
             if !known_agent_ids.contains(&info.agent_id) {
                 let _ = client.kill(&info.agent_id); // 삭제된 에이전트의 고아 세션 정리.
                 continue;
@@ -3793,6 +3825,163 @@ return
         )
         .await;
 
+        let _ = std::fs::remove_dir_all(&app_data_dir);
+    }
+
+    /// §#50: 다중 인스턴스 안전화. 첫 매니저(mgr1)가 라이브로 붙어 있는(attached)
+    /// 브로커 세션을 둘째 매니저(mgr2, = 2번째 앱 인스턴스)의 adopt가 가로채지
+    /// 않고 스킵하는지, 그리고 mgr1이 detach(handoff_all -> data 소켓 결정적
+    /// shutdown)하면 conn이 정리돼 attached=false가 되어 mgr2가 그제서야 정상
+    /// 입양하는지(§P0 결정적 reader-close 의존)를 실 데몬으로 검증한다.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn broker_adopt_skips_live_attached_session_then_adopts_after_detach() {
+        use crate::session::broker_pty::BrokerPtyFactory;
+        use crate::session::pty_factory::PortablePtyFactory;
+        use std::collections::HashSet;
+        use tauri::ipc::{Channel, InvokeResponseBody};
+
+        let app_data_dir = scratch_dir("broker-hijack-appdata");
+        std::fs::create_dir_all(&app_data_dir).expect("create scratch app_data_dir");
+        let socket_path = crate::sessiond::client::default_socket_path(&app_data_dir);
+
+        let hook: crate::sessiond::daemon::ShutdownHook = Arc::new(|| {});
+        let daemon_socket = socket_path.clone();
+        std::thread::spawn(move || {
+            let _ = crate::sessiond::daemon::run_daemon_inner(
+                daemon_socket,
+                Duration::from_secs(60),
+                hook,
+            );
+        });
+        wait_for_timeout(
+            || socket_path.exists(),
+            Duration::from_secs(2),
+            "sessiond never bound its socket",
+        )
+        .await;
+
+        fn build_broker_manager(app_data_dir: &Path) -> Arc<SessionManager> {
+            let events = Arc::new(RecordingEvents::default());
+            let registry = Arc::new(SessionRegistry::new());
+            let hub = Arc::new(NotificationHub::new(
+                registry.clone(),
+                events.clone() as Arc<dyn AppEvents>,
+                Arc::new(SystemClock),
+                Duration::from_millis(3000),
+            ));
+            let observer = Arc::new(ObserverRuntime::new(hub.clone(), vec![]));
+            let fallback: Arc<dyn crate::session::pty_factory::PtyFactory> =
+                Arc::new(PortablePtyFactory);
+            let factory = Arc::new(BrokerPtyFactory::new(app_data_dir, fallback));
+            Arc::new(
+                SessionManager::new(
+                    factory,
+                    observer,
+                    registry,
+                    events.clone() as Arc<dyn AppEvents>,
+                    hub,
+                    Arc::new(|| None),
+                )
+                .with_shell_resolver(Arc::new(|_, _| shells::ResolvedShell {
+                    program: "/bin/sh".into(),
+                    args: vec![],
+                    extra_env: vec![],
+                }))
+                .with_app_data_dir(app_data_dir.to_path_buf())
+                .with_broker_mode(true),
+            )
+        }
+
+        fn attach_collector(mgr: &Arc<SessionManager>, agent_id: &str) -> Arc<Mutex<String>> {
+            let output = Arc::new(Mutex::new(String::new()));
+            let output_for_channel = output.clone();
+            let channel: Channel<OutputChunk> = Channel::new(move |body| {
+                if let InvokeResponseBody::Json(s) = body {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                        if let Some(data) = v.get("data").and_then(|d| d.as_str()) {
+                            output_for_channel.lock().push_str(data);
+                        }
+                    }
+                }
+                Ok(())
+            });
+            mgr.attach_output(agent_id, channel);
+            output
+        }
+
+        let known: HashSet<String> = ["a1".to_string()].into_iter().collect();
+
+        // mgr1: 세션 생성 후 라이브로 붙어 있다(attached=true).
+        let mgr1 = build_broker_manager(&app_data_dir);
+        mgr1.create(CreateSessionRequest {
+            agent_id: "a1".into(),
+            cols: Some(80),
+            rows: Some(24),
+            cwd: None,
+            shell: None,
+            startup_command: None,
+            personality_prompt: None,
+            autostart_claude: Some(false),
+        })
+        .expect("broker spawn should succeed");
+        let out1 = attach_collector(&mgr1, "a1");
+        mgr1.write_input("a1", "echo mgr1-alive-11111\n");
+        wait_for_timeout(
+            || out1.lock().contains("mgr1-alive-11111"),
+            Duration::from_secs(5),
+            "mgr1 broker session never echoed",
+        )
+        .await;
+
+        // mgr2(= 2번째 인스턴스): mgr1이 살아 붙어 있는 세션을 입양하려 하면
+        // attached=true라 스킵해야 한다(하이재킹 금지).
+        let mgr2 = build_broker_manager(&app_data_dir);
+        let adopted = mgr2.adopt_detached(&known);
+        assert!(
+            adopted.is_empty(),
+            "must NOT adopt a session attached by a live instance (hijack): {adopted:?}"
+        );
+        assert!(mgr2.find("a1").is_none(), "skipped session must not enter mgr2");
+
+        // mgr1은 여전히 살아 동작한다(가로채기가 없었으므로 스트림 유지).
+        mgr1.write_input("a1", "echo mgr1-still-alive-22222\n");
+        wait_for_timeout(
+            || out1.lock().contains("mgr1-still-alive-22222"),
+            Duration::from_secs(5),
+            "mgr1 must stay live after mgr2's skipped adopt",
+        )
+        .await;
+
+        // mgr1 detach: data 소켓을 결정적 shutdown -> 데몬 conn 정리 -> attached=false.
+        let handed = mgr1.handoff_all(&std::collections::HashMap::new());
+        assert_eq!(handed, 1, "mgr1 must detach its broker session");
+        assert!(mgr1.find("a1").is_none());
+
+        // 이제 mgr2가 입양 가능해야 한다(P0 결정적 close로 attached가 풀렸다).
+        // 데몬이 FIN을 관측할 짧은 시간을 주며 재시도.
+        let mut adopted2 = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while adopted2.is_empty() && std::time::Instant::now() < deadline {
+            adopted2 = mgr2.adopt_detached(&known);
+            if adopted2.is_empty() {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+        assert_eq!(
+            adopted2.len(),
+            1,
+            "after mgr1 detached, mgr2 must adopt the now-unattached session"
+        );
+        let out2 = attach_collector(&mgr2, "a1");
+        wait_for_timeout(
+            || out2.lock().contains("mgr1-alive-11111"),
+            Duration::from_secs(5),
+            "adopted session must replay pre-detach backlog",
+        )
+        .await;
+
+        mgr2.dispose("a1");
         let _ = std::fs::remove_dir_all(&app_data_dir);
     }
 

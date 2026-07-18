@@ -1497,6 +1497,61 @@ mod tests {
     }
 
     #[test]
+    fn broker_shutdown_both_clears_attached_even_with_a_lingering_clone() {
+        // §#50 P0: 앱은 data 소켓의 clone fd를 여러 개 쥔다(reader 스레드 clone +
+        // writer + detach 핸들). detach는 `shutdown(Both)`로 소켓을 닫는데, 이는
+        // 소켓(연결) 단위 연산이라 clone이 아직 살아 있어도 즉시 FIN을 보내
+        // 데몬이 conn을 떼어내고 attached=false가 되어야 한다. clone을 하나 남긴
+        // 채 shutdown해도 attached가 stale-true로 고착되지 않음을 못박는다 --
+        // 매니저 detach의 `broker_data_shutdown`이 의존하는 바로 그 성질.
+        use std::net::Shutdown;
+        let (socket_path, dir) = start_real_daemon();
+        let control = connect_hello(&socket_path);
+        spawn_broker(control.as_raw_fd(), "a1", "sleep 30");
+
+        let data = connect_hello(&socket_path);
+        protocol::write_frame(data.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
+            .unwrap();
+        assert!(matches!(
+            protocol::read_frame(data.as_raw_fd()).unwrap().0,
+            Message::DataAttachOk { .. }
+        ));
+        assert_eq!(list_attached(control.as_raw_fd(), "a1"), Some(true));
+
+        // 앱 reader 스레드가 쥔 clone을 흉내: shutdown 후에도 살려 둔다.
+        let lingering_clone = data.try_clone().unwrap();
+        // detach: 한 clone에서 shutdown(Both) -> 연결 전체가 닫혀야 한다.
+        data.shutdown(Shutdown::Both).unwrap();
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while list_attached(control.as_raw_fd(), "a1") != Some(false) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "shutdown(Both) must clear attached even while a clone fd lingers"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        // conn이 정리됐으니 재입양(새 DataAttach)이 성공하고 attached가 다시 true.
+        let data2 = connect_hello(&socket_path);
+        protocol::write_frame(data2.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
+            .unwrap();
+        assert!(matches!(
+            protocol::read_frame(data2.as_raw_fd()).unwrap().0,
+            Message::DataAttachOk { .. }
+        ));
+        assert_eq!(list_attached(control.as_raw_fd(), "a1"), Some(true));
+
+        drop(lingering_clone);
+        protocol::write_frame(control.as_raw_fd(), &Message::Kill { agent_id: "a1".into() }, None)
+            .unwrap();
+        let _ = protocol::read_frame(control.as_raw_fd());
+        drop(control);
+        drop(data2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn broker_wait_returns_child_exit_code() {
         let (socket_path, dir) = start_real_daemon();
         let control = connect_hello(&socket_path);

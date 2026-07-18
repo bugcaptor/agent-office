@@ -44,6 +44,14 @@ pub struct SpawnedPty {
     /// 업로드 시 "앱이 실제 여기까지 받았다"는 offset으로 동봉해 유실 창을 없앤다
     /// (§P1). 브로커 세션만 Some, 그 외(폴백/PortablePty/v1 입양/Fake)는 None.
     pub broker_stream_offset: Option<Arc<std::sync::atomic::AtomicU64>>,
+    /// detach 시 data 소켓을 결정적으로 닫는 핸들(§#50 선결). detach가 이걸
+    /// shutdown하면 앱 reader 스레드가 EOF로 종료되고 데몬 conn이 정리돼
+    /// List의 `attached`가 false로 돌아간다 — 그래야 재시작/크래시 후 다음
+    /// 인스턴스가 안전히 입양한다. 브로커 세션만 Some(unix).
+    #[cfg(unix)]
+    pub broker_data_shutdown: Option<crate::session::broker_pty::BrokerDataShutdown>,
+    #[cfg(not(unix))]
+    pub broker_data_shutdown: Option<()>,
 }
 
 /// 핸드오프 시 sessiond에 전달할 마스터 fd(및 프로세스 식별자). `master_fd`는
@@ -221,6 +229,7 @@ impl PtyFactory for PortablePtyFactory {
             handoff,
             broker_owned: false, // 프로세스 내 직접 스폰 -- 브로커 소유 아님(v1 fd 핸드오프 대상).
             broker_stream_offset: None,
+            broker_data_shutdown: None,
         })
     }
 }
@@ -367,6 +376,7 @@ pub fn assemble_adopted(
             handoff,
             broker_owned: false, // v1 fd 입양 세션 -- 재핸드오프도 v1 경로.
             broker_stream_offset: None,
+            broker_data_shutdown: None,
         },
         stopping,
     ))
@@ -598,6 +608,7 @@ pub mod fake {
             handoff: None,
             broker_owned: false,
             broker_stream_offset: None,
+            broker_data_shutdown: None,
         }
     }
 
