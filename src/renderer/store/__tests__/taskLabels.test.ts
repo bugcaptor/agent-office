@@ -37,7 +37,7 @@ beforeEach(() => {
 });
 
 describe("applyActivityEvent → taskLabels", () => {
-  it("첫 prompt는 first/latest를 함께 설정한다", () => {
+  it("첫 prompt는 first/latest와 goalFallback을 함께 설정한다", () => {
     useAppStore.getState().applyActivityEvent(promptEvent());
     const l = useAppStore.getState().taskLabels["a1"];
     expect(l).toEqual({
@@ -45,7 +45,53 @@ describe("applyActivityEvent → taskLabels", () => {
       firstPromptText: "첫 지시",
       latestPromptText: "첫 지시",
       latestPromptAt: 1000,
+      goalFallback: "첫 지시", // 요청 어미 없음 → 마지막(유일) 조각
     });
+  });
+
+  it("첫 prompt의 cwd(훅 body 실제 cwd)를 라벨에 싣는다", () => {
+    useAppStore.getState().applyActivityEvent(promptEvent({ cwd: "/w/proj" }));
+    expect(useAppStore.getState().taskLabels["a1"].cwd).toBe("/w/proj");
+  });
+
+  it("goalFallback은 요청 문장을 고른다(맥락 서술 뒤 요청 어미)", () => {
+    useAppStore
+      .getState()
+      .applyActivityEvent(promptEvent({ text: "맥락 설명이 길다. 44번 이슈에 코멘트해." }));
+    expect(useAppStore.getState().taskLabels["a1"].goalFallback).toBe("44번 이슈에 코멘트해");
+  });
+
+  it("후속 prompt: 의미 있는 요청 문장이면 goalFallback을 갱신한다", () => {
+    const s = useAppStore.getState();
+    s.applyActivityEvent(promptEvent());
+    s.applyActivityEvent(promptEvent({ text: "로그인 버그 고쳐줘", at: 2000 }));
+    expect(useAppStore.getState().taskLabels["a1"].goalFallback).toBe("로그인 버그 고쳐줘");
+  });
+
+  it("후속 prompt: 짧은 맞장구성 지시는 goalFallback을 유지한다", () => {
+    const s = useAppStore.getState();
+    s.applyActivityEvent(promptEvent({ text: "로그인 버그 고쳐줘" }));
+    // 6자 미만 + 맞장구 시작 → 직전 폴백 유지.
+    s.applyActivityEvent(promptEvent({ text: "응 그래", at: 2000 }));
+    s.applyActivityEvent(promptEvent({ text: "네", at: 3000 }));
+    expect(useAppStore.getState().taskLabels["a1"].goalFallback).toBe("로그인 버그 고쳐줘");
+  });
+
+  it("후속 prompt: 맞장구로 시작하지만 실제 지시가 이어지면 갱신한다", () => {
+    const s = useAppStore.getState();
+    s.applyActivityEvent(promptEvent({ text: "로그인 버그 고쳐줘" }));
+    // "네트워크"는 맞장구 오탐 금지 — 토큰 경계가 없어 갱신 대상.
+    s.applyActivityEvent(promptEvent({ text: "네트워크 계층도 손봐줘", at: 2000 }));
+    expect(useAppStore.getState().taskLabels["a1"].goalFallback).toBe("네트워크 계층도 손봐줘");
+  });
+
+  it("후속 prompt: cwd가 오면 갱신, 없으면 이전 값을 유지한다", () => {
+    const s = useAppStore.getState();
+    s.applyActivityEvent(promptEvent({ cwd: "/w/first" }));
+    s.applyActivityEvent(promptEvent({ text: "다음 지시 해줘", at: 2000, cwd: "/w/second" }));
+    expect(useAppStore.getState().taskLabels["a1"].cwd).toBe("/w/second");
+    s.applyActivityEvent(promptEvent({ text: "또 다른 지시 해줘", at: 3000 }));
+    expect(useAppStore.getState().taskLabels["a1"].cwd).toBe("/w/second"); // 유지
   });
 
   it("같은 세션의 후속 prompt는 latest만 갱신하고 currentSummary를 무효화한다", () => {
@@ -72,6 +118,7 @@ describe("applyActivityEvent → taskLabels", () => {
       firstPromptText: "새 세션 지시",
       latestPromptText: "새 세션 지시",
       latestPromptAt: 3000,
+      goalFallback: "새 세션 지시",
     });
   });
 

@@ -27,6 +27,9 @@ impl ObserverProvider {
 pub enum ObserverEvent {
     Prompt {
         text: Option<String>,
+        /// 훅 body top-level cwd — 라벨 프로젝트명 표시용(이슈 #44 작업 D). codex 등
+        /// body에 cwd가 없으면 None.
+        cwd: Option<String>,
     },
     Tool {
         /// 도구 요약("Bash: npm test" 등). 파싱 실패/서브에이전트 이벤트는 None.

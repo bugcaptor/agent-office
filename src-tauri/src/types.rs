@@ -121,6 +121,10 @@ pub struct ActivityEvent {
     /// 적용). 그 외 kind/codex/부재는 None — None이면 wire에서 필드 생략.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assistant_text: Option<String>,
+    /// kind=Prompt일 때 훅 body top-level cwd(세션 실제 작업 디렉터리, 라벨
+    /// 프로젝트명 표시용, 이슈 #44 작업 D). 그 외 kind/부재는 None — None이면 wire에서 필드 생략.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     /// kind=SubCount일 때 현재 실행 중 서브에이전트 절대 수.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub count: Option<u32>,
@@ -366,6 +370,7 @@ mod tests {
             at: 1_720_000_000_000,
             text: None,
             assistant_text: None,
+            cwd: None,
             count: None,
         };
         let json = serde_json::to_string(&ev).unwrap();
@@ -373,6 +378,30 @@ mod tests {
             json,
             "{\"agentId\":\"a1\",\"sessionId\":\"s1\",\"kind\":\"prompt\",\"at\":1720000000000}"
         );
+    }
+
+    #[test]
+    fn activity_event_omits_cwd_when_none_and_serializes_when_some() {
+        // 이슈 #44 작업 D: cwd는 None이면 wire에서 생략, Some이면 camelCase로 실린다.
+        let ev = ActivityEvent {
+            agent_id: "a1".into(),
+            session_id: "s1".into(),
+            kind: ActivityKind::Prompt,
+            at: 1,
+            text: None,
+            assistant_text: None,
+            cwd: None,
+            count: None,
+        };
+        let j = serde_json::to_string(&ev).unwrap();
+        assert!(!j.contains("\"cwd\""), "None이면 필드 자체가 생략돼야 한다: {j}");
+
+        let ev2 = ActivityEvent {
+            cwd: Some("/w/project".into()),
+            ..ev
+        };
+        let j2 = serde_json::to_string(&ev2).unwrap();
+        assert!(j2.contains(r#""cwd":"/w/project""#), "{j2}");
     }
 
     #[test]
@@ -384,6 +413,7 @@ mod tests {
             at: 1,
             text: None,
             assistant_text: None,
+            cwd: None,
             count: None,
         };
         let j = serde_json::to_string(&ev).unwrap();
@@ -403,6 +433,7 @@ mod tests {
             at: 1,
             text: None,
             assistant_text: None,
+            cwd: None,
             count: None,
         };
         let json = serde_json::to_string(&ev).unwrap();

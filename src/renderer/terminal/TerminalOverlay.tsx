@@ -16,6 +16,7 @@
 // AgentTabStrip's header.
 import { useAppStore } from "../store/appStore";
 import { AgentTabStrip } from "./AgentTabStrip";
+import { TerminalSummaryBar } from "./TerminalSummaryBar";
 import { TerminalHost } from "./TerminalHost";
 
 export function TerminalOverlay() {
@@ -40,6 +41,9 @@ export function TerminalOverlay() {
     >
       <div className="terminal-overlay-panel">
         <AgentTabStrip />
+        {/* 활성 탭 요약 바(이슈 #44 T1). 탭 스트립과 호스트 사이에 상시 마운트
+            — 표시는 오버레이 display 토글이 담당하므로 불변식과 무관하다. */}
+        <TerminalSummaryBar />
         <TerminalHost />
       </div>
     </div>

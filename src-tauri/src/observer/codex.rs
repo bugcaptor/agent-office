@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use super::event::{agent_id, codex_stop_message, prompt_text, tool_activity_text, tool_description};
+use super::event::{
+    agent_id, codex_stop_message, hook_cwd, prompt_text, tool_activity_text, tool_description,
+};
 use super::hook_command::forwarder_shell_command;
 use super::{
     AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError, ObserverEvent,
@@ -105,6 +107,8 @@ impl ObserverAdapter for CodexAdapter {
         match raw.event_name {
             "UserPromptSubmit" => Some(ObserverEvent::Prompt {
                 text: prompt_text(raw.body),
+                // codex body에 cwd가 없으면 자연히 None(이슈 #44 작업 D).
+                cwd: hook_cwd(raw.body),
             }),
             // 이슈 #43: claude와 동일하게 도구 요약을 싣되, 서브에이전트 내부 도구
             // (agent_id 있음)는 하트비트만 유지한다. codex는 transcript 꼬리가 없어

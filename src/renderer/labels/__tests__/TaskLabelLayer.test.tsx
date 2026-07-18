@@ -85,6 +85,21 @@ describe("TaskLabelLayer", () => {
     expect(container.querySelector(".task-label-line2")!.textContent).toBe("테스트 추가해줘");
   });
 
+  it("라벨 cwd(세션 실제 디렉터리)가 프로필 cwd보다 우선한다", () => {
+    // agent.cwd = /Users/me/dev/agent-office 인데 세션은 다른 곳으로 이동해 실행됐다.
+    seedStore({
+      label: { firstPromptText: "x", latestPromptText: "x", cwd: "/w/other-proj", goal: "작업" },
+    });
+    const { container } = render(<TaskLabelLayer bus={createMockOfficeBus()} />);
+    expect(container.querySelector(".task-label-line1")!.textContent).toBe("other-proj · 작업");
+  });
+
+  it("goalFallback이 있으면 1줄 목표로 쓴다(goal 부재 시)", () => {
+    seedStore({ label: { firstPromptText: "맥락. 로그인 고쳐줘", goalFallback: "로그인 고쳐줘", latestPromptText: "x" } });
+    const { container } = render(<TaskLabelLayer bus={createMockOfficeBus()} />);
+    expect(container.querySelector(".task-label-line1")!.textContent).toBe("agent-office · 로그인 고쳐줘");
+  });
+
   it("프롬프트가 아직 없으면 프로젝트명만 표시한다", () => {
     seedStore({ label: undefined });
     const { container } = render(<TaskLabelLayer bus={createMockOfficeBus()} />);

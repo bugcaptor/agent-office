@@ -4,8 +4,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use super::event::{
-    agent_id, claude_transcript_message, claude_transcript_progress_message, message, prompt_text,
-    running_subagents, tool_activity_text, transcript_path,
+    agent_id, claude_transcript_message, claude_transcript_progress_message, hook_cwd, message,
+    prompt_text, running_subagents, tool_activity_text, transcript_path,
 };
 use super::hook_command::forwarder_shell_command;
 use super::{
@@ -178,6 +178,7 @@ impl ObserverAdapter for ClaudeAdapter {
         match raw.event_name {
             "UserPromptSubmit" => Some(ObserverEvent::Prompt {
                 text: prompt_text(raw.body),
+                cwd: hook_cwd(raw.body),
             }),
             "PostToolUse" => Some(self.map_post_tool_use(raw.body)),
             "SubagentStart" => Some(ObserverEvent::SubStart),
@@ -577,6 +578,33 @@ mod tests {
             Some(ObserverEvent::Stop {
                 message: Some("done".into()),
                 running: Some(2),
+            }),
+        );
+    }
+
+    #[test]
+    fn user_prompt_carries_hook_cwd_into_prompt_event() {
+        // 이슈 #44 작업 D: UserPromptSubmit body의 top-level cwd가 Prompt.cwd로 실려야 한다.
+        let adapter = ClaudeAdapter::new(scratch_dir(), forwarder_exe());
+        assert_eq!(
+            adapter.map_hook(&RawObserverHook {
+                event_name: "UserPromptSubmit",
+                body: r#"{"prompt":"버그 고쳐줘","cwd":"/home/x/project"}"#.as_bytes(),
+            }),
+            Some(ObserverEvent::Prompt {
+                text: Some("버그 고쳐줘".into()),
+                cwd: Some("/home/x/project".into()),
+            }),
+        );
+        // cwd 부재 body는 None.
+        assert_eq!(
+            adapter.map_hook(&RawObserverHook {
+                event_name: "UserPromptSubmit",
+                body: r#"{"prompt":"버그 고쳐줘"}"#.as_bytes(),
+            }),
+            Some(ObserverEvent::Prompt {
+                text: Some("버그 고쳐줘".into()),
+                cwd: None,
             }),
         );
     }

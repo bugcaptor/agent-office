@@ -72,6 +72,63 @@
   color: #0a0b12;
 }
 
+/* ---- 활성 탭 요약 바 (탭 스트립과 호스트 사이, 이슈 #44 T1) ---- */
+/* 머리 위 라벨과 같은 데이터를 한 줄로 요약. 한 줄 고정, 넘치면 ellipsis. */
+.terminal-summary-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 0.72rem;
+  line-height: 1;
+  color: var(--text-dim);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-dark);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.terminal-summary-line1 {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.terminal-summary-sep {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.terminal-summary-line2 {
+  flex: 1 1 auto;
+  min-width: 0; /* flex 자식 ellipsis를 위해 필수 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+}
+
+/* 완료(비활성) 세션: 실황 없이 목표만 남고 전체를 흐리게. */
+.terminal-summary-stale {
+  opacity: 0.5;
+}
+
+/* phase 악센트 — 머리 위 라벨(labels.css)의 감각과 맞춘 은은한 톤. */
+.terminal-summary-bar.phase-working .terminal-summary-line2 {
+  color: var(--accent);
+}
+
+.terminal-summary-bar.phase-waiting .terminal-summary-line2 {
+  color: var(--accent-warn);
+}
+
+.terminal-summary-bar.phase-idle {
+  opacity: 0.5;
+}
+
 /* ---- keep-alive 호스트: 패널의 나머지 전부를 차지, 자식은 100% ---- */
 .terminal-host {
   flex: 1 1 auto;

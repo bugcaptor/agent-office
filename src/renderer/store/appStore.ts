@@ -19,6 +19,7 @@ import type {
 } from "./types";
 import { initialTurnState, reduceTurn } from "../timeline/turnReducer";
 import type { AgentTurnState, TurnInput } from "../timeline/turnReducer";
+import { requestSentence } from "../labels/labelText";
 import { applyTheme, loadStoredThemeId } from "../theme/applyTheme";
 import type { ThemeId } from "../theme/themes";
 import type { ActivityEvent, AppSettings, SessionState, UsageSnapshot } from "@shared/types";
@@ -27,6 +28,16 @@ import { tauriApi } from "../ipc/tauriApi";
 const MAX_EXCERPT = 80;
 /** 도구 요약 라벨 갱신 최소 간격(ms). 도구가 빠르게 연달아 와도 라벨이 튀지 않게 스로틀. */
 const TOOL_LABEL_MIN_INTERVAL_MS = 2000;
+/** goalFallback 갱신 최소 문자 수 — 이보다 짧은 요청 문장은 목적을 담기 어렵다(이슈 #44). */
+const GOAL_FALLBACK_MIN_CHARS = 6;
+/** 맞장구성 지시 판정: 이 토큰으로 "시작"하고 뒤에 공백·부호가 오거나 그 자체로
+ * 끝날 때만. "네트워크"류 오탐을 막기 위해 토큰 경계를 요구한다(이슈 #44 작업 A). */
+const BACKCHANNEL_START = /^(응|네|넵|예|그래|좋아|오케이|오케|ㅇㅋ|알겠|고마|감사)(?=[\s,.!?~…]|$)/;
+
+/** 요청 문장이 목표 폴백을 갱신할 만한가 — 충분히 길고 맞장구성이 아니어야 한다. */
+function isMeaningfulGoalFallback(cand: string): boolean {
+  return Array.from(cand).length >= GOAL_FALLBACK_MIN_CHARS && !BACKCHANNEL_START.test(cand);
+}
 const DEFAULT_APP_SETTINGS: AppSettings = {
   version: 1,
   summarizerEnabled: false,
@@ -485,24 +496,34 @@ export const useAppStore = create<AppState>()(
         if (e.kind === "prompt") {
           if (!e.text) return { timeTracking }; // text 없는 prompt → 라벨 미변경
           const prev = s.taskLabels[e.agentId];
-          const label: AgentTaskLabel =
-            prev && prev.sessionId === e.sessionId
-              ? {
-                  ...prev,
-                  latestPromptText: e.text,
-                  latestPromptAt: e.at,
-                  currentSummary: undefined, // 새 지시 → 재요약 대상
-                  latestToolText: undefined, // 새 턴 → 이전 턴 실황 제거
-                  latestAssistantText: undefined,
-                  latestToolAt: undefined,
-                }
-              : {
-                  // 새 세션(또는 첫 이벤트): 목표 포함 전체 리셋
-                  sessionId: e.sessionId,
-                  firstPromptText: e.text,
-                  latestPromptText: e.text,
-                  latestPromptAt: e.at,
-                };
+          let label: AgentTaskLabel;
+          if (prev && prev.sessionId === e.sessionId) {
+            // 같은 세션 후속 프롬프트: 요청 문장이 의미 있으면 목표 폴백을 갱신하고,
+            // 짧은 맞장구성 지시면 직전 폴백을 유지한다. cwd는 오면 갱신, 없으면 유지.
+            const cand = requestSentence(e.text);
+            label = {
+              ...prev,
+              latestPromptText: e.text,
+              latestPromptAt: e.at,
+              goalFallback:
+                cand && isMeaningfulGoalFallback(cand) ? cand : prev.goalFallback,
+              cwd: e.cwd ?? prev.cwd,
+              currentSummary: undefined, // 새 지시 → 재요약 대상
+              latestToolText: undefined, // 새 턴 → 이전 턴 실황 제거
+              latestAssistantText: undefined,
+              latestToolAt: undefined,
+            };
+          } else {
+            // 새 세션(또는 첫 이벤트): 목표 포함 전체 리셋. 폴백은 항상 설정.
+            label = {
+              sessionId: e.sessionId,
+              firstPromptText: e.text,
+              latestPromptText: e.text,
+              latestPromptAt: e.at,
+              goalFallback: requestSentence(e.text),
+              cwd: e.cwd,
+            };
+          }
           return { timeTracking, taskLabels: { ...s.taskLabels, [e.agentId]: label } };
         }
 

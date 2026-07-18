@@ -161,22 +161,22 @@ impl NotificationHub {
     /// axum 핸들러가 호출: prompt/tool activity 신호를 dedup/큐 없이 즉시
     /// activity-event로 방출한다. 죽은/미지 세션은 폐기한다.
     pub fn ingest_activity(&self, session_id: &str, kind: ActivityKind) {
-        self.ingest_activity_inner(session_id, kind, None, None);
+        self.ingest_activity_inner(session_id, kind, None, None, None);
     }
 
     /// prompt 훅 전용: body(UserPromptSubmit 이벤트 JSON)에서 원문을 추출해 싣는다.
     /// 파싱 실패는 text=None으로 강등될 뿐, 이벤트 방출 자체는 항상 일어난다.
     pub fn ingest_activity_with_body(&self, session_id: &str, kind: ActivityKind, body: &[u8]) {
-        self.ingest_activity_inner(session_id, kind, prompt_text(body), None);
+        self.ingest_activity_inner(session_id, kind, prompt_text(body), None, None);
     }
 
     pub fn ingest_observer(&self, session_id: &str, event: ObserverEvent) {
         match event {
-            ObserverEvent::Prompt { text } => {
-                self.ingest_activity_inner(session_id, ActivityKind::Prompt, text, None)
+            ObserverEvent::Prompt { text, cwd } => {
+                self.ingest_activity_inner(session_id, ActivityKind::Prompt, text, None, cwd)
             }
             ObserverEvent::Tool { text, assistant } => {
-                self.ingest_activity_inner(session_id, ActivityKind::Tool, text, assistant)
+                self.ingest_activity_inner(session_id, ActivityKind::Tool, text, assistant, None)
             }
             ObserverEvent::SubStart => self.ingest_activity(session_id, ActivityKind::SubStart),
             ObserverEvent::SubStop => self.ingest_activity(session_id, ActivityKind::SubStop),
@@ -218,6 +218,7 @@ impl NotificationHub {
         kind: ActivityKind,
         text: Option<String>,
         assistant: Option<String>,
+        cwd: Option<String>,
     ) {
         // 이슈 #41: 세션이 계속 일한다는 신호(프롬프트 제출·도구 사용·서브에이전트
         // 시작)가 오면 보류 중인 질문 알림을 조용히 폐기한다. SubStop/SubCount/
@@ -238,6 +239,7 @@ impl NotificationHub {
             at: self.clock.now_ms(),
             text,
             assistant_text: assistant,
+            cwd,
             count: None,
         };
         self.events.activity_event(&ev);
@@ -254,6 +256,7 @@ impl NotificationHub {
             at: self.clock.now_ms(),
             text: None,
             assistant_text: None,
+            cwd: None,
             count: Some(running),
         };
         self.events.activity_event(&ev);
@@ -609,6 +612,7 @@ mod tests {
             "s1",
             ObserverEvent::Prompt {
                 text: Some("버그 수정".into()),
+                cwd: None,
             },
         );
         hub.ingest_observer(
@@ -658,6 +662,25 @@ mod tests {
         assert_eq!(activity[0].text.as_deref(), Some("Bash: npm test"));
         assert_eq!(activity[0].assistant_text.as_deref(), Some("파일을 살펴보는 중"));
         // 활동 신호이므로 알림 파이프라인은 오염되지 않는다.
+        assert!(events.notifications().is_empty());
+    }
+
+    #[test]
+    fn prompt_observer_event_carries_cwd_into_activity() {
+        // 이슈 #44 작업 D: ObserverEvent::Prompt의 cwd가 ActivityEvent로 실려야 한다.
+        let (hub, events, _clock) = fixture();
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Prompt {
+                text: Some("버그 고쳐줘".into()),
+                cwd: Some("/w/project".into()),
+            },
+        );
+        let activity = events.activities();
+        assert_eq!(activity.len(), 1);
+        assert_eq!(activity[0].kind, ActivityKind::Prompt);
+        assert_eq!(activity[0].text.as_deref(), Some("버그 고쳐줘"));
+        assert_eq!(activity[0].cwd.as_deref(), Some("/w/project"));
         assert!(events.notifications().is_empty());
     }
 
@@ -1206,7 +1229,7 @@ mod tests {
         // Prompt 취소
         let (hub, _events, clock) = hold_fixture(5000);
         hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
-        hub.ingest_observer("s1", ObserverEvent::Prompt { text: None });
+        hub.ingest_observer("s1", ObserverEvent::Prompt { text: None, cwd: None });
         clock.advance(6000);
         hub.flush_expired();
         assert!(hub.pending("s1").is_empty());

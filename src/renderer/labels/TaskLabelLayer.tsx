@@ -6,7 +6,7 @@
 import { useEffect, useRef } from "react";
 import { useAppStore } from "../store/appStore";
 import type { LabelAnchor, OfficeBus } from "../office/bus";
-import { firstLine, projectNameFromCwd } from "./labelText";
+import { deriveTaskLabelLines } from "./labelText";
 import "./labels.css";
 
 const GOAL_FALLBACK_MAX = 24; // 원문 폴백 절단(1줄 목표 자리)
@@ -39,16 +39,12 @@ export function TaskLabelLayer({ bus }: { bus: OfficeBus }) {
     const status = sessions[agent.id]?.status;
     if (status !== "starting" && status !== "running") return [];
     const label = taskLabels[agent.id];
-    const project = projectNameFromCwd(agent.cwd);
-    const goal = label?.goal ?? firstLine(label?.firstPromptText, GOAL_FALLBACK_MAX);
-    const line1 = [project, goal].filter(Boolean).join(" · ");
-    // 실황(assistant 내레이션 > 도구 요약) > LLM 지시 요약 > 프롬프트 원문.
-    // currentSummary는 지시 요약이라 턴 중 실황보다 정보가 오래됐다(이슈 #43).
-    const line2 =
-      firstLine(label?.latestAssistantText, CURRENT_FALLBACK_MAX) ??
-      firstLine(label?.latestToolText, CURRENT_FALLBACK_MAX) ??
-      label?.currentSummary ??
-      firstLine(label?.latestPromptText, CURRENT_FALLBACK_MAX);
+    // 두 줄 파생 규칙은 labelText.deriveTaskLabelLines로 일원화(이슈 #44 T1).
+    // 표시 결과는 종전과 동일하되 터미널 요약 표시와 규칙을 공유한다.
+    const { line1, line2 } = deriveTaskLabelLines(label, agent.cwd, {
+      goalMax: GOAL_FALLBACK_MAX,
+      currentMax: CURRENT_FALLBACK_MAX,
+    });
     if (!line1 && !line2) return [];
     const phase = timeTracking[agent.id]?.phase ?? "idle";
     return [{ id: agent.id, line1, line2, phase }];

@@ -134,6 +134,9 @@ export interface ActivityEvent {
   /** kind="tool"일 때 턴 중간 assistant 내레이션(claude transcript 꼬리, 스로틀
    * 적용). 그 외 kind/codex/부재는 undefined. */
   assistantText?: string;
+  /** kind="prompt"일 때 훅 body top-level cwd(세션 실제 작업 디렉터리, 라벨
+   * 프로젝트명 표시용, 이슈 #44 작업 D). 그 외 kind/부재는 undefined. */
+  cwd?: string;
   /** kind="sub-count"일 때 현재 실행 중 서브에이전트 절대 수. */
   count?: number;
 }

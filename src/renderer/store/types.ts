@@ -80,6 +80,12 @@ export interface AgentTaskLabel {
   latestPromptAt?: number;
   /** LLM 생성 목표(세션당 1회). */
   goal?: string;
+  /** LLM 요약 부재 시 1줄 목표 폴백 — 최신 프롬프트의 요청 문장. 짧은 맞장구성
+   * 지시(응/알겠 등)는 갱신을 스킵해 직전 목적을 유지한다(이슈 #44 작업 A). */
+  goalFallback?: string;
+  /** 세션 실제 작업 디렉터리 — 프롬프트마다 갱신. 훅 body top-level cwd에서 온다.
+   * 부재 시 프로필 cwd로 폴백하는 것은 표시 쪽 몫(이슈 #44 작업 D). */
+  cwd?: string;
   /** LLM 생성 현재 명령 요약. 새 프롬프트가 오면 무효화(undefined). */
   currentSummary?: string;
   /** 턴 중 최신 도구 요약("Bash: npm test"). stop/새 프롬프트에 리셋. */

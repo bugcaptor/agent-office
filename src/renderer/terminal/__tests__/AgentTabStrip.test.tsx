@@ -267,6 +267,37 @@ describe("cleanup", () => {
   });
 });
 
+describe("탭 툴팁(이슈 #44 T2)", () => {
+  it("라벨이 있고 세션이 live면 title에 '목표\\n실황' 두 줄을 붙인다", () => {
+    seedThreeTabs(); // addAgent가 세션을 starting으로 시드 → live
+    useAppStore.setState({
+      taskLabels: {
+        a1: { sessionId: "s1", goal: "버그 수정", latestAssistantText: "원인 좁히는 중" },
+      },
+    });
+    const { getAllByRole } = render(<AgentTabStrip />);
+    expect(getAllByRole("tab")[0].getAttribute("title")).toBe("버그 수정\n원인 좁히는 중");
+  });
+
+  it("세션이 live가 아니면 실황을 빼고 title은 목표(line1)만", () => {
+    seedThreeTabs();
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "exited" });
+    useAppStore.setState({
+      taskLabels: {
+        a1: { sessionId: "s1", goal: "버그 수정", latestAssistantText: "원인 좁히는 중" },
+      },
+    });
+    const { getAllByRole } = render(<AgentTabStrip />);
+    expect(getAllByRole("tab")[0].getAttribute("title")).toBe("버그 수정");
+  });
+
+  it("라벨이 없는 탭은 title 속성이 없다", () => {
+    seedThreeTabs(); // mkProfile은 cwd·라벨 미설정
+    const { getAllByRole } = render(<AgentTabStrip />);
+    expect(getAllByRole("tab")[0].getAttribute("title")).toBeNull();
+  });
+});
+
 describe("탭 우클릭 컨텍스트 메뉴", () => {
   it("탭을 우클릭하면 메뉴가 뜨고 '프로필 편집' 선택 시 편집 모달을 열고 메뉴는 닫힌다", () => {
     seedThreeTabs();

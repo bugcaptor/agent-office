@@ -317,6 +317,7 @@ mod tests {
             at: 100,
             text: None,
             assistant_text: None,
+            cwd: None,
             count: None,
         });
         events.activity_event(&ActivityEvent {
@@ -326,6 +327,7 @@ mod tests {
             at: 200,
             text: None,
             assistant_text: None,
+            cwd: None,
             count: None,
         });
 

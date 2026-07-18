@@ -114,6 +114,7 @@ impl ObserverRuntime {
         let event = match source {
             "prompt" => ObserverEvent::Prompt {
                 text: event::prompt_text(body),
+                cwd: event::hook_cwd(body),
             },
             "tool" => ObserverEvent::Tool {
                 text: None,
@@ -191,6 +192,8 @@ mod tests {
             }),
             Some(ObserverEvent::Prompt {
                 text: Some("버그 고쳐줘".into()),
+                // body에 cwd가 없으므로 hook_cwd → None(양 어댑터 공통).
+                cwd: None,
             }),
         );
         assert_eq!(
@@ -407,6 +410,7 @@ mod tests {
                     plan: Ok(AdapterSessionPlan::default()),
                     mapped: Some(ObserverEvent::Prompt {
                         text: Some("marker".into()),
+                        cwd: None,
                     }),
                 }),
                 Arc::new(FakeAdapter {
