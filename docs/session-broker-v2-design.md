@@ -1,7 +1,9 @@
 # 세션 브로커 v2 계획 — 상시 브로커(스폰부터 데몬이 PTY 소유)
 
-작성: 2026-07-17 (Fable). 상태: **계획 단계 (구현 미착수, 승인 대기)**.
+작성: 2026-07-17 (Fable). 상태: **Phase 1 구현 중 (feature flag opt-in, unix 전용)**.
 전제: v1(feat/session-handoff, PR #6) = 종료 시점 핸드오프. v2는 그 역전.
+활성화: `AGENT_OFFICE_SESSION_BROKER=v2` + unix일 때만 `BrokerPtyFactory` 주입.
+기본 off라 v1 경로(PortablePtyFactory + 종료 시 fd 핸드오프)는 그대로 보존된다.
 
 ## v2가 v1보다 나은 것 / 잃는 것
 
@@ -47,6 +49,78 @@
 - **화면 복원**: v1에서 만든 xterm 직렬화 스냅샷을 그대로 사용 — 단, 종료 시점이
   아니라 **주기 또는 disconnect 시점에 브로커로 업로드**(크래시 생존을 위해선
   마지막 스냅샷이 브로커에 있어야 함. 주기 30s + quit 시 1회가 기본안).
+
+## 프로토콜 v2 확정 (Phase 1 와이어 계약)
+
+`PROTO_VERSION`을 **2**로 올렸다. 규칙은 **additive-only**: 기존 메시지
+(Hello/HelloOk/Handoff/HandoffOk/List/ListOk/Adopt/AdoptOk/Kill/KillOk/Error)는
+의미 불변이고, 신규 필드는 전부 `#[serde(default)]`. 프레이밍은 v1과 동일
+(`u32 LE 길이 + JSON`). 구현: `src-tauri/src/sessiond/{protocol,client,daemon}.rs`.
+
+### 신규 메시지 (앱 → 데몬, 별도 표기 없으면 control 연결에서 프레임 RPC)
+
+- `Spawn { agent_id, session_id, shell, args, env: [(k,v)], rows, cols, cwd, cleanup_paths }`
+  → `SpawnOk { pid }`. 데몬이 portable-pty로 openpty+spawn하고 세션 테이블에
+  등록한다. 링버퍼는 **스폰 시점부터** 수집한다. fd는 동반하지 않는다(v1 Handoff와
+  정반대로 소유권이 처음부터 데몬에 있다). `env`는 앱(SessionManager)이 이미
+  관찰자 훅/설정 파일 경로까지 계산해 넘기고 데몬은 그대로 주입만 한다.
+- `DataAttach { agent_id }` → 프레임 `DataAttachOk` **직후 해당 연결이 raw
+  양방향 바이트 스트림으로 전환**된다(이후 프레이밍 없음). 데몬은 DataAttachOk
+  직후 링버퍼 백로그를 같은 스트림에 먼저 쓰고 이어서 라이브 출력을 흘린다
+  (이음새 없는 리플레이 — 백로그 스냅샷과 conn 설치를 하나의 락 아래에서
+  원자화해 유실/중복 없음). 앱→데몬 방향 raw 바이트는 PTY master에 기록된다.
+  **세션당 활성 data conn은 1개** — 새 DataAttach가 오면 기존 소켓을 `shutdown`해
+  교체한다. 앱 쪽 EOF/에러 = detach(자식은 죽이지 않음).
+- `Attach { agent_id }` → `AttachOk { rows, cols, pid, snapshot_b64, exit: Option }`.
+  재접속용 메타데이터+최신 업로드 스냅샷 회수(백로그는 data conn 담당이라 여기
+  buffer는 없다). `exit`이 Some이면 이미 종료된 세션.
+- `Resize { agent_id, rows, cols }` → `ResizeOk`. 데몬이 PTY master를 resize.
+- `Wait { agent_id }` → 자식 종료까지 블로킹 후 `WaitOk { exit_code, signal }`.
+  연결별 독립 처리이므로 waiter는 **전용 control 연결**을 하나 열어 쓴다. 데몬은
+  자식을 reap(waitpid)해 ExitInfo를 기록하고, 종료 시 reader가 잔여 출력을 전부
+  흘린 뒤 data conn을 닫는다. 데몬이 자식의 부모라 v1 EofWaiter의 "exit code
+  소실" 제약이 사라진다.
+- `KillAll` → `KillAllOk { killed }`. 브로커 소유 자식 전부 SIGKILL + 테이블 비움
+  (원자적 일괄 종료용 프로토콜 surface). 단 앱의 "모두 종료"/dispose_all은
+  실제로는 **세션별 `Kill { agent_id }`**로 처리한다 — 각 세션의 control이 알아서
+  죽이므로(브로커 세션=Kill RPC, 데몬 접속 실패로 폴백 스폰된 in-process 세션=
+  직접 kill) KillAll 특수 분기 없이도 폴백 세션 누수가 없다. `Kill`은 데몬이
+  SIGKILL+테이블 제거+cleanup까지 하고, 그 자식을 reap한 waiter가 exit를 기록해
+  앱의 Wait가 반환→상태가 Disposed로 전이한다.
+- `UpdateSnapshot { agent_id, snapshot_b64 }` → `UpdateSnapshotOk`. 주기 스냅샷
+  업로드(기본 30초, 렌더러) — 데몬은 세션당 최신 것만 보관해 앱 크래시 후 화면
+  복원에 대비한다.
+- `ListOk`의 `SessionInfo`에 `broker: bool`(serde default) 추가 — v1 핸드오프
+  세션(false)과 v2 브로커 세션(true)을 additive로 구분한다.
+
+### 버전 협상 / 폴백 (additive, 재시도 협상)
+
+협상은 additive다 — 어느 쪽이 신·구든 세션을 잃지 않는다.
+
+- **데몬**: `Hello{proto}`를 `proto >= 1`이면 수락하고 `HelloOk{ min(proto,
+  PROTO_VERSION) }`로 답한다(proto 0만 거부). 구프로토 클라이언트는 그 버전의
+  메시지만 보내므로 안전하고, 미래 클라이언트(proto > 상한)는 상한으로 클램프된다.
+- **클라이언트**: 먼저 `Hello{PROTO_VERSION}`을 보내 `HelloOk{p}`(1..=PROTO_VERSION)를
+  받으면 그 `p`를 `Client`에 보관한다. **구데몬(proto 1)은 Hello{2}를 못 알아듣고
+  Error로 답하되 연결은 유지하므로, Error를 받으면 같은 연결에서 `Hello{1}`로 1회
+  재시도**해 `p=1`로 협상한다 — 앱을 이번 버전으로 업데이트해도 구데몬이 쥔 v1
+  핸드오프 세션의 adopt 경로가 그대로 살아 있다(이 재시도가 없으면 기본 off인
+  기존 v1 사용자도 업데이트 직후 세션을 잃는 회귀가 난다).
+- **v2 게이팅**: 협상 `p < 2`면 v2 RPC 래퍼(spawn/attach/resize/wait/
+  update_snapshot/data-attach)는 네트워크로 나가기 전에 즉시 `Err`를 낸다 →
+  `BrokerPtyFactory`가 그 spawn을 `PortablePtyFactory`로 폴백한다(로그 남김).
+  v1 메서드(handoff/list/adopt/kill)는 `p=1`에서도 그대로 동작한다.
+- 데몬은 앱이 자기 자신을 `--sessiond`로 재실행해 띄우므로, 브로커 모드에서 앱이
+  직접 스폰한 데몬의 proto는 항상 앱과 같은 2다. p=1 협상은 "소켓에 이미 떠 있는
+  구데몬"을 만난 업데이트 직후에만 발생한다.
+
+### 연결 모델 (BrokerPtyFactory)
+
+세션 하나당 세 연결: **control**(Spawn 후 resize/kill RPC에 재사용, Mutex 보관),
+**data**(DataAttach 후 raw — reader/writer가 이 소켓의 try_clone), **wait**(Wait
+전용, 블로킹). `SpawnedPty` 계약(reader/writer/control/waiter)이 그대로
+보존되므로 SessionManager는 팩토리 교체 외 거의 무변경이고, `handoff`/
+`reader_interrupt`는 None(브로커 세션은 fd 핸드오프가 필요 없다).
 
 ## 버전 스큐 (앱 업데이트 중 구버전 브로커)
 

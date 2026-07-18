@@ -580,6 +580,13 @@ export interface AgentOfficeApi {
   handoffSessions(snapshots: Record<string, string>): Promise<number>;
   /** 부팅 시 1회 — 데몬에 남아있던 세션을 되찾는다. 미지원/데몬 없음이면 빈 배열. */
   adoptDetachedSessions(): Promise<AdoptedSessionInfo[]>;
+  /** v2 상시 브로커 모드(docs/session-broker-v2-design.md)가 켜져 있는지.
+   * true일 때만 렌더러가 주기 스냅샷 업로드를 활성화한다. 미지원/기본은 false. */
+  sessionBrokerMode(): Promise<boolean>;
+  /** 브로커 모드 주기 스냅샷 업로드 — agentId -> 직렬화된 xterm 화면. 데몬이
+   * 세션별 최신 것만 보관해 앱 크래시 후 화면 복원에 대비한다. 브로커 모드가
+   * 아니거나 데몬에 못 닿으면 백엔드에서 no-op. */
+  uploadSessionSnapshots(snapshots: Record<string, string>): Promise<void>;
   /** Claude 세션 이어하기 후보 목록(agentId → 최신 1건). 메뉴를 열 때 조회한다.
    * 캡처된 적 없는 에이전트는 키가 없다(빈 객체 가능). */
   listClaudeResumeSessions(): Promise<Record<AgentId, ClaudeResumeEntry>>;

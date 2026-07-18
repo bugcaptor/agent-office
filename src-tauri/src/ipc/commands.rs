@@ -132,6 +132,26 @@ pub async fn handoff_supported() -> Result<bool, String> {
     Ok(cfg!(unix))
 }
 
+/// v2 상시 브로커 모드가 켜져 있는지(docs/session-broker-v2-design.md).
+/// 렌더러는 이 값이 true일 때만 주기 스냅샷 업로드를 활성화한다. `handoff_supported`
+/// 옆에 additive로 두어 기존 계약을 건드리지 않는다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn session_broker_mode(app_state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(app_state.manager.broker_mode())
+}
+
+/// 브로커 모드 주기 스냅샷 업로드: 렌더러가 30초마다 직렬화한 xterm 화면을
+/// agentId 키로 올려 앱 크래시 후 화면 복원에 대비한다. 브로커 모드가 아니거나
+/// 데몬에 못 닿으면 no-op이다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn upload_session_snapshots(
+    app_state: State<'_, AppState>,
+    snapshots: std::collections::HashMap<String, String>,
+) -> Result<(), String> {
+    app_state.manager.upload_snapshots(&snapshots);
+    Ok(())
+}
+
 /// 앱 종료 확인 모달에서 "터미널 유지하고 종료" 선택 시 호출. Running
 /// 세션들을 sessiond로 넘기고 넘긴 개수를 반환한다 -- 프론트는 이 수와
 /// 무관하게 창을 닫고 종료를 진행한다(§핵심 3). 비unix에서는

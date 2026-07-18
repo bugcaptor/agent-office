@@ -75,6 +75,9 @@ pub struct AdoptedSession {
 
 pub struct Client {
     stream: UnixStream,
+    /// Hello로 협상된 프로토콜 버전(1..=PROTO_VERSION). v2 RPC는 이 값이 2
+    /// 이상일 때만 쓸 수 있다 -- 구데몬(proto 1)과는 v1 메시지만 주고받는다.
+    proto: u32,
 }
 
 impl Client {
@@ -82,26 +85,61 @@ impl Client {
         self.stream.as_raw_fd()
     }
 
-    /// 연결 + Hello/HelloOk 프로토콜 버전 핸드셰이크까지 마친 클라이언트를
-    /// 만든다. 버전 불일치는 Err -- 호출자는 해당 세션의 입양/핸드오프를
-    /// 포기해야 한다(설계 문서 §프로토콜).
+    /// 이 연결이 협상한 프로토콜 버전. 브로커(v2) 기능은 `>= 2`에서만 유효.
+    pub fn proto(&self) -> u32 {
+        self.proto
+    }
+
+    /// v2 브로커 RPC 진입 가드. 협상된 proto가 2 미만이면(구데몬 등) 즉시
+    /// Err -- 호출자(BrokerPtyFactory)는 이걸 보고 in-process 폴백을 탄다.
+    fn require_v2(&self) -> io::Result<()> {
+        if self.proto >= 2 {
+            Ok(())
+        } else {
+            Err(io::Error::other(format!(
+                "sessiond negotiated proto {} (broker mode needs >= 2)",
+                self.proto
+            )))
+        }
+    }
+
+    /// 연결 + Hello 협상까지 마친 클라이언트를 만든다. 협상은 additive:
+    /// 신앱은 Hello{PROTO_VERSION}을 먼저 보내고, 데몬이 자기 상한으로 낮춰
+    /// HelloOk{p}(1..=PROTO_VERSION)를 답하면 그 p로 확정한다. **구데몬(proto 1)은
+    /// Hello{2}에 Error로 답하되 연결은 유지하므로, Error를 받으면 같은 연결에서
+    /// Hello{1}로 1회 재시도해 p=1로 협상한다** -- 앱 업데이트 직후 구데몬이 쥔
+    /// v1 핸드오프 세션을 잃지 않게 하는 하위호환 경로.
     pub fn connect(socket_path: &Path) -> io::Result<Self> {
         let stream = UnixStream::connect(socket_path)?;
-        let client = Client { stream };
-        client.hello()?;
+        let mut client = Client { stream, proto: 0 };
+        client.proto = client.negotiate()?;
         Ok(client)
     }
 
-    fn hello(&self) -> io::Result<()> {
+    fn negotiate(&self) -> io::Result<u32> {
         protocol::write_frame(self.fd(), &Message::Hello { proto: protocol::PROTO_VERSION }, None)?;
         match protocol::read_frame(self.fd())?.0 {
-            Message::HelloOk { proto } if proto == protocol::PROTO_VERSION => Ok(()),
+            Message::HelloOk { proto } if (1..=protocol::PROTO_VERSION).contains(&proto) => Ok(proto),
             Message::HelloOk { proto } => Err(io::Error::other(format!(
-                "sessiond speaks proto {proto}, expected {}",
+                "sessiond negotiated unexpected proto {proto} (max {})",
                 protocol::PROTO_VERSION
             ))),
-            Message::Error { message } => Err(io::Error::other(message)),
+            // 구데몬: Hello{2}를 못 알아듣고 Error로 답하지만 연결은 살아 있다.
+            // 같은 연결에서 v1 Hello로 한 번만 재시도한다.
+            Message::Error { .. } => self.negotiate_v1_retry(),
             other => Err(io::Error::other(format!("unexpected reply to Hello: {other:?}"))),
+        }
+    }
+
+    fn negotiate_v1_retry(&self) -> io::Result<u32> {
+        protocol::write_frame(self.fd(), &Message::Hello { proto: 1 }, None)?;
+        match protocol::read_frame(self.fd())?.0 {
+            Message::HelloOk { proto: 1 } => Ok(1),
+            Message::HelloOk { proto } => Err(io::Error::other(format!(
+                "sessiond answered v1 Hello with unexpected proto {proto}"
+            ))),
+            Message::Error { message } => Err(io::Error::other(message)),
+            other => Err(io::Error::other(format!("unexpected reply to v1 Hello retry: {other:?}"))),
         }
     }
 
@@ -197,6 +235,135 @@ impl Client {
             other => Err(io::Error::other(format!("unexpected reply to Kill: {other:?}"))),
         }
     }
+
+    // ── 프로토콜 v2: 상시 브로커 모드 RPC ───────────────────────────────
+
+    /// 데몬에 세션 하나를 spawn하라고 지시하고 자식 pid를 돌려받는다.
+    pub fn spawn_broker(&self, req: SpawnBrokerRequest) -> io::Result<Option<i32>> {
+        self.require_v2()?;
+        protocol::write_frame(
+            self.fd(),
+            &Message::Spawn {
+                agent_id: req.agent_id,
+                session_id: req.session_id,
+                shell: req.shell,
+                args: req.args,
+                env: req.env,
+                rows: req.rows,
+                cols: req.cols,
+                cwd: req.cwd,
+                cleanup_paths: req.cleanup_paths,
+            },
+            None,
+        )?;
+        match protocol::read_frame(self.fd())?.0 {
+            Message::SpawnOk { pid } => Ok(pid),
+            Message::Error { message } => Err(io::Error::other(message)),
+            other => Err(io::Error::other(format!("unexpected reply to Spawn: {other:?}"))),
+        }
+    }
+
+    /// 재접속용 메타데이터+최신 스냅샷 회수(백로그는 data conn 담당).
+    pub fn attach(&self, agent_id: &str) -> io::Result<AttachedMeta> {
+        self.require_v2()?;
+        protocol::write_frame(self.fd(), &Message::Attach { agent_id: agent_id.to_string() }, None)?;
+        match protocol::read_frame(self.fd())?.0 {
+            Message::AttachOk { rows, cols, snapshot_b64, exit, .. } => {
+                use base64::Engine;
+                let snapshot = base64::engine::general_purpose::STANDARD
+                    .decode(snapshot_b64)
+                    .unwrap_or_default();
+                Ok(AttachedMeta {
+                    rows,
+                    cols,
+                    snapshot,
+                    exit: exit.map(|e| (e.exit_code, e.signal)),
+                })
+            }
+            Message::Error { message } => Err(io::Error::other(message)),
+            other => Err(io::Error::other(format!("unexpected reply to Attach: {other:?}"))),
+        }
+    }
+
+    pub fn resize(&self, agent_id: &str, rows: u16, cols: u16) -> io::Result<()> {
+        self.require_v2()?;
+        protocol::write_frame(
+            self.fd(),
+            &Message::Resize { agent_id: agent_id.to_string(), rows, cols },
+            None,
+        )?;
+        match protocol::read_frame(self.fd())?.0 {
+            Message::ResizeOk => Ok(()),
+            Message::Error { message } => Err(io::Error::other(message)),
+            other => Err(io::Error::other(format!("unexpected reply to Resize: {other:?}"))),
+        }
+    }
+
+    /// 자식 종료까지 블로킹 후 `(exit_code, signal)`을 돌려준다.
+    pub fn wait(&self, agent_id: &str) -> io::Result<(Option<i32>, Option<i32>)> {
+        self.require_v2()?;
+        protocol::write_frame(self.fd(), &Message::Wait { agent_id: agent_id.to_string() }, None)?;
+        match protocol::read_frame(self.fd())?.0 {
+            Message::WaitOk { exit_code, signal } => Ok((exit_code, signal)),
+            Message::Error { message } => Err(io::Error::other(message)),
+            other => Err(io::Error::other(format!("unexpected reply to Wait: {other:?}"))),
+        }
+    }
+
+    pub fn update_snapshot(&self, agent_id: &str, snapshot: &[u8]) -> io::Result<()> {
+        self.require_v2()?;
+        let snapshot_b64 = {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.encode(snapshot)
+        };
+        protocol::write_frame(
+            self.fd(),
+            &Message::UpdateSnapshot { agent_id: agent_id.to_string(), snapshot_b64 },
+            None,
+        )?;
+        match protocol::read_frame(self.fd())?.0 {
+            Message::UpdateSnapshotOk => Ok(()),
+            Message::Error { message } => Err(io::Error::other(message)),
+            other => Err(io::Error::other(format!("unexpected reply to UpdateSnapshot: {other:?}"))),
+        }
+    }
+
+    /// DataAttach를 보내고 DataAttachOk를 확인한 뒤, 이 연결을 raw 양방향
+    /// 바이트 스트림으로 전환해 소유권째 돌려준다. 이후 프레이밍은 없다 --
+    /// 반환된 스트림에서 read하면 백로그+라이브 PTY 출력이, write하면 그대로
+    /// PTY master 입력이 된다. `Client`를 소비한다(더는 프레임 RPC 불가).
+    pub fn into_data_stream(self, agent_id: &str) -> io::Result<UnixStream> {
+        self.require_v2()?;
+        protocol::write_frame(self.fd(), &Message::DataAttach { agent_id: agent_id.to_string() }, None)?;
+        match protocol::read_frame(self.fd())?.0 {
+            Message::DataAttachOk => Ok(self.stream),
+            Message::Error { message } => Err(io::Error::other(message)),
+            other => Err(io::Error::other(format!("unexpected reply to DataAttach: {other:?}"))),
+        }
+    }
+}
+
+/// `spawn_broker` 인자 묶음(대응하는 v2 Spawn 메시지의 필드들).
+pub struct SpawnBrokerRequest {
+    pub agent_id: String,
+    pub session_id: String,
+    pub shell: String,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub rows: u16,
+    pub cols: u16,
+    pub cwd: String,
+    pub cleanup_paths: Vec<String>,
+}
+
+/// `attach` 결과(재접속용 메타 + 최신 스냅샷 + 종료 정보). session_id는 List가
+/// 이미 주므로 여기 없다.
+pub struct AttachedMeta {
+    pub rows: u16,
+    pub cols: u16,
+    pub snapshot: Vec<u8>,
+    /// 자식이 이미 종료했으면 `Some((exit_code, signal))`.
+    pub exit: Option<(Option<i32>, Option<i32>)>,
 }
 
 /// 데몬을 자기 자신의 실행 파일로 스폰한다(`main.rs`의 `--sessiond` 분기가
@@ -250,6 +417,96 @@ pub fn connect_or_spawn(socket_path: &Path, exe_path: &Path, log_path: &Path) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 신앱(proto 2 클라이언트)이 구데몬(proto 1만 아는)을 만났을 때 협상이
+    /// 재시도로 v1에 안착하는지 검증한다. 구데몬 시뮬레이션: Hello{1}만 수락하고
+    /// Hello{2}엔 Error로 답하되 **연결은 유지**하며, List엔 v1 세션을 담아
+    /// 응답하고 v2/기타 메시지엔 Error. 앱 업데이트 직후 구데몬이 쥔 v1 핸드오프
+    /// 세션을 잃지 않게 하는 하위호환 경로의 회귀 방지.
+    #[test]
+    fn connect_retries_v1_hello_against_an_old_daemon_and_negotiates_proto_1() {
+        use std::os::unix::net::UnixListener;
+
+        let dir = std::env::temp_dir().join(format!("ao-oldd-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let socket_path = dir.join("s.sock");
+        let _ = std::fs::remove_file(&socket_path);
+
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let fd = stream.as_raw_fd();
+            loop {
+                let msg = match protocol::read_frame(fd) {
+                    Ok((m, _)) => m,
+                    Err(_) => return,
+                };
+                match msg {
+                    Message::Hello { proto: 1 } => {
+                        let _ = protocol::write_frame(fd, &Message::HelloOk { proto: 1 }, None);
+                    }
+                    Message::List => {
+                        let _ = protocol::write_frame(
+                            fd,
+                            &Message::ListOk {
+                                sessions: vec![SessionInfo {
+                                    agent_id: "a1".into(),
+                                    session_id: "s1".into(),
+                                    pid: Some(1),
+                                    rows: 24,
+                                    cols: 80,
+                                    cwd: "/tmp".into(),
+                                    exited: false,
+                                    buffered_bytes: 0,
+                                    broker: false,
+                                }],
+                            },
+                            None,
+                        );
+                    }
+                    // 구데몬은 Hello{2}/v2 메시지를 모른다 -- Error로 답하되 연결은 유지.
+                    _ => {
+                        let _ = protocol::write_frame(
+                            fd,
+                            &Message::Error { message: "unsupported".into() },
+                            None,
+                        );
+                    }
+                }
+            }
+        });
+
+        let client = Client::connect(&socket_path).expect("negotiation must retry down to v1");
+        assert_eq!(client.proto(), 1, "must negotiate proto 1 against an old daemon");
+
+        // (a) v1 메서드는 p=1에서 정상 동작한다.
+        let sessions = client.list().unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].agent_id, "a1");
+        assert!(!sessions[0].broker);
+
+        // (c) v2 래퍼는 p=1에서 네트워크로 나가지 않고 즉시 Err(폴백 유도).
+        assert!(client.attach("a1").is_err());
+        assert!(client.resize("a1", 30, 100).is_err());
+        assert!(client.wait("a1").is_err());
+        assert!(client.update_snapshot("a1", b"x").is_err());
+        assert!(client
+            .spawn_broker(SpawnBrokerRequest {
+                agent_id: "a1".into(),
+                session_id: "s1".into(),
+                shell: "/bin/sh".into(),
+                args: vec![],
+                env: vec![],
+                rows: 24,
+                cols: 80,
+                cwd: "/tmp".into(),
+                cleanup_paths: vec![],
+            })
+            .is_err());
+
+        drop(client);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn default_socket_and_log_paths_are_under_app_data_dir() {

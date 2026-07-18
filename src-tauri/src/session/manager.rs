@@ -147,6 +147,11 @@ pub struct SessionManager {
     /// 벡터)이고 env 주입도 생략된다(기존 테스트가 앱 데이터 경로 없이도
     /// 그대로 통과해야 하므로 기본값은 None).
     app_data_dir: Option<std::path::PathBuf>,
+    /// v2 상시 브로커 모드(unix 전용 opt-in, docs/session-broker-v2-design.md).
+    /// true면 `handoff_all`/`adopt_detached`/스냅샷 업로드가 v1 fd 핸드오프
+    /// 대신 브로커 RPC 경로를 탄다. 기본 false(v1 경로 보존). 팩토리 주입은
+    /// `lib.rs`가 별도로 하고, 이 플래그는 앱 쪽 의미 분기에만 관여한다.
+    broker_mode: bool,
 }
 
 impl SessionManager {
@@ -169,7 +174,20 @@ impl SessionManager {
             sinks: Mutex::new(HashMap::new()),
             shell_resolver: Arc::new(shells::resolve_observed),
             app_data_dir: None,
+            broker_mode: false,
         }
+    }
+
+    /// v2 상시 브로커 모드를 켠다(unix opt-in). `lib.rs`가 플래그+unix일 때만
+    /// 호출하고, 같은 조건에서 팩토리도 `BrokerPtyFactory`로 주입한다.
+    pub fn with_broker_mode(mut self, on: bool) -> Self {
+        self.broker_mode = on;
+        self
+    }
+
+    /// 렌더러가 주기 스냅샷 업로드/모달 분기를 켤지 판단하는 데 쓰는 조회.
+    pub fn broker_mode(&self) -> bool {
+        self.broker_mode
     }
 
     /// 앱 데이터 디렉터리를 지정한다(세션 핸드오프 소켓/로그 경로,
@@ -347,6 +365,14 @@ impl SessionManager {
             rows: req.rows.unwrap_or(24),
             cwd,
             env,
+            agent_id: req.agent_id.clone(),
+            session_id: session_id.clone(),
+            // 브로커 모드 데몬이 크래시-생존 정리에 쓸 경로(비브로커 팩토리는 무시).
+            cleanup_paths: plan
+                .cleanup_paths
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect(),
         }) {
             Ok(s) => s,
             // spawn 실패: observer_plan_guard가 설정 파일을 정리한다.
@@ -547,7 +573,11 @@ impl SessionManager {
         }
     }
 
-    /// 앱 quit: 모든 PTY kill + settings 정리(동기, 빠름).
+    /// 앱 quit: 모든 PTY kill + settings 정리(동기, 빠름). 브로커 모드에서도
+    /// 세션별 `dispose`가 각자의 control로 죽인다 -- 브로커 세션은 Kill RPC
+    /// (데몬이 SIGKILL+테이블 제거+cleanup)로, 데몬 접속 실패 시 폴백 스폰된
+    /// 세션은 in-process kill로. 그래서 KillAll 특수 분기 없이 v1과 동일한
+    /// 루프면 폴백 세션 누수 없이 전부 정리된다.
     pub fn dispose_all(&self) {
         let ids: Vec<AgentId> = self.sessions.lock().keys().cloned().collect();
         for a in ids {
@@ -563,6 +593,9 @@ impl SessionManager {
     /// `app_data_dir`이 없으면(테스트 등) 0.
     #[cfg(unix)]
     pub fn handoff_all(&self, snapshots: &std::collections::HashMap<String, String>) -> usize {
+        if self.broker_mode {
+            return self.handoff_all_broker(snapshots);
+        }
         let Some(app_data_dir) = self.app_data_dir.clone() else {
             return 0;
         };
@@ -688,6 +721,149 @@ impl SessionManager {
         }
     }
 
+    // ── v2 브로커 모드 앱 쪽 분기 ─────────────────────────────────────
+    //
+    // 브로커 세션은 데몬이 자식을 소유하므로 "유지하고 종료"는 fd 핸드오프가
+    // 아니라 **스냅샷 업로드 후 detach**(자식은 안 죽인다)로 끝난다. 앱은 세션을
+    // 맵에서 떼어내(handed_off) dispose_all이 Kill하지 않게만 하면 되고, 실제
+    // 자식 존속은 데몬이 책임진다. 앱이 곧 종료되며 data/control/wait 연결이
+    // 끊기면 데몬은 그냥 detach로 처리한다.
+    #[cfg(unix)]
+    fn handoff_all_broker(&self, snapshots: &std::collections::HashMap<String, String>) -> usize {
+        let Some(app_data_dir) = self.app_data_dir.clone() else {
+            return 0;
+        };
+        let ids: Vec<AgentId> = {
+            let map = self.sessions.lock();
+            map.iter()
+                .filter(|(_, s)| *s.state.lock() == SessionState::Running)
+                .map(|(a, _)| a.clone())
+                .collect()
+        };
+        if ids.is_empty() {
+            return 0;
+        }
+        // 최신 스냅샷 업로드는 best-effort -- 데몬에 못 닿아도 detach(맵에서 제거)는
+        // 그대로 진행해야 dispose_all이 자식을 죽이지 않는다.
+        let client = crate::session::broker_pty::connect(&app_data_dir).ok();
+        let mut count = 0;
+        for agent_id in ids {
+            let Some(sess) = self.find(&agent_id) else { continue };
+            if sess.handed_off.load(Ordering::SeqCst) {
+                continue;
+            }
+            if let (Some(client), Some(snap)) = (&client, snapshots.get(agent_id.as_str())) {
+                let _ = client.update_snapshot(&agent_id, snap.as_bytes());
+            }
+            // detach: 맵/레지스트리에서 떼어내되 자식은 죽이지 않는다.
+            sess.handed_off.store(true, Ordering::SeqCst);
+            self.sessions.lock().remove(&agent_id);
+            self.registry.remove(&sess.session_id);
+            count += 1;
+        }
+        count
+    }
+
+    /// 주기 스냅샷 업로드(브로커 모드 전용). 렌더러가 30초마다 직렬화한 화면을
+    /// 데몬에 올려 앱 크래시 후에도 마지막 화면을 복원할 수 있게 한다.
+    /// 브로커 모드가 아니거나 데몬에 못 닿으면 no-op.
+    #[cfg(unix)]
+    pub fn upload_snapshots(&self, snapshots: &std::collections::HashMap<String, String>) {
+        if !self.broker_mode {
+            return;
+        }
+        let Some(app_data_dir) = &self.app_data_dir else {
+            return;
+        };
+        let Ok(client) = crate::session::broker_pty::connect(app_data_dir) else {
+            return;
+        };
+        for (agent_id, snap) in snapshots {
+            // 데몬 테이블에 없는 agentId면 no-op으로 무시된다(안전).
+            let _ = client.update_snapshot(agent_id, snap.as_bytes());
+        }
+    }
+
+    #[cfg(not(unix))]
+    pub fn upload_snapshots(&self, _snapshots: &std::collections::HashMap<String, String>) {}
+
+    /// 브로커 모드 재접속: List에서 broker=true인 세션을 Attach+DataAttach로
+    /// 되찾는다. 화면 복원은 data 연결의 백로그 리플레이가 담당하므로 스냅샷을
+    /// initial_output으로 다시 주입하지 않는다. 이어받은 세션의 종료는 이제
+    /// BrokerWaiter(Wait RPC)가 실제 exit code로 관측한다(v1 EofWaiter의
+    /// "exit code 소실" 제약 해소).
+    #[cfg(unix)]
+    fn adopt_detached_broker(
+        self: &Arc<Self>,
+        known_agent_ids: &std::collections::HashSet<String>,
+    ) -> Vec<AdoptedSessionInfo> {
+        let Some(app_data_dir) = self.app_data_dir.clone() else {
+            return Vec::new();
+        };
+        if !crate::session::broker_pty::socket_exists(&app_data_dir) {
+            return Vec::new();
+        }
+        let Ok(client) = crate::session::broker_pty::connect(&app_data_dir) else {
+            return Vec::new();
+        };
+        let sessions = client.list().unwrap_or_default();
+        let mut adopted = Vec::new();
+        for info in sessions {
+            if !info.broker || info.exited {
+                continue; // v1 핸드오프 세션/종료된 세션은 브로커 입양 대상이 아니다.
+            }
+            if !known_agent_ids.contains(&info.agent_id) {
+                let _ = client.kill(&info.agent_id); // 삭제된 에이전트의 고아 세션 정리.
+                continue;
+            }
+            let (spawned, meta) = match crate::session::broker_pty::assemble_broker_adopted(
+                &app_data_dir,
+                &info.agent_id,
+            ) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("agent-office: broker adopt failed for {}: {e}", info.agent_id);
+                    continue;
+                }
+            };
+            // List와 Attach 사이에 자식이 죽었으면(경합) 입양하지 않는다 --
+            // data 연결은 이미 열었지만 곧 EOF로 정리되고, 세션은 다음 부팅에서
+            // exited로 걸러진다.
+            if meta.exit.is_some() {
+                continue;
+            }
+            // Attach가 준 라이브 크기를 우선(리사이즈 후 List가 낡았을 수 있다).
+            let size = (meta.cols, meta.rows);
+            // 화면 복원은 data 연결의 백로그 리플레이가 담당한다. 단, 링버퍼가
+            // 비어 있으면(예: 데몬이 오래 살아 롤오버) 마지막 업로드 스냅샷을
+            // initial_output으로 한 번 주입해 최소한 마지막 화면은 복원한다 --
+            // 백로그가 있을 때는 중복 방지를 위해 주입하지 않는다.
+            let initial_output = if info.buffered_bytes == 0 && !meta.snapshot.is_empty() {
+                Some(meta.snapshot)
+            } else {
+                None
+            };
+            // cleanup_paths는 데몬이 Spawn 때 받아 보관·정리하므로 앱 쪽은 비운다.
+            let (session, _started) = self.install_session(
+                info.session_id.clone(),
+                info.agent_id.clone(),
+                Vec::new(),
+                info.cwd.clone(),
+                size,
+                spawned,
+                None, // eof_stop_gate: 브로커는 Wait RPC로 종료를 관측한다.
+                initial_output,
+            );
+            adopted.push(AdoptedSessionInfo {
+                agent_id: info.agent_id.clone(),
+                session_id: session.session_id.clone(),
+                rows: size.1,
+                cols: size.0,
+            });
+        }
+        adopted
+    }
+
     /// 부트스트랩(§핵심 4): sessiond에 남아 있는 세션들을 되찾는다.
     /// `known_agent_ids`는 영속 프로필의 agentId 집합 -- 여기 없는 항목은
     /// Kill 지시(삭제된 에이전트의 고아 claude 방지), exited 항목은 스킵.
@@ -698,6 +874,9 @@ impl SessionManager {
         self: &Arc<Self>,
         known_agent_ids: &std::collections::HashSet<String>,
     ) -> Vec<AdoptedSessionInfo> {
+        if self.broker_mode {
+            return self.adopt_detached_broker(known_agent_ids);
+        }
         let Some(app_data_dir) = &self.app_data_dir else {
             return Vec::new();
         };
@@ -3387,6 +3566,159 @@ return
             },
             Duration::from_secs(5),
             "both adopted sessions never reached Disposed within 5s after dispose()",
+        )
+        .await;
+
+        let _ = std::fs::remove_dir_all(&app_data_dir);
+    }
+
+    /// v2 브로커 모드 라운드트립: 실 sessiond(run_daemon_inner 스레드)와
+    /// `BrokerPtyFactory`로 create(=Spawn) → write/read(echo) → detach(handoff_all,
+    /// 자식 안 죽임) → 새 매니저로 adopt(브로커 경로) → 출력 연속성 확인 →
+    /// dispose(=Kill RPC)로 정리까지. v1 핸드오프 테스트의 브로커판이다.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn broker_spawn_write_read_detach_adopt_round_trips_a_real_session() {
+        use crate::session::broker_pty::BrokerPtyFactory;
+        use crate::session::pty_factory::PortablePtyFactory;
+        use std::collections::HashSet;
+        use tauri::ipc::{Channel, InvokeResponseBody};
+
+        let app_data_dir = scratch_dir("broker-appdata");
+        std::fs::create_dir_all(&app_data_dir).expect("create scratch app_data_dir");
+        let socket_path = crate::sessiond::client::default_socket_path(&app_data_dir);
+
+        // 실 데몬을 스레드로 띄운다(테스트 바이너리는 --sessiond를 모르므로
+        // connect_or_spawn의 자기재실행 대신 여기서 직접 구동한다 -- 팩토리의
+        // connect_or_spawn은 이미 떠 있는 이 데몬에 그냥 connect한다).
+        let hook: crate::sessiond::daemon::ShutdownHook = Arc::new(|| {});
+        let daemon_socket = socket_path.clone();
+        std::thread::spawn(move || {
+            let _ = crate::sessiond::daemon::run_daemon_inner(
+                daemon_socket,
+                Duration::from_secs(60),
+                hook,
+            );
+        });
+        wait_for_timeout(
+            || socket_path.exists(),
+            Duration::from_secs(2),
+            "sessiond never bound its socket",
+        )
+        .await;
+
+        fn build_broker_manager(app_data_dir: &Path) -> (Arc<SessionManager>, Arc<RecordingEvents>) {
+            let events = Arc::new(RecordingEvents::default());
+            let registry = Arc::new(SessionRegistry::new());
+            let hub = Arc::new(NotificationHub::new(
+                registry.clone(),
+                events.clone() as Arc<dyn AppEvents>,
+                Arc::new(SystemClock),
+                Duration::from_millis(3000),
+            ));
+            let observer = Arc::new(ObserverRuntime::new(hub.clone(), vec![]));
+            let fallback: Arc<dyn crate::session::pty_factory::PtyFactory> =
+                Arc::new(PortablePtyFactory);
+            let factory = Arc::new(BrokerPtyFactory::new(app_data_dir, fallback));
+            let mgr = Arc::new(
+                SessionManager::new(
+                    factory,
+                    observer,
+                    registry,
+                    events.clone() as Arc<dyn AppEvents>,
+                    hub,
+                    Arc::new(|| None),
+                )
+                .with_shell_resolver(Arc::new(|_, _| shells::ResolvedShell {
+                    program: "/bin/sh".into(),
+                    args: vec![],
+                    extra_env: vec![],
+                }))
+                .with_app_data_dir(app_data_dir.to_path_buf())
+                .with_broker_mode(true),
+            );
+            (mgr, events)
+        }
+
+        fn attach_collector(mgr: &Arc<SessionManager>, agent_id: &str) -> Arc<Mutex<String>> {
+            let output = Arc::new(Mutex::new(String::new()));
+            let output_for_channel = output.clone();
+            let channel: Channel<OutputChunk> = Channel::new(move |body| {
+                if let InvokeResponseBody::Json(s) = body {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                        if let Some(data) = v.get("data").and_then(|d| d.as_str()) {
+                            output_for_channel.lock().push_str(data);
+                        }
+                    }
+                }
+                Ok(())
+            });
+            mgr.attach_output(agent_id, channel);
+            output
+        }
+
+        let (mgr1, _events1) = build_broker_manager(&app_data_dir);
+        let created = mgr1
+            .create(CreateSessionRequest {
+                agent_id: "a1".into(),
+                cols: Some(80),
+                rows: Some(24),
+                cwd: None,
+                shell: None,
+                startup_command: None,
+                personality_prompt: None,
+                autostart_claude: Some(false),
+            })
+            .expect("broker spawn should succeed");
+        assert_eq!(created.state, SessionState::Running);
+
+        // write -> read(echo) 왕복.
+        let out1 = attach_collector(&mgr1, "a1");
+        mgr1.write_input("a1", "echo broker-alive-11111\n");
+        wait_for_timeout(
+            || out1.lock().contains("broker-alive-11111"),
+            Duration::from_secs(5),
+            "broker session never echoed the write_input marker",
+        )
+        .await;
+
+        // detach(유지하고 종료): 자식은 안 죽고 맵에서만 빠진다.
+        let handed = mgr1.handoff_all(&std::collections::HashMap::new());
+        assert_eq!(handed, 1, "the running broker session must be detached");
+        assert!(mgr1.find("a1").is_none(), "detached session must leave the map");
+        drop(mgr1); // 앱 "종료" -- data/control/wait 연결이 끊긴다(자식은 데몬 소유라 생존).
+
+        // "재시작": 새 매니저가 브로커 경로로 되찾는다.
+        let (mgr2, events2) = build_broker_manager(&app_data_dir);
+        let known: HashSet<String> = ["a1".to_string()].into_iter().collect();
+        let adopted = mgr2.adopt_detached(&known);
+        assert_eq!(adopted.len(), 1, "the detached broker session must be adopted");
+        assert_eq!(mgr2.session_id_for("a1"), Some(created.session_id.clone()));
+        assert!(events2.states().contains(&SessionState::Running));
+
+        // 출력 연속성: data 연결 백로그 리플레이로 detach 전 echo가 다시 보이고,
+        // 새 write도 살아서 왕복한다.
+        let out2 = attach_collector(&mgr2, "a1");
+        wait_for_timeout(
+            || out2.lock().contains("broker-alive-11111"),
+            Duration::from_secs(5),
+            "adopted broker session never replayed the pre-detach backlog",
+        )
+        .await;
+        mgr2.write_input("a1", "echo broker-still-alive-22222\n");
+        wait_for_timeout(
+            || out2.lock().contains("broker-still-alive-22222"),
+            Duration::from_secs(5),
+            "adopted broker session is not live after adopt",
+        )
+        .await;
+
+        // dispose(=Kill RPC): 실제 exit code를 관측하는 BrokerWaiter가 Disposed로 전이.
+        mgr2.dispose("a1");
+        wait_for_timeout(
+            || events2.states().iter().any(|s| *s == SessionState::Disposed),
+            Duration::from_secs(5),
+            "disposed broker session never reached Disposed",
         )
         .await;
 

@@ -91,6 +91,15 @@ pub struct PtySpawnOptions {
     pub rows: u16,
     pub cwd: String,
     pub env: Vec<(String, String)>,
+    /// 세션을 소유할 에이전트/세션 식별자. `PortablePtyFactory`/Fake는 무시하지만
+    /// `BrokerPtyFactory`(v2)는 이걸 데몬 Spawn 메시지의 테이블 키/세션 id로 쓴다.
+    pub agent_id: String,
+    pub session_id: String,
+    /// 관찰자 설정 파일 등 세션 종료 시 지울 경로. `BrokerPtyFactory`가 데몬에
+    /// 넘겨, 앱 크래시 후 자식을 kill할 때 데몬이 정리할 수 있게 한다(정상
+    /// 경로에서는 앱 쪽 Session이 on_exit/dispose에서도 지운다 -- 이중 정리는
+    /// NotFound 무시라 무해).
+    pub cleanup_paths: Vec<String>,
 }
 
 /// 부작용 경계. SessionManager는 이 트레잇만 안다. 테스트는 FakePtyFactory 주입.
@@ -698,6 +707,9 @@ mod tests {
             rows: 24,
             cwd: ".".into(),
             env: vec![],
+            agent_id: "test-agent".into(),
+            session_id: "test-session".into(),
+            cleanup_paths: vec![],
         }
     }
 
@@ -857,6 +869,9 @@ mod tests {
                     .to_string_lossy()
                     .into_owned(),
                 env: vec![],
+                agent_id: "test-agent".into(),
+                session_id: "test-session".into(),
+                cleanup_paths: vec![],
             })
             .unwrap();
 
@@ -895,6 +910,9 @@ mod tests {
                 rows: 24,
                 cwd: ".".into(),
                 env: vec![],
+                agent_id: "test-agent".into(),
+                session_id: "test-session".into(),
+                cleanup_paths: vec![],
             })
             .unwrap();
 
