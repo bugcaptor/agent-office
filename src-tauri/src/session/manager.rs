@@ -949,6 +949,9 @@ fn spawn_output_pump(
                         if bytes.contains(&0x07) {
                             hub.on_bell(&session_id); // BEL 폴백(dedup이 연속 억제)
                         }
+                        // 이슈 #39: Stop 이후 출력이 계속되면 "아직 작업중"으로 복귀시키는
+                        // 휴리스틱에 바이트 수를 흘려 보낸다(Stop 감시 중이 아니면 즉시 반환).
+                        hub.on_output(&session_id, bytes.len());
                         batcher.push(&bytes);
                         if batcher.pending_bytes() >= MAX_BYTES {
                             batcher.flush(&*sink);

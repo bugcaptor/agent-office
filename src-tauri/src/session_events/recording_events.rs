@@ -81,7 +81,12 @@ impl AppEvents for RecordingAppEvents {
         let kind = match event.kind {
             ActivityKind::Prompt => Some(SessionEventKind::Prompt),
             ActivityKind::Tool => Some(SessionEventKind::Tool),
-            ActivityKind::SubStart | ActivityKind::SubStop | ActivityKind::SubCount => None,
+            // 서브에이전트 카운트 신호와 resume(이슈 #39, 출력 휴리스틱 복귀 신호)은
+            // 렌더러 릴레이 전용 — 시계열엔 기록하지 않는다.
+            ActivityKind::SubStart
+            | ActivityKind::SubStop
+            | ActivityKind::SubCount
+            | ActivityKind::Resume => None,
         };
         if let Some(kind) = kind {
             self.record(SessionEventDraft::simple(

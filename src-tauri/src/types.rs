@@ -84,7 +84,10 @@ pub struct NotificationEvent {
 /// prompt = UserPromptSubmit(턴 시작), tool = PostToolUse(하트비트).
 /// sub-start = PreToolUse:Task(서브에이전트 소환), sub-stop = SubagentStop(종료),
 /// sub-count = 현재 실행 중 서브에이전트 절대 수.
-/// 뒤 셋은 카운트 기반 미니 캐릭터 전용 — 시간 추적/시계열엔 기록하지 않는다.
+/// resume = 완료 알림 이후 출력이 계속 쏟아져 "아직 작업중"으로 복귀시키는 신호
+/// (NotificationHub의 출력 휴리스틱이 방출, 이슈 #39). 세 sub-* 는 카운트 기반
+/// 미니 캐릭터 전용이라 시간 추적/시계열엔 기록하지 않지만, resume 은 렌더러의
+/// 턴 상태를 working 으로 되돌리는 신호로 쓰인다(tool 과 동일하게 취급).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ActivityKind {
@@ -96,6 +99,7 @@ pub enum ActivityKind {
     SubStop,
     #[serde(rename = "sub-count")]
     SubCount,
+    Resume,
 }
 
 /// 세션 시간 추적용 활동 이벤트. NotificationHub의 dedup/큐를 우회해
@@ -326,6 +330,9 @@ mod tests {
     fn activity_kind_serializes_lowercase() {
         assert_eq!(serde_json::to_string(&ActivityKind::Prompt).unwrap(), "\"prompt\"");
         assert_eq!(serde_json::to_string(&ActivityKind::Tool).unwrap(), "\"tool\"");
+        assert_eq!(serde_json::to_string(&ActivityKind::Resume).unwrap(), "\"resume\"");
+        let r: ActivityKind = serde_json::from_str("\"resume\"").unwrap();
+        assert_eq!(r, ActivityKind::Resume);
     }
 
     #[test]

@@ -89,7 +89,12 @@ export function reduceTurn(s: AgentTurnState, input: TurnInput): AgentTurnState 
   }
 
   if (s.phase === "idle") {
-    // idle ignores tool/notification/stop/settle (no half-turn accounting).
+    // A `tool` while idle means work resumed after a completion (Stop already
+    // settled the turn to idle, then a PreToolUse/PostToolUse — or the
+    // backend's post-completion output heuristic mapped to `tool` — proves the
+    // agent is working again). Open a fresh turn (이슈 #39). idle still ignores
+    // notification/stop/settle (no half-turn accounting).
+    if (kind === "tool") return openTurn(s, at);
     return s;
   }
 

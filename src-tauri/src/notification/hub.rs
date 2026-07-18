@@ -23,6 +23,28 @@ use crate::types::*;
 const ATTENTION_FALLBACK: &str = "확인이 필요합니다";
 const STOP_FALLBACK: &str = "작업이 완료되었습니다.";
 
+// ── 출력 기반 "아직 작업중" 복귀 휴리스틱 상수(이슈 #39) ────────────────
+//
+// 완료(Stop) 알림 직후에도 PTY 출력이 계속 쏟아지면 사실 아직 작업 중이므로,
+// 그 세션의 stop 알림을 걷어내고 렌더러 턴을 working 으로 되돌린다. 임계치를
+// 크게 잡는 이유는 사용자 키 입력 에코/프롬프트 리드로우로 인한 오탐 방지.
+/// Stop 직후 이 시간 안의 출력은 프롬프트 리드로우로 보고 무시하는 유예기간.
+const RESUME_GRACE: Duration = Duration::from_secs(3);
+/// Stop 이후 이 시간까지만 복귀 후보로 감시한다(넘으면 감시 종료).
+const RESUME_WINDOW: Duration = Duration::from_secs(30);
+/// 감시창 내 누적 출력이 이 바이트를 넘으면 1회 복귀 신호를 낸다.
+const RESUME_THRESHOLD_BYTES: usize = 8 * 1024;
+
+/// 세션별 Stop-후 출력 감시 상태(이슈 #39 출력 휴리스틱).
+struct ResumeWatch {
+    /// 마지막 Stop 알림 시각(clock.now()).
+    stop_at: Instant,
+    /// grace 이후 감시창 내 누적 출력 바이트.
+    accumulated: usize,
+    /// 복귀 신호를 이미 1회 냈는지(중복 방지).
+    fired: bool,
+}
+
 /// 주입 가능한 시계. dedup 윈도우(Instant) + at 타임스탬프(epoch ms).
 pub trait Clock: Send + Sync {
     fn now(&self) -> Instant;
@@ -46,6 +68,11 @@ pub struct NotificationHub {
     dedup_window: Duration,
     queues: Mutex<HashMap<SessionId, Vec<NotificationEvent>>>,
     last_seen: Mutex<HashMap<String, Instant>>,
+    /// Stop-후 출력 감시(이슈 #39). Stop 알림이 실제 방출될 때만 엔트리가 생긴다.
+    resume_watch: Mutex<HashMap<SessionId, ResumeWatch>>,
+    resume_grace: Duration,
+    resume_window: Duration,
+    resume_threshold: usize,
 }
 
 impl NotificationHub {
@@ -62,7 +89,25 @@ impl NotificationHub {
             dedup_window,
             queues: Mutex::new(HashMap::new()),
             last_seen: Mutex::new(HashMap::new()),
+            resume_watch: Mutex::new(HashMap::new()),
+            resume_grace: RESUME_GRACE,
+            resume_window: RESUME_WINDOW,
+            resume_threshold: RESUME_THRESHOLD_BYTES,
         }
+    }
+
+    /// 테스트 전용: 출력 휴리스틱 임계치를 주입한다(FakeClock 과 함께 결정론적 검증).
+    #[cfg(test)]
+    pub fn with_resume_params(
+        mut self,
+        grace: Duration,
+        window: Duration,
+        threshold: usize,
+    ) -> Self {
+        self.resume_grace = grace;
+        self.resume_window = window;
+        self.resume_threshold = threshold;
+        self
     }
 
     /// axum 핸들러가 호출: 원본 hook body에서 메시지 추출 후 ingest.
@@ -200,6 +245,74 @@ impl NotificationHub {
             .or_default()
             .push(ev.clone());
         self.events.notification_new(&ev);
+
+        // 이슈 #39: 완료 알림이 실제 방출된 시점부터 출력 감시를 시작한다.
+        // dedup 으로 억제된 중복 Stop 은 여기 오지 않으므로 감시창이 리셋되지 않는다.
+        if source == NotificationSource::Stop {
+            self.resume_watch.lock().unwrap().insert(
+                session_id.to_string(),
+                ResumeWatch {
+                    stop_at: now_i,
+                    accumulated: 0,
+                    fired: false,
+                },
+            );
+        }
+    }
+
+    /// output pump 가 세션 PTY 출력 배치를 넘길 때마다 호출(이슈 #39). Stop 이후
+    /// grace 를 지나 window 내에 누적 출력이 임계치를 넘으면 1회만: 그 세션의
+    /// stop 알림을 걷어내고(notification-cleared 재사용) "아직 작업중" 복귀 신호
+    /// (resume activity)를 낸다. Stop 감시 중이 아닌 세션은 즉시 반환(핫 패스).
+    pub fn on_output(&self, session_id: &str, byte_len: usize) {
+        let now = self.clock.now();
+        let should_resume = {
+            let mut watches = self.resume_watch.lock().unwrap();
+            let Some(watch) = watches.get_mut(session_id) else {
+                return;
+            };
+            if watch.fired {
+                return;
+            }
+            let elapsed = now.duration_since(watch.stop_at);
+            if elapsed < self.resume_grace {
+                // 프롬프트 리드로우 구간 — 무시.
+                return;
+            }
+            if elapsed > self.resume_window {
+                // 감시창 종료 — 정리하고 끝.
+                watches.remove(session_id);
+                return;
+            }
+            watch.accumulated = watch.accumulated.saturating_add(byte_len);
+            if watch.accumulated < self.resume_threshold {
+                return;
+            }
+            watch.fired = true;
+            true
+        };
+        if should_resume {
+            self.clear_stop_notifications(session_id);
+            self.ingest_activity(session_id, ActivityKind::Resume);
+        }
+    }
+
+    /// 해당 세션의 stop 소스 알림만 걷어낸다(clear 경로 재사용 → notification-cleared).
+    fn clear_stop_notifications(&self, session_id: &str) {
+        let ids: Vec<String> = {
+            let queues = self.queues.lock().unwrap();
+            match queues.get(session_id) {
+                Some(list) => list
+                    .iter()
+                    .filter(|e| e.source == NotificationSource::Stop)
+                    .map(|e| e.id.clone())
+                    .collect(),
+                None => Vec::new(),
+            }
+        };
+        if !ids.is_empty() {
+            self.clear(session_id, Some(ids));
+        }
     }
 
     pub fn pending(&self, session_id: &str) -> Vec<NotificationEvent> {
@@ -246,6 +359,7 @@ impl NotificationHub {
 
     pub fn purge_session(&self, session_id: &str) {
         self.queues.lock().unwrap().remove(session_id);
+        self.resume_watch.lock().unwrap().remove(session_id);
     }
 }
 
@@ -754,6 +868,95 @@ mod tests {
         hub.on_bell("unknown-session");
 
         assert!(events.notifications().is_empty());
+    }
+
+    // ---- on_output: Stop-후 출력 복귀 휴리스틱(이슈 #39) ----
+
+    fn ingest_final_stop(hub: &NotificationHub) {
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Stop {
+                message: None,
+                running: Some(0),
+            },
+        );
+    }
+
+    #[test]
+    fn on_output_after_grace_over_threshold_clears_stop_and_emits_resume() {
+        let (hub, events, clock) = fixture();
+        ingest_final_stop(&hub);
+        assert_eq!(hub.pending("s1").len(), 1);
+
+        // grace(3s) 이내 출력은 프롬프트 리드로우로 보고 무시한다.
+        clock.advance(1000);
+        hub.on_output("s1", 100_000);
+        assert!(events.cleared().is_empty());
+        assert!(events
+            .activities()
+            .iter()
+            .all(|a| a.kind != ActivityKind::Resume));
+        assert_eq!(hub.pending("s1").len(), 1);
+
+        // grace 경과 후 임계치 초과 → 복귀 발화.
+        clock.advance(3000); // elapsed = 4s > grace
+        hub.on_output("s1", 9000); // > 8KB
+
+        assert!(hub.pending("s1").is_empty(), "stop 알림이 걷혀야 한다");
+        let cleared = events.cleared();
+        assert_eq!(cleared.len(), 1);
+        assert_eq!(cleared[0].0, "a1");
+        assert!(events
+            .activities()
+            .iter()
+            .any(|a| a.kind == ActivityKind::Resume && a.agent_id == "a1"));
+
+        // 재발화 방지: 이후 출력엔 더 반응하지 않는다.
+        let cleared_before = events.cleared().len();
+        let acts_before = events.activities().len();
+        hub.on_output("s1", 100_000);
+        assert_eq!(events.cleared().len(), cleared_before);
+        assert_eq!(events.activities().len(), acts_before);
+    }
+
+    #[test]
+    fn on_output_under_threshold_does_not_resume() {
+        let (hub, events, clock) = fixture();
+        ingest_final_stop(&hub);
+        clock.advance(4000); // grace 경과
+        hub.on_output("s1", 1000);
+        hub.on_output("s1", 2000); // 누적 3000 < 8192
+
+        assert_eq!(hub.pending("s1").len(), 1);
+        assert!(events.cleared().is_empty());
+        assert!(events
+            .activities()
+            .iter()
+            .all(|a| a.kind != ActivityKind::Resume));
+    }
+
+    #[test]
+    fn on_output_after_window_stops_watching() {
+        let (hub, events, clock) = fixture();
+        ingest_final_stop(&hub);
+        clock.advance(31_000); // 30s 감시창 경과
+        hub.on_output("s1", 100_000);
+
+        assert_eq!(hub.pending("s1").len(), 1);
+        assert!(events.cleared().is_empty());
+        assert!(events
+            .activities()
+            .iter()
+            .all(|a| a.kind != ActivityKind::Resume));
+    }
+
+    #[test]
+    fn on_output_without_prior_stop_is_a_noop() {
+        let (hub, events, clock) = fixture();
+        clock.advance(5000);
+        hub.on_output("s1", 100_000);
+        assert!(events.activities().is_empty());
+        assert!(events.cleared().is_empty());
     }
 
     // ---- ingest_activity: dedup/큐 우회, now_ms 타임스탬프 ----

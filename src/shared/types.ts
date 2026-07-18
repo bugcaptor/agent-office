@@ -104,9 +104,17 @@ export interface NotificationEvent {
 /**
  * Activity kind for the time-tracking pipeline. Mirrors Rust `ActivityKind`
  * (serde lowercase). `prompt` = UserPromptSubmit (turn start), `tool` =
- * PostToolUse (heartbeat / waiting→working signal).
+ * PostToolUse (heartbeat / waiting→working signal). `resume` = the backend's
+ * post-completion output heuristic (이슈 #39) deciding the agent is still
+ * working after a Stop; the renderer treats it like `tool` for turn purposes.
  */
-export type ActivityKind = "prompt" | "tool" | "sub-start" | "sub-stop" | "sub-count";
+export type ActivityKind =
+  | "prompt"
+  | "tool"
+  | "sub-start"
+  | "sub-stop"
+  | "sub-count"
+  | "resume";
 
 /**
  * Activity signal for session time tracking. Emitted as the `activity-event`

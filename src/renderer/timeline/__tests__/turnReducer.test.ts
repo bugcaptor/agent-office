@@ -92,12 +92,35 @@ describe("reduceTurn", () => {
     expect(s.turnStartedAt).toBe(4000);
   });
 
-  it("idle ignores tool / notification / stop / settle", () => {
+  it("idle ignores notification / stop / settle", () => {
     const base = initialTurnState();
-    for (const kind of ["tool", "notification", "stop", "settle"] as const) {
+    for (const kind of ["notification", "stop", "settle"] as const) {
       const s = reduceTurn(base, { kind, at: 1000 });
       expect(s).toEqual(base); // no change, no phantom turn
     }
+  });
+
+  it("idle + tool reopens a working turn (post-completion resume, 이슈 #39)", () => {
+    // Stop settled the turn to idle; a later tool proves work resumed.
+    const settled = run(
+      { kind: "prompt", at: 0 },
+      { kind: "stop", at: 1000 } // → idle, turns=1
+    );
+    expect(settled.phase).toBe("idle");
+    expect(settled.turns).toBe(1);
+
+    const resumed = reduceTurn(settled, { kind: "tool", at: 5000 });
+    expect(resumed.phase).toBe("working");
+    expect(resumed.turnStartedAt).toBe(5000);
+    // The reopened turn hasn't settled yet — accumulators unchanged.
+    expect(resumed.turns).toBe(1);
+    expect(resumed.totalMs).toBe(1000);
+
+    // The reopened turn settles normally on the next stop.
+    const done = reduceTurn(resumed, { kind: "stop", at: 8000 });
+    expect(done.turns).toBe(2);
+    expect(done.totalMs).toBe(4000); // 1000 + (8000-5000)
+    expect(done.workedMs).toBe(4000);
   });
 
   it("consecutive notifications keep the first waitingSince", () => {
