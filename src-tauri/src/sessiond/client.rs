@@ -513,6 +513,7 @@ mod tests {
                                     exited: false,
                                     buffered_bytes: 0,
                                     broker: false,
+                                    attached: false,
                                 }],
                             },
                             None,

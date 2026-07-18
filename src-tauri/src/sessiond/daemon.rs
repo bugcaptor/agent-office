@@ -575,19 +575,28 @@ fn handle_connection(
                         exited: e.exited.load(Ordering::SeqCst),
                         buffered_bytes: e.ring.lock().unwrap().len(),
                         broker: false,
+                        attached: false,
                     })
                     .collect();
                 // v2 브로커 세션도 같은 List에 additive로 실어 준다(broker: true).
-                sessions.extend(broker.lock().unwrap().iter().map(|(agent_id, s)| SessionInfo {
-                    agent_id: agent_id.clone(),
-                    session_id: s.session_id.clone(),
-                    pid: s.pid,
-                    rows: s.rows.load(Ordering::SeqCst),
-                    cols: s.cols.load(Ordering::SeqCst),
-                    cwd: s.cwd.clone(),
-                    exited: s.exited.load(Ordering::SeqCst),
-                    buffered_bytes: s.io.lock().unwrap().ring.len(),
-                    broker: true,
+                sessions.extend(broker.lock().unwrap().iter().map(|(agent_id, s)| {
+                    // buffered_bytes와 attached를 한 번의 io 락으로 함께 읽는다.
+                    let (buffered_bytes, attached) = {
+                        let io = s.io.lock().unwrap();
+                        (io.ring.len(), io.conn.is_some())
+                    };
+                    SessionInfo {
+                        agent_id: agent_id.clone(),
+                        session_id: s.session_id.clone(),
+                        pid: s.pid,
+                        rows: s.rows.load(Ordering::SeqCst),
+                        cols: s.cols.load(Ordering::SeqCst),
+                        cwd: s.cwd.clone(),
+                        exited: s.exited.load(Ordering::SeqCst),
+                        buffered_bytes,
+                        broker: true,
+                        attached,
+                    }
                 }));
                 let _ = protocol::write_frame(fd, &Message::ListOk { sessions }, None);
             }
@@ -776,8 +785,13 @@ fn handle_connection(
                     let _ = nix::unistd::close(entry.master_fd);
                     entry.consumed = true;
                 }
-                // v2 브로커 세션도 같은 Kill로 의도적 종료할 수 있다.
-                if let Some(session) = broker.lock().unwrap().remove(&agent_id) {
+                // v2 브로커 세션도 같은 Kill로 의도적 종료할 수 있다. 테이블에서
+                // 먼저 꺼내(락 즉시 해제) 이후 killer/io 락은 broker 테이블 락 밖에서
+                // 잡는다 -- if-let scrutinee의 임시 가드가 body 끝까지 broker 락을
+                // 쥐면, 그 사이 session.io.lock()을 기다리는 동안 다른 브로커
+                // 요청(Spawn/List/DataAttach)이 전부 막힌다(edition 2021).
+                let killed = broker.lock().unwrap().remove(&agent_id);
+                if let Some(session) = killed {
                     let _ = session.killer.lock().unwrap().kill();
                     if let Some(conn) = session.io.lock().unwrap().conn.take() {
                         let _ = shutdown(conn.fd, Shutdown::Both);
@@ -1308,6 +1322,57 @@ mod tests {
         drop(control);
         drop(waiter);
         drop(data);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// control 연결로 List를 보내 특정 agent의 `attached` 값을 읽는다(없으면 None).
+    fn list_attached(control_fd: RawFd, agent_id: &str) -> Option<bool> {
+        protocol::write_frame(control_fd, &Message::List, None).unwrap();
+        match protocol::read_frame(control_fd).unwrap().0 {
+            Message::ListOk { sessions } => {
+                sessions.iter().find(|s| s.agent_id == agent_id).map(|s| s.attached)
+            }
+            other => panic!("unexpected reply to List: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn broker_list_reports_attached_state_across_data_conn_lifecycle() {
+        // §멀티인스턴스: List의 attached는 활성 data conn 유무를 반영해야 한다 --
+        // 재접속(adopt)이 "다른 앱 인스턴스가 붙여 둔 세션"을 가로채지 않게 하는
+        // 근거. 붙기 전 false -> DataAttach 후 true -> 끊으면 다시 false.
+        let (socket_path, dir) = start_real_daemon();
+        let control = connect_hello(&socket_path);
+        spawn_broker(control.as_raw_fd(), "a1", "sleep 30");
+
+        assert_eq!(list_attached(control.as_raw_fd(), "a1"), Some(false));
+
+        let data = connect_hello(&socket_path);
+        protocol::write_frame(data.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
+            .unwrap();
+        assert!(matches!(
+            protocol::read_frame(data.as_raw_fd()).unwrap().0,
+            Message::DataAttachOk { .. }
+        ));
+        // DataAttachOk를 받은 시점엔 conn 설치가 같은 io 락 안에서 끝났으므로 true.
+        assert_eq!(list_attached(control.as_raw_fd(), "a1"), Some(true));
+
+        // 크래시/정상종료 시뮬레이션: data 소켓을 닫으면 데몬이 conn을 떼어내
+        // attached=false로 돌아가야 한다(그래야 다음 부팅에서 입양된다).
+        drop(data);
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while list_attached(control.as_raw_fd(), "a1") != Some(false) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "attached must clear after the data conn drops"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        protocol::write_frame(control.as_raw_fd(), &Message::Kill { agent_id: "a1".into() }, None)
+            .unwrap();
+        let _ = protocol::read_frame(control.as_raw_fd());
+        drop(control);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

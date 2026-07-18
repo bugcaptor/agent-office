@@ -859,12 +859,18 @@ impl SessionManager {
                 }
                 continue;
             }
+            // NOTE(follow-up): 다른 앱 인스턴스가 이미 붙여 둔 세션(info.attached)을
+            // 여기서 입양하면 그 인스턴스의 data conn이 교체·shutdown돼 원본
+            // 터미널이 먹통이 된다(앱은 단일 인스턴스가 아니다). 안전한 스킵은
+            // detach 시 reader 소켓을 확실히 닫아 stale conn과 라이브 소유를
+            // 구분하는 설계가 함께 필요하므로 별도 이슈에서 처리한다(현재는
+            // attached 필드만 노출).
             if !known_agent_ids.contains(&info.agent_id) {
                 let _ = client.kill(&info.agent_id); // 삭제된 에이전트의 고아 세션 정리.
                 continue;
             }
             let result = if info.broker {
-                self.adopt_one_broker(&app_data_dir, &info)
+                self.adopt_one_broker(&app_data_dir, &info, &client)
             } else {
                 // v1 핸드오프/폴백 세션은 기존 fd 회수 경로로 입양한다(공유 연결 사용).
                 self.adopt_one(&info.agent_id, &client)
@@ -884,6 +890,7 @@ impl SessionManager {
         self: &Arc<Self>,
         app_data_dir: &std::path::Path,
         info: &crate::sessiond::protocol::SessionInfo,
+        client: &crate::sessiond::client::Client,
     ) -> Option<AdoptedSessionInfo> {
         let (spawned, meta) =
             match crate::session::broker_pty::assemble_broker_adopted(app_data_dir, &info.agent_id) {
@@ -893,8 +900,12 @@ impl SessionManager {
                     return None;
                 }
             };
-        // List와 Attach 사이에 자식이 죽었으면(경합) 입양하지 않는다.
+        // List와 Attach 사이에 자식이 죽었으면(경합) 입양하지 않는다. 이때
+        // 데몬 테이블엔 exited 엔트리가 남아 table-empty 종료를 막으므로,
+        // best-effort Kill로 치운다(입양은 boot 때 1회뿐이라 나중에 dispose할
+        // 매니저 세션이 안 생겨 방치되면 영구 잔류한다).
         if meta.exit.is_some() {
+            let _ = client.kill(&info.agent_id);
             return None;
         }
         // Attach가 준 라이브 크기를 우선(리사이즈 후 List가 낡았을 수 있다).

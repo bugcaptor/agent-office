@@ -67,10 +67,15 @@ export const SNAPSHOT_UPLOAD_INTERVAL_MS = 30_000;
  */
 function installSnapshotUploader(): () => void {
   let timer: ReturnType<typeof setInterval> | null = null;
+  // sessionBrokerMode()는 async라 teardown이 그 해소보다 먼저 올 수 있다. 그때
+  // 아직 timer가 null이라 clearInterval이 안 걸리고, 뒤늦게 해소된 콜백이
+  // setInterval을 걸면 teardown 이후에도 영원히 도는 누수가 된다. `disposed`
+  // 플래그로 해소 시점에 이미 정리됐는지 확인해 타이머를 아예 안 건다.
+  let disposed = false;
   void tauriApi
     .sessionBrokerMode()
     .then((enabled) => {
-      if (!enabled) return;
+      if (!enabled || disposed) return;
       timer = setInterval(() => {
         // 직렬화 전에 xterm write 큐를 flush(§P1)해 방금 도착한 바이트까지
         // 스냅샷에 담는다 — 브로커가 스냅샷 오프셋 이후만 리플레이해도 유실 없음.
@@ -87,6 +92,7 @@ function installSnapshotUploader(): () => void {
       /* 미지원/구버전 백엔드 — 업로드 없이 진행 */
     });
   return () => {
+    disposed = true;
     if (timer !== null) clearInterval(timer);
   };
 }

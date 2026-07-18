@@ -228,6 +228,13 @@ pub struct SessionInfo {
     /// 역직렬화되게 하는 additive 하위호환.
     #[serde(default)]
     pub broker: bool,
+    /// v2 브로커 세션에 지금 활성 data conn이 붙어 있는가(= 다른 앱 인스턴스가
+    /// 사용 중). 재접속(adopt)은 이 값이 true면 그 세션을 건드리지 않는다 --
+    /// 앱이 단일 인스턴스가 아니므로, 두 번째 인스턴스가 첫 인스턴스가 붙여 둔
+    /// 세션을 가로채(DataAttach 교체) 원본 터미널을 먹통으로 만드는 것을 막는다.
+    /// v1 세션엔 의미 없어 항상 false. `#[serde(default)]`로 하위호환.
+    #[serde(default)]
+    pub attached: bool,
 }
 
 pub(crate) fn write_all_raw(fd: RawFd, mut buf: &[u8]) -> io::Result<()> {
@@ -444,6 +451,7 @@ mod tests {
                     exited: false,
                     buffered_bytes: 0,
                     broker: false,
+                    attached: false,
                 },
                 SessionInfo {
                     agent_id: "a2".into(),
@@ -455,6 +463,7 @@ mod tests {
                     exited: true,
                     buffered_bytes: 42,
                     broker: true,
+                    attached: true,
                 },
             ],
         };

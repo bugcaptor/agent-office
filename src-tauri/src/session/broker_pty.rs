@@ -64,7 +64,13 @@ impl BrokerPtyFactory {
             session_id: o.session_id.clone(),
             shell: o.shell.clone(),
             args: o.args.clone(),
-            env: o.env.clone(),
+            // 데몬은 앱 재시작을 넘어 존속하므로, 데몬 프로세스가 스폰될 때의
+            // (낡을 수 있는) 환경을 그대로 상속시키면 사용자가 셸 rc에서 PATH
+            // 등을 바꾼 뒤에도 새 터미널이 옛 환경을 받는다(v1은 앱이 직접 스폰해
+            // 늘 실시간 환경). 그래서 앱의 현재 프로세스 환경을 베이스로 실어
+            // 보내고, 세션 전용 env(o.env)를 뒤에 둬 마지막에 우선하게 한다
+            // (PortablePtyFactory가 상속 위에 o.env를 덮어쓰는 것과 동일 의미).
+            env: current_env_with_overrides(&o.env),
             rows: o.rows,
             cols: o.cols,
             cwd: o.cwd.clone(),
@@ -81,6 +87,21 @@ impl BrokerPtyFactory {
             }
         }
     }
+}
+
+/// 앱의 현재 프로세스 환경을 베이스로, 세션 전용 `overrides`를 뒤에 이어 붙인
+/// (key, value) 목록. 데몬은 이걸 순서대로 `cmd.env`에 넣으므로 뒤(overrides)가
+/// 최종 우선한다. UTF-8이 아닌 env 항목은 프로토콜(JSON)이 실을 수 없어 건너뛴다
+/// (대상 플랫폼에서 사실상 없음).
+fn current_env_with_overrides(overrides: &[(String, String)]) -> Vec<(String, String)> {
+    let mut env: Vec<(String, String)> = std::env::vars_os()
+        .filter_map(|(k, v)| match (k.into_string(), v.into_string()) {
+            (Ok(k), Ok(v)) => Some((k, v)),
+            _ => None,
+        })
+        .collect();
+    env.extend(overrides.iter().cloned());
+    env
 }
 
 impl PtyFactory for BrokerPtyFactory {
