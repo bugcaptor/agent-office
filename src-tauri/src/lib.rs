@@ -183,6 +183,8 @@ pub fn run() {
     tauri::Builder::default()
         // 네이티브 폴더 선택 다이얼로그(pick_directory) — Rust 측에서만 사용.
         .plugin(tauri_plugin_dialog::init())
+        // OS 데스크탑 알림(이슈 #39) — 앱이 백그라운드일 때 프런트가 발송.
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let handle = app.handle().clone();
             let data_dir = app.path().app_data_dir()?;

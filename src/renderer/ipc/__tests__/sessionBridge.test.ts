@@ -67,6 +67,11 @@ const { mockApi, capture } = vi.hoisted(() => {
 
 vi.mock("../tauriApi", () => ({ tauriApi: mockApi }));
 
+const { maybeSendOsNotification } = vi.hoisted(() => ({
+  maybeSendOsNotification: vi.fn(() => Promise.resolve()),
+}));
+vi.mock("../osNotify", () => ({ maybeSendOsNotification }));
+
 import { useAppStore } from "../../store/appStore";
 import type { AgentProfile } from "../../store/types";
 import { installSessionBridge, officeBus } from "../sessionBridge";
@@ -104,6 +109,7 @@ let cleanup: () => void;
 beforeEach(() => {
   useAppStore.setState(initialState, true);
   Object.values(mockApi).forEach((fn) => fn.mockClear());
+  maybeSendOsNotification.mockClear();
   capture.onSessionState = undefined;
   capture.onNotification = undefined;
   capture.onNotificationCleared = undefined;
@@ -125,6 +131,19 @@ describe("installSessionBridge / onNotification", () => {
     expect(notifications).toHaveLength(1);
     expect(notifications[0].id).toBe("n1");
     expect(notifications[0].agentId).toBe("a1");
+  });
+
+  it("sends an OS notification only when the window is unfocused (이슈 #39)", () => {
+    useAppStore.getState().addAgent(mkProfile({ id: "a1", name: "코더" }));
+
+    // 포커스 상태(기본): OS 알림 없음.
+    capture.onNotification?.(mkNotifEvent({ agentId: "a1", source: "stop", message: "완료" }));
+    expect(maybeSendOsNotification).not.toHaveBeenCalled();
+
+    // 비포커스: 제목=에이전트 이름, 본문=메시지로 OS 알림 발송.
+    useAppStore.getState().setWindowFocused(false);
+    capture.onNotification?.(mkNotifEvent({ agentId: "a1", id: "n2", source: "stop", message: "완료" }));
+    expect(maybeSendOsNotification).toHaveBeenCalledWith("코더", "완료");
   });
 
   it("relays hasPending=true to officeBus.onNotificationChanged listeners", () => {

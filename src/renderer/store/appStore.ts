@@ -68,6 +68,10 @@ interface AppState {
   notifications: Notification[];
   /** null = terminal overlay closed. */
   activeTerminalAgentId: string | null;
+  /** Tauri 창(웹뷰)이 OS 포커스를 가졌는지. 기본 true. sessionBridge의
+   * 포커스 추적이 갱신한다(이슈 #39). 비포커스면 터미널이 열려 있어도
+   * 알림을 억제하지 않고 OS 데스크탑 알림까지 보낸다. */
+  windowFocused: boolean;
   /** Tab strip order (LRU, most-recent first). */
   recentAgentIds: string[];
   modal: ModalState;
@@ -123,6 +127,10 @@ interface AppState {
   // ---- session actions ----
   setSessionState(e: { agentId: string; status: SessionStatus }): void;
   setSessionSize(agentId: string, cols: number, rows: number): void;
+
+  // ---- window focus ----
+  /** OS 창 포커스 상태 반영(이슈 #39). sessionBridge의 포커스 추적이 호출. */
+  setWindowFocused(focused: boolean): void;
 
   // ---- clock in/out ----
   /** 퇴근: 프로필을 clockedOut=true로, 세션 런타임/최근탭에서 제거하고,
@@ -208,6 +216,7 @@ export const useAppStore = create<AppState>()(
     sessions: {},
     notifications: [],
     activeTerminalAgentId: null,
+    windowFocused: true,
     recentAgentIds: [],
     modal: { kind: "none" },
     muted: false,
@@ -365,10 +374,16 @@ export const useAppStore = create<AppState>()(
         return { sessions: { ...s.sessions, [agentId]: { ...prev, cols, rows } } };
       }),
 
+    setWindowFocused: (focused) =>
+      set((s) => (s.windowFocused === focused ? s : { windowFocused: focused })),
+
     pushNotification: (e) =>
       set((s) => {
-        // Suppress: the active terminal is already showing this agent.
-        if (s.activeTerminalAgentId === e.agentId) return s;
+        // Suppress only when the active terminal is already showing this agent
+        // AND the app window has focus. If the window is backgrounded, surface
+        // the notification (ticker + badge + sound) even with the terminal
+        // open, so a completed task isn't missed (이슈 #39).
+        if (s.activeTerminalAgentId === e.agentId && s.windowFocused) return s;
         const n: Notification = {
           id: e.id, // reuse the backend-issued id as-is.
           agentId: e.agentId,
@@ -451,9 +466,12 @@ export const useAppStore = create<AppState>()(
       set((s) => {
         // 서브에이전트 카운트 신호는 시간 추적/라벨 대상이 아니다(카운트는
         // sessionBridge가 별도 소유). reduceTurn의 TurnInputKind로 좁히기 위해서도 필요.
-        if (e.kind !== "prompt" && e.kind !== "tool") return {};
+        // resume(이슈 #39)은 완료 후 출력 지속 신호 — 턴 목적상 tool과 동일하게
+        // 취급해 idle→working으로 복귀시킨다(라벨 갱신 대상은 아니다).
+        if (e.kind !== "prompt" && e.kind !== "tool" && e.kind !== "resume") return {};
+        const turnKind = e.kind === "resume" ? "tool" : e.kind;
         const prevTurn = s.timeTracking[e.agentId] ?? initialTurnState();
-        const nextTurn = reduceTurn(prevTurn, { kind: e.kind, at: e.at });
+        const nextTurn = reduceTurn(prevTurn, { kind: turnKind, at: e.at });
         logSettledTurn(e.agentId, prevTurn, nextTurn, e.at);
         const timeTracking = { ...s.timeTracking, [e.agentId]: nextTurn };
         // 라벨 소스: text 실린 prompt만 반영. tool/text 없음 → 통과.

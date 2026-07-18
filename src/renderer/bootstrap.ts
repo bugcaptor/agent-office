@@ -20,6 +20,7 @@
 //   carry) against any invoke/event-arrival race, not the sole source of truth.
 import { useAppStore } from "./store/appStore";
 import { installSessionBridge } from "./ipc/sessionBridge";
+import { installWindowFocusTracking } from "./ipc/windowFocus";
 import { installPersistence } from "./store/persist";
 import { installPortraitCache } from "./portrait/portraitCache";
 import { installSpriteCache } from "./sprite/spriteCache";
@@ -124,6 +125,8 @@ export async function bootApp(): Promise<() => void> {
   }
 
   const offBridge = installSessionBridge();
+  // 창 포커스 추적(이슈 #39) — 브리지 직후. 비포커스면 알림 억제 해제 + OS 알림.
+  const offFocus = installWindowFocusTracking();
   await adoptDetachedSessions();
   const offPersistence = installPersistence();
   const offPortraits = installPortraitCache();
@@ -137,6 +140,7 @@ export async function bootApp(): Promise<() => void> {
 
   return () => {
     offBridge();
+    offFocus();
     offPersistence();
     offPortraits();
     offSprites();

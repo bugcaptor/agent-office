@@ -111,6 +111,23 @@ describe("pushNotification", () => {
     expect(useAppStore.getState().notifications).toHaveLength(0);
   });
 
+  it("still surfaces the active agent's notification when the window is unfocused (이슈 #39)", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.openTerminal("a1");
+    s.setWindowFocused(false);
+
+    s.pushNotification(mkNotifEvent({ agentId: "a1", source: "stop", message: "완료" }));
+
+    // 창이 비포커스면 터미널이 열려 있어도 억제하지 않는다.
+    expect(useAppStore.getState().notifications).toHaveLength(1);
+
+    // 다시 포커스가 오면 활성 에이전트 알림은 도로 억제된다.
+    s.setWindowFocused(true);
+    s.pushNotification(mkNotifEvent({ agentId: "a1", id: "n2", source: "stop" }));
+    expect(useAppStore.getState().notifications).toHaveLength(1);
+  });
+
   it("derives type from source and keeps newest first", () => {
     const s = useAppStore.getState();
     s.addAgent(mkProfile({ id: "a1" }));
@@ -444,6 +461,28 @@ describe("timeTracking slice", () => {
     expect(t.phase).toBe("idle");
     expect(t.turns).toBe(1);
     expect(t.totalMs).toBe(5000);
+  });
+
+  it("applyActivityEvent(resume) reopens a working turn after a stop (이슈 #39)", () => {
+    const s = useAppStore.getState();
+    s.applyActivityEvent({ agentId: "a1", sessionId: "s1", kind: "prompt", at: 0 });
+    s.applyNotificationTiming({
+      id: "n1",
+      sessionId: "s1",
+      agentId: "a1",
+      source: "stop",
+      message: "완료",
+      dedupKey: "d1",
+      at: 1000,
+    });
+    expect(useAppStore.getState().timeTracking["a1"].phase).toBe("idle");
+
+    // resume은 tool처럼 idle→working으로 되돌린다.
+    s.applyActivityEvent({ agentId: "a1", sessionId: "s1", kind: "resume", at: 5000 });
+    const t = useAppStore.getState().timeTracking["a1"];
+    expect(t.phase).toBe("working");
+    expect(t.turnStartedAt).toBe(5000);
+    expect(t.turns).toBe(1);
   });
 
   it("removeAgent drops the agent's timeTracking entry", () => {

@@ -32,6 +32,10 @@ import { useAppStore } from "../store/appStore";
 import { tauriApi } from "./tauriApi";
 import { sessionOptsFor } from "./sessionOpts";
 import { SubagentCountTracker } from "./subagentCounts";
+import { maybeSendOsNotification } from "./osNotify";
+
+/** OS 알림 본문 길이 상한(제목 옆 본문은 짧게). */
+const OS_NOTIFY_BODY_MAX = 120;
 
 type NotifCb = (agentId: string, hasPending: boolean) => void;
 type StateCb = (agentId: string, state: SessionState) => void;
@@ -200,10 +204,22 @@ export function installSessionBridge(): () => void {
   });
 
   const offNotif = tauriApi.onNotification((e) => {
-    useAppStore.getState().pushNotification(e);
+    const store = useAppStore.getState();
+    store.pushNotification(e);
     // 시간 추적은 pushNotification 억제와 무관하게 항상 공급(활성 터미널이어도 집계).
     // Stop 카운트 reset 안전망은 백엔드 Stop→sub-count(0 fallback)로 이동했다.
-    useAppStore.getState().applyNotificationTiming(e);
+    store.applyNotificationTiming(e);
+    // 이슈 #39: 창이 비포커스일 때만 OS 데스크탑 알림 발송(터미널이 열려 있어도).
+    // 제목=에이전트 이름/ID, 본문=메시지 excerpt.
+    if (!store.windowFocused) {
+      const agent = store.agents[e.agentId];
+      const title = agent?.name ?? e.agentId;
+      const body =
+        e.message.length > OS_NOTIFY_BODY_MAX
+          ? e.message.slice(0, OS_NOTIFY_BODY_MAX - 1) + "…"
+          : e.message;
+      void maybeSendOsNotification(title, body);
+    }
   });
 
   const offCleared = tauriApi.onNotificationCleared(({ agentId, ids }) => {
