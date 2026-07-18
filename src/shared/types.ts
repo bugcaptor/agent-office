@@ -472,6 +472,35 @@ export interface UsageSnapshot {
 }
 
 /**
+ * 마크다운 문서 탐색·편집(이슈 #10)의 renderer<->backend 계약.
+ * `version`은 렌더러가 해석하지 않는 불투명 토큰(백엔드가 발급, 낙관적 잠금용)이라
+ * 왕복만 한다 — 값 형식(해시·mtime 등)은 백엔드 소관이므로 `string`으로만 다룬다.
+ */
+export interface MarkdownFileEntry {
+  /** root 기준 상대 경로(POSIX 구분자). 목록/열기의 키. */
+  relPath: string;
+  /** 표시·퍼지 매칭 가중치용 파일명(경로 마지막 세그먼트). */
+  name: string;
+}
+
+/** `markdown_list_files` 응답. `truncated`면 상한을 넘어 일부만 담겼다. */
+export interface MarkdownListResult {
+  files: MarkdownFileEntry[];
+  truncated: boolean;
+}
+
+/** `markdown_read_file` 응답. `version`은 이후 쓰기의 `expectedVersion`으로 되돌려준다. */
+export interface MarkdownReadResult {
+  content: string;
+  version: string;
+}
+
+/** `markdown_write_file` 응답. 저장 성공 시 갱신된 `version`을 돌려준다. */
+export interface MarkdownWriteResult {
+  version: string;
+}
+
+/**
  * Renderer-facing API surface (frozen). Implemented by
  * `src/renderer/ipc/tauriApi.ts` via Tauri commands (invoke) + events
  * (listen) + a dedicated output `Channel` (exact command/event names are
@@ -557,4 +586,16 @@ export interface AgentOfficeApi {
   /** 구독 사용량(rate limit) 스냅샷을 홈 디렉터리 로컬 캐시에서 읽는다(인자 없음).
    * 파싱 실패한 provider는 null이며 호출 자체는 항상 성공한다. */
   loadUsageSnapshot(): Promise<UsageSnapshot>;
+  /** `root` 하위의 마크다운(.md) 파일 목록(이슈 #10). 상한 초과 시 `truncated=true`. */
+  markdownListFiles(root: string): Promise<MarkdownListResult>;
+  /** `root` 기준 `relPath` 파일 내용과 버전을 읽는다. 부재/범위 밖이면 reject. */
+  markdownReadFile(root: string, relPath: string): Promise<MarkdownReadResult>;
+  /** `expectedVersion`이 현재 버전과 다르면 "CONFLICT"로 시작하는 메시지로 reject.
+   * 성공 시 갱신된 버전을 돌려준다. */
+  markdownWriteFile(
+    root: string,
+    relPath: string,
+    content: string,
+    expectedVersion: string,
+  ): Promise<MarkdownWriteResult>;
 }

@@ -13,6 +13,7 @@
 @import "../timeline/timeline.css";
 @import "../analytics/analytics.css";
 @import "../usage/usage.css";
+@import "../markdown/markdown.css";
 
 html,
 body,

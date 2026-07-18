@@ -20,6 +20,7 @@ import { resolveArchetype } from "../office/gen/archetypes";
 import { ContextMenu } from "../ui/ContextMenu";
 import { deriveTaskLabelLines } from "../labels/labelText";
 import { tauriApi } from "../ipc/tauriApi";
+import { useMarkdownStore } from "../markdown/markdownStore";
 import { terminalRegistry } from "./TerminalRegistry";
 import type { ClaudeResumeEntry } from "@shared/types";
 
@@ -76,6 +77,10 @@ export function AgentTabStrip() {
   const openTerminal = useAppStore((s) => s.openTerminal);
   const closeTerminal = useAppStore((s) => s.closeTerminal);
   const openModal = useAppStore((s) => s.openModal);
+  // 이슈 #10: 활성 에이전트 cwd를 root로 마크다운 문서 팔레트를 연다.
+  const openMarkdownPalette = useMarkdownStore((s) => s.openPalette);
+  // 활성 에이전트의 cwd(문서 버튼 활성 조건). 없으면 버튼 비활성.
+  const activeCwd = activeId ? agents[activeId]?.cwd : undefined;
   const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
   // 메뉴를 열 때 조회한 Claude 이어하기 후보(agentId → 최신 1건). 엔트리가
   // 있는 에이전트만 "이전 세션 이어하기"가 활성화된다. 열 때마다 비우고
@@ -167,6 +172,18 @@ export function AgentTabStrip() {
           {tab.name}
         </button>
       ))}
+      <button
+        type="button"
+        className="agent-tab-strip-docs"
+        // 활성 에이전트 cwd를 root로 마크다운 문서 팔레트 오픈. cwd 없으면 비활성.
+        title="마크다운 문서 열기"
+        disabled={!activeCwd}
+        onClick={() => {
+          if (activeId && activeCwd) openMarkdownPalette(activeCwd, activeId);
+        }}
+      >
+        문서
+      </button>
       <button
         type="button"
         className="agent-tab-strip-close"

@@ -48,6 +48,11 @@ export const Commands = {
   // 구독 사용량(rate limit) 스냅샷(docs/usage-limits-design.md) — 홈 디렉터리의
   // Claude/Codex 로컬 캐시를 읽어 정규화한 원시 스냅샷.
   loadUsageSnapshot: "load_usage_snapshot",
+  // 마크다운 문서 탐색·편집(이슈 #10) — 에이전트 cwd를 root로 하위 .md 목록/읽기/쓰기.
+  // 쓰기는 낙관적 잠금(expectedVersion)이며 충돌 시 "CONFLICT"로 시작하는 메시지로 reject.
+  markdownListFiles: "markdown_list_files",
+  markdownReadFile: "markdown_read_file",
+  markdownWriteFile: "markdown_write_file",
 } as const;
 
 /**

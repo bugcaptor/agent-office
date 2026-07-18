@@ -22,6 +22,8 @@ import { useAgentList, useLightsOff } from "./store/selectors";
 import { THEMES } from "./theme/themes";
 import { TaskLabelLayer } from "./labels/TaskLabelLayer";
 import { TerminalOverlay } from "./terminal/TerminalOverlay";
+import { MarkdownPalette } from "./markdown/MarkdownPalette";
+import { MarkdownEditorOverlay } from "./markdown/MarkdownEditorOverlay";
 import { UIChrome } from "./layout/UIChrome";
 
 // Root component: the 4-layer z-stack.
@@ -94,6 +96,11 @@ function App() {
       <AgentHoverCard />
       <DeskAssignMenu />
       <TerminalOverlay />
+      {/* 마크다운 문서 탐색·편집(이슈 #10). 항상 마운트, 각자 store 상태로
+          self-gate(null 렌더). z-index로 터미널 오버레이 위에 뜬다(markdown.css).
+          터미널 keep-alive와 무관 — 터미널 DOM은 건드리지 않는다. */}
+      <MarkdownPalette />
+      <MarkdownEditorOverlay />
       <div className="modal-root">
         <ProfileDialog />
         <ConfirmDeleteDialog />

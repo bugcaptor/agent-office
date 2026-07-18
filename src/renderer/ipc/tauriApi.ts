@@ -186,6 +186,18 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.loadUsageSnapshot);
   },
 
+  async markdownListFiles(root) {
+    return await invoke(Commands.markdownListFiles, { root });
+  },
+
+  async markdownReadFile(root, relPath) {
+    return await invoke(Commands.markdownReadFile, { root, relPath });
+  },
+
+  async markdownWriteFile(root, relPath, content, expectedVersion) {
+    return await invoke(Commands.markdownWriteFile, { root, relPath, content, expectedVersion });
+  },
+
   onData(agentId, cb) {
     let sub = outputSubs.get(agentId);
     if (!sub) {

@@ -1,0 +1,257 @@
+/* src/renderer/markdown/markdown.css
+ *
+ * 마크다운 문서 탐색·편집(이슈 #10)의 팔레트·편집기 오버레이 스타일.
+ * 오버레이는 TerminalOverlay(z:20)·모달(z:30)보다 위에 뜬다. 내부 확인
+ * 다이얼로그(더티/충돌)는 그보다 더 위(z:50). 픽셀 크롬 토큰은 tokens.css를 따른다.
+ */
+@import "../styles/tokens.css";
+
+/* 공통 오버레이(팔레트/편집기): 뷰포트 전체를 덮는 백드롭. */
+.md-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40; /* 터미널 오버레이(20)·모달(30)보다 위 */
+  display: flex;
+  background: rgba(10, 11, 18, 0.55);
+}
+
+/* ---- 팔레트(Ctrl+P 유사): 상단 중앙 정렬 ---- */
+.md-palette-overlay {
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 8vh;
+}
+.md-palette {
+  width: min(640px, 92vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 2px solid var(--border-dark);
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.18);
+}
+.md-palette-input {
+  box-sizing: border-box;
+  width: 100%;
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: none;
+  border-bottom: 2px solid var(--border-dark);
+  padding: calc(var(--unit) * 3);
+  outline: none;
+}
+.md-palette-input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+.md-palette-note {
+  padding: calc(var(--unit) * 1) calc(var(--unit) * 3);
+  color: var(--accent-warn);
+  font-size: 0.72rem;
+  border-bottom: 1px solid var(--border-dark);
+}
+.md-palette-empty {
+  padding: calc(var(--unit) * 4);
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  text-align: center;
+}
+.md-palette-list {
+  list-style: none;
+  margin: 0;
+  padding: calc(var(--unit) * 1);
+  overflow-y: auto;
+}
+.md-palette-item {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--unit) * 2);
+  padding: calc(var(--unit) * 2);
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+.md-palette-item-active {
+  background: var(--bg-panel-hi);
+  border-color: var(--border-dark);
+}
+.md-palette-item-name {
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.9rem;
+  color: var(--text);
+  flex: none;
+}
+.md-palette-item-path {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 편집기 오버레이: 중앙 큰 패널 ---- */
+.md-editor-overlay {
+  align-items: center;
+  justify-content: center;
+}
+.md-editor {
+  width: 80%;
+  height: 82%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 2px solid var(--border-dark);
+}
+.md-editor-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--unit) * 2);
+  flex: none;
+  height: 40px;
+  padding: 0 calc(var(--unit) * 2) 0 calc(var(--unit) * 3);
+  background: var(--bg-panel-hi);
+  border-bottom: 2px solid var(--border-dark);
+}
+.md-editor-path {
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.85rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--unit);
+}
+.md-editor-dirty {
+  color: var(--accent-warn);
+  font-size: 0.7rem;
+}
+.md-editor-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--unit);
+  flex: none;
+}
+.md-tab {
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 0;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.md-tab-active {
+  color: var(--text);
+  background: var(--bg-panel);
+  border-color: var(--border-dark);
+}
+.md-editor-close {
+  width: 28px;
+  height: 28px;
+  font-family: "DungGeunMo", monospace;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 2px solid var(--border-dark);
+  border-radius: 0;
+  cursor: pointer;
+}
+.md-editor-close:hover {
+  background: var(--accent-warn);
+  color: #0a0b12;
+}
+.md-editor-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.md-editor-status {
+  margin: auto;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+.md-editor-error {
+  color: var(--accent-error);
+}
+.md-editor-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  resize: none;
+  font-family: "Menlo", "Consolas", monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: none;
+  padding: calc(var(--unit) * 3);
+  outline: none;
+  tab-size: 2;
+}
+.md-editor-preview {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  padding: calc(var(--unit) * 3) calc(var(--unit) * 5);
+  font-family: "Galmuri11", "DungGeunMo", sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text);
+}
+.md-editor-preview h1,
+.md-editor-preview h2,
+.md-editor-preview h3 {
+  border-bottom: 1px solid var(--border-dark);
+  padding-bottom: calc(var(--unit) * 1);
+}
+.md-editor-preview a {
+  color: var(--accent);
+}
+.md-editor-preview code {
+  font-family: "Menlo", "Consolas", monospace;
+  font-size: 0.82rem;
+  background: var(--bg-panel-hi);
+  padding: 1px 4px;
+}
+.md-editor-preview pre {
+  background: var(--bg-panel-hi);
+  border: 1px solid var(--border-dark);
+  padding: calc(var(--unit) * 2);
+  overflow-x: auto;
+}
+.md-editor-preview pre code {
+  background: none;
+  padding: 0;
+}
+.md-editor-preview blockquote {
+  margin: 0;
+  padding-left: calc(var(--unit) * 3);
+  border-left: 3px solid var(--border-dark);
+  color: var(--text-dim);
+}
+.md-editor-preview img {
+  max-width: 100%;
+}
+
+/* ---- 편집기 내부 확인 다이얼로그(더티/충돌): 편집기 위에 겹친다 ---- */
+.md-inner-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 11, 18, 0.72);
+  padding: calc(var(--unit) * 4);
+}
+.md-confirm {
+  box-sizing: border-box;
+  max-width: 420px;
+  padding: calc(var(--unit) * 5) calc(var(--unit) * 6);
+}

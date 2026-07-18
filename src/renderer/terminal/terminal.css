@@ -50,8 +50,35 @@
   border-color: var(--border-dark);
 }
 
-.agent-tab-strip-close {
+/* 문서 버튼(이슈 #10): 탭들 오른쪽 끝, 닫기 버튼 왼쪽에 붙는다.
+ * margin-left:auto가 여기서 남는 공간을 다 먹어 이 버튼과 닫기 버튼을
+ * 함께 오른쪽으로 민다(닫기 버튼의 auto는 남은 공간이 없어 무해). */
+.agent-tab-strip-docs {
   margin-left: auto;
+  flex: none;
+  height: 28px;
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--border-dark);
+  border-radius: 0;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.agent-tab-strip-docs:hover:not(:disabled) {
+  background: var(--accent);
+  color: #0a0b12;
+}
+
+.agent-tab-strip-docs:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.agent-tab-strip-close {
   position: sticky;
   right: 0;
   flex: none;

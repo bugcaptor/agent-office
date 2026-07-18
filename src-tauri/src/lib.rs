@@ -7,6 +7,7 @@
 // RunEvent::ExitRequested (dispose_all -> observer server shutdown).
 pub mod api_keys;
 mod ipc;
+mod markdown;
 mod notification;
 mod observer;
 mod persistence;
@@ -347,6 +348,9 @@ pub fn run() {
             ipc::commands::open_in_vscode,
             ipc::commands::open_in_terminal,
             ipc::commands::export_terminal_output,
+            markdown::markdown_list_files,
+            markdown::markdown_read_file,
+            markdown::markdown_write_file,
             ipc::commands::pick_directory,
             ipc::commands::append_session_turn,
             ipc::commands::load_session_turns,
