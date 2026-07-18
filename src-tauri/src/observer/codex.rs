@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::event::{prompt_text, tool_description};
+use super::event::{codex_stop_message, prompt_text, tool_description};
 use super::hook_command::forwarder_shell_command;
 use super::{
     AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError, ObserverEvent,
@@ -110,8 +110,10 @@ impl ObserverAdapter for CodexAdapter {
             "PermissionRequest" => Some(ObserverEvent::Attention {
                 message: tool_description(raw.body),
             }),
+            // 이슈 #39: 예전엔 last_assistant_message 를 의도적으로 버렸으나,
+            // 이제 완료 알림 본문으로 실어 보낸다(절단은 codex_stop_message).
             "Stop" => Some(ObserverEvent::Stop {
-                message: None,
+                message: codex_stop_message(raw.body),
                 running: None,
             }),
             "SubagentStart" => Some(ObserverEvent::SubStart),

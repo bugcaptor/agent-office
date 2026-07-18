@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use super::event::{agent_id, message, prompt_text, running_subagents};
+use super::event::{
+    agent_id, claude_transcript_message, message, prompt_text, running_subagents,
+};
 use super::hook_command::forwarder_shell_command;
 use super::{
     AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError, ObserverEvent,
@@ -129,8 +131,12 @@ impl ObserverAdapter for ClaudeAdapter {
             "Notification" => Some(ObserverEvent::Attention {
                 message: message(raw.body),
             }),
+            // 이슈 #39: Claude Stop 훅 body 엔 message 필드가 없다 → transcript_path
+            // (JSONL)의 마지막 assistant 텍스트를 완료 본문으로 뽑는다. 파일 부재/
+            // 포맷 이상은 None 폴백 → hub 의 STOP_FALLBACK 유지. body 에 message 가
+            // 실려 오는 경로(pi 등 미래 확장)는 그대로 우선한다.
             "Stop" => Some(ObserverEvent::Stop {
-                message: message(raw.body),
+                message: message(raw.body).or_else(|| claude_transcript_message(raw.body)),
                 running: running_subagents(raw.body),
             }),
             _ => None,
@@ -366,6 +372,48 @@ mod tests {
                 }),
             );
         }
+    }
+
+    #[test]
+    fn claude_stop_reads_completion_from_transcript_tail() {
+        // 이슈 #39: message 필드가 없어도 transcript_path 의 마지막 assistant
+        // 텍스트를 완료 본문으로 실어야 한다.
+        let adapter = ClaudeAdapter::new(scratch_dir(), forwarder_exe());
+        let dir = scratch_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("transcript.jsonl");
+        let lines = [
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"이전 응답"}]}}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"작업을 마쳤습니다"}]}}"#,
+        ];
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        let body = serde_json::json!({ "transcript_path": path.to_string_lossy() })
+            .to_string()
+            .into_bytes();
+
+        assert_eq!(
+            adapter.map_hook(&RawObserverHook {
+                event_name: "Stop",
+                body: &body,
+            }),
+            Some(ObserverEvent::Stop {
+                message: Some("작업을 마쳤습니다".into()),
+                running: None,
+            }),
+        );
+
+        // transcript 부재 시엔 None 폴백(hub STOP_FALLBACK).
+        assert_eq!(
+            adapter.map_hook(&RawObserverHook {
+                event_name: "Stop",
+                body: br#"{"transcript_path":"/nonexistent/transcript.jsonl"}"#,
+            }),
+            Some(ObserverEvent::Stop {
+                message: None,
+                running: None,
+            }),
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

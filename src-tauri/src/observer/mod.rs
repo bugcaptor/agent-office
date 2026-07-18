@@ -262,13 +262,15 @@ mod tests {
                 message: Some("codex attention".into()),
             }),
         );
+        // 이슈 #39: 이제 codex Stop 의 last_assistant_message 는 완료 본문으로
+        // 노출된다(예전엔 의도적으로 버려 message: None 이었다).
         assert_eq!(
             codex.map_hook(&RawObserverHook {
                 event_name: "Stop",
-                body: br#"{"last_assistant_message":"must not surface"}"#,
+                body: r#"{"last_assistant_message":"코덱스 작업 완료"}"#.as_bytes(),
             }),
             Some(ObserverEvent::Stop {
-                message: None,
+                message: Some("코덱스 작업 완료".into()),
                 running: None,
             }),
         );
