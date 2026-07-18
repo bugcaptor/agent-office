@@ -178,6 +178,14 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.adoptDetachedSessions);
   },
 
+  async sessionBrokerMode() {
+    return await invoke(Commands.sessionBrokerMode);
+  },
+
+  async uploadSessionSnapshots(snapshots: Record<string, string>) {
+    await invoke(Commands.uploadSessionSnapshots, { snapshots });
+  },
+
   async listClaudeResumeSessions() {
     return await invoke(Commands.listClaudeResumeSessions);
   },

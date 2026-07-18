@@ -54,6 +54,49 @@ async function adoptDetachedSessions(): Promise<void> {
   }
 }
 
+/** 브로커 모드 주기 스냅샷 업로드 간격(ms). 크래시 생존 화면 복원의 신선도. */
+export const SNAPSHOT_UPLOAD_INTERVAL_MS = 30_000;
+
+/**
+ * 세션 브로커 v2(docs/session-broker-v2-design.md) 주기 스냅샷 업로드: 브로커
+ * 모드일 때만, 30초마다 모든 터미널 화면(스크롤백 포함)을 직렬화해 데몬에
+ * 올린다 — 앱이 크래시로 죽어도 데몬에 마지막 화면이 남아 재접속 시 복원할 수
+ * 있게 하는 것. 브로커 모드가 아니거나 조회 실패면 타이머를 아예 켜지 않는다
+ * (기본 off라 v1 경로엔 영향 없음). `setInterval`은 전역(persist.ts와 동일
+ * 컨벤션) — `window` 없는 Node 테스트에서도 안전.
+ */
+function installSnapshotUploader(): () => void {
+  let timer: ReturnType<typeof setInterval> | null = null;
+  // sessionBrokerMode()는 async라 teardown이 그 해소보다 먼저 올 수 있다. 그때
+  // 아직 timer가 null이라 clearInterval이 안 걸리고, 뒤늦게 해소된 콜백이
+  // setInterval을 걸면 teardown 이후에도 영원히 도는 누수가 된다. `disposed`
+  // 플래그로 해소 시점에 이미 정리됐는지 확인해 타이머를 아예 안 건다.
+  let disposed = false;
+  void tauriApi
+    .sessionBrokerMode()
+    .then((enabled) => {
+      if (!enabled || disposed) return;
+      timer = setInterval(() => {
+        // 직렬화 전에 xterm write 큐를 flush(§P1)해 방금 도착한 바이트까지
+        // 스냅샷에 담는다 — 브로커가 스냅샷 오프셋 이후만 리플레이해도 유실 없음.
+        void (async () => {
+          const snapshots = await terminalRegistry.flushAndSerializeAll();
+          if (Object.keys(snapshots).length === 0) return;
+          await tauriApi.uploadSessionSnapshots(snapshots);
+        })().catch((err) => {
+          console.warn("bootstrap: 세션 스냅샷 업로드 실패", err);
+        });
+      }, SNAPSHOT_UPLOAD_INTERVAL_MS);
+    })
+    .catch(() => {
+      /* 미지원/구버전 백엔드 — 업로드 없이 진행 */
+    });
+  return () => {
+    disposed = true;
+    if (timer !== null) clearInterval(timer);
+  };
+}
+
 /**
  * "오늘 일한 시간" 헤드라인의 로컬 자정 리셋 타이머. 발화 시 베이스를 0으로,
  * 기준선을 그 시점의 Σ메모리 workedMs로 세팅(파일 재읽기 없음 — 계산 모델은
@@ -137,6 +180,8 @@ export async function bootApp(): Promise<() => void> {
   // 설정(soundEnabled/soundVolume)을 읽는다.
   const offSound = installSoundManager();
   const offDayRollover = installDayRollover();
+  // 세션 브로커 v2 주기 스냅샷 업로드(브로커 모드일 때만 타이머 가동).
+  const offSnapshotUploader = installSnapshotUploader();
 
   return () => {
     offBridge();
@@ -148,5 +193,6 @@ export async function bootApp(): Promise<() => void> {
     offQuitGuard();
     offSound();
     offDayRollover();
+    offSnapshotUploader();
   };
 }

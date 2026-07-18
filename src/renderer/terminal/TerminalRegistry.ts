@@ -181,6 +181,27 @@ class TerminalRegistry {
     return out;
   }
 
+  /**
+   * 세션 브로커 v2(§P1): 직렬화 *전에* 각 터미널의 xterm write 큐를 flush해,
+   * 이미 도착했지만 아직 파싱/렌더 안 된 바이트까지 스냅샷에 반영한다 —
+   * `term.write("", cb)`의 콜백은 큐가 비워진 뒤에 불린다. 이렇게 하면 스냅샷이
+   * "앱이 실제로 여기까지 받았다"는 지점과 최대한 정합하고, 브로커가 그 오프셋
+   * 이후만 리플레이해도 유실이 없다. quit/주기 업로더가 사용(둘 다 async 경로).
+   * 한 터미널의 실패가 나머지를 막지 않도록 개별 try/catch로 스킵.
+   */
+  async flushAndSerializeAll(): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    for (const [agentId, e] of this.entries) {
+      try {
+        await new Promise<void>((resolve) => e.term.write("", () => resolve()));
+        out[agentId] = e.serialize.serialize();
+      } catch {
+        /* 이 터미널만 스킵 -- 나머지 스냅샷은 정상 전달 */
+      }
+    }
+    return out;
+  }
+
   has(agentId: string): boolean {
     return this.entries.has(agentId);
   }

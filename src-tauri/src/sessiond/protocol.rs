@@ -19,7 +19,12 @@ use std::os::unix::io::RawFd;
 use nix::sys::socket::{recvmsg, sendmsg, ControlMessage, ControlMessageOwned, MsgFlags};
 use serde::{Deserialize, Serialize};
 
-pub const PROTO_VERSION: u32 = 1;
+// 프로토콜 버전. v1(=1)은 종료 시점 fd 핸드오프(Handoff/Adopt), v2(=2)는
+// 상시 브로커 모드(Spawn/DataAttach/Attach/Resize/Wait/KillAll/UpdateSnapshot)를
+// additive로 얹은 것이다. 규칙은 additive-only: 기존 메시지(Hello/Handoff/
+// List/Adopt/Kill)는 의미 불변이고, 신규 필드는 전부 `#[serde(default)]`.
+// 자세한 와이어 계약은 docs/session-broker-v2-design.md "프로토콜 v2 확정" 참조.
+pub const PROTO_VERSION: u32 = 2;
 
 /// 프레임이 실을 수 있는 최대 JSON 바이트 수. 512KB 링버퍼가 base64로
 /// ~700KB까지 부푸는 것을 감안한 넉넉한 상한 — 이 이상은 손상된/악의적
@@ -85,11 +90,126 @@ pub enum Message {
         agent_id: String,
     },
     KillOk,
+
+    // ── 프로토콜 v2: 상시 브로커 모드(additive) ─────────────────────────
+    //
+    // v2에서는 데몬이 스폰부터 PTY와 자식을 소유하고 앱은 연결만 붙였다
+    // 뗀다. control 연결(프레이밍 유지)로 아래 RPC를 주고받되, DataAttach만은
+    // 응답 직후 그 연결을 raw 양방향 바이트 스트림으로 전환한다(프레이밍 없음).
+    /// 앱 -> 데몬. 데몬이 openpty+spawn으로 세션을 새로 만들고 테이블에
+    /// 등록한다(링버퍼는 스폰 시점부터 수집). fd는 동반하지 않는다 --
+    /// v1 Handoff와 정반대로, 소유권이 처음부터 데몬에 있다.
+    Spawn {
+        agent_id: String,
+        session_id: String,
+        shell: String,
+        #[serde(default)]
+        args: Vec<String>,
+        /// (key, value) 쌍 목록. 세션 env(관찰자 훅/설정 파일 경로 등)는
+        /// 앱(SessionManager)이 이미 계산해 넘긴다 -- 데몬은 그대로 주입만 한다.
+        #[serde(default)]
+        env: Vec<(String, String)>,
+        rows: u16,
+        cols: u16,
+        cwd: String,
+        #[serde(default)]
+        cleanup_paths: Vec<String>,
+    },
+    SpawnOk {
+        pid: Option<i32>,
+    },
+    /// 앱 -> 데몬. 응답 `DataAttachOk` 직후 이 연결은 raw 양방향 바이트
+    /// 스트림으로 전환된다: 데몬은 먼저 링버퍼 백로그를, 이어서 라이브 PTY
+    /// 출력을 같은 스트림에 흘린다(이음새 없는 리플레이). 앱->데몬 방향 raw
+    /// 바이트는 PTY master에 기록된다. 세션당 활성 data conn은 1개 --
+    /// 새 DataAttach가 오면 기존 연결을 끊고 교체한다.
+    DataAttach {
+        agent_id: String,
+    },
+    DataAttachOk {
+        /// 이 연결에서 리플레이할 백로그 첫 바이트의 절대 스트림 오프셋
+        /// (= 데몬 링의 `total - backlog.len()`). 앱은 이 값으로 data reader의
+        /// 누적 수신 카운터를 초기화해, 이후 UpdateSnapshot에 "앱이 실제로 여기까지
+        /// 받았다"는 오프셋을 동봉한다(§P1, 유실 창 제거). `#[serde(default)]`(0)로
+        /// v1/구버전과의 additive 하위호환.
+        #[serde(default)]
+        stream_offset: u64,
+    },
+    /// 앱 -> 데몬. 재접속용 메타데이터+최신 스냅샷 회수(백로그는 data conn이
+    /// 담당하므로 여기엔 버퍼가 없다). `exit`이 Some이면 이미 종료된 세션.
+    Attach {
+        agent_id: String,
+    },
+    AttachOk {
+        rows: u16,
+        cols: u16,
+        pid: Option<i32>,
+        /// 앱이 주기적으로 업로드한 최신 xterm 화면 스냅샷(표준 base64). 데몬은
+        /// 이 바이트를 불투명하게 보관·반환만 한다 -- 압축 여부는 아래 플래그로.
+        #[serde(default)]
+        snapshot_b64: String,
+        /// `snapshot_b64`가 deflate 압축된 것인지(§P2-c). 앱이 UpdateSnapshot에
+        /// 실어 보낸 플래그를 그대로 되돌려준다 -- 앱은 입양 시 이걸 보고 해제한다.
+        #[serde(default)]
+        snapshot_compressed: bool,
+        /// 자식이 이미 종료했으면 Some(그 종료 정보).
+        #[serde(default)]
+        exit: Option<ExitStatusMsg>,
+    },
+    /// 앱 -> 데몬. 데몬이 PTY master를 resize(TIOCSWINSZ)한다.
+    Resize {
+        agent_id: String,
+        rows: u16,
+        cols: u16,
+    },
+    ResizeOk,
+    /// 앱 -> 데몬. 자식 종료까지 블로킹 후 `WaitOk`. 연결별 독립 처리이므로
+    /// waiter는 전용 control 연결을 하나 열어 이 요청만 보낸다.
+    Wait {
+        agent_id: String,
+    },
+    WaitOk {
+        exit_code: Option<i32>,
+        signal: Option<i32>,
+    },
+    /// 앱 -> 데몬. 브로커가 소유한 모든 자식을 SIGKILL하고 테이블을 비운다
+    /// ("모두 종료"). 죽인 개수를 반환한다.
+    KillAll,
+    KillAllOk {
+        killed: usize,
+    },
+    /// 앱 -> 데몬. 주기 스냅샷 업로드 -- 데몬은 세션당 최신 것만 보관한다.
+    /// 앱 크래시 후에도 마지막 화면을 Attach로 복원할 수 있게 하는 것.
+    UpdateSnapshot {
+        agent_id: String,
+        snapshot_b64: String,
+        /// 이 스냅샷이 반영하는 스트림 오프셋(§P1). Some이면 데몬은 수신 시점
+        /// `ring.total()` 대신 이 값을 `snapshot_offset`으로 기록한다(링 범위로
+        /// 클램프). 앱이 data 연결 카운터로 "실제 여기까지 렌더/수신했다"를 실어
+        /// 보내, 렌더러 직렬화~데몬 수신 사이 바이트가 유실되는 창을 없앤다.
+        #[serde(default)]
+        offset: Option<u64>,
+        /// `snapshot_b64`가 deflate 압축된 것인지(§P2-c). 데몬은 불투명 보관하고
+        /// 이 플래그를 AttachOk에 그대로 되돌려준다.
+        #[serde(default)]
+        compressed: bool,
+    },
+    UpdateSnapshotOk,
+
     /// 프로토콜 버전 불일치 등, 요청을 처리할 수 없을 때. 앱은 해당 세션의
     /// 입양/핸드오프를 포기한다(세션은 데몬에 그대로 남는다).
     Error {
         message: String,
     },
+}
+
+/// 자식 종료 정보(Attach 응답 전용). WaitOk는 필드를 평면으로 갖지만,
+/// AttachOk는 "종료했는가"를 Option으로 감싸야 해 별도 구조체로 뺀다.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExitStatusMsg {
+    pub exit_code: Option<i32>,
+    pub signal: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,9 +223,21 @@ pub struct SessionInfo {
     pub cwd: String,
     pub exited: bool,
     pub buffered_bytes: usize,
+    /// v2 브로커 세션이면 true(데몬이 스폰부터 소유). v1 핸드오프 세션은
+    /// false. `#[serde(default)]`: v1 데몬이 이 필드 없이 보낸 ListOk도 그대로
+    /// 역직렬화되게 하는 additive 하위호환.
+    #[serde(default)]
+    pub broker: bool,
+    /// v2 브로커 세션에 지금 활성 data conn이 붙어 있는가(= 다른 앱 인스턴스가
+    /// 사용 중). 재접속(adopt)은 이 값이 true면 그 세션을 건드리지 않는다 --
+    /// 앱이 단일 인스턴스가 아니므로, 두 번째 인스턴스가 첫 인스턴스가 붙여 둔
+    /// 세션을 가로채(DataAttach 교체) 원본 터미널을 먹통으로 만드는 것을 막는다.
+    /// v1 세션엔 의미 없어 항상 false. `#[serde(default)]`로 하위호환.
+    #[serde(default)]
+    pub attached: bool,
 }
 
-fn write_all_raw(fd: RawFd, mut buf: &[u8]) -> io::Result<()> {
+pub(crate) fn write_all_raw(fd: RawFd, mut buf: &[u8]) -> io::Result<()> {
     while !buf.is_empty() {
         match nix::unistd::write(fd, buf) {
             Ok(0) => return Err(io::Error::new(io::ErrorKind::WriteZero, "write returned 0")),
@@ -318,6 +450,8 @@ mod tests {
                     cwd: "/tmp".into(),
                     exited: false,
                     buffered_bytes: 0,
+                    broker: false,
+                    attached: false,
                 },
                 SessionInfo {
                     agent_id: "a2".into(),
@@ -328,6 +462,8 @@ mod tests {
                     cwd: "/tmp/b".into(),
                     exited: true,
                     buffered_bytes: 42,
+                    broker: true,
+                    attached: true,
                 },
             ],
         };
@@ -383,6 +519,136 @@ mod tests {
             other => panic!("unexpected message: {other:?}"),
         }
         let _ = close(b);
+    }
+
+    #[test]
+    fn round_trips_v2_spawn_and_spawn_ok() {
+        let (a, b) = pair();
+        let msg = Message::Spawn {
+            agent_id: "a1".into(),
+            session_id: "s1".into(),
+            shell: "/bin/zsh".into(),
+            args: vec!["-l".into(), "-i".into()],
+            env: vec![
+                ("TERM".into(), "xterm-256color".into()),
+                ("AGENT_OFFICE_SESSION".into(), "s1".into()),
+            ],
+            rows: 24,
+            cols: 80,
+            cwd: "/tmp/work".into(),
+            cleanup_paths: vec!["/tmp/settings.json".into()],
+        };
+        write_frame(a, &msg, None).unwrap();
+        match read_frame(b).unwrap().0 {
+            Message::Spawn { agent_id, shell, args, env, cwd, cleanup_paths, .. } => {
+                assert_eq!(agent_id, "a1");
+                assert_eq!(shell, "/bin/zsh");
+                assert_eq!(args, vec!["-l".to_string(), "-i".to_string()]);
+                assert_eq!(env[0], ("TERM".to_string(), "xterm-256color".to_string()));
+                assert_eq!(cwd, "/tmp/work");
+                assert_eq!(cleanup_paths, vec!["/tmp/settings.json".to_string()]);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+        write_frame(a, &Message::SpawnOk { pid: Some(4242) }, None).unwrap();
+        assert!(matches!(read_frame(b).unwrap().0, Message::SpawnOk { pid: Some(4242) }));
+        let _ = close(a);
+        let _ = close(b);
+    }
+
+    #[test]
+    fn round_trips_v2_attach_ok_with_and_without_exit() {
+        let (a, b) = pair();
+        // 살아있는 세션: exit = None.
+        write_frame(
+            a,
+            &Message::AttachOk {
+                rows: 40,
+                cols: 120,
+                pid: Some(7),
+                snapshot_b64: "c25hcA==".into(),
+                snapshot_compressed: true,
+                exit: None,
+            },
+            None,
+        )
+        .unwrap();
+        match read_frame(b).unwrap().0 {
+            Message::AttachOk { rows, cols, pid, snapshot_b64, snapshot_compressed, exit } => {
+                assert_eq!((rows, cols, pid), (40, 120, Some(7)));
+                assert_eq!(snapshot_b64, "c25hcA==");
+                assert!(snapshot_compressed);
+                assert!(exit.is_none());
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+        // 종료된 세션: exit = Some.
+        write_frame(
+            a,
+            &Message::AttachOk {
+                rows: 24,
+                cols: 80,
+                pid: None,
+                snapshot_b64: String::new(),
+                snapshot_compressed: false,
+                exit: Some(ExitStatusMsg { exit_code: Some(3), signal: None }),
+            },
+            None,
+        )
+        .unwrap();
+        match read_frame(b).unwrap().0 {
+            Message::AttachOk { exit: Some(e), .. } => {
+                assert_eq!(e.exit_code, Some(3));
+                assert_eq!(e.signal, None);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+        let _ = close(a);
+        let _ = close(b);
+    }
+
+    #[test]
+    fn round_trips_v2_control_messages() {
+        let (a, b) = pair();
+        for msg in [
+            Message::DataAttach { agent_id: "a1".into() },
+            Message::DataAttachOk { stream_offset: 4096 },
+            Message::Resize { agent_id: "a1".into(), rows: 30, cols: 100 },
+            Message::ResizeOk,
+            Message::Wait { agent_id: "a1".into() },
+            Message::WaitOk { exit_code: Some(0), signal: None },
+            Message::KillAll,
+            Message::KillAllOk { killed: 3 },
+            Message::UpdateSnapshot {
+                agent_id: "a1".into(),
+                snapshot_b64: "eA==".into(),
+                offset: Some(1234),
+                compressed: true,
+            },
+            Message::UpdateSnapshotOk,
+        ] {
+            write_frame(a, &msg, None).unwrap();
+            let decoded = read_frame(b).unwrap().0;
+            // 타입 태그가 라운드트립되는지만 확인(개별 필드는 위 테스트에서 커버).
+            assert_eq!(
+                std::mem::discriminant(&decoded),
+                std::mem::discriminant(&msg),
+                "message discriminant must round-trip: {msg:?}"
+            );
+        }
+        let _ = close(a);
+        let _ = close(b);
+    }
+
+    #[test]
+    fn session_info_broker_field_defaults_to_false_for_v1_wire() {
+        // v1 데몬이 broker 필드 없이 보낸 ListOk도 그대로 역직렬화돼야 한다
+        // (additive 하위호환) -- broker는 default(false).
+        let json = r#"{"type":"listOk","sessions":[{"agentId":"a1","sessionId":"s1","pid":1,"rows":24,"cols":80,"cwd":"/tmp","exited":false,"bufferedBytes":0}]}"#;
+        match serde_json::from_str::<Message>(json).unwrap() {
+            Message::ListOk { sessions } => assert!(!sessions[0].broker),
+            other => panic!("unexpected: {other:?}"),
+        }
     }
 
     #[test]

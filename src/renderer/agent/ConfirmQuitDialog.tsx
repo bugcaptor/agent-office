@@ -41,7 +41,8 @@ export function ConfirmQuitDialog() {
     try {
       // 종료 직전 화면(스크롤백)을 실어 보낸다 -- 데몬은 핸드오프 *이후*
       // 출력만 보관하므로, 이게 없으면 재입양 후 종료 전 화면이 사라진다.
-      await tauriApi.handoffSessions(terminalRegistry.serializeAll());
+      // 직렬화 전에 xterm write 큐를 flush(§P1)해 방금 도착한 바이트까지 포함한다.
+      await tauriApi.handoffSessions(await terminalRegistry.flushAndSerializeAll());
     } catch (err) {
       console.warn("종료 확인: 세션 핸드오프 실패 — 터미널 유지 없이 종료 진행", err);
     }

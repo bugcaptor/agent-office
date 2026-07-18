@@ -25,7 +25,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const openMock = vi.fn();
 const disposeMock = vi.fn();
 const focusMock = vi.fn();
-const writeMock = vi.fn();
+// xterm.write(data, cb?)의 cb는 write 큐가 비워지면 호출된다 — flushAndSerializeAll이
+// 이 콜백을 기다리므로 목도 콜백을 즉시 불러 준다(§P1).
+const writeMock = vi.fn((_data?: string, cb?: () => void) => cb?.());
 const loadAddonMock = vi.fn();
 const fitMock = vi.fn();
 const pasteMock = vi.fn();
@@ -139,7 +141,8 @@ beforeEach(() => {
   openMock.mockReset();
   disposeMock.mockReset();
   focusMock.mockReset();
-  writeMock.mockReset();
+  // 콜백 호출 구현을 유지해야 flushAndSerializeAll(§P1)의 write("", cb)가 resolve된다.
+  writeMock.mockReset().mockImplementation((_data?: string, cb?: () => void) => cb?.());
   loadAddonMock.mockReset();
   fitMock.mockReset();
   pasteMock.mockReset();
@@ -387,6 +390,43 @@ describe("serializeAll (session handoff snapshot)", () => {
   it("returns an empty object when there are no live terminals", async () => {
     const terminalRegistry = await importRegistry();
     expect(terminalRegistry.serializeAll()).toEqual({});
+  });
+});
+
+describe("flushAndSerializeAll (broker v2 §P1)", () => {
+  it("flushes each terminal's write queue before serializing, keyed by agentId", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+    terminalRegistry.attach("a2", host);
+    const e1 = terminalRegistry.get("a1")! as unknown as { serialize: FakeSerializeAddon };
+    const e2 = terminalRegistry.get("a2")! as unknown as { serialize: FakeSerializeAddon };
+    e1.serialize.serialize.mockReturnValue("SCREEN-A1");
+    e2.serialize.serialize.mockReturnValue("SCREEN-A2");
+    writeMock.mockClear();
+
+    const result = await terminalRegistry.flushAndSerializeAll();
+
+    expect(result).toEqual({ a1: "SCREEN-A1", a2: "SCREEN-A2" });
+    // 각 터미널마다 flush용 write("", cb)가 한 번씩 호출됐다(콜백이 Promise를 resolve).
+    expect(writeMock).toHaveBeenCalledWith("", expect.any(Function));
+  });
+
+  it("skips a terminal whose serialize() throws, still returning the rest", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+    terminalRegistry.attach("a2", host);
+    const e1 = terminalRegistry.get("a1")! as unknown as { serialize: FakeSerializeAddon };
+    const e2 = terminalRegistry.get("a2")! as unknown as { serialize: FakeSerializeAddon };
+    e1.serialize.serialize.mockImplementation(() => {
+      throw new Error("serialize boom");
+    });
+    e2.serialize.serialize.mockReturnValue("SCREEN-A2");
+
+    const result = await terminalRegistry.flushAndSerializeAll();
+
+    expect(result).toEqual({ a2: "SCREEN-A2" });
   });
 });
 

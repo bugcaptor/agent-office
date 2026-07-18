@@ -42,6 +42,10 @@ export const Commands = {
   handoffSupported: "handoff_supported",
   handoffSessions: "handoff_sessions",
   adoptDetachedSessions: "adopt_detached_sessions",
+  // 세션 브로커 v2(docs/session-broker-v2-design.md) — 상시 브로커 모드 여부
+  // 조회와, 브로커 모드에서 크래시 생존 화면 복원을 위한 주기 스냅샷 업로드.
+  sessionBrokerMode: "session_broker_mode",
+  uploadSessionSnapshots: "upload_session_snapshots",
   // Claude 세션 이어하기(docs/claude-session-resume-design.md) — 캡처된
   // native 세션 ID를 agentId별로 돌려준다.
   listClaudeResumeSessions: "list_claude_resume_sessions",

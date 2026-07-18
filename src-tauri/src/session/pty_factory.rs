@@ -33,6 +33,17 @@ pub struct SpawnedPty {
     pub handoff: Option<HandoffInfo>,
     #[cfg(not(unix))]
     pub handoff: Option<()>,
+    /// 이 세션을 v2 브로커 데몬이 소유하는가. `BrokerPtyFactory`의 성공 경로와
+    /// 브로커 재접속(`assemble_broker_adopted`)만 true다 — `PortablePtyFactory`,
+    /// 팩토리 폴백, v1 fd 입양(`assemble_adopted`)은 전부 false. 브로커 모드
+    /// 매니저에서도 폴백으로 생긴 in-process 세션이 섞일 수 있으므로, 전역
+    /// `broker_mode`가 아니라 이 **세션 단위 소유 플래그**로 handoff/adopt 경로를
+    /// 가른다(브로커 세션=스냅샷 업로드+detach, 폴백 세션=v1 fd 핸드오프).
+    pub broker_owned: bool,
+    /// 브로커 data 연결의 누적 수신 바이트 카운터(절대 스트림 오프셋). 스냅샷
+    /// 업로드 시 "앱이 실제 여기까지 받았다"는 offset으로 동봉해 유실 창을 없앤다
+    /// (§P1). 브로커 세션만 Some, 그 외(폴백/PortablePty/v1 입양/Fake)는 None.
+    pub broker_stream_offset: Option<Arc<std::sync::atomic::AtomicU64>>,
 }
 
 /// 핸드오프 시 sessiond에 전달할 마스터 fd(및 프로세스 식별자). `master_fd`는
@@ -91,6 +102,15 @@ pub struct PtySpawnOptions {
     pub rows: u16,
     pub cwd: String,
     pub env: Vec<(String, String)>,
+    /// 세션을 소유할 에이전트/세션 식별자. `PortablePtyFactory`/Fake는 무시하지만
+    /// `BrokerPtyFactory`(v2)는 이걸 데몬 Spawn 메시지의 테이블 키/세션 id로 쓴다.
+    pub agent_id: String,
+    pub session_id: String,
+    /// 관찰자 설정 파일 등 세션 종료 시 지울 경로. `BrokerPtyFactory`가 데몬에
+    /// 넘겨, 앱 크래시 후 자식을 kill할 때 데몬이 정리할 수 있게 한다(정상
+    /// 경로에서는 앱 쪽 Session이 on_exit/dispose에서도 지운다 -- 이중 정리는
+    /// NotFound 무시라 무해).
+    pub cleanup_paths: Vec<String>,
 }
 
 /// 부작용 경계. SessionManager는 이 트레잇만 안다. 테스트는 FakePtyFactory 주입.
@@ -199,6 +219,8 @@ impl PtyFactory for PortablePtyFactory {
             waiter,
             reader_interrupt,
             handoff,
+            broker_owned: false, // 프로세스 내 직접 스폰 -- 브로커 소유 아님(v1 fd 핸드오프 대상).
+            broker_stream_offset: None,
         })
     }
 }
@@ -343,6 +365,8 @@ pub fn assemble_adopted(
             waiter,
             reader_interrupt: Some(interrupt),
             handoff,
+            broker_owned: false, // v1 fd 입양 세션 -- 재핸드오프도 v1 경로.
+            broker_stream_offset: None,
         },
         stopping,
     ))
@@ -572,6 +596,8 @@ pub mod fake {
             waiter,
             reader_interrupt: None,
             handoff: None,
+            broker_owned: false,
+            broker_stream_offset: None,
         }
     }
 
@@ -698,6 +724,9 @@ mod tests {
             rows: 24,
             cwd: ".".into(),
             env: vec![],
+            agent_id: "test-agent".into(),
+            session_id: "test-session".into(),
+            cleanup_paths: vec![],
         }
     }
 
@@ -857,6 +886,9 @@ mod tests {
                     .to_string_lossy()
                     .into_owned(),
                 env: vec![],
+                agent_id: "test-agent".into(),
+                session_id: "test-session".into(),
+                cleanup_paths: vec![],
             })
             .unwrap();
 
@@ -895,6 +927,9 @@ mod tests {
                 rows: 24,
                 cwd: ".".into(),
                 env: vec![],
+                agent_id: "test-agent".into(),
+                session_id: "test-session".into(),
+                cleanup_paths: vec![],
             })
             .unwrap();
 
