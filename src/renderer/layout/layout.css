@@ -213,26 +213,24 @@ body {
   padding: calc(var(--unit) * 4); /* keep dialogs off the viewport edges */
 }
 
-/* 모달 패널 공통 내부 여백(#35): 창마다 제각각이던 padding을 여기서 통일.
-   값은 ProfileDialog가 쓰던 여백 기준. width/max-height를 지정하는 패널이
-   padding 포함 크기로 계산되도록 border-box로 고정. */
-.modal-backdrop > .pixel-panel {
+/* 모달 패널 공통 기본값(#35): 창마다 제각각이던 padding을 여기서 통일하고,
+   ProfileDialog만 갖던 짧은 뷰포트 안전장치를 전 모달로 확장 —
+   `align-items: center` 백드롭에서는 컨테이너보다 큰 자식이 위쪽부터
+   잘려 닿을 수 없게 되므로, max-height를 뷰포트-백드롭 padding으로
+   묶고 내부 스크롤을 열어야 액션 행이 항상 닿는다(FirstRunDialog는
+   닫기도 불가). :where()로 특이도를 0으로 낮춰 개별 다이얼로그의
+   단일 클래스 선언(.usage-dialog의 max-height 88vh, .sprite-editor의
+   box-sizing 등)이 항상 이기는 기본값으로 동작시킨다. */
+:where(.modal-backdrop > .pixel-panel) {
   box-sizing: border-box;
   padding: calc(var(--unit) * 5) calc(var(--unit) * 6);
-}
-
-/* Short-viewport safety: cap the dialog to the padded backdrop and scroll
-   inside. With `align-items: center`, a child taller than the container
-   would clip at the top with no way to reach it -- capping max-height to
-   viewport minus the backdrop padding guarantees the child never exceeds
-   the container, so centering stays safe and the action row stays
-   reachable. */
-.profile-dialog {
-  box-sizing: border-box;
   max-height: calc(100vh - var(--unit) * 8); /* fallback for older webviews */
   max-height: calc(100dvh - var(--unit) * 8);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.profile-dialog {
   /* ── 프로필 편집 폼 리디자인: 고정 폭 + 세로 스택 + 섹션 간 여백 ── */
   width: 560px;
   max-width: calc(100vw - var(--unit) * 10);
