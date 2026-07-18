@@ -45,6 +45,39 @@ describe("TaskLabelLayer", () => {
     expect(el.className).toContain("phase-working");
   });
 
+  it("2줄은 실황(assistant > tool) > 지시 요약 > 프롬프트 순으로 우선한다", () => {
+    // 모두 있을 때: assistant 내레이션이 이긴다.
+    seedStore({
+      label: {
+        firstPromptText: "버그 고쳐줘",
+        latestPromptText: "버그 고쳐줘",
+        currentSummary: "버그 고치는 중",
+        latestToolText: "Bash: npm test",
+        latestAssistantText: "원인을 좁히는 중",
+      },
+    });
+    const { container } = render(<TaskLabelLayer bus={createMockOfficeBus()} />);
+    expect(container.querySelector(".task-label-line2")!.textContent).toBe("원인을 좁히는 중");
+
+    // assistant 없으면 도구 요약.
+    act(() => {
+      seedStore({
+        label: {
+          latestPromptText: "버그 고쳐줘",
+          currentSummary: "버그 고치는 중",
+          latestToolText: "Bash: npm test",
+        },
+      });
+    });
+    expect(container.querySelector(".task-label-line2")!.textContent).toBe("Bash: npm test");
+
+    // 실황이 없으면 지시 요약.
+    act(() => {
+      seedStore({ label: { latestPromptText: "버그 고쳐줘", currentSummary: "버그 고치는 중" } });
+    });
+    expect(container.querySelector(".task-label-line2")!.textContent).toBe("버그 고치는 중");
+  });
+
   it("요약이 없으면 원문 첫 줄 절단으로 폴백한다", () => {
     seedStore({ label: { firstPromptText: "버그를 고쳐줘\n상세", latestPromptText: "테스트 추가해줘" } });
     const { container } = render(<TaskLabelLayer bus={createMockOfficeBus()} />);

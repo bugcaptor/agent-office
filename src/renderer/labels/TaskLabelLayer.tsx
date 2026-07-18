@@ -42,7 +42,13 @@ export function TaskLabelLayer({ bus }: { bus: OfficeBus }) {
     const project = projectNameFromCwd(agent.cwd);
     const goal = label?.goal ?? firstLine(label?.firstPromptText, GOAL_FALLBACK_MAX);
     const line1 = [project, goal].filter(Boolean).join(" · ");
-    const line2 = label?.currentSummary ?? firstLine(label?.latestPromptText, CURRENT_FALLBACK_MAX);
+    // 실황(assistant 내레이션 > 도구 요약) > LLM 지시 요약 > 프롬프트 원문.
+    // currentSummary는 지시 요약이라 턴 중 실황보다 정보가 오래됐다(이슈 #43).
+    const line2 =
+      firstLine(label?.latestAssistantText, CURRENT_FALLBACK_MAX) ??
+      firstLine(label?.latestToolText, CURRENT_FALLBACK_MAX) ??
+      label?.currentSummary ??
+      firstLine(label?.latestPromptText, CURRENT_FALLBACK_MAX);
     if (!line1 && !line2) return [];
     const phase = timeTracking[agent.id]?.phase ?? "idle";
     return [{ id: agent.id, line1, line2, phase }];

@@ -128,8 +128,12 @@ export interface ActivityEvent {
   sessionId: SessionId;
   kind: ActivityKind;
   at: number;
-  /** kind="prompt"일 때 사용자 프롬프트 원문(최대 2,000자 절단). 파싱 실패/부재 시 undefined. */
+  /** kind="prompt"일 때 사용자 프롬프트 원문(최대 2,000자 절단), kind="tool"일 때
+   * 도구 요약("Bash: npm test" 등, 최대 60자). 파싱 실패/부재 시 undefined. */
   text?: string;
+  /** kind="tool"일 때 턴 중간 assistant 내레이션(claude transcript 꼬리, 스로틀
+   * 적용). 그 외 kind/codex/부재는 undefined. */
+  assistantText?: string;
   /** kind="sub-count"일 때 현재 실행 중 서브에이전트 절대 수. */
   count?: number;
 }

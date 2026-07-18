@@ -161,21 +161,23 @@ impl NotificationHub {
     /// axum 핸들러가 호출: prompt/tool activity 신호를 dedup/큐 없이 즉시
     /// activity-event로 방출한다. 죽은/미지 세션은 폐기한다.
     pub fn ingest_activity(&self, session_id: &str, kind: ActivityKind) {
-        self.ingest_activity_inner(session_id, kind, None);
+        self.ingest_activity_inner(session_id, kind, None, None);
     }
 
     /// prompt 훅 전용: body(UserPromptSubmit 이벤트 JSON)에서 원문을 추출해 싣는다.
     /// 파싱 실패는 text=None으로 강등될 뿐, 이벤트 방출 자체는 항상 일어난다.
     pub fn ingest_activity_with_body(&self, session_id: &str, kind: ActivityKind, body: &[u8]) {
-        self.ingest_activity_inner(session_id, kind, prompt_text(body));
+        self.ingest_activity_inner(session_id, kind, prompt_text(body), None);
     }
 
     pub fn ingest_observer(&self, session_id: &str, event: ObserverEvent) {
         match event {
             ObserverEvent::Prompt { text } => {
-                self.ingest_activity_inner(session_id, ActivityKind::Prompt, text)
+                self.ingest_activity_inner(session_id, ActivityKind::Prompt, text, None)
             }
-            ObserverEvent::Tool => self.ingest_activity(session_id, ActivityKind::Tool),
+            ObserverEvent::Tool { text, assistant } => {
+                self.ingest_activity_inner(session_id, ActivityKind::Tool, text, assistant)
+            }
             ObserverEvent::SubStart => self.ingest_activity(session_id, ActivityKind::SubStart),
             ObserverEvent::SubStop => self.ingest_activity(session_id, ActivityKind::SubStop),
             ObserverEvent::SubCount { running } => self.ingest_subagent_count(session_id, running),
@@ -210,7 +212,13 @@ impl NotificationHub {
         }
     }
 
-    fn ingest_activity_inner(&self, session_id: &str, kind: ActivityKind, text: Option<String>) {
+    fn ingest_activity_inner(
+        &self,
+        session_id: &str,
+        kind: ActivityKind,
+        text: Option<String>,
+        assistant: Option<String>,
+    ) {
         // 이슈 #41: 세션이 계속 일한다는 신호(프롬프트 제출·도구 사용·서브에이전트
         // 시작)가 오면 보류 중인 질문 알림을 조용히 폐기한다. SubStop/SubCount/
         // Resume 은 취소 신호가 아니다.
@@ -229,6 +237,7 @@ impl NotificationHub {
             kind,
             at: self.clock.now_ms(),
             text,
+            assistant_text: assistant,
             count: None,
         };
         self.events.activity_event(&ev);
@@ -244,6 +253,7 @@ impl NotificationHub {
             kind: ActivityKind::SubCount,
             at: self.clock.now_ms(),
             text: None,
+            assistant_text: None,
             count: Some(running),
         };
         self.events.activity_event(&ev);
@@ -601,7 +611,13 @@ mod tests {
                 text: Some("버그 수정".into()),
             },
         );
-        hub.ingest_observer("s1", ObserverEvent::Tool);
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Tool {
+                text: None,
+                assistant: None,
+            },
+        );
         hub.ingest_observer("s1", ObserverEvent::Attention { message: None });
         hub.ingest_observer(
             "s1",
@@ -623,6 +639,26 @@ mod tests {
         assert_eq!(notifications[0].message, "확인이 필요합니다");
         assert_eq!(notifications[1].source, NotificationSource::Stop);
         assert_eq!(notifications[1].message, "작업이 완료되었습니다.");
+    }
+
+    #[test]
+    fn tool_observer_event_carries_text_and_assistant_into_activity() {
+        // 이슈 #43: ObserverEvent::Tool의 text/assistant가 ActivityEvent로 실려야 한다.
+        let (hub, events, _clock) = fixture();
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Tool {
+                text: Some("Bash: npm test".into()),
+                assistant: Some("파일을 살펴보는 중".into()),
+            },
+        );
+        let activity = events.activities();
+        assert_eq!(activity.len(), 1);
+        assert_eq!(activity[0].kind, ActivityKind::Tool);
+        assert_eq!(activity[0].text.as_deref(), Some("Bash: npm test"));
+        assert_eq!(activity[0].assistant_text.as_deref(), Some("파일을 살펴보는 중"));
+        // 활동 신호이므로 알림 파이프라인은 오염되지 않는다.
+        assert!(events.notifications().is_empty());
     }
 
     #[test]
@@ -1141,7 +1177,13 @@ mod tests {
     fn hold_cancelled_by_tool_activity_and_requestion_re_holds() {
         let (hub, events, clock) = hold_fixture(5000);
         hub.ingest_hook("s1", NotificationSource::Hook, &msg("need input")); // held at t=0
-        hub.ingest_observer("s1", ObserverEvent::Tool); // 계속 일하는 신호 → 폐기
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Tool {
+                text: None,
+                assistant: None,
+            },
+        ); // 계속 일하는 신호 → 폐기
         assert!(hub.pending("s1").is_empty());
 
         clock.advance(6000);

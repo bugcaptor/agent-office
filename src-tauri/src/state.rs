@@ -316,6 +316,7 @@ mod tests {
             kind: ActivityKind::Prompt,
             at: 100,
             text: None,
+            assistant_text: None,
             count: None,
         });
         events.activity_event(&ActivityEvent {
@@ -324,6 +325,7 @@ mod tests {
             kind: ActivityKind::Tool,
             at: 200,
             text: None,
+            assistant_text: None,
             count: None,
         });
 

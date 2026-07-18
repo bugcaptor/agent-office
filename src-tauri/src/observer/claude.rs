@@ -1,7 +1,11 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use super::event::{
-    agent_id, claude_transcript_message, message, prompt_text, running_subagents,
+    agent_id, claude_transcript_message, claude_transcript_progress_message, message, prompt_text,
+    running_subagents, tool_activity_text, transcript_path,
 };
 use super::hook_command::forwarder_shell_command;
 use super::{
@@ -9,16 +13,72 @@ use super::{
     ObserverProvider, ObserverSessionContext, RawObserverHook, WrapperArg,
 };
 
+/// transcript 꼬리 읽기(assistant 내레이션 추출) 스로틀 기본 간격. 파일 tail을
+/// 매 PostToolUse마다 읽지 않도록 transcript_path별로 이 간격을 둔다(이슈 #43).
+const TRANSCRIPT_PROGRESS_INTERVAL: Duration = Duration::from_secs(5);
+
 pub struct ClaudeAdapter {
     settings_dir: PathBuf,
     forwarder_executable: PathBuf,
+    /// transcript_path별 마지막 tail 읽기 "시도" 시각(스로틀 기준). 읽기 실패해도
+    /// 시도 시각을 기록하므로 다음 interval까지 재시도하지 않는다.
+    transcript_progress: Mutex<HashMap<String, Instant>>,
+    /// tail 읽기 최소 간격(테스트는 with_progress_interval로 조정).
+    progress_interval: Duration,
 }
 
 impl ClaudeAdapter {
     pub fn new(settings_dir: PathBuf, forwarder_executable: PathBuf) -> Self {
+        Self::with_progress_interval(settings_dir, forwarder_executable, TRANSCRIPT_PROGRESS_INTERVAL)
+    }
+
+    /// 테스트/튜닝용: transcript tail 읽기 스로틀 간격을 지정해 생성한다.
+    pub fn with_progress_interval(
+        settings_dir: PathBuf,
+        forwarder_executable: PathBuf,
+        progress_interval: Duration,
+    ) -> Self {
         Self {
             settings_dir,
             forwarder_executable,
+            transcript_progress: Mutex::new(HashMap::new()),
+            progress_interval,
+        }
+    }
+
+    /// PostToolUse를 도구 요약 + (스로틀 통과 시) assistant 내레이션으로 매핑한다.
+    fn map_post_tool_use(&self, body: &[u8]) -> ObserverEvent {
+        // 서브에이전트 내부 도구(agent_id 있음)는 하트비트만 유지하고 텍스트를
+        // 싣지 않는다 — 부모 라벨이 서브에이전트 도구/내레이션으로 오염되는 걸 막는다.
+        if agent_id(body).is_some() {
+            return ObserverEvent::Tool {
+                text: None,
+                assistant: None,
+            };
+        }
+        let text = tool_activity_text(body);
+        let assistant = if self.progress_due(body) {
+            claude_transcript_progress_message(body)
+        } else {
+            None
+        };
+        ObserverEvent::Tool { text, assistant }
+    }
+
+    /// transcript_path별 스로틀: 마지막 읽기 시도 후 progress_interval이 지났으면
+    /// true를 돌려주고 그 시각을 기록한다. transcript_path 부재면 false.
+    fn progress_due(&self, body: &[u8]) -> bool {
+        let Some(path) = transcript_path(body) else {
+            return false;
+        };
+        let now = Instant::now();
+        let mut map = self.transcript_progress.lock().unwrap();
+        match map.get(&path) {
+            Some(last) if now.duration_since(*last) < self.progress_interval => false,
+            _ => {
+                map.insert(path, now);
+                true
+            }
         }
     }
 
@@ -119,7 +179,7 @@ impl ObserverAdapter for ClaudeAdapter {
             "UserPromptSubmit" => Some(ObserverEvent::Prompt {
                 text: prompt_text(raw.body),
             }),
-            "PostToolUse" => Some(ObserverEvent::Tool),
+            "PostToolUse" => Some(self.map_post_tool_use(raw.body)),
             "SubagentStart" => Some(ObserverEvent::SubStart),
             // 절대 카운트는 self 제외를 위해 top-level agent_id가 반드시 있어야 신뢰할 수
             // 있다(리뷰 지적: agent_id 부재 시 자기 자신까지 세어 off-by-one으로 미니미
@@ -135,10 +195,16 @@ impl ObserverAdapter for ClaudeAdapter {
             // (JSONL)의 마지막 assistant 텍스트를 완료 본문으로 뽑는다. 파일 부재/
             // 포맷 이상은 None 폴백 → hub 의 STOP_FALLBACK 유지. body 에 message 가
             // 실려 오는 경로(pi 등 미래 확장)는 그대로 우선한다.
-            "Stop" => Some(ObserverEvent::Stop {
-                message: message(raw.body).or_else(|| claude_transcript_message(raw.body)),
-                running: running_subagents(raw.body),
-            }),
+            "Stop" => {
+                // 턴 종료 → 이 transcript의 progress 스로틀 엔트리 제거(맵 누수 방지).
+                if let Some(path) = transcript_path(raw.body) {
+                    self.transcript_progress.lock().unwrap().remove(&path);
+                }
+                Some(ObserverEvent::Stop {
+                    message: message(raw.body).or_else(|| claude_transcript_message(raw.body)),
+                    running: running_subagents(raw.body),
+                })
+            }
             _ => None,
         }
     }
@@ -433,9 +499,16 @@ mod tests {
             map("UserPromptSubmit", br#"{"agent_id":"sub-1","prompt":"x"}"#,),
             None,
         );
+        // 서브에이전트 내부 도구는 하트비트만 — 텍스트/내레이션 모두 None(부모 라벨 보호).
         assert_eq!(
-            map("PostToolUse", br#"{"agent_id":"sub-1"}"#),
-            Some(ObserverEvent::Tool),
+            map(
+                "PostToolUse",
+                br#"{"agent_id":"sub-1","tool_name":"Bash","tool_input":{"command":"npm test"}}"#,
+            ),
+            Some(ObserverEvent::Tool {
+                text: None,
+                assistant: None,
+            }),
         );
         assert_eq!(
             map(
@@ -506,5 +579,77 @@ mod tests {
                 running: Some(2),
             }),
         );
+    }
+
+    #[test]
+    fn post_tool_use_carries_tool_summary_for_main_session() {
+        // 이슈 #43: 메인 세션 PostToolUse는 도구 요약을 라벨용 text로 싣는다.
+        let adapter = ClaudeAdapter::new(scratch_dir(), forwarder_exe());
+        assert_eq!(
+            adapter.map_hook(&RawObserverHook {
+                event_name: "PostToolUse",
+                body: br#"{"tool_name":"Bash","tool_input":{"command":"npm test"}}"#,
+            }),
+            Some(ObserverEvent::Tool {
+                text: Some("Bash: npm test".into()),
+                assistant: None, // transcript_path 부재 → 내레이션 없음
+            }),
+        );
+    }
+
+    #[test]
+    fn post_tool_use_throttles_transcript_reads_per_path() {
+        use std::time::Duration;
+        // 진짜 프롬프트 → assistant 내레이션 → tool_result user(턴 중간 실황).
+        let dir = scratch_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("transcript.jsonl");
+        let lines = [
+            r#"{"type":"user","message":{"role":"user","content":"작업"}}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"진행 중"}]}}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}"#,
+        ];
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        let body = serde_json::json!({ "transcript_path": path.to_string_lossy() })
+            .to_string()
+            .into_bytes();
+        let post = |adapter: &ClaudeAdapter| {
+            adapter.map_hook(&RawObserverHook {
+                event_name: "PostToolUse",
+                body: &body,
+            })
+        };
+        let with_narration = Some(ObserverEvent::Tool {
+            text: None,
+            assistant: Some("진행 중".into()),
+        });
+        let without = Some(ObserverEvent::Tool {
+            text: None,
+            assistant: None,
+        });
+
+        // interval ZERO: 매 호출마다 tail을 읽어 내레이션을 싣는다.
+        let always =
+            ClaudeAdapter::with_progress_interval(scratch_dir(), forwarder_exe(), Duration::ZERO);
+        assert_eq!(post(&always), with_narration);
+        assert_eq!(post(&always), with_narration);
+
+        // 큰 interval: 첫 호출만 읽고 두 번째는 스로틀로 assistant=None.
+        let throttled = ClaudeAdapter::with_progress_interval(
+            scratch_dir(),
+            forwarder_exe(),
+            Duration::from_secs(3600),
+        );
+        assert_eq!(post(&throttled), with_narration);
+        assert_eq!(post(&throttled), without);
+
+        // Stop이 스로틀 엔트리를 제거하면 이후 PostToolUse가 다시 읽는다.
+        throttled.map_hook(&RawObserverHook {
+            event_name: "Stop",
+            body: &body,
+        });
+        assert_eq!(post(&throttled), with_narration);
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

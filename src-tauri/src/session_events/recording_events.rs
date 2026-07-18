@@ -147,6 +147,7 @@ mod tests {
             kind: ActivityKind::Prompt,
             at: 1_783_728_000_000,
             text: Some("do not persist this prompt".into()),
+            assistant_text: None,
             count: None,
         });
         events.notification_new(&NotificationEvent {
@@ -213,6 +214,7 @@ mod tests {
             kind: ActivityKind::Tool,
             at: 1_783_728_000_004,
             text: None,
+            assistant_text: None,
             count: None,
         });
         let records = read(&root);
@@ -277,6 +279,7 @@ mod tests {
             kind: ActivityKind::SubStart,
             at: 1_783_728_000_000,
             text: None,
+            assistant_text: None,
             count: None,
         });
         // inner(렌더러 릴레이)로는 전달된다.
@@ -303,6 +306,7 @@ mod tests {
             kind: ActivityKind::Tool,
             at: 1_783_728_000_000,
             text: None,
+            assistant_text: None,
             count: None,
         });
         assert_eq!(inner.activities().len(), 1);

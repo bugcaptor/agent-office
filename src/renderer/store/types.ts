@@ -82,4 +82,10 @@ export interface AgentTaskLabel {
   goal?: string;
   /** LLM 생성 현재 명령 요약. 새 프롬프트가 오면 무효화(undefined). */
   currentSummary?: string;
+  /** 턴 중 최신 도구 요약("Bash: npm test"). stop/새 프롬프트에 리셋. */
+  latestToolText?: string;
+  /** 턴 중 assistant 내레이션(claude transcript 꼬리). stop/새 프롬프트에 리셋. */
+  latestAssistantText?: string;
+  /** 도구 요약 마지막 반영 시각(스로틀 기준, 백엔드 epoch ms). */
+  latestToolAt?: number;
 }

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::event::{codex_stop_message, prompt_text, tool_description};
+use super::event::{agent_id, codex_stop_message, prompt_text, tool_activity_text, tool_description};
 use super::hook_command::forwarder_shell_command;
 use super::{
     AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError, ObserverEvent,
@@ -106,7 +106,20 @@ impl ObserverAdapter for CodexAdapter {
             "UserPromptSubmit" => Some(ObserverEvent::Prompt {
                 text: prompt_text(raw.body),
             }),
-            "PostToolUse" => Some(ObserverEvent::Tool),
+            // 이슈 #43: claude와 동일하게 도구 요약을 싣되, 서브에이전트 내부 도구
+            // (agent_id 있음)는 하트비트만 유지한다. codex는 transcript 꼬리가 없어
+            // assistant 내레이션은 항상 None.
+            "PostToolUse" => Some(if agent_id(raw.body).is_some() {
+                ObserverEvent::Tool {
+                    text: None,
+                    assistant: None,
+                }
+            } else {
+                ObserverEvent::Tool {
+                    text: tool_activity_text(raw.body),
+                    assistant: None,
+                }
+            }),
             "PermissionRequest" => Some(ObserverEvent::Attention {
                 message: tool_description(raw.body),
             }),
@@ -381,6 +394,34 @@ mod tests {
         let claude = ClaudeAdapter::new(dir.clone(), std::env::current_exe().unwrap());
         assert!(claude.prepare_session(&context).is_ok());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn codex_post_tool_use_carries_summary_and_suppresses_subagent() {
+        use crate::observer::{ObserverEvent, RawObserverHook};
+        let codex = CodexAdapter::new(forwarder_path_with_spaces());
+        // 이슈 #43: 메인 세션 도구 요약을 싣는다(assistant는 codex라 항상 None).
+        assert_eq!(
+            codex.map_hook(&RawObserverHook {
+                event_name: "PostToolUse",
+                body: br#"{"tool_name":"Grep","tool_input":{"pattern":"TODO"}}"#,
+            }),
+            Some(ObserverEvent::Tool {
+                text: Some("Grep: TODO".into()),
+                assistant: None,
+            }),
+        );
+        // 서브에이전트 내부 도구(agent_id)는 하트비트만.
+        assert_eq!(
+            codex.map_hook(&RawObserverHook {
+                event_name: "PostToolUse",
+                body: br#"{"agent_id":"sub-1","tool_name":"Grep","tool_input":{"pattern":"TODO"}}"#,
+            }),
+            Some(ObserverEvent::Tool {
+                text: None,
+                assistant: None,
+            }),
+        );
     }
 
     #[test]

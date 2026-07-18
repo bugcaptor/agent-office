@@ -112,10 +112,15 @@ pub struct ActivityEvent {
     pub session_id: SessionId,
     pub kind: ActivityKind,
     pub at: u64,
-    /// kind=Prompt일 때 사용자 프롬프트 원문(최대 2,000자, chars 기준 절단).
-    /// body 파싱 실패/부재 시 None — None이면 wire에서 필드 생략.
+    /// kind=Prompt일 때 사용자 프롬프트 원문(최대 2,000자, chars 기준 절단),
+    /// kind=Tool일 때 도구 요약("Bash: npm test" 등, 최대 60자). 부재 시 None —
+    /// None이면 wire에서 필드 생략.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// kind=Tool일 때 턴 중간 assistant 내레이션(claude transcript 꼬리, 스로틀
+    /// 적용). 그 외 kind/codex/부재는 None — None이면 wire에서 필드 생략.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assistant_text: Option<String>,
     /// kind=SubCount일 때 현재 실행 중 서브에이전트 절대 수.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub count: Option<u32>,
@@ -360,6 +365,7 @@ mod tests {
             kind: ActivityKind::Prompt,
             at: 1_720_000_000_000,
             text: None,
+            assistant_text: None,
             count: None,
         };
         let json = serde_json::to_string(&ev).unwrap();
@@ -377,6 +383,7 @@ mod tests {
             kind: ActivityKind::Prompt,
             at: 1,
             text: None,
+            assistant_text: None,
             count: None,
         };
         let j = serde_json::to_string(&ev).unwrap();
@@ -395,6 +402,7 @@ mod tests {
             kind: ActivityKind::SubCount,
             at: 1,
             text: None,
+            assistant_text: None,
             count: None,
         };
         let json = serde_json::to_string(&ev).unwrap();

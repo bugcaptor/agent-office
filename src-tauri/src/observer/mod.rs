@@ -115,7 +115,10 @@ impl ObserverRuntime {
             "prompt" => ObserverEvent::Prompt {
                 text: event::prompt_text(body),
             },
-            "tool" => ObserverEvent::Tool,
+            "tool" => ObserverEvent::Tool {
+                text: None,
+                assistant: None,
+            },
             "stop" => ObserverEvent::Stop {
                 message: event::message(body),
                 running: None,
@@ -195,7 +198,10 @@ mod tests {
                 event_name: "PostToolUse",
                 body: b"{}",
             }),
-            Some(ObserverEvent::Tool),
+            Some(ObserverEvent::Tool {
+                text: None,
+                assistant: None,
+            }),
         );
         assert_eq!(
             adapter.map_hook(&RawObserverHook {
@@ -472,7 +478,13 @@ mod tests {
     #[test]
     fn claude_hook_records_native_session_id_and_cwd_to_sink() {
         let sink = Arc::new(FakeSink::default());
-        let runtime = claude_runtime_with_sink(Some(ObserverEvent::Tool), sink.clone());
+        let runtime = claude_runtime_with_sink(
+            Some(ObserverEvent::Tool {
+                text: None,
+                assistant: None,
+            }),
+            sink.clone(),
+        );
         runtime.ingest(
             ObserverProvider::Claude,
             "s1",
@@ -535,7 +547,13 @@ mod tests {
     #[test]
     fn claude_hook_without_session_id_is_a_sink_noop() {
         let sink = Arc::new(FakeSink::default());
-        let runtime = claude_runtime_with_sink(Some(ObserverEvent::Tool), sink.clone());
+        let runtime = claude_runtime_with_sink(
+            Some(ObserverEvent::Tool {
+                text: None,
+                assistant: None,
+            }),
+            sink.clone(),
+        );
         runtime.ingest(
             ObserverProvider::Claude,
             "s1",
@@ -563,7 +581,10 @@ mod tests {
             vec![Arc::new(FakeAdapter {
                 provider: ObserverProvider::Claude,
                 plan: Ok(AdapterSessionPlan::default()),
-                mapped: Some(ObserverEvent::Tool),
+                mapped: Some(ObserverEvent::Tool {
+                    text: None,
+                    assistant: None,
+                }),
             })],
         );
 

@@ -25,6 +25,8 @@ import type { ActivityEvent, AppSettings, SessionState, UsageSnapshot } from "@s
 import { tauriApi } from "../ipc/tauriApi";
 
 const MAX_EXCERPT = 80;
+/** 도구 요약 라벨 갱신 최소 간격(ms). 도구가 빠르게 연달아 와도 라벨이 튀지 않게 스로틀. */
+const TOOL_LABEL_MIN_INTERVAL_MS = 2000;
 const DEFAULT_APP_SETTINGS: AppSettings = {
   version: 1,
   summarizerEnabled: false,
@@ -476,25 +478,55 @@ export const useAppStore = create<AppState>()(
         const nextTurn = reduceTurn(prevTurn, { kind: turnKind, at: e.at });
         logSettledTurn(e.agentId, prevTurn, nextTurn, e.at);
         const timeTracking = { ...s.timeTracking, [e.agentId]: nextTurn };
-        // 라벨 소스: text 실린 prompt만 반영. tool/text 없음 → 통과.
-        if (e.kind !== "prompt" || !e.text) return { timeTracking };
-        const prev = s.taskLabels[e.agentId];
-        const label: AgentTaskLabel =
-          prev && prev.sessionId === e.sessionId
-            ? {
-                ...prev,
-                latestPromptText: e.text,
-                latestPromptAt: e.at,
-                currentSummary: undefined, // 새 지시 → 재요약 대상
-              }
-            : {
-                // 새 세션(또는 첫 이벤트): 목표 포함 전체 리셋
-                sessionId: e.sessionId,
-                firstPromptText: e.text,
-                latestPromptText: e.text,
-                latestPromptAt: e.at,
-              };
-        return { timeTracking, taskLabels: { ...s.taskLabels, [e.agentId]: label } };
+
+        // ---- prompt: 라벨 소스 갱신(새 턴 시작 → 턴 중 실황 필드 리셋) ----
+        if (e.kind === "prompt") {
+          if (!e.text) return { timeTracking }; // text 없는 prompt → 라벨 미변경
+          const prev = s.taskLabels[e.agentId];
+          const label: AgentTaskLabel =
+            prev && prev.sessionId === e.sessionId
+              ? {
+                  ...prev,
+                  latestPromptText: e.text,
+                  latestPromptAt: e.at,
+                  currentSummary: undefined, // 새 지시 → 재요약 대상
+                  latestToolText: undefined, // 새 턴 → 이전 턴 실황 제거
+                  latestAssistantText: undefined,
+                  latestToolAt: undefined,
+                }
+              : {
+                  // 새 세션(또는 첫 이벤트): 목표 포함 전체 리셋
+                  sessionId: e.sessionId,
+                  firstPromptText: e.text,
+                  latestPromptText: e.text,
+                  latestPromptAt: e.at,
+                };
+          return { timeTracking, taskLabels: { ...s.taskLabels, [e.agentId]: label } };
+        }
+
+        // ---- tool: 턴 중 실황(도구 요약/assistant 내레이션) ----
+        // 프롬프트 없이 tool만 온 세션은 라벨을 만들지 않고, 세션 불일치는 무시한다.
+        if (e.kind === "tool") {
+          const prev = s.taskLabels[e.agentId];
+          if (!prev || prev.sessionId !== e.sessionId) return { timeTracking };
+          const patch: Partial<AgentTaskLabel> = {};
+          // assistant 내레이션은 러스트 5초 스로틀이 이미 적용됨 → 오면 항상 반영.
+          if (e.assistantText) patch.latestAssistantText = e.assistantText;
+          // 도구 요약은 2초 스로틀 + 동일 텍스트 스킵(불필요 리렌더 방지).
+          if (
+            e.text &&
+            e.text !== prev.latestToolText &&
+            e.at - (prev.latestToolAt ?? 0) >= TOOL_LABEL_MIN_INTERVAL_MS
+          ) {
+            patch.latestToolText = e.text;
+            patch.latestToolAt = e.at;
+          }
+          if (Object.keys(patch).length === 0) return { timeTracking }; // 갱신 없음
+          return { timeTracking, taskLabels: { ...s.taskLabels, [e.agentId]: { ...prev, ...patch } } };
+        }
+
+        // ---- resume: 시간 추적만, 라벨 비대상 ----
+        return { timeTracking };
       }),
 
     setTaskLabelSummary: (agentId, patch) =>
@@ -511,7 +543,26 @@ export const useAppStore = create<AppState>()(
         const prev = s.timeTracking[e.agentId] ?? initialTurnState();
         const next = reduceTurn(prev, { kind, at: e.at });
         logSettledTurn(e.agentId, prev, next, e.at);
-        return { timeTracking: { ...s.timeTracking, [e.agentId]: next } };
+        const timeTracking = { ...s.timeTracking, [e.agentId]: next };
+        // 완료(stop) → 라벨의 턴 중 실황을 지운다(idle에서 마지막 도구 잔존 방지).
+        if (e.source === "stop") {
+          const label = s.taskLabels[e.agentId];
+          if (label) {
+            return {
+              timeTracking,
+              taskLabels: {
+                ...s.taskLabels,
+                [e.agentId]: {
+                  ...label,
+                  latestToolText: undefined,
+                  latestAssistantText: undefined,
+                  latestToolAt: undefined,
+                },
+              },
+            };
+          }
+        }
+        return { timeTracking };
       }),
 
     applySessionTiming: (agentId, state, at) =>
