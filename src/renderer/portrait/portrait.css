@@ -164,6 +164,10 @@
 
 /* ---- sprite editor (SpriteEditor.tsx) ---- */
 .sprite-editor {
+  /* 공통 모달 padding(#35)이 border-box라 360px에서 내용 폭이 308px로 줄면
+     크롭 프레임+미리보기 행(≈336px)이 테두리를 넘침 — content-box로 되돌려
+     내용 폭 360px 유지 */
+  box-sizing: content-box;
   width: 360px;
 }
 .sprite-edit-row {
