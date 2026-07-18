@@ -64,20 +64,29 @@
   등록한다. 링버퍼는 **스폰 시점부터** 수집한다. fd는 동반하지 않는다(v1 Handoff와
   정반대로 소유권이 처음부터 데몬에 있다). `env`는 앱(SessionManager)이 이미
   관찰자 훅/설정 파일 경로까지 계산해 넘기고 데몬은 그대로 주입만 한다.
-- `DataAttach { agent_id }` → 프레임 `DataAttachOk` **직후 해당 연결이 raw
-  양방향 바이트 스트림으로 전환**된다(이후 프레이밍 없음). 데몬은 DataAttachOk
-  직후 백로그를 같은 스트림에 먼저 쓰고 이어서 라이브 출력을 흘린다(이음새 없는
-  리플레이 — 백로그 스냅샷과 conn 설치를 하나의 락 아래에서 원자화해 유실/중복
-  없음). **백로그 범위(§P2-b)**: 스냅샷이 업로드된 적 있으면 링버퍼 전체가 아니라
-  마지막 `UpdateSnapshot` 시점의 누적 오프셋(`snapshot_offset`) *이후* 바이트만
+- `DataAttach { agent_id }` → 프레임 `DataAttachOk { stream_offset }` **직후 해당
+  연결이 raw 양방향 바이트 스트림으로 전환**된다(이후 프레이밍 없음). 데몬은
+  DataAttachOk 직후 백로그를 같은 스트림에 먼저 쓰고 이어서 라이브 출력을 흘린다
+  (이음새 없는 리플레이 — 백로그 스냅샷과 conn 설치를 하나의 락 아래에서 원자화해
+  유실/중복 없음). `stream_offset`은 이 연결이 흘리는 백로그 첫 바이트의 절대
+  스트림 오프셋(= 링의 `total - backlog.len()`)으로, 앱이 data reader의 누적 수신
+  카운터를 여기서 시작하는 데 쓴다(§P1). **백로그 범위**: 스냅샷이 업로드된 적
+  있으면 링버퍼 전체가 아니라 그 스냅샷의 오프셋(`snapshot_offset`) *이후* 바이트만
   흘린다 — 앱이 그 스냅샷을 화면으로 별도 복원하므로, "스냅샷 + 이후 출력"이 되어
   중복 없이 전체 스크롤백이 재구성된다. 스냅샷이 한 번도 없으면 링 전체를 흘린다.
   앱→데몬 방향 raw 바이트는 PTY master에 기록된다. **세션당 활성 data conn은 1개**
   — 새 DataAttach가 오면 기존 소켓을 `shutdown`해 교체한다. 앱 쪽 EOF/에러 =
-  detach(자식은 죽이지 않음).
-- `Attach { agent_id }` → `AttachOk { rows, cols, pid, snapshot_b64, exit: Option }`.
-  재접속용 메타데이터+최신 업로드 스냅샷 회수(백로그는 data conn 담당이라 여기
-  buffer는 없다). `exit`이 Some이면 이미 종료된 세션.
+  detach(자식은 죽이지 않음). **종료 직후 설치 레이스(§P2-b)**: 자식을 reap한
+  waiter는 같은 io 락 아래에서 `closed=true`를 세우고 활성 conn을 정리한다. 그
+  *뒤* 도착한 DataAttach는 (역시 같은 락 아래에서 `closed`를 보고) 새 conn을 설치
+  하지 않고 백로그만 쓴 뒤 자기 fd를 `shutdown(Write)`해 앱에 백로그+EOF를 주고
+  끝낸다(입력 펌프 생략 — 자식이 이미 죽어 master에 쓸 게 없다). 이 직렬화가
+  없으면 그 conn을 아무도 닫지 않아 앱 reader가 영원히 블록된다.
+- `Attach { agent_id }` → `AttachOk { rows, cols, pid, snapshot_b64,
+  snapshot_compressed, exit: Option }`. 재접속용 메타데이터+최신 업로드 스냅샷
+  회수(백로그는 data conn 담당이라 여기 buffer는 없다). 데몬은 스냅샷 바이트를
+  불투명하게 보관·반환하고 `snapshot_compressed`로 압축 여부만 전달한다(§P2-c) —
+  앱이 입양 시 해제한다. `exit`이 Some이면 이미 종료된 세션.
 - `Resize { agent_id, rows, cols }` → `ResizeOk`. 데몬이 PTY master를 resize.
 - `Wait { agent_id }` → 자식 종료까지 블로킹 후 `WaitOk { exit_code, signal }`.
   연결별 독립 처리이므로 waiter는 **전용 control 연결**을 하나 열어 쓴다. 데몬은
@@ -91,11 +100,33 @@
   직접 kill) KillAll 특수 분기 없이도 폴백 세션 누수가 없다. `Kill`은 데몬이
   SIGKILL+테이블 제거+cleanup까지 하고, 그 자식을 reap한 waiter가 exit를 기록해
   앱의 Wait가 반환→상태가 Disposed로 전이한다.
-- `UpdateSnapshot { agent_id, snapshot_b64 }` → `UpdateSnapshotOk`. 주기 스냅샷
-  업로드(기본 30초, 렌더러) — 데몬은 세션당 최신 것만 보관해 앱 크래시 후 화면
-  복원에 대비한다.
+- `UpdateSnapshot { agent_id, snapshot_b64, offset: Option<u64>, compressed }` →
+  `UpdateSnapshotOk`. 주기 스냅샷 업로드(기본 30초, 렌더러) — 데몬은 세션당 최신
+  것만 보관해 앱 크래시 후 화면 복원에 대비한다. `offset`(§P1)이 Some이면 데몬은
+  수신 시점 `ring.total()` 대신 그 값을 `snapshot_offset`으로 기록한다(링 상한으로
+  클램프, 하한은 리플레이가 처리). `compressed`(§P2-c)는 `snapshot_b64`가 deflate
+  압축인지 — 데몬은 그대로 보관하고 AttachOk에 되돌려준다.
 - `ListOk`의 `SessionInfo`에 `broker: bool`(serde default) 추가 — v1 핸드오프
   세션(false)과 v2 브로커 세션(true)을 additive로 구분한다.
+
+### §P1 스냅샷 오프셋 정합 (유실 창 제거, 부분 수용 — 완전 동기화는 Phase 2)
+
+렌더러가 화면을 직렬화한 시점과 데몬이 UpdateSnapshot을 수신한 시점 사이에, 데몬은
+링에 넣었지만 앱은 아직 안 읽었거나 렌더러가 아직 파싱 안 한 바이트가 있을 수 있다.
+데몬 수신 시점 `ring.total()`을 스냅샷 오프셋으로 쓰면 그 구간이 "스냅샷에도 없고
+offset 이전이라 리플레이도 안 되는" 영구 유실 창이 된다. 이를 없애기 위해:
+
+- data reader를 `CountingReader`로 감싸 **앱이 실제 수신한 절대 오프셋**을 센다
+  (`DataAttachOk.stream_offset`으로 초기화). 스냅샷 업로드(`upload_snapshots`/
+  `handoff_all_broker`)가 이 카운터 값을 `offset`으로 동봉한다.
+- 렌더러는 직렬화 *전에* xterm write 큐를 flush한다(`TerminalRegistry.
+  flushAndSerializeAll()` → `term.write("", cb)` 콜백 대기). 30초 업로더와
+  `ConfirmQuitDialog`("유지하고 종료")가 이걸 쓴다 — 이미 도착한 바이트까지
+  스냅샷에 반영해 offset과 정합시킨다.
+- **잔여 한계**: 직렬화 완료~데몬의 UpdateSnapshot 처리 사이 수 ms 창에 흘러온
+  바이트는 (offset이 그보다 앞서므로) 크래시 시 이론상 유실될 수 있다. quit 경로는
+  flush 후 즉시 처리라 실질 무시 가능하고, 라이브 30초 주기의 오차는 다음 스냅샷/
+  링이 흡수한다. reader와 데몬 사이 완전 오프셋 동기화(ack)는 Phase 2 후보.
 
 ### 버전 협상 / 폴백 (additive, 재시도 협상)
 
@@ -145,6 +176,21 @@ bool`**을 두고 세션 단위로 소유를 추적한다 — `BrokerPtyFactory`
 - **adopt_detached(브로커 모드)**: List를 훑어 `broker=true`는 Attach+DataAttach로,
   `broker=false`(v1 핸드오프/폴백 세션)는 **기존 v1 adopt(fd 회수)**로 입양한다
   (§P1-b). 협상 p=1인 구데몬 상대로는 broker 항목이 없어 자연히 v1만 처리된다.
+  **exited 브로커 항목(§P2-a)**: detach 중 자식이 죽으면 데몬 테이블에 exited
+  엔트리가 남는데(브로커 세션은 종료돼도 Attach로 exit를 보고하려 테이블에 남긴다),
+  이걸 그대로 두면 table-empty 종료가 막히는 누수가 된다. adopt는 exited *브로커*
+  항목에 best-effort `Kill`을 보내 치운다(v1 exited 항목은 v1 수명 규칙대로 스킵).
+
+### 스냅샷 압축·프레임 상한 (§P2-c)
+
+직렬화 스냅샷이 ~3MiB를 넘으면 base64 JSON 프레임이 `MAX_FRAME_BYTES`(4MiB)를
+초과해 데몬이 연결을 끊고 이후 업로드까지 전멸한다. 그래서 앱은 스냅샷을 `flate2`
+deflate로 압축해 보내고(`UpdateSnapshot.compressed=true`), 데몬은 불투명 보관 +
+플래그 보존, `AttachOk.snapshot_compressed`로 되돌려주면 앱이 입양 시 해제한다.
+터미널 텍스트는 압축률이 높아(≈10×) 대부분 이걸로 충분하다. 그래도(비압축성 등)
+인코딩 프레임이 상한을 넘으면 client 래퍼가 **그 agent만 스킵 + eprintln**하고
+전송하지 않아 연결을 오염시키지 않는다(다음 주기에 화면이 줄면 재개). 참고: v1
+`Handoff`의 snapshot도 같은 상한 이슈가 이론상 있으나 기존 동작이라 이번 범위 밖.
 
 ## 버전 스큐 (앱 업데이트 중 구버전 브로커)
 

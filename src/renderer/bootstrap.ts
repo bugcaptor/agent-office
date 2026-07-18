@@ -72,9 +72,13 @@ function installSnapshotUploader(): () => void {
     .then((enabled) => {
       if (!enabled) return;
       timer = setInterval(() => {
-        const snapshots = terminalRegistry.serializeAll();
-        if (Object.keys(snapshots).length === 0) return;
-        void tauriApi.uploadSessionSnapshots(snapshots).catch((err) => {
+        // 직렬화 전에 xterm write 큐를 flush(§P1)해 방금 도착한 바이트까지
+        // 스냅샷에 담는다 — 브로커가 스냅샷 오프셋 이후만 리플레이해도 유실 없음.
+        void (async () => {
+          const snapshots = await terminalRegistry.flushAndSerializeAll();
+          if (Object.keys(snapshots).length === 0) return;
+          await tauriApi.uploadSessionSnapshots(snapshots);
+        })().catch((err) => {
           console.warn("bootstrap: 세션 스냅샷 업로드 실패", err);
         });
       }, SNAPSHOT_UPLOAD_INTERVAL_MS);

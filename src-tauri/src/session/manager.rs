@@ -130,6 +130,10 @@ struct Session {
     /// 매니저라도 팩토리 폴백으로 생긴 in-process 세션은 false다 — handoff_all이
     /// 이 플래그로 "스냅샷 업로드+detach"(true)와 "v1 fd 핸드오프"(false)를 가른다.
     broker_owned: bool,
+    /// 브로커 data 연결의 누적 수신 오프셋 카운터(§P1). 스냅샷 업로드 시 현재
+    /// 값을 offset으로 동봉해 데몬 수신 시점 ring.total()과의 간극(유실 창)을
+    /// 없앤다. 브로커 세션만 Some.
+    broker_stream_offset: Option<Arc<std::sync::atomic::AtomicU64>>,
 }
 
 pub struct SessionManager {
@@ -469,6 +473,7 @@ impl SessionManager {
         // 그대로 이어받아 재생성/재입양 시 재구독이 필요 없다.
         let output = self.sink_for(&agent_id);
         let broker_owned = spawned.broker_owned;
+        let broker_stream_offset = spawned.broker_stream_offset.clone();
         let session = Arc::new(Session {
             session_id: session_id.clone(),
             agent_id: agent_id.clone(),
@@ -486,6 +491,7 @@ impl SessionManager {
             handoff: Mutex::new(spawned.handoff),
             eof_stop_gate,
             broker_owned,
+            broker_stream_offset,
         });
 
         self.sessions.lock().insert(agent_id.clone(), session.clone());
@@ -767,7 +773,11 @@ impl SessionManager {
                 // 브로커 세션: 최신 스냅샷 업로드(best-effort) 후 detach. 데몬에
                 // 못 닿아도 detach는 진행해야 dispose_all이 자식을 죽이지 않는다.
                 if let (Some(client), Some(snap)) = (&client, snapshots.get(agent_id.as_str())) {
-                    let _ = client.update_snapshot(&agent_id, snap.as_bytes());
+                    let offset = sess
+                        .broker_stream_offset
+                        .as_ref()
+                        .map(|c| c.load(Ordering::SeqCst));
+                    let _ = client.update_snapshot(&agent_id, snap.as_bytes(), offset);
                 }
                 sess.handed_off.store(true, Ordering::SeqCst);
                 self.sessions.lock().remove(&agent_id);
@@ -803,8 +813,13 @@ impl SessionManager {
             return;
         };
         for (agent_id, snap) in snapshots {
-            // 데몬 테이블에 없는 agentId면 no-op으로 무시된다(안전).
-            let _ = client.update_snapshot(agent_id, snap.as_bytes());
+            // 데몬 테이블에 없는 agentId면 no-op으로 무시된다(안전). 앱 쪽 세션의
+            // 수신 오프셋을 offset으로 동봉해 유실 창을 없앤다(§P1) -- 세션이 없거나
+            // 브로커가 아니면 None(데몬은 수신 시점 ring.total()로 폴백).
+            let offset = self
+                .find(agent_id)
+                .and_then(|s| s.broker_stream_offset.as_ref().map(|c| c.load(Ordering::SeqCst)));
+            let _ = client.update_snapshot(agent_id, snap.as_bytes(), offset);
         }
     }
 
@@ -835,6 +850,13 @@ impl SessionManager {
         let mut adopted = Vec::new();
         for info in sessions {
             if info.exited {
+                // 종료된 브로커 세션은 best-effort Kill로 데몬 테이블에서 치운다
+                // (§P2-a) -- detach 중 자식이 죽으면 exited 엔트리가 영원히 남아
+                // 데몬의 table-empty 종료를 막는 누수가 된다. v1 exited 항목은
+                // 기존대로 스킵(v1 Adopt/Kill 수명 규칙 유지).
+                if info.broker {
+                    let _ = client.kill(&info.agent_id);
+                }
                 continue;
             }
             if !known_agent_ids.contains(&info.agent_id) {
@@ -3918,6 +3940,112 @@ return
 
         mgr2.dispose("b1");
         mgr2.dispose("f1");
+        let _ = std::fs::remove_dir_all(&app_data_dir);
+    }
+
+    /// §P2-a: detach된 브로커 세션의 자식이 나중에 스스로 죽으면 데몬 테이블에
+    /// exited 엔트리가 남는데, 이후 adopt_detached가 그걸 best-effort Kill로
+    /// 치워 데몬의 table-empty 종료 누수를 막아야 한다. 짧게 사는 자식으로 재현.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn broker_adopt_reaps_exited_detached_session_from_daemon_table() {
+        use crate::session::broker_pty::BrokerPtyFactory;
+        use crate::session::pty_factory::PortablePtyFactory;
+        use std::collections::HashSet;
+
+        let app_data_dir = scratch_dir("reap-appdata");
+        std::fs::create_dir_all(&app_data_dir).unwrap();
+        let socket_path = crate::sessiond::client::default_socket_path(&app_data_dir);
+        let hook: crate::sessiond::daemon::ShutdownHook = Arc::new(|| {});
+        let daemon_socket = socket_path.clone();
+        std::thread::spawn(move || {
+            let _ =
+                crate::sessiond::daemon::run_daemon_inner(daemon_socket, Duration::from_secs(60), hook);
+        });
+        wait_for_timeout(|| socket_path.exists(), Duration::from_secs(2), "daemon socket").await;
+
+        fn build_short_lived(app_data_dir: &Path) -> Arc<SessionManager> {
+            let events = Arc::new(RecordingEvents::default());
+            let registry = Arc::new(SessionRegistry::new());
+            let hub = Arc::new(NotificationHub::new(
+                registry.clone(),
+                events.clone() as Arc<dyn AppEvents>,
+                Arc::new(SystemClock),
+                Duration::from_millis(3000),
+            ));
+            let observer = Arc::new(ObserverRuntime::new(hub.clone(), vec![]));
+            let fallback: Arc<dyn crate::session::pty_factory::PtyFactory> =
+                Arc::new(PortablePtyFactory);
+            let factory = Arc::new(BrokerPtyFactory::new(app_data_dir, fallback));
+            Arc::new(
+                SessionManager::new(
+                    factory,
+                    observer,
+                    registry,
+                    events.clone() as Arc<dyn AppEvents>,
+                    hub,
+                    Arc::new(|| None),
+                )
+                // 자식이 0.4초 후 스스로 종료하도록 셸을 sh -c 'sleep 0.4'로 고정.
+                .with_shell_resolver(Arc::new(|_, _| shells::ResolvedShell {
+                    program: "/bin/sh".into(),
+                    args: vec!["-c".into(), "sleep 0.4".into()],
+                    extra_env: vec![],
+                }))
+                .with_app_data_dir(app_data_dir.to_path_buf())
+                .with_broker_mode(true),
+            )
+        }
+
+        let mgr1 = build_short_lived(&app_data_dir);
+        mgr1
+            .create(CreateSessionRequest {
+                agent_id: "a1".into(),
+                cols: Some(80),
+                rows: Some(24),
+                cwd: None,
+                shell: None,
+                startup_command: None,
+                personality_prompt: None,
+                autostart_claude: Some(false),
+            })
+            .unwrap();
+        // detach: 자식은 데몬 소유로 남는다(곧 sleep이 끝나 스스로 죽는다).
+        assert_eq!(mgr1.handoff_all(&std::collections::HashMap::new()), 1);
+        drop(mgr1);
+
+        // 데몬 List에 a1이 exited로 남을 때까지 대기(자식 reap 확인).
+        wait_for_timeout(
+            || {
+                crate::sessiond::client::Client::connect(&socket_path)
+                    .and_then(|c| c.list())
+                    .map(|list| list.iter().any(|s| s.agent_id == "a1" && s.exited))
+                    .unwrap_or(false)
+            },
+            Duration::from_secs(3),
+            "detached child never showed up as exited in the daemon table",
+        )
+        .await;
+
+        // adopt_detached: exited 브로커 세션을 Kill로 치운다. exited라 입양은 0건.
+        let mgr2 = build_short_lived(&app_data_dir);
+        let known: HashSet<String> = ["a1".to_string()].into_iter().collect();
+        let adopted = mgr2.adopt_detached(&known);
+        assert!(adopted.is_empty(), "exited session must not be adopted");
+
+        // 데몬 테이블에서 a1이 사라져야 한다(누수 방지).
+        wait_for_timeout(
+            || {
+                crate::sessiond::client::Client::connect(&socket_path)
+                    .and_then(|c| c.list())
+                    .map(|list| !list.iter().any(|s| s.agent_id == "a1"))
+                    .unwrap_or(false)
+            },
+            Duration::from_secs(3),
+            "exited broker session was never reaped from the daemon table",
+        )
+        .await;
+
         let _ = std::fs::remove_dir_all(&app_data_dir);
     }
 

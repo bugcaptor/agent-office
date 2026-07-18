@@ -55,6 +55,9 @@ vi.mock("../terminal/TerminalRegistry", () => ({
   terminalRegistry: {
     markAdopted: (...args: unknown[]) => markAdopted(...args),
     serializeAll: () => serializeAll(),
+    // 30초 업로더는 flush 후 직렬화하는 async 경로를 쓴다(§P1) — 목은 동일한
+    // serializeAll 스텁을 Promise로 감싸 돌려준다.
+    flushAndSerializeAll: () => Promise.resolve(serializeAll()),
   },
 }));
 

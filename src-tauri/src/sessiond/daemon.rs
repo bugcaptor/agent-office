@@ -190,10 +190,15 @@ struct DataConn {
 struct BrokerIo {
     ring: RingBuffer,
     conn: Option<DataConn>,
-    /// 마지막 UpdateSnapshot 수신 시점의 링 누적 오프셋(§P2-b). Some이면
-    /// DataAttach 리플레이가 이 오프셋 이후 바이트만 흘린다(앱은 스냅샷을
-    /// initial_output으로 별도 주입). None이면 링 전체 리플레이.
+    /// 마지막 스냅샷이 반영하는 링 누적 오프셋(§P1/§P2-b). Some이면 DataAttach
+    /// 리플레이가 이 오프셋 이후 바이트만 흘린다(앱은 스냅샷을 initial_output으로
+    /// 별도 주입). None이면 링 전체 리플레이.
     snapshot_offset: Option<u64>,
+    /// 자식이 이미 reap돼 이 세션의 data 스트림이 영구히 닫혔는지(§P2-b).
+    /// waiter가 conn을 정리한 *뒤* 도착한 DataAttach가 새 conn을 설치하면 아무도
+    /// 닫아주지 않아 앱 reader가 영원히 블록되는 레이스를 막는다 -- 같은 io 락
+    /// 아래에서 waiter의 정리와 DataAttach의 설치를 직렬화한다.
+    closed: bool,
 }
 
 /// 종료 정보(reap 결과). portable-pty의 `ExitStatus`는 exit code만 노출하므로
@@ -224,8 +229,9 @@ struct BrokerSession {
     exit: Mutex<Option<ExitRecord>>,
     exit_cv: Condvar,
     exited: AtomicBool,
-    /// 앱이 주기적으로 올리는 최신 화면 스냅샷(원본 바이트).
-    snapshot: Mutex<Vec<u8>>,
+    /// 앱이 주기적으로 올리는 최신 화면 스냅샷 (불투명 바이트, 압축 여부).
+    /// 데몬은 이 바이트를 해석하지 않고 Attach에 플래그와 함께 그대로 되돌려준다.
+    snapshot: Mutex<(Vec<u8>, bool)>,
     /// data conn 세대 카운터.
     gen: AtomicU64,
 }
@@ -312,6 +318,7 @@ fn spawn_broker_session(
             ring: RingBuffer::new(RING_CAPACITY),
             conn: None,
             snapshot_offset: None,
+            closed: false,
         }),
         input: Mutex::new(writer),
         master: Mutex::new(pair.master),
@@ -319,7 +326,7 @@ fn spawn_broker_session(
         exit: Mutex::new(None),
         exit_cv: Condvar::new(),
         exited: AtomicBool::new(false),
-        snapshot: Mutex::new(Vec::new()),
+        snapshot: Mutex::new((Vec::new(), false)),
         gen: AtomicU64::new(0),
     });
 
@@ -358,8 +365,16 @@ fn spawn_broker_session(
         // 링버퍼/conn에 흘린 뒤 끝난다. 그걸 기다린 다음에 종료를 신호해,
         // Wait를 받은 앱이 모든 출력을 본 뒤에 Exited로 전이하게 한다.
         let _ = reader_join.join();
-        // 활성 data conn을 닫아 앱 쪽 reader가 EOF를 보게 한다.
-        if let Some(conn) = waiter_session.io.lock().unwrap().conn.take() {
+        // 활성 data conn을 닫아 앱 쪽 reader가 EOF를 보게 하고, `closed`를 세워
+        // 이후 도착하는 DataAttach가 새 conn을 설치하지 못하게 한다(§P2-b) --
+        // conn.take()와 closed=true를 같은 락 아래에서 수행해 run_data_conn의
+        // 설치와 직렬화한다.
+        let stale = {
+            let mut io = waiter_session.io.lock().unwrap();
+            io.closed = true;
+            io.conn.take()
+        };
+        if let Some(conn) = stale {
             let _ = shutdown(conn.fd, Shutdown::Both);
         }
         // cleanup: 관찰자 설정 파일 등(자식이 죽었으니 더 필요 없다).
@@ -390,31 +405,53 @@ fn cleanup_broker_paths(paths: &[String]) {
 /// 라이브 출력 사이에 이음새(유실/중복)가 생기지 않게 한다. 이후 이 스레드는
 /// 소켓의 raw 입력(앱->master)을 자식이 살아있는 동안 계속 펌프한다.
 fn run_data_conn(fd: RawFd, session: &Arc<BrokerSession>) {
-    // DataAttachOk 프레임(프레이밍 O) -- 이 프레임 이후부터 raw.
-    if protocol::write_frame(fd, &Message::DataAttachOk, None).is_err() {
-        return;
-    }
     let gen = session.next_gen();
 
-    // 기존 활성 conn을 떼어내고(있다면) 그 소켓을 shutdown해 상대 스레드를 깨운다.
-    let previous = {
+    // DataAttachOk(+stream_offset) 프레임, 백로그 전송, closed 판정, conn 설치를
+    // 하나의 io 락 아래에서 수행한다: (1) stream_offset이 백로그 첫 바이트와 정합
+    // (§P1), (2) closed(§P2-b)와 conn 설치가 waiter의 정리와 직렬화된다.
+    enum Outcome {
+        Installed(Option<DataConn>), // 정상 설치 -- 교체된 이전 conn(있으면)
+        AlreadyClosed,               // 자식이 이미 reap됨 -> 입력 펌프 없이 백로그+EOF
+        WriteFailed,                 // 프레임/백로그 전송 실패
+    }
+    let outcome = {
         let mut io = session.io.lock().unwrap();
-        // 스냅샷이 업로드된 세션은 그 시점 이후 바이트만 리플레이한다(앱이
+        // 스냅샷이 업로드된 세션은 그 오프셋 이후 바이트만 리플레이한다(앱이
         // 스냅샷을 화면으로 별도 복원하므로 중복 방지). 한 번도 없으면 링 전체.
         let backlog = match io.snapshot_offset {
             Some(off) => io.ring.snapshot_since(off),
             None => io.ring.snapshot(),
         };
-        // 백로그를 먼저 이 소켓에 쓰고(락 유지), 이어서 conn을 설치한다.
-        // 락을 쥔 동안 reader 스레드는 새 바이트를 conn에 못 쓰므로 순서가 확정된다.
-        let _ = write_all_raw(fd, &backlog);
-        io.conn.replace(DataConn { fd, gen })
+        // 이 백로그 첫 바이트의 절대 스트림 오프셋 -- 앱이 수신 카운터를 여기서
+        // 시작해, 이후 UpdateSnapshot에 실제 수신 오프셋을 실어 보낸다(§P1).
+        let stream_offset = io.ring.total() - backlog.len() as u64;
+        if protocol::write_frame(fd, &Message::DataAttachOk { stream_offset }, None).is_err()
+            || write_all_raw(fd, &backlog).is_err()
+        {
+            Outcome::WriteFailed
+        } else if io.closed {
+            Outcome::AlreadyClosed
+        } else {
+            Outcome::Installed(io.conn.replace(DataConn { fd, gen }))
+        }
     };
-    if let Some(prev) = previous {
-        let _ = shutdown(prev.fd, Shutdown::Both);
+    match outcome {
+        Outcome::WriteFailed => return,
+        Outcome::AlreadyClosed => {
+            // 자식이 이미 죽어 master에 쓸 게 없다 -- 백로그는 이미 보냈으니 write
+            // 쪽만 shutdown해 앱 reader가 EOF를 보게 하고 입력 펌프는 생략한다.
+            let _ = shutdown(fd, Shutdown::Write);
+            return;
+        }
+        Outcome::Installed(prev) => {
+            if let Some(prev) = prev {
+                let _ = shutdown(prev.fd, Shutdown::Both);
+            }
+        }
     }
 
-    // raw 입력 펌프: 소켓 -> master. 앱이 끊거나(Ok(0)) 교체로 shutdown되면 끝.
+    // raw 입력 펌프: 소켓 -> master. 앱이 끊거나(Ok(0)) 교체/종료로 shutdown되면 끝.
     let mut buf = [0u8; 8192];
     loop {
         match nix::unistd::read(fd, &mut buf) {
@@ -608,16 +645,20 @@ fn handle_connection(
                 let session = broker.lock().unwrap().get(&agent_id).cloned();
                 let reply = match session {
                     Some(session) => {
+                        let (snapshot_bytes, snapshot_compressed) = {
+                            let g = session.snapshot.lock().unwrap();
+                            (g.0.clone(), g.1)
+                        };
                         let snapshot_b64 = {
                             use base64::Engine;
-                            base64::engine::general_purpose::STANDARD
-                                .encode(session.snapshot.lock().unwrap().clone())
+                            base64::engine::general_purpose::STANDARD.encode(snapshot_bytes)
                         };
                         Message::AttachOk {
                             rows: session.rows.load(Ordering::SeqCst),
                             cols: session.cols.load(Ordering::SeqCst),
                             pid: session.pid,
                             snapshot_b64,
+                            snapshot_compressed,
                             exit: session.exit_status_msg(),
                         }
                     }
@@ -667,22 +708,21 @@ fn handle_connection(
                 }
                 let _ = protocol::write_frame(fd, &Message::KillAllOk { killed }, None);
             }
-            Message::UpdateSnapshot { agent_id, snapshot_b64 } => {
+            Message::UpdateSnapshot { agent_id, snapshot_b64, offset, compressed } => {
                 if let Some(session) = broker.lock().unwrap().get(&agent_id) {
                     use base64::Engine;
                     if let Ok(bytes) =
                         base64::engine::general_purpose::STANDARD.decode(&snapshot_b64)
                     {
-                        *session.snapshot.lock().unwrap() = bytes;
-                        // 이 스냅샷이 반영하는 지점 = 지금까지 링에 push된 누적
-                        // 오프셋. 이후 DataAttach는 이 오프셋 이후 바이트만
-                        // 리플레이한다(§P2-b). 스냅샷 바이트 저장과 오프셋 기록이
-                        // 서로 다른 락이라 사이에 몇 바이트 더 밀릴 수 있으나,
-                        // quit 시 업로드는 출력이 멎은 뒤라 정확하고, 라이브 30초
-                        // 주기의 미세 오차는 다음 스냅샷/링이 흡수한다.
+                        *session.snapshot.lock().unwrap() = (bytes, compressed);
+                        // 스냅샷이 반영하는 스트림 오프셋. 앱이 data 연결 카운터로
+                        // "실제 여기까지 수신했다"는 offset을 실어 보내면(§P1) 그걸
+                        // 쓰고(링 상한으로 클램프 — 하한은 snapshot_since가 처리),
+                        // 없으면 수신 시점 ring.total()로 폴백한다. 이후 DataAttach는
+                        // 이 오프셋 이후 바이트만 리플레이한다.
                         let mut io = session.io.lock().unwrap();
-                        let off = io.ring.total();
-                        io.snapshot_offset = Some(off);
+                        let total = io.ring.total();
+                        io.snapshot_offset = Some(offset.map_or(total, |o| o.min(total)));
                     }
                 }
                 let _ = protocol::write_frame(fd, &Message::UpdateSnapshotOk, None);
@@ -1002,7 +1042,7 @@ mod tests {
         wait_until(|| h.broker.lock().unwrap().contains_key("a1"));
 
         h.send(&Message::DataAttach { agent_id: "a1".into() }, None);
-        assert!(matches!(h.recv().0, Message::DataAttachOk));
+        assert!(matches!(h.recv().0, Message::DataAttachOk { .. }));
 
         // 백로그로 "READY"가 리플레이되어야 한다(스폰 시점부터 수집).
         let backlog = raw_read_until(h.client_fd, b"READY");
@@ -1035,7 +1075,7 @@ mod tests {
         let data1 = connect_hello(&socket_path);
         protocol::write_frame(data1.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
             .unwrap();
-        assert!(matches!(protocol::read_frame(data1.as_raw_fd()).unwrap().0, Message::DataAttachOk));
+        assert!(matches!(protocol::read_frame(data1.as_raw_fd()).unwrap().0, Message::DataAttachOk { .. }));
         let first = raw_read_until(data1.as_raw_fd(), b"HELLO-BACKLOG");
         assert!(first.windows(13).any(|w| w == b"HELLO-BACKLOG"));
         drop(data1); // detach(자식은 안 죽는다)
@@ -1044,7 +1084,7 @@ mod tests {
         let data2 = connect_hello(&socket_path);
         protocol::write_frame(data2.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
             .unwrap();
-        assert!(matches!(protocol::read_frame(data2.as_raw_fd()).unwrap().0, Message::DataAttachOk));
+        assert!(matches!(protocol::read_frame(data2.as_raw_fd()).unwrap().0, Message::DataAttachOk { .. }));
         let second = raw_read_until(data2.as_raw_fd(), b"HELLO-BACKLOG");
         assert!(
             second.windows(13).any(|w| w == b"HELLO-BACKLOG"),
@@ -1072,14 +1112,19 @@ mod tests {
         let data1 = connect_hello(&socket_path);
         protocol::write_frame(data1.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
             .unwrap();
-        assert!(matches!(protocol::read_frame(data1.as_raw_fd()).unwrap().0, Message::DataAttachOk));
+        assert!(matches!(protocol::read_frame(data1.as_raw_fd()).unwrap().0, Message::DataAttachOk { .. }));
         // PRE가 링에 전부 들어온 상태에서(셸이 read로 멎어 더 안 나옴) 스냅샷.
         let pre = raw_read_until(data1.as_raw_fd(), b"PREMARKER");
         assert!(pre.windows(9).any(|w| w == b"PREMARKER"));
 
         protocol::write_frame(
             control.as_raw_fd(),
-            &Message::UpdateSnapshot { agent_id: "a1".into(), snapshot_b64: "c25hcA==".into() },
+            &Message::UpdateSnapshot {
+                agent_id: "a1".into(),
+                snapshot_b64: "c25hcA==".into(),
+                offset: None,
+                compressed: false,
+            },
             None,
         )
         .unwrap();
@@ -1096,7 +1141,7 @@ mod tests {
         let data2 = connect_hello(&socket_path);
         protocol::write_frame(data2.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
             .unwrap();
-        assert!(matches!(protocol::read_frame(data2.as_raw_fd()).unwrap().0, Message::DataAttachOk));
+        assert!(matches!(protocol::read_frame(data2.as_raw_fd()).unwrap().0, Message::DataAttachOk { .. }));
         let backlog2 = raw_read_until(data2.as_raw_fd(), b"POSTMARKER");
         assert!(
             backlog2.windows(10).any(|w| w == b"POSTMARKER"),
@@ -1154,6 +1199,115 @@ mod tests {
             .unwrap();
         let _ = protocol::read_frame(control.as_raw_fd());
         drop(control);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn broker_data_attach_honors_app_supplied_offset() {
+        // §P1: UpdateSnapshot{offset:Some(k)}가 오면 데몬 수신 시점 ring.total()이
+        // 아니라 앱이 준 오프셋을 snapshot_offset으로 써야 한다 -- 리플레이가 그
+        // 오프셋부터 시작한다. printf로 결정적 8바이트("ABCDEFGH")를 만들고
+        // offset=3을 주면 재접속 백로그는 "DEFGH"여야 한다.
+        let (socket_path, dir) = start_real_daemon();
+        let control = connect_hello(&socket_path);
+        spawn_broker(control.as_raw_fd(), "a1", "printf ABCDEFGH; sleep 5");
+
+        let data1 = connect_hello(&socket_path);
+        protocol::write_frame(data1.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
+            .unwrap();
+        assert!(matches!(
+            protocol::read_frame(data1.as_raw_fd()).unwrap().0,
+            Message::DataAttachOk { stream_offset: 0 }
+        ));
+        let _ = raw_read_until(data1.as_raw_fd(), b"ABCDEFGH");
+
+        protocol::write_frame(
+            control.as_raw_fd(),
+            &Message::UpdateSnapshot {
+                agent_id: "a1".into(),
+                snapshot_b64: "c25hcA==".into(),
+                offset: Some(3),
+                compressed: false,
+            },
+            None,
+        )
+        .unwrap();
+        assert!(matches!(
+            protocol::read_frame(control.as_raw_fd()).unwrap().0,
+            Message::UpdateSnapshotOk
+        ));
+
+        let data2 = connect_hello(&socket_path);
+        protocol::write_frame(data2.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
+            .unwrap();
+        assert!(matches!(
+            protocol::read_frame(data2.as_raw_fd()).unwrap().0,
+            Message::DataAttachOk { stream_offset: 3 }
+        ));
+        let backlog2 = raw_read_until(data2.as_raw_fd(), b"DEFGH");
+        assert!(backlog2.windows(5).any(|w| w == b"DEFGH"));
+        assert!(
+            !backlog2.windows(3).any(|w| w == b"ABC"),
+            "offset=3 must skip the first 3 bytes: {backlog2:?}"
+        );
+
+        protocol::write_frame(control.as_raw_fd(), &Message::Kill { agent_id: "a1".into() }, None)
+            .unwrap();
+        let _ = protocol::read_frame(control.as_raw_fd());
+        drop(control);
+        drop(data1);
+        drop(data2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn broker_data_attach_after_child_exit_gets_backlog_and_eof_without_blocking() {
+        // §P2-b: waiter가 conn 정리를 마친(closed=true) 뒤 도착한 DataAttach는
+        // 새 conn을 설치하지 않고 백로그+EOF만 주고 끝나야 한다(앱 reader 무한
+        // 블록 방지). 즉시 종료하는 자식으로 재현.
+        let (socket_path, dir) = start_real_daemon();
+        let control = connect_hello(&socket_path);
+        spawn_broker(control.as_raw_fd(), "a1", "printf DONE-X");
+
+        // Wait로 자식 reap + closed=true까지 확정적으로 기다린다.
+        let waiter = connect_hello(&socket_path);
+        protocol::write_frame(waiter.as_raw_fd(), &Message::Wait { agent_id: "a1".into() }, None)
+            .unwrap();
+        assert!(matches!(
+            protocol::read_frame(waiter.as_raw_fd()).unwrap().0,
+            Message::WaitOk { .. }
+        ));
+
+        // 종료 후 DataAttach: 백로그("DONE-X")를 받고 EOF(Ok(0))로 끝나야 한다.
+        let data = connect_hello(&socket_path);
+        protocol::write_frame(data.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
+            .unwrap();
+        assert!(matches!(
+            protocol::read_frame(data.as_raw_fd()).unwrap().0,
+            Message::DataAttachOk { .. }
+        ));
+        // EOF까지 읽는다 -- 무한 블록이면 raw_read_until의 5초 데드라인에 걸려
+        // 아래 assert가 실패한다.
+        let got = raw_read_until(data.as_raw_fd(), b"DONE-X");
+        assert!(got.windows(6).any(|w| w == b"DONE-X"), "backlog must arrive: {got:?}");
+        // 이어 read하면 EOF(0)여야 한다(블록 아님).
+        {
+            use nix::poll::{poll, PollFd, PollFlags};
+            let mut fds = [PollFd::new(data.as_raw_fd(), PollFlags::POLLIN)];
+            let ready = poll(&mut fds, 2000).unwrap();
+            assert!(ready > 0, "reader must not block after backlog -- expected EOF");
+            let mut buf = [0u8; 64];
+            let n = nix_read(data.as_raw_fd(), &mut buf).unwrap();
+            // "DONE-X"가 한 번에 안 왔을 수도 있으니 0이거나 남은 바이트.
+            if n > 0 {
+                let n2 = nix_read(data.as_raw_fd(), &mut buf).unwrap_or(0);
+                assert_eq!(n2, 0, "must reach EOF shortly after backlog");
+            }
+        }
+
+        drop(control);
+        drop(waiter);
+        drop(data);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

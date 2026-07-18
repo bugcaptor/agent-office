@@ -39,6 +39,7 @@ uuid = { version = "1", features = ["v4"] } # sessionId/notification id
 sha1_smol = "1" # dedupKey(순수 Rust, 추가 트랜지티브 의존 없음)
 sha2 = "0.10" # Claude Code 스코프 Keychain 서비스명(CLAUDE_CONFIG_DIR sha256 앞 8자). 이미 Cargo.lock에 트랜지티브로 존재.
 base64 = "0.22" # 초상 PNG base64 IPC 왕복 디코드/인코드
+flate2 = "1" # 세션 브로커 v2 스냅샷 deflate 압축(§P2-c) — ~3MiB 상한 프레임 방지
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "json",

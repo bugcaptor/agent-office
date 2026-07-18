@@ -126,7 +126,15 @@ pub enum Message {
     DataAttach {
         agent_id: String,
     },
-    DataAttachOk,
+    DataAttachOk {
+        /// 이 연결에서 리플레이할 백로그 첫 바이트의 절대 스트림 오프셋
+        /// (= 데몬 링의 `total - backlog.len()`). 앱은 이 값으로 data reader의
+        /// 누적 수신 카운터를 초기화해, 이후 UpdateSnapshot에 "앱이 실제로 여기까지
+        /// 받았다"는 오프셋을 동봉한다(§P1, 유실 창 제거). `#[serde(default)]`(0)로
+        /// v1/구버전과의 additive 하위호환.
+        #[serde(default)]
+        stream_offset: u64,
+    },
     /// 앱 -> 데몬. 재접속용 메타데이터+최신 스냅샷 회수(백로그는 data conn이
     /// 담당하므로 여기엔 버퍼가 없다). `exit`이 Some이면 이미 종료된 세션.
     Attach {
@@ -136,9 +144,14 @@ pub enum Message {
         rows: u16,
         cols: u16,
         pid: Option<i32>,
-        /// 앱이 주기적으로 업로드한 최신 xterm 화면 스냅샷(표준 base64).
+        /// 앱이 주기적으로 업로드한 최신 xterm 화면 스냅샷(표준 base64). 데몬은
+        /// 이 바이트를 불투명하게 보관·반환만 한다 -- 압축 여부는 아래 플래그로.
         #[serde(default)]
         snapshot_b64: String,
+        /// `snapshot_b64`가 deflate 압축된 것인지(§P2-c). 앱이 UpdateSnapshot에
+        /// 실어 보낸 플래그를 그대로 되돌려준다 -- 앱은 입양 시 이걸 보고 해제한다.
+        #[serde(default)]
+        snapshot_compressed: bool,
         /// 자식이 이미 종료했으면 Some(그 종료 정보).
         #[serde(default)]
         exit: Option<ExitStatusMsg>,
@@ -170,6 +183,16 @@ pub enum Message {
     UpdateSnapshot {
         agent_id: String,
         snapshot_b64: String,
+        /// 이 스냅샷이 반영하는 스트림 오프셋(§P1). Some이면 데몬은 수신 시점
+        /// `ring.total()` 대신 이 값을 `snapshot_offset`으로 기록한다(링 범위로
+        /// 클램프). 앱이 data 연결 카운터로 "실제 여기까지 렌더/수신했다"를 실어
+        /// 보내, 렌더러 직렬화~데몬 수신 사이 바이트가 유실되는 창을 없앤다.
+        #[serde(default)]
+        offset: Option<u64>,
+        /// `snapshot_b64`가 deflate 압축된 것인지(§P2-c). 데몬은 불투명 보관하고
+        /// 이 플래그를 AttachOk에 그대로 되돌려준다.
+        #[serde(default)]
+        compressed: bool,
     },
     UpdateSnapshotOk,
 
@@ -535,15 +558,17 @@ mod tests {
                 cols: 120,
                 pid: Some(7),
                 snapshot_b64: "c25hcA==".into(),
+                snapshot_compressed: true,
                 exit: None,
             },
             None,
         )
         .unwrap();
         match read_frame(b).unwrap().0 {
-            Message::AttachOk { rows, cols, pid, snapshot_b64, exit } => {
+            Message::AttachOk { rows, cols, pid, snapshot_b64, snapshot_compressed, exit } => {
                 assert_eq!((rows, cols, pid), (40, 120, Some(7)));
                 assert_eq!(snapshot_b64, "c25hcA==");
+                assert!(snapshot_compressed);
                 assert!(exit.is_none());
             }
             other => panic!("unexpected: {other:?}"),
@@ -556,6 +581,7 @@ mod tests {
                 cols: 80,
                 pid: None,
                 snapshot_b64: String::new(),
+                snapshot_compressed: false,
                 exit: Some(ExitStatusMsg { exit_code: Some(3), signal: None }),
             },
             None,
@@ -577,14 +603,19 @@ mod tests {
         let (a, b) = pair();
         for msg in [
             Message::DataAttach { agent_id: "a1".into() },
-            Message::DataAttachOk,
+            Message::DataAttachOk { stream_offset: 4096 },
             Message::Resize { agent_id: "a1".into(), rows: 30, cols: 100 },
             Message::ResizeOk,
             Message::Wait { agent_id: "a1".into() },
             Message::WaitOk { exit_code: Some(0), signal: None },
             Message::KillAll,
             Message::KillAllOk { killed: 3 },
-            Message::UpdateSnapshot { agent_id: "a1".into(), snapshot_b64: "eA==".into() },
+            Message::UpdateSnapshot {
+                agent_id: "a1".into(),
+                snapshot_b64: "eA==".into(),
+                offset: Some(1234),
+                compressed: true,
+            },
             Message::UpdateSnapshotOk,
         ] {
             write_frame(a, &msg, None).unwrap();

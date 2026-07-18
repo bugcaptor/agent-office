@@ -40,6 +40,10 @@ pub struct SpawnedPty {
     /// `broker_mode`가 아니라 이 **세션 단위 소유 플래그**로 handoff/adopt 경로를
     /// 가른다(브로커 세션=스냅샷 업로드+detach, 폴백 세션=v1 fd 핸드오프).
     pub broker_owned: bool,
+    /// 브로커 data 연결의 누적 수신 바이트 카운터(절대 스트림 오프셋). 스냅샷
+    /// 업로드 시 "앱이 실제 여기까지 받았다"는 offset으로 동봉해 유실 창을 없앤다
+    /// (§P1). 브로커 세션만 Some, 그 외(폴백/PortablePty/v1 입양/Fake)는 None.
+    pub broker_stream_offset: Option<Arc<std::sync::atomic::AtomicU64>>,
 }
 
 /// 핸드오프 시 sessiond에 전달할 마스터 fd(및 프로세스 식별자). `master_fd`는
@@ -216,6 +220,7 @@ impl PtyFactory for PortablePtyFactory {
             reader_interrupt,
             handoff,
             broker_owned: false, // 프로세스 내 직접 스폰 -- 브로커 소유 아님(v1 fd 핸드오프 대상).
+            broker_stream_offset: None,
         })
     }
 }
@@ -361,6 +366,7 @@ pub fn assemble_adopted(
             reader_interrupt: Some(interrupt),
             handoff,
             broker_owned: false, // v1 fd 입양 세션 -- 재핸드오프도 v1 경로.
+            broker_stream_offset: None,
         },
         stopping,
     ))
@@ -591,6 +597,7 @@ pub mod fake {
             reader_interrupt: None,
             handoff: None,
             broker_owned: false,
+            broker_stream_offset: None,
         }
     }
 

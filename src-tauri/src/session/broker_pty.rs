@@ -16,7 +16,9 @@
 #![cfg(unix)]
 
 use std::io::{self, Read, Write};
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -131,6 +133,22 @@ impl PtyWaiter for BrokerWaiter {
     }
 }
 
+/// data reader를 감싸 누적 수신 바이트를 센다(§P1). `into_data_stream`이 준
+/// `stream_offset`으로 카운터를 초기화하고, 읽은 만큼 더한다 -- 스냅샷 업로드가
+/// 이 값을 "앱이 실제 여기까지 받았다"는 offset으로 동봉한다.
+struct CountingReader {
+    inner: UnixStream,
+    counter: Arc<AtomicU64>,
+}
+
+impl Read for CountingReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.counter.fetch_add(n as u64, Ordering::SeqCst);
+        Ok(n)
+    }
+}
+
 /// data/wait 연결 번들. 조립 실패 롤백(P2-a)을 위해 control 연결 소비와
 /// 분리해 둔다 -- 이게 실패하면 호출자가 아직 control을 쥐고 있어 Kill로
 /// 되돌릴 수 있다.
@@ -138,19 +156,26 @@ struct BrokerIoBundle {
     reader: Box<dyn Read + Send>,
     writer: Box<dyn Write + Send>,
     wait_client: Client,
+    /// data reader의 누적 수신 카운터(스냅샷 offset 동봉용).
+    stream_offset: Arc<AtomicU64>,
 }
 
 /// data(DataAttach 후 raw 스트림) + wait 연결을 연다. control 연결은 건드리지
 /// 않으므로, 이 함수가 실패해도 호출자는 control로 롤백 Kill을 보낼 수 있다.
 fn open_broker_io(socket_path: &Path, agent_id: &str) -> io::Result<BrokerIoBundle> {
     // data 연결: reader는 백로그+라이브 출력을, writer는 그대로 PTY master
-    // 입력을 담당한다(같은 소켓의 try_clone).
-    let data_stream = Client::connect(socket_path)?.into_data_stream(agent_id)?;
-    let reader: Box<dyn Read + Send> = Box::new(data_stream.try_clone()?);
+    // 입력을 담당한다(같은 소켓의 try_clone). DataAttachOk의 stream_offset으로
+    // 수신 카운터를 초기화한다(백로그 첫 바이트의 절대 오프셋).
+    let (data_stream, stream_offset) = Client::connect(socket_path)?.into_data_stream(agent_id)?;
+    let counter = Arc::new(AtomicU64::new(stream_offset));
+    let reader: Box<dyn Read + Send> = Box::new(CountingReader {
+        inner: data_stream.try_clone()?,
+        counter: counter.clone(),
+    });
     let writer: Box<dyn Write + Send> = Box::new(data_stream);
     // wait 연결: 종료까지 블로킹하는 전용 연결.
     let wait_client = Client::connect(socket_path)?;
-    Ok(BrokerIoBundle { reader, writer, wait_client })
+    Ok(BrokerIoBundle { reader, writer, wait_client, stream_offset: counter })
 }
 
 /// control 연결 + IO 번들로 `SpawnedPty`를 조립한다. `broker_owned: true` --
@@ -173,6 +198,7 @@ fn build_broker_spawned(control: Client, agent_id: &str, io: BrokerIoBundle) -> 
         reader_interrupt: None,
         handoff: None,
         broker_owned: true,
+        broker_stream_offset: Some(io.stream_offset),
     }
 }
 

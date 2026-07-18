@@ -263,16 +263,25 @@ impl Client {
         }
     }
 
-    /// 재접속용 메타데이터+최신 스냅샷 회수(백로그는 data conn 담당).
+    /// 재접속용 메타데이터+최신 스냅샷 회수(백로그는 data conn 담당). 데몬이
+    /// 압축 플래그를 함께 주면 여기서 해제해 `AttachedMeta.snapshot`은 항상 원본
+    /// 바이트다(§P2-c) -- 호출자는 압축을 신경 쓸 필요 없다.
     pub fn attach(&self, agent_id: &str) -> io::Result<AttachedMeta> {
         self.require_v2()?;
         protocol::write_frame(self.fd(), &Message::Attach { agent_id: agent_id.to_string() }, None)?;
         match protocol::read_frame(self.fd())?.0 {
-            Message::AttachOk { rows, cols, snapshot_b64, exit, .. } => {
+            Message::AttachOk { rows, cols, snapshot_b64, snapshot_compressed, exit, .. } => {
                 use base64::Engine;
-                let snapshot = base64::engine::general_purpose::STANDARD
+                let raw = base64::engine::general_purpose::STANDARD
                     .decode(snapshot_b64)
                     .unwrap_or_default();
+                // 압축 해제 실패는 스냅샷 없음으로 취급(입양은 백로그 리플레이로
+                // 진행 -- 스냅샷은 화면 복원 보조일 뿐이라 없어도 세션은 산다).
+                let snapshot = if snapshot_compressed {
+                    inflate(&raw).unwrap_or_default()
+                } else {
+                    raw
+                };
                 Ok(AttachedMeta {
                     rows,
                     cols,
@@ -310,15 +319,41 @@ impl Client {
         }
     }
 
-    pub fn update_snapshot(&self, agent_id: &str, snapshot: &[u8]) -> io::Result<()> {
+    /// 스냅샷을 deflate 압축해 업로드한다(§P2-c). `offset`은 앱이 data 연결
+    /// 카운터로 잰 "실제 여기까지 수신했다"는 스트림 오프셋(§P1). 압축 후에도
+    /// 인코딩 프레임이 상한(MAX_FRAME_BYTES)을 넘으면 **이 agent만 스킵하고 로그**
+    /// 한다 -- 큰 프레임을 보내면 데몬이 연결을 끊어 이후 업로드까지 전멸하므로,
+    /// 연결을 오염시키지 않고 조용히 건너뛴다(다음 주기에 화면이 줄면 재개).
+    pub fn update_snapshot(
+        &self,
+        agent_id: &str,
+        snapshot: &[u8],
+        offset: Option<u64>,
+    ) -> io::Result<()> {
         self.require_v2()?;
+        let compressed = deflate(snapshot);
         let snapshot_b64 = {
             use base64::Engine;
-            base64::engine::general_purpose::STANDARD.encode(snapshot)
+            base64::engine::general_purpose::STANDARD.encode(&compressed)
         };
+        // base64 본문 + JSON 구조(필드명/agent_id) 여유. 상한을 넘으면 전송 자체를
+        // 포기(연결 보존).
+        if snapshot_b64.len() + 1024 > protocol::MAX_FRAME_BYTES {
+            eprintln!(
+                "agent-office: skipping oversized snapshot for {agent_id} \
+                 ({} b64 bytes > frame cap)",
+                snapshot_b64.len()
+            );
+            return Ok(());
+        }
         protocol::write_frame(
             self.fd(),
-            &Message::UpdateSnapshot { agent_id: agent_id.to_string(), snapshot_b64 },
+            &Message::UpdateSnapshot {
+                agent_id: agent_id.to_string(),
+                snapshot_b64,
+                offset,
+                compressed: true,
+            },
             None,
         )?;
         match protocol::read_frame(self.fd())?.0 {
@@ -329,18 +364,37 @@ impl Client {
     }
 
     /// DataAttach를 보내고 DataAttachOk를 확인한 뒤, 이 연결을 raw 양방향
-    /// 바이트 스트림으로 전환해 소유권째 돌려준다. 이후 프레이밍은 없다 --
-    /// 반환된 스트림에서 read하면 백로그+라이브 PTY 출력이, write하면 그대로
-    /// PTY master 입력이 된다. `Client`를 소비한다(더는 프레임 RPC 불가).
-    pub fn into_data_stream(self, agent_id: &str) -> io::Result<UnixStream> {
+    /// 바이트 스트림으로 전환해 소유권째 돌려준다. `DataAttachOk.stream_offset`
+    /// (백로그 첫 바이트의 절대 스트림 오프셋)을 함께 반환한다 -- 호출자는 이걸로
+    /// 수신 카운터를 초기화한다(§P1). `Client`를 소비한다(더는 프레임 RPC 불가).
+    pub fn into_data_stream(self, agent_id: &str) -> io::Result<(UnixStream, u64)> {
         self.require_v2()?;
         protocol::write_frame(self.fd(), &Message::DataAttach { agent_id: agent_id.to_string() }, None)?;
         match protocol::read_frame(self.fd())?.0 {
-            Message::DataAttachOk => Ok(self.stream),
+            Message::DataAttachOk { stream_offset } => Ok((self.stream, stream_offset)),
             Message::Error { message } => Err(io::Error::other(message)),
             other => Err(io::Error::other(format!("unexpected reply to DataAttach: {other:?}"))),
         }
     }
+}
+
+/// 스냅샷 deflate 압축(§P2-c). `Vec` 대상 write는 실패하지 않으므로 unwrap 안전.
+fn deflate(data: &[u8]) -> Vec<u8> {
+    use flate2::write::DeflateEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+    let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
+    enc.write_all(data).expect("writing to an in-memory Vec never fails");
+    enc.finish().expect("deflate finish on a Vec never fails")
+}
+
+/// deflate 해제. 손상 입력은 Err.
+fn inflate(data: &[u8]) -> io::Result<Vec<u8>> {
+    use flate2::read::DeflateDecoder;
+    use std::io::Read;
+    let mut out = Vec::new();
+    DeflateDecoder::new(data).read_to_end(&mut out)?;
+    Ok(out)
 }
 
 /// `spawn_broker` 인자 묶음(대응하는 v2 Spawn 메시지의 필드들).
@@ -489,7 +543,7 @@ mod tests {
         assert!(client.attach("a1").is_err());
         assert!(client.resize("a1", 30, 100).is_err());
         assert!(client.wait("a1").is_err());
-        assert!(client.update_snapshot("a1", b"x").is_err());
+        assert!(client.update_snapshot("a1", b"x", None).is_err());
         assert!(client
             .spawn_broker(SpawnBrokerRequest {
                 agent_id: "a1".into(),
@@ -505,6 +559,105 @@ mod tests {
             .is_err());
 
         drop(client);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 실 데몬 스레드를 띄우고 소켓 경로/디렉터리를 돌려준다(브로커 압축 테스트용).
+    fn start_daemon() -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "ao-cz-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let socket_path = dir.join("s.sock");
+        let socket_for_daemon = socket_path.clone();
+        std::thread::spawn(move || {
+            let hook: super::super::daemon::ShutdownHook = std::sync::Arc::new(|| {});
+            let _ = super::super::daemon::run_daemon_inner(
+                socket_for_daemon,
+                Duration::from_secs(60),
+                hook,
+            );
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !socket_path.exists() {
+            assert!(Instant::now() < deadline, "daemon never bound the socket");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        (socket_path, dir)
+    }
+
+    fn spawn_a_broker_session(client: &Client, agent_id: &str) {
+        client
+            .spawn_broker(SpawnBrokerRequest {
+                agent_id: agent_id.into(),
+                session_id: format!("s-{agent_id}"),
+                shell: "/bin/sh".into(),
+                args: vec!["-c".into(), "sleep 30".into()],
+                env: vec![],
+                rows: 24,
+                cols: 80,
+                cwd: "/tmp".into(),
+                cleanup_paths: vec![],
+            })
+            .unwrap();
+    }
+
+    /// §P2-c: 압축 덕분에, 압축 안 하면 프레임 상한(4MiB)을 넘길 큰 스냅샷도
+    /// 왕복한다. 5MiB의 반복 바이트는 deflate로 수 KB가 되어 무사히 전송되고,
+    /// attach가 원본 그대로(해제된) 돌려준다 -- 압축이 없으면 base64가 ~6.6MiB라
+    /// 데몬이 프레임을 거부해 attach 스냅샷이 비었을 것이다.
+    #[test]
+    fn update_snapshot_compresses_large_payload_and_attach_round_trips() {
+        let (socket_path, dir) = start_daemon();
+        let client = Client::connect(&socket_path).unwrap();
+        spawn_a_broker_session(&client, "a1");
+
+        let big = vec![b'Z'; 5 * 1024 * 1024]; // 압축 안 하면 상한 초과
+        client.update_snapshot("a1", &big, Some(0)).unwrap();
+
+        let meta = client.attach("a1").unwrap();
+        assert_eq!(meta.snapshot.len(), big.len(), "compressed snapshot must round-trip whole");
+        assert_eq!(meta.snapshot, big);
+
+        let _ = client.kill("a1");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// §P2-c 가드: 압축해도 상한을 넘는(비압축성) 스냅샷은 전송 자체를 스킵해
+    /// 연결을 오염시키지 않는다. 스킵 후에도 같은 연결로 정상 스냅샷을 올릴 수
+    /// 있어야 한다(연결 생존).
+    #[test]
+    fn oversized_incompressible_snapshot_is_skipped_and_connection_survives() {
+        let (socket_path, dir) = start_daemon();
+        let client = Client::connect(&socket_path).unwrap();
+        spawn_a_broker_session(&client, "a1");
+
+        // 비압축성 ~6MiB(간단한 xorshift PRNG) -> deflate 후에도 상한 초과 -> 스킵.
+        let mut x: u64 = 0x9E3779B97F4A7C15;
+        let incompressible: Vec<u8> = (0..6 * 1024 * 1024)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                (x & 0xff) as u8
+            })
+            .collect();
+        // 스킵은 Ok(전송 안 함) -- 연결은 프레임을 안 보냈으니 깨끗하다.
+        client.update_snapshot("a1", &incompressible, Some(0)).unwrap();
+        let after_skip = client.attach("a1").unwrap();
+        assert!(after_skip.snapshot.is_empty(), "oversized snapshot must not be stored");
+
+        // 같은 연결이 여전히 살아 정상 스냅샷을 처리한다.
+        client.update_snapshot("a1", b"small-ok", Some(0)).unwrap();
+        let after_ok = client.attach("a1").unwrap();
+        assert_eq!(after_ok.snapshot, b"small-ok");
+
+        let _ = client.kill("a1");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
