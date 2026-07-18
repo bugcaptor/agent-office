@@ -68,7 +68,16 @@ impl BrokerPtyFactory {
             cwd: o.cwd.clone(),
             cleanup_paths: o.cleanup_paths.clone(),
         })?;
-        assemble_broker_connected(&self.socket_path, control, &o.agent_id)
+        // Spawn RPC 성공 후 data/wait 연결 조립이 실패하면(소켓 경합 등) 데몬에
+        // 자식만 남는 고아가 된다 -- best-effort Kill로 롤백한 뒤 에러를 돌려
+        // 폴백(in-process 스폰)을 타게 한다.
+        match open_broker_io(&self.socket_path, &o.agent_id) {
+            Ok(io_bundle) => Ok(build_broker_spawned(control, &o.agent_id, io_bundle)),
+            Err(e) => {
+                let _ = control.kill(&o.agent_id);
+                Err(e)
+            }
+        }
     }
 }
 
@@ -122,46 +131,55 @@ impl PtyWaiter for BrokerWaiter {
     }
 }
 
-/// 이미 control 연결이 잡힌 상태(spawn 직후 또는 attach 직후)에서 data/wait
-/// 연결을 추가로 열어 `SpawnedPty` 번들을 조립한다. reader/writer는 raw data
-/// 스트림을 공유하고, control/waiter는 각자의 RPC 연결을 쓴다.
-fn assemble_broker_connected(
-    socket_path: &Path,
-    control: Client,
-    agent_id: &str,
-) -> io::Result<SpawnedPty> {
-    // data 연결: DataAttach 후 raw 양방향 스트림. reader는 백로그+라이브 출력을,
-    // writer는 그대로 PTY master 입력을 담당한다(같은 소켓의 try_clone).
+/// data/wait 연결 번들. 조립 실패 롤백(P2-a)을 위해 control 연결 소비와
+/// 분리해 둔다 -- 이게 실패하면 호출자가 아직 control을 쥐고 있어 Kill로
+/// 되돌릴 수 있다.
+struct BrokerIoBundle {
+    reader: Box<dyn Read + Send>,
+    writer: Box<dyn Write + Send>,
+    wait_client: Client,
+}
+
+/// data(DataAttach 후 raw 스트림) + wait 연결을 연다. control 연결은 건드리지
+/// 않으므로, 이 함수가 실패해도 호출자는 control로 롤백 Kill을 보낼 수 있다.
+fn open_broker_io(socket_path: &Path, agent_id: &str) -> io::Result<BrokerIoBundle> {
+    // data 연결: reader는 백로그+라이브 출력을, writer는 그대로 PTY master
+    // 입력을 담당한다(같은 소켓의 try_clone).
     let data_stream = Client::connect(socket_path)?.into_data_stream(agent_id)?;
     let reader: Box<dyn Read + Send> = Box::new(data_stream.try_clone()?);
     let writer: Box<dyn Write + Send> = Box::new(data_stream);
-
     // wait 연결: 종료까지 블로킹하는 전용 연결.
     let wait_client = Client::connect(socket_path)?;
+    Ok(BrokerIoBundle { reader, writer, wait_client })
+}
 
+/// control 연결 + IO 번들로 `SpawnedPty`를 조립한다. `broker_owned: true` --
+/// 이 세션은 데몬이 소유하므로 handoff/adopt가 브로커 경로를 탄다.
+fn build_broker_spawned(control: Client, agent_id: &str, io: BrokerIoBundle) -> SpawnedPty {
     let control = Arc::new(Mutex::new(control));
     let pty_control: Arc<dyn PtyControl> = Arc::new(BrokerControl {
         client: control,
         agent_id: agent_id.to_string(),
     });
     let waiter: Box<dyn PtyWaiter> =
-        Box::new(BrokerWaiter { client: wait_client, agent_id: agent_id.to_string() });
+        Box::new(BrokerWaiter { client: io.wait_client, agent_id: agent_id.to_string() });
 
-    Ok(SpawnedPty {
-        reader,
-        writer,
+    SpawnedPty {
+        reader: io.reader,
+        writer: io.writer,
         control: pty_control,
         waiter,
         // 브로커 세션은 fd 핸드오프가 필요 없다(소유권이 이미 데몬에 있다).
         reader_interrupt: None,
         handoff: None,
-    })
+        broker_owned: true,
+    }
 }
 
 /// 재접속(adopt): 이미 데몬 테이블에 있는 브로커 세션에 Attach(메타/스냅샷
 /// 회수) + DataAttach(백로그 리플레이 스트림) + Wait 연결을 붙여 `SpawnedPty`와
-/// 메타를 조립한다. 화면 복원은 data 연결의 백로그 리플레이가 담당하므로
-/// 여기서 얻은 스냅샷은 initial_output으로 다시 주입하지 않는다(중복 방지).
+/// 메타를 조립한다. 조립 실패 시엔 Kill하지 않는다 -- 이 세션은 우리가 만든 게
+/// 아니라 이미 데몬에 있던 것이므로 그대로 두고 다음 부팅에서 다시 시도한다.
 pub fn assemble_broker_adopted(
     app_data_dir: &Path,
     agent_id: &str,
@@ -169,8 +187,8 @@ pub fn assemble_broker_adopted(
     let socket_path = client::default_socket_path(app_data_dir);
     let control = Client::connect(&socket_path)?;
     let meta = control.attach(agent_id)?;
-    let spawned = assemble_broker_connected(&socket_path, control, agent_id)?;
-    Ok((spawned, meta))
+    let io = open_broker_io(&socket_path, agent_id)?;
+    Ok((build_broker_spawned(control, agent_id, io), meta))
 }
 
 /// 브로커 데몬에 연결한다(없으면 에러 -- 스폰하지 않는다). 스냅샷 업로드/

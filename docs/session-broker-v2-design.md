@@ -66,11 +66,15 @@
   관찰자 훅/설정 파일 경로까지 계산해 넘기고 데몬은 그대로 주입만 한다.
 - `DataAttach { agent_id }` → 프레임 `DataAttachOk` **직후 해당 연결이 raw
   양방향 바이트 스트림으로 전환**된다(이후 프레이밍 없음). 데몬은 DataAttachOk
-  직후 링버퍼 백로그를 같은 스트림에 먼저 쓰고 이어서 라이브 출력을 흘린다
-  (이음새 없는 리플레이 — 백로그 스냅샷과 conn 설치를 하나의 락 아래에서
-  원자화해 유실/중복 없음). 앱→데몬 방향 raw 바이트는 PTY master에 기록된다.
-  **세션당 활성 data conn은 1개** — 새 DataAttach가 오면 기존 소켓을 `shutdown`해
-  교체한다. 앱 쪽 EOF/에러 = detach(자식은 죽이지 않음).
+  직후 백로그를 같은 스트림에 먼저 쓰고 이어서 라이브 출력을 흘린다(이음새 없는
+  리플레이 — 백로그 스냅샷과 conn 설치를 하나의 락 아래에서 원자화해 유실/중복
+  없음). **백로그 범위(§P2-b)**: 스냅샷이 업로드된 적 있으면 링버퍼 전체가 아니라
+  마지막 `UpdateSnapshot` 시점의 누적 오프셋(`snapshot_offset`) *이후* 바이트만
+  흘린다 — 앱이 그 스냅샷을 화면으로 별도 복원하므로, "스냅샷 + 이후 출력"이 되어
+  중복 없이 전체 스크롤백이 재구성된다. 스냅샷이 한 번도 없으면 링 전체를 흘린다.
+  앱→데몬 방향 raw 바이트는 PTY master에 기록된다. **세션당 활성 data conn은 1개**
+  — 새 DataAttach가 오면 기존 소켓을 `shutdown`해 교체한다. 앱 쪽 EOF/에러 =
+  detach(자식은 죽이지 않음).
 - `Attach { agent_id }` → `AttachOk { rows, cols, pid, snapshot_b64, exit: Option }`.
   재접속용 메타데이터+최신 업로드 스냅샷 회수(백로그는 data conn 담당이라 여기
   buffer는 없다). `exit`이 Some이면 이미 종료된 세션.
@@ -121,6 +125,26 @@
 전용, 블로킹). `SpawnedPty` 계약(reader/writer/control/waiter)이 그대로
 보존되므로 SessionManager는 팩토리 교체 외 거의 무변경이고, `handoff`/
 `reader_interrupt`는 None(브로커 세션은 fd 핸드오프가 필요 없다).
+
+`try_broker_spawn`은 Spawn RPC 성공 후 data/wait 연결 조립이 실패하면(소켓 경합
+등) best-effort `Kill{agent_id}`로 그 브로커 세션을 정리한 뒤 에러를 돌려
+폴백(in-process 스폰)을 타게 한다(§P2-a, 데몬에 자식만 남는 고아 방지).
+
+### 세션 단위 소유 플래그 (broker_owned) — 혼합 상황 처리
+
+전역 `broker_mode`만으로 handoff/adopt 경로를 가르면, 브로커 모드에서도 팩토리
+폴백으로 생긴 in-process 세션을 오분류한다. 그래서 `SpawnedPty`에 **`broker_owned:
+bool`**을 두고 세션 단위로 소유를 추적한다 — `BrokerPtyFactory` 성공 경로와 브로커
+재접속(`assemble_broker_adopted`)만 true, `PortablePtyFactory`·팩토리 폴백·v1 fd
+입양은 false. 이 플래그가 Session까지 전파돼:
+
+- **handoff_all(브로커 모드)**: 세션마다 `broker_owned`로 분기 — true면 스냅샷
+  업로드+detach(자식은 데몬 소유), false(폴백)면 **기존 v1 fd 핸드오프**(§P1-a).
+  하나의 `connect_or_spawn` 연결이 두 경로(v1 Handoff + v2 UpdateSnapshot)를 모두
+  처리한다(데몬은 proto 2). 반환 카운트는 두 경로 합.
+- **adopt_detached(브로커 모드)**: List를 훑어 `broker=true`는 Attach+DataAttach로,
+  `broker=false`(v1 핸드오프/폴백 세션)는 **기존 v1 adopt(fd 회수)**로 입양한다
+  (§P1-b). 협상 p=1인 구데몬 상대로는 broker 항목이 없어 자연히 v1만 처리된다.
 
 ## 버전 스큐 (앱 업데이트 중 구버전 브로커)
 

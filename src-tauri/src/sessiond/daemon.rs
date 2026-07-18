@@ -15,7 +15,7 @@ use std::io::{self, Read, Write};
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -35,14 +35,19 @@ const FIRST_HANDOFF_TIMEOUT: Duration = Duration::from_secs(60);
 struct RingBuffer {
     buf: VecDeque<u8>,
     cap: usize,
+    /// 이 링에 지금까지 push된 누적 총 바이트 수(롤오버로 버려진 것 포함).
+    /// `snapshot_offset` 기반 부분 리플레이(§P2-b)의 좌표계 -- 링 안 첫 바이트의
+    /// 누적 인덱스는 `total - buf.len()`이다.
+    total: u64,
 }
 
 impl RingBuffer {
     fn new(cap: usize) -> Self {
-        Self { buf: VecDeque::with_capacity(cap.min(64 * 1024)), cap }
+        Self { buf: VecDeque::with_capacity(cap.min(64 * 1024)), cap, total: 0 }
     }
 
     fn push(&mut self, data: &[u8]) {
+        self.total = self.total.saturating_add(data.len() as u64);
         if data.len() >= self.cap {
             self.buf.clear();
             self.buf.extend(&data[data.len() - self.cap..]);
@@ -57,6 +62,25 @@ impl RingBuffer {
 
     fn snapshot(&self) -> Vec<u8> {
         self.buf.iter().copied().collect()
+    }
+
+    /// 누적 인덱스 `offset` 이후의 바이트만 돌려준다(링에 남은 범위로 클램프).
+    /// 스냅샷 이후 출력만 리플레이하는 데 쓴다: `offset`이 링 시작보다 앞이면
+    /// (오래돼 이미 롤오버) 링 전체를, 링 끝 이후면 빈 벡터를 준다.
+    fn snapshot_since(&self, offset: u64) -> Vec<u8> {
+        let ring_start = self.total - self.buf.len() as u64; // 링 안 첫 바이트의 누적 인덱스
+        if offset <= ring_start {
+            return self.snapshot();
+        }
+        let skip = (offset - ring_start) as usize;
+        if skip >= self.buf.len() {
+            return Vec::new();
+        }
+        self.buf.iter().skip(skip).copied().collect()
+    }
+
+    fn total(&self) -> u64 {
+        self.total
     }
 
     fn len(&self) -> usize {
@@ -166,6 +190,10 @@ struct DataConn {
 struct BrokerIo {
     ring: RingBuffer,
     conn: Option<DataConn>,
+    /// 마지막 UpdateSnapshot 수신 시점의 링 누적 오프셋(§P2-b). Some이면
+    /// DataAttach 리플레이가 이 오프셋 이후 바이트만 흘린다(앱은 스냅샷을
+    /// initial_output으로 별도 주입). None이면 링 전체 리플레이.
+    snapshot_offset: Option<u64>,
 }
 
 /// 종료 정보(reap 결과). portable-pty의 `ExitStatus`는 exit code만 노출하므로
@@ -178,8 +206,9 @@ struct ExitRecord {
 
 struct BrokerSession {
     session_id: String,
-    rows: u16,
-    cols: u16,
+    /// 현재 지오메트리 -- Resize 성공 시 갱신되어 List/Attach가 최신 값을 준다(§P2-c).
+    rows: AtomicU16,
+    cols: AtomicU16,
     cwd: String,
     pid: Option<i32>,
     cleanup_paths: Vec<String>,
@@ -274,12 +303,16 @@ fn spawn_broker_session(
 
     let session = Arc::new(BrokerSession {
         session_id,
-        rows,
-        cols,
+        rows: AtomicU16::new(rows),
+        cols: AtomicU16::new(cols),
         cwd,
         pid,
         cleanup_paths,
-        io: Mutex::new(BrokerIo { ring: RingBuffer::new(RING_CAPACITY), conn: None }),
+        io: Mutex::new(BrokerIo {
+            ring: RingBuffer::new(RING_CAPACITY),
+            conn: None,
+            snapshot_offset: None,
+        }),
         input: Mutex::new(writer),
         master: Mutex::new(pair.master),
         killer: Mutex::new(child.clone_killer()),
@@ -357,7 +390,7 @@ fn cleanup_broker_paths(paths: &[String]) {
 /// 라이브 출력 사이에 이음새(유실/중복)가 생기지 않게 한다. 이후 이 스레드는
 /// 소켓의 raw 입력(앱->master)을 자식이 살아있는 동안 계속 펌프한다.
 fn run_data_conn(fd: RawFd, session: &Arc<BrokerSession>) {
-    // DataAttackOk 프레임(프레이밍 O) -- 이 프레임 이후부터 raw.
+    // DataAttachOk 프레임(프레이밍 O) -- 이 프레임 이후부터 raw.
     if protocol::write_frame(fd, &Message::DataAttachOk, None).is_err() {
         return;
     }
@@ -366,7 +399,12 @@ fn run_data_conn(fd: RawFd, session: &Arc<BrokerSession>) {
     // 기존 활성 conn을 떼어내고(있다면) 그 소켓을 shutdown해 상대 스레드를 깨운다.
     let previous = {
         let mut io = session.io.lock().unwrap();
-        let backlog = io.ring.snapshot();
+        // 스냅샷이 업로드된 세션은 그 시점 이후 바이트만 리플레이한다(앱이
+        // 스냅샷을 화면으로 별도 복원하므로 중복 방지). 한 번도 없으면 링 전체.
+        let backlog = match io.snapshot_offset {
+            Some(off) => io.ring.snapshot_since(off),
+            None => io.ring.snapshot(),
+        };
         // 백로그를 먼저 이 소켓에 쓰고(락 유지), 이어서 conn을 설치한다.
         // 락을 쥔 동안 reader 스레드는 새 바이트를 conn에 못 쓰므로 순서가 확정된다.
         let _ = write_all_raw(fd, &backlog);
@@ -507,8 +545,8 @@ fn handle_connection(
                     agent_id: agent_id.clone(),
                     session_id: s.session_id.clone(),
                     pid: s.pid,
-                    rows: s.rows,
-                    cols: s.cols,
+                    rows: s.rows.load(Ordering::SeqCst),
+                    cols: s.cols.load(Ordering::SeqCst),
                     cwd: s.cwd.clone(),
                     exited: s.exited.load(Ordering::SeqCst),
                     buffered_bytes: s.io.lock().unwrap().ring.len(),
@@ -576,8 +614,8 @@ fn handle_connection(
                                 .encode(session.snapshot.lock().unwrap().clone())
                         };
                         Message::AttachOk {
-                            rows: session.rows,
-                            cols: session.cols,
+                            rows: session.rows.load(Ordering::SeqCst),
+                            cols: session.cols.load(Ordering::SeqCst),
                             pid: session.pid,
                             snapshot_b64,
                             exit: session.exit_status_msg(),
@@ -590,12 +628,18 @@ fn handle_connection(
             Message::Resize { agent_id, rows, cols } => {
                 let session = broker.lock().unwrap().get(&agent_id).cloned();
                 if let Some(session) = session {
-                    let _ = session.master.lock().unwrap().resize(portable_pty::PtySize {
-                        rows,
-                        cols,
-                        pixel_width: 0,
-                        pixel_height: 0,
-                    });
+                    let ok = session
+                        .master
+                        .lock()
+                        .unwrap()
+                        .resize(portable_pty::PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+                        .is_ok();
+                    // resize 성공 시 메타를 갱신 -- List/Attach가 최신 지오메트리를
+                    // 반환하게 한다(§P2-c).
+                    if ok {
+                        session.rows.store(rows, Ordering::SeqCst);
+                        session.cols.store(cols, Ordering::SeqCst);
+                    }
                 }
                 let _ = protocol::write_frame(fd, &Message::ResizeOk, None);
             }
@@ -630,6 +674,15 @@ fn handle_connection(
                         base64::engine::general_purpose::STANDARD.decode(&snapshot_b64)
                     {
                         *session.snapshot.lock().unwrap() = bytes;
+                        // 이 스냅샷이 반영하는 지점 = 지금까지 링에 push된 누적
+                        // 오프셋. 이후 DataAttach는 이 오프셋 이후 바이트만
+                        // 리플레이한다(§P2-b). 스냅샷 바이트 저장과 오프셋 기록이
+                        // 서로 다른 락이라 사이에 몇 바이트 더 밀릴 수 있으나,
+                        // quit 시 업로드는 출력이 멎은 뒤라 정확하고, 라이브 30초
+                        // 주기의 미세 오차는 다음 스냅샷/링이 흡수한다.
+                        let mut io = session.io.lock().unwrap();
+                        let off = io.ring.total();
+                        io.snapshot_offset = Some(off);
                     }
                 }
                 let _ = protocol::write_frame(fd, &Message::UpdateSnapshotOk, None);
@@ -1003,6 +1056,104 @@ mod tests {
         let _ = protocol::read_frame(control.as_raw_fd());
         drop(control);
         drop(data2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn broker_data_attach_after_snapshot_replays_only_post_snapshot_bytes() {
+        // §P2-b: UpdateSnapshot이 그 시점 링 오프셋을 기록하면, 이후 DataAttach는
+        // 스냅샷 이전 출력을 리플레이하지 않고 그 이후 바이트만 흘려야 한다
+        // (앱은 스냅샷을 화면으로 별도 복원 -> 중복 없이 전체 스크롤백 복원).
+        let (socket_path, dir) = start_real_daemon();
+        let control = connect_hello(&socket_path);
+        // printf PRE -> read(입력 대기, 여기서 출력이 멎어 스냅샷 오프셋이 결정적) -> printf POST.
+        spawn_broker(control.as_raw_fd(), "a1", "printf PREMARKER; read x; printf POSTMARKER");
+
+        let data1 = connect_hello(&socket_path);
+        protocol::write_frame(data1.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
+            .unwrap();
+        assert!(matches!(protocol::read_frame(data1.as_raw_fd()).unwrap().0, Message::DataAttachOk));
+        // PRE가 링에 전부 들어온 상태에서(셸이 read로 멎어 더 안 나옴) 스냅샷.
+        let pre = raw_read_until(data1.as_raw_fd(), b"PREMARKER");
+        assert!(pre.windows(9).any(|w| w == b"PREMARKER"));
+
+        protocol::write_frame(
+            control.as_raw_fd(),
+            &Message::UpdateSnapshot { agent_id: "a1".into(), snapshot_b64: "c25hcA==".into() },
+            None,
+        )
+        .unwrap();
+        assert!(matches!(
+            protocol::read_frame(control.as_raw_fd()).unwrap().0,
+            Message::UpdateSnapshotOk
+        ));
+
+        // 입력으로 read를 풀어 POST를 만든다(입력 에코 "go"도 스냅샷 이후라 무해).
+        protocol::write_all_raw(data1.as_raw_fd(), b"go\n").unwrap();
+        let _ = raw_read_until(data1.as_raw_fd(), b"POSTMARKER");
+
+        // 재접속: 스냅샷 이후 바이트만 와야 한다 -- POST 포함, PRE 제외.
+        let data2 = connect_hello(&socket_path);
+        protocol::write_frame(data2.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
+            .unwrap();
+        assert!(matches!(protocol::read_frame(data2.as_raw_fd()).unwrap().0, Message::DataAttachOk));
+        let backlog2 = raw_read_until(data2.as_raw_fd(), b"POSTMARKER");
+        assert!(
+            backlog2.windows(10).any(|w| w == b"POSTMARKER"),
+            "post-snapshot output must replay: {backlog2:?}"
+        );
+        assert!(
+            !backlog2.windows(9).any(|w| w == b"PREMARKER"),
+            "pre-snapshot output must NOT replay (snapshot_offset excludes it): {backlog2:?}"
+        );
+
+        protocol::write_frame(control.as_raw_fd(), &Message::Kill { agent_id: "a1".into() }, None)
+            .unwrap();
+        let _ = protocol::read_frame(control.as_raw_fd());
+        drop(control);
+        drop(data1);
+        drop(data2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn broker_resize_updates_geometry_in_list_and_attach() {
+        // §P2-c: Resize 성공 시 rows/cols 메타가 갱신되어 List/Attach가 최신
+        // 지오메트리를 반환해야 한다.
+        let (socket_path, dir) = start_real_daemon();
+        let control = connect_hello(&socket_path);
+        spawn_broker(control.as_raw_fd(), "a1", "sleep 30"); // 스폰 시 24x80
+
+        protocol::write_frame(
+            control.as_raw_fd(),
+            &Message::Resize { agent_id: "a1".into(), rows: 50, cols: 200 },
+            None,
+        )
+        .unwrap();
+        assert!(matches!(protocol::read_frame(control.as_raw_fd()).unwrap().0, Message::ResizeOk));
+
+        protocol::write_frame(control.as_raw_fd(), &Message::Attach { agent_id: "a1".into() }, None)
+            .unwrap();
+        match protocol::read_frame(control.as_raw_fd()).unwrap().0 {
+            Message::AttachOk { rows, cols, .. } => {
+                assert_eq!((rows, cols), (50, 200), "Attach must reflect the resize");
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+
+        protocol::write_frame(control.as_raw_fd(), &Message::List, None).unwrap();
+        match protocol::read_frame(control.as_raw_fd()).unwrap().0 {
+            Message::ListOk { sessions } => {
+                let s = sessions.iter().find(|s| s.agent_id == "a1").expect("session in list");
+                assert_eq!((s.rows, s.cols), (50, 200), "List must reflect the resize");
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+
+        protocol::write_frame(control.as_raw_fd(), &Message::Kill { agent_id: "a1".into() }, None)
+            .unwrap();
+        let _ = protocol::read_frame(control.as_raw_fd());
+        drop(control);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

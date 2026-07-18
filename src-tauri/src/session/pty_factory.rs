@@ -33,6 +33,13 @@ pub struct SpawnedPty {
     pub handoff: Option<HandoffInfo>,
     #[cfg(not(unix))]
     pub handoff: Option<()>,
+    /// 이 세션을 v2 브로커 데몬이 소유하는가. `BrokerPtyFactory`의 성공 경로와
+    /// 브로커 재접속(`assemble_broker_adopted`)만 true다 — `PortablePtyFactory`,
+    /// 팩토리 폴백, v1 fd 입양(`assemble_adopted`)은 전부 false. 브로커 모드
+    /// 매니저에서도 폴백으로 생긴 in-process 세션이 섞일 수 있으므로, 전역
+    /// `broker_mode`가 아니라 이 **세션 단위 소유 플래그**로 handoff/adopt 경로를
+    /// 가른다(브로커 세션=스냅샷 업로드+detach, 폴백 세션=v1 fd 핸드오프).
+    pub broker_owned: bool,
 }
 
 /// 핸드오프 시 sessiond에 전달할 마스터 fd(및 프로세스 식별자). `master_fd`는
@@ -208,6 +215,7 @@ impl PtyFactory for PortablePtyFactory {
             waiter,
             reader_interrupt,
             handoff,
+            broker_owned: false, // 프로세스 내 직접 스폰 -- 브로커 소유 아님(v1 fd 핸드오프 대상).
         })
     }
 }
@@ -352,6 +360,7 @@ pub fn assemble_adopted(
             waiter,
             reader_interrupt: Some(interrupt),
             handoff,
+            broker_owned: false, // v1 fd 입양 세션 -- 재핸드오프도 v1 경로.
         },
         stopping,
     ))
@@ -581,6 +590,7 @@ pub mod fake {
             waiter,
             reader_interrupt: None,
             handoff: None,
+            broker_owned: false,
         }
     }
 
