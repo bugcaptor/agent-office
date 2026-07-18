@@ -72,6 +72,35 @@ class FakeTerminal {
   getSelection() {
     return selectionValue ?? "";
   }
+  // getPlainText(이슈 #42)가 읽는 buffer.active 최소 스텁. 기본은 빈 버퍼.
+  buffer = {
+    active: {
+      length: 0,
+      getLine(_i: number):
+        | { translateToString(trimRight?: boolean): string; isWrapped: boolean }
+        | undefined {
+        return undefined;
+      },
+    },
+  };
+  /** Test helper: 버퍼 줄을 세팅한다. translateToString(true)는 실제 xterm처럼
+   * 우측 공백을 떼도록 흉내낸다. */
+  setBufferLines(lines: Array<{ text: string; isWrapped?: boolean }>) {
+    this.buffer = {
+      active: {
+        length: lines.length,
+        getLine(i: number) {
+          const l = lines[i];
+          if (!l) return undefined;
+          return {
+            translateToString: (trimRight?: boolean) =>
+              trimRight ? l.text.replace(/\s+$/, "") : l.text,
+            isWrapped: l.isWrapped ?? false,
+          };
+        },
+      },
+    };
+  }
 }
 
 class FakeFitAddon {
@@ -617,5 +646,48 @@ describe("theme + font options", () => {
     expect(opts.fontFamily).toContain("SF Mono");
     expect(opts.fontFamily).toContain("Menlo");
     expect(opts.fontFamily).toContain("monospace");
+  });
+});
+
+describe("getPlainText (이슈 #42)", () => {
+  it("아직 만들어지지 않은 터미널은 undefined", async () => {
+    const terminalRegistry = await importRegistry();
+    expect(terminalRegistry.getPlainText("nope")).toBeUndefined();
+  });
+
+  it("일반 줄들을 개행으로 join한다", async () => {
+    const terminalRegistry = await importRegistry();
+    const e = terminalRegistry.ensure("a1");
+    (e.term as unknown as FakeTerminal).setBufferLines([
+      { text: "line1" },
+      { text: "line2" },
+      { text: "line3" },
+    ]);
+    expect(terminalRegistry.getPlainText("a1")).toBe("line1\nline2\nline3\n");
+  });
+
+  it("isWrapped 줄은 앞 줄에 개행 없이 이어붙인다(소프트랩 보존)", async () => {
+    const terminalRegistry = await importRegistry();
+    const e = terminalRegistry.ensure("a1");
+    // 긴 토큰이 소프트랩된 상황: "verylong"이 두 셀 줄로 쪼개져도(뒤 줄
+    // isWrapped) 하드 개행 없이 한 줄로 복원돼야 한다.
+    (e.term as unknown as FakeTerminal).setBufferLines([
+      { text: "very" },
+      { text: "long", isWrapped: true },
+      { text: "next" },
+    ]);
+    expect(terminalRegistry.getPlainText("a1")).toBe("verylong\nnext\n");
+  });
+
+  it("끝쪽 빈 줄을 트리밍하고 개행 하나로 끝맺는다", async () => {
+    const terminalRegistry = await importRegistry();
+    const e = terminalRegistry.ensure("a1");
+    (e.term as unknown as FakeTerminal).setBufferLines([
+      { text: "content" },
+      { text: "" },
+      { text: "   " }, // translateToString(true)가 공백 줄로 트림
+      { text: "" },
+    ]);
+    expect(terminalRegistry.getPlainText("a1")).toBe("content\n");
   });
 });

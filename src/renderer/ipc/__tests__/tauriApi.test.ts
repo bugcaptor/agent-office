@@ -435,6 +435,7 @@ describe("app settings commands", () => {
       soundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal" as const,
+      externalEditor: "system" as const,
       attentionHoldMs: 5000,
     };
     const tauriApi = await importTauriApi();
@@ -456,6 +457,19 @@ describe("app settings commands", () => {
 
     expect(invoke).toHaveBeenCalledWith(Commands.listAvailableShells);
     expect(result).toEqual(shells);
+  });
+
+  it("exportTerminalOutput invokes export_terminal_output with agentName/content and returns the written path", async () => {
+    invoke.mockResolvedValueOnce("/tmp/agent-office/shell-output/Ada-20260718-120000.txt");
+    const tauriApi = await importTauriApi();
+
+    const result = await tauriApi.exportTerminalOutput("Ada", "line1\nline2\n");
+
+    expect(invoke).toHaveBeenCalledWith(Commands.exportTerminalOutput, {
+      agentName: "Ada",
+      content: "line1\nline2\n",
+    });
+    expect(result).toBe("/tmp/agent-office/shell-output/Ada-20260718-120000.txt");
   });
 });
 

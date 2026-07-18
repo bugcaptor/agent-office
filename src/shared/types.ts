@@ -361,6 +361,10 @@ export type SummaryProvider = "claude" | "codex";
  * macOS에서만 의미가 있다(다른 OS는 무시). */
 export type ExternalTerminalApp = "terminal" | "iterm";
 
+/** 셸 출력 내보내기(.txt)를 열 외부 에디터 — Rust `ExternalEditor` 미러.
+ * 기본은 OS 기본 연결(system). */
+export type ExternalEditorApp = "system" | "vscode";
+
 /** 앱 전역 opt-in 설정 — Rust `persistence::settings_store::AppSettings` 미러. */
 export interface AppSettings {
   version: number;
@@ -376,6 +380,8 @@ export interface AppSettings {
   soundVolume: number;
   /** "OS 터미널로 열기"가 사용할 터미널 앱. 기본 Terminal.app(macOS 전용). */
   externalTerminal: ExternalTerminalApp;
+  /** 셸 출력 내보내기(.txt)를 열 에디터. 기본 OS 기본 연결. */
+  externalEditor: ExternalEditorApp;
   /** 질문(Hook) 알림을 방출 전 보류하는 시간(ms). 그 사이 세션이 계속
    * 일하면(오토모드 자동 승인 등) 알림을 조용히 폐기한다. 0이면 즉시 알림. 기본 5000. */
   attentionHoldMs: number;
@@ -513,6 +519,9 @@ export interface AgentOfficeApi {
   openInVscode(path: string): Promise<void>;
   /** 디렉터리를 OS 기본 터미널 앱으로 연다. 경로 부재/실행 실패 시 reject. */
   openInTerminal(path: string): Promise<void>;
+  /** 셸 출력(터미널 버퍼 plain text)을 임시 .txt로 쓰고 설정한 외부 에디터로
+   * 연다. 쓴 파일의 절대 경로를 반환, 쓰기/실행 실패 시 reject. */
+  exportTerminalOutput(agentName: string, content: string): Promise<string>;
   /** 네이티브 폴더 선택 다이얼로그. 선택한 절대 경로, 취소 시 null.
    * `initialDir`이 실존 디렉터리면 거기서 시작한다(`~` 확장 포함). */
   pickDirectory(initialDir?: string): Promise<string | null>;

@@ -185,6 +185,30 @@ class TerminalRegistry {
     return this.entries.has(agentId);
   }
 
+  /**
+   * 이슈 #42: 현재 버퍼(스크롤백 포함)를 plain text로 추출한다. 아직 만들어지지
+   * 않은(ensure 전) 터미널은 undefined. 각 줄은 translateToString(true)로 우측
+   * 공백을 떼어 뽑고, 소프트랩(isWrapped)된 줄은 앞 줄에 개행 없이 이어붙여
+   * xterm의 자동 줄바꿈이 하드 개행으로 굳지 않게 한다. 끝쪽 빈 줄은 트림하고
+   * 마지막에 개행 하나를 붙여 파일이 개행으로 끝나게 한다.
+   */
+  getPlainText(agentId: string): string | undefined {
+    const e = this.entries.get(agentId);
+    if (!e) return undefined;
+    const buf = e.term.buffer.active;
+    const lines: string[] = [];
+    for (let i = 0; i < buf.length; i++) {
+      const line = buf.getLine(i);
+      const text = line?.translateToString(true) ?? "";
+      if (line?.isWrapped && lines.length > 0) {
+        lines[lines.length - 1] += text; // 소프트랩: 앞 줄에 이어붙임
+      } else {
+        lines.push(text);
+      }
+    }
+    return lines.join("\n").replace(/\n+$/, "") + "\n";
+  }
+
   /** Attaches the (keep-alive) container to a DOM host, opening the term the first time only. */
   attach(agentId: string, host: HTMLElement): void {
     const e = this.ensure(agentId);

@@ -6,18 +6,20 @@
 // `activeTerminalAgentId` (no remount, handled by TerminalHost).
 //
 // Keyboard routing, active only while a terminal is open:
-// - Cmd/Ctrl+1..9  -> jump to that tab index.
-// - Cmd/Ctrl+W     -> close the overlay (`closeTerminal`).
+// - Cmd/Ctrl+1..9      -> jump to that tab index.
+// - Cmd/Ctrl+W         -> close the overlay (`closeTerminal`).
+// - Cmd/Ctrl+Shift+E   -> 셸 출력을 에디터로 내보내기(이슈 #42, activeId 대상).
 // - Escape         -> deliberately NOT handled here. Claiming Escape would
 //   break TUI apps (vim etc.) that need a real Escape keystroke delivered to
 //   the shell; overlay close is header-X-button/Cmd+W only.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "../store/appStore";
 import { generateSpritePreview } from "../office/gen/characterFactory";
 import { resolveArchetype } from "../office/gen/archetypes";
 import { ContextMenu } from "../ui/ContextMenu";
 import { tauriApi } from "../ipc/tauriApi";
+import { terminalRegistry } from "./TerminalRegistry";
 import type { ClaudeResumeEntry } from "@shared/types";
 
 export function AgentTabStrip() {
@@ -69,6 +71,19 @@ export function AgentTabStrip() {
   // 덮지 않게 최신 세대의 응답만 반영한다.
   const resumeFetchSeq = useRef(0);
 
+  // 이슈 #42: 해당 에이전트 터미널의 현재 버퍼를 뽑아 외부 에디터로 내보낸다.
+  // 미생성 터미널(getPlainText === undefined)은 무시. 파일명은 프로필 이름 폴백.
+  const exportShellOutput = useCallback(
+    (agentId: string) => {
+      const text = terminalRegistry.getPlainText(agentId);
+      if (text === undefined) return;
+      void tauriApi
+        .exportTerminalOutput(agents[agentId]?.name ?? agentId, text)
+        .catch((err) => console.warn("셸 출력 내보내기 실패", err));
+    },
+    [agents]
+  );
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -79,6 +94,14 @@ export function AgentTabStrip() {
       if (e.key.toLowerCase() === "w") {
         e.preventDefault();
         closeTerminal();
+        return;
+      }
+
+      // Cmd/Ctrl+Shift+E: 현재 활성 터미널의 셸 출력을 에디터로 내보내기.
+      if (e.shiftKey && e.key.toLowerCase() === "e") {
+        if (activeId === null) return;
+        e.preventDefault();
+        exportShellOutput(activeId);
         return;
       }
 
@@ -94,7 +117,7 @@ export function AgentTabStrip() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isOpen, tabs, openTerminal, closeTerminal]);
+  }, [isOpen, tabs, activeId, openTerminal, closeTerminal, exportShellOutput]);
 
   return (
     <div className="agent-tab-strip" role="tablist">
@@ -194,6 +217,13 @@ export function AgentTabStrip() {
                   .openInTerminal(cwd)
                   .catch((err) => console.warn("OS 터미널 열기 실패", err));
               },
+            },
+            {
+              // 이슈 #42: 현재 터미널 버퍼(스크롤백 포함)를 .txt로 내보내 에디터로 연다.
+              label: "셸 출력을 에디터로 보기",
+              // 터미널이 아직 만들어지지 않았으면(has === false) 뽑을 버퍼가 없다.
+              disabled: !terminalRegistry.has(menu.agentId),
+              onSelect: () => exportShellOutput(menu.agentId),
             },
             {
               label: "프로필 편집",

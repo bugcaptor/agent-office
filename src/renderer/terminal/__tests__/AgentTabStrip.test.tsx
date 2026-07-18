@@ -35,12 +35,25 @@ vi.mock("../../office/gen/characterFactory", () => ({
 // `tauriApi`는 실제 @tauri-apps/api invoke를 부르므로 jsdom에서는 mock
 // (ProfileDialog 테스트와 동일한 관례). "VS Code로 열기" 경로 전달 검증용.
 const openInVscode = vi.fn().mockResolvedValue(undefined);
+const exportTerminalOutput = vi.fn().mockResolvedValue("/tmp/out.txt");
 // 컨텍스트 메뉴를 열면 이어하기 후보를 조회한다 — 기본은 빈 목록(항목 비활성).
 const listClaudeResumeSessions = vi.fn().mockResolvedValue({});
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     openInVscode: (...args: unknown[]) => openInVscode(...args),
+    exportTerminalOutput: (...args: unknown[]) => exportTerminalOutput(...args),
     listClaudeResumeSessions: (...args: unknown[]) => listClaudeResumeSessions(...args),
+  },
+}));
+
+// TerminalRegistry는 실제 xterm 모듈을 로드하므로 jsdom에서는 mock한다 —
+// 셸 출력 내보내기(이슈 #42)의 has()/getPlainText()만 스텁으로 제어한다.
+const terminalRegistryHas = vi.fn().mockReturnValue(false);
+const terminalRegistryGetPlainText = vi.fn().mockReturnValue(undefined);
+vi.mock("../TerminalRegistry", () => ({
+  terminalRegistry: {
+    has: (...args: unknown[]) => terminalRegistryHas(...args),
+    getPlainText: (...args: unknown[]) => terminalRegistryGetPlainText(...args),
   },
 }));
 
@@ -64,6 +77,10 @@ beforeEach(() => {
   useAppStore.setState(initialState, true);
   generateSpritePreview.mockClear();
   openInVscode.mockClear();
+  exportTerminalOutput.mockClear();
+  exportTerminalOutput.mockResolvedValue("/tmp/out.txt");
+  terminalRegistryHas.mockClear().mockReturnValue(false);
+  terminalRegistryGetPlainText.mockClear().mockReturnValue(undefined);
   listClaudeResumeSessions.mockClear();
   listClaudeResumeSessions.mockResolvedValue({});
 });
@@ -331,6 +348,33 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
 
     fireEvent.click(item);
     expect(openInVscode).not.toHaveBeenCalled();
+  });
+
+  it("터미널이 있으면 '셸 출력을 에디터로 보기' 선택 시 이름+버퍼로 exportTerminalOutput을 호출한다", () => {
+    terminalRegistryHas.mockReturnValue(true);
+    terminalRegistryGetPlainText.mockReturnValue("buffer text\n");
+    seedThreeTabs();
+    const { getAllByRole, getByRole, queryByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]); // "Agent a1"
+    fireEvent.click(getByRole("menuitem", { name: "셸 출력을 에디터로 보기" }));
+
+    expect(terminalRegistryGetPlainText).toHaveBeenCalledWith("a1");
+    expect(exportTerminalOutput).toHaveBeenCalledWith("Agent a1", "buffer text\n");
+    expect(queryByRole("menu")).toBeNull();
+  });
+
+  it("터미널이 없으면 '셸 출력을 에디터로 보기'가 비활성화되고 클릭해도 호출되지 않는다", () => {
+    terminalRegistryHas.mockReturnValue(false);
+    seedThreeTabs();
+    const { getAllByRole, getByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    const item = getByRole("menuitem", { name: "셸 출력을 에디터로 보기" });
+    expect(item).toHaveProperty("disabled", true);
+
+    fireEvent.click(item);
+    expect(exportTerminalOutput).not.toHaveBeenCalled();
   });
 
   it("'터미널 종료'가 '터미널 재시작' → '이전 세션 이어하기' 다음 항목으로 보이고 선택 시 confirm-terminate 모달을 열고 메뉴는 닫힌다", () => {

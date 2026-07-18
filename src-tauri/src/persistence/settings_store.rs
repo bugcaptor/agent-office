@@ -48,6 +48,15 @@ pub enum ExternalTerminal {
     Iterm,
 }
 
+/// 셸 출력 내보내기(.txt)를 열 외부 에디터. 기본은 OS 기본 연결(open/xdg-open).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExternalEditor {
+    #[default]
+    System,
+    Vscode,
+}
+
 /// 앱 전역 설정. 요약과 관찰자 연동은 기본 OFF이고, 사운드는 기본 ON이다.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,6 +77,9 @@ pub struct AppSettings {
     /// "OS 터미널로 열기"가 사용할 외부 터미널 앱(macOS 전용).
     #[serde(default)]
     pub external_terminal: ExternalTerminal,
+    /// 셸 출력 내보내기(.txt)를 열 외부 에디터. 기본은 OS 기본 연결.
+    #[serde(default)]
+    pub external_editor: ExternalEditor,
     /// 질문(Hook) 알림을 방출 전 보류하는 시간(ms). 그 사이 세션이 계속
     /// 일하면(오토모드 자동 승인 등) 알림을 조용히 폐기한다. 0이면 즉시 알림.
     #[serde(default = "default_attention_hold_ms")]
@@ -84,6 +96,7 @@ impl Default for AppSettings {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Terminal,
+            external_editor: ExternalEditor::System,
             attention_hold_ms: 5000,
         }
     }
@@ -164,6 +177,7 @@ mod tests {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Terminal,
+            external_editor: ExternalEditor::System,
             attention_hold_ms: 5000,
         };
         store.save(&s).expect("save succeeds");
@@ -256,6 +270,7 @@ mod tests {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Iterm,
+            external_editor: ExternalEditor::Vscode,
             attention_hold_ms: 5000,
         };
         store.save(&settings).unwrap();
@@ -263,6 +278,7 @@ mod tests {
         assert!(json.contains("\"summarizerEnabled\""), "{json}");
         assert!(json.contains("\"summaryProvider\": \"codex\""), "{json}");
         assert!(json.contains("\"externalTerminal\": \"iterm\""), "{json}");
+        assert!(json.contains("\"externalEditor\": \"vscode\""), "{json}");
         assert!(json.contains("\"attentionHoldMs\": 5000"), "{json}");
         assert!(json.contains("\"observerEnabled\""), "{json}");
         assert!(!json.contains("claudeCliEnabled"), "{json}");
@@ -340,6 +356,11 @@ mod tests {
             s.external_terminal,
             ExternalTerminal::Terminal,
             "부재 시 기본 Terminal.app"
+        );
+        assert_eq!(
+            s.external_editor,
+            ExternalEditor::System,
+            "부재 시 기본 시스템 에디터"
         );
         assert_eq!(s.attention_hold_ms, 5000, "부재 시 기본 홀드 5초");
         let _ = fs::remove_dir_all(file.parent().unwrap());

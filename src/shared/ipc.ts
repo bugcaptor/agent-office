@@ -32,6 +32,7 @@ export const Commands = {
   listAvailableShells: "list_available_shells",
   openInVscode: "open_in_vscode",
   openInTerminal: "open_in_terminal",
+  exportTerminalOutput: "export_terminal_output",
   pickDirectory: "pick_directory",
   appendSessionTurn: "append_session_turn",
   loadSessionTurns: "load_session_turns",

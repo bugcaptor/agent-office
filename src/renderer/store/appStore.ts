@@ -35,6 +35,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   soundEnabled: true,
   soundVolume: 0.5,
   externalTerminal: "terminal",
+  externalEditor: "system",
   attentionHoldMs: 5000,
 };
 
@@ -203,6 +204,7 @@ interface AppState {
         | "soundEnabled"
         | "soundVolume"
         | "externalTerminal"
+        | "externalEditor"
         | "attentionHoldMs"
       >
     >,

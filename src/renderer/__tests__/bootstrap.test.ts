@@ -196,6 +196,7 @@ describe("bootApp", () => {
       soundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
+      externalEditor: "system",
       attentionHoldMs: 5000,
     });
     expect(s.settingsFirstRun).toBe(false);

@@ -34,6 +34,7 @@ describe("SettingsDialog", () => {
         soundEnabled: true,
         soundVolume: 0.5,
         externalTerminal: "terminal",
+        externalEditor: "system",
         attentionHoldMs: 5000,
       },
       false,
@@ -54,6 +55,7 @@ describe("SettingsDialog", () => {
       soundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
+      externalEditor: "system",
       attentionHoldMs: 5000,
     });
   });
@@ -68,6 +70,7 @@ describe("SettingsDialog", () => {
         soundEnabled: true,
         soundVolume: 0.5,
         externalTerminal: "terminal",
+        externalEditor: "system",
         attentionHoldMs: 5000,
       },
       false,
@@ -75,9 +78,37 @@ describe("SettingsDialog", () => {
     useAppStore.getState().openModal({ kind: "settings" });
 
     render(<SettingsDialog />);
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "iterm" } });
+    // 이제 셀렉터가 둘(외부 터미널/셸 출력 에디터)이므로 이름으로 특정한다.
+    fireEvent.change(screen.getByRole("combobox", { name: /외부 터미널/ }), {
+      target: { value: "iterm" },
+    });
 
     expect(useAppStore.getState().appSettings.externalTerminal).toBe("iterm");
+  });
+
+  it("셸 출력 에디터 셀렉터가 VS Code 선택을 즉시 반영한다", () => {
+    useAppStore.getState().hydrateSettings(
+      {
+        version: 1,
+        summarizerEnabled: false,
+        summaryProvider: "claude",
+        observerEnabled: false,
+        soundEnabled: true,
+        soundVolume: 0.5,
+        externalTerminal: "terminal",
+        externalEditor: "system",
+        attentionHoldMs: 5000,
+      },
+      false,
+    );
+    useAppStore.getState().openModal({ kind: "settings" });
+
+    render(<SettingsDialog />);
+    fireEvent.change(screen.getByRole("combobox", { name: /셸 출력 에디터/ }), {
+      target: { value: "vscode" },
+    });
+
+    expect(useAppStore.getState().appSettings.externalEditor).toBe("vscode");
   });
 
   it("닫기 버튼 클릭 시 closeModal을 부른다", () => {
