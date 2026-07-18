@@ -147,8 +147,11 @@ pub async fn session_broker_mode(app_state: State<'_, AppState>) -> Result<bool,
 pub async fn upload_session_snapshots(
     app_state: State<'_, AppState>,
     snapshots: std::collections::HashMap<String, String>,
+    // §#49: agentId -> 렌더러가 실제 렌더한 raw 스트림 바이트 누적치. 데몬이
+    // 스냅샷 offset(=base+이 값) 이후만 리플레이해 유실 창을 없앤다.
+    rendered_bytes: std::collections::HashMap<String, u64>,
 ) -> Result<(), String> {
-    app_state.manager.upload_snapshots(&snapshots);
+    app_state.manager.upload_snapshots(&snapshots, &rendered_bytes);
     Ok(())
 }
 
@@ -165,10 +168,12 @@ pub async fn upload_session_snapshots(
 pub async fn handoff_sessions(
     app_state: State<'_, AppState>,
     snapshots: std::collections::HashMap<String, String>,
+    // §#49: agentId -> 렌더러가 실제 렌더한 raw 스트림 바이트 누적치(스냅샷 offset 계산용).
+    rendered_bytes: std::collections::HashMap<String, u64>,
 ) -> Result<usize, String> {
     let manager = app_state.manager.clone();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-        manager.handoff_all(&snapshots)
+        manager.handoff_all(&snapshots, &rendered_bytes)
     }));
     result.map_err(|panic| {
         let msg = panic_message(&panic);

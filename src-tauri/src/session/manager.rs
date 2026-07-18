@@ -35,6 +35,10 @@ const BACKLOG_CAP: usize = 256;
 
 enum ReaderMsg {
     Data(Vec<u8>),
+    /// adopt 복원 스냅샷(화면 이미지). 스트림 바이트로 계수하지 않는다(§#49 함정 2):
+    /// base가 이미 이 지점을 가리키므로 offset에 잡히면 그만큼 데이터가 유실된다.
+    /// 렌더러 누적 회계에 안 잡히도록 bytes=0 청크로 방출된다.
+    Restore(Vec<u8>),
     Eof,
 }
 
@@ -514,7 +518,10 @@ impl SessionManager {
             // 리더 스레드보다 먼저 보내야 한다 -- unbounded 채널은 send() 호출
             // 순서를 그대로 보존하므로, 아래 스레드 스폰보다 앞서 이 send가
             // happens-before로 확정되면 순서가 깨지지 않는다.
-            let _ = tx.send(ReaderMsg::Data(bytes));
+            // §#49: 복원 스냅샷은 스트림 바이트가 아니므로 Restore로 보내 offset
+            // 회계에서 제외한다(bytes=0 청크로 방출됨). Data로 보내면 offset이
+            // 스냅샷 길이만큼 부풀어 그만큼 유실된다(이 버그의 재발).
+            let _ = tx.send(ReaderMsg::Restore(bytes));
         }
         let mut reader = spawned.reader;
         std::thread::spawn(move || {
@@ -613,9 +620,13 @@ impl SessionManager {
     /// 반환값은 성공 개수 -- 프론트는 이 수와 무관하게 종료를 진행한다.
     /// `app_data_dir`이 없으면(테스트 등) 0.
     #[cfg(unix)]
-    pub fn handoff_all(&self, snapshots: &std::collections::HashMap<String, String>) -> usize {
+    pub fn handoff_all(
+        &self,
+        snapshots: &std::collections::HashMap<String, String>,
+        rendered_bytes: &std::collections::HashMap<String, u64>,
+    ) -> usize {
         if self.broker_mode {
-            return self.handoff_all_broker(snapshots);
+            return self.handoff_all_broker(snapshots, rendered_bytes);
         }
         let Some(app_data_dir) = self.app_data_dir.clone() else {
             return 0;
@@ -655,7 +666,11 @@ impl SessionManager {
     }
 
     #[cfg(not(unix))]
-    pub fn handoff_all(&self, _snapshots: &std::collections::HashMap<String, String>) -> usize {
+    pub fn handoff_all(
+        &self,
+        _snapshots: &std::collections::HashMap<String, String>,
+        _rendered_bytes: &std::collections::HashMap<String, u64>,
+    ) -> usize {
         0
     }
 
@@ -753,7 +768,11 @@ impl SessionManager {
     // 하나의 connect_or_spawn 연결로 두 경로를 모두 처리한다 -- 데몬은 proto 2라
     // v1 Handoff와 v2 UpdateSnapshot을 같은 연결에서 받는다.
     #[cfg(unix)]
-    fn handoff_all_broker(&self, snapshots: &std::collections::HashMap<String, String>) -> usize {
+    fn handoff_all_broker(
+        &self,
+        snapshots: &std::collections::HashMap<String, String>,
+        rendered_bytes: &std::collections::HashMap<String, u64>,
+    ) -> usize {
         let Some(app_data_dir) = self.app_data_dir.clone() else {
             return 0;
         };
@@ -782,10 +801,7 @@ impl SessionManager {
                 // 브로커 세션: 최신 스냅샷 업로드(best-effort) 후 detach. 데몬에
                 // 못 닿아도 detach는 진행해야 dispose_all이 자식을 죽이지 않는다.
                 if let (Some(client), Some(snap)) = (&client, snapshots.get(agent_id.as_str())) {
-                    let offset = sess
-                        .broker_stream_offset
-                        .as_ref()
-                        .map(|c| c.load(Ordering::SeqCst));
+                    let offset = snapshot_offset(&sess, rendered_bytes.get(agent_id.as_str()).copied());
                     let _ = client.update_snapshot(&agent_id, snap.as_bytes(), offset);
                 }
                 sess.handed_off.store(true, Ordering::SeqCst);
@@ -823,7 +839,11 @@ impl SessionManager {
     /// 데몬에 올려 앱 크래시 후에도 마지막 화면을 복원할 수 있게 한다.
     /// 브로커 모드가 아니거나 데몬에 못 닿으면 no-op.
     #[cfg(unix)]
-    pub fn upload_snapshots(&self, snapshots: &std::collections::HashMap<String, String>) {
+    pub fn upload_snapshots(
+        &self,
+        snapshots: &std::collections::HashMap<String, String>,
+        rendered_bytes: &std::collections::HashMap<String, u64>,
+    ) {
         if !self.broker_mode {
             return;
         }
@@ -834,18 +854,24 @@ impl SessionManager {
             return;
         };
         for (agent_id, snap) in snapshots {
-            // 데몬 테이블에 없는 agentId면 no-op으로 무시된다(안전). 앱 쪽 세션의
-            // 수신 오프셋을 offset으로 동봉해 유실 창을 없앤다(§P1) -- 세션이 없거나
-            // 브로커가 아니면 None(데몬은 수신 시점 ring.total()로 폴백).
+            // 데몬 테이블에 없는 agentId면 no-op으로 무시된다(안전). 스냅샷 offset은
+            // base(attach 시 stream_offset) + 렌더러가 실제 렌더한 raw 바이트 누적치로
+            // 동봉해 유실 창을 없앤다(§#49) -- 렌더러 누적치가 없으면 None(데몬은
+            // 수신 시점 ring.total()로 폴백).
             let offset = self
                 .find(agent_id)
-                .and_then(|s| s.broker_stream_offset.as_ref().map(|c| c.load(Ordering::SeqCst)));
+                .and_then(|s| snapshot_offset(&s, rendered_bytes.get(agent_id).copied()));
             let _ = client.update_snapshot(agent_id, snap.as_bytes(), offset);
         }
     }
 
     #[cfg(not(unix))]
-    pub fn upload_snapshots(&self, _snapshots: &std::collections::HashMap<String, String>) {}
+    pub fn upload_snapshots(
+        &self,
+        _snapshots: &std::collections::HashMap<String, String>,
+        _rendered_bytes: &std::collections::HashMap<String, u64>,
+    ) {
+    }
 
     /// 브로커 모드 재접속: List를 훑어 세션 종류별로 되찾는다 -- **broker=true는
     /// Attach+DataAttach(브로커 경로)로, broker=false(v1 핸드오프/폴백 세션)는
@@ -1204,6 +1230,22 @@ fn cleanup_paths(paths: &[std::path::PathBuf]) {
     }
 }
 
+/// 스냅샷 업로드/핸드오프에 실을 절대 offset을 계산한다(§#49).
+/// `base`(attach 시 DataAttachOk가 준 stream_offset, 세션당 고정) + `rendered`
+/// (렌더러가 실제 렌더/소비한 raw 스트림 바이트 누적치). 렌더러 누적치가
+/// 없으면(프론트가 그 세션 값을 안 실어 보냄) None을 반환해 데몬이 수신 시점
+/// ring.total()로 폴백하게 한다(trim 과다 위험은 값이 아예 없을 때만).
+#[cfg(unix)]
+fn snapshot_offset(sess: &Session, rendered: Option<u64>) -> Option<u64> {
+    let rendered = rendered?;
+    let base = sess
+        .broker_stream_offset
+        .as_ref()
+        .map(|c| c.load(Ordering::SeqCst))
+        .unwrap_or(0);
+    Some(base + rendered)
+}
+
 fn spawn_output_pump(
     session_id: String,
     agent_id: String,
@@ -1242,6 +1284,17 @@ fn spawn_output_pump(
                             deadline = Some(tokio::time::Instant::now()
                                 + std::time::Duration::from_millis(WINDOW_MS));
                         }
+                    }
+                    Some(ReaderMsg::Restore(bytes)) => {
+                        // §#49 함정 2: adopt 복원 스냅샷(화면 이미지)은 실시간
+                        // 스트림 출력이 아니라 화면 복원이다. batcher를 거치면
+                        // consumed>0으로 계수돼 offset이 부풀므로, bytes=0인 청크로
+                        // 직접 방출한다. 순서 보존을 위해 혹시 남아 있을 pending을
+                        // 먼저 flush한다(Restore는 항상 첫 메시지라 실제로는 없음).
+                        // BEL/on_output 휴리스틱도 적용하지 않는다(실시간 출력 아님).
+                        batcher.flush(&*sink);
+                        deadline = None;
+                        batcher.emit_uncounted(String::from_utf8_lossy(&bytes).into_owned(), &*sink);
                     }
                     Some(ReaderMsg::Eof) | None => {
                         batcher.flush_final(&*sink); // 잔여 강제 방출
@@ -3579,7 +3632,7 @@ return
         snapshots.insert("a1".to_string(), "SNAPSHOT-MARKER-13579\r\n".to_string());
         // "a2"는 의도적으로 생략 -- 백로그 폴백 경로를 태운다.
 
-        let handed = mgr1.handoff_all(&snapshots);
+        let handed = mgr1.handoff_all(&snapshots, &HashMap::new());
         assert_eq!(handed, 2, "both running real sessions must be handed off");
         assert!(
             mgr1.find("a1").is_none(),
@@ -3786,7 +3839,7 @@ return
         .await;
 
         // detach(유지하고 종료): 자식은 안 죽고 맵에서만 빠진다.
-        let handed = mgr1.handoff_all(&std::collections::HashMap::new());
+        let handed = mgr1.handoff_all(&std::collections::HashMap::new(), &std::collections::HashMap::new());
         assert_eq!(handed, 1, "the running broker session must be detached");
         assert!(mgr1.find("a1").is_none(), "detached session must leave the map");
         drop(mgr1); // 앱 "종료" -- data/control/wait 연결이 끊긴다(자식은 데몬 소유라 생존).
@@ -3954,7 +4007,7 @@ return
         .await;
 
         // mgr1 detach: data 소켓을 결정적 shutdown -> 데몬 conn 정리 -> attached=false.
-        let handed = mgr1.handoff_all(&std::collections::HashMap::new());
+        let handed = mgr1.handoff_all(&std::collections::HashMap::new(), &std::collections::HashMap::new());
         assert_eq!(handed, 1, "mgr1 must detach its broker session");
         assert!(mgr1.find("a1").is_none());
 
@@ -4107,7 +4160,7 @@ return
         wait_for_timeout(|| of1.lock().contains("F-ALIVE-1"), Duration::from_secs(5), "f1 echo").await;
 
         // handoff_all: b1=detach, f1=v1 fd 핸드오프. 반환 카운트는 둘 합.
-        let handed = mgr1.handoff_all(&std::collections::HashMap::new());
+        let handed = mgr1.handoff_all(&std::collections::HashMap::new(), &std::collections::HashMap::new());
         assert_eq!(handed, 2, "both sessions must be handed off via their own path");
         assert!(mgr1.find("b1").is_none());
         assert!(mgr1.find("f1").is_none());
@@ -4211,7 +4264,7 @@ return
             })
             .unwrap();
         // detach: 자식은 데몬 소유로 남는다(곧 sleep이 끝나 스스로 죽는다).
-        assert_eq!(mgr1.handoff_all(&std::collections::HashMap::new()), 1);
+        assert_eq!(mgr1.handoff_all(&std::collections::HashMap::new(), &std::collections::HashMap::new()), 1);
         drop(mgr1);
 
         // 데몬 List에 a1이 exited로 남을 때까지 대기(자식 reap 확인).

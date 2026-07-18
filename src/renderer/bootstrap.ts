@@ -82,7 +82,9 @@ function installSnapshotUploader(): () => void {
         void (async () => {
           const snapshots = await terminalRegistry.flushAndSerializeAll();
           if (Object.keys(snapshots).length === 0) return;
-          await tauriApi.uploadSessionSnapshots(snapshots);
+          // §#49: flush 직후 렌더 완료된 raw 바이트 누적치를 함께 실어 offset을 확정한다.
+          const renderedBytes = terminalRegistry.getRenderedBytes();
+          await tauriApi.uploadSessionSnapshots(snapshots, renderedBytes);
         })().catch((err) => {
           console.warn("bootstrap: 세션 스냅샷 업로드 실패", err);
         });

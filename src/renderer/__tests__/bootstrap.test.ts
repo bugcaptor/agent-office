@@ -51,6 +51,7 @@ vi.mock("../ipc/tauriApi", () => ({ tauriApi: mockApi }));
 // `markAdopted`를 호출하는지만 배선으로 검증한다.
 const markAdopted = vi.fn();
 const serializeAll = vi.fn(() => ({}) as Record<string, string>);
+const getRenderedBytes = vi.fn(() => ({}) as Record<string, number>);
 vi.mock("../terminal/TerminalRegistry", () => ({
   terminalRegistry: {
     markAdopted: (...args: unknown[]) => markAdopted(...args),
@@ -58,6 +59,8 @@ vi.mock("../terminal/TerminalRegistry", () => ({
     // 30초 업로더는 flush 후 직렬화하는 async 경로를 쓴다(§P1) — 목은 동일한
     // serializeAll 스텁을 Promise로 감싸 돌려준다.
     flushAndSerializeAll: () => Promise.resolve(serializeAll()),
+    // §#49: 업로더는 스냅샷과 함께 렌더러 누적 바이트를 실어 보낸다.
+    getRenderedBytes: () => getRenderedBytes(),
   },
 }));
 
@@ -365,15 +368,19 @@ describe("session-broker snapshot uploader (bootApp)", () => {
   it("브로커 모드면 30초마다 직렬화 화면을 업로드한다", async () => {
     mockApi.sessionBrokerMode.mockResolvedValue(true);
     serializeAll.mockReturnValue({ a1: "SCREEN-A1", a2: "SCREEN-A2" });
+    getRenderedBytes.mockReturnValue({ a1: 11, a2: 22 });
 
     teardown = await bootApp();
     // 인터벌 첫 발화(30s).
     await vi.advanceTimersByTimeAsync(SNAPSHOT_UPLOAD_INTERVAL_MS);
 
-    expect(mockApi.uploadSessionSnapshots).toHaveBeenCalledWith({
-      a1: "SCREEN-A1",
-      a2: "SCREEN-A2",
-    });
+    expect(mockApi.uploadSessionSnapshots).toHaveBeenCalledWith(
+      {
+        a1: "SCREEN-A1",
+        a2: "SCREEN-A2",
+      },
+      { a1: 11, a2: 22 }
+    );
 
     // 두 번째 주기에도 다시 발화.
     await vi.advanceTimersByTimeAsync(SNAPSHOT_UPLOAD_INTERVAL_MS);

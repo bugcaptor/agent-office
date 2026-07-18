@@ -111,16 +111,29 @@ impl OutputBatcher {
             return;
         }
         self.buf.drain(..consumed);
-        self.emit(out, sink);
+        // §#49: raw 스트림 바이트 회계엔 UTF-8 문자열 길이(data.len())가 아니라
+        // buf에서 실제로 drain한 raw 바이트 수(consumed)를 실어야 한다 — 잘못된
+        // 바이트가 U+FFFD(3바이트)로 치환되면 둘이 어긋나고, 데몬 ring은 raw PTY
+        // 바이트를 세므로 raw만 offset과 정합한다.
+        self.emit(out, consumed, sink);
     }
 
-    fn emit(&mut self, data: String, sink: &dyn FlushSink) {
+    /// 스트림 바이트로 계수하지 않는 청크를 방출한다(§#49 함정 2): adopt 복원
+    /// 스냅샷(화면 이미지)은 실제 스트림 바이트가 아니라 base가 이미 그 지점을
+    /// 가리키므로, `bytes = 0`으로 실어 렌더러 누적에 안 잡히게 한다. seq 단조성은
+    /// 이 경로도 batcher가 관리해 자연히 보존된다.
+    pub fn emit_uncounted(&mut self, data: String, sink: &dyn FlushSink) {
+        self.emit(data, 0, sink);
+    }
+
+    fn emit(&mut self, data: String, bytes: usize, sink: &dyn FlushSink) {
         let chunk = OutputChunk {
             session_id: self.session_id.clone(),
             agent_id: self.agent_id.clone(),
             data,
             frames: self.frames,
             seq: self.seq,
+            bytes: bytes as u64,
         };
         self.seq += 1;
         self.frames = 0;
@@ -385,5 +398,80 @@ mod tests {
             assert_eq!(b.pending_bytes(), 0, "buffer must never accumulate invalid bytes");
         }
         assert_eq!(sink.len(), 100);
+    }
+
+    // ---- §#49: raw 스트림 바이트 회계(bytes 필드) ----
+
+    #[test]
+    fn flush_reports_raw_consumed_bytes_not_utf8_len() {
+        // 유효 바이트: bytes == data.len().
+        let sink = RecordingSink::default();
+        let mut b = batcher();
+        b.push(b"abc");
+        b.flush(&sink);
+        let chunk = sink.at(0);
+        assert_eq!(chunk.data, "abc");
+        assert_eq!(chunk.bytes, chunk.data.len() as u64);
+        assert_eq!(chunk.bytes, 3);
+
+        // 잘못된 바이트(0xFF): raw consumed==1이지만 data는 U+FFFD(3바이트)라
+        // bytes != data.len(). offset은 반드시 raw(consumed)를 따라야 한다.
+        let mut b = batcher();
+        b.push(&[0xFF]);
+        b.flush(&sink);
+        let chunk = sink.at(1);
+        assert_eq!(chunk.data, "\u{FFFD}");
+        assert_eq!(chunk.bytes, 1, "raw consumed 바이트는 1");
+        assert_ne!(chunk.bytes, chunk.data.len() as u64, "U+FFFD는 3바이트라 어긋남");
+    }
+
+    #[test]
+    fn flush_reports_raw_bytes_for_multibyte_char() {
+        // '한' = ED 95 9C (3 raw bytes), UTF-8 문자열 길이도 3.
+        let sink = RecordingSink::default();
+        let mut b = batcher();
+        b.push("한".as_bytes());
+        b.flush(&sink);
+        let chunk = sink.at(0);
+        assert_eq!(chunk.data, "한");
+        assert_eq!(chunk.bytes, 3);
+    }
+
+    #[test]
+    fn carried_incomplete_tail_counts_in_the_flush_that_completes_it() {
+        // 캐리된 불완전 tail은 그 flush의 bytes에 안 들어가고, 완성되는 flush에서
+        // 잡혀 누계가 raw와 일치한다. '한' = ED 95 9C를 두 push로 쪼갠다.
+        let sink = RecordingSink::default();
+        let mut b = batcher();
+        b.push(&[0xED, 0x95]); // 불완전 lead — 방출 없음
+        b.flush(&sink);
+        assert_eq!(sink.len(), 0);
+
+        b.push(&[0x9C]); // 완성
+        b.flush(&sink);
+        assert_eq!(sink.len(), 1);
+        let chunk = sink.at(0);
+        assert_eq!(chunk.data, "한");
+        // 첫 flush는 아무것도 안 실었고, 완성 flush가 raw 3바이트 전부를 계수.
+        assert_eq!(chunk.bytes, 3);
+    }
+
+    #[test]
+    fn emit_uncounted_carries_zero_bytes() {
+        // 복원 스냅샷 주입 경로(§#49 C-3): bytes=0으로 방출해 offset 누적 제외.
+        let sink = RecordingSink::default();
+        let mut b = batcher();
+        b.emit_uncounted("복원화면".to_string(), &sink);
+        assert_eq!(sink.len(), 1);
+        let chunk = sink.at(0);
+        assert_eq!(chunk.data, "복원화면");
+        assert_eq!(chunk.bytes, 0, "복원 청크는 스트림 바이트로 계수하지 않음");
+        assert_eq!(chunk.seq, 0);
+
+        // seq 단조성 보존: 이후 일반 flush는 seq 1부터.
+        b.push(b"x");
+        b.flush(&sink);
+        assert_eq!(sink.at(1).seq, 1);
+        assert_eq!(sink.at(1).bytes, 1);
     }
 }

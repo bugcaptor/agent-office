@@ -18,7 +18,7 @@
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -154,27 +154,12 @@ impl PtyWaiter for BrokerWaiter {
     }
 }
 
-/// data reader를 감싸 누적 수신 바이트를 센다(§P1). `into_data_stream`이 준
-/// `stream_offset`으로 카운터를 초기화하고, 읽은 만큼 더한다 -- 스냅샷 업로드가
-/// 이 값을 "앱이 실제 여기까지 받았다"는 offset으로 동봉한다.
-struct CountingReader {
-    inner: UnixStream,
-    counter: Arc<AtomicU64>,
-}
-
-impl Read for CountingReader {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.inner.read(buf)?;
-        self.counter.fetch_add(n as u64, Ordering::SeqCst);
-        Ok(n)
-    }
-}
-
 /// broker data 소켓을 결정적으로 닫는 detach 핸들(§#50 선결, §P1 보강). detach
 /// 시 `shutdown(Both)`를 호출하면:
 ///   1. 앱 reader 스레드의 블로킹 `read()`가 EOF(Ok(0))로 풀려 스레드가 확정
-///      종료된다 -- 그래야 CountingReader가 detach 시점 이후로 더 증가하지 않아
-///      스냅샷 offset이 확정값이 된다(§P1 오버슛 차단).
+///      종료된다 -- reader 스레드를 확정 종료시켜 다음 입양이 깨끗이 재배선된다
+///      (§#49로 offset 회계는 렌더러 ack로 옮겨졌고, native reader는 더 이상
+///      offset을 세지 않는다).
 ///   2. 데몬 쪽으로 FIN이 가 `run_data_conn` 입력 펌프가 EOF를 관측 -> conn을
 ///      떼어내 List의 `attached`가 false로 돌아간다 -- 그래야 재시작/크래시 후
 ///      다음 인스턴스가 그 세션을 안전히 입양한다(§#50).
@@ -199,7 +184,9 @@ struct BrokerIoBundle {
     reader: Box<dyn Read + Send>,
     writer: Box<dyn Write + Send>,
     wait_client: Client,
-    /// data reader의 누적 수신 카운터(스냅샷 offset 동봉용).
+    /// 이 attach의 base 오프셋(§#49): DataAttachOk가 준 백로그 첫 바이트의 절대
+    /// 오프셋. attach당 1회 고정이며 native는 더 증가시키지 않는다 -- 스냅샷 offset은
+    /// `base + 렌더러가 실제 렌더(소비)한 raw 바이트 누적치`로 계산된다(manager).
     stream_offset: Arc<AtomicU64>,
     /// detach 시 data 소켓을 결정적으로 닫는 핸들(§#50 선결).
     shutdown: BrokerDataShutdown,
@@ -209,20 +196,19 @@ struct BrokerIoBundle {
 /// 않으므로, 이 함수가 실패해도 호출자는 control로 롤백 Kill을 보낼 수 있다.
 fn open_broker_io(socket_path: &Path, agent_id: &str) -> io::Result<BrokerIoBundle> {
     // data 연결: reader는 백로그+라이브 출력을, writer는 그대로 PTY master
-    // 입력을 담당한다(같은 소켓의 try_clone). DataAttachOk의 stream_offset으로
-    // 수신 카운터를 초기화한다(백로그 첫 바이트의 절대 오프셋).
+    // 입력을 담당한다(같은 소켓의 try_clone). DataAttachOk의 stream_offset을
+    // base(백로그 첫 바이트의 절대 오프셋)로 고정 저장한다(§#49). native reader는
+    // 더 이상 바이트를 세지 않는다 -- 스냅샷 offset은 렌더러가 실제 소비한 raw
+    // 바이트 누적치를 base에 더해 계산한다(계수 없는 순수 리더로 둔다).
     let (data_stream, stream_offset) = Client::connect(socket_path)?.into_data_stream(agent_id)?;
-    let counter = Arc::new(AtomicU64::new(stream_offset));
-    let reader: Box<dyn Read + Send> = Box::new(CountingReader {
-        inner: data_stream.try_clone()?,
-        counter: counter.clone(),
-    });
+    let base = Arc::new(AtomicU64::new(stream_offset));
+    let reader: Box<dyn Read + Send> = Box::new(data_stream.try_clone()?);
     // detach용 clone은 writer로 data_stream을 소비하기 전에 떠 둔다(같은 소켓).
     let shutdown = BrokerDataShutdown { stream: data_stream.try_clone()? };
     let writer: Box<dyn Write + Send> = Box::new(data_stream);
     // wait 연결: 종료까지 블로킹하는 전용 연결.
     let wait_client = Client::connect(socket_path)?;
-    Ok(BrokerIoBundle { reader, writer, wait_client, stream_offset: counter, shutdown })
+    Ok(BrokerIoBundle { reader, writer, wait_client, stream_offset: base, shutdown })
 }
 
 /// control 연결 + IO 번들로 `SpawnedPty`를 조립한다. `broker_owned: true` --

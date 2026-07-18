@@ -34,7 +34,7 @@ function mockBackend(): SoundBackend & { calls: Record<string, unknown[][]> } {
 }
 
 function mockApi() {
-  const dataCbs = new Map<string, (d: string) => void>();
+  const dataCbs = new Map<string, (d: string, bytes: number) => void>();
   let notifCb: ((n: NotificationEvent) => void) | null = null;
   let sessionCb: ((e: SessionStateEvent) => void) | null = null;
   const dataUnsubs: string[] = [];
@@ -44,7 +44,7 @@ function mockApi() {
     emitNotification: (n: NotificationEvent) => notifCb?.(n),
     emitSession: (e: SessionStateEvent) => sessionCb?.(e),
     api: {
-      onData(agentId: string, cb: (d: string) => void) {
+      onData(agentId: string, cb: (d: string, bytes: number) => void) {
         dataCbs.set(agentId, cb);
         return () => {
           dataCbs.delete(agentId);
@@ -120,7 +120,7 @@ describe("installSoundManager", () => {
   it("출력이 흐르면 타이핑 시간 동안 playClicks가 호출된다", () => {
     const { backend, m, off } = install();
     useAppStore.getState().addAgent(AGENT);
-    m.dataCbs.get("a1")!("x".repeat(600)); // 타이핑 시간 확보
+    m.dataCbs.get("a1")!("x".repeat(600), 600); // 타이핑 시간 확보
     // 차분한 타속(최저 초당 3클릭)이라 첫 클릭까지 몇 틱 걸릴 수 있다
     for (let i = 0; i < 10; i++) {
       now += 100;
@@ -134,7 +134,7 @@ describe("installSoundManager", () => {
   it("에이전트의 keyboardSound 팩 id가 playClicks에 전달된다", () => {
     const { backend, m, off } = install();
     useAppStore.getState().addAgent({ ...AGENT, keyboardSound: "topre" });
-    m.dataCbs.get("a1")!("x".repeat(600));
+    m.dataCbs.get("a1")!("x".repeat(600), 600);
     for (let i = 0; i < 10; i++) {
       now += 100;
       vi.advanceTimersByTime(100);
@@ -146,7 +146,7 @@ describe("installSoundManager", () => {
   it("keyboardSound 미지정이면 팩 id로 undefined를 전달한다 (backend가 기본 팩 해석)", () => {
     const { backend, m, off } = install();
     useAppStore.getState().addAgent(AGENT);
-    m.dataCbs.get("a1")!("x".repeat(600));
+    m.dataCbs.get("a1")!("x".repeat(600), 600);
     for (let i = 0; i < 10; i++) {
       now += 100;
       vi.advanceTimersByTime(100);
@@ -162,7 +162,7 @@ describe("installSoundManager", () => {
     // 유효 글자가 적은 TUI 프레임이 반복돼도(대기 중 스피너) 무음이어야 한다.
     const frame = "\x1b[2K\x1b[1G✳ Deliberating… (esc to interrupt · 12s)";
     for (let i = 0; i < 10; i++) {
-      m.dataCbs.get("a1")!(frame);
+      m.dataCbs.get("a1")!(frame, frame.length);
       now += 100;
       vi.advanceTimersByTime(100);
     }
@@ -174,7 +174,7 @@ describe("installSoundManager", () => {
     const { backend, m, off } = install();
     useAppStore.getState().addAgent(AGENT);
     useAppStore.getState().updateAppSettings({ soundEnabled: false });
-    m.dataCbs.get("a1")!("x".repeat(600));
+    m.dataCbs.get("a1")!("x".repeat(600), 600);
     now += 100;
     vi.advanceTimersByTime(100);
     expect(backend.calls.playClicks).toBeUndefined();

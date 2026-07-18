@@ -50,6 +50,7 @@ function makeChunk(overrides: Partial<OutputChunk> = {}): OutputChunk {
     data: "hello",
     frames: 1,
     seq: 1,
+    bytes: 5,
     ...overrides,
   };
 }
@@ -78,10 +79,12 @@ describe("onData fanout", () => {
     tauriApi.onData("a1", cb2);
 
     const channel = capturedChannel("a1");
-    channel.onmessage(makeChunk({ data: "hi" }));
+    channel.onmessage(makeChunk({ data: "hi", bytes: 2 }));
 
-    expect(cb1).toHaveBeenCalledWith("hi");
-    expect(cb2).toHaveBeenCalledWith("hi");
+    // §#49: callbacks receive (data, bytes) so the renderer can accumulate the
+    // raw stream byte count for snapshot offset accounting.
+    expect(cb1).toHaveBeenCalledWith("hi", 2);
+    expect(cb2).toHaveBeenCalledWith("hi", 2);
   });
 
   it("only subscribes once (single Channel/invoke) for multiple callbacks on the same agent", async () => {
@@ -100,9 +103,9 @@ describe("onData fanout", () => {
     tauriApi.onData("a1", cbA);
     tauriApi.onData("a2", cbB);
 
-    capturedChannel("a1").onmessage(makeChunk({ agentId: "a1", data: "for-a1" }));
+    capturedChannel("a1").onmessage(makeChunk({ agentId: "a1", data: "for-a1", bytes: 6 }));
 
-    expect(cbA).toHaveBeenCalledWith("for-a1");
+    expect(cbA).toHaveBeenCalledWith("for-a1", 6);
     expect(cbB).not.toHaveBeenCalled();
   });
 
@@ -116,8 +119,8 @@ describe("onData fanout", () => {
     tauriApi.onData("a1", fine);
 
     const channel = capturedChannel("a1");
-    expect(() => channel.onmessage(makeChunk({ data: "x" }))).not.toThrow();
-    expect(fine).toHaveBeenCalledWith("x");
+    expect(() => channel.onmessage(makeChunk({ data: "x", bytes: 1 }))).not.toThrow();
+    expect(fine).toHaveBeenCalledWith("x", 1);
   });
 });
 
@@ -484,14 +487,15 @@ describe("session handoff commands", () => {
     expect(result).toBe(true);
   });
 
-  it("handoffSessions invokes handoff_sessions with the snapshots map and returns the handed-off count", async () => {
+  it("handoffSessions invokes handoff_sessions with the snapshots and renderedBytes maps and returns the handed-off count", async () => {
     invoke.mockResolvedValueOnce(3);
     const tauriApi = await importTauriApi();
     const snapshots = { a1: "SCREEN-A1", a2: "SCREEN-A2" };
+    const renderedBytes = { a1: 128, a2: 256 };
 
-    const result = await tauriApi.handoffSessions(snapshots);
+    const result = await tauriApi.handoffSessions(snapshots, renderedBytes);
 
-    expect(invoke).toHaveBeenCalledWith(Commands.handoffSessions, { snapshots });
+    expect(invoke).toHaveBeenCalledWith(Commands.handoffSessions, { snapshots, renderedBytes });
     expect(result).toBe(3);
   });
 

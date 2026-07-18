@@ -197,6 +197,7 @@ pub struct OutputChunk {
     pub data: String,      // UTF-8. OutputBatcher가 이어붙인 결과(경계 캐리 처리됨)
     pub frames: u32,       // 담은 원본 read 이벤트 수(진단용)
     pub seq: u64,          // 세션별 단조 증가
+    pub bytes: u64, // 이 청크가 담은 원본(raw) 스트림 바이트 수(§#49 offset 회계). data의 UTF-8 길이와 다를 수 있음.
 }
 
 /// 알림 클리어됨 브로드캐스트. 이벤트 "notification-cleared".
@@ -517,11 +518,12 @@ mod tests {
             data: "hello".into(),
             frames: 3,
             seq: 42,
+            bytes: 5,
         };
         let json = serde_json::to_string(&chunk).unwrap();
         assert_eq!(
             json,
-            "{\"sessionId\":\"s1\",\"agentId\":\"a1\",\"data\":\"hello\",\"frames\":3,\"seq\":42}"
+            "{\"sessionId\":\"s1\",\"agentId\":\"a1\",\"data\":\"hello\",\"frames\":3,\"seq\":42,\"bytes\":5}"
         );
     }
 

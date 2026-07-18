@@ -38,7 +38,7 @@ import type {
 /** One Channel per agentId, fanned out to however many onData callbacks are registered. */
 interface OutputSub {
   channel: Channel<OutputChunk>;
-  cbs: Set<(data: string) => void>;
+  cbs: Set<(data: string, bytes: number) => void>;
 }
 const outputSubs = new Map<string, OutputSub>();
 
@@ -170,8 +170,8 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.handoffSupported);
   },
 
-  async handoffSessions(snapshots: Record<string, string>) {
-    return await invoke(Commands.handoffSessions, { snapshots });
+  async handoffSessions(snapshots: Record<string, string>, renderedBytes: Record<string, number>) {
+    return await invoke(Commands.handoffSessions, { snapshots, renderedBytes });
   },
 
   async adoptDetachedSessions() {
@@ -182,8 +182,11 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.sessionBrokerMode);
   },
 
-  async uploadSessionSnapshots(snapshots: Record<string, string>) {
-    await invoke(Commands.uploadSessionSnapshots, { snapshots });
+  async uploadSessionSnapshots(
+    snapshots: Record<string, string>,
+    renderedBytes: Record<string, number>
+  ) {
+    await invoke(Commands.uploadSessionSnapshots, { snapshots, renderedBytes });
   },
 
   async listClaudeResumeSessions() {
@@ -212,7 +215,15 @@ export const tauriApi: AgentOfficeApi = {
       const channel = new Channel<OutputChunk>();
       const created: OutputSub = { channel, cbs: new Set() };
       channel.onmessage = (chunk) => {
-        for (const f of created.cbs) safeInvoke(f, chunk.data);
+        // §#49: pass the raw stream byte count alongside the text so the
+        // renderer can accumulate it on write to derive snapshot offsets.
+        for (const f of created.cbs) {
+          try {
+            f(chunk.data, chunk.bytes);
+          } catch (err) {
+            console.error("tauriApi: subscriber callback threw", err);
+          }
+        }
       };
       outputSubs.set(agentId, created);
       // Subscribe before/alongside createSession settling — any output that
