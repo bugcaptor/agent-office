@@ -213,6 +213,14 @@ body {
   padding: calc(var(--unit) * 4); /* keep dialogs off the viewport edges */
 }
 
+/* 모달 패널 공통 내부 여백(#35): 창마다 제각각이던 padding을 여기서 통일.
+   값은 ProfileDialog가 쓰던 여백 기준. width/max-height를 지정하는 패널이
+   padding 포함 크기로 계산되도록 border-box로 고정. */
+.modal-backdrop > .pixel-panel {
+  box-sizing: border-box;
+  padding: calc(var(--unit) * 5) calc(var(--unit) * 6);
+}
+
 /* Short-viewport safety: cap the dialog to the padded backdrop and scroll
    inside. With `align-items: center`, a child taller than the container
    would clip at the top with no way to reach it -- capping max-height to
@@ -228,7 +236,6 @@ body {
   /* ── 프로필 편집 폼 리디자인: 고정 폭 + 세로 스택 + 섹션 간 여백 ── */
   width: 560px;
   max-width: calc(100vw - var(--unit) * 10);
-  padding: calc(var(--unit) * 5) calc(var(--unit) * 6);
   display: flex;
   flex-direction: column;
   gap: calc(var(--unit) * 5);
