@@ -280,8 +280,12 @@ export const useAppStore = create<AppState>()(
 
     pushNotification: (e) =>
       set((s) => {
-        // active 터미널이 이미 이 에이전트를 보고 있으면 알림 억제
-        if (s.activeTerminalAgentId === e.agentId) return s;
+        // active 터미널이 이미 이 에이전트를 보고 있으면 알림 억제 —
+        // 단 창이 포커스일 때만(이슈 #39). 앱이 백그라운드면 터미널이 열려
+        // 있어도 티커/배지/사운드로 노출한다(창 포커스는 `windowFocused`,
+        // `installWindowFocusTracking`가 갱신). OS 데스크탑 알림 발송은
+        // sessionBridge의 onNotification이 `!windowFocused`일 때만 수행한다.
+        if (s.activeTerminalAgentId === e.agentId && s.windowFocused) return s;
         const n: Notification = {
           id: e.id,                       // 정합화: A의 id 그대로
           agentId: e.agentId,

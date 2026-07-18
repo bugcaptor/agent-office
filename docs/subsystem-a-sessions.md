@@ -1716,3 +1716,57 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "test-
 - **백프레셔**: 16ms/64KB 코얼레싱 + `seq`, **UTF-8 경계 캐리**(Rust 고유), exit/dispose 시 `flush_final`.
 - **테스트**: 모든 부작용(pty/http/fs/event/clock)을 트레잇 뒤로 → cargo 테스트 T-A~T-F, `#[tokio::test]`는 스레드/타이머/HTTP 케이스에만.
 - **영속화**: `PersistedState`(agents+version:1) → app data dir JSON, sessionId는 런타임 전용 미저장. **quit**: `RunEvent::ExitRequested`에서 PTY kill + settings cleanup + axum graceful shutdown.
+
+---
+
+## 10. 완료 알림 고도화 (이슈 #39)
+
+> 이 절이 §3.4 스켈레톤의 `extract_message`/hub 알림 동작을 대체하는 정본이다.
+> observer 어댑터 리팩터(§3.4는 curl+extract_message 시절 스케치)를 반영한다.
+
+### 10.1 완료 알림에 완료 내용 담기
+
+`ObserverEvent::Stop { message, running }`의 `message`를 실제 완료 내용으로 채운다.
+비면 종전대로 hub의 `STOP_FALLBACK`("작업이 완료되었습니다.")을 쓴다.
+
+- **Codex**: `observer/codex.rs`의 `Stop` 매핑이 body의 `last_assistant_message`를
+  `event::codex_stop_message`로 추출·절단한다(예전엔 의도적으로 버렸다).
+- **Claude**: Stop 훅 body엔 `message`가 없다. `observer/claude.rs`가
+  `message(body).or_else(|| claude_transcript_message(body))`로, body의
+  `transcript_path`(JSONL)를 끝에서 최대 64KB만 읽어(`read_file_tail`) 뒤에서부터
+  줄을 스캔, 마지막 `type=="assistant"` 라인의 `message.content[]` 중 `type=="text"`
+  조각을 이어붙인다. 파일 부재/포맷 이상은 None으로 폴백.
+- **절단**: `event::MAX_STOP_MESSAGE_CHARS`(300, chars 기준) 초과 시 `truncate_stop_message`가
+  `head + "…"`로 자르고, 공백뿐이면 None. 프런트는 이 위에서 `MAX_EXCERPT`(80)로 더 줄인다.
+
+### 10.2 완료 후에도 계속 진행 중이면 "진행중"으로 복귀
+
+두 경로로 idle→working 복귀를 만든다.
+
+- **(a) 결정적 신호 — `turnReducer`**: idle 상태에서 `tool` 입력이 오면 새 턴을 연다
+  (`openTurn`). Stop 이후 PreToolUse/PostToolUse는 확실한 "작업 재개" 신호.
+- **(b) 출력 휴리스틱 — `NotificationHub`**: `spawn_output_pump`가 BEL 배선 옆에서
+  세션 PTY 출력 배치마다 `hub.on_output(session_id, byte_len)`을 호출한다. hub는
+  Stop 알림이 **실제 방출된** 시각을 세션별로 기억(`resume_watch`)하고,
+  `RESUME_GRACE`(3s, 프롬프트 리드로우 무시)가 지난 뒤 `RESUME_WINDOW`(30s) 내에
+  누적 출력이 `RESUME_THRESHOLD_BYTES`(8KB) 초과하면 **1회만**:
+  1. 그 세션의 stop 소스 알림을 `clear`로 걷어낸다(`notification-cleared` 재사용).
+  2. `ActivityKind::Resume` activity-event를 방출한다.
+  임계치를 크게 잡는 이유는 키 에코/입력박스 리드로우 오탐 방지. 시각은 hub의 `Clock`
+  추상화를 따르며, 상수는 `#[cfg(test)] with_resume_params`로 주입 가능.
+  프런트 `sessionBridge.onActivity`는 `resume`을 `applyActivityEvent`로 흘리고,
+  `appStore`가 이를 턴 목적상 `tool`과 동일 취급해 working으로 복귀시킨다. 잘못
+  열린 턴은 기존 stop/settle(세션 종료) 경로가 그대로 정산하므로 별도 타임아웃은 없다.
+
+### 10.3 앱이 백그라운드일 때 터미널이 열려 있어도 알림
+
+- **창 포커스 추적**: `installWindowFocusTracking`(`ipc/windowFocus.ts`)이
+  `getCurrentWindow().onFocusChanged`(초기값 `isFocused()`)를 구독해
+  `appStore.windowFocused`를 갱신한다. bootstrap의 브리지 설치 직후 설치.
+- **억제 완화**: `pushNotification`은 `activeTerminalAgentId === e.agentId && windowFocused`
+  일 때만 억제 → 비포커스면 티커/배지/사운드가 모두 동작.
+- **OS 데스크탑 알림**: `tauri-plugin-notification`(Cargo/`lib.rs` 플러그인/capabilities
+  `notification:*`/npm `@tauri-apps/plugin-notification`). `sessionBridge.onNotification`이
+  `!windowFocused`일 때만 `maybeSendOsNotification`(`ipc/osNotify.ts`, 동적 import)로
+  발송한다. 제목=에이전트 이름/ID, 본문=메시지 excerpt. 권한은 최초 발송 전 1회
+  확인/요청. 테스트는 플러그인/`@tauri-apps/api/window` 모듈을 모킹.
