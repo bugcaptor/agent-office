@@ -447,9 +447,24 @@ fn spawn_daemon(exe_path: &Path, socket_path: &Path, log_path: &Path) -> io::Res
     Ok(())
 }
 
+/// 데몬 스폰 결정을 프로세스 전역으로 직렬화하는 락. 브로커 모드에서 여러
+/// 세션이 동시에 생성될 때 소켓이 아직 없으면, 각 호출이 제각기 데몬을
+/// 스폰하고 각 데몬이 소켓을 remove+rebind해 세션이 서로 다른 데몬으로 갈라진다
+/// (재시작 후 unlink된 데몬의 세션은 유실). 스폰 임계구역만 감싸 단일 승자를
+/// 보장한다. 서로 다른 앱 프로세스 간 경합은 별도 소유권 설계(멀티인스턴스
+/// 이슈)의 몫이라 여기서는 프로세스 내 경합만 막는다.
+static DAEMON_SPAWN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// 데몬에 연결을 시도하고, 없으면 스폰 후 ~2초 백오프로 재시도한다
 /// (설계 문서 §핵심 3).
 pub fn connect_or_spawn(socket_path: &Path, exe_path: &Path, log_path: &Path) -> io::Result<Client> {
+    if let Ok(client) = Client::connect(socket_path) {
+        return Ok(client);
+    }
+    // 스폰은 프로세스 전역에서 단일 승자만: 락을 잡고 connect를 재확인해
+    // (경합 스레드가 이미 스폰했으면 그 데몬에 붙는다) 여전히 없을 때만 스폰한다.
+    // 락이 poison돼도 세션 생성이 영구히 막히지 않게 into_inner로 복구한다.
+    let _spawn_guard = DAEMON_SPAWN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if let Ok(client) = Client::connect(socket_path) {
         return Ok(client);
     }
