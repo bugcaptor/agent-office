@@ -16,6 +16,7 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -28,6 +29,12 @@ use super::protocol::{self, write_all_raw, ExitStatusMsg, Message, SessionInfo};
 /// 데몬이 세션당 보관하는 미전달 출력 상한(§프로토콜). base64 팽창은 전송
 /// 시점(AdoptOk)에만 계산 — 보관은 원본 바이트로.
 const RING_CAPACITY: usize = 512 * 1024;
+
+/// data conn별 writer 스레드로 흘리는 출력 프레임 큐의 상한(프레임 수, §#48).
+/// 블로킹 소켓 write를 io 락 밖(전용 writer 스레드)으로 빼되, 앱이 멈춰 큐가
+/// 이만큼 차면 그 conn을 버린다(링버퍼가 진실원본이라 재접속 시 backlog로 복구).
+/// 프레임 하나는 reader buf 상한(8KiB)이므로 상한 메모리는 ~2MiB.
+const WRITER_QUEUE_CAP: usize = 256;
 
 /// 기동 후 이 시간 안에 Handoff가 하나도 없으면 고아 데몬으로 보고 종료.
 const FIRST_HANDOFF_TIMEOUT: Duration = Duration::from_secs(60);
@@ -182,9 +189,15 @@ type Table = Mutex<HashMap<String, SessionEntry>>;
 /// 활성 data conn 핸들. `fd`는 handle_connection 스레드가 소유한 UnixStream의
 /// 빌린 fd -- 그 스레드가 raw 입력 루프를 도는 동안 유효하다. `gen`은 교체
 /// 판정용(오래된 conn이 자기 자리를 잘못 비우지 않게).
+///
+/// §#48: 앱 방향 출력 write는 이제 전용 writer 스레드가 담당하고, reader는 이
+/// `tx`로 프레임을 넘길 뿐이다(블로킹 write가 io 락을 물지 않게). conn이
+/// 슬롯에서 제거(take/replace)되면 `tx`가 드롭돼 writer의 `recv`가 끝난다.
 struct DataConn {
     fd: RawFd,
     gen: u64,
+    /// 출력 프레임을 writer 스레드로 넘기는 바운드 채널(꽉 차면 conn 폐기).
+    tx: SyncSender<Vec<u8>>,
 }
 
 struct BrokerIo {
@@ -341,10 +354,19 @@ fn spawn_broker_session(
                 Ok(n) => {
                     let mut io = reader_session.io.lock().unwrap();
                     io.ring.push(&buf[..n]);
-                    if let Some(conn) = &io.conn {
-                        // 소켓 쓰기 실패는 무시 -- data conn 정리는 입력 루프의
-                        // detach가 책임진다(잔여 바이트는 링버퍼에 남아 재접속 시 리플레이).
-                        let _ = write_all_raw(conn.fd, &buf[..n]);
+                    // §#48: 블로킹 write 대신 non-blocking try_send로 writer 스레드에
+                    // 넘긴다 -- io 락을 쥔 채 소켓 write가 멈추던 결함을 없앤다. 큐가
+                    // 꽉 찼거나(느린/멈춘 앱) writer가 죽어 채널이 끊겼으면 이 conn을
+                    // 버린다: fd를 shutdown해 입력 펌프/writer를 깨우고 슬롯을 비운다.
+                    // 잔여/유실 바이트는 링버퍼에 남아 재접속 시 backlog로 복구된다.
+                    let send_failed = match &io.conn {
+                        Some(conn) => conn.tx.try_send(buf[..n].to_vec()).is_err(),
+                        None => false,
+                    };
+                    if send_failed {
+                        if let Some(conn) = io.conn.take() {
+                            let _ = shutdown(conn.fd, Shutdown::Both);
+                        }
                     }
                 }
                 Err(_) => break,
@@ -400,22 +422,60 @@ fn cleanup_broker_paths(paths: &[String]) {
     }
 }
 
-/// DataAttach 처리: 응답 프레임을 보낸 뒤 이 연결을 raw 스트림으로 전환한다.
-/// 백로그 리플레이 + conn 설치를 io 락 아래에서 원자적으로 수행해, 리플레이와
-/// 라이브 출력 사이에 이음새(유실/중복)가 생기지 않게 한다. 이후 이 스레드는
-/// 소켓의 raw 입력(앱->master)을 자식이 살아있는 동안 계속 펌프한다.
+/// 한 data conn의 앱 방향 출력(master->앱)을 전담하는 writer 스레드를 띄운다
+/// (§#48). 블로킹 소켓 write를 io 락 밖으로 완전히 빼는 핵심: 이 스레드만 fd에
+/// write하고, reader는 `tx`로 프레임을 넘길 뿐이다.
+///
+/// **원자성 seam**: DataAttachOk 프레임과 backlog는 채널이 아니라 이 스레드의
+/// *초기 상태*로 받아 큐보다 **먼저** 쓴다. 호출자가 io 락 아래에서 backlog를
+/// 캡처하고 conn(=tx)을 설치하므로, 그 이후 reader가 `tx`로 넣는 라이브 프레임은
+/// 반드시 backlog 뒤에 온다 -- enqueue가 새로운 직렬화 지점이 되어 기존의
+/// "락 안 원자성"이 그대로 보존된다(유실/중복 없음).
+///
+/// `close_write_after_backlog`(=자식이 이미 reap됨, §P2-b)면 backlog만 보내고
+/// write 쪽을 shutdown해 앱이 EOF를 보게 하고 끝낸다(라이브 출력이 없으므로 큐
+/// 드레인 없음). fd는 호출자(run_data_conn을 부른 handle_connection)가 소유하며,
+/// run_data_conn이 이 스레드를 join한 **뒤** 반환하므로 fd가 닫히기 전에 이
+/// 스레드가 확정 종료된다(fd 재사용 레이스 방지).
+fn spawn_conn_writer(
+    fd: RawFd,
+    stream_offset: u64,
+    backlog: Vec<u8>,
+    rx: Receiver<Vec<u8>>,
+    close_write_after_backlog: bool,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        if protocol::write_frame(fd, &Message::DataAttachOk { stream_offset }, None).is_err()
+            || write_all_raw(fd, &backlog).is_err()
+        {
+            // 초기 전송 실패(앱이 이미 끊김 등) -- conn 정리는 입력 펌프의
+            // detach_if가 담당하므로 여기선 그냥 끝낸다.
+            return;
+        }
+        if close_write_after_backlog {
+            let _ = shutdown(fd, Shutdown::Write);
+            return;
+        }
+        // 라이브 프레임 드레인: conn이 슬롯에서 제거되면 tx가 드롭돼 recv가 끝난다.
+        while let Ok(chunk) = rx.recv() {
+            if write_all_raw(fd, &chunk).is_err() {
+                break;
+            }
+        }
+    })
+}
+
+/// DataAttach 처리: 이 연결을 raw 스트림으로 전환한다. backlog 캡처 + conn(tx)
+/// 설치를 io 락 아래에서 원자적으로 수행하고(§원자성 seam은 spawn_conn_writer
+/// 참고), 실제 소켓 write는 전용 writer 스레드로 넘긴다 -- 블로킹 write가 io
+/// 락을 물어 List/Kill 등을 얼리던 결함(§#48)을 없앤다. 이후 이 스레드는 소켓의
+/// raw 입력(앱->master)을 펌프하다가, 끝나면 writer를 join한 뒤 반환한다.
 fn run_data_conn(fd: RawFd, session: &Arc<BrokerSession>) {
     let gen = session.next_gen();
 
-    // DataAttachOk(+stream_offset) 프레임, 백로그 전송, closed 판정, conn 설치를
-    // 하나의 io 락 아래에서 수행한다: (1) stream_offset이 백로그 첫 바이트와 정합
-    // (§P1), (2) closed(§P2-b)와 conn 설치가 waiter의 정리와 직렬화된다.
-    enum Outcome {
-        Installed(Option<DataConn>), // 정상 설치 -- 교체된 이전 conn(있으면)
-        AlreadyClosed,               // 자식이 이미 reap됨 -> 입력 펌프 없이 백로그+EOF
-        WriteFailed,                 // 프레임/백로그 전송 실패
-    }
-    let outcome = {
+    // io 락 아래에서: backlog 캡처 + writer 스레드 생성 + conn 설치. writer는 락
+    // 밖에서 backlog/라이브를 write하므로 블로킹이 락을 물지 않는다.
+    let (writer_join, prev, run_pump) = {
         let mut io = session.io.lock().unwrap();
         // 스냅샷이 업로드된 세션은 그 오프셋 이후 바이트만 리플레이한다(앱이
         // 스냅샷을 화면으로 별도 복원하므로 중복 방지). 한 번도 없으면 링 전체.
@@ -426,44 +486,46 @@ fn run_data_conn(fd: RawFd, session: &Arc<BrokerSession>) {
         // 이 백로그 첫 바이트의 절대 스트림 오프셋 -- 앱이 수신 카운터를 여기서
         // 시작해, 이후 UpdateSnapshot에 실제 수신 오프셋을 실어 보낸다(§P1).
         let stream_offset = io.ring.total() - backlog.len() as u64;
-        if protocol::write_frame(fd, &Message::DataAttachOk { stream_offset }, None).is_err()
-            || write_all_raw(fd, &backlog).is_err()
-        {
-            Outcome::WriteFailed
-        } else if io.closed {
-            Outcome::AlreadyClosed
+        let closed = io.closed; // 자식이 이미 reap됨(§P2-b) -> 라이브 출력 없음.
+        let (tx, rx) = sync_channel::<Vec<u8>>(WRITER_QUEUE_CAP);
+        // writer 생성은 락 아래(큐가 빈 시점). 이후 reader의 enqueue는 이 conn
+        // 설치 뒤에만 가능하므로 backlog 뒤 순서가 보장된다.
+        let writer_join = spawn_conn_writer(fd, stream_offset, backlog, rx, closed);
+        if closed {
+            // 설치하지 않는다(라이브 출력 없음). tx는 여기서 드롭되지만 writer는
+            // closed 경로라 rx를 보지 않는다. 입력 펌프도 돌리지 않는다.
+            (writer_join, None, false)
         } else {
-            Outcome::Installed(io.conn.replace(DataConn { fd, gen }))
+            (writer_join, io.conn.replace(DataConn { fd, gen, tx }), true)
         }
     };
-    match outcome {
-        Outcome::WriteFailed => return,
-        Outcome::AlreadyClosed => {
-            // 자식이 이미 죽어 master에 쓸 게 없다 -- 백로그는 이미 보냈으니 write
-            // 쪽만 shutdown해 앱 reader가 EOF를 보게 하고 입력 펌프는 생략한다.
-            let _ = shutdown(fd, Shutdown::Write);
-            return;
-        }
-        Outcome::Installed(prev) => {
-            if let Some(prev) = prev {
-                let _ = shutdown(prev.fd, Shutdown::Both);
+
+    // 교체된 이전 conn: 소켓을 shutdown해 그 입력 펌프/writer를 깨우고, prev를
+    // 드롭해 그 tx를 떨어뜨린다(이전 writer의 recv 종료).
+    if let Some(prev) = prev {
+        let _ = shutdown(prev.fd, Shutdown::Both);
+    }
+
+    if run_pump {
+        // raw 입력 펌프: 소켓 -> master. 앱이 끊거나(Ok(0)) 교체/종료로 shutdown되면 끝.
+        let mut buf = [0u8; 8192];
+        loop {
+            match nix::unistd::read(fd, &mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let _ = session.input.lock().unwrap().write_all(&buf[..n]);
+                }
+                Err(nix::errno::Errno::EINTR) => continue,
+                Err(_) => break,
             }
         }
     }
 
-    // raw 입력 펌프: 소켓 -> master. 앱이 끊거나(Ok(0)) 교체/종료로 shutdown되면 끝.
-    let mut buf = [0u8; 8192];
-    loop {
-        match nix::unistd::read(fd, &mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                let _ = session.input.lock().unwrap().write_all(&buf[..n]);
-            }
-            Err(nix::errno::Errno::EINTR) => continue,
-            Err(_) => break,
-        }
-    }
+    // conn을 슬롯에서 비운다(우리 gen이면). 이게 우리 tx를 드롭해 writer의 recv를
+    // 끝낸다 -- join보다 **먼저** 해야 writer가 깨어 종료하고 join이 안 막힌다.
     session.detach_if(gen);
+    // fd가 닫히기(handle_connection 반환) 전에 writer가 확정 종료하도록 join한다.
+    let _ = writer_join.join();
 }
 
 /// 연결 하나(=하나의 fd, Hello 이후 여러 요청을 순차로 받을 수 있다)를
@@ -1372,6 +1434,64 @@ mod tests {
         protocol::write_frame(control.as_raw_fd(), &Message::Kill { agent_id: "a1".into() }, None)
             .unwrap();
         let _ = protocol::read_frame(control.as_raw_fd());
+        drop(control);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn broker_stalled_data_consumer_does_not_freeze_control_rpcs() {
+        // §#48: 앱 data 소비자가 멈춰 소켓 송신버퍼가 가득 차도, reader 스레드가
+        // io 락을 쥔 채 블로킹 write에 멈추면 안 된다 -- 그러면 List/Kill 등 다른
+        // RPC가 전부 얼어붙는다. 출력 write를 전용 writer 스레드 + 바운드 큐로
+        // 락 밖에 뺀 것의 회귀 테스트: 소비자가 멈춰도 (1) List가 즉시 응답하고,
+        // (2) 큐가 차면 그 conn이 폐기돼 attached=false로 수렴하며, (3) Kill이
+        // 얼지 않고 완료해야 한다.
+        let (socket_path, dir) = start_real_daemon();
+        let control = connect_hello(&socket_path);
+        // 자식이 출력을 쉼없이 쏟아낸다(소켓 송신버퍼 + writer 큐를 빠르게 채운다).
+        spawn_broker(control.as_raw_fd(), "a1", "yes ABCDEFGHIJKLMNOP");
+
+        // data conn을 붙이되 DataAttachOk만 받고 이후 절대 읽지 않는다(멈춘 소비자).
+        let data = connect_hello(&socket_path);
+        protocol::write_frame(data.as_raw_fd(), &Message::DataAttach { agent_id: "a1".into() }, None)
+            .unwrap();
+        assert!(matches!(
+            protocol::read_frame(data.as_raw_fd()).unwrap().0,
+            Message::DataAttachOk { .. }
+        ));
+        // 소켓 송신버퍼와 writer 큐가 찰 시간을 준다(writer가 블로킹 write에 멈춘다).
+        std::thread::sleep(Duration::from_millis(300));
+
+        // control 연결의 List가 멈춘 소비자와 무관하게 유계 시간 안에 응답해야 한다.
+        // 워치독 스레드로 각 호출을 감싸 io 락이 얼었다면 recv_timeout으로 잡는다.
+        let control_fd = control.as_raw_fd();
+        for _ in 0..5 {
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(list_attached(control_fd, "a1"));
+            });
+            assert!(
+                rx.recv_timeout(Duration::from_secs(3)).is_ok(),
+                "List froze while a data consumer was stalled — io lock held during blocking write"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // 멈춘 소비자의 conn은 큐가 차면 폐기돼 attached=false로 수렴한다.
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while list_attached(control.as_raw_fd(), "a1") != Some(false) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a stalled data conn must be dropped once its queue fills -> attached clears"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // Kill도 얼지 않고 완료해야 한다(멈춘 소비자가 io 락을 물지 않으므로).
+        protocol::write_frame(control.as_raw_fd(), &Message::Kill { agent_id: "a1".into() }, None)
+            .unwrap();
+        let _ = protocol::read_frame(control.as_raw_fd());
+        drop(data);
         drop(control);
         let _ = std::fs::remove_dir_all(&dir);
     }
