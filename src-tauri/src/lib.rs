@@ -13,6 +13,7 @@ mod persistence;
 pub mod pixellab;
 mod session;
 mod session_events;
+mod shell_export;
 #[cfg(unix)]
 mod sessiond;
 mod state;
@@ -225,6 +226,11 @@ pub fn run() {
                     }
                 });
             }
+            // 이슈 #42: 셸 출력 내보내기 임시 .txt 누적 방지 -- 부팅 시 1회,
+            // 7일보다 오래된 파일을 백그라운드로 청소한다(부팅 블로킹 금지).
+            std::thread::spawn(|| {
+                shell_export::gc_old_exports(std::time::Duration::from_secs(7 * 24 * 3600))
+            });
             // AppState가 갖는 캐시와 동일한 Arc를 observer URL getter 생성 전에
             // 만든다 -- 아래 getter가 이 Arc를 clone해 쥐고 있어야
             // set_app_settings의 실행 중 설정 변경(특히 ON→OFF)이 새 세션의
@@ -340,6 +346,7 @@ pub fn run() {
             ipc::commands::set_app_settings,
             ipc::commands::open_in_vscode,
             ipc::commands::open_in_terminal,
+            ipc::commands::export_terminal_output,
             ipc::commands::pick_directory,
             ipc::commands::append_session_turn,
             ipc::commands::load_session_turns,
@@ -466,6 +473,7 @@ mod tests {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: Default::default(),
+            external_editor: Default::default(),
             attention_hold_ms: 5000,
         }));
         let registry = Arc::new(SessionRegistry::new());

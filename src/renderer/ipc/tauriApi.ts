@@ -146,6 +146,10 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.openInTerminal, { path });
   },
 
+  async exportTerminalOutput(agentName, content) {
+    return await invoke(Commands.exportTerminalOutput, { agentName, content });
+  },
+
   async pickDirectory(initialDir) {
     return await invoke(Commands.pickDirectory, { initialDir: initialDir ?? null });
   },

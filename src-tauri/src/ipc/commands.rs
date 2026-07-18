@@ -486,6 +486,34 @@ pub async fn open_in_terminal(
     )
 }
 
+/// 이슈 #42: 셸 출력(터미널 버퍼 plain text)을 임시 .txt 파일로 쓰고 사용자가
+/// 설정한 외부 에디터로 연다. `content`는 렌더러(TerminalRegistry.getPlainText)가
+/// 추출한 현재 화면(스크롤백 포함), `agent_name`은 파일명에 쓸 표시 이름이다.
+/// 어떤 에디터를 쓸지는 앱 설정 `externalEditor`(system/vscode)를 따른다.
+/// 성공 시 쓴 파일의 절대 경로 문자열을 돌려준다. 구현은 `crate::shell_export`.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn export_terminal_output(
+    app_state: State<'_, AppState>,
+    agent_name: String,
+    content: String,
+) -> Result<String, String> {
+    // 파일명 충돌 없이 매번 새 파일 -- 초 단위 timestamp를 파일명에 넣는다.
+    let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let file = crate::shell_export::write_export_file(&agent_name, &content, &timestamp)?;
+
+    // 설정 read 가드는 에디터 프로세스(블로킹 status 대기)를 실행하기 전에
+    // 드롭한다 -- 실행이 길어져도 설정 락을 쥐고 있지 않도록.
+    let use_vscode = {
+        let guard = app_state.settings.read().unwrap();
+        matches!(
+            guard.external_editor,
+            crate::persistence::settings_store::ExternalEditor::Vscode
+        )
+    };
+    crate::shell_export::open_file_in_editor(&file, use_vscode)?;
+    Ok(file.to_string_lossy().into_owned())
+}
+
 /// 네이티브 폴더 선택 다이얼로그를 띄운다. 사용자가 고른 절대 경로,
 /// 취소 시 None. `initial_dir`이 (틸드 확장 후) 실존 디렉터리면 거기서
 /// 시작한다 — 아니면 OS 기본 위치. 다이얼로그 표시의 메인 스레드 디스패치는
@@ -734,6 +762,7 @@ mod tests {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: Default::default(),
+            external_editor: Default::default(),
             attention_hold_ms: 5000,
         };
 
@@ -770,6 +799,7 @@ mod tests {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: Default::default(),
+            external_editor: Default::default(),
             attention_hold_ms: 5000,
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
@@ -805,6 +835,7 @@ mod tests {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: Default::default(),
+            external_editor: Default::default(),
             attention_hold_ms: 5000,
         };
 

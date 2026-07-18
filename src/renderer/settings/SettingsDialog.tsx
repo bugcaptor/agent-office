@@ -4,7 +4,7 @@
 // 값을 직접 바인딩 — 토글 즉시 updateAppSettings로 저장된다(확인 버튼 없음).
 import { useAppStore } from "../store/appStore";
 import { SettingsForm } from "./SettingsForm";
-import type { ExternalTerminalApp } from "@shared/types";
+import type { ExternalEditorApp, ExternalTerminalApp } from "@shared/types";
 
 export function SettingsDialog() {
   const modal = useAppStore((s) => s.modal);
@@ -97,6 +97,26 @@ export function SettingsDialog() {
             >
               <option value="terminal">Terminal (기본)</option>
               <option value="iterm">iTerm2</option>
+            </select>
+          </label>
+          <label className="settings-item">
+            <span>
+              <strong>셸 출력 에디터</strong>
+              <small>
+                터미널 탭 우클릭 "셸 출력을 에디터로 보기"(단축키 Cmd/Ctrl+Shift+E)가
+                .txt를 열 때 사용할 앱입니다.
+              </small>
+            </span>
+            <select
+              value={appSettings.externalEditor}
+              onChange={(e) =>
+                updateAppSettings({
+                  externalEditor: e.target.value as ExternalEditorApp,
+                })
+              }
+            >
+              <option value="system">시스템 기본</option>
+              <option value="vscode">VS Code</option>
             </select>
           </label>
         </div>
