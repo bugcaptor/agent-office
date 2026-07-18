@@ -34,6 +34,7 @@ describe("SettingsDialog", () => {
         soundEnabled: true,
         soundVolume: 0.5,
         externalTerminal: "terminal",
+        attentionHoldMs: 5000,
       },
       false,
     );
@@ -53,6 +54,7 @@ describe("SettingsDialog", () => {
       soundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
+      attentionHoldMs: 5000,
     });
   });
 
@@ -66,6 +68,7 @@ describe("SettingsDialog", () => {
         soundEnabled: true,
         soundVolume: 0.5,
         externalTerminal: "terminal",
+        attentionHoldMs: 5000,
       },
       false,
     );

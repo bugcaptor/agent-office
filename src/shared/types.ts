@@ -372,6 +372,9 @@ export interface AppSettings {
   soundVolume: number;
   /** "OS 터미널로 열기"가 사용할 터미널 앱. 기본 Terminal.app(macOS 전용). */
   externalTerminal: ExternalTerminalApp;
+  /** 질문(Hook) 알림을 방출 전 보류하는 시간(ms). 그 사이 세션이 계속
+   * 일하면(오토모드 자동 승인 등) 알림을 조용히 폐기한다. 0이면 즉시 알림. 기본 5000. */
+  attentionHoldMs: number;
 }
 
 /** `get_app_settings` 응답. firstRun = settings.json 부재(첫 실행). */

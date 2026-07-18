@@ -212,6 +212,19 @@ pub fn run() {
 
             let settings_store = SettingsStore::new(data_dir.join("settings.json"));
             let (settings, settings_first_run) = settings_store.load();
+            // 이슈 #41: 오토모드 질문 알림 홀드 시간을 설정에서 주입한다.
+            hub.set_hold_duration(Duration::from_millis(settings.attention_hold_ms));
+            // 500ms 간격 단일 스위퍼로 만료된 보류 알림을 방출한다(훅별 타이머 없이).
+            {
+                let hub = hub.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut ticker = tokio::time::interval(Duration::from_millis(500));
+                    loop {
+                        ticker.tick().await;
+                        hub.flush_expired();
+                    }
+                });
+            }
             // AppState가 갖는 캐시와 동일한 Arc를 observer URL getter 생성 전에
             // 만든다 -- 아래 getter가 이 Arc를 clone해 쥐고 있어야
             // set_app_settings의 실행 중 설정 변경(특히 ON→OFF)이 새 세션의
@@ -453,6 +466,7 @@ mod tests {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: Default::default(),
+            attention_hold_ms: 5000,
         }));
         let registry = Arc::new(SessionRegistry::new());
         let events: Arc<dyn AppEvents> = Arc::new(crate::state::fake::RecordingEvents::default());

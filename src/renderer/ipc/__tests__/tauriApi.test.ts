@@ -435,6 +435,7 @@ describe("app settings commands", () => {
       soundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal" as const,
+      attentionHoldMs: 5000,
     };
     const tauriApi = await importTauriApi();
 

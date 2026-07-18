@@ -15,6 +15,9 @@ fn default_true() -> bool {
 fn default_sound_volume() -> f32 {
     0.5
 }
+fn default_attention_hold_ms() -> u64 {
+    5000
+}
 
 /// 라벨 요약에 사용할 CLI 제공자. 기존 설정과의 호환을 위해 기본은 Claude.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -65,6 +68,10 @@ pub struct AppSettings {
     /// "OS 터미널로 열기"가 사용할 외부 터미널 앱(macOS 전용).
     #[serde(default)]
     pub external_terminal: ExternalTerminal,
+    /// 질문(Hook) 알림을 방출 전 보류하는 시간(ms). 그 사이 세션이 계속
+    /// 일하면(오토모드 자동 승인 등) 알림을 조용히 폐기한다. 0이면 즉시 알림.
+    #[serde(default = "default_attention_hold_ms")]
+    pub attention_hold_ms: u64,
 }
 
 impl Default for AppSettings {
@@ -77,6 +84,7 @@ impl Default for AppSettings {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Terminal,
+            attention_hold_ms: 5000,
         }
     }
 }
@@ -156,6 +164,7 @@ mod tests {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Terminal,
+            attention_hold_ms: 5000,
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -247,12 +256,14 @@ mod tests {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Iterm,
+            attention_hold_ms: 5000,
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();
         assert!(json.contains("\"summarizerEnabled\""), "{json}");
         assert!(json.contains("\"summaryProvider\": \"codex\""), "{json}");
         assert!(json.contains("\"externalTerminal\": \"iterm\""), "{json}");
+        assert!(json.contains("\"attentionHoldMs\": 5000"), "{json}");
         assert!(json.contains("\"observerEnabled\""), "{json}");
         assert!(!json.contains("claudeCliEnabled"), "{json}");
         assert!(!json.contains("claudeHooksEnabled"), "{json}");
@@ -330,6 +341,7 @@ mod tests {
             ExternalTerminal::Terminal,
             "부재 시 기본 Terminal.app"
         );
+        assert_eq!(s.attention_hold_ms, 5000, "부재 시 기본 홀드 5초");
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 }

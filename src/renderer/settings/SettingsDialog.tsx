@@ -61,6 +61,26 @@ export function SettingsDialog() {
           </label>
           <label className="settings-item">
             <span>
+              <strong>질문 알림 지연 (초)</strong>
+              <small>
+                질문 알림을 이 시간만큼 보류하고, 그 사이 에이전트가 계속
+                일하면(오토모드 자동 승인 등) 알림을 내지 않습니다. 0이면 즉시
+                알림.
+              </small>
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={60}
+              value={Math.round(appSettings.attentionHoldMs / 1000)}
+              onChange={(e) => {
+                const secs = Math.max(0, Math.min(60, Math.round(Number(e.target.value) || 0)));
+                updateAppSettings({ attentionHoldMs: secs * 1000 });
+              }}
+            />
+          </label>
+          <label className="settings-item">
+            <span>
               <strong>외부 터미널 앱</strong>
               <small>
                 터미널 탭 우클릭 "OS 터미널로 열기"가 사용할 앱입니다. macOS

@@ -444,6 +444,11 @@ async fn set_app_settings_inner(app_state: &AppState, settings: AppSettings) -> 
         .settings_first_run
         .store(false, std::sync::atomic::Ordering::SeqCst);
 
+    // 이슈 #41: 질문 알림 홀드 시간 변경을 즉시 hub 에 반영한다.
+    app_state
+        .hub
+        .set_hold_duration(std::time::Duration::from_millis(settings.attention_hold_ms));
+
     if settings.observer_enabled {
         let _ = app_state
             .observer_server
@@ -729,6 +734,7 @@ mod tests {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: Default::default(),
+            attention_hold_ms: 5000,
         };
 
         // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
@@ -764,6 +770,7 @@ mod tests {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: Default::default(),
+            attention_hold_ms: 5000,
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
         // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.
@@ -798,6 +805,7 @@ mod tests {
             sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: Default::default(),
+            attention_hold_ms: 5000,
         };
 
         assert!(set_app_settings_inner(&state, settings).await.is_ok());

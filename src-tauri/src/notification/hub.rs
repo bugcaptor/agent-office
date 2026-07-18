@@ -35,6 +35,28 @@ const RESUME_WINDOW: Duration = Duration::from_secs(30);
 /// 감시창 내 누적 출력이 이 바이트를 넘으면 1회 복귀 신호를 낸다.
 const RESUME_THRESHOLD_BYTES: usize = 8 * 1024;
 
+// ── 오토모드 질문 알림 홀드 상수(이슈 #41) ─────────────────────────────
+//
+// 오토모드에서 에이전트의 질문(Hook)이 자동 승인되는데도 느낌표 알림이 즉시
+// 떠버린다. 그래서 Hook 알림을 hold_duration 만큼 보류했다가, 그 사이 세션이
+// 계속 일한다는 신호(프롬프트·도구·서브에이전트·출력 폭주 등)가 오면 조용히
+// 폐기하고, 신호가 없으면 그때 방출한다. 홀드 지속시간 자체는 상수가 아니라
+// 설정(attention_hold_ms) 주입값이다.
+/// 홀드 시작 직후 이 시간 안의 출력은 질문 UI 자체 렌더링으로 보고 무시한다.
+const HOLD_OUTPUT_GRACE: Duration = Duration::from_secs(1);
+/// grace 이후 누적 출력이 이 바이트를 넘으면 "아직 작업중"으로 보고 홀드를 폐기한다.
+const HOLD_OUTPUT_THRESHOLD_BYTES: usize = 8 * 1024;
+
+/// 세션별 보류 중인 질문 알림(이슈 #41). 세션당 최대 1개.
+struct HeldNotification {
+    /// 보류된 알림 이벤트(방출 시 그대로 큐/이벤트로 나간다).
+    ev: NotificationEvent,
+    /// 보류 시작 시각(clock.now()). 만료·grace 판정 기준.
+    held_at: Instant,
+    /// grace 이후 누적 출력 바이트(출력 폭주 폐기 판정용).
+    accumulated: usize,
+}
+
 /// 세션별 Stop-후 출력 감시 상태(이슈 #39 출력 휴리스틱).
 struct ResumeWatch {
     /// 마지막 Stop 알림 시각(clock.now()).
@@ -73,6 +95,10 @@ pub struct NotificationHub {
     resume_grace: Duration,
     resume_window: Duration,
     resume_threshold: usize,
+    /// 오토모드 질문 알림 홀드(이슈 #41). 세션당 최대 1개.
+    held: Mutex<HashMap<SessionId, HeldNotification>>,
+    /// Hook 알림 보류 시간. 0이면 즉시 방출(현행 동작 = 기존 테스트 불변).
+    hold_duration: Mutex<Duration>,
 }
 
 impl NotificationHub {
@@ -93,7 +119,17 @@ impl NotificationHub {
             resume_grace: RESUME_GRACE,
             resume_window: RESUME_WINDOW,
             resume_threshold: RESUME_THRESHOLD_BYTES,
+            held: Mutex::new(HashMap::new()),
+            // 기본 0 = 즉시 방출. 실제 값은 lib.rs가 설정 로드 직후
+            // set_hold_duration으로 주입한다(기존 테스트는 0으로 현행 동작 유지).
+            hold_duration: Mutex::new(Duration::ZERO),
         }
+    }
+
+    /// Hook 알림 보류 시간을 주입한다(이슈 #41). 설정 로드/변경 시 lib.rs·
+    /// set_app_settings가 호출. 0이면 즉시 방출(홀드 비활성).
+    pub fn set_hold_duration(&self, d: Duration) {
+        *self.hold_duration.lock().unwrap() = d;
     }
 
     /// 테스트 전용: 출력 휴리스틱 임계치를 주입한다(FakeClock 과 함께 결정론적 검증).
@@ -152,6 +188,9 @@ impl NotificationHub {
             ),
             ObserverEvent::Stop { message, running } => {
                 let running = running.unwrap_or(0);
+                // 이슈 #41: 턴이 종료되면(자동답변 후 케이스 포함) 보류 중인 질문
+                // 알림을 폐기한다 — 질문+완료 이중 알림 방지. running 값과 무관.
+                self.held.lock().unwrap().remove(session_id);
                 self.ingest_subagent_count(session_id, running);
                 // 백그라운드 서브에이전트가 아직 도는 중의 Stop은 턴 경계일 뿐
                 // 완료가 아니다 — 알림을 내지 않는다(이슈 #27). 렌더러의 턴
@@ -172,6 +211,15 @@ impl NotificationHub {
     }
 
     fn ingest_activity_inner(&self, session_id: &str, kind: ActivityKind, text: Option<String>) {
+        // 이슈 #41: 세션이 계속 일한다는 신호(프롬프트 제출·도구 사용·서브에이전트
+        // 시작)가 오면 보류 중인 질문 알림을 조용히 폐기한다. SubStop/SubCount/
+        // Resume 은 취소 신호가 아니다.
+        if matches!(
+            kind,
+            ActivityKind::Prompt | ActivityKind::Tool | ActivityKind::SubStart
+        ) {
+            self.held.lock().unwrap().remove(session_id);
+        }
         let Some(agent_id) = self.registry.resolve_agent(session_id) else {
             return;
         };
@@ -226,7 +274,12 @@ impl NotificationHub {
                     return; // 억제
                 }
             }
-            ls.insert(key.clone(), now_i);
+            // 이슈 #41: Hook 소스는 ingest가 아니라 실제 방출 시점(emit)에만
+            // last_seen 을 남긴다 — 홀드가 폐기된 질문이 dedup 윈도우 안에 다시
+            // 와도 알림이 나가야 하므로. Stop/Bell 은 현행대로 ingest 시 기록한다.
+            if source != NotificationSource::Hook {
+                ls.insert(key.clone(), now_i);
+            }
         }
 
         let ev = NotificationEvent {
@@ -238,10 +291,48 @@ impl NotificationHub {
             dedup_key: key,
             at: self.clock.now_ms(),
         };
+
+        // 이슈 #41: 오토모드 홀드. Hook 알림은 hold_duration 동안 보류했다가
+        // flush_expired 가 방출하거나, 취소 신호가 오면 조용히 폐기한다.
+        let hold = *self.hold_duration.lock().unwrap();
+        if source == NotificationSource::Hook && hold > Duration::ZERO {
+            let mut held = self.held.lock().unwrap();
+            match held.get(session_id) {
+                // 같은 질문의 재수신 — 원래 타이머를 유지한다(무시).
+                Some(existing) if existing.ev.dedup_key == ev.dedup_key => {}
+                // 세션당 최대 1개: 새 질문이 이전 질문을 대체한다(타이머 리셋).
+                _ => {
+                    held.insert(
+                        session_id.to_string(),
+                        HeldNotification {
+                            ev,
+                            held_at: now_i,
+                            accumulated: 0,
+                        },
+                    );
+                }
+            }
+            return;
+        }
+
+        self.emit(ev);
+    }
+
+    /// 큐 push + notification_new 방출. Hook 즉시 방출과 flush_expired 가 공유한다.
+    /// 실제 방출 시점에 last_seen 을 남겨(Hook 지연 방출 포함) 이후 같은 메시지의
+    /// dedup 억제 기준을 방출 시각으로 잡는다(이슈 #41). Stop 이면 출력 감시를 건다(#39).
+    fn emit(&self, ev: NotificationEvent) {
+        let now_i = self.clock.now();
+        self.last_seen
+            .lock()
+            .unwrap()
+            .insert(ev.dedup_key.clone(), now_i);
+        let source = ev.source;
+        let session_id = ev.session_id.clone();
         self.queues
             .lock()
             .unwrap()
-            .entry(session_id.to_string())
+            .entry(session_id.clone())
             .or_default()
             .push(ev.clone());
         self.events.notification_new(&ev);
@@ -250,7 +341,7 @@ impl NotificationHub {
         // dedup 으로 억제된 중복 Stop 은 여기 오지 않으므로 감시창이 리셋되지 않는다.
         if source == NotificationSource::Stop {
             self.resume_watch.lock().unwrap().insert(
-                session_id.to_string(),
+                session_id,
                 ResumeWatch {
                     stop_at: now_i,
                     accumulated: 0,
@@ -260,12 +351,54 @@ impl NotificationHub {
         }
     }
 
+    /// 스위퍼가 500ms 간격으로 호출(이슈 #41). 보류 시간이 지난 held 알림을
+    /// 방출한다 — 세션이 registry 에서 사라졌으면(사망) 조용히 폐기한다.
+    pub fn flush_expired(&self) {
+        let hold = *self.hold_duration.lock().unwrap();
+        let now = self.clock.now();
+        let ready: Vec<HeldNotification> = {
+            let mut held = self.held.lock().unwrap();
+            let expired: Vec<SessionId> = held
+                .iter()
+                .filter(|(_, h)| now.duration_since(h.held_at) >= hold)
+                .map(|(sid, _)| sid.clone())
+                .collect();
+            expired
+                .into_iter()
+                .filter_map(|sid| held.remove(&sid))
+                .collect()
+        };
+        for h in ready {
+            // 세션 사망 → 조용히 폐기(죽은 세션의 알림은 내지 않는다).
+            if self.registry.resolve_agent(&h.ev.session_id).is_some() {
+                self.emit(h.ev);
+            }
+        }
+    }
+
     /// output pump 가 세션 PTY 출력 배치를 넘길 때마다 호출(이슈 #39). Stop 이후
     /// grace 를 지나 window 내에 누적 출력이 임계치를 넘으면 1회만: 그 세션의
     /// stop 알림을 걷어내고(notification-cleared 재사용) "아직 작업중" 복귀 신호
     /// (resume activity)를 낸다. Stop 감시 중이 아닌 세션은 즉시 반환(핫 패스).
     pub fn on_output(&self, session_id: &str, byte_len: usize) {
         let now = self.clock.now();
+
+        // 이슈 #41: 보류 중인 질문이 있으면 출력 폭주로 폐기 판정을 먼저 한다.
+        // grace 내 출력은 질문 UI 자체 렌더링으로 보고 무시하고, grace 이후
+        // 누적이 임계치를 넘으면 세션이 계속 일하는 것으로 보고 홀드를 폐기한다.
+        // 아래 resume_watch(#39) 경로는 이 체크와 무관하게 그대로 실행된다.
+        {
+            let mut held = self.held.lock().unwrap();
+            if let Some(h) = held.get_mut(session_id) {
+                if now.duration_since(h.held_at) >= HOLD_OUTPUT_GRACE {
+                    h.accumulated = h.accumulated.saturating_add(byte_len);
+                    if h.accumulated >= HOLD_OUTPUT_THRESHOLD_BYTES {
+                        held.remove(session_id);
+                    }
+                }
+            }
+        }
+
         let should_resume = {
             let mut watches = self.resume_watch.lock().unwrap();
             let Some(watch) = watches.get_mut(session_id) else {
@@ -326,6 +459,11 @@ impl NotificationHub {
 
     /// 터미널 열림 시 클리어. ids 없으면 세션 전체. cleared된 id 방출.
     pub fn clear(&self, session_id: &str, ids: Option<Vec<String>>) -> Vec<String> {
+        // 이슈 #41: 세션 전체 clear(터미널 열림)면 보류 중인 질문도 폐기한다.
+        // 부분 clear(Some(ids))는 held 를 건드리지 않는다.
+        if ids.is_none() {
+            self.held.lock().unwrap().remove(session_id);
+        }
         let cleared: Vec<String> = {
             let mut q = self.queues.lock().unwrap();
             let Some(list) = q.get_mut(session_id) else {
@@ -360,6 +498,8 @@ impl NotificationHub {
     pub fn purge_session(&self, session_id: &str) {
         self.queues.lock().unwrap().remove(session_id);
         self.resume_watch.lock().unwrap().remove(session_id);
+        // 이슈 #41: 세션 정리 시 보류 중인 질문도 함께 버린다(flush 전 잔류 방지).
+        self.held.lock().unwrap().remove(session_id);
     }
 }
 
@@ -957,6 +1097,269 @@ mod tests {
         hub.on_output("s1", 100_000);
         assert!(events.activities().is_empty());
         assert!(events.cleared().is_empty());
+    }
+
+    // ---- 오토모드 질문 알림 홀드(이슈 #41) ----
+
+    /// fixture + hold_duration 주입. 기본 fixture 는 hold=0(즉시 방출)이므로
+    /// 홀드 동작 테스트는 이 헬퍼로 hold 를 켠다.
+    fn hold_fixture(ms: u64) -> (Arc<NotificationHub>, Arc<RecordingEvents>, Arc<FakeClock>) {
+        let (hub, events, clock) = fixture();
+        hub.set_hold_duration(Duration::from_millis(ms));
+        (hub, events, clock)
+    }
+
+    #[test]
+    fn hold_defers_hook_until_flush_and_records_last_seen_on_emit() {
+        let (hub, events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("need input")); // held at t=0
+
+        // 보류 중 — 방출·큐 없음(pending 은 held 를 포함하지 않는다).
+        assert!(events.notifications().is_empty());
+        assert!(hub.pending("s1").is_empty());
+
+        // 만료 전(t=4000) flush 는 방출하지 않는다.
+        clock.advance(4000);
+        hub.flush_expired();
+        assert!(events.notifications().is_empty());
+        assert!(hub.pending("s1").is_empty());
+
+        // 5s 경과(t=5000) flush → 방출.
+        clock.advance(1000);
+        hub.flush_expired();
+        assert_eq!(events.notifications().len(), 1);
+        assert_eq!(hub.pending("s1").len(), 1);
+        assert_eq!(hub.pending("s1")[0].message, "need input");
+
+        // 방출 시점(t=5000)에 last_seen 이 남으므로 같은 메시지 재ingest 는 dedup 억제.
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("need input"));
+        assert_eq!(events.notifications().len(), 1);
+        assert_eq!(hub.pending("s1").len(), 1);
+    }
+
+    #[test]
+    fn hold_cancelled_by_tool_activity_and_requestion_re_holds() {
+        let (hub, events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("need input")); // held at t=0
+        hub.ingest_observer("s1", ObserverEvent::Tool); // 계속 일하는 신호 → 폐기
+        assert!(hub.pending("s1").is_empty());
+
+        clock.advance(6000);
+        hub.flush_expired();
+        assert!(
+            events.notifications().is_empty(),
+            "폐기된 홀드는 만료돼도 방출되지 않는다"
+        );
+
+        // last_seen 미기록 검증: 같은 메시지를 다시 보내면 억제되지 않고 새로 held 로 들어간다.
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("need input")); // held at t=6000
+        assert!(hub.pending("s1").is_empty(), "즉시 방출이 아니라 다시 보류");
+        clock.advance(5000);
+        hub.flush_expired();
+        assert_eq!(events.notifications().len(), 1);
+    }
+
+    #[test]
+    fn hold_cancelled_by_prompt_and_substart_but_not_substop_or_subcount() {
+        // Prompt 취소
+        let (hub, _events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        hub.ingest_observer("s1", ObserverEvent::Prompt { text: None });
+        clock.advance(6000);
+        hub.flush_expired();
+        assert!(hub.pending("s1").is_empty());
+
+        // SubStart 취소
+        let (hub, _events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        hub.ingest_observer("s1", ObserverEvent::SubStart);
+        clock.advance(6000);
+        hub.flush_expired();
+        assert!(hub.pending("s1").is_empty());
+
+        // SubStop 은 취소하지 않는다.
+        let (hub, _events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        hub.ingest_observer("s1", ObserverEvent::SubStop);
+        clock.advance(6000);
+        hub.flush_expired();
+        assert_eq!(hub.pending("s1").len(), 1);
+
+        // SubCount 는 취소하지 않는다.
+        let (hub, _events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        hub.ingest_observer("s1", ObserverEvent::SubCount { running: 2 });
+        clock.advance(6000);
+        hub.flush_expired();
+        assert_eq!(hub.pending("s1").len(), 1);
+    }
+
+    #[test]
+    fn hold_discarded_by_stop_observer_regardless_of_running() {
+        // running=0: 질문은 폐기되고 Stop 완료 알림만 방출된다(이중 알림 방지).
+        let (hub, events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Stop {
+                message: None,
+                running: Some(0),
+            },
+        );
+        clock.advance(6000);
+        hub.flush_expired();
+        let notifs = events.notifications();
+        assert_eq!(notifs.len(), 1);
+        assert_eq!(notifs[0].source, NotificationSource::Stop);
+        assert!(notifs.iter().all(|n| n.source != NotificationSource::Hook));
+
+        // running>0: Stop 알림 자체는 억제(#27)되지만 held 는 폐기된다.
+        let (hub, events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Stop {
+                message: None,
+                running: Some(1),
+            },
+        );
+        clock.advance(6000);
+        hub.flush_expired();
+        assert!(events.notifications().is_empty());
+        assert!(hub.pending("s1").is_empty());
+    }
+
+    #[test]
+    fn hold_output_within_grace_ignored_then_flood_after_grace_discards() {
+        // grace(1s) 내 대량 출력은 무시 → 만료 시 방출.
+        let (hub, _events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        clock.advance(500); // < grace
+        hub.on_output("s1", 100_000);
+        clock.advance(4500); // 만료(t=5000)
+        hub.flush_expired();
+        assert_eq!(hub.pending("s1").len(), 1, "grace 내 출력은 폐기하지 않는다");
+
+        // grace 후 누적 8KB 이상 → 폐기.
+        let (hub, events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        clock.advance(1500); // > grace
+        hub.on_output("s1", 9000); // > 8KB
+        clock.advance(4000);
+        hub.flush_expired();
+        assert!(hub.pending("s1").is_empty());
+        assert!(events.notifications().is_empty());
+
+        // grace 후 8KB 미만 → 만료 시 방출.
+        let (hub, _events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        clock.advance(1500);
+        hub.on_output("s1", 1000);
+        hub.on_output("s1", 2000); // 누적 3000 < 8192
+        clock.advance(4000);
+        hub.flush_expired();
+        assert_eq!(hub.pending("s1").len(), 1);
+    }
+
+    #[test]
+    fn hold_same_key_keeps_timer_but_different_key_replaces() {
+        // 같은 dedup_key 재수신 → 단일 held, 원래 held_at 유지(교체 안 됨).
+        let (hub, events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q")); // held at t=0
+        clock.advance(3000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q")); // 같은 키 → 무시
+        clock.advance(2000); // t=5000, 원래 타이머 기준 5s 경과
+        hub.flush_expired();
+        assert_eq!(events.notifications().len(), 1);
+
+        // 다른 키 → 교체(만료 시 새 메시지만, 새 타이머로 방출).
+        let (hub, events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("first")); // held at t=0
+        clock.advance(3000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("second")); // 교체 → held at t=3000
+        clock.advance(2000); // t=5000, 새 타이머 기준 2s < 5s
+        hub.flush_expired();
+        assert!(hub.pending("s1").is_empty(), "교체된 타이머는 아직 만료 전");
+        clock.advance(3000); // t=8000
+        hub.flush_expired();
+        let notifs = events.notifications();
+        assert_eq!(notifs.len(), 1);
+        assert_eq!(notifs[0].message, "second");
+    }
+
+    #[test]
+    fn hold_full_clear_discards_but_partial_clear_keeps() {
+        // clear(None) → held 폐기.
+        let (hub, events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        hub.clear("s1", None);
+        clock.advance(6000);
+        hub.flush_expired();
+        assert!(events.notifications().is_empty());
+
+        // clear(Some(ids)) → held 유지.
+        let (hub, events, clock) = hold_fixture(5000);
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        hub.clear("s1", Some(vec!["irrelevant".to_string()]));
+        clock.advance(6000);
+        hub.flush_expired();
+        assert_eq!(events.notifications().len(), 1);
+    }
+
+    #[test]
+    fn hold_zero_emits_hook_immediately() {
+        // 기본(hold=0)에서는 현행 동작 그대로 즉시 방출한다.
+        let (hub, events, _clock) = fixture();
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        assert_eq!(events.notifications().len(), 1);
+        assert_eq!(hub.pending("s1").len(), 1);
+    }
+
+    #[test]
+    fn flush_discards_held_when_session_gone_from_registry() {
+        let registry = Arc::new(SessionRegistry::new());
+        registry.insert("s1", "a1", SessionState::Running);
+        let events = Arc::new(RecordingEvents::default());
+        let clock = Arc::new(FakeClock::new());
+        let hub = Arc::new(NotificationHub::new(
+            registry.clone(),
+            events.clone(),
+            clock.clone(),
+            Duration::from_millis(3000),
+        ));
+        hub.set_hold_duration(Duration::from_millis(5000));
+
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
+        registry.remove("s1"); // flush 시점에 세션 사망
+        clock.advance(6000);
+        hub.flush_expired();
+        assert!(events.notifications().is_empty());
+        assert!(hub.pending("s1").is_empty());
+    }
+
+    #[test]
+    fn bell_source_emits_immediately_even_when_hold_enabled() {
+        let (hub, events, _clock) = hold_fixture(5000);
+        hub.on_bell("s1");
+        assert_eq!(events.notifications().len(), 1);
+        assert_eq!(events.notifications()[0].source, NotificationSource::Bell);
+        assert_eq!(hub.pending("s1").len(), 1);
+    }
+
+    #[test]
+    fn set_hold_duration_runtime_change_applies_to_subsequent_ingest() {
+        let (hub, events, clock) = fixture(); // hold=0
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("first")); // 즉시 방출
+        assert_eq!(events.notifications().len(), 1);
+
+        hub.set_hold_duration(Duration::from_millis(5000));
+        hub.ingest_hook("s1", NotificationSource::Hook, &msg("second")); // 이제 보류
+        assert_eq!(events.notifications().len(), 1, "두 번째는 보류되어 방출 안 됨");
+
+        clock.advance(5000);
+        hub.flush_expired();
+        assert_eq!(events.notifications().len(), 2);
+        assert_eq!(hub.pending("s1")[1].message, "second");
     }
 
     // ---- ingest_activity: dedup/큐 우회, now_ms 타임스탬프 ----

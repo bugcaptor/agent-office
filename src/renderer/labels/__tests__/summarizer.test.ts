@@ -48,6 +48,7 @@ beforeEach(() => {
       soundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
+      attentionHoldMs: 5000,
     },
     false
   );
@@ -86,6 +87,7 @@ describe("installTaskLabelSummarizer", () => {
           soundEnabled: true,
           soundVolume: 0.5,
           externalTerminal: "terminal",
+          attentionHoldMs: 5000,
         },
         false,
       );
@@ -356,6 +358,7 @@ describe("installTaskLabelSummarizer", () => {
         soundEnabled: true,
         soundVolume: 0.5,
         externalTerminal: "terminal",
+        attentionHoldMs: 5000,
       },
       false
     );

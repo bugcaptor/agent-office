@@ -1770,3 +1770,35 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "test-
   `!windowFocused`일 때만 `maybeSendOsNotification`(`ipc/osNotify.ts`, 동적 import)로
   발송한다. 제목=에이전트 이름/ID, 본문=메시지 excerpt. 권한은 최초 발송 전 1회
   확인/요청. 테스트는 플러그인/`@tauri-apps/api/window` 모듈을 모킹.
+
+### 10.4 오토모드를 감안한 질문 알림 지연 (이슈 #41)
+
+오토모드에서는 에이전트의 질문(`Notification` 훅 → `ObserverEvent::Attention` →
+`NotificationSource::Hook`)이 자동 승인되는데도 느낌표 알림이 즉시 떠버린다. hub는
+Hook 소스 알림을 `hold_duration`(설정 `attentionHoldMs`, 기본 5초) 만큼 보류했다가,
+그 사이 세션이 계속 일한다는 신호가 오면 조용히 폐기하고, 신호가 없으면 그때 방출한다.
+`hold_duration == 0`이면 홀드를 끄고 현행대로 즉시 방출한다(기본 hub도 0으로 시작해
+기존 동작을 보존).
+
+- **보류**: `ingest`가 dedup 통과 후, `source == Hook`이고 `hold_duration > 0`이면
+  큐/이벤트 대신 `held`(세션당 최대 1개)에 넣는다. 같은 세션에 이미 held가 있으면 같은
+  `dedup_key`는 무시(원래 타이머 유지), 다른 키는 교체(새 질문이 이전 질문을 대체).
+- **dedup 기록 시점**: Hook 소스는 §10.2의 Stop과 달리 ingest가 아니라 **실제 방출
+  시점**(즉시 방출이든 flush든)에만 `last_seen`을 남긴다 — 홀드가 폐기된 질문이 dedup
+  윈도우 안에 다시 와도 알림이 나가야 하기 때문. Stop/Bell은 종전대로 ingest 시 기록.
+- **방출**: 단일 스위퍼(`lib.rs`가 500ms 간격으로 `flush_expired` 호출)가 `held_at`
+  기준 만료된 항목을 방출한다. 방출 시점에 세션이 registry에서 사라졌으면(사망) 조용히
+  폐기. 최대 500ms 지터는 5초 홀드에서 허용.
+- **폐기(취소) 신호 — 모두 조용히, 이벤트 없음**:
+  1. `Prompt`/`Tool`/`SubStart` activity(프롬프트 제출·도구 사용·서브에이전트 시작) —
+     `SubStop`/`SubCount`/`Resume`은 취소하지 않는다.
+  2. `Stop` observer(자동답변 후 턴 종료) — `running` 값과 무관하게 폐기해 질문+완료
+     이중 알림을 막는다.
+  3. `on_output` 출력 폭주 — §10.2 `resume_watch` 로직 **앞에서**, `HOLD_OUTPUT_GRACE`
+     (1s, 질문 UI 렌더링 구간)가 지난 뒤 누적 출력이 `HOLD_OUTPUT_THRESHOLD_BYTES`(8KB)를
+     넘으면 폐기. resume_watch 경로는 그대로 유지된다.
+  4. 세션 전체 `clear(None)`(터미널 열림)·`purge_session`. 부분 `clear(Some(ids))`는
+     held를 건드리지 않는다.
+- **설정**: `AppSettings.attentionHoldMs`(serde default 5000). `lib.rs`는 설정 로드 직후,
+  `set_app_settings`는 변경 시 `hub.set_hold_duration`으로 반영한다. 설정 UI는
+  `SettingsDialog`의 숫자 입력(초 단위, 0~60 clamp, 내부 ms 변환).

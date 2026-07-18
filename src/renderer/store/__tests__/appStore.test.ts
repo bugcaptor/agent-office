@@ -505,6 +505,7 @@ describe("app settings slice", () => {
       soundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
+      attentionHoldMs: 5000,
     });
     expect(s.settingsFirstRun).toBe(false);
   });
@@ -519,6 +520,7 @@ describe("app settings slice", () => {
         soundEnabled: true,
         soundVolume: 0.5,
         externalTerminal: "terminal",
+        attentionHoldMs: 5000,
       },
       true
     );
@@ -531,6 +533,7 @@ describe("app settings slice", () => {
       soundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
+      attentionHoldMs: 5000,
     });
     expect(s.settingsFirstRun).toBe(true);
   });
@@ -545,6 +548,7 @@ describe("app settings slice", () => {
       soundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
+      attentionHoldMs: 5000,
     });
   });
 
@@ -558,6 +562,7 @@ describe("app settings slice", () => {
         soundEnabled: true,
         soundVolume: 0.5,
         externalTerminal: "terminal",
+        attentionHoldMs: 5000,
       },
       true
     );
@@ -576,6 +581,7 @@ describe("app settings slice", () => {
       soundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
+      attentionHoldMs: 5000,
     });
   });
 
