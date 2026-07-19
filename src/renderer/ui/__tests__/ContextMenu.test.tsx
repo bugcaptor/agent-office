@@ -61,4 +61,67 @@ describe("ContextMenu", () => {
     expect(onSelect).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it("아이콘을 라벨과 함께 표시한다", () => {
+    render(
+      <ContextMenu
+        x={10}
+        y={10}
+        items={[{ label: "재시작", icon: "🔄", onSelect: () => {} }]}
+        onClose={() => {}}
+      />
+    );
+    const item = screen.getByRole("menuitem", { name: /재시작/ });
+    expect(item.textContent).toContain("🔄");
+    expect(item.textContent).toContain("재시작");
+  });
+
+  it("danger 항목에 강조 클래스를 붙인다", () => {
+    render(
+      <ContextMenu
+        x={10}
+        y={10}
+        items={[{ label: "삭제", danger: true, onSelect: () => {} }]}
+        onClose={() => {}}
+      />
+    );
+    const item = screen.getByRole("menuitem", { name: "삭제" });
+    expect(item.className).toContain("context-menu-item-danger");
+  });
+
+  it("그룹 사이 구분선을 렌더한다", () => {
+    render(
+      <ContextMenu
+        x={10}
+        y={10}
+        items={[
+          { label: "A", onSelect: () => {} },
+          { separator: true },
+          { label: "B", onSelect: () => {} },
+        ]}
+        onClose={() => {}}
+      />
+    );
+    expect(screen.getAllByRole("separator")).toHaveLength(1);
+  });
+
+  it("맨 앞/맨 뒤·연속 구분선은 정규화로 제거한다", () => {
+    render(
+      <ContextMenu
+        x={10}
+        y={10}
+        items={[
+          { separator: true }, // 맨 앞 → 제거
+          { label: "A", onSelect: () => {} },
+          { separator: true },
+          { separator: true }, // 연속 → 하나로
+          { label: "B", onSelect: () => {} },
+          { separator: true }, // 맨 뒤 → 제거
+        ]}
+        onClose={() => {}}
+      />
+    );
+    expect(screen.getAllByRole("separator")).toHaveLength(1);
+    expect(screen.getAllByRole("menuitem")).toHaveLength(2);
+  });
 });

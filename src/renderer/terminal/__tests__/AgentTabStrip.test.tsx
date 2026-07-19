@@ -345,7 +345,7 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
 
     fireEvent.contextMenu(getAllByRole("tab")[0]); // "Agent a1"
     const items = getAllByRole("menuitem");
-    expect(items[0].textContent).toBe("터미널 재시작");
+    expect(items[0].textContent).toContain("터미널 재시작");
 
     fireEvent.click(getByRole("menuitem", { name: "터미널 재시작" }));
 
@@ -414,9 +414,9 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
 
     fireEvent.contextMenu(getAllByRole("tab")[0]); // "Agent a1"
     const items = getAllByRole("menuitem");
-    expect(items[0].textContent).toBe("터미널 재시작");
-    expect(items[1].textContent).toBe("이전 세션 이어하기");
-    expect(items[2].textContent).toBe("터미널 종료");
+    expect(items[0].textContent).toContain("터미널 재시작");
+    expect(items[1].textContent).toContain("이전 세션 이어하기");
+    expect(items[2].textContent).toContain("터미널 종료");
 
     fireEvent.click(getByRole("menuitem", { name: "터미널 종료" }));
 

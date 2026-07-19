@@ -201,13 +201,16 @@ export function AgentTabStrip() {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
+            // ── 세션 제어: 인앱 PTY 생명주기 ──
             {
               label: "터미널 재시작",
+              icon: "🔄",
               onSelect: () =>
                 openModal({ kind: "confirm-restart", agentId: menu.agentId }),
             },
             {
               label: "이전 세션 이어하기",
+              icon: "⏮️",
               // 캡처된 Claude native 세션이 있을 때만 활성 — 없으면 비활성.
               disabled: !resumeEntries[menu.agentId],
               onSelect: () => {
@@ -222,6 +225,7 @@ export function AgentTabStrip() {
             },
             {
               label: "터미널 종료",
+              icon: "⏹️",
               // PTY가 살아있을 때만 의미가 있다 — 이미 exited/idle이면 캐릭터는
               // 탕비실(또는 재소환 대기)이므로 비활성화.
               disabled: !["starting", "running"].includes(
@@ -230,8 +234,11 @@ export function AgentTabStrip() {
               onSelect: () =>
                 openModal({ kind: "confirm-terminate", agentId: menu.agentId }),
             },
+            { separator: true },
+            // ── 열기/보기: 작업 폴더·외부 도구·출력 ──
             {
               label: "작업 폴더 보기",
+              icon: "📁",
               // 작업 폴더(cwd) 미설정 프로필은 비활성화 — 홈 디렉터리 폴백 없음.
               disabled: !agents[menu.agentId]?.cwd,
               onSelect: () => {
@@ -241,6 +248,7 @@ export function AgentTabStrip() {
             },
             {
               label: "VS Code로 열기",
+              icon: "💻",
               // 작업 폴더(cwd) 미설정 프로필은 비활성화 — 홈 디렉터리 폴백 없음.
               disabled: !agents[menu.agentId]?.cwd,
               onSelect: () => {
@@ -254,6 +262,7 @@ export function AgentTabStrip() {
             {
               // 인앱 PTY(터미널 재시작/종료)와 구분되는 외부 OS 터미널 앱.
               label: "OS 터미널로 열기",
+              icon: "⌨️",
               disabled: !agents[menu.agentId]?.cwd,
               onSelect: () => {
                 const cwd = agents[menu.agentId]?.cwd;
@@ -266,22 +275,31 @@ export function AgentTabStrip() {
             {
               // 이슈 #42: 현재 터미널 버퍼(스크롤백 포함)를 .txt로 내보내 에디터로 연다.
               label: "셸 출력을 에디터로 보기",
+              icon: "📄",
               // 터미널이 아직 만들어지지 않았으면(has === false) 뽑을 버퍼가 없다.
               disabled: !terminalRegistry.has(menu.agentId),
               onSelect: () => exportShellOutput(menu.agentId),
             },
+            { separator: true },
+            // ── 프로필/생명주기 ──
             {
               label: "프로필 편집",
+              icon: "✏️",
               onSelect: () =>
                 openModal({ kind: "profile-edit", agentId: menu.agentId }),
             },
             {
               label: "퇴근",
+              icon: "🏠",
               onSelect: () =>
                 openModal({ kind: "confirm-clock-out", agentId: menu.agentId }),
             },
+            { separator: true },
+            // 파괴적(되돌릴 수 없음) — 경고색으로 강조하고 구분선으로 격리.
             {
               label: "캐릭터 삭제",
+              icon: "🗑️",
+              danger: true,
               onSelect: () =>
                 openModal({ kind: "confirm-delete", agentId: menu.agentId }),
             },

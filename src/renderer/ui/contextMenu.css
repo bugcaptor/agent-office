@@ -12,6 +12,9 @@
   box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
 }
 .context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 6px 10px;
   background: none;
   border: none;
@@ -29,4 +32,29 @@
 }
 .context-menu-item:disabled:hover {
   background: none;
+}
+/* 아이콘 자리(고정 폭 슬롯) — 아이콘 미지정 항목도 라벨 좌측 정렬 유지. */
+.context-menu-icon {
+  flex: 0 0 auto;
+  width: 1.15em;
+  text-align: center;
+  line-height: 1;
+}
+.context-menu-label {
+  flex: 1 1 auto;
+}
+/* 파괴적 항목: 경고색으로 강조(disabled 시 opacity 규칙과 함께 흐려짐). */
+.context-menu-item-danger {
+  color: var(--accent-error);
+}
+.context-menu-item-danger:hover {
+  background: var(--accent-error);
+  color: var(--border-lite);
+}
+/* 그룹 구분선 — 위아래 여백 있는 1px 실선. */
+.context-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-dark);
+  opacity: 0.5;
 }
