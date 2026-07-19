@@ -25,6 +25,7 @@ import { installPersistence } from "./store/persist";
 import { installPortraitCache } from "./portrait/portraitCache";
 import { installSpriteCache } from "./sprite/spriteCache";
 import { installTaskLabelSummarizer } from "./labels/summarizer";
+import { installWorkLogRecorder } from "./diary/workLog";
 import { installQuitGuard } from "./quitGuard";
 import { installSoundManager } from "./sound/soundManager";
 import { tauriApi } from "./ipc/tauriApi";
@@ -177,6 +178,9 @@ export async function bootApp(): Promise<() => void> {
   const offPortraits = installPortraitCache();
   const offSprites = installSpriteCache();
   const offSummarizer = installTaskLabelSummarizer();
+  // 캐릭터 일기(#56)의 원천 — taskLabels를 구독해 작업 로그를 누적한다. 설정과
+  // 무관하게 항상 수집하되(비영속·상한), 일기 생성 자체는 diaryEnabled opt-in.
+  const offWorkLog = installWorkLogRecorder();
   const offQuitGuard = installQuitGuard();
   // 설정 하이드레이트 이후에 설치 — fireImmediately 구독이 최신 사운드
   // 설정(soundEnabled/soundVolume)을 읽는다.
@@ -192,6 +196,7 @@ export async function bootApp(): Promise<() => void> {
     offPortraits();
     offSprites();
     offSummarizer();
+    offWorkLog();
     offQuitGuard();
     offSound();
     offDayRollover();

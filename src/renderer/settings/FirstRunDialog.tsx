@@ -13,6 +13,7 @@ export function FirstRunDialog() {
   const [value, setValue] = useState<SettingsFormValue>({
     summarizerEnabled: false,
     summaryProvider: "claude",
+    diaryEnabled: false,
     observerEnabled: false,
   });
 

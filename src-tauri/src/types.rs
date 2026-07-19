@@ -143,6 +143,20 @@ pub struct SessionTurnRecord {
     pub waited_ms: u64,
 }
 
+/// 캐릭터 일기 한 편(#56). 성격 프롬프트 문체로 쓴 작업 로그 겸 일기.
+/// per-agent append-only 로그(`diaries/<agentId>.jsonl`)의 한 줄. TS `DiaryEntry` 미러.
+/// agentId는 파일명이 담으므로 레코드엔 넣지 않는다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiaryEntry {
+    /// 작성 시각(백엔드 epoch ms).
+    pub at: u64,
+    /// 이 일기가 다룬 세션의 sessionId(재시작 경계 추적용).
+    pub session_id: String,
+    /// 일기 본문(LLM 생성, 성격 문체 반영).
+    pub body: String,
+}
+
 /// renderer→backend 세션 생성 옵션. 프런트 AgentOfficeApi.createSession(agentId, opts?).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

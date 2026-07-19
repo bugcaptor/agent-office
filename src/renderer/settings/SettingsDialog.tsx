@@ -29,6 +29,7 @@ export function SettingsDialog() {
           value={{
             summarizerEnabled: appSettings.summarizerEnabled,
             summaryProvider: appSettings.summaryProvider,
+            diaryEnabled: appSettings.diaryEnabled,
             observerEnabled: appSettings.observerEnabled,
           }}
           onChange={updateAppSettings}

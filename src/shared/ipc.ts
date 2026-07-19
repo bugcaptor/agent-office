@@ -44,6 +44,9 @@ export const Commands = {
   pickDirectory: "pick_directory",
   appendSessionTurn: "append_session_turn",
   loadSessionTurns: "load_session_turns",
+  // 캐릭터 일기(이슈 #56) — per-agent 일기 append/load.
+  appendDiaryEntry: "append_diary_entry",
+  loadDiary: "load_diary",
   loadSessionEvents: "load_session_events",
   // 세션 핸드오프(docs/session-handoff-design.md) — unix 전용, 종료 시 PTY를
   // sessiond 데몬으로 넘기고 재시작 시 되찾는다.

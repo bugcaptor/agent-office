@@ -363,6 +363,8 @@ pub fn run() {
             let session_time_store = crate::persistence::session_time_store::SessionTimeStore::new(
                 data_dir.join("session-times.jsonl"),
             );
+            let diary_store =
+                crate::persistence::diary_store::DiaryStore::new(data_dir.join("diaries"));
 
             // CLI 제어(#55): control 서버 상태 + 핸들러가 쥘 앱 상태 클론. 필요한
             // Arc/스토어만 복제해 ControlContext에 담는다(AppState는 Tauri가
@@ -407,6 +409,7 @@ pub fn run() {
                 portrait_store,
                 sprite_store,
                 session_time_store,
+                diary_store,
                 claude_resume_store,
                 settings_store,
                 settings: settings_cache,
@@ -471,6 +474,8 @@ pub fn run() {
             ipc::commands::pick_directory,
             ipc::commands::append_session_turn,
             ipc::commands::load_session_turns,
+            ipc::commands::append_diary_entry,
+            ipc::commands::load_diary,
             ipc::commands::load_session_events,
             ipc::commands::list_claude_resume_sessions,
             ipc::commands::load_usage_snapshot,
@@ -592,6 +597,7 @@ mod tests {
             version: 1,
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
+            diary_enabled: false,
             observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,

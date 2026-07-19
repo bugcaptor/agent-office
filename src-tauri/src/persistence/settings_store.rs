@@ -66,6 +66,10 @@ pub struct AppSettings {
     pub summarizer_enabled: bool,
     #[serde(default)]
     pub summary_provider: SummaryProvider,
+    /// 캐릭터 일기(#56) 자동 생성 허용. 요약기와 같은 provider·CLI를 쓰므로
+    /// 크레딧을 소모한다 → opt-in. 기본 꺼짐.
+    #[serde(default)]
+    pub diary_enabled: bool,
     #[serde(default, alias = "claudeHooksEnabled")]
     pub observer_enabled: bool,
     /// 사무실 앰비언스 사운드(타이핑·효과음·공조음) 재생 여부.
@@ -102,6 +106,7 @@ impl Default for AppSettings {
             version: 1,
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
+            diary_enabled: false,
             observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
@@ -186,6 +191,7 @@ mod tests {
             version: 1,
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Claude,
+            diary_enabled: false,
             observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,
@@ -281,6 +287,7 @@ mod tests {
             version: 1,
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Codex,
+            diary_enabled: false,
             observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,

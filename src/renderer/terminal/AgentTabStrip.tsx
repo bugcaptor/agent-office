@@ -22,6 +22,7 @@ import { deriveTaskLabelLines } from "../labels/labelText";
 import { tauriApi } from "../ipc/tauriApi";
 import { useMarkdownStore } from "../markdown/markdownStore";
 import { useWorkdirStore } from "../workdir/workdirStore";
+import { useDiaryStore } from "../diary/diaryStore";
 import { terminalRegistry } from "./TerminalRegistry";
 import { looksLikeAgentRunning } from "./botGuard";
 import { botStatusText } from "./botStatusText";
@@ -89,6 +90,8 @@ export function AgentTabStrip() {
   const openMarkdownPalette = useMarkdownStore((s) => s.openPalette);
   // 이슈 #11: 작업 폴더 보기(파일 목록 + git 상태) 오버레이를 연다.
   const openWorkdirPalette = useWorkdirStore((s) => s.openPalette);
+  // 이슈 #56: 캐릭터 일기 열람/생성 오버레이를 연다.
+  const openDiary = useDiaryStore((s) => s.openDiary);
   // 활성 에이전트의 cwd(문서 버튼 활성 조건). 없으면 버튼 비활성.
   const activeCwd = activeId ? agents[activeId]?.cwd : undefined;
   const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
@@ -352,6 +355,14 @@ export function AgentTabStrip() {
               // 터미널이 아직 만들어지지 않았으면(has === false) 뽑을 버퍼가 없다.
               disabled: !terminalRegistry.has(menu.agentId),
               onSelect: () => exportShellOutput(menu.agentId),
+            },
+            {
+              // 이슈 #56: 캐릭터 일기 열람/생성. 오버레이 안에서 "일기 쓰기"로
+              // 지금까지의 작업 로그를 성격 문체의 일기 한 편으로 남긴다.
+              label: "일기 보기",
+              icon: "📔",
+              onSelect: () =>
+                openDiary(menu.agentId, agents[menu.agentId]?.name ?? "캐릭터"),
             },
             { separator: true },
             // ── 프로필/생명주기 ──

@@ -318,6 +318,20 @@ export interface SessionTurnRecord {
 }
 
 /**
+ * 캐릭터 일기 한 편(#56). 성격 프롬프트 문체로 쓴 작업 로그 겸 일기.
+ * per-agent append-only 로그(`diaries/<agentId>.jsonl`)의 한 줄. Rust `DiaryEntry` 미러.
+ * agentId는 파일명이 담으므로 레코드엔 없다.
+ */
+export interface DiaryEntry {
+  /** 작성 시각(백엔드 epoch ms). */
+  at: number;
+  /** 이 일기가 다룬 세션의 sessionId(재시작 경계 추적용). */
+  sessionId: SessionId;
+  /** 일기 본문(LLM 생성, 성격 문체 반영). */
+  body: string;
+}
+
+/**
  * 세션 이벤트 시계열 레코드의 종류. Rust `SessionEventKind`(serde snake_case)
  * 미러. 수집 설계 docs/session-event-timeseries-design.md §4.1 참조.
  */
@@ -397,6 +411,9 @@ export interface AppSettings {
   summarizerEnabled: boolean;
   /** 라벨 요약에 사용할 로컬 CLI provider. */
   summaryProvider: SummaryProvider;
+  /** 캐릭터 일기(#56) 자동 생성 허용. 요약기와 같은 provider·CLI를 쓰므로
+   * 크레딧을 소모한다 → opt-in. 기본 false. */
+  diaryEnabled: boolean;
   /** 세션 observer 주입 + 로컬 observer 서버 기동(알림·시간측정). */
   observerEnabled: boolean;
   /** 사무실 앰비언스 사운드(타이핑·효과음·공조음) 재생 여부. 기본 켜짐. */
@@ -735,6 +752,11 @@ export interface AgentOfficeApi {
   appendSessionTurn(record: SessionTurnRecord): void;
   /** 누적된 세션 턴 기록 전체를 읽는다(통계용). 손상된 줄은 건너뛴다. */
   loadSessionTurns(): Promise<SessionTurnRecord[]>;
+  /** 캐릭터 일기(#56) 한 편을 per-agent 로그에 append. 생성은 렌더러가
+   * summarizeText로 이미 마친 상태 — 여기선 저장만 한다. */
+  appendDiaryEntry(agentId: string, entry: DiaryEntry): Promise<void>;
+  /** 한 캐릭터의 일기 전체(작성순)를 읽는다(열람 오버레이용). 손상된 줄은 건너뛴다. */
+  loadDiary(agentId: string): Promise<DiaryEntry[]>;
   /** 세션 이벤트 시계열에서 `fromAt..=toAt`(epoch ms) 범위를 읽는다(분석 패널용).
    * 없는 파일·손상 줄은 건너뛰며 항상 성공한다. `(at, runId, seq)` 정렬. */
   loadSessionEvents(fromAt: number, toAt: number): Promise<SessionEventRecord[]>;
