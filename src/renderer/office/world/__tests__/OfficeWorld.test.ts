@@ -411,6 +411,45 @@ describe("외형 키 변경 시 엔티티 재생성", () => {
   });
 });
 
+describe("OfficeWorld.setRenderScale (이슈 #47)", () => {
+  it("커스텀 시트 엔티티만 S 변경 시 재프리필터한다(절차 생성은 불변)", () => {
+    const { world } = makeWorld();
+    setSpriteOverride("a", { height: 256 } as unknown as CanvasImageSource);
+    world.syncAgents([profile("a"), profile("b")]); // a=커스텀, b=절차 생성
+    hoisted.createCharacterAssetsSpy.mockClear();
+
+    world.setRenderScale(5); // 기본 3 → 5
+
+    expect(hoisted.createCharacterAssetsSpy).toHaveBeenCalledTimes(1); // a만
+    expect(hoisted.createCharacterAssetsSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "a" }),
+      5,
+    );
+  });
+
+  it("정수 S가 그대로면 no-op", () => {
+    const { world } = makeWorld();
+    setSpriteOverride("a", { height: 256 } as unknown as CanvasImageSource);
+    world.syncAgents([profile("a")]);
+    hoisted.createCharacterAssetsSpy.mockClear();
+
+    world.setRenderScale(3.2); // round(3.2)=3 == 기본 3
+
+    expect(hoisted.createCharacterAssetsSpy).not.toHaveBeenCalled();
+  });
+
+  it("목표 해상도 D가 불변이면 재생성하지 않는다", () => {
+    const { world } = makeWorld();
+    setSpriteOverride("a", { height: 256 } as unknown as CanvasImageSource);
+    world.syncAgents([profile("a")]); // fake assets cellSize=16
+    hoisted.createCharacterAssetsSpy.mockClear();
+
+    world.setRenderScale(1); // detailCellSize(256,1)=16 == entity.cellSize(16)
+
+    expect(hoisted.createCharacterAssetsSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("appearanceKey: archetype 포함", () => {
   const base = mkProfile({ id: "a1", seed: "s1", archetype: "human" });
 

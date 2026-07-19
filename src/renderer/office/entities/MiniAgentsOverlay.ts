@@ -35,6 +35,14 @@ export class MiniAgentsOverlay {
     });
   }
 
+  /** 부모 텍스처/배율 교체(커스텀 시트 S-적응 재생성 시). 텍스처는 부모 소유. */
+  setBase(texture: Texture, spriteScale: number): void {
+    this.minis.forEach((s) => {
+      s.texture = texture;
+      s.scale.set(spriteScale * MINI_SCALE_FACTOR);
+    });
+  }
+
   setCount(n: number): void {
     const clamped = Math.max(0, Math.min(MAX_MINIS, Math.floor(n)));
     this.count = clamped;

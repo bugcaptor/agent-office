@@ -212,6 +212,9 @@ export class OfficeScene {
     const mapPxH = OFFICE_MAP.height * TILE_SIZE;
     const scale = computeIntegerScale(w, h, mapPxW, mapPxH);
     this.worldContainer.scale.set(scale);
+    // 커스텀 고해상 시트를 이 정수 스케일에 맞춰 프리필터(이슈 #47). S가 바뀔
+    // 때만 커스텀 엔티티 텍스처를 재생성한다(내부에서 no-op 가드).
+    this.world.setRenderScale(scale);
     // Center, snapped to integer position to preserve sharpness.
     this.worldContainer.position.set(
       Math.floor((w - mapPxW * scale) / 2),

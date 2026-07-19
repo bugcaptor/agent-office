@@ -128,6 +128,32 @@ export class CharacterEntity {
     this.sprite.hitArea = new Rectangle(-n / 2, -n, n, n);
   }
 
+  /** 현재 렌더 셀 크기(텍스처 셀 px). 커스텀 시트 S-적응 재생성 판단용. */
+  get cellSize(): number {
+    return this.assets.cellSize;
+  }
+
+  /**
+   * 외형은 그대로 두고 텍스처 에셋만 교체한다(커스텀 고해상 시트를 카메라 정수
+   * 스케일 S에 맞춰 재프리필터할 때 — 이슈 #47). FSM/이동/애니메이션 상태를
+   * 보존하므로 창 리사이즈로 S가 바뀌어도 캐릭터가 튀거나 초기화되지 않는다.
+   */
+  replaceAssets(next: CharacterAssets): void {
+    const prev = this.assets;
+    this.assets = next;
+    this.spriteScale = APPARENT_CELL / next.cellSize;
+    const flip = this.sprite.scale.x < 0 ? -1 : 1;
+    this.sprite.scale.set(flip * this.spriteScale, this.spriteScale);
+    // 진행 중이던 상태의 현재 프레임을 새 텍스처 셋에서 다시 집는다.
+    const frames = this.state === "walking" ? next.walk : next.idle;
+    this.sprite.texture = frames[this.frameIdx % frames.length];
+    // 히트 영역은 텍스처 셀(local, pre-scale) 기준이라 새 cellSize를 따른다.
+    const n = next.cellSize;
+    this.sprite.hitArea = new Rectangle(-n / 2, -n, n, n);
+    this.miniOverlay.setBase(next.idle[0], this.spriteScale);
+    prev.dispose?.();
+  }
+
   onClicked(cb: (id: string) => void): void {
     this.sprite.on("pointertap", () => cb(this.agentId));
   }
@@ -227,6 +253,7 @@ export class CharacterEntity {
     this.thinkOverlay.destroy();
     this.miniOverlay.destroy();
     this.root.destroy({ children: true });
+    this.assets.dispose?.(); // 커스텀 다운스케일 프레임 텍스처/소스 해제(누수 방지)
   }
 
   private setSeatTarget(): void {

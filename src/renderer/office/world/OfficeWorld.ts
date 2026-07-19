@@ -25,6 +25,8 @@ import type { SessionState } from "../../../shared/types";
 import type { OfficeMap } from "../map/mapData";
 import { assignDesks } from "../map/deskAssignment";
 import { createCharacterAssets } from "../gen/characterFactory";
+import { detailCellSize } from "../gen/spriteResample";
+import { CELL } from "../gen/compositor";
 import { getSpriteOverride } from "../gen/spriteOverrides";
 import { CharacterEntity } from "../entities/CharacterEntity";
 import { mulberry32, hashStringToSeed } from "../gen/prng";
@@ -55,11 +57,19 @@ function isSessionActive(state: SessionState): boolean {
   return state === "starting" || state === "running";
 }
 
+/** 커스텀 시트 프리필터 기본 렌더 스케일. 카메라가 측정되기 전(init~첫 resize
+ * 사이)의 폴백 — 대개 곧바로 setRenderScale로 실제 정수 S가 들어온다. */
+const DEFAULT_RENDER_SCALE = 3;
+
 export class OfficeWorld {
   private entities = new Map<string, CharacterEntity>();
   private appearanceKeys = new Map<string, string>();
   private sessionActive = new Map<string, boolean>();
   private subagentCounts = new Map<string, number>();
+  // 라이브 프로필 스냅샷 — setRenderScale이 커스텀 엔티티를 재프리필터할 때 필요.
+  private profiles = new Map<string, AgentProfile>();
+  // 카메라 정수 스케일 S. 커스텀 시트를 D=min(N,16·S)로 프리필터하는 기준.
+  private renderScale = DEFAULT_RENDER_SCALE;
   // 탕비실 타일 예약(tileKey) — 전 엔티티 공유. 쉬는 캐릭터가 같은 타일에
   // 겹쳐 서지 않게 한다. 엔티티가 예약/해제하고(destroy 포함) 여기서는 소유만.
   private breakReservations = new Set<string>();
@@ -93,6 +103,8 @@ export class OfficeWorld {
     }
     const desks = assignDesks(this.o.map, profiles.map((p) => p.id), manual);
     const next = new Set(profiles.map((p) => p.id));
+    // setRenderScale 재프리필터가 참조할 최신 프로필 스냅샷.
+    this.profiles = new Map(profiles.map((p) => [p.id, p]));
 
     for (const [id, entity] of this.entities) {
       if (next.has(id)) continue;
@@ -134,7 +146,7 @@ export class OfficeWorld {
       const slot = desks.get(p.id);
       if (!slot) continue; // seat shortage: skip for now (planned follow-up: idle wander without a desk)
 
-      const assets = createCharacterAssets(p);
+      const assets = createCharacterAssets(p, this.renderScale);
       const rand = mulberry32(hashStringToSeed(p.id) ^ MOVEMENT_RNG_SALT);
       const entity = new CharacterEntity(p.id, assets, slot.seat, this.o.map, rand, this.breakReservations);
       entity.setSessionActive(this.sessionActive.get(p.id) ?? false);
@@ -144,6 +156,26 @@ export class OfficeWorld {
       this.o.characterLayer.addChild(entity.root);
       this.entities.set(p.id, entity);
       this.appearanceKeys.set(p.id, appearanceKey(p));
+    }
+  }
+
+  /**
+   * 카메라 정수 스케일 S 반영(이슈 #47). 커스텀 고해상 시트를 가진 엔티티만
+   * D=min(N,16·S)로 재프리필터해 텍스처를 교체한다(FSM/이동 상태는 보존).
+   * 절차 생성 스프라이트(항상 16px)와 목표 해상도 D가 그대로인 엔티티는 건너뛴다.
+   */
+  setRenderScale(scale: number): void {
+    const s = Math.max(1, Math.round(scale));
+    if (s === this.renderScale) return;
+    this.renderScale = s;
+    for (const [id, entity] of this.entities) {
+      const override = getSpriteOverride(id);
+      if (!override) continue; // 커스텀만 대상(절차 생성은 스케일 무관)
+      const p = this.profiles.get(id);
+      if (!p) continue;
+      const n = (override as { height?: number }).height ?? CELL;
+      if (detailCellSize(n, s) === entity.cellSize) continue; // 목표 해상도 불변
+      entity.replaceAssets(createCharacterAssets(p, s));
     }
   }
 
@@ -168,5 +200,6 @@ export class OfficeWorld {
     this.appearanceKeys.clear();
     this.sessionActive.clear();
     this.subagentCounts.clear();
+    this.profiles.clear();
   }
 }
