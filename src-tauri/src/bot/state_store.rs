@@ -33,9 +33,11 @@ pub struct Job {
     #[serde(default)]
     pub branch: Option<String>,
     pub phase: JobPhase,
-    /// 마지막 진행 보고 시각(ISO8601). 5분 스로틀 판단용.
+    /// 마지막 진행 보고 시각(epoch ms). 러너 주도 5분 보고 스로틀 앵커(#61).
+    /// 잡 시작 시 `now`로 세팅해 첫 보고가 시작 5분 후 발화하게 한다. ISO 파싱을
+    /// 피하려고 epoch ms를 쓴다.
     #[serde(default)]
-    pub last_report_at: Option<String>,
+    pub last_report_at_ms: Option<u64>,
 }
 
 /// `bot-state.json` 전체.
@@ -194,7 +196,7 @@ mod tests {
                 issue: 57,
                 branch: Some("bot/issue-57".into()),
                 phase: JobPhase::Working,
-                last_report_at: None,
+                last_report_at_ms: None,
             },
         );
         store.save(&s).unwrap();
