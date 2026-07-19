@@ -18,10 +18,12 @@ vi.mock("../../ipc/tauriApi", () => ({
 import { useAppStore } from "../../store/appStore";
 import {
   LABEL_SYSTEM_PROMPT,
+  deriveContextText,
   installTaskLabelSummarizer,
   sanitizeLabelPair,
   sanitizeSummary,
 } from "../summarizer";
+import type { AgentTaskLabel } from "../../store/types";
 import type { ActivityEvent, SummaryProvider } from "@shared/types";
 
 /** 통합 응답: 1줄 목표 + 2줄 현재. */
@@ -167,7 +169,7 @@ describe("installTaskLabelSummarizer", () => {
     );
   });
 
-  it("진행 중인 동일 identity는 provider 변경 후 재sweep에서도 중복 요청하지 않는다", async () => {
+  it("진행 중인 동일 identity는 provider 변경 후 재sweep에서도 인플라이트 중 중복 요청하지 않는다", async () => {
     const gate = deferred();
     const summarizeFn = vi.fn(async (provider: SummaryProvider) => {
       if (provider === "claude") {
@@ -182,19 +184,25 @@ describe("installTaskLabelSummarizer", () => {
     await vi.waitFor(() => expect(summarizeFn).toHaveBeenCalledTimes(1));
 
     // provider를 바꾸고, 같은 프롬프트를 유지한 채 tool 이벤트로 재sweep을 유발.
+    // (tool 이벤트는 정황도 실어 오지만, claude 요청이 인플라이트인 동안엔
+    //  activeIdentityKeys 소유권이 같은 identity의 재요청을 막는다.)
     useAppStore.getState().updateAppSettings({ summaryProvider: "codex" });
     useAppStore.getState().applyActivityEvent(toolEvent());
     await new Promise((resolve) => setTimeout(resolve, 0));
-    // provider가 key에 없는 activeIdentityKeys 소유권으로 codex 재요청은 차단.
+    // 인플라이트 중에는 activeIdentityKeys 소유권으로 codex 재요청이 차단된다.
     expect.soft(summarizeFn).toHaveBeenCalledTimes(1);
     expect.soft(summarizeFn.mock.calls.some(([provider]) => provider === "codex")).toBe(false);
 
+    // 인플라이트가 끝나면 도착한 정황으로 딱 1회 재평가한다 — 이때 provider는 codex.
     gate.release();
     await vi.waitFor(() =>
-      expect(useAppStore.getState().taskLabels.a1.currentSummary).toBe("Claude 현재"),
+      expect(useAppStore.getState().taskLabels.a1.goal).toBe("Codex 목표"),
     );
-    expect(useAppStore.getState().taskLabels.a1.goal).toBe("Claude 목표");
-    expect(summarizeFn).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().taskLabels.a1.currentSummary).toBe("Codex 현재");
+    expect(summarizeFn).toHaveBeenCalledTimes(2);
+    const [enrichProvider, , enrichText] = summarizeFn.mock.calls[1];
+    expect(enrichProvider).toBe("codex");
+    expect(enrichText).toContain("[초기 작업 정황]");
   });
 
   it("Claude cache는 같은 원문의 새 Codex identity를 충족하지 않는다", async () => {
@@ -484,6 +492,99 @@ describe("installTaskLabelSummarizer", () => {
     );
     expect(useAppStore.getState().taskLabels.a1.goal).toBe("Codex 새 목표");
     expect(useAppStore.getState().taskLabels.a1.sessionId).toBe("s2");
+  });
+
+  it("정황이 도착하면 잠정 목표를 1회 재평가해 승격하고 [초기 작업 정황]을 주입한다 (#51)", async () => {
+    const summarizeFn = vi.fn(async (_p: SummaryProvider, _i: string, text: string) =>
+      text.includes("초기 작업 정황")
+        ? pair("훅 설정 복구", "이슈 40 해결")
+        : pair("이슈 40 해결", "이슈 40 해결"),
+    );
+    teardown = installTaskLabelSummarizer({ summarizeFn });
+
+    // 프롬프트만으로 만든 잠정 목표(정황 없음).
+    useAppStore.getState().applyActivityEvent(promptEvent({ text: "이슈 40을 해결해" }));
+    await vi.waitFor(() => expect(useAppStore.getState().taskLabels.a1.goal).toBe("이슈 40 해결"));
+    expect(summarizeFn).toHaveBeenCalledTimes(1);
+    expect(summarizeFn.mock.calls[0][2]).not.toContain("초기 작업 정황");
+
+    // assistant 내레이션 도착 → 딱 1회 재평가로 목표 승격.
+    useAppStore.getState().applyActivityEvent(
+      toolEvent({ text: undefined, assistantText: "Claude 훅 설정 파일을 복구하는 중" }),
+    );
+    await vi.waitFor(() => expect(useAppStore.getState().taskLabels.a1.goal).toBe("훅 설정 복구"));
+    expect(summarizeFn).toHaveBeenCalledTimes(2);
+    const enrichText = summarizeFn.mock.calls[1][2];
+    expect(enrichText).toContain("[초기 작업 정황]");
+    expect(enrichText).toContain("Claude 훅 설정 파일을 복구하는 중");
+  });
+
+  it("정황이 없으면 프롬프트 기반 요약 1회만 낸다 (#51)", async () => {
+    const summarizeFn = vi.fn<SummarizeFn>(async () => pair("목표", "현재"));
+    teardown = installTaskLabelSummarizer({ summarizeFn });
+
+    useAppStore.getState().applyActivityEvent(promptEvent());
+    await vi.waitFor(() =>
+      expect(useAppStore.getState().taskLabels.a1.currentSummary).toBe("현재"),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(summarizeFn).toHaveBeenCalledTimes(1);
+    expect(summarizeFn.mock.calls[0][2]).not.toContain("초기 작업 정황");
+  });
+
+  it("정황이 여러 번 갱신돼도 프롬프트당 재평가는 정확히 1회다 (#51)", async () => {
+    const summarizeFn = vi.fn(async (_p: SummaryProvider, _i: string, text: string) =>
+      text.includes("초기 작업 정황")
+        ? pair("훅 설정 복구", "이슈 40 해결")
+        : pair("이슈 40 해결", "이슈 40 해결"),
+    );
+    teardown = installTaskLabelSummarizer({ summarizeFn });
+
+    useAppStore.getState().applyActivityEvent(promptEvent({ text: "이슈 40을 해결해" }));
+    await vi.waitFor(() => expect(summarizeFn).toHaveBeenCalledTimes(1));
+
+    useAppStore.getState().applyActivityEvent(
+      toolEvent({ text: undefined, assistantText: "훅 설정 복구 중", at: 9000 }),
+    );
+    await vi.waitFor(() => expect(useAppStore.getState().taskLabels.a1.goal).toBe("훅 설정 복구"));
+    expect(summarizeFn).toHaveBeenCalledTimes(2);
+
+    // 이후 내레이션이 더 와도 같은 프롬프트는 다시 재평가하지 않는다.
+    useAppStore.getState().applyActivityEvent(
+      toolEvent({ text: undefined, assistantText: "테스트 실행 중", at: 10_000 }),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(summarizeFn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("deriveContextText", () => {
+  const labelWith = (patch: Partial<AgentTaskLabel>): AgentTaskLabel => ({
+    sessionId: "s1",
+    ...patch,
+  });
+
+  it("assistant 내레이션을 도구 요약보다 우선한다", () => {
+    expect(
+      deriveContextText(
+        labelWith({ latestAssistantText: "원인 좁히는 중", latestToolText: "Bash: ls" }),
+      ),
+    ).toBe("원인 좁히는 중");
+  });
+
+  it("assistant가 없으면 도구 요약으로 폴백한다", () => {
+    expect(deriveContextText(labelWith({ latestToolText: "Bash: npm test" }))).toBe(
+      "Bash: npm test",
+    );
+  });
+
+  it("둘 다 없으면 undefined", () => {
+    expect(deriveContextText(labelWith({}))).toBeUndefined();
+  });
+
+  it("120자 초과는 버리지 않고 절단한다", () => {
+    const out = deriveContextText(labelWith({ latestAssistantText: "가".repeat(200) }));
+    expect(out && Array.from(out).length).toBe(120);
   });
 });
 
