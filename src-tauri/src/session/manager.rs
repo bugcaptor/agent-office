@@ -145,6 +145,20 @@ struct Session {
     /// 브로커 세션만 Some(unix).
     #[cfg(unix)]
     broker_data_shutdown: Mutex<Option<crate::session::broker_pty::BrokerDataShutdown>>,
+    /// 마지막 PTY 활동(출력 수신 또는 stdin 주입) 시각(epoch ms). 봇 모드의
+    /// turn-taking 유휴 판정에 쓴다 — 봇은 이 값이 일정 시간 이상 정체됐을 때만
+    /// 다음 지시를 주입한다(이슈 #57, docs/bot-mode-design.md). 0이면 아직 활동
+    /// 없음. reader 스레드와 write_input이 갱신한다.
+    last_activity_ms: Arc<std::sync::atomic::AtomicU64>,
+}
+
+/// epoch(UTC) 밀리초. 봇 turn-taking 유휴 계산용(단조성보다 벽시계 기준이면
+/// 충분 — 폴링 주기가 초 단위라 시계 점프에 민감하지 않다).
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 pub struct SessionManager {
@@ -507,6 +521,7 @@ impl SessionManager {
             broker_stream_offset,
             #[cfg(unix)]
             broker_data_shutdown: Mutex::new(spawned.broker_data_shutdown),
+            last_activity_ms: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         });
 
         self.sessions.lock().insert(agent_id.clone(), session.clone());
@@ -526,12 +541,15 @@ impl SessionManager {
             let _ = tx.send(ReaderMsg::Restore(bytes));
         }
         let mut reader = spawned.reader;
+        let reader_activity = session.last_activity_ms.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
+                        // 봇 turn-taking 유휴 판정용 활동 시각 갱신(출력 수신).
+                        reader_activity.store(now_ms(), Ordering::Relaxed);
                         if tx.send(ReaderMsg::Data(buf[..n].to_vec())).is_err() {
                             break;
                         }
@@ -575,9 +593,32 @@ impl SessionManager {
     pub fn write_input(&self, agent_id: &str, data: &str) {
         if let Some(s) = self.find(agent_id) {
             if *s.state.lock() == SessionState::Running {
+                // stdin 주입도 활동으로 기록 — 봇이 방금 넣은 프롬프트 직후
+                // 곧바로 다음 지시를 밀어넣지 않게(turn-taking 유휴 리셋).
+                s.last_activity_ms.store(now_ms(), Ordering::Relaxed);
                 let _ = s.writer.lock().write_all(data.as_bytes());
             }
         }
+    }
+
+    /// 세션이 마지막 활동(출력/입력) 이후 유휴로 있었던 시간(ms). 아직 활동이
+    /// 없었거나 세션이 없으면 None. 봇 turn-taking이 릴레이 주입 타이밍을 잡는 데
+    /// 쓴다.
+    pub fn idle_ms(&self, agent_id: &str) -> Option<u64> {
+        let s = self.find(agent_id)?;
+        let last = s.last_activity_ms.load(Ordering::Relaxed);
+        if last == 0 {
+            return None;
+        }
+        Some(now_ms().saturating_sub(last))
+    }
+
+    /// 세션이 살아서 입력을 받을 수 있는 상태(Running)인지. 봇이 잡을 이어갈 수
+    /// 있는지 판단한다.
+    pub fn is_running(&self, agent_id: &str) -> bool {
+        self.find(agent_id)
+            .map(|s| *s.state.lock() == SessionState::Running)
+            .unwrap_or(false)
     }
 
     pub fn resize(&self, agent_id: &str, cols: u16, rows: u16) {

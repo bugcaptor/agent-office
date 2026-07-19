@@ -264,6 +264,21 @@ export interface AgentProfile {
   clockedOut?: boolean;
   /** 키보드 사운드 팩 id (sound/packs.ts). 부재/무효 = 기본 팩. */
   keyboardSound?: string;
+  /** 봇 모드 설정(이슈 #57). 부재 = 기본값. 봇 ON/OFF 자체는 런타임 상태이고
+   * 여기엔 지속 설정(slug 별칭·화이트리스트·폴링 주기)만 담는다. Rust `bot` 미러. */
+  bot?: BotConfig;
+}
+
+/** 캐릭터 봇 모드 설정(이슈 #57, docs/bot-mode-design.md). Rust `BotConfig` 미러. */
+export interface BotConfig {
+  /** 슬래시 명령 slug 별칭(예: "Nova Kim" → "nova"). 비면 이름에서 자동 파생. */
+  slug?: string;
+  /** 명령을 발동할 수 있는 추가 Gitea 계정. tea 로그인 계정 본인은 항상 포함. */
+  whitelist: string[];
+  /** 이슈/댓글 폴링 주기(초). 부재 시 기본 60, 하한 30. */
+  pollIntervalSec?: number;
+  /** turn-taking 유휴 판정 임계(ms). 부재 시 기본 3000. */
+  idleQuietMs?: number;
 }
 
 /**
@@ -421,6 +436,24 @@ export interface ControlStatus {
   port: number | null;
   /** 연결 안내에 쓰는 app_data 경로. */
   appDataDir: string;
+}
+
+/** 봇 모드가 켜진 캐릭터 한 명의 런타임 상태(이슈 #57). Rust `BotAgentStatus` 미러. */
+export interface BotAgentStatus {
+  /** 폴링 태스크가 살아 있는지. */
+  running: boolean;
+  /** 현재 이 탭에 바인딩된 이슈 번호(작업 중일 때). */
+  issue?: number;
+  /** 이 봇이 반응하는 슬래시 slug. */
+  slug?: string;
+  /** 마지막 폴링/기동 오류(tea 미로그인 등). 없으면 정상. */
+  error?: string;
+}
+
+/** `bot_status` 응답(이슈 #57) — 봇 모드가 켜진 탭들의 스냅샷. */
+export interface BotStatus {
+  /** agentId → 상태. 봇 모드가 켜진 탭만 포함한다. */
+  agents: Record<string, BotAgentStatus>;
 }
 
 /**
@@ -661,6 +694,13 @@ export interface AgentOfficeApi {
   controlApprove(): Promise<void>;
   /** CLI 제어 승인 취소(토큰 폐기). 이후 모든 CLI 요청 401. */
   controlRevoke(): Promise<void>;
+  /** 봇 모드 시작(이슈 #57) — 이 탭의 폴링 태스크를 띄우고 로컬 입력을 봇에
+   * 넘긴다. tea 미로그인/저장소 미감지 시 error가 채워진 상태를 반환. */
+  botStart(agentId: string): Promise<BotAgentStatus>;
+  /** 봇 모드 중단 — 폴링 태스크를 내리고 로컬 조작으로 복귀. */
+  botStop(agentId: string): Promise<void>;
+  /** 봇 모드가 켜진 탭들의 상태 스냅샷. */
+  botStatus(): Promise<BotStatus>;
   /** 사용 가능한 셸 목록. Windows 외 플랫폼은 빈 배열. */
   listAvailableShells(): Promise<AvailableShell[]>;
   /** 디렉터리를 Visual Studio Code로 연다. VS Code 미설치/경로 부재 시 reject. */

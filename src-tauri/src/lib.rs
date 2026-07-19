@@ -6,6 +6,7 @@
 // invoke_handler for the renderer-facing commands -> graceful quit on
 // RunEvent::ExitRequested (dispose_all -> observer server shutdown).
 pub mod api_keys;
+mod bot;
 mod control;
 mod ipc;
 mod markdown;
@@ -384,6 +385,19 @@ pub fn run() {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));
             }
 
+            // 캐릭터 봇 모드(#57): 탭별 폴링 태스크 소유자 + 태스크가 쥘 상태 클론.
+            // 봇 모드 자체는 런타임 상태(탭에서 켜야 시작)라 여기선 아무 태스크도
+            // 띄우지 않는다 — start는 렌더러 bot_start 커맨드가 트리거한다.
+            let bot_runtime = Arc::new(crate::bot::BotRuntime::default());
+            let bot_ctx = Arc::new(crate::bot::runner::BotContext {
+                manager: manager.clone(),
+                store: store.clone(),
+                state_store: crate::bot::state_store::BotStateStore::new(
+                    data_dir.join("bot-state.json"),
+                ),
+                state_lock: Arc::new(std::sync::Mutex::new(())),
+            });
+
             app.manage(AppState {
                 manager,
                 hub,
@@ -401,6 +415,8 @@ pub fn run() {
                 live_usage: crate::usage::LiveUsageState::new(),
                 control_server,
                 control_ctx,
+                bot_runtime,
+                bot_ctx,
             });
             Ok(())
         })
@@ -435,6 +451,9 @@ pub fn run() {
             ipc::commands::control_status,
             ipc::commands::control_approve,
             ipc::commands::control_revoke,
+            ipc::commands::bot_start,
+            ipc::commands::bot_stop,
+            ipc::commands::bot_status,
             ipc::commands::open_in_vscode,
             ipc::commands::open_in_terminal,
             ipc::commands::export_terminal_output,
@@ -468,6 +487,7 @@ pub fn run() {
                 state.manager.dispose_all(); // kill + settings cleanup(동기)
                 state.observer_server.shutdown();
                 state.control_server.shutdown(); // CLI 제어 서버 정지 + control-port 정리(#55)
+                state.bot_runtime.stop_all(); // 봇 폴링 태스크 정지(#57)
                 // wait 스레드가 Disposed 확정 후 OS가 자식 reap. 프로세스 종료는 정상 진행.
             }
         });

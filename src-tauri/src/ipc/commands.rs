@@ -551,6 +551,33 @@ pub async fn control_revoke(app_state: State<'_, AppState>) -> Result<(), String
     app_state.control_server.revoke_token()
 }
 
+/// 이 탭의 봇 모드를 시작한다(#57). 폴링 태스크를 띄우고 즉시 초기 상태를
+/// 반환한다 — 저장소 slug 감지·tea 계정 확인은 태스크가 비동기로 하므로 실패는
+/// 이후 `bot_status`의 `error`로 드러난다. 렌더러는 이와 별개로 로컬 키 입력을
+/// 잠근다(봇과 사람이 같은 stdin을 두드리는 혼선 방지).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn bot_start(
+    agent_id: String,
+    app_state: State<'_, AppState>,
+) -> Result<BotAgentStatus, String> {
+    Ok(app_state.bot_runtime.start(app_state.bot_ctx.clone(), agent_id))
+}
+
+/// 이 탭의 봇 모드를 중단한다 — 폴링 태스크를 내린다. 로컬 조작 복귀는 렌더러가
+/// 입력 잠금을 풀어 처리한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn bot_stop(agent_id: String, app_state: State<'_, AppState>) -> Result<(), String> {
+    app_state.bot_runtime.stop(&agent_id);
+    Ok(())
+}
+
+/// 봇 모드가 켜진 탭들의 상태 스냅샷(#57). 렌더러가 폴링해 "봇 운전 중" 배지와
+/// 현재 이슈·오류를 표시한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn bot_status(app_state: State<'_, AppState>) -> Result<BotStatus, String> {
+    Ok(app_state.bot_runtime.status())
+}
+
 /// 에이전트 작업 폴더를 Visual Studio Code로 연다. `path`는 렌더러가
 /// 프로필의 `cwd`를 그대로 전달한다(미설정 시 메뉴가 비활성화되므로 폴백
 /// 없음). 시작 폴더 UI가 `~/dev/foo`류 입력을 허용하므로 세션 생성과
@@ -1065,6 +1092,15 @@ mod tests {
             app_data_dir: profile_dir.clone(),
         });
 
+        let bot_runtime = std::sync::Arc::new(crate::bot::BotRuntime::default());
+        let bot_ctx = std::sync::Arc::new(crate::bot::runner::BotContext {
+            manager: manager.clone(),
+            store: store.clone(),
+            state_store: crate::bot::state_store::BotStateStore::new(
+                profile_dir.join("bot-state.json"),
+            ),
+            state_lock: std::sync::Arc::new(std::sync::Mutex::new(())),
+        });
         let state = AppState {
             manager,
             hub,
@@ -1082,6 +1118,8 @@ mod tests {
             live_usage: crate::usage::LiveUsageState::new(),
             control_server,
             control_ctx,
+            bot_runtime,
+            bot_ctx,
         };
         (state, ctl, observer_dir, profile_dir)
     }
@@ -1367,6 +1405,7 @@ mod tests {
                 personality_prompt: None,
                 clocked_out: None,
                 keyboard_sound: None,
+                bot: None,
             }],
             version: 1,
         };
@@ -1415,6 +1454,7 @@ mod tests {
                 personality_prompt: None,
                 clocked_out: None,
                 keyboard_sound: None,
+                bot: None,
             }],
             version: 1,
         };
@@ -1482,6 +1522,7 @@ mod tests {
                 personality_prompt: None,
                 clocked_out: None,
                 keyboard_sound: None,
+                bot: None,
             }],
             version: 1,
         };

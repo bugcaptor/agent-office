@@ -50,6 +50,13 @@
   border-color: var(--border-dark);
 }
 
+/* 봇 운전 중 배지(이슈 #57) — 탭 이름 앞 작은 로봇 아이콘. */
+.agent-tab-bot {
+  flex: none;
+  font-size: 11px;
+  line-height: 1;
+}
+
 /* 문서 버튼(이슈 #10): 탭들 오른쪽 끝, 닫기 버튼 왼쪽에 붙는다.
  * margin-left:auto가 여기서 남는 공간을 다 먹어 이 버튼과 닫기 버튼을
  * 함께 오른쪽으로 민다(닫기 버튼의 auto는 남은 공간이 없어 무해). */

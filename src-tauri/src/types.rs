@@ -259,6 +259,58 @@ pub struct AgentProfile {
     /// TS `keyboardSound?: string` 미러.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub keyboard_sound: Option<String>,
+    /// 봇 모드 설정(이슈 #57). 없으면 기본값으로 동작. 봇 모드 ON/OFF 자체는
+    /// 런타임 상태(BotRuntime)이고, 여기엔 slug 별칭·화이트리스트·폴링 주기 등
+    /// 지속 설정만 담는다. TS `bot?: BotConfig` 미러.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub bot: Option<BotConfig>,
+}
+
+/// 캐릭터 봇 모드 설정(이슈 #57, docs/bot-mode-design.md). 전부 선택값이며,
+/// 미지정 시 호출부가 기본값을 적용한다. TS `BotConfig` 미러.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BotConfig {
+    /// 슬래시 명령 slug 별칭(예: 이름 "Nova Kim" → slug "nova"). 비면 이름에서
+    /// 자동 파생(소문자화+공백 제거).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub slug: Option<String>,
+    /// 명령을 발동할 수 있는 추가 Gitea 계정. tea 로그인 계정 본인은 항상 암묵
+    /// 포함된다. GUI에서만 편집한다.
+    #[serde(default)]
+    pub whitelist: Vec<String>,
+    /// 이슈/댓글 폴링 주기(초). 미지정 시 기본 60, 하한 30.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub poll_interval_sec: Option<u64>,
+    /// turn-taking 유휴 판정 임계(ms). 마지막 활동 후 이 시간 이상 정체돼야
+    /// 다음 릴레이를 주입한다. 미지정 시 기본 3000.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub idle_quiet_ms: Option<u64>,
+}
+
+/// 봇 모드가 켜진 캐릭터 한 명의 런타임 상태(이슈 #57). TS `BotAgentStatus` 미러.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BotAgentStatus {
+    /// 폴링 태스크가 살아 있는지.
+    pub running: bool,
+    /// 현재 이 탭에 바인딩된 이슈 번호(작업 중일 때).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub issue: Option<u64>,
+    /// 이 봇이 반응하는 슬래시 slug.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub slug: Option<String>,
+    /// 마지막 폴링/기동 오류(tea 미로그인 등). 없으면 정상.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub error: Option<String>,
+}
+
+/// `bot_status` 응답(이슈 #57) — 봇 모드가 켜진 탭들의 스냅샷. TS `BotStatus` 미러.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BotStatus {
+    /// agentId → 상태. 봇 모드가 켜진 탭만 포함한다.
+    pub agents: std::collections::BTreeMap<String, BotAgentStatus>,
 }
 
 /// 영속 상태. version은 리터럴 1.
@@ -644,6 +696,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"cwd\":\"/tmp/proj\""));
@@ -671,6 +724,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("cwd"));
@@ -709,6 +763,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"appearance\":\"short black hair, glasses\""));
@@ -737,6 +792,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("appearance"));
@@ -776,6 +832,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"spriteRequest\":\"red cloak wizard\""));
@@ -804,6 +861,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("spriteRequest"));
@@ -831,6 +889,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"archetype\":\"orc\""));
@@ -848,6 +907,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("archetype"));
@@ -874,6 +934,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
                        keyboard_sound: Some("topre-hhkb".into()),
+                       bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"keyboardSound\":\"topre-hhkb\""));
@@ -891,6 +952,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
                        keyboard_sound: None,
+                       bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("keyboardSound"));
@@ -915,6 +977,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"shell\":\"git-bash\""));
@@ -930,6 +993,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("shell"));
@@ -954,6 +1018,7 @@ mod tests {
             clocked_out: Some(true),
             personality_prompt: None,
         keyboard_sound: None,
+        bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"clockedOut\":true"));
@@ -969,6 +1034,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("clockedOut"));

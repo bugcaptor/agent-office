@@ -33,6 +33,10 @@ export const Commands = {
   controlStatus: "control_status",
   controlApprove: "control_approve",
   controlRevoke: "control_revoke",
+  // 캐릭터 봇 모드(이슈 #57, docs/bot-mode-design.md) — 탭 단위 시작/중단/상태.
+  botStart: "bot_start",
+  botStop: "bot_stop",
+  botStatus: "bot_status",
   listAvailableShells: "list_available_shells",
   openInVscode: "open_in_vscode",
   openInTerminal: "open_in_terminal",

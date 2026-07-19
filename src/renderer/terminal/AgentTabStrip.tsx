@@ -78,6 +78,11 @@ export function AgentTabStrip() {
   const openTerminal = useAppStore((s) => s.openTerminal);
   const closeTerminal = useAppStore((s) => s.closeTerminal);
   const openModal = useAppStore((s) => s.openModal);
+  // 봇 모드(이슈 #57): 켜진 탭 집합/상태 + 시작·중단 액션.
+  const botMode = useAppStore((s) => s.botMode);
+  const startBot = useAppStore((s) => s.startBot);
+  const stopBot = useAppStore((s) => s.stopBot);
+  const applyBotStatus = useAppStore((s) => s.applyBotStatus);
   // 이슈 #10: 활성 에이전트 cwd를 root로 마크다운 문서 팔레트를 연다.
   const openMarkdownPalette = useMarkdownStore((s) => s.openPalette);
   // 이슈 #11: 작업 폴더 보기(파일 목록 + git 상태) 오버레이를 연다.
@@ -142,6 +147,30 @@ export function AgentTabStrip() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isOpen, tabs, activeId, openTerminal, closeTerminal, exportShellOutput]);
 
+  // 봇 상태 폴링(이슈 #57): 켜진 봇이 하나라도 있으면 5초마다 백엔드에서
+  // 이슈 번호·오류를 받아 배지를 갱신한다. 없으면 폴링하지 않는다.
+  const hasBots = Object.keys(botMode).length > 0;
+  useEffect(() => {
+    if (!hasBots) return;
+    let alive = true;
+    const tick = () => {
+      void tauriApi
+        .botStatus()
+        .then((st) => {
+          if (alive) applyBotStatus(st);
+        })
+        .catch(() => {
+          /* 폴링 실패는 무시 — 다음 주기에 재시도 */
+        });
+    };
+    const iv = window.setInterval(tick, 5000);
+    tick();
+    return () => {
+      alive = false;
+      window.clearInterval(iv);
+    };
+  }, [hasBots, applyBotStatus]);
+
   return (
     <div className="agent-tab-strip" role="tablist">
       {tabs.map((tab) => (
@@ -171,6 +200,21 @@ export function AgentTabStrip() {
         >
           {tab.thumb && (
             <img className="agent-tab-thumb" src={tab.thumb} alt="" aria-hidden="true" />
+          )}
+          {botMode[tab.id] && (
+            <span
+              className="agent-tab-bot"
+              title={
+                botMode[tab.id].error
+                  ? `봇 오류: ${botMode[tab.id].error}`
+                  : botMode[tab.id].issue
+                    ? `봇 운전 중 · 이슈 #${botMode[tab.id].issue}`
+                    : "봇 운전 중"
+              }
+              aria-hidden="true"
+            >
+              {botMode[tab.id].error ? "⚠️" : "🤖"}
+            </span>
           )}
           {tab.name}
         </button>
@@ -233,6 +277,31 @@ export function AgentTabStrip() {
               ),
               onSelect: () =>
                 openModal({ kind: "confirm-terminate", agentId: menu.agentId }),
+            },
+            // 봇 모드(이슈 #57): 켜면 이 탭이 Gitea 이슈의 슬래시 명령에 반응해
+            // 자동 작업한다. 켜는 동안 로컬 키 입력은 잠긴다. 끌 땐 한 번 더 확인.
+            {
+              label: menu.agentId in botMode ? "봇 모드 끄기" : "봇 모드 시작",
+              icon: "🤖",
+              // 새로 켤 땐 세션이 살아 있어야 프롬프트를 주입할 수 있다. 이미 켜진
+              // 경우엔 끄기이므로 항상 활성.
+              disabled:
+                !(menu.agentId in botMode) &&
+                !["starting", "running"].includes(sessions[menu.agentId]?.status ?? "idle"),
+              onSelect: () => {
+                const aid = menu.agentId;
+                if (aid in botMode) {
+                  if (
+                    window.confirm(
+                      "봇 모드를 끄고 이 탭을 직접 조작할까요? 진행 중인 봇 작업 흐름이 중단됩니다."
+                    )
+                  ) {
+                    void stopBot(aid);
+                  }
+                } else {
+                  void startBot(aid);
+                }
+              },
             },
             { separator: true },
             // ── 열기/보기: 작업 폴더·외부 도구·출력 ──

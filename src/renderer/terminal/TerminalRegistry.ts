@@ -19,6 +19,7 @@ import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { tauriApi } from "../ipc/tauriApi";
+import { useAppStore } from "../store/appStore";
 import { XTERM_THEME } from "./theme";
 
 interface Entry {
@@ -86,6 +87,12 @@ class TerminalRegistry {
     let lastDataAt = -Infinity;
 
     const writeInput = (data: string) => {
+      // 봇 운전 중인 탭은 로컬 키 입력을 차단한다(이슈 #57). 봇 자신의 주입은
+      // 백엔드 write_input을 직접 거치므로 이 게이트를 통과하지 않는다 — 여기서
+      // 막히는 건 사람이 xterm에 타이핑/붙여넣기 하는 경로뿐이다.
+      if (useAppStore.getState().isBotDriven(agentId)) {
+        return;
+      }
       const now = performance.now();
       const isImeDuplicate =
         now - compositionEndedAt < IME_COMMIT_WINDOW_MS &&

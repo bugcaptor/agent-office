@@ -6,6 +6,7 @@
 import { nanoid } from "nanoid";
 import { NAME_WORDS, ROLE_WORDS, PERSONALITY_WORDS } from "./wordlists";
 import type { AgentProfile } from "../store/types";
+import type { BotConfig } from "@shared/types";
 import { pickArchetype } from "../office/gen/archetypes";
 
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -31,6 +32,16 @@ export interface DraftProfile {
   archetype?: string;
   /** 키보드 사운드 팩 id(선택). 빈 문자열 = 기본 팩. */
   keyboardSound?: string;
+  /** 봇 슬래시 slug 별칭(이슈 #57). 빈 문자열 = 이름에서 자동 파생. */
+  botSlug?: string;
+  /** 봇 화이트리스트(추가 허용 Gitea 계정). 콤마/줄바꿈 구분 입력. tea 로그인
+   * 계정 본인은 항상 암묵 포함. */
+  botWhitelist?: string;
+  /** 봇 폴링 주기(초) 입력. 빈 문자열 = 기본 60. 하한 30. */
+  botPollIntervalSec?: string;
+  /** 봇 turn-taking 유휴 임계(ms). UI에 노출하지 않지만 편집 저장 시 유실되지
+   * 않도록 draft에 실어 라운드트립한다(리뷰 M2). 빈 문자열 = 기본 3000. */
+  botIdleQuietMs?: string;
 }
 
 export function generateDraft(): DraftProfile {
@@ -48,6 +59,33 @@ export function generateDraft(): DraftProfile {
     spriteRequest: "",
     archetype: "auto",
     keyboardSound: "",
+    botSlug: "",
+    botWhitelist: "",
+    botPollIntervalSec: "",
+    botIdleQuietMs: "",
+  };
+}
+
+/** 봇 설정 입력을 `BotConfig`로 조립한다. 아무 값도 없으면 undefined(봇 미설정).
+ * whitelist는 콤마/줄바꿈으로 나눠 트림·빈값 제거, 폴링 주기는 하한 30을 적용. */
+export function buildBotConfig(d: DraftProfile): BotConfig | undefined {
+  const slug = (d.botSlug ?? "").trim();
+  const whitelist = (d.botWhitelist ?? "")
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const pollRaw = (d.botPollIntervalSec ?? "").trim();
+  const poll = pollRaw ? Number.parseInt(pollRaw, 10) : NaN;
+  const hasPoll = Number.isFinite(poll) && poll > 0;
+  const idleRaw = (d.botIdleQuietMs ?? "").trim();
+  const idle = idleRaw ? Number.parseInt(idleRaw, 10) : NaN;
+  const hasIdle = Number.isFinite(idle) && idle > 0;
+  if (!slug && whitelist.length === 0 && !hasPoll && !hasIdle) return undefined;
+  return {
+    ...(slug ? { slug } : {}),
+    whitelist,
+    ...(hasPoll ? { pollIntervalSec: Math.max(30, poll) } : {}),
+    ...(hasIdle ? { idleQuietMs: idle } : {}),
   };
 }
 
@@ -60,6 +98,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
   const spriteRequest = (d.spriteRequest ?? "").trim();
   const keyboardSound = (d.keyboardSound ?? "").trim();
   const archetype = d.archetype && d.archetype !== "auto" ? d.archetype : pickArchetype(d.seed);
+  const bot = buildBotConfig(d);
   return {
     id: nanoid(),
     name: d.name.trim() || pick(NAME_WORDS),
@@ -76,5 +115,6 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(appearance ? { appearance } : {}),
     ...(spriteRequest ? { spriteRequest } : {}),
     ...(keyboardSound ? { keyboardSound } : {}),
+    ...(bot ? { bot } : {}),
   };
 }

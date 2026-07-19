@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import { useAppStore } from "../store/appStore";
-import { generateDraft, draftToProfile, type DraftProfile } from "./generate";
+import { generateDraft, draftToProfile, buildBotConfig, type DraftProfile } from "./generate";
 import { generateSpritePreview } from "../office/gen/characterFactory";
 import { ARCHETYPE_SELECT_OPTIONS, resolveArchetype, pickArchetype } from "../office/gen/archetypes";
 import { tauriApi } from "../ipc/tauriApi";
@@ -115,6 +115,10 @@ export function ProfileDialog() {
       spriteRequest: agent.spriteRequest ?? "",
       archetype: agent.archetype ?? "auto",
       keyboardSound: agent.keyboardSound ?? "",
+      botSlug: agent.bot?.slug ?? "",
+      botWhitelist: (agent.bot?.whitelist ?? []).join(", "),
+      botPollIntervalSec: agent.bot?.pollIntervalSec ? String(agent.bot.pollIntervalSec) : "",
+      botIdleQuietMs: agent.bot?.idleQuietMs ? String(agent.bot.idleQuietMs) : "",
     });
   }, [editingAgentId]);
 
@@ -256,6 +260,7 @@ export function ProfileDialog() {
         appearance: trimmedAppearance || undefined,
         spriteRequest: trimmedSpriteRequest || undefined,
         keyboardSound: trimmedKeyboardSound || undefined,
+        bot: buildBotConfig(draft),
       });
     } else {
       const profile = draftToProfile(draft, agentOrder.length);
@@ -510,6 +515,49 @@ export function ProfileDialog() {
               </select>
             </label>
             <p className="form-hint">이 에이전트가 타이핑할 때 나는 소리입니다. 고르면 미리 들려줍니다.</p>
+          </div>
+          <div className="form-field">
+            <span className="form-label-text">봇 모드 설정</span>
+            <p className="form-hint">
+              터미널 탭 우클릭 → “봇 모드 시작”으로 켜면, 이 캐릭터가 담당 저장소의 Gitea
+              이슈에 달린 슬래시 명령에 반응해 자동으로 작업합니다. 아래는 봇의 지속 설정입니다.
+            </p>
+          </div>
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">봇 슬래시 별칭</span>
+              <input
+                value={draft.botSlug ?? ""}
+                onChange={(e) => setDraft({ ...draft, botSlug: e.target.value })}
+                placeholder="예: nova (선택, 비우면 이름에서 자동 파생)"
+              />
+            </label>
+            <p className="form-hint">
+              이슈에서 <code>/별칭</code> 으로 이 캐릭터를 호출합니다. 비우면 이름에서 파생합니다(공백 제거·소문자).
+            </p>
+          </div>
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">봇 화이트리스트</span>
+              <input
+                value={draft.botWhitelist ?? ""}
+                onChange={(e) => setDraft({ ...draft, botWhitelist: e.target.value })}
+                placeholder="추가 허용 Gitea 계정, 콤마 구분 (선택)"
+              />
+            </label>
+            <p className="form-hint">명령을 발동할 수 있는 계정. tea 로그인 계정 본인은 항상 포함됩니다.</p>
+          </div>
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">봇 폴링 주기(초)</span>
+              <input
+                type="number"
+                min={30}
+                value={draft.botPollIntervalSec ?? ""}
+                onChange={(e) => setDraft({ ...draft, botPollIntervalSec: e.target.value })}
+                placeholder="기본 60, 하한 30"
+              />
+            </label>
           </div>
           {shells.length > 0 && (
             <div className="form-field">

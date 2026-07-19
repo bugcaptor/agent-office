@@ -771,6 +771,7 @@ mod tests {
             personality_prompt: None,
             clocked_out: None,
             keyboard_sound: None,
+            bot: None,
         }
     }
 }

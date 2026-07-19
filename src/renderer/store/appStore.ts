@@ -22,7 +22,14 @@ import type { AgentTurnState, TurnInput } from "../timeline/turnReducer";
 import { requestSentence } from "../labels/labelText";
 import { applyTheme, loadStoredThemeId } from "../theme/applyTheme";
 import type { ThemeId } from "../theme/themes";
-import type { ActivityEvent, AppSettings, SessionState, UsageSnapshot } from "@shared/types";
+import type {
+  ActivityEvent,
+  AppSettings,
+  BotAgentStatus,
+  BotStatus,
+  SessionState,
+  UsageSnapshot,
+} from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 
 const MAX_EXCERPT = 80;
@@ -125,6 +132,10 @@ interface AppState {
   /** 구독 사용량 스냅샷. null = 아직 로드 전. UsageWidget이 60초 폴링으로 채운다.
    * 런타임 전용(비영속). */
   usage: UsageSnapshot | null;
+  /** 봇 모드가 켜진 탭(이슈 #57). agentId → 런타임 상태. 여기 있으면 그 탭은
+   * "봇 운전 중" — 로컬 키 입력이 잠기고 배지가 뜬다. 런타임 전용(비영속,
+   * 앱 재시작 시 꺼진 상태로 시작). */
+  botMode: Record<string, BotAgentStatus>;
 
   // ---- profile actions ----
   addAgent(profile: AgentProfile): void;
@@ -144,6 +155,17 @@ interface AppState {
   // ---- session actions ----
   setSessionState(e: { agentId: string; status: SessionStatus }): void;
   setSessionSize(agentId: string, cols: number, rows: number): void;
+
+  // ---- bot mode (이슈 #57) ----
+  /** 이 탭의 봇 모드를 켠다 — 백엔드 폴링 태스크를 띄우고 로컬 입력을 잠근다.
+   * 실패해도 상태(error)를 저장해 배지가 원인을 보여준다. */
+  startBot(agentId: string): Promise<void>;
+  /** 이 탭의 봇 모드를 끈다 — 백엔드 태스크를 내리고 로컬 조작으로 복귀. */
+  stopBot(agentId: string): Promise<void>;
+  /** bot_status 폴링 결과를 병합한다(이슈 번호·오류 갱신). */
+  applyBotStatus(status: BotStatus): void;
+  /** 이 탭이 봇 운전 중인지(로컬 입력 차단 여부 판정). */
+  isBotDriven(agentId: string): boolean;
 
   // ---- window focus ----
   /** OS 창 포커스 상태 반영(이슈 #39). sessionBridge의 포커스 추적이 호출. */
@@ -252,6 +274,7 @@ export const useAppStore = create<AppState>()(
     appSettings: DEFAULT_APP_SETTINGS,
     settingsFirstRun: false,
     usage: null,
+    botMode: {},
 
     addAgent: (profile) =>
       set((s) => ({
@@ -394,6 +417,51 @@ export const useAppStore = create<AppState>()(
         if (!prev || (prev.cols === cols && prev.rows === rows)) return s;
         return { sessions: { ...s.sessions, [agentId]: { ...prev, cols, rows } } };
       }),
+
+    startBot: async (agentId) => {
+      // 낙관적으로 먼저 켠 상태로 표시(입력 잠금·배지 즉시 반영), 백엔드 응답으로
+      // 실제 상태(이슈/오류)를 갱신한다. 실패해도 켠 상태는 유지하고 error만 표시.
+      set((s) => ({ botMode: { ...s.botMode, [agentId]: { running: true } } }));
+      try {
+        const status: BotAgentStatus = await tauriApi.botStart(agentId);
+        set((s) => ({ botMode: { ...s.botMode, [agentId]: status } }));
+      } catch (err) {
+        set((s) => ({
+          botMode: { ...s.botMode, [agentId]: { running: false, error: String(err) } },
+        }));
+      }
+    },
+
+    stopBot: async (agentId) => {
+      try {
+        await tauriApi.botStop(agentId);
+      } catch (err) {
+        console.warn("bot: 중단 실패", err);
+      }
+      set((s) => {
+        const next = { ...s.botMode };
+        delete next[agentId];
+        return { botMode: next };
+      });
+    },
+
+    applyBotStatus: (status) =>
+      set((s) => {
+        // 봇 모드가 켜진(로컬 상태에 있는) 탭만 갱신한다 — 방금 끈 탭이 폴링
+        // 응답으로 되살아나지 않게.
+        const next = { ...s.botMode };
+        let changed = false;
+        for (const id of Object.keys(next)) {
+          const fresh = status.agents[id];
+          if (fresh) {
+            next[id] = fresh;
+            changed = true;
+          }
+        }
+        return changed ? { botMode: next } : s;
+      }),
+
+    isBotDriven: (agentId) => agentId in get().botMode,
 
     setWindowFocused: (focused) =>
       set((s) => (s.windowFocused === focused ? s : { windowFocused: focused })),
