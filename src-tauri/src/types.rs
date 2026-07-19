@@ -288,18 +288,47 @@ pub struct BotConfig {
     pub idle_quiet_ms: Option<u64>,
 }
 
+/// 봇 폴링 태스크의 현재 단계(이슈 #57 후속 — 상태 가시화). GUI 배너/오버레이가
+/// "지금 뭐 하는 중"을 보여주는 근거. TS `BotPhase` 미러.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BotPhase {
+    /// 파라미터 해석/커서 프라임 중(첫 폴링 전).
+    Starting,
+    /// 담당 이슈 없이 슬래시 명령을 감시하는 중(대기).
+    Watching,
+    /// 특정 이슈에 바인딩되어 에이전트가 작업 중.
+    Working,
+    /// 기동/폴링 오류로 멈춤(error에 원인).
+    Error,
+}
+
+impl Default for BotPhase {
+    fn default() -> Self {
+        BotPhase::Starting
+    }
+}
+
 /// 봇 모드가 켜진 캐릭터 한 명의 런타임 상태(이슈 #57). TS `BotAgentStatus` 미러.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotAgentStatus {
     /// 폴링 태스크가 살아 있는지.
     pub running: bool,
+    /// 현재 단계(상태 가시화). GUI가 배너 문구를 고르는 근거.
+    pub phase: BotPhase,
     /// 현재 이 탭에 바인딩된 이슈 번호(작업 중일 때).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub issue: Option<u64>,
     /// 이 봇이 반응하는 슬래시 slug.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub slug: Option<String>,
+    /// 폴링 주기(초). GUI가 "다음 확인까지 N초" 카운트다운을 그리는 데 쓴다.
+    pub poll_interval_sec: u64,
+    /// 마지막 폴링이 끝난 시각(epoch ms). None이면 아직 첫 폴링 전. 카운트다운
+    /// 기준점.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub last_poll_at_ms: Option<u64>,
     /// 마지막 폴링/기동 오류(tea 미로그인 등). 없으면 정상.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub error: Option<String>,

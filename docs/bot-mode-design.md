@@ -344,3 +344,23 @@ BotConfig {
 - 보고 5분 스로틀.
 - **기존 세션을 사람 입력처럼 조작**(`write_input`) — 인자 주입이 아니라 타이핑.
 - 앱은 **읽기 전용**, 모든 Gitea 쓰기(댓글·PR)는 **에이전트가 `tea`로** 위임.
+
+## 후속(#57 이후) — 상태 가시화·클릭 블로커·맨 셸 가드
+
+원구현(커밋 6cd8317) 눈검증에서 나온 3가지 결함을 보완:
+
+1. **상태 가시화** — `BotAgentStatus`에 `phase`(starting/watching/working/error)·
+   `pollIntervalSec`·`lastPollAtMs` 추가. 폴링 루프(`bot/mod.rs`)가 매 폴링 후
+   phase와 시각을 갱신한다. 렌더러는 `botStatusText`/`nextPollSeconds`(공유 헬퍼)로
+   "이슈 감시 중 · /slug 대기", "이슈 #N 처리 중", "다음 확인까지 N초"를 그린다.
+2. **클릭 블로커 오버레이** — `BotOverlay`(터미널 mount 안, z:3)가 봇 탭 터미널을
+   반투명 스크림으로 덮어 사람의 클릭·드래그·선택을 캡처(키 입력은 기존
+   `TerminalRegistry.writeInput` 게이트가 담당). 상단 배너에 상태·카운트다운과
+   유일한 탈출구인 "봇 끄기"(확인 후 stopBot). 스크림이 반투명이라 아래 에이전트
+   출력은 비쳐 보인다.
+3. **맨 셸 가드** — 봇은 세션에 이미 뜬 에이전트 프롬프트에 지시문을 타이핑
+   주입하므로, claude가 아니라 맨 셸이면 지시문이 셸 명령으로 오실행된다. 켤 때
+   `botGuard.looksLikeAgentRunning`이 터미널 버퍼 **꼬리**(현재 화면 ~1500자)에서
+   에이전트 TUI 시그니처를 훑어, 확신이 없으면 `confirm-bot-start` 다이얼로그로
+   경고한다(오탐<미탐 — 한 번 더 확인이 안전). 스크롤백 전체가 아니라 꼬리만 보는
+   이유: claude 종료 후 맨 셸로 돌아와도 스크롤백엔 claude 출력이 남는다.

@@ -63,13 +63,42 @@ fn sanitize_untrusted(s: &str) -> String {
         .collect()
 }
 
+/// 신뢰 지시문의 상한 길이(주입 폭주 방지). 이슈 본문 트리거 시 본문 전체가
+/// 지시문이 될 수 있어 한 줄 주입이 과도해지지 않게 자른다.
+const MAX_DIRECTIVE_LEN: usize = 1500;
+
+/// 화이트리스트 작성자가 `/slug`와 함께 남긴 신뢰 지시문을 주입용으로 다듬는다:
+/// 트리거 토큰 제거(command) → 제어문자 소독 → 길이 상한. 순수 트리거면 None.
+fn directive_for(text: &str, slug: &str) -> Option<String> {
+    let raw = command::extract_directive(text, slug)?;
+    let safe = sanitize_untrusted(&raw);
+    let safe = safe.trim();
+    if safe.is_empty() {
+        return None;
+    }
+    Some(safe.chars().take(MAX_DIRECTIVE_LEN).collect())
+}
+
 /// 초기 작업 프롬프트. 에이전트가 이슈를 읽고 접수/진행/완료 댓글을 `tea`로 직접
-/// 달되(로컬 계정 명의), 본문에 마커+캐릭터 서명을 넣게 지시한다.
-fn initial_prompt(agent_id: &str, name: &str, repo_slug: &str, issue: u64) -> String {
+/// 달되(로컬 계정 명의), 본문에 마커+캐릭터 서명을 넣게 지시한다. `directive`가
+/// 있으면(요청자가 슬래시 명령과 함께 남긴 문장) 신뢰 가능한 핵심 요구로 싣는다.
+fn initial_prompt(
+    agent_id: &str,
+    name: &str,
+    repo_slug: &str,
+    issue: u64,
+    directive: Option<&str>,
+) -> String {
     let marker = command::bot_marker(agent_id);
+    let directive_section = match directive {
+        Some(d) if !d.trim().is_empty() => format!(
+            " 요청자(신뢰 가능한 계정)가 슬래시 명령과 함께 남긴 지시다 — 신뢰해도 되며 이번 작업의 핵심 요구사항이다: \"{d}\"."
+        ),
+        _ => String::new(),
+    };
     format!(
         "너는 Agent Office의 캐릭터 \"{name}\"이고 지금 봇 모드로 이 저장소를 맡았다. \
-Gitea 이슈 #{issue}을(를) 처리해라. 저장소 slug는 {repo_slug}다.\n\
+Gitea 이슈 #{issue}을(를) 처리해라. 저장소 slug는 {repo_slug}다.{directive_section}\n\
 작업 순서: \
 1) `tea api \"repos/{repo_slug}/issues/{issue}\"`로 이슈 전문을 읽어라. \
 2) 접수 댓글을 한 번 달아라 — 본문 첫 줄에 정확히 `{marker}`를, 이어서 \
@@ -92,9 +121,24 @@ fn relay_prompt(issue: u64, author: &str, body: &str) -> String {
     )
 }
 
-/// 세션 stdin에 한 줄을 타이핑하듯 주입한다(사람 입력과 동일 경로 + CR).
+/// 텍스트 주입 후 Enter(CR)를 보내기까지의 대기(ms). 텍스트와 CR이 한 이벤트로
+/// 뭉쳐 claude TUI가 Enter를 삼키는 것을 막고, 입력이 렌더될 틈을 준다.
+const INJECT_SUBMIT_DELAY_MS: u64 = 150;
+
+/// 세션 stdin에 프롬프트를 "타이핑"해 주입하고 Enter로 제출한다(사람 입력과 동일
+/// 경로). 두 가지 방어:
+/// 1) **단일 라인화** — 임베디드 개행(\n/\r)을 공백으로 바꾼다. 개행을 그대로
+///    쓰면 claude 등 TUI가 각 개행을 조기 제출로 처리해 프롬프트 앞부분이
+///    유실되고 꼬리만 입력창에 남는다(실사용 관측).
+/// 2) **제출 지연** — 텍스트를 먼저 쓰고 잠깐 쉰 뒤 CR을 따로 보낸다(둘이 한
+///    입력 이벤트로 합쳐져 Enter가 무시되는 것을 막는다).
 fn inject(manager: &SessionManager, agent_id: &str, text: &str) {
-    manager.write_input(agent_id, text);
+    let one_line: String = text
+        .chars()
+        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+        .collect();
+    manager.write_input(agent_id, &one_line);
+    std::thread::sleep(std::time::Duration::from_millis(INJECT_SUBMIT_DELAY_MS));
     manager.write_input(agent_id, "\r");
 }
 
@@ -186,7 +230,12 @@ pub fn poll_once(ctx: &BotContext, p: &BotParams, cancel: &AtomicBool) -> Result
                 if cancel.load(Ordering::Relaxed) {
                     break;
                 }
-                inject(&ctx.manager, &p.agent_id, &initial_prompt(&p.agent_id, &p.name, &p.repo_slug, issue_num));
+                let directive = directive_for(&c.body, &p.slug);
+                inject(
+                    &ctx.manager,
+                    &p.agent_id,
+                    &initial_prompt(&p.agent_id, &p.name, &p.repo_slug, issue_num, directive.as_deref()),
+                );
                 start_job(&mut state, &p.agent_id, issue_num);
                 state.mark_processed(c.id);
                 state.advance_cursor(&c.updated_at);
@@ -234,7 +283,13 @@ pub fn poll_once(ctx: &BotContext, p: &BotParams, cancel: &AtomicBool) -> Result
                 if cancel.load(Ordering::Relaxed) {
                     break;
                 }
-                inject(&ctx.manager, &p.agent_id, &initial_prompt(&p.agent_id, &p.name, &p.repo_slug, i.number));
+                let directive = directive_for(&i.body, &p.slug)
+                    .or_else(|| directive_for(&i.title, &p.slug));
+                inject(
+                    &ctx.manager,
+                    &p.agent_id,
+                    &initial_prompt(&p.agent_id, &p.name, &p.repo_slug, i.number, directive.as_deref()),
+                );
                 start_job(&mut state, &p.agent_id, i.number);
                 state.mark_issue_triggered(i.number);
             }

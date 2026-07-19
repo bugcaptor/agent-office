@@ -23,6 +23,8 @@ import { tauriApi } from "../ipc/tauriApi";
 import { useMarkdownStore } from "../markdown/markdownStore";
 import { useWorkdirStore } from "../workdir/workdirStore";
 import { terminalRegistry } from "./TerminalRegistry";
+import { looksLikeAgentRunning } from "./botGuard";
+import { botStatusText } from "./botStatusText";
 import type { ClaudeResumeEntry } from "@shared/types";
 
 export function AgentTabStrip() {
@@ -201,21 +203,19 @@ export function AgentTabStrip() {
           {tab.thumb && (
             <img className="agent-tab-thumb" src={tab.thumb} alt="" aria-hidden="true" />
           )}
-          {botMode[tab.id] && (
-            <span
-              className="agent-tab-bot"
-              title={
-                botMode[tab.id].error
-                  ? `봇 오류: ${botMode[tab.id].error}`
-                  : botMode[tab.id].issue
-                    ? `봇 운전 중 · 이슈 #${botMode[tab.id].issue}`
-                    : "봇 운전 중"
-              }
-              aria-hidden="true"
-            >
-              {botMode[tab.id].error ? "⚠️" : "🤖"}
-            </span>
-          )}
+          {botMode[tab.id] &&
+            (() => {
+              const bs = botStatusText(botMode[tab.id]);
+              return (
+                <span
+                  className="agent-tab-bot"
+                  title={bs.detail ? `${bs.title} · ${bs.detail}` : bs.title}
+                  aria-hidden="true"
+                >
+                  {bs.icon}
+                </span>
+              );
+            })()}
           {tab.name}
         </button>
       ))}
@@ -298,8 +298,12 @@ export function AgentTabStrip() {
                   ) {
                     void stopBot(aid);
                   }
-                } else {
+                } else if (looksLikeAgentRunning(terminalRegistry.getPlainText(aid))) {
+                  // 에이전트(claude 등)가 프롬프트를 잡고 있어 보이면 바로 켠다.
                   void startBot(aid);
+                } else {
+                  // 맨 셸일 수 있음 — 확인 다이얼로그로 넘긴다(맨 셸 가드).
+                  openModal({ kind: "confirm-bot-start", agentId: aid });
                 }
               },
             },

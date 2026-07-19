@@ -38,6 +38,14 @@ fn run(program: &str, args: &[&str], cwd: Option<&Path>, timeout: Duration) -> R
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // C 로케일 강제. GUI(Finder/launchd)로 띄운 앱은 셸 프로파일을 거치지 않아
+    // LANG/LC_* 가 비어, git이 시스템 로케일(예: 한국어)로 오류를 낸다. tea는
+    // git의 영어 "not a git repository" 문자열을 매치해 "여기는 저장소 아님 →
+    // 기본 로그인으로 폴백"을 판정하므로, 로케일이 비면 폴백이 깨져 `tea api`가
+    // 통째로 실패한다(사용자에겐 "tea 로그인 실패"로 보임). LC_ALL=C로 git/tea
+    // 메시지를 영어로 고정해 파싱을 결정화한다. tea가 뱉는 JSON 본문은 HTTP
+    // 원문 바이트라 로케일 영향을 받지 않는다.
+    cmd.env("LC_ALL", "C");
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }

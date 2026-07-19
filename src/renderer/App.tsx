@@ -10,6 +10,7 @@ import { ConfirmDeleteDialog } from "./agent/ConfirmDeleteDialog";
 import { ConfirmRestartDialog } from "./agent/ConfirmRestartDialog";
 import { ConfirmResumeDialog } from "./agent/ConfirmResumeDialog";
 import { ConfirmTerminateDialog } from "./agent/ConfirmTerminateDialog";
+import { ConfirmBotStartDialog } from "./agent/ConfirmBotStartDialog";
 import { ConfirmClockOutDialog } from "./agent/ConfirmClockOutDialog";
 import { ConfirmQuitDialog } from "./agent/ConfirmQuitDialog";
 import { SettingsDialog } from "./settings/SettingsDialog";
@@ -110,6 +111,7 @@ function App() {
         <ConfirmRestartDialog />
         <ConfirmResumeDialog />
         <ConfirmTerminateDialog />
+        <ConfirmBotStartDialog />
         <ConfirmClockOutDialog />
         <ConfirmQuitDialog />
         <SettingsDialog />

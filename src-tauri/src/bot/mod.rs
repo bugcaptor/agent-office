@@ -23,8 +23,16 @@ use std::time::Duration;
 use tauri::async_runtime::JoinHandle;
 use tokio::sync::oneshot;
 
-use crate::types::{BotAgentStatus, BotStatus};
+use crate::types::{BotAgentStatus, BotPhase, BotStatus};
 use runner::{BotContext, BotParams, PollOutcome};
+
+/// 현재 시각(epoch ms). 상태 카운트다운 기준점.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
 
 /// 한 탭(agentId)의 살아있는 폴링 태스크.
 struct RunningBot {
@@ -53,6 +61,7 @@ impl BotRuntime {
         }
         let status = Arc::new(Mutex::new(BotAgentStatus {
             running: true,
+            phase: BotPhase::Starting,
             ..Default::default()
         }));
         let cancel = Arc::new(AtomicBool::new(false));
@@ -128,6 +137,7 @@ async fn bot_loop(
             // 오류를 남겨 GUI가 원인을 보여준다. 사용자가 stop으로 정리한다.
             let mut s = status.lock().unwrap();
             s.running = false;
+            s.phase = BotPhase::Error;
             s.error = Some(e);
             return;
         }
@@ -135,6 +145,7 @@ async fn bot_loop(
     {
         let mut s = status.lock().unwrap();
         s.slug = Some(params.slug.clone());
+        s.poll_interval_sec = params.poll_interval_sec;
     }
     // 커서 프라임 + 재시작 잔존 잡 제거(과거 소급 트리거·유령 잡 방지).
     {
@@ -146,15 +157,23 @@ async fn bot_loop(
             status.lock().unwrap().error = Some(e);
         }
     }
+    // 프라임까지 끝났으면 첫 폴링을 기다리지 않고 즉시 "감시 중"으로 표시한다.
+    // (안 그러면 폴링 주기(30~60초) 내내 "봇 시작 중…/저장소·계정 확인 중"에
+    // 머물러, 성공했는데도 멈춘 것처럼 보인다.) 프라임 오류가 있으면 배지가
+    // error를 우선 표시하므로 phase는 그대로 둔다.
+    {
+        let mut s = status.lock().unwrap();
+        if s.error.is_none() && s.phase == BotPhase::Starting {
+            s.phase = BotPhase::Watching;
+        }
+    }
     let interval = Duration::from_secs(params.poll_interval_sec);
     loop {
-        tokio::select! {
-            _ = &mut shutdown_rx => break,
-            _ = tokio::time::sleep(interval) => {}
-        }
         if cancel.load(Ordering::Relaxed) {
             break;
         }
+        // 폴링을 먼저 돌린다(첫 반응이 interval만큼 지연되지 않게). 이후 다음
+        // 주기까지 대기하며, 대기 중 중단 신호에는 즉시 반응한다.
         let ctx2 = ctx.clone();
         let params2 = params.clone();
         let cancel2 = cancel.clone();
@@ -162,16 +181,30 @@ async fn bot_loop(
             runner::poll_once(&ctx2, &params2, &cancel2)
         })
         .await;
-        let mut s = status.lock().unwrap();
-        match res {
-            Ok(Ok(PollOutcome { issue })) => {
-                s.issue = issue;
-                s.error = None;
+        {
+            let mut s = status.lock().unwrap();
+            s.last_poll_at_ms = Some(now_ms());
+            match res {
+                Ok(Ok(PollOutcome { issue })) => {
+                    s.issue = issue;
+                    s.error = None;
+                    // 잡이 바인딩돼 있으면 "처리 중", 아니면 명령 "감시 중".
+                    s.phase = if issue.is_some() {
+                        BotPhase::Working
+                    } else {
+                        BotPhase::Watching
+                    };
+                }
+                Ok(Err(e)) => {
+                    s.error = Some(e);
+                    s.phase = BotPhase::Error;
+                }
+                Err(_) => { /* join 취소/패닉: 다음 주기에 재시도 */ }
             }
-            Ok(Err(e)) => {
-                s.error = Some(e);
-            }
-            Err(_) => { /* join 취소/패닉: 다음 주기에 재시도 */ }
+        }
+        tokio::select! {
+            _ = &mut shutdown_rx => break,
+            _ = tokio::time::sleep(interval) => {}
         }
     }
 }

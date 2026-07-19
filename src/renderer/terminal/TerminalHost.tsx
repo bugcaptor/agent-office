@@ -17,6 +17,7 @@ import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { ensureSession } from "../ipc/sessionBridge";
 import { terminalRegistry } from "./TerminalRegistry";
+import { BotOverlay } from "./BotOverlay";
 
 const RESIZE_DEBOUNCE_MS = 120;
 
@@ -94,6 +95,9 @@ function TerminalMount({ agentId }: { agentId: string }) {
       data-agent-id={agentId}
     >
       <div ref={hostRef} className="terminal-mount-host" />
+      {/* 봇 운전 중이면 터미널을 덮는 클릭 블로커 + 상태 배너(이슈 #57). 봇 모드가
+          꺼진 탭에선 self-gate로 null 렌더 — 아무 것도 덮지 않는다. */}
+      <BotOverlay agentId={agentId} />
       {isExited && (
         <div className="terminal-exited-banner" role="alert">
           <span>프로세스가 종료되었습니다.</span>

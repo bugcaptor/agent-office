@@ -194,6 +194,72 @@
   height: 100%;
 }
 
+/* 봇 운전 중 오버레이(이슈 #57 후속) — 터미널을 덮어 사람의 클릭/드래그를 막고
+   상태 배너를 띄운다. 스크림은 반투명이라 아래 에이전트 출력이 비쳐 보인다. */
+.bot-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3; /* exited 배너(2)보다 위 */
+  background: rgba(10, 12, 20, 0.32);
+  cursor: not-allowed;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.bot-overlay-error {
+  background: rgba(60, 14, 14, 0.4);
+}
+
+.bot-overlay-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px;
+  padding: 8px 12px;
+  font-family: "DungGeunMo", monospace;
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--accent);
+  cursor: default; /* 배너 위에선 not-allowed 해제 */
+}
+
+.bot-overlay-error .bot-overlay-banner {
+  border-color: var(--accent-error);
+}
+
+.bot-overlay-icon {
+  flex: none;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.bot-overlay-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bot-overlay-title {
+  font-size: 0.9rem;
+}
+
+.bot-overlay-detail {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.bot-overlay-countdown {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+  opacity: 0.85;
+}
+
+.bot-overlay-stop {
+  flex: none;
+}
+
 /* 프로세스 종료 시 표시되는 "다시 띄우기" 배너 (터미널 위 오버레이) */
 .terminal-exited-banner {
   position: absolute;

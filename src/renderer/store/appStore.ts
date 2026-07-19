@@ -421,13 +421,26 @@ export const useAppStore = create<AppState>()(
     startBot: async (agentId) => {
       // 낙관적으로 먼저 켠 상태로 표시(입력 잠금·배지 즉시 반영), 백엔드 응답으로
       // 실제 상태(이슈/오류)를 갱신한다. 실패해도 켠 상태는 유지하고 error만 표시.
-      set((s) => ({ botMode: { ...s.botMode, [agentId]: { running: true } } }));
+      set((s) => ({
+        botMode: {
+          ...s.botMode,
+          [agentId]: { running: true, phase: "starting", pollIntervalSec: 60 },
+        },
+      }));
       try {
         const status: BotAgentStatus = await tauriApi.botStart(agentId);
         set((s) => ({ botMode: { ...s.botMode, [agentId]: status } }));
       } catch (err) {
         set((s) => ({
-          botMode: { ...s.botMode, [agentId]: { running: false, error: String(err) } },
+          botMode: {
+            ...s.botMode,
+            [agentId]: {
+              running: false,
+              phase: "error",
+              pollIntervalSec: 60,
+              error: String(err),
+            },
+          },
         }));
       }
     },

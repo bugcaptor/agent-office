@@ -51,6 +51,37 @@ pub fn matches_command(text: &str, slug: &str) -> bool {
     })
 }
 
+/// 화이트리스트 작성자가 `/slug`와 함께 남긴 **신뢰 가능한 지시문**을 뽑는다.
+/// 본문에서 첫 번째 `/slug` 토큰(트리거)만 제거하고 남은 텍스트를 공백 정규화해
+/// 돌려준다. 트리거만 있고 별도 문장이 없으면 None(순수 트리거).
+///
+/// 주입 프롬프트에서 이 지시문은 요청자 본인의 말이므로 신뢰하되, 에이전트가
+/// `tea`로 읽어들이는 이슈 본문 등은 여전히 신뢰불가 참고자료로 다룬다(리뷰:
+/// 트리거 발신자=화이트리스트라 그의 지시는 신뢰, 그 밖 콘텐츠는 불신).
+pub fn extract_directive(text: &str, slug: &str) -> Option<String> {
+    if slug.is_empty() {
+        return None;
+    }
+    let needle = format!("/{}", slug.to_lowercase());
+    let mut removed = false;
+    let mut kept: Vec<&str> = Vec::new();
+    for tok in text.split_whitespace() {
+        let trimmed = tok.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/');
+        if !removed && trimmed.to_lowercase() == needle {
+            removed = true; // 트리거 토큰 1개만 제거
+            continue;
+        }
+        kept.push(tok);
+    }
+    let joined = kept.join(" ");
+    let joined = joined.trim();
+    if joined.is_empty() {
+        None
+    } else {
+        Some(joined.to_string())
+    }
+}
+
 /// 작성자가 명령을 발동할 권한이 있는지. tea 로그인 계정(owner)은 항상 허용이고,
 /// 추가 화이트리스트는 대소문자 무시로 비교한다.
 pub fn is_authorized(author: &str, owner: &str, whitelist: &[String]) -> bool {
@@ -92,6 +123,29 @@ mod tests {
         assert!(!matches_command("email/ada@x", "ada")); // 토큰 경계 아님
         assert!(!matches_command("ada 그냥 언급", "ada")); // 슬래시 없음
         assert!(!matches_command("/ada", "")); // 빈 slug
+    }
+
+    #[test]
+    fn extract_directive_strips_trigger_keeps_sentence() {
+        assert_eq!(
+            extract_directive("/ada 로그인 버그 고쳐줘", "ada").as_deref(),
+            Some("로그인 버그 고쳐줘")
+        );
+        assert_eq!(
+            extract_directive("먼저 확인 부탁 /ada, 그리고 PR", "ada").as_deref(),
+            Some("먼저 확인 부탁 그리고 PR")
+        );
+        assert_eq!(
+            extract_directive("/빌더 이슈 봐줘", "빌더").as_deref(),
+            Some("이슈 봐줘")
+        );
+    }
+
+    #[test]
+    fn extract_directive_none_when_only_trigger() {
+        assert_eq!(extract_directive("/ada", "ada"), None);
+        assert_eq!(extract_directive("  /ada  ", "ada"), None);
+        assert_eq!(extract_directive("아무 문장", ""), None); // 빈 slug
     }
 
     #[test]
