@@ -62,7 +62,27 @@ export function installDiaryAutoWriter(deps: DiaryAutoWriterDeps = {}): () => vo
   // 이미 자동 처리(시도)한 (agentId,sessionId) — 이중 이벤트(exited→disposed)와
   // 스트래글러 재스캔에서 같은 세션을 두 번 생성하지 않게 한다. 성공 시엔 로그가
   // 소진돼 재등장하지 않지만, 실패/스킵도 재시도하지 않도록(조용한 폴백) 표시한다.
+  // 단 in-flight(다른 경로가 이 캐릭터를 쓰는 중)만은 표시하지 않고 다음 종료 때
+  // 재시도한다 — 겹친 트리거에서 자격 있는 일기를 잃지 않게.
   const attempted = new Set<string>();
+
+  // 에이전트별 처리 직렬화. onSessionState는 exited→disposed를 연달아 방출하는데,
+  // handleAgent는 `await generate` 지점에서 양보하므로 두 콜백이 인터리브될 수 있다.
+  // 그러면 generateDiary의 per-agent inflight와 얽혀(두 번째 핸들러가 세션을 먼저
+  // 잡아두고 in-flight로 튕겨) 일기가 유실될 수 있어, 같은 에이전트는 앞 처리가
+  // 끝난 뒤에만 다음 처리가 돌게 한다.
+  const running = new Map<string, Promise<void>>();
+
+  function schedule(agentId: string): void {
+    const prev = running.get(agentId) ?? Promise.resolve();
+    const next = prev.then(() => handleAgent(agentId)).catch((err) => {
+      console.warn(`diaryAutoWriter: 자동 일기 처리 실패(agent=${agentId})`, err);
+    });
+    running.set(agentId, next);
+    void next.finally(() => {
+      if (running.get(agentId) === next) running.delete(agentId);
+    });
+  }
 
   async function handleAgent(agentId: string): Promise<void> {
     // 게이트를 먼저 확인 — OFF면 스캔조차 하지 않는다(CLI 미호출).
@@ -94,16 +114,19 @@ export function installDiaryAutoWriter(deps: DiaryAutoWriterDeps = {}): () => vo
         attempted.add(key);
         continue;
       }
-      attempted.add(key);
       let result;
       try {
         result = await generate(agentId, {}, sessionId);
       } catch (err) {
+        attempted.add(key); // 예외는 재시도하지 않는다(조용한 폴백).
         console.warn(`diaryAutoWriter: 자동 일기 생성 예외(agent=${agentId})`, err);
         continue;
       }
-      if (!result.ok) continue;
-      onWritten(agentId, result.entry);
+      // in-flight면 표시하지 않고 다음 종료 이벤트에서 재시도 — 자격 있는 일기를
+      // 잃지 않는다. 그 외(성공·disabled·cli-missing·failed)는 표시해 재시도 방지.
+      if (!result.ok && result.reason === "in-flight") continue;
+      attempted.add(key);
+      if (result.ok) onWritten(agentId, result.entry);
     }
   }
 
@@ -118,11 +141,12 @@ export function installDiaryAutoWriter(deps: DiaryAutoWriterDeps = {}): () => vo
 
   const offSession = api.onSessionState((e) => {
     if (e.state !== "exited" && e.state !== "disposed") return;
-    void handleAgent(e.agentId);
+    schedule(e.agentId);
   });
 
   return () => {
     offSession();
     attempted.clear();
+    running.clear();
   };
 }

@@ -200,6 +200,38 @@ describe("installDiaryAutoWriter", () => {
     off();
   });
 
+  it("겹친 종료 이벤트(exited/disposed)에서 자격 있는 세션을 잃지 않는다", async () => {
+    // 두 세션이 버퍼에 남은 채 종료 콜백이 겹칠 때, generateDiary의 per-agent
+    // in-flight와 얽혀 한 세션이 유실되던 레이스(리뷰 P2)의 회귀 방지.
+    const log = new WorkLog();
+    for (let i = 0; i < 4; i++) log.append("a1", { at: NOW, sessionId: "s1", kind: "tool", text: `a${i}` });
+    for (let i = 0; i < 4; i++) log.append("a1", { at: NOW, sessionId: "s2", kind: "tool", text: `b${i}` });
+
+    // 실제 generateDiary처럼 per-agent in-flight를 흉내낸다: 동시 호출은 거절.
+    let active = false;
+    const written: string[] = [];
+    const generate = vi.fn(async (_id: string, _d: unknown, sid?: string) => {
+      if (active) return { ok: false as const, reason: "in-flight" as const };
+      active = true;
+      await Promise.resolve();
+      active = false;
+      written.push(sid ?? "");
+      return okResult(sid ?? "");
+    });
+
+    const m = mockApi();
+    const off = installDiaryAutoWriter({ api: m.api, now: () => NOW, log, generate, notify: vi.fn() });
+
+    m.emit({ state: "exited", sessionId: "s1" });
+    m.emit({ state: "disposed", sessionId: "s1" });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 두 세션 모두 성공적으로 기록됐고, 어느 것도 한 번보다 많이 쓰지 않았다.
+    expect([...written].sort()).toEqual(["s1", "s2"]);
+    off();
+  });
+
   it("오버레이가 그 캐릭터를 열고 있으면 성공 후 갱신한다", async () => {
     useDiaryStore.setState({ overlay: { agentId: "a1", agentName: "컴파일러" }, entries: [] });
     const refresh = vi.spyOn(useDiaryStore.getState(), "refresh").mockResolvedValue();
