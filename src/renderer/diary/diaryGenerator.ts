@@ -9,9 +9,11 @@
 // (요약기와 동일 정책). provider CLI 미설치("${provider}-not-found")·실패·
 // 타임아웃은 조용히 폴백(일기 미생성) — 나머지 기능은 정상 동작.
 //
-// 트리거: 탭 컨텍스트 메뉴의 "일기 쓰기"(수동). 비용·기대 UX상 사용자 요청
-// 기반을 기본으로 한다(기획 열린 질문의 (c) 수동). 성공 시 append_diary_entry로
-// 영속화하고 그 세션의 작업 로그를 소진(clear)해 다음 일기가 새 작업만 담게 한다.
+// 트리거: (1) 세션 종료 시 자동(diaryAutoWriter, #60) — diaryEnabled면 기본 동작.
+// (2) 탭 컨텍스트 메뉴의 "일기 쓰기"(수동). 자동 경로는 종료된 세션을 sessionId로
+// 명시해 그 세션 로그만 담고, 수동 경로는 인자 없이 현재 세션을 유추한다. 성공 시
+// append_diary_entry로 영속화하고 그 세션의 작업 로그를 소진(clear)해 다음 일기가
+// 새 작업만 담게 한다.
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import type { DiaryEntry, SummaryProvider } from "@shared/types";
@@ -62,10 +64,14 @@ const inflight = new Set<string>();
  * 한 캐릭터의 누적 작업 로그로 일기 한 편을 생성·영속화한다. opt-in OFF·작업
  * 로그 없음·CLI 미설치·실패는 조용한 사유 반환(throw 안 함). 성공 시 그 세션의
  * 작업 로그를 소진한다.
+ *
+ * targetSessionId를 주면(자동 경로) 그 세션의 로그만 담고 그 세션으로 기록한다.
+ * 생략하면(수동 경로) 현재 라벨의 세션을 유추한다(하위호환).
  */
 export async function generateDiary(
   agentId: string,
   deps: DiaryGeneratorDeps = {},
+  targetSessionId?: string,
 ): Promise<DiaryResult> {
   const summarizeFn =
     deps.summarizeFn ??
@@ -77,15 +83,17 @@ export async function generateDiary(
   const state = useAppStore.getState();
   if (!state.appSettings.diaryEnabled) return { ok: false, reason: "disabled" };
 
-  const items = log.items(agentId);
+  const items = targetSessionId === undefined ? log.items(agentId) : log.items(agentId, targetSessionId);
   if (items.length === 0) return { ok: false, reason: "no-work" };
 
   if (inflight.has(agentId)) return { ok: false, reason: "in-flight" };
 
   const provider = state.appSettings.summaryProvider;
   const personality = state.agents[agentId]?.personalityPrompt?.trim() ?? "";
-  // 일기가 다룰 세션 — 현재 라벨의 세션(없으면 최신 로그 항목의 세션).
-  const sessionId = state.taskLabels[agentId]?.sessionId ?? items[items.length - 1].sessionId;
+  // 일기가 다룰 세션 — 자동 경로는 지정 세션, 수동 경로는 현재 라벨의 세션
+  // (없으면 최신 로그 항목의 세션).
+  const sessionId =
+    targetSessionId ?? state.taskLabels[agentId]?.sessionId ?? items[items.length - 1].sessionId;
 
   const userText = `[성격]\n${personality || "(없음)"}\n\n[작업 로그]\n${formatWorkLog(items)}`;
 
