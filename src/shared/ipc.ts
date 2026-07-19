@@ -61,6 +61,12 @@ export const Commands = {
   // git 상태(porcelain v2)를 돌려준다. git 조회는 거대 저장소 대비 3초 타임아웃.
   workdirListFiles: "workdir_list_files",
   workdirGitStatus: "workdir_git_status",
+  // 변경점(diff)·이력(history) 확인(이슈 #11 후속). 전부 읽기 전용이며
+  // difftool만 외부 GUI 도구를 fire-and-forget으로 띄운다.
+  workdirDiffFile: "workdir_diff_file",
+  workdirFileHistory: "workdir_file_history",
+  workdirDiffCommit: "workdir_diff_commit",
+  workdirDifftool: "workdir_difftool",
 } as const;
 
 /**

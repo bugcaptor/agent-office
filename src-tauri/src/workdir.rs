@@ -37,6 +37,17 @@ const MAX_LIST: usize = 5000;
 /// 넘기면 자식을 죽이고 `timed_out`을 세운다.
 const GIT_STATUS_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// diff/log/show subprocess 타임아웃. status보다 넉넉하되(대용량 diff·긴 로그)
+/// UI가 무한정 멈추지 않도록 상한을 둔다.
+const GIT_QUERY_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// diff 텍스트 상한(바이트). 이 크기를 넘으면 잘라내고 `truncated=true`.
+const MAX_DIFF_BYTES: usize = 1024 * 1024;
+/// diff 텍스트 상한(줄 수). 이 줄 수를 넘으면 잘라내고 `truncated=true`.
+const MAX_DIFF_LINES: usize = 5000;
+/// 파일 히스토리 조회 상한(요청 limit을 이 값으로 클램프).
+const HISTORY_MAX_LIMIT: usize = 200;
+
 /// 목록 결과. `truncated`는 상한(MAX_LIST)에 걸려 일부만 담겼음을 뜻한다.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +118,387 @@ impl GitStatusResult {
             timed_out: true,
         }
     }
+}
+
+/// diff 조회 결과. `diff`는 unified diff 텍스트(변경 없으면 빈 문자열),
+/// `binary`는 git이 바이너리로 판단했는지, `truncated`는 상한(바이트/줄)에 걸려
+/// 잘렸는지, `timed_out`은 타임아웃으로 조회를 중단했는지.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitDiffResult {
+    pub diff: String,
+    pub binary: bool,
+    pub truncated: bool,
+    pub timed_out: bool,
+}
+
+/// 파일 히스토리 커밋 1건. `hash`는 full 40-hex, `short_hash`는 축약,
+/// `author`/`date`/`subject`는 표시용.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitEntry {
+    pub hash: String,
+    pub short_hash: String,
+    pub author: String,
+    pub date: String,
+    pub subject: String,
+}
+
+/// `git_file_history` 결과. `has_more`는 요청 limit만큼 다 채웠는지(더 있을 수
+/// 있음), `timed_out`은 타임아웃 여부.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitFileHistoryResult {
+    pub commits: Vec<GitCommitEntry>,
+    pub has_more: bool,
+    pub timed_out: bool,
+}
+
+/// git 서브프로세스 1회 실행 결과(제네릭). `spawn_failed`는 git 바이너리 부재
+/// 등 실행 자체 실패, `timed_out`은 타임아웃으로 kill, `success`는 exit 0 여부,
+/// `stdout`은 종료 코드와 무관하게 리더 스레드가 끝까지 읽은 표준출력.
+struct GitRun {
+    spawn_failed: bool,
+    timed_out: bool,
+    success: bool,
+    stdout: Vec<u8>,
+}
+
+/// git을 root에서 `args`로 한 번 실행한다. stdout은 별도 스레드로 끝까지 읽어
+/// 파이프 교착을 막고(거대 diff는 수 MB), 타임아웃을 넘기면 자식을 죽인다.
+/// stderr는 버린다(에러 메시지는 종료 코드/빈 stdout으로 판별).
+fn run_git(root: &Path, args: &[&str], timeout: Duration) -> GitRun {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(root)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(_) => {
+            return GitRun {
+                spawn_failed: true,
+                timed_out: false,
+                success: false,
+                stdout: Vec::new(),
+            }
+        }
+    };
+
+    let mut stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return GitRun {
+                spawn_failed: true,
+                timed_out: false,
+                success: false,
+                stdout: Vec::new(),
+            };
+        }
+    };
+    let (tx, rx) = mpsc::channel();
+    let reader = thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        let _ = tx.send(buf);
+    });
+
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break None;
+                }
+                thread::sleep(Duration::from_millis(15));
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+        }
+    };
+
+    let buf = rx.recv().unwrap_or_default();
+    let _ = reader.join();
+
+    match status {
+        Some(s) => GitRun {
+            spawn_failed: false,
+            timed_out: false,
+            success: s.success(),
+            stdout: buf,
+        },
+        None => GitRun {
+            spawn_failed: false,
+            timed_out: true,
+            success: false,
+            stdout: buf,
+        },
+    }
+}
+
+/// git 커맨드에 넘길 상대경로를 검증·정규화한다. 절대경로·`..`·루트 컴포넌트를
+/// 거부해 root 밖 접근을 막고, 반환값은 '/'로 정규화된 상대경로다. 이 값은 항상
+/// `--` 뒤에 pathspec으로 넘겨(옵션 주입 차단) 선행 '-'가 있어도 안전하다.
+fn sanitize_rel_path(rel: &str) -> Result<String, String> {
+    if rel.is_empty() {
+        return Err("경로가 비어 있습니다".to_string());
+    }
+    let p = Path::new(rel);
+    let mut parts: Vec<String> = Vec::new();
+    for comp in p.components() {
+        use std::path::Component;
+        match comp {
+            Component::Normal(s) => parts.push(s.to_string_lossy().into_owned()),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(format!("작업 폴더 밖의 경로는 접근할 수 없습니다: {rel}"));
+            }
+        }
+    }
+    if parts.is_empty() {
+        return Err(format!("잘못된 경로입니다: {rel}"));
+    }
+    Ok(parts.join("/"))
+}
+
+/// 커밋 인자가 안전한지(hex 7~40자) 검증한다. git rev로 넘기기 전 옵션·경로
+/// 주입을 원천 차단하기 위함.
+fn valid_commit(commit: &str) -> bool {
+    let n = commit.len();
+    (7..=40).contains(&n) && commit.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// git diff 출력 바이트를 상한(바이트/줄)에 맞춰 잘라 GitDiffResult로 만든다.
+/// 바이너리 판정은 git이 내는 "Binary files ..." / "GIT binary patch" 표식으로.
+fn finalize_diff(bytes: &[u8]) -> GitDiffResult {
+    let text = String::from_utf8_lossy(bytes);
+    let binary = text.contains("Binary files ") || text.contains("GIT binary patch");
+    let mut out = String::new();
+    let mut truncated = false;
+    for (idx, line) in text.lines().enumerate() {
+        if idx >= MAX_DIFF_LINES || out.len() + line.len() + 1 > MAX_DIFF_BYTES {
+            truncated = true;
+            break;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    GitDiffResult {
+        diff: out,
+        binary,
+        truncated,
+        timed_out: false,
+    }
+}
+
+/// canonical root를 얻고 디렉터리인지 확인한다(diff/history 진입 공통 전처리).
+fn canon_dir(root: &str) -> Result<std::path::PathBuf, String> {
+    let canon_root = std::fs::canonicalize(root)
+        .map_err(|e| format!("작업 폴더를 찾을 수 없습니다: {root} ({e})"))?;
+    if !canon_root.is_dir() {
+        return Err(format!("작업 폴더가 디렉터리가 아닙니다: {root}"));
+    }
+    Ok(canon_root)
+}
+
+/// root 기준 `rel_path`의 diff를 `mode`에 맞춰 뽑는다.
+/// - `worktreeVsIndex`: 워킹트리↔인덱스(미스테이지 변경) `git diff`
+/// - `indexVsHead`: 인덱스↔HEAD(스테이지된 변경) `git diff --cached`
+/// - `worktreeVsHead`: 워킹트리↔HEAD(전체 변경 합본) `git diff HEAD`
+/// - `untracked`: 미추적 파일을 새 파일로 `git diff --no-index /dev/null <path>`
+///
+/// 미추적 파일은 일반 `git diff`가 아무것도 내지 않으므로 `untracked` 모드가
+/// 필요하다(프런트가 뱃지 '?'를 보고 이 모드로 요청).
+pub fn git_diff_file(root: &str, rel_path: &str, mode: &str) -> Result<GitDiffResult, String> {
+    let canon_root = canon_dir(root)?;
+    let rel = sanitize_rel_path(rel_path)?;
+    let args: Vec<&str> = match mode {
+        "worktreeVsIndex" => vec!["diff", "--", &rel],
+        "indexVsHead" => vec!["diff", "--cached", "--", &rel],
+        "worktreeVsHead" => vec!["diff", "HEAD", "--", &rel],
+        // /dev/null은 git이 diff --no-index에서 크로스플랫폼으로 특별 처리한다.
+        "untracked" => vec!["diff", "--no-index", "--", "/dev/null", &rel],
+        other => return Err(format!("알 수 없는 diff 모드: {other}")),
+    };
+    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT);
+    if run.spawn_failed {
+        return Err("git 실행에 실패했습니다(설치 여부 확인)".to_string());
+    }
+    if run.timed_out {
+        return Ok(GitDiffResult {
+            diff: String::new(),
+            binary: false,
+            truncated: false,
+            timed_out: true,
+        });
+    }
+    // diff --no-index는 차이가 있으면 exit 1을 내지만 정상 출력이다. 그래서
+    // success와 무관하게 stdout을 그대로 파싱한다(exit 2 등 에러도 빈 stdout이면
+    // 빈 diff로 귀결되어 UI에 "변경 없음"으로 보인다).
+    Ok(finalize_diff(&run.stdout))
+}
+
+/// root 기준 `rel_path`의 커밋 히스토리를 `git log --follow`로 가져온다(페이지네이션).
+pub fn git_file_history(
+    root: &str,
+    rel_path: &str,
+    limit: usize,
+    skip: usize,
+) -> Result<GitFileHistoryResult, String> {
+    let canon_root = canon_dir(root)?;
+    let rel = sanitize_rel_path(rel_path)?;
+    let limit = limit.clamp(1, HISTORY_MAX_LIMIT);
+    // 필드 구분 US(0x1f), 레코드 구분은 -z의 NUL. subject에 개행이 있어도 안전.
+    let n_arg = format!("-n{limit}");
+    let skip_arg = format!("--skip={skip}");
+    let args = [
+        "log",
+        "--follow",
+        "--date=format:%Y-%m-%d %H:%M",
+        "--format=%H%x1f%h%x1f%an%x1f%ad%x1f%s",
+        "-z",
+        &n_arg,
+        &skip_arg,
+        "--",
+        &rel,
+    ];
+    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT);
+    if run.spawn_failed {
+        return Err("git 실행에 실패했습니다(설치 여부 확인)".to_string());
+    }
+    if run.timed_out {
+        return Ok(GitFileHistoryResult {
+            commits: Vec::new(),
+            has_more: false,
+            timed_out: true,
+        });
+    }
+    Ok(parse_history(&run.stdout, limit))
+}
+
+/// `git log ... -z --format=%H\x1f%h\x1f%an\x1f%ad\x1f%s` 출력을 파싱한다.
+/// 레코드는 NUL로 구분되며 각 레코드 안은 US(0x1f)로 5개 필드가 나뉜다.
+fn parse_history(bytes: &[u8], limit: usize) -> GitFileHistoryResult {
+    let mut commits = Vec::new();
+    for rec in bytes.split(|&b| b == 0) {
+        // 레코드 사이 개행이 섞일 수 있어 앞뒤 공백/개행을 다듬는다.
+        let s = String::from_utf8_lossy(rec);
+        let s = s.trim_matches(['\n', '\r']);
+        if s.is_empty() {
+            continue;
+        }
+        let mut f = s.splitn(5, '\u{1f}');
+        let hash = f.next().unwrap_or("").to_string();
+        let short_hash = f.next().unwrap_or("").to_string();
+        let author = f.next().unwrap_or("").to_string();
+        let date = f.next().unwrap_or("").to_string();
+        let subject = f.next().unwrap_or("").to_string();
+        if hash.is_empty() {
+            continue;
+        }
+        commits.push(GitCommitEntry {
+            hash,
+            short_hash,
+            author,
+            date,
+            subject,
+        });
+    }
+    let has_more = commits.len() >= limit;
+    GitFileHistoryResult {
+        commits,
+        has_more,
+        timed_out: false,
+    }
+}
+
+/// 특정 커밋이 `rel_path`에 만든 변경(diff)을 `git show`로 가져온다. `--format=`로
+/// 커밋 메시지 헤더를 지워 diff만 남긴다.
+pub fn git_diff_commit(root: &str, commit: &str, rel_path: &str) -> Result<GitDiffResult, String> {
+    let canon_root = canon_dir(root)?;
+    if !valid_commit(commit) {
+        return Err(format!("잘못된 커밋 해시입니다: {commit}"));
+    }
+    let rel = sanitize_rel_path(rel_path)?;
+    let args = ["show", "--format=", commit, "--", &rel];
+    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT);
+    if run.spawn_failed {
+        return Err("git 실행에 실패했습니다(설치 여부 확인)".to_string());
+    }
+    if run.timed_out {
+        return Ok(GitDiffResult {
+            diff: String::new(),
+            binary: false,
+            truncated: false,
+            timed_out: true,
+        });
+    }
+    Ok(finalize_diff(&run.stdout))
+}
+
+/// 외부 비교 도구(`git difftool`)를 fire-and-forget으로 띄운다. GUI 도구가
+/// 설정돼 있어야 의미가 있고, 미설정이면 백그라운드에서 조용히 실패한다(인앱
+/// diff가 항상 폴백이므로 여기서는 spawn 성공만 확인). `commit`이 있으면 그
+/// 커밋의 변경을, 없으면 `mode`에 따른 현재 변경을 연다.
+pub fn launch_difftool(
+    root: &str,
+    rel_path: &str,
+    mode: &str,
+    commit: Option<&str>,
+) -> Result<(), String> {
+    let canon_root = canon_dir(root)?;
+    let rel = sanitize_rel_path(rel_path)?;
+    let mut args: Vec<String> = vec!["difftool".to_string(), "-y".to_string()];
+    match commit {
+        Some(c) => {
+            if !valid_commit(c) {
+                return Err(format!("잘못된 커밋 해시입니다: {c}"));
+            }
+            // "<hash>^!"는 그 커밋 하나의 변경(부모↔커밋)을 뜻한다.
+            args.push(format!("{c}^!"));
+        }
+        None => match mode {
+            "indexVsHead" => args.push("--cached".to_string()),
+            "worktreeVsHead" => args.push("HEAD".to_string()),
+            // worktreeVsIndex(기본)·untracked 등은 추가 rev 없이 워킹트리 비교.
+            _ => {}
+        },
+    }
+    args.push("--".to_string());
+    args.push(rel);
+
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let mut cmd = Command::new("git");
+    cmd.current_dir(&canon_root)
+        .args(&arg_refs)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| format!("외부 비교 도구 실행 실패: {e}"))
 }
 
 /// root 아래 파일을 스캔한다. markdown.rs의 스캐너와 동일하되 확장자 필터가
@@ -180,76 +572,28 @@ pub fn collect_git_status(root: &str) -> Result<GitStatusResult, String> {
 }
 
 /// `git status --porcelain=v2 --branch -z`를 root에서 실행하고 결과를 파싱한다.
-/// 타임아웃 초과 시 자식을 죽이고 timed_out 응답을 돌려준다.
+/// 타임아웃 초과 시 자식을 죽이고 timed_out 응답을 돌려준다. 실행/파이프 처리는
+/// 공용 `run_git`에 위임한다.
 fn run_git_status(root: &Path, timeout: Duration) -> GitStatusResult {
-    let mut cmd = Command::new("git");
-    cmd.current_dir(root)
-        .args(["status", "--porcelain=v2", "--branch", "-z"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
+    let run = run_git(
+        root,
+        &["status", "--porcelain=v2", "--branch", "-z"],
+        timeout,
+    );
+    // git 바이너리 부재 등 -- 저장소 아님으로 취급(뱃지 조용히 생략).
+    if run.spawn_failed {
+        return GitStatusResult::not_repo();
     }
-
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        // git 바이너리 부재 등 -- 저장소 아님으로 취급(뱃지 조용히 생략).
-        Err(_) => return GitStatusResult::not_repo(),
-    };
-
-    // stdout을 별도 스레드로 끝까지 읽어 파이프 버퍼가 차서 git이 write에서
-    // 멈추는 교착을 막는다(거대 저장소는 출력이 수 MB일 수 있다).
-    let mut stdout = match child.stdout.take() {
-        Some(s) => s,
-        None => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return GitStatusResult::not_repo();
-        }
-    };
-    let (tx, rx) = mpsc::channel();
-    let reader = thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stdout.read_to_end(&mut buf);
-        let _ = tx.send(buf);
-    });
-
-    // 자식 종료를 타임아웃까지 폴링한다. 리더 스레드가 파이프를 비우므로 교착
-    // 없이 종료를 기다릴 수 있다.
-    let deadline = Instant::now() + timeout;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break None; // 타임아웃.
-                }
-                thread::sleep(Duration::from_millis(15));
-            }
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break None;
-            }
-        }
-    };
-
-    let buf = rx.recv().unwrap_or_default();
-    let _ = reader.join();
-
-    match status {
-        // exit 0: 정상 파싱. 비-repo이면 git이 애초에 spawn 후 non-zero로 끝난다.
-        Some(s) if s.success() => parse_porcelain_v2(&buf),
+    // 타임아웃.
+    if run.timed_out {
+        return GitStatusResult::timed_out();
+    }
+    if run.success {
+        // exit 0: 정상 파싱.
+        parse_porcelain_v2(&run.stdout)
+    } else {
         // non-zero: 비 git 저장소(혹은 기타 git 에러) -- 뱃지 생략.
-        Some(_) => GitStatusResult::not_repo(),
-        // 타임아웃/실행 오류.
-        None => GitStatusResult::timed_out(),
+        GitStatusResult::not_repo()
     }
 }
 
@@ -411,6 +755,68 @@ pub async fn workdir_git_status(root: String) -> Result<GitStatusResult, String>
     collect_git_status(&crate::session::manager::expand_tilde(root))
 }
 
+/// `git_diff_file`의 Tauri 커맨드 래퍼.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn workdir_diff_file(
+    root: String,
+    rel_path: String,
+    mode: String,
+) -> Result<GitDiffResult, String> {
+    git_diff_file(
+        &crate::session::manager::expand_tilde(root),
+        &rel_path,
+        &mode,
+    )
+}
+
+/// `git_file_history`의 Tauri 커맨드 래퍼.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn workdir_file_history(
+    root: String,
+    rel_path: String,
+    limit: usize,
+    skip: usize,
+) -> Result<GitFileHistoryResult, String> {
+    git_file_history(
+        &crate::session::manager::expand_tilde(root),
+        &rel_path,
+        limit,
+        skip,
+    )
+}
+
+/// `git_diff_commit`의 Tauri 커맨드 래퍼.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn workdir_diff_commit(
+    root: String,
+    commit: String,
+    rel_path: String,
+) -> Result<GitDiffResult, String> {
+    git_diff_commit(
+        &crate::session::manager::expand_tilde(root),
+        &commit,
+        &rel_path,
+    )
+}
+
+/// `launch_difftool`의 Tauri 커맨드 래퍼. `commit`이 빈 문자열/미지정이면 현재
+/// 변경을, 아니면 그 커밋의 변경을 외부 도구로 연다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn workdir_difftool(
+    root: String,
+    rel_path: String,
+    mode: String,
+    commit: Option<String>,
+) -> Result<(), String> {
+    let commit_ref = commit.as_deref().filter(|c| !c.is_empty());
+    launch_difftool(
+        &crate::session::manager::expand_tilde(root),
+        &rel_path,
+        &mode,
+        commit_ref,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -544,5 +950,130 @@ mod tests {
         let r = collect_git_status(root).unwrap();
         assert!(r.is_repo, "이 크레이트는 git 저장소여야 함");
         assert!(!r.timed_out);
+    }
+
+    #[test]
+    fn sanitize_rel_path_rejects_escapes() {
+        assert!(sanitize_rel_path("").is_err());
+        assert!(sanitize_rel_path("/etc/passwd").is_err());
+        assert!(sanitize_rel_path("../secret").is_err());
+        assert!(sanitize_rel_path("a/../../b").is_err());
+        // 정상: 정규화되어 '/' 구분.
+        assert_eq!(sanitize_rel_path("src/lib.rs").unwrap(), "src/lib.rs");
+        assert_eq!(sanitize_rel_path("./src/./lib.rs").unwrap(), "src/lib.rs");
+        // 선행 '-' 파일명은 통과한다(항상 `--` 뒤 pathspec으로 넘겨 안전).
+        assert_eq!(sanitize_rel_path("-weird.txt").unwrap(), "-weird.txt");
+    }
+
+    #[test]
+    fn valid_commit_accepts_only_hex_7_to_40() {
+        assert!(valid_commit("dd7c2d8"));
+        assert!(valid_commit("dd7c2d861e6c0619e58bed7340efebe2ae7915db"));
+        assert!(!valid_commit("dd7c2d")); // 6자
+        assert!(!valid_commit("HEAD"));
+        assert!(!valid_commit("dd7c2d8; rm -rf /"));
+        assert!(!valid_commit("../../etc"));
+        // 41자 초과.
+        assert!(!valid_commit("dd7c2d861e6c0619e58bed7340efebe2ae7915db0"));
+    }
+
+    #[test]
+    fn finalize_diff_flags_binary() {
+        let d = finalize_diff(b"Binary files a/x.png and b/x.png differ\n");
+        assert!(d.binary);
+        assert!(!d.truncated);
+    }
+
+    #[test]
+    fn finalize_diff_truncates_by_lines() {
+        let mut big = String::new();
+        for i in 0..(MAX_DIFF_LINES + 100) {
+            big.push_str(&format!("+line {i}\n"));
+        }
+        let d = finalize_diff(big.as_bytes());
+        assert!(d.truncated);
+        assert_eq!(d.diff.lines().count(), MAX_DIFF_LINES);
+    }
+
+    #[test]
+    fn parse_history_splits_records_and_fields() {
+        // 필드 US(0x1f), 레코드 NUL. 2개 커밋.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(
+            "abc1234def5678\u{1f}abc1234\u{1f}Alice\u{1f}2026-01-01 10:00\u{1f}first subject"
+                .as_bytes(),
+        );
+        bytes.push(0);
+        bytes.extend_from_slice(
+            "9990000aaaa\u{1f}9990000\u{1f}Bob\u{1f}2026-02-02 11:11\u{1f}second".as_bytes(),
+        );
+        bytes.push(0);
+        let r = parse_history(&bytes, 50);
+        assert_eq!(r.commits.len(), 2);
+        assert_eq!(r.commits[0].hash, "abc1234def5678");
+        assert_eq!(r.commits[0].short_hash, "abc1234");
+        assert_eq!(r.commits[0].author, "Alice");
+        assert_eq!(r.commits[0].date, "2026-01-01 10:00");
+        assert_eq!(r.commits[0].subject, "first subject");
+        assert_eq!(r.commits[1].author, "Bob");
+        assert!(!r.has_more); // 2 < 50
+    }
+
+    #[test]
+    fn parse_history_has_more_when_full() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice("aaaaaaa\u{1f}aaaaaaa\u{1f}A\u{1f}d\u{1f}s".as_bytes());
+        bytes.push(0);
+        let r = parse_history(&bytes, 1);
+        assert_eq!(r.commits.len(), 1);
+        assert!(r.has_more); // 1 >= limit(1)
+    }
+
+    #[test]
+    fn unknown_diff_mode_is_error() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        assert!(git_diff_file(root, "Cargo.toml", "bogus").is_err());
+    }
+
+    #[test]
+    fn diff_out_of_root_is_error() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        assert!(git_diff_file(root, "../../../etc/passwd", "worktreeVsHead").is_err());
+        assert!(git_file_history(root, "../escape", 10, 0).is_err());
+        assert!(git_diff_commit(root, "0000000", "../escape").is_err());
+    }
+
+    #[test]
+    fn diff_commit_rejects_bad_hash() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        // 유효하지 않은 해시는 sanitize 이전에 거부.
+        assert!(git_diff_commit(root, "not-a-hash", "Cargo.toml").is_err());
+    }
+
+    /// 실제 저장소에서 파일 히스토리를 조회하는 스모크. workdir.rs는 커밋
+    /// 이력이 있으므로 최소 1건 이상 나와야 한다.
+    #[test]
+    fn this_repo_file_history_smoke() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let r = git_file_history(root, "src/workdir.rs", 10, 0).unwrap();
+        assert!(!r.timed_out);
+        assert!(
+            !r.commits.is_empty(),
+            "workdir.rs는 커밋 이력이 있어야 함"
+        );
+        // 해시는 hex 40자여야 한다.
+        assert!(valid_commit(&r.commits[0].hash));
+    }
+
+    /// 특정 커밋(#11 도입 커밋)의 workdir.rs diff를 뽑는 스모크.
+    #[test]
+    fn this_repo_diff_commit_smoke() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let r =
+            git_diff_commit(root, "dd7c2d861e6c0619e58bed7340efebe2ae7915db", "src/workdir.rs")
+                .unwrap();
+        assert!(!r.timed_out);
+        // 그 커밋이 workdir.rs를 새로 추가했으므로 diff에 파일 헤더가 있어야 한다.
+        assert!(r.diff.contains("diff --git") || r.diff.contains("new file"));
     }
 }

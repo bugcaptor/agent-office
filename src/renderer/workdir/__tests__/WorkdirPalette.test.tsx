@@ -7,19 +7,26 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listFiles, gitStatus, openInVscode, updateSettings } = vi.hoisted(() => ({
-  listFiles: vi.fn().mockResolvedValue({ files: [], truncated: false }),
-  gitStatus: vi.fn().mockResolvedValue({
-    isRepo: true,
-    branch: "main",
-    ahead: 0,
-    behind: 0,
-    entries: [],
-    timedOut: false,
-  }),
-  openInVscode: vi.fn().mockResolvedValue(undefined),
-  updateSettings: vi.fn(),
-}));
+const { listFiles, gitStatus, openInVscode, updateSettings, diffFile, fileHistory, diffCommit, difftool } =
+  vi.hoisted(() => ({
+    listFiles: vi.fn().mockResolvedValue({ files: [], truncated: false }),
+    gitStatus: vi.fn().mockResolvedValue({
+      isRepo: true,
+      branch: "main",
+      ahead: 0,
+      behind: 0,
+      entries: [],
+      timedOut: false,
+    }),
+    openInVscode: vi.fn().mockResolvedValue(undefined),
+    updateSettings: vi.fn(),
+    diffFile: vi
+      .fn()
+      .mockResolvedValue({ diff: "@@ -1 +1 @@\n-a\n+b\n", binary: false, truncated: false, timedOut: false }),
+    fileHistory: vi.fn().mockResolvedValue({ commits: [], hasMore: false, timedOut: false }),
+    diffCommit: vi.fn().mockResolvedValue({ diff: "", binary: false, truncated: false, timedOut: false }),
+    difftool: vi.fn().mockResolvedValue(undefined),
+  }));
 
 const settings = { gitStatusEnabled: true };
 
@@ -28,6 +35,10 @@ vi.mock("../../ipc/tauriApi", () => ({
     workdirListFiles: (...a: unknown[]) => listFiles(...a),
     workdirGitStatus: (...a: unknown[]) => gitStatus(...a),
     openInVscode: (...a: unknown[]) => openInVscode(...a),
+    workdirDiffFile: (...a: unknown[]) => diffFile(...a),
+    workdirFileHistory: (...a: unknown[]) => fileHistory(...a),
+    workdirDiffCommit: (...a: unknown[]) => diffCommit(...a),
+    workdirDifftool: (...a: unknown[]) => difftool(...a),
   },
 }));
 // useAppStore는 selector 훅으로도, getState로도 쓰인다. 두 경로 모두 지원.
@@ -127,5 +138,30 @@ describe("WorkdirPalette", () => {
     render(<WorkdirPalette />);
     fireEvent.mouseDown(screen.getByText("b.rs"));
     expect(openInVscode).toHaveBeenCalledWith("/root/src/b.rs");
+  });
+
+  it("변경된 파일 클릭은 열지 않고 변경점 상세를 연다", async () => {
+    render(<WorkdirPalette />);
+    // a.rs는 M 상태 → 곧장 열지 않고 diff 상세 페인.
+    fireEvent.mouseDown(screen.getByText("a.rs"));
+    expect(openInVscode).not.toHaveBeenCalled();
+    expect(diffFile).toHaveBeenCalledWith("/root", "src/a.rs", "worktreeVsHead");
+    // 상세 페인(탭/버튼)이 렌더된다.
+    expect(screen.getByText("변경점")).toBeTruthy();
+    expect(screen.getByText("실제 파일 열기")).toBeTruthy();
+    // diff 내용이 도착하면 추가/삭제 줄이 보인다.
+    await screen.findByText("+b");
+  });
+
+  it("상세가 열려 있으면 Esc는 상세만 먼저 닫는다", () => {
+    render(<WorkdirPalette />);
+    fireEvent.mouseDown(screen.getByText("a.rs"));
+    expect(useWorkdirStore.getState().detail).not.toBeNull();
+
+    const input = screen.getByPlaceholderText(/검색/);
+    fireEvent.keyDown(input, { key: "Escape" });
+    // 상세만 닫히고 팔레트는 유지.
+    expect(useWorkdirStore.getState().detail).toBeNull();
+    expect(useWorkdirStore.getState().palette).not.toBeNull();
   });
 });

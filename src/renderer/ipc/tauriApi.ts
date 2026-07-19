@@ -217,6 +217,22 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.workdirGitStatus, { root });
   },
 
+  async workdirDiffFile(root, relPath, mode) {
+    return await invoke(Commands.workdirDiffFile, { root, relPath, mode });
+  },
+
+  async workdirFileHistory(root, relPath, limit, skip) {
+    return await invoke(Commands.workdirFileHistory, { root, relPath, limit, skip });
+  },
+
+  async workdirDiffCommit(root, commit, relPath) {
+    return await invoke(Commands.workdirDiffCommit, { root, commit, relPath });
+  },
+
+  async workdirDifftool(root, relPath, mode, commit) {
+    return await invoke(Commands.workdirDifftool, { root, relPath, mode, commit });
+  },
+
   onData(agentId, cb) {
     let sub = outputSubs.get(agentId);
     if (!sub) {

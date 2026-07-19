@@ -11,7 +11,8 @@
 // 얹고, "변경만" 뷰는 git 엔트리 자체를 목록으로 쓴다(삭제·root 밖 "../" 파일도
 // 포함). git이 꺼졌거나 저장소가 아니면 "변경만"은 비활성.
 import { useEffect, useMemo, useRef } from "react";
-import { useWorkdirStore } from "./workdirStore";
+import { useWorkdirStore, isChangedStatus } from "./workdirStore";
+import { WorkdirDetailPane } from "./WorkdirDetailPane";
 import { useAppStore } from "../store/appStore";
 import { fuzzyFilter } from "../markdown/fuzzy";
 import type { GitFileStatus } from "@shared/types";
@@ -59,11 +60,14 @@ export function WorkdirPalette() {
   const listing = useWorkdirStore((s) => (s.palette ? s.listing[s.palette.root] : undefined));
   const git = useWorkdirStore((s) => (s.palette ? s.git[s.palette.root] : undefined));
   const gitLoading = useWorkdirStore((s) => (s.palette ? !!s.gitLoading[s.palette.root] : false));
+  const detailOpen = useWorkdirStore((s) => s.detail !== null);
   const setQuery = useWorkdirStore((s) => s.setQuery);
   const setSelectedIndex = useWorkdirStore((s) => s.setSelectedIndex);
   const setChangedOnly = useWorkdirStore((s) => s.setChangedOnly);
   const closePalette = useWorkdirStore((s) => s.closePalette);
+  const closeDetail = useWorkdirStore((s) => s.closeDetail);
   const openEntry = useWorkdirStore((s) => s.openEntry);
+  const openDetail = useWorkdirStore((s) => s.openDetail);
   const refreshGit = useWorkdirStore((s) => s.refreshGit);
 
   const gitStatusEnabled = useAppStore((s) => s.appSettings.gitStatusEnabled);
@@ -121,9 +125,13 @@ export function WorkdirPalette() {
 
   if (!palette) return null;
 
+  // 변경된 파일(git 뱃지 있음)은 곧장 열지 않고 상세(변경점) 페인으로 보낸다.
+  // 변경 없는 파일만 기존처럼 바로 연다(openEntry).
   const commitOpen = (index: number) => {
     const item = results[index];
-    if (item) openEntry(root, item.relPath, item.name);
+    if (!item) return;
+    if (isChangedStatus(item.status)) openDetail(root, item.relPath, item.name, item.status);
+    else openEntry(root, item.relPath, item.name);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -139,7 +147,9 @@ export function WorkdirPalette() {
       commitOpen(selected);
     } else if (e.key === "Escape") {
       e.preventDefault();
-      closePalette();
+      // 상세가 열려 있으면 상세만 먼저 닫는다.
+      if (detailOpen) closeDetail();
+      else closePalette();
     }
   };
 
@@ -171,7 +181,11 @@ export function WorkdirPalette() {
         if (e.button === 0 && e.target === e.currentTarget) closePalette();
       }}
     >
-      <div className="wd-panel" role="dialog" aria-label="작업 폴더 보기">
+      <div
+        className={detailOpen ? "wd-panel wd-panel-wide" : "wd-panel"}
+        role="dialog"
+        aria-label="작업 폴더 보기"
+      >
         <div className="wd-header">
           <div className="wd-branch" title={root}>
             {branchSummary}
@@ -219,52 +233,61 @@ export function WorkdirPalette() {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
         />
-        {listing?.truncated && !changedOnly && (
-          <div className="wd-note">파일이 많아 일부(5000개)만 표시됩니다.</div>
-        )}
-        {git?.timedOut && (
-          <div className="wd-note">git 상태 조회가 시간 초과됐습니다. 설정에서 끌 수 있습니다.</div>
-        )}
-        {listing === undefined && !changedOnly ? (
-          <div className="wd-empty">목록을 불러오는 중…</div>
-        ) : results.length === 0 ? (
-          <div className="wd-empty">
-            {changedOnly
-              ? "변경된 파일이 없습니다."
-              : rows.length === 0
-                ? "파일이 없습니다."
-                : "일치하는 파일이 없습니다."}
+        <div className="wd-body">
+          <div className="wd-list-pane">
+            {listing?.truncated && !changedOnly && (
+              <div className="wd-note">파일이 많아 일부(5000개)만 표시됩니다.</div>
+            )}
+            {git?.timedOut && (
+              <div className="wd-note">
+                git 상태 조회가 시간 초과됐습니다. 설정에서 끌 수 있습니다.
+              </div>
+            )}
+            {listing === undefined && !changedOnly ? (
+              <div className="wd-empty">목록을 불러오는 중…</div>
+            ) : results.length === 0 ? (
+              <div className="wd-empty">
+                {changedOnly
+                  ? "변경된 파일이 없습니다."
+                  : rows.length === 0
+                    ? "파일이 없습니다."
+                    : "일치하는 파일이 없습니다."}
+              </div>
+            ) : (
+              <ul className="wd-list" ref={listRef} role="listbox">
+                {results.map((item, i) => (
+                  <li
+                    key={item.relPath}
+                    role="option"
+                    aria-selected={i === selected}
+                    className={i === selected ? "wd-item wd-item-active" : "wd-item"}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setSelectedIndex(i);
+                      commitOpen(i);
+                    }}
+                    onMouseEnter={() => setSelectedIndex(i)}
+                  >
+                    <span
+                      className={
+                        item.status
+                          ? `wd-badge wd-badge-${item.status}`
+                          : "wd-badge wd-badge-empty"
+                      }
+                      title={item.status ? `${statusLabel(item.status)} (${item.xy})` : ""}
+                      aria-label={item.status ? statusLabel(item.status) : undefined}
+                    >
+                      {item.status ?? ""}
+                    </span>
+                    <span className="wd-item-name">{item.name}</span>
+                    <span className="wd-item-path">{item.relPath}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        ) : (
-          <ul className="wd-list" ref={listRef} role="listbox">
-            {results.map((item, i) => (
-              <li
-                key={item.relPath}
-                role="option"
-                aria-selected={i === selected}
-                className={i === selected ? "wd-item wd-item-active" : "wd-item"}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  setSelectedIndex(i);
-                  commitOpen(i);
-                }}
-                onMouseEnter={() => setSelectedIndex(i)}
-              >
-                <span
-                  className={
-                    item.status ? `wd-badge wd-badge-${item.status}` : "wd-badge wd-badge-empty"
-                  }
-                  title={item.status ? `${statusLabel(item.status)} (${item.xy})` : ""}
-                  aria-label={item.status ? statusLabel(item.status) : undefined}
-                >
-                  {item.status ?? ""}
-                </span>
-                <span className="wd-item-name">{item.name}</span>
-                <span className="wd-item-path">{item.relPath}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+          {detailOpen && <WorkdirDetailPane />}
+        </div>
       </div>
     </div>
   );

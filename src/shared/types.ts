@@ -545,6 +545,39 @@ export interface GitStatusResult {
   timedOut: boolean;
 }
 
+/** `workdir_diff_file`의 diff 관점(이슈 #11 후속).
+ * - `worktreeVsIndex`: 미스테이지 변경(워킹트리↔인덱스)
+ * - `indexVsHead`: 스테이지된 변경(인덱스↔HEAD)
+ * - `worktreeVsHead`: 전체 변경 합본(워킹트리↔HEAD) — 기본
+ * - `untracked`: 미추적 파일을 새 파일로(`git diff --no-index`) */
+export type GitDiffMode = "worktreeVsIndex" | "indexVsHead" | "worktreeVsHead" | "untracked";
+
+/** `workdir_diff_file`/`workdir_diff_commit` 응답. `diff`가 빈 문자열이면 변경
+ * 없음. `binary`면 텍스트 diff 불가, `truncated`면 상한(1MiB·5000줄)에 걸려
+ * 잘렸고, `timedOut`이면 조회가 시간 초과됐다. */
+export interface GitDiffResult {
+  diff: string;
+  binary: boolean;
+  truncated: boolean;
+  timedOut: boolean;
+}
+
+/** 파일 히스토리 커밋 1건. `hash`는 full 40-hex, `shortHash`는 축약. */
+export interface GitCommitEntry {
+  hash: string;
+  shortHash: string;
+  author: string;
+  date: string;
+  subject: string;
+}
+
+/** `workdir_file_history` 응답. `hasMore`면 요청 limit을 다 채워 더 있을 수 있다. */
+export interface GitFileHistoryResult {
+  commits: GitCommitEntry[];
+  hasMore: boolean;
+  timedOut: boolean;
+}
+
 /**
  * Renderer-facing API surface (frozen). Implemented by
  * `src/renderer/ipc/tauriApi.ts` via Tauri commands (invoke) + events
@@ -667,4 +700,25 @@ export interface AgentOfficeApi {
   /** `root`의 git 상태(porcelain v2). 저장소 아님/타임아웃은 reject가 아니라
    * `isRepo=false`/`timedOut=true` 필드로 표현한다. */
   workdirGitStatus(root: string): Promise<GitStatusResult>;
+  /** `root` 기준 `relPath`의 diff를 `mode` 관점으로 조회(이슈 #11 후속).
+   * 미추적 파일은 `mode="untracked"`. 타임아웃은 `timedOut=true`로 표현. */
+  workdirDiffFile(root: string, relPath: string, mode: GitDiffMode): Promise<GitDiffResult>;
+  /** `root` 기준 `relPath`의 커밋 히스토리(`git log --follow`, 페이지네이션). */
+  workdirFileHistory(
+    root: string,
+    relPath: string,
+    limit: number,
+    skip: number,
+  ): Promise<GitFileHistoryResult>;
+  /** 특정 커밋이 `relPath`에 만든 변경(diff). `commit`은 hex 7~40자. */
+  workdirDiffCommit(root: string, commit: string, relPath: string): Promise<GitDiffResult>;
+  /** 외부 비교 도구(`git difftool`)를 fire-and-forget으로 띄운다. `commit`이
+   * 지정되면 그 커밋의 변경을, 아니면 `mode`의 현재 변경을 연다. 미설정 도구는
+   * 백그라운드에서 조용히 실패(인앱 diff가 폴백). */
+  workdirDifftool(
+    root: string,
+    relPath: string,
+    mode: GitDiffMode,
+    commit?: string,
+  ): Promise<void>;
 }

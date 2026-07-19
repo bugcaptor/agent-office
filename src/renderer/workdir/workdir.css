@@ -25,6 +25,30 @@
   border: 2px solid var(--border-dark);
   box-shadow: 0 8px 0 rgba(0, 0, 0, 0.18);
 }
+/* 상세(변경점) 페인이 열리면 2-페인을 담게 넓힌다. */
+.wd-panel-wide {
+  width: min(1180px, 96vw);
+  max-height: 82vh;
+}
+
+/* ---- 본문: 좌 목록 페인 · 우 상세 페인 ---- */
+.wd-body {
+  display: flex;
+  flex: 1;
+  min-height: 0; /* 자식 overflow가 동작하도록 */
+}
+.wd-list-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.wd-panel-wide .wd-list-pane {
+  flex: 0 0 40%;
+  max-width: 40%;
+  border-right: 2px solid var(--border-dark);
+}
 
 /* ---- 헤더: 브랜치 요약 + 필터/토글/닫기 ---- */
 .wd-header {
@@ -141,6 +165,8 @@
   margin: 0;
   padding: calc(var(--unit) * 1);
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 .wd-item {
   display: flex;
@@ -195,4 +221,180 @@
 }
 .wd-badge-\? {
   color: var(--text-dim);
+}
+
+/* ============================================================
+ * 상세(변경점·히스토리) 페인 — 이슈 #11 후속
+ * ============================================================ */
+.wd-detail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-panel);
+}
+
+.wd-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--unit) * 2);
+  padding: calc(var(--unit) * 2) calc(var(--unit) * 3);
+  background: var(--bg-panel-hi);
+  border-bottom: 2px solid var(--border-dark);
+}
+.wd-detail-title {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--unit) * 2);
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.9rem;
+  color: var(--text);
+  overflow: hidden;
+  min-width: 0;
+}
+.wd-detail-path {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wd-detail-actions {
+  display: flex;
+  gap: calc(var(--unit) * 2);
+  padding: calc(var(--unit) * 2) calc(var(--unit) * 3);
+  flex-wrap: wrap;
+}
+.wd-btn {
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.72rem;
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--border-dark);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.wd-btn:hover {
+  background: var(--accent);
+  color: #0a0b12;
+}
+
+/* 변경점 | 히스토리 탭 */
+.wd-tabs {
+  display: flex;
+  padding: 0 calc(var(--unit) * 3);
+  gap: 0;
+  border-bottom: 2px solid var(--border-dark);
+}
+.wd-tab {
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: calc(var(--unit) * 2) calc(var(--unit) * 3);
+  cursor: pointer;
+}
+.wd-tab-active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.wd-detail-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.wd-detail-empty {
+  padding: calc(var(--unit) * 4);
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+/* diff 관점 세그먼트(전체|스테이지됨|미스테이지) */
+.wd-mode-seg {
+  margin: calc(var(--unit) * 2) calc(var(--unit) * 3);
+  align-self: flex-start;
+}
+
+/* ---- unified diff 렌더 ---- */
+.wd-diff {
+  font-family: "D2Coding", "Consolas", monospace;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  padding: calc(var(--unit) * 2) 0;
+  overflow-x: auto;
+}
+.wd-dl {
+  white-space: pre;
+  padding: 0 calc(var(--unit) * 3);
+  color: var(--text);
+}
+.wd-dl-meta {
+  color: var(--text-dim);
+}
+.wd-dl-hunk {
+  color: var(--accent);
+  background: rgba(120, 170, 255, 0.08);
+}
+.wd-dl-add {
+  color: #9ece6a;
+  background: rgba(120, 200, 90, 0.1);
+}
+.wd-dl-del {
+  color: #f7768e;
+  background: rgba(240, 90, 110, 0.1);
+}
+
+/* ---- 커밋 히스토리 ---- */
+.wd-history {
+  list-style: none;
+  margin: 0;
+  padding: calc(var(--unit) * 1);
+}
+.wd-commit {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 calc(var(--unit) * 2);
+  padding: calc(var(--unit) * 2);
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+.wd-commit:hover {
+  background: var(--bg-panel-hi);
+}
+.wd-commit-active {
+  background: var(--bg-panel-hi);
+  border-color: var(--border-dark);
+}
+.wd-commit-hash {
+  grid-row: 1 / 3;
+  align-self: center;
+  font-family: "D2Coding", "Consolas", monospace;
+  font-size: 0.72rem;
+  color: var(--accent-warn);
+}
+.wd-commit-subject {
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.8rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wd-commit-meta {
+  grid-column: 2;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+.wd-commit-diff {
+  border-top: 2px solid var(--border-dark);
 }
