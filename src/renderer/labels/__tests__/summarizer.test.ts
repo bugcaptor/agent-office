@@ -171,7 +171,7 @@ describe("installTaskLabelSummarizer", () => {
 
   it("진행 중인 동일 identity는 provider 변경 후 재sweep에서도 인플라이트 중 중복 요청하지 않는다", async () => {
     const gate = deferred();
-    const summarizeFn = vi.fn(async (provider: SummaryProvider) => {
+    const summarizeFn = vi.fn<SummarizeFn>(async (provider) => {
       if (provider === "claude") {
         await gate.promise;
         return pair("Claude 목표", "Claude 현재");
