@@ -71,6 +71,7 @@ beforeEach(() => {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      cliEnabled: false,
     },
     false
   );
@@ -135,6 +136,7 @@ describe("installTaskLabelSummarizer", () => {
           externalEditor: "system",
           attentionHoldMs: 5000,
           gitStatusEnabled: true,
+          cliEnabled: false,
         },
         false,
       );
@@ -394,6 +396,7 @@ describe("installTaskLabelSummarizer", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        cliEnabled: false,
       },
       false
     );

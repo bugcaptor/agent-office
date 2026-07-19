@@ -52,6 +52,35 @@ permission request, stop과 서브에이전트 시작·종료를 관찰하며
 설정 변경은 새로 만드는 터미널부터 적용됩니다. 연동이 실패하거나 꺼져 있어도
 터미널 세션 관리·캐릭터·테마 등 나머지 기능은 계속 동작합니다.
 
+## CLI로 조종하기 (옵트인, 2단계 승인)
+
+다른 AI나 스크립트가 실행 중인 Agent Office를 프로그래밍 방식으로 조종할 수
+있습니다. 보안 표면이므로 **2단계 옵트인**입니다(기본 꺼짐).
+
+1. ⚙ 설정 → **CLI 제어 (외부 조종)** 를 켠다 → 로컬(`127.0.0.1`) 제어 서버가
+   임의 포트로 뜨고 `<app_data>/control-port`가 기록됩니다.
+2. 같은 설정에서 **CLI 제어 승인**을 눌러 토큰을 발급한다 → 이때만
+   `<app_data>/control-token`(0600)이 생기고, 그 전에는 서버가 떠 있어도 모든
+   요청이 401입니다. 승인은 지속되며 **승인 취소**로 언제든 폐기할 수 있습니다.
+
+이용하는 쪽은 **주소·포트·토큰을 알 필요가 없습니다.** 같은 바이너리의 `ctl`
+서브커맨드가 `AGENT_OFFICE_APP_DATA`(세션 터미널엔 앱이 자동 주입) 또는 OS별
+표준 app_data 경로에서 포트·토큰을 자동으로 찾습니다. `ctl`은 GUI를 띄우지
+않는 단명 클라이언트로, 요청 1건을 보내고 종료합니다(중복 앱 실행 아님).
+
+```bash
+agent-office ctl status                      # 연결/승인 상태 점검
+agent-office ctl list                        # 프로필 + 실행 중 세션
+agent-office ctl create reviewer --cwd ~/proj
+agent-office ctl send builder "npm test" --enter
+agent-office ctl notifications builder --json
+agent-office ctl dispose reviewer
+agent-office ctl settings set soundEnabled=false
+```
+
+HTTP는 내부 전송 계층일 뿐 사용자·에이전트가 보는 인터페이스는 CLI입니다.
+설계·위협모델·전체 명령/종료 코드는 `docs/cli-control-design.md`를 참고하세요.
+
 ## 사용 팁
 
 ### 터미널 탭 우클릭 메뉴

@@ -78,6 +78,16 @@ impl SessionRegistry {
     pub fn resolve_agent(&self, sid: &str) -> Option<AgentId> {
         self.map.read().unwrap().get(sid).map(|(a, _)| a.clone())
     }
+    /// (sessionId, agentId, state) 전체 스냅샷 — CLI 제어(#55) `list`가
+    /// 프로필과 병합해 실행 중 세션의 상태를 보여주는 데 쓴다.
+    pub fn snapshot(&self) -> Vec<(SessionId, AgentId, SessionState)> {
+        self.map
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(sid, (agent, state))| (sid.clone(), agent.clone(), *state))
+            .collect()
+    }
 }
 
 /// `tauri::Manager::manage()`가 보관하는 앱 전역 상태. 커맨드는 전부
@@ -116,6 +126,12 @@ pub struct AppState {
     /// 커맨드가 스로틀 판단·직전 성공 스냅샷을 여기 보관해, 렌더러 60초 폴링에
     /// 얹혀 리셋 경계 후 빠르게 실제 값을 갱신한다(docs/claude-usage-live-fetch-design.md).
     pub live_usage: crate::usage::LiveUsageState,
+    /// CLI 제어(#55, docs/cli-control-design.md)의 로컬 control 서버 상태.
+    /// cli_enabled ON일 때만 기동되고 포트/토큰 파일을 관리한다.
+    pub control_server: Arc<crate::control::ControlServerState>,
+    /// control 핸들러가 쥐는 앱 상태 클론들. `set_app_settings`가 cli_enabled
+    /// ON 전환 시 `control_server.ensure(control_ctx)`에 넘긴다.
+    pub control_ctx: Arc<crate::control::ControlContext>,
 }
 
 // ── 테스트용 페이크 ────────────────────────────────────────────────────

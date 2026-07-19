@@ -37,6 +37,7 @@ describe("SettingsDialog", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        cliEnabled: false,
       },
       false,
     );
@@ -59,6 +60,7 @@ describe("SettingsDialog", () => {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      cliEnabled: false,
     });
   });
 
@@ -75,6 +77,7 @@ describe("SettingsDialog", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        cliEnabled: false,
       },
       false,
     );
@@ -102,6 +105,7 @@ describe("SettingsDialog", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        cliEnabled: false,
       },
       false,
     );

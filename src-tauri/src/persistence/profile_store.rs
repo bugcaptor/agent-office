@@ -17,6 +17,7 @@ use crate::types::PersistedState;
 /// Loads/saves `PersistedState` to a single JSON file. The file path is
 /// injected (see `new`) so tests can point it at a tempdir instead of the
 /// real Tauri app data dir; that wiring happens in task 2I.
+#[derive(Clone)]
 pub struct ProfileStore {
     file: PathBuf,
 }

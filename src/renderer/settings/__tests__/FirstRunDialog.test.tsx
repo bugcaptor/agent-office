@@ -33,6 +33,7 @@ describe("FirstRunDialog", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        cliEnabled: false,
       },
       false,
     );
@@ -53,6 +54,7 @@ describe("FirstRunDialog", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        cliEnabled: false,
       },
       true,
     );
@@ -73,6 +75,7 @@ describe("FirstRunDialog", () => {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      cliEnabled: false,
     });
   });
 
@@ -89,6 +92,7 @@ describe("FirstRunDialog", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        cliEnabled: false,
       },
       true,
     );

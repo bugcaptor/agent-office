@@ -88,6 +88,12 @@ pub struct AppSettings {
     /// 저장소에서 git status가 무거울 수 있어 끌 수 있게 한다. 기본 켜짐.
     #[serde(default = "default_true")]
     pub git_status_enabled: bool,
+    /// 로컬 CLI 제어 서버(이슈 #55, docs/cli-control-design.md)를 띄울지.
+    /// 켜면 `127.0.0.1`에 임의 포트로 control 서버가 뜨고 `control-port`가
+    /// 기록된다. 하지만 실제 명령 수행은 앱에서 **명시적 승인**(control-token
+    /// 발급)이 있어야 한다 — 2단계 옵트인. 보안 표면이므로 기본 꺼짐.
+    #[serde(default)]
+    pub cli_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -103,10 +109,12 @@ impl Default for AppSettings {
             external_editor: ExternalEditor::System,
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            cli_enabled: false,
         }
     }
 }
 
+#[derive(Clone)]
 pub struct SettingsStore {
     file: PathBuf,
 }
@@ -185,6 +193,7 @@ mod tests {
             external_editor: ExternalEditor::System,
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            cli_enabled: false,
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -279,6 +288,7 @@ mod tests {
             external_editor: ExternalEditor::Vscode,
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            cli_enabled: false,
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();

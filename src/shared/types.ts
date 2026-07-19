@@ -398,12 +398,29 @@ export interface AppSettings {
   /** "작업 폴더 보기"(이슈 #11)에서 파일별 git 상태 뱃지를 조회할지. 거대
    * 저장소에서 무거울 수 있어 끌 수 있다. 기본 true. */
   gitStatusEnabled: boolean;
+  /** 로컬 CLI 제어 서버(이슈 #55) 기동 여부. 켜도 앱에서 명시적 승인이 있어야
+   * 명령이 실행된다(2단계 옵트인). 보안 표면이므로 기본 false. */
+  cliEnabled: boolean;
 }
 
 /** `get_app_settings` 응답. firstRun = settings.json 부재(첫 실행). */
 export interface GetAppSettingsResult {
   settings: AppSettings;
   firstRun: boolean;
+}
+
+/** `control_status` 응답(이슈 #55) — CLI 제어의 2단계 승인 상태. */
+export interface ControlStatus {
+  /** 설정 cliEnabled(서버 기동 대상 여부). */
+  enabled: boolean;
+  /** control 서버가 실제로 떠 있는지. */
+  running: boolean;
+  /** 승인됨(토큰 발급됨) 여부. */
+  approved: boolean;
+  /** 현재 바인딩된 포트(서버가 떠 있을 때만). */
+  port: number | null;
+  /** 연결 안내에 쓰는 app_data 경로. */
+  appDataDir: string;
 }
 
 /**
@@ -638,6 +655,12 @@ export interface AgentOfficeApi {
   getAppSettings(): Promise<GetAppSettingsResult>;
   /** 앱 전역 opt-in 설정 저장. */
   setAppSettings(settings: AppSettings): Promise<void>;
+  /** CLI 제어(#55) 상태 조회 — 서버 기동·승인 여부·포트·app_data 경로. */
+  controlStatus(): Promise<ControlStatus>;
+  /** CLI 제어를 승인(토큰 발급). 2단계 옵트인의 2단계. */
+  controlApprove(): Promise<void>;
+  /** CLI 제어 승인 취소(토큰 폐기). 이후 모든 CLI 요청 401. */
+  controlRevoke(): Promise<void>;
   /** 사용 가능한 셸 목록. Windows 외 플랫폼은 빈 배열. */
   listAvailableShells(): Promise<AvailableShell[]>;
   /** 디렉터리를 Visual Studio Code로 연다. VS Code 미설치/경로 부재 시 reject. */

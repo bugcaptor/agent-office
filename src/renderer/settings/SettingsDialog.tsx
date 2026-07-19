@@ -2,9 +2,11 @@
 //
 // 상시 설정 다이얼로그(BottomBar ⚙로 열림). FirstRunDialog와 달리 스토어
 // 값을 직접 바인딩 — 토글 즉시 updateAppSettings로 저장된다(확인 버튼 없음).
+import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "../store/appStore";
+import { tauriApi } from "../ipc/tauriApi";
 import { SettingsForm } from "./SettingsForm";
-import type { ExternalEditorApp, ExternalTerminalApp } from "@shared/types";
+import type { ControlStatus, ExternalEditorApp, ExternalTerminalApp } from "@shared/types";
 
 export function SettingsDialog() {
   const modal = useAppStore((s) => s.modal);
@@ -134,12 +136,117 @@ export function SettingsDialog() {
             </select>
           </label>
         </div>
+        <ControlSection enabled={appSettings.cliEnabled} />
         <div className="dialog-actions">
           <button className="pixel-btn" onClick={closeModal}>
             닫기
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * CLI 제어(이슈 #55) 설정 — 2단계 옵트인. 1단계: "CLI 제어 활성화" 토글로
+ * 로컬 control 서버를 켠다(control-port 기록). 2단계: "승인"으로 토큰을
+ * 발급해야만 실제로 명령이 실행된다. 승인 전에는 서버가 떠 있어도 모든 요청
+ * 401. 승인은 지속되며 "승인 취소"로 토큰을 폐기할 수 있다.
+ */
+function ControlSection({ enabled }: { enabled: boolean }) {
+  const updateAppSettings = useAppStore((s) => s.updateAppSettings);
+  const [status, setStatus] = useState<ControlStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await tauriApi.controlStatus());
+    } catch {
+      setStatus(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh, enabled]);
+
+  const approve = async () => {
+    setBusy(true);
+    try {
+      await tauriApi.controlApprove();
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revoke = async () => {
+    setBusy(true);
+    try {
+      await tauriApi.controlRevoke();
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="settings-form">
+      <label className="settings-item">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => updateAppSettings({ cliEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>CLI 제어 (외부 조종)</strong>
+          <small>
+            <code>agent-office ctl …</code> 또는 스크립트가 이 앱을 조종하도록
+            로컬(127.0.0.1) 제어 서버를 엽니다. 켜도 아래에서 <b>명시적으로
+            승인</b>해야 명령이 실행됩니다(2단계). 보안 표면이므로 기본 꺼짐.
+          </small>
+        </span>
+      </label>
+
+      {enabled && (
+        <div className="settings-item" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>
+            상태:{" "}
+            {status
+              ? `서버 ${status.running ? `실행 중(포트 ${status.port ?? "?"})` : "정지"} · ${
+                  status.approved ? "승인됨" : "미승인"
+                }`
+              : "조회 중…"}
+          </div>
+
+          {status && !status.approved && (
+            <button className="pixel-btn" disabled={busy} onClick={approve}>
+              CLI 제어 승인 (토큰 발급)
+            </button>
+          )}
+          {status && status.approved && (
+            <>
+              <button className="pixel-btn" disabled={busy} onClick={revoke}>
+                승인 취소 (토큰 폐기)
+              </button>
+              <div style={{ fontSize: 12, opacity: 0.85 }}>
+                <div style={{ marginBottom: 4 }}>
+                  세션 터미널 안에서는 바로 사용할 수 있습니다:
+                </div>
+                <code style={{ display: "block", whiteSpace: "pre-wrap" }}>
+                  agent-office ctl status{"\n"}
+                  agent-office ctl list{"\n"}
+                  agent-office ctl send &lt;agentId&gt; "npm test" --enter
+                </code>
+                <div style={{ marginTop: 6, opacity: 0.7 }}>
+                  외부 스크립트는 app_data 자동발견을 씁니다:{" "}
+                  <code>{status.appDataDir}</code>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

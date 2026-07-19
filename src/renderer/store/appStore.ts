@@ -49,6 +49,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   externalEditor: "system",
   attentionHoldMs: 5000,
   gitStatusEnabled: true,
+  cliEnabled: false,
 };
 
 /**
@@ -219,6 +220,7 @@ interface AppState {
         | "externalEditor"
         | "attentionHoldMs"
         | "gitStatusEnabled"
+        | "cliEnabled"
       >
     >,
   ): void;

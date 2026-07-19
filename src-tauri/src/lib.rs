@@ -6,6 +6,7 @@
 // invoke_handler for the renderer-facing commands -> graceful quit on
 // RunEvent::ExitRequested (dispose_all -> observer server shutdown).
 pub mod api_keys;
+mod control;
 mod ipc;
 mod markdown;
 mod notification;
@@ -111,6 +112,30 @@ where
     S: AsRef<std::ffi::OsStr>,
 {
     None
+}
+
+/// `ctl <명령> …` 분기(이슈 #55, docs/cli-control-design.md) — 실행 중인 앱의
+/// control 서버에 요청 1건을 보내는 단명 클라이언트. `maybe_run_observer_forwarder`
+/// 와 같은 패턴: 첫 인자가 `ctl`이 아니면 `None`을 돌려줘 `main.rs`가 평범한
+/// `run()`(GUI)으로 진행하게 한다. GUI 런타임에 도달하지 않으므로 두 번째
+/// 사무실/서버가 뜨지 않는다.
+pub fn maybe_run_cli<I, S>(args: I) -> Option<i32>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    let mut args = args.into_iter();
+    let _program = args.next();
+    let mode = args.next()?.as_ref().to_os_string();
+    if mode.as_os_str() != std::ffi::OsStr::new("ctl") {
+        return None;
+    }
+    // 나머지 토큰을 String으로. 비유니코드 인자는 lossy 변환(경로/텍스트가
+    // 대부분이라 실무상 무해 — 필요하면 --app-data 등으로 명시 지정).
+    let rest: Vec<String> = args
+        .map(|a| a.as_ref().to_string_lossy().into_owned())
+        .collect();
+    Some(control::client::run(rest))
 }
 
 /// 훅이 forwarder로 재실행할 자기 자신의 경로. Linux AppImage에서는
@@ -338,6 +363,27 @@ pub fn run() {
                 data_dir.join("session-times.jsonl"),
             );
 
+            // CLI 제어(#55): control 서버 상태 + 핸들러가 쥘 앱 상태 클론. 필요한
+            // Arc/스토어만 복제해 ControlContext에 담는다(AppState는 Tauri가
+            // 소유해 Arc로 꺼낼 수 없으므로). cli_enabled ON일 때만 지금 기동해
+            // control-port를 기록한다(토큰=승인은 별도, 기본 미승인).
+            let control_server = Arc::new(crate::control::ControlServerState::default());
+            control_server.set_app_data_dir(data_dir.clone());
+            let control_ctx = Arc::new(crate::control::ControlContext {
+                manager: manager.clone(),
+                observer: observer.clone(),
+                observer_server: observer_server.clone(),
+                hub: hub.clone(),
+                registry: registry.clone(),
+                store: store.clone(),
+                settings: settings_cache.clone(),
+                settings_store: settings_store.clone(),
+                app_data_dir: data_dir.clone(),
+            });
+            if settings_cache.read().unwrap().cli_enabled {
+                let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));
+            }
+
             app.manage(AppState {
                 manager,
                 hub,
@@ -353,6 +399,8 @@ pub fn run() {
                 settings_first_run: std::sync::atomic::AtomicBool::new(settings_first_run),
                 session_event_root: session_event_root(&data_dir),
                 live_usage: crate::usage::LiveUsageState::new(),
+                control_server,
+                control_ctx,
             });
             Ok(())
         })
@@ -384,6 +432,9 @@ pub fn run() {
             ipc::commands::generate_sprite_image,
             ipc::commands::get_app_settings,
             ipc::commands::set_app_settings,
+            ipc::commands::control_status,
+            ipc::commands::control_approve,
+            ipc::commands::control_revoke,
             ipc::commands::open_in_vscode,
             ipc::commands::open_in_terminal,
             ipc::commands::export_terminal_output,
@@ -416,6 +467,7 @@ pub fn run() {
                 let state = app.state::<AppState>();
                 state.manager.dispose_all(); // kill + settings cleanup(동기)
                 state.observer_server.shutdown();
+                state.control_server.shutdown(); // CLI 제어 서버 정지 + control-port 정리(#55)
                 // wait 스레드가 Disposed 확정 후 OS가 자식 reap. 프로세스 종료는 정상 진행.
             }
         });
@@ -527,6 +579,7 @@ mod tests {
             external_editor: Default::default(),
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            cli_enabled: false,
         }));
         let registry = Arc::new(SessionRegistry::new());
         let events: Arc<dyn AppEvents> = Arc::new(crate::state::fake::RecordingEvents::default());
@@ -556,6 +609,18 @@ mod tests {
     // maybe_run_sessiond의 실제 데몬 기동(Some 분기)은 daemon.rs/client.rs가
     // run_daemon(_inner)를 직접 구동해 검증한다 -- 여기서는 인자 파싱이
     // "데몬 모드 아님"을 정확히 판별하는지(None 분기)만 확인한다.
+    // maybe_run_cli: 첫 인자가 `ctl`이 아니면 None(=GUI로 진행). `ctl help`는
+    // 네트워크·파일 접근 없이 usage를 찍고 Some(0)을 돌려주는 안전한 분기라
+    // 여기서 라우팅만 확인한다(실 요청 경로는 client.rs 단위 테스트가 담당).
+    #[test]
+    fn maybe_run_cli_routes_only_the_ctl_subcommand() {
+        assert_eq!(maybe_run_cli(["agent-office"]), None);
+        assert_eq!(maybe_run_cli(["agent-office", "--observer-forward"]), None);
+        assert_eq!(maybe_run_cli(["agent-office", "--sessiond", "/tmp/x.sock"]), None);
+        assert_eq!(maybe_run_cli(["agent-office", "ctl", "help"]), Some(0));
+        assert_eq!(maybe_run_cli(["agent-office", "ctl"]), Some(0));
+    }
+
     #[cfg(unix)]
     #[test]
     fn maybe_run_sessiond_returns_none_for_non_daemon_invocations() {

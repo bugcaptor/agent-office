@@ -29,6 +29,10 @@ export const Commands = {
   generateSpriteImage: "generate_sprite_image",
   getAppSettings: "get_app_settings",
   setAppSettings: "set_app_settings",
+  // CLI 제어(이슈 #55, docs/cli-control-design.md) — 2단계 승인 상태 조회/승인/취소.
+  controlStatus: "control_status",
+  controlApprove: "control_approve",
+  controlRevoke: "control_revoke",
   listAvailableShells: "list_available_shells",
   openInVscode: "open_in_vscode",
   openInTerminal: "open_in_terminal",

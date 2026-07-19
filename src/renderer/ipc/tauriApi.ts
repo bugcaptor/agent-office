@@ -134,6 +134,18 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.setAppSettings, { settings });
   },
 
+  async controlStatus() {
+    return await invoke(Commands.controlStatus);
+  },
+
+  async controlApprove() {
+    await invoke(Commands.controlApprove);
+  },
+
+  async controlRevoke() {
+    await invoke(Commands.controlRevoke);
+  },
+
   async listAvailableShells() {
     return await invoke(Commands.listAvailableShells);
   },
