@@ -497,6 +497,7 @@ mod tests {
                     WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
                 ],
                 skip_if_present: vec!["--settings".into()],
+                ..Default::default()
             },
             CommandWrapperSpec {
                 command: "codex".into(),
@@ -507,6 +508,7 @@ mod tests {
                     WrapperArg::Env("AGENT_OFFICE_CODEX_HOOK_STOP".into()),
                 ],
                 skip_if_present: vec![],
+                ..Default::default()
             },
             CommandWrapperSpec {
                 command: "pi".into(),
@@ -515,6 +517,7 @@ mod tests {
                     WrapperArg::Env("AGENT_OFFICE_PI_EXT".into()),
                 ],
                 skip_if_present: vec![],
+                ..Default::default()
             },
         ]
     }

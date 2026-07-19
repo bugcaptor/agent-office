@@ -98,6 +98,7 @@ impl ObserverAdapter for CodexAdapter {
                     WrapperArg::Env(CODEX_SUBAGENT_STOP_CONFIG.into()),
                 ],
                 skip_if_present: vec![],
+                ..Default::default()
             }],
             cleanup_paths: vec![],
         })

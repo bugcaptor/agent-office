@@ -731,6 +731,9 @@ fn handle_connection(
                             snapshot_b64,
                             snapshot_compressed,
                             exit: session.exit_status_msg(),
+                            // 이슈 #40: 입양 앱이 설정 파일을 복구할 수 있게 데몬이
+                            // 보관 중인 cleanup_paths를 함께 돌려준다.
+                            cleanup_paths: session.cleanup_paths.clone(),
                         }
                     }
                     None => Message::Error { message: format!("unknown agent_id: {agent_id}") },
@@ -1267,6 +1270,49 @@ mod tests {
             Message::ListOk { sessions } => {
                 let s = sessions.iter().find(|s| s.agent_id == "a1").expect("session in list");
                 assert_eq!((s.rows, s.cols), (50, 200), "List must reflect the resize");
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+
+        protocol::write_frame(control.as_raw_fd(), &Message::Kill { agent_id: "a1".into() }, None)
+            .unwrap();
+        let _ = protocol::read_frame(control.as_raw_fd());
+        drop(control);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn broker_attach_returns_cleanup_paths_for_settings_recovery() {
+        // 이슈 #40: 데몬이 Spawn 때 받은 cleanup_paths를 Attach 응답에 되돌려줘야
+        // 입양 앱이 사라진 설정 파일을 복구할 수 있다.
+        let (socket_path, dir) = start_real_daemon();
+        let control = connect_hello(&socket_path);
+        protocol::write_frame(
+            control.as_raw_fd(),
+            &Message::Spawn {
+                agent_id: "a1".into(),
+                session_id: "s-a1".into(),
+                shell: "/bin/sh".into(),
+                args: vec!["-c".into(), "sleep 30".into()],
+                env: vec![("TERM".into(), "xterm-256color".into())],
+                rows: 24,
+                cols: 80,
+                cwd: "/tmp".into(),
+                cleanup_paths: vec!["/tmp/ao-a1.settings.json".into()],
+            },
+            None,
+        )
+        .unwrap();
+        assert!(matches!(
+            protocol::read_frame(control.as_raw_fd()).unwrap().0,
+            Message::SpawnOk { .. }
+        ));
+
+        protocol::write_frame(control.as_raw_fd(), &Message::Attach { agent_id: "a1".into() }, None)
+            .unwrap();
+        match protocol::read_frame(control.as_raw_fd()).unwrap().0 {
+            Message::AttachOk { cleanup_paths, .. } => {
+                assert_eq!(cleanup_paths, vec!["/tmp/ao-a1.settings.json".to_string()]);
             }
             other => panic!("unexpected: {other:?}"),
         }

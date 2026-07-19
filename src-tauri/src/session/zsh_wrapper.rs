@@ -90,6 +90,7 @@ mod tests {
                     WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
                 ],
                 skip_if_present: vec!["--settings".into()],
+                ..Default::default()
             },
             CommandWrapperSpec {
                 command: "codex".into(),
@@ -98,6 +99,7 @@ mod tests {
                     WrapperArg::Env("AGENT_OFFICE_CODEX_HOOK_STOP".into()),
                 ],
                 skip_if_present: vec![],
+                ..Default::default()
             },
             CommandWrapperSpec {
                 command: "pi".into(),
@@ -106,6 +108,7 @@ mod tests {
                     WrapperArg::Env("AGENT_OFFICE_PI_EXT".into()),
                 ],
                 skip_if_present: vec![],
+                ..Default::default()
             },
         ]
     }
@@ -223,6 +226,7 @@ mod tests {
                 WrapperArg::Env("AGENT_OFFICE_PERSONA".into()),
             ],
             skip_if_present: vec!["--append-system-prompt".into(), "--system-prompt".into()],
+            ..Default::default()
         }];
         write_observer_shim(&shim_dir, &wrappers).expect("write_observer_shim succeeds");
 

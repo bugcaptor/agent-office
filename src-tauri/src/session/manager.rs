@@ -300,6 +300,7 @@ impl SessionManager {
                             WrapperArg::Env("AGENT_OFFICE_PI_EXT".into()),
                         ],
                         skip_if_present: vec![],
+                        ..Default::default()
                     });
                 }
                 Err(error) => eprintln!("agent-office: failed to write pi extension: {error}"),
@@ -330,6 +331,7 @@ impl SessionManager {
                     command: "claude".into(),
                     prefix_args: persona_args.into(),
                     skip_if_present: vec![],
+                    ..Default::default()
                 });
             }
         }
@@ -974,6 +976,13 @@ impl SessionManager {
         // 스크롤백이 복원된다. 스냅샷이 한 번도 업로드 안 됐으면 데몬이 링 전체를
         // 리플레이하고 meta.snapshot은 비어 있어 주입하지 않는다.
         let initial_output = (!meta.snapshot.is_empty()).then_some(meta.snapshot);
+        // 이슈 #40: 삭제 소유권은 데몬이 유지하되(앱 install_session엔 빈 벡터를
+        // 넘긴다), 앱이 꺼진 사이 사라졌을 수 있는 observer 설정 파일은 데몬이
+        // 돌려준 cleanup_paths로 입양 시점에 멱등 재작성한다.
+        let restore_paths: Vec<std::path::PathBuf> =
+            meta.cleanup_paths.iter().map(std::path::PathBuf::from).collect();
+        self.observer
+            .restore_session_artifacts(&info.session_id, &restore_paths);
         // cleanup_paths는 데몬이 Spawn 때 받아 보관·정리하므로 앱 쪽은 비운다.
         let (session, _started) = self.install_session(
             info.session_id.clone(),
@@ -1070,7 +1079,12 @@ impl SessionManager {
                 return None;
             }
         };
-        let cleanup_paths = adopted.cleanup_paths.iter().map(std::path::PathBuf::from).collect();
+        let cleanup_paths: Vec<std::path::PathBuf> =
+            adopted.cleanup_paths.iter().map(std::path::PathBuf::from).collect();
+        // 이슈 #40: 앱이 꺼진 사이 사라졌을 수 있는 observer 설정 파일을 입양
+        // 시점에 멱등 재작성한다. cleanup_paths가 비면(observer OFF 세션) no-op.
+        self.observer
+            .restore_session_artifacts(&adopted.session_id, &cleanup_paths);
         let size = (adopted.cols, adopted.rows);
         // 종료 직전 화면 스냅샷 -> 핸드오프 이후 링버퍼 순으로 이어붙인다
         // (실증에서 발견된 빈틈 수정) -- 순서가 바뀌면 화면이 뒤죽박죽으로
@@ -1541,6 +1555,7 @@ mod tests {
                     command: command.into(),
                     prefix_args: vec![],
                     skip_if_present: vec![],
+                    ..Default::default()
                 }],
                 cleanup_paths: vec![],
             }),
@@ -1623,6 +1638,7 @@ mod tests {
                         WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
                     ],
                     skip_if_present: vec!["--settings".into()],
+                    ..Default::default()
                 }],
                 cleanup_paths: vec![],
             }),
