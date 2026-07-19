@@ -290,7 +290,12 @@ describe("메뉴 우선 진입(이슈 #54)", () => {
     // 마크다운.
     s.openDetail("/root", "docs/x.md", "x.md", undefined);
     s.openInApp();
-    expect(openMarkdownFile).toHaveBeenCalledWith("/root", "docs/x.md", "agent1");
+    expect(openMarkdownFile).toHaveBeenCalledWith(
+      "/root",
+      "docs/x.md",
+      "agent1",
+      expect.any(Function),
+    );
     expect(useWorkdirStore.getState().palette).toBeNull();
 
     // 비마크다운은 no-op.
@@ -299,6 +304,22 @@ describe("메뉴 우선 진입(이슈 #54)", () => {
     s.openDetail("/root", "src/a.rs", "a.rs", "M");
     s.openInApp();
     expect(openMarkdownFile).not.toHaveBeenCalled();
+  });
+
+  it("인앱 뷰어를 닫으면 작업 폴더 탐색(팔레트+메뉴)으로 복귀한다", () => {
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    s.openDetail("/root", "docs/x.md", "x.md", undefined);
+    s.openInApp();
+    // 뷰어가 열리며 탐색은 잠시 비워진다.
+    expect(useWorkdirStore.getState().palette).toBeNull();
+    expect(useWorkdirStore.getState().detail).toBeNull();
+
+    // openFile에 넘어간 onClose 콜백을 실행하면 팔레트+메뉴가 복귀한다.
+    const onClose = openMarkdownFile.mock.calls[0][3] as () => void;
+    onClose();
+    expect(useWorkdirStore.getState().palette).toMatchObject({ root: "/root", agentId: "agent1" });
+    expect(useWorkdirStore.getState().detail).toMatchObject({ relPath: "docs/x.md" });
   });
 });
 

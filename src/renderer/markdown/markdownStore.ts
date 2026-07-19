@@ -50,6 +50,9 @@ export interface EditorState {
   loadError: string | null;
   /** true면 저장 충돌 해결 다이얼로그 표시. */
   conflict: boolean;
+  /** 편집기가 닫힐 때(어느 경로로든) 1회 호출되는 훅. 다른 서브시스템(예: 작업
+   *  폴더 보기)에서 열었을 때 "닫으면 그 탐색 상태로 복귀"를 구현하는 데 쓴다. */
+  onClose?: () => void;
 }
 
 /** 저장 결과 — 호출자(Cmd+S, Esc 저장후닫기)가 후속 동작을 정하기 위한 판별 유니온. */
@@ -76,8 +79,9 @@ interface MarkdownState {
   refreshListing(root: string): Promise<void>;
 
   // ---- 편집기 ----
-  /** 파일을 읽어 편집기를 연다(성공 시 팔레트는 닫는다). */
-  openFile(root: string, relPath: string, agentId: string): Promise<void>;
+  /** 파일을 읽어 편집기를 연다(성공 시 팔레트는 닫는다). `onClose`가 주어지면
+   *  편집기가 닫히는 어느 경로에서든 1회 호출된다(호출자 탐색 상태 복귀용). */
+  openFile(root: string, relPath: string, agentId: string, onClose?: () => void): Promise<void>;
   closeEditor(): void;
   setContent(content: string): void;
   setMode(mode: "source" | "preview"): void;
@@ -142,7 +146,7 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
     }
   },
 
-  openFile: async (root, relPath, agentId) => {
+  openFile: async (root, relPath, agentId, onClose) => {
     // 즉시 로딩 상태의 편집기를 띄우고 팔레트는 닫는다.
     set({
       palette: null,
@@ -159,6 +163,7 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
         saving: false,
         loadError: null,
         conflict: false,
+        onClose,
       },
     });
     try {
@@ -185,7 +190,11 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
     }
   },
 
-  closeEditor: () => set({ editor: null, discardConfirm: false }),
+  closeEditor: () => {
+    const cb = get().editor?.onClose;
+    set({ editor: null, discardConfirm: false });
+    cb?.();
+  },
 
   setContent: (content) =>
     set((s) => (s.editor ? { editor: { ...s.editor, content } } : s)),
@@ -230,7 +239,11 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
     const { editor } = get();
     if (!editor) return;
     if (isEditorDirty(editor)) set({ discardConfirm: true });
-    else set({ editor: null, discardConfirm: false });
+    else {
+      const cb = editor.onClose;
+      set({ editor: null, discardConfirm: false });
+      cb?.();
+    }
   },
 
   cancelDiscard: () => set({ discardConfirm: false }),

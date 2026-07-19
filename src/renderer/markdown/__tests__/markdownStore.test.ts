@@ -178,3 +178,21 @@ describe("더티 가드", () => {
     expect(useMarkdownStore.getState().discardConfirm).toBe(false);
   });
 });
+
+describe("닫기 콜백(onClose)", () => {
+  it("closeEditor가 onClose를 1회 호출한다", async () => {
+    const onClose = vi.fn();
+    const s = useMarkdownStore.getState();
+    await s.openFile("/root", "x.md", "agent1", onClose);
+    useMarkdownStore.getState().closeEditor();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("더티 아닌 requestClose도 onClose를 호출한다", async () => {
+    const onClose = vi.fn();
+    const s = useMarkdownStore.getState();
+    await s.openFile("/root", "x.md", "agent1", onClose);
+    useMarkdownStore.getState().requestClose();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

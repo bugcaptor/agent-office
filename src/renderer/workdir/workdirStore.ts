@@ -391,8 +391,19 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     if (!d) return;
     if (!isMarkdownPath(d.relPath)) return; // 인앱 지원 형식만.
     const agentId = get().palette?.agentId ?? "";
+    // 현재 탐색 상태(팔레트+메뉴)를 스냅샷해 두고, 인앱 뷰어를 닫으면 그대로
+    // 복귀시킨다("인앱 뷰어 닫으면 다시 탐색 모드").
+    const palette = get().palette;
+    const detail = d;
     set({ palette: null, detail: null });
-    void useMarkdownStore.getState().openFile(d.root, d.relPath, agentId);
+    void useMarkdownStore.getState().openFile(d.root, d.relPath, agentId, () => {
+      set({ palette, detail });
+      if (palette) {
+        // 뷰어를 보던 사이 파일/ git이 바뀌었을 수 있으니 백그라운드 갱신.
+        void get().refreshListing(palette.root);
+        void get().refreshGit(palette.root);
+      }
+    });
   },
 
   setDetailTab: (tab) => {
