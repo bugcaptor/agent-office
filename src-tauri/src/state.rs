@@ -103,6 +103,8 @@ pub struct AppState {
     pub sprite_store: crate::persistence::png_store::PngStore,
     /// 세션 턴 시계열 로그(session-times.jsonl) — 턴이 종료될 때마다 append.
     pub session_time_store: crate::persistence::session_time_store::SessionTimeStore,
+    /// 캐릭터 일기(#56) per-agent 로그(`diaries/<agentId>.jsonl`) — 일기 생성 시 append.
+    pub diary_store: crate::persistence::diary_store::DiaryStore,
     /// Claude native 세션 ID(리줌) 스냅샷 스토어(`claude-resume.json`). observer
     /// ingest가 ClaudeResumeRecorder를 통해 쓰고, list_claude_resume_sessions가 읽는다.
     pub claude_resume_store: Arc<ClaudeResumeStore>,

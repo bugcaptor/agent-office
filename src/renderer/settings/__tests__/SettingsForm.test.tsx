@@ -16,7 +16,7 @@ describe("SettingsForm", () => {
     const onChange = vi.fn();
     render(
       <SettingsForm
-        value={{ summarizerEnabled: false, summaryProvider: "claude", observerEnabled: false }}
+        value={{ summarizerEnabled: false, summaryProvider: "claude", diaryEnabled: false, observerEnabled: false }}
         onChange={onChange}
       />,
     );
@@ -36,7 +36,7 @@ describe("SettingsForm", () => {
     const onChange = vi.fn();
     render(
       <SettingsForm
-        value={{ summarizerEnabled: false, summaryProvider: "codex", observerEnabled: false }}
+        value={{ summarizerEnabled: false, summaryProvider: "codex", diaryEnabled: false, observerEnabled: false }}
         onChange={onChange}
       />,
     );

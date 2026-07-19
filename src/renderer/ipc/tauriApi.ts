@@ -27,6 +27,7 @@ import type {
   ActivityEvent,
   AgentOfficeApi,
   AppSettings,
+  DiaryEntry,
   NotificationClearedEvent,
   NotificationEvent,
   OutputChunk,
@@ -184,6 +185,14 @@ export const tauriApi: AgentOfficeApi = {
 
   async loadSessionTurns() {
     return await invoke(Commands.loadSessionTurns);
+  },
+
+  async appendDiaryEntry(agentId: string, entry: DiaryEntry) {
+    await invoke(Commands.appendDiaryEntry, { agentId, entry });
+  },
+
+  async loadDiary(agentId: string) {
+    return await invoke(Commands.loadDiary, { agentId });
   },
 
   async loadSessionEvents(fromAt: number, toAt: number) {

@@ -7,7 +7,7 @@ import type { AppSettings } from "@shared/types";
 
 export type SettingsFormValue = Pick<
   AppSettings,
-  "summarizerEnabled" | "summaryProvider" | "observerEnabled"
+  "summarizerEnabled" | "summaryProvider" | "diaryEnabled" | "observerEnabled"
 >;
 
 export function SettingsForm({
@@ -55,6 +55,22 @@ export function SettingsForm({
           Codex
         </label>
       </fieldset>
+
+      <label className="settings-item">
+        <input
+          type="checkbox"
+          checked={value.diaryEnabled}
+          onChange={(e) => onChange({ diaryEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>캐릭터 일기</strong>
+          <small>
+            각 캐릭터가 성격을 문체로 삼아 작업 로그 겸 일기를 씁니다. 위 요약기와
+            같은 CLI를 호출하므로 계정 사용량을 소모합니다. 탭 우클릭 메뉴에서
+            열람합니다.
+          </small>
+        </span>
+      </label>
 
       <label className="settings-item">
         <input

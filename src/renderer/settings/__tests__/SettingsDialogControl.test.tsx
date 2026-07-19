@@ -34,6 +34,7 @@ function hydrate(cliEnabled: boolean) {
       version: 1,
       summarizerEnabled: false,
       summaryProvider: "claude",
+      diaryEnabled: false,
       observerEnabled: false,
       soundEnabled: true,
       soundVolume: 0.5,

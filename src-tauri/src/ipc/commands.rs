@@ -693,6 +693,32 @@ pub async fn load_session_turns(
     Ok(app_state.session_time_store.load())
 }
 
+/// 캐릭터 일기(#56) 한 편을 per-agent 로그(`diaries/<agentId>.jsonl`)에 append.
+/// 본문 생성은 렌더러가 `summarize_text`로 이미 마친 상태 — 여기선 저장만 한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn append_diary_entry(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+    entry: crate::types::DiaryEntry,
+) -> Result<(), String> {
+    app_state
+        .diary_store
+        .append(&agent_id, &entry)
+        .map_err(|e| e.to_string())
+}
+
+/// 한 캐릭터의 일기 전체(작성순)를 읽는다(열람 오버레이용).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_diary(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<Vec<crate::types::DiaryEntry>, String> {
+    app_state
+        .diary_store
+        .load(&agent_id)
+        .map_err(|e| e.to_string())
+}
+
 /// 세션 이벤트 시계열에서 `from_at..=to_at`(epoch ms) 범위를 읽는다(분석 패널용).
 /// 읽기 전용 — 수집 측 `SessionEventStore`는 건드리지 않는다
 /// (docs/session-analytics-design.md §4.2). reader가 없는 파일·손상 줄을
@@ -878,6 +904,7 @@ mod tests {
             version: 1,
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Codex,
+            diary_enabled: false,
             observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
@@ -917,6 +944,7 @@ mod tests {
             version: 1,
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Claude,
+            diary_enabled: false,
             observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
@@ -955,6 +983,7 @@ mod tests {
             version: 1,
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
+            diary_enabled: false,
             observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,
@@ -1073,6 +1102,8 @@ mod tests {
         let session_time_store = crate::persistence::session_time_store::SessionTimeStore::new(
             profile_dir.join("session-times.jsonl"),
         );
+        let diary_store =
+            crate::persistence::diary_store::DiaryStore::new(profile_dir.join("diaries"));
         let claude_resume_store =
             Arc::new(crate::persistence::claude_resume_store::ClaudeResumeStore::new(
                 profile_dir.join("claude-resume.json"),
@@ -1110,6 +1141,7 @@ mod tests {
             portrait_store,
             sprite_store,
             session_time_store,
+            diary_store,
             claude_resume_store,
             settings_store,
             settings,
@@ -1585,6 +1617,32 @@ mod tests {
     async fn load_session_turns_on_no_prior_appends_returns_empty() {
         let (state, ctl, dir, profile_dir) = build("session-turn-empty");
         assert!(state.session_time_store.load().is_empty());
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    // ---- append_diary_entry / load_diary ----
+
+    #[tokio::test]
+    async fn append_then_load_diary_through_app_state() {
+        let (state, ctl, dir, profile_dir) = build("diary");
+        let entry = crate::types::DiaryEntry {
+            at: 1_000,
+            session_id: "s1".into(),
+            body: "오늘은 이슈 하나를 해치웠다. 뿌듯.".into(),
+        };
+
+        // append_diary_entry / load_diary 본문과 동일한 delegation.
+        state.diary_store.append("a1", &entry).unwrap();
+        let loaded = state.diary_store.load("a1").unwrap();
+
+        assert_eq!(loaded, vec![entry]);
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    #[tokio::test]
+    async fn load_diary_on_no_prior_appends_returns_empty() {
+        let (state, ctl, dir, profile_dir) = build("diary-empty");
+        assert!(state.diary_store.load("nobody").unwrap().is_empty());
         cleanup(&ctl, &dir, &profile_dir);
     }
 
