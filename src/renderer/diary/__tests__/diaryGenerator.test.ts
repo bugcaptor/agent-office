@@ -149,6 +149,24 @@ describe("generateDiary", () => {
     expect(log.items("a1")).toHaveLength(2);
   });
 
+  it("targetSessionId를 주면 그 세션 로그만 담아 기록하고 그 세션만 소진한다", async () => {
+    const log = new WorkLog();
+    log.append("a1", { at: 1, sessionId: "s1", kind: "prompt", text: "이전 세션 작업" });
+    log.append("a1", { at: 2, sessionId: "s2", kind: "prompt", text: "종료된 세션 작업" });
+    const summarizeFn = vi.fn().mockResolvedValue("종료된 세션을 정리했다.");
+    const appendFn = vi.fn().mockResolvedValue(undefined);
+    const result = await generateDiary("a1", { summarizeFn, appendFn, now: () => 9, log }, "s2");
+
+    expect(result.ok).toBe(true);
+    // s2 로그만 프롬프트에 담긴다.
+    expect(summarizeFn.mock.calls[0][2]).toContain("종료된 세션 작업");
+    expect(summarizeFn.mock.calls[0][2]).not.toContain("이전 세션 작업");
+    expect(appendFn).toHaveBeenCalledWith("a1", { at: 9, sessionId: "s2", body: "종료된 세션을 정리했다." });
+    // s2만 소진, s1은 남는다.
+    expect(log.items("a1", "s2")).toHaveLength(0);
+    expect(log.items("a1", "s1")).toHaveLength(1);
+  });
+
   it("생성이 진행 중이면 두 번째 호출은 in-flight로 거절한다", async () => {
     const log = seededLog();
     let release!: () => void;
