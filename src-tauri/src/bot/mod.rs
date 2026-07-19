@@ -219,8 +219,15 @@ async fn resolve_params(ctx: Arc<BotContext>, agent_id: String) -> Result<Arc<Bo
             .clone()
             .filter(|c| !c.trim().is_empty())
             .ok_or_else(|| "이 캐릭터에 작업 폴더(cwd)가 설정되어 있지 않습니다".to_string())?;
-        let repo_slug = gitea::detect_slug(Path::new(&cwd))?;
-        let owner = gitea::current_user()?;
+        // 번들(GUI) 기동 앱은 로그인 셸 프로파일을 안 거쳐 GITEA_TOKEN/BASE_URL·
+        // PATH가 비어 있다(#58). 봇 시작 시 로그인 셸에서 지정 키를 1회 캡처해
+        // 프로세스 env에 병합한다(멱등). 이후 아래 REST 클라이언트와, 앞으로
+        // spawn되는 에이전트 PTY(쓰기 curl)가 같은 자격을 상속한다.
+        crate::session::env_capture::ensure_captured();
+        let root = Path::new(&cwd);
+        let repo_slug = gitea::detect_slug(root)?;
+        let gitea_client = std::sync::Arc::new(gitea::Gitea::from_env(root)?);
+        let owner = gitea_client.current_user()?;
         let bot = profile.bot.clone().unwrap_or_default();
         let slug = command::effective_slug(&profile.name, bot.slug.as_deref());
         if slug.is_empty() {
@@ -240,6 +247,7 @@ async fn resolve_params(ctx: Arc<BotContext>, agent_id: String) -> Result<Arc<Bo
             whitelist: bot.whitelist,
             idle_quiet_ms,
             poll_interval_sec,
+            gitea: gitea_client,
         }))
     })
     .await

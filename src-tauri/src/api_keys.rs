@@ -8,6 +8,14 @@
 /// PixelLab API 키 환경변수 이름.
 pub const PIXELLAB_API_KEY: &str = "PIXELLAB_API_KEY";
 
+/// 봇 모드(#58) Gitea 접근 토큰 환경변수 이름. 봇 시작 시 로그인 셸에서 캡처해
+/// 프로세스 env에 심는다(session::env_capture).
+pub const GITEA_TOKEN: &str = "GITEA_TOKEN";
+
+/// 봇 모드(#58) Gitea 웹 베이스 URL 환경변수 이름(예: `http://host:5088`).
+/// 미설정 시 http(s) origin에서 파싱을 시도하고, ssh origin이면 이 값을 요구한다.
+pub const GITEA_BASE_URL: &str = "GITEA_BASE_URL";
+
 /// 환경변수에서 API 키를 읽는다. 미설정이거나 공백뿐이면 None.
 pub fn env_api_key(name: &str) -> Option<String> {
     match std::env::var(name) {
