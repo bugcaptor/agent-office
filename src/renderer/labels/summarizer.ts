@@ -27,12 +27,6 @@ import type { SummaryProvider } from "@shared/types";
 
 export const LABEL_SYSTEM_PROMPT =
   "너는 코딩 세션 라벨 생성기다. [이전 목표]와 [새 지시]를 보고 정확히 두 줄을 출력하라. 1줄: 세션 목표 — 새 지시가 새로운 작업이면 한국어 명사구 12자 이내로 새로 뽑고, 이전 작업의 후속·보완 지시이거나 판단이 애매하면 이전 목표를 그대로 출력하라. 이전 목표가 (없음)이면 새로 뽑아라. 2줄: 새 지시 요약 — 한국어 18자 이내 한 줄. 규칙: 정확히 두 줄, 한국어만, 사과·설명·따옴표·번호·머리말 금지. 판단 불가면 1줄은 이전 목표(없으면 '작업 중'), 2줄은 '작업 중'. 예) 이전 목표: 로그인 버그 수정 / 새 지시: 테스트도 고쳐줘 → 1줄 '로그인 버그 수정', 2줄 '테스트 수정'";
-
-/** 실험 툴 모드 프롬프트: 위 계약에 "현재 폴더를 읽기 전용 툴로 훑어보라"는
- * 절만 덧댄다. 툴 탐색은 여러 턴이지만 최종 stdout은 반드시 두 줄이어야 한다. */
-export const LABEL_SYSTEM_PROMPT_TOOLS =
-  LABEL_SYSTEM_PROMPT +
-  " 현재 디렉터리는 이 세션의 실제 작업 폴더다. [새 지시]가 모호하면 Glob/Read/Grep으로 README·매니페스트(package.json, Cargo.toml 등)·지시가 가리키는 파일을 최대 3개, 툴 사용 2회 이내로 확인해 목표를 구체화하라. 비밀값 파일(.env 등)은 열지 마라. 탐색 과정·파일명·설명은 절대 출력하지 말고, 최종 출력은 위 규칙대로 정확히 두 줄뿐이다.";
 const FAILURE_COOLDOWN_MS = 30_000;
 const SUMMARY_MAX_CHARS = 40;
 const META_MARKERS = ["인코딩", "죄송", "할 수 없"];
@@ -80,7 +74,6 @@ export interface SummarizerDeps {
     provider: SummaryProvider,
     instruction: string,
     text: string,
-    cwd?: string,
   ) => Promise<string>;
   now?: () => number;
 }
@@ -92,10 +85,6 @@ interface RequestIdentity {
   sourceText: string; // latestPromptText
   latestPromptAt?: number;
   prevGoal: string | null; // 통합 호출에 넘기는 이전 목표 컨텍스트
-  /** 실험 툴 모드 여부(Claude + 설정 ON + cwd 존재). 프롬프트·cwd·캐시 키를 가른다. */
-  toolMode: boolean;
-  /** 툴 모드일 때 백엔드에 넘길 세션 작업 폴더. */
-  cwd?: string;
 }
 
 /**
@@ -105,8 +94,7 @@ interface RequestIdentity {
 export function installTaskLabelSummarizer(deps: SummarizerDeps = {}): () => void {
   const summarizeFn =
     deps.summarizeFn ??
-    ((provider, instruction, text, cwd) =>
-      tauriApi.summarizeText(provider, instruction, text, cwd));
+    ((provider, instruction, text) => tauriApi.summarizeText(provider, instruction, text));
   const now = deps.now ?? Date.now;
 
   const cache = new Map<string, { goal: string; current: string }>(); // `${provider}|${prevGoal}|${원문}` -> 쌍
@@ -153,10 +141,6 @@ export function installTaskLabelSummarizer(deps: SummarizerDeps = {}): () => voi
     if (disabledProviders.has(provider)) return;
     const label = state.taskLabels[agentId];
     if (!label) return;
-    // 실험 툴 모드: Claude + 설정 ON + 세션 작업 폴더가 있을 때만. 백엔드가 최종
-    // 권위이지만(설정 재확인), 프런트도 게이트를 두어 불필요한 cwd 전송을 막는다.
-    const toolMode =
-      provider === "claude" && settings.summarizerToolCalls && !!label.cwd;
     const identity: RequestIdentity = {
       agentId,
       provider,
@@ -164,13 +148,10 @@ export function installTaskLabelSummarizer(deps: SummarizerDeps = {}): () => voi
       sourceText: text,
       latestPromptAt: label.latestPromptAt,
       prevGoal: label.goal ?? null,
-      toolMode,
-      cwd: toolMode ? label.cwd : undefined,
     };
     const identityKey = activeIdentityKey(identity);
     if (activeIdentityKeys.has(identityKey)) return;
-    // 캐시 키에 모드를 포함 — 설정 토글 직후 구식(플레인↔툴) 결과 재사용 방지.
-    const key = `${identity.provider}|${identity.toolMode ? "T" : "P"}|${identity.prevGoal ?? ""}|${identity.sourceText}`;
+    const key = `${identity.provider}|${identity.prevGoal ?? ""}|${identity.sourceText}`;
     const cached = cache.get(key);
     if (cached !== undefined) {
       apply(identity, cached);
@@ -183,17 +164,8 @@ export function installTaskLabelSummarizer(deps: SummarizerDeps = {}): () => voi
     void (async () => {
       try {
         const userText = `[이전 목표]\n${identity.prevGoal ?? "(없음)"}\n[새 지시]\n${identity.sourceText}`;
-        const instruction = identity.toolMode
-          ? LABEL_SYSTEM_PROMPT_TOOLS
-          : LABEL_SYSTEM_PROMPT;
-        // 호출 1회당 선택 provider의 사용자 구독/크레딧을 소모할 수 있다. 툴
-        // 모드면 cwd를 함께 넘겨 백엔드가 그 폴더에서 읽기 전용 툴로 실행한다.
-        const raw = await summarizeFn(
-          identity.provider,
-          instruction,
-          userText,
-          identity.cwd,
-        );
+        // 호출 1회당 선택 provider의 사용자 구독/크레딧을 소모할 수 있다.
+        const raw = await summarizeFn(identity.provider, LABEL_SYSTEM_PROMPT, userText);
         const pair = sanitizeLabelPair(raw);
         if (pair === null) {
           // 두 줄 미만·메타·깨짐·과길이 응답 — 실패로 처리(30초 쿨다운, 원문 폴백 표시).

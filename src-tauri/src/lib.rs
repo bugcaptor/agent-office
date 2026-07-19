@@ -511,7 +511,6 @@ mod tests {
             version: 1,
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
-            summarizer_tool_calls: false,
             observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,

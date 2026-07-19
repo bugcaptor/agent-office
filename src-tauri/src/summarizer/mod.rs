@@ -1,7 +1,6 @@
 mod claude;
 mod codex;
 
-use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -15,8 +14,6 @@ const TEXT_MAX_CHARS: usize = 2_000;
 const ERROR_MAX_CHARS: usize = 512;
 const MAX_CONCURRENT: usize = 2;
 const TIMEOUT: Duration = Duration::from_secs(20);
-/// 실험 툴 모드는 여러 턴 동안 파일을 훑으므로 여유 있는 상한을 준다.
-const PROBE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub(super) struct ProviderCommand {
     pub command: std::process::Command,
@@ -44,32 +41,22 @@ fn missing_error(provider: SummaryProvider) -> String {
     format!("{}-not-found", provider.as_str())
 }
 
-/// `tool_cwd` 는 호출부(command)가 이미 "설정 ON + provider=Claude" 를 확인한
-/// 경우에만 Some 이다. 여기서 디렉터리 실존을 마지막으로 검증해, 없으면 조용히
-/// 플레인 모드로 강등한다(에러 아님). Codex 경로는 tool_cwd 와 무관하게 불변.
 pub async fn summarize(
     provider: SummaryProvider,
     instruction: &str,
     text: &str,
-    tool_cwd: Option<PathBuf>,
 ) -> Result<String, String> {
     let capped = cap_text(text)?;
-    // 실존하는 디렉터리일 때만 툴 모드. 그 외에는 플레인.
-    let workdir = tool_cwd.filter(|path| path.is_dir());
-    let (command, run_dir, timeout) = match provider {
-        SummaryProvider::Claude => match workdir {
-            Some(dir) => (claude::build_with_tools(instruction), Some(dir), PROBE_TIMEOUT),
-            None => (claude::build(instruction), None, TIMEOUT),
-        },
-        SummaryProvider::Codex => (codex::build(instruction), None, TIMEOUT),
+    let command = match provider {
+        SummaryProvider::Claude => claude::build(instruction),
+        SummaryProvider::Codex => codex::build(instruction),
     };
-    run_with_timeout(command, &capped, run_dir, timeout).await
+    run_with_timeout(command, &capped, TIMEOUT).await
 }
 
 async fn run_with_timeout(
     mut spec: ProviderCommand,
     text: &str,
-    workdir: Option<PathBuf>,
     timeout: Duration,
 ) -> Result<String, String> {
     let _permit = permits()
@@ -78,8 +65,7 @@ async fn run_with_timeout(
         .expect("semaphore is never closed");
     let provider = spec.provider;
 
-    spec.command
-        .current_dir(workdir.unwrap_or_else(std::env::temp_dir));
+    spec.command.current_dir(std::env::temp_dir());
     spec.command.stdin(Stdio::piped());
     spec.command.stdout(Stdio::piped());
     spec.command.stderr(Stdio::piped());
@@ -142,7 +128,6 @@ mod tests {
         root: std::path::PathBuf,
         stdin: std::path::PathBuf,
         pid: std::path::PathBuf,
-        cwd: std::path::PathBuf,
     }
 
     impl FakeCliDir {
@@ -160,7 +145,6 @@ mod tests {
                     r#"$ErrorActionPreference='Stop'
 [Console]::InputEncoding=[System.Text.Encoding]::UTF8
 [IO.File]::WriteAllText($env:AO_FAKE_PID, "$PID")
-[IO.File]::WriteAllText($env:AO_FAKE_CWD, (Get-Location).Path)
 $in = [Console]::In.ReadToEnd()
 [IO.File]::WriteAllText($env:AO_FAKE_STDIN, $in)
 if ($env:AO_FAKE_SLEEP_SECONDS) { Start-Sleep -Seconds ([int]$env:AO_FAKE_SLEEP_SECONDS) }
@@ -179,7 +163,6 @@ exit ([int]$env:AO_FAKE_EXIT)
                     &codex,
                     r#"#!/bin/sh
 printf '%s' "$$" > "$AO_FAKE_PID"
-pwd -P > "$AO_FAKE_CWD"
 cat > "$AO_FAKE_STDIN"
 [ -n "$AO_FAKE_SLEEP_SECONDS" ] && sleep "$AO_FAKE_SLEEP_SECONDS"
 printf '%s\n' 'Codex fake summary'
@@ -193,7 +176,6 @@ exit "$AO_FAKE_EXIT"
             Self {
                 stdin: root.join("codex.stdin"),
                 pid: root.join("codex.pid"),
-                cwd: root.join("codex.cwd"),
                 root,
             }
         }
@@ -219,7 +201,6 @@ exit "$AO_FAKE_EXIT"
             command
                 .env("AO_FAKE_STDIN", &self.stdin)
                 .env("AO_FAKE_PID", &self.pid)
-                .env("AO_FAKE_CWD", &self.cwd)
                 .env("AO_FAKE_EXIT", exit)
                 .env("AO_FAKE_SLEEP_SECONDS", sleep_seconds);
 
@@ -277,7 +258,7 @@ exit "$AO_FAKE_EXIT"
 
     #[tokio::test]
     async fn rejects_empty_text_before_spawning_a_provider() {
-        let error = summarize(SummaryProvider::Codex, "summarize", "   ", None)
+        let error = summarize(SummaryProvider::Codex, "summarize", "   ")
             .await
             .unwrap_err();
         assert_eq!(error, "validation: text is empty");
@@ -301,46 +282,10 @@ exit "$AO_FAKE_EXIT"
         let fake = FakeCliDir::new();
         let spec = fake.provider_command("0", "");
 
-        let result = run_with_timeout(spec, "한글 원문", None, TIMEOUT)
-            .await
-            .unwrap();
+        let result = run_with_timeout(spec, "한글 원문", TIMEOUT).await.unwrap();
 
         assert_eq!(result, "Codex fake summary");
         assert_eq!(std::fs::read_to_string(&fake.stdin).unwrap(), "한글 원문");
-    }
-
-    #[tokio::test]
-    async fn some_workdir_runs_child_in_that_directory() {
-        let _process_lock = PROCESS_TEST_LOCK.lock().await;
-        let fake = FakeCliDir::new();
-        let spec = fake.provider_command("0", "");
-        let expected = std::fs::canonicalize(&fake.root).unwrap();
-
-        run_with_timeout(spec, "text", Some(fake.root.clone()), TIMEOUT)
-            .await
-            .unwrap();
-
-        let recorded = std::fs::read_to_string(&fake.cwd).unwrap();
-        assert_eq!(
-            std::fs::canonicalize(recorded.trim()).unwrap(),
-            expected,
-            "child ran outside the requested workdir"
-        );
-    }
-
-    #[tokio::test]
-    async fn none_workdir_runs_child_in_temp_dir() {
-        let _process_lock = PROCESS_TEST_LOCK.lock().await;
-        let fake = FakeCliDir::new();
-        let spec = fake.provider_command("0", "");
-        let expected = std::fs::canonicalize(std::env::temp_dir()).unwrap();
-
-        run_with_timeout(spec, "text", None, TIMEOUT)
-            .await
-            .unwrap();
-
-        let recorded = std::fs::read_to_string(&fake.cwd).unwrap();
-        assert_eq!(std::fs::canonicalize(recorded.trim()).unwrap(), expected);
     }
 
     #[tokio::test]
@@ -349,7 +294,7 @@ exit "$AO_FAKE_EXIT"
         let fake = FakeCliDir::new();
         let spec = fake.provider_command("7", "");
 
-        let error = run_with_timeout(spec, "source text", None, TIMEOUT)
+        let error = run_with_timeout(spec, "source text", TIMEOUT)
             .await
             .unwrap_err();
 
@@ -363,7 +308,7 @@ exit "$AO_FAKE_EXIT"
         let spec = fake.provider_command("0", "60");
 
         let started = std::time::Instant::now();
-        let error = run_with_timeout(spec, "source text", None, Duration::from_secs(1))
+        let error = run_with_timeout(spec, "source text", Duration::from_secs(1))
             .await
             .unwrap_err();
 

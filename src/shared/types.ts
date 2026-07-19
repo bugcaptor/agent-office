@@ -382,9 +382,6 @@ export interface AppSettings {
   summarizerEnabled: boolean;
   /** 라벨 요약에 사용할 로컬 CLI provider. */
   summaryProvider: SummaryProvider;
-  /** 실험(옵트인): Claude 요약기가 읽기 전용 툴(Read/Glob/Grep)로 세션 작업
-   * 폴더를 훑어 목표를 추론하도록 허용. Claude provider일 때만 효과. 기본 꺼짐. */
-  summarizerToolCalls: boolean;
   /** 세션 observer 주입 + 로컬 observer 서버 기동(알림·시간측정). */
   observerEnabled: boolean;
   /** 사무실 앰비언스 사운드(타이핑·효과음·공조음) 재생 여부. 기본 켜짐. */
@@ -543,14 +540,11 @@ export interface AgentOfficeApi {
   loadSprite(agentId: string): Promise<string | null>;
   /** 스프라이트 파일 삭제(없어도 성공). */
   deleteSprite(agentId: string): Promise<void>;
-  /** 머리 위 라벨 요약: 캡처한 provider의 로컬 CLI를 호출한다. 호출마다 사용자
-   * 구독/크레딧을 소모할 수 있다. cwd가 있으면(실험 툴 모드) Claude가 그 폴더에서
-   * 읽기 전용 툴로 목표를 추론한다 — 실제 툴 모드 여부는 백엔드가 설정으로 판단. */
+  /** 머리 위 라벨 요약: 캡처한 provider의 로컬 CLI를 호출한다. 호출마다 사용자 구독/크레딧을 소모할 수 있다. */
   summarizeText(
     provider: SummaryProvider,
     instruction: string,
     text: string,
-    cwd?: string,
   ): Promise<string>;
   /** PixelLab로 64×64 스프라이트 1장 생성. 동기 HTTP — 수십 초 걸릴 수 있다. */
   generateSpriteImage(description: string): Promise<GeneratedSpriteImage>;

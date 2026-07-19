@@ -11,43 +11,18 @@ $in = [Console]::In.ReadToEnd()
 $in | & $c.Source -p $env:AO_INSTRUCTION --model haiku --output-format text --max-turns 1
 exit $LASTEXITCODE"#;
 
-// 실험(옵트인) 툴 모드: 읽기 전용 툴만 허용하고 MCP 서버를 배제한다.
-// print 모드(-p)는 비대화형이라 허용 밖 툴 요청은 승인 대기 없이 거절된다.
-// --allowedTools 는 variadic 이므로 맨 뒤에 두어 뒤따르는 토큰 흡수를 막는다.
 #[cfg(windows)]
-const WINDOWS_SCRIPT_TOOLS: &str = r#"$ErrorActionPreference='Stop'
-[Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
-$OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$c = Get-Command claude -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $c) { exit 3 }
-$in = [Console]::In.ReadToEnd()
-$in | & $c.Source -p $env:AO_INSTRUCTION --model haiku --output-format text --max-turns 4 --strict-mcp-config --allowedTools Read Glob Grep
-exit $LASTEXITCODE"#;
-
-#[cfg(windows)]
-fn windows_command(script: &str, instruction: &str) -> ProviderCommand {
+pub(super) fn build(instruction: &str) -> ProviderCommand {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = std::process::Command::new("powershell.exe");
-    command.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    command.args(["-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT]);
     command.creation_flags(CREATE_NO_WINDOW);
     command.env("AO_INSTRUCTION", instruction);
     ProviderCommand {
         command,
         provider: SummaryProvider::Claude,
     }
-}
-
-#[cfg(windows)]
-pub(super) fn build(instruction: &str) -> ProviderCommand {
-    windows_command(WINDOWS_SCRIPT, instruction)
-}
-
-/// 실험 툴 모드(세션 작업 폴더에서 읽기 전용 툴 허용). 호출부가 workdir 를
-/// 정할 때만 쓰인다. 나머지 플래그는 plain build 와 동일.
-#[cfg(windows)]
-pub(super) fn build_with_tools(instruction: &str) -> ProviderCommand {
-    windows_command(WINDOWS_SCRIPT_TOOLS, instruction)
 }
 
 #[cfg(not(windows))]
@@ -62,33 +37,6 @@ pub(super) fn build(instruction: &str) -> ProviderCommand {
         "text",
         "--max-turns",
         "1",
-    ]);
-    ProviderCommand {
-        command,
-        provider: SummaryProvider::Claude,
-    }
-}
-
-/// 실험 툴 모드(세션 작업 폴더에서 읽기 전용 툴 허용). 호출부가 workdir 를
-/// 정할 때만 쓰인다. print 모드라 허용 밖 툴 요청은 대기 없이 거절된다.
-/// --allowedTools 는 variadic 이므로 맨 뒤에 둔다.
-#[cfg(not(windows))]
-pub(super) fn build_with_tools(instruction: &str) -> ProviderCommand {
-    let mut command = std::process::Command::new("claude");
-    command.args([
-        "-p",
-        instruction,
-        "--model",
-        "haiku",
-        "--output-format",
-        "text",
-        "--max-turns",
-        "4",
-        "--strict-mcp-config",
-        "--allowedTools",
-        "Read",
-        "Glob",
-        "Grep",
     ]);
     ProviderCommand {
         command,
@@ -122,47 +70,6 @@ mod tests {
         assert!(rendered.contains("text"), "{rendered}");
         assert!(rendered.contains("--max-turns"), "{rendered}");
         assert!(rendered.contains("1"), "{rendered}");
-    }
-
-    #[test]
-    fn claude_tool_command_pins_read_only_tools_and_never_skips_permissions() {
-        let spec = build_with_tools("요약 지시");
-        let rendered = command_debug(&spec.command);
-        assert!(rendered.contains("--allowedTools"), "{rendered}");
-        assert!(rendered.contains("Read"), "{rendered}");
-        assert!(rendered.contains("Glob"), "{rendered}");
-        assert!(rendered.contains("Grep"), "{rendered}");
-        assert!(rendered.contains("--max-turns"), "{rendered}");
-        assert!(rendered.contains('4'), "{rendered}");
-        assert!(rendered.contains("--strict-mcp-config"), "{rendered}");
-        // 쓰기·셸 툴은 절대 허용하지 않는다.
-        assert!(!rendered.contains("dangerously"), "{rendered}");
-        assert!(!rendered.contains("Bash"), "{rendered}");
-        assert!(!rendered.contains("Write"), "{rendered}");
-        assert!(!rendered.contains("Edit"), "{rendered}");
-    }
-
-    #[cfg(not(windows))]
-    #[test]
-    fn tool_command_places_variadic_allowed_tools_last() {
-        let spec = build_with_tools("요약 지시");
-        let args: Vec<_> = spec
-            .command
-            .get_args()
-            .map(|a| a.to_string_lossy().to_string())
-            .collect();
-        // variadic --allowedTools 가 뒤 토큰을 흡수하지 않도록 맨 끝에 온다.
-        let idx = args.iter().position(|a| a == "--allowedTools").unwrap();
-        assert_eq!(&args[idx..], &["--allowedTools", "Read", "Glob", "Grep"]);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn windows_tool_script_pins_read_only_allowed_tools_at_end() {
-        assert!(WINDOWS_SCRIPT_TOOLS.contains("--allowedTools Read Glob Grep"));
-        assert!(WINDOWS_SCRIPT_TOOLS.contains("--max-turns 4"));
-        assert!(WINDOWS_SCRIPT_TOOLS.contains("--strict-mcp-config"));
-        assert!(WINDOWS_SCRIPT_TOOLS.trim_end().ends_with("exit $LASTEXITCODE"));
     }
 
     #[cfg(windows)]

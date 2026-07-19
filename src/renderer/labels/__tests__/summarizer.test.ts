@@ -18,7 +18,6 @@ vi.mock("../../ipc/tauriApi", () => ({
 import { useAppStore } from "../../store/appStore";
 import {
   LABEL_SYSTEM_PROMPT,
-  LABEL_SYSTEM_PROMPT_TOOLS,
   installTaskLabelSummarizer,
   sanitizeLabelPair,
   sanitizeSummary,
@@ -35,7 +34,6 @@ type SummarizeFn = (
   provider: SummaryProvider,
   instruction: string,
   text: string,
-  cwd?: string,
 ) => Promise<string>;
 
 function promptEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
@@ -64,7 +62,6 @@ beforeEach(() => {
       version: 1,
       summarizerEnabled: true,
       summaryProvider: "claude",
-      summarizerToolCalls: false,
       observerEnabled: false,
       soundEnabled: true,
       soundVolume: 0.5,
@@ -95,53 +92,6 @@ describe("installTaskLabelSummarizer", () => {
     // 첫 프롬프트 → 이전 목표는 (없음), 새 지시 원문 포함.
     expect(text).toContain("(없음)");
     expect(text).toContain("버그 고쳐줘");
-  });
-
-  it("실험 툴 모드(Claude+설정 ON+cwd): 툴 프롬프트와 cwd로 호출한다", async () => {
-    useAppStore.getState().updateAppSettings({ summarizerToolCalls: true });
-    const summarizeFn = vi.fn<SummarizeFn>(async () => pair("요약기 개선", "폴더 훑는 중"));
-    teardown = installTaskLabelSummarizer({ summarizeFn });
-
-    useAppStore.getState().applyActivityEvent(promptEvent({ cwd: "/work/repo" }));
-
-    await vi.waitFor(() =>
-      expect(useAppStore.getState().taskLabels.a1.goal).toBe("요약기 개선"),
-    );
-    expect(summarizeFn).toHaveBeenCalledTimes(1);
-    const [provider, instruction, , cwd] = summarizeFn.mock.calls[0];
-    expect(provider).toBe("claude");
-    expect(instruction).toBe(LABEL_SYSTEM_PROMPT_TOOLS);
-    expect(cwd).toBe("/work/repo");
-  });
-
-  it("툴 설정이 켜져도 cwd가 없으면 플레인 프롬프트로 호출한다", async () => {
-    useAppStore.getState().updateAppSettings({ summarizerToolCalls: true });
-    const summarizeFn = vi.fn<SummarizeFn>(async () => pair("목표", "현재"));
-    teardown = installTaskLabelSummarizer({ summarizeFn });
-
-    useAppStore.getState().applyActivityEvent(promptEvent()); // cwd 없음
-
-    await vi.waitFor(() => expect(summarizeFn).toHaveBeenCalledTimes(1));
-    const [, instruction, , cwd] = summarizeFn.mock.calls[0];
-    expect(instruction).toBe(LABEL_SYSTEM_PROMPT);
-    expect(cwd).toBeUndefined();
-  });
-
-  it("Codex는 툴 설정이 켜져 있고 cwd가 있어도 플레인으로 호출한다", async () => {
-    useAppStore.getState().updateAppSettings({
-      summaryProvider: "codex",
-      summarizerToolCalls: true,
-    });
-    const summarizeFn = vi.fn<SummarizeFn>(async () => pair("목표", "현재"));
-    teardown = installTaskLabelSummarizer({ summarizeFn });
-
-    useAppStore.getState().applyActivityEvent(promptEvent({ cwd: "/work/repo" }));
-
-    await vi.waitFor(() => expect(summarizeFn).toHaveBeenCalledTimes(1));
-    const [provider, instruction, , cwd] = summarizeFn.mock.calls[0];
-    expect(provider).toBe("codex");
-    expect(instruction).toBe(LABEL_SYSTEM_PROMPT);
-    expect(cwd).toBeUndefined();
   });
 
   it("후속 프롬프트는 이전 goal을 컨텍스트로 넘기고 목표를 유지할 수 있다", async () => {
@@ -175,7 +125,6 @@ describe("installTaskLabelSummarizer", () => {
           version: 1,
           summarizerEnabled: true,
           summaryProvider: provider,
-          summarizerToolCalls: false,
           observerEnabled: false,
           soundEnabled: true,
           soundVolume: 0.5,
@@ -428,7 +377,6 @@ describe("installTaskLabelSummarizer", () => {
         version: 1,
         summarizerEnabled: false,
         summaryProvider: "claude",
-        summarizerToolCalls: false,
         observerEnabled: false,
         soundEnabled: true,
         soundVolume: 0.5,

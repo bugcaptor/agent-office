@@ -208,7 +208,6 @@ describe("bootApp", () => {
       version: 1,
       summarizerEnabled: false,
       summaryProvider: "claude",
-      summarizerToolCalls: false,
       observerEnabled: false,
       soundEnabled: true,
       soundVolume: 0.5,
