@@ -47,6 +47,11 @@ pub async fn summarize(
     text: &str,
 ) -> Result<String, String> {
     let capped = cap_text(text)?;
+    // GUI(Finder/launchd)로 띄운 번들 앱은 프로세스 PATH가 최소값(`/usr/bin:/bin:…`)
+    // 이라 `claude`/`codex`를 못 찾아 `-not-found`로 조용히 실패한다(#58과 동일 원인,
+    // 요약기·일기 경로에서 재발). spawn 직전에 로그인 셸 PATH를 1회 병합해 보장한다.
+    // 멱등이라 첫 호출만 로그인 셸을 돌리고, 블로킹 호출이라 blocking 풀에서 실행한다.
+    let _ = tokio::task::spawn_blocking(crate::session::env_capture::ensure_captured).await;
     let command = match provider {
         SummaryProvider::Claude => claude::build(instruction),
         SummaryProvider::Codex => codex::build(instruction),
