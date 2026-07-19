@@ -1111,3 +1111,84 @@ it('ensure returns same Terminal instance across calls (keep-alive)', () => {
 | 알림 억제 | active 에이전트 알림 push 무시 + 열람 시 클리어 | 보고 있는 세션은 알림 불필요 |
 | 폰트/CSS | DungGeunMo+Galmuri11 번들, CSS Modules | 오프라인·픽셀 감성·장황함 회피 |
 | fit 타이밍 | show 후 rAF에서 fit + debounced resize IPC | display:none 상태의 0크기 fit 방지 |
+
+---
+
+## 10. 작업 폴더 보기 & 마크다운 탐색 (이슈 #10 / #11 / #54)
+
+에이전트 cwd를 앱 안에서 직접 들여다보는 오버레이 서브시스템. 오피스 씬·세션과
+무관한 독립 슬라이스라 `store/appStore`가 아니라 전용 zustand 스토어
+(`renderer/workdir/workdirStore.ts`, `renderer/markdown/markdownStore.ts`)로 분리한다.
+진입은 탭 우클릭 컨텍스트 메뉴(`작업 폴더 보기` / `문서`) 또는 상세 페인 버튼.
+백엔드는 `src-tauri/src/workdir.rs`(문서 정본은 그 파일 상단 주석 + 서브시스템 A)와
+`markdown.rs`. z-index: 팔레트 40, 마크다운 편집기 50(모달 30·터미널 20 위).
+
+### 10.1 작업 폴더 팔레트 (`WorkdirPalette`)
+
+- **평면 퍼지 리스트**(트리 아님) + `[전체 | 변경만]` 필터 + `git 상태` on/off 토글
+  (전역 설정과 동일 값 — 상태 이원화 방지). "전체"는 파일 목록에 git 상태를
+  relPath로 매칭해 뱃지를 얹고, "변경만"은 git 엔트리 자체를 목록으로 쓴다(삭제·
+  root 밖 `../` 파일 포함). git 꺼짐/비저장소면 "변경만"·"커밋 로그"는 비활성.
+- **뷰 모드 2종(#54)**: `viewMode: "files" | "log"` — 헤더 `파일 | 커밋 로그` 세그로 전환.
+
+### 10.2 진입 흐름 — "메뉴 우선" (#54)
+
+- **모든 파일 클릭 → 상세(메뉴) 페인**(`openDetail`). 변경 파일은 기본 `변경점` 탭,
+  변경 없는 파일은 기본 `히스토리` 탭(clean 파일도 깃 로그를 항상 노출; git 상태
+  토글이 꺼져 있어도 히스토리·diff는 조회됨 — 토글은 status **폴링**만 게이팅).
+- **빠른 열기**: `⌘/Ctrl-클릭`·더블클릭·`⌘+Enter`는 기존 자동 라우팅(`openEntry`,
+  .md→인앱·그 외→`open_in_vscode`). 리스트 행은 `mouseDown`=선택만·`click`=열기로
+  분리해 더블클릭이 성립하게 한다.
+- **#11 → #54 전환**: 이전에는 변경 파일만 상세로 보내고(`isChangedStatus` 분기)
+  나머지는 즉시 열었으나, "일반 파일도 열기 전에 로그·메뉴를 보고 싶다"는 요구로
+  분기를 제거하고 메뉴 우선으로 통합.
+
+### 10.3 상세 페인 (`WorkdirDetailPane`)
+
+- 상단 액션 **명시적 2버튼**(#54): `외부 프로그램으로 열기`(마크다운도 강제 외부) +
+  (마크다운만) `인앱 뷰어로 열기`. 이전 자동 라우팅(.md면 무조건 인앱)을 대체.
+- `변경점` 탭: 추적 파일은 3관점 세그(`worktreeVsHead` 합본=기본·`indexVsHead`
+  스테이지·`worktreeVsIndex` 미스테이지), 미추적은 단일 뷰. `gen` 카운터로 모드
+  전환 시 늦게 도착한 stale 응답 폐기.
+- `히스토리` 탭: `git log --follow` 커밋 목록. **커밋 행 인라인 확장(#54)** — `▸/▾`
+  토글(`toggleCommitExpand`)로 그 커밋이 바꾼 파일 목록을 인라인 표시(`더 보기…`
+  페이징), 파일 선택 시 그 커밋의 해당 파일 diff. 펼치지 않고 커밋만 고르면
+  (`selectCommit`) 지금 파일의 그 커밋 시점 diff. 하단 diff는 `(selectedCommit,
+  selectedCommitFile)` 기준.
+- **인앱 뷰어 복귀(#54)**: `openInApp`은 팔레트+detail 스냅샷을 잡고 열며,
+  markdownStore `openFile(…, onClose)` 콜백에서 그 스냅샷을 복원 → **인앱 마크다운
+  뷰어를 닫으면 작업 폴더 탐색 상태로 복귀**. (빠른 열기 `openEntry`는 무변경 —
+  닫으면 오피스로.)
+
+### 10.4 커밋 로그 브라우저 (`WorkdirRepoLogPane`, #54 2단계)
+
+- 파일을 먼저 지목하지 않고 **로그 → 커밋 → 변경파일 → diff** 순으로 훑는다.
+  좌: 커밋 목록(메시지 검색 300ms 디바운스·`전체 브랜치`(`--all`) 체크박스·`더 보기…`),
+  우: 선택 커밋의 변경파일 → 파일 선택 → diff + 외부 도구 비교.
+- 스토어 `repoLog` 슬라이스는 root별 캐시 + `gen` 스테일 가드(검색/브랜치 전환 시
+  증가 → 늦은 응답 폐기). 검색은 `git log --grep=<q> -i -F`(고정 문자열·대소문자 무시).
+- **combined diff**: `git show`/`git log`의 기본 동작(머지는 `--cc`)을 그대로 사용.
+  병합 커밋은 combined라 변경파일이 빌 수 있어 "표시할 파일 변경 없음(병합)" 안내.
+
+### 10.5 diff 렌더 & 백엔드 커맨드
+
+- `DiffView.tsx`: 새 npm 의존성 없이 unified diff 텍스트를 줄 종류(meta/hunk/add/del)
+  로 자체 색상 렌더(marked 자체 렌더 철학과 동일).
+- 백엔드 읽기 전용 커맨드: `workdir_diff_file`·`workdir_file_history`·
+  `workdir_diff_commit`(#11), `workdir_commit_files`(`git show --name-status -M -z`
+  파서·페이징)·`workdir_repo_log`(#54). `launch_difftool`만 외부 GUI를
+  fire-and-forget. **안전장치**: `sanitize_rel_path`(절대경로·`..` 거부, 항상 `--`
+  pathspec)·`valid_commit`(hex 7~40)·diff 상한(1MiB·5000줄)·쿼리 타임아웃(10s).
+
+### 10.6 핵심 설계 결정 요약
+
+| 항목 | 결정 | 이유 |
+|---|---|---|
+| 파일 열기 진입 | 모든 파일 클릭=메뉴 우선, ⌘/더블클릭=즉시 열기 | 열기 전 깃 로그·외부/인앱 선택 노출(#54) |
+| clean 파일 기본 탭 | 히스토리 탭 | 변경 없어도 로그를 항상 볼 수 있게 |
+| git 토글 범위 | status 폴링만 게이팅, diff/history는 항상 조회 | 거대 저장소 대비는 status에만 필요 |
+| 커밋 변경파일 | `git show --name-status -M -z` + 페이징(상한 2만) | 인라인 확장·로그 브라우저 공용 재사용 |
+| 머지 커밋 diff | git 기본 combined(`--cc`) | 사용자 확정; 빈 목록은 안내로 |
+| 인앱 뷰어 복귀 | markdownStore `onClose` 콜백 + 탐색 상태 스냅샷 | 뷰어 닫으면 탐색으로 복귀(#54) |
+| diff 렌더 | 의존성 없이 자체 줄단위 색상 | marked 자체 렌더 철학 일관 |
+| 로그 검색 | `--grep -i -F`(메시지, 고정 문자열) | 예측 가능·주입 안전. 작성자 검색은 후속 |
