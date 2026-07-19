@@ -267,16 +267,24 @@ pub fn run() {
             // §핵심 5: 세션 재시작(입양) 후 훅이 스폰 시점의 죽은 포트를 치는
             // 문제 완화 -- forwarder가 읽는 <app_data_dir>/observer-port의 근거.
             observer_server.set_app_data_dir(data_dir.clone());
-            let observer_temp = app
-                .path()
-                .temp_dir()
-                .unwrap_or_else(|error| {
-                    eprintln!("observer temp directory unavailable, using OS temp: {error}");
-                    std::env::temp_dir()
-                })
-                .join("agent-office")
-                .join("observer")
-                .join("claude");
+            // 이슈 #40: Claude 훅 설정 파일을 OS temp가 아니라 app_data의 안정
+            // 경로에 둔다. OS temp는 앱이 꺼진 사이 시스템 청소로 사라질 수 있어,
+            // 셸 env(`AGENT_OFFICE_SETTINGS`)가 가리키는 파일이 없어져 `claude
+            // --settings <없는 파일>`이 하드 실패했다. app_data는 앱 수명주기가
+            // 소유하며 입양 시 복구(restore_session_artifacts)로 재작성된다.
+            let observer_settings_dir = data_dir.join("observer").join("claude");
+            // 더블-크래시 등으로 정리 못 한 설정 아티팩트가 app_data에 영구화되지
+            // 않도록 부트 시 1회 백그라운드로 30일 초과분을 청소한다(살아 있는
+            // 세션은 매 입양마다 재작성돼 mtime이 갱신되므로 안전).
+            {
+                let dir = observer_settings_dir.clone();
+                std::thread::spawn(move || {
+                    crate::observer::claude::gc_stale_settings(
+                        &dir,
+                        Duration::from_secs(30 * 24 * 3600),
+                    );
+                });
+            }
             // Claude 리줌 캡처(docs/claude-session-resume-design.md): 스토어 →
             // 레코더(sink) → observer runtime 순으로 배선. sink는 builder로 주입해
             // production() 시그니처를 건드리지 않는다.
@@ -293,7 +301,7 @@ pub fn run() {
             let observer = Arc::new(
                 ObserverRuntime::production(
                     hub.clone(),
-                    observer_temp,
+                    observer_settings_dir,
                     forwarder_executable_path(),
                 )
                 .with_claude_session_sink(claude_resume_recorder),

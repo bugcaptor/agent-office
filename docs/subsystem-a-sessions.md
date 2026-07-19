@@ -1802,3 +1802,46 @@ Hook 소스 알림을 `hold_duration`(설정 `attentionHoldMs`, 기본 5초) 만
 - **설정**: `AppSettings.attentionHoldMs`(serde default 5000). `lib.rs`는 설정 로드 직후,
   `set_app_settings`는 변경 시 `hub.set_hold_duration`으로 반영한다. 설정 UI는
   `SettingsDialog`의 숫자 입력(초 단위, 0~60 clamp, 내부 ms 변환).
+
+## 11. 이어받은 셸에서 Claude 설정 파일 복구 (이슈 #40)
+
+**증상**: 세션 이어하기(핸드오프/브로커 입양)로 앱을 재시작한 뒤, 터미널에서 수동으로
+`claude`를 나갔다가 같은 셸에서 다시 `claude`를 치면 `--settings`가 가리키는 임시 설정
+파일을 못 찾아 실패.
+
+**근본원인**: Claude 훅 설정 파일이 `<OS_temp>/agent-office/observer/claude/<sessionId>.settings.json`
+(OS 임시 디렉터리)에 있었다. 셸의 `AGENT_OFFICE_SETTINGS` env는 스폰 시점 경로로 **영구
+고정**되는데, OS temp는 앱이 꺼진 사이 시스템 청소로 사라질 수 있고 복구 경로가 없었다.
+핸드오프/입양 자체는 파일을 보존(`daemon.rs`의 Adopt는 삭제 안 함)하지만, 앱-off 창의
+temp 청소·강제 삭제를 되돌릴 수단이 없어 그 셸의 `claude` 재실행이 영구 실패했다.
+
+**해결 (B: app_data 안정 경로 + A: 입양 시 복구 + 래퍼 가드)**:
+
+- **경로 이동** — `lib.rs`: settings_dir을 OS temp가 아니라 `<app_data>/observer/claude/`로
+  둔다(앱 수명주기가 소유). `ObserverRuntime::production` 시그니처 불변.
+- **멱등 복구** — `observer/claude.rs`: 파일 쓰기를 `write_settings_file(path)`로 추출하고,
+  `ObserverAdapter::restore_session_artifact(path)`(트레이트 default = no-op) 구현. 파일명이
+  `.settings.json`으로 끝나는 경로만 claude 소관이라 판별해 **존재 여부와 무관하게 재작성**
+  (낡은 forwarder 경로도 함께 갱신). `ObserverRuntime::restore_session_artifacts(session_id,
+  cleanup_paths)`가 순회·계측 로그. 내용은 세션 무관(sessionId·포트 미포함)이라 같은 함수를
+  스폰/복구가 공유. 쓰기는 temp+rename 원자적.
+- **입양 시점 호출** — `session/manager.rs`: v1 `adopt_one`은 `adopted.cleanup_paths`로,
+  v2 브로커 `adopt_one_broker`는 `AttachOk`에 additive로 실린 `cleanup_paths`로 복구를 호출.
+  `cleanup_paths`가 비면(observer OFF 세션·codex-only) no-op이라 자연히 건너뛴다.
+- **프로토콜 additive** — `sessiond/protocol.rs`의 `AttachOk`에 `#[serde(default)] cleanup_paths`
+  추가(데몬이 삭제 소유권 유지, 복구용 경로만 앱에 반환). `client.rs`의 `AttachedMeta`에도
+  동반. **삭제 소유권 계약은 불변** — 삭제는 여전히 ObserverPlanGuard(스폰 실패)·dispose·
+  on_exit(둘 다 handed_off 스킵)·데몬 자식종료/Kill 5곳만.
+- **래퍼 파일-부재 가드** — `CommandWrapperSpec.skip_prefix_if_env_file_missing: Option<String>`
+  (env 이름). 렌더된 셸 함수는 prefix를 붙이기 전에 그 env가 가리키는 파일 존재를 확인해,
+  없으면 경고 후 `--settings` 없이 원본 `claude`를 실행한다(하드 실패 대신 **비관찰 강등**).
+  앱-off 창에서 데몬조차 없어 복구할 수 없을 때의 실행 보장(이슈 열린질문의 답). posix는
+  `if [ ! -f "${ENV}" ]`, powershell은 `Test-Path -LiteralPath`. prefix가 비면 무의미해 미방출.
+- **GC** — `gc_stale_settings(dir, max_age)`를 부트 시 백그라운드 1회 실행(30일 초과
+  `*.settings.json` 청소). app_data로 옮기며 더블-크래시 잔존물이 영구화되는 것 방지. 살아
+  있는 세션은 매 입양마다 재작성돼 mtime이 갱신되므로 안전.
+
+**보장 범위**: 앱 재실행·입양이 일어나면 파일이 복구된다. 앱이 완전히 꺼진(데몬도 없는)
+창에서 분리된 셸의 `claude`는 "관찰"이 아니라 "실행"까지만 보장(래퍼 가드가 비관찰로
+강등). 일반 종료·"모두 종료" 뒤에는 세션 아티팩트가 남지 않고, observer OFF 세션에는
+설정 파일/래퍼가 생기지 않는다.

@@ -62,11 +62,17 @@ pub enum WrapperArg {
     Env(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CommandWrapperSpec {
     pub command: String,
     pub prefix_args: Vec<WrapperArg>,
     pub skip_if_present: Vec<String>,
+    /// Some(env_name)이면, 렌더된 래퍼는 prefix를 붙이기 전에 그 env가 가리키는
+    /// 파일의 존재를 확인한다 — 없으면 경고 후 prefix 없이 원본 명령을 실행한다
+    /// (이슈 #40). observer 설정 파일이 사라진 셸에서 claude가 `--settings <없는
+    /// 파일>`로 하드 실패하는 대신 비관찰로 강등해 실행을 보장한다. prefix가
+    /// 비어 있으면 의미가 없으므로 렌더러가 무시한다.
+    pub skip_prefix_if_env_file_missing: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -418,6 +424,7 @@ mod tests {
             command: command.into(),
             prefix_args: vec![],
             skip_if_present: vec![],
+            ..Default::default()
         }
     }
 

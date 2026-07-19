@@ -155,6 +155,13 @@ pub enum Message {
         /// 자식이 이미 종료했으면 Some(그 종료 정보).
         #[serde(default)]
         exit: Option<ExitStatusMsg>,
+        /// 이 세션의 observer 아티팩트(예: Claude 설정 파일) 경로들(이슈 #40).
+        /// 앱은 입양 시 이 경로들을 멱등 재작성해, 앱이 꺼진 사이 파일이
+        /// 사라졌어도 셸의 `claude --settings`가 다시 유효해지게 한다. 브로커
+        /// 세션은 앱측 cleanup_paths를 비워 두므로(삭제 소유권=데몬) 복구엔
+        /// 데몬이 아는 이 목록이 필요하다. `#[serde(default)]`로 하위호환.
+        #[serde(default)]
+        cleanup_paths: Vec<String>,
     },
     /// 앱 -> 데몬. 데몬이 PTY master를 resize(TIOCSWINSZ)한다.
     Resize {
@@ -569,16 +576,27 @@ mod tests {
                 snapshot_b64: "c25hcA==".into(),
                 snapshot_compressed: true,
                 exit: None,
+                cleanup_paths: vec!["/tmp/a.settings.json".into()],
             },
             None,
         )
         .unwrap();
         match read_frame(b).unwrap().0 {
-            Message::AttachOk { rows, cols, pid, snapshot_b64, snapshot_compressed, exit } => {
+            Message::AttachOk {
+                rows,
+                cols,
+                pid,
+                snapshot_b64,
+                snapshot_compressed,
+                exit,
+                cleanup_paths,
+            } => {
                 assert_eq!((rows, cols, pid), (40, 120, Some(7)));
                 assert_eq!(snapshot_b64, "c25hcA==");
                 assert!(snapshot_compressed);
                 assert!(exit.is_none());
+                // 이슈 #40: cleanup_paths가 왕복해야 입양 복구가 경로를 안다.
+                assert_eq!(cleanup_paths, vec!["/tmp/a.settings.json".to_string()]);
             }
             other => panic!("unexpected: {other:?}"),
         }
@@ -592,6 +610,7 @@ mod tests {
                 snapshot_b64: String::new(),
                 snapshot_compressed: false,
                 exit: Some(ExitStatusMsg { exit_code: Some(3), signal: None }),
+                cleanup_paths: vec![],
             },
             None,
         )

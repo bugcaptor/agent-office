@@ -49,6 +49,12 @@ fn validate_wrapper(wrapper: &CommandWrapperSpec) {
             );
         }
     }
+    if let Some(name) = &wrapper.skip_prefix_if_env_file_missing {
+        assert!(
+            safe_env_identifier(name),
+            "invalid wrapper environment name"
+        );
+    }
 }
 
 pub fn render_powershell(wrappers: &[CommandWrapperSpec]) -> String {
@@ -97,6 +103,29 @@ pub fn render_powershell(wrappers: &[CommandWrapperSpec]) -> String {
             .map(ps_arg)
             .collect::<Vec<_>>()
             .join(" ");
+        // 이슈 #40: prefix env가 가리키는 설정 파일이 없으면 prefix를 붙이지 않고
+        // 원본 명령을 실행한다(관찰 없이 실행 보장). prefix가 비면 무의미해 건너뛴다.
+        if !prefix.is_empty() {
+            if let Some(env_name) = &wrapper.skip_prefix_if_env_file_missing {
+                writeln!(
+                    script,
+                    "    if (-not $env:{env_name} -or -not (Test-Path -LiteralPath $env:{env_name})) {{",
+                )
+                .unwrap();
+                writeln!(
+                    script,
+                    "        Write-Warning {}",
+                    ps_quote(&format!(
+                        "agent-office: observer settings missing; running {} unobserved",
+                        wrapper.command,
+                    )),
+                )
+                .unwrap();
+                writeln!(script, "        & $cmd.Source @args").unwrap();
+                writeln!(script, "        return").unwrap();
+                writeln!(script, "    }}").unwrap();
+            }
+        }
         if prefix.is_empty() {
             writeln!(script, "    & $cmd.Source @args").unwrap();
         } else {
@@ -141,6 +170,21 @@ pub fn render_posix(wrappers: &[CommandWrapperSpec]) -> String {
             .map(sh_arg)
             .collect::<Vec<_>>()
             .join(" ");
+        // 이슈 #40: prefix env가 가리키는 설정 파일이 없으면 prefix를 붙이지 않고
+        // 원본 명령을 실행한다(관찰 없이 실행 보장). prefix가 비면 무의미해 건너뛴다.
+        if !prefix.is_empty() {
+            if let Some(env_name) = &wrapper.skip_prefix_if_env_file_missing {
+                writeln!(script, "  if [ ! -f \"${{{env_name}}}\" ]; then").unwrap();
+                writeln!(
+                    script,
+                    "    echo 'agent-office: observer settings missing; running {} unobserved' >&2",
+                    wrapper.command,
+                )
+                .unwrap();
+                writeln!(script, "    command {} \"$@\"; return", wrapper.command).unwrap();
+                writeln!(script, "  fi").unwrap();
+            }
+        }
         if prefix.is_empty() {
             writeln!(script, "  command {} \"$@\"", wrapper.command).unwrap();
         } else {
@@ -165,6 +209,7 @@ mod tests {
                     WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
                 ],
                 skip_if_present: vec!["--settings".into()],
+                ..Default::default()
             },
             CommandWrapperSpec {
                 command: "codex".into(),
@@ -175,6 +220,7 @@ mod tests {
                     WrapperArg::Env("AGENT_OFFICE_CODEX_HOOK_STOP".into()),
                 ],
                 skip_if_present: vec![],
+                ..Default::default()
             },
         ]
     }
@@ -257,6 +303,7 @@ mod tests {
             command: "safe-tool".into(),
             prefix_args: vec![WrapperArg::Literal("a'b; $(touch nope)".into())],
             skip_if_present: vec!["--flag'; Remove-Item nope".into()],
+            ..Default::default()
         }];
 
         let powershell = render_powershell(&wrappers);
@@ -281,6 +328,7 @@ mod tests {
             command: "claude; Remove-Item C:\\".into(),
             prefix_args: vec![],
             skip_if_present: vec![],
+            ..Default::default()
         }]);
     }
 
@@ -291,6 +339,55 @@ mod tests {
             command: "codex".into(),
             prefix_args: vec![WrapperArg::Env("SAFE}; touch /tmp/nope; #".into())],
             skip_if_present: vec![],
+            ..Default::default()
         }]);
+    }
+
+    // 이슈 #40: skip_prefix_if_env_file_missing 가드가 렌더된 래퍼에 파일-부재
+    // 강등 분기를 넣는지(그리고 옵션이 None이면 안 넣는지) 검증한다.
+    fn guarded_claude() -> Vec<CommandWrapperSpec> {
+        vec![CommandWrapperSpec {
+            command: "claude".into(),
+            prefix_args: vec![
+                WrapperArg::Literal("--settings".into()),
+                WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+            ],
+            skip_if_present: vec!["--settings".into()],
+            skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_SETTINGS".into()),
+        }]
+    }
+
+    #[test]
+    fn posix_renderer_degrades_to_unobserved_when_settings_file_missing() {
+        let script = render_posix(&guarded_claude());
+        assert!(
+            script.contains("if [ ! -f \"${AGENT_OFFICE_SETTINGS}\" ]; then"),
+            "{script}",
+        );
+        assert!(
+            script.contains("command claude \"$@\"; return"),
+            "{script}",
+        );
+        // 가드 없는 기본 래퍼(wrappers())에는 이 분기가 없어야 한다(무회귀).
+        assert!(
+            !render_posix(&wrappers()).contains("if [ ! -f"),
+            "guard must not appear without the option",
+        );
+    }
+
+    #[test]
+    fn powershell_renderer_degrades_to_unobserved_when_settings_file_missing() {
+        let script = render_powershell(&guarded_claude());
+        assert!(
+            script.contains(
+                "if (-not $env:AGENT_OFFICE_SETTINGS -or -not (Test-Path -LiteralPath $env:AGENT_OFFICE_SETTINGS))"
+            ),
+            "{script}",
+        );
+        assert!(script.contains("Write-Warning"), "{script}");
+        assert!(
+            !render_powershell(&wrappers()).contains("Test-Path -LiteralPath"),
+            "guard must not appear without the option",
+        );
     }
 }

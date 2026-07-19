@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -96,23 +96,17 @@ impl ClaudeAdapter {
     fn hook_command(&self, event: &str) -> Result<String, ObserverAdapterError> {
         forwarder_shell_command(&self.forwarder_executable, &["claude", event])
     }
-}
 
-impl ObserverAdapter for ClaudeAdapter {
-    fn provider(&self) -> ObserverProvider {
-        ObserverProvider::Claude
-    }
-
-    fn prepare_session(
-        &self,
-        context: &ObserverSessionContext,
-    ) -> Result<AdapterSessionPlan, ObserverAdapterError> {
-        std::fs::create_dir_all(&self.settings_dir).map_err(|error| {
-            ObserverAdapterError::new(format!("Claude settings directory failed: {error}"))
-        })?;
-        let path = self
-            .settings_dir
-            .join(format!("{}.settings.json", context.session_id));
+    /// 훅 설정 JSON을 `path`에 (부모 디렉터리 생성 포함) 원자적으로 쓴다. 내용은
+    /// **세션 무관**이다 — forwarder 명령만 담기고 sessionId·포트는 박히지 않는다
+    /// (이슈 #30). 그래서 스폰(`prepare_session`)과 입양 복구(`restore_session_artifact`)가
+    /// 같은 함수를 쓴다. temp+rename으로 부분 기록된 파일이 노출되지 않게 한다.
+    fn write_settings_file(&self, path: &Path) -> Result<(), ObserverAdapterError> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| {
+                ObserverAdapterError::new(format!("Claude settings directory failed: {error}"))
+            })?;
+        }
         // forwarder 경로 검증 실패 시 여기서 Err를 전파한다(codex와 동일 계약).
         let entry = |command: String| {
             serde_json::json!([{
@@ -142,9 +136,65 @@ impl ObserverAdapter for ClaudeAdapter {
         });
         let contents = serde_json::to_vec_pretty(&settings)
             .expect("serializing Claude hook settings cannot fail");
-        std::fs::write(&path, contents).map_err(|error| {
-            ObserverAdapterError::new(format!("Claude settings write failed: {error}"))
-        })?;
+        // temp+rename: 같은 디렉터리에 임시 파일로 쓴 뒤 원자적으로 옮긴다.
+        // (`foo.settings.json` → `foo.settings.json.tmp` — `.settings.json`으로
+        // 끝나지 않아 gc/복구 파일명 매칭에 걸리지 않는다.)
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, contents)
+            .and_then(|()| std::fs::rename(&tmp, path))
+            .map_err(|error| {
+                let _ = std::fs::remove_file(&tmp);
+                ObserverAdapterError::new(format!("Claude settings write failed: {error}"))
+            })
+    }
+}
+
+/// `dir` 안에서 `*.settings.json` 파일 중 mtime이 `max_age`를 넘긴 것을 지운다
+/// (이슈 #40 D8). 설정 파일이 OS temp에서 app_data로 이동하면서 더블-크래시로
+/// 정리 못 한 아티팩트가 영구화될 수 있어, 부트 시 1회 백그라운드로 청소한다.
+/// 살아 있는 세션은 매 입양마다 재작성돼 mtime이 갱신되므로 안전하다.
+pub fn gc_stale_settings(dir: &Path, max_age: Duration) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return; // 디렉터리 부재(설정이 한 번도 안 만들어짐) = 청소할 것 없음.
+    };
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().ends_with(".settings.json"))
+        {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age > max_age);
+        if stale {
+            if let Err(error) = std::fs::remove_file(&path) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("agent-office: stale settings cleanup failed for {path:?}: {error}");
+                }
+            }
+        }
+    }
+}
+
+impl ObserverAdapter for ClaudeAdapter {
+    fn provider(&self) -> ObserverProvider {
+        ObserverProvider::Claude
+    }
+
+    fn prepare_session(
+        &self,
+        context: &ObserverSessionContext,
+    ) -> Result<AdapterSessionPlan, ObserverAdapterError> {
+        let path = self
+            .settings_dir
+            .join(format!("{}.settings.json", context.session_id));
+        self.write_settings_file(&path)?;
 
         Ok(AdapterSessionPlan {
             env: vec![(
@@ -158,9 +208,26 @@ impl ObserverAdapter for ClaudeAdapter {
                     WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
                 ],
                 skip_if_present: vec!["--settings".into()],
+                // 이슈 #40: 앱이 꺼진 사이 설정 파일이 사라져도 `claude --settings
+                // <없는 파일>`로 하드 실패하지 않고 비관찰로 강등 실행하게 한다.
+                skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_SETTINGS".into()),
             }],
             cleanup_paths: vec![path],
         })
+    }
+
+    /// 입양 시 설정 파일 복구(이슈 #40). 파일명이 `.settings.json`으로 끝나는
+    /// 경로만 이 어댑터 소관이다. 존재 여부와 무관하게 **멱등 재작성**하므로,
+    /// 파일이 사라졌든 낡은 forwarder 경로가 남았든 현재 값으로 복원된다.
+    fn restore_session_artifact(&self, path: &Path) -> Result<bool, ObserverAdapterError> {
+        if !path
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().ends_with(".settings.json"))
+        {
+            return Ok(false);
+        }
+        self.write_settings_file(path)?;
+        Ok(true)
     }
 
     fn map_hook(&self, raw: &RawObserverHook<'_>) -> Option<ObserverEvent> {
@@ -677,6 +744,81 @@ mod tests {
             body: &body,
         });
         assert_eq!(post(&throttled), with_narration);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn restore_rewrites_a_deleted_settings_file_identically() {
+        // 이슈 #40: 입양 시 사라진 설정 파일을 멱등 재작성한다. 재작성 내용은
+        // prepare_session 산출과 동일해야 한다(훅 8종, 포트 미포함).
+        use crate::observer::ObserverAdapter;
+        let dir = scratch_dir();
+        let adapter = ClaudeAdapter::new(dir.clone(), forwarder_exe());
+        let context = ObserverSessionContext::new("ao-s1", "http://127.0.0.1:43123/hook");
+
+        let plan = adapter.prepare_session(&context).unwrap();
+        let path = dir.join("ao-s1.settings.json");
+        let original = std::fs::read_to_string(&path).unwrap();
+
+        // 앱이 꺼진 사이 사라진 상황을 흉내낸다.
+        std::fs::remove_file(&path).unwrap();
+        assert!(!path.exists());
+
+        assert!(adapter.restore_session_artifact(&path).unwrap());
+        let restored = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(restored, original, "restore must reproduce the settings file");
+        assert!(!restored.contains("127.0.0.1"), "no spawn-time port: {restored}");
+        // plan의 cleanup_paths/env가 같은 경로를 가리키는지도 확인(계약 불변).
+        assert_eq!(plan.cleanup_paths, vec![path.clone()]);
+
+        // 파일이 이미 존재해도 멱등(다시 true, 내용 동일).
+        assert!(adapter.restore_session_artifact(&path).unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn restore_ignores_non_settings_paths() {
+        use crate::observer::ObserverAdapter;
+        let dir = scratch_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let adapter = ClaudeAdapter::new(dir.clone(), forwarder_exe());
+        let other = dir.join("codex-hook.toml");
+
+        // codex 등 다른 어댑터의 아티팩트는 claude 소관이 아니다 → Ok(false), 미생성.
+        assert!(!adapter.restore_session_artifact(&other).unwrap());
+        assert!(!other.exists());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn gc_respects_age_and_filename_filter() {
+        use std::time::Duration;
+        let dir = scratch_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let settings_a = dir.join("a.settings.json");
+        let settings_b = dir.join("b.settings.json");
+        let unrelated = dir.join("keep.json");
+        for p in [&settings_a, &settings_b, &unrelated] {
+            std::fs::write(p, "{}").unwrap();
+        }
+
+        // 넉넉한 max_age: 방금 쓴 파일은 전부 살아남는다(살아 있는 세션 보호).
+        super::gc_stale_settings(&dir, Duration::from_secs(30 * 24 * 3600));
+        assert!(settings_a.exists() && settings_b.exists() && unrelated.exists());
+
+        // max_age=0: 모든 `.settings.json`은 age>0이라 지워지고, 비매칭 파일은
+        // 남는다(파일명 필터 검증).
+        super::gc_stale_settings(&dir, Duration::ZERO);
+        assert!(!settings_a.exists(), "stale settings must be removed");
+        assert!(!settings_b.exists(), "stale settings must be removed");
+        assert!(unrelated.exists(), "non-settings files must survive");
+
+        // 디렉터리 부재는 조용히 no-op(패닉 없음).
+        super::gc_stale_settings(&scratch_dir(), Duration::ZERO);
 
         let _ = std::fs::remove_dir_all(dir);
     }

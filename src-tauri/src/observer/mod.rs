@@ -25,6 +25,16 @@ pub trait ObserverAdapter: Send + Sync {
         context: &ObserverSessionContext,
     ) -> Result<AdapterSessionPlan, ObserverAdapterError>;
     fn map_hook(&self, raw: &RawObserverHook<'_>) -> Option<ObserverEvent>;
+
+    /// 입양 시 세션 아티팩트(예: Claude 설정 파일) 복구(이슈 #40). `path`가 이
+    /// 어댑터의 소관이면 멱등 재작성 후 `Ok(true)`, 아니면 `Ok(false)`. 기본은
+    /// no-op이라 아티팩트가 없는 어댑터(codex 등)는 구현할 필요가 없다.
+    fn restore_session_artifact(
+        &self,
+        _path: &std::path::Path,
+    ) -> Result<bool, ObserverAdapterError> {
+        Ok(false)
+    }
 }
 
 /// Claude 훅 body에서 뽑은 native 세션 ID를 소비하는 주입점(리줌 기능).
@@ -83,6 +93,38 @@ impl ObserverRuntime {
             }
         }
         merged
+    }
+
+    /// 입양 시 세션 아티팩트 복구(이슈 #40). `cleanup_paths`가 비면 no-op이라
+    /// observer OFF 세션·codex-only 세션은 자연히 건너뛴다(claude만 cleanup_paths에
+    /// 파일을 싣는다). 각 path를 소관 어댑터가 **멱등 재작성**한다 — 앱이 꺼진 사이
+    /// 파일이 사라졌거나 낡은 forwarder 경로가 남아 있어도 현재 값으로 복원된다.
+    /// 실패는 로그만 남기고 입양을 막지 않는다(claude 재실행만 다음 부트까지 제한).
+    pub fn restore_session_artifacts(&self, session_id: &str, cleanup_paths: &[PathBuf]) {
+        for path in cleanup_paths {
+            let existed = path.exists();
+            for adapter in &self.adapters {
+                match adapter.restore_session_artifact(path) {
+                    Ok(false) => continue,
+                    Ok(true) => {
+                        eprintln!(
+                            "agent-office: observer artifact restore session={session_id} provider={} path={} existed={existed}",
+                            adapter.provider().as_str(),
+                            path.display(),
+                        );
+                        break;
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "agent-office: observer artifact restore failed session={session_id} provider={} path={} error={error}",
+                            adapter.provider().as_str(),
+                            path.display(),
+                        );
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     pub fn ingest(&self, provider: ObserverProvider, session_id: &str, raw: RawObserverHook<'_>) {
@@ -180,6 +222,7 @@ mod tests {
             command: command.into(),
             prefix_args: vec![],
             skip_if_present: vec![],
+            ..Default::default()
         }
     }
 
@@ -567,6 +610,64 @@ mod tests {
             },
         );
         assert!(sink.calls().is_empty());
+    }
+
+    /// 이슈 #40: restore_session_artifact 호출을 기록하고 소관 파일이면 Ok(true)를
+    /// 돌려주는 어댑터(runtime.restore_session_artifacts 위임 검증용).
+    struct RestoreAdapter {
+        provider: ObserverProvider,
+        owns_suffix: &'static str,
+        calls: std::sync::Mutex<Vec<std::path::PathBuf>>,
+    }
+
+    impl ObserverAdapter for RestoreAdapter {
+        fn provider(&self) -> ObserverProvider {
+            self.provider
+        }
+        fn prepare_session(
+            &self,
+            _context: &ObserverSessionContext,
+        ) -> Result<AdapterSessionPlan, ObserverAdapterError> {
+            Ok(AdapterSessionPlan::default())
+        }
+        fn map_hook(&self, _raw: &RawObserverHook<'_>) -> Option<ObserverEvent> {
+            None
+        }
+        fn restore_session_artifact(
+            &self,
+            path: &std::path::Path,
+        ) -> Result<bool, ObserverAdapterError> {
+            self.calls.lock().unwrap().push(path.to_path_buf());
+            Ok(path
+                .to_string_lossy()
+                .ends_with(self.owns_suffix))
+        }
+    }
+
+    #[test]
+    fn restore_delegates_to_the_owning_adapter_and_skips_empty() {
+        let claude = Arc::new(RestoreAdapter {
+            provider: ObserverProvider::Claude,
+            owns_suffix: ".settings.json",
+            calls: std::sync::Mutex::new(vec![]),
+        });
+        let codex = Arc::new(RestoreAdapter {
+            provider: ObserverProvider::Codex,
+            owns_suffix: ".never",
+            calls: std::sync::Mutex::new(vec![]),
+        });
+        let runtime = ObserverRuntime::new(test_hub(), vec![claude.clone(), codex.clone()]);
+
+        // 빈 cleanup_paths(observer OFF 세션)는 no-op — 어떤 어댑터도 안 부른다.
+        runtime.restore_session_artifacts("s0", &[]);
+        assert!(claude.calls.lock().unwrap().is_empty());
+        assert!(codex.calls.lock().unwrap().is_empty());
+
+        // claude 소관 경로: claude가 Ok(true)를 주면 거기서 멈춘다(codex 미호출).
+        let path = std::path::PathBuf::from("/data/observer/claude/ao-s1.settings.json");
+        runtime.restore_session_artifacts("s1", std::slice::from_ref(&path));
+        assert_eq!(claude.calls.lock().unwrap().as_slice(), std::slice::from_ref(&path));
+        assert!(codex.calls.lock().unwrap().is_empty(), "stop at first owner");
     }
 
     #[test]

@@ -270,7 +270,15 @@ impl Client {
         self.require_v2()?;
         protocol::write_frame(self.fd(), &Message::Attach { agent_id: agent_id.to_string() }, None)?;
         match protocol::read_frame(self.fd())?.0 {
-            Message::AttachOk { rows, cols, snapshot_b64, snapshot_compressed, exit, .. } => {
+            Message::AttachOk {
+                rows,
+                cols,
+                snapshot_b64,
+                snapshot_compressed,
+                exit,
+                cleanup_paths,
+                ..
+            } => {
                 use base64::Engine;
                 let raw = base64::engine::general_purpose::STANDARD
                     .decode(snapshot_b64)
@@ -287,6 +295,7 @@ impl Client {
                     cols,
                     snapshot,
                     exit: exit.map(|e| (e.exit_code, e.signal)),
+                    cleanup_paths,
                 })
             }
             Message::Error { message } => Err(io::Error::other(message)),
@@ -418,6 +427,8 @@ pub struct AttachedMeta {
     pub snapshot: Vec<u8>,
     /// 자식이 이미 종료했으면 `Some((exit_code, signal))`.
     pub exit: Option<(Option<i32>, Option<i32>)>,
+    /// 이 세션의 observer 아티팩트 경로들(이슈 #40). 입양 시 멱등 재작성용.
+    pub cleanup_paths: Vec<String>,
 }
 
 /// 데몬을 자기 자신의 실행 파일로 스폰한다(`main.rs`의 `--sessiond` 분기가
