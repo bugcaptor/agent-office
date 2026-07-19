@@ -11,8 +11,10 @@
 // 얹고, "변경만" 뷰는 git 엔트리 자체를 목록으로 쓴다(삭제·root 밖 "../" 파일도
 // 포함). git이 꺼졌거나 저장소가 아니면 "변경만"은 비활성.
 import { useEffect, useMemo, useRef } from "react";
-import { useWorkdirStore, isChangedStatus } from "./workdirStore";
+import { useWorkdirStore } from "./workdirStore";
 import { WorkdirDetailPane } from "./WorkdirDetailPane";
+import { WorkdirRepoLogPane } from "./WorkdirRepoLogPane";
+import { statusLabel } from "./status";
 import { useAppStore } from "../store/appStore";
 import { fuzzyFilter } from "../markdown/fuzzy";
 import type { GitFileStatus } from "@shared/types";
@@ -31,30 +33,6 @@ function basename(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
-/** 뱃지 문자 → 사람이 읽는 상태(툴팁·접근성). */
-function statusLabel(status: string): string {
-  switch (status) {
-    case "M":
-      return "수정됨";
-    case "A":
-      return "추가됨";
-    case "D":
-      return "삭제됨";
-    case "R":
-      return "이름변경";
-    case "C":
-      return "복사됨";
-    case "U":
-      return "충돌";
-    case "T":
-      return "타입변경";
-    case "?":
-      return "추적 안 됨";
-    default:
-      return status;
-  }
-}
-
 export function WorkdirPalette() {
   const palette = useWorkdirStore((s) => s.palette);
   const listing = useWorkdirStore((s) => (s.palette ? s.listing[s.palette.root] : undefined));
@@ -64,6 +42,8 @@ export function WorkdirPalette() {
   const setQuery = useWorkdirStore((s) => s.setQuery);
   const setSelectedIndex = useWorkdirStore((s) => s.setSelectedIndex);
   const setChangedOnly = useWorkdirStore((s) => s.setChangedOnly);
+  const viewMode = useWorkdirStore((s) => s.palette?.viewMode ?? "files");
+  const setViewMode = useWorkdirStore((s) => s.setViewMode);
   const closePalette = useWorkdirStore((s) => s.closePalette);
   const closeDetail = useWorkdirStore((s) => s.closeDetail);
   const openEntry = useWorkdirStore((s) => s.openEntry);
@@ -125,13 +105,18 @@ export function WorkdirPalette() {
 
   if (!palette) return null;
 
-  // 변경된 파일(git 뱃지 있음)은 곧장 열지 않고 상세(변경점) 페인으로 보낸다.
-  // 변경 없는 파일만 기존처럼 바로 연다(openEntry).
-  const commitOpen = (index: number) => {
+  // 이슈 #54: 모든 파일 클릭은 곧장 열지 않고 상세(메뉴) 페인을 띄운다 — 거기서
+  // 깃 로그·외부/인앱 열기를 고른다. 빠른 열기는 ⌘-클릭/더블클릭으로 기존 자동
+  // 라우팅(openEntry)을 그대로 쓴다.
+  const openMenu = (index: number) => {
     const item = results[index];
     if (!item) return;
-    if (isChangedStatus(item.status)) openDetail(root, item.relPath, item.name, item.status);
-    else openEntry(root, item.relPath, item.name);
+    openDetail(root, item.relPath, item.name, item.status);
+  };
+  const openImmediate = (index: number) => {
+    const item = results[index];
+    if (!item) return;
+    openEntry(root, item.relPath, item.name);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -144,7 +129,9 @@ export function WorkdirPalette() {
       setSelectedIndex(Math.max(selected - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      commitOpen(selected);
+      // ⌘/Ctrl+Enter는 즉시 열기, 그냥 Enter는 메뉴.
+      if (e.metaKey || e.ctrlKey) openImmediate(selected);
+      else openMenu(selected);
     } else if (e.key === "Escape") {
       e.preventDefault();
       // 상세가 열려 있으면 상세만 먼저 닫는다.
@@ -182,7 +169,7 @@ export function WorkdirPalette() {
       }}
     >
       <div
-        className={detailOpen ? "wd-panel wd-panel-wide" : "wd-panel"}
+        className={detailOpen || viewMode === "log" ? "wd-panel wd-panel-wide" : "wd-panel"}
         role="dialog"
         aria-label="작업 폴더 보기"
       >
@@ -191,24 +178,45 @@ export function WorkdirPalette() {
             {branchSummary}
           </div>
           <div className="wd-header-actions">
-            <div className="wd-seg" role="group" aria-label="필터">
+            {/* 파일 목록 ↔ 저장소 전체 커밋 로그 브라우저(이슈 #54). */}
+            <div className="wd-seg" role="group" aria-label="뷰">
               <button
                 type="button"
-                className={changedOnly ? "wd-seg-btn" : "wd-seg-btn wd-seg-active"}
-                onClick={() => setChangedOnly(false)}
+                className={viewMode === "files" ? "wd-seg-btn wd-seg-active" : "wd-seg-btn"}
+                onClick={() => setViewMode("files")}
               >
-                전체
+                파일
               </button>
               <button
                 type="button"
-                className={changedOnly ? "wd-seg-btn wd-seg-active" : "wd-seg-btn"}
+                className={viewMode === "log" ? "wd-seg-btn wd-seg-active" : "wd-seg-btn"}
                 disabled={!hasGit}
-                title={hasGit ? "" : "git 상태가 있어야 사용할 수 있습니다"}
-                onClick={() => setChangedOnly(true)}
+                title={hasGit ? "" : "git 저장소여야 커밋 로그를 볼 수 있습니다"}
+                onClick={() => setViewMode("log")}
               >
-                변경만
+                커밋 로그
               </button>
             </div>
+            {viewMode === "files" && (
+              <div className="wd-seg" role="group" aria-label="필터">
+                <button
+                  type="button"
+                  className={changedOnly ? "wd-seg-btn" : "wd-seg-btn wd-seg-active"}
+                  onClick={() => setChangedOnly(false)}
+                >
+                  전체
+                </button>
+                <button
+                  type="button"
+                  className={changedOnly ? "wd-seg-btn wd-seg-active" : "wd-seg-btn"}
+                  disabled={!hasGit}
+                  title={hasGit ? "" : "git 상태가 있어야 사용할 수 있습니다"}
+                  onClick={() => setChangedOnly(true)}
+                >
+                  변경만
+                </button>
+              </div>
+            )}
             <label className="wd-git-toggle" title="파일별 git 상태 조회(거대 저장소에서 끄기)">
               <input type="checkbox" checked={gitStatusEnabled} onChange={toggleGit} />
               <span>git 상태</span>
@@ -223,11 +231,15 @@ export function WorkdirPalette() {
             </button>
           </div>
         </div>
+        {viewMode === "log" ? (
+          <WorkdirRepoLogPane />
+        ) : (
+        <>
         <input
           ref={inputRef}
           className="wd-input"
           type="text"
-          placeholder="파일 이름 또는 경로로 검색…"
+          placeholder="파일 이름 또는 경로로 검색…  (⌘/더블클릭: 즉시 열기)"
           value={query}
           spellCheck={false}
           onChange={(e) => setQuery(e.target.value)}
@@ -262,10 +274,16 @@ export function WorkdirPalette() {
                     aria-selected={i === selected}
                     className={i === selected ? "wd-item wd-item-active" : "wd-item"}
                     onMouseDown={(e) => {
+                      // 포커스를 입력창에 유지하고 선택만 옮긴다(열기는 click에서).
                       e.preventDefault();
                       setSelectedIndex(i);
-                      commitOpen(i);
                     }}
+                    onClick={(e) => {
+                      // ⌘/Ctrl-클릭은 즉시 열기, 그냥 클릭은 메뉴 페인.
+                      if (e.metaKey || e.ctrlKey) openImmediate(i);
+                      else openMenu(i);
+                    }}
+                    onDoubleClick={() => openImmediate(i)}
                     onMouseEnter={() => setSelectedIndex(i)}
                   >
                     <span
@@ -288,6 +306,8 @@ export function WorkdirPalette() {
           </div>
           {detailOpen && <WorkdirDetailPane />}
         </div>
+        </>
+        )}
       </div>
     </div>
   );

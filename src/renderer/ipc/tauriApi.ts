@@ -229,6 +229,14 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.workdirDiffCommit, { root, commit, relPath });
   },
 
+  async workdirCommitFiles(root, commit, limit, skip) {
+    return await invoke(Commands.workdirCommitFiles, { root, commit, limit, skip });
+  },
+
+  async workdirRepoLog(root, limit, skip, allBranches, query) {
+    return await invoke(Commands.workdirRepoLog, { root, limit, skip, allBranches, query });
+  },
+
   async workdirDifftool(root, relPath, mode, commit) {
     return await invoke(Commands.workdirDifftool, { root, relPath, mode, commit });
   },

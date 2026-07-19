@@ -48,6 +48,12 @@ const MAX_DIFF_LINES: usize = 5000;
 /// 파일 히스토리 조회 상한(요청 limit을 이 값으로 클램프).
 const HISTORY_MAX_LIMIT: usize = 200;
 
+/// 커밋 변경파일 목록 파싱 상한. 거대 커밋(수만 파일)에서 메모리를 보호하기 위해
+/// 이 수까지만 파싱하고 이후는 `has_more`로 표현한다.
+const COMMIT_FILES_PARSE_CAP: usize = 20_000;
+/// 커밋 변경파일 페이지 크기 상한(요청 limit을 이 값으로 클램프).
+const COMMIT_FILES_MAX_LIMIT: usize = 1000;
+
 /// 목록 결과. `truncated`는 상한(MAX_LIST)에 걸려 일부만 담겼음을 뜻한다.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -150,6 +156,25 @@ pub struct GitCommitEntry {
 #[serde(rename_all = "camelCase")]
 pub struct GitFileHistoryResult {
     pub commits: Vec<GitCommitEntry>,
+    pub has_more: bool,
+    pub timed_out: bool,
+}
+
+/// 한 커밋이 바꾼 파일 1건. `path`는 저장소 루트 기준 상대경로(rename이면 새
+/// 경로), `status`는 표시용 단일 문자(M/A/D/R/C/T…).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitFileEntry {
+    pub path: String,
+    pub status: String,
+}
+
+/// `git_commit_files` 결과. `has_more`면 이 페이지 뒤로 파일이 더 남았음(페이징),
+/// `timed_out`은 타임아웃 여부.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitFilesResult {
+    pub files: Vec<GitCommitFileEntry>,
     pub has_more: bool,
     pub timed_out: bool,
 }
@@ -450,6 +475,143 @@ pub fn git_diff_commit(root: &str, commit: &str, rel_path: &str) -> Result<GitDi
         });
     }
     Ok(finalize_diff(&run.stdout))
+}
+
+/// 한 커밋이 바꾼 파일 목록을 `git show --name-status`로 가져온다(페이지네이션).
+/// pathspec 없이 커밋 하나만 받으므로 `valid_commit` 검증이 필수다(옵션·경로
+/// 주입 차단). 병합 커밋은 git이 기본 combined diff를 쓰므로 변경파일이 비어
+/// 있을 수 있다(정상 — 프런트가 "표시할 파일 변경 없음"으로 안내).
+pub fn git_commit_files(
+    root: &str,
+    commit: &str,
+    limit: usize,
+    skip: usize,
+) -> Result<GitCommitFilesResult, String> {
+    let canon_root = canon_dir(root)?;
+    if !valid_commit(commit) {
+        return Err(format!("잘못된 커밋 해시입니다: {commit}"));
+    }
+    let limit = limit.clamp(1, COMMIT_FILES_MAX_LIMIT);
+    // `--format=`로 커밋 헤더를 지우고 `--name-status -M -z`로 파일별 상태만 뽑는다.
+    let args = ["show", "--format=", "--name-status", "-M", "-z", commit];
+    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT);
+    if run.spawn_failed {
+        return Err("git 실행에 실패했습니다(설치 여부 확인)".to_string());
+    }
+    if run.timed_out {
+        return Ok(GitCommitFilesResult {
+            files: Vec::new(),
+            has_more: false,
+            timed_out: true,
+        });
+    }
+    let all = parse_name_status(&run.stdout);
+    let total = all.len();
+    let files: Vec<GitCommitFileEntry> = all.into_iter().skip(skip).take(limit).collect();
+    // 이 페이지 뒤로 남은 게 있거나, 파싱 상한에 걸려 잘렸으면 더 있음.
+    let has_more = skip + files.len() < total || total >= COMMIT_FILES_PARSE_CAP;
+    Ok(GitCommitFilesResult {
+        files,
+        has_more,
+        timed_out: false,
+    })
+}
+
+/// `git show/diff-tree --name-status -z` 출력을 파싱한다. `-z`에서 레코드는
+/// `STATUS\0경로\0` 반복이며, rename/copy(R/C)만 `STATUS\0원본\0새경로\0`로 경로가
+/// 둘 붙는다 — 이 경우 새 경로를 표시 경로로 쓴다. 병합 combined 상태("MM" 등)는
+/// 첫 글자만 취한다. 파싱 상한(COMMIT_FILES_PARSE_CAP)에 걸리면 멈춘다.
+fn parse_name_status(bytes: &[u8]) -> Vec<GitCommitFileEntry> {
+    let toks: Vec<&[u8]> = bytes.split(|&b| b == 0).filter(|t| !t.is_empty()).collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < toks.len() {
+        if out.len() >= COMMIT_FILES_PARSE_CAP {
+            break;
+        }
+        let status_raw = String::from_utf8_lossy(toks[i]);
+        i += 1;
+        // 상태 코드의 첫 글자(예: "R097" → 'R', "MM" → 'M').
+        let code = status_raw.chars().next().unwrap_or('?');
+        let path = if code == 'R' || code == 'C' {
+            // rename/copy: 다음 두 토큰이 (원본, 새 경로). 새 경로를 표시.
+            let _orig = toks.get(i);
+            i += 1;
+            match toks.get(i) {
+                Some(p) => {
+                    i += 1;
+                    String::from_utf8_lossy(p).into_owned()
+                }
+                None => break, // 짝이 안 맞으면 중단(방어).
+            }
+        } else {
+            match toks.get(i) {
+                Some(p) => {
+                    i += 1;
+                    String::from_utf8_lossy(p).into_owned()
+                }
+                None => break,
+            }
+        };
+        if path.is_empty() {
+            continue;
+        }
+        out.push(GitCommitFileEntry {
+            path,
+            status: code.to_string(),
+        });
+    }
+    out
+}
+
+/// 저장소 전체 커밋 로그를 `git log`로 가져온다(파일 pathspec/`--follow` 없음).
+/// `all_branches`면 `--all`로 모든 참조를, `query`가 있으면 커밋 메시지를
+/// 대소문자 무시·고정 문자열로 필터(`--grep`)한다. 결과 타입은 파일 히스토리와
+/// 같은 `GitFileHistoryResult`를 재사용한다.
+pub fn git_repo_log(
+    root: &str,
+    limit: usize,
+    skip: usize,
+    all_branches: bool,
+    query: &str,
+) -> Result<GitFileHistoryResult, String> {
+    let canon_root = canon_dir(root)?;
+    let limit = limit.clamp(1, HISTORY_MAX_LIMIT);
+    let n_arg = format!("-n{limit}");
+    let skip_arg = format!("--skip={skip}");
+    // `--grep=<q>`는 값이 옵션에 묶여 주입이 불가하고, `-F`(고정 문자열)·`-i`
+    // (대소문자 무시)로 예측 가능한 부분일치 검색을 한다.
+    let grep_arg = format!("--grep={query}");
+    let mut args: Vec<&str> = vec![
+        "log",
+        "--date=format:%Y-%m-%d %H:%M",
+        "--format=%H%x1f%h%x1f%an%x1f%ad%x1f%s",
+        "-z",
+        &n_arg,
+        &skip_arg,
+    ];
+    if all_branches {
+        args.push("--all");
+    }
+    let has_query = !query.is_empty();
+    if has_query {
+        args.push(&grep_arg);
+        args.push("-i");
+        args.push("-F");
+    }
+    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT);
+    if run.spawn_failed {
+        return Err("git 실행에 실패했습니다(설치 여부 확인)".to_string());
+    }
+    if run.timed_out {
+        return Ok(GitFileHistoryResult {
+            commits: Vec::new(),
+            has_more: false,
+            timed_out: true,
+        });
+    }
+    // 비 git 저장소/빈 저장소는 exit non-zero거나 빈 출력 → 빈 목록으로 귀결.
+    Ok(parse_history(&run.stdout, limit))
 }
 
 /// 외부 비교 도구(`git difftool`)를 fire-and-forget으로 띄운다. GUI 도구가
@@ -799,6 +961,40 @@ pub async fn workdir_diff_commit(
     )
 }
 
+/// `git_commit_files`의 Tauri 커맨드 래퍼.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn workdir_commit_files(
+    root: String,
+    commit: String,
+    limit: usize,
+    skip: usize,
+) -> Result<GitCommitFilesResult, String> {
+    git_commit_files(
+        &crate::session::manager::expand_tilde(root),
+        &commit,
+        limit,
+        skip,
+    )
+}
+
+/// `git_repo_log`의 Tauri 커맨드 래퍼.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn workdir_repo_log(
+    root: String,
+    limit: usize,
+    skip: usize,
+    all_branches: bool,
+    query: String,
+) -> Result<GitFileHistoryResult, String> {
+    git_repo_log(
+        &crate::session::manager::expand_tilde(root),
+        limit,
+        skip,
+        all_branches,
+        &query,
+    )
+}
+
 /// `launch_difftool`의 Tauri 커맨드 래퍼. `commit`이 빈 문자열/미지정이면 현재
 /// 변경을, 아니면 그 커밋의 변경을 외부 도구로 연다.
 #[tauri::command(rename_all = "camelCase")]
@@ -1075,5 +1271,97 @@ mod tests {
         assert!(!r.timed_out);
         // 그 커밋이 workdir.rs를 새로 추가했으므로 diff에 파일 헤더가 있어야 한다.
         assert!(r.diff.contains("diff --git") || r.diff.contains("new file"));
+    }
+
+    #[test]
+    fn parse_name_status_basic_and_rename() {
+        // "M\0a.rs\0A\0b.rs\0R097\0old.md\0new.md\0" — 마지막은 rename(원본+새경로).
+        let mut bytes = Vec::new();
+        for t in ["M", "a.rs", "A", "b.rs", "R097", "old.md", "new.md"] {
+            bytes.extend_from_slice(t.as_bytes());
+            bytes.push(0);
+        }
+        let files = parse_name_status(&bytes);
+        assert_eq!(files.len(), 3);
+        assert_eq!(files[0], GitCommitFileEntry { path: "a.rs".into(), status: "M".into() });
+        assert_eq!(files[1], GitCommitFileEntry { path: "b.rs".into(), status: "A".into() });
+        // rename은 새 경로를 표시하고 상태는 'R'.
+        assert_eq!(files[2], GitCommitFileEntry { path: "new.md".into(), status: "R".into() });
+    }
+
+    #[test]
+    fn parse_name_status_combined_takes_first_char() {
+        // 병합 combined 상태 "MM"은 첫 글자 'M'로.
+        let mut bytes = Vec::new();
+        for t in ["MM", "merged.rs"] {
+            bytes.extend_from_slice(t.as_bytes());
+            bytes.push(0);
+        }
+        let files = parse_name_status(&bytes);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].status, "M");
+        assert_eq!(files[0].path, "merged.rs");
+    }
+
+    #[test]
+    fn parse_name_status_empty_is_empty() {
+        assert!(parse_name_status(&[]).is_empty());
+    }
+
+    #[test]
+    fn commit_files_rejects_bad_hash() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        assert!(git_commit_files(root, "not-a-hash", 100, 0).is_err());
+    }
+
+    /// 실제 커밋(#11 도입, dd7c2d8)의 변경파일 목록 스모크. 그 커밋은 workdir.rs를
+    /// 새로 추가했으므로 목록에 status 'A'로 나와야 한다.
+    #[test]
+    fn this_repo_commit_files_smoke() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let r = git_commit_files(root, "dd7c2d861e6c0619e58bed7340efebe2ae7915db", 500, 0).unwrap();
+        assert!(!r.timed_out);
+        assert!(
+            r.files.iter().any(|f| f.path == "src-tauri/src/workdir.rs" && f.status == "A"),
+            "workdir.rs가 status A로 있어야 함: {:?}",
+            r.files
+        );
+    }
+
+    /// 커밋 변경파일 페이지네이션: limit=1이면 첫 1건 + has_more.
+    #[test]
+    fn this_repo_commit_files_paginates() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let p0 = git_commit_files(root, "dd7c2d861e6c0619e58bed7340efebe2ae7915db", 1, 0).unwrap();
+        assert_eq!(p0.files.len(), 1);
+        assert!(p0.has_more, "이 커밋은 파일이 여러 개라 has_more여야 함");
+        let p1 = git_commit_files(root, "dd7c2d861e6c0619e58bed7340efebe2ae7915db", 1, 1).unwrap();
+        assert_eq!(p1.files.len(), 1);
+        assert_ne!(p0.files[0].path, p1.files[0].path, "skip이 다음 파일을 줘야 함");
+    }
+
+    /// 리포 전체 로그 스모크: 최근 커밋이 최신순으로 나오고 has_more 페이징.
+    #[test]
+    fn this_repo_repo_log_smoke() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let r = git_repo_log(root, 5, 0, false, "").unwrap();
+        assert!(!r.timed_out);
+        assert_eq!(r.commits.len(), 5);
+        assert!(r.has_more);
+        assert!(valid_commit(&r.commits[0].hash));
+    }
+
+    /// 리포 로그 검색: 존재하는 부분 문자열로 grep하면 결과가 나오고, 없는
+    /// 문자열이면 빈 목록.
+    #[test]
+    fn this_repo_repo_log_search() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        // 커밋 메시지에 흔한 접두 "feat" 검색(대소문자 무시).
+        let hit = git_repo_log(root, 50, 0, false, "FEAT").unwrap();
+        assert!(!hit.commits.is_empty(), "feat 커밋이 있어야 함");
+        assert!(hit.commits.iter().all(|c| c.subject.to_lowercase().contains("feat")));
+        // 존재하지 않을 매우 특이한 문자열.
+        let miss = git_repo_log(root, 50, 0, false, "zzz_no_such_commit_xyzzy_qqq").unwrap();
+        assert!(miss.commits.is_empty());
     }
 }

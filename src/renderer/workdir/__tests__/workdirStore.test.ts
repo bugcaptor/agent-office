@@ -12,6 +12,8 @@ const {
   diffFile,
   fileHistory,
   diffCommit,
+  commitFiles,
+  repoLog,
   difftool,
 } = vi.hoisted(() => ({
   listFiles: vi.fn(),
@@ -21,6 +23,8 @@ const {
   diffFile: vi.fn(),
   fileHistory: vi.fn(),
   diffCommit: vi.fn(),
+  commitFiles: vi.fn(),
+  repoLog: vi.fn(),
   difftool: vi.fn(),
 }));
 
@@ -35,6 +39,8 @@ vi.mock("../../ipc/tauriApi", () => ({
     workdirDiffFile: (...a: unknown[]) => diffFile(...a),
     workdirFileHistory: (...a: unknown[]) => fileHistory(...a),
     workdirDiffCommit: (...a: unknown[]) => diffCommit(...a),
+    workdirCommitFiles: (...a: unknown[]) => commitFiles(...a),
+    workdirRepoLog: (...a: unknown[]) => repoLog(...a),
     workdirDifftool: (...a: unknown[]) => difftool(...a),
   },
 }));
@@ -76,6 +82,19 @@ beforeEach(() => {
   diffCommit
     .mockReset()
     .mockResolvedValue({ diff: "diff --git\n", binary: false, truncated: false, timedOut: false });
+  commitFiles.mockReset().mockResolvedValue({
+    files: [
+      { path: "src/a.rs", status: "M" },
+      { path: "src/b.rs", status: "A" },
+    ],
+    hasMore: false,
+    timedOut: false,
+  });
+  repoLog.mockReset().mockResolvedValue({
+    commits: [{ hash: "c".repeat(40), shortHash: "ccccccc", author: "C", date: "d", subject: "feat: x" }],
+    hasMore: false,
+    timedOut: false,
+  });
   difftool.mockReset().mockResolvedValue(undefined);
 });
 
@@ -239,5 +258,146 @@ describe("상세(변경점) 페인", () => {
     s.openDetail("/root", "src/a.rs", "a.rs", "M");
     s.closePalette();
     expect(useWorkdirStore.getState().detail).toBeNull();
+  });
+});
+
+describe("메뉴 우선 진입(이슈 #54)", () => {
+  it("변경 없는 파일은 기본 히스토리 탭으로 열고 로그를 로드한다", () => {
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    s.openDetail("/root", "src/clean.rs", "clean.rs", undefined);
+    expect(useWorkdirStore.getState().detail).toMatchObject({
+      relPath: "src/clean.rs",
+      tab: "history",
+    });
+    // 히스토리 탭이 기본이라 즉시 히스토리를 로드한다.
+    expect(fileHistory).toHaveBeenCalledWith("/root", "src/clean.rs", 50, 0);
+  });
+
+  it("openExternal은 .md도 강제로 외부 에디터로 연다(팔레트 유지)", () => {
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    s.openDetail("/root", "docs/x.md", "x.md", undefined);
+    s.openExternal();
+    expect(openInVscode).toHaveBeenCalledWith("/root/docs/x.md");
+    expect(openMarkdownFile).not.toHaveBeenCalled();
+    expect(useWorkdirStore.getState().palette).not.toBeNull();
+  });
+
+  it("openInApp은 마크다운만 인앱으로 열고 팔레트를 닫는다", () => {
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    // 마크다운.
+    s.openDetail("/root", "docs/x.md", "x.md", undefined);
+    s.openInApp();
+    expect(openMarkdownFile).toHaveBeenCalledWith("/root", "docs/x.md", "agent1");
+    expect(useWorkdirStore.getState().palette).toBeNull();
+
+    // 비마크다운은 no-op.
+    openMarkdownFile.mockClear();
+    s.openPalette("/root", "agent1");
+    s.openDetail("/root", "src/a.rs", "a.rs", "M");
+    s.openInApp();
+    expect(openMarkdownFile).not.toHaveBeenCalled();
+  });
+});
+
+describe("인라인 커밋 확장(이슈 #54)", () => {
+  it("커밋을 펼치면 변경파일을 로드하고, 다시 누르면 접는다", async () => {
+    const s = useWorkdirStore.getState();
+    s.openDetail("/root", "src/a.rs", "a.rs", "M");
+    await s.toggleCommitExpand("f".repeat(40));
+    expect(commitFiles).toHaveBeenCalledWith("/root", "f".repeat(40), 100, 0);
+    expect(useWorkdirStore.getState().detail).toMatchObject({ expandedCommit: "f".repeat(40) });
+    expect(useWorkdirStore.getState().detail?.commitFiles).toHaveLength(2);
+
+    await s.toggleCommitExpand("f".repeat(40));
+    expect(useWorkdirStore.getState().detail?.expandedCommit).toBeUndefined();
+  });
+
+  it("selectCommitFile은 그 커밋의 해당 파일 diff를 하단에 로드한다", async () => {
+    const s = useWorkdirStore.getState();
+    s.openDetail("/root", "src/a.rs", "a.rs", "M");
+    await s.selectCommitFile("f".repeat(40), "src/b.rs");
+    expect(diffCommit).toHaveBeenCalledWith("/root", "f".repeat(40), "src/b.rs");
+    expect(useWorkdirStore.getState().detail).toMatchObject({
+      selectedCommit: "f".repeat(40),
+      selectedCommitFile: "src/b.rs",
+    });
+  });
+
+  it("selectCommit은 지금 파일을 selectedCommitFile로 쓴다", async () => {
+    const s = useWorkdirStore.getState();
+    s.openDetail("/root", "src/a.rs", "a.rs", "M");
+    await s.selectCommit("f".repeat(40));
+    expect(diffCommit).toHaveBeenCalledWith("/root", "f".repeat(40), "src/a.rs");
+    expect(useWorkdirStore.getState().detail?.selectedCommitFile).toBe("src/a.rs");
+  });
+});
+
+describe("커밋 로그 브라우저(이슈 #54)", () => {
+  it("setViewMode('log') 최초 진입 시 로그를 로드한다", async () => {
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    s.setViewMode("log");
+    expect(useWorkdirStore.getState().palette?.viewMode).toBe("log");
+    expect(repoLog).toHaveBeenCalledWith("/root", 50, 0, false, "");
+    await vi.waitFor(() => {
+      expect(useWorkdirStore.getState().repoLog["/root"].commits).toHaveLength(1);
+    });
+  });
+
+  it("커밋 선택→파일 선택→diff 흐름", async () => {
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    await s.loadRepoLog(true);
+    await s.selectRepoCommit("c".repeat(40));
+    expect(commitFiles).toHaveBeenCalledWith("/root", "c".repeat(40), 100, 0);
+    expect(useWorkdirStore.getState().repoLog["/root"].files).toHaveLength(2);
+
+    await s.selectRepoFile("c".repeat(40), "src/a.rs");
+    expect(diffCommit).toHaveBeenCalledWith("/root", "c".repeat(40), "src/a.rs");
+    expect(useWorkdirStore.getState().repoLog["/root"].selectedFile).toBe("src/a.rs");
+    expect(useWorkdirStore.getState().repoLog["/root"].fileDiff?.diff).toContain("diff --git");
+  });
+
+  it("검색어 변경은 첫 페이지부터 재조회한다", async () => {
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    await s.loadRepoLog(true);
+    repoLog.mockClear();
+    s.setRepoLogQuery("feat");
+    expect(useWorkdirStore.getState().repoLog["/root"].query).toBe("feat");
+    expect(repoLog).toHaveBeenCalledWith("/root", 50, 0, false, "feat");
+  });
+
+  it("전체 브랜치 토글은 --all로 재조회한다", async () => {
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    await s.loadRepoLog(true);
+    repoLog.mockClear();
+    s.setRepoLogAllBranches(true);
+    expect(repoLog).toHaveBeenCalledWith("/root", 50, 0, true, "");
+  });
+
+  it("더 보기는 다음 페이지를 이어 붙인다", async () => {
+    repoLog.mockResolvedValueOnce({
+      commits: [{ hash: "1".repeat(40), shortHash: "1111111", author: "A", date: "d", subject: "s1" }],
+      hasMore: true,
+      timedOut: false,
+    });
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    await s.loadRepoLog(true);
+    expect(useWorkdirStore.getState().repoLog["/root"].hasMore).toBe(true);
+
+    repoLog.mockResolvedValueOnce({
+      commits: [{ hash: "2".repeat(40), shortHash: "2222222", author: "B", date: "d", subject: "s2" }],
+      hasMore: false,
+      timedOut: false,
+    });
+    await s.loadRepoLog(false);
+    expect(repoLog).toHaveBeenLastCalledWith("/root", 50, 1, false, "");
+    expect(useWorkdirStore.getState().repoLog["/root"].commits).toHaveLength(2);
   });
 });

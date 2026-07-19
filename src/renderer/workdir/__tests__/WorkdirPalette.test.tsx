@@ -81,7 +81,7 @@ beforeEach(() => {
   openInVscode.mockClear();
   updateSettings.mockClear();
   useWorkdirStore.setState({
-    palette: { root: "/root", agentId: "agent1", query: "", selectedIndex: 0, changedOnly: false },
+    palette: { root: "/root", agentId: "agent1", query: "", selectedIndex: 0, changedOnly: false, viewMode: "files" },
     listing: { "/root": { files: FILES, truncated: false } },
     git: { "/root": GIT },
     gitLoading: {},
@@ -134,28 +134,47 @@ describe("WorkdirPalette", () => {
     expect(useWorkdirStore.getState().palette).toBeNull();
   });
 
-  it("일반 파일 클릭은 open_in_vscode로 절대경로를 넘긴다", () => {
+  it("일반 파일도 클릭은 곧장 열지 않고 메뉴(상세)를 연다", () => {
+    // 이슈 #54: 메뉴 우선. 변경 없는 파일이라 기본 히스토리 탭으로 열린다.
     render(<WorkdirPalette />);
-    fireEvent.mouseDown(screen.getByText("b.rs"));
+    fireEvent.click(screen.getByText("b.rs"));
+    expect(openInVscode).not.toHaveBeenCalled();
+    expect(useWorkdirStore.getState().detail).toMatchObject({
+      relPath: "src/b.rs",
+      tab: "history",
+    });
+  });
+
+  it("⌘-클릭은 기존처럼 즉시 외부 열기(open_in_vscode)", () => {
+    render(<WorkdirPalette />);
+    fireEvent.click(screen.getByText("b.rs"), { metaKey: true });
+    expect(openInVscode).toHaveBeenCalledWith("/root/src/b.rs");
+    // 메뉴는 뜨지 않는다.
+    expect(useWorkdirStore.getState().detail).toBeNull();
+  });
+
+  it("더블클릭도 즉시 외부 열기", () => {
+    render(<WorkdirPalette />);
+    fireEvent.doubleClick(screen.getByText("b.rs"));
     expect(openInVscode).toHaveBeenCalledWith("/root/src/b.rs");
   });
 
   it("변경된 파일 클릭은 열지 않고 변경점 상세를 연다", async () => {
     render(<WorkdirPalette />);
-    // a.rs는 M 상태 → 곧장 열지 않고 diff 상세 페인.
-    fireEvent.mouseDown(screen.getByText("a.rs"));
+    // a.rs는 M 상태 → 곧장 열지 않고 diff 상세 페인(기본 변경점 탭).
+    fireEvent.click(screen.getByText("a.rs"));
     expect(openInVscode).not.toHaveBeenCalled();
     expect(diffFile).toHaveBeenCalledWith("/root", "src/a.rs", "worktreeVsHead");
     // 상세 페인(탭/버튼)이 렌더된다.
     expect(screen.getByText("변경점")).toBeTruthy();
-    expect(screen.getByText("실제 파일 열기")).toBeTruthy();
+    expect(screen.getByText("외부 프로그램으로 열기")).toBeTruthy();
     // diff 내용이 도착하면 추가/삭제 줄이 보인다.
     await screen.findByText("+b");
   });
 
   it("상세가 열려 있으면 Esc는 상세만 먼저 닫는다", () => {
     render(<WorkdirPalette />);
-    fireEvent.mouseDown(screen.getByText("a.rs"));
+    fireEvent.click(screen.getByText("a.rs"));
     expect(useWorkdirStore.getState().detail).not.toBeNull();
 
     const input = screen.getByPlaceholderText(/검색/);

@@ -13,20 +13,28 @@
 //   relPath와 그대로 매칭된다(root 밖 파일만 "../" 접두 — 목록엔 없고 "변경만"
 //   뷰에만 나타난다).
 //
-// 인터랙션 모델(이슈 #11 후속): 변경된 파일(git 뱃지 있음)은 클릭 시 곧장 열지
-// 않고 우측 상세 페인에서 **변경점(diff)** 을 먼저 보여준다. 거기서 명시적으로
-// "실제 파일 열기"로 넘어가거나 커밋 히스토리를 탐색한다. 변경 없는 파일만
-// 기존처럼 바로 연다(openEntry).
+// 인터랙션 모델(이슈 #54): **모든** 파일 클릭은 곧장 열지 않고 우측 상세(메뉴)
+// 페인을 띄운다 — 변경 파일은 기본 "변경점" 탭, 변경 없는 파일은 기본 "히스토리"
+// 탭으로 열려 깃 로그를 항상 볼 수 있다. 페인에서 "외부 프로그램으로 열기"·(마크
+// 다운 등) "인앱 뷰어로 열기" 버튼으로 명시적으로 연다. 빠른 열기는 ⌘-클릭/더블
+// 클릭으로 기존 자동 라우팅(openEntry)을 그대로 쓴다.
 //
-// 파일 열기: .md는 기존 인앱 편집기(markdownStore.openFile)로 위임하고, 그 외는
-// 절대경로를 만들어 open_in_vscode로 외부 에디터에 넘긴다(읽기 전용 인앱 뷰어는
-// 바이너리/인코딩/대용량 처리 수렁이라 MVP 범위에서 제외 — 후속 과제).
-import { create } from "zustand";
+// 히스토리 탭의 커밋은 펼치면(toggleCommitExpand) 그 커밋이 바꾼 파일 목록을
+// 인라인으로 보여주고(페이징), 파일을 고르면 그 커밋의 해당 파일 diff를 띄운다.
+// 펼치지 않고 커밋만 고르면(selectCommit) 지금 파일의 그 커밋 시점 diff를 본다.
+//
+// 팔레트는 두 뷰 모드를 갖는다: "files"(파일 목록) / "log"(저장소 전체 커밋 로그
+// 브라우저 — 파일 지목 없이 로그를 탐색, 커밋→변경파일→diff, 검색·전체브랜치).
+//
+// 파일 열기(openEntry, 빠른 열기용): .md는 인앱 편집기(markdownStore.openFile)로
+// 위임하고, 그 외는 절대경로를 만들어 open_in_vscode로 외부 에디터에 넘긴다.
+import { create, type StoreApi } from "zustand";
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
 import { useMarkdownStore } from "../markdown/markdownStore";
 import type {
   GitCommitEntry,
+  GitCommitFileEntry,
   GitDiffMode,
   GitDiffResult,
   GitStatusResult,
@@ -38,6 +46,9 @@ export interface WorkdirListing {
   files: WorkdirFileEntry[];
   truncated: boolean;
 }
+
+/** 팔레트 뷰 모드: 파일 목록 / 저장소 전체 커밋 로그 브라우저(이슈 #54). */
+export type WorkdirViewMode = "files" | "log";
 
 /** 팔레트 상태. null = 닫힘. */
 export interface WorkdirPaletteState {
@@ -51,6 +62,8 @@ export interface WorkdirPaletteState {
   selectedIndex: number;
   /** true면 git 변경 파일만 보여준다(전체 목록 대신 git 엔트리 기준). */
   changedOnly: boolean;
+  /** 파일 목록 뷰 / 커밋 로그 브라우저 뷰(이슈 #54). */
+  viewMode: WorkdirViewMode;
 }
 
 /** 우측 상세 페인 상태(변경점/히스토리). null = 상세 닫힘(목록만). */
@@ -72,11 +85,50 @@ export interface WorkdirDetail {
   history?: GitCommitEntry[];
   historyLoading: boolean;
   historyHasMore: boolean;
-  /** 히스토리에서 선택해 diff를 보고 있는 커밋 해시. */
+  /** 히스토리에서 선택해 하단 diff를 보고 있는 커밋 해시. */
   selectedCommit?: string;
+  /** 하단 diff가 보여주는 파일 경로. 기본은 이 상세의 파일(relPath)이지만,
+   *  커밋을 펼쳐 다른 파일을 고르면 그 파일 경로가 된다(이슈 #54). */
+  selectedCommitFile?: string;
   commitDiff?: GitDiffResult;
   commitDiffLoading: boolean;
+  /** 변경파일 목록을 인라인으로 펼친 커밋 해시(이슈 #54). undefined = 안 펼침. */
+  expandedCommit?: string;
+  /** 펼친 커밋의 변경파일 목록(페이징 누적). */
+  commitFiles?: GitCommitFileEntry[];
+  commitFilesLoading: boolean;
+  commitFilesHasMore: boolean;
+  /** 다음 페이지 조회를 위한 skip(=이미 담긴 개수). */
+  commitFilesSkip: number;
   /** diff 로드 세대 카운터(모드 전환 시 증가 → 늦게 도착한 stale 응답 폐기). */
+  gen: number;
+}
+
+/** 저장소 전체 커밋 로그 브라우저 상태(이슈 #54, 2단계). 파일을 먼저 지목하지
+ *  않고 로그→커밋→변경파일→diff 순으로 훑는다. root별로 유지(재오픈 즉시 표시). */
+export interface WorkdirRepoLog {
+  root: string;
+  /** 커밋 메시지 검색어(대소문자 무시·부분일치). 빈 문자열 = 전체. */
+  query: string;
+  /** true면 `--all`로 모든 브랜치/참조의 커밋을 함께 본다. */
+  allBranches: boolean;
+  commits?: GitCommitEntry[];
+  loading: boolean;
+  hasMore: boolean;
+  /** 이미 로드한 커밋 수(다음 페이지 skip). */
+  loaded: number;
+  timedOut: boolean;
+  /** 선택된 커밋(그 커밋의 변경파일 목록을 로드). */
+  selectedCommit?: string;
+  files?: GitCommitFileEntry[];
+  filesLoading: boolean;
+  filesHasMore: boolean;
+  filesLoaded: number;
+  /** 변경파일 중 선택돼 diff를 보고 있는 파일 경로. */
+  selectedFile?: string;
+  fileDiff?: GitDiffResult;
+  fileDiffLoading: boolean;
+  /** 조회 세대 카운터(검색/브랜치 전환 시 증가 → stale 응답 폐기). */
   gen: number;
 }
 
@@ -90,6 +142,8 @@ interface WorkdirState {
   gitLoading: Record<string, boolean>;
   /** 우측 상세 페인(변경점/히스토리). null = 목록만. */
   detail: WorkdirDetail | null;
+  /** root별 커밋 로그 브라우저 상태(이슈 #54, 런타임 전용 캐시). */
+  repoLog: Record<string, WorkdirRepoLog>;
 
   /** 팔레트를 root로 연다(쿼리·선택 초기화) + 목록/ git 백그라운드 갱신. */
   openPalette(root: string, agentId: string): void;
@@ -97,27 +151,56 @@ interface WorkdirState {
   setQuery(query: string): void;
   setSelectedIndex(index: number): void;
   setChangedOnly(changedOnly: boolean): void;
+  /** 파일 목록 뷰 ↔ 커밋 로그 브라우저 뷰 전환(이슈 #54). log 최초 진입 시 로드. */
+  setViewMode(mode: WorkdirViewMode): void;
   /** 파일 목록을 다시 읽어 캐시를 갱신한다(fire-and-forget 가능). */
   refreshListing(root: string): Promise<void>;
   /** git 상태를 다시 읽어 캐시를 갱신한다. 설정이 꺼져 있으면 캐시를 비운다. */
   refreshGit(root: string): Promise<void>;
-  /** 항목을 연다: .md는 인앱 편집기, 그 외는 외부 에디터(open_in_vscode). */
+  /** 빠른 열기(⌘-클릭/더블클릭): .md는 인앱 편집기, 그 외는 외부 에디터. */
   openEntry(root: string, relPath: string, name: string): void;
 
-  /** 변경된 파일의 상세(변경점) 페인을 연다. status로 untracked/추적을 구분해
-   *  기본 diff 모드를 정하고 즉시 diff를 로드한다. */
+  /** 파일의 상세(메뉴) 페인을 연다. 변경 파일은 기본 "변경점" 탭, 변경 없는
+   *  파일은 기본 "히스토리" 탭으로 열어 로그를 항상 노출한다(이슈 #54). */
   openDetail(root: string, relPath: string, name: string, status?: string): void;
   closeDetail(): void;
   setDetailTab(tab: "diff" | "history"): void;
   setDiffMode(mode: GitDiffMode): void;
+  /** 현재 상세 파일을 외부 프로그램(open_in_vscode)으로 연다. .md도 강제 외부. */
+  openExternal(): void;
+  /** 인앱 뷰어로 연다(마크다운만 지원 — 그 외는 no-op). */
+  openInApp(): void;
   /** 현재 상세의 diff를 (재)로드한다. */
   loadDiff(): Promise<void>;
   /** 현재 상세 파일의 커밋 히스토리를 로드한다(첫 페이지). */
   loadHistory(): Promise<void>;
-  /** 히스토리에서 커밋을 선택해 그 커밋의 diff를 로드한다. */
+  /** 히스토리에서 커밋을 선택해 지금 파일의 그 커밋 시점 diff를 로드한다. */
   selectCommit(hash: string): Promise<void>;
-  /** 외부 비교 도구를 띄운다(fire-and-forget). commit 지정 시 그 커밋의 변경. */
+  /** 커밋 행을 펼쳐/접어 그 커밋이 바꾼 파일 목록을 인라인 표시한다(이슈 #54). */
+  toggleCommitExpand(hash: string): Promise<void>;
+  /** 펼친 커밋의 변경파일 다음 페이지를 이어 로드한다. */
+  loadMoreCommitFiles(): Promise<void>;
+  /** 펼친 커밋에서 파일을 골라 그 커밋의 해당 파일 diff를 하단에 로드한다. */
+  selectCommitFile(hash: string, path: string): Promise<void>;
+  /** 외부 비교 도구를 띄운다(fire-and-forget). commit 지정 시 그 커밋의 변경.
+   *  현재 하단 diff가 보고 있는 파일(selectedCommitFile)을 대상으로 한다. */
   openDifftool(commit?: string): void;
+
+  // ---- 커밋 로그 브라우저(이슈 #54, 2단계) ----
+  /** 로그를 로드한다. reset이면 첫 페이지로 교체, 아니면 다음 페이지를 잇는다. */
+  loadRepoLog(reset: boolean): Promise<void>;
+  /** 검색어를 바꾸고 첫 페이지부터 재조회한다. */
+  setRepoLogQuery(query: string): void;
+  /** 전체 브랜치(--all) 토글 후 재조회한다. */
+  setRepoLogAllBranches(all: boolean): void;
+  /** 로그에서 커밋을 골라 그 커밋의 변경파일 목록을 로드한다(첫 페이지). */
+  selectRepoCommit(hash: string): Promise<void>;
+  /** 선택 커밋의 변경파일 다음 페이지를 잇는다. */
+  loadMoreRepoFiles(): Promise<void>;
+  /** 변경파일을 골라 그 커밋의 해당 파일 diff를 로드한다. */
+  selectRepoFile(hash: string, path: string): Promise<void>;
+  /** 로그 브라우저에서 외부 비교 도구를 띄운다(선택 커밋+파일). */
+  openRepoDifftool(): void;
 }
 
 /** `.md`/`.mdx`/`.markdown` 확장자인지(대소문자 무시). */
@@ -137,8 +220,33 @@ export function isChangedStatus(status?: string): boolean {
   return !!status && status.length > 0;
 }
 
-/** 히스토리 한 페이지 크기. */
+/** 히스토리/로그 한 페이지 크기. */
 const HISTORY_PAGE = 50;
+/** 커밋 변경파일 인라인 목록 한 페이지 크기(more…로 이어 로드). */
+const COMMIT_FILES_PAGE = 100;
+
+/** 커밋 로그 브라우저 초기 상태(root 바인딩). */
+function emptyRepoLog(root: string): WorkdirRepoLog {
+  return {
+    root,
+    query: "",
+    allBranches: false,
+    commits: undefined,
+    loading: false,
+    hasMore: false,
+    loaded: 0,
+    timedOut: false,
+    selectedCommit: undefined,
+    files: undefined,
+    filesLoading: false,
+    filesHasMore: false,
+    filesLoaded: 0,
+    selectedFile: undefined,
+    fileDiff: undefined,
+    fileDiffLoading: false,
+    gen: 0,
+  };
+}
 
 export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
   palette: null,
@@ -146,10 +254,11 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
   git: {},
   gitLoading: {},
   detail: null,
+  repoLog: {},
 
   openPalette: (root, agentId) => {
     set({
-      palette: { root, agentId, query: "", selectedIndex: 0, changedOnly: false },
+      palette: { root, agentId, query: "", selectedIndex: 0, changedOnly: false, viewMode: "files" },
       detail: null,
     });
     // 캐시가 있으면 즉시 표시되고, 여기서 백그라운드 갱신.
@@ -167,6 +276,17 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
 
   setChangedOnly: (changedOnly) =>
     set((s) => (s.palette ? { palette: { ...s.palette, changedOnly, selectedIndex: 0 } } : s)),
+
+  setViewMode: (mode) => {
+    const p = get().palette;
+    if (!p) return;
+    set({ palette: { ...p, viewMode: mode } });
+    // 로그 뷰 최초 진입 시 한 번 로드(캐시에 커밋이 아직 없으면).
+    if (mode === "log") {
+      const rl = get().repoLog[p.root];
+      if (!rl || rl.commits === undefined) void get().loadRepoLog(true);
+    }
+  },
 
   refreshListing: async (root) => {
     try {
@@ -221,6 +341,9 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     const isUntracked = status === "?";
     // 미추적은 untracked 모드 고정, 그 외는 전체 변경 합본(worktreeVsHead)이 기본.
     const diffMode: GitDiffMode = isUntracked ? "untracked" : "worktreeVsHead";
+    // 변경 파일은 변경점을 먼저 보여주고, 변경 없는(clean) 파일은 볼 변경점이
+    // 없으므로 히스토리 탭으로 열어 깃 로그를 바로 노출한다(이슈 #54).
+    const tab: "diff" | "history" = isChangedStatus(status) ? "diff" : "history";
     set((s) => ({
       detail: {
         root,
@@ -228,7 +351,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
         name,
         status,
         isUntracked,
-        tab: "diff",
+        tab,
         diffMode,
         diff: undefined,
         diffLoading: false,
@@ -236,22 +359,52 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
         historyLoading: false,
         historyHasMore: false,
         selectedCommit: undefined,
+        selectedCommitFile: undefined,
         commitDiff: undefined,
         commitDiffLoading: false,
+        expandedCommit: undefined,
+        commitFiles: undefined,
+        commitFilesLoading: false,
+        commitFilesHasMore: false,
+        commitFilesSkip: 0,
         gen: (s.detail?.gen ?? 0) + 1,
       },
     }));
-    void get().loadDiff();
+    // 변경점 탭이면 diff를, 히스토리 탭이면 로그를 즉시 로드(보이는 탭 우선).
+    if (tab === "diff") void get().loadDiff();
+    else void get().loadHistory();
   },
 
   closeDetail: () => set({ detail: null }),
 
+  openExternal: () => {
+    const d = get().detail;
+    if (!d) return;
+    // 마크다운 포함 항상 외부 에디터로. 팔레트는 유지(참조용).
+    void tauriApi
+      .openInVscode(joinPath(d.root, d.relPath))
+      .catch((err) => console.warn(`외부 열기 실패: ${d.name}`, err));
+  },
+
+  openInApp: () => {
+    const d = get().detail;
+    if (!d) return;
+    if (!isMarkdownPath(d.relPath)) return; // 인앱 지원 형식만.
+    const agentId = get().palette?.agentId ?? "";
+    set({ palette: null, detail: null });
+    void useMarkdownStore.getState().openFile(d.root, d.relPath, agentId);
+  },
+
   setDetailTab: (tab) => {
     set((s) => (s.detail ? { detail: { ...s.detail, tab } } : s));
-    // 히스토리 탭을 처음 열면 지연 로드.
+    // 아직 로드 안 된 탭을 처음 열면 지연 로드(변경 없는 파일은 diff 탭이,
+    // 변경 파일은 history 탭이 최초 진입 시 비어 있다).
     const d = get().detail;
-    if (tab === "history" && d && d.history === undefined && !d.historyLoading) {
+    if (!d) return;
+    if (tab === "history" && d.history === undefined && !d.historyLoading) {
       void get().loadHistory();
+    } else if (tab === "diff" && d.diff === undefined && !d.diffLoading) {
+      void get().loadDiff();
     }
   },
 
@@ -315,16 +468,31 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
   selectCommit: async (hash) => {
     const d = get().detail;
     if (!d) return;
-    const { root, relPath } = d;
+    // 펼치지 않고 커밋만 고르면 "이 파일"의 그 커밋 시점 diff를 본다.
+    await get().selectCommitFile(hash, d.relPath);
+  },
+
+  selectCommitFile: async (hash, path) => {
+    const d = get().detail;
+    if (!d) return;
+    const { root } = d;
     set((s) =>
       s.detail
-        ? { detail: { ...s.detail, selectedCommit: hash, commitDiff: undefined, commitDiffLoading: true } }
+        ? {
+            detail: {
+              ...s.detail,
+              selectedCommit: hash,
+              selectedCommitFile: path,
+              commitDiff: undefined,
+              commitDiffLoading: true,
+            },
+          }
         : s,
     );
     try {
-      const res = await tauriApi.workdirDiffCommit(root, hash, relPath);
+      const res = await tauriApi.workdirDiffCommit(root, hash, path);
       set((s) =>
-        s.detail && s.detail.relPath === relPath && s.detail.selectedCommit === hash
+        s.detail && s.detail.selectedCommit === hash && s.detail.selectedCommitFile === path
           ? { detail: { ...s.detail, commitDiff: res, commitDiffLoading: false } }
           : s,
       );
@@ -338,11 +506,241 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     }
   },
 
+  toggleCommitExpand: async (hash) => {
+    const d = get().detail;
+    if (!d) return;
+    // 이미 펼친 커밋을 다시 누르면 접는다.
+    if (d.expandedCommit === hash) {
+      set((s) => (s.detail ? { detail: { ...s.detail, expandedCommit: undefined } } : s));
+      return;
+    }
+    const { root } = d;
+    set((s) =>
+      s.detail
+        ? {
+            detail: {
+              ...s.detail,
+              expandedCommit: hash,
+              commitFiles: undefined,
+              commitFilesLoading: true,
+              commitFilesHasMore: false,
+              commitFilesSkip: 0,
+            },
+          }
+        : s,
+    );
+    try {
+      const res = await tauriApi.workdirCommitFiles(root, hash, COMMIT_FILES_PAGE, 0);
+      set((s) =>
+        s.detail && s.detail.expandedCommit === hash
+          ? {
+              detail: {
+                ...s.detail,
+                commitFiles: res.files,
+                commitFilesHasMore: res.hasMore,
+                commitFilesLoading: false,
+                commitFilesSkip: res.files.length,
+              },
+            }
+          : s,
+      );
+    } catch (err) {
+      console.warn("workdir: 커밋 변경파일 조회 실패", err);
+      set((s) =>
+        s.detail && s.detail.expandedCommit === hash
+          ? { detail: { ...s.detail, commitFilesLoading: false } }
+          : s,
+      );
+    }
+  },
+
+  loadMoreCommitFiles: async () => {
+    const d = get().detail;
+    if (!d || !d.expandedCommit || d.commitFilesLoading || !d.commitFilesHasMore) return;
+    const { root, expandedCommit, commitFilesSkip } = d;
+    set((s) => (s.detail ? { detail: { ...s.detail, commitFilesLoading: true } } : s));
+    try {
+      const res = await tauriApi.workdirCommitFiles(root, expandedCommit, COMMIT_FILES_PAGE, commitFilesSkip);
+      set((s) =>
+        s.detail && s.detail.expandedCommit === expandedCommit
+          ? {
+              detail: {
+                ...s.detail,
+                commitFiles: [...(s.detail.commitFiles ?? []), ...res.files],
+                commitFilesHasMore: res.hasMore,
+                commitFilesLoading: false,
+                commitFilesSkip: commitFilesSkip + res.files.length,
+              },
+            }
+          : s,
+      );
+    } catch (err) {
+      console.warn("workdir: 커밋 변경파일 추가 조회 실패", err);
+      set((s) =>
+        s.detail && s.detail.expandedCommit === expandedCommit
+          ? { detail: { ...s.detail, commitFilesLoading: false } }
+          : s,
+      );
+    }
+  },
+
   openDifftool: (commit) => {
     const d = get().detail;
     if (!d) return;
+    // 하단 diff가 보고 있는 파일(없으면 이 상세 파일)을 대상으로.
+    const rel = d.selectedCommitFile ?? d.relPath;
     void tauriApi
-      .workdirDifftool(d.root, d.relPath, d.diffMode, commit)
+      .workdirDifftool(d.root, rel, d.diffMode, commit)
+      .catch((err) => console.warn("외부 비교 도구 실행 실패", err));
+  },
+
+  // ================= 커밋 로그 브라우저(이슈 #54, 2단계) =================
+
+  loadRepoLog: async (reset) => {
+    const p = get().palette;
+    if (!p) return;
+    const root = p.root;
+    const prev = get().repoLog[root] ?? emptyRepoLog(root);
+    const skip = reset ? 0 : prev.loaded;
+    const gen = reset ? prev.gen + 1 : prev.gen;
+    setRepoLog(set, root, {
+      ...prev,
+      loading: true,
+      ...(reset ? { commits: undefined, selectedCommit: undefined, files: undefined, selectedFile: undefined, fileDiff: undefined, gen } : {}),
+    });
+    try {
+      const res = await tauriApi.workdirRepoLog(root, HISTORY_PAGE, skip, prev.allBranches, prev.query);
+      const cur = get().repoLog[root];
+      if (!cur || cur.gen !== gen) return; // stale(검색/브랜치 전환됨).
+      const commits = reset ? res.commits : [...(cur.commits ?? []), ...res.commits];
+      setRepoLog(set, root, {
+        ...cur,
+        commits,
+        hasMore: res.hasMore,
+        loaded: commits.length,
+        timedOut: res.timedOut,
+        loading: false,
+      });
+    } catch (err) {
+      console.warn("workdir: 리포 로그 조회 실패", err);
+      const cur = get().repoLog[root];
+      if (cur && cur.gen === gen) setRepoLog(set, root, { ...cur, loading: false });
+    }
+  },
+
+  setRepoLogQuery: (query) => {
+    const p = get().palette;
+    if (!p) return;
+    const prev = get().repoLog[p.root] ?? emptyRepoLog(p.root);
+    setRepoLog(set, p.root, { ...prev, query });
+    void get().loadRepoLog(true);
+  },
+
+  setRepoLogAllBranches: (all) => {
+    const p = get().palette;
+    if (!p) return;
+    const prev = get().repoLog[p.root] ?? emptyRepoLog(p.root);
+    setRepoLog(set, p.root, { ...prev, allBranches: all });
+    void get().loadRepoLog(true);
+  },
+
+  selectRepoCommit: async (hash) => {
+    const p = get().palette;
+    if (!p) return;
+    const root = p.root;
+    const prev = get().repoLog[root];
+    if (!prev) return;
+    setRepoLog(set, root, {
+      ...prev,
+      selectedCommit: hash,
+      files: undefined,
+      filesLoading: true,
+      filesHasMore: false,
+      filesLoaded: 0,
+      selectedFile: undefined,
+      fileDiff: undefined,
+    });
+    try {
+      const res = await tauriApi.workdirCommitFiles(root, hash, COMMIT_FILES_PAGE, 0);
+      const cur = get().repoLog[root];
+      if (!cur || cur.selectedCommit !== hash) return;
+      setRepoLog(set, root, {
+        ...cur,
+        files: res.files,
+        filesHasMore: res.hasMore,
+        filesLoaded: res.files.length,
+        filesLoading: false,
+      });
+    } catch (err) {
+      console.warn("workdir: 로그 커밋 변경파일 조회 실패", err);
+      const cur = get().repoLog[root];
+      if (cur && cur.selectedCommit === hash) setRepoLog(set, root, { ...cur, filesLoading: false });
+    }
+  },
+
+  loadMoreRepoFiles: async () => {
+    const p = get().palette;
+    if (!p) return;
+    const root = p.root;
+    const prev = get().repoLog[root];
+    if (!prev || !prev.selectedCommit || prev.filesLoading || !prev.filesHasMore) return;
+    const hash = prev.selectedCommit;
+    setRepoLog(set, root, { ...prev, filesLoading: true });
+    try {
+      const res = await tauriApi.workdirCommitFiles(root, hash, COMMIT_FILES_PAGE, prev.filesLoaded);
+      const cur = get().repoLog[root];
+      if (!cur || cur.selectedCommit !== hash) return;
+      const files = [...(cur.files ?? []), ...res.files];
+      setRepoLog(set, root, {
+        ...cur,
+        files,
+        filesHasMore: res.hasMore,
+        filesLoaded: files.length,
+        filesLoading: false,
+      });
+    } catch (err) {
+      console.warn("workdir: 로그 변경파일 추가 조회 실패", err);
+      const cur = get().repoLog[root];
+      if (cur && cur.selectedCommit === hash) setRepoLog(set, root, { ...cur, filesLoading: false });
+    }
+  },
+
+  selectRepoFile: async (hash, path) => {
+    const p = get().palette;
+    if (!p) return;
+    const root = p.root;
+    const prev = get().repoLog[root];
+    if (!prev) return;
+    setRepoLog(set, root, { ...prev, selectedFile: path, fileDiff: undefined, fileDiffLoading: true });
+    try {
+      const res = await tauriApi.workdirDiffCommit(root, hash, path);
+      const cur = get().repoLog[root];
+      if (!cur || cur.selectedFile !== path || cur.selectedCommit !== hash) return;
+      setRepoLog(set, root, { ...cur, fileDiff: res, fileDiffLoading: false });
+    } catch (err) {
+      console.warn("workdir: 로그 파일 diff 조회 실패", err);
+      const cur = get().repoLog[root];
+      if (cur && cur.selectedFile === path) setRepoLog(set, root, { ...cur, fileDiffLoading: false });
+    }
+  },
+
+  openRepoDifftool: () => {
+    const p = get().palette;
+    if (!p) return;
+    const rl = get().repoLog[p.root];
+    if (!rl || !rl.selectedCommit || !rl.selectedFile) return;
+    void tauriApi
+      .workdirDifftool(p.root, rl.selectedFile, "worktreeVsHead", rl.selectedCommit)
       .catch((err) => console.warn("외부 비교 도구 실행 실패", err));
   },
 }));
+
+/** repoLog[root]를 갱신하는 헬퍼(레코드 불변 갱신). `set`은 zustand 스토어의
+ *  실제 setState 타입을 그대로 받아 배리언스 문제 없이 넘길 수 있다. */
+function setRepoLog(
+  set: StoreApi<WorkdirState>["setState"],
+  root: string,
+  next: WorkdirRepoLog,
+): void {
+  set((s) => ({ repoLog: { ...s.repoLog, [root]: next } }));
+}

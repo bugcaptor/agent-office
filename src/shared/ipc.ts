@@ -66,6 +66,10 @@ export const Commands = {
   workdirDiffFile: "workdir_diff_file",
   workdirFileHistory: "workdir_file_history",
   workdirDiffCommit: "workdir_diff_commit",
+  // 이슈 #54: 한 커밋이 바꾼 파일 목록(인라인 확장·페이징)과, 파일 지목 없는
+  // 저장소 전체 로그(검색·전체브랜치).
+  workdirCommitFiles: "workdir_commit_files",
+  workdirRepoLog: "workdir_repo_log",
   workdirDifftool: "workdir_difftool",
 } as const;
 

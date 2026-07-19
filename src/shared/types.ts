@@ -571,9 +571,24 @@ export interface GitCommitEntry {
   subject: string;
 }
 
-/** `workdir_file_history` 응답. `hasMore`면 요청 limit을 다 채워 더 있을 수 있다. */
+/** `workdir_file_history`/`workdir_repo_log` 응답. `hasMore`면 요청 limit을 다
+ * 채워 더 있을 수 있다. */
 export interface GitFileHistoryResult {
   commits: GitCommitEntry[];
+  hasMore: boolean;
+  timedOut: boolean;
+}
+
+/** 한 커밋이 바꾼 파일 1건(이슈 #54). `path`는 root 기준 상대경로(rename이면 새
+ * 경로), `status`는 표시용 단일 문자(M/A/D/R/C/T 등). */
+export interface GitCommitFileEntry {
+  path: string;
+  status: string;
+}
+
+/** `workdir_commit_files` 응답. `hasMore`면 이 페이지 뒤로 파일이 더 남았다. */
+export interface GitCommitFilesResult {
+  files: GitCommitFileEntry[];
   hasMore: boolean;
   timedOut: boolean;
 }
@@ -712,6 +727,23 @@ export interface AgentOfficeApi {
   ): Promise<GitFileHistoryResult>;
   /** 특정 커밋이 `relPath`에 만든 변경(diff). `commit`은 hex 7~40자. */
   workdirDiffCommit(root: string, commit: string, relPath: string): Promise<GitDiffResult>;
+  /** 한 커밋이 바꾼 파일 목록(이슈 #54, 페이지네이션). 병합 커밋은 combined
+   * diff라 목록이 빌 수 있다. */
+  workdirCommitFiles(
+    root: string,
+    commit: string,
+    limit: number,
+    skip: number,
+  ): Promise<GitCommitFilesResult>;
+  /** 저장소 전체 커밋 로그(이슈 #54, 파일 지목 없음). `allBranches`면 모든
+   * 참조를, `query`가 있으면 커밋 메시지를 대소문자 무시·부분일치로 필터한다. */
+  workdirRepoLog(
+    root: string,
+    limit: number,
+    skip: number,
+    allBranches: boolean,
+    query: string,
+  ): Promise<GitFileHistoryResult>;
   /** 외부 비교 도구(`git difftool`)를 fire-and-forget으로 띄운다. `commit`이
    * 지정되면 그 커밋의 변경을, 아니면 `mode`의 현재 변경을 연다. 미설정 도구는
    * 백그라운드에서 조용히 실패(인앱 diff가 폴백). */
