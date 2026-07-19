@@ -9,6 +9,7 @@ import { create } from "zustand";
 import { tauriApi } from "../ipc/tauriApi";
 import type { DiaryEntry } from "@shared/types";
 import { generateDiary, type DiaryResult } from "./diaryGenerator";
+import { sharedDiaryFlusher } from "./diaryFlusher";
 
 /** 열린 오버레이가 가리키는 캐릭터. null = 닫힘. */
 export interface DiaryOverlayTarget {
@@ -40,16 +41,20 @@ interface DiaryState {
   entries: DiaryEntry[];
   loading: boolean;
   generating: boolean;
+  /** 오버레이를 여는 순간 밀린(종료된 미기록) 세션 일기를 백그라운드로 쓰는 중. */
+  backfilling: boolean;
   /** 마지막 동작에 대한 사용자 안내(성공/실패). null = 없음. */
   notice: string | null;
 
-  /** 오버레이를 연다 + 일기 로드 트리거. */
+  /** 오버레이를 연다 + 일기 로드 + 밀린 세션 백필 트리거. */
   openDiary(agentId: string, agentName: string): void;
   closeDiary(): void;
   /** 현재 열린(또는 지정한) 캐릭터의 일기를 다시 읽는다. */
   refresh(agentId: string): Promise<void>;
   /** 지금까지의 작업 로그로 일기 한 편을 생성한다(수동 트리거). */
   writeNow(agentId: string): Promise<void>;
+  /** 종료된 미기록 세션이 있으면 백그라운드로 일기화하고, 끝나면 목록 갱신. */
+  backfill(agentId: string): Promise<void>;
 }
 
 export const useDiaryStore = create<DiaryState>((set, get) => ({
@@ -57,14 +62,17 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
   entries: [],
   loading: false,
   generating: false,
+  backfilling: false,
   notice: null,
 
   openDiary: (agentId, agentName) => {
-    set({ overlay: { agentId, agentName }, entries: [], loading: true, notice: null });
+    set({ overlay: { agentId, agentName }, entries: [], loading: true, notice: null, backfilling: false });
     void get().refresh(agentId);
+    // 일기 보기를 여는 순간, 아직 안 쓴 종료 세션이 있으면 조용히 채운다(#60).
+    void get().backfill(agentId);
   },
 
-  closeDiary: () => set({ overlay: null, entries: [], notice: null }),
+  closeDiary: () => set({ overlay: null, entries: [], notice: null, backfilling: false }),
 
   refresh: async (agentId) => {
     set({ loading: true });
@@ -86,5 +94,23 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     const result = await generateDiary(agentId);
     set({ generating: false, notice: noticeFor(result) });
     if (result.ok) await get().refresh(agentId);
+  },
+
+  backfill: async (agentId) => {
+    const flusher = sharedDiaryFlusher();
+    // 쓸 게 없으면(대부분) 배지도 안 켜고 즉시 끝낸다 — 깜빡임 방지.
+    if (!flusher.hasPendingWork(agentId, { includeLive: false, source: "open-diary" })) return;
+    set({ backfilling: true });
+    try {
+      await flusher.flushAgent(agentId, { includeLive: false, source: "open-diary" });
+    } finally {
+      // 여전히 이 캐릭터를 열고 있을 때만 배지를 내리고 목록을 갱신한다(stale 방지).
+      if (get().overlay?.agentId === agentId) {
+        set({ backfilling: false });
+        await get().refresh(agentId);
+      } else {
+        set({ backfilling: false });
+      }
+    }
   },
 }));

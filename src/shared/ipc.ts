@@ -47,6 +47,9 @@ export const Commands = {
   // 캐릭터 일기(이슈 #56) — per-agent 일기 append/load.
   appendDiaryEntry: "append_diary_entry",
   loadDiary: "load_diary",
+  // 캐릭터 일기(이슈 #60) — 작업 로그 스냅샷 save/load(영속 보존·부팅 복원).
+  saveWorkLog: "save_work_log",
+  loadWorkLogs: "load_work_logs",
   loadSessionEvents: "load_session_events",
   // 세션 핸드오프(docs/session-handoff-design.md) — unix 전용, 종료 시 PTY를
   // sessiond 데몬으로 넘기고 재시작 시 되찾는다.

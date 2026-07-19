@@ -11,27 +11,15 @@
 // 일기를 생성하고 나면 generator가 clearWorkLog로 소진한다.
 import { useAppStore } from "../store/appStore";
 import type { AgentTaskLabel } from "../store/types";
+import type { WorkLogItem, WorkLogKind } from "@shared/types";
+
+// 정본 타입은 @shared/types(백엔드 스냅샷과 공유). 기존 임포터 호환을 위해 재export.
+export type { WorkLogItem, WorkLogKind } from "@shared/types";
 
 /** agentId당 보관하는 최근 작업 로그 항목 상한(오래된 것부터 버림). */
 export const MAX_ITEMS_PER_AGENT = 60;
 /** 한 항목 본문의 문자 상한(과도한 도구/내레이션 텍스트 방지). */
 export const ITEM_MAX_CHARS = 400;
-
-/** 작업 로그 한 항목의 종류. */
-export type WorkLogKind = "prompt" | "tool" | "narration";
-
-/** 작업 로그 한 항목. taskLabels의 휘발성 소스에서 캡처한 한 조각. */
-export interface WorkLogItem {
-  /** 캡처 시각(epoch ms). */
-  at: number;
-  /** 이 항목이 속한 세션. 세션 재시작 경계 추적용. */
-  sessionId: string;
-  kind: WorkLogKind;
-  /** 항목 본문(프롬프트 원문·도구 요약·내레이션 꼬리). */
-  text: string;
-  /** prompt 항목일 때, 그 시점 LLM 목표(goal). 일기 서사에 방향을 준다. */
-  goal?: string;
-}
 
 /** 텍스트 정제: 공백 정규화 + 상한 절단. 비면 undefined. */
 function clean(raw: string | undefined): string | undefined {
@@ -44,9 +32,20 @@ function clean(raw: string | undefined): string | undefined {
 
 /**
  * per-agent 작업 로그 버퍼(순수 자료구조). 구독과 분리해 테스트가 쉽다.
+ *
+ * 변이(append/clear/seed)마다 `onChange(agentId)`를 발화한다 — 영속화기
+ * (`workLogPersister`)가 이 훅으로 dirty를 감지해 디바운스 저장한다. 훅은
+ * 선택적(테스트/영속화 미설치 시 no-op)이라 순수 자료구조 성질을 유지한다.
  */
 export class WorkLog {
   private byAgent = new Map<string, WorkLogItem[]>();
+  /** 변이 알림 훅(영속화기가 설치). 없으면 no-op. */
+  private onChange?: (agentId: string) => void;
+
+  /** 변이 알림 훅을 설치한다(영속화기 1개 전제). 해제는 undefined로 재설정. */
+  setOnChange(cb: ((agentId: string) => void) | undefined): void {
+    this.onChange = cb;
+  }
 
   /** 한 항목을 append하고 상한을 넘으면 오래된 것부터 버린다. */
   append(agentId: string, item: WorkLogItem): void {
@@ -56,6 +55,23 @@ export class WorkLog {
       list.splice(0, list.length - MAX_ITEMS_PER_AGENT);
     }
     this.byAgent.set(agentId, list);
+    this.onChange?.(agentId);
+  }
+
+  /**
+   * 디스크 복원분을 버퍼 **앞에** 채운다(부팅 복원). 복원 항목은 항상 과거
+   * 세션이므로 prepend가 시간순을 유지한다 — recorder 설치와의 async 순서
+   * 경합(이미 새 항목이 들어온 경우)에도 안전하다. 상한을 넘으면 오래된 것부터
+   * 버린다. 복원은 디스크→메모리 반영이므로 onChange를 발화하지 않는다(재저장 불필요).
+   */
+  seed(agentId: string, items: WorkLogItem[]): void {
+    if (items.length === 0) return;
+    const list = this.byAgent.get(agentId) ?? [];
+    const merged = [...items, ...list];
+    if (merged.length > MAX_ITEMS_PER_AGENT) {
+      merged.splice(0, merged.length - MAX_ITEMS_PER_AGENT);
+    }
+    this.byAgent.set(agentId, merged);
   }
 
   /** 한 캐릭터의 로그 항목(선택적으로 sessionId 필터). 없으면 빈 배열. */
@@ -64,17 +80,36 @@ export class WorkLog {
     return sessionId === undefined ? [...list] : list.filter((i) => i.sessionId === sessionId);
   }
 
+  /** 이 캐릭터의 서로 다른 sessionId 목록(중복 제거, 등장순). */
+  sessions(agentId: string): string[] {
+    const list = this.byAgent.get(agentId);
+    if (!list) return [];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const i of list) {
+      if (!seen.has(i.sessionId)) {
+        seen.add(i.sessionId);
+        out.push(i.sessionId);
+      }
+    }
+    return out;
+  }
+
   /** 일기 생성 후 소진. sessionId를 주면 그 세션 항목만 지운다. */
   clear(agentId: string, sessionId?: string): void {
     if (sessionId === undefined) {
+      if (!this.byAgent.has(agentId)) return;
       this.byAgent.delete(agentId);
+      this.onChange?.(agentId);
       return;
     }
     const list = this.byAgent.get(agentId);
     if (!list) return;
     const kept = list.filter((i) => i.sessionId !== sessionId);
+    if (kept.length === list.length) return; // 변화 없음 — 발화 생략.
     if (kept.length) this.byAgent.set(agentId, kept);
     else this.byAgent.delete(agentId);
+    this.onChange?.(agentId);
   }
 }
 

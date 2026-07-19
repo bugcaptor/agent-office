@@ -34,6 +34,7 @@ import type {
   PersistedState,
   SessionStateEvent,
   SessionTurnRecord,
+  WorkLogItem,
 } from "@shared/types";
 
 /** One Channel per agentId, fanned out to however many onData callbacks are registered. */
@@ -193,6 +194,14 @@ export const tauriApi: AgentOfficeApi = {
 
   async loadDiary(agentId: string) {
     return await invoke(Commands.loadDiary, { agentId });
+  },
+
+  async saveWorkLog(agentId: string, items: WorkLogItem[]) {
+    await invoke(Commands.saveWorkLog, { agentId, items });
+  },
+
+  async loadWorkLogs() {
+    return await invoke(Commands.loadWorkLogs);
   },
 
   async loadSessionEvents(fromAt: number, toAt: number) {

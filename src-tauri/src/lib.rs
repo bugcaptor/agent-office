@@ -365,6 +365,8 @@ pub fn run() {
             );
             let diary_store =
                 crate::persistence::diary_store::DiaryStore::new(data_dir.join("diaries"));
+            let work_log_store =
+                crate::persistence::work_log_store::WorkLogStore::new(data_dir.join("worklogs"));
 
             // CLI 제어(#55): control 서버 상태 + 핸들러가 쥘 앱 상태 클론. 필요한
             // Arc/스토어만 복제해 ControlContext에 담는다(AppState는 Tauri가
@@ -410,6 +412,7 @@ pub fn run() {
                 sprite_store,
                 session_time_store,
                 diary_store,
+                work_log_store,
                 claude_resume_store,
                 settings_store,
                 settings: settings_cache,
@@ -476,6 +479,8 @@ pub fn run() {
             ipc::commands::load_session_turns,
             ipc::commands::append_diary_entry,
             ipc::commands::load_diary,
+            ipc::commands::save_work_log,
+            ipc::commands::load_work_logs,
             ipc::commands::load_session_events,
             ipc::commands::list_claude_resume_sessions,
             ipc::commands::load_usage_snapshot,

@@ -26,6 +26,7 @@ import { installPortraitCache } from "./portrait/portraitCache";
 import { installSpriteCache } from "./sprite/spriteCache";
 import { installTaskLabelSummarizer } from "./labels/summarizer";
 import { installWorkLogRecorder } from "./diary/workLog";
+import { installWorkLogPersister, restoreWorkLogs } from "./diary/workLogPersister";
 import { installDiaryAutoWriter } from "./diary/diaryAutoWriter";
 import { installQuitGuard } from "./quitGuard";
 import { installSoundManager } from "./sound/soundManager";
@@ -179,8 +180,13 @@ export async function bootApp(): Promise<() => void> {
   const offPortraits = installPortraitCache();
   const offSprites = installSpriteCache();
   const offSummarizer = installTaskLabelSummarizer();
+  // 캐릭터 일기(#60) 작업 로그 영속화 — 디스크 스냅샷을 버퍼로 복원한 뒤(recorder가
+  // 새 항목을 붙이기 전에 과거 세션 로그가 자리 잡게), 영속화기를 설치해 이후 변경을
+  // 디바운스 저장한다. diaryEnabled ON일 때만 디스크에 쓴다(복원은 게이트 무관).
+  await restoreWorkLogs();
+  const workLogPersister = installWorkLogPersister();
   // 캐릭터 일기(#56)의 원천 — taskLabels를 구독해 작업 로그를 누적한다. 설정과
-  // 무관하게 항상 수집하되(비영속·상한), 일기 생성 자체는 diaryEnabled opt-in.
+  // 무관하게 항상 수집하되(상한), 일기 생성 자체는 diaryEnabled opt-in.
   const offWorkLog = installWorkLogRecorder();
   // 세션 종료 시 자동 일기(#60) — diaryEnabled면 종료된 세션 로그로 한 편을 쓴다.
   // 작업 로그 누적(recorder) 직후에 설치해 종료 시점 로그가 이미 반영돼 있게 한다.
@@ -201,6 +207,7 @@ export async function bootApp(): Promise<() => void> {
     offSprites();
     offSummarizer();
     offWorkLog();
+    workLogPersister.dispose();
     offDiaryAuto();
     offQuitGuard();
     offSound();

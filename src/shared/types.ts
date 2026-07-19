@@ -331,6 +331,27 @@ export interface DiaryEntry {
   body: string;
 }
 
+/** 작업 로그 한 항목의 종류(캐릭터 일기 원천). */
+export type WorkLogKind = "prompt" | "tool" | "narration";
+
+/**
+ * 캐릭터 일기(#60)의 원천 데이터 한 조각. 렌더러 작업 로그 버퍼(`workLog.ts`)가
+ * 세션 활동에서 캡처하며, 일기화 전까지 디스크에 스냅샷 보존된다
+ * (`worklogs/<agentId>.json`). Rust `WorkLogItem` 미러(백엔드는 `kind`를 불투명
+ * String으로 통과).
+ */
+export interface WorkLogItem {
+  /** 캡처 시각(epoch ms). */
+  at: number;
+  /** 이 항목이 속한 세션(재시작 경계 추적용). */
+  sessionId: SessionId;
+  kind: WorkLogKind;
+  /** 항목 본문(프롬프트 원문·도구 요약·내레이션 꼬리). */
+  text: string;
+  /** prompt 항목일 때, 그 시점 LLM 목표(goal). 일기 서사에 방향을 준다. */
+  goal?: string;
+}
+
 /**
  * 세션 이벤트 시계열 레코드의 종류. Rust `SessionEventKind`(serde snake_case)
  * 미러. 수집 설계 docs/session-event-timeseries-design.md §4.1 참조.
@@ -757,6 +778,11 @@ export interface AgentOfficeApi {
   appendDiaryEntry(agentId: string, entry: DiaryEntry): Promise<void>;
   /** 한 캐릭터의 일기 전체(작성순)를 읽는다(열람 오버레이용). 손상된 줄은 건너뛴다. */
   loadDiary(agentId: string): Promise<DiaryEntry[]>;
+  /** 캐릭터 일기(#60) 작업 로그 버퍼 전체를 스냅샷 저장한다. `items`가 비면
+   * 스냅샷 파일을 삭제한다(일기화로 소진된 캐릭터). 렌더러가 디바운스로 호출. */
+  saveWorkLog(agentId: string, items: WorkLogItem[]): Promise<void>;
+  /** 전 캐릭터의 작업 로그 스냅샷을 읽는다(부팅 복원용). 손상/부재는 건너뛴다. */
+  loadWorkLogs(): Promise<Record<string, WorkLogItem[]>>;
   /** 세션 이벤트 시계열에서 `fromAt..=toAt`(epoch ms) 범위를 읽는다(분석 패널용).
    * 없는 파일·손상 줄은 건너뛰며 항상 성공한다. `(at, runId, seq)` 정렬. */
   loadSessionEvents(fromAt: number, toAt: number): Promise<SessionEventRecord[]>;

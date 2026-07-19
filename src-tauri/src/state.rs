@@ -105,6 +105,9 @@ pub struct AppState {
     pub session_time_store: crate::persistence::session_time_store::SessionTimeStore,
     /// 캐릭터 일기(#56) per-agent 로그(`diaries/<agentId>.jsonl`) — 일기 생성 시 append.
     pub diary_store: crate::persistence::diary_store::DiaryStore,
+    /// 캐릭터 일기(#60) 작업 로그 스냅샷(`worklogs/<agentId>.json`) — 일기화 전까지
+    /// 렌더러 버퍼를 디스크에 보존해 앱 재시작 후 복원한다. 렌더러가 쓰기를 주도한다.
+    pub work_log_store: crate::persistence::work_log_store::WorkLogStore,
     /// Claude native 세션 ID(리줌) 스냅샷 스토어(`claude-resume.json`). observer
     /// ingest가 ClaudeResumeRecorder를 통해 쓰고, list_claude_resume_sessions가 읽는다.
     pub claude_resume_store: Arc<ClaudeResumeStore>,

@@ -719,6 +719,29 @@ pub async fn load_diary(
         .map_err(|e| e.to_string())
 }
 
+/// 한 캐릭터의 작업 로그 버퍼 전체를 스냅샷 저장한다(#60). 렌더러가 버퍼 변경 시
+/// 디바운스로 호출한다. `items`가 비면 스냅샷 파일을 삭제한다(일기화로 소진된 캐릭터).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn save_work_log(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+    items: Vec<crate::types::WorkLogItem>,
+) -> Result<(), String> {
+    app_state
+        .work_log_store
+        .save(&agent_id, &items)
+        .map_err(|e| e.to_string())
+}
+
+/// 전 캐릭터의 작업 로그 스냅샷을 읽는다(부팅 복원용). `agentId -> items` 맵.
+/// 손상/부재는 조용히 건너뛰므로 항상 성공한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_work_logs(
+    app_state: State<'_, AppState>,
+) -> Result<std::collections::HashMap<String, Vec<crate::types::WorkLogItem>>, String> {
+    Ok(app_state.work_log_store.load_all())
+}
+
 /// 세션 이벤트 시계열에서 `from_at..=to_at`(epoch ms) 범위를 읽는다(분석 패널용).
 /// 읽기 전용 — 수집 측 `SessionEventStore`는 건드리지 않는다
 /// (docs/session-analytics-design.md §4.2). reader가 없는 파일·손상 줄을
@@ -1104,6 +1127,8 @@ mod tests {
         );
         let diary_store =
             crate::persistence::diary_store::DiaryStore::new(profile_dir.join("diaries"));
+        let work_log_store =
+            crate::persistence::work_log_store::WorkLogStore::new(profile_dir.join("worklogs"));
         let claude_resume_store =
             Arc::new(crate::persistence::claude_resume_store::ClaudeResumeStore::new(
                 profile_dir.join("claude-resume.json"),
@@ -1142,6 +1167,7 @@ mod tests {
             sprite_store,
             session_time_store,
             diary_store,
+            work_log_store,
             claude_resume_store,
             settings_store,
             settings,

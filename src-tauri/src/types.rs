@@ -157,6 +157,27 @@ pub struct DiaryEntry {
     pub body: String,
 }
 
+/// 캐릭터 일기(#60)의 원천 데이터 한 조각 — 렌더러 작업 로그 버퍼(`workLog.ts`)의
+/// `WorkLogItem`을 미러한다. 일기화 전까지 디스크에 스냅샷 보존되며
+/// (`worklogs/<agentId>.json`), 일기 생성 성공 시 렌더러가 소진한다.
+/// `kind`는 렌더러 유니온("prompt" | "tool" | "narration")이지만 백엔드는
+/// 저장·복원만 하므로 String으로 둔다(불투명 통과).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkLogItem {
+    /// 캡처 시각(epoch ms).
+    pub at: u64,
+    /// 이 항목이 속한 세션(재시작 경계 추적용).
+    pub session_id: String,
+    /// 항목 종류("prompt" | "tool" | "narration") — 백엔드는 불투명 문자열로 통과.
+    pub kind: String,
+    /// 항목 본문(프롬프트 원문·도구 요약·내레이션 꼬리).
+    pub text: String,
+    /// prompt 항목일 때의 LLM 목표(goal). 없으면 생략.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub goal: Option<String>,
+}
+
 /// renderer→backend 세션 생성 옵션. 프런트 AgentOfficeApi.createSession(agentId, opts?).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

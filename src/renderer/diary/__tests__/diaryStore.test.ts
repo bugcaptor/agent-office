@@ -9,6 +9,12 @@ vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: { loadDiary: vi.fn() },
 }));
 vi.mock("../diaryGenerator", () => ({ generateDiary: vi.fn() }));
+// 공유 flusher는 목으로 — 백필 트리거만 검증하고, flush 자체는 diaryFlusher.test가 커버.
+const hasPendingWork = vi.fn().mockReturnValue(false);
+const flushAgent = vi.fn().mockResolvedValue(undefined);
+vi.mock("../diaryFlusher", () => ({
+  sharedDiaryFlusher: () => ({ hasPendingWork, flushAgent }),
+}));
 
 import { useDiaryStore } from "../diaryStore";
 import { tauriApi } from "../../ipc/tauriApi";
@@ -25,11 +31,14 @@ function entry(at: number, body: string): DiaryEntry {
 beforeEach(() => {
   loadDiary.mockReset();
   genDiary.mockReset();
+  hasPendingWork.mockReset().mockReturnValue(false);
+  flushAgent.mockReset().mockResolvedValue(undefined);
   useDiaryStore.setState({
     overlay: null,
     entries: [],
     loading: false,
     generating: false,
+    backfilling: false,
     notice: null,
   });
 });
@@ -42,6 +51,28 @@ describe("openDiary / refresh", () => {
     await vi.waitFor(() => expect(useDiaryStore.getState().loading).toBe(false));
     expect(useDiaryStore.getState().entries).toHaveLength(2);
     expect(loadDiary).toHaveBeenCalledWith("a1");
+  });
+
+  it("밀린(종료) 세션이 있으면 백필을 돌리고 끝나면 목록을 갱신한다", async () => {
+    hasPendingWork.mockReturnValue(true);
+    loadDiary.mockResolvedValue([entry(1, "복원분")]);
+
+    useDiaryStore.getState().openDiary("a1", "컴파일러");
+    // 백필 시작 → 배지 ON.
+    await vi.waitFor(() => expect(useDiaryStore.getState().backfilling).toBe(true));
+    expect(flushAgent).toHaveBeenCalledWith("a1", { includeLive: false, source: "open-diary" });
+    // 완료 → 배지 OFF + refresh.
+    await vi.waitFor(() => expect(useDiaryStore.getState().backfilling).toBe(false));
+    expect(loadDiary).toHaveBeenCalledWith("a1");
+  });
+
+  it("밀린 세션이 없으면 백필도 배지도 없다", async () => {
+    hasPendingWork.mockReturnValue(false);
+    loadDiary.mockResolvedValue([]);
+    useDiaryStore.getState().openDiary("a1", "컴파일러");
+    await vi.waitFor(() => expect(useDiaryStore.getState().loading).toBe(false));
+    expect(flushAgent).not.toHaveBeenCalled();
+    expect(useDiaryStore.getState().backfilling).toBe(false);
   });
 
   it("로드 완료 전에 다른 캐릭터로 바뀌면 stale 결과를 무시한다", async () => {

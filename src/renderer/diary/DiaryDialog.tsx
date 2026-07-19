@@ -20,6 +20,7 @@ export function DiaryDialog() {
   const entries = useDiaryStore((s) => s.entries);
   const loading = useDiaryStore((s) => s.loading);
   const generating = useDiaryStore((s) => s.generating);
+  const backfilling = useDiaryStore((s) => s.backfilling);
   const notice = useDiaryStore((s) => s.notice);
   const closeDiary = useDiaryStore((s) => s.closeDiary);
   const writeNow = useDiaryStore((s) => s.writeNow);
@@ -68,6 +69,7 @@ export function DiaryDialog() {
           </div>
         </div>
 
+        {backfilling && <div className="diary-notice">밀린 일기 쓰는 중…</div>}
         {notice && <div className="diary-notice">{notice}</div>}
 
         {loading ? (
