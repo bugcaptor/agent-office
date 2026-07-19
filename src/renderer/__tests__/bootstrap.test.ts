@@ -214,6 +214,7 @@ describe("bootApp", () => {
       externalTerminal: "terminal",
       externalEditor: "system",
       attentionHoldMs: 5000,
+      gitStatusEnabled: true,
     });
     expect(s.settingsFirstRun).toBe(false);
     expect(warn).toHaveBeenCalledWith(

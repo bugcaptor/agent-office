@@ -1,0 +1,198 @@
+/* src/renderer/workdir/workdir.css
+ *
+ * 작업 폴더 보기 오버레이(이슈 #11)의 스타일. MarkdownPalette와 같은 층위
+ * (z:40, 터미널·모달 위)에 뜨고 픽셀 크롬 토큰은 tokens.css를 따른다.
+ */
+@import "../styles/tokens.css";
+
+.wd-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40; /* 터미널 오버레이(20)·모달(30)보다 위 */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 8vh;
+  background: rgba(10, 11, 18, 0.55);
+}
+
+.wd-panel {
+  width: min(720px, 94vw);
+  max-height: 74vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 2px solid var(--border-dark);
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.18);
+}
+
+/* ---- 헤더: 브랜치 요약 + 필터/토글/닫기 ---- */
+.wd-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--unit) * 2);
+  padding: calc(var(--unit) * 2) calc(var(--unit) * 3);
+  background: var(--bg-panel-hi);
+  border-bottom: 2px solid var(--border-dark);
+}
+.wd-branch {
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.8rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.wd-header-actions {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 2);
+  flex: none;
+}
+
+/* [전체 | 변경만] 세그먼트 토글 */
+.wd-seg {
+  display: inline-flex;
+  border: 2px solid var(--border-dark);
+}
+.wd-seg-btn {
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  background: var(--bg-panel);
+  border: none;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.wd-seg-btn + .wd-seg-btn {
+  border-left: 2px solid var(--border-dark);
+}
+.wd-seg-active {
+  color: var(--text);
+  background: var(--bg-panel-hi);
+}
+.wd-seg-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.wd-git-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--unit);
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.wd-close {
+  width: 26px;
+  height: 26px;
+  font-family: "DungGeunMo", monospace;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 2px solid var(--border-dark);
+  cursor: pointer;
+}
+.wd-close:hover {
+  background: var(--accent-warn);
+  color: #0a0b12;
+}
+
+/* ---- 검색 입력 ---- */
+.wd-input {
+  box-sizing: border-box;
+  width: 100%;
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: none;
+  border-bottom: 2px solid var(--border-dark);
+  padding: calc(var(--unit) * 3);
+  outline: none;
+}
+.wd-input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+.wd-note {
+  padding: calc(var(--unit) * 1) calc(var(--unit) * 3);
+  color: var(--accent-warn);
+  font-size: 0.72rem;
+  border-bottom: 1px solid var(--border-dark);
+}
+.wd-empty {
+  padding: calc(var(--unit) * 4);
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+/* ---- 파일 목록 ---- */
+.wd-list {
+  list-style: none;
+  margin: 0;
+  padding: calc(var(--unit) * 1);
+  overflow-y: auto;
+}
+.wd-item {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--unit) * 2);
+  padding: calc(var(--unit) * 2);
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+.wd-item-active {
+  background: var(--bg-panel-hi);
+  border-color: var(--border-dark);
+}
+.wd-item-name {
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.9rem;
+  color: var(--text);
+  flex: none;
+}
+.wd-item-path {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- git 상태 뱃지 ---- */
+.wd-badge {
+  flex: none;
+  width: 1.1rem;
+  text-align: center;
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.82rem;
+  font-weight: bold;
+}
+.wd-badge-empty {
+  color: transparent;
+}
+.wd-badge-M,
+.wd-badge-R,
+.wd-badge-C,
+.wd-badge-T {
+  color: var(--accent-warn);
+}
+.wd-badge-A {
+  color: var(--accent);
+}
+.wd-badge-D,
+.wd-badge-U {
+  color: var(--accent-error);
+}
+.wd-badge-\? {
+  color: var(--text-dim);
+}

@@ -61,11 +61,13 @@ pub fn launch_candidates(os: &str, dir: &str, local_app_data: Option<&str>) -> V
     }
 }
 
-/// `dir`을 VS Code로 연다. 디렉터리가 아니거나 전 후보 실패 시 사용자에게
-/// 그대로 보여줄 수 있는 한국어 에러 문자열을 돌려준다.
+/// `dir`을 VS Code로 연다. 경로(폴더 또는 파일)가 없거나 전 후보 실패 시
+/// 사용자에게 그대로 보여줄 수 있는 한국어 에러 문자열을 돌려준다. 이슈 #11의
+/// "작업 폴더 보기"에서 개별 파일을 클릭해 여는 경우가 있어, 디렉터리뿐 아니라
+/// 실존하는 파일 경로도 허용한다(`code`/`open -a`는 파일도 새 탭으로 연다).
 pub fn open_dir_in_vscode(dir: &str) -> Result<(), String> {
-    if !Path::new(dir).is_dir() {
-        return Err(format!("작업 폴더를 찾을 수 없습니다: {dir}"));
+    if !Path::new(dir).exists() {
+        return Err(format!("경로를 찾을 수 없습니다: {dir}"));
     }
 
     let local_app_data = std::env::var("LOCALAPPDATA").ok();

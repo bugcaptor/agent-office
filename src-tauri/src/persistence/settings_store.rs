@@ -84,6 +84,10 @@ pub struct AppSettings {
     /// 일하면(오토모드 자동 승인 등) 알림을 조용히 폐기한다. 0이면 즉시 알림.
     #[serde(default = "default_attention_hold_ms")]
     pub attention_hold_ms: u64,
+    /// "작업 폴더 보기"(이슈 #11)에서 파일별 git 상태 뱃지를 조회할지. 거대
+    /// 저장소에서 git status가 무거울 수 있어 끌 수 있게 한다. 기본 켜짐.
+    #[serde(default = "default_true")]
+    pub git_status_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -98,6 +102,7 @@ impl Default for AppSettings {
             external_terminal: ExternalTerminal::Terminal,
             external_editor: ExternalEditor::System,
             attention_hold_ms: 5000,
+            git_status_enabled: true,
         }
     }
 }
@@ -179,6 +184,7 @@ mod tests {
             external_terminal: ExternalTerminal::Terminal,
             external_editor: ExternalEditor::System,
             attention_hold_ms: 5000,
+            git_status_enabled: true,
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -272,6 +278,7 @@ mod tests {
             external_terminal: ExternalTerminal::Iterm,
             external_editor: ExternalEditor::Vscode,
             attention_hold_ms: 5000,
+            git_status_enabled: true,
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();

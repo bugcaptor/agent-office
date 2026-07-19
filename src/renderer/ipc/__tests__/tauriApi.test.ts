@@ -440,6 +440,7 @@ describe("app settings commands", () => {
       externalTerminal: "terminal" as const,
       externalEditor: "system" as const,
       attentionHoldMs: 5000,
+      gitStatusEnabled: true,
     };
     const tauriApi = await importTauriApi();
 

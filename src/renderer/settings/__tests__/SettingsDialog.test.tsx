@@ -36,6 +36,7 @@ describe("SettingsDialog", () => {
         externalTerminal: "terminal",
         externalEditor: "system",
         attentionHoldMs: 5000,
+        gitStatusEnabled: true,
       },
       false,
     );
@@ -57,6 +58,7 @@ describe("SettingsDialog", () => {
       externalTerminal: "terminal",
       externalEditor: "system",
       attentionHoldMs: 5000,
+      gitStatusEnabled: true,
     });
   });
 
@@ -72,6 +74,7 @@ describe("SettingsDialog", () => {
         externalTerminal: "terminal",
         externalEditor: "system",
         attentionHoldMs: 5000,
+        gitStatusEnabled: true,
       },
       false,
     );
@@ -98,6 +101,7 @@ describe("SettingsDialog", () => {
         externalTerminal: "terminal",
         externalEditor: "system",
         attentionHoldMs: 5000,
+        gitStatusEnabled: true,
       },
       false,
     );

@@ -48,6 +48,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   externalTerminal: "terminal",
   externalEditor: "system",
   attentionHoldMs: 5000,
+  gitStatusEnabled: true,
 };
 
 /**
@@ -217,6 +218,7 @@ interface AppState {
         | "externalTerminal"
         | "externalEditor"
         | "attentionHoldMs"
+        | "gitStatusEnabled"
       >
     >,
   ): void;

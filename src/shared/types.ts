@@ -395,6 +395,9 @@ export interface AppSettings {
   /** 질문(Hook) 알림을 방출 전 보류하는 시간(ms). 그 사이 세션이 계속
    * 일하면(오토모드 자동 승인 등) 알림을 조용히 폐기한다. 0이면 즉시 알림. 기본 5000. */
   attentionHoldMs: number;
+  /** "작업 폴더 보기"(이슈 #11)에서 파일별 git 상태 뱃지를 조회할지. 거대
+   * 저장소에서 무거울 수 있어 끌 수 있다. 기본 true. */
+  gitStatusEnabled: boolean;
 }
 
 /** `get_app_settings` 응답. firstRun = settings.json 부재(첫 실행). */
@@ -505,6 +508,41 @@ export interface MarkdownReadResult {
 /** `markdown_write_file` 응답. 저장 성공 시 갱신된 `version`을 돌려준다. */
 export interface MarkdownWriteResult {
   version: string;
+}
+
+/** 작업 폴더 보기(이슈 #11)의 파일 목록 항목. `relPath`가 목록/열기의 키. */
+export interface WorkdirFileEntry {
+  /** root 기준 상대 경로(POSIX 구분자). */
+  relPath: string;
+  /** 표시·퍼지 매칭용 파일명(경로 마지막 세그먼트). */
+  name: string;
+}
+
+/** `workdir_list_files` 응답. `truncated`면 상한(5000)을 넘어 일부만 담겼다. */
+export interface WorkdirListResult {
+  files: WorkdirFileEntry[];
+  truncated: boolean;
+}
+
+/** 파일 하나의 git 상태. `status`는 표시용 단일 문자(M/A/D/R/U/? 등),
+ * `xy`는 porcelain v2 원문 2글자(스테이지 X + 워킹트리 Y, 툴팁용). */
+export interface GitFileStatus {
+  /** 저장소 루트 기준 상대 경로(POSIX 구분자). */
+  path: string;
+  status: string;
+  xy: string;
+}
+
+/** `workdir_git_status` 응답. 저장소가 아니거나(isRepo=false) 타임아웃
+ * (timedOut=true)이면 entries는 비고 프런트는 뱃지를 조용히 생략한다. */
+export interface GitStatusResult {
+  isRepo: boolean;
+  /** 현재 브랜치명(detached HEAD면 null). */
+  branch: string | null;
+  ahead: number;
+  behind: number;
+  entries: GitFileStatus[];
+  timedOut: boolean;
 }
 
 /**
@@ -623,4 +661,10 @@ export interface AgentOfficeApi {
     content: string,
     expectedVersion: string,
   ): Promise<MarkdownWriteResult>;
+  /** `root` 하위의 전체 파일 목록(이슈 #11, .gitignore 존중·hidden 스킵).
+   * 상한(5000) 초과 시 `truncated=true`. */
+  workdirListFiles(root: string): Promise<WorkdirListResult>;
+  /** `root`의 git 상태(porcelain v2). 저장소 아님/타임아웃은 reject가 아니라
+   * `isRepo=false`/`timedOut=true` 필드로 표현한다. */
+  workdirGitStatus(root: string): Promise<GitStatusResult>;
 }

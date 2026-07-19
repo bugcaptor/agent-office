@@ -209,6 +209,14 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.markdownWriteFile, { root, relPath, content, expectedVersion });
   },
 
+  async workdirListFiles(root) {
+    return await invoke(Commands.workdirListFiles, { root });
+  },
+
+  async workdirGitStatus(root) {
+    return await invoke(Commands.workdirGitStatus, { root });
+  },
+
   onData(agentId, cb) {
     let sub = outputSubs.get(agentId);
     if (!sub) {

@@ -70,6 +70,7 @@ beforeEach(() => {
       externalTerminal: "terminal",
       externalEditor: "system",
       attentionHoldMs: 5000,
+      gitStatusEnabled: true,
     },
     false
   );
@@ -133,6 +134,7 @@ describe("installTaskLabelSummarizer", () => {
           externalTerminal: "terminal",
           externalEditor: "system",
           attentionHoldMs: 5000,
+          gitStatusEnabled: true,
         },
         false,
       );
@@ -391,6 +393,7 @@ describe("installTaskLabelSummarizer", () => {
         externalTerminal: "terminal",
         externalEditor: "system",
         attentionHoldMs: 5000,
+        gitStatusEnabled: true,
       },
       false
     );

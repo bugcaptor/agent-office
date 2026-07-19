@@ -24,6 +24,7 @@ import { TaskLabelLayer } from "./labels/TaskLabelLayer";
 import { TerminalOverlay } from "./terminal/TerminalOverlay";
 import { MarkdownPalette } from "./markdown/MarkdownPalette";
 import { MarkdownEditorOverlay } from "./markdown/MarkdownEditorOverlay";
+import { WorkdirPalette } from "./workdir/WorkdirPalette";
 import { UIChrome } from "./layout/UIChrome";
 
 // Root component: the 4-layer z-stack.
@@ -101,6 +102,8 @@ function App() {
           터미널 keep-alive와 무관 — 터미널 DOM은 건드리지 않는다. */}
       <MarkdownPalette />
       <MarkdownEditorOverlay />
+      {/* 작업 폴더 보기(이슈 #11). markdown 오버레이와 같은 층위·관례로 상시 마운트. */}
+      <WorkdirPalette />
       <div className="modal-root">
         <ProfileDialog />
         <ConfirmDeleteDialog />

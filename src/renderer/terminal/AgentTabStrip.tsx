@@ -21,6 +21,7 @@ import { ContextMenu } from "../ui/ContextMenu";
 import { deriveTaskLabelLines } from "../labels/labelText";
 import { tauriApi } from "../ipc/tauriApi";
 import { useMarkdownStore } from "../markdown/markdownStore";
+import { useWorkdirStore } from "../workdir/workdirStore";
 import { terminalRegistry } from "./TerminalRegistry";
 import type { ClaudeResumeEntry } from "@shared/types";
 
@@ -79,6 +80,8 @@ export function AgentTabStrip() {
   const openModal = useAppStore((s) => s.openModal);
   // 이슈 #10: 활성 에이전트 cwd를 root로 마크다운 문서 팔레트를 연다.
   const openMarkdownPalette = useMarkdownStore((s) => s.openPalette);
+  // 이슈 #11: 작업 폴더 보기(파일 목록 + git 상태) 오버레이를 연다.
+  const openWorkdirPalette = useWorkdirStore((s) => s.openPalette);
   // 활성 에이전트의 cwd(문서 버튼 활성 조건). 없으면 버튼 비활성.
   const activeCwd = activeId ? agents[activeId]?.cwd : undefined;
   const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
@@ -226,6 +229,15 @@ export function AgentTabStrip() {
               ),
               onSelect: () =>
                 openModal({ kind: "confirm-terminate", agentId: menu.agentId }),
+            },
+            {
+              label: "작업 폴더 보기",
+              // 작업 폴더(cwd) 미설정 프로필은 비활성화 — 홈 디렉터리 폴백 없음.
+              disabled: !agents[menu.agentId]?.cwd,
+              onSelect: () => {
+                const cwd = agents[menu.agentId]?.cwd;
+                if (cwd) openWorkdirPalette(cwd, menu.agentId);
+              },
             },
             {
               label: "VS Code로 열기",

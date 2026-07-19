@@ -80,6 +80,20 @@ export function SettingsDialog() {
             />
           </label>
           <label className="settings-item">
+            <input
+              type="checkbox"
+              checked={appSettings.gitStatusEnabled}
+              onChange={(e) => updateAppSettings({ gitStatusEnabled: e.target.checked })}
+            />
+            <span>
+              <strong>작업 폴더 git 상태 표시</strong>
+              <small>
+                "작업 폴더 보기"에서 파일별 git 변경 상태(수정·추가·삭제 등)를
+                조회해 뱃지로 보여줍니다. 거대 저장소에서 느리면 끄세요.
+              </small>
+            </span>
+          </label>
+          <label className="settings-item">
             <span>
               <strong>외부 터미널 앱</strong>
               <small>

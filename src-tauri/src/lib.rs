@@ -23,6 +23,7 @@ mod terminal;
 mod types;
 mod usage;
 mod vscode;
+mod workdir;
 
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -389,6 +390,8 @@ pub fn run() {
             markdown::markdown_list_files,
             markdown::markdown_read_file,
             markdown::markdown_write_file,
+            workdir::workdir_list_files,
+            workdir::workdir_git_status,
             ipc::commands::pick_directory,
             ipc::commands::append_session_turn,
             ipc::commands::load_session_turns,
@@ -517,6 +520,7 @@ mod tests {
             external_terminal: Default::default(),
             external_editor: Default::default(),
             attention_hold_ms: 5000,
+            git_status_enabled: true,
         }));
         let registry = Arc::new(SessionRegistry::new());
         let events: Arc<dyn AppEvents> = Arc::new(crate::state::fake::RecordingEvents::default());

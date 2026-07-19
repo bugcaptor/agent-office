@@ -32,6 +32,7 @@ describe("FirstRunDialog", () => {
         externalTerminal: "terminal",
         externalEditor: "system",
         attentionHoldMs: 5000,
+        gitStatusEnabled: true,
       },
       false,
     );
@@ -51,6 +52,7 @@ describe("FirstRunDialog", () => {
         externalTerminal: "terminal",
         externalEditor: "system",
         attentionHoldMs: 5000,
+        gitStatusEnabled: true,
       },
       true,
     );
@@ -70,6 +72,7 @@ describe("FirstRunDialog", () => {
       externalTerminal: "terminal",
       externalEditor: "system",
       attentionHoldMs: 5000,
+      gitStatusEnabled: true,
     });
   });
 
@@ -85,6 +88,7 @@ describe("FirstRunDialog", () => {
         externalTerminal: "terminal",
         externalEditor: "system",
         attentionHoldMs: 5000,
+        gitStatusEnabled: true,
       },
       true,
     );

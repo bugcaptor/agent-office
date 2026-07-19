@@ -507,6 +507,7 @@ describe("app settings slice", () => {
       externalTerminal: "terminal",
       externalEditor: "system",
       attentionHoldMs: 5000,
+      gitStatusEnabled: true,
     });
     expect(s.settingsFirstRun).toBe(false);
   });
@@ -523,6 +524,7 @@ describe("app settings slice", () => {
         externalTerminal: "terminal",
         externalEditor: "system",
         attentionHoldMs: 5000,
+        gitStatusEnabled: true,
       },
       true
     );
@@ -537,6 +539,7 @@ describe("app settings slice", () => {
       externalTerminal: "terminal",
       externalEditor: "system",
       attentionHoldMs: 5000,
+      gitStatusEnabled: true,
     });
     expect(s.settingsFirstRun).toBe(true);
   });
@@ -553,6 +556,7 @@ describe("app settings slice", () => {
       externalTerminal: "terminal",
       externalEditor: "system",
       attentionHoldMs: 5000,
+      gitStatusEnabled: true,
     });
   });
 
@@ -568,6 +572,7 @@ describe("app settings slice", () => {
         externalTerminal: "terminal",
         externalEditor: "system",
         attentionHoldMs: 5000,
+        gitStatusEnabled: true,
       },
       true
     );
@@ -588,6 +593,7 @@ describe("app settings slice", () => {
       externalTerminal: "terminal",
       externalEditor: "system",
       attentionHoldMs: 5000,
+      gitStatusEnabled: true,
     });
   });
 

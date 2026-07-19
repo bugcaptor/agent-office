@@ -57,6 +57,10 @@ export const Commands = {
   markdownListFiles: "markdown_list_files",
   markdownReadFile: "markdown_read_file",
   markdownWriteFile: "markdown_write_file",
+  // 작업 폴더 보기(이슈 #11) — 에이전트 cwd를 root로 전체 파일 목록과, 파일별
+  // git 상태(porcelain v2)를 돌려준다. git 조회는 거대 저장소 대비 3초 타임아웃.
+  workdirListFiles: "workdir_list_files",
+  workdirGitStatus: "workdir_git_status",
 } as const;
 
 /**
