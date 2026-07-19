@@ -7,7 +7,7 @@ import type { AppSettings } from "@shared/types";
 
 export type SettingsFormValue = Pick<
   AppSettings,
-  "summarizerEnabled" | "summaryProvider" | "observerEnabled"
+  "summarizerEnabled" | "summaryProvider" | "summarizerToolCalls" | "observerEnabled"
 >;
 
 export function SettingsForm({
@@ -55,6 +55,22 @@ export function SettingsForm({
           Codex
         </label>
       </fieldset>
+
+      <label className="settings-item settings-subitem">
+        <input
+          type="checkbox"
+          checked={value.summarizerToolCalls}
+          disabled={!value.summarizerEnabled || value.summaryProvider !== "claude"}
+          onChange={(e) => onChange({ summarizerToolCalls: e.target.checked })}
+        />
+        <span>
+          <strong>실험: 작업 폴더 훑어보기 (Claude 전용)</strong>
+          <small>
+            요약기가 읽기 전용 툴(Read/Glob/Grep)로 세션 작업 폴더를 살펴 목표를
+            더 정확히 추론합니다. 호출당 사용량을 더 소모하고 느려집니다.
+          </small>
+        </span>
+      </label>
 
       <label className="settings-item">
         <input

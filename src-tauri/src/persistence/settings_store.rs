@@ -66,6 +66,10 @@ pub struct AppSettings {
     pub summarizer_enabled: bool,
     #[serde(default)]
     pub summary_provider: SummaryProvider,
+    /// 실험(옵트인): Claude 요약기가 읽기 전용 툴(Read/Glob/Grep)로 세션 작업
+    /// 폴더를 훑어 목표를 추론하도록 허용한다. Claude provider일 때만 효과.
+    #[serde(default)]
+    pub summarizer_tool_calls: bool,
     #[serde(default, alias = "claudeHooksEnabled")]
     pub observer_enabled: bool,
     /// 사무실 앰비언스 사운드(타이핑·효과음·공조음) 재생 여부.
@@ -92,6 +96,7 @@ impl Default for AppSettings {
             version: 1,
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
+            summarizer_tool_calls: false,
             observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
@@ -173,6 +178,7 @@ mod tests {
             version: 1,
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Claude,
+            summarizer_tool_calls: true,
             observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,
@@ -266,6 +272,7 @@ mod tests {
             version: 1,
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Codex,
+            summarizer_tool_calls: false,
             observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,
@@ -277,6 +284,7 @@ mod tests {
         let json = fs::read_to_string(&file).unwrap();
         assert!(json.contains("\"summarizerEnabled\""), "{json}");
         assert!(json.contains("\"summaryProvider\": \"codex\""), "{json}");
+        assert!(json.contains("\"summarizerToolCalls\": false"), "{json}");
         assert!(json.contains("\"externalTerminal\": \"iterm\""), "{json}");
         assert!(json.contains("\"externalEditor\": \"vscode\""), "{json}");
         assert!(json.contains("\"attentionHoldMs\": 5000"), "{json}");
@@ -349,6 +357,10 @@ mod tests {
         assert!(!first_run);
         assert!(s.summarizer_enabled);
         assert_eq!(s.summary_provider, SummaryProvider::Claude);
+        assert!(
+            !s.summarizer_tool_calls,
+            "부재 시 실험 툴콜 기본 꺼짐"
+        );
         assert!(!s.observer_enabled);
         assert!(s.sound_enabled, "부재 시 기본 켜짐");
         assert_eq!(s.sound_volume, 0.5, "부재 시 기본 볼륨 0.5");

@@ -365,6 +365,20 @@ describe("command invocations", () => {
       provider: "codex",
       instruction: "요약 지시",
       text: "원문",
+      cwd: undefined,
+    });
+  });
+
+  it("summarizeText는 실험 툴 모드에서 cwd를 함께 전달한다", async () => {
+    const tauriApi = await importTauriApi();
+
+    await tauriApi.summarizeText("claude", "요약 지시", "원문", "/work/repo");
+
+    expect(invoke).toHaveBeenCalledWith(Commands.summarizeText, {
+      provider: "claude",
+      instruction: "요약 지시",
+      text: "원문",
+      cwd: "/work/repo",
     });
   });
 
@@ -434,6 +448,7 @@ describe("app settings commands", () => {
       version: 1,
       summarizerEnabled: true,
       summaryProvider: "codex" as const,
+      summarizerToolCalls: false,
       observerEnabled: false,
       soundEnabled: true,
       soundVolume: 0.5,

@@ -16,7 +16,12 @@ describe("SettingsForm", () => {
     const onChange = vi.fn();
     render(
       <SettingsForm
-        value={{ summarizerEnabled: false, summaryProvider: "claude", observerEnabled: false }}
+        value={{
+          summarizerEnabled: false,
+          summaryProvider: "claude",
+          summarizerToolCalls: false,
+          observerEnabled: false,
+        }}
         onChange={onChange}
       />,
     );
@@ -36,10 +41,64 @@ describe("SettingsForm", () => {
     const onChange = vi.fn();
     render(
       <SettingsForm
-        value={{ summarizerEnabled: false, summaryProvider: "codex", observerEnabled: false }}
+        value={{
+          summarizerEnabled: false,
+          summaryProvider: "codex",
+          summarizerToolCalls: false,
+          observerEnabled: false,
+        }}
         onChange={onChange}
       />,
     );
     expect((screen.getByRole("radio", { name: "Codex" }) as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it("실험 툴 체크박스: 요약 OFF거나 Codex면 비활성, Claude+요약 ON이면 토글된다", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SettingsForm
+        value={{
+          summarizerEnabled: false,
+          summaryProvider: "claude",
+          summarizerToolCalls: false,
+          observerEnabled: false,
+        }}
+        onChange={onChange}
+      />,
+    );
+    const probe = () =>
+      screen.getByRole("checkbox", { name: /작업 폴더 훑어보기/ }) as HTMLInputElement;
+    // 요약 OFF → 비활성.
+    expect(probe().disabled).toBe(true);
+
+    // 요약 ON + Codex → 여전히 비활성(Claude 전용).
+    rerender(
+      <SettingsForm
+        value={{
+          summarizerEnabled: true,
+          summaryProvider: "codex",
+          summarizerToolCalls: false,
+          observerEnabled: false,
+        }}
+        onChange={onChange}
+      />,
+    );
+    expect(probe().disabled).toBe(true);
+
+    // 요약 ON + Claude → 활성, 클릭 시 패치.
+    rerender(
+      <SettingsForm
+        value={{
+          summarizerEnabled: true,
+          summaryProvider: "claude",
+          summarizerToolCalls: false,
+          observerEnabled: false,
+        }}
+        onChange={onChange}
+      />,
+    );
+    expect(probe().disabled).toBe(false);
+    fireEvent.click(probe());
+    expect(onChange).toHaveBeenCalledWith({ summarizerToolCalls: true });
   });
 });

@@ -389,12 +389,36 @@ pub async fn summarize_text(
     provider: crate::persistence::settings_store::SummaryProvider,
     instruction: String,
     text: String,
+    cwd: Option<String>,
 ) -> Result<String, String> {
-    let enabled = app_state.settings.read().unwrap().summarizer_enabled;
+    let (enabled, tool_calls) = {
+        let settings = app_state.settings.read().unwrap();
+        (settings.summarizer_enabled, settings.summarizer_tool_calls)
+    };
     if !enabled {
         return Err("summarizer-disabled".to_string());
     }
-    crate::summarizer::summarize(provider, &instruction, &text).await
+    // 백엔드가 최종 권위: 실험 툴 모드는 설정 ON + Claude 일 때만. 그 외에는
+    // cwd 를 무시하고 플레인 요약(렌더러 경합이 툴을 켤 수 없다). 디렉터리
+    // 실존 검증은 summarize 가 마지막으로 수행(없으면 조용히 플레인 강등).
+    let tool_cwd = tool_cwd_for(tool_calls, provider, cwd);
+    crate::summarizer::summarize(provider, &instruction, &text, tool_cwd).await
+}
+
+/// 실험 툴 모드로 넘길 작업 폴더 결정. 설정 ON + Claude provider 일 때만
+/// cwd 를 통과시키고, 그 외에는 None(플레인 강등). 디렉터리 실존 검증은 하지
+/// 않는다 — 그건 summarize 몫.
+fn tool_cwd_for(
+    tool_calls: bool,
+    provider: crate::persistence::settings_store::SummaryProvider,
+    cwd: Option<String>,
+) -> Option<std::path::PathBuf> {
+    use crate::persistence::settings_store::SummaryProvider;
+    if tool_calls && provider == SummaryProvider::Claude {
+        cwd.map(std::path::PathBuf::from)
+    } else {
+        None
+    }
 }
 
 /// PixelLab로 64×64 스프라이트 1장 생성. AppState 비의존
@@ -749,10 +773,27 @@ mod tests {
     // 검증한다.
 
     #[test]
+    fn tool_cwd_only_passes_through_for_enabled_claude() {
+        use std::path::PathBuf;
+        let cwd = || Some("/work/repo".to_string());
+        // 설정 ON + Claude → 통과.
+        assert_eq!(
+            tool_cwd_for(true, SummaryProvider::Claude, cwd()),
+            Some(PathBuf::from("/work/repo"))
+        );
+        // 설정 OFF → 강등.
+        assert_eq!(tool_cwd_for(false, SummaryProvider::Claude, cwd()), None);
+        // Codex 는 이 방식의 툴을 못 쓴다 → 강등.
+        assert_eq!(tool_cwd_for(true, SummaryProvider::Codex, cwd()), None);
+        // cwd 부재 → None.
+        assert_eq!(tool_cwd_for(true, SummaryProvider::Claude, None), None);
+    }
+
+    #[test]
     fn summarize_text_command_accepts_provider_snapshot() {
         fn assert_signature<F, Fut>(_command: F)
         where
-            F: Fn(State<'static, AppState>, SummaryProvider, String, String) -> Fut,
+            F: Fn(State<'static, AppState>, SummaryProvider, String, String, Option<String>) -> Fut,
         {
         }
 
@@ -769,7 +810,7 @@ mod tests {
         let result: Result<String, String> = if !state.settings.read().unwrap().summarizer_enabled {
             Err("summarizer-disabled".to_string())
         } else {
-            crate::summarizer::summarize(SummaryProvider::Codex, "요약하라", "text").await
+            crate::summarizer::summarize(SummaryProvider::Codex, "요약하라", "text", None).await
         };
 
         assert_eq!(result.unwrap_err(), "summarizer-disabled");
@@ -783,6 +824,7 @@ mod tests {
             version: 1,
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Codex,
+            summarizer_tool_calls: false,
             observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
@@ -796,7 +838,7 @@ mod tests {
         let result: Result<String, String> = if !state.settings.read().unwrap().summarizer_enabled {
             Err("summarizer-disabled".to_string())
         } else {
-            crate::summarizer::summarize(SummaryProvider::Codex, "요약하라", "   ").await
+            crate::summarizer::summarize(SummaryProvider::Codex, "요약하라", "   ", None).await
         };
 
         assert_eq!(result.unwrap_err(), "validation: text is empty");
@@ -820,6 +862,7 @@ mod tests {
             version: 1,
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Claude,
+            summarizer_tool_calls: false,
             observer_enabled: false,
             sound_enabled: true,
             sound_volume: 0.5,
@@ -856,6 +899,7 @@ mod tests {
             version: 1,
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
+            summarizer_tool_calls: false,
             observer_enabled: true,
             sound_enabled: true,
             sound_volume: 0.5,

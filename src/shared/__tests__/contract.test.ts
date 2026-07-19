@@ -306,13 +306,14 @@ describe("Commands / Events name constants", () => {
 describe("AppSettings (opt-in 설정 계약)", () => {
   it("Rust GetAppSettingsResult JSON이 TS 타입에 그대로 할당된다", () => {
     const json =
-      '{"settings":{"version":1,"summarizerEnabled":false,"summaryProvider":"claude","observerEnabled":false,"soundEnabled":true,"soundVolume":0.5,"externalTerminal":"terminal","externalEditor":"system","attentionHoldMs":5000},"firstRun":true}';
+      '{"settings":{"version":1,"summarizerEnabled":false,"summaryProvider":"claude","summarizerToolCalls":false,"observerEnabled":false,"soundEnabled":true,"soundVolume":0.5,"externalTerminal":"terminal","externalEditor":"system","attentionHoldMs":5000},"firstRun":true}';
     const parsed: GetAppSettingsResult = JSON.parse(json);
     expect(parsed.firstRun).toBe(true);
     expect(parsed.settings).toEqual({
       version: 1,
       summarizerEnabled: false,
       summaryProvider: "claude",
+      summarizerToolCalls: false,
       observerEnabled: false,
       soundEnabled: true,
       soundVolume: 0.5,

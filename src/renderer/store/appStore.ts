@@ -42,6 +42,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   version: 1,
   summarizerEnabled: false,
   summaryProvider: "claude",
+  summarizerToolCalls: false,
   observerEnabled: false,
   soundEnabled: true,
   soundVolume: 0.5,
@@ -211,6 +212,7 @@ interface AppState {
         AppSettings,
         | "summarizerEnabled"
         | "summaryProvider"
+        | "summarizerToolCalls"
         | "observerEnabled"
         | "soundEnabled"
         | "soundVolume"
@@ -222,7 +224,10 @@ interface AppState {
   ): void;
   /** 첫 실행 온보딩 선택 저장 + firstRun 종료. */
   completeFirstRun(
-    choice: Pick<AppSettings, "summarizerEnabled" | "summaryProvider" | "observerEnabled">,
+    choice: Pick<
+      AppSettings,
+      "summarizerEnabled" | "summaryProvider" | "summarizerToolCalls" | "observerEnabled"
+    >,
   ): void;
 }
 
