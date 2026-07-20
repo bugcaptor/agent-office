@@ -497,11 +497,10 @@ pub mod fake {
         ///
         /// No current test needs this (all existing assertions go through
         /// `writes_utf8`), but it's kept as part of `FakeControl`'s public
-        /// test-fixture surface for future non-UTF-8 assertions. Previously
-        /// silenced crate-wide by `lib.rs`'s scaffold `#[allow(dead_code)]`
-        /// on `mod session`; a later change replaced that scaffold with the real
-        /// bootstrap (no blanket allow), which is what surfaced this
-        /// warning under `cargo clippy --all-targets` / `cargo test`.
+        /// test-fixture surface for future non-UTF-8 assertions. `lib.rs` has
+        /// no crate-wide `#[allow(dead_code)]` to lean on, so this method
+        /// needs its own allow to stay warning-free under
+        /// `cargo clippy --all-targets` / `cargo test`.
         #[allow(dead_code)]
         pub fn writes_raw(&self) -> Vec<u8> {
             self.writes.lock().unwrap().clone()
