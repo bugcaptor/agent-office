@@ -23,7 +23,7 @@ use uuid::Uuid;
 
 use crate::notification::hub::NotificationHub;
 use crate::observer::{CommandWrapperSpec, ObserverRuntime, ObserverSessionContext, WrapperArg};
-use crate::session::output_batcher::{FlushSink, OutputBatcher, MAX_BYTES, WINDOW_MS};
+use crate::session::output::{spawn_output_pump, OutputSink, ReaderMsg};
 use crate::session::pi_extension;
 use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnOptions, SpawnedPty};
 use crate::session::shells;
@@ -31,120 +31,57 @@ use crate::session_events::types::{AgentEventProfile, SessionStartedEvent};
 use crate::state::{AppEvents, SessionRegistry};
 use crate::types::*;
 
-const BACKLOG_CAP: usize = 256;
-
-enum ReaderMsg {
-    Data(Vec<u8>),
-    /// adopt 복원 스냅샷(화면 이미지). 스트림 바이트로 계수하지 않는다(§#49 함정 2):
-    /// base가 이미 이 지점을 가리키므로 offset에 잡히면 그만큼 데이터가 유실된다.
-    /// 렌더러 누적 회계에 안 잡히도록 bytes=0 청크로 방출된다.
-    Restore(Vec<u8>),
-    Eof,
-}
-
-/// agentId당 출력 Channel + 등록 이전 백로그. FlushSink 구현체.
-pub struct OutputSink {
-    channel: Mutex<Option<Channel<OutputChunk>>>,
-    backlog: Mutex<std::collections::VecDeque<OutputChunk>>,
-}
-impl OutputSink {
-    fn new() -> Self {
-        Self {
-            channel: Mutex::new(None),
-            backlog: Mutex::new(Default::default()),
-        }
-    }
-    fn attach(&self, ch: Channel<OutputChunk>) {
-        // 락 순서 항상 channel → backlog (데드락 방지, emit과 동일 순서).
-        let mut c = self.channel.lock();
-        let mut b = self.backlog.lock();
-        for chunk in b.drain(..) {
-            let _ = ch.send(chunk);
-        }
-        *c = Some(ch);
-    }
-    fn detach(&self) {
-        *self.channel.lock() = None;
-    }
-    /// 핸드오프 스냅샷 폴백(실증에서 발견된 빈틈): 프론트가 이 터미널을
-    /// 한 번도 구독하지 않은 채 종료하면 xterm 쪽 직렬화 스냅샷이 없다 --
-    /// 그 세션의 종료 전 출력은 여기 backlog에만 남아 있으므로, 원시
-    /// 바이트를 이어붙여 스냅샷 대용으로 쓴다. **드레인하지 않고 복사만
-    /// 한다** -- 핸드오프가 실패해도(데몬 연결 불가 등) 이 세션은 맵에
-    /// 그대로 남아 출력이 이어져야 하므로 backlog를 비우면 안 된다.
-    fn backlog_snapshot(&self) -> Vec<u8> {
-        self.backlog
-            .lock()
-            .iter()
-            .flat_map(|chunk| chunk.data.as_bytes())
-            .copied()
-            .collect()
-    }
-}
-impl FlushSink for OutputSink {
-    fn emit(&self, chunk: OutputChunk) {
-        let c = self.channel.lock();
-        if let Some(ch) = c.as_ref() {
-            let _ = ch.send(chunk); // Channel 전송 실패(웹뷰 소멸)는 무시
-        } else {
-            let mut b = self.backlog.lock();
-            if b.len() >= BACKLOG_CAP {
-                b.pop_front();
-            }
-            b.push_back(chunk);
-        }
-    }
-}
-
-struct Session {
-    session_id: SessionId,
+/// pub(super): handoff_v1.rs/handoff_broker.rs(세션 핸드오프 형제 모듈)가
+/// 필드에 직접 접근한다 -- 최소 가시성으로 `session` 모듈 트리 전체에만 연다.
+pub(super) struct Session {
+    pub(super) session_id: SessionId,
     agent_id: AgentId,
-    state: Mutex<SessionState>,
+    pub(super) state: Mutex<SessionState>,
     writer: Mutex<Box<dyn Write + Send>>,
     control: Arc<dyn PtyControl>,
-    cleanup_paths: Vec<std::path::PathBuf>,
+    pub(super) cleanup_paths: Vec<std::path::PathBuf>,
     kill_requested: AtomicBool,
     /// 시작 작업 디렉터리(세션 수명 동안 불변 -- `cd`는 추적하지 않는다).
     /// 핸드오프 시 Handoff 메시지의 진단/List용 메타데이터로 실어 보낸다.
-    cwd: String,
+    pub(super) cwd: String,
     /// 현재 알려진 터미널 크기. resize()가 갱신 -- 핸드오프 시 Handoff
     /// 메시지에 실어 데몬에 보내고, 입양 응답의 AdoptedSessionInfo로
     /// 프론트에 되돌려줘 터미널 크기를 맞추는 데 쓴다.
-    size: Mutex<(u16, u16)>, // (cols, rows)
+    pub(super) size: Mutex<(u16, u16)>, // (cols, rows)
     /// 세션 핸드오프(§핵심 3, 4). true면 on_exit/dispose가 즉시 return —
     /// 이 세션의 실제 수명은 sessiond가 넘겨받았다(또는 넘겨받는 중이다).
     /// 필드 자체는 크로스플랫폼으로 둬 cfg 분기를 최소화한다(Windows/Fake는
     /// 항상 false로 남는 no-op).
-    handed_off: AtomicBool,
+    pub(super) handed_off: AtomicBool,
     /// unix 전용: 핸드오프 시 리더 스레드를 확정적으로 멈추는 스위치와,
     /// sessiond에 넘길 마스터 fd/pid/pgid. `create_with_profile`(팩토리
     /// spawn)과 `adopt_detached`(assemble_adopted) 양쪽이 채운다 — Fake로
     /// 만든 세션은 항상 None(핸드오프 불가능 세션).
     #[cfg(unix)]
-    reader_interrupt: Mutex<Option<crate::session::poll_reader::ReaderInterrupt>>,
+    pub(super) reader_interrupt: Mutex<Option<crate::session::poll_reader::ReaderInterrupt>>,
     #[cfg(unix)]
-    handoff: Mutex<Option<crate::session::pty_factory::HandoffInfo>>,
+    pub(super) handoff: Mutex<Option<crate::session::pty_factory::HandoffInfo>>,
     /// 입양된 세션 한정(§핵심 4의 AdoptedReader 정지 게이트) -- 재핸드오프
     /// 인터럽트 직전 true로 세팅해야 EofWaiter가 오발화하지 않는다.
     /// create() 경로(RealWaiter가 독립적으로 exit 판정)는 항상 None. 타입
     /// 자체는 크로스플랫폼이라 cfg 분기가 필요 없다(항상 컴파일되고, 비unix는
     /// 그냥 항상 None으로 남는다).
-    eof_stop_gate: Option<Arc<AtomicBool>>,
+    pub(super) eof_stop_gate: Option<Arc<AtomicBool>>,
     /// v2 브로커 데몬이 이 세션을 소유하는가(SpawnedPty에서 전파). 브로커 모드
     /// 매니저라도 팩토리 폴백으로 생긴 in-process 세션은 false다 — handoff_all이
     /// 이 플래그로 "스냅샷 업로드+detach"(true)와 "v1 fd 핸드오프"(false)를 가른다.
-    broker_owned: bool,
+    pub(super) broker_owned: bool,
     /// 브로커 data 연결의 누적 수신 오프셋 카운터(§P1). 스냅샷 업로드 시 현재
     /// 값을 offset으로 동봉해 데몬 수신 시점 ring.total()과의 간극(유실 창)을
     /// 없앤다. 브로커 세션만 Some.
-    broker_stream_offset: Option<Arc<std::sync::atomic::AtomicU64>>,
+    pub(super) broker_stream_offset: Option<Arc<std::sync::atomic::AtomicU64>>,
     /// detach 시 data 소켓을 결정적으로 닫는 핸들(§#50 선결). broker_owned 세션의
     /// detach에서 shutdown하면 앱 reader 스레드가 EOF로 종료되고 데몬 conn이 정리돼
     /// List `attached`가 false로 돌아간다 — adopt가 라이브 원격 소유 세션을
     /// 가로채지 않게 하는 근거(현재 인스턴스가 살아 붙어 있으면 attached=true 유지).
     /// 브로커 세션만 Some(unix).
     #[cfg(unix)]
-    broker_data_shutdown: Mutex<Option<crate::session::broker_pty::BrokerDataShutdown>>,
+    pub(super) broker_data_shutdown: Mutex<Option<crate::session::broker_pty::BrokerDataShutdown>>,
     /// 마지막 PTY 활동(출력 수신 또는 stdin 주입) 시각(epoch ms). 봇 모드의
     /// turn-taking 유휴 판정에 쓴다 — 봇은 이 값이 일정 시간 이상 정체됐을 때만
     /// 다음 지시를 주입한다(이슈 #57, docs/bot-mode-design.md). 0이면 아직 활동
@@ -163,12 +100,16 @@ fn now_ms() -> u64 {
 
 pub struct SessionManager {
     factory: Arc<dyn PtyFactory>,
-    observer: Arc<ObserverRuntime>,
+    /// pub(super): handoff_v1.rs의 adopt_one/handoff_broker.rs의 adopt_one_broker가
+    /// `restore_session_artifacts`를 직접 호출한다.
+    pub(super) observer: Arc<ObserverRuntime>,
     get_observer_url: Arc<dyn Fn() -> Option<String> + Send + Sync>,
-    registry: Arc<SessionRegistry>,
+    /// pub(super): 핸드오프/입양 형제 모듈이 세션 제거 시 레지스트리도 함께 정리한다.
+    pub(super) registry: Arc<SessionRegistry>,
     events: Arc<dyn AppEvents>,
     hub: Arc<NotificationHub>,
-    sessions: Mutex<HashMap<AgentId, Arc<Session>>>,
+    /// pub(super): 핸드오프/입양 형제 모듈이 Running 세션 목록 조회·맵 제거에 쓴다.
+    pub(super) sessions: Mutex<HashMap<AgentId, Arc<Session>>>,
     /// agentId별 출력 sink — 세션 수명과 독립. subscribe 이전 pending attach와
     /// 세션 재생성 시 채널 재사용을 위해 세션이 아니라 여기에 보관한다.
     sinks: Mutex<HashMap<AgentId, Arc<OutputSink>>>,
@@ -179,7 +120,8 @@ pub struct SessionManager {
     /// 채운다 — 미설정(None)이면 `handoff_all`/`adopt_detached`는 no-op(0/빈
     /// 벡터)이고 env 주입도 생략된다(기존 테스트가 앱 데이터 경로 없이도
     /// 그대로 통과해야 하므로 기본값은 None).
-    app_data_dir: Option<std::path::PathBuf>,
+    /// pub(super): 핸드오프/입양 형제 모듈이 소켓/로그 경로 계산에 직접 읽는다.
+    pub(super) app_data_dir: Option<std::path::PathBuf>,
     /// v2 상시 브로커 모드(unix 전용 opt-in, docs/session-broker-v2-design.md).
     /// true면 `handoff_all`/`adopt_detached`/스냅샷 업로드가 v1 fd 핸드오프
     /// 대신 브로커 RPC 경로를 탄다. 기본 false(v1 경로 보존). 팩토리 주입은
@@ -231,14 +173,17 @@ impl SessionManager {
         self
     }
 
-    fn find(&self, agent_id: &str) -> Option<Arc<Session>> {
+    /// pub(super): handoff_v1.rs/handoff_broker.rs가 세션 조회에 직접 쓴다.
+    pub(super) fn find(&self, agent_id: &str) -> Option<Arc<Session>> {
         self.sessions.lock().get(agent_id).cloned()
     }
 
     /// agentId의 출력 sink를 반환(없으면 생성). attach_output이 세션보다 먼저
     /// 호출되면 여기서 sink가 만들어지고, create()는 같은 sink를 이어받아
     /// 이미 붙은 채널/백로그를 그대로 재사용한다.
-    fn sink_for(&self, agent_id: &str) -> Arc<OutputSink> {
+    ///
+    /// pub(super): handoff_v1.rs의 handoff_one이 backlog 스냅샷 폴백에 쓴다.
+    pub(super) fn sink_for(&self, agent_id: &str) -> Arc<OutputSink> {
         self.sinks
             .lock()
             .entry(agent_id.to_string())
@@ -484,8 +429,11 @@ impl SessionManager {
     /// `initial_output`: 데몬이 보관해 둔 미전달 출력(입양 전용). reader
     /// 스레드가 시작되기 *전에* pump 채널로 먼저 흘려보내 순서를 보장한다
     /// (§핵심 4: "pump mpsc에 첫 ReaderMsg::Data로 주입").
+    ///
+    /// pub(super): handoff_v1.rs의 adopt_one/handoff_broker.rs의 adopt_one_broker가
+    /// 입양 재배선에 재사용한다.
     #[allow(clippy::too_many_arguments)]
-    fn install_session(
+    pub(super) fn install_session(
         self: &Arc<Self>,
         session_id: SessionId,
         agent_id: AgentId,
@@ -656,501 +604,6 @@ impl SessionManager {
         }
     }
 
-    /// 앱 quit(§핵심 3): Running 세션들을 sessiond로 넘긴다. `snapshots`는
-    /// agentId -> 프론트가 종료 직전 직렬화한 xterm 화면(스크롤백 포함) --
-    /// 데몬은 핸드오프 *이후* 출력만 링버퍼에 담으므로, 이게 없으면 재입양
-    /// 후 종료 전 화면(예: ls 결과)이 사라진다(실증에서 발견된 빈틈).
-    /// 반환값은 성공 개수 -- 프론트는 이 수와 무관하게 종료를 진행한다.
-    /// `app_data_dir`이 없으면(테스트 등) 0.
-    #[cfg(unix)]
-    pub fn handoff_all(
-        &self,
-        snapshots: &std::collections::HashMap<String, String>,
-        rendered_bytes: &std::collections::HashMap<String, u64>,
-    ) -> usize {
-        if self.broker_mode {
-            return self.handoff_all_broker(snapshots, rendered_bytes);
-        }
-        let Some(app_data_dir) = self.app_data_dir.clone() else {
-            return 0;
-        };
-        let ids: Vec<AgentId> = {
-            let map = self.sessions.lock();
-            map.iter()
-                .filter(|(_, s)| *s.state.lock() == SessionState::Running)
-                .map(|(a, _)| a.clone())
-                .collect()
-        };
-        if ids.is_empty() {
-            return 0;
-        }
-
-        let socket_path = crate::sessiond::client::default_socket_path(&app_data_dir);
-        let log_path = crate::sessiond::client::default_log_path(&app_data_dir);
-        let exe_path = std::env::current_exe().unwrap_or_default();
-        let client =
-            match crate::sessiond::client::connect_or_spawn(&socket_path, &exe_path, &log_path) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("agent-office: handoff_all could not reach sessiond: {e}");
-                    return 0;
-                }
-            };
-
-        ids.iter()
-            .filter(|agent_id| {
-                let snapshot = snapshots
-                    .get(agent_id.as_str())
-                    .map(|s| s.clone().into_bytes())
-                    .unwrap_or_default();
-                self.handoff_one(agent_id, &client, snapshot)
-            })
-            .count()
-    }
-
-    #[cfg(not(unix))]
-    pub fn handoff_all(
-        &self,
-        _snapshots: &std::collections::HashMap<String, String>,
-        _rendered_bytes: &std::collections::HashMap<String, u64>,
-    ) -> usize {
-        0
-    }
-
-    /// 세션 하나를 넘긴다. 설계 문서 §핵심 3의 순서 그대로: 리더 인터럽트 →
-    /// handed_off set → 전송. 실패해도 세션은 그대로 둔다(맵에 남고
-    /// handed_off=true) -- 앱은 어차피 곧 종료되므로 마스터 fd가 닫히며
-    /// SIGHUP으로 자연 정리된다(설계 문서 "왜 이 방식인가" 참조).
-    ///
-    /// `snapshot`이 비어 있으면(프론트가 이 터미널을 한 번도 구독하지 않아
-    /// 직렬화 대상이 없었던 경우 등) sink의 backlog를 폴백으로 쓴다 --
-    /// 실증에서 발견된 빈틈 수정: 그래야 아직 한 번도 열지 않은 터미널도
-    /// 재입양 후 종료 전 출력이 최소한 backlog 분량만큼은 보존된다.
-    #[cfg(unix)]
-    fn handoff_one(
-        &self,
-        agent_id: &str,
-        client: &crate::sessiond::client::Client,
-        snapshot: Vec<u8>,
-    ) -> bool {
-        let Some(sess) = self.find(agent_id) else {
-            return false;
-        };
-        if sess.handed_off.load(Ordering::SeqCst) {
-            return false;
-        }
-        let Some(handoff) = sess.handoff.lock().take() else {
-            return false; // Fake/입양 조립 실패 등으로 handoff 정보가 없는 세션은 핸드오프 불가.
-        };
-
-        // 재핸드오프(입양 세션)라면 EofWaiter 오발화를 막는다.
-        if let Some(gate) = &sess.eof_stop_gate {
-            gate.store(true, Ordering::SeqCst);
-        }
-        if let Some(interrupt) = sess.reader_interrupt.lock().take() {
-            interrupt.interrupt();
-        }
-        // poll 기반 리더는 인터럽트를 수 ms 내 관측한다 -- fd를 보내기 전에
-        // 짧게 양보해 리더 스레드가 실제로 빠져나갈 시간을 준다(완료 채널을
-        // 새로 두는 것보다 훨씬 단순하고, 실패해도 안전 — 최악의 경우 데몬이
-        // 아주 잠깐 늦게 도착한 잔여 바이트를 이어 읽을 뿐 유실은 없다).
-        std::thread::sleep(std::time::Duration::from_millis(20));
-
-        sess.handed_off.store(true, Ordering::SeqCst);
-
-        let pid = handoff.pid;
-        let pgid = handoff.pgid;
-        let master_fd = handoff.take_master_fd();
-        let (cols, rows) = *sess.size.lock();
-        let cleanup_paths = sess
-            .cleanup_paths
-            .iter()
-            .map(|p| p.to_string_lossy().into_owned())
-            .collect();
-        let snapshot = if snapshot.is_empty() {
-            self.sink_for(agent_id).backlog_snapshot()
-        } else {
-            snapshot
-        };
-
-        let result = client.handoff(crate::sessiond::client::HandoffRequest {
-            agent_id: agent_id.to_string(),
-            session_id: sess.session_id.clone(),
-            pid,
-            pgid,
-            rows,
-            cols,
-            cwd: sess.cwd.clone(),
-            cleanup_paths,
-            snapshot,
-            master_fd,
-        });
-
-        match result {
-            Ok(()) => {
-                self.sessions.lock().remove(agent_id);
-                self.registry.remove(&sess.session_id);
-                true
-            }
-            Err(e) => {
-                eprintln!("agent-office: handoff failed for {agent_id}: {e}");
-                let _ = nix::unistd::close(master_fd);
-                false
-            }
-        }
-    }
-
-    // ── v2 브로커 모드 앱 쪽 분기 ─────────────────────────────────────
-    //
-    // 브로커 모드 매니저라도 세션은 두 종류가 섞일 수 있다: 데몬이 소유하는
-    // 브로커 세션(broker_owned)과, 데몬 접속 실패로 팩토리가 폴백 스폰한
-    // in-process 세션. "유지하고 종료"를 세션 단위로 가른다:
-    //   - broker_owned: 데몬이 자식을 이미 소유하므로 **스냅샷 업로드 후
-    //     detach**(맵에서만 떼어내 dispose_all이 Kill하지 않게 함).
-    //   - 폴백 세션: 앱이 fd를 쥐고 있으므로 **기존 v1 fd 핸드오프**로 넘긴다.
-    // 하나의 connect_or_spawn 연결로 두 경로를 모두 처리한다 -- 데몬은 proto 2라
-    // v1 Handoff와 v2 UpdateSnapshot을 같은 연결에서 받는다.
-    #[cfg(unix)]
-    fn handoff_all_broker(
-        &self,
-        snapshots: &std::collections::HashMap<String, String>,
-        rendered_bytes: &std::collections::HashMap<String, u64>,
-    ) -> usize {
-        let Some(app_data_dir) = self.app_data_dir.clone() else {
-            return 0;
-        };
-        let ids: Vec<AgentId> = {
-            let map = self.sessions.lock();
-            map.iter()
-                .filter(|(_, s)| *s.state.lock() == SessionState::Running)
-                .map(|(a, _)| a.clone())
-                .collect()
-        };
-        if ids.is_empty() {
-            return 0;
-        }
-        let socket_path = crate::sessiond::client::default_socket_path(&app_data_dir);
-        let log_path = crate::sessiond::client::default_log_path(&app_data_dir);
-        let exe_path = std::env::current_exe().unwrap_or_default();
-        let client =
-            crate::sessiond::client::connect_or_spawn(&socket_path, &exe_path, &log_path).ok();
-        let mut count = 0;
-        for agent_id in ids {
-            let Some(sess) = self.find(&agent_id) else { continue };
-            if sess.handed_off.load(Ordering::SeqCst) {
-                continue;
-            }
-            if sess.broker_owned {
-                // 브로커 세션: 최신 스냅샷 업로드(best-effort) 후 detach. 데몬에
-                // 못 닿아도 detach는 진행해야 dispose_all이 자식을 죽이지 않는다.
-                if let (Some(client), Some(snap)) = (&client, snapshots.get(agent_id.as_str())) {
-                    let offset = snapshot_offset(&sess, rendered_bytes.get(agent_id.as_str()).copied());
-                    let _ = client.update_snapshot(&agent_id, snap.as_bytes(), offset);
-                }
-                sess.handed_off.store(true, Ordering::SeqCst);
-                // data 소켓을 결정적으로 shutdown: reader 스레드를 EOF로 종료시키고
-                // 데몬에 FIN을 보내 conn을 정리시킨다(§#50 선결). 이게 없으면 reader
-                // 스레드가 clone fd를 프로세스 종료까지 쥐어 데몬 conn이 살아 있고
-                // List `attached`가 stale-true로 고착돼, 다음 인스턴스가 라이브 소유로
-                // 오판하거나 같은 프로세스 재입양이 깨진다.
-                if let Some(sd) = sess.broker_data_shutdown.lock().take() {
-                    sd.shutdown();
-                }
-                // 데몬이 FIN을 관측해 conn을 떼어낼 짧은 여유(handoff_one과 동일 패턴).
-                // 실제 앱 종료 시엔 이후 프로세스가 죽어 무관하나, 같은 프로세스에서
-                // 곧바로 재입양하는 경우 attached=false로 수렴할 시간을 준다.
-                std::thread::sleep(std::time::Duration::from_millis(20));
-                self.sessions.lock().remove(&agent_id);
-                self.registry.remove(&sess.session_id);
-                count += 1;
-            } else if let Some(client) = &client {
-                // 폴백(in-process) 세션: 기존 v1 fd 핸드오프(reader 인터럽트 →
-                // fd 전송 → 맵 제거). 스냅샷이 없으면 handoff_one이 backlog로 폴백.
-                let snapshot = snapshots
-                    .get(agent_id.as_str())
-                    .map(|s| s.clone().into_bytes())
-                    .unwrap_or_default();
-                if self.handoff_one(&agent_id, client, snapshot) {
-                    count += 1;
-                }
-            }
-        }
-        count
-    }
-
-    /// 주기 스냅샷 업로드(브로커 모드 전용). 렌더러가 30초마다 직렬화한 화면을
-    /// 데몬에 올려 앱 크래시 후에도 마지막 화면을 복원할 수 있게 한다.
-    /// 브로커 모드가 아니거나 데몬에 못 닿으면 no-op.
-    #[cfg(unix)]
-    pub fn upload_snapshots(
-        &self,
-        snapshots: &std::collections::HashMap<String, String>,
-        rendered_bytes: &std::collections::HashMap<String, u64>,
-    ) {
-        if !self.broker_mode {
-            return;
-        }
-        let Some(app_data_dir) = &self.app_data_dir else {
-            return;
-        };
-        let Ok(client) = crate::session::broker_pty::connect(app_data_dir) else {
-            return;
-        };
-        for (agent_id, snap) in snapshots {
-            // 데몬 테이블에 없는 agentId면 no-op으로 무시된다(안전). 스냅샷 offset은
-            // base(attach 시 stream_offset) + 렌더러가 실제 렌더한 raw 바이트 누적치로
-            // 동봉해 유실 창을 없앤다(§#49) -- 렌더러 누적치가 없으면 None(데몬은
-            // 수신 시점 ring.total()로 폴백).
-            let offset = self
-                .find(agent_id)
-                .and_then(|s| snapshot_offset(&s, rendered_bytes.get(agent_id).copied()));
-            let _ = client.update_snapshot(agent_id, snap.as_bytes(), offset);
-        }
-    }
-
-    #[cfg(not(unix))]
-    pub fn upload_snapshots(
-        &self,
-        _snapshots: &std::collections::HashMap<String, String>,
-        _rendered_bytes: &std::collections::HashMap<String, u64>,
-    ) {
-    }
-
-    /// 브로커 모드 재접속: List를 훑어 세션 종류별로 되찾는다 -- **broker=true는
-    /// Attach+DataAttach(브로커 경로)로, broker=false(v1 핸드오프/폴백 세션)는
-    /// 기존 v1 adopt(adopt_one, fd 회수)로** 입양한다. 후자는 이전 실행이 폴백
-    /// 스폰한 세션을 v1 fd 핸드오프로 넘긴 경우나, 브로커로 업그레이드하기 전
-    /// 남아 있던 세션을 커버한다(협상 p=1인 구데몬 상대로는 애초에 broker 항목이
-    /// 없으니 자연히 v1만 처리된다). exited 항목은 스킵.
-    #[cfg(unix)]
-    fn adopt_detached_broker(
-        self: &Arc<Self>,
-        known_agent_ids: &std::collections::HashSet<String>,
-    ) -> Vec<AdoptedSessionInfo> {
-        let Some(app_data_dir) = self.app_data_dir.clone() else {
-            return Vec::new();
-        };
-        if !crate::session::broker_pty::socket_exists(&app_data_dir) {
-            return Vec::new();
-        }
-        let Ok(client) = crate::session::broker_pty::connect(&app_data_dir) else {
-            return Vec::new();
-        };
-        let sessions = client.list().unwrap_or_default();
-        let mut adopted = Vec::new();
-        for info in sessions {
-            if info.exited {
-                // 종료된 브로커 세션은 best-effort Kill로 데몬 테이블에서 치운다
-                // (§P2-a) -- detach 중 자식이 죽으면 exited 엔트리가 영원히 남아
-                // 데몬의 table-empty 종료를 막는 누수가 된다. v1 exited 항목은
-                // 기존대로 스킵(v1 Adopt/Kill 수명 규칙 유지).
-                if info.broker {
-                    let _ = client.kill(&info.agent_id);
-                }
-                continue;
-            }
-            // §#50: 다른 앱 인스턴스가 지금 활성 data conn을 붙여 둔 세션
-            // (info.attached)은 입양하지 않는다 -- 입양하면 DataAttach 교체로
-            // 데몬이 그 인스턴스의 data 소켓을 shutdown해 원본 터미널이 먹통이
-            // 된다(앱은 단일 인스턴스 강제가 없다). detach가 이제 소켓을 결정적
-            // shutdown하므로(broker_data_shutdown) 정상 재시작/크래시(프로세스
-            // 종료로 OS가 fd를 닫음)면 데몬이 conn을 정리해 attached=false가 되어
-            // 여기서 정상 입양된다. attached=true는 "살아 있는 다른 인스턴스 소유".
-            // v1 세션은 데몬이 항상 attached=false로 주므로 영향 없다.
-            // TOCTOU(List~DataAttach 창)는 수용: 두 인스턴스가 ms 창에서 같은
-            // 미소유 세션을 경합해도 데몬 gen 직렬화로 크래시 없이 last-wins 수렴.
-            if info.attached {
-                eprintln!(
-                    "agent-office: skip adopt of {} — attached by another live instance",
-                    info.agent_id
-                );
-                continue;
-            }
-            if !known_agent_ids.contains(&info.agent_id) {
-                let _ = client.kill(&info.agent_id); // 삭제된 에이전트의 고아 세션 정리.
-                continue;
-            }
-            let result = if info.broker {
-                self.adopt_one_broker(&app_data_dir, &info, &client)
-            } else {
-                // v1 핸드오프/폴백 세션은 기존 fd 회수 경로로 입양한다(공유 연결 사용).
-                self.adopt_one(&info.agent_id, &client)
-            };
-            if let Some(r) = result {
-                adopted.push(r);
-            }
-        }
-        adopted
-    }
-
-    /// 브로커 세션 하나 입양: Attach로 메타/스냅샷을 회수하고 DataAttach로
-    /// 백로그 리플레이 스트림을 붙인다. 종료는 BrokerWaiter(Wait RPC)가 실제
-    /// exit code로 관측한다(v1 EofWaiter의 "exit code 소실" 제약 해소).
-    #[cfg(unix)]
-    fn adopt_one_broker(
-        self: &Arc<Self>,
-        app_data_dir: &std::path::Path,
-        info: &crate::sessiond::protocol::SessionInfo,
-        client: &crate::sessiond::client::Client,
-    ) -> Option<AdoptedSessionInfo> {
-        let (spawned, meta) =
-            match crate::session::broker_pty::assemble_broker_adopted(app_data_dir, &info.agent_id) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("agent-office: broker adopt failed for {}: {e}", info.agent_id);
-                    return None;
-                }
-            };
-        // List와 Attach 사이에 자식이 죽었으면(경합) 입양하지 않는다. 이때
-        // 데몬 테이블엔 exited 엔트리가 남아 table-empty 종료를 막으므로,
-        // best-effort Kill로 치운다(입양은 boot 때 1회뿐이라 나중에 dispose할
-        // 매니저 세션이 안 생겨 방치되면 영구 잔류한다).
-        if meta.exit.is_some() {
-            let _ = client.kill(&info.agent_id);
-            return None;
-        }
-        // Attach가 준 라이브 크기를 우선(리사이즈 후 List가 낡았을 수 있다).
-        let size = (meta.cols, meta.rows);
-        // 화면 복원: 업로드된 스냅샷이 있으면 항상 initial_output으로 주입한다.
-        // 데몬은 그 스냅샷 시점 이후의 링버퍼 바이트만 data 연결로 리플레이하므로
-        // (snapshot_offset 기반), "스냅샷 + 이후 출력"이 되어 중복 없이 전체
-        // 스크롤백이 복원된다. 스냅샷이 한 번도 업로드 안 됐으면 데몬이 링 전체를
-        // 리플레이하고 meta.snapshot은 비어 있어 주입하지 않는다.
-        let initial_output = (!meta.snapshot.is_empty()).then_some(meta.snapshot);
-        // 이슈 #40: 삭제 소유권은 데몬이 유지하되(앱 install_session엔 빈 벡터를
-        // 넘긴다), 앱이 꺼진 사이 사라졌을 수 있는 observer 설정 파일은 데몬이
-        // 돌려준 cleanup_paths로 입양 시점에 멱등 재작성한다.
-        let restore_paths: Vec<std::path::PathBuf> =
-            meta.cleanup_paths.iter().map(std::path::PathBuf::from).collect();
-        self.observer
-            .restore_session_artifacts(&info.session_id, &restore_paths);
-        // cleanup_paths는 데몬이 Spawn 때 받아 보관·정리하므로 앱 쪽은 비운다.
-        let (session, _started) = self.install_session(
-            info.session_id.clone(),
-            info.agent_id.clone(),
-            Vec::new(),
-            info.cwd.clone(),
-            size,
-            spawned,
-            None, // eof_stop_gate: 브로커는 Wait RPC로 종료를 관측한다.
-            initial_output,
-        );
-        Some(AdoptedSessionInfo {
-            agent_id: info.agent_id.clone(),
-            session_id: session.session_id.clone(),
-            rows: size.1,
-            cols: size.0,
-        })
-    }
-
-    /// 부트스트랩(§핵심 4): sessiond에 남아 있는 세션들을 되찾는다.
-    /// `known_agent_ids`는 영속 프로필의 agentId 집합 -- 여기 없는 항목은
-    /// Kill 지시(삭제된 에이전트의 고아 claude 방지), exited 항목은 스킵.
-    /// 소켓이 없거나 연결 실패면 빈 벡터(데몬을 새로 스폰하지 않는다 --
-    /// 입양할 게 없으면 없는 대로다).
-    #[cfg(unix)]
-    pub fn adopt_detached(
-        self: &Arc<Self>,
-        known_agent_ids: &std::collections::HashSet<String>,
-    ) -> Vec<AdoptedSessionInfo> {
-        if self.broker_mode {
-            return self.adopt_detached_broker(known_agent_ids);
-        }
-        let Some(app_data_dir) = &self.app_data_dir else {
-            return Vec::new();
-        };
-        let socket_path = crate::sessiond::client::default_socket_path(app_data_dir);
-        if !socket_path.exists() {
-            return Vec::new();
-        }
-        let client = match crate::sessiond::client::Client::connect(&socket_path) {
-            Ok(c) => c,
-            Err(_) => return Vec::new(),
-        };
-        let sessions = match client.list() {
-            Ok(s) => s,
-            Err(_) => return Vec::new(),
-        };
-
-        let mut adopted = Vec::new();
-        for info in sessions {
-            if info.exited {
-                continue;
-            }
-            if !known_agent_ids.contains(&info.agent_id) {
-                let _ = client.kill(&info.agent_id);
-                continue;
-            }
-            if let Some(result) = self.adopt_one(&info.agent_id, &client) {
-                adopted.push(result);
-            }
-        }
-        adopted
-    }
-
-    #[cfg(not(unix))]
-    pub fn adopt_detached(
-        self: &Arc<Self>,
-        _known_agent_ids: &std::collections::HashSet<String>,
-    ) -> Vec<AdoptedSessionInfo> {
-        Vec::new()
-    }
-
-    /// 세션 하나를 입양해 install_session으로 재배선한다. 실패하면 None --
-    /// 그 세션은 데몬 테이블에 그대로 남아 다음 재시작에서 다시 시도할 수
-    /// 있다(이번 연결에서 이미 Adopt를 보낸 뒤 실패했다면 데몬 쪽에선 이미
-    /// 테이블에서 빠진 상태이므로 fd 자체는 유실 -- assemble_adopted 실패는
-    /// 극히 드문 경로라 이 트레이드오프를 받아들인다).
-    #[cfg(unix)]
-    fn adopt_one(
-        self: &Arc<Self>,
-        agent_id: &str,
-        client: &crate::sessiond::client::Client,
-    ) -> Option<AdoptedSessionInfo> {
-        let adopted = client.adopt(agent_id).ok()?;
-        let (spawned, stop_gate) = match crate::session::pty_factory::assemble_adopted(
-            adopted.master_fd,
-            adopted.pid,
-            adopted.pgid,
-        ) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("agent-office: failed to assemble adopted session {agent_id}: {e}");
-                let _ = nix::unistd::close(adopted.master_fd);
-                return None;
-            }
-        };
-        let cleanup_paths: Vec<std::path::PathBuf> =
-            adopted.cleanup_paths.iter().map(std::path::PathBuf::from).collect();
-        // 이슈 #40: 앱이 꺼진 사이 사라졌을 수 있는 observer 설정 파일을 입양
-        // 시점에 멱등 재작성한다. cleanup_paths가 비면(observer OFF 세션) no-op.
-        self.observer
-            .restore_session_artifacts(&adopted.session_id, &cleanup_paths);
-        let size = (adopted.cols, adopted.rows);
-        // 종료 직전 화면 스냅샷 -> 핸드오프 이후 링버퍼 순으로 이어붙인다
-        // (실증에서 발견된 빈틈 수정) -- 순서가 바뀌면 화면이 뒤죽박죽으로
-        // 재생된다. install_session이 빈 벡터는 initial_output 주입 자체를
-        // 건너뛰므로 둘 다 없을 때를 따로 가릴 필요가 없다.
-        let mut initial_output = adopted.snapshot;
-        initial_output.extend_from_slice(&adopted.buffer);
-        let (session, _started) = self.install_session(
-            adopted.session_id,
-            agent_id.to_string(),
-            cleanup_paths,
-            adopted.cwd,
-            size,
-            spawned,
-            Some(stop_gate),
-            Some(initial_output),
-        );
-        Some(AdoptedSessionInfo {
-            agent_id: agent_id.to_string(),
-            session_id: session.session_id.clone(),
-            rows: size.1,
-            cols: size.0,
-        })
-    }
-
     /// subscribe_output 커맨드가 호출: agentId에 Channel 등록(+백로그 드레인).
     /// 세션이 아직 없어도 sink를 만들어 채널을 보관한다(pending attach) —
     /// 이후 create()가 같은 sink를 이어받아 재구독 없이 출력이 흐른다.
@@ -1283,82 +736,6 @@ fn cleanup_paths(paths: &[std::path::PathBuf]) {
             }
         }
     }
-}
-
-/// 스냅샷 업로드/핸드오프에 실을 절대 offset을 계산한다(§#49).
-/// `base`(attach 시 DataAttachOk가 준 stream_offset, 세션당 고정) + `rendered`
-/// (렌더러가 실제 렌더/소비한 raw 스트림 바이트 누적치). 렌더러 누적치가
-/// 없으면(프론트가 그 세션 값을 안 실어 보냄) None을 반환해 데몬이 수신 시점
-/// ring.total()로 폴백하게 한다(trim 과다 위험은 값이 아예 없을 때만).
-#[cfg(unix)]
-fn snapshot_offset(sess: &Session, rendered: Option<u64>) -> Option<u64> {
-    let rendered = rendered?;
-    let base = sess
-        .broker_stream_offset
-        .as_ref()
-        .map(|c| c.load(Ordering::SeqCst))
-        .unwrap_or(0);
-    Some(base + rendered)
-}
-
-fn spawn_output_pump(
-    session_id: String,
-    agent_id: String,
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<ReaderMsg>,
-    sink: Arc<OutputSink>,
-    hub: Arc<NotificationHub>,
-) {
-    tokio::spawn(async move {
-        let mut batcher = OutputBatcher::new(session_id.clone(), agent_id);
-        let mut deadline: Option<tokio::time::Instant> = None;
-        loop {
-            let timer = async {
-                match deadline {
-                    Some(d) => tokio::time::sleep_until(d).await,
-                    None => std::future::pending::<()>().await, // 데드라인 없으면 영원히 대기
-                }
-            };
-            tokio::select! {
-                _ = timer => {
-                    batcher.flush(&*sink);
-                    deadline = None;
-                }
-                msg = rx.recv() => match msg {
-                    Some(ReaderMsg::Data(bytes)) => {
-                        if bytes.contains(&0x07) {
-                            hub.on_bell(&session_id); // BEL 폴백(dedup이 연속 억제)
-                        }
-                        // 이슈 #39: Stop 이후 출력이 계속되면 "아직 작업중"으로 복귀시키는
-                        // 휴리스틱에 바이트 수를 흘려 보낸다(Stop 감시 중이 아니면 즉시 반환).
-                        hub.on_output(&session_id, bytes.len());
-                        batcher.push(&bytes);
-                        if batcher.pending_bytes() >= MAX_BYTES {
-                            batcher.flush(&*sink);
-                            deadline = None;
-                        } else if deadline.is_none() {
-                            deadline = Some(tokio::time::Instant::now()
-                                + std::time::Duration::from_millis(WINDOW_MS));
-                        }
-                    }
-                    Some(ReaderMsg::Restore(bytes)) => {
-                        // §#49 함정 2: adopt 복원 스냅샷(화면 이미지)은 실시간
-                        // 스트림 출력이 아니라 화면 복원이다. batcher를 거치면
-                        // consumed>0으로 계수돼 offset이 부풀므로, bytes=0인 청크로
-                        // 직접 방출한다. 순서 보존을 위해 혹시 남아 있을 pending을
-                        // 먼저 flush한다(Restore는 항상 첫 메시지라 실제로는 없음).
-                        // BEL/on_output 휴리스틱도 적용하지 않는다(실시간 출력 아님).
-                        batcher.flush(&*sink);
-                        deadline = None;
-                        batcher.emit_uncounted(String::from_utf8_lossy(&bytes).into_owned(), &*sink);
-                    }
-                    Some(ReaderMsg::Eof) | None => {
-                        batcher.flush_final(&*sink); // 잔여 강제 방출
-                        break;
-                    }
-                }
-            }
-        }
-    });
 }
 
 pub(crate) fn home_dir() -> String {

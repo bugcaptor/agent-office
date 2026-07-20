@@ -528,9 +528,382 @@ fn run_data_conn(fd: RawFd, session: &Arc<BrokerSession>) {
     let _ = writer_join.join();
 }
 
+// ── 오피코드별 핸들러 ──────────────────────────────────────────────────
+//
+// 각 함수는 `handle_connection`의 원래 match arm 몸체를 그대로 옮긴 것이다
+// (락 획득 지점·범위·순서, 응답 프레임, 에러 처리 전부 불변). 대부분은 응답을
+// 직접 소켓에 쓰고 반환하며, `handle_connection`은 파싱한 필드를 그대로
+// 넘기는 얇은 디스패처로 남는다.
+
+/// `Hello`: additive 협상 -- 클라이언트가 요청한 proto를 데몬 상한으로 낮춰
+/// 수락한다(HelloOk{min(proto, PROTO_VERSION)}). 구프로토(>=1) 클라이언트는
+/// 그 버전의 메시지만 보내므로 안전하다. proto 0은 유효한 버전이 아니므로
+/// 거부한다.
+fn handle_hello(fd: RawFd, proto: u32) {
+    let reply = if proto >= 1 {
+        Message::HelloOk { proto: proto.min(protocol::PROTO_VERSION) }
+    } else {
+        Message::Error { message: format!("unsupported protocol version {proto}") }
+    };
+    let _ = protocol::write_frame(fd, &reply, None);
+}
+
+/// `Handoff`: 앱이 넘긴 세션을 v1 테이블에 등록한다. 반환값 `false`는 원래
+/// `continue`(fd 없이 온 잘못된 요청)에 해당한다 -- 호출자가 루프를 이어간다.
+#[allow(clippy::too_many_arguments)]
+fn handle_handoff(
+    fd: RawFd,
+    table: &Table,
+    ever_handoff: &AtomicBool,
+    recv_fd: Option<RawFd>,
+    agent_id: String,
+    session_id: String,
+    pid: Option<i32>,
+    pgid: Option<i32>,
+    rows: u16,
+    cols: u16,
+    cwd: String,
+    cleanup_paths: Vec<String>,
+    snapshot_b64: String,
+) {
+    let Some(master_fd) = recv_fd else {
+        let _ = protocol::write_frame(
+            fd,
+            &Message::Error { message: "Handoff must carry a master fd".into() },
+            None,
+        );
+        return;
+    };
+    // 디코딩 실패(손상된 base64 등)는 스냅샷 없음으로 취급한다 -- fd는 이미
+    // 받았으므로 핸드오프 자체를 거부하지 않는다(설계 문서: "핸드오프 실패
+    // 시에도 세션 표시가 깨지면 안 된다"와 같은 원칙).
+    let snapshot = {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.decode(&snapshot_b64).unwrap_or_default()
+    };
+    let ring = Arc::new(Mutex::new(RingBuffer::new(RING_CAPACITY)));
+    let exited = Arc::new(AtomicBool::new(false));
+    let stopping = Arc::new(AtomicBool::new(false));
+    match spawn_reader(master_fd, ring.clone(), exited.clone(), stopping.clone()) {
+        Ok((interrupt, reader_join)) => {
+            let entry = SessionEntry {
+                session_id,
+                pid,
+                pgid,
+                rows,
+                cols,
+                cwd,
+                cleanup_paths,
+                snapshot,
+                master_fd,
+                ring,
+                exited,
+                stopping,
+                interrupt,
+                reader_join: Some(reader_join),
+                consumed: false,
+            };
+            table.lock().unwrap().insert(agent_id, entry);
+            ever_handoff.store(true, Ordering::SeqCst);
+            let _ = protocol::write_frame(fd, &Message::HandoffOk, None);
+        }
+        Err(e) => {
+            let _ = nix::unistd::close(master_fd);
+            let _ = protocol::write_frame(
+                fd,
+                &Message::Error { message: format!("failed to start reader: {e}") },
+                None,
+            );
+        }
+    }
+}
+
+/// `List`: v1 테이블 + v2 브로커 테이블을 합쳐 세션 목록을 돌려준다.
+fn handle_list(fd: RawFd, table: &Table, broker: &BrokerTable) {
+    let mut sessions: Vec<SessionInfo> = table
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(agent_id, e)| SessionInfo {
+            agent_id: agent_id.clone(),
+            session_id: e.session_id.clone(),
+            pid: e.pid,
+            rows: e.rows,
+            cols: e.cols,
+            cwd: e.cwd.clone(),
+            exited: e.exited.load(Ordering::SeqCst),
+            buffered_bytes: e.ring.lock().unwrap().len(),
+            broker: false,
+            attached: false,
+        })
+        .collect();
+    // v2 브로커 세션도 같은 List에 additive로 실어 준다(broker: true).
+    sessions.extend(broker.lock().unwrap().iter().map(|(agent_id, s)| {
+        // buffered_bytes와 attached를 한 번의 io 락으로 함께 읽는다.
+        let (buffered_bytes, attached) = {
+            let io = s.io.lock().unwrap();
+            (io.ring.len(), io.conn.is_some())
+        };
+        SessionInfo {
+            agent_id: agent_id.clone(),
+            session_id: s.session_id.clone(),
+            pid: s.pid,
+            rows: s.rows.load(Ordering::SeqCst),
+            cols: s.cols.load(Ordering::SeqCst),
+            cwd: s.cwd.clone(),
+            exited: s.exited.load(Ordering::SeqCst),
+            buffered_bytes,
+            broker: true,
+            attached,
+        }
+    }));
+    let _ = protocol::write_frame(fd, &Message::ListOk { sessions }, None);
+}
+
+/// `Spawn`(v2): openpty+spawn 후 브로커 테이블에 등록한다.
+#[allow(clippy::too_many_arguments)]
+fn handle_spawn(
+    fd: RawFd,
+    broker: &BrokerTable,
+    ever_handoff: &AtomicBool,
+    agent_id: String,
+    session_id: String,
+    shell: String,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+    rows: u16,
+    cols: u16,
+    cwd: String,
+    cleanup_paths: Vec<String>,
+) {
+    match spawn_broker_session(session_id, shell, args, env, rows, cols, cwd, cleanup_paths) {
+        Ok(session) => {
+            let pid = session.pid;
+            broker.lock().unwrap().insert(agent_id, session);
+            // 스폰도 first-activity로 인정 -- 고아 데몬 타임아웃 방지.
+            ever_handoff.store(true, Ordering::SeqCst);
+            let _ = protocol::write_frame(fd, &Message::SpawnOk { pid }, None);
+        }
+        Err(e) => {
+            let _ = protocol::write_frame(
+                fd,
+                &Message::Error { message: format!("spawn failed: {e}") },
+                None,
+            );
+        }
+    }
+}
+
+/// `DataAttach`(v2): 세션이 있으면 연결을 raw 스트림으로 전환하고 반환값
+/// `true`로 "이 연결은 끝났다"를 알린다(호출자가 프레임 루프로 돌아가지 않고
+/// `return`한다). 없으면 에러 프레임만 쓰고 `false`(루프 계속)를 돌려준다.
+fn handle_data_attach(fd: RawFd, broker: &BrokerTable, agent_id: String) -> bool {
+    let session = broker.lock().unwrap().get(&agent_id).cloned();
+    match session {
+        Some(session) => {
+            // 응답 프레임 후 이 연결은 raw로 전환된다 -- 자식이 살아있는 동안
+            // (또는 교체될 때까지) 이 스레드가 raw 입력을 펌프하다가, 끝나면
+            // 연결도 끝난다(프레임 루프로 돌아가지 않는다).
+            run_data_conn(fd, &session);
+            true
+        }
+        None => {
+            let _ = protocol::write_frame(
+                fd,
+                &Message::Error { message: format!("unknown agent_id: {agent_id}") },
+                None,
+            );
+            false
+        }
+    }
+}
+
+/// `Attach`(v2): 세션 메타 + 스냅샷 + 종료 정보를 돌려준다(연결은 프레임
+/// 모드로 유지 -- data 전송은 별도 DataAttach 연결이 담당).
+fn handle_attach(fd: RawFd, broker: &BrokerTable, agent_id: String) {
+    let session = broker.lock().unwrap().get(&agent_id).cloned();
+    let reply = match session {
+        Some(session) => {
+            let (snapshot_bytes, snapshot_compressed) = {
+                let g = session.snapshot.lock().unwrap();
+                (g.0.clone(), g.1)
+            };
+            let snapshot_b64 = {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD.encode(snapshot_bytes)
+            };
+            Message::AttachOk {
+                rows: session.rows.load(Ordering::SeqCst),
+                cols: session.cols.load(Ordering::SeqCst),
+                pid: session.pid,
+                snapshot_b64,
+                snapshot_compressed,
+                exit: session.exit_status_msg(),
+                // 이슈 #40: 입양 앱이 설정 파일을 복구할 수 있게 데몬이 보관
+                // 중인 cleanup_paths를 함께 돌려준다.
+                cleanup_paths: session.cleanup_paths.clone(),
+            }
+        }
+        None => Message::Error { message: format!("unknown agent_id: {agent_id}") },
+    };
+    let _ = protocol::write_frame(fd, &reply, None);
+}
+
+/// `Resize`(v2): PTY 지오메트리를 바꾸고, 성공 시 세션 메타도 갱신한다
+/// (§P2-c: List/Attach가 최신 값을 돌려주게).
+fn handle_resize(fd: RawFd, broker: &BrokerTable, agent_id: String, rows: u16, cols: u16) {
+    let session = broker.lock().unwrap().get(&agent_id).cloned();
+    if let Some(session) = session {
+        let ok = session
+            .master
+            .lock()
+            .unwrap()
+            .resize(portable_pty::PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+            .is_ok();
+        if ok {
+            session.rows.store(rows, Ordering::SeqCst);
+            session.cols.store(cols, Ordering::SeqCst);
+        }
+    }
+    let _ = protocol::write_frame(fd, &Message::ResizeOk, None);
+}
+
+/// `Wait`(v2): 자식이 종료할 때까지 condvar로 블로킹한 뒤 종료 정보를 돌려준다.
+fn handle_wait(fd: RawFd, broker: &BrokerTable, agent_id: String) {
+    let session = broker.lock().unwrap().get(&agent_id).cloned();
+    let reply = match session {
+        Some(session) => {
+            let mut exit = session.exit.lock().unwrap();
+            while exit.is_none() {
+                exit = session.exit_cv.wait(exit).unwrap();
+            }
+            let rec = exit.unwrap();
+            Message::WaitOk { exit_code: rec.exit_code, signal: rec.signal }
+        }
+        None => Message::Error { message: format!("unknown agent_id: {agent_id}") },
+    };
+    let _ = protocol::write_frame(fd, &reply, None);
+}
+
+/// `KillAll`(v2): 브로커 테이블 전체를 비우고 각 세션을 킬한다.
+fn handle_kill_all(fd: RawFd, broker: &BrokerTable) {
+    let sessions: Vec<Arc<BrokerSession>> = broker.lock().unwrap().drain().map(|(_, s)| s).collect();
+    let killed = sessions.len();
+    for session in &sessions {
+        let _ = session.killer.lock().unwrap().kill();
+    }
+    let _ = protocol::write_frame(fd, &Message::KillAllOk { killed }, None);
+}
+
+/// `UpdateSnapshot`(v2): 앱이 올린 최신 화면 스냅샷 + 그 스냅샷이 반영하는
+/// 스트림 오프셋을 기록한다(§P1).
+fn handle_update_snapshot(
+    fd: RawFd,
+    broker: &BrokerTable,
+    agent_id: String,
+    snapshot_b64: String,
+    offset: Option<u64>,
+    compressed: bool,
+) {
+    if let Some(session) = broker.lock().unwrap().get(&agent_id) {
+        use base64::Engine;
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&snapshot_b64) {
+            *session.snapshot.lock().unwrap() = (bytes, compressed);
+            // 스냅샷이 반영하는 스트림 오프셋. 앱이 data 연결 카운터로 "실제
+            // 여기까지 수신했다"는 offset을 실어 보내면(§P1) 그걸 쓰고(링
+            // 상한으로 클램프 — 하한은 snapshot_since가 처리), 없으면 수신
+            // 시점 ring.total()로 폴백한다. 이후 DataAttach는 이 오프셋 이후
+            // 바이트만 리플레이한다.
+            let mut io = session.io.lock().unwrap();
+            let total = io.ring.total();
+            io.snapshot_offset = Some(offset.map_or(total, |o| o.min(total)));
+        }
+    }
+    let _ = protocol::write_frame(fd, &Message::UpdateSnapshotOk, None);
+}
+
+/// `Adopt`(v1): 리더를 확정적으로 멈춘 뒤(§핵심 1) fd를 응답에 실어 돌려준다.
+fn handle_adopt(fd: RawFd, table: &Table, agent_id: String) {
+    let entry = table.lock().unwrap().remove(&agent_id);
+    match entry {
+        None => {
+            let _ = protocol::write_frame(
+                fd,
+                &Message::Error { message: format!("unknown agent_id: {agent_id}") },
+                None,
+            );
+        }
+        Some(mut entry) => {
+            // 리더를 먼저 확정적으로 멈춘 뒤(§핵심 1) fd를 보낸다.
+            entry.stop_reader();
+            let buffer_b64 = {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD
+                    .encode(entry.ring.lock().unwrap().snapshot())
+            };
+            let snapshot_b64 = {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD.encode(&entry.snapshot)
+            };
+            let reply = Message::AdoptOk {
+                agent_id: agent_id.clone(),
+                session_id: entry.session_id.clone(),
+                pid: entry.pid,
+                pgid: entry.pgid,
+                rows: entry.rows,
+                cols: entry.cols,
+                cwd: entry.cwd.clone(),
+                cleanup_paths: entry.cleanup_paths.clone(),
+                buffer_b64,
+                snapshot_b64,
+            };
+            let _ = protocol::write_frame(fd, &reply, Some(entry.master_fd));
+            let _ = nix::unistd::close(entry.master_fd);
+            entry.consumed = true;
+        }
+    }
+}
+
+/// `Kill`: v1 테이블 항목과 v2 브로커 세션 양쪽을 같은 오피코드로 종료한다.
+fn handle_kill(fd: RawFd, table: &Table, broker: &BrokerTable, agent_id: String) {
+    if let Some(mut entry) = table.lock().unwrap().remove(&agent_id) {
+        if let Some(pgid) = entry.pgid.or(entry.pid) {
+            let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
+        }
+        entry.stop_reader();
+        let _ = nix::unistd::close(entry.master_fd);
+        entry.consumed = true;
+    }
+    // v2 브로커 세션도 같은 Kill로 의도적 종료할 수 있다. 테이블에서 먼저
+    // 꺼내(락 즉시 해제) 이후 killer/io 락은 broker 테이블 락 밖에서 잡는다
+    // -- if-let scrutinee의 임시 가드가 body 끝까지 broker 락을 쥐면, 그 사이
+    // session.io.lock()을 기다리는 동안 다른 브로커 요청(Spawn/List/
+    // DataAttach)이 전부 막힌다(edition 2021).
+    let killed = broker.lock().unwrap().remove(&agent_id);
+    if let Some(session) = killed {
+        let _ = session.killer.lock().unwrap().kill();
+        if let Some(conn) = session.io.lock().unwrap().conn.take() {
+            let _ = shutdown(conn.fd, Shutdown::Both);
+        }
+        cleanup_broker_paths(&session.cleanup_paths);
+    }
+    let _ = protocol::write_frame(fd, &Message::KillOk, None);
+}
+
+/// 알려지지 않은/예상 밖 메시지: 에러 프레임을 돌려준다.
+fn handle_unexpected(fd: RawFd, other: Message) {
+    let _ = protocol::write_frame(
+        fd,
+        &Message::Error { message: format!("unexpected message: {other:?}") },
+        None,
+    );
+}
+
 /// 연결 하나(=하나의 fd, Hello 이후 여러 요청을 순차로 받을 수 있다)를
 /// 소진될 때까지(연결 종료/오류) 처리한다. 실 accept 루프와 테스트
-/// (socketpair) 양쪽에서 동일하게 쓰는 핵심 로직.
+/// (socketpair) 양쪽에서 동일하게 쓰는 핵심 로직. 요청을 파싱해 오피코드별
+/// 핸들러로 디스패치하는 얇은 라우터 -- 프로토콜 바이트/순서/락 범위는
+/// 각 `handle_*` 함수 안에 원래 그대로 보존돼 있다.
 fn handle_connection(
     fd: RawFd,
     table: &Table,
@@ -543,20 +916,7 @@ fn handle_connection(
             Err(_) => return, // 연결 종료 또는 프로토콜 오류 -- 이 연결은 여기까지.
         };
         match msg {
-            Message::Hello { proto } => {
-                // additive 협상: 클라이언트가 요청한 proto를 데몬 상한으로 낮춰
-                // 수락한다(HelloOk{min(proto, PROTO_VERSION)}). 구프로토(>=1)
-                // 클라이언트는 그 버전의 메시지만 보내므로 안전하다. proto 0은
-                // 유효한 버전이 아니므로 거부한다.
-                let reply = if proto >= 1 {
-                    Message::HelloOk { proto: proto.min(protocol::PROTO_VERSION) }
-                } else {
-                    Message::Error {
-                        message: format!("unsupported protocol version {proto}"),
-                    }
-                };
-                let _ = protocol::write_frame(fd, &reply, None);
-            }
+            Message::Hello { proto } => handle_hello(fd, proto),
             Message::Handoff {
                 agent_id,
                 session_id,
@@ -567,101 +927,22 @@ fn handle_connection(
                 cwd,
                 cleanup_paths,
                 snapshot_b64,
-            } => {
-                let Some(master_fd) = recv_fd else {
-                    let _ = protocol::write_frame(
-                        fd,
-                        &Message::Error { message: "Handoff must carry a master fd".into() },
-                        None,
-                    );
-                    continue;
-                };
-                // 디코딩 실패(손상된 base64 등)는 스냅샷 없음으로 취급한다 --
-                // fd는 이미 받았으므로 핸드오프 자체를 거부하지 않는다(설계
-                // 문서: "핸드오프 실패 시에도 세션 표시가 깨지면 안 된다"와
-                // 같은 원칙).
-                let snapshot = {
-                    use base64::Engine;
-                    base64::engine::general_purpose::STANDARD
-                        .decode(&snapshot_b64)
-                        .unwrap_or_default()
-                };
-                let ring = Arc::new(Mutex::new(RingBuffer::new(RING_CAPACITY)));
-                let exited = Arc::new(AtomicBool::new(false));
-                let stopping = Arc::new(AtomicBool::new(false));
-                match spawn_reader(master_fd, ring.clone(), exited.clone(), stopping.clone()) {
-                    Ok((interrupt, reader_join)) => {
-                        let entry = SessionEntry {
-                            session_id,
-                            pid,
-                            pgid,
-                            rows,
-                            cols,
-                            cwd,
-                            cleanup_paths,
-                            snapshot,
-                            master_fd,
-                            ring,
-                            exited,
-                            stopping,
-                            interrupt,
-                            reader_join: Some(reader_join),
-                            consumed: false,
-                        };
-                        table.lock().unwrap().insert(agent_id, entry);
-                        ever_handoff.store(true, Ordering::SeqCst);
-                        let _ = protocol::write_frame(fd, &Message::HandoffOk, None);
-                    }
-                    Err(e) => {
-                        let _ = nix::unistd::close(master_fd);
-                        let _ = protocol::write_frame(
-                            fd,
-                            &Message::Error { message: format!("failed to start reader: {e}") },
-                            None,
-                        );
-                    }
-                }
-            }
-            Message::List => {
-                let mut sessions: Vec<SessionInfo> = table
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .map(|(agent_id, e)| SessionInfo {
-                        agent_id: agent_id.clone(),
-                        session_id: e.session_id.clone(),
-                        pid: e.pid,
-                        rows: e.rows,
-                        cols: e.cols,
-                        cwd: e.cwd.clone(),
-                        exited: e.exited.load(Ordering::SeqCst),
-                        buffered_bytes: e.ring.lock().unwrap().len(),
-                        broker: false,
-                        attached: false,
-                    })
-                    .collect();
-                // v2 브로커 세션도 같은 List에 additive로 실어 준다(broker: true).
-                sessions.extend(broker.lock().unwrap().iter().map(|(agent_id, s)| {
-                    // buffered_bytes와 attached를 한 번의 io 락으로 함께 읽는다.
-                    let (buffered_bytes, attached) = {
-                        let io = s.io.lock().unwrap();
-                        (io.ring.len(), io.conn.is_some())
-                    };
-                    SessionInfo {
-                        agent_id: agent_id.clone(),
-                        session_id: s.session_id.clone(),
-                        pid: s.pid,
-                        rows: s.rows.load(Ordering::SeqCst),
-                        cols: s.cols.load(Ordering::SeqCst),
-                        cwd: s.cwd.clone(),
-                        exited: s.exited.load(Ordering::SeqCst),
-                        buffered_bytes,
-                        broker: true,
-                        attached,
-                    }
-                }));
-                let _ = protocol::write_frame(fd, &Message::ListOk { sessions }, None);
-            }
+            } => handle_handoff(
+                fd,
+                table,
+                ever_handoff,
+                recv_fd,
+                agent_id,
+                session_id,
+                pid,
+                pgid,
+                rows,
+                cols,
+                cwd,
+                cleanup_paths,
+                snapshot_b64,
+            ),
+            Message::List => handle_list(fd, table, broker),
             // ── v2 브로커 메시지 ────────────────────────────────────────
             Message::Spawn {
                 agent_id,
@@ -673,205 +954,25 @@ fn handle_connection(
                 cols,
                 cwd,
                 cleanup_paths,
-            } => {
-                match spawn_broker_session(
-                    session_id, shell, args, env, rows, cols, cwd, cleanup_paths,
-                ) {
-                    Ok(session) => {
-                        let pid = session.pid;
-                        broker.lock().unwrap().insert(agent_id, session);
-                        // 스폰도 first-activity로 인정 -- 고아 데몬 타임아웃 방지.
-                        ever_handoff.store(true, Ordering::SeqCst);
-                        let _ = protocol::write_frame(fd, &Message::SpawnOk { pid }, None);
-                    }
-                    Err(e) => {
-                        let _ = protocol::write_frame(
-                            fd,
-                            &Message::Error { message: format!("spawn failed: {e}") },
-                            None,
-                        );
-                    }
-                }
-            }
+            } => handle_spawn(
+                fd, broker, ever_handoff, agent_id, session_id, shell, args, env, rows, cols, cwd,
+                cleanup_paths,
+            ),
             Message::DataAttach { agent_id } => {
-                let session = broker.lock().unwrap().get(&agent_id).cloned();
-                match session {
-                    Some(session) => {
-                        // 응답 프레임 후 이 연결은 raw로 전환된다 -- 자식이 살아있는
-                        // 동안(또는 교체될 때까지) 이 스레드가 raw 입력을 펌프하다가,
-                        // 끝나면 연결도 끝난다(프레임 루프로 돌아가지 않는다).
-                        run_data_conn(fd, &session);
-                        return;
-                    }
-                    None => {
-                        let _ = protocol::write_frame(
-                            fd,
-                            &Message::Error { message: format!("unknown agent_id: {agent_id}") },
-                            None,
-                        );
-                    }
+                if handle_data_attach(fd, broker, agent_id) {
+                    return;
                 }
             }
-            Message::Attach { agent_id } => {
-                let session = broker.lock().unwrap().get(&agent_id).cloned();
-                let reply = match session {
-                    Some(session) => {
-                        let (snapshot_bytes, snapshot_compressed) = {
-                            let g = session.snapshot.lock().unwrap();
-                            (g.0.clone(), g.1)
-                        };
-                        let snapshot_b64 = {
-                            use base64::Engine;
-                            base64::engine::general_purpose::STANDARD.encode(snapshot_bytes)
-                        };
-                        Message::AttachOk {
-                            rows: session.rows.load(Ordering::SeqCst),
-                            cols: session.cols.load(Ordering::SeqCst),
-                            pid: session.pid,
-                            snapshot_b64,
-                            snapshot_compressed,
-                            exit: session.exit_status_msg(),
-                            // 이슈 #40: 입양 앱이 설정 파일을 복구할 수 있게 데몬이
-                            // 보관 중인 cleanup_paths를 함께 돌려준다.
-                            cleanup_paths: session.cleanup_paths.clone(),
-                        }
-                    }
-                    None => Message::Error { message: format!("unknown agent_id: {agent_id}") },
-                };
-                let _ = protocol::write_frame(fd, &reply, None);
-            }
-            Message::Resize { agent_id, rows, cols } => {
-                let session = broker.lock().unwrap().get(&agent_id).cloned();
-                if let Some(session) = session {
-                    let ok = session
-                        .master
-                        .lock()
-                        .unwrap()
-                        .resize(portable_pty::PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
-                        .is_ok();
-                    // resize 성공 시 메타를 갱신 -- List/Attach가 최신 지오메트리를
-                    // 반환하게 한다(§P2-c).
-                    if ok {
-                        session.rows.store(rows, Ordering::SeqCst);
-                        session.cols.store(cols, Ordering::SeqCst);
-                    }
-                }
-                let _ = protocol::write_frame(fd, &Message::ResizeOk, None);
-            }
-            Message::Wait { agent_id } => {
-                let session = broker.lock().unwrap().get(&agent_id).cloned();
-                let reply = match session {
-                    Some(session) => {
-                        let mut exit = session.exit.lock().unwrap();
-                        while exit.is_none() {
-                            exit = session.exit_cv.wait(exit).unwrap();
-                        }
-                        let rec = exit.unwrap();
-                        Message::WaitOk { exit_code: rec.exit_code, signal: rec.signal }
-                    }
-                    None => Message::Error { message: format!("unknown agent_id: {agent_id}") },
-                };
-                let _ = protocol::write_frame(fd, &reply, None);
-            }
-            Message::KillAll => {
-                let sessions: Vec<Arc<BrokerSession>> =
-                    broker.lock().unwrap().drain().map(|(_, s)| s).collect();
-                let killed = sessions.len();
-                for session in &sessions {
-                    let _ = session.killer.lock().unwrap().kill();
-                }
-                let _ = protocol::write_frame(fd, &Message::KillAllOk { killed }, None);
-            }
+            Message::Attach { agent_id } => handle_attach(fd, broker, agent_id),
+            Message::Resize { agent_id, rows, cols } => handle_resize(fd, broker, agent_id, rows, cols),
+            Message::Wait { agent_id } => handle_wait(fd, broker, agent_id),
+            Message::KillAll => handle_kill_all(fd, broker),
             Message::UpdateSnapshot { agent_id, snapshot_b64, offset, compressed } => {
-                if let Some(session) = broker.lock().unwrap().get(&agent_id) {
-                    use base64::Engine;
-                    if let Ok(bytes) =
-                        base64::engine::general_purpose::STANDARD.decode(&snapshot_b64)
-                    {
-                        *session.snapshot.lock().unwrap() = (bytes, compressed);
-                        // 스냅샷이 반영하는 스트림 오프셋. 앱이 data 연결 카운터로
-                        // "실제 여기까지 수신했다"는 offset을 실어 보내면(§P1) 그걸
-                        // 쓰고(링 상한으로 클램프 — 하한은 snapshot_since가 처리),
-                        // 없으면 수신 시점 ring.total()로 폴백한다. 이후 DataAttach는
-                        // 이 오프셋 이후 바이트만 리플레이한다.
-                        let mut io = session.io.lock().unwrap();
-                        let total = io.ring.total();
-                        io.snapshot_offset = Some(offset.map_or(total, |o| o.min(total)));
-                    }
-                }
-                let _ = protocol::write_frame(fd, &Message::UpdateSnapshotOk, None);
+                handle_update_snapshot(fd, broker, agent_id, snapshot_b64, offset, compressed)
             }
-            Message::Adopt { agent_id } => {
-                let entry = table.lock().unwrap().remove(&agent_id);
-                match entry {
-                    None => {
-                        let _ = protocol::write_frame(
-                            fd,
-                            &Message::Error { message: format!("unknown agent_id: {agent_id}") },
-                            None,
-                        );
-                    }
-                    Some(mut entry) => {
-                        // 리더를 먼저 확정적으로 멈춘 뒤(§핵심 1) fd를 보낸다.
-                        entry.stop_reader();
-                        let buffer_b64 = {
-                            use base64::Engine;
-                            base64::engine::general_purpose::STANDARD
-                                .encode(entry.ring.lock().unwrap().snapshot())
-                        };
-                        let snapshot_b64 = {
-                            use base64::Engine;
-                            base64::engine::general_purpose::STANDARD.encode(&entry.snapshot)
-                        };
-                        let reply = Message::AdoptOk {
-                            agent_id: agent_id.clone(),
-                            session_id: entry.session_id.clone(),
-                            pid: entry.pid,
-                            pgid: entry.pgid,
-                            rows: entry.rows,
-                            cols: entry.cols,
-                            cwd: entry.cwd.clone(),
-                            cleanup_paths: entry.cleanup_paths.clone(),
-                            buffer_b64,
-                            snapshot_b64,
-                        };
-                        let _ = protocol::write_frame(fd, &reply, Some(entry.master_fd));
-                        let _ = nix::unistd::close(entry.master_fd);
-                        entry.consumed = true;
-                    }
-                }
-            }
-            Message::Kill { agent_id } => {
-                if let Some(mut entry) = table.lock().unwrap().remove(&agent_id) {
-                    if let Some(pgid) = entry.pgid.or(entry.pid) {
-                        let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
-                    }
-                    entry.stop_reader();
-                    let _ = nix::unistd::close(entry.master_fd);
-                    entry.consumed = true;
-                }
-                // v2 브로커 세션도 같은 Kill로 의도적 종료할 수 있다. 테이블에서
-                // 먼저 꺼내(락 즉시 해제) 이후 killer/io 락은 broker 테이블 락 밖에서
-                // 잡는다 -- if-let scrutinee의 임시 가드가 body 끝까지 broker 락을
-                // 쥐면, 그 사이 session.io.lock()을 기다리는 동안 다른 브로커
-                // 요청(Spawn/List/DataAttach)이 전부 막힌다(edition 2021).
-                let killed = broker.lock().unwrap().remove(&agent_id);
-                if let Some(session) = killed {
-                    let _ = session.killer.lock().unwrap().kill();
-                    if let Some(conn) = session.io.lock().unwrap().conn.take() {
-                        let _ = shutdown(conn.fd, Shutdown::Both);
-                    }
-                    cleanup_broker_paths(&session.cleanup_paths);
-                }
-                let _ = protocol::write_frame(fd, &Message::KillOk, None);
-            }
-            other => {
-                let _ = protocol::write_frame(
-                    fd,
-                    &Message::Error { message: format!("unexpected message: {other:?}") },
-                    None,
-                );
-            }
+            Message::Adopt { agent_id } => handle_adopt(fd, table, agent_id),
+            Message::Kill { agent_id } => handle_kill(fd, table, broker, agent_id),
+            other => handle_unexpected(fd, other),
         }
     }
 }
