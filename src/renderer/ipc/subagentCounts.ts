@@ -18,6 +18,8 @@ export class SubagentCountTracker {
 
   subscribe(cb: SubagentCountCb): () => void {
     this.cbs.add(cb);
+    // 구독 시점 replay — 씬 재마운트 시 진행 중인 미니 캐릭터 수 복원.
+    for (const [id, n] of this.counts) cb(id, n);
     return () => this.cbs.delete(cb);
   }
 

@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { isWalkable, pickBreakTarget, pickWanderTarget, tileCenterPx, tileKey } from "../pathing";
-import { BREAK_ROOM_RECT, OFFICE_MAP, Tile, TILE_SIZE, type OfficeMap } from "../../map/mapData";
+import { BOSS_DESK_RECT, BREAK_ROOM_RECT, OFFICE_MAP, QUEUE_SLOTS, Tile, TILE_SIZE, type OfficeMap } from "../../map/mapData";
 
 const makeMap = (rows: string[]): OfficeMap => {
   const tiles = rows.map((row) =>
@@ -159,5 +159,35 @@ describe("pickBreakTarget", () => {
     };
     const rand = () => 0.5;
     expect(pickBreakTarget(allWalls, rand)).toBeNull();
+  });
+});
+
+describe("boss desk map data", () => {
+  it("boss desk tiles are BossDesk and not walkable", () => {
+    expect(BOSS_DESK_RECT).toEqual({ x: 17, y: 7, w: 1, h: 2 });
+    for (let dy = 0; dy < BOSS_DESK_RECT.h; dy++) {
+      for (let dx = 0; dx < BOSS_DESK_RECT.w; dx++) {
+        const tx = BOSS_DESK_RECT.x + dx;
+        const ty = BOSS_DESK_RECT.y + dy;
+        expect(OFFICE_MAP.tiles[ty][tx]).toBe(Tile.BossDesk);
+        expect(isWalkable(OFFICE_MAP, tx, ty)).toBe(false);
+      }
+    }
+  });
+
+  it("queue slots are exactly the spec coordinates, all walkable", () => {
+    expect(QUEUE_SLOTS).toEqual([
+      { tx: 16, ty: 8 }, { tx: 15, ty: 8 }, { tx: 14, ty: 8 }, { tx: 13, ty: 8 },
+      { tx: 12, ty: 8 }, { tx: 11, ty: 8 }, { tx: 10, ty: 8 }, { tx: 9, ty: 8 },
+    ]);
+    for (const s of QUEUE_SLOTS) expect(isWalkable(OFFICE_MAP, s.tx, s.ty)).toBe(true);
+  });
+
+  it("break room rect no longer overlaps queue lane (tx16)", () => {
+    expect(BREAK_ROOM_RECT).toEqual({ x: 11, y: 10, w: 5, h: 2 });
+  });
+
+  it("boss desk does not create an employee desk slot", () => {
+    expect(OFFICE_MAP.desks).toHaveLength(8);
   });
 });

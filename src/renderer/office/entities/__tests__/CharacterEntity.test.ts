@@ -29,7 +29,7 @@ import { Rectangle, type Sprite } from "pixi.js";
 
 import { CharacterEntity, SEAT_SINK_PX } from "../CharacterEntity";
 import { makeTestCharacterAssets } from "./helpers";
-import { OFFICE_MAP, Tile, TILE_SIZE, type OfficeMap } from "../../map/mapData";
+import { OFFICE_MAP, QUEUE_SLOTS, Tile, TILE_SIZE, type OfficeMap } from "../../map/mapData";
 import { tileCenterPx } from "../../world/pathing";
 
 /** 5x5 map: Wall border, Floor interior (tx/ty in [1,3]). No break-room tiles reachable. */
@@ -399,7 +399,7 @@ describe("CharacterEntity: break-room tile reservations (no overlap while restin
 
   it("stays seated (and retries later) when every break-room tile is reserved", () => {
     const reservations = new Set<string>();
-    for (let ty = 10; ty < 12; ty++) for (let tx = 11; tx < 18; tx++) reservations.add(`${tx},${ty}`);
+    for (let ty = 10; ty < 12; ty++) for (let tx = 11; tx < 16; tx++) reservations.add(`${tx},${ty}`);
     const e = new CharacterEntity(
       "agent-a",
       makeTestCharacterAssets(),
@@ -466,6 +466,77 @@ describe("CharacterEntity: setSeat (책상 지정 변경)", () => {
     e.setSeat(next);
     e.update(20_000);
     expect({ x: e.root.x, y: e.root.y }).toEqual(feetOfSeat(next));
+  });
+});
+
+describe("CharacterEntity: boss desk queueing (setQueueSlot)", () => {
+  const feetOfQueue = (t: { tx: number; ty: number }) => {
+    const c = tileCenterPx(t);
+    return { x: c.x, y: c.y + TILE_SIZE / 2 };
+  };
+  const feetOfSeat = (t: { tx: number; ty: number }) => {
+    const c = tileCenterPx(t);
+    return { x: c.x, y: c.y + TILE_SIZE / 2 + SEAT_SINK_PX };
+  };
+
+  it("setQueueSlot(0): walks to queue slot 0 and arrives queueing", () => {
+    const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.5);
+    e.setPending(true);
+    e.setQueueSlot(0);
+    e.update(20_000); // large dt: covers the whole hop in one tick
+    const t = feetOfQueue(QUEUE_SLOTS[0]);
+    expect(e.root.x).toBe(t.x);
+    expect(e.root.y).toBe(t.y);
+  });
+
+  it("queue pull: while queueing at slot 1, setQueueSlot(0) walks to the new (closer) slot", () => {
+    const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.5);
+    e.setPending(true);
+    e.setQueueSlot(1);
+    e.update(20_000);
+    e.setQueueSlot(0);
+    e.update(20_000);
+    const t = feetOfQueue(QUEUE_SLOTS[0]);
+    expect(e.root.x).toBe(t.x);
+    expect(e.root.y).toBe(t.y);
+  });
+
+  it("setQueueSlot(null): returns to its own seat and sits", () => {
+    const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.5);
+    e.setPending(true);
+    e.setQueueSlot(0);
+    e.update(20_000);
+    e.setPending(false);
+    e.setQueueSlot(null);
+    e.update(20_000);
+    const p = feetOfSeat(OFFICE_SEAT);
+    expect(e.root.x).toBe(p.x);
+    expect(e.root.y).toBe(p.y);
+  });
+
+  it("mid-walk toward the queue slot: clearing the slot retargets immediately to the seat instead of finishing the walk", () => {
+    const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.5);
+    e.setPending(true);
+    e.setQueueSlot(0);
+    e.update(16); // one small step, not arrived yet
+    e.setPending(false);
+    e.setQueueSlot(null);
+    e.update(20_000);
+    const p = feetOfSeat(OFFICE_SEAT);
+    expect(e.root.x).toBe(p.x);
+    expect(e.root.y).toBe(p.y);
+  });
+
+  it("setQueueSlot with the same slot is a no-op (does not reset an in-progress walk)", () => {
+    const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.5);
+    e.setPending(true);
+    e.setQueueSlot(0);
+    e.update(16); // partial step toward the slot
+    const midX = e.root.x;
+    const midY = e.root.y;
+    e.setQueueSlot(0);
+    expect(e.root.x).toBe(midX);
+    expect(e.root.y).toBe(midY);
   });
 });
 

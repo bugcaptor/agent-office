@@ -29,7 +29,7 @@
 import { Container, Rectangle, Sprite } from "pixi.js";
 
 import type { CharacterAssets } from "../gen/characterFactory";
-import { OfficeMap, TILE_SIZE } from "../map/mapData";
+import { OfficeMap, QUEUE_SLOTS, TILE_SIZE } from "../map/mapData";
 import { GridPos, pickBreakTarget, tileCenterPx, tileKey } from "../world/pathing";
 import { BehaviorState, stepBehavior } from "./behaviorFsm";
 import { ExclamationOverlay } from "./ExclamationOverlay";
@@ -53,7 +53,7 @@ const THINK_HIDDEN_MAX_MS = 7000;
 const THINK_VISIBLE_MIN_MS = 2000;
 const THINK_VISIBLE_MAX_MS = 2500;
 
-type TargetKind = "seat" | "break";
+type TargetKind = "seat" | "break" | "queue";
 
 export class CharacterEntity {
   readonly root = new Container(); // added to the scene's sortable layer; zIndex = worldY
@@ -72,6 +72,8 @@ export class CharacterEntity {
   private spriteScale = 1; // 16 / cellSize, 좌우 반전과 결합할 배율 크기.
   // 이 캐릭터가 breakReservations에 넣어 둔 탕비실 타일 키(예약 중이면 non-null).
   private reservedBreakKey: string | null = null;
+  // 보스 책상 줄 슬롯(월드가 배정). null = 줄에 서 있지 않음.
+  private queueSlot: number | null = null;
 
   // "..." 말풍선 점멸 사이클 상태 (dt 누적 기반, Date.now 사용 안 함).
   private thinkHidden = true;
@@ -196,6 +198,22 @@ export class CharacterEntity {
     }
   }
 
+  /** 보스 책상 줄 슬롯 배정/해제(월드가 호출). null = 줄에서 빠짐. */
+  setQueueSlot(slot: number | null): void {
+    if (slot === this.queueSlot) return;
+    this.queueSlot = slot;
+    if (slot !== null) {
+      this.setQueueTarget(slot);
+      this.state = "walking";
+      this.stateTimer = 0;
+    } else if (this.state === "queueing" || (this.state === "walking" && this.targetKind === "queue")) {
+      // 이동 중 해제도 즉시 자리로 리타깃 — FSM은 queueing 상태에서만 복귀를 처리한다.
+      this.setSeatTarget();
+      this.state = "walking";
+      this.stateTimer = 0;
+    }
+  }
+
   /** dt: ms, ticker-supplied (never a real timer / Date.now internally). */
   update(dt: number): void {
     this.stateTimer += dt;
@@ -205,6 +223,7 @@ export class CharacterEntity {
       {
         hasPending: this.hasPending,
         sessionActive: this.sessionActive,
+        shouldQueue: this.queueSlot !== null,
         timerMs: this.stateTimer,
         rand: r,
       },
@@ -217,6 +236,8 @@ export class CharacterEntity {
         accepted = this.setBreakTarget();
       } else if (res.requestReturnToDesk) {
         this.setSeatTarget();
+      } else if (res.requestQueueSlot) {
+        this.setQueueTarget(this.queueSlot!); // shouldQueue=true일 때만 오므로 non-null
       }
       if (accepted) {
         this.state = res.next;
@@ -228,9 +249,11 @@ export class CharacterEntity {
 
     // Responsiveness: a session activating (or a notification arriving)
     // mid-stroll toward the break room pre-empts the stroll — retarget to
-    // the seat immediately rather than finishing the walk.
+    // the seat (or the queue slot, if one is assigned) immediately rather
+    // than finishing the walk.
     if (this.state === "walking" && this.targetKind === "break" && (this.sessionActive || this.hasPending)) {
-      this.setSeatTarget();
+      if (this.queueSlot !== null) this.setQueueTarget(this.queueSlot);
+      else this.setSeatTarget();
     }
 
     if (this.targetPx) this.moveToward(dt);
@@ -277,6 +300,13 @@ export class CharacterEntity {
     return true;
   }
 
+  private setQueueTarget(slot: number): void {
+    this.releaseBreakTile();
+    const p = tileCenterPx(QUEUE_SLOTS[slot]);
+    this.targetPx = { x: p.x, y: p.y + TILE_SIZE / 2 };
+    this.targetKind = "queue";
+  }
+
   private releaseBreakTile(): void {
     if (this.reservedBreakKey === null) return;
     this.breakReservations?.delete(this.reservedBreakKey);
@@ -292,9 +322,10 @@ export class CharacterEntity {
     if (dist <= step || dist < ARRIVE_EPS_PX) {
       this.root.position.set(Math.round(t.x), Math.round(t.y));
       this.targetPx = null;
-      // Arrival: walking ends -> sitting for the seat leg, breakIdle for a
-      // break-room leg (initial or a stroll).
-      this.state = this.targetKind === "seat" ? "sitting" : "breakIdle";
+      // Arrival: walking ends -> sitting for the seat leg, queueing for the
+      // boss-desk queue leg, breakIdle for a break-room leg (initial or a
+      // stroll).
+      this.state = this.targetKind === "seat" ? "sitting" : this.targetKind === "queue" ? "queueing" : "breakIdle";
       this.targetKind = null;
       this.stateTimer = 0;
       return;

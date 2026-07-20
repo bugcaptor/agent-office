@@ -655,6 +655,7 @@ mod tests {
         let profiles = crate::types::PersistedState {
             agents: vec![profile("a1", "Ada")],
             version: 1,
+            vacation_mode: None,
         };
         f.ctx.store.save(&profiles).unwrap();
         let client = reqwest::Client::new();

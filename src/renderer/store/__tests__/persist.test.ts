@@ -97,6 +97,7 @@ describe("installPersistence / debounce", () => {
         expect.objectContaining({ id: "a2", name: "Renamed" }),
       ],
       version: 1,
+      vacationMode: false,
     });
   });
 
@@ -108,6 +109,21 @@ describe("installPersistence / debounce", () => {
     useAppStore.getState().addAgent(mkProfile({ id: "a2" }));
     vi.advanceTimersByTime(500);
     expect(mockApi.saveState).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("installPersistence / vacationMode", () => {
+  it("includes vacationMode in the saveState payload after a debounced toggle", () => {
+    useAppStore.getState().toggleVacationMode();
+
+    expect(mockApi.saveState).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(500);
+
+    expect(mockApi.saveState).toHaveBeenCalledTimes(1);
+    expect(mockApi.saveState).toHaveBeenCalledWith(
+      expect.objectContaining({ vacationMode: true })
+    );
   });
 });
 

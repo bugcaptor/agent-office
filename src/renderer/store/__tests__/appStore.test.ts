@@ -415,6 +415,17 @@ describe("hydrate", () => {
   });
 });
 
+describe("vacationMode", () => {
+  it("toggleVacationMode flips and hydrate restores", () => {
+    useAppStore.getState().toggleVacationMode();
+    expect(useAppStore.getState().vacationMode).toBe(true);
+    useAppStore.getState().hydrate({ agents: [], version: 1, vacationMode: false });
+    expect(useAppStore.getState().vacationMode).toBe(false);
+    useAppStore.getState().hydrate({ agents: [], version: 1 }); // 필드 없는 구버전
+    expect(useAppStore.getState().vacationMode).toBe(false);
+  });
+});
+
 describe("timeTracking slice", () => {
   it("applyActivityEvent(prompt) opens a working turn", () => {
     const s = useAppStore.getState();

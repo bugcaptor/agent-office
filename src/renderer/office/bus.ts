@@ -18,7 +18,8 @@ export interface LabelAnchor {
 }
 
 export interface OfficeBus {
-  // B subscribes (A -> B, relayed through C).
+  // B subscribes (A -> B, relayed through C). 구독 즉시 현재 상태를 1회
+  // replay한다(기본값 상태 false/idle은 생략) — 재마운트된 씬도 상태를 받는다.
   onNotificationChanged(cb: (agentId: string, hasPending: boolean) => void): () => void;
   onSessionStateChanged(cb: (agentId: string, state: SessionState) => void): () => void;
   // B emits (B -> C/A).
@@ -39,6 +40,11 @@ export interface OfficeBus {
   onDeskClicked(cb: (deskIndex: number, screenX: number, screenY: number) => void): () => void;
   /** B가 부모별 활성 서브에이전트 수 변화를 구독(미니 캐릭터 표시용). */
   onSubagentCountChanged(cb: (agentId: string, count: number) => void): () => void;
+  /** B가 보스 책상 클릭을 알림(책상 주인 지정과 별개 — 보스 자리 클릭 전용 채널). */
+  emitBossDeskClicked(): void;
+  /** B가 휴가 모드 on/off를 구독 — on이면 줄 전원 이탈.
+   * 구독 즉시 현재값을 1회 재생(replay)한다 — 늦게 마운트된 씬도 초기값 수신. */
+  onVacationModeChanged(cb: (on: boolean) => void): () => void;
 }
 
 type NotificationListener = (agentId: string, hasPending: boolean) => void;
@@ -53,6 +59,10 @@ export interface MockOfficeBus extends OfficeBus {
   triggerSubagentCountChanged(agentId: string, count: number): void;
   /** Records every agentId passed to `emitAgentClicked` (B -> A/C direction), in order. */
   readonly clickedAgentIds: readonly string[];
+  /** Drives the C -> B direction for vacation mode from a test/manual harness. */
+  triggerVacationModeChanged(on: boolean): void;
+  /** Counts every `emitBossDeskClicked` call (B -> A/C direction). */
+  readonly bossDeskClickCount: number;
 }
 
 /** In-memory pub/sub `OfficeBus` implementation. No Pixi/DOM/IPC dependency. */
@@ -65,15 +75,23 @@ export function createMockOfficeBus(): MockOfficeBus {
   const labelAnchorListeners = new Set<(a: ReadonlyMap<string, LabelAnchor>) => void>();
   const deskClickListeners = new Set<(deskIndex: number, x: number, y: number) => void>();
   const subagentCountListeners = new Set<(agentId: string, count: number) => void>();
+  const vacationModeListeners = new Set<(on: boolean) => void>();
   const clickedAgentIds: string[] = [];
+  let bossDeskClickCount = 0;
+  let vacationMode = false;
+  // 구독 시점 replay용 마지막 상태.
+  const lastPending = new Map<string, boolean>();
+  const lastSessionState = new Map<string, SessionState>();
 
   return {
     onNotificationChanged(cb) {
       notificationListeners.add(cb);
+      for (const [id, p] of lastPending) if (p) cb(id, true);
       return () => notificationListeners.delete(cb);
     },
     onSessionStateChanged(cb) {
       sessionStateListeners.add(cb);
+      for (const [id, st] of lastSessionState) cb(id, st);
       return () => sessionStateListeners.delete(cb);
     },
     emitAgentClicked(agentId) {
@@ -108,11 +126,28 @@ export function createMockOfficeBus(): MockOfficeBus {
       for (const cb of subagentCountListeners) cb(agentId, count);
     },
     triggerNotificationChanged(agentId, hasPending) {
+      lastPending.set(agentId, hasPending);
       for (const cb of notificationListeners) cb(agentId, hasPending);
     },
     triggerSessionStateChanged(agentId, state) {
+      lastSessionState.set(agentId, state);
       for (const cb of sessionStateListeners) cb(agentId, state);
     },
     clickedAgentIds,
+    emitBossDeskClicked() {
+      bossDeskClickCount += 1;
+    },
+    onVacationModeChanged(cb) {
+      vacationModeListeners.add(cb);
+      cb(vacationMode);
+      return () => vacationModeListeners.delete(cb);
+    },
+    triggerVacationModeChanged(on) {
+      vacationMode = on;
+      for (const cb of vacationModeListeners) cb(on);
+    },
+    get bossDeskClickCount() {
+      return bossDeskClickCount;
+    },
   };
 }

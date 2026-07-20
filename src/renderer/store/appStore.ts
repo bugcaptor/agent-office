@@ -101,6 +101,8 @@ interface AppState {
   recentAgentIds: string[];
   modal: ModalState;
   muted: boolean;
+  /** 휴가 모드(보스 책상 클릭으로 토글). true = 줄 전원 이탈. */
+  vacationMode: boolean;
   /** 현재 테마 id. localStorage("agent-office.theme")로 영속 — PersistedState 아님. */
   theme: ThemeId;
   /** 초상 dataURL 캐시(agentId -> "data:image/png;base64,..."). 런타임 전용, 영속 안 함. */
@@ -202,6 +204,10 @@ interface AppState {
   /** Flips `muted`. Badge resync on toggle is the session bridge's job. */
   toggleMuted(): void;
 
+  // ---- vacation mode ----
+  /** Flips `vacationMode`. officeBus relay to the scene is the session bridge's job. */
+  toggleVacationMode(): void;
+
   // ---- theme ----
   /** 테마 전환: DOM 적용(applyTheme) + localStorage 영속 + 상태 갱신. */
   setTheme(id: ThemeId): void;
@@ -268,6 +274,7 @@ export const useAppStore = create<AppState>()(
     recentAgentIds: [],
     modal: { kind: "none" },
     muted: false,
+    vacationMode: false,
     theme: loadStoredThemeId(), // 스토어 생성 시점(첫 render 전)에 저장값 복원 → 플래시 없음
     portraits: {},
     spritePreviews: {},
@@ -540,6 +547,8 @@ export const useAppStore = create<AppState>()(
 
     toggleMuted: () => set((s) => ({ muted: !s.muted })),
 
+    toggleVacationMode: () => set((s) => ({ vacationMode: !s.vacationMode })),
+
     setTheme: (id) => {
       // 부수효과(DOM/localStorage)를 액션에서 직접 수행 — 이 스토어는 React
       // 밖(IPC 콜백 등)에서도 호출되므로 별도 구독자 계층을 두지 않는다.
@@ -707,7 +716,12 @@ export const useAppStore = create<AppState>()(
             lastActivityAt: a.createdAt,
           };
         }
-        return { agents, sessions, agentOrder: state.agents.map((a) => a.id) };
+        return {
+          agents,
+          sessions,
+          agentOrder: state.agents.map((a) => a.id),
+          vacationMode: state.vacationMode ?? false,
+        };
       }),
 
     setUsage: (snapshot) => set({ usage: snapshot }),

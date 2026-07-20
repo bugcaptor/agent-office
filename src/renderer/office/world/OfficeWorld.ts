@@ -22,6 +22,7 @@ import type { Container } from "pixi.js";
 import type { LabelAnchor, OfficeBus } from "../bus";
 import type { AgentProfile } from "../types";
 import type { SessionState } from "../../../shared/types";
+import { QUEUE_SLOTS } from "../map/mapData";
 import type { OfficeMap } from "../map/mapData";
 import { assignDesks } from "../map/deskAssignment";
 import { createCharacterAssets } from "../gen/characterFactory";
@@ -43,8 +44,9 @@ export interface OfficeWorldOptions {
  * which reuses `hashStringToSeed(id)` directly with no salt). */
 const MOVEMENT_RNG_SALT = 0x9e3779b9;
 
-/** 라벨 앵커의 머리 위 오프셋(월드 px). ExclamationOverlay(-TILE_SIZE)보다 살짝 위. */
-const LABEL_ANCHOR_OFFSET_Y = 20;
+/** 라벨 앵커의 머리 위 오프셋(월드 px). ExclamationOverlay(-TILE_SIZE)보다 살짝 위.
+ * exported for test-only position lookups via `collectLabelAnchors` (no other entity-position accessor exists). */
+export const LABEL_ANCHOR_OFFSET_Y = 20;
 
 /** 엔티티 외형을 결정하는 키 — 바뀌면 재생성한다. archetype, seed 편집, 커스텀 시트
  * 등록/변경/해제(spriteUpdatedAt + 오버라이드 유무) 모두 반영. */
@@ -73,10 +75,22 @@ export class OfficeWorld {
   // 탕비실 타일 예약(tileKey) — 전 엔티티 공유. 쉬는 캐릭터가 같은 타일에
   // 겹쳐 서지 않게 한다. 엔티티가 예약/해제하고(destroy 포함) 여기서는 소유만.
   private breakReservations = new Set<string>();
+  // 알림 대기 agentId(도착 순서 = 삽입 순서). 휴가 중에도 유지되고, 줄
+  // 순서는 매번 여기서 유도한다(recomputeQueue) — 동기화할 사본이 없다.
+  private pendingIds = new Set<string>();
+  private vacationMode = false;
   private unsub: Array<() => void> = [];
 
   constructor(private o: OfficeWorldOptions) {
-    this.unsub.push(o.bus.onNotificationChanged((id, hasPending) => this.entities.get(id)?.setPending(hasPending)));
+    this.unsub.push(
+      o.bus.onNotificationChanged((id, hasPending) => {
+        this.entities.get(id)?.setPending(hasPending);
+        if (this.pendingIds.has(id) === hasPending) return; // 멤버십 불변 → 큐 재계산 불필요
+        if (hasPending) this.pendingIds.add(id);
+        else this.pendingIds.delete(id);
+        this.recomputeQueue();
+      }),
+    );
     this.unsub.push(
       o.bus.onSessionStateChanged((agentId, state) => {
         const active = isSessionActive(state);
@@ -90,6 +104,25 @@ export class OfficeWorld {
         this.entities.get(agentId)?.setSubagentCount(count);
       }),
     );
+    this.unsub.push(
+      o.bus.onVacationModeChanged((on) => {
+        this.vacationMode = on;
+        this.recomputeQueue();
+      }),
+    );
+  }
+
+  /** 멤버십(알림×휴가) 재계산 후 전 엔티티에 슬롯 반영. 줄 순서는
+   * pendingIds(도착 순) ∩ entities에서 매번 유도 — 엔티티 없는(책상 부족)
+   * pending은 자동으로 걸러져 유령 자리를 만들지 않는다. */
+  private recomputeQueue(): void {
+    const order = this.vacationMode
+      ? []
+      : [...this.pendingIds].filter((id) => this.entities.has(id));
+    for (const [id, e] of this.entities) {
+      const i = order.indexOf(id);
+      e.setQueueSlot(i === -1 || i >= QUEUE_SLOTS.length ? null : i);
+    }
   }
 
   /** Diff the live entity set against `profiles`: destroy dropped agents, create new ones,
@@ -105,6 +138,12 @@ export class OfficeWorld {
     const next = new Set(profiles.map((p) => p.id));
     // setRenderScale 재프리필터가 참조할 최신 프로필 스냅샷.
     this.profiles = new Map(profiles.map((p) => [p.id, p]));
+
+    // 엔티티 없이(책상 부족) 대기하던 에이전트가 목록에서 사라지면 아래
+    // entities 기반 정리 루프로는 잡히지 않는다 — 별도 sweep.
+    for (const id of [...this.pendingIds]) {
+      if (!next.has(id)) this.pendingIds.delete(id);
+    }
 
     for (const [id, entity] of this.entities) {
       if (next.has(id)) continue;
@@ -133,6 +172,7 @@ export class OfficeWorld {
       if (!entity) continue;
       const slot = desks.get(p.id);
       if (!slot) {
+        // pendingIds는 유지 — 좌석을 되찾으면 recomputeQueue가 큐 멤버십을 되살린다.
         entity.destroy();
         this.entities.delete(p.id);
         this.appearanceKeys.delete(p.id);
@@ -151,12 +191,16 @@ export class OfficeWorld {
       const entity = new CharacterEntity(p.id, assets, slot.seat, this.o.map, rand, this.breakReservations);
       entity.setSessionActive(this.sessionActive.get(p.id) ?? false);
       entity.setSubagentCount(this.subagentCounts.get(p.id) ?? 0);
+      entity.setPending(this.pendingIds.has(p.id));
       entity.onClicked((id) => this.o.bus.emitAgentClicked(id));
       entity.onHover((id, x, y) => this.o.bus.emitAgentHoverChanged(id, x, y));
       this.o.characterLayer.addChild(entity.root);
       this.entities.set(p.id, entity);
       this.appearanceKeys.set(p.id, appearanceKey(p));
     }
+
+    // 외형 재생성으로 새로 만들어진 엔티티(같은 id)에 큐 슬롯을 재주입한다.
+    this.recomputeQueue();
   }
 
   /**
@@ -201,5 +245,6 @@ export class OfficeWorld {
     this.sessionActive.clear();
     this.subagentCounts.clear();
     this.profiles.clear();
+    this.pendingIds.clear();
   }
 }

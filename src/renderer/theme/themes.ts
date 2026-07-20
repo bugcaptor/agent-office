@@ -52,9 +52,11 @@ type TilePaletteKey = (typeof TILE_PALETTE_KEYS)[number];
 /** 타일 색만(0xRRGGBB). TileRenderer의 생성자 인자 타입. */
 export type OfficeTilePalette = Record<TilePaletteKey, number>;
 
-/** 타일 색 + 씬 배경색. OfficeScene이 소비. */
+/** 타일 색 + 씬 배경색 + 씬 내 텍스트색. OfficeScene이 소비. */
 export interface PixiThemePalette extends OfficeTilePalette {
   background: number;
+  /** 씬 안에 그리는 텍스트(휴가중 팻말 등) — css `--text`의 미러. */
+  text: number;
 }
 
 export type ThemeId = "daylight" | "midnight" | "sakura";
@@ -86,6 +88,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     },
     pixi: {
       background: 0xd9ccb4, // 맵 밖 레터박스: 바닥보다 살짝 어둡게 → 맵이 떠 보인다
+      text: 0x3a3428, // = --text
       floorA: 0xe8dcc8, // 밝은 웜 우드 체커
       floorB: 0xe0d3bc,
       floorDot: 0xcfc0a4,
@@ -124,6 +127,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     },
     pixi: {
       background: 0x1b1b24,
+      text: 0xc8d0e0, // = --text
       floorA: 0x3a3a4a,
       floorB: 0x34343f,
       floorDot: 0x2e2e38,
@@ -162,6 +166,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     },
     pixi: {
       background: 0xe9cfda,
+      text: 0x4a2b3c, // = --text
       floorA: 0xf6e2ea, // 연분홍 체커 바닥
       floorB: 0xefd7e1,
       floorDot: 0xe2c2d0,

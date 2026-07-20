@@ -209,13 +209,13 @@ describe("desk click hit areas (책상 지정 메뉴)", () => {
     state.initResolvers.forEach((resolve) => resolve());
     await initPromise;
 
-    // floorLayer(최하단 레이어)에 있는 인터랙티브 자식들 = 책상 히트영역.
+    // floorLayer(최하단 레이어)에 있는 인터랙티브 자식들 = 데스크 히트영역 + 보스 책상 히트영역.
     // 캐릭터/가구보다 아래에 두어 캐릭터 클릭이 항상 우선한다.
     const floorLayer = (
       scene as unknown as { floorLayer: { children: Array<Record<string, unknown>> } }
     ).floorLayer;
     const hits = floorLayer.children.filter((c) => c.eventMode === "static");
-    expect(hits.length).toBe(OFFICE_MAP.desks.length);
+    expect(hits.length).toBe(OFFICE_MAP.desks.length + 1); // +1 for boss desk
 
     // 첫 데스크의 히트영역을 찾아 탭 → (index, 화면좌표) 발행 확인.
     const d0 = OFFICE_MAP.desks[0];

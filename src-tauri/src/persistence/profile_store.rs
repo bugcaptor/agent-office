@@ -117,6 +117,7 @@ mod tests {
             bot: None,
             }],
             version: 1,
+            vacation_mode: None,
         }
     }
 

@@ -40,8 +40,11 @@ export const useLightsOff = () =>
 export const useRunningCount = () =>
   useAppStore((s) => Object.values(s.sessions).filter((x) => x.status === "running").length);
 
-export const usePendingCount = () =>
-  useAppStore((s) => new Set(s.notifications.map((n) => n.agentId)).size);
+/** 알림 대기 중인 agentId 집합 — "pending" 정의의 단일 소스(배지·오피스 릴레이·replay 공용). */
+export const pendingAgentIds = (notifications: ReadonlyArray<{ agentId: string }>): Set<string> =>
+  new Set(notifications.map((n) => n.agentId));
+
+export const usePendingCount = () => useAppStore((s) => pendingAgentIds(s.notifications).size);
 
 export interface SessionTimeRow {
   agentId: string;

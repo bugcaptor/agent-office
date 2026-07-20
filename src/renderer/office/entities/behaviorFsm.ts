@@ -16,11 +16,12 @@
 // to another break-room tile (walking(break wander) -> [arrival] ->
 // breakIdle) purely for flavor.
 
-export type BehaviorState = "sitting" | "walking" | "breakIdle";
+export type BehaviorState = "sitting" | "walking" | "breakIdle" | "queueing";
 
 export interface FsmContext {
   hasPending: boolean; // 알림 대기 (있으면 자리 지킴/즉시 복귀)
   sessionActive: boolean; // 세션이 starting/running 인가 (있으면 자리 지킴/즉시 복귀)
+  shouldQueue: boolean; // 보스 줄에 서야 하는가 — 월드가 계산(hasPending && !휴가 && 슬롯 배정)
   timerMs: number; // 현재 상태 경과
   rand: number; // [0,1) 이번 틱 난수
 }
@@ -31,6 +32,7 @@ export interface FsmResult {
   requestBreakTarget?: boolean; // sitting -> walking: 탕비실로 이동
   requestBreakWander?: boolean; // breakIdle -> walking: 탕비실 내 다른 타일로 산책
   requestReturnToDesk?: boolean; // breakIdle -> walking: 자기 자리로 복귀
+  requestQueueSlot?: boolean; // walking 진입: 보스 책상 줄 슬롯으로 이동
 }
 
 // 세션이 끝난 뒤 곧장 일어서지 않도록 두는 짧은 여유 시간.
@@ -40,6 +42,7 @@ const BREAK_WANDER_CHANCE_PER_SEC = 0.06;
 export function stepBehavior(state: BehaviorState, c: FsmContext, dtMs: number): FsmResult {
   switch (state) {
     case "sitting": {
+      if (c.shouldQueue) return { next: "walking", requestQueueSlot: true };
       // 세션이 활성 상태이거나 알림 대기 중이면 자리 고정 — 배회하지 않는다.
       if (c.sessionActive || c.hasPending) return { next: "sitting" };
       if (c.timerMs < SIT_LINGER_MS) return { next: "sitting" };
@@ -49,7 +52,12 @@ export function stepBehavior(state: BehaviorState, c: FsmContext, dtMs: number):
       // 도착 판정은 이동 컨트롤러가 하고 도착 시 상태 종료를 부른다.
       return { next: "walking" };
     }
+    case "queueing": {
+      if (!c.shouldQueue) return { next: "walking", requestReturnToDesk: true };
+      return { next: "queueing" };
+    }
     case "breakIdle": {
+      if (c.shouldQueue) return { next: "walking", requestQueueSlot: true };
       // 세션이 다시 활성화되거나 알림이 오면 즉시 자리로 복귀.
       if (c.sessionActive || c.hasPending) {
         return { next: "walking", requestReturnToDesk: true };
