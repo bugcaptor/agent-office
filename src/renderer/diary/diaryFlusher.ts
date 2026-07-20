@@ -28,7 +28,10 @@ export const AUTO_DIARY_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // 3일
 export const AUTO_DIARY_MIN_ITEMS = 3;
 
 /** flush를 부른 계기 — 로깅/의미 구분용(동작 분기는 하지 않는다). */
-export type FlushSource = "session-end" | "open-diary" | "quit";
+export type FlushSource = "session-end" | "open-diary" | "quit" | "background";
+
+/** 한 세션의 타임아웃 재시도 상한. 초과 시 attempted 확정(무한 재시도 방지, #66). */
+export const TIMEOUT_MAX_RETRIES = 2;
 
 export interface FlushAgentOpts {
   /** 진행 중(running) 세션도 포함할지. 기본 false — 종료된 세션만 쓴다. */
@@ -63,6 +66,10 @@ export class DiaryFlusher {
   // 에이전트별 처리 직렬화. 겹친 트리거가 generateDiary의 per-agent inflight와
   // 얽혀 세션을 잃지 않도록 앞 처리가 끝난 뒤에만 다음 처리가 돌게 한다.
   private readonly running = new Map<string, Promise<void>>();
+  // 세션별(agentId:sessionId) 타임아웃 재시도 횟수. 상한(TIMEOUT_MAX_RETRIES)
+  // 초과 시 attempted로 확정한다 — 근본적으로 느린 CLI에서 같은 세션을 영원히
+  // 두드리지 않도록. 인스턴스(=앱 세션) 수명 한정이라 재부팅 시 리셋(의도).
+  private readonly timeoutRetries = new Map<string, number>();
 
   constructor(deps: DiaryFlusherDeps = {}) {
     this.now = deps.now ?? Date.now;
@@ -153,14 +160,17 @@ export class DiaryFlusher {
       if (this.attempted.has(key)) continue;
       // 진행 중 세션은 제외 — attempted 표시하지 않아, 나중에 종료되면 그때 쓴다.
       if (sessionId === liveSid) continue;
-      // 3일보다 오래된 과거는 수동으로만 — 소급 자동 생성 금지.
+      // 3일보다 오래된 과거는 수동으로만 — 소급 자동 생성 금지. 타임아웃 재시도로
+      // 미뤄지다 컷오프를 넘긴 세션도 여기서 확정된다(재시도가 소급 금지를 우회 못 함).
       if (g.latestAt < cutoff) {
         this.attempted.add(key);
+        this.timeoutRetries.delete(key);
         continue;
       }
       // 작업량이 극히 적은 세션은 제외.
       if (g.count < AUTO_DIARY_MIN_ITEMS) {
         this.attempted.add(key);
+        this.timeoutRetries.delete(key);
         continue;
       }
 
@@ -190,9 +200,22 @@ export class DiaryFlusher {
         continue;
       }
       // in-flight면 표시하지 않고 다음 트리거에서 재시도 — 자격 있는 일기를
-      // 잃지 않는다. 그 외(성공·disabled·cli-missing·failed)는 표시해 재시도 방지.
+      // 잃지 않는다(상한 없음: 다른 경로가 곧 놓아준다).
       if (!result.ok && result.reason === "in-flight") continue;
+      // 타임아웃도 재시도 가능하되 세션당 상한까지만(#66) — 백그라운드 스윕이
+      // 다음 유휴에 다시 시도한다. 상한 내면 표시하지 않고 넘어간다.
+      if (!result.ok && result.reason === "timeout") {
+        const tries = (this.timeoutRetries.get(key) ?? 0) + 1;
+        if (tries <= TIMEOUT_MAX_RETRIES) {
+          this.timeoutRetries.set(key, tries);
+          continue;
+        }
+        // 상한 초과 — 아래에서 attempted 확정(조용한 폴백).
+        console.warn(`diaryFlusher: 타임아웃 재시도 상한 초과 — 포기(${key})`);
+      }
+      // 그 외(성공·disabled·cli-missing·failed·타임아웃 상한초과)는 표시해 재시도 방지.
       this.attempted.add(key);
+      this.timeoutRetries.delete(key);
       restoredSessionKeys.delete(key);
       if (result.ok) this.onWritten?.(agentId, result.entry);
     }

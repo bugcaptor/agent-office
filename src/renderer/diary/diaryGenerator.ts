@@ -28,7 +28,10 @@ const BODY_MIN_CHARS = 4;
 /** 생성 결과 사유 — 호출부(UI)가 사용자 피드백에 쓴다. */
 export type DiaryResult =
   | { ok: true; entry: DiaryEntry }
-  | { ok: false; reason: "disabled" | "no-work" | "in-flight" | "cli-missing" | "failed" };
+  | {
+      ok: false;
+      reason: "disabled" | "no-work" | "in-flight" | "cli-missing" | "timeout" | "failed";
+    };
 
 export interface DiaryGeneratorDeps {
   summarizeFn?: (
@@ -75,7 +78,8 @@ export async function generateDiary(
 ): Promise<DiaryResult> {
   const summarizeFn =
     deps.summarizeFn ??
-    ((provider, instruction, text) => tauriApi.summarizeText(provider, instruction, text));
+    // 일기 경로는 "diary" 목적으로 호출 — 백엔드가 넉넉한 타임아웃(120초)을 쓴다(#66).
+    ((provider, instruction, text) => tauriApi.summarizeText(provider, instruction, text, "diary"));
   const appendFn = deps.appendFn ?? ((id, entry) => tauriApi.appendDiaryEntry(id, entry));
   const now = deps.now ?? Date.now;
   const log = deps.log ?? workLog;
@@ -112,6 +116,13 @@ export async function generateDiary(
     if (message.includes(`${provider}-not-found`)) {
       console.warn(`diary: ${provider} CLI 미설치 — 일기 생성 건너뜀`);
       return { ok: false, reason: "cli-missing" };
+    }
+    // 백엔드 요약기 타임아웃(#66). 정확히 "timeout"일 때만 — provider stderr에
+    // "timeout"이 섞인 exit 에러("… exited 1: … timeout …")를 오분류하지 않는다.
+    // 타임아웃은 영구 실패가 아니라 재시도 가능 사유다(flusher가 보존·재시도).
+    if (message === "timeout") {
+      console.warn(`diary: 요약기 타임아웃 — 재시도 대기(agent=${agentId})`);
+      return { ok: false, reason: "timeout" };
     }
     if (message.includes("summarizer-disabled")) {
       // 설정 OFF 경합 — 스토어 게이트가 다음 요청을 막는다.

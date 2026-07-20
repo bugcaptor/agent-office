@@ -365,6 +365,20 @@ describe("command invocations", () => {
       provider: "codex",
       instruction: "요약 지시",
       text: "원문",
+      purpose: undefined,
+    });
+  });
+
+  it("summarizeText는 목적(purpose)을 그대로 전달한다(일기=diary)", async () => {
+    const tauriApi = await importTauriApi();
+
+    await tauriApi.summarizeText("claude", "일기 지시", "작업 로그", "diary");
+
+    expect(invoke).toHaveBeenCalledWith(Commands.summarizeText, {
+      provider: "claude",
+      instruction: "일기 지시",
+      text: "작업 로그",
+      purpose: "diary",
     });
   });
 

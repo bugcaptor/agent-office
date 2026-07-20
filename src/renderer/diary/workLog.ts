@@ -117,8 +117,19 @@ export class WorkLog {
 export const workLog = new WorkLog();
 
 /**
- * 로그 항목들을 일기 생성 입력용 텍스트로 조립한다. 시간순, 종류별 접두어를
- * 붙인다. 요약기 백엔드가 다시 2,000자로 캡하므로 여기선 사람이 읽는 형태만 만든다.
+ * 일기 입력 조립 시 목표 예산(문자). 백엔드 캡(2,000자, `cap_text`)보다 낮게 잡아
+ * 대부분 케이스에서 백엔드 절단을 타지 않게 한다.
+ */
+export const FORMAT_BUDGET_CHARS = 1_900;
+
+/**
+ * 로그 항목들을 일기 생성 입력용 텍스트로 조립한다. 시간순, 종류별 접두어를 붙인다.
+ *
+ * 예산(FORMAT_BUDGET_CHARS) 이내면 전부 그대로 잇는다. 초과하면 **우선순위 기반
+ * 축소**(#66): (1) `prompt`(+목표)는 일기의 뼈대이므로 전량 보존, (2) 남은 예산에
+ * `tool`/`narration`을 **최신 우선**으로 채우되 출력은 시간순 유지, (3) 탈락한
+ * 구간은 `- (중략: N개 항목)` 한 줄로 표시. 예전에는 백엔드가 앞 2,000자만 남기는
+ * 꼬리 절단이라 긴 세션의 최신 작업이 통째로 유실됐다.
  */
 export function formatWorkLog(items: WorkLogItem[]): string {
   const label: Record<WorkLogKind, string> = {
@@ -126,12 +137,51 @@ export function formatWorkLog(items: WorkLogItem[]): string {
     tool: "도구",
     narration: "진행",
   };
-  return items
-    .map((i) => {
-      const head = `- [${label[i.kind]}] ${i.text}`;
-      return i.kind === "prompt" && i.goal ? `${head} (목표: ${i.goal})` : head;
-    })
-    .join("\n");
+  const render = (i: WorkLogItem): string => {
+    const head = `- [${label[i.kind]}] ${i.text}`;
+    return i.kind === "prompt" && i.goal ? `${head} (목표: ${i.goal})` : head;
+  };
+
+  const lines = items.map(render);
+  const totalCost = lines.reduce((n, l) => n + l.length + 1, 0); // +1 = 개행
+  if (totalCost <= FORMAT_BUDGET_CHARS) return lines.join("\n");
+
+  // 예산 초과 — 우선순위 선별.
+  const kept = new Set<number>();
+  let used = 0;
+  // 1) prompt는 예산과 무관하게 전량 확보(지시·목표는 반드시 남긴다).
+  items.forEach((it, idx) => {
+    if (it.kind === "prompt") {
+      kept.add(idx);
+      used += lines[idx].length + 1;
+    }
+  });
+  // 2) 남은 예산을 tool/narration으로 최신(뒤)→과거 순 채운다. 안 맞는 항목은
+  //    건너뛰고 더 과거의(작을 수 있는) 항목을 계속 시도 — 정보량 최대화.
+  for (let idx = items.length - 1; idx >= 0; idx--) {
+    if (kept.has(idx)) continue;
+    const cost = lines[idx].length + 1;
+    if (used + cost > FORMAT_BUDGET_CHARS) continue;
+    kept.add(idx);
+    used += cost;
+  }
+
+  // 시간순 출력 + 탈락 구간을 중략 한 줄로 접기.
+  const out: string[] = [];
+  let dropRun = 0;
+  items.forEach((_, idx) => {
+    if (kept.has(idx)) {
+      if (dropRun > 0) {
+        out.push(`- (중략: ${dropRun}개 항목)`);
+        dropRun = 0;
+      }
+      out.push(lines[idx]);
+    } else {
+      dropRun += 1;
+    }
+  });
+  if (dropRun > 0) out.push(`- (중략: ${dropRun}개 항목)`);
+  return out.join("\n");
 }
 
 export interface WorkLogRecorderDeps {

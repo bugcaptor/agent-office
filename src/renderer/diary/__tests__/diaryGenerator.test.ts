@@ -149,6 +149,28 @@ describe("generateDiary", () => {
     expect(log.items("a1")).toHaveLength(2);
   });
 
+  it("백엔드 타임아웃(정확히 \"timeout\")은 timeout 사유로 분기(로그 유지)", async () => {
+    const log = seededLog();
+    // tauri invoke 거절은 Error가 아닌 문자열로 오기도 하므로 문자열로 재현.
+    const result = await generateDiary("a1", {
+      summarizeFn: vi.fn().mockRejectedValue("timeout"),
+      appendFn: vi.fn(),
+      log,
+    });
+    expect(result).toEqual({ ok: false, reason: "timeout" });
+    expect(log.items("a1")).toHaveLength(2); // 소진 안 함 — 재시도 대상
+  });
+
+  it("stderr에 timeout이 섞인 exit 에러는 timeout이 아니라 failed로 본다", async () => {
+    const log = seededLog();
+    const result = await generateDiary("a1", {
+      summarizeFn: vi.fn().mockRejectedValue(new Error("claude exited 1: request timeout on server")),
+      appendFn: vi.fn(),
+      log,
+    });
+    expect(result).toEqual({ ok: false, reason: "failed" });
+  });
+
   it("targetSessionId를 주면 그 세션 로그만 담아 기록하고 그 세션만 소진한다", async () => {
     const log = new WorkLog();
     log.append("a1", { at: 1, sessionId: "s1", kind: "prompt", text: "이전 세션 작업" });

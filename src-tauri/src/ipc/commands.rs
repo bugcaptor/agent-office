@@ -389,12 +389,14 @@ pub async fn summarize_text(
     provider: crate::persistence::settings_store::SummaryProvider,
     instruction: String,
     text: String,
+    // 목적별 타임아웃(#66). 미전달(구 렌더러)이면 라벨(20초)로 취급.
+    purpose: Option<crate::summarizer::SummaryPurpose>,
 ) -> Result<String, String> {
     let enabled = app_state.settings.read().unwrap().summarizer_enabled;
     if !enabled {
         return Err("summarizer-disabled".to_string());
     }
-    crate::summarizer::summarize(provider, &instruction, &text).await
+    crate::summarizer::summarize(provider, purpose.unwrap_or_default(), &instruction, &text).await
 }
 
 /// PixelLab로 64×64 스프라이트 1장 생성. AppState 비의존
@@ -896,7 +898,13 @@ mod tests {
     fn summarize_text_command_accepts_provider_snapshot() {
         fn assert_signature<F, Fut>(_command: F)
         where
-            F: Fn(State<'static, AppState>, SummaryProvider, String, String) -> Fut,
+            F: Fn(
+                State<'static, AppState>,
+                SummaryProvider,
+                String,
+                String,
+                Option<crate::summarizer::SummaryPurpose>,
+            ) -> Fut,
         {
         }
 
@@ -913,7 +921,13 @@ mod tests {
         let result: Result<String, String> = if !state.settings.read().unwrap().summarizer_enabled {
             Err("summarizer-disabled".to_string())
         } else {
-            crate::summarizer::summarize(SummaryProvider::Codex, "요약하라", "text").await
+            crate::summarizer::summarize(
+                SummaryProvider::Codex,
+                crate::summarizer::SummaryPurpose::Label,
+                "요약하라",
+                "text",
+            )
+            .await
         };
 
         assert_eq!(result.unwrap_err(), "summarizer-disabled");
@@ -943,7 +957,13 @@ mod tests {
         let result: Result<String, String> = if !state.settings.read().unwrap().summarizer_enabled {
             Err("summarizer-disabled".to_string())
         } else {
-            crate::summarizer::summarize(SummaryProvider::Codex, "요약하라", "   ").await
+            crate::summarizer::summarize(
+                SummaryProvider::Codex,
+                crate::summarizer::SummaryPurpose::Label,
+                "요약하라",
+                "   ",
+            )
+            .await
         };
 
         assert_eq!(result.unwrap_err(), "validation: text is empty");

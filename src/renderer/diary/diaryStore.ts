@@ -30,6 +30,8 @@ function noticeFor(result: DiaryResult): string {
       return "이미 일기를 쓰는 중입니다.";
     case "cli-missing":
       return "선택한 CLI를 찾지 못해 일기를 쓰지 못했습니다.";
+    case "timeout":
+      return "생성이 오래 걸려 미뤘습니다. 잠시 후 자동으로 다시 시도합니다.";
     case "failed":
       return "일기 생성에 실패했습니다. 잠시 후 다시 시도하세요.";
   }

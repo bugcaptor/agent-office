@@ -3,7 +3,7 @@
 // 자동 일기 트리거(#60): 세션 종료 구독 → 자격 있는 세션 자동 생성, opt-in OFF
 // 미호출, 극소 작업/3일 초과 과거 제외, 놓친 스트래글러 flush, 이중 이벤트 dedupe,
 // 성공 시 알림·오버레이 갱신. api/log/now/notify/generate 전부 주입.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
@@ -21,6 +21,7 @@ import {
 } from "../diaryAutoWriter";
 import { WorkLog } from "../workLog";
 import type { AgentProfile, AppSettings, DiaryEntry, SessionStateEvent } from "@shared/types";
+import type { SessionRuntime as StoreSessionRuntime } from "../../store/types";
 
 const SETTINGS_ON: AppSettings = {
   version: 1,
@@ -72,8 +73,12 @@ function okResult(sessionId: string): { ok: true; entry: DiaryEntry } {
   return { ok: true, entry: { at: NOW, sessionId, body: "오늘은 빌드를 고쳤다." } };
 }
 
+function running(agentId: string): StoreSessionRuntime {
+  return { agentId, status: "running", cols: 80, rows: 24, lastActivityAt: NOW };
+}
+
 beforeEach(() => {
-  useAppStore.setState({ agents: { a1: profile() }, taskLabels: {} });
+  useAppStore.setState({ agents: { a1: profile() }, taskLabels: {}, agentOrder: ["a1"], sessions: {} });
   useAppStore.getState().hydrateSettings(SETTINGS_ON, false);
   useDiaryStore.setState({ overlay: null, entries: [] });
 });
@@ -264,5 +269,118 @@ describe("installDiaryAutoWriter", () => {
 
     expect(generate).not.toHaveBeenCalled();
     off();
+  });
+});
+
+describe("installDiaryAutoWriter — 백그라운드 유휴 스윕(#66)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("유휴일 때 백스톱 주기에 밀린(이벤트 없이 쌓인) 세션을 생성한다", async () => {
+    const m = mockApi();
+    const generate = vi.fn().mockResolvedValue(okResult("s1"));
+    const off = installDiaryAutoWriter({
+      api: m.api,
+      now: () => NOW,
+      log: logWith("s1", AUTO_DIARY_MIN_ITEMS, NOW),
+      generate,
+      notify: vi.fn(),
+      backstopMs: 1000,
+      settleMs: 500,
+    });
+
+    // 종료 이벤트가 없어도 백스톱이 백로그를 비운다. 첫 주기 전엔 아무 것도 안 함.
+    expect(generate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(generate).toHaveBeenCalledWith("a1", {}, "s1");
+    off();
+  });
+
+  it("활성(running) 세션이 있으면 백스톱이 돌아도 스윕하지 않는다", async () => {
+    useAppStore.setState({ sessions: { other: running("other") } });
+    const m = mockApi();
+    const generate = vi.fn().mockResolvedValue(okResult("s1"));
+    const off = installDiaryAutoWriter({
+      api: m.api,
+      now: () => NOW,
+      log: logWith("s1", AUTO_DIARY_MIN_ITEMS, NOW),
+      generate,
+      notify: vi.fn(),
+      backstopMs: 1000,
+    });
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(generate).not.toHaveBeenCalled();
+    off();
+  });
+
+  it("종료 즉시 생성이 타임아웃이면 정착 지연 뒤 재시도한다", async () => {
+    const m = mockApi();
+    const generate = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, reason: "timeout" })
+      .mockResolvedValue(okResult("s1"));
+    const off = installDiaryAutoWriter({
+      api: m.api,
+      now: () => NOW,
+      log: logWith("s1", AUTO_DIARY_MIN_ITEMS, NOW),
+      generate,
+      notify: vi.fn(),
+      settleMs: 500,
+      backstopMs: 100000,
+    });
+
+    m.emit({ state: "exited", sessionId: "s1" });
+    await vi.advanceTimersByTimeAsync(0); // 즉시 flush(타임아웃) 소화
+    expect(generate).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(500); // 유휴 정착 → 스윕 재시도
+    expect(generate).toHaveBeenCalledTimes(2);
+    off();
+  });
+
+  it("정착 대기 중 새 세션이 시작되면 스윕이 재시도하지 않는다(활성 가드)", async () => {
+    const m = mockApi();
+    // 계속 타임아웃 → 세션이 재시도 대상으로 남는다(즉시 flush가 소진하지 않음).
+    const generate = vi.fn().mockResolvedValue({ ok: false, reason: "timeout" });
+    const off = installDiaryAutoWriter({
+      api: m.api,
+      now: () => NOW,
+      log: logWith("s1", AUTO_DIARY_MIN_ITEMS, NOW),
+      generate,
+      notify: vi.fn(),
+      settleMs: 500,
+      backstopMs: 100000,
+    });
+
+    m.emit({ state: "exited", sessionId: "s1" });
+    await vi.advanceTimersByTimeAsync(0); // 즉시 flush 1회(타임아웃, 재시도 대상 유지)
+    expect(generate).toHaveBeenCalledTimes(1);
+
+    // 정착 만료 전 새 세션 시작 → 활성 상태로 전이.
+    useAppStore.setState({ sessions: { a1: running("a1") } });
+    m.emit({ state: "running", sessionId: "s9" });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    // 활성이므로 정착 스윕이 재시도하지 않는다 → 여전히 1회.
+    expect(generate).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it("해제하면 백스톱 타이머가 더는 돌지 않는다", async () => {
+    const m = mockApi();
+    const generate = vi.fn().mockResolvedValue(okResult("s1"));
+    const off = installDiaryAutoWriter({
+      api: m.api,
+      now: () => NOW,
+      log: logWith("s1", AUTO_DIARY_MIN_ITEMS, NOW),
+      generate,
+      notify: vi.fn(),
+      backstopMs: 1000,
+    });
+
+    off();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(generate).not.toHaveBeenCalled();
   });
 });

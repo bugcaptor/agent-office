@@ -13,7 +13,29 @@ use crate::persistence::settings_store::SummaryProvider;
 const TEXT_MAX_CHARS: usize = 2_000;
 const ERROR_MAX_CHARS: usize = 512;
 const MAX_CONCURRENT: usize = 2;
-const TIMEOUT: Duration = Duration::from_secs(20);
+/// 라벨 요약(인터랙티브 — 머리 위 라벨). 짧게 잡아 UX 지연을 막는다.
+const TIMEOUT_LABEL: Duration = Duration::from_secs(20);
+/// 일기 생성(#66). 백그라운드 유휴 스윕에서만 도는 배치라 종료 데드라인이
+/// 없다 — 긴 세션도 완주하도록 넉넉히 기다린다.
+const TIMEOUT_DIARY: Duration = Duration::from_secs(120);
+
+/// 요약 호출의 목적. 목적별로 타임아웃만 달라지고 나머지 파이프라인은 공유한다(#66).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SummaryPurpose {
+    #[default]
+    Label,
+    Diary,
+}
+
+impl SummaryPurpose {
+    fn timeout(self) -> Duration {
+        match self {
+            Self::Label => TIMEOUT_LABEL,
+            Self::Diary => TIMEOUT_DIARY,
+        }
+    }
+}
 
 pub(super) struct ProviderCommand {
     pub command: std::process::Command,
@@ -25,12 +47,28 @@ fn permits() -> &'static Semaphore {
     PERMITS.get_or_init(|| Semaphore::new(MAX_CONCURRENT))
 }
 
+/// 초과 입력을 캡한다. 예전에는 앞 `TEXT_MAX_CHARS`자만 남기는 꼬리 절단이라
+/// 시간순 append된 작업 로그의 **최신 부분이 통째로 유실**됐다(#66). 이제
+/// head 60% + 중략 표시 + tail 40%로 머리(첫 지시)와 꼬리(최근 작업)를 함께
+/// 보존한다. 프런트의 우선순위 축소(`formatWorkLog`)가 실패하거나 다른 경로가
+/// 긴 입력을 줄 때의 안전망 — 출력은 항상 `TEXT_MAX_CHARS` 이하다.
 fn cap_text(text: &str) -> Result<String, String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Err("validation: text is empty".to_string());
     }
-    Ok(trimmed.chars().take(TEXT_MAX_CHARS).collect())
+    let chars: Vec<char> = trimmed.chars().collect();
+    if chars.len() <= TEXT_MAX_CHARS {
+        return Ok(trimmed.to_string());
+    }
+    const MARKER: &str = "\n…(중략)…\n";
+    let marker_len = MARKER.chars().count();
+    let budget = TEXT_MAX_CHARS.saturating_sub(marker_len);
+    let head_len = budget * 60 / 100;
+    let tail_len = budget - head_len;
+    let head: String = chars[..head_len].iter().collect();
+    let tail: String = chars[chars.len() - tail_len..].iter().collect();
+    Ok(format!("{head}{MARKER}{tail}"))
 }
 
 fn bounded_detail(detail: &str) -> String {
@@ -43,6 +81,7 @@ fn missing_error(provider: SummaryProvider) -> String {
 
 pub async fn summarize(
     provider: SummaryProvider,
+    purpose: SummaryPurpose,
     instruction: &str,
     text: &str,
 ) -> Result<String, String> {
@@ -56,7 +95,7 @@ pub async fn summarize(
         SummaryProvider::Claude => claude::build(instruction),
         SummaryProvider::Codex => codex::build(instruction),
     };
-    run_with_timeout(command, &capped, TIMEOUT).await
+    run_with_timeout(command, &capped, purpose.timeout()).await
 }
 
 async fn run_with_timeout(
@@ -263,16 +302,41 @@ exit "$AO_FAKE_EXIT"
 
     #[tokio::test]
     async fn rejects_empty_text_before_spawning_a_provider() {
-        let error = summarize(SummaryProvider::Codex, "summarize", "   ")
+        let error = summarize(SummaryProvider::Codex, SummaryPurpose::Label, "summarize", "   ")
             .await
             .unwrap_err();
         assert_eq!(error, "validation: text is empty");
     }
 
     #[test]
+    fn purpose_maps_to_distinct_timeouts() {
+        assert_eq!(SummaryPurpose::Label.timeout(), TIMEOUT_LABEL);
+        assert_eq!(SummaryPurpose::Diary.timeout(), TIMEOUT_DIARY);
+        assert!(TIMEOUT_DIARY > TIMEOUT_LABEL);
+    }
+
+    #[test]
     fn cap_text_counts_unicode_scalars_not_bytes() {
         let input = "가".repeat(TEXT_MAX_CHARS + 5);
+        // head+tail 보존이라 총 길이는 정확히 캡(중략 마커 포함)에 맞춘다.
         assert_eq!(cap_text(&input).unwrap().chars().count(), TEXT_MAX_CHARS);
+    }
+
+    #[test]
+    fn cap_text_passes_through_when_within_budget() {
+        let input = "가".repeat(TEXT_MAX_CHARS);
+        assert_eq!(cap_text(&input).unwrap(), input);
+    }
+
+    #[test]
+    fn cap_text_preserves_both_head_and_tail() {
+        // 앞뒤를 구분할 수 있게 머리엔 'H', 꼬리엔 'T'를 채운다.
+        let input = format!("{}{}", "H".repeat(TEXT_MAX_CHARS), "T".repeat(TEXT_MAX_CHARS));
+        let capped = cap_text(&input).unwrap();
+        assert!(capped.starts_with('H'), "머리(첫 지시)가 유실됨");
+        assert!(capped.ends_with('T'), "꼬리(최근 작업)가 유실됨");
+        assert!(capped.contains("(중략)"), "중략 표시가 없음");
+        assert!(capped.chars().count() <= TEXT_MAX_CHARS);
     }
 
     #[test]
@@ -287,7 +351,7 @@ exit "$AO_FAKE_EXIT"
         let fake = FakeCliDir::new();
         let spec = fake.provider_command("0", "");
 
-        let result = run_with_timeout(spec, "한글 원문", TIMEOUT).await.unwrap();
+        let result = run_with_timeout(spec, "한글 원문", TIMEOUT_LABEL).await.unwrap();
 
         assert_eq!(result, "Codex fake summary");
         assert_eq!(std::fs::read_to_string(&fake.stdin).unwrap(), "한글 원문");
@@ -299,7 +363,7 @@ exit "$AO_FAKE_EXIT"
         let fake = FakeCliDir::new();
         let spec = fake.provider_command("7", "");
 
-        let error = run_with_timeout(spec, "source text", TIMEOUT)
+        let error = run_with_timeout(spec, "source text", TIMEOUT_LABEL)
             .await
             .unwrap_err();
 

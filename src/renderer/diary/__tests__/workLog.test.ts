@@ -16,6 +16,7 @@ vi.mock("../../ipc/tauriApi", () => ({
 
 import { useAppStore } from "../../store/appStore";
 import {
+  FORMAT_BUDGET_CHARS,
   MAX_ITEMS_PER_AGENT,
   WorkLog,
   formatWorkLog,
@@ -75,6 +76,58 @@ describe("formatWorkLog", () => {
     expect(formatWorkLog(items)).toBe(
       "- [지시] 이슈 56 해줘 (목표: 일기 기능)\n- [도구] Bash: cargo test\n- [진행] 테스트를 추가했다",
     );
+  });
+
+  describe("우선순위 스마트 축소(#66)", () => {
+    // 항목 하나가 예산의 60%를 먹도록 큰 텍스트 — 둘은 함께 못 들어간다.
+    const big = (marker: string) => marker + "x".repeat(Math.floor(FORMAT_BUDGET_CHARS * 0.6));
+
+    it("예산 이내면 무손실로 전부 잇는다(기존 동등)", () => {
+      const items: WorkLogItem[] = [
+        { at: 1, sessionId: "s", kind: "prompt", text: "짧은 지시" },
+        { at: 2, sessionId: "s", kind: "tool", text: "짧은 도구" },
+      ];
+      expect(formatWorkLog(items)).toBe("- [지시] 짧은 지시\n- [도구] 짧은 도구");
+    });
+
+    it("예산 초과 시 prompt(+목표)는 전량 보존한다", () => {
+      const items: WorkLogItem[] = [
+        { at: 1, sessionId: "s", kind: "prompt", text: "첫 지시", goal: "핵심 목표" },
+        { at: 2, sessionId: "s", kind: "tool", text: big("T1") },
+        { at: 3, sessionId: "s", kind: "tool", text: big("T2") },
+        { at: 4, sessionId: "s", kind: "prompt", text: "둘째 지시" },
+      ];
+      const out = formatWorkLog(items);
+      expect(out).toContain("- [지시] 첫 지시 (목표: 핵심 목표)");
+      expect(out).toContain("- [지시] 둘째 지시");
+    });
+
+    it("남은 예산은 tool/narration을 최신 우선으로 채우되 출력은 시간순", () => {
+      const items: WorkLogItem[] = [
+        { at: 1, sessionId: "s", kind: "prompt", text: "지시" },
+        { at: 2, sessionId: "s", kind: "tool", text: big("OLD") }, // 가장 과거 — 탈락 예상
+        { at: 3, sessionId: "s", kind: "tool", text: big("NEW") }, // 최신 — 우선 보존
+      ];
+      const out = formatWorkLog(items);
+      expect(out).toContain("NEW"); // 최신은 남는다
+      expect(out).not.toContain("OLD"); // 과거는 예산 밖으로 탈락
+      // 중략 표시가 탈락 위치(지시와 NEW 사이)에 들어간다.
+      expect(out).toContain("(중략: 1개 항목)");
+      const lines = out.split("\n");
+      expect(lines[0]).toBe("- [지시] 지시"); // 시간순: 지시가 먼저
+    });
+
+    it("탈락 항목은 중략 한 줄로 접는다", () => {
+      const items: WorkLogItem[] = [
+        { at: 1, sessionId: "s", kind: "prompt", text: "지시" },
+        { at: 2, sessionId: "s", kind: "tool", text: big("A") },
+        { at: 3, sessionId: "s", kind: "tool", text: big("B") },
+        { at: 4, sessionId: "s", kind: "tool", text: big("C") },
+      ];
+      const out = formatWorkLog(items);
+      // A·B·C 중 예산상 일부만 남고 나머지는 하나의 중략 줄로.
+      expect(out).toMatch(/\(중략: \d+개 항목\)/);
+    });
   });
 });
 

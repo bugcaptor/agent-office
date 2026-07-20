@@ -419,6 +419,12 @@ export interface ClaudeResumeEntry {
 /** 라벨 요약에 사용할 로컬 CLI provider. Rust `SummaryProvider` 미러. */
 export type SummaryProvider = "claude" | "codex";
 
+/**
+ * 요약 호출의 목적. 목적별로 백엔드 타임아웃이 다르다(#66) — 라벨(인터랙티브)은
+ * 20초, 일기(백그라운드 배치)는 120초. Rust `SummaryPurpose` 미러.
+ */
+export type SummaryPurpose = "label" | "diary";
+
 /** "OS 터미널로 열기"가 사용할 외부 터미널 앱 — Rust `ExternalTerminal` 미러.
  * macOS에서만 의미가 있다(다른 OS는 무시). */
 export type ExternalTerminalApp = "terminal" | "iterm";
@@ -725,11 +731,13 @@ export interface AgentOfficeApi {
   loadSprite(agentId: string): Promise<string | null>;
   /** 스프라이트 파일 삭제(없어도 성공). */
   deleteSprite(agentId: string): Promise<void>;
-  /** 머리 위 라벨 요약: 캡처한 provider의 로컬 CLI를 호출한다. 호출마다 사용자 구독/크레딧을 소모할 수 있다. */
+  /** 머리 위 라벨 요약: 캡처한 provider의 로컬 CLI를 호출한다. 호출마다 사용자 구독/크레딧을 소모할 수 있다.
+   *  purpose로 백엔드 타임아웃을 고른다(#66) — 기본 "label"(20초), 일기는 "diary"(120초). */
   summarizeText(
     provider: SummaryProvider,
     instruction: string,
     text: string,
+    purpose?: SummaryPurpose,
   ): Promise<string>;
   /** PixelLab로 64×64 스프라이트 1장 생성. 동기 HTTP — 수십 초 걸릴 수 있다. */
   generateSpriteImage(description: string): Promise<GeneratedSpriteImage>;
