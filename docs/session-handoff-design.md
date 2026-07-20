@@ -1,7 +1,18 @@
 # 세션 핸드오프 설계 — 앱 종료 후 터미널 존속 + 재실행 시 이어받기
 
-작성: 2026-07-17 (Fable). 상태: 설계 확정, 구현 착수.
-브랜치: `feat/session-handoff` (워크트리 `.claude/worktrees/session-handoff`).
+작성: 2026-07-17 (Fable). 상태 갱신: 2026-07-20.
+상태: 정본 — **v1 구현 완료, 현재 기본 경로**(이슈 #7 닫힘). v2 상시 브로커
+(`docs/session-broker-v2-design.md`)와 공존 중이다: v2는
+`AGENT_OFFICE_SESSION_BROKER=v2` opt-in·기본 off이고, 기본값에서는 이 문서의
+v1 fd-핸드오프가 동작한다. `SessionManager`는 `broker_mode`/세션별 `broker_owned`
+플래그로 두 경로를 분기하며, 혼합 상황(브로커 모드에서의 폴백 세션 등) 처리는
+v2 문서의 "세션 단위 소유 플래그" 절이 정본. v1 제거는 REBUILD-PLAN R-8의 별도
+결정 항목이다.
+
+구현 파일(2026-07 리팩터 반영): v1 핸드오프·입양 갈래는
+`session/handoff_v1.rs`(`handoff_all`/`handoff_one`/`adopt_detached`/`adopt_one`)로,
+v2 브로커 갈래는 `session/handoff_broker.rs`로 파일 격리됐다.
+poll reader는 `session/poll_reader.rs`, 데몬은 `sessiond/{daemon,client,protocol}.rs`.
 
 ## 목표
 

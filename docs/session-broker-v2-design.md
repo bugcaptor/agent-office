@@ -1,9 +1,20 @@
 # 세션 브로커 v2 계획 — 상시 브로커(스폰부터 데몬이 PTY 소유)
 
-작성: 2026-07-17 (Fable). 상태: **Phase 1 구현 중 (feature flag opt-in, unix 전용)**.
+작성: 2026-07-17 (Fable). 상태 갱신: 2026-07-20.
+상태: 정본 — **구현 완료·기본 off(opt-in)**. PR #46 머지 + 후속 결함 3건(#48 io락
+블로킹→writer 스레드, #50 입양 하이재킹→결정적 close+attached skip, #49 스냅샷
+offset→렌더러 ack) 수정 완료. v1 제거/기본 on 승격은 별도 결정 항목(REBUILD-PLAN R-8).
 전제: v1(feat/session-handoff, PR #6) = 종료 시점 핸드오프. v2는 그 역전.
 활성화: `AGENT_OFFICE_SESSION_BROKER=v2` + unix일 때만 `BrokerPtyFactory` 주입.
 기본 off라 v1 경로(PortablePtyFactory + 종료 시 fd 핸드오프)는 그대로 보존된다.
+
+구현 파일(2026-07 리팩터 반영): 데몬 `sessiond/{daemon,client,protocol}.rs` —
+`daemon.rs`의 `handle_connection`은 오피코드별 핸들러 함수 13개(`handle_hello`/
+`handle_spawn`/`handle_data_attach`/`handle_attach`/`handle_resize`/`handle_wait`/
+`handle_kill_all`/`handle_update_snapshot`/`handle_adopt`/`handle_kill` 등)로 분해됨.
+앱 쪽 브로커 갈래는 `session/handoff_broker.rs`로 격리(v1 갈래는
+`session/handoff_v1.rs` — R-8 때 파일 삭제로 제거 가능), 팩토리는
+`session/broker_pty.rs`.
 
 ## v2가 v1보다 나은 것 / 잃는 것
 

@@ -1,7 +1,35 @@
 # Pi(pi.dev) CLI 작업 상태 감지 지원 — 설계 문서
 
-작성: 2026-07-12 (Fable, 주요 설계) · 상태: 사용자 승인 대기 항목 4건 포함
-대상 버전: pi-coding-agent v0.80.3 기준 (로컬 실측: `/opt/homebrew/bin/pi`)
+작성: 2026-07-12 (Fable, 주요 설계) · 상태 갱신: 2026-07-20
+상태: 부분표류 — **구현 완료·main 머지·눈검증 완료(이슈 #8 닫음)**. 단, 구현 후
+훅 파이프라인이 observer/adapter 구조로 리팩터되어 **본문 §1의 file:line 근거와
+상수·필드명 다수가 구식**이다(`notification/hook_server.rs`·`hook_settings.rs` →
+`observer/` 등). 이벤트 매핑(§2)·결정 D1~D3·스파이크 실측(§9)은 여전히 유효한
+설계 근거다. 현행 구조는 바로 아래 §0.5 요약과 코드가 정본.
+
+## 0.5 현행 구조 요약 (2026-07-20, observer/adapter 리팩터 반영)
+
+설계 당시의 "notification/hook_server → hub" 직결 구조는 어댑터 계층으로
+일반화됐다. 현재 정본 배선:
+
+- **HTTP 수신**: `observer/server.rs`의 `/hook` 라우트. Claude/Codex는
+  `?provider=` 쿼리로 `ObserverProvider`를 파싱해 어댑터로 보내고, **Pi는
+  `?agent=pi&source=<kind>` 쿼리를 만나면 `ObserverRuntime::ingest_pi_source`
+  갈래로 직행**한다 — 설계의 "&agent=pi는 오늘 무시" 예정과 달리, 구현에서는
+  첫날부터 이 쿼리가 Pi 판별 키가 됐다.
+- **어댑터 계층**: `observer/mod.rs`의 `ObserverAdapter` 트레잇
+  (`provider`/`prepare_session`/`map_hook`/`restore_session_artifact`) +
+  `ObserverRuntime`(ingest → hub). 구현체는 `ClaudeAdapter`(`observer/claude.rs`),
+  `CodexAdapter`(`observer/codex.rs`). Pi는 별도 어댑터 없이
+  `ingest_pi_source`가 source 문자열을 직접 hub 이벤트로 매핑한다.
+- **확장 파일**: `session/pi_extension.rs` — 설계 §3.1 그대로(정적 확장 파일,
+  `AGENT_OFFICE_PI_EXT` env, blind overwrite).
+- **셸 래퍼**: `pi()` 함수는 개별 래퍼 상수가 아니라 공용
+  `session/wrapper_script.rs`(`CommandWrapperSpec`) 기반으로 렌더된다 —
+  zsh/bash/PowerShell 래퍼 생성이 스펙 주도로 일반화됐다.
+
+이 요약과 어긋나는 본문 서술(특히 §1 표의 파일 경로·행 번호, §3.3의 래퍼 상수명)은
+이력으로 읽을 것.
 
 ---
 

@@ -1,7 +1,7 @@
 # 분석용 세션 이벤트 시계열 — 설계 스펙
 
-- 날짜: 2026-07-11 (상태 갱신: 2026-07-17)
-- 상태: 구현 완료·main 반영. 이후 리팩터(observer 구조, `SubStart`/`SubStop`/`SubCount` ActivityKind 추가 등)로 본문 일부 상수·구조는 실제 코드와 다를 수 있음 — 코드가 정본.
+- 날짜: 2026-07-11 (상태 갱신: 2026-07-17, 아카이브: 2026-07-20)
+- 상태: 이력(archived) — 구현 완료·main 반영 후 리팩터(observer 구조, `SubStart`/`SubStop`/`SubCount` ActivityKind 추가 등)로 본문 일부 상수·구조가 실제와 다름. **코드가 정본**(`src-tauri/src/session_events/`). 소비자 설계는 `docs/session-analytics-design.md` 참조.
 
 ## 1. 배경과 목표
 

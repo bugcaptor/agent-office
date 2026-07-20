@@ -1,5 +1,7 @@
 # Claude 세션 이어하기(resume) 설계
 
+상태: 정본 — 구현 완료(이슈 #20, 2026-07-20 확인). 구현: `observer/claude_resume_recorder.rs`, `persistence/claude_resume_store.rs`, 커맨드 `list_claude_resume_sessions`(`ipc/commands/persistence.rs`).
+
 이슈 #20. Claude Code의 native 세션 ID(리줌 ID)를 기억해 두었다가, 사용자가
 원할 때 `claude --resume <id>`로 이전 대화를 이어서 시작하는 기능.
 

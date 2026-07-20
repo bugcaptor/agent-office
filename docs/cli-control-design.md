@@ -1,5 +1,7 @@
 # CLI 제어 설계 (이슈 #55)
 
+상태: 정본 — 구현 완료(이슈 #55 닫음, 2026-07-20 확인). 구현: `src-tauri/src/control/{mod,protocol,client}.rs`. 리팩터 후 렌더러 커맨드는 `ipc/commands/settings.rs`(`control_status`/`control_approve`/`control_revoke`)에 있다.
+
 실행 중인 Agent Office 인스턴스를 다른 AI/스크립트가 프로그래밍 방식으로
 조종하기 위한 로컬 제어 인터페이스. `--observer-forward`/`--sessiond`와 동일한
 "같은 바이너리의 인자 분기 + 로컬 IPC 서버" 패턴을 미러링한다.

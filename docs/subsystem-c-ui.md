@@ -1,6 +1,8 @@
 # 서브시스템 C 상세 설계 — Renderer UI / 상태관리 / TerminalHost
 
-> 설계: Opus 하위 설계 / 주요 판단: Fable. 계약 정합화 결과는 마스터 플랜(`docs/superpowers/plans/2026-07-06-agent-office.md`)의 "계약 정합화" 절이 우선한다.
+상태: 정본 — 2026-07-20 현행화. 이슈별 증분(§10 등)으로 갱신되어 온 문서라 본문 대부분이 유효하다. 구현 태스크 분해(구 §8)만 제거했고, 절 번호는 외부 참조 보존을 위해 유지(§8 결번). 초기 절의 개별 파일 경로가 코드와 어긋나면 코드가 정본 — 현재 폴더 지도는 §0.5.
+
+> 설계: Opus 하위 설계 / 주요 판단: Fable. 계약 정합화 결과는 마스터 플랜(이력)의 "계약 정합화" 절이 우선했다.
 > **정합화 반영 사항**:
 > 1. `window.api` 표면은 마스터 플랜의 정식 정의(`AgentOfficeApi`)를 따른다(아래 §0은 그 반영본). `onData`는 unsubscribe 함수를 반환한다(A에 반영됨). **Tauri v2 개정**: 이 API의 공급 주체는 Electron preload가 아니라 `src/renderer/ipc/tauriApi.ts` 어댑터(@tauri-apps/api invoke/Channel/listen — 서브시스템 A 문서 §3.7)다. 이 문서의 `window.api.*` 호출은 모두 `tauriApi` 참조로 읽는다(전역 주입 또는 모듈 import — 구현 시 모듈 import 채택).
 > 2. `SessionStatus`는 `'idle'|'starting'|'running'|'exited'|'disposed'` — `needs_input`은 세션 상태가 아니라 알림 유무에서 파생한다. `error`는 `exited`(intentional=false)로 흡수.
@@ -34,6 +36,28 @@ interface AgentOfficeApi {
 ```
 
 ---
+
+## 0.5 현재 파일 레이아웃 (2026-07-20)
+
+`src/renderer/`는 24개 기능 폴더로 모듈화돼 있다(구조 건강 — REBUILD-PLAN §2.5 진단).
+계약 타입은 `src/shared/types/{common,session,notification,bot,profile,diary,usage,settings,markdown,git,api}.ts` 분할 배럴(`shared/types.ts`는 재수출), 커맨드명은 `src/shared/ipc.ts`.
+
+| 폴더 | 담당 (정본 절/문서) |
+|---|---|
+| `ipc/` | `tauriApi.ts` 어댑터·`sessionBridge`·windowFocus·osNotify (A §2) |
+| `store/` | zustand `appStore`·selectors·persist (§2) |
+| `terminal/` | TerminalRegistry/Host/Overlay·AgentTabStrip·BotOverlay·botGuard (§3, 봇은 bot-mode 문서) |
+| `office/` | PixiJS 씬 — 서브시스템 B 문서 |
+| `layout/` | TopBar/BottomBar/UIChrome (§1) |
+| `notification/` | 알림 티커 (§5) |
+| `profile/` | 프로필 생성 플로우 (§4) |
+| `theme/`, `styles/` | 픽셀 테마·토큰 (§6) |
+| `workdir/`, `markdown/` | 작업 폴더 팔레트·문서 뷰어 (§10) |
+| `analytics/` | 활동 분석 패널 (session-analytics 문서) |
+| `usage/` | 사용량 위젯·다이얼로그 (usage-design 문서) |
+| `timeline/` | turnReducer·SessionTimePanel |
+| `diary/`, `labels/`, `desk/`, `agent/`, `portrait/`, `sprite/` | 일기·라벨·책상·캐릭터 편집·초상·스프라이트 편집 |
+| `settings/`, `about/`, `sound/`, `ui/` | 설정(CLI 제어 승인 UI 포함)·정보·사운드·공용 위젯(ContextMenu 등) |
 
 ## 1. 앱 레이아웃 & 윈도우 설계
 
@@ -1080,23 +1104,7 @@ it('ensure returns same Terminal instance across calls (keep-alive)', () => {
 
 ---
 
-## 8. 구현 태스크 분해 (순서·파일경로)
-
-각 스텝은 독립 테스트 가능. 경로는 모두 `src/renderer/` 기준.
-
-1. **스타일 기반 구축** — `styles/tokens.css`, `styles/pixel.css`, `assets/fonts/{DungGeunMo,Galmuri11}.woff2`, `@font-face` 등록. (시각 검수)
-2. **스토어 코어** — `store/types.ts`, `store/appStore.ts`, `store/selectors.ts`. 테스트 T1–T3. (의존 없음, 최우선)
-3. **IPC 브리지 & preload 타입** — `ipc/window.d.ts`(window.api 타입 선언), `ipc/sessionBridge.ts`(officeBus 포함).
-4. **TerminalRegistry** — `terminal/TerminalRegistry.ts`, `terminal/theme.ts`. 테스트 T5.
-5. **TerminalHost/Mount** — `terminal/TerminalHost.tsx`. fit/resize/focus 통합. (수동 e2e: 2개 세션 전환 시 스크롤백 보존 확인)
-6. **오버레이 + 탭스트립** — `terminal/TerminalOverlay.tsx`, `terminal/AgentTabStrip.tsx`. 단축키 `Cmd+1..9`, 닫기.
-7. **알림 티커** — `notification/dedupe.ts`, `notification/NotificationTicker.tsx`, `notification/ticker.module.css`. 테스트 T4.
-8. **프로필 플로우** — `profile/wordlists.ts`, `profile/generate.ts`, `profile/ProfileDialog.tsx`, `profile/profileDialog.module.css`. createSession 연동.
-9. **바 & 셸 조립** — `layout/TopBar.tsx`, `layout/BottomBar.tsx`, `layout/UIChrome.tsx`, `App.tsx`, `main.tsx`. 부팅 시 `loadState`→`hydrate`, `installSessionBridge`.
-10. **영속화 배선** — `agents` 변경 구독 → 디바운스 `saveState`. `store/persist.ts`.
-11. **배지/뮤트** — BottomBar 뮤트 토글, `setBadgeCount` 연동 마무리.
-
-의존 순서: 1·2 병렬 가능 → 3·4 → 5 → 6·7·8 병렬 → 9 → 10·11.
+## 8. (결번 — 구현 태스크 분해는 제거됨, 2026-07-20)
 
 ---
 
@@ -1120,8 +1128,8 @@ it('ensure returns same Terminal instance across calls (keep-alive)', () => {
 무관한 독립 슬라이스라 `store/appStore`가 아니라 전용 zustand 스토어
 (`renderer/workdir/workdirStore.ts`, `renderer/markdown/markdownStore.ts`)로 분리한다.
 진입은 탭 우클릭 컨텍스트 메뉴(`작업 폴더 보기` / `문서`) 또는 상세 페인 버튼.
-백엔드는 `src-tauri/src/workdir.rs`(문서 정본은 그 파일 상단 주석 + 서브시스템 A)와
-`markdown.rs`. z-index: 팔레트 40, 마크다운 편집기 50(모달 30·터미널 20 위).
+백엔드는 `src-tauri/src/workdir/`(R-3 리팩터로 모듈화 — `{git_runner,status,diff,listing,model,commands}.rs`,
+커맨드 표면은 서브시스템 A §2.2)와 `markdown.rs`. z-index: 팔레트 40, 마크다운 편집기 50(모달 30·터미널 20 위).
 
 ### 10.1 작업 폴더 팔레트 (`WorkdirPalette`)
 

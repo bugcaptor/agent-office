@@ -1,6 +1,6 @@
 # Claude 사용량 실시간 조회 설계 (이슈 #33)
 
-상태: 설계 확정 (2026-07-18). 기반: docs/usage-limits-design.md (캐시 미러 v1).
+상태: 이력(archived, 2026-07-20) — 구현 완료(PR #34) 후 `docs/usage-design.md` §6으로 병합됨(그쪽이 정본). 이슈 #33 링크 보존용. 기반: usage-limits-design.md (캐시 미러 v1, 같은 병합에 포함).
 
 ## 1. 문제와 목표
 

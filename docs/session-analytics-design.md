@@ -1,8 +1,9 @@
 # 세션 활동 분석 패널 — 설계 스펙
 
-- 날짜: 2026-07-17
-- 상태: 설계 확정, 구현 착수
-- 선행: `docs/session-event-timeseries-design.md` (수집 완료·가동 중). 그 설계의 비목표였던 "분석 UI"를 이번 범위로 승격한다.
+- 날짜: 2026-07-17 (상태 갱신: 2026-07-20)
+- 상태: 정본 — 구현 완료. 구현: `session_events/reader.rs`(Rust), `renderer/analytics/`(집계·UI), 커맨드 `load_session_events`(`ipc/commands/persistence.rs`).
+- 선행: `docs/archive/session-event-timeseries-design.md` (수집 계층, archived — 코드가 정본). 그 설계의 비목표였던 "분석 UI"를 이번 범위로 승격한다.
+- usage(한도) 표시와는 별개 기능 — 그쪽은 `docs/usage-design.md` 참조(상호 링크만, 데이터 소스가 다름).
 
 ## 1. 배경과 목표
 

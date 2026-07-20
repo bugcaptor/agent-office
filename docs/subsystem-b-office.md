@@ -1,6 +1,8 @@
 # 서브시스템 B 상세 설계 — 오피스 씬 & 절차적 픽셀 캐릭터
 
-> 설계: Opus 하위 설계 / 주요 판단: Fable. 계약 정합화 결과는 마스터 플랜(`docs/superpowers/plans/2026-07-06-agent-office.md`)의 "계약 정합화" 절이 우선한다.
+상태: 정본(부분표류 주의) — 2026-07-20 현행화는 상태줄·§0 파일 레이아웃·구현 작업 분해(구 §6) 제거까지. §1~§4의 코드 블록은 구현 전 스케치라 세부가 코드와 다를 수 있다(특히 커스텀 스프라이트 #47 이후 `gen/`에 `archetypes`/`spriteResample`/`spriteOverrides` 추가, `entities/`에 `MiniAgentsOverlay`/`ThinkingOverlay` 추가) — **어긋나면 코드가 정본**. 결정성 원칙(§5)과 "핵심 결정 요약"은 유효.
+
+> 설계: Opus 하위 설계 / 주요 판단: Fable. 계약 정합화 결과는 마스터 플랜(이력)의 "계약 정합화" 절이 우선했다.
 > **정합화 반영 사항**: C가 요청한 `generateSpritePreview(seed)`는 씬 메서드가 아니라 `gen/characterFactory.ts`의 순수 함수로 노출한다(§3.5 끝 참조). `SessionState` 타입은 `src/shared/types.ts`의 것을 재사용한다.
 
 대상 경로 루트: `src/renderer/office/`
@@ -12,7 +14,7 @@
 ## 0. 파일 레이아웃 개요
 
 ```
-src/renderer/office/
+src/renderer/office/          (2026-07-20 현재)
   OfficeScene.ts            # Pixi Application 래퍼 (init/resize/destroy/update)
   useOfficeScene.ts         # React 통합 훅 (얇은 브리지)
   OfficeCanvas.tsx          # 캔버스를 호스팅하는 React 컴포넌트 (서브시스템 C 경계)
@@ -26,22 +28,24 @@ src/renderer/office/
     prng.ts                 # mulberry32 + 유틸 (hashStringToSeed 등)
     palette.ts              # 팔레트 램프 생성
     parts.ts                # 신체/헤어/의상/액세서리 픽셀 데이터 배열
+    archetypes.ts           # 파트 조합 아키타입 (설계 이후 추가)
     compositor.ts           # 파트 합성 → 프레임 → 스프라이트시트 캔버스
     characterFactory.ts     # profile → CharacterAssets (텍스처/애니메이션)
+    spriteOverrides.ts      # 커스텀 스프라이트 오버라이드 연결 (이슈 #26 계열)
+    spriteResample.ts       # 고해상 커스텀 스프라이트 area 프리필터 축소 (이슈 #47)
   entities/
     CharacterEntity.ts      # 상태머신 + Pixi 표시객체 소유
     behaviorFsm.ts          # sitting/idle/walking 상태 전이
     ExclamationOverlay.ts   # 머리 위 "!" 바운스 오버레이
+    ThinkingOverlay.ts      # 작업중 말풍선 오버레이 (설계 이후 추가)
+    MiniAgentsOverlay.ts    # 서브에이전트 미니미 오버레이 (설계 이후 추가)
   world/
     OfficeWorld.ts          # 엔티티 컬렉션 관리, A/C 이벤트 → 엔티티 반영
     pathing.ts              # 그리드 좌표 ↔ 픽셀 변환, 목적지 선택
-  __tests__/
-    prng.test.ts
-    palette.test.ts
-    characterFactory.test.ts
-    deskAssignment.test.ts
-    behaviorFsm.test.ts
+  __tests__/                # prng/palette/characterFactory/deskAssignment/behaviorFsm 등
 ```
+
+커스텀 스프라이트 업로드·정규화·편집은 별도 폴더 `src/renderer/sprite/`(SpriteEditor·spriteCache·spriteNormalize), 초상화는 `src/renderer/portrait/` — 이 문서 범위 밖의 후속 기능이며 `gen/spriteOverrides`가 접점이다.
 
 핵심 설계 원칙: **`gen/` 이하는 순수 함수** — Pixi/DOM 전역에 의존하지 않고 `OffscreenCanvas`(또는 테스트에서 주입되는 캔버스 팩토리)만 받는다. 결정성/테스트 용이성을 위해서.
 
@@ -1367,46 +1371,7 @@ describe('behavior fsm', () => {
 
 ---
 
-## 6. 구현 작업 분해 (순서대로, 독립 테스트 가능)
-
-**T1 — PRNG & 팔레트 코어** · `gen/prng.ts`, `gen/palette.ts`
-- 산출: `hashStringToSeed`, `mulberry32`, `makeRng`, `generatePalette`, `contrastRatio`, 대비 최종 클램프.
-- 검증: `__tests__/prng.test.ts`(동일 시드 동일 시퀀스, 분포 sanity), `palette.test.ts`(대비 ≥1.6, 램프 명도 순서).
-
-**T2 — 파트 데이터 & 합성기** · `gen/parts.ts`, `gen/compositor.ts`
-- 산출: 픽셀 배열들, `composeSpriteSheet`(순수, `CanvasFactory` 주입), `resolveChar`.
-- 검증: 시트 픽셀 opaque 수/투명 처리 단위 테스트.
-
-**T3 — 캐릭터 팩토리** · `gen/characterFactory.ts` + `__tests__/helpers.ts`
-- 산출: `selectLayers`, `generateSheet`, `createCharacterAssets`(Pixi Texture), `generateSpritePreview`(dataURL).
-- 검증: `characterFactory.test.ts`(§5 전체 — 결정성/차이/대비/비어있지 않음).
-
-**T4 — 맵 데이터 & 데스크 배정** · `map/mapData.ts`, `map/deskAssignment.ts`
-- 산출: `OFFICE_MAP`, `deriveDesks`, `assignDesks`.
-- 검증: `deskAssignment.test.ts`(순서 독립·무충돌).
-
-**T5 — 타일 렌더러** · `map/TileRenderer.ts`
-- 산출: `build`(정적 캐시), `buildFurniture`(y-sort).
-- 검증: 시각(수동).
-
-**T6 — 씬 골격 & React 브리지** · `OfficeScene.ts`, `useOfficeScene.ts`, `OfficeCanvas.tsx`, `bus.ts`, `types.ts`
-- 산출: Application init/resize/destroy, 카메라 정수 스케일, 레이어, 훅.
-- 검증: 빈 오피스(맵만) 렌더 수동 확인, StrictMode 이중 마운트 무누수(destroy 호출 확인).
-
-**T7 — 거동 FSM** · `entities/behaviorFsm.ts`, `world/pathing.ts`
-- 산출: `stepBehavior`, 좌표 변환/배회 타겟.
-- 검증: `behaviorFsm.test.ts`.
-
-**T8 — 캐릭터 엔티티 & 오버레이** · `entities/CharacterEntity.ts`, `entities/ExclamationOverlay.ts`
-- 산출: 스프라이트 애니, 이동 보간, flip, 클릭 배선, 느낌표 바운스.
-- 검증: 수동(캐릭터 착석·간헐 배회·클릭 로그·느낌표 토글).
-
-**T9 — 월드 통합** · `world/OfficeWorld.ts`
-- 산출: 프로필 diff 생성/삭제, 버스 구독(`onNotificationChanged`→`setPending`), `emitAgentClicked` 배선.
-- 검증: 목 버스로 알림 토글→느낌표, 클릭→이벤트 방출 통합 테스트.
-
-**T10 — 마감/후행 확장 훅**
-- `sessionStateChanged` 시각화(상태별 틴트/작은 아이콘), 좌석 부족 시 대기 배회, 카메라 팬 활성화. 전부 기존 시그니처 무변경 확장.
+## 6. (결번 — 구현 작업 분해는 제거됨, 2026-07-20)
 
 ---
 
