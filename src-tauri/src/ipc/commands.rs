@@ -27,7 +27,11 @@ mod media;
 mod misc;
 mod persistence;
 mod session;
-mod settings;
+// pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가
+// `agent_office_lib::ipc::commands::settings::GetAppSettingsResult`에 닿아야
+// 한다. 기존 `pub(crate) use settings::*;` 글롭 재수출은 그대로 두고 모듈
+// 자체만 승격 — 로직 변경 없음.
+pub mod settings;
 mod usage;
 
 // Re-imported here (in addition to each domain file's own scoped `use`s)

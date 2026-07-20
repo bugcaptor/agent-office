@@ -8,24 +8,38 @@
 pub mod api_keys;
 mod bot;
 mod control;
-mod ipc;
+// pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가
+// `agent_office_lib::ipc::commands::settings::GetAppSettingsResult`에 닿아야 한다.
+// 로직 변경 없음 — 가시성만 승격.
+pub mod ipc;
 mod markdown;
 mod notification;
 mod observer;
-mod persistence;
+// pub: contract 테스트가 `agent_office_lib::persistence::settings_store::AppSettings`에
+// 닿아야 한다. 로직 변경 없음 — 가시성만 승격.
+pub mod persistence;
 pub mod pixellab;
 mod session;
-mod session_events;
+// pub: contract 테스트가 `agent_office_lib::session_events::types::SessionEventRecord`에
+// 닿아야 한다. 로직 변경 없음 — 가시성만 승격.
+pub mod session_events;
 mod shell_export;
 #[cfg(unix)]
 mod sessiond;
 mod state;
 mod summarizer;
 mod terminal;
-mod types;
-mod usage;
+// pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가 이 모듈의 wire
+// 타입(SessionStateEvent 등)에 닿아야 한다. 로직 변경 없음 — 가시성만 승격.
+pub mod types;
+// pub: contract 테스트가 `agent_office_lib::usage::{UsageSnapshot, ...}`에 닿아야
+// 한다. 로직 변경 없음 — 가시성만 승격.
+pub mod usage;
 mod vscode;
-mod workdir;
+// pub: contract 테스트가 `agent_office_lib::workdir::{GitStatusResult, ...}`에
+// 닿아야 한다(model.rs가 이미 `pub use model::*`로 재수출). 로직 변경 없음 —
+// 가시성만 승격.
+pub mod workdir;
 
 use std::sync::{Arc, RwLock};
 use std::time::Duration;

@@ -1,0 +1,10 @@
+{
+  "agentId": "a1",
+  "cols": 80,
+  "rows": 24,
+  "cwd": "/tmp/proj",
+  "shell": "pwsh",
+  "startupCommand": "echo hi",
+  "personalityPrompt": "친절하게 대답해",
+  "autostartClaude": false
+}

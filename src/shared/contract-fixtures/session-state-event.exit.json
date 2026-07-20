@@ -1,0 +1,11 @@
+{
+  "sessionId": "s1",
+  "agentId": "a1",
+  "state": "exited",
+  "exit": {
+    "sessionId": "s1",
+    "exitCode": 1,
+    "intentional": false
+  },
+  "at": 1720000000001
+}

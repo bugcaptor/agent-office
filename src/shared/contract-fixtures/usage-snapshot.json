@@ -1,0 +1,40 @@
+{
+  "claude": {
+    "provider": "claude",
+    "fetchedAtMs": 1784281391475,
+    "planLabel": "max_20x",
+    "windows": [
+      {
+        "kind": "session",
+        "label": null,
+        "usedPercent": 61.0,
+        "resetsAtMs": 1784281800243,
+        "windowMinutes": null,
+        "isActive": true
+      },
+      {
+        "kind": "weekly_model",
+        "label": "Fable",
+        "usedPercent": 24.0,
+        "resetsAtMs": 1784606400000,
+        "windowMinutes": null,
+        "isActive": false
+      }
+    ]
+  },
+  "codex": {
+    "provider": "codex",
+    "fetchedAtMs": 1784287217595,
+    "planLabel": "prolite",
+    "windows": [
+      {
+        "kind": "weekly",
+        "label": null,
+        "usedPercent": 11.0,
+        "resetsAtMs": 1784786662000,
+        "windowMinutes": 10080,
+        "isActive": null
+      }
+    ]
+  }
+}

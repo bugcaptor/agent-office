@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "runId": "run-1",
+  "seq": 42,
+  "at": 1783728100000,
+  "agentId": "a1",
+  "sessionId": "s1",
+  "kind": "tool"
+}

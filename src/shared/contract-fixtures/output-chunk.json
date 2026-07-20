@@ -1,0 +1,8 @@
+{
+  "sessionId": "s1",
+  "agentId": "a1",
+  "data": "hello",
+  "frames": 3,
+  "seq": 42,
+  "bytes": 5
+}

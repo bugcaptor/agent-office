@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "runId": "run-1",
+  "seq": 1,
+  "at": 1783728000000,
+  "agentId": "a1",
+  "sessionId": "s1",
+  "kind": "session_started",
+  "agentName": "Ada",
+  "agentRole": "backend",
+  "cwd": "/tmp/proj",
+  "shell": "/bin/zsh"
+}

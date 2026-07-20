@@ -1,0 +1,13 @@
+{
+  "commits": [
+    {
+      "hash": "abcdef0123456789abcdef0123456789abcdef01",
+      "shortHash": "abcdef0",
+      "author": "bugcaptor",
+      "date": "2026-07-19",
+      "subject": "fix: something"
+    }
+  ],
+  "hasMore": false,
+  "timedOut": false
+}

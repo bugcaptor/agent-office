@@ -1,0 +1,12 @@
+{
+  "agents": {
+    "a1": {
+      "running": true,
+      "phase": "working",
+      "issue": 42,
+      "slug": "nova",
+      "pollIntervalSec": 60,
+      "lastPollAtMs": 1720000000000
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "isRepo": true,
+  "branch": "main",
+  "ahead": 2,
+  "behind": 0,
+  "entries": [
+    {
+      "path": "src/lib.rs",
+      "status": "M",
+      "xy": " M"
+    }
+  ],
+  "timedOut": false
+}

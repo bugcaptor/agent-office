@@ -6,6 +6,8 @@
 // - `notificationType()` derivation matches the source->type mapping.
 // - `Commands`/`Events` name constants have no duplicate string values.
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Commands, Events } from "../ipc";
 import type {
@@ -27,6 +29,16 @@ import type {
   UsageWindow,
 } from "../types";
 import { notificationType } from "../types";
+
+// R-9: 케이스들 중 일부는 이제 src/shared/contract-fixtures/*.json으로 옮겨졌다
+// (Rust 통합 테스트 src-tauri/tests/contract_fixtures.rs와 공유하는 왕복
+// 검증 픽스처). 그 JSON을 여기서도 읽어 쓴다 — 손으로 다시 쓴 문자열을
+// 남겨두면 인라인+픽스처+타입 3중 유지가 되어 드리프트 위험이 생긴다.
+// 이 파일에 남은 인라인 JSON은 픽스처가 없는(고유한) 케이스뿐이다.
+const FIXTURES_DIR = resolve(__dirname, "../contract-fixtures");
+function loadFixtureRaw(name: string): string {
+  return readFileSync(resolve(FIXTURES_DIR, name), "utf8");
+}
 
 describe("SessionState / SessionStatus", () => {
   it("accepts exactly the four backend states", () => {
@@ -51,10 +63,7 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
   });
 
   it("SessionStateEvent (with exit)", () => {
-    const json =
-      '{"sessionId":"s1","agentId":"a1","state":"exited",' +
-      '"exit":{"sessionId":"s1","exitCode":1,"intentional":false},"at":1720000000001}';
-    const parsed: SessionStateEvent = JSON.parse(json);
+    const parsed: SessionStateEvent = JSON.parse(loadFixtureRaw("session-state-event.exit.json"));
     const exit: SessionExitInfo | undefined = parsed.exit;
     expect(exit?.exitCode).toBe(1);
     expect(exit?.signal).toBeUndefined();
@@ -62,72 +71,37 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
   });
 
   it("NotificationEvent", () => {
-    const json =
-      '{"id":"n1","sessionId":"s1","agentId":"a1","source":"hook",' +
-      '"message":"needs input","dedupKey":"hook:s1","at":1720000000002}';
-    const parsed: NotificationEvent = JSON.parse(json);
+    const parsed: NotificationEvent = JSON.parse(loadFixtureRaw("notification-event.json"));
     expect(parsed.source).toBe("hook");
     expect(notificationType(parsed.source)).toBe("question");
   });
 
   it("OutputChunk", () => {
-    const json = '{"sessionId":"s1","agentId":"a1","data":"hello","frames":3,"seq":42}';
-    const parsed: OutputChunk = JSON.parse(json);
+    const parsed: OutputChunk = JSON.parse(loadFixtureRaw("output-chunk.json"));
     expect(parsed.agentId).toBe("a1");
     expect(parsed.seq).toBe(42);
+    expect(parsed.bytes).toBe(5);
   });
 
   it("CreateSessionResult", () => {
-    const json = '{"sessionId":"s1","state":"starting"}';
-    const parsed: CreateSessionResult = JSON.parse(json);
+    const parsed: CreateSessionResult = JSON.parse(loadFixtureRaw("create-session-result.json"));
     expect(parsed.state).toBe("starting");
   });
 
-  it("AgentProfile / PersistedState", () => {
-    const json =
-      '{"agents":[{"id":"p1","name":"Ada","role":"backend","note":"",' +
-      '"seed":"abc123","createdAt":1720000000003,"deskIndex":0}],"version":1}';
-    const parsed: PersistedState = JSON.parse(json);
+  it("AgentProfile / PersistedState without cwd/startupCommand (backward compat with files saved before those fields existed)", () => {
+    const parsed: PersistedState = JSON.parse(loadFixtureRaw("persisted-state.minimal.json"));
     const profile: AgentProfile = parsed.agents[0];
     expect(parsed.version).toBe(1);
     expect(profile.deskIndex).toBe(0);
-  });
-
-  it("AgentProfile / PersistedState without cwd (backward compat with files saved before the cwd field existed)", () => {
-    const json =
-      '{"agents":[{"id":"p1","name":"Ada","role":"backend","note":"",' +
-      '"seed":"abc123","createdAt":1720000000003,"deskIndex":0}],"version":1}';
-    const parsed: PersistedState = JSON.parse(json);
-    const profile: AgentProfile = parsed.agents[0];
     expect(profile.cwd).toBeUndefined();
+    expect(profile.startupCommand).toBeUndefined();
   });
 
-  it("AgentProfile / PersistedState with cwd", () => {
-    const json =
-      '{"agents":[{"id":"p1","name":"Ada","role":"backend","note":"",' +
-      '"seed":"abc123","createdAt":1720000000003,"deskIndex":0,"cwd":"/tmp/proj"}],"version":1}';
-    const parsed: PersistedState = JSON.parse(json);
+  it("AgentProfile / PersistedState with cwd and startupCommand", () => {
+    const parsed: PersistedState = JSON.parse(loadFixtureRaw("persisted-state.full.json"));
     const profile: AgentProfile = parsed.agents[0];
     expect(profile.cwd).toBe("/tmp/proj");
-  });
-
-  it("AgentProfile / PersistedState with startupCommand", () => {
-    const json =
-      '{"agents":[{"id":"p1","name":"Ada","role":"backend","note":"",' +
-      '"seed":"abc123","createdAt":1720000000003,"deskIndex":0,' +
-      '"startupCommand":"source ./init.sh"}],"version":1}';
-    const parsed: PersistedState = JSON.parse(json);
-    const profile: AgentProfile = parsed.agents[0];
     expect(profile.startupCommand).toBe("source ./init.sh");
-  });
-
-  it("AgentProfile without startupCommand (backward compat)", () => {
-    const json =
-      '{"agents":[{"id":"p1","name":"Ada","role":"backend","note":"",' +
-      '"seed":"abc123","createdAt":1720000000003,"deskIndex":0}],"version":1}';
-    const parsed: PersistedState = JSON.parse(json);
-    const profile: AgentProfile = parsed.agents[0];
-    expect(profile.startupCommand).toBeUndefined();
   });
 
   it("ActivityEvent without text (tool / legacy)", () => {
@@ -138,9 +112,7 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
   });
 
   it("ActivityEvent with prompt text", () => {
-    const json =
-      '{"agentId":"a1","sessionId":"s1","kind":"prompt","at":1720000000005,"text":"버그 고쳐줘"}';
-    const parsed: ActivityEvent = JSON.parse(json);
+    const parsed: ActivityEvent = JSON.parse(loadFixtureRaw("activity-event.prompt.json"));
     expect(parsed.text).toBe("버그 고쳐줘");
   });
 
@@ -167,8 +139,7 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
   });
 
   it("AdoptedSessionInfo", () => {
-    const json = '{"agentId":"a1","sessionId":"s1","rows":24,"cols":80}';
-    const parsed: AdoptedSessionInfo = JSON.parse(json);
+    const parsed: AdoptedSessionInfo = JSON.parse(loadFixtureRaw("adopted-session-info.json"));
     expect(parsed.agentId).toBe("a1");
     expect(parsed.rows).toBe(24);
     expect(parsed.cols).toBe(80);
@@ -176,11 +147,7 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
 
   it("SessionEventRecord (session_started, 옵션 필드 있음)", () => {
     // 수집 측이 실제로 쓰는 형태: envelope + 세션 시작 스냅샷 필드들.
-    const json =
-      '{"schemaVersion":1,"runId":"run-1","seq":1,"at":1783728000000,' +
-      '"agentId":"a1","sessionId":"s1","kind":"session_started",' +
-      '"agentName":"Ada","agentRole":"backend","cwd":"/tmp/proj","shell":"/bin/zsh"}';
-    const parsed: SessionEventRecord = JSON.parse(json);
+    const parsed: SessionEventRecord = JSON.parse(loadFixtureRaw("session-event-record.started.json"));
     expect(parsed.kind).toBe("session_started");
     expect(parsed.agentName).toBe("Ada");
     expect(parsed.agentRole).toBe("backend");
@@ -191,10 +158,7 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
   });
 
   it("SessionEventRecord (tool, 옵션 필드 없음 = envelope만)", () => {
-    const json =
-      '{"schemaVersion":1,"runId":"run-1","seq":42,"at":1783728100000,' +
-      '"agentId":"a1","sessionId":"s1","kind":"tool"}';
-    const parsed: SessionEventRecord = JSON.parse(json);
+    const parsed: SessionEventRecord = JSON.parse(loadFixtureRaw("session-event-record.tool.json"));
     expect(parsed.kind).toBe("tool");
     expect(parsed.seq).toBe(42);
     expect(parsed.agentName).toBeUndefined();
@@ -216,15 +180,7 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
   it("UsageSnapshot (both providers, limits[] + fallback shapes)", () => {
     // Rust load_usage_snapshot이 실제로 내보내는 형태: 정규화된 원시 스냅샷.
     // resetsAtMs/label/windowMinutes/planLabel/isActive는 T | null(optional 아님).
-    const json =
-      '{"claude":{"provider":"claude","fetchedAtMs":1784281391475,"planLabel":"max_20x",' +
-      '"windows":[' +
-      '{"kind":"session","label":null,"usedPercent":61,"resetsAtMs":1784281800243,"windowMinutes":null,"isActive":true},' +
-      '{"kind":"weekly_model","label":"Fable","usedPercent":24,"resetsAtMs":1784606400000,"windowMinutes":null,"isActive":false}' +
-      ']},' +
-      '"codex":{"provider":"codex","fetchedAtMs":1784287217595,"planLabel":"prolite",' +
-      '"windows":[{"kind":"weekly","label":null,"usedPercent":11,"resetsAtMs":1784786662000,"windowMinutes":10080,"isActive":null}]}}';
-    const parsed: UsageSnapshot = JSON.parse(json);
+    const parsed: UsageSnapshot = JSON.parse(loadFixtureRaw("usage-snapshot.json"));
     expect(parsed.claude?.provider).toBe("claude");
     expect(parsed.claude?.windows).toHaveLength(2);
     const w0: UsageWindow = parsed.claude!.windows[0];
@@ -305,9 +261,7 @@ describe("Commands / Events name constants", () => {
 
 describe("AppSettings (opt-in 설정 계약)", () => {
   it("Rust GetAppSettingsResult JSON이 TS 타입에 그대로 할당된다", () => {
-    const json =
-      '{"settings":{"version":1,"summarizerEnabled":false,"summaryProvider":"claude","diaryEnabled":false,"observerEnabled":false,"soundEnabled":true,"soundVolume":0.5,"externalTerminal":"terminal","externalEditor":"system","attentionHoldMs":5000},"firstRun":true}';
-    const parsed: GetAppSettingsResult = JSON.parse(json);
+    const parsed: GetAppSettingsResult = JSON.parse(loadFixtureRaw("get-app-settings-result.json"));
     expect(parsed.firstRun).toBe(true);
     expect(parsed.settings).toEqual({
       version: 1,
@@ -320,6 +274,8 @@ describe("AppSettings (opt-in 설정 계약)", () => {
       externalTerminal: "terminal",
       externalEditor: "system",
       attentionHoldMs: 5000,
+      gitStatusEnabled: true,
+      cliEnabled: false,
     });
   });
 

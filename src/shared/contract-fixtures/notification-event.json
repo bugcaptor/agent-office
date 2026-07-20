@@ -1,0 +1,9 @@
+{
+  "id": "n1",
+  "sessionId": "s1",
+  "agentId": "a1",
+  "source": "hook",
+  "message": "needs input",
+  "dedupKey": "hook:s1",
+  "at": 1720000000002
+}
