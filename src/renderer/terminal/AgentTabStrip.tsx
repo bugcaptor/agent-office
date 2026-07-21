@@ -26,7 +26,20 @@ import { useDiaryStore } from "../diary/diaryStore";
 import { terminalRegistry } from "./TerminalRegistry";
 import { looksLikeAgentRunning } from "./botGuard";
 import { botStatusText } from "./botStatusText";
+import type { TerminalViewMode } from "./terminalViewMode";
 import type { ClaudeResumeEntry } from "@shared/types";
+
+// 뷰 모드 토글 버튼(이슈 #69)의 아이콘/툴팁. title은 "누르면 가는 다음 모드"를
+// 안내한다(windowed↔filled). aria-label도 동일.
+const VIEW_MODE_BUTTON: Record<TerminalViewMode, { icon: string; label: string }> = {
+  windowed: { icon: "⤢", label: "앱에 꽉 채우기" },
+  filled: { icon: "❐", label: "창 모드로 복귀" },
+};
+
+// 꽉 채우기 토글 단축키는 OS "확대" 관례를 따른다: macOS는 Ctrl+Cmd+F, 그 외는 F11.
+const IS_MAC =
+  typeof navigator !== "undefined" &&
+  /mac/i.test(navigator.platform || navigator.userAgent || "");
 
 export function AgentTabStrip() {
   const isOpen = useAppStore((s) => s.activeTerminalAgentId !== null);
@@ -81,6 +94,9 @@ export function AgentTabStrip() {
   const openTerminal = useAppStore((s) => s.openTerminal);
   const closeTerminal = useAppStore((s) => s.closeTerminal);
   const openModal = useAppStore((s) => s.openModal);
+  // 뷰 모드(이슈 #69): 토글 버튼 + 꽉 채우기 단축키용.
+  const viewMode = useAppStore((s) => s.terminalViewMode);
+  const cycleTerminalViewMode = useAppStore((s) => s.cycleTerminalViewMode);
   // 봇 모드(이슈 #57): 켜진 탭 집합/상태 + 시작·중단 액션.
   const botMode = useAppStore((s) => s.botMode);
   const startBot = useAppStore((s) => s.startBot);
@@ -121,6 +137,17 @@ export function AgentTabStrip() {
     if (!isOpen) return;
 
     function onKeyDown(e: KeyboardEvent) {
+      // 꽉 채우기 토글(OS "확대" 관례): mac = Ctrl+Cmd+F, 그 외 = F11. windowed ↔ filled.
+      // mod 게이트보다 먼저 — F11은 수식키가 없다.
+      const fillShortcut = IS_MAC
+        ? e.ctrlKey && e.metaKey && e.key.toLowerCase() === "f"
+        : e.key === "F11";
+      if (fillShortcut) {
+        e.preventDefault();
+        cycleTerminalViewMode();
+        return;
+      }
+
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
 
@@ -150,7 +177,15 @@ export function AgentTabStrip() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isOpen, tabs, activeId, openTerminal, closeTerminal, exportShellOutput]);
+  }, [
+    isOpen,
+    tabs,
+    activeId,
+    openTerminal,
+    closeTerminal,
+    exportShellOutput,
+    cycleTerminalViewMode,
+  ]);
 
   // 봇 상태 폴링(이슈 #57): 켜진 봇이 하나라도 있으면 5초마다 백엔드에서
   // 이슈 번호·오류를 받아 배지를 갱신한다. 없으면 폴링하지 않는다.
@@ -233,6 +268,16 @@ export function AgentTabStrip() {
         }}
       >
         문서
+      </button>
+      <button
+        type="button"
+        className={`agent-tab-strip-viewmode mode-${viewMode}`}
+        // 토글: windowed↔filled. 아이콘은 현재 모드, title은 누르면 갈 다음 모드를 안내한다.
+        title={VIEW_MODE_BUTTON[viewMode].label}
+        aria-label={VIEW_MODE_BUTTON[viewMode].label}
+        onClick={cycleTerminalViewMode}
+      >
+        {VIEW_MODE_BUTTON[viewMode].icon}
       </button>
       <button
         type="button"

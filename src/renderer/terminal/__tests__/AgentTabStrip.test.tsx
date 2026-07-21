@@ -240,6 +240,50 @@ describe("keyboard routing while the overlay is open", () => {
   });
 });
 
+describe("뷰 모드 토글 버튼/단축키(이슈 #69)", () => {
+  it("토글 버튼 클릭은 windowed↔filled 로 돈다", () => {
+    seedThreeTabs();
+    const { container } = render(<AgentTabStrip />);
+    const btn = container.querySelector(".agent-tab-strip-viewmode") as HTMLElement;
+    expect(useAppStore.getState().terminalViewMode).toBe("windowed");
+
+    fireEvent.click(btn);
+    expect(useAppStore.getState().terminalViewMode).toBe("filled");
+
+    fireEvent.click(btn);
+    expect(useAppStore.getState().terminalViewMode).toBe("windowed");
+  });
+
+  it("버튼 클래스가 현재 모드를 반영한다(시각 구분)", () => {
+    seedThreeTabs();
+    const { container } = render(<AgentTabStrip />);
+    const btn = container.querySelector(".agent-tab-strip-viewmode") as HTMLElement;
+    expect(btn.className).toContain("mode-windowed");
+
+    act(() => useAppStore.getState().setTerminalViewMode("filled"));
+    expect(btn.className).toContain("mode-filled");
+  });
+
+  it("꽉 채우기 단축키(OS 관례)가 windowed ↔ filled 를 토글하고 preventDefault 한다", () => {
+    seedThreeTabs();
+    render(<AgentTabStrip />);
+    // 컴포넌트와 동일한 관례로 현재 환경의 단축키를 만든다: mac=Ctrl+Cmd+F, 그 외=F11.
+    const isMac = /mac/i.test(navigator.platform || navigator.userAgent || "");
+    const opts = isMac
+      ? { key: "f", ctrlKey: true, metaKey: true, cancelable: true }
+      : { key: "F11", cancelable: true };
+
+    const e1 = new KeyboardEvent("keydown", opts);
+    act(() => void window.dispatchEvent(e1));
+    expect(e1.defaultPrevented).toBe(true);
+    expect(useAppStore.getState().terminalViewMode).toBe("filled");
+
+    const e2 = new KeyboardEvent("keydown", opts);
+    act(() => void window.dispatchEvent(e2));
+    expect(useAppStore.getState().terminalViewMode).toBe("windowed");
+  });
+});
+
 describe("keyboard routing while the overlay is closed", () => {
   it("shortcuts are inert when there is no active terminal", () => {
     seedThreeTabs();

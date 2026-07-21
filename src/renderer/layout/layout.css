@@ -196,6 +196,18 @@ body {
   background: var(--bg-panel);
 }
 
+/* 뷰 모드(이슈 #69). windowed=기본(위). filled는 패널이 오버레이 루트(=앱 창)
+   를 꽉 채우고 배경 딤을 제거한다. 배경 딤이 사라지면 패널이 루트를 완전히
+   덮어 backdrop 클릭 닫기는 도달 불가 — 문서화된 동작(TerminalOverlay.tsx 참조). */
+.terminal-overlay.mode-filled {
+  background: transparent;
+}
+
+.terminal-overlay.mode-filled .terminal-overlay-panel {
+  width: 100%;
+  height: 100%;
+}
+
 /* Layer 3 (z:30) -- modal root. `display: contents` so the wrapper itself
    never becomes a full-viewport pointer-events sink when no dialog is open
    (`ProfileDialog` renders `null` in that case); `.modal-backdrop` (rendered

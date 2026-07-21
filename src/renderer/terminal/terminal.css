@@ -85,6 +85,34 @@
   cursor: default;
 }
 
+/* 뷰 모드 순환 버튼(이슈 #69): 문서 버튼과 닫기 버튼 사이. 문서 버튼의
+   margin-left:auto가 이 그룹 전체를 오른쪽으로 민다. */
+.agent-tab-strip-viewmode {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--border-dark);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.agent-tab-strip-viewmode:hover {
+  background: var(--accent);
+  color: #0a0b12;
+}
+
+/* 꽉 채우기(filled) 상태에서 버튼을 악센트색으로 강조 — 창 모드와 시각적으로
+   구분(수용 기준: 현재 모드가 시각적으로 구분된다). */
+.agent-tab-strip-viewmode.mode-filled {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .agent-tab-strip-close {
   position: sticky;
   right: 0;

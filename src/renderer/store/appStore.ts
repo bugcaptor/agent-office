@@ -22,6 +22,12 @@ import type { AgentTurnState, TurnInput } from "../timeline/turnReducer";
 import { requestSentence } from "../labels/labelText";
 import { applyTheme, loadStoredThemeId } from "../theme/applyTheme";
 import type { ThemeId } from "../theme/themes";
+import {
+  loadStoredTerminalViewMode,
+  nextTerminalViewMode,
+  persistTerminalViewMode,
+} from "../terminal/terminalViewMode";
+import type { TerminalViewMode } from "../terminal/terminalViewMode";
 import type {
   ActivityEvent,
   AppSettings,
@@ -95,6 +101,9 @@ interface AppState {
   notifications: Notification[];
   /** null = terminal overlay closed. */
   activeTerminalAgentId: string | null;
+  /** 터미널 오버레이 뷰 모드(이슈 #69). windowed=중앙 72%, filled=앱 창 꽉 채움.
+   * localStorage로 영속 — PersistedState 아님. */
+  terminalViewMode: TerminalViewMode;
   /** Tauri 창(웹뷰)이 OS 포커스를 가졌는지. 기본 true. sessionBridge의
    * 포커스 추적이 갱신한다(이슈 #39). 비포커스면 터미널이 열려 있어도
    * 알림을 억제하지 않고 OS 데스크탑 알림까지 보낸다. */
@@ -214,6 +223,12 @@ interface AppState {
   /** 테마 전환: DOM 적용(applyTheme) + localStorage 영속 + 상태 갱신. */
   setTheme(id: ThemeId): void;
 
+  // ---- terminal view mode (이슈 #69) ----
+  /** 뷰 모드 지정 + localStorage 영속. */
+  setTerminalViewMode(mode: TerminalViewMode): void;
+  /** windowed ↔ filled 토글. */
+  cycleTerminalViewMode(): void;
+
   // ---- time tracking (feeds turnReducer) ----
   applyActivityEvent(e: ActivityEvent): void;
   applyNotificationTiming(e: NotificationEvent): void;
@@ -274,6 +289,7 @@ export const useAppStore = create<AppState>()(
     sessions: {},
     notifications: [],
     activeTerminalAgentId: null,
+    terminalViewMode: loadStoredTerminalViewMode(),
     windowFocused: true,
     recentAgentIds: [],
     modal: { kind: "none" },
@@ -559,6 +575,14 @@ export const useAppStore = create<AppState>()(
       applyTheme(id);
       set({ theme: id });
     },
+
+    setTerminalViewMode: (mode) => {
+      // theme와 동일 패턴: 부수효과(localStorage 영속)를 액션에서 직접 수행.
+      persistTerminalViewMode(mode);
+      set({ terminalViewMode: mode });
+    },
+    cycleTerminalViewMode: () =>
+      get().setTerminalViewMode(nextTerminalViewMode(get().terminalViewMode)),
 
     setPortrait: (agentId, dataUrl) =>
       set((s) => ({ portraits: { ...s.portraits, [agentId]: dataUrl } })),

@@ -1200,3 +1200,50 @@ it('ensure returns same Terminal instance across calls (keep-alive)', () => {
 | 인앱 뷰어 복귀 | markdownStore `onClose` 콜백 + 탐색 상태 스냅샷 | 뷰어 닫으면 탐색으로 복귀(#54) |
 | diff 렌더 | 의존성 없이 자체 줄단위 색상 | marked 자체 렌더 철학 일관 |
 | 로그 검색 | `--grep -i -F`(메시지, 고정 문자열) | 예측 가능·주입 안전. 작성자 검색은 후속 |
+
+## 11. 터미널 오버레이 뷰 모드 (이슈 #69)
+
+터미널 오버레이 패널을 넓게 쓰기 위한 확대 모드. **windowed ↔ filled 2스테이트 토글**
+로 확정(초기 기획의 OS 전체화면 3-스테이트에서 축소 — OS 전체화면 상태 동기화
+복잡성을 걷어내고 인앱 CSS만으로 처리).
+
+- **windowed**: 화면 중앙 `72%×72%` 오버레이(기존 동작, 배경 딤 유지).
+- **filled**: 오버레이가 앱 창 전체를 덮음 — 배경 딤 제거, 탭 스트립·요약 바는 유지.
+
+### 11.1 상태/영속
+
+- 스토어 필드 `terminalViewMode: "windowed" | "filled"` + 액션
+  `setTerminalViewMode`/`cycleTerminalViewMode`(2스테이트 토글).
+- 영속은 **테마와 동일하게 `localStorage`**(`agent-office.terminal-view-mode`) —
+  `PersistedState`(agents/vacationMode)를 확장하지 않는다. 순수 로직·영속은
+  `renderer/terminal/terminalViewMode.ts`로 분리(스토어/Tauri 의존 없음 → appStore가
+  안전하게 import, 순환 방지). 부수효과(localStorage)는 액션에서 직접 수행(theme 패턴).
+
+### 11.2 렌더/불변식
+
+- `TerminalOverlay`가 루트에 `mode-*` 클래스만 토글하고, `layout.css`의
+  `.terminal-overlay.mode-filled`가 패널 100%×100% + 배경 딤 제거를 담당한다.
+- **keep-alive 불변식 유지**: 조건부 렌더가 아니라 CSS 클래스 변경뿐이라 xterm/PTY가
+  리마운트되지 않는다. 패널이 커지면 `TerminalHost`의 active-only `ResizeObserver`가
+  debounce 후 자동 refit → `setSessionSize`/`resize`가 PTY `cols/rows`를 갱신(별도
+  refit 로직 불필요).
+- filled에서는 패널이 오버레이 루트를 완전히 덮어 **backdrop mousedown 닫기 경로가
+  도달 불가** → X 버튼/`Cmd+W`가 유일한 닫기 경로(의도된 동작).
+
+### 11.3 조작
+
+- 헤더 토글 버튼 하나(`문서`와 닫기 사이). 아이콘은 현재 모드(`⤢`↔`❐`), title은
+  다음 모드 안내. filled일 때 악센트색으로 강조(현재 모드 시각 구분).
+- 단축키: OS "확대" 관례 — **macOS `Ctrl+Cmd+F`, 그 외 `F11`** 이 windowed↔filled 토글.
+  `mod` 게이트보다 먼저 처리(F11은 수식키 없음). `Esc`는 여전히 미사용(TUI가 실제
+  Escape를 받아야 함).
+
+### 11.4 핵심 설계 결정 요약
+
+| 항목 | 결정 | 이유 |
+|---|---|---|
+| 모드 수 | windowed ↔ filled 2스테이트 | OS 전체화면 제외로 상태 동기화 리스크 제거(사용자 확정) |
+| 확대 방식 | CSS 클래스 토글만 | keep-alive 불변식 유지(리마운트 없음) |
+| refit | 별도 로직 없음 | 컨테이너 리사이즈를 ResizeObserver가 자동 처리 |
+| 영속 | `localStorage`(테마 패턴) | PersistedState 미확장, 마지막 모드 유지 |
+| 단축키 | mac Ctrl+Cmd+F / 그 외 F11 | OS 확대 관례 |

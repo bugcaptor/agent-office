@@ -128,6 +128,35 @@ describe("TerminalOverlay display toggle (keep-alive)", () => {
   });
 });
 
+describe("뷰 모드 클래스(이슈 #69)", () => {
+  it("루트에 현재 terminalViewMode에 대응하는 mode-* 클래스를 붙인다", () => {
+    useAppStore.getState().addAgent(mkProfile("a1"));
+    const { container } = render(<TerminalOverlay />);
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toContain("mode-windowed");
+
+    act(() => useAppStore.getState().setTerminalViewMode("filled"));
+    expect(root.className).toContain("mode-filled");
+    expect(root.className).not.toContain("mode-windowed");
+  });
+
+  it("모드 전환은 자식(TerminalHost/AgentTabStrip)을 리마운트하지 않는다(keep-alive)", () => {
+    useAppStore.getState().addAgent(mkProfile("a1"));
+    render(<TerminalOverlay />);
+    act(() => useAppStore.getState().openTerminal("a1"));
+    expect(tabStripMount).toHaveBeenCalledTimes(1);
+    expect(hostMount).toHaveBeenCalledTimes(1);
+
+    act(() => useAppStore.getState().setTerminalViewMode("filled"));
+    act(() => useAppStore.getState().setTerminalViewMode("windowed"));
+
+    expect(tabStripMount).toHaveBeenCalledTimes(1);
+    expect(hostMount).toHaveBeenCalledTimes(1);
+    expect(tabStripUnmount).not.toHaveBeenCalled();
+    expect(hostUnmount).not.toHaveBeenCalled();
+  });
+});
+
 describe("backdrop mousedown close (third escape path, alongside X button / Cmd+W)", () => {
   it("mousedown directly on the overlay root (backdrop) closes the overlay", () => {
     useAppStore.getState().addAgent(mkProfile("a1"));
