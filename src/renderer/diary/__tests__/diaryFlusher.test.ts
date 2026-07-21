@@ -33,6 +33,7 @@ const SETTINGS_ON: AppSettings = {
   externalEditor: "system",
   attentionHoldMs: 5000,
   gitStatusEnabled: true,
+  fileIndexBackend: "walker",
   cliEnabled: false,
 };
 

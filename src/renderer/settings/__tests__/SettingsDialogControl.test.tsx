@@ -42,6 +42,7 @@ function hydrate(cliEnabled: boolean) {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      fileIndexBackend: "walker",
       cliEnabled,
     },
     false,

@@ -76,6 +76,28 @@
   flex: none;
 }
 
+/* 캐시 기준 시각 표시(브랜치 요약 옆, 이슈 #67). */
+.wd-updated {
+  color: var(--text-dim);
+}
+
+/* 새로고침 버튼(이슈 #67): 닫기 버튼과 같은 톤, 크기는 조금 작게. */
+.wd-refresh {
+  width: 26px;
+  height: 26px;
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 2px solid var(--border-dark);
+  cursor: pointer;
+}
+.wd-refresh:hover {
+  background: var(--accent-warn);
+  color: #0a0b12;
+}
+
 /* [전체 | 변경만] 세그먼트 토글 */
 .wd-seg {
   display: inline-flex;

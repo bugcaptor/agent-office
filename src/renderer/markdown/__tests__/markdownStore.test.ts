@@ -2,7 +2,7 @@
 //
 // 마크다운 스토어 상태 전이(이슈 #10): 열기/더티/저장/충돌. tauriApi는
 // 목으로 대체해 오케스트레이션 배선만 검증한다(store 테스트 관례, appStore.test).
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { listFiles, readFile, writeFile } = vi.hoisted(() => ({
   listFiles: vi.fn(),
@@ -41,6 +41,7 @@ describe("팔레트", () => {
       expect(useMarkdownStore.getState().listing["/root"]).toEqual({
         files: [{ relPath: "a.md", name: "a.md" }],
         truncated: true,
+        fetchedAt: expect.any(Number),
       });
     });
   });
@@ -194,5 +195,72 @@ describe("닫기 콜백(onClose)", () => {
     await s.openFile("/root", "x.md", "agent1", onClose);
     useMarkdownStore.getState().requestClose();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("TTL/캐시 재사용(이슈 #67)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("5분 이내 재오픈은 캐시를 재사용하고 재스캔하지 않는다", async () => {
+    vi.setSystemTime(0);
+    listFiles.mockResolvedValueOnce({ files: [{ relPath: "a.md", name: "a.md" }], truncated: false });
+    await useMarkdownStore.getState().refreshListing("/root"); // 최초 채움(캐시 없음 → 즉시 스캔)
+    expect(listFiles).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(4 * 60_000); // 4분 경과(TTL 이내)
+    useMarkdownStore.getState().openPalette("/root", "agent1");
+    // 캐시 hit이면 동기적으로 스킵되므로 마이크로태스크를 기다릴 필요조차 없다.
+    expect(listFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it("5분 초과 시 캐시를 즉시 보여주고 백그라운드로 1회 재스캔한다", async () => {
+    vi.setSystemTime(0);
+    listFiles.mockResolvedValueOnce({ files: [{ relPath: "old.md", name: "old.md" }], truncated: false });
+    await useMarkdownStore.getState().refreshListing("/root");
+
+    vi.setSystemTime(6 * 60_000); // 6분 경과(TTL 초과)
+    listFiles.mockResolvedValueOnce({ files: [{ relPath: "new.md", name: "new.md" }], truncated: false });
+    useMarkdownStore.getState().openPalette("/root", "agent1");
+
+    // 재스캔이 끝나기 전에는 기존 캐시가 그대로 보인다(즉시 표시).
+    expect(useMarkdownStore.getState().listing["/root"].files).toEqual([{ relPath: "old.md", name: "old.md" }]);
+
+    await vi.runAllTimersAsync(); // 백그라운드 재스캔(마이크로태스크) 완료까지 흘려보낸다.
+    expect(listFiles).toHaveBeenCalledTimes(2);
+    expect(useMarkdownStore.getState().listing["/root"].files).toEqual([{ relPath: "new.md", name: "new.md" }]);
+  });
+
+  it("force:true는 TTL을 무시하고 항상 재스캔한다", async () => {
+    vi.setSystemTime(0);
+    listFiles.mockResolvedValueOnce({ files: [{ relPath: "old.md", name: "old.md" }], truncated: false });
+    await useMarkdownStore.getState().refreshListing("/root");
+    expect(listFiles).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(60_000); // 1분 후(TTL 이내라도)
+    listFiles.mockResolvedValueOnce({ files: [{ relPath: "new.md", name: "new.md" }], truncated: false });
+    await useMarkdownStore.getState().refreshListing("/root", { force: true });
+
+    expect(listFiles).toHaveBeenCalledTimes(2);
+    expect(useMarkdownStore.getState().listing["/root"].files).toEqual([{ relPath: "new.md", name: "new.md" }]);
+  });
+
+  it("동시에 호출된 refreshListing은 in-flight dedupe로 1회만 실행된다", async () => {
+    let resolveList!: (v: { files: { relPath: string; name: string }[]; truncated: boolean }) => void;
+    listFiles.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveList = resolve;
+        }),
+    );
+    const s = useMarkdownStore.getState();
+    const p1 = s.refreshListing("/root");
+    const p2 = s.refreshListing("/root"); // 이미 진행 중이므로 스킵되어야 한다.
+
+    resolveList({ files: [{ relPath: "a.md", name: "a.md" }], truncated: false });
+    await Promise.all([p1, p2]);
+
+    expect(listFiles).toHaveBeenCalledTimes(1);
+    expect(useMarkdownStore.getState().listing["/root"].files).toEqual([{ relPath: "a.md", name: "a.md" }]);
   });
 });

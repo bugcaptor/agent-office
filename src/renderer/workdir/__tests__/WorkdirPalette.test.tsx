@@ -82,7 +82,7 @@ beforeEach(() => {
   updateSettings.mockClear();
   useWorkdirStore.setState({
     palette: { root: "/root", agentId: "agent1", query: "", selectedIndex: 0, changedOnly: false, viewMode: "files" },
-    listing: { "/root": { files: FILES, truncated: false } },
+    listing: { "/root": { files: FILES, truncated: false, fetchedAt: Date.now() } },
     git: { "/root": GIT },
     gitLoading: {},
   });

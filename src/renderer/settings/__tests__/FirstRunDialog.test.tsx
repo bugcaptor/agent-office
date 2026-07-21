@@ -34,6 +34,7 @@ describe("FirstRunDialog", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        fileIndexBackend: "walker",
         cliEnabled: false,
       },
       false,
@@ -56,6 +57,7 @@ describe("FirstRunDialog", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        fileIndexBackend: "walker",
         cliEnabled: false,
       },
       true,
@@ -78,6 +80,7 @@ describe("FirstRunDialog", () => {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      fileIndexBackend: "walker",
       cliEnabled: false,
     });
   });
@@ -96,6 +99,7 @@ describe("FirstRunDialog", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        fileIndexBackend: "walker",
         cliEnabled: false,
       },
       true,

@@ -220,9 +220,11 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "externalEditor",
       "attentionHoldMs",
       "gitStatusEnabled",
+      "fileIndexBackend",
       "cliEnabled",
     ]);
     expect(settings.gitStatusEnabled).toBe(true);
+    expect(settings.fileIndexBackend).toBe("walker");
     expect(settings.cliEnabled).toBe(false);
   });
 

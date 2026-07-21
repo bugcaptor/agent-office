@@ -275,6 +275,7 @@ describe("AppSettings (opt-in 설정 계약)", () => {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      fileIndexBackend: "walker",
       cliEnabled: false,
     });
   });

@@ -72,6 +72,7 @@ beforeEach(() => {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      fileIndexBackend: "walker",
       cliEnabled: false,
     },
     false
@@ -138,6 +139,7 @@ describe("installTaskLabelSummarizer", () => {
           externalEditor: "system",
           attentionHoldMs: 5000,
           gitStatusEnabled: true,
+          fileIndexBackend: "walker",
           cliEnabled: false,
         },
         false,
@@ -399,6 +401,7 @@ describe("installTaskLabelSummarizer", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        fileIndexBackend: "walker",
         cliEnabled: false,
       },
       false

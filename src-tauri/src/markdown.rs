@@ -22,10 +22,8 @@
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use ignore::WalkBuilder;
+use crate::file_scan::walk_files;
 
-/// 목록 결과 상한 -- 이 수에 도달하면 스캔을 멈추고 `truncated=true`.
-const MAX_LIST: usize = 5000;
 /// 읽기 허용 최대 크기(2 MiB). 초과하면 에러(대용량 파일이 UI를 멈추지 않게).
 const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
 
@@ -93,61 +91,58 @@ fn resolve_within_root(root: &str, rel_path: &str) -> Result<(PathBuf, PathBuf),
     Ok((canon_root, canon_target))
 }
 
-/// root 아래 마크다운 파일을 스캔한다. `ignore` 크레이트(WalkBuilder)로
-/// .gitignore를 존중하고 hidden을 스킵하며 심링크는 따라가지 않는다.
-/// require_git(false)로 `.git`이 없는 폴더에서도 .gitignore를 적용한다.
+/// root 아래 마크다운 파일을 스캔한다. `file_scan::walk_files`(병렬
+/// WalkBuilder)로 .gitignore를 존중하고 hidden을 스킵하며 심링크는 따라가지
+/// 않는다. require_git(false)로 `.git`이 없는 폴더에서도 .gitignore를
+/// 적용한다.
 pub fn list_markdown_files(root: &str) -> Result<MarkdownListResult, String> {
-    let canon_root = std::fs::canonicalize(root)
-        .map_err(|e| format!("작업 폴더를 찾을 수 없습니다: {root} ({e})"))?;
-    if !canon_root.is_dir() {
-        return Err(format!("작업 폴더가 디렉터리가 아닙니다: {root}"));
-    }
-
-    let mut builder = WalkBuilder::new(&canon_root);
-    builder
-        .follow_links(false) // 심링크는 따라가지 않는다(root 밖 유출 방지).
-        .hidden(true) // 숨김 파일/폴더 스킵.
-        .git_ignore(true) // .gitignore 존중.
-        .require_git(false); // .git이 없어도 .gitignore를 적용.
-
-    let mut files = Vec::new();
-    let mut truncated = false;
-
-    for entry in builder.build() {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => continue, // 개별 항목 접근 오류는 조용히 건너뛴다.
-        };
-        // 파일만(디렉터리·심링크 등 제외). file_type은 root 자체엔 없을 수 있다.
-        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-            continue;
-        }
-        let path = entry.path();
-        if !has_markdown_extension(path) {
-            continue;
-        }
-        let Ok(rel) = path.strip_prefix(&canon_root) else {
-            continue; // root 하위가 아니면(있을 수 없지만) 스킵.
-        };
-        let rel_path = normalize_separators(rel);
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        files.push(MarkdownFileEntry { rel_path, name });
-
-        if files.len() >= MAX_LIST {
-            truncated = true;
-            break;
-        }
-    }
-
-    // relPath 오름차순 정렬(스캔 순서는 비결정적이므로 안정적 출력을 위해).
-    files.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
+    let (scanned, truncated) = walk_files(root, Some(&MARKDOWN_EXTENSIONS))?;
+    let files = scanned
+        .into_iter()
+        .map(|f| MarkdownFileEntry {
+            rel_path: f.rel_path,
+            name: f.name,
+        })
+        .collect();
     Ok(MarkdownListResult { files, truncated })
 }
 
-/// 확장자가 md/mdx/markdown 중 하나인지(대소문자 무시).
+/// 설정 `fileIndexBackend`에 따라 목록 스캔 백엔드를 고른다(이슈 #67 Stage 4).
+/// `Everything`이면 es.exe로 후보를 얻어 gitignore 등가성 필터를 거치되,
+/// es.exe가 없거나(비Windows·미설치) 실패/타임아웃이면 조용히 `Walker`로
+/// 폴백한다 -- 사용자에게는 항상 목록이 나오고, 다만 어느 스캐너를 썼는지는
+/// 드러나지 않는다(폴백이 "에러"가 아니라 "이번엔 다른 방법으로"이므로).
+pub fn list_markdown_files_with_backend(
+    root: &str,
+    backend: crate::persistence::settings_store::FileIndexBackend,
+) -> Result<MarkdownListResult, String> {
+    use crate::persistence::settings_store::FileIndexBackend;
+
+    if backend == FileIndexBackend::Everything {
+        let canon_root = std::fs::canonicalize(root)
+            .map_err(|e| format!("작업 폴더를 찾을 수 없습니다: {root} ({e})"))?;
+        if !canon_root.is_dir() {
+            return Err(format!("작업 폴더가 디렉터리가 아닙니다: {root}"));
+        }
+        if let Some((scanned, truncated)) =
+            crate::file_index::list_markdown_files_via_everything(&canon_root)
+        {
+            let files = scanned
+                .into_iter()
+                .map(|f| MarkdownFileEntry {
+                    rel_path: f.rel_path,
+                    name: f.name,
+                })
+                .collect();
+            return Ok(MarkdownListResult { files, truncated });
+        }
+        // es.exe 부재/실패/타임아웃 -- 조용히 워커로 폴백.
+    }
+    list_markdown_files(root)
+}
+
+/// 확장자가 md/mdx/markdown 중 하나인지(대소문자 무시). `file_scan::walk_files`의
+/// 확장자 필터와 별개로, 등가성 테스트 등에서 개별 경로를 확인할 때 쓴다.
 fn has_markdown_extension(path: &Path) -> bool {
     match path.extension().and_then(|e| e.to_str()) {
         Some(ext) => {
@@ -156,15 +151,6 @@ fn has_markdown_extension(path: &Path) -> bool {
         }
         None => false,
     }
-}
-
-/// 경로 구분자를 '/'로 정규화한다(Windows의 '\\'도 '/'로). 프런트는 항상
-/// '/' 구분자 상대경로를 기대한다.
-fn normalize_separators(rel: &Path) -> String {
-    rel.components()
-        .map(|c| c.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/")
 }
 
 /// root 기준 rel_path 파일을 읽는다. 경로 봉쇄를 적용하고, 2 MiB 초과·
@@ -240,11 +226,17 @@ pub fn write_markdown_file(
     })
 }
 
-/// 프런트가 부르는 커맨드: root 아래 마크다운 파일 목록. 구현은
-/// `list_markdown_files`.
+/// 프런트가 부르는 커맨드: root 아래 마크다운 파일 목록. 설정
+/// `fileIndexBackend`을 읽어 `list_markdown_files_with_backend`에 위임한다
+/// (이슈 #67 Stage 4) -- 다른 stateful 커맨드들(`observer_enabled` 등,
+/// ipc/commands/*.rs)과 동일하게 `app_state.settings.read().unwrap()` 패턴.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn markdown_list_files(root: String) -> Result<MarkdownListResult, String> {
-    list_markdown_files(&root)
+pub async fn markdown_list_files(
+    root: String,
+    app_state: tauri::State<'_, crate::state::AppState>,
+) -> Result<MarkdownListResult, String> {
+    let backend = app_state.settings.read().unwrap().file_index_backend;
+    list_markdown_files_with_backend(&root, backend)
 }
 
 /// 프런트가 부르는 커맨드: root 기준 rel_path 파일 읽기. 구현은
@@ -272,7 +264,54 @@ pub async fn markdown_write_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::persistence::settings_store::FileIndexBackend;
     use std::fs;
+
+    /// backend=Walker면 es.exe/file_index 경로를 전혀 타지 않고
+    /// list_markdown_files와 동일 결과.
+    #[test]
+    fn with_backend_walker_matches_plain_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("a.md"), "x").unwrap();
+        fs::write(root.join("b.txt"), "x").unwrap();
+
+        let plain = list_markdown_files(root.to_str().unwrap()).unwrap();
+        let via_backend =
+            list_markdown_files_with_backend(root.to_str().unwrap(), FileIndexBackend::Walker)
+                .unwrap();
+        assert_eq!(plain.files, via_backend.files);
+        assert_eq!(plain.truncated, via_backend.truncated);
+    }
+
+    /// backend=Everything 요청은 항상 정상 응답(`Ok`)이어야 한다 -- es.exe가
+    /// 없으면(대부분의 CI/개발 머신) 조용히 워커로 폴백하고, es.exe가 실제
+    /// 설치돼 있어도(이 리포의 개발 머신 등) 어쨌든 에러 없이 목록을 돌려줘야
+    /// 한다. es.exe의 실시간 인덱스는 방금 만든 임시 파일을 아직 못 봤을 수
+    /// 있어(인덱싱 지연) 여기서는 파일 내용까지는 단언하지 않는다 -- 그 정확성
+    /// 보장은 gitignore_filter의 등가성 테스트(WalkBuilder 오라클)가 한다.
+    #[test]
+    fn with_backend_everything_never_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("a.md"), "x").unwrap();
+
+        let result =
+            list_markdown_files_with_backend(root.to_str().unwrap(), FileIndexBackend::Everything);
+        assert!(result.is_ok(), "result={result:?}");
+    }
+
+    /// backend=Everything이라도 root가 없으면 워커와 동일하게 에러(폴백 이전에
+    /// 조기 검증).
+    #[test]
+    fn with_backend_everything_missing_root_errors() {
+        let err = list_markdown_files_with_backend(
+            "/definitely/not/a/dir/xyzzy",
+            FileIndexBackend::Everything,
+        )
+        .unwrap_err();
+        assert!(err.contains("작업 폴더"), "err={err}");
+    }
 
     /// 마크다운 확장자 필터: md/mdx/markdown(대소문자 무시)만 통과.
     #[test]

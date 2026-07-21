@@ -57,6 +57,19 @@ pub enum ExternalEditor {
     Vscode,
 }
 
+/// 파일 목록 스캔 백엔드(이슈 #67). `Walker`는 `ignore::WalkBuilder` 병렬
+/// 스캔(기본), `Everything`은 Windows 전용 es.exe(Voidtools Everything CLI)로
+/// 후보를 빠르게 얻은 뒤 gitignore 등가성 필터를 거친다 -- md 팔레트에만
+/// 적용되고, es.exe 부재/실패/타임아웃 시 조용히 Walker로 폴백한다. 기존
+/// 설정 파일에 이 키가 없으면(구버전) `#[serde(default)]`로 Walker.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FileIndexBackend {
+    #[default]
+    Walker,
+    Everything,
+}
+
 /// 앱 전역 설정. 요약과 관찰자 연동은 기본 OFF이고, 사운드는 기본 ON이다.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -92,6 +105,11 @@ pub struct AppSettings {
     /// 저장소에서 git status가 무거울 수 있어 끌 수 있게 한다. 기본 켜짐.
     #[serde(default = "default_true")]
     pub git_status_enabled: bool,
+    /// 파일 목록(마크다운 팔레트) 스캔 백엔드(이슈 #67). `#[serde(default)]`라
+    /// 기존 설정 파일에 키가 없으면 `FileIndexBackend::Walker`(기본값)로
+    /// 폴백한다.
+    #[serde(default)]
+    pub file_index_backend: FileIndexBackend,
     /// 로컬 CLI 제어 서버(이슈 #55, docs/cli-control-design.md)를 띄울지.
     /// 켜면 `127.0.0.1`에 임의 포트로 control 서버가 뜨고 `control-port`가
     /// 기록된다. 하지만 실제 명령 수행은 앱에서 **명시적 승인**(control-token
@@ -114,6 +132,7 @@ impl Default for AppSettings {
             external_editor: ExternalEditor::System,
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
         }
     }
@@ -199,6 +218,7 @@ mod tests {
             external_editor: ExternalEditor::System,
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
         };
         store.save(&s).expect("save succeeds");
@@ -295,6 +315,7 @@ mod tests {
             external_editor: ExternalEditor::Vscode,
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
         };
         store.save(&settings).unwrap();

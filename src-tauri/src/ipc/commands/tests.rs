@@ -88,6 +88,7 @@
             external_editor: Default::default(),
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            file_index_backend: Default::default(),
             cli_enabled: false,
         };
 
@@ -134,6 +135,7 @@
             external_editor: Default::default(),
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            file_index_backend: Default::default(),
             cli_enabled: false,
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
@@ -173,6 +175,7 @@
             external_editor: Default::default(),
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            file_index_backend: Default::default(),
             cli_enabled: false,
         };
 

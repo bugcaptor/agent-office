@@ -219,6 +219,7 @@ describe("bootApp", () => {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      fileIndexBackend: "walker",
       cliEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(false);

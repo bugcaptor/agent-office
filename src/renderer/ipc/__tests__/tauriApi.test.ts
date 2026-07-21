@@ -457,6 +457,7 @@ describe("app settings commands", () => {
       externalEditor: "system" as const,
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      fileIndexBackend: "walker" as const,
       cliEnabled: false,
     };
     const tauriApi = await importTauriApi();

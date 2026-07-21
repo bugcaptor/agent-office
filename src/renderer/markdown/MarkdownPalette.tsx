@@ -1,15 +1,20 @@
 // src/renderer/markdown/MarkdownPalette.tsx
 //
 // VS Code Ctrl+P 유사 파일 팔레트(이슈 #10). 열리면 캐시된 목록을 즉시 보여주고
-// (스토어 openPalette가 백그라운드 재스캔을 이미 트리거함), 입력으로 relPath를
-// 퍼지 필터한다. ↑/↓ 선택 이동, Enter 열기, Esc 닫기. 키 이벤트는 여기서
-// stopPropagation해 터미널/전역 단축키(AgentTabStrip window 리스너)로 새지 않게 한다.
+// (스토어 openPalette가 캐시 나이(TTL)를 봐서 필요할 때만 백그라운드 재스캔을
+// 트리거함 — 이슈 #67), 입력으로 relPath를 퍼지 필터한다. ↑/↓ 선택 이동, Enter
+// 열기, Esc 닫기. 키 이벤트는 여기서 stopPropagation해 터미널/전역 단축키
+// (AgentTabStrip window 리스너)로 새지 않게 한다.
 //
 // self-gate 관례(다이얼로그와 동일): 항상 마운트되며 팔레트가 없으면 null 렌더.
 // 쿼리·선택은 스토어가 소유하므로 재오픈 시 openPalette가 초기화한다.
+//
+// 헤더에 캐시 기준 시각("N분 전 기준")과 새로고침 버튼을 둔다(이슈 #67) —
+// 새로고침은 TTL을 무시하고 강제로 재스캔한다(refreshListing force:true).
 import { useEffect, useMemo, useRef } from "react";
 import { useMarkdownStore } from "./markdownStore";
 import { fuzzyFilter } from "./fuzzy";
+import { formatRelativeTime } from "../shared/relativeTime";
 
 export function MarkdownPalette() {
   const palette = useMarkdownStore((s) => s.palette);
@@ -18,6 +23,7 @@ export function MarkdownPalette() {
   const setSelectedIndex = useMarkdownStore((s) => s.setSelectedIndex);
   const closePalette = useMarkdownStore((s) => s.closePalette);
   const openFile = useMarkdownStore((s) => s.openFile);
+  const refreshListing = useMarkdownStore((s) => s.refreshListing);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -90,6 +96,19 @@ export function MarkdownPalette() {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
         />
+        {listing && (
+          <div className="md-palette-header">
+            <span className="md-palette-updated">{formatRelativeTime(listing.fetchedAt)} 기준</span>
+            <button
+              type="button"
+              className="md-palette-refresh"
+              title="새로고침"
+              onClick={() => void refreshListing(palette.root, { force: true })}
+            >
+              ↻
+            </button>
+          </div>
+        )}
         {listing?.truncated && (
           <div className="md-palette-note">파일이 많아 일부만 표시됩니다.</div>
         )}

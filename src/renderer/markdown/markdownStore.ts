@@ -11,13 +11,23 @@
 // - 저장 충돌("CONFLICT" 접두 reject)은 `conflict` 플래그로 다이얼로그를 띄운다.
 import { create } from "zustand";
 import { tauriApi } from "../ipc/tauriApi";
+import { createInFlightTracker, isStale } from "../shared/createListingCache";
 import type { MarkdownFileEntry } from "@shared/types";
 
 /** root별 파일 목록 캐시 1건. */
 export interface MarkdownListing {
   files: MarkdownFileEntry[];
   truncated: boolean;
+  /** 이 캐시가 채워진 시각(Date.now()) — TTL 판정·"N분 전" 표시에 쓰인다. */
+  fetchedAt: number;
 }
+
+/** 캐시 재사용 유효기간(이슈 #67): 이보다 오래되면 팔레트를 열 때 백그라운드로
+ *  재스캔한다. 그 이내면 캐시를 그대로 쓰고 풀스캔을 건너뛴다. */
+const LISTING_TTL_MS = 5 * 60_000;
+
+/** root별 refreshListing 진행 상태(모듈 수준 — 스토어 재생성과 무관하게 유지). */
+const listingInFlight = createInFlightTracker();
 
 /** 팔레트(Ctrl+P 유사) 상태. null = 닫힘. */
 export interface PaletteState {
@@ -75,8 +85,11 @@ interface MarkdownState {
   closePalette(): void;
   setQuery(query: string): void;
   setSelectedIndex(index: number): void;
-  /** 목록을 다시 읽어 캐시를 갱신한다(fire-and-forget 가능). */
-  refreshListing(root: string): Promise<void>;
+  /** 목록을 다시 읽어 캐시를 갱신한다(fire-and-forget 가능). 기본은 TTL을 따라
+   *  캐시가 신선하면(5분 이내) 스킵한다. `force: true`는 TTL을 무시하고 항상
+   *  스캔한다(수동 새로고침 버튼용). 같은 root에 대해 이미 진행 중이면 중복
+   *  실행하지 않는다(in-flight dedupe). */
+  refreshListing(root: string, opts?: { force?: boolean }): Promise<void>;
 
   // ---- 편집기 ----
   /** 파일을 읽어 편집기를 연다(성공 시 팔레트는 닫는다). `onClose`가 주어지면
@@ -123,7 +136,8 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
 
   openPalette: (root, agentId) => {
     set({ palette: { root, agentId, query: "", selectedIndex: 0 } });
-    // 캐시가 있으면 팔레트가 즉시 그것을 표시하고, 여기서 백그라운드 재스캔.
+    // 캐시가 있으면 팔레트가 즉시 그것을 표시한다. 재스캔 여부(TTL)는
+    // refreshListing 내부가 판단하므로 여기서는 그냥 호출만 한다.
     void get().refreshListing(root);
   },
 
@@ -135,14 +149,24 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
   setSelectedIndex: (index) =>
     set((s) => (s.palette ? { palette: { ...s.palette, selectedIndex: index } } : s)),
 
-  refreshListing: async (root) => {
+  refreshListing: async (root, opts) => {
+    const force = opts?.force ?? false;
+    // TTL 이내면(force가 아닌 한) 스킵 — 캐시가 없으면 isStale이 true를 준다.
+    if (!force && !isStale(get().listing[root], LISTING_TTL_MS)) return;
+    if (!listingInFlight.begin(root)) return; // 이미 진행 중이면 중복 실행하지 않는다.
     try {
       const res = await tauriApi.markdownListFiles(root);
       set((s) => ({
-        listing: { ...s.listing, [root]: { files: res.files, truncated: res.truncated } },
+        listing: {
+          ...s.listing,
+          [root]: { files: res.files, truncated: res.truncated, fetchedAt: Date.now() },
+        },
       }));
     } catch (err) {
+      // 실패 시 기존 캐시·fetchedAt은 그대로 유지한다.
       console.warn("markdown: 목록 재스캔 실패", err);
+    } finally {
+      listingInFlight.end(root);
     }
   },
 

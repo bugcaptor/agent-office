@@ -20,6 +20,9 @@ export type ExternalTerminalApp = "terminal" | "iterm";
  * 기본은 OS 기본 연결(system). */
 export type ExternalEditorApp = "system" | "vscode";
 
+/** 파일 목록 스캔 백엔드 — Rust `FileIndexBackend` 미러. 기본 walker. */
+export type FileIndexBackend = "walker" | "everything";
+
 /** 앱 전역 opt-in 설정 — Rust `persistence::settings_store::AppSettings` 미러. */
 export interface AppSettings {
   version: number;
@@ -46,6 +49,9 @@ export interface AppSettings {
   /** "작업 폴더 보기"(이슈 #11)에서 파일별 git 상태 뱃지를 조회할지. 거대
    * 저장소에서 무거울 수 있어 끌 수 있다. 기본 true. */
   gitStatusEnabled: boolean;
+  /** 파일 목록 백엔드. everything은 es.exe(Windows) 필요, 문서(md) 팔레트에만
+   * 적용, 실패 시 자동 폴백. 기본 walker. */
+  fileIndexBackend: FileIndexBackend;
   /** 로컬 CLI 제어 서버(이슈 #55) 기동 여부. 켜도 앱에서 명시적 승인이 있어야
    * 명령이 실행된다(2단계 옵트인). 보안 표면이므로 기본 false. */
   cliEnabled: boolean;

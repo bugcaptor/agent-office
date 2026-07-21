@@ -36,7 +36,7 @@ beforeEach(() => {
   // 팔레트 열림 + 목록 캐시 주입(백그라운드 재스캔은 무시).
   useMarkdownStore.setState({
     palette: { root: "/root", agentId: "agent1", query: "", selectedIndex: 0 },
-    listing: { "/root": { files: FILES, truncated: false } },
+    listing: { "/root": { files: FILES, truncated: false, fetchedAt: Date.now() } },
   });
 });
 

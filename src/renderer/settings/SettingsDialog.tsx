@@ -6,7 +6,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { SettingsForm } from "./SettingsForm";
-import type { ControlStatus, ExternalEditorApp, ExternalTerminalApp } from "@shared/types";
+import type {
+  ControlStatus,
+  ExternalEditorApp,
+  ExternalTerminalApp,
+  FileIndexBackend,
+} from "@shared/types";
 
 export function SettingsDialog() {
   const modal = useAppStore((s) => s.modal);
@@ -134,6 +139,26 @@ export function SettingsDialog() {
             >
               <option value="system">시스템 기본</option>
               <option value="vscode">VS Code</option>
+            </select>
+          </label>
+          <label className="settings-item">
+            <span>
+              <strong>파일 목록 백엔드</strong>
+              <small>
+                Everything(es.exe)은 Windows 전용·문서(md) 팔레트 한정, 실패
+                시 자동으로 기본 스캐너를 사용합니다.
+              </small>
+            </span>
+            <select
+              value={appSettings.fileIndexBackend}
+              onChange={(e) =>
+                updateAppSettings({
+                  fileIndexBackend: e.target.value as FileIndexBackend,
+                })
+              }
+            >
+              <option value="walker">기본 스캐너 (walker)</option>
+              <option value="everything">Everything (es.exe)</option>
             </select>
           </label>
         </div>

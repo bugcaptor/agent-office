@@ -52,6 +52,32 @@
   font-size: 0.72rem;
   border-bottom: 1px solid var(--border-dark);
 }
+
+/* 캐시 기준 시각 + 새로고침(이슈 #67). */
+.md-palette-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--unit) * 2);
+  padding: calc(var(--unit) * 1) calc(var(--unit) * 3);
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  border-bottom: 1px solid var(--border-dark);
+}
+.md-palette-refresh {
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dark);
+  cursor: pointer;
+}
+.md-palette-refresh:hover {
+  background: var(--accent-warn);
+  color: #0a0b12;
+}
 .md-palette-empty {
   padding: calc(var(--unit) * 4);
   color: var(--text-dim);

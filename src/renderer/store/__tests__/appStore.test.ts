@@ -520,6 +520,7 @@ describe("app settings slice", () => {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      fileIndexBackend: "walker",
       cliEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(false);
@@ -539,6 +540,7 @@ describe("app settings slice", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        fileIndexBackend: "walker",
         cliEnabled: false,
       },
       true
@@ -556,6 +558,7 @@ describe("app settings slice", () => {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      fileIndexBackend: "walker",
       cliEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(true);
@@ -575,6 +578,7 @@ describe("app settings slice", () => {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      fileIndexBackend: "walker",
       cliEnabled: false,
     });
   });
@@ -593,6 +597,7 @@ describe("app settings slice", () => {
         externalEditor: "system",
         attentionHoldMs: 5000,
         gitStatusEnabled: true,
+        fileIndexBackend: "walker",
         cliEnabled: false,
       },
       true
@@ -617,6 +622,7 @@ describe("app settings slice", () => {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      fileIndexBackend: "walker",
       cliEnabled: false,
     });
   });

@@ -57,6 +57,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   externalEditor: "system",
   attentionHoldMs: 5000,
   gitStatusEnabled: true,
+  fileIndexBackend: "walker",
   cliEnabled: false,
 };
 
@@ -250,6 +251,7 @@ interface AppState {
         | "externalEditor"
         | "attentionHoldMs"
         | "gitStatusEnabled"
+        | "fileIndexBackend"
         | "cliEnabled"
       >
     >,

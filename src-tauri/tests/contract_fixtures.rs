@@ -21,7 +21,7 @@
 
 use agent_office_lib::ipc::commands::settings::GetAppSettingsResult;
 use agent_office_lib::persistence::settings_store::{
-    AppSettings, ExternalEditor, ExternalTerminal, SummaryProvider,
+    AppSettings, ExternalEditor, ExternalTerminal, FileIndexBackend, SummaryProvider,
 };
 use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
@@ -213,6 +213,7 @@ fn get_app_settings_result_matches_fixture() {
             external_editor: ExternalEditor::System,
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
         },
         first_run: true,

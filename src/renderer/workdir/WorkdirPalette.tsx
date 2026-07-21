@@ -10,6 +10,9 @@
 // "전체" 뷰는 파일 목록(.gitignore 존중)에 git 상태를 relPath로 매칭해 뱃지를
 // 얹고, "변경만" 뷰는 git 엔트리 자체를 목록으로 쓴다(삭제·root 밖 "../" 파일도
 // 포함). git이 꺼졌거나 저장소가 아니면 "변경만"은 비활성.
+//
+// 헤더 브랜치 요약 옆에 파일 목록 캐시의 기준 시각("N분 전 기준")을 보여주고,
+// 새로고침 버튼으로 TTL과 무관하게 목록·git 상태를 강제 재조회한다(이슈 #67).
 import { useEffect, useMemo, useRef } from "react";
 import { useWorkdirStore } from "./workdirStore";
 import { WorkdirDetailPane } from "./WorkdirDetailPane";
@@ -17,6 +20,7 @@ import { WorkdirRepoLogPane } from "./WorkdirRepoLogPane";
 import { statusLabel } from "./status";
 import { useAppStore } from "../store/appStore";
 import { fuzzyFilter } from "../markdown/fuzzy";
+import { formatRelativeTime } from "../shared/relativeTime";
 import type { GitFileStatus } from "@shared/types";
 
 /** 목록 행 하나(전체/변경만 공통). status/xy는 git 뱃지용(없을 수 있음). */
@@ -49,6 +53,7 @@ export function WorkdirPalette() {
   const openEntry = useWorkdirStore((s) => s.openEntry);
   const openDetail = useWorkdirStore((s) => s.openDetail);
   const refreshGit = useWorkdirStore((s) => s.refreshGit);
+  const refreshListing = useWorkdirStore((s) => s.refreshListing);
 
   const gitStatusEnabled = useAppStore((s) => s.appSettings.gitStatusEnabled);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
@@ -148,6 +153,12 @@ export function WorkdirPalette() {
     else if (changedOnly) setChangedOnly(false); // 데이터가 사라지므로 전체로 복귀.
   };
 
+  // 새로고침 버튼(이슈 #67): TTL을 무시하고 목록·git 상태를 강제로 다시 조회.
+  const onRefresh = () => {
+    void refreshListing(root, { force: true });
+    void refreshGit(root);
+  };
+
   // 브랜치 요약 문자열.
   const branchSummary = (() => {
     if (!gitStatusEnabled) return "git 상태 꺼짐";
@@ -176,8 +187,19 @@ export function WorkdirPalette() {
         <div className="wd-header">
           <div className="wd-branch" title={root}>
             {branchSummary}
+            {listing && (
+              <span className="wd-updated"> · {formatRelativeTime(listing.fetchedAt)} 기준</span>
+            )}
           </div>
           <div className="wd-header-actions">
+            <button
+              type="button"
+              className="wd-refresh"
+              title="새로고침"
+              onClick={onRefresh}
+            >
+              ↻
+            </button>
             {/* 파일 목록 ↔ 저장소 전체 커밋 로그 브라우저(이슈 #54). */}
             <div className="wd-seg" role="group" aria-label="뷰">
               <button

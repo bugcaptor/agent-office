@@ -8,6 +8,10 @@
 pub mod api_keys;
 mod bot;
 mod control;
+// Everything(es.exe) 백엔드(이슈 #67) -- markdown.rs 전용 옵트인 스캔 경로.
+mod file_index;
+// markdown.rs/workdir::list_workdir_files가 공유하는 병렬 스캔 워커.
+mod file_scan;
 // pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가
 // `agent_office_lib::ipc::commands::settings::GetAppSettingsResult`에 닿아야 한다.
 // 로직 변경 없음 — 가시성만 승격.
@@ -624,6 +628,7 @@ mod tests {
             external_editor: Default::default(),
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            file_index_backend: Default::default(),
             cli_enabled: false,
         }));
         let registry = Arc::new(SessionRegistry::new());
