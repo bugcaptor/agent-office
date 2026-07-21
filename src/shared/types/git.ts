@@ -17,6 +17,17 @@ export interface WorkdirListResult {
   truncated: boolean;
 }
 
+/** `workdir_search_files`(이슈 #67) 응답. 목록이 5000개 상한에 걸려 검색어
+ * 대상 파일이 애초에 안 잡혔을 때, Everything 백엔드로 다시 검색한 결과.
+ * `usedIndex`가 false면 Everything을 쓰지 않았거나(Walker 백엔드/빈 쿼리)
+ * es.exe가 실패해 폴백했다는 뜻 — 이때 `files`는 항상 빈 배열이고, 호출부는
+ * 기존 클라이언트 fuzzy 필터로 되돌아가야 한다. */
+export interface WorkdirSearchResult {
+  files: WorkdirFileEntry[];
+  truncated: boolean;
+  usedIndex: boolean;
+}
+
 /** 파일 하나의 git 상태. `status`는 표시용 단일 문자(M/A/D/R/U/? 등),
  * `xy`는 porcelain v2 원문 2글자(스테이지 X + 워킹트리 Y, 툴팁용). */
 export interface GitFileStatus {

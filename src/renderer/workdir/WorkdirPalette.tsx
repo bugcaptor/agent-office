@@ -13,13 +13,19 @@
 //
 // 헤더 브랜치 요약 옆에 파일 목록 캐시의 기준 시각("N분 전 기준")을 보여주고,
 // 새로고침 버튼으로 TTL과 무관하게 목록·git 상태를 강제 재조회한다(이슈 #67).
+//
+// 서버사이드 검색(이슈 #67 후속): Everything 백엔드 + "전체" 필터 + 파일 목록
+// 뷰에서 쿼리가 2글자 이상이면 workdirStore.setQuery가 디바운스 후 es.exe로
+// 다시 검색한다(listing의 5000개 상한 밖 파일도 찾기 위함). 활성 검색 결과가
+// 있으면(searchActive) 그 결과를 rank-only(fuzzyRank, 탈락 없음)로 보여주고,
+// 아니면 기존처럼 이미 가져온 목록 안에서 fuzzyFilter(탈락 있음)로 거른다.
 import { useEffect, useMemo, useRef } from "react";
 import { useWorkdirStore } from "./workdirStore";
 import { WorkdirDetailPane } from "./WorkdirDetailPane";
 import { WorkdirRepoLogPane } from "./WorkdirRepoLogPane";
 import { statusLabel } from "./status";
 import { useAppStore } from "../store/appStore";
-import { fuzzyFilter } from "../markdown/fuzzy";
+import { fuzzyFilter, fuzzyRank } from "../markdown/fuzzy";
 import { formatRelativeTime } from "../shared/relativeTime";
 import type { GitFileStatus } from "@shared/types";
 
@@ -40,6 +46,8 @@ function basename(path: string): string {
 export function WorkdirPalette() {
   const palette = useWorkdirStore((s) => s.palette);
   const listing = useWorkdirStore((s) => (s.palette ? s.listing[s.palette.root] : undefined));
+  const search = useWorkdirStore((s) => s.search);
+  const searchLoading = useWorkdirStore((s) => s.searchLoading);
   const git = useWorkdirStore((s) => (s.palette ? s.git[s.palette.root] : undefined));
   const gitLoading = useWorkdirStore((s) => (s.palette ? !!s.gitLoading[s.palette.root] : false));
   const detailOpen = useWorkdirStore((s) => s.detail !== null);
@@ -90,8 +98,37 @@ export function WorkdirPalette() {
     });
   }, [changedOnly, hasGit, git, listing, gitMap]);
 
-  // 퍼지 필터(원본 참조 안정 시에만 재계산).
-  const results = useMemo(() => fuzzyFilter(rows, query).map((r) => r.item), [rows, query]);
+  // 서버사이드(Everything) 검색이 활성인지(이슈 #67): 현재 root·query와
+  // 정확히 일치하고, "전체" 필터(changedOnly 아님)·파일 목록 뷰일 때만 우선한다
+  // (changedOnly/log 뷰는 애초에 setQuery가 search를 채우지 않지만, 응답이
+  // 도착한 뒤 사용자가 필터를 바꿨을 수 있어 여기서도 다시 확인한다).
+  const searchActive =
+    !changedOnly &&
+    viewMode === "files" &&
+    !!search &&
+    search.root === root &&
+    search.query === query &&
+    search.files.length > 0;
+
+  // 서버 검색 결과에도 기존 목록과 동일하게 gitMap 뱃지를 얹는다.
+  const searchRows: RowItem[] = useMemo(() => {
+    if (!searchActive || !search) return [];
+    return search.files.map((f) => {
+      const g = gitMap.get(f.relPath);
+      return { relPath: f.relPath, name: f.name, status: g?.status, xy: g?.xy };
+    });
+  }, [searchActive, search, gitMap]);
+
+  // 퍼지 필터(원본 참조 안정 시에만 재계산). 서버 검색이 활성이면 서버가 이미
+  // 후보를 좁혀 줬으므로 탈락 없는 rank-only 정렬(fuzzyRank), 아니면 기존
+  // 클라이언트 필터(fuzzyFilter).
+  const results = useMemo(
+    () =>
+      searchActive
+        ? fuzzyRank(searchRows, query).map((r) => r.item)
+        : fuzzyFilter(rows, query).map((r) => r.item),
+    [searchActive, searchRows, rows, query],
+  );
 
   const selected = Math.min(
     Math.max(palette?.selectedIndex ?? 0, 0),
@@ -269,9 +306,13 @@ export function WorkdirPalette() {
         />
         <div className="wd-body">
           <div className="wd-list-pane">
-            {listing?.truncated && !changedOnly && (
-              <div className="wd-note">파일이 많아 일부(5000개)만 표시됩니다.</div>
+            {searchActive && search?.truncated ? (
+              <div className="wd-note">일치 항목이 많아 일부(5000개)만 표시됩니다.</div>
+            ) : (
+              listing?.truncated &&
+              !changedOnly && <div className="wd-note">파일이 많아 일부(5000개)만 표시됩니다.</div>
             )}
+            {searchLoading && <div className="wd-note wd-note-dim">검색 중…</div>}
             {git?.timedOut && (
               <div className="wd-note">
                 git 상태 조회가 시간 초과됐습니다. 설정에서 끌 수 있습니다.

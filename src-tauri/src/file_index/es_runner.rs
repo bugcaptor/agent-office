@@ -35,6 +35,38 @@ pub fn find_gitignore_files(canon_root: &Path) -> Option<Vec<PathBuf>> {
     Some(files)
 }
 
+/// 팔레트 검색어(공백 구분 토큰)를 es.exe 쿼리 문법으로 변환한다. 각 토큰의
+/// `"` 문자를 제거한 뒤 `path:"<tok>"`로 감싸 AND 결합하고, 맨 앞에
+/// `file:`(디렉터리 제외, 파일만 매칭)을 붙인다. 예: `workdir tsx` ->
+/// `file: path:"workdir" path:"tsx"`. 토큰이 하나도 없으면(빈 문자열/공백뿐)
+/// `None` -- 호출부가 검색을 시도조차 하지 않게 한다.
+pub fn build_search_query(user_query: &str) -> Option<String> {
+    let tokens: Vec<String> = user_query
+        .split_whitespace()
+        .map(|tok| tok.replace('"', ""))
+        .filter(|tok| !tok.is_empty())
+        .collect();
+    if tokens.is_empty() {
+        return None;
+    }
+    let path_terms = tokens
+        .iter()
+        .map(|tok| format!(r#"path:"{tok}""#))
+        .collect::<Vec<_>>()
+        .join(" ");
+    Some(format!("file: {path_terms}"))
+}
+
+/// root 아래에서 사용자 검색어(팔레트 입력)와 일치하는 파일(절대경로)을
+/// es.exe로 찾는다. `build_search_query`가 `None`이면(빈 검색어) 여기서도
+/// `None` -- 호출부가 "검색 안 함"과 "es.exe 실패"를 구분하지 않고 동일하게
+/// 폴백 처리할 수 있게 한다.
+pub fn find_files_matching(canon_root: &Path, user_query: &str) -> Option<Vec<PathBuf>> {
+    let query = build_search_query(user_query)?;
+    let output = run_es(canon_root, &query)?;
+    Some(parse_paths_under_root(canon_root, &output))
+}
+
 /// stdout 원문을 줄 단위로 잘라 canon_root 하위의 절대경로만 남긴다.
 fn parse_paths_under_root(canon_root: &Path, output: &[u8]) -> Vec<PathBuf> {
     String::from_utf8_lossy(output)
@@ -178,5 +210,36 @@ mod tests {
         let raw = format!("\n{}\n\n", inside.display());
         let parsed = parse_paths_under_root(&canon, raw.as_bytes());
         assert_eq!(parsed, vec![inside]);
+    }
+
+    #[test]
+    fn build_search_query_wraps_single_token() {
+        assert_eq!(
+            build_search_query("workdir").as_deref(),
+            Some(r#"file: path:"workdir""#)
+        );
+    }
+
+    #[test]
+    fn build_search_query_joins_multiple_tokens() {
+        assert_eq!(
+            build_search_query("workdir tsx").as_deref(),
+            Some(r#"file: path:"workdir" path:"tsx""#)
+        );
+    }
+
+    #[test]
+    fn build_search_query_strips_quote_characters() {
+        // 토큰 안의 `"`는 쿼리 문법을 깨뜨리므로 제거하고 감싼다.
+        assert_eq!(
+            build_search_query(r#"ab"c"#).as_deref(),
+            Some(r#"file: path:"abc""#)
+        );
+    }
+
+    #[test]
+    fn build_search_query_whitespace_only_is_none() {
+        assert_eq!(build_search_query("   "), None);
+        assert_eq!(build_search_query(""), None);
     }
 }

@@ -1,7 +1,8 @@
 // src-tauri/src/file_index/mod.rs
 //
-// Everything(es.exe) 백엔드(이슈 #67 Stage 4) -- markdown.rs::list_markdown_files
-// 전용 옵트인 스캔 경로. 설정 `fileIndexBackend == everything`일 때만 시도되고,
+// Everything(es.exe) 백엔드(이슈 #67 Stage 4·서버사이드 검색은 Stage 후속) --
+// markdown.rs::list_markdown_files와 workdir 팔레트의 서버사이드 검색이 함께
+// 쓰는 옵트인 스캔 경로. 설정 `fileIndexBackend == everything`일 때만 시도되고,
 // es.exe 부재/실패/타임아웃이면 조용히 `None`을 돌려줘 호출부가 기존
 // 워커(WalkBuilder, file_scan::walk_files) 경로로 폴백하게 한다.
 //
@@ -47,6 +48,26 @@ fn strip_verbatim_prefix(p: &Path) -> PathBuf {
 pub fn list_markdown_files_via_everything(canon_root: &Path) -> Option<(Vec<ScannedFile>, bool)> {
     let root = strip_verbatim_prefix(canon_root);
     let candidates = es_runner::find_markdown_candidates(&root)?;
+    let gitignore_files = es_runner::find_gitignore_files(&root)?;
+    Some(gitignore_filter::build_result(
+        &root,
+        &gitignore_files,
+        candidates,
+    ))
+}
+
+/// Everything 백엔드로 root 아래에서 `user_query`와 일치하는 파일을 검색한다
+/// (이슈 #67 workdir 팔레트 서버사이드 검색). `list_markdown_files_via_everything`과
+/// 대칭 구조 -- 후보 조회·`.gitignore` 목록 조회 중 하나라도 실패하면(`None`)
+/// 전체를 폴백 신호로 돌려준다. `user_query`가 비어 있으면(공백뿐)
+/// `find_files_matching`이 `None`을 주므로 여기서도 `None`이 된다(호출부가
+/// "빈 쿼리"와 "es.exe 실패"를 같은 폴백 경로로 처리).
+pub fn search_files_via_everything(
+    canon_root: &Path,
+    user_query: &str,
+) -> Option<(Vec<ScannedFile>, bool)> {
+    let root = strip_verbatim_prefix(canon_root);
+    let candidates = es_runner::find_files_matching(&root, user_query)?;
     let gitignore_files = es_runner::find_gitignore_files(&root)?;
     Some(gitignore_filter::build_result(
         &root,

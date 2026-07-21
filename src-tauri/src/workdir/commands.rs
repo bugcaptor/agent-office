@@ -1,6 +1,6 @@
 // src-tauri/src/workdir/commands.rs
 //
-// `#[tauri::command]` 얇은 래퍼 8개. lib.rs의 `tauri::generate_handler![...]`가
+// `#[tauri::command]` 얇은 래퍼 9개. lib.rs의 `tauri::generate_handler![...]`가
 // `workdir::workdir_*` 경로로 이 함수들을 직접 등록하므로(mod.rs의
 // `pub use commands::*;`로 재수출), 함수 시그니처와 이름은 그대로 유지해야 한다.
 //
@@ -12,9 +12,10 @@ use super::diff::{
     git_commit_files, git_diff_commit, git_diff_file, git_file_history, git_repo_log,
     launch_difftool,
 };
-use super::listing::list_workdir_files;
+use super::listing::{list_workdir_files, search_workdir_files};
 use super::model::{
     GitCommitFilesResult, GitDiffResult, GitFileHistoryResult, GitStatusResult, WorkdirListResult,
+    WorkdirSearchResult,
 };
 use super::status::collect_git_status;
 
@@ -23,6 +24,32 @@ use super::status::collect_git_status;
 #[tauri::command(rename_all = "camelCase")]
 pub async fn workdir_list_files(root: String) -> Result<WorkdirListResult, String> {
     list_workdir_files(&crate::session::manager::expand_tilde(root))
+}
+
+/// `search_workdir_files`의 Tauri 커맨드 래퍼(이슈 #67 -- 목록이 5000개
+/// 상한에 걸려 잘린 뒤라도 팔레트 검색어로 Everything 인덱스를 다시 훑을 수
+/// 있게 한다). 백엔드 설정 게이팅은 여기서 한다: `fileIndexBackend`가
+/// `Walker`면 서버 검색을 아예 시도하지 않고 `usedIndex: false` + 빈 목록을
+/// 즉시 돌려준다(프런트는 기존 클라이언트 fuzzy 필터로 폴백). `Everything`이면
+/// `search_workdir_files`에 위임하고, es.exe 실패/빈 쿼리로 `usedIndex: false`가
+/// 와도 그대로 프런트에 전달한다(같은 폴백 신호).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn workdir_search_files(
+    root: String,
+    query: String,
+    app_state: tauri::State<'_, crate::state::AppState>,
+) -> Result<WorkdirSearchResult, String> {
+    use crate::persistence::settings_store::FileIndexBackend;
+
+    let backend = app_state.settings.read().unwrap().file_index_backend;
+    if backend != FileIndexBackend::Everything {
+        return Ok(WorkdirSearchResult {
+            files: Vec::new(),
+            truncated: false,
+            used_index: false,
+        });
+    }
+    search_workdir_files(&crate::session::manager::expand_tilde(root), &query)
 }
 
 /// `collect_git_status`의 Tauri 커맨드 래퍼.

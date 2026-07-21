@@ -1,10 +1,14 @@
 // src/renderer/markdown/fuzzy.ts
 //
-// 의존성 없는 자체 퍼지 매칭(이슈 #10 팔레트용). VS Code Ctrl+P 유사 순위:
-// 쿼리 문자를 대상 문자열의 부분 수열(subsequence)로 매칭하되, 연속 매치·
-// 단어 경계(구분자 뒤, 카멜케이스 전환)·선두 매치에 가산점을 주어 점수를 낸다.
-// 파일명 매치는 경로 매치보다 가중치를 높게 둔다(같은 쿼리라도 파일명에 걸린
-// 후보가 위로 오게).
+// 의존성 없는 자체 퍼지 매칭(이슈 #10 팔레트용, 워크폴더 팔레트도 공유). VS Code
+// Ctrl+P 유사 순위: 쿼리 문자를 대상 문자열의 부분 수열(subsequence)로
+// 매칭하되, 연속 매치·단어 경계(구분자 뒤, 카멜케이스 전환)·선두 매치에
+// 가산점을 주어 점수를 낸다. 파일명 매치는 경로 매치보다 가중치를 높게 둔다
+// (같은 쿼리라도 파일명에 걸린 후보가 위로 오게).
+//
+// `fuzzyFilter`는 매치 실패 항목을 탈락시키는 반면, `fuzzyRank`(이슈 #67)는
+// 탈락 없이 순위만 매긴다 — 서버(Everything)가 이미 검색어로 후보를 좁혀 준
+// 목록에 다시 이 필터를 걸어 0건으로 만드는 걸 막기 위함이다.
 
 /** 파일명 매치에 얹는 가산점 — 경로만 걸린 후보보다 확실히 위로 올린다. */
 const NAME_WEIGHT = 12;
@@ -88,6 +92,39 @@ export function fuzzyFilter<T extends { name: string; relPath: string }>(
     );
     ranked.push({ item, score });
   }
+  ranked.sort((a, b) => b.score - a.score || a.item.relPath.localeCompare(b.item.relPath));
+  return ranked;
+}
+
+/**
+ * `fuzzyFilter`와 달리 매치 실패해도 탈락시키지 않고 순위만 매긴다(이슈 #67
+ * 워크폴더 팔레트 서버사이드 검색용). 서버(Everything)가 이미 검색어로 후보를
+ * 좁혀 준 목록을 다시 클라이언트 퍼지 판정으로 걸러 0건으로 만드는 걸 막기
+ * 위함 — 서버 쿼리(`path:` 토큰 AND)와 클라이언트 부분수열 판정 기준이 미세하게
+ * 달라 여기서는 매치 실패할 수 있기 때문이다. 매치 실패 항목은 점수 없이
+ * (`Number.NEGATIVE_INFINITY`) 맨 뒤로 밀려날 뿐 목록에는 그대로 남는다.
+ * 빈 쿼리는 `fuzzyFilter`와 동일하게 relPath 사전순.
+ */
+export function fuzzyRank<T extends { name: string; relPath: string }>(
+  items: readonly T[],
+  query: string,
+): FuzzyRanked<T>[] {
+  const trimmed = query.trim();
+  if (trimmed.length === 0) {
+    return [...items]
+      .sort((a, b) => a.relPath.localeCompare(b.relPath))
+      .map((item) => ({ item, score: 0 }));
+  }
+
+  const ranked: FuzzyRanked<T>[] = items.map((item) => {
+    const nameScore = fuzzyScore(trimmed, item.name);
+    const pathScore = fuzzyScore(trimmed, item.relPath);
+    const score = Math.max(
+      nameScore !== null ? nameScore + NAME_WEIGHT : Number.NEGATIVE_INFINITY,
+      pathScore !== null ? pathScore : Number.NEGATIVE_INFINITY,
+    );
+    return { item, score };
+  });
   ranked.sort((a, b) => b.score - a.score || a.item.relPath.localeCompare(b.item.relPath));
   return ranked;
 }

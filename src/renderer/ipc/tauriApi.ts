@@ -255,6 +255,10 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.workdirListFiles, { root });
   },
 
+  async workdirSearchFiles(root, query) {
+    return await invoke(Commands.workdirSearchFiles, { root, query });
+  },
+
   async workdirGitStatus(root) {
     return await invoke(Commands.workdirGitStatus, { root });
   },

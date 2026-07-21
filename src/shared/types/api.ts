@@ -33,6 +33,7 @@ import type {
 } from './markdown';
 import type {
   WorkdirListResult,
+  WorkdirSearchResult,
   GitStatusResult,
   GitDiffResult,
   GitDiffMode,
@@ -184,6 +185,13 @@ export interface AgentOfficeApi {
   /** `root` 하위의 전체 파일 목록(이슈 #11, .gitignore 존중·hidden 스킵).
    * 상한(5000) 초과 시 `truncated=true`. */
   workdirListFiles(root: string): Promise<WorkdirListResult>;
+  /** `root` 아래에서 `query`와 일치하는 파일을 서버사이드(Everything)로
+   * 검색한다(이슈 #67) — `workdirListFiles`가 5000개 상한에 걸려 잘랐더라도,
+   * 이 검색은 인덱스를 다시 훑어 상한 밖 파일도 찾아낼 수 있다. Walker
+   * 백엔드/빈 쿼리/es.exe 실패는 모두 `usedIndex=false` + 빈 `files`로
+   * 조용히 답한다(에러가 아니다) — 호출부는 이 신호로 기존 클라이언트 fuzzy
+   * 필터로 되돌아가야 한다. */
+  workdirSearchFiles(root: string, query: string): Promise<WorkdirSearchResult>;
   /** `root`의 git 상태(porcelain v2). 저장소 아님/타임아웃은 reject가 아니라
    * `isRepo=false`/`timedOut=true` 필드로 표현한다. */
   workdirGitStatus(root: string): Promise<GitStatusResult>;

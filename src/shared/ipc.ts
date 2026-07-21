@@ -74,6 +74,10 @@ export const Commands = {
   // 작업 폴더 보기(이슈 #11) — 에이전트 cwd를 root로 전체 파일 목록과, 파일별
   // git 상태(porcelain v2)를 돌려준다. git 조회는 거대 저장소 대비 3초 타임아웃.
   workdirListFiles: "workdir_list_files",
+  // 서버사이드 검색(이슈 #67) — 목록의 5000개 상한 밖 파일도 Everything
+  // 백엔드가 켜져 있으면 검색어로 다시 찾아온다. Walker 백엔드/빈 쿼리/es.exe
+  // 실패는 모두 usedIndex=false로 조용히 폴백(프런트가 클라이언트 필터로 전환).
+  workdirSearchFiles: "workdir_search_files",
   workdirGitStatus: "workdir_git_status",
   // 변경점(diff)·이력(history) 확인(이슈 #11 후속). 전부 읽기 전용이며
   // difftool만 외부 GUI 도구를 fire-and-forget으로 띄운다.

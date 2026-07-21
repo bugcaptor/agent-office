@@ -21,6 +21,18 @@ pub struct WorkdirFileEntry {
     pub name: String,
 }
 
+/// 서버사이드 검색(Everything) 결과(이슈 #67). `usedIndex`가 false면
+/// Everything을 시도하지 않았거나(Walker 백엔드/빈 쿼리) es.exe가 실패해
+/// 폴백했다는 뜻 -- 이 경우 프런트는 `files`(빈 목록)를 무시하고 기존
+/// 클라이언트 fuzzy 필터(이미 가져온 목록 내 검색)로 되돌아간다.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkdirSearchResult {
+    pub files: Vec<WorkdirFileEntry>,
+    pub truncated: bool,
+    pub used_index: bool,
+}
+
 /// git 상태 파일 항목 하나. `path`는 저장소 루트 기준 상대경로(git이 준 그대로,
 /// '/' 구분), `status`는 표시용 단일 문자 뱃지, `xy`는 porcelain v2 원문 2글자
 /// (스테이지 X + 워킹트리 Y, 툴팁용).

@@ -2,7 +2,7 @@
 //
 // 퍼지 매칭 순위(이슈 #10). 순수 로직이라 기본 node 환경.
 import { describe, expect, it } from "vitest";
-import { fuzzyScore, fuzzyFilter } from "../fuzzy";
+import { fuzzyScore, fuzzyFilter, fuzzyRank } from "../fuzzy";
 
 interface Entry {
   relPath: string;
@@ -67,5 +67,33 @@ describe("fuzzyFilter", () => {
     const items = [entry("z/a.md"), entry("a/a.md")];
     const out = fuzzyFilter(items, "a").map((r) => r.item.relPath);
     expect(out).toEqual(["a/a.md", "z/a.md"]);
+  });
+});
+
+describe("fuzzyRank(이슈 #67 -- 서버사이드 검색 결과 rank-only 정렬)", () => {
+  it("fuzzyFilter와 달리 매치 실패 항목도 탈락시키지 않고 남긴다", () => {
+    const items = [entry("readme.md"), entry("license.txt")];
+    const out = fuzzyRank(items, "read").map((r) => r.item.relPath);
+    // fuzzyFilter라면 license.txt는 제외되지만, fuzzyRank는 순위만 매겨 남긴다.
+    expect(out).toHaveLength(2);
+    expect(out).toContain("license.txt");
+  });
+
+  it("매치되는 항목이 매치 안 되는 항목보다 위로 온다", () => {
+    const items = [entry("license.txt"), entry("readme.md")];
+    const out = fuzzyRank(items, "read").map((r) => r.item.relPath);
+    expect(out).toEqual(["readme.md", "license.txt"]);
+  });
+
+  it("빈 쿼리는 fuzzyFilter와 동일하게 relPath 사전순", () => {
+    const items = [entry("b.md"), entry("a.md"), entry("docs/c.md")];
+    const out = fuzzyRank(items, "").map((r) => r.item.relPath);
+    expect(out).toEqual(["a.md", "b.md", "docs/c.md"]);
+  });
+
+  it("파일명 매치가 경로만 매치되는 후보보다 위로 온다(fuzzyFilter와 동일 가중치)", () => {
+    const items = [entry("docs/read-team/notes.md"), entry("README.md")];
+    const out = fuzzyRank(items, "read").map((r) => r.item.relPath);
+    expect(out[0]).toBe("README.md");
   });
 });

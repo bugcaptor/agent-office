@@ -485,6 +485,7 @@ pub fn run() {
             markdown::markdown_read_file,
             markdown::markdown_write_file,
             workdir::workdir_list_files,
+            workdir::workdir_search_files,
             workdir::workdir_git_status,
             workdir::workdir_diff_file,
             workdir::workdir_file_history,

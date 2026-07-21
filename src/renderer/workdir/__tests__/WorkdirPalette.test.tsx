@@ -7,32 +7,43 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listFiles, gitStatus, openInVscode, updateSettings, diffFile, fileHistory, diffCommit, difftool } =
-  vi.hoisted(() => ({
-    listFiles: vi.fn().mockResolvedValue({ files: [], truncated: false }),
-    gitStatus: vi.fn().mockResolvedValue({
-      isRepo: true,
-      branch: "main",
-      ahead: 0,
-      behind: 0,
-      entries: [],
-      timedOut: false,
-    }),
-    openInVscode: vi.fn().mockResolvedValue(undefined),
-    updateSettings: vi.fn(),
-    diffFile: vi
-      .fn()
-      .mockResolvedValue({ diff: "@@ -1 +1 @@\n-a\n+b\n", binary: false, truncated: false, timedOut: false }),
-    fileHistory: vi.fn().mockResolvedValue({ commits: [], hasMore: false, timedOut: false }),
-    diffCommit: vi.fn().mockResolvedValue({ diff: "", binary: false, truncated: false, timedOut: false }),
-    difftool: vi.fn().mockResolvedValue(undefined),
-  }));
+const {
+  listFiles,
+  searchFiles,
+  gitStatus,
+  openInVscode,
+  updateSettings,
+  diffFile,
+  fileHistory,
+  diffCommit,
+  difftool,
+} = vi.hoisted(() => ({
+  listFiles: vi.fn().mockResolvedValue({ files: [], truncated: false }),
+  searchFiles: vi.fn().mockResolvedValue({ files: [], truncated: false, usedIndex: false }),
+  gitStatus: vi.fn().mockResolvedValue({
+    isRepo: true,
+    branch: "main",
+    ahead: 0,
+    behind: 0,
+    entries: [],
+    timedOut: false,
+  }),
+  openInVscode: vi.fn().mockResolvedValue(undefined),
+  updateSettings: vi.fn(),
+  diffFile: vi
+    .fn()
+    .mockResolvedValue({ diff: "@@ -1 +1 @@\n-a\n+b\n", binary: false, truncated: false, timedOut: false }),
+  fileHistory: vi.fn().mockResolvedValue({ commits: [], hasMore: false, timedOut: false }),
+  diffCommit: vi.fn().mockResolvedValue({ diff: "", binary: false, truncated: false, timedOut: false }),
+  difftool: vi.fn().mockResolvedValue(undefined),
+}));
 
 const settings = { gitStatusEnabled: true };
 
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     workdirListFiles: (...a: unknown[]) => listFiles(...a),
+    workdirSearchFiles: (...a: unknown[]) => searchFiles(...a),
     workdirGitStatus: (...a: unknown[]) => gitStatus(...a),
     openInVscode: (...a: unknown[]) => openInVscode(...a),
     workdirDiffFile: (...a: unknown[]) => diffFile(...a),
@@ -182,5 +193,87 @@ describe("WorkdirPalette", () => {
     // 상세만 닫히고 팔레트는 유지.
     expect(useWorkdirStore.getState().detail).toBeNull();
     expect(useWorkdirStore.getState().palette).not.toBeNull();
+  });
+});
+
+describe("서버사이드 검색(이슈 #67)", () => {
+  // 아래 테스트들은 디바운스·IPC 흐름(workdirStore.test.ts에서 검증)을 다시
+  // 타지 않고, 스토어의 `search`/`searchLoading`을 직접 세팅해 팔레트가 그
+  // 상태를 어떻게 렌더링하는지만 확인한다.
+
+  it("활성 search가 있으면 서버 결과를 rank-only로(탈락 없이) 보여준다", () => {
+    useWorkdirStore.setState({
+      palette: {
+        root: "/root",
+        agentId: "agent1",
+        query: "wd",
+        selectedIndex: 0,
+        changedOnly: false,
+        viewMode: "files",
+      },
+      search: {
+        root: "/root",
+        query: "wd",
+        files: [
+          { relPath: "src/a.rs", name: "a.rs" }, // git M 뱃지가 얹혀야 한다.
+          { relPath: "docs/wd-notes.md", name: "wd-notes.md" },
+        ],
+        truncated: false,
+      },
+    });
+    render(<WorkdirPalette />);
+
+    // 목록 캐시(listing)의 FILES가 아니라 search.files 기준으로 렌더돼야 한다.
+    expect(screen.getByText("wd-notes.md")).toBeTruthy();
+    expect(screen.queryByText("b.rs")).toBeNull(); // listing에는 있지만 search엔 없음.
+    // 기존과 동일하게 gitMap 뱃지가 얹힌다.
+    expect(screen.getAllByText("M").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("search.truncated면 절단 전용 문구를 보여준다", () => {
+    useWorkdirStore.setState({
+      palette: {
+        root: "/root",
+        agentId: "agent1",
+        query: "wd",
+        selectedIndex: 0,
+        changedOnly: false,
+        viewMode: "files",
+      },
+      search: {
+        root: "/root",
+        query: "wd",
+        files: [{ relPath: "docs/wd-notes.md", name: "wd-notes.md" }],
+        truncated: true,
+      },
+    });
+    render(<WorkdirPalette />);
+    expect(screen.getByText("일치 항목이 많아 일부(5000개)만 표시됩니다.")).toBeTruthy();
+    // 목록 절단 문구(listing.truncated)는 이 경우 뜨지 않는다.
+    expect(screen.queryByText("파일이 많아 일부(5000개)만 표시됩니다.")).toBeNull();
+  });
+
+  it("searchLoading이면 기존 결과를 유지한 채 '검색 중…'을 얹는다", () => {
+    useWorkdirStore.setState({
+      palette: {
+        root: "/root",
+        agentId: "agent1",
+        query: "wd",
+        selectedIndex: 0,
+        changedOnly: false,
+        viewMode: "files",
+      },
+      search: {
+        root: "/root",
+        query: "wd",
+        files: [{ relPath: "docs/wd-notes.md", name: "wd-notes.md" }],
+        truncated: false,
+      },
+      searchLoading: true,
+    });
+    render(<WorkdirPalette />);
+    expect(screen.getByText("검색 중…")).toBeTruthy();
+    // 로딩 중에도 기존(직전) 결과는 그대로 보인다.
+    expect(screen.getByText("wd-notes.md")).toBeTruthy();
   });
 });

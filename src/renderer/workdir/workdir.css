@@ -174,6 +174,11 @@
   font-size: 0.72rem;
   border-bottom: 1px solid var(--border-dark);
 }
+/* 서버사이드 검색 진행 표시(이슈 #67) — 경고가 아니라 진행 상태이므로 옅은
+   톤(--text-dim)으로, 기존 결과 위에 얹혀도 튀지 않게 한다. */
+.wd-note-dim {
+  color: var(--text-dim);
+}
 .wd-empty {
   padding: calc(var(--unit) * 4);
   color: var(--text-dim);

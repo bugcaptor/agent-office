@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   listFiles,
+  searchFiles,
   gitStatus,
   openInVscode,
   openMarkdownFile,
@@ -17,6 +18,7 @@ const {
   difftool,
 } = vi.hoisted(() => ({
   listFiles: vi.fn(),
+  searchFiles: vi.fn(),
   gitStatus: vi.fn(),
   openInVscode: vi.fn(),
   openMarkdownFile: vi.fn(),
@@ -28,12 +30,16 @@ const {
   difftool: vi.fn(),
 }));
 
-// gitStatusEnabled를 테스트마다 바꾸기 위한 가변 셋팅.
-const settings = { gitStatusEnabled: true };
+// gitStatusEnabled/fileIndexBackend를 테스트마다 바꾸기 위한 가변 셋팅.
+const settings: { gitStatusEnabled: boolean; fileIndexBackend: "walker" | "everything" } = {
+  gitStatusEnabled: true,
+  fileIndexBackend: "walker",
+};
 
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     workdirListFiles: (...a: unknown[]) => listFiles(...a),
+    workdirSearchFiles: (...a: unknown[]) => searchFiles(...a),
     workdirGitStatus: (...a: unknown[]) => gitStatus(...a),
     openInVscode: (...a: unknown[]) => openInVscode(...a),
     workdirDiffFile: (...a: unknown[]) => diffFile(...a),
@@ -67,7 +73,9 @@ const cleanRepo = {
 beforeEach(() => {
   useWorkdirStore.setState(initialState, true);
   settings.gitStatusEnabled = true;
+  settings.fileIndexBackend = "walker";
   listFiles.mockReset().mockResolvedValue({ files: [], truncated: false });
+  searchFiles.mockReset().mockResolvedValue({ files: [], truncated: false, usedIndex: false });
   gitStatus.mockReset().mockResolvedValue(cleanRepo);
   openInVscode.mockReset().mockResolvedValue(undefined);
   openMarkdownFile.mockReset().mockResolvedValue(undefined);
@@ -487,5 +495,137 @@ describe("TTL/캐시 재사용(이슈 #67)", () => {
 
     expect(listFiles).toHaveBeenCalledTimes(1);
     expect(useWorkdirStore.getState().listing["/root"].files).toEqual([{ relPath: "a.rs", name: "a.rs" }]);
+  });
+});
+
+describe("서버사이드 검색(이슈 #67)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("Everything 백엔드 + 2글자 이상 쿼리는 250ms 디바운스 후 서버 검색을 호출한다", async () => {
+    settings.fileIndexBackend = "everything";
+    searchFiles.mockResolvedValueOnce({
+      files: [{ relPath: "src/workdir.tsx", name: "workdir.tsx" }],
+      truncated: false,
+      usedIndex: true,
+    });
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    s.setQuery("wd");
+    // 디바운스 대기 중에는 아직 호출되지 않지만 로딩 표시는 즉시 켜진다.
+    expect(searchFiles).not.toHaveBeenCalled();
+    expect(useWorkdirStore.getState().searchLoading).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(250);
+    expect(searchFiles).toHaveBeenCalledWith("/root", "wd");
+    expect(useWorkdirStore.getState().search).toEqual({
+      root: "/root",
+      query: "wd",
+      files: [{ relPath: "src/workdir.tsx", name: "workdir.tsx" }],
+      truncated: false,
+    });
+    expect(useWorkdirStore.getState().searchLoading).toBe(false);
+  });
+
+  it("usedIndex=false면 search를 null로 두어 클라이언트 필터로 폴백시킨다", async () => {
+    settings.fileIndexBackend = "everything";
+    searchFiles.mockResolvedValueOnce({ files: [], truncated: false, usedIndex: false });
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    s.setQuery("wd");
+    await vi.advanceTimersByTimeAsync(250);
+    expect(useWorkdirStore.getState().search).toBeNull();
+    expect(useWorkdirStore.getState().searchLoading).toBe(false);
+  });
+
+  it("Walker 백엔드는 서버 검색을 시도하지 않는다", async () => {
+    settings.fileIndexBackend = "walker";
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    s.setQuery("wd");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(searchFiles).not.toHaveBeenCalled();
+    expect(useWorkdirStore.getState().search).toBeNull();
+  });
+
+  it("2글자 미만 쿼리는 시도하지 않는다", async () => {
+    settings.fileIndexBackend = "everything";
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    s.setQuery("w");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(searchFiles).not.toHaveBeenCalled();
+    expect(useWorkdirStore.getState().searchLoading).toBe(false);
+  });
+
+  it("변경만(changedOnly) 필터에서는 시도하지 않는다", async () => {
+    settings.fileIndexBackend = "everything";
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    s.setChangedOnly(true);
+    s.setQuery("wd");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(searchFiles).not.toHaveBeenCalled();
+  });
+
+  it("타이핑 중 더 최신 쿼리가 나가면 이전 디바운스 타이머는 취소된다", async () => {
+    settings.fileIndexBackend = "everything";
+    searchFiles.mockResolvedValue({ files: [], truncated: false, usedIndex: true });
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    s.setQuery("wo");
+    await vi.advanceTimersByTimeAsync(100); // 아직 250ms가 안 지남.
+    s.setQuery("wor"); // 이전 타이머를 취소하고 새로 250ms 대기.
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(searchFiles).toHaveBeenCalledTimes(1);
+    expect(searchFiles).toHaveBeenCalledWith("/root", "wor");
+  });
+
+  it("응답이 늦게 도착해도 그 사이 더 최신 요청이 나갔으면(stale) 폐기한다", async () => {
+    settings.fileIndexBackend = "everything";
+    let resolveFirst!: (v: { files: unknown[]; truncated: boolean; usedIndex: boolean }) => void;
+    searchFiles.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    s.setQuery("wo");
+    await vi.advanceTimersByTimeAsync(250); // 첫 요청 발사(아직 pending).
+
+    searchFiles.mockResolvedValueOnce({
+      files: [{ relPath: "b.tsx", name: "b.tsx" }],
+      truncated: false,
+      usedIndex: true,
+    });
+    s.setQuery("wor"); // 더 최신 요청.
+    await vi.advanceTimersByTimeAsync(250);
+    expect(useWorkdirStore.getState().search).toMatchObject({ query: "wor" });
+
+    // 첫 요청 응답이 뒤늦게 도착 -- gen이 최신이 아니므로 무시돼야 한다.
+    resolveFirst({ files: [{ relPath: "stale.tsx", name: "stale.tsx" }], truncated: false, usedIndex: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useWorkdirStore.getState().search).toMatchObject({ query: "wor" });
+  });
+
+  it("closePalette/openPalette는 검색 상태를 초기화한다", async () => {
+    settings.fileIndexBackend = "everything";
+    searchFiles.mockResolvedValueOnce({
+      files: [{ relPath: "a.tsx", name: "a.tsx" }],
+      truncated: false,
+      usedIndex: true,
+    });
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    s.setQuery("wd");
+    await vi.advanceTimersByTimeAsync(250);
+    expect(useWorkdirStore.getState().search).not.toBeNull();
+
+    s.closePalette();
+    expect(useWorkdirStore.getState().search).toBeNull();
+    expect(useWorkdirStore.getState().searchLoading).toBe(false);
   });
 });

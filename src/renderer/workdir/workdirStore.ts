@@ -28,6 +28,14 @@
 //
 // 파일 열기(openEntry, 빠른 열기용): .md는 인앱 편집기(markdownStore.openFile)로
 // 위임하고, 그 외는 절대경로를 만들어 open_in_vscode로 외부 에디터에 넘긴다.
+//
+// 서버사이드 검색(이슈 #67): 목록(listing)은 5000개 상한에 걸려 잘릴 수 있어,
+// 그 밖의 파일은 클라이언트 fuzzy 필터로 찾을 수 없다. 설정
+// `fileIndexBackend`가 Everything이면 `setQuery`가 (디바운스 후) es.exe로
+// 다시 검색해 `search`를 채우고, 팔레트는 활성 `search`가 있으면 그 결과를
+// 우선 보여준다(WorkdirPalette.tsx의 `results` 분기). Walker 백엔드/짧은
+// 쿼리/변경만 필터/로그 뷰/es.exe 실패는 모두 `search: null`로 기존 클라이언트
+// 필터 경로를 그대로 쓴다.
 import { create, type StoreApi } from "zustand";
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
@@ -56,6 +64,20 @@ const LISTING_TTL_MS = 5 * 60_000;
 
 /** root별 refreshListing 진행 상태(모듈 수준 — 스토어 재생성과 무관하게 유지). */
 const listingInFlight = createInFlightTracker();
+
+/** 서버사이드(Everything) 검색 디바운스 지연(ms, 이슈 #67) — 타이핑 중 매
+ *  keystroke마다 es.exe를 부르지 않기 위함. */
+const SEARCH_DEBOUNCE_MS = 250;
+/** 서버사이드 검색을 시도할 최소 쿼리 길이. 한두 글자는 후보가 너무 많아
+ *  Everything 조회 자체가 무의미하다(클라이언트 fuzzy 필터로 충분). */
+const SEARCH_MIN_QUERY_LEN = 2;
+
+/** 팔레트 검색어 디바운스 타이머(모듈 수준 — 스토어 재생성과 무관하게 유지,
+ *  root/query가 바뀌면 이전 타이머를 취소한다). */
+let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+/** 서버사이드 검색 요청 세대 카운터. 응답 도착 시 이 값과 다르면(그 사이 더
+ *  최신 요청이 나갔으면) stale로 보고 폐기한다. */
+let searchGen = 0;
 
 /** 팔레트 뷰 모드: 파일 목록 / 저장소 전체 커밋 로그 브라우저(이슈 #54). */
 export type WorkdirViewMode = "files" | "log";
@@ -142,10 +164,25 @@ export interface WorkdirRepoLog {
   gen: number;
 }
 
+/** 서버사이드(Everything) 검색 결과(이슈 #67). `root`/`query`가 현재 팔레트와
+ *  일치할 때만 유효 — 팔레트 컴포넌트가 이 둘을 대조해 stale 응답을 걸러낸다. */
+export interface WorkdirSearchState {
+  root: string;
+  query: string;
+  files: WorkdirFileEntry[];
+  truncated: boolean;
+}
+
 interface WorkdirState {
   palette: WorkdirPaletteState | null;
   /** root별 목록 캐시(재오픈 즉시 표시용, 런타임 전용). */
   listing: Record<string, WorkdirListing>;
+  /** 서버사이드(Everything) 검색 결과(이슈 #67). null = 비활성 — 팔레트는
+   *  기존 클라이언트 fuzzy 필터로 표시한다. `setQuery`가 디바운스 후 채운다. */
+  search: WorkdirSearchState | null;
+  /** 서버사이드 검색 조회 진행 중(디바운스 대기~응답 도착까지) 여부. 기존
+   *  결과는 유지한 채 팔레트가 옅게 "검색 중…"을 얹는 용도. */
+  searchLoading: boolean;
   /** root별 git 상태 캐시(런타임 전용). */
   git: Record<string, GitStatusResult>;
   /** git 조회 진행 중 여부(root별). 헤더 스피너/상태 표시용. */
@@ -158,6 +195,9 @@ interface WorkdirState {
   /** 팔레트를 root로 연다(쿼리·선택 초기화) + 목록/ git 백그라운드 갱신. */
   openPalette(root: string, agentId: string): void;
   closePalette(): void;
+  /** 팔레트 쿼리를 갱신한다. 백엔드가 Everything이고 "files" 뷰·"전체"
+   *  필터(!changedOnly)·쿼리 2글자 이상이면 250ms 디바운스 후 서버사이드
+   *  검색(`search`)을 시도한다(이슈 #67) — 조건 미달이면 `search`를 비운다. */
   setQuery(query: string): void;
   setSelectedIndex(index: number): void;
   setChangedOnly(changedOnly: boolean): void;
@@ -264,15 +304,21 @@ function emptyRepoLog(root: string): WorkdirRepoLog {
 export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
   palette: null,
   listing: {},
+  search: null,
+  searchLoading: false,
   git: {},
   gitLoading: {},
   detail: null,
   repoLog: {},
 
   openPalette: (root, agentId) => {
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchGen++;
     set({
       palette: { root, agentId, query: "", selectedIndex: 0, changedOnly: false, viewMode: "files" },
       detail: null,
+      search: null,
+      searchLoading: false,
     });
     // 캐시가 있으면 즉시 표시된다. 목록 재스캔 여부(TTL)는 refreshListing
     // 내부가 판단하고, git 상태는 캐시 없이 매번 갱신한다.
@@ -280,10 +326,56 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     void get().refreshGit(root);
   },
 
-  closePalette: () => set({ palette: null, detail: null }),
+  closePalette: () => {
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchGen++;
+    set({ palette: null, detail: null, search: null, searchLoading: false });
+  },
 
-  setQuery: (query) =>
-    set((s) => (s.palette ? { palette: { ...s.palette, query, selectedIndex: 0 } } : s)),
+  setQuery: (query) => {
+    set((s) => (s.palette ? { palette: { ...s.palette, query, selectedIndex: 0 } } : s));
+
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+
+    const p = get().palette;
+    const backend = useAppStore.getState().appSettings.fileIndexBackend;
+    const eligible =
+      !!p &&
+      backend === "everything" &&
+      p.viewMode === "files" &&
+      !p.changedOnly &&
+      query.trim().length >= SEARCH_MIN_QUERY_LEN;
+
+    if (!eligible) {
+      set({ search: null, searchLoading: false });
+      return;
+    }
+
+    const root = p.root;
+    const gen = ++searchGen;
+    set({ searchLoading: true });
+    searchDebounceTimer = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await tauriApi.workdirSearchFiles(root, query);
+          const curP = get().palette;
+          // stale 가드: 그 사이 root/query가 바뀌었거나 더 최신 요청이 나갔으면 폐기.
+          if (gen !== searchGen || !curP || curP.root !== root || curP.query !== query) return;
+          if (!res.usedIndex) {
+            set({ search: null, searchLoading: false });
+          } else {
+            set({
+              search: { root, query, files: res.files, truncated: res.truncated },
+              searchLoading: false,
+            });
+          }
+        } catch (err) {
+          console.warn("workdir: 서버사이드 검색 실패", err);
+          if (gen === searchGen) set({ search: null, searchLoading: false });
+        }
+      })();
+    }, SEARCH_DEBOUNCE_MS);
+  },
 
   setSelectedIndex: (index) =>
     set((s) => (s.palette ? { palette: { ...s.palette, selectedIndex: index } } : s)),
