@@ -277,6 +277,7 @@ describe("AppSettings (opt-in 설정 계약)", () => {
       gitStatusEnabled: true,
       fileIndexBackend: "walker",
       cliEnabled: false,
+      keepAwakeEnabled: false,
     });
   });
 

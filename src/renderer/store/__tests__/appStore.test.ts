@@ -522,6 +522,7 @@ describe("app settings slice", () => {
       gitStatusEnabled: true,
       fileIndexBackend: "walker",
       cliEnabled: false,
+      keepAwakeEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(false);
   });
@@ -542,6 +543,7 @@ describe("app settings slice", () => {
         gitStatusEnabled: true,
         fileIndexBackend: "walker",
         cliEnabled: false,
+        keepAwakeEnabled: false,
       },
       true
     );
@@ -560,6 +562,7 @@ describe("app settings slice", () => {
       gitStatusEnabled: true,
       fileIndexBackend: "walker",
       cliEnabled: false,
+      keepAwakeEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(true);
   });
@@ -580,6 +583,7 @@ describe("app settings slice", () => {
       gitStatusEnabled: true,
       fileIndexBackend: "walker",
       cliEnabled: false,
+      keepAwakeEnabled: false,
     });
   });
 
@@ -599,6 +603,7 @@ describe("app settings slice", () => {
         gitStatusEnabled: true,
         fileIndexBackend: "walker",
         cliEnabled: false,
+        keepAwakeEnabled: false,
       },
       true
     );
@@ -624,6 +629,7 @@ describe("app settings slice", () => {
       gitStatusEnabled: true,
       fileIndexBackend: "walker",
       cliEnabled: false,
+      keepAwakeEnabled: false,
     });
   });
 

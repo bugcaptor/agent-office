@@ -36,6 +36,7 @@ describe("FirstRunDialog", () => {
         gitStatusEnabled: true,
         fileIndexBackend: "walker",
         cliEnabled: false,
+        keepAwakeEnabled: false,
       },
       false,
     );
@@ -59,6 +60,7 @@ describe("FirstRunDialog", () => {
         gitStatusEnabled: true,
         fileIndexBackend: "walker",
         cliEnabled: false,
+        keepAwakeEnabled: false,
       },
       true,
     );
@@ -82,6 +84,7 @@ describe("FirstRunDialog", () => {
       gitStatusEnabled: true,
       fileIndexBackend: "walker",
       cliEnabled: false,
+      keepAwakeEnabled: false,
     });
   });
 
@@ -101,6 +104,7 @@ describe("FirstRunDialog", () => {
         gitStatusEnabled: true,
         fileIndexBackend: "walker",
         cliEnabled: false,
+        keepAwakeEnabled: false,
       },
       true,
     );

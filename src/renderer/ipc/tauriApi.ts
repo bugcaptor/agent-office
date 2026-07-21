@@ -136,6 +136,10 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.setAppSettings, { settings });
   },
 
+  async setKeepAwake(active: boolean) {
+    await invoke(Commands.setKeepAwake, { active });
+  },
+
   async controlStatus() {
     return await invoke(Commands.controlStatus);
   },

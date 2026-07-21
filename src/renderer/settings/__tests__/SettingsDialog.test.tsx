@@ -40,6 +40,7 @@ describe("SettingsDialog", () => {
         gitStatusEnabled: true,
         fileIndexBackend: "walker",
         cliEnabled: false,
+        keepAwakeEnabled: false,
       },
       false,
     );
@@ -65,6 +66,7 @@ describe("SettingsDialog", () => {
       gitStatusEnabled: true,
       fileIndexBackend: "walker",
       cliEnabled: false,
+      keepAwakeEnabled: false,
     });
   });
 
@@ -84,6 +86,7 @@ describe("SettingsDialog", () => {
         gitStatusEnabled: true,
         fileIndexBackend: "walker",
         cliEnabled: false,
+        keepAwakeEnabled: false,
       },
       false,
     );
@@ -114,6 +117,7 @@ describe("SettingsDialog", () => {
         gitStatusEnabled: true,
         fileIndexBackend: "walker",
         cliEnabled: false,
+        keepAwakeEnabled: false,
       },
       false,
     );

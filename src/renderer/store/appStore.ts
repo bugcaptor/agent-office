@@ -59,6 +59,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   gitStatusEnabled: true,
   fileIndexBackend: "walker",
   cliEnabled: false,
+  keepAwakeEnabled: false,
 };
 
 /**
@@ -253,6 +254,7 @@ interface AppState {
         | "gitStatusEnabled"
         | "fileIndexBackend"
         | "cliEnabled"
+        | "keepAwakeEnabled"
       >
     >,
   ): void;

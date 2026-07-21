@@ -215,6 +215,7 @@ fn get_app_settings_result_matches_fixture() {
             git_status_enabled: true,
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
+            keep_awake_enabled: false,
         },
         first_run: true,
     };

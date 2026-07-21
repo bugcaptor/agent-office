@@ -88,6 +88,10 @@ export interface AgentOfficeApi {
   getAppSettings(): Promise<GetAppSettingsResult>;
   /** 앱 전역 opt-in 설정 저장. */
   setAppSettings(settings: AppSettings): Promise<void>;
+  /** 작업 중 잠자기 방지(#68) — "일하는 캐릭터 있음(true)/없음(false)" 통지.
+   * true는 lease를 갱신하므로 주기적으로 재호출한다. 설정이 꺼져 있으면 백엔드가
+   * 조용히 무시한다. */
+  setKeepAwake(active: boolean): Promise<void>;
   /** CLI 제어(#55) 상태 조회 — 서버 기동·승인 여부·포트·app_data 경로. */
   controlStatus(): Promise<ControlStatus>;
   /** CLI 제어를 승인(토큰 발급). 2단계 옵트인의 2단계. */

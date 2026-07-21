@@ -74,6 +74,7 @@ beforeEach(() => {
       gitStatusEnabled: true,
       fileIndexBackend: "walker",
       cliEnabled: false,
+      keepAwakeEnabled: false,
     },
     false
   );
@@ -141,6 +142,7 @@ describe("installTaskLabelSummarizer", () => {
           gitStatusEnabled: true,
           fileIndexBackend: "walker",
           cliEnabled: false,
+          keepAwakeEnabled: false,
         },
         false,
       );
@@ -403,6 +405,7 @@ describe("installTaskLabelSummarizer", () => {
         gitStatusEnabled: true,
         fileIndexBackend: "walker",
         cliEnabled: false,
+        keepAwakeEnabled: false,
       },
       false
     );

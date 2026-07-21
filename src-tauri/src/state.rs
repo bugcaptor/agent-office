@@ -141,6 +141,10 @@ pub struct AppState {
     pub bot_runtime: Arc<crate::bot::BotRuntime>,
     /// 봇 폴링 태스크가 쥐는 앱 상태 클론(세션 주입·프로필/상태 접근).
     pub bot_ctx: Arc<crate::bot::runner::BotContext>,
+    /// 작업 중 시스템 잠자기 방지(이슈 #68) 웨이크락 소유자. `set_keep_awake`
+    /// 커맨드가 lease를 갱신/해제하고, lib.rs의 주기 감시 태스크가 lease 만료
+    /// 시 강제 해제한다. 설정 `keep_awake_enabled`가 꺼져 있으면 무시된다.
+    pub wake_lock: Arc<crate::power::WakeLock>,
 }
 
 // ── 테스트용 페이크 ────────────────────────────────────────────────────

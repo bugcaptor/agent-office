@@ -35,6 +35,7 @@ const SETTINGS_ON: AppSettings = {
   gitStatusEnabled: true,
   fileIndexBackend: "walker",
   cliEnabled: false,
+  keepAwakeEnabled: false,
 };
 
 const NOW = 1_000_000_000_000;

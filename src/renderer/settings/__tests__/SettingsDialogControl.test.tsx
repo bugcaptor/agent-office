@@ -44,6 +44,7 @@ function hydrate(cliEnabled: boolean) {
       gitStatusEnabled: true,
       fileIndexBackend: "walker",
       cliEnabled,
+      keepAwakeEnabled: false,
     },
     false,
   );

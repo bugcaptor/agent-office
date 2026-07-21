@@ -222,10 +222,12 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "gitStatusEnabled",
       "fileIndexBackend",
       "cliEnabled",
+      "keepAwakeEnabled",
     ]);
     expect(settings.gitStatusEnabled).toBe(true);
     expect(settings.fileIndexBackend).toBe("walker");
     expect(settings.cliEnabled).toBe(false);
+    expect(settings.keepAwakeEnabled).toBe(false);
   });
 
   it("GitStatusResult / GitFileStatus", () => {

@@ -23,6 +23,7 @@ mod observer;
 // 닿아야 한다. 로직 변경 없음 — 가시성만 승격.
 pub mod persistence;
 pub mod pixellab;
+mod power;
 mod session;
 // pub: contract 테스트가 `agent_office_lib::session_events::types::SessionEventRecord`에
 // 닿아야 한다. 로직 변경 없음 — 가시성만 승격.
@@ -420,6 +421,20 @@ pub fn run() {
                 state_lock: Arc::new(std::sync::Mutex::new(())),
             });
 
+            // 작업 중 잠자기 방지(#68): 웨이크락 소유자 + lease 만료 감시 태스크.
+            // 렌더러가 set_keep_awake로 lease(180s)를 갱신하고, 이 태스크가 30초
+            // 간격으로 tick해 렌더러가 크래시/행으로 통지를 멈추면 강제 해제한다.
+            let wake_lock = Arc::new(crate::power::WakeLock::new());
+            {
+                let wake_lock = wake_lock.clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                        wake_lock.tick();
+                    }
+                });
+            }
+
             app.manage(AppState {
                 manager,
                 hub,
@@ -441,6 +456,7 @@ pub fn run() {
                 control_ctx,
                 bot_runtime,
                 bot_ctx,
+                wake_lock,
             });
             Ok(())
         })
@@ -472,6 +488,7 @@ pub fn run() {
             ipc::commands::generate_sprite_image,
             ipc::commands::get_app_settings,
             ipc::commands::set_app_settings,
+            ipc::commands::set_keep_awake,
             ipc::commands::control_status,
             ipc::commands::control_approve,
             ipc::commands::control_revoke,
@@ -517,6 +534,7 @@ pub fn run() {
                 state.observer_server.shutdown();
                 state.control_server.shutdown(); // CLI 제어 서버 정지 + control-port 정리(#55)
                 state.bot_runtime.stop_all(); // 봇 폴링 태스크 정지(#57)
+                state.wake_lock.deactivate(); // 잠자기 방지 해제(#68) — OS가 자동 회수도 하지만 이중 안전장치.
                 // wait 스레드가 Disposed 확정 후 OS가 자식 reap. 프로세스 종료는 정상 진행.
             }
         });
@@ -631,6 +649,7 @@ mod tests {
             git_status_enabled: true,
             file_index_backend: Default::default(),
             cli_enabled: false,
+            keep_awake_enabled: false,
         }));
         let registry = Arc::new(SessionRegistry::new());
         let events: Arc<dyn AppEvents> = Arc::new(crate::state::fake::RecordingEvents::default());

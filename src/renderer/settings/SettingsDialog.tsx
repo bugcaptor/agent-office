@@ -102,6 +102,21 @@ export function SettingsDialog() {
             </span>
           </label>
           <label className="settings-item">
+            <input
+              type="checkbox"
+              checked={appSettings.keepAwakeEnabled}
+              onChange={(e) => updateAppSettings({ keepAwakeEnabled: e.target.checked })}
+            />
+            <span>
+              <strong>작업 중 시스템 잠자기 방지</strong>
+              <small>
+                캐릭터가 작업하는 동안 컴퓨터가 자동으로 잠들지 않게 합니다. 화면은
+                꺼질 수 있으며, 뚜껑을 닫거나 수동으로 재우는 것은 막지 않습니다.
+                (macOS·Windows)
+              </small>
+            </span>
+          </label>
+          <label className="settings-item">
             <span>
               <strong>외부 터미널 앱</strong>
               <small>

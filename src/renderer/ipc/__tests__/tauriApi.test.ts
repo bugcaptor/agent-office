@@ -459,6 +459,7 @@ describe("app settings commands", () => {
       gitStatusEnabled: true,
       fileIndexBackend: "walker" as const,
       cliEnabled: false,
+      keepAwakeEnabled: false,
     };
     const tauriApi = await importTauriApi();
 

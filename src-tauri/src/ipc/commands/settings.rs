@@ -89,6 +89,35 @@ pub(crate) async fn set_app_settings_inner(
     } else {
         app_state.control_server.shutdown();
     }
+
+    // 잠자기 방지(#68) OFF 전환은 즉시 반영 — 렌더러 구독도 곧 set_keep_awake(false)를
+    // 보내지만, 백엔드가 권위이자 즉시 해제하는 게이트다. (CLI control 경로는 이 함수를
+    // 안 거치지만, 거기서 keep_awake를 끄더라도 lease TTL이 최대 3분 내 backstop 해제한다.)
+    if !settings.keep_awake_enabled {
+        app_state.wake_lock.deactivate();
+    }
+    Ok(())
+}
+
+/// 렌더러가 "지금 일하는 캐릭터가 하나 이상"이라고 통지한다(이슈 #68). `active`
+/// 통지는 lease(180초 TTL)를 갱신하며 rising-edge에 즉시, 이후 주기적으로 온다.
+/// 설정 `keep_awake_enabled`가 꺼져 있으면 조용히 무시한다(백엔드가 최종 게이트).
+/// `active=false`는 즉시 해제한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn set_keep_awake(
+    app_state: State<'_, AppState>,
+    active: bool,
+) -> Result<(), String> {
+    let enabled = app_state.settings.read().unwrap().keep_awake_enabled;
+    if active {
+        if enabled {
+            app_state
+                .wake_lock
+                .renew(std::time::Duration::from_secs(180));
+        }
+    } else {
+        app_state.wake_lock.deactivate();
+    }
     Ok(())
 }
 

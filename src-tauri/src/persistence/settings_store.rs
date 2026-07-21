@@ -116,6 +116,13 @@ pub struct AppSettings {
     /// 발급)이 있어야 한다 — 2단계 옵트인. 보안 표면이므로 기본 꺼짐.
     #[serde(default)]
     pub cli_enabled: bool,
+    /// 캐릭터가 작업 중일 때 시스템 유휴 잠자기를 막을지(이슈 #68). macOS는
+    /// IOKit `PreventUserIdleSystemSleep`, Windows는 `ES_SYSTEM_REQUIRED` — 둘
+    /// 다 **디스플레이 잠자기는 허용**한다(화면은 꺼져도 에이전트는 계속 돈다).
+    /// 렌더러가 "일하는 캐릭터 있음"을 통지할 때만 실제로 잠자기를 막는다.
+    /// `#[serde(default)]`라 기존 설정 파일에 키가 없으면 false. 기본 꺼짐.
+    #[serde(default)]
+    pub keep_awake_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -134,6 +141,7 @@ impl Default for AppSettings {
             git_status_enabled: true,
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
+            keep_awake_enabled: false,
         }
     }
 }
@@ -220,6 +228,7 @@ mod tests {
             git_status_enabled: true,
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
+            keep_awake_enabled: false,
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -317,6 +326,7 @@ mod tests {
             git_status_enabled: true,
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
+            keep_awake_enabled: false,
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();

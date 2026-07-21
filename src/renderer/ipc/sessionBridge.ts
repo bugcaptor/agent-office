@@ -34,6 +34,7 @@ import { tauriApi } from "./tauriApi";
 import { sessionOptsFor } from "./sessionOpts";
 import { SubagentCountTracker } from "./subagentCounts";
 import { maybeSendOsNotification } from "./osNotify";
+import { computeAnyWorking, createKeepAwakeController } from "../power/keepAwake";
 
 /** OS 알림 본문 길이 상한(제목 옆 본문은 짧게). */
 const OS_NOTIFY_BODY_MAX = 120;
@@ -293,6 +294,23 @@ export function installSessionBridge(): () => void {
     }
   );
 
+  // 작업 중 잠자기 방지(#68): 턴 상태와 설정에서 "일하는 캐릭터 있음"을 집계해
+  // 백엔드 웨이크락을 구동한다. 백엔드가 설정으로 게이트하므로 설정이 꺼져 있으면
+  // 통지는 무시된다(여기서도 enabled=false면 즉시 해제 통지).
+  const keepAwake = createKeepAwakeController((active) => {
+    void tauriApi.setKeepAwake(active).catch((err) => console.warn("keepAwake: 통지 실패", err));
+  });
+  const recomputeKeepAwake = () => {
+    const s = useAppStore.getState();
+    keepAwake.update(s.appSettings.keepAwakeEnabled, computeAnyWorking(s.timeTracking));
+  };
+  const offKeepAwakeTiming = useAppStore.subscribe((s) => s.timeTracking, recomputeKeepAwake);
+  const offKeepAwakeSetting = useAppStore.subscribe(
+    (s) => s.appSettings.keepAwakeEnabled,
+    recomputeKeepAwake
+  );
+  recomputeKeepAwake(); // 부트 시 현재 상태 1회 반영.
+
   return () => {
     offState();
     offNotif();
@@ -300,5 +318,8 @@ export function installSessionBridge(): () => void {
     offActivity();
     offPending();
     offMuted();
+    offKeepAwakeTiming();
+    offKeepAwakeSetting();
+    keepAwake.dispose();
   };
 }

@@ -29,6 +29,7 @@ const { mockApi } = vi.hoisted(() => ({
     setBadgeCount: vi.fn(),
     getAppSettings: vi.fn(),
     setAppSettings: vi.fn(),
+    setKeepAwake: vi.fn(),
     onData: vi.fn(),
     onSessionState: vi.fn(() => vi.fn()),
     onNotification: vi.fn(),
@@ -221,6 +222,7 @@ describe("bootApp", () => {
       gitStatusEnabled: true,
       fileIndexBackend: "walker",
       cliEnabled: false,
+      keepAwakeEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(false);
     expect(warn).toHaveBeenCalledWith(

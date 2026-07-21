@@ -29,6 +29,8 @@ export const Commands = {
   generateSpriteImage: "generate_sprite_image",
   getAppSettings: "get_app_settings",
   setAppSettings: "set_app_settings",
+  // 작업 중 잠자기 방지(이슈 #68) — 렌더러가 "일하는 캐릭터 있음"을 통지.
+  setKeepAwake: "set_keep_awake",
   // CLI 제어(이슈 #55, docs/cli-control-design.md) — 2단계 승인 상태 조회/승인/취소.
   controlStatus: "control_status",
   controlApprove: "control_approve",
