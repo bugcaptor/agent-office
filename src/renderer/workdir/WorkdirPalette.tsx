@@ -19,6 +19,11 @@
 // 다시 검색한다(listing의 5000개 상한 밖 파일도 찾기 위함). 활성 검색 결과가
 // 있으면(searchActive) 그 결과를 rank-only(fuzzyRank, 탈락 없음)로 보여주고,
 // 아니면 기존처럼 이미 가져온 목록 안에서 fuzzyFilter(탈락 있음)로 거른다.
+//
+// 미추적 파일은 백엔드가 `-uall`로 파일 단위까지 펼쳐 주므로(이슈 #70) 새로
+// 추가된 폴더 안의 파일도 각각 '?' 뱃지로 뜬다 — 5000개 상한에 걸리면
+// `git.truncated`로 안내한다. 행의 상대경로는 앞쪽이 말줄임되고(이슈 #71,
+// workdir.css) 전체 경로는 행 `title` 툴팁으로 확인한다.
 import { useEffect, useMemo, useRef } from "react";
 import { useWorkdirStore } from "./workdirStore";
 import { WorkdirDetailPane } from "./WorkdirDetailPane";
@@ -205,7 +210,8 @@ export function WorkdirPalette() {
     const parts: string[] = [git.branch ?? "(detached)"];
     if (git.ahead) parts.push(`↑${git.ahead}`);
     if (git.behind) parts.push(`↓${git.behind}`);
-    parts.push(`· 변경 ${git.entries.length}개`);
+    // 상한(5000)에 걸렸으면 "+"를 붙여 더 있음을 알린다(이슈 #70).
+    parts.push(`· 변경 ${git.entries.length}${git.truncated ? "+" : ""}개`);
     return parts.join(" ");
   })();
 
@@ -318,6 +324,9 @@ export function WorkdirPalette() {
                 git 상태 조회가 시간 초과됐습니다. 설정에서 끌 수 있습니다.
               </div>
             )}
+            {git?.truncated && (
+              <div className="wd-note">변경된 파일이 많아 일부(5000개)만 표시됩니다.</div>
+            )}
             {listing === undefined && !changedOnly ? (
               <div className="wd-empty">목록을 불러오는 중…</div>
             ) : results.length === 0 ? (
@@ -335,6 +344,8 @@ export function WorkdirPalette() {
                     key={item.relPath}
                     role="option"
                     aria-selected={i === selected}
+                    // 경로가 잘려도 호버로 전체를 확인할 수 있게(이슈 #71).
+                    title={item.relPath}
                     className={i === selected ? "wd-item wd-item-active" : "wd-item"}
                     onMouseDown={(e) => {
                       // 포커스를 입력창에 유지하고 선택만 옮긴다(열기는 click에서).

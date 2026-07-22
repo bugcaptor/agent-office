@@ -68,6 +68,7 @@ const cleanRepo = {
   behind: 0,
   entries: [],
   timedOut: false,
+  truncated: false,
 };
 
 beforeEach(() => {

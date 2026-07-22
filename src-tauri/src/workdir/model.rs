@@ -60,6 +60,8 @@ pub struct GitStatusResult {
     pub entries: Vec<GitFileStatus>,
     /// 타임아웃으로 조회를 중단했는지.
     pub timed_out: bool,
+    /// 엔트리 상한(MAX_STATUS_ENTRIES)에 걸려 일부만 담겼는지(이슈 #70).
+    pub truncated: bool,
 }
 
 impl GitStatusResult {
@@ -72,6 +74,7 @@ impl GitStatusResult {
             behind: 0,
             entries: Vec::new(),
             timed_out: false,
+            truncated: false,
         }
     }
 
@@ -84,6 +87,7 @@ impl GitStatusResult {
             behind: 0,
             entries: Vec::new(),
             timed_out: true,
+            truncated: false,
         }
     }
 }

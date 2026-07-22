@@ -1188,7 +1188,29 @@ it('ensure returns same Terminal instance across calls (keep-alive)', () => {
   fire-and-forget. **안전장치**: `sanitize_rel_path`(절대경로·`..` 거부, 항상 `--`
   pathspec)·`valid_commit`(hex 7~40)·diff 상한(1MiB·5000줄)·쿼리 타임아웃(10s).
 
-### 10.6 핵심 설계 결정 요약
+### 10.6 미추적 파일 전개 & 긴 경로 표시 (#70 / #71)
+
+- **새 폴더 안의 새 파일(#70)**: `git status`는 기본 `-unormal`이라 미추적 디렉터리를
+  접어 `? docs/` 한 줄로만 보고한다 → 내부 파일이 목록에 없고, 그 폴더 엔트리를
+  누르면 `untracked` diff가 디렉터리를 가리켜 "변경 없음"이 된다. `status.rs`의
+  인자에 **`--untracked-files=all`**을 더해 파일 단위(`? docs/new/a.md`)로 펼친다 —
+  파서·프런트 변경 없이 기존 흐름(`?` 뱃지 → `--no-index` 신규 diff)이 그대로 성립.
+  `.gitignore` 대상은 여전히 제외된다(`--ignored`를 주지 않으므로).
+- **엔트리 상한**: `-uall`은 gitignore되지 않은 대량 산출물 폴더에서 수만 건을 낼 수
+  있어 `parse_porcelain_v2`가 **5000개**(`MAX_STATUS_ENTRIES`, listing의 `MAX_LIST`와
+  동일)에서 끊고 `GitStatusResult.truncated`를 세운다. 브랜치 헤더(`# …`)는 항상
+  엔트리보다 앞이라 중단해도 손실이 없다. 프런트는 절단 시 목록 위 안내와 헤더
+  `변경 5000+개` 표기를 보여준다. *폴더 단위 통합 diff는 이번 범위 밖(후속).*
+- **긴 경로 표시(#71)**: 행은 `[뱃지] [파일명] [상대경로]`인데 말줄임이 뒤에 걸리면
+  식별에 필요한 리프 디렉터리가 통째로 사라진다. `.wd-item-path`/`.wd-cf-path`/
+  `.wd-detail-path`에 **head-ellipsis**(`direction: rtl` + `text-align: left`)를 적용해
+  끝을 보존한다. RTL 문단에서 선행 중립문자가 재배열돼 root 밖 경로 `../a/b.ts`가
+  `a/b.ts../`로 뒤집히는 문제는 `::before { content: "\200E" }`(LRM, 강한 L)로 막는다
+  (`unicode-bidi: plaintext`는 문단 방향을 LTR로 되돌려 말줄임이 다시 뒤로 가므로 쓰지
+  않는다). 표시 내용은 **전체 상대경로 유지**(dirname만 노출하지 않음) + 행 전체에
+  `title` 툴팁.
+
+### 10.7 핵심 설계 결정 요약
 
 | 항목 | 결정 | 이유 |
 |---|---|---|
@@ -1200,6 +1222,8 @@ it('ensure returns same Terminal instance across calls (keep-alive)', () => {
 | 인앱 뷰어 복귀 | markdownStore `onClose` 콜백 + 탐색 상태 스냅샷 | 뷰어 닫으면 탐색으로 복귀(#54) |
 | diff 렌더 | 의존성 없이 자체 줄단위 색상 | marked 자체 렌더 철학 일관 |
 | 로그 검색 | `--grep -i -F`(메시지, 고정 문자열) | 예측 가능·주입 안전. 작성자 검색은 후속 |
+| 미추적 표시 | `--untracked-files=all` + 5000개 상한 | 새 폴더 안 파일도 개별 diff(#70) |
+| 긴 경로 말줄임 | head-ellipsis(`direction: rtl` + LRM) | 식별에 중요한 끝을 보존(#71) |
 
 ## 11. 터미널 오버레이 뷰 모드 (이슈 #69)
 

@@ -27,6 +27,7 @@ const {
     behind: 0,
     entries: [],
     timedOut: false,
+    truncated: false,
   }),
   openInVscode: vi.fn().mockResolvedValue(undefined),
   updateSettings: vi.fn(),
@@ -84,6 +85,7 @@ const GIT = {
     { path: "deleted.rs", status: "D", xy: "D." },
   ],
   timedOut: false,
+  truncated: false,
 };
 
 beforeEach(() => {
@@ -129,6 +131,25 @@ describe("WorkdirPalette", () => {
     expect(screen.getByText("D")).toBeTruthy();
     // 변경 없는 b.rs는 사라진다.
     expect(screen.queryByText("b.rs")).toBeNull();
+  });
+
+  it("목록 행에 전체 상대경로 툴팁(title)이 붙는다", () => {
+    // 이슈 #71: 경로가 앞쪽부터 잘리므로 호버로 전체를 확인할 수 있어야 한다.
+    render(<WorkdirPalette />);
+    const rows = screen.getAllByRole("option");
+    expect(rows.map((r) => r.getAttribute("title")).sort()).toEqual([
+      "README.md",
+      "src/a.rs",
+      "src/b.rs",
+    ]);
+  });
+
+  it("git 엔트리가 상한에 걸리면 절단 안내와 '+' 표기를 보여준다", () => {
+    // 이슈 #70: -uall로 미추적 파일이 대량으로 나올 때의 안전장치.
+    useWorkdirStore.setState({ git: { "/root": { ...GIT, truncated: true } } });
+    render(<WorkdirPalette />);
+    expect(screen.getByText(/변경된 파일이 많아/)).toBeTruthy();
+    expect(screen.getByText(/변경 2\+개/)).toBeTruthy();
   });
 
   it("git 토글 해제는 updateAppSettings를 부른다", () => {

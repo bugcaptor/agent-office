@@ -14,6 +14,12 @@ use super::model::{GitFileStatus, GitStatusResult};
 /// 넘기면 자식을 죽이고 `timed_out`을 세운다.
 const GIT_STATUS_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// 파싱해서 담을 엔트리 상한(이슈 #70). `--untracked-files=all`로 미추적
+/// 디렉터리를 파일 단위로 펼치면서, gitignore되지 않은 대량 산출물 폴더가
+/// 있으면 수만 건이 나올 수 있다 -- IPC 직렬화·렌더가 무거워지지 않도록
+/// listing.rs의 MAX_LIST와 같은 5000개에서 자르고 `truncated`를 세운다.
+const MAX_STATUS_ENTRIES: usize = 5000;
+
 /// root의 git 상태를 조회한다. 저장소가 아니거나 git이 없으면 is_repo=false,
 /// 타임아웃이면 timed_out=true인 정상 응답을 돌려준다(에러 문자열은 root가 아예
 /// 없는 등 조회 이전 단계 실패에서만 반환).
@@ -26,13 +32,24 @@ pub fn collect_git_status(root: &str) -> Result<GitStatusResult, String> {
     Ok(run_git_status(&canon_root, GIT_STATUS_TIMEOUT))
 }
 
-/// `git status --porcelain=v2 --branch -z`를 root에서 실행하고 결과를 파싱한다.
-/// 타임아웃 초과 시 자식을 죽이고 timed_out 응답을 돌려준다. 실행/파이프 처리는
-/// 공용 `run_git`에 위임한다.
+/// `git status --porcelain=v2 --branch -z --untracked-files=all`을 root에서
+/// 실행하고 결과를 파싱한다. 타임아웃 초과 시 자식을 죽이고 timed_out 응답을
+/// 돌려준다. 실행/파이프 처리는 공용 `run_git`에 위임한다.
+///
+/// `--untracked-files=all`(이슈 #70): 기본값 `normal`은 미추적 디렉터리를 접어
+/// `? newfolder/` 한 줄로만 보고하기 때문에, 새로 추가된 폴더 안의 개별 파일이
+/// 목록에도 안 뜨고 diff(`--no-index`)도 디렉터리를 가리켜 비어 버린다. `all`로
+/// 펼치면 파일 단위 `? newfolder/a.txt` 레코드가 나와 기존 흐름이 그대로 성립한다.
 fn run_git_status(root: &Path, timeout: Duration) -> GitStatusResult {
     let run = run_git(
         root,
-        &["status", "--porcelain=v2", "--branch", "-z"],
+        &[
+            "status",
+            "--porcelain=v2",
+            "--branch",
+            "-z",
+            "--untracked-files=all",
+        ],
         timeout,
     );
     // git 바이너리 부재 등 -- 저장소 아님으로 취급(뱃지 조용히 생략).
@@ -63,6 +80,9 @@ fn run_git_status(root: &Path, timeout: Duration) -> GitStatusResult {
 /// - `2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <Xscore> <path>`  (rename/copy; +원본경로)
 /// - `u <XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>` (충돌)
 /// - `? <path>`  (untracked)  /  `! <path>` (ignored; 스킵)
+///
+/// 엔트리가 `MAX_STATUS_ENTRIES`에 닿으면 거기서 멈추고 `truncated`를 세운다.
+/// 브랜치 헤더(`# ...`)는 항상 엔트리보다 앞에 오므로 중단해도 손실이 없다.
 pub fn parse_porcelain_v2(bytes: &[u8]) -> GitStatusResult {
     let mut result = GitStatusResult {
         is_repo: true,
@@ -71,6 +91,7 @@ pub fn parse_porcelain_v2(bytes: &[u8]) -> GitStatusResult {
         behind: 0,
         entries: Vec::new(),
         timed_out: false,
+        truncated: false,
     };
 
     let tokens: Vec<&[u8]> = bytes
@@ -128,6 +149,11 @@ pub fn parse_porcelain_v2(bytes: &[u8]) -> GitStatusResult {
             _ => {}
         }
         i += 1;
+        // 상한 도달: 남은 레코드는 버리고 절단 표시(이슈 #70).
+        if result.entries.len() >= MAX_STATUS_ENTRIES {
+            result.truncated = i < tokens.len();
+            break;
+        }
     }
 
     result
@@ -288,6 +314,50 @@ mod tests {
         assert_eq!(r.entries[0].path, "untracked.txt");
         assert_eq!(r.entries[0].status, "?");
         assert_eq!(r.entries[0].xy, "??");
+    }
+
+    /// 이슈 #70: `--untracked-files=all`이면 새 폴더가 접히지 않고 내부 파일이
+    /// 각각 `? <경로>` 레코드로 온다 -- 파서는 그대로 파일 단위 엔트리를 만든다.
+    #[test]
+    fn untracked_directory_expands_to_individual_files() {
+        let bytes = nul_join(&[
+            "? docs/new/a.md",
+            "? docs/new/b.md",
+            "? docs/new/deep/nested/c.md",
+        ]);
+        let r = parse_porcelain_v2(&bytes);
+        assert_eq!(r.entries.len(), 3);
+        let paths: Vec<&str> = r.entries.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(paths, ["docs/new/a.md", "docs/new/b.md", "docs/new/deep/nested/c.md"]);
+        assert!(r.entries.iter().all(|e| e.status == "?"));
+        assert!(!r.truncated);
+    }
+
+    /// 이슈 #70: 엔트리가 상한을 넘으면 상한까지만 담고 truncated를 세운다.
+    #[test]
+    fn entries_are_capped_and_flagged() {
+        let mut tokens: Vec<String> = vec!["# branch.head main".to_string()];
+        for i in 0..(MAX_STATUS_ENTRIES + 10) {
+            tokens.push(format!("? junk/f{i}.txt"));
+        }
+        let refs: Vec<&str> = tokens.iter().map(|s| s.as_str()).collect();
+        let r = parse_porcelain_v2(&nul_join(&refs));
+        assert_eq!(r.entries.len(), MAX_STATUS_ENTRIES);
+        assert!(r.truncated);
+        // 브랜치 헤더는 엔트리보다 앞에 오므로 절단돼도 살아 있어야 한다.
+        assert_eq!(r.branch.as_deref(), Some("main"));
+    }
+
+    /// 상한과 정확히 같은 개수면 절단이 아니다(경계).
+    #[test]
+    fn exactly_at_cap_is_not_truncated() {
+        let tokens: Vec<String> = (0..MAX_STATUS_ENTRIES)
+            .map(|i| format!("? junk/f{i}.txt"))
+            .collect();
+        let refs: Vec<&str> = tokens.iter().map(|s| s.as_str()).collect();
+        let r = parse_porcelain_v2(&nul_join(&refs));
+        assert_eq!(r.entries.len(), MAX_STATUS_ENTRIES);
+        assert!(!r.truncated);
     }
 
     #[test]

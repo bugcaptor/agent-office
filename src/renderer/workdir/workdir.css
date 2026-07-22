@@ -221,6 +221,28 @@
   white-space: nowrap;
 }
 
+/* 경로 말줄임은 앞쪽에(head-ellipsis, 이슈 #71).
+ *
+ * 경로가 길 때 잘리는 쪽이 뒤(tail)면 파일을 구분해 주는 리프 디렉터리와
+ * 파일명이 통째로 사라진다. `direction: rtl`은 줄의 끝 모서리를 왼쪽으로
+ * 뒤집어 말줄임(…)을 앞에 놓으므로 "…workdir/index.ts"처럼 끝이 남는다.
+ *
+ * `::before`의 LRM(U+200E)은 RTL 문단에서 선행 중립문자가 재배열되는 것을
+ * 막는 장치다 -- 이게 없으면 root 밖 경로 "../a/b.ts"가 "a/b.ts../"로
+ * 뒤집혀 보인다(선행 "../"가 강한 L 문자를 못 만나 문단 방향 RTL을 따름).
+ * LRM은 강한 L이라 뒤따르는 중립문자를 전부 LTR로 붙잡아 준다. */
+.wd-item-path,
+.wd-cf-path,
+.wd-detail-path {
+  direction: rtl;
+  text-align: left;
+}
+.wd-item-path::before,
+.wd-cf-path::before,
+.wd-detail-path::before {
+  content: "\200E";
+}
+
 /* ---- git 상태 뱃지 ---- */
 .wd-badge {
   flex: none;

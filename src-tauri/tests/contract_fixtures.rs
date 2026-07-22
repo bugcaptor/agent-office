@@ -236,6 +236,7 @@ fn git_status_result_matches_fixture() {
             xy: " M".into(),
         }],
         timed_out: false,
+        truncated: false,
     };
     assert_value_eq(fixture_json, serde_json::to_value(&value).unwrap());
 }

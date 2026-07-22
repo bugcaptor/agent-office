@@ -232,7 +232,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
 
   it("GitStatusResult / GitFileStatus", () => {
     const parsed: GitStatusResult = loadFixture("git-status-result.json") as GitStatusResult;
-    expectKeys(parsed, ["isRepo", "branch", "ahead", "behind", "entries", "timedOut"]);
+    expectKeys(parsed, ["isRepo", "branch", "ahead", "behind", "entries", "timedOut", "truncated"]);
     expect(parsed.branch).toBe("main");
     const entry: GitFileStatus = parsed.entries[0];
     expectKeys(entry, ["path", "status", "xy"]);

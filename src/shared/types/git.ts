@@ -38,7 +38,8 @@ export interface GitFileStatus {
 }
 
 /** `workdir_git_status` 응답. 저장소가 아니거나(isRepo=false) 타임아웃
- * (timedOut=true)이면 entries는 비고 프런트는 뱃지를 조용히 생략한다. */
+ * (timedOut=true)이면 entries는 비고 프런트는 뱃지를 조용히 생략한다.
+ * 미추적 파일은 폴더로 접히지 않고 파일 단위로 온다(`-uall`, 이슈 #70). */
 export interface GitStatusResult {
   isRepo: boolean;
   /** 현재 브랜치명(detached HEAD면 null). */
@@ -47,6 +48,8 @@ export interface GitStatusResult {
   behind: number;
   entries: GitFileStatus[];
   timedOut: boolean;
+  /** 엔트리가 5000개 상한에 걸려 일부만 담겼는지(이슈 #70). */
+  truncated: boolean;
 }
 
 /** `workdir_diff_file`의 diff 관점(이슈 #11 후속).
