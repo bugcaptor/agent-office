@@ -5,17 +5,17 @@ import {
   HIDDEN_MASCOT_STATE,
   parseMascotState,
   sameMascotState,
-  spriteIdentityChanged,
   type MascotState,
 } from "../protocol";
 import { createDragDetector, DRAG_THRESHOLD_PX } from "../drag";
 import {
   defaultPosition,
   isOnMonitor,
-  MASCOT_MARGIN_BOTTOM,
-  MASCOT_MARGIN_RIGHT,
+  MASCOT_FALLBACK_TASKBAR_INSET_PX,
+  MASCOT_MARGIN_PX,
   readSavedPosition,
   resolvePosition,
+  usableArea,
   writeSavedPosition,
   type MonitorRect,
 } from "../position";
@@ -52,11 +52,6 @@ describe("protocol", () => {
     expect(sameMascotState(state(), state({ hasPending: true }))).toBe(false);
   });
 
-  it("spriteIdentityChanged는 외형에 영향 없는 변화를 무시한다", () => {
-    expect(spriteIdentityChanged(state(), state({ hasPending: true, working: true }))).toBe(false);
-    expect(spriteIdentityChanged(state(), state({ seed: "other" }))).toBe(true);
-    expect(spriteIdentityChanged(state(), state({ spriteUpdatedAt: 1 }))).toBe(true);
-  });
 });
 
 describe("drag detector", () => {
@@ -95,17 +90,59 @@ describe("position", () => {
     ...patch,
   });
 
-  it("기본 위치는 모니터 우하단에서 여백만큼 떨어진다", () => {
+  it("workArea가 없으면 전체 경계에서 하단만 어림 인셋만큼 줄인다(기존 동작 보존)", () => {
     expect(defaultPosition(mon(), size)).toEqual({
-      x: 1920 - 120 - MASCOT_MARGIN_RIGHT,
-      y: 1080 - 140 - MASCOT_MARGIN_BOTTOM,
+      x: 1920 - 120 - MASCOT_MARGIN_PX,
+      y: 1080 - 140 - MASCOT_MARGIN_PX - MASCOT_FALLBACK_TASKBAR_INSET_PX,
     });
   });
 
   it("배율이 2인 모니터에서는 여백도 물리 픽셀로 환산된다", () => {
     expect(defaultPosition(mon({ scaleFactor: 2 }), size)).toEqual({
-      x: 1920 - 120 - MASCOT_MARGIN_RIGHT * 2,
-      y: 1080 - 140 - MASCOT_MARGIN_BOTTOM * 2,
+      x: 1920 - 120 - MASCOT_MARGIN_PX * 2,
+      y: 1080 - 140 - (MASCOT_MARGIN_PX + MASCOT_FALLBACK_TASKBAR_INSET_PX) * 2,
+    });
+  });
+
+  it("workArea가 있으면 그 우하단을 쓴다 — 하단 작업표시줄(이슈 #73)", () => {
+    const m = mon({ workArea: { x: 0, y: 0, width: 1920, height: 1080 - 48 } });
+    expect(defaultPosition(m, size)).toEqual({
+      x: 1920 - 120 - MASCOT_MARGIN_PX,
+      y: 1080 - 48 - 140 - MASCOT_MARGIN_PX,
+    });
+  });
+
+  it("작업표시줄이 왼쪽/위쪽이어도 작업 영역 안에 잡힌다", () => {
+    // 왼쪽 72px 작업표시줄: workArea가 오른쪽으로 밀리고 폭이 줄어든다.
+    const left = mon({ workArea: { x: 72, y: 0, width: 1920 - 72, height: 1080 } });
+    expect(defaultPosition(left, size)).toEqual({
+      x: 1920 - 120 - MASCOT_MARGIN_PX,
+      y: 1080 - 140 - MASCOT_MARGIN_PX,
+    });
+    // 위쪽 48px 작업표시줄: 아래 여백은 그대로, 세로 시작점만 내려간다.
+    const top = mon({ workArea: { x: 0, y: 48, width: 1920, height: 1080 - 48 } });
+    expect(defaultPosition(top, size)).toEqual({
+      x: 1920 - 120 - MASCOT_MARGIN_PX,
+      y: 48 + (1080 - 48) - 140 - MASCOT_MARGIN_PX,
+    });
+  });
+
+  it("화면 안/밖 판정은 workArea가 아니라 전체 경계로 한다", () => {
+    // 하단 작업표시줄 위에 놓인 마스코트 — 작업 영역 밖이지만 화면 안이다.
+    const m = mon({ workArea: { x: 0, y: 0, width: 1920, height: 1080 - 48 } });
+    const overTaskbar = { x: 1700, y: 1080 - 60 };
+    expect(isOnMonitor(overTaskbar, size, m)).toBe(true);
+    expect(resolvePosition(overTaskbar, size, [m], m)).toEqual(overTaskbar);
+  });
+
+  it("usableArea는 workArea를 그대로 돌려주고, 없으면 하단만 줄인다", () => {
+    const wa = { x: 5, y: 6, width: 100, height: 200 };
+    expect(usableArea(mon({ workArea: wa }))).toEqual(wa);
+    expect(usableArea(mon({ scaleFactor: 2 }))).toEqual({
+      x: 0,
+      y: 0,
+      width: 1920,
+      height: 1080 - MASCOT_FALLBACK_TASKBAR_INSET_PX * 2,
     });
   });
 

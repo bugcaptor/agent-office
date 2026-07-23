@@ -13,10 +13,16 @@
 // 아니면 주 모니터 기본 위치로 되돌린다.
 
 export const MASCOT_POS_KEY = "agent-office.mascot.pos";
-/** 기본 위치 여백(물리 px 기준으로 스케일해 쓴다) — 우하단에서 이만큼 띄운다.
- *  하단 여백이 큰 것은 macOS Dock / Windows 작업표시줄을 피하기 위해서다. */
-export const MASCOT_MARGIN_RIGHT = 24;
-export const MASCOT_MARGIN_BOTTOM = 80;
+/** 기본 위치 여백(논리 px — 모니터 배율로 환산해 쓴다). 작업 영역 우하단에서
+ *  이만큼 띄운다. */
+export const MASCOT_MARGIN_PX = 24;
+/**
+ * `workArea`를 못 얻었을 때만 쓰는 하단 여유(논리 px). 작업표시줄/Dock이
+ * 얼마나 먹는지 알 수 없으니 어림잡는다 — 이 경로에서는 실질 하단 여백이
+ * `MASCOT_MARGIN_PX + 이 값` = 80px으로, workArea 도입 전 동작과 같다.
+ * workArea가 있으면 이 어림은 쓰이지 않는다(이슈 #73).
+ */
+export const MASCOT_FALLBACK_TASKBAR_INSET_PX = 56;
 /** 모니터 포함 판정 허용 오차(px). 창이 화면 경계에 살짝 걸친 상태를 살린다. */
 export const MONITOR_SLACK_PX = 8;
 
@@ -30,9 +36,33 @@ export interface Size {
   height: number;
 }
 
-export interface MonitorRect extends Point, Size {
+export interface Rect extends Point, Size {}
+
+export interface MonitorRect extends Rect {
   /** 이 모니터의 배율 — 여백을 물리 픽셀로 환산하는 데 쓴다. */
   scaleFactor: number;
+  /**
+   * 작업표시줄/Dock을 뺀 사용 가능 영역(물리 px). Tauri `Monitor.workArea`
+   * 그대로. **기본 위치 계산에만** 쓰고 화면 안/밖 판정에는 쓰지 않는다 —
+   * 사용자가 마스코트를 작업표시줄 위로 끌어다 놓았다면 그 자리도 유효한
+   * 위치이므로, 복원 시 화면 밖으로 오인해 되돌리면 안 된다.
+   */
+  workArea?: Rect;
+}
+
+/**
+ * 기본 위치를 계산할 영역. workArea가 있으면 그대로, 없으면 전체 경계에서
+ * 하단만 어림 인셋만큼 줄인다(macOS Dock / Windows 작업표시줄 회피).
+ */
+export function usableArea(m: MonitorRect): Rect {
+  if (m.workArea) return m.workArea;
+  const s = m.scaleFactor > 0 ? m.scaleFactor : 1;
+  return {
+    x: m.x,
+    y: m.y,
+    width: m.width,
+    height: m.height - MASCOT_FALLBACK_TASKBAR_INSET_PX * s,
+  };
 }
 
 /** 창(좌상단 pos, 크기 size)이 이 모니터에 걸치는가. 순수. */
@@ -50,12 +80,17 @@ export function isOnMonitor(
   );
 }
 
-/** 모니터 우하단 기본 위치. 여백은 해당 모니터 배율로 환산한다. 순수. */
+/**
+ * 모니터 **작업 영역** 우하단 기본 위치. 여백은 해당 모니터 배율로 환산한다.
+ * workArea를 쓰므로 작업표시줄이 좌·상·우 어디에 있어도 그 영역을 피한다
+ * (이슈 #73 — 이전에는 전체 경계 + 하단 고정 여백이라 Windows에서 깨졌다). 순수.
+ */
 export function defaultPosition(m: MonitorRect, size: Size): Point {
   const s = m.scaleFactor > 0 ? m.scaleFactor : 1;
+  const area = usableArea(m);
   return {
-    x: Math.round(m.x + m.width - size.width - MASCOT_MARGIN_RIGHT * s),
-    y: Math.round(m.y + m.height - size.height - MASCOT_MARGIN_BOTTOM * s),
+    x: Math.round(area.x + area.width - size.width - MASCOT_MARGIN_PX * s),
+    y: Math.round(area.y + area.height - size.height - MASCOT_MARGIN_PX * s),
   };
 }
 

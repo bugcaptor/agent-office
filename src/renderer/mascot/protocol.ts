@@ -87,13 +87,3 @@ export function sameMascotState(a: MascotState, b: MascotState): boolean {
     a.working === b.working
   );
 }
-
-/** 스프라이트를 다시 만들어야 하는 변화인가(외형에 영향을 주는 필드만). */
-export function spriteIdentityChanged(a: MascotState, b: MascotState): boolean {
-  return (
-    a.agentId !== b.agentId ||
-    a.seed !== b.seed ||
-    a.archetype !== b.archetype ||
-    a.spriteUpdatedAt !== b.spriteUpdatedAt
-  );
-}
