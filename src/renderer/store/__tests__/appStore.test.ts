@@ -523,6 +523,7 @@ describe("app settings slice", () => {
       fileIndexBackend: "walker",
       cliEnabled: false,
       keepAwakeEnabled: false,
+      mascotEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(false);
   });
@@ -544,6 +545,7 @@ describe("app settings slice", () => {
         fileIndexBackend: "walker",
         cliEnabled: false,
         keepAwakeEnabled: false,
+        mascotEnabled: false,
       },
       true
     );
@@ -563,6 +565,7 @@ describe("app settings slice", () => {
       fileIndexBackend: "walker",
       cliEnabled: false,
       keepAwakeEnabled: false,
+      mascotEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(true);
   });
@@ -584,6 +587,7 @@ describe("app settings slice", () => {
       fileIndexBackend: "walker",
       cliEnabled: false,
       keepAwakeEnabled: false,
+      mascotEnabled: false,
     });
   });
 
@@ -604,6 +608,7 @@ describe("app settings slice", () => {
         fileIndexBackend: "walker",
         cliEnabled: false,
         keepAwakeEnabled: false,
+        mascotEnabled: false,
       },
       true
     );
@@ -630,6 +635,7 @@ describe("app settings slice", () => {
       fileIndexBackend: "walker",
       cliEnabled: false,
       keepAwakeEnabled: false,
+      mascotEnabled: false,
     });
   });
 

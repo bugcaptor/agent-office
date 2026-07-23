@@ -4,7 +4,7 @@
 // opening the agent's working folder in an external app, exporting terminal
 // output, and the native folder-picker dialog.
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::state::AppState;
 
@@ -24,6 +24,46 @@ pub async fn set_badge_count(app: AppHandle, count: i64) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// 마스코트 창(이슈 #72)을 보이거나 숨긴다. 창은 tauri.conf.json에서
+/// `visible:false`로 항상 만들어지고, 표시 여부는 main 창의 mascotBridge가
+/// 이 커맨드로만 제어한다(런타임 create/destroy 없음 — 라이프사이클이 단순하고
+/// capability의 window 매칭이 정적으로 유지된다). 창이 없으면 조용히 no-op.
+///
+/// `focus:false` 설정 덕에 show()가 포커스를 훔치지 않는다 — 사용자가 다른 앱에
+/// 타이핑하는 중에 마스코트가 떠도 입력이 끊기지 않는다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn set_mascot_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("mascot") {
+        if visible {
+            win.show().map_err(|e| e.to_string())?;
+        } else {
+            win.hide().map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// 마스코트 클릭(이슈 #72): main 창을 앞으로 끌어올린 뒤 해당 에이전트의
+/// 터미널을 열라고 main에 알린다. 포커스/표시는 Rust가 수행하므로 마스코트
+/// 창에는 창 조작 권한을 주지 않아도 된다(권한 표면 최소화).
+///
+/// 최소화 상태에서도 복구돼야 하므로 show + unminimize + set_focus 3연타.
+/// 이벤트는 `emit_to("main", ...)`으로 보내 마스코트 자신이 되받지 않게 한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn mascot_activate(app: AppHandle, agent_id: String) -> Result<(), String> {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.show();
+        let _ = main.unminimize();
+        let _ = main.set_focus();
+    }
+    app.emit_to(
+        "main",
+        "mascot-open-terminal",
+        serde_json::json!({ "agentId": agent_id }),
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// 에이전트 작업 폴더를 Visual Studio Code로 연다. `path`는 렌더러가

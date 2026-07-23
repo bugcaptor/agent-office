@@ -20,7 +20,12 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 chrono = "0.4"
-tauri = { version = "2", features = [] } # Channel/이벤트/경로 API 포함
+# macos-private-api: 마스코트 창(이슈 #72)의 투명 배경에 필수. tauri.conf.json의
+# `app.macOSPrivateApi`만 켜면 빌드가 실패한다 — 이 feature와 짝이다. macOS가
+# 아닌 타깃에서는 no-op.
+tauri = { version = "2", features = [
+    "macos-private-api",
+] } # Channel/이벤트/경로 API 포함
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = [

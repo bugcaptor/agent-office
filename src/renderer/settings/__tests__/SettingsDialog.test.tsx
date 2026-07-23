@@ -41,6 +41,7 @@ describe("SettingsDialog", () => {
         fileIndexBackend: "walker",
         cliEnabled: false,
         keepAwakeEnabled: false,
+        mascotEnabled: false,
       },
       false,
     );
@@ -67,6 +68,7 @@ describe("SettingsDialog", () => {
       fileIndexBackend: "walker",
       cliEnabled: false,
       keepAwakeEnabled: false,
+      mascotEnabled: false,
     });
   });
 
@@ -87,6 +89,7 @@ describe("SettingsDialog", () => {
         fileIndexBackend: "walker",
         cliEnabled: false,
         keepAwakeEnabled: false,
+        mascotEnabled: false,
       },
       false,
     );
@@ -118,6 +121,7 @@ describe("SettingsDialog", () => {
         fileIndexBackend: "walker",
         cliEnabled: false,
         keepAwakeEnabled: false,
+        mascotEnabled: false,
       },
       false,
     );

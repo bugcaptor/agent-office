@@ -46,6 +46,67 @@ export const pendingAgentIds = (notifications: ReadonlyArray<{ agentId: string }
 
 export const usePendingCount = () => useAppStore((s) => pendingAgentIds(s.notifications).size);
 
+/** 마스코트 창(이슈 #72)이 보여줄 캐릭터 1명. agentId가 null이면 활동 없음. */
+export interface MascotPick {
+  agentId: string | null;
+  hasPending: boolean;
+  working: boolean;
+}
+
+const NO_MASCOT_PICK: MascotPick = { agentId: null, hasPending: false, working: false };
+
+/**
+ * "지금 활동 중인 캐릭터" 1명 선정 — 순수 함수(docs/mascot-window-design.md §5.1).
+ *
+ * 활동 = 알림 대기(pending) ∪ 턴 진행(working). waiting(사용자 질문 대기)은
+ * 제외한다 — 질문은 이미 pending으로 표면화되고, 알림을 지운 waiting은 사용자가
+ * 인지한 상태다(keepAwake의 computeAnyWorking과 같은 판단).
+ *
+ * 우선순위:
+ *  1. pending 최신(`notifications`는 newest-first) — 알릴 것이 있으면 즉시 인터럽트.
+ *  2. sticky: 직전에 보여주던 캐릭터가 여전히 working이면 그대로 유지한다
+ *     (working끼리 서로 뺏으며 깜빡이지 않게).
+ *  3. working 중 `turnStartedAt`이 가장 최근인 캐릭터.
+ *  4. 없음.
+ *
+ * 퇴근(clockedOut)했거나 프로필이 사라진 에이전트는 모든 단계에서 제외된다.
+ */
+export function pickMascotTarget(input: {
+  notifications: ReadonlyArray<{ agentId: string }>;
+  timeTracking: Record<string, { phase: TurnPhase; turnStartedAt: number | null }>;
+  agents: Record<string, { clockedOut?: boolean } | undefined>;
+  prevAgentId: string | null;
+}): MascotPick {
+  const { notifications, timeTracking, agents, prevAgentId } = input;
+  const eligible = (id: string) => {
+    const a = agents[id];
+    return a != null && !a.clockedOut;
+  };
+  const isWorking = (id: string) => timeTracking[id]?.phase === "working";
+
+  for (const n of notifications) {
+    if (eligible(n.agentId)) {
+      return { agentId: n.agentId, hasPending: true, working: isWorking(n.agentId) };
+    }
+  }
+
+  if (prevAgentId && eligible(prevAgentId) && isWorking(prevAgentId)) {
+    return { agentId: prevAgentId, hasPending: false, working: true };
+  }
+
+  let best: string | null = null;
+  let bestAt = -Infinity;
+  for (const [id, t] of Object.entries(timeTracking)) {
+    if (t.phase !== "working" || !eligible(id)) continue;
+    const at = t.turnStartedAt ?? 0;
+    if (at > bestAt) {
+      bestAt = at;
+      best = id;
+    }
+  }
+  return best === null ? NO_MASCOT_PICK : { agentId: best, hasPending: false, working: true };
+}
+
 export interface SessionTimeRow {
   agentId: string;
   name: string;

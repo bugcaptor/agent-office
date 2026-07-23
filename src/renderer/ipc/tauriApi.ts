@@ -140,6 +140,14 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.setKeepAwake, { active });
   },
 
+  async setMascotVisible(visible: boolean) {
+    await invoke(Commands.setMascotVisible, { visible });
+  },
+
+  async mascotActivate(agentId: string) {
+    await invoke(Commands.mascotActivate, { agentId });
+  },
+
   async controlStatus() {
     return await invoke(Commands.controlStatus);
   },

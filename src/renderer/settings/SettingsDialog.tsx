@@ -117,6 +117,21 @@ export function SettingsDialog() {
             </span>
           </label>
           <label className="settings-item">
+            <input
+              type="checkbox"
+              checked={appSettings.mascotEnabled}
+              onChange={(e) => updateAppSettings({ mascotEnabled: e.target.checked })}
+            />
+            <span>
+              <strong>데스크톱 마스코트</strong>
+              <small>
+                지금 활동 중인 캐릭터를 앱 창과 별개의 작은 창으로 항상 위에
+                띄웁니다. 알림이 오면 그 자리에서 알리고, 클릭하면 해당 캐릭터의
+                터미널이 열립니다.
+              </small>
+            </span>
+          </label>
+          <label className="settings-item">
             <span>
               <strong>외부 터미널 앱</strong>
               <small>

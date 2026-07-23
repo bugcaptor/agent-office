@@ -489,6 +489,8 @@ pub fn run() {
             ipc::commands::get_app_settings,
             ipc::commands::set_app_settings,
             ipc::commands::set_keep_awake,
+            ipc::commands::set_mascot_visible,
+            ipc::commands::mascot_activate,
             ipc::commands::control_status,
             ipc::commands::control_approve,
             ipc::commands::control_revoke,
@@ -524,6 +526,22 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build tauri app")
         .run(|app, event| {
+            // 마스코트 창(이슈 #72)이 살아 있으면 main을 닫아도 앱이 죽지 않는다 --
+            // Tauri는 **모든** 창이 닫혀야 ExitRequested를 발화하는데, quitGuard가
+            // main에 destroy()를 쓰므로 close 훅으로는 잡히지 않는다. main이
+            // 파괴되는 순간 마스코트도 함께 파괴해 유령 창/좀비 프로세스를 막는다.
+            if let RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } = &event
+            {
+                if label == "main" {
+                    if let Some(mascot) = app.get_webview_window("mascot") {
+                        let _ = mascot.destroy();
+                    }
+                }
+            }
             // 앱 종료 -- 모든 PTY kill + settings 정리 + observer 서버 graceful
             // shutdown, 반드시 이 순서로 (dispose_all이 먼저 끝나야 axum
             // shutdown 신호를 보내도 이미 kill된 세션들의 마지막 hook POST가
@@ -650,6 +668,7 @@ mod tests {
             file_index_backend: Default::default(),
             cli_enabled: false,
             keep_awake_enabled: false,
+            mascot_enabled: false,
         }));
         let registry = Arc::new(SessionRegistry::new());
         let events: Arc<dyn AppEvents> = Arc::new(crate::state::fake::RecordingEvents::default());

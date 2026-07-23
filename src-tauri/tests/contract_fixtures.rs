@@ -216,6 +216,7 @@ fn get_app_settings_result_matches_fixture() {
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
             keep_awake_enabled: false,
+            mascot_enabled: false,
         },
         first_run: true,
     };

@@ -58,6 +58,9 @@ export interface AppSettings {
   /** 캐릭터가 작업 중일 때 시스템 유휴 잠자기를 막을지(이슈 #68). 디스플레이
    * 잠자기는 막지 않는다(화면은 꺼져도 에이전트는 계속 돈다). 기본 false. */
   keepAwakeEnabled: boolean;
+  /** 데스크톱 마스코트 창(이슈 #72) — 활동 중인 캐릭터 1명을 앱 창과 별개의
+   * 투명·최상단 창으로 띄운다. 화면을 상시 점유하므로 기본 false. */
+  mascotEnabled: boolean;
 }
 
 /** `get_app_settings` 응답. firstRun = settings.json 부재(첫 실행). */

@@ -13,7 +13,8 @@
     "gitStatusEnabled": true,
     "fileIndexBackend": "walker",
     "cliEnabled": false,
-    "keepAwakeEnabled": false
+    "keepAwakeEnabled": false,
+    "mascotEnabled": false
   },
   "firstRun": true
 }

@@ -92,6 +92,11 @@ export interface AgentOfficeApi {
    * true는 lease를 갱신하므로 주기적으로 재호출한다. 설정이 꺼져 있으면 백엔드가
    * 조용히 무시한다. */
   setKeepAwake(active: boolean): Promise<void>;
+  /** 마스코트 창(#72) 표시/숨김. 창은 항상 존재하고 표시만 토글된다. */
+  setMascotVisible(visible: boolean): Promise<void>;
+  /** 마스코트 클릭(#72) — main 창을 앞으로 올리고 해당 에이전트 터미널을
+   * 열도록 main에 요청한다. 마스코트 창에서만 호출한다. */
+  mascotActivate(agentId: string): Promise<void>;
   /** CLI 제어(#55) 상태 조회 — 서버 기동·승인 여부·포트·app_data 경로. */
   controlStatus(): Promise<ControlStatus>;
   /** CLI 제어를 승인(토큰 발급). 2단계 옵트인의 2단계. */

@@ -7,7 +7,6 @@
 // `selectLayers`) stays DOM/Pixi-free so it's directly vitest-able.
 import { Texture, Rectangle } from "pixi.js";
 
-import { makeRng, hashStringToSeed } from "./prng";
 import {
   defaultCanvasFactory,
   CELL,
@@ -16,7 +15,11 @@ import {
   type CanvasFactory,
 } from "./compositor";
 import { getSpriteOverride } from "./spriteOverrides";
-import { getArchetype, resolveArchetype, composeArchetypeSheet } from "./archetypes";
+import { resolveArchetype } from "./archetypes";
+// 순수 시트 생성은 sheetGen.ts로 옮겼다(마스코트 창이 Pixi 없이 import할 수
+// 있어야 하므로). 여기서 재수출해 기존 호출부/테스트의 import 경로를 보존한다.
+import { generateSheet, selectLayers } from "./sheetGen";
+export { generateSheet, selectLayers };
 import { detailCellSize, areaDownscalePremul } from "./spriteResample";
 import type { AgentProfile } from "../types";
 
@@ -38,29 +41,6 @@ const CUSTOM_DESCRIPTOR = {
   clothes: "custom",
   accessory: "custom",
 } as const;
-
-/** seed(+archetype) → 결정적 팔레트/시트 스펙. archetype 기본 "human"(레거시 호환). */
-export function selectLayers(seed: string, archetype: string = "human") {
-  const arch = getArchetype(archetype);
-  const rng = makeRng(hashStringToSeed(seed));
-  const pal = arch.generatePalette(rng);
-  const built = arch.buildFrames(rng, pal);
-  return {
-    pal,
-    descriptor: { archetype: arch.id, ...built.descriptor },
-    build: built.sheet,
-  };
-}
-
-/** 순수 시트 생성(테스트 픽셀 비교용). factory 2번째/archetype 3번째(레거시 호출 호환). */
-export function generateSheet(
-  seed: string,
-  factory: CanvasFactory = defaultCanvasFactory,
-  archetype: string = "human",
-) {
-  const { pal, build, descriptor } = selectLayers(seed, archetype);
-  return { sheet: composeArchetypeSheet(build, pal, factory), descriptor };
-}
 
 /** 한 프레임(소스 아틀라스의 i번째 N×N 영역)을 D×D로 area 다운스케일한 nearest
  *  텍스처. 프레임별 개별 소스라 시트 seam bleed가 없다. 순수 리샘플 + 캔버스 I/O. */

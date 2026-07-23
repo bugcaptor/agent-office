@@ -31,6 +31,10 @@ export const Commands = {
   setAppSettings: "set_app_settings",
   // 작업 중 잠자기 방지(이슈 #68) — 렌더러가 "일하는 캐릭터 있음"을 통지.
   setKeepAwake: "set_keep_awake",
+  // 데스크톱 마스코트(이슈 #72, docs/mascot-window-design.md) — 창 표시 토글과,
+  // 마스코트 클릭 시 main 포커스 + 터미널 열기 요청.
+  setMascotVisible: "set_mascot_visible",
+  mascotActivate: "mascot_activate",
   // CLI 제어(이슈 #55, docs/cli-control-design.md) — 2단계 승인 상태 조회/승인/취소.
   controlStatus: "control_status",
   controlApprove: "control_approve",
@@ -104,4 +108,10 @@ export const Events = {
   notificationNew: "notification-new",
   notificationCleared: "notification-cleared",
   activityEvent: "activity-event",
+  // 마스코트 창(이슈 #72). mascotState는 main→mascot 브로드캐스트(진실의 원천은
+  // main의 스토어), mascotReady는 mascot 부팅 핸드셰이크(main이 현재 상태 재방출),
+  // mascotOpenTerminal은 Rust가 main에만 emit_to하는 클릭 결과다.
+  mascotState: "mascot-state",
+  mascotReady: "mascot-ready",
+  mascotOpenTerminal: "mascot-open-terminal",
 } as const;

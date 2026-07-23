@@ -250,6 +250,13 @@ describe("Commands / Events name constants", () => {
     expect(Events.sessionState).toBe("session-state");
     expect(Events.notificationNew).toBe("notification-new");
     expect(Events.notificationCleared).toBe("notification-cleared");
+
+    // 마스코트 창(이슈 #72) — Rust `emit_to`/커맨드 이름과 짝이 맞아야 한다.
+    expect(Commands.setMascotVisible).toBe("set_mascot_visible");
+    expect(Commands.mascotActivate).toBe("mascot_activate");
+    expect(Events.mascotState).toBe("mascot-state");
+    expect(Events.mascotReady).toBe("mascot-ready");
+    expect(Events.mascotOpenTerminal).toBe("mascot-open-terminal");
   });
 
   it("has no duplicate values across Commands and Events combined", () => {
@@ -278,6 +285,7 @@ describe("AppSettings (opt-in 설정 계약)", () => {
       fileIndexBackend: "walker",
       cliEnabled: false,
       keepAwakeEnabled: false,
+      mascotEnabled: false,
     });
   });
 

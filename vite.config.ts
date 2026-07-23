@@ -32,6 +32,18 @@ export default defineConfig(async () => ({
     },
   },
 
+  // 멀티페이지: 메인 창(index.html)과 데스크톱 마스코트 창(mascot.html, 이슈 #72)이
+  // 각자 엔트리를 갖는다. dev 서버는 파일 경로를 그대로 서빙하므로 별도 설정이
+  // 필요 없고, 프로덕션 빌드만 rollup 입력에 추가하면 된다.
+  build: {
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        mascot: fileURLToPath(new URL("./mascot.html", import.meta.url)),
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

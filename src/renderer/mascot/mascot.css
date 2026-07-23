@@ -1,0 +1,67 @@
+/* src/renderer/mascot/mascot.css
+ *
+ * 마스코트 창(이슈 #72) 전용 최소 스타일. 전역 styles/를 절대 로드하지 않는다 —
+ * 테마 배경색이 들어오는 순간 투명 창이 불투명한 사각형이 된다.
+ */
+
+.mascot-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: transparent;
+}
+
+/* 스프라이트 자체. 창 하단 중앙에 붙는다. 클릭/드래그 히트 영역도 여기뿐이라
+   투명한 여백을 눌러도 아무 일이 없다. */
+.mascot-sprite {
+  display: block;
+  image-rendering: pixelated;
+  cursor: pointer;
+}
+
+/* 알림 대기 중 캐릭터가 통통 뛴다. 배지와 같은 주기(600ms)로 맞춰 한 몸처럼 보이게. */
+.mascot-sprite.pending {
+  animation: mascot-hop 600ms ease-in-out infinite;
+}
+
+@keyframes mascot-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+/* 머리 위 느낌표 배지 — 오피스 씬의 ExclamationOverlay와 같은 색/모양. */
+.mascot-badge {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  margin-left: -14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #ffcc33;
+  border: 1px solid #8a5a00;
+  color: #3a2600;
+  font: 700 18px/26px ui-sans-serif, system-ui, sans-serif;
+  text-align: center;
+  box-sizing: border-box;
+  pointer-events: none;
+  animation: mascot-bounce 600ms ease-in-out infinite;
+}
+
+@keyframes mascot-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}

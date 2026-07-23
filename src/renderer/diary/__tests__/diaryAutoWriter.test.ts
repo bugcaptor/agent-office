@@ -38,6 +38,7 @@ const SETTINGS_ON: AppSettings = {
   fileIndexBackend: "walker",
   cliEnabled: false,
   keepAwakeEnabled: false,
+  mascotEnabled: false,
 };
 
 function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {

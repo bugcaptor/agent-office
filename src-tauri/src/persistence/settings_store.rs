@@ -123,6 +123,11 @@ pub struct AppSettings {
     /// `#[serde(default)]`라 기존 설정 파일에 키가 없으면 false. 기본 꺼짐.
     #[serde(default)]
     pub keep_awake_enabled: bool,
+    /// 데스크톱 마스코트 창(이슈 #72, docs/mascot-window-design.md)을 띄울지.
+    /// 활동 중인 캐릭터 1명을 앱 창과 별개의 투명·최상단 창으로 보여준다.
+    /// 화면을 상시 점유하는 시스템 표면이라 opt-in — 기본 꺼짐.
+    #[serde(default)]
+    pub mascot_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -142,6 +147,7 @@ impl Default for AppSettings {
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
             keep_awake_enabled: false,
+            mascot_enabled: false,
         }
     }
 }
@@ -229,6 +235,7 @@ mod tests {
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
             keep_awake_enabled: false,
+            mascot_enabled: false,
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -327,6 +334,7 @@ mod tests {
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
             keep_awake_enabled: false,
+            mascot_enabled: false,
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();

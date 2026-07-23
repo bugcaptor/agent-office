@@ -10,11 +10,32 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "main",
         "title": "Agent Office",
         "width": 800,
         "height": 600
+      },
+      {
+        "label": "mascot",
+        "url": "mascot.html",
+        "title": "Agent Office Mascot",
+        "width": 120,
+        "height": 140,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "shadow": false,
+        "focus": false,
+        "acceptFirstMouse": true,
+        "visibleOnAllWorkspaces": true,
+        "visible": false
       }
     ],
     "security": {

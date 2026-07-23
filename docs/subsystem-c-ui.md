@@ -63,6 +63,11 @@ interface AgentOfficeApi {
 
 ### 1.1 결론: 단일 BrowserWindow + z-index 레이어 스택
 
+> 예외(이슈 #72): 앱에는 이제 두 번째 웹뷰 창 `mascot`이 있다 — 투명·최상단·
+> 장식 없는 데스크톱 마스코트. 이 절의 "단일 창" 전제는 **앱 본체 UI**에 대한
+> 것이고, 마스코트는 스토어도 Pixi도 없는 얇은 소비자라 아래 레이어 스택과
+> 무관하다. 설계는 `docs/mascot-window-design.md` 정본.
+
 `frame: false` 커스텀 프레임은 MVP 범위를 넘으므로 표준 프레임 유지. 창 내부는 **4개 레이어의 절대 위치 스택**:
 
 ```

@@ -36,6 +36,7 @@ const SETTINGS_ON: AppSettings = {
   fileIndexBackend: "walker",
   cliEnabled: false,
   keepAwakeEnabled: false,
+  mascotEnabled: false,
 };
 
 const NOW = 1_000_000_000_000;
