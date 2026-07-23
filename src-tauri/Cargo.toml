@@ -1,6 +1,6 @@
 [package]
 name = "agent-office"
-version = "0.5.7"
+version = "0.5.8"
 description = "Agent Office"
 authors = ["bugcaptor"]
 license = "MIT"
