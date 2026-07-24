@@ -160,3 +160,62 @@ pub async fn pick_directory(
         )),
     }
 }
+
+/// 캐릭터 번들(이슈 #77) 내보내기: 네이티브 저장 다이얼로그를 띄워 사용자가 고른
+/// 경로에 UTF-8 텍스트(자기완결형 JSON)를 쓴다. 저장한 절대 경로, 취소 시 None.
+/// `default_name`은 다이얼로그 초기 파일명. 콜백→oneshot 브리지는 `pick_directory`와
+/// 동일한 이유(블로킹 API가 런타임 스레드를 점유)로 쓴다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn export_character_file(
+    app: tauri::AppHandle,
+    default_name: String,
+    content: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_file_name(default_name)
+        .add_filter("Agent Office 캐릭터", &["json"])
+        .save_file(move |path| {
+            let _ = tx.send(path);
+        });
+    let picked = rx
+        .await
+        .map_err(|_| "저장 다이얼로그가 응답 없이 종료되었습니다".to_string())?;
+    match picked {
+        None => Ok(None),
+        Some(fp) => {
+            let path = fp.into_path().map_err(|e| e.to_string())?;
+            std::fs::write(&path, content.as_bytes()).map_err(|e| e.to_string())?;
+            Ok(Some(path.to_string_lossy().into_owned()))
+        }
+    }
+}
+
+/// 캐릭터 번들(이슈 #77) 가져오기: 네이티브 열기 다이얼로그로 파일 하나를 고르게
+/// 하고 UTF-8 텍스트로 읽어 그대로 돌려준다(파싱/검증은 프런트가 수행). 취소 시 None.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn import_character_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("Agent Office 캐릭터", &["json"])
+        .pick_file(move |path| {
+            let _ = tx.send(path);
+        });
+    let picked = rx
+        .await
+        .map_err(|_| "열기 다이얼로그가 응답 없이 종료되었습니다".to_string())?;
+    match picked {
+        None => Ok(None),
+        Some(fp) => {
+            let path = fp.into_path().map_err(|e| e.to_string())?;
+            let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+            Ok(Some(text))
+        }
+    }
+}

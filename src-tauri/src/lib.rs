@@ -513,6 +513,8 @@ pub fn run() {
             workdir::workdir_repo_log,
             workdir::workdir_difftool,
             ipc::commands::pick_directory,
+            ipc::commands::export_character_file,
+            ipc::commands::import_character_file,
             ipc::commands::append_session_turn,
             ipc::commands::load_session_turns,
             ipc::commands::append_diary_entry,

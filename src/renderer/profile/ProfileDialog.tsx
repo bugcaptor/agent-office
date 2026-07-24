@@ -11,6 +11,15 @@ import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import { useAppStore } from "../store/appStore";
 import { generateDraft, draftToProfile, buildBotConfig, type DraftProfile } from "./generate";
+import {
+  portableFromDraft,
+  applyBundleToDraft,
+  serializeBundle,
+  buildExportFileName,
+} from "./characterIo";
+import { parseCharacterBundle } from "@shared/types";
+import { pngBase64ToDataUrl } from "../portrait/portraitCache";
+import { loadSpritesFor } from "../sprite/spriteCache";
 import { generateSpritePreview } from "../office/gen/characterFactory";
 import { ARCHETYPE_SELECT_OPTIONS, resolveArchetype, pickArchetype } from "../office/gen/archetypes";
 import { tauriApi } from "../ipc/tauriApi";
@@ -56,6 +65,7 @@ export function ProfileDialog() {
     editingAgentId ? s.agents[editingAgentId] : undefined
   );
   const removePortrait = useAppStore((s) => s.removePortrait);
+  const setPortrait = useAppStore((s) => s.setPortrait);
   const portraitUrl = useAppStore((s) =>
     editingAgent ? s.portraits[editingAgent.id] : undefined
   );
@@ -76,6 +86,9 @@ export function ProfileDialog() {
   const [draft, setDraft] = useState<DraftProfile>(() => generateDraft());
   const [spriteUrl, setSpriteUrl] = useState<string>("");
   const [shells, setShells] = useState<AvailableShell[]>([]);
+  /** 캐릭터 내보내기/가져오기(이슈 #77) 진행 표시 + 결과/오류 캡션. */
+  const [ioBusy, setIoBusy] = useState(false);
+  const [ioNote, setIoNote] = useState<string | null>(null);
 
   // 마운트 시 사용 가능한 셸 목록 조회 (Windows 외에는 빈 배열 → 셀렉터 미노출).
   useEffect(() => {
@@ -99,6 +112,8 @@ export function ProfileDialog() {
     setPixellabBusy(false);
     setPixellabNote(null);
     setGeneratedImage(null);
+    setIoBusy(false);
+    setIoNote(null);
     if (!editingAgentId) return;
     const agent = useAppStore.getState().agents[editingAgentId];
     if (!agent) return;
@@ -234,6 +249,84 @@ export function ProfileDialog() {
     clearSpriteOverride(editingAgent.id);
     removeSpritePreview(editingAgent.id);
     updateAgent(editingAgent.id, { spriteUpdatedAt: undefined });
+  };
+
+  // ── 캐릭터 내보내기(이슈 #77) ──────────────────────────────
+  // 현재 편집 draft(진행 중 편집 반영) + 백엔드에 저장된 초상/스프라이트를 모아
+  // 자기완결형 번들 파일로 쓴다. 로컬 환경 필드(cwd/셸/시작명령/봇)는 제외한다.
+  const onExportCharacter = async () => {
+    if (ioBusy || !editingAgent) return;
+    setIoBusy(true);
+    setIoNote(null);
+    try {
+      const profile = portableFromDraft(draft);
+      const [portraitB64, spriteB64] = await Promise.all([
+        tauriApi.loadPortrait(editingAgent.id),
+        tauriApi.loadSprite(editingAgent.id),
+      ]);
+      const json = serializeBundle(profile, portraitB64 ?? undefined, spriteB64 ?? undefined);
+      const saved = await tauriApi.exportCharacterFile(buildExportFileName(profile.name), json);
+      setIoNote(saved ? "내보냈습니다." : null); // null=사용자가 취소
+    } catch (err) {
+      console.warn("ProfileDialog: exportCharacter failed", err);
+      setIoNote("내보내기에 실패했습니다.");
+    } finally {
+      setIoBusy(false);
+    }
+  };
+
+  // ── 캐릭터 가져오기(이슈 #77) ──────────────────────────────
+  // 편집 중인 캐릭터에 번들을 적용한다(새 캐릭터를 만들지 않는다). 이미지는
+  // replace 시맨틱: 번들에 있으면 저장·표시, 없으면 기존 이미지를 제거해 소스와
+  // 똑같은 외형이 되게 한다. 텍스트 필드는 draft에 실어 ‘저장’ 시 확정한다.
+  const onImportCharacter = async () => {
+    if (ioBusy || !editingAgent) return;
+    setIoBusy(true);
+    setIoNote(null);
+    const id = editingAgent.id;
+    try {
+      const text = await tauriApi.importCharacterFile();
+      if (text == null) {
+        setIoBusy(false);
+        return; // 사용자가 취소
+      }
+      const res = parseCharacterBundle(text);
+      if (!res.ok) {
+        setIoNote(res.error);
+        setIoBusy(false);
+        return;
+      }
+      const b = res.bundle;
+
+      if (b.portraitPngBase64) {
+        await tauriApi.savePortrait(id, b.portraitPngBase64);
+        setPortrait(id, pngBase64ToDataUrl(b.portraitPngBase64));
+        updateAgent(id, { portraitUpdatedAt: Date.now() });
+      } else {
+        await tauriApi.deletePortrait(id);
+        removePortrait(id);
+        updateAgent(id, { portraitUpdatedAt: undefined });
+      }
+
+      if (b.spritePngBase64) {
+        await tauriApi.saveSprite(id, b.spritePngBase64);
+        updateAgent(id, { spriteUpdatedAt: Date.now() });
+        await loadSpritesFor([id]); // 백엔드에서 디코드 → 오버라이드 + 프리뷰 갱신
+      } else {
+        await tauriApi.deleteSprite(id);
+        clearSpriteOverride(id);
+        removeSpritePreview(id);
+        updateAgent(id, { spriteUpdatedAt: undefined });
+      }
+
+      setDraft((d) => applyBundleToDraft(d, b.profile));
+      setIoNote("가져왔습니다. ‘저장’을 눌러 반영하세요.");
+    } catch (err) {
+      console.warn("ProfileDialog: importCharacter failed", err);
+      setIoNote("가져오기에 실패했습니다.");
+    } finally {
+      setIoBusy(false);
+    }
   };
 
   const onSave = async () => {
@@ -586,6 +679,25 @@ export function ProfileDialog() {
             <button className="pixel-btn dialog-action-aux" onClick={regenAll}>
               전체 랜덤
             </button>
+          )}
+          {editing && editingAgent && (
+            <div className="dialog-io-group">
+              <button
+                className="pixel-btn"
+                onClick={onExportCharacter}
+                disabled={ioBusy}
+              >
+                내보내기
+              </button>
+              <button
+                className="pixel-btn"
+                onClick={onImportCharacter}
+                disabled={ioBusy}
+              >
+                가져오기
+              </button>
+              {ioNote && <span className="profile-io-note">{ioNote}</span>}
+            </div>
           )}
           <button className="pixel-btn primary" onClick={onSave}>
             저장

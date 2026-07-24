@@ -122,6 +122,12 @@ export interface AgentOfficeApi {
   /** 네이티브 폴더 선택 다이얼로그. 선택한 절대 경로, 취소 시 null.
    * `initialDir`이 실존 디렉터리면 거기서 시작한다(`~` 확장 포함). */
   pickDirectory(initialDir?: string): Promise<string | null>;
+  /** 캐릭터 번들(#77) 내보내기 — 저장 다이얼로그로 UTF-8 텍스트를 쓴다.
+   * 저장한 절대 경로, 취소 시 null. `defaultName`은 초기 파일명. */
+  exportCharacterFile(defaultName: string, content: string): Promise<string | null>;
+  /** 캐릭터 번들(#77) 가져오기 — 열기 다이얼로그로 고른 파일 텍스트를 반환.
+   * 취소 시 null. 파싱/검증은 호출부가 수행한다. */
+  importCharacterFile(): Promise<string | null>;
   /** Returns an unsubscribe function. `bytes` is the raw stream byte count of
    * this batch (§#49); the renderer accumulates it on write to derive snapshot
    * offsets. Restore snapshots deliver `bytes === 0`. */

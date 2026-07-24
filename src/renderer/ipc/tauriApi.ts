@@ -192,6 +192,14 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.pickDirectory, { initialDir: initialDir ?? null });
   },
 
+  async exportCharacterFile(defaultName, content) {
+    return await invoke(Commands.exportCharacterFile, { defaultName, content });
+  },
+
+  async importCharacterFile() {
+    return await invoke(Commands.importCharacterFile);
+  },
+
   appendSessionTurn(record: SessionTurnRecord) {
     void invoke(Commands.appendSessionTurn, { record }); // fire-and-forget
   },

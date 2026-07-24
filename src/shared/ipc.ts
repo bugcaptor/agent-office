@@ -48,6 +48,9 @@ export const Commands = {
   openInTerminal: "open_in_terminal",
   exportTerminalOutput: "export_terminal_output",
   pickDirectory: "pick_directory",
+  // 캐릭터 내보내기/가져오기(이슈 #77) — 저장/열기 다이얼로그 경유 텍스트 파일 rw.
+  exportCharacterFile: "export_character_file",
+  importCharacterFile: "import_character_file",
   appendSessionTurn: "append_session_turn",
   loadSessionTurns: "load_session_turns",
   // 캐릭터 일기(이슈 #56) — per-agent 일기 append/load.

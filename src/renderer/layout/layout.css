@@ -389,6 +389,19 @@ body {
 .profile-dialog .dialog-action-aux {
   margin-right: auto;
 }
+/* 내보내기/가져오기(이슈 #77): 좌측 그룹으로 묶어 저장/취소와 분리, 노트 인라인. */
+.profile-dialog .dialog-io-group {
+  margin-right: auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(var(--unit) * 2);
+}
+.profile-dialog .profile-io-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  max-width: 22ch;
+}
 
 /* ── 정보(About) 다이얼로그: 텍스트만 있는 단순 패널이라 폭 제한 정도만 ── */
 .about-dialog {
