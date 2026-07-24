@@ -14,7 +14,7 @@ vi.mock("../../ipc/tauriApi", () => ({
 }));
 
 import { useAppStore } from "../../store/appStore";
-import { MAX_ITEMS_PER_AGENT, WorkLog } from "../workLog";
+import { MAX_ITEMS_PER_SESSION, WorkLog } from "../workLog";
 import {
   installWorkLogPersister,
   restoreWorkLogs,
@@ -46,11 +46,11 @@ describe("WorkLog 신규 동작(#60)", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("seed도 상한을 지킨다(오래된 것부터 버림)", () => {
+  it("seed도 세션당 상한을 지킨다(오래된 것부터 버림)", () => {
     const log = new WorkLog();
-    const restored = Array.from({ length: MAX_ITEMS_PER_AGENT + 3 }, (_, i) => item(i, "s1", `r${i}`));
+    const restored = Array.from({ length: MAX_ITEMS_PER_SESSION + 3 }, (_, i) => item(i, "s1", `r${i}`));
     log.seed("a1", restored);
-    expect(log.items("a1")).toHaveLength(MAX_ITEMS_PER_AGENT);
+    expect(log.items("a1")).toHaveLength(MAX_ITEMS_PER_SESSION);
     expect(log.items("a1")[0].text).toBe("r3");
   });
 

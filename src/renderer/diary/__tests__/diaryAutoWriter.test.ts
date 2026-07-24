@@ -342,6 +342,59 @@ describe("installDiaryAutoWriter — 백그라운드 유휴 스윕(#66)", () => 
     off();
   });
 
+  it("종료 flush가 타임아웃이어도 앱이 계속 활성이면 유휴-비의존 재시도로 결국 쓴다(#75)", async () => {
+    // 다른 에이전트가 running이라 앱은 유휴가 아니다 → 정착·백스톱 스윕은 안 돈다.
+    useAppStore.setState({ sessions: { other: running("other") } });
+    const m = mockApi();
+    const generate = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, reason: "timeout" })
+      .mockResolvedValue(okResult("s1"));
+    const off = installDiaryAutoWriter({
+      api: m.api,
+      now: () => NOW,
+      log: logWith("s1", AUTO_DIARY_MIN_ITEMS, NOW),
+      generate,
+      notify: vi.fn(),
+      settleMs: 100000, // 유휴 스윕은 사실상 비활성
+      backstopMs: 100000,
+      endRetryMs: 500,
+    });
+
+    m.emit({ state: "exited", sessionId: "s1" });
+    await vi.advanceTimersByTimeAsync(0); // 즉시 flush(타임아웃) 소화
+    expect(generate).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(500); // 유휴와 무관한 재시도 → 성공
+    expect(generate).toHaveBeenCalledTimes(2);
+    off();
+  });
+
+  it("유휴-비의존 재시도는 상한(maxEndRetries)에서 멈춘다(#75)", async () => {
+    useAppStore.setState({ sessions: { other: running("other") } });
+    const m = mockApi();
+    // 계속 in-flight → hasPendingWork가 계속 참이라 상한이 없으면 무한 재시도.
+    const generate = vi.fn().mockResolvedValue({ ok: false, reason: "in-flight" });
+    const off = installDiaryAutoWriter({
+      api: m.api,
+      now: () => NOW,
+      log: logWith("s1", AUTO_DIARY_MIN_ITEMS, NOW),
+      generate,
+      notify: vi.fn(),
+      settleMs: 100000,
+      backstopMs: 100000,
+      endRetryMs: 100,
+      maxEndRetries: 3,
+    });
+
+    m.emit({ state: "exited", sessionId: "s1" });
+    await vi.advanceTimersByTimeAsync(0); // 즉시 시도(1회)
+    await vi.advanceTimersByTimeAsync(10_000); // 재시도가 상한까지만
+    // 즉시 1 + 재시도 3 = 4회에서 멈춘다.
+    expect(generate).toHaveBeenCalledTimes(1 + 3);
+    off();
+  });
+
   it("정착 대기 중 새 세션이 시작되면 스윕이 재시도하지 않는다(활성 가드)", async () => {
     const m = mockApi();
     // 계속 타임아웃 → 세션이 재시도 대상으로 남는다(즉시 flush가 소진하지 않음).

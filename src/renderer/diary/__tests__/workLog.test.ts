@@ -17,7 +17,8 @@ vi.mock("../../ipc/tauriApi", () => ({
 import { useAppStore } from "../../store/appStore";
 import {
   FORMAT_BUDGET_CHARS,
-  MAX_ITEMS_PER_AGENT,
+  MAX_ITEMS_PER_SESSION,
+  MAX_SESSIONS_PER_AGENT,
   WorkLog,
   formatWorkLog,
   installWorkLogRecorder,
@@ -38,14 +39,46 @@ describe("WorkLog 버퍼", () => {
     ]);
   });
 
-  it("상한을 넘으면 오래된 항목부터 버린다", () => {
+  it("한 세션이 세션당 상한을 넘으면 그 세션의 오래된 항목부터 버린다", () => {
     const log = new WorkLog();
-    for (let i = 0; i < MAX_ITEMS_PER_AGENT + 5; i++) {
+    for (let i = 0; i < MAX_ITEMS_PER_SESSION + 5; i++) {
       log.append("a1", { at: i, sessionId: "s1", kind: "tool", text: `t${i}` });
     }
     const items = log.items("a1");
-    expect(items.length).toBe(MAX_ITEMS_PER_AGENT);
+    expect(items.length).toBe(MAX_ITEMS_PER_SESSION);
     expect(items[0].text).toBe("t5"); // 0~4가 밀려남
+  });
+
+  it("새 세션 활동이 아직 일기화 안 된 옛 세션 항목을 축출하지 않는다(#75)", () => {
+    const log = new WorkLog();
+    // 세션 A: 3항목(일기 자격). 이후 세션 B가 세션당 상한을 넘겨 쏟아부어도
+    // 예전(에이전트 단위 상한) 동작이라면 A가 밀려났겠지만, 세션 인지형은 A를 보존.
+    log.append("a1", { at: 1, sessionId: "A", kind: "prompt", text: "A1" });
+    log.append("a1", { at: 2, sessionId: "A", kind: "tool", text: "A2" });
+    log.append("a1", { at: 3, sessionId: "A", kind: "narration", text: "A3" });
+    for (let i = 0; i < MAX_ITEMS_PER_SESSION + 10; i++) {
+      log.append("a1", { at: 100 + i, sessionId: "B", kind: "tool", text: `B${i}` });
+    }
+    // A의 세 항목은 그대로 남아 있어야 한다.
+    expect(log.items("a1", "A").map((i) => i.text)).toEqual(["A1", "A2", "A3"]);
+    // B는 세션당 상한까지만.
+    expect(log.items("a1", "B").length).toBe(MAX_ITEMS_PER_SESSION);
+  });
+
+  it("세션 개수가 상한을 넘으면 가장 오래된 세션을 통째로 버린다(#75)", () => {
+    const log = new WorkLog();
+    // MAX_SESSIONS_PER_AGENT + 2개의 서로 다른 세션을 각 1항목씩 순서대로.
+    const total = MAX_SESSIONS_PER_AGENT + 2;
+    for (let i = 0; i < total; i++) {
+      log.append("a1", { at: i, sessionId: `s${i}`, kind: "tool", text: `t${i}` });
+    }
+    const kept = log.sessions("a1");
+    expect(kept.length).toBe(MAX_SESSIONS_PER_AGENT);
+    // 가장 오래된 두 세션(s0, s1)이 통째로 빠지고 최신 세션들만 남는다.
+    expect(kept).not.toContain("s0");
+    expect(kept).not.toContain("s1");
+    expect(kept[0]).toBe("s2");
+    expect(kept[kept.length - 1]).toBe(`s${total - 1}`);
   });
 
   it("sessionId로 필터하고, clear(sessionId)는 그 세션만 지운다", () => {

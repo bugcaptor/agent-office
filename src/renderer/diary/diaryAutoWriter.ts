@@ -31,6 +31,18 @@ export { AUTO_DIARY_MAX_AGE_MS, AUTO_DIARY_MIN_ITEMS } from "./diaryFlusher";
 export const DEFAULT_SETTLE_MS = 30_000;
 /** 주기 백스톱 간격 — 정착 트리거가 이벤트 유실로 놓친 백로그를 유휴 시 비운다. */
 export const DEFAULT_BACKSTOP_MS = 5 * 60_000;
+/**
+ * 종료 flush가 타임아웃/in-flight로 미완이면, **유휴와 무관하게** 그 에이전트만
+ * 이 간격 뒤 재시도 예약한다(#75). 재시작을 연발해 앱이 계속 활성(비유휴)이라
+ * 정착·백스톱 스윕이 영영 안 도는 구간에서도 밀린 일기를 따라잡기 위함.
+ */
+export const DEFAULT_END_RETRY_MS = 20_000;
+/**
+ * 한 에이전트의 유휴-비의존 재시도 예약 상한(무한 루프 방어선). flusher 자체가
+ * 타임아웃을 TIMEOUT_MAX_RETRIES로 유계화하므로 보통 그 전에 pending이 사라지지만,
+ * 병리적 in-flight 반복에 대비한 하드 캡.
+ */
+export const DEFAULT_MAX_END_RETRIES = 6;
 
 export interface DiaryAutoWriterDeps {
   api?: Pick<AgentOfficeApi, "onSessionState">;
@@ -45,6 +57,10 @@ export interface DiaryAutoWriterDeps {
   settleMs?: number;
   /** 백스톱 간격(ms, 테스트 주입). 기본 DEFAULT_BACKSTOP_MS. */
   backstopMs?: number;
+  /** 유휴-비의존 종료 재시도 간격(ms, 테스트 주입). 기본 DEFAULT_END_RETRY_MS. */
+  endRetryMs?: number;
+  /** 에이전트별 종료 재시도 예약 상한(테스트 주입). 기본 DEFAULT_MAX_END_RETRIES. */
+  maxEndRetries?: number;
 }
 
 /** 알림 본문용: 일기 본문 앞부분을 한 줄로 자른다. */
@@ -84,6 +100,8 @@ export function installDiaryAutoWriter(deps: DiaryAutoWriterDeps = {}): () => vo
 
   const settleMs = deps.settleMs ?? DEFAULT_SETTLE_MS;
   const backstopMs = deps.backstopMs ?? DEFAULT_BACKSTOP_MS;
+  const endRetryMs = deps.endRetryMs ?? DEFAULT_END_RETRY_MS;
+  const maxEndRetries = deps.maxEndRetries ?? DEFAULT_MAX_END_RETRIES;
 
   // 유휴 = 활성(starting/running) 세션이 하나도 없음. 스토어의 세션 상태를 직접
   // 읽어 판정한다 — 증감 카운터가 아니라 최신 상태 집계라, 종료 이벤트를 놓쳐도
@@ -132,10 +150,43 @@ export function installDiaryAutoWriter(deps: DiaryAutoWriterDeps = {}): () => vo
     }, settleMs);
   };
 
+  // 종료 flush의 유휴-비의존 재시도(#75). 종료 즉시 시도가 타임아웃/in-flight로
+  // 미완이면, 앱이 계속 활성이라 정착·백스톱 스윕이 안 돌아도 이 타이머가 그
+  // 에이전트만 유계 재시도한다. hasPendingWork가 false가 되면(성공·스킵·타임아웃
+  // 상한 확정) 스스로 멈춘다. 재시작 연발로 disposed 이벤트가 억제되는 세션은
+  // restartAgentSession의 명시 트리거가 이 경로를 태운다.
+  const endRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const endRetryCounts = new Map<string, number>();
+
+  const scheduleEndRetry = (agentId: string): void => {
+    if (endRetryTimers.has(agentId)) return; // 이미 예약됨.
+    const count = endRetryCounts.get(agentId) ?? 0;
+    if (count >= maxEndRetries) return; // 하드 캡 — 병리적 반복 방어.
+    endRetryCounts.set(agentId, count + 1);
+    endRetryTimers.set(
+      agentId,
+      setTimeout(() => {
+        endRetryTimers.delete(agentId);
+        void endFlush(agentId);
+      }, endRetryMs),
+    );
+  };
+
+  const endFlush = async (agentId: string): Promise<void> => {
+    const opts = { includeLive: false, source: "session-end" as const };
+    await flusher.flushAgent(agentId, opts);
+    // 아직 자격 있는 미기록 세션이 남았으면(타임아웃/in-flight) 유휴와 무관하게
+    // 재시도 예약, 없으면 카운터를 비워 다음 종료가 온전한 재시도 예산을 받게 한다.
+    if (flusher.hasPendingWork(agentId, opts)) scheduleEndRetry(agentId);
+    else endRetryCounts.delete(agentId);
+  };
+
   const offSession = api.onSessionState((e) => {
     if (e.state === "exited" || e.state === "disposed") {
-      // 종료 즉시 그 세션은 기존대로 바로 시도(빠른 happy path).
-      void flusher.flushAgent(e.agentId, { includeLive: false, source: "session-end" });
+      // 새 종료 이벤트 — 온전한 재시도 예산으로 즉시 시도(빠른 happy path) +
+      // 미완 시 유휴-비의존 재시도 예약.
+      endRetryCounts.delete(e.agentId);
+      void endFlush(e.agentId);
       // 유휴로 접어들면 정착 후 백로그 스윕을 예약(발화 시점에 재확인).
       if (isIdle()) armSettle();
     } else {
@@ -153,6 +204,9 @@ export function installDiaryAutoWriter(deps: DiaryAutoWriterDeps = {}): () => vo
   return () => {
     offSession();
     clearSettle();
+    for (const t of endRetryTimers.values()) clearTimeout(t);
+    endRetryTimers.clear();
+    endRetryCounts.clear();
     clearInterval(backstopTimer);
     setSharedDiaryFlusher(null);
   };

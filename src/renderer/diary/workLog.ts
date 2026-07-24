@@ -7,8 +7,10 @@
 // taskLabels 변화를 감시해 {프롬프트·목표·도구요약·내레이션, 시각}을 append한다.
 //
 // 버퍼는 비영속(런타임 전용) — 앱을 껐다 켜면 미생성 세션의 로그는 유실된다
-// (일기 트리거 설계로 완화). agentId별 상한(항목 수)을 둬 무한 성장하지 않는다.
-// 일기를 생성하고 나면 generator가 clearWorkLog로 소진한다.
+// (일기 트리거 설계로 완화). 상한을 둬 무한 성장하지 않되, 축출은 **세션 인지형**
+// 이다(#75): 새 세션 활동이 아직 일기화 안 된 옛 세션 항목을 밀어내 유실시키지
+// 않도록, 세션당 항목 상한 + 세션 개수 상한으로 이원화한다. 일기를 생성하고 나면
+// generator가 clear로 소진한다.
 import { useAppStore } from "../store/appStore";
 import type { AgentTaskLabel } from "../store/types";
 import type { WorkLogItem, WorkLogKind } from "@shared/types";
@@ -16,8 +18,18 @@ import type { WorkLogItem, WorkLogKind } from "@shared/types";
 // 정본 타입은 @shared/types(백엔드 스냅샷과 공유). 기존 임포터 호환을 위해 재export.
 export type { WorkLogItem, WorkLogKind } from "@shared/types";
 
-/** agentId당 보관하는 최근 작업 로그 항목 상한(오래된 것부터 버림). */
-export const MAX_ITEMS_PER_AGENT = 60;
+/**
+ * 한 세션이 보관하는 최근 작업 로그 항목 상한(넘으면 그 세션의 오래된 것부터 버림).
+ * 예전 `MAX_ITEMS_PER_AGENT`(에이전트 전체 60)를 세션 단위로 옮긴 값 — 단일 세션
+ * 동작은 동일하되, 여러 세션이 한 에이전트를 공유해도 서로 밀어내지 않게 한다(#75).
+ */
+export const MAX_ITEMS_PER_SESSION = 60;
+/**
+ * 한 에이전트가 보관하는 서로 다른 세션 개수 상한(넘으면 가장 오래된 세션을 통째로
+ * 버림). 재시작을 아주 많이 반복해도 미기록 세션이 무한 누적하지 않게 하는 메모리
+ * 방어선. 최악 메모리 = MAX_SESSIONS_PER_AGENT × MAX_ITEMS_PER_SESSION 항목(#75).
+ */
+export const MAX_SESSIONS_PER_AGENT = 40;
 /** 한 항목 본문의 문자 상한(과도한 도구/내레이션 텍스트 방지). */
 export const ITEM_MAX_CHARS = 400;
 
@@ -47,13 +59,48 @@ export class WorkLog {
     this.onChange = cb;
   }
 
-  /** 한 항목을 append하고 상한을 넘으면 오래된 것부터 버린다. */
+  /**
+   * 세션 인지형 축출(#75). 시간순(오래→최신) 리스트를 제자리에서 절단한다:
+   *  (1) 세션당 항목 상한 — 각 세션이 MAX_ITEMS_PER_SESSION를 넘으면 그 세션의
+   *      가장 오래된 항목부터 버린다(최신 우선 보존). 다른 세션엔 손대지 않는다.
+   *  (2) 세션 개수 상한 — 서로 다른 세션이 MAX_SESSIONS_PER_AGENT를 넘으면 가장
+   *      오래된 세션(등장순 앞)부터 통째로 버린다. 여기서만 "세션 유실"이 일어나되,
+   *      새 세션 활동이 아닌 세션 수 누적이 원인일 때뿐이다.
+   * 리스트는 항목 수가 크지 않아(수천 이하) 매 변이 O(n) 전량 스캔으로 충분하다.
+   */
+  private static bound(list: WorkLogItem[]): void {
+    // (1) 세션당 항목 상한 — 뒤(최신)에서부터 세며 상한 초과 과거 항목을 제거.
+    const perSession = new Map<string, number>();
+    for (let i = list.length - 1; i >= 0; i--) {
+      const sid = list[i].sessionId;
+      const n = (perSession.get(sid) ?? 0) + 1;
+      perSession.set(sid, n);
+      if (n > MAX_ITEMS_PER_SESSION) list.splice(i, 1);
+    }
+    // (2) 세션 개수 상한 — 등장순으로 세션을 세어 오래된 세션을 통째로 드롭.
+    if (perSession.size > MAX_SESSIONS_PER_AGENT) {
+      const order: string[] = [];
+      const seen = new Set<string>();
+      for (const it of list) {
+        if (!seen.has(it.sessionId)) {
+          seen.add(it.sessionId);
+          order.push(it.sessionId);
+        }
+      }
+      const drop = new Set(order.slice(0, order.length - MAX_SESSIONS_PER_AGENT));
+      if (drop.size > 0) {
+        for (let i = list.length - 1; i >= 0; i--) {
+          if (drop.has(list[i].sessionId)) list.splice(i, 1);
+        }
+      }
+    }
+  }
+
+  /** 한 항목을 append하고 세션 인지 상한(#75)을 적용한다. */
   append(agentId: string, item: WorkLogItem): void {
     const list = this.byAgent.get(agentId) ?? [];
     list.push(item);
-    if (list.length > MAX_ITEMS_PER_AGENT) {
-      list.splice(0, list.length - MAX_ITEMS_PER_AGENT);
-    }
+    WorkLog.bound(list);
     this.byAgent.set(agentId, list);
     this.onChange?.(agentId);
   }
@@ -68,9 +115,7 @@ export class WorkLog {
     if (items.length === 0) return;
     const list = this.byAgent.get(agentId) ?? [];
     const merged = [...items, ...list];
-    if (merged.length > MAX_ITEMS_PER_AGENT) {
-      merged.splice(0, merged.length - MAX_ITEMS_PER_AGENT);
-    }
+    WorkLog.bound(merged);
     this.byAgent.set(agentId, merged);
   }
 

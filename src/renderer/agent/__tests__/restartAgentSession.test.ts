@@ -23,6 +23,11 @@ vi.mock("../../terminal/TerminalRegistry", () => ({
   },
 }));
 
+const flushAgent = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../diary/diaryFlusher", () => ({
+  sharedDiaryFlusher: () => ({ flushAgent: (...args: unknown[]) => flushAgent(...args) }),
+}));
+
 const { restartAgentSession } = await import("../restartAgentSession");
 
 function mkProfile(id: string, overrides: Partial<AgentProfile> = {}): AgentProfile {
@@ -45,6 +50,7 @@ beforeEach(() => {
   disposeSession.mockClear();
   createSession.mockClear();
   destroy.mockClear();
+  flushAgent.mockClear();
   disposeSession.mockResolvedValue(undefined);
   createSession.mockResolvedValue(undefined);
 });
@@ -173,6 +179,27 @@ describe("restartAgentSession 오케스트레이션", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("옛 세션 일기 catch-up을 명시 flush로 트리거한다(#75, create 전·starting 상태)", async () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1"));
+
+    const order: string[] = [];
+    flushAgent.mockImplementationOnce((id: string) => {
+      order.push(`flush:${id}:status=${useAppStore.getState().sessions.a1.status}`);
+      return Promise.resolve();
+    });
+    createSession.mockImplementationOnce(async (id: string) => {
+      order.push(`create:${id}`);
+    });
+
+    await restartAgentSession("a1");
+
+    // flush가 createSession 전에, 그리고 status가 아직 running으로 안 바뀐
+    // starting 상태에서 옛 세션을 대상으로(includeLive:false) 트리거된다.
+    expect(flushAgent).toHaveBeenCalledWith("a1", { includeLive: false, source: "session-end" });
+    expect(order).toEqual(["flush:a1:status=starting", "create:a1"]);
   });
 
   it("여러 번 재시작하면 에폭이 매번 증가한다", async () => {
