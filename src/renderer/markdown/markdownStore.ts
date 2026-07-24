@@ -29,6 +29,12 @@ const LISTING_TTL_MS = 5 * 60_000;
 /** root별 refreshListing 진행 상태(모듈 수준 — 스토어 재생성과 무관하게 유지). */
 const listingInFlight = createInFlightTracker();
 
+/** `.md`/`.mdx`/`.markdown` 확장자인지(대소문자 무시). workdirStore에도 동일
+ *  판별이 있으나 그쪽이 이 스토어를 임포트하므로 순환을 피해 로컬로 둔다. */
+function isMarkdownPath(relPath: string): boolean {
+  return /\.(md|mdx|markdown)$/i.test(relPath);
+}
+
 /** 팔레트(Ctrl+P 유사) 상태. null = 닫힘. */
 export interface PaletteState {
   /** 탐색 루트(해당 에이전트 cwd). */
@@ -182,7 +188,9 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
         content: "",
         baseline: "",
         version: "",
-        mode: "source",
+        // md류는 "읽기" 목적이 우선이므로 미리보기를 기본 뷰로 연다(이슈 #76).
+        // 비-md가 유입돼도 안전하게 소스로 폴백.
+        mode: isMarkdownPath(relPath) ? "preview" : "source",
         loading: true,
         saving: false,
         loadError: null,

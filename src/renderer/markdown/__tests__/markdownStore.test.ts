@@ -69,9 +69,18 @@ describe("파일 열기/더티", () => {
       baseline: "hello",
       version: "v1",
       loading: false,
+      mode: "preview", // md는 미리보기가 기본 뷰(이슈 #76)
     });
     expect(useMarkdownStore.getState().palette).toBeNull();
     expect(isEditorDirty(ed)).toBe(false);
+  });
+
+  it("md는 미리보기, 비-md는 소스를 기본 모드로 연다(이슈 #76)", async () => {
+    const s = useMarkdownStore.getState();
+    await s.openFile("/root", "notes.markdown", "agent1");
+    expect(useMarkdownStore.getState().editor!.mode).toBe("preview");
+    await s.openFile("/root", "main.rs", "agent1");
+    expect(useMarkdownStore.getState().editor!.mode).toBe("source");
   });
 
   it("읽기 실패면 loadError를 세팅한다", async () => {

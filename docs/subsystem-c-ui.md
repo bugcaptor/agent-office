@@ -1172,6 +1172,9 @@ it('ensure returns same Terminal instance across calls (keep-alive)', () => {
   markdownStore `openFile(…, onClose)` 콜백에서 그 스냅샷을 복원 → **인앱 마크다운
   뷰어를 닫으면 작업 폴더 탐색 상태로 복귀**. (빠른 열기 `openEntry`는 무변경 —
   닫으면 오피스로.)
+- **초기 뷰 모드(#76)**: `openFile`은 `.md`류를 열 때 `mode: "preview"`(미리보기)를
+  기본으로 연다("읽기" 우선). 비-md 유입 시엔 `"source"`로 폴백. 소스↔미리보기 토글은
+  세션 간 기억 없이 매 오픈마다 이 기본으로 초기화.
 
 ### 10.4 커밋 로그 브라우저 (`WorkdirRepoLogPane`, #54 2단계)
 
