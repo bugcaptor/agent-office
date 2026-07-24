@@ -40,6 +40,9 @@
 /* 머리 위 느낌표 배지 — 오피스 씬의 ExclamationOverlay와 같은 색/모양. */
 .mascot-badge {
   position: absolute;
+  /* .pending 캔버스가 transform으로 스택 컨텍스트를 만들어 배지 위를 덮는다.
+     양의 z-index를 명시해 배지를 항상 상위 페인트 레이어에 고정한다. (이슈 #74) */
+  z-index: 1;
   top: 8px;
   left: 50%;
   margin-left: -14px;
