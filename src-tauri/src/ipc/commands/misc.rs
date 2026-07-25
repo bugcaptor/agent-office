@@ -219,3 +219,90 @@ pub async fn import_character_file(app: tauri::AppHandle) -> Result<Option<Strin
         }
     }
 }
+
+/// 저장 다이얼로그에서 고른 경로의 확장자로 쓸 본문을 고른다(이슈 #65).
+/// `.json`(대소문자 무관)만 JSON, 나머지(확장자 없음 포함)는 Markdown —
+/// 사용자가 확장자를 지우거나 임의로 바꿔도 사람이 읽는 쪽으로 떨어진다.
+/// 순수 함수라 다이얼로그 없이 단위 테스트한다.
+pub fn diary_content_for<'a>(path: &std::path::Path, markdown: &'a str, json: &'a str) -> &'a str {
+    let is_json = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("json"));
+    if is_json {
+        json
+    } else {
+        markdown
+    }
+}
+
+/// 캐릭터 일기(이슈 #65) 내보내기: 네이티브 저장 다이얼로그로 위치를 고르게 하고,
+/// 고른 파일의 확장자에 따라 Markdown/JSON 본문 중 하나를 쓴다(둘 다 미리 만들어
+/// 넘겨받는다 — 다이얼로그가 닫힌 뒤에는 렌더러에 되물을 수 없으므로). 저장한
+/// 절대 경로, 취소 시 None. 콜백→oneshot 브리지는 `export_character_file`과 동일.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn export_diary_file(
+    app: tauri::AppHandle,
+    default_name: String,
+    markdown: String,
+    json: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_file_name(default_name)
+        .add_filter("Markdown", &["md"])
+        .add_filter("JSON", &["json"])
+        .save_file(move |path| {
+            let _ = tx.send(path);
+        });
+    let picked = rx
+        .await
+        .map_err(|_| "저장 다이얼로그가 응답 없이 종료되었습니다".to_string())?;
+    match picked {
+        None => Ok(None),
+        Some(fp) => {
+            let path = fp.into_path().map_err(|e| e.to_string())?;
+            let content = diary_content_for(&path, &markdown, &json);
+            std::fs::write(&path, content.as_bytes()).map_err(|e| e.to_string())?;
+            Ok(Some(path.to_string_lossy().into_owned()))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn json_extension_picks_json_others_pick_markdown() {
+        assert_eq!(diary_content_for(Path::new("/t/a.json"), "MD", "JS"), "JS");
+        assert_eq!(diary_content_for(Path::new("/t/a.JSON"), "MD", "JS"), "JS");
+        assert_eq!(diary_content_for(Path::new("/t/a.md"), "MD", "JS"), "MD");
+        assert_eq!(diary_content_for(Path::new("/t/a.txt"), "MD", "JS"), "MD");
+        // 확장자를 지운 경우도 사람이 읽는 Markdown으로 떨어진다.
+        assert_eq!(diary_content_for(Path::new("/t/일기"), "MD", "JS"), "MD");
+    }
+
+    #[test]
+    fn export_writes_picked_content_and_roundtrips() {
+        // 다이얼로그 없이 커맨드의 쓰기 부분만 검증한다(경로는 테스트가 고정).
+        let dir = std::env::temp_dir().join(format!("diary-export-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let md = "# 컴파일러의 일기\n\n## 2026-07-25 14:30\n\n한글 본문\n";
+        let js = "{\"kind\":\"agent-office.diary\"}";
+
+        let p_md = dir.join("일기.md");
+        std::fs::write(&p_md, diary_content_for(&p_md, md, js).as_bytes()).unwrap();
+        assert_eq!(std::fs::read_to_string(&p_md).unwrap(), md);
+
+        let p_js = dir.join("일기.json");
+        std::fs::write(&p_js, diary_content_for(&p_js, md, js).as_bytes()).unwrap();
+        assert_eq!(std::fs::read_to_string(&p_js).unwrap(), js);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

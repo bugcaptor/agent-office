@@ -128,6 +128,10 @@ export interface AgentOfficeApi {
   /** 캐릭터 번들(#77) 가져오기 — 열기 다이얼로그로 고른 파일 텍스트를 반환.
    * 취소 시 null. 파싱/검증은 호출부가 수행한다. */
   importCharacterFile(): Promise<string | null>;
+  /** 캐릭터 일기(#65) 내보내기 — 저장 다이얼로그로 위치를 고르게 하고, 고른
+   * 확장자가 `.json`이면 `json`을, 아니면 `markdown`을 쓴다(둘 다 미리 만들어
+   * 넘긴다). 저장한 절대 경로, 취소 시 null. */
+  exportDiaryFile(defaultName: string, markdown: string, json: string): Promise<string | null>;
   /** Returns an unsubscribe function. `bytes` is the raw stream byte count of
    * this batch (§#49); the renderer accumulates it on write to derive snapshot
    * offsets. Restore snapshots deliver `bytes === 0`. */

@@ -19,6 +19,28 @@ export interface DiaryEntry {
   body: string;
 }
 
+/** 일기 내보내기(#65) JSON 파일 판별자. characterBundle과 같은 관례로 고정 문자열 —
+ *  diaries/*.jsonl(줄 단위 원본)과 헷갈리지 않게 한다. */
+export const DIARY_BUNDLE_KIND = "agent-office.diary" as const;
+/** 현재 일기 번들 스키마 버전. */
+export const DIARY_BUNDLE_SCHEMA_VERSION = 1 as const;
+
+/**
+ * 한 캐릭터의 일기 전체를 담는 자기완결형 내보내기 번들(#65). 현재는 내보내기
+ * 전용(가져오기는 범위 밖)이라 파서는 없다 — 나중에 가져오기를 붙일 때
+ * `parseCharacterBundle`과 같은 자리에서 검증한다.
+ */
+export interface DiaryBundle {
+  kind: typeof DIARY_BUNDLE_KIND;
+  schemaVersion: typeof DIARY_BUNDLE_SCHEMA_VERSION;
+  /** 내보낸 시점의 캐릭터 이름(표시용 스냅샷). */
+  agentName: string;
+  /** 내보낸 시각(epoch ms). */
+  exportedAt: number;
+  /** 일기 전체(작성순, 오래된 → 최신). 원본 레코드 그대로. */
+  entries: DiaryEntry[];
+}
+
 /** 작업 로그 한 항목의 종류(캐릭터 일기 원천). */
 export type WorkLogKind = "prompt" | "tool" | "narration";
 

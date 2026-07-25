@@ -515,6 +515,7 @@ pub fn run() {
             ipc::commands::pick_directory,
             ipc::commands::export_character_file,
             ipc::commands::import_character_file,
+            ipc::commands::export_diary_file,
             ipc::commands::append_session_turn,
             ipc::commands::load_session_turns,
             ipc::commands::append_diary_entry,

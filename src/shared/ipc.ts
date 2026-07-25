@@ -51,6 +51,8 @@ export const Commands = {
   // 캐릭터 내보내기/가져오기(이슈 #77) — 저장/열기 다이얼로그 경유 텍스트 파일 rw.
   exportCharacterFile: "export_character_file",
   importCharacterFile: "import_character_file",
+  // 캐릭터 일기 내보내기(이슈 #65) — 저장 다이얼로그 경유 md/json 쓰기.
+  exportDiaryFile: "export_diary_file",
   appendSessionTurn: "append_session_turn",
   loadSessionTurns: "load_session_turns",
   // 캐릭터 일기(이슈 #56) — per-agent 일기 append/load.

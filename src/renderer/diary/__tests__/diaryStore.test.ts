@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../ipc/tauriApi", () => ({
-  tauriApi: { loadDiary: vi.fn() },
+  tauriApi: { loadDiary: vi.fn(), exportDiaryFile: vi.fn() },
 }));
 vi.mock("../diaryGenerator", () => ({ generateDiary: vi.fn() }));
 // 공유 flusher는 목으로 — 백필 트리거만 검증하고, flush 자체는 diaryFlusher.test가 커버.
@@ -22,6 +22,7 @@ import { generateDiary } from "../diaryGenerator";
 import type { DiaryEntry } from "@shared/types";
 
 const loadDiary = tauriApi.loadDiary as unknown as ReturnType<typeof vi.fn>;
+const exportDiaryFile = tauriApi.exportDiaryFile as unknown as ReturnType<typeof vi.fn>;
 const genDiary = generateDiary as unknown as ReturnType<typeof vi.fn>;
 
 function entry(at: number, body: string): DiaryEntry {
@@ -30,6 +31,7 @@ function entry(at: number, body: string): DiaryEntry {
 
 beforeEach(() => {
   loadDiary.mockReset();
+  exportDiaryFile.mockReset().mockResolvedValue("/tmp/a.md");
   genDiary.mockReset();
   hasPendingWork.mockReset().mockReturnValue(false);
   flushAgent.mockReset().mockResolvedValue(undefined);
@@ -39,6 +41,7 @@ beforeEach(() => {
     loading: false,
     generating: false,
     backfilling: false,
+    exporting: false,
     notice: null,
   });
 });
@@ -118,5 +121,71 @@ describe("writeNow", () => {
     useDiaryStore.setState({ overlay: { agentId: "a1", agentName: "A" }, generating: true });
     await useDiaryStore.getState().writeNow("a1");
     expect(genDiary).not.toHaveBeenCalled();
+  });
+});
+
+describe("exportNow", () => {
+  function openWith(entries: DiaryEntry[]) {
+    useDiaryStore.setState({ overlay: { agentId: "a1", agentName: "컴파일러" }, entries });
+  }
+
+  it("두 포맷을 만들어 넘기고 저장 경로를 안내한다", async () => {
+    openWith([entry(Date.UTC(2026, 6, 20), "첫 일기")]);
+    exportDiaryFile.mockResolvedValue("/Users/me/컴파일러-일기.md");
+
+    await useDiaryStore.getState().exportNow("a1");
+
+    expect(exportDiaryFile).toHaveBeenCalledTimes(1);
+    const [defaultName, markdown, json] = exportDiaryFile.mock.calls[0];
+    expect(defaultName).toMatch(/^컴파일러-일기-\d{8}-\d{4}\.md$/);
+    expect(markdown).toContain("# 컴파일러의 일기");
+    expect(markdown).toContain("첫 일기");
+    expect(JSON.parse(json)).toMatchObject({ kind: "agent-office.diary", agentName: "컴파일러" });
+    expect(useDiaryStore.getState().notice).toContain("/Users/me/컴파일러-일기.md");
+    expect(useDiaryStore.getState().exporting).toBe(false);
+  });
+
+  it("일기가 없으면 호출하지 않고 안내만 한다", async () => {
+    openWith([]);
+    await useDiaryStore.getState().exportNow("a1");
+    expect(exportDiaryFile).not.toHaveBeenCalled();
+    expect(useDiaryStore.getState().notice).toMatch(/내보낼 일기가 없습니다/);
+  });
+
+  it("다이얼로그 취소는 실패가 아니라 취소로 안내한다", async () => {
+    openWith([entry(1, "일기")]);
+    exportDiaryFile.mockResolvedValue(null);
+    await useDiaryStore.getState().exportNow("a1");
+    expect(useDiaryStore.getState().notice).toMatch(/취소/);
+  });
+
+  it("쓰기 실패는 안내로 잡고 진행 플래그를 되돌린다", async () => {
+    openWith([entry(1, "일기")]);
+    exportDiaryFile.mockRejectedValue(new Error("디스크 가득참"));
+    await useDiaryStore.getState().exportNow("a1");
+    expect(useDiaryStore.getState().notice).toMatch(/내보내지 못했습니다/);
+    expect(useDiaryStore.getState().exporting).toBe(false);
+  });
+
+  it("내보내는 중이면 두 번째 호출은 무시한다", async () => {
+    openWith([entry(1, "일기")]);
+    useDiaryStore.setState({ exporting: true });
+    await useDiaryStore.getState().exportNow("a1");
+    expect(exportDiaryFile).not.toHaveBeenCalled();
+  });
+
+  it("다른 캐릭터를 열고 있으면(stale) 안내를 덮지 않는다", async () => {
+    openWith([entry(1, "일기")]);
+    let resolveExport!: (v: string | null) => void;
+    exportDiaryFile.mockImplementation(() => new Promise((r) => (resolveExport = r)));
+
+    const p = useDiaryStore.getState().exportNow("a1");
+    // 저장 다이얼로그가 떠 있는 사이 다른 캐릭터로 전환.
+    useDiaryStore.setState({ overlay: { agentId: "a2", agentName: "B" }, notice: null });
+    resolveExport("/tmp/x.md");
+    await p;
+
+    expect(useDiaryStore.getState().notice).toBeNull();
+    expect(useDiaryStore.getState().exporting).toBe(false);
   });
 });

@@ -48,6 +48,9 @@
   color: var(--text-dim);
   padding: calc(var(--unit) * 2);
   border: 2px dashed var(--border-dark);
+  /* 내보내기 안내(#65)는 저장 경로를 통째로 담아 길어질 수 있다 — 패널 밖으로
+     밀지 말고 접어서 보여준다. */
+  overflow-wrap: anywhere;
 }
 
 .diary-list {

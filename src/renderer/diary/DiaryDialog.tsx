@@ -3,17 +3,12 @@
 // 캐릭터 일기(#56) 열람/생성 오버레이. self-gate 관례(다이얼로그와 동일):
 // 항상 마운트되며 오버레이 타깃이 없으면 null 렌더. 날짜 역순으로 일기를
 // 보여주고, "일기 쓰기" 버튼으로 지금까지의 작업 로그를 한 편으로 남긴다
-// (수동 트리거 — 비용·기대 UX상 사용자 요청 기반). 읽기 전용 뷰.
+// (수동 트리거 — 비용·기대 UX상 사용자 요청 기반). "내보내기"(#65)는 일기
+// 전체를 Markdown/JSON 파일로 저장한다. 일기 자체는 읽기 전용 뷰.
 import { useEffect } from "react";
 import { useDiaryStore } from "./diaryStore";
+import { formatWhen } from "./diaryExport";
 import "./diary.css";
-
-/** epoch ms → 사람이 읽는 로컬 날짜·시각. */
-function formatWhen(at: number): string {
-  const d = new Date(at);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 export function DiaryDialog() {
   const overlay = useDiaryStore((s) => s.overlay);
@@ -22,8 +17,10 @@ export function DiaryDialog() {
   const generating = useDiaryStore((s) => s.generating);
   const backfilling = useDiaryStore((s) => s.backfilling);
   const notice = useDiaryStore((s) => s.notice);
+  const exporting = useDiaryStore((s) => s.exporting);
   const closeDiary = useDiaryStore((s) => s.closeDiary);
   const writeNow = useDiaryStore((s) => s.writeNow);
+  const exportNow = useDiaryStore((s) => s.exportNow);
 
   // Esc 닫기(전역/터미널로 새지 않게 캡처 단계에서 멈춘다).
   const open = overlay !== null;
@@ -62,6 +59,15 @@ export function DiaryDialog() {
               onClick={() => void writeNow(overlay.agentId)}
             >
               {generating ? "쓰는 중…" : "일기 쓰기"}
+            </button>
+            <button
+              type="button"
+              className="pixel-btn"
+              disabled={exporting || entries.length === 0}
+              title={entries.length === 0 ? "내보낼 일기가 없습니다" : "일기 전체를 파일로 저장"}
+              onClick={() => void exportNow(overlay.agentId)}
+            >
+              {exporting ? "내보내는 중…" : "내보내기"}
             </button>
             <button type="button" className="pixel-btn" onClick={closeDiary}>
               닫기

@@ -1279,3 +1279,49 @@ it('ensure returns same Terminal instance across calls (keep-alive)', () => {
 | refit | 별도 로직 없음 | 컨테이너 리사이즈를 ResizeObserver가 자동 처리 |
 | 영속 | `localStorage`(테마 패턴) | PersistedState 미확장, 마지막 모드 유지 |
 | 단축키 | mac Ctrl+Cmd+F / 그 외 F11 | OS 확대 관례 |
+
+## 12. 캐릭터 일기 내보내기 (이슈 #65)
+
+`DiaryDialog`(읽기 전용 열람)에 **일기 전체를 파일로 저장**하는 액션을 더한 것.
+저장 방식은 셸 출력 내보내기(#42, 임시 폴더 + 외부 에디터 자동 열기)가 아니라
+**캐릭터 번들 내보내기(#77)의 네이티브 저장 다이얼로그 패턴**을 따른다 — 일기는
+"보관·공유"가 목적이라 사용자가 위치를 고르는 편이 맞고, 임시 폴더는 GC 대상이다.
+
+### 12.1 포맷 — 확장자가 곧 선택
+
+Markdown(기본)과 JSON 두 가지를 지원하되 **UI에는 버튼 하나**뿐이다. 저장
+다이얼로그에 `md`/`json` 두 필터를 걸고, **사용자가 고른 경로의 확장자로 본문을
+택한다**(`.json`이면 JSON, 그 외·확장자 없음은 Markdown).
+
+- 다이얼로그가 닫힌 뒤에는 렌더러에 되물을 수 없으므로, 커맨드
+  `export_diary_file(defaultName, markdown, json)`은 **두 본문을 모두 미리 받는다**.
+  택일은 백엔드의 순수 함수 `diary_content_for(path, md, json)`이 하고, 이 함수만
+  단위 테스트한다(다이얼로그 없이 검증 가능).
+- Markdown: `# <이름>의 일기` → `총 N편` → 편별 `## <날짜 시각>` + 본문.
+  **작성순(오래된 → 최신)** — 화면은 최신 먼저지만 문서로 읽을 땐 시간순이 자연스럽다.
+  본문은 이스케이프하지 않고 원문 보존(코드블록·`#`가 들어 있어도 그대로).
+- JSON: 자기완결형 번들 `DiaryBundle`(`kind: "agent-office.diary"`,
+  `schemaVersion: 1`, `agentName`, `exportedAt`, 원본 `entries`) —
+  `CharacterBundle`(#77)과 같은 판별자 관례. 현재는 내보내기 전용(가져오기 범위 밖)이라
+  파서는 두지 않는다.
+
+### 12.2 계층
+
+포맷팅은 렌더러의 순수 모듈 `renderer/diary/diaryExport.ts`(`formatDiaryMarkdown` /
+`formatDiaryJson` / `diaryFileName` / `sanitizeFileBase` / `formatWhen`)가 맡고,
+파일 I/O는 백엔드가 한다(`characterIo.ts`와 같은 관례). `formatWhen`은 목록 표시와
+내보낸 문서가 같은 표기를 쓰도록 이 모듈로 옮겨 `DiaryDialog`가 import한다.
+초기 파일명 `<이름>-일기-<YYYYMMDD-HHmm>.md`의 이름 부분은 Rust
+`shell_export::sanitize_agent_name`을 미러한 `sanitizeFileBase`로 안전화한다(경로
+구분자가 파일명으로 새지 않게).
+
+### 12.3 스토어/UI
+
+- `diaryStore.exportNow(agentId)` + `exporting` 플래그(중복 실행 방지). 저장
+  다이얼로그가 떠 있는 사이 목록이 바뀌어도 흔들리지 않게 **호출 시점의 `entries`로
+  두 포맷을 먼저 만들어** 넘긴다.
+- 결과는 기존 `notice` 배너로: 성공은 저장 경로, 취소(`null` 반환)는 "취소했습니다"
+  (실패로 취급하지 않음), 예외는 실패 안내. 다른 캐릭터로 전환됐으면 안내를 덮지
+  않는다(스토어 stale 가드 관례).
+- 버튼은 **다이얼로그 헤더에만** 둔다(캐릭터 컨텍스트 메뉴 비대화 방지, 사용자 결정).
+  일기 0편이면 비활성.

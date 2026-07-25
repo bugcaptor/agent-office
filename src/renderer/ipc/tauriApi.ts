@@ -200,6 +200,10 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.importCharacterFile);
   },
 
+  async exportDiaryFile(defaultName, markdown, json) {
+    return await invoke(Commands.exportDiaryFile, { defaultName, markdown, json });
+  },
+
   appendSessionTurn(record: SessionTurnRecord) {
     void invoke(Commands.appendSessionTurn, { record }); // fire-and-forget
   },
