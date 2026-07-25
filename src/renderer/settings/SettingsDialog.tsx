@@ -119,6 +119,22 @@ export function SettingsDialog() {
           <label className="settings-item">
             <input
               type="checkbox"
+              checked={appSettings.sessionLogEnabled}
+              onChange={(e) => updateAppSettings({ sessionLogEnabled: e.target.checked })}
+            />
+            <span>
+              <strong>세션 로그 남기기</strong>
+              <small>
+                터미널에서 오간 내용(AI 대화·명령·출력)을 읽을 수 있는 텍스트로
+                파일에 기록합니다. 캐릭터 탭 우클릭 "세션 로그 보기"에서 열람하고
+                학습자료로 정리할 수 있습니다. 30일이 지나거나 전체 2GB를 넘으면
+                오래된 것부터 자동 삭제됩니다.
+              </small>
+            </span>
+          </label>
+          <label className="settings-item">
+            <input
+              type="checkbox"
               checked={appSettings.mascotEnabled}
               onChange={(e) => updateAppSettings({ mascotEnabled: e.target.checked })}
             />

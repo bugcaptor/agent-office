@@ -23,6 +23,7 @@ import { tauriApi } from "../ipc/tauriApi";
 import { useMarkdownStore } from "../markdown/markdownStore";
 import { useWorkdirStore } from "../workdir/workdirStore";
 import { useDiaryStore } from "../diary/diaryStore";
+import { useSessionLogStore } from "../sessionlog/sessionLogStore";
 import { terminalRegistry } from "./TerminalRegistry";
 import { looksLikeAgentRunning } from "./botGuard";
 import { botStatusText } from "./botStatusText";
@@ -108,6 +109,7 @@ export function AgentTabStrip() {
   const openWorkdirPalette = useWorkdirStore((s) => s.openPalette);
   // 이슈 #56: 캐릭터 일기 열람/생성 오버레이를 연다.
   const openDiary = useDiaryStore((s) => s.openDiary);
+  const openSessionLogs = useSessionLogStore((s) => s.open);
   // 활성 에이전트의 cwd(문서 버튼 활성 조건). 없으면 버튼 비활성.
   const activeCwd = activeId ? agents[activeId]?.cwd : undefined;
   const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
@@ -408,6 +410,14 @@ export function AgentTabStrip() {
               icon: "📔",
               onSelect: () =>
                 openDiary(menu.agentId, agents[menu.agentId]?.name ?? "캐릭터"),
+            },
+            {
+              // docs/session-log-design.md: 상시 기록된 터미널 전사 목록.
+              // 하나를 고르면 편집기로 열거나 학습자료로 정리할 수 있다.
+              label: "세션 로그 보기",
+              icon: "📜",
+              onSelect: () =>
+                openSessionLogs(menu.agentId, agents[menu.agentId]?.name ?? "캐릭터"),
             },
             { separator: true },
             // ── 프로필/생명주기 ──

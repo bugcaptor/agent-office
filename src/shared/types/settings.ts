@@ -58,6 +58,10 @@ export interface AppSettings {
   /** 캐릭터가 작업 중일 때 시스템 유휴 잠자기를 막을지(이슈 #68). 디스플레이
    * 잠자기는 막지 않는다(화면은 꺼져도 에이전트는 계속 돈다). 기본 false. */
   keepAwakeEnabled: boolean;
+  /** 터미널 세션 로그를 파일로 상시 기록할지(docs/session-log-design.md).
+   * 나중에 회고하려면 그때 이미 켜져 있었어야 하므로 기본 true(opt-out).
+   * 보존은 30일·2GB로 스스로 제한한다. */
+  sessionLogEnabled: boolean;
   /** 데스크톱 마스코트 창(이슈 #72) — 활동 중인 캐릭터 1명을 앱 창과 별개의
    * 투명·최상단 창으로 띄운다. 화면을 상시 점유하므로 기본 false. */
   mascotEnabled: boolean;

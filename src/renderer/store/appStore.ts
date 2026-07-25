@@ -66,6 +66,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   fileIndexBackend: "walker",
   cliEnabled: false,
   keepAwakeEnabled: false,
+  sessionLogEnabled: true,
   mascotEnabled: false,
 };
 
@@ -271,6 +272,7 @@ interface AppState {
         | "fileIndexBackend"
         | "cliEnabled"
         | "keepAwakeEnabled"
+        | "sessionLogEnabled"
         | "mascotEnabled"
       >
     >,

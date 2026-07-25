@@ -96,6 +96,12 @@ pub(crate) async fn set_app_settings_inner(
     if !settings.keep_awake_enabled {
         app_state.wake_lock.deactivate();
     }
+
+    // 세션 로그 토글은 기록 중인 세션에도 즉시 반영된다 — SessionManager와
+    // 같은 Arc<AtomicBool>이라 다음 출력 청크부터 반영/중단된다.
+    app_state
+        .session_log_enabled
+        .store(settings.session_log_enabled, std::sync::atomic::Ordering::Relaxed);
     Ok(())
 }
 

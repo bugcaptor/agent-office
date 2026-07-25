@@ -232,6 +232,18 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.loadSessionEvents, { fromAt, toAt });
   },
 
+  async listSessionLogs(agentId: string, offset: number, limit: number) {
+    return await invoke(Commands.listSessionLogs, { agentId, offset, limit });
+  },
+
+  async openSessionLog(path: string) {
+    return await invoke(Commands.openSessionLog, { path });
+  },
+
+  async generateStudyMaterial(agentId: string, path: string) {
+    return await invoke(Commands.generateStudyMaterial, { agentId, path });
+  },
+
   async handoffSupported() {
     return await invoke(Commands.handoffSupported);
   },

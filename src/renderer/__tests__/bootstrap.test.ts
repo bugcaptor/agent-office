@@ -223,6 +223,7 @@ describe("bootApp", () => {
       fileIndexBackend: "walker",
       cliEnabled: false,
       keepAwakeEnabled: false,
+      sessionLogEnabled: true,
       mascotEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(false);

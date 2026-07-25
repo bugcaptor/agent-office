@@ -91,6 +91,7 @@
             file_index_backend: Default::default(),
             cli_enabled: false,
             keep_awake_enabled: false,
+            session_log_enabled: true,
             mascot_enabled: false,
         };
 
@@ -140,6 +141,7 @@
             file_index_backend: Default::default(),
             cli_enabled: false,
             keep_awake_enabled: false,
+            session_log_enabled: true,
             mascot_enabled: false,
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
@@ -182,6 +184,7 @@
             file_index_backend: Default::default(),
             cli_enabled: false,
             keep_awake_enabled: false,
+            session_log_enabled: true,
             mascot_enabled: false,
         };
 
@@ -341,6 +344,8 @@
             settings,
             settings_first_run: std::sync::atomic::AtomicBool::new(true),
             session_event_root: profile_dir.join("session-events").join("v1"),
+            session_log_root: profile_dir.join("session-logs").join("v1"),
+            session_log_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             live_usage: crate::usage::LiveUsageState::new(),
             control_server,
             control_ctx,

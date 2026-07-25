@@ -112,6 +112,80 @@ pub async fn load_session_events(
     ))
 }
 
+/// 한 캐릭터의 세션 로그 파일 목록 한 페이지(최신순).
+/// docs/session-log-design.md §6. 어떤 실패도 빈 페이지로 흡수한다 — 열람
+/// 경로가 에러로 막히지 않게.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_session_logs(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+    offset: usize,
+    limit: usize,
+) -> Result<crate::types::SessionLogPage, String> {
+    // 상한을 둬 렌더러 실수로 수천 개를 한 번에 읽지 않게 한다.
+    let limit = limit.clamp(1, 100);
+    let (total, items) =
+        crate::session_log::store::list_logs(&app_state.session_log_root, &agent_id, offset, limit);
+    Ok(crate::types::SessionLogPage { total, items })
+}
+
+/// 세션 로그 파일을 외부 에디터로 연다(설정 `externalEditor` 준수).
+/// `path`는 반드시 세션 로그 루트 아래여야 한다 — 렌더러가 준 경로를 그대로
+/// 믿지 않는다(경로 탈출 차단).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_session_log(
+    app_state: State<'_, AppState>,
+    path: String,
+) -> Result<(), String> {
+    let file = std::path::PathBuf::from(&path);
+    if !crate::session_log::store::is_inside_root(&app_state.session_log_root, &file) {
+        return Err("세션 로그 폴더 밖의 경로입니다".to_string());
+    }
+    let use_vscode = {
+        let guard = app_state.settings.read().unwrap();
+        matches!(
+            guard.external_editor,
+            crate::persistence::settings_store::ExternalEditor::Vscode
+        )
+    };
+    crate::shell_export::open_file_in_editor(&file, use_vscode)
+}
+
+/// 세션 로그 하나로 회고·학습자료(Markdown)를 만든다(수동 트리거 전용).
+/// 요약기 옵트인이 꺼져 있으면 CLI를 부르지 않고 거절한다(일기와 동일 정책).
+/// docs/session-log-design.md §5.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn generate_study_material(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+    path: String,
+) -> Result<crate::types::StudyMaterialResult, String> {
+    let file = std::path::PathBuf::from(&path);
+    if !crate::session_log::store::is_inside_root(&app_state.session_log_root, &file) {
+        return Err("세션 로그 폴더 밖의 경로입니다".to_string());
+    }
+    // 설정 가드는 await 이전에 떨어뜨린다(no-lock-across-await 계약).
+    let provider = {
+        let guard = app_state.settings.read().unwrap();
+        if !guard.summarizer_enabled {
+            return Err("summarizer-disabled".to_string());
+        }
+        guard.summary_provider
+    };
+    let result = crate::session_log::study::generate(
+        &app_state.session_log_root,
+        &agent_id,
+        &file,
+        provider,
+    )
+    .await?;
+    Ok(crate::types::StudyMaterialResult {
+        path: result.path.to_string_lossy().into_owned(),
+        dir: result.dir.to_string_lossy().into_owned(),
+        file_name: result.file_name,
+    })
+}
+
 /// 에이전트별 최신 Claude native 세션(리줌) 스냅샷 전체를 읽는다(이어하기
 /// 메뉴용). 렌더러는 메뉴를 열 때만 조회하므로 이벤트 푸시가 필요 없다
 /// (docs/claude-session-resume-design.md §5). 반환은 항상 성공.

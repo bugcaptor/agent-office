@@ -27,6 +27,7 @@ import { MarkdownPalette } from "./markdown/MarkdownPalette";
 import { MarkdownEditorOverlay } from "./markdown/MarkdownEditorOverlay";
 import { WorkdirPalette } from "./workdir/WorkdirPalette";
 import { DiaryDialog } from "./diary/DiaryDialog";
+import { SessionLogDialog } from "./sessionlog/SessionLogDialog";
 import { UIChrome } from "./layout/UIChrome";
 
 // Root component: the 4-layer z-stack.
@@ -108,6 +109,8 @@ function App() {
       <WorkdirPalette />
       {/* 캐릭터 일기(이슈 #56). 같은 층위·관례로 상시 마운트, store로 self-gate. */}
       <DiaryDialog />
+      {/* 세션 로그 보기(docs/session-log-design.md). 같은 층위·관례로 상시 마운트. */}
+      <SessionLogDialog />
       <div className="modal-root">
         <ProfileDialog />
         <ConfirmDeleteDialog />

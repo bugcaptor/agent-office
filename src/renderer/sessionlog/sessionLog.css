@@ -1,0 +1,137 @@
+/* src/renderer/sessionlog/sessionLog.css
+ *
+ * 세션 로그 보기 오버레이 스타일. diary.css와 같은 층·같은 토큰만 쓴다.
+ */
+.slog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40; /* 터미널(20)·모달(30)보다 위, diary/md 오버레이와 동일 층 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 11, 18, 0.55);
+}
+
+.slog-dialog {
+  width: min(720px, 94vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  padding: calc(var(--unit) * 4);
+  gap: calc(var(--unit) * 3);
+}
+
+.slog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--unit) * 2);
+}
+
+.slog-title {
+  font-family: "DungGeunMo", monospace;
+  font-size: 18px;
+  color: var(--text);
+  margin: 0;
+}
+
+.slog-notice {
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: calc(var(--unit) * 2);
+  border: 2px dashed var(--border-dark);
+  overflow-wrap: anywhere;
+}
+
+.slog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--unit);
+}
+
+/* 한 줄 = 한 세션. 시각 | 길이 | 크기 | 작업 폴더. */
+.slog-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 5em 4.5em 1fr;
+  align-items: center;
+  gap: calc(var(--unit) * 2);
+  text-align: left;
+  background: transparent;
+  border: 2px solid transparent;
+  border-left: 3px solid var(--border-dark);
+  padding: calc(var(--unit) * 2);
+  cursor: pointer;
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  color: var(--text);
+}
+
+.slog-row:hover {
+  border-color: var(--border-dark);
+  border-left-color: var(--accent);
+}
+
+.slog-row.active {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+.slog-when {
+  font-family: "DungGeunMo", monospace;
+  font-size: 13px;
+}
+
+.slog-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.slog-cwd {
+  font-size: 12px;
+  color: var(--text-dim);
+  /* 경로는 뒤쪽이 중요하다 — 넘치면 잘리되 title로 전체를 볼 수 있다. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.slog-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--unit) * 2);
+}
+
+.slog-pager-label {
+  font-family: "DungGeunMo", monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  min-width: 4em;
+  text-align: center;
+}
+
+/* 항목을 고른 뒤에만 나타나는 동작 영역. */
+.slog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: calc(var(--unit) * 2);
+  border-top: 2px dashed var(--border-dark);
+  padding-top: calc(var(--unit) * 3);
+}
+
+.slog-empty {
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 13px;
+  color: var(--text-dim);
+  text-align: center;
+  line-height: 1.8;
+  padding: calc(var(--unit) * 8) 0;
+}

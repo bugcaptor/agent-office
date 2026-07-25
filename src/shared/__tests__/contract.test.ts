@@ -246,6 +246,10 @@ describe("Commands / Events name constants", () => {
     expect(Commands.uploadSessionSnapshots).toBe("upload_session_snapshots");
     expect(Commands.loadSessionEvents).toBe("load_session_events");
     expect(Commands.loadUsageSnapshot).toBe("load_usage_snapshot");
+    // 세션 로그(docs/session-log-design.md §6)
+    expect(Commands.listSessionLogs).toBe("list_session_logs");
+    expect(Commands.openSessionLog).toBe("open_session_log");
+    expect(Commands.generateStudyMaterial).toBe("generate_study_material");
 
     expect(Events.sessionState).toBe("session-state");
     expect(Events.notificationNew).toBe("notification-new");
@@ -285,6 +289,7 @@ describe("AppSettings (opt-in 설정 계약)", () => {
       fileIndexBackend: "walker",
       cliEnabled: false,
       keepAwakeEnabled: false,
+      sessionLogEnabled: true,
       mascotEnabled: false,
     });
   });

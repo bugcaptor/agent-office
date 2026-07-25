@@ -143,6 +143,43 @@ pub struct SessionTurnRecord {
     pub waited_ms: u64,
 }
 
+/// 세션 로그 파일 하나의 요약 정보(docs/session-log-design.md §6).
+/// 목록 UI가 쓰는 메타데이터 -- 본문은 담지 않는다(파일이 수십 MB일 수 있다).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionLogItem {
+    /// 로그 파일 절대 경로. 후속 동작(열기·학습자료)의 키다.
+    pub path: String,
+    /// 헤더에 기록된 sessionId. 헤더가 없으면 빈 문자열.
+    pub session_id: String,
+    /// 세션 시작 시각(epoch ms). 헤더 우선, 없으면 파일 생성 시각.
+    pub started_at: u64,
+    /// 마지막 기록 시각(epoch ms) -- 목록에서 지속 시간을 보여주는 데 쓴다.
+    pub modified_at: u64,
+    pub bytes: u64,
+    /// 세션의 시작 작업 폴더(헤더). 없으면 빈 문자열.
+    pub cwd: String,
+}
+
+/// `list_session_logs`의 한 페이지.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionLogPage {
+    /// 페이징 전 전체 개수(페이지 표시용).
+    pub total: usize,
+    pub items: Vec<SessionLogItem>,
+}
+
+/// `generate_study_material`의 결과. `dir`/`fileName`을 그대로
+/// 마크다운 뷰어(`markdown_read_file`)에 넘기면 인앱 미리보기가 열린다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StudyMaterialResult {
+    pub path: String,
+    pub dir: String,
+    pub file_name: String,
+}
+
 /// 캐릭터 일기 한 편(#56). 성격 프롬프트 문체로 쓴 작업 로그 겸 일기.
 /// per-agent append-only 로그(`diaries/<agentId>.jsonl`)의 한 줄. TS `DiaryEntry` 미러.
 /// agentId는 파일명이 담으므로 레코드엔 넣지 않는다.

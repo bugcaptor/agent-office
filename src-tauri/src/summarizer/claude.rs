@@ -1,4 +1,4 @@
-use super::ProviderCommand;
+use super::{ProviderCommand, SummaryPurpose};
 use crate::persistence::settings_store::SummaryProvider;
 
 #[cfg(windows)]
@@ -8,17 +8,18 @@ $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
 $c = Get-Command claude -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 $in = [Console]::In.ReadToEnd()
-$in | & $c.Source -p $env:AO_INSTRUCTION --model haiku --output-format text --max-turns 1
+$in | & $c.Source -p $env:AO_INSTRUCTION --model $env:AO_MODEL --output-format text --max-turns 1
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-pub(super) fn build(instruction: &str) -> ProviderCommand {
+pub(super) fn build(instruction: &str, purpose: SummaryPurpose) -> ProviderCommand {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = std::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT]);
     command.creation_flags(CREATE_NO_WINDOW);
     command.env("AO_INSTRUCTION", instruction);
+    command.env("AO_MODEL", purpose.claude_model());
     ProviderCommand {
         command,
         provider: SummaryProvider::Claude,
@@ -26,13 +27,13 @@ pub(super) fn build(instruction: &str) -> ProviderCommand {
 }
 
 #[cfg(not(windows))]
-pub(super) fn build(instruction: &str) -> ProviderCommand {
+pub(super) fn build(instruction: &str, purpose: SummaryPurpose) -> ProviderCommand {
     let mut command = std::process::Command::new("claude");
     command.args([
         "-p",
         instruction,
         "--model",
-        "haiku",
+        purpose.claude_model(),
         "--output-format",
         "text",
         "--max-turns",
@@ -63,7 +64,7 @@ mod tests {
 
     #[test]
     fn claude_command_pins_existing_behavior() {
-        let spec = build("요약 지시");
+        let spec = build("요약 지시", SummaryPurpose::Label);
         let rendered = command_debug(&spec.command);
         assert!(rendered.contains("haiku"), "{rendered}");
         assert!(rendered.contains("--output-format"), "{rendered}");
@@ -92,7 +93,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_command_uses_powershell_with_no_window_flag_and_env_instruction() {
-        let spec = build("요약 지시");
+        let spec = build("요약 지시", SummaryPurpose::Label);
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "powershell.exe");
         let args: Vec<_> = cmd
@@ -110,10 +111,20 @@ mod tests {
         assert_eq!(env_val, Some(std::ffi::OsStr::new("요약 지시")));
     }
 
+    /// 학습자료 목적은 같은 파이프라인을 쓰되 더 큰 모델을 고른다.
+    #[cfg(not(windows))]
+    #[test]
+    fn study_purpose_upgrades_the_model() {
+        let spec = build("학습자료 지시", SummaryPurpose::Study);
+        let rendered = command_debug(&spec.command);
+        assert!(rendered.contains("sonnet"), "{rendered}");
+        assert!(!rendered.contains("haiku"), "{rendered}");
+    }
+
     #[cfg(not(windows))]
     #[test]
     fn non_windows_command_passes_instruction_and_model_flags() {
-        let spec = build("요약 지시");
+        let spec = build("요약 지시", SummaryPurpose::Label);
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "claude");
         let args: Vec<_> = cmd

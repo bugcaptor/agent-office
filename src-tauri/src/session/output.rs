@@ -86,6 +86,7 @@ pub(super) fn spawn_output_pump(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<ReaderMsg>,
     sink: Arc<OutputSink>,
     hub: Arc<NotificationHub>,
+    log: Option<Arc<crate::session_log::SessionLogHandle>>,
 ) {
     tokio::spawn(async move {
         let mut batcher = OutputBatcher::new(session_id.clone(), agent_id);
@@ -110,6 +111,11 @@ pub(super) fn spawn_output_pump(
                         // 이슈 #39: Stop 이후 출력이 계속되면 "아직 작업중"으로 복귀시키는
                         // 휴리스틱에 바이트 수를 흘려 보낸다(Stop 감시 중이 아니면 즉시 반환).
                         hub.on_output(&session_id, bytes.len());
+                        // 세션 로그 tee(docs/session-log-design.md §3.1). 채널로
+                        // 던지고 잊는다 -- 파일 쓰기는 전용 스레드에서 한다.
+                        if let Some(log) = log.as_ref() {
+                            log.data(&bytes);
+                        }
                         batcher.push(&bytes);
                         if batcher.pending_bytes() >= MAX_BYTES {
                             batcher.flush(&*sink);
@@ -132,6 +138,11 @@ pub(super) fn spawn_output_pump(
                     }
                     Some(ReaderMsg::Eof) | None => {
                         batcher.flush_final(&*sink); // 잔여 강제 방출
+                        // 로그도 잔여를 확정하고 마무리한다. Restore는 기록하지
+                        // 않았으므로(화면 이미지) 여기서 새는 것은 없다.
+                        if let Some(log) = log.as_ref() {
+                            log.finish();
+                        }
                         break;
                     }
                 }

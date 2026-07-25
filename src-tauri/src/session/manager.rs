@@ -44,6 +44,9 @@ pub(super) struct Session {
     /// 시작 작업 디렉터리(세션 수명 동안 불변 -- `cd`는 추적하지 않는다).
     /// 핸드오프 시 Handoff 메시지의 진단/List용 메타데이터로 실어 보낸다.
     pub(super) cwd: String,
+    /// 세션 로그 기록 핸들(docs/session-log-design.md). 저장소 루트가 없거나
+    /// 파일을 못 열면 None -- 로그는 부가 기능이라 세션 동작을 막지 않는다.
+    pub(super) log: Option<Arc<crate::session_log::SessionLogHandle>>,
     /// 현재 알려진 터미널 크기. resize()가 갱신 -- 핸드오프 시 Handoff
     /// 메시지에 실어 데몬에 보내고, 입양 응답의 AdoptedSessionInfo로
     /// 프론트에 되돌려줘 터미널 크기를 맞추는 데 쓴다.
@@ -127,6 +130,12 @@ pub struct SessionManager {
     /// 대신 브로커 RPC 경로를 탄다. 기본 false(v1 경로 보존). 팩토리 주입은
     /// `lib.rs`가 별도로 하고, 이 플래그는 앱 쪽 의미 분기에만 관여한다.
     broker_mode: bool,
+    /// 세션 로그 저장소 루트(`<app_data>/session-logs/v1`). None이면 기록하지
+    /// 않는다 -- 테스트 기본값이다.
+    session_log_root: Option<std::path::PathBuf>,
+    /// 설정 `sessionLogEnabled`의 런타임 미러. 설정 변경이 즉시 반영되도록
+    /// 원자 플래그를 세션들과 공유한다.
+    session_log_enabled: Arc<AtomicBool>,
 }
 
 impl SessionManager {
@@ -150,7 +159,22 @@ impl SessionManager {
             shell_resolver: Arc::new(shells::resolve_observed),
             app_data_dir: None,
             broker_mode: false,
+            session_log_root: None,
+            session_log_enabled: Arc::new(AtomicBool::new(true)),
         }
+    }
+
+    /// 세션 로그 기록을 켠다(docs/session-log-design.md). `lib.rs`가 앱 데이터
+    /// 디렉터리를 알게 된 시점에 호출한다. `enabled`는 설정 토글과 공유하는
+    /// 원자 플래그 -- 세션이 도는 중에 꺼도 즉시 반영된다.
+    pub fn with_session_log(
+        mut self,
+        root: std::path::PathBuf,
+        enabled: Arc<AtomicBool>,
+    ) -> Self {
+        self.session_log_root = Some(root);
+        self.session_log_enabled = enabled;
+        self
     }
 
     /// v2 상시 브로커 모드를 켠다(unix opt-in). `lib.rs`가 플래그+unix일 때만
@@ -449,6 +473,27 @@ impl SessionManager {
         let output = self.sink_for(&agent_id);
         let broker_owned = spawned.broker_owned;
         let broker_stream_offset = spawned.broker_stream_offset.clone();
+        // 세션 로그 기록 시작(§3.1). 같은 sessionId의 파일이 이미 있으면
+        // 이어 쓴다 -- 앱 재시작 후 입양된 세션이 한 파일로 이어진다.
+        //
+        // 설정이 꺼져 있으면 핸들 자체를 만들지 않는다: 껐는데도 헤더(작업 폴더
+        // 경로 포함)만 든 파일이 세션마다 생기면 "끔"이 아니다. 대신 세션이 도는
+        // 중에 끄는 것은 원자 플래그로 즉시 반영된다(다음 세션부터 다시 켜진다).
+        let log = self
+            .session_log_root
+            .as_ref()
+            .filter(|_| self.session_log_enabled.load(Ordering::Relaxed))
+            .and_then(|root| {
+            crate::session_log::SessionLogHandle::spawn(
+                root,
+                &agent_id,
+                &session_id,
+                &cwd,
+                size.1,
+                self.session_log_enabled.clone(),
+            )
+            .map(Arc::new)
+        });
         let session = Arc::new(Session {
             session_id: session_id.clone(),
             agent_id: agent_id.clone(),
@@ -457,6 +502,7 @@ impl SessionManager {
             control: spawned.control,
             cleanup_paths,
             kill_requested: AtomicBool::new(false),
+            log: log.clone(),
             cwd,
             size: Mutex::new(size),
             handed_off: AtomicBool::new(false),
@@ -508,8 +554,15 @@ impl SessionManager {
             let _ = tx.send(ReaderMsg::Eof);
         });
 
-        // 2) output pump task (배칭 + BEL 감지 + Channel 방출)
-        spawn_output_pump(session_id.clone(), agent_id.clone(), rx, output, self.hub.clone());
+        // 2) output pump task (배칭 + BEL 감지 + Channel 방출 + 세션 로그 tee)
+        spawn_output_pump(
+            session_id.clone(),
+            agent_id.clone(),
+            rx,
+            output,
+            self.hub.clone(),
+            log,
+        );
 
         // 3) wait thread (블로킹 wait → 상태 전이)
         let me = Arc::clone(self);
@@ -574,6 +627,10 @@ impl SessionManager {
             if *s.state.lock() == SessionState::Running {
                 let _ = s.control.resize(cols, rows);
                 *s.size.lock() = (cols, rows);
+                // 전사 필터의 라이브 영역은 화면 높이에서 나온다(§3.3).
+                if let Some(log) = s.log.as_ref() {
+                    log.resize(rows);
+                }
             }
         }
     }

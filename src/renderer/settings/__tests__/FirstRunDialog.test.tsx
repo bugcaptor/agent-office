@@ -37,6 +37,7 @@ describe("FirstRunDialog", () => {
         fileIndexBackend: "walker",
         cliEnabled: false,
         keepAwakeEnabled: false,
+        sessionLogEnabled: true,
         mascotEnabled: false,
       },
       false,
@@ -62,6 +63,7 @@ describe("FirstRunDialog", () => {
         fileIndexBackend: "walker",
         cliEnabled: false,
         keepAwakeEnabled: false,
+        sessionLogEnabled: true,
         mascotEnabled: false,
       },
       true,
@@ -87,6 +89,7 @@ describe("FirstRunDialog", () => {
       fileIndexBackend: "walker",
       cliEnabled: false,
       keepAwakeEnabled: false,
+      sessionLogEnabled: true,
       mascotEnabled: false,
     });
   });
@@ -108,6 +111,7 @@ describe("FirstRunDialog", () => {
         fileIndexBackend: "walker",
         cliEnabled: false,
         keepAwakeEnabled: false,
+        sessionLogEnabled: true,
         mascotEnabled: false,
       },
       true,

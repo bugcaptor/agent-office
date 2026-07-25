@@ -460,6 +460,7 @@ describe("app settings commands", () => {
       fileIndexBackend: "walker" as const,
       cliEnabled: false,
       keepAwakeEnabled: false,
+      sessionLogEnabled: true,
       mascotEnabled: false,
     };
     const tauriApi = await importTauriApi();

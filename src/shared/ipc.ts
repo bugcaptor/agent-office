@@ -62,6 +62,11 @@ export const Commands = {
   saveWorkLog: "save_work_log",
   loadWorkLogs: "load_work_logs",
   loadSessionEvents: "load_session_events",
+  // 세션 로그(docs/session-log-design.md) — 상시 기록된 터미널 전사 목록/열기와,
+  // 그중 하나로 만드는 회고·학습자료(수동 트리거).
+  listSessionLogs: "list_session_logs",
+  openSessionLog: "open_session_log",
+  generateStudyMaterial: "generate_study_material",
   // 세션 핸드오프(docs/session-handoff-design.md) — unix 전용, 종료 시 PTY를
   // sessiond 데몬으로 넘기고 재시작 시 되찾는다.
   handoffSupported: "handoff_supported",

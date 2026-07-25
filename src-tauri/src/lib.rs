@@ -28,6 +28,8 @@ mod session;
 // pub: contract 테스트가 `agent_office_lib::session_events::types::SessionEventRecord`에
 // 닿아야 한다. 로직 변경 없음 — 가시성만 승격.
 pub mod session_events;
+// pub: 세션 로그 전사 필터/저장소를 contract·통합 테스트가 직접 부른다.
+pub mod session_log;
 mod shell_export;
 #[cfg(unix)]
 mod sessiond;
@@ -359,6 +361,14 @@ pub fn run() {
             let get_observer_url =
                 make_observer_url_getter(settings_cache.clone(), observer_server.clone());
 
+            // 세션 로그(docs/session-log-design.md): 저장소 루트 + 설정 토글을
+            // 미러하는 원자 플래그. 플래그는 set_app_settings가 갱신한다.
+            let session_log_root = crate::session_log::store::root_for(&data_dir);
+            let session_log_enabled = Arc::new(std::sync::atomic::AtomicBool::new(
+                settings_cache.read().unwrap().session_log_enabled,
+            ));
+            crate::session_log::spawn_gc(session_log_root.clone());
+
             let (pty_factory, broker_mode) = make_pty_factory(&data_dir);
             let manager = Arc::new(
                 SessionManager::new(
@@ -373,7 +383,9 @@ pub fn run() {
                 // 경로와 AGENT_OFFICE_APP_DATA env 주입(§핵심 5)의 근거.
                 .with_app_data_dir(data_dir.clone())
                 // v2 상시 브로커 모드(opt-in, docs/session-broker-v2-design.md).
-                .with_broker_mode(broker_mode),
+                .with_broker_mode(broker_mode)
+                // 터미널 전사 상시 기록(30일·2GB 자율 보존).
+                .with_session_log(session_log_root.clone(), session_log_enabled.clone()),
             );
 
             let store = ProfileStore::new(data_dir.join("profiles.json"));
@@ -451,6 +463,8 @@ pub fn run() {
                 settings: settings_cache,
                 settings_first_run: std::sync::atomic::AtomicBool::new(settings_first_run),
                 session_event_root: session_event_root(&data_dir),
+                session_log_root,
+                session_log_enabled,
                 live_usage: crate::usage::LiveUsageState::new(),
                 control_server,
                 control_ctx,
@@ -523,6 +537,9 @@ pub fn run() {
             ipc::commands::save_work_log,
             ipc::commands::load_work_logs,
             ipc::commands::load_session_events,
+            ipc::commands::list_session_logs,
+            ipc::commands::open_session_log,
+            ipc::commands::generate_study_material,
             ipc::commands::list_claude_resume_sessions,
             ipc::commands::load_usage_snapshot,
         ])
@@ -671,6 +688,7 @@ mod tests {
             file_index_backend: Default::default(),
             cli_enabled: false,
             keep_awake_enabled: false,
+            session_log_enabled: true,
             mascot_enabled: false,
         }));
         let registry = Arc::new(SessionRegistry::new());

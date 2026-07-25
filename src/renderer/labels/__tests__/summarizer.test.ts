@@ -75,6 +75,7 @@ beforeEach(() => {
       fileIndexBackend: "walker",
       cliEnabled: false,
       keepAwakeEnabled: false,
+      sessionLogEnabled: true,
       mascotEnabled: false,
     },
     false
@@ -144,6 +145,7 @@ describe("installTaskLabelSummarizer", () => {
           fileIndexBackend: "walker",
           cliEnabled: false,
           keepAwakeEnabled: false,
+          sessionLogEnabled: true,
           mascotEnabled: false,
         },
         false,
@@ -408,6 +410,7 @@ describe("installTaskLabelSummarizer", () => {
         fileIndexBackend: "walker",
         cliEnabled: false,
         keepAwakeEnabled: false,
+        sessionLogEnabled: true,
         mascotEnabled: false,
       },
       false

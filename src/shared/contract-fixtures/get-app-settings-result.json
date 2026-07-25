@@ -14,6 +14,7 @@
     "fileIndexBackend": "walker",
     "cliEnabled": false,
     "keepAwakeEnabled": false,
+    "sessionLogEnabled": true,
     "mascotEnabled": false
   },
   "firstRun": true

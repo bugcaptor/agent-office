@@ -45,6 +45,7 @@ function hydrate(cliEnabled: boolean) {
       fileIndexBackend: "walker",
       cliEnabled,
       keepAwakeEnabled: false,
+      sessionLogEnabled: true,
       mascotEnabled: false,
     },
     false,

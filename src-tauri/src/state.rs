@@ -123,6 +123,14 @@ pub struct AppState {
     /// (`load_session_events`)가 reader로 읽기만 하려고 경로를 따로 보관한다
     /// (스토어는 쓰기 전용 원칙 유지, docs/session-analytics-design.md §4.1).
     pub session_event_root: std::path::PathBuf,
+    /// 세션 로그 저장소 루트(`<app-data>/session-logs/v1`). 목록·열기·학습자료
+    /// 커맨드가 여기서만 파일을 찾는다 — 경로 탈출 검증의 기준점이기도 하다
+    /// (docs/session-log-design.md §6).
+    pub session_log_root: std::path::PathBuf,
+    /// 설정 `session_log_enabled`의 런타임 미러. SessionManager와 공유하는
+    /// 같은 Arc라 `set_app_settings`가 여기만 갱신해도 기록 중인 세션에 즉시
+    /// 반영된다.
+    pub session_log_enabled: Arc<AtomicBool>,
     /// 부팅 시 settings.json 부재 여부 — 첫 실행 동의 다이얼로그 신호.
     /// `set_app_settings` 성공 시 false로 내려가야 웹뷰 리로드 후에도 첫
     /// 실행 다이얼로그가 다시 뜨지 않는다 -- `AtomicBool`로 이 갱신을 표현.

@@ -225,3 +225,38 @@ export interface AdoptedSessionInfo {
   rows: number;
   cols: number;
 }
+
+/**
+ * 세션 로그 파일 하나의 요약 정보. Mirrors Rust `SessionLogItem` (camelCase).
+ * 설계: docs/session-log-design.md §6. 본문은 담지 않는다 — 파일이 수십 MB일 수
+ * 있어 목록에는 메타데이터만 싣는다.
+ */
+export interface SessionLogItem {
+  /** 로그 파일 절대 경로. 후속 동작(열기·학습자료)의 키다. */
+  path: string;
+  /** 헤더에 기록된 sessionId. 헤더가 없으면 빈 문자열. */
+  sessionId: string;
+  /** 세션 시작 시각(epoch ms). */
+  startedAt: number;
+  /** 마지막 기록 시각(epoch ms). startedAt과의 차이가 대략의 지속 시간이다. */
+  modifiedAt: number;
+  bytes: number;
+  /** 세션의 시작 작업 폴더. 없으면 빈 문자열. */
+  cwd: string;
+}
+
+/** `list_session_logs`의 한 페이지. `total`은 페이징 전 전체 개수. */
+export interface SessionLogPage {
+  total: number;
+  items: SessionLogItem[];
+}
+
+/**
+ * `generate_study_material`의 결과. `dir`/`fileName`을 그대로 마크다운
+ * 뷰어(`markdownReadFile`)에 넘기면 인앱 미리보기가 열린다.
+ */
+export interface StudyMaterialResult {
+  path: string;
+  dir: string;
+  fileName: string;
+}

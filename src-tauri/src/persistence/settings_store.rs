@@ -123,6 +123,12 @@ pub struct AppSettings {
     /// `#[serde(default)]`라 기존 설정 파일에 키가 없으면 false. 기본 꺼짐.
     #[serde(default)]
     pub keep_awake_enabled: bool,
+    /// 터미널 세션 로그를 파일로 상시 기록할지(docs/session-log-design.md).
+    /// 나중에 회고하려면 "그때 이미 켜져 있었어야" 하므로 기본 켜짐 —
+    /// 이 앱에서 기본값이 켜짐인 몇 안 되는 opt-out 기능이다. 보존은 30일·2GB로
+    /// 스스로 제한한다.
+    #[serde(default = "default_true")]
+    pub session_log_enabled: bool,
     /// 데스크톱 마스코트 창(이슈 #72, docs/mascot-window-design.md)을 띄울지.
     /// 활동 중인 캐릭터 1명을 앱 창과 별개의 투명·최상단 창으로 보여준다.
     /// 화면을 상시 점유하는 시스템 표면이라 opt-in — 기본 꺼짐.
@@ -147,6 +153,7 @@ impl Default for AppSettings {
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
             keep_awake_enabled: false,
+            session_log_enabled: true,
             mascot_enabled: false,
         }
     }
@@ -235,6 +242,7 @@ mod tests {
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
             keep_awake_enabled: false,
+            session_log_enabled: true,
             mascot_enabled: false,
         };
         store.save(&s).expect("save succeeds");
@@ -334,6 +342,7 @@ mod tests {
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
             keep_awake_enabled: false,
+            session_log_enabled: true,
             mascot_enabled: false,
         };
         store.save(&settings).unwrap();

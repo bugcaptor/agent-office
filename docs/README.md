@@ -17,6 +17,7 @@
 | [session-handoff-design.md](session-handoff-design.md) | v1 종료 시점 fd-핸드오프(현재 기본 경로) — 앱 종료 후 터미널 존속·재실행 입양 | 정본 — 구현 완료(#7). v2와 공존 |
 | [session-broker-v2-design.md](session-broker-v2-design.md) | v2 상시 브로커(스폰부터 데몬이 PTY 소유) — 크래시 생존, 프로토콜 v2 | 정본 — 구현 완료·기본 off(`AGENT_OFFICE_SESSION_BROKER=v2` opt-in), 결함 #48/#50/#49 수정 완료 |
 | [session-analytics-design.md](session-analytics-design.md) | 세션 활동 분석 패널 — 시계열 재구성·일별 스택 차트 | 정본 — 구현 완료 |
+| [session-log-design.md](session-log-design.md) | 터미널 전사 상시 기록(30일·2GB) + 세션 로그 보기 + 회고·학습자료 생성 | 정본 — 구현 완료, 눈검증 대기 |
 | [usage-design.md](usage-design.md) | 구독 사용량(rate limit) 표시 — 캐시 미러(#22) + Claude 실시간 조회(#33) 통합본 | 정본 — 구현 완료 |
 | [bot-mode-design.md](bot-mode-design.md) | 캐릭터 봇 모드 — Gitea 이슈 폴링·프롬프트 주입·PR 완료 판정 | 정본 — 구현 완료(#57/#58/#61) |
 | [cli-control-design.md](cli-control-design.md) | `agent-office ctl` 외부 CLI 제어 — 로컬 axum 서버 + 2단계 승인 | 정본 — 구현 완료(#55) |

@@ -13,6 +13,8 @@ import type {
   AdoptedSessionInfo,
   AvailableShell,
   ClaudeResumeEntry,
+  SessionLogPage,
+  StudyMaterialResult,
 } from './session';
 import type { NotificationEvent, ActivityEvent } from './notification';
 import type { PersistedState, GeneratedSpriteImage } from './profile';
@@ -158,6 +160,14 @@ export interface AgentOfficeApi {
   /** 세션 이벤트 시계열에서 `fromAt..=toAt`(epoch ms) 범위를 읽는다(분석 패널용).
    * 없는 파일·손상 줄은 건너뛰며 항상 성공한다. `(at, runId, seq)` 정렬. */
   loadSessionEvents(fromAt: number, toAt: number): Promise<SessionEventRecord[]>;
+  /** 한 캐릭터의 세션 로그 목록 한 페이지(최신순). 없는 캐릭터·읽기 실패는
+   * 빈 페이지로 흡수돼 항상 성공한다. `limit`은 백엔드가 1..100으로 클램프한다. */
+  listSessionLogs(agentId: AgentId, offset: number, limit: number): Promise<SessionLogPage>;
+  /** 세션 로그 파일을 설정한 외부 에디터로 연다. 로그 폴더 밖 경로는 reject. */
+  openSessionLog(path: string): Promise<void>;
+  /** 세션 로그 하나로 회고·학습자료(.md)를 만든다(수동 트리거, 수십 초 걸린다).
+   * 요약기 옵트인이 꺼져 있으면 `summarizer-disabled`로 reject. */
+  generateStudyMaterial(agentId: AgentId, path: string): Promise<StudyMaterialResult>;
   /** 세션 핸드오프(unix 전용) 지원 여부. Windows 등 미지원 플랫폼은 false. */
   handoffSupported(): Promise<boolean>;
   /** 종료 시 살아있는 세션들을 `sessiond` 데몬으로 넘긴다. `snapshots`는

@@ -11,6 +11,9 @@ use tokio::sync::Semaphore;
 use crate::persistence::settings_store::SummaryProvider;
 
 const TEXT_MAX_CHARS: usize = 2_000;
+/// 학습자료(세션 로그 전사)는 세션 한 편을 통째로 넣어야 의미가 있다 —
+/// 라벨·일기와 달리 상한이 훨씬 크다(docs/session-log-design.md §5.1).
+const TEXT_MAX_CHARS_STUDY: usize = 120_000;
 const ERROR_MAX_CHARS: usize = 512;
 const MAX_CONCURRENT: usize = 2;
 /// 라벨 요약(인터랙티브 — 머리 위 라벨). 짧게 잡아 UX 지연을 막는다.
@@ -18,14 +21,19 @@ const TIMEOUT_LABEL: Duration = Duration::from_secs(20);
 /// 일기 생성(#66). 백그라운드 유휴 스윕에서만 도는 배치라 종료 데드라인이
 /// 없다 — 긴 세션도 완주하도록 넉넉히 기다린다.
 const TIMEOUT_DIARY: Duration = Duration::from_secs(120);
+/// 학습자료 생성. 사용자가 명시적으로 누르고 기다리는 배치이고, 입력이
+/// 60배 크며 출력도 문서 한 편이다.
+const TIMEOUT_STUDY: Duration = Duration::from_secs(300);
 
-/// 요약 호출의 목적. 목적별로 타임아웃만 달라지고 나머지 파이프라인은 공유한다(#66).
+/// 요약 호출의 목적. 목적별로 타임아웃·입력 상한·모델이 달라지고 나머지
+/// 파이프라인은 공유한다(#66).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SummaryPurpose {
     #[default]
     Label,
     Diary,
+    Study,
 }
 
 impl SummaryPurpose {
@@ -33,6 +41,37 @@ impl SummaryPurpose {
         match self {
             Self::Label => TIMEOUT_LABEL,
             Self::Diary => TIMEOUT_DIARY,
+            Self::Study => TIMEOUT_STUDY,
+        }
+    }
+
+    fn max_chars(self) -> usize {
+        match self {
+            Self::Label | Self::Diary => TEXT_MAX_CHARS,
+            Self::Study => TEXT_MAX_CHARS_STUDY,
+        }
+    }
+
+    /// 이 목적이 요구하는 모델 등급. 라벨·일기는 한 문단짜리 변환이라 빠른
+    /// 모델로 충분하지만, 학습자료는 긴 전사를 읽고 구조화하는 일이다.
+    pub(super) fn claude_model(self) -> &'static str {
+        match self {
+            Self::Label | Self::Diary => "haiku",
+            Self::Study => "sonnet",
+        }
+    }
+
+    pub(super) fn codex_model(self) -> &'static str {
+        match self {
+            Self::Label | Self::Diary => "gpt-5.4-mini",
+            Self::Study => "gpt-5.4",
+        }
+    }
+
+    pub(super) fn codex_effort(self) -> &'static str {
+        match self {
+            Self::Label | Self::Diary => "low",
+            Self::Study => "medium",
         }
     }
 }
@@ -52,18 +91,18 @@ fn permits() -> &'static Semaphore {
 /// head 60% + 중략 표시 + tail 40%로 머리(첫 지시)와 꼬리(최근 작업)를 함께
 /// 보존한다. 프런트의 우선순위 축소(`formatWorkLog`)가 실패하거나 다른 경로가
 /// 긴 입력을 줄 때의 안전망 — 출력은 항상 `TEXT_MAX_CHARS` 이하다.
-fn cap_text(text: &str) -> Result<String, String> {
+fn cap_text(text: &str, max_chars: usize) -> Result<String, String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Err("validation: text is empty".to_string());
     }
     let chars: Vec<char> = trimmed.chars().collect();
-    if chars.len() <= TEXT_MAX_CHARS {
+    if chars.len() <= max_chars {
         return Ok(trimmed.to_string());
     }
     const MARKER: &str = "\n…(중략)…\n";
     let marker_len = MARKER.chars().count();
-    let budget = TEXT_MAX_CHARS.saturating_sub(marker_len);
+    let budget = max_chars.saturating_sub(marker_len);
     let head_len = budget * 60 / 100;
     let tail_len = budget - head_len;
     let head: String = chars[..head_len].iter().collect();
@@ -85,15 +124,15 @@ pub async fn summarize(
     instruction: &str,
     text: &str,
 ) -> Result<String, String> {
-    let capped = cap_text(text)?;
+    let capped = cap_text(text, purpose.max_chars())?;
     // GUI(Finder/launchd)로 띄운 번들 앱은 프로세스 PATH가 최소값(`/usr/bin:/bin:…`)
     // 이라 `claude`/`codex`를 못 찾아 `-not-found`로 조용히 실패한다(#58과 동일 원인,
     // 요약기·일기 경로에서 재발). spawn 직전에 로그인 셸 PATH를 1회 병합해 보장한다.
     // 멱등이라 첫 호출만 로그인 셸을 돌리고, 블로킹 호출이라 blocking 풀에서 실행한다.
     let _ = tokio::task::spawn_blocking(crate::session::env_capture::ensure_captured).await;
     let command = match provider {
-        SummaryProvider::Claude => claude::build(instruction),
-        SummaryProvider::Codex => codex::build(instruction),
+        SummaryProvider::Claude => claude::build(instruction, purpose),
+        SummaryProvider::Codex => codex::build(instruction, purpose),
     };
     run_with_timeout(command, &capped, purpose.timeout()).await
 }
@@ -319,20 +358,20 @@ exit "$AO_FAKE_EXIT"
     fn cap_text_counts_unicode_scalars_not_bytes() {
         let input = "가".repeat(TEXT_MAX_CHARS + 5);
         // head+tail 보존이라 총 길이는 정확히 캡(중략 마커 포함)에 맞춘다.
-        assert_eq!(cap_text(&input).unwrap().chars().count(), TEXT_MAX_CHARS);
+        assert_eq!(cap_text(&input, TEXT_MAX_CHARS).unwrap().chars().count(), TEXT_MAX_CHARS);
     }
 
     #[test]
     fn cap_text_passes_through_when_within_budget() {
         let input = "가".repeat(TEXT_MAX_CHARS);
-        assert_eq!(cap_text(&input).unwrap(), input);
+        assert_eq!(cap_text(&input, TEXT_MAX_CHARS).unwrap(), input);
     }
 
     #[test]
     fn cap_text_preserves_both_head_and_tail() {
         // 앞뒤를 구분할 수 있게 머리엔 'H', 꼬리엔 'T'를 채운다.
         let input = format!("{}{}", "H".repeat(TEXT_MAX_CHARS), "T".repeat(TEXT_MAX_CHARS));
-        let capped = cap_text(&input).unwrap();
+        let capped = cap_text(&input, TEXT_MAX_CHARS).unwrap();
         assert!(capped.starts_with('H'), "머리(첫 지시)가 유실됨");
         assert!(capped.ends_with('T'), "꼬리(최근 작업)가 유실됨");
         assert!(capped.contains("(중략)"), "중략 표시가 없음");
