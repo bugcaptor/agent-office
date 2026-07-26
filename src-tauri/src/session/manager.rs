@@ -136,6 +136,10 @@ pub struct SessionManager {
     /// 설정 `sessionLogEnabled`의 런타임 미러. 설정 변경이 즉시 반영되도록
     /// 원자 플래그를 세션들과 공유한다.
     session_log_enabled: Arc<AtomicBool>,
+    /// 캐릭터별 Claude native 세션 ID 조회기(프로덕션은 `ClaudeResumeStore`).
+    /// 세션 로그가 Claude 자체 JSONL 전사를 찾아 붙는 데 쓴다. None이면 PTY
+    /// 전사만 남는다 -- 테스트 기본값이다.
+    agent_session_lookup: Option<Arc<dyn crate::session_log::agent_transcript::AgentSessionLookup>>,
 }
 
 impl SessionManager {
@@ -161,6 +165,7 @@ impl SessionManager {
             broker_mode: false,
             session_log_root: None,
             session_log_enabled: Arc::new(AtomicBool::new(true)),
+            agent_session_lookup: None,
         }
     }
 
@@ -174,6 +179,17 @@ impl SessionManager {
     ) -> Self {
         self.session_log_root = Some(root);
         self.session_log_enabled = enabled;
+        self
+    }
+
+    /// 세션 로그가 Claude 자체 JSONL 전사를 찾아 붙일 수 있게 조회기를 준다
+    /// (docs/session-log-design.md §3.4). 없으면 대체 화면 안의 대화는 로그에
+    /// 남지 않는다.
+    pub fn with_agent_session_lookup(
+        mut self,
+        lookup: Arc<dyn crate::session_log::agent_transcript::AgentSessionLookup>,
+    ) -> Self {
+        self.agent_session_lookup = Some(lookup);
         self
     }
 
@@ -491,6 +507,7 @@ impl SessionManager {
                 &cwd,
                 size.1,
                 self.session_log_enabled.clone(),
+                self.agent_session_lookup.clone(),
             )
             .map(Arc::new)
         });

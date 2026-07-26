@@ -17,9 +17,17 @@
 use std::collections::VecDeque;
 
 /// 대체 화면(alternate screen) 진입/이탈에 남기는 마커. 그 안의 내용은
-/// 기록하지 않지만 "여기서 전체 화면 앱을 썼다"는 사실은 남긴다.
+/// PTY 전사로 기록하지 않지만 "여기서 전체 화면 앱을 썼다"는 사실은 남긴다.
+///
+/// Claude Code·Codex도 대체 화면을 쓴다 -- 그 대화는 이 경로가 아니라
+/// agent_transcript(각 CLI가 남기는 JSONL 전사)가 채운다(§3.4).
 pub const ALT_ENTER_MARKER: &str = "[전체 화면 앱 시작]";
 pub const ALT_EXIT_MARKER: &str = "[전체 화면 앱 종료]";
+
+/// 넓은 글자(한글·한자·가나·전각·이모지)가 차지한 두 번째 칸을 메우는 표식.
+/// 확정할 때 걸러낸다. 널 문자는 전사에 정상적으로 등장할 수 없어(제어문자는
+/// ground에서 버린다) 이 용도로 안전하다.
+const WIDE_TAIL: char = '\0';
 
 /// 라이브 영역 하한 -- 화면이 아주 작게 보고돼도 이만큼은 되감기 여유를 둔다.
 const MIN_LIVE_ROWS: usize = 80;
@@ -40,6 +48,64 @@ enum State {
     Str,
     /// 문자열 시퀀스 안에서 ESC 를 봤다(다음이 `\\`면 종료).
     StrEsc,
+    /// 한 바이트를 더 먹고 버려야 하는 2바이트 ESC 시퀀스의 뒷바이트 대기.
+    /// SS3(`ESC O <키>`)와 문자셋 지정(`ESC ( B` 등)이 여기로 온다 -- 이걸
+    /// 흘려보내면 뒷바이트가 본문 글자로 새어 로그에 `B`, `O` 같은 잡음이 찍힌다.
+    EscDiscardOne,
+}
+
+/// 터미널이 이 글자에 몇 칸을 쓰는가. 커서 열 계산에 쓴다.
+///
+/// **왜 필요한가**: Ink(Claude Code)는 단어마다 CHA(`CSI n G`)로 절대 열을
+/// 지정하며, 그 열은 넓은 글자를 2칸으로 센 값이다. 여기서 한글을 1칸으로 세면
+/// 지정 열까지의 차이가 전부 공백으로 메워져 "기획서와     데이터" 꼴이 된다.
+///
+/// 정확한 EastAsianWidth 표 대신 W/F 주요 구간만 담는다 -- 로그 가독성 문제이고
+/// 빗나가도 공백 몇 칸 차이라 의존성을 늘릴 값이 아니다.
+fn char_width(ch: char) -> usize {
+    let c = ch as u32;
+    // 결합 문자·폭 0 제어 계열: 앞 글자에 얹히므로 열을 먹지 않는다.
+    const ZERO: [(u32, u32); 8] = [
+        (0x0300, 0x036f),
+        (0x0483, 0x0489),
+        (0x0591, 0x05bd),
+        (0x1ab0, 0x1aff),
+        (0x1dc0, 0x1dff),
+        (0x200b, 0x200f),
+        (0x20d0, 0x20f0),
+        (0xfe00, 0xfe0f),
+    ];
+    if ZERO.iter().any(|(lo, hi)| c >= *lo && c <= *hi) {
+        return 0;
+    }
+    // EastAsianWidth W/F 주요 구간 + 이모지.
+    const WIDE: [(u32, u32); 20] = [
+        (0x1100, 0x115f),   // 한글 자모
+        (0x2e80, 0x303e),   // CJK 부수·강희·CJK 기호
+        (0x3041, 0x33ff),   // 히라가나 ~ CJK 호환
+        (0x3400, 0x4dbf),   // CJK 확장 A
+        (0x4e00, 0x9fff),   // CJK 통합
+        (0xa000, 0xa4cf),   // 이
+        (0xa960, 0xa97f),   // 한글 자모 확장 A
+        (0xac00, 0xd7a3),   // 한글 음절
+        (0xf900, 0xfaff),   // CJK 호환 한자
+        (0xfe10, 0xfe19),   // 세로쓰기 형태
+        (0xfe30, 0xfe6f),   // CJK 호환 형태
+        (0xff00, 0xff60),   // 전각 형태
+        (0xffe0, 0xffe6),   // 전각 기호
+        (0x1f004, 0x1f004), // 🀄
+        (0x1f18e, 0x1f19a),
+        (0x1f200, 0x1f2ff),
+        (0x1f300, 0x1f64f), // 이모지 본진
+        (0x1f680, 0x1f6ff),
+        (0x1f900, 0x1faff),
+        (0x20000, 0x3fffd), // CJK 확장 B~
+    ];
+    if WIDE.iter().any(|(lo, hi)| c >= *lo && c <= *hi) {
+        2
+    } else {
+        1
+    }
 }
 
 pub struct TranscriptFilter {
@@ -115,7 +181,7 @@ impl TranscriptFilter {
         while self
             .pending
             .back()
-            .is_some_and(|line| line.iter().all(|c| *c == ' '))
+            .is_some_and(|line| line.iter().all(|c| *c == ' ' || *c == WIDE_TAIL))
         {
             self.pending.pop_back();
         }
@@ -152,10 +218,16 @@ impl TranscriptFilter {
                         self.row = self.row.saturating_sub(1);
                         self.state = State::Ground;
                     }
-                    // 그 외 2바이트 ESC 시퀀스(문자셋 지정 등)는 버린다.
+                    // SS3(`ESC O <키>`)와 문자셋 지정(`ESC ( B` 등)은 뒤에
+                    // 바이트가 하나 더 붙는다 -- 함께 버려야 새지 않는다.
+                    b'O' | b'(' | b')' | b'*' | b'+' | b'%' | b'#' | b' ' => {
+                        self.state = State::EscDiscardOne
+                    }
+                    // 그 외 2바이트 ESC 시퀀스(키패드 모드 등)는 이걸로 끝난다.
                     _ => self.state = State::Ground,
                 }
             }
+            State::EscDiscardOne => self.state = State::Ground,
             State::Csi => {
                 // 파라미터(0x30-0x3F)와 중간 바이트(0x20-0x2F)를 모으고,
                 // 최종 바이트(0x40-0x7E)에서 실행한다.
@@ -422,6 +494,10 @@ impl TranscriptFilter {
         if self.alt_screen {
             return;
         }
+        let width = char_width(ch);
+        if width == 0 {
+            return; // 결합 문자 -- 열을 먹지 않으므로 버린다
+        }
         self.ensure_row();
         let col = self.col;
         let line = &mut self.pending[self.row];
@@ -431,12 +507,23 @@ impl TranscriptFilter {
         while line.len() < col {
             line.push(' ');
         }
-        if col < line.len() {
-            line[col] = ch;
-        } else {
-            line.push(ch);
+        // 넓은 글자의 두 번째 칸을 덮어쓰게 되면 앞 칸의 글자는 반쪽이 된다.
+        // 공백으로 바꿔 유령 글자가 남지 않게 한다.
+        if col < line.len() && line[col] == WIDE_TAIL && col > 0 {
+            line[col - 1] = ' ';
         }
-        self.col = col + 1;
+        let set = |i: usize, c: char, line: &mut Vec<char>| {
+            if i < line.len() {
+                line[i] = c;
+            } else {
+                line.push(c);
+            }
+        };
+        set(col, ch, line);
+        if width == 2 {
+            set(col + 1, WIDE_TAIL, line);
+        }
+        self.col = col + width;
     }
 
     fn ensure_row(&mut self) {
@@ -462,7 +549,7 @@ impl TranscriptFilter {
             return;
         };
         self.row = self.row.saturating_sub(1);
-        let text: String = line.into_iter().collect();
+        let text: String = line.into_iter().filter(|c| *c != WIDE_TAIL).collect();
         out.push(text.trim_end().to_string());
     }
 }
@@ -623,6 +710,30 @@ mod tests {
         // DL: 커서 줄 삭제
         let out = transcribe(24, &["a\r\nb\r\nc\r\n", "\x1b[3A\x1b[M"]);
         assert_eq!(out, "b\nc");
+    }
+
+    #[test]
+    fn wide_chars_occupy_two_columns() {
+        // Ink 관례: 단어마다 CHA로 절대 열 지정. "기획서"는 6칸이므로 다음
+        // 단어의 열 지정(7 → 인덱스 6)이 딱 맞아 공백이 끼지 않아야 한다.
+        // (한글을 1칸으로 세면 여기서 공백 3칸이 벌어진다 -- 실제로 그랬다.)
+        assert_eq!(transcribe(24, &["기획서\x1b[7G데이터\r\n"]), "기획서데이터");
+        // 진짜 간격이 있는 경우는 그만큼만 벌어진다.
+        assert_eq!(transcribe(24, &["가\x1b[5Gx\r\n"]), "가  x");
+    }
+
+    #[test]
+    fn overwriting_the_tail_of_a_wide_char_leaves_no_ghost() {
+        // "가"(0~1칸) 위에 1칸에서 덮어쓰면 앞 절반은 공백이 돼야 한다.
+        assert_eq!(transcribe(24, &["가\r\x1b[1CX\r\n"]), " X");
+    }
+
+    #[test]
+    fn ss3_and_charset_sequences_do_not_leak_letters() {
+        // ESC O B(방향키 에코)와 ESC ( B(문자셋 지정)는 뒷바이트까지 버려야
+        // 한다 -- 안 그러면 로그에 "B"가 본문처럼 찍힌다(실제 증상).
+        assert_eq!(transcribe(24, &["\x1bOB\x1bOAhi\r\n"]), "hi");
+        assert_eq!(transcribe(24, &["\x1b(B\x1b)0ok\r\n"]), "ok");
     }
 
     #[test]

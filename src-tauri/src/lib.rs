@@ -385,7 +385,10 @@ pub fn run() {
                 // v2 상시 브로커 모드(opt-in, docs/session-broker-v2-design.md).
                 .with_broker_mode(broker_mode)
                 // 터미널 전사 상시 기록(30일·2GB 자율 보존).
-                .with_session_log(session_log_root.clone(), session_log_enabled.clone()),
+                .with_session_log(session_log_root.clone(), session_log_enabled.clone())
+                // 대체 화면(Claude Code)에서 도는 대화는 PTY로 안 보인다 --
+                // 리줌 스토어의 세션 ID로 Claude 자체 JSONL 전사를 찾아 붙인다.
+                .with_agent_session_lookup(claude_resume_store.clone()),
             );
 
             let store = ProfileStore::new(data_dir.join("profiles.json"));
