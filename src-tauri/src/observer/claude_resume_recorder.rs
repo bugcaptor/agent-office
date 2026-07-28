@@ -18,10 +18,11 @@ pub struct ClaudeResumeRecorder {
     registry: Arc<SessionRegistry>,
     store: Arc<ClaudeResumeStore>,
     clock: Clock,
-    // ao_session_id → 마지막으로 기록한 native ID. Claude는 모든 훅마다
-    // session_id를 실어 보내므로, 값이 바뀔 때만 store.record를 호출해
-    // 훅마다 디스크를 다시 쓰는 것을 막는다.
-    last_seen: Mutex<HashMap<String, String>>,
+    // ao_session_id → 마지막으로 기록한 (native ID, 전사 경로). Claude는 모든
+    // 훅마다 session_id를 실어 보내므로, 값이 바뀔 때만 store.record를 호출해
+    // 훅마다 디스크를 다시 쓰는 것을 막는다. 전사 경로를 키에 포함해야
+    // 세션 ID가 같은데 경로만 뒤늦게 실려 온 훅이 dedup에 먹히지 않는다.
+    last_seen: Mutex<HashMap<String, (String, Option<String>)>>,
 }
 
 impl ClaudeResumeRecorder {
@@ -44,28 +45,41 @@ impl ClaudeResumeRecorder {
 }
 
 impl ClaudeSessionSink for ClaudeResumeRecorder {
-    fn record(&self, ao_session_id: &str, native_session_id: &str, cwd: Option<&str>) {
+    fn record(
+        &self,
+        ao_session_id: &str,
+        native_session_id: &str,
+        cwd: Option<&str>,
+        transcript_path: Option<&str>,
+    ) {
         // 미등록 세션(레지스트리에 없음)은 어느 에이전트 것인지 알 수 없어 버린다.
         let Some(agent_id) = self.registry.resolve_agent(ao_session_id) else {
             return;
         };
+        let key = (
+            native_session_id.to_string(),
+            transcript_path.map(str::to_string),
+        );
         {
             let seen = self.last_seen.lock().unwrap();
-            if seen.get(ao_session_id).map(String::as_str) == Some(native_session_id) {
+            if seen.get(ao_session_id) == Some(&key) {
                 return; // 값 불변 — 디스크 쓰기 생략
             }
         }
         // 디스크 반영에 성공했을 때만 "기록됨"으로 표시한다 — 실패를 표시해
         // 버리면 같은 ID를 실어 오는 후속 훅이 전부 위의 dedup에 걸려 영영
         // 재시도하지 않는다(리뷰 지적).
-        if self
-            .store
-            .record(&agent_id, native_session_id, cwd, (self.clock)())
-        {
+        if self.store.record(
+            &agent_id,
+            native_session_id,
+            cwd,
+            transcript_path,
+            (self.clock)(),
+        ) {
             self.last_seen
                 .lock()
                 .unwrap()
-                .insert(ao_session_id.to_string(), native_session_id.to_string());
+                .insert(ao_session_id.to_string(), key);
         }
     }
 }
@@ -102,14 +116,36 @@ mod tests {
         let recorder =
             ClaudeResumeRecorder::with_clock(registry, store.clone(), ticking_clock());
 
-        recorder.record("s1", "native-1", Some("/w"));
-        recorder.record("s1", "native-1", Some("/w"));
+        recorder.record("s1", "native-1", Some("/w"), Some("/t/n1.jsonl"));
+        recorder.record("s1", "native-1", Some("/w"), Some("/t/n1.jsonl"));
 
         let all = store.load_all();
         assert_eq!(all.len(), 1);
         // 두 번째 호출이 무시됐다면 updatedAt은 첫 기록값(1)에 머문다.
         assert_eq!(all["a1"].updated_at, 1);
         assert_eq!(all["a1"].session_id, "native-1");
+        assert_eq!(all["a1"].transcript_path.as_deref(), Some("/t/n1.jsonl"));
+
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    /// 세션 ID는 그대로인데 전사 경로가 뒤늦게 실려 온 훅은 dedup을 통과해
+    /// 기록돼야 한다 — 안 그러면 세션 로그가 그 세션 내내 경로를 못 얻는다.
+    #[test]
+    fn transcript_path_arriving_later_is_recorded() {
+        let file = scratch_file();
+        let registry = Arc::new(SessionRegistry::new());
+        registry.insert("s1", "a1", SessionState::Running);
+        let store = Arc::new(ClaudeResumeStore::new(file.clone()));
+        let recorder =
+            ClaudeResumeRecorder::with_clock(registry, store.clone(), ticking_clock());
+
+        recorder.record("s1", "native-1", None, None); // updatedAt = 1
+        recorder.record("s1", "native-1", None, Some("/t/n1.jsonl")); // 경로만 추가
+
+        let all = store.load_all();
+        assert_eq!(all["a1"].transcript_path.as_deref(), Some("/t/n1.jsonl"));
+        assert_eq!(all["a1"].updated_at, 2);
 
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
@@ -123,8 +159,8 @@ mod tests {
         let recorder =
             ClaudeResumeRecorder::with_clock(registry, store.clone(), ticking_clock());
 
-        recorder.record("s1", "native-1", None); // updatedAt = 1
-        recorder.record("s1", "native-2", None); // 값 변경 → updatedAt = 2
+        recorder.record("s1", "native-1", None, None); // updatedAt = 1
+        recorder.record("s1", "native-2", None, None); // 값 변경 → updatedAt = 2
 
         let all = store.load_all();
         assert_eq!(all["a1"].session_id, "native-2");
@@ -144,18 +180,18 @@ mod tests {
 
         // 대상 경로를 디렉터리로 막아 첫 저장을 실패시킨다.
         std::fs::create_dir_all(&file).unwrap();
-        recorder.record("s1", "native-1", None);
+        recorder.record("s1", "native-1", None, None);
 
         // 장애 해소 후 같은 ID의 후속 훅 — dedup에 걸리지 않고 재시도해야 한다.
         std::fs::remove_dir_all(&file).unwrap();
-        recorder.record("s1", "native-1", None);
+        recorder.record("s1", "native-1", None, None);
 
         let reloaded = ClaudeResumeStore::new(file.clone());
         assert_eq!(reloaded.load_all()["a1"].session_id, "native-1");
 
         // 성공 뒤에는 dedup이 다시 동작한다(updatedAt이 성공 시점 값에 머묾).
         let persisted_at = store.load_all()["a1"].updated_at;
-        recorder.record("s1", "native-1", None);
+        recorder.record("s1", "native-1", None, None);
         assert_eq!(store.load_all()["a1"].updated_at, persisted_at);
 
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
@@ -169,7 +205,7 @@ mod tests {
         let recorder =
             ClaudeResumeRecorder::with_clock(registry, store.clone(), ticking_clock());
 
-        recorder.record("s-unknown", "native-x", None);
+        recorder.record("s-unknown", "native-x", None, None);
 
         assert!(store.load_all().is_empty());
 

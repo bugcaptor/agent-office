@@ -5,6 +5,8 @@
 // on bind failure) -> session manager wiring -> AppState managed ->
 // invoke_handler for the renderer-facing commands -> graceful quit on
 // RunEvent::ExitRequested (dispose_all -> observer server shutdown).
+// 에이전트 CLI 데이터 루트(CLAUDE_CONFIG_DIR/CODEX_HOME) 결정 규칙 한 곳.
+pub mod agent_paths;
 pub mod api_keys;
 mod bot;
 mod control;
@@ -264,6 +266,15 @@ pub fn run() {
             let handle = app.handle().clone();
             let data_dir = app.path().app_data_dir()?;
             install_panic_logger(data_dir.clone());
+
+            // 로그인 셸 env 1회 캡처(#58). 봇 시작·요약기 스폰 직전에도 부르지만
+            // (멱등) 부팅에서 미리 해 둬야 세션 로그의 JSONL 전사 소스와 사용량
+            // 조회가 `CLAUDE_CONFIG_DIR`/`CODEX_HOME` 오버라이드를 본다. 로그인
+            // 셸을 돌리는 블로킹 호출이라 부팅을 막지 않게 백그라운드로 뺀다.
+            std::thread::Builder::new()
+                .name("env-capture".into())
+                .spawn(crate::session::env_capture::ensure_captured)
+                .ok();
 
             let event_store = Arc::new(crate::session_events::store::SessionEventStore::new(
                 session_event_root(&data_dir),

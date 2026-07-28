@@ -198,6 +198,12 @@ export interface ClaudeResumeEntry {
   sessionId: SessionId;
   /** 캡처 시점의 작업 디렉터리(참고용 — resume은 같은 프로젝트에서만 찾는다). */
   cwd?: string;
+  /**
+   * 훅이 알려 준 전사(JSONL) 절대 경로. 세션 로그가 이 경로로 대화를 끌어온다
+   * (`CLAUDE_CONFIG_DIR`을 옮긴 환경에서 경로 추측이 통하지 않으므로).
+   * 옛 기록에는 없을 수 있다.
+   */
+  transcriptPath?: string;
   /** 마지막으로 갱신된 백엔드 epoch ms. */
   updatedAt: number;
 }

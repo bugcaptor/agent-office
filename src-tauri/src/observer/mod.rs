@@ -42,7 +42,15 @@ pub trait ObserverAdapter: Send + Sync {
 /// 페이크. 부재 시 `ingest`는 캡처를 no-op으로 건너뛴다.
 pub trait ClaudeSessionSink: Send + Sync {
     /// ao_session_id = agent-office UUID(훅 라우팅 키), native = Claude 세션 ID.
-    fn record(&self, ao_session_id: &str, native_session_id: &str, cwd: Option<&str>);
+    /// `transcript_path`는 훅 body가 알려 준 JSONL 절대 경로 — 세션 로그가
+    /// 이걸로 대화를 끌어온다(CLAUDE_CONFIG_DIR을 옮겨도 맞는 유일한 경로).
+    fn record(
+        &self,
+        ao_session_id: &str,
+        native_session_id: &str,
+        cwd: Option<&str>,
+        transcript_path: Option<&str>,
+    );
 }
 
 pub struct ObserverRuntime {
@@ -143,7 +151,12 @@ impl ObserverRuntime {
             if let (Some(sink), Some(native)) =
                 (&self.claude_session_sink, event::native_session_id(raw.body))
             {
-                sink.record(session_id, &native, event::hook_cwd(raw.body).as_deref());
+                sink.record(
+                    session_id,
+                    &native,
+                    event::hook_cwd(raw.body).as_deref(),
+                    event::transcript_path(raw.body).as_deref(),
+                );
             }
         }
         let Some(event) = adapter.map_hook(&raw) else {
@@ -486,23 +499,32 @@ mod tests {
         assert_eq!(recorded.notifications()[0].session_id, "s1");
     }
 
+    type SinkCall = (String, String, Option<String>, Option<String>);
+
     #[derive(Default)]
     struct FakeSink {
-        calls: std::sync::Mutex<Vec<(String, String, Option<String>)>>,
+        calls: std::sync::Mutex<Vec<SinkCall>>,
     }
 
     impl ClaudeSessionSink for FakeSink {
-        fn record(&self, ao_session_id: &str, native_session_id: &str, cwd: Option<&str>) {
+        fn record(
+            &self,
+            ao_session_id: &str,
+            native_session_id: &str,
+            cwd: Option<&str>,
+            transcript_path: Option<&str>,
+        ) {
             self.calls.lock().unwrap().push((
                 ao_session_id.to_string(),
                 native_session_id.to_string(),
                 cwd.map(str::to_string),
+                transcript_path.map(str::to_string),
             ));
         }
     }
 
     impl FakeSink {
-        fn calls(&self) -> Vec<(String, String, Option<String>)> {
+        fn calls(&self) -> Vec<SinkCall> {
             self.calls.lock().unwrap().clone()
         }
     }
@@ -537,12 +559,19 @@ mod tests {
             "s1",
             RawObserverHook {
                 event_name: "PostToolUse",
-                body: br#"{"session_id":"native-1","cwd":"/w/project"}"#,
+                body: br#"{"session_id":"native-1","cwd":"/w/project","transcript_path":"/data/claude/projects/-w-project/native-1.jsonl"}"#,
             },
         );
+        // 전사 경로까지 실어 나른다 -- 세션 로그가 CLAUDE_CONFIG_DIR 위치를
+        // 추측하지 않고 이 경로로 바로 붙는다.
         assert_eq!(
             sink.calls(),
-            vec![("s1".into(), "native-1".into(), Some("/w/project".into()))]
+            vec![(
+                "s1".into(),
+                "native-1".into(),
+                Some("/w/project".into()),
+                Some("/data/claude/projects/-w-project/native-1.jsonl".into())
+            )]
         );
     }
 
@@ -561,7 +590,7 @@ mod tests {
         );
         assert_eq!(
             sink.calls(),
-            vec![("s1".into(), "native-2".into(), None)]
+            vec![("s1".into(), "native-2".into(), None, None)]
         );
     }
 

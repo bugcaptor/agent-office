@@ -17,7 +17,14 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// 캡처 대상 키(지정 키만). 토큰/베이스 URL과 PATH·로케일에 한정한다.
+/// 캡처 대상 키(지정 키만). 토큰/베이스 URL, PATH·로케일, 그리고 에이전트 CLI
+/// 데이터 루트 오버라이드에 한정한다.
+///
+/// `CLAUDE_CONFIG_DIR`/`CODEX_HOME`을 넣는 이유: 이 값을 `.zshrc`에서 export한
+/// 사용자의 경우 GUI로 띄운 앱은 그 값을 못 봐서 (1) 세션 로그가 `~/.claude`
+/// 아래에서 JSONL 전사를 찾다 실패해 에이전트 대화가 통째로 빠지고,
+/// (2) 요약기·학습자료가 스폰하는 `claude -p`도 엉뚱한 설정 디렉터리(=미로그인)를
+/// 보게 된다. 캡처해 심어 두면 `agent_paths`와 자식 프로세스가 함께 바로잡힌다.
 const CAPTURE_KEYS: &[&str] = &[
     "GITEA_TOKEN",
     "GITEA_BASE_URL",
@@ -26,6 +33,8 @@ const CAPTURE_KEYS: &[&str] = &[
     "LC_ALL",
     "LC_CTYPE",
     "LC_MESSAGES",
+    "CLAUDE_CONFIG_DIR",
+    "CODEX_HOME",
 ];
 
 /// 레코드 구분자(0x1E). rc 파일이 stdout에 찍는 잡음과 키=값 페어를 안전하게
@@ -234,6 +243,18 @@ mod tests {
         let m = parse_captured(raw.as_bytes(), CAPTURE_KEYS);
         assert_eq!(m.get("GITEA_TOKEN"), Some(&"abc".to_string()));
         assert_eq!(m.get("PATH"), Some(&"/opt/homebrew/bin".to_string()));
+    }
+
+    /// 에이전트 CLI 데이터 루트 오버라이드는 캡처 대상이어야 한다 — 빠지면
+    /// GUI 기동 시 세션 로그 전사와 요약기가 기본 `~/.claude`를 보게 된다.
+    #[test]
+    fn agent_cli_root_overrides_are_captured() {
+        assert!(CAPTURE_KEYS.contains(&"CLAUDE_CONFIG_DIR"));
+        assert!(CAPTURE_KEYS.contains(&"CODEX_HOME"));
+        let raw = format!("{START_MARKER}\u{1e}CLAUDE_CONFIG_DIR=/data/claude\u{1e}CODEX_HOME=/data/codex\u{1e}");
+        let m = parse_captured(raw.as_bytes(), CAPTURE_KEYS);
+        assert_eq!(m.get("CLAUDE_CONFIG_DIR"), Some(&"/data/claude".to_string()));
+        assert_eq!(m.get("CODEX_HOME"), Some(&"/data/codex".to_string()));
     }
 
     #[test]

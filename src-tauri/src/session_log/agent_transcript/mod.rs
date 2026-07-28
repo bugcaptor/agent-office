@@ -32,11 +32,23 @@ pub(crate) const MAX_VALUE_CHARS: usize = 1200;
 /// 도구 결과에서 남길 줄 수 상한.
 pub(crate) const MAX_VALUE_LINES: usize = 24;
 
-/// 에이전트별 "지금 이 캐릭터가 쓰고 있는 네이티브 세션 ID"를 알려주는 조회기.
+/// 훅이 알려 준 "지금 이 캐릭터가 쓰고 있는 네이티브 세션" 스냅샷.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSessionSnapshot {
+    pub session_id: String,
+    /// 훅 body의 cwd(세션 도중 폴더가 바뀌었을 수 있다).
+    pub cwd: Option<String>,
+    /// 훅 body의 `transcript_path` — CLI가 **직접 알려 준** JSONL 절대 경로.
+    /// 있으면 이게 정답이다: 사용자가 `CLAUDE_CONFIG_DIR`을 어디로 옮겼든
+    /// 실제로 쓰고 있는 파일이라 경로를 추측할 필요가 없다.
+    pub transcript_path: Option<String>,
+}
+
+/// 에이전트별 "지금 이 캐릭터가 쓰고 있는 네이티브 세션"을 알려주는 조회기.
 /// 프로덕션 구현은 `ClaudeResumeStore`(훅이 채운다).
 pub trait AgentSessionLookup: Send + Sync {
-    /// (session_id, cwd). 모르면 None.
-    fn latest_session(&self, agent_id: &str) -> Option<(String, Option<String>)>;
+    /// 모르면 None.
+    fn latest_session(&self, agent_id: &str) -> Option<AgentSessionSnapshot>;
 }
 
 /// 전사 파일 한 종류(= CLI 한 종류)를 다루는 소스.

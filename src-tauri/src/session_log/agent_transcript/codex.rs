@@ -1,6 +1,6 @@
 // src-tauri/src/session_log/agent_transcript/codex.rs
 //
-// Codex 전사 소스. `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl`.
+// Codex 전사 소스. `<CODEX_HOME|~/.codex>/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl`.
 //
 // Claude와 달리 Codex 세션 ID를 훅으로 받는 경로가 없다. 대신 rollout 파일
 // 첫 줄(`session_meta`)에 `cwd`와 `thread_source`가 들어 있어 그것으로 고른다:
@@ -28,9 +28,11 @@ const LIVE_WINDOW: Duration = Duration::from_secs(30 * 60);
 /// 붙기까지 이만큼 늦어질 뿐이다.
 const RESCAN_EVERY: Duration = Duration::from_secs(10);
 
+/// `<CODEX_HOME 또는 ~/.codex>/sessions`. Claude의 `CLAUDE_CONFIG_DIR`과 같은
+/// 사례 -- 홈만 보고 조립하면 CODEX_HOME을 옮겨 쓰는 환경에서 세션 로그에
+/// Codex 대화가 통째로 빠진다(agent_paths).
 pub fn default_sessions_root() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join(".codex").join("sessions"))
+    Some(crate::agent_paths::codex_home_from_env()?.join("sessions"))
 }
 
 pub struct CodexSource {

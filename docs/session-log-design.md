@@ -128,13 +128,24 @@ Claude Code(Ink)·Codex 같은 TUI는 화면을 지우고 다시 그리는 방�
 ```
 세션 로그 파일 ← 기록 스레드 ← Msg::Lines ← 수집 스레드(2초 틱)
                                               └ TranscriptTailer
-                                                  ├ claude: ~/.claude/projects/<슬러그>/<sessionId>.jsonl
-                                                  └ codex : ~/.codex/sessions/<Y>/<M>/<D>/rollout-*.jsonl
+                                                  ├ claude: 훅이 알려 준 transcript_path
+                                                  │         (폴백 <설정 디렉터리>/projects/<슬러그>/<sessionId>.jsonl)
+                                                  └ codex : <CODEX_HOME|~/.codex>/sessions/<Y>/<M>/<D>/rollout-*.jsonl
 ```
+
+**설정 디렉터리는 홈이 아닐 수 있다.** Claude Code는 `CLAUDE_CONFIG_DIR`,
+Codex는 `CODEX_HOME`으로 데이터 루트를 통째로 옮길 수 있다. `~/.claude`를
+박아 두면 그런 환경에서 전사를 못 찾아 **세션 로그에 에이전트 대화가 통째로
+빠지고**, 그 로그로 만든 학습자료(§5)도 셸 출력만 남는다. 그래서
+(1) 경로 규칙은 `agent_paths`(오버라이드 존중) 한 곳으로 모으고,
+(2) claude는 애초에 추측하지 않고 **훅 body의 `transcript_path`**를 쓰며,
+(3) GUI로 띄운 번들 앱은 `.zshrc`의 export를 못 보므로 `session::env_capture`가
+부팅 시 두 키를 로그인 셸에서 캡처해 프로세스 env에 심는다(요약기가 스폰하는
+`claude -p`도 같은 설정 디렉터리를 보게 되는 부수 효과).
 
 | 갈래 | 결정 | 근거 |
 | --- | --- | --- |
-| 파일 찾기(claude) | `claude-resume.json`의 **세션 ID**로 찾는다 | 훅이 이미 캐릭터별 native 세션을 추적한다. cwd 슬러그로 한 번 추측하고 빗나가면 프로젝트 디렉터리를 한 번 훑는다 |
+| 파일 찾기(claude) | `claude-resume.json`의 **`transcriptPath`**를 그대로 연다. 없을 때만(옛 기록·경로 미첨부) 세션 ID로 cwd 슬러그 추측 → 프로젝트 디렉터리 한 번 훑기 | 훅이 이미 캐릭터별 native 세션을 추적하고, 훅 body가 전사 절대 경로까지 실어 온다. CLI가 직접 알려 준 경로라 `CLAUDE_CONFIG_DIR`을 어디로 옮겼든 맞는다 |
 | 파일 찾기(codex) | 첫 줄 `session_meta`의 **cwd 일치** + `thread_source ≠ subagent` + 최근 30분 내 갱신 | codex는 세션 ID를 받아 올 훅 경로가 없다. 캐릭터-폴더가 1:1인 사용 방식에서는 충분하다 |
 | 시작 지점 | 처음 붙는 파일은 **끝(EOF)부터** | 앱이 이미 한참 돌던 세션에 붙을 때 과거 대화 전체를 다시 쏟지 않는다. 대신 원본 경로를 `[claude 전사 연결: …]` 한 줄로 남겨 그쪽을 찾아갈 수 있게 한다 |
 | 남기는 항목 | 사용자 발화, 에이전트 텍스트, 도구 호출/결과, 서브에이전트(`⤷` 표식) | 회고에 쓰이는 것만 |
@@ -249,6 +260,12 @@ Claude Code(Ink)·Codex 같은 TUI는 화면을 지우고 다시 그리는 방�
 
 지금은 `TEXT_MAX_CHARS`가 전역 상수이고 모델이 `claude.rs`에 하드코딩돼 있다.
 둘 다 `SummaryPurpose`에서 갈라지도록 바꾼다(기존 두 목적의 동작은 그대로).
+
+이 경로는 **입력과 실행 양쪽에서** 설정 디렉터리 위치에 걸린다: 입력인 세션
+로그가 전사를 못 붙였으면(§3.4) 셸 출력만 요약되고, 스폰하는 `claude -p`가
+사용자와 다른 `CLAUDE_CONFIG_DIR`을 보면 미로그인으로 실패한다. 둘 다
+`env_capture`가 부팅 시 심어 두는 `CLAUDE_CONFIG_DIR`이 해결한다(자식 프로세스가
+그대로 상속).
 
 ### 5.2 시스템 프롬프트 (요지)
 

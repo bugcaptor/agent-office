@@ -5,13 +5,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use agent_office_lib::session_log::agent_transcript::{
-    claude::ClaudeSource, codex::CodexSource, AgentSessionLookup, TranscriptSource,
-    TranscriptTailer,
+    claude::ClaudeSource, codex::CodexSource, AgentSessionLookup, AgentSessionSnapshot,
+    TranscriptSource, TranscriptTailer,
 };
 
 struct NoLookup;
 impl AgentSessionLookup for NoLookup {
-    fn latest_session(&self, _agent_id: &str) -> Option<(String, Option<String>)> {
+    fn latest_session(&self, _agent_id: &str) -> Option<AgentSessionSnapshot> {
         None
     }
 }
@@ -27,7 +27,7 @@ fn main() {
                 PathBuf::from(&args[0]),
             ),
         );
-        let mut source = ClaudeSource::new(PathBuf::from(&args[1]), store);
+        let mut source = ClaudeSource::new(Some(PathBuf::from(&args[1])), store);
         println!("{:?}", source.locate(&args[2], &args[3]));
         return;
     }
@@ -40,7 +40,7 @@ fn main() {
                 PathBuf::from(&args[0]),
             ),
         );
-        let source = Box::new(ClaudeSource::new(PathBuf::from(&args[1]), store));
+        let source = Box::new(ClaudeSource::new(Some(PathBuf::from(&args[1])), store));
         let mut tailer = TranscriptTailer::new(&args[2], &args[3], vec![source]);
         let secs: u64 = args[4].parse().unwrap_or(20);
         for _ in 0..secs / 2 {
@@ -54,7 +54,7 @@ fn main() {
     }
     let path = std::env::args().nth(2).expect("jsonl path");
     let source: Box<dyn TranscriptSource> = match kind.as_str() {
-        "claude" => Box::new(ClaudeSource::new(PathBuf::from("/nowhere"), Arc::new(NoLookup))),
+        "claude" => Box::new(ClaudeSource::new(Some(PathBuf::from("/nowhere")), Arc::new(NoLookup))),
         "codex" => Box::new(CodexSource::new(PathBuf::from("/nowhere"))),
         other => panic!("알 수 없는 종류: {other}"),
     };

@@ -76,8 +76,12 @@
 - **env 캡처(핵심)**: GUI(Finder/launchd) 기동 번들 앱은 로그인 셸 프로파일을
   안 거쳐 `GITEA_TOKEN`/`GITEA_BASE_URL`이 비고 `PATH`가 최소값이다. 봇 시작 시
   `session::env_capture`가 `"$SHELL" -l -i -c …`로 **지정 키만**(`GITEA_TOKEN`,
-  `GITEA_BASE_URL`, `PATH`, `LANG`, `LC_ALL`, `LC_CTYPE`, `LC_MESSAGES`) 1회
-  캡처해 프로세스 env에 병합한다(덮어쓰기 아님; PATH만 union). 이후 spawn되는
+  `GITEA_BASE_URL`, `PATH`, `LANG`, `LC_ALL`, `LC_CTYPE`, `LC_MESSAGES`,
+  `CLAUDE_CONFIG_DIR`, `CODEX_HOME`) 1회
+  캡처해 프로세스 env에 병합한다(덮어쓰기 아님; PATH만 union). 부팅 시에도 1회
+  백그라운드로 부른다(멱등) — 세션 로그의 JSONL 전사 소스와 사용량 조회가 두
+  CLI 데이터 루트 오버라이드를 봐야 하기 때문이다(docs/session-log-design.md
+  §3.4). 이후 spawn되는
   에이전트 PTY도 이 env를 상속하므로 폴링(앱)과 쓰기(에이전트)가 같은 자격을
   본다. 실패/타임아웃(8s) 시 no-op 폴백 — 봇 시작을 블로킹하지 않고, 값이
   진짜 없으면 폴링이 인증 오류로 드러난다.

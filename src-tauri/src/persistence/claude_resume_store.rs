@@ -19,6 +19,12 @@ pub struct ClaudeResumeEntry {
     pub session_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    /// 훅 body가 실어 온 `transcript_path`(JSONL 절대 경로). 세션 로그가 이
+    /// 경로로 대화를 끌어온다 -- 사용자가 `CLAUDE_CONFIG_DIR`을 옮겼을 때
+    /// `~/.claude/projects` 추측이 통하지 않기 때문이다. 옛 파일에는 없을 수
+    /// 있어 `default`(그때는 세션 로그가 슬러그 추측 폴백을 쓴다).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript_path: Option<String>,
     pub updated_at: u64,
 }
 
@@ -57,13 +63,28 @@ impl ClaudeResumeStore {
     /// 반영 성공 여부 — 실패해도 인메모리 상태는 유지되지만(load_all은 최신값),
     /// 호출자(recorder)가 false를 보고 "기록됨" 처리를 미뤄야 다음 훅이
     /// 같은 ID로 저장을 재시도한다(리뷰 지적: 일시적 IO 실패의 영구 유실 방지).
-    pub fn record(&self, agent_id: &str, session_id: &str, cwd: Option<&str>, at_ms: u64) -> bool {
+    pub fn record(
+        &self,
+        agent_id: &str,
+        session_id: &str,
+        cwd: Option<&str>,
+        transcript_path: Option<&str>,
+        at_ms: u64,
+    ) -> bool {
         let mut guard = self.state.lock().unwrap();
+        // 같은 세션의 후속 훅이 경로를 안 실어 왔다면 이미 알던 경로를 지킨다.
+        // 한 번 알아낸 전사 위치를 훅 body 하나의 누락으로 잃지 않는다.
+        let kept = guard
+            .agents
+            .get(agent_id)
+            .filter(|prev| prev.session_id == session_id)
+            .and_then(|prev| prev.transcript_path.clone());
         guard.agents.insert(
             agent_id.to_string(),
             ClaudeResumeEntry {
                 session_id: session_id.to_string(),
                 cwd: cwd.map(str::to_string),
+                transcript_path: transcript_path.map(str::to_string).or(kept),
                 updated_at: at_ms,
             },
         );
@@ -119,7 +140,7 @@ mod tests {
         let file = scratch_file();
         {
             let store = ClaudeResumeStore::new(file.clone());
-            store.record("a1", "native-1", Some("/w/project"), 1_000);
+            store.record("a1", "native-1", Some("/w/project"), Some("/t/native-1.jsonl"), 1_000);
         }
         // 새 인스턴스로 디스크에서 다시 읽어 실제 영속화됐는지 확인.
         let reloaded = ClaudeResumeStore::new(file.clone());
@@ -128,7 +149,45 @@ mod tests {
         let entry = &all["a1"];
         assert_eq!(entry.session_id, "native-1");
         assert_eq!(entry.cwd.as_deref(), Some("/w/project"));
+        assert_eq!(entry.transcript_path.as_deref(), Some("/t/native-1.jsonl"));
         assert_eq!(entry.updated_at, 1_000);
+
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    /// 전사 경로는 같은 세션이 이어지는 동안 유지되고(훅 하나가 안 실어 와도),
+    /// 세션이 바뀌면 새 값(없으면 None)으로 교체된다.
+    #[test]
+    fn transcript_path_survives_a_hook_without_it_but_not_a_new_session() {
+        let file = scratch_file();
+        let store = ClaudeResumeStore::new(file.clone());
+        store.record("a1", "native-1", None, Some("/t/native-1.jsonl"), 1_000);
+        store.record("a1", "native-1", Some("/w"), None, 2_000);
+        assert_eq!(
+            store.load_all()["a1"].transcript_path.as_deref(),
+            Some("/t/native-1.jsonl")
+        );
+
+        store.record("a1", "native-2", Some("/w"), None, 3_000);
+        assert_eq!(store.load_all()["a1"].transcript_path, None);
+
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    /// transcriptPath가 없던 시절의 파일도 그대로 읽혀야 한다(하위 호환).
+    #[test]
+    fn legacy_file_without_transcript_path_loads() {
+        let file = scratch_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(
+            &file,
+            br#"{"agents":{"a1":{"sessionId":"native-1","cwd":"/w","updatedAt":1}}}"#,
+        )
+        .unwrap();
+
+        let all = ClaudeResumeStore::new(file.clone()).load_all();
+        assert_eq!(all["a1"].session_id, "native-1");
+        assert_eq!(all["a1"].transcript_path, None);
 
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
@@ -137,8 +196,8 @@ mod tests {
     fn record_overwrites_previous_entry_for_same_agent() {
         let file = scratch_file();
         let store = ClaudeResumeStore::new(file.clone());
-        store.record("a1", "native-old", None, 1_000);
-        store.record("a1", "native-new", Some("/w"), 2_000);
+        store.record("a1", "native-old", None, None, 1_000);
+        store.record("a1", "native-new", Some("/w"), None, 2_000);
 
         let all = store.load_all();
         assert_eq!(all.len(), 1);
@@ -153,8 +212,8 @@ mod tests {
     fn record_keeps_entries_for_distinct_agents() {
         let file = scratch_file();
         let store = ClaudeResumeStore::new(file.clone());
-        store.record("a1", "native-1", None, 1_000);
-        store.record("a2", "native-2", None, 1_500);
+        store.record("a1", "native-1", None, None, 1_000);
+        store.record("a2", "native-2", None, None, 1_500);
 
         let all = store.load_all();
         assert_eq!(all.len(), 2);
@@ -174,7 +233,7 @@ mod tests {
         assert!(store.load_all().is_empty());
 
         // fail-open 후에도 정상적으로 기록·저장돼야 한다.
-        store.record("a1", "native-1", None, 3_000);
+        store.record("a1", "native-1", None, None, 3_000);
         assert_eq!(store.load_all()["a1"].session_id, "native-1");
 
         let _ = fs::remove_dir_all(file.parent().unwrap());
@@ -187,13 +246,13 @@ mod tests {
         fs::create_dir_all(&file).unwrap();
 
         let store = ClaudeResumeStore::new(file.clone());
-        assert!(!store.record("a1", "native-1", None, 1_000));
+        assert!(!store.record("a1", "native-1", None, None, 1_000));
         // 디스크는 실패했어도 인메모리 미러는 최신값(load_all은 앱 수명 내 UI용).
         assert_eq!(store.load_all()["a1"].session_id, "native-1");
 
         // 장애 해소 후 재시도는 성공해야 한다.
         fs::remove_dir_all(&file).unwrap();
-        assert!(store.record("a1", "native-1", None, 2_000));
+        assert!(store.record("a1", "native-1", None, None, 2_000));
         let reloaded = ClaudeResumeStore::new(file.clone());
         assert_eq!(reloaded.load_all()["a1"].session_id, "native-1");
 
@@ -210,7 +269,7 @@ mod tests {
     fn record_leaves_no_temp_file_behind() {
         let file = scratch_file();
         let store = ClaudeResumeStore::new(file.clone());
-        store.record("a1", "native-1", None, 1_000);
+        store.record("a1", "native-1", None, None, 1_000);
 
         let dir = file.parent().unwrap();
         let names: Vec<String> = fs::read_dir(dir)

@@ -27,12 +27,20 @@
   - `native_session_id(body) -> Option<String>` — top-level `session_id`
     문자열, 공백/빈 값은 None.
   - `hook_cwd(body) -> Option<String>` — top-level `cwd`.
+  - `transcript_path(body) -> Option<String>` — top-level `transcript_path`
+    (JSONL 절대 경로). 세션 로그의 전사 수집이 이걸 쓴다.
 - `ObserverRuntime`에 옵셔널 sink를 주입:
 
   ```rust
   pub trait ClaudeSessionSink: Send + Sync {
       /// ao_session_id = agent-office UUID(훅 라우팅 키), native = Claude 세션 ID.
-      fn record(&self, ao_session_id: &str, native_session_id: &str, cwd: Option<&str>);
+      fn record(
+          &self,
+          ao_session_id: &str,
+          native_session_id: &str,
+          cwd: Option<&str>,
+          transcript_path: Option<&str>,
+      );
   }
   ```
 
@@ -42,9 +50,10 @@
 - 프로덕션 sink `ClaudeResumeRecorder`:
   - `SessionRegistry::resolve_agent(ao_session_id)`로 agent_id 해석.
     해석 실패(미등록 세션)면 버린다.
-  - ao_session별 마지막 native ID를 in-memory 캐시로 들고, **값이 바뀔 때만**
-    스토어에 기록 — 훅마다 디스크 쓰기 방지. `/clear`·resume으로 native ID가
-    갈리면 최신값이 이긴다.
+  - ao_session별 마지막 `(native ID, transcriptPath)`를 in-memory 캐시로 들고,
+    **값이 바뀔 때만** 스토어에 기록 — 훅마다 디스크 쓰기 방지. `/clear`·resume으로
+    native ID가 갈리면 최신값이 이긴다. 전사 경로를 캐시 키에 포함해야 ID는 같은데
+    경로만 뒤늦게 실려 온 훅이 dedup에 먹히지 않는다.
   - 캐시 갱신은 **디스크 반영 성공 시에만** 한다. 실패를 "기록됨"으로
     표시하면 같은 ID의 후속 훅이 전부 dedup에 걸려 영영 재시도하지 않는다
     (Codex 리뷰 지적).
@@ -62,13 +71,23 @@
 ```json
 {
   "agents": {
-    "<agentId>": { "sessionId": "…", "cwd": "/path", "updatedAt": 1730000000000 }
+    "<agentId>": {
+      "sessionId": "…",
+      "cwd": "/path",
+      "transcriptPath": "/path/to/projects/-w-proj/<sessionId>.jsonl",
+      "updatedAt": 1730000000000
+    }
   }
 }
 ```
 
 - 에이전트당 최신 1건(MVP). 기존 스토어처럼 Mutex + tmp→rename 원자 쓰기.
 - 로드 실패(파손)는 빈 상태로 fail-open.
+- `transcriptPath`는 리줌이 아니라 **세션 로그**가 쓴다(docs/session-log-design.md
+  §3.4): `CLAUDE_CONFIG_DIR`을 옮긴 환경에서 `~/.claude/projects` 추측이 통하지
+  않으므로 CLI가 직접 알려 준 경로를 그대로 보관한다. 옛 파일에는 없을 수 있어
+  `serde(default)`이고, 같은 세션의 후속 훅이 경로를 안 실어 오면 기존 값을
+  유지한다.
 - 프로필 삭제된 에이전트의 잔존 엔트리는 무해 — 정리는 후속 과제.
 
 ## 4. 실행 — 기존 startup_command 경로 재사용
@@ -89,7 +108,7 @@
 
 ## 5. IPC·UI
 
-- 커맨드 `list_claude_resume_sessions() -> { [agentId]: { sessionId, cwd?, updatedAt } }`.
+- 커맨드 `list_claude_resume_sessions() -> { [agentId]: { sessionId, cwd?, transcriptPath?, updatedAt } }`.
   렌더러는 메뉴를 열 때 조회(이벤트 푸시 불필요). 열 때마다 후보를 비우고
   응답 도착까지 비활성으로 두며, 세대 가드로 늦게 도착한 옛 응답을 무시한다
   — 이전 조회의 낡은 ID(/clear 후 등)로 엉뚱한 대화를 이어버리는 것 방지

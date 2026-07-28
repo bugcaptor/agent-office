@@ -1,11 +1,18 @@
 // src-tauri/src/session_log/agent_transcript/claude.rs
 //
-// Claude Code 전사 소스. `~/.claude/projects/<슬러그>/<sessionId>.jsonl`.
+// Claude Code 전사 소스. `<설정 디렉터리>/projects/<슬러그>/<sessionId>.jsonl`.
 //
-// 세션 ID는 훅이 채우는 `claude-resume.json`(ClaudeResumeStore)에서 온다 --
+// 세션 정보는 훅이 채우는 `claude-resume.json`(ClaudeResumeStore)에서 온다 --
 // 이미 에이전트별 최신 native 세션을 추적하고 있으므로 새 배선이 필요 없다.
-// 경로는 cwd 슬러그를 먼저 추측하고(한 번의 stat), 빗나가면 프로젝트 디렉터리를
-// 한 번 훑어 찾는다. 찾은 경로는 세션 ID별로 캐시한다.
+// 전사 파일을 찾는 순서:
+//
+//   1) 훅이 실어 온 `transcript_path` -- CLI가 직접 알려 준 절대 경로라
+//      `CLAUDE_CONFIG_DIR`을 어디로 옮겼든 맞는다. 정상 경로는 여기서 끝난다.
+//   2) cwd 슬러그 추측(한 번의 stat)
+//   3) 프로젝트 디렉터리 한 번 훑기
+//
+// 2·3의 기준 루트도 `CLAUDE_CONFIG_DIR`을 존중한다(agent_paths). 찾은 경로는
+// 세션 ID별로 캐시한다.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -15,10 +22,10 @@ use serde_json::Value;
 
 use super::{block, clamp_value, compact_json_brief, AgentSessionLookup, TranscriptSource};
 
-/// `~/.claude/projects`. 홈을 못 찾으면 None(소스가 만들어지지 않는다).
+/// `<CLAUDE_CONFIG_DIR 또는 ~/.claude>/projects`. 홈도 오버라이드도 없으면 None
+/// (그 경우 훅이 알려 준 절대 경로에만 의존한다).
 pub fn default_projects_root() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join(".claude").join("projects"))
+    Some(crate::agent_paths::claude_config_dir_from_env()?.join("projects"))
 }
 
 /// cwd → Claude Code의 프로젝트 디렉터리 이름. 영숫자와 `-`만 남기고 나머지는
@@ -36,14 +43,16 @@ fn slug(cwd: &str) -> String {
 }
 
 pub struct ClaudeSource {
-    projects_root: PathBuf,
+    /// 추측·훑기의 기준 루트. 설정 디렉터리를 못 정했으면 None이고, 그때는
+    /// 훅이 알려 준 절대 경로만 쓴다.
+    projects_root: Option<PathBuf>,
     lookup: Arc<dyn AgentSessionLookup>,
     /// sessionId → 확인된 전사 경로. 디렉터리 훑기를 세션마다 한 번으로 묶는다.
     resolved: HashMap<String, PathBuf>,
 }
 
 impl ClaudeSource {
-    pub fn new(projects_root: PathBuf, lookup: Arc<dyn AgentSessionLookup>) -> Self {
+    pub fn new(projects_root: Option<PathBuf>, lookup: Arc<dyn AgentSessionLookup>) -> Self {
         Self {
             projects_root,
             lookup,
@@ -51,22 +60,30 @@ impl ClaudeSource {
         }
     }
 
-    fn find(&mut self, session_id: &str, cwd: &str) -> Option<PathBuf> {
+    fn find(&mut self, session_id: &str, cwd: &str, hook_path: Option<&str>) -> Option<PathBuf> {
         if let Some(hit) = self.resolved.get(session_id) {
             if hit.exists() {
                 return Some(hit.clone());
             }
             self.resolved.remove(session_id);
         }
+        // 1) 훅이 알려 준 경로. 설정 디렉터리 위치와 무관하게 항상 맞는다.
+        if let Some(path) = hook_path.map(PathBuf::from).filter(|p| p.is_file()) {
+            self.resolved.insert(session_id.to_string(), path.clone());
+            return Some(path);
+        }
+        // 옛 `claude-resume.json`(transcriptPath 없이 기록된 항목)이나 훅이 경로를
+        // 안 실어 준 경우를 위한 폴백 -- 루트를 알 때만 가능하다.
+        let root = self.projects_root.clone()?;
         let file = format!("{session_id}.jsonl");
-        // 1) cwd 슬러그로 바로 찾기.
-        let guess = self.projects_root.join(slug(cwd)).join(&file);
+        // 2) cwd 슬러그로 바로 찾기.
+        let guess = root.join(slug(cwd)).join(&file);
         if guess.is_file() {
             self.resolved.insert(session_id.to_string(), guess.clone());
             return Some(guess);
         }
-        // 2) 빗나갔으면(리줌 후 cwd 변경, 슬러그 규칙 변화) 한 번 훑는다.
-        for entry in std::fs::read_dir(&self.projects_root).ok()?.flatten() {
+        // 3) 빗나갔으면(리줌 후 cwd 변경, 슬러그 규칙 변화) 한 번 훑는다.
+        for entry in std::fs::read_dir(&root).ok()?.flatten() {
             let candidate = entry.path().join(&file);
             if candidate.is_file() {
                 self.resolved
@@ -84,10 +101,10 @@ impl TranscriptSource for ClaudeSource {
     }
 
     fn locate(&mut self, agent_id: &str, cwd: &str) -> Option<PathBuf> {
-        let (session_id, hook_cwd) = self.lookup.latest_session(agent_id)?;
+        let session = self.lookup.latest_session(agent_id)?;
         // 훅이 실어 온 cwd가 있으면 그쪽이 정확하다(세션 중 폴더가 바뀌었을 수 있다).
-        let cwd = hook_cwd.unwrap_or_else(|| cwd.to_string());
-        self.find(&session_id, &cwd)
+        let cwd = session.cwd.unwrap_or_else(|| cwd.to_string());
+        self.find(&session.session_id, &cwd, session.transcript_path.as_deref())
     }
 
     fn render(&self, raw: &str) -> Vec<String> {
@@ -227,20 +244,24 @@ fn flatten_content(content: Option<&Value>) -> String {
 /// `ClaudeResumeStore`를 조회기로 그대로 쓴다 -- 훅이 매번 갱신하므로 세션
 /// 도중 리줌으로 ID가 바뀌어도 다음 틱에 새 파일로 따라간다.
 impl AgentSessionLookup for crate::persistence::claude_resume_store::ClaudeResumeStore {
-    fn latest_session(&self, agent_id: &str) -> Option<(String, Option<String>)> {
+    fn latest_session(&self, agent_id: &str) -> Option<super::AgentSessionSnapshot> {
         let all = self.load_all();
         let entry = all.get(agent_id)?;
-        Some((entry.session_id.clone(), entry.cwd.clone()))
+        Some(super::AgentSessionSnapshot {
+            session_id: entry.session_id.clone(),
+            cwd: entry.cwd.clone(),
+            transcript_path: entry.transcript_path.clone(),
+        })
     }
 }
 
-/// 홈의 기본 위치에서 Claude 소스를 만든다. 프로젝트 디렉터리가 아예 없으면
-/// (Claude Code를 안 쓰는 환경) None.
+/// Claude 소스를 만든다. 기준 루트(`CLAUDE_CONFIG_DIR` 또는 `~/.claude`) 아래
+/// `projects/`가 없어도 소스는 만든다 -- 훅이 실어 오는 절대 경로만으로도
+/// 전사를 따라갈 수 있고, 오히려 그 상황(설정 디렉터리를 옮겨 쓰는데 앱이
+/// 아직 그 env를 못 본 경우)이 이 소스가 가장 필요한 순간이다. 조회기가 이
+/// 캐릭터의 세션을 모르면 `locate`가 즉시 None이라 비용도 없다.
 pub fn source(lookup: Arc<dyn AgentSessionLookup>) -> Option<Box<dyn TranscriptSource>> {
-    let root = default_projects_root()?;
-    if !root.is_dir() {
-        return None;
-    }
+    let root = default_projects_root().filter(|root| root.is_dir());
     Some(Box::new(ClaudeSource::new(root, lookup)))
 }
 
@@ -248,10 +269,20 @@ pub fn source(lookup: Arc<dyn AgentSessionLookup>) -> Option<Box<dyn TranscriptS
 mod tests {
     use super::*;
 
-    struct FixedLookup(Option<(String, Option<String>)>);
+    use super::super::AgentSessionSnapshot;
+
+    struct FixedLookup(Option<AgentSessionSnapshot>);
     impl AgentSessionLookup for FixedLookup {
-        fn latest_session(&self, _agent_id: &str) -> Option<(String, Option<String>)> {
+        fn latest_session(&self, _agent_id: &str) -> Option<AgentSessionSnapshot> {
             self.0.clone()
+        }
+    }
+
+    fn snapshot(session_id: &str, cwd: Option<&str>) -> AgentSessionSnapshot {
+        AgentSessionSnapshot {
+            session_id: session_id.to_string(),
+            cwd: cwd.map(str::to_string),
+            transcript_path: None,
         }
     }
 
@@ -330,7 +361,10 @@ mod tests {
 
     #[test]
     fn unparsable_line_is_ignored() {
-        let src = ClaudeSource::new(PathBuf::from("/nowhere"), Arc::new(FixedLookup(None)));
+        let src = ClaudeSource::new(
+            Some(PathBuf::from("/nowhere")),
+            Arc::new(FixedLookup(None)),
+        );
         assert!(src.render("not json").is_empty());
         assert!(src.render("").is_empty());
     }
@@ -346,25 +380,80 @@ mod tests {
         std::fs::create_dir_all(&by_slug).unwrap();
         std::fs::write(by_slug.join("sess-1.jsonl"), b"").unwrap();
 
-        let lookup = Arc::new(FixedLookup(Some((
-            "sess-1".to_string(),
-            Some(cwd.to_string()),
-        ))));
-        let mut src = ClaudeSource::new(dir.clone(), lookup);
+        let lookup = Arc::new(FixedLookup(Some(snapshot("sess-1", Some(cwd)))));
+        let mut src = ClaudeSource::new(Some(dir.clone()), lookup);
         assert_eq!(src.locate("a1", cwd), Some(by_slug.join("sess-1.jsonl")));
 
         // 슬러그가 안 맞는 위치에 있어도(리줌 후 폴더 변경) 훑어서 찾아낸다.
         let odd = dir.join("-somewhere-else");
         std::fs::create_dir_all(&odd).unwrap();
         std::fs::write(odd.join("sess-2.jsonl"), b"").unwrap();
-        let lookup2 = Arc::new(FixedLookup(Some(("sess-2".to_string(), None))));
-        let mut src2 = ClaudeSource::new(dir.clone(), lookup2);
+        let lookup2 = Arc::new(FixedLookup(Some(snapshot("sess-2", None))));
+        let mut src2 = ClaudeSource::new(Some(dir.clone()), lookup2);
         assert_eq!(src2.locate("a1", cwd), Some(odd.join("sess-2.jsonl")));
 
         // 세션 ID를 모르면 아무것도 안 한다.
-        let mut blind = ClaudeSource::new(dir.clone(), Arc::new(FixedLookup(None)));
+        let mut blind = ClaudeSource::new(Some(dir.clone()), Arc::new(FixedLookup(None)));
         assert_eq!(blind.locate("a1", cwd), None);
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 훅이 알려 준 transcript_path는 기준 루트 밖(=CLAUDE_CONFIG_DIR을 옮긴
+    /// 경우)에 있어도 그대로 쓰여야 한다. 루트를 아예 모를 때도 마찬가지다.
+    #[test]
+    fn locate_prefers_the_hook_reported_path_outside_the_root() {
+        let dir = std::env::temp_dir().join(format!(
+            "agent-office-claude-src-hookpath-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let elsewhere = dir.join("custom-config/projects/-w-proj");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let transcript = elsewhere.join("sess-9.jsonl");
+        std::fs::write(&transcript, b"").unwrap();
+
+        let with_hook = |root: Option<PathBuf>| {
+            let lookup = Arc::new(FixedLookup(Some(AgentSessionSnapshot {
+                session_id: "sess-9".to_string(),
+                cwd: Some("/w/proj".to_string()),
+                transcript_path: Some(transcript.to_string_lossy().into_owned()),
+            })));
+            ClaudeSource::new(root, lookup)
+        };
+
+        // 기본 루트(~/.claude/projects 상당)에는 이 세션 파일이 없다.
+        let home_root = dir.join("home-claude/projects");
+        std::fs::create_dir_all(&home_root).unwrap();
+        let mut src = with_hook(Some(home_root));
+        assert_eq!(src.locate("a1", "/w/proj"), Some(transcript.clone()));
+
+        // 루트를 못 정한 환경(HOME 부재 등)에서도 훅 경로만으로 따라간다.
+        let mut rootless = with_hook(None);
+        assert_eq!(rootless.locate("a1", "/w/proj"), Some(transcript.clone()));
+
+        // 훅 경로가 사라졌으면(파일 삭제) 폴백으로 내려간다 — 루트가 없으면 None.
+        std::fs::remove_file(&transcript).unwrap();
+        let mut gone = with_hook(None);
+        assert_eq!(gone.locate("a1", "/w/proj"), None);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 기준 루트는 CLAUDE_CONFIG_DIR을 존중해야 한다(빈 값은 미설정 취급).
+    #[test]
+    fn projects_root_follows_the_config_dir_override() {
+        assert_eq!(
+            crate::agent_paths::claude_config_dir(
+                std::path::Path::new("/home/u"),
+                Some("/data/claude")
+            )
+            .join("projects"),
+            PathBuf::from("/data/claude/projects")
+        );
+        assert_eq!(
+            crate::agent_paths::claude_config_dir(std::path::Path::new("/home/u"), None)
+                .join("projects"),
+            PathBuf::from("/home/u/.claude/projects")
+        );
     }
 }

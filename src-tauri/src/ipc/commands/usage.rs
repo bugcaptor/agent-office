@@ -22,10 +22,7 @@ pub(crate) fn resolve_usage_roots(
     codex_home_env: Option<&str>,
     claude_config_env: Option<&str>,
 ) -> (std::path::PathBuf, std::path::PathBuf) {
-    let codex_root = codex_home_env
-        .filter(|s| !s.is_empty())
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| home.join(".codex"));
+    let codex_root = crate::agent_paths::codex_home(home, codex_home_env);
     let claude_root = claude_config_env
         .filter(|s| !s.is_empty())
         .map(std::path::PathBuf::from)
@@ -41,10 +38,7 @@ pub(crate) fn resolve_claude_config_dir(
     home: &std::path::Path,
     claude_config_env: Option<&str>,
 ) -> std::path::PathBuf {
-    claude_config_env
-        .filter(|s| !s.is_empty())
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| home.join(".claude"))
+    crate::agent_paths::claude_config_dir(home, claude_config_env)
 }
 
 /// 구독 사용량(rate limit) 스냅샷을 읽는다(인자 없음,

@@ -7,7 +7,8 @@
 //                                                    → 전용 스레드
 //                                                    → TranscriptFilter → SessionLogWriter
 //                                                                            ↑
-//   ~/.claude/projects/**.jsonl ── 수집 스레드 ── TranscriptTailer ──────────┘
+//   에이전트 JSONL 전사 ────────── 수집 스레드 ── TranscriptTailer ──────────┘
+//   (훅이 알려 준 transcript_path, 없으면 <CLAUDE_CONFIG_DIR|~/.claude>/projects)
 //
 // 두 번째 경로가 필요한 이유: Claude Code·Codex는 대체 화면에서 돌아 PTY
 // 전사에 대화가 남지 않는다. 대신 두 CLI가 스스로 남기는 JSONL 전사를 tail 해
