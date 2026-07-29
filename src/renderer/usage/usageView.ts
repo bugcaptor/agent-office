@@ -7,6 +7,7 @@
 
 import type {
   ClaudeLiveStatus,
+  FetchTransport,
   ProviderUsage,
   UsageSnapshot,
   UsageWindow,
@@ -139,6 +140,23 @@ export interface LiveStatusNote {
 const CACHE_FALLBACK_NOTE =
   "표시값은 로컬 캐시(~/.claude.json)이며, 이 캐시는 Claude Code에서 /usage를 열 때만 갱신됩니다";
 
+/** 전송 수단 표시명. `direct`는 우회가 아니므로 라벨을 쓰지 않는다. */
+export function transportLabel(via: FetchTransport): string {
+  switch (via) {
+    case "direct":
+      return "직접 조회";
+    case "curl":
+      return "curl";
+    case "claude_cli":
+      return "claude CLI";
+  }
+}
+
+/** 우회 수단으로 값을 받아오고 있는지(=앱의 직접 HTTPS가 막힌 환경인지). */
+function detour(via: FetchTransport | null | undefined): FetchTransport | null {
+  return via && via !== "direct" ? via : null;
+}
+
 /**
  * 실시간 조회 상태 → 표시 문구. `null`(구버전 백엔드 응답 등 필드 부재)이면
  * 아무것도 표시하지 않는다.
@@ -148,12 +166,26 @@ export function describeLiveStatus(
 ): LiveStatusNote | null {
   if (!status) return null;
   switch (status.outcome) {
-    case "ok":
+    case "ok": {
+      // 우회로 성공 중이면 값은 최신이지만 환경 진단으로서 알릴 가치가 있다 —
+      // 앱이 직접 거는 HTTPS만 막혀 있다는 뜻이라, 사설 인증서를 신뢰 목록에
+      // 넣거나 프록시 설정을 손보면 우회 없이도 돌아간다.
+      const via = detour(status.via);
+      if (via) {
+        return {
+          level: "ok",
+          text:
+            `앱이 사용량을 ${transportLabel(via)} 우회로 조회 중 — 앱에서 직접 거는 HTTPS가 ` +
+            "이 환경에서 막혀 있습니다(사내 프록시·사설 인증서 등). 표시값은 최신입니다",
+          short: `실시간 조회 정상(${transportLabel(via)} 우회)`,
+        };
+      }
       return {
         level: "ok",
         text: "앱이 사용량을 직접 조회 중 (최대 15분 간격)",
         short: "실시간 조회 정상",
       };
+    }
     case "never_attempted":
       return {
         level: "warn",
@@ -204,8 +236,13 @@ export function describeLiveStatus(
 export function formatLiveAttempts(status: ClaudeLiveStatus, now: number): string {
   const parts: string[] = [];
   if (status.lastAttemptMs !== null) parts.push(`마지막 시도 ${formatAgo(status.lastAttemptMs, now)}`);
-  if (status.lastSuccessMs !== null) parts.push(`마지막 성공 ${formatAgo(status.lastSuccessMs, now)}`);
-  else if (status.outcome !== "never_attempted") parts.push("성공 이력 없음");
+  if (status.lastSuccessMs !== null) {
+    // 실패 중이어도 "그 값을 무엇으로 받아왔는지"는 남는다(via는 마지막
+    // 성공의 수단이다) — 우회로 연명 중인 환경을 여기서도 읽을 수 있게 한다.
+    const via = detour(status.via);
+    const suffix = via ? ` (${transportLabel(via)} 우회)` : "";
+    parts.push(`마지막 성공 ${formatAgo(status.lastSuccessMs, now)}${suffix}`);
+  } else if (status.outcome !== "never_attempted") parts.push("성공 이력 없음");
   return parts.join(" · ");
 }
 

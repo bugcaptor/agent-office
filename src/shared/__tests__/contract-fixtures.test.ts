@@ -202,17 +202,21 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expect(codex.windows[0].isActive).toBeNull();
     expect(codex.planLabel).toBe("prolite");
     // 실시간 조회 진단은 실패해도 스냅샷과 함께 항상 온다 — 픽스처는 실제로
-    // 흔한 조합(Keychain이 막혀 파일 토큰 폴백 → 401)을 굳혀 둔다.
+    // 흔한 조합(Keychain이 막혀 파일 토큰 폴백 → 401)에 폴백 체인의 모양까지
+    // 얹어 굳혀 둔다(`via`=마지막으로 값을 얻어낸 수단, 실패가 지우지 않음).
     expectKeys(parsed.claudeLive, [
       "outcome",
       "tokenSource",
       "detail",
       "lastAttemptMs",
       "lastSuccessMs",
+      "via",
     ]);
     expect(parsed.claudeLive.outcome).toBe("unauthorized");
     expect(parsed.claudeLive.tokenSource).toBe("file");
-    expect(parsed.claudeLive.lastSuccessMs).toBeNull();
+    expect(parsed.claudeLive.lastSuccessMs).toBe(1784280000000);
+    // 지금은 401로 실패 중이지만, 마지막으로 값을 얻어낸 수단은 남는다.
+    expect(parsed.claudeLive.via).toBe("curl");
   });
 
   it("GetAppSettingsResult / AppSettings", () => {

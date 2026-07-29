@@ -11,6 +11,7 @@
 
 mod claude;
 mod claude_live;
+mod claude_live_fallback;
 mod codex;
 
 use std::path::Path;
@@ -53,6 +54,21 @@ pub enum TokenSource {
     File,
 }
 
+/// 사용량 값을 실제로 얻어낸 전송 수단. TS `FetchTransport` 미러.
+/// `direct`가 아니라는 것은 앱의 자체 HTTPS가 이 환경에서 막혀 있고(사내
+/// MITM 프록시·self-signed 루트 등) 외부 프로세스로 우회 중이라는 뜻이다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FetchTransport {
+    /// 앱 안의 reqwest로 직접 조회(기본 경로).
+    Direct,
+    /// `curl` 자식 프로세스 경유(OS 인증서 스토어·프록시 설정을 그대로 씀).
+    Curl,
+    /// `claude -p /usage` 경유. 현재 CLI는 사용량을 돌려주지 않아 사실상
+    /// 도달하지 않는 값이다(claude_live_fallback 헤더 주석 참조).
+    ClaudeCli,
+}
+
 /// Claude 실시간 조회 진단 스냅샷. TS `ClaudeLiveStatus` 미러(camelCase).
 /// 스냅샷마다 항상 존재한다(실패해도 null이 아니다 — "모름"은 `NeverAttempted`).
 #[derive(Debug, Clone, PartialEq, Serialize, Default)]
@@ -68,6 +84,10 @@ pub struct ClaudeLiveStatus {
     pub last_attempt_ms: Option<i64>,
     /// 마지막 성공 시각(epoch ms). 한 번도 성공한 적 없으면 null.
     pub last_success_ms: Option<i64>,
+    /// 마지막으로 값을 얻어낸 전송 수단. 한 번도 성공한 적 없으면 null.
+    /// 실패는 이 값을 지우지 않는다 — "아까는 curl로 받아온 값"이라는 설명이
+    /// 실패 중에도 성립해야 하기 때문이다.
+    pub via: Option<FetchTransport>,
 }
 
 /// 한도 윈도 종류. TS `UsageWindowKind` 미러(serde snake_case).
@@ -176,17 +196,103 @@ pub async fn load_usage_snapshot_with_live(
             Some((token, source)) => match claude_live::fetch_live(&token).await {
                 Ok(windows) => live.record_success(
                     claude_live::live_provider_usage(windows, now_ms),
-                    source,
+                    Some(source),
+                    FetchTransport::Direct,
                 ),
-                Err(failure) => live.record_failure(Some(source), failure),
+                Err(failure) => {
+                    run_fallback_chain(live, Some((&token, source)), failure, now_ms).await
+                }
             },
-            None => live.record_failure(None, claude_live::LiveFailure::no_credentials()),
+            // 토큰을 못 읽어도 폴백은 의미가 있다 — `claude` 갈래는 CLI 자신의
+            // 자격증명을 쓰므로 우리 Keychain 접근이 막힌 것과 무관하게 돈다.
+            None => {
+                run_fallback_chain(live, None, claude_live::LiveFailure::no_credentials(), now_ms)
+                    .await
+            }
         }
     }
 
     snapshot.claude = merge_claude(snapshot.claude.take(), live.last_success());
     snapshot.claude_live = live.status();
     snapshot
+}
+
+/// 1차(앱 내 reqwest) 조회가 실패했을 때의 우회 체인. curl → claude CLI 순으로
+/// 시도하고, 하나라도 성공하면 그 값과 수단을 기록한다. 설계 의도는
+/// claude_live_fallback 헤더 주석에 있다.
+///
+/// 스로틀: 폴백은 1시간에 한 번만 시도한다. 막히면 1차 실패 사유를 그대로
+/// 기록하고 끝낸다 — 60초 폴링마다 자식 프로세스를 띄우는 일은 없다.
+///
+/// 실패로 끝나면 **1차 실패의 outcome을 유지**한다. 사용자가 고쳐야 할 대상은
+/// "앱이 왜 직접 못 가져오는가"이고, 폴백 갈래별 결과는 detail에 접두를 달아
+/// 함께 실어 보낸다("연결 실패 · curl: HTTP 401 · claude: 사용량 미제공").
+async fn run_fallback_chain(
+    live: &LiveUsageState,
+    credentials: Option<(&str, TokenSource)>,
+    primary: claude_live::LiveFailure,
+    now_ms: i64,
+) {
+    let token_source = credentials.map(|(_, source)| source);
+    if !live.begin_fallback_if_due(now_ms) {
+        live.record_failure(token_source, primary);
+        return;
+    }
+
+    let mut notes: Vec<String> = primary.detail.clone().into_iter().collect();
+
+    // 1) curl — 우리가 읽은 토큰이 있어야 한다(1차와 같은 요청을 그대로 재현).
+    match credentials {
+        Some((token, source)) => match claude_live_fallback::fetch_via_curl(token).await {
+            Ok(windows) => {
+                live.record_success(
+                    claude_live::live_provider_usage(windows, now_ms),
+                    Some(source),
+                    FetchTransport::Curl,
+                );
+                return;
+            }
+            Err(failure) => notes.push(format!("curl: {}", detail_or(&failure))),
+        },
+        None => notes.push("curl: 토큰 없음".into()),
+    }
+
+    // 2) claude CLI — 과금이 감지돼 봉인된 경우가 아니면 시도한다.
+    if let Some(reason) = live.cli_disabled_reason() {
+        notes.push(format!("claude: 건너뜀({reason})"));
+    } else {
+        let probe = claude_live_fallback::fetch_via_claude_cli().await;
+        if let Some(spend) = probe.token_spend {
+            // 조회 성패와 무관하게 즉시 봉인한다. 이 경로는 공짜일 때만 존재 가치가 있다.
+            live.disable_cli_fallback(spend.clone());
+            notes.push(format!("claude: 비활성화({spend})"));
+        }
+        match probe.result {
+            Ok(windows) => {
+                live.record_success(
+                    claude_live::live_provider_usage(windows, now_ms),
+                    token_source,
+                    FetchTransport::ClaudeCli,
+                );
+                return;
+            }
+            Err(failure) => notes.push(format!("claude: {}", detail_or(&failure))),
+        }
+    }
+
+    live.record_failure(
+        token_source,
+        claude_live::LiveFailure {
+            outcome: primary.outcome,
+            detail: (!notes.is_empty()).then(|| notes.join(" · ")),
+        },
+    );
+}
+
+/// 실패의 사람이 읽을 사유. detail이 비어 있는 실패는 사실상 없지만, 진단
+/// 문자열이 "claude: " 처럼 잘려 나가지 않도록 기본값을 둔다.
+fn detail_or(failure: &claude_live::LiveFailure) -> String {
+    failure.detail.clone().unwrap_or_else(|| "실패".into())
 }
 
 /// 파일 캐시와 실시간 결과 중 `fetched_at_ms`가 큰 쪽을 고른다(렌더러

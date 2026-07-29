@@ -48,6 +48,7 @@ function live(partial: Partial<ClaudeLiveStatus> = {}): ClaudeLiveStatus {
     detail: null,
     lastAttemptMs: null,
     lastSuccessMs: null,
+    via: "direct",
     ...partial,
   };
 }
@@ -323,6 +324,32 @@ describe("describeLiveStatus", () => {
     expect(describeLiveStatus(null)).toBeNull();
     expect(describeLiveStatus(undefined)).toBeNull();
   });
+
+  // ── 우회 전송(사내 프록시·사설 인증서 환경) ──
+
+  it("curl 우회로 성공 중이면 값은 정상이라고 하되 우회 사실을 알린다", () => {
+    const note = describeLiveStatus(live({ outcome: "ok", via: "curl" }))!;
+    expect(note.level).toBe("ok");
+    expect(note.short).toContain("curl 우회");
+    expect(note.text).toContain("직접 거는 HTTPS가");
+  });
+
+  it("claude CLI 우회도 같은 방식으로 알린다", () => {
+    const note = describeLiveStatus(live({ outcome: "ok", via: "claude_cli" }))!;
+    expect(note.level).toBe("ok");
+    expect(note.short).toContain("claude CLI 우회");
+  });
+
+  it("직접 조회 성공에는 우회 문구가 붙지 않는다", () => {
+    const note = describeLiveStatus(live({ outcome: "ok", via: "direct" }))!;
+    expect(note.short).toBe("실시간 조회 정상");
+    expect(note.text).not.toContain("우회");
+  });
+
+  it("via가 없는 구버전 응답도 직접 조회로 취급한다", () => {
+    const note = describeLiveStatus(live({ outcome: "ok", via: null }))!;
+    expect(note.short).toBe("실시간 조회 정상");
+  });
 });
 
 describe("formatLiveAttempts", () => {
@@ -343,5 +370,16 @@ describe("formatLiveAttempts", () => {
 
   it("한 번도 시도 안 했으면 빈 문자열", () => {
     expect(formatLiveAttempts(live({ outcome: "never_attempted" }), NOW)).toBe("");
+  });
+
+  it("실패 중이어도 그 값을 무엇으로 받아왔는지는 남는다", () => {
+    // via는 마지막 '성공'의 수단이라 실패가 지우지 않는다.
+    const s = live({
+      outcome: "network_error",
+      lastAttemptMs: NOW - 60000,
+      lastSuccessMs: NOW - 20 * 60000,
+      via: "curl",
+    });
+    expect(formatLiveAttempts(s, NOW)).toBe("마지막 시도 1분 전 · 마지막 성공 20분 전 (curl 우회)");
   });
 });

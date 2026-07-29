@@ -40,8 +40,9 @@
   "claudeLive": {
     "outcome": "unauthorized",
     "tokenSource": "file",
-    "detail": "HTTP 401",
+    "detail": "HTTP 401 · curl: HTTP 401 · claude: 사용량 미제공",
     "lastAttemptMs": 1784281400000,
-    "lastSuccessMs": null
+    "lastSuccessMs": 1784280000000,
+    "via": "curl"
   }
 }

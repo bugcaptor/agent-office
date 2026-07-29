@@ -30,8 +30,8 @@ use agent_office_lib::types::{
     OutputChunk, PersistedState, SessionExitInfo, SessionState, SessionStateEvent,
 };
 use agent_office_lib::usage::{
-    ClaudeLiveStatus, LiveFetchOutcome, Provider, ProviderUsage, TokenSource, UsageSnapshot,
-    UsageWindow, UsageWindowKind,
+    ClaudeLiveStatus, FetchTransport, LiveFetchOutcome, Provider, ProviderUsage, TokenSource,
+    UsageSnapshot, UsageWindow, UsageWindowKind,
 };
 use agent_office_lib::workdir::{GitCommitEntry, GitFileHistoryResult, GitFileStatus, GitStatusResult};
 
@@ -199,13 +199,16 @@ fn usage_snapshot_matches_fixture() {
         // 실시간 조회가 실패해도 스냅샷은 파일 캐시로 정상 반환된다 — 대신
         // 사유가 실려 나가 UI가 "표시값이 왜 낡았는지"를 말할 수 있다(§7).
         // 픽스처는 실제로 흔한 조합(Keychain이 막혀 파일 토큰으로 폴백 →
-        // 그 토큰이 만료돼 401)을 그대로 굳혀 둔다.
+        // 그 토큰이 만료돼 401)에 폴백 체인의 모양까지 얹어 굳혀 둔다:
+        // `via`는 마지막으로 값을 얻어낸 수단(여기선 curl 우회)이라 실패
+        // 중에도 남고, `detail`은 갈래별 결과를 " · "로 이어 붙인 형태다.
         claude_live: ClaudeLiveStatus {
             outcome: LiveFetchOutcome::Unauthorized,
             token_source: Some(TokenSource::File),
-            detail: Some("HTTP 401".into()),
+            detail: Some("HTTP 401 · curl: HTTP 401 · claude: 사용량 미제공".into()),
             last_attempt_ms: Some(1784281400000),
-            last_success_ms: None,
+            last_success_ms: Some(1784280000000),
+            via: Some(FetchTransport::Curl),
         },
     };
     assert_value_eq(fixture_json, serde_json::to_value(&value).unwrap());

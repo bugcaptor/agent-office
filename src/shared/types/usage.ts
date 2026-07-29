@@ -75,6 +75,19 @@ export type LiveFetchOutcome =
 export type TokenSource = "keychain_scoped" | "keychain_legacy" | "file";
 
 /**
+ * 사용량 값을 실제로 얻어낸 전송 수단. Rust `FetchTransport` 미러.
+ *
+ * `direct`가 아니라는 것은 앱이 직접 거는 HTTPS가 이 환경에서 막혀 있고
+ * (사내 MITM 프록시·self-signed 루트 등) 외부 프로세스로 우회 중이라는
+ * 뜻이다 — 값 자체는 정상이지만 환경 진단으로서 표시할 가치가 있다.
+ *
+ * `claude_cli`는 `claude -p /usage` 경유다. 현재 CLI는 `-p` 모드에서 사용량을
+ * 돌려주지 않으므로 사실상 나오지 않는 값이며, CLI가 나중에 지원하면 그때
+ * 살아난다.
+ */
+export type FetchTransport = "direct" | "curl" | "claude_cli";
+
+/**
  * 실시간 조회 진단. Rust `ClaudeLiveStatus` 미러(camelCase). 스냅샷마다 항상
  * 존재한다 — "아직 모름"은 null이 아니라 `never_attempted`다.
  */
@@ -88,6 +101,12 @@ export interface ClaudeLiveStatus {
   lastAttemptMs: number | null;
   /** 마지막 성공 시각(epoch ms). 한 번도 성공한 적 없으면 null. */
   lastSuccessMs: number | null;
+  /**
+   * 마지막으로 값을 얻어낸 전송 수단. 한 번도 성공한 적 없으면 null.
+   * 실패는 이 값을 지우지 않는다 — "지금은 실패 중이지만 아까 그 값은 curl
+   * 우회로 받아온 것"이라는 설명이 성립해야 하기 때문이다.
+   */
+  via: FetchTransport | null;
 }
 
 /**

@@ -17,13 +17,18 @@ use parking_lot::Mutex;
 use serde_json::Value;
 
 use super::claude::{parse_fallback, parse_limits};
-use super::{ClaudeLiveStatus, LiveFetchOutcome, Provider, ProviderUsage, TokenSource, UsageWindow};
+use super::{
+    ClaudeLiveStatus, FetchTransport, LiveFetchOutcome, Provider, ProviderUsage, TokenSource,
+    UsageWindow,
+};
 
 /// Claude Code CLI가 내부적으로 치는 사용량 엔드포인트(비공식). UA·beta
 /// 헤더를 CLI와 맞추는 것이 계약의 일부다(설계 §2.1).
-const USAGE_ENDPOINT: &str = "https://api.anthropic.com/api/oauth/usage";
-const OAUTH_BETA: &str = "oauth-2025-04-20";
-const CLIENT_USER_AGENT: &str = "claude-code/2.1.0";
+/// pub(super): 외부 프로세스 폴백(claude_live_fallback)이 **같은** 엔드포인트·
+/// 헤더로 조회해야 응답 모양이 같고 파서를 공유할 수 있다.
+pub(super) const USAGE_ENDPOINT: &str = "https://api.anthropic.com/api/oauth/usage";
+pub(super) const OAUTH_BETA: &str = "oauth-2025-04-20";
+pub(super) const CLIENT_USER_AGENT: &str = "claude-code/2.1.0";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Keychain 자식 프로세스(`security`) 대기 상한. Keychain이 잠겨 있거나 권한
@@ -43,6 +48,12 @@ const KEYCHAIN_LEGACY_SERVICE: &str = "Claude Code-credentials";
 const MIN_ATTEMPT_GAP_MS: i64 = 5 * 60 * 1000;
 /// 성공 후 정기 리프레시 간격. 설계 §3.1.
 const REFRESH_INTERVAL_MS: i64 = 15 * 60 * 1000;
+/// 외부 프로세스 폴백(claude_live_fallback)의 시도 간 하한. 1차 경로보다
+/// 훨씬 길게 잡는다: 폴백은 자식 프로세스를 띄우는 무거운 경로이고, `claude`
+/// 갈래는 CLI 정책이 바뀌면 언젠가 과금될 수도 있어 "자주 돌지 않는다"가
+/// 그 자체로 안전장치다. 1차 조회가 실패한 폴링에서만, 그것도 1시간에 한 번만
+/// 시도한다.
+const FALLBACK_MIN_GAP_MS: i64 = 60 * 60 * 1000;
 
 // ── 토큰 읽기 ────────────────────────────────────────────────────────────
 
@@ -164,7 +175,7 @@ pub(super) struct LiveFailure {
 }
 
 impl LiveFailure {
-    fn new(outcome: LiveFetchOutcome, detail: Option<String>) -> Self {
+    pub(super) fn new(outcome: LiveFetchOutcome, detail: Option<String>) -> Self {
         Self { outcome, detail }
     }
 
@@ -181,6 +192,12 @@ impl LiveFailure {
 pub(super) async fn fetch_live(token: &str) -> Result<Vec<UsageWindow>, LiveFailure> {
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
+        // 번들 루트와 OS 스토어 루트를 모두 신뢰한다. 사내 프록시가 TLS를
+        // 가로채는 환경에서는 후자만이 유일한 통로다(Cargo.toml의 reqwest
+        // features 주석 참조). 그래도 못 뚫으면 claude_live_fallback이
+        // 외부 CLI로 우회한다.
+        .tls_built_in_webpki_certs(true)
+        .tls_built_in_native_certs(true)
         .build()
         .map_err(|_| {
             LiveFailure::new(LiveFetchOutcome::NetworkError, Some("클라이언트 초기화 실패".into()))
@@ -218,7 +235,7 @@ pub(super) async fn fetch_live(token: &str) -> Result<Vec<UsageWindow>, LiveFail
 
 /// 비2xx 상태코드 → 실패 분류(순수 함수). 401/403만 자격증명 문제로 따로 세워
 /// UI가 "재로그인/토큰 만료"를 말할 수 있게 한다.
-fn http_failure(status: u16) -> LiveFailure {
+pub(super) fn http_failure(status: u16) -> LiveFailure {
     let outcome = if status == 401 || status == 403 {
         LiveFetchOutcome::Unauthorized
     } else {
@@ -258,6 +275,15 @@ pub(super) fn should_fetch(
     now_ms - success.fetched_at_ms >= REFRESH_INTERVAL_MS
 }
 
+/// 외부 프로세스 폴백을 시도해도 되는지(순수 함수). 호출자는 **1차 조회가
+/// 실패한 직후에만** 이걸 묻는다 — 그래서 여기선 시간 간격만 본다.
+pub(super) fn should_try_fallback(last_fallback_attempt_ms: Option<i64>, now_ms: i64) -> bool {
+    match last_fallback_attempt_ms {
+        None => true,
+        Some(prev) => now_ms - prev >= FALLBACK_MIN_GAP_MS,
+    }
+}
+
 /// 실시간 조회 메모리 상태(AppState 보관). Mutex를 잡은 채 await 하지 않는다:
 /// 판단·기록은 짧은 임계구역이고 실제 fetch는 락 밖에서 진행한다.
 #[derive(Default)]
@@ -275,6 +301,16 @@ struct LiveUsageInner {
     outcome: LiveFetchOutcome,
     detail: Option<String>,
     token_source: Option<TokenSource>,
+    /// 마지막으로 **값을 얻어낸** 수단(실패는 이 값을 건드리지 않는다).
+    /// 폴백으로 값이 오고 있다는 사실 자체가 진단이다 — "1차 경로가 이
+    /// 환경에서 막혀 있고 우회로로 연명 중"임을 UI가 말할 수 있다.
+    via: Option<FetchTransport>,
+    /// 마지막 **폴백** 시도 시각(epoch ms). 1차 시도(last_attempt_ms)와 별도
+    /// 축으로 1시간 간격을 건다.
+    last_fallback_attempt_ms: Option<i64>,
+    /// `claude` CLI 갈래를 봉인한 사유. CLI가 사용량 조회에 모델을 태우기
+    /// 시작하면(=과금) 그 즉시 채워지고, 이후 세션 내내 그 갈래를 건너뛴다.
+    cli_disabled: Option<String>,
 }
 
 impl LiveUsageState {
@@ -298,18 +334,54 @@ impl LiveUsageState {
         due
     }
 
+    /// 폴백을 시도해도 되는지 판단하고, 통과하면 `last_fallback_attempt_ms`를
+    /// 먼저 갱신한다(begin_attempt_if_due와 같은 규율 — 판단+갱신을 한 락 안에서).
+    pub(super) fn begin_fallback_if_due(&self, now_ms: i64) -> bool {
+        let mut guard = self.inner.lock();
+        let due = should_try_fallback(guard.last_fallback_attempt_ms, now_ms);
+        if due {
+            guard.last_fallback_attempt_ms = Some(now_ms);
+        }
+        due
+    }
+
+    /// `claude` CLI 갈래가 아직 살아 있는지. 봉인됐으면 사유를 돌려준다.
+    pub(super) fn cli_disabled_reason(&self) -> Option<String> {
+        self.inner.lock().cli_disabled.clone()
+    }
+
+    /// CLI 갈래를 봉인한다(과금 감지). 되돌리는 경로는 없다 — 앱을 다시 켜면
+    /// 초기화되므로, CLI 정책이 바뀌었다면 다음 실행에서 한 번 더 확인하고
+    /// 다시 봉인될 뿐이다.
+    pub(super) fn disable_cli_fallback(&self, reason: String) {
+        self.inner.lock().cli_disabled = Some(reason);
+    }
+
     /// fetch 성공 결과를 기록한다(진단 상태도 함께 Ok로 되돌린다).
-    pub(super) fn record_success(&self, usage: ProviderUsage, token_source: TokenSource) {
+    ///
+    /// `token_source`가 Option인 것은 `claude` CLI 갈래 때문이다 — 그 경로는
+    /// **CLI 자신의 자격증명**으로 조회하므로 우리가 토큰을 한 줄도 못 읽은
+    /// 상태에서도 성공할 수 있다.
+    pub(super) fn record_success(
+        &self,
+        usage: ProviderUsage,
+        token_source: Option<TokenSource>,
+        via: FetchTransport,
+    ) {
         let mut guard = self.inner.lock();
         guard.last_success = Some(usage);
         guard.outcome = LiveFetchOutcome::Ok;
         guard.detail = None;
-        guard.token_source = Some(token_source);
+        guard.token_source = token_source;
+        guard.via = Some(via);
     }
 
-    /// 실패 사유를 기록한다. `last_success`는 건드리지 않는다 — 마지막으로
-    /// 성공했던 값은 파일 캐시보다 신선할 수 있어 계속 쓰이고, 다만 그 값이
-    /// 왜 안 갱신되는지를 이 사유가 설명한다.
+    /// 실패 사유를 기록한다. `last_success`와 `via`는 건드리지 않는다 —
+    /// 마지막으로 성공했던 값은 파일 캐시보다 신선할 수 있어 계속 쓰이고,
+    /// 그 값을 어느 수단으로 얻었는지도 함께 남아야 "지금은 실패 중이지만
+    /// 아까는 curl로 받아온 값"이라는 설명이 성립한다. 왜 값이 안 갱신되는지는
+    /// outcome/detail이 말하며, 폴백 갈래별 실패는 detail에 접두로 구분돼
+    /// 함께 실린다("연결 실패 · curl: HTTP 401" 등).
     pub(super) fn record_failure(&self, token_source: Option<TokenSource>, failure: LiveFailure) {
         let mut guard = self.inner.lock();
         guard.outcome = failure.outcome;
@@ -327,6 +399,7 @@ impl LiveUsageState {
             detail: guard.detail.clone(),
             last_attempt_ms: guard.last_attempt_ms,
             last_success_ms: guard.last_success.as_ref().map(|u| u.fetched_at_ms),
+            via: guard.via,
         }
     }
 
@@ -500,8 +573,61 @@ mod tests {
         let state = LiveUsageState::new();
         assert!(state.last_success().is_none());
         let u = usage(123, vec![window(None)]);
-        state.record_success(u.clone(), TokenSource::KeychainLegacy);
+        state.record_success(
+            u.clone(),
+            Some(TokenSource::KeychainLegacy),
+            FetchTransport::Direct,
+        );
         assert_eq!(state.last_success(), Some(u));
+    }
+
+    // ── 폴백 스로틀(1시간) ──
+
+    #[test]
+    fn should_try_fallback_true_when_never_tried() {
+        assert!(should_try_fallback(None, 0));
+    }
+
+    #[test]
+    fn should_try_fallback_false_within_an_hour() {
+        let now = 10_000_000;
+        assert!(!should_try_fallback(Some(now), now));
+        assert!(!should_try_fallback(Some(now), now + 59 * 60 * 1000));
+    }
+
+    #[test]
+    fn should_try_fallback_true_after_an_hour() {
+        let now = 10_000_000;
+        assert!(should_try_fallback(Some(now), now + 60 * 60 * 1000));
+    }
+
+    #[test]
+    fn begin_fallback_if_due_dedups_within_the_hour() {
+        let state = LiveUsageState::new();
+        let now = 20_000_000;
+        assert!(state.begin_fallback_if_due(now), "첫 시도는 통과");
+        assert!(!state.begin_fallback_if_due(now + 5 * 60 * 1000), "1시간 안엔 막힌다");
+        assert!(state.begin_fallback_if_due(now + 60 * 60 * 1000), "1시간 뒤엔 다시 통과");
+    }
+
+    /// 1차 시도 스로틀과 폴백 스로틀은 별개 축이다 — 폴백을 한 번 썼다고
+    /// 5분마다 도는 1차 조회가 막히면 안 된다.
+    #[test]
+    fn fallback_throttle_is_independent_from_primary_throttle() {
+        let state = LiveUsageState::new();
+        let now = 30_000_000;
+        assert!(state.begin_fallback_if_due(now));
+        assert!(state.begin_attempt_if_due(now), "1차 시도는 폴백과 무관하게 통과");
+    }
+
+    // ── CLI 갈래 봉인(과금 안전장치) ──
+
+    #[test]
+    fn cli_fallback_starts_enabled_and_stays_disabled_once_sealed() {
+        let state = LiveUsageState::new();
+        assert_eq!(state.cli_disabled_reason(), None);
+        state.disable_cli_fallback("토큰 12 소모".into());
+        assert_eq!(state.cli_disabled_reason().as_deref(), Some("토큰 12 소모"));
     }
 
     // ── 진단 상태(§7) ──
@@ -521,12 +647,17 @@ mod tests {
         let state = LiveUsageState::new();
         let now = 5_000_000;
         assert!(state.begin_attempt_if_due(now));
-        state.record_success(usage(now, vec![window(None)]), TokenSource::KeychainScoped);
+        state.record_success(
+            usage(now, vec![window(None)]),
+            Some(TokenSource::KeychainScoped),
+            FetchTransport::Direct,
+        );
         let s = state.status();
         assert_eq!(s.outcome, LiveFetchOutcome::Ok);
         assert_eq!(s.token_source, Some(TokenSource::KeychainScoped));
         assert_eq!(s.last_attempt_ms, Some(now));
         assert_eq!(s.last_success_ms, Some(now));
+        assert_eq!(s.via, Some(FetchTransport::Direct));
     }
 
     /// 실패는 마지막 성공 값을 지우지 않는다 — 그 값이 계속 표시되고,
@@ -535,7 +666,7 @@ mod tests {
     fn record_failure_keeps_last_success_but_changes_outcome() {
         let state = LiveUsageState::new();
         let u = usage(1_000, vec![window(None)]);
-        state.record_success(u.clone(), TokenSource::KeychainLegacy);
+        state.record_success(u.clone(), Some(TokenSource::KeychainLegacy), FetchTransport::Curl);
         state.record_failure(
             Some(TokenSource::File),
             LiveFailure::new(LiveFetchOutcome::Unauthorized, Some("HTTP 401".into())),
@@ -546,6 +677,11 @@ mod tests {
         assert_eq!(s.detail.as_deref(), Some("HTTP 401"));
         assert_eq!(s.token_source, Some(TokenSource::File));
         assert_eq!(s.last_success_ms, Some(1_000), "성공 시각도 남아 있어야");
+        assert_eq!(
+            s.via,
+            Some(FetchTransport::Curl),
+            "실패는 '무엇으로 얻어낸 값인지'를 지우지 않는다"
+        );
     }
 
     #[test]

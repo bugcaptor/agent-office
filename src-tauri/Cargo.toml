@@ -46,10 +46,15 @@ sha2 = "0.10" # Claude Code 스코프 Keychain 서비스명(CLAUDE_CONFIG_DIR sh
 base64 = "0.22" # 초상 PNG base64 IPC 왕복 디코드/인코드
 flate2 = "1" # 세션 브로커 v2 스냅샷 deflate 압축(§P2-c) — ~3MiB 상한 프레임 방지
 reqwest = { version = "0.12", default-features = false, features = [
-    "rustls-tls",
+    "rustls-tls-webpki-roots",
+    "rustls-tls-native-roots",
     "json",
     "blocking",
-] } # PixelLab API 호출 + 봇 모드 Gitea REST 폴링(blocking, spawn_blocking 내에서 호출)
+] } # PixelLab API 호출 + 봇 모드 Gitea REST 폴링(blocking, spawn_blocking 내에서 호출).
+# 루트 CA는 webpki(번들) + OS 스토어(native) 둘 다 신뢰한다. 예전엔 "rustls-tls"
+# (=webpki 번들 전용)라서, 사내 MITM 프록시나 self-signed 루트를 OS에 설치한
+# 환경에서는 앱만 TLS 핸드셰이크에 실패하고 claude CLI·curl은 멀쩡히 통하는
+# 비대칭이 생겼다(사용량 실시간 조회가 network_error로 죽는 주된 원인).
 tauri-plugin-dialog = "2" # 프로필 시작 폴더의 네이티브 폴더 선택 다이얼로그 (Rust 측에서만 호출 — capability 불필요)
 tauri-plugin-notification = "2" # 앱 백그라운드 시 OS 데스크탑 알림(이슈 #39). 프런트 @tauri-apps/plugin-notification 로 호출 — capability 필요
 ignore = "0.4" # 마크다운 파일 스캔(markdown.rs) — .gitignore/숨김 존중하는 WalkBuilder
