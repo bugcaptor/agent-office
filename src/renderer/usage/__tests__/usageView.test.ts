@@ -4,12 +4,20 @@
 // 선택, 임계 색상, 카운트다운·신선도 포맷, stale 판정.
 
 import { describe, expect, it } from "vitest";
-import type { ProviderUsage, UsageSnapshot, UsageWindow } from "@shared/types";
+import type {
+  ClaudeLiveStatus,
+  ProviderUsage,
+  UsageSnapshot,
+  UsageWindow,
+} from "@shared/types";
 import {
   STALE_THRESHOLD_MS,
   badgeWindows,
+  describeLiveStatus,
+  formatAgo,
   formatCountdown,
   formatFreshness,
+  formatLiveAttempts,
   isStale,
   mergeUsageSnapshot,
   mostUrgentWindow,
@@ -31,6 +39,25 @@ function win(partial: Partial<UsageWindow>): UsageWindow {
 
 function provider(windows: UsageWindow[]): ProviderUsage {
   return { provider: "claude", fetchedAtMs: 0, planLabel: null, windows };
+}
+
+function live(partial: Partial<ClaudeLiveStatus> = {}): ClaudeLiveStatus {
+  return {
+    outcome: "ok",
+    tokenSource: "keychain_legacy",
+    detail: null,
+    lastAttemptMs: null,
+    lastSuccessMs: null,
+    ...partial,
+  };
+}
+
+function snap(
+  claude: ProviderUsage | null,
+  codex: ProviderUsage | null,
+  claudeLive: ClaudeLiveStatus = live(),
+): UsageSnapshot {
+  return { claude, codex, claudeLive };
 }
 
 describe("usageLevel 임계 70/90", () => {
@@ -182,16 +209,24 @@ describe("mergeUsageSnapshot", () => {
   };
 
   it("새 값이 null이면 이전 값을 유지한다", () => {
-    const prev: UsageSnapshot = { claude: claudeUsage, codex: codexUsage };
-    const next: UsageSnapshot = { claude: null, codex: null };
-    expect(mergeUsageSnapshot(prev, next)).toEqual({ claude: claudeUsage, codex: codexUsage });
+    const merged = mergeUsageSnapshot(snap(claudeUsage, codexUsage), snap(null, null));
+    expect(merged.claude).toEqual(claudeUsage);
+    expect(merged.codex).toEqual(codexUsage);
   });
 
   it("새 값이 있으면 교체한다", () => {
-    const prev: UsageSnapshot = { claude: claudeUsage, codex: codexUsage };
     const newerClaude: ProviderUsage = provider([win({ usedPercent: 55 })]);
-    const next: UsageSnapshot = { claude: newerClaude, codex: null };
-    expect(mergeUsageSnapshot(prev, next)).toEqual({ claude: newerClaude, codex: codexUsage });
+    const merged = mergeUsageSnapshot(snap(claudeUsage, codexUsage), snap(newerClaude, null));
+    expect(merged.claude).toEqual(newerClaude);
+    expect(merged.codex).toEqual(codexUsage);
+  });
+
+  it("실시간 진단은 병합하지 않고 항상 새 응답을 쓴다", () => {
+    // 값(누적)과 달리 진단은 "지금 상태" — 이전 실패가 남으면 이미 복구된
+    // 상태를 계속 실패로 보여주게 된다.
+    const prev = snap(claudeUsage, codexUsage, live({ outcome: "unauthorized" }));
+    const next = snap(null, null, live({ outcome: "ok" }));
+    expect(mergeUsageSnapshot(prev, next).claudeLive.outcome).toBe("ok");
   });
 
   it("새 값이 이전 값보다 오래된 스냅샷이면(fetchedAtMs) 이전 값을 유지한다", () => {
@@ -203,27 +238,110 @@ describe("mergeUsageSnapshot", () => {
       fetchedAtMs: 100,
       windows: [win({ usedPercent: 3 })],
     };
-    const prev: UsageSnapshot = { claude: null, codex: fresh };
-    const next: UsageSnapshot = { claude: null, codex: staleFallback };
-    expect(mergeUsageSnapshot(prev, next)).toEqual({ claude: null, codex: fresh });
+    expect(mergeUsageSnapshot(snap(null, fresh), snap(null, staleFallback)).codex).toEqual(fresh);
   });
 
   it("fetchedAtMs 동률이면 새 값을 쓴다", () => {
     const sameTs: ProviderUsage = { ...codexUsage, windows: [win({ usedPercent: 9 })] };
-    const prev: UsageSnapshot = { claude: null, codex: codexUsage };
-    const next: UsageSnapshot = { claude: null, codex: sameTs };
-    expect(mergeUsageSnapshot(prev, next)).toEqual({ claude: null, codex: sameTs });
+    expect(mergeUsageSnapshot(snap(null, codexUsage), snap(null, sameTs)).codex).toEqual(sameTs);
   });
 
   it("prev가 null이면 next를 그대로 쓴다", () => {
-    const next: UsageSnapshot = { claude: claudeUsage, codex: null };
-    expect(mergeUsageSnapshot(null, next)).toEqual({ claude: claudeUsage, codex: null });
+    const next = snap(claudeUsage, null);
+    expect(mergeUsageSnapshot(null, next)).toEqual(next);
   });
 
   it("prev도 next도 없는 provider는 null 그대로", () => {
-    expect(mergeUsageSnapshot(null, { claude: null, codex: null })).toEqual({
-      claude: null,
-      codex: null,
+    const merged = mergeUsageSnapshot(null, snap(null, null));
+    expect(merged.claude).toBeNull();
+    expect(merged.codex).toBeNull();
+  });
+});
+
+describe("formatAgo", () => {
+  const NOW = 1_784_000_000_000;
+  it("1분 미만은 방금", () => {
+    expect(formatAgo(NOW - 30_000, NOW)).toBe("방금");
+  });
+  it("분/시간/일 단위", () => {
+    expect(formatAgo(NOW - 14 * 60000, NOW)).toBe("14분 전");
+    expect(formatAgo(NOW - (2 * 60 + 3) * 60000, NOW)).toBe("2시간 3분 전");
+    expect(formatAgo(NOW - 3 * 24 * 60 * 60000, NOW)).toBe("3일 전");
+  });
+});
+
+describe("describeLiveStatus", () => {
+  it("성공 중이면 ok 레벨(정상임을 확인할 수 있어야 진단으로 쓸모가 있다)", () => {
+    const note = describeLiveStatus(live({ outcome: "ok" }))!;
+    expect(note.level).toBe("ok");
+    expect(note.text).toContain("직접 조회");
+  });
+
+  it("자격증명 없음은 error + Keychain을 짚어준다", () => {
+    const note = describeLiveStatus(live({ outcome: "no_credentials", tokenSource: null }))!;
+    expect(note.level).toBe("error");
+    expect(note.text).toContain("Keychain");
+  });
+
+  /** 실제로 가장 흔한 실패 조합 — 사유가 이 구분을 하지 못하면 진단 가치가 없다. */
+  it("401 + 파일 토큰이면 파일 폴백 만료를 짚어준다", () => {
+    const note = describeLiveStatus(
+      live({ outcome: "unauthorized", tokenSource: "file", detail: "HTTP 401" }),
+    )!;
+    expect(note.level).toBe("error");
+    expect(note.text).toContain(".credentials.json");
+    expect(note.text).toContain("HTTP 401");
+  });
+
+  it("401 + Keychain 토큰이면 재로그인을 안내한다", () => {
+    const note = describeLiveStatus(
+      live({ outcome: "unauthorized", tokenSource: "keychain_legacy" }),
+    )!;
+    expect(note.text).toContain("재로그인");
+    expect(note.text).not.toContain(".credentials.json");
+  });
+
+  it("실패 문구는 캐시가 /usage로만 갱신된다는 사실을 함께 말한다", () => {
+    for (const outcome of [
+      "no_credentials",
+      "unauthorized",
+      "http_error",
+      "network_error",
+      "unexpected_response",
+      "never_attempted",
+    ] as const) {
+      expect(describeLiveStatus(live({ outcome }))!.text).toContain("/usage");
+    }
+  });
+
+  it("네트워크/응답 형태 문제는 warn(일시적일 수 있음)", () => {
+    expect(describeLiveStatus(live({ outcome: "network_error" }))!.level).toBe("warn");
+    expect(describeLiveStatus(live({ outcome: "unexpected_response" }))!.level).toBe("warn");
+  });
+
+  it("상태가 없으면(구버전 응답) 아무 문구도 만들지 않는다", () => {
+    expect(describeLiveStatus(null)).toBeNull();
+    expect(describeLiveStatus(undefined)).toBeNull();
+  });
+});
+
+describe("formatLiveAttempts", () => {
+  const NOW = 1_784_000_000_000;
+  it("시도·성공 시각을 상대 시간으로 잇는다", () => {
+    const s = live({
+      outcome: "ok",
+      lastAttemptMs: NOW - 3 * 60000,
+      lastSuccessMs: NOW - 3 * 60000,
     });
+    expect(formatLiveAttempts(s, NOW)).toBe("마지막 시도 3분 전 · 마지막 성공 3분 전");
+  });
+
+  it("성공 이력이 없으면 그렇게 말한다", () => {
+    const s = live({ outcome: "unauthorized", lastAttemptMs: NOW - 60000, lastSuccessMs: null });
+    expect(formatLiveAttempts(s, NOW)).toBe("마지막 시도 1분 전 · 성공 이력 없음");
+  });
+
+  it("한 번도 시도 안 했으면 빈 문자열", () => {
+    expect(formatLiveAttempts(live({ outcome: "never_attempted" }), NOW)).toBe("");
   });
 });

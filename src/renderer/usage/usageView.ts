@@ -5,7 +5,12 @@
 // 임계 색상, 카운트다운·신선도 포맷 같은 해석·표시는 여기서 한다. React·스토어
 // 의존 없음 — 단위 테스트 대상(설계 §4).
 
-import type { ProviderUsage, UsageSnapshot, UsageWindow } from "@shared/types";
+import type {
+  ClaudeLiveStatus,
+  ProviderUsage,
+  UsageSnapshot,
+  UsageWindow,
+} from "@shared/types";
 
 /** 신선도가 이보다 오래되면(ms) stale로 보고 흐리게 표시한다. */
 export const STALE_THRESHOLD_MS = 30 * 60 * 1000;
@@ -85,24 +90,123 @@ export function formatCountdown(resetsAtMs: number | null, now: number): string 
 }
 
 /**
+ * 과거 시각을 "N분 전"으로. 1분 미만은 "방금", 1시간 이상은 "N시간 N분 전",
+ * 하루 이상은 "N일 전".
+ */
+export function formatAgo(atMs: number, now: number): string {
+  const diff = Math.max(0, now - atMs);
+  const totalMin = Math.floor(diff / 60000);
+  if (totalMin < 1) return "방금";
+  const days = Math.floor(totalMin / (60 * 24));
+  const hours = Math.floor((totalMin % (60 * 24)) / 60);
+  const mins = totalMin % 60;
+  if (days > 0) return `${days}일 전`;
+  if (hours > 0) return `${hours}시간 ${mins}분 전`;
+  return `${mins}분 전`;
+}
+
+/**
  * 신선도를 "N분 전 기준"으로. 1분 미만은 "방금 기준", 1시간 이상은
  * "N시간 N분 전 기준", 하루 이상은 "N일 전 기준".
  */
 export function formatFreshness(fetchedAtMs: number, now: number): string {
-  const diff = Math.max(0, now - fetchedAtMs);
-  const totalMin = Math.floor(diff / 60000);
-  if (totalMin < 1) return "방금 기준";
-  const days = Math.floor(totalMin / (60 * 24));
-  const hours = Math.floor((totalMin % (60 * 24)) / 60);
-  const mins = totalMin % 60;
-  if (days > 0) return `${days}일 전 기준`;
-  if (hours > 0) return `${hours}시간 ${mins}분 전 기준`;
-  return `${mins}분 전 기준`;
+  return `${formatAgo(fetchedAtMs, now)} 기준`;
 }
 
 /** 신선도가 STALE_THRESHOLD_MS를 넘었는지. */
 export function isStale(fetchedAtMs: number, now: number): boolean {
   return now - fetchedAtMs > STALE_THRESHOLD_MS;
+}
+
+// ── Claude 실시간 조회 진단 표시(설계 §7) ─────────────────────────────
+//
+// 왜 필요한가: 실시간 조회가 실패하면 화면 숫자는 `~/.claude.json` 캐시
+// 미러로 조용히 강등되는데, 그 캐시는 Claude Code에서 `/usage`를 열 때만
+// 갱신된다(일반 대화로는 절대 안 갱신됨 — CLI 2.1.220 실측). 그래서 "쓰고
+// 있는데 숫자가 며칠째 그대로"가 원인 불명으로 보인다. 사유를 문장으로
+// 돌려주는 건 여기(순수 함수), 그리기는 UsageDialog/UsageWidget이 한다.
+
+/** 진단 문구 한 줄 + 심각도(색). */
+export interface LiveStatusNote {
+  level: "ok" | "warn" | "error";
+  /** 상세 모달용 전체 문장. */
+  text: string;
+  /** 위젯 툴팁용 짧은 꼬리표. */
+  short: string;
+}
+
+/** 캐시 미러가 왜 안 움직이는지 — 실패 문구 뒤에 공통으로 붙인다. */
+const CACHE_FALLBACK_NOTE =
+  "표시값은 로컬 캐시(~/.claude.json)이며, 이 캐시는 Claude Code에서 /usage를 열 때만 갱신됩니다";
+
+/**
+ * 실시간 조회 상태 → 표시 문구. `null`(구버전 백엔드 응답 등 필드 부재)이면
+ * 아무것도 표시하지 않는다.
+ */
+export function describeLiveStatus(
+  status: ClaudeLiveStatus | null | undefined,
+): LiveStatusNote | null {
+  if (!status) return null;
+  switch (status.outcome) {
+    case "ok":
+      return {
+        level: "ok",
+        text: "앱이 사용량을 직접 조회 중 (최대 15분 간격)",
+        short: "실시간 조회 정상",
+      };
+    case "never_attempted":
+      return {
+        level: "warn",
+        text: `실시간 조회를 아직 시도하지 않음 — ${CACHE_FALLBACK_NOTE}`,
+        short: "실시간 조회 대기 중",
+      };
+    case "no_credentials":
+      return {
+        level: "error",
+        text:
+          "실시간 조회 실패: 자격증명을 읽지 못했습니다 — Keychain 접근이 거부/잠겼거나 " +
+          `.credentials.json이 없습니다. ${CACHE_FALLBACK_NOTE}`,
+        short: "실시간 조회 실패(자격증명 없음)",
+      };
+    case "unauthorized":
+      return {
+        level: "error",
+        text:
+          `실시간 조회 실패: 토큰이 거부됐습니다(${status.detail ?? "HTTP 401"})` +
+          (status.tokenSource === "file"
+            ? " — Keychain 대신 .credentials.json 파일 토큰으로 폴백했고 그 토큰이 만료됐을 수 있습니다"
+            : " — 재로그인(claude /login)이 필요할 수 있습니다") +
+          `. ${CACHE_FALLBACK_NOTE}`,
+        short: "실시간 조회 실패(인증 거부)",
+      };
+    case "http_error":
+      return {
+        level: "error",
+        text: `실시간 조회 실패: 서버 오류(${status.detail ?? "HTTP 오류"}). ${CACHE_FALLBACK_NOTE}`,
+        short: `실시간 조회 실패(${status.detail ?? "HTTP 오류"})`,
+      };
+    case "network_error":
+      return {
+        level: "warn",
+        text: `실시간 조회 실패: 네트워크 ${status.detail ?? "오류"}. ${CACHE_FALLBACK_NOTE}`,
+        short: "실시간 조회 실패(네트워크)",
+      };
+    case "unexpected_response":
+      return {
+        level: "warn",
+        text: `실시간 조회 실패: 응답 형태가 바뀌었습니다(${status.detail ?? "알 수 없음"}). ${CACHE_FALLBACK_NOTE}`,
+        short: "실시간 조회 실패(응답 형태)",
+      };
+  }
+}
+
+/** 진단 문구 뒤에 붙일 "마지막 시도 N분 전 · 마지막 성공 N분 전". */
+export function formatLiveAttempts(status: ClaudeLiveStatus, now: number): string {
+  const parts: string[] = [];
+  if (status.lastAttemptMs !== null) parts.push(`마지막 시도 ${formatAgo(status.lastAttemptMs, now)}`);
+  if (status.lastSuccessMs !== null) parts.push(`마지막 성공 ${formatAgo(status.lastSuccessMs, now)}`);
+  else if (status.outcome !== "never_attempted") parts.push("성공 이력 없음");
+  return parts.join(" · ");
 }
 
 /**
@@ -136,5 +240,8 @@ export function mergeUsageSnapshot(
   return {
     claude: fresherProvider(prev?.claude ?? null, next.claude),
     codex: fresherProvider(prev?.codex ?? null, next.codex),
+    // 진단은 병합하지 않고 항상 최신 응답을 쓴다 — 값(누적)과 달리 "지금
+    // 상태"라서 이전 것을 살려두면 이미 복구된 실패가 남는다.
+    claudeLive: next.claudeLive ?? prev?.claudeLive,
   };
 }

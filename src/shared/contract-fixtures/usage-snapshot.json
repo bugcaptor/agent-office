@@ -36,5 +36,12 @@
         "isActive": null
       }
     ]
+  },
+  "claudeLive": {
+    "outcome": "unauthorized",
+    "tokenSource": "file",
+    "detail": "HTTP 401",
+    "lastAttemptMs": 1784281400000,
+    "lastSuccessMs": null
   }
 }

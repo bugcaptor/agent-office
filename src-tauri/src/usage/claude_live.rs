@@ -17,7 +17,7 @@ use parking_lot::Mutex;
 use serde_json::Value;
 
 use super::claude::{parse_fallback, parse_limits};
-use super::{Provider, ProviderUsage, UsageWindow};
+use super::{ClaudeLiveStatus, LiveFetchOutcome, Provider, ProviderUsage, TokenSource, UsageWindow};
 
 /// Claude Code CLI가 내부적으로 치는 사용량 엔드포인트(비공식). UA·beta
 /// 헤더를 CLI와 맞추는 것이 계약의 일부다(설계 §2.1).
@@ -64,25 +64,27 @@ pub(super) fn parse_access_token(json: &str) -> Option<String> {
 /// `config_dir`은 CLAUDE_CONFIG_DIR(설정 시) 또는 `~/.claude`(미설정 시)다.
 /// 스코프 Keychain 서비스명은 이 경로 문자열의 sha256 앞 8자로 만든다 —
 /// 미설정 케이스에선 그 항목이 존재하지 않아 조용히 레거시로 강등된다.
-pub async fn read_access_token(config_dir: &Path) -> Option<String> {
+/// 반환값에는 토큰을 실제로 읽어낸 출처가 함께 온다 — 진단 표시가 "Keychain이
+/// 막혀 파일로 폴백했다"를 구분해 말할 수 있어야 하기 때문이다(§7).
+pub async fn read_access_token(config_dir: &Path) -> Option<(String, TokenSource)> {
     #[cfg(target_os = "macos")]
     {
         // 1) 스코프 항목(CLAUDE_CONFIG_DIR 설정 시 Claude Code가 쓰는 위치).
         let scoped = scoped_keychain_service(&config_dir.to_string_lossy());
         if let Some(tok) = read_keychain(&scoped).await.and_then(|j| parse_access_token(&j)) {
-            return Some(tok);
+            return Some((tok, TokenSource::KeychainScoped));
         }
         // 2) 레거시 항목.
         if let Some(tok) = read_keychain(KEYCHAIN_LEGACY_SERVICE)
             .await
             .and_then(|j| parse_access_token(&j))
         {
-            return Some(tok);
+            return Some((tok, TokenSource::KeychainLegacy));
         }
     }
     // 3) 파일 폴백(비-macOS는 이 경로만).
     let content = std::fs::read_to_string(config_dir.join(".credentials.json")).ok()?;
-    parse_access_token(&content)
+    parse_access_token(&content).map(|tok| (tok, TokenSource::File))
 }
 
 /// 스코프 Keychain 서비스명: `Claude Code-credentials-<sha256(dir) hex 앞 8자>`.
@@ -152,14 +154,37 @@ pub(super) fn parse_live_response(root: &Value) -> Option<Vec<UsageWindow>> {
 
 // ── HTTP 호출(얇게) ──────────────────────────────────────────────────────
 
-/// 토큰으로 사용량 엔드포인트를 GET 해 윈도 배열을 얻는다. 타임아웃 10초,
-/// 비2xx(401 등)·네트워크 오류·파싱 실패는 전부 None(→ 폴백). 로컬 만료
-/// 판정은 하지 않는다 — 서버 401이 유일한 판정자(설계 §2.2).
-pub(super) async fn fetch_live(token: &str) -> Option<Vec<UsageWindow>> {
+/// 실시간 조회 실패 하나. 표시용 사유(outcome)와 사람이 읽을 보조 문자열을
+/// 함께 나른다. **토큰·자격증명은 어디에도 넣지 않는다**(설계 §2.2) — detail은
+/// HTTP 상태코드나 "시간 초과" 같은 고정 어휘만 담는다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct LiveFailure {
+    pub outcome: LiveFetchOutcome,
+    pub detail: Option<String>,
+}
+
+impl LiveFailure {
+    fn new(outcome: LiveFetchOutcome, detail: Option<String>) -> Self {
+        Self { outcome, detail }
+    }
+
+    /// 토큰을 어느 출처에서도 못 읽은 경우(조립 단계에서 사용).
+    pub(super) fn no_credentials() -> Self {
+        Self::new(LiveFetchOutcome::NoCredentials, None)
+    }
+}
+
+/// 토큰으로 사용량 엔드포인트를 GET 해 윈도 배열을 얻는다. 타임아웃 10초.
+/// 실패는 전부 Err(→ 파일 캐시 폴백)이되, **사유를 분류해서** 돌려준다 —
+/// 조용한 폴백이 "값이 왜 안 움직이는지 알 수 없음"이 되지 않도록(§7).
+/// 로컬 만료 판정은 여전히 하지 않는다 — 서버 401이 유일한 판정자(설계 §2.2).
+pub(super) async fn fetch_live(token: &str) -> Result<Vec<UsageWindow>, LiveFailure> {
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
         .build()
-        .ok()?;
+        .map_err(|_| {
+            LiveFailure::new(LiveFetchOutcome::NetworkError, Some("클라이언트 초기화 실패".into()))
+        })?;
     let resp = client
         .get(USAGE_ENDPOINT)
         .bearer_auth(token)
@@ -167,12 +192,39 @@ pub(super) async fn fetch_live(token: &str) -> Option<Vec<UsageWindow>> {
         .header(reqwest::header::USER_AGENT, CLIENT_USER_AGENT)
         .send()
         .await
-        .ok()?;
-    if !resp.status().is_success() {
-        return None;
+        .map_err(|e| {
+            // reqwest 오류 문자열에는 URL이 섞여 나오므로 그대로 싣지 않고
+            // 고정 어휘로만 분류한다.
+            let detail = if e.is_timeout() {
+                "시간 초과"
+            } else if e.is_connect() {
+                "연결 실패"
+            } else {
+                "요청 실패"
+            };
+            LiveFailure::new(LiveFetchOutcome::NetworkError, Some(detail.into()))
+        })?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(http_failure(status.as_u16()));
     }
-    let body: Value = resp.json().await.ok()?;
-    parse_live_response(&body)
+    let body: Value = resp.json().await.map_err(|_| {
+        LiveFailure::new(LiveFetchOutcome::UnexpectedResponse, Some("본문이 JSON이 아님".into()))
+    })?;
+    parse_live_response(&body).ok_or_else(|| {
+        LiveFailure::new(LiveFetchOutcome::UnexpectedResponse, Some("아는 한도 필드가 없음".into()))
+    })
+}
+
+/// 비2xx 상태코드 → 실패 분류(순수 함수). 401/403만 자격증명 문제로 따로 세워
+/// UI가 "재로그인/토큰 만료"를 말할 수 있게 한다.
+fn http_failure(status: u16) -> LiveFailure {
+    let outcome = if status == 401 || status == 403 {
+        LiveFetchOutcome::Unauthorized
+    } else {
+        LiveFetchOutcome::HttpError
+    };
+    LiveFailure::new(outcome, Some(format!("HTTP {status}")))
 }
 
 // ── 스로틀 상태 + 판단 ───────────────────────────────────────────────────
@@ -217,6 +269,12 @@ pub struct LiveUsageState {
 struct LiveUsageInner {
     last_success: Option<ProviderUsage>,
     last_attempt_ms: Option<i64>,
+    /// 마지막 **시도**의 결과. 성공 스냅샷(last_success)과 별개로 유지된다 —
+    /// 성공 이력이 있어도 지금은 실패 중일 수 있고, 그때 표시값이 낡는 이유가
+    /// 바로 이 값이다.
+    outcome: LiveFetchOutcome,
+    detail: Option<String>,
+    token_source: Option<TokenSource>,
 }
 
 impl LiveUsageState {
@@ -240,9 +298,36 @@ impl LiveUsageState {
         due
     }
 
-    /// fetch 성공 결과를 기록한다.
-    pub(super) fn record_success(&self, usage: ProviderUsage) {
-        self.inner.lock().last_success = Some(usage);
+    /// fetch 성공 결과를 기록한다(진단 상태도 함께 Ok로 되돌린다).
+    pub(super) fn record_success(&self, usage: ProviderUsage, token_source: TokenSource) {
+        let mut guard = self.inner.lock();
+        guard.last_success = Some(usage);
+        guard.outcome = LiveFetchOutcome::Ok;
+        guard.detail = None;
+        guard.token_source = Some(token_source);
+    }
+
+    /// 실패 사유를 기록한다. `last_success`는 건드리지 않는다 — 마지막으로
+    /// 성공했던 값은 파일 캐시보다 신선할 수 있어 계속 쓰이고, 다만 그 값이
+    /// 왜 안 갱신되는지를 이 사유가 설명한다.
+    pub(super) fn record_failure(&self, token_source: Option<TokenSource>, failure: LiveFailure) {
+        let mut guard = self.inner.lock();
+        guard.outcome = failure.outcome;
+        guard.detail = failure.detail;
+        guard.token_source = token_source;
+    }
+
+    /// 렌더러로 나갈 진단 스냅샷. `last_success_ms`는 성공 스냅샷에서 유도해
+    /// 중복 필드를 두지 않는다.
+    pub(super) fn status(&self) -> ClaudeLiveStatus {
+        let guard = self.inner.lock();
+        ClaudeLiveStatus {
+            outcome: guard.outcome,
+            token_source: guard.token_source,
+            detail: guard.detail.clone(),
+            last_attempt_ms: guard.last_attempt_ms,
+            last_success_ms: guard.last_success.as_ref().map(|u| u.fetched_at_ms),
+        }
     }
 
     /// 마지막 성공 스냅샷 복제본(조립에서 파일 캐시와 신선도 비교).
@@ -415,8 +500,70 @@ mod tests {
         let state = LiveUsageState::new();
         assert!(state.last_success().is_none());
         let u = usage(123, vec![window(None)]);
-        state.record_success(u.clone());
+        state.record_success(u.clone(), TokenSource::KeychainLegacy);
         assert_eq!(state.last_success(), Some(u));
+    }
+
+    // ── 진단 상태(§7) ──
+
+    #[test]
+    fn status_starts_as_never_attempted() {
+        let s = LiveUsageState::new().status();
+        assert_eq!(s.outcome, LiveFetchOutcome::NeverAttempted);
+        assert_eq!(s.token_source, None);
+        assert_eq!(s.detail, None);
+        assert_eq!(s.last_attempt_ms, None);
+        assert_eq!(s.last_success_ms, None);
+    }
+
+    #[test]
+    fn status_reports_attempt_and_success_times() {
+        let state = LiveUsageState::new();
+        let now = 5_000_000;
+        assert!(state.begin_attempt_if_due(now));
+        state.record_success(usage(now, vec![window(None)]), TokenSource::KeychainScoped);
+        let s = state.status();
+        assert_eq!(s.outcome, LiveFetchOutcome::Ok);
+        assert_eq!(s.token_source, Some(TokenSource::KeychainScoped));
+        assert_eq!(s.last_attempt_ms, Some(now));
+        assert_eq!(s.last_success_ms, Some(now));
+    }
+
+    /// 실패는 마지막 성공 값을 지우지 않는다 — 그 값이 계속 표시되고,
+    /// 사유는 "왜 그 값이 안 움직이는지"를 설명하는 역할만 한다.
+    #[test]
+    fn record_failure_keeps_last_success_but_changes_outcome() {
+        let state = LiveUsageState::new();
+        let u = usage(1_000, vec![window(None)]);
+        state.record_success(u.clone(), TokenSource::KeychainLegacy);
+        state.record_failure(
+            Some(TokenSource::File),
+            LiveFailure::new(LiveFetchOutcome::Unauthorized, Some("HTTP 401".into())),
+        );
+        assert_eq!(state.last_success(), Some(u), "성공 스냅샷은 유지");
+        let s = state.status();
+        assert_eq!(s.outcome, LiveFetchOutcome::Unauthorized);
+        assert_eq!(s.detail.as_deref(), Some("HTTP 401"));
+        assert_eq!(s.token_source, Some(TokenSource::File));
+        assert_eq!(s.last_success_ms, Some(1_000), "성공 시각도 남아 있어야");
+    }
+
+    #[test]
+    fn no_credentials_failure_has_no_token_source() {
+        let state = LiveUsageState::new();
+        state.record_failure(None, LiveFailure::no_credentials());
+        let s = state.status();
+        assert_eq!(s.outcome, LiveFetchOutcome::NoCredentials);
+        assert_eq!(s.token_source, None);
+    }
+
+    #[test]
+    fn http_failure_classifies_auth_errors_separately() {
+        assert_eq!(http_failure(401).outcome, LiveFetchOutcome::Unauthorized);
+        assert_eq!(http_failure(403).outcome, LiveFetchOutcome::Unauthorized);
+        let other = http_failure(500);
+        assert_eq!(other.outcome, LiveFetchOutcome::HttpError);
+        assert_eq!(other.detail.as_deref(), Some("HTTP 500"));
     }
 
     #[cfg(target_os = "macos")]
@@ -441,8 +588,10 @@ mod tests {
         let config_dir = std::env::var("CLAUDE_CONFIG_DIR")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| home.join(".claude"));
-        let token = read_access_token(&config_dir).await.expect("토큰을 찾지 못함");
+        let (token, source) = read_access_token(&config_dir).await.expect("토큰을 찾지 못함");
         let windows = fetch_live(&token).await.expect("실시간 사용량 조회 실패");
         assert!(!windows.is_empty(), "윈도가 하나 이상 있어야 함");
+        // 어느 출처가 실제로 쓰였는지는 진단 표시의 핵심 입력이라 함께 찍는다.
+        println!("token source: {source:?}");
     }
 }

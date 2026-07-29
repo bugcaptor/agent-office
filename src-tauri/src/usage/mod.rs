@@ -19,6 +19,57 @@ use serde::Serialize;
 
 pub use claude_live::LiveUsageState;
 
+/// Claude 실시간 조회의 마지막 시도 결과. TS `LiveFetchOutcome` 미러
+/// (serde snake_case). 왜 표시값이 낡았는지를 UI가 사용자에게 설명하기 위한
+/// 진단값이다 — 실패해도 스냅샷은 파일 캐시로 정상 반환되므로 이 값은
+/// "표시 실패"가 아니라 "신선도의 이유"를 뜻한다(docs/usage-design.md §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LiveFetchOutcome {
+    /// 아직 한 번도 시도하지 않음(부팅 직후 첫 폴링 전).
+    #[default]
+    NeverAttempted,
+    Ok,
+    /// 토큰을 어느 출처에서도 읽지 못함(Keychain 거부/잠김·타임아웃 + 파일 부재).
+    NoCredentials,
+    /// 서버가 토큰을 거부(401/403). 만료됐거나 재로그인이 필요하다.
+    Unauthorized,
+    /// 그 외 비2xx 응답.
+    HttpError,
+    /// 요청 자체 실패(타임아웃·연결 실패 등).
+    NetworkError,
+    /// 2xx인데 본문이 아는 모양이 아님(비공식 API 계약 변경).
+    UnexpectedResponse,
+}
+
+/// 토큰을 읽어낸 출처. TS `TokenSource` 미러. 진단에 필요하다 — 예컨대
+/// `file` + `unauthorized`는 "Keychain 접근이 막혀 파일로 폴백했는데 그 파일의
+/// 토큰이 낡음"이라는 흔한 실패 조합을 가리킨다. 토큰 값 자체는 절대 담지 않는다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TokenSource {
+    KeychainScoped,
+    KeychainLegacy,
+    File,
+}
+
+/// Claude 실시간 조회 진단 스냅샷. TS `ClaudeLiveStatus` 미러(camelCase).
+/// 스냅샷마다 항상 존재한다(실패해도 null이 아니다 — "모름"은 `NeverAttempted`).
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeLiveStatus {
+    pub outcome: LiveFetchOutcome,
+    /// 마지막 시도에서 토큰을 읽어낸 출처. 토큰을 못 읽었으면 null.
+    pub token_source: Option<TokenSource>,
+    /// 사람이 읽을 진단 보조(예: "HTTP 500", "시간 초과"). **토큰·자격증명
+    /// 문자열은 절대 넣지 않는다**(설계 §6.2).
+    pub detail: Option<String>,
+    /// 마지막 시도 시각(epoch ms). 스로틀에 막혀 건너뛴 폴링은 시도가 아니다.
+    pub last_attempt_ms: Option<i64>,
+    /// 마지막 성공 시각(epoch ms). 한 번도 성공한 적 없으면 null.
+    pub last_success_ms: Option<i64>,
+}
+
 /// 한도 윈도 종류. TS `UsageWindowKind` 미러(serde snake_case).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -71,10 +122,14 @@ pub struct ProviderUsage {
 }
 
 /// 전체 스냅샷. TS `UsageSnapshot` 미러. 실패한 소스는 null.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct UsageSnapshot {
     pub claude: Option<ProviderUsage>,
     pub codex: Option<ProviderUsage>,
+    /// Claude 실시간 조회 진단(항상 존재). 파일 캐시만 읽는 동기 경로에서는
+    /// `NeverAttempted`가 그대로 나간다.
+    pub claude_live: ClaudeLiveStatus,
 }
 
 /// `claude_root`(홈, `.claude.json`이 이 아래)와 `codex_root`(`~/.codex`,
@@ -84,6 +139,7 @@ pub fn load_usage_snapshot(claude_root: &Path, codex_root: &Path) -> UsageSnapsh
     UsageSnapshot {
         claude: claude::load(claude_root),
         codex: codex::load(codex_root),
+        claude_live: ClaudeLiveStatus::default(),
     }
 }
 
@@ -97,6 +153,10 @@ pub fn load_usage_snapshot(claude_root: &Path, codex_root: &Path) -> UsageSnapsh
 ///    판단·기록의 짧은 임계구역에서만 잡고 fetch await는 락 밖에서 한다.
 /// 3. claude 필드를 파일 캐시와 메모리 live 중 더 신선한 쪽으로 확정하되,
 ///    plan_label은 응답에 없으므로 파일 캐시 값을 접목한다.
+/// 4. 시도 결과(성공/실패 사유)를 `claude_live`에 실어 보낸다 — 실패는 여전히
+///    조용한 폴백이지만 "왜 값이 안 움직이는지"는 UI가 말할 수 있어야 한다
+///    (docs/usage-design.md §7). 스로틀에 막혀 이번 폴링이 시도조차 안 했으면
+///    직전 시도의 결과가 그대로 유지돼 나간다.
 ///
 /// `claude_config_dir`은 자격증명(.credentials.json)·스코프 Keychain의 기준
 /// 디렉터리로, `.claude.json`을 읽는 `claude_root`와 다를 수 있다
@@ -112,14 +172,20 @@ pub async fn load_usage_snapshot_with_live(
 
     // 락 안에서 스로틀 판단 + last_attempt 갱신(중복 fetch 차단) → 락 해제 후 fetch.
     if live.begin_attempt_if_due(now_ms) {
-        if let Some(token) = claude_live::read_access_token(claude_config_dir).await {
-            if let Some(windows) = claude_live::fetch_live(&token).await {
-                live.record_success(claude_live::live_provider_usage(windows, now_ms));
-            }
+        match claude_live::read_access_token(claude_config_dir).await {
+            Some((token, source)) => match claude_live::fetch_live(&token).await {
+                Ok(windows) => live.record_success(
+                    claude_live::live_provider_usage(windows, now_ms),
+                    source,
+                ),
+                Err(failure) => live.record_failure(Some(source), failure),
+            },
+            None => live.record_failure(None, claude_live::LiveFailure::no_credentials()),
         }
     }
 
     snapshot.claude = merge_claude(snapshot.claude.take(), live.last_success());
+    snapshot.claude_live = live.status();
     snapshot
 }
 

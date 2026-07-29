@@ -38,11 +38,56 @@ export interface UsageWindow {
  */
 export interface ProviderUsage {
   provider: "claude" | "codex";
-  /** 신선도 기준 시각(epoch ms). 로컬 CLI가 실제로 돌 때만 갱신되는 캐시. */
+  /**
+   * 신선도 기준 시각(epoch ms). 출처마다 갱신 조건이 다르다: Codex는 CLI가
+   * 돌 때 rollout에 남는 스냅샷, Claude는 앱의 실시간 조회(성공 시) 또는
+   * `~/.claude.json` 캐시 미러다. 후자는 CLI가 `/usage`를 열 때만 갱신되므로
+   * 며칠씩 멈춰 있을 수 있다 — 그 이유는 `claudeLive`가 설명한다.
+   */
   fetchedAtMs: number;
   /** codex plan_type, claude organizationRateLimitTier 등. 없으면 null. */
   planLabel: string | null;
   windows: UsageWindow[];
+}
+
+/**
+ * Claude 실시간 조회(`GET /api/oauth/usage`)의 마지막 시도 결과. Rust
+ * `LiveFetchOutcome`(serde snake_case) 미러. 설계: docs/usage-design.md §7.
+ *
+ * 이 값이 `ok`가 아니면 화면의 Claude 숫자는 `~/.claude.json`의 로컬 캐시
+ * 미러이고, 그 캐시는 **Claude Code에서 `/usage`를 열 때만** 갱신된다
+ * (일반 대화로는 갱신되지 않는다) — 표시값이 며칠씩 멈춰 보이는 주된 원인.
+ */
+export type LiveFetchOutcome =
+  | "never_attempted"
+  | "ok"
+  | "no_credentials"
+  | "unauthorized"
+  | "http_error"
+  | "network_error"
+  | "unexpected_response";
+
+/**
+ * 토큰을 읽어낸 출처. Rust `TokenSource` 미러. `file` + `unauthorized`는
+ * "Keychain 접근이 막혀 `.credentials.json`으로 폴백했는데 그 토큰이 낡음"이라는
+ * 흔한 실패 조합을 가리킨다.
+ */
+export type TokenSource = "keychain_scoped" | "keychain_legacy" | "file";
+
+/**
+ * 실시간 조회 진단. Rust `ClaudeLiveStatus` 미러(camelCase). 스냅샷마다 항상
+ * 존재한다 — "아직 모름"은 null이 아니라 `never_attempted`다.
+ */
+export interface ClaudeLiveStatus {
+  outcome: LiveFetchOutcome;
+  /** 토큰을 못 읽었으면 null. 토큰 값 자체는 절대 오지 않는다. */
+  tokenSource: TokenSource | null;
+  /** 진단 보조(예: "HTTP 401", "시간 초과"). 없으면 null. */
+  detail: string | null;
+  /** 마지막 시도 시각(epoch ms). 스로틀에 막혀 건너뛴 폴링은 시도가 아니다. */
+  lastAttemptMs: number | null;
+  /** 마지막 성공 시각(epoch ms). 한 번도 성공한 적 없으면 null. */
+  lastSuccessMs: number | null;
 }
 
 /**
@@ -52,4 +97,5 @@ export interface ProviderUsage {
 export interface UsageSnapshot {
   claude: ProviderUsage | null;
   codex: ProviderUsage | null;
+  claudeLive: ClaudeLiveStatus;
 }

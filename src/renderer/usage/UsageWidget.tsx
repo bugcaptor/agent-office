@@ -27,9 +27,11 @@ import type { ProviderUsage } from "@shared/types";
 import {
   PROVIDER_SHORT,
   badgeWindows,
+  describeLiveStatus,
   mergeUsageSnapshot,
   usageLevel,
   windowLabel,
+  type LiveStatusNote,
 } from "./usageView";
 
 /** 폴링 주기(ms). */
@@ -40,22 +42,32 @@ const PROVIDERS = ["claude", "codex"] as const;
 function ProviderBadge({
   provider,
   usage,
+  note,
 }: {
   provider: "claude" | "codex";
   usage: ProviderUsage | null;
+  /** Claude 실시간 조회 진단(있으면 툴팁에 덧붙이고 뱃지를 표시색으로 물들인다). */
+  note: LiveStatusNote | null;
 }) {
   const short = PROVIDER_SHORT[provider];
   const windows = badgeWindows(usage);
+  // 폭이 빠듯한 BottomBar(설계 §BottomBar 800px)라 글자를 늘리지 않는다 —
+  // 사유는 툴팁과 상세 모달에, 여기서는 색 힌트만 준다.
+  const degraded = note && note.level !== "ok" ? ` usage-badge-${note.level}` : "";
+  const noteSuffix = note && note.level !== "ok" ? ` (${note.short})` : "";
   if (windows.length === 0) {
     return (
-      <span className="usage-badge usage-badge-empty" title={`${short}: 데이터 없음`}>
+      <span
+        className={`usage-badge usage-badge-empty${degraded}`}
+        title={`${short}: 데이터 없음${noteSuffix}`}
+      >
         <span className="usage-badge-label">{short}</span> <span className="usage-badge-pct">—</span>
       </span>
     );
   }
-  const title = `${short}: ${windows.map((w) => `${windowLabel(w)} ${Math.round(w.usedPercent)}%`).join(" · ")}`;
+  const title = `${short}: ${windows.map((w) => `${windowLabel(w)} ${Math.round(w.usedPercent)}%`).join(" · ")}${noteSuffix}`;
   return (
-    <span className="usage-badge" title={title}>
+    <span className={`usage-badge${degraded}`} title={title}>
       {/* usage-badge-label은 BottomBar가 좁을 때 usage.css 미디어 쿼리로
           숨겨진다 — 좁은 폭에서는 퍼센트 숫자만 남긴다(레이아웃 §BottomBar 800px). */}
       <span className="usage-badge-label">{short}</span>{" "}
@@ -103,6 +115,7 @@ export function UsageWidget() {
     };
   }, [setUsage]);
 
+  const liveNote = describeLiveStatus(usage?.claudeLive);
   return (
     <button
       type="button"
@@ -112,7 +125,12 @@ export function UsageWidget() {
       onClick={() => openModal({ kind: "usage" })}
     >
       {PROVIDERS.map((p) => (
-        <ProviderBadge key={p} provider={p} usage={usage ? usage[p] : null} />
+        <ProviderBadge
+          key={p}
+          provider={p}
+          usage={usage ? usage[p] : null}
+          note={p === "claude" ? liveNote : null}
+        />
       ))}
     </button>
   );

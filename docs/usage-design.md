@@ -1,6 +1,6 @@
 # 구독 사용량(usage) 표시 설계 — 캐시 미러 + Claude 실시간 조회
 
-상태: 정본 — 구현 완료 (v1 캐시 미러 = 이슈 #22, Claude live fetch = 이슈 #33/PR #34). 병합: 2026-07-20 (`usage-limits-design.md` + `claude-usage-live-fetch-design.md` 통합, 원본은 `docs/archive/`).
+상태: 정본 — 구현 완료 (v1 캐시 미러 = 이슈 #22, Claude live fetch = 이슈 #33/PR #34, 실패 사유 표시 = §7, 2026-07-29). 병합: 2026-07-20 (`usage-limits-design.md` + `claude-usage-live-fetch-design.md` 통합, 원본은 `docs/archive/`).
 
 구현 파일: 백엔드 `src-tauri/src/usage/{mod,claude,codex,claude_live}.rs`, 커맨드 `load_usage_snapshot`·`resolve_usage_roots`는 `ipc/commands/usage.rs`. 프런트 `src/renderer/usage/{UsageWidget,UsageDialog}.tsx`·`usageView.ts`. 와이어 타입은 `src/shared/types/usage.ts`(배럴 `shared/types.ts` 경유).
 
@@ -42,6 +42,8 @@ Claude Code와 Codex CLI 구독 정액제의 시간별(5시간 세션)·주간 �
 }
 ```
 
+- **이 캐시는 CLI가 `/usage` 화면을 열 때만 갱신된다**(2026-07-29 CLI 2.1.220 바이너리 실측). 쓰는 함수는 하나뿐이고(`cachedUsageUtilization` 대입), 그 함수를 부르는 곳은 `loadPlanRateLimits`(= 앱과 같은 `GET /api/oauth/usage` 호출)뿐이며, 그것을 부르는 건 `/usage` 패널의 effect와 SDK `onGetUsage` 요청이다. 일반 대화 중 CLI가 응답 헤더(`anthropic-ratelimit-unified-*`)로 받는 사용률은 메모리에만 있고(`source:"headers"`) 파일에 쓰지 않는다.
+  - 따라서 **"에이전트를 돌리면 캐시가 갱신된다"는 명제는 거짓이다** — 앱 안에서 돌리든 사용자가 터미널에서 돌리든 마찬가지다(실측 사례: `fetchedAtMs`가 11일간 고정). 이 사실이 §6 실시간 조회의 존재 이유이고, 실패 시 UI가 사용자에게 말해야 할 내용이기도 하다(§7).
 - `limits[]`가 있으면 우선 사용(더 구조화·모델별 주간 포함), 없으면 `five_hour`/`seven_day` 폴백.
 - `resets_at`은 timezone 포함 ISO8601. `fetchedAtMs`가 신선도.
 - 파일이 크고(100KB+) CLI가 세션 중 자주 rewrite하므로: `cachedUsageUtilization` 키만 추출, 파싱 실패 시 조용히 None(이전 값 유지·재시도는 프런트 폴링이 담당).
@@ -235,3 +237,81 @@ User-Agent: claude-code/2.1.0
   live 실패 시 파일 폴백, plan_label 접목.
 - 실 API smoke: `#[ignore]` 테스트 1개(토큰 있으면 실호출) — 사용자 수동.
 - HTTP 호출부는 얇게 유지(파싱·판단이 전부 순수 함수라 네트워크 목 불필요).
+
+---
+
+## 7. 실시간 조회 실패 사유 표시 (2026-07-29)
+
+### 7.1 문제
+
+§6의 실시간 조회는 실패를 전부 조용히 삼키고 파일 캐시로 강등한다. 그런데
+§2에서 확인했듯 그 파일 캐시는 `/usage`를 열지 않는 한 영원히 안 움직인다.
+두 사실이 겹치면 사용자에게는 **"에이전트를 계속 쓰는데 사용량 숫자가 며칠째
+그대로"**로 보이고, 화면에는 그 이유를 알 단서가 없다. 실제로 겪은 경로:
+GUI 번들 앱의 Keychain 접근이 막힘 → `.credentials.json` 파일 토큰으로 폴백 →
+그 토큰이 두 달 전 만료 → 401 → 조용한 폴백 → 11일 된 캐시 표시.
+
+목표: **표시값의 신선도에 대한 책임 소재를 화면에 드러낸다.** 실패해도 폴백
+동작 자체는 §6 그대로 유지한다(표시가 죽지 않는 게 우선).
+
+### 7.2 계약 확장
+
+`UsageSnapshot`에 진단 필드 `claudeLive: ClaudeLiveStatus`를 **항상** 싣는다
+(실패해도 null이 아니다 — "아직 모름"은 `never_attempted`).
+
+```ts
+type LiveFetchOutcome =
+  | "never_attempted" | "ok" | "no_credentials"
+  | "unauthorized" | "http_error" | "network_error" | "unexpected_response";
+type TokenSource = "keychain_scoped" | "keychain_legacy" | "file";
+interface ClaudeLiveStatus {
+  outcome: LiveFetchOutcome;
+  tokenSource: TokenSource | null;   // 토큰을 못 읽었으면 null
+  detail: string | null;             // "HTTP 401", "시간 초과" 등 고정 어휘
+  lastAttemptMs: number | null;      // 스로틀에 막혀 건너뛴 폴링은 시도가 아님
+  lastSuccessMs: number | null;
+}
+```
+
+- **`tokenSource`를 싣는 이유**: `file` + `unauthorized` 조합이 위 실패 경로의
+  지문이다. 이 구분이 없으면 "401"만 보이고 사용자는 재로그인을 시도하지만,
+  실제 원인은 Keychain 접근 차단이라 재로그인으로 낫지 않는다.
+- `detail`에는 **토큰·자격증명 문자열을 절대 넣지 않는다**(§6.2 유지).
+  reqwest 오류 문자열도 URL이 섞여 나오므로 그대로 싣지 않고
+  `is_timeout()`/`is_connect()`로 분류해 고정 어휘만 쓴다.
+- 로컬 `expiresAt`으로 만료를 판정하지 않는 규칙은 그대로다(§6.2) — 서버 401이
+  판정자이고, `tokenSource`는 그 401을 해석하는 힌트일 뿐이다.
+
+백엔드: `LiveUsageState`가 `last_success`와 **별개로** 마지막 시도의
+outcome/detail/token_source를 들고 있는다(성공 이력이 있어도 지금은 실패
+중일 수 있고, 그 상태가 정확히 "값이 안 움직이는 이유"다). `status()`가
+`last_success_ms`를 성공 스냅샷에서 유도해 중복 필드를 두지 않는다.
+
+### 7.3 표시
+
+- 순수 함수 `describeLiveStatus(status) -> {level, text, short} | null`
+  (`usageView.ts`)가 사유를 한국어 문장으로 만든다. 실패 문구에는 **항상**
+  "표시값은 로컬 캐시이며 이 캐시는 `/usage`를 열 때만 갱신된다"를 붙인다 —
+  사유만으로는 왜 숫자가 안 움직이는지가 안 닫힌다.
+- `UsageDialog`: Claude 블록 아래 진단 줄 + "마지막 시도/성공 N분 전".
+  **진단 줄은 `.usage-stale`(opacity 0.5) 바깥에 둔다** — 값이 낡아 흐려진
+  블록 안에 설명을 넣으면 정작 읽어야 할 문장이 같이 흐려진다(opacity는
+  자식이 되돌릴 수 없다). 이를 위해 `.usage-provider-block` 래퍼를 둔다.
+- `UsageWidget`: **글자를 늘리지 않는다.** BottomBar는 800px 기본 폭에서
+  여유가 거의 없어(§3 BottomBar 800px) 경고 글리프 하나에도 상태 텍스트가
+  잘린다. 대신 provider 라벨 색(warn/error)과 title 툴팁 꼬리표로만 알리고,
+  라벨이 숨겨지는 좁은 폭(<900px)에서는 퍼센트에 점선 밑줄을 준다.
+- `mergeUsageSnapshot`은 진단을 **병합하지 않고 항상 새 응답을 쓴다** — 값과
+  달리 "지금 상태"라서, 이전 실패를 살려두면 이미 복구된 상태가 계속 실패로
+  보인다.
+- 상세 모달의 신선도 줄에서 Claude의 "실행 중에만 갱신됨" 문구는 **제거**했다
+  (§2에서 거짓으로 판명). Codex는 rollout 파일 기준이라 그대로 유효하다.
+
+### 7.4 테스트
+
+- Rust: `status()` 초기값=`never_attempted`, 성공/실패 기록 후 필드 전이,
+  실패가 `last_success`를 지우지 않음, `http_failure`의 401/403↔기타 분류.
+- TS: `describeLiveStatus` 각 outcome의 level·문구(특히 401+file ↔ 401+keychain
+  분기), 모든 실패 문구가 `/usage` 안내를 포함하는지, `formatLiveAttempts`
+  (성공 이력 없음/미시도), 진단이 병합되지 않고 교체되는지.
+- 계약: `usage-snapshot.json` 픽스처에 401+file 조합을 굳혀 양쪽에서 검증.

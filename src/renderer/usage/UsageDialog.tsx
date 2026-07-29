@@ -6,13 +6,15 @@
 // 신선도는 SessionTimePanel의 1초 tick 패턴(로컬 시계, 재조회 아님)으로 갱신하고,
 // stale(>30분)이면 provider 블록을 흐리게 + 표시한다.
 // 설계: docs/usage-limits-design.md §3. 폴링·스토어 갱신은 UsageWidget 소관.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { ProviderUsage } from "@shared/types";
 import { useAppStore } from "../store/appStore";
 import {
   PROVIDER_SHORT,
+  describeLiveStatus,
   formatCountdown,
   formatFreshness,
+  formatLiveAttempts,
   isStale,
   usageLevel,
   windowLabel,
@@ -35,6 +37,20 @@ function useOneSecondTick(active: boolean): number {
     return () => window.clearInterval(id);
   }, [active]);
   return now;
+}
+
+/**
+ * provider 블록 + (Claude만) 실시간 조회 진단 줄. 진단은 `.usage-stale`
+ * (opacity 0.5) 바깥에 둔다 — 값이 낡아서 흐려진 블록 안에 "왜 낡았는지"를
+ * 넣으면 정작 읽어야 할 설명이 같이 흐려진다(opacity는 자식이 되돌릴 수 없다).
+ */
+function ProviderBlock({ children, note }: { children: ReactNode; note: ReactNode }) {
+  return (
+    <div className="usage-provider-block">
+      {children}
+      {note}
+    </div>
+  );
 }
 
 function ProviderSection({ usage, now }: { usage: ProviderUsage; now: number }) {
@@ -78,7 +94,10 @@ function ProviderSection({ usage, now }: { usage: ProviderUsage; now: number }) 
       </ul>
       <div className="usage-freshness">
         {formatFreshness(usage.fetchedAtMs, now)}
-        {stale && " · 오래됨"} · {PROVIDER_NAME[usage.provider]} 실행 중에만 갱신됨
+        {stale && " · 오래됨"}
+        {/* Claude는 갱신 조건이 상황에 따라 달라서(실시간 조회 성공 여부)
+            아래 진단 줄이 대신 설명한다 — 여기 고정 문구를 두면 거짓말이 된다. */}
+        {usage.provider === "codex" && " · Codex CLI 실행 중에만 갱신됨"}
       </div>
     </section>
   );
@@ -93,6 +112,21 @@ export function UsageDialog() {
   const now = useOneSecondTick(open);
 
   if (!open) return null;
+
+  // Claude 실시간 조회 진단 — "왜 이 숫자가 안 움직이는지"의 답. 성공 중일
+  // 때도 한 줄 남겨 둔다(정상임을 확인할 수 있어야 진단으로 쓸모가 있다).
+  const live = usage?.claudeLive ?? null;
+  const described = describeLiveStatus(live);
+  const liveNote =
+    live && described ? (
+      <p className={`usage-live-note usage-live-${described.level}`}>
+        {described.text}
+        {(() => {
+          const attempts = formatLiveAttempts(live, now);
+          return attempts ? <span className="usage-live-attempts">{attempts}</span> : null;
+        })()}
+      </p>
+    ) : null;
 
   return (
     <div
@@ -109,21 +143,27 @@ export function UsageDialog() {
         <div className="usage-body">
           {PROVIDERS.map((p) => {
             const pu = usage ? usage[p] : null;
-            if (!pu) {
-              return (
-                <section key={p} className="usage-provider usage-provider-empty">
-                  <div className="usage-provider-head">
-                    <span className="usage-provider-name">{PROVIDER_NAME[p]}</span>
-                    <span className="usage-badge-empty">{PROVIDER_SHORT[p]}</span>
-                  </div>
-                  <p className="usage-empty-msg">
-                    사용량 데이터가 없습니다. {PROVIDER_NAME[p]}를 한 번 실행하면 로컬 캐시가
-                    생깁니다.
-                  </p>
-                </section>
-              );
-            }
-            return <ProviderSection key={p} usage={pu} now={now} />;
+            const note = p === "claude" ? liveNote : null;
+            const body = !pu ? (
+              <section className="usage-provider usage-provider-empty">
+                <div className="usage-provider-head">
+                  <span className="usage-provider-name">{PROVIDER_NAME[p]}</span>
+                  <span className="usage-badge-empty">{PROVIDER_SHORT[p]}</span>
+                </div>
+                <p className="usage-empty-msg">
+                  {p === "claude"
+                    ? "사용량 데이터가 없습니다. Claude Code에서 /usage를 한 번 열면 로컬 캐시가 생깁니다."
+                    : "사용량 데이터가 없습니다. Codex CLI를 한 번 실행하면 로컬 캐시가 생깁니다."}
+                </p>
+              </section>
+            ) : (
+              <ProviderSection usage={pu} now={now} />
+            );
+            return (
+              <ProviderBlock key={p} note={note}>
+                {body}
+              </ProviderBlock>
+            );
           })}
         </div>
 

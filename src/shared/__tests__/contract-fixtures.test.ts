@@ -186,7 +186,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
 
   it("UsageSnapshot (both providers, limits[] + null 폴백)", () => {
     const parsed: UsageSnapshot = loadFixture("usage-snapshot.json") as UsageSnapshot;
-    expectKeys(parsed, ["claude", "codex"]);
+    expectKeys(parsed, ["claude", "claudeLive", "codex"]);
     const claude: ProviderUsage = parsed.claude!;
     expectKeys(claude, ["provider", "fetchedAtMs", "planLabel", "windows"]);
     expect(claude.windows).toHaveLength(2);
@@ -201,6 +201,18 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expect(codex.windows[0].windowMinutes).toBe(10080);
     expect(codex.windows[0].isActive).toBeNull();
     expect(codex.planLabel).toBe("prolite");
+    // 실시간 조회 진단은 실패해도 스냅샷과 함께 항상 온다 — 픽스처는 실제로
+    // 흔한 조합(Keychain이 막혀 파일 토큰 폴백 → 401)을 굳혀 둔다.
+    expectKeys(parsed.claudeLive, [
+      "outcome",
+      "tokenSource",
+      "detail",
+      "lastAttemptMs",
+      "lastSuccessMs",
+    ]);
+    expect(parsed.claudeLive.outcome).toBe("unauthorized");
+    expect(parsed.claudeLive.tokenSource).toBe("file");
+    expect(parsed.claudeLive.lastSuccessMs).toBeNull();
   });
 
   it("GetAppSettingsResult / AppSettings", () => {
