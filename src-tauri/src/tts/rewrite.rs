@@ -31,6 +31,10 @@ pub const MAX_TOKENS: u32 = 1024;
 pub const MAX_LINE_CHARS: usize = 120;
 /// 원문이 아무리 길어도 프롬프트에 이만큼만 싣는다(훅 문구는 짧지만 방어적).
 const MAX_SOURCE_CHARS: usize = 1000;
+/// 작업 맥락(그 에이전트가 방금 무슨 일을 하고 있었는지 한 줄)의 프롬프트 상한.
+/// 목표(goal)보다는 문맥이 필요하지만 원문 알림 문구를 압도해선 안 되므로
+/// 300자로 제한한다.
+const MAX_CONTEXT_CHARS: usize = 300;
 
 /// 무엇을 읽어주는 순간인가. 어조가 갈리므로 프롬프트도 갈린다 — 확인 요청은
 /// 사용자를 기다리는 말이고, 완료 보고는 이미 끝난 일을 알리는 말이다. 같은
@@ -63,6 +67,10 @@ AI 코딩 에이전트가 **사용자 확인을 기다리며** 낸 시스템 알
 규칙:
 - 120자 이내의 한 줄. 줄바꿈 금지.
 - 무엇을 확인해 달라는지 핵심 의미는 반드시 유지한다.
+- 이것은 각색이 아니라 전달이다. 원문에 없는 사실·소재·사건을 지어내지 마라.
+- archetype은 어미·억양 같은 말투의 결에만 살짝 반영하라. 세계관 소품(마법·전투·숲 등)을 소재로 끌어오지 마라.
+- 작업 맥락이 주어지면 대사가 그 맥락에 자연스럽게 닿게 하라. 단 맥락 역시 소재의 한계다 — 없는 일을 지어내지 마라.
+- 원문이 일반적인 문구뿐이면 꾸미지 말고 담백하게 확인만 청하라.
 - ElevenLabs v3 오디오 태그([nervous], [curious], [whispers], [hesitant], [excited] 등)를 \
 대사 안에 0~2개 넣어 조심스럽게 묻는 감정을 지시한다.
 - 대사만 출력한다. 따옴표, 설명, 머리말, 캐릭터 이름 접두사를 붙이지 않는다.";
@@ -74,6 +82,9 @@ AI 코딩 에이전트가 **작업을 마치고** 낸 시스템 알림 문구를
 규칙:
 - 120자 이내의 한 줄. 줄바꿈 금지.
 - 무엇을 끝냈는지 핵심 의미는 반드시 유지한다. 원문에 내용이 없으면 담백하게 완료만 알린다.
+- 이것은 각색이 아니라 전달이다. 원문에 없는 사실·소재·사건을 지어내지 마라.
+- archetype은 어미·억양 같은 말투의 결에만 살짝 반영하라. 세계관 소품(마법·전투·숲 등)을 소재로 끌어오지 마라.
+- 작업 맥락이 주어지면 대사가 그 맥락에 자연스럽게 닿게 하라. 단 맥락 역시 소재의 한계다 — 없는 일을 지어내지 마라.
 - ElevenLabs v3 오디오 태그([cheerful], [relieved], [sighs], [proud], [tired] 등)를 \
 대사 안에 0~2개 넣어 뿌듯하거나 홀가분한 감정을 지시한다.
 - 대사만 출력한다. 따옴표, 설명, 머리말, 캐릭터 이름 접두사를 붙이지 않는다.";
@@ -121,16 +132,21 @@ impl std::fmt::Display for RewriteError {
     }
 }
 
-/// 캐릭터 정보 + 상황 + 원문을 담은 user 메시지. 원문은 태그 오염을 막으려고
-/// 구분자로 감싸 넘긴다.
+/// 캐릭터 정보 + 상황 + (있다면) 작업 맥락 + 원문을 담은 user 메시지. 원문은
+/// 태그 오염을 막으려고 구분자로 감싸 넘긴다.
 ///
 /// 상황(`kind`)은 시스템 프롬프트로도 갈리지만 여기에도 한 줄 싣는다 —
 /// 완료 알림의 원문이 짧을수록(예: "작업이 완료되었습니다") 모델이 맥락을
 /// 놓치고 질문투로 쓰는 일이 있었다.
+///
+/// `context`는 그 에이전트가 발화 시점에 하던 작업 한 줄(렌더러의 머리 위
+/// 라벨 파생 텍스트)이다 — "빌드 돌려도 될까요?" 처럼 상황 밀착형 대사가
+/// 나오게 참고용으로만 싣는다(빈 문자열/공백뿐이면 블록 자체를 생략).
 pub fn build_user_content(
     kind: SpeakKind,
     agent_name: &str,
     archetype: Option<&str>,
+    context: Option<&str>,
     message: &str,
 ) -> String {
     let name = if agent_name.trim().is_empty() {
@@ -146,9 +162,17 @@ pub fn build_user_content(
         SpeakKind::Question => "사용자 확인을 기다리는 요청",
         SpeakKind::Done => "작업을 마친 완료 보고",
     };
+    let context_block = context
+        .map(|c| c.trim())
+        .filter(|c| !c.is_empty())
+        .map(|c| {
+            let truncated: String = c.chars().take(MAX_CONTEXT_CHARS).collect();
+            format!("최근 작업 맥락(참고용):\n<context>\n{truncated}\n</context>\n\n")
+        })
+        .unwrap_or_default();
     let src: String = message.chars().take(MAX_SOURCE_CHARS).collect();
     format!(
-        "캐릭터 이름: {name}\n캐릭터 archetype: {arch}\n상황: {situation}\n\n원문 알림 문구:\n<notice>\n{src}\n</notice>"
+        "캐릭터 이름: {name}\n캐릭터 archetype: {arch}\n상황: {situation}\n\n{context_block}원문 알림 문구:\n<notice>\n{src}\n</notice>"
     )
 }
 
@@ -232,6 +256,7 @@ pub async fn rewrite(
     model: TtsRewriteModel,
     agent_name: &str,
     archetype: Option<&str>,
+    context: Option<&str>,
     message: &str,
 ) -> Result<String, RewriteError> {
     if api_key.trim().is_empty() {
@@ -244,7 +269,7 @@ pub async fn rewrite(
     let body = build_request_body(
         kind,
         model,
-        &build_user_content(kind, agent_name, archetype, message),
+        &build_user_content(kind, agent_name, archetype, context, message),
     );
     let resp = client
         .post(BASE_URL)
@@ -283,7 +308,13 @@ mod tests {
 
     #[test]
     fn user_content_carries_character_and_source() {
-        let c = build_user_content(SpeakKind::Question, "무지", Some("cat"), "확인이 필요합니다");
+        let c = build_user_content(
+            SpeakKind::Question,
+            "무지",
+            Some("cat"),
+            None,
+            "확인이 필요합니다",
+        );
         assert!(c.contains("무지"));
         assert!(c.contains("cat"));
         assert!(c.contains("확인이 필요합니다"));
@@ -291,11 +322,47 @@ mod tests {
 
     #[test]
     fn user_content_falls_back_for_blank_name_and_auto_archetype() {
-        let c = build_user_content(SpeakKind::Question, "  ", Some("auto"), "m");
+        let c = build_user_content(SpeakKind::Question, "  ", Some("auto"), None, "m");
         assert!(c.contains("이름 없음"));
         assert!(c.contains("human"), "auto는 확정 전 값이라 human으로 취급");
-        let c2 = build_user_content(SpeakKind::Question, "A", None, "m");
+        let c2 = build_user_content(SpeakKind::Question, "A", None, None, "m");
         assert!(c2.contains("human"));
+    }
+
+    // ── 작업 맥락(context) 주입 ─────────────────────────────────────────
+    #[test]
+    fn user_content_injects_context_block_when_present() {
+        let c = build_user_content(
+            SpeakKind::Question,
+            "무지",
+            None,
+            Some("빌드 스크립트를 정리하는 중"),
+            "확인이 필요합니다",
+        );
+        assert!(c.contains("최근 작업 맥락(참고용):"), "{c}");
+        assert!(c.contains("빌드 스크립트를 정리하는 중"), "{c}");
+        // 맥락 블록이 원문 알림 문구보다 앞에 온다(원문이 우선순위상 마지막에 강조되도록).
+        let ctx_pos = c.find("최근 작업 맥락").unwrap();
+        let notice_pos = c.find("원문 알림 문구").unwrap();
+        assert!(ctx_pos < notice_pos, "{c}");
+    }
+
+    #[test]
+    fn user_content_omits_context_block_when_absent_or_blank() {
+        let none_ctx = build_user_content(SpeakKind::Question, "무지", None, None, "m");
+        assert!(!none_ctx.contains("최근 작업 맥락"), "{none_ctx}");
+        let blank_ctx = build_user_content(SpeakKind::Question, "무지", None, Some("   "), "m");
+        assert!(!blank_ctx.contains("최근 작업 맥락"), "{blank_ctx}");
+    }
+
+    #[test]
+    fn user_content_truncates_context_by_chars_not_bytes() {
+        let long = "가".repeat(1000);
+        let c = build_user_content(SpeakKind::Question, "무지", None, Some(&long), "m");
+        let ctx_start = c.find("<context>\n").unwrap() + "<context>\n".len();
+        let ctx_end = c.find("\n</context>").unwrap();
+        let injected = &c[ctx_start..ctx_end];
+        assert_eq!(injected.chars().count(), MAX_CONTEXT_CHARS);
     }
 
     // ── 상황(question/done) 분기 ──────────────────────────────────────
@@ -312,10 +379,23 @@ mod tests {
 
     #[test]
     fn user_content_states_the_situation_for_each_kind() {
-        let q = build_user_content(SpeakKind::Question, "무지", None, "m");
-        let d = build_user_content(SpeakKind::Done, "무지", None, "m");
+        let q = build_user_content(SpeakKind::Question, "무지", None, None, "m");
+        let d = build_user_content(SpeakKind::Done, "무지", None, None, "m");
         assert!(q.contains("사용자 확인을 기다리는 요청"), "{q}");
         assert!(d.contains("작업을 마친 완료 보고"), "{d}");
+    }
+
+    // 불만 원인 ①②를 겨냥한 규칙: 각색 금지 + archetype은 말투에만, 세계관 소품
+    // 금지 + 맥락도 소재의 한계다(지어내기 금지). 양쪽 프롬프트에 다 있어야 한다.
+    #[test]
+    fn both_prompts_forbid_fabrication_and_worldbuilding_props() {
+        for p in [SYSTEM_PROMPT_QUESTION, SYSTEM_PROMPT_DONE] {
+            assert!(p.contains("지어내지 마라"), "{p}");
+            assert!(p.contains("소재로 끌어오지 마라"), "{p}");
+            assert!(p.contains("작업 맥락이 주어지면"), "{p}");
+        }
+        // 확인 요청 쪽에만 있는 폴백: 원문이 빈약하면 담백하게.
+        assert!(SYSTEM_PROMPT_QUESTION.contains("담백하게 확인만 청하라"));
     }
 
     #[test]

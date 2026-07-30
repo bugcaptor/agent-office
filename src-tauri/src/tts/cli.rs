@@ -136,9 +136,11 @@ pub async fn rewrite_via_cli(
     model: TtsRewriteModel,
     agent_name: &str,
     archetype: Option<&str>,
+    context: Option<&str>,
     message: &str,
 ) -> Result<String, RewriteError> {
-    let user_content = super::rewrite::build_user_content(kind, agent_name, archetype, message);
+    let user_content =
+        super::rewrite::build_user_content(kind, agent_name, archetype, context, message);
     let std_command = build_command(kind, model, &user_content);
     let mut command = tokio::process::Command::from(std_command);
     command

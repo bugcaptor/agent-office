@@ -23,11 +23,17 @@ import { tauriApi } from "../ipc/tauriApi";
 import { MIN_CHUNK_LETTERS, TypingScheduler, meaningfulCount } from "./typing";
 import { createWebAudioBackend } from "./backend";
 import { base64ToBytes, createVoiceQueue } from "./voiceQueue";
+import { deriveTaskLabelLines } from "../labels/labelText";
 import type { SoundBackend } from "./backend";
 import type { AgentOfficeApi, TtsSpeakKind, TtsSpeakRequest } from "@shared/types";
 import { notificationType } from "@shared/types";
 
 const TICK_MS = 100;
+// 대사 리라이트에 실을 작업 맥락(머리 위 라벨과 같은 파생 규칙, 이슈 없음 —
+// TerminalSummaryBar와 같은 폭)의 절단 상한. 최종 상한은 백엔드가 300자로
+// 다시 자르므로(rewrite.rs MAX_CONTEXT_CHARS) 여기서는 넉넉히 잡는다.
+const CONTEXT_GOAL_MAX = 60;
+const CONTEXT_CURRENT_MAX = 90;
 
 /** 설치된 backend — previewKeyboardSound(프로필 다이얼로그 미리듣기)용. */
 let activeBackend: SoundBackend | null = null;
@@ -170,6 +176,15 @@ export function installSoundManager(deps: SoundManagerDeps = {}): () => void {
     if (!kind) return;
     if (!voiceAllowed()) return;
     const agent = store.agents[e.agentId];
+    // 그 에이전트가 지금 무슨 작업을 하던 중인지 한 줄 — 머리 위 라벨과 같은
+    // 파생 규칙(labelText.deriveTaskLabelLines)을 재사용해 "빌드 돌려도
+    // 될까요?" 처럼 상황 밀착형 대사가 나오도록 리라이트 프롬프트에 참고용으로
+    // 실어 보낸다. 두 줄이면 공백으로 이어붙인다.
+    const { line1, line2 } = deriveTaskLabelLines(store.taskLabels[e.agentId], agent?.cwd, {
+      goalMax: CONTEXT_GOAL_MAX,
+      currentMax: CONTEXT_CURRENT_MAX,
+    });
+    const context = [line1, line2].filter(Boolean).join(" ") || undefined;
     voiceQueue.enqueue({
       agentId: e.agentId,
       agentName: agent?.name ?? "",
@@ -178,6 +193,7 @@ export function installSoundManager(deps: SoundManagerDeps = {}): () => void {
       message: e.message,
       kind,
       ...(agent?.voiceId ? { voiceId: agent.voiceId } : {}),
+      ...(context ? { context } : {}),
     });
   });
 

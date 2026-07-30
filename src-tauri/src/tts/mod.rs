@@ -60,6 +60,11 @@ pub struct SpeakRequest {
     /// 목록에 없는 id면 조용히 자동 배정으로 강등한다(voice::assign_voice).
     #[serde(default)]
     pub voice_id: Option<String>,
+    /// 발화 시점에 그 에이전트가 하던 작업 한 줄(렌더러의 머리 위 라벨 파생
+    /// 텍스트). 리라이트 프롬프트에 참고용으로만 실려 상황 밀착형 대사를
+    /// 유도한다 — 없어도 기존 동작(원문만으로 리라이트)과 같다.
+    #[serde(default)]
+    pub context: Option<String>,
 }
 
 /// `tts_list_voices` 항목 — 프로필 다이얼로그의 보이스 드롭다운용.
@@ -388,6 +393,7 @@ pub async fn speak(
             model,
             &req.agent_name,
             req.archetype.as_deref(),
+            req.context.as_deref(),
             source,
         )
         .await
@@ -397,6 +403,7 @@ pub async fn speak(
             model,
             &req.agent_name,
             req.archetype.as_deref(),
+            req.context.as_deref(),
             source,
         )
         .await
@@ -618,6 +625,7 @@ mod tests {
         // 새 필드가 없는 요청은 "확인 요청 + 자동 배정"이다(구버전 호환).
         assert_eq!(r.kind, rewrite::SpeakKind::Question);
         assert_eq!(r.voice_id, None);
+        assert_eq!(r.context, None, "구버전 렌더러는 맥락을 안 보낸다");
     }
 
     #[test]
@@ -628,6 +636,15 @@ mod tests {
         .unwrap();
         assert_eq!(r.kind, rewrite::SpeakKind::Done);
         assert_eq!(r.voice_id.as_deref(), Some("v-9"));
+    }
+
+    #[test]
+    fn speak_request_reads_context() {
+        let r: SpeakRequest = serde_json::from_str(
+            r#"{"agentId":"a1","message":"확인","context":"빌드 스크립트 정리 중"}"#,
+        )
+        .unwrap();
+        assert_eq!(r.context.as_deref(), Some("빌드 스크립트 정리 중"));
     }
 
     #[test]

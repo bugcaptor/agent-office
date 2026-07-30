@@ -81,6 +81,55 @@ user 메시지에도 `상황:` 한 줄을 싣는다. 완료 알림의 원문은 
 캐시 키는 **최종 텍스트** 기준이므로 kind 분기가 캐시를 오염시키지 않는다
 (어조가 다르면 텍스트가 다르고, 텍스트가 같으면 같은 오디오여도 무방하다).
 
+**각색 금지 규칙(사용자 불만 "너무 뜬금없는 말이 나온다" 대응).** 원인은
+둘이었다 — ①원문 훅 문구가 빈약해 모델이 즉흥 창작으로 메움, ②archetype이
+말투를 넘어 세계관 소재(마법·전투 등)로 쓰임. 두 프롬프트 모두에 규칙을
+못박는다.
+
+- "이것은 각색이 아니라 전달이다. 원문에 없는 사실·소재·사건을 지어내지 마라."
+- "archetype은 어미·억양 같은 말투의 결에만 살짝 반영하라. 세계관 소품(마법·
+  전투·숲 등)을 소재로 끌어오지 마라."
+- `question`에만: "원문이 일반적인 문구뿐이면 꾸미지 말고 담백하게 확인만
+  청하라"(`done`은 "원문에 내용이 없으면 담백하게 완료만 알린다"가 이미 있다).
+
+**작업 맥락 주입(§4.2a).** 발화 시점에 그 에이전트가 무슨 작업을 하던 중인지
+한 줄을 프롬프트에 실어 "빌드 돌려도 될까요?"처럼 상황 밀착형 대사를 유도한다.
+두 프롬프트 모두에 한 줄을 추가한다: "작업 맥락이 주어지면 대사가 그 맥락에
+자연스럽게 닿게 하라. 단 맥락 역시 소재의 한계다 — 없는 일을 지어내지 마라"
+— 맥락도 각색 금지 규칙의 예외가 아니라는 점을 분명히 한다.
+
+### 4.2a 작업 맥락 (`context`)
+
+`SpeakRequest.context: Option<String>`(와이어: `TtsSpeakRequest.context?`) —
+렌더러가 채우는 참고용 필드. `tts::rewrite::build_user_content`가 캐릭터
+이름·archetype·상황 다음, 원문 알림 문구 앞에 블록으로 삽입한다:
+
+```
+최근 작업 맥락(참고용):
+<context>
+{…}
+</context>
+
+원문 알림 문구:
+<notice>
+{…}
+</notice>
+```
+
+`context`가 `None`이거나 trim 후 빈 문자열이면 블록 자체를 생략한다(구버전
+호환 — 필드가 없어도 기존 동작과 같다). 길이는 `MAX_CONTEXT_CHARS`(300자,
+chars 기준)로 절단한다 — 목표(goal)보다는 문맥이 필요하지만 원문 알림 문구를
+압도해선 안 되므로.
+
+렌더러(`sound/soundManager.ts`)는 `voiceQueue.enqueue` 시점에 그 에이전트의
+`taskLabels`를 `labelText.deriveTaskLabelLines`(머리 위 라벨·터미널 요약과
+같은 파생 규칙)에 통과시켜 `line1`(프로젝트·목표) + `line2`(실황)을 공백으로
+이어붙여 싣는다. `previewVoice`(설정 UI의 "시청" 버튼)는 context를 싣지 않는다
+— 목적이 "이 캐릭터가 어떤 목소리냐"라 작업 맥락과 무관하다.
+
+캐시 키는 여전히 **최종 텍스트** 기준이라 이 변경으로 별도 손댈 곳이 없다
+(맥락이 달라 리라이트 결과 텍스트가 달라지면 자연히 다른 캐시 항목이 된다).
+
 ### 4.1 공급자 체인
 
 `tts::resolve_rewrite_route(provider, anthropic_key, claude_cli_available)` — 순수
@@ -275,13 +324,14 @@ mtime 오래된 것부터 지운다.
 
 | 커맨드 | 입력 | 출력 |
 | --- | --- | --- |
-| `tts_speak` | `TtsSpeakRequest`(agentId·agentName·archetype·seed·message·kind?·voiceId?) | `TtsSpeakResult`(audioBase64·line·voiceId·modelId·cached·rewritten·rewriteVia) |
+| `tts_speak` | `TtsSpeakRequest`(agentId·agentName·archetype·seed·message·kind?·voiceId?·context?) | `TtsSpeakResult`(audioBase64·line·voiceId·modelId·cached·rewritten·rewriteVia) |
 | `tts_list_voices` | — | `TtsVoiceOption[]`(voiceId·name·labels 요약) |
 | `tts_key_status` | — | `TtsStatus` (키 존재 여부 bool만) |
 | `tts_set_keys` | `elevenlabs?`·`anthropic?` (`null`=유지, `""`=삭제) | `TtsStatus` |
 
-`kind`/`voiceId`는 **선택**이다. 없으면 각각 `question`·자동 배정 — 이 필드들이
-없던 시절의 요청이 그대로 유효해야 한다.
+`kind`/`voiceId`/`context`는 **선택**이다. 없으면 각각 `question`·자동 배정·
+맥락 블록 생략 — 이 필드들이 없던 시절의 요청이 그대로 유효해야 한다
+(`context`는 §4.2a).
 
 `tts_speak`는 설정 `tts_enabled`를 **백엔드에서 최종 게이트**한다. 렌더러도
 게이트하지만(불필요한 왕복 제거), 외부 API 비용이 걸린 경로라 백엔드가 권위다.

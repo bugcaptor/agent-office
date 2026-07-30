@@ -49,6 +49,9 @@ export interface TtsSpeakRequest {
   /** 프로필에서 수동 지정한 voiceId. 비면 archetype 기반 자동 캐스팅.
    * 계정 목록에 없는 id면 백엔드가 조용히 자동 배정으로 강등한다. */
   voiceId?: string;
+  /** 발화 시점 그 에이전트의 작업 맥락 한 줄(머리 위 라벨 파생 텍스트 등).
+   * 리라이트 프롬프트에 참고용으로만 실린다 — 없어도 기존 동작과 같다. */
+  context?: string;
 }
 
 /** `tts_list_voices` 항목 — Rust `tts::VoiceOption` 미러.

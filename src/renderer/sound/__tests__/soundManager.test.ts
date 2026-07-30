@@ -330,6 +330,38 @@ describe("installSoundManager", () => {
     off();
   });
 
+  // ── 작업 맥락(context) 주입(TTS 리라이트 품질 개선) ──────────────────
+  it("발화 요청에 그 에이전트의 현재 작업 라벨(목표+실황)을 context로 싣는다", async () => {
+    const { m, off } = install();
+    useAppStore.getState().addAgent(AGENT);
+    useAppStore.getState().updateAppSettings({ ttsEnabled: true });
+    useAppStore.setState({
+      taskLabels: {
+        a1: {
+          sessionId: "s1",
+          goal: "빌드 스크립트 정리",
+          currentSummary: "테스트 돌리는 중",
+        },
+      },
+    });
+    m.emitNotification(notif("a1", "hook"));
+    await vi.waitFor(() => expect(m.ttsCalls).toHaveLength(1));
+    // deriveTaskLabelLines의 line1(프로젝트·목표) + line2(실황)을 공백으로 이어붙인다.
+    expect(m.ttsCalls[0].context).toContain("빌드 스크립트 정리");
+    expect(m.ttsCalls[0].context).toContain("테스트 돌리는 중");
+    off();
+  });
+
+  it("작업 라벨이 없으면 context 필드 자체를 싣지 않는다", async () => {
+    const { m, off } = install();
+    useAppStore.getState().addAgent(AGENT);
+    useAppStore.getState().updateAppSettings({ ttsEnabled: true });
+    m.emitNotification(notif("a1", "hook"));
+    await vi.waitFor(() => expect(m.ttsCalls).toHaveLength(1));
+    expect("context" in m.ttsCalls[0]).toBe(false);
+    off();
+  });
+
   it("무음 모드(muted)면 발화하지 않는다", async () => {
     const { m, off } = install();
     useAppStore.getState().addAgent(AGENT);
