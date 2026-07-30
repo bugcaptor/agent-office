@@ -35,6 +35,10 @@ const MAX_SOURCE_CHARS: usize = 1000;
 /// 목표(goal)보다는 문맥이 필요하지만 원문 알림 문구를 압도해선 안 되므로
 /// 300자로 제한한다.
 const MAX_CONTEXT_CHARS: usize = 300;
+/// 캐릭터 성격(프로필의 `personalityPrompt`) 프롬프트 상한. 사용자가 자유
+/// 텍스트로 길게 쓸 수 있는 필드라 방어적으로 자른다 — 말투의 결만 얻으면
+/// 되므로 원문 알림 문구를 압도할 만큼 실을 이유가 없다.
+const MAX_PERSONALITY_CHARS: usize = 500;
 
 /// 무엇을 읽어주는 순간인가. 어조가 갈리므로 프롬프트도 갈린다 — 확인 요청은
 /// 사용자를 기다리는 말이고, 완료 보고는 이미 끝난 일을 알리는 말이다. 같은
@@ -61,14 +65,15 @@ impl SpeakKind {
 }
 
 pub const SYSTEM_PROMPT_QUESTION: &str = "너는 픽셀 오피스 게임 캐릭터의 대사 작가다. \
-AI 코딩 에이전트가 **사용자 확인을 기다리며** 낸 시스템 알림 문구를, 주어진 캐릭터(이름·archetype)의 \
+AI 코딩 에이전트가 **사용자 확인을 기다리며** 낸 시스템 알림 문구를, 주어진 캐릭터(이름·성격)의 \
 말투로 된 짧은 한국어 대사 한 줄로 바꿔라. 사용자에게 판단을 청하는 말이다.
 
 규칙:
 - 120자 이내의 한 줄. 줄바꿈 금지.
 - 무엇을 확인해 달라는지 핵심 의미는 반드시 유지한다.
 - 이것은 각색이 아니라 전달이다. 원문에 없는 사실·소재·사건을 지어내지 마라.
-- archetype은 어미·억양 같은 말투의 결에만 살짝 반영하라. 세계관 소품(마법·전투·숲 등)을 소재로 끌어오지 마라.
+- 캐릭터 성격은 어미·억양 같은 말투의 결에만 살짝 반영하라. 성격 설명에 적힌 설정이나 \
+세계관 소품(마법·전투·숲 등)을 대사의 소재로 끌어오지 마라. 성격이 주어지지 않으면 담백한 평상어로 쓴다.
 - 작업 맥락이 주어지면 대사가 그 맥락에 자연스럽게 닿게 하라. 단 맥락 역시 소재의 한계다 — 없는 일을 지어내지 마라.
 - 원문이 일반적인 문구뿐이면 꾸미지 말고 담백하게 확인만 청하라.
 - ElevenLabs v3 오디오 태그([nervous], [curious], [whispers], [hesitant], [excited] 등)를 \
@@ -76,14 +81,15 @@ AI 코딩 에이전트가 **사용자 확인을 기다리며** 낸 시스템 알
 - 대사만 출력한다. 따옴표, 설명, 머리말, 캐릭터 이름 접두사를 붙이지 않는다.";
 
 pub const SYSTEM_PROMPT_DONE: &str = "너는 픽셀 오피스 게임 캐릭터의 대사 작가다. \
-AI 코딩 에이전트가 **작업을 마치고** 낸 시스템 알림 문구를, 주어진 캐릭터(이름·archetype)의 \
+AI 코딩 에이전트가 **작업을 마치고** 낸 시스템 알림 문구를, 주어진 캐릭터(이름·성격)의 \
 말투로 된 짧은 한국어 대사 한 줄로 바꿔라. 일을 끝내고 보고하는 말이다 — 묻지 말고 알려라.
 
 규칙:
 - 120자 이내의 한 줄. 줄바꿈 금지.
 - 무엇을 끝냈는지 핵심 의미는 반드시 유지한다. 원문에 내용이 없으면 담백하게 완료만 알린다.
 - 이것은 각색이 아니라 전달이다. 원문에 없는 사실·소재·사건을 지어내지 마라.
-- archetype은 어미·억양 같은 말투의 결에만 살짝 반영하라. 세계관 소품(마법·전투·숲 등)을 소재로 끌어오지 마라.
+- 캐릭터 성격은 어미·억양 같은 말투의 결에만 살짝 반영하라. 성격 설명에 적힌 설정이나 \
+세계관 소품(마법·전투·숲 등)을 대사의 소재로 끌어오지 마라. 성격이 주어지지 않으면 담백한 평상어로 쓴다.
 - 작업 맥락이 주어지면 대사가 그 맥락에 자연스럽게 닿게 하라. 단 맥락 역시 소재의 한계다 — 없는 일을 지어내지 마라.
 - ElevenLabs v3 오디오 태그([cheerful], [relieved], [sighs], [proud], [tired] 등)를 \
 대사 안에 0~2개 넣어 뿌듯하거나 홀가분한 감정을 지시한다.
@@ -132,8 +138,14 @@ impl std::fmt::Display for RewriteError {
     }
 }
 
-/// 캐릭터 정보 + 상황 + (있다면) 작업 맥락 + 원문을 담은 user 메시지. 원문은
-/// 태그 오염을 막으려고 구분자로 감싸 넘긴다.
+/// 캐릭터 정보 + 상황 + (있다면) 성격·작업 맥락 + 원문을 담은 user 메시지.
+/// 원문은 태그 오염을 막으려고 구분자로 감싸 넘긴다.
+///
+/// 말투의 근거는 **성격(`personality`, 프로필의 `personalityPrompt`)뿐이다** —
+/// 종족(archetype)은 싣지 않는다. 종족은 겉모습·목소리 캐스팅의 축이지 말투의
+/// 축이 아니어서, 프롬프트에 실으면 사용자가 적어둔 성격을 밀어내고 "고양이니까
+/// ~냥" 같은 종족 클리셰가 대사를 지배했다. 종족은 `voice::assign_voice`에만
+/// 남는다.
 ///
 /// 상황(`kind`)은 시스템 프롬프트로도 갈리지만 여기에도 한 줄 싣는다 —
 /// 완료 알림의 원문이 짧을수록(예: "작업이 완료되었습니다") 모델이 맥락을
@@ -145,7 +157,7 @@ impl std::fmt::Display for RewriteError {
 pub fn build_user_content(
     kind: SpeakKind,
     agent_name: &str,
-    archetype: Option<&str>,
+    personality: Option<&str>,
     context: Option<&str>,
     message: &str,
 ) -> String {
@@ -154,14 +166,19 @@ pub fn build_user_content(
     } else {
         agent_name.trim()
     };
-    let arch = archetype
-        .map(|a| a.trim())
-        .filter(|a| !a.is_empty() && *a != "auto")
-        .unwrap_or("human");
     let situation = match kind {
         SpeakKind::Question => "사용자 확인을 기다리는 요청",
         SpeakKind::Done => "작업을 마친 완료 보고",
     };
+    // 성격은 멀티라인 자유 텍스트다 — 줄 구조를 살려 구분자로 감싼다.
+    let personality_block = personality
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            let truncated: String = p.chars().take(MAX_PERSONALITY_CHARS).collect();
+            format!("캐릭터 성격(말투에만 반영):\n<personality>\n{truncated}\n</personality>\n\n")
+        })
+        .unwrap_or_default();
     let context_block = context
         .map(|c| c.trim())
         .filter(|c| !c.is_empty())
@@ -172,7 +189,7 @@ pub fn build_user_content(
         .unwrap_or_default();
     let src: String = message.chars().take(MAX_SOURCE_CHARS).collect();
     format!(
-        "캐릭터 이름: {name}\n캐릭터 archetype: {arch}\n상황: {situation}\n\n{context_block}원문 알림 문구:\n<notice>\n{src}\n</notice>"
+        "캐릭터 이름: {name}\n상황: {situation}\n\n{personality_block}{context_block}원문 알림 문구:\n<notice>\n{src}\n</notice>"
     )
 }
 
@@ -255,7 +272,7 @@ pub async fn rewrite(
     kind: SpeakKind,
     model: TtsRewriteModel,
     agent_name: &str,
-    archetype: Option<&str>,
+    personality: Option<&str>,
     context: Option<&str>,
     message: &str,
 ) -> Result<String, RewriteError> {
@@ -269,7 +286,7 @@ pub async fn rewrite(
     let body = build_request_body(
         kind,
         model,
-        &build_user_content(kind, agent_name, archetype, context, message),
+        &build_user_content(kind, agent_name, personality, context, message),
     );
     let resp = client
         .post(BASE_URL)
@@ -311,22 +328,65 @@ mod tests {
         let c = build_user_content(
             SpeakKind::Question,
             "무지",
-            Some("cat"),
+            Some("차분하고 말수가 적다"),
             None,
             "확인이 필요합니다",
         );
         assert!(c.contains("무지"));
-        assert!(c.contains("cat"));
+        assert!(c.contains("차분하고 말수가 적다"));
         assert!(c.contains("확인이 필요합니다"));
     }
 
     #[test]
-    fn user_content_falls_back_for_blank_name_and_auto_archetype() {
-        let c = build_user_content(SpeakKind::Question, "  ", Some("auto"), None, "m");
+    fn user_content_falls_back_for_blank_name() {
+        let c = build_user_content(SpeakKind::Question, "  ", None, None, "m");
         assert!(c.contains("이름 없음"));
-        assert!(c.contains("human"), "auto는 확정 전 값이라 human으로 취급");
-        let c2 = build_user_content(SpeakKind::Question, "A", None, None, "m");
-        assert!(c2.contains("human"));
+    }
+
+    // ── 성격(personality) 주입 / 종족(archetype) 배제 ────────────────────
+    #[test]
+    fn user_content_injects_personality_block_when_present() {
+        let c = build_user_content(
+            SpeakKind::Question,
+            "무지",
+            Some("차분하게 말한다.\n근거를 먼저 든다."),
+            None,
+            "확인이 필요합니다",
+        );
+        assert!(c.contains("캐릭터 성격(말투에만 반영):"), "{c}");
+        // 멀티라인 성격은 줄 구조가 보존된다.
+        assert!(c.contains("차분하게 말한다.\n근거를 먼저 든다."), "{c}");
+        // 성격 블록은 원문 알림 문구보다 앞(원문이 마지막에 강조되도록).
+        assert!(c.find("캐릭터 성격").unwrap() < c.find("원문 알림 문구").unwrap(), "{c}");
+    }
+
+    #[test]
+    fn user_content_omits_personality_block_when_absent_or_blank() {
+        let none_p = build_user_content(SpeakKind::Question, "무지", None, None, "m");
+        assert!(!none_p.contains("캐릭터 성격"), "{none_p}");
+        let blank_p = build_user_content(SpeakKind::Question, "무지", Some(" \n "), None, "m");
+        assert!(!blank_p.contains("캐릭터 성격"), "{blank_p}");
+    }
+
+    #[test]
+    fn user_content_truncates_personality_by_chars_not_bytes() {
+        let long = "성".repeat(2000);
+        let c = build_user_content(SpeakKind::Question, "무지", Some(&long), None, "m");
+        let start = c.find("<personality>\n").unwrap() + "<personality>\n".len();
+        let end = c.find("\n</personality>").unwrap();
+        assert_eq!(c[start..end].chars().count(), MAX_PERSONALITY_CHARS);
+    }
+
+    // 종족(archetype)은 말투의 축이 아니다 — 프롬프트에 실리면 사용자가 적은
+    // 성격을 밀어내고 종족 클리셰가 대사를 지배한다. 보이스 캐스팅에만 남긴다.
+    #[test]
+    fn prompts_never_mention_archetype() {
+        for p in [SYSTEM_PROMPT_QUESTION, SYSTEM_PROMPT_DONE] {
+            assert!(!p.contains("archetype"), "{p}");
+        }
+        let c = build_user_content(SpeakKind::Question, "무지", Some("명랑하다"), None, "m");
+        assert!(!c.contains("archetype"), "{c}");
+        assert!(!c.contains("human"), "{c}");
     }
 
     // ── 작업 맥락(context) 주입 ─────────────────────────────────────────

@@ -330,6 +330,24 @@ describe("installSoundManager", () => {
     off();
   });
 
+  // ── 성격(personality) 주입 ──────────────────────────────────────────
+  // 대사 말투의 근거는 성격 프롬프트뿐이다. 종족(archetype)은 보이스 캐스팅
+  // 축으로만 실려야 하며 리라이트 프롬프트로는 넘어가지 않는다.
+  it("프로필의 성격 프롬프트를 personality로 싣는다(없으면 필드 자체가 없다)", async () => {
+    const { m, off } = install();
+    useAppStore.getState().addAgent({ ...AGENT, personalityPrompt: "차분하게 말한다" });
+    useAppStore.getState().updateAppSettings({ ttsEnabled: true });
+    m.emitNotification(notif("a1", "hook"));
+    await vi.waitFor(() => expect(m.ttsCalls).toHaveLength(1));
+    expect(m.ttsCalls[0].personality).toBe("차분하게 말한다");
+
+    useAppStore.getState().updateAgent("a1", { personalityPrompt: undefined });
+    m.emitNotification(notif("a1", "hook"));
+    await vi.waitFor(() => expect(m.ttsCalls).toHaveLength(2));
+    expect("personality" in m.ttsCalls[1]).toBe(false);
+    off();
+  });
+
   // ── 작업 맥락(context) 주입(TTS 리라이트 품질 개선) ──────────────────
   it("발화 요청에 그 에이전트의 현재 작업 라벨(목표+실황)을 context로 싣는다", async () => {
     const { m, off } = install();

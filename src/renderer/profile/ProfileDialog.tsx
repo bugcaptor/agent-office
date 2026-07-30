@@ -802,7 +802,9 @@ function VoiceField({
       const line = await previewVoice({
         agentId: agentId ?? "preview",
         agentName: draft.name,
+        // 종족은 보이스 캐스팅용, 대사 말투는 편집 중인 성격 프롬프트가 정한다.
         archetype: resolveArchetype(draft.archetype, draft.seed),
+        ...(draft.personalityPrompt?.trim() ? { personality: draft.personalityPrompt.trim() } : {}),
         seed: draft.seed,
         ...(selected ? { voiceId: selected } : {}),
       });

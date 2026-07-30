@@ -6,7 +6,8 @@
 // (synth.rs) 렌더러에 오디오 바이트를 준다. 어조는 `SpeakKind`로 갈린다.
 //
 // 파이프라인:
-//   문구 ─rewrite(kind)─▶ 대사 ─assign_voice(지정|archetype+seed)─▶ voice_id
+//   문구 ─rewrite(kind, 성격)─▶ 대사 ─assign_voice(지정|archetype+seed)─▶ voice_id
+//   (말투는 성격 프롬프트만, 종족은 보이스 캐스팅에만 — 축이 갈린다)
 //         │                └─cache hit?─▶ 디스크 mp3
 //         │                └─miss──────▶ synth(ElevenLabs) ─▶ 캐시 저장
 //         └ 공급자 체인(resolve_rewrite_route): Anthropic Messages API(rewrite.rs)
@@ -47,8 +48,14 @@ pub struct SpeakRequest {
     pub agent_id: String,
     #[serde(default)]
     pub agent_name: String,
+    /// 캐릭터 종족. **보이스 자동 캐스팅에만 쓰인다**(`voice::assign_voice`) —
+    /// 리라이트 프롬프트에는 실리지 않는다(rewrite::build_user_content 머리말).
     #[serde(default)]
     pub archetype: Option<String>,
+    /// 프로필의 `personalityPrompt`. 리라이트가 참고하는 **유일한 말투 근거**다
+    /// (빈 값이면 담백한 평상어로 쓴다).
+    #[serde(default)]
+    pub personality: Option<String>,
     #[serde(default)]
     pub seed: String,
     pub message: String,
@@ -392,7 +399,7 @@ pub async fn speak(
             req.kind,
             model,
             &req.agent_name,
-            req.archetype.as_deref(),
+            req.personality.as_deref(),
             req.context.as_deref(),
             source,
         )
@@ -402,7 +409,7 @@ pub async fn speak(
             req.kind,
             model,
             &req.agent_name,
-            req.archetype.as_deref(),
+            req.personality.as_deref(),
             req.context.as_deref(),
             source,
         )
@@ -626,6 +633,16 @@ mod tests {
         assert_eq!(r.kind, rewrite::SpeakKind::Question);
         assert_eq!(r.voice_id, None);
         assert_eq!(r.context, None, "구버전 렌더러는 맥락을 안 보낸다");
+        assert_eq!(r.personality, None, "성격 없는 요청도 담백하게 발화한다");
+    }
+
+    #[test]
+    fn speak_request_reads_personality() {
+        let r: SpeakRequest = serde_json::from_str(
+            r#"{"agentId":"a1","message":"확인","personality":"차분하게 말한다"}"#,
+        )
+        .unwrap();
+        assert_eq!(r.personality.as_deref(), Some("차분하게 말한다"));
     }
 
     #[test]

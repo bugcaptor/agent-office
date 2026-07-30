@@ -87,10 +87,41 @@ user 메시지에도 `상황:` 한 줄을 싣는다. 완료 알림의 원문은 
 못박는다.
 
 - "이것은 각색이 아니라 전달이다. 원문에 없는 사실·소재·사건을 지어내지 마라."
-- "archetype은 어미·억양 같은 말투의 결에만 살짝 반영하라. 세계관 소품(마법·
-  전투·숲 등)을 소재로 끌어오지 마라."
+- "캐릭터 성격은 어미·억양 같은 말투의 결에만 살짝 반영하라. 성격 설명에 적힌
+  설정이나 세계관 소품(마법·전투·숲 등)을 대사의 소재로 끌어오지 마라. 성격이
+  주어지지 않으면 담백한 평상어로 쓴다."
 - `question`에만: "원문이 일반적인 문구뿐이면 꾸미지 말고 담백하게 확인만
   청하라"(`done`은 "원문에 내용이 없으면 담백하게 완료만 알린다"가 이미 있다).
+
+**말투의 근거는 성격뿐이다(archetype 배제).** 원인 ②의 근본 처방으로,
+리라이트 프롬프트에서 종족(archetype)을 **아예 뺐다**. 종족은 겉모습과 보이스
+캐스팅의 축이지 말투의 축이 아니어서, 프롬프트에 실리면 사용자가 프로필에
+적어둔 성격을 밀어내고 "고양이니까 ~냥" 류의 종족 클리셰가 대사를 지배했다.
+두 축을 갈라 놓는다.
+
+| 축 | 입력 | 쓰이는 곳 |
+| --- | --- | --- |
+| 말투 | `personality`(프로필 `personalityPrompt`) | 리라이트 프롬프트(§4.2b)만 |
+| 목소리 | `archetype` | `voice::assign_voice` 캐스팅(§5)만 |
+
+### 4.2b 캐릭터 성격 (`personality`)
+
+`SpeakRequest.personality: Option<String>`(와이어: `TtsSpeakRequest.personality?`)
+— 렌더러가 프로필의 `personalityPrompt`를 그대로 싣는다(Claude 세션에 주입하는
+그 성격과 같은 값이라, 캐릭터가 터미널에서 말하는 결과 대사의 결이 어긋나지
+않는다). `build_user_content`가 캐릭터 이름·상황 다음, 작업 맥락 블록 앞에
+삽입한다:
+
+```
+캐릭터 성격(말투에만 반영):
+<personality>
+{…}
+</personality>
+```
+
+멀티라인 자유 텍스트라 줄 구조를 살려 구분자로 감싸고 500자
+(`MAX_PERSONALITY_CHARS`)로 자른다. `None`이거나 trim 후 빈 문자열이면 블록
+자체를 생략하며, 그때 대사는 담백한 평상어가 된다(시스템 프롬프트가 지시).
 
 **작업 맥락 주입(§4.2a).** 발화 시점에 그 에이전트가 무슨 작업을 하던 중인지
 한 줄을 프롬프트에 실어 "빌드 돌려도 될까요?"처럼 상황 밀착형 대사를 유도한다.
@@ -102,7 +133,7 @@ user 메시지에도 `상황:` 한 줄을 싣는다. 완료 알림의 원문은 
 
 `SpeakRequest.context: Option<String>`(와이어: `TtsSpeakRequest.context?`) —
 렌더러가 채우는 참고용 필드. `tts::rewrite::build_user_content`가 캐릭터
-이름·archetype·상황 다음, 원문 알림 문구 앞에 블록으로 삽입한다:
+이름·상황·성격(§4.2b) 다음, 원문 알림 문구 앞에 블록으로 삽입한다:
 
 ```
 최근 작업 맥락(참고용):
@@ -324,7 +355,7 @@ mtime 오래된 것부터 지운다.
 
 | 커맨드 | 입력 | 출력 |
 | --- | --- | --- |
-| `tts_speak` | `TtsSpeakRequest`(agentId·agentName·archetype·seed·message·kind?·voiceId?·context?) | `TtsSpeakResult`(audioBase64·line·voiceId·modelId·cached·rewritten·rewriteVia) |
+| `tts_speak` | `TtsSpeakRequest`(agentId·agentName·archetype·seed·message·kind?·voiceId?·context?·personality?) | `TtsSpeakResult`(audioBase64·line·voiceId·modelId·cached·rewritten·rewriteVia) |
 | `tts_list_voices` | — | `TtsVoiceOption[]`(voiceId·name·labels 요약) |
 | `tts_key_status` | — | `TtsStatus` (키 존재 여부 bool만) |
 | `tts_set_keys` | `elevenlabs?`·`anthropic?` (`null`=유지, `""`=삭제) | `TtsStatus` |

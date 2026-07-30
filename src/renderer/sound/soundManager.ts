@@ -82,6 +82,7 @@ export async function previewVoice(overrides: Partial<TtsSpeakRequest> = {}): Pr
     agentId: agentId ?? "preview",
     agentName: agent?.name ?? "",
     archetype: agent?.archetype,
+    ...(agent?.personalityPrompt ? { personality: agent.personalityPrompt } : {}),
     seed: agent?.seed ?? "preview",
     message: PREVIEW_MESSAGE,
     kind: "question",
@@ -188,10 +189,12 @@ export function installSoundManager(deps: SoundManagerDeps = {}): () => void {
     voiceQueue.enqueue({
       agentId: e.agentId,
       agentName: agent?.name ?? "",
+      // archetype은 보이스 캐스팅용, 말투는 성격 프롬프트만 — 축이 갈린다.
       archetype: agent?.archetype,
       seed: agent?.seed ?? "",
       message: e.message,
       kind,
+      ...(agent?.personalityPrompt ? { personality: agent.personalityPrompt } : {}),
       ...(agent?.voiceId ? { voiceId: agent.voiceId } : {}),
       ...(context ? { context } : {}),
     });

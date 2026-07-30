@@ -37,9 +37,13 @@ export interface TtsSpeakRequest {
   agentId: string;
   /** 캐릭터 이름(말투 힌트). 빈 문자열 허용. */
   agentName: string;
-  /** 캐릭터 아키타입 id. 부재/"auto"는 백엔드가 "human"으로 취급하며,
-   * 보이스 자동 캐스팅의 선호 라벨(성별·연령)도 여기서 갈린다. */
+  /** 캐릭터 아키타입(종족) id. **보이스 자동 캐스팅 전용** — 선호 라벨
+   * (성별·연령)이 여기서 갈린다. 리라이트 프롬프트에는 실리지 않는다
+   * (말투의 근거는 `personality`뿐). */
   archetype?: string;
+  /** 캐릭터 성격(프로필 `personalityPrompt`). 리라이트가 참고하는 유일한 말투
+   * 근거다 — 부재/빈 값이면 담백한 평상어로 발화한다. */
+  personality?: string;
   /** 스프라이트 시드 — 보이스 결정적 배정 키. 비면 agentId로 폴백. */
   seed: string;
   /** 원문 알림 문구. */
