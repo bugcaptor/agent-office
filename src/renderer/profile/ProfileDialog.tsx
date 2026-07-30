@@ -29,8 +29,8 @@ import { PortraitEditor } from "../portrait/PortraitEditor";
 import { SpriteEditor } from "../sprite/SpriteEditor";
 import { clearSpriteOverride } from "../office/gen/spriteOverrides";
 import { KEYBOARD_SOUND_PACK_OPTIONS } from "../sound/packs";
-import { previewKeyboardSound } from "../sound/soundManager";
-import type { AvailableShell } from "@shared/types";
+import { previewKeyboardSound, previewVoice } from "../sound/soundManager";
+import type { AvailableShell, TtsVoiceOption } from "@shared/types";
 import "../portrait/portrait.css";
 
 /** IPC 오류 문자열("{code}: {상세}") → 사용자 캡션. */
@@ -130,6 +130,7 @@ export function ProfileDialog() {
       spriteRequest: agent.spriteRequest ?? "",
       archetype: agent.archetype ?? "auto",
       keyboardSound: agent.keyboardSound ?? "",
+      voiceId: agent.voiceId ?? "",
       botSlug: agent.bot?.slug ?? "",
       botWhitelist: (agent.bot?.whitelist ?? []).join(", "),
       botPollIntervalSec: agent.bot?.pollIntervalSec ? String(agent.bot.pollIntervalSec) : "",
@@ -338,6 +339,7 @@ export function ProfileDialog() {
       const trimmedAppearance = (draft.appearance ?? "").trim();
       const trimmedSpriteRequest = (draft.spriteRequest ?? "").trim();
       const trimmedKeyboardSound = (draft.keyboardSound ?? "").trim();
+      const trimmedVoiceId = (draft.voiceId ?? "").trim();
       const chosenArchetype =
         draft.archetype && draft.archetype !== "auto" ? draft.archetype : pickArchetype(draft.seed);
       updateAgent(editingAgent.id, {
@@ -353,6 +355,7 @@ export function ProfileDialog() {
         appearance: trimmedAppearance || undefined,
         spriteRequest: trimmedSpriteRequest || undefined,
         keyboardSound: trimmedKeyboardSound || undefined,
+        voiceId: trimmedVoiceId || undefined,
         bot: buildBotConfig(draft),
       });
     } else {
@@ -609,6 +612,11 @@ export function ProfileDialog() {
             </label>
             <p className="form-hint">이 에이전트가 타이핑할 때 나는 소리입니다. 고르면 미리 들려줍니다.</p>
           </div>
+          <VoiceField
+            draft={draft}
+            agentId={editingAgentId}
+            onChange={(voiceId) => setDraft((d) => ({ ...d, voiceId }))}
+          />
           <div className="form-field">
             <span className="form-label-text">봇 모드 설정</span>
             <p className="form-hint">
@@ -723,6 +731,124 @@ export function ProfileDialog() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * 대사 TTS 보이스 선택 + 그 자리 미리듣기.
+ *
+ * 기본은 "자동" — 캐릭터 종족(archetype)에 어울리는 성별·연령 라벨로 후보를
+ * 좁힌 뒤 시드 해시로 고정 배정한다(백엔드 `tts::voice`). 여기서 고르는 것은
+ * 그 자동 배정을 덮어쓰는 수동 지정이다.
+ *
+ * 목록은 백엔드가 ElevenLabs에서 1회 조회해 캐시한 것과 **같은 것**이라, 여기
+ * 보이는 이름이 실제 발화 목소리와 어긋나지 않는다. 키 값은 오지 않는다.
+ * TTS가 꺼져 있거나 키가 없으면 고를 것이 없으므로 비활성 + 사유 안내.
+ */
+function VoiceField({
+  draft,
+  agentId,
+  onChange,
+}: {
+  draft: DraftProfile;
+  agentId?: string;
+  onChange: (voiceId: string) => void;
+}) {
+  const ttsEnabled = useAppStore((s) => s.appSettings.ttsEnabled);
+  const muted = useAppStore((s) => s.muted);
+  const [voices, setVoices] = useState<TtsVoiceOption[]>([]);
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!ttsEnabled) {
+      setVoices([]);
+      setNote(null);
+      return;
+    }
+    let alive = true;
+    void (async () => {
+      try {
+        const list = await tauriApi.ttsListVoices();
+        if (!alive) return;
+        setVoices(list);
+        setNote(null);
+      } catch (err) {
+        if (!alive) return;
+        setVoices([]);
+        // 키가 없으면 목록도 못 받는다 — 설정으로 안내한다.
+        setNote(
+          String(err).startsWith("missing_elevenlabs_key")
+            ? "설정에서 ElevenLabs API 키를 저장하면 목소리를 고를 수 있습니다."
+            : `목소리 목록을 불러오지 못했습니다: ${String(err)}`
+        );
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [ttsEnabled]);
+
+  const selected = draft.voiceId ?? "";
+  // 다른 PC에서 가져온 프로필 등, 목록에 없는 id도 선택값으로 살려 둔다 —
+  // select가 조용히 "자동"으로 되돌아가면 저장 시 지정이 날아간다.
+  const missing = selected !== "" && !voices.some((v) => v.voiceId === selected);
+  const disabled = !ttsEnabled || voices.length === 0;
+
+  const preview = async () => {
+    setBusy(true);
+    try {
+      const line = await previewVoice({
+        agentId: agentId ?? "preview",
+        agentName: draft.name,
+        archetype: resolveArchetype(draft.archetype, draft.seed),
+        seed: draft.seed,
+        ...(selected ? { voiceId: selected } : {}),
+      });
+      setNote(line ? `발화: ${line}` : "발화할 수 없었습니다.");
+    } catch (err) {
+      setNote(`미리듣기 실패: ${String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="form-field">
+      <label>
+        <span className="form-label-text">목소리 (TTS)</span>
+        <div className="form-control-row">
+          <select
+            value={selected}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value)}
+          >
+            <option value="">자동 (종족에 맞춰 배정)</option>
+            {missing && <option value={selected}>{selected} (목록에 없음)</option>}
+            {voices.map((v) => (
+              <option key={v.voiceId} value={v.voiceId}>
+                {v.labels ? `${v.name} — ${v.labels}` : v.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="pixel-btn"
+            disabled={!ttsEnabled || busy}
+            onClick={preview}
+          >
+            미리듣기
+          </button>
+        </div>
+      </label>
+      <p className="form-hint">
+        {!ttsEnabled
+          ? "설정에서 ‘알림 대사 읽어주기(TTS)’를 켜면 목소리를 고를 수 있습니다."
+          : "비워두면 캐릭터 종족과 시드에 맞춰 자동으로 정해집니다."}
+        {muted && " 무음 모드가 켜져 있어 실제 알림은 발화되지 않습니다(미리듣기는 들립니다)."}
+      </p>
+      {note && <p className="form-hint">{note}</p>}
     </div>
   );
 }

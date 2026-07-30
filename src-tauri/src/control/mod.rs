@@ -726,7 +726,7 @@ mod tests {
         let ok_resp: serde_json::Value = client
             .post(format!("http://127.0.0.1:{port}/v1/settings/set"))
             .header(TOKEN_HEADER, &token)
-            .json(&serde_json::json!({ "soundEnabled": false }))
+            .json(&serde_json::json!({ "typingSoundEnabled": false }))
             .send()
             .await
             .unwrap()
@@ -734,8 +734,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(ok_resp["ok"], true);
-        assert_eq!(ok_resp["data"]["soundEnabled"], false);
-        assert!(!f.ctx.settings.read().unwrap().sound_enabled);
+        assert_eq!(ok_resp["data"]["typingSoundEnabled"], false);
+        assert!(!f.ctx.settings.read().unwrap().typing_sound_enabled);
+        // 3분할 이후 `soundEnabled`는 와이어에 없다 — 병합 패치로 들어와도
+        // 무시된다(로드 시점 마이그레이션만 옛 키를 인정한다).
+        assert!(f.ctx.settings.read().unwrap().notify_sound_enabled);
         cleanup(&f);
     }
 
@@ -772,6 +775,7 @@ mod tests {
             personality_prompt: None,
             clocked_out: None,
             keyboard_sound: None,
+            voice_id: None,
             bot: None,
         }
     }

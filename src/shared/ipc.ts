@@ -35,9 +35,10 @@ export const Commands = {
   // 마스코트 클릭 시 main 포커스 + 터미널 열기 요청.
   setMascotVisible: "set_mascot_visible",
   mascotActivate: "mascot_activate",
-  // 확인 요청 대사 TTS — 질문 알림 문구를 캐릭터 대사로 리라이트 + 합성(백엔드
+  // 알림 대사 TTS — 질문/완료 알림 문구를 캐릭터 대사로 리라이트 + 합성(백엔드
   // 전담: API 키는 웹뷰로 나오지 않고 오디오 바이트만 온다).
   ttsSpeak: "tts_speak",
+  ttsListVoices: "tts_list_voices",
   ttsKeyStatus: "tts_key_status",
   ttsSetKeys: "tts_set_keys",
   // CLI 제어(이슈 #55, docs/cli-control-design.md) — 2단계 승인 상태 조회/승인/취소.

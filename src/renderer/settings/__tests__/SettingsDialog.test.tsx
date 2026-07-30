@@ -32,7 +32,8 @@ describe("SettingsDialog", () => {
         summaryProvider: "claude",
         diaryEnabled: false,
         observerEnabled: false,
-        soundEnabled: true,
+        typingSoundEnabled: true,
+        notifySoundEnabled: true,
         soundVolume: 0.5,
         externalTerminal: "terminal",
         externalEditor: "system",
@@ -63,7 +64,8 @@ describe("SettingsDialog", () => {
       summaryProvider: "codex",
       diaryEnabled: false,
       observerEnabled: true,
-      soundEnabled: true,
+      typingSoundEnabled: true,
+      notifySoundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
       externalEditor: "system",
@@ -88,7 +90,8 @@ describe("SettingsDialog", () => {
         summaryProvider: "claude",
         diaryEnabled: false,
         observerEnabled: false,
-        soundEnabled: true,
+        typingSoundEnabled: true,
+        notifySoundEnabled: true,
         soundVolume: 0.5,
         externalTerminal: "terminal",
         externalEditor: "system",
@@ -124,7 +127,8 @@ describe("SettingsDialog", () => {
         summaryProvider: "claude",
         diaryEnabled: false,
         observerEnabled: false,
-        soundEnabled: true,
+        typingSoundEnabled: true,
+        notifySoundEnabled: true,
         soundVolume: 0.5,
         externalTerminal: "terminal",
         externalEditor: "system",
@@ -149,6 +153,21 @@ describe("SettingsDialog", () => {
     });
 
     expect(useAppStore.getState().appSettings.externalEditor).toBe("vscode");
+  });
+
+
+  // 사운드 3분할: 타건음/알림음이 서로 독립된 토글이어야 한다(TTS는 별도 섹션).
+  it("타건음·알림음 토글이 각각 독립적으로 반영된다", () => {
+    useAppStore.getState().openModal({ kind: "settings" });
+    render(<SettingsDialog />);
+
+    fireEvent.click(screen.getByLabelText(/타건음/));
+    expect(useAppStore.getState().appSettings.typingSoundEnabled).toBe(false);
+    expect(useAppStore.getState().appSettings.notifySoundEnabled).toBe(true);
+
+    fireEvent.click(screen.getByLabelText(/알림음/));
+    expect(useAppStore.getState().appSettings.notifySoundEnabled).toBe(false);
+    expect(useAppStore.getState().appSettings.typingSoundEnabled).toBe(false);
   });
 
   it("닫기 버튼 클릭 시 closeModal을 부른다", () => {

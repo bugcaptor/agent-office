@@ -46,6 +46,9 @@ export interface AgentProfile {
   clockedOut?: boolean;
   /** 키보드 사운드 팩 id (sound/packs.ts). 부재/무효 = 기본 팩. */
   keyboardSound?: string;
+  /** 대사 TTS에 쓸 ElevenLabs voice_id 수동 지정. 부재/빈 값 = archetype 기반
+   * 자동 캐스팅. 계정 목록에 없는 id면 백엔드가 자동 배정으로 강등한다. */
+  voiceId?: string;
   /** 봇 모드 설정(이슈 #57). 부재 = 기본값. 봇 ON/OFF 자체는 런타임 상태이고
    * 여기엔 지속 설정(slug 별칭·화이트리스트·폴링 주기)만 담는다. Rust `bot` 미러. */
   bot?: BotConfig;

@@ -32,16 +32,60 @@ pub const MAX_LINE_CHARS: usize = 120;
 /// 원문이 아무리 길어도 프롬프트에 이만큼만 싣는다(훅 문구는 짧지만 방어적).
 const MAX_SOURCE_CHARS: usize = 1000;
 
-pub const SYSTEM_PROMPT: &str = "너는 픽셀 오피스 게임 캐릭터의 대사 작가다. \
-AI 코딩 에이전트가 사용자 확인을 기다리며 낸 시스템 알림 문구를, 주어진 캐릭터(이름·archetype)의 \
-말투로 된 짧은 한국어 대사 한 줄로 바꿔라.
+/// 무엇을 읽어주는 순간인가. 어조가 갈리므로 프롬프트도 갈린다 — 확인 요청은
+/// 사용자를 기다리는 말이고, 완료 보고는 이미 끝난 일을 알리는 말이다. 같은
+/// 프롬프트로 둘 다 처리하면 완료 알림이 "이거 해도 될까요?"처럼 들린다.
+///
+/// 와이어(`TtsSpeakRequest.kind`)에는 `"question"` / `"done"`으로 실린다.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SpeakKind {
+    /// 사용자 확인을 기다리는 요청(알림 source=hook).
+    #[default]
+    Question,
+    /// 작업을 마친 완료 보고(알림 source=stop).
+    Done,
+}
+
+impl SpeakKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Question => "question",
+            Self::Done => "done",
+        }
+    }
+}
+
+pub const SYSTEM_PROMPT_QUESTION: &str = "너는 픽셀 오피스 게임 캐릭터의 대사 작가다. \
+AI 코딩 에이전트가 **사용자 확인을 기다리며** 낸 시스템 알림 문구를, 주어진 캐릭터(이름·archetype)의 \
+말투로 된 짧은 한국어 대사 한 줄로 바꿔라. 사용자에게 판단을 청하는 말이다.
 
 규칙:
 - 120자 이내의 한 줄. 줄바꿈 금지.
 - 무엇을 확인해 달라는지 핵심 의미는 반드시 유지한다.
-- ElevenLabs v3 오디오 태그([nervous], [excited], [whispers], [sighs], [curious] 등)를 \
-대사 안에 0~2개 넣어 감정을 지시한다.
+- ElevenLabs v3 오디오 태그([nervous], [curious], [whispers], [hesitant], [excited] 등)를 \
+대사 안에 0~2개 넣어 조심스럽게 묻는 감정을 지시한다.
 - 대사만 출력한다. 따옴표, 설명, 머리말, 캐릭터 이름 접두사를 붙이지 않는다.";
+
+pub const SYSTEM_PROMPT_DONE: &str = "너는 픽셀 오피스 게임 캐릭터의 대사 작가다. \
+AI 코딩 에이전트가 **작업을 마치고** 낸 시스템 알림 문구를, 주어진 캐릭터(이름·archetype)의 \
+말투로 된 짧은 한국어 대사 한 줄로 바꿔라. 일을 끝내고 보고하는 말이다 — 묻지 말고 알려라.
+
+규칙:
+- 120자 이내의 한 줄. 줄바꿈 금지.
+- 무엇을 끝냈는지 핵심 의미는 반드시 유지한다. 원문에 내용이 없으면 담백하게 완료만 알린다.
+- ElevenLabs v3 오디오 태그([cheerful], [relieved], [sighs], [proud], [tired] 등)를 \
+대사 안에 0~2개 넣어 뿌듯하거나 홀가분한 감정을 지시한다.
+- 대사만 출력한다. 따옴표, 설명, 머리말, 캐릭터 이름 접두사를 붙이지 않는다.";
+
+/// 상황별 시스템 프롬프트. API 경로와 claude CLI 경로가 같은 것을 쓴다 —
+/// 경로에 따라 어조가 달라지면 사용자에게는 그냥 버그로 보인다.
+pub fn system_prompt(kind: SpeakKind) -> &'static str {
+    match kind {
+        SpeakKind::Question => SYSTEM_PROMPT_QUESTION,
+        SpeakKind::Done => SYSTEM_PROMPT_DONE,
+    }
+}
 
 /// 리라이트 실패 사유. 호출측은 코드만 로그에 남기고 원문으로 강등한다.
 #[derive(Debug, Clone, PartialEq)]
@@ -77,9 +121,18 @@ impl std::fmt::Display for RewriteError {
     }
 }
 
-/// 캐릭터 정보 + 원문을 담은 user 메시지. 원문은 태그 오염을 막으려고
+/// 캐릭터 정보 + 상황 + 원문을 담은 user 메시지. 원문은 태그 오염을 막으려고
 /// 구분자로 감싸 넘긴다.
-pub fn build_user_content(agent_name: &str, archetype: Option<&str>, message: &str) -> String {
+///
+/// 상황(`kind`)은 시스템 프롬프트로도 갈리지만 여기에도 한 줄 싣는다 —
+/// 완료 알림의 원문이 짧을수록(예: "작업이 완료되었습니다") 모델이 맥락을
+/// 놓치고 질문투로 쓰는 일이 있었다.
+pub fn build_user_content(
+    kind: SpeakKind,
+    agent_name: &str,
+    archetype: Option<&str>,
+    message: &str,
+) -> String {
     let name = if agent_name.trim().is_empty() {
         "이름 없음"
     } else {
@@ -89,17 +142,25 @@ pub fn build_user_content(agent_name: &str, archetype: Option<&str>, message: &s
         .map(|a| a.trim())
         .filter(|a| !a.is_empty() && *a != "auto")
         .unwrap_or("human");
+    let situation = match kind {
+        SpeakKind::Question => "사용자 확인을 기다리는 요청",
+        SpeakKind::Done => "작업을 마친 완료 보고",
+    };
     let src: String = message.chars().take(MAX_SOURCE_CHARS).collect();
     format!(
-        "캐릭터 이름: {name}\n캐릭터 archetype: {arch}\n\n원문 알림 문구:\n<notice>\n{src}\n</notice>"
+        "캐릭터 이름: {name}\n캐릭터 archetype: {arch}\n상황: {situation}\n\n원문 알림 문구:\n<notice>\n{src}\n</notice>"
     )
 }
 
-pub fn build_request_body(model: TtsRewriteModel, user_content: &str) -> serde_json::Value {
+pub fn build_request_body(
+    kind: SpeakKind,
+    model: TtsRewriteModel,
+    user_content: &str,
+) -> serde_json::Value {
     serde_json::json!({
         "model": model.as_str(),
         "max_tokens": MAX_TOKENS,
-        "system": SYSTEM_PROMPT,
+        "system": system_prompt(kind),
         "messages": [{ "role": "user", "content": user_content }],
     })
 }
@@ -167,6 +228,7 @@ pub fn sanitize_line(raw: &str) -> String {
 /// 얇은 HTTP 래퍼 — 이 함수만 네트워크를 만진다. 키 값은 에러에 싣지 않는다.
 pub async fn rewrite(
     api_key: &str,
+    kind: SpeakKind,
     model: TtsRewriteModel,
     agent_name: &str,
     archetype: Option<&str>,
@@ -179,7 +241,11 @@ pub async fn rewrite(
         .timeout(std::time::Duration::from_secs(TIMEOUT_SECS))
         .build()
         .map_err(|e| RewriteError::Network(e.to_string()))?;
-    let body = build_request_body(model, &build_user_content(agent_name, archetype, message));
+    let body = build_request_body(
+        kind,
+        model,
+        &build_user_content(kind, agent_name, archetype, message),
+    );
     let resp = client
         .post(BASE_URL)
         .header("x-api-key", api_key)
@@ -205,7 +271,7 @@ mod tests {
     fn body_omits_sampling_and_thinking_params() {
         // sonnet-5/opus-5는 temperature류를 받으면 400이고, thinking은 과제
         // 지시대로 아예 보내지 않는다.
-        let b = build_request_body(TtsRewriteModel::Opus5, "hi");
+        let b = build_request_body(SpeakKind::Question, TtsRewriteModel::Opus5, "hi");
         let obj = b.as_object().unwrap();
         for forbidden in ["temperature", "top_p", "top_k", "thinking"] {
             assert!(!obj.contains_key(forbidden), "{forbidden} 를 보내면 안 된다");
@@ -217,7 +283,7 @@ mod tests {
 
     #[test]
     fn user_content_carries_character_and_source() {
-        let c = build_user_content("무지", Some("cat"), "확인이 필요합니다");
+        let c = build_user_content(SpeakKind::Question, "무지", Some("cat"), "확인이 필요합니다");
         assert!(c.contains("무지"));
         assert!(c.contains("cat"));
         assert!(c.contains("확인이 필요합니다"));
@@ -225,11 +291,48 @@ mod tests {
 
     #[test]
     fn user_content_falls_back_for_blank_name_and_auto_archetype() {
-        let c = build_user_content("  ", Some("auto"), "m");
+        let c = build_user_content(SpeakKind::Question, "  ", Some("auto"), "m");
         assert!(c.contains("이름 없음"));
         assert!(c.contains("human"), "auto는 확정 전 값이라 human으로 취급");
-        let c2 = build_user_content("A", None, "m");
+        let c2 = build_user_content(SpeakKind::Question, "A", None, "m");
         assert!(c2.contains("human"));
+    }
+
+    // ── 상황(question/done) 분기 ──────────────────────────────────────
+    #[test]
+    fn done_prompt_asks_for_a_report_not_a_question() {
+        let q = system_prompt(SpeakKind::Question);
+        let d = system_prompt(SpeakKind::Done);
+        assert_ne!(q, d, "완료 보고를 질문투로 읽으면 안 된다");
+        assert!(d.contains("작업을 마치고"), "{d}");
+        assert!(q.contains("사용자 확인을 기다리며"), "{q}");
+        // 완료는 뿌듯/홀가분 계열 태그를 지시한다.
+        assert!(d.contains("[relieved]") || d.contains("[cheerful]"), "{d}");
+    }
+
+    #[test]
+    fn user_content_states_the_situation_for_each_kind() {
+        let q = build_user_content(SpeakKind::Question, "무지", None, "m");
+        let d = build_user_content(SpeakKind::Done, "무지", None, "m");
+        assert!(q.contains("사용자 확인을 기다리는 요청"), "{q}");
+        assert!(d.contains("작업을 마친 완료 보고"), "{d}");
+    }
+
+    #[test]
+    fn body_carries_the_kind_specific_system_prompt() {
+        let d = build_request_body(SpeakKind::Done, TtsRewriteModel::Haiku45, "hi");
+        assert_eq!(d["system"], SYSTEM_PROMPT_DONE);
+    }
+
+    #[test]
+    fn speak_kind_wire_values_are_lowercase_and_default_to_question() {
+        assert_eq!(SpeakKind::default(), SpeakKind::Question);
+        assert_eq!(SpeakKind::Question.as_str(), "question");
+        assert_eq!(SpeakKind::Done.as_str(), "done");
+        for k in [SpeakKind::Question, SpeakKind::Done] {
+            let parsed: SpeakKind = serde_json::from_str(&format!("\"{}\"", k.as_str())).unwrap();
+            assert_eq!(parsed, k);
+        }
     }
 
     #[test]

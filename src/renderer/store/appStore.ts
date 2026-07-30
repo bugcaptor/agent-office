@@ -57,7 +57,8 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   summaryProvider: "claude",
   diaryEnabled: false,
   observerEnabled: false,
-  soundEnabled: true,
+  typingSoundEnabled: true,
+  notifySoundEnabled: true,
   soundVolume: 0.5,
   externalTerminal: "terminal",
   externalEditor: "system",
@@ -266,7 +267,8 @@ interface AppState {
         | "summaryProvider"
         | "diaryEnabled"
         | "observerEnabled"
-        | "soundEnabled"
+        | "typingSoundEnabled"
+        | "notifySoundEnabled"
         | "soundVolume"
         | "externalTerminal"
         | "externalEditor"

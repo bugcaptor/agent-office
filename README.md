@@ -62,7 +62,7 @@ agent-office ctl create reviewer --cwd ~/proj
 agent-office ctl send builder "npm test" --enter
 agent-office ctl notifications builder --json
 agent-office ctl dispose reviewer
-agent-office ctl settings set soundEnabled=false
+agent-office ctl settings set typingSoundEnabled=false
 ```
 
 설계·위협모델·전체 명령은 `docs/cli-control-design.md`를 참고하세요.

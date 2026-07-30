@@ -195,14 +195,63 @@ describe("installSoundManager", () => {
     off();
   });
 
-  it("soundEnabled=false면 클릭을 재생하지 않는다", () => {
+  it("typingSoundEnabled=false면 클릭을 재생하지 않는다", () => {
     const { backend, m, off } = install();
     useAppStore.getState().addAgent(AGENT);
-    useAppStore.getState().updateAppSettings({ soundEnabled: false });
+    useAppStore.getState().updateAppSettings({ typingSoundEnabled: false });
     m.dataCbs.get("a1")!("x".repeat(600), 600);
     now += 100;
     vi.advanceTimersByTime(100);
     expect(backend.calls.playClicks).toBeUndefined();
+    off();
+  });
+
+  // ── 소리 3분할: 세 스위치는 서로를 보지 않는다 ─────────────────────
+  it("타건음을 꺼도 알림 딩은 울린다(그리고 그 반대도)", () => {
+    const { backend, m, off } = install();
+    useAppStore.getState().addAgent(AGENT);
+    useAppStore.getState().updateAppSettings({ typingSoundEnabled: false });
+    m.emitNotification(notif("a1"));
+    expect(backend.calls.playDing).toHaveLength(1);
+
+    // 알림음만 끄면 딩은 멎지만 타건음은 그대로다.
+    useAppStore
+      .getState()
+      .updateAppSettings({ typingSoundEnabled: true, notifySoundEnabled: false });
+    m.emitNotification(notif("a1"));
+    expect(backend.calls.playDing).toHaveLength(1);
+    m.dataCbs.get("a1")!("x".repeat(600), 600);
+    for (let i = 0; i < 10; i++) {
+      now += 100;
+      vi.advanceTimersByTime(100);
+    }
+    expect(backend.calls.playClicks?.length).toBeGreaterThan(0);
+    off();
+  });
+
+  it("무음 모드는 타건음·세션 효과음까지 덮는 마스터다", () => {
+    const { backend, m, off } = install();
+    useAppStore.getState().addAgent(AGENT);
+    useAppStore.getState().toggleMuted();
+    m.dataCbs.get("a1")!("x".repeat(600), 600);
+    for (let i = 0; i < 10; i++) {
+      now += 100;
+      vi.advanceTimersByTime(100);
+    }
+    expect(backend.calls.playClicks).toBeUndefined();
+    m.emitSession({ sessionId: "s1", agentId: "a1", at: 1, state: "running" });
+    expect(backend.calls.playSessionStart).toBeUndefined();
+    off();
+  });
+
+  it("notifySoundEnabled=false면 세션 시작·종료 효과음도 멎는다", () => {
+    const { backend, m, off } = install();
+    useAppStore.getState().updateAppSettings({ notifySoundEnabled: false });
+    const base = { sessionId: "s1", agentId: "a1", at: 1 } as const;
+    m.emitSession({ ...base, state: "running" });
+    m.emitSession({ ...base, state: "exited" });
+    expect(backend.calls.playSessionStart).toBeUndefined();
+    expect(backend.calls.playSessionEnd).toBeUndefined();
     off();
   });
 
@@ -233,13 +282,12 @@ describe("installSoundManager", () => {
     off();
   });
 
-  it("ttsEnabled=true면 question(hook) 알림만 발화한다", async () => {
+  it("ttsEnabled=true면 question(hook) 알림을 발화한다", async () => {
     const { backend, m, off } = install();
     useAppStore.getState().addAgent(AGENT);
     useAppStore.getState().updateAppSettings({ ttsEnabled: true });
 
-    // stop(done)/bell(info)은 발화 대상이 아니다.
-    m.emitNotification(notif("a1", "stop"));
+    // bell(info)은 발화 대상이 아니다 — 캐릭터의 말이 아니라 터미널 신호다.
     m.emitNotification(notif("a1", "bell"));
     await vi.advanceTimersByTimeAsync(0);
     expect(m.ttsCalls).toHaveLength(0);
@@ -247,8 +295,38 @@ describe("installSoundManager", () => {
     m.emitNotification(notif("a1", "hook"));
     await vi.waitFor(() => expect(m.ttsCalls).toHaveLength(1));
     // 캐릭터 정보가 스토어에서 실려 나간다(보이스 결정적 배정 키 = seed).
-    expect(m.ttsCalls[0]).toMatchObject({ agentId: "a1", agentName: "테스트", seed: "seed" });
+    expect(m.ttsCalls[0]).toMatchObject({
+      agentId: "a1",
+      agentName: "테스트",
+      seed: "seed",
+      kind: "question",
+    });
     await vi.waitFor(() => expect(backend.calls.playVoice).toHaveLength(1));
+    off();
+  });
+
+  it("stop(done) 알림은 kind=\"done\"으로 발화한다", async () => {
+    const { m, off } = install();
+    useAppStore.getState().addAgent(AGENT);
+    useAppStore.getState().updateAppSettings({ ttsEnabled: true });
+    m.emitNotification(notif("a1", "stop"));
+    await vi.waitFor(() => expect(m.ttsCalls).toHaveLength(1));
+    expect(m.ttsCalls[0]).toMatchObject({ agentId: "a1", kind: "done" });
+    off();
+  });
+
+  it("프로필의 voiceId가 발화 요청에 실린다(미지정이면 필드 자체가 없다)", async () => {
+    const { m, off } = install();
+    useAppStore.getState().addAgent({ ...AGENT, voiceId: "v-manual" });
+    useAppStore.getState().updateAppSettings({ ttsEnabled: true });
+    m.emitNotification(notif("a1", "hook"));
+    await vi.waitFor(() => expect(m.ttsCalls).toHaveLength(1));
+    expect(m.ttsCalls[0].voiceId).toBe("v-manual");
+
+    useAppStore.getState().updateAgent("a1", { voiceId: undefined });
+    m.emitNotification(notif("a1", "hook"));
+    await vi.waitFor(() => expect(m.ttsCalls).toHaveLength(2));
+    expect("voiceId" in m.ttsCalls[1]).toBe(false);
     off();
   });
 

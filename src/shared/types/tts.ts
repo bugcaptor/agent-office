@@ -1,9 +1,9 @@
 // src/shared/types/tts.ts
 //
-// Domain slice: 확인 요청 대사 TTS. AI 에이전트가 사용자 확인을 기다릴 때
-// (알림 source="hook" → notificationType "question") 그 시스템 문구를 캐릭터
-// 말투의 짧은 대사로 리라이트한 뒤 ElevenLabs로 합성해 캐릭터 목소리로
-// 재생한다. stop/bell 알림은 발화하지 않는다.
+// Domain slice: 알림 대사 TTS. AI 에이전트가 사용자 확인을 기다리거나
+// (source="hook" → "question") 작업을 마쳤을 때(source="stop" → "done") 그
+// 시스템 문구를 캐릭터 말투의 짧은 대사로 리라이트한 뒤 ElevenLabs로 합성해
+// 캐릭터 목소리로 재생한다. bell(info) 알림은 발화하지 않는다.
 //
 // 보안 계약: **API 키는 이 경계를 넘지 않는다.** 합성은 전부 백엔드
 // (`src-tauri/src/tts/`)에서 수행되고, 렌더러는 오디오 바이트(base64)만 받는다.
@@ -24,17 +24,40 @@ export type TtsRewriteModel = "claude-haiku-4-5" | "claude-sonnet-5" | "claude-o
  */
 export type TtsRewriteProvider = "auto" | "api" | "claude-cli" | "none";
 
+/**
+ * 무엇을 읽어주는 순간인가 — Rust `tts::rewrite::SpeakKind` 미러.
+ * 리라이트 어조가 갈린다: `question`은 사용자 판단을 청하는 말,
+ * `done`은 이미 끝난 일을 알리는 말(뿌듯/홀가분 계열 태그).
+ * 부재 시 백엔드 기본값은 `question`이다.
+ */
+export type TtsSpeakKind = "question" | "done";
+
 /** `tts_speak` 입력 — Rust `tts::SpeakRequest` 미러. 캐릭터 정보는 스토어에서 온다. */
 export interface TtsSpeakRequest {
   agentId: string;
   /** 캐릭터 이름(말투 힌트). 빈 문자열 허용. */
   agentName: string;
-  /** 캐릭터 아키타입 id. 부재/"auto"는 백엔드가 "human"으로 취급. */
+  /** 캐릭터 아키타입 id. 부재/"auto"는 백엔드가 "human"으로 취급하며,
+   * 보이스 자동 캐스팅의 선호 라벨(성별·연령)도 여기서 갈린다. */
   archetype?: string;
   /** 스프라이트 시드 — 보이스 결정적 배정 키. 비면 agentId로 폴백. */
   seed: string;
   /** 원문 알림 문구. */
   message: string;
+  /** 상황. 부재 = "question"(구버전 호환). */
+  kind?: TtsSpeakKind;
+  /** 프로필에서 수동 지정한 voiceId. 비면 archetype 기반 자동 캐스팅.
+   * 계정 목록에 없는 id면 백엔드가 조용히 자동 배정으로 강등한다. */
+  voiceId?: string;
+}
+
+/** `tts_list_voices` 항목 — Rust `tts::VoiceOption` 미러.
+ * 프로필 다이얼로그의 보이스 드롭다운이 쓴다. **키 값은 실리지 않는다.** */
+export interface TtsVoiceOption {
+  voiceId: string;
+  name: string;
+  /** 사람이 읽는 라벨 요약(예: "female · young · american"). 없으면 빈 문자열. */
+  labels: string;
 }
 
 /** `tts_speak` 결과 — Rust `tts::SpeakResult` 미러. */

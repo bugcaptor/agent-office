@@ -32,6 +32,8 @@ export interface DraftProfile {
   archetype?: string;
   /** 키보드 사운드 팩 id(선택). 빈 문자열 = 기본 팩. */
   keyboardSound?: string;
+  /** 대사 TTS 보이스 id(선택). 빈 문자열 = 종족 기반 자동 캐스팅. */
+  voiceId?: string;
   /** 봇 슬래시 slug 별칭(이슈 #57). 빈 문자열 = 이름에서 자동 파생. */
   botSlug?: string;
   /** 봇 화이트리스트(추가 허용 Gitea 계정). 콤마/줄바꿈 구분 입력. tea 로그인
@@ -59,6 +61,7 @@ export function generateDraft(): DraftProfile {
     spriteRequest: "",
     archetype: "auto",
     keyboardSound: "",
+    voiceId: "",
     botSlug: "",
     botWhitelist: "",
     botPollIntervalSec: "",
@@ -97,6 +100,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
   const appearance = (d.appearance ?? "").trim();
   const spriteRequest = (d.spriteRequest ?? "").trim();
   const keyboardSound = (d.keyboardSound ?? "").trim();
+  const voiceId = (d.voiceId ?? "").trim();
   const archetype = d.archetype && d.archetype !== "auto" ? d.archetype : pickArchetype(d.seed);
   const bot = buildBotConfig(d);
   return {
@@ -115,6 +119,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(appearance ? { appearance } : {}),
     ...(spriteRequest ? { spriteRequest } : {}),
     ...(keyboardSound ? { keyboardSound } : {}),
+    ...(voiceId ? { voiceId } : {}),
     ...(bot ? { bot } : {}),
   };
 }

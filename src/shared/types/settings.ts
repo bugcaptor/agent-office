@@ -37,8 +37,12 @@ export interface AppSettings {
   diaryEnabled: boolean;
   /** 세션 observer 주입 + 로컬 observer 서버 기동(알림·시간측정). */
   observerEnabled: boolean;
-  /** 사무실 앰비언스 사운드(타이핑·효과음·공조음) 재생 여부. 기본 켜짐. */
-  soundEnabled: boolean;
+  /** 키보드 타건음(캐릭터가 출력을 뿜을 때). 기본 켜짐.
+   * 레거시 `soundEnabled` 하나가 담당하던 것을 셋으로 쪼갠 결과 —
+   * 새 키가 없는 설정 파일은 백엔드가 옛 값으로 초기화한다. */
+  typingSoundEnabled: boolean;
+  /** 알림 딩 + 세션 시작/종료 효과음. 기본 켜짐. */
+  notifySoundEnabled: boolean;
   /** 마스터 볼륨 0.0~1.0. 기본 0.5. */
   soundVolume: number;
   /** "OS 터미널로 열기"가 사용할 터미널 앱. 기본 Terminal.app(macOS 전용). */
@@ -67,7 +71,7 @@ export interface AppSettings {
   /** 데스크톱 마스코트 창(이슈 #72) — 활동 중인 캐릭터 1명을 앱 창과 별개의
    * 투명·최상단 창으로 띄운다. 화면을 상시 점유하므로 기본 false. */
   mascotEnabled: boolean;
-  /** 확인 요청 대사 TTS(질문 알림을 캐릭터 목소리로 발화). 외부 유료 API 두 곳을
+  /** 알림 대사 TTS(질문·완료 알림을 캐릭터 목소리로 발화). 외부 유료 API 두 곳을
    * 호출하므로 opt-in — 기본 false. API 키는 이 구조체에 없다(백엔드 0600 파일). */
   ttsEnabled: boolean;
   /** 대사 리라이트에 쓸 Anthropic 모델. 기본 "claude-haiku-4-5". */

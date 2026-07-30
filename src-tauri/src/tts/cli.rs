@@ -33,7 +33,7 @@ use std::time::Duration;
 
 use crate::persistence::settings_store::TtsRewriteModel;
 
-use super::rewrite::{sanitize_line, RewriteError, SYSTEM_PROMPT};
+use super::rewrite::{sanitize_line, system_prompt, RewriteError, SpeakKind};
 
 /// CLI는 API보다 느리다(프로세스 시작 + 인증). API 경로의 6초보다 넉넉히 준다.
 pub const TIMEOUT_SECS: u64 = 20;
@@ -53,7 +53,11 @@ pub const STRIPPED_ENV: &[&str] = &[
 /// non-Windows: `claude` 바이너리를 직접 spawn한다(로그인 셸을 거치지 않으므로
 /// 관찰자 래퍼 함수가 적용되지 않는다 — 격리 근거 1).
 #[cfg(not(windows))]
-pub fn build_command(model: TtsRewriteModel, user_content: &str) -> std::process::Command {
+pub fn build_command(
+    kind: SpeakKind,
+    model: TtsRewriteModel,
+    user_content: &str,
+) -> std::process::Command {
     let mut command = std::process::Command::new("claude");
     command.args([
         "-p",
@@ -65,8 +69,9 @@ pub fn build_command(model: TtsRewriteModel, user_content: &str) -> std::process
         "--max-turns",
         "1",
         // 기본 시스템 프롬프트(코딩 에이전트) 대신 대사 작가 프롬프트로 교체.
+        // 확인 요청/완료 보고에 따라 어조 지시가 갈린다(API 경로와 동일).
         "--system-prompt",
-        SYSTEM_PROMPT,
+        system_prompt(kind),
         // 격리 근거 2.
         "--settings",
         HOOKS_OFF_SETTINGS,
@@ -88,7 +93,11 @@ if (-not $c) { exit 3 }
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-pub fn build_command(model: TtsRewriteModel, user_content: &str) -> std::process::Command {
+pub fn build_command(
+    kind: SpeakKind,
+    model: TtsRewriteModel,
+    user_content: &str,
+) -> std::process::Command {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = std::process::Command::new("powershell.exe");
@@ -96,7 +105,7 @@ pub fn build_command(model: TtsRewriteModel, user_content: &str) -> std::process
     command.creation_flags(CREATE_NO_WINDOW);
     command.env("AO_TTS_PROMPT", user_content);
     command.env("AO_TTS_MODEL", model.as_str());
-    command.env("AO_TTS_SYSTEM", SYSTEM_PROMPT);
+    command.env("AO_TTS_SYSTEM", system_prompt(kind));
     command.env("AO_TTS_SETTINGS", HOOKS_OFF_SETTINGS);
     strip_observer_env(&mut command);
     command
@@ -123,13 +132,14 @@ pub fn parse_output(stdout: &str) -> Result<String, RewriteError> {
 /// `claude -p`를 실행해 대사를 얻는다. 실패는 전부 `RewriteError` — 호출측
 /// (`tts::speak`)이 원문 발화로 강등한다.
 pub async fn rewrite_via_cli(
+    kind: SpeakKind,
     model: TtsRewriteModel,
     agent_name: &str,
     archetype: Option<&str>,
     message: &str,
 ) -> Result<String, RewriteError> {
-    let user_content = super::rewrite::build_user_content(agent_name, archetype, message);
-    let std_command = build_command(model, &user_content);
+    let user_content = super::rewrite::build_user_content(kind, agent_name, archetype, message);
+    let std_command = build_command(kind, model, &user_content);
     let mut command = tokio::process::Command::from(std_command);
     command
         .stdin(std::process::Stdio::null())
@@ -185,7 +195,7 @@ mod tests {
 
     #[test]
     fn command_disables_hooks_via_inline_settings_override() {
-        let c = build_command(TtsRewriteModel::Haiku45, "content");
+        let c = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "content");
         let r = rendered(&c);
         assert!(r.contains("--settings"), "{r}");
         assert!(r.contains(r#"{"hooks":{}}"#), "{r}");
@@ -195,7 +205,7 @@ mod tests {
     // 제거돼야 한다. `env_remove`는 `get_envs()`에 (key, None)으로 나타난다.
     #[test]
     fn command_strips_every_observer_env_var() {
-        let c = build_command(TtsRewriteModel::Haiku45, "content");
+        let c = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "content");
         let removed: Vec<String> = c
             .get_envs()
             .filter(|(_, v)| v.is_none())
@@ -211,7 +221,7 @@ mod tests {
 
     #[test]
     fn command_is_headless_single_turn_text_output() {
-        let c = build_command(TtsRewriteModel::Sonnet5, "content");
+        let c = build_command(SpeakKind::Question, TtsRewriteModel::Sonnet5, "content");
         let r = rendered(&c);
         assert!(r.contains("-p"), "{r}");
         assert!(r.contains("--output-format"), "{r}");
@@ -225,7 +235,7 @@ mod tests {
     // 존재 이유를 무력화한다. 실수로 들어오면 잡는다.
     #[test]
     fn command_does_not_use_bare_mode() {
-        let c = build_command(TtsRewriteModel::Haiku45, "content");
+        let c = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "content");
         assert!(
             !c.get_args().any(|a| a == "--bare"),
             "--bare는 구독 인증을 끊는다"
@@ -237,14 +247,14 @@ mod tests {
     fn non_windows_spawns_the_binary_directly_not_a_login_shell() {
         // 로그인 셸을 거치면 관찰자 `claude` 래퍼 함수가 --settings를 덧붙여
         // 훅이 살아난다(격리 근거 1).
-        let c = build_command(TtsRewriteModel::Haiku45, "content");
+        let c = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "content");
         assert_eq!(c.get_program(), "claude");
     }
 
     #[cfg(not(windows))]
     #[test]
     fn non_windows_passes_user_content_as_the_prompt_arg() {
-        let c = build_command(TtsRewriteModel::Haiku45, "캐릭터 이름: 무지");
+        let c = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "캐릭터 이름: 무지");
         let args: Vec<String> = c.get_args().map(|a| a.to_string_lossy().into()).collect();
         let i = args.iter().position(|a| a == "-p").unwrap();
         assert_eq!(args[i + 1], "캐릭터 이름: 무지");
@@ -253,7 +263,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_uses_powershell_and_passes_args_through_env() {
-        let c = build_command(TtsRewriteModel::Haiku45, "내용");
+        let c = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "내용");
         assert_eq!(c.get_program(), "powershell.exe");
         let val = |name: &str| {
             c.get_envs()
@@ -272,6 +282,16 @@ mod tests {
         assert!(WINDOWS_SCRIPT.contains("--settings $env:AO_TTS_SETTINGS"));
         assert!(WINDOWS_SCRIPT.contains("--max-turns 1"));
         assert!(!WINDOWS_SCRIPT.contains("--bare"));
+    }
+
+    // 완료 보고는 API 경로와 같은 프롬프트를 써야 한다 — 경로에 따라 어조가
+    // 달라지면 사용자에게는 그냥 버그로 보인다.
+    #[test]
+    fn done_kind_swaps_the_system_prompt() {
+        let q = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "c");
+        let d = build_command(SpeakKind::Done, TtsRewriteModel::Haiku45, "c");
+        assert_ne!(rendered(&q), rendered(&d));
+        assert!(rendered(&d).contains("작업을 마치고"));
     }
 
     #[test]

@@ -514,7 +514,8 @@ describe("app settings slice", () => {
       summaryProvider: "claude",
       diaryEnabled: false,
       observerEnabled: false,
-      soundEnabled: true,
+      typingSoundEnabled: true,
+      notifySoundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
       externalEditor: "system",
@@ -540,7 +541,8 @@ describe("app settings slice", () => {
         summaryProvider: "codex",
         diaryEnabled: false,
         observerEnabled: false,
-        soundEnabled: true,
+        typingSoundEnabled: true,
+        notifySoundEnabled: true,
         soundVolume: 0.5,
         externalTerminal: "terminal",
         externalEditor: "system",
@@ -564,7 +566,8 @@ describe("app settings slice", () => {
       summaryProvider: "codex",
       diaryEnabled: false,
       observerEnabled: false,
-      soundEnabled: true,
+      typingSoundEnabled: true,
+      notifySoundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
       externalEditor: "system",
@@ -590,7 +593,8 @@ describe("app settings slice", () => {
       summaryProvider: "codex",
       diaryEnabled: false,
       observerEnabled: true,
-      soundEnabled: true,
+      typingSoundEnabled: true,
+      notifySoundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
       externalEditor: "system",
@@ -615,7 +619,8 @@ describe("app settings slice", () => {
         summaryProvider: "claude",
         diaryEnabled: false,
         observerEnabled: false,
-        soundEnabled: true,
+        typingSoundEnabled: true,
+        notifySoundEnabled: true,
         soundVolume: 0.5,
         externalTerminal: "terminal",
         externalEditor: "system",
@@ -646,7 +651,8 @@ describe("app settings slice", () => {
       summaryProvider: "codex",
       diaryEnabled: false,
       observerEnabled: true,
-      soundEnabled: true,
+      typingSoundEnabled: true,
+      notifySoundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
       externalEditor: "system",
@@ -665,17 +671,17 @@ describe("app settings slice", () => {
 
   it("사운드 설정 기본값은 켜짐/0.5다", () => {
     const s = useAppStore.getState();
-    expect(s.appSettings.soundEnabled).toBe(true);
+    expect(s.appSettings.typingSoundEnabled).toBe(true);
     expect(s.appSettings.soundVolume).toBe(0.5);
   });
 
   it("updateAppSettings가 사운드 설정을 갱신하고 백엔드에 저장한다", () => {
-    useAppStore.getState().updateAppSettings({ soundEnabled: false, soundVolume: 0.2 });
+    useAppStore.getState().updateAppSettings({ typingSoundEnabled: false, soundVolume: 0.2 });
     const s = useAppStore.getState();
-    expect(s.appSettings.soundEnabled).toBe(false);
+    expect(s.appSettings.typingSoundEnabled).toBe(false);
     expect(s.appSettings.soundVolume).toBe(0.2);
     expect(setAppSettingsMock).toHaveBeenCalledWith(
-      expect.objectContaining({ soundEnabled: false, soundVolume: 0.2 })
+      expect.objectContaining({ typingSoundEnabled: false, soundVolume: 0.2 })
     );
   });
 });

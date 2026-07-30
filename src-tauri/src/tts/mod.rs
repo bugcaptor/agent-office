@@ -1,11 +1,12 @@
 // src-tauri/src/tts/mod.rs
 //
-// 확인 요청 대사 TTS. AI 에이전트가 사용자 확인을 기다릴 때(질문 알림,
-// source=hook) 그 시스템 문구를 캐릭터 말투의 짧은 대사로 리라이트하고
-// (rewrite.rs) ElevenLabs로 합성해(synth.rs) 렌더러에 오디오 바이트를 준다.
+// 알림 대사 TTS. AI 에이전트가 사용자 확인을 기다리거나(질문 알림,
+// source=hook) 작업을 마쳤을 때(완료 알림, source=stop) 그 시스템 문구를
+// 캐릭터 말투의 짧은 대사로 리라이트하고(rewrite.rs) ElevenLabs로 합성해
+// (synth.rs) 렌더러에 오디오 바이트를 준다. 어조는 `SpeakKind`로 갈린다.
 //
 // 파이프라인:
-//   문구 ─rewrite─▶ 대사 ─pick_voice(seed 해시)─▶ voice_id
+//   문구 ─rewrite(kind)─▶ 대사 ─assign_voice(지정|archetype+seed)─▶ voice_id
 //         │                └─cache hit?─▶ 디스크 mp3
 //         │                └─miss──────▶ synth(ElevenLabs) ─▶ 캐시 저장
 //         └ 공급자 체인(resolve_rewrite_route): Anthropic Messages API(rewrite.rs)
@@ -51,6 +52,25 @@ pub struct SpeakRequest {
     #[serde(default)]
     pub seed: String,
     pub message: String,
+    /// 무엇을 읽는 순간인지 — 리라이트 어조가 갈린다. 부재 시 `question`
+    /// (구버전 렌더러가 이 필드 없이 보내던 요청은 전부 확인 요청이었다).
+    #[serde(default)]
+    pub kind: rewrite::SpeakKind,
+    /// 프로필에서 수동 지정한 보이스. 비면 archetype 기반 자동 캐스팅.
+    /// 목록에 없는 id면 조용히 자동 배정으로 강등한다(voice::assign_voice).
+    #[serde(default)]
+    pub voice_id: Option<String>,
+}
+
+/// `tts_list_voices` 항목 — 프로필 다이얼로그의 보이스 드롭다운용.
+/// **키는 실리지 않는다**(keys.rs 머리말의 보안 계약).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceOption {
+    pub voice_id: String,
+    pub name: String,
+    /// 사람이 읽는 라벨 요약(예: "female · young · american"). 없으면 빈 문자열.
+    pub labels: String,
 }
 
 /// `tts_speak` 결과. `line`은 실제로 합성된 텍스트(디버그/표시용) —
@@ -301,7 +321,41 @@ fn write_cache(dir: &Path, key: &str, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 확인 요청 문구 하나를 캐릭터 목소리로 합성한다.
+/// 보이스 목록 — 캐시에 있으면 그것, 없으면 1회 조회 후 캐시. 락을 `.await`
+/// 넘어 들고 가지 않는다(잡았다 놓고, 값으로 들고 다닌다).
+async fn voices_of(state: &TtsState, el_key: &str) -> Vec<voice::VoiceRef> {
+    match state.cached_voices() {
+        Some(v) => v,
+        None => {
+            let fetched = voice::fetch_voices(el_key).await;
+            state.store_voices(fetched.clone());
+            fetched
+        }
+    }
+}
+
+/// 프로필 다이얼로그의 보이스 드롭다운용 목록. `speak`과 **같은 캐시**를 쓰므로
+/// 목록을 연 뒤 배정되는 보이스가 화면과 어긋나지 않는다.
+///
+/// 키가 없으면 에러다 — 목록 자체는 폴백이 있지만, 키가 없으면 어차피 발화가
+/// 불가능하므로 "고를 수 있는 것처럼" 보여주지 않는 편이 정직하다.
+pub async fn list_voices(state: &TtsState) -> Result<Vec<VoiceOption>, TtsError> {
+    let el_key = state
+        .keys
+        .elevenlabs_key()
+        .ok_or(TtsError::MissingElevenLabsKey)?;
+    Ok(voices_of(state, &el_key)
+        .await
+        .into_iter()
+        .map(|v| VoiceOption {
+            labels: v.label_summary(),
+            voice_id: v.voice_id,
+            name: v.name,
+        })
+        .collect())
+}
+
+/// 알림 문구 하나를 캐릭터 목소리로 합성한다(확인 요청 또는 완료 보고).
 ///
 /// 락을 `.await` 넘어 들고 가지 않는다 — 보이스 목록은 잡았다 놓고, 나머지
 /// 상태는 값으로 꺼내 쓴다.
@@ -328,22 +382,25 @@ pub async fn speak(
     );
     let attempted = route.label();
     let outcome = match &route {
-        RewriteRoute::Api(key) => {
-            rewrite::rewrite(
-                key,
-                model,
-                &req.agent_name,
-                req.archetype.as_deref(),
-                source,
-            )
-            .await
-            .map(Some)
-        }
-        RewriteRoute::ClaudeCli => {
-            cli::rewrite_via_cli(model, &req.agent_name, req.archetype.as_deref(), source)
-                .await
-                .map(Some)
-        }
+        RewriteRoute::Api(key) => rewrite::rewrite(
+            key,
+            req.kind,
+            model,
+            &req.agent_name,
+            req.archetype.as_deref(),
+            source,
+        )
+        .await
+        .map(Some),
+        RewriteRoute::ClaudeCli => cli::rewrite_via_cli(
+            req.kind,
+            model,
+            &req.agent_name,
+            req.archetype.as_deref(),
+            source,
+        )
+        .await
+        .map(Some),
         RewriteRoute::None => Ok(None),
     };
     let (line, rewritten, rewrite_via) = match outcome {
@@ -358,17 +415,15 @@ pub async fn speak(
         return Err(TtsError::EmptyMessage);
     }
 
-    // ── 2. 보이스 결정적 배정 ─────────────────────────────────────────
-    let voices = match state.cached_voices() {
-        Some(v) => v,
-        None => {
-            let fetched = voice::fetch_voices(&el_key).await;
-            state.store_voices(fetched.clone());
-            fetched
-        }
-    };
-    let picked = voice::pick_voice(&voices, &voice::voice_key(&req.agent_id, &req.seed))
-        .ok_or(TtsError::NoVoiceAvailable)?;
+    // ── 2. 보이스 배정(수동 지정 → archetype 캐스팅 → seed 해시) ──────
+    let voices = voices_of(state, &el_key).await;
+    let picked = voice::assign_voice(
+        &voices,
+        req.voice_id.as_deref(),
+        req.archetype.as_deref(),
+        &voice::voice_key(&req.agent_id, &req.seed),
+    )
+    .ok_or(TtsError::NoVoiceAvailable)?;
 
     // ── 3. v3 시도(캐시 우선) → 실패 시 태그 제거 + v2 ────────────────
     let attempts = [
@@ -560,5 +615,31 @@ mod tests {
         assert_eq!(r.agent_name, "");
         assert_eq!(r.archetype, None);
         assert_eq!(r.seed, "");
+        // 새 필드가 없는 요청은 "확인 요청 + 자동 배정"이다(구버전 호환).
+        assert_eq!(r.kind, rewrite::SpeakKind::Question);
+        assert_eq!(r.voice_id, None);
+    }
+
+    #[test]
+    fn speak_request_reads_kind_and_voice_override() {
+        let r: SpeakRequest = serde_json::from_str(
+            r#"{"agentId":"a1","message":"끝","kind":"done","voiceId":"v-9"}"#,
+        )
+        .unwrap();
+        assert_eq!(r.kind, rewrite::SpeakKind::Done);
+        assert_eq!(r.voice_id.as_deref(), Some("v-9"));
+    }
+
+    #[test]
+    fn voice_option_serializes_camel_case_without_any_key_material() {
+        let v = VoiceOption {
+            voice_id: "v1".into(),
+            name: "Rachel".into(),
+            labels: "female · young".into(),
+        };
+        let json = serde_json::to_string(&v).unwrap();
+        assert!(json.contains("\"voiceId\":\"v1\""), "{json}");
+        assert!(json.contains("\"labels\""), "{json}");
+        assert!(!json.contains("xi-"), "{json}");
     }
 }

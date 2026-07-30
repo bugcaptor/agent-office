@@ -201,7 +201,7 @@ export async function bootApp(): Promise<() => void> {
   const offDiaryAuto = installDiaryAutoWriter();
   const offQuitGuard = installQuitGuard();
   // 설정 하이드레이트 이후에 설치 — fireImmediately 구독이 최신 사운드
-  // 설정(soundEnabled/soundVolume)을 읽는다.
+  // 설정(typingSoundEnabled/notifySoundEnabled/soundVolume)을 읽는다.
   const offSound = installSoundManager();
   const offDayRollover = installDayRollover();
   // 세션 브로커 v2 주기 스냅샷 업로드(브로커 모드일 때만 타이머 가동).

@@ -570,7 +570,7 @@ mod tests {
             &parse(&args(&[
                 "settings",
                 "set",
-                "soundEnabled=false",
+                "typingSoundEnabled=false",
                 "soundVolume=0.25",
                 "attentionHoldMs=3000",
                 "summaryProvider=codex",
@@ -579,7 +579,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(path, "/v1/settings/set");
-        assert_eq!(body["soundEnabled"], false);
+        assert_eq!(body["typingSoundEnabled"], false);
         assert_eq!(body["soundVolume"], 0.25);
         assert_eq!(body["attentionHoldMs"], 3000);
         assert_eq!(body["summaryProvider"], "codex");

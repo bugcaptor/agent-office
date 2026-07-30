@@ -2,7 +2,7 @@
 //
 // src/renderer/settings/__tests__/SettingsDialogTts.test.tsx
 //
-// 확인 요청 대사 TTS 설정 섹션. 토글 OFF면 상세(키 입력·공급자·시청)가 접혀
+// 알림 대사 TTS 설정 섹션. 토글 OFF면 상세(키 입력·공급자·시청)가 접혀
 // 있어야 하고, ON이면 키 상태가 마스킹된 형태로만 표시돼야 한다 —
 // **키 값이 화면에 돌아오는 경로가 없다**는 것이 이 섹션의 핵심 계약이다.
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -49,7 +49,8 @@ function hydrate(patch: Partial<AppSettings> = {}) {
       summaryProvider: "claude",
       diaryEnabled: false,
       observerEnabled: false,
-      soundEnabled: true,
+      typingSoundEnabled: true,
+      notifySoundEnabled: true,
       soundVolume: 0.5,
       externalTerminal: "terminal",
       externalEditor: "system",
@@ -79,11 +80,11 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-describe("SettingsDialog · 확인 요청 대사 TTS", () => {
+describe("SettingsDialog · 알림 대사 TTS", () => {
   it("기본은 꺼짐이고, 꺼져 있으면 키 입력·시청이 노출되지 않는다", () => {
     hydrate();
     render(<SettingsDialog />);
-    const toggle = screen.getByLabelText(/확인 요청 대사 읽어주기/) as HTMLInputElement;
+    const toggle = screen.getByLabelText(/알림 대사 읽어주기/) as HTMLInputElement;
     expect(toggle.checked).toBe(false);
     expect(screen.queryByText(/ElevenLabs API 키/)).toBeNull();
     expect(screen.queryByText("시청 (미리듣기)")).toBeNull();
@@ -92,7 +93,7 @@ describe("SettingsDialog · 확인 요청 대사 TTS", () => {
   it("토글이 updateAppSettings로 반영된다", () => {
     hydrate();
     render(<SettingsDialog />);
-    fireEvent.click(screen.getByLabelText(/확인 요청 대사 읽어주기/));
+    fireEvent.click(screen.getByLabelText(/알림 대사 읽어주기/));
     expect(useAppStore.getState().appSettings.ttsEnabled).toBe(true);
     expect(setAppSettings).toHaveBeenCalled();
   });
@@ -152,6 +153,17 @@ describe("SettingsDialog · 확인 요청 대사 TTS", () => {
     await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
     fireEvent.click(screen.getByText("시청 (미리듣기)"));
     await screen.findByText(/발화: \[nervous\] 이거 진행해도 될까요\?/);
+  });
+
+  // 무음 모드인 줄 모르고 "왜 발화가 안 되지"로 헤매는 사고가 실제로 있었다 —
+  // 미리듣기는 무음에서도 울리므로 그 옆에서 명시적으로 알린다.
+  it("무음 모드면 미리듣기 옆에 실제 알림은 발화되지 않는다고 알린다", async () => {
+    hydrate({ ttsEnabled: true });
+    render(<SettingsDialog />);
+    await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
+    expect(screen.queryByText(/무음 모드가 켜져 있어/)).toBeNull();
+    useAppStore.getState().toggleMuted();
+    await screen.findByText(/무음 모드가 켜져 있어/);
   });
 
   it("claude CLI 경로는 구독 사용량 소모를 안내한다", async () => {

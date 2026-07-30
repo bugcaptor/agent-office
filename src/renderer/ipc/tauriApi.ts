@@ -152,6 +152,10 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.ttsSpeak, { request });
   },
 
+  async ttsListVoices() {
+    return await invoke(Commands.ttsListVoices);
+  },
+
   async ttsKeyStatus() {
     return await invoke(Commands.ttsKeyStatus);
   },

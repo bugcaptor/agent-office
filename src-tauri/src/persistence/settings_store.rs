@@ -5,6 +5,11 @@
 // 신호다. 파손/버전 불일치는 기본값(Claude 기능 OFF, 사운드 ON)으로 폴백하되 first_run은
 // false(파일이 존재했다는 것 자체가 온보딩 완료의 증거 — 유저를 온보딩으로
 // 다시 괴롭히지 않는다). 쓰기는 ProfileStore와 같은 temp+rename 원자 쓰기.
+//
+// 사운드 설정은 한 덩어리(`soundEnabled`)에서 세 갈래(타건음/알림음/TTS)로
+// 쪼개졌다. 파일에 새 키가 없으면 옛 `soundEnabled` 값으로 둘 다 초기화한다
+// (`migrate_sound_keys`) — 버전 올림 없이 로드 시점에 한 번 접어 넣는 방식이라
+// 옛 앱으로 되돌아가도 파일이 깨지지 않는다.
 
 use std::fs;
 use std::path::PathBuf;
@@ -147,9 +152,14 @@ pub struct AppSettings {
     pub diary_enabled: bool,
     #[serde(default, alias = "claudeHooksEnabled")]
     pub observer_enabled: bool,
-    /// 사무실 앰비언스 사운드(타이핑·효과음·공조음) 재생 여부.
+    /// 키보드 타건음(캐릭터가 출력을 뿜을 때 나는 타이핑 소리).
+    /// 레거시 `soundEnabled` 하나가 담당하던 것을 셋(타건/알림/TTS)으로 쪼갠
+    /// 결과다 — 마이그레이션은 `migrate_sound_keys` 참고.
     #[serde(default = "default_true")]
-    pub sound_enabled: bool,
+    pub typing_sound_enabled: bool,
+    /// 알림 딩 + 세션 시작/종료 효과음.
+    #[serde(default = "default_true")]
+    pub notify_sound_enabled: bool,
     /// 마스터 볼륨 0.0~1.0.
     #[serde(default = "default_sound_volume")]
     pub sound_volume: f32,
@@ -221,7 +231,8 @@ impl Default for AppSettings {
             summary_provider: SummaryProvider::Claude,
             diary_enabled: false,
             observer_enabled: false,
-            sound_enabled: true,
+            typing_sound_enabled: true,
+            notify_sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Terminal,
             external_editor: ExternalEditor::System,
@@ -239,6 +250,30 @@ impl Default for AppSettings {
     }
 }
 
+/// 레거시 사운드 키 접기. `soundEnabled` 하나가 담당하던 것을
+/// `typingSoundEnabled`(타건음) + `notifySoundEnabled`(딩·세션 효과음)로 쪼갰다.
+///
+/// 규칙: **새 키가 없을 때만** 옛 `soundEnabled` 값으로 채운다. 새 키가 이미
+/// 있으면 손대지 않는다(사용자가 셋을 따로 만져둔 상태를 옛 키가 덮어쓰면 안
+/// 된다). 옛 키도 없으면 아무것도 하지 않고 serde 기본값(켜짐)에 맡긴다.
+/// `soundEnabled`는 저장 시 더 이상 쓰이지 않으므로 다음 저장에서 사라진다
+/// (`claudeCliEnabled` → `summarizerEnabled` 때와 같은 관례).
+///
+/// 순수 — JSON 값만 만진다.
+pub fn migrate_sound_keys(value: &mut serde_json::Value) {
+    let Some(obj) = value.as_object_mut() else {
+        return;
+    };
+    let Some(legacy) = obj.get("soundEnabled").and_then(|v| v.as_bool()) else {
+        return;
+    };
+    for key in ["typingSoundEnabled", "notifySoundEnabled"] {
+        if !obj.contains_key(key) {
+            obj.insert(key.to_string(), serde_json::Value::Bool(legacy));
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SettingsStore {
     file: PathBuf,
@@ -250,12 +285,22 @@ impl SettingsStore {
     }
 
     /// (설정, first_run). first_run은 "파일이 아예 없다"일 때만 true.
+    ///
+    /// 구조체로 바로 파싱하지 않고 `Value`를 한 번 거치는 이유는 레거시
+    /// 사운드 키 접기(`migrate_sound_keys`) 때문이다 — serde의 필드 기본값은
+    /// **다른 필드 값을 볼 수 없으므로** 파생 매크로만으로는 표현할 수 없다.
     pub fn load(&self) -> (AppSettings, bool) {
         match fs::read(&self.file) {
-            Ok(bytes) => match serde_json::from_slice::<AppSettings>(&bytes) {
-                Ok(s) if s.version == 1 => (s, false),
-                _ => (AppSettings::default(), false),
-            },
+            Ok(bytes) => {
+                let parsed = serde_json::from_slice::<serde_json::Value>(&bytes).map(|mut v| {
+                    migrate_sound_keys(&mut v);
+                    v
+                });
+                match parsed.and_then(serde_json::from_value::<AppSettings>) {
+                    Ok(s) if s.version == 1 => (s, false),
+                    _ => (AppSettings::default(), false),
+                }
+            }
             Err(_) => (AppSettings::default(), true),
         }
     }
@@ -313,7 +358,8 @@ mod tests {
             summary_provider: SummaryProvider::Claude,
             diary_enabled: false,
             observer_enabled: true,
-            sound_enabled: true,
+            typing_sound_enabled: true,
+            notify_sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Terminal,
             external_editor: ExternalEditor::System,
@@ -418,7 +464,8 @@ mod tests {
             summary_provider: SummaryProvider::Codex,
             diary_enabled: false,
             observer_enabled: true,
-            sound_enabled: true,
+            typing_sound_enabled: true,
+            notify_sound_enabled: true,
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Iterm,
             external_editor: ExternalEditor::Vscode,
@@ -563,7 +610,8 @@ mod tests {
         assert!(s.summarizer_enabled);
         assert_eq!(s.summary_provider, SummaryProvider::Claude);
         assert!(!s.observer_enabled);
-        assert!(s.sound_enabled, "부재 시 기본 켜짐");
+        assert!(s.typing_sound_enabled, "부재 시 기본 켜짐");
+        assert!(s.notify_sound_enabled, "부재 시 기본 켜짐");
         assert_eq!(s.sound_volume, 0.5, "부재 시 기본 볼륨 0.5");
         assert_eq!(
             s.external_terminal,
@@ -576,6 +624,65 @@ mod tests {
             "부재 시 기본 시스템 에디터"
         );
         assert_eq!(s.attention_hold_ms, 5000, "부재 시 기본 홀드 5초");
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    // ── 사운드 3분할 마이그레이션 ─────────────────────────────────────
+    //
+    // 옛 설정에는 `soundEnabled` 하나뿐이다. 그 값이 **꺼짐**이었다면 새 키
+    // 둘도 꺼짐이어야 한다 — 업데이트했더니 껐던 타건음이 되살아나는 것이
+    // 이 마이그레이션이 막아야 할 유일한 사고다.
+    #[test]
+    fn legacy_sound_enabled_seeds_both_new_switches() {
+        for legacy in [true, false] {
+            let file = scratch_file();
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(
+                &file,
+                format!(r#"{{"version":1,"soundEnabled":{legacy}}}"#).as_bytes(),
+            )
+            .unwrap();
+            let (s, _) = SettingsStore::new(file.clone()).load();
+            assert_eq!(s.typing_sound_enabled, legacy, "타건음이 옛 값을 따라야 한다");
+            assert_eq!(s.notify_sound_enabled, legacy, "알림음이 옛 값을 따라야 한다");
+            let _ = fs::remove_dir_all(file.parent().unwrap());
+        }
+    }
+
+    #[test]
+    fn new_switches_win_over_legacy_key_when_both_present() {
+        // 새 키를 이미 따로 만져둔 사용자가 있다. 옛 키가 그것을 덮으면 안 된다.
+        let mut v: serde_json::Value = serde_json::from_str(
+            r#"{"version":1,"soundEnabled":false,"typingSoundEnabled":true}"#,
+        )
+        .unwrap();
+        migrate_sound_keys(&mut v);
+        assert_eq!(v["typingSoundEnabled"], serde_json::json!(true), "보존");
+        assert_eq!(v["notifySoundEnabled"], serde_json::json!(false), "채움");
+    }
+
+    #[test]
+    fn migration_is_noop_without_legacy_key() {
+        let mut v: serde_json::Value = serde_json::from_str(r#"{"version":1}"#).unwrap();
+        migrate_sound_keys(&mut v);
+        assert_eq!(v, serde_json::json!({"version":1}), "serde 기본값에 맡긴다");
+    }
+
+    // 저장하면 옛 키는 사라지고 새 키 둘만 남는다(claudeCliEnabled 때와 같은 관례).
+    #[test]
+    fn save_writes_split_sound_keys_and_drops_the_legacy_one() {
+        let file = scratch_file();
+        let store = SettingsStore::new(file.clone());
+        store
+            .save(&AppSettings {
+                typing_sound_enabled: false,
+                ..AppSettings::default()
+            })
+            .unwrap();
+        let json = fs::read_to_string(&file).unwrap();
+        assert!(json.contains("\"typingSoundEnabled\": false"), "{json}");
+        assert!(json.contains("\"notifySoundEnabled\": true"), "{json}");
+        assert!(!json.contains("\"soundEnabled\""), "{json}");
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 }

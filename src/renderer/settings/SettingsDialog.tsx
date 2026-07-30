@@ -47,27 +47,40 @@ export function SettingsDialog() {
           <label className="settings-item">
             <input
               type="checkbox"
-              checked={appSettings.soundEnabled}
-              onChange={(e) => updateAppSettings({ soundEnabled: e.target.checked })}
+              checked={appSettings.typingSoundEnabled}
+              onChange={(e) => updateAppSettings({ typingSoundEnabled: e.target.checked })}
             />
             <span>
-              <strong>사무실 사운드</strong>
-              <small>
-                에이전트가 일할 때 키보드 타이핑 소리와 알림·출퇴근 효과음을
-                재생합니다.
-              </small>
+              <strong>타건음</strong>
+              <small>에이전트가 일할 때 나는 키보드 타이핑 소리입니다.</small>
+            </span>
+          </label>
+          <label className="settings-item">
+            <input
+              type="checkbox"
+              checked={appSettings.notifySoundEnabled}
+              onChange={(e) => updateAppSettings({ notifySoundEnabled: e.target.checked })}
+            />
+            <span>
+              <strong>알림음</strong>
+              <small>알림이 왔을 때의 딩과 세션 시작·종료 효과음입니다.</small>
             </span>
           </label>
           <label className="settings-item">
             <span>
               <strong>볼륨</strong>
+              <small>위 스위치들과 대사 읽어주기가 함께 씁니다.</small>
             </span>
             <input
               type="range"
               min={0}
               max={100}
               value={Math.round(appSettings.soundVolume * 100)}
-              disabled={!appSettings.soundEnabled}
+              disabled={
+                !appSettings.typingSoundEnabled &&
+                !appSettings.notifySoundEnabled &&
+                !appSettings.ttsEnabled
+              }
               onChange={(e) => updateAppSettings({ soundVolume: Number(e.target.value) / 100 })}
             />
           </label>
@@ -242,6 +255,10 @@ const REWRITE_VIA_LABEL: Record<TtsRewriteProvider, string> = {
 function TtsSection() {
   const appSettings = useAppStore((s) => s.appSettings);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
+  // 미리듣기는 무음 모드에서도 울린다(방금 누른 버튼이 침묵하면 고장으로
+  // 보인다). 대신 "실제 알림은 안 나온다"는 사실을 여기서 말해 준다 —
+  // 무음인 줄 모르고 "왜 발화가 안 되지"로 헤매는 사고가 실제로 있었다.
+  const muted = useAppStore((s) => s.muted);
   const [status, setStatus] = useState<TtsStatus | null>(null);
   const [elevenlabs, setElevenlabs] = useState("");
   const [anthropic, setAnthropic] = useState("");
@@ -302,11 +319,12 @@ function TtsSection() {
           onChange={(e) => updateAppSettings({ ttsEnabled: e.target.checked })}
         />
         <span>
-          <strong>확인 요청 대사 읽어주기 (TTS)</strong>
+          <strong>알림 대사 읽어주기 (TTS)</strong>
           <small>
-            캐릭터가 사용자 확인을 기다릴 때, 그 알림 문구를 캐릭터 말투의 짧은
-            대사로 바꿔 목소리로 읽어줍니다. 작업 완료·벨 알림은 읽지 않습니다.
-            ElevenLabs 음성 합성 크레딧을 소모하므로 기본 꺼짐.
+            캐릭터가 확인을 기다리거나 작업을 마쳤을 때, 그 알림 문구를 캐릭터
+            말투의 짧은 대사로 바꿔 목소리로 읽어줍니다(벨 알림은 제외).
+            목소리는 캐릭터 종족에 맞춰 자동으로 정해지며, 캐릭터 편집에서 직접
+            고를 수도 있습니다. ElevenLabs 음성 합성 크레딧을 소모하므로 기본 꺼짐.
           </small>
         </span>
       </label>
@@ -428,6 +446,12 @@ function TtsSection() {
                 시청 (미리듣기)
               </button>
             </div>
+            {muted && (
+              <div style={{ fontSize: 12, opacity: 0.85 }}>
+                무음 모드가 켜져 있어 실제 알림은 발화되지 않습니다 (미리듣기는
+                들립니다).
+              </div>
+            )}
             {note && <div style={{ fontSize: 12, opacity: 0.85 }}>{note}</div>}
           </div>
         </>
