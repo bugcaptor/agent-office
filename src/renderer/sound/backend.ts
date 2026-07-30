@@ -31,9 +31,22 @@ export interface SoundBackend {
   playDing(): void;
   playSessionStart(): void;
   playSessionEnd(): void;
+  /**
+   * 확인 요청 대사 TTS(mp3 바이트)를 재생하고 **재생이 끝나면** resolve한다.
+   * 직렬 큐(voiceQueue.ts)가 이 프라미스로 다음 발화 타이밍을 잡는다.
+   *
+   * 반드시 `decodeAudioData` 경로다 — `media-src` CSP를 건드리지 않기 위해
+   * blob/data URL + `<audio>`를 쓰지 않는다. 대사는 기존 마스터 게인·컴프레서
+   * 체인을 그대로 타므로 타이핑 소리와 함께 울려도 과대음량이 억제된다.
+   * 디코드 실패/컨텍스트 사망 시엔 조용히 즉시 resolve(장식 기능).
+   */
+  playVoice(mp3: ArrayBuffer): Promise<void>;
   setVolume(v: number): void;
   dispose(): void;
 }
+
+/** 대사는 효과음보다 앞서 들려야 하므로 마스터 게인 위에 약간의 부스트를 얹는다. */
+const VOICE_GAIN = 1.15;
 
 const THOCK_CHANCE = 0.12; // 폴백 합성 클릭용: 약 8타에 1번 저역 타건
 
@@ -261,6 +274,45 @@ export function createWebAudioBackend(deps: WebAudioDeps = {}): SoundBackend | n
     playSessionEnd: () => {
       void reviveIfNeeded();
       playSweep(ctx, bus, ctx.currentTime, 660, 330);
+    },
+    async playVoice(mp3) {
+      await reviveIfNeeded();
+      if (disposed) return;
+      // decodeAudioData는 전달된 ArrayBuffer를 detach(소유권 이전)하므로,
+      // 재시도/재사용 가능성을 위해 사본을 넘긴다.
+      let buf: AudioBuffer;
+      try {
+        buf = await ctx.decodeAudioData(mp3.slice(0));
+      } catch (err) {
+        console.warn("sound: 대사 오디오 디코드 실패 — 발화 생략", err);
+        return;
+      }
+      if (disposed) return;
+      // 디코드 중 rebuild가 끼어들었을 수 있다. AudioBuffer는 컨텍스트에 묶이지
+      // 않는 순수 데이터라 새 컨텍스트에서도 그대로 쓸 수 있다(파일 머리말 참고).
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const g = ctx.createGain();
+      g.gain.value = VOICE_GAIN;
+      src.connect(g).connect(bus);
+      await new Promise<void>((resolve) => {
+        // ended가 오지 않는 경우(컨텍스트 사망 등)에도 큐가 막히지 않게
+        // 버퍼 길이 + 여유로 백스톱 타이머를 둔다.
+        const backstop = setTimeout(
+          () => resolve(),
+          Math.ceil(buf.duration * 1000) + 1000
+        );
+        src.onended = () => {
+          clearTimeout(backstop);
+          resolve();
+        };
+        try {
+          src.start();
+        } catch {
+          clearTimeout(backstop);
+          resolve();
+        }
+      });
     },
     setVolume(v) {
       currentGain = v * v; // 청감 보정(제곱) — 재생성 시 새 bus에 재적용할 값으로 보존.

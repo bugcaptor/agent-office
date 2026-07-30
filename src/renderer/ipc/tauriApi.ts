@@ -148,6 +148,22 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.mascotActivate, { agentId });
   },
 
+  async ttsSpeak(request) {
+    return await invoke(Commands.ttsSpeak, { request });
+  },
+
+  async ttsKeyStatus() {
+    return await invoke(Commands.ttsKeyStatus);
+  },
+
+  async ttsSetKeys(elevenlabs?: string, anthropic?: string) {
+    return await invoke(Commands.ttsSetKeys, {
+      // Rust는 Option<String> — 미전달(undefined)은 "기존 값 유지"다.
+      elevenlabs: elevenlabs ?? null,
+      anthropic: anthropic ?? null,
+    });
+  },
+
   async controlStatus() {
     return await invoke(Commands.controlStatus);
   },

@@ -6,11 +6,15 @@ import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { SettingsForm } from "./SettingsForm";
+import { previewVoice } from "../sound/soundManager";
 import type {
   ControlStatus,
   ExternalEditorApp,
   ExternalTerminalApp,
   FileIndexBackend,
+  TtsRewriteModel,
+  TtsRewriteProvider,
+  TtsStatus,
 } from "@shared/types";
 
 export function SettingsDialog() {
@@ -208,6 +212,7 @@ export function SettingsDialog() {
             </select>
           </label>
         </div>
+        <TtsSection />
         <ControlSection enabled={appSettings.cliEnabled} />
         <div className="dialog-actions">
           <button className="pixel-btn" onClick={closeModal}>
@@ -215,6 +220,218 @@ export function SettingsDialog() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** 리라이트 경로 라벨 → 사람이 읽는 이름. "자동"이 실제로 무엇을 고를지 알려준다. */
+const REWRITE_VIA_LABEL: Record<TtsRewriteProvider, string> = {
+  auto: "자동",
+  api: "Anthropic API",
+  "claude-cli": "claude CLI (구독)",
+  none: "리라이트 없음 (원문 발화)",
+};
+
+/**
+ * 확인 요청 대사 TTS 설정.
+ *
+ * 키는 스토어(appSettings)에 들어오지 않는다 — 백엔드가 0600 파일에만 보관하고
+ * 여기에는 **존재 여부**(`TtsStatus`)만 내려온다. 그래서 입력 필드는 항상
+ * 빈 채로 시작하고, 저장 버튼을 눌러야 백엔드로 넘어간다(빈 값 저장 = 삭제).
+ */
+function TtsSection() {
+  const appSettings = useAppStore((s) => s.appSettings);
+  const updateAppSettings = useAppStore((s) => s.updateAppSettings);
+  const [status, setStatus] = useState<TtsStatus | null>(null);
+  const [elevenlabs, setElevenlabs] = useState("");
+  const [anthropic, setAnthropic] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await tauriApi.ttsKeyStatus());
+    } catch {
+      setStatus(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh, appSettings.ttsEnabled, appSettings.ttsRewriteProvider]);
+
+  const saveKeys = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      // 손대지 않은 필드는 undefined로 보내 기존 값을 보존한다.
+      const next = await tauriApi.ttsSetKeys(
+        elevenlabs === "" ? undefined : elevenlabs,
+        anthropic === "" ? undefined : anthropic
+      );
+      setStatus(next);
+      setElevenlabs("");
+      setAnthropic("");
+      setNote("키를 저장했습니다.");
+    } catch (err) {
+      setNote(`키 저장 실패: ${String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const preview = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const line = await previewVoice();
+      setNote(line ? `발화: ${line}` : "발화할 수 없었습니다.");
+    } catch (err) {
+      setNote(`시청 실패: ${String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="settings-form">
+      <label className="settings-item">
+        <input
+          type="checkbox"
+          checked={appSettings.ttsEnabled}
+          onChange={(e) => updateAppSettings({ ttsEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>확인 요청 대사 읽어주기 (TTS)</strong>
+          <small>
+            캐릭터가 사용자 확인을 기다릴 때, 그 알림 문구를 캐릭터 말투의 짧은
+            대사로 바꿔 목소리로 읽어줍니다. 작업 완료·벨 알림은 읽지 않습니다.
+            ElevenLabs 음성 합성 크레딧을 소모하므로 기본 꺼짐.
+          </small>
+        </span>
+      </label>
+
+      {appSettings.ttsEnabled && (
+        <>
+          <label className="settings-item">
+            <span>
+              <strong>대사 리라이트</strong>
+              <small>
+                시스템 문구를 캐릭터 말투로 바꾸는 방법입니다. claude CLI는 API
+                키 없이 쓸 수 있지만 <b>구독 사용량을 소모합니다</b>. "리라이트
+                없음"은 원문 문구를 그대로 읽습니다.
+              </small>
+            </span>
+            <select
+              value={appSettings.ttsRewriteProvider}
+              onChange={(e) =>
+                updateAppSettings({
+                  ttsRewriteProvider: e.target.value as TtsRewriteProvider,
+                })
+              }
+            >
+              <option value="auto">자동 (API 키 → claude CLI → 끄기)</option>
+              <option value="api">Anthropic API 키</option>
+              <option value="claude-cli">claude CLI (구독 사용량 소모)</option>
+              <option value="none">리라이트 없음 (원문 발화)</option>
+            </select>
+          </label>
+
+          <label className="settings-item">
+            <span>
+              <strong>리라이트 모델</strong>
+              <small>한 줄 대사 변환이라 기본(Haiku)으로 충분합니다.</small>
+            </span>
+            <select
+              value={appSettings.ttsRewriteModel}
+              onChange={(e) =>
+                updateAppSettings({
+                  ttsRewriteModel: e.target.value as TtsRewriteModel,
+                })
+              }
+            >
+              <option value="claude-haiku-4-5">Haiku 4.5 (기본·빠름)</option>
+              <option value="claude-sonnet-5">Sonnet 5</option>
+              <option value="claude-opus-5">Opus 5</option>
+            </select>
+          </label>
+
+          <div
+            className="settings-item"
+            style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}
+          >
+            <div style={{ fontSize: 12, opacity: 0.85 }}>
+              {status
+                ? `ElevenLabs 키 ${
+                    status.elevenlabsSet
+                      ? status.elevenlabsFromEnv
+                        ? "있음(환경변수)"
+                        : "있음"
+                      : "없음"
+                  } · Anthropic 키 ${
+                    status.anthropicSet
+                      ? status.anthropicFromEnv
+                        ? "있음(환경변수)"
+                        : "있음"
+                      : "없음"
+                  } · claude CLI ${status.claudeCliAvailable ? "있음" : "없음"} → 리라이트: ${
+                    REWRITE_VIA_LABEL[status.effectiveRewriteVia]
+                  }`
+                : "상태 조회 중…"}
+            </div>
+
+            <label className="settings-item">
+              <span>
+                <strong>ElevenLabs API 키</strong>
+                <small>
+                  음성 합성에 필수입니다. 저장하면 앱에만 보관되고 화면에 다시
+                  표시되지 않습니다. 비우고 저장하면 삭제됩니다
+                  (<code>ELEVENLABS_API_KEY</code> 환경변수도 폴백으로 인정).
+                </small>
+              </span>
+              <input
+                type="password"
+                autoComplete="off"
+                placeholder={status?.elevenlabsSet ? "저장됨 (변경 시 입력)" : "xi-…"}
+                value={elevenlabs}
+                onChange={(e) => setElevenlabs(e.target.value)}
+              />
+            </label>
+
+            <label className="settings-item">
+              <span>
+                <strong>Anthropic API 키 (선택)</strong>
+                <small>
+                  대사 리라이트에만 쓰입니다. 비어 있으면{" "}
+                  <code>ANTHROPIC_API_KEY</code> 환경변수를 쓰고, 그것도 없으면
+                  claude CLI로 넘어갑니다.
+                </small>
+              </span>
+              <input
+                type="password"
+                autoComplete="off"
+                placeholder={status?.anthropicSet ? "저장됨 (변경 시 입력)" : "sk-ant-…"}
+                value={anthropic}
+                onChange={(e) => setAnthropic(e.target.value)}
+              />
+            </label>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="pixel-btn"
+                disabled={busy || (elevenlabs === "" && anthropic === "")}
+                onClick={saveKeys}
+              >
+                키 저장
+              </button>
+              <button className="pixel-btn" disabled={busy} onClick={preview}>
+                시청 (미리듣기)
+              </button>
+            </div>
+            {note && <div style={{ fontSize: 12, opacity: 0.85 }}>{note}</div>}
+          </div>
+        </>
+      )}
     </div>
   );
 }

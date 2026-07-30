@@ -43,6 +43,9 @@ describe("SettingsDialog", () => {
         keepAwakeEnabled: false,
         sessionLogEnabled: true,
         mascotEnabled: false,
+        ttsEnabled: false,
+        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteProvider: "auto",
       },
       false,
     );
@@ -71,6 +74,9 @@ describe("SettingsDialog", () => {
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       mascotEnabled: false,
+      ttsEnabled: false,
+      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteProvider: "auto",
     });
   });
 
@@ -93,6 +99,9 @@ describe("SettingsDialog", () => {
         keepAwakeEnabled: false,
         sessionLogEnabled: true,
         mascotEnabled: false,
+        ttsEnabled: false,
+        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteProvider: "auto",
       },
       false,
     );
@@ -126,6 +135,9 @@ describe("SettingsDialog", () => {
         keepAwakeEnabled: false,
         sessionLogEnabled: true,
         mascotEnabled: false,
+        ttsEnabled: false,
+        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteProvider: "auto",
       },
       false,
     );

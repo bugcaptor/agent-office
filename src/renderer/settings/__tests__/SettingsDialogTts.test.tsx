@@ -1,0 +1,163 @@
+// @vitest-environment jsdom
+//
+// src/renderer/settings/__tests__/SettingsDialogTts.test.tsx
+//
+// 확인 요청 대사 TTS 설정 섹션. 토글 OFF면 상세(키 입력·공급자·시청)가 접혀
+// 있어야 하고, ON이면 키 상태가 마스킹된 형태로만 표시돼야 한다 —
+// **키 값이 화면에 돌아오는 경로가 없다**는 것이 이 섹션의 핵심 계약이다.
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AppSettings, TtsStatus } from "@shared/types";
+
+const ttsKeyStatus = vi.fn<() => Promise<TtsStatus>>();
+const ttsSetKeys = vi.fn<(e?: string, a?: string) => Promise<TtsStatus>>();
+const setAppSettings = vi.fn<(s: unknown) => Promise<void>>(() => Promise.resolve());
+const controlStatus = vi.fn(() => Promise.reject(new Error("not used")));
+
+vi.mock("../../ipc/tauriApi", () => ({
+  tauriApi: {
+    ttsKeyStatus: () => ttsKeyStatus(),
+    ttsSetKeys: (e?: string, a?: string) => ttsSetKeys(e, a),
+    setAppSettings: (s: unknown) => setAppSettings(s),
+    controlStatus: () => controlStatus(),
+  },
+}));
+// 미리듣기는 AudioContext가 필요하니 이 테스트에서는 대체한다.
+vi.mock("../../sound/soundManager", () => ({
+  previewVoice: () => Promise.resolve("[nervous] 이거 진행해도 될까요?"),
+}));
+
+import { useAppStore } from "../../store/appStore";
+import { SettingsDialog } from "../SettingsDialog";
+
+const initialState = useAppStore.getState();
+
+const STATUS: TtsStatus = {
+  elevenlabsSet: true,
+  anthropicSet: false,
+  elevenlabsFromEnv: false,
+  anthropicFromEnv: false,
+  claudeCliAvailable: true,
+  effectiveRewriteVia: "claude-cli",
+};
+
+function hydrate(patch: Partial<AppSettings> = {}) {
+  useAppStore.getState().hydrateSettings(
+    {
+      version: 1,
+      summarizerEnabled: false,
+      summaryProvider: "claude",
+      diaryEnabled: false,
+      observerEnabled: false,
+      soundEnabled: true,
+      soundVolume: 0.5,
+      externalTerminal: "terminal",
+      externalEditor: "system",
+      attentionHoldMs: 5000,
+      gitStatusEnabled: true,
+      fileIndexBackend: "walker",
+      cliEnabled: false,
+      keepAwakeEnabled: false,
+      sessionLogEnabled: true,
+      mascotEnabled: false,
+      ttsEnabled: false,
+      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteProvider: "auto",
+      ...patch,
+    },
+    false,
+  );
+  useAppStore.getState().openModal({ kind: "settings" });
+}
+
+beforeEach(() => {
+  useAppStore.setState(initialState, true);
+  ttsKeyStatus.mockReset().mockResolvedValue(STATUS);
+  ttsSetKeys.mockReset().mockResolvedValue({ ...STATUS, anthropicSet: true });
+  setAppSettings.mockClear();
+});
+
+afterEach(() => cleanup());
+
+describe("SettingsDialog · 확인 요청 대사 TTS", () => {
+  it("기본은 꺼짐이고, 꺼져 있으면 키 입력·시청이 노출되지 않는다", () => {
+    hydrate();
+    render(<SettingsDialog />);
+    const toggle = screen.getByLabelText(/확인 요청 대사 읽어주기/) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    expect(screen.queryByText(/ElevenLabs API 키/)).toBeNull();
+    expect(screen.queryByText("시청 (미리듣기)")).toBeNull();
+  });
+
+  it("토글이 updateAppSettings로 반영된다", () => {
+    hydrate();
+    render(<SettingsDialog />);
+    fireEvent.click(screen.getByLabelText(/확인 요청 대사 읽어주기/));
+    expect(useAppStore.getState().appSettings.ttsEnabled).toBe(true);
+    expect(setAppSettings).toHaveBeenCalled();
+  });
+
+  it("켜면 키 상태를 마스킹된 문장으로만 보여준다 (키 값 노출 경로 없음)", async () => {
+    hydrate({ ttsEnabled: true });
+    render(<SettingsDialog />);
+    await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
+    await screen.findByText(/ElevenLabs 키 있음/);
+    // "자동"이 실제로 무엇을 고를지 안내한다.
+    expect(screen.getByText(/리라이트: claude CLI \(구독\)/)).toBeTruthy();
+    // 입력 필드는 비어 있고 placeholder만 "저장됨"을 알린다.
+    const el = screen.getByPlaceholderText("저장됨 (변경 시 입력)") as HTMLInputElement;
+    expect(el.value).toBe("");
+    expect(el.type).toBe("password");
+  });
+
+  it("공백뿐인 입력이면 저장 버튼이 비활성이고, 입력 후 저장하면 필드를 비운다", async () => {
+    hydrate({ ttsEnabled: true });
+    render(<SettingsDialog />);
+    await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
+    const save = screen.getByText("키 저장") as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+
+    const anthropic = screen.getByPlaceholderText("sk-ant-…") as HTMLInputElement;
+    fireEvent.change(anthropic, { target: { value: "sk-ant-abc" } });
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    // 손대지 않은 ElevenLabs 필드는 undefined로 보내 기존 값을 보존한다.
+    await waitFor(() => expect(ttsSetKeys).toHaveBeenCalledWith(undefined, "sk-ant-abc"));
+    await waitFor(() => expect(anthropic.value).toBe(""));
+    await screen.findByText("키를 저장했습니다.");
+  });
+
+  it("리라이트 공급자/모델 선택이 설정에 반영된다", async () => {
+    hydrate({ ttsEnabled: true });
+    render(<SettingsDialog />);
+    await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
+    // 라벨이 설명문(small)까지 감싸고 있어 접근성 이름으로 특정하기 어렵다 —
+    // 현재 값으로 각 select를 집는다(공급자="auto", 모델="claude-haiku-4-5").
+    const selectByValue = (value: string) =>
+      screen
+        .getAllByRole("combobox")
+        .find((el) => (el as HTMLSelectElement).value === value)!;
+
+    fireEvent.change(selectByValue("auto"), { target: { value: "claude-cli" } });
+    expect(useAppStore.getState().appSettings.ttsRewriteProvider).toBe("claude-cli");
+    fireEvent.change(selectByValue("claude-haiku-4-5"), {
+      target: { value: "claude-opus-5" },
+    });
+    expect(useAppStore.getState().appSettings.ttsRewriteModel).toBe("claude-opus-5");
+  });
+
+  it("시청 버튼이 실제 발화된 대사를 보여준다", async () => {
+    hydrate({ ttsEnabled: true });
+    render(<SettingsDialog />);
+    await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
+    fireEvent.click(screen.getByText("시청 (미리듣기)"));
+    await screen.findByText(/발화: \[nervous\] 이거 진행해도 될까요\?/);
+  });
+
+  it("claude CLI 경로는 구독 사용량 소모를 안내한다", async () => {
+    hydrate({ ttsEnabled: true });
+    render(<SettingsDialog />);
+    await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
+    expect(screen.getByText(/구독 사용량을 소모합니다/)).toBeTruthy();
+  });
+});

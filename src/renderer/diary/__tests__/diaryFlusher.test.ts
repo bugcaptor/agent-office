@@ -38,6 +38,9 @@ const SETTINGS_ON: AppSettings = {
   keepAwakeEnabled: false,
   sessionLogEnabled: true,
   mascotEnabled: false,
+  ttsEnabled: false,
+  ttsRewriteModel: "claude-haiku-4-5",
+  ttsRewriteProvider: "auto",
 };
 
 const NOW = 1_000_000_000_000;

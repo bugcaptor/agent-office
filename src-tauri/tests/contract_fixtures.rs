@@ -22,6 +22,7 @@
 use agent_office_lib::ipc::commands::settings::GetAppSettingsResult;
 use agent_office_lib::persistence::settings_store::{
     AppSettings, ExternalEditor, ExternalTerminal, FileIndexBackend, SummaryProvider,
+    TtsRewriteModel, TtsRewriteProvider,
 };
 use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
@@ -236,6 +237,9 @@ fn get_app_settings_result_matches_fixture() {
             keep_awake_enabled: false,
             session_log_enabled: true,
             mascot_enabled: false,
+            tts_enabled: false,
+            tts_rewrite_model: TtsRewriteModel::Haiku45,
+            tts_rewrite_provider: TtsRewriteProvider::Auto,
         },
         first_run: true,
     };

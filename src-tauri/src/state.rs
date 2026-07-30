@@ -156,6 +156,11 @@ pub struct AppState {
     /// 커맨드가 lease를 갱신/해제하고, lib.rs의 주기 감시 태스크가 lease 만료
     /// 시 강제 해제한다. 설정 `keep_awake_enabled`가 꺼져 있으면 무시된다.
     pub wake_lock: Arc<crate::power::WakeLock>,
+    /// 확인 요청 대사 TTS의 런타임 상태 — API 키 스토어(0600 별도 파일),
+    /// mp3 디스크 캐시, 보이스 목록 1회 캐시. 설정(`tts_enabled`/
+    /// `tts_rewrite_model`)은 `settings`에 있고 **키는 여기에만** 있다
+    /// (설정은 렌더러로 통째로 왕복하므로).
+    pub tts: Arc<crate::tts::TtsState>,
 }
 
 // ── 테스트용 페이크 ────────────────────────────────────────────────────

@@ -68,6 +68,9 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   keepAwakeEnabled: false,
   sessionLogEnabled: true,
   mascotEnabled: false,
+  ttsEnabled: false,
+  ttsRewriteModel: "claude-haiku-4-5",
+  ttsRewriteProvider: "auto",
 };
 
 /**
@@ -274,6 +277,9 @@ interface AppState {
         | "keepAwakeEnabled"
         | "sessionLogEnabled"
         | "mascotEnabled"
+        | "ttsEnabled"
+        | "ttsRewriteModel"
+        | "ttsRewriteProvider"
       >
     >,
   ): void;

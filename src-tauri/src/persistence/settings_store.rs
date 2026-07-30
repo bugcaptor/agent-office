@@ -74,6 +74,64 @@ pub enum FileIndexBackend {
     Everything,
 }
 
+/// 확인 요청 대사 TTS(docs/tts-confirm-line-design.md)의 대사 리라이트에 쓰는
+/// Anthropic 모델. serde 표현이 곧 Messages API의 `model` 문자열이라, 설정
+/// 파일과 와이어에는 `"claude-haiku-4-5"`처럼 모델 id 그대로 실린다(문자열
+/// 필드와 호환되면서 `AppSettings`의 `Copy`는 유지된다 — String 필드를 넣으면
+/// `*settings.read()` 패턴이 전부 깨진다).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TtsRewriteModel {
+    /// 짧은 한 줄 리라이트라 기본은 가장 빠르고 싼 Haiku.
+    #[default]
+    #[serde(rename = "claude-haiku-4-5")]
+    Haiku45,
+    #[serde(rename = "claude-sonnet-5")]
+    Sonnet5,
+    #[serde(rename = "claude-opus-5")]
+    Opus5,
+}
+
+impl TtsRewriteModel {
+    /// Messages API `model` 값. serde rename과 반드시 같아야 한다.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Haiku45 => "claude-haiku-4-5",
+            Self::Sonnet5 => "claude-sonnet-5",
+            Self::Opus5 => "claude-opus-5",
+        }
+    }
+}
+
+/// 대사 리라이트를 누가 수행할지. 기본 `Auto` — 사용 가능한 경로를
+/// 저렴/빠른 순으로 자동 선택한다(`tts::resolve_rewrite_route` 참고).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TtsRewriteProvider {
+    /// 저장 API 키 → ANTHROPIC_API_KEY env → claude CLI → 리라이트 생략.
+    #[default]
+    #[serde(rename = "auto")]
+    Auto,
+    /// Anthropic Messages API만. 키가 없으면 리라이트를 건너뛴다.
+    #[serde(rename = "api")]
+    Api,
+    /// `claude -p` 헤드리스 서브프로세스만. 구독 사용량을 소모한다.
+    #[serde(rename = "claude-cli")]
+    ClaudeCli,
+    /// 리라이트 없음 — 원문 문구를 그대로 읽는다(합성만 사용).
+    #[serde(rename = "none")]
+    None,
+}
+
+impl TtsRewriteProvider {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Api => "api",
+            Self::ClaudeCli => "claude-cli",
+            Self::None => "none",
+        }
+    }
+}
+
 /// 앱 전역 설정. 요약과 관찰자 연동은 기본 OFF이고, 사운드는 기본 ON이다.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,6 +196,21 @@ pub struct AppSettings {
     /// 화면을 상시 점유하는 시스템 표면이라 opt-in — 기본 꺼짐.
     #[serde(default)]
     pub mascot_enabled: bool,
+    /// 확인 요청 대사 TTS — 질문(Hook) 알림 문구를 캐릭터 말투 대사로 리라이트한 뒤
+    /// ElevenLabs로 합성해 캐릭터 목소리로 재생한다. 외부 API 두 곳을 호출해
+    /// 유료 크레딧을 소모하므로 opt-in — 기본 꺼짐. API 키는 이 구조체가 아니라
+    /// `tts::keys::TtsKeyStore`(0600 별도 파일)에 있다 — 설정은 렌더러로 통째로
+    /// 왕복하므로 키를 여기 두면 웹뷰에 노출된다.
+    #[serde(default)]
+    pub tts_enabled: bool,
+    /// 대사 리라이트에 쓸 Anthropic 모델. 기본 `claude-haiku-4-5`.
+    /// API 경로에서는 Messages API의 `model`, claude CLI 경로에서는
+    /// `claude -p --model`의 값으로 같이 쓰인다.
+    #[serde(default)]
+    pub tts_rewrite_model: TtsRewriteModel,
+    /// 대사 리라이트 공급자. 기본 `auto`(API 키 → env → claude CLI → 생략).
+    #[serde(default)]
+    pub tts_rewrite_provider: TtsRewriteProvider,
 }
 
 impl Default for AppSettings {
@@ -159,6 +232,9 @@ impl Default for AppSettings {
             keep_awake_enabled: false,
             session_log_enabled: true,
             mascot_enabled: false,
+            tts_enabled: false,
+            tts_rewrite_model: TtsRewriteModel::Haiku45,
+            tts_rewrite_provider: TtsRewriteProvider::Auto,
         }
     }
 }
@@ -248,6 +324,9 @@ mod tests {
             keep_awake_enabled: false,
             session_log_enabled: true,
             mascot_enabled: false,
+            tts_enabled: false,
+            tts_rewrite_model: TtsRewriteModel::Haiku45,
+            tts_rewrite_provider: TtsRewriteProvider::Auto,
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -350,6 +429,9 @@ mod tests {
             keep_awake_enabled: false,
             session_log_enabled: true,
             mascot_enabled: false,
+            tts_enabled: false,
+            tts_rewrite_model: TtsRewriteModel::Haiku45,
+            tts_rewrite_provider: TtsRewriteProvider::Auto,
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();
@@ -401,6 +483,59 @@ mod tests {
             !names.iter().any(|n| n.contains(".tmp")),
             "no temp left: {names:?}"
         );
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    // TTS(확인 요청 대사)는 외부 유료 API를 부르므로 기본 꺼짐이어야 하고,
+    // 리라이트 모델은 와이어에 모델 id 문자열 그대로 실려야 한다(렌더러
+    // select 값과 Messages API `model`이 같은 문자열을 공유한다).
+    #[test]
+    fn tts_defaults_off_and_model_serializes_as_model_id() {
+        let s = AppSettings::default();
+        assert!(!s.tts_enabled);
+        assert_eq!(s.tts_rewrite_model, TtsRewriteModel::Haiku45);
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"ttsEnabled\":false"), "{json}");
+        assert!(
+            json.contains("\"ttsRewriteModel\":\"claude-haiku-4-5\""),
+            "{json}"
+        );
+        assert_eq!(s.tts_rewrite_provider, TtsRewriteProvider::Auto);
+        assert!(json.contains("\"ttsRewriteProvider\":\"auto\""), "{json}");
+        for p in [
+            TtsRewriteProvider::Auto,
+            TtsRewriteProvider::Api,
+            TtsRewriteProvider::ClaudeCli,
+            TtsRewriteProvider::None,
+        ] {
+            assert_eq!(
+                serde_json::to_value(p).unwrap(),
+                serde_json::Value::String(p.as_str().to_string())
+            );
+        }
+        for m in [
+            TtsRewriteModel::Haiku45,
+            TtsRewriteModel::Sonnet5,
+            TtsRewriteModel::Opus5,
+        ] {
+            assert_eq!(
+                serde_json::to_value(m).unwrap(),
+                serde_json::Value::String(m.as_str().to_string()),
+                "as_str와 serde rename이 어긋나면 API가 404를 낸다"
+            );
+        }
+    }
+
+    // 하위 호환: TTS 키가 없는 기존 settings.json도 기본값(꺼짐/Haiku)으로 로드된다.
+    #[test]
+    fn load_settings_without_tts_fields_falls_back_to_defaults() {
+        let file = scratch_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, br#"{"version":1,"soundEnabled":true}"#).unwrap();
+        let (s, _) = SettingsStore::new(file.clone()).load();
+        assert!(!s.tts_enabled);
+        assert_eq!(s.tts_rewrite_model, TtsRewriteModel::Haiku45);
+        assert_eq!(s.tts_rewrite_provider, TtsRewriteProvider::Auto);
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 

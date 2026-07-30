@@ -39,6 +39,9 @@ describe("FirstRunDialog", () => {
         keepAwakeEnabled: false,
         sessionLogEnabled: true,
         mascotEnabled: false,
+        ttsEnabled: false,
+        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteProvider: "auto",
       },
       false,
     );
@@ -65,6 +68,9 @@ describe("FirstRunDialog", () => {
         keepAwakeEnabled: false,
         sessionLogEnabled: true,
         mascotEnabled: false,
+        ttsEnabled: false,
+        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteProvider: "auto",
       },
       true,
     );
@@ -91,6 +97,9 @@ describe("FirstRunDialog", () => {
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       mascotEnabled: false,
+      ttsEnabled: false,
+      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteProvider: "auto",
     });
   });
 
@@ -113,6 +122,9 @@ describe("FirstRunDialog", () => {
         keepAwakeEnabled: false,
         sessionLogEnabled: true,
         mascotEnabled: false,
+        ttsEnabled: false,
+        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteProvider: "auto",
       },
       true,
     );

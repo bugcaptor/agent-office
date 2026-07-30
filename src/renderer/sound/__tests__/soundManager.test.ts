@@ -13,7 +13,12 @@ vi.mock("../../ipc/tauriApi", () => ({
 import { useAppStore } from "../../store/appStore";
 import { installSoundManager, previewKeyboardSound } from "../soundManager";
 import type { SoundBackend } from "../backend";
-import type { NotificationEvent, SessionStateEvent } from "@shared/types";
+import type {
+  NotificationEvent,
+  NotificationSource,
+  SessionStateEvent,
+  TtsSpeakRequest,
+} from "@shared/types";
 
 function mockBackend(): SoundBackend & { calls: Record<string, unknown[][]> } {
   const calls: Record<string, unknown[][]> = {};
@@ -28,6 +33,9 @@ function mockBackend(): SoundBackend & { calls: Record<string, unknown[][]> } {
     playDing: rec("playDing"),
     playSessionStart: rec("playSessionStart"),
     playSessionEnd: rec("playSessionEnd"),
+    playVoice: (async (mp3: ArrayBuffer) => {
+      (calls.playVoice ??= []).push([mp3.byteLength]);
+    }) as SoundBackend["playVoice"],
     setVolume: rec("setVolume") as SoundBackend["setVolume"],
     dispose: rec("dispose"),
   };
@@ -38,9 +46,11 @@ function mockApi() {
   let notifCb: ((n: NotificationEvent) => void) | null = null;
   let sessionCb: ((e: SessionStateEvent) => void) | null = null;
   const dataUnsubs: string[] = [];
+  const ttsCalls: TtsSpeakRequest[] = [];
   return {
     dataCbs,
     dataUnsubs,
+    ttsCalls,
     emitNotification: (n: NotificationEvent) => notifCb?.(n),
     emitSession: (e: SessionStateEvent) => sessionCb?.(e),
     api: {
@@ -63,6 +73,21 @@ function mockApi() {
           sessionCb = null;
         };
       },
+      // TTS는 기본 꺼짐이라 아래 대부분의 테스트에서 호출되지 않는다. 호출되면
+      // 그 자체가 회귀 신호이므로 spy로 세어둔다(전용 테스트가 검사).
+      ttsSpeak: async (request: TtsSpeakRequest) => {
+        ttsCalls.push(request);
+        return {
+          audioBase64: "AAAA",
+          mimeType: "audio/mpeg",
+          line: "[nervous] " + request.message,
+          voiceId: "v1",
+          modelId: "eleven_v3",
+          cached: false,
+          rewritten: true,
+          rewriteVia: "api" as const,
+        };
+      },
     },
   };
 }
@@ -79,8 +104,8 @@ const AGENT: AgentProfile = {
   deskIndex: 0,
 };
 
-function notif(agentId: string): NotificationEvent {
-  return { id: "n1", sessionId: "s1", agentId, source: "hook", message: "m", dedupKey: "k", at: 1 };
+function notif(agentId: string, source: NotificationSource = "hook"): NotificationEvent {
+  return { id: "n1", sessionId: "s1", agentId, source, message: "m", dedupKey: "k", at: 1 };
 }
 
 describe("installSoundManager", () => {
@@ -196,6 +221,56 @@ describe("installSoundManager", () => {
     useAppStore.getState().toggleMuted();
     m.emitNotification(notif("a1"));
     expect(backend.calls.playDing).toHaveLength(1); // 그대로
+    off();
+  });
+
+  // ── 확인 요청 대사 TTS 게이팅 ──────────────────────────────────────
+  it("ttsEnabled=false(기본)면 question 알림에도 발화하지 않는다", async () => {
+    const { m, off } = install();
+    m.emitNotification(notif("a1"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(m.ttsCalls).toHaveLength(0);
+    off();
+  });
+
+  it("ttsEnabled=true면 question(hook) 알림만 발화한다", async () => {
+    const { backend, m, off } = install();
+    useAppStore.getState().addAgent(AGENT);
+    useAppStore.getState().updateAppSettings({ ttsEnabled: true });
+
+    // stop(done)/bell(info)은 발화 대상이 아니다.
+    m.emitNotification(notif("a1", "stop"));
+    m.emitNotification(notif("a1", "bell"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(m.ttsCalls).toHaveLength(0);
+
+    m.emitNotification(notif("a1", "hook"));
+    await vi.waitFor(() => expect(m.ttsCalls).toHaveLength(1));
+    // 캐릭터 정보가 스토어에서 실려 나간다(보이스 결정적 배정 키 = seed).
+    expect(m.ttsCalls[0]).toMatchObject({ agentId: "a1", agentName: "테스트", seed: "seed" });
+    await vi.waitFor(() => expect(backend.calls.playVoice).toHaveLength(1));
+    off();
+  });
+
+  it("무음 모드(muted)면 발화하지 않는다", async () => {
+    const { m, off } = install();
+    useAppStore.getState().addAgent(AGENT);
+    useAppStore.getState().updateAppSettings({ ttsEnabled: true });
+    useAppStore.getState().toggleMuted();
+    m.emitNotification(notif("a1"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(m.ttsCalls).toHaveLength(0);
+    off();
+  });
+
+  // 딩은 대사와 역할이 다르다(즉시 "왔다" vs 수 초 뒤 "무엇을") — TTS가 켜져
+  // 있어도 딩은 그대로 울려야 하고, 합성이 실패해도 알림을 놓치지 않는다.
+  it("TTS가 켜져 있어도 알림 딩은 그대로 울린다", async () => {
+    const { backend, m, off } = install();
+    useAppStore.getState().addAgent(AGENT);
+    useAppStore.getState().updateAppSettings({ ttsEnabled: true });
+    m.emitNotification(notif("a1"));
+    expect(backend.calls.playDing).toHaveLength(1);
     off();
   });
 

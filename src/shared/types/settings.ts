@@ -23,6 +23,8 @@ export type ExternalEditorApp = "system" | "vscode";
 /** 파일 목록 스캔 백엔드 — Rust `FileIndexBackend` 미러. 기본 walker. */
 export type FileIndexBackend = "walker" | "everything";
 
+import type { TtsRewriteModel, TtsRewriteProvider } from './tts';
+
 /** 앱 전역 opt-in 설정 — Rust `persistence::settings_store::AppSettings` 미러. */
 export interface AppSettings {
   version: number;
@@ -65,6 +67,13 @@ export interface AppSettings {
   /** 데스크톱 마스코트 창(이슈 #72) — 활동 중인 캐릭터 1명을 앱 창과 별개의
    * 투명·최상단 창으로 띄운다. 화면을 상시 점유하므로 기본 false. */
   mascotEnabled: boolean;
+  /** 확인 요청 대사 TTS(질문 알림을 캐릭터 목소리로 발화). 외부 유료 API 두 곳을
+   * 호출하므로 opt-in — 기본 false. API 키는 이 구조체에 없다(백엔드 0600 파일). */
+  ttsEnabled: boolean;
+  /** 대사 리라이트에 쓸 Anthropic 모델. 기본 "claude-haiku-4-5". */
+  ttsRewriteModel: TtsRewriteModel;
+  /** 대사 리라이트 공급자. 기본 "auto"(API 키 → env → claude CLI → 생략). */
+  ttsRewriteProvider: TtsRewriteProvider;
 }
 
 /** `get_app_settings` 응답. firstRun = settings.json 부재(첫 실행). */

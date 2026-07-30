@@ -25,6 +25,7 @@ export * from './types/diary';
 export * from './types/memo';
 export * from './types/usage';
 export * from './types/settings';
+export * from './types/tts';
 export * from './types/markdown';
 export * from './types/git';
 export * from './types/api';

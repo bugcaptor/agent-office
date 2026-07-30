@@ -93,6 +93,9 @@
             keep_awake_enabled: false,
             session_log_enabled: true,
             mascot_enabled: false,
+            tts_enabled: false,
+            tts_rewrite_model: Default::default(),
+            tts_rewrite_provider: Default::default(),
         };
 
         // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
@@ -143,6 +146,9 @@
             keep_awake_enabled: false,
             session_log_enabled: true,
             mascot_enabled: false,
+            tts_enabled: false,
+            tts_rewrite_model: Default::default(),
+            tts_rewrite_provider: Default::default(),
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
         // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.
@@ -186,6 +192,9 @@
             keep_awake_enabled: false,
             session_log_enabled: true,
             mascot_enabled: false,
+            tts_enabled: false,
+            tts_rewrite_model: Default::default(),
+            tts_rewrite_provider: Default::default(),
         };
 
         assert!(set_app_settings_inner(&state, settings).await.is_ok());
@@ -354,6 +363,7 @@
             bot_runtime,
             bot_ctx,
             wake_lock: std::sync::Arc::new(crate::power::WakeLock::new()),
+            tts: std::sync::Arc::new(crate::tts::TtsState::new(&profile_dir)),
         };
         (state, ctl, observer_dir, profile_dir)
     }

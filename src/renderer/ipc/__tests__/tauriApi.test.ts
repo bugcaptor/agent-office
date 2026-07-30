@@ -526,6 +526,9 @@ describe("app settings commands", () => {
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       mascotEnabled: false,
+      ttsEnabled: false,
+      ttsRewriteModel: "claude-haiku-4-5" as const,
+      ttsRewriteProvider: "auto" as const,
     };
     const tauriApi = await importTauriApi();
 

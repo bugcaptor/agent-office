@@ -26,6 +26,7 @@ import type {
   ControlStatus,
 } from './settings';
 import type { BotAgentStatus, BotStatus } from './bot';
+import type { TtsSpeakRequest, TtsSpeakResult, TtsStatus } from './tts';
 import type { DiaryEntry, WorkLogItem } from './diary';
 import type { MemoSheet, MemoSheetMeta } from './memo';
 import type { UsageSnapshot } from './usage';
@@ -100,6 +101,15 @@ export interface AgentOfficeApi {
   /** 마스코트 클릭(#72) — main 창을 앞으로 올리고 해당 에이전트 터미널을
    * 열도록 main에 요청한다. 마스코트 창에서만 호출한다. */
   mascotActivate(agentId: string): Promise<void>;
+  /** 확인 요청 대사 TTS — 문구를 캐릭터 말투 대사로 리라이트한 뒤 합성해
+   * mp3 바이트(base64)를 돌려준다. 설정 `ttsEnabled`가 꺼져 있으면 백엔드가
+   * "tts_disabled:"로 reject한다(백엔드가 최종 게이트 — 외부 API 비용 경로).
+   * 실패 메시지는 pixellab과 같은 `"{code}: {상세}"` 형태다. */
+  ttsSpeak(request: TtsSpeakRequest): Promise<TtsSpeakResult>;
+  /** TTS 키/경로 상태(존재 여부 bool만 — 키 값은 절대 오지 않는다). */
+  ttsKeyStatus(): Promise<TtsStatus>;
+  /** TTS 키 저장. undefined 필드는 기존 값 유지, "" 는 삭제. */
+  ttsSetKeys(elevenlabs?: string, anthropic?: string): Promise<TtsStatus>;
   /** CLI 제어(#55) 상태 조회 — 서버 기동·승인 여부·포트·app_data 경로. */
   controlStatus(): Promise<ControlStatus>;
   /** CLI 제어를 승인(토큰 발급). 2단계 옵트인의 2단계. */

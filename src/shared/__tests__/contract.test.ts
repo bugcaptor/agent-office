@@ -291,6 +291,9 @@ describe("AppSettings (opt-in 설정 계약)", () => {
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       mascotEnabled: false,
+      ttsEnabled: false,
+      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteProvider: "auto",
     });
   });
 

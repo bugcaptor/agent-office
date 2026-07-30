@@ -225,6 +225,9 @@ describe("bootApp", () => {
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       mascotEnabled: false,
+      ttsEnabled: false,
+      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteProvider: "auto",
     });
     expect(s.settingsFirstRun).toBe(false);
     expect(warn).toHaveBeenCalledWith(

@@ -525,6 +525,9 @@ describe("app settings slice", () => {
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       mascotEnabled: false,
+      ttsEnabled: false,
+      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteProvider: "auto",
     });
     expect(s.settingsFirstRun).toBe(false);
   });
@@ -548,6 +551,9 @@ describe("app settings slice", () => {
         keepAwakeEnabled: false,
         sessionLogEnabled: true,
         mascotEnabled: false,
+        ttsEnabled: false,
+        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteProvider: "auto",
       },
       true
     );
@@ -569,6 +575,9 @@ describe("app settings slice", () => {
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       mascotEnabled: false,
+      ttsEnabled: false,
+      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteProvider: "auto",
     });
     expect(s.settingsFirstRun).toBe(true);
   });
@@ -592,6 +601,9 @@ describe("app settings slice", () => {
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       mascotEnabled: false,
+      ttsEnabled: false,
+      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteProvider: "auto",
     });
   });
 
@@ -614,6 +626,9 @@ describe("app settings slice", () => {
         keepAwakeEnabled: false,
         sessionLogEnabled: true,
         mascotEnabled: false,
+        ttsEnabled: false,
+        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteProvider: "auto",
       },
       true
     );
@@ -642,6 +657,9 @@ describe("app settings slice", () => {
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       mascotEnabled: false,
+      ttsEnabled: false,
+      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteProvider: "auto",
     });
   });
 
