@@ -28,6 +28,7 @@ import { MarkdownEditorOverlay } from "./markdown/MarkdownEditorOverlay";
 import { WorkdirPalette } from "./workdir/WorkdirPalette";
 import { DiaryDialog } from "./diary/DiaryDialog";
 import { SessionLogDialog } from "./sessionlog/SessionLogDialog";
+import { MemoArchiveDialog } from "./memo/MemoArchiveDialog";
 import { UIChrome } from "./layout/UIChrome";
 
 // Root component: the 4-layer z-stack.
@@ -111,6 +112,9 @@ function App() {
       <DiaryDialog />
       {/* 세션 로그 보기(docs/session-log-design.md). 같은 층위·관례로 상시 마운트. */}
       <SessionLogDialog />
+      {/* 포스트잇 메모 아카이브(이슈 #79). 위젯 자체는 터미널 오버레이 패널 안에
+          있고, 아카이브 열람만 이 층에 뜬다(터미널을 덮어야 하므로). */}
+      <MemoArchiveDialog />
       <div className="modal-root">
         <ProfileDialog />
         <ConfirmDeleteDialog />

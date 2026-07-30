@@ -24,6 +24,7 @@ import { useMarkdownStore } from "../markdown/markdownStore";
 import { useWorkdirStore } from "../workdir/workdirStore";
 import { useDiaryStore } from "../diary/diaryStore";
 import { useSessionLogStore } from "../sessionlog/sessionLogStore";
+import { useMemoStore } from "../memo/memoStore";
 import { terminalRegistry } from "./TerminalRegistry";
 import { looksLikeAgentRunning } from "./botGuard";
 import { botStatusText } from "./botStatusText";
@@ -110,6 +111,11 @@ export function AgentTabStrip() {
   // 이슈 #56: 캐릭터 일기 열람/생성 오버레이를 연다.
   const openDiary = useDiaryStore((s) => s.openDiary);
   const openSessionLogs = useSessionLogStore((s) => s.open);
+  // 이슈 #79: 포스트잇 메모 위젯 토글 + 아카이브 열람.
+  const memoVisible = useMemoStore((s) => s.visible);
+  const setMemoVisible = useMemoStore((s) => s.setVisible);
+  const toggleMemo = useMemoStore((s) => s.toggleVisible);
+  const openMemoArchive = useMemoStore((s) => s.openArchive);
   // 활성 에이전트의 cwd(문서 버튼 활성 조건). 없으면 버튼 비활성.
   const activeCwd = activeId ? agents[activeId]?.cwd : undefined;
   const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
@@ -273,6 +279,20 @@ export function AgentTabStrip() {
       </button>
       <button
         type="button"
+        className={
+          memoVisible ? "agent-tab-strip-memo agent-tab-strip-memo-on" : "agent-tab-strip-memo"
+        }
+        // 포스트잇 토글(이슈 #79). 위젯은 늘 활성 탭의 장을 보여주므로 이
+        // 버튼도 전역 토글이다 — 켜진 상태는 악센트색으로 구분.
+        title={memoVisible ? "포스트잇 닫기" : "포스트잇 열기"}
+        aria-label={memoVisible ? "포스트잇 닫기" : "포스트잇 열기"}
+        aria-pressed={memoVisible}
+        onClick={toggleMemo}
+      >
+        🗒
+      </button>
+      <button
+        type="button"
         className={`agent-tab-strip-viewmode mode-${viewMode}`}
         // 토글: windowed↔filled. 아이콘은 현재 모드, title은 누르면 갈 다음 모드를 안내한다.
         title={VIEW_MODE_BUTTON[viewMode].label}
@@ -410,6 +430,28 @@ export function AgentTabStrip() {
               icon: "📔",
               onSelect: () =>
                 openDiary(menu.agentId, agents[menu.agentId]?.name ?? "캐릭터"),
+            },
+            {
+              // 이슈 #79: 포스트잇 메모 위젯 토글. 위젯은 늘 활성 탭의 장을
+              // 보여주므로, 활성이 아닌 탭에서 열면 그 탭으로 함께 전환한다
+              // (사용자가 지목한 캐릭터의 메모가 보이도록).
+              label: memoVisible ? "포스트잇 닫기" : "포스트잇 열기",
+              icon: "🗒",
+              onSelect: () => {
+                if (memoVisible && menu.agentId === activeId) {
+                  setMemoVisible(false);
+                  return;
+                }
+                if (menu.agentId !== activeId) openTerminal(menu.agentId);
+                setMemoVisible(true);
+              },
+            },
+            {
+              // 이슈 #79: 넘긴 지난 장들. 위젯 열림 여부와 무관하게 볼 수 있다.
+              label: "메모 아카이브",
+              icon: "🗂",
+              onSelect: () =>
+                void openMemoArchive(menu.agentId, agents[menu.agentId]?.name ?? "캐릭터"),
             },
             {
               // docs/session-log-design.md: 상시 기록된 터미널 전사 목록.

@@ -194,6 +194,10 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--bg-panel);
+  /* 포스트잇 위젯(이슈 #79)이 이 패널 우상단에 absolute로 얹힌다 — 이 선언이
+     없으면 positioning context가 fixed인 .terminal-overlay(=뷰포트 전체)로
+     올라가, windowed 모드에서 쪽지가 패널 밖 화면 우상단에 붙는다. */
+  position: relative;
 }
 
 /* 뷰 모드(이슈 #69). windowed=기본(위). filled는 패널이 오버레이 루트(=앱 창)

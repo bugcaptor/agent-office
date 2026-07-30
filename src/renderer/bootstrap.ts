@@ -25,6 +25,7 @@ import { installWindowFocusTracking } from "./ipc/windowFocus";
 import { installPersistence } from "./store/persist";
 import { installPortraitCache } from "./portrait/portraitCache";
 import { installSpriteCache } from "./sprite/spriteCache";
+import { installMemoCleanup } from "./memo/memoCleanup";
 import { installTaskLabelSummarizer } from "./labels/summarizer";
 import { installWorkLogRecorder } from "./diary/workLog";
 import { installWorkLogPersister, restoreWorkLogs } from "./diary/workLogPersister";
@@ -183,6 +184,9 @@ export async function bootApp(): Promise<() => void> {
   const offPersistence = installPersistence();
   const offPortraits = installPortraitCache();
   const offSprites = installSpriteCache();
+  // 포스트잇 메모(#79) 정리 브리지 — 초상/스프라이트와 같은 지점·같은 방식으로
+  // `agents`에서 사라진 캐릭터의 메모 폴더를 지운다.
+  const offMemos = installMemoCleanup();
   const offSummarizer = installTaskLabelSummarizer();
   // 캐릭터 일기(#60) 작업 로그 영속화 — 디스크 스냅샷을 버퍼로 복원한 뒤(recorder가
   // 새 항목을 붙이기 전에 과거 세션 로그가 자리 잡게), 영속화기를 설치해 이후 변경을
@@ -210,6 +214,7 @@ export async function bootApp(): Promise<() => void> {
     offPersistence();
     offPortraits();
     offSprites();
+    offMemos();
     offSummarizer();
     offWorkLog();
     workLogPersister.dispose();

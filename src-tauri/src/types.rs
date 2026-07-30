@@ -215,6 +215,38 @@ pub struct WorkLogItem {
     pub goal: Option<String>,
 }
 
+/// 에이전트별 포스트잇 메모(#79)의 장(sheet) 한 장. 디스크 원본은
+/// `memos/<agentId>/<sheetId>.txt`(Obsidian식 frontmatter + plain text)이고,
+/// 이 구조체는 그 파싱 결과다. TS `MemoSheet` 미러. agentId는 폴더명이 담으므로
+/// 레코드엔 넣지 않는다. 시각은 로컬 오프셋 포함 RFC3339 문자열 — 사람이
+/// 파일을 직접 열어 읽는 헤더이므로 epoch ms가 아니다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoSheet {
+    /// 생성 시각 기반 식별자(사전순 = 시간순). 파일명에서 확장자를 뗀 것.
+    pub sheet_id: String,
+    /// 장이 만들어진 시각(RFC3339, 로컬 오프셋).
+    pub created: String,
+    /// 마지막 본문 저장 시각(RFC3339, 로컬 오프셋).
+    pub updated: String,
+    /// 넘겨진(아카이브된) 시각. **없으면 이 장이 현재 장**이라는 뜻이다.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub archived: Option<String>,
+    /// 본문(plain text, 마크다운 렌더링 없음).
+    pub content: String,
+}
+
+/// 아카이브 목록 한 항목 — 본문을 뺀 메타만. TS `MemoSheetMeta` 미러.
+/// `archived`가 필수인 점이 `MemoSheet`와 다르다(아카이브된 장만 담기므로).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoSheetMeta {
+    pub sheet_id: String,
+    pub created: String,
+    pub updated: String,
+    pub archived: String,
+}
+
 /// renderer→backend 세션 생성 옵션. 프런트 AgentOfficeApi.createSession(agentId, opts?).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

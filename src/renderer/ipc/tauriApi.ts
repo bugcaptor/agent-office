@@ -228,6 +228,30 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.loadWorkLogs);
   },
 
+  async loadMemo(agentId: string) {
+    return await invoke(Commands.loadMemo, { agentId });
+  },
+
+  async saveMemo(agentId: string, sheetId: string, content: string) {
+    await invoke(Commands.saveMemo, { agentId, sheetId, content });
+  },
+
+  async archiveMemoSheet(agentId: string) {
+    return await invoke(Commands.archiveMemoSheet, { agentId });
+  },
+
+  async listMemoArchive(agentId: string) {
+    return await invoke(Commands.listMemoArchive, { agentId });
+  },
+
+  async readMemoSheet(agentId: string, sheetId: string) {
+    return await invoke(Commands.readMemoSheet, { agentId, sheetId });
+  },
+
+  async deleteMemos(agentId: string) {
+    await invoke(Commands.deleteMemos, { agentId });
+  },
+
   async loadSessionEvents(fromAt: number, toAt: number) {
     return await invoke(Commands.loadSessionEvents, { fromAt, toAt });
   },

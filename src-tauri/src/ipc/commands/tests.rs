@@ -300,6 +300,7 @@
             crate::persistence::diary_store::DiaryStore::new(profile_dir.join("diaries"));
         let work_log_store =
             crate::persistence::work_log_store::WorkLogStore::new(profile_dir.join("worklogs"));
+        let memo_store = crate::persistence::memo_store::MemoStore::new(profile_dir.join("memos"));
         let claude_resume_store =
             Arc::new(crate::persistence::claude_resume_store::ClaudeResumeStore::new(
                 profile_dir.join("claude-resume.json"),
@@ -339,6 +340,7 @@
             session_time_store,
             diary_store,
             work_log_store,
+            memo_store,
             claude_resume_store,
             settings_store,
             settings,

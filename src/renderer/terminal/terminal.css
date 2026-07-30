@@ -85,6 +85,30 @@
   cursor: default;
 }
 
+/* 포스트잇 토글(이슈 #79): 문서 버튼과 뷰 모드 버튼 사이. 문서 버튼의
+   margin-left:auto가 이 그룹 전체를 오른쪽으로 민다. */
+.agent-tab-strip-memo {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--border-dark);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.agent-tab-strip-memo:hover {
+  background: var(--accent);
+}
+
+/* 켜진 상태를 악센트 테두리로 구분(뷰 모드 버튼과 같은 관례). */
+.agent-tab-strip-memo-on {
+  border-color: var(--accent);
+}
+
 /* 뷰 모드 순환 버튼(이슈 #69): 문서 버튼과 닫기 버튼 사이. 문서 버튼의
    margin-left:auto가 이 그룹 전체를 오른쪽으로 민다. */
 .agent-tab-strip-viewmode {

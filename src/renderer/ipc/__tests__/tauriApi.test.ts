@@ -424,6 +424,70 @@ describe("portrait commands", () => {
   });
 });
 
+describe("memo commands (#79)", () => {
+  it("loadMemo는 agentId를 넘기고 현재 장을 돌려준다", async () => {
+    const tauriApi = await importTauriApi();
+    const sheet = {
+      sheetId: "20260730T123456",
+      created: "2026-07-30T12:34:56+09:00",
+      updated: "2026-07-30T13:00:00+09:00",
+      content: "메모",
+    };
+    invoke.mockResolvedValueOnce(sheet);
+
+    expect(await tauriApi.loadMemo("a1")).toEqual(sheet);
+    expect(invoke).toHaveBeenCalledWith(Commands.loadMemo, { agentId: "a1" });
+  });
+
+  it("saveMemo는 agentId/sheetId/content를 camelCase 키로 넘긴다", async () => {
+    const tauriApi = await importTauriApi();
+    await tauriApi.saveMemo("a1", "20260730T123456", "본문");
+    expect(invoke).toHaveBeenCalledWith(Commands.saveMemo, {
+      agentId: "a1",
+      sheetId: "20260730T123456",
+      content: "본문",
+    });
+  });
+
+  it("archiveMemoSheet은 새 빈 장을 돌려준다", async () => {
+    const tauriApi = await importTauriApi();
+    invoke.mockResolvedValueOnce({
+      sheetId: "20260730T130000",
+      created: "2026-07-30T13:00:00+09:00",
+      updated: "2026-07-30T13:00:00+09:00",
+      content: "",
+    });
+
+    const fresh = await tauriApi.archiveMemoSheet("a1");
+
+    expect(invoke).toHaveBeenCalledWith(Commands.archiveMemoSheet, { agentId: "a1" });
+    expect(fresh.content).toBe("");
+  });
+
+  it("listMemoArchive / readMemoSheet / deleteMemos", async () => {
+    const tauriApi = await importTauriApi();
+    invoke.mockResolvedValueOnce([]);
+    expect(await tauriApi.listMemoArchive("a1")).toEqual([]);
+    expect(invoke).toHaveBeenCalledWith(Commands.listMemoArchive, { agentId: "a1" });
+
+    invoke.mockResolvedValueOnce({
+      sheetId: "s1",
+      created: "c",
+      updated: "u",
+      archived: "a",
+      content: "지난 장",
+    });
+    expect((await tauriApi.readMemoSheet("a1", "s1")).content).toBe("지난 장");
+    expect(invoke).toHaveBeenCalledWith(Commands.readMemoSheet, {
+      agentId: "a1",
+      sheetId: "s1",
+    });
+
+    await tauriApi.deleteMemos("a1");
+    expect(invoke).toHaveBeenCalledWith(Commands.deleteMemos, { agentId: "a1" });
+  });
+});
+
 describe("app settings commands", () => {
   it("getAppSettings는 get_app_settings를 인자 없이 invoke한다", async () => {
     invoke.mockResolvedValueOnce({

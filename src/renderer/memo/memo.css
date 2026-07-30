@@ -1,0 +1,252 @@
+/* src/renderer/memo/memo.css
+ *
+ * 에이전트별 포스트잇 메모(#79) 스타일. 두 덩어리다:
+ *   1) .postit*      — 터미널 오버레이 패널 우상단에 얹히는 쪽지 위젯.
+ *   2) .memo-archive* — 아카이브 열람 다이얼로그(diary.css의 .diary-overlay 관례).
+ *
+ * 색·간격은 전역 토큰(tokens.css)만 참조한다. 다만 "포스트잇 감성"의 노란
+ * 종이색만은 테마 토큰에 대응물이 없어 이 파일에서 만든다 — 토큰
+ * --bg-panel-hi 위에 반투명 노란 레이어를 겹치는 방식이라 다크 테마에서도
+ * 배경과 함께 어두워진다(하드코딩 색 하나를 더하는 것보다 테마 내성이 좋다).
+ */
+@import "../styles/tokens.css";
+
+/* ---- 포스트잇 위젯 ---- */
+/* 오버레이 패널(.terminal-overlay-panel) 기준 absolute. 탭 스트립(36px) +
+   요약 바(22px) 아래에서 시작해 헤더 크롬을 가리지 않는다. */
+.postit {
+  position: absolute;
+  top: calc(36px + 22px + var(--unit) * 2);
+  right: calc(var(--unit) * 3);
+  z-index: 5; /* 오버레이 패널 안에서 터미널 위 */
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--unit);
+  padding: calc(var(--unit) * 2);
+  /* 종이 느낌: 패널색 + 노란 기운, 살짝 기운 그림자로 "붙여 놓은" 느낌. */
+  background:
+    linear-gradient(rgba(255, 214, 92, 0.32), rgba(255, 214, 92, 0.32)),
+    var(--bg-panel-hi);
+}
+
+.postit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--unit);
+}
+
+.postit-title {
+  font-family: "DungGeunMo", monospace;
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.postit-x {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  font-family: "DungGeunMo", monospace;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text);
+  background: transparent;
+  border: 2px solid var(--border-dark);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.postit-x:hover {
+  background: var(--accent-warn);
+  color: #0a0b12;
+}
+
+.postit-text {
+  /* plain text 편집 — 마크다운 렌더링 없음(이 위젯의 요점). */
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.42);
+  border: 2px solid var(--border-dark);
+  border-radius: 0;
+  padding: calc(var(--unit) * 1.5);
+  height: 180px;
+  resize: vertical;
+  outline: none;
+}
+
+.postit-text:disabled {
+  opacity: 0.6;
+}
+
+.postit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--unit);
+}
+
+/* 쪽지가 좁으니 공용 .pixel-btn보다 촘촘하게. */
+.postit-btn {
+  font-size: 11px;
+  padding: calc(var(--unit) * 0.75) var(--unit);
+}
+
+.postit-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.postit-notice,
+.postit-stamp {
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+/* ---- 아카이브 다이얼로그 ---- */
+.memo-archive-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40; /* diary/markdown 오버레이와 동일 층 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 11, 18, 0.55);
+}
+
+.memo-archive-dialog {
+  width: min(760px, 92vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  padding: calc(var(--unit) * 4);
+  gap: calc(var(--unit) * 3);
+}
+
+.memo-archive-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--unit) * 2);
+}
+
+.memo-archive-title {
+  font-family: "DungGeunMo", monospace;
+  font-size: 18px;
+  color: var(--text);
+  margin: 0;
+}
+
+.memo-archive-actions {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 2);
+}
+
+.memo-archive-notice {
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: calc(var(--unit) * 2);
+  border: 2px dashed var(--border-dark);
+  overflow-wrap: anywhere;
+}
+
+/* 좌: 목록 / 우: 본문. 2-페인은 workdir 팔레트와 같은 관례. */
+.memo-archive-body {
+  display: flex;
+  gap: calc(var(--unit) * 3);
+  min-height: 0;
+}
+
+.memo-archive-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: none;
+  width: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--unit);
+}
+
+.memo-archive-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 0;
+  padding: calc(var(--unit) * 1.5);
+  cursor: pointer;
+}
+
+.memo-archive-item:hover {
+  border-color: var(--border-dark);
+}
+
+.memo-archive-item-active {
+  background: var(--bg-panel-hi);
+  border-color: var(--accent);
+}
+
+.memo-archive-item-when {
+  font-family: "DungGeunMo", monospace;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.memo-archive-item-sub {
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.memo-archive-view {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--unit);
+  border-left: 3px solid var(--accent);
+  padding-left: calc(var(--unit) * 3);
+  overflow: hidden;
+}
+
+.memo-archive-view-head {
+  font-family: "DungGeunMo", monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.memo-archive-view-body {
+  margin: 0;
+  overflow: auto;
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.memo-archive-empty {
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 13px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: calc(var(--unit) * 8) 0;
+}

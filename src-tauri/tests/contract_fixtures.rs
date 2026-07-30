@@ -26,8 +26,9 @@ use agent_office_lib::persistence::settings_store::{
 use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
     ActivityEvent, ActivityKind, AdoptedSessionInfo, AgentProfile, BotAgentStatus, BotPhase,
-    BotStatus, CreateSessionRequest, CreateSessionResult, NotificationEvent, NotificationSource,
-    OutputChunk, PersistedState, SessionExitInfo, SessionState, SessionStateEvent,
+    BotStatus, CreateSessionRequest, CreateSessionResult, MemoSheet, MemoSheetMeta,
+    NotificationEvent, NotificationSource, OutputChunk, PersistedState, SessionExitInfo,
+    SessionState, SessionStateEvent,
 };
 use agent_office_lib::usage::{
     ClaudeLiveStatus, FetchTransport, LiveFetchOutcome, Provider, ProviderUsage, TokenSource,
@@ -349,4 +350,29 @@ fn bot_status_agent_fields_match_fixture() {
     assert_eq!(a1.poll_interval_sec, 60);
     assert_eq!(a1.last_poll_at_ms, Some(1720000000000));
     assert!(a1.error.is_none());
+}
+
+#[test]
+fn memo_sheet_current_roundtrips() {
+    assert_roundtrip::<MemoSheet>(fixture!("memo-sheet.current.json"));
+}
+
+#[test]
+fn memo_sheet_archived_roundtrips() {
+    assert_roundtrip::<MemoSheet>(fixture!("memo-sheet.archived.json"));
+}
+
+#[test]
+fn memo_sheet_current_has_no_archived_key() {
+    // 현재 장 = `archived` **부재**(null이 아니다). skip_serializing_if가
+    // 빠지면 렌더러의 "현재 장 판별"이 무너지므로 부재를 직접 확인한다.
+    let parsed: MemoSheet = serde_json::from_str(fixture!("memo-sheet.current.json")).unwrap();
+    assert!(parsed.archived.is_none());
+    let value = serde_json::to_value(&parsed).unwrap();
+    assert!(value.get("archived").is_none());
+}
+
+#[test]
+fn memo_sheet_meta_roundtrips() {
+    assert_roundtrip::<MemoSheetMeta>(fixture!("memo-sheet-meta.json"));
 }

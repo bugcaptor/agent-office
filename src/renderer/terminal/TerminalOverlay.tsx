@@ -22,6 +22,7 @@ import { useAppStore } from "../store/appStore";
 import { AgentTabStrip } from "./AgentTabStrip";
 import { TerminalSummaryBar } from "./TerminalSummaryBar";
 import { TerminalHost } from "./TerminalHost";
+import { PostItWidget } from "../memo/PostItWidget";
 
 export function TerminalOverlay() {
   const isOpen = useAppStore((s) => s.activeTerminalAgentId !== null);
@@ -53,6 +54,12 @@ export function TerminalOverlay() {
             — 표시는 오버레이 display 토글이 담당하므로 불변식과 무관하다. */}
         <TerminalSummaryBar />
         <TerminalHost />
+        {/* 포스트잇 메모(이슈 #79). 패널 우상단 absolute — 위 형제들과 달리
+            조건부 렌더여도 무해하다(keep-alive 불변식은 AgentTabStrip/
+            TerminalHost와 그 아래 xterm에만 걸린 것이고, 이 위젯의 본문
+            진실은 디스크다). 패널이 positioning context가 되도록
+            layout.css의 .terminal-overlay-panel에 position:relative가 있다. */}
+        <PostItWidget />
       </div>
     </div>
   );

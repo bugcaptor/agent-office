@@ -38,11 +38,23 @@ const openInVscode = vi.fn().mockResolvedValue(undefined);
 const exportTerminalOutput = vi.fn().mockResolvedValue("/tmp/out.txt");
 // 컨텍스트 메뉴를 열면 이어하기 후보를 조회한다 — 기본은 빈 목록(항목 비활성).
 const listClaudeResumeSessions = vi.fn().mockResolvedValue({});
+// 포스트잇(이슈 #79) 헤더 버튼/메뉴 항목이 memoStore를 건드리므로 그 커맨드도 스텁.
+const loadMemo = vi.fn().mockResolvedValue({
+  sheetId: "s1",
+  created: "2026-07-30T09:00:00+09:00",
+  updated: "2026-07-30T09:00:00+09:00",
+  content: "",
+});
+const saveMemo = vi.fn().mockResolvedValue(undefined);
+const listMemoArchive = vi.fn().mockResolvedValue([]);
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     openInVscode: (...args: unknown[]) => openInVscode(...args),
     exportTerminalOutput: (...args: unknown[]) => exportTerminalOutput(...args),
     listClaudeResumeSessions: (...args: unknown[]) => listClaudeResumeSessions(...args),
+    loadMemo: (...args: unknown[]) => loadMemo(...args),
+    saveMemo: (...args: unknown[]) => saveMemo(...args),
+    listMemoArchive: (...args: unknown[]) => listMemoArchive(...args),
   },
 }));
 
@@ -58,6 +70,7 @@ vi.mock("../TerminalRegistry", () => ({
 }));
 
 const { AgentTabStrip } = await import("../AgentTabStrip");
+const { useMemoStore } = await import("../../memo/memoStore");
 
 function mkProfile(id: string): AgentProfile {
   return {
@@ -72,9 +85,14 @@ function mkProfile(id: string): AgentProfile {
 }
 
 const initialState = useAppStore.getState();
+const initialMemoState = useMemoStore.getState();
 
 beforeEach(() => {
   useAppStore.setState(initialState, true);
+  useMemoStore.setState(initialMemoState, true);
+  loadMemo.mockClear();
+  saveMemo.mockClear();
+  listMemoArchive.mockClear().mockResolvedValue([]);
   generateSpritePreview.mockClear();
   openInVscode.mockClear();
   exportTerminalOutput.mockClear();
@@ -281,6 +299,34 @@ describe("뷰 모드 토글 버튼/단축키(이슈 #69)", () => {
     const e2 = new KeyboardEvent("keydown", opts);
     act(() => void window.dispatchEvent(e2));
     expect(useAppStore.getState().terminalViewMode).toBe("windowed");
+  });
+});
+
+describe("포스트잇 토글 버튼(이슈 #79)", () => {
+  it("헤더 버튼 클릭이 위젯 열림 상태를 토글한다", () => {
+    seedThreeTabs();
+    const { container } = render(<AgentTabStrip />);
+    const btn = container.querySelector(".agent-tab-strip-memo") as HTMLElement;
+    expect(useMemoStore.getState().visible).toBe(false);
+
+    fireEvent.click(btn);
+    expect(useMemoStore.getState().visible).toBe(true);
+
+    fireEvent.click(btn);
+    expect(useMemoStore.getState().visible).toBe(false);
+  });
+
+  it("켜진 상태가 클래스/aria-pressed로 드러난다", () => {
+    seedThreeTabs();
+    const { container } = render(<AgentTabStrip />);
+    const btn = container.querySelector(".agent-tab-strip-memo") as HTMLElement;
+    expect(btn.className).not.toContain("agent-tab-strip-memo-on");
+    expect(btn.getAttribute("aria-pressed")).toBe("false");
+
+    act(() => useMemoStore.getState().setVisible(true));
+
+    expect(btn.className).toContain("agent-tab-strip-memo-on");
+    expect(btn.getAttribute("aria-pressed")).toBe("true");
   });
 });
 
@@ -565,6 +611,55 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
     expect(
       (await findByRole("menuitem", { name: "이전 세션 이어하기" }))
     ).toHaveProperty("disabled", true);
+  });
+
+  it("'포스트잇 열기'는 위젯을 켠다(활성 탭이면 탭 전환 없음)", () => {
+    seedThreeTabs(); // active = a1
+    const { getAllByRole, getByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]); // "Agent a1" = 활성
+    fireEvent.click(getByRole("menuitem", { name: "포스트잇 열기" }));
+
+    expect(useMemoStore.getState().visible).toBe(true);
+    expect(useAppStore.getState().activeTerminalAgentId).toBe("a1");
+  });
+
+  it("비활성 탭에서 '포스트잇 열기'는 그 탭으로 전환한 뒤 위젯을 켠다", () => {
+    seedThreeTabs(); // active = a1
+    const { getAllByRole, getByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[1]); // "Agent a2" = 비활성
+    fireEvent.click(getByRole("menuitem", { name: "포스트잇 열기" }));
+
+    expect(useAppStore.getState().activeTerminalAgentId).toBe("a2");
+    expect(useMemoStore.getState().visible).toBe(true);
+  });
+
+  it("이미 켜진 상태에서 활성 탭의 항목은 '포스트잇 닫기'로 바뀌고 끈다", () => {
+    seedThreeTabs();
+    act(() => useMemoStore.getState().setVisible(true));
+    const { getAllByRole, getByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    fireEvent.click(getByRole("menuitem", { name: "포스트잇 닫기" }));
+
+    expect(useMemoStore.getState().visible).toBe(false);
+  });
+
+  it("'메모 아카이브' 선택 시 그 캐릭터의 아카이브를 연다", async () => {
+    seedThreeTabs();
+    const { getAllByRole, getByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[1]); // "Agent a2"
+    fireEvent.click(getByRole("menuitem", { name: "메모 아카이브" }));
+
+    await vi.waitFor(() =>
+      expect(useMemoStore.getState().archive).toEqual({
+        agentId: "a2",
+        agentName: "Agent a2",
+      })
+    );
+    expect(listMemoArchive).toHaveBeenCalledWith("a2");
   });
 
   it("'퇴근' 선택 시 confirm-clock-out 모달을 열고 메뉴는 닫힌다", () => {

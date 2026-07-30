@@ -61,6 +61,14 @@ export const Commands = {
   // 캐릭터 일기(이슈 #60) — 작업 로그 스냅샷 save/load(영속 보존·부팅 복원).
   saveWorkLog: "save_work_log",
   loadWorkLogs: "load_work_logs",
+  // 에이전트별 포스트잇 메모(이슈 #79) — 현재 장 로드/저장, 한 장 넘기기,
+  // 아카이브 목록/열람, 캐릭터 삭제 시 폴더 정리.
+  loadMemo: "load_memo",
+  saveMemo: "save_memo",
+  archiveMemoSheet: "archive_memo_sheet",
+  listMemoArchive: "list_memo_archive",
+  readMemoSheet: "read_memo_sheet",
+  deleteMemos: "delete_memos",
   loadSessionEvents: "load_session_events",
   // 세션 로그(docs/session-log-design.md) — 상시 기록된 터미널 전사 목록/열기와,
   // 그중 하나로 만드는 회고·학습자료(수동 트리거).

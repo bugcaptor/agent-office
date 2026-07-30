@@ -40,7 +40,7 @@ interface AgentOfficeApi {
 ## 0.5 현재 파일 레이아웃 (2026-07-20)
 
 `src/renderer/`는 24개 기능 폴더로 모듈화돼 있다(구조 건강 — REBUILD-PLAN §2.5 진단).
-계약 타입은 `src/shared/types/{common,session,notification,bot,profile,diary,usage,settings,markdown,git,api}.ts` 분할 배럴(`shared/types.ts`는 재수출), 커맨드명은 `src/shared/ipc.ts`.
+계약 타입은 `src/shared/types/{common,session,notification,bot,profile,diary,memo,usage,settings,markdown,git,api}.ts` 분할 배럴(`shared/types.ts`는 재수출), 커맨드명은 `src/shared/ipc.ts`.
 
 | 폴더 | 담당 (정본 절/문서) |
 |---|---|
@@ -57,6 +57,7 @@ interface AgentOfficeApi {
 | `usage/` | 사용량 위젯·다이얼로그 (usage-design 문서) |
 | `timeline/` | turnReducer·SessionTimePanel |
 | `diary/`, `labels/`, `desk/`, `agent/`, `portrait/`, `sprite/` | 일기·라벨·책상·캐릭터 편집·초상·스프라이트 편집 |
+| `memo/` | 에이전트별 포스트잇 메모 — 위젯·아카이브 다이얼로그 (§13) |
 | `settings/`, `about/`, `sound/`, `ui/` | 설정(CLI 제어 승인 UI 포함)·정보·사운드·공용 위젯(ContextMenu 등) |
 
 ## 1. 앱 레이아웃 & 윈도우 설계
@@ -1325,3 +1326,97 @@ Markdown(기본)과 JSON 두 가지를 지원하되 **UI에는 버튼 하나**�
   않는다(스토어 stale 가드 관례).
 - 버튼은 **다이얼로그 헤더에만** 둔다(캐릭터 컨텍스트 메뉴 비대화 방지, 사용자 결정).
   일기 0편이면 비활성.
+
+## 13. 에이전트별 포스트잇 메모 (이슈 #79)
+
+터미널 오버레이 **우상단에 붙은 쪽지 한 장**. 사람이 캐릭터별 작업 컨텍스트를
+직접 적어 두는 곳이며, 에이전트가 읽거나 쓰지 않는다 — 일기(#56/#60)가 LLM이
+쓰는 기록인 것과 정반대다. `AgentProfile.note`와도 무관하다(그쪽은 프로필 속성).
+
+### 13.1 왜 파일이고, 왜 plain text인가
+
+저장 형식은 `<app_data>/memos/<agentId>/<sheetId>.txt` — **장(sheet) 단위 파일**에
+Obsidian식 frontmatter 헤더 + plain text 본문이다.
+
+```
+---
+created: 2026-07-30T12:34:56+09:00
+updated: 2026-07-30T13:00:00+09:00
+archived: 2026-07-31T09:00:00+09:00   (넘긴 장에만)
+---
+본문
+```
+
+- **JSON이 아닌 이유**: 이 파일은 사용자가 에디터로 직접 열어 읽고 고칠 수 있어야
+  한다. 본문이 JSON 문자열로 이스케이프되면 그 성질을 잃는다. 그래서 시각도
+  epoch ms가 아니라 로컬 오프셋이 붙은 RFC3339 문자열이다(사람이 읽는 헤더).
+- **마크다운 렌더링 없음**: 위젯 본문은 `<textarea>`이고 렌더 단계가 없다. "쓰는
+  대로 보인다"가 요점이라 마크다운 뷰어(#10)와 다른 갈래다.
+- **파서는 손으로 짠 `key: value`**: 우리가 쓰는 키는 3개뿐이라 yaml 크레이트를
+  들이지 않는다. 본문에 `---` 줄이 있어도 깨지지 않게, **헤더는 파일 첫 줄이 정확히
+  `---`일 때만** 시작하고 **두 번째 `---`까지**다. 닫는 `---`가 없으면 헤더가 아닌
+  것으로 보고 파일 전체를 본문으로 돌린다(모르는 키는 무시 — 전방 호환).
+- 쓰기는 tmp+rename 원자 교체(`work_log_store.rs`와 같은 패턴), `agentId`/`sheetId`는
+  경로 요소로 쓰기 전 `validate_id`로 거른다(`diary_store.rs` 규칙 복제 — 공유 헬퍼
+  없음이 이 저장소 관례).
+
+### 13.2 "한 장 넘기기" = 스탬프, 이동 아님
+
+**현재 장 = frontmatter에 `archived` 키가 없는 유일한 파일**이라는 불변식 하나로
+전체 모델이 돈다. 넘기기는 파일을 옮기거나 지우지 않고 헤더에 `archived` 스탬프만
+더한다 — 그래서 `sheetId`(=파일명)가 영구히 고정되고, 아카이브 열람은 같은 폴더를
+다시 읽는 것으로 끝난다.
+
+- `sheetId`는 생성 시각 기반(`20260730T123456`)이라 **사전순 = 시간순**이다. 같은
+  초에 두 장이 생기면 `-1`, `-2` 접미사가 붙어 그 성질을 지킨다.
+- `save`는 이미 붙은 `archived` 스탬프를 **절대 지우지 않는다**. 넘기기 직후 뒤늦게
+  도착한 디바운스 저장이 스탬프를 되살리면 "현재 장 둘"이 되기 때문이다.
+- 그래도 `archived` 없는 장이 둘 이상 발견되면(외부 편집 등) `load_current`가 가장
+  최근 것만 현재 장으로 남기고 나머지에 스탬프를 찍는다 — 삭제가 아니라 아카이브로
+  밀어 넣는 방어적 복구다.
+
+### 13.3 저장 버튼이 없다
+
+사용자가 인지하는 저장은 전부 자동이다. `memoStore`가 세 경로를 보장한다:
+
+1. 타이핑 → `edit()`이 1초 디바운스 후 `saveMemo`.
+2. blur / 에이전트 전환 / 위젯 닫힘 / 넘기기 직전 / 아카이브 열기 → `flush()`가
+   예약된 타이머를 취소하고 즉시 저장.
+3. 저장 실패는 `dirty`를 되살려 다음 `flush`에서 재시도한다.
+
+전환 시에는 **`agentId`를 갈아치우기 전에** 이전 캐릭터의 `flush`를 await 한다 —
+그러지 않으면 마지막 타이핑이 새 캐릭터의 장에 쓰인다.
+
+### 13.4 콘솔 연동은 복붙뿐
+
+텍스트 선택 복사 + "전체 복사" 버튼(`navigator.clipboard`) 둘뿐이다. 프롬프트
+주입/전송은 **의도적으로 만들지 않았다** — 메모는 사람의 작업 기억이고, 자동 주입은
+봇 모드(#57)가 다루는 별개 문제다.
+
+### 13.5 배치와 격리
+
+- 위젯은 `TerminalOverlay`의 `.terminal-overlay-panel` 안에 `position: absolute`로
+  얹힌다(그래서 패널에 `position: relative`가 필요하다 — 없으면 fixed인
+  `.terminal-overlay`가 기준이 되어 windowed 모드에서 쪽지가 패널 밖에 붙는다).
+- **keep-alive 불변식과 무관**하다: 그 불변식은 `AgentTabStrip`/`TerminalHost`와 그
+  아래 xterm 인스턴스에 걸린 것이고, 이 위젯은 형제이며 본문의 진실은 디스크다.
+  그래서 닫으면 조건부 렌더로 언마운트한다(언마운트 직전 `flush`).
+- 위젯 안의 keydown/keyup은 `stopPropagation` 한다. 터미널 오버레이가 window에
+  `Cmd/Ctrl+1..9`·`Cmd+W`를 걸어 두므로, 그대로 두면 메모를 타이핑하다 탭이 바뀐다
+  (React는 루트 컨테이너에 리스너를 붙이므로 여기서 멈추면 window까지 못 간다).
+- 로드가 끝나기 전에는 `<textarea>`를 disabled로 둔다 — 빈 `draft`가 디스크의 본문을
+  덮어쓰는 사고 방지.
+
+### 13.6 상태/파일 배치
+
+- 열림 여부는 **전역**이고 localStorage에 영속한다(`memoVisibility.ts`,
+  `terminalViewMode.ts`와 같은 순수 모듈 관례). 위젯은 늘 활성 탭의 장을 보여주므로
+  "포스트잇을 띄워 둔다"는 사용자의 작업 습관이지 캐릭터의 속성이 아니다.
+- `memoStore`는 appStore와 비커플링(독립 스토어 관례). 활성 탭이 무엇인지는
+  `PostItWidget`이 appStore에서 읽어 `focusAgent`로 밀어 넣는다.
+- 캐릭터 삭제 시 정리는 `memoCleanup.ts`가 appStore의 `agents` 구독에서 사라진 id를
+  잡아 `deleteMemos`를 부른다 — 초상/스프라이트(`portraitCache`/`spriteCache`)와 **같은
+  지점·같은 방식**이다(이 저장소에는 "캐릭터 삭제" 백엔드 커맨드가 없다).
+- 진입점 둘: 터미널 헤더의 `🗒` 토글 버튼(문서 버튼과 뷰 모드 버튼 사이)과 탭 우클릭
+  메뉴의 "포스트잇 열기/닫기"·"메모 아카이브". 비활성 탭에서 메뉴로 열면 그 탭으로
+  함께 전환한다(사용자가 지목한 캐릭터의 메모가 보이도록).

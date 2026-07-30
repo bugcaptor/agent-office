@@ -95,6 +95,85 @@ pub async fn load_work_logs(
     Ok(app_state.work_log_store.load_all())
 }
 
+/// 포스트잇 메모(#79) 현재 장을 읽는다. 없으면 새 빈 장을 만들어 돌려준다 —
+/// 렌더러는 "장이 없는 상태"를 다루지 않는다(항상 쓸 수 있는 한 장이 있다).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_memo(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<crate::types::MemoSheet, String> {
+    app_state
+        .memo_store
+        .load_current(&agent_id)
+        .map_err(|e| e.to_string())
+}
+
+/// 지목한 장의 본문을 교체하고 `updated`를 갱신한다(디바운스 자동저장의 착지점).
+/// `created`와 이미 붙은 `archived` 스탬프는 보존된다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn save_memo(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+    sheet_id: String,
+    content: String,
+) -> Result<(), String> {
+    app_state
+        .memo_store
+        .save(&agent_id, &sheet_id, &content)
+        .map_err(|e| e.to_string())
+}
+
+/// 현재 장을 통째로 아카이브(삭제 아님 — frontmatter에 `archived` 스탬프 추가)하고,
+/// 즉시 만들어진 새 빈 장을 돌려준다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn archive_memo_sheet(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<crate::types::MemoSheet, String> {
+    app_state
+        .memo_store
+        .archive_current(&agent_id)
+        .map_err(|e| e.to_string())
+}
+
+/// 아카이브된 장들의 메타 목록(최신순, 본문 제외).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_memo_archive(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<Vec<crate::types::MemoSheetMeta>, String> {
+    app_state
+        .memo_store
+        .list_archive(&agent_id)
+        .map_err(|e| e.to_string())
+}
+
+/// 특정 장 전체(본문 포함) — 아카이브 열람용.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn read_memo_sheet(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+    sheet_id: String,
+) -> Result<crate::types::MemoSheet, String> {
+    app_state
+        .memo_store
+        .read_sheet(&agent_id, &sheet_id)
+        .map_err(|e| e.to_string())
+}
+
+/// 캐릭터 삭제 시 그 캐릭터의 메모 폴더를 통째로 정리한다. 초상/스프라이트
+/// 삭제와 같은 브리지(렌더러 `agents` 구독)에서 호출된다. 부재는 무해 통과.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn delete_memos(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<(), String> {
+    app_state
+        .memo_store
+        .delete_agent(&agent_id)
+        .map_err(|e| e.to_string())
+}
+
 /// 세션 이벤트 시계열에서 `from_at..=to_at`(epoch ms) 범위를 읽는다(분석 패널용).
 /// 읽기 전용 — 수집 측 `SessionEventStore`는 건드리지 않는다
 /// (docs/session-analytics-design.md §4.2). reader가 없는 파일·손상 줄을

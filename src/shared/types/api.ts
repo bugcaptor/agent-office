@@ -27,6 +27,7 @@ import type {
 } from './settings';
 import type { BotAgentStatus, BotStatus } from './bot';
 import type { DiaryEntry, WorkLogItem } from './diary';
+import type { MemoSheet, MemoSheetMeta } from './memo';
 import type { UsageSnapshot } from './usage';
 import type {
   MarkdownListResult,
@@ -157,6 +158,20 @@ export interface AgentOfficeApi {
   saveWorkLog(agentId: string, items: WorkLogItem[]): Promise<void>;
   /** 전 캐릭터의 작업 로그 스냅샷을 읽는다(부팅 복원용). 손상/부재는 건너뛴다. */
   loadWorkLogs(): Promise<Record<string, WorkLogItem[]>>;
+  /** 포스트잇 메모(#79) 현재 장을 읽는다. 없으면 백엔드가 새 빈 장을 만들어
+   *  돌려주므로 "장이 없는 상태"는 렌더러에 존재하지 않는다. */
+  loadMemo(agentId: AgentId): Promise<MemoSheet>;
+  /** 지목한 장의 본문을 교체하고 `updated`를 갱신한다(디바운스 자동저장).
+   *  `created`와 이미 붙은 `archived` 스탬프는 백엔드가 보존한다. */
+  saveMemo(agentId: AgentId, sheetId: string, content: string): Promise<void>;
+  /** 현재 장을 통째로 아카이브(삭제 아님)하고 새 빈 장을 돌려준다. */
+  archiveMemoSheet(agentId: AgentId): Promise<MemoSheet>;
+  /** 아카이브된 장들의 메타 목록(최신순, 본문 제외). */
+  listMemoArchive(agentId: AgentId): Promise<MemoSheetMeta[]>;
+  /** 특정 장 전체(본문 포함) — 아카이브 열람용. 없으면 reject. */
+  readMemoSheet(agentId: AgentId, sheetId: string): Promise<MemoSheet>;
+  /** 캐릭터 삭제 시 그 캐릭터의 메모 폴더를 통째로 정리한다. 부재는 무해 통과. */
+  deleteMemos(agentId: AgentId): Promise<void>;
   /** 세션 이벤트 시계열에서 `fromAt..=toAt`(epoch ms) 범위를 읽는다(분석 패널용).
    * 없는 파일·손상 줄은 건너뛰며 항상 성공한다. `(at, runId, seq)` 정렬. */
   loadSessionEvents(fromAt: number, toAt: number): Promise<SessionEventRecord[]>;

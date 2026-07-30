@@ -412,6 +412,9 @@ pub fn run() {
                 crate::persistence::diary_store::DiaryStore::new(data_dir.join("diaries"));
             let work_log_store =
                 crate::persistence::work_log_store::WorkLogStore::new(data_dir.join("worklogs"));
+            // 포스트잇 메모(#79): 캐릭터별 하위 폴더(`memos/<agentId>/`)를 갖는다.
+            let memo_store =
+                crate::persistence::memo_store::MemoStore::new(data_dir.join("memos"));
 
             // CLI 제어(#55): control 서버 상태 + 핸들러가 쥘 앱 상태 클론. 필요한
             // Arc/스토어만 복제해 ControlContext에 담는다(AppState는 Tauri가
@@ -472,6 +475,7 @@ pub fn run() {
                 session_time_store,
                 diary_store,
                 work_log_store,
+                memo_store,
                 claude_resume_store,
                 settings_store,
                 settings: settings_cache,
@@ -550,6 +554,12 @@ pub fn run() {
             ipc::commands::load_diary,
             ipc::commands::save_work_log,
             ipc::commands::load_work_logs,
+            ipc::commands::load_memo,
+            ipc::commands::save_memo,
+            ipc::commands::archive_memo_sheet,
+            ipc::commands::list_memo_archive,
+            ipc::commands::read_memo_sheet,
+            ipc::commands::delete_memos,
             ipc::commands::load_session_events,
             ipc::commands::list_session_logs,
             ipc::commands::open_session_log,

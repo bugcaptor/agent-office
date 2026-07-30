@@ -108,6 +108,9 @@ pub struct AppState {
     /// 캐릭터 일기(#60) 작업 로그 스냅샷(`worklogs/<agentId>.json`) — 일기화 전까지
     /// 렌더러 버퍼를 디스크에 보존해 앱 재시작 후 복원한다. 렌더러가 쓰기를 주도한다.
     pub work_log_store: crate::persistence::work_log_store::WorkLogStore,
+    /// 에이전트별 포스트잇 메모(#79) 장 저장소(`memos/<agentId>/<sheetId>.txt`).
+    /// 사람이 직접 쓰는 메모라 frontmatter + plain text로 보관한다.
+    pub memo_store: crate::persistence::memo_store::MemoStore,
     /// Claude native 세션 ID(리줌) 스냅샷 스토어(`claude-resume.json`). observer
     /// ingest가 ClaudeResumeRecorder를 통해 쓰고, list_claude_resume_sessions가 읽는다.
     pub claude_resume_store: Arc<ClaudeResumeStore>,
