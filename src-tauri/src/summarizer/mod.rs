@@ -1,5 +1,7 @@
+mod agy;
 mod claude;
 mod codex;
+mod gemini;
 
 use std::process::Stdio;
 use std::sync::OnceLock;
@@ -74,6 +76,24 @@ impl SummaryPurpose {
             Self::Study => "medium",
         }
     }
+
+    /// agy(Google Antigravity CLI) 모델명은 reasoning effort를 접미로
+    /// 포함한다(`agy models` 출력 기준) — 별도 effort 플래그가 없다.
+    pub(super) fn agy_model(self) -> &'static str {
+        match self {
+            Self::Label | Self::Diary => "gemini-3.6-flash-low",
+            Self::Study => "gemini-3.1-pro-low",
+        }
+    }
+
+    /// gemini CLI의 안정 기본 모델 상수(DEFAULT_GEMINI_FLASH_MODEL /
+    /// DEFAULT_GEMINI_MODEL)와 같은 이름을 쓴다.
+    pub(super) fn gemini_model(self) -> &'static str {
+        match self {
+            Self::Label | Self::Diary => "gemini-2.5-flash",
+            Self::Study => "gemini-2.5-pro",
+        }
+    }
 }
 
 pub(super) struct ProviderCommand {
@@ -133,6 +153,8 @@ pub async fn summarize(
     let command = match provider {
         SummaryProvider::Claude => claude::build(instruction, purpose),
         SummaryProvider::Codex => codex::build(instruction, purpose),
+        SummaryProvider::Agy => agy::build(instruction, purpose),
+        SummaryProvider::Gemini => gemini::build(instruction, purpose),
     };
     run_with_timeout(command, &capped, purpose.timeout()).await
 }

@@ -24,12 +24,19 @@ describe("SettingsForm", () => {
     expect((screen.getByRole("checkbox", { name: /라벨 요약/ }) as HTMLInputElement).checked).toBe(false);
     expect((screen.getByRole("radio", { name: "Claude" }) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByRole("radio", { name: "Codex" }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("radio", { name: "Antigravity (agy)" }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("radio", { name: "Gemini" }) as HTMLInputElement).checked).toBe(false);
     expect((screen.getByRole("checkbox", { name: /에이전트 관찰/ }) as HTMLInputElement).checked).toBe(false);
 
     fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
     fireEvent.click(screen.getByRole("checkbox", { name: /에이전트 관찰/ }));
     expect(onChange).toHaveBeenCalledWith({ summaryProvider: "codex" });
     expect(onChange).toHaveBeenCalledWith({ observerEnabled: true });
+
+    fireEvent.click(screen.getByRole("radio", { name: "Antigravity (agy)" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Gemini" }));
+    expect(onChange).toHaveBeenCalledWith({ summaryProvider: "agy" });
+    expect(onChange).toHaveBeenCalledWith({ summaryProvider: "gemini" });
   });
 
   it("요약이 꺼져 있어도 provider를 미리 선택할 수 있다", () => {

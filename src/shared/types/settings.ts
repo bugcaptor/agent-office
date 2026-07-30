@@ -4,7 +4,7 @@
 // and CLI control status. See src/shared/types.ts for the frozen-contract overview.
 
 /** 라벨 요약에 사용할 로컬 CLI provider. Rust `SummaryProvider` 미러. */
-export type SummaryProvider = "claude" | "codex";
+export type SummaryProvider = "claude" | "codex" | "agy" | "gemini";
 
 /**
  * 요약 호출의 목적. 목적별로 백엔드 타임아웃이 다르다(#66) — 라벨(인터랙티브)은

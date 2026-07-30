@@ -26,6 +26,8 @@ pub enum SummaryProvider {
     #[default]
     Claude,
     Codex,
+    Agy,
+    Gemini,
 }
 
 impl SummaryProvider {
@@ -33,6 +35,8 @@ impl SummaryProvider {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
+            Self::Agy => "agy",
+            Self::Gemini => "gemini",
         }
     }
 }
@@ -304,6 +308,8 @@ mod tests {
     fn summary_provider_as_str_matches_serialized_values() {
         assert_eq!(SummaryProvider::Claude.as_str(), "claude");
         assert_eq!(SummaryProvider::Codex.as_str(), "codex");
+        assert_eq!(SummaryProvider::Agy.as_str(), "agy");
+        assert_eq!(SummaryProvider::Gemini.as_str(), "gemini");
     }
 
     #[test]
