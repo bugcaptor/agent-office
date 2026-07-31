@@ -117,6 +117,35 @@ npm install && npm run tauri build
 
 결과물은 `src-tauri/target/release/`에 생성됩니다(macOS `.dmg`, Windows `.msi`/`.exe`, Linux `.deb`/`.AppImage`).
 
+### macOS 설치와 권한 프롬프트
+
+macOS에서는 "사진", "미디어 라이브러리", "이동식 볼륨" 접근 권한 프롬프트가 뜹니다. Agent Office가 실제로 사진첩이나 음악을 읽는 것은 아니고, **앱이 띄운 CLI 에이전트의 파일 접근이 macOS에서 앱 이름으로 귀속되기 때문**입니다. 터미널 앱이라면 모두 겪는 현상이며 **거부해도 기능에 지장이 없습니다.**
+
+다만 서명이 불안정하면 같은 프롬프트가 계속 반복됩니다. 설치 경로에 따라 아래를 따르세요. 자세한 원리는 [docs/macos-signing.md](docs/macos-signing.md) 참고.
+
+#### DMG를 받아 설치하는 경우
+
+Apple 공증을 받지 않은 앱이라 첫 실행 때 Gatekeeper가 막습니다. 한 번만 허용해 주세요.
+
+> 시스템 설정 → 개인정보 보호 및 보안 → 아래로 스크롤 → **"확인 없이 열기"**
+
+터미널이 편하면 `xattr -dr com.apple.quarantine /Applications/agent-office.app` 로도 됩니다.
+
+권한 프롬프트는 서비스별로 한 번씩만 답하면 되고, 이후 앱을 업데이트해도 다시 묻지 않습니다.
+
+#### 소스에서 빌드해 쓰는 경우
+
+로컬 빌드한 앱에는 검역 속성이 붙지 않아 Gatekeeper가 개입하지 않습니다. 자체 서명 인증서를 한 번 만들어 두면 권한 프롬프트도 반복되지 않습니다(Apple 계정 불필요, 무료).
+
+```bash
+npm run cert:mac       # 자체 서명 인증서 생성 — 최초 1회
+npm run install:mac    # 빌드 + 서명 + /Applications 에 설치
+
+tccutil reset All com.bugcaptor.agent-office   # 최초 1회, 서명 전 잔재 청소
+```
+
+이후로는 `npm run install:mac` 하나면 됩니다.
+
 ### 테스트
 
 ```bash

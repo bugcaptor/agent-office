@@ -1,32 +1,29 @@
 #!/usr/bin/env bash
 #
-# macOS 빌드 산출물을 "TCC 결정이 유지되는" designated requirement로 재서명한다.
+# macOS 앱 번들을 "TCC 결정이 유지되는" 서명으로 재서명한다.
+# 배경과 원리는 docs/macos-signing.md 가 정본이다. 요약하면:
 #
-# 왜 재서명이 필요한가:
-#   Tauri가 `bundle.macOS.signingIdentity`로 서명하면 codesign이 DR을 자동
-#   생성하는데, Apple Development 인증서의 자동 DR은 leaf의 subject.CN을 핀한다:
-#     certificate leaf[subject.CN] = "Apple Development: 이름 (367QTRA243)"
-#   괄호 안 인증서 ID는 **재발급할 때마다 바뀐다**(무료 계정은 1년 만료).
-#   macOS TCC는 허용/거부 결정을 DR에 묶어 저장하므로, DR이 바뀌면
-#   `Failed to match existing code requirement` 로 결정이 무효화되고 사진·
-#   미디어 라이브러리·이동식 볼륨 접근 프롬프트가 처음부터 다시 뜬다.
+#   macOS TCC 는 권한 허용/거부를 그 앱의 designated requirement(DR)에 묶어
+#   저장한다. 애드혹 서명(= 서명 설정을 안 했을 때의 기본값)은 DR 이 cdhash
+#   고정이라 **빌드할 때마다** 바뀌고, 그때마다 저장된 결정이 무효화되어
+#   사진·미디어 라이브러리·이동식 볼륨 프롬프트가 다시 뜬다.
 #
-#   그래서 DR을 인증서 ID가 아니라 **팀 ID(subject.OU)** 에 묶는다. 팀 ID는
-#   같은 Apple ID를 쓰는 한 인증서를 몇 번 재발급해도 그대로다.
+# 인증서 종류마다 codesign 이 만드는 자동 DR 이 다르므로, 종류별로 다르게 다룬다:
 #
-# 애드혹 서명(서명 미지정 기본값)은 DR이 cdhash 고정이라 **매 빌드마다** 깨진다.
-# 이 스크립트의 존재 이유가 그것이다.
+#   자체 서명      -> `certificate root = H"<인증서 해시>"`
+#                     인증서를 유지하는 한 안정적. 자동 DR 을 그대로 쓴다.
+#   Developer ID   -> `... certificate leaf[subject.OU] = "<팀ID>"`
+#                     이미 팀 기준이라 안정적. 자동 DR 을 그대로 쓴다.
+#   Apple Development -> `... certificate leaf[subject.CN] = "Apple Development: 이름 (인증서ID)"`
+#                     괄호 안 인증서 ID 가 재발급마다 바뀐다(무료 계정은 1년 만료).
+#                     그래서 이 경우에만 DR 을 팀 ID(subject.OU)에 묶도록 덮어쓴다.
 
 set -euo pipefail
 
 BUNDLE_ID="com.bugcaptor.agent-office"
-# 팀 ID. `security find-identity -v -p codesigning` 로 얻은 인증서의 subject.OU.
-TEAM_ID="${AGENT_OFFICE_TEAM_ID:-5P333WMUVE}"
-# 서명 아이덴티티. 실명이 저장소에 남지 않도록 접두어 매칭을 쓴다
-# (codesign은 유일하게 매칭되면 접두어만으로 찾아낸다).
-IDENTITY="${APPLE_SIGNING_IDENTITY:-Apple Development}"
-
+SELF_CN="${AGENT_OFFICE_SIGNING_CN:-Agent Office Local Signing}"
 INSTALL_DIR="${AGENT_OFFICE_INSTALL_DIR:-/Applications}"
+
 DO_INSTALL=0
 APP=""
 
@@ -34,8 +31,15 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --install) DO_INSTALL=1 ;;
     -h|--help)
-      echo "사용법: $0 [--install] [앱_번들_경로]"
-      echo "  --install   재서명 후 $INSTALL_DIR 에 설치한다(기존 설치본을 교체)."
+      cat <<USAGE
+사용법: $0 [--install] [앱_번들_경로]
+  --install   재서명 후 $INSTALL_DIR 에 설치한다(기존 설치본을 교체).
+
+서명 아이덴티티는 이 순서로 고른다:
+  1) 환경변수 APPLE_SIGNING_IDENTITY
+  2) 자체 서명 "$SELF_CN"   (scripts/make-signing-cert.sh 로 생성)
+  3) "Apple Development"    (Xcode 무료 인증서)
+USAGE
       exit 0
       ;;
     -*) echo "오류: 모르는 옵션: $1" >&2; exit 1 ;;
@@ -48,23 +52,69 @@ APP="${APP:-src-tauri/target/release/bundle/macos/agent-office.app}"
 
 if [ ! -d "$APP" ]; then
   echo "오류: 앱 번들이 없다: $APP" >&2
-  echo "먼저 \`npm run tauri build\` 를 돌리거나, 경로를 인자로 넘겨라." >&2
+  echo "먼저 \`npm run tauri build --bundles app\` 을 돌리거나, 경로를 인자로 넘겨라." >&2
   exit 1
 fi
 
-if ! security find-identity -v -p codesigning | grep -q "$IDENTITY"; then
-  echo "오류: 유효한 코드서명 아이덴티티가 없다: $IDENTITY" >&2
-  echo "Xcode > Settings > Accounts > Manage Certificates 에서 Apple Development 인증서를 발급하고," >&2
-  echo "체인이 끊겼다면 WWDR G3 중간 인증서를 설치해라:" >&2
-  echo "  curl -fsSLO https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer" >&2
-  echo "  security import AppleWWDRCAG3.cer -k ~/Library/Keychains/login.keychain-db" >&2
+# -v 를 붙이지 않는다: 자체 서명 인증서에 신뢰 설정을 안 걸었어도 목록에 잡혀야
+# 한다. 이름이 아니라 해시로 서명하므로 신뢰 여부와 무관하게 동작한다.
+find_identity_hash() {
+  security find-identity -p codesigning 2>/dev/null \
+    | grep -F "$1" | head -1 | awk '{print $2}'
+}
+
+SIGN_ID=""
+KIND=""
+if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+  SIGN_ID="$APPLE_SIGNING_IDENTITY"
+  case "$SIGN_ID" in
+    *"Apple Development"*) KIND="appledev" ;;
+    *) KIND="explicit" ;;
+  esac
+elif SIGN_ID="$(find_identity_hash "$SELF_CN")" && [ -n "$SIGN_ID" ]; then
+  KIND="selfsigned"
+elif SIGN_ID="$(find_identity_hash "Apple Development")" && [ -n "$SIGN_ID" ]; then
+  KIND="appledev"
+else
+  cat >&2 <<'ERR'
+오류: 쓸 수 있는 코드 서명 아이덴티티가 없다.
+
+자체 서명 인증서를 만들어라(권장, 무료·계정 불필요):
+  ./scripts/make-signing-cert.sh
+
+이미 만들었는데도 이 메시지가 나오면 아래로 확인해라:
+  security find-identity -p codesigning
+ERR
   exit 1
 fi
 
-REQUIREMENT="designated => identifier \"$BUNDLE_ID\" and anchor apple generic and certificate leaf[subject.OU] = \"$TEAM_ID\""
+# Apple Development 만 DR 을 덮어쓴다. 팀 ID 는 인증서 subject 의 OU 에서 읽는다.
+REQ_ARGS=()
+if [ "$KIND" = "appledev" ]; then
+  TEAM_ID="${AGENT_OFFICE_TEAM_ID:-}"
+  if [ -z "$TEAM_ID" ]; then
+    TEAM_ID="$(security find-certificate -c "Apple Development" -p 2>/dev/null \
+      | /usr/bin/openssl x509 -noout -subject 2>/dev/null \
+      | tr ',/' '\n\n' | awk -F= '/^ *OU=/{gsub(/^ +/,"",$2); print $2; exit}')"
+  fi
+  if [ -z "$TEAM_ID" ]; then
+    echo "오류: Apple Development 인증서에서 팀 ID(OU)를 못 읽었다." >&2
+    echo "      AGENT_OFFICE_TEAM_ID 로 직접 넘겨라." >&2
+    exit 1
+  fi
+  REQ_ARGS=(-r="designated => identifier \"$BUNDLE_ID\" and anchor apple generic and certificate leaf[subject.OU] = \"$TEAM_ID\"")
+  echo "아이덴티티: Apple Development (팀 $TEAM_ID) -- DR 을 팀 ID 기준으로 덮어쓴다"
+else
+  echo "아이덴티티: $KIND ($SIGN_ID)"
+fi
 
 echo "서명 중: $APP"
-codesign --force --sign "$IDENTITY" -r="$REQUIREMENT" --timestamp "$APP"
+# 중단된 codesign 이 남긴 .cstemp 가 있으면 다음 서명이
+# "invalid or unsupported format for signature" 로 실패한다. 먼저 치운다.
+find "$APP" -name "*.cstemp" -prune -exec rm -rf {} + 2>/dev/null || true
+# `${A[@]+"${A[@]}"}`: bash 3.2(구형 macOS 기본 셸)에서 set -u 와 빈 배열이
+# 만나면 unbound variable 로 죽는다. 그 조합을 피하는 관용구다.
+codesign --force --sign "$SIGN_ID" ${REQ_ARGS[@]+"${REQ_ARGS[@]}"} "$APP"
 
 echo
 echo "--- 서명 확인 ---"
@@ -85,7 +135,8 @@ if [ "$DO_INSTALL" = "1" ]; then
     echo "      설치 후 반드시 종료하고 다시 실행해라."
   fi
   echo "설치 중: $DEST"
-  # cp -R 은 기존 번들 위에 병합돼 옛 파일이 남을 수 있다. 통째로 갈아끼운다.
+  # cp -R 은 확장속성을 흘려 서명을 깨뜨린다("code has no resources but signature
+  # indicates they must be present"). 반드시 ditto 를 쓴다.
   rm -rf "$DEST"
   ditto "$APP" "$DEST"
   echo "설치 완료."
@@ -93,7 +144,7 @@ fi
 
 cat <<EOF
 
-TCC 레코드는 처음 한 번만 청소하면 된다(애드혹 서명 시절의 깨진 항목 제거):
+TCC 레코드 청소는 **처음 한 번만** 하면 된다(애드혹 서명 시절의 깨진 항목 제거):
   tccutil reset All $BUNDLE_ID
 
 그 뒤 앱을 실행하고 프롬프트에 서비스별로 한 번씩만 답한다.
