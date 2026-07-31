@@ -55,8 +55,8 @@ tccutil reset All com.bugcaptor.agent-office   # 최초 1회, 애드혹 시절 �
 
 - `--install`은 기존 설치본을 `rm -rf` 후 **`ditto`** 로 갈아끼운다. `cp -R`은 확장속성을 흘려 서명을 깨뜨린다. 앱이 실행 중이면 경고하지만 진행하며, 실행 중인 인스턴스는 옛 코드를 계속 쓰므로 종료 후 재실행해야 한다.
 - `npm run build:mac`은 `--bundles app`으로 `.app`만 만든다(DMG 생략 — 로컬 반복 빌드가 빠르다).
-- **릴리스 DMG**는 이름 기반 조회를 쓰므로 인증서에 신뢰 설정이 걸려 있어야 한다: `APPLE_SIGNING_IDENTITY="Agent Office Local Signing" npm run tauri build`. 자체 서명 배포본의 Gatekeeper 안내는 정본 문서 §5 참고.
-- 인증서 개인키를 잃으면 DR이 바뀌어 프롬프트가 한 번 더 돈다. 키체인 접근.app에서 `.p12`로 내보내 백업해 두면 좋다.
+- **릴리스 DMG**는 이름 기반 조회를 쓰므로 인증서에 신뢰 설정이 걸려 있어야 한다: `APPLE_SIGNING_IDENTITY="Agent Office Local Signing" npm run tauri build`. 아키텍처 선택·굽고 나서 확인·릴리스 노트 문구까지 전체 절차는 정본 문서 §6 참고.
+- 인증서를 잃으면 DR이 바뀌어 사용자가 프롬프트에 한 번 더 답하게 된다. 현재 방침은 **백업 대신 재발급**이며, 그 근거와 백업으로 전환할 조건은 정본 문서 §5에 있다.
 - 이 과정 전체가 macOS 전용이다. TCC는 윈도우에 대응물이 없고, `bundle.macOS` 설정은 다른 플랫폼 빌드에서 무시된다.
 
 ## bump-version.mjs
