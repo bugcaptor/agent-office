@@ -4,6 +4,76 @@
 
 Claude Code 같은 에이전트를 여러 개 돌리면 어느 터미널이 무슨 일을 하고 있었는지 놓치기 쉽습니다. Agent Office는 세션 하나를 사무실에서 일하는 캐릭터로 보여줘, 타이쿤 게임 구경하듯 에이전트들을 한눈에 파악하고 오갈 수 있게 합니다.
 
+## 빠른 시작
+
+### 1. 설치하기
+
+<details open>
+<summary><b>macOS — DMG를 받아 설치</b></summary>
+
+<br>
+
+DMG를 열어 `agent-office.app`을 **응용 프로그램** 폴더로 끌어다 놓습니다.
+
+첫 실행 때 "확인되지 않은 개발자" 경고가 뜹니다. Apple 공증($99/년 유료 프로그램)을 받지 않은 앱이라 그렇습니다. **한 번만** 허용해 주세요.
+
+> 앱을 실행 → 경고가 뜨면 닫기 → **시스템 설정 → 개인정보 보호 및 보안** → 아래로 스크롤 → **"확인 없이 열기"**
+
+이후 "사진", "미디어 라이브러리", "이동식 볼륨" 권한을 묻는 창이 뜰 수 있는데, **전부 거부해도 기능에 지장이 없습니다.** 앱이 사진첩을 읽는 게 아니라, 앱이 띄운 CLI 에이전트의 파일 접근이 macOS에서 앱 이름으로 집계되기 때문입니다. 자세한 사정은 [docs/macos-signing.md](docs/macos-signing.md)에 있습니다.
+
+</details>
+
+<details>
+<summary><b>소스에서 빌드 — macOS / Windows / Linux</b></summary>
+
+<br>
+
+[Node 18+](https://nodejs.org)와 [Rust 툴체인](https://rustup.rs)이 필요합니다.
+
+```bash
+git clone https://github.com/bugcaptor/agent-office.git
+cd agent-office
+npm install
+npm run tauri dev      # 바로 실행해 보기
+```
+
+**macOS라면** 아래를 최초 1회 해 두는 걸 권합니다. 자체 서명 인증서를 만들어 두면 권한 프롬프트가 매 빌드마다 반복되지 않습니다(Apple 계정 불필요, 무료).
+
+```bash
+npm run cert:mac                               # 인증서 생성 — 최초 1회
+npm run install:mac                            # 빌드 + 서명 + 응용 프로그램에 설치
+tccutil reset All com.bugcaptor.agent-office   # 최초 1회, 서명 전 잔재 청소
+```
+
+</details>
+
+### 2. 첫 실행
+
+처음 켜면 **동의 화면**이 뜹니다. Claude/Codex 연동 기능들을 켤지 묻는 것인데, **전부 꺼진 상태가 기본**이고 나중에 하단 ⚙ 설정에서 언제든 바꿀 수 있습니다. 잘 모르겠으면 그냥 넘어가세요 — 세션 관리·캐릭터·테마 같은 핵심 기능은 연동 없이도 전부 동작합니다.
+
+### 3. 첫 에이전트 만들기
+
+1. 화면 하단 왼쪽의 **`＋ New Agent`** 버튼을 누릅니다.
+2. **이름**을 정합니다(예: `builder`). 나머지는 전부 선택 사항입니다.
+3. **시작 폴더**에 작업할 프로젝트 경로를 넣습니다. 비우면 홈 디렉터리에서 시작하는데, 프로젝트 폴더를 지정해 두는 편이 훨씬 편합니다.
+4. **저장**을 누르면 캐릭터가 사무실로 출근하고 **터미널 세션이 바로 시작**됩니다.
+
+이제 이렇게 씁니다.
+
+| 하고 싶은 것 | 방법 |
+| --- | --- |
+| 터미널 열기 | 캐릭터를 **클릭** |
+| 각종 동작 (폴더 보기·재시작·일기·퇴근 등) | 상단 세션 탭을 **우클릭** ([메뉴 전체](#터미널-탭-우클릭-메뉴)) |
+| 캐릭터 더 만들기 | 다시 **`＋ New Agent`** |
+| 퇴근시킨 캐릭터 부르기 | 하단 **`🏠 출근`** |
+| 테마 바꾸기 | 하단 오른쪽 테마 버튼 (밝음·미드나이트·벚꽃) |
+
+에이전트가 응답을 기다리면 캐릭터 머리 위에 느낌표가 뜨고 오른쪽에 알림이 쌓입니다. 알림을 클릭하면 그 터미널로 바로 갑니다.
+
+> 💡 캐릭터 외형이 마음에 안 든다면 [예쁜 캐릭터를 쉽게 만드는 법](#예쁜-캐릭터를-쉽게-만드는-법)을 참고하세요. 이미지 생성 AI로 만든 그림을 올릴 수 있습니다.
+
+더 자세한 빌드·테스트·환경변수는 [실행 방법](#실행-방법)에 있습니다.
+
 ## 주요 기능
 
 - **에이전트 1명 = 터미널 세션 1개** — 캐릭터를 클릭하면 터미널이 열립니다. 닫아도 세션은 사라지지 않고 보존됩니다(보이기만 토글).
@@ -117,34 +187,23 @@ npm install && npm run tauri build
 
 결과물은 `src-tauri/target/release/`에 생성됩니다(macOS `.dmg`, Windows `.msi`/`.exe`, Linux `.deb`/`.AppImage`).
 
-### macOS 설치와 권한 프롬프트
+### macOS 서명
 
-macOS에서는 "사진", "미디어 라이브러리", "이동식 볼륨" 접근 권한 프롬프트가 뜹니다. Agent Office가 실제로 사진첩이나 음악을 읽는 것은 아니고, **앱이 띄운 CLI 에이전트의 파일 접근이 macOS에서 앱 이름으로 귀속되기 때문**입니다. 터미널 앱이라면 모두 겪는 현상이며 **거부해도 기능에 지장이 없습니다.**
-
-다만 서명이 불안정하면 같은 프롬프트가 계속 반복됩니다. 설치 경로에 따라 아래를 따르세요. 자세한 원리는 [docs/macos-signing.md](docs/macos-signing.md) 참고.
-
-#### DMG를 받아 설치하는 경우
-
-Apple 공증을 받지 않은 앱이라 첫 실행 때 Gatekeeper가 막습니다. 한 번만 허용해 주세요.
-
-> 시스템 설정 → 개인정보 보호 및 보안 → 아래로 스크롤 → **"확인 없이 열기"**
-
-터미널이 편하면 `xattr -dr com.apple.quarantine /Applications/agent-office.app` 로도 됩니다.
-
-권한 프롬프트는 서비스별로 한 번씩만 답하면 되고, 이후 앱을 업데이트해도 다시 묻지 않습니다.
-
-#### 소스에서 빌드해 쓰는 경우
-
-로컬 빌드한 앱에는 검역 속성이 붙지 않아 Gatekeeper가 개입하지 않습니다. 자체 서명 인증서를 한 번 만들어 두면 권한 프롬프트도 반복되지 않습니다(Apple 계정 불필요, 무료).
+설치 절차는 [빠른 시작](#1-설치하기)에 있습니다. 여기서는 개발자용 명령만 정리합니다.
 
 ```bash
 npm run cert:mac       # 자체 서명 인증서 생성 — 최초 1회
-npm run install:mac    # 빌드 + 서명 + /Applications 에 설치
-
-tccutil reset All com.bugcaptor.agent-office   # 최초 1회, 서명 전 잔재 청소
+npm run build:mac      # 빌드 + 서명 (설치는 안 함)
+npm run install:mac    # 빌드 + 서명 + 응용 프로그램에 설치
 ```
 
-이후로는 `npm run install:mac` 하나면 됩니다.
+`npm run build:mac`·`install:mac`은 `--bundles app`으로 `.app`만 만들어 DMG 생성을 건너뜁니다(로컬 반복 빌드가 빠릅니다). 배포용 DMG는 `npm run tauri build`로 굽되, 인증서 이름을 넘겨야 합니다.
+
+```bash
+APPLE_SIGNING_IDENTITY="Agent Office Local Signing" npm run tauri build
+```
+
+서명하지 않으면 designated requirement가 빌드마다 바뀌어 권한 프롬프트가 계속 반복됩니다. 원리·인증서 종류별 차이·배포 방식은 [docs/macos-signing.md](docs/macos-signing.md)가 정본입니다. 이 절은 macOS 전용이며, Windows·Linux 빌드와는 무관합니다.
 
 ### 테스트
 
