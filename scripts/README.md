@@ -26,15 +26,26 @@ macOS 빌드 산출물을 재서명해, macOS TCC(개인정보 보호) 권한 �
 
 ### 사용법
 
+평소에는 npm 스크립트 하나면 된다. 재서명은 **빌드할 때마다** 필요하므로 빌드와 묶어놨다.
+
 ```bash
-npm run tauri build
+npm run build:mac      # 빌드 + 재서명
+npm run install:mac    # 빌드 + 재서명 + /Applications 에 설치
+```
+
+스크립트를 직접 부를 수도 있다:
+
+```bash
 ./scripts/sign-macos.sh                      # 기본 경로의 번들을 재서명
+./scripts/sign-macos.sh --install            # 재서명 후 설치까지
 ./scripts/sign-macos.sh path/to/some.app     # 경로 직접 지정
 ```
 
-환경변수 `AGENT_OFFICE_TEAM_ID`·`APPLE_SIGNING_IDENTITY` 로 팀 ID와 아이덴티티를 덮어쓸 수 있다.
+환경변수로 덮어쓸 수 있는 것: `AGENT_OFFICE_TEAM_ID`(팀 ID), `APPLE_SIGNING_IDENTITY`(서명 아이덴티티), `AGENT_OFFICE_INSTALL_DIR`(설치 위치, 기본 `/Applications`).
 
-애드혹 시절의 깨진 레코드는 한 번 청소해야 한다:
+`--install` 은 기존 설치본을 `rm -rf` 후 `ditto` 로 통째로 갈아끼운다(`cp -R` 은 옛 파일이 남는다). 앱이 실행 중이면 경고하지만 진행하며, 실행 중인 인스턴스는 옛 코드를 계속 쓰므로 종료 후 재실행해야 한다.
+
+TCC 레코드 청소는 **처음 한 번만** 하면 된다. 애드혹 서명 시절의 깨진 항목을 지우는 용도라 이후 빌드에서는 불필요하다:
 
 ```bash
 tccutil reset All com.bugcaptor.agent-office
@@ -45,6 +56,8 @@ tccutil reset All com.bugcaptor.agent-office
 - 사진·미디어 라이브러리·이동식/네트워크 볼륨 프롬프트는 **거부해도 기능 손실이 없다**. 실제 접근 주체는 CLI 에이전트 샌드박스의 프리플라이트다.
 - 전체 디스크 접근 권한(FDA)은 기본적으로 주지 않는다. 주는 순간 앱이 띄우는 모든 에이전트가 `~/Library` 전역에 접근하게 되므로, 폴더 단위 게이팅을 방어선으로 남긴다.
 - 로그에 찍히는 `kTCCServiceScreenCapture` 는 WKWebView GPU 프로세스의 무프롬프트 프리플라이트라 무시해도 된다.
+- `npm run build:mac` 은 `--bundles app` 으로 `.app` 만 만든다(DMG 생략 — 로컬 반복 빌드가 빠르다). 반면 `npm run tauri build` 는 `bundle.targets: "all"` 이라 DMG도 굽는데, **DMG 안의 앱은 재서명 전 상태**라 DR이 인증서 CN에 묶여 있다. 배포용 DMG를 만들 때는 재서명 이후 다시 굽거나, Developer ID 서명으로 넘어가야 한다.
+- 이 과정 전체가 macOS 전용이다. TCC는 윈도우에 대응물이 없고, `bundle.macOS` 설정은 다른 플랫폼 빌드에서 무시된다.
 
 ## bump-version.mjs
 
