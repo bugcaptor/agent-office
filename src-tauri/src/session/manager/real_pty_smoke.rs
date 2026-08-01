@@ -259,6 +259,7 @@ return
     /// 않았을 때도 최소한 backlog 분량은 보존돼야 한다).
     #[cfg(unix)]
     #[tokio::test]
+    #[ignore = "real PTY; run explicitly"]
     async fn handoff_all_then_adopt_detached_round_trips_a_real_session() {
         use crate::session::pty_factory::PortablePtyFactory;
         use std::collections::{HashMap, HashSet};
@@ -460,6 +461,7 @@ return
     /// dispose(=Kill RPC)로 정리까지. v1 핸드오프 테스트의 브로커판이다.
     #[cfg(unix)]
     #[tokio::test]
+    #[ignore = "real PTY; run explicitly"]
     async fn broker_spawn_write_read_detach_adopt_round_trips_a_real_session() {
         use crate::session::broker_pty::BrokerPtyFactory;
         use crate::session::pty_factory::PortablePtyFactory;
@@ -614,6 +616,7 @@ return
     /// 입양하는지(§P0 결정적 reader-close 의존)를 실 데몬으로 검증한다.
     #[cfg(unix)]
     #[tokio::test]
+    #[ignore = "real PTY; run explicitly"]
     async fn broker_adopt_skips_live_attached_session_then_adopts_after_detach() {
         use crate::session::broker_pty::BrokerPtyFactory;
         use crate::session::pty_factory::PortablePtyFactory;
@@ -770,6 +773,7 @@ return
     /// 핸드오프 -- 둘 다 데몬에 남기고, 새 매니저 adopt가 둘 다 복구하는지.
     #[cfg(unix)]
     #[tokio::test]
+    #[ignore = "real PTY; run explicitly"]
     async fn broker_mode_handoff_mixes_broker_detach_and_v1_fd_handoff() {
         use crate::session::broker_pty::BrokerPtyFactory;
         use crate::session::pty_factory::{PortablePtyFactory, PtyFactory, PtySpawnOptions, SpawnedPty};
@@ -927,6 +931,7 @@ return
     /// 치워 데몬의 table-empty 종료 누수를 막아야 한다. 짧게 사는 자식으로 재현.
     #[cfg(unix)]
     #[tokio::test]
+    #[ignore = "real PTY; run explicitly"]
     async fn broker_adopt_reaps_exited_detached_session_from_daemon_table() {
         use crate::session::broker_pty::BrokerPtyFactory;
         use crate::session::pty_factory::PortablePtyFactory;
