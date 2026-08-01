@@ -435,7 +435,9 @@ impl SessionManager {
                 Some(p) => format!("claude --settings \"{}\"\r", p.display()),
                 None => "claude\r".to_string(),
             };
-            let _ = session.writer.lock().write_all(line.as_bytes());
+            if let Err(error) = session.writer.lock().write_all(line.as_bytes()) {
+                eprintln!("agent-office: autostart write failed for {session_id}: {error}");
+            }
         }
 
         // 사용자 지정 시작 명령어: 세션이 실제로 Running으로 전이한 경우에만, 트림 후
@@ -451,7 +453,11 @@ impl SessionManager {
                     // CR이며, 유닉스 PTY는 ICRNL로 CR->LF를 매핑하므로 CR 하나면
                     // 모든 플랫폼에서 명령이 그대로 실행된다.
                     let line = format!("{cmd}\r");
-                    let _ = session.writer.lock().write_all(line.as_bytes());
+                    if let Err(error) = session.writer.lock().write_all(line.as_bytes()) {
+                        eprintln!(
+                            "agent-office: startup command write failed for {session_id}: {error}"
+                        );
+                    }
                 }
             }
         }
@@ -614,7 +620,15 @@ impl SessionManager {
                 // stdin 주입도 활동으로 기록 — 봇이 방금 넣은 프롬프트 직후
                 // 곧바로 다음 지시를 밀어넣지 않게(turn-taking 유휴 리셋).
                 s.last_activity_ms.store(now_ms(), Ordering::Relaxed);
-                let _ = s.writer.lock().write_all(data.as_bytes());
+                // 실패해도 IPC 계약상 돌려줄 곳이 없다(반환값 없음). 그래도
+                // 조용히 삼키면 "키를 눌렀는데 아무 일도 없다"가 되므로 최소한
+                // 로그는 남긴다 -- 세션이 방금 죽었거나 PTY가 닫힌 경우다.
+                if let Err(error) = s.writer.lock().write_all(data.as_bytes()) {
+                    eprintln!(
+                        "agent-office: input write failed for {}: {error}",
+                        s.session_id
+                    );
+                }
             }
         }
     }
@@ -642,7 +656,9 @@ impl SessionManager {
     pub fn resize(&self, agent_id: &str, cols: u16, rows: u16) {
         if let Some(s) = self.find(agent_id) {
             if *s.state.lock() == SessionState::Running {
-                let _ = s.control.resize(cols, rows);
+                if let Err(error) = s.control.resize(cols, rows) {
+                    eprintln!("agent-office: resize failed for {}: {error}", s.session_id);
+                }
                 *s.size.lock() = (cols, rows);
                 // 전사 필터의 라이브 영역은 화면 높이에서 나온다(§3.3).
                 if let Some(log) = s.log.as_ref() {
@@ -661,7 +677,11 @@ impl SessionManager {
                 return;
             }
             s.kill_requested.store(true, Ordering::SeqCst);
-            let _ = s.control.kill();
+            if let Err(error) = s.control.kill() {
+                // 이미 죽은 자식이면 흔한 실패다 -- 그래도 남겨 둬야 "kill했는데
+                // 계속 살아 있다"를 사후에 구분할 수 있다.
+                eprintln!("agent-office: kill failed for {}: {error}", s.session_id);
+            }
             cleanup_paths(&s.cleanup_paths);
         }
     }
