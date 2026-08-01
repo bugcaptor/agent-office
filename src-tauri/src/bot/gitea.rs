@@ -11,12 +11,9 @@
 // 로그인 셸에서 캡처한 env(session::env_capture)에서 읽는다. `git`은 origin slug
 // 감지에만 남는데, `git`은 보통 `/usr/bin/git`(Xcode CLT)이라 최소 PATH에도 있다.
 
-use std::io::Read;
+use crate::proc_runner::{self, ProcOutcome, ProcSpec};
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// git 호출 기본 타임아웃(origin slug 감지용).
 const GIT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -33,71 +30,38 @@ struct Run {
 /// `git`을 `args`로 한 번 실행한다. stdout을 별도 스레드로 끝까지 읽어 파이프
 /// 교착을 막고, 타임아웃을 넘기면 자식을 죽인다. slug 감지 전용이라 stderr는
 /// 버린다.
+///
+/// 실행 골격은 `crate::proc_runner`가 갖고, 여기서는 `Run` 표현으로만 옮긴다.
+/// 타임아웃은 이 호출부에서 실패(`success: false`)와 구분하지 않는다 -- slug를
+/// 못 얻었다는 결론이 같기 때문.
 fn run_git(args: &[&str], cwd: &Path, timeout: Duration) -> Run {
-    let mut cmd = Command::new("git");
-    cmd.args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    // C 로케일 강제. GUI 기동 앱은 LANG/LC_*가 비어 git이 시스템 로케일로 오류를
-    // 낼 수 있다. slug 감지는 성공 경로만 파싱하지만, 일관성을 위해 고정한다.
-    cmd.env("LC_ALL", "C");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(_) => {
-            return Run {
-                spawn_failed: true,
-                success: false,
-                stdout: Vec::new(),
-            }
-        }
-    };
-
-    let stdout = child.stdout.take();
-    let (otx, orx) = mpsc::channel();
-    if let Some(mut s) = stdout {
-        thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = s.read_to_end(&mut buf);
-            let _ = otx.send(buf);
-        });
-    } else {
-        let _ = otx.send(Vec::new());
-    }
-
-    let deadline = Instant::now() + timeout;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break None;
-                }
-                thread::sleep(Duration::from_millis(15));
-            }
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break None;
-            }
-        }
-    };
-
-    let stdout = orx.recv().unwrap_or_default();
-    Run {
-        spawn_failed: false,
-        success: status.map(|s| s.success()).unwrap_or(false),
-        stdout,
+    let run = proc_runner::run(ProcSpec {
+        program: "git",
+        args,
+        cwd: Some(cwd),
+        // C 로케일 강제. GUI 기동 앱은 LANG/LC_*가 비어 git이 시스템 로케일로
+        // 오류를 낼 수 있다. slug 감지는 성공 경로만 파싱하지만, 일관성을 위해
+        // 고정한다.
+        envs: &[("LC_ALL", "C")],
+        timeout,
+        max_stdout_bytes: None,
+    });
+    match run.outcome {
+        ProcOutcome::SpawnFailed => Run {
+            spawn_failed: true,
+            success: false,
+            stdout: Vec::new(),
+        },
+        ProcOutcome::Exited { success } => Run {
+            spawn_failed: false,
+            success,
+            stdout: run.stdout,
+        },
+        ProcOutcome::TimedOut | ProcOutcome::Overflowed => Run {
+            spawn_failed: false,
+            success: false,
+            stdout: run.stdout,
+        },
     }
 }
 

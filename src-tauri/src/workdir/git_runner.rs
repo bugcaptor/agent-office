@@ -4,12 +4,9 @@
 // 확보)를 모은다. status/diff 서브모듈이 공용으로 쓰는 하위 레벨 유틸리티라
 // `pub(super)`로 workdir 트리 안에서만 보인다.
 
-use std::io::Read;
+use crate::proc_runner::{self, ProcOutcome, ProcSpec};
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// git 서브프로세스 1회 실행 결과(제네릭). `spawn_failed`는 git 바이너리 부재
 /// 등 실행 자체 실패, `timed_out`은 타임아웃으로 kill, `success`는 exit 0 여부,
@@ -24,87 +21,39 @@ pub(super) struct GitRun {
 /// git을 root에서 `args`로 한 번 실행한다. stdout은 별도 스레드로 끝까지 읽어
 /// 파이프 교착을 막고(거대 diff는 수 MB), 타임아웃을 넘기면 자식을 죽인다.
 /// stderr는 버린다(에러 메시지는 종료 코드/빈 stdout으로 판별).
+///
+/// 실행 골격은 `crate::proc_runner`가 갖고, 여기서는 workdir이 기대하는
+/// `GitRun` 표현으로만 옮긴다.
 pub(super) fn run_git(root: &Path, args: &[&str], timeout: Duration) -> GitRun {
-    let mut cmd = Command::new("git");
-    cmd.current_dir(root)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(_) => {
-            return GitRun {
-                spawn_failed: true,
-                timed_out: false,
-                success: false,
-                stdout: Vec::new(),
-            }
-        }
-    };
-
-    let mut stdout = match child.stdout.take() {
-        Some(s) => s,
-        None => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return GitRun {
-                spawn_failed: true,
-                timed_out: false,
-                success: false,
-                stdout: Vec::new(),
-            };
-        }
-    };
-    let (tx, rx) = mpsc::channel();
-    let reader = thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stdout.read_to_end(&mut buf);
-        let _ = tx.send(buf);
+    let run = proc_runner::run(ProcSpec {
+        program: "git",
+        args,
+        cwd: Some(root),
+        envs: &[],
+        timeout,
+        // 출력 상한 없음 -- 거대 diff도 끝까지 받는다(호출부가 자체 절단).
+        max_stdout_bytes: None,
     });
-
-    let deadline = Instant::now() + timeout;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break None;
-                }
-                thread::sleep(Duration::from_millis(15));
-            }
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break None;
-            }
-        }
-    };
-
-    let buf = rx.recv().unwrap_or_default();
-    let _ = reader.join();
-
-    match status {
-        Some(s) => GitRun {
+    match run.outcome {
+        ProcOutcome::SpawnFailed => GitRun {
+            spawn_failed: true,
+            timed_out: false,
+            success: false,
+            stdout: Vec::new(),
+        },
+        ProcOutcome::Exited { success } => GitRun {
             spawn_failed: false,
             timed_out: false,
-            success: s.success(),
-            stdout: buf,
+            success,
+            stdout: run.stdout,
         },
-        None => GitRun {
+        // Overflowed는 상한을 걸지 않았으니 나올 수 없다. 나온다면 타임아웃과
+        // 똑같이 "결과를 믿을 수 없음"으로 취급하면 된다.
+        ProcOutcome::TimedOut | ProcOutcome::Overflowed => GitRun {
             spawn_failed: false,
             timed_out: true,
             success: false,
-            stdout: buf,
+            stdout: run.stdout,
         },
     }
 }

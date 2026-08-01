@@ -1,9 +1,10 @@
 // src-tauri/src/file_index/es_runner.rs
 //
 // es.exe(Voidtools "Everything" CLI, https://www.voidtools.com/support/everything/command_line_interface/)
-// 서브프로세스 실행. workdir/git_runner.rs::run_git 패턴을 복제하되 대상이
-// es.exe다: Windows 전용, `CREATE_NO_WINDOW`로 콘솔 창 깜빡임 방지, stdout은
-// 별도 스레드로 읽어 파이프 교착을 막고, 3초 타임아웃을 넘기면 kill.
+// 서브프로세스 실행. 실행 골격은 공용 `crate::proc_runner`에 있고(스폰·타임아웃
+// kill·stdout 리더 스레드·`CREATE_NO_WINDOW`) 여기서는 es.exe 고유 부분만
+// 다룬다: Windows 전용, `-path` 인자, 3초 타임아웃, 32MB 출력 상한, ANSI
+// 코드페이지 디코딩.
 //
 // 실패는 전부 조용히 `None`으로 폴백한다(에러가 아니다) -- es.exe 부재(비
 // Windows·미설치)·스폰 실패·타임아웃·비정상 종료·32MB 초과 출력 전부. 호출부
@@ -153,91 +154,28 @@ fn run_es(_canon_root: &Path, _es_args: &[&str]) -> Option<Vec<u8>> {
 
 #[cfg(windows)]
 fn run_es(canon_root: &Path, es_args: &[&str]) -> Option<Vec<u8>> {
-    use std::io::Read;
-    use std::os::windows::process::CommandExt;
-    use std::process::{Command, Stdio};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{mpsc, Arc};
-    use std::thread;
-    use std::time::{Duration, Instant};
-
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    use crate::proc_runner::{self, ProcOutcome, ProcSpec};
+    use std::time::Duration;
 
     let root_str = canon_root.to_str()?;
 
-    let mut cmd = Command::new("es.exe");
-    cmd.arg("-path")
-        .arg(root_str)
-        .args(es_args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW);
+    // es.exe는 검색 루트를 인자(`-path`)로 받는다 -- 현재 디렉터리는 건드리지
+    // 않는다(cwd: None).
+    let mut args: Vec<&str> = vec!["-path", root_str];
+    args.extend_from_slice(es_args);
 
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(_) => return None, // es.exe 부재 등 -- 조용한 폴백.
-    };
-    let mut stdout = match child.stdout.take() {
-        Some(s) => s,
-        None => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return None;
-        }
-    };
-
-    let overflowed = Arc::new(AtomicBool::new(false));
-    let overflowed_reader = overflowed.clone();
-    let (tx, rx) = mpsc::channel();
-    let reader = thread::spawn(move || {
-        let mut buf = Vec::new();
-        let mut chunk = [0u8; 64 * 1024];
-        loop {
-            match stdout.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => {
-                    if buf.len() + n > MAX_OUTPUT_BYTES {
-                        overflowed_reader.store(true, Ordering::Relaxed);
-                        break;
-                    }
-                    buf.extend_from_slice(&chunk[..n]);
-                }
-                Err(_) => break,
-            }
-        }
-        let _ = tx.send(buf);
+    let run = proc_runner::run(ProcSpec {
+        program: "es.exe",
+        args: &args,
+        cwd: None,
+        envs: &[],
+        timeout: Duration::from_secs(TIMEOUT_SECS),
+        max_stdout_bytes: Some(MAX_OUTPUT_BYTES),
     });
-
-    let deadline = Instant::now() + Duration::from_secs(TIMEOUT_SECS);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                if Instant::now() >= deadline || overflowed.load(Ordering::Relaxed) {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break None;
-                }
-                thread::sleep(Duration::from_millis(15));
-            }
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break None;
-            }
-        }
-    };
-
-    let buf = rx.recv().unwrap_or_default();
-    let _ = reader.join();
-
-    if overflowed.load(Ordering::Relaxed) {
-        return None;
-    }
-    match status {
-        Some(s) if s.success() => Some(buf),
-        _ => None, // 비정상 종료·타임아웃 -- 조용한 폴백.
+    match run.outcome {
+        ProcOutcome::Exited { success: true } => Some(run.stdout),
+        // spawn 실패(es.exe 부재)·비정상 종료·타임아웃·상한 초과 전부 조용한 폴백.
+        _ => None,
     }
 }
 
