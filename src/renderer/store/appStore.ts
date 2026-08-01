@@ -184,6 +184,13 @@ interface AppState {
   stopBot(agentId: string): Promise<void>;
   /** bot_status 폴링 결과를 병합한다(이슈 번호·오류 갱신). */
   applyBotStatus(status: BotStatus): void;
+  /**
+   * 부팅 시 백엔드에 살아 있는 봇 태스크를 botMode에 심는다. `applyBotStatus`와
+   * 달리 **없던 항목도 추가**한다 — 앱을 재시작하면 botMode(비영속)가 비어 있어
+   * 5초 폴링(hasBots>0 게이트)이 아예 안 돌고, 그 결과 백엔드가 계속 운전 중인
+   * 탭인데도 입력 잠금(isBotDriven)이 풀린 채로 남는 버그를 막는 시드다.
+   */
+  seedBotStatus(status: BotStatus): void;
   /** 이 탭이 봇 운전 중인지(로컬 입력 차단 여부 판정). */
   isBotDriven(agentId: string): boolean;
 
@@ -516,6 +523,15 @@ export const useAppStore = create<AppState>()(
           }
         }
         return changed ? { botMode: next } : s;
+      }),
+
+    seedBotStatus: (status) =>
+      set((s) => {
+        const entries = Object.entries(status.agents);
+        if (entries.length === 0) return s;
+        const next = { ...s.botMode };
+        for (const [id, st] of entries) next[id] = st;
+        return { botMode: next };
       }),
 
     isBotDriven: (agentId) => agentId in get().botMode,

@@ -40,6 +40,7 @@ const { mockApi } = vi.hoisted(() => ({
     handoffSupported: vi.fn(),
     handoffSessions: vi.fn(),
     adoptDetachedSessions: vi.fn(),
+    botStatus: vi.fn(),
     sessionBrokerMode: vi.fn(),
     uploadSessionSnapshots: vi.fn(),
   },
@@ -140,6 +141,7 @@ beforeEach(() => {
   mockApi.handoffSupported.mockResolvedValue(false);
   mockApi.handoffSessions.mockResolvedValue(0);
   mockApi.adoptDetachedSessions.mockResolvedValue([]);
+  mockApi.botStatus.mockResolvedValue({ agents: {} });
   mockApi.sessionBrokerMode.mockResolvedValue(false);
   mockApi.uploadSessionSnapshots.mockResolvedValue(undefined);
   markAdopted.mockClear();
@@ -361,6 +363,56 @@ describe("session-handoff adoption (bootApp)", () => {
     expect(markAdopted).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(
       "bootstrap: 세션 입양 실패 — 이전 세션 없이 진행",
+      expect.any(Error)
+    );
+
+    // Rest of boot still live (bridge + persistence).
+    capturedOnNotification?.(mkNotifEvent({ agentId: "a1" }));
+    expect(useAppStore.getState().notifications).toHaveLength(1);
+
+    warn.mockRestore();
+  });
+});
+
+// 봇 모드(이슈 #57) 부팅 시드: botMode는 비영속이라 재시작하면 비고, 5초 폴링은
+// "봇이 하나라도 있을 때"만 도는 게이트라 스스로 못 살아난다 — 부팅 1회 조회로
+// 백엔드에 살아 있는 봇을 심어 폴링·입력 잠금을 되살린다.
+describe("bot mode seeding (bootApp)", () => {
+  it("백엔드에 살아 있는 봇 태스크를 botMode에 심는다", async () => {
+    mockApi.botStatus.mockResolvedValue({
+      agents: {
+        a1: { running: true, phase: "watching", pollIntervalSec: 60, issue: 42 },
+      },
+    });
+
+    teardown = await bootApp();
+
+    const s = useAppStore.getState();
+    expect(s.botMode.a1).toEqual({
+      running: true,
+      phase: "watching",
+      pollIntervalSec: 60,
+      issue: 42,
+    });
+    // 입력 잠금(TerminalRegistry가 읽는 판정)이 곧바로 켜져 있어야 한다.
+    expect(s.isBotDriven("a1")).toBe(true);
+  });
+
+  it("봇이 없으면 botMode는 비어 있다", async () => {
+    teardown = await bootApp();
+
+    expect(useAppStore.getState().botMode).toEqual({});
+  });
+
+  it("bot_status가 실패해도 부팅은 계속된다", async () => {
+    mockApi.botStatus.mockRejectedValue(new Error("no backend"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    teardown = await bootApp();
+
+    expect(useAppStore.getState().botMode).toEqual({});
+    expect(warn).toHaveBeenCalledWith(
+      "bootstrap: 봇 상태 조회 실패 — 봇 모드 없이 진행",
       expect.any(Error)
     );
 

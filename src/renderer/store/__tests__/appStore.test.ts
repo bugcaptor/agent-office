@@ -12,6 +12,7 @@
 // needing a separate file.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { BotAgentStatus } from "@shared/types";
 import type { AgentProfile, NotificationEvent } from "../types";
 
 const { setAppSettingsMock, appendSessionTurnMock } = vi.hoisted(() => ({
@@ -683,5 +684,48 @@ describe("app settings slice", () => {
     expect(setAppSettingsMock).toHaveBeenCalledWith(
       expect.objectContaining({ typingSoundEnabled: false, soundVolume: 0.2 })
     );
+  });
+});
+
+// 봇 모드(이슈 #57) 시드/병합. applyBotStatus는 "이미 켜진 탭만" 갱신하는 폴링용,
+// seedBotStatus는 부팅 때 "없던 항목도 추가"하는 시드용 — 둘의 차이가 핵심이다.
+describe("botMode slice", () => {
+  const st = (overrides: Partial<BotAgentStatus> = {}): BotAgentStatus => ({
+    running: true,
+    phase: "watching",
+    pollIntervalSec: 60,
+    ...overrides,
+  });
+
+  it("seedBotStatus는 없던 탭도 추가한다(부팅 시드)", () => {
+    useAppStore.getState().seedBotStatus({ agents: { a1: st({ issue: 7 }) } });
+
+    const s = useAppStore.getState();
+    expect(s.botMode.a1).toEqual(st({ issue: 7 }));
+    expect(s.isBotDriven("a1")).toBe(true);
+  });
+
+  it("seedBotStatus는 기존 항목을 유지한 채 병합한다", () => {
+    useAppStore.setState({ botMode: { a1: st({ issue: 1 }) } });
+
+    useAppStore.getState().seedBotStatus({ agents: { a2: st({ issue: 2 }) } });
+
+    const s = useAppStore.getState();
+    expect(Object.keys(s.botMode).sort()).toEqual(["a1", "a2"]);
+    expect(s.botMode.a1.issue).toBe(1);
+  });
+
+  it("빈 스냅샷이면 상태를 바꾸지 않는다(리렌더 유발 없음)", () => {
+    const before = useAppStore.getState().botMode;
+
+    useAppStore.getState().seedBotStatus({ agents: {} });
+
+    expect(useAppStore.getState().botMode).toBe(before);
+  });
+
+  it("applyBotStatus는 시드와 달리 없던 탭을 추가하지 않는다", () => {
+    useAppStore.getState().applyBotStatus({ agents: { a1: st() } });
+
+    expect(useAppStore.getState().botMode).toEqual({});
   });
 });
