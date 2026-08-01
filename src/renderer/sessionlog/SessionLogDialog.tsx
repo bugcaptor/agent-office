@@ -6,8 +6,8 @@
 // 목록은 10개씩 페이징하고, 한 개를 고르면 그때 동작 영역(편집기로 열기 /
 // 학습자료 만들기)이 열린다. 고르기 전에는 동작을 보여주지 않는다 — 무엇에
 // 적용될지 모르는 버튼을 띄우지 않기 위해서다.
-import { useEffect } from "react";
 import { useSessionLogStore, PAGE_SIZE } from "./sessionLogStore";
+import { useEscapeToClose } from "../shared/useEscapeToClose";
 import { formatBytes, formatDuration, formatWhen, shortenPath } from "./format";
 import "./sessionLog.css";
 
@@ -27,18 +27,7 @@ export function SessionLogDialog() {
   const makeStudyMaterial = useSessionLogStore((s) => s.makeStudyMaterial);
 
   // Esc 닫기(전역/터미널로 새지 않게 캡처 단계에서 멈춘다).
-  const open = overlay !== null;
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        close();
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, close]);
+  useEscapeToClose(overlay !== null, close);
 
   if (!overlay) return null;
 

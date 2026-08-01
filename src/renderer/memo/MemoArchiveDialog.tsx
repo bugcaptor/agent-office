@@ -7,8 +7,8 @@
 //
 // 좌: 넘긴 장 목록(최신순, 생성·수정·아카이브 시각). 우: 고른 장의 본문 —
 // 읽기 전용이고 복사만 된다(과거 장을 되살리는 기능은 범위 밖).
-import { useEffect } from "react";
 import { useMemoStore } from "./memoStore";
+import { useEscapeToClose } from "../shared/useEscapeToClose";
 import { formatMemoWhen } from "./memoFormat";
 import "./memo.css";
 
@@ -30,18 +30,7 @@ export function MemoArchiveDialog() {
   const copySelected = useMemoStore((s) => s.copySelected);
 
   // Esc 닫기(전역/터미널로 새지 않게 캡처 단계에서 멈춘다).
-  const open = target !== null;
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        closeArchive();
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, closeArchive]);
+  useEscapeToClose(target !== null, closeArchive);
 
   if (!target) return null;
 

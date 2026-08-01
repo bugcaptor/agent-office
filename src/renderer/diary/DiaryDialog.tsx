@@ -5,8 +5,8 @@
 // 보여주고, "일기 쓰기" 버튼으로 지금까지의 작업 로그를 한 편으로 남긴다
 // (수동 트리거 — 비용·기대 UX상 사용자 요청 기반). "내보내기"(#65)는 일기
 // 전체를 Markdown/JSON 파일로 저장한다. 일기 자체는 읽기 전용 뷰.
-import { useEffect } from "react";
 import { useDiaryStore } from "./diaryStore";
+import { useEscapeToClose } from "../shared/useEscapeToClose";
 import { formatWhen } from "./diaryExport";
 import "./diary.css";
 
@@ -23,18 +23,7 @@ export function DiaryDialog() {
   const exportNow = useDiaryStore((s) => s.exportNow);
 
   // Esc 닫기(전역/터미널로 새지 않게 캡처 단계에서 멈춘다).
-  const open = overlay !== null;
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        closeDiary();
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [open, closeDiary]);
+  useEscapeToClose(overlay !== null, closeDiary);
 
   if (!overlay) return null;
 
