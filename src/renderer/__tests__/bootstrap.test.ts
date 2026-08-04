@@ -240,6 +240,7 @@ describe("bootApp", () => {
       peerShareEnabled: false,
       peerBind: "tailnet",
       peerPort: 47800,
+      webHostingEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(false);
     expect(warn).toHaveBeenCalledWith(

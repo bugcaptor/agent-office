@@ -158,8 +158,9 @@ export function PeerShareSection() {
                     }}
                   >
                     <div style={{ fontSize: 13 }}>
-                      <b>{p.viewerName}</b> 이(가) 연결을 요청했습니다. 상대
-                      화면에 이 코드를 입력하게 하세요:
+                      <b>{p.viewerName}</b>
+                      {p.clientKind === "web" ? " (웹 브라우저)" : " (다른 사무실)"} 이(가)
+                      연결을 요청했습니다. 상대 화면에 이 코드를 입력하게 하세요:
                     </div>
                     <div style={{ fontSize: 24, letterSpacing: 4, fontFamily: "monospace" }}>
                       {p.code}
@@ -252,6 +253,38 @@ export function PeerShareSection() {
             )}
           </div>
         </>
+      )}
+
+      <label className="settings-item">
+        <input
+          type="checkbox"
+          checked={appSettings.webHostingEnabled}
+          onChange={(e) => updateAppSettings({ webHostingEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>웹 호스팅 (브라우저로 접속해서 작업)</strong>
+          <small>
+            폰이나 다른 컴퓨터의 <b>브라우저</b>로 접속해 상태를 보고 터미널을
+            조작합니다. 세션 공유와 <b>같은 서버·같은 포트</b>를 쓰고, 접속하려면
+            역시 페어링 승인이 필요합니다. 브라우저에는 <b>정해진 명령만</b>
+            열립니다(설정 변경·봇 조작은 열리지 않습니다).
+          </small>
+        </span>
+      </label>
+
+      {appSettings.webHostingEnabled && (
+        <div className="settings-item" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>브라우저에서 이 주소로 접속하세요</div>
+          <code style={{ fontSize: 13 }}>
+            http://{host?.addressHint ?? "<이 컴퓨터 주소>"}:{host?.port ?? appSettings.peerPort}
+            /web/
+          </code>
+          {!host?.running && (
+            <div style={{ fontSize: 12, opacity: 0.7 }}>
+              서버가 아직 뜨지 않았습니다 — 잠시 후 이 화면을 다시 열어 보세요.
+            </div>
+          )}
+        </div>
       )}
 
       <PeerConnectSection viewers={viewers} />

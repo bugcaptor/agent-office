@@ -45,6 +45,7 @@ const SETTINGS_ON: AppSettings = {
   peerShareEnabled: false,
   peerBind: "tailnet",
   peerPort: 47800,
+  webHostingEnabled: false,
 };
 
 const NOW = 1_000_000_000_000;

@@ -49,6 +49,8 @@ export interface PendingPairing {
   pairingId: string;
   code: string;
   viewerName: string;
+  /** "web"이면 브라우저에서 온 요청(웹 호스팅 #7m). 기본 "peer". */
+  clientKind?: "peer" | "web";
 }
 
 export interface PeerHostStatus {

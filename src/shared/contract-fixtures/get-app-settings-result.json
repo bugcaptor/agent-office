@@ -22,7 +22,8 @@
     "ttsRewriteProvider": "auto",
     "peerShareEnabled": false,
     "peerBind": "tailnet",
-    "peerPort": 47800
+    "peerPort": 47800,
+    "webHostingEnabled": false
   },
   "firstRun": true
 }

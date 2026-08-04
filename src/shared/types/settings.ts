@@ -86,6 +86,10 @@ export interface AppSettings {
   peerBind: PeerBindPolicy;
   /** 수신 포트. 기본 47800(점유 시 백엔드가 +1씩 스캔한 실제 포트를 알려준다). */
   peerPort: number;
+  /** 웹 호스팅(#7m) — 브라우저로 접속해 상태 확인·터미널 조작을 하게 한다.
+   * 피어 공유와 **같은 리스너**를 쓰고(`/web/…`), 페어링 승인은 여전히 필요하다.
+   * 네트워크 표면이므로 기본 false. */
+  webHostingEnabled: boolean;
 }
 
 /** 피어 수신 서버가 받아 줄 원격 주소 범위(#7k §결정 5). */

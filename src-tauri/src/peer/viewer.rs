@@ -470,6 +470,8 @@ impl ViewerRegistry {
                 );
             }
             HostMsg::Pong => {}
+            // 웹 클라이언트 전용 프레임 — 앱↔앱 뷰어는 RPC를 쓰지 않는다.
+            HostMsg::RpcResult { .. } => {}
             HostMsg::Error { message } => {
                 eprintln!("peer host error: {message}");
                 self.emit(
@@ -552,6 +554,8 @@ pub async fn pair_start(address: &str, viewer_name: &str) -> Result<PairStartOut
         viewer_name: viewer_name.to_string(),
         app_version: env!("CARGO_PKG_VERSION").to_string(),
         proto_version: PEER_PROTO_VERSION,
+        // 앱↔앱 뷰어다(브라우저가 아니다) — 가시성은 공유 토글을 따른다.
+        client_kind: PeerClientKind::Peer,
     };
     let resp = reqwest::Client::new()
         .post(&url)

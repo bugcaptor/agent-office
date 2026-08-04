@@ -46,6 +46,7 @@ describe("FirstRunDialog", () => {
         peerShareEnabled: false,
         peerBind: "tailnet",
         peerPort: 47800,
+        webHostingEnabled: false,
       },
       false,
     );
@@ -79,6 +80,7 @@ describe("FirstRunDialog", () => {
         peerShareEnabled: false,
         peerBind: "tailnet",
         peerPort: 47800,
+        webHostingEnabled: false,
       },
       true,
     );
@@ -112,6 +114,7 @@ describe("FirstRunDialog", () => {
       peerShareEnabled: false,
       peerBind: "tailnet",
       peerPort: 47800,
+      webHostingEnabled: false,
     });
   });
 
@@ -141,6 +144,7 @@ describe("FirstRunDialog", () => {
         peerShareEnabled: false,
         peerBind: "tailnet",
         peerPort: 47800,
+        webHostingEnabled: false,
       },
       true,
     );

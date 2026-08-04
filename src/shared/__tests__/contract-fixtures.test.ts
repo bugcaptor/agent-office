@@ -248,6 +248,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "peerShareEnabled",
       "peerBind",
       "peerPort",
+      "webHostingEnabled",
     ]);
     expect(settings.gitStatusEnabled).toBe(true);
     expect(settings.fileIndexBackend).toBe("walker");
@@ -265,6 +266,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expect(settings.peerShareEnabled).toBe(false);
     expect(settings.peerBind).toBe("tailnet");
     expect(settings.peerPort).toBe(47800);
+    expect(settings.webHostingEnabled).toBe(false);
   });
 
   it("GitStatusResult / GitFileStatus", () => {

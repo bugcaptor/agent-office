@@ -234,6 +234,11 @@ pub struct AppSettings {
     /// 점유 시에는 +1씩 스캔한 실제 포트를 설정 UI에 표시한다.
     #[serde(default = "default_peer_port")]
     pub peer_port: u16,
+    /// 웹 호스팅(kbm #7m) — 브라우저로 접속해 상태 확인·터미널 조작을 하게
+    /// 한다. peer와 **같은 리스너**를 쓰고(`/web/…`), 켜져 있을 때만 정적
+    /// 자산과 웹 RPC가 응답한다. 페어링 승인은 여전히 필요하다. 기본 꺼짐.
+    #[serde(default)]
+    pub web_hosting_enabled: bool,
 }
 
 fn default_peer_port() -> u16 {
@@ -266,6 +271,7 @@ impl Default for AppSettings {
             peer_share_enabled: false,
             peer_bind: PeerBind::Tailnet,
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
+            web_hosting_enabled: false,
         }
     }
 }
@@ -422,6 +428,7 @@ mod tests {
             peer_share_enabled: false,
             peer_bind: Default::default(),
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
+            web_hosting_enabled: false,
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -531,6 +538,7 @@ mod tests {
             peer_share_enabled: false,
             peer_bind: Default::default(),
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
+            web_hosting_enabled: false,
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();

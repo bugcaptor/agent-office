@@ -50,6 +50,7 @@ describe("SettingsDialog", () => {
         peerShareEnabled: false,
         peerBind: "tailnet",
         peerPort: 47800,
+        webHostingEnabled: false,
       },
       false,
     );
@@ -85,6 +86,7 @@ describe("SettingsDialog", () => {
       peerShareEnabled: false,
       peerBind: "tailnet",
       peerPort: 47800,
+      webHostingEnabled: false,
     });
   });
 
@@ -114,6 +116,7 @@ describe("SettingsDialog", () => {
         peerShareEnabled: false,
         peerBind: "tailnet",
         peerPort: 47800,
+        webHostingEnabled: false,
       },
       false,
     );
@@ -154,6 +157,7 @@ describe("SettingsDialog", () => {
         peerShareEnabled: false,
         peerBind: "tailnet",
         peerPort: 47800,
+        webHostingEnabled: false,
       },
       false,
     );

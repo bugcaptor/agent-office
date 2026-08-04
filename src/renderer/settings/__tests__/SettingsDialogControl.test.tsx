@@ -54,6 +54,7 @@ function hydrate(cliEnabled: boolean) {
       peerShareEnabled: false,
       peerBind: "tailnet",
       peerPort: 47800,
+      webHostingEnabled: false,
     },
     false,
   );

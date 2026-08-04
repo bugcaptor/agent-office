@@ -48,6 +48,8 @@ pub struct PendingSummary {
     pub pairing_id: String,
     pub code: String,
     pub viewer_name: String,
+    /// 승인 다이얼로그가 "웹 브라우저"와 "다른 사무실"을 구분해 보여준다.
+    pub client_kind: String,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -82,6 +84,7 @@ pub async fn peer_host_status(app_state: State<'_, AppState>) -> Result<PeerHost
                 pairing_id: p.pairing_id,
                 code: p.code,
                 viewer_name: p.viewer_name,
+                client_kind: p.client_kind.as_str().to_string(),
             })
             .collect(),
     })

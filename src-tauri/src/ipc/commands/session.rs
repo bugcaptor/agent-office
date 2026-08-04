@@ -49,35 +49,50 @@ pub(crate) async fn create_session_inner(
     agent_id: String,
     opts: Option<SessionOpts>,
 ) -> Result<CreateSessionResult, String> {
-    let observer_enabled = app_state.settings.read().unwrap().observer_enabled;
-    if observer_enabled {
-        let _ = app_state
-            .observer_server
-            .ensure(app_state.observer.clone())
-            .await;
-    }
     let o = opts.unwrap_or_default();
     let profile = event_profile(&agent_id, &o);
-    // catch_unwind: Tauri에서 커맨드가 패닉하면 invoke 프라미스가 영원히
-    // settle되지 않는다 — 프론트는 "starting"에 고착되고 사용자는 앱 재시작
-    // 전까지 그 에이전트의 터미널을 못 띄운다(2026-07-11 실사고). create()
-    // 내부(스폰/하위 crate)의 잔여 패닉을 Err로 바꿔 프라미스를 반드시
-    // settle시키고, 프론트가 exited로 전환해 재시도할 수 있게 한다.
-    let manager = app_state.manager.clone();
+    spawn_session(
+        &app_state.manager,
+        &app_state.observer,
+        &app_state.observer_server,
+        &app_state.settings,
+        CreateSessionRequest {
+            agent_id,
+            cols: o.cols,
+            rows: o.rows,
+            cwd: o.cwd,
+            shell: o.shell,
+            startup_command: o.startup_command,
+            personality_prompt: o.personality_prompt,
+            autostart_claude: None, // 항상 기본 false (SessionManager::create의 unwrap_or(false))
+        },
+        profile,
+    )
+    .await
+}
+
+/// 세션 스폰의 **단일 본문**. `State<'_, AppState>` 없이 필요한 Arc만 받으므로
+/// Tauri 커맨드·control 서버·웹 RPC 셋이 전부 이걸 부른다 — 진입점이 늘 때마다
+/// 본문을 복제하던 부채(1p)를 여기서 끊는다.
+///
+/// observer가 켜져 있으면 서버를 먼저 지연 기동하고, 스폰 자체는
+/// `catch_unwind`로 감싼다: Tauri에서 커맨드가 패닉하면 invoke 프라미스가
+/// 영원히 settle되지 않아 프런트가 "starting"에 고착된다(2026-07-11 실사고).
+pub(crate) async fn spawn_session(
+    manager: &std::sync::Arc<crate::session::manager::SessionManager>,
+    observer: &std::sync::Arc<crate::observer::ObserverRuntime>,
+    observer_server: &std::sync::Arc<crate::observer::server::ObserverServerState>,
+    settings: &std::sync::Arc<std::sync::RwLock<crate::persistence::settings_store::AppSettings>>,
+    req: CreateSessionRequest,
+    profile: AgentEventProfile,
+) -> Result<CreateSessionResult, String> {
+    let observer_enabled = settings.read().unwrap().observer_enabled;
+    if observer_enabled {
+        let _ = observer_server.ensure(observer.clone()).await;
+    }
+    let manager = manager.clone();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-        manager.create_with_profile(
-            CreateSessionRequest {
-                agent_id,
-                cols: o.cols,
-                rows: o.rows,
-                cwd: o.cwd,
-                shell: o.shell,
-                startup_command: o.startup_command,
-                personality_prompt: o.personality_prompt,
-                autostart_claude: None, // 항상 기본 false (SessionManager::create의 unwrap_or(false))
-            },
-            profile,
-        )
+        manager.create_with_profile(req, profile)
     }));
     result.map_err(|panic| {
         let msg = panic_message(&panic);

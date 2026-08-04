@@ -100,6 +100,7 @@
             peer_share_enabled: false,
             peer_bind: Default::default(),
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
+            web_hosting_enabled: false,
         };
 
         // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
@@ -157,6 +158,7 @@
             peer_share_enabled: false,
             peer_bind: Default::default(),
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
+            web_hosting_enabled: false,
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
         // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.
@@ -207,6 +209,7 @@
             peer_share_enabled: false,
             peer_bind: Default::default(),
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
+            web_hosting_enabled: false,
         };
 
         assert!(set_app_settings_inner(&state, settings).await.is_ok());
@@ -351,17 +354,24 @@
             ),
             state_lock: std::sync::Arc::new(std::sync::Mutex::new(())),
         });
+        let live_usage = std::sync::Arc::new(crate::usage::LiveUsageState::new());
         // 피어 세션 공유(#7k): 서버는 띄우지 않고 컨텍스트만 만든다 —
         // 커맨드 테스트는 `peer:` 라우팅 분기만 지나가면 된다.
         let peer_hub = crate::peer::host::PeerHub::new();
         let peer_ctx = std::sync::Arc::new(crate::peer::PeerContext::new(
-            manager.clone(),
-            registry.clone(),
-            store.clone(),
-            settings.clone(),
-            peer_hub,
-            profile_dir.clone(),
-            "테스트호스트".into(),
+            crate::peer::PeerContextDeps {
+                manager: manager.clone(),
+                registry: registry.clone(),
+                store: store.clone(),
+                settings: settings.clone(),
+                hub: peer_hub,
+                app_data_dir: profile_dir.clone(),
+                host_name: "테스트호스트".into(),
+                hub_notify: hub.clone(),
+                observer: observer.clone(),
+                observer_server: observer_server.clone(),
+                live_usage: live_usage.clone(),
+            },
         ));
         let peer_viewer = crate::peer::viewer::ViewerRegistry::new(
             crate::peer::pairing::PeerHostStore::new(profile_dir.join("peer-hosts.json")),
@@ -386,7 +396,7 @@
             session_event_root: profile_dir.join("session-events").join("v1"),
             session_log_root: profile_dir.join("session-logs").join("v1"),
             session_log_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
-            live_usage: crate::usage::LiveUsageState::new(),
+            live_usage: live_usage.clone(),
             control_server,
             control_ctx,
             peer_server: std::sync::Arc::new(crate::peer::PeerServerState::default()),

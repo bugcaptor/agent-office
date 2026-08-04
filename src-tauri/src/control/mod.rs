@@ -216,10 +216,8 @@ async fn create(
     State(ctx): State<Arc<ControlContext>>,
     Json(p): Json<CreateParams>,
 ) -> Json<serde_json::Value> {
-    // create_session_inner과 동일: observer가 켜져 있으면 서버를 먼저 지연 기동.
-    if ctx.settings.read().unwrap().observer_enabled {
-        let _ = ctx.observer_server.ensure(ctx.observer.clone()).await;
-    }
+    // 스폰 본문은 `ipc::commands::spawn_session` 하나뿐이다 — 여기서 복제하던
+    // observer ensure + catch_unwind + create_with_profile를 그쪽으로 합쳤다.
     let profile = AgentEventProfile {
         name: p.name.clone().unwrap_or_else(|| p.agent_id.clone()),
         role: p.role.clone(),
@@ -228,27 +226,27 @@ async fn create(
     // 함께 보내는 값이라, CLI로 띄운 세션만 성격 없이 뜨면 안 된다(M3에서
     // 고친 결함: 예전엔 무조건 None이었다). 프로필이 없으면 기존대로 None.
     let personality_prompt = profile_personality(&ctx, &p.agent_id);
-    let manager = ctx.manager.clone();
-    // command와 동일한 catch_unwind 방어(패닉이 요청을 매달지 않게).
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-        manager.create_with_profile(
-            CreateSessionRequest {
-                agent_id: p.agent_id,
-                cols: p.cols,
-                rows: p.rows,
-                cwd: p.cwd,
-                shell: p.shell,
-                startup_command: p.startup_command,
-                personality_prompt,
-                autostart_claude: None,
-            },
-            profile,
-        )
-    }));
-    match result {
-        Ok(Ok(created)) => ok(created),
-        Ok(Err(e)) => fail(e),
-        Err(panic) => fail(format!("세션 생성 중 내부 오류(panic): {}", panic_message(&panic))),
+    match crate::ipc::commands::spawn_session(
+        &ctx.manager,
+        &ctx.observer,
+        &ctx.observer_server,
+        &ctx.settings,
+        CreateSessionRequest {
+            agent_id: p.agent_id,
+            cols: p.cols,
+            rows: p.rows,
+            cwd: p.cwd,
+            shell: p.shell,
+            startup_command: p.startup_command,
+            personality_prompt,
+            autostart_claude: None,
+        },
+        profile,
+    )
+    .await
+    {
+        Ok(created) => ok(created),
+        Err(e) => fail(e),
     }
 }
 

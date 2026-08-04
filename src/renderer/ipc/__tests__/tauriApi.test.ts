@@ -533,6 +533,7 @@ describe("app settings commands", () => {
       peerShareEnabled: false,
       peerBind: "tailnet" as const,
       peerPort: 47800,
+      webHostingEnabled: false,
     };
     const tauriApi = await importTauriApi();
 

@@ -190,7 +190,9 @@ pub struct AppState {
     /// Claude 사용량 실시간 조회(이슈 #33)의 메모리 상태. `load_usage_snapshot`
     /// 커맨드가 스로틀 판단·직전 성공 스냅샷을 여기 보관해, 렌더러 60초 폴링에
     /// 얹혀 리셋 경계 후 빠르게 실제 값을 갱신한다(docs/claude-usage-live-fetch-design.md).
-    pub live_usage: crate::usage::LiveUsageState,
+    /// `Arc`인 이유: 웹 RPC(`usage.snapshot`)가 같은 스로틀 상태를 공유해야
+    /// 폰 폴링이 중복 fetch를 일으키지 않는다(웹 호스팅 #7m).
+    pub live_usage: Arc<crate::usage::LiveUsageState>,
     /// CLI 제어(#55, docs/cli-control-design.md)의 로컬 control 서버 상태.
     /// cli_enabled ON일 때만 기동되고 포트/토큰 파일을 관리한다.
     pub control_server: Arc<crate::control::ControlServerState>,

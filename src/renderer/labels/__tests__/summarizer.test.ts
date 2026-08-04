@@ -84,6 +84,7 @@ beforeEach(() => {
       peerShareEnabled: false,
       peerBind: "tailnet",
       peerPort: 47800,
+      webHostingEnabled: false,
     },
     false
   );
@@ -161,6 +162,7 @@ describe("installTaskLabelSummarizer", () => {
           peerShareEnabled: false,
           peerBind: "tailnet",
           peerPort: 47800,
+          webHostingEnabled: false,
         },
         false,
       );
@@ -433,6 +435,7 @@ describe("installTaskLabelSummarizer", () => {
         peerShareEnabled: false,
         peerBind: "tailnet",
         peerPort: 47800,
+        webHostingEnabled: false,
       },
       false
     );

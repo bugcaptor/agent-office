@@ -11,19 +11,25 @@
 // 완료할 수 있게 하는 사람-루프 장치이고, 승인 클릭은 권한을 고르는 자리다.
 // 코드 3회 오입력이면 그 페어링은 폐기한다.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use super::protocol::PeerPermission;
+use super::protocol::{PeerClientKind, PeerPermission};
 
 /// 페어링 코드 유효 시간.
 pub const PAIRING_TTL: Duration = Duration::from_secs(120);
 /// 코드 오입력 허용 횟수.
 const MAX_CODE_ATTEMPTS: u8 = 3;
+/// 동시에 대기할 수 있는 페어링 수 — 승인 다이얼로그 폭주 방지.
+const MAX_PENDING: usize = 5;
+
+/// 발급 토큰 수명(쿠키 Max-Age와 같은 값). 폰은 오래 열어 두므로 짧으면
+/// 짜증이고, 길면 분실 위험이라 30일로 잡고 기기별 폐기를 실질 대안으로 둔다.
+pub const TOKEN_MAX_AGE_SECS: u64 = 30 * 24 * 3600;
 
 // ── 호스트: 발급 토큰 ────────────────────────────────────────────────
 
@@ -37,6 +43,10 @@ pub struct PeerRecord {
     #[serde(default)]
     pub permission: PeerPermission,
     pub created_at: u64,
+    /// 앱↔앱 뷰어인가 브라우저인가. 가시성 규칙이 갈린다(웹 호스팅 #7m).
+    /// 기존 토큰 파일에는 없으므로 default = `Peer`(역호환).
+    #[serde(default)]
+    pub kind: PeerClientKind,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -196,6 +206,8 @@ pub struct PendingPairing {
     pub pairing_id: String,
     pub code: String,
     pub viewer_name: String,
+    /// 승인 다이얼로그가 "웹 브라우저"인지 "다른 사무실"인지 구분해 보여준다.
+    pub client_kind: PeerClientKind,
     pub decision: PairingDecision,
     attempts: u8,
     started: Instant,
@@ -221,13 +233,18 @@ pub struct PairingState {
 }
 
 impl PairingState {
-    /// 새 페어링을 열고 (pairingId, 6자리 코드)를 만든다.
-    pub fn start(&self, viewer_name: &str) -> PendingPairing {
+    /// 새 페어링을 열고 (pairingId, 6자리 코드)를 만든다. 동시 대기가 상한을
+    /// 넘으면 `None` — 승인 다이얼로그를 폭주시키는 것 자체가 공격이다.
+    pub fn start(&self, viewer_name: &str, client_kind: PeerClientKind) -> Option<PendingPairing> {
         self.sweep();
+        if self.pending.lock().len() >= MAX_PENDING {
+            return None;
+        }
         let entry = PendingPairing {
             pairing_id: uuid::Uuid::new_v4().simple().to_string(),
             code: random_code(),
             viewer_name: viewer_name.to_string(),
+            client_kind,
             decision: PairingDecision::Pending,
             attempts: 0,
             started: Instant::now(),
@@ -235,7 +252,7 @@ impl PairingState {
         self.pending
             .lock()
             .insert(entry.pairing_id.clone(), entry.clone());
-        entry
+        Some(entry)
     }
 
     /// 호스트 UI가 표시할 대기 목록.
@@ -307,6 +324,72 @@ impl PairingState {
     }
 }
 
+// ── 레이트리밋 ────────────────────────────────────────────────────────
+//
+// 브라우저 클라이언트가 생기면 페어링 표면이 커진다(#7m §4). 코드 3회 오입력
+// 폐기만으로는 "새 페어링을 계속 열어 코드를 무한 시도"를 못 막으므로, 시작
+// 시도와 인증 실패를 IP별 슬라이딩 윈도로 센다.
+
+/// `pair/start` 허용 횟수와 창.
+const START_LIMIT: usize = 3;
+const START_WINDOW: Duration = Duration::from_secs(60);
+/// 인증 실패(코드 오입력·토큰 무효) 허용 횟수와 창.
+const AUTH_FAIL_LIMIT: usize = 10;
+const AUTH_FAIL_WINDOW: Duration = Duration::from_secs(600);
+
+#[derive(Default)]
+pub struct PairRateLimiter {
+    starts: Mutex<HashMap<std::net::IpAddr, VecDeque<Instant>>>,
+    failures: Mutex<HashMap<std::net::IpAddr, VecDeque<Instant>>>,
+}
+
+fn note(
+    map: &Mutex<HashMap<std::net::IpAddr, VecDeque<Instant>>>,
+    ip: std::net::IpAddr,
+    window: Duration,
+    limit: usize,
+) -> bool {
+    let now = Instant::now();
+    let mut guard = map.lock();
+    let entry = guard.entry(ip).or_default();
+    while entry.front().is_some_and(|t| now.duration_since(*t) > window) {
+        entry.pop_front();
+    }
+    if entry.len() >= limit {
+        return false;
+    }
+    entry.push_back(now);
+    true
+}
+
+impl PairRateLimiter {
+    /// 페어링 시작을 허용할지. false면 429.
+    pub fn allow_start(&self, ip: std::net::IpAddr) -> bool {
+        note(&self.starts, ip, START_WINDOW, START_LIMIT)
+    }
+
+    /// 인증 실패 1건 기록. false면 그 IP는 당분간 차단(429).
+    pub fn note_auth_failure(&self, ip: std::net::IpAddr) -> bool {
+        note(&self.failures, ip, AUTH_FAIL_WINDOW, AUTH_FAIL_LIMIT)
+    }
+
+    /// 지금 이 IP가 인증 시도를 더 해도 되는지(기록 없이 조회만).
+    pub fn auth_allowed(&self, ip: std::net::IpAddr) -> bool {
+        let now = Instant::now();
+        let guard = self.failures.lock();
+        match guard.get(&ip) {
+            Some(entry) => {
+                entry
+                    .iter()
+                    .filter(|t| now.duration_since(**t) <= AUTH_FAIL_WINDOW)
+                    .count()
+                    < AUTH_FAIL_LIMIT
+            }
+            None => true,
+        }
+    }
+}
+
 /// 6자리 숫자 코드. uuid v4 바이트에서 뽑아 별도 난수 의존을 두지 않는다.
 fn random_code() -> String {
     let bytes = uuid::Uuid::new_v4().into_bytes();
@@ -361,7 +444,7 @@ mod tests {
     #[test]
     fn pairing_requires_both_code_and_human_approval() {
         let state = PairingState::default();
-        let p = state.start("맥북");
+        let p = state.start("맥북", PeerClientKind::Peer).unwrap();
         // 승인 전에는 코드가 맞아도 대기.
         assert_eq!(
             state.complete(&p.pairing_id, &p.code),
@@ -382,7 +465,7 @@ mod tests {
     #[test]
     fn wrong_code_three_times_kills_the_pairing() {
         let state = PairingState::default();
-        let p = state.start("낯선 손님");
+        let p = state.start("낯선 손님", PeerClientKind::Peer).unwrap();
         state.approve(&p.pairing_id, PeerPermission::Input);
         assert_eq!(
             state.complete(&p.pairing_id, "000000-nope"),
@@ -406,12 +489,47 @@ mod tests {
     #[test]
     fn rejected_pairing_reports_rejection() {
         let state = PairingState::default();
-        let p = state.start("손님");
+        let p = state.start("손님", PeerClientKind::Web).unwrap();
         assert!(state.reject(&p.pairing_id));
         assert_eq!(
             state.complete(&p.pairing_id, &p.code),
             PairingOutcome::Rejected
         );
+    }
+
+    #[test]
+    fn pending_pairings_are_capped() {
+        let state = PairingState::default();
+        for _ in 0..MAX_PENDING {
+            assert!(state.start("손님", PeerClientKind::Web).is_some());
+        }
+        // 승인 다이얼로그를 폭주시키는 것 자체가 공격이다.
+        assert!(state.start("손님", PeerClientKind::Web).is_none());
+    }
+
+    #[test]
+    fn rate_limiter_caps_starts_per_ip() {
+        let limiter = PairRateLimiter::default();
+        let ip: std::net::IpAddr = "100.64.0.9".parse().unwrap();
+        let other: std::net::IpAddr = "100.64.0.10".parse().unwrap();
+        for _ in 0..START_LIMIT {
+            assert!(limiter.allow_start(ip));
+        }
+        assert!(!limiter.allow_start(ip), "같은 IP는 창 안에서 막힌다");
+        // IP별 독립이라 다른 기기는 영향받지 않는다.
+        assert!(limiter.allow_start(other));
+    }
+
+    #[test]
+    fn rate_limiter_blocks_after_repeated_auth_failures() {
+        let limiter = PairRateLimiter::default();
+        let ip: std::net::IpAddr = "100.64.0.11".parse().unwrap();
+        assert!(limiter.auth_allowed(ip));
+        for _ in 0..AUTH_FAIL_LIMIT {
+            assert!(limiter.note_auth_failure(ip));
+        }
+        assert!(!limiter.note_auth_failure(ip));
+        assert!(!limiter.auth_allowed(ip));
     }
 
     #[test]
@@ -435,6 +553,7 @@ mod tests {
                 token: token.clone(),
                 permission: PeerPermission::Input,
                 created_at: now_ms(),
+                kind: PeerClientKind::Peer,
             })
             .unwrap();
 
@@ -469,6 +588,7 @@ mod tests {
                 token: new_token(),
                 permission: PeerPermission::ReadOnly,
                 created_at: 0,
+                kind: PeerClientKind::Web,
             })
             .unwrap();
         let mode = std::fs::metadata(token_path(&dir))

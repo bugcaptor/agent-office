@@ -533,6 +533,7 @@ describe("app settings slice", () => {
       peerShareEnabled: false,
       peerBind: "tailnet",
       peerPort: 47800,
+      webHostingEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(false);
   });
@@ -563,6 +564,7 @@ describe("app settings slice", () => {
         peerShareEnabled: false,
         peerBind: "tailnet",
         peerPort: 47800,
+        webHostingEnabled: false,
       },
       true
     );
@@ -591,6 +593,7 @@ describe("app settings slice", () => {
       peerShareEnabled: false,
       peerBind: "tailnet",
       peerPort: 47800,
+      webHostingEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(true);
   });
@@ -621,6 +624,7 @@ describe("app settings slice", () => {
       peerShareEnabled: false,
       peerBind: "tailnet",
       peerPort: 47800,
+      webHostingEnabled: false,
     });
   });
 
@@ -650,6 +654,7 @@ describe("app settings slice", () => {
         peerShareEnabled: false,
         peerBind: "tailnet",
         peerPort: 47800,
+        webHostingEnabled: false,
       },
       true
     );
@@ -685,6 +690,7 @@ describe("app settings slice", () => {
       peerShareEnabled: false,
       peerBind: "tailnet",
       peerPort: 47800,
+      webHostingEnabled: false,
     });
   });
 

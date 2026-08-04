@@ -67,6 +67,7 @@ function hydrate(patch: Partial<AppSettings> = {}) {
       peerShareEnabled: false,
       peerBind: "tailnet",
       peerPort: 47800,
+      webHostingEnabled: false,
       ...patch,
     },
     false,

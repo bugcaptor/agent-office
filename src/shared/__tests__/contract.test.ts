@@ -298,6 +298,7 @@ describe("AppSettings (opt-in 설정 계약)", () => {
       peerShareEnabled: false,
       peerBind: "tailnet",
       peerPort: 47800,
+      webHostingEnabled: false,
     });
   });
 

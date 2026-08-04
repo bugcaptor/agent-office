@@ -26,6 +26,63 @@ pub const PEER_HOSTS_FILE: &str = "peer-hosts.json";
 /// 이 접두사가 붙은 agentId는 **어떤 로컬 영속 계층에도 저장하지 않는다**(§결정 3).
 pub const PEER_AGENT_PREFIX: &str = "peer:";
 
+/// 페어링한 클라이언트의 종류. 가시성 규칙이 다르다 — 앱↔앱 뷰어(`Peer`)는
+/// **캐릭터별 공유 토글을 켠 것만** 보고(손님 의미론), 브라우저(`Web`)는 내
+/// 기계를 내가 조종하는 것이므로 **내 캐릭터 전부**를 본다(주인 의미론).
+/// 기존 토큰 파일에는 이 필드가 없으므로 `#[serde(default)]` = `Peer`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PeerClientKind {
+    #[default]
+    Peer,
+    Web,
+}
+
+impl PeerClientKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Peer => "peer",
+            Self::Web => "web",
+        }
+    }
+    pub fn is_web(self) -> bool {
+        matches!(self, Self::Web)
+    }
+}
+
+/// 웹 RPC 실패 사유. 폐쇄 집합 — 클라이언트가 문자열로 분기한다.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RpcError {
+    pub code: String,
+    pub message: String,
+}
+
+impl RpcError {
+    pub fn new(code: &str, message: impl Into<String>) -> Self {
+        Self {
+            code: code.to_string(),
+            message: message.into(),
+        }
+    }
+    /// allowlist 테이블에 없는 커맨드 — **존재하는 커맨드라도 미등재면 이것**이다.
+    pub fn unknown_cmd(cmd: &str) -> Self {
+        Self::new("unknownCmd", format!("허용되지 않은 명령입니다: {cmd}"))
+    }
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self::new("forbidden", message)
+    }
+    pub fn bad_args(message: impl Into<String>) -> Self {
+        Self::new("badArgs", message)
+    }
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new("notFound", message)
+    }
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::new("internal", message)
+    }
+}
+
 /// 뷰어에게 허용할 권한. kill/dispose/resize/생성은 이 체계에 아예 없다(§결정 6·7).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,6 +139,9 @@ pub struct PairStartRequest {
     pub app_version: String,
     #[serde(default)]
     pub proto_version: u32,
+    /// 브라우저에서 온 요청인지. 승인 다이얼로그 표시와 가시성 규칙이 갈린다.
+    #[serde(default)]
+    pub client_kind: PeerClientKind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,6 +269,15 @@ pub enum HostMsg {
         rows: u16,
     },
     Pong,
+    /// 웹 RPC 응답(웹 호스팅 #7m). `ok=false`면 `error`가 채워진다.
+    RpcResult {
+        id: u64,
+        ok: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        data: Option<serde_json::Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<RpcError>,
+    },
     Error {
         message: String,
     },
@@ -228,6 +297,15 @@ pub enum ViewerMsg {
     Input {
         agent_id: String,
         data: String,
+    },
+    /// 웹 클라이언트의 요청/응답 상관 RPC(웹 호스팅 #7m). 커맨드 80개를
+    /// 라우트로 펼치는 대신 이 프레임 하나에 얹고, **allowlist 테이블에 없는
+    /// `cmd`는 무조건 거부**한다.
+    Rpc {
+        id: u64,
+        cmd: String,
+        #[serde(default)]
+        args: serde_json::Value,
     },
     Ping,
 }

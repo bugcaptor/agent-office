@@ -47,6 +47,7 @@ const SETTINGS_ON: AppSettings = {
   peerShareEnabled: false,
   peerBind: "tailnet",
   peerPort: 47800,
+  webHostingEnabled: false,
 };
 
 function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {

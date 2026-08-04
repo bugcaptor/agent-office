@@ -93,7 +93,8 @@ pub(crate) async fn set_app_settings_inner(
     // 피어 세션 공유(#7k) lifecycle: peer_share_enabled 토글에 따라 수신 서버를
     // 기동/정지한다. 끄면 리스너만 내려가고 발급 토큰·공유 목록은 남는다
     // (재활성화 시 재페어링 불필요 — control의 "승인은 지속" 규칙과 같다).
-    if settings.peer_share_enabled {
+    // 웹 호스팅(#7m)이 같은 리스너를 쓰므로 어느 쪽이든 켜져 있으면 유지한다.
+    if settings.peer_share_enabled || settings.web_hosting_enabled {
         let _ = app_state
             .peer_server
             .ensure(app_state.peer_ctx.clone(), settings.peer_port)

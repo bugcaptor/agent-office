@@ -82,6 +82,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   peerShareEnabled: false,
   peerBind: "tailnet",
   peerPort: 47800,
+  webHostingEnabled: false,
 };
 
 /**
@@ -342,6 +343,7 @@ interface AppState {
         | "peerShareEnabled"
         | "peerBind"
         | "peerPort"
+        | "webHostingEnabled"
         | "ttsEnabled"
         | "ttsRewriteModel"
         | "ttsRewriteProvider"

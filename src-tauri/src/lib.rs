@@ -504,16 +504,25 @@ pub fn run() {
             //   · 뷰어  : 저장된 피어에 자동 재접속하는 얇은 레지스트리.
             // control 서버와 같은 2단계 옵트인이라 peer_share_enabled가 켜져 있어도
             // 페어링 승인 전에는 모든 요청이 401이다.
+            // 사용량 스로틀 상태는 네이티브 커맨드와 웹 RPC가 공유한다
+            // (폰 폴링이 중복 fetch를 일으키지 않게).
+            let live_usage = Arc::new(crate::usage::LiveUsageState::new());
             let peer_server = Arc::new(crate::peer::PeerServerState::default());
             let host_name = crate::peer::local_host_name();
             let peer_ctx = Arc::new(crate::peer::PeerContext::new(
-                manager.clone(),
-                registry.clone(),
-                store.clone(),
-                settings_cache.clone(),
-                peer_hub.clone(),
-                data_dir.clone(),
-                host_name.clone(),
+                crate::peer::PeerContextDeps {
+                    manager: manager.clone(),
+                    registry: registry.clone(),
+                    store: store.clone(),
+                    settings: settings_cache.clone(),
+                    hub: peer_hub.clone(),
+                    app_data_dir: data_dir.clone(),
+                    host_name: host_name.clone(),
+                    hub_notify: hub.clone(),
+                    observer: observer.clone(),
+                    observer_server: observer_server.clone(),
+                    live_usage: live_usage.clone(),
+                },
             ));
             peer_ctx.apply_shares();
             {
@@ -540,11 +549,17 @@ pub fn run() {
                     );
                 }));
             }
-            if settings_cache.read().unwrap().peer_share_enabled {
-                let port = settings_cache.read().unwrap().peer_port;
-                let _ = tauri::async_runtime::block_on(
-                    peer_server.ensure(peer_ctx.clone(), port),
-                );
+            // 두 기능이 같은 리스너를 공유한다 — 어느 쪽이든 켜져 있으면 뜬다.
+            {
+                let (needs_server, port) = {
+                    let s = settings_cache.read().unwrap();
+                    (s.peer_share_enabled || s.web_hosting_enabled, s.peer_port)
+                };
+                if needs_server {
+                    let _ = tauri::async_runtime::block_on(
+                        peer_server.ensure(peer_ctx.clone(), port),
+                    );
+                }
             }
             let peer_viewer = crate::peer::viewer::ViewerRegistry::new(
                 crate::peer::pairing::PeerHostStore::new(crate::peer::pairing::hosts_path(
@@ -609,7 +624,7 @@ pub fn run() {
                 session_event_root: session_event_root(&data_dir),
                 session_log_root,
                 session_log_enabled,
-                live_usage: crate::usage::LiveUsageState::new(),
+                live_usage: live_usage.clone(),
                 control_server,
                 control_ctx,
                 peer_server,
@@ -890,6 +905,7 @@ mod tests {
             peer_share_enabled: false,
             peer_bind: Default::default(),
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
+            web_hosting_enabled: false,
         }));
         let registry = Arc::new(SessionRegistry::new());
         let events: Arc<dyn AppEvents> = Arc::new(crate::state::fake::RecordingEvents::default());
