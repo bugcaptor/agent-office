@@ -47,6 +47,9 @@ describe("SettingsDialog", () => {
         ttsEnabled: false,
         ttsRewriteModel: "claude-haiku-4-5",
         ttsRewriteProvider: "auto",
+        peerShareEnabled: false,
+        peerBind: "tailnet",
+        peerPort: 47800,
       },
       false,
     );
@@ -79,6 +82,9 @@ describe("SettingsDialog", () => {
       ttsEnabled: false,
       ttsRewriteModel: "claude-haiku-4-5",
       ttsRewriteProvider: "auto",
+      peerShareEnabled: false,
+      peerBind: "tailnet",
+      peerPort: 47800,
     });
   });
 
@@ -105,6 +111,9 @@ describe("SettingsDialog", () => {
         ttsEnabled: false,
         ttsRewriteModel: "claude-haiku-4-5",
         ttsRewriteProvider: "auto",
+        peerShareEnabled: false,
+        peerBind: "tailnet",
+        peerPort: 47800,
       },
       false,
     );
@@ -142,6 +151,9 @@ describe("SettingsDialog", () => {
         ttsEnabled: false,
         ttsRewriteModel: "claude-haiku-4-5",
         ttsRewriteProvider: "auto",
+        peerShareEnabled: false,
+        peerBind: "tailnet",
+        peerPort: 47800,
       },
       false,
     );

@@ -20,6 +20,7 @@
 //   carry) against any invoke/event-arrival race, not the sole source of truth.
 import { useAppStore } from "./store/appStore";
 import { installSessionBridge } from "./ipc/sessionBridge";
+import { installPeerBridge } from "./ipc/peerBridge";
 import { installMascotBridge } from "./ipc/mascotBridge";
 import { installWindowFocusTracking } from "./ipc/windowFocus";
 import { installPersistence } from "./store/persist";
@@ -197,6 +198,9 @@ export async function bootApp(): Promise<() => void> {
   }
 
   const offBridge = installSessionBridge();
+  // 피어 세션 공유(#7k) — 세션 브리지 직후. 원격 캐릭터를 스토어에 세우고,
+  // 호스트 역할일 때 스냅샷 요청에 답한다.
+  const offPeer = installPeerBridge();
   // 데스크톱 마스코트(이슈 #72) — 세션 브리지 직후. officeBus(=emitAgentClicked)를
   // 쓰므로 그 뒤여야 하고, 설정 hydrate 이후라 mascotEnabled를 곧바로 읽는다.
   const offMascot = installMascotBridge();
@@ -237,6 +241,7 @@ export async function bootApp(): Promise<() => void> {
 
   return () => {
     offBridge();
+    offPeer();
     offMascot();
     offFocus();
     offPersistence();

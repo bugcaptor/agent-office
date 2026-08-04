@@ -530,6 +530,9 @@ describe("app settings commands", () => {
       ttsEnabled: false,
       ttsRewriteModel: "claude-haiku-4-5" as const,
       ttsRewriteProvider: "auto" as const,
+      peerShareEnabled: false,
+      peerBind: "tailnet" as const,
+      peerPort: 47800,
     };
     const tauriApi = await importTauriApi();
 

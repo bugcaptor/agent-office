@@ -52,6 +52,55 @@ impl AppEvents for TauriEvents {
     }
 }
 
+/// 피어 뷰어가 원격 세션의 이벤트를 렌더러로 재방출하는 통로.
+/// `peer::viewer`가 Tauri를 모르게 하려고 트레잇 뒤에 둔다.
+pub struct TauriViewerEvents {
+    pub app: AppHandle,
+}
+impl crate::peer::viewer::ViewerEvents for TauriViewerEvents {
+    fn emit(&self, event: &str, payload: serde_json::Value) {
+        let _ = self.app.emit(event, payload);
+    }
+}
+
+/// 두 방출 경계를 하나로 세운다(피어 세션 공유 #7k §결정 4).
+/// `AppEvents`가 이미 **모든 앱 이벤트의 단일 관문**이라, 여기 한 겹만 끼우면
+/// 공유 중인 캐릭터의 상태·알림·활동이 그대로 뷰어로 미러된다 — 방출 지점마다
+/// 훅을 추가할 필요가 없다. `primary`(=TauriEvents)가 먼저다.
+pub struct CompositeEvents {
+    pub primary: Arc<dyn AppEvents>,
+    pub secondary: Arc<dyn AppEvents>,
+}
+
+impl CompositeEvents {
+    pub fn new(primary: Arc<dyn AppEvents>, secondary: Arc<dyn AppEvents>) -> Self {
+        Self { primary, secondary }
+    }
+}
+
+impl AppEvents for CompositeEvents {
+    fn session_started(&self, ev: &SessionStartedEvent) {
+        self.primary.session_started(ev);
+        self.secondary.session_started(ev);
+    }
+    fn session_state(&self, ev: &SessionStateEvent) {
+        self.primary.session_state(ev);
+        self.secondary.session_state(ev);
+    }
+    fn notification_new(&self, ev: &NotificationEvent) {
+        self.primary.notification_new(ev);
+        self.secondary.notification_new(ev);
+    }
+    fn notification_cleared(&self, agent_id: &str, ids: &[String]) {
+        self.primary.notification_cleared(agent_id, ids);
+        self.secondary.notification_cleared(agent_id, ids);
+    }
+    fn activity_event(&self, ev: &ActivityEvent) {
+        self.primary.activity_event(ev);
+        self.secondary.activity_event(ev);
+    }
+}
+
 /// sid → (agentId, state). SessionManager가 쓰고 NotificationHub가 읽어 순환 의존 제거.
 #[derive(Default)]
 pub struct SessionRegistry {
@@ -148,6 +197,14 @@ pub struct AppState {
     /// control 핸들러가 쥐는 앱 상태 클론들. `set_app_settings`가 cli_enabled
     /// ON 전환 시 `control_server.ensure(control_ctx)`에 넘긴다.
     pub control_ctx: Arc<crate::control::ControlContext>,
+    /// 피어 세션 공유(#7k)의 수신 서버 상태(호스트 역할). `peer_share_enabled`가
+    /// 켜져 있을 때만 뜬다.
+    pub peer_server: Arc<crate::peer::PeerServerState>,
+    /// peer 핸들러가 쥐는 앱 상태 클론 + 허브. 설정 토글 시 `ensure`에 넘긴다.
+    pub peer_ctx: Arc<crate::peer::PeerContext>,
+    /// 원격 세션 레지스트리(뷰어 역할). `peer:` 접두사 키의 출력/입력이 여기로
+    /// 라우팅된다 — 로컬 `SessionManager`는 원격을 전혀 모른다.
+    pub peer_viewer: Arc<crate::peer::viewer::ViewerRegistry>,
     /// 캐릭터 봇 모드(#57, docs/bot-mode-design.md)의 탭별 폴링 태스크 소유자.
     pub bot_runtime: Arc<crate::bot::BotRuntime>,
     /// 봇 폴링 태스크가 쥐는 앱 상태 클론(세션 주입·프로필/상태 접근).

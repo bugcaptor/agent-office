@@ -97,6 +97,9 @@
             tts_enabled: false,
             tts_rewrite_model: Default::default(),
             tts_rewrite_provider: Default::default(),
+            peer_share_enabled: false,
+            peer_bind: Default::default(),
+            peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
         };
 
         // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
@@ -151,6 +154,9 @@
             tts_enabled: false,
             tts_rewrite_model: Default::default(),
             tts_rewrite_provider: Default::default(),
+            peer_share_enabled: false,
+            peer_bind: Default::default(),
+            peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
         // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.
@@ -198,6 +204,9 @@
             tts_enabled: false,
             tts_rewrite_model: Default::default(),
             tts_rewrite_provider: Default::default(),
+            peer_share_enabled: false,
+            peer_bind: Default::default(),
+            peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
         };
 
         assert!(set_app_settings_inner(&state, settings).await.is_ok());
@@ -342,6 +351,22 @@
             ),
             state_lock: std::sync::Arc::new(std::sync::Mutex::new(())),
         });
+        // 피어 세션 공유(#7k): 서버는 띄우지 않고 컨텍스트만 만든다 —
+        // 커맨드 테스트는 `peer:` 라우팅 분기만 지나가면 된다.
+        let peer_hub = crate::peer::host::PeerHub::new();
+        let peer_ctx = std::sync::Arc::new(crate::peer::PeerContext::new(
+            manager.clone(),
+            registry.clone(),
+            store.clone(),
+            settings.clone(),
+            peer_hub,
+            profile_dir.clone(),
+            "테스트호스트".into(),
+        ));
+        let peer_viewer = crate::peer::viewer::ViewerRegistry::new(
+            crate::peer::pairing::PeerHostStore::new(profile_dir.join("peer-hosts.json")),
+            "테스트뷰어".into(),
+        );
         let state = AppState {
             manager,
             hub,
@@ -364,6 +389,9 @@
             live_usage: crate::usage::LiveUsageState::new(),
             control_server,
             control_ctx,
+            peer_server: std::sync::Arc::new(crate::peer::PeerServerState::default()),
+            peer_ctx,
+            peer_viewer,
             bot_runtime,
             bot_ctx,
             wake_lock: std::sync::Arc::new(crate::power::WakeLock::new()),

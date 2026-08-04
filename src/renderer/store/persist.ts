@@ -17,6 +17,7 @@
 // touching both within the window still collapses into a single saveState call.
 import { useAppStore } from "./appStore";
 import { tauriApi } from "../ipc/tauriApi";
+import { isRemoteAgentId } from "../ipc/peerApi";
 import type { AgentProfile, PersistedState } from "./types";
 
 const DEBOUNCE_MS = 500;
@@ -36,7 +37,11 @@ export function installPersistence(): () => void {
       timer = null;
       const { agents, agentOrder, vacationMode } = useAppStore.getState();
       const state: PersistedState = {
+        // 피어 세션 공유(#7k §결정 3): 원격 캐릭터(`peer:` 키)는 오피스에 서 있을
+        // 뿐 이 앱의 프로필이 아니다 — 저장하면 호스트가 꺼진 뒤에도 유령 캐릭터로
+        // 남고, 프로필 소유권(호스트 단독)도 깨진다. 저장 직전에 걸러낸다.
         agents: agentOrder
+          .filter((id) => !isRemoteAgentId(id))
           .map((id) => agents[id])
           .filter((a): a is AgentProfile => a != null),
         version: 1,

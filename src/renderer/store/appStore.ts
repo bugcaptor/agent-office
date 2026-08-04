@@ -42,6 +42,8 @@ import type {
   UsageSnapshot,
 } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
+import type { PendingPairing, PeerAgentInfo, PeerViewerStatus } from "../ipc/peerApi";
+import { isRemoteAgentId } from "../ipc/peerApi";
 
 const MAX_EXCERPT = 80;
 /** 도구 요약 라벨 갱신 최소 간격(ms). 도구가 빠르게 연달아 와도 라벨이 튀지 않게 스로틀. */
@@ -77,6 +79,9 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   ttsEnabled: false,
   ttsRewriteModel: "claude-haiku-4-5",
   ttsRewriteProvider: "auto",
+  peerShareEnabled: false,
+  peerBind: "tailnet",
+  peerPort: 47800,
 };
 
 /**
@@ -175,6 +180,15 @@ interface AppState {
    * "봇 운전 중" — 로컬 키 입력이 잠기고 배지가 뜬다. 런타임 전용(비영속,
    * 앱 재시작 시 꺼진 상태로 시작). */
   botMode: Record<string, BotAgentStatus>;
+  /**
+   * 피어 세션 공유(#7k) 뷰어 상태 — 연결된 호스트와 그들이 공유 중인 캐릭터.
+   * 런타임 전용(비영속). 원격 캐릭터는 `agents`/`agentOrder`에도 `peer:` 키로
+   * 함께 들어가 기존 오피스/탭/터미널 파이프라인을 그대로 탄다 — 대신
+   * persist.ts가 저장 시 그 키를 걸러낸다(§결정 3 "영속화 금지 규칙").
+   */
+  peerViewers: PeerViewerStatus[];
+  /** 호스트 역할: 승인 대기 중인 페어링(코드 표시용). 런타임 전용. */
+  peerPending: PendingPairing[];
 
   // ---- profile actions ----
   addAgent(profile: AgentProfile): void;
@@ -196,6 +210,16 @@ interface AppState {
    * 세션의 전이라 `kind`를 `external`로, 부재/false면 `pty`로 확정한다. */
   setSessionState(e: { agentId: string; status: SessionStatus; external?: boolean }): void;
   setSessionSize(agentId: string, cols: number, rows: number): void;
+
+  // ---- 피어 세션 공유(#7k) ----
+  /**
+   * 뷰어 상태를 통째로 갈아끼우고, 연결된 피어가 공유 중인 캐릭터를
+   * `agents`/`agentOrder`에 `peer:<peerId>:<agentId>` 키로 반영한다. 사라진
+   * 피어/캐릭터의 항목은 함께 정리된다(끊긴 피어의 캐릭터는 오피스에서 빠진다).
+   */
+  syncPeerViewers(list: PeerViewerStatus[]): void;
+  /** 호스트 역할: 승인 대기 페어링 목록 갱신. */
+  setPeerPending(pending: PendingPairing[]): void;
 
   // ---- bot mode (이슈 #57) ----
   /** 이 탭의 봇 모드를 켠다 — 백엔드 폴링 태스크를 띄우고 로컬 입력을 잠근다.
@@ -315,6 +339,9 @@ interface AppState {
         | "keepAwakeEnabled"
         | "sessionLogEnabled"
         | "mascotEnabled"
+        | "peerShareEnabled"
+        | "peerBind"
+        | "peerPort"
         | "ttsEnabled"
         | "ttsRewriteModel"
         | "ttsRewriteProvider"
@@ -328,6 +355,22 @@ interface AppState {
       "summarizerEnabled" | "summaryProvider" | "diaryEnabled" | "observerEnabled"
     >,
   ): void;
+}
+
+/** 호스트가 알려준 세션 상태 문자열 → 스토어의 SessionStatus. */
+function remoteSessionStatus(state: string | null | undefined): SessionStatus {
+  switch (state) {
+    case "running":
+      return "running";
+    case "starting":
+      return "starting";
+    case "exited":
+    case "disposed":
+      return "exited";
+    default:
+      // 호스트에 세션이 아직 없다 = 원격에서 시작되기를 기다리는 상태.
+      return "exited";
+  }
 }
 
 export const useAppStore = create<AppState>()(
@@ -357,6 +400,62 @@ export const useAppStore = create<AppState>()(
     settingsFirstRun: false,
     usage: null,
     botMode: {},
+    peerViewers: [],
+    peerPending: [],
+
+    syncPeerViewers: (list) =>
+      set((s) => {
+        // 연결된 피어의 캐릭터만 오피스에 세운다 — 끊긴 피어는 사라진다
+        // ("연결 끊김" 연출은 남은 캐릭터가 아니라 피어 목록이 담당한다).
+        const live: PeerAgentInfo[] = list
+          .filter((p) => p.state === "connected")
+          .flatMap((p) => p.agents ?? []);
+        const liveIds = new Set(live.map((a) => a.agentId));
+
+        const agents = { ...s.agents };
+        const sessions = { ...s.sessions };
+        // 사라진 원격 캐릭터 정리(로컬 캐릭터는 절대 건드리지 않는다).
+        for (const id of Object.keys(agents)) {
+          if (isRemoteAgentId(id) && !liveIds.has(id)) {
+            delete agents[id];
+            delete sessions[id];
+          }
+        }
+        for (const info of live) {
+          const prev = agents[info.agentId];
+          agents[info.agentId] = {
+            ...(prev ?? {
+              id: info.agentId,
+              note: "",
+              createdAt: 0,
+              deskIndex: 0,
+            }),
+            id: info.agentId,
+            name: info.name,
+            role: info.role ?? "",
+            seed: info.seed ?? info.agentId,
+            cwd: info.cwd ?? undefined,
+            note: prev?.note ?? "",
+            createdAt: prev?.createdAt ?? 0,
+            deskIndex: prev?.deskIndex ?? 0,
+          } as AgentProfile;
+          const status = remoteSessionStatus(info.state);
+          sessions[info.agentId] = {
+            agentId: info.agentId,
+            status,
+            cols: info.cols || sessions[info.agentId]?.cols || 80,
+            rows: info.rows || sessions[info.agentId]?.rows || 24,
+            lastActivityAt: sessions[info.agentId]?.lastActivityAt ?? Date.now(),
+          };
+        }
+        const agentOrder = [
+          ...s.agentOrder.filter((id) => !isRemoteAgentId(id) || liveIds.has(id)),
+          ...live.map((a) => a.agentId).filter((id) => !s.agentOrder.includes(id)),
+        ];
+        return { peerViewers: list, agents, agentOrder, sessions };
+      }),
+
+    setPeerPending: (pending) => set({ peerPending: pending }),
 
     addAgent: (profile) =>
       set((s) => ({

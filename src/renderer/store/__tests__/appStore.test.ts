@@ -530,6 +530,9 @@ describe("app settings slice", () => {
       ttsEnabled: false,
       ttsRewriteModel: "claude-haiku-4-5",
       ttsRewriteProvider: "auto",
+      peerShareEnabled: false,
+      peerBind: "tailnet",
+      peerPort: 47800,
     });
     expect(s.settingsFirstRun).toBe(false);
   });
@@ -557,6 +560,9 @@ describe("app settings slice", () => {
         ttsEnabled: false,
         ttsRewriteModel: "claude-haiku-4-5",
         ttsRewriteProvider: "auto",
+        peerShareEnabled: false,
+        peerBind: "tailnet",
+        peerPort: 47800,
       },
       true
     );
@@ -582,6 +588,9 @@ describe("app settings slice", () => {
       ttsEnabled: false,
       ttsRewriteModel: "claude-haiku-4-5",
       ttsRewriteProvider: "auto",
+      peerShareEnabled: false,
+      peerBind: "tailnet",
+      peerPort: 47800,
     });
     expect(s.settingsFirstRun).toBe(true);
   });
@@ -609,6 +618,9 @@ describe("app settings slice", () => {
       ttsEnabled: false,
       ttsRewriteModel: "claude-haiku-4-5",
       ttsRewriteProvider: "auto",
+      peerShareEnabled: false,
+      peerBind: "tailnet",
+      peerPort: 47800,
     });
   });
 
@@ -635,6 +647,9 @@ describe("app settings slice", () => {
         ttsEnabled: false,
         ttsRewriteModel: "claude-haiku-4-5",
         ttsRewriteProvider: "auto",
+        peerShareEnabled: false,
+        peerBind: "tailnet",
+        peerPort: 47800,
       },
       true
     );
@@ -667,6 +682,9 @@ describe("app settings slice", () => {
       ttsEnabled: false,
       ttsRewriteModel: "claude-haiku-4-5",
       ttsRewriteProvider: "auto",
+      peerShareEnabled: false,
+      peerBind: "tailnet",
+      peerPort: 47800,
     });
   });
 

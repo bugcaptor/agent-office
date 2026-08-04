@@ -33,6 +33,7 @@
 | [archive/session-event-timeseries-design.md](archive/session-event-timeseries-design.md) | 수집 계층 구현 완료 후 코드가 정본이 됨(본문 자인). 소비자는 session-analytics 문서 |
 | [archive/usage-limits-design.md](archive/usage-limits-design.md) | `usage-design.md`로 병합됨 (이슈 #22 링크 보존) |
 | [archive/claude-usage-live-fetch-design.md](archive/claude-usage-live-fetch-design.md) | `usage-design.md` §6으로 병합됨 (이슈 #33 링크 보존) |
+| [archive/peer-session-share-design.md](archive/peer-session-share-design.md) | 앱↔앱 세션 공유(kbm #7k) — 웹 호스팅(#7m)에 흡수돼 완료·폐기. **호스트 인프라(출력 tap·링버퍼·오프셋 회계·페어링·이벤트 미러)는 그대로 계승**됐고 그 설계 근거가 여기 있다. 앱↔앱 뷰어(`peer/viewer.rs`)만 동결 |
 
 ## 관련 (docs/ 밖)
 

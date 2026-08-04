@@ -25,6 +25,8 @@
 mod bot;
 mod media;
 mod misc;
+// 피어 세션 공유(#7k) — 호스트 공유 토글·페어링 승인, 뷰어 연결 관리.
+mod peer;
 mod persistence;
 mod session;
 // pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가
@@ -51,6 +53,7 @@ use crate::types::*;
 pub(crate) use bot::*;
 pub(crate) use media::*;
 pub(crate) use misc::*;
+pub(crate) use peer::*;
 pub(crate) use persistence::*;
 pub(crate) use session::*;
 pub(crate) use settings::*;

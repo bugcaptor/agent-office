@@ -112,6 +112,11 @@ pub async fn dispose_session(
     app_state: State<'_, AppState>,
     agent_id: String,
 ) -> Result<(), String> {
+    // 뷰어는 손님이다 — 원격 세션을 죽일 수 없다(§결정 7). 권한 체계에 아예
+    // 없으므로 여기서 거부한다.
+    if crate::peer::protocol::is_remote_agent(&agent_id) {
+        return Err("원격 세션은 이 앱에서 종료할 수 없습니다".into());
+    }
     app_state.manager.dispose(&agent_id);
     Ok(())
 }
@@ -211,12 +216,23 @@ pub async fn adopt_detached_sessions(
     })
 }
 
+/// 피어 세션 공유(#7k §결정 3): `peer:<peerId>:<agentId>` 키는 로컬
+/// `SessionManager`가 아니라 뷰어 레지스트리로 간다. **백엔드 진입점에서**
+/// 가르는 이유는, 렌더러 브리지에서 가르면 우회 가능한 게이트가 되기 때문이다.
+fn is_remote(agent_id: &str) -> bool {
+    crate::peer::protocol::is_remote_agent(agent_id)
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn write_input(
     app_state: State<'_, AppState>,
     agent_id: String,
     data: String,
 ) -> Result<(), String> {
+    if is_remote(&agent_id) {
+        app_state.peer_viewer.write_input(&agent_id, &data);
+        return Ok(());
+    }
     app_state.manager.write_input(&agent_id, &data);
     Ok(())
 }
@@ -228,6 +244,12 @@ pub async fn resize_session(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
+    // 리사이즈 소유자는 호스트 단독이다(§결정 6) — 뷰어의 창 크기는 원격
+    // PTY에 반영하지 않는다. 조용한 no-op으로 두어 렌더러 공통 경로를 건드리지
+    // 않는다(렌더러는 호스트가 push한 크기로 xterm을 고정한다).
+    if is_remote(&agent_id) {
+        return Ok(());
+    }
     app_state.manager.resize(&agent_id, cols, rows);
     Ok(())
 }
@@ -238,6 +260,10 @@ pub async fn subscribe_output(
     agent_id: String,
     channel: Channel<OutputChunk>,
 ) -> Result<(), String> {
+    if is_remote(&agent_id) {
+        app_state.peer_viewer.attach_output(&agent_id, channel);
+        return Ok(());
+    }
     app_state.manager.attach_output(&agent_id, channel);
     Ok(())
 }
@@ -247,6 +273,10 @@ pub async fn unsubscribe_output(
     app_state: State<'_, AppState>,
     agent_id: String,
 ) -> Result<(), String> {
+    if is_remote(&agent_id) {
+        app_state.peer_viewer.detach_output(&agent_id);
+        return Ok(());
+    }
     app_state.manager.detach_output(&agent_id);
     Ok(())
 }

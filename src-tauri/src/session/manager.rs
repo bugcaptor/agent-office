@@ -793,6 +793,26 @@ impl SessionManager {
         }
     }
 
+    /// 출력 tap 등록(피어 세션 공유 #7k, docs/peer-session-share-design.md §결정 2).
+    /// sink는 **agentId 수명**이라 세션이 아직 없거나 재생성돼도 tap이 유지된다
+    /// — 공유 토글을 켜 둔 캐릭터는 세션을 다시 띄워도 계속 중계된다.
+    pub fn add_output_tap(&self, agent_id: &str, tap: Arc<dyn crate::session::output::OutputTap>) -> u64 {
+        self.sink_for(agent_id).add_tap(tap)
+    }
+
+    /// 등록된 tap 제거. 없는 agentId/id는 무해한 no-op.
+    pub fn remove_output_tap(&self, agent_id: &str, tap_id: u64) {
+        if let Some(s) = self.sinks.lock().get(agent_id) {
+            s.remove_tap(tap_id);
+        }
+    }
+
+    /// 현재 알려진 터미널 크기 (cols, rows). 피어 뷰어는 호스트 크기를 그대로
+    /// 따르므로(§결정 6) attach 시점과 resize 때 이 값을 실어 보낸다.
+    pub fn size_of(&self, agent_id: &str) -> Option<(u16, u16)> {
+        self.find(agent_id).map(|s| *s.size.lock())
+    }
+
     pub fn pending_notifications(&self, agent_id: &str) -> Vec<NotificationEvent> {
         match self.session_id_for(agent_id) {
             Some(sid) => self.hub.pending(&sid),

@@ -221,6 +221,23 @@ pub struct AppSettings {
     /// 대사 리라이트 공급자. 기본 `auto`(API 키 → env → claude CLI → 생략).
     #[serde(default)]
     pub tts_rewrite_provider: TtsRewriteProvider,
+    /// 피어 세션 공유(#7k, docs/peer-session-share-design.md)의 수신 서버를
+    /// 띄울지. 켜도 **페어링 승인 전에는 모든 요청이 401**이고, 실제로 중계되는
+    /// 캐릭터는 캐릭터별 공유 토글을 켠 것뿐이다(전체 공유 스위치는 없다).
+    /// 네트워크 표면이므로 기본 꺼짐.
+    #[serde(default)]
+    pub peer_share_enabled: bool,
+    /// 어떤 원격 주소를 받아 줄지. 기본 `tailnet`(Tailscale 대역 + 루프백).
+    #[serde(default)]
+    pub peer_bind: PeerBind,
+    /// 수신 포트. 수동 `host:port` 입력이 곧 디스커버리라 고정값이 기본이고,
+    /// 점유 시에는 +1씩 스캔한 실제 포트를 설정 UI에 표시한다.
+    #[serde(default = "default_peer_port")]
+    pub peer_port: u16,
+}
+
+fn default_peer_port() -> u16 {
+    crate::peer::protocol::DEFAULT_PEER_PORT
 }
 
 impl Default for AppSettings {
@@ -246,6 +263,35 @@ impl Default for AppSettings {
             tts_enabled: false,
             tts_rewrite_model: TtsRewriteModel::Haiku45,
             tts_rewrite_provider: TtsRewriteProvider::Auto,
+            peer_share_enabled: false,
+            peer_bind: PeerBind::Tailnet,
+            peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
+        }
+    }
+}
+
+/// 피어 서버가 받아 줄 원격 주소 범위(#7k §결정 5). 인터페이스 열거 크레이트를
+/// 새로 들이지 않고 **원격 주소 허용목록**으로 정책을 강제한다 — tailnet 밖
+/// 클라이언트는 페어링조차 시작하지 못하므로 "기본 구성에서 평문이 LAN에
+/// 흐르지 않는다"는 성질은 그대로다.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PeerBind {
+    /// Tailscale 대역(100.64.0.0/10, fd7a:115c:a1e0::/48) + 루프백만. 기본값.
+    #[default]
+    Tailnet,
+    /// 아무 주소나(순수 LAN 사용 — 평문 전송 경고 동반).
+    All,
+    /// 루프백만(사실상 비활성 — 같은 머신 테스트용).
+    Loopback,
+}
+
+impl PeerBind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Tailnet => "tailnet",
+            Self::All => "all",
+            Self::Loopback => "loopback",
         }
     }
 }
@@ -373,6 +419,9 @@ mod tests {
             tts_enabled: false,
             tts_rewrite_model: TtsRewriteModel::Haiku45,
             tts_rewrite_provider: TtsRewriteProvider::Auto,
+            peer_share_enabled: false,
+            peer_bind: Default::default(),
+            peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -479,6 +528,9 @@ mod tests {
             tts_enabled: false,
             tts_rewrite_model: TtsRewriteModel::Haiku45,
             tts_rewrite_provider: TtsRewriteProvider::Auto,
+            peer_share_enabled: false,
+            peer_bind: Default::default(),
+            peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();

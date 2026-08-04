@@ -19,7 +19,10 @@
     "mascotEnabled": false,
     "ttsEnabled": false,
     "ttsRewriteModel": "claude-haiku-4-5",
-    "ttsRewriteProvider": "auto"
+    "ttsRewriteProvider": "auto",
+    "peerShareEnabled": false,
+    "peerBind": "tailnet",
+    "peerPort": 47800
   },
   "firstRun": true
 }

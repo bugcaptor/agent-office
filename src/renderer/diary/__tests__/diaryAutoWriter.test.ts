@@ -44,6 +44,9 @@ const SETTINGS_ON: AppSettings = {
   ttsEnabled: false,
   ttsRewriteModel: "claude-haiku-4-5",
   ttsRewriteProvider: "auto",
+  peerShareEnabled: false,
+  peerBind: "tailnet",
+  peerPort: 47800,
 };
 
 function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {

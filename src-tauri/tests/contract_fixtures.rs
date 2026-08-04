@@ -21,7 +21,7 @@
 
 use agent_office_lib::ipc::commands::settings::GetAppSettingsResult;
 use agent_office_lib::persistence::settings_store::{
-    AppSettings, ExternalEditor, ExternalTerminal, FileIndexBackend, SummaryProvider,
+    AppSettings, ExternalEditor, ExternalTerminal, FileIndexBackend, PeerBind, SummaryProvider,
     TtsRewriteModel, TtsRewriteProvider,
 };
 use agent_office_lib::session_events::types::SessionEventRecord;
@@ -243,6 +243,9 @@ fn get_app_settings_result_matches_fixture() {
             tts_enabled: false,
             tts_rewrite_model: TtsRewriteModel::Haiku45,
             tts_rewrite_provider: TtsRewriteProvider::Auto,
+            peer_share_enabled: false,
+            peer_bind: PeerBind::Tailnet,
+            peer_port: 47800,
         },
         first_run: true,
     };
