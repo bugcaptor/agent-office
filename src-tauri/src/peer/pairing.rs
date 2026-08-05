@@ -213,6 +213,15 @@ pub struct PendingPairing {
     started: Instant,
 }
 
+impl PendingPairing {
+    /// TTL까지 남은 시간(ms). 승인 다이얼로그가 만료된 코드를 계속 띄우지
+    /// 않도록 렌더러에 같이 내려 준다 — 이벤트로 밀어 준 항목은 나이를
+    /// 알 길이 없어서 클라이언트가 스스로 지울 근거가 필요하다.
+    pub fn remaining_ms(&self) -> u64 {
+        PAIRING_TTL.saturating_sub(self.started.elapsed()).as_millis() as u64
+    }
+}
+
 /// `pair/complete`의 결과.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PairingOutcome {

@@ -31,7 +31,6 @@ export function PeerShareSection() {
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
   const agents = useAppStore((s) => s.agents);
   const agentOrder = useAppStore((s) => s.agentOrder);
-  const pending = useAppStore((s) => s.peerPending);
   const setPeerPending = useAppStore((s) => s.setPeerPending);
   const viewers = useAppStore((s) => s.peerViewers);
 
@@ -63,28 +62,6 @@ export function PeerShareSection() {
       await refreshHost();
     } catch (err) {
       setNote(String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const approve = async (pairingId: string, permission: PeerPermission) => {
-    setBusy(true);
-    try {
-      await peerApi.approvePairing(pairingId, permission);
-      setPeerPending(pending.filter((p) => p.pairingId !== pairingId));
-      await refreshHost();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const reject = async (pairingId: string) => {
-    setBusy(true);
-    try {
-      await peerApi.rejectPairing(pairingId);
-      setPeerPending(pending.filter((p) => p.pairingId !== pairingId));
-      await refreshHost();
     } finally {
       setBusy(false);
     }
@@ -143,55 +120,9 @@ export function PeerShareSection() {
                 : "조회 중…"}
             </div>
 
-            {pending.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {pending.map((p) => (
-                  <div
-                    key={p.pairingId}
-                    style={{
-                      border: "1px solid var(--warn-border, #b8860b)",
-                      borderRadius: 4,
-                      padding: 8,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
-                    }}
-                  >
-                    <div style={{ fontSize: 13 }}>
-                      <b>{p.viewerName}</b>
-                      {p.clientKind === "web" ? " (웹 브라우저)" : " (다른 사무실)"} 이(가)
-                      연결을 요청했습니다. 상대 화면에 이 코드를 입력하게 하세요:
-                    </div>
-                    <div style={{ fontSize: 24, letterSpacing: 4, fontFamily: "monospace" }}>
-                      {p.code}
-                    </div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <button
-                        className="pixel-btn"
-                        disabled={busy}
-                        onClick={() => void approve(p.pairingId, "input")}
-                      >
-                        승인 (입력 허용)
-                      </button>
-                      <button
-                        className="pixel-btn"
-                        disabled={busy}
-                        onClick={() => void approve(p.pairingId, "readOnly")}
-                      >
-                        승인 (읽기 전용)
-                      </button>
-                      <button
-                        className="pixel-btn"
-                        disabled={busy}
-                        onClick={() => void reject(p.pairingId)}
-                      >
-                        거부
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* 승인 대기 페어링(코드 표시)은 PairingRequestDialog가 모달 층에서
+                맡는다 — 설정을 열어 두지 않아도 코드가 보여야 하고, 웹 호스팅만
+                켠 경우에도 떠야 하기 때문이다. */}
 
             <div style={{ fontSize: 12, opacity: 0.85 }}>공유할 캐릭터</div>
             {localAgents.length === 0 && (
@@ -279,6 +210,11 @@ export function PeerShareSection() {
             http://{host?.addressHint ?? "<이 컴퓨터 주소>"}:{host?.port ?? appSettings.peerPort}
             /web/
           </code>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>
+            브라우저에서 <b>연결 요청</b>을 누르면 이 앱에 <b>6자리 코드와 승인
+            창</b>이 뜹니다. 그 코드를 브라우저에 입력하세요(설정 창을 닫아 두어도
+            뜹니다).
+          </div>
           {!host?.running && (
             <div style={{ fontSize: 12, opacity: 0.7 }}>
               서버가 아직 뜨지 않았습니다 — 잠시 후 이 화면을 다시 열어 보세요.

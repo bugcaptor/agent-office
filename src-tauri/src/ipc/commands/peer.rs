@@ -50,6 +50,8 @@ pub struct PendingSummary {
     pub viewer_name: String,
     /// 승인 다이얼로그가 "웹 브라우저"와 "다른 사무실"을 구분해 보여준다.
     pub client_kind: String,
+    /// 코드가 만료되기까지 남은 시간(ms).
+    pub expires_in_ms: u64,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -81,6 +83,7 @@ pub async fn peer_host_status(app_state: State<'_, AppState>) -> Result<PeerHost
             .into_iter()
             .filter(|p| p.decision == crate::peer::pairing::PairingDecision::Pending)
             .map(|p| PendingSummary {
+                expires_in_ms: p.remaining_ms(),
                 pairing_id: p.pairing_id,
                 code: p.code,
                 viewer_name: p.viewer_name,

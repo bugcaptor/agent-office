@@ -545,6 +545,10 @@ pub fn run() {
                             "pairingId": pending.pairing_id,
                             "code": pending.code,
                             "viewerName": pending.viewer_name,
+                            // 브라우저인지 다른 사무실인지, 그리고 코드 수명 —
+                            // 승인 다이얼로그가 문구와 자동 소멸에 쓴다.
+                            "clientKind": pending.client_kind.as_str(),
+                            "expiresInMs": pending.remaining_ms(),
                         }),
                     );
                 }));
