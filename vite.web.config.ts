@@ -1,7 +1,22 @@
 import { fileURLToPath, URL } from "node:url";
 
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+
+// `emptyOutDir`가 dist-web를 통째로 비우면서 **git이 추적하는** `.gitkeep`까지
+// 지워, 빌드만 돌려도 워킹트리가 더러워졌다(`tauri dev`의 beforeDevCommand가
+// 매번 web:build를 탄다). 산출물의 일부로 다시 내보내 원상복구한다.
+// .gitkeep 자체는 지울 수 없다 — rust-embed의 `#[folder = "../dist-web/"]`는
+// 폴더가 없으면 컴파일 단계에서 실패하므로 새 클론에도 폴더가 있어야 한다.
+function keepGitkeep(): Plugin {
+  return {
+    name: "agent-office:keep-gitkeep",
+    apply: "build",
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: ".gitkeep", source: "" });
+    },
+  };
+}
 
 // 웹 호스팅(kbm #7m) 클라이언트 빌드.
 //
@@ -15,7 +30,7 @@ import react from "@vitejs/plugin-react";
 // 빌드에서는 런타임에 디스크를 읽으므로 `npm run web:dev`(--watch)만 띄워 두면
 // 새 빌드가 즉시 서빙된다.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), keepGitkeep()],
   // 엔트리(index.html)가 여기 있다 — 산출물이 `dist-web/index.html`이 되어야
   // Rust 쪽 정적 서빙(rust-embed)이 그대로 집어 든다.
   root: fileURLToPath(new URL("./src/web", import.meta.url)),
