@@ -4,7 +4,7 @@
   "version": "0.6.3",
   "identifier": "com.bugcaptor.agent-office",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run web:build && npm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
