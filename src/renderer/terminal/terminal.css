@@ -312,6 +312,38 @@
   flex: none;
 }
 
+/* 외부(논리) 세션 안내 패널 — PTY가 없어 xterm 대신 이걸 그린다.
+   터미널 영역 전체를 차지하고 가운데 정렬한다. */
+.terminal-external-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  font-family: "DungGeunMo", monospace;
+  color: var(--text);
+}
+
+.terminal-external-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.terminal-external-title {
+  font-size: 0.95rem;
+}
+
+.terminal-external-detail {
+  max-width: 420px;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
 /* 프로세스 종료 시 표시되는 "다시 띄우기" 배너 (터미널 위 오버레이) */
 .terminal-exited-banner {
   position: absolute;

@@ -222,6 +222,9 @@ export function installSessionBridge(): () => void {
     useAppStore.getState().setSessionState({
       agentId: e.agentId,
       status: e.state === "disposed" ? "exited" : e.state,
+      // 외부(논리) 세션 표시는 그대로 넘긴다 — 스토어가 kind를 확정해
+      // TerminalHost가 xterm 대신 placeholder를 그린다.
+      external: e.external,
     });
     // 시간 추적: 세션 종료(exited/disposed) 시 열린 턴 강제 정산(백엔드 e.at 사용).
     useAppStore.getState().applySessionTiming(e.agentId, e.state, e.at);

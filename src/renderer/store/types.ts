@@ -33,6 +33,10 @@ export interface SessionRuntime {
   cols: number;
   rows: number;
   lastActivityAt: number;
+  /** 세션 종류. `external` = 앱 밖 터미널에 붙인 논리 세션(PTY 없음 — 출력
+   * 미러링·입력 주입 불가, 터미널 대신 placeholder를 그린다). 부재는 `pty`와
+   * 같게 취급한다(기존 세션 엔트리·hydrate 경로 불변). */
+  kind?: "pty" | "external";
 }
 
 /**

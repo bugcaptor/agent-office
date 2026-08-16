@@ -68,6 +68,10 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.disposeSession, { agentId });
   },
 
+  async detachExternalSession(agentId) {
+    return await invoke(Commands.detachExternalSession, { agentId });
+  },
+
   writeInput(agentId, data) {
     void invoke(Commands.writeInput, { agentId, data }); // fire-and-forget
   },

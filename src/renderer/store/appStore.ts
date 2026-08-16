@@ -173,7 +173,9 @@ interface AppState {
   removeSpritePreview(agentId: string): void;
 
   // ---- session actions ----
-  setSessionState(e: { agentId: string; status: SessionStatus }): void;
+  /** `external`은 백엔드 `SessionStateEvent.external` 그대로 — true면 외부(논리)
+   * 세션의 전이라 `kind`를 `external`로, 부재/false면 `pty`로 확정한다. */
+  setSessionState(e: { agentId: string; status: SessionStatus; external?: boolean }): void;
   setSessionSize(agentId: string, cols: number, rows: number): void;
 
   // ---- bot mode (이슈 #57) ----
@@ -450,14 +452,22 @@ export const useAppStore = create<AppState>()(
         };
       }),
 
-    setSessionState: ({ agentId, status }) =>
+    setSessionState: ({ agentId, status, external }) =>
       set((s) => {
         const prev = s.sessions[agentId];
         if (!prev) return s;
+        // kind는 매 전이의 출처로 확정한다: 외부 세션 이벤트만 external=true를
+        // 달고 오고(attach/detach 양쪽), PTY 경로(생성/재시작/입양/실패)는 이
+        // 필드를 아예 보내지 않으므로 pty로 되돌아간다.
         return {
           sessions: {
             ...s.sessions,
-            [agentId]: { ...prev, status, lastActivityAt: Date.now() },
+            [agentId]: {
+              ...prev,
+              status,
+              kind: external ? "external" : "pty",
+              lastActivityAt: Date.now(),
+            },
           },
         };
       }),

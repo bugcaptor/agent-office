@@ -8,10 +8,14 @@
 // — this component only decides *which* container is visible and
 // when to (re)fit it.
 //
+// 예외: 앱 밖 터미널에 붙인 외부(논리) 세션(`SessionRuntime.kind === "external"`)은
+// PTY가 없어 미러링할 출력이 없다 — xterm을 아예 만들지 않고 안내 패널 +
+// "연결 해제" 버튼만 그린다(계획 M4).
+//
 // Deviation from the original design skeleton: that skeleton's `window.api`
 // is the `tauriApi` module, so `resize` is called on that
 // import directly instead of a `window.api` global.
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
@@ -40,7 +44,61 @@ export function TerminalHost() {
   );
 }
 
+/**
+ * 마운트 분기: 앱 밖 터미널에 붙인 외부(논리) 세션은 PTY가 없어 미러링할
+ * 출력 스트림이 없다 — xterm을 만들지 않고 placeholder만 그린다. 그 외(PTY
+ * 세션·tmux 미러 세션 포함)는 기존 경로 그대로.
+ */
 function TerminalMount({ agentId }: { agentId: string }) {
+  const isExternal = useAppStore(
+    (s) => s.sessions[agentId]?.kind === "external" && s.sessions[agentId]?.status === "running"
+  );
+  return isExternal ? <ExternalMount agentId={agentId} /> : <PtyMount agentId={agentId} />;
+}
+
+function ExternalMount({ agentId }: { agentId: string }) {
+  const isActive = useAppStore((s) => s.activeTerminalAgentId === agentId);
+  const [detaching, setDetaching] = useState(false);
+
+  const detach = () => {
+    setDetaching(true);
+    // 성공하면 백엔드가 session-state(disposed)를 방출해 이 마운트가 알아서
+    // 사라진다. 실패해도 버튼은 다시 눌러볼 수 있게 되돌린다.
+    void tauriApi
+      .detachExternalSession(agentId)
+      .catch((err) => console.warn(`detachExternalSession failed for ${agentId}`, err))
+      .finally(() => setDetaching(false));
+  };
+
+  return (
+    <div
+      className="terminal-mount"
+      style={{ display: isActive ? "block" : "none" }}
+      data-agent-id={agentId}
+    >
+      <div className="terminal-external-panel" role="status">
+        <span className="terminal-external-icon" aria-hidden="true">
+          🔗
+        </span>
+        <div className="terminal-external-title">외부 터미널 세션에 연결됨</div>
+        <div className="terminal-external-detail">
+          앱 밖 터미널의 세션이라 화면 미러링은 없습니다. 알림과 성격 프롬프트만 이
+          캐릭터를 통해 동작합니다.
+        </div>
+        <button
+          type="button"
+          className="pixel-btn"
+          onClick={detach}
+          disabled={detaching}
+        >
+          연결 해제
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PtyMount({ agentId }: { agentId: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const isActive = useAppStore((s) => s.activeTerminalAgentId === agentId);
   const isExited = useAppStore((s) => s.sessions[agentId]?.status === "exited");

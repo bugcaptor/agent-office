@@ -58,6 +58,9 @@ import type {
 export interface AgentOfficeApi {
   createSession(agentId: string, opts?: CreateSessionOptions): Promise<CreateSessionResult>;
   disposeSession(agentId: string): Promise<void>;
+  /** 외부(논리) 세션 연결 해제 — PTY가 없으므로 kill할 프로세스는 없고 훅
+   * 라우팅 등록과 settings 파일만 정리된다. 붙어 있지 않았으면 false(no-op). */
+  detachExternalSession(agentId: string): Promise<boolean>;
   /** fire-and-forget */
   writeInput(agentId: string, data: string): void;
   resize(agentId: string, cols: number, rows: number): void;

@@ -46,6 +46,10 @@ export interface SessionStateEvent {
   state: SessionState;
   exit?: SessionExitInfo;
   at: number;
+  /** 외부(논리) 세션의 전이인가 — 앱 밖 터미널/tmux에 붙인 세션은 PTY가 없어
+   * 렌더러가 터미널 대신 placeholder를 그린다. PTY 세션은 Rust가 `None`으로
+   * 두어 JSON에서 통째로 빠진다(additive, 기존 계약 무변경). */
+  external?: boolean;
 }
 
 /**

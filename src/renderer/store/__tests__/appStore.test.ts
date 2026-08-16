@@ -729,3 +729,44 @@ describe("botMode slice", () => {
     expect(useAppStore.getState().botMode).toEqual({});
   });
 });
+
+describe("setSessionState (외부 세션 kind)", () => {
+  it("external=true인 running 이벤트는 kind를 external로 만든다", () => {
+    useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
+
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "running", external: true });
+
+    const rt = useAppStore.getState().sessions.a1;
+    expect(rt.status).toBe("running");
+    expect(rt.kind).toBe("external");
+  });
+
+  it("external 부재(PTY 경로)면 kind가 pty다", () => {
+    useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
+
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "running" });
+
+    expect(useAppStore.getState().sessions.a1.kind).toBe("pty");
+  });
+
+  it("외부 세션을 끊고 PTY 세션을 띄우면 kind가 pty로 돌아온다", () => {
+    useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "running", external: true });
+
+    // detach: 백엔드가 external=true인 disposed를 내고, 브리지가 exited로 흡수한다.
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "exited", external: true });
+    expect(useAppStore.getState().sessions.a1.kind).toBe("external");
+
+    // 이후 PTY 생성 경로(external 필드 없음).
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "starting" });
+    expect(useAppStore.getState().sessions.a1.kind).toBe("pty");
+  });
+
+  it("세션 엔트리가 없으면 여전히 no-op이다", () => {
+    const before = useAppStore.getState();
+
+    useAppStore.getState().setSessionState({ agentId: "nope", status: "running", external: true });
+
+    expect(useAppStore.getState()).toBe(before);
+  });
+});

@@ -20,7 +20,7 @@
 //   refocus/re-scroll on plain resize).
 // - The `ResizeObserver` is disconnected when the mount stops being active
 //   or unmounts (no leaks).
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
 import type { AgentProfile } from "../../store/types";
@@ -38,8 +38,12 @@ vi.mock("../TerminalRegistry", () => ({
 }));
 
 const resize = vi.fn();
+const detachExternalSession = vi.fn((..._args: unknown[]) => Promise.resolve(true));
 vi.mock("../../ipc/tauriApi", () => ({
-  tauriApi: { resize: (...args: unknown[]) => resize(...args) },
+  tauriApi: {
+    resize: (...args: unknown[]) => resize(...args),
+    detachExternalSession: (...args: unknown[]) => detachExternalSession(...args),
+  },
 }));
 
 const { TerminalHost } = await import("../TerminalHost");
@@ -79,6 +83,8 @@ beforeEach(() => {
   activate.mockReset();
   refit.mockReset();
   resize.mockReset();
+  detachExternalSession.mockReset();
+  detachExternalSession.mockResolvedValue(true);
   FakeResizeObserver.instances = [];
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
   vi.useFakeTimers();
@@ -256,5 +262,68 @@ describe("ResizeObserver: active-only, 120ms debounce, refit (not activate)", ()
 
     expect(ro.disconnect).toHaveBeenCalledTimes(1);
     expect(refit).not.toHaveBeenCalled(); // timer must have been cleared, not left to fire post-unmount
+  });
+});
+
+describe("외부(논리) 세션 마운트", () => {
+  function mkExternal(id: string) {
+    useAppStore.getState().addAgent(mkProfile(id));
+    useAppStore.getState().setSessionState({ agentId: id, status: "running", external: true });
+  }
+
+  it("kind=external + running이면 xterm을 붙이지 않고 안내 패널을 그린다", () => {
+    mkExternal("a1");
+    useAppStore.getState().openTerminal("a1");
+
+    const { container } = render(<TerminalHost />);
+
+    const mount = container.querySelector('[data-agent-id="a1"]') as HTMLElement;
+    expect(mount.style.display).toBe("block");
+    expect(container.querySelector(".terminal-external-panel")).not.toBeNull();
+    expect(container.querySelector(".terminal-mount-host")).toBeNull();
+    expect(attach).not.toHaveBeenCalled();
+    expect(mount.textContent).toContain("외부 터미널 세션에 연결됨");
+  });
+
+  it("연결 해제 버튼이 detachExternalSession을 호출한다", async () => {
+    mkExternal("a1");
+    useAppStore.getState().openTerminal("a1");
+
+    const { container } = render(<TerminalHost />);
+    const btn = container.querySelector(".terminal-external-panel button") as HTMLButtonElement;
+    expect(btn.textContent).toBe("연결 해제");
+
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+
+    expect(detachExternalSession).toHaveBeenCalledTimes(1);
+    expect(detachExternalSession).toHaveBeenCalledWith("a1");
+  });
+
+  it("PTY 세션(external 부재)은 기존 xterm 경로 그대로다", () => {
+    useAppStore.getState().addAgent(mkProfile("a1"));
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "running" });
+    useAppStore.getState().openTerminal("a1");
+
+    const { container } = render(<TerminalHost />);
+
+    expect(container.querySelector(".terminal-external-panel")).toBeNull();
+    expect(attach).toHaveBeenCalledWith("a1", expect.any(HTMLElement));
+  });
+
+  it("연결이 끊기면(exited) 다시 기존 마운트로 돌아온다", () => {
+    mkExternal("a1");
+    useAppStore.getState().openTerminal("a1");
+
+    const { container } = render(<TerminalHost />);
+    expect(container.querySelector(".terminal-external-panel")).not.toBeNull();
+
+    act(() =>
+      useAppStore.getState().setSessionState({ agentId: "a1", status: "exited", external: true })
+    );
+
+    expect(container.querySelector(".terminal-external-panel")).toBeNull();
+    expect(attach).toHaveBeenCalledWith("a1", expect.any(HTMLElement));
   });
 });
