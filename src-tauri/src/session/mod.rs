@@ -1,3 +1,4 @@
+pub mod attach_script;
 pub mod bash_wrapper;
 #[cfg(unix)]
 pub mod broker_pty;

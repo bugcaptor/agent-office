@@ -1,6 +1,6 @@
 # CLI 제어 설계 (이슈 #55)
 
-상태: 정본 — 구현 완료(이슈 #55 닫음, 2026-07-20 확인). 구현: `src-tauri/src/control/{mod,protocol,client}.rs`. 리팩터 후 렌더러 커맨드는 `ipc/commands/settings.rs`(`control_status`/`control_approve`/`control_revoke`)에 있다.
+상태: 정본 — 구현 완료(이슈 #55 닫음, 2026-07-20 확인). 구현: `src-tauri/src/control/{mod,protocol,client}.rs`. 리팩터 후 렌더러 커맨드는 `ipc/commands/settings.rs`(`control_status`/`control_approve`/`control_revoke`)에 있다. 이후 외부 터미널 attach(`/v1/attach`·`/v1/detach`)가 추가됐다(§외부 터미널 attach).
 
 실행 중인 Agent Office 인스턴스를 다른 AI/스크립트가 프로그래밍 방식으로
 조종하기 위한 로컬 제어 인터페이스. `--observer-forward`/`--sessiond`와 동일한
@@ -12,15 +12,17 @@
 
 - 앱 바이너리 서브커맨드 `agent-office ctl <명령>`(GUI를 띄우지 않는 단명
   클라이언트).
-- 명령 표면: `status` `ping` `list` `create` `send` `dispose` `notifications`
-  `clear` `settings get` `settings set`.
+- 명령 표면: `status` `ping` `list` `create` `attach` `detach` `send` `dispose`
+  `notifications` `clear` `settings get` `settings set`.
 - 앱 안의 로컬 control 서버(axum, `127.0.0.1`, 임의 포트).
 - **2단계 옵트인**: 설정 `cli_enabled`(기본 OFF)로 서버를 켜고, 앱에서 **명시적
   승인**(토큰 발급)이 있어야 명령이 실행된다.
 
 **제외(후속)**
 
-- 실시간 터미널 출력 스트리밍(`attach`/`tail`) — v1은 요청/응답만.
+- 실시간 터미널 출력 스트리밍(`tail`) — 요청/응답만이다. (`attach`는 이름과
+  달리 스트리밍이 아니라 **외부 터미널을 캐릭터에 붙이는** 명령이다 — 아래
+  §외부 터미널 attach.)
 - 스프라이트/초상 생성, 프로필 전체 편집 패리티, GUI 전용 연출.
 - 원격(네트워크) 접근.
 
@@ -84,12 +86,46 @@
 | `/v1/ping` | `{}` | (버전·세션 수) |
 | `/v1/list` | `{}` | `load_state` + registry 스냅샷 |
 | `/v1/create` | `{ agentId, cwd?, shell?, startupCommand?, name?, role?, cols?, rows? }` | `create_session` |
+| `/v1/attach` | `{ agentId, pid?, cwd? }` → `{ sessionId, mode, script }` | `attach_external_with_profile` |
+| `/v1/detach` | `{ agentId }` → `{ detached }` | `detach_external` |
 | `/v1/send` | `{ agentId, data }` | `write_input` |
 | `/v1/dispose` | `{ agentId }` | `dispose_session` |
 | `/v1/notifications` | `{ agentId }` | `list_notifications` |
 | `/v1/clear` | `{ agentId, ids? }` | `clear_notifications` |
 | `/v1/settings/get` | `{}` | `get_app_settings` |
 | `/v1/settings/set` | `{ <설정필드>: <값>, … }` | `set_app_settings`(cliEnabled 제외) |
+
+## 외부 터미널 attach
+
+앱 밖에서 시작한 터미널(iTerm, tmux pane 등)을 캐릭터에 붙인다 — 화면 미러링은
+없고 **훅 알림 + 성격(persona) 주입**만 제공한다.
+
+```sh
+eval "$(agent-office ctl attach 캐릭터ID)"   # 붙이기
+agent-office ctl detach 캐릭터ID              # 끊기(셸을 닫아도 자동 정리됨)
+```
+
+- **왜 eval인가**: 이미 떠 있는 셸의 env(`AGENT_OFFICE_SESSION` 등)와 `claude`
+  래퍼 함수를 그 셸 안에 심어야 하기 때문이다. 자식 프로세스로는 부모 셸을
+  바꿀 수 없다.
+- **출력 계약**: 성공하면 **stdout에는 셸 스크립트 원문만** 나가고, 그 밖의
+  안내·오류는 전부 stderr로 간다. 실패하면 stdout이 비어 `eval ""`이 되므로
+  안전하다(종료 코드는 §종료 코드와 동일).
+- **셸 지원**: zsh/bash 등 POSIX 셸 전용이다. fish는 문법이 달라 미지원
+  (`export A=v`/함수 정의가 유효하지 않다).
+- **observer OFF**: 훅 URL이 없으므로 알림은 오지 않고 성격만 적용된다. 이때
+  스크립트 상단에 경고 코멘트가 붙는다(`# 경고: 관측이 비활성입니다 …`).
+- **끊김 감지**: `ctl`이 자기 부모 프로세스 PID(= 그 터미널의 셸)를 함께
+  보내고, 앱이 **5초 주기**로 `kill(pid, 0)` 스윕을 돌려 셸이 사라지면 자동으로
+  detach한다(unix 전용). EXIT trap은 사용자의 기존 trap을 덮어쓸 위험이 있어
+  쓰지 않는다.
+- **1캐릭터 1세션**: 그 캐릭터의 앱 내 PTY 세션이 살아 있으면 새 논리 세션을
+  만들지 않고 **그 sid에 합류**한다(`mode: "bind"`). 새로 발급하면
+  `mode: "new"`다. 반대로 앱에서 그 캐릭터의 세션을 새로 만들면 붙어 있던 외부
+  세션은 자동으로 끊긴다.
+- **미존재 캐릭터**: `ok:false`로 거절한다(캐릭터 자동 생성은 범위 밖).
+- **앱 재시작**: 논리 세션은 메모리에만 있으므로 사라진다 — 터미널에서 다시
+  `eval "$(… attach …)"`을 실행해야 한다(영속화는 후속 과제).
 
 ## 발견 순서와 오버라이드
 
@@ -127,7 +163,11 @@
 - `src-tauri/src/control/mod.rs` — `ControlContext`(앱 상태 클론),
   `ControlServerState`(생명주기, ObserverServerState 미러), axum 라우터 +
   토큰 미들웨어 + 핸들러, 토큰/포트 파일 헬퍼(0600).
-- `src-tauri/src/control/client.rs` — `ctl` 파서·발견·요청·출력.
+- `src-tauri/src/control/client.rs` — `ctl` 파서·발견·요청·출력(attach는 raw
+  stdout).
+- `src-tauri/src/session/attach_script.rs` — attach 응답 스크립트 렌더러
+  (`PreparedPlan` → export + `wrapper_script::render_posix`).
+- `src-tauri/src/session/external.rs` — 외부(논리) 세션 등록/해제·PID 스윕.
 - `src-tauri/src/lib.rs` — `maybe_run_cli` 분기, setup에서 opt-in 기동, 종료
   훅 정리, 렌더러 커맨드 등록.
 - `src-tauri/src/ipc/commands.rs` — `control_status`/`control_approve`/

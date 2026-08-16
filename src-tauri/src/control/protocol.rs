@@ -46,6 +46,43 @@ pub struct AgentParams {
     pub agent_id: String,
 }
 
+/// `attach` 파라미터 — 앱 밖 터미널을 캐릭터에 붙인다. `pid`는 그 터미널
+/// 셸의 PID(끊김 감지용 스윕 대상), `cwd`는 타임라인 표시용 작업 폴더로,
+/// 둘 다 `ctl`이 자동 수집해 보낸다(unix 외에는 pid가 빠진다).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachParams {
+    pub agent_id: String,
+    #[serde(default)]
+    pub pid: Option<u32>,
+    #[serde(default)]
+    pub cwd: Option<String>,
+}
+
+/// `attach` 응답 — `script`는 요청한 셸에서 그대로 eval할 POSIX 스크립트다.
+/// `mode`는 새 논리 세션이면 "new", 앱 안 PTY 세션에 합류했으면 "bind".
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachResult {
+    pub session_id: String,
+    pub mode: String,
+    pub script: String,
+}
+
+/// `detach` 파라미터.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetachParams {
+    pub agent_id: String,
+}
+
+/// `detach` 응답 — 실제로 붙어 있던 외부 세션을 끊었는지(없었으면 false).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetachResult {
+    pub detached: bool,
+}
+
 /// `send` 파라미터 — `data`는 세션 stdin에 그대로 주입된다(개행 포함 여부는
 /// 클라이언트가 `--enter`로 결정).
 #[derive(Debug, Clone, Deserialize)]

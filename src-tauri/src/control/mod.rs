@@ -34,6 +34,7 @@ use crate::observer::server::ObserverServerState;
 use crate::observer::ObserverRuntime;
 use crate::persistence::profile_store::ProfileStore;
 use crate::persistence::settings_store::{AppSettings, SettingsStore};
+use crate::session::external::ExternalDetachReason;
 use crate::session::manager::SessionManager;
 use crate::session_events::types::AgentEventProfile;
 use crate::state::SessionRegistry;
@@ -243,6 +244,75 @@ async fn create(
     }
 }
 
+/// 앱 밖 터미널을 캐릭터에 붙인다 — 응답 `script`를 그 터미널에서 eval하면
+/// 그 셸에서 뜬 claude의 훅이 이 캐릭터의 알림으로 흐른다.
+///
+/// create와 같은 골격이다(observer 선기동 + catch_unwind). persona와 표시용
+/// 이름/역할은 디스크 프로필에서 읽는다 — 프로필이 없으면 붙일 캐릭터가 없다.
+async fn attach(
+    State(ctx): State<Arc<ControlContext>>,
+    Json(p): Json<AttachParams>,
+) -> Json<serde_json::Value> {
+    if ctx.settings.read().unwrap().observer_enabled {
+        let _ = ctx.observer_server.ensure(ctx.observer.clone()).await;
+    }
+    let Some(agent) = ctx
+        .store
+        .load()
+        .agents
+        .into_iter()
+        .find(|a| a.id == p.agent_id)
+    else {
+        return fail(format!(
+            "알 수 없는 캐릭터입니다: {} — 먼저 앱에서 캐릭터를 만들거나 `agent-office ctl create {}`로 세션을 시작하세요",
+            p.agent_id, p.agent_id,
+        ));
+    };
+    let profile = AgentEventProfile {
+        name: agent.name.clone(),
+        role: Some(agent.role.clone()).filter(|role| !role.is_empty()),
+    };
+    let manager = ctx.manager.clone();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        manager
+            .attach_external_with_profile(
+                &p.agent_id,
+                p.pid,
+                p.cwd.as_deref(),
+                agent.personality_prompt.as_deref(),
+                profile,
+            )
+            .map(|outcome| AttachResult {
+                session_id: outcome.session_id().to_string(),
+                mode: if outcome.is_new() { "new" } else { "bind" }.to_string(),
+                script: crate::session::attach_script::render_attach_script(
+                    &agent.name,
+                    outcome.session_id(),
+                    outcome.plan(),
+                ),
+            })
+    }));
+    match result {
+        Ok(Ok(attached)) => ok(attached),
+        Ok(Err(e)) => fail(e),
+        Err(panic) => fail(format!(
+            "attach 중 내부 오류(panic): {}",
+            panic_message(&panic)
+        )),
+    }
+}
+
+/// 외부 세션을 끊는다. 붙어 있지 않았으면 `detached: false`(무해한 no-op).
+async fn detach(
+    State(ctx): State<Arc<ControlContext>>,
+    Json(p): Json<DetachParams>,
+) -> Json<serde_json::Value> {
+    let detached = ctx
+        .manager
+        .detach_external(&p.agent_id, ExternalDetachReason::Detach);
+    ok(DetachResult { detached })
+}
+
 async fn send(
     State(ctx): State<Arc<ControlContext>>,
     Json(p): Json<SendParams>,
@@ -328,6 +398,8 @@ fn router(ctx: Arc<ControlContext>) -> Router {
         .route("/v1/ping", post(ping))
         .route("/v1/list", post(list))
         .route("/v1/create", post(create))
+        .route("/v1/attach", post(attach))
+        .route("/v1/detach", post(detach))
         .route("/v1/send", post(send))
         .route("/v1/dispose", post(dispose))
         .route("/v1/notifications", post(notifications))
@@ -701,6 +773,140 @@ mod tests {
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["agentId"], "a1");
         assert_eq!(arr[0]["state"], "running");
+        cleanup(&f);
+    }
+
+    #[tokio::test]
+    async fn attach_returns_an_evaluable_script_and_detach_reissues_a_session() {
+        let f = build("attach");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        // 훅 ON(기본값은 OFF) — attach 핸들러가 observer 서버를 선기동하고,
+        // 그래야 스크립트에 훅 env와 claude 래퍼가 실린다.
+        f.ctx.settings.write().unwrap().observer_enabled = true;
+        f.ctx
+            .store
+            .save(&crate::types::PersistedState {
+                agents: vec![profile("a1", "Ada")],
+                version: 1,
+                vacation_mode: None,
+            })
+            .unwrap();
+        let client = reqwest::Client::new();
+        let attach = |body: serde_json::Value| {
+            let client = client.clone();
+            let token = token.clone();
+            async move {
+                client
+                    .post(format!("http://127.0.0.1:{port}/v1/attach"))
+                    .header(TOKEN_HEADER, &token)
+                    .json(&body)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<serde_json::Value>()
+                    .await
+                    .unwrap()
+            }
+        };
+
+        let first = attach(serde_json::json!({ "agentId": "a1", "cwd": "/tmp/proj" })).await;
+        assert_eq!(first["ok"], true);
+        assert_eq!(first["data"]["mode"], "new");
+        let sid = first["data"]["sessionId"].as_str().unwrap().to_string();
+        let script = first["data"]["script"].as_str().unwrap();
+        assert!(
+            script.contains(&format!("export AGENT_OFFICE_SESSION='{sid}'")),
+            "{script}",
+        );
+        assert!(script.contains("claude() {"), "{script}");
+
+        // 붙어 있는 동안 다시 attach하면 새 sid를 재발급한다(외부 세션 교체).
+        let again = attach(serde_json::json!({ "agentId": "a1" })).await;
+        assert_eq!(again["data"]["mode"], "new");
+        assert_ne!(again["data"]["sessionId"].as_str().unwrap(), sid);
+        let second_sid = again["data"]["sessionId"].as_str().unwrap().to_string();
+
+        // detach는 실제로 끊었는지 알려주고, 두 번째는 no-op이다.
+        let detach = |body: serde_json::Value| {
+            let client = client.clone();
+            let token = token.clone();
+            async move {
+                client
+                    .post(format!("http://127.0.0.1:{port}/v1/detach"))
+                    .header(TOKEN_HEADER, &token)
+                    .json(&body)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<serde_json::Value>()
+                    .await
+                    .unwrap()
+            }
+        };
+        let detached = detach(serde_json::json!({ "agentId": "a1" })).await;
+        assert_eq!(detached["ok"], true);
+        assert_eq!(detached["data"]["detached"], true);
+        assert_eq!(
+            detach(serde_json::json!({ "agentId": "a1" })).await["data"]["detached"],
+            false
+        );
+
+        // detach 후 재attach는 또 다른 sid를 발급한다.
+        let third = attach(serde_json::json!({ "agentId": "a1" })).await;
+        assert_eq!(third["data"]["mode"], "new");
+        assert_ne!(third["data"]["sessionId"].as_str().unwrap(), second_sid);
+
+        // 앱 안 PTY 세션이 살아 있으면 그 sid에 합류한다(1캐릭터 1세션).
+        let created: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/create"))
+            .header(TOKEN_HEADER, &token)
+            .json(&serde_json::json!({ "agentId": "a1" }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let pty_sid = created["data"]["sessionId"].as_str().unwrap().to_string();
+        let bound = attach(serde_json::json!({ "agentId": "a1" })).await;
+        assert_eq!(bound["data"]["mode"], "bind");
+        assert_eq!(bound["data"]["sessionId"].as_str().unwrap(), pty_sid);
+
+        cleanup(&f);
+    }
+
+    #[tokio::test]
+    async fn attach_rejects_an_unknown_agent_and_requires_the_token() {
+        let f = build("attach-unknown");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let client = reqwest::Client::new();
+
+        // 미승인(토큰 없음) → 401.
+        let unauthorized = client
+            .post(format!("http://127.0.0.1:{port}/v1/attach"))
+            .json(&serde_json::json!({ "agentId": "nope" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(unauthorized.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        let token = f.state.issue_token().unwrap();
+        let body: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/attach"))
+            .header(TOKEN_HEADER, &token)
+            .json(&serde_json::json!({ "agentId": "nope" }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(body["ok"], false);
+        assert!(
+            body["error"].as_str().unwrap().contains("ctl create"),
+            "{body}"
+        );
         cleanup(&f);
     }
 

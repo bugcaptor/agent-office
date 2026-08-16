@@ -4,7 +4,9 @@ fn ps_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
-fn sh_quote(value: &str) -> String {
+/// POSIX 셸 인용(작은따옴표 안은 확장이 전혀 없다 → 임의 텍스트가 데이터로만
+/// 남는다). pub(crate): attach_script.rs가 export 값 인용에 같은 규칙을 쓴다.
+pub(crate) fn sh_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
@@ -29,7 +31,8 @@ fn safe_command_identifier(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
-fn safe_env_identifier(value: &str) -> bool {
+/// pub(crate): attach_script.rs가 export할 env 키를 같은 기준으로 거른다.
+pub(crate) fn safe_env_identifier(value: &str) -> bool {
     !value.is_empty()
         && value
             .bytes()

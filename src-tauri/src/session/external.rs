@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 use super::manager::{cleanup_paths, PreparedPlan, SessionManager};
-use crate::session_events::types::SessionStartedEvent;
+use crate::session_events::types::{AgentEventProfile, SessionStartedEvent};
 use crate::types::*;
 
 /// 외부 논리 세션 한 건. PTY 자원이 없으므로 훅 라우팅 키(sid)와 정리에
@@ -105,13 +105,34 @@ impl SessionManager {
     /// `shell_pid`는 끊김 감지용(그 셸이 죽으면 `sweep_externals`가 정리한다).
     /// `personality_prompt`는 in-app 세션과 동일하게 claude 래퍼로 주입된다.
     ///
-    /// `Result`인 이유는 M2의 control 핸들러가 실패를 그대로 `ok:false`로
-    /// 돌려줄 수 있게 하기 위함이다(현재 실패 경로는 없다).
+    /// `Result`인 이유는 control 핸들러가 실패를 그대로 `ok:false`로 돌려줄 수
+    /// 있게 하기 위함이다(현재 실패 경로는 없다).
+    ///
+    /// 타임라인 표시용 이름/역할은 `create`와 같은 폴백(이름=agentId, 역할 없음)을
+    /// 쓴다. 프로필을 아는 호출자는 `attach_external_with_profile`를 쓴다.
     pub fn attach_external(
         &self,
         agent_id: &str,
         shell_pid: Option<u32>,
+        cwd: Option<&str>,
         personality_prompt: Option<&str>,
+    ) -> Result<ExternalAttachOutcome, String> {
+        let fallback = AgentEventProfile {
+            name: agent_id.to_string(),
+            role: None,
+        };
+        self.attach_external_with_profile(agent_id, shell_pid, cwd, personality_prompt, fallback)
+    }
+
+    /// `attach_external`에 타임라인/오피스 씬이 쓰는 캐릭터 이름·역할을 실어
+    /// 주는 형태(`create` ↔ `create_with_profile`과 같은 관례).
+    pub fn attach_external_with_profile(
+        &self,
+        agent_id: &str,
+        shell_pid: Option<u32>,
+        cwd: Option<&str>,
+        personality_prompt: Option<&str>,
+        profile: AgentEventProfile,
     ) -> Result<ExternalAttachOutcome, String> {
         // 앱 내 PTY 세션이 살아 있으면 논리 세션을 만들지 않는다. 같은 sid로
         // plan만 다시 만들어 돌려준다 -- 훅 settings 파일 경로는 sid에서
@@ -138,14 +159,14 @@ impl SessionManager {
         self.registry
             .insert(&session_id, agent_id, SessionState::Running);
         // 타임라인/오피스 씬은 session_started로 세션의 시작을 안다. PTY가
-        // 없으므로 shell은 "external", cwd는 알 수 없어 빈 문자열이다
-        // (attach 시점에 외부 셸의 작업 폴더를 앱이 관측할 방법이 없다).
+        // 없으므로 shell은 "external"이고, cwd는 앱이 관측할 수 없어 attach를
+        // 요청한 쪽(ctl이 자기 작업 폴더를 실어 보낸다)이 알려준 값을 쓴다.
         self.events.session_started(&SessionStartedEvent {
             agent_id: agent_id.to_string(),
             session_id: session_id.clone(),
-            agent_name: agent_id.to_string(),
-            agent_role: None,
-            cwd: String::new(),
+            agent_name: profile.name,
+            agent_role: profile.role,
+            cwd: cwd.unwrap_or_default().to_string(),
             shell: "external".into(),
             at: now_ms(),
         });

@@ -96,7 +96,7 @@ fn req(agent_id: &str) -> CreateSessionRequest {
 #[tokio::test]
 async fn attach_external_routes_hooks_to_the_agent() {
     let f = build();
-    let outcome = f.manager.attach_external("a1", None, None).unwrap();
+    let outcome = f.manager.attach_external("a1", None, None, None).unwrap();
     assert!(outcome.is_new());
     let sid = outcome.session_id().to_string();
 
@@ -142,7 +142,7 @@ async fn attach_external_writes_the_same_hook_settings_and_persona_wiring() {
     let f = build();
     let outcome = f
         .manager
-        .attach_external("a1", None, Some("차분하게 답한다."))
+        .attach_external("a1", None, None, Some("차분하게 답한다."))
         .unwrap();
     let plan = outcome.plan();
 
@@ -180,9 +180,34 @@ async fn attach_external_writes_the_same_hook_settings_and_persona_wiring() {
 }
 
 #[tokio::test]
+async fn attach_with_profile_puts_the_character_name_role_and_cwd_on_the_timeline() {
+    let f = build();
+    f.manager
+        .attach_external_with_profile(
+            "a1",
+            None,
+            Some("/tmp/proj"),
+            None,
+            crate::session_events::types::AgentEventProfile {
+                name: "에이다".into(),
+                role: Some("backend".into()),
+            },
+        )
+        .unwrap();
+
+    let starts = f.events.session_starts();
+    assert_eq!(starts.len(), 1);
+    assert_eq!(starts[0].agent_name, "에이다");
+    assert_eq!(starts[0].agent_role.as_deref(), Some("backend"));
+    assert_eq!(starts[0].cwd, "/tmp/proj");
+
+    f.cleanup();
+}
+
+#[tokio::test]
 async fn detach_external_stops_hook_routing_and_removes_the_settings_file() {
     let f = build();
-    let outcome = f.manager.attach_external("a1", None, None).unwrap();
+    let outcome = f.manager.attach_external("a1", None, None, None).unwrap();
     let sid = outcome.session_id().to_string();
     let settings = outcome.plan().settings_path.clone().expect("settings 경로");
     assert!(settings.exists());
@@ -214,7 +239,7 @@ async fn attach_binds_to_a_live_in_app_session_without_registering_an_external()
 
     let outcome = f
         .manager
-        .attach_external("a1", Some(std::process::id()), None)
+        .attach_external("a1", Some(std::process::id()), None, None)
         .unwrap();
     assert!(!outcome.is_new());
     assert_eq!(outcome.session_id(), created.session_id);
@@ -238,7 +263,7 @@ async fn attach_binds_to_a_live_in_app_session_without_registering_an_external()
 #[tokio::test]
 async fn create_session_detaches_a_previously_attached_external() {
     let f = build();
-    let outcome = f.manager.attach_external("a1", None, None).unwrap();
+    let outcome = f.manager.attach_external("a1", None, None, None).unwrap();
     let external_sid = outcome.session_id().to_string();
     let external_settings = outcome.plan().settings_path.clone().expect("settings 경로");
 
@@ -268,11 +293,11 @@ async fn create_session_detaches_a_previously_attached_external() {
 #[tokio::test]
 async fn attaching_twice_reissues_a_fresh_session_id() {
     let f = build();
-    let first = f.manager.attach_external("a1", None, None).unwrap();
+    let first = f.manager.attach_external("a1", None, None, None).unwrap();
     let first_sid = first.session_id().to_string();
     let first_settings = first.plan().settings_path.clone().expect("settings 경로");
 
-    let second = f.manager.attach_external("a1", None, None).unwrap();
+    let second = f.manager.attach_external("a1", None, None, None).unwrap();
     assert!(second.is_new());
     assert_ne!(second.session_id(), first_sid);
 
@@ -289,7 +314,7 @@ async fn attaching_twice_reissues_a_fresh_session_id() {
 #[tokio::test]
 async fn external_session_never_looks_running_to_bot_mode() {
     let f = build();
-    f.manager.attach_external("a1", None, None).unwrap();
+    f.manager.attach_external("a1", None, None, None).unwrap();
     // write_input이 닿지 않는 세션이므로 봇 게이트는 false여야 한다.
     assert!(!f.manager.is_running("a1"));
     f.cleanup();
@@ -298,7 +323,7 @@ async fn external_session_never_looks_running_to_bot_mode() {
 #[tokio::test]
 async fn dispose_delegates_to_detach_for_an_external_session() {
     let f = build();
-    let outcome = f.manager.attach_external("a1", None, None).unwrap();
+    let outcome = f.manager.attach_external("a1", None, None, None).unwrap();
     let settings = outcome.plan().settings_path.clone().expect("settings 경로");
 
     f.manager.dispose("a1");
@@ -327,11 +352,11 @@ async fn sweep_detaches_the_external_whose_shell_is_gone() {
     let _ = child.wait();
 
     f.manager
-        .attach_external("gone", Some(dead_pid), None)
+        .attach_external("gone", Some(dead_pid), None, None)
         .unwrap();
     let alive = f
         .manager
-        .attach_external("alive", Some(std::process::id()), None)
+        .attach_external("alive", Some(std::process::id()), None, None)
         .unwrap();
     let alive_sid = alive.session_id().to_string();
 
@@ -356,7 +381,7 @@ async fn sweep_detaches_the_external_whose_shell_is_gone() {
 #[tokio::test]
 async fn sweep_leaves_externals_without_a_shell_pid_alone() {
     let f = build();
-    let outcome = f.manager.attach_external("a1", None, None).unwrap();
+    let outcome = f.manager.attach_external("a1", None, None, None).unwrap();
     let sid = outcome.session_id().to_string();
 
     f.manager.sweep_externals();
