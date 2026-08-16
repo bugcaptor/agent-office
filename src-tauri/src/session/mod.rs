@@ -2,6 +2,7 @@ pub mod bash_wrapper;
 #[cfg(unix)]
 pub mod broker_pty;
 pub mod env_capture;
+pub mod external;
 pub mod handoff_broker;
 pub mod handoff_v1;
 pub mod manager;

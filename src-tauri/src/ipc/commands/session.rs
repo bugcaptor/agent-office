@@ -7,6 +7,7 @@
 
 use tauri::{ipc::Channel, State};
 
+use crate::session::external::ExternalDetachReason;
 use crate::session_events::types::AgentEventProfile;
 use crate::state::AppState;
 use crate::types::*;
@@ -113,6 +114,19 @@ pub async fn dispose_session(
 ) -> Result<(), String> {
     app_state.manager.dispose(&agent_id);
     Ok(())
+}
+
+/// 외부(논리) 세션 연결 해제. 앱 밖 터미널에 붙여 둔 캐릭터를 떼어낸다 --
+/// PTY가 없으므로 kill할 프로세스는 없고, 훅 라우팅 등록과 훅 settings 파일만
+/// 정리된다. 붙어 있지 않았으면 false(no-op).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn detach_external_session(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<bool, String> {
+    Ok(app_state
+        .manager
+        .detach_external(&agent_id, ExternalDetachReason::Detach))
 }
 
 /// 세션 핸드오프 기능 지원 여부(docs/session-handoff-design.md). unix

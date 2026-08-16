@@ -45,6 +45,11 @@ pub struct SessionStateEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exit: Option<SessionExitInfo>,
     pub at: u64,
+    /// 외부(논리) 세션인가 -- 앱 밖 터미널에 붙은 세션은 PTY가 없어 프런트가
+    /// 터미널 대신 placeholder를 그린다. PTY 세션은 None이라 직렬화에서 통째로
+    /// 빠진다(기존 계약 무변경, additive).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external: Option<bool>,
 }
 
 /// 알림 출처. TS NotificationSource와 동일.
@@ -671,6 +676,7 @@ mod tests {
             state: SessionState::Running,
             exit: None,
             at: 1,
+            external: None,
         };
         let json = serde_json::to_string(&ev).unwrap();
         assert_eq!(
@@ -678,6 +684,25 @@ mod tests {
             "{\"sessionId\":\"s1\",\"agentId\":\"a1\",\"state\":\"running\",\"at\":1}"
         );
         assert!(!json.contains("exit"));
+        // external도 None이면 통째로 빠진다(기존 계약 무변경).
+        assert!(!json.contains("external"));
+    }
+
+    #[test]
+    fn session_state_event_marks_external_sessions() {
+        let ev = SessionStateEvent {
+            session_id: "s1".into(),
+            agent_id: "a1".into(),
+            state: SessionState::Running,
+            exit: None,
+            at: 1,
+            external: Some(true),
+        };
+        let json = serde_json::to_string(&ev).unwrap();
+        assert_eq!(
+            json,
+            "{\"sessionId\":\"s1\",\"agentId\":\"a1\",\"state\":\"running\",\"at\":1,\"external\":true}"
+        );
     }
 
     #[test]
@@ -693,6 +718,7 @@ mod tests {
                 intentional: false,
             }),
             at: 2,
+            external: None,
         };
         let json = serde_json::to_string(&ev).unwrap();
         assert_eq!(

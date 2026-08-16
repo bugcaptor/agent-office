@@ -407,6 +407,20 @@ pub fn run() {
                 .with_agent_session_lookup(claude_resume_store.clone()),
             );
 
+            // 외부(논리) 세션 끊김 감지: attach를 요청한 셸이 사라지면 5초 안에
+            // 캐릭터에서 뗀다. 셸의 EXIT trap은 사용자 trap을 덮어쓸 위험이 있어
+            // 앱 쪽 `kill(pid, 0)` 폴링으로 감지한다(비unix는 no-op).
+            {
+                let manager = manager.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut ticker = tokio::time::interval(Duration::from_secs(5));
+                    loop {
+                        ticker.tick().await;
+                        manager.sweep_externals();
+                    }
+                });
+            }
+
             let store = ProfileStore::new(data_dir.join("profiles.json"));
             let portrait_store = PngStore::new(data_dir.join("portraits"), MAX_PORTRAIT_BYTES);
             let sprite_store = PngStore::new(data_dir.join("sprites"), MAX_SPRITE_BYTES);
@@ -504,6 +518,7 @@ pub fn run() {
             ipc::commands::create_session,
             ipc::commands::list_available_shells,
             ipc::commands::dispose_session,
+            ipc::commands::detach_external_session,
             ipc::commands::handoff_supported,
             ipc::commands::handoff_sessions,
             ipc::commands::adopt_detached_sessions,

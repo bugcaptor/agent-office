@@ -269,6 +269,7 @@ mod tests {
             state,
             exit: None,
             at: 1,
+            external: None,
         }
     }
 
@@ -318,6 +319,7 @@ mod tests {
                 intentional: false,
             }),
             at: 2,
+            external: None,
         };
         events.session_state(&exit_ev);
 

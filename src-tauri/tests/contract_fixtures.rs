@@ -87,6 +87,8 @@ fn session_state_event_exit_matches_fixture() {
             intentional: false,
         }),
         at: 1720000000001,
+        // PTY 세션 -- None이면 직렬화에서 빠져 기존 픽스처와 동일하다.
+        external: None,
     };
     assert_value_eq(fixture_json, serde_json::to_value(&value).unwrap());
 }

@@ -194,6 +194,7 @@ mod tests {
             state: SessionState::Running,
             exit: None,
             at: 1_783_728_000_001,
+            external: None,
         });
         for (offset, source) in [NotificationSource::Bell, NotificationSource::Stop]
             .into_iter()
@@ -256,6 +257,7 @@ mod tests {
                 state,
                 exit: None,
                 at: 1_783_728_000_000 + offset as u64,
+                external: None,
             });
         }
         assert_eq!(
