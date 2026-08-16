@@ -330,6 +330,7 @@
             settings: settings.clone(),
             settings_store: settings_store.clone(),
             app_data_dir: profile_dir.clone(),
+            tmux_probe: crate::control::tmux::system_probe(),
         });
 
         let bot_runtime = std::sync::Arc::new(crate::bot::BotRuntime::default());

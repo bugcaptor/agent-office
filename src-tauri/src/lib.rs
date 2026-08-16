@@ -453,6 +453,7 @@ pub fn run() {
                 settings: settings_cache.clone(),
                 settings_store: settings_store.clone(),
                 app_data_dir: data_dir.clone(),
+                tmux_probe: crate::control::tmux::system_probe(),
             });
             if settings_cache.read().unwrap().cli_enabled {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));

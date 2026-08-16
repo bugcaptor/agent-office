@@ -55,6 +55,21 @@ pub fn render_attach_script(agent_name: &str, session_id: &str, plan: &PreparedP
     script
 }
 
+/// tmux 모드(`ctl attach … --tmux <target>`)의 응답 스크립트. 이때 앱은 자기
+/// PTY로 tmux 클라이언트를 여는 것이므로 **요청한 셸에 심을 것이 없다** --
+/// 출력 계약(성공 시 stdout=eval 대상)을 깨지 않도록 코멘트 두 줄만 낸다.
+///
+/// 훅·성격은 tmux **pane 안에서** 다시 `eval "$(… ctl attach <id>)"`을 해야
+/// 붙는다(그때는 앱 안 PTY 세션이 살아 있어 BindExisting -- 같은 sid에 합류).
+pub fn render_tmux_notice(agent_id: &str, target: &str) -> String {
+    format!(
+        "# agent-office attach — tmux 세션 '{}'에 연결됨(앱 터미널 탭이 미러입니다).\n\
+         # 각 pane에서 훅·성격을 붙이려면 그 pane에서: eval \"$(agent-office ctl attach {})\"\n",
+        comment_safe(target),
+        comment_safe(agent_id),
+    )
+}
+
 /// `#` 코멘트 한 줄에 안전하게 넣을 수 있게 제어문자(특히 개행)를 없앤다 --
 /// 개행이 남으면 코멘트가 끝나고 그 뒤가 코드로 해석된다.
 fn comment_safe(value: &str) -> String {
@@ -196,6 +211,21 @@ mod tests {
         let first_line = script.lines().next().unwrap();
         assert!(first_line.contains("Ada echo pwned"), "{script}");
         assert!(!script.contains("\necho pwned"), "{script}");
+    }
+
+    #[test]
+    fn tmux_notice_is_comments_only_and_sanitized() {
+        let notice = render_tmux_notice("a1", "work");
+        assert!(notice.lines().all(|line| line.starts_with('#')), "{notice}");
+        assert!(notice.contains("tmux 세션 'work'"), "{notice}");
+        assert!(
+            notice.contains("eval \"$(agent-office ctl attach a1)\""),
+            "{notice}"
+        );
+        // 개행이 섞여 들어와도 코멘트를 벗어나지 못한다.
+        let evil = render_tmux_notice("a1", "work'\necho pwned");
+        assert_eq!(evil.lines().count(), 2, "{evil}");
+        assert!(evil.lines().all(|line| line.starts_with('#')), "{evil}");
     }
 
     #[test]

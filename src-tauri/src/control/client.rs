@@ -218,6 +218,12 @@ fn build_request(p: &Parsed) -> Result<(&'static str, Value), String> {
             if let Some(cwd) = cwd {
                 o.insert("cwd".into(), Value::String(cwd));
             }
+            // `--tmux <세션이름>`: 이 셸이 아니라 **그 tmux 세션**에 붙인다
+            // (앱이 자기 PTY로 tmux 클라이언트를 연다). 이때 응답 script는
+            // 코멘트뿐이라 eval해도 이 셸은 그대로다.
+            if let Some(target) = p.kv.get("tmux") {
+                o.insert("tmux".into(), Value::String(target.clone()));
+            }
             Ok(("/v1/attach", Value::Object(o)))
         }
         "detach" => {
@@ -291,6 +297,7 @@ agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
   create <agentId> [--cwd P] [--shell S] [--startup-command C]
                      [--name N] [--role R] [--cols N] [--rows N]
   attach <agentId> [--cwd P]      이 터미널을 캐릭터에 붙인다(아래 eval 필요)
+         [--tmux <세션이름>]      대신 그 tmux 세션에 붙는다(앱 탭이 미러)
   detach <agentId>                외부 터미널 연결을 끊는다
   send <agentId> <text> [--enter] 세션 stdin에 text를 주입(--enter=개행 추가)
   dispose <agentId>               세션을 종료한다
@@ -308,6 +315,11 @@ agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
   eval \"$(agent-office ctl attach 캐릭터ID)\"
   attach는 성공 시 셸 스크립트만 stdout으로 내보낸다(실패하면 아무것도 내보내지
   않으므로 eval이 안전하다). 이 셸이 종료되면 앱이 5초 안에 연결을 정리한다.
+
+tmux 세션 attach(출력 미러링·입력 주입까지 되는 풀 기능):
+  agent-office ctl attach 캐릭터ID --tmux 세션이름
+  앱이 그 tmux 세션에 클라이언트로 붙어 앱 탭이 미러가 된다. 각 pane의 훅·성격은
+  그 pane 안에서 eval \"$(agent-office ctl attach 캐릭터ID)\"로 따로 붙인다.
 ";
 
 /// `ctl` 진입점 — `ctl` 이후의 인자 토큰을 받아 종료 코드를 돌려준다.
@@ -704,6 +716,24 @@ mod tests {
         assert_eq!(explicit["cwd"], "/tmp/x");
 
         assert!(build_request(&parse(&args(&["attach"])).unwrap()).is_err());
+    }
+
+    #[test]
+    fn build_attach_forwards_the_tmux_target_only_when_given() {
+        let (_, plain) = build_request(&parse(&args(&["attach", "a1"])).unwrap()).unwrap();
+        assert!(plain.get("tmux").is_none());
+
+        let (path, body) =
+            build_request(&parse(&args(&["attach", "a1", "--tmux", "work"])).unwrap()).unwrap();
+        assert_eq!(path, "/v1/attach");
+        assert_eq!(body["agentId"], "a1");
+        assert_eq!(body["tmux"], "work");
+
+        // `--tmux=이름` 형태도 같은 필드로 들어간다.
+        let (_, eq) =
+            build_request(&parse(&args(&["attach", "--agent", "a2", "--tmux=my sess"])).unwrap())
+                .unwrap();
+        assert_eq!(eq["tmux"], "my sess");
     }
 
     #[test]

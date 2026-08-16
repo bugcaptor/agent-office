@@ -86,7 +86,7 @@
 | `/v1/ping` | `{}` | (버전·세션 수) |
 | `/v1/list` | `{}` | `load_state` + registry 스냅샷 |
 | `/v1/create` | `{ agentId, cwd?, shell?, startupCommand?, name?, role?, cols?, rows? }` | `create_session` |
-| `/v1/attach` | `{ agentId, pid?, cwd? }` → `{ sessionId, mode, script }` | `attach_external_with_profile` |
+| `/v1/attach` | `{ agentId, pid?, cwd?, tmux? }` → `{ sessionId, mode, script }` | `attach_external_with_profile`(tmux면 `create_with_profile`) |
 | `/v1/detach` | `{ agentId }` → `{ detached }` | `detach_external` |
 | `/v1/send` | `{ agentId, data }` | `write_input` |
 | `/v1/dispose` | `{ agentId }` | `dispose_session` |
@@ -127,6 +127,50 @@ agent-office ctl detach 캐릭터ID              # 끊기(셸을 닫아도 자�
 - **앱 재시작**: 논리 세션은 메모리에만 있으므로 사라진다 — 터미널에서 다시
   `eval "$(… attach …)"`을 실행해야 한다(영속화는 후속 과제).
 
+## tmux 세션 attach(풀 기능)
+
+일반 외부 터미널과 달리 tmux는 **출력 미러링 + 입력 주입까지** 된다. 방식은
+"앱이 자기 PTY로 tmux 클라이언트를 하나 더 여는 것"이다 — 서버가 일반 세션을
+`startup_command = exec tmux attach-session -t '<target>'`로 만들면 출력·입력·
+resize·`on_exit`·세션 로그·봇 inject가 **기존 PTY 파이프라인 그대로** 동작한다
+(pipe-pane + send-keys 대안은 가짜 SpawnedPty·이스케이프·크기 불일치 때문에
+사실상 병렬 파이프라인 신설이라 기각했다).
+
+```sh
+agent-office ctl attach 캐릭터ID --tmux 세션이름   # 앱이 그 tmux에 붙는다
+# 그 tmux의 각 pane 안에서(훅·성격 붙이기):
+eval "$(agent-office ctl attach 캐릭터ID)"
+```
+
+- **검증**: 대상 이름이 비었거나 개행/제어문자를 포함하면 거절한다. 이어서
+  `tmux has-session -t <target>`를 돌려 tmux 미설치(spawn 실패)와 세션 미존재를
+  각각 다른 `ok:false` 메시지로 알린다. 앱이 GUI로 떠 PATH가 최소값이면 tmux를
+  못 찾을 수 있다(부팅 시 로그인 셸 env 캡처가 PATH를 채워 준다, `env_capture`).
+- **응답**: `mode: "tmux"`, `script`는 **코멘트 두 줄뿐**이다 — 출력 계약(성공 시
+  stdout = eval 대상)을 깨지 않으면서 `eval`해도 요청한 셸은 그대로다. 두 번째
+  줄이 pane 안에서 할 일(위 `eval`)을 안내한다.
+- **pane의 훅·성격**: `exec tmux`로 셸을 갈아치우므로 클라이언트 셸의 env는
+  pane에 전달되지 않는다(pane은 tmux **서버**에서 갈라진다). pane 안에서
+  `eval "$(… ctl attach …)"`을 하면 그 캐릭터의 앱 내 PTY 세션(= tmux
+  클라이언트)이 살아 있으므로 **BindExisting** — 같은 sid로 훅·성격이 합류한다.
+- **`pid`는 쓰지 않는다**: 세션 수명은 tmux 클라이언트의 종료(`on_exit`)가
+  결정한다. `ctl`을 부른 셸이 죽어도 무관하다.
+- **이미 세션이 있으면 거절**: 1캐릭터 1세션이라 `create`는 살아 있는 세션을
+  재사용한다 — 그러면 tmux 클라이언트가 뜨지 않으므로 성공으로 위장하지 않고
+  `ok:false`로 알린다(탭을 닫거나 `ctl dispose <id>` 후 재시도).
+- **창 크기**: 앱 탭이 tmux 클라이언트이므로 앱 창 크기가 tmux window 크기에
+  영향을 준다(tmux 기본 `window-size latest` = 가장 최근 클라이언트 기준).
+  다른 실제 터미널과 같은 세션을 함께 보면 작은 쪽에 맞춰지는 등 tmux의 평소
+  규칙을 그대로 따른다.
+- **dispose는 비파괴적**: 탭을 닫으면 tmux **클라이언트만** 죽는다. tmux 서버와
+  세션·pane은 그대로 남아 다시 attach할 수 있다(`tmux kill-session`을 하면 그때
+  클라이언트도 끝나 세션이 `Exited`가 된다).
+- **"다시 띄우기" 주의**: `Exited` 후 탭의 재시작은 **프로필의**
+  `startupCommand`를 기준으로 하므로 tmux 재접속이 아니다. 다시 붙이려면
+  `ctl attach … --tmux …`를 한 번 더 실행한다(프로필에 저장하는 옵션은 후속 과제).
+- **봇 inject**: `write_input`은 tmux 클라이언트의 stdin으로 가므로 **활성
+  pane**에 입력된다. 봇 모드로 쓸 tmux 세션은 pane 하나만 두는 것을 권한다.
+
 ## 발견 순서와 오버라이드
 
 1. `--app-data <경로>` / `--port <n>` / `--token <t>` 플래그(명시 최우선).
@@ -165,8 +209,11 @@ agent-office ctl detach 캐릭터ID              # 끊기(셸을 닫아도 자�
   토큰 미들웨어 + 핸들러, 토큰/포트 파일 헬퍼(0600).
 - `src-tauri/src/control/client.rs` — `ctl` 파서·발견·요청·출력(attach는 raw
   stdout).
+- `src-tauri/src/control/tmux.rs` — `--tmux` 대상 검증, `exec tmux
+  attach-session` 시작 명령 렌더, `tmux has-session` 확인기(테스트 주입 가능).
 - `src-tauri/src/session/attach_script.rs` — attach 응답 스크립트 렌더러
-  (`PreparedPlan` → export + `wrapper_script::render_posix`).
+  (`PreparedPlan` → export + `wrapper_script::render_posix`), tmux 모드의
+  코멘트 전용 안내(`render_tmux_notice`).
 - `src-tauri/src/session/external.rs` — 외부(논리) 세션 등록/해제·PID 스윕.
 - `src-tauri/src/lib.rs` — `maybe_run_cli` 분기, setup에서 opt-in 기동, 종료
   훅 정리, 렌더러 커맨드 등록.
