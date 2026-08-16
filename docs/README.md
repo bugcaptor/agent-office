@@ -21,6 +21,7 @@
 | [usage-design.md](usage-design.md) | 구독 사용량(rate limit) 표시 — 캐시 미러(#22) + Claude 실시간 조회(#33) 통합본 | 정본 — 구현 완료 |
 | [bot-mode-design.md](bot-mode-design.md) | 캐릭터 봇 모드 — Gitea 이슈 폴링·프롬프트 주입·PR 완료 판정 | 정본 — 구현 완료(#57/#58/#61) |
 | [cli-control-design.md](cli-control-design.md) | `agent-office ctl` 외부 CLI 제어 — 로컬 axum 서버 + 2단계 승인 | 정본 — 구현 완료(#55) |
+| [external-session-attach-design.md](external-session-attach-design.md) | 외부 터미널/tmux 세션에 캐릭터 붙이기 — PTY 없는 논리 세션·`ctl attach` eval 스크립트·tmux 클라이언트 스폰 | 정본 — 구현 완료(kbm #2by), 눈검증 대기 |
 | [claude-session-resume-design.md](claude-session-resume-design.md) | Claude native 세션 ID 캡처·`--resume` 이어하기 | 정본 — 구현 완료(#20) |
 | [tts-confirm-line-design.md](tts-confirm-line-design.md) | 알림 대사 TTS — 질문·완료 알림 문구를 캐릭터 말투 대사로 리라이트(API/claude CLI) + ElevenLabs 합성·archetype 보이스 캐스팅/수동 지정, 소리 3분할 설정 | 정본 — 구현 완료, 눈검증 대기 |
 | [pi-support-design.md](pi-support-design.md) | Pi(pi.dev) CLI 작업 상태 감지 — Pi 확장 + 셸 래퍼 | 부분표류 — 구현 완료(#8)이나 §1 file:line 근거가 observer 리팩터로 구식. 현행 구조는 문서 §0.5 |
