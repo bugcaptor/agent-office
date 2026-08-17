@@ -1,0 +1,14 @@
+{
+  // F5로 확장 개발 호스트를 띄운다. 자세한 설명: https://aka.ms/vscode-extension-debug
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "확장 실행",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/out/**/*.js"],
+      "preLaunchTask": "${defaultBuildTask}"
+    }
+  ]
+}

@@ -1,0 +1,202 @@
+{
+  "name": "agent-office-logs",
+  "displayName": "Agent Office 로그",
+  "description": "실행 중인 Agent Office 앱에 붙어 캐릭터 목록·알림을 보고, 세션 로그를 tail-follow로 읽는 뷰어",
+  "version": "0.1.0",
+  "publisher": "bugcaptor",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onView:agentOffice.characters"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agent-office",
+          "title": "Agent Office",
+          "icon": "media/agent-office.svg"
+        }
+      ]
+    },
+    "views": {
+      "agent-office": [
+        {
+          "id": "agentOffice.characters",
+          "name": "캐릭터"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "agentOffice.characters",
+        "contents": "Agent Office 앱이 실행 중이고, 앱 설정에서 CLI 제어가 켜져 있고 승인되어 있어야 캐릭터가 보입니다.\n\n세션 로그는 앱이 2초 간격으로 정리해 쌓는 '대화록'이라 실시간 터미널 미러가 아닙니다.\n\n[새로고침](command:agentOffice.refresh)"
+      }
+    ],
+    "configuration": {
+      "title": "Agent Office 로그",
+      "properties": {
+        "agentOffice.appDataDir": {
+          "type": "string",
+          "default": "",
+          "description": "앱 데이터 폴더 경로. 비워 두면 AGENT_OFFICE_APP_DATA 환경변수 → OS 기본 경로 순으로 자동 발견합니다."
+        },
+        "agentOffice.pollIntervalMs": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 500,
+          "description": "창이 포커스를 가진 동안의 폴링 간격(ms). 백그라운드에서는 10초로 늘어납니다."
+        },
+        "agentOffice.logTailKb": {
+          "type": "number",
+          "default": 512,
+          "minimum": 8,
+          "description": "tail-follow 문서가 파일 끝에서 읽어 오는 크기(KB). 넘치는 앞부분은 '전체 불러오기'로 볼 수 있습니다."
+        },
+        "agentOffice.notifyToast": {
+          "type": "boolean",
+          "default": false,
+          "description": "새 알림이 도착하면 VSCode 알림(토스트)으로도 띄웁니다."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "agentOffice.refresh",
+        "title": "새로고침",
+        "category": "Agent Office",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentOffice.openLog",
+        "title": "로그 열기(tail-follow)",
+        "category": "Agent Office"
+      },
+      {
+        "command": "agentOffice.openLogFile",
+        "title": "파일로 열기",
+        "category": "Agent Office"
+      },
+      {
+        "command": "agentOffice.openLogFull",
+        "title": "전체 불러오기",
+        "category": "Agent Office",
+        "icon": "$(unfold)"
+      },
+      {
+        "command": "agentOffice.showNotification",
+        "title": "알림 보기",
+        "category": "Agent Office"
+      },
+      {
+        "command": "agentOffice.clearAgentNotifications",
+        "title": "알림 모두 지우기",
+        "category": "Agent Office",
+        "icon": "$(bell-slash)"
+      },
+      {
+        "command": "agentOffice.revealLogDir",
+        "title": "로그 폴더 열기",
+        "category": "Agent Office",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "agentOffice.toggleLogPage",
+        "title": "로그 목록 더 보기/접기",
+        "category": "Agent Office"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "agentOffice.openLog",
+          "when": "false"
+        },
+        {
+          "command": "agentOffice.openLogFile",
+          "when": "false"
+        },
+        {
+          "command": "agentOffice.showNotification",
+          "when": "false"
+        },
+        {
+          "command": "agentOffice.clearAgentNotifications",
+          "when": "false"
+        },
+        {
+          "command": "agentOffice.revealLogDir",
+          "when": "false"
+        },
+        {
+          "command": "agentOffice.openLogFull",
+          "when": "false"
+        },
+        {
+          "command": "agentOffice.toggleLogPage",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "agentOffice.refresh",
+          "when": "view == agentOffice.characters",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "agentOffice.clearAgentNotifications",
+          "when": "view == agentOffice.characters && viewItem == agentOffice.agentWithNotifications",
+          "group": "inline"
+        },
+        {
+          "command": "agentOffice.revealLogDir",
+          "when": "view == agentOffice.characters && viewItem =~ /^agentOffice.agent/",
+          "group": "inline@2"
+        },
+        {
+          "command": "agentOffice.clearAgentNotifications",
+          "when": "view == agentOffice.characters && viewItem == agentOffice.agentWithNotifications",
+          "group": "1_actions"
+        },
+        {
+          "command": "agentOffice.revealLogDir",
+          "when": "view == agentOffice.characters && viewItem =~ /^agentOffice.agent/",
+          "group": "1_actions"
+        },
+        {
+          "command": "agentOffice.openLogFile",
+          "when": "view == agentOffice.characters && viewItem == agentOffice.log",
+          "group": "1_actions"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "agentOffice.openLogFull",
+          "when": "resourceScheme == agent-office-log && agentOffice.logTailActive",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}
