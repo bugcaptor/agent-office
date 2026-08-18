@@ -116,6 +116,35 @@ describe("THEMES 레지스트리 무결성", () => {
     }
   });
 
+  it("유채색 ANSI 6색은 전경으로도(vs 터미널 배경) 배경으로도(vs ANSI black) 읽힌다", () => {
+    // agnoster류 프롬프트는 blue/green 배경 + black 글자로 세그먼트(경로·git)를
+    // 그린다. 유채색이 전경 가독성만 좇아 너무 어두워지면(과거 daylight blue
+    // #1d5fd0 → black 대비 2.6:1) 세그먼트 글자가 안 보인다. 양방향 WCAG 대비
+    // ≥3:1을 계약으로 고정한다(겸용 색의 이론적 상한이 밝은 테마에서 ~3.5:1).
+    const relLum = (hex: string) => {
+      const lin = (c: number) =>
+        c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      const n = parseInt(hex.slice(1), 16);
+      const [r, g, b] = [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff].map((v) =>
+        lin(v / 255)
+      );
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrast = (a: string, b: string) => {
+      const [hi, lo] = [relLum(a) + 0.05, relLum(b) + 0.05].sort((x, y) => y - x);
+      return hi / lo;
+    };
+    const CHROMATIC = ["red", "green", "yellow", "blue", "magenta", "cyan"] as const;
+    for (const id of ALL_IDS) {
+      const t = THEMES[id].xterm;
+      for (const key of CHROMATIC) {
+        const c = t[key] as string;
+        expect(contrast(c, t.background), `${id} ${key} 전경 대비`).toBeGreaterThanOrEqual(3);
+        expect(contrast(c, t.black as string), `${id} ${key} 배경 대비`).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
   it("midnight은 테마 도입 이전의 원본 값을 그대로 보존한다(오피스 리디자인으로 추가된 타일 팔레트 키 제외)", () => {
     // 원본: tokens.css(구 :root) + TileRenderer.PAL(구 상수) + 배경 0x1b1b24.
     // Phase A(오피스 리디자인)에서 plant/counter/table 등 신규 키가 추가되었으므로

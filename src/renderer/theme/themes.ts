@@ -121,7 +121,11 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       laptopBody: 0x3a4050, // 랩탑 본체/디테일(더 어두운 슬레이트)
     },
     // 밝은 배경의 터미널 — ANSI 16색은 "밝을수록 잘 보인다"가 뒤집히므로
-    // 노랑/흰색 계열을 어둡게 보정하고, bright는 더 진하게(대비 강화) 간다.
+    // 흰색 계열을 어둡게 보정하고, bright는 더 진하게(대비 강화) 간다.
+    // 유채색 6색은 전경·배경 겸용이다(agnoster류 프롬프트가 blue/green 배경 +
+    // black 글자로 세그먼트를 그린다). 너무 어두우면 세그먼트 글자가 안 보이고
+    // 너무 밝으면 색 글자가 안 보이므로, 터미널 배경 대비(전경용)와 black 대비
+    // (배경용)가 같아지는 균형 휘도(~0.21, 양방향 약 3.7:1)에 맞춘다.
     xterm: {
       background: "#fbf6ea",
       foreground: "#3a3428",
@@ -129,12 +133,12 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       cursorAccent: "#fbf6ea",
       selectionBackground: "#cfc0a480",
       black: "#2b2620",
-      red: "#c03a2e",
-      green: "#2f7d3a",
-      yellow: "#9a6b00",
-      blue: "#1d5fd0",
-      magenta: "#a3348f",
-      cyan: "#0f7a76",
+      red: "#d4554a",
+      green: "#369043",
+      yellow: "#a87500",
+      blue: "#407de4",
+      magenta: "#c751b2",
+      cyan: "#118e89",
       white: "#7a7161",
       brightBlack: "#857a66",
       brightRed: "#d94f3d",
@@ -248,7 +252,8 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       laptopLid: 0x6e5d73, // 랩탑 뚜껑 등판(플럼 그레이)
       laptopBody: 0x504256,
     },
-    // 밝은 블러시 배경 + 플럼 전경. daylight와 같은 이유로 노랑/흰색은 어둡게.
+    // 밝은 블러시 배경 + 플럼 전경. 유채색 6색은 daylight와 같은 이유로
+    // 전경·배경 겸용 균형 휘도에 맞춘다(이 배경/black에서는 양방향 약 3.5:1).
     xterm: {
       background: "#fcf0f5",
       foreground: "#4a2b3c",
@@ -256,11 +261,11 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       cursorAccent: "#fcf0f5",
       selectionBackground: "#e2c2d080",
       black: "#3f2433",
-      red: "#c33a5a",
+      red: "#ce5a75",
       green: "#3f8f6a",
       yellow: "#b06a12",
-      blue: "#4a63c0",
-      magenta: "#c0398c",
+      blue: "#687cca",
+      magenta: "#cc559e",
       cyan: "#2f8a94",
       white: "#8a6d7c",
       brightBlack: "#9a7286",
