@@ -133,15 +133,18 @@ describe("SettingsDialog · 알림 대사 TTS", () => {
     render(<SettingsDialog />);
     await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
     // 라벨이 설명문(small)까지 감싸고 있어 접근성 이름으로 특정하기 어렵다 —
-    // 현재 값으로 각 select를 집는다(공급자="auto", 모델="claude-haiku-4-5").
-    const selectByValue = (value: string) =>
+    // "그 값을 고를 수 있는 select"로 집는다. (현재 값으로 집으면 다이얼로그의
+    // 다른 select와 부딪힌다 — "터미널 색상"도 기본값이 "auto"다.)
+    const selectByOption = (optionValue: string) =>
       screen
         .getAllByRole("combobox")
-        .find((el) => (el as HTMLSelectElement).value === value)!;
+        .find((el) =>
+          Array.from((el as HTMLSelectElement).options).some((o) => o.value === optionValue),
+        )!;
 
-    fireEvent.change(selectByValue("auto"), { target: { value: "claude-cli" } });
+    fireEvent.change(selectByOption("claude-cli"), { target: { value: "claude-cli" } });
     expect(useAppStore.getState().appSettings.ttsRewriteProvider).toBe("claude-cli");
-    fireEvent.change(selectByValue("claude-haiku-4-5"), {
+    fireEvent.change(selectByOption("claude-opus-5"), {
       target: { value: "claude-opus-5" },
     });
     expect(useAppStore.getState().appSettings.ttsRewriteModel).toBe("claude-opus-5");

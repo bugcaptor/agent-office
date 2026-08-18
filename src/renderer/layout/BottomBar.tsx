@@ -23,7 +23,7 @@ import {
   usePendingCount,
   useRunningCount,
 } from "../store/selectors";
-import { THEMES, nextThemeId } from "../theme/themes";
+import { THEMES, THEME_ORDER } from "../theme/themes";
 import { ContextMenu } from "../ui/ContextMenu";
 import { clockInAgent, clockInAll } from "../agent/clockOut";
 import { UsageWidget } from "../usage/UsageWidget";
@@ -40,6 +40,7 @@ export function BottomBar() {
   const clockedOutAgents = useClockedOutAgents();
   const clockedOutCount = useClockedOutCount();
   const [summonMenu, setSummonMenu] = useState<{ x: number; y: number } | null>(null);
+  const [themeMenu, setThemeMenu] = useState<{ x: number; y: number } | null>(null);
 
   return (
     <footer className="bottom-bar pixel-panel">
@@ -124,12 +125,29 @@ export function BottomBar() {
       <button
         type="button"
         className="pixel-btn theme-btn"
-        aria-label="테마 전환"
-        title="클릭할 때마다 다음 테마로 전환"
-        onClick={() => setTheme(nextThemeId(theme))}
+        aria-label="테마 선택"
+        aria-haspopup="menu"
+        title="테마 목록에서 고르기"
+        onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setThemeMenu({ x: rect.left, y: rect.top });
+        }}
       >
         테마: {THEMES[theme].label}
       </button>
+      {themeMenu && (
+        <ContextMenu
+          x={themeMenu.x}
+          y={themeMenu.y}
+          onClose={() => setThemeMenu(null)}
+          items={THEME_ORDER.map((id) => ({
+            // 현재 테마는 체크로 표시(아이콘 슬롯 폭은 나머지 항목도 유지한다).
+            icon: id === theme ? "✔" : undefined,
+            label: THEMES[id].label,
+            onSelect: () => setTheme(id),
+          }))}
+        />
+      )}
       <button
         type="button"
         className="pixel-btn mute-btn"

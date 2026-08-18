@@ -476,7 +476,7 @@ export function installSessionBridge(): () => void {
 ```ts
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { XTERM_THEME } from './theme';
+import { resolveXtermTheme } from './theme';   // 팔레트는 테마 레지스트리에서 (§3.6)
 
 interface Entry {
   term: Terminal;
@@ -495,7 +495,7 @@ class TerminalRegistry {
     if (e) return e;
 
     const term = new Terminal({
-      theme: XTERM_THEME,
+      theme: this.currentTheme(),   // 현재 유효 팔레트(setTheme으로 갱신) — §3.6
       fontFamily: '"SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace',
       fontSize: 13,
       lineHeight: 1.2,
@@ -646,38 +646,33 @@ function TerminalMount({ agentId }: { agentId: string }) {
 - `activate()`에서 `term.focus()` — 오버레이 열림 즉시 키 입력 가능.
 - 오버레이가 닫히면(`closeTerminal`) 별도 blur 불필요. **Esc는 셸에 전달**(vim 등 TUI 앱에서 필요)하고 오버레이 닫기는 헤더의 X 버튼과 `Cmd+W`로 한다. Esc를 UI 닫기에 쓰면 TUI 앱이 망가진다.
 
-### 3.6 xterm ITheme — 픽셀/레트로 다크
+### 3.6 xterm ITheme — 테마 시스템에 편입
 
-`src/renderer/terminal/theme.ts`
+터미널 색은 **테마 레지스트리의 일부**다. 초기안의 단일 상수 `XTERM_THEME`(midnight 값)은 폐기하고, 테마마다 전용 xterm 팔레트를 갖는다.
 
-```ts
-import type { ITheme } from '@xterm/xterm';
+- **실값의 단일 원천**: `src/renderer/theme/themes.ts`의 `THEMES[id].xterm` (`ITheme & { background: string; foreground: string }` — `--term-bg` 주입과 대비 보장을 위해 두 필드는 필수로 좁힌다). midnight의 팔레트가 초기안 `XTERM_THEME` 값 그대로다("green-CRT meets modern dark").
+- **해석/영속**: `src/renderer/terminal/theme.ts` — 색 값은 없고 "어느 테마의 팔레트를 쓸 것인가"만 정한다.
+  ```ts
+  type XtermThemeOverride = ThemeId | 'auto';           // 기본 'auto'
+  resolveXtermTheme(themeId, override): ITheme          // auto면 앱 테마를 따름
+  xtermBackground(themeId, override): string
+  loadStoredXtermThemeOverride() / persistXtermThemeOverride()  // 'agent-office.xterm-theme'
+  ```
+  스토어/xterm 런타임 의존이 없는 순수 모듈(`ITheme`은 type-only import)이라 `appStore`와 `applyTheme` 양쪽이 안전하게 import한다.
+- **스토어**: `xtermTheme: XtermThemeOverride` 슬라이스(기본 `"auto"`) + `setXtermTheme` — 테마와 같은 계층(zustand + localStorage, `PersistedState` 아님)이라 `updateAppSettings`(Rust 영속)가 아니다. 설정 다이얼로그의 "터미널 색상" 셀렉터가 여기에 직접 바인딩된다.
+- **라이브 재도색**: `App.tsx`의 효과가 `[theme, xtermTheme]` 변화 시 `terminalRegistry.setTheme(resolveXtermTheme(...))`을 호출한다(Pixi 팔레트 배선과 같은 모양이되, 소비처가 React 트리 밖이라 효과로 밀어 넣는다). `TerminalRegistry.setTheme`은 팔레트를 보관해 이후 생성분에 쓰고, keep-alive 중인 전 인스턴스에 `term.options.theme`을 재대입한다(xterm 5.x는 재대입으로 즉시 다시 그린다 — 숨어 있는 터미널도 함께 갱신되므로 탭을 옮겨도 옛 색이 남지 않는다).
+- **DOM 배경**: 유효 팔레트의 `background`를 `documentElement`에 `--term-bg`로 주입한다. 부팅 경로는 `applyTheme()`이 저장된 선택을 읽어 첫 페인트 전에 세팅하고(main.tsx가 render 전 1회 호출), 이후 변경은 `applyTerminalBg()`가 갱신한다. `terminal.css`의 `.terminal-host`는 `background: var(--term-bg, #12131a)`(폴백 = 테마 도입 이전 값).
 
-// "green-CRT meets modern dark" — 가독성 유지한 레트로
-export const XTERM_THEME: ITheme = {
-  background: '#12131a',
-  foreground: '#c8d0e0',
-  cursor: '#7CFF6B',
-  cursorAccent: '#12131a',
-  selectionBackground: '#2b3350',
-  black: '#1b1d2a',
-  red: '#ff5c6a',
-  green: '#7CFF6B',
-  yellow: '#ffd866',
-  blue: '#6fb3ff',
-  magenta: '#c792ea',
-  cyan: '#5be7d6',
-  white: '#c8d0e0',
-  brightBlack: '#4a5170',
-  brightRed: '#ff8791',
-  brightGreen: '#a5ff9c',
-  brightYellow: '#ffe699',
-  brightBlue: '#a0cbff',
-  brightMagenta: '#e0b7ff',
-  brightCyan: '#8ff4e8',
-  brightWhite: '#ffffff',
-};
-```
+테마별 팔레트 설계 원칙:
+
+| 테마 | 배경/전경 | ANSI 16색 |
+| --- | --- | --- |
+| midnight | `#12131a` / `#c8d0e0` | 초기안 값 그대로(룩 보존 계약) |
+| daylight | `#fbf6ea` / `#3a3428` | 밝은 배경이라 명도 관계가 뒤집힌다 — 노랑/흰색 계열을 어둡게 보정하고 bright는 더 진하게(대비 강화) |
+| sakura | `#fcf0f5` / `#4a2b3c` | daylight와 같은 보정 + 플럼/핑크 쪽으로 기울인 색상 |
+| pipboy | `#071209` / `#66ff99` | 인광 초록 모노크롬. **완전 단색화 금지** — 빨강 에러/노랑 경고 구분이 죽는다. 색상(hue) 정체성은 남기고 채도만 낮춰 초록 쪽으로 기울인다 |
+
+레지스트리 무결성은 `theme/__tests__/theme.test.ts`가 전 테마 순회로 검사한다(배경/전경/커서 + ANSI 16색이 전부 `#rrggbb`, 어두운 테마는 배경 < 전경 명도).
 
 ---
 
@@ -1032,6 +1027,24 @@ export function NotificationTicker() {
 
 - 모든 코너 각지게(border-radius:0), `image-rendering:pixelated`로 스프라이트 확대 시 픽셀 유지.
 - 애니메이션은 하드 트랜지션 위주(부드러운 그라디언트 지양)로 게임 감성 유지.
+
+> 위 `:root` 블록은 **초기안(단일 다크 테마=midnight) 시절의 값**이다. 지금은 §6.4의 테마 레지스트리가 색 토큰의 단일 원천이고, `tokens.css`의 `:root`는 기본 테마(daylight)와 같은 값의 부트/무JS 폴백일 뿐이다.
+
+### 6.4 테마 레지스트리
+
+`src/renderer/theme/themes.ts`가 색의 단일 원천이다. 한 테마(`ThemeDef`)는 세 팔레트를 함께 들고 있다.
+
+| 필드 | 소비처 | 적용 방식 |
+| --- | --- | --- |
+| `css` (CSS_TOKEN_KEYS 10종) | DOM 전체 | `applyTheme()`이 `documentElement`에 `data-theme` + 인라인 커스텀 프로퍼티로 주입(`:root` 폴백을 이김) |
+| `pixi` (타일 18종 + background/text) | 오피스 씬 | `App → OfficeCanvas → useOfficeScene → OfficeScene.setTheme()`이 타일 텍스처 재베이크 |
+| `xterm` (`ITheme`) | 터미널 | §3.6 — 앱 테마를 따르는 게 기본이되 별도 고정 가능 |
+
+- **테마 목록**: `daylight`(기본·밝음) / `midnight`(테마 도입 이전 룩 보존) / `sakura`(파스텔 핑크) / `pipboy`(핍보이 — 폴아웃 Pip-Boy 오마주, 인광 초록 모노크롬 CRT).
+- **캐릭터 스프라이트 팔레트(`office/gen/palette.ts`, `archetypes.ts`)와 분석 차트 색은 테마 대상이 아니다** — 에이전트별 절차 생성/데이터 인코딩이라 테마가 바뀌어도 불변이다.
+- **영속**: `localStorage("agent-office.theme")`. 스토어 초기값이 `loadStoredThemeId()`이고 `main.tsx`가 첫 `render()` 전에 `applyTheme()`을 동기 호출하므로 잘못된 테마로 페인트되는 플래시가 없다.
+- **픽커**: BottomBar의 "테마: {라벨}" 버튼 → 공유 `ContextMenu` 드롭다운(전 테마, 현재 테마에 ✔). 순환 버튼이던 초기 구현은 테마가 4개가 되면서 폐기했다(`nextThemeId`는 순서 계약·향후 단축키용으로 남아 있다). 라벨은 짧게 유지한다 — BottomBar는 800px 창에서 이미 폭이 포화다(docs/usage-design.md).
+- **CRT 오버레이**: `theme === "pipboy"`일 때만 App 루트에 `.crt-overlay` 1장을 마운트한다. `position:fixed; inset:0; z-index:100; pointer-events:none`에 순수 CSS 두 겹(4px 주기 스캔라인 `rgba(0,0,0,.06)` + 옅은 비네트)뿐 — 애니메이션·블러가 없어 합성 비용이 사실상 0이고 모달/터미널 상호작용을 그대로 통과시킨다. 다른 테마에서는 아예 마운트되지 않는다.
 
 ---
 

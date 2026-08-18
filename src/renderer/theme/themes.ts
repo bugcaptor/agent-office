@@ -8,8 +8,13 @@
 //   블록은 기본 테마(daylight)의 부트 폴백일 뿐이다.
 // - Pixi 쪽: `pixi` 팔레트는 TileRenderer의 타일 색 전부 + 씬 배경색.
 //   테마 전환 시 OfficeScene.setTheme()이 타일 텍스처를 재베이크한다.
+// - xterm 쪽: `xterm` 팔레트는 터미널 화면(ITheme) 전용. 해석/영속은
+//   terminal/theme.ts(resolveXtermTheme)가 맡고, 라이브 재도색은
+//   TerminalRegistry.setTheme()이 한다. 유저가 "터미널 색상만 딴 테마로
+//   고정"을 고를 수 있으므로 앱 테마와 1:1로 묶여 있지는 않다.
 // - 캐릭터 스프라이트 팔레트(office/gen/palette.ts)는 에이전트별 절차
 //   생성이므로 테마 대상이 아니다.
+import type { ITheme } from "@xterm/xterm";
 
 /** tokens.css가 선언하는 색 토큰 전부(--unit 같은 비색상 토큰 제외). */
 export const CSS_TOKEN_KEYS = [
@@ -59,14 +64,21 @@ export interface PixiThemePalette extends OfficeTilePalette {
   text: number;
 }
 
-export type ThemeId = "daylight" | "midnight" | "sakura";
+export type ThemeId = "daylight" | "midnight" | "sakura" | "pipboy";
 
 export interface ThemeDef {
   id: ThemeId;
-  /** 픽커 버튼에 그대로 노출되는 한국어 라벨. */
+  /** 픽커 버튼/드롭다운에 그대로 노출되는 한국어 라벨. */
   label: string;
   css: Record<CssTokenKey, string>;
   pixi: PixiThemePalette;
+  /**
+   * 터미널(xterm) 팔레트. 앱 테마를 따르는 게 기본이지만 별도 고정도 가능.
+   * `ITheme`은 전 필드가 optional이지만 background/foreground는 필수로 좁힌다 —
+   * `--term-bg` 주입(applyTheme)이 배경색을 항상 얻을 수 있어야 하고, 전경 없이
+   * 배경만 바뀌면 대비가 깨지기 때문.
+   */
+  xterm: ITheme & { background: string; foreground: string };
 }
 
 export const THEMES: Record<ThemeId, ThemeDef> = {
@@ -108,6 +120,31 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       laptopLid: 0x525a6e, // 랩탑 뚜껑 등판(슬레이트)
       laptopBody: 0x3a4050, // 랩탑 본체/디테일(더 어두운 슬레이트)
     },
+    // 밝은 배경의 터미널 — ANSI 16색은 "밝을수록 잘 보인다"가 뒤집히므로
+    // 노랑/흰색 계열을 어둡게 보정하고, bright는 더 진하게(대비 강화) 간다.
+    xterm: {
+      background: "#fbf6ea",
+      foreground: "#3a3428",
+      cursor: "#2f9e44",
+      cursorAccent: "#fbf6ea",
+      selectionBackground: "#cfc0a480",
+      black: "#2b2620",
+      red: "#c03a2e",
+      green: "#2f7d3a",
+      yellow: "#9a6b00",
+      blue: "#1d5fd0",
+      magenta: "#a3348f",
+      cyan: "#0f7a76",
+      white: "#7a7161",
+      brightBlack: "#857a66",
+      brightRed: "#d94f3d",
+      brightGreen: "#3f9c4a",
+      brightYellow: "#b8860b",
+      brightBlue: "#3b7ddd",
+      brightMagenta: "#c04aa8",
+      brightCyan: "#14968f",
+      brightWhite: "#3a3428",
+    },
   },
   // 테마 도입 이전의 기존 룩 — tokens.css/PAL/배경 0x1b1b24를 그대로 보존.
   midnight: {
@@ -146,6 +183,31 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       tableTop: 0x6f4d2e,
       laptopLid: 0x5b647e, // 랩탑 뚜껑 등판(어두운 배경 대비 살짝 밝은 슬레이트)
       laptopBody: 0x424a60,
+    },
+    // 터미널 테마 도입 이전의 유일한 팔레트(구 XTERM_THEME)를 값 그대로 이관.
+    // "green-CRT meets modern dark" — 가독성 유지한 레트로.
+    xterm: {
+      background: "#12131a",
+      foreground: "#c8d0e0",
+      cursor: "#7cff6b",
+      cursorAccent: "#12131a",
+      selectionBackground: "#2b3350",
+      black: "#1b1d2a",
+      red: "#ff5c6a",
+      green: "#7cff6b",
+      yellow: "#ffd866",
+      blue: "#6fb3ff",
+      magenta: "#c792ea",
+      cyan: "#5be7d6",
+      white: "#c8d0e0",
+      brightBlack: "#4a5170",
+      brightRed: "#ff8791",
+      brightGreen: "#a5ff9c",
+      brightYellow: "#ffe699",
+      brightBlue: "#a0cbff",
+      brightMagenta: "#e0b7ff",
+      brightCyan: "#8ff4e8",
+      brightWhite: "#ffffff",
     },
   },
   // 파스텔 핑크 — 블러시 패널 + 플럼 텍스트.
@@ -186,11 +248,106 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       laptopLid: 0x6e5d73, // 랩탑 뚜껑 등판(플럼 그레이)
       laptopBody: 0x504256,
     },
+    // 밝은 블러시 배경 + 플럼 전경. daylight와 같은 이유로 노랑/흰색은 어둡게.
+    xterm: {
+      background: "#fcf0f5",
+      foreground: "#4a2b3c",
+      cursor: "#d6488c",
+      cursorAccent: "#fcf0f5",
+      selectionBackground: "#e2c2d080",
+      black: "#3f2433",
+      red: "#c33a5a",
+      green: "#3f8f6a",
+      yellow: "#b06a12",
+      blue: "#4a63c0",
+      magenta: "#c0398c",
+      cyan: "#2f8a94",
+      white: "#8a6d7c",
+      brightBlack: "#9a7286",
+      brightRed: "#e05575",
+      brightGreen: "#4faa80",
+      brightYellow: "#cf8a2a",
+      brightBlue: "#6a80d8",
+      brightMagenta: "#dd57a6",
+      brightCyan: "#40a5b0",
+      brightWhite: "#4a2b3c",
+    },
+  },
+  // 폴아웃 Pip-Boy 오마주 — 인광 초록 모노크롬 CRT. 오피스 씬까지 통째로
+  // 초록 계열이며, App 루트에 스캔라인 오버레이(.crt-overlay)가 겹친다.
+  pipboy: {
+    id: "pipboy",
+    label: "핍보이",
+    css: {
+      "--bg-base": "#071209",
+      "--bg-panel": "#0c1f10",
+      "--bg-panel-hi": "#133019",
+      "--border-lite": "#2e6b3a",
+      "--border-dark": "#051007",
+      "--accent": "#33ff66",
+      "--accent-warn": "#d7ff3d",
+      "--accent-error": "#ff7a5c",
+      "--text": "#8dffa8",
+      "--text-dim": "#43a35e",
+    },
+    // midnight의 명암 구조(바닥 < 벽 < 가구 < 하이라이트)를 그대로 초록으로 옮김.
+    pixi: {
+      background: 0x071209, // = --bg-base
+      text: 0x8dffa8, // = --text
+      floorA: 0x143b1f, // 어두운 초록 체커 바닥
+      floorB: 0x113318,
+      floorDot: 0x0d2814,
+      wall: 0x0b2010, // 벽(바닥보다 어둡게 → 씬이 깊어 보인다)
+      wallTop: 0x1a4a26,
+      desk: 0x1f6b35, // 책상(중간 초록)
+      deskEdge: 0x14532a,
+      deskTop: 0x2b8a45,
+      rug: 0x155040, // 러그(청록으로 살짝 기울인 초록)
+      rugEdge: 0x104036,
+      plant: 0x39c96a, // 화분 잎(가장 밝은 인광 초록)
+      plantPot: 0x1b4a28,
+      counter: 0x102a16, // 탕비실 카운터
+      counterTop: 0x1c4a28,
+      table: 0x1a5c2e, // 탕비실 테이블
+      tableTop: 0x24743a,
+      laptopLid: 0x2e8a55, // 랩탑(가구보다 한 단계 밝게)
+      laptopBody: 0x1d5c39,
+    },
+    // 완전 단색은 로그 가독성을 죽인다(빨강 에러/노랑 경고 구분 불가) —
+    // 색상(hue) 정체성은 남기되 채도를 낮추고 전부 초록 쪽으로 기울인다.
+    xterm: {
+      background: "#071209",
+      foreground: "#66ff99",
+      cursor: "#33ff66",
+      cursorAccent: "#071209",
+      selectionBackground: "#2e6b3a99",
+      black: "#0a1c0f",
+      red: "#ff6a4d",
+      green: "#33ff66",
+      yellow: "#c8e04a",
+      blue: "#5ba8c4",
+      magenta: "#c07fb0",
+      cyan: "#45d6c0",
+      white: "#8dffa8",
+      brightBlack: "#2e6b3a",
+      brightRed: "#ff9478",
+      brightGreen: "#8dffb0",
+      brightYellow: "#e4ff7a",
+      brightBlue: "#8ccfe0",
+      brightMagenta: "#dda8cc",
+      brightCyan: "#86f0e0",
+      brightWhite: "#d6ffe2",
+    },
   },
 };
 
 /** 픽커의 순환 순서(= 기본 테마가 첫 번째). */
-export const THEME_ORDER: readonly ThemeId[] = ["daylight", "midnight", "sakura"];
+export const THEME_ORDER: readonly ThemeId[] = [
+  "daylight",
+  "midnight",
+  "sakura",
+  "pipboy",
+];
 
 export const DEFAULT_THEME_ID: ThemeId = "daylight";
 
@@ -198,7 +355,11 @@ export function isThemeId(v: unknown): v is ThemeId {
   return typeof v === "string" && v in THEMES;
 }
 
-/** 픽커 버튼용: THEME_ORDER 기준 다음 테마. */
+/**
+ * THEME_ORDER 기준 다음 테마. BottomBar가 순환 버튼에서 드롭다운으로 바뀌면서
+ * UI 소비처는 없어졌지만, 순환 순서 계약(레지스트리 무결성 테스트)과 향후
+ * 단축키/CLI 전환을 위해 남겨 둔다.
+ */
 export function nextThemeId(id: ThemeId): ThemeId {
   const i = THEME_ORDER.indexOf(id);
   return THEME_ORDER[(i + 1) % THEME_ORDER.length];

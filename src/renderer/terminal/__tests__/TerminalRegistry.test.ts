@@ -730,20 +730,43 @@ describe("Hangul/IME double-input guard", () => {
 });
 
 describe("theme + font options", () => {
-  it("constructs the Terminal with the pixel/retro theme and a regular monospace font stack", async () => {
-    const { XTERM_THEME } = await import("../theme");
+  it("constructs the Terminal with the current effective palette and a regular monospace font stack", async () => {
+    const { resolveXtermTheme } = await import("../theme");
+    const { useAppStore } = await import("../../store/appStore");
     const terminalRegistry = await importRegistry();
 
+    const s = useAppStore.getState();
     const e = terminalRegistry.ensure("a1");
     const opts = (e.term as unknown as FakeTerminal).options as {
       theme: unknown;
       fontFamily: string;
     };
 
-    expect(opts.theme).toEqual(XTERM_THEME);
+    expect(opts.theme).toEqual(resolveXtermTheme(s.theme, s.xtermTheme));
     expect(opts.fontFamily).toContain("SF Mono");
     expect(opts.fontFamily).toContain("Menlo");
     expect(opts.fontFamily).toContain("monospace");
+  });
+
+  it("setTheme은 살아있는 전 인스턴스를 재도색하고, 이후 만들어지는 터미널에도 적용된다", async () => {
+    const { THEMES } = await import("../../theme/themes");
+    const terminalRegistry = await importRegistry();
+
+    const a = terminalRegistry.ensure("a1");
+    const b = terminalRegistry.ensure("a2");
+
+    terminalRegistry.setTheme(THEMES.pipboy.xterm);
+
+    for (const e of [a, b]) {
+      const opts = (e.term as unknown as FakeTerminal).options as { theme: unknown };
+      expect(opts.theme).toEqual(THEMES.pipboy.xterm);
+    }
+
+    // 전환 이후 생성분도 같은 팔레트로 태어난다(재도색을 기다리지 않는다).
+    const c = terminalRegistry.ensure("a3");
+    expect((c.term as unknown as FakeTerminal).options).toMatchObject({
+      theme: THEMES.pipboy.xterm,
+    });
   });
 });
 

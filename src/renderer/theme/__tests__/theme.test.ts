@@ -74,6 +74,48 @@ describe("THEMES 레지스트리 무결성", () => {
     }
   });
 
+  it("모든 테마의 xterm 팔레트가 배경/전경 + ANSI 16색을 #rrggbb로 정의한다", () => {
+    // 하나라도 빠지면 xterm이 기본(검정 배경 계열)으로 떨어져 테마가 깨진다.
+    const ANSI_16 = [
+      "black",
+      "red",
+      "green",
+      "yellow",
+      "blue",
+      "magenta",
+      "cyan",
+      "white",
+      "brightBlack",
+      "brightRed",
+      "brightGreen",
+      "brightYellow",
+      "brightBlue",
+      "brightMagenta",
+      "brightCyan",
+      "brightWhite",
+    ] as const;
+    for (const id of ALL_IDS) {
+      const t = THEMES[id].xterm;
+      for (const key of ["background", "foreground", "cursor", ...ANSI_16] as const) {
+        expect(t[key], `${id} xterm.${key}`).toMatch(/^#[0-9a-f]{6}$/);
+      }
+    }
+  });
+
+  it("어두운 테마의 터미널 배경은 어둡고, 밝은 테마는 밝다(전경과 명도가 뒤집히지 않는다)", () => {
+    // 배경/전경이 같은 밝기 쪽에 몰리면 글자가 안 보인다 — 상대 명도만 검사.
+    const lum = (hex: string) => {
+      const n = parseInt(hex.slice(1), 16);
+      return (((n >> 16) & 0xff) * 299 + ((n >> 8) & 0xff) * 587 + (n & 0xff) * 114) / 1000;
+    };
+    const darkThemes: Array<keyof typeof THEMES> = ["midnight", "pipboy"];
+    for (const id of ALL_IDS) {
+      const { background, foreground } = THEMES[id].xterm;
+      const dark = darkThemes.includes(id);
+      expect(lum(background) < lum(foreground), `${id} 배경/전경 명도`).toBe(dark);
+    }
+  });
+
   it("midnight은 테마 도입 이전의 원본 값을 그대로 보존한다(오피스 리디자인으로 추가된 타일 팔레트 키 제외)", () => {
     // 원본: tokens.css(구 :root) + TileRenderer.PAL(구 상수) + 배경 0x1b1b24.
     // Phase A(오피스 리디자인)에서 plant/counter/table 등 신규 키가 추가되었으므로
@@ -129,6 +171,22 @@ describe("applyTheme", () => {
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("sakura");
   });
 
+  it("--term-bg에 유효 xterm 배경색을 주입한다(기본 auto = 그 테마의 팔레트)", () => {
+    applyTheme("pipboy");
+    expect(document.documentElement.style.getPropertyValue("--term-bg")).toBe(
+      THEMES.pipboy.xterm.background
+    );
+  });
+
+  it("터미널 색상이 특정 테마로 고정돼 있으면 --term-bg는 앱 테마를 따르지 않는다", async () => {
+    const { XTERM_THEME_STORAGE_KEY } = await import("../../terminal/theme");
+    localStorage.setItem(XTERM_THEME_STORAGE_KEY, "midnight");
+    applyTheme("daylight");
+    expect(document.documentElement.style.getPropertyValue("--term-bg")).toBe(
+      THEMES.midnight.xterm.background
+    );
+  });
+
   it("재적용 시 이전 테마 값을 전부 덮어쓴다", () => {
     applyTheme("midnight");
     applyTheme("daylight");
@@ -160,6 +218,34 @@ describe("store.setTheme", () => {
     expect(document.documentElement.dataset.theme).toBe("sakura");
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("sakura");
     // 원복(모듈 스토어는 테스트 파일 내에서 공유되므로 기본값으로 되돌린다)
+    useAppStore.getState().setTheme(DEFAULT_THEME_ID);
+  });
+});
+
+describe("store.setXtermTheme", () => {
+  it("상태 갱신 + --term-bg 갱신 + 영속을 한 번에 수행하고, 앱 테마는 건드리지 않는다", async () => {
+    const { useAppStore } = await import("../../store/appStore");
+    const { XTERM_THEME_STORAGE_KEY, loadStoredXtermThemeOverride } = await import(
+      "../../terminal/theme"
+    );
+
+    useAppStore.getState().setTheme("daylight");
+    useAppStore.getState().setXtermTheme("pipboy");
+
+    expect(useAppStore.getState().xtermTheme).toBe("pipboy");
+    expect(useAppStore.getState().theme).toBe("daylight"); // 앱 테마는 그대로
+    expect(localStorage.getItem(XTERM_THEME_STORAGE_KEY)).toBe("pipboy");
+    expect(loadStoredXtermThemeOverride()).toBe("pipboy");
+    expect(document.documentElement.style.getPropertyValue("--term-bg")).toBe(
+      THEMES.pipboy.xterm.background
+    );
+
+    // auto로 되돌리면 다시 앱 테마를 따라간다.
+    useAppStore.getState().setXtermTheme("auto");
+    expect(document.documentElement.style.getPropertyValue("--term-bg")).toBe(
+      THEMES.daylight.xterm.background
+    );
+
     useAppStore.getState().setTheme(DEFAULT_THEME_ID);
   });
 });

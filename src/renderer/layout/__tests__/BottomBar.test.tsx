@@ -93,6 +93,28 @@ describe("출근 버튼(🏠)", () => {
   });
 });
 
+describe("테마 드롭다운", () => {
+  it("클릭하면 전 테마가 메뉴로 뜨고, 고르면 그 테마로 바뀌며 메뉴가 닫힌다", async () => {
+    const { THEMES, THEME_ORDER, DEFAULT_THEME_ID } = await import("../../theme/themes");
+    const { getByRole, queryByRole } = render(<BottomBar />);
+
+    const btn = getByRole("button", { name: "테마 선택" });
+    expect(btn.textContent).toContain(THEMES[DEFAULT_THEME_ID].label);
+
+    fireEvent.click(btn);
+    for (const id of THEME_ORDER) {
+      // 현재 테마는 체크 아이콘이 붙으므로 이름이 라벨과 정확히 같지 않다.
+      expect(getByRole("menuitem", { name: new RegExp(THEMES[id].label) })).toBeTruthy();
+    }
+
+    fireEvent.click(getByRole("menuitem", { name: /핍보이/ }));
+    expect(useAppStore.getState().theme).toBe("pipboy");
+    expect(queryByRole("menu")).toBeNull();
+
+    useAppStore.getState().setTheme(DEFAULT_THEME_ID); // 모듈 전역 DOM/영속 원복
+  });
+});
+
 describe("정보 버튼(ℹ)", () => {
   it("클릭하면 about 모달을 연다", () => {
     const { getByRole } = render(<BottomBar />);

@@ -20,7 +20,7 @@ import type {
 import { initialTurnState, reduceTurn } from "../timeline/turnReducer";
 import type { AgentTurnState, TurnInput } from "../timeline/turnReducer";
 import { requestSentence } from "../labels/labelText";
-import { applyTheme, loadStoredThemeId } from "../theme/applyTheme";
+import { applyTerminalBg, applyTheme, loadStoredThemeId } from "../theme/applyTheme";
 import type { ThemeId } from "../theme/themes";
 import {
   loadStoredTerminalViewMode,
@@ -28,6 +28,11 @@ import {
   persistTerminalViewMode,
 } from "../terminal/terminalViewMode";
 import type { TerminalViewMode } from "../terminal/terminalViewMode";
+import {
+  loadStoredXtermThemeOverride,
+  persistXtermThemeOverride,
+} from "../terminal/theme";
+import type { XtermThemeOverride } from "../terminal/theme";
 import type {
   ActivityEvent,
   AppSettings,
@@ -122,6 +127,12 @@ interface AppState {
   vacationMode: boolean;
   /** 현재 테마 id. localStorage("agent-office.theme")로 영속 — PersistedState 아님. */
   theme: ThemeId;
+  /**
+   * 터미널(xterm) 색상 선택. "auto"(기본)면 `theme`를 따라가고, 특정 테마 id면
+   * 앱 테마와 무관하게 터미널 색만 그 테마로 고정한다.
+   * localStorage("agent-office.xterm-theme")로 영속 — PersistedState 아님.
+   */
+  xtermTheme: XtermThemeOverride;
   /** 초상 dataURL 캐시(agentId -> "data:image/png;base64,..."). 런타임 전용, 영속 안 함. */
   portraits: Record<string, string>;
   /** 커스텀 스프라이트 프리뷰(idle0 확대) dataURL 캐시. 런타임 전용, 영속 안 함. */
@@ -237,6 +248,11 @@ interface AppState {
   // ---- theme ----
   /** 테마 전환: DOM 적용(applyTheme) + localStorage 영속 + 상태 갱신. */
   setTheme(id: ThemeId): void;
+  /**
+   * 터미널 색상 선택: --term-bg 갱신 + localStorage 영속 + 상태 갱신.
+   * 살아있는 xterm 인스턴스 재도색은 App의 효과(terminalRegistry.setTheme)가 맡는다.
+   */
+  setXtermTheme(override: XtermThemeOverride): void;
 
   // ---- terminal view mode (이슈 #69) ----
   /** 뷰 모드 지정 + localStorage 영속. */
@@ -317,6 +333,7 @@ export const useAppStore = create<AppState>()(
     muted: false,
     vacationMode: false,
     theme: loadStoredThemeId(), // 스토어 생성 시점(첫 render 전)에 저장값 복원 → 플래시 없음
+    xtermTheme: loadStoredXtermThemeOverride(),
     portraits: {},
     spritePreviews: {},
     timeTracking: {},
@@ -612,6 +629,13 @@ export const useAppStore = create<AppState>()(
       // 밖(IPC 콜백 등)에서도 호출되므로 별도 구독자 계층을 두지 않는다.
       applyTheme(id);
       set({ theme: id });
+    },
+
+    setXtermTheme: (override) => {
+      // theme와 동일 패턴: 부수효과(영속 + --term-bg)를 액션에서 직접 수행.
+      persistXtermThemeOverride(override);
+      applyTerminalBg(get().theme, override);
+      set({ xtermTheme: override });
     },
 
     setTerminalViewMode: (mode) => {

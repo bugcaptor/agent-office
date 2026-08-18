@@ -7,6 +7,8 @@ import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { SettingsForm } from "./SettingsForm";
 import { previewVoice } from "../sound/soundManager";
+import { THEMES, THEME_ORDER } from "../theme/themes";
+import type { XtermThemeOverride } from "../terminal/theme";
 import type {
   ControlStatus,
   ExternalEditorApp,
@@ -224,6 +226,7 @@ export function SettingsDialog() {
               <option value="everything">Everything (es.exe)</option>
             </select>
           </label>
+          <TerminalThemeItem />
         </div>
         <TtsSection />
         <ControlSection enabled={appSettings.cliEnabled} />
@@ -234,6 +237,39 @@ export function SettingsDialog() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * 터미널 색상 선택. 다른 항목과 달리 AppSettings(Rust 영속)가 아니라
+ * zustand + localStorage에 사는 값이라 `updateAppSettings`가 아닌 전용 액션에
+ * 직접 바인딩한다(테마 자체와 같은 계층 — theme/applyTheme.ts 참고).
+ */
+function TerminalThemeItem() {
+  const xtermTheme = useAppStore((s) => s.xtermTheme);
+  const setXtermTheme = useAppStore((s) => s.setXtermTheme);
+
+  return (
+    <label className="settings-item">
+      <span>
+        <strong>터미널 색상</strong>
+        <small>
+          터미널 창 색만 별도 테마로 고정합니다. 기본값(테마 따름)이면 앱 테마를
+          바꿀 때 터미널도 함께 바뀝니다.
+        </small>
+      </span>
+      <select
+        value={xtermTheme}
+        onChange={(e) => setXtermTheme(e.target.value as XtermThemeOverride)}
+      >
+        <option value="auto">테마 따름 (기본)</option>
+        {THEME_ORDER.map((id) => (
+          <option key={id} value={id}>
+            {THEMES[id].label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

@@ -212,6 +212,27 @@ body {
   height: 100%;
 }
 
+/* Layer 4 (z:100) -- pipboy 테마 전용 CRT 오버레이. App이 `theme === "pipboy"`
+   일 때만 마운트한다. 순수 CSS 두 겹(가로 스캔라인 + 옅은 비네트)이고
+   애니메이션/블러가 없어 합성 비용이 사실상 0이며, pointer-events:none이라
+   모달·터미널을 포함한 모든 상호작용을 그대로 통과시킨다. 절제가 핵심 —
+   스캔라인은 4px 주기에 불투명도 0.06 정도로 "있는 줄 모르게" 깔린다. */
+.crt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.06) 0,
+      rgba(0, 0, 0, 0.06) 1px,
+      rgba(0, 0, 0, 0) 1px,
+      rgba(0, 0, 0, 0) 4px
+    ),
+    radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.35) 100%);
+}
+
 /* Layer 3 (z:30) -- modal root. `display: contents` so the wrapper itself
    never becomes a full-viewport pointer-events sink when no dialog is open
    (`ProfileDialog` renders `null` in that case); `.modal-backdrop` (rendered

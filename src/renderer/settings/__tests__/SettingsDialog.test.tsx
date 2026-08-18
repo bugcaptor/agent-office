@@ -156,6 +156,23 @@ describe("SettingsDialog", () => {
   });
 
 
+  // 터미널 색상만은 AppSettings(Rust 영속)가 아니라 zustand+localStorage에 산다 —
+  // updateAppSettings가 아닌 setXtermTheme에 바인딩돼야 한다.
+  it("터미널 색상 셀렉터가 xtermTheme을 즉시 반영한다(앱 테마는 그대로)", () => {
+    useAppStore.getState().openModal({ kind: "settings" });
+    render(<SettingsDialog />);
+
+    const select = screen.getByRole("combobox", { name: /터미널 색상/ });
+    expect((select as HTMLSelectElement).value).toBe("auto");
+
+    fireEvent.change(select, { target: { value: "pipboy" } });
+    expect(useAppStore.getState().xtermTheme).toBe("pipboy");
+    expect(useAppStore.getState().theme).toBe(initialState.theme);
+
+    fireEvent.change(select, { target: { value: "auto" } });
+    expect(useAppStore.getState().xtermTheme).toBe("auto");
+  });
+
   // 사운드 3분할: 타건음/알림음이 서로 독립된 토글이어야 한다(TTS는 별도 섹션).
   it("타건음·알림음 토글이 각각 독립적으로 반영된다", () => {
     useAppStore.getState().openModal({ kind: "settings" });

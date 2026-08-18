@@ -221,7 +221,9 @@
   min-height: 0;
   position: relative;
   padding: 8px;
-  background: #12131a; /* XTERM_THEME.background와 일치 */
+  /* 유효 xterm 팔레트의 background — applyTheme/App 효과가 documentElement에
+     주입한다(theme/applyTheme.ts). 폴백은 테마 도입 이전 값(midnight). */
+  background: var(--term-bg, #12131a);
   overflow: hidden;
 }
 

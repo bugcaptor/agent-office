@@ -47,6 +47,8 @@ vi.mock("../terminal/TerminalRegistry", () => ({
     attach: vi.fn(),
     activate: vi.fn(),
     refit: vi.fn(),
+    // App의 테마 효과가 마운트 즉시 호출한다(테마 -> xterm 팔레트 배선).
+    setTheme: vi.fn(),
   },
 }));
 

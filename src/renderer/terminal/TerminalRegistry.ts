@@ -15,12 +15,13 @@
 // here — the pixel aesthetic is the UI chrome's job, not the terminal
 // screen's).
 import { Terminal } from "@xterm/xterm";
+import type { ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
-import { XTERM_THEME } from "./theme";
+import { resolveXtermTheme } from "./theme";
 
 interface Entry {
   term: Terminal;
@@ -49,6 +50,30 @@ class TerminalRegistry {
   // 입양(adopt_detached_sessions)된 세션 — 다음 activate()에서 1회
   // redraw nudge(§핵심 6)를 태우고 스스로 제거한다.
   private pendingNudge = new Set<string>();
+  // 현재 유효한 xterm 팔레트. App의 테마 효과가 setTheme()으로 밀어 넣고,
+  // 그 전에 만들어지는 터미널은 스토어의 현재 선택에서 지연 해석한다
+  // (스토어 초기값이 이미 localStorage 복원값이라 부팅 직후에도 정확하다).
+  private theme: ITheme | null = null;
+
+  /** 새 Terminal에 먹일 팔레트(미설정이면 스토어에서 1회 해석해 기억). */
+  private currentTheme(): ITheme {
+    if (!this.theme) {
+      const s = useAppStore.getState();
+      this.theme = resolveXtermTheme(s.theme, s.xtermTheme);
+    }
+    return this.theme;
+  }
+
+  /**
+   * 테마 전환 시 라이브 재도색. 보관된 팔레트를 갱신하고(이후 생성되는
+   * 터미널이 쓴다) keep-alive 중인 전 인스턴스에 재대입한다 — xterm 5.x는
+   * `options.theme` 재대입으로 즉시 다시 그린다. 숨어 있는(display:none)
+   * 터미널도 같이 갱신되므로 탭을 옮겨도 예전 색이 남지 않는다.
+   */
+  setTheme(theme: ITheme): void {
+    this.theme = theme;
+    for (const e of this.entries.values()) e.term.options.theme = theme;
+  }
 
   /** First open for a session: creates the Terminal. Already-open agents get the existing entry back (keep-alive guarantee). */
   ensure(agentId: string): Entry {
@@ -56,7 +81,7 @@ class TerminalRegistry {
     if (e) return e;
 
     const term = new Terminal({
-      theme: XTERM_THEME,
+      theme: this.currentTheme(),
       fontFamily: '"SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace',
       fontSize: 13,
       lineHeight: 1.2,

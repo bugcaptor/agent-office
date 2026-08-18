@@ -1,5 +1,6 @@
 import "./layout/layout.css";
 
+import { useEffect } from "react";
 import { officeBus } from "./ipc/sessionBridge";
 import { OfficeCanvas } from "./office/OfficeCanvas";
 import type { AgentProfile as OfficeAgentProfile } from "./office/types";
@@ -23,6 +24,9 @@ import { AboutDialog } from "./about/AboutDialog";
 import { useAppStore } from "./store/appStore";
 import { useAgentList, useLightsOff } from "./store/selectors";
 import { THEMES } from "./theme/themes";
+import { applyTerminalBg } from "./theme/applyTheme";
+import { resolveXtermTheme } from "./terminal/theme";
+import { terminalRegistry } from "./terminal/TerminalRegistry";
 import { TaskLabelLayer } from "./labels/TaskLabelLayer";
 import { TerminalOverlay } from "./terminal/TerminalOverlay";
 import { MarkdownPalette } from "./markdown/MarkdownPalette";
@@ -82,6 +86,14 @@ function App() {
   // `applyTheme`(store.setTheme / main.tsx 부트)이 이미 처리한다.
   const themeId = useAppStore((s) => s.theme);
   const pixiPalette = THEMES[themeId].pixi;
+  // 테마 -> 터미널(xterm) 팔레트. Pixi 배선과 같은 모양이되, 소비처가 React
+  // 트리 밖(keep-alive 레지스트리)이라 효과로 밀어 넣는다. `xtermTheme`이
+  // "auto"가 아니면 앱 테마와 무관하게 그 테마로 고정된다.
+  const xtermOverride = useAppStore((s) => s.xtermTheme);
+  useEffect(() => {
+    terminalRegistry.setTheme(resolveXtermTheme(themeId, xtermOverride));
+    applyTerminalBg(themeId, xtermOverride);
+  }, [themeId, xtermOverride]);
   // 에이전트가 하나 이상 있으나 전원 퇴근했을 때만 true(빈 새 사무실은 제외).
   const lightsOff = useLightsOff();
 
@@ -117,6 +129,9 @@ function App() {
       {/* 포스트잇 메모 아카이브(이슈 #79). 위젯 자체는 터미널 오버레이 패널 안에
           있고, 아카이브 열람만 이 층에 뜬다(터미널을 덮어야 하므로). */}
       <MemoArchiveDialog />
+      {/* pipboy 전용 CRT 연출(스캔라인 + 옅은 비네트). 순수 CSS 1장, 클릭
+          통과, 최상단. 다른 테마에서는 아예 마운트되지 않는다. */}
+      {themeId === "pipboy" && <div className="crt-overlay" aria-hidden="true" />}
       <div className="modal-root">
         <ProfileDialog />
         <ConfirmDeleteDialog />
