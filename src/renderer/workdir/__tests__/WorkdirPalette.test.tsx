@@ -17,6 +17,7 @@ const {
   fileHistory,
   diffCommit,
   difftool,
+  gitCancel,
 } = vi.hoisted(() => ({
   listFiles: vi.fn().mockResolvedValue({ files: [], truncated: false }),
   searchFiles: vi.fn().mockResolvedValue({ files: [], truncated: false, usedIndex: false }),
@@ -27,16 +28,18 @@ const {
     behind: 0,
     entries: [],
     timedOut: false,
+    canceled: false,
     truncated: false,
   }),
   openInVscode: vi.fn().mockResolvedValue(undefined),
   updateSettings: vi.fn(),
   diffFile: vi
     .fn()
-    .mockResolvedValue({ diff: "@@ -1 +1 @@\n-a\n+b\n", binary: false, truncated: false, timedOut: false }),
-  fileHistory: vi.fn().mockResolvedValue({ commits: [], hasMore: false, timedOut: false }),
-  diffCommit: vi.fn().mockResolvedValue({ diff: "", binary: false, truncated: false, timedOut: false }),
+    .mockResolvedValue({ diff: "@@ -1 +1 @@\n-a\n+b\n", binary: false, truncated: false, timedOut: false, canceled: false }),
+  fileHistory: vi.fn().mockResolvedValue({ commits: [], hasMore: false, timedOut: false, canceled: false }),
+  diffCommit: vi.fn().mockResolvedValue({ diff: "", binary: false, truncated: false, timedOut: false, canceled: false }),
   difftool: vi.fn().mockResolvedValue(undefined),
+  gitCancel: vi.fn().mockResolvedValue(undefined),
 }));
 
 const settings = { gitStatusEnabled: true };
@@ -51,6 +54,7 @@ vi.mock("../../ipc/tauriApi", () => ({
     workdirFileHistory: (...a: unknown[]) => fileHistory(...a),
     workdirDiffCommit: (...a: unknown[]) => diffCommit(...a),
     workdirDifftool: (...a: unknown[]) => difftool(...a),
+    workdirGitCancel: (...a: unknown[]) => gitCancel(...a),
   },
 }));
 // useAppStore는 selector 훅으로도, getState로도 쓰인다. 두 경로 모두 지원.
@@ -85,6 +89,7 @@ const GIT = {
     { path: "deleted.rs", status: "D", xy: "D." },
   ],
   timedOut: false,
+  canceled: false,
   truncated: false,
 };
 
@@ -196,7 +201,12 @@ describe("WorkdirPalette", () => {
     // a.rs는 M 상태 → 곧장 열지 않고 diff 상세 페인(기본 변경점 탭).
     fireEvent.click(screen.getByText("a.rs"));
     expect(openInVscode).not.toHaveBeenCalled();
-    expect(diffFile).toHaveBeenCalledWith("/root", "src/a.rs", "worktreeVsHead");
+    expect(diffFile).toHaveBeenCalledWith(
+      "/root",
+      "src/a.rs",
+      "worktreeVsHead",
+      expect.any(String),
+    );
     // 상세 페인(탭/버튼)이 렌더된다.
     expect(screen.getByText("변경점")).toBeTruthy();
     expect(screen.getByText("외부 프로그램으로 열기")).toBeTruthy();

@@ -6,11 +6,37 @@
 //
 // 검색 입력은 매 타건마다 git을 때리지 않도록 300ms 디바운스로 스토어 쿼리에
 // 반영한다(스토어가 쿼리 변경 시 첫 페이지부터 재조회).
+//
+// 조회 중단 UI(타임아웃 개편): 거대 저장소의 로그/변경파일/ diff 조회는 분 단위가
+// 될 수 있어, 모든 "불러오는 중…" 자리에 취소 버튼을 두고 취소된 결과에는 "다시
+// 시도"를 붙인다(상세 페인과 같은 관례).
 import { useEffect, useRef, useState } from "react";
 import { useWorkdirStore } from "./workdirStore";
 import { DiffView } from "./DiffView";
 import { statusLabel } from "./status";
 import type { GitDiffResult } from "@shared/types";
+
+/** 진행/중단 안내 한 줄(취소·다시 시도 버튼 포함) — 상세 페인과 같은 모양. */
+function BusyNote({
+  text,
+  actionLabel,
+  onAction,
+}: {
+  text: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="wd-detail-empty">
+      <span>{text}</span>
+      {actionLabel && onAction && (
+        <button type="button" className="wd-btn wd-btn-mini" onClick={onAction}>
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
 
 /** 경로의 마지막 세그먼트(파일명). */
 function basename(path: string): string {
@@ -18,12 +44,26 @@ function basename(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
-/** diff 본문(상세 페인과 동일한 상태 처리). */
-function DiffBody({ diff, loading }: { diff?: GitDiffResult; loading: boolean }) {
-  if (loading && !diff) return <div className="wd-detail-empty">변경점 불러오는 중…</div>;
+/** diff 본문(상세 페인과 동일한 상태 처리 + 취소/재시도). */
+function DiffBody({
+  diff,
+  loading,
+  onCancel,
+  onRetry,
+}: {
+  diff?: GitDiffResult;
+  loading: boolean;
+  onCancel?: () => void;
+  onRetry?: () => void;
+}) {
+  const aborted = !!diff && (diff.canceled || diff.timedOut);
+  if (loading && (!diff || aborted))
+    return <BusyNote text="변경점 불러오는 중…" actionLabel="취소" onAction={onCancel} />;
   if (!diff) return <div className="wd-detail-empty">파일을 선택하세요.</div>;
+  if (diff.canceled)
+    return <BusyNote text="조회를 취소했습니다." actionLabel="다시 시도" onAction={onRetry} />;
   if (diff.timedOut)
-    return <div className="wd-detail-empty">조회가 시간 초과됐습니다. 다시 시도하세요.</div>;
+    return <BusyNote text="조회가 시간 초과됐습니다." actionLabel="다시 시도" onAction={onRetry} />;
   if (diff.binary) return <div className="wd-detail-empty">바이너리 파일이라 diff를 표시할 수 없습니다.</div>;
   if (diff.diff.trim() === "") return <div className="wd-detail-empty">표시할 변경이 없습니다.</div>;
   return (
@@ -47,6 +87,7 @@ export function WorkdirRepoLogPane() {
   const selectRepoFile = useWorkdirStore((s) => s.selectRepoFile);
   const openRepoDifftool = useWorkdirStore((s) => s.openRepoDifftool);
   const closePalette = useWorkdirStore((s) => s.closePalette);
+  const cancelOp = useWorkdirStore((s) => s.cancelOp);
 
   // 검색 입력: 로컬 상태 + 디바운스로 스토어 쿼리에 반영.
   const appliedQuery = rl?.query ?? "";
@@ -105,7 +146,19 @@ export function WorkdirRepoLogPane() {
           {rl?.timedOut && (
             <div className="wd-note">로그 조회가 시간 초과됐습니다. 검색을 좁혀 보세요.</div>
           )}
-          {commits === undefined ? (
+          {commits === undefined && rl?.loading ? (
+            <BusyNote
+              text="로그를 불러오는 중…"
+              actionLabel="취소"
+              onAction={() => cancelOp(rl?.opId)}
+            />
+          ) : commits === undefined && rl?.canceled ? (
+            <BusyNote
+              text="조회를 취소했습니다."
+              actionLabel="다시 시도"
+              onAction={() => void loadRepoLog(true)}
+            />
+          ) : commits === undefined ? (
             <div className="wd-empty">로그를 불러오는 중…</div>
           ) : commits.length === 0 ? (
             <div className="wd-empty">
@@ -148,7 +201,27 @@ export function WorkdirRepoLogPane() {
             <>
               <ul className="wd-commit-files wd-log-files" aria-label="이 커밋이 바꾼 파일">
                 {rl?.filesLoading && !rl?.files ? (
-                  <li className="wd-cf-note">변경파일 불러오는 중…</li>
+                  <li className="wd-cf-note">
+                    변경파일 불러오는 중…{" "}
+                    <button
+                      type="button"
+                      className="wd-btn wd-btn-mini"
+                      onClick={() => cancelOp(rl?.filesOpId)}
+                    >
+                      취소
+                    </button>
+                  </li>
+                ) : rl?.filesCanceled && !rl?.files ? (
+                  <li className="wd-cf-note">
+                    조회를 취소했습니다.{" "}
+                    <button
+                      type="button"
+                      className="wd-btn wd-btn-mini"
+                      onClick={() => void selectRepoCommit(selectedCommit)}
+                    >
+                      다시 시도
+                    </button>
+                  </li>
                 ) : (rl?.files ?? []).length === 0 ? (
                   <li className="wd-cf-note">
                     표시할 파일 변경이 없습니다(병합 커밋일 수 있음).
@@ -196,7 +269,12 @@ export function WorkdirRepoLogPane() {
                       외부 도구로 비교
                     </button>
                   </div>
-                  <DiffBody diff={rl.fileDiff} loading={rl.fileDiffLoading} />
+                  <DiffBody
+                    diff={rl.fileDiff}
+                    loading={rl.fileDiffLoading}
+                    onCancel={() => cancelOp(rl.fileDiffOpId)}
+                    onRetry={() => void selectRepoFile(selectedCommit, rl.selectedFile!)}
+                  />
                 </div>
               )}
             </>

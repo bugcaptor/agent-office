@@ -252,21 +252,34 @@ export interface AgentOfficeApi {
    * 조용히 답한다(에러가 아니다) — 호출부는 이 신호로 기존 클라이언트 fuzzy
    * 필터로 되돌아가야 한다. */
   workdirSearchFiles(root: string, query: string): Promise<WorkdirSearchResult>;
-  /** `root`의 git 상태(porcelain v2). 저장소 아님/타임아웃은 reject가 아니라
-   * `isRepo=false`/`timedOut=true` 필드로 표현한다. */
-  workdirGitStatus(root: string): Promise<GitStatusResult>;
+  /** `root`의 git 상태(porcelain v2). 저장소 아님/타임아웃/취소는 reject가
+   * 아니라 `isRepo=false`/`timedOut=true`/`canceled=true` 필드로 표현한다.
+   * `opId`를 주면 조회 도중 `workdirGitCancel(opId)`로 끊을 수 있다(이하 조회
+   * 커맨드 공통 — 거대 저장소 대비 타임아웃 개편). */
+  workdirGitStatus(root: string, opId?: string): Promise<GitStatusResult>;
   /** `root` 기준 `relPath`의 diff를 `mode` 관점으로 조회(이슈 #11 후속).
-   * 미추적 파일은 `mode="untracked"`. 타임아웃은 `timedOut=true`로 표현. */
-  workdirDiffFile(root: string, relPath: string, mode: GitDiffMode): Promise<GitDiffResult>;
+   * 미추적 파일은 `mode="untracked"`. 타임아웃/취소는 `timedOut`/`canceled`로 표현. */
+  workdirDiffFile(
+    root: string,
+    relPath: string,
+    mode: GitDiffMode,
+    opId?: string,
+  ): Promise<GitDiffResult>;
   /** `root` 기준 `relPath`의 커밋 히스토리(`git log --follow`, 페이지네이션). */
   workdirFileHistory(
     root: string,
     relPath: string,
     limit: number,
     skip: number,
+    opId?: string,
   ): Promise<GitFileHistoryResult>;
   /** 특정 커밋이 `relPath`에 만든 변경(diff). `commit`은 hex 7~40자. */
-  workdirDiffCommit(root: string, commit: string, relPath: string): Promise<GitDiffResult>;
+  workdirDiffCommit(
+    root: string,
+    commit: string,
+    relPath: string,
+    opId?: string,
+  ): Promise<GitDiffResult>;
   /** 한 커밋이 바꾼 파일 목록(이슈 #54, 페이지네이션). 병합 커밋은 combined
    * diff라 목록이 빌 수 있다. */
   workdirCommitFiles(
@@ -274,6 +287,7 @@ export interface AgentOfficeApi {
     commit: string,
     limit: number,
     skip: number,
+    opId?: string,
   ): Promise<GitCommitFilesResult>;
   /** 저장소 전체 커밋 로그(이슈 #54, 파일 지목 없음). `allBranches`면 모든
    * 참조를, `query`가 있으면 커밋 메시지를 대소문자 무시·부분일치로 필터한다. */
@@ -283,7 +297,11 @@ export interface AgentOfficeApi {
     skip: number,
     allBranches: boolean,
     query: string,
+    opId?: string,
   ): Promise<GitFileHistoryResult>;
+  /** 진행 중인 git 조회를 취소한다(fire-and-forget). 해당 `opId`의 조회가 이미
+   * 끝났거나 없으면 조용한 no-op이라 항상 resolve된다. */
+  workdirGitCancel(opId: string): Promise<void>;
   /** 외부 비교 도구(`git difftool`)를 fire-and-forget으로 띄운다. `commit`이
    * 지정되면 그 커밋의 변경을, 아니면 `mode`의 현재 변경을 연다. 미설정 도구는
    * 백그라운드에서 조용히 실패(인앱 diff가 폴백). */

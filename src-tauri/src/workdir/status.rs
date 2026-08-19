@@ -1,18 +1,22 @@
 // src-tauri/src/workdir/status.rs
 //
 // `git status --porcelain=v2 --branch -z` 조회와 그 출력을 파싱하는 파서
-// 계열. git 바이너리 부재·비(非) git 저장소·타임아웃은 모두 에러가 아니라
-// 정상 응답의 필드(is_repo=false / timed_out=true)로 표현한다.
+// 계열. git 바이너리 부재·비(非) git 저장소·타임아웃·사용자 취소는 모두 에러가
+// 아니라 정상 응답의 필드(is_repo=false / timed_out=true / canceled=true)로
+// 표현한다.
 
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use super::git_runner::run_git;
+use super::git_runner::{register_cancel, run_git};
 use super::model::{GitFileStatus, GitStatusResult};
 
-/// git status subprocess 타임아웃. 거대 저장소에서 UI가 멈추지 않도록 이 시간을
-/// 넘기면 자식을 죽이고 `timed_out`을 세운다.
-const GIT_STATUS_TIMEOUT: Duration = Duration::from_secs(3);
+/// git status subprocess 타임아웃. **UX 제한이 아니라 폭주 방지 백스톱이다** --
+/// 거대 저장소에서 status가 수십 초 걸리는 건 정상이라 짧은 상한은 "무조건
+/// 실패"만 낳는다. 1차 탈출구는 사용자 취소(`op_id` + `workdir_git_cancel`)이고,
+/// 이 값은 취소도 하지 않은 채 영영 매달린 자식을 결국 정리하는 마지막 그물이다.
+const GIT_STATUS_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// 파싱해서 담을 엔트리 상한(이슈 #70). `--untracked-files=all`로 미추적
 /// 디렉터리를 파일 단위로 펼치면서, gitignore되지 않은 대량 산출물 폴더가
@@ -21,15 +25,23 @@ const GIT_STATUS_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_STATUS_ENTRIES: usize = 5000;
 
 /// root의 git 상태를 조회한다. 저장소가 아니거나 git이 없으면 is_repo=false,
-/// 타임아웃이면 timed_out=true인 정상 응답을 돌려준다(에러 문자열은 root가 아예
-/// 없는 등 조회 이전 단계 실패에서만 반환).
-pub fn collect_git_status(root: &str) -> Result<GitStatusResult, String> {
+/// 타임아웃이면 timed_out=true, 사용자가 취소했으면 canceled=true인 정상 응답을
+/// 돌려준다(에러 문자열은 root가 아예 없는 등 조회 이전 단계 실패에서만 반환).
+///
+/// `op_id`를 주면 그 id로 취소 플래그를 등록해, 조회가 오래 걸릴 때 프런트가
+/// `workdir_git_cancel`로 중단시킬 수 있다. 등록은 이 함수가 끝나면 자동 해제된다.
+pub fn collect_git_status(root: &str, op_id: Option<&str>) -> Result<GitStatusResult, String> {
     let canon_root = std::fs::canonicalize(root)
         .map_err(|e| format!("작업 폴더를 찾을 수 없습니다: {root} ({e})"))?;
     if !canon_root.is_dir() {
         return Err(format!("작업 폴더가 디렉터리가 아닙니다: {root}"));
     }
-    Ok(run_git_status(&canon_root, GIT_STATUS_TIMEOUT))
+    let cancel = register_cancel(op_id);
+    Ok(run_git_status(
+        &canon_root,
+        GIT_STATUS_TIMEOUT,
+        Some(cancel.flag()),
+    ))
 }
 
 /// `git status --porcelain=v2 --branch -z --untracked-files=all`을 root에서
@@ -40,7 +52,7 @@ pub fn collect_git_status(root: &str) -> Result<GitStatusResult, String> {
 /// `? newfolder/` 한 줄로만 보고하기 때문에, 새로 추가된 폴더 안의 개별 파일이
 /// 목록에도 안 뜨고 diff(`--no-index`)도 디렉터리를 가리켜 비어 버린다. `all`로
 /// 펼치면 파일 단위 `? newfolder/a.txt` 레코드가 나와 기존 흐름이 그대로 성립한다.
-fn run_git_status(root: &Path, timeout: Duration) -> GitStatusResult {
+fn run_git_status(root: &Path, timeout: Duration, cancel: Option<&AtomicBool>) -> GitStatusResult {
     let run = run_git(
         root,
         &[
@@ -51,10 +63,15 @@ fn run_git_status(root: &Path, timeout: Duration) -> GitStatusResult {
             "--untracked-files=all",
         ],
         timeout,
+        cancel,
     );
     // git 바이너리 부재 등 -- 저장소 아님으로 취급(뱃지 조용히 생략).
     if run.spawn_failed {
         return GitStatusResult::not_repo();
+    }
+    // 사용자 취소(타임아웃보다 먼저 -- 사유가 더 구체적이다).
+    if run.canceled {
+        return GitStatusResult::canceled();
     }
     // 타임아웃.
     if run.timed_out {
@@ -91,6 +108,7 @@ pub fn parse_porcelain_v2(bytes: &[u8]) -> GitStatusResult {
         behind: 0,
         entries: Vec::new(),
         timed_out: false,
+        canceled: false,
         truncated: false,
     };
 
@@ -391,8 +409,35 @@ mod tests {
     #[test]
     fn this_repo_is_detected_as_git() {
         let root = env!("CARGO_MANIFEST_DIR");
-        let r = collect_git_status(root).unwrap();
+        let r = collect_git_status(root, None).unwrap();
         assert!(r.is_repo, "이 크레이트는 git 저장소여야 함");
         assert!(!r.timed_out);
+        assert!(!r.canceled);
+    }
+
+    /// 이미 서 있는 취소 플래그로 들어오면 status는 에러가 아니라
+    /// `canceled=true` 정상 응답이 된다(timed_out과 구분).
+    #[test]
+    fn canceled_run_reports_canceled_not_timed_out() {
+        use std::sync::atomic::AtomicBool;
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let cancel = AtomicBool::new(true);
+        let r = run_git_status(root, GIT_STATUS_TIMEOUT, Some(&cancel));
+        assert!(r.canceled);
+        assert!(!r.timed_out);
+        assert!(r.is_repo);
+        assert!(r.entries.is_empty());
+    }
+
+    /// op_id 레지스트리를 통한 취소가 실제 조회 결과까지 닿는지: 등록 →
+    /// `request_cancel` → 그 플래그로 조회 → canceled 응답.
+    #[test]
+    fn cancel_via_registry_reaches_the_query() {
+        use super::super::git_runner::{register_cancel, request_cancel};
+        let guard = register_cancel(Some("test-status-cancel-op"));
+        request_cancel("test-status-cancel-op");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let r = run_git_status(root, GIT_STATUS_TIMEOUT, Some(guard.flag()));
+        assert!(r.canceled);
     }
 }

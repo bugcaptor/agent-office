@@ -38,7 +38,8 @@ export interface GitFileStatus {
 }
 
 /** `workdir_git_status` 응답. 저장소가 아니거나(isRepo=false) 타임아웃
- * (timedOut=true)이면 entries는 비고 프런트는 뱃지를 조용히 생략한다.
+ * (timedOut=true)·사용자 취소(canceled=true)면 entries는 비고 프런트는 뱃지를
+ * 조용히 생략한다(취소는 "다시 시도" 안내를 함께 띄운다).
  * 미추적 파일은 폴더로 접히지 않고 파일 단위로 온다(`-uall`, 이슈 #70). */
 export interface GitStatusResult {
   isRepo: boolean;
@@ -48,6 +49,8 @@ export interface GitStatusResult {
   behind: number;
   entries: GitFileStatus[];
   timedOut: boolean;
+  /** 사용자가 `workdirGitCancel`로 조회를 끊었는지(에러가 아닌 정상 상태). */
+  canceled: boolean;
   /** 엔트리가 5000개 상한에 걸려 일부만 담겼는지(이슈 #70). */
   truncated: boolean;
 }
@@ -61,12 +64,14 @@ export type GitDiffMode = "worktreeVsIndex" | "indexVsHead" | "worktreeVsHead" |
 
 /** `workdir_diff_file`/`workdir_diff_commit` 응답. `diff`가 빈 문자열이면 변경
  * 없음. `binary`면 텍스트 diff 불가, `truncated`면 상한(1MiB·5000줄)에 걸려
- * 잘렸고, `timedOut`이면 조회가 시간 초과됐다. */
+ * 잘렸고, `timedOut`이면 조회가 시간 초과(백스톱)됐으며, `canceled`면 사용자가
+ * 조회를 취소했다(새 opId로 재시도 가능). */
 export interface GitDiffResult {
   diff: string;
   binary: boolean;
   truncated: boolean;
   timedOut: boolean;
+  canceled: boolean;
 }
 
 /** 파일 히스토리 커밋 1건. `hash`는 full 40-hex, `shortHash`는 축약. */
@@ -79,11 +84,12 @@ export interface GitCommitEntry {
 }
 
 /** `workdir_file_history`/`workdir_repo_log` 응답. `hasMore`면 요청 limit을 다
- * 채워 더 있을 수 있다. */
+ * 채워 더 있을 수 있다. `canceled`면 사용자가 조회를 취소했다(재시도 가능). */
 export interface GitFileHistoryResult {
   commits: GitCommitEntry[];
   hasMore: boolean;
   timedOut: boolean;
+  canceled: boolean;
 }
 
 /** 한 커밋이 바꾼 파일 1건(이슈 #54). `path`는 root 기준 상대경로(rename이면 새
@@ -93,9 +99,11 @@ export interface GitCommitFileEntry {
   status: string;
 }
 
-/** `workdir_commit_files` 응답. `hasMore`면 이 페이지 뒤로 파일이 더 남았다. */
+/** `workdir_commit_files` 응답. `hasMore`면 이 페이지 뒤로 파일이 더 남았다.
+ * `canceled`면 사용자가 조회를 취소했다(재시도 가능). */
 export interface GitCommitFilesResult {
   files: GitCommitFileEntry[];
   hasMore: boolean;
   timedOut: boolean;
+  canceled: boolean;
 }

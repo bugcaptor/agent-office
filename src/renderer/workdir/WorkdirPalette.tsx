@@ -55,6 +55,8 @@ export function WorkdirPalette() {
   const searchLoading = useWorkdirStore((s) => s.searchLoading);
   const git = useWorkdirStore((s) => (s.palette ? s.git[s.palette.root] : undefined));
   const gitLoading = useWorkdirStore((s) => (s.palette ? !!s.gitLoading[s.palette.root] : false));
+  const gitOpId = useWorkdirStore((s) => (s.palette ? s.gitOpId[s.palette.root] : undefined));
+  const cancelOp = useWorkdirStore((s) => s.cancelOp);
   const detailOpen = useWorkdirStore((s) => s.detail !== null);
   const setQuery = useWorkdirStore((s) => s.setQuery);
   const setSelectedIndex = useWorkdirStore((s) => s.setSelectedIndex);
@@ -205,6 +207,7 @@ export function WorkdirPalette() {
   const branchSummary = (() => {
     if (!gitStatusEnabled) return "git 상태 꺼짐";
     if (gitLoading && !git) return "git 상태 조회 중…";
+    if (git?.canceled) return "git 상태 조회 취소됨";
     if (git?.timedOut) return "git 상태 조회 시간 초과";
     if (!git?.isRepo) return "git 저장소 아님";
     const parts: string[] = [git.branch ?? "(detached)"];
@@ -235,6 +238,18 @@ export function WorkdirPalette() {
             )}
           </div>
           <div className="wd-header-actions">
+            {/* git 조회는 거대 저장소에서 분 단위가 될 수 있다 — 진행 중이면
+                기다리거나 여기서 끊을 수 있게 취소 버튼을 노출한다. */}
+            {gitLoading && gitOpId && (
+              <button
+                type="button"
+                className="wd-btn wd-btn-mini"
+                title="진행 중인 git 상태 조회를 중단합니다"
+                onClick={() => cancelOp(gitOpId)}
+              >
+                취소
+              </button>
+            )}
             <button
               type="button"
               className="wd-refresh"
@@ -319,6 +334,14 @@ export function WorkdirPalette() {
               !changedOnly && <div className="wd-note">파일이 많아 일부(5000개)만 표시됩니다.</div>
             )}
             {searchLoading && <div className="wd-note wd-note-dim">검색 중…</div>}
+            {git?.canceled && (
+              <div className="wd-note">
+                git 상태 조회를 취소했습니다.{" "}
+                <button type="button" className="wd-btn wd-btn-mini" onClick={() => void refreshGit(root)}>
+                  다시 시도
+                </button>
+              </div>
+            )}
             {git?.timedOut && (
               <div className="wd-note">
                 git 상태 조회가 시간 초과됐습니다. 설정에서 끌 수 있습니다.

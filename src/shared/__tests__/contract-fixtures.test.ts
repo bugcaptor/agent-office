@@ -261,7 +261,16 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
 
   it("GitStatusResult / GitFileStatus", () => {
     const parsed: GitStatusResult = loadFixture("git-status-result.json") as GitStatusResult;
-    expectKeys(parsed, ["isRepo", "branch", "ahead", "behind", "entries", "timedOut", "truncated"]);
+    expectKeys(parsed, [
+      "isRepo",
+      "branch",
+      "ahead",
+      "behind",
+      "entries",
+      "timedOut",
+      "canceled",
+      "truncated",
+    ]);
     expect(parsed.branch).toBe("main");
     const entry: GitFileStatus = parsed.entries[0];
     expectKeys(entry, ["path", "status", "xy"]);
@@ -270,7 +279,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
 
   it("GitFileHistoryResult / GitCommitEntry", () => {
     const parsed: GitFileHistoryResult = loadFixture("git-file-history-result.json") as GitFileHistoryResult;
-    expectKeys(parsed, ["commits", "hasMore", "timedOut"]);
+    expectKeys(parsed, ["commits", "hasMore", "timedOut", "canceled"]);
     const commit: GitCommitEntry = parsed.commits[0];
     expectKeys(commit, ["hash", "shortHash", "author", "date", "subject"]);
     expect(commit.shortHash).toBe("abcdef0");

@@ -1208,7 +1208,33 @@ it('ensure returns same Terminal instance across calls (keep-alive)', () => {
   `workdir_diff_commit`(#11), `workdir_commit_files`(`git show --name-status -M -z`
   파서·페이징)·`workdir_repo_log`(#54). `launch_difftool`만 외부 GUI를
   fire-and-forget. **안전장치**: `sanitize_rel_path`(절대경로·`..` 거부, 항상 `--`
-  pathspec)·`valid_commit`(hex 7~40)·diff 상한(1MiB·5000줄)·쿼리 타임아웃(10s).
+  pathspec)·`valid_commit`(hex 7~40)·diff 상한(1MiB·5000줄)·쿼리 타임아웃(§10.5.1).
+
+#### 10.5.1 조회 타임아웃 & 사용자 취소
+
+- **문제**: 예전 타임아웃(status 3s / diff·log 10s)은 거대 저장소에서 UX 상한이
+  아니라 **무조건 실패**였다 — 사용자가 기다릴 의사가 있어도 조회가 끊겼다.
+- **모델 전환**: 타임아웃은 **폭주 방지 백스톱**으로만 남기고(status 120s /
+  diff·log 300s), 1차 탈출구는 **사용자 취소**다.
+  - 프런트가 조회마다 `opId`(UUID)를 만들어 커맨드에 함께 넘긴다. 백엔드
+    `git_runner`의 프로세스 전역 레지스트리(`opId → AtomicBool`)에 취소 플래그가
+    등록되고, `CancelGuard`의 Drop이 조회 종료 시 반드시 해제한다.
+  - `workdir_git_cancel(opId)`가 그 플래그를 세우면 `proc_runner` 폴 루프(15ms)가
+    자식 git을 kill하고 `ProcOutcome::Canceled`로 끝낸다. 없는 opId는 조용한 no-op
+    (프런트는 fire-and-forget으로 부른다).
+  - 취소는 **에러가 아니라** 결과의 `canceled: true`(status/diff/history/commitFiles
+    공통)로 돌아온다 — `timedOut`과 구분해 UI 문구가 갈린다.
+- **blocking 격리**: 타임아웃이 분 단위가 되면서 조회 커맨드 본문은 전부
+  `tauri::async_runtime::spawn_blocking`으로 옮겼다(async 워커 점유 방지).
+- **프런트**: 로딩 플래그 옆에 진행 중 opId를 보관한다(`gitOpId[root]`,
+  detail의 `diffOpId`/`historyOpId`/`commitDiffOpId`/`commitFilesOpId`, repoLog의
+  `opId`/`filesOpId`/`fileDiffOpId`). 모든 "불러오는 중…" 자리에 **취소** 버튼,
+  취소된 결과에는 "조회를 취소했습니다" + **다시 시도**(새 opId로 재조회).
+  `refreshGit`은 같은 root의 in-flight 조회가 있으면 스킵하고(중복 스택 방지),
+  팔레트/상세 닫기·diff 모드 전환·뷰 전환·다른 커밋/파일 선택·로그 `gen` 증가처럼
+  진행 중 op가 무의미해지는 지점에서는 자동으로 취소한다.
+- 취소된 조회의 빈 결과는 **캐시하지 않는다**(`history`/`commitFiles`/`commits`를
+  `undefined`로 남김) — "커밋/변경 없음"과 "취소됨"을 UI가 구분해야 하기 때문.
 
 ### 10.6 미추적 파일 전개 & 긴 경로 표시 (#70 / #71)
 

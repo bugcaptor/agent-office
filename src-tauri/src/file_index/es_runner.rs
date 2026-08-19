@@ -171,6 +171,8 @@ fn run_es(canon_root: &Path, es_args: &[&str]) -> Option<Vec<u8>> {
         envs: &[],
         timeout: Duration::from_secs(TIMEOUT_SECS),
         max_stdout_bytes: Some(MAX_OUTPUT_BYTES),
+        // 취소 없음: es.exe 조회는 짧고(타임아웃만으로 충분) 취소 UI가 없다.
+        cancel: None,
     });
     match run.outcome {
         ProcOutcome::Exited { success: true } => Some(run.stdout),

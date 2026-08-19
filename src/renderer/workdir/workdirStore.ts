@@ -29,6 +29,15 @@
 // 파일 열기(openEntry, 빠른 열기용): .md는 인앱 편집기(markdownStore.openFile)로
 // 위임하고, 그 외는 절대경로를 만들어 open_in_vscode로 외부 에디터에 넘긴다.
 //
+// git 조회 취소(작업 폴더 보기 타임아웃 개편): 거대 저장소에서는 status/diff/log가
+// 분 단위로 걸릴 수 있다. 예전에는 짧은 타임아웃(3초/10초)이 그걸 무조건 끊었지만,
+// 이제 타임아웃은 백스톱(120초/300초)일 뿐이고 **1차 탈출구는 사용자 취소**다.
+// 그래서 조회마다 `opId`(UUID)를 만들어 백엔드에 함께 넘기고, 진행 중인 opId를
+// 로딩 플래그 옆에 보관한다 — UI의 "취소" 버튼이 `cancelOp(opId)`로 자식 git을
+// 죽이고, 응답은 에러가 아니라 `canceled=true`인 정상 결과로 돌아온다(재시도 가능).
+// 진행 중 op가 무의미해지는 지점(팔레트/상세 닫기, diff 모드·뷰 전환, 다른 파일·
+// 커밋 선택, 로그 gen 증가)에서는 자동으로 취소해 잉여 git 프로세스를 남기지 않는다.
+//
 // 서버사이드 검색(이슈 #67): 목록(listing)은 5000개 상한에 걸려 잘릴 수 있어,
 // 그 밖의 파일은 클라이언트 fuzzy 필터로 찾을 수 없다. 설정
 // `fileIndexBackend`가 Everything이면 `setQuery`가 (디바운스 후) es.exe로
@@ -79,6 +88,24 @@ let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
  *  최신 요청이 나갔으면) stale로 보고 폐기한다. */
 let searchGen = 0;
 
+/** git 조회 1건의 식별자를 만든다. 백엔드 취소 레지스트리의 키이자, 스토어가
+ *  "지금 진행 중인 조회"를 가리키는 손잡이다. `crypto.randomUUID`가 없는 환경
+ *  (구형 jsdom 등)에서는 카운터 기반으로 폴백한다 — 유일하기만 하면 된다. */
+let opSeq = 0;
+function newOpId(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  return `wd-op-${Date.now()}-${++opSeq}`;
+}
+
+/** 레코드에서 키 하나를 뺀 새 레코드(진행 중 opId 해제용). */
+function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in record)) return record;
+  const next = { ...record };
+  delete next[key];
+  return next;
+}
+
 /** 팔레트 뷰 모드: 파일 목록 / 저장소 전체 커밋 로그 브라우저(이슈 #54). */
 export type WorkdirViewMode = "files" | "log";
 
@@ -114,8 +141,14 @@ export interface WorkdirDetail {
   diffMode: GitDiffMode;
   diff?: GitDiffResult;
   diffLoading: boolean;
+  /** 진행 중인 diff 조회의 opId(취소 버튼이 쓴다). undefined = 진행 중 아님. */
+  diffOpId?: string;
   history?: GitCommitEntry[];
   historyLoading: boolean;
+  /** 진행 중인 히스토리 조회의 opId. */
+  historyOpId?: string;
+  /** 히스토리 조회가 취소로 끝났는지("다시 시도" 안내 — 빈 목록과 구분). */
+  historyCanceled: boolean;
   historyHasMore: boolean;
   /** 히스토리에서 선택해 하단 diff를 보고 있는 커밋 해시. */
   selectedCommit?: string;
@@ -124,11 +157,17 @@ export interface WorkdirDetail {
   selectedCommitFile?: string;
   commitDiff?: GitDiffResult;
   commitDiffLoading: boolean;
+  /** 진행 중인 커밋 diff 조회의 opId. */
+  commitDiffOpId?: string;
   /** 변경파일 목록을 인라인으로 펼친 커밋 해시(이슈 #54). undefined = 안 펼침. */
   expandedCommit?: string;
   /** 펼친 커밋의 변경파일 목록(페이징 누적). */
   commitFiles?: GitCommitFileEntry[];
   commitFilesLoading: boolean;
+  /** 진행 중인 변경파일 조회의 opId. */
+  commitFilesOpId?: string;
+  /** 변경파일 조회가 취소로 끝났는지(빈 목록과 구분해 "다시 시도"를 띄운다). */
+  commitFilesCanceled: boolean;
   commitFilesHasMore: boolean;
   /** 다음 페이지 조회를 위한 skip(=이미 담긴 개수). */
   commitFilesSkip: number;
@@ -146,20 +185,30 @@ export interface WorkdirRepoLog {
   allBranches: boolean;
   commits?: GitCommitEntry[];
   loading: boolean;
+  /** 진행 중인 로그 조회의 opId(취소 버튼용). */
+  opId?: string;
   hasMore: boolean;
   /** 이미 로드한 커밋 수(다음 페이지 skip). */
   loaded: number;
   timedOut: boolean;
+  /** 로그 조회가 취소로 끝났는지("다시 시도" 안내). */
+  canceled: boolean;
   /** 선택된 커밋(그 커밋의 변경파일 목록을 로드). */
   selectedCommit?: string;
   files?: GitCommitFileEntry[];
   filesLoading: boolean;
+  /** 진행 중인 변경파일 조회의 opId. */
+  filesOpId?: string;
+  /** 변경파일 조회가 취소로 끝났는지. */
+  filesCanceled: boolean;
   filesHasMore: boolean;
   filesLoaded: number;
   /** 변경파일 중 선택돼 diff를 보고 있는 파일 경로. */
   selectedFile?: string;
   fileDiff?: GitDiffResult;
   fileDiffLoading: boolean;
+  /** 진행 중인 파일 diff 조회의 opId. */
+  fileDiffOpId?: string;
   /** 조회 세대 카운터(검색/브랜치 전환 시 증가 → stale 응답 폐기). */
   gen: number;
 }
@@ -187,6 +236,8 @@ interface WorkdirState {
   git: Record<string, GitStatusResult>;
   /** git 조회 진행 중 여부(root별). 헤더 스피너/상태 표시용. */
   gitLoading: Record<string, boolean>;
+  /** 진행 중인 git status 조회의 opId(root별). 헤더 "취소" 버튼이 쓴다. */
+  gitOpId: Record<string, string>;
   /** 우측 상세 페인(변경점/히스토리). null = 목록만. */
   detail: WorkdirDetail | null;
   /** root별 커밋 로그 브라우저 상태(이슈 #54, 런타임 전용 캐시). */
@@ -208,8 +259,12 @@ interface WorkdirState {
    *  항상 스캔한다(수동 새로고침 버튼용). 같은 root에 대해 이미 진행 중이면
    *  중복 실행하지 않는다(in-flight dedupe). */
   refreshListing(root: string, opts?: { force?: boolean }): Promise<void>;
-  /** git 상태를 다시 읽어 캐시를 갱신한다. 설정이 꺼져 있으면 캐시를 비운다. */
+  /** git 상태를 다시 읽어 캐시를 갱신한다. 설정이 꺼져 있으면 캐시를 비운다.
+   *  같은 root의 조회가 이미 진행 중이면 스킵한다 — 타임아웃이 분 단위라
+   *  중복 호출이 쌓이면 git 프로세스가 겹겹이 남는다. */
   refreshGit(root: string): Promise<void>;
+  /** 진행 중인 git 조회를 취소한다(fire-and-forget). `opId`가 없으면 no-op. */
+  cancelOp(opId?: string): void;
   /** 빠른 열기(⌘-클릭/더블클릭): .md는 인앱 편집기, 그 외는 외부 에디터. */
   openEntry(root: string, relPath: string, name: string): void;
 
@@ -286,19 +341,51 @@ function emptyRepoLog(root: string): WorkdirRepoLog {
     allBranches: false,
     commits: undefined,
     loading: false,
+    opId: undefined,
     hasMore: false,
     loaded: 0,
     timedOut: false,
+    canceled: false,
     selectedCommit: undefined,
     files: undefined,
     filesLoading: false,
+    filesOpId: undefined,
+    filesCanceled: false,
     filesHasMore: false,
     filesLoaded: 0,
     selectedFile: undefined,
     fileDiff: undefined,
     fileDiffLoading: false,
+    fileDiffOpId: undefined,
     gen: 0,
   };
+}
+
+/** 진행 중인 조회 하나를 취소한다(fire-and-forget). 백엔드는 없는 opId를
+ *  조용히 무시하므로 실패해도 흐름에 영향이 없다. */
+function cancel(opId?: string): void {
+  if (!opId) return;
+  void tauriApi.workdirGitCancel(opId).catch((err) => {
+    // 취소 실패는 사용자 흐름에 영향이 없다(조회가 이미 끝났을 뿐일 수 있다).
+    console.warn("workdir: git 조회 취소 실패", err);
+  });
+}
+
+/** 상세 페인이 걸고 있던 모든 조회를 취소한다(상세를 닫거나 다른 파일로 바꿀 때). */
+function cancelDetailOps(d: WorkdirDetail | null): void {
+  if (!d) return;
+  cancel(d.diffOpId);
+  cancel(d.historyOpId);
+  cancel(d.commitDiffOpId);
+  cancel(d.commitFilesOpId);
+}
+
+/** 로그 브라우저가 걸고 있던 모든 조회를 취소한다(뷰를 떠나거나 팔레트를 닫을 때). */
+function cancelRepoLogOps(rl: WorkdirRepoLog | undefined): void {
+  if (!rl) return;
+  cancel(rl.opId);
+  cancel(rl.filesOpId);
+  cancel(rl.fileDiffOpId);
 }
 
 export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
@@ -308,12 +395,15 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
   searchLoading: false,
   git: {},
   gitLoading: {},
+  gitOpId: {},
   detail: null,
   repoLog: {},
 
   openPalette: (root, agentId) => {
     if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
     searchGen++;
+    // 이전 팔레트의 상세가 걸어 둔 조회는 여기서 무의미해진다.
+    cancelDetailOps(get().detail);
     set({
       palette: { root, agentId, query: "", selectedIndex: 0, changedOnly: false, viewMode: "files" },
       detail: null,
@@ -329,6 +419,14 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
   closePalette: () => {
     if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
     searchGen++;
+    // 팔레트가 사라지면 그 안의 조회 결과를 볼 곳이 없다 — 진행 중인 git
+    // 프로세스(수 분짜리일 수 있다)를 그대로 두지 않고 전부 끊는다.
+    const p = get().palette;
+    cancelDetailOps(get().detail);
+    if (p) {
+      cancel(get().gitOpId[p.root]);
+      cancelRepoLogOps(get().repoLog[p.root]);
+    }
     set({ palette: null, detail: null, search: null, searchLoading: false });
   },
 
@@ -386,6 +484,11 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
   setViewMode: (mode) => {
     const p = get().palette;
     if (!p) return;
+    // 떠나는 뷰가 걸고 있던 조회는 더 보이지 않으므로 취소한다.
+    if (p.viewMode !== mode) {
+      if (p.viewMode === "log") cancelRepoLogOps(get().repoLog[p.root]);
+      else cancelDetailOps(get().detail);
+    }
     set({ palette: { ...p, viewMode: mode } });
     // 로그 뷰 최초 진입 시 한 번 로드(캐시에 커밋이 아직 없으면).
     if (mode === "log") {
@@ -416,8 +519,10 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
   },
 
   refreshGit: async (root) => {
-    // 설정이 꺼져 있으면 조회하지 않고 캐시를 비운다(뱃지 미표시).
+    // 설정이 꺼져 있으면 조회하지 않고 캐시를 비운다(뱃지 미표시). 진행 중이던
+    // 조회가 있으면 함께 끊는다 — 결과를 보여줄 곳이 사라졌기 때문.
     if (!useAppStore.getState().appSettings.gitStatusEnabled) {
+      cancel(get().gitOpId[root]);
       set((s) => {
         if (!(root in s.git)) return s;
         const next = { ...s.git };
@@ -426,18 +531,31 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
       });
       return;
     }
-    set((s) => ({ gitLoading: { ...s.gitLoading, [root]: true } }));
+    // in-flight 가드: 타임아웃이 분 단위라 중복 호출이 쌓이면 git 프로세스가
+    // 겹겹이 남는다(재오픈/새로고침 연타).
+    if (get().gitLoading[root]) return;
+    const opId = newOpId();
+    set((s) => ({
+      gitLoading: { ...s.gitLoading, [root]: true },
+      gitOpId: { ...s.gitOpId, [root]: opId },
+    }));
     try {
-      const res = await tauriApi.workdirGitStatus(root);
+      const res = await tauriApi.workdirGitStatus(root, opId);
       set((s) => ({
         git: { ...s.git, [root]: res },
         gitLoading: { ...s.gitLoading, [root]: false },
+        gitOpId: omitKey(s.gitOpId, root),
       }));
     } catch (err) {
       console.warn("workdir: git 상태 조회 실패", err);
-      set((s) => ({ gitLoading: { ...s.gitLoading, [root]: false } }));
+      set((s) => ({
+        gitLoading: { ...s.gitLoading, [root]: false },
+        gitOpId: omitKey(s.gitOpId, root),
+      }));
     }
   },
+
+  cancelOp: (opId) => cancel(opId),
 
   openEntry: (root, relPath, name) => {
     const agentId = get().palette?.agentId ?? "";
@@ -460,6 +578,8 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     // 변경 파일은 변경점을 먼저 보여주고, 변경 없는(clean) 파일은 볼 변경점이
     // 없으므로 히스토리 탭으로 열어 깃 로그를 바로 노출한다(이슈 #54).
     const tab: "diff" | "history" = isChangedStatus(status) ? "diff" : "history";
+    // 이전 파일의 상세가 걸어 둔 조회는 여기서 무의미해진다.
+    cancelDetailOps(get().detail);
     set((s) => ({
       detail: {
         root,
@@ -471,16 +591,22 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
         diffMode,
         diff: undefined,
         diffLoading: false,
+        diffOpId: undefined,
         history: undefined,
         historyLoading: false,
+        historyOpId: undefined,
+        historyCanceled: false,
         historyHasMore: false,
         selectedCommit: undefined,
         selectedCommitFile: undefined,
         commitDiff: undefined,
         commitDiffLoading: false,
+        commitDiffOpId: undefined,
         expandedCommit: undefined,
         commitFiles: undefined,
         commitFilesLoading: false,
+        commitFilesOpId: undefined,
+        commitFilesCanceled: false,
         commitFilesHasMore: false,
         commitFilesSkip: 0,
         gen: (s.detail?.gen ?? 0) + 1,
@@ -491,7 +617,11 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     else void get().loadHistory();
   },
 
-  closeDetail: () => set({ detail: null }),
+  closeDetail: () => {
+    // 상세를 닫으면 그 조회 결과를 볼 곳이 없다 — 진행 중이던 git을 끊는다.
+    cancelDetailOps(get().detail);
+    set({ detail: null });
+  },
 
   openExternal: () => {
     const d = get().detail;
@@ -537,9 +667,21 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
   },
 
   setDiffMode: (mode) => {
-    // gen을 올려 진행 중이던 이전 모드의 응답을 폐기하고 새로 로드.
+    // gen을 올려 진행 중이던 이전 모드의 응답을 폐기하고 새로 로드. 그 응답은
+    // 어차피 버릴 것이므로 자식 git도 함께 끊는다.
+    cancel(get().detail?.diffOpId);
     set((s) =>
-      s.detail ? { detail: { ...s.detail, diffMode: mode, diff: undefined, gen: s.detail.gen + 1 } } : s,
+      s.detail
+        ? {
+            detail: {
+              ...s.detail,
+              diffMode: mode,
+              diff: undefined,
+              diffOpId: undefined,
+              gen: s.detail.gen + 1,
+            },
+          }
+        : s,
     );
     void get().loadDiff();
   },
@@ -548,18 +690,36 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     const d = get().detail;
     if (!d) return;
     const { root, relPath, diffMode, gen } = d;
-    set((s) => (s.detail ? { detail: { ...s.detail, diffLoading: true } } : s));
+    // 재시도(취소/시간 초과 뒤)면 이전 결과를 비워 진행 표시가 보이게 한다.
+    const opId = newOpId();
+    set((s) =>
+      s.detail
+        ? {
+            detail: {
+              ...s.detail,
+              diffLoading: true,
+              diffOpId: opId,
+              diff:
+                s.detail.diff && (s.detail.diff.canceled || s.detail.diff.timedOut)
+                  ? undefined
+                  : s.detail.diff,
+            },
+          }
+        : s,
+    );
     try {
-      const res = await tauriApi.workdirDiffFile(root, relPath, diffMode);
+      const res = await tauriApi.workdirDiffFile(root, relPath, diffMode, opId);
       set((s) =>
         s.detail && s.detail.gen === gen && s.detail.relPath === relPath
-          ? { detail: { ...s.detail, diff: res, diffLoading: false } }
+          ? { detail: { ...s.detail, diff: res, diffLoading: false, diffOpId: undefined } }
           : s,
       );
     } catch (err) {
       console.warn("workdir: diff 조회 실패", err);
       set((s) =>
-        s.detail && s.detail.gen === gen ? { detail: { ...s.detail, diffLoading: false } } : s,
+        s.detail && s.detail.gen === gen
+          ? { detail: { ...s.detail, diffLoading: false, diffOpId: undefined } }
+          : s,
       );
     }
   },
@@ -568,17 +728,26 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     const d = get().detail;
     if (!d) return;
     const { root, relPath } = d;
-    set((s) => (s.detail ? { detail: { ...s.detail, historyLoading: true } } : s));
+    const opId = newOpId();
+    set((s) =>
+      s.detail
+        ? { detail: { ...s.detail, historyLoading: true, historyOpId: opId, historyCanceled: false } }
+        : s,
+    );
     try {
-      const res = await tauriApi.workdirFileHistory(root, relPath, HISTORY_PAGE, 0);
+      const res = await tauriApi.workdirFileHistory(root, relPath, HISTORY_PAGE, 0, opId);
       set((s) =>
         s.detail && s.detail.relPath === relPath
           ? {
               detail: {
                 ...s.detail,
-                history: res.commits,
-                historyHasMore: res.hasMore,
+                // 취소면 빈 목록을 캐시하지 않는다 — "커밋 없음"과 구분해
+                // "다시 시도"를 띄우기 위함.
+                history: res.canceled ? undefined : res.commits,
+                historyCanceled: res.canceled,
+                historyHasMore: res.canceled ? false : res.hasMore,
                 historyLoading: false,
+                historyOpId: undefined,
               },
             }
           : s,
@@ -587,7 +756,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
       console.warn("workdir: 히스토리 조회 실패", err);
       set((s) =>
         s.detail && s.detail.relPath === relPath
-          ? { detail: { ...s.detail, historyLoading: false } }
+          ? { detail: { ...s.detail, historyLoading: false, historyOpId: undefined } }
           : s,
       );
     }
@@ -604,6 +773,9 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     const d = get().detail;
     if (!d) return;
     const { root } = d;
+    // 이전 선택의 diff는 이제 볼 일이 없다.
+    cancel(d.commitDiffOpId);
+    const opId = newOpId();
     set((s) =>
       s.detail
         ? {
@@ -613,22 +785,30 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
               selectedCommitFile: path,
               commitDiff: undefined,
               commitDiffLoading: true,
+              commitDiffOpId: opId,
             },
           }
         : s,
     );
     try {
-      const res = await tauriApi.workdirDiffCommit(root, hash, path);
+      const res = await tauriApi.workdirDiffCommit(root, hash, path, opId);
       set((s) =>
         s.detail && s.detail.selectedCommit === hash && s.detail.selectedCommitFile === path
-          ? { detail: { ...s.detail, commitDiff: res, commitDiffLoading: false } }
+          ? {
+              detail: {
+                ...s.detail,
+                commitDiff: res,
+                commitDiffLoading: false,
+                commitDiffOpId: undefined,
+              },
+            }
           : s,
       );
     } catch (err) {
       console.warn("workdir: 커밋 diff 조회 실패", err);
       set((s) =>
         s.detail && s.detail.selectedCommit === hash
-          ? { detail: { ...s.detail, commitDiffLoading: false } }
+          ? { detail: { ...s.detail, commitDiffLoading: false, commitDiffOpId: undefined } }
           : s,
       );
     }
@@ -637,12 +817,27 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
   toggleCommitExpand: async (hash) => {
     const d = get().detail;
     if (!d) return;
-    // 이미 펼친 커밋을 다시 누르면 접는다.
+    // 이미 펼친 커밋을 다시 누르면 접는다(진행 중이던 목록 조회도 함께 끊는다).
     if (d.expandedCommit === hash) {
-      set((s) => (s.detail ? { detail: { ...s.detail, expandedCommit: undefined } } : s));
+      cancel(d.commitFilesOpId);
+      set((s) =>
+        s.detail
+          ? {
+              detail: {
+                ...s.detail,
+                expandedCommit: undefined,
+                commitFilesLoading: false,
+                commitFilesOpId: undefined,
+              },
+            }
+          : s,
+      );
       return;
     }
     const { root } = d;
+    // 다른 커밋을 펼치면 이전 커밋의 목록 조회는 무의미해진다.
+    cancel(d.commitFilesOpId);
+    const opId = newOpId();
     set((s) =>
       s.detail
         ? {
@@ -651,6 +846,8 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
               expandedCommit: hash,
               commitFiles: undefined,
               commitFilesLoading: true,
+              commitFilesOpId: opId,
+              commitFilesCanceled: false,
               commitFilesHasMore: false,
               commitFilesSkip: 0,
             },
@@ -658,16 +855,19 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
         : s,
     );
     try {
-      const res = await tauriApi.workdirCommitFiles(root, hash, COMMIT_FILES_PAGE, 0);
+      const res = await tauriApi.workdirCommitFiles(root, hash, COMMIT_FILES_PAGE, 0, opId);
       set((s) =>
         s.detail && s.detail.expandedCommit === hash
           ? {
               detail: {
                 ...s.detail,
-                commitFiles: res.files,
-                commitFilesHasMore: res.hasMore,
+                // 취소면 빈 목록을 캐시하지 않는다("변경 없음"과 구분).
+                commitFiles: res.canceled ? undefined : res.files,
+                commitFilesCanceled: res.canceled,
+                commitFilesHasMore: res.canceled ? false : res.hasMore,
                 commitFilesLoading: false,
-                commitFilesSkip: res.files.length,
+                commitFilesOpId: undefined,
+                commitFilesSkip: res.canceled ? 0 : res.files.length,
               },
             }
           : s,
@@ -676,7 +876,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
       console.warn("workdir: 커밋 변경파일 조회 실패", err);
       set((s) =>
         s.detail && s.detail.expandedCommit === hash
-          ? { detail: { ...s.detail, commitFilesLoading: false } }
+          ? { detail: { ...s.detail, commitFilesLoading: false, commitFilesOpId: undefined } }
           : s,
       );
     }
@@ -686,17 +886,38 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     const d = get().detail;
     if (!d || !d.expandedCommit || d.commitFilesLoading || !d.commitFilesHasMore) return;
     const { root, expandedCommit, commitFilesSkip } = d;
-    set((s) => (s.detail ? { detail: { ...s.detail, commitFilesLoading: true } } : s));
+    const opId = newOpId();
+    set((s) =>
+      s.detail
+        ? {
+            detail: {
+              ...s.detail,
+              commitFilesLoading: true,
+              commitFilesOpId: opId,
+              commitFilesCanceled: false,
+            },
+          }
+        : s,
+    );
     try {
-      const res = await tauriApi.workdirCommitFiles(root, expandedCommit, COMMIT_FILES_PAGE, commitFilesSkip);
+      const res = await tauriApi.workdirCommitFiles(
+        root,
+        expandedCommit,
+        COMMIT_FILES_PAGE,
+        commitFilesSkip,
+        opId,
+      );
       set((s) =>
         s.detail && s.detail.expandedCommit === expandedCommit
           ? {
               detail: {
                 ...s.detail,
+                // 취소면 이미 받은 페이지는 그대로 두고 "더 보기"만 남긴다.
                 commitFiles: [...(s.detail.commitFiles ?? []), ...res.files],
-                commitFilesHasMore: res.hasMore,
+                commitFilesCanceled: res.canceled,
+                commitFilesHasMore: res.canceled ? s.detail.commitFilesHasMore : res.hasMore,
                 commitFilesLoading: false,
+                commitFilesOpId: undefined,
                 commitFilesSkip: commitFilesSkip + res.files.length,
               },
             }
@@ -706,7 +927,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
       console.warn("workdir: 커밋 변경파일 추가 조회 실패", err);
       set((s) =>
         s.detail && s.detail.expandedCommit === expandedCommit
-          ? { detail: { ...s.detail, commitFilesLoading: false } }
+          ? { detail: { ...s.detail, commitFilesLoading: false, commitFilesOpId: undefined } }
           : s,
       );
     }
@@ -731,28 +952,63 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     const prev = get().repoLog[root] ?? emptyRepoLog(root);
     const skip = reset ? 0 : prev.loaded;
     const gen = reset ? prev.gen + 1 : prev.gen;
+    // reset(검색어/브랜치 전환)이면 진행 중이던 조회는 전부 버려질 응답이다.
+    if (reset) cancelRepoLogOps(prev);
+    else cancel(prev.opId);
+    const opId = newOpId();
     setRepoLog(set, root, {
       ...prev,
       loading: true,
-      ...(reset ? { commits: undefined, selectedCommit: undefined, files: undefined, selectedFile: undefined, fileDiff: undefined, gen } : {}),
+      opId,
+      canceled: false,
+      ...(reset
+        ? {
+            commits: undefined,
+            selectedCommit: undefined,
+            files: undefined,
+            filesOpId: undefined,
+            filesCanceled: false,
+            selectedFile: undefined,
+            fileDiff: undefined,
+            fileDiffOpId: undefined,
+            gen,
+          }
+        : {}),
     });
     try {
-      const res = await tauriApi.workdirRepoLog(root, HISTORY_PAGE, skip, prev.allBranches, prev.query);
+      const res = await tauriApi.workdirRepoLog(
+        root,
+        HISTORY_PAGE,
+        skip,
+        prev.allBranches,
+        prev.query,
+        opId,
+      );
       const cur = get().repoLog[root];
       if (!cur || cur.gen !== gen) return; // stale(검색/브랜치 전환됨).
-      const commits = reset ? res.commits : [...(cur.commits ?? []), ...res.commits];
+      // 취소면 첫 페이지는 비운 채로 두고(“커밋 없음”과 구분), 이어 로드는
+      // 이미 받은 목록을 그대로 유지한다.
+      const commits = reset
+        ? res.canceled
+          ? undefined
+          : res.commits
+        : [...(cur.commits ?? []), ...res.commits];
       setRepoLog(set, root, {
         ...cur,
         commits,
-        hasMore: res.hasMore,
-        loaded: commits.length,
+        hasMore: res.canceled ? (reset ? false : cur.hasMore) : res.hasMore,
+        loaded: commits?.length ?? 0,
         timedOut: res.timedOut,
+        canceled: res.canceled,
         loading: false,
+        opId: undefined,
       });
     } catch (err) {
       console.warn("workdir: 리포 로그 조회 실패", err);
       const cur = get().repoLog[root];
-      if (cur && cur.gen === gen) setRepoLog(set, root, { ...cur, loading: false });
+      if (cur && cur.gen === gen) {
+        setRepoLog(set, root, { ...cur, loading: false, opId: undefined });
+      }
     }
   },
 
@@ -778,31 +1034,43 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     const root = p.root;
     const prev = get().repoLog[root];
     if (!prev) return;
+    // 다른 커밋을 고르면 이전 커밋의 변경파일·diff 조회는 무의미해진다.
+    cancel(prev.filesOpId);
+    cancel(prev.fileDiffOpId);
+    const opId = newOpId();
     setRepoLog(set, root, {
       ...prev,
       selectedCommit: hash,
       files: undefined,
       filesLoading: true,
+      filesOpId: opId,
+      filesCanceled: false,
       filesHasMore: false,
       filesLoaded: 0,
       selectedFile: undefined,
       fileDiff: undefined,
+      fileDiffOpId: undefined,
     });
     try {
-      const res = await tauriApi.workdirCommitFiles(root, hash, COMMIT_FILES_PAGE, 0);
+      const res = await tauriApi.workdirCommitFiles(root, hash, COMMIT_FILES_PAGE, 0, opId);
       const cur = get().repoLog[root];
       if (!cur || cur.selectedCommit !== hash) return;
       setRepoLog(set, root, {
         ...cur,
-        files: res.files,
-        filesHasMore: res.hasMore,
-        filesLoaded: res.files.length,
+        // 취소면 빈 목록을 캐시하지 않는다("변경 없음"과 구분).
+        files: res.canceled ? undefined : res.files,
+        filesCanceled: res.canceled,
+        filesHasMore: res.canceled ? false : res.hasMore,
+        filesLoaded: res.canceled ? 0 : res.files.length,
         filesLoading: false,
+        filesOpId: undefined,
       });
     } catch (err) {
       console.warn("workdir: 로그 커밋 변경파일 조회 실패", err);
       const cur = get().repoLog[root];
-      if (cur && cur.selectedCommit === hash) setRepoLog(set, root, { ...cur, filesLoading: false });
+      if (cur && cur.selectedCommit === hash) {
+        setRepoLog(set, root, { ...cur, filesLoading: false, filesOpId: undefined });
+      }
     }
   },
 
@@ -813,23 +1081,35 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     const prev = get().repoLog[root];
     if (!prev || !prev.selectedCommit || prev.filesLoading || !prev.filesHasMore) return;
     const hash = prev.selectedCommit;
-    setRepoLog(set, root, { ...prev, filesLoading: true });
+    const opId = newOpId();
+    setRepoLog(set, root, { ...prev, filesLoading: true, filesOpId: opId, filesCanceled: false });
     try {
-      const res = await tauriApi.workdirCommitFiles(root, hash, COMMIT_FILES_PAGE, prev.filesLoaded);
+      const res = await tauriApi.workdirCommitFiles(
+        root,
+        hash,
+        COMMIT_FILES_PAGE,
+        prev.filesLoaded,
+        opId,
+      );
       const cur = get().repoLog[root];
       if (!cur || cur.selectedCommit !== hash) return;
       const files = [...(cur.files ?? []), ...res.files];
       setRepoLog(set, root, {
         ...cur,
         files,
-        filesHasMore: res.hasMore,
+        // 취소면 이미 받은 페이지는 유지하고 "더 보기"를 남긴다.
+        filesCanceled: res.canceled,
+        filesHasMore: res.canceled ? cur.filesHasMore : res.hasMore,
         filesLoaded: files.length,
         filesLoading: false,
+        filesOpId: undefined,
       });
     } catch (err) {
       console.warn("workdir: 로그 변경파일 추가 조회 실패", err);
       const cur = get().repoLog[root];
-      if (cur && cur.selectedCommit === hash) setRepoLog(set, root, { ...cur, filesLoading: false });
+      if (cur && cur.selectedCommit === hash) {
+        setRepoLog(set, root, { ...cur, filesLoading: false, filesOpId: undefined });
+      }
     }
   },
 
@@ -839,16 +1119,27 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     const root = p.root;
     const prev = get().repoLog[root];
     if (!prev) return;
-    setRepoLog(set, root, { ...prev, selectedFile: path, fileDiff: undefined, fileDiffLoading: true });
+    // 다른 파일을 고르면(또는 같은 파일을 재시도하면) 이전 diff 조회는 버린다.
+    cancel(prev.fileDiffOpId);
+    const opId = newOpId();
+    setRepoLog(set, root, {
+      ...prev,
+      selectedFile: path,
+      fileDiff: undefined,
+      fileDiffLoading: true,
+      fileDiffOpId: opId,
+    });
     try {
-      const res = await tauriApi.workdirDiffCommit(root, hash, path);
+      const res = await tauriApi.workdirDiffCommit(root, hash, path, opId);
       const cur = get().repoLog[root];
       if (!cur || cur.selectedFile !== path || cur.selectedCommit !== hash) return;
-      setRepoLog(set, root, { ...cur, fileDiff: res, fileDiffLoading: false });
+      setRepoLog(set, root, { ...cur, fileDiff: res, fileDiffLoading: false, fileDiffOpId: undefined });
     } catch (err) {
       console.warn("workdir: 로그 파일 diff 조회 실패", err);
       const cur = get().repoLog[root];
-      if (cur && cur.selectedFile === path) setRepoLog(set, root, { ...cur, fileDiffLoading: false });
+      if (cur && cur.selectedFile === path) {
+        setRepoLog(set, root, { ...cur, fileDiffLoading: false, fileDiffOpId: undefined });
+      }
     }
   },
 

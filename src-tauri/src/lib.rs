@@ -571,6 +571,7 @@ pub fn run() {
             workdir::workdir_diff_commit,
             workdir::workdir_commit_files,
             workdir::workdir_repo_log,
+            workdir::workdir_git_cancel,
             workdir::workdir_difftool,
             ipc::commands::pick_directory,
             ipc::commands::export_character_file,

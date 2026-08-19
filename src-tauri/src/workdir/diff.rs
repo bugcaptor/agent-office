@@ -3,18 +3,25 @@
 // 파일 diff, 파일 히스토리, 커밋 변경파일, 저장소 로그, 외부 difftool 실행.
 // 모두 `run_git`(git_runner) 위에 얹힌 조회 계열이며, 결과 파싱 함수(parse_*)도
 // 여기 함께 둔다.
+//
+// 조회 계열은 모두 `op_id: Option<&str>`를 받아 취소 플래그를 등록한다 -- 거대
+// 저장소에서 분 단위로 걸리는 조회를 사용자가 직접 끊을 수 있게 하기 위함이며,
+// 취소는 에러가 아니라 결과의 `canceled=true`로 돌아온다.
 
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use super::git_runner::{canon_dir, run_git, sanitize_rel_path, valid_commit};
+use super::git_runner::{canon_dir, register_cancel, run_git, sanitize_rel_path, valid_commit};
 use super::model::{
     GitCommitFileEntry, GitCommitFilesResult, GitDiffResult, GitFileHistoryResult,
 };
 
-/// diff/log/show subprocess 타임아웃. status보다 넉넉하되(대용량 diff·긴 로그)
-/// UI가 무한정 멈추지 않도록 상한을 둔다.
-const GIT_QUERY_TIMEOUT: Duration = Duration::from_secs(10);
+/// diff/log/show subprocess 타임아웃. **UX 제한이 아니라 폭주 방지 백스톱이다** --
+/// 거대 저장소의 `git log`/`git show`는 몇 분이 걸릴 수 있고, 그걸 짧은 상한으로
+/// 끊으면 사용자는 결과를 영영 못 본다. 1차 탈출구는 사용자 취소(`op_id` +
+/// `workdir_git_cancel`)이고, 이 값은 취소조차 없이 매달린 자식을 결국 정리하는
+/// 마지막 그물이다.
+const GIT_QUERY_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// diff 텍스트 상한(바이트). 이 크기를 넘으면 잘라내고 `truncated=true`.
 const MAX_DIFF_BYTES: usize = 1024 * 1024;
@@ -49,6 +56,19 @@ fn finalize_diff(bytes: &[u8]) -> GitDiffResult {
         binary,
         truncated,
         timed_out: false,
+        canceled: false,
+    }
+}
+
+/// 조회가 중단됐을 때의 빈 diff 응답(타임아웃/취소 공용). 두 사유는 프런트
+/// 문구가 갈리므로 플래그로만 구분한다.
+fn aborted_diff(timed_out: bool, canceled: bool) -> GitDiffResult {
+    GitDiffResult {
+        diff: String::new(),
+        binary: false,
+        truncated: false,
+        timed_out,
+        canceled,
     }
 }
 
@@ -60,7 +80,12 @@ fn finalize_diff(bytes: &[u8]) -> GitDiffResult {
 ///
 /// 미추적 파일은 일반 `git diff`가 아무것도 내지 않으므로 `untracked` 모드가
 /// 필요하다(프런트가 뱃지 '?'를 보고 이 모드로 요청).
-pub fn git_diff_file(root: &str, rel_path: &str, mode: &str) -> Result<GitDiffResult, String> {
+pub fn git_diff_file(
+    root: &str,
+    rel_path: &str,
+    mode: &str,
+    op_id: Option<&str>,
+) -> Result<GitDiffResult, String> {
     let canon_root = canon_dir(root)?;
     let rel = sanitize_rel_path(rel_path)?;
     let args: Vec<&str> = match mode {
@@ -71,17 +96,13 @@ pub fn git_diff_file(root: &str, rel_path: &str, mode: &str) -> Result<GitDiffRe
         "untracked" => vec!["diff", "--no-index", "--", "/dev/null", &rel],
         other => return Err(format!("알 수 없는 diff 모드: {other}")),
     };
-    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT);
+    let cancel = register_cancel(op_id);
+    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT, Some(cancel.flag()));
     if run.spawn_failed {
         return Err("git 실행에 실패했습니다(설치 여부 확인)".to_string());
     }
-    if run.timed_out {
-        return Ok(GitDiffResult {
-            diff: String::new(),
-            binary: false,
-            truncated: false,
-            timed_out: true,
-        });
+    if run.canceled || run.timed_out {
+        return Ok(aborted_diff(run.timed_out, run.canceled));
     }
     // diff --no-index는 차이가 있으면 exit 1을 내지만 정상 출력이다. 그래서
     // success와 무관하게 stdout을 그대로 파싱한다(exit 2 등 에러도 빈 stdout이면
@@ -95,6 +116,7 @@ pub fn git_file_history(
     rel_path: &str,
     limit: usize,
     skip: usize,
+    op_id: Option<&str>,
 ) -> Result<GitFileHistoryResult, String> {
     let canon_root = canon_dir(root)?;
     let rel = sanitize_rel_path(rel_path)?;
@@ -113,15 +135,17 @@ pub fn git_file_history(
         "--",
         &rel,
     ];
-    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT);
+    let cancel = register_cancel(op_id);
+    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT, Some(cancel.flag()));
     if run.spawn_failed {
         return Err("git 실행에 실패했습니다(설치 여부 확인)".to_string());
     }
-    if run.timed_out {
+    if run.canceled || run.timed_out {
         return Ok(GitFileHistoryResult {
             commits: Vec::new(),
             has_more: false,
-            timed_out: true,
+            timed_out: run.timed_out,
+            canceled: run.canceled,
         });
     }
     Ok(parse_history(&run.stdout, limit))
@@ -161,29 +185,31 @@ fn parse_history(bytes: &[u8], limit: usize) -> GitFileHistoryResult {
         commits,
         has_more,
         timed_out: false,
+        canceled: false,
     }
 }
 
 /// 특정 커밋이 `rel_path`에 만든 변경(diff)을 `git show`로 가져온다. `--format=`로
 /// 커밋 메시지 헤더를 지워 diff만 남긴다.
-pub fn git_diff_commit(root: &str, commit: &str, rel_path: &str) -> Result<GitDiffResult, String> {
+pub fn git_diff_commit(
+    root: &str,
+    commit: &str,
+    rel_path: &str,
+    op_id: Option<&str>,
+) -> Result<GitDiffResult, String> {
     let canon_root = canon_dir(root)?;
     if !valid_commit(commit) {
         return Err(format!("잘못된 커밋 해시입니다: {commit}"));
     }
     let rel = sanitize_rel_path(rel_path)?;
     let args = ["show", "--format=", commit, "--", &rel];
-    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT);
+    let cancel = register_cancel(op_id);
+    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT, Some(cancel.flag()));
     if run.spawn_failed {
         return Err("git 실행에 실패했습니다(설치 여부 확인)".to_string());
     }
-    if run.timed_out {
-        return Ok(GitDiffResult {
-            diff: String::new(),
-            binary: false,
-            truncated: false,
-            timed_out: true,
-        });
+    if run.canceled || run.timed_out {
+        return Ok(aborted_diff(run.timed_out, run.canceled));
     }
     Ok(finalize_diff(&run.stdout))
 }
@@ -197,6 +223,7 @@ pub fn git_commit_files(
     commit: &str,
     limit: usize,
     skip: usize,
+    op_id: Option<&str>,
 ) -> Result<GitCommitFilesResult, String> {
     let canon_root = canon_dir(root)?;
     if !valid_commit(commit) {
@@ -205,15 +232,17 @@ pub fn git_commit_files(
     let limit = limit.clamp(1, COMMIT_FILES_MAX_LIMIT);
     // `--format=`로 커밋 헤더를 지우고 `--name-status -M -z`로 파일별 상태만 뽑는다.
     let args = ["show", "--format=", "--name-status", "-M", "-z", commit];
-    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT);
+    let cancel = register_cancel(op_id);
+    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT, Some(cancel.flag()));
     if run.spawn_failed {
         return Err("git 실행에 실패했습니다(설치 여부 확인)".to_string());
     }
-    if run.timed_out {
+    if run.canceled || run.timed_out {
         return Ok(GitCommitFilesResult {
             files: Vec::new(),
             has_more: false,
-            timed_out: true,
+            timed_out: run.timed_out,
+            canceled: run.canceled,
         });
     }
     let all = parse_name_status(&run.stdout);
@@ -225,6 +254,7 @@ pub fn git_commit_files(
         files,
         has_more,
         timed_out: false,
+        canceled: false,
     })
 }
 
@@ -285,6 +315,7 @@ pub fn git_repo_log(
     skip: usize,
     all_branches: bool,
     query: &str,
+    op_id: Option<&str>,
 ) -> Result<GitFileHistoryResult, String> {
     let canon_root = canon_dir(root)?;
     let limit = limit.clamp(1, HISTORY_MAX_LIMIT);
@@ -310,15 +341,17 @@ pub fn git_repo_log(
         args.push("-i");
         args.push("-F");
     }
-    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT);
+    let cancel = register_cancel(op_id);
+    let run = run_git(&canon_root, &args, GIT_QUERY_TIMEOUT, Some(cancel.flag()));
     if run.spawn_failed {
         return Err("git 실행에 실패했습니다(설치 여부 확인)".to_string());
     }
-    if run.timed_out {
+    if run.canceled || run.timed_out {
         return Ok(GitFileHistoryResult {
             commits: Vec::new(),
             has_more: false,
-            timed_out: true,
+            timed_out: run.timed_out,
+            canceled: run.canceled,
         });
     }
     // 비 git 저장소/빈 저장소는 exit non-zero거나 빈 출력 → 빈 목록으로 귀결.
@@ -430,25 +463,46 @@ mod tests {
         assert!(r.has_more); // 1 >= limit(1)
     }
 
+    /// 중단 응답은 두 사유가 플래그로 갈린다(프런트 문구가 다르다). 어느
+    /// 쪽이든 diff는 비고 truncated/binary는 서지 않는다.
+    #[test]
+    fn aborted_diff_separates_timeout_and_cancel() {
+        let t = aborted_diff(true, false);
+        assert!(t.timed_out && !t.canceled);
+        assert!(t.diff.is_empty() && !t.binary && !t.truncated);
+        let c = aborted_diff(false, true);
+        assert!(c.canceled && !c.timed_out);
+        assert!(c.diff.is_empty());
+    }
+
+    /// 정상 조회 결과에는 두 플래그가 모두 서지 않는다(취소 도입 회귀 가드).
+    #[test]
+    fn normal_query_has_no_abort_flags() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let r = git_repo_log(root, 3, 0, false, "", Some("test-diff-normal-op")).unwrap();
+        assert!(!r.timed_out && !r.canceled);
+        assert!(!r.commits.is_empty());
+    }
+
     #[test]
     fn unknown_diff_mode_is_error() {
         let root = env!("CARGO_MANIFEST_DIR");
-        assert!(git_diff_file(root, "Cargo.toml", "bogus").is_err());
+        assert!(git_diff_file(root, "Cargo.toml", "bogus", None).is_err());
     }
 
     #[test]
     fn diff_out_of_root_is_error() {
         let root = env!("CARGO_MANIFEST_DIR");
-        assert!(git_diff_file(root, "../../../etc/passwd", "worktreeVsHead").is_err());
-        assert!(git_file_history(root, "../escape", 10, 0).is_err());
-        assert!(git_diff_commit(root, "0000000", "../escape").is_err());
+        assert!(git_diff_file(root, "../../../etc/passwd", "worktreeVsHead", None).is_err());
+        assert!(git_file_history(root, "../escape", 10, 0, None).is_err());
+        assert!(git_diff_commit(root, "0000000", "../escape", None).is_err());
     }
 
     #[test]
     fn diff_commit_rejects_bad_hash() {
         let root = env!("CARGO_MANIFEST_DIR");
         // 유효하지 않은 해시는 sanitize 이전에 거부.
-        assert!(git_diff_commit(root, "not-a-hash", "Cargo.toml").is_err());
+        assert!(git_diff_commit(root, "not-a-hash", "Cargo.toml", None).is_err());
     }
 
     /// 실제 저장소에서 파일 히스토리를 조회하는 스모크. workdir.rs는 커밋
@@ -456,7 +510,7 @@ mod tests {
     #[test]
     fn this_repo_file_history_smoke() {
         let root = env!("CARGO_MANIFEST_DIR");
-        let r = git_file_history(root, "src/workdir.rs", 10, 0).unwrap();
+        let r = git_file_history(root, "src/workdir.rs", 10, 0, None).unwrap();
         assert!(!r.timed_out);
         assert!(
             !r.commits.is_empty(),
@@ -471,7 +525,7 @@ mod tests {
     fn this_repo_diff_commit_smoke() {
         let root = env!("CARGO_MANIFEST_DIR");
         let r =
-            git_diff_commit(root, "dd7c2d861e6c0619e58bed7340efebe2ae7915db", "src/workdir.rs")
+            git_diff_commit(root, "dd7c2d861e6c0619e58bed7340efebe2ae7915db", "src/workdir.rs", None)
                 .unwrap();
         assert!(!r.timed_out);
         // 그 커밋이 workdir.rs를 새로 추가했으므로 diff에 파일 헤더가 있어야 한다.
@@ -516,7 +570,7 @@ mod tests {
     #[test]
     fn commit_files_rejects_bad_hash() {
         let root = env!("CARGO_MANIFEST_DIR");
-        assert!(git_commit_files(root, "not-a-hash", 100, 0).is_err());
+        assert!(git_commit_files(root, "not-a-hash", 100, 0, None).is_err());
     }
 
     /// 실제 커밋(#11 도입, dd7c2d8)의 변경파일 목록 스모크. 그 커밋은 workdir.rs를
@@ -524,7 +578,7 @@ mod tests {
     #[test]
     fn this_repo_commit_files_smoke() {
         let root = env!("CARGO_MANIFEST_DIR");
-        let r = git_commit_files(root, "dd7c2d861e6c0619e58bed7340efebe2ae7915db", 500, 0).unwrap();
+        let r = git_commit_files(root, "dd7c2d861e6c0619e58bed7340efebe2ae7915db", 500, 0, None).unwrap();
         assert!(!r.timed_out);
         assert!(
             r.files.iter().any(|f| f.path == "src-tauri/src/workdir.rs" && f.status == "A"),
@@ -537,10 +591,10 @@ mod tests {
     #[test]
     fn this_repo_commit_files_paginates() {
         let root = env!("CARGO_MANIFEST_DIR");
-        let p0 = git_commit_files(root, "dd7c2d861e6c0619e58bed7340efebe2ae7915db", 1, 0).unwrap();
+        let p0 = git_commit_files(root, "dd7c2d861e6c0619e58bed7340efebe2ae7915db", 1, 0, None).unwrap();
         assert_eq!(p0.files.len(), 1);
         assert!(p0.has_more, "이 커밋은 파일이 여러 개라 has_more여야 함");
-        let p1 = git_commit_files(root, "dd7c2d861e6c0619e58bed7340efebe2ae7915db", 1, 1).unwrap();
+        let p1 = git_commit_files(root, "dd7c2d861e6c0619e58bed7340efebe2ae7915db", 1, 1, None).unwrap();
         assert_eq!(p1.files.len(), 1);
         assert_ne!(p0.files[0].path, p1.files[0].path, "skip이 다음 파일을 줘야 함");
     }
@@ -549,7 +603,7 @@ mod tests {
     #[test]
     fn this_repo_repo_log_smoke() {
         let root = env!("CARGO_MANIFEST_DIR");
-        let r = git_repo_log(root, 5, 0, false, "").unwrap();
+        let r = git_repo_log(root, 5, 0, false, "", None).unwrap();
         assert!(!r.timed_out);
         assert_eq!(r.commits.len(), 5);
         assert!(r.has_more);
@@ -562,11 +616,11 @@ mod tests {
     fn this_repo_repo_log_search() {
         let root = env!("CARGO_MANIFEST_DIR");
         // 커밋 메시지에 흔한 접두 "feat" 검색(대소문자 무시).
-        let hit = git_repo_log(root, 50, 0, false, "FEAT").unwrap();
+        let hit = git_repo_log(root, 50, 0, false, "FEAT", None).unwrap();
         assert!(!hit.commits.is_empty(), "feat 커밋이 있어야 함");
         assert!(hit.commits.iter().all(|c| c.subject.to_lowercase().contains("feat")));
         // 존재하지 않을 매우 특이한 문자열.
-        let miss = git_repo_log(root, 50, 0, false, "zzz_no_such_commit_xyzzy_qqq").unwrap();
+        let miss = git_repo_log(root, 50, 0, false, "zzz_no_such_commit_xyzzy_qqq", None).unwrap();
         assert!(miss.commits.is_empty());
     }
 }

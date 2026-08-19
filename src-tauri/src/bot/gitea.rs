@@ -45,6 +45,8 @@ fn run_git(args: &[&str], cwd: &Path, timeout: Duration) -> Run {
         envs: &[("LC_ALL", "C")],
         timeout,
         max_stdout_bytes: None,
+        // 취소 없음: slug 감지는 백그라운드 단발 조회라 취소 지점이 없다.
+        cancel: None,
     });
     match run.outcome {
         ProcOutcome::SpawnFailed => Run {
@@ -57,7 +59,9 @@ fn run_git(args: &[&str], cwd: &Path, timeout: Duration) -> Run {
             success,
             stdout: run.stdout,
         },
-        ProcOutcome::TimedOut | ProcOutcome::Overflowed => Run {
+        // Canceled는 `cancel: None`이라 나올 수 없지만, 나온다면 타임아웃과
+        // 같은 "결과를 못 얻음"으로 귀결시킨다.
+        ProcOutcome::TimedOut | ProcOutcome::Overflowed | ProcOutcome::Canceled => Run {
             spawn_failed: false,
             success: false,
             stdout: run.stdout,

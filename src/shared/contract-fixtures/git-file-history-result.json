@@ -9,5 +9,6 @@
     }
   ],
   "hasMore": false,
-  "timedOut": false
+  "timedOut": false,
+  "canceled": false
 }

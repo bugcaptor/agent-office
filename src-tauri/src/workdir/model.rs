@@ -45,7 +45,8 @@ pub struct GitFileStatus {
 }
 
 /// git 상태 조회 결과. git 저장소가 아니거나(is_repo=false) 타임아웃
-/// (timed_out=true)이면 entries는 비어 있고 프런트는 조용히 뱃지를 생략한다.
+/// (timed_out=true)·사용자 취소(canceled=true)면 entries는 비어 있고 프런트는
+/// 조용히 뱃지를 생략한다(취소만 "다시 시도" 안내를 함께 띄운다).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitStatusResult {
@@ -60,6 +61,8 @@ pub struct GitStatusResult {
     pub entries: Vec<GitFileStatus>,
     /// 타임아웃으로 조회를 중단했는지.
     pub timed_out: bool,
+    /// 사용자가 조회를 취소했는지(에러가 아니라 정상 응답의 상태).
+    pub canceled: bool,
     /// 엔트리 상한(MAX_STATUS_ENTRIES)에 걸려 일부만 담겼는지(이슈 #70).
     pub truncated: bool,
 }
@@ -74,6 +77,7 @@ impl GitStatusResult {
             behind: 0,
             entries: Vec::new(),
             timed_out: false,
+            canceled: false,
             truncated: false,
         }
     }
@@ -87,6 +91,22 @@ impl GitStatusResult {
             behind: 0,
             entries: Vec::new(),
             timed_out: true,
+            canceled: false,
+            truncated: false,
+        }
+    }
+
+    /// 취소 응답(브랜치/엔트리 없이 플래그만). 프런트는 "조회를 취소했습니다"와
+    /// 다시 시도 버튼을 띄운다.
+    pub(super) fn canceled() -> Self {
+        Self {
+            is_repo: true,
+            branch: None,
+            ahead: 0,
+            behind: 0,
+            entries: Vec::new(),
+            timed_out: false,
+            canceled: true,
             truncated: false,
         }
     }
@@ -94,7 +114,8 @@ impl GitStatusResult {
 
 /// diff 조회 결과. `diff`는 unified diff 텍스트(변경 없으면 빈 문자열),
 /// `binary`는 git이 바이너리로 판단했는지, `truncated`는 상한(바이트/줄)에 걸려
-/// 잘렸는지, `timed_out`은 타임아웃으로 조회를 중단했는지.
+/// 잘렸는지, `timed_out`은 타임아웃으로 조회를 중단했는지, `canceled`는 사용자가
+/// 조회를 취소했는지.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitDiffResult {
@@ -102,6 +123,7 @@ pub struct GitDiffResult {
     pub binary: bool,
     pub truncated: bool,
     pub timed_out: bool,
+    pub canceled: bool,
 }
 
 /// 파일 히스토리 커밋 1건. `hash`는 full 40-hex, `short_hash`는 축약,
@@ -117,13 +139,14 @@ pub struct GitCommitEntry {
 }
 
 /// `git_file_history` 결과. `has_more`는 요청 limit만큼 다 채웠는지(더 있을 수
-/// 있음), `timed_out`은 타임아웃 여부.
+/// 있음), `timed_out`은 타임아웃 여부, `canceled`는 사용자 취소 여부.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitFileHistoryResult {
     pub commits: Vec<GitCommitEntry>,
     pub has_more: bool,
     pub timed_out: bool,
+    pub canceled: bool,
 }
 
 /// 한 커밋이 바꾼 파일 1건. `path`는 저장소 루트 기준 상대경로(rename이면 새
@@ -136,11 +159,12 @@ pub struct GitCommitFileEntry {
 }
 
 /// `git_commit_files` 결과. `has_more`면 이 페이지 뒤로 파일이 더 남았음(페이징),
-/// `timed_out`은 타임아웃 여부.
+/// `timed_out`은 타임아웃 여부, `canceled`는 사용자 취소 여부.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitFilesResult {
     pub files: Vec<GitCommitFileEntry>,
     pub has_more: bool,
     pub timed_out: bool,
+    pub canceled: bool,
 }

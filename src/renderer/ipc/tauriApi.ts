@@ -343,28 +343,32 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.workdirSearchFiles, { root, query });
   },
 
-  async workdirGitStatus(root) {
-    return await invoke(Commands.workdirGitStatus, { root });
+  async workdirGitStatus(root, opId) {
+    return await invoke(Commands.workdirGitStatus, { root, opId });
   },
 
-  async workdirDiffFile(root, relPath, mode) {
-    return await invoke(Commands.workdirDiffFile, { root, relPath, mode });
+  async workdirDiffFile(root, relPath, mode, opId) {
+    return await invoke(Commands.workdirDiffFile, { root, relPath, mode, opId });
   },
 
-  async workdirFileHistory(root, relPath, limit, skip) {
-    return await invoke(Commands.workdirFileHistory, { root, relPath, limit, skip });
+  async workdirFileHistory(root, relPath, limit, skip, opId) {
+    return await invoke(Commands.workdirFileHistory, { root, relPath, limit, skip, opId });
   },
 
-  async workdirDiffCommit(root, commit, relPath) {
-    return await invoke(Commands.workdirDiffCommit, { root, commit, relPath });
+  async workdirDiffCommit(root, commit, relPath, opId) {
+    return await invoke(Commands.workdirDiffCommit, { root, commit, relPath, opId });
   },
 
-  async workdirCommitFiles(root, commit, limit, skip) {
-    return await invoke(Commands.workdirCommitFiles, { root, commit, limit, skip });
+  async workdirCommitFiles(root, commit, limit, skip, opId) {
+    return await invoke(Commands.workdirCommitFiles, { root, commit, limit, skip, opId });
   },
 
-  async workdirRepoLog(root, limit, skip, allBranches, query) {
-    return await invoke(Commands.workdirRepoLog, { root, limit, skip, allBranches, query });
+  async workdirRepoLog(root, limit, skip, allBranches, query, opId) {
+    return await invoke(Commands.workdirRepoLog, { root, limit, skip, allBranches, query, opId });
+  },
+
+  async workdirGitCancel(opId) {
+    return await invoke(Commands.workdirGitCancel, { opId });
   },
 
   async workdirDifftool(root, relPath, mode, commit) {

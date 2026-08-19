@@ -330,6 +330,15 @@
   background: var(--accent);
   color: #0a0b12;
 }
+/* 진행/중단 안내 옆에 붙는 작은 버튼(취소·다시 시도, 타임아웃 개편). 안내 문구
+   흐름에 얹히므로 wd-btn보다 한 단계 작고 여백도 좁다. */
+.wd-btn-mini {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-width: 1px;
+  margin-left: calc(var(--unit) * 2);
+  vertical-align: middle;
+}
 
 /* 변경점 | 히스토리 탭 */
 .wd-tabs {

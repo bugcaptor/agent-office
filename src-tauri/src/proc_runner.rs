@@ -12,6 +12,11 @@
 // 여기서는 항상 join한다(`rx.recv()`가 이미 리더의 마지막 send를 기다리므로
 // join은 사실상 즉시 끝난다).
 //
+// 협조적 취소(`ProcSpec::cancel`): 폴 루프가 매 틱(15ms)마다 플래그를 확인해
+// 서 있으면 자식을 죽이고 `Canceled`로 끝낸다. 타임아웃과 골격은 같지만 사유를
+// 구분해 돌려준다 -- 호출부(workdir git 조회)가 "시간 초과"와 "사용자가 취소"를
+// 다른 UI로 보여줘야 하기 때문. 플래그를 주지 않으면(None) 종전 동작 그대로다.
+//
 // stderr는 세 호출부 모두 버린다(오류는 종료 코드/빈 stdout으로 판별). 그래서
 // 캡처 옵션을 두지 않고 항상 `Stdio::null()`이다 -- 필요해지면 그때 추가한다.
 
@@ -43,6 +48,9 @@ pub(crate) struct ProcSpec<'a> {
     /// stdout 누적 상한. `Some(n)`이면 n 바이트를 넘는 순간 읽기를 멈추고
     /// 자식을 kill한 뒤 `Overflowed`. `None`이면 EOF까지 무제한으로 읽는다.
     pub(crate) max_stdout_bytes: Option<usize>,
+    /// 협조적 취소 플래그. 폴 루프가 매 틱 확인해 서 있으면 자식을 kill하고
+    /// `Canceled`로 끝낸다. `None`이면 취소 없음(종전 동작).
+    pub(crate) cancel: Option<&'a std::sync::atomic::AtomicBool>,
 }
 
 /// 실행이 어떻게 끝났는지.
@@ -55,6 +63,8 @@ pub(crate) enum ProcOutcome {
     TimedOut,
     /// `max_stdout_bytes` 초과로 kill.
     Overflowed,
+    /// `cancel` 플래그가 서서 kill(사용자가 조회를 그만둠).
+    Canceled,
 }
 
 /// 실행 결과. `stdout`은 종료 사유와 무관하게 리더 스레드가 읽어낸 만큼이다
@@ -129,10 +139,19 @@ pub(crate) fn run(spec: ProcSpec) -> ProcRun {
     });
 
     let deadline = Instant::now() + spec.timeout;
+    // 취소로 끝났는지(타임아웃과 구분해 돌려주기 위한 로컬 플래그).
+    let mut canceled = false;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
             Ok(None) => {
+                // 취소를 먼저 본다 -- 사용자의 명시적 중단이라 사유가 더 구체적이다.
+                if spec.cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+                    canceled = true;
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break None;
+                }
                 if Instant::now() >= deadline || overflowed.load(Ordering::Relaxed) {
                     let _ = child.kill();
                     let _ = child.wait();
@@ -153,8 +172,11 @@ pub(crate) fn run(spec: ProcSpec) -> ProcRun {
     let buf = rx.recv().unwrap_or_default();
     let _ = reader.join();
 
+    // 취소는 다른 어떤 사유보다 우선한다(사용자가 이미 결과를 포기했다).
+    let outcome = if canceled {
+        ProcOutcome::Canceled
     // 상한 초과는 종료 코드보다 우선한다(초과분을 버린 출력은 신뢰할 수 없다).
-    let outcome = if overflowed.load(Ordering::Relaxed) {
+    } else if overflowed.load(Ordering::Relaxed) {
         ProcOutcome::Overflowed
     } else {
         match status {
@@ -191,6 +213,7 @@ mod tests {
             envs: &[],
             timeout: Duration::from_secs(1),
             max_stdout_bytes: None,
+            cancel: None,
         });
         assert!(matches!(run.outcome, ProcOutcome::SpawnFailed));
         assert!(run.stdout.is_empty());
@@ -207,6 +230,7 @@ mod tests {
             envs: &[],
             timeout: Duration::from_secs(10),
             max_stdout_bytes: None,
+            cancel: None,
         });
         assert!(matches!(run.outcome, ProcOutcome::Exited { success: true }));
         assert_eq!(run.stdout, b"hello");
@@ -223,6 +247,7 @@ mod tests {
             envs: &[],
             timeout: Duration::from_secs(10),
             max_stdout_bytes: None,
+            cancel: None,
         });
         assert!(matches!(run.outcome, ProcOutcome::Exited { success: false }));
     }
@@ -240,6 +265,7 @@ mod tests {
             envs: &[],
             timeout: Duration::from_secs(10),
             max_stdout_bytes: None,
+            cancel: None,
         });
         let out = String::from_utf8_lossy(&run.stdout).trim().to_string();
         assert_eq!(out, canon.to_string_lossy());
@@ -256,6 +282,7 @@ mod tests {
             envs: &[("AGENT_OFFICE_TEST_VAR", "42")],
             timeout: Duration::from_secs(10),
             max_stdout_bytes: None,
+            cancel: None,
         });
         assert_eq!(run.stdout, b"42");
     }
@@ -272,6 +299,7 @@ mod tests {
             envs: &[],
             timeout: Duration::from_millis(120),
             max_stdout_bytes: None,
+            cancel: None,
         });
         assert!(matches!(run.outcome, ProcOutcome::TimedOut));
     }
@@ -287,7 +315,56 @@ mod tests {
             envs: &[],
             timeout: Duration::from_secs(10),
             max_stdout_bytes: Some(64 * 1024),
+            cancel: None,
         });
         assert!(matches!(run.outcome, ProcOutcome::Overflowed));
+    }
+
+    /// 취소 플래그가 서면 데드라인(30초)을 기다리지 않고 곧바로 자식을 죽이고
+    /// `Canceled`를 돌려준다 -- 타임아웃과 사유가 구분돼야 한다.
+    #[test]
+    #[cfg(unix)]
+    fn canceled_child_is_killed_promptly() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let flag = cancel.clone();
+        // 다른 스레드에서 잠깐 뒤 취소를 건다(실사용의 IPC 취소 요청 대역).
+        let canceller = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(80));
+            flag.store(true, Ordering::Relaxed);
+        });
+
+        let started = Instant::now();
+        let run = run(ProcSpec {
+            program: "/bin/sh",
+            args: &["-c", "sleep 30"],
+            cwd: None,
+            envs: &[],
+            timeout: Duration::from_secs(30),
+            max_stdout_bytes: None,
+            cancel: Some(&cancel),
+        });
+        let _ = canceller.join();
+
+        assert!(matches!(run.outcome, ProcOutcome::Canceled));
+        // 데드라인이 아니라 취소로 끝났음을 시간으로도 확인(넉넉한 여유).
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    /// 이미 서 있는 플래그로 들어오면 첫 폴에서 바로 취소된다(취소 요청이
+    /// 조회 시작 직후 도착하는 경우).
+    #[test]
+    #[cfg(unix)]
+    fn precanceled_flag_cancels_immediately() {
+        let cancel = AtomicBool::new(true);
+        let run = run(ProcSpec {
+            program: "/bin/sh",
+            args: &["-c", "sleep 30"],
+            cwd: None,
+            envs: &[],
+            timeout: Duration::from_secs(30),
+            max_stdout_bytes: None,
+            cancel: Some(&cancel),
+        });
+        assert!(matches!(run.outcome, ProcOutcome::Canceled));
     }
 }

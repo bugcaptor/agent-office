@@ -84,7 +84,7 @@ mod tests {
     fn nonexistent_root_is_error() {
         // tests 모듈 기준 super::super = workdir(listing의 부모)이므로
         // super::super::status는 workdir::status를 가리킨다.
-        assert!(super::super::status::collect_git_status("/definitely/not/a/dir/xyzzy").is_err());
+        assert!(super::super::status::collect_git_status("/definitely/not/a/dir/xyzzy", None).is_err());
         assert!(list_workdir_files("/definitely/not/a/dir/xyzzy").is_err());
     }
 

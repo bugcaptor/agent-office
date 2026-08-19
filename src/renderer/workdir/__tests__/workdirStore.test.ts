@@ -16,6 +16,7 @@ const {
   commitFiles,
   repoLog,
   difftool,
+  gitCancel,
 } = vi.hoisted(() => ({
   listFiles: vi.fn(),
   searchFiles: vi.fn(),
@@ -28,6 +29,7 @@ const {
   commitFiles: vi.fn(),
   repoLog: vi.fn(),
   difftool: vi.fn(),
+  gitCancel: vi.fn(),
 }));
 
 // gitStatusEnabled/fileIndexBackend를 테스트마다 바꾸기 위한 가변 셋팅.
@@ -48,6 +50,7 @@ vi.mock("../../ipc/tauriApi", () => ({
     workdirCommitFiles: (...a: unknown[]) => commitFiles(...a),
     workdirRepoLog: (...a: unknown[]) => repoLog(...a),
     workdirDifftool: (...a: unknown[]) => difftool(...a),
+    workdirGitCancel: (...a: unknown[]) => gitCancel(...a),
   },
 }));
 vi.mock("../../store/appStore", () => ({
@@ -68,6 +71,7 @@ const cleanRepo = {
   behind: 0,
   entries: [],
   timedOut: false,
+  canceled: false,
   truncated: false,
 };
 
@@ -82,15 +86,16 @@ beforeEach(() => {
   openMarkdownFile.mockReset().mockResolvedValue(undefined);
   diffFile
     .mockReset()
-    .mockResolvedValue({ diff: "@@ -1 +1 @@\n-a\n+b\n", binary: false, truncated: false, timedOut: false });
+    .mockResolvedValue({ diff: "@@ -1 +1 @@\n-a\n+b\n", binary: false, truncated: false, timedOut: false, canceled: false });
   fileHistory.mockReset().mockResolvedValue({
     commits: [{ hash: "a".repeat(40), shortHash: "aaaaaaa", author: "A", date: "d", subject: "s" }],
     hasMore: false,
     timedOut: false,
+    canceled: false,
   });
   diffCommit
     .mockReset()
-    .mockResolvedValue({ diff: "diff --git\n", binary: false, truncated: false, timedOut: false });
+    .mockResolvedValue({ diff: "diff --git\n", binary: false, truncated: false, timedOut: false, canceled: false });
   commitFiles.mockReset().mockResolvedValue({
     files: [
       { path: "src/a.rs", status: "M" },
@@ -98,13 +103,16 @@ beforeEach(() => {
     ],
     hasMore: false,
     timedOut: false,
+    canceled: false,
   });
   repoLog.mockReset().mockResolvedValue({
     commits: [{ hash: "c".repeat(40), shortHash: "ccccccc", author: "C", date: "d", subject: "feat: x" }],
     hasMore: false,
     timedOut: false,
+    canceled: false,
   });
   difftool.mockReset().mockResolvedValue(undefined);
+  gitCancel.mockReset().mockResolvedValue(undefined);
 });
 
 describe("순수 헬퍼", () => {
@@ -138,7 +146,7 @@ describe("팔레트 열기", () => {
       changedOnly: false,
     });
     expect(listFiles).toHaveBeenCalledWith("/root");
-    expect(gitStatus).toHaveBeenCalledWith("/root");
+    expect(gitStatus).toHaveBeenCalledWith("/root", expect.any(String));
 
     await vi.waitFor(() => {
       expect(useWorkdirStore.getState().listing["/root"].files).toHaveLength(1);
@@ -152,6 +160,141 @@ describe("팔레트 열기", () => {
     s.setSelectedIndex(5);
     s.setChangedOnly(true);
     expect(useWorkdirStore.getState().palette).toMatchObject({ changedOnly: true, selectedIndex: 0 });
+  });
+});
+
+describe("git 조회 취소(타임아웃 개편)", () => {
+  /** 응답을 임의 시점에 풀 수 있는 pending 목을 만든다(진행 중 상태 재현). */
+  function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  it("refreshGit은 opId를 함께 넘기고 진행 중에는 그 opId를 보관한다", async () => {
+    const d = deferred<typeof cleanRepo>();
+    gitStatus.mockImplementationOnce(() => d.promise);
+    const p = useWorkdirStore.getState().refreshGit("/root");
+
+    const opId = useWorkdirStore.getState().gitOpId["/root"];
+    expect(opId).toBeTruthy();
+    expect(gitStatus).toHaveBeenCalledWith("/root", opId);
+    expect(useWorkdirStore.getState().gitLoading["/root"]).toBe(true);
+
+    d.resolve(cleanRepo);
+    await p;
+    // 끝나면 진행 중 표시와 opId가 함께 해제된다.
+    expect(useWorkdirStore.getState().gitOpId["/root"]).toBeUndefined();
+    expect(useWorkdirStore.getState().gitLoading["/root"]).toBe(false);
+  });
+
+  it("진행 중인 root에 대한 refreshGit은 중복 조회하지 않는다", async () => {
+    const d = deferred<typeof cleanRepo>();
+    gitStatus.mockImplementationOnce(() => d.promise);
+    const p1 = useWorkdirStore.getState().refreshGit("/root");
+    const p2 = useWorkdirStore.getState().refreshGit("/root"); // 스킵돼야 한다.
+
+    expect(gitStatus).toHaveBeenCalledTimes(1);
+    d.resolve(cleanRepo);
+    await Promise.all([p1, p2]);
+  });
+
+  it("cancelOp은 그 opId로 백엔드 취소를 부른다", () => {
+    useWorkdirStore.getState().cancelOp("op-1");
+    expect(gitCancel).toHaveBeenCalledWith("op-1");
+    // opId가 없으면 no-op.
+    gitCancel.mockClear();
+    useWorkdirStore.getState().cancelOp(undefined);
+    expect(gitCancel).not.toHaveBeenCalled();
+  });
+
+  it("closePalette는 진행 중인 git status 조회를 자동 취소한다", async () => {
+    const d = deferred<typeof cleanRepo>();
+    gitStatus.mockImplementationOnce(() => d.promise);
+    useWorkdirStore.getState().openPalette("/root", "agent1");
+    const opId = useWorkdirStore.getState().gitOpId["/root"];
+    expect(opId).toBeTruthy();
+
+    useWorkdirStore.getState().closePalette();
+    expect(gitCancel).toHaveBeenCalledWith(opId);
+    d.resolve(cleanRepo);
+  });
+
+  it("closeDetail은 진행 중인 diff 조회를 자동 취소한다", () => {
+    const d = deferred<{ diff: string; binary: boolean; truncated: boolean; timedOut: boolean; canceled: boolean }>();
+    diffFile.mockImplementationOnce(() => d.promise);
+    const s = useWorkdirStore.getState();
+    s.openDetail("/root", "src/a.rs", "a.rs", "M");
+    const opId = useWorkdirStore.getState().detail?.diffOpId;
+    expect(opId).toBeTruthy();
+
+    s.closeDetail();
+    expect(gitCancel).toHaveBeenCalledWith(opId);
+    d.resolve({ diff: "", binary: false, truncated: false, timedOut: false, canceled: false });
+  });
+
+  it("setDiffMode는 이전 관점의 조회를 취소하고 새 opId로 다시 건다", () => {
+    const d = deferred<{ diff: string; binary: boolean; truncated: boolean; timedOut: boolean; canceled: boolean }>();
+    diffFile.mockImplementationOnce(() => d.promise);
+    const s = useWorkdirStore.getState();
+    s.openDetail("/root", "src/a.rs", "a.rs", "M");
+    const first = useWorkdirStore.getState().detail?.diffOpId;
+
+    s.setDiffMode("indexVsHead");
+    expect(gitCancel).toHaveBeenCalledWith(first);
+    const second = useWorkdirStore.getState().detail?.diffOpId;
+    expect(second).toBeTruthy();
+    expect(second).not.toBe(first);
+    d.resolve({ diff: "", binary: false, truncated: false, timedOut: false, canceled: false });
+  });
+
+  it("canceled=true diff 응답은 상태에 남고 재시도는 새 opId로 재조회한다", async () => {
+    diffFile.mockResolvedValueOnce({
+      diff: "",
+      binary: false,
+      truncated: false,
+      timedOut: false,
+      canceled: true,
+    });
+    const s = useWorkdirStore.getState();
+    s.openDetail("/root", "src/a.rs", "a.rs", "M");
+    await vi.waitFor(() => {
+      expect(useWorkdirStore.getState().detail?.diff?.canceled).toBe(true);
+    });
+    const firstOp = diffFile.mock.calls[0][3];
+
+    // 재시도: 새 opId로 다시 조회하고 취소 결과는 진행 표시로 대체된다.
+    await useWorkdirStore.getState().loadDiff();
+    expect(diffFile).toHaveBeenCalledTimes(2);
+    expect(diffFile.mock.calls[1][3]).not.toBe(firstOp);
+    expect(useWorkdirStore.getState().detail?.diff?.canceled).toBe(false);
+  });
+
+  it("취소된 히스토리는 빈 목록이 아니라 historyCanceled로 남는다", async () => {
+    fileHistory.mockResolvedValueOnce({
+      commits: [],
+      hasMore: false,
+      timedOut: false,
+      canceled: true,
+    });
+    const s = useWorkdirStore.getState();
+    s.openDetail("/root", "src/clean.rs", "clean.rs", undefined); // 히스토리 탭 기본
+    await vi.waitFor(() => {
+      expect(useWorkdirStore.getState().detail?.historyCanceled).toBe(true);
+    });
+    // "커밋 없음"과 구분하기 위해 목록은 undefined로 남긴다.
+    expect(useWorkdirStore.getState().detail?.history).toBeUndefined();
+  });
+
+  it("취소된 리포 로그는 commits를 비운 채 canceled로 남는다", async () => {
+    repoLog.mockResolvedValueOnce({ commits: [], hasMore: false, timedOut: false, canceled: true });
+    const s = useWorkdirStore.getState();
+    s.openPalette("/root", "agent1");
+    await s.loadRepoLog(true);
+    expect(useWorkdirStore.getState().repoLog["/root"].canceled).toBe(true);
+    expect(useWorkdirStore.getState().repoLog["/root"].commits).toBeUndefined();
   });
 });
 
@@ -202,7 +345,7 @@ describe("상세(변경점) 페인", () => {
 
     const d0 = useWorkdirStore.getState().detail;
     expect(d0).toMatchObject({ relPath: "src/a.rs", diffMode: "worktreeVsHead", isUntracked: false, tab: "diff" });
-    expect(diffFile).toHaveBeenCalledWith("/root", "src/a.rs", "worktreeVsHead");
+    expect(diffFile).toHaveBeenCalledWith("/root", "src/a.rs", "worktreeVsHead", expect.any(String));
 
     await vi.waitFor(() => {
       expect(useWorkdirStore.getState().detail?.diff?.diff).toContain("+b");
@@ -213,7 +356,7 @@ describe("상세(변경점) 페인", () => {
     const s = useWorkdirStore.getState();
     s.openDetail("/root", "new.txt", "new.txt", "?");
     expect(useWorkdirStore.getState().detail).toMatchObject({ isUntracked: true, diffMode: "untracked" });
-    expect(diffFile).toHaveBeenCalledWith("/root", "new.txt", "untracked");
+    expect(diffFile).toHaveBeenCalledWith("/root", "new.txt", "untracked", expect.any(String));
   });
 
   it("setDiffMode는 관점을 바꿔 재조회하고 gen을 올려 stale 응답을 폐기한다", async () => {
@@ -225,7 +368,7 @@ describe("상세(변경점) 페인", () => {
     const d = useWorkdirStore.getState().detail!;
     expect(d.diffMode).toBe("indexVsHead");
     expect(d.gen).toBe(gen0 + 1);
-    expect(diffFile).toHaveBeenLastCalledWith("/root", "src/a.rs", "indexVsHead");
+    expect(diffFile).toHaveBeenLastCalledWith("/root", "src/a.rs", "indexVsHead", expect.any(String));
   });
 
   it("히스토리 탭 최초 진입 시 지연 로드한다", async () => {
@@ -234,7 +377,7 @@ describe("상세(변경점) 페인", () => {
     expect(fileHistory).not.toHaveBeenCalled();
 
     s.setDetailTab("history");
-    expect(fileHistory).toHaveBeenCalledWith("/root", "src/a.rs", 50, 0);
+    expect(fileHistory).toHaveBeenCalledWith("/root", "src/a.rs", 50, 0, expect.any(String));
     await vi.waitFor(() => {
       expect(useWorkdirStore.getState().detail?.history).toHaveLength(1);
     });
@@ -245,7 +388,7 @@ describe("상세(변경점) 페인", () => {
     s.openDetail("/root", "src/a.rs", "a.rs", "M");
     await s.selectCommit("a".repeat(40));
 
-    expect(diffCommit).toHaveBeenCalledWith("/root", "a".repeat(40), "src/a.rs");
+    expect(diffCommit).toHaveBeenCalledWith("/root", "a".repeat(40), "src/a.rs", expect.any(String));
     expect(useWorkdirStore.getState().detail).toMatchObject({ selectedCommit: "a".repeat(40) });
     expect(useWorkdirStore.getState().detail?.commitDiff?.diff).toContain("diff --git");
   });
@@ -280,7 +423,7 @@ describe("메뉴 우선 진입(이슈 #54)", () => {
       tab: "history",
     });
     // 히스토리 탭이 기본이라 즉시 히스토리를 로드한다.
-    expect(fileHistory).toHaveBeenCalledWith("/root", "src/clean.rs", 50, 0);
+    expect(fileHistory).toHaveBeenCalledWith("/root", "src/clean.rs", 50, 0, expect.any(String));
   });
 
   it("openExternal은 .md도 강제로 외부 에디터로 연다(팔레트 유지)", () => {
@@ -337,7 +480,7 @@ describe("인라인 커밋 확장(이슈 #54)", () => {
     const s = useWorkdirStore.getState();
     s.openDetail("/root", "src/a.rs", "a.rs", "M");
     await s.toggleCommitExpand("f".repeat(40));
-    expect(commitFiles).toHaveBeenCalledWith("/root", "f".repeat(40), 100, 0);
+    expect(commitFiles).toHaveBeenCalledWith("/root", "f".repeat(40), 100, 0, expect.any(String));
     expect(useWorkdirStore.getState().detail).toMatchObject({ expandedCommit: "f".repeat(40) });
     expect(useWorkdirStore.getState().detail?.commitFiles).toHaveLength(2);
 
@@ -349,7 +492,7 @@ describe("인라인 커밋 확장(이슈 #54)", () => {
     const s = useWorkdirStore.getState();
     s.openDetail("/root", "src/a.rs", "a.rs", "M");
     await s.selectCommitFile("f".repeat(40), "src/b.rs");
-    expect(diffCommit).toHaveBeenCalledWith("/root", "f".repeat(40), "src/b.rs");
+    expect(diffCommit).toHaveBeenCalledWith("/root", "f".repeat(40), "src/b.rs", expect.any(String));
     expect(useWorkdirStore.getState().detail).toMatchObject({
       selectedCommit: "f".repeat(40),
       selectedCommitFile: "src/b.rs",
@@ -360,7 +503,7 @@ describe("인라인 커밋 확장(이슈 #54)", () => {
     const s = useWorkdirStore.getState();
     s.openDetail("/root", "src/a.rs", "a.rs", "M");
     await s.selectCommit("f".repeat(40));
-    expect(diffCommit).toHaveBeenCalledWith("/root", "f".repeat(40), "src/a.rs");
+    expect(diffCommit).toHaveBeenCalledWith("/root", "f".repeat(40), "src/a.rs", expect.any(String));
     expect(useWorkdirStore.getState().detail?.selectedCommitFile).toBe("src/a.rs");
   });
 });
@@ -371,7 +514,7 @@ describe("커밋 로그 브라우저(이슈 #54)", () => {
     s.openPalette("/root", "agent1");
     s.setViewMode("log");
     expect(useWorkdirStore.getState().palette?.viewMode).toBe("log");
-    expect(repoLog).toHaveBeenCalledWith("/root", 50, 0, false, "");
+    expect(repoLog).toHaveBeenCalledWith("/root", 50, 0, false, "", expect.any(String));
     await vi.waitFor(() => {
       expect(useWorkdirStore.getState().repoLog["/root"].commits).toHaveLength(1);
     });
@@ -382,11 +525,11 @@ describe("커밋 로그 브라우저(이슈 #54)", () => {
     s.openPalette("/root", "agent1");
     await s.loadRepoLog(true);
     await s.selectRepoCommit("c".repeat(40));
-    expect(commitFiles).toHaveBeenCalledWith("/root", "c".repeat(40), 100, 0);
+    expect(commitFiles).toHaveBeenCalledWith("/root", "c".repeat(40), 100, 0, expect.any(String));
     expect(useWorkdirStore.getState().repoLog["/root"].files).toHaveLength(2);
 
     await s.selectRepoFile("c".repeat(40), "src/a.rs");
-    expect(diffCommit).toHaveBeenCalledWith("/root", "c".repeat(40), "src/a.rs");
+    expect(diffCommit).toHaveBeenCalledWith("/root", "c".repeat(40), "src/a.rs", expect.any(String));
     expect(useWorkdirStore.getState().repoLog["/root"].selectedFile).toBe("src/a.rs");
     expect(useWorkdirStore.getState().repoLog["/root"].fileDiff?.diff).toContain("diff --git");
   });
@@ -398,7 +541,7 @@ describe("커밋 로그 브라우저(이슈 #54)", () => {
     repoLog.mockClear();
     s.setRepoLogQuery("feat");
     expect(useWorkdirStore.getState().repoLog["/root"].query).toBe("feat");
-    expect(repoLog).toHaveBeenCalledWith("/root", 50, 0, false, "feat");
+    expect(repoLog).toHaveBeenCalledWith("/root", 50, 0, false, "feat", expect.any(String));
   });
 
   it("전체 브랜치 토글은 --all로 재조회한다", async () => {
@@ -407,7 +550,7 @@ describe("커밋 로그 브라우저(이슈 #54)", () => {
     await s.loadRepoLog(true);
     repoLog.mockClear();
     s.setRepoLogAllBranches(true);
-    expect(repoLog).toHaveBeenCalledWith("/root", 50, 0, true, "");
+    expect(repoLog).toHaveBeenCalledWith("/root", 50, 0, true, "", expect.any(String));
   });
 
   it("더 보기는 다음 페이지를 이어 붙인다", async () => {
@@ -415,6 +558,7 @@ describe("커밋 로그 브라우저(이슈 #54)", () => {
       commits: [{ hash: "1".repeat(40), shortHash: "1111111", author: "A", date: "d", subject: "s1" }],
       hasMore: true,
       timedOut: false,
+      canceled: false,
     });
     const s = useWorkdirStore.getState();
     s.openPalette("/root", "agent1");
@@ -425,9 +569,10 @@ describe("커밋 로그 브라우저(이슈 #54)", () => {
       commits: [{ hash: "2".repeat(40), shortHash: "2222222", author: "B", date: "d", subject: "s2" }],
       hasMore: false,
       timedOut: false,
+      canceled: false,
     });
     await s.loadRepoLog(false);
-    expect(repoLog).toHaveBeenLastCalledWith("/root", 50, 1, false, "");
+    expect(repoLog).toHaveBeenLastCalledWith("/root", 50, 1, false, "", expect.any(String));
     expect(useWorkdirStore.getState().repoLog["/root"].commits).toHaveLength(2);
   });
 });

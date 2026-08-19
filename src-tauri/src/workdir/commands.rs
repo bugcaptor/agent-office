@@ -1,12 +1,20 @@
 // src-tauri/src/workdir/commands.rs
 //
-// `#[tauri::command]` 얇은 래퍼 9개. lib.rs의 `tauri::generate_handler![...]`가
+// `#[tauri::command]` 얇은 래퍼 10개. lib.rs의 `tauri::generate_handler![...]`가
 // `workdir::workdir_*` 경로로 이 함수들을 직접 등록하므로(mod.rs의
 // `pub use commands::*;`로 재수출), 함수 시그니처와 이름은 그대로 유지해야 한다.
 //
 // 각 래퍼는 테스트 가능한 순수 함수(listing/status/diff)에 위임하고, 시작 폴더
 // UI가 `~/dev/foo`류 입력을 허용하므로 세션 생성과 동일한 틸드 확장을 거친다
 // (open_in_vscode 관례).
+//
+// **git 조회는 blocking + 취소 가능**(작업 폴더 보기 타임아웃 개편): 타임아웃이
+// 분 단위(status 120s / diff·log 300s)로 늘어나면서, 그대로 async 함수 본문에서
+// git을 돌리면 Tauri async 런타임 워커 하나를 그 시간 내내 점유해 다른 커맨드를
+// 굶긴다. 그래서 조회 계열 본문은 전부 `spawn_blocking`으로 옮겼다. 대신 각
+// 커맨드는 프런트가 만든 `opId`를 받아 취소 플래그를 등록하고,
+// `workdir_git_cancel(opId)`이 그 플래그를 세워 자식 git을 즉시 죽인다 --
+// "타임아웃은 백스톱, 1차 탈출구는 사용자 취소" 모델의 IPC 면이다.
 
 use super::diff::{
     git_commit_files, git_diff_commit, git_diff_file, git_file_history, git_repo_log,
@@ -18,6 +26,19 @@ use super::model::{
     WorkdirSearchResult,
 };
 use super::status::collect_git_status;
+
+/// blocking 스레드에서 돌린 조회 결과를 커맨드 반환값으로 되돌린다. join 실패
+/// (패닉/취소)는 사용자에게 보여줄 한국어 문자열로 바꾼다 -- 정상 흐름에서는
+/// 나오지 않는다.
+async fn run_blocking<T, F>(f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("git 조회를 실행하지 못했습니다: {e}"))?
+}
 
 /// `list_workdir_files`의 Tauri 커맨드 래퍼. 시작 폴더 UI가 `~/dev/foo`류
 /// 입력을 허용하므로 세션 생성과 동일한 틸드 확장을 거친다(open_in_vscode 관례).
@@ -52,10 +73,15 @@ pub async fn workdir_search_files(
     search_workdir_files(&crate::session::manager::expand_tilde(root), &query)
 }
 
-/// `collect_git_status`의 Tauri 커맨드 래퍼.
+/// `collect_git_status`의 Tauri 커맨드 래퍼. `opId`를 주면 조회 중
+/// `workdir_git_cancel`로 끊을 수 있다.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn workdir_git_status(root: String) -> Result<GitStatusResult, String> {
-    collect_git_status(&crate::session::manager::expand_tilde(root))
+pub async fn workdir_git_status(
+    root: String,
+    op_id: Option<String>,
+) -> Result<GitStatusResult, String> {
+    let root = crate::session::manager::expand_tilde(root);
+    run_blocking(move || collect_git_status(&root, op_id.as_deref())).await
 }
 
 /// `git_diff_file`의 Tauri 커맨드 래퍼.
@@ -64,12 +90,10 @@ pub async fn workdir_diff_file(
     root: String,
     rel_path: String,
     mode: String,
+    op_id: Option<String>,
 ) -> Result<GitDiffResult, String> {
-    git_diff_file(
-        &crate::session::manager::expand_tilde(root),
-        &rel_path,
-        &mode,
-    )
+    let root = crate::session::manager::expand_tilde(root);
+    run_blocking(move || git_diff_file(&root, &rel_path, &mode, op_id.as_deref())).await
 }
 
 /// `git_file_history`의 Tauri 커맨드 래퍼.
@@ -79,13 +103,10 @@ pub async fn workdir_file_history(
     rel_path: String,
     limit: usize,
     skip: usize,
+    op_id: Option<String>,
 ) -> Result<GitFileHistoryResult, String> {
-    git_file_history(
-        &crate::session::manager::expand_tilde(root),
-        &rel_path,
-        limit,
-        skip,
-    )
+    let root = crate::session::manager::expand_tilde(root);
+    run_blocking(move || git_file_history(&root, &rel_path, limit, skip, op_id.as_deref())).await
 }
 
 /// `git_diff_commit`의 Tauri 커맨드 래퍼.
@@ -94,12 +115,10 @@ pub async fn workdir_diff_commit(
     root: String,
     commit: String,
     rel_path: String,
+    op_id: Option<String>,
 ) -> Result<GitDiffResult, String> {
-    git_diff_commit(
-        &crate::session::manager::expand_tilde(root),
-        &commit,
-        &rel_path,
-    )
+    let root = crate::session::manager::expand_tilde(root);
+    run_blocking(move || git_diff_commit(&root, &commit, &rel_path, op_id.as_deref())).await
 }
 
 /// `git_commit_files`의 Tauri 커맨드 래퍼.
@@ -109,13 +128,10 @@ pub async fn workdir_commit_files(
     commit: String,
     limit: usize,
     skip: usize,
+    op_id: Option<String>,
 ) -> Result<GitCommitFilesResult, String> {
-    git_commit_files(
-        &crate::session::manager::expand_tilde(root),
-        &commit,
-        limit,
-        skip,
-    )
+    let root = crate::session::manager::expand_tilde(root);
+    run_blocking(move || git_commit_files(&root, &commit, limit, skip, op_id.as_deref())).await
 }
 
 /// `git_repo_log`의 Tauri 커맨드 래퍼.
@@ -126,14 +142,22 @@ pub async fn workdir_repo_log(
     skip: usize,
     all_branches: bool,
     query: String,
+    op_id: Option<String>,
 ) -> Result<GitFileHistoryResult, String> {
-    git_repo_log(
-        &crate::session::manager::expand_tilde(root),
-        limit,
-        skip,
-        all_branches,
-        &query,
-    )
+    let root = crate::session::manager::expand_tilde(root);
+    run_blocking(move || {
+        git_repo_log(&root, limit, skip, all_branches, &query, op_id.as_deref())
+    })
+    .await
+}
+
+/// 진행 중인 git 조회에 취소를 요청한다(fire-and-forget). 해당 `opId`의 조회가
+/// 이미 끝났거나 아직 시작되지 않았으면 조용한 no-op이므로 항상 성공한다 --
+/// 프런트가 취소 응답을 기다릴 필요가 없다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn workdir_git_cancel(op_id: String) -> Result<(), String> {
+    super::git_runner::request_cancel(&op_id);
+    Ok(())
 }
 
 /// `launch_difftool`의 Tauri 커맨드 래퍼. `commit`이 빈 문자열/미지정이면 현재

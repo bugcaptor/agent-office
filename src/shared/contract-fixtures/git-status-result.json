@@ -11,5 +11,6 @@
     }
   ],
   "timedOut": false,
+  "canceled": false,
   "truncated": false
 }

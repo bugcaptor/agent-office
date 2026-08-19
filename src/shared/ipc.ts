@@ -104,7 +104,9 @@ export const Commands = {
   markdownReadFile: "markdown_read_file",
   markdownWriteFile: "markdown_write_file",
   // 작업 폴더 보기(이슈 #11) — 에이전트 cwd를 root로 전체 파일 목록과, 파일별
-  // git 상태(porcelain v2)를 돌려준다. git 조회는 거대 저장소 대비 3초 타임아웃.
+  // git 상태(porcelain v2)를 돌려준다. git 조회의 1차 탈출구는 사용자 취소
+  // (`opId` + workdirGitCancel)이고, 타임아웃(status 120s/조회 300s)은 매달린
+  // 자식을 결국 정리하는 백스톱이다.
   workdirListFiles: "workdir_list_files",
   // 서버사이드 검색(이슈 #67) — 목록의 5000개 상한 밖 파일도 Everything
   // 백엔드가 켜져 있으면 검색어로 다시 찾아온다. Walker 백엔드/빈 쿼리/es.exe
@@ -120,6 +122,9 @@ export const Commands = {
   // 저장소 전체 로그(검색·전체브랜치).
   workdirCommitFiles: "workdir_commit_files",
   workdirRepoLog: "workdir_repo_log",
+  // 진행 중인 git 조회 취소 — 조회 커맨드에 넘긴 `opId`로 자식 git을 죽인다.
+  // 이미 끝났거나 없는 opId는 조용한 no-op(fire-and-forget으로 부른다).
+  workdirGitCancel: "workdir_git_cancel",
   workdirDifftool: "workdir_difftool",
 } as const;
 

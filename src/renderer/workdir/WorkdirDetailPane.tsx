@@ -8,10 +8,39 @@
 //   - 히스토리: `git log --follow` 커밋 목록. 커밋을 펼치면(▸) 그 커밋이 바꾼 파일
 //     목록을 인라인으로 보여주고(더 보기…로 페이징), 파일을 고르면 그 커밋의 해당
 //     파일 diff를 하단에 띄운다. 펼치지 않고 커밋만 고르면 지금 파일의 그 커밋 diff.
+//
+// 조회 중단 UI(타임아웃 개편): 거대 저장소에서는 조회가 분 단위로 걸릴 수 있으므로
+// 모든 "불러오는 중…" 자리에 **취소** 버튼을 함께 둔다(스토어의 opId로 자식 git을
+// 죽인다). 중단된 결과는 사유를 구분해 보여준다 — 사용자가 끊었으면 "조회를
+// 취소했습니다", 백스톱 타임아웃이면 "조회 시간 초과" — 둘 다 **다시 시도** 버튼으로
+// 새 opId 조회를 건다.
 import { useWorkdirStore, isMarkdownPath } from "./workdirStore";
 import { DiffView } from "./DiffView";
 import { statusLabel } from "./status";
 import type { GitDiffMode, GitDiffResult } from "@shared/types";
+
+/** 진행/중단 안내 한 줄(취소·다시 시도 버튼 포함). 팔레트의 모든 조회가 같은
+ *  모양을 쓰도록 여기 하나로 모은다. */
+function BusyNote({
+  text,
+  actionLabel,
+  onAction,
+}: {
+  text: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="wd-detail-empty">
+      <span>{text}</span>
+      {actionLabel && onAction && (
+        <button type="button" className="wd-btn wd-btn-mini" onClick={onAction}>
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
 
 /** diff 모드 → 탭 라벨(추적 파일용 3탭). */
 const MODE_TABS: { mode: GitDiffMode; label: string; title: string }[] = [
@@ -26,12 +55,30 @@ function basename(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
-/** diff 본문(로딩/바이너리/잘림/빈 상태 처리 공통). */
-function DiffBody({ diff, loading }: { diff?: GitDiffResult; loading: boolean }) {
-  if (loading && !diff) return <div className="wd-detail-empty">변경점 불러오는 중…</div>;
+/** diff 본문(로딩/취소/시간 초과/바이너리/잘림/빈 상태 처리 공통).
+ *  `onCancel`은 진행 중 취소, `onRetry`는 중단된 조회의 재시도 훅이다. */
+function DiffBody({
+  diff,
+  loading,
+  onCancel,
+  onRetry,
+}: {
+  diff?: GitDiffResult;
+  loading: boolean;
+  onCancel?: () => void;
+  onRetry?: () => void;
+}) {
+  // 중단된 이전 결과가 남아 있어도 재조회 중이면 진행 표시가 우선이다.
+  const aborted = !!diff && (diff.canceled || diff.timedOut);
+  if (loading && (!diff || aborted))
+    return <BusyNote text="변경점 불러오는 중…" actionLabel="취소" onAction={onCancel} />;
   if (!diff) return <div className="wd-detail-empty">변경점을 선택하세요.</div>;
+  if (diff.canceled)
+    return <BusyNote text="조회를 취소했습니다." actionLabel="다시 시도" onAction={onRetry} />;
   if (diff.timedOut)
-    return <div className="wd-detail-empty">조회가 시간 초과됐습니다. 다시 시도하세요.</div>;
+    return (
+      <BusyNote text="조회가 시간 초과됐습니다." actionLabel="다시 시도" onAction={onRetry} />
+    );
   if (diff.binary) return <div className="wd-detail-empty">바이너리 파일이라 diff를 표시할 수 없습니다.</div>;
   if (diff.diff.trim() === "") return <div className="wd-detail-empty">표시할 변경이 없습니다.</div>;
   return (
@@ -69,8 +116,24 @@ export function WorkdirDetailPane() {
   const openExternal = useWorkdirStore((s) => s.openExternal);
   const openInApp = useWorkdirStore((s) => s.openInApp);
   const openDifftool = useWorkdirStore((s) => s.openDifftool);
+  const cancelOp = useWorkdirStore((s) => s.cancelOp);
+  const loadDiff = useWorkdirStore((s) => s.loadDiff);
+  const loadHistory = useWorkdirStore((s) => s.loadHistory);
 
   if (!detail) return null;
+
+  // 하단 커밋 diff의 재시도는 지금 보고 있는 (커밋, 파일) 쌍을 다시 요청한다.
+  const retryCommitDiff = () => {
+    if (detail.selectedCommit) {
+      void selectCommitFile(detail.selectedCommit, detail.selectedCommitFile ?? detail.relPath);
+    }
+  };
+  // 변경파일 목록 재시도: `toggleCommitExpand`는 같은 커밋을 다시 누르면
+  // "접기"이므로, 접었다 펴서 새 opId로 다시 조회한다.
+  const retryCommitFiles = async (hash: string) => {
+    await toggleCommitExpand(hash);
+    await toggleCommitExpand(hash);
+  };
 
   const canInApp = isMarkdownPath(detail.relPath);
   // 하단 diff가 이 상세 파일이 아닌 다른(펼친 커밋의) 파일을 보고 있으면 라벨 표시.
@@ -153,12 +216,27 @@ export function WorkdirDetailPane() {
               ))}
             </div>
           )}
-          <DiffBody diff={detail.diff} loading={detail.diffLoading} />
+          <DiffBody
+            diff={detail.diff}
+            loading={detail.diffLoading}
+            onCancel={() => cancelOp(detail.diffOpId)}
+            onRetry={() => void loadDiff()}
+          />
         </div>
       ) : (
         <div className="wd-detail-body">
           {detail.historyLoading && !detail.history ? (
-            <div className="wd-detail-empty">히스토리 불러오는 중…</div>
+            <BusyNote
+              text="히스토리 불러오는 중…"
+              actionLabel="취소"
+              onAction={() => cancelOp(detail.historyOpId)}
+            />
+          ) : detail.historyCanceled && !detail.history ? (
+            <BusyNote
+              text="조회를 취소했습니다."
+              actionLabel="다시 시도"
+              onAction={() => void loadHistory()}
+            />
           ) : !detail.history || detail.history.length === 0 ? (
             <div className="wd-detail-empty">커밋 히스토리가 없습니다.</div>
           ) : (
@@ -195,7 +273,27 @@ export function WorkdirDetailPane() {
                       {expanded && (
                         <ul className="wd-commit-files" aria-label="이 커밋이 바꾼 파일">
                           {detail.commitFilesLoading && !detail.commitFiles ? (
-                            <li className="wd-cf-note">변경파일 불러오는 중…</li>
+                            <li className="wd-cf-note">
+                              변경파일 불러오는 중…{" "}
+                              <button
+                                type="button"
+                                className="wd-btn wd-btn-mini"
+                                onClick={() => cancelOp(detail.commitFilesOpId)}
+                              >
+                                취소
+                              </button>
+                            </li>
+                          ) : detail.commitFilesCanceled && !detail.commitFiles ? (
+                            <li className="wd-cf-note">
+                              조회를 취소했습니다.{" "}
+                              <button
+                                type="button"
+                                className="wd-btn wd-btn-mini"
+                                onClick={() => void retryCommitFiles(c.hash)}
+                              >
+                                다시 시도
+                              </button>
+                            </li>
                           ) : (detail.commitFiles ?? []).length === 0 ? (
                             <li className="wd-cf-note">
                               표시할 파일 변경이 없습니다(병합 커밋일 수 있음).
@@ -255,7 +353,12 @@ export function WorkdirDetailPane() {
                       외부 도구로 비교
                     </button>
                   </div>
-                  <DiffBody diff={detail.commitDiff} loading={detail.commitDiffLoading} />
+                  <DiffBody
+                    diff={detail.commitDiff}
+                    loading={detail.commitDiffLoading}
+                    onCancel={() => cancelOp(detail.commitDiffOpId)}
+                    onRetry={retryCommitDiff}
+                  />
                 </div>
               )}
             </>
