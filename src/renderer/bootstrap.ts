@@ -27,6 +27,7 @@ import { installPortraitCache } from "./portrait/portraitCache";
 import { installSpriteCache } from "./sprite/spriteCache";
 import { installMemoCleanup } from "./memo/memoCleanup";
 import { installTaskLabelSummarizer } from "./labels/summarizer";
+import { installGitBranchWatcher } from "./labels/gitBranchWatcher";
 import { installWorkLogRecorder } from "./diary/workLog";
 import { installWorkLogPersister, restoreWorkLogs } from "./diary/workLogPersister";
 import { installDiaryAutoWriter } from "./diary/diaryAutoWriter";
@@ -212,6 +213,9 @@ export async function bootApp(): Promise<() => void> {
   // `agents`에서 사라진 캐릭터의 메모 폴더를 지운다.
   const offMemos = installMemoCleanup();
   const offSummarizer = installTaskLabelSummarizer();
+  // 라벨의 "프로젝트 (브랜치)" 표시용 cwd→브랜치 폴링. 요약기와 같은 라벨
+  // 계열이라 나란히 둔다 — 서로 의존하지 않고 각자 taskLabels를 읽을 뿐이다.
+  const offGitBranch = installGitBranchWatcher();
   // 캐릭터 일기(#60) 작업 로그 영속화 — 디스크 스냅샷을 버퍼로 복원한 뒤(recorder가
   // 새 항목을 붙이기 전에 과거 세션 로그가 자리 잡게), 영속화기를 설치해 이후 변경을
   // 디바운스 저장한다. diaryEnabled ON일 때만 디스크에 쓴다(복원은 게이트 무관).
@@ -240,6 +244,7 @@ export async function bootApp(): Promise<() => void> {
     offSprites();
     offMemos();
     offSummarizer();
+    offGitBranch();
     offWorkLog();
     workLogPersister.dispose();
     offDiaryAuto();

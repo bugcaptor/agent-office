@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use super::git_runner::{register_cancel, run_git};
-use super::model::{GitFileStatus, GitStatusResult};
+use super::model::{GitBranchResult, GitFileStatus, GitStatusResult};
 
 /// git status subprocess 타임아웃. **UX 제한이 아니라 폭주 방지 백스톱이다** --
 /// 거대 저장소에서 status가 수십 초 걸리는 건 정상이라 짧은 상한은 "무조건
@@ -23,6 +23,12 @@ const GIT_STATUS_TIMEOUT: Duration = Duration::from_secs(120);
 /// 있으면 수만 건이 나올 수 있다 -- IPC 직렬화·렌더가 무거워지지 않도록
 /// listing.rs의 MAX_LIST와 같은 5000개에서 자르고 `truncated`를 세운다.
 const MAX_STATUS_ENTRIES: usize = 5000;
+
+/// 라벨용 브랜치 조회 타임아웃. `git rev-parse --abbrev-ref HEAD`는 인덱스나
+/// 워킹트리를 훑지 않고 `.git/HEAD`만 읽어 거대 저장소에서도 즉답이라, status의
+/// 분 단위 백스톱(취소 UI가 딸린)과 달리 짧게 잡는다 -- 이쪽은 사용자가 부른
+/// 조회가 아니라 30초 주기 폴링이고, 표시 못 하면 브랜치를 생략할 뿐이다.
+const GIT_BRANCH_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// root의 git 상태를 조회한다. 저장소가 아니거나 git이 없으면 is_repo=false,
 /// 타임아웃이면 timed_out=true, 사용자가 취소했으면 canceled=true인 정상 응답을
@@ -42,6 +48,51 @@ pub fn collect_git_status(root: &str, op_id: Option<&str>) -> Result<GitStatusRe
         GIT_STATUS_TIMEOUT,
         Some(cancel.flag()),
     ))
+}
+
+/// root의 현재 브랜치명만 가볍게 조회한다(라벨 표면의 "프로젝트 (브랜치)").
+/// `collect_git_status`와 달리 취소(opId)를 받지 않는다 -- 30초 주기 폴링이라
+/// 사용자가 끊을 UI 자체가 없고, 조회도 `.git/HEAD` 한 번 읽기로 끝난다.
+///
+/// 폴더가 없거나·git이 없거나·비저장소거나·타임아웃이면 전부 `is_repo=false`인
+/// 정상 응답이다(에러 반환 없음) -- 폴링 경로라 실패를 에러로 올려봐야 콘솔만
+/// 시끄럽고, 호출부가 할 일은 어느 경우든 "브랜치 생략"으로 같다.
+pub fn collect_git_branch(root: &str) -> GitBranchResult {
+    let Ok(canon_root) = std::fs::canonicalize(root) else {
+        return GitBranchResult::not_repo();
+    };
+    if !canon_root.is_dir() {
+        return GitBranchResult::not_repo();
+    }
+    let run = run_git(
+        &canon_root,
+        &["rev-parse", "--abbrev-ref", "HEAD"],
+        GIT_BRANCH_TIMEOUT,
+        None,
+    );
+    // spawn 실패(git 부재)·타임아웃·non-zero(비저장소, 커밋 없는 새 저장소) 모두
+    // 브랜치를 표시하지 않는다. canceled는 취소 플래그를 안 넘겼으니 나올 수 없다.
+    if run.spawn_failed || run.timed_out || run.canceled || !run.success {
+        return GitBranchResult::not_repo();
+    }
+    parse_abbrev_ref(&run.stdout)
+}
+
+/// `git rev-parse --abbrev-ref HEAD` 출력을 브랜치명으로 해석한다. detached
+/// HEAD면 git이 브랜치명 대신 문자열 `HEAD`를 그대로 뱉으므로 branch=None으로
+/// 접는다(빈 출력도 같은 취급). 여기 오는 건 exit 0인 출력뿐이라 is_repo는 항상 true.
+pub fn parse_abbrev_ref(stdout: &[u8]) -> GitBranchResult {
+    let name = String::from_utf8_lossy(stdout).trim().to_string();
+    if name.is_empty() || name == "HEAD" {
+        return GitBranchResult {
+            is_repo: true,
+            branch: None,
+        };
+    }
+    GitBranchResult {
+        is_repo: true,
+        branch: Some(name),
+    }
 }
 
 /// `git status --porcelain=v2 --branch -z --untracked-files=all`을 root에서
@@ -253,6 +304,39 @@ mod tests {
             v.push(0);
         }
         v
+    }
+
+    /// 라벨용 브랜치 파서: 흔한 이름·슬래시 포함 이름 모두 그대로 통과하고,
+    /// 트레일링 개행은 벗겨진다.
+    #[test]
+    fn abbrev_ref_parses_branch_name() {
+        let r = parse_abbrev_ref(b"main\n");
+        assert!(r.is_repo);
+        assert_eq!(r.branch.as_deref(), Some("main"));
+        assert_eq!(
+            parse_abbrev_ref(b"feature/label-branch\n").branch.as_deref(),
+            Some("feature/label-branch")
+        );
+    }
+
+    /// detached HEAD면 git이 브랜치명 대신 "HEAD"를 뱉는다 -- 저장소이긴 하나
+    /// 표시할 브랜치는 없다. 빈 출력도 같은 취급.
+    #[test]
+    fn abbrev_ref_detached_head_has_no_branch() {
+        let r = parse_abbrev_ref(b"HEAD\n");
+        assert!(r.is_repo);
+        assert_eq!(r.branch, None);
+        let empty = parse_abbrev_ref(b"  \n");
+        assert!(empty.is_repo);
+        assert_eq!(empty.branch, None);
+    }
+
+    /// 없는 폴더는 에러가 아니라 "브랜치 없음" 정상 응답이다(폴링 경로).
+    #[test]
+    fn collect_git_branch_missing_root_is_not_repo() {
+        let r = collect_git_branch("/definitely/not/a/real/path/agent-office");
+        assert!(!r.is_repo);
+        assert_eq!(r.branch, None);
     }
 
     #[test]

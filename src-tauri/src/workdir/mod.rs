@@ -29,11 +29,11 @@
 //
 // 서브모듈 구성(R-3 분할):
 // - `git_runner`: git 서브프로세스 실행·취소 레지스트리·경로/커밋 인자 안전장치
-// - `status`: `git status --porcelain=v2` 조회·파싱
+// - `status`: `git status --porcelain=v2` 조회·파싱 + 라벨용 브랜치 단독 조회
 // - `diff`: diff/파일 히스토리/커밋로그/difftool
 // - `listing`: 작업 폴더 파일 목록 스캔·Everything 서버사이드 검색(이슈 #67)
 // - `model`: 결과 타입(struct/enum)
-// - `commands`: `#[tauri::command]` 래퍼 10개(조회 계열은 spawn_blocking)
+// - `commands`: `#[tauri::command]` 래퍼 11개(조회 계열은 spawn_blocking)
 //
 // lib.rs의 `tauri::generate_handler![...]`가 `workdir::workdir_*` 경로로 커맨드를
 // 등록하므로, 아래 `pub use`들은 분할 이전 경로(`crate::workdir::X`)를 그대로
@@ -58,4 +58,4 @@ pub use listing::{list_workdir_files, search_workdir_files};
 #[allow(unused_imports)]
 pub use model::*;
 #[allow(unused_imports)]
-pub use status::{collect_git_status, parse_porcelain_v2};
+pub use status::{collect_git_branch, collect_git_status, parse_porcelain_v2};

@@ -151,6 +151,14 @@ interface AppState {
   /** 머리 위 작업 라벨 소스 상태. 비영속. */
   taskLabels: Record<string, AgentTaskLabel>;
   /**
+   * 작업 폴더(cwd) → 현재 브랜치명. 라벨 표면이 "프로젝트 (브랜치) · 목표"를
+   * 그릴 때만 쓴다. **git 저장소이고 브랜치가 있을 때만 키가 존재한다** —
+   * 비저장소·detached HEAD는 키 자체를 넣지 않아, 조회 전과 "브랜치 없음"이
+   * 표시상 같게(= 괄호 생략) 떨어진다. gitBranchWatcher가 30초 주기로 채우는
+   * 런타임 전용 상태(비영속).
+   */
+  gitBranches: Record<string, string>;
+  /**
    * 터미널 재시작 에폭(agentId -> 정수, 기본 0). TerminalMount의 key에
    * 반영되어, 증가하면 강제 리마운트 -> attach()가 새 xterm을 만든다.
    * 런타임 전용, 영속 안 함(persist.ts는 agents만 저장).
@@ -272,6 +280,9 @@ interface AppState {
 
   // ---- overhead task label ----
   setTaskLabelSummary(agentId: string, patch: { goal?: string; currentSummary?: string }): void;
+  /** cwd→브랜치 맵을 통째로 교체한다(gitBranchWatcher의 폴링 1회분 결과).
+   * 부분 병합·가지치기는 순수 함수(gitBranchWatcher.nextGitBranches)가 맡는다. */
+  setGitBranches(next: Record<string, string>): void;
 
   // ---- persistence hydration ----
   hydrate(state: PersistedState): void;
@@ -340,6 +351,7 @@ export const useAppStore = create<AppState>()(
     todayWorkedBaseMs: 0,
     memoryWorkedBaselineMs: 0,
     taskLabels: {},
+    gitBranches: {},
     terminalEpochs: {},
     appSettings: DEFAULT_APP_SETTINGS,
     settingsFirstRun: false,
@@ -747,6 +759,8 @@ export const useAppStore = create<AppState>()(
         if (!prev) return s;
         return { taskLabels: { ...s.taskLabels, [agentId]: { ...prev, ...patch } } };
       }),
+
+    setGitBranches: (next) => set({ gitBranches: next }),
 
     applyNotificationTiming: (e) =>
       set((s) => {

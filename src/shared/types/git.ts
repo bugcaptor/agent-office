@@ -55,6 +55,16 @@ export interface GitStatusResult {
   truncated: boolean;
 }
 
+/** `workdir_git_branch` 응답. 라벨 표면("프로젝트 (브랜치) · 목표")이 브랜치를
+ * 덧붙일지 정하는 데만 쓰는 최소 결과다. 비저장소·git 부재·타임아웃은 전부
+ * `isRepo=false`로 뭉뚱그린다(호출부가 할 일이 "브랜치 생략"으로 같다).
+ * detached HEAD만 `isRepo=true` + `branch=null`. */
+export interface GitBranchResult {
+  isRepo: boolean;
+  /** 현재 브랜치명(detached HEAD/비저장소면 null). */
+  branch: string | null;
+}
+
 /** `workdir_diff_file`의 diff 관점(이슈 #11 후속).
  * - `worktreeVsIndex`: 미스테이지 변경(워킹트리↔인덱스)
  * - `indexVsHead`: 스테이지된 변경(인덱스↔HEAD)

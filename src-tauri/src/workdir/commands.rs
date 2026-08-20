@@ -1,6 +1,6 @@
 // src-tauri/src/workdir/commands.rs
 //
-// `#[tauri::command]` 얇은 래퍼 10개. lib.rs의 `tauri::generate_handler![...]`가
+// `#[tauri::command]` 얇은 래퍼 11개. lib.rs의 `tauri::generate_handler![...]`가
 // `workdir::workdir_*` 경로로 이 함수들을 직접 등록하므로(mod.rs의
 // `pub use commands::*;`로 재수출), 함수 시그니처와 이름은 그대로 유지해야 한다.
 //
@@ -22,10 +22,10 @@ use super::diff::{
 };
 use super::listing::{list_workdir_files, search_workdir_files};
 use super::model::{
-    GitCommitFilesResult, GitDiffResult, GitFileHistoryResult, GitStatusResult, WorkdirListResult,
-    WorkdirSearchResult,
+    GitBranchResult, GitCommitFilesResult, GitDiffResult, GitFileHistoryResult, GitStatusResult,
+    WorkdirListResult, WorkdirSearchResult,
 };
-use super::status::collect_git_status;
+use super::status::{collect_git_branch, collect_git_status};
 
 /// blocking 스레드에서 돌린 조회 결과를 커맨드 반환값으로 되돌린다. join 실패
 /// (패닉/취소)는 사용자에게 보여줄 한국어 문자열로 바꾼다 -- 정상 흐름에서는
@@ -82,6 +82,16 @@ pub async fn workdir_git_status(
 ) -> Result<GitStatusResult, String> {
     let root = crate::session::manager::expand_tilde(root);
     run_blocking(move || collect_git_status(&root, op_id.as_deref())).await
+}
+
+/// `collect_git_branch`의 Tauri 커맨드 래퍼(라벨의 "프로젝트 (브랜치)" 표시용).
+/// 다른 조회와 달리 `opId`가 없다 -- 30초 주기 폴링이라 취소 UI가 없고,
+/// 타임아웃도 2초로 짧다. 반환은 항상 `Ok`이며, 실패는 `isRepo=false`로 표현한다
+/// (`Result`인 것은 spawn_blocking join 실패를 옮기기 위한 형식일 뿐).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn workdir_git_branch(root: String) -> Result<GitBranchResult, String> {
+    let root = crate::session::manager::expand_tilde(root);
+    run_blocking(move || Ok(collect_git_branch(&root))).await
 }
 
 /// `git_diff_file`의 Tauri 커맨드 래퍼.

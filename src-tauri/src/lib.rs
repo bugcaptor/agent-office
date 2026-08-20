@@ -566,6 +566,7 @@ pub fn run() {
             workdir::workdir_list_files,
             workdir::workdir_search_files,
             workdir::workdir_git_status,
+            workdir::workdir_git_branch,
             workdir::workdir_diff_file,
             workdir::workdir_file_history,
             workdir::workdir_diff_commit,

@@ -113,6 +113,9 @@ export const Commands = {
   // 실패는 모두 usedIndex=false로 조용히 폴백(프런트가 클라이언트 필터로 전환).
   workdirSearchFiles: "workdir_search_files",
   workdirGitStatus: "workdir_git_status",
+  // 라벨 표면의 "프로젝트 (브랜치)" 표시용 경량 조회. status와 달리 취소(opId)가
+  // 없고 타임아웃도 2초 — 30초 주기 폴링이라 실패하면 브랜치를 생략할 뿐이다.
+  workdirGitBranch: "workdir_git_branch",
   // 변경점(diff)·이력(history) 확인(이슈 #11 후속). 전부 읽기 전용이며
   // difftool만 외부 GUI 도구를 fire-and-forget으로 띄운다.
   workdirDiffFile: "workdir_diff_file",

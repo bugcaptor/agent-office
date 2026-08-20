@@ -161,6 +161,34 @@ describe("deriveTaskLabelLines", () => {
     expect(line2).toBe("원인을좁히는…");
   });
 
+  it("branch를 주면 프로젝트명 뒤에 (브랜치)를 붙인다", () => {
+    expect(
+      deriveTaskLabelLines(label({ cwd: "/w/agent-office", goal: "버그 수정" }), undefined, {
+        ...opts,
+        branch: "main",
+      }).line1
+    ).toBe("agent-office (main) · 버그 수정");
+    // 목표가 없어도 프로젝트명 쪽만 브랜치를 단다.
+    expect(
+      deriveTaskLabelLines(label({ cwd: "/w/agent-office" }), undefined, {
+        ...opts,
+        branch: "feature/x",
+      }).line1
+    ).toBe("agent-office (feature/x)");
+  });
+
+  it("branch 부재(비저장소·detached·조회 전)면 기존 표시 그대로", () => {
+    expect(
+      deriveTaskLabelLines(label({ cwd: "/w/agent-office", goal: "버그 수정" }), undefined, opts)
+        .line1
+    ).toBe("agent-office · 버그 수정");
+    // 프로젝트명이 없으면(cwd 부재) 괄호만 뜨지 않게 브랜치도 생략한다.
+    expect(
+      deriveTaskLabelLines(label({ goal: "버그 수정" }), undefined, { ...opts, branch: "main" })
+        .line1
+    ).toBe("버그 수정");
+  });
+
   it("빈 라벨/undefined는 두 줄 모두 undefined", () => {
     expect(deriveTaskLabelLines(undefined, undefined, opts)).toEqual({
       line1: undefined,

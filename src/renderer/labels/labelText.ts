@@ -16,6 +16,18 @@ export function projectNameFromCwd(cwd: string | undefined): string | undefined 
   return parts.length > 0 ? parts[parts.length - 1] : undefined;
 }
 
+/**
+ * 라벨이 실제로 가리키는 작업 폴더. 세션 실제 cwd 우선, 부재 시 프로필 cwd
+ * (deriveTaskLabelLines의 프로젝트명 산출과 같은 규칙). 브랜치 맵(cwd→브랜치)을
+ * 조회하는 호출부가 같은 키를 쓰도록 여기 한 곳에 둔다.
+ */
+export function effectiveCwd(
+  label: AgentTaskLabel | undefined,
+  fallbackCwd: string | undefined
+): string | undefined {
+  return label?.cwd ?? fallbackCwd;
+}
+
 /** chars 기준 max자로 절단, 넘치면 "…" 부착(멀티바이트 안전). 표시 쪽 공용 헬퍼. */
 export function truncateChars(text: string, max: number): string {
   const chars = Array.from(text);
@@ -106,6 +118,9 @@ export function requestSentence(text: string | undefined): string | undefined {
  *
  * - line1 = 프로젝트명 · 목표. 프로젝트명은 `label.cwd ?? fallbackCwd`의
  *   basename, 목표는 LLM 요약 > 저장된 요청 문장 폴백 > 첫 프롬프트의 요청 문장.
+ *   `opts.branch`를 주면 프로젝트명 뒤에 `(브랜치)`를 붙인다 — 비저장소·detached
+ *   HEAD는 호출부가 아예 넘기지 않으므로 여기선 유/무만 본다. 프로젝트명이
+ *   없으면(cwd 부재) 브랜치도 붙이지 않는다 — 괄호만 뜬 라벨은 읽을 수 없다.
  * - line2 = 실황(assistant 내레이션 > 도구 요약) > LLM 지시 요약 > 최신 프롬프트
  *   요청 문장. currentSummary는 지시 요약이라 턴 중 실황보다 오래됐다(이슈 #43).
  *
@@ -114,10 +129,12 @@ export function requestSentence(text: string | undefined): string | undefined {
 export function deriveTaskLabelLines(
   label: AgentTaskLabel | undefined,
   fallbackCwd: string | undefined,
-  opts: { goalMax: number; currentMax: number }
+  opts: { goalMax: number; currentMax: number; branch?: string }
 ): { line1?: string; line2?: string } {
   // 세션 실제 cwd 우선, 부재 시 폴백 cwd(프로필 cwd)로 폴백(이슈 #44 작업 D).
-  const project = projectNameFromCwd(label?.cwd ?? fallbackCwd);
+  const baseProject = projectNameFromCwd(effectiveCwd(label, fallbackCwd));
+  const project =
+    baseProject && opts.branch ? `${baseProject} (${opts.branch})` : baseProject;
   const goal =
     label?.goal ??
     (truncateChars(

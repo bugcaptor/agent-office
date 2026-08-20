@@ -18,7 +18,7 @@ import { useAppStore } from "../store/appStore";
 import { generateSpritePreview } from "../office/gen/characterFactory";
 import { resolveArchetype } from "../office/gen/archetypes";
 import { ContextMenu } from "../ui/ContextMenu";
-import { deriveTaskLabelLines } from "../labels/labelText";
+import { deriveTaskLabelLines, effectiveCwd } from "../labels/labelText";
 import { tauriApi } from "../ipc/tauriApi";
 import { useMarkdownStore } from "../markdown/markdownStore";
 import { useWorkdirStore } from "../workdir/workdirStore";
@@ -58,6 +58,8 @@ export function AgentTabStrip() {
   // 탭 툴팁(이슈 #44 T2)용 라벨 소스. 원본 참조 그대로 구독하고 파생은
   // 렌더(useMemo)에서 — 셀렉터에서 새 객체를 만들면 useShallow가 무력화된다.
   const taskLabels = useAppStore((s) => s.taskLabels);
+  // 툴팁 line1의 "프로젝트 (브랜치)"용 cwd→브랜치 맵(gitBranchWatcher가 채운다).
+  const gitBranches = useAppStore((s) => s.gitBranches);
   const portraits = useAppStore((s) => s.portraits);
   const spritePreviews = useAppStore((s) => s.spritePreviews);
   const tabs = useMemo(
@@ -81,9 +83,11 @@ export function AgentTabStrip() {
         // 탭 툴팁(이슈 #44 T2): 머리 위 라벨과 같은 파생 규칙으로 2줄을 만들어
         // native title로 붙인다(폭 넉넉히). 세션이 starting/running이 아니면
         // 실황(line2)은 stale이므로 line1만. 라벨이 없으면 title 생략.
+        const cwd = effectiveCwd(taskLabels[id], agent?.cwd);
         const { line1, line2 } = deriveTaskLabelLines(taskLabels[id], agent?.cwd, {
           goalMax: 80,
           currentMax: 120,
+          branch: cwd ? gitBranches[cwd] : undefined,
         });
         const status = sessions[id]?.status;
         const live = status === "starting" || status === "running";
@@ -91,7 +95,7 @@ export function AgentTabStrip() {
         const title = titleLines.length > 0 ? titleLines.join("\n") : undefined;
         return { id, name: agent?.name ?? id, thumb, title };
       }),
-    [tabIds, agents, sessions, taskLabels, portraits, spritePreviews]
+    [tabIds, agents, sessions, taskLabels, gitBranches, portraits, spritePreviews]
   );
   const openTerminal = useAppStore((s) => s.openTerminal);
   const closeTerminal = useAppStore((s) => s.closeTerminal);

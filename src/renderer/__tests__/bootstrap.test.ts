@@ -43,6 +43,9 @@ const { mockApi } = vi.hoisted(() => ({
     botStatus: vi.fn(),
     sessionBrokerMode: vi.fn(),
     uploadSessionSnapshots: vi.fn(),
+    // 라벨 브랜치 폴링(installGitBranchWatcher) — 부팅 직후 라이브 탭이 없으면
+    // 호출되지 않지만, 스텁을 둬서 배선이 실수로 늘어도 조용히 죽지 않게 한다.
+    workdirGitBranch: vi.fn().mockResolvedValue({ isRepo: false, branch: null }),
   },
 }));
 

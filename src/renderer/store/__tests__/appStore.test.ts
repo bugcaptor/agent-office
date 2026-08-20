@@ -770,3 +770,16 @@ describe("setSessionState (외부 세션 kind)", () => {
     expect(useAppStore.getState()).toBe(before);
   });
 });
+
+describe("gitBranches slice", () => {
+  it("기본값은 빈 맵이고, setGitBranches가 통째로 교체한다", () => {
+    expect(useAppStore.getState().gitBranches).toEqual({});
+
+    useAppStore.getState().setGitBranches({ "/w/one": "main" });
+    expect(useAppStore.getState().gitBranches).toEqual({ "/w/one": "main" });
+
+    // 병합이 아니라 교체 — 가지치기는 호출부(nextGitBranches)가 끝내고 넘긴다.
+    useAppStore.getState().setGitBranches({ "/w/two": "dev" });
+    expect(useAppStore.getState().gitBranches).toEqual({ "/w/two": "dev" });
+  });
+});

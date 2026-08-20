@@ -10,7 +10,7 @@
 // useShallow 함정 주의: 스토어 구독은 원본 참조 그대로 가져오고(새 객체
 // 리터럴 금지) 파생은 렌더에서 한다(AgentTabStrip 헤더 주석 참조).
 import { useAppStore } from "../store/appStore";
-import { deriveTaskLabelLines } from "../labels/labelText";
+import { deriveTaskLabelLines, effectiveCwd } from "../labels/labelText";
 import "./terminal.css";
 
 const SUMMARY_GOAL_MAX = 60; // 요약 바는 폭이 넉넉하다 — 머리 위 라벨보다 크게.
@@ -22,12 +22,16 @@ export function TerminalSummaryBar() {
   const sessions = useAppStore((s) => s.sessions);
   const timeTracking = useAppStore((s) => s.timeTracking);
   const agents = useAppStore((s) => s.agents);
+  // 머리 위 라벨과 같은 cwd→브랜치 맵(gitBranchWatcher가 채운다).
+  const gitBranches = useAppStore((s) => s.gitBranches);
 
   if (!activeId) return null;
   const label = taskLabels[activeId];
+  const cwd = effectiveCwd(label, agents[activeId]?.cwd);
   const { line1, line2 } = deriveTaskLabelLines(label, agents[activeId]?.cwd, {
     goalMax: SUMMARY_GOAL_MAX,
     currentMax: SUMMARY_CURRENT_MAX,
+    branch: cwd ? gitBranches[cwd] : undefined,
   });
   // 표시할 게 없으면(라벨 없음) 바 자체를 렌더하지 않아 레이아웃 점프를 피한다.
   if (!line1 && !line2) return null;

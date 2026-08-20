@@ -347,6 +347,10 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.workdirGitStatus, { root, opId });
   },
 
+  async workdirGitBranch(root) {
+    return await invoke(Commands.workdirGitBranch, { root });
+  },
+
   async workdirDiffFile(root, relPath, mode, opId) {
     return await invoke(Commands.workdirDiffFile, { root, relPath, mode, opId });
   },

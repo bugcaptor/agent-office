@@ -112,6 +112,29 @@ impl GitStatusResult {
     }
 }
 
+/// 라벨 표면(머리 위 라벨·탭 툴팁·요약 바)이 "프로젝트명 (브랜치)"를 그리기
+/// 위한 최소 응답. 비(非) git 저장소·git 바이너리 부재·타임아웃은 전부
+/// is_repo=false로 뭉뚱그린다 -- 호출부가 할 일이 "브랜치를 생략한다"로 같아서
+/// 사유를 구분해봐야 쓸 데가 없다. detached HEAD만 is_repo=true + branch=None.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBranchResult {
+    /// git 저장소 여부. git 바이너리 부재/비저장소/타임아웃 모두 false.
+    pub is_repo: bool,
+    /// 현재 브랜치명(detached HEAD면 None).
+    pub branch: Option<String>,
+}
+
+impl GitBranchResult {
+    /// 브랜치를 표시하지 않을 때의 응답(비저장소·git 없음·타임아웃 공통).
+    pub(super) fn not_repo() -> Self {
+        Self {
+            is_repo: false,
+            branch: None,
+        }
+    }
+}
+
 /// diff 조회 결과. `diff`는 unified diff 텍스트(변경 없으면 빈 문자열),
 /// `binary`는 git이 바이너리로 판단했는지, `truncated`는 상한(바이트/줄)에 걸려
 /// 잘렸는지, `timed_out`은 타임아웃으로 조회를 중단했는지, `canceled`는 사용자가

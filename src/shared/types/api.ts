@@ -39,6 +39,7 @@ import type {
   WorkdirListResult,
   WorkdirSearchResult,
   GitStatusResult,
+  GitBranchResult,
   GitDiffResult,
   GitDiffMode,
   GitFileHistoryResult,
@@ -257,6 +258,10 @@ export interface AgentOfficeApi {
    * `opId`를 주면 조회 도중 `workdirGitCancel(opId)`로 끊을 수 있다(이하 조회
    * 커맨드 공통 — 거대 저장소 대비 타임아웃 개편). */
   workdirGitStatus(root: string, opId?: string): Promise<GitStatusResult>;
+  /** `root`의 현재 브랜치명만 가볍게 조회한다(라벨의 "프로젝트 (브랜치)" 표시).
+   * 폴더 부재·git 부재·비저장소·타임아웃(2초)은 전부 reject가 아니라
+   * `isRepo=false`로 답한다 — 30초 주기 폴링이라 실패는 조용히 넘긴다. */
+  workdirGitBranch(root: string): Promise<GitBranchResult>;
   /** `root` 기준 `relPath`의 diff를 `mode` 관점으로 조회(이슈 #11 후속).
    * 미추적 파일은 `mode="untracked"`. 타임아웃/취소는 `timedOut`/`canceled`로 표현. */
   workdirDiffFile(
