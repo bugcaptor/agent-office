@@ -58,6 +58,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 tauri-plugin-dialog = "2" # 프로필 시작 폴더의 네이티브 폴더 선택 다이얼로그 (Rust 측에서만 호출 — capability 불필요)
 tauri-plugin-notification = "2" # 앱 백그라운드 시 OS 데스크탑 알림(이슈 #39). 프런트 @tauri-apps/plugin-notification 로 호출 — capability 필요
 ignore = "0.4" # 마크다운 파일 스캔(markdown.rs) — .gitignore/숨김 존중하는 WalkBuilder
+tauri-plugin-window-state = "2" # main 창 크기·위치·최대화 상태 저장/복원. Rust 측에서만 등록·호출 — capability 불필요
 
 # 세션 핸드오프(unix 전용, docs/session-handoff-design.md): poll 기반 인터럽트
 # 가능 리더, sessiond와의 UDS+SCM_RIGHTS(fd 전달), TIOCSWINSZ/killpg.

@@ -59,6 +59,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use tauri::{Manager, RunEvent};
+use tauri_plugin_window_state::{AppHandleExt as _, StateFlags};
 
 use crate::notification::hub::{NotificationHub, SystemClock};
 use crate::observer::server::ObserverServerState;
@@ -260,9 +261,36 @@ fn make_pty_factory(
     (Arc::new(PortablePtyFactory), false)
 }
 
+/// 창 상태 저장/복원 대상 플래그. **SIZE | POSITION | MAXIMIZED만** 쓴다:
+///
+/// - `VISIBLE`: main은 tauri.conf.json에서 항상 `visible: true`라 복원할 사용자
+///   상태가 없다. 반대로 이 플래그가 켜지면 저장 시 `is_visible()`이 기록되는데,
+///   macOS에서 앱을 숨기거나(⌘H) 최소화한 채 종료하면 `visible: false`가 남고
+///   복원 경로가 `show()`/`set_focus()`를 건너뛴다. 지금은 설정이 창을 띄우므로
+///   무해하지만, 창 표시 여부를 저장 파일에 결부시킬 이유가 없어 아예 뺀다.
+/// - `FULLSCREEN`: 풀스크린으로 종료했다고 다음 실행도 풀스크린으로 강제하는 건
+///   원하는 동작이 아니고, macOS에서는 크기/위치 복원과 겹쳐 어긋난다.
+/// - `DECORATIONS`: main의 장식은 앱이 바꾸지 않으므로 저장할 상태가 없다.
+///
+/// 플러그인 등록과 종료 시 명시 저장이 **같은 플래그**를 써야 저장 파일의
+/// 필드 구성이 어긋나지 않는다.
+const WINDOW_STATE_FLAGS: StateFlags = StateFlags::SIZE
+    .union(StateFlags::POSITION)
+    .union(StateFlags::MAXIMIZED);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // main 창의 크기·위치·최대화 상태를 종료 시 저장하고 재실행 시 복원한다.
+        // 마스코트 창(이슈 #72)은 자체 위치 복원 로직(src/renderer/mascot/position.ts,
+        // localStorage + 모니터 유효성 검사)을 갖고 있어 플러그인이 건드리면 두
+        // 주체가 좌표를 다투므로 denylist로 제외한다.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(WINDOW_STATE_FLAGS)
+                .with_denylist(&["mascot"])
+                .build(),
+        )
         // 네이티브 폴더 선택 다이얼로그(pick_directory) — Rust 측에서만 사용.
         .plugin(tauri_plugin_dialog::init())
         // OS 데스크탑 알림(이슈 #39) — 앱이 백그라운드일 때 프런트가 발송.
@@ -621,6 +649,21 @@ pub fn run() {
             // shutdown 신호를 보내도 이미 kill된 세션들의 마지막 hook POST가
             // 유실돼도 무해하다 -- 어차피 프로세스가 죽는 중이므로).
             if let RunEvent::ExitRequested { .. } = event {
+                // 창 상태 저장을 **가장 먼저** — 종료 경로가 둘이라서다.
+                // ① X 클릭: CloseRequested가 발화해 플러그인이 살아 있는 창을
+                //    읽어 캐시를 갱신한다(quitGuard가 preventDefault해도 Rust
+                //    리스너는 이미 돌았다).
+                // ② quitGuard 확인 후 `destroy()`(ConfirmQuitDialog.tsx): 이땐
+                //    CloseRequested가 재발화하지 않는다. 크기/위치는 Moved/Resized
+                //    리스너가 실시간으로 캐시에 넣어 두므로, 여기서 그 캐시를
+                //    디스크에 확정 기록하는 게 이 호출의 역할이다.
+                // ⌘Q처럼 CloseRequested 없이 들어온 경로에서 창이 아직 살아
+                // 있다면 실제 창을 읽어 최대화 여부까지 갱신한다(창이 이미
+                // 파괴됐으면 플러그인이 그 창을 건너뛰고 캐시만 쓴다).
+                // 실패는 로그만 — 종료를 막지 않는다.
+                if let Err(e) = app.save_window_state(WINDOW_STATE_FLAGS) {
+                    eprintln!("agent-office: 창 상태 저장 실패: {e}");
+                }
                 let state = app.state::<AppState>();
                 state.manager.dispose_all(); // kill + settings cleanup(동기)
                 state.observer_server.shutdown();
