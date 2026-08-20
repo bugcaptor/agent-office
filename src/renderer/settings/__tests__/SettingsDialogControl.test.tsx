@@ -28,6 +28,11 @@ import { SettingsDialog } from "../SettingsDialog";
 
 const initialState = useAppStore.getState();
 
+/** CLI 제어 섹션은 "제어" 탭에 있다 — 렌더 직후 그 탭을 열어야 마운트된다. */
+function openTab(name: string) {
+  fireEvent.click(screen.getByRole("tab", { name }));
+}
+
 function hydrate(cliEnabled: boolean) {
   useAppStore.getState().hydrateSettings(
     {
@@ -78,6 +83,7 @@ describe("SettingsDialog · CLI 제어", () => {
     });
     hydrate(false);
     render(<SettingsDialog />);
+    openTab("제어");
 
     fireEvent.click(screen.getByRole("checkbox", { name: /CLI 제어/ }));
     expect(useAppStore.getState().appSettings.cliEnabled).toBe(true);
@@ -93,6 +99,7 @@ describe("SettingsDialog · CLI 제어", () => {
     });
     hydrate(true);
     render(<SettingsDialog />);
+    openTab("제어");
 
     const approveBtn = await screen.findByRole("button", { name: /CLI 제어 승인/ });
     expect(screen.getByText(/실행 중\(포트 51234\)/)).toBeTruthy();
@@ -110,6 +117,7 @@ describe("SettingsDialog · CLI 제어", () => {
     });
     hydrate(true);
     render(<SettingsDialog />);
+    openTab("제어");
 
     const revokeBtn = await screen.findByRole("button", { name: /승인 취소/ });
     expect(

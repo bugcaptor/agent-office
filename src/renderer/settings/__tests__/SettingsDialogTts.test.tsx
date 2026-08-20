@@ -41,6 +41,11 @@ const STATUS: TtsStatus = {
   effectiveRewriteVia: "claude-cli",
 };
 
+/** TTS 섹션은 "소리·음성" 탭에 있다 — 렌더 직후 그 탭을 열어야 마운트된다. */
+function openTab(name: string) {
+  fireEvent.click(screen.getByRole("tab", { name }));
+}
+
 function hydrate(patch: Partial<AppSettings> = {}) {
   useAppStore.getState().hydrateSettings(
     {
@@ -84,6 +89,7 @@ describe("SettingsDialog · 알림 대사 TTS", () => {
   it("기본은 꺼짐이고, 꺼져 있으면 키 입력·시청이 노출되지 않는다", () => {
     hydrate();
     render(<SettingsDialog />);
+    openTab("소리·음성");
     const toggle = screen.getByLabelText(/알림 대사 읽어주기/) as HTMLInputElement;
     expect(toggle.checked).toBe(false);
     expect(screen.queryByText(/ElevenLabs API 키/)).toBeNull();
@@ -93,6 +99,7 @@ describe("SettingsDialog · 알림 대사 TTS", () => {
   it("토글이 updateAppSettings로 반영된다", () => {
     hydrate();
     render(<SettingsDialog />);
+    openTab("소리·음성");
     fireEvent.click(screen.getByLabelText(/알림 대사 읽어주기/));
     expect(useAppStore.getState().appSettings.ttsEnabled).toBe(true);
     expect(setAppSettings).toHaveBeenCalled();
@@ -101,6 +108,7 @@ describe("SettingsDialog · 알림 대사 TTS", () => {
   it("켜면 키 상태를 마스킹된 문장으로만 보여준다 (키 값 노출 경로 없음)", async () => {
     hydrate({ ttsEnabled: true });
     render(<SettingsDialog />);
+    openTab("소리·음성");
     await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
     await screen.findByText(/ElevenLabs 키 있음/);
     // "자동"이 실제로 무엇을 고를지 안내한다.
@@ -114,6 +122,7 @@ describe("SettingsDialog · 알림 대사 TTS", () => {
   it("공백뿐인 입력이면 저장 버튼이 비활성이고, 입력 후 저장하면 필드를 비운다", async () => {
     hydrate({ ttsEnabled: true });
     render(<SettingsDialog />);
+    openTab("소리·음성");
     await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
     const save = screen.getByText("키 저장") as HTMLButtonElement;
     expect(save.disabled).toBe(true);
@@ -131,6 +140,7 @@ describe("SettingsDialog · 알림 대사 TTS", () => {
   it("리라이트 공급자/모델 선택이 설정에 반영된다", async () => {
     hydrate({ ttsEnabled: true });
     render(<SettingsDialog />);
+    openTab("소리·음성");
     await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
     // 라벨이 설명문(small)까지 감싸고 있어 접근성 이름으로 특정하기 어렵다 —
     // "그 값을 고를 수 있는 select"로 집는다. (현재 값으로 집으면 다이얼로그의
@@ -153,6 +163,7 @@ describe("SettingsDialog · 알림 대사 TTS", () => {
   it("시청 버튼이 실제 발화된 대사를 보여준다", async () => {
     hydrate({ ttsEnabled: true });
     render(<SettingsDialog />);
+    openTab("소리·음성");
     await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
     fireEvent.click(screen.getByText("시청 (미리듣기)"));
     await screen.findByText(/발화: \[nervous\] 이거 진행해도 될까요\?/);
@@ -163,6 +174,7 @@ describe("SettingsDialog · 알림 대사 TTS", () => {
   it("무음 모드면 미리듣기 옆에 실제 알림은 발화되지 않는다고 알린다", async () => {
     hydrate({ ttsEnabled: true });
     render(<SettingsDialog />);
+    openTab("소리·음성");
     await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
     expect(screen.queryByText(/무음 모드가 켜져 있어/)).toBeNull();
     useAppStore.getState().toggleMuted();
@@ -172,6 +184,7 @@ describe("SettingsDialog · 알림 대사 TTS", () => {
   it("claude CLI 경로는 구독 사용량 소모를 안내한다", async () => {
     hydrate({ ttsEnabled: true });
     render(<SettingsDialog />);
+    openTab("소리·음성");
     await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
     expect(screen.getByText(/구독 사용량을 소모합니다/)).toBeTruthy();
   });

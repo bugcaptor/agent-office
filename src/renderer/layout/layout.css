@@ -446,6 +446,66 @@ body {
   font-size: 0.8rem;
 }
 
+/* ── 설정 다이얼로그: 탭 4개(일반/소리·음성/시스템/제어) ──
+   탭마다 내용 길이가 크게 달라, 패널 높이에 맡기면 전환할 때마다 모달이
+   출렁인다. 그래서 다이얼로그 높이를 못 박고(짧은 화면에서는 뷰포트에
+   맞춰 줄어든다) 스크롤은 탭 패널 안에서만 일어나게 한다. 공통 기본값
+   :where(.modal-backdrop > .pixel-panel)의 overflow-y: auto를 여기서
+   덮어쓴다(:where()는 특이도 0이라 단일 클래스가 항상 이긴다). */
+.settings-dialog {
+  box-sizing: border-box;
+  width: min(620px, calc(100vw - var(--unit) * 10));
+  height: 560px;
+  max-height: calc(100vh - var(--unit) * 8); /* fallback for older webviews */
+  max-height: calc(100dvh - var(--unit) * 8);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 2);
+  overflow: hidden;
+}
+.settings-dialog .pixel-title {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+/* 탭 바: workdir 상세 페인(.wd-tabs)과 같은 관례 — 밑줄 강조, 활성만 --accent. */
+.settings-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0;
+  border-bottom: 2px solid var(--border-dark);
+}
+.settings-tab {
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: calc(var(--unit) * 2) calc(var(--unit) * 3);
+  cursor: pointer;
+}
+.settings-tab:hover {
+  color: var(--text);
+}
+.settings-tab-active {
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border-bottom-color: var(--accent);
+}
+
+/* 유일한 스크롤 영역. 세로 여백은 .settings-form의 margin이 낸다. */
+.settings-tabpanel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.settings-dialog .dialog-actions {
+  flex: 0 0 auto;
+}
+
 /* 설정 폼(첫 실행/설정 다이얼로그 공유): 토글 + 설명 2단 구성 */
 .settings-form { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
 .settings-item { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }

@@ -2,6 +2,12 @@
 //
 // 상시 설정 다이얼로그(BottomBar ⚙로 열림). FirstRunDialog와 달리 스토어
 // 값을 직접 바인딩 — 토글 즉시 updateAppSettings로 저장된다(확인 버튼 없음).
+//
+// 항목이 불어나 한 화면 스크롤로는 못 찾겠어서 탭 4개(일반/소리·음성/
+// 시스템/제어)로 나눴다. 탭은 다이얼로그 로컬 상태이고 기억하지 않는다 —
+// 열 때마다 첫 탭. 그래서 게이팅(SettingsDialog)과 본체(SettingsDialogBody)를
+// 나눠, 닫으면 본체가 언마운트되며 탭 상태가 함께 사라지게 한다(이 컴포넌트는
+// App에 상시 마운트돼 있어 useState만으로는 초기화되지 않는다).
 import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
@@ -19,13 +25,26 @@ import type {
   TtsStatus,
 } from "@shared/types";
 
+type SettingsTabId = "general" | "sound" | "system" | "control";
+
+/** 화면 순서 = 이 배열 순서. 첫 항목이 열 때마다의 기본 탭이다. */
+const SETTINGS_TABS: { id: SettingsTabId; label: string }[] = [
+  { id: "general", label: "일반" },
+  { id: "sound", label: "소리·음성" },
+  { id: "system", label: "시스템" },
+  { id: "control", label: "제어" },
+];
+
 export function SettingsDialog() {
   const modal = useAppStore((s) => s.modal);
-  const closeModal = useAppStore((s) => s.closeModal);
-  const appSettings = useAppStore((s) => s.appSettings);
-  const updateAppSettings = useAppStore((s) => s.updateAppSettings);
-
   if (modal.kind !== "settings") return null;
+  return <SettingsDialogBody />;
+}
+
+function SettingsDialogBody() {
+  const closeModal = useAppStore((s) => s.closeModal);
+  const cliEnabled = useAppStore((s) => s.appSettings.cliEnabled);
+  const [tab, setTab] = useState<SettingsTabId>(SETTINGS_TABS[0].id);
 
   return (
     <div
@@ -36,206 +55,267 @@ export function SettingsDialog() {
     >
       <div className="pixel-panel settings-dialog">
         <h2 className="pixel-title">설정</h2>
-        <SettingsForm
-          value={{
-            summarizerEnabled: appSettings.summarizerEnabled,
-            summaryProvider: appSettings.summaryProvider,
-            diaryEnabled: appSettings.diaryEnabled,
-            observerEnabled: appSettings.observerEnabled,
-          }}
-          onChange={updateAppSettings}
-        />
-        <div className="settings-form">
-          <label className="settings-item">
-            <input
-              type="checkbox"
-              checked={appSettings.typingSoundEnabled}
-              onChange={(e) => updateAppSettings({ typingSoundEnabled: e.target.checked })}
-            />
-            <span>
-              <strong>타건음</strong>
-              <small>에이전트가 일할 때 나는 키보드 타이핑 소리입니다.</small>
-            </span>
-          </label>
-          <label className="settings-item">
-            <input
-              type="checkbox"
-              checked={appSettings.notifySoundEnabled}
-              onChange={(e) => updateAppSettings({ notifySoundEnabled: e.target.checked })}
-            />
-            <span>
-              <strong>알림음</strong>
-              <small>알림이 왔을 때의 딩과 세션 시작·종료 효과음입니다.</small>
-            </span>
-          </label>
-          <label className="settings-item">
-            <span>
-              <strong>볼륨</strong>
-              <small>위 스위치들과 대사 읽어주기가 함께 씁니다.</small>
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={Math.round(appSettings.soundVolume * 100)}
-              disabled={
-                !appSettings.typingSoundEnabled &&
-                !appSettings.notifySoundEnabled &&
-                !appSettings.ttsEnabled
-              }
-              onChange={(e) => updateAppSettings({ soundVolume: Number(e.target.value) / 100 })}
-            />
-          </label>
-          <label className="settings-item">
-            <span>
-              <strong>질문 알림 지연 (초)</strong>
-              <small>
-                질문 알림을 이 시간만큼 보류하고, 그 사이 에이전트가 계속
-                일하면(오토모드 자동 승인 등) 알림을 내지 않습니다. 0이면 즉시
-                알림.
-              </small>
-            </span>
-            <input
-              type="number"
-              min={0}
-              max={60}
-              value={Math.round(appSettings.attentionHoldMs / 1000)}
-              onChange={(e) => {
-                const secs = Math.max(0, Math.min(60, Math.round(Number(e.target.value) || 0)));
-                updateAppSettings({ attentionHoldMs: secs * 1000 });
-              }}
-            />
-          </label>
-          <label className="settings-item">
-            <input
-              type="checkbox"
-              checked={appSettings.gitStatusEnabled}
-              onChange={(e) => updateAppSettings({ gitStatusEnabled: e.target.checked })}
-            />
-            <span>
-              <strong>작업 폴더 git 상태 표시</strong>
-              <small>
-                "작업 폴더 보기"에서 파일별 git 변경 상태(수정·추가·삭제 등)를
-                조회해 뱃지로 보여줍니다. 거대 저장소에서 느리면 끄세요.
-              </small>
-            </span>
-          </label>
-          <label className="settings-item">
-            <input
-              type="checkbox"
-              checked={appSettings.keepAwakeEnabled}
-              onChange={(e) => updateAppSettings({ keepAwakeEnabled: e.target.checked })}
-            />
-            <span>
-              <strong>작업 중 시스템 잠자기 방지</strong>
-              <small>
-                캐릭터가 작업하는 동안 컴퓨터가 자동으로 잠들지 않게 합니다. 화면은
-                꺼질 수 있으며, 뚜껑을 닫거나 수동으로 재우는 것은 막지 않습니다.
-                (macOS·Windows)
-              </small>
-            </span>
-          </label>
-          <label className="settings-item">
-            <input
-              type="checkbox"
-              checked={appSettings.sessionLogEnabled}
-              onChange={(e) => updateAppSettings({ sessionLogEnabled: e.target.checked })}
-            />
-            <span>
-              <strong>세션 로그 남기기</strong>
-              <small>
-                터미널에서 오간 내용(AI 대화·명령·출력)을 읽을 수 있는 텍스트로
-                파일에 기록합니다. 캐릭터 탭 우클릭 "세션 로그 보기"에서 열람하고
-                학습자료로 정리할 수 있습니다. 30일이 지나거나 전체 2GB를 넘으면
-                오래된 것부터 자동 삭제됩니다.
-              </small>
-            </span>
-          </label>
-          <label className="settings-item">
-            <input
-              type="checkbox"
-              checked={appSettings.mascotEnabled}
-              onChange={(e) => updateAppSettings({ mascotEnabled: e.target.checked })}
-            />
-            <span>
-              <strong>데스크톱 마스코트</strong>
-              <small>
-                지금 활동 중인 캐릭터를 앱 창과 별개의 작은 창으로 항상 위에
-                띄웁니다. 알림이 오면 그 자리에서 알리고, 클릭하면 해당 캐릭터의
-                터미널이 열립니다.
-              </small>
-            </span>
-          </label>
-          <label className="settings-item">
-            <span>
-              <strong>외부 터미널 앱</strong>
-              <small>
-                터미널 탭 우클릭 "OS 터미널로 열기"가 사용할 앱입니다. macOS
-                전용 — 다른 OS에서는 무시됩니다.
-              </small>
-            </span>
-            <select
-              value={appSettings.externalTerminal}
-              onChange={(e) =>
-                updateAppSettings({
-                  externalTerminal: e.target.value as ExternalTerminalApp,
-                })
-              }
+
+        <div className="settings-tabs" role="tablist" aria-label="설정 분류">
+          {SETTINGS_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              id={`settings-tab-${t.id}`}
+              aria-selected={tab === t.id}
+              aria-controls={`settings-tabpanel-${t.id}`}
+              className={tab === t.id ? "settings-tab settings-tab-active" : "settings-tab"}
+              onClick={() => setTab(t.id)}
             >
-              <option value="terminal">Terminal (기본)</option>
-              <option value="iterm">iTerm2</option>
-            </select>
-          </label>
-          <label className="settings-item">
-            <span>
-              <strong>셸 출력 에디터</strong>
-              <small>
-                터미널 탭 우클릭 "셸 출력을 에디터로 보기"(단축키 Cmd/Ctrl+Shift+E)가
-                .txt를 열 때 사용할 앱입니다.
-              </small>
-            </span>
-            <select
-              value={appSettings.externalEditor}
-              onChange={(e) =>
-                updateAppSettings({
-                  externalEditor: e.target.value as ExternalEditorApp,
-                })
-              }
-            >
-              <option value="system">시스템 기본</option>
-              <option value="vscode">VS Code</option>
-            </select>
-          </label>
-          <label className="settings-item">
-            <span>
-              <strong>파일 목록 백엔드</strong>
-              <small>
-                Everything(es.exe)은 Windows 전용·문서(md) 팔레트 한정, 실패
-                시 자동으로 기본 스캐너를 사용합니다.
-              </small>
-            </span>
-            <select
-              value={appSettings.fileIndexBackend}
-              onChange={(e) =>
-                updateAppSettings({
-                  fileIndexBackend: e.target.value as FileIndexBackend,
-                })
-              }
-            >
-              <option value="walker">기본 스캐너 (walker)</option>
-              <option value="everything">Everything (es.exe)</option>
-            </select>
-          </label>
-          <TerminalThemeItem />
+              {t.label}
+            </button>
+          ))}
         </div>
-        <TtsSection />
-        <ControlSection enabled={appSettings.cliEnabled} />
+
+        <div
+          className="settings-tabpanel"
+          role="tabpanel"
+          id={`settings-tabpanel-${tab}`}
+          aria-labelledby={`settings-tab-${tab}`}
+          tabIndex={0}
+        >
+          {tab === "general" && <GeneralTab />}
+          {tab === "sound" && <SoundTab />}
+          {tab === "system" && <SystemTab />}
+          {tab === "control" && <ControlSection enabled={cliEnabled} />}
+        </div>
+
         <div className="dialog-actions">
           <button className="pixel-btn" onClick={closeModal}>
             닫기
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** 일반 — 요약 라벨·요약기·일기·관찰. FirstRunDialog와 공유하는 폼 그대로. */
+function GeneralTab() {
+  const appSettings = useAppStore((s) => s.appSettings);
+  const updateAppSettings = useAppStore((s) => s.updateAppSettings);
+
+  return (
+    <SettingsForm
+      value={{
+        summarizerEnabled: appSettings.summarizerEnabled,
+        summaryProvider: appSettings.summaryProvider,
+        diaryEnabled: appSettings.diaryEnabled,
+        observerEnabled: appSettings.observerEnabled,
+      }}
+      onChange={updateAppSettings}
+    />
+  );
+}
+
+/** 소리·음성 — 효과음/볼륨/알림 지연 + 대사 읽어주기(TTS). */
+function SoundTab() {
+  const appSettings = useAppStore((s) => s.appSettings);
+  const updateAppSettings = useAppStore((s) => s.updateAppSettings);
+
+  return (
+    <>
+      <div className="settings-form">
+        <label className="settings-item">
+          <input
+            type="checkbox"
+            checked={appSettings.typingSoundEnabled}
+            onChange={(e) => updateAppSettings({ typingSoundEnabled: e.target.checked })}
+          />
+          <span>
+            <strong>타건음</strong>
+            <small>에이전트가 일할 때 나는 키보드 타이핑 소리입니다.</small>
+          </span>
+        </label>
+        <label className="settings-item">
+          <input
+            type="checkbox"
+            checked={appSettings.notifySoundEnabled}
+            onChange={(e) => updateAppSettings({ notifySoundEnabled: e.target.checked })}
+          />
+          <span>
+            <strong>알림음</strong>
+            <small>알림이 왔을 때의 딩과 세션 시작·종료 효과음입니다.</small>
+          </span>
+        </label>
+        <label className="settings-item">
+          <span>
+            <strong>볼륨</strong>
+            <small>위 스위치들과 대사 읽어주기가 함께 씁니다.</small>
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(appSettings.soundVolume * 100)}
+            disabled={
+              !appSettings.typingSoundEnabled &&
+              !appSettings.notifySoundEnabled &&
+              !appSettings.ttsEnabled
+            }
+            onChange={(e) => updateAppSettings({ soundVolume: Number(e.target.value) / 100 })}
+          />
+        </label>
+        <label className="settings-item">
+          <span>
+            <strong>질문 알림 지연 (초)</strong>
+            <small>
+              질문 알림을 이 시간만큼 보류하고, 그 사이 에이전트가 계속
+              일하면(오토모드 자동 승인 등) 알림을 내지 않습니다. 0이면 즉시
+              알림.
+            </small>
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={60}
+            value={Math.round(appSettings.attentionHoldMs / 1000)}
+            onChange={(e) => {
+              const secs = Math.max(0, Math.min(60, Math.round(Number(e.target.value) || 0)));
+              updateAppSettings({ attentionHoldMs: secs * 1000 });
+            }}
+          />
+        </label>
+      </div>
+      <TtsSection />
+    </>
+  );
+}
+
+/** 시스템 — 앱 바깥(OS·저장소·외부 앱)에 닿는 설정과 터미널 색상. */
+function SystemTab() {
+  const appSettings = useAppStore((s) => s.appSettings);
+  const updateAppSettings = useAppStore((s) => s.updateAppSettings);
+
+  return (
+    <div className="settings-form">
+      <label className="settings-item">
+        <input
+          type="checkbox"
+          checked={appSettings.gitStatusEnabled}
+          onChange={(e) => updateAppSettings({ gitStatusEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>작업 폴더 git 상태 표시</strong>
+          <small>
+            "작업 폴더 보기"에서 파일별 git 변경 상태(수정·추가·삭제 등)를
+            조회해 뱃지로 보여줍니다. 거대 저장소에서 느리면 끄세요.
+          </small>
+        </span>
+      </label>
+      <label className="settings-item">
+        <input
+          type="checkbox"
+          checked={appSettings.keepAwakeEnabled}
+          onChange={(e) => updateAppSettings({ keepAwakeEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>작업 중 시스템 잠자기 방지</strong>
+          <small>
+            캐릭터가 작업하는 동안 컴퓨터가 자동으로 잠들지 않게 합니다. 화면은
+            꺼질 수 있으며, 뚜껑을 닫거나 수동으로 재우는 것은 막지 않습니다.
+            (macOS·Windows)
+          </small>
+        </span>
+      </label>
+      <label className="settings-item">
+        <input
+          type="checkbox"
+          checked={appSettings.sessionLogEnabled}
+          onChange={(e) => updateAppSettings({ sessionLogEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>세션 로그 남기기</strong>
+          <small>
+            터미널에서 오간 내용(AI 대화·명령·출력)을 읽을 수 있는 텍스트로
+            파일에 기록합니다. 캐릭터 탭 우클릭 "세션 로그 보기"에서 열람하고
+            학습자료로 정리할 수 있습니다. 30일이 지나거나 전체 2GB를 넘으면
+            오래된 것부터 자동 삭제됩니다.
+          </small>
+        </span>
+      </label>
+      <label className="settings-item">
+        <input
+          type="checkbox"
+          checked={appSettings.mascotEnabled}
+          onChange={(e) => updateAppSettings({ mascotEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>데스크톱 마스코트</strong>
+          <small>
+            지금 활동 중인 캐릭터를 앱 창과 별개의 작은 창으로 항상 위에
+            띄웁니다. 알림이 오면 그 자리에서 알리고, 클릭하면 해당 캐릭터의
+            터미널이 열립니다.
+          </small>
+        </span>
+      </label>
+      <label className="settings-item">
+        <span>
+          <strong>외부 터미널 앱</strong>
+          <small>
+            터미널 탭 우클릭 "OS 터미널로 열기"가 사용할 앱입니다. macOS
+            전용 — 다른 OS에서는 무시됩니다.
+          </small>
+        </span>
+        <select
+          value={appSettings.externalTerminal}
+          onChange={(e) =>
+            updateAppSettings({
+              externalTerminal: e.target.value as ExternalTerminalApp,
+            })
+          }
+        >
+          <option value="terminal">Terminal (기본)</option>
+          <option value="iterm">iTerm2</option>
+        </select>
+      </label>
+      <label className="settings-item">
+        <span>
+          <strong>셸 출력 에디터</strong>
+          <small>
+            터미널 탭 우클릭 "셸 출력을 에디터로 보기"(단축키 Cmd/Ctrl+Shift+E)가
+            .txt를 열 때 사용할 앱입니다.
+          </small>
+        </span>
+        <select
+          value={appSettings.externalEditor}
+          onChange={(e) =>
+            updateAppSettings({
+              externalEditor: e.target.value as ExternalEditorApp,
+            })
+          }
+        >
+          <option value="system">시스템 기본</option>
+          <option value="vscode">VS Code</option>
+        </select>
+      </label>
+      <label className="settings-item">
+        <span>
+          <strong>파일 목록 백엔드</strong>
+          <small>
+            Everything(es.exe)은 Windows 전용·문서(md) 팔레트 한정, 실패
+            시 자동으로 기본 스캐너를 사용합니다.
+          </small>
+        </span>
+        <select
+          value={appSettings.fileIndexBackend}
+          onChange={(e) =>
+            updateAppSettings({
+              fileIndexBackend: e.target.value as FileIndexBackend,
+            })
+          }
+        >
+          <option value="walker">기본 스캐너 (walker)</option>
+          <option value="everything">Everything (es.exe)</option>
+        </select>
+      </label>
+      <TerminalThemeItem />
     </div>
   );
 }

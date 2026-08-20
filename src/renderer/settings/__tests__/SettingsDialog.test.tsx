@@ -5,12 +5,20 @@
 // 상시 설정 다이얼로그(ConfirmQuitDialog와 동일 패턴). FirstRunDialog와
 // 달리 스토어 값을 직접 바인딩한다 — 토글 클릭이 즉시 updateAppSettings로
 // 반영되는지, 닫기 버튼/백드롭이 closeModal을 부르는지 확인한다.
+//
+// 탭 4개로 나뉜 뒤로 항목은 해당 탭을 먼저 눌러야 화면에 있다 — 각 테스트가
+// `openTab()`으로 자기 탭을 연다(기본은 첫 탭 "일반").
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useAppStore } from "../../store/appStore";
 import { SettingsDialog } from "../SettingsDialog";
 
 const initialState = useAppStore.getState();
+
+/** 이름으로 탭을 연다. 탭 버튼은 role="tab"이라 항목 셀렉터와 부딪히지 않는다. */
+function openTab(name: string) {
+  fireEvent.click(screen.getByRole("tab", { name }));
+}
 
 beforeEach(() => {
   useAppStore.setState(initialState, true);
@@ -111,6 +119,7 @@ describe("SettingsDialog", () => {
     useAppStore.getState().openModal({ kind: "settings" });
 
     render(<SettingsDialog />);
+    openTab("시스템");
     // 이제 셀렉터가 둘(외부 터미널/셸 출력 에디터)이므로 이름으로 특정한다.
     fireEvent.change(screen.getByRole("combobox", { name: /외부 터미널/ }), {
       target: { value: "iterm" },
@@ -148,6 +157,7 @@ describe("SettingsDialog", () => {
     useAppStore.getState().openModal({ kind: "settings" });
 
     render(<SettingsDialog />);
+    openTab("시스템");
     fireEvent.change(screen.getByRole("combobox", { name: /셸 출력 에디터/ }), {
       target: { value: "vscode" },
     });
@@ -161,6 +171,7 @@ describe("SettingsDialog", () => {
   it("터미널 색상 셀렉터가 xtermTheme을 즉시 반영한다(앱 테마는 그대로)", () => {
     useAppStore.getState().openModal({ kind: "settings" });
     render(<SettingsDialog />);
+    openTab("시스템");
 
     const select = screen.getByRole("combobox", { name: /터미널 색상/ });
     expect((select as HTMLSelectElement).value).toBe("auto");
@@ -177,6 +188,7 @@ describe("SettingsDialog", () => {
   it("타건음·알림음 토글이 각각 독립적으로 반영된다", () => {
     useAppStore.getState().openModal({ kind: "settings" });
     render(<SettingsDialog />);
+    openTab("소리·음성");
 
     fireEvent.click(screen.getByLabelText(/타건음/));
     expect(useAppStore.getState().appSettings.typingSoundEnabled).toBe(false);
@@ -185,6 +197,54 @@ describe("SettingsDialog", () => {
     fireEvent.click(screen.getByLabelText(/알림음/));
     expect(useAppStore.getState().appSettings.notifySoundEnabled).toBe(false);
     expect(useAppStore.getState().appSettings.typingSoundEnabled).toBe(false);
+  });
+
+  // 탭 재편(kbm #2dt): 열 때는 항상 첫 탭 "일반"이고, 탭을 바꾸면 그 탭
+  // 항목만 남는다. 탭 상태는 기억하지 않으므로 닫았다 열면 다시 "일반".
+  it("탭 전환이 해당 탭 항목만 보여주고, 다시 열면 첫 탭으로 돌아온다", () => {
+    useAppStore.getState().openModal({ kind: "settings" });
+    const { rerender } = render(<SettingsDialog />);
+
+    const tabName = (t: HTMLElement) => t.textContent;
+    expect(screen.getAllByRole("tab").map(tabName)).toEqual([
+      "일반",
+      "소리·음성",
+      "시스템",
+      "제어",
+    ]);
+
+    // 기본 탭 = 일반. 다른 탭 항목은 아직 DOM에 없다.
+    expect(screen.getByRole("tab", { name: "일반" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByLabelText(/타건음/)).toBeNull();
+    expect(screen.queryByLabelText(/데스크톱 마스코트/)).toBeNull();
+    expect(screen.queryByLabelText(/CLI 제어/)).toBeNull();
+
+    openTab("소리·음성");
+    expect(screen.getByRole("tab", { name: "소리·음성" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("tab", { name: "일반" }).getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByLabelText(/타건음/)).toBeTruthy();
+    expect(screen.getByLabelText(/알림 대사 읽어주기/)).toBeTruthy();
+    // 일반 탭 항목(관찰)은 사라진다.
+    expect(screen.queryByLabelText(/에이전트 관찰/)).toBeNull();
+
+    openTab("시스템");
+    expect(screen.getByLabelText(/데스크톱 마스코트/)).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: /터미널 색상/ })).toBeTruthy();
+    expect(screen.queryByLabelText(/타건음/)).toBeNull();
+
+    openTab("제어");
+    expect(screen.getByLabelText(/CLI 제어/)).toBeTruthy();
+    expect(screen.queryByLabelText(/데스크톱 마스코트/)).toBeNull();
+
+    // 닫으면 본체가 언마운트되므로 탭 상태도 사라진다.
+    useAppStore.getState().closeModal();
+    rerender(<SettingsDialog />);
+    useAppStore.getState().openModal({ kind: "settings" });
+    rerender(<SettingsDialog />);
+    expect(screen.getByRole("tab", { name: "일반" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByLabelText(/CLI 제어/)).toBeNull();
   });
 
   it("닫기 버튼 클릭 시 closeModal을 부른다", () => {
