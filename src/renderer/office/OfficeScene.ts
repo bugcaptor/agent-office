@@ -61,6 +61,7 @@ export class OfficeScene {
   private bossSignBoard?: Graphics;
   private bossSignLabel?: Text;
   private offVacation?: () => void;
+  private offHoverGate?: () => void;
 
   constructor(opts: OfficeSceneOptions) {
     this.opts = opts;
@@ -105,6 +106,14 @@ export class OfficeScene {
 
     this.applyCamera();
     this.started = true;
+
+    // 오버레이(터미널 창 등)가 캔버스를 덮고 있을 때 뒤의 캐릭터가 hover되는
+    // 것을 차단. 유닛 테스트의 FakeApplication renderer에는 events가 없어
+    // 옵셔널 체이닝으로 건너뛴다.
+    const events = this.app.renderer.events;
+    if (events?.features) {
+      this.offHoverGate = bindHoverGate(events.features, this.opts.canvas);
+    }
 
     // Drive entity FSM/movement/animation from Pixi's own frame clock —
     // never a real timer/Date.now (keeps `CharacterEntity.update` testable
@@ -320,12 +329,41 @@ export class OfficeScene {
       this.onWake = undefined;
     }
     this.offVacation?.();
+    this.offHoverGate?.();
     this.world.destroy(); // unconditional: only unsubscribes bus + destroys entities, no Pixi dependency
     if (!this.started) return; // init() never completed -> nothing else to tear down yet
     this.started = false;
     if (this.tickerCallback) this.app.ticker.remove(this.tickerCallback);
     this.app.destroy(true, { children: true, texture: true }); // release GPU resources
   }
+}
+
+/**
+ * Pixi v8 EventSystem은 pointermove를 캔버스가 아닌 document(캡처)에 등록하므로,
+ * 캔버스를 덮은 DOM(터미널 오버레이·다이얼로그 등) 위에서 마우스를 움직여도
+ * 씬 히트테스트가 계속 돌아 뒤의 캐릭터에 pointerover가 발화한다. 포인터가
+ * 실제로 캔버스 위에 있을 때만 `features.move`를 켜서 이를 차단한다.
+ * EventsTicker의 합성 pointermove(정지 커서 밑으로 캐릭터가 걸어올 때)도 같은
+ * `features.move` 게이트를 지나므로 함께 정리된다. 캔버스 pointerleave 처리는
+ * `features.click` 게이트라 계속 살아 있어, 커서가 오버레이로 넘어가는 순간
+ * 기존 hover 상태는 정상 해제된다. 초기값은 false — 첫 pointerenter 전에는
+ * 포인터 위치를 모르니 안전하게 차단해 두면, 캔버스 위에서의 첫 이동이 바로
+ * enter를 발화해 스스로 풀린다.
+ */
+export function bindHoverGate(features: { move: boolean }, canvas: HTMLElement): () => void {
+  const enter = () => {
+    features.move = true;
+  };
+  const leave = () => {
+    features.move = false;
+  };
+  features.move = false;
+  canvas.addEventListener("pointerenter", enter);
+  canvas.addEventListener("pointerleave", leave);
+  return () => {
+    canvas.removeEventListener("pointerenter", enter);
+    canvas.removeEventListener("pointerleave", leave);
+  };
 }
 
 /** 월드좌표 → 화면좌표(캔버스 px): 카메라 정수 스케일 + 센터링 오프셋. */

@@ -57,7 +57,7 @@ vi.mock("pixi.js", async (importOriginal) => {
 });
 
 // Imported after the mock is registered so OfficeScene picks up the fake Application.
-const { OfficeScene, computeIntegerScale } = await import("../OfficeScene");
+const { OfficeScene, computeIntegerScale, bindHoverGate } = await import("../OfficeScene");
 const { createMockOfficeBus } = await import("../bus");
 const { OfficeWorld } = await import("../world/OfficeWorld");
 
@@ -263,5 +263,35 @@ describe("label anchor publishing (overhead-task-label)", () => {
     // renderer 320x224, 맵 320x224 → scale 1, offset (0,0) → 월드좌표 그대로.
     expect(seen[0].get("a1")).toEqual({ x: 50, y: 40 });
     collectSpy.mockRestore();
+  });
+});
+
+describe("bindHoverGate (오버레이 뒤 캐릭터 hover 차단)", () => {
+  it("초기에는 move를 끄고, 캔버스 enter/leave로 토글한다", () => {
+    const features = { move: true };
+    const canvas = document.createElement("canvas");
+    const off = bindHoverGate(features, canvas);
+
+    // 첫 pointerenter 전에는 포인터 위치를 모르므로 차단 상태로 시작.
+    expect(features.move).toBe(false);
+
+    canvas.dispatchEvent(new Event("pointerenter"));
+    expect(features.move).toBe(true);
+
+    // 커서가 캔버스를 덮은 오버레이로 넘어가면 leave → 히트테스트 차단.
+    canvas.dispatchEvent(new Event("pointerleave"));
+    expect(features.move).toBe(false);
+
+    off();
+  });
+
+  it("dispose 후에는 enter가 와도 move를 건드리지 않는다", () => {
+    const features = { move: true };
+    const canvas = document.createElement("canvas");
+    const off = bindHoverGate(features, canvas);
+    off();
+
+    canvas.dispatchEvent(new Event("pointerenter"));
+    expect(features.move).toBe(false);
   });
 });
