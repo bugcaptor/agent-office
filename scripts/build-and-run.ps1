@@ -1,4 +1,4 @@
-# 클론 직후 바로 빌드해서 실행해 보기 위한 스크립트 (Windows).
+﻿# 클론 직후 바로 빌드해서 실행해 보기 위한 스크립트 (Windows).
 #
 #   .\scripts\build-and-run.cmd              # 개발 모드로 실행 (npm run tauri dev)
 #   .\scripts\build-and-run.cmd --install    # NSIS 인스톨러 빌드 -> 설치 -> 실행
@@ -48,7 +48,8 @@ Require-Cmd node  "Node.js $NodeMin+"          "https://nodejs.org"
 Require-Cmd npm   "npm (Node.js 에 포함)"       "https://nodejs.org"
 Require-Cmd cargo "Rust 툴체인 (MSVC 타깃)"     "https://rustup.rs"
 
-$NodeMajor = [int](node -p 'process.versions.node.split(".")[0]')
+# node -p 에 따옴표를 넘기면 Windows PowerShell 이 벗겨 먹으니 node -v 를 직접 파싱한다.
+$NodeMajor = [int](((node -v) -replace '^v', '').Split('.')[0])
 if ($NodeMajor -lt $NodeMin) {
   Write-Host "오류: Node $NodeMin+ 가 필요하다 (현재 $(node -v))." -ForegroundColor Red
   Write-Host "      https://nodejs.org" -ForegroundColor Red
