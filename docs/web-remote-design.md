@@ -193,6 +193,86 @@ import 병합)와 `src-tauri/src/control/mod.rs`(`create`가 그 사이 성격 �
 완료 기준: 폰 Safari에서 채팅으로 지시 → 진행 표시 → 응답 버블 → 확인 요청
 카드에 퀵 키 응답까지 왕복.
 
+#### M2 구현 기록 (2026-08-21 — 코드 완성·폰 눈검증 대기)
+
+**와이어 최종 형태**(계획 대비 이름이 바뀌었다 — 아래 이탈 1):
+
+```
+클라이언트 → 호스트 (기존 rpc 프레임 위)
+  chat.follow { agentId }              viewer   구독 시작(멱등)
+  chat.send   { agentId, text }        operator 문장 통째 주입
+  chat.keys   { agentId, keys:[name] } operator 명명 키 시퀀스
+
+호스트 → 클라이언트 (새 프레임 하나)
+  { type:"chat", agentId, items:[TranscriptItem], backfill, unavailable }
+
+TranscriptItem = { role:"user"|"assistant", kind:"text"|"tool_use"|"tool_result",
+                   text, toolName?, isError, sidechain }
+```
+
+`backfill:true`는 **교체**다(이어 붙이기가 아니다). 재접속·늦은 합류에서 서버가
+최근 대화를 다시 보내는데, 이어 붙이면 같은 대화가 두 벌 쌓인다 — 교체 규칙이
+클라이언트 dedup 없이 그 문제를 없앤다. `unavailable:true`는 전사 파일을 못
+찾았다는 뜻이고 웹은 터미널 폴백을 안내한다.
+
+**파서 분리와 로그 동일성.** `TranscriptSource::render`가
+`parse(raw) -> Vec<TranscriptItem>` + `format_items(items) -> Vec<String>`로
+갈라졌다. `render`는 트레이트 기본 구현(`format_items(&self.parse(raw))`)이라
+로그와 채팅이 어긋날 수 없다. **기존 세션 로그 픽스처 테스트를 한 줄도 고치지
+않았고**(claude/codex의 `render(raw)` 헬퍼가 이제 `format_items∘parse_entry`를
+부른다) 전부 통과한다 — 그것이 "문자열 수준 동일" 계약의 근거다.
+
+- 클램프는 **한 번만** 한다: 항목의 `text`는 자르지 않은 원문이고, 로그는
+  `block()`에서, 와이어는 `TranscriptItem::clamped()`에서 자른다. 항목 단계에서
+  미리 자르면 로그 포매터가 두 번 잘라 "… (이하 생략)"이 두 줄 붙는다.
+- codex `sub_agent_activity`는 **도구 이름이 없는** `tool_use` 항목으로 표현한다
+  (`toolName: null` + `sidechain: true` → 로그 `⤷ 서브에이전트 …` 한 줄).
+  설계 스키마의 닫힌 집합을 유지하면서 예전 로그 줄을 그대로 재현하는 유일한
+  표현이었다.
+- 스키마에 `sidechain`을 **추가**했다(설계 명세엔 없었다). 없으면 서브에이전트
+  표식 `⤷`를 포매터가 복원할 수 없어 로그가 달라진다.
+
+**백필 규칙.** `TranscriptTailer::backfill(max_bytes, max_items)` —
+파일 끝에서 최대 **256KB**를 거슬러 읽고, 잘렸으면 첫 줄을 버리고(중간에서
+시작한 조각), 마지막 줄이 개행으로 안 끝났으면 그것도 버린다
+(`complete_lines`, 순수 함수·단위 테스트). 파싱한 뒤 **마지막 100개**만 남긴다.
+tail 스레드는 (1) 전사 파일을 처음 찾았을 때 (2) 붙어 있는 파일 집합이 바뀌었을
+때(리줌으로 새 세션 파일) (3) 새 팔로워가 합류했을 때 백필을 보낸다.
+
+계획 대비 달라진 결정:
+
+1. **커맨드 이름이 `chat.*`이다** — §5 원안의 `transcript.follow`/
+   `notifications.stream`이 아니다. 구독·주입·키가 한 화면(채팅 뷰)의 세 동작이라
+   접두사를 맞췄다. `transcript.list`(과거 세션 목록)는 **미구현**으로 미뤘다 —
+   M2 완료 기준(왕복)에 필요하지 않고 allowlist 표면만 넓힌다.
+2. **알림/활동은 별도 스트림 커맨드가 없다.** `WebRemoteEvents`가
+   `notification-new`/`notification-cleared`/`activity-event`/`session-state`를
+   **캐릭터 필터 없이** broadcast 하고(붙은 브라우저가 없으면 직렬화도 안 한다 —
+   `hub.has_clients()`), WS 연결은 **터미널 프레임만**(`output`/`restore`/
+   `resized`) attach 집합으로, **채팅 프레임만** follow 집합으로 거른다.
+   - 부수효과(좋은 쪽): 웹 클라이언트가 더 이상 접속 즉시 **모든 캐릭터에
+     attach 하지 않는다**. 예전엔 알림을 받으려고 그래야 했고, 그 대가로
+     캐릭터마다 tap + 1MB 링버퍼가 생겼다. 이제 링버퍼는 터미널 화면을 실제로
+     연 캐릭터에만 생긴다.
+3. **채팅 tail의 수명은 WS 연결**에 매인다. `chat.follow`가 연결 id를 하나
+   더하고, 연결이 끊기면 `ChatRegistry::release`가 그 연결 몫을 전부 놓는다.
+   마지막 팔로워가 빠지면 tail 스레드가 다음 슬라이스(100ms)에 끝난다.
+   - **알려진 한계**: `chat.unfollow`가 없다(allowlist를 3개로 유지). 목록으로
+     돌아가도 그 캐릭터의 tail은 브라우저를 닫을 때까지 돈다 — 비용은 세션
+     로그 수집 스레드와 같은 2초 stat 하나다.
+4. **주입은 봇 모드와 같은 함수를 쓴다.** `bot::runner::single_line` +
+   `INJECT_SUBMIT_DELAY_MS`(150ms)를 `pub`으로 올려 `chat.send`가 그대로 부른다:
+   개행을 공백으로 바꿔 한 줄로 만들고, 텍스트를 쓴 뒤 잠깐 쉬었다가 CR을 따로
+   보낸다(TUI가 Enter를 삼키는 것을 막는 실측 방어).
+5. **퀵 키는 이름만 받는다.** 브라우저가 임의 바이트를 stdin에 쏘는 통로를
+   만들지 않으려고 `key_bytes`(순수 함수) 테이블 밖 이름은 `badArgs`이고,
+   시퀀스 중 하나라도 모르면 **아무것도 쓰지 않고** 전부 거부한다.
+
+검증: cargo 1043(lib 1011 + 통합 22 + 10) · vitest 1776 · `tsc --noEmit` 0 ·
+`npm run web:build` 성공. 새 테스트는 파서 구조화·클램프 1회·`complete_lines`·
+backfill·키 매핑·채팅 allowlist/가시성·attach 없는 알림 도달·chat tail 왕복
+(백필→증분→unavailable)·ChatScreen 렌더 7건.
+
 ### M3. tailnet HTTPS (#7n 설계분 선별)
 
 serve 감지·등록/해제 대행(`ipc/commands/tailscale.rs`, `parse_serve_status`
