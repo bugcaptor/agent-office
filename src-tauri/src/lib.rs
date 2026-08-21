@@ -661,6 +661,7 @@ pub fn run() {
             ipc::commands::load_sprite,
             ipc::commands::delete_sprite,
             ipc::commands::summarize_text,
+            ipc::commands::openrouter_list_models,
             ipc::commands::generate_sprite_image,
             ipc::commands::get_app_settings,
             ipc::commands::set_app_settings,

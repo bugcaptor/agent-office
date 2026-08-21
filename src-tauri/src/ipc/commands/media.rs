@@ -130,6 +130,17 @@ pub async fn summarize_text(
     .await
 }
 
+/// 설정 화면의 OpenRouter 모델 추천 목록(요약·TTS 공용). AppState 비의존이고
+/// 키도 쓰지 않는다 — 공개 카탈로그 GET 한 번이라 `summarizer_enabled`로
+/// 게이트하지 **않는다**(`tts_list_voices`와 같은 판단: 기능을 켜기 전에도
+/// 어떤 모델을 고를 수 있는지 보여주는 편이 낫다).
+///
+/// 실패는 렌더러가 정적 프리셋 폴백으로 조용히 강등한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn openrouter_list_models() -> Result<Vec<String>, String> {
+    crate::summarizer::list_openrouter_models().await
+}
+
 /// PixelLab로 64×64 스프라이트 1장 생성. AppState 비의존
 /// (stateless) — 이 command만은 본문에 .await가 있으나 락을 전혀 잡지
 /// 않으므로 파일 머리말의 "no lock across await" 계약과 무관하다.

@@ -229,6 +229,18 @@ pub async fn summarize(
     run_with_timeout(command, &capped, purpose.timeout()).await
 }
 
+/// 설정 화면의 OpenRouter 모델 추천 목록. 키가 필요 없는 공개 GET이라
+/// `summarize`와 달리 설정·키 스토어를 전혀 보지 않는다 — 모듈 자체는 계속
+/// 비공개로 두고 이 얇은 껍데기만 밖으로 연다.
+///
+/// 요약 세마포어도 잡지 않는다(요약 대기열을 설정 화면이 소모하면 안 된다).
+pub async fn list_openrouter_models() -> Result<Vec<String>, String> {
+    /// 설정 화면이 사람을 기다리게 하는 조회라 요약보다 짧게 잡는다 —
+    /// 실패하면 정적 프리셋으로 조용히 폴백할 뿐이다.
+    const TIMEOUT_MODELS: Duration = Duration::from_secs(10);
+    openrouter::list_models(TIMEOUT_MODELS).await
+}
+
 /// HTTP 경로의 실행 껍데기. CLI 경로(`run_with_timeout`)와 같은 전역 세마포어와
 /// 같은 목적별 타임아웃을 쓴다 — 동시 요약 개수와 대기 예산이 provider에 따라
 /// 달라지면 안 된다.

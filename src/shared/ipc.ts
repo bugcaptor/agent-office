@@ -28,6 +28,9 @@ export const Commands = {
   loadSprite: "load_sprite",
   deleteSprite: "delete_sprite",
   summarizeText: "summarize_text",
+  // 설정 화면의 OpenRouter 모델 추천 목록(요약·TTS 공용). 키 없이 부르는
+  // 공개 카탈로그라 실패해도 정적 프리셋으로 폴백할 뿐이다.
+  openrouterListModels: "openrouter_list_models",
   generateSpriteImage: "generate_sprite_image",
   getAppSettings: "get_app_settings",
   setAppSettings: "set_app_settings",

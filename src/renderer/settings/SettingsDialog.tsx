@@ -13,6 +13,7 @@ import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { SettingsForm } from "./SettingsForm";
 import { WebRemoteSection } from "./WebRemoteSection";
+import { OpenrouterModelDatalist } from "./openrouterModels";
 import { previewVoice } from "../sound/soundManager";
 import { THEMES, THEME_ORDER } from "../theme/themes";
 import type { XtermThemeOverride } from "../terminal/theme";
@@ -157,8 +158,8 @@ function SummaryModelSection() {
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
   const current = summaryModels[provider];
   const defaults = SUMMARY_DEFAULT_MODELS[provider];
-  // OpenRouter만 CLI가 아니라 HTTP라 API 키가 따로 필요하다 — 그 키는 소리·음성
-  // 탭에서 관리하므로 여기서는 어디를 봐야 하는지만 알려 준다.
+  // OpenRouter만 CLI가 아니라 HTTP라 API 키가 따로 필요하다 — 키 입력과 연결
+  // 테스트는 아래 OpenrouterSummaryTools가 맡는다(저장소는 소리·음성 탭과 공유).
   const isOpenrouter = provider === "openrouter";
   // 모델 id 추천은 TTS 쪽과 같은 목록을 쓴다(중복 정의하면 갈라진다).
   const modelListId = isOpenrouter ? "summary-openrouter-models" : undefined;
@@ -175,9 +176,8 @@ function SummaryModelSection() {
     <div className="settings-form">
       {isOpenrouter && (
         <p className="settings-note">
-          OpenRouter 요약은 <b>소리·음성</b> 탭에 저장한 OpenRouter API 키(또는
-          환경변수 <code>OPENROUTER_API_KEY</code>)를 씁니다. 키가 없으면 요약이
-          실패하고 원문이 그대로 표시됩니다.
+          OpenRouter 요약은 API 키(또는 환경변수 <code>OPENROUTER_API_KEY</code>)를
+          씁니다. 키가 없으면 요약이 실패하고 원문이 그대로 표시됩니다.
         </p>
       )}
       <label className="settings-item">
@@ -217,12 +217,132 @@ function SummaryModelSection() {
         />
       </label>
       {isOpenrouter && (
-        <datalist id="summary-openrouter-models">
-          {OPENROUTER_MODEL_PRESETS.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
+        <>
+          <OpenrouterModelDatalist id="summary-openrouter-models" />
+          <OpenrouterSummaryTools />
+        </>
       )}
+    </div>
+  );
+}
+
+/** 요약 테스트가 실패했을 때 그대로 보여주면 뜻이 통하지 않는 코드들.
+ *  나머지는 원문을 보여준다 — 상류 오류는 종류가 열려 있다. */
+const SUMMARY_TEST_ERROR_LABEL: Record<string, string> = {
+  "summarizer-disabled": "요약 기능이 꺼져 있습니다(일반 탭에서 켜세요)",
+  "openrouter-key-missing": "OpenRouter API 키가 없습니다",
+};
+
+/** 요약 테스트에 쓰는 표본. 짧아야 한다 — 크레딧을 쓰는 실제 호출이다. */
+const SUMMARY_TEST_INSTRUCTION = "다음 텍스트를 한 문장으로 요약하라.";
+const SUMMARY_TEST_TEXT =
+  "설정 화면에서 OpenRouter 연결을 확인하려고 보낸 시험 문장입니다. " +
+  "요약이 돌아오면 키와 경량 모델 설정이 모두 올바른 것입니다.";
+
+/**
+ * OpenRouter 요약을 위한 키 입력과 연결 테스트.
+ *
+ * 키는 **소리·음성 탭과 같은 0600 저장소**를 그대로 쓴다(`ttsSetKeys`의 셋째
+ * 칸). 요약 전용 키를 따로 두면 같은 키를 두 번 넣게 되고 어느 쪽이 실제로
+ * 쓰이는지 알 수 없게 된다 — 백엔드도 키를 하나만 읽는다.
+ *
+ * 테스트는 전용 커맨드가 아니라 `summarizeText`(라벨 목적)를 그대로 탄다 —
+ * 여기서 성공하면 실제 라벨 요약도 같은 키·같은 경량 모델로 성공한다는 뜻이
+ * 돼야 하기 때문이다.
+ */
+function OpenrouterSummaryTools() {
+  const [status, setStatus] = useState<TtsStatus | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await tauriApi.ttsKeyStatus());
+    } catch {
+      setStatus(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const saveKey = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      // 앞 두 칸은 undefined — 여기서는 OpenRouter 키만 건드린다.
+      setStatus(await tauriApi.ttsSetKeys(undefined, undefined, apiKey));
+      setApiKey("");
+      setNote("키를 저장했습니다.");
+    } catch (err) {
+      setNote(`키 저장 실패: ${String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const test = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const out = await tauriApi.summarizeText(
+        "openrouter",
+        SUMMARY_TEST_INSTRUCTION,
+        SUMMARY_TEST_TEXT,
+        "label",
+      );
+      setNote(`요약: ${out}`);
+    } catch (err) {
+      const code = String(err);
+      setNote(`요약 실패: ${SUMMARY_TEST_ERROR_LABEL[code] ?? code}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="settings-item" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+      <div style={{ fontSize: 12, opacity: 0.85 }}>
+        {status
+          ? `OpenRouter 키 ${
+              status.openrouterSet
+                ? status.openrouterFromEnv
+                  ? "있음(환경변수)"
+                  : "있음"
+                : "없음"
+            }`
+          : "상태 조회 중…"}
+      </div>
+
+      <label className="settings-item">
+        <span>
+          <strong>OpenRouter API 키</strong>
+          <small>
+            이 키는 <b>소리·음성</b> 탭의 OpenRouter 키와 같은 저장소를 씁니다
+            (어느 쪽에서 넣어도 같습니다). 저장하면 앱에만 보관되고 화면에 다시
+            표시되지 않습니다.
+          </small>
+        </span>
+        <input
+          type="password"
+          autoComplete="off"
+          placeholder={status?.openrouterSet ? "저장됨 (변경 시 입력)" : "sk-or-…"}
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+        />
+      </label>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="pixel-btn" disabled={busy || apiKey === ""} onClick={saveKey}>
+          키 저장
+        </button>
+        <button className="pixel-btn" disabled={busy} onClick={test}>
+          {busy ? "요약 테스트 중…" : "요약 테스트"}
+        </button>
+      </div>
+      {note && <div style={{ fontSize: 12, opacity: 0.85 }}>{note}</div>}
     </div>
   );
 }
@@ -476,15 +596,9 @@ const REWRITE_VIA_LABEL: Record<TtsRewriteProvider, string> = {
 };
 
 /** 모델 입력 자유 텍스트의 추천 목록(datalist). 강제가 아니라 힌트다 — 새
- * 모델이 나와도 그냥 적어 넣으면 된다. */
+ * 모델이 나와도 그냥 적어 넣으면 된다. (OpenRouter 쪽은 실시간 카탈로그와
+ * 합쳐야 해서 openrouterModels.tsx가 따로 맡는다.) */
 const ANTHROPIC_MODEL_PRESETS = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"];
-const OPENROUTER_MODEL_PRESETS = [
-  "openai/gpt-5.4-mini",
-  "openai/gpt-5.4",
-  "anthropic/claude-haiku-4.5",
-  "google/gemini-2.5-flash",
-  "meta-llama/llama-4-maverick",
-];
 
 /**
  * 확인 요청 대사 TTS 설정.
@@ -623,11 +737,7 @@ function TtsSection() {
                   updateAppSettings({ ttsRewriteModelOpenrouter: e.target.value })
                 }
               />
-              <datalist id="tts-openrouter-models">
-                {OPENROUTER_MODEL_PRESETS.map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
+              <OpenrouterModelDatalist id="tts-openrouter-models" />
             </label>
           ) : (
             appSettings.ttsRewriteProvider !== "none" && (

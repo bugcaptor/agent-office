@@ -19,6 +19,9 @@
 use super::SummaryPurpose;
 
 pub const BASE_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
+/// 모델 카탈로그. 요약 호출과 달리 **인증이 없는 공개 GET**이라 키를 넣기
+/// 전에도 부를 수 있다 — 설정 화면이 모델 추천 목록을 채우는 데 쓴다.
+pub const MODELS_URL: &str = "https://openrouter.ai/api/v1/models";
 
 /// 라벨·일기는 한 문단짜리 출력이라 넉넉히 잡아도 이 정도면 충분하다.
 const MAX_TOKENS_LIGHT: u32 = 1_024;
@@ -121,6 +124,62 @@ pub async fn summarize(
     parse_response(status, &text)
 }
 
+/// 모델 카탈로그 응답 → 모델 id 목록. 순수.
+///
+/// `data[].id`만 뽑아 정렬한다 — 설정 화면의 datalist가 쓰는 값이 id뿐이고,
+/// 응답에 함께 실린 가격·컨텍스트 길이는 지금 화면에 놓을 자리가 없다.
+/// 정렬은 벤더별로 묶여 보이게 하려는 것이다(id가 `벤더/모델` 형식이다).
+pub fn parse_models_response(status: u16, body: &str) -> Result<Vec<String>, String> {
+    if status != 200 {
+        return Err(format!("openrouter http {status}"));
+    }
+    let v: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| format!("openrouter invalid JSON: {}", super::bounded_detail(&e.to_string())))?;
+    let mut ids: Vec<String> = v
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m.get("id").and_then(|i| i.as_str()))
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    ids.sort();
+    ids.dedup();
+    if ids.is_empty() {
+        // 호출측은 실패를 정적 프리셋으로 조용히 폴백한다 — 빈 목록을 성공으로
+        // 돌려주면 "조회했는데 아무것도 없다"와 구분되지 않는다.
+        return Err("empty model list".to_string());
+    }
+    Ok(ids)
+}
+
+/// 모델 카탈로그 조회. 이 함수만 네트워크를 만진다.
+///
+/// 키를 보내지 않는다 — 공개 엔드포인트이고, 설정 화면은 키가 저장되기
+/// **전에도** 목록을 보여줘야 한다. 실패는 전부 호출측에서 정적 프리셋
+/// 폴백으로 강등된다.
+pub async fn list_models(timeout: std::time::Duration) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(timeout)
+        .build()
+        .map_err(|e| format!("openrouter client: {}", super::bounded_detail(&e.to_string())))?;
+    let resp = client
+        .get(MODELS_URL)
+        .send()
+        .await
+        .map_err(|e| format!("openrouter network: {}", super::bounded_detail(&e.to_string())))?;
+    let status = resp.status().as_u16();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("openrouter network: {}", super::bounded_detail(&e.to_string())))?;
+    parse_models_response(status, &text)
+}
+
 /// 키가 없을 때의 안정 에러 문자열. CLI 경로의 `<provider>-not-found`와 같은
 /// 자리를 차지한다 — 렌더러는 이것을 실패로 보고 원문 폴백으로 강등한다.
 pub const KEY_MISSING: &str = "openrouter-key-missing";
@@ -197,6 +256,61 @@ mod tests {
             (200u16, r#"{"choices":[{"message":{"content":"sk-or-SECRET"#),
         ] {
             let e = parse_response(status, body).unwrap_err();
+            assert!(!e.contains("SECRET"), "{e}");
+        }
+    }
+
+    // 카탈로그는 응답 순서를 보장하지 않는다 — 화면에 벤더별로 묶여 보이려면
+    // 앱이 정렬해야 한다.
+    #[test]
+    fn parse_models_extracts_sorted_ids() {
+        let body = r#"{"data":[
+            {"id":"openai/gpt-5.4-mini","name":"GPT"},
+            {"id":"deepseek/deepseek-v4-pro"},
+            {"id":"anthropic/claude-haiku-4.5"},
+            {"id":"  "},
+            {"name":"id 없는 항목"}
+        ]}"#;
+        assert_eq!(
+            parse_models_response(200, body).unwrap(),
+            vec![
+                "anthropic/claude-haiku-4.5",
+                "deepseek/deepseek-v4-pro",
+                "openai/gpt-5.4-mini",
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_models_maps_error_shapes() {
+        // 비JSON(프록시가 끼어든 HTML 등).
+        assert!(parse_models_response(200, "<html>nope</html>")
+            .unwrap_err()
+            .starts_with("openrouter invalid JSON"));
+        assert_eq!(
+            parse_models_response(503, "{}"),
+            Err("openrouter http 503".to_string())
+        );
+        // data가 없거나 비면 "성공한 빈 목록"이 아니라 실패다(폴백으로 강등).
+        assert_eq!(
+            parse_models_response(200, r#"{"data":[]}"#),
+            Err("empty model list".to_string())
+        );
+        assert_eq!(
+            parse_models_response(200, "{}"),
+            Err("empty model list".to_string())
+        );
+    }
+
+    // 목록 경로도 요약 경로와 같은 규칙을 따른다 — 에러에 body를 싣지 않는다.
+    #[test]
+    fn model_list_errors_never_leak_the_response_body() {
+        for (status, body) in [
+            (401u16, r#"{"error":"key sk-or-SECRET is invalid"}"#),
+            (200u16, "sk-or-SECRET 아닌 JSON"),
+            (200u16, r#"{"data":[{"id":"#),
+        ] {
+            let e = parse_models_response(status, body).unwrap_err();
             assert!(!e.contains("SECRET"), "{e}");
         }
     }

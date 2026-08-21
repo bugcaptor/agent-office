@@ -90,6 +90,10 @@ export interface AgentOfficeApi {
     text: string,
     purpose?: SummaryPurpose,
   ): Promise<string>;
+  /** 설정 화면의 OpenRouter 모델 추천 목록(모델 id 정렬). 키가 필요 없는 공개
+   *  카탈로그 조회라 요약/TTS를 켜기 전에도 부를 수 있다. 실패는 호출측이
+   *  정적 프리셋 폴백으로 조용히 강등한다. */
+  openrouterListModels(): Promise<string[]>;
   /** PixelLab로 64×64 스프라이트 1장 생성. 동기 HTTP — 수십 초 걸릴 수 있다. */
   generateSpriteImage(description: string): Promise<GeneratedSpriteImage>;
   /** 앱 전역 opt-in 설정 로드. 인자 없음. */
