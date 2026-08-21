@@ -137,7 +137,9 @@ pub struct AppState {
     pub observer: Arc<ObserverRuntime>,
     pub observer_server: Arc<ObserverServerState>,
     pub store: ProfileStore,
-    pub portrait_store: crate::persistence::png_store::PngStore,
+    /// 초상 PNG 저장소. 웹 원격(`media.portrait` RPC)도 같은 인스턴스를 읽으므로
+    /// Arc다 — 디렉터리 규약이 두 곳에 복제되지 않는다.
+    pub portrait_store: Arc<crate::persistence::png_store::PngStore>,
     pub sprite_store: crate::persistence::png_store::PngStore,
     /// 세션 턴 시계열 로그(session-times.jsonl) — 턴이 종료될 때마다 append.
     pub session_time_store: crate::persistence::session_time_store::SessionTimeStore,

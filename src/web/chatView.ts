@@ -92,6 +92,109 @@ export function activityLine(payload: {
   }
 }
 
+// ── 호스트 입력 즉시 에코 ─────────────────────────────────────────────
+//
+// 데스크톱에서 사람이 친 프롬프트는 `UserPromptSubmit` 훅을 타고 activity
+// 프레임(kind=prompt, text=원문)으로 **즉시** 도착하지만, 같은 문장이 채팅
+// 버블이 되려면 CLI가 JSONL에 그것을 쓰고 서버 tail이 다음 틱에 집어 올릴
+// 때까지 기다려야 한다. 그 공백을 "대기 중 유저 버블"로 메운다.
+//
+// 정합성은 **소거**로 맞춘다: 전사 항목이 도착하면 같은 문장의 에코를 지운다.
+// 낙관 표시의 고전적 함정(원본이 영영 안 와서 버블이 두 벌 남는 것)은 상한
+// (`MAX_ECHOES`)과 정규화 매칭이 막는다.
+
+/** 동시에 들고 있을 에코 상한. 넘치면 오래된 것부터 버린다. */
+export const MAX_ECHOES = 10;
+
+/** 문장 비교용 정규화 — 앞뒤 공백만 턴다(주입은 원문을 그대로 보낸다). */
+function echoKey(text: string): string {
+  return text.trim();
+}
+
+/**
+ * activity 페이로드에서 에코할 프롬프트 원문을 뽑는다. 없으면 null.
+ * kind=prompt여도 훅 body에 프롬프트가 없으면 `text`가 비어 온다 — 그때는
+ * 진행 라인만 뜨고 에코는 만들지 않는다.
+ */
+export function promptEcho(payload: { kind?: string; text?: string | null }): string | null {
+  if (payload.kind !== "prompt") return null;
+  const text = payload.text?.trim();
+  return text ? text : null;
+}
+
+/**
+ * 에코 하나를 목록에 넣는다. **같은 문장이 이미 대기 중이면 넣지 않는다** —
+ * 웹에서 보낸 낙관 에코와 그 직후 호스트가 미러하는 activity prompt가 같은
+ * 문장이라 그냥 쌓으면 버블이 두 개가 된다.
+ */
+export function pushEcho(echoes: string[], text: string, max = MAX_ECHOES): string[] {
+  const key = echoKey(text);
+  if (!key) return echoes;
+  if (echoes.some((e) => echoKey(e) === key)) return echoes;
+  return [...echoes, text].slice(-max);
+}
+
+/** 에코 하나를 되돌린다(주입 실패 → 드래프트 복원과 한 쌍). */
+export function removeEcho(echoes: string[], text: string): string[] {
+  const at = echoes.findIndex((e) => echoKey(e) === echoKey(text));
+  if (at < 0) return echoes;
+  return [...echoes.slice(0, at), ...echoes.slice(at + 1)];
+}
+
+/**
+ * 전사에 실제로 나타난 유저 발화만큼 에코를 지운다. 매칭되지 않은 에코는
+ * 남는다(교체=backfill 프레임에서도 마찬가지 — 아직 전사에 없는 방금 입력이
+ * 사라지면 안 된다). 지울 것이 없으면 **같은 참조**를 돌려준다.
+ */
+export function dedupEchoes(echoes: string[], items: TranscriptItem[]): string[] {
+  if (echoes.length === 0) return echoes;
+  const rest = [...echoes];
+  for (const item of items) {
+    if (item.role !== "user" || item.kind !== "text") continue;
+    const key = echoKey(item.text);
+    if (!key) continue;
+    const at = rest.findIndex((e) => echoKey(e) === key);
+    if (at >= 0) rest.splice(at, 1);
+  }
+  return rest.length === echoes.length ? echoes : rest;
+}
+
+// ── 긴 본문 접기 ──────────────────────────────────────────────────────
+//
+// 서버가 웹용 한도(16k자/240줄)로 자르므로 전문이 오지만, 그대로 펼쳐 두면
+// 도구 결과 한 건이 화면을 통째로 먹는다. 접힌 상태로 시작하고 "더 보기"로
+// 편다.
+
+/** 접힌 채로 시작할 문자 수 기준. */
+export const COLLAPSE_CHARS = 500;
+/** 접힌 채로 시작할 줄 수 기준. */
+export const COLLAPSE_LINES = 8;
+/** 접었을 때 보여줄 줄 수(기준보다 하나 적게 — 잘렸다는 것이 보이게). */
+export const PREVIEW_LINES = 6;
+
+/** 이 본문이 접기 대상인가. */
+export function isLongText(
+  text: string,
+  maxChars = COLLAPSE_CHARS,
+  maxLines = COLLAPSE_LINES
+): boolean {
+  return text.length > maxChars || text.split("\n").length > maxLines;
+}
+
+/**
+ * 접힌 미리보기 본문. 길지 않으면 원문 그대로다(호출부가 분기하지 않아도
+ * 되게 — `isLongText`가 false면 이 함수는 항등이다).
+ */
+export function previewText(
+  text: string,
+  maxChars = COLLAPSE_CHARS,
+  previewLines = PREVIEW_LINES
+): string {
+  if (!isLongText(text, maxChars)) return text;
+  const head = text.split("\n").slice(0, previewLines).join("\n");
+  return head.length > maxChars ? head.slice(0, maxChars) : head;
+}
+
 /** 확인 요청 카드에 붙는 퀵 키. 서버 allowlist(`key_bytes`)와 같은 이름들. */
 export const QUICK_KEYS: Array<{ label: string; key: string }> = [
   { label: "1", key: "1" },

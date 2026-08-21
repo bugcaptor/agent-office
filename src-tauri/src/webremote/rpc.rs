@@ -39,9 +39,8 @@ use crate::types::CreateSessionRequest;
 pub fn required_permission(cmd: &str) -> Option<ClientPermission> {
     match cmd {
         // 읽기만
-        "agents.list" | "notifications.list" | "usage.snapshot" | "chat.follow" => {
-            Some(ClientPermission::ReadOnly)
-        }
+        "agents.list" | "notifications.list" | "usage.snapshot" | "chat.follow"
+        | "media.portrait" => Some(ClientPermission::ReadOnly),
         // 조작
         "session.start" | "session.dispose" | "notifications.clear" | "chat.send"
         | "chat.keys" => Some(ClientPermission::Input),
@@ -154,6 +153,19 @@ pub async fn dispatch(
                 ctx.hub_notify.clear(&sid, ids);
             }
             Ok(Value::Null)
+        }
+
+        // 커스텀 초상 PNG(base64). 없으면 null이고 뷰어는 seed+archetype으로
+        // 절차 생성 아바타를 그린다. 쓰기는 없다 — 프로필 소유권은 호스트에
+        // 있고 뷰어는 읽기 캐시다(§결정 4).
+        "media.portrait" => {
+            let agent_id = arg_str(&args, "agentId")?;
+            ensure_visible(ctx, record, &agent_id)?;
+            let png = ctx
+                .portraits
+                .load(&agent_id)
+                .map_err(|e| RpcError::internal(e.to_string()))?;
+            Ok(png.map(Value::String).unwrap_or(Value::Null))
         }
 
         // ── 채팅 뷰(M2) ─────────────────────────────────────────────
@@ -288,6 +300,7 @@ pub fn routes() -> Router<Arc<WebRemoteContext>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine as _;
     use serde_json::json;
 
     fn record(permission: ClientPermission) -> ClientRecord {
@@ -309,6 +322,8 @@ mod tests {
             Some(ClientPermission::ReadOnly)
         );
         assert_eq!(required_permission("usage.snapshot"), Some(ClientPermission::ReadOnly));
+        // 아바타 초상 — 읽기만(쓰기는 호스트 전용).
+        assert_eq!(required_permission("media.portrait"), Some(ClientPermission::ReadOnly));
         // operator 티어
         assert_eq!(required_permission("session.start"), Some(ClientPermission::Input));
         assert_eq!(required_permission("session.dispose"), Some(ClientPermission::Input));
@@ -330,6 +345,8 @@ mod tests {
             "export_terminal_output",
             "chat.unfollow",
             "transcript.list",
+            "media.portrait.save",
+            "save_portrait",
             "",
         ] {
             assert_eq!(required_permission(cmd), None, "{cmd}는 열려 있으면 안 된다");
@@ -343,6 +360,7 @@ mod tests {
             "agents.list",
             "notifications.list",
             "usage.snapshot",
+            "media.portrait",
             "session.start",
             "session.dispose",
             "notifications.clear",
@@ -353,7 +371,42 @@ mod tests {
         .into_iter()
         .filter(|c| required_permission(c).is_some())
         .collect();
-        assert_eq!(opened.len(), 9, "열린 커맨드는 정확히 이 9개뿐이다");
+        assert_eq!(opened.len(), 10, "열린 커맨드는 정확히 이 10개뿐이다");
+    }
+
+    /// 초상은 있으면 base64, 없으면 null이다(뷰어는 null을 절차 생성 신호로 쓴다).
+    #[tokio::test]
+    async fn portrait_returns_base64_or_null() {
+        let (ctx, dir) = crate::webremote::tests::build_ctx("web-portrait");
+        ctx.settings.write().unwrap().web_remote_enabled = true;
+        let viewer = record(ClientPermission::ReadOnly);
+
+        // 저장된 초상이 없으면 null.
+        let none = dispatch(&ctx, &viewer, 1, "media.portrait", json!({ "agentId": "a1" }))
+            .await
+            .expect("읽기 권한으로 조회 가능");
+        assert!(none.is_null(), "{none}");
+
+        // 저장해 두면 같은 base64가 그대로 돌아온다.
+        let png = base64::engine::general_purpose::STANDARD.encode([
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01,
+        ]);
+        ctx.portraits
+            .save("a1", &png, &["a1".to_string()])
+            .expect("초상 저장");
+        let some = dispatch(&ctx, &viewer, 1, "media.portrait", json!({ "agentId": "a1" }))
+            .await
+            .unwrap();
+        assert_eq!(some.as_str(), Some(png.as_str()));
+
+        // 프로필에 없는 id는 가시성 게이트에서 막힌다(경로 조작 시도 포함).
+        for bad in ["ghost", "../secret"] {
+            let err = dispatch(&ctx, &viewer, 1, "media.portrait", json!({ "agentId": bad }))
+                .await
+                .expect_err("없는 캐릭터");
+            assert_eq!(err.code, "forbidden", "{bad}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 읽기 전용 티어는 채팅을 **보기만** 한다 — 주입은 조작 권한이다.

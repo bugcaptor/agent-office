@@ -38,6 +38,10 @@ export default defineConfig({
   base: "/web/",
   resolve: {
     alias: {
+      // 아바타 절차 생성이 렌더러의 `office/gen`을 그대로 쓴다. 그 폴더는
+      // Pixi 비의존이라(마스코트 창이 같은 이유로 먼저 쓰고 있다) 웹 번들에
+      // Pixi가 딸려 오지 않는다 — 스토어·IPC도 마찬가지로 건드리지 않는다.
+      "@renderer": fileURLToPath(new URL("./src/renderer", import.meta.url)),
       "@shared": fileURLToPath(new URL("./src/shared", import.meta.url)),
       "@web": fileURLToPath(new URL("./src/web", import.meta.url)),
     },

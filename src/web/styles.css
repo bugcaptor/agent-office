@@ -247,6 +247,43 @@ body {
   opacity: 0.75;
   border-style: dashed;
 }
+/* 아직 전사에 나타나지 않은 내 입력(호스트 프롬프트 미러 + 낙관 에코). */
+.bubble.user.pending {
+  opacity: 0.72;
+  border-style: dashed;
+}
+/* 긴 본문의 "더 보기 / 접기". 버블 안 마지막 줄에 붙는다. */
+.bubble .more {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* 아바타 — 이미지가 늦게 와도 옆 텍스트가 밀리지 않게 자리를 먼저 잡는다. */
+.avatar {
+  flex: none;
+  display: inline-block;
+  vertical-align: middle;
+  border-radius: 5px;
+  background: #23272b;
+  overflow: hidden;
+}
+.avatar img {
+  display: block;
+  /* 커스텀 초상은 240×320 세로라 정사각 칸에서는 중앙을 잘라 쓴다. */
+  object-fit: cover;
+  /* 픽셀아트 확대 — 브라우저 보간을 끈다. */
+  image-rendering: pixelated;
+}
+.card .name .avatar {
+  margin-right: 8px;
+}
 
 .tool-line {
   align-self: stretch;
@@ -282,6 +319,11 @@ body {
   color: var(--ink);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  /* 서버가 웹 한도(16k자)로 보내므로 펼친 도구 결과가 화면을 통째로 먹을 수
+     있다 — 높이를 묶고 안에서 스크롤한다. */
+  max-height: 50vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .notice-line,

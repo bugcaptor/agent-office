@@ -148,6 +148,9 @@ pub struct WebRemoteContext {
     pub observer: Arc<ObserverRuntime>,
     pub observer_server: Arc<ObserverServerState>,
     pub live_usage: Arc<crate::usage::LiveUsageState>,
+    /// 커스텀 초상 PNG 저장소(`media.portrait` RPC). 네이티브와 **같은
+    /// 인스턴스**를 공유한다 — 디렉터리 규약이 두 곳에 복제되지 않는다.
+    pub portraits: Arc<crate::persistence::png_store::PngStore>,
     pub rate: pairing::PairRateLimiter,
     pair_notify: Mutex<Option<PairNotifyFn>>,
 }
@@ -166,6 +169,7 @@ pub struct WebRemoteContextDeps {
     pub observer: Arc<ObserverRuntime>,
     pub observer_server: Arc<ObserverServerState>,
     pub live_usage: Arc<crate::usage::LiveUsageState>,
+    pub portraits: Arc<crate::persistence::png_store::PngStore>,
 }
 
 impl WebRemoteContext {
@@ -186,6 +190,7 @@ impl WebRemoteContext {
             observer: deps.observer,
             observer_server: deps.observer_server,
             live_usage: deps.live_usage,
+            portraits: deps.portraits,
             rate: pairing::PairRateLimiter::default(),
             pair_notify: Mutex::new(None),
         }
@@ -260,6 +265,8 @@ impl WebRemoteContext {
                     session_id: live.map(|(sid, _)| sid.clone()),
                     cols,
                     rows,
+                    archetype: p.archetype,
+                    portrait_updated_at: p.portrait_updated_at,
                 }
             })
             .collect()
@@ -1289,6 +1296,10 @@ mod tests {
             observer,
             observer_server,
             live_usage: Arc::new(crate::usage::LiveUsageState::new()),
+            portraits: Arc::new(crate::persistence::png_store::PngStore::new(
+                dir.join("portraits"),
+                crate::persistence::png_store::MAX_PORTRAIT_BYTES,
+            )),
         }));
         (ctx, dir)
     }

@@ -17,6 +17,8 @@ import { PairingScreen } from "./PairingScreen";
 import { TerminalScreen } from "./TerminalScreen";
 import type { HostMsg, NotificationItem, RemoteAgent, ClientPermission } from "./protocol";
 import { RpcCmd } from "./protocol";
+import { resolveAvatar } from "./avatar";
+import * as notify from "./notify";
 import { WebRemoteSocket, probeAuth, type ConnState } from "./ws";
 
 type Phase = "checking" | "pairing" | "ready";
@@ -32,6 +34,10 @@ export function App() {
   const [view, setView] = useState<View>("chat");
   const [notifications, setNotifications] = useState<Record<string, NotificationItem[]>>({});
   const socketRef = useRef<WebRemoteSocket | null>(null);
+  // WS 핸들러는 `phase`에만 매여 있어 `agents` 클로저가 곧 낡는다 — 알림
+  // 제목(캐릭터 이름)과 아이콘은 최신 목록에서 찾아야 하므로 ref로 들고 있는다.
+  const agentsRef = useRef<RemoteAgent[]>([]);
+  agentsRef.current = agents;
 
   // 쿠키가 살아 있는지 먼저 본다(WS 401이면 페어링 화면).
   useEffect(() => {
@@ -48,6 +54,41 @@ export function App() {
     if (phase !== "ready") return;
     const socket = new WebRemoteSocket();
     socketRef.current = socket;
+
+    /** 이미 브라우저 알림으로 띄운 id(재접속 재송에 두 번 뜨지 않게). */
+    const raised = new Set<string>();
+
+    // 알림은 attach와 무관하게 **모든 캐릭터** 것이 온다 — 지금 보고 있지 않은
+    // 캐릭터라도 띄우고, 클릭하면 그 캐릭터 채팅으로 들어간다.
+    const raise = (agentId: string, item: NotificationItem) => {
+      if (
+        !notify.shouldNotify({
+          enabled: notify.enabled(),
+          permission: notify.permission(),
+          visibility: document.visibilityState,
+        })
+      ) {
+        return;
+      }
+      const agent = agentsRef.current.find((a) => a.agentId === agentId) ?? null;
+      const open = () => {
+        setOpenAgentId(agentId);
+        setView("chat");
+      };
+      const fire = (icon: string | null) =>
+        notify.show({
+          title: agent?.name ?? agentId,
+          body: item.message,
+          // 같은 알림이 두 번 뜨지 않게 — 재접속 재송에도 한 장만 남는다.
+          tag: item.id,
+          icon: icon ?? undefined,
+          onClick: open,
+        });
+      // 아바타는 대개 목록에서 이미 풀려 캐시 히트다. 그래도 못 얻으면
+      // 아이콘 없이 띄운다(알림이 아예 안 뜨는 것보다 낫다).
+      if (agent) void resolveAvatar(socket, agent).then(fire).catch(() => fire(null));
+      else fire(null);
+    };
 
     const offState = socket.onState(setConnState);
     const off = socket.onMessage((msg: HostMsg) => {
@@ -66,6 +107,13 @@ export function App() {
             if (list.some((n) => n.id === item.id)) return prev;
             return { ...prev, [msg.agentId]: [...list, item] };
           });
+          // 중복 판정을 setState 갱신자에 얹지 않는다 — 갱신자는 나중에(렌더
+          // 단계에) 돌기도 하고 StrictMode에서는 두 번 돌기도 한다.
+          if (!raised.has(item.id)) {
+            if (raised.size > 500) raised.clear();
+            raised.add(item.id);
+            raise(msg.agentId, item);
+          }
           break;
         }
         case "notificationCleared":

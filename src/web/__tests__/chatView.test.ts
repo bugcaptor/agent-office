@@ -4,12 +4,21 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  COLLAPSE_CHARS,
+  MAX_ECHOES,
   MAX_ITEMS,
+  PREVIEW_LINES,
   activityLine,
   applyChatFrame,
+  dedupEchoes,
   isAtBottom,
+  isLongText,
   isQuestion,
   itemGlyph,
+  previewText,
+  promptEcho,
+  pushEcho,
+  removeEcho,
   toolSummary,
 } from "@web/chatView";
 import type { NotificationItem, TranscriptItem } from "@web/protocol";
@@ -138,5 +147,98 @@ describe("activityLine", () => {
       expect(activityLine({ kind })).toBeNull();
     }
     expect(activityLine({})).toBeNull();
+  });
+});
+
+describe("호스트 입력 에코", () => {
+  it("kind=prompt의 원문만 에코 후보다", () => {
+    expect(promptEcho({ kind: "prompt", text: "  로그를 고쳐줘  " })).toBe("로그를 고쳐줘");
+    // 훅 body에 프롬프트가 없으면 진행 라인만 뜨고 에코는 없다.
+    expect(promptEcho({ kind: "prompt" })).toBeNull();
+    expect(promptEcho({ kind: "prompt", text: "" })).toBeNull();
+    expect(promptEcho({ kind: "prompt", text: "   " })).toBeNull();
+    expect(promptEcho({ kind: "prompt", text: null })).toBeNull();
+    // 다른 활동 신호는 에코가 아니다.
+    for (const kind of ["tool", "resume", "sub-start", undefined]) {
+      expect(promptEcho({ kind, text: "무언가" })).toBeNull();
+    }
+  });
+
+  it("같은 문장은 한 번만 쌓인다 — 웹 낙관 에코와 호스트 미러가 겹친다", () => {
+    const once = pushEcho([], "테스트를 돌려줘");
+    expect(once).toEqual(["테스트를 돌려줘"]);
+    // 정규화(trim) 기준으로 같으면 추가하지 않는다.
+    expect(pushEcho(once, "  테스트를 돌려줘 ")).toBe(once);
+    expect(pushEcho(once, "다른 말")).toEqual(["테스트를 돌려줘", "다른 말"]);
+    // 빈 문장은 애초에 에코가 아니다.
+    expect(pushEcho(once, "   ")).toBe(once);
+  });
+
+  it("상한을 넘으면 오래된 에코부터 버린다", () => {
+    let list: string[] = [];
+    for (let i = 0; i < MAX_ECHOES + 3; i += 1) list = pushEcho(list, `m${i}`);
+    expect(list).toHaveLength(MAX_ECHOES);
+    expect(list[0]).toBe("m3");
+  });
+
+  it("전송 실패는 에코를 되돌린다", () => {
+    const list = pushEcho(pushEcho([], "가"), "나");
+    expect(removeEcho(list, " 가 ")).toEqual(["나"]);
+    // 없는 문장은 목록을 건드리지 않는다(참조 유지).
+    expect(removeEcho(list, "다")).toBe(list);
+  });
+
+  it("전사에 나타난 유저 발화만큼만 소거한다", () => {
+    const echoes = ["첫 말", "둘째 말"];
+    const next = dedupEchoes(echoes, [
+      text("첫 말"),
+      text("에이전트 답", "assistant"),
+      { role: "user", kind: "tool_result", text: "둘째 말" },
+    ]);
+    // tool_result는 유저 발화가 아니다 — "둘째 말"은 남는다.
+    expect(next).toEqual(["둘째 말"]);
+
+    // 매칭이 없으면 참조를 유지한다(불필요한 재렌더 방지).
+    expect(dedupEchoes(echoes, [text("전혀 다른 말")])).toBe(echoes);
+    expect(dedupEchoes([], [text("첫 말")])).toEqual([]);
+  });
+
+  it("같은 문장이 두 번 나오면 에코도 하나씩만 소거된다", () => {
+    // pushEcho는 중복을 막지만 백필 전사에는 같은 문장이 여러 번 있을 수 있다.
+    const echoes = ["반복"];
+    expect(dedupEchoes(echoes, [text("반복"), text("반복")])).toEqual([]);
+  });
+
+  it("앞뒤 공백 차이는 같은 문장으로 본다", () => {
+    expect(dedupEchoes(["보고서 써줘"], [text("  보고서 써줘\n")])).toEqual([]);
+  });
+});
+
+describe("긴 본문 접기", () => {
+  it("문자 수·줄 수 어느 쪽이든 넘으면 접는다", () => {
+    expect(isLongText("짧다")).toBe(false);
+    expect(isLongText("가".repeat(COLLAPSE_CHARS + 1))).toBe(true);
+    expect(isLongText(Array.from({ length: 9 }, (_, i) => `line${i}`).join("\n"))).toBe(
+      true
+    );
+    // 기준 이하 줄 수는 그대로 편다.
+    expect(isLongText(Array.from({ length: 8 }, (_, i) => `line${i}`).join("\n"))).toBe(
+      false
+    );
+  });
+
+  it("미리보기는 앞부분만 남기고, 짧으면 항등이다", () => {
+    const short = "한 줄";
+    expect(previewText(short)).toBe(short);
+
+    const many = Array.from({ length: 40 }, (_, i) => `line${i}`).join("\n");
+    const head = previewText(many);
+    expect(head.split("\n")).toHaveLength(PREVIEW_LINES);
+    expect(head.startsWith("line0")).toBe(true);
+    expect(head).not.toContain("line39");
+
+    // 개행 없는 긴 한 줄은 문자 수로 자른다.
+    const wall = "가".repeat(COLLAPSE_CHARS + 200);
+    expect(previewText(wall)).toHaveLength(COLLAPSE_CHARS);
   });
 });

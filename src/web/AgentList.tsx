@@ -6,6 +6,8 @@
 import { useEffect, useState } from "react";
 import type { NotificationItem, RemoteAgent, ClientPermission } from "./protocol";
 import { RpcCmd } from "./protocol";
+import { AgentAvatar } from "./AgentAvatar";
+import * as notify from "./notify";
 import type { ConnState, WebRemoteSocket } from "./ws";
 
 interface Props {
@@ -49,6 +51,10 @@ export function AgentList({
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 브라우저 알림 토글. 저장소는 localStorage고 App.tsx가 알림을 띄울 때
+  // 직접 다시 읽는다 — 상태를 위로 끌어올리지 않아도 한 벌로 유지된다.
+  const [notifyOn, setNotifyOn] = useState(() => notify.enabled());
+  const [notifyHint, setNotifyHint] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -82,6 +88,25 @@ export function AgentList({
     }
   };
 
+  // 켤 때만 권한을 묻는다(끄기는 즉시). 거부는 사이트 설정에서만 되돌릴 수
+  // 있으므로 안내 문구를 잠깐 띄우고 토글은 꺼진 채로 둔다.
+  const toggleNotify = async () => {
+    setNotifyHint(null);
+    if (notifyOn) {
+      notify.setEnabled(false);
+      setNotifyOn(false);
+      return;
+    }
+    const perm = await notify.requestPermission();
+    if (perm !== "granted") {
+      setNotifyHint("브라우저가 알림을 거부했습니다. 사이트 설정에서 허용해 주세요.");
+      setTimeout(() => setNotifyHint(null), 4000);
+      return;
+    }
+    notify.setEnabled(true);
+    setNotifyOn(true);
+  };
+
   const session = usage?.claude?.windows.find((w) => w.kind === "session");
 
   return (
@@ -90,8 +115,20 @@ export function AgentList({
         <span className="title">{hostName}</span>
         <span className={`dot ${connState}`} title={connState} />
         {session && <span className="usage">세션 {Math.round(session.usedPercent)}%</span>}
+        {/* Notification API 자체가 없는 환경(iOS Safari 비-PWA 등)은 버튼을
+            아예 그리지 않는다 — 눌러도 아무 일이 없는 버튼은 두지 않는다. */}
+        {notify.supported() && (
+          <button
+            className="btn small"
+            title={notifyOn ? "브라우저 알림 끄기" : "브라우저 알림 켜기"}
+            onClick={() => void toggleNotify()}
+          >
+            {notifyOn ? "🔔" : "🔕"}
+          </button>
+        )}
       </header>
 
+      {notifyHint && <p className="muted pad">{notifyHint}</p>}
       {error && <p className="error pad">{error}</p>}
       {agents.length === 0 && <p className="muted pad">보여줄 캐릭터가 없습니다.</p>}
 
@@ -102,7 +139,10 @@ export function AgentList({
           return (
             <li key={a.agentId} className="card">
               <button className="card-main" onClick={() => onOpen(a)}>
-                <span className="name">{a.name}</span>
+                <span className="name">
+                  <AgentAvatar socket={socket} agent={a} size={22} />
+                  {a.name}
+                </span>
                 <span className="meta">
                   {a.role || "역할 없음"} · {STATE_LABEL[a.state ?? ""] ?? "세션 없음"}
                 </span>

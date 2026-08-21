@@ -17,6 +17,10 @@ export interface RemoteAgent {
   sessionId?: string | null;
   cols?: number;
   rows?: number;
+  /** 아키타입(종족) id. 절차 생성 아바타에 seed와 함께 쓴다. 없으면 "human". */
+  archetype?: string | null;
+  /** 커스텀 초상이 있으면 epoch ms(캐시 키). 없으면 절차 생성 아바타. */
+  portraitUpdatedAt?: number | null;
 }
 
 export interface RemoteOutput {
@@ -104,6 +108,7 @@ export const RpcCmd = {
   agentsList: "agents.list",
   notificationsList: "notifications.list",
   usageSnapshot: "usage.snapshot",
+  mediaPortrait: "media.portrait",
   sessionStart: "session.start",
   sessionDispose: "session.dispose",
   notificationsClear: "notifications.clear",

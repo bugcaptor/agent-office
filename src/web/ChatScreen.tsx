@@ -24,12 +24,19 @@ import { RpcCmd } from "./protocol";
 import {
   activityLine,
   applyChatFrame,
+  dedupEchoes,
   isAtBottom,
+  isLongText,
   isQuestion,
   itemGlyph,
+  previewText,
+  promptEcho,
+  pushEcho,
+  removeEcho,
   toolSummary,
   QUICK_KEYS,
 } from "./chatView";
+import { AgentAvatar } from "./AgentAvatar";
 import type { WebRemoteSocket } from "./ws";
 
 interface Props {
@@ -52,6 +59,8 @@ export function ChatScreen({
   onClearNotifications,
 }: Props) {
   const [items, setItems] = useState<TranscriptItem[]>([]);
+  /** 전사에 아직 안 나타난 유저 입력(데스크톱 프롬프트 미러 + 웹 낙관 에코). */
+  const [echoes, setEchoes] = useState<string[]>([]);
   const [unavailable, setUnavailable] = useState(false);
   const [activity, setActivity] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -67,6 +76,7 @@ export function ChatScreen({
 
   useEffect(() => {
     setItems([]);
+    setEchoes([]);
     setUnavailable(false);
     setActivity(null);
     setExpanded(new Set());
@@ -93,6 +103,10 @@ export function ChatScreen({
         const view = listRef.current;
         stickRef.current = view ? isAtBottom(view) : true;
         setItems((prev) => applyChatFrame(prev, msg));
+        // 전사에 실제로 나타난 유저 발화만큼 에코를 소거한다. 교체(backfill)
+        // 프레임이어도 **매칭된 것만** 지운다 — 방금 친 문장이 아직 전사에
+        // 없다고 버블이 사라지면 안 된다.
+        setEchoes((prev) => dedupEchoes(prev, msg.items ?? []));
         // 펼침 상태는 항목 인덱스에 매여 있다 — 교체 프레임이 오면 그 인덱스가
         // 다른 항목을 가리키므로 접어 둔다.
         if (msg.backfill) setExpanded(new Set());
@@ -102,8 +116,17 @@ export function ChatScreen({
         return;
       }
       if (msg.type === "activity" && msg.agentId === agentId) {
-        const line = activityLine(msg.payload as { kind?: string; text?: string });
+        const payload = msg.payload as { kind?: string; text?: string };
+        const line = activityLine(payload);
         if (line) setActivity(line.text);
+        // 데스크톱에서 사람이 친 프롬프트는 훅이 원문을 그대로 미러한다 —
+        // 전사 tail을 기다리지 않고 곧바로 유저 버블로 세운다.
+        const echo = promptEcho(payload);
+        if (echo) {
+          const view = listRef.current;
+          stickRef.current = view ? isAtBottom(view) : true;
+          setEchoes((prev) => pushEcho(prev, echo));
+        }
         return;
       }
     });
@@ -122,7 +145,7 @@ export function ChatScreen({
       view.scrollTop = view.scrollHeight;
       setHasNew(false);
     }
-  }, [items, activity]);
+  }, [items, echoes, activity]);
 
   const question = useMemo(
     () => notifications.filter(isQuestion).slice(-1)[0] ?? null,
@@ -148,10 +171,13 @@ export function ChatScreen({
     setDraft("");
     setError(null);
     stickRef.current = true;
+    // 낙관 에코 — 전사에 나타나기 전까지 내 문장이 화면에 보인다.
+    setEchoes((prev) => pushEcho(prev, text));
     socket.rpc(RpcCmd.chatSend, { agentId, text }).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : String(err));
-      // 주입에 실패했으면 애써 친 문장을 돌려준다.
+      // 주입에 실패했으면 애써 친 문장을 돌려준다(에코도 함께 되돌린다).
       setDraft(text);
+      setEchoes((prev) => removeEcho(prev, text));
     });
   };
 
@@ -170,6 +196,7 @@ export function ChatScreen({
         <button className="btn small" onClick={onBack}>
           ← 목록
         </button>
+        <AgentAvatar socket={socket} agent={agent} size={26} />
         <span className="title">{agent.name}</span>
         {!canInput && <span className="badge">읽기 전용</span>}
         <button className="btn small" onClick={onOpenTerminal}>
@@ -215,17 +242,26 @@ export function ChatScreen({
             </button>
           </div>
         )}
-        {!unavailable && items.length === 0 && (
+        {!unavailable && items.length === 0 && echoes.length === 0 && (
           <p className="muted pad">아직 대화가 없습니다.</p>
         )}
         {items.map((item, i) => {
           if (item.kind === "text") {
+            // 긴 발화는 접어서 시작한다 — 펼침 상태는 도구 줄과 같은 인덱스
+            // 집합을 쓰므로 backfill 교체 시 함께 접힌다.
+            const long = isLongText(item.text);
+            const shown = expanded.has(i);
             return (
               <div
                 key={i}
                 className={`bubble ${item.role}${item.sidechain ? " side" : ""}`}
               >
-                {item.text}
+                {long && !shown ? previewText(item.text) : item.text}
+                {long && (
+                  <button className="more" onClick={() => toggle(i)}>
+                    {shown ? "접기" : "더 보기"}
+                  </button>
+                )}
               </div>
             );
           }
@@ -242,6 +278,9 @@ export function ChatScreen({
             </div>
           );
         })}
+        {echoes.map((t) => (
+          <EchoBubble key={`echo-${t}`} text={t} />
+        ))}
         {otherNotices.map((n) => (
           <div key={n.id} className="notice-line">
             {n.source === "bell" ? "🔔" : "✅"} {n.message}
@@ -279,6 +318,25 @@ export function ChatScreen({
             전송
           </button>
         </form>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 전사에 아직 없는 유저 입력 버블. 항목 인덱스가 없어 펼침 상태를 자기가
+ * 들고 있다(2,000자짜리 프롬프트도 오므로 접기 규칙은 똑같이 적용한다).
+ */
+function EchoBubble({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = isLongText(text);
+  return (
+    <div className="bubble user pending">
+      {long && !open ? previewText(text) : text}
+      {long && (
+        <button className="more" onClick={() => setOpen((v) => !v)}>
+          {open ? "접기" : "더 보기"}
+        </button>
       )}
     </div>
   );

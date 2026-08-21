@@ -312,10 +312,10 @@
         ));
         let profile_dir = scratch_dir(&format!("{tag}-profiles"));
         let store = ProfileStore::new(profile_dir.join("profiles.json"));
-        let portrait_store = crate::persistence::png_store::PngStore::new(
+        let portrait_store = Arc::new(crate::persistence::png_store::PngStore::new(
             profile_dir.join("portraits"),
             crate::persistence::png_store::MAX_PORTRAIT_BYTES,
-        );
+        ));
         let sprite_store = crate::persistence::png_store::PngStore::new(
             profile_dir.join("sprites"),
             crate::persistence::png_store::MAX_SPRITE_BYTES,
@@ -377,6 +377,7 @@
                 observer: observer.clone(),
                 observer_server: observer_server.clone(),
                 live_usage: live_usage.clone(),
+                portraits: portrait_store.clone(),
             },
         ));
         let state = AppState {

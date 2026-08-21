@@ -195,7 +195,12 @@ fn unavailable_frame(agent_id: &str) -> HostMsg {
 fn chat_frame(agent_id: &str, items: Vec<TranscriptItem>, backfill: bool) -> HostMsg {
     HostMsg::Chat {
         agent_id: agent_id.to_string(),
-        items: items.into_iter().map(TranscriptItem::clamped).collect(),
+        // 로그 한도가 아니라 **웹 한도**로 자른다 — 브라우저는 접기/펼치기로
+        // 전문을 보여주므로 여기서 1200자로 깎으면 펼칠 원문이 사라진다.
+        items: items
+            .into_iter()
+            .map(TranscriptItem::clamped_for_web)
+            .collect(),
         backfill,
         unavailable: false,
     }

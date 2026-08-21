@@ -462,7 +462,7 @@ pub fn run() {
             }
 
             let store = ProfileStore::new(data_dir.join("profiles.json"));
-            let portrait_store = PngStore::new(data_dir.join("portraits"), MAX_PORTRAIT_BYTES);
+            let portrait_store = Arc::new(PngStore::new(data_dir.join("portraits"), MAX_PORTRAIT_BYTES));
             let sprite_store = PngStore::new(data_dir.join("sprites"), MAX_SPRITE_BYTES);
             let session_time_store = crate::persistence::session_time_store::SessionTimeStore::new(
                 data_dir.join("session-times.jsonl"),
@@ -520,6 +520,7 @@ pub fn run() {
                     observer: observer.clone(),
                     observer_server: observer_server.clone(),
                     live_usage: live_usage.clone(),
+                    portraits: portrait_store.clone(),
                 },
             ));
             {

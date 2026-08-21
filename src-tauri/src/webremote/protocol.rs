@@ -141,6 +141,14 @@ pub struct RemoteAgent {
     pub cols: u16,
     #[serde(default)]
     pub rows: u16,
+    /// 아키타입(종족) id. 뷰어가 절차 생성 아바타를 그릴 때 seed와 함께 쓴다.
+    /// 부재 = "human" 폴백(렌더러 `resolveArchetype`과 같은 규약).
+    #[serde(default)]
+    pub archetype: Option<String>,
+    /// 커스텀 초상 존재 표시 + 캐시 무효화 키(epoch ms). Some이면 뷰어가
+    /// `media.portrait`로 PNG를 받아 아바타에 쓰고, None이면 절차 생성이다.
+    #[serde(default)]
+    pub portrait_updated_at: Option<u64>,
 }
 
 /// 출력 청크(호스트의 `OutputChunk`를 그대로 옮긴 것 + 절대 오프셋).
@@ -317,6 +325,26 @@ mod tests {
                 unavailable: true, ..
             }
         ));
+    }
+
+    /// 아바타용 additive 필드는 camelCase로 나가고, 옛 페이로드도 그대로 파싱된다.
+    #[test]
+    fn remote_agent_carries_avatar_hints() {
+        let json = serde_json::to_string(&RemoteAgent {
+            agent_id: "ada".into(),
+            name: "아다".into(),
+            archetype: Some("cat".into()),
+            portrait_updated_at: Some(1_700_000_000_000),
+            ..RemoteAgent::default()
+        })
+        .unwrap();
+        assert!(json.contains("\"archetype\":\"cat\""), "{json}");
+        assert!(json.contains("\"portraitUpdatedAt\":1700000000000"), "{json}");
+
+        let back: RemoteAgent =
+            serde_json::from_str(r#"{"agentId":"ada","name":"아다"}"#).unwrap();
+        assert_eq!(back.archetype, None);
+        assert_eq!(back.portrait_updated_at, None);
     }
 
     #[test]

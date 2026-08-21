@@ -34,6 +34,15 @@ pub(crate) const MAX_VALUE_CHARS: usize = 1200;
 /// 도구 결과에서 남길 줄 수 상한.
 pub(crate) const MAX_VALUE_LINES: usize = 24;
 
+/// 웹 채팅 프레임의 문자 상한. 로그와 달리 "펼치면 전문이 보인다"가 목적이라
+/// 훨씬 넉넉하다 — 클라이언트가 접기/펼치기로 화면 점유를 관리한다.
+/// 상한 산정: 폰이 들고 있는 항목 수(웹 `MAX_ITEMS` 400) × 이 한도가 최악의
+/// 메모리이므로, 16k자면 UTF-16 기준 대략 12MB대 — 400개가 전부 상한을 채우는
+/// 일은 실제로 없고(도구 결과 대부분은 수백 자) 현실적 상한으로 충분하다.
+pub const MAX_WEB_VALUE_CHARS: usize = 16_000;
+/// 웹 채팅 프레임의 줄 수 상한.
+pub const MAX_WEB_VALUE_LINES: usize = 240;
+
 /// 백필(웹 채팅 진입)에서 파일 끝에서부터 거슬러 읽는 최대 바이트.
 pub const BACKFILL_MAX_BYTES: u64 = 256 * 1024;
 /// 백필로 돌려주는 최대 항목 수(가장 최근 것부터 남긴다).
@@ -127,6 +136,15 @@ impl TranscriptItem {
     /// 와이어로 내보내기 전 본문을 자른다(로그의 `block`과 같은 규칙).
     pub fn clamped(mut self) -> Self {
         self.text = clamp_value(&self.text).join("\n");
+        self
+    }
+
+    /// 웹 채팅 프레임용 클램프. 로그 한도(1200자/24줄)로 자르면 브라우저에서
+    /// 펼쳐도 원문이 없다 — 잘린 뒤라 되살릴 곳이 없기 때문이다. 그래서 웹은
+    /// 별도의 넉넉한 한도를 쓰고, 접기/펼치기는 클라이언트가 한다.
+    pub fn clamped_for_web(mut self) -> Self {
+        self.text = clamp_value_with(&self.text, MAX_WEB_VALUE_CHARS, MAX_WEB_VALUE_LINES)
+            .join("\n");
         self
     }
 }
@@ -449,17 +467,25 @@ pub(crate) fn compact_json_brief(v: &serde_json::Value) -> String {
 }
 
 /// 여러 줄 값을 로그에 넣을 수 있게 자른다(줄 수·문자 수 둘 다).
+/// **세션 로그 전용 한도**다 — 픽스처 테스트가 문자열 수준으로 핀을 박고 있어
+/// 여기서 나오는 바이트는 바뀌면 안 된다.
 pub(crate) fn clamp_value(text: &str) -> Vec<String> {
+    clamp_value_with(text, MAX_VALUE_CHARS, MAX_VALUE_LINES)
+}
+
+/// 한도를 주입받는 클램프. 소비처마다 상한이 다르다(로그는 회고용 요약,
+/// 웹 채팅은 "펼치면 전문이 보인다"가 목적).
+pub(crate) fn clamp_value_with(text: &str, max_chars: usize, max_lines: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     let mut chars = 0usize;
     let mut truncated = false;
     for raw in text.lines() {
-        if lines.len() >= MAX_VALUE_LINES {
+        if lines.len() >= max_lines {
             truncated = true;
             break;
         }
         let line = raw.trim_end();
-        let remaining = MAX_VALUE_CHARS.saturating_sub(chars);
+        let remaining = max_chars.saturating_sub(chars);
         if remaining == 0 {
             truncated = true;
             break;
@@ -708,6 +734,56 @@ mod tests {
         let clamped = item.clamped();
         assert!(clamped.text.ends_with("… (이하 생략)"));
         assert_eq!(clamped.text.lines().count(), 2);
+    }
+
+    /// 웹 채팅은 별도 한도다 — 로그가 자르는 길이도 여기서는 그대로 살아남아야
+    /// 클라이언트가 "펼치기"로 전문을 보여줄 수 있다.
+    #[test]
+    fn web_clamp_keeps_what_the_log_would_cut() {
+        let long = "가".repeat(5000);
+        let item = TranscriptItem::speech(ItemRole::User, long.clone());
+
+        // 로그 한도로는 잘린다.
+        let logged = item.clone().clamped();
+        assert_eq!(
+            logged.text.lines().next().unwrap().chars().count(),
+            MAX_VALUE_CHARS
+        );
+        assert!(logged.text.ends_with("… (이하 생략)"));
+        // 웹 한도로는 원문 그대로.
+        let web = item.clone().clamped_for_web();
+        assert_eq!(web.text, long);
+        assert!(!web.text.contains("… (이하 생략)"));
+
+        // 웹 한도도 상한은 있다 — 넘으면 같은 마커가 붙는다.
+        let huge = "나".repeat(MAX_WEB_VALUE_CHARS + 100);
+        let cut = TranscriptItem::speech(ItemRole::User, huge).clamped_for_web();
+        assert!(cut.text.ends_with("… (이하 생략)"));
+        assert_eq!(cut.text.lines().next().unwrap().chars().count(), MAX_WEB_VALUE_CHARS);
+
+        // 줄 수 상한도 웹 쪽이 넉넉하다.
+        let many: String = (0..300).map(|i| format!("line{i}\n")).collect();
+        let lines = clamp_value_with(&many, MAX_WEB_VALUE_CHARS, MAX_WEB_VALUE_LINES);
+        assert_eq!(lines.len(), MAX_WEB_VALUE_LINES + 1);
+        assert_eq!(lines.last().unwrap(), "… (이하 생략)");
+    }
+
+    /// 한도 파라미터화가 **세션 로그 출력을 바꾸지 않았다**는 핀.
+    #[test]
+    fn parameterized_clamp_preserves_the_log_defaults() {
+        let cases: Vec<String> = vec![
+            "짧은 줄".to_string(),
+            "가".repeat(5000),
+            (0..100).map(|i| format!("line{i}\n")).collect(),
+            String::new(),
+        ];
+        for (i, text) in cases.iter().enumerate() {
+            assert_eq!(
+                clamp_value(text),
+                clamp_value_with(text, MAX_VALUE_CHARS, MAX_VALUE_LINES),
+                "case {i}"
+            );
+        }
     }
 
     #[test]

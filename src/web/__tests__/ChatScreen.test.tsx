@@ -258,3 +258,207 @@ describe("ChatScreen", () => {
     expect(container.querySelector(".activity-line")).toBeNull();
   });
 });
+
+describe("ChatScreen 유저 입력 에코", () => {
+  it("호스트 프롬프트는 전사보다 먼저 유저 버블로 뜨고, 전사가 오면 하나만 남는다", () => {
+    const { socket, push } = fakeSocket();
+    const { container } = render(
+      <ChatScreen
+        socket={socket}
+        agent={agent}
+        permission="input"
+        notifications={[]}
+        onBack={noop}
+        onOpenTerminal={noop}
+        onClearNotifications={noop}
+      />
+    );
+
+    // 데스크톱에서 사람이 친 프롬프트 — 훅이 원문을 실어 온다.
+    push(
+      chat({
+        type: "activity",
+        agentId: "a1",
+        payload: { kind: "prompt", text: "로그를 고쳐줘" },
+      })
+    );
+    const pending = container.querySelector(".bubble.user.pending");
+    expect(pending?.textContent).toBe("로그를 고쳐줘");
+    // 진행 표시는 별개로 그대로 뜬다.
+    expect(container.querySelector(".activity-line")?.textContent).toBe("⏳ 작업 중");
+
+    // 같은 문장이 전사로 도착하면 에코는 소거되고 진짜 버블 하나만 남는다.
+    push(
+      chat({
+        type: "chat",
+        agentId: "a1",
+        items: [{ role: "user", kind: "text", text: "로그를 고쳐줘" }],
+      })
+    );
+    expect(container.querySelector(".bubble.user.pending")).toBeNull();
+    expect(container.querySelectorAll(".bubble.user")).toHaveLength(1);
+  });
+
+  it("백필 교체는 매칭된 에코만 지우고 방금 친 문장은 남긴다", () => {
+    const { socket, push } = fakeSocket();
+    const { container } = render(
+      <ChatScreen
+        socket={socket}
+        agent={agent}
+        permission="input"
+        notifications={[]}
+        onBack={noop}
+        onOpenTerminal={noop}
+        onClearNotifications={noop}
+      />
+    );
+    for (const text of ["예전 말", "방금 친 말"]) {
+      push(chat({ type: "activity", agentId: "a1", payload: { kind: "prompt", text } }));
+    }
+    push(
+      chat({
+        type: "chat",
+        agentId: "a1",
+        backfill: true,
+        items: [{ role: "user", kind: "text", text: "예전 말" }],
+      })
+    );
+    const pending = [...container.querySelectorAll(".bubble.user.pending")];
+    expect(pending.map((n) => n.textContent)).toEqual(["방금 친 말"]);
+  });
+
+  it("prompt에 원문이 없으면 에코 없이 진행 라인만 뜬다", () => {
+    const { socket, push } = fakeSocket();
+    const { container } = render(
+      <ChatScreen
+        socket={socket}
+        agent={agent}
+        permission="input"
+        notifications={[]}
+        onBack={noop}
+        onOpenTerminal={noop}
+        onClearNotifications={noop}
+      />
+    );
+    push(chat({ type: "activity", agentId: "a1", payload: { kind: "prompt" } }));
+    expect(container.querySelector(".bubble.user.pending")).toBeNull();
+    expect(container.querySelector(".activity-line")).not.toBeNull();
+  });
+
+  it("웹에서 보낸 문장도 즉시 에코되고, 주입 실패면 에코와 드래프트가 되돌아온다", async () => {
+    const { socket, rpc } = fakeSocket();
+    const { container } = render(
+      <ChatScreen
+        socket={socket}
+        agent={agent}
+        permission="input"
+        notifications={[]}
+        onBack={noop}
+        onOpenTerminal={noop}
+        onClearNotifications={noop}
+      />
+    );
+    const input = container.querySelector(".chat-input input") as HTMLInputElement;
+
+    // ① 성공 경로 — 보내자마자 내 문장이 보인다.
+    fireEvent.change(input, { target: { value: "테스트를 돌려줘" } });
+    fireEvent.submit(container.querySelector(".chat-input") as HTMLFormElement);
+    expect(container.querySelector(".bubble.user.pending")?.textContent).toBe(
+      "테스트를 돌려줘"
+    );
+
+    // ② 실패 경로 — 에코를 거두고 드래프트를 복원한다.
+    (rpc as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
+      Promise.reject(new Error("주입 실패"))
+    );
+    fireEvent.change(input, { target: { value: "이건 실패한다" } });
+    await act(async () => {
+      fireEvent.submit(container.querySelector(".chat-input") as HTMLFormElement);
+    });
+    const pending = [...container.querySelectorAll(".bubble.user.pending")];
+    expect(pending.map((n) => n.textContent)).toEqual(["테스트를 돌려줘"]);
+    expect(input.value).toBe("이건 실패한다");
+    expect(container.querySelector(".error")?.textContent).toContain("주입 실패");
+  });
+});
+
+describe("ChatScreen 긴 본문", () => {
+  const long = Array.from({ length: 40 }, (_, i) => `줄${i}`).join("\n");
+
+  it("긴 발화는 접혀서 시작하고 '더 보기'로 펼친다", () => {
+    const { socket, push } = fakeSocket();
+    const { container } = render(
+      <ChatScreen
+        socket={socket}
+        agent={agent}
+        permission="input"
+        notifications={[]}
+        onBack={noop}
+        onOpenTerminal={noop}
+        onClearNotifications={noop}
+      />
+    );
+    push(
+      chat({
+        type: "chat",
+        agentId: "a1",
+        backfill: true,
+        items: [{ role: "assistant", kind: "text", text: long }],
+      })
+    );
+    const bubble = container.querySelector(".bubble.assistant") as HTMLElement;
+    expect(bubble.textContent).not.toContain("줄39");
+
+    fireEvent.click(screen.getByRole("button", { name: "더 보기" }));
+    expect(bubble.textContent).toContain("줄39");
+
+    fireEvent.click(screen.getByRole("button", { name: "접기" }));
+    expect(bubble.textContent).not.toContain("줄39");
+  });
+
+  it("짧은 발화에는 접기 버튼이 없다", () => {
+    const { socket, push } = fakeSocket();
+    render(
+      <ChatScreen
+        socket={socket}
+        agent={agent}
+        permission="input"
+        notifications={[]}
+        onBack={noop}
+        onOpenTerminal={noop}
+        onClearNotifications={noop}
+      />
+    );
+    push(
+      chat({
+        type: "chat",
+        agentId: "a1",
+        backfill: true,
+        items: [{ role: "assistant", kind: "text", text: "한 줄이면 그대로" }],
+      })
+    );
+    expect(screen.queryByRole("button", { name: "더 보기" })).toBeNull();
+  });
+
+  it("에코 버블도 같은 접기 규칙을 따른다", () => {
+    const { socket, push } = fakeSocket();
+    const { container } = render(
+      <ChatScreen
+        socket={socket}
+        agent={agent}
+        permission="input"
+        notifications={[]}
+        onBack={noop}
+        onOpenTerminal={noop}
+        onClearNotifications={noop}
+      />
+    );
+    push(
+      chat({ type: "activity", agentId: "a1", payload: { kind: "prompt", text: long } })
+    );
+    const bubble = container.querySelector(".bubble.user.pending") as HTMLElement;
+    expect(bubble.textContent).not.toContain("줄39");
+    fireEvent.click(screen.getByRole("button", { name: "더 보기" }));
+    expect(bubble.textContent).toContain("줄39");
+  });
+});
