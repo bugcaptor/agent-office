@@ -283,6 +283,21 @@ function OpenrouterSummaryTools() {
     }
   };
 
+  // 빈 문자열을 보내는 것이 백엔드의 삭제 신호다(undefined=보존). 입력창을
+  // 비우고 저장하는 경로로는 여기에 절대 닿지 않으므로 전용 버튼이 필요하다.
+  const deleteKey = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      setStatus(await tauriApi.ttsSetKeys(undefined, undefined, ""));
+      setNote("키를 삭제했습니다.");
+    } catch (err) {
+      setNote(`키 삭제 실패: ${String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const test = async () => {
     setBusy(true);
     setNote(null);
@@ -341,6 +356,11 @@ function OpenrouterSummaryTools() {
         <button className="pixel-btn" disabled={busy} onClick={test}>
           {busy ? "요약 테스트 중…" : "요약 테스트"}
         </button>
+        {status?.openrouterSet && !status.openrouterFromEnv && (
+          <button className="pixel-btn" disabled={busy} onClick={deleteKey}>
+            키 삭제
+          </button>
+        )}
       </div>
       {note && <div style={{ fontSize: 12, opacity: 0.85 }}>{note}</div>}
     </div>
@@ -605,7 +625,10 @@ const ANTHROPIC_MODEL_PRESETS = ["claude-haiku-4-5", "claude-sonnet-5", "claude-
  *
  * 키는 스토어(appSettings)에 들어오지 않는다 — 백엔드가 0600 파일에만 보관하고
  * 여기에는 **존재 여부**(`TtsStatus`)만 내려온다. 그래서 입력 필드는 항상
- * 빈 채로 시작하고, 저장 버튼을 눌러야 백엔드로 넘어간다(빈 값 저장 = 삭제).
+ * 빈 채로 시작하고, 저장 버튼을 눌러야 백엔드로 넘어간다. 입력을 비운 채
+ * 저장하면 그 필드는 `undefined`로 넘어가 기존 값이 그대로 유지된다 — 삭제는
+ * 이 값으로는 절대 닿을 수 없고, 저장된 키가 있을 때만 뜨는 전용 "키 삭제"
+ * 버튼(빈 문자열 `""`을 보냄)으로만 한다.
  */
 function TtsSection() {
   const appSettings = useAppStore((s) => s.appSettings);
@@ -650,6 +673,27 @@ function TtsSection() {
       setNote("키를 저장했습니다.");
     } catch (err) {
       setNote(`키 저장 실패: ${String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 셋 중 지정한 한 칸만 빈 문자열(=삭제 신호)로 보내고 나머지 둘은
+  // undefined(=보존)로 보낸다. 입력창을 비우고 저장하는 경로로는 빈 문자열에
+  // 절대 닿지 않으므로(위 saveKeys 참고) 삭제 전용 버튼이 필요하다.
+  const deleteKey = async (key: "elevenlabs" | "anthropic" | "openrouter") => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const next = await tauriApi.ttsSetKeys(
+        key === "elevenlabs" ? "" : undefined,
+        key === "anthropic" ? "" : undefined,
+        key === "openrouter" ? "" : undefined,
+      );
+      setStatus(next);
+      setNote("키를 삭제했습니다.");
+    } catch (err) {
+      setNote(`키 삭제 실패: ${String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -804,7 +848,8 @@ function TtsSection() {
                 <strong>ElevenLabs API 키</strong>
                 <small>
                   음성 합성에 필수입니다. 저장하면 앱에만 보관되고 화면에 다시
-                  표시되지 않습니다. 비우고 저장하면 삭제됩니다
+                  표시되지 않습니다. 비워두고 저장하면 기존 키가 그대로
+                  유지됩니다 — 삭제하려면 아래 "키 삭제" 버튼을 쓰세요
                   (<code>ELEVENLABS_API_KEY</code> 환경변수도 폴백으로 인정).
                 </small>
               </span>
@@ -816,6 +861,13 @@ function TtsSection() {
                 onChange={(e) => setElevenlabs(e.target.value)}
               />
             </label>
+            {status?.elevenlabsSet && !status.elevenlabsFromEnv && (
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button className="pixel-btn" disabled={busy} onClick={() => deleteKey("elevenlabs")}>
+                  ElevenLabs 키 삭제
+                </button>
+              </div>
+            )}
 
             <label className="settings-item">
               <span>
@@ -834,6 +886,13 @@ function TtsSection() {
                 onChange={(e) => setAnthropic(e.target.value)}
               />
             </label>
+            {status?.anthropicSet && !status.anthropicFromEnv && (
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button className="pixel-btn" disabled={busy} onClick={() => deleteKey("anthropic")}>
+                  Anthropic 키 삭제
+                </button>
+              </div>
+            )}
 
             <label className="settings-item">
               <span>
@@ -851,6 +910,13 @@ function TtsSection() {
                 onChange={(e) => setOpenrouter(e.target.value)}
               />
             </label>
+            {status?.openrouterSet && !status.openrouterFromEnv && (
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button className="pixel-btn" disabled={busy} onClick={() => deleteKey("openrouter")}>
+                  OpenRouter 키 삭제
+                </button>
+              </div>
+            )}
 
             <div style={{ display: "flex", gap: 8 }}>
               <button

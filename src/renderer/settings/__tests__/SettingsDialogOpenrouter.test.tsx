@@ -104,6 +104,29 @@ describe("SettingsDialog · OpenRouter 요약 설정", () => {
     await screen.findByText("키를 저장했습니다.");
   });
 
+  // kbm #2e6: 빈 입력 저장은 undefined(=보존)로만 가므로 삭제 전용 버튼이
+  // 필요하다. 요약 탭도 TTS와 같은 저장소를 쓰므로 같은 조건을 따른다.
+  it("저장된 키에만 삭제 버튼이 뜨고, 누르면 OpenRouter 칸만 빈 문자열로 보낸다", async () => {
+    hydrate({ summaryProvider: "openrouter" });
+    ttsKeyStatus.mockResolvedValue({ ...STATUS, openrouterSet: true, openrouterFromEnv: false });
+    ttsSetKeys.mockResolvedValue({ ...STATUS, openrouterSet: false });
+    render(<SettingsDialog />);
+    await screen.findByText(/OpenRouter 키 있음/);
+
+    fireEvent.click(screen.getByText("키 삭제"));
+    await waitFor(() => expect(ttsSetKeys).toHaveBeenCalledWith(undefined, undefined, ""));
+    await screen.findByText("키를 삭제했습니다.");
+  });
+
+  it("환경변수 출처인 키는 삭제 버튼이 뜨지 않는다", async () => {
+    hydrate({ summaryProvider: "openrouter" });
+    ttsKeyStatus.mockResolvedValue({ ...STATUS, openrouterSet: true, openrouterFromEnv: true });
+    render(<SettingsDialog />);
+    await screen.findByText(/OpenRouter 키 있음\(환경변수\)/);
+
+    expect(screen.queryByText("키 삭제")).toBeNull();
+  });
+
   it("요약 테스트가 실제 summarizeText 경로를 타고 결과를 보여준다", async () => {
     hydrate({ summaryProvider: "openrouter" });
     render(<SettingsDialog />);

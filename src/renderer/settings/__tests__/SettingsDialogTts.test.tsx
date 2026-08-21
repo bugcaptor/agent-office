@@ -214,6 +214,42 @@ describe("SettingsDialog · 알림 대사 TTS", () => {
     await waitFor(() => expect(or.value).toBe(""));
   });
 
+  // kbm #2e6: 빈 입력 저장은 undefined(=보존)로만 가므로 삭제 전용 버튼이
+  // 필요하다. 저장된 키가 있고(elevenlabsSet) 환경변수 출처가 아닐 때만 뜬다.
+  it("저장된 키에만 삭제 버튼이 뜨고, 환경변수 출처인 키는 삭제 버튼이 없다", async () => {
+    hydrate({ ttsEnabled: true });
+    ttsKeyStatus.mockResolvedValue({
+      ...STATUS,
+      elevenlabsSet: true,
+      elevenlabsFromEnv: false,
+      anthropicSet: true,
+      anthropicFromEnv: true, // 환경변수 출처 — 삭제 버튼 없어야 함
+      openrouterSet: false,
+    });
+    render(<SettingsDialog />);
+    openTab("소리·음성");
+    await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
+
+    expect(screen.getByText("ElevenLabs 키 삭제")).toBeTruthy();
+    expect(screen.queryByText("Anthropic 키 삭제")).toBeNull();
+    expect(screen.queryByText("OpenRouter 키 삭제")).toBeNull();
+  });
+
+  it("삭제 버튼을 누르면 해당 키만 빈 문자열로, 나머지는 undefined로 보낸다", async () => {
+    hydrate({ ttsEnabled: true });
+    ttsKeyStatus.mockResolvedValue({ ...STATUS, elevenlabsSet: true, elevenlabsFromEnv: false });
+    ttsSetKeys.mockResolvedValue({ ...STATUS, elevenlabsSet: false });
+    render(<SettingsDialog />);
+    openTab("소리·음성");
+    await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("ElevenLabs 키 삭제"));
+    await waitFor(() => expect(ttsSetKeys).toHaveBeenCalledWith("", undefined, undefined));
+    await screen.findByText("키를 삭제했습니다.");
+    // 삭제 후 상태가 갱신되면 버튼도 사라진다.
+    await waitFor(() => expect(screen.queryByText("ElevenLabs 키 삭제")).toBeNull());
+  });
+
   it("시청 버튼이 실제 발화된 대사를 보여준다", async () => {
     hydrate({ ttsEnabled: true });
     render(<SettingsDialog />);
