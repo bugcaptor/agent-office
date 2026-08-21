@@ -302,7 +302,8 @@ export class CharacterEntity {
 
   private setQueueTarget(slot: number): void {
     this.releaseBreakTile();
-    const p = tileCenterPx(QUEUE_SLOTS[slot]);
+    // 줄 슬롯도 씬마다 다르다(보스 자리가 다르므로) — 맵에서 읽고 폴백은 오피스 값.
+    const p = tileCenterPx((this.map.queueSlots ?? QUEUE_SLOTS)[slot]);
     this.targetPx = { x: p.x, y: p.y + TILE_SIZE / 2 };
     this.targetKind = "queue";
   }

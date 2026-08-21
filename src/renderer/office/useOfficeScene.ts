@@ -30,7 +30,8 @@
 // surviving one.
 import { useEffect, useRef } from "react";
 import { OfficeScene } from "./OfficeScene";
-import type { PixiThemePalette } from "../theme/themes";
+import type { ThemeDef } from "../theme/themes";
+import type { SceneDef } from "./scenes/sceneTypes";
 import type { OfficeBus } from "./bus";
 import type { AgentProfile } from "./types";
 
@@ -38,14 +39,17 @@ export function useOfficeScene(
   bus: OfficeBus,
   profiles: readonly AgentProfile[],
   resyncSignal?: unknown,
-  pixiPalette?: PixiThemePalette,
+  theme?: ThemeDef,
+  scene?: SceneDef,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<OfficeScene | null>(null);
-  // 마운트 효과는 deps가 비어 있어 최초 렌더의 값을 캡처한다 — 팔레트는 ref로
-  // 최신값을 넘겨 마운트 시점의 현재 테마로 씬을 생성한다.
-  const paletteRef = useRef(pixiPalette);
-  paletteRef.current = pixiPalette;
+  // 마운트 효과는 deps가 비어 있어 최초 렌더의 값을 캡처한다 — 테마·풍경은
+  // ref로 최신값을 넘겨 마운트 시점의 현재 조합으로 씬을 생성한다.
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
+  const sceneDefRef = useRef(scene);
+  sceneDefRef.current = scene;
   // profiles도 같은 이유로 ref가 필요하다 — 간헐적 "빈 사무실" 레이스의
   // 근본 원인: 실제 부팅에서는 App이 agents=[]로 먼저 렌더되고(bootApp의
   // loadState는 비동기), Pixi `init()`이 끝나기 전에 hydrate가 profiles를
@@ -68,19 +72,24 @@ export function useOfficeScene(
     container.appendChild(canvas);
 
     let disposed = false;
-    const scene = new OfficeScene({ canvas, bus, palette: paletteRef.current });
-    sceneRef.current = scene;
-    scene.init().then(() => {
+    const officeScene = new OfficeScene({
+      canvas,
+      bus,
+      theme: themeRef.current,
+      scene: sceneDefRef.current,
+    });
+    sceneRef.current = officeScene;
+    officeScene.init().then(() => {
       if (disposed) {
-        scene.destroy();
+        officeScene.destroy();
         return;
       }
-      scene.syncAgents(profilesRef.current); // initial sync — 최신값(마운트 시점 캡처 아님)
+      officeScene.syncAgents(profilesRef.current); // initial sync — 최신값(마운트 시점 캡처 아님)
     });
     return () => {
       disposed = true;
       sceneRef.current = null;
-      scene.destroy();
+      officeScene.destroy();
       canvas.remove(); // this scene's own canvas only -- never shared with another instance
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -93,11 +102,17 @@ export function useOfficeScene(
     sceneRef.current?.syncAgents(profiles);
   }, [profiles, resyncSignal]);
 
-  // 테마 팔레트 변경 -> 씬 배경 갱신 + 타일 텍스처 재베이크(Pixi 재생성 없음).
-  // `OfficeScene.setTheme`는 init 전에도 안전(팔레트만 저장 → init이 사용).
+  // 테마 변경 -> 씬 배경 갱신 + 타일 텍스처 재베이크(Pixi 재생성 없음).
+  // `OfficeScene.setTheme`는 init 전에도 안전(값만 저장 → init이 사용).
   useEffect(() => {
-    if (pixiPalette) sceneRef.current?.setTheme(pixiPalette);
-  }, [pixiPalette]);
+    if (theme) sceneRef.current?.setTheme(theme);
+  }, [theme]);
+
+  // 풍경 변경 -> 맵·타일·히트영역·월드까지 재구축(역시 Pixi 재생성 없음).
+  // 테마와 직교하므로 별도 효과로 둔다 — 둘 중 하나만 바뀌어도 각자 처리된다.
+  useEffect(() => {
+    if (scene) sceneRef.current?.setScene(scene);
+  }, [scene]);
 
   return { containerRef };
 }

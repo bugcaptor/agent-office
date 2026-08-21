@@ -119,9 +119,11 @@ export class OfficeWorld {
     const order = this.vacationMode
       ? []
       : [...this.pendingIds].filter((id) => this.entities.has(id));
+    // 슬롯 수는 씬(맵)이 정한다 — 폴백은 오피스 값.
+    const slots = this.o.map.queueSlots ?? QUEUE_SLOTS;
     for (const [id, e] of this.entities) {
       const i = order.indexOf(id);
-      e.setQueueSlot(i === -1 || i >= QUEUE_SLOTS.length ? null : i);
+      e.setQueueSlot(i === -1 || i >= slots.length ? null : i);
     }
   }
 
@@ -201,6 +203,28 @@ export class OfficeWorld {
 
     // 외형 재생성으로 새로 만들어진 엔티티(같은 id)에 큐 슬롯을 재주입한다.
     this.recomputeQueue();
+  }
+
+  /**
+   * 풍경(scene) 교체로 타일 맵이 통째로 바뀔 때의 전파. 좌석·라운지·줄 슬롯
+   * 좌표가 전부 달라지므로, 살아 있는 엔티티를 전부 파기하고 새 맵으로 다시
+   * 만든다(엔티티는 생성 시점의 맵 참조를 자기 안에 들고 있어 부분 갱신이
+   * 불가능하다). 걸어가던 캐릭터도 새 좌석에서 다시 시작한다 — 순간이동을
+   * 허용하는 대신 상태 전이 경로를 하나로 유지한다(설계 결정).
+   *
+   * 세션 활성/서브에이전트 수/알림 대기 캐시는 유지되므로 재생성된 엔티티에
+   * `syncAgents`가 그대로 다시 주입하고, 줄 순서도 그 끝의 recomputeQueue가
+   * 새 슬롯 기준으로 되살린다. 탕비실 예약은 좌표계가 바뀌었으니 비운다.
+   */
+  setMap(map: OfficeMap): void {
+    if (map === this.o.map) return;
+    const profiles = [...this.profiles.values()];
+    for (const entity of this.entities.values()) entity.destroy();
+    this.entities.clear();
+    this.appearanceKeys.clear();
+    this.breakReservations.clear();
+    this.o.map = map;
+    this.syncAgents(profiles);
   }
 
   /**

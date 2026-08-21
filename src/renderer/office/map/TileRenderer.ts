@@ -11,21 +11,27 @@
 // explicitly). `buildFurniture()` returns individual Graphics for every
 // y-sort target (desks, plants, break-room counter/table) for the
 // `sortableLayer`, each pre-tagged with `zIndex`.
+//
+// 한 칸을 *무엇으로* 그릴지는 풍경(scene)이 정한다(scenes/sceneTypes.ts의
+// `TileDrawFn`; 오피스 드로잉은 scenes/officeScene.ts). 이 클래스는 베이크/
+// 가구 분리/zIndex 같은 씬 공용 기계만 소유하므로 씬이 늘어나도 그대로다.
 
 import { Container, Graphics } from "pixi.js";
 import { Tile, TILE_SIZE } from "./mapData";
 import type { OfficeMap } from "./mapData";
 import { THEMES } from "../../theme/themes";
-import type { OfficeTilePalette } from "../../theme/themes";
+import { officeTileDraw } from "../scenes/officeScene";
+import type { TileDrawFn } from "../scenes/sceneTypes";
 
 export class TileRenderer {
-  // 팔레트는 테마 시스템(theme/themes.ts)에서 주입된다. 기본값은 테마 도입
-  // 이전의 원본 색(midnight) — 팔레트 없이 쓰던 기존 호출부/테스트의 외형을
-  // 보존한다. OfficeScene은 항상 현재 테마의 팔레트를 명시적으로 넘긴다.
+  // 드로잉 함수는 씬 레지스트리(scenes/*)에서 주입된다. 기본값은 오피스 씬 ×
+  // 테마 도입 이전의 원본 색(midnight) — 팔레트/드로잉 없이 쓰던 기존
+  // 호출부·테스트의 외형을 보존한다. OfficeScene은 항상 현재 씬×테마로
+  // 확정된 함수를 명시적으로 넘긴다.
   constructor(
     private map: OfficeMap,
     private tile = TILE_SIZE,
-    private pal: OfficeTilePalette = THEMES.midnight.pixi,
+    private draw: TileDrawFn = officeTileDraw(THEMES.midnight.pixi),
   ) {}
 
   /** Tile types drawn in the y-sorted furniture layer instead of the baked floor layer. */
@@ -71,82 +77,7 @@ export class TileRenderer {
 
   private drawTile(t: Tile, tx: number, ty: number): Graphics {
     const g = new Graphics();
-    const s = this.tile;
-    switch (t) {
-      case Tile.Floor: {
-        const checker = (tx + ty) % 2 === 0 ? this.pal.floorA : this.pal.floorB;
-        g.rect(0, 0, s, s).fill(checker);
-        // 1px pixel detail: corner dots
-        g.rect(1, 1, 1, 1).fill(this.pal.floorDot);
-        g.rect(s - 2, s - 2, 1, 1).fill(this.pal.floorDot);
-        break;
-      }
-      case Tile.Wall:
-        g.rect(0, 0, s, s).fill(this.pal.wall);
-        g.rect(0, 0, s, 3).fill(this.pal.wallTop); // 3px top highlight
-        break;
-      case Tile.DeskTop:
-        g.rect(0, 0, s, s).fill(this.pal.desk);
-        g.rect(0, 0, s, 4).fill(this.pal.deskTop); // bright top face
-        g.rect(0, s - 2, s, 2).fill(this.pal.deskEdge); // bottom shadow
-        g.rect(2, 6, s - 4, 1).fill(this.pal.deskEdge); // 1px wood grain
-        // 랩탑(뒷모습): 좌석과 정렬된 왼쪽 타일에만. 캐릭터가 책상 위쪽에
-        // 앉으므로 화면은 북쪽을 향하고, 뷰어에게는 뚜껑 등판이 보인다.
-        if (this.map.tiles[ty][tx - 1] !== Tile.DeskTop) {
-          g.rect(s * 0.2, s * 0.25, s * 0.6, 2).fill(this.pal.laptopBody); // 본체(키보드) 슬리버 — 뚜껑 뒤로 살짝
-          g.rect(s * 0.25, s * 0.3, s * 0.5, s * 0.45).fill(this.pal.laptopLid); // 뚜껑 등판
-          g.rect(s * 0.25, s * 0.3 + s * 0.45 - 1, s * 0.5, 1).fill(this.pal.laptopBody); // 하단 힌지 라인
-          g.rect(s * 0.45, s * 0.42, 2, 2).fill(this.pal.laptopBody); // 로고 도트
-        }
-        break;
-      case Tile.Rug:
-        g.rect(0, 0, s, s).fill(this.pal.rug);
-        g.rect(0, 0, s, 1).fill(this.pal.rugEdge);
-        g.rect(0, 0, 1, s).fill(this.pal.rugEdge);
-        break;
-      case Tile.Plant: {
-        // Pot (bottom half) + a few foliage clusters (top), pixel-art style.
-        const potH = Math.round(s * 0.35);
-        g.rect(s * 0.25, s - potH, s * 0.5, potH).fill(this.pal.plantPot);
-        g.rect(s * 0.5 - 1, s - potH - 1, 2, 1).fill(this.pal.plantPot); // pot rim
-        g.rect(s * 0.3, s * 0.15, s * 0.4, s * 0.35).fill(this.pal.plant); // main foliage mass
-        g.rect(s * 0.12, s * 0.35, s * 0.22, s * 0.22).fill(this.pal.plant); // left cluster
-        g.rect(s * 0.66, s * 0.35, s * 0.22, s * 0.22).fill(this.pal.plant); // right cluster
-        break;
-      }
-      case Tile.Counter:
-        g.rect(0, 0, s, s).fill(this.pal.counter);
-        g.rect(0, 0, s, 4).fill(this.pal.counterTop); // countertop face
-        g.rect(0, s - 2, s, 2).fill(this.pal.counter); // base shadow
-        // Alternate top decoration by tile position: coffee machine vs cup/sink block.
-        if (tx % 2 === 0) {
-          g.rect(s * 0.3, s * 0.55, s * 0.4, s * 0.3).fill(this.pal.counterTop); // coffee machine body
-          g.rect(s * 0.4, s * 0.48, s * 0.2, s * 0.1).fill(this.pal.counterTop); // spout
-        } else {
-          g.rect(s * 0.25, s * 0.6, s * 0.2, s * 0.2).fill(this.pal.counterTop); // cup
-          g.rect(s * 0.55, s * 0.6, s * 0.2, s * 0.2).fill(this.pal.counterTop); // cup
-        }
-        break;
-      case Tile.Table:
-        g.rect(0, 0, s, s).fill(this.pal.table);
-        g.rect(0, 0, s, 4).fill(this.pal.tableTop); // bright top face
-        g.rect(0, s - 2, s, 2).fill(this.pal.table); // bottom shadow (legs)
-        g.rect(2, 6, s - 4, 1).fill(this.pal.tableTop); // 1px wood grain
-        break;
-      case Tile.BossDesk: {
-        // 세로 책상(우측 벽 등짐) = 일반 책상의 90° 회전 — 가로 배치로
-        // 되돌리면 이 케이스도 다시 눕혀야 한다.
-        const north = this.map.tiles[ty - 1]?.[tx] === Tile.BossDesk;
-        g.rect(0, 0, s, s).fill(this.pal.desk);
-        g.rect(s - 4, 0, 4, s).fill(this.pal.deskTop); // 밝은 상판 얼굴(좌석 쪽 세로 밴드)
-        g.rect(0, 0, 2, s).fill(this.pal.deskEdge); // 전면 그림자(줄 쪽 세로 밴드)
-        g.rect(s - 7, 2, 1, s - 4).fill(this.pal.deskEdge); // 1px wood grain
-        if (!north) {
-          g.rect(s * 0.45, s * 0.25, 3, s * 0.5).fill(this.pal.counterTop); // 명패
-        }
-        break;
-      }
-    }
+    this.draw(g, { t, tx, ty, s: this.tile, map: this.map });
     return g;
   }
 }

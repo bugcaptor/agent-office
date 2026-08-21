@@ -24,6 +24,7 @@ import { AboutDialog } from "./about/AboutDialog";
 import { useAppStore } from "./store/appStore";
 import { useAgentList, useLightsOff } from "./store/selectors";
 import { THEMES } from "./theme/themes";
+import { SCENES } from "./office/scenes/scenes";
 import { applyTerminalBg } from "./theme/applyTheme";
 import { resolveXtermTheme } from "./terminal/theme";
 import { terminalRegistry } from "./terminal/TerminalRegistry";
@@ -81,11 +82,15 @@ function App() {
   // selector re-triggers B's resync effect whenever a sprite preview is
   // added/updated/removed (see `useOfficeScene`'s `resyncSignal` param).
   const spritePreviews = useAppStore((s) => s.spritePreviews);
-  // 테마 -> Pixi 팔레트. `THEMES[..].pixi`는 모듈 상수라 참조가 안정적 —
-  // 테마가 실제로 바뀔 때만 B의 setTheme 효과가 발화한다. DOM 쪽 토큰은
+  // 테마 -> Pixi 씬. `THEMES[..]`는 모듈 상수라 참조가 안정적 — 테마가 실제로
+  // 바뀔 때만 B의 setTheme 효과가 발화한다. DOM 쪽 토큰은
   // `applyTheme`(store.setTheme / main.tsx 부트)이 이미 처리한다.
   const themeId = useAppStore((s) => s.theme);
-  const pixiPalette = THEMES[themeId].pixi;
+  const theme = THEMES[themeId];
+  // 풍경(scene)은 테마와 직교한 축이다 — 같은 이유로 레지스트리 상수를 그대로
+  // 넘겨 참조 동일성이 바뀔 때만 B의 setScene 효과가 발화하게 한다.
+  const sceneId = useAppStore((s) => s.scene);
+  const scene = SCENES[sceneId];
   // 테마 -> 터미널(xterm) 팔레트. Pixi 배선과 같은 모양이되, 소비처가 React
   // 트리 밖(keep-alive 레지스트리)이라 효과로 밀어 넣는다. `xtermTheme`이
   // "auto"가 아니면 앱 테마와 무관하게 그 테마로 고정된다.
@@ -103,7 +108,8 @@ function App() {
         bus={officeBus}
         profiles={officeProfiles}
         resyncSignal={spritePreviews}
-        pixiPalette={pixiPalette}
+        theme={theme}
+        scene={scene}
       />
       {lightsOff && (
         <div className="office-lights-off" aria-hidden="true">
