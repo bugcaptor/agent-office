@@ -24,6 +24,7 @@ import {
   useRunningCount,
 } from "../store/selectors";
 import { THEMES, THEME_ORDER } from "../theme/themes";
+import { SCENES, SCENE_ORDER } from "../office/scenes/scenes";
 import { ContextMenu } from "../ui/ContextMenu";
 import { clockInAgent, clockInAll } from "../agent/clockOut";
 import { UsageWidget } from "../usage/UsageWidget";
@@ -34,6 +35,8 @@ export function BottomBar() {
   const toggleMuted = useAppStore((s) => s.toggleMuted);
   const theme = useAppStore((s) => s.theme);
   const setTheme = useAppStore((s) => s.setTheme);
+  const scene = useAppStore((s) => s.scene);
+  const setScene = useAppStore((s) => s.setScene);
   const runningCount = useRunningCount();
   const pendingCount = usePendingCount();
   const onDutyCount = useAgentList().length;
@@ -41,6 +44,7 @@ export function BottomBar() {
   const clockedOutCount = useClockedOutCount();
   const [summonMenu, setSummonMenu] = useState<{ x: number; y: number } | null>(null);
   const [themeMenu, setThemeMenu] = useState<{ x: number; y: number } | null>(null);
+  const [sceneMenu, setSceneMenu] = useState<{ x: number; y: number } | null>(null);
 
   return (
     <footer className="bottom-bar pixel-panel">
@@ -122,6 +126,32 @@ export function BottomBar() {
       >
         ℹ
       </button>
+      <button
+        type="button"
+        className="pixel-btn scene-btn"
+        aria-label="풍경 선택"
+        aria-haspopup="menu"
+        title="오피스 풍경 목록에서 고르기"
+        onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setSceneMenu({ x: rect.left, y: rect.top });
+        }}
+      >
+        풍경: {SCENES[scene].label}
+      </button>
+      {sceneMenu && (
+        <ContextMenu
+          x={sceneMenu.x}
+          y={sceneMenu.y}
+          onClose={() => setSceneMenu(null)}
+          items={SCENE_ORDER.map((id) => ({
+            // 테마 드롭다운과 같은 관례: 현재 항목만 체크 아이콘.
+            icon: id === scene ? "✔" : undefined,
+            label: SCENES[id].label,
+            onSelect: () => setScene(id),
+          }))}
+        />
+      )}
       <button
         type="button"
         className="pixel-btn theme-btn"

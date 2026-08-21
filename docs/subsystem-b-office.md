@@ -374,6 +374,8 @@ export const OFFICE_MAP: OfficeMap = {
 
 위 배치는 3행 × 4쌍 = **데스크 슬롯 12개**. 에이전트가 더 많아지면 `GRID`만 확장.
 
+**풍경(scene)별 맵.** 맵은 하나가 아니라 풍경마다 한 벌씩 있다(`office`/`beach`/`valley`, `office/scenes/*`). 세 맵 모두 같은 `Tile` enum과 같은 20×14를 쓰고 — 이게 계약의 전부다 — `buildSceneMap(GRID, breakRoom)`이라는 같은 함수로 만들어진다. 그래서 `deriveDesks`·좌석 배정·행동 FSM·줄서기는 풍경을 전혀 모른다. 풍경이 정하는 것은 자기 `GRID` 문자열과 휴게 사각형뿐이고, 좌석·보스 책상(`bossDesk`)·줄 슬롯(`queueSlots`)은 거기서 유도된다. 줄 슬롯 방향은 보스 자리가 맵 오른쪽 절반이면 서쪽, 왼쪽 절반이면 동쪽으로 자동 결정된다(해변은 우측 라이프가드 타워, 계곡은 좌측 통나무 오두막). `OfficeMap`의 `breakRoom`/`bossDesk`/`queueSlots`는 옵셔널이라, 이 필드가 생기기 전부터 있던 테스트 픽스처 맵은 오피스 기본 상수로 폴백한다. 각 칸을 무슨 그림으로 그릴지는 `TileRenderer`가 아니라 풍경이 주입하는 `TileDrawFn`이 정한다 — 베이크/가구 분리/zIndex 기계는 §2.4 그대로 공용이다. 풍경 축의 UI·영속·테마 교차는 docs/subsystem-c-ui.md §6.5.
+
 ### 2.3 데스크 배정 — 결정적
 
 에이전트 순서가 바뀌어도 같은 에이전트는 같은 자리에 앉도록, `agentId` 해시 기반으로 슬롯을 배정하되 충돌 시 선형 탐사. 순수 함수.

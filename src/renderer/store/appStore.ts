@@ -22,6 +22,8 @@ import type { AgentTurnState, TurnInput } from "../timeline/turnReducer";
 import { requestSentence } from "../labels/labelText";
 import { applyTerminalBg, applyTheme, loadStoredThemeId } from "../theme/applyTheme";
 import type { ThemeId } from "../theme/themes";
+import { loadStoredSceneId, persistSceneId } from "../office/scenes/sceneStorage";
+import type { SceneId } from "../office/scenes/sceneTypes";
 import {
   loadStoredTerminalViewMode,
   nextTerminalViewMode,
@@ -127,6 +129,12 @@ interface AppState {
   vacationMode: boolean;
   /** 현재 테마 id. localStorage("agent-office.theme")로 영속 — PersistedState 아님. */
   theme: ThemeId;
+  /**
+   * 현재 풍경(오피스 씬) id. 테마(색 축)와 직교한 축 — 어떤 조합도 유효하다.
+   * localStorage("agent-office.scene")로 영속 — PersistedState 아님(=Rust
+   * AppSettings와 무관한 순수 프런트 취향값).
+   */
+  scene: SceneId;
   /**
    * 터미널(xterm) 색상 선택. "auto"(기본)면 `theme`를 따라가고, 특정 테마 id면
    * 앱 테마와 무관하게 터미널 색만 그 테마로 고정한다.
@@ -262,6 +270,11 @@ interface AppState {
    */
   setXtermTheme(override: XtermThemeOverride): void;
 
+  // ---- office scene (풍경) ----
+  /** 풍경 전환: localStorage 영속 + 상태 갱신. 실제 씬 재구축은 App의
+   * `<OfficeCanvas scene>` 배선 → `OfficeScene.setScene`이 맡는다. */
+  setScene(id: SceneId): void;
+
   // ---- terminal view mode (이슈 #69) ----
   /** 뷰 모드 지정 + localStorage 영속. */
   setTerminalViewMode(mode: TerminalViewMode): void;
@@ -344,6 +357,7 @@ export const useAppStore = create<AppState>()(
     muted: false,
     vacationMode: false,
     theme: loadStoredThemeId(), // 스토어 생성 시점(첫 render 전)에 저장값 복원 → 플래시 없음
+    scene: loadStoredSceneId(), // 테마와 같은 이유로 스토어 생성 시점에 복원
     xtermTheme: loadStoredXtermThemeOverride(),
     portraits: {},
     spritePreviews: {},
@@ -641,6 +655,12 @@ export const useAppStore = create<AppState>()(
       // 밖(IPC 콜백 등)에서도 호출되므로 별도 구독자 계층을 두지 않는다.
       applyTheme(id);
       set({ theme: id });
+    },
+
+    setScene: (id) => {
+      // theme와 동일 패턴: 부수효과(localStorage 영속)를 액션에서 직접 수행.
+      persistSceneId(id);
+      set({ scene: id });
     },
 
     setXtermTheme: (override) => {

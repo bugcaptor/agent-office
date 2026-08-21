@@ -29,7 +29,9 @@ const state = vi.hoisted(() => ({
   tickerAddSpy: vi.fn(),
   tickerRemoveSpy: vi.fn(),
   initResolvers: [] as Array<() => void>,
-  rendererSize: { width: 320, height: 224 },
+  // `background`는 setTheme/setScene의 라이브 배경색 갱신이 만지는 유일한
+  // 렌더러 표면이라 페이크에도 둔다(실제 Pixi는 여기에 색을 쓴다).
+  rendererSize: { width: 320, height: 224, background: { color: 0 } },
 }));
 
 vi.mock("pixi.js", async (importOriginal) => {
@@ -37,7 +39,7 @@ vi.mock("pixi.js", async (importOriginal) => {
 
   class FakeApplication {
     stage = new actual.Container();
-    renderer: { width: number; height: number } | undefined;
+    renderer: typeof state.rendererSize | undefined;
     // `OfficeScene.init()` wires `world.update()` onto `ticker.add`; real
     // `Application.init()` needs a WebGL/canvas-2d context this jsdom-free
     // unit test doesn't provide, so the ticker is faked out here too.
@@ -72,7 +74,7 @@ beforeEach(() => {
   state.tickerAddSpy.mockClear();
   state.tickerRemoveSpy.mockClear();
   state.initResolvers = [];
-  state.rendererSize = { width: 320, height: 224 };
+  state.rendererSize = { width: 320, height: 224, background: { color: 0 } };
 });
 
 afterEach(() => {
@@ -229,6 +231,100 @@ describe("desk click hit areas (책상 지정 메뉴)", () => {
 
     hit.emit("pointertap", { global: { x: 33, y: 44 } });
     expect(seen).toEqual([[d0.index, 33, 44]]);
+  });
+});
+
+describe("setScene (풍경 교체)", () => {
+  /** floorLayer의 인터랙티브 자식 = 좌석 히트영역 + 보스 책상 히트영역. */
+  const hitsOf = (s: unknown) =>
+    (s as { floorLayer: { children: Array<Record<string, unknown>> } }).floorLayer.children.filter(
+      (c) => c.eventMode === "static",
+    );
+
+  async function makeStartedScene() {
+    const canvas = document.createElement("canvas");
+    const officeScene = new OfficeScene({ canvas, bus: createMockOfficeBus() });
+    const initPromise = officeScene.init();
+    state.initResolvers.forEach((resolve) => resolve());
+    await initPromise;
+    return officeScene;
+  }
+
+  it("바닥 재베이크 + 가구 교체 + 히트영역/보스 책상 재구축 + 월드 맵 전파를 한 번에 한다", async () => {
+    const { SCENES } = await import("../scenes/scenes");
+    const { TILE_SIZE } = await import("../map/mapData");
+    const setMapSpy = vi.spyOn(OfficeWorld.prototype, "setMap");
+    const officeScene = await makeStartedScene();
+
+    const internals = officeScene as unknown as {
+      floorTiles: { destroyed: boolean };
+      furnitureTiles: unknown[];
+    };
+    const officeFloor = internals.floorTiles;
+    const officeFurniture = internals.furnitureTiles;
+    expect(hitsOf(officeScene)).toHaveLength(SCENES.office.map.desks.length + 1);
+
+    officeScene.setScene(SCENES.valley);
+
+    // 바닥: 이전 베이크 컨테이너는 파기되고 새 인스턴스로 교체된다.
+    expect(officeFloor.destroyed).toBe(true);
+    expect(internals.floorTiles).not.toBe(officeFloor);
+    // 가구: Graphics 전량 교체.
+    expect(internals.furnitureTiles).not.toBe(officeFurniture);
+    expect(internals.furnitureTiles.length).toBeGreaterThan(0);
+    // 월드: 새 맵 전파(좌석 재배정 + 엔티티 리타깃은 OfficeWorld의 몫).
+    expect(setMapSpy).toHaveBeenCalledWith(SCENES.valley.map);
+    // 히트영역: 개수는 새 맵의 좌석 수 + 보스 1, 위치는 새 맵의 좌석 좌표.
+    const hits = hitsOf(officeScene);
+    expect(hits).toHaveLength(SCENES.valley.map.desks.length + 1);
+    const bossRect = SCENES.valley.map.bossDesk!;
+    const bossHit = hits.find(
+      (c) =>
+        (c.position as { x: number; y: number }).x === bossRect.x * TILE_SIZE &&
+        (c.position as { x: number; y: number }).y === bossRect.y * TILE_SIZE,
+    );
+    expect(bossHit).toBeDefined(); // 오피스(tx17)와 다른 좌표(tx2)에 다시 생겼다
+
+    setMapSpy.mockRestore();
+    officeScene.destroy();
+  });
+
+  it("같은 풍경을 다시 넘기면 아무것도 재구축하지 않는다", async () => {
+    const { SCENES } = await import("../scenes/scenes");
+    const setMapSpy = vi.spyOn(OfficeWorld.prototype, "setMap");
+    const officeScene = await makeStartedScene();
+    const before = (officeScene as unknown as { floorTiles: unknown }).floorTiles;
+
+    officeScene.setScene(SCENES.office); // 생성 시 기본값과 동일
+
+    expect((officeScene as unknown as { floorTiles: unknown }).floorTiles).toBe(before);
+    expect(setMapSpy).not.toHaveBeenCalled();
+    setMapSpy.mockRestore();
+    officeScene.destroy();
+  });
+
+  it("풍경을 바꿔도 휴가 팻말 표시 상태가 유지되고 구독이 중복되지 않는다", async () => {
+    const { SCENES } = await import("../scenes/scenes");
+    const bus = createMockOfficeBus();
+    const canvas = document.createElement("canvas");
+    const officeScene = new OfficeScene({ canvas, bus });
+    const initPromise = officeScene.init();
+    state.initResolvers.forEach((resolve) => resolve());
+    await initPromise;
+
+    bus.triggerVacationModeChanged(true);
+    const signOf = () => (officeScene as unknown as { bossSign?: { visible: boolean } }).bossSign!;
+    expect(signOf().visible).toBe(true);
+
+    officeScene.setScene(SCENES.beach);
+    // 새로 만든 팻말이 휴가 상태를 그대로 이어받는다(bus는 값이 바뀔 때만 발화).
+    expect(signOf().visible).toBe(true);
+
+    // 이전 씬의 구독이 남아 있었다면 파기된 팻말을 만져 예외가 났을 것이다.
+    bus.triggerVacationModeChanged(false);
+    expect(signOf().visible).toBe(false);
+
+    officeScene.destroy();
   });
 });
 

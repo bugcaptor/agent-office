@@ -40,7 +40,7 @@ export function pickWanderTarget(m: OfficeMap, near: GridPos, rand: () => number
 }
 
 /**
- * 탕비실(휴게 공간) 사각형(BREAK_ROOM_RECT) 내부에서 걸을 수 있는 임의
+ * 탕비실(휴게 공간) 사각형(`m.breakRoom`, 없으면 오피스 기본값) 내부에서 걸을 수 있는 임의
  * 타일을 골라 그 픽셀 중심을 반환한다. 사각형 내부 전체가 걸을 수 있는
  * 타일이라는 계약이 있으므로 보통 첫 시도에 성공하지만, 계약이 깨진
  * 경우를 대비해 pickWanderTarget과 같은 재시도(rejection sampling) 방식을
@@ -55,7 +55,8 @@ export function pickBreakTarget(
   rand: () => number,
   occupied?: ReadonlySet<string>,
 ): { x: number; y: number } | null {
-  const rect = BREAK_ROOM_RECT;
+  // 휴게 공간은 씬마다 위치가 다르므로 맵이 들고 다닌다(폴백은 오피스 값).
+  const rect = m.breakRoom ?? BREAK_ROOM_RECT;
   for (let i = 0; i < 12; i++) {
     const tx = rect.x + Math.floor(rand() * rect.w);
     const ty = rect.y + Math.floor(rand() * rect.h);

@@ -30,6 +30,17 @@ export interface OfficeMap {
   height: number;
   tiles: readonly (readonly Tile[])[]; // [ty][tx]
   desks: readonly DeskSlot[];
+  /**
+   * 휴게 공간(탕비실/라운지) 사각형 — 내부 전 타일이 걸을 수 있어야 한다.
+   * 씬(office/beach/valley)마다 위치가 다르므로 맵이 들고 다닌다.
+   * 미지정이면 소비처가 오피스 기본값(BREAK_ROOM_RECT)으로 폴백한다 —
+   * 이 필드가 생기기 전부터 있던 테스트 픽스처 맵과의 호환.
+   */
+  breakRoom?: TileRect;
+  /** 보스 책상(BossDesk 타일들을 감싸는 사각형). 미지정 시 BOSS_DESK_RECT 폴백. */
+  bossDesk?: TileRect;
+  /** 줄서기 슬롯(0 = 맨 앞). 미지정 시 QUEUE_SLOTS 폴백. */
+  queueSlots?: readonly { tx: number; ty: number }[];
 }
 
 /** 타일 좌표계 사각형(폭/높이는 타일 단위). */
@@ -41,8 +52,10 @@ export interface TileRect {
 }
 
 // F=Floor, W=Wall, D=DeskTop, R=Rug, P=Plant, C=Counter, T=Table, B=BossDesk 로 읽기 쉽게
-// 구성 후 숫자로 변환
-const L = (row: string): Tile[] =>
+// 구성 후 숫자로 변환. 씬(scenes/*)들도 자기 GRID를 이 함수로 읽는다 —
+// 의미 타일(Tile) 계약은 씬 전체가 공유하고, 각 칸을 무엇으로 *그릴지*만
+// 씬이 정한다(scenes/sceneTypes.ts의 TileDrawFn).
+export const L = (row: string): Tile[] =>
   [...row].map(
     (ch) =>
       ({
@@ -76,9 +89,6 @@ const GRID: Tile[][] = [
   L('WWWWWWWWWWWWWWWWWWWW'), // ty13
 ];
 
-/** 휴게 공간(탕비실) 내부의 걸을 수 있는 러그 라운지 사각형(타일 좌표). */
-export const BREAK_ROOM_RECT: TileRect = { x: 11, y: 10, w: 5, h: 2 };
-
 /** GRID의 BossDesk 셀들을 감싸는 사각형 — deriveDesks처럼 지오메트리의
  * 소스는 GRID 하나. 책상을 옮기면 히트영역·표지판·줄 슬롯이 함께 따라온다. */
 function deriveBossDeskRect(grid: Tile[][]): TileRect {
@@ -95,16 +105,22 @@ function deriveBossDeskRect(grid: Tile[][]): TileRect {
   return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
 }
 
-/** 보스 책상 타일 영역(우측 벽을 등진 세로 1×2). 렌더링·히트영역·표지판 위치의 단일 출처. */
-export const BOSS_DESK_RECT: TileRect = deriveBossDeskRect(GRID);
-
 const QUEUE_MAX_SLOTS = 8;
 
-/** 줄서기 슬롯(슬롯 0 = 맨 앞) — 책상 하단 행을 따라 서쪽으로 늘어선다. */
-export const QUEUE_SLOTS: readonly { tx: number; ty: number }[] = Array.from(
-  { length: QUEUE_MAX_SLOTS },
-  (_, i) => ({ tx: BOSS_DESK_RECT.x - 1 - i, ty: BOSS_DESK_RECT.y + BOSS_DESK_RECT.h - 1 }),
-);
+/**
+ * 줄서기 슬롯(슬롯 0 = 맨 앞) — 보스 책상 하단 행을 따라 옆으로 늘어선다.
+ * 책상이 맵 오른쪽 절반에 있으면 서쪽으로, 왼쪽 절반이면 동쪽으로 뻗는다
+ * (씬마다 보스 자리가 달라 방향을 고정할 수 없다).
+ */
+function deriveQueueSlots(rect: TileRect, mapWidth: number): { tx: number; ty: number }[] {
+  const westward = rect.x >= mapWidth / 2;
+  const ty = rect.y + rect.h - 1;
+  const startX = westward ? rect.x - 1 : rect.x + rect.w;
+  return Array.from({ length: QUEUE_MAX_SLOTS }, (_, i) => ({
+    tx: westward ? startX - i : startX + i,
+    ty,
+  }));
+}
 
 // 데스크 상판(ty=2,5)의 각 DeskTop 쌍마다 그 *위* 타일을 seat으로 생성 —
 // 캐릭터가 책상 뒤(북쪽)에 앉아 정면이 보이고, 랩탑은 뒷면이 보인다.
@@ -122,9 +138,33 @@ function deriveDesks(grid: Tile[][]): DeskSlot[] {
   return desks;
 }
 
-export const OFFICE_MAP: OfficeMap = {
-  width: GRID[0].length,
-  height: GRID.length,
-  tiles: GRID,
-  desks: deriveDesks(GRID),
-};
+/**
+ * 문자 GRID + 휴게 사각형 → 완성된 OfficeMap. 좌석/보스 책상/줄 슬롯은 전부
+ * GRID에서 유도되므로, 씬은 레이아웃 문자열과 라운지 위치만 정하면 된다.
+ * 오피스 맵도 이 함수로 만든다(씬 3종이 같은 기계를 쓴다는 보증).
+ */
+export function buildSceneMap(grid: Tile[][], breakRoom: TileRect): OfficeMap {
+  const width = grid[0].length;
+  const bossDesk = deriveBossDeskRect(grid);
+  return {
+    width,
+    height: grid.length,
+    tiles: grid,
+    desks: deriveDesks(grid),
+    breakRoom,
+    bossDesk,
+    queueSlots: deriveQueueSlots(bossDesk, width),
+  };
+}
+
+export const OFFICE_MAP: OfficeMap = buildSceneMap(GRID, { x: 11, y: 10, w: 5, h: 2 });
+
+/** 휴게 공간(탕비실) 내부의 걸을 수 있는 러그 라운지 사각형(타일 좌표).
+ * `map.breakRoom`이 없는 맵(구 테스트 픽스처)의 폴백 겸 오피스 씬의 값. */
+export const BREAK_ROOM_RECT: TileRect = OFFICE_MAP.breakRoom!;
+
+/** 보스 책상 타일 영역(우측 벽을 등진 세로 1×2). 렌더링·히트영역·표지판 위치의 단일 출처. */
+export const BOSS_DESK_RECT: TileRect = OFFICE_MAP.bossDesk!;
+
+/** 줄서기 슬롯(슬롯 0 = 맨 앞) — 책상 하단 행을 따라 서쪽으로 늘어선다. */
+export const QUEUE_SLOTS: readonly { tx: number; ty: number }[] = OFFICE_MAP.queueSlots!;

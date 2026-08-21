@@ -1046,6 +1046,21 @@ export function NotificationTicker() {
 - **픽커**: BottomBar의 "테마: {라벨}" 버튼 → 공유 `ContextMenu` 드롭다운(전 테마, 현재 테마에 ✔). 순환 버튼이던 초기 구현은 테마가 4개가 되면서 폐기했다(`nextThemeId`는 순서 계약·향후 단축키용으로 남아 있다). 라벨은 짧게 유지한다 — BottomBar는 800px 창에서 이미 폭이 포화다(docs/usage-design.md).
 - **CRT 오버레이**: `theme === "pipboy"`일 때만 App 루트에 `.crt-overlay` 1장을 마운트한다. `position:fixed; inset:0; z-index:100; pointer-events:none`에 순수 CSS 두 겹(4px 주기 스캔라인 `rgba(0,0,0,.06)` + 옅은 비네트)뿐 — 애니메이션·블러가 없어 합성 비용이 사실상 0이고 모달/터미널 상호작용을 그대로 통과시킨다. 다른 테마에서는 아예 마운트되지 않는다.
 
+### 6.5 풍경(scene) 레지스트리
+
+`src/renderer/office/scenes/`가 **테마와 직교한 두 번째 축**이다. 테마가 "색"을 고르면 풍경은 "무대"를 고른다 — 어떤 조합도 유효하다.
+
+| 필드(`SceneDef`) | 내용 |
+| --- | --- |
+| `map` | 그 풍경의 타일 맵. 좌석·휴게 공간·보스 자리·줄 슬롯이 전부 여기서 유도된다(docs/subsystem-b-office.md §2.2) |
+| `resolve(theme)` | 현재 테마로 확정된 `{ background, drawTile }`. 16px 한 칸을 무엇으로 그릴지가 풍경의 몫이다 |
+
+- **풍경 목록**: `office`(기본·사무실) / `beach`(바캉스 해변) / `valley`(산 계곡).
+- **소비 경로**: `App → OfficeCanvas → useOfficeScene → OfficeScene.setScene()`. 테마 경로(`setTheme`)와 나란한 별도 효과라 둘 중 하나만 바뀌어도 각자 처리된다. `setTheme`은 색만 다시 칠하고(바닥 재베이크 + 가구 교체 + 팻말 재도색), `setScene`은 거기에 더해 좌석 히트영역·보스 책상·`OfficeWorld`의 맵까지 재구축한다.
+- **테마 × 풍경 색**: `office`는 `theme.pixi`를 그대로 쓴다(도입 이전 룩 보존). `beach`/`valley`는 "한낮의 원색" 팔레트 한 벌만 두고 `scenes/sceneColor.ts`가 테마별로 변환한다 — daylight·sakura는 원색 그대로, midnight는 황혼(채도·명도를 낮추고 야청색으로 기울임), pipboy는 휘도를 감마·양자화해 인광 초록 램프로. 씬 안 텍스트("휴가중" 팻말)와 보스 명패 색만은 예외로 **테마** 팔레트를 계속 쓴다.
+- **영속**: `localStorage("agent-office.scene")`. 테마와 같은 관례로 스토어 초기값이 `loadStoredSceneId()`이고, 잘못된 값이면 `office`로 폴백한다. Rust `AppSettings`와는 무관한 순수 프런트 취향값이다.
+- **픽커**: BottomBar의 "풍경: {라벨}" 버튼 → 테마와 같은 `ContextMenu` 드롭다운(현재 풍경에 ✔). 라벨은 테마와 같은 이유로 짧게 유지한다.
+
 ---
 
 ## 7. vitest / 테스트 시임 (구체적 5개)

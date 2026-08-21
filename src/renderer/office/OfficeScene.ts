@@ -23,19 +23,23 @@
 // initialized, and it must not leak listeners on the pre-init destroy path.
 import { Application, Container, Graphics, Rectangle, Text, type FederatedPointerEvent, type Ticker } from "pixi.js";
 import { TileRenderer } from "./map/TileRenderer";
-import { BOSS_DESK_RECT, OFFICE_MAP, TILE_SIZE } from "./map/mapData";
+import { BOSS_DESK_RECT, TILE_SIZE, type OfficeMap, type TileRect } from "./map/mapData";
 import { tileCenterPx } from "./world/pathing";
 import { OfficeWorld } from "./world/OfficeWorld";
 import { THEMES } from "../theme/themes";
-import type { PixiThemePalette } from "../theme/themes";
+import type { ThemeDef } from "../theme/themes";
+import { SCENES } from "./scenes/scenes";
+import type { SceneDef, SceneRender } from "./scenes/sceneTypes";
 import type { LabelAnchor, OfficeBus } from "./bus";
 import type { AgentProfile } from "./types";
 
 export interface OfficeSceneOptions {
   canvas: HTMLCanvasElement;
   bus: OfficeBus; // handed straight to this scene's `OfficeWorld` (3H)
-  /** 테마 팔레트(타일 색 + 배경색). 기본은 테마 도입 이전 룩(midnight). */
-  palette?: PixiThemePalette;
+  /** 테마(색 축). 기본은 테마 도입 이전 룩(midnight). */
+  theme?: ThemeDef;
+  /** 풍경(scene 축) — 맵 + 타일 드로잉. 기본은 사무실. */
+  scene?: SceneDef;
 }
 
 export class OfficeScene {
@@ -52,20 +56,29 @@ export class OfficeScene {
   private tickerCallback?: (ticker: Ticker) => void;
   private labelAnchorsWorld = new Map<string, LabelAnchor>();
   private labelAnchorsScreen = new Map<string, LabelAnchor>();
-  // 현재 테마 팔레트 + 테마 전환 시 파기/재구축해야 하는 타일 표시 객체 추적.
+  // 현재 테마·풍경 + 전환 시 파기/재구축해야 하는 표시 객체 추적.
   // (캐릭터 엔티티는 sortableLayer를 공유하므로 레이어 통째 removeChildren은 불가.)
-  private palette: PixiThemePalette;
+  private theme: ThemeDef;
+  private scene: SceneDef;
+  /** 현재 씬×테마로 확정된 렌더 바인딩(배경색 + 타일 드로잉). */
+  private render: SceneRender;
   private floorTiles?: Container;
   private furnitureTiles: Container[] = [];
+  private deskHits: Container[] = [];
+  private bossHit?: Container;
   private bossSign?: Container;
   private bossSignBoard?: Graphics;
   private bossSignLabel?: Text;
   private offVacation?: () => void;
   private offHoverGate?: () => void;
+  /** 휴가 모드 최신값 — 씬 재구축 후 팻말 표시 상태를 되살리기 위해 보관. */
+  private vacationOn = false;
 
   constructor(opts: OfficeSceneOptions) {
     this.opts = opts;
-    this.palette = opts.palette ?? THEMES.midnight.pixi;
+    this.theme = opts.theme ?? THEMES.midnight;
+    this.scene = opts.scene ?? SCENES.office;
+    this.render = this.scene.resolve(this.theme);
     this.app = new Application();
     this.worldContainer = new Container();
     this.floorLayer = new Container();
@@ -80,15 +93,25 @@ export class OfficeScene {
       bus: this.opts.bus,
       characterLayer: this.sortableLayer,
       overlayLayer: this.overlayLayer,
-      map: OFFICE_MAP,
+      map: this.scene.map,
     });
+  }
+
+  /** 현재 풍경의 타일 맵 — 좌석/보스 책상/줄 슬롯/라운지의 단일 출처. */
+  private get map(): OfficeMap {
+    return this.scene.map;
+  }
+
+  /** 현재 맵의 보스 책상 사각형(맵이 안 들고 있으면 오피스 기본값). */
+  private get bossDeskRect(): TileRect {
+    return this.map.bossDesk ?? BOSS_DESK_RECT;
   }
 
   /** Async init. Awaited from the React hook. */
   async init(): Promise<void> {
     await this.app.init({
       canvas: this.opts.canvas,
-      background: this.palette.background, // init 전 setTheme()가 왔어도 최신 팔레트가 반영된다
+      background: this.render.background, // init 전 setTheme()/setScene()가 왔어도 최신 값이 반영된다
       antialias: false, // pixel art: no AA
       roundPixels: true, // avoid subpixel rendering
       resolution: 1, // sharpness comes from the integer-scale camera, not DPR
@@ -149,9 +172,9 @@ export class OfficeScene {
     this.applyCamera();
   }
 
-  /** 현재 팔레트로 정적 바닥/벽 레이어 + 가구를 (재)구축한다. */
+  /** 현재 씬×테마 드로잉으로 정적 바닥/벽 레이어 + 가구를 (재)구축한다. */
   private buildMapLayers(): void {
-    const tiles = new TileRenderer(OFFICE_MAP, TILE_SIZE, this.palette);
+    const tiles = new TileRenderer(this.map, TILE_SIZE, this.render.drawTile);
     this.floorTiles = tiles.build();
     this.floorLayer.addChild(this.floorTiles);
     this.furnitureTiles = tiles.buildFurniture();
@@ -161,11 +184,11 @@ export class OfficeScene {
   /**
    * 데스크 슬롯마다 데스크 쌍(2x1 타일)을 덮는 보이지 않는 히트영역을
    * floorLayer(최하단)에 만든다 — 캐릭터·가구보다 아래라서 캐릭터 클릭이
-   * 항상 우선하고, 빈 책상 클릭만 여기로 떨어진다. 테마 전환과 무관하게
-   * 한 번만 생성(색이 없으므로 재베이크 불필요).
+   * 항상 우선하고, 빈 책상 클릭만 여기로 떨어진다. 테마 전환과는 무관하고
+   * (색이 없다), 풍경 전환에서는 좌석 좌표가 바뀌므로 재구축한다.
    */
   private buildDeskHitAreas(): void {
-    for (const desk of OFFICE_MAP.desks) {
+    for (const desk of this.map.desks) {
       const hit = new Container();
       // 좌석은 데스크 상판 바로 위 타일 — 상판 행은 seat.ty + 1.
       hit.position.set(desk.seat.tx * TILE_SIZE, (desk.seat.ty + 1) * TILE_SIZE);
@@ -176,18 +199,21 @@ export class OfficeScene {
         this.opts.bus.emitDeskClicked(desk.index, e.global.x, e.global.y),
       );
       this.floorLayer.addChild(hit);
+      this.deskHits.push(hit);
     }
   }
 
   /** 보스 책상: 클릭 히트영역(휴가 토글) + "휴가중" 표지판(휴가 모드일 때만 표시). */
   private buildBossDesk(): void {
+    const rect = this.bossDeskRect;
     const hit = new Container();
-    hit.position.set(BOSS_DESK_RECT.x * TILE_SIZE, BOSS_DESK_RECT.y * TILE_SIZE);
+    hit.position.set(rect.x * TILE_SIZE, rect.y * TILE_SIZE);
     hit.eventMode = "static";
     hit.cursor = "pointer";
-    hit.hitArea = new Rectangle(0, 0, TILE_SIZE * BOSS_DESK_RECT.w, TILE_SIZE * BOSS_DESK_RECT.h);
+    hit.hitArea = new Rectangle(0, 0, TILE_SIZE * rect.w, TILE_SIZE * rect.h);
     hit.on("pointertap", () => this.opts.bus.emitBossDeskClicked());
     this.floorLayer.addChild(hit); // 데스크 히트영역과 동일 레이어(캐릭터 클릭 우선)
+    this.bossHit = hit;
 
     // 책상 위 텐트 카드(/휴가중/\): 앞면 평행사변형 + 능선을 공유하는 뒤판 삼각형.
     const sign = new Container();
@@ -198,7 +224,7 @@ export class OfficeScene {
     // 글씨는 월드 배율에서 비정수 리샘플링으로 깨져, applyCamera가 1/scale로 상쇄한다.
     const label = new Text({
       text: "휴가중",
-      style: { fontFamily: "DungGeunMo", fontSize: 11, fill: this.palette.text },
+      style: { fontFamily: "DungGeunMo", fontSize: 11, fill: this.theme.pixi.text },
       resolution: 2,
     });
     label.anchor.set(0.5, 0.5);
@@ -206,27 +232,64 @@ export class OfficeScene {
     sign.addChild(label);
     this.bossSignLabel = label;
     this.paintBossSign();
-    const p = tileCenterPx({ tx: BOSS_DESK_RECT.x, ty: BOSS_DESK_RECT.y + BOSS_DESK_RECT.h - 1 });
+    const p = tileCenterPx({ tx: rect.x, ty: rect.y + rect.h - 1 });
     sign.position.set(p.x, p.y);
-    sign.visible = false;
+    // 풍경을 바꿔도 휴가 팻말이 사라지지 않도록 최신 휴가 상태로 복원한다
+    // (bus는 값이 *바뀔 때만* 발화하므로 재구축 직후엔 아무 이벤트도 안 온다).
+    sign.visible = this.vacationOn;
+    // 글씨는 월드 배율을 1/scale로 상쇄한다(applyCamera와 같은 규칙) — 재구축
+    // 직후 카메라가 다시 측정되지 못하는 경우에도 배율이 어긋나지 않게 여기서 건다.
+    label.scale.set(1 / (this.worldContainer.scale.x || 1));
     this.overlayLayer.addChild(sign);
     this.bossSign = sign;
 
     this.offVacation = this.opts.bus.onVacationModeChanged((on) => {
+      this.vacationOn = on;
       if (this.bossSign) this.bossSign.visible = on;
     });
   }
 
   /**
    * 테마 전환: 배경색을 라이브로 갱신하고, `build()`가 한 장으로 베이크해 둔
-   * 타일 텍스처를 파기 후 새 팔레트로 재베이크한다. 캐릭터 엔티티는
-   * sortableLayer에 그대로 남는다(가구 Graphics만 교체).
-   * init() 전에 불리면 팔레트만 바꿔 둔다 — init()이 그 값을 사용한다.
+   * 타일 텍스처를 파기 후 새 색으로 재베이크한다. 맵(지오메트리)은 그대로라
+   * 히트영역·보스 책상·월드는 손대지 않는다. 캐릭터 엔티티도 sortableLayer에
+   * 그대로 남는다(가구 Graphics만 교체).
+   * init() 전에 불리면 값만 바꿔 둔다 — init()이 그 값을 사용한다.
    */
-  setTheme(palette: PixiThemePalette): void {
-    this.palette = palette;
+  setTheme(theme: ThemeDef): void {
+    this.theme = theme;
+    this.render = this.scene.resolve(theme);
     if (!this.started) return;
-    this.app.renderer.background.color = palette.background;
+    this.repaint();
+  }
+
+  /**
+   * 풍경 전환: 색뿐 아니라 **지오메트리 전체**가 바뀐다. 재도색(repaint)에
+   * 더해 좌석 히트영역·보스 책상(히트영역+팻말)·월드 맵을 다시 만들고,
+   * 카메라와 라벨 앵커를 새 맵 기준으로 갱신한다.
+   * init() 전에 불리면 값만 바꿔 둔다 — init()이 그 씬으로 처음부터 짓는다.
+   */
+  setScene(scene: SceneDef): void {
+    if (scene === this.scene) return;
+    this.scene = scene;
+    this.render = scene.resolve(this.theme);
+    // 월드는 Pixi 렌더러에 의존하지 않으므로 init 전에도 안전하게 전파한다
+    // (init 전이면 엔티티가 없어 사실상 맵 참조 교체뿐).
+    this.world.setMap(scene.map);
+    if (!this.started) return;
+    // 파기 → 재도색 → 재구축 순서. 먼저 파기해야 repaint가 곧 버릴 팻말을
+    // 헛되이 칠하지 않는다(paintBossSign은 팻말이 없으면 no-op).
+    this.teardownHitAreas();
+    this.repaint();
+    this.buildDeskHitAreas();
+    this.buildBossDesk();
+    this.applyCamera(); // 맵 크기가 달라질 수 있고, 팻말 글씨 배율도 여기서 다시 건다
+    this.publishLabelAnchors(); // 순간이동한 캐릭터의 라벨을 즉시 따라오게
+  }
+
+  /** 색만 갱신: 배경 + 바닥/가구 재베이크 + 텐트 카드 재도색. */
+  private repaint(): void {
+    this.app.renderer.background.color = this.render.background;
     if (this.floorTiles) {
       this.floorLayer.removeChild(this.floorTiles);
       this.floorTiles.cacheAsTexture(false); // 베이크된 캐시 텍스처 명시 해제(GPU 릭 방지)
@@ -242,16 +305,40 @@ export class OfficeScene {
     this.paintBossSign();
   }
 
-  /** 텐트 카드를 현재 팔레트로 (재)도색 — 타일 재베이크(setTheme)와 동기. */
+  /** 좌석/보스 히트영역과 휴가 팻말을 파기한다(풍경 전환 전용). */
+  private teardownHitAreas(): void {
+    for (const hit of this.deskHits) {
+      this.floorLayer.removeChild(hit);
+      hit.destroy();
+    }
+    this.deskHits = [];
+    if (this.bossHit) {
+      this.floorLayer.removeChild(this.bossHit);
+      this.bossHit.destroy();
+      this.bossHit = undefined;
+    }
+    this.offVacation?.(); // buildBossDesk가 다시 구독한다 — 중복 구독 방지
+    this.offVacation = undefined;
+    if (this.bossSign) {
+      this.overlayLayer.removeChild(this.bossSign);
+      this.bossSign.destroy({ children: true });
+      this.bossSign = undefined;
+      this.bossSignBoard = undefined;
+      this.bossSignLabel = undefined;
+    }
+  }
+
+  /** 텐트 카드를 현재 테마로 (재)도색 — 타일 재베이크(repaint)와 동기.
+   * 씬 팔레트가 아니라 **테마** 팔레트를 쓴다(씬 안 텍스트/명패는 테마 축). */
   private paintBossSign(): void {
     if (!this.bossSignBoard || !this.bossSignLabel) return;
     this.bossSignBoard
       .clear()
       .poly([9, -7, 11.5, 0, 7, 0])
-      .fill(this.palette.deskEdge)
+      .fill(this.theme.pixi.deskEdge)
       .poly([-7, 0, 7, 0, 9, -7, -5, -7])
-      .fill(this.palette.counterTop);
-    this.bossSignLabel.style.fill = this.palette.text;
+      .fill(this.theme.pixi.counterTop);
+    this.bossSignLabel.style.fill = this.theme.pixi.text;
   }
 
   private applyCamera(): void {
@@ -274,8 +361,8 @@ export class OfficeScene {
       this.app.renderer.resize(w, h);
     }
 
-    const mapPxW = OFFICE_MAP.width * TILE_SIZE;
-    const mapPxH = OFFICE_MAP.height * TILE_SIZE;
+    const mapPxW = this.map.width * TILE_SIZE;
+    const mapPxH = this.map.height * TILE_SIZE;
     const scale = computeIntegerScale(w, h, mapPxW, mapPxH);
     this.worldContainer.scale.set(scale);
     // 커스텀 고해상 시트를 이 정수 스케일에 맞춰 프리필터(이슈 #47). S가 바뀔
