@@ -19,8 +19,6 @@
 //     캡하므로, 300 같은 값을 주면 사고에 다 먹혀 본문이 빈 채로 잘린다.
 //  3) 응답의 `text` 블록만 이어붙인다(thinking 블록은 건너뛴다).
 
-use crate::persistence::settings_store::TtsRewriteModel;
-
 pub const BASE_URL: &str = "https://api.anthropic.com/v1/messages";
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 /// 리라이트는 인터랙티브 경로다 — 이 시간을 넘기면 원문으로 강등한다.
@@ -193,13 +191,9 @@ pub fn build_user_content(
     )
 }
 
-pub fn build_request_body(
-    kind: SpeakKind,
-    model: TtsRewriteModel,
-    user_content: &str,
-) -> serde_json::Value {
+pub fn build_request_body(kind: SpeakKind, model: &str, user_content: &str) -> serde_json::Value {
     serde_json::json!({
-        "model": model.as_str(),
+        "model": model,
         "max_tokens": MAX_TOKENS,
         "system": system_prompt(kind),
         "messages": [{ "role": "user", "content": user_content }],
@@ -270,7 +264,7 @@ pub fn sanitize_line(raw: &str) -> String {
 pub async fn rewrite(
     api_key: &str,
     kind: SpeakKind,
-    model: TtsRewriteModel,
+    model: &str,
     agent_name: &str,
     personality: Option<&str>,
     context: Option<&str>,
@@ -313,7 +307,7 @@ mod tests {
     fn body_omits_sampling_and_thinking_params() {
         // sonnet-5/opus-5는 temperature류를 받으면 400이고, thinking은 과제
         // 지시대로 아예 보내지 않는다.
-        let b = build_request_body(SpeakKind::Question, TtsRewriteModel::Opus5, "hi");
+        let b = build_request_body(SpeakKind::Question, "claude-opus-5", "hi");
         let obj = b.as_object().unwrap();
         for forbidden in ["temperature", "top_p", "top_k", "thinking"] {
             assert!(!obj.contains_key(forbidden), "{forbidden} 를 보내면 안 된다");
@@ -460,7 +454,7 @@ mod tests {
 
     #[test]
     fn body_carries_the_kind_specific_system_prompt() {
-        let d = build_request_body(SpeakKind::Done, TtsRewriteModel::Haiku45, "hi");
+        let d = build_request_body(SpeakKind::Done, "claude-haiku-4-5", "hi");
         assert_eq!(d["system"], SYSTEM_PROMPT_DONE);
     }
 
@@ -531,10 +525,11 @@ mod tests {
         assert_eq!(out.chars().count(), MAX_LINE_CHARS);
     }
 
+    // 모델 id는 이제 설정의 자유 문자열이다 — 요청 본문에 그대로 실려야 한다
+    // (앱이 아는 목록으로 걸러내면 새 모델이 나올 때마다 앱을 고쳐야 한다).
     #[test]
-    fn model_ids_are_the_documented_strings() {
-        assert_eq!(TtsRewriteModel::Haiku45.as_str(), "claude-haiku-4-5");
-        assert_eq!(TtsRewriteModel::Sonnet5.as_str(), "claude-sonnet-5");
-        assert_eq!(TtsRewriteModel::Opus5.as_str(), "claude-opus-5");
+    fn model_id_passes_through_verbatim() {
+        let b = build_request_body(SpeakKind::Question, "claude-future-9", "hi");
+        assert_eq!(b["model"], "claude-future-9");
     }
 }

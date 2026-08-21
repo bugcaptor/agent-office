@@ -164,11 +164,12 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.ttsKeyStatus);
   },
 
-  async ttsSetKeys(elevenlabs?: string, anthropic?: string) {
+  async ttsSetKeys(elevenlabs?: string, anthropic?: string, openrouter?: string) {
     return await invoke(Commands.ttsSetKeys, {
       // Rust는 Option<String> — 미전달(undefined)은 "기존 값 유지"다.
       elevenlabs: elevenlabs ?? null,
       anthropic: anthropic ?? null,
+      openrouter: openrouter ?? null,
     });
   },
 

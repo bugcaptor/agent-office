@@ -23,7 +23,26 @@ export type ExternalEditorApp = "system" | "vscode";
 /** 파일 목록 스캔 백엔드 — Rust `FileIndexBackend` 미러. 기본 walker. */
 export type FileIndexBackend = "walker" | "everything";
 
-import type { TtsRewriteModel, TtsRewriteProvider } from './tts';
+import type { TtsRewriteProvider } from './tts';
+
+/**
+ * 요약기 provider 하나의 모델 오버라이드 — Rust `SummaryModelOverride` 미러.
+ * **빈 문자열 = 오버라이드 없음**(백엔드의 목적별 기본 모델을 그대로 쓴다).
+ */
+export interface SummaryModelOverride {
+  /** 라벨·일기(짧은 변환)에 쓸 모델 id. */
+  light: string;
+  /** 학습자료(긴 전사 구조화)에 쓸 모델 id. */
+  heavy: string;
+}
+
+/** 요약기 provider별 모델 오버라이드 — Rust `SummaryModels` 미러. */
+export interface SummaryModels {
+  claude: SummaryModelOverride;
+  codex: SummaryModelOverride;
+  agy: SummaryModelOverride;
+  gemini: SummaryModelOverride;
+}
 
 /** 앱 전역 opt-in 설정 — Rust `persistence::settings_store::AppSettings` 미러. */
 export interface AppSettings {
@@ -32,6 +51,8 @@ export interface AppSettings {
   summarizerEnabled: boolean;
   /** 라벨 요약에 사용할 로컬 CLI provider. */
   summaryProvider: SummaryProvider;
+  /** 요약기 provider별 모델 오버라이드. 빈 문자열이면 백엔드 기본 모델. */
+  summaryModels: SummaryModels;
   /** 캐릭터 일기(#56) 자동 생성 허용. 요약기와 같은 provider·CLI를 쓰므로
    * 크레딧을 소모한다 → opt-in. 기본 false. */
   diaryEnabled: boolean;
@@ -74,8 +95,11 @@ export interface AppSettings {
   /** 알림 대사 TTS(질문·완료 알림을 캐릭터 목소리로 발화). 외부 유료 API 두 곳을
    * 호출하므로 opt-in — 기본 false. API 키는 이 구조체에 없다(백엔드 0600 파일). */
   ttsEnabled: boolean;
-  /** 대사 리라이트에 쓸 Anthropic 모델. 기본 "claude-haiku-4-5". */
-  ttsRewriteModel: TtsRewriteModel;
+  /** 대사 리라이트에 쓸 Anthropic 모델 id(자유 입력). Anthropic API 경로와
+   * claude CLI 경로가 함께 쓴다. 기본 "claude-haiku-4-5". */
+  ttsRewriteModelAnthropic: string;
+  /** OpenRouter 경로의 모델 id(`<vendor>/<model>`). 기본 "openai/gpt-5.4-mini". */
+  ttsRewriteModelOpenrouter: string;
   /** 대사 리라이트 공급자. 기본 "auto"(API 키 → env → claude CLI → 생략). */
   ttsRewriteProvider: TtsRewriteProvider;
 }

@@ -11,18 +11,16 @@
 //
 // See src/shared/types.ts for the frozen-contract overview.
 
-/** 대사 리라이트에 쓸 Anthropic 모델 — Rust `TtsRewriteModel` 미러.
- * 값이 곧 Messages API / `claude -p --model`의 모델 id다. */
-export type TtsRewriteModel = "claude-haiku-4-5" | "claude-sonnet-5" | "claude-opus-5";
-
 /**
  * 대사 리라이트 공급자 — Rust `TtsRewriteProvider` 미러.
  * - `auto`: 저장 API 키 → `ANTHROPIC_API_KEY` env → claude CLI → 리라이트 생략.
  * - `api`: Anthropic Messages API만(키 없으면 생략).
+ * - `openrouter`: OpenRouter chat/completions만(키 없으면 생략). **명시 선택
+ *   전용** — `auto` 체인은 이 경로를 고르지 않는다.
  * - `claude-cli`: `claude -p` 헤드리스 서브프로세스만. **구독 사용량을 소모한다.**
  * - `none`: 리라이트 없이 원문 문구를 그대로 읽는다.
  */
-export type TtsRewriteProvider = "auto" | "api" | "claude-cli" | "none";
+export type TtsRewriteProvider = "auto" | "api" | "openrouter" | "claude-cli" | "none";
 
 /**
  * 무엇을 읽어주는 순간인가 — Rust `tts::rewrite::SpeakKind` 미러.
@@ -102,6 +100,9 @@ export interface TtsStatus {
   /** 그 키가 저장값이 아니라 env 폴백인지(UI 안내용). */
   elevenlabsFromEnv: boolean;
   anthropicFromEnv: boolean;
+  /** OpenRouter 키를 쓸 수 있는지. 공급자로 openrouter를 고른 경우에만 쓰인다. */
+  openrouterSet: boolean;
+  openrouterFromEnv: boolean;
   /** PATH에 `claude`가 있는지. */
   claudeCliAvailable: boolean;
   /** 현재 설정으로 실제 선택될 리라이트 경로. */
@@ -112,4 +113,5 @@ export interface TtsStatus {
 export interface TtsSetKeysRequest {
   elevenlabs?: string;
   anthropic?: string;
+  openrouter?: string;
 }

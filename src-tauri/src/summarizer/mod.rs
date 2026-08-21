@@ -10,7 +10,7 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Semaphore;
 
-use crate::persistence::settings_store::SummaryProvider;
+use crate::persistence::settings_store::{SummaryModels, SummaryProvider};
 
 const TEXT_MAX_CHARS: usize = 2_000;
 /// 학습자료(세션 로그 전사)는 세션 한 편을 통째로 넣어야 의미가 있다 —
@@ -54,6 +54,12 @@ impl SummaryPurpose {
         }
     }
 
+    /// 이 목적이 무거운 쪽(학습자료)인지. 설정의 provider별 오버라이드가
+    /// light/heavy 두 칸이라 그 선택에 쓰인다.
+    fn is_heavy(self) -> bool {
+        matches!(self, Self::Study)
+    }
+
     /// 이 목적이 요구하는 모델 등급. 라벨·일기는 한 문단짜리 변환이라 빠른
     /// 모델로 충분하지만, 학습자료는 긴 전사를 읽고 구조화하는 일이다.
     pub(super) fn claude_model(self) -> &'static str {
@@ -93,6 +99,36 @@ impl SummaryPurpose {
             Self::Label | Self::Diary => "gemini-2.5-flash",
             Self::Study => "gemini-2.5-pro",
         }
+    }
+}
+
+/// 목적별 하드코딩 기본 모델. 오버라이드 해석(`resolve_model`)의 폴백이자,
+/// 어느 provider가 무엇을 기본으로 쓰는지의 단일 출처다.
+fn default_model(provider: SummaryProvider, purpose: SummaryPurpose) -> &'static str {
+    match provider {
+        SummaryProvider::Claude => purpose.claude_model(),
+        SummaryProvider::Codex => purpose.codex_model(),
+        SummaryProvider::Agy => purpose.agy_model(),
+        SummaryProvider::Gemini => purpose.gemini_model(),
+    }
+}
+
+/// 설정 오버라이드 우선, 비어 있으면 하드코딩 기본값. 순수.
+///
+/// 오버라이드는 자유 입력이라 앱이 유효성을 판단하지 않는다 — 오타는 해당
+/// CLI가 오류로 알려주고 요약은 원문 폴백으로 강등된다(기존 실패 경로와 동일).
+pub(super) fn resolve_model(
+    provider: SummaryProvider,
+    purpose: SummaryPurpose,
+    models: &SummaryModels,
+) -> String {
+    let o = models.for_provider(provider);
+    let picked = if purpose.is_heavy() { &o.heavy } else { &o.light };
+    let picked = picked.trim();
+    if picked.is_empty() {
+        default_model(provider, purpose).to_string()
+    } else {
+        picked.to_string()
     }
 }
 
@@ -138,11 +174,15 @@ fn missing_error(provider: SummaryProvider) -> String {
     format!("{}-not-found", provider.as_str())
 }
 
+/// `models`는 설정의 provider별 모델 오버라이드다(빈 문자열 = 기본 모델).
+/// 호출측이 설정 캐시에서 값으로 떠서 넘긴다 — 가드를 `.await` 너머로 들고
+/// 가지 않기 위해서다.
 pub async fn summarize(
     provider: SummaryProvider,
     purpose: SummaryPurpose,
     instruction: &str,
     text: &str,
+    models: &SummaryModels,
 ) -> Result<String, String> {
     let capped = cap_text(text, purpose.max_chars())?;
     // GUI(Finder/launchd)로 띄운 번들 앱은 프로세스 PATH가 최소값(`/usr/bin:/bin:…`)
@@ -150,11 +190,12 @@ pub async fn summarize(
     // 요약기·일기 경로에서 재발). spawn 직전에 로그인 셸 PATH를 1회 병합해 보장한다.
     // 멱등이라 첫 호출만 로그인 셸을 돌리고, 블로킹 호출이라 blocking 풀에서 실행한다.
     let _ = tokio::task::spawn_blocking(crate::session::env_capture::ensure_captured).await;
+    let model = resolve_model(provider, purpose, models);
     let command = match provider {
-        SummaryProvider::Claude => claude::build(instruction, purpose),
-        SummaryProvider::Codex => codex::build(instruction, purpose),
-        SummaryProvider::Agy => agy::build(instruction, purpose),
-        SummaryProvider::Gemini => gemini::build(instruction, purpose),
+        SummaryProvider::Claude => claude::build(instruction, &model),
+        SummaryProvider::Codex => codex::build(instruction, purpose, &model),
+        SummaryProvider::Agy => agy::build(instruction, &model),
+        SummaryProvider::Gemini => gemini::build(instruction, &model),
     };
     run_with_timeout(command, &capped, purpose.timeout()).await
 }
@@ -363,10 +404,75 @@ exit "$AO_FAKE_EXIT"
 
     #[tokio::test]
     async fn rejects_empty_text_before_spawning_a_provider() {
-        let error = summarize(SummaryProvider::Codex, SummaryPurpose::Label, "summarize", "   ")
-            .await
-            .unwrap_err();
+        let error = summarize(
+            SummaryProvider::Codex,
+            SummaryPurpose::Label,
+            "summarize",
+            "   ",
+            &SummaryModels::default(),
+        )
+        .await
+        .unwrap_err();
         assert_eq!(error, "validation: text is empty");
+    }
+
+    // ── 모델 오버라이드 ───────────────────────────────────────────────
+    #[test]
+    fn empty_override_keeps_the_hardcoded_default_per_provider_and_purpose() {
+        let none = SummaryModels::default();
+        for (provider, label, study) in [
+            (SummaryProvider::Claude, "haiku", "sonnet"),
+            (SummaryProvider::Codex, "gpt-5.4-mini", "gpt-5.4"),
+            (SummaryProvider::Agy, "gemini-3.6-flash-low", "gemini-3.1-pro-low"),
+            (SummaryProvider::Gemini, "gemini-2.5-flash", "gemini-2.5-pro"),
+        ] {
+            assert_eq!(resolve_model(provider, SummaryPurpose::Label, &none), label);
+            assert_eq!(resolve_model(provider, SummaryPurpose::Diary, &none), label);
+            assert_eq!(resolve_model(provider, SummaryPurpose::Study, &none), study);
+        }
+    }
+
+    #[test]
+    fn override_wins_and_light_heavy_split_follows_the_purpose() {
+        let mut models = SummaryModels::default();
+        models.codex.light = "gpt-5.4-nano".into();
+        models.codex.heavy = "gpt-5.4-pro".into();
+        assert_eq!(
+            resolve_model(SummaryProvider::Codex, SummaryPurpose::Label, &models),
+            "gpt-5.4-nano"
+        );
+        assert_eq!(
+            resolve_model(SummaryProvider::Codex, SummaryPurpose::Diary, &models),
+            "gpt-5.4-nano",
+            "일기는 라벨과 같은 경량 등급이다"
+        );
+        assert_eq!(
+            resolve_model(SummaryProvider::Codex, SummaryPurpose::Study, &models),
+            "gpt-5.4-pro"
+        );
+        // 다른 provider는 자기 오버라이드만 본다.
+        assert_eq!(
+            resolve_model(SummaryProvider::Claude, SummaryPurpose::Label, &models),
+            "haiku"
+        );
+    }
+
+    // 한쪽 칸만 채운 흔한 상태에서 빈 칸이 빈 --model 인자로 새어 나가면
+    // CLI가 통째로 실패한다 — 빈/공백 오버라이드는 기본값으로 돌아가야 한다.
+    #[test]
+    fn blank_override_falls_back_instead_of_passing_an_empty_model() {
+        let mut models = SummaryModels::default();
+        models.gemini.light = "   ".into();
+        assert_eq!(
+            resolve_model(SummaryProvider::Gemini, SummaryPurpose::Label, &models),
+            "gemini-2.5-flash"
+        );
+        models.gemini.light = "gemini-3-flash".into();
+        assert_eq!(
+            resolve_model(SummaryProvider::Gemini, SummaryPurpose::Study, &models),
+            "gemini-2.5-pro",
+            "light만 채웠으면 heavy는 기본값 그대로"
+        );
     }
 
     #[test]

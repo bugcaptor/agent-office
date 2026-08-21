@@ -513,6 +513,12 @@ describe("app settings slice", () => {
       version: 1,
       summarizerEnabled: false,
       summaryProvider: "claude",
+      summaryModels: {
+        claude: { light: "", heavy: "" },
+        codex: { light: "", heavy: "" },
+        agy: { light: "", heavy: "" },
+        gemini: { light: "", heavy: "" },
+      },
       diaryEnabled: false,
       observerEnabled: false,
       typingSoundEnabled: true,
@@ -528,7 +534,8 @@ describe("app settings slice", () => {
       sessionLogEnabled: true,
       mascotEnabled: false,
       ttsEnabled: false,
-      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteModelAnthropic: "claude-haiku-4-5",
+      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
     });
     expect(s.settingsFirstRun).toBe(false);
@@ -540,6 +547,12 @@ describe("app settings slice", () => {
         version: 1,
         summarizerEnabled: true,
         summaryProvider: "codex",
+        summaryModels: {
+          claude: { light: "", heavy: "" },
+          codex: { light: "", heavy: "" },
+          agy: { light: "", heavy: "" },
+          gemini: { light: "", heavy: "" },
+        },
         diaryEnabled: false,
         observerEnabled: false,
         typingSoundEnabled: true,
@@ -555,7 +568,8 @@ describe("app settings slice", () => {
         sessionLogEnabled: true,
         mascotEnabled: false,
         ttsEnabled: false,
-        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteModelAnthropic: "claude-haiku-4-5",
+        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
         ttsRewriteProvider: "auto",
       },
       true
@@ -565,6 +579,12 @@ describe("app settings slice", () => {
       version: 1,
       summarizerEnabled: true,
       summaryProvider: "codex",
+      summaryModels: {
+        claude: { light: "", heavy: "" },
+        codex: { light: "", heavy: "" },
+        agy: { light: "", heavy: "" },
+        gemini: { light: "", heavy: "" },
+      },
       diaryEnabled: false,
       observerEnabled: false,
       typingSoundEnabled: true,
@@ -580,18 +600,31 @@ describe("app settings slice", () => {
       sessionLogEnabled: true,
       mascotEnabled: false,
       ttsEnabled: false,
-      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteModelAnthropic: "claude-haiku-4-5",
+      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
     });
     expect(s.settingsFirstRun).toBe(true);
   });
 
   it("updateAppSettings가 스토어를 갱신하고 백엔드에 저장한다", () => {
-    useAppStore.getState().updateAppSettings({ summaryProvider: "codex", observerEnabled: true });
+    useAppStore.getState().updateAppSettings({ summaryProvider: "codex",
+ summaryModels: {
+   claude: { light: "", heavy: "" },
+   codex: { light: "", heavy: "" },
+   agy: { light: "", heavy: "" },
+   gemini: { light: "", heavy: "" },
+ }, observerEnabled: true });
     expect(setAppSettingsMock).toHaveBeenCalledWith({
       version: 1,
       summarizerEnabled: false,
       summaryProvider: "codex",
+      summaryModels: {
+        claude: { light: "", heavy: "" },
+        codex: { light: "", heavy: "" },
+        agy: { light: "", heavy: "" },
+        gemini: { light: "", heavy: "" },
+      },
       diaryEnabled: false,
       observerEnabled: true,
       typingSoundEnabled: true,
@@ -607,7 +640,8 @@ describe("app settings slice", () => {
       sessionLogEnabled: true,
       mascotEnabled: false,
       ttsEnabled: false,
-      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteModelAnthropic: "claude-haiku-4-5",
+      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
     });
   });
@@ -618,6 +652,12 @@ describe("app settings slice", () => {
         version: 1,
         summarizerEnabled: false,
         summaryProvider: "claude",
+        summaryModels: {
+          claude: { light: "", heavy: "" },
+          codex: { light: "", heavy: "" },
+          agy: { light: "", heavy: "" },
+          gemini: { light: "", heavy: "" },
+        },
         diaryEnabled: false,
         observerEnabled: false,
         typingSoundEnabled: true,
@@ -633,7 +673,8 @@ describe("app settings slice", () => {
         sessionLogEnabled: true,
         mascotEnabled: false,
         ttsEnabled: false,
-        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteModelAnthropic: "claude-haiku-4-5",
+        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
         ttsRewriteProvider: "auto",
       },
       true
@@ -650,6 +691,12 @@ describe("app settings slice", () => {
       version: 1,
       summarizerEnabled: true,
       summaryProvider: "codex",
+      summaryModels: {
+        claude: { light: "", heavy: "" },
+        codex: { light: "", heavy: "" },
+        agy: { light: "", heavy: "" },
+        gemini: { light: "", heavy: "" },
+      },
       diaryEnabled: false,
       observerEnabled: true,
       typingSoundEnabled: true,
@@ -665,7 +712,8 @@ describe("app settings slice", () => {
       sessionLogEnabled: true,
       mascotEnabled: false,
       ttsEnabled: false,
-      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteModelAnthropic: "claude-haiku-4-5",
+      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
     });
   });

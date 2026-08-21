@@ -60,6 +60,12 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   version: 1,
   summarizerEnabled: false,
   summaryProvider: "claude",
+  summaryModels: {
+    claude: { light: "", heavy: "" },
+    codex: { light: "", heavy: "" },
+    agy: { light: "", heavy: "" },
+    gemini: { light: "", heavy: "" },
+  },
   diaryEnabled: false,
   observerEnabled: false,
   typingSoundEnabled: true,
@@ -75,7 +81,8 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   sessionLogEnabled: true,
   mascotEnabled: false,
   ttsEnabled: false,
-  ttsRewriteModel: "claude-haiku-4-5",
+  ttsRewriteModelAnthropic: "claude-haiku-4-5",
+  ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
   ttsRewriteProvider: "auto",
 };
 
@@ -301,6 +308,7 @@ interface AppState {
         AppSettings,
         | "summarizerEnabled"
         | "summaryProvider"
+        | "summaryModels"
         | "diaryEnabled"
         | "observerEnabled"
         | "typingSoundEnabled"
@@ -316,7 +324,8 @@ interface AppState {
         | "sessionLogEnabled"
         | "mascotEnabled"
         | "ttsEnabled"
-        | "ttsRewriteModel"
+        | "ttsRewriteModelAnthropic"
+        | "ttsRewriteModelOpenrouter"
         | "ttsRewriteProvider"
       >
     >,

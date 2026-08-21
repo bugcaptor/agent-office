@@ -38,6 +38,12 @@ describe("SettingsDialog", () => {
         version: 1,
         summarizerEnabled: false,
         summaryProvider: "claude",
+        summaryModels: {
+          claude: { light: "", heavy: "" },
+          codex: { light: "", heavy: "" },
+          agy: { light: "", heavy: "" },
+          gemini: { light: "", heavy: "" },
+        },
         diaryEnabled: false,
         observerEnabled: false,
         typingSoundEnabled: true,
@@ -53,7 +59,8 @@ describe("SettingsDialog", () => {
         sessionLogEnabled: true,
         mascotEnabled: false,
         ttsEnabled: false,
-        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteModelAnthropic: "claude-haiku-4-5",
+        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
         ttsRewriteProvider: "auto",
       },
       false,
@@ -70,6 +77,12 @@ describe("SettingsDialog", () => {
       version: 1,
       summarizerEnabled: false,
       summaryProvider: "codex",
+      summaryModels: {
+        claude: { light: "", heavy: "" },
+        codex: { light: "", heavy: "" },
+        agy: { light: "", heavy: "" },
+        gemini: { light: "", heavy: "" },
+      },
       diaryEnabled: false,
       observerEnabled: true,
       typingSoundEnabled: true,
@@ -85,7 +98,8 @@ describe("SettingsDialog", () => {
       sessionLogEnabled: true,
       mascotEnabled: false,
       ttsEnabled: false,
-      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteModelAnthropic: "claude-haiku-4-5",
+      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
     });
   });
@@ -96,6 +110,12 @@ describe("SettingsDialog", () => {
         version: 1,
         summarizerEnabled: false,
         summaryProvider: "claude",
+        summaryModels: {
+          claude: { light: "", heavy: "" },
+          codex: { light: "", heavy: "" },
+          agy: { light: "", heavy: "" },
+          gemini: { light: "", heavy: "" },
+        },
         diaryEnabled: false,
         observerEnabled: false,
         typingSoundEnabled: true,
@@ -111,7 +131,8 @@ describe("SettingsDialog", () => {
         sessionLogEnabled: true,
         mascotEnabled: false,
         ttsEnabled: false,
-        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteModelAnthropic: "claude-haiku-4-5",
+        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
         ttsRewriteProvider: "auto",
       },
       false,
@@ -134,6 +155,12 @@ describe("SettingsDialog", () => {
         version: 1,
         summarizerEnabled: false,
         summaryProvider: "claude",
+        summaryModels: {
+          claude: { light: "", heavy: "" },
+          codex: { light: "", heavy: "" },
+          agy: { light: "", heavy: "" },
+          gemini: { light: "", heavy: "" },
+        },
         diaryEnabled: false,
         observerEnabled: false,
         typingSoundEnabled: true,
@@ -149,7 +176,8 @@ describe("SettingsDialog", () => {
         sessionLogEnabled: true,
         mascotEnabled: false,
         ttsEnabled: false,
-        ttsRewriteModel: "claude-haiku-4-5",
+        ttsRewriteModelAnthropic: "claude-haiku-4-5",
+        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
         ttsRewriteProvider: "auto",
       },
       false,
@@ -245,6 +273,31 @@ describe("SettingsDialog", () => {
     rerender(<SettingsDialog />);
     expect(screen.getByRole("tab", { name: "일반" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByLabelText(/CLI 제어/)).toBeNull();
+  });
+
+  // 요약 모델 오버라이드는 "지금 고른 요약기"의 두 칸만 보여준다 — 네 provider의
+  // 여덟 칸을 한꺼번에 띄우면 어느 값이 쓰이는지 알 수 없다.
+  it("요약 모델 오버라이드는 선택된 요약기의 두 칸만 보이고 그 값이 저장된다", () => {
+    useAppStore.getState().hydrateSettings(
+      { ...useAppStore.getState().appSettings, summaryProvider: "codex" },
+      false,
+    );
+    useAppStore.getState().openModal({ kind: "settings" });
+    render(<SettingsDialog />);
+
+    // placeholder = 비웠을 때 실제로 쓰이는 백엔드 기본 모델.
+    const light = screen.getByPlaceholderText("gpt-5.4-mini") as HTMLInputElement;
+    const heavy = screen.getByPlaceholderText("gpt-5.4") as HTMLInputElement;
+    expect(light.value).toBe("");
+    expect(screen.queryByPlaceholderText("haiku")).toBeNull();
+
+    fireEvent.change(light, { target: { value: "gpt-5.4-nano" } });
+    fireEvent.change(heavy, { target: { value: "gpt-5.4-pro" } });
+
+    const models = useAppStore.getState().appSettings.summaryModels;
+    expect(models.codex).toEqual({ light: "gpt-5.4-nano", heavy: "gpt-5.4-pro" });
+    // 다른 provider의 칸은 건드리지 않는다.
+    expect(models.claude).toEqual({ light: "", heavy: "" });
   });
 
   it("닫기 버튼 클릭 시 closeModal을 부른다", () => {

@@ -40,7 +40,7 @@ pub async fn get_app_settings(
     app_state: State<'_, AppState>,
 ) -> Result<GetAppSettingsResult, String> {
     Ok(GetAppSettingsResult {
-        settings: *app_state.settings.read().unwrap(),
+        settings: app_state.settings.read().unwrap().clone(),
         first_run: app_state
             .settings_first_run
             .load(std::sync::atomic::Ordering::SeqCst),
@@ -71,7 +71,7 @@ pub(crate) async fn set_app_settings_inner(
         &app_state.hub,
         &app_state.observer_server,
         &app_state.observer,
-        settings,
+        settings.clone(),
     )
     .await?;
     app_state
@@ -146,7 +146,8 @@ pub(crate) async fn apply_settings_effects(
     {
         let mut guard = settings_cache.write().unwrap();
         settings_store.save(&settings).map_err(|e| e.to_string())?;
-        *guard = settings;
+        // AppSettings는 Copy가 아니다 — 아래에서 계속 읽으므로 복제해 넣는다.
+        *guard = settings.clone();
     }
     // 이슈 #41: 질문 알림 홀드 시간 변경을 즉시 hub 에 반영한다.
     hub.set_hold_duration(std::time::Duration::from_millis(settings.attention_hold_ms));

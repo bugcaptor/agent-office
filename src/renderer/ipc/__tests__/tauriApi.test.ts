@@ -495,6 +495,12 @@ describe("app settings commands", () => {
         version: 1,
         summarizerEnabled: false,
         summaryProvider: "claude",
+        summaryModels: {
+          claude: { light: "", heavy: "" },
+          codex: { light: "", heavy: "" },
+          agy: { light: "", heavy: "" },
+          gemini: { light: "", heavy: "" },
+        },
         diaryEnabled: false,
         observerEnabled: false,
       },
@@ -513,6 +519,12 @@ describe("app settings commands", () => {
       version: 1,
       summarizerEnabled: true,
       summaryProvider: "codex" as const,
+      summaryModels: {
+        claude: { light: "", heavy: "" },
+        codex: { light: "", heavy: "" },
+        agy: { light: "", heavy: "" },
+        gemini: { light: "", heavy: "" },
+      },
       diaryEnabled: false,
       observerEnabled: false,
       typingSoundEnabled: true,
@@ -528,7 +540,8 @@ describe("app settings commands", () => {
       sessionLogEnabled: true,
       mascotEnabled: false,
       ttsEnabled: false,
-      ttsRewriteModel: "claude-haiku-4-5" as const,
+      ttsRewriteModelAnthropic: "claude-haiku-4-5" as const,
+      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini" as const,
       ttsRewriteProvider: "auto" as const,
     };
     const tauriApi = await importTauriApi();

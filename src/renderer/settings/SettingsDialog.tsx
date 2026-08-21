@@ -20,7 +20,7 @@ import type {
   ExternalEditorApp,
   ExternalTerminalApp,
   FileIndexBackend,
-  TtsRewriteModel,
+  SummaryProvider,
   TtsRewriteProvider,
   TtsStatus,
 } from "@shared/types";
@@ -102,15 +102,99 @@ function GeneralTab() {
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
 
   return (
-    <SettingsForm
-      value={{
-        summarizerEnabled: appSettings.summarizerEnabled,
-        summaryProvider: appSettings.summaryProvider,
-        diaryEnabled: appSettings.diaryEnabled,
-        observerEnabled: appSettings.observerEnabled,
-      }}
-      onChange={updateAppSettings}
-    />
+    <>
+      <SettingsForm
+        value={{
+          summarizerEnabled: appSettings.summarizerEnabled,
+          summaryProvider: appSettings.summaryProvider,
+          diaryEnabled: appSettings.diaryEnabled,
+          observerEnabled: appSettings.observerEnabled,
+        }}
+        onChange={updateAppSettings}
+      />
+      <SummaryModelSection />
+    </>
+  );
+}
+
+/** 요약기 provider별 기본 모델(비우면 이 값이 쓰인다) — 백엔드
+ * `summarizer::SummaryPurpose`의 하드코딩 값과 같아야 한다. 안내 문구
+ * (placeholder)에만 쓰이므로 어긋나도 동작에는 영향이 없다. */
+const SUMMARY_DEFAULT_MODELS: Record<SummaryProvider, { light: string; heavy: string }> = {
+  claude: { light: "haiku", heavy: "sonnet" },
+  codex: { light: "gpt-5.4-mini", heavy: "gpt-5.4" },
+  agy: { light: "gemini-3.6-flash-low", heavy: "gemini-3.1-pro-low" },
+  gemini: { light: "gemini-2.5-flash", heavy: "gemini-2.5-pro" },
+};
+
+const SUMMARY_PROVIDER_LABEL: Record<SummaryProvider, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  agy: "Antigravity (agy)",
+  gemini: "Gemini",
+};
+
+/**
+ * 요약 모델 오버라이드 — 지금 고른 요약기의 경량/고급 모델만 노출한다.
+ * (SettingsForm은 FirstRunDialog와 공유하는 폼이라 손대지 않는다 — 첫 실행
+ * 온보딩에서 모델 id까지 물을 이유가 없다.)
+ *
+ * 비우면 백엔드 기본값. 값은 그대로 해당 CLI의 `--model`로 실리므로 앱이
+ * 목록을 강제하지 않는다 — 새 모델이 나올 때마다 앱을 고쳐야 하는 것보다,
+ * 오타가 나면 그 요약이 실패해 원문 폴백으로 강등되는 편이 낫다.
+ */
+function SummaryModelSection() {
+  const provider = useAppStore((s) => s.appSettings.summaryProvider);
+  const summaryModels = useAppStore((s) => s.appSettings.summaryModels);
+  const updateAppSettings = useAppStore((s) => s.updateAppSettings);
+  const current = summaryModels[provider];
+  const defaults = SUMMARY_DEFAULT_MODELS[provider];
+
+  const setModel = (key: "light" | "heavy", value: string) =>
+    updateAppSettings({
+      summaryModels: {
+        ...summaryModels,
+        [provider]: { ...current, [key]: value },
+      },
+    });
+
+  return (
+    <div className="settings-form">
+      <label className="settings-item">
+        <span>
+          <strong>{SUMMARY_PROVIDER_LABEL[provider]} 경량 모델</strong>
+          <small>
+            작업 라벨 요약과 캐릭터 일기에 쓰는 모델입니다. 비우면 기본값(
+            <code>{defaults.light}</code>)을 씁니다.
+          </small>
+        </span>
+        <input
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={defaults.light}
+          value={current.light}
+          onChange={(e) => setModel("light", e.target.value)}
+        />
+      </label>
+      <label className="settings-item">
+        <span>
+          <strong>{SUMMARY_PROVIDER_LABEL[provider]} 고급 모델</strong>
+          <small>
+            세션 로그 학습자료처럼 긴 글을 정리할 때 쓰는 모델입니다. 비우면
+            기본값(<code>{defaults.heavy}</code>)을 씁니다.
+          </small>
+        </span>
+        <input
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={defaults.heavy}
+          value={current.heavy}
+          onChange={(e) => setModel("heavy", e.target.value)}
+        />
+      </label>
+    </div>
   );
 }
 
@@ -357,9 +441,21 @@ function TerminalThemeItem() {
 const REWRITE_VIA_LABEL: Record<TtsRewriteProvider, string> = {
   auto: "자동",
   api: "Anthropic API",
+  openrouter: "OpenRouter",
   "claude-cli": "claude CLI (구독)",
   none: "리라이트 없음 (원문 발화)",
 };
+
+/** 모델 입력 자유 텍스트의 추천 목록(datalist). 강제가 아니라 힌트다 — 새
+ * 모델이 나와도 그냥 적어 넣으면 된다. */
+const ANTHROPIC_MODEL_PRESETS = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"];
+const OPENROUTER_MODEL_PRESETS = [
+  "openai/gpt-5.4-mini",
+  "openai/gpt-5.4",
+  "anthropic/claude-haiku-4.5",
+  "google/gemini-2.5-flash",
+  "meta-llama/llama-4-maverick",
+];
 
 /**
  * 확인 요청 대사 TTS 설정.
@@ -378,6 +474,7 @@ function TtsSection() {
   const [status, setStatus] = useState<TtsStatus | null>(null);
   const [elevenlabs, setElevenlabs] = useState("");
   const [anthropic, setAnthropic] = useState("");
+  const [openrouter, setOpenrouter] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -400,11 +497,13 @@ function TtsSection() {
       // 손대지 않은 필드는 undefined로 보내 기존 값을 보존한다.
       const next = await tauriApi.ttsSetKeys(
         elevenlabs === "" ? undefined : elevenlabs,
-        anthropic === "" ? undefined : anthropic
+        anthropic === "" ? undefined : anthropic,
+        openrouter === "" ? undefined : openrouter
       );
       setStatus(next);
       setElevenlabs("");
       setAnthropic("");
+      setOpenrouter("");
       setNote("키를 저장했습니다.");
     } catch (err) {
       setNote(`키 저장 실패: ${String(err)}`);
@@ -466,29 +565,70 @@ function TtsSection() {
             >
               <option value="auto">자동 (API 키 → claude CLI → 끄기)</option>
               <option value="api">Anthropic API 키</option>
+              <option value="openrouter">OpenRouter</option>
               <option value="claude-cli">claude CLI (구독 사용량 소모)</option>
               <option value="none">리라이트 없음 (원문 발화)</option>
             </select>
           </label>
 
-          <label className="settings-item">
-            <span>
-              <strong>리라이트 모델</strong>
-              <small>한 줄 대사 변환이라 기본(Haiku)으로 충분합니다.</small>
-            </span>
-            <select
-              value={appSettings.ttsRewriteModel}
-              onChange={(e) =>
-                updateAppSettings({
-                  ttsRewriteModel: e.target.value as TtsRewriteModel,
-                })
-              }
-            >
-              <option value="claude-haiku-4-5">Haiku 4.5 (기본·빠름)</option>
-              <option value="claude-sonnet-5">Sonnet 5</option>
-              <option value="claude-opus-5">Opus 5</option>
-            </select>
-          </label>
+          {/* 모델 입력은 공급자에 따라 하나만 보인다 — 지금 쓰이지 않는 쪽을
+              같이 띄우면 어느 값이 실제로 쓰이는지 헷갈린다. "자동"과
+              "claude CLI"는 Anthropic 모델 id 체계를 쓰므로 같은 칸이다. */}
+          {appSettings.ttsRewriteProvider === "openrouter" ? (
+            <label className="settings-item">
+              <span>
+                <strong>리라이트 모델 (OpenRouter)</strong>
+                <small>
+                  OpenRouter 모델 id를 <code>벤더/모델</code> 형식으로 적습니다.
+                  목록에 없는 모델도 직접 입력할 수 있습니다.
+                </small>
+              </span>
+              <input
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                list="tts-openrouter-models"
+                placeholder="openai/gpt-5.4-mini"
+                value={appSettings.ttsRewriteModelOpenrouter}
+                onChange={(e) =>
+                  updateAppSettings({ ttsRewriteModelOpenrouter: e.target.value })
+                }
+              />
+              <datalist id="tts-openrouter-models">
+                {OPENROUTER_MODEL_PRESETS.map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+            </label>
+          ) : (
+            appSettings.ttsRewriteProvider !== "none" && (
+              <label className="settings-item">
+                <span>
+                  <strong>리라이트 모델 (Anthropic)</strong>
+                  <small>
+                    한 줄 대사 변환이라 기본(Haiku)으로 충분합니다. 목록에 없는
+                    모델도 직접 입력할 수 있습니다.
+                  </small>
+                </span>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  list="tts-anthropic-models"
+                  placeholder="claude-haiku-4-5"
+                  value={appSettings.ttsRewriteModelAnthropic}
+                  onChange={(e) =>
+                    updateAppSettings({ ttsRewriteModelAnthropic: e.target.value })
+                  }
+                />
+                <datalist id="tts-anthropic-models">
+                  {ANTHROPIC_MODEL_PRESETS.map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+              </label>
+            )
+          )}
 
           <div
             className="settings-item"
@@ -505,6 +645,12 @@ function TtsSection() {
                   } · Anthropic 키 ${
                     status.anthropicSet
                       ? status.anthropicFromEnv
+                        ? "있음(환경변수)"
+                        : "있음"
+                      : "없음"
+                  } · OpenRouter 키 ${
+                    status.openrouterSet
+                      ? status.openrouterFromEnv
                         ? "있음(환경변수)"
                         : "있음"
                       : "없음"
@@ -550,10 +696,27 @@ function TtsSection() {
               />
             </label>
 
+            <label className="settings-item">
+              <span>
+                <strong>OpenRouter API 키 (선택)</strong>
+                <small>
+                  위에서 공급자를 <b>OpenRouter</b>로 골랐을 때만 쓰입니다. 비어
+                  있으면 <code>OPENROUTER_API_KEY</code> 환경변수를 씁니다.
+                </small>
+              </span>
+              <input
+                type="password"
+                autoComplete="off"
+                placeholder={status?.openrouterSet ? "저장됨 (변경 시 입력)" : "sk-or-…"}
+                value={openrouter}
+                onChange={(e) => setOpenrouter(e.target.value)}
+              />
+            </label>
+
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 className="pixel-btn"
-                disabled={busy || (elevenlabs === "" && anthropic === "")}
+                disabled={busy || (elevenlabs === "" && anthropic === "" && openrouter === "")}
                 onClick={saveKeys}
               >
                 키 저장

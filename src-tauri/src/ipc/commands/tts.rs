@@ -19,14 +19,14 @@ pub async fn tts_speak(
     request: crate::tts::SpeakRequest,
 ) -> Result<crate::tts::SpeakResult, String> {
     // 설정 스냅샷만 값으로 꺼내고 가드는 즉시 놓는다(await 전).
-    let (enabled, model, provider) = {
+    let (enabled, cfg) = {
         let s = app_state.settings.read().unwrap();
-        (s.tts_enabled, s.tts_rewrite_model, s.tts_rewrite_provider)
+        (s.tts_enabled, crate::tts::RewriteConfig::from_settings(&s))
     };
     if !enabled {
         return Err(crate::tts::TtsError::Disabled.to_ipc_string());
     }
-    crate::tts::speak(&app_state.tts, model, provider, &request)
+    crate::tts::speak(&app_state.tts, &cfg, &request)
         .await
         .map_err(|e| {
             // 장식 기능이라 앱 동작에는 영향이 없지만, 원인은 남긴다(키 값은 미포함).
@@ -60,7 +60,12 @@ pub async fn tts_key_status(app_state: State<'_, AppState>) -> Result<crate::tts
 fn tts_status(app_state: &AppState) -> crate::tts::TtsStatus {
     let provider = app_state.settings.read().unwrap().tts_rewrite_provider;
     let cli = crate::tts::claude_cli_available();
-    let route = crate::tts::resolve_rewrite_route(provider, app_state.tts.keys.anthropic_key(), cli);
+    let route = crate::tts::resolve_rewrite_route(
+        provider,
+        app_state.tts.keys.anthropic_key(),
+        app_state.tts.keys.openrouter_key(),
+        cli,
+    );
     crate::tts::TtsStatus {
         keys: app_state.tts.keys.status(),
         claude_cli_available: cli,
@@ -75,11 +80,12 @@ pub async fn tts_set_keys(
     app_state: State<'_, AppState>,
     elevenlabs: Option<String>,
     anthropic: Option<String>,
+    openrouter: Option<String>,
 ) -> Result<crate::tts::TtsStatus, String> {
     app_state
         .tts
         .keys
-        .set(elevenlabs, anthropic)
+        .set(elevenlabs, anthropic, openrouter)
         .map_err(|e| format!("cache: 키 저장 실패 ({e})"))?;
     Ok(tts_status(&app_state))
 }

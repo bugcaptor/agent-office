@@ -31,8 +31,6 @@
 
 use std::time::Duration;
 
-use crate::persistence::settings_store::TtsRewriteModel;
-
 use super::rewrite::{sanitize_line, system_prompt, RewriteError, SpeakKind};
 
 /// CLI는 API보다 느리다(프로세스 시작 + 인증). API 경로의 6초보다 넉넉히 준다.
@@ -53,17 +51,13 @@ pub const STRIPPED_ENV: &[&str] = &[
 /// non-Windows: `claude` 바이너리를 직접 spawn한다(로그인 셸을 거치지 않으므로
 /// 관찰자 래퍼 함수가 적용되지 않는다 — 격리 근거 1).
 #[cfg(not(windows))]
-pub fn build_command(
-    kind: SpeakKind,
-    model: TtsRewriteModel,
-    user_content: &str,
-) -> std::process::Command {
+pub fn build_command(kind: SpeakKind, model: &str, user_content: &str) -> std::process::Command {
     let mut command = std::process::Command::new("claude");
     command.args([
         "-p",
         user_content,
         "--model",
-        model.as_str(),
+        model,
         "--output-format",
         "text",
         "--max-turns",
@@ -93,18 +87,14 @@ if (-not $c) { exit 3 }
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-pub fn build_command(
-    kind: SpeakKind,
-    model: TtsRewriteModel,
-    user_content: &str,
-) -> std::process::Command {
+pub fn build_command(kind: SpeakKind, model: &str, user_content: &str) -> std::process::Command {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = std::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT]);
     command.creation_flags(CREATE_NO_WINDOW);
     command.env("AO_TTS_PROMPT", user_content);
-    command.env("AO_TTS_MODEL", model.as_str());
+    command.env("AO_TTS_MODEL", model);
     command.env("AO_TTS_SYSTEM", system_prompt(kind));
     command.env("AO_TTS_SETTINGS", HOOKS_OFF_SETTINGS);
     strip_observer_env(&mut command);
@@ -133,7 +123,7 @@ pub fn parse_output(stdout: &str) -> Result<String, RewriteError> {
 /// (`tts::speak`)이 원문 발화로 강등한다.
 pub async fn rewrite_via_cli(
     kind: SpeakKind,
-    model: TtsRewriteModel,
+    model: &str,
     agent_name: &str,
     personality: Option<&str>,
     context: Option<&str>,
@@ -197,7 +187,7 @@ mod tests {
 
     #[test]
     fn command_disables_hooks_via_inline_settings_override() {
-        let c = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "content");
+        let c = build_command(SpeakKind::Question, "claude-haiku-4-5", "content");
         let r = rendered(&c);
         assert!(r.contains("--settings"), "{r}");
         assert!(r.contains(r#"{"hooks":{}}"#), "{r}");
@@ -207,7 +197,7 @@ mod tests {
     // 제거돼야 한다. `env_remove`는 `get_envs()`에 (key, None)으로 나타난다.
     #[test]
     fn command_strips_every_observer_env_var() {
-        let c = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "content");
+        let c = build_command(SpeakKind::Question, "claude-haiku-4-5", "content");
         let removed: Vec<String> = c
             .get_envs()
             .filter(|(_, v)| v.is_none())
@@ -223,7 +213,7 @@ mod tests {
 
     #[test]
     fn command_is_headless_single_turn_text_output() {
-        let c = build_command(SpeakKind::Question, TtsRewriteModel::Sonnet5, "content");
+        let c = build_command(SpeakKind::Question, "claude-sonnet-5", "content");
         let r = rendered(&c);
         assert!(r.contains("-p"), "{r}");
         assert!(r.contains("--output-format"), "{r}");
@@ -237,7 +227,7 @@ mod tests {
     // 존재 이유를 무력화한다. 실수로 들어오면 잡는다.
     #[test]
     fn command_does_not_use_bare_mode() {
-        let c = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "content");
+        let c = build_command(SpeakKind::Question, "claude-haiku-4-5", "content");
         assert!(
             !c.get_args().any(|a| a == "--bare"),
             "--bare는 구독 인증을 끊는다"
@@ -249,14 +239,14 @@ mod tests {
     fn non_windows_spawns_the_binary_directly_not_a_login_shell() {
         // 로그인 셸을 거치면 관찰자 `claude` 래퍼 함수가 --settings를 덧붙여
         // 훅이 살아난다(격리 근거 1).
-        let c = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "content");
+        let c = build_command(SpeakKind::Question, "claude-haiku-4-5", "content");
         assert_eq!(c.get_program(), "claude");
     }
 
     #[cfg(not(windows))]
     #[test]
     fn non_windows_passes_user_content_as_the_prompt_arg() {
-        let c = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "캐릭터 이름: 무지");
+        let c = build_command(SpeakKind::Question, "claude-haiku-4-5", "캐릭터 이름: 무지");
         let args: Vec<String> = c.get_args().map(|a| a.to_string_lossy().into()).collect();
         let i = args.iter().position(|a| a == "-p").unwrap();
         assert_eq!(args[i + 1], "캐릭터 이름: 무지");
@@ -265,7 +255,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_uses_powershell_and_passes_args_through_env() {
-        let c = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "내용");
+        let c = build_command(SpeakKind::Question, "claude-haiku-4-5", "내용");
         assert_eq!(c.get_program(), "powershell.exe");
         let val = |name: &str| {
             c.get_envs()
@@ -290,8 +280,8 @@ mod tests {
     // 달라지면 사용자에게는 그냥 버그로 보인다.
     #[test]
     fn done_kind_swaps_the_system_prompt() {
-        let q = build_command(SpeakKind::Question, TtsRewriteModel::Haiku45, "c");
-        let d = build_command(SpeakKind::Done, TtsRewriteModel::Haiku45, "c");
+        let q = build_command(SpeakKind::Question, "claude-haiku-4-5", "c");
+        let d = build_command(SpeakKind::Done, "claude-haiku-4-5", "c");
         assert_ne!(rendered(&q), rendered(&d));
         assert!(rendered(&d).contains("작업을 마치고"));
     }

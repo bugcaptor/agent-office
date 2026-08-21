@@ -1,4 +1,4 @@
-use super::{ProviderCommand, SummaryPurpose};
+use super::ProviderCommand;
 use crate::persistence::settings_store::SummaryProvider;
 
 #[cfg(windows)]
@@ -12,14 +12,14 @@ $in | & $c.Source -p $env:AO_INSTRUCTION --model $env:AO_MODEL --output-format t
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-pub(super) fn build(instruction: &str, purpose: SummaryPurpose) -> ProviderCommand {
+pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = std::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT]);
     command.creation_flags(CREATE_NO_WINDOW);
     command.env("AO_INSTRUCTION", instruction);
-    command.env("AO_MODEL", purpose.claude_model());
+    command.env("AO_MODEL", model);
     ProviderCommand {
         command,
         provider: SummaryProvider::Claude,
@@ -27,13 +27,13 @@ pub(super) fn build(instruction: &str, purpose: SummaryPurpose) -> ProviderComma
 }
 
 #[cfg(not(windows))]
-pub(super) fn build(instruction: &str, purpose: SummaryPurpose) -> ProviderCommand {
+pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
     let mut command = std::process::Command::new("claude");
     command.args([
         "-p",
         instruction,
         "--model",
-        purpose.claude_model(),
+        model,
         "--output-format",
         "text",
         "--max-turns",
@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn claude_command_pins_existing_behavior() {
-        let spec = build("요약 지시", SummaryPurpose::Label);
+        let spec = build("요약 지시", "haiku");
         let rendered = command_debug(&spec.command);
         assert!(rendered.contains("haiku"), "{rendered}");
         assert!(rendered.contains("--output-format"), "{rendered}");
@@ -93,7 +93,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_command_uses_powershell_with_no_window_flag_and_env_instruction() {
-        let spec = build("요약 지시", SummaryPurpose::Label);
+        let spec = build("요약 지시", "haiku");
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "powershell.exe");
         let args: Vec<_> = cmd
@@ -111,11 +111,13 @@ mod tests {
         assert_eq!(env_val, Some(std::ffi::OsStr::new("요약 지시")));
     }
 
-    /// 학습자료 목적은 같은 파이프라인을 쓰되 더 큰 모델을 고른다.
+    /// 모델은 이제 호출측(`summarizer::resolve_model`)이 정해 넘긴다 — 여기서는
+    /// 그 값이 왜곡 없이 커맨드로 실리는지만 고정한다(목적별 기본값·설정
+    /// 오버라이드 규칙은 mod.rs의 `resolve_model` 테스트가 지킨다).
     #[cfg(not(windows))]
     #[test]
-    fn study_purpose_upgrades_the_model() {
-        let spec = build("학습자료 지시", SummaryPurpose::Study);
+    fn explicit_model_is_passed_through() {
+        let spec = build("학습자료 지시", "sonnet");
         let rendered = command_debug(&spec.command);
         assert!(rendered.contains("sonnet"), "{rendered}");
         assert!(!rendered.contains("haiku"), "{rendered}");
@@ -124,7 +126,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn non_windows_command_passes_instruction_and_model_flags() {
-        let spec = build("요약 지시", SummaryPurpose::Label);
+        let spec = build("요약 지시", "haiku");
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "claude");
         let args: Vec<_> = cmd

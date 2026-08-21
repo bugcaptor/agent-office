@@ -65,6 +65,7 @@
                 crate::summarizer::SummaryPurpose::Label,
                 "요약하라",
                 "text",
+                &Default::default(),
             )
             .await
         };
@@ -80,6 +81,7 @@
             version: 1,
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Codex,
+            summary_models: Default::default(),
             diary_enabled: false,
             observer_enabled: false,
             typing_sound_enabled: true,
@@ -95,7 +97,8 @@
             session_log_enabled: true,
             mascot_enabled: false,
             tts_enabled: false,
-            tts_rewrite_model: Default::default(),
+            tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
+            tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
         };
 
@@ -109,6 +112,7 @@
                 crate::summarizer::SummaryPurpose::Label,
                 "요약하라",
                 "   ",
+                &Default::default(),
             )
             .await
         };
@@ -134,6 +138,7 @@
             version: 1,
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Claude,
+            summary_models: Default::default(),
             diary_enabled: false,
             observer_enabled: false,
             typing_sound_enabled: true,
@@ -149,7 +154,8 @@
             session_log_enabled: true,
             mascot_enabled: false,
             tts_enabled: false,
-            tts_rewrite_model: Default::default(),
+            tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
+            tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
@@ -160,7 +166,7 @@
                 .settings_store
                 .save(&new_settings)
                 .expect("save into tempdir should succeed");
-            *guard = new_settings;
+            *guard = new_settings.clone();
         }
         state
             .settings_first_run
@@ -181,6 +187,7 @@
             version: 1,
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
+            summary_models: Default::default(),
             diary_enabled: false,
             observer_enabled: true,
             typing_sound_enabled: true,
@@ -196,11 +203,12 @@
             session_log_enabled: true,
             mascot_enabled: false,
             tts_enabled: false,
-            tts_rewrite_model: Default::default(),
+            tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
+            tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
         };
 
-        assert!(set_app_settings_inner(&state, settings).await.is_ok());
+        assert!(set_app_settings_inner(&state, settings.clone()).await.is_ok());
         assert_eq!(*state.settings.read().unwrap(), settings);
         assert_eq!(state.settings_store.load().0, settings);
         assert!(!state

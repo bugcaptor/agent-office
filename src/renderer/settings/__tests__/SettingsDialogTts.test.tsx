@@ -10,14 +10,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSettings, TtsStatus } from "@shared/types";
 
 const ttsKeyStatus = vi.fn<() => Promise<TtsStatus>>();
-const ttsSetKeys = vi.fn<(e?: string, a?: string) => Promise<TtsStatus>>();
+const ttsSetKeys = vi.fn<(e?: string, a?: string, o?: string) => Promise<TtsStatus>>();
 const setAppSettings = vi.fn<(s: unknown) => Promise<void>>(() => Promise.resolve());
 const controlStatus = vi.fn(() => Promise.reject(new Error("not used")));
 
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     ttsKeyStatus: () => ttsKeyStatus(),
-    ttsSetKeys: (e?: string, a?: string) => ttsSetKeys(e, a),
+    ttsSetKeys: (e?: string, a?: string, o?: string) => ttsSetKeys(e, a, o),
     setAppSettings: (s: unknown) => setAppSettings(s),
     controlStatus: () => controlStatus(),
   },
@@ -37,6 +37,8 @@ const STATUS: TtsStatus = {
   anthropicSet: false,
   elevenlabsFromEnv: false,
   anthropicFromEnv: false,
+  openrouterSet: false,
+  openrouterFromEnv: false,
   claudeCliAvailable: true,
   effectiveRewriteVia: "claude-cli",
 };
@@ -52,6 +54,12 @@ function hydrate(patch: Partial<AppSettings> = {}) {
       version: 1,
       summarizerEnabled: false,
       summaryProvider: "claude",
+      summaryModels: {
+        claude: { light: "", heavy: "" },
+        codex: { light: "", heavy: "" },
+        agy: { light: "", heavy: "" },
+        gemini: { light: "", heavy: "" },
+      },
       diaryEnabled: false,
       observerEnabled: false,
       typingSoundEnabled: true,
@@ -67,7 +75,8 @@ function hydrate(patch: Partial<AppSettings> = {}) {
       sessionLogEnabled: true,
       mascotEnabled: false,
       ttsEnabled: false,
-      ttsRewriteModel: "claude-haiku-4-5",
+      ttsRewriteModelAnthropic: "claude-haiku-4-5",
+      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
       ...patch,
     },
@@ -131,33 +140,74 @@ describe("SettingsDialog · 알림 대사 TTS", () => {
     fireEvent.change(anthropic, { target: { value: "sk-ant-abc" } });
     expect(save.disabled).toBe(false);
     fireEvent.click(save);
-    // 손대지 않은 ElevenLabs 필드는 undefined로 보내 기존 값을 보존한다.
-    await waitFor(() => expect(ttsSetKeys).toHaveBeenCalledWith(undefined, "sk-ant-abc"));
+    // 손대지 않은 필드는 undefined로 보내 기존 값을 보존한다.
+    await waitFor(() =>
+      expect(ttsSetKeys).toHaveBeenCalledWith(undefined, "sk-ant-abc", undefined),
+    );
     await waitFor(() => expect(anthropic.value).toBe(""));
     await screen.findByText("키를 저장했습니다.");
   });
 
-  it("리라이트 공급자/모델 선택이 설정에 반영된다", async () => {
+  // 라벨이 설명문(small)까지 감싸고 있어 접근성 이름으로 특정하기 어렵다 —
+  // "그 값을 고를 수 있는 select"로 집는다. (현재 값으로 집으면 다이얼로그의
+  // 다른 select와 부딪힌다 — "터미널 색상"도 기본값이 "auto"다.)
+  const selectByOption = (optionValue: string) =>
+    screen
+      .getAllByRole("combobox")
+      .find((el) =>
+        Array.from((el as HTMLSelectElement).options).some((o) => o.value === optionValue),
+      )!;
+
+  it("리라이트 공급자/모델 입력이 설정에 반영된다", async () => {
     hydrate({ ttsEnabled: true });
     render(<SettingsDialog />);
     openTab("소리·음성");
     await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
-    // 라벨이 설명문(small)까지 감싸고 있어 접근성 이름으로 특정하기 어렵다 —
-    // "그 값을 고를 수 있는 select"로 집는다. (현재 값으로 집으면 다이얼로그의
-    // 다른 select와 부딪힌다 — "터미널 색상"도 기본값이 "auto"다.)
-    const selectByOption = (optionValue: string) =>
-      screen
-        .getAllByRole("combobox")
-        .find((el) =>
-          Array.from((el as HTMLSelectElement).options).some((o) => o.value === optionValue),
-        )!;
 
     fireEvent.change(selectByOption("claude-cli"), { target: { value: "claude-cli" } });
     expect(useAppStore.getState().appSettings.ttsRewriteProvider).toBe("claude-cli");
-    fireEvent.change(selectByOption("claude-opus-5"), {
-      target: { value: "claude-opus-5" },
-    });
-    expect(useAppStore.getState().appSettings.ttsRewriteModel).toBe("claude-opus-5");
+
+    // 모델은 자유 입력이다 — 목록에 없는 모델도 그대로 저장된다.
+    const model = screen.getByPlaceholderText("claude-haiku-4-5") as HTMLInputElement;
+    fireEvent.change(model, { target: { value: "claude-future-9" } });
+    expect(useAppStore.getState().appSettings.ttsRewriteModelAnthropic).toBe("claude-future-9");
+  });
+
+  // 공급자를 OpenRouter로 바꾸면 모델 칸이 그쪽 값으로 갈린다 — 두 칸이 함께
+  // 보이면 어느 값이 실제로 쓰이는지 알 수 없다.
+  it("OpenRouter를 고르면 OpenRouter 모델 칸만 보이고 그 값이 저장된다", async () => {
+    hydrate({ ttsEnabled: true });
+    render(<SettingsDialog />);
+    openTab("소리·음성");
+    await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
+
+    fireEvent.change(selectByOption("openrouter"), { target: { value: "openrouter" } });
+    expect(useAppStore.getState().appSettings.ttsRewriteProvider).toBe("openrouter");
+    expect(screen.queryByPlaceholderText("claude-haiku-4-5")).toBeNull();
+
+    const model = screen.getByPlaceholderText("openai/gpt-5.4-mini") as HTMLInputElement;
+    expect(model.value).toBe("openai/gpt-5.4-mini");
+    fireEvent.change(model, { target: { value: "google/gemini-3-pro" } });
+    const s = useAppStore.getState().appSettings;
+    expect(s.ttsRewriteModelOpenrouter).toBe("google/gemini-3-pro");
+    expect(s.ttsRewriteModelAnthropic).toBe("claude-haiku-4-5");
+  });
+
+  it("OpenRouter 키도 마스킹 상태로만 표시하고 저장 시 셋째 인자로 넘긴다", async () => {
+    hydrate({ ttsEnabled: true });
+    render(<SettingsDialog />);
+    openTab("소리·음성");
+    await waitFor(() => expect(ttsKeyStatus).toHaveBeenCalled());
+    await screen.findByText(/OpenRouter 키 없음/);
+
+    const or = screen.getByPlaceholderText("sk-or-…") as HTMLInputElement;
+    expect(or.type).toBe("password");
+    fireEvent.change(or, { target: { value: "sk-or-abc" } });
+    fireEvent.click(screen.getByText("키 저장"));
+    await waitFor(() =>
+      expect(ttsSetKeys).toHaveBeenCalledWith(undefined, undefined, "sk-or-abc"),
+    );
+    await waitFor(() => expect(or.value).toBe(""));
   });
 
   it("시청 버튼이 실제 발화된 대사를 보여준다", async () => {

@@ -252,11 +252,16 @@ Codex는 `CODEX_HOME`으로 데이터 루트를 통째로 옮길 수 있다. `~/
 
 `summarizer` 파이프라인을 재사용하되 목적별로 갈라지는 것을 **셋**으로 늘린다.
 
-| 목적 | 입력 상한 | 타임아웃 | 모델 |
+| 목적 | 입력 상한 | 타임아웃 | 모델(기본, claude 기준) |
 | --- | --- | --- | --- |
 | `Label` | 2,000자 | 20초 | haiku |
 | `Diary` | 2,000자 | 120초 | haiku |
 | `Study` | **120,000자** | **300초** | **sonnet** |
+
+모델은 설정에서 provider별로 덮어쓸 수 있다(`AppSettings.summaryModels`의
+`{light, heavy}` 두 칸 — `Label`·`Diary`가 light, `Study`가 heavy). 빈 문자열이면
+위 표의 하드코딩 기본값을 쓴다. 해석은 `summarizer::resolve_model`(순수)이 하고,
+provider 빌더(`claude.rs` 등)는 정해진 모델 문자열을 받기만 한다.
 
 지금은 `TEXT_MAX_CHARS`가 전역 상수이고 모델이 `claude.rs`에 하드코딩돼 있다.
 둘 다 `SummaryPurpose`에서 갈라지도록 바꾼다(기존 두 목적의 동작은 그대로).

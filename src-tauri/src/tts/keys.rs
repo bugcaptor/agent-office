@@ -1,6 +1,6 @@
 // src-tauri/src/tts/keys.rs
 //
-// TTS가 쓰는 외부 API 키 두 개(ElevenLabs, Anthropic)의 보관소.
+// TTS가 쓰는 외부 API 키 세 개(ElevenLabs, Anthropic, OpenRouter)의 보관소.
 //
 // 왜 `AppSettings`가 아니라 별도 파일인가: `get_app_settings`는 설정 구조체를
 // **통째로** 렌더러(웹뷰)에 돌려준다. 키를 설정에 넣으면 그 순간부터 웹뷰
@@ -23,6 +23,8 @@ use std::path::PathBuf;
 pub const ANTHROPIC_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
 /// ElevenLabs 키도 같은 편의를 준다(설정 입력이 정공법이지만 env가 있으면 존중).
 pub const ELEVENLABS_API_KEY_ENV: &str = "ELEVENLABS_API_KEY";
+/// OpenRouter 키의 env 폴백. 다른 둘과 같은 규칙.
+pub const OPENROUTER_API_KEY_ENV: &str = "OPENROUTER_API_KEY";
 
 /// 디스크 표현. 필드가 비어 있으면 "미설정"이다(Option 대신 빈 문자열을 쓰는
 /// 이유: 렌더러에서 "지우기"를 빈 문자열 전송으로 자연스럽게 표현할 수 있다).
@@ -33,6 +35,8 @@ struct StoredKeys {
     elevenlabs: String,
     #[serde(default)]
     anthropic: String,
+    #[serde(default)]
+    openrouter: String,
 }
 
 /// 렌더러에 내려가는 마스킹된 상태 — 키 값은 절대 포함하지 않는다.
@@ -48,6 +52,11 @@ pub struct TtsKeyStatus {
     pub elevenlabs_from_env: bool,
     /// Anthropic 키가 저장값이 아니라 env 폴백인지(UI 안내용).
     pub anthropic_from_env: bool,
+    /// OpenRouter 키를 (저장값이든 env든) 쓸 수 있는지. 공급자로 OpenRouter를
+    /// **명시 선택**했을 때만 쓰인다(auto 체인은 이 키를 보지 않는다).
+    pub openrouter_set: bool,
+    /// OpenRouter 키가 저장값이 아니라 env 폴백인지(UI 안내용).
+    pub openrouter_from_env: bool,
 }
 
 /// 공백뿐이면 None으로 정규화한다.
@@ -97,15 +106,22 @@ impl TtsKeyStore {
         Self::resolve(&self.load().anthropic, ANTHROPIC_API_KEY_ENV).0
     }
 
+    pub fn openrouter_key(&self) -> Option<String> {
+        Self::resolve(&self.load().openrouter, OPENROUTER_API_KEY_ENV).0
+    }
+
     pub fn status(&self) -> TtsKeyStatus {
         let stored = self.load();
         let (el, el_env) = Self::resolve(&stored.elevenlabs, ELEVENLABS_API_KEY_ENV);
         let (an, an_env) = Self::resolve(&stored.anthropic, ANTHROPIC_API_KEY_ENV);
+        let (or, or_env) = Self::resolve(&stored.openrouter, OPENROUTER_API_KEY_ENV);
         TtsKeyStatus {
             elevenlabs_set: el.is_some(),
             anthropic_set: an.is_some(),
             elevenlabs_from_env: el_env,
             anthropic_from_env: an_env,
+            openrouter_set: or.is_some(),
+            openrouter_from_env: or_env,
         }
     }
 
@@ -115,6 +131,7 @@ impl TtsKeyStore {
         &self,
         elevenlabs: Option<String>,
         anthropic: Option<String>,
+        openrouter: Option<String>,
     ) -> std::io::Result<TtsKeyStatus> {
         let mut stored = self.load();
         if let Some(v) = elevenlabs {
@@ -122,6 +139,9 @@ impl TtsKeyStore {
         }
         if let Some(v) = anthropic {
             stored.anthropic = v.trim().to_string();
+        }
+        if let Some(v) = openrouter {
+            stored.openrouter = v.trim().to_string();
         }
         self.save(&stored)?;
         Ok(self.status())
@@ -182,13 +202,18 @@ mod tests {
         let file = scratch();
         let store = TtsKeyStore::new(file.clone());
         let st = store
-            .set(Some("  xi-abc  ".into()), Some("sk-ant-xyz".into()))
+            .set(
+                Some("  xi-abc  ".into()),
+                Some("sk-ant-xyz".into()),
+                Some("  sk-or-1  ".into()),
+            )
             .unwrap();
-        assert!(st.elevenlabs_set && st.anthropic_set);
-        assert!(!st.elevenlabs_from_env && !st.anthropic_from_env);
+        assert!(st.elevenlabs_set && st.anthropic_set && st.openrouter_set);
+        assert!(!st.elevenlabs_from_env && !st.anthropic_from_env && !st.openrouter_from_env);
         // 트림돼서 저장된다.
         assert_eq!(store.elevenlabs_key().as_deref(), Some("xi-abc"));
         assert_eq!(store.anthropic_key().as_deref(), Some("sk-ant-xyz"));
+        assert_eq!(store.openrouter_key().as_deref(), Some("sk-or-1"));
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
@@ -196,10 +221,17 @@ mod tests {
     fn none_field_keeps_previous_value() {
         let file = scratch();
         let store = TtsKeyStore::new(file.clone());
-        store.set(Some("xi-1".into()), Some("an-1".into())).unwrap();
-        store.set(None, Some("an-2".into())).unwrap();
+        store
+            .set(Some("xi-1".into()), Some("an-1".into()), Some("or-1".into()))
+            .unwrap();
+        store.set(None, Some("an-2".into()), None).unwrap();
         assert_eq!(store.elevenlabs_key().as_deref(), Some("xi-1"));
         assert_eq!(store.anthropic_key().as_deref(), Some("an-2"));
+        assert_eq!(
+            store.openrouter_key().as_deref(),
+            Some("or-1"),
+            "None 필드는 손대지 않는다"
+        );
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
@@ -207,8 +239,8 @@ mod tests {
     fn empty_string_clears_stored_key() {
         let file = scratch();
         let store = TtsKeyStore::new(file.clone());
-        store.set(Some("xi-1".into()), None).unwrap();
-        store.set(Some("".into()), None).unwrap();
+        store.set(Some("xi-1".into()), None, None).unwrap();
+        store.set(Some("".into()), None, None).unwrap();
         // env가 없다면 미설정으로 떨어진다(테스트 환경에 ELEVENLABS_API_KEY가
         // 있으면 env 폴백이 잡히므로 저장값 자체만 검사한다).
         assert_eq!(store.load().elevenlabs, "");
@@ -229,7 +261,7 @@ mod tests {
     fn save_leaves_no_temp_file() {
         let file = scratch();
         let store = TtsKeyStore::new(file.clone());
-        store.set(Some("xi".into()), None).unwrap();
+        store.set(Some("xi".into()), None, None).unwrap();
         let names: Vec<String> = fs::read_dir(file.parent().unwrap())
             .unwrap()
             .map(|e| e.unwrap().file_name().into_string().unwrap())
@@ -244,7 +276,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let file = scratch();
         let store = TtsKeyStore::new(file.clone());
-        store.set(Some("xi".into()), None).unwrap();
+        store.set(Some("xi".into()), None, None).unwrap();
         let mode = fs::metadata(&file).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "키 파일은 소유자만 읽을 수 있어야 한다");
         let _ = fs::remove_dir_all(file.parent().unwrap());

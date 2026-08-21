@@ -1,4 +1,4 @@
-use super::{ProviderCommand, SummaryPurpose};
+use super::ProviderCommand;
 use crate::persistence::settings_store::SummaryProvider;
 
 // agy(Google Antigravity CLI)는 print 모드에서 stdin을 본문으로 읽지 않는다
@@ -28,14 +28,14 @@ $in = [Console]::In.ReadToEnd()
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-pub(super) fn build(instruction: &str, purpose: SummaryPurpose) -> ProviderCommand {
+pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = std::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT]);
     command.creation_flags(CREATE_NO_WINDOW);
     command.env("AO_INSTRUCTION", instruction);
-    command.env("AO_MODEL", purpose.agy_model());
+    command.env("AO_MODEL", model);
     ProviderCommand {
         command,
         provider: SummaryProvider::Agy,
@@ -43,11 +43,11 @@ pub(super) fn build(instruction: &str, purpose: SummaryPurpose) -> ProviderComma
 }
 
 #[cfg(not(windows))]
-pub(super) fn build(instruction: &str, purpose: SummaryPurpose) -> ProviderCommand {
+pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
     let mut command = std::process::Command::new("/bin/sh");
     command.args(["-c", UNIX_SCRIPT]);
     command.env("AO_INSTRUCTION", instruction);
-    command.env("AO_MODEL", purpose.agy_model());
+    command.env("AO_MODEL", model);
     ProviderCommand {
         command,
         provider: SummaryProvider::Agy,
@@ -63,7 +63,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn unix_command_wraps_agy_in_sh_with_env_instruction_and_model() {
-        let spec = build("요약 지시", SummaryPurpose::Label);
+        let spec = build("요약 지시", "gemini-3.6-flash-low");
         assert_eq!(spec.provider, SummaryProvider::Agy);
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "/bin/sh");
@@ -82,11 +82,13 @@ mod tests {
         assert_eq!(env("AO_MODEL").as_deref(), Some("gemini-3.6-flash-low"));
     }
 
-    /// 학습자료 목적은 같은 파이프라인을 쓰되 더 큰 모델을 고른다.
+    /// 모델은 이제 호출측(`summarizer::resolve_model`)이 정해 넘긴다 — 여기서는
+    /// 그 값이 왜곡 없이 커맨드로 실리는지만 고정한다(목적별 기본값·설정
+    /// 오버라이드 규칙은 mod.rs의 `resolve_model` 테스트가 지킨다).
     #[cfg(not(windows))]
     #[test]
-    fn study_purpose_upgrades_the_model() {
-        let spec = build("학습자료 지시", SummaryPurpose::Study);
+    fn explicit_model_is_passed_through() {
+        let spec = build("학습자료 지시", "gemini-3.1-pro-low");
         let model = spec
             .command
             .get_envs()
@@ -132,7 +134,7 @@ mod tests {
             std::iter::once(dir.clone()).chain(std::env::split_paths(&original_path)),
         )
         .unwrap();
-        let mut spec = build(DANGEROUS_INSTRUCTION, SummaryPurpose::Label);
+        let mut spec = build(DANGEROUS_INSTRUCTION, "gemini-3.6-flash-low");
         spec.command.env("PATH", path);
         spec.command.env("AO_CAPTURE_FILE", &capture);
         spec.command.stdin(Stdio::piped());
@@ -183,7 +185,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_command_uses_powershell_with_no_window_flag_and_env_instruction() {
-        let spec = build(DANGEROUS_INSTRUCTION, SummaryPurpose::Label);
+        let spec = build(DANGEROUS_INSTRUCTION, "gemini-3.6-flash-low");
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "powershell.exe");
         let args: Vec<_> = cmd

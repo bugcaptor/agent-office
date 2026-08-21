@@ -101,11 +101,23 @@ pub async fn summarize_text(
     // 목적별 타임아웃(#66). 미전달(구 렌더러)이면 라벨(20초)로 취급.
     purpose: Option<crate::summarizer::SummaryPurpose>,
 ) -> Result<String, String> {
-    let enabled = app_state.settings.read().unwrap().summarizer_enabled;
-    if !enabled {
-        return Err("summarizer-disabled".to_string());
-    }
-    crate::summarizer::summarize(provider, purpose.unwrap_or_default(), &instruction, &text).await
+    // 설정 가드는 .await 이전에 떨어뜨린다(no-lock-across-await 계약) — 모델
+    // 오버라이드는 값으로 복제해 들고 나온다.
+    let models = {
+        let guard = app_state.settings.read().unwrap();
+        if !guard.summarizer_enabled {
+            return Err("summarizer-disabled".to_string());
+        }
+        guard.summary_models.clone()
+    };
+    crate::summarizer::summarize(
+        provider,
+        purpose.unwrap_or_default(),
+        &instruction,
+        &text,
+        &models,
+    )
+    .await
 }
 
 /// PixelLab로 64×64 스프라이트 1장 생성. AppState 비의존

@@ -228,6 +228,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "version",
       "summarizerEnabled",
       "summaryProvider",
+      "summaryModels",
       "diaryEnabled",
       "observerEnabled",
       "typingSoundEnabled",
@@ -243,7 +244,8 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "sessionLogEnabled",
       "mascotEnabled",
       "ttsEnabled",
-      "ttsRewriteModel",
+      "ttsRewriteModelAnthropic",
+      "ttsRewriteModelOpenrouter",
       "ttsRewriteProvider",
     ]);
     expect(settings.gitStatusEnabled).toBe(true);
@@ -255,8 +257,11 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expect(settings.mascotEnabled).toBe(false);
     // TTS는 외부 유료 API 두 곳을 호출하므로 기본 꺼짐, 리라이트는 자동 체인.
     expect(settings.ttsEnabled).toBe(false);
-    expect(settings.ttsRewriteModel).toBe("claude-haiku-4-5");
+    expect(settings.ttsRewriteModelAnthropic).toBe("claude-haiku-4-5");
+    expect(settings.ttsRewriteModelOpenrouter).toBe("openai/gpt-5.4-mini");
     expect(settings.ttsRewriteProvider).toBe("auto");
+    // 요약 모델 오버라이드는 "비어 있음 = 백엔드 기본 모델"이 기본 상태다.
+    expect(settings.summaryModels.codex).toEqual({ light: "", heavy: "" });
   });
 
   it("GitStatusResult / GitFileStatus", () => {

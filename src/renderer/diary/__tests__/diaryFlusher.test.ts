@@ -25,6 +25,12 @@ const SETTINGS_ON: AppSettings = {
   version: 1,
   summarizerEnabled: false,
   summaryProvider: "claude",
+  summaryModels: {
+    claude: { light: "", heavy: "" },
+    codex: { light: "", heavy: "" },
+    agy: { light: "", heavy: "" },
+    gemini: { light: "", heavy: "" },
+  },
   diaryEnabled: true,
   observerEnabled: false,
   typingSoundEnabled: true,
@@ -40,7 +46,8 @@ const SETTINGS_ON: AppSettings = {
   sessionLogEnabled: true,
   mascotEnabled: false,
   ttsEnabled: false,
-  ttsRewriteModel: "claude-haiku-4-5",
+  ttsRewriteModelAnthropic: "claude-haiku-4-5",
+  ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
   ttsRewriteProvider: "auto",
 };
 

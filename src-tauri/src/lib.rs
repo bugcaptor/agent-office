@@ -774,6 +774,7 @@ mod tests {
             version: 1,
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
+            summary_models: Default::default(),
             diary_enabled: false,
             observer_enabled: true,
             typing_sound_enabled: true,
@@ -789,7 +790,8 @@ mod tests {
             session_log_enabled: true,
             mascot_enabled: false,
             tts_enabled: false,
-            tts_rewrite_model: Default::default(),
+            tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
+            tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
         }));
         let registry = Arc::new(SessionRegistry::new());

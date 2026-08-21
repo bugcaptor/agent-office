@@ -54,13 +54,21 @@ AI 에이전트가 사용자 확인을 기다리거나 작업을 마쳤을 때, 
 - 렌더러가 얻는 것: `TtsStatus` — **존재 여부 bool**과 env 유래 여부, claude CLI
   가용성, 실제 선택될 리라이트 경로뿐.
 - 합성은 전부 백엔드에서 끝나고 렌더러는 오디오 바이트만 받는다.
-- 저장값이 비면 env 폴백: `ELEVENLABS_API_KEY` / `ANTHROPIC_API_KEY`.
+- 저장값이 비면 env 폴백: `ELEVENLABS_API_KEY` / `ANTHROPIC_API_KEY` /
+  `OPENROUTER_API_KEY`.
 
-`AppSettings`에는 `ttsEnabled` / `ttsRewriteModel` / `ttsRewriteProvider`만 둔다.
-셋 다 `Copy` 가능한 enum·bool이다 — `AppSettings`는 `Copy`이고 커맨드들이
-`*settings.read().unwrap()`으로 값 복사를 하므로 `String` 필드를 추가하면 그
-패턴이 전부 깨진다. 그래서 모델/공급자는 serde rename으로 **문자열처럼 보이는
-enum**이다(`"claude-haiku-4-5"`, `"auto"` …).
+`AppSettings`에는 `ttsEnabled` / `ttsRewriteProvider` /
+`ttsRewriteModelAnthropic` / `ttsRewriteModelOpenrouter`만 둔다(키는 없다).
+
+모델은 **자유 문자열**이다. 처음에는 Anthropic 모델 3종 enum이었는데, 그 이유는
+`AppSettings`가 `Copy`라 `String` 필드를 넣으면 `*settings.read().unwrap()`
+패턴이 깨진다는 것이었다. 모델 선택을 전 서비스로 열면서 그 제약을 뒤집었다 —
+`AppSettings`는 이제 `Clone` 전용이고, 설정 캐시에서 꺼낼 때 `.clone()`을 쓰거나
+필요한 스칼라 필드만 가드에서 복사한다. 모델 문자열은 앱이 검증하지 않고 그대로
+API/CLI에 싣는다(오타는 호출 실패 → 원문 발화로 강등).
+
+레거시 `ttsRewriteModel`(enum) 키는 로드 시점에 `ttsRewriteModelAnthropic`으로
+접힌다(`settings_store::migrate_tts_rewrite_model`, 사운드 키와 같은 관례).
 
 ## 4. 리라이트
 
@@ -163,18 +171,38 @@ chars 기준)로 절단한다 — 목표(goal)보다는 문맥이 필요하지�
 
 ### 4.1 공급자 체인
 
-`tts::resolve_rewrite_route(provider, anthropic_key, claude_cli_available)` — 순수
-함수. 설정(사용자 의도) + 지금 쓸 수 있는 자원 → 실제 경로.
+`tts::resolve_rewrite_route(provider, anthropic_key, openrouter_key,
+claude_cli_available)` — 순수 함수. 설정(사용자 의도) + 지금 쓸 수 있는 자원 →
+실제 경로.
 
 | 설정 `ttsRewriteProvider` | 결과 |
 | --- | --- |
 | `auto`(기본) | 저장 키 → `ANTHROPIC_API_KEY` env → claude CLI → 생략 |
 | `api` | Messages API만. 키 없으면 **생략**(CLI로 몰래 넘어가 구독을 쓰지 않는다) |
+| `openrouter` | OpenRouter만. 키 없으면 생략 |
 | `claude-cli` | `claude -p`만. CLI 부재 시 생략 |
 | `none` | 원문 문구를 그대로 읽는다 |
 
 `auto`가 API를 먼저 두는 이유: 키가 있으면 가장 빠르고(6초 타임아웃), 사용자
-구독 사용량을 건드리지 않는다.
+구독 사용량을 건드리지 않는다. **OpenRouter는 `auto` 체인에 끼지 않는다** — 키를
+넣어 뒀다는 이유만으로 과금 경로가 조용히 바뀌면 안 되므로 명시 선택 전용이다.
+
+모델은 경로별로 갈린다: `api`와 `claude-cli`는 `ttsRewriteModelAnthropic`을
+공유하고(같은 모델 id 체계), `openrouter`만 `ttsRewriteModelOpenrouter`
+(`<vendor>/<model>`)를 쓴다.
+
+### 4.1.1 OpenRouter 경로 (`tts/openrouter.rs`)
+
+`POST https://openrouter.ai/api/v1/chat/completions`(OpenAI 호환), 헤더
+`Authorization: Bearer <키>`. system + user 두 메시지를 보내고 응답의
+`choices[0].message.content`를 읽는다. 시스템 프롬프트는 Anthropic 경로와 같은
+것(`rewrite::system_prompt`)이다.
+
+- 타임아웃 20초 — 요청이 다시 상류 벤더로 중계되므로 Anthropic 직통(6초)보다
+  느릴 수 있다. 넘기면 원문 발화로 강등.
+- 샘플링 파라미터를 보내지 않는다(모델이 자유 입력이라 무엇이 올지 모른다).
+- 상류 오류는 **200 + `error` 필드**로도 오므로 둘 다 본다. 에러 문자열에는 코드만
+  남기고 body를 싣지 않는다(키 반사 방지).
 
 ### 4.2 API 경로 (`tts/rewrite.rs`)
 

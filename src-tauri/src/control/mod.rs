@@ -438,7 +438,7 @@ async fn clear(
 }
 
 async fn settings_get(State(ctx): State<Arc<ControlContext>>) -> Json<serde_json::Value> {
-    ok(*ctx.settings.read().unwrap())
+    ok(ctx.settings.read().unwrap().clone())
 }
 
 async fn settings_set(
@@ -453,7 +453,7 @@ async fn settings_set(
     if obj.contains_key("cliEnabled") || obj.contains_key("cli_enabled") {
         return fail("cliEnabled는 앱 설정에서만 변경할 수 있습니다");
     }
-    let current = *ctx.settings.read().unwrap();
+    let current = ctx.settings.read().unwrap().clone();
     let mut merged = match serde_json::to_value(current) {
         Ok(v) => v,
         Err(e) => return fail(e.to_string()),
@@ -473,7 +473,7 @@ async fn settings_set(
         &ctx.hub,
         &ctx.observer_server,
         &ctx.observer,
-        new,
+        new.clone(),
     )
     .await
     {

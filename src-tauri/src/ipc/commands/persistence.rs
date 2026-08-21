@@ -244,18 +244,19 @@ pub async fn generate_study_material(
         return Err("세션 로그 폴더 밖의 경로입니다".to_string());
     }
     // 설정 가드는 await 이전에 떨어뜨린다(no-lock-across-await 계약).
-    let provider = {
+    let (provider, models) = {
         let guard = app_state.settings.read().unwrap();
         if !guard.summarizer_enabled {
             return Err("summarizer-disabled".to_string());
         }
-        guard.summary_provider
+        (guard.summary_provider, guard.summary_models.clone())
     };
     let result = crate::session_log::study::generate(
         &app_state.session_log_root,
         &agent_id,
         &file,
         provider,
+        &models,
     )
     .await?;
     Ok(crate::types::StudyMaterialResult {

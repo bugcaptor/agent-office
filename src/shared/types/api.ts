@@ -116,7 +116,11 @@ export interface AgentOfficeApi {
   /** TTS 키/경로 상태(존재 여부 bool만 — 키 값은 절대 오지 않는다). */
   ttsKeyStatus(): Promise<TtsStatus>;
   /** TTS 키 저장. undefined 필드는 기존 값 유지, "" 는 삭제. */
-  ttsSetKeys(elevenlabs?: string, anthropic?: string): Promise<TtsStatus>;
+  ttsSetKeys(
+    elevenlabs?: string,
+    anthropic?: string,
+    openrouter?: string,
+  ): Promise<TtsStatus>;
   /** CLI 제어(#55) 상태 조회 — 서버 기동·승인 여부·포트·app_data 경로. */
   controlStatus(): Promise<ControlStatus>;
   /** CLI 제어를 승인(토큰 발급). 2단계 옵트인의 2단계. */

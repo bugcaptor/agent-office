@@ -53,14 +53,21 @@ pub async fn generate(
     agent_id: &str,
     log_path: &Path,
     provider: SummaryProvider,
+    models: &crate::persistence::settings_store::SummaryModels,
 ) -> Result<StudyResult, String> {
     let text = read_capped(log_path)?;
     if text.trim().is_empty() {
         return Err("빈 로그입니다".to_string());
     }
 
-    let body = crate::summarizer::summarize(provider, SummaryPurpose::Study, STUDY_SYSTEM_PROMPT, &text)
-        .await?;
+    let body = crate::summarizer::summarize(
+        provider,
+        SummaryPurpose::Study,
+        STUDY_SYSTEM_PROMPT,
+        &text,
+        models,
+    )
+    .await?;
     let body = strip_wrapping_fence(&body);
 
     let dir = super::store::study_dir(root);

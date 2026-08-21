@@ -21,8 +21,8 @@
 
 use agent_office_lib::ipc::commands::settings::GetAppSettingsResult;
 use agent_office_lib::persistence::settings_store::{
-    AppSettings, ExternalEditor, ExternalTerminal, FileIndexBackend, SummaryProvider,
-    TtsRewriteModel, TtsRewriteProvider,
+    AppSettings, ExternalEditor, ExternalTerminal, FileIndexBackend, SummaryModels,
+    SummaryProvider, TtsRewriteProvider,
 };
 use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
@@ -226,6 +226,7 @@ fn get_app_settings_result_matches_fixture() {
             version: 1,
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
+            summary_models: SummaryModels::default(),
             diary_enabled: false,
             observer_enabled: false,
             typing_sound_enabled: true,
@@ -241,7 +242,8 @@ fn get_app_settings_result_matches_fixture() {
             session_log_enabled: true,
             mascot_enabled: false,
             tts_enabled: false,
-            tts_rewrite_model: TtsRewriteModel::Haiku45,
+            tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
+            tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: TtsRewriteProvider::Auto,
         },
         first_run: true,

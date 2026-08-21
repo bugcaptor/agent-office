@@ -11,7 +11,8 @@
 //         │                └─cache hit?─▶ 디스크 mp3
 //         │                └─miss──────▶ synth(ElevenLabs) ─▶ 캐시 저장
 //         └ 공급자 체인(resolve_rewrite_route): Anthropic Messages API(rewrite.rs)
-//           → `claude -p` 헤드리스 CLI(cli.rs) → 생략(원문 발화)
+//           → `claude -p` 헤드리스 CLI(cli.rs) → 생략(원문 발화). OpenRouter
+//           (openrouter.rs)는 사용자가 **명시 선택**했을 때만 끼어든다.
 //
 // 설계 원칙 세 가지:
 //  1) **장식 기능이다.** 어느 단계가 실패해도 앱 동작에 영향이 없어야 한다.
@@ -24,6 +25,7 @@
 
 pub mod cli;
 pub mod keys;
+pub mod openrouter;
 pub mod rewrite;
 pub mod synth;
 pub mod voice;
@@ -34,7 +36,10 @@ use std::sync::Mutex;
 use base64::Engine as _;
 use sha2::{Digest, Sha256};
 
-use crate::persistence::settings_store::{TtsRewriteModel, TtsRewriteProvider};
+use crate::persistence::settings_store::{
+    AppSettings, TtsRewriteProvider, DEFAULT_TTS_REWRITE_MODEL_ANTHROPIC,
+    DEFAULT_TTS_REWRITE_MODEL_OPENROUTER,
+};
 
 /// 캐시 파일 수 상한. 넘으면 mtime이 오래된 것부터 지운다. 한 줄 대사 mp3는
 /// 수십 KB라 이 정도면 수 MB 수준이다.
@@ -117,7 +122,8 @@ pub struct TtsStatus {
     pub keys: keys::TtsKeyStatus,
     /// PATH에 `claude`가 있는지(앱 수명 동안 1회 탐색 후 캐시).
     pub claude_cli_available: bool,
-    /// 현재 설정으로 실제 선택될 리라이트 경로 라벨(`"api"`/`"claude-cli"`/`"none"`).
+    /// 현재 설정으로 실제 선택될 리라이트 경로 라벨
+    /// (`"api"`/`"openrouter"`/`"claude-cli"`/`"none"`).
     pub effective_rewrite_via: &'static str,
 }
 
@@ -127,6 +133,8 @@ pub struct TtsStatus {
 pub enum RewriteRoute {
     /// Anthropic Messages API. 키를 값으로 들고 있다(설정값 또는 env 폴백).
     Api(String),
+    /// OpenRouter chat/completions. 키를 값으로 들고 있다.
+    OpenRouter(String),
     /// `claude -p` 헤드리스 서브프로세스(구독 사용량 소모).
     ClaudeCli,
     /// 리라이트 없음 — 원문 발화.
@@ -137,27 +145,75 @@ impl RewriteRoute {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Api(_) => "api",
+            Self::OpenRouter(_) => "openrouter",
             Self::ClaudeCli => "claude-cli",
             Self::None => "none",
         }
     }
 }
 
-/// 설정(공급자 의도) + 가용 자원 → 실제 경로. 순수 — `anthropic_key`는
-/// 호출측이 키 스토어에서 미리 해결해 넘긴다(테스트 가능성 확보).
+/// 리라이트에 필요한 설정 스냅샷. 설정 캐시 가드를 `.await` 너머로 들고 가지
+/// 않으려고 **값으로** 떠서 넘긴다(호출측 `ipc::commands::tts`).
 ///
-/// `Auto` 순서: 저장/env API 키 → claude CLI → 생략. API를 먼저 두는 이유는
-/// 키가 있으면 그게 가장 빠르고(6초 타임아웃) 구독 사용량을 건드리지 않기
-/// 때문이다. `claude_cli_available`은 PATH 탐색 결과다.
+/// 모델은 공급자별로 갈린다: Anthropic API와 claude CLI는 같은 모델 id 체계를
+/// 쓰므로 `model_anthropic`을 공유하고, OpenRouter만 `<vendor>/<model>` 표기의
+/// 별도 값을 쓴다.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RewriteConfig {
+    pub provider: TtsRewriteProvider,
+    pub model_anthropic: String,
+    pub model_openrouter: String,
+}
+
+impl RewriteConfig {
+    /// 모델 입력을 **비운 상태**는 "기본 모델"로 읽는다(요약기 오버라이드와 같은
+    /// 규칙) — 빈 모델 id를 그대로 실으면 매 발화가 400으로 실패해 원문 발화로
+    /// 강등되는데, 사용자에게는 그냥 "리라이트가 안 되는 앱"으로 보인다.
+    pub fn from_settings(s: &AppSettings) -> Self {
+        fn or_default(v: &str, fallback: &str) -> String {
+            let t = v.trim();
+            if t.is_empty() {
+                fallback.to_string()
+            } else {
+                t.to_string()
+            }
+        }
+        Self {
+            provider: s.tts_rewrite_provider,
+            model_anthropic: or_default(
+                &s.tts_rewrite_model_anthropic,
+                DEFAULT_TTS_REWRITE_MODEL_ANTHROPIC,
+            ),
+            model_openrouter: or_default(
+                &s.tts_rewrite_model_openrouter,
+                DEFAULT_TTS_REWRITE_MODEL_OPENROUTER,
+            ),
+        }
+    }
+}
+
+/// 설정(공급자 의도) + 가용 자원 → 실제 경로. 순수 — 키들은 호출측이 키
+/// 스토어에서 미리 해결해 넘긴다(테스트 가능성 확보).
+///
+/// `Auto` 순서: 저장/env Anthropic 키 → claude CLI → 생략. API를 먼저 두는
+/// 이유는 키가 있으면 그게 가장 빠르고(6초 타임아웃) 구독 사용량을 건드리지
+/// 않기 때문이다. **OpenRouter는 `Auto`에 끼지 않는다** — 키를 넣어 뒀다는
+/// 이유만으로 과금 경로가 조용히 바뀌면 안 되므로 명시 선택 전용이다.
+/// `claude_cli_available`은 PATH 탐색 결과다.
 pub fn resolve_rewrite_route(
     provider: TtsRewriteProvider,
     anthropic_key: Option<String>,
+    openrouter_key: Option<String>,
     claude_cli_available: bool,
 ) -> RewriteRoute {
     match provider {
         TtsRewriteProvider::None => RewriteRoute::None,
         TtsRewriteProvider::Api => match anthropic_key {
             Some(k) => RewriteRoute::Api(k),
+            None => RewriteRoute::None,
+        },
+        TtsRewriteProvider::OpenRouter => match openrouter_key {
+            Some(k) => RewriteRoute::OpenRouter(k),
             None => RewriteRoute::None,
         },
         TtsRewriteProvider::ClaudeCli => {
@@ -373,8 +429,7 @@ pub async fn list_voices(state: &TtsState) -> Result<Vec<VoiceOption>, TtsError>
 /// 상태는 값으로 꺼내 쓴다.
 pub async fn speak(
     state: &TtsState,
-    model: TtsRewriteModel,
-    provider: TtsRewriteProvider,
+    cfg: &RewriteConfig,
     req: &SpeakRequest,
 ) -> Result<SpeakResult, TtsError> {
     let source = req.message.trim();
@@ -388,8 +443,9 @@ pub async fn speak(
 
     // ── 1. 리라이트(실패는 어느 경로든 원문 강등) ─────────────────────
     let route = resolve_rewrite_route(
-        provider,
+        cfg.provider,
         state.keys.anthropic_key(),
+        state.keys.openrouter_key(),
         claude_cli_available(),
     );
     let attempted = route.label();
@@ -397,7 +453,7 @@ pub async fn speak(
         RewriteRoute::Api(key) => rewrite::rewrite(
             key,
             req.kind,
-            model,
+            &cfg.model_anthropic,
             &req.agent_name,
             req.personality.as_deref(),
             req.context.as_deref(),
@@ -405,9 +461,21 @@ pub async fn speak(
         )
         .await
         .map(Some),
+        RewriteRoute::OpenRouter(key) => openrouter::rewrite(
+            key,
+            req.kind,
+            &cfg.model_openrouter,
+            &req.agent_name,
+            req.personality.as_deref(),
+            req.context.as_deref(),
+            source,
+        )
+        .await
+        .map(Some),
+        // claude CLI는 Anthropic 모델 id 체계를 쓴다(API 경로와 같은 값).
         RewriteRoute::ClaudeCli => cli::rewrite_via_cli(
             req.kind,
-            model,
+            &cfg.model_anthropic,
             &req.agent_name,
             req.personality.as_deref(),
             req.context.as_deref(),
@@ -570,37 +638,84 @@ mod tests {
     fn auto_prefers_api_key_then_cli_then_skips() {
         use TtsRewriteProvider::Auto;
         assert_eq!(
-            resolve_rewrite_route(Auto, Some("k".into()), true),
+            resolve_rewrite_route(Auto, Some("k".into()), None, true),
             RewriteRoute::Api("k".into()),
             "키가 있으면 구독 사용량을 건드리지 않는 API를 먼저"
         );
         assert_eq!(
-            resolve_rewrite_route(Auto, None, true),
+            resolve_rewrite_route(Auto, None, None, true),
             RewriteRoute::ClaudeCli
         );
-        assert_eq!(resolve_rewrite_route(Auto, None, false), RewriteRoute::None);
+        assert_eq!(
+            resolve_rewrite_route(Auto, None, None, false),
+            RewriteRoute::None
+        );
+    }
+
+    // OpenRouter 키가 있어도 auto는 그것을 고르지 않는다 — 키를 넣어 뒀다는
+    // 이유로 과금 경로가 조용히 바뀌면 안 된다(명시 선택 전용).
+    #[test]
+    fn auto_never_picks_openrouter_even_when_its_key_exists() {
+        use TtsRewriteProvider::Auto;
+        assert_eq!(
+            resolve_rewrite_route(Auto, None, Some("or".into()), true),
+            RewriteRoute::ClaudeCli
+        );
+        assert_eq!(
+            resolve_rewrite_route(Auto, None, Some("or".into()), false),
+            RewriteRoute::None
+        );
+        assert_eq!(
+            resolve_rewrite_route(Auto, Some("an".into()), Some("or".into()), false),
+            RewriteRoute::Api("an".into())
+        );
     }
 
     #[test]
     fn explicit_providers_do_not_silently_cross_over() {
         // api 선택인데 키가 없으면 CLI로 몰래 넘어가 구독을 소모해선 안 된다.
         assert_eq!(
-            resolve_rewrite_route(TtsRewriteProvider::Api, None, true),
+            resolve_rewrite_route(TtsRewriteProvider::Api, None, Some("or".into()), true),
+            RewriteRoute::None
+        );
+        // openrouter 선택이면 Anthropic 키가 있어도 OpenRouter를 쓴다.
+        assert_eq!(
+            resolve_rewrite_route(
+                TtsRewriteProvider::OpenRouter,
+                Some("an".into()),
+                Some("or".into()),
+                true
+            ),
+            RewriteRoute::OpenRouter("or".into())
+        );
+        // openrouter 키가 없으면 다른 경로로 새지 않고 생략으로 강등.
+        assert_eq!(
+            resolve_rewrite_route(
+                TtsRewriteProvider::OpenRouter,
+                Some("an".into()),
+                None,
+                true
+            ),
             RewriteRoute::None
         );
         // claude-cli 선택이면 키가 있어도 CLI를 쓴다(사용자 명시 의도).
         assert_eq!(
-            resolve_rewrite_route(TtsRewriteProvider::ClaudeCli, Some("k".into()), true),
+            resolve_rewrite_route(TtsRewriteProvider::ClaudeCli, Some("k".into()), None, true),
             RewriteRoute::ClaudeCli
         );
         // CLI가 없으면 생략으로 강등.
         assert_eq!(
-            resolve_rewrite_route(TtsRewriteProvider::ClaudeCli, Some("k".into()), false),
+            resolve_rewrite_route(TtsRewriteProvider::ClaudeCli, Some("k".into()), None, false),
             RewriteRoute::None
         );
         // none은 무조건 원문.
         assert_eq!(
-            resolve_rewrite_route(TtsRewriteProvider::None, Some("k".into()), true),
+            resolve_rewrite_route(
+                TtsRewriteProvider::None,
+                Some("k".into()),
+                Some("or".into()),
+                true
+            ),
             RewriteRoute::None
         );
     }
@@ -608,6 +723,10 @@ mod tests {
     #[test]
     fn route_labels_match_the_settings_wire_values() {
         assert_eq!(RewriteRoute::Api("k".into()).label(), "api");
+        assert_eq!(
+            RewriteRoute::OpenRouter("k".into()).label(),
+            TtsRewriteProvider::OpenRouter.as_str()
+        );
         assert_eq!(
             RewriteRoute::ClaudeCli.label(),
             TtsRewriteProvider::ClaudeCli.as_str()
@@ -617,8 +736,38 @@ mod tests {
 
     #[test]
     fn route_label_never_leaks_the_key() {
-        let r = RewriteRoute::Api("sk-ant-SECRET".into());
-        assert!(!r.label().contains("SECRET"));
+        for r in [
+            RewriteRoute::Api("sk-ant-SECRET".into()),
+            RewriteRoute::OpenRouter("sk-or-SECRET".into()),
+        ] {
+            assert!(!r.label().contains("SECRET"));
+        }
+    }
+
+    // 설정 스냅샷은 공급자별 모델을 갈라 담는다 — claude CLI는 Anthropic
+    // 모델 id를 쓰므로 API 경로와 같은 값을 공유한다(speak 참고).
+    #[test]
+    fn rewrite_config_snapshots_both_model_ids_from_settings() {
+        let mut s = AppSettings::default();
+        s.tts_rewrite_provider = TtsRewriteProvider::OpenRouter;
+        s.tts_rewrite_model_anthropic = "claude-opus-5".into();
+        s.tts_rewrite_model_openrouter = "google/gemini-3-pro".into();
+        let cfg = RewriteConfig::from_settings(&s);
+        assert_eq!(cfg.provider, TtsRewriteProvider::OpenRouter);
+        assert_eq!(cfg.model_anthropic, "claude-opus-5");
+        assert_eq!(cfg.model_openrouter, "google/gemini-3-pro");
+    }
+
+    // 설정 입력을 비운 상태는 "기본 모델"이다 — 빈 model이 실려 매 발화가
+    // 실패하면 사용자 눈에는 그냥 리라이트가 죽은 앱으로 보인다.
+    #[test]
+    fn blank_model_settings_fall_back_to_the_defaults() {
+        let mut s = AppSettings::default();
+        s.tts_rewrite_model_anthropic = "  ".into();
+        s.tts_rewrite_model_openrouter = String::new();
+        let cfg = RewriteConfig::from_settings(&s);
+        assert_eq!(cfg.model_anthropic, DEFAULT_TTS_REWRITE_MODEL_ANTHROPIC);
+        assert_eq!(cfg.model_openrouter, DEFAULT_TTS_REWRITE_MODEL_OPENROUTER);
     }
 
     #[test]
