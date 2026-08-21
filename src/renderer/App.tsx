@@ -145,7 +145,7 @@ function App() {
         <SettingsDialog />
         <FirstRunDialog />
         {/* 페어링 승인(#7k/#7m). 설정을 열지 않아도 코드가 보여야 하므로
-            여기 모달 층에 상시 마운트하고 peerPending으로 self-gate한다. */}
+            여기 모달 층에 상시 마운트하고 webRemotePending으로 self-gate한다. */}
         <PairingRequestDialog />
         <AnalyticsDialog />
         <UsageDialog />

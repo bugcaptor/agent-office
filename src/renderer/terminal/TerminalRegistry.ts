@@ -258,8 +258,8 @@ class TerminalRegistry {
   }
 
   /**
-   * 피어 세션 공유(#7k): 한 터미널만 flush+직렬화한다. 뷰어가 처음 붙을 때
-   * 호스트가 `peer-snapshot-request`로 요청하는 화면 이미지 — 없으면 링버퍼
+   * 웹 원격: 한 터미널만 flush+직렬화한다. 브라우저가 처음 붙을 때
+   * 호스트가 `web-remote-snapshot-request`로 요청하는 화면 이미지 — 없으면 링버퍼
    * 리플레이로 폴백하므로, 실패는 조용히 undefined를 돌려주면 된다.
    * `flushAndSerializeAll`과 같은 이유로 직렬화 전에 write 큐를 비운다.
    */

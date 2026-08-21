@@ -53,7 +53,7 @@ pub struct OutputSink {
     next_tap_id: std::sync::atomic::AtomicU64,
 }
 impl OutputSink {
-    /// pub: 피어 세션 공유의 뷰어 레지스트리(`peer::viewer`)가 원격 에이전트용
+    /// pub: 웹 원격 tap이
     /// sink를 직접 만들어 쓴다 — 렌더러 파이프라인을 그대로 재사용하는 핵심.
     pub fn new() -> Self {
         Self {

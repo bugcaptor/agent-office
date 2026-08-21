@@ -5,7 +5,7 @@
 // 페어링은 **호스트 화면에 뜬 6자리 코드**를 브라우저에서 받아 적는 사람-루프
 // 장치라, 코드가 어디에도 안 보이면 페어링 자체가 불가능하다. 승인은 설정을
 // 열어 둔 사람만 하는 일이 아니므로 설정 섹션이 아니라 모달 층에 둔다 —
-// 상시 마운트, `peerPending`이 비면 null 렌더.
+// 상시 마운트, `webRemotePending`이 비면 null 렌더.
 //
 // 코드는 백엔드에서 TTL(2분)이 지나면 사라지지만 렌더러 스토어는 이벤트로
 // 밀어 넣은 항목의 나이를 모른다. 그래서 `expiresInMs`를 같이 받아 만료 시각에
@@ -13,15 +13,15 @@
 
 import { useEffect } from "react";
 import { useAppStore } from "../store/appStore";
-import { peerApi } from "../ipc/peerApi";
-import type { PeerPermission } from "../ipc/peerApi";
+import { webRemoteApi } from "../ipc/webRemoteApi";
+import type { ClientPermission } from "../ipc/webRemoteApi";
 
 /** 백엔드 PAIRING_TTL과 같은 값 — expiresInMs가 없는 구버전 응답의 보수적 기본값. */
 const PAIRING_TTL_MS = 120_000;
 
 export function PairingRequestDialog() {
-  const pending = useAppStore((s) => s.peerPending);
-  const setPeerPending = useAppStore((s) => s.setPeerPending);
+  const pending = useAppStore((s) => s.webRemotePending);
+  const setWebRemotePending = useAppStore((s) => s.setWebRemotePending);
 
   // 승인 대기는 한 번에 하나만 보여준다(가장 먼저 온 것). 뒤엣것은 이게
   // 처리되면 저절로 올라온다 — 코드 두 개를 나란히 띄우면 상대가 어느 쪽을
@@ -34,8 +34,8 @@ export function PairingRequestDialog() {
     const timers = pending.map((p) =>
       window.setTimeout(
         () => {
-          const rest = useAppStore.getState().peerPending.filter((q) => q.pairingId !== p.pairingId);
-          useAppStore.getState().setPeerPending(rest);
+          const rest = useAppStore.getState().webRemotePending.filter((q) => q.pairingId !== p.pairingId);
+          useAppStore.getState().setWebRemotePending(rest);
         },
         Math.max(0, p.expiresInMs ?? PAIRING_TTL_MS)
       )
@@ -45,17 +45,17 @@ export function PairingRequestDialog() {
 
   if (!current) return null;
 
-  const drop = () => setPeerPending(pending.filter((p) => p.pairingId !== current.pairingId));
+  const drop = () => setWebRemotePending(pending.filter((p) => p.pairingId !== current.pairingId));
 
-  const approve = (permission: PeerPermission) => {
-    void peerApi.approvePairing(current.pairingId, permission).catch(() => {
+  const approve = (permission: ClientPermission) => {
+    void webRemoteApi.approvePairing(current.pairingId, permission).catch(() => {
       /* 이미 만료·소비됨 — 목록에서 빼는 것으로 충분하다 */
     });
     drop();
   };
 
   const reject = () => {
-    void peerApi.rejectPairing(current.pairingId).catch(() => {});
+    void webRemoteApi.rejectPairing(current.pairingId).catch(() => {});
     drop();
   };
 
@@ -65,7 +65,7 @@ export function PairingRequestDialog() {
       <div className="pixel-panel pairing-request-dialog">
         <h2 className="pixel-title">연결 요청</h2>
         <p>
-          <b>{current.viewerName}</b> (웹 브라우저) 이(가) 이 사무실에 연결하려
+          <b>{current.clientName}</b> (웹 브라우저) 이(가) 이 사무실에 연결하려
           합니다.
         </p>
         <p>브라우저 화면에 이 코드를 입력하세요:</p>

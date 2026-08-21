@@ -1,8 +1,8 @@
-// src/renderer/settings/PeerShareSection.tsx
+// src/renderer/settings/WebRemoteSection.tsx
 //
 // 웹 원격(docs/web-remote-design.md) 설정 UI. 앱은 호스트 역할만 한다 —
 // 폰이나 다른 컴퓨터의 **브라우저**가 이 앱에 붙어 상태를 보고 터미널에
-// 개입한다. 앱↔앱 피어 접속은 범위 밖이라 뷰어 UI가 없다.
+// 개입한다. 앱↔앱 접속은 범위 밖이라 뷰어 UI가 없다.
 //
 // 보안 흐름은 CLI 제어와 같은 2단계 옵트인이다: 토글로 서버를 켜도 페어링
 // 승인 전에는 모든 요청이 401이고, 브라우저에 열리는 것은 allowlist에 등재된
@@ -10,45 +10,45 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "../store/appStore";
-import { peerApi } from "../ipc/peerApi";
-import type { PeerHostStatus, PeerPermission } from "../ipc/peerApi";
-import type { PeerBindPolicy } from "@shared/types";
+import { webRemoteApi } from "../ipc/webRemoteApi";
+import type { WebRemoteStatus, ClientPermission } from "../ipc/webRemoteApi";
+import type { WebRemoteBindPolicy } from "@shared/types";
 
-const BIND_LABEL: Record<PeerBindPolicy, string> = {
+const BIND_LABEL: Record<WebRemoteBindPolicy, string> = {
   tailnet: "Tailscale 망만 (권장)",
   all: "모든 네트워크 (평문 전송 주의)",
   loopback: "이 컴퓨터만 (사실상 비활성)",
 };
 
-export function PeerShareSection() {
+export function WebRemoteSection() {
   const appSettings = useAppStore((s) => s.appSettings);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
-  const setPeerPending = useAppStore((s) => s.setPeerPending);
+  const setWebRemotePending = useAppStore((s) => s.setWebRemotePending);
 
-  const [host, setHost] = useState<PeerHostStatus | null>(null);
+  const [host, setHost] = useState<WebRemoteStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refreshHost = useCallback(async () => {
     try {
-      const status = await peerApi.hostStatus();
+      const status = await webRemoteApi.hostStatus();
       setHost(status);
-      setPeerPending(status.pending ?? []);
+      setWebRemotePending(status.pending ?? []);
     } catch {
       setHost(null);
     }
-  }, [setPeerPending]);
+  }, [setWebRemotePending]);
 
   useEffect(() => {
     void refreshHost();
-  }, [refreshHost, appSettings.webHostingEnabled]);
+  }, [refreshHost, appSettings.webRemoteEnabled]);
 
   return (
     <div className="settings-form">
       <label className="settings-item">
         <input
           type="checkbox"
-          checked={appSettings.webHostingEnabled}
-          onChange={(e) => updateAppSettings({ webHostingEnabled: e.target.checked })}
+          checked={appSettings.webRemoteEnabled}
+          onChange={(e) => updateAppSettings({ webRemoteEnabled: e.target.checked })}
         />
         <span>
           <strong>웹 원격 (브라우저로 접속해서 작업)</strong>
@@ -62,7 +62,7 @@ export function PeerShareSection() {
         </span>
       </label>
 
-      {appSettings.webHostingEnabled && (
+      {appSettings.webRemoteEnabled && (
         <>
           <label className="settings-item">
             <span>
@@ -73,12 +73,12 @@ export function PeerShareSection() {
               </small>
             </span>
             <select
-              value={appSettings.peerBind}
+              value={appSettings.webRemoteBind}
               onChange={(e) =>
-                updateAppSettings({ peerBind: e.target.value as PeerBindPolicy })
+                updateAppSettings({ webRemoteBind: e.target.value as WebRemoteBindPolicy })
               }
             >
-              {(Object.keys(BIND_LABEL) as PeerBindPolicy[]).map((k) => (
+              {(Object.keys(BIND_LABEL) as WebRemoteBindPolicy[]).map((k) => (
                 <option key={k} value={k}>
                   {BIND_LABEL[k]}
                 </option>
@@ -95,7 +95,7 @@ export function PeerShareSection() {
             </div>
             <div style={{ fontSize: 12, opacity: 0.85 }}>브라우저에서 이 주소로 접속하세요</div>
             <code style={{ fontSize: 13 }}>
-              http://{host?.addressHint ?? "<이 컴퓨터 주소>"}:{host?.port ?? appSettings.peerPort}
+              http://{host?.addressHint ?? "<이 컴퓨터 주소>"}:{host?.port ?? appSettings.webRemotePort}
               /web/
             </code>
             <div style={{ fontSize: 12, opacity: 0.7 }}>
@@ -109,12 +109,12 @@ export function PeerShareSection() {
               </div>
             )}
 
-            {host && host.peers.length > 0 && (
+            {host && host.clients.length > 0 && (
               <>
                 <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>승인된 브라우저</div>
-                {host.peers.map((p) => (
+                {host.clients.map((p) => (
                   <div
-                    key={p.peerId}
+                    key={p.clientId}
                     style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}
                   >
                     <span style={{ flex: 1 }}>{p.name}</span>
@@ -123,8 +123,8 @@ export function PeerShareSection() {
                       disabled={busy}
                       onChange={(e) => {
                         setBusy(true);
-                        void peerApi
-                          .setPeerPermission(p.peerId, e.target.value as PeerPermission)
+                        void webRemoteApi
+                          .setClientPermission(p.clientId, e.target.value as ClientPermission)
                           .then(refreshHost)
                           .finally(() => setBusy(false));
                       }}
@@ -137,8 +137,8 @@ export function PeerShareSection() {
                       disabled={busy}
                       onClick={() => {
                         setBusy(true);
-                        void peerApi
-                          .revokePeer(p.peerId)
+                        void webRemoteApi
+                          .revokeClient(p.clientId)
                           .then(refreshHost)
                           .finally(() => setBusy(false));
                       }}

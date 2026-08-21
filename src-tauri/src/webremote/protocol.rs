@@ -1,24 +1,24 @@
-// src-tauri/src/peer/protocol.rs
+// src-tauri/src/webremote/protocol.rs
 //
 // 웹 원격(docs/web-remote-design.md)의 와이어 계약.
-// 페어링은 HTTP(POST /peer/v1/pair/*), 세션 중계는 WebSocket(GET /peer/v1/ws).
+// 페어링은 HTTP(POST /webremote/v1/pair/*), 세션 중계는 WebSocket(GET /webremote/v1/ws).
 // 프레이밍은 WS 텍스트 프레임 안의 JSON(camelCase)이고, 확장은 additive-only다
 // (브로커 v2의 협상 관례 준용 — 새 필드는 전부 `#[serde(default)]`).
 
 use serde::{Deserialize, Serialize};
 
 /// 와이어 프로토콜 버전. 호환을 깨지 않는 필드 추가에는 올리지 않는다.
-pub const PEER_PROTO_VERSION: u32 = 1;
+pub const WEB_REMOTE_PROTO_VERSION: u32 = 1;
 
 /// WS 업그레이드/HTTP 요청에 붙는 인증 헤더.
-pub const PEER_TOKEN_HEADER: &str = "x-agent-office-peer-token";
+pub const WEB_REMOTE_TOKEN_HEADER: &str = "x-agent-office-web-remote-token";
 
 /// 기본 수신 포트. 수동 `host:port` 입력이 곧 디스커버리라(§결정 5) 고정값이
 /// 필요하다 — 점유 중이면 +1씩 스캔하고 실제 포트를 설정 UI에 표시한다.
-pub const DEFAULT_PEER_PORT: u16 = 47800;
+pub const DEFAULT_WEB_REMOTE_PORT: u16 = 47800;
 
-/// 호스트가 발급한 peer 토큰 목록(0600).
-pub const PEER_TOKENS_FILE: &str = "peer-tokens.json";
+/// 호스트가 발급한 클라이언트 토큰 목록(0600).
+pub const WEB_REMOTE_TOKENS_FILE: &str = "web-remote-tokens.json";
 /// 웹 RPC 실패 사유. 폐쇄 집합 — 클라이언트가 문자열로 분기한다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,7 +55,7 @@ impl RpcError {
 /// 뷰어에게 허용할 권한. kill/dispose/resize/생성은 이 체계에 아예 없다(§결정 6·7).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum PeerPermission {
+pub enum ClientPermission {
     /// 보기만. `input` 메시지는 서버에서 거부된다.
     #[default]
     ReadOnly,
@@ -63,7 +63,7 @@ pub enum PeerPermission {
     Input,
 }
 
-impl PeerPermission {
+impl ClientPermission {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ReadOnly => "readOnly",
@@ -82,7 +82,7 @@ impl PeerPermission {
 pub struct PairStartRequest {
     /// 클라이언트 쪽 표시 이름(호스트 승인 다이얼로그에 그대로 보인다).
     #[serde(default)]
-    pub viewer_name: String,
+    pub client_name: String,
     #[serde(default)]
     pub app_version: String,
     #[serde(default)]
@@ -110,10 +110,10 @@ pub struct PairCompleteRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PairCompleteResponse {
-    pub peer_token: String,
-    pub peer_id: String,
+    pub client_token: String,
+    pub client_id: String,
     pub host_name: String,
-    pub permission: PeerPermission,
+    pub permission: ClientPermission,
     pub proto_version: u32,
 }
 
@@ -123,7 +123,7 @@ pub struct PairCompleteResponse {
 /// 읽기 캐시다(§결정 4).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PeerAgent {
+pub struct RemoteAgent {
     pub agent_id: String,
     pub name: String,
     #[serde(default)]
@@ -148,7 +148,7 @@ pub struct PeerAgent {
 /// 적용한 청크의 `offset + bytes`를 재접속 시 `lastOffset`으로 되돌려준다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PeerOutput {
+pub struct RemoteOutput {
     pub agent_id: String,
     pub session_id: String,
     pub seq: u64,
@@ -167,13 +167,13 @@ pub enum HostMsg {
         host_name: String,
         app_version: String,
         proto_version: u32,
-        permission: PeerPermission,
-        peer_id: String,
+        permission: ClientPermission,
+        client_id: String,
     },
     /// 공유 중인 캐릭터 전량. 변경 시 전량 재송한다(부분 갱신 없음 — 뷰어
     /// 캐시 무효화 규칙을 단순하게 유지).
     Agents {
-        agents: Vec<PeerAgent>,
+        agents: Vec<RemoteAgent>,
     },
     /// attach 응답. `snapshot`이 Some이면 화면 이미지를 먼저 복원하고,
     /// 이후 도착하는 `output`을 이어 붙인다. `baseOffset`은 복원 직후의 절대
@@ -190,7 +190,7 @@ pub enum HostMsg {
         #[serde(default)]
         session_id: Option<String>,
     },
-    Output(PeerOutput),
+    Output(RemoteOutput),
     /// 호스트의 `activity-event` 원본 JSON(agentId만 뷰어가 다시 쓴다).
     Activity {
         agent_id: String,
@@ -230,7 +230,7 @@ pub enum HostMsg {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub enum ViewerMsg {
+pub enum ClientMsg {
     Attach {
         agent_id: String,
         #[serde(default)]
@@ -261,30 +261,30 @@ mod tests {
 
     #[test]
     fn viewer_msg_wire_shape_is_tagged() {
-        let json = serde_json::to_string(&ViewerMsg::Attach {
+        let json = serde_json::to_string(&ClientMsg::Attach {
             agent_id: "ada".into(),
             last_offset: Some(42),
         })
         .unwrap();
         assert!(json.contains("\"type\":\"attach\""));
         assert!(json.contains("\"lastOffset\":42"));
-        let back: ViewerMsg = serde_json::from_str(&json).unwrap();
-        assert!(matches!(back, ViewerMsg::Attach { last_offset: Some(42), .. }));
+        let back: ClientMsg = serde_json::from_str(&json).unwrap();
+        assert!(matches!(back, ClientMsg::Attach { last_offset: Some(42), .. }));
     }
 
     #[test]
     fn attach_without_last_offset_parses() {
-        let back: ViewerMsg =
+        let back: ClientMsg =
             serde_json::from_str(r#"{"type":"attach","agentId":"ada"}"#).unwrap();
-        assert!(matches!(back, ViewerMsg::Attach { last_offset: None, .. }));
+        assert!(matches!(back, ClientMsg::Attach { last_offset: None, .. }));
     }
 
     #[test]
     fn permission_gates_input() {
-        assert!(!PeerPermission::ReadOnly.allows_input());
-        assert!(PeerPermission::Input.allows_input());
+        assert!(!ClientPermission::ReadOnly.allows_input());
+        assert!(ClientPermission::Input.allows_input());
         assert_eq!(
-            serde_json::to_string(&PeerPermission::ReadOnly).unwrap(),
+            serde_json::to_string(&ClientPermission::ReadOnly).unwrap(),
             "\"readOnly\""
         );
     }

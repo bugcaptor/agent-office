@@ -21,11 +21,11 @@ export function PairingScreen({ onPaired }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/peer/v1/pair/start", {
+      const res = await fetch("/webremote/v1/pair/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          viewerName: navigator.userAgent.includes("Mobile") ? "휴대폰 브라우저" : "브라우저",
+          clientName: navigator.userAgent.includes("Mobile") ? "휴대폰 브라우저" : "브라우저",
         }),
       });
       const body = await res.json();
@@ -47,7 +47,7 @@ export function PairingScreen({ onPaired }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/peer/v1/pair/complete", {
+      const res = await fetch("/webremote/v1/pair/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pairingId, code: code.trim() }),

@@ -10,14 +10,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import type { HostMsg, PeerAgent, PeerPermission } from "./protocol";
-import type { PeerSocket } from "./ws";
+import type { HostMsg, RemoteAgent, ClientPermission } from "./protocol";
+import type { WebRemoteSocket } from "./ws";
 import { KeyBar } from "./KeyBar";
 
 interface Props {
-  socket: PeerSocket;
-  agent: PeerAgent;
-  permission: PeerPermission;
+  socket: WebRemoteSocket;
+  agent: RemoteAgent;
+  permission: ClientPermission;
   onBack: () => void;
 }
 

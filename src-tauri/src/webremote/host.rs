@@ -1,4 +1,4 @@
-// src-tauri/src/peer/host.rs
+// src-tauri/src/webremote/host.rs
 //
 // 호스트 쪽 중계 허브(#7k §결정 2·4). 공유가 켜진 캐릭터마다
 //
@@ -24,7 +24,7 @@ use crate::session::output::OutputTap;
 use crate::state::AppEvents;
 use crate::types::OutputChunk;
 
-use super::protocol::{HostMsg, PeerOutput};
+use super::protocol::{HostMsg, RemoteOutput};
 
 /// 공유 세션당 보관하는 raw tail 링버퍼 상한. 스냅샷이 주 복원 경로이고
 /// 링은 "스냅샷 이후 델타 + 재접속 델타"를 담는 창이다.
@@ -170,7 +170,7 @@ impl SnapshotBridge {
         *self.emit.lock() = Some(emit);
     }
 
-    /// 렌더러가 `submit_peer_snapshot` 커맨드로 되돌려준다.
+    /// 렌더러가 `web_remote_submit_snapshot` 커맨드로 되돌려준다.
     pub fn submit(&self, request_id: &str, snapshot: String) {
         let tx = self.pending.lock().remove(request_id);
         if let Some(tx) = tx {
@@ -196,7 +196,7 @@ impl SnapshotBridge {
 
 // ── 허브 ──────────────────────────────────────────────────────────────
 
-pub struct PeerHub {
+pub struct WebRemoteHub {
     streams: Mutex<HashMap<String, Arc<Mutex<SharedStream>>>>,
     /// agentId → 설치된 tap id. 이 맵의 키가 곧 "공유 중인 캐릭터" 집합이다.
     taps: Mutex<HashMap<String, u64>>,
@@ -204,7 +204,7 @@ pub struct PeerHub {
     pub snapshots: SnapshotBridge,
 }
 
-impl PeerHub {
+impl WebRemoteHub {
     pub fn new() -> Arc<Self> {
         let (tx, _rx) = broadcast::channel(BROADCAST_CAP);
         Arc::new(Self {
@@ -275,7 +275,7 @@ impl PeerHub {
             s.push(chunk);
             offset
         };
-        self.broadcast(HostMsg::Output(PeerOutput {
+        self.broadcast(HostMsg::Output(RemoteOutput {
             agent_id: agent_id.to_string(),
             session_id: chunk.session_id.clone(),
             seq: chunk.seq,
@@ -328,7 +328,7 @@ impl PeerHub {
 /// `OutputSink`에 꽂히는 tap. 허브를 **Weak**로 쥐어, 매니저의 sink가 tap을
 /// 오래 들고 있어도 허브 수명이 그것에 매이지 않게 한다.
 struct HubTap {
-    hub: std::sync::Weak<PeerHub>,
+    hub: std::sync::Weak<WebRemoteHub>,
     agent_id: String,
 }
 
@@ -344,12 +344,12 @@ impl OutputTap for HubTap {
 
 /// 공유 중인 캐릭터의 앱 이벤트만 뷰어로 흘리는 `AppEvents` 구현.
 /// `CompositeEvents`로 `TauriEvents`와 나란히 세워 쓴다(§결정 4).
-pub struct PeerEvents {
-    hub: Arc<PeerHub>,
+pub struct WebRemoteEvents {
+    hub: Arc<WebRemoteHub>,
 }
 
-impl PeerEvents {
-    pub fn new(hub: Arc<PeerHub>) -> Self {
+impl WebRemoteEvents {
+    pub fn new(hub: Arc<WebRemoteHub>) -> Self {
         Self { hub }
     }
 
@@ -363,7 +363,7 @@ impl PeerEvents {
     }
 }
 
-impl AppEvents for PeerEvents {
+impl AppEvents for WebRemoteEvents {
     fn session_state(&self, ev: &crate::types::SessionStateEvent) {
         let agent_id = ev.agent_id.clone();
         self.mirror(
@@ -509,7 +509,7 @@ mod tests {
 
     #[tokio::test]
     async fn hub_fans_out_output_to_subscribers() {
-        let hub = PeerHub::new();
+        let hub = WebRemoteHub::new();
         hub.share_for_test("a");
         let mut rx = hub.subscribe();
         hub.push_for_test("a", &chunk("s1", "a", "hi", 1));
@@ -527,7 +527,7 @@ mod tests {
 
     #[tokio::test]
     async fn unshared_agent_output_is_ignored() {
-        let hub = PeerHub::new();
+        let hub = WebRemoteHub::new();
         let mut rx = hub.subscribe();
         hub.push_for_test("ghost", &chunk("s1", "ghost", "hi", 1));
         assert!(rx.try_recv().is_err());
@@ -559,7 +559,7 @@ mod tests {
 
     #[tokio::test]
     async fn replay_for_requests_a_snapshot_on_first_attach() {
-        let hub = PeerHub::new();
+        let hub = WebRemoteHub::new();
         hub.share_for_test("ada");
         hub.push_for_test("ada", &chunk("s1", "ada", "before", 1));
         let hub2 = hub.clone();
@@ -575,7 +575,7 @@ mod tests {
 
     #[tokio::test]
     async fn replay_for_falls_back_to_ring_when_snapshot_times_out() {
-        let hub = PeerHub::new();
+        let hub = WebRemoteHub::new();
         hub.share_for_test("ada");
         hub.push_for_test("ada", &chunk("s1", "ada", "hello", 1));
         hub.snapshots.set_emitter(Arc::new(|_, _| {})); // 응답 없음

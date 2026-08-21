@@ -1,6 +1,6 @@
 // src/web/ws.ts
 //
-// 웹 클라이언트의 유일한 서버 연결. same-origin `ws(s)://…/peer/v1/ws`로 붙고
+// 웹 클라이언트의 유일한 서버 연결. same-origin `ws(s)://…/webremote/v1/ws`로 붙고
 // 인증은 **쿠키가 자동으로** 동반한다(브라우저 WebSocket API는 커스텀 헤더를
 // 못 붙인다 — 그래서 서버가 쿠키 인증 경로를 갖는다).
 //
@@ -8,7 +8,7 @@
 // 메시지 팬아웃. 상태는 갖지 않는다 — 서버 push가 유일한 진실이라는 원칙이
 // 스토어가 두 벌 생기는 문제를 애초에 없앤다.
 
-import type { HostMsg, ViewerMsg } from "./protocol";
+import type { HostMsg, ClientMsg } from "./protocol";
 
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 30_000;
@@ -23,7 +23,7 @@ interface Pending {
   timer: ReturnType<typeof setTimeout>;
 }
 
-export class PeerSocket {
+export class WebRemoteSocket {
   private ws: WebSocket | null = null;
   private backoff = RECONNECT_MIN_MS;
   private nextId = 1;
@@ -32,7 +32,7 @@ export class PeerSocket {
   private stateListeners = new Set<(s: ConnState) => void>();
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private closed = false;
-  private queue: ViewerMsg[] = [];
+  private queue: ClientMsg[] = [];
 
   state: ConnState = "closed";
 
@@ -64,7 +64,7 @@ export class PeerSocket {
     return () => this.stateListeners.delete(cb);
   }
 
-  send(msg: ViewerMsg): void {
+  send(msg: ClientMsg): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     } else {
@@ -99,7 +99,7 @@ export class PeerSocket {
     if (this.closed) return;
     this.setState("connecting");
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${proto}//${location.host}/peer/v1/ws`);
+    const ws = new WebSocket(`${proto}//${location.host}/webremote/v1/ws`);
     this.ws = ws;
 
     ws.onopen = () => {
@@ -132,7 +132,7 @@ export class PeerSocket {
         try {
           cb(msg);
         } catch (err) {
-          console.error("peer message handler threw", err);
+          console.error("web remote message handler threw", err);
         }
       }
     };
@@ -168,7 +168,7 @@ export class PeerSocket {
 export async function probeAuth(): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${proto}//${location.host}/peer/v1/ws`);
+    const ws = new WebSocket(`${proto}//${location.host}/webremote/v1/ws`);
     const done = (ok: boolean) => {
       ws.onopen = ws.onclose = ws.onerror = null;
       try {

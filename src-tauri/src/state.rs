@@ -188,10 +188,10 @@ pub struct AppState {
     /// control 핸들러가 쥐는 앱 상태 클론들. `set_app_settings`가 cli_enabled
     /// ON 전환 시 `control_server.ensure(control_ctx)`에 넘긴다.
     pub control_ctx: Arc<crate::control::ControlContext>,
-    /// 웹 원격의 수신 서버 상태. `web_hosting_enabled`가 켜져 있을 때만 뜬다.
-    pub peer_server: Arc<crate::peer::PeerServerState>,
+    /// 웹 원격의 수신 서버 상태. `web_remote_enabled`가 켜져 있을 때만 뜬다.
+    pub web_remote_server: Arc<crate::webremote::WebRemoteServerState>,
     /// 웹 원격 핸들러가 쥐는 앱 상태 클론 + 허브. 설정 토글 시 `ensure`에 넘긴다.
-    pub peer_ctx: Arc<crate::peer::PeerContext>,
+    pub web_remote_ctx: Arc<crate::webremote::WebRemoteContext>,
     /// 캐릭터 봇 모드(#57, docs/bot-mode-design.md)의 탭별 폴링 태스크 소유자.
     pub bot_runtime: Arc<crate::bot::BotRuntime>,
     /// 봇 폴링 태스크가 쥐는 앱 상태 클론(세션 주입·프로필/상태 접근).

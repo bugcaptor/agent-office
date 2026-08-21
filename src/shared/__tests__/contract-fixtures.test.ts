@@ -245,9 +245,9 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "ttsEnabled",
       "ttsRewriteModel",
       "ttsRewriteProvider",
-      "peerBind",
-      "peerPort",
-      "webHostingEnabled",
+      "webRemoteBind",
+      "webRemotePort",
+      "webRemoteEnabled",
     ]);
     expect(settings.gitStatusEnabled).toBe(true);
     expect(settings.fileIndexBackend).toBe("walker");
@@ -262,9 +262,9 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expect(settings.ttsRewriteProvider).toBe("auto");
     // 웹 원격은 네트워크 표면이라 기본 꺼짐이고, 켜더라도 기본 허용 범위는
     // tailnet(+루프백)뿐이다.
-    expect(settings.peerBind).toBe("tailnet");
-    expect(settings.peerPort).toBe(47800);
-    expect(settings.webHostingEnabled).toBe(false);
+    expect(settings.webRemoteBind).toBe("tailnet");
+    expect(settings.webRemotePort).toBe(47800);
+    expect(settings.webRemoteEnabled).toBe(false);
   });
 
   it("GitStatusResult / GitFileStatus", () => {

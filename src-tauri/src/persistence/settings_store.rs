@@ -223,20 +223,20 @@ pub struct AppSettings {
     pub tts_rewrite_provider: TtsRewriteProvider,
     /// 어떤 원격 주소를 받아 줄지. 기본 `tailnet`(Tailscale 대역 + 루프백).
     #[serde(default)]
-    pub peer_bind: PeerBind,
+    pub web_remote_bind: WebRemoteBind,
     /// 수신 포트. 수동 `host:port` 입력이 곧 디스커버리라 고정값이 기본이고,
     /// 점유 시에는 +1씩 스캔한 실제 포트를 설정 UI에 표시한다.
-    #[serde(default = "default_peer_port")]
-    pub peer_port: u16,
+    #[serde(default = "default_web_remote_port")]
+    pub web_remote_port: u16,
     /// 웹 원격(docs/web-remote-design.md) — 브라우저로 접속해 상태 확인·터미널
     /// 조작을 하게 한다. 켜져 있을 때만 리스너가 뜨고 정적 자산·웹 RPC가
     /// 응답한다. 페어링 승인은 여전히 필요하다. 네트워크 표면이라 기본 꺼짐.
     #[serde(default)]
-    pub web_hosting_enabled: bool,
+    pub web_remote_enabled: bool,
 }
 
-fn default_peer_port() -> u16 {
-    crate::peer::protocol::DEFAULT_PEER_PORT
+fn default_web_remote_port() -> u16 {
+    crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT
 }
 
 impl Default for AppSettings {
@@ -262,9 +262,9 @@ impl Default for AppSettings {
             tts_enabled: false,
             tts_rewrite_model: TtsRewriteModel::Haiku45,
             tts_rewrite_provider: TtsRewriteProvider::Auto,
-            peer_bind: PeerBind::Tailnet,
-            peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
-            web_hosting_enabled: false,
+            web_remote_bind: WebRemoteBind::Tailnet,
+            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
+            web_remote_enabled: false,
         }
     }
 }
@@ -275,7 +275,7 @@ impl Default for AppSettings {
 /// 흐르지 않는다"는 성질은 그대로다.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum PeerBind {
+pub enum WebRemoteBind {
     /// Tailscale 대역(100.64.0.0/10, fd7a:115c:a1e0::/48) + 루프백만. 기본값.
     #[default]
     Tailnet,
@@ -285,7 +285,7 @@ pub enum PeerBind {
     Loopback,
 }
 
-impl PeerBind {
+impl WebRemoteBind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Tailnet => "tailnet",
@@ -418,9 +418,9 @@ mod tests {
             tts_enabled: false,
             tts_rewrite_model: TtsRewriteModel::Haiku45,
             tts_rewrite_provider: TtsRewriteProvider::Auto,
-            peer_bind: Default::default(),
-            peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
-            web_hosting_enabled: false,
+            web_remote_bind: Default::default(),
+            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
+            web_remote_enabled: false,
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -527,9 +527,9 @@ mod tests {
             tts_enabled: false,
             tts_rewrite_model: TtsRewriteModel::Haiku45,
             tts_rewrite_provider: TtsRewriteProvider::Auto,
-            peer_bind: Default::default(),
-            peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
-            web_hosting_enabled: false,
+            web_remote_bind: Default::default(),
+            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
+            web_remote_enabled: false,
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();

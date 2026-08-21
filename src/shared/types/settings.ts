@@ -79,17 +79,17 @@ export interface AppSettings {
   /** 대사 리라이트 공급자. 기본 "auto"(API 키 → env → claude CLI → 생략). */
   ttsRewriteProvider: TtsRewriteProvider;
   /** 어떤 원격 주소를 받아 줄지. 기본 "tailnet"(Tailscale 대역 + 루프백). */
-  peerBind: PeerBindPolicy;
+  webRemoteBind: WebRemoteBindPolicy;
   /** 수신 포트. 기본 47800(점유 시 백엔드가 +1씩 스캔한 실제 포트를 알려준다). */
-  peerPort: number;
-  /** 웹 호스팅(#7m) — 브라우저로 접속해 상태 확인·터미널 조작을 하게 한다.
-   * 피어 공유와 **같은 리스너**를 쓰고(`/web/…`), 페어링 승인은 여전히 필요하다.
-   * 네트워크 표면이므로 기본 false. */
-  webHostingEnabled: boolean;
+  webRemotePort: number;
+  /** 웹 원격(docs/web-remote-design.md) — 브라우저로 접속해 상태 확인·터미널
+   * 조작을 하게 한다. 켜져 있을 때만 리스너가 뜨고, 페어링 승인은 여전히
+   * 필요하다. 네트워크 표면이므로 기본 false. */
+  webRemoteEnabled: boolean;
 }
 
-/** 피어 수신 서버가 받아 줄 원격 주소 범위(#7k §결정 5). */
-export type PeerBindPolicy = "tailnet" | "all" | "loopback";
+/** 웹 원격 수신 서버가 받아 줄 원격 주소 범위. */
+export type WebRemoteBindPolicy = "tailnet" | "all" | "loopback";
 
 /** `get_app_settings` 응답. firstRun = settings.json 부재(첫 실행). */
 export interface GetAppSettingsResult {

@@ -1,12 +1,12 @@
 // src/web/protocol.ts
 //
-// 웹 호스팅(kbm #7m) 와이어 타입 — Rust `src-tauri/src/peer/protocol.rs`의 미러.
+// 웹 원격 와이어 타입 — Rust `src-tauri/src/webremote/protocol.rs`의 미러.
 // `src/shared`로 올리지 않는 이유: 지금 소비자가 웹 클라이언트 하나뿐이고,
 // 데스크톱 렌더러는 이 프로토콜을 모른다(Tauri 커맨드로 직접 간다).
 
-export type PeerPermission = "readOnly" | "input";
+export type ClientPermission = "readOnly" | "input";
 
-export interface PeerAgent {
+export interface RemoteAgent {
   agentId: string;
   name: string;
   role?: string | null;
@@ -19,7 +19,7 @@ export interface PeerAgent {
   rows?: number;
 }
 
-export interface PeerOutput {
+export interface RemoteOutput {
   agentId: string;
   sessionId: string;
   seq: number;
@@ -41,10 +41,10 @@ export type HostMsg =
       hostName: string;
       appVersion: string;
       protoVersion: number;
-      permission: PeerPermission;
-      peerId: string;
+      permission: ClientPermission;
+      clientId: string;
     }
-  | { type: "agents"; agents: PeerAgent[] }
+  | { type: "agents"; agents: RemoteAgent[] }
   | {
       type: "restore";
       agentId: string;
@@ -54,7 +54,7 @@ export type HostMsg =
       rows?: number;
       sessionId?: string | null;
     }
-  | ({ type: "output" } & PeerOutput)
+  | ({ type: "output" } & RemoteOutput)
   | { type: "activity"; agentId: string; payload: Record<string, unknown> }
   | { type: "sessionState"; agentId: string; payload: Record<string, unknown> }
   | { type: "notification"; agentId: string; payload: Record<string, unknown> }
@@ -70,7 +70,7 @@ export type HostMsg =
     }
   | { type: "error"; message: string };
 
-export type ViewerMsg =
+export type ClientMsg =
   | { type: "attach"; agentId: string; lastOffset?: number | null }
   | { type: "detach"; agentId: string }
   | { type: "input"; agentId: string; data: string }

@@ -13,8 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const approvePairing = vi.fn<(id: string, p: string) => Promise<void>>(() => Promise.resolve());
 const rejectPairing = vi.fn<(id: string) => Promise<void>>(() => Promise.resolve());
 
-vi.mock("../../ipc/peerApi", () => ({
-  peerApi: {
+vi.mock("../../ipc/webRemoteApi", () => ({
+  webRemoteApi: {
     approvePairing: (id: string, p: string) => approvePairing(id, p),
     rejectPairing: (id: string) => rejectPairing(id),
   },
@@ -43,8 +43,8 @@ describe("PairingRequestDialog", () => {
   });
 
   it("브라우저 요청이 오면 설정을 열지 않아도 6자리 코드가 보인다", () => {
-    useAppStore.getState().setPeerPending([
-      { pairingId: "p1", code: "042317", viewerName: "휴대폰 브라우저" },
+    useAppStore.getState().setWebRemotePending([
+      { pairingId: "p1", code: "042317", clientName: "휴대폰 브라우저" },
     ]);
     render(<PairingRequestDialog />);
     expect(screen.getByText("042317")).toBeTruthy();
@@ -54,17 +54,17 @@ describe("PairingRequestDialog", () => {
   it("승인하면 권한과 함께 IPC를 부르고 목록에서 빠진다", () => {
     useAppStore
       .getState()
-      .setPeerPending([{ pairingId: "p1", code: "111111", viewerName: "브라우저" }]);
+      .setWebRemotePending([{ pairingId: "p1", code: "111111", clientName: "브라우저" }]);
     render(<PairingRequestDialog />);
     fireEvent.click(screen.getByText("승인 (읽기 전용)"));
     expect(approvePairing).toHaveBeenCalledWith("p1", "readOnly");
-    expect(useAppStore.getState().peerPending).toHaveLength(0);
+    expect(useAppStore.getState().webRemotePending).toHaveLength(0);
   });
 
   it("거부하면 IPC를 부르고 다음 대기 요청이 올라온다", () => {
-    useAppStore.getState().setPeerPending([
-      { pairingId: "p1", code: "111111", viewerName: "손님1" },
-      { pairingId: "p2", code: "222222", viewerName: "손님2" },
+    useAppStore.getState().setWebRemotePending([
+      { pairingId: "p1", code: "111111", clientName: "손님1" },
+      { pairingId: "p2", code: "222222", clientName: "손님2" },
     ]);
     render(<PairingRequestDialog />);
     expect(screen.getByText("111111")).toBeTruthy();
@@ -77,15 +77,15 @@ describe("PairingRequestDialog", () => {
     vi.useFakeTimers();
     useAppStore
       .getState()
-      .setPeerPending([
-        { pairingId: "p1", code: "333333", viewerName: "손님", expiresInMs: 1000 },
+      .setWebRemotePending([
+        { pairingId: "p1", code: "333333", clientName: "손님", expiresInMs: 1000 },
       ]);
     const { container } = render(<PairingRequestDialog />);
     expect(screen.getByText("333333")).toBeTruthy();
     act(() => {
       vi.advanceTimersByTime(1001);
     });
-    expect(useAppStore.getState().peerPending).toHaveLength(0);
+    expect(useAppStore.getState().webRemotePending).toHaveLength(0);
     expect(container.firstChild).toBeNull();
   });
 });

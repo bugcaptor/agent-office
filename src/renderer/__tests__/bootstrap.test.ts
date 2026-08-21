@@ -237,9 +237,9 @@ describe("bootApp", () => {
       ttsEnabled: false,
       ttsRewriteModel: "claude-haiku-4-5",
       ttsRewriteProvider: "auto",
-      peerBind: "tailnet",
-      peerPort: 47800,
-      webHostingEnabled: false,
+      webRemoteBind: "tailnet",
+      webRemotePort: 47800,
+      webRemoteEnabled: false,
     });
     expect(s.settingsFirstRun).toBe(false);
     expect(warn).toHaveBeenCalledWith(

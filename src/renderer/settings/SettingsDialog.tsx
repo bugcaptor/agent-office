@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { SettingsForm } from "./SettingsForm";
-import { PeerShareSection } from "./PeerShareSection";
+import { WebRemoteSection } from "./WebRemoteSection";
 import { previewVoice } from "../sound/soundManager";
 import { THEMES, THEME_ORDER } from "../theme/themes";
 import type { XtermThemeOverride } from "../terminal/theme";
@@ -231,7 +231,7 @@ export function SettingsDialog() {
         </div>
         <TtsSection />
         <ControlSection enabled={appSettings.cliEnabled} />
-        <PeerShareSection />
+        <WebRemoteSection />
         <div className="dialog-actions">
           <button className="pixel-btn" onClick={closeModal}>
             닫기

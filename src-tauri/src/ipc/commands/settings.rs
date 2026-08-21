@@ -90,16 +90,16 @@ pub(crate) async fn set_app_settings_inner(
         app_state.control_server.shutdown();
     }
 
-    // 웹 원격 lifecycle: web_hosting_enabled 토글에 따라 수신 서버를 기동/
+    // 웹 원격 lifecycle: web_remote_enabled 토글에 따라 수신 서버를 기동/
     // 정지한다. 끄면 리스너만 내려가고 발급 토큰은 남는다(재활성화 시 재페어링
     // 불필요 — control의 "승인은 지속" 규칙과 같다).
-    if settings.web_hosting_enabled {
+    if settings.web_remote_enabled {
         let _ = app_state
-            .peer_server
-            .ensure(app_state.peer_ctx.clone(), settings.peer_port)
+            .web_remote_server
+            .ensure(app_state.web_remote_ctx.clone(), settings.web_remote_port)
             .await;
     } else {
-        app_state.peer_server.shutdown();
+        app_state.web_remote_server.shutdown();
     }
 
     // 잠자기 방지(#68) OFF 전환은 즉시 반영 — 렌더러 구독도 곧 set_keep_awake(false)를

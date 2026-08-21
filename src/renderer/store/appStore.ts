@@ -42,7 +42,7 @@ import type {
   UsageSnapshot,
 } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
-import type { PendingPairing } from "../ipc/peerApi";
+import type { PendingPairing } from "../ipc/webRemoteApi";
 
 const MAX_EXCERPT = 80;
 /** 도구 요약 라벨 갱신 최소 간격(ms). 도구가 빠르게 연달아 와도 라벨이 튀지 않게 스로틀. */
@@ -78,9 +78,9 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   ttsEnabled: false,
   ttsRewriteModel: "claude-haiku-4-5",
   ttsRewriteProvider: "auto",
-  peerBind: "tailnet",
-  peerPort: 47800,
-  webHostingEnabled: false,
+  webRemoteBind: "tailnet",
+  webRemotePort: 47800,
+  webRemoteEnabled: false,
 };
 
 /**
@@ -180,7 +180,7 @@ interface AppState {
    * 앱 재시작 시 꺼진 상태로 시작). */
   botMode: Record<string, BotAgentStatus>;
   /** 웹 원격: 승인 대기 중인 페어링(코드 표시용). 런타임 전용. */
-  peerPending: PendingPairing[];
+  webRemotePending: PendingPairing[];
 
   // ---- profile actions ----
   addAgent(profile: AgentProfile): void;
@@ -205,7 +205,7 @@ interface AppState {
 
   // ---- 웹 원격 ----
   /** 승인 대기 페어링 목록 갱신. */
-  setPeerPending(pending: PendingPairing[]): void;
+  setWebRemotePending(pending: PendingPairing[]): void;
 
   // ---- bot mode (이슈 #57) ----
   /** 이 탭의 봇 모드를 켠다 — 백엔드 폴링 태스크를 띄우고 로컬 입력을 잠근다.
@@ -325,9 +325,9 @@ interface AppState {
         | "keepAwakeEnabled"
         | "sessionLogEnabled"
         | "mascotEnabled"
-        | "peerBind"
-        | "peerPort"
-        | "webHostingEnabled"
+        | "webRemoteBind"
+        | "webRemotePort"
+        | "webRemoteEnabled"
         | "ttsEnabled"
         | "ttsRewriteModel"
         | "ttsRewriteProvider"
@@ -370,9 +370,9 @@ export const useAppStore = create<AppState>()(
     settingsFirstRun: false,
     usage: null,
     botMode: {},
-    peerPending: [],
+    webRemotePending: [],
 
-    setPeerPending: (pending) => set({ peerPending: pending }),
+    setWebRemotePending: (pending) => set({ webRemotePending: pending }),
 
     addAgent: (profile) =>
       set((s) => ({

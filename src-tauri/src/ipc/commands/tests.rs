@@ -97,9 +97,9 @@
             tts_enabled: false,
             tts_rewrite_model: Default::default(),
             tts_rewrite_provider: Default::default(),
-            peer_bind: Default::default(),
-            peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
-            web_hosting_enabled: false,
+            web_remote_bind: Default::default(),
+            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
+            web_remote_enabled: false,
         };
 
         // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
@@ -154,9 +154,9 @@
             tts_enabled: false,
             tts_rewrite_model: Default::default(),
             tts_rewrite_provider: Default::default(),
-            peer_bind: Default::default(),
-            peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
-            web_hosting_enabled: false,
+            web_remote_bind: Default::default(),
+            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
+            web_remote_enabled: false,
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
         // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.
@@ -204,9 +204,9 @@
             tts_enabled: false,
             tts_rewrite_model: Default::default(),
             tts_rewrite_provider: Default::default(),
-            peer_bind: Default::default(),
-            peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
-            web_hosting_enabled: false,
+            web_remote_bind: Default::default(),
+            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
+            web_remote_enabled: false,
         };
 
         assert!(set_app_settings_inner(&state, settings).await.is_ok());
@@ -352,16 +352,15 @@
             state_lock: std::sync::Arc::new(std::sync::Mutex::new(())),
         });
         let live_usage = std::sync::Arc::new(crate::usage::LiveUsageState::new());
-        // 피어 세션 공유(#7k): 서버는 띄우지 않고 컨텍스트만 만든다 —
-        // 커맨드 테스트는 `peer:` 라우팅 분기만 지나가면 된다.
-        let peer_hub = crate::peer::host::PeerHub::new();
-        let peer_ctx = std::sync::Arc::new(crate::peer::PeerContext::new(
-            crate::peer::PeerContextDeps {
+        // 웹 원격: 서버는 띄우지 않고 컨텍스트만 만든다 —
+        let web_remote_hub = crate::webremote::host::WebRemoteHub::new();
+        let web_remote_ctx = std::sync::Arc::new(crate::webremote::WebRemoteContext::new(
+            crate::webremote::WebRemoteContextDeps {
                 manager: manager.clone(),
                 registry: registry.clone(),
                 store: store.clone(),
                 settings: settings.clone(),
-                hub: peer_hub,
+                hub: web_remote_hub,
                 app_data_dir: profile_dir.clone(),
                 host_name: "테스트호스트".into(),
                 hub_notify: hub.clone(),
@@ -392,8 +391,8 @@
             live_usage: live_usage.clone(),
             control_server,
             control_ctx,
-            peer_server: std::sync::Arc::new(crate::peer::PeerServerState::default()),
-            peer_ctx,
+            web_remote_server: std::sync::Arc::new(crate::webremote::WebRemoteServerState::default()),
+            web_remote_ctx,
             bot_runtime,
             bot_ctx,
             wake_lock: std::sync::Arc::new(crate::power::WakeLock::new()),

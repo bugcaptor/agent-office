@@ -11,21 +11,21 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AgentList } from "./AgentList";
 import { PairingScreen } from "./PairingScreen";
 import { TerminalScreen } from "./TerminalScreen";
-import type { HostMsg, NotificationItem, PeerAgent, PeerPermission } from "./protocol";
+import type { HostMsg, NotificationItem, RemoteAgent, ClientPermission } from "./protocol";
 import { RpcCmd } from "./protocol";
-import { PeerSocket, probeAuth, type ConnState } from "./ws";
+import { WebRemoteSocket, probeAuth, type ConnState } from "./ws";
 
 type Phase = "checking" | "pairing" | "ready";
 
 export function App() {
   const [phase, setPhase] = useState<Phase>("checking");
-  const [agents, setAgents] = useState<PeerAgent[]>([]);
-  const [permission, setPermission] = useState<PeerPermission>("readOnly");
+  const [agents, setAgents] = useState<RemoteAgent[]>([]);
+  const [permission, setPermission] = useState<ClientPermission>("readOnly");
   const [hostName, setHostName] = useState("Agent Office");
   const [connState, setConnState] = useState<ConnState>("closed");
   const [openAgentId, setOpenAgentId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Record<string, NotificationItem[]>>({});
-  const socketRef = useRef<PeerSocket | null>(null);
+  const socketRef = useRef<WebRemoteSocket | null>(null);
   const attachedRef = useRef<Set<string>>(new Set());
 
   // 쿠키가 살아 있는지 먼저 본다(WS 401이면 페어링 화면).
@@ -41,7 +41,7 @@ export function App() {
 
   useEffect(() => {
     if (phase !== "ready") return;
-    const socket = new PeerSocket();
+    const socket = new WebRemoteSocket();
     socketRef.current = socket;
 
     const offState = socket.onState(setConnState);

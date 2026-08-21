@@ -1,10 +1,10 @@
-// src/renderer/ipc/peerBridge.ts
+// src/renderer/ipc/webRemoteBridge.ts
 //
 // 웹 원격(docs/web-remote-design.md)의 렌더러 브리지. 백엔드 이벤트 둘을 받아
 // 스토어/터미널에 반영한다.
 //
-//   peer-snapshot-request  화면 직렬화 요청 → submit_peer_snapshot
-//   peer-pair-request      승인 대기 페어링 → 스토어(승인 다이얼로그가 표시)
+//   web-remote-snapshot-request  화면 직렬화 요청 → web_remote_submit_snapshot
+//   web-remote-pair-request      승인 대기 페어링 → 스토어(승인 다이얼로그가 표시)
 //
 // 브라우저로 나가는 출력/입력 자체는 여기를 거치지 않는다 — 백엔드의
 // `OutputSink` tap과 WS가 직접 나른다.
@@ -13,8 +13,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Events } from "@shared/ipc";
 import { useAppStore } from "../store/appStore";
 import { terminalRegistry } from "../terminal/TerminalRegistry";
-import { peerApi } from "./peerApi";
-import type { PendingPairing } from "./peerApi";
+import { webRemoteApi } from "./webRemoteApi";
+import type { PendingPairing } from "./webRemoteApi";
 
 interface SnapshotRequest {
   agentId: string;
@@ -29,7 +29,7 @@ interface SnapshotRequest {
  */
 async function answerSnapshot(req: SnapshotRequest): Promise<void> {
   const snapshot = (await terminalRegistry.flushAndSerialize(req.agentId)) ?? "";
-  await peerApi.submitSnapshot(req.requestId, snapshot);
+  await webRemoteApi.submitSnapshot(req.requestId, snapshot);
 }
 
 /**
@@ -37,7 +37,7 @@ async function answerSnapshot(req: SnapshotRequest): Promise<void> {
  * `listen()`은 비동기로 UnlistenFn을 주므로, teardown이 먼저 와도 새는 일이
  * 없도록 해소 시점에 즉시 정리한다(tauriApi.wrapListen과 같은 관례).
  */
-export function installPeerBridge(): () => void {
+export function installWebRemoteBridge(): () => void {
   let disposed = false;
   const unlisteners: UnlistenFn[] = [];
 
@@ -51,32 +51,32 @@ export function installPeerBridge(): () => void {
         unlisteners.push(un);
       })
       .catch((err) => {
-        console.warn("peerBridge: 이벤트 구독 실패", err);
+        console.warn("webRemoteBridge: 이벤트 구독 실패", err);
       });
   };
 
   track(
-    listen<SnapshotRequest>(Events.peerSnapshotRequest, (e) => {
+    listen<SnapshotRequest>(Events.webRemoteSnapshotRequest, (e) => {
       void answerSnapshot(e.payload).catch((err) => {
-        console.warn("peerBridge: 스냅샷 응답 실패", err);
+        console.warn("webRemoteBridge: 스냅샷 응답 실패", err);
       });
     })
   );
 
   track(
-    listen<PendingPairing>(Events.peerPairRequest, (e) => {
-      const prev = useAppStore.getState().peerPending;
+    listen<PendingPairing>(Events.webRemotePairRequest, (e) => {
+      const prev = useAppStore.getState().webRemotePending;
       const next = [...prev.filter((p) => p.pairingId !== e.payload.pairingId), e.payload];
-      useAppStore.getState().setPeerPending(next);
+      useAppStore.getState().setWebRemotePending(next);
     })
   );
 
   // 부팅 직후 1회 동기화 — 이벤트는 새 요청에만 오므로, 앱이 뜨기 전에
   // 시작된 페어링을 여기서 한 번 끌어온다.
-  void peerApi
+  void webRemoteApi
     .hostStatus()
     .then((status) => {
-      if (!disposed) useAppStore.getState().setPeerPending(status.pending ?? []);
+      if (!disposed) useAppStore.getState().setWebRemotePending(status.pending ?? []);
     })
     .catch(() => {
       /* 무시 — 웹 원격이 꺼져 있을 뿐 */

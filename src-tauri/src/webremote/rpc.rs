@@ -1,4 +1,4 @@
-// src-tauri/src/peer/web.rs
+// src-tauri/src/webremote/rpc.rs
 //
 // 웹 원격(docs/web-remote-design.md). 브라우저로 접속해 상태를 확인하고
 // 터미널에 개입한다. 주인 의미론 — 내 기계를 내가 원격 조종하는 것이다.
@@ -12,9 +12,9 @@
 //   2. `session.start`는 **저장된 프로필로만** 스폰한다 — 웹에서 cwd·shell·
 //      startupCommand를 실어 보낼 수 없다(임의 명령 주입 벡터 차단).
 //   3. 설정 변경·봇 조작(admin 티어)은 **테이블 자체가 비어 있다**. 원격
-//      설정 변경은 `webHostingEnabled`를 스스로 끄는 셀프 락아웃이자 권한
+//      설정 변경은 `webRemoteEnabled`를 스스로 끄는 셀프 락아웃이자 권한
 //      상승 표면이다(control 서버가 `cliEnabled`를 막는 것과 같은 논리).
-//   4. 정적 자산과 RPC 모두 **매 요청 `web_hosting_enabled`를 확인**한다 —
+//   4. 정적 자산과 RPC 모두 **매 요청 `web_remote_enabled`를 확인**한다 —
 //      토글이 서버 재시작 없이 즉시 반영된다.
 
 use std::sync::Arc;
@@ -26,9 +26,9 @@ use axum::routing::get;
 use axum::Router;
 use serde_json::Value;
 
-use super::pairing::PeerRecord;
-use super::protocol::{PeerPermission, RpcError};
-use super::PeerContext;
+use super::pairing::ClientRecord;
+use super::protocol::{ClientPermission, RpcError};
+use super::WebRemoteContext;
 use crate::session_events::types::AgentEventProfile;
 use crate::types::CreateSessionRequest;
 
@@ -36,12 +36,12 @@ use crate::types::CreateSessionRequest;
 ///
 /// 티어 대응: `ReadOnly` = 읽기, `Input` = 조작.
 /// admin 티어(설정·봇)는 의도적으로 비어 있다 — §5 "하지 않을 것".
-pub fn required_permission(cmd: &str) -> Option<PeerPermission> {
+pub fn required_permission(cmd: &str) -> Option<ClientPermission> {
     match cmd {
         // 읽기만
-        "agents.list" | "notifications.list" | "usage.snapshot" => Some(PeerPermission::ReadOnly),
+        "agents.list" | "notifications.list" | "usage.snapshot" => Some(ClientPermission::ReadOnly),
         // 조작
-        "session.start" | "session.dispose" | "notifications.clear" => Some(PeerPermission::Input),
+        "session.start" | "session.dispose" | "notifications.clear" => Some(ClientPermission::Input),
         _ => None,
     }
 }
@@ -55,13 +55,13 @@ fn arg_str(args: &Value, key: &str) -> Result<String, RpcError> {
 
 /// 웹 RPC 한 건을 처리한다. 권한·가시성 검사가 **여기 한 곳**에 있다.
 pub async fn dispatch(
-    ctx: &Arc<PeerContext>,
-    record: &PeerRecord,
+    ctx: &Arc<WebRemoteContext>,
+    record: &ClientRecord,
     cmd: &str,
     args: Value,
 ) -> Result<Value, RpcError> {
     // 웹 원격이 꺼져 있으면 RPC 자체가 없다(브라우저 토큰이 살아 있어도).
-    if !ctx.web_hosting_enabled() {
+    if !ctx.web_remote_enabled() {
         return Err(RpcError::forbidden("웹 원격이 꺼져 있습니다"));
     }
     let Some(needed) = required_permission(cmd) else {
@@ -155,7 +155,7 @@ pub async fn dispatch(
     }
 }
 
-fn ensure_visible(ctx: &Arc<PeerContext>, record: &PeerRecord, agent_id: &str) -> Result<(), RpcError> {
+fn ensure_visible(ctx: &Arc<WebRemoteContext>, record: &ClientRecord, agent_id: &str) -> Result<(), RpcError> {
     if ctx.agent_allowed(record, agent_id) {
         Ok(())
     } else {
@@ -172,17 +172,17 @@ fn ensure_visible(ctx: &Arc<PeerContext>, record: &PeerRecord, agent_id: &str) -
 #[folder = "../dist-web/"]
 struct WebAssets;
 
-async fn index(State(ctx): State<Arc<PeerContext>>) -> Response {
+async fn index(State(ctx): State<Arc<WebRemoteContext>>) -> Response {
     serve_asset(&ctx, "index.html")
 }
 
-async fn asset(State(ctx): State<Arc<PeerContext>>, Path(path): Path<String>) -> Response {
+async fn asset(State(ctx): State<Arc<WebRemoteContext>>, Path(path): Path<String>) -> Response {
     serve_asset(&ctx, &path)
 }
 
-fn serve_asset(ctx: &Arc<PeerContext>, path: &str) -> Response {
+fn serve_asset(ctx: &Arc<WebRemoteContext>, path: &str) -> Response {
     // 매 요청 확인 — 토글을 끄면 즉시 사라진다(서버 재시작 불필요).
-    if !ctx.web_hosting_enabled() {
+    if !ctx.web_remote_enabled() {
         return (StatusCode::NOT_FOUND, "web remote disabled").into_response();
     }
     let path = path.trim_start_matches('/');
@@ -212,7 +212,7 @@ fn serve_asset(ctx: &Arc<PeerContext>, path: &str) -> Response {
     }
 }
 
-pub fn routes() -> Router<Arc<PeerContext>> {
+pub fn routes() -> Router<Arc<WebRemoteContext>> {
     // axum 0.7의 와일드카드는 `/*path`다(0.8의 `{*path}`가 아니다 — 잘못 쓰면
     // 라우터 조립 시점에 패닉한다).
     Router::new()
@@ -226,9 +226,9 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn record(permission: PeerPermission) -> PeerRecord {
-        PeerRecord {
-            peer_id: "p1".into(),
+    fn record(permission: ClientPermission) -> ClientRecord {
+        ClientRecord {
+            client_id: "p1".into(),
             name: "테스트".into(),
             token: "t".into(),
             permission,
@@ -239,18 +239,18 @@ mod tests {
     #[test]
     fn table_defines_the_whole_surface() {
         // viewer 티어
-        assert_eq!(required_permission("agents.list"), Some(PeerPermission::ReadOnly));
+        assert_eq!(required_permission("agents.list"), Some(ClientPermission::ReadOnly));
         assert_eq!(
             required_permission("notifications.list"),
-            Some(PeerPermission::ReadOnly)
+            Some(ClientPermission::ReadOnly)
         );
-        assert_eq!(required_permission("usage.snapshot"), Some(PeerPermission::ReadOnly));
+        assert_eq!(required_permission("usage.snapshot"), Some(ClientPermission::ReadOnly));
         // operator 티어
-        assert_eq!(required_permission("session.start"), Some(PeerPermission::Input));
-        assert_eq!(required_permission("session.dispose"), Some(PeerPermission::Input));
+        assert_eq!(required_permission("session.start"), Some(ClientPermission::Input));
+        assert_eq!(required_permission("session.dispose"), Some(ClientPermission::Input));
         assert_eq!(
             required_permission("notifications.clear"),
-            Some(PeerPermission::Input)
+            Some(ClientPermission::Input)
         );
         // 테이블 밖 — 실재하는 Tauri 커맨드라도 없는 것이다.
         for cmd in [
@@ -285,9 +285,9 @@ mod tests {
 
     #[tokio::test]
     async fn read_only_client_cannot_call_operator_commands() {
-        let (ctx, dir) = crate::peer::tests::build_ctx("web-perm");
-        ctx.settings.write().unwrap().web_hosting_enabled = true;
-        let viewer = record(PeerPermission::ReadOnly);
+        let (ctx, dir) = crate::webremote::tests::build_ctx("web-perm");
+        ctx.settings.write().unwrap().web_remote_enabled = true;
+        let viewer = record(ClientPermission::ReadOnly);
         let err = dispatch(&ctx, &viewer, "session.start", json!({ "agentId": "a1" }))
             .await
             .expect_err("읽기 전용은 거부");
@@ -297,9 +297,9 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_command_is_refused_even_for_operators() {
-        let (ctx, dir) = crate::peer::tests::build_ctx("web-unknown");
-        ctx.settings.write().unwrap().web_hosting_enabled = true;
-        let op = record(PeerPermission::Input);
+        let (ctx, dir) = crate::webremote::tests::build_ctx("web-unknown");
+        ctx.settings.write().unwrap().web_remote_enabled = true;
+        let op = record(ClientPermission::Input);
         let err = dispatch(&ctx, &op, "set_app_settings", json!({}))
             .await
             .expect_err("테이블 밖은 거부");
@@ -309,10 +309,10 @@ mod tests {
 
     #[tokio::test]
     async fn rpc_is_dead_while_web_hosting_is_off() {
-        let (ctx, dir) = crate::peer::tests::build_ctx("web-off");
-        ctx.settings.write().unwrap().web_hosting_enabled = false;
+        let (ctx, dir) = crate::webremote::tests::build_ctx("web-off");
+        ctx.settings.write().unwrap().web_remote_enabled = false;
         // 토큰이 살아 있어도 토글이 꺼지면 RPC가 없다.
-        let op = record(PeerPermission::Input);
+        let op = record(ClientPermission::Input);
         let err = dispatch(&ctx, &op, "agents.list", json!({}))
             .await
             .expect_err("꺼져 있으면 거부");
@@ -322,8 +322,8 @@ mod tests {
 
     #[tokio::test]
     async fn every_local_character_is_visible_to_the_browser() {
-        let (ctx, dir) = crate::peer::tests::build_ctx("web-visibility");
-        let client = record(PeerPermission::Input);
+        let (ctx, dir) = crate::webremote::tests::build_ctx("web-visibility");
+        let client = record(ClientPermission::Input);
 
         // 캐릭터별 공유 토글이라는 개념이 없다 — 내 캐릭터는 전부 보인다.
         let seen = dispatch(&ctx, &client, "agents.list", json!({})).await.unwrap();
@@ -337,9 +337,9 @@ mod tests {
 
     #[tokio::test]
     async fn session_start_refuses_unknown_profile() {
-        let (ctx, dir) = crate::peer::tests::build_ctx("web-notfound");
-        ctx.settings.write().unwrap().web_hosting_enabled = true;
-        let op = record(PeerPermission::Input);
+        let (ctx, dir) = crate::webremote::tests::build_ctx("web-notfound");
+        ctx.settings.write().unwrap().web_remote_enabled = true;
+        let op = record(ClientPermission::Input);
         let err = dispatch(&ctx, &op, "session.start", json!({ "agentId": "ghost" }))
             .await
             .expect_err("없는 캐릭터");
@@ -350,9 +350,9 @@ mod tests {
 
     #[tokio::test]
     async fn missing_args_are_reported_as_bad_args() {
-        let (ctx, dir) = crate::peer::tests::build_ctx("web-args");
-        ctx.settings.write().unwrap().web_hosting_enabled = true;
-        let op = record(PeerPermission::Input);
+        let (ctx, dir) = crate::webremote::tests::build_ctx("web-args");
+        ctx.settings.write().unwrap().web_remote_enabled = true;
+        let op = record(ClientPermission::Input);
         let err = dispatch(&ctx, &op, "session.dispose", json!({}))
             .await
             .expect_err("agentId 없음");

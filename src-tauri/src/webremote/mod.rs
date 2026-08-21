@@ -1,10 +1,10 @@
-// src-tauri/src/peer/mod.rs
+// src-tauri/src/webremote/mod.rs
 //
 // 웹 원격(docs/web-remote-design.md, 선행 docs/archive/web-hosting-design.md).
 //
 // 앱이 소유·실행 중인 에이전트 세션을 tailnet의 **브라우저**에서 보고 입력한다.
 // 프로세스·PTY·observer 훅은 전부 이 앱에 남고, 건너가는 것은 ①출력 바이트
-// ②화면 스냅샷 ③앱 이벤트 ④입력 넷뿐이다. 앱↔앱 피어 접속은 범위 밖이다 —
+// ②화면 스냅샷 ③앱 이벤트 ④입력 넷뿐이다. 앱↔앱 접속은 범위 밖이다 —
 // 클라이언트는 브라우저 하나뿐이고, 가시성은 "내 캐릭터 전부"(주인 의미론)다.
 //
 // control 서버와의 관계: 2단계 옵트인·토큰 파일·상수시간 비교 **패턴만**
@@ -16,7 +16,7 @@ pub mod host;
 pub mod pairing;
 pub mod protocol;
 /// 브라우저 클라이언트용 정적 자산 + allowlist RPC 디스패처.
-pub mod web;
+pub mod rpc;
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -39,19 +39,19 @@ use crate::notification::hub::NotificationHub;
 use crate::observer::server::ObserverServerState;
 use crate::observer::ObserverRuntime;
 use crate::persistence::profile_store::ProfileStore;
-use crate::persistence::settings_store::{AppSettings, PeerBind};
+use crate::persistence::settings_store::{AppSettings, WebRemoteBind};
 use crate::session::manager::SessionManager;
 use crate::state::SessionRegistry;
 use crate::types::SessionState;
 
-use host::PeerHub;
-use pairing::{PairingOutcome, PairingState, PeerRecord, PeerTokenStore};
+use host::WebRemoteHub;
+use pairing::{PairingOutcome, PairingState, ClientRecord, ClientTokenStore};
 use protocol::*;
 
 /// 브라우저 클라이언트가 WS 업그레이드에 실어 보낼 인증 쿠키
 /// 이름. 브라우저의 WebSocket API는 커스텀 헤더를 붙일 수 없으므로 헤더 인증만
 /// 두면 브라우저는 아예 붙지 못한다.
-pub const PEER_COOKIE_NAME: &str = "ao_peer_token";
+pub const WEB_REMOTE_COOKIE_NAME: &str = "ao_web_remote_token";
 
 /// 쿠키를 못 쓰는 상황의 보조 경로 — `Sec-WebSocket-Protocol`에 토큰을 싣는
 /// 표준 관용. 값 형식은 `agent-office.token.<token>`.
@@ -108,11 +108,11 @@ fn is_loopback(ip: IpAddr) -> bool {
 /// 새로 들이지 않고 **원격 주소 허용목록**으로 등가 구현한다 — 포트는 열리되
 /// tailnet 밖 클라이언트는 페어링·WS 어느 것도 시작하지 못하므로, "기본
 /// 구성에서 평문이 LAN에 흐르지 않는다"는 보안 성질은 그대로다.
-pub fn bind_policy_allows(bind: PeerBind, ip: IpAddr) -> bool {
+pub fn bind_policy_allows(bind: WebRemoteBind, ip: IpAddr) -> bool {
     match bind {
-        PeerBind::Tailnet => is_tailnet_addr(ip) || is_loopback(ip),
-        PeerBind::All => true,
-        PeerBind::Loopback => is_loopback(ip),
+        WebRemoteBind::Tailnet => is_tailnet_addr(ip) || is_loopback(ip),
+        WebRemoteBind::All => true,
+        WebRemoteBind::Loopback => is_loopback(ip),
     }
 }
 
@@ -121,13 +121,13 @@ pub fn bind_policy_allows(bind: PeerBind, ip: IpAddr) -> bool {
 /// 페어링 요청이 오면 호스트 렌더러에 승인 다이얼로그를 띄우기 위한 알림.
 pub type PairNotifyFn = Arc<dyn Fn(&pairing::PendingPairing) + Send + Sync>;
 
-pub struct PeerContext {
+pub struct WebRemoteContext {
     pub manager: Arc<SessionManager>,
     pub registry: Arc<SessionRegistry>,
     pub store: ProfileStore,
     pub settings: Arc<RwLock<AppSettings>>,
-    pub hub: Arc<PeerHub>,
-    pub tokens: PeerTokenStore,
+    pub hub: Arc<WebRemoteHub>,
+    pub tokens: ClientTokenStore,
     pub pairing: Arc<PairingState>,
     pub host_name: String,
     pub app_data_dir: PathBuf,
@@ -141,14 +141,14 @@ pub struct PeerContext {
     pair_notify: Mutex<Option<PairNotifyFn>>,
 }
 
-/// `PeerContext::new`의 인자 묶음 — 필드가 늘어도 호출부가 위치 인자 나열로
+/// `WebRemoteContext::new`의 인자 묶음 — 필드가 늘어도 호출부가 위치 인자 나열로
 /// 무너지지 않게 한다.
-pub struct PeerContextDeps {
+pub struct WebRemoteContextDeps {
     pub manager: Arc<SessionManager>,
     pub registry: Arc<SessionRegistry>,
     pub store: ProfileStore,
     pub settings: Arc<RwLock<AppSettings>>,
-    pub hub: Arc<PeerHub>,
+    pub hub: Arc<WebRemoteHub>,
     pub app_data_dir: PathBuf,
     pub host_name: String,
     pub hub_notify: Arc<NotificationHub>,
@@ -157,15 +157,15 @@ pub struct PeerContextDeps {
     pub live_usage: Arc<crate::usage::LiveUsageState>,
 }
 
-impl PeerContext {
-    pub fn new(deps: PeerContextDeps) -> Self {
+impl WebRemoteContext {
+    pub fn new(deps: WebRemoteContextDeps) -> Self {
         Self {
             manager: deps.manager,
             registry: deps.registry,
             store: deps.store,
             settings: deps.settings,
             hub: deps.hub,
-            tokens: PeerTokenStore::new(pairing::token_path(&deps.app_data_dir)),
+            tokens: ClientTokenStore::new(pairing::token_path(&deps.app_data_dir)),
             pairing: Arc::new(PairingState::default()),
             host_name: deps.host_name,
             app_data_dir: deps.app_data_dir,
@@ -180,10 +180,10 @@ impl PeerContext {
 
     /// 웹 호스팅이 켜져 있는가(정적 자산·웹 RPC 게이트). 매 요청 확인하므로
     /// 토글이 서버 재시작 없이 즉시 반영된다(control 토큰 파일 대조와 같은 패턴).
-    pub fn web_hosting_enabled(&self) -> bool {
+    pub fn web_remote_enabled(&self) -> bool {
         self.settings
             .read()
-            .map(|s| s.web_hosting_enabled)
+            .map(|s| s.web_remote_enabled)
             .unwrap_or(false)
     }
 
@@ -192,13 +192,13 @@ impl PeerContext {
     /// 클라이언트는 브라우저 하나뿐이고 **내 기계를 내가 조종하는 것**이므로
     /// 내 캐릭터 전부가 대상이다(주인 의미론). 단 웹 원격 토글이 꺼져 있으면
     /// 아무것도 못 본다 — 매 요청 확인이라 토글이 즉시 반영된다.
-    pub fn agent_allowed(&self, _record: &PeerRecord, agent_id: &str) -> bool {
-        self.web_hosting_enabled() && self.store.load().agents.iter().any(|a| a.id == agent_id)
+    pub fn agent_allowed(&self, _record: &ClientRecord, agent_id: &str) -> bool {
+        self.web_remote_enabled() && self.store.load().agents.iter().any(|a| a.id == agent_id)
     }
 
     /// 그 클라이언트에게 보여줄 캐릭터 목록(가시성 규칙은 `agent_allowed`와 동일).
-    pub fn build_agents_for(&self, _record: &PeerRecord) -> Vec<PeerAgent> {
-        if !self.web_hosting_enabled() {
+    pub fn build_agents_for(&self, _record: &ClientRecord) -> Vec<RemoteAgent> {
+        if !self.web_remote_enabled() {
             return Vec::new();
         }
         self.agents_from(|_| true)
@@ -215,16 +215,16 @@ impl PeerContext {
         }
     }
 
-    fn bind_policy(&self) -> PeerBind {
+    fn bind_policy(&self) -> WebRemoteBind {
         self.settings
             .read()
-            .map(|s| s.peer_bind)
+            .map(|s| s.web_remote_bind)
             .unwrap_or_default()
     }
 
-    /// 프로필 + 실행 상태를 병합해 `PeerAgent`를 만든다. 어떤 캐릭터를 담을지는
+    /// 프로필 + 실행 상태를 병합해 `RemoteAgent`를 만든다. 어떤 캐릭터를 담을지는
     /// 호출자가 준 술어가 정한다(가시성 규칙의 단일 구현 지점).
-    fn agents_from(&self, keep: impl Fn(&str) -> bool) -> Vec<PeerAgent> {
+    fn agents_from(&self, keep: impl Fn(&str) -> bool) -> Vec<RemoteAgent> {
         let mut by_agent: HashMap<String, (String, SessionState)> = HashMap::new();
         for (sid, agent, state) in self.registry.snapshot() {
             by_agent.insert(agent, (sid, state));
@@ -237,7 +237,7 @@ impl PeerContext {
             .map(|p| {
                 let live = by_agent.get(&p.id);
                 let (cols, rows) = self.manager.size_of(&p.id).unwrap_or((0, 0));
-                PeerAgent {
+                RemoteAgent {
                     agent_id: p.id.clone(),
                     name: p.name,
                     role: Some(p.role),
@@ -274,7 +274,7 @@ fn fail(msg: impl Into<String>) -> Json<serde_json::Value> {
 // ── 원격 주소 정책 미들웨어 ───────────────────────────────────────────
 
 async fn remote_policy(
-    State(ctx): State<Arc<PeerContext>>,
+    State(ctx): State<Arc<WebRemoteContext>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     req: Request,
     next: Next,
@@ -293,31 +293,31 @@ async fn remote_policy(
 // ── 페어링 핸들러 ────────────────────────────────────────────────────
 
 async fn pair_start(
-    State(ctx): State<Arc<PeerContext>>,
+    State(ctx): State<Arc<WebRemoteContext>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(req): Json<PairStartRequest>,
 ) -> Response {
     // 브라우저 클라이언트가 생기면서 페어링 표면이 커졌다 — 시작 자체를
     // IP별로 제한하지 않으면 "새 페어링을 계속 열어 코드를 무한 시도"가 된다.
     if !ctx.rate.allow_start(addr.ip()) {
-        eprintln!("peer: pair/start 레이트리밋 초과 from {}", addr.ip());
+        eprintln!("webremote: pair/start 레이트리밋 초과 from {}", addr.ip());
         return (
             StatusCode::TOO_MANY_REQUESTS,
             fail("요청이 너무 잦습니다. 잠시 후 다시 시도하세요"),
         )
             .into_response();
     }
-    if !ctx.web_hosting_enabled() {
+    if !ctx.web_remote_enabled() {
         return (
             StatusCode::FORBIDDEN,
             fail("웹 원격이 꺼져 있습니다"),
         )
             .into_response();
     }
-    let name = if req.viewer_name.trim().is_empty() {
+    let name = if req.client_name.trim().is_empty() {
         "이름 없는 손님".to_string()
     } else {
-        req.viewer_name.trim().chars().take(60).collect()
+        req.client_name.trim().chars().take(60).collect()
     };
     let Some(pending) = ctx.pairing.start(&name) else {
         return (
@@ -331,13 +331,13 @@ async fn pair_start(
         pairing_id: pending.pairing_id,
         expires_in: pairing::PAIRING_TTL.as_secs(),
         host_name: ctx.host_name.clone(),
-        proto_version: PEER_PROTO_VERSION,
+        proto_version: WEB_REMOTE_PROTO_VERSION,
     })
     .into_response()
 }
 
 async fn pair_complete(
-    State(ctx): State<Arc<PeerContext>>,
+    State(ctx): State<Arc<WebRemoteContext>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(req): Json<PairCompleteRequest>,
 ) -> Response {
@@ -350,14 +350,14 @@ async fn pair_complete(
     }
     match ctx.pairing.complete(&req.pairing_id, &req.code) {
         PairingOutcome::Approved(permission) => {
-            let record = PeerRecord {
-                peer_id: pairing::new_peer_id(),
+            let record = ClientRecord {
+                client_id: pairing::new_client_id(),
                 name: ctx
                     .pairing
                     .list()
                     .into_iter()
                     .find(|p| p.pairing_id == req.pairing_id)
-                    .map(|p| p.viewer_name)
+                    .map(|p| p.client_name)
                     .unwrap_or_else(|| "브라우저".into()),
                 token: pairing::new_token(),
                 permission,
@@ -368,18 +368,18 @@ async fn pair_complete(
             }
             let token = record.token.clone();
             let mut resp = ok(PairCompleteResponse {
-                peer_token: record.token,
-                peer_id: record.peer_id,
+                client_token: record.token,
+                client_id: record.client_id,
                 host_name: ctx.host_name.clone(),
                 permission,
-                proto_version: PEER_PROTO_VERSION,
+                proto_version: WEB_REMOTE_PROTO_VERSION,
             })
             .into_response();
             // 브라우저 인증 쿠키. `Secure`는 https일 때만 의미가 있어 붙이지
             // 않는다(v1은 tailnet 평문 전제 — tailscale serve로 https를 씌우는
             // 경로는 M3).
             if let Ok(value) = format!(
-                "{PEER_COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+                "{WEB_REMOTE_COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
                 pairing::TOKEN_MAX_AGE_SECS
             )
             .parse()
@@ -399,7 +399,7 @@ async fn pair_complete(
         }
         PairingOutcome::WrongCode { remaining } => {
             ctx.rate.note_auth_failure(addr.ip());
-            eprintln!("peer: 페어링 코드 불일치 from {}", addr.ip());
+            eprintln!("webremote: 페어링 코드 불일치 from {}", addr.ip());
             (
                 StatusCode::UNAUTHORIZED,
                 fail(format!("코드가 맞지 않습니다(남은 시도 {remaining}회)")),
@@ -418,9 +418,9 @@ async fn pair_complete(
 
 /// 제시된 토큰을 뽑는다. 세 경로를 모두 본다:
 ///
-/// 1. `X-Agent-Office-Peer-Token` 헤더 — 브라우저가 아닌 클라이언트(진단 도구
+/// 1. `X-Agent-Office-Web-Remote-Token` 헤더 — 브라우저가 아닌 클라이언트(진단 도구
 ///    등)의 경로.
-/// 2. `Cookie: ao_peer_token=…` — **브라우저 경로**. 브라우저의 WebSocket API는
+/// 2. `Cookie: ao_web_remote_token=…` — **브라우저 경로**. 브라우저의 WebSocket API는
 ///    커스텀 헤더를 붙일 수 없어서(웹 호스팅 #7m §D) 헤더만 보면 브라우저는
 ///    아예 붙지 못한다. 페어링 완료 시 HttpOnly 쿠키를 발급해 두면 업그레이드에
 ///    자동으로 동반된다.
@@ -428,12 +428,12 @@ async fn pair_complete(
 ///    상황(교차 오리진 등)의 표준 관용 우회. 서버는 고른 서브프로토콜을 응답에
 ///    그대로 echo 해야 하므로 `ws.protocols(...)`로 되돌려준다.
 fn presented_token(headers: &HeaderMap) -> Option<String> {
-    if let Some(v) = headers.get(PEER_TOKEN_HEADER).and_then(|v| v.to_str().ok()) {
+    if let Some(v) = headers.get(WEB_REMOTE_TOKEN_HEADER).and_then(|v| v.to_str().ok()) {
         return Some(v.to_string());
     }
     if let Some(cookie) = headers.get(axum::http::header::COOKIE).and_then(|v| v.to_str().ok()) {
         for part in cookie.split(';') {
-            if let Some(value) = part.trim().strip_prefix(&format!("{PEER_COOKIE_NAME}=")) {
+            if let Some(value) = part.trim().strip_prefix(&format!("{WEB_REMOTE_COOKIE_NAME}=")) {
                 if !value.is_empty() {
                     return Some(value.to_string());
                 }
@@ -455,7 +455,7 @@ fn subprotocol_token(headers: &HeaderMap) -> Option<String> {
         .map(str::to_string)
 }
 
-fn authenticate(ctx: &PeerContext, headers: &HeaderMap) -> Option<PeerRecord> {
+fn authenticate(ctx: &WebRemoteContext, headers: &HeaderMap) -> Option<ClientRecord> {
     ctx.tokens.authenticate(&presented_token(headers)?)
 }
 
@@ -478,7 +478,7 @@ fn origin_allowed(headers: &HeaderMap) -> bool {
 }
 
 async fn ws_route(
-    State(ctx): State<Arc<PeerContext>>,
+    State(ctx): State<Arc<WebRemoteContext>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
@@ -499,7 +499,7 @@ async fn ws_route(
     }
     let Some(record) = authenticate(&ctx, &headers) else {
         ctx.rate.note_auth_failure(addr.ip());
-        eprintln!("peer: WS 인증 실패 from {}", addr.ip());
+        eprintln!("webremote: WS 인증 실패 from {}", addr.ip());
         return (
             StatusCode::UNAUTHORIZED,
             fail("unauthorized: 페어링이 취소됐거나 토큰이 무효합니다"),
@@ -517,7 +517,7 @@ async fn ws_route(
 
 /// 한 뷰어 연결의 수명. 읽기(뷰어 메시지)·쓰기(broadcast 팬아웃)·keepalive를
 /// 한 루프에서 select 한다 — 쓰기 주체가 하나라 소켓 배타 잠금이 필요 없다.
-async fn serve_ws(socket: WebSocket, ctx: Arc<PeerContext>, peer: PeerRecord) {
+async fn serve_ws(socket: WebSocket, ctx: Arc<WebRemoteContext>, client: ClientRecord) {
     let (mut sink, mut stream) = socket.split();
     let mut rx = ctx.hub.subscribe();
     // agentId → 다음에 기대하는 절대 오프셋(구멍 감지 + 재접속 기준점).
@@ -531,9 +531,9 @@ async fn serve_ws(socket: WebSocket, ctx: Arc<PeerContext>, peer: PeerRecord) {
         &HostMsg::Hello {
             host_name: ctx.host_name.clone(),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
-            proto_version: PEER_PROTO_VERSION,
-            permission: peer.permission,
-            peer_id: peer.peer_id.clone(),
+            proto_version: WEB_REMOTE_PROTO_VERSION,
+            permission: client.permission,
+            client_id: client.client_id.clone(),
         },
     )
     .await
@@ -544,7 +544,7 @@ async fn serve_ws(socket: WebSocket, ctx: Arc<PeerContext>, peer: PeerRecord) {
     let _ = send_msg(
         &mut sink,
         &HostMsg::Agents {
-            agents: ctx.build_agents_for(&peer),
+            agents: ctx.build_agents_for(&client),
         },
     )
     .await;
@@ -556,13 +556,13 @@ async fn serve_ws(socket: WebSocket, ctx: Arc<PeerContext>, peer: PeerRecord) {
                 last_seen = Instant::now();
                 match frame {
                     Message::Text(text) => {
-                        let Ok(msg) = serde_json::from_str::<ViewerMsg>(&text) else {
+                        let Ok(msg) = serde_json::from_str::<ClientMsg>(&text) else {
                             let _ = send_msg(&mut sink, &HostMsg::Error {
                                 message: "알 수 없는 메시지".into(),
                             }).await;
                             continue;
                         };
-                        if handle_viewer_msg(&mut sink, &ctx, &peer, &mut attached, msg).await.is_err() {
+                        if handle_client_msg(&mut sink, &ctx, &client, &mut attached, msg).await.is_err() {
                             break;
                         }
                     }
@@ -591,7 +591,7 @@ async fn serve_ws(socket: WebSocket, ctx: Arc<PeerContext>, peer: PeerRecord) {
                     }
                     // 세션 상태가 바뀌면 목록 메타(state/크기)도 같이 갱신한다.
                     if matches!(&*msg, HostMsg::SessionState { .. }) {
-                        let _ = send_msg(&mut sink, &HostMsg::Agents { agents: ctx.build_agents_for(&peer) }).await;
+                        let _ = send_msg(&mut sink, &HostMsg::Agents { agents: ctx.build_agents_for(&client) }).await;
                     }
                     if send_msg(&mut sink, &msg).await.is_err() {
                         break;
@@ -646,24 +646,24 @@ async fn send_msg(sink: &mut WsSink, msg: &HostMsg) -> Result<(), ()> {
     sink.send(Message::Text(text)).await.map_err(|_| ())
 }
 
-async fn handle_viewer_msg(
+async fn handle_client_msg(
     sink: &mut WsSink,
-    ctx: &Arc<PeerContext>,
-    peer: &PeerRecord,
+    ctx: &Arc<WebRemoteContext>,
+    client: &ClientRecord,
     attached: &mut HashMap<String, u64>,
-    msg: ViewerMsg,
+    msg: ClientMsg,
 ) -> Result<(), ()> {
     match msg {
-        ViewerMsg::Ping => send_msg(sink, &HostMsg::Pong).await,
-        ViewerMsg::Detach { agent_id } => {
+        ClientMsg::Ping => send_msg(sink, &HostMsg::Pong).await,
+        ClientMsg::Detach { agent_id } => {
             attached.remove(&agent_id);
             Ok(())
         }
-        ViewerMsg::Attach {
+        ClientMsg::Attach {
             agent_id,
             last_offset,
         } => {
-            if !ctx.agent_allowed(peer, &agent_id) {
+            if !ctx.agent_allowed(client, &agent_id) {
                 return send_msg(
                     sink,
                     &HostMsg::Error {
@@ -677,8 +677,8 @@ async fn handle_viewer_msg(
             ctx.hub.share(&ctx.manager, &agent_id);
             restore_agent(sink, ctx, &agent_id, last_offset, attached).await
         }
-        ViewerMsg::Input { agent_id, data } => {
-            if !peer.permission.allows_input() {
+        ClientMsg::Input { agent_id, data } => {
+            if !client.permission.allows_input() {
                 return send_msg(
                     sink,
                     &HostMsg::Error {
@@ -687,14 +687,14 @@ async fn handle_viewer_msg(
                 )
                 .await;
             }
-            if !ctx.agent_allowed(peer, &agent_id) {
+            if !ctx.agent_allowed(client, &agent_id) {
                 return Ok(());
             }
             ctx.manager.write_input(&agent_id, &data);
             Ok(())
         }
-        ViewerMsg::Rpc { id, cmd, args } => {
-            let result = web::dispatch(ctx, peer, &cmd, args).await;
+        ClientMsg::Rpc { id, cmd, args } => {
+            let result = rpc::dispatch(ctx, client, &cmd, args).await;
             let msg = match result {
                 Ok(data) => HostMsg::RpcResult {
                     id,
@@ -717,7 +717,7 @@ async fn handle_viewer_msg(
 /// 복원(스냅샷+델타 또는 델타만)을 보내고 `attached` 기준점을 갱신한다.
 async fn restore_agent(
     sink: &mut WsSink,
-    ctx: &Arc<PeerContext>,
+    ctx: &Arc<WebRemoteContext>,
     agent_id: &str,
     last_offset: Option<u64>,
     attached: &mut HashMap<String, u64>,
@@ -743,7 +743,7 @@ async fn restore_agent(
         next = chunk.offset + chunk.bytes;
         send_msg(
             sink,
-            &HostMsg::Output(PeerOutput {
+            &HostMsg::Output(RemoteOutput {
                 agent_id: agent_id.to_string(),
                 session_id: chunk.session_id,
                 seq: chunk.seq,
@@ -760,13 +760,13 @@ async fn restore_agent(
 
 // ── 라우터 / 서버 수명 ────────────────────────────────────────────────
 
-fn router(ctx: Arc<PeerContext>) -> Router {
+fn router(ctx: Arc<WebRemoteContext>) -> Router {
     Router::new()
-        .route("/peer/v1/pair/start", post(pair_start))
-        .route("/peer/v1/pair/complete", post(pair_complete))
-        .route("/peer/v1/ws", get(ws_route))
+        .route("/webremote/v1/pair/start", post(pair_start))
+        .route("/webremote/v1/pair/complete", post(pair_complete))
+        .route("/webremote/v1/ws", get(ws_route))
         // 웹 호스팅(#7m): 같은 리스너에 라우트를 얹는다 — 별도 포트·프로세스 없음.
-        .merge(web::routes())
+        .merge(rpc::routes())
         .layer(axum::middleware::from_fn_with_state(
             ctx.clone(),
             remote_policy,
@@ -775,12 +775,12 @@ fn router(ctx: Arc<PeerContext>) -> Router {
 }
 
 async fn serve(
-    ctx: Arc<PeerContext>,
+    ctx: Arc<WebRemoteContext>,
     port: u16,
     shutdown_rx: oneshot::Receiver<()>,
 ) -> std::io::Result<(u16, JoinHandle<()>)> {
     let bind_ip = match ctx.bind_policy() {
-        PeerBind::Loopback => "127.0.0.1",
+        WebRemoteBind::Loopback => "127.0.0.1",
         _ => "0.0.0.0",
     };
     // 고정 포트가 점유돼 있으면 몇 칸 스캔한다(실제 포트는 설정 UI에 표시).
@@ -817,12 +817,12 @@ struct InstalledServer {
 }
 
 #[derive(Default)]
-pub struct PeerServerState {
+pub struct WebRemoteServerState {
     start_gate: tokio::sync::Mutex<()>,
     installed: Mutex<Option<InstalledServer>>,
 }
 
-impl PeerServerState {
+impl WebRemoteServerState {
     pub fn current_port(&self) -> Option<u16> {
         self.installed.lock().unwrap().as_ref().map(|s| s.port)
     }
@@ -832,7 +832,7 @@ impl PeerServerState {
     }
 
     /// opt-in 기동(멱등). 실패해도 GUI 기능에는 영향이 없다(fail-open).
-    pub async fn ensure(&self, ctx: Arc<PeerContext>, port: u16) -> Option<u16> {
+    pub async fn ensure(&self, ctx: Arc<WebRemoteContext>, port: u16) -> Option<u16> {
         let _gate = self.start_gate.lock().await;
         if let Some(p) = self.current_port() {
             return Some(p);
@@ -848,7 +848,7 @@ impl PeerServerState {
                 Some(bound)
             }
             Err(e) => {
-                eprintln!("peer server unavailable: {e}");
+                eprintln!("web remote server unavailable: {e}");
                 None
             }
         }
@@ -912,14 +912,14 @@ mod tests {
         let lan = IpAddr::V4(Ipv4Addr::new(192, 168, 0, 5));
         let tail = IpAddr::V4(Ipv4Addr::new(100, 64, 1, 2));
         let local = IpAddr::V4(Ipv4Addr::LOCALHOST);
-        assert!(!bind_policy_allows(PeerBind::Tailnet, lan));
-        assert!(bind_policy_allows(PeerBind::Tailnet, tail));
-        assert!(bind_policy_allows(PeerBind::Tailnet, local));
+        assert!(!bind_policy_allows(WebRemoteBind::Tailnet, lan));
+        assert!(bind_policy_allows(WebRemoteBind::Tailnet, tail));
+        assert!(bind_policy_allows(WebRemoteBind::Tailnet, local));
 
-        assert!(bind_policy_allows(PeerBind::All, lan));
-        assert!(!bind_policy_allows(PeerBind::Loopback, lan));
-        assert!(!bind_policy_allows(PeerBind::Loopback, tail));
-        assert!(bind_policy_allows(PeerBind::Loopback, local));
+        assert!(bind_policy_allows(WebRemoteBind::All, lan));
+        assert!(!bind_policy_allows(WebRemoteBind::Loopback, lan));
+        assert!(!bind_policy_allows(WebRemoteBind::Loopback, tail));
+        assert!(bind_policy_allows(WebRemoteBind::Loopback, local));
     }
 
     // ── 페어링 → WS → 복원/입력까지 실제 소켓으로 태우는 통합 테스트 ──────
@@ -962,9 +962,9 @@ mod tests {
         }
     }
 
-    /// pub(crate): 웹 RPC 테스트(`peer::web::tests`)가 같은 픽스처를 쓴다.
-    pub(crate) fn build_ctx(tag: &str) -> (Arc<PeerContext>, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("peer-it-{tag}-{}", uuid::Uuid::new_v4()));
+    /// pub(crate): 웹 RPC 테스트(`webremote::rpc::tests`)가 같은 픽스처를 쓴다.
+    pub(crate) fn build_ctx(tag: &str) -> (Arc<WebRemoteContext>, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("webremote-it-{tag}-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let events: Arc<dyn AppEvents> = Arc::new(RecordingEvents::default());
         let registry = Arc::new(SessionRegistry::new());
@@ -980,10 +980,10 @@ mod tests {
             std::env::current_exe().unwrap(),
         ));
         let settings = Arc::new(RwLock::new(AppSettings {
-            peer_bind: PeerBind::Loopback,
+            web_remote_bind: WebRemoteBind::Loopback,
             // 페어링·정적자산·RPC가 전부 이 토글을 매 요청 확인한다 —
             // 켜 두지 않으면 픽스처가 페어링 단계에서 403이다.
-            web_hosting_enabled: true,
+            web_remote_enabled: true,
             ..AppSettings::default()
         }));
         let observer_server = Arc::new(crate::observer::server::ObserverServerState::default());
@@ -1006,12 +1006,12 @@ mod tests {
                 vacation_mode: None,
             })
             .unwrap();
-        let ctx = Arc::new(PeerContext::new(PeerContextDeps {
+        let ctx = Arc::new(WebRemoteContext::new(WebRemoteContextDeps {
             manager,
             registry,
             store,
             settings,
-            hub: PeerHub::new(),
+            hub: WebRemoteHub::new(),
             app_data_dir: dir.clone(),
             host_name: "테스트호스트".into(),
             hub_notify,
@@ -1023,11 +1023,11 @@ mod tests {
     }
 
     /// 페어링 왕복 — 승인 전에는 202(대기), 승인 후에는 토큰 발급.
-    async fn pair(port: u16, ctx: &Arc<PeerContext>) -> String {
+    async fn pair(port: u16, ctx: &Arc<WebRemoteContext>) -> String {
         let client = reqwest::Client::new();
         let started: serde_json::Value = client
-            .post(format!("http://127.0.0.1:{port}/peer/v1/pair/start"))
-            .json(&serde_json::json!({ "viewerName": "테스트뷰어" }))
+            .post(format!("http://127.0.0.1:{port}/webremote/v1/pair/start"))
+            .json(&serde_json::json!({ "clientName": "테스트뷰어" }))
             .send()
             .await
             .unwrap()
@@ -1046,16 +1046,16 @@ mod tests {
 
         // 승인 전: 코드가 맞아도 202.
         let waiting = client
-            .post(format!("http://127.0.0.1:{port}/peer/v1/pair/complete"))
+            .post(format!("http://127.0.0.1:{port}/webremote/v1/pair/complete"))
             .json(&serde_json::json!({ "pairingId": pairing_id, "code": code }))
             .send()
             .await
             .unwrap();
         assert_eq!(waiting.status(), reqwest::StatusCode::ACCEPTED);
 
-        assert!(ctx.pairing.approve(&pairing_id, PeerPermission::Input));
+        assert!(ctx.pairing.approve(&pairing_id, ClientPermission::Input));
         let done: serde_json::Value = client
-            .post(format!("http://127.0.0.1:{port}/peer/v1/pair/complete"))
+            .post(format!("http://127.0.0.1:{port}/webremote/v1/pair/complete"))
             .json(&serde_json::json!({ "pairingId": pairing_id, "code": code }))
             .send()
             .await
@@ -1064,7 +1064,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(done["ok"], true);
-        done["data"]["peerToken"].as_str().unwrap().to_string()
+        done["data"]["clientToken"].as_str().unwrap().to_string()
     }
 
     async fn open_ws(
@@ -1073,12 +1073,12 @@ mod tests {
     ) -> tokio_tungstenite::WebSocketStream<
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
     > {
-        let mut request = format!("ws://127.0.0.1:{port}/peer/v1/ws")
+        let mut request = format!("ws://127.0.0.1:{port}/webremote/v1/ws")
             .into_client_request()
             .unwrap();
         request
             .headers_mut()
-            .insert(PEER_TOKEN_HEADER, token.parse().unwrap());
+            .insert(WEB_REMOTE_TOKEN_HEADER, token.parse().unwrap());
         let (socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
         socket
     }
@@ -1103,7 +1103,7 @@ mod tests {
     #[tokio::test]
     async fn pair_then_attach_streams_backlog_and_live_output() {
         let (ctx, dir) = build_ctx("stream");
-        let server = PeerServerState::default();
+        let server = WebRemoteServerState::default();
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
         let token = pair(port, &ctx).await;
 
@@ -1132,7 +1132,7 @@ mod tests {
                 host_name,
                 ..
             } => {
-                assert_eq!(permission, PeerPermission::Input);
+                assert_eq!(permission, ClientPermission::Input);
                 assert_eq!(host_name, "테스트호스트");
             }
             other => panic!("hello가 먼저여야 한다: {other:?}"),
@@ -1148,7 +1148,7 @@ mod tests {
 
         socket
             .send(TMessage::Text(
-                serde_json::to_string(&ViewerMsg::Attach {
+                serde_json::to_string(&ClientMsg::Attach {
                     agent_id: "a1".into(),
                     last_offset: None,
                 })
@@ -1207,7 +1207,7 @@ mod tests {
     #[tokio::test]
     async fn unknown_agent_cannot_be_attached() {
         let (ctx, dir) = build_ctx("unknown-agent");
-        let server = PeerServerState::default();
+        let server = WebRemoteServerState::default();
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
         let token = pair(port, &ctx).await;
         let mut socket = open_ws(port, &token).await;
@@ -1216,7 +1216,7 @@ mod tests {
 
         socket
             .send(TMessage::Text(
-                serde_json::to_string(&ViewerMsg::Attach {
+                serde_json::to_string(&ClientMsg::Attach {
                     agent_id: "ghost".into(), // 프로필에 없는 캐릭터
                     last_offset: None,
                 })
@@ -1233,30 +1233,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_only_peer_is_refused_input() {
+    async fn read_only_client_is_refused_input() {
         let (ctx, dir) = build_ctx("readonly");
-        let server = PeerServerState::default();
+        let server = WebRemoteServerState::default();
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
         let token = pair(port, &ctx).await;
         // 발급 후 권한을 읽기 전용으로 낮춘다(설정 UI의 권한 변경과 같은 경로).
         ctx.tokens
             .set_permission(
-                &ctx.tokens.load()[0].peer_id.clone(),
-                PeerPermission::ReadOnly,
+                &ctx.tokens.load()[0].client_id.clone(),
+                ClientPermission::ReadOnly,
             )
             .unwrap();
 
         let mut socket = open_ws(port, &token).await;
         match next_msg(&mut socket).await {
             HostMsg::Hello { permission, .. } => {
-                assert_eq!(permission, PeerPermission::ReadOnly)
+                assert_eq!(permission, ClientPermission::ReadOnly)
             }
             other => panic!("hello가 먼저여야 한다: {other:?}"),
         }
         let _agents = next_msg(&mut socket).await;
         socket
             .send(TMessage::Text(
-                serde_json::to_string(&ViewerMsg::Input {
+                serde_json::to_string(&ClientMsg::Input {
                     agent_id: "a1".into(),
                     data: "rm -rf /".into(),
                 })
@@ -1275,9 +1275,9 @@ mod tests {
     #[tokio::test]
     async fn ws_without_token_is_rejected() {
         let (ctx, dir) = build_ctx("noauth");
-        let server = PeerServerState::default();
+        let server = WebRemoteServerState::default();
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
-        let request = format!("ws://127.0.0.1:{port}/peer/v1/ws")
+        let request = format!("ws://127.0.0.1:{port}/webremote/v1/ws")
             .into_client_request()
             .unwrap();
         let err = tokio_tungstenite::connect_async(request).await;
@@ -1289,7 +1289,7 @@ mod tests {
     #[tokio::test]
     async fn revoked_token_cannot_reconnect() {
         let (ctx, dir) = build_ctx("revoked");
-        let server = PeerServerState::default();
+        let server = WebRemoteServerState::default();
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
         let token = pair(port, &ctx).await;
         // 한 번은 붙는다.
@@ -1297,14 +1297,14 @@ mod tests {
         let _ = next_msg(&mut socket).await;
         drop(socket);
         // 승인 취소 후에는 같은 토큰이 막힌다(매 연결 파일 대조).
-        let peer_id = ctx.tokens.load()[0].peer_id.clone();
-        ctx.tokens.remove(&peer_id).unwrap();
-        let mut request = format!("ws://127.0.0.1:{port}/peer/v1/ws")
+        let client_id = ctx.tokens.load()[0].client_id.clone();
+        ctx.tokens.remove(&client_id).unwrap();
+        let mut request = format!("ws://127.0.0.1:{port}/webremote/v1/ws")
             .into_client_request()
             .unwrap();
         request
             .headers_mut()
-            .insert(PEER_TOKEN_HEADER, token.parse().unwrap());
+            .insert(WEB_REMOTE_TOKEN_HEADER, token.parse().unwrap());
         assert!(tokio_tungstenite::connect_async(request).await.is_err());
         server.shutdown();
         let _ = std::fs::remove_dir_all(&dir);
@@ -1318,13 +1318,13 @@ mod tests {
         let mut headers = HeaderMap::new();
         assert_eq!(presented_token(&headers), None);
 
-        headers.insert(PEER_TOKEN_HEADER, "from-header".parse().unwrap());
+        headers.insert(WEB_REMOTE_TOKEN_HEADER, "from-header".parse().unwrap());
         assert_eq!(presented_token(&headers).as_deref(), Some("from-header"));
 
         let mut cookies = HeaderMap::new();
         cookies.insert(
             axum::http::header::COOKIE,
-            format!("other=1; {PEER_COOKIE_NAME}=from-cookie; x=2")
+            format!("other=1; {WEB_REMOTE_COOKIE_NAME}=from-cookie; x=2")
                 .parse()
                 .unwrap(),
         );
@@ -1344,7 +1344,7 @@ mod tests {
         let mut empty = HeaderMap::new();
         empty.insert(
             axum::http::header::COOKIE,
-            format!("{PEER_COOKIE_NAME}=").parse().unwrap(),
+            format!("{WEB_REMOTE_COOKIE_NAME}=").parse().unwrap(),
         );
         assert_eq!(presented_token(&empty), None);
     }
@@ -1374,13 +1374,13 @@ mod tests {
     #[tokio::test]
     async fn pairing_issues_a_browser_cookie() {
         let (ctx, dir) = build_ctx("cookie");
-        let server = PeerServerState::default();
+        let server = WebRemoteServerState::default();
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
 
         let client = reqwest::Client::new();
         let started: serde_json::Value = client
-            .post(format!("http://127.0.0.1:{port}/peer/v1/pair/start"))
-            .json(&serde_json::json!({ "viewerName": "브라우저" }))
+            .post(format!("http://127.0.0.1:{port}/webremote/v1/pair/start"))
+            .json(&serde_json::json!({ "clientName": "브라우저" }))
             .send()
             .await
             .unwrap()
@@ -1395,10 +1395,10 @@ mod tests {
             .find(|p| p.pairing_id == pairing_id)
             .unwrap()
             .code;
-        ctx.pairing.approve(&pairing_id, PeerPermission::Input);
+        ctx.pairing.approve(&pairing_id, ClientPermission::Input);
 
         let resp = client
-            .post(format!("http://127.0.0.1:{port}/peer/v1/pair/complete"))
+            .post(format!("http://127.0.0.1:{port}/webremote/v1/pair/complete"))
             .json(&serde_json::json!({ "pairingId": pairing_id, "code": code }))
             .send()
             .await
@@ -1409,7 +1409,7 @@ mod tests {
             .and_then(|v| v.to_str().ok())
             .unwrap_or_default()
             .to_string();
-        assert!(cookie.starts_with(PEER_COOKIE_NAME), "쿠키 발급: {cookie}");
+        assert!(cookie.starts_with(WEB_REMOTE_COOKIE_NAME), "쿠키 발급: {cookie}");
         assert!(cookie.contains("HttpOnly"));
         assert!(cookie.contains("SameSite=Strict"));
 
@@ -1422,12 +1422,12 @@ mod tests {
             .nth(1)
             .unwrap()
             .to_string();
-        let mut request = format!("ws://127.0.0.1:{port}/peer/v1/ws")
+        let mut request = format!("ws://127.0.0.1:{port}/webremote/v1/ws")
             .into_client_request()
             .unwrap();
         request.headers_mut().insert(
             axum::http::header::COOKIE,
-            format!("{PEER_COOKIE_NAME}={token}").parse().unwrap(),
+            format!("{WEB_REMOTE_COOKIE_NAME}={token}").parse().unwrap(),
         );
         let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
         assert!(matches!(next_msg(&mut socket).await, HostMsg::Hello { .. }));
@@ -1443,14 +1443,14 @@ mod tests {
     #[tokio::test]
     async fn web_client_pairs_and_drives_rpc_over_the_same_socket() {
         let (ctx, dir) = build_ctx("web-e2e");
-        ctx.settings.write().unwrap().web_hosting_enabled = true;
-        let server = PeerServerState::default();
+        ctx.settings.write().unwrap().web_remote_enabled = true;
+        let server = WebRemoteServerState::default();
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
 
         let client = reqwest::Client::new();
         let started: serde_json::Value = client
-            .post(format!("http://127.0.0.1:{port}/peer/v1/pair/start"))
-            .json(&serde_json::json!({ "viewerName": "휴대폰" }))
+            .post(format!("http://127.0.0.1:{port}/webremote/v1/pair/start"))
+            .json(&serde_json::json!({ "clientName": "휴대폰" }))
             .send()
             .await
             .unwrap()
@@ -1464,9 +1464,9 @@ mod tests {
             .into_iter()
             .find(|p| p.pairing_id == pairing_id)
             .unwrap();
-        ctx.pairing.approve(&pairing_id, PeerPermission::Input);
+        ctx.pairing.approve(&pairing_id, ClientPermission::Input);
         let done = client
-            .post(format!("http://127.0.0.1:{port}/peer/v1/pair/complete"))
+            .post(format!("http://127.0.0.1:{port}/webremote/v1/pair/complete"))
             .json(&serde_json::json!({ "pairingId": pairing_id, "code": pending.code }))
             .send()
             .await
@@ -1480,12 +1480,12 @@ mod tests {
         let token = cookie.split(';').next().unwrap().split('=').nth(1).unwrap();
 
         // 쿠키만으로 붙는다(브라우저는 헤더를 못 붙인다).
-        let mut request = format!("ws://127.0.0.1:{port}/peer/v1/ws")
+        let mut request = format!("ws://127.0.0.1:{port}/webremote/v1/ws")
             .into_client_request()
             .unwrap();
         request.headers_mut().insert(
             axum::http::header::COOKIE,
-            format!("{PEER_COOKIE_NAME}={token}").parse().unwrap(),
+            format!("{WEB_REMOTE_COOKIE_NAME}={token}").parse().unwrap(),
         );
         let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
         assert!(matches!(next_msg(&mut socket).await, HostMsg::Hello { .. }));
@@ -1498,7 +1498,7 @@ mod tests {
         // 같은 소켓에 RPC를 얹는다 — 새 라우트·새 소켓 없음.
         socket
             .send(TMessage::Text(
-                serde_json::to_string(&ViewerMsg::Rpc {
+                serde_json::to_string(&ClientMsg::Rpc {
                     id: 1,
                     cmd: "agents.list".into(),
                     args: serde_json::json!({}),
@@ -1519,7 +1519,7 @@ mod tests {
         // allowlist 밖은 소켓 위에서도 거부된다.
         socket
             .send(TMessage::Text(
-                serde_json::to_string(&ViewerMsg::Rpc {
+                serde_json::to_string(&ClientMsg::Rpc {
                     id: 2,
                     cmd: "set_app_settings".into(),
                     args: serde_json::json!({ "cliEnabled": true }),
@@ -1545,8 +1545,8 @@ mod tests {
     #[tokio::test]
     async fn web_assets_are_gated_by_the_toggle() {
         let (ctx, dir) = build_ctx("web-gate");
-        ctx.settings.write().unwrap().web_hosting_enabled = false;
-        let server = PeerServerState::default();
+        ctx.settings.write().unwrap().web_remote_enabled = false;
+        let server = WebRemoteServerState::default();
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
         let client = reqwest::Client::new();
 
@@ -1557,7 +1557,7 @@ mod tests {
             .unwrap();
         assert_eq!(off.status(), reqwest::StatusCode::NOT_FOUND);
 
-        ctx.settings.write().unwrap().web_hosting_enabled = true;
+        ctx.settings.write().unwrap().web_remote_enabled = true;
         let on = client
             .get(format!("http://127.0.0.1:{port}/web/"))
             .send()
@@ -1578,11 +1578,11 @@ mod tests {
     #[tokio::test]
     async fn turning_the_toggle_off_hides_every_agent() {
         let (ctx, dir) = build_ctx("web-toggle-off");
-        let server = PeerServerState::default();
+        let server = WebRemoteServerState::default();
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
         let token = pair(port, &ctx).await;
 
-        ctx.settings.write().unwrap().web_hosting_enabled = false;
+        ctx.settings.write().unwrap().web_remote_enabled = false;
         let mut socket = open_ws(port, &token).await;
         let _hello = next_msg(&mut socket).await;
         match next_msg(&mut socket).await {
@@ -1591,7 +1591,7 @@ mod tests {
         }
         socket
             .send(TMessage::Text(
-                serde_json::to_string(&ViewerMsg::Attach {
+                serde_json::to_string(&ClientMsg::Attach {
                     agent_id: "a1".into(),
                     last_offset: None,
                 })
@@ -1609,7 +1609,7 @@ mod tests {
 
     #[test]
     fn forwarded_agent_extracts_target() {
-        let out = HostMsg::Output(PeerOutput {
+        let out = HostMsg::Output(RemoteOutput {
             agent_id: "ada".into(),
             session_id: "s".into(),
             seq: 1,

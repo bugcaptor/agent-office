@@ -4,18 +4,18 @@
 // 재기동 → 폭주 종료"가 이 화면의 설계 기준이다(#7m Phase 1 커트라인).
 
 import { useEffect, useState } from "react";
-import type { NotificationItem, PeerAgent, PeerPermission } from "./protocol";
+import type { NotificationItem, RemoteAgent, ClientPermission } from "./protocol";
 import { RpcCmd } from "./protocol";
-import type { ConnState, PeerSocket } from "./ws";
+import type { ConnState, WebRemoteSocket } from "./ws";
 
 interface Props {
-  socket: PeerSocket;
-  agents: PeerAgent[];
-  permission: PeerPermission;
+  socket: WebRemoteSocket;
+  agents: RemoteAgent[];
+  permission: ClientPermission;
   hostName: string;
   connState: ConnState;
   notifications: Record<string, NotificationItem[]>;
-  onOpen: (agent: PeerAgent) => void;
+  onOpen: (agent: RemoteAgent) => void;
   onClearNotifications: (agentId: string) => void;
 }
 
