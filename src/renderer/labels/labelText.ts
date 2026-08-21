@@ -3,6 +3,15 @@
 // 머리 위 라벨의 파생 텍스트 순수 헬퍼. store에 저장하지 않고
 // 표시 시점에 파생한다.
 //
+// 라벨 line1의 "프로젝트명 (브랜치)"는 서로 다른 두 cwd를 본다 —
+// 프로젝트명은 탭을 연 프로필 cwd(정체성 앵커), 브랜치는 세션이 지금 실제로
+// 있는 cwd. 세션 cwd는 훅 프롬프트마다 갱신되므로 작업 중
+// `.claude/worktrees/<브랜치>` 같은 하위 폴더로 cd하면 basename이 브랜치명으로
+// 바뀌어 프로젝트명 자리를 덮어쓴다. 그래서 세션 cwd가 프로필 cwd "안"에
+// 있으면 프로젝트명은 프로필 cwd를 유지하고(projectAnchorCwd), 정말 다른
+// 프로젝트로 이탈했을 때만 세션 cwd를 따른다. 브랜치 조회 키는 그대로
+// effectiveCwd(세션 cwd 우선)라 워크트리의 브랜치가 제대로 보인다.
+//
 // 이 모듈은 스토어 런타임에 의존하지 않는 순수 모듈이다 — 아래
 // AgentTaskLabel은 타입만 필요하므로 반드시 `import type`으로만 가져와
 // 순수성을 유지한다(런타임 import가 섞이면 이 파일을 쓰는 곳마다 스토어를
@@ -17,15 +26,58 @@ export function projectNameFromCwd(cwd: string | undefined): string | undefined 
 }
 
 /**
- * 라벨이 실제로 가리키는 작업 폴더. 세션 실제 cwd 우선, 부재 시 프로필 cwd
- * (deriveTaskLabelLines의 프로젝트명 산출과 같은 규칙). 브랜치 맵(cwd→브랜치)을
- * 조회하는 호출부가 같은 키를 쓰도록 여기 한 곳에 둔다.
+ * 라벨이 실제로 가리키는 작업 폴더. 세션 실제 cwd 우선, 부재 시 프로필 cwd.
+ * 브랜치 맵(cwd→브랜치)을 조회하는 호출부가 같은 키를 쓰도록 여기 한 곳에 둔다 —
+ * 브랜치는 세션이 지금 있는 폴더의 것이어야 하므로 프로젝트명 앵커
+ * (projectAnchorCwd)와는 규칙이 다르다.
  */
 export function effectiveCwd(
   label: AgentTaskLabel | undefined,
   fallbackCwd: string | undefined
 ): string | undefined {
   return label?.cwd ?? fallbackCwd;
+}
+
+/** 경로 비교용 정규화: `\`→`/`, 트레일링 구분자 제거(대소문자는 보존). */
+function normalizeCwd(cwd: string): string {
+  return cwd.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+/**
+ * sessionCwd가 profileCwd와 같거나 그 하위인가.
+ * profileCwd가 `~`/`~/...`이면 프런트는 홈 경로를 모르므로 `~` 뒤 나머지(suffix)가
+ * sessionCwd 안에 경로 경계로 등장하고 그 뒤가 끝이거나 `/`인지로 판정한다
+ * (`~` 단독이면 홈 전체라 항상 안으로 본다).
+ */
+function isInsideCwd(sessionCwd: string, profileCwd: string): boolean {
+  const session = normalizeCwd(sessionCwd);
+  const profile = normalizeCwd(profileCwd);
+  if (profile === "~" || profile.startsWith("~/")) {
+    const suffix = profile.slice(1); // "~/dev/proj" → "/dev/proj", "~" → ""
+    if (suffix === "") return true;
+    // suffix는 `/`로 시작하므로 앞쪽 경계는 자동으로 맞는다. 뒤쪽만 확인
+    // ("/dev/proj"가 "/x/dev/proj2"에 걸리지 않도록) — 여러 번 등장할 수 있어 전부 훑는다.
+    for (let at = session.indexOf(suffix); at !== -1; at = session.indexOf(suffix, at + 1)) {
+      const next = session[at + suffix.length];
+      if (next === undefined || next === "/") return true;
+    }
+    return false;
+  }
+  return session === profile || session.startsWith(profile + "/");
+}
+
+/**
+ * 프로젝트명을 뽑을 기준 cwd(정체성 앵커). 한쪽만 있으면 그쪽,
+ * 세션 cwd가 프로필 cwd 안(같거나 하위 — 워크트리·서브폴더)이면 프로필 cwd,
+ * 정말 다른 곳으로 이탈했으면 세션 cwd. 브랜치 조회 키(effectiveCwd)와는 별개다.
+ */
+export function projectAnchorCwd(
+  sessionCwd: string | undefined,
+  profileCwd: string | undefined
+): string | undefined {
+  if (!profileCwd) return sessionCwd;
+  if (!sessionCwd) return profileCwd;
+  return isInsideCwd(sessionCwd, profileCwd) ? profileCwd : sessionCwd;
 }
 
 /** chars 기준 max자로 절단, 넘치면 "…" 부착(멀티바이트 안전). 표시 쪽 공용 헬퍼. */
@@ -116,11 +168,15 @@ export function requestSentence(text: string | undefined): string | undefined {
  * TaskLabelLayer와 터미널 요약 표시가 같은 규칙을 공유하도록 한 곳에 모은 것
  * (이슈 #44 T1/T2). 절단 폭은 표시처마다 다르므로 opts로 받는다.
  *
- * - line1 = 프로젝트명 · 목표. 프로젝트명은 `label.cwd ?? fallbackCwd`의
- *   basename, 목표는 LLM 요약 > 저장된 요청 문장 폴백 > 첫 프롬프트의 요청 문장.
- *   `opts.branch`를 주면 프로젝트명 뒤에 `(브랜치)`를 붙인다 — 비저장소·detached
- *   HEAD는 호출부가 아예 넘기지 않으므로 여기선 유/무만 본다. 프로젝트명이
- *   없으면(cwd 부재) 브랜치도 붙이지 않는다 — 괄호만 뜬 라벨은 읽을 수 없다.
+ * - line1 = 프로젝트명 · 목표. 프로젝트명은 `projectAnchorCwd(label.cwd,
+ *   fallbackCwd)`의 basename — 세션이 프로필 cwd 하위(워크트리 등)로 옮겨가도
+ *   프로필 cwd 이름을 유지하고, 다른 프로젝트로 이탈했을 때만 세션 cwd를 쓴다.
+ *   목표는 LLM 요약 > 저장된 요청 문장 폴백 > 첫 프롬프트의 요청 문장.
+ *   `opts.branch`를 주면 프로젝트명 뒤에 `(브랜치)`를 붙인다 — 호출부가
+ *   effectiveCwd(세션 cwd 우선)로 조회한 값이라 워크트리로 옮기면 그 브랜치가
+ *   뜬다. 비저장소·detached HEAD는 호출부가 아예 넘기지 않으므로 여기선 유/무만
+ *   본다. 프로젝트명이 없으면(cwd 부재) 브랜치도 붙이지 않는다 — 괄호만 뜬
+ *   라벨은 읽을 수 없다.
  * - line2 = 실황(assistant 내레이션 > 도구 요약) > LLM 지시 요약 > 최신 프롬프트
  *   요청 문장. currentSummary는 지시 요약이라 턴 중 실황보다 오래됐다(이슈 #43).
  *
@@ -131,8 +187,9 @@ export function deriveTaskLabelLines(
   fallbackCwd: string | undefined,
   opts: { goalMax: number; currentMax: number; branch?: string }
 ): { line1?: string; line2?: string } {
-  // 세션 실제 cwd 우선, 부재 시 폴백 cwd(프로필 cwd)로 폴백(이슈 #44 작업 D).
-  const baseProject = projectNameFromCwd(effectiveCwd(label, fallbackCwd));
+  // 프로젝트명은 정체성 앵커 기준 — 세션 cwd가 프로필 cwd 하위면 프로필 cwd를
+  // 유지한다(워크트리로 cd해도 폴더명이 브랜치명으로 덮이지 않도록).
+  const baseProject = projectNameFromCwd(projectAnchorCwd(label?.cwd, fallbackCwd));
   const project =
     baseProject && opts.branch ? `${baseProject} (${opts.branch})` : baseProject;
   const goal =

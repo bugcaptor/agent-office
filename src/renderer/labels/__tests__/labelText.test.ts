@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveTaskLabelLines,
   firstLine,
+  projectAnchorCwd,
   projectNameFromCwd,
   requestSentence,
   truncateChars,
@@ -23,6 +24,48 @@ describe("projectNameFromCwd", () => {
     expect(projectNameFromCwd(undefined)).toBeUndefined();
     expect(projectNameFromCwd("")).toBeUndefined();
     expect(projectNameFromCwd("/")).toBeUndefined();
+  });
+});
+
+describe("projectAnchorCwd", () => {
+  it("세션이 프로필 cwd 하위(워크트리)면 프로필 cwd를 유지한다", () => {
+    expect(projectAnchorCwd("/a/proj/.claude/worktrees/wt-x", "/a/proj")).toBe("/a/proj");
+  });
+  it("같은 경로면 프로필 cwd", () => {
+    expect(projectAnchorCwd("/a/proj", "/a/proj")).toBe("/a/proj");
+  });
+  it("형제·무관 경로면 세션 cwd", () => {
+    expect(projectAnchorCwd("/a/other", "/a/proj")).toBe("/a/other");
+    expect(projectAnchorCwd("/b/elsewhere", "/a/proj")).toBe("/b/elsewhere");
+  });
+  it("prefix 함정: /a/proj2는 /a/proj의 하위가 아니다", () => {
+    expect(projectAnchorCwd("/a/proj2", "/a/proj")).toBe("/a/proj2");
+  });
+  it("틸드 프로필은 `~` 뒤 나머지가 경로 경계로 등장하면 안으로 본다", () => {
+    expect(projectAnchorCwd("/Users/u/dev/proj/.claude/worktrees/wt-x", "~/dev/proj")).toBe(
+      "~/dev/proj"
+    );
+    expect(projectAnchorCwd("/Users/u/dev/proj", "~/dev/proj")).toBe("~/dev/proj");
+    // `~` 단독은 홈 전체 → 항상 안.
+    expect(projectAnchorCwd("/Users/u/anywhere", "~")).toBe("~");
+  });
+  it("틸드인데 무관 경로면 세션 cwd", () => {
+    expect(projectAnchorCwd("/Users/u/work/other", "~/dev/proj")).toBe("/Users/u/work/other");
+    // 경계가 아닌 부분 일치(mydev/proj)·뒤쪽 prefix 함정(proj2) 모두 밖으로 본다.
+    expect(projectAnchorCwd("/Users/u/mydev/proj", "~/dev/proj")).toBe("/Users/u/mydev/proj");
+    expect(projectAnchorCwd("/Users/u/dev/proj2", "~/dev/proj")).toBe("/Users/u/dev/proj2");
+  });
+  it("한쪽이 undefined면 있는 쪽", () => {
+    expect(projectAnchorCwd("/a/proj", undefined)).toBe("/a/proj");
+    expect(projectAnchorCwd(undefined, "/a/proj")).toBe("/a/proj");
+    expect(projectAnchorCwd(undefined, undefined)).toBeUndefined();
+  });
+  it("트레일링 슬래시는 판정에 영향이 없다(반환은 원문 그대로)", () => {
+    expect(projectAnchorCwd("/a/proj/.claude/worktrees/wt-x/", "/a/proj/")).toBe("/a/proj/");
+    expect(projectAnchorCwd("/a/proj/", "/a/proj")).toBe("/a/proj");
+  });
+  it("대소문자는 구분한다", () => {
+    expect(projectAnchorCwd("/a/Proj/sub", "/a/proj")).toBe("/a/Proj/sub");
   });
 });
 
@@ -128,6 +171,16 @@ describe("deriveTaskLabelLines", () => {
     expect(deriveTaskLabelLines(label({ goal: "작업" }), "/w/profile-proj", opts).line1).toBe(
       "profile-proj · 작업"
     );
+  });
+
+  it("세션이 워크트리로 옮겨가도 프로젝트명은 프로필 폴더명, 브랜치는 워크트리 것", () => {
+    expect(
+      deriveTaskLabelLines(
+        label({ cwd: "/w/agent-office/.claude/worktrees/fix-x", goal: "버그 수정" }),
+        "/w/agent-office",
+        { ...opts, branch: "worktree-fix-x" }
+      ).line1
+    ).toBe("agent-office (worktree-fix-x) · 버그 수정");
   });
 
   it("실황 우선순위: assistant > tool > currentSummary > 최신 프롬프트 요청 문장", () => {
