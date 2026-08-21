@@ -29,6 +29,19 @@ export interface RemoteOutput {
   bytes: number;
 }
 
+/** 전사 항목 — Rust `session_log::agent_transcript::TranscriptItem`의 미러. */
+export type ItemRole = "user" | "assistant";
+export type ItemKind = "text" | "tool_use" | "tool_result";
+
+export interface TranscriptItem {
+  role: ItemRole;
+  kind: ItemKind;
+  text: string;
+  toolName?: string | null;
+  isError?: boolean;
+  sidechain?: boolean;
+}
+
 export interface RpcErrorPayload {
   /** unknownCmd | forbidden | badArgs | notFound | internal */
   code: string;
@@ -55,6 +68,15 @@ export type HostMsg =
       sessionId?: string | null;
     }
   | ({ type: "output" } & RemoteOutput)
+  | {
+      type: "chat";
+      agentId: string;
+      /** `backfill`이면 목록을 **교체**하고, 아니면 이어 붙인다. */
+      items?: TranscriptItem[];
+      backfill?: boolean;
+      /** 전사가 없어 채팅화가 불가능한 세션(일반 셸·미지원 CLI). */
+      unavailable?: boolean;
+    }
   | { type: "activity"; agentId: string; payload: Record<string, unknown> }
   | { type: "sessionState"; agentId: string; payload: Record<string, unknown> }
   | { type: "notification"; agentId: string; payload: Record<string, unknown> }
@@ -85,7 +107,34 @@ export const RpcCmd = {
   sessionStart: "session.start",
   sessionDispose: "session.dispose",
   notificationsClear: "notifications.clear",
+  chatFollow: "chat.follow",
+  chatSend: "chat.send",
+  chatKeys: "chat.keys",
 } as const;
+
+/** 서버 `webremote::chat::key_bytes`가 아는 이름들. 그 밖은 badArgs다. */
+export type ChatKey =
+  | "enter"
+  | "esc"
+  | "up"
+  | "down"
+  | "left"
+  | "right"
+  | "tab"
+  | "backspace"
+  | "space"
+  | "ctrl-c"
+  | "1"
+  | "2"
+  | "3"
+  | "4"
+  | "5"
+  | "6"
+  | "7"
+  | "8"
+  | "9"
+  | "y"
+  | "n";
 
 export interface NotificationItem {
   id: string;

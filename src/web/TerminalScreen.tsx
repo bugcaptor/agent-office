@@ -19,6 +19,8 @@ interface Props {
   agent: RemoteAgent;
   permission: ClientPermission;
   onBack: () => void;
+  /** 주 화면(채팅 뷰)으로 돌아간다 — 미러는 폴백이다(M2). */
+  onOpenChat: () => void;
 }
 
 /** 컨테이너 폭에 호스트가 정한 열 수를 담기 위한 폰트 크기(px). */
@@ -29,7 +31,13 @@ function fitFontSize(containerWidth: number, cols: number): number {
   return Math.max(7, Math.min(16, Math.floor(per / 0.62)));
 }
 
-export function TerminalScreen({ socket, agent, permission, onBack }: Props) {
+export function TerminalScreen({
+  socket,
+  agent,
+  permission,
+  onBack,
+  onOpenChat,
+}: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const offsetRef = useRef<number | null>(null);
@@ -125,6 +133,9 @@ export function TerminalScreen({ socket, agent, permission, onBack }: Props) {
         </button>
         <span className="title">{agent.name}</span>
         {permission !== "input" && <span className="badge">읽기 전용</span>}
+        <button className="btn small" onClick={onOpenChat}>
+          채팅
+        </button>
       </header>
       {status && <div className="muted pad">{status}</div>}
       <div className="term-mount" ref={mountRef} />

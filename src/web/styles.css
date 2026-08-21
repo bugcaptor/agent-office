@@ -195,6 +195,159 @@ body {
   padding: 0 14px 12px;
 }
 
+/* ── 채팅(주 화면) ───────────────────────────────────────────── */
+
+.chat-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  position: relative;
+}
+.chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+.chat-empty {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  text-align: center;
+  color: var(--muted);
+  padding: 24px;
+}
+
+.bubble {
+  max-width: 86%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  /* 전사 원문의 줄바꿈을 살리되 긴 경로·URL은 접어 준다. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.bubble.user {
+  align-self: flex-end;
+  border-color: var(--accent);
+  background: #1b2a29;
+}
+.bubble.assistant {
+  align-self: flex-start;
+}
+.bubble.side {
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+.tool-line {
+  align-self: stretch;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #191c1f;
+}
+.tool-line.tool-error {
+  border-color: var(--danger);
+}
+.tool-head {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  min-height: 36px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-line.tool-error .tool-head {
+  color: var(--danger);
+}
+.tool-body {
+  margin: 0;
+  padding: 0 10px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notice-line,
+.activity-line {
+  align-self: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* 확인 요청 — 화면 위에 고정하고 퀵 키를 붙인다. */
+.ask-card {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 12px 0;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: #1b2a29;
+}
+.ask-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ask-keys {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.new-badge {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 76px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--accent);
+  padding: 8px 14px;
+  font-size: 13px;
+  min-height: 36px;
+}
+
+.chat-input {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+.chat-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 16px; /* iOS가 16px 미만이면 확대한다 */
+}
+
 /* ── 터미널 ──────────────────────────────────────────────────── */
 
 .term-screen {
