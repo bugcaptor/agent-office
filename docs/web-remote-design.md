@@ -115,7 +115,7 @@ tail) · `docs/bot-mode-design.md`(문장 통째 주입 선례).
 |---|---|---|---|
 | 주 화면 | 터미널 미러(xterm) | **채팅 뷰** — 전사 tail + 표준 입력칸 + 알림 카드/퀵 키. 미러는 폴백 | §2 |
 | 피어(앱↔앱) 뷰어 | `peer/viewer.rs`(753줄) 동결 유지 | **걷어낸다** — `PeerClientKind::Peer`, 캐릭터별 공유 토글, 앱↔앱 페어링 UI 포함 | "피어 접속"은 부활 범위 밖. 웹 전용으로 단순화하면 가시성 규칙의 함정도 소멸 |
-| 바인드 | LAN/tailnet(전 인터페이스) | **tailnet 우선** — 기본은 tailscale 인터페이스(100.64/10) IP 바인드, 미발견 시 안내 후 폴백(설정으로 전 인터페이스 허용) | 사용자 요구가 tailnet 한정. 노출 표면 축소 |
+| 바인드 | LAN/tailnet(전 인터페이스 바인드 + 원격 주소 허용목록) | **tailnet 우선** — 기본은 tailscale 인터페이스(100.64/10) IP에 직접 바인드, 미발견 시 `127.0.0.1` 폴백 + 설정 UI 안내(설정으로 전 인터페이스 허용) | 사용자 요구가 tailnet 한정. 노출 표면 축소 |
 | 모듈명 | `peer/` | `src-tauri/src/webremote/` 개명 이식 | "피어/웹 호스팅" → **웹 원격(web remote)** |
 
 ## 5. 마일스톤
@@ -131,6 +131,53 @@ viewer 계열 제거(`viewer.rs`·`PeerClientKind::Peer`·공유 토글·앱↔�
 
 완료 기준: 데스크톱 브라우저에서 페어링 → 캐릭터 목록 → 터미널 미러로 입력
 왕복. cargo/vitest/tsc 전 통과.
+
+#### M1 구현 기록 (2026-08-21 — 코드 완성·실행 눈검증 대기)
+
+체리픽 5건은 계획대로 들어갔다. 충돌은 두 파일뿐 —
+`src-tauri/src/lib.rs`(`use tauri::{Emitter, Manager, RunEvent}` + window-state
+import 병합)와 `src-tauri/src/control/mod.rs`(`create`가 그 사이 성격 프롬프트를
+디스크 프로필에서 읽도록 바뀌어 있었다 → 아카이브의 `spawn_session` 추출을
+받아들이되 `personality_prompt`는 새 동작을 유지). **컴파일 드리프트는 없었다**
+— 16커밋이 거의 순수 추가였고, `AppEvents`에 새로 생긴
+`session_started`도 기본 no-op이라 `WebRemoteEvents`가 그대로 컴파일된다.
+
+계획 대비 달라진 결정:
+
+1. **바인드를 실제로 좁혔다.** 아카이브 구현은 `0.0.0.0`에 열고
+   **원격 주소 허용목록**(`remote_policy`)으로 정책을 강제했다. 이제
+   `choose_bind_ip(bind, local_addrs)`(순수 함수, 단위 테스트)가 고른 주소에
+   **직접 바인드**한다 — `tailnet`(기본)이면 tailscale 인터페이스 IP(IPv4 우선),
+   못 찾으면 `127.0.0.1` 폴백. 허용목록 미들웨어는 방어층으로 남긴다.
+   - 인터페이스 열거는 unix에서 `getifaddrs(3)`(`nix` — portable-pty가 이미
+     끌고 오는 의존이라 트리가 늘지 않는다). 그 외 플랫폼은 열거 API가 없어
+     UDP 소스 주소 프로브로 폴백한다(외부 명령 없음).
+   - 미탐지는 설정 UI가 명시한다("Tailscale이 감지되지 않았습니다 — 127.0.0.1
+     에만 열었습니다"). `webRemoteStatus.tailnetFound`가 그 근거.
+   - **부수효과**: tailnet 바인드 중에는 `http://localhost:47800`이 닫힌다.
+     M3의 serve 업스트림은 `http://127.0.0.1:47800`이 아니라
+     **`http://100.x.y.z:47800`** 으로 잡아야 한다(§10.2 명령 수정 필요).
+2. **개명 범위가 모듈명보다 넓다.** 배포본이 없으므로 마이그레이션 없이
+   와이어까지 정리했다: 라우트 `/peer/v1/*`→`/webremote/v1/*`, 쿠키
+   `ao_peer_token`→`ao_web_remote_token`, 헤더
+   `X-Agent-Office-Peer-Token`→`…-Web-Remote-Token`, 토큰 파일
+   `peer-tokens.json`→`web-remote-tokens.json`, 와이어 필드
+   `peerId`→`clientId`·`viewerName`→`clientName`·`peerToken`→`clientToken`,
+   설정 `peer_bind`/`peer_port`→`web_remote_bind`/`web_remote_port`,
+   `webremote/web.rs`→`rpc.rs`.
+3. **`peer_share_enabled` 설정을 없앴다.** 리스너 기동 조건이
+   `web_remote_enabled` 하나로 단일화된다(예전엔 둘 중 하나면 떴다).
+   영속 저장소 `peer-shared.json`·`peer-hosts.json`과 `peer:` 네임스페이스
+   경로(`persist.ts` 필터, `session.rs`의 원격 라우팅, `save_state` 게이트)도
+   함께 사라졌다.
+4. **tap 수명이 바뀌었다.** 캐릭터별 공유 토글이 없어져 부팅 시 `apply_shares`가
+   없다 — tap은 브라우저가 `attach`할 때 설치된다. 즉 **첫 attach 이전 출력은
+   링버퍼에 남지 않는다**(첫 화면은 렌더러 스냅샷이 담당하므로 실사용 영향은
+   없다).
+5. 외부(논리) attach 세션과 tap의 상호작용은 방어가 이미 서 있었다 —
+   `add_output_tap`은 agentId 수명의 `OutputSink`에 달리고(PTY 무관),
+   `size_of`/`write_input`/`dispose`/`session_id_for`가 전부 부재를 흡수한다.
+   별도 수정 없음.
 
 ### M2. 채팅 뷰 (핵심 신규)
 
@@ -149,7 +196,9 @@ viewer 계열 제거(`viewer.rs`·`PeerClientKind::Peer`·공유 토글·앱↔�
 ### M3. tailnet HTTPS (#7n 설계분 선별)
 
 serve 감지·등록/해제 대행(`ipc/commands/tailscale.rs`, `parse_serve_status`
-픽스처 테스트, 포트 47443) · `Secure` 쿠키. 가독성 항목(폰트 스텝퍼·패닝·
+픽스처 테스트, 포트 47443) · `Secure` 쿠키. **주의**: M1이 tailnet IP에 직접
+바인드하므로 serve 업스트림은 `http://127.0.0.1:47800`이 아니라
+`http://<tailnet IP>:47800`이다(아카이브 §10.2의 명령을 그대로 쓰면 안 된다). 가독성 항목(폰트 스텝퍼·패닝·
 `Resized` 발행자)은 폴백 화면 한정이므로 후순위로 강등 — 필요 시만.
 
 ### M4. 기능 확장

@@ -17,9 +17,13 @@ pub struct WebRemoteStatus {
     pub running: bool,
     pub port: Option<u16>,
     pub host_name: String,
-    /// 브라우저에 불러 줄 주소 힌트(`100.x.y.z`). 못 구하면 None.
+    /// 브라우저에 불러 줄 주소. 서버가 떠 있으면 **실제 바인드 주소**이고,
+    /// 아직 안 떴으면 추정치다. 못 구하면 None.
     pub address_hint: Option<String>,
     pub bind: String,
+    /// 로컬 인터페이스에서 tailscale 주소를 찾았는지. `bind == "tailnet"`인데
+    /// false면 리스너가 루프백에만 열려 있다는 뜻이라 UI가 그 사실을 알린다.
+    pub tailnet_found: bool,
     /// 승인해 준 브라우저들(토큰은 절대 내보내지 않는다).
     pub clients: Vec<ClientSummary>,
     /// 승인 대기 중인 페어링.
@@ -49,13 +53,29 @@ pub struct PendingSummary {
 pub async fn web_remote_status(app_state: State<'_, AppState>) -> Result<WebRemoteStatus, String> {
     let settings = *app_state.settings.read().unwrap();
     let ctx = &app_state.web_remote_ctx;
+    let bound = app_state.web_remote_server.current_bound();
+    // 서버가 떠 있으면 실제로 바인드된 주소가 정답이다(0.0.0.0은 사람에게
+    // 불러 줄 주소가 아니므로 그때만 추정치로 되돌아간다).
+    let address_hint = bound
+        .map(|b| b.ip)
+        .filter(|ip| !ip.is_unspecified())
+        .map(|ip| ip.to_string())
+        .or_else(crate::webremote::local_addr_hint);
     Ok(WebRemoteStatus {
         enabled: settings.web_remote_enabled,
         running: app_state.web_remote_server.is_running(),
         port: app_state.web_remote_server.current_port(),
         host_name: ctx.host_name.clone(),
-        address_hint: crate::webremote::local_addr_hint(),
+        address_hint,
         bind: settings.web_remote_bind.as_str().to_string(),
+        tailnet_found: match bound {
+            Some(b) => b.tailnet_found,
+            None => crate::webremote::choose_bind_ip(
+                settings.web_remote_bind,
+                &crate::webremote::local_ip_addrs(),
+            )
+            .tailnet_found,
+        },
         clients: ctx
             .tokens
             .load()

@@ -32,6 +32,9 @@ export interface WebRemoteStatus {
   hostName: string;
   addressHint?: string | null;
   bind: string;
+  /** 로컬 인터페이스에서 tailscale 주소를 찾았는지. `bind === "tailnet"`인데
+   * false면 리스너가 루프백에만 열려 있다. */
+  tailnetFound: boolean;
   clients: ClientSummary[];
   pending: PendingPairing[];
 }

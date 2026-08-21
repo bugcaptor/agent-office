@@ -93,6 +93,13 @@ export function WebRemoteSection() {
             <div style={{ fontSize: 12, opacity: 0.85 }}>
               상태: {host ? (host.running ? `수신 중 (이름: ${host.hostName})` : "정지") : "조회 중…"}
             </div>
+            {host && appSettings.webRemoteBind === "tailnet" && !host.tailnetFound && (
+              <div style={{ fontSize: 12, color: "var(--accent-warn)" }}>
+                <b>Tailscale이 감지되지 않았습니다</b> — 이 컴퓨터에서만 접속할 수
+                있게 <code>127.0.0.1</code>에만 열었습니다. Tailscale을 켜고 앱을
+                다시 시작하거나, 허용 네트워크를 바꾸세요.
+              </div>
+            )}
             <div style={{ fontSize: 12, opacity: 0.85 }}>브라우저에서 이 주소로 접속하세요</div>
             <code style={{ fontSize: 13 }}>
               http://{host?.addressHint ?? "<이 컴퓨터 주소>"}:{host?.port ?? appSettings.webRemotePort}
