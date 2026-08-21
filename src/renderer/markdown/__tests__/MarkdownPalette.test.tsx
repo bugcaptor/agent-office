@@ -90,6 +90,36 @@ describe("MarkdownPalette", () => {
     expect(options[0].textContent).toContain("b.md");
   });
 
+  // 빈 쿼리에서만 루트 README를 맨 위로 올린다(kbm #2ee). 검색어가 있으면
+  // 어떤 가산점도 없이 퍼지 점수 순 그대로여야 한다.
+  describe("빈 쿼리 대표 문서 우선", () => {
+    const DOC_FILES = [
+      { relPath: "AGENTS.md", name: "AGENTS.md" },
+      { relPath: "docs/guide.md", name: "guide.md" },
+      { relPath: "README.md", name: "README.md" },
+    ];
+    const paths = () =>
+      screen.getAllByRole("option").map((o) => o.querySelector(".md-palette-item-path")!.textContent);
+
+    beforeEach(() => {
+      useMarkdownStore.setState({
+        listing: { "/root": { files: DOC_FILES, truncated: false, fetchedAt: Date.now() } },
+      });
+    });
+
+    it("빈 쿼리에서 루트 README가 AGENTS.md·docs/guide.md보다 위", () => {
+      render(<MarkdownPalette />);
+      expect(paths()).toEqual(["README.md", "AGENTS.md", "docs/guide.md"]);
+    });
+
+    it("검색어가 있으면 부스트 없이 퍼지 점수 순(README가 맨 위가 아니다)", () => {
+      render(<MarkdownPalette />);
+      // 'e'는 세 후보 모두 파일명에 걸려 동점 -> relPath 사전순, README는 맨 뒤.
+      fireEvent.change(screen.getByRole("textbox"), { target: { value: "e" } });
+      expect(paths()).toEqual(["AGENTS.md", "docs/guide.md", "README.md"]);
+    });
+  });
+
   it("키 이벤트는 stopPropagation되어 상위로 새지 않는다", () => {
     const spy = vi.fn();
     const { container } = render(

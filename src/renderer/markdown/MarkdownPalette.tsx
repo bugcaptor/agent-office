@@ -13,7 +13,7 @@
 // 새로고침은 TTL을 무시하고 강제로 재스캔한다(refreshListing force:true).
 import { useEffect, useMemo, useRef } from "react";
 import { useMarkdownStore } from "./markdownStore";
-import { fuzzyFilter } from "./fuzzy";
+import { emptyQueryPriority, fuzzyFilter } from "./fuzzy";
 import { formatRelativeTime } from "../shared/relativeTime";
 
 export function MarkdownPalette() {
@@ -32,10 +32,21 @@ export function MarkdownPalette() {
   const files = listing?.files;
 
   // 퍼지 필터 결과(원본 참조가 안정적이므로 query/files 변화 시에만 재계산).
-  const results = useMemo(
-    () => (files ? fuzzyFilter(files, query).map((r) => r.item) : []),
-    [files, query],
-  );
+  //
+  // 검색어가 비어 있을 때만 대표 문서(루트 README)를 맨 위로 끌어올린다 — 팔레트를
+  // 막 열었을 때 저장소 개요부터 눈에 들어오게. 검색어가 있으면 어떤 가산점도
+  // 주지 않고 퍼지 순위를 그대로 쓴다. fuzzy.ts는 워크폴더 팔레트와 공유하므로
+  // fuzzyFilter 자체는 건드리지 않고 여기서만 재정렬한다.
+  const results = useMemo(() => {
+    if (!files) return [];
+    const ranked = fuzzyFilter(files, query).map((r) => r.item);
+    if (query.trim().length > 0) return ranked;
+    return [...ranked].sort(
+      (a, b) =>
+        emptyQueryPriority(a.relPath) - emptyQueryPriority(b.relPath) ||
+        a.relPath.localeCompare(b.relPath),
+    );
+  }, [files, query]);
 
   // 선택 인덱스는 결과 길이 안으로 클램프해 표시한다(필터가 바뀌면 store 값이
   // 잠깐 범위를 벗어날 수 있음). 열기·이동은 이 clamped 값을 기준으로 한다.

@@ -59,6 +59,20 @@ export function fuzzyScore(query: string, target: string): number | null {
   return score;
 }
 
+/**
+ * 빈 쿼리 정렬용 우선순위: 0=루트 README*, 1=기타 루트 파일, 2=나머지.
+ *
+ * 검색어가 없을 때 저장소 대표 문서(루트 README)를 목록 맨 위로 올리기 위한
+ * 보조 키다. 여기서 "루트 파일"은 relPath에 경로 구분자(`/`, `\`)가 없는 경우,
+ * "README*"는 파일명이 대소문자 무시 `readme`로 시작하는 경우를 말한다.
+ * 검색어가 있을 때는 쓰지 않는다 — 퍼지 점수만으로 순위를 매겨야 하므로.
+ */
+export function emptyQueryPriority(relPath: string): number {
+  const isRoot = !relPath.includes("/") && !relPath.includes("\\");
+  if (!isRoot) return 2;
+  return /^readme/i.test(relPath) ? 0 : 1;
+}
+
 /** 퍼지 필터 결과 항목(원본 + 점수). 점수는 디버깅/테스트 편의용으로 노출. */
 export interface FuzzyRanked<T> {
   item: T;

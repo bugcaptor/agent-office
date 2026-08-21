@@ -2,7 +2,7 @@
 //
 // 퍼지 매칭 순위(이슈 #10). 순수 로직이라 기본 node 환경.
 import { describe, expect, it } from "vitest";
-import { fuzzyScore, fuzzyFilter, fuzzyRank } from "../fuzzy";
+import { fuzzyScore, fuzzyFilter, fuzzyRank, emptyQueryPriority } from "../fuzzy";
 
 interface Entry {
   relPath: string;
@@ -67,6 +67,31 @@ describe("fuzzyFilter", () => {
     const items = [entry("z/a.md"), entry("a/a.md")];
     const out = fuzzyFilter(items, "a").map((r) => r.item.relPath);
     expect(out).toEqual(["a/a.md", "z/a.md"]);
+  });
+});
+
+describe("emptyQueryPriority(빈 쿼리 대표 문서 우선)", () => {
+  it("루트 README*는 0 -- 대소문자·확장자 무관", () => {
+    expect(emptyQueryPriority("README.md")).toBe(0);
+    expect(emptyQueryPriority("readme.mdx")).toBe(0);
+    expect(emptyQueryPriority("ReadMe.markdown")).toBe(0);
+  });
+
+  it("루트의 다른 파일은 1", () => {
+    expect(emptyQueryPriority("AGENTS.md")).toBe(1);
+    expect(emptyQueryPriority("CHANGELOG.md")).toBe(1);
+  });
+
+  it("중첩 경로는 README라도 2", () => {
+    expect(emptyQueryPriority("docs/guide.md")).toBe(2);
+    expect(emptyQueryPriority("docs/README.md")).toBe(2);
+    expect(emptyQueryPriority("docs\\README.md")).toBe(2); // 윈도우 구분자
+  });
+
+  it("파일명이 readme로 '시작'만 해도 0 (readme-old.md 등)", () => {
+    expect(emptyQueryPriority("readme-old.md")).toBe(0);
+    // 반대로 readme가 뒤에 붙은 건 대표 문서가 아니다.
+    expect(emptyQueryPriority("old-readme.md")).toBe(1);
   });
 });
 
