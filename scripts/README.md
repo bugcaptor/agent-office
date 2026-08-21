@@ -2,6 +2,16 @@
 
 프로젝트 유지보수용 스크립트 모음.
 
+## 빌드 앤 런 (build-and-run.sh)
+
+클론 직후 한 번에 실행하는 진입 스크립트(`npm start`로도 호출). 요구사항(node 18+·cargo) 점검 → 필요 시 `npm install` → 기본은 `npm run tauri dev`. `--install`은 macOS에서 자체 서명 인증서 확인(없으면 생성 여부를 물음) 후 `npm run install:mac`으로 서명 설치·실행하고, 그 외 OS는 `npm run tauri build` 후 산출물 경로를 안내한다.
+
+```bash
+./scripts/build-and-run.sh            # 바로 실행(개발 모드)
+./scripts/build-and-run.sh --install  # 빌드·(macOS 서명)·설치
+./scripts/build-and-run.sh --help
+```
+
 ## macOS 서명 (make-signing-cert.sh, sign-macos.sh)
 
 macOS TCC 권한 프롬프트(사진·미디어 라이브러리·이동식 볼륨)가 **빌드할 때마다** 다시 뜨는 것을 막는다. 배경과 원리는 [docs/macos-signing.md](../docs/macos-signing.md)가 정본이고, 여기서는 조작법만 다룬다.

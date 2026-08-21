@@ -5,6 +5,7 @@
   "version": "0.6.4",
   "type": "module",
   "scripts": {
+    "start": "bash scripts/build-and-run.sh",
     "dev": "vite",
     "build": "tsc && vite build && npm run web:build",
     "preview": "vite preview",
