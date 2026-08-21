@@ -125,6 +125,7 @@ const SUMMARY_DEFAULT_MODELS: Record<SummaryProvider, { light: string; heavy: st
   codex: { light: "gpt-5.4-mini", heavy: "gpt-5.4" },
   agy: { light: "gemini-3.6-flash-low", heavy: "gemini-3.1-pro-low" },
   gemini: { light: "gemini-2.5-flash", heavy: "gemini-2.5-pro" },
+  openrouter: { light: "openai/gpt-5.4-mini", heavy: "openai/gpt-5.4" },
 };
 
 const SUMMARY_PROVIDER_LABEL: Record<SummaryProvider, string> = {
@@ -132,6 +133,7 @@ const SUMMARY_PROVIDER_LABEL: Record<SummaryProvider, string> = {
   codex: "Codex",
   agy: "Antigravity (agy)",
   gemini: "Gemini",
+  openrouter: "OpenRouter",
 };
 
 /**
@@ -149,6 +151,11 @@ function SummaryModelSection() {
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
   const current = summaryModels[provider];
   const defaults = SUMMARY_DEFAULT_MODELS[provider];
+  // OpenRouter만 CLI가 아니라 HTTP라 API 키가 따로 필요하다 — 그 키는 소리·음성
+  // 탭에서 관리하므로 여기서는 어디를 봐야 하는지만 알려 준다.
+  const isOpenrouter = provider === "openrouter";
+  // 모델 id 추천은 TTS 쪽과 같은 목록을 쓴다(중복 정의하면 갈라진다).
+  const modelListId = isOpenrouter ? "summary-openrouter-models" : undefined;
 
   const setModel = (key: "light" | "heavy", value: string) =>
     updateAppSettings({
@@ -160,6 +167,13 @@ function SummaryModelSection() {
 
   return (
     <div className="settings-form">
+      {isOpenrouter && (
+        <p className="settings-note">
+          OpenRouter 요약은 <b>소리·음성</b> 탭에 저장한 OpenRouter API 키(또는
+          환경변수 <code>OPENROUTER_API_KEY</code>)를 씁니다. 키가 없으면 요약이
+          실패하고 원문이 그대로 표시됩니다.
+        </p>
+      )}
       <label className="settings-item">
         <span>
           <strong>{SUMMARY_PROVIDER_LABEL[provider]} 경량 모델</strong>
@@ -172,6 +186,7 @@ function SummaryModelSection() {
           type="text"
           autoComplete="off"
           spellCheck={false}
+          list={modelListId}
           placeholder={defaults.light}
           value={current.light}
           onChange={(e) => setModel("light", e.target.value)}
@@ -189,11 +204,19 @@ function SummaryModelSection() {
           type="text"
           autoComplete="off"
           spellCheck={false}
+          list={modelListId}
           placeholder={defaults.heavy}
           value={current.heavy}
           onChange={(e) => setModel("heavy", e.target.value)}
         />
       </label>
+      {isOpenrouter && (
+        <datalist id="summary-openrouter-models">
+          {OPENROUTER_MODEL_PRESETS.map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
+      )}
     </div>
   );
 }

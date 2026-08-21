@@ -28,8 +28,8 @@ export function SettingsForm({
         <span>
           <strong>작업 라벨 요약</strong>
           <small>
-            머리 위 작업 라벨을 선택한 CLI로 요약합니다. 선택한 CLI 계정의
-            사용량을 소모합니다.
+            머리 위 작업 라벨을 선택한 요약기로 요약합니다. 선택한 계정의
+            사용량(또는 API 크레딧)을 소모합니다.
           </small>
         </span>
       </label>
@@ -71,6 +71,15 @@ export function SettingsForm({
             onChange={() => onChange({ summaryProvider: "gemini" })}
           />
           Gemini
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="summary-provider"
+            checked={value.summaryProvider === "openrouter"}
+            onChange={() => onChange({ summaryProvider: "openrouter" })}
+          />
+          OpenRouter (API 키)
         </label>
       </fieldset>
 

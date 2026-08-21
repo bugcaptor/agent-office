@@ -66,6 +66,7 @@
                 "요약하라",
                 "text",
                 &Default::default(),
+                None,
             )
             .await
         };
@@ -113,6 +114,7 @@
                 "요약하라",
                 "   ",
                 &Default::default(),
+                None,
             )
             .await
         };

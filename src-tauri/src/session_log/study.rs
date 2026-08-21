@@ -48,12 +48,15 @@ pub struct StudyResult {
 }
 
 /// 로그 파일을 읽어 학습자료를 만들고 `study/` 아래에 저장한다.
+/// `openrouter_key`는 provider가 OpenRouter일 때만 쓰인다(키 스토어가 Tauri
+/// State 안에 있어 호출측이 떠서 넘긴다 — `models`와 같은 이유).
 pub async fn generate(
     root: &Path,
     agent_id: &str,
     log_path: &Path,
     provider: SummaryProvider,
     models: &crate::persistence::settings_store::SummaryModels,
+    openrouter_key: Option<&str>,
 ) -> Result<StudyResult, String> {
     let text = read_capped(log_path)?;
     if text.trim().is_empty() {
@@ -66,6 +69,7 @@ pub async fn generate(
         STUDY_SYSTEM_PROMPT,
         &text,
         models,
+        openrouter_key,
     )
     .await?;
     let body = strip_wrapping_fence(&body);

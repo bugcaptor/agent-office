@@ -44,6 +44,7 @@ function hydrate(cliEnabled: boolean) {
         codex: { light: "", heavy: "" },
         agy: { light: "", heavy: "" },
         gemini: { light: "", heavy: "" },
+        openrouter: { light: "", heavy: "" },
       },
       diaryEnabled: false,
       observerEnabled: false,

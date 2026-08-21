@@ -43,6 +43,7 @@ describe("SettingsDialog", () => {
           codex: { light: "", heavy: "" },
           agy: { light: "", heavy: "" },
           gemini: { light: "", heavy: "" },
+          openrouter: { light: "", heavy: "" },
         },
         diaryEnabled: false,
         observerEnabled: false,
@@ -82,6 +83,7 @@ describe("SettingsDialog", () => {
         codex: { light: "", heavy: "" },
         agy: { light: "", heavy: "" },
         gemini: { light: "", heavy: "" },
+        openrouter: { light: "", heavy: "" },
       },
       diaryEnabled: false,
       observerEnabled: true,
@@ -115,6 +117,7 @@ describe("SettingsDialog", () => {
           codex: { light: "", heavy: "" },
           agy: { light: "", heavy: "" },
           gemini: { light: "", heavy: "" },
+          openrouter: { light: "", heavy: "" },
         },
         diaryEnabled: false,
         observerEnabled: false,
@@ -160,6 +163,7 @@ describe("SettingsDialog", () => {
           codex: { light: "", heavy: "" },
           agy: { light: "", heavy: "" },
           gemini: { light: "", heavy: "" },
+          openrouter: { light: "", heavy: "" },
         },
         diaryEnabled: false,
         observerEnabled: false,
@@ -298,6 +302,31 @@ describe("SettingsDialog", () => {
     expect(models.codex).toEqual({ light: "gpt-5.4-nano", heavy: "gpt-5.4-pro" });
     // 다른 provider의 칸은 건드리지 않는다.
     expect(models.claude).toEqual({ light: "", heavy: "" });
+  });
+
+  // OpenRouter는 유일한 비-CLI 경로라 API 키가 따로 필요하다 — 어디서 넣는지
+  // 알려주지 않으면 "요약이 그냥 안 되는" 것으로만 보인다.
+  it("OpenRouter를 고르면 키 안내와 OpenRouter 기본 모델이 뜬다", () => {
+    useAppStore
+      .getState()
+      .hydrateSettings(
+        { ...useAppStore.getState().appSettings, summaryProvider: "openrouter" },
+        false,
+      );
+    useAppStore.getState().openModal({ kind: "settings" });
+    render(<SettingsDialog />);
+
+    expect(screen.getByText(/OPENROUTER_API_KEY/)).toBeTruthy();
+    const light = screen.getByPlaceholderText("openai/gpt-5.4-mini") as HTMLInputElement;
+    expect(screen.getByPlaceholderText("openai/gpt-5.4")).toBeTruthy();
+    // CLI provider의 칸은 보이지 않는다.
+    expect(screen.queryByPlaceholderText("haiku")).toBeNull();
+
+    fireEvent.change(light, { target: { value: "anthropic/claude-haiku-4.5" } });
+    expect(useAppStore.getState().appSettings.summaryModels.openrouter).toEqual({
+      light: "anthropic/claude-haiku-4.5",
+      heavy: "",
+    });
   });
 
   it("닫기 버튼 클릭 시 closeModal을 부른다", () => {

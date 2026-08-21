@@ -41,7 +41,12 @@ fn default_tts_rewrite_model_openrouter() -> String {
     DEFAULT_TTS_REWRITE_MODEL_OPENROUTER.to_string()
 }
 
-/// 라벨 요약에 사용할 CLI 제공자. 기존 설정과의 호환을 위해 기본은 Claude.
+/// 요약(라벨·일기·학습자료)에 사용할 제공자. 기존 설정과의 호환을 위해
+/// 기본은 Claude.
+///
+/// 앞의 넷은 로컬 CLI를 서브프로세스로 부르고, `Openrouter`만 HTTP(OpenAI 호환
+/// chat/completions) 경로다 — CLI 설치 없이 한 키로 여러 벤더 모델을 쓰려는
+/// 사용자를 위한 갈래이고, 키는 TTS와 같은 0600 키 스토어를 공유한다.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SummaryProvider {
@@ -50,6 +55,7 @@ pub enum SummaryProvider {
     Codex,
     Agy,
     Gemini,
+    Openrouter,
 }
 
 impl SummaryProvider {
@@ -59,6 +65,7 @@ impl SummaryProvider {
             Self::Codex => "codex",
             Self::Agy => "agy",
             Self::Gemini => "gemini",
+            Self::Openrouter => "openrouter",
         }
     }
 }
@@ -160,6 +167,10 @@ pub struct SummaryModels {
     pub agy: SummaryModelOverride,
     #[serde(default)]
     pub gemini: SummaryModelOverride,
+    /// OpenRouter 모델 id(`<벤더>/<모델>` 표기). 다른 슬롯과 마찬가지로
+    /// `#[serde(default)]`라 이 키가 없는 구 설정 파일도 그대로 로드된다.
+    #[serde(default)]
+    pub openrouter: SummaryModelOverride,
 }
 
 impl SummaryModels {
@@ -170,6 +181,7 @@ impl SummaryModels {
             SummaryProvider::Codex => &self.codex,
             SummaryProvider::Agy => &self.agy,
             SummaryProvider::Gemini => &self.gemini,
+            SummaryProvider::Openrouter => &self.openrouter,
         }
     }
 }
@@ -519,10 +531,56 @@ mod tests {
 
     #[test]
     fn summary_provider_as_str_matches_serialized_values() {
+        for provider in [
+            SummaryProvider::Claude,
+            SummaryProvider::Codex,
+            SummaryProvider::Agy,
+            SummaryProvider::Gemini,
+            SummaryProvider::Openrouter,
+        ] {
+            let json = serde_json::to_string(&provider).unwrap();
+            assert_eq!(json, format!("\"{}\"", provider.as_str()));
+        }
         assert_eq!(SummaryProvider::Claude.as_str(), "claude");
         assert_eq!(SummaryProvider::Codex.as_str(), "codex");
         assert_eq!(SummaryProvider::Agy.as_str(), "agy");
         assert_eq!(SummaryProvider::Gemini.as_str(), "gemini");
+        assert_eq!(SummaryProvider::Openrouter.as_str(), "openrouter");
+    }
+
+    // OpenRouter 슬롯이 없는 구 설정 파일도 그대로 열려야 한다 — 못 열면
+    // 전체 설정이 기본값으로 폴백해 사용자가 다른 설정까지 잃는다.
+    #[test]
+    fn load_settings_without_the_openrouter_slot_still_reads_the_others() {
+        let file = scratch_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(
+            &file,
+            br#"{"version":1,"summarizerEnabled":true,"summaryProvider":"codex",
+                "summaryModels":{"claude":{"light":"opus","heavy":""},
+                "codex":{"light":"","heavy":""},"agy":{"light":"","heavy":""},
+                "gemini":{"light":"","heavy":""}}}"#,
+        )
+        .unwrap();
+        let (s, first_run) = SettingsStore::new(file.clone()).load();
+        assert!(!first_run);
+        assert!(s.summarizer_enabled, "구 파일의 다른 값이 폴백되면 안 된다");
+        assert_eq!(s.summary_provider, SummaryProvider::Codex);
+        assert_eq!(s.summary_models.claude.light, "opus");
+        assert_eq!(s.summary_models.openrouter, SummaryModelOverride::default());
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn openrouter_provider_round_trips_through_the_settings_file() {
+        let file = scratch_file();
+        let store = SettingsStore::new(file.clone());
+        let mut edited = AppSettings::default();
+        edited.summary_provider = SummaryProvider::Openrouter;
+        edited.summary_models.openrouter.light = "openai/gpt-5.4-nano".to_string();
+        store.save(&edited).unwrap();
+        assert_eq!(store.load(), (edited, false));
+        let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
     #[test]

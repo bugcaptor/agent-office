@@ -67,6 +67,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
     codex: { light: "", heavy: "" },
     agy: { light: "", heavy: "" },
     gemini: { light: "", heavy: "" },
+    openrouter: { light: "", heavy: "" },
   },
   diaryEnabled: false,
   observerEnabled: false,

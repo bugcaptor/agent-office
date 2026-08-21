@@ -2,6 +2,7 @@ mod agy;
 mod claude;
 mod codex;
 mod gemini;
+mod openrouter;
 
 use std::process::Stdio;
 use std::sync::OnceLock;
@@ -100,6 +101,15 @@ impl SummaryPurpose {
             Self::Study => "gemini-2.5-pro",
         }
     }
+
+    /// OpenRouter 모델 id는 `<벤더>/<모델>` 표기다. TTS 리라이트의
+    /// OpenRouter 기본과 같은 계열을 쓴다.
+    pub(super) fn openrouter_model(self) -> &'static str {
+        match self {
+            Self::Label | Self::Diary => "openai/gpt-5.4-mini",
+            Self::Study => "openai/gpt-5.4",
+        }
+    }
 }
 
 /// 목적별 하드코딩 기본 모델. 오버라이드 해석(`resolve_model`)의 폴백이자,
@@ -110,6 +120,7 @@ fn default_model(provider: SummaryProvider, purpose: SummaryPurpose) -> &'static
         SummaryProvider::Codex => purpose.codex_model(),
         SummaryProvider::Agy => purpose.agy_model(),
         SummaryProvider::Gemini => purpose.gemini_model(),
+        SummaryProvider::Openrouter => purpose.openrouter_model(),
     }
 }
 
@@ -177,27 +188,70 @@ fn missing_error(provider: SummaryProvider) -> String {
 /// `models`는 설정의 provider별 모델 오버라이드다(빈 문자열 = 기본 모델).
 /// 호출측이 설정 캐시에서 값으로 떠서 넘긴다 — 가드를 `.await` 너머로 들고
 /// 가지 않기 위해서다.
+///
+/// `openrouter_key`도 같은 이유로 호출측이 떠서 넘긴다(키 스토어는 Tauri
+/// State 안에 있고 이 함수는 State를 모른다). provider가 `Openrouter`가
+/// **아니면 무시된다** — 호출측은 그 경우 굳이 키를 읽지 않아도 된다.
 pub async fn summarize(
     provider: SummaryProvider,
     purpose: SummaryPurpose,
     instruction: &str,
     text: &str,
     models: &SummaryModels,
+    openrouter_key: Option<&str>,
 ) -> Result<String, String> {
     let capped = cap_text(text, purpose.max_chars())?;
+    let model = resolve_model(provider, purpose, models);
+
+    // OpenRouter는 서브프로세스가 아니라 HTTP다 — 로그인 셸 PATH 병합(CLI 전용)도,
+    // stdin 파이프도 필요 없다. 세마포어와 목적별 타임아웃만 CLI 경로와 공유한다.
+    if provider == SummaryProvider::Openrouter {
+        let key = openrouter_key
+            .map(str::trim)
+            .filter(|k| !k.is_empty())
+            .ok_or_else(|| openrouter::KEY_MISSING.to_string())?;
+        return run_openrouter(key, purpose, &model, instruction, &capped).await;
+    }
+
     // GUI(Finder/launchd)로 띄운 번들 앱은 프로세스 PATH가 최소값(`/usr/bin:/bin:…`)
     // 이라 `claude`/`codex`를 못 찾아 `-not-found`로 조용히 실패한다(#58과 동일 원인,
     // 요약기·일기 경로에서 재발). spawn 직전에 로그인 셸 PATH를 1회 병합해 보장한다.
     // 멱등이라 첫 호출만 로그인 셸을 돌리고, 블로킹 호출이라 blocking 풀에서 실행한다.
     let _ = tokio::task::spawn_blocking(crate::session::env_capture::ensure_captured).await;
-    let model = resolve_model(provider, purpose, models);
     let command = match provider {
         SummaryProvider::Claude => claude::build(instruction, &model),
         SummaryProvider::Codex => codex::build(instruction, purpose, &model),
         SummaryProvider::Agy => agy::build(instruction, &model),
         SummaryProvider::Gemini => gemini::build(instruction, &model),
+        // 위에서 이미 갈라져 나갔다.
+        SummaryProvider::Openrouter => unreachable!("openrouter는 HTTP 경로로 처리된다"),
     };
     run_with_timeout(command, &capped, purpose.timeout()).await
+}
+
+/// HTTP 경로의 실행 껍데기. CLI 경로(`run_with_timeout`)와 같은 전역 세마포어와
+/// 같은 목적별 타임아웃을 쓴다 — 동시 요약 개수와 대기 예산이 provider에 따라
+/// 달라지면 안 된다.
+async fn run_openrouter(
+    api_key: &str,
+    purpose: SummaryPurpose,
+    model: &str,
+    instruction: &str,
+    text: &str,
+) -> Result<String, String> {
+    let _permit = permits()
+        .acquire()
+        .await
+        .expect("semaphore is never closed");
+    let timeout = purpose.timeout();
+    // reqwest 자체 타임아웃도 같은 값으로 걸지만, 에러 문자열을 CLI 경로와
+    // 똑같은 "timeout"으로 맞추기 위해 바깥에서 한 번 더 감싼다.
+    tokio::time::timeout(
+        timeout,
+        openrouter::summarize(api_key, purpose, model, instruction, text, timeout),
+    )
+    .await
+    .map_err(|_| "timeout".to_string())?
 }
 
 async fn run_with_timeout(
@@ -410,10 +464,30 @@ exit "$AO_FAKE_EXIT"
             "summarize",
             "   ",
             &SummaryModels::default(),
+            None,
         )
         .await
         .unwrap_err();
         assert_eq!(error, "validation: text is empty");
+    }
+
+    // 키가 없으면 네트워크를 만지기 전에 안정 문자열로 실패해야 한다 —
+    // 렌더러는 이것을 다른 실패와 똑같이 원문 폴백으로 강등한다.
+    #[tokio::test]
+    async fn openrouter_without_a_key_fails_before_any_request() {
+        for key in [None, Some("   ")] {
+            let error = summarize(
+                SummaryProvider::Openrouter,
+                SummaryPurpose::Label,
+                "요약하라",
+                "작업 로그",
+                &SummaryModels::default(),
+                key,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error, "openrouter-key-missing");
+        }
     }
 
     // ── 모델 오버라이드 ───────────────────────────────────────────────
@@ -425,6 +499,11 @@ exit "$AO_FAKE_EXIT"
             (SummaryProvider::Codex, "gpt-5.4-mini", "gpt-5.4"),
             (SummaryProvider::Agy, "gemini-3.6-flash-low", "gemini-3.1-pro-low"),
             (SummaryProvider::Gemini, "gemini-2.5-flash", "gemini-2.5-pro"),
+            (
+                SummaryProvider::Openrouter,
+                "openai/gpt-5.4-mini",
+                "openai/gpt-5.4",
+            ),
         ] {
             assert_eq!(resolve_model(provider, SummaryPurpose::Label, &none), label);
             assert_eq!(resolve_model(provider, SummaryPurpose::Diary, &none), label);

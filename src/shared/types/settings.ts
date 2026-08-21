@@ -3,8 +3,12 @@
 // Domain slice: app-wide opt-in settings, summarizer provider/purpose,
 // and CLI control status. See src/shared/types.ts for the frozen-contract overview.
 
-/** 라벨 요약에 사용할 로컬 CLI provider. Rust `SummaryProvider` 미러. */
-export type SummaryProvider = "claude" | "codex" | "agy" | "gemini";
+/**
+ * 요약(라벨·일기·학습자료)에 사용할 provider. Rust `SummaryProvider` 미러.
+ * 앞의 넷은 로컬 CLI를 부르고, `openrouter`만 HTTP 경로다(키는 TTS와 같은
+ * 백엔드 키 스토어 또는 `OPENROUTER_API_KEY` 환경변수를 쓴다).
+ */
+export type SummaryProvider = "claude" | "codex" | "agy" | "gemini" | "openrouter";
 
 /**
  * 요약 호출의 목적. 목적별로 백엔드 타임아웃이 다르다(#66) — 라벨(인터랙티브)은
@@ -42,6 +46,8 @@ export interface SummaryModels {
   codex: SummaryModelOverride;
   agy: SummaryModelOverride;
   gemini: SummaryModelOverride;
+  /** OpenRouter 모델 id(`벤더/모델` 표기). */
+  openrouter: SummaryModelOverride;
 }
 
 /** 앱 전역 opt-in 설정 — Rust `persistence::settings_store::AppSettings` 미러. */

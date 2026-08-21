@@ -251,12 +251,21 @@ pub async fn generate_study_material(
         }
         (guard.summary_provider, guard.summary_models.clone())
     };
+    // OpenRouter 경로만 API 키를 쓴다(요약기 HTTP 갈래).
+    let openrouter_key = if provider
+        == crate::persistence::settings_store::SummaryProvider::Openrouter
+    {
+        app_state.tts.keys.openrouter_key()
+    } else {
+        None
+    };
     let result = crate::session_log::study::generate(
         &app_state.session_log_root,
         &agent_id,
         &file,
         provider,
         &models,
+        openrouter_key.as_deref(),
     )
     .await?;
     Ok(crate::types::StudyMaterialResult {
