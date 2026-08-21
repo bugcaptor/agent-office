@@ -171,7 +171,15 @@ fn report_prompt(issue: u64, name: &str, repo_slug: &str, marker: &str) -> Strin
 
 /// 텍스트 주입 후 Enter(CR)를 보내기까지의 대기(ms). 텍스트와 CR이 한 이벤트로
 /// 뭉쳐 claude TUI가 Enter를 삼키는 것을 막고, 입력이 렌더될 틈을 준다.
-const INJECT_SUBMIT_DELAY_MS: u64 = 150;
+/// 웹 채팅 입력칸(webremote)도 같은 규칙을 쓴다.
+pub const INJECT_SUBMIT_DELAY_MS: u64 = 150;
+
+/// 임베디드 개행을 공백으로 바꾼다(주입 방어 1 — 아래 `inject` 설명 참고).
+pub fn single_line(text: &str) -> String {
+    text.chars()
+        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+        .collect()
+}
 
 /// 세션 stdin에 프롬프트를 "타이핑"해 주입하고 Enter로 제출한다(사람 입력과 동일
 /// 경로). 두 가지 방어:
@@ -181,10 +189,7 @@ const INJECT_SUBMIT_DELAY_MS: u64 = 150;
 /// 2) **제출 지연** — 텍스트를 먼저 쓰고 잠깐 쉰 뒤 CR을 따로 보낸다(둘이 한
 ///    입력 이벤트로 합쳐져 Enter가 무시되는 것을 막는다).
 fn inject(manager: &SessionManager, agent_id: &str, text: &str) {
-    let one_line: String = text
-        .chars()
-        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
-        .collect();
+    let one_line = single_line(text);
     manager.write_input(agent_id, &one_line);
     std::thread::sleep(std::time::Duration::from_millis(INJECT_SUBMIT_DELAY_MS));
     manager.write_input(agent_id, "\r");

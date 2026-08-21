@@ -191,6 +191,19 @@ pub enum HostMsg {
         session_id: Option<String>,
     },
     Output(RemoteOutput),
+    /// 채팅 뷰의 전사 항목(M2). `backfill`이면 클라이언트는 그 캐릭터의 목록을
+    /// **교체**하고, 아니면 이어 붙인다 — 재접속·늦은 합류에서 중복이 쌓이지
+    /// 않게 하는 규칙이다. `unavailable`이면 전사가 없어 채팅화가 불가능하다
+    /// (웹은 터미널 폴백을 안내한다).
+    Chat {
+        agent_id: String,
+        #[serde(default)]
+        items: Vec<crate::session_log::agent_transcript::TranscriptItem>,
+        #[serde(default)]
+        backfill: bool,
+        #[serde(default)]
+        unavailable: bool,
+    },
     /// 호스트의 `activity-event` 원본 JSON(agentId만 뷰어가 다시 쓴다).
     Activity {
         agent_id: String,
@@ -277,6 +290,33 @@ mod tests {
         let back: ClientMsg =
             serde_json::from_str(r#"{"type":"attach","agentId":"ada"}"#).unwrap();
         assert!(matches!(back, ClientMsg::Attach { last_offset: None, .. }));
+    }
+
+    /// 채팅 프레임의 와이어 모양(웹 `protocol.ts` 미러).
+    #[test]
+    fn chat_frame_carries_items_and_flags() {
+        use crate::session_log::agent_transcript::{ItemRole, TranscriptItem};
+        let json = serde_json::to_string(&HostMsg::Chat {
+            agent_id: "ada".into(),
+            items: vec![TranscriptItem::speech(ItemRole::User, "안녕")],
+            backfill: true,
+            unavailable: false,
+        })
+        .unwrap();
+        assert!(json.contains("\"type\":\"chat\""), "{json}");
+        assert!(json.contains("\"agentId\":\"ada\""), "{json}");
+        assert!(json.contains("\"backfill\":true"), "{json}");
+        assert!(json.contains("\"role\":\"user\""), "{json}");
+
+        // unavailable 프레임은 items 없이도 파싱된다(additive-only).
+        let back: HostMsg =
+            serde_json::from_str(r#"{"type":"chat","agentId":"ada","unavailable":true}"#).unwrap();
+        assert!(matches!(
+            back,
+            HostMsg::Chat {
+                unavailable: true, ..
+            }
+        ));
     }
 
     #[test]

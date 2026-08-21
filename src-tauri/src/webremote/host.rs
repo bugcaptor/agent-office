@@ -223,6 +223,12 @@ impl WebRemoteHub {
         self.taps.lock().contains_key(agent_id)
     }
 
+    /// 지금 이 허브를 듣고 있는 WS 연결이 있는가. 브라우저가 하나도 안 붙어
+    /// 있으면 이벤트를 JSON으로 만들 이유도 없다.
+    pub fn has_clients(&self) -> bool {
+        self.tx.receiver_count() > 0
+    }
+
     pub fn shared_agents(&self) -> Vec<String> {
         let mut v: Vec<String> = self.taps.lock().keys().cloned().collect();
         v.sort();
@@ -342,8 +348,13 @@ impl OutputTap for HubTap {
 
 // ── 앱 이벤트 미러 ────────────────────────────────────────────────────
 
-/// 공유 중인 캐릭터의 앱 이벤트만 뷰어로 흘리는 `AppEvents` 구현.
+/// 앱 이벤트를 브라우저로 흘리는 `AppEvents` 구현.
 /// `CompositeEvents`로 `TauriEvents`와 나란히 세워 쓴다(§결정 4).
+///
+/// **캐릭터별 필터가 없다**(M2에서 바뀐 점): 알림·활동·세션 상태는 채팅 뷰의
+/// 재료라 터미널에 attach 하지 않은 캐릭터도 받아야 한다. 클라이언트가 하나뿐인
+/// 단일 사용자 tailnet이므로 전체 broadcast로 충분하고, 붙어 있는 브라우저가
+/// 없으면(`has_clients`) 직렬화조차 하지 않는다.
 pub struct WebRemoteEvents {
     hub: Arc<WebRemoteHub>,
 }
@@ -353,8 +364,8 @@ impl WebRemoteEvents {
         Self { hub }
     }
 
-    fn mirror<T: serde::Serialize>(&self, agent_id: &str, make: impl FnOnce(serde_json::Value) -> HostMsg, ev: &T) {
-        if !self.hub.is_shared(agent_id) {
+    fn mirror<T: serde::Serialize>(&self, make: impl FnOnce(serde_json::Value) -> HostMsg, ev: &T) {
+        if !self.hub.has_clients() {
             return;
         }
         if let Ok(payload) = serde_json::to_value(ev) {
@@ -366,24 +377,16 @@ impl WebRemoteEvents {
 impl AppEvents for WebRemoteEvents {
     fn session_state(&self, ev: &crate::types::SessionStateEvent) {
         let agent_id = ev.agent_id.clone();
-        self.mirror(
-            &ev.agent_id,
-            move |payload| HostMsg::SessionState { agent_id, payload },
-            ev,
-        );
+        self.mirror(move |payload| HostMsg::SessionState { agent_id, payload }, ev);
     }
 
     fn notification_new(&self, ev: &crate::types::NotificationEvent) {
         let agent_id = ev.agent_id.clone();
-        self.mirror(
-            &ev.agent_id,
-            move |payload| HostMsg::Notification { agent_id, payload },
-            ev,
-        );
+        self.mirror(move |payload| HostMsg::Notification { agent_id, payload }, ev);
     }
 
     fn notification_cleared(&self, agent_id: &str, ids: &[String]) {
-        if !self.hub.is_shared(agent_id) {
+        if !self.hub.has_clients() {
             return;
         }
         self.hub.broadcast(HostMsg::NotificationCleared {
@@ -394,11 +397,7 @@ impl AppEvents for WebRemoteEvents {
 
     fn activity_event(&self, ev: &crate::types::ActivityEvent) {
         let agent_id = ev.agent_id.clone();
-        self.mirror(
-            &ev.agent_id,
-            move |payload| HostMsg::Activity { agent_id, payload },
-            ev,
-        );
+        self.mirror(move |payload| HostMsg::Activity { agent_id, payload }, ev);
     }
 }
 

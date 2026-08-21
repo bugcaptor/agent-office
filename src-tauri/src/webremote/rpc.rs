@@ -39,9 +39,12 @@ use crate::types::CreateSessionRequest;
 pub fn required_permission(cmd: &str) -> Option<ClientPermission> {
     match cmd {
         // 읽기만
-        "agents.list" | "notifications.list" | "usage.snapshot" => Some(ClientPermission::ReadOnly),
+        "agents.list" | "notifications.list" | "usage.snapshot" | "chat.follow" => {
+            Some(ClientPermission::ReadOnly)
+        }
         // 조작
-        "session.start" | "session.dispose" | "notifications.clear" => Some(ClientPermission::Input),
+        "session.start" | "session.dispose" | "notifications.clear" | "chat.send"
+        | "chat.keys" => Some(ClientPermission::Input),
         _ => None,
     }
 }
@@ -54,9 +57,13 @@ fn arg_str(args: &Value, key: &str) -> Result<String, RpcError> {
 }
 
 /// 웹 RPC 한 건을 처리한다. 권한·가시성 검사가 **여기 한 곳**에 있다.
+///
+/// `conn`은 이 요청을 실어 온 WS 연결의 id다 — 채팅 구독 수명이 연결에 매여
+/// 있어서(브라우저를 닫으면 tail이 멈춘다) 커맨드가 그것을 알아야 한다.
 pub async fn dispatch(
     ctx: &Arc<WebRemoteContext>,
     record: &ClientRecord,
+    conn: u64,
     cmd: &str,
     args: Value,
 ) -> Result<Value, RpcError> {
@@ -145,6 +152,63 @@ pub async fn dispatch(
                 .and_then(|v| serde_json::from_value(v.clone()).ok());
             if let Some(sid) = ctx.manager.session_id_for(&agent_id) {
                 ctx.hub_notify.clear(&sid, ids);
+            }
+            Ok(Value::Null)
+        }
+
+        // ── 채팅 뷰(M2) ─────────────────────────────────────────────
+        //
+        // 읽기: 전사 tail 구독. 쓰기: 세션 stdin에 문장·키를 주입한다.
+        // 새 표면이 아니다 — **이미 떠 있는 세션의 stdin**이라 봇 모드가 이미
+        // 지고 있는 경계 안이다(임의 프로세스 스폰과 무관).
+        "chat.follow" => {
+            let agent_id = arg_str(&args, "agentId")?;
+            ensure_visible(ctx, record, &agent_id)?;
+            let cwd = ctx
+                .store
+                .load()
+                .agents
+                .into_iter()
+                .find(|a| a.id == agent_id)
+                .and_then(|a| a.cwd)
+                .unwrap_or_default();
+            ctx.chat.follow(&agent_id, &cwd, conn);
+            Ok(Value::Null)
+        }
+
+        "chat.send" => {
+            let agent_id = arg_str(&args, "agentId")?;
+            ensure_visible(ctx, record, &agent_id)?;
+            let text = arg_str(&args, "text")?;
+            if text.trim().is_empty() {
+                return Err(RpcError::bad_args("빈 문장은 보낼 수 없습니다"));
+            }
+            // 봇 모드와 **같은 주입 규칙**이다: 단일 라인화 후 텍스트를 쓰고,
+            // 잠깐 쉰 뒤 CR을 따로 보낸다(TUI가 Enter를 삼키는 것을 막는다).
+            ctx.manager
+                .write_input(&agent_id, &crate::bot::runner::single_line(&text));
+            tokio::time::sleep(std::time::Duration::from_millis(
+                crate::bot::runner::INJECT_SUBMIT_DELAY_MS,
+            ))
+            .await;
+            ctx.manager.write_input(&agent_id, "\r");
+            Ok(Value::Null)
+        }
+
+        "chat.keys" => {
+            let agent_id = arg_str(&args, "agentId")?;
+            ensure_visible(ctx, record, &agent_id)?;
+            let names: Vec<String> = args
+                .get("keys")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .ok_or_else(|| RpcError::bad_args("keys가 필요합니다"))?;
+            if names.is_empty() {
+                return Err(RpcError::bad_args("keys가 비었습니다"));
+            }
+            let bytes = super::chat::keys_to_bytes(&names)
+                .map_err(|k| RpcError::bad_args(format!("알 수 없는 키입니다: {k}")))?;
+            for chunk in bytes {
+                ctx.manager.write_input(&agent_id, chunk);
             }
             Ok(Value::Null)
         }
@@ -252,6 +316,10 @@ mod tests {
             required_permission("notifications.clear"),
             Some(ClientPermission::Input)
         );
+        // 채팅(M2) — 구독은 읽기, 주입은 조작.
+        assert_eq!(required_permission("chat.follow"), Some(ClientPermission::ReadOnly));
+        assert_eq!(required_permission("chat.send"), Some(ClientPermission::Input));
+        assert_eq!(required_permission("chat.keys"), Some(ClientPermission::Input));
         // 테이블 밖 — 실재하는 Tauri 커맨드라도 없는 것이다.
         for cmd in [
             "set_app_settings",
@@ -260,6 +328,8 @@ mod tests {
             "save_state",
             "workdir_diff_file",
             "export_terminal_output",
+            "chat.unfollow",
+            "transcript.list",
             "",
         ] {
             assert_eq!(required_permission(cmd), None, "{cmd}는 열려 있으면 안 된다");
@@ -276,11 +346,99 @@ mod tests {
             "session.start",
             "session.dispose",
             "notifications.clear",
+            "chat.follow",
+            "chat.send",
+            "chat.keys",
         ]
         .into_iter()
         .filter(|c| required_permission(c).is_some())
         .collect();
-        assert_eq!(opened.len(), 6, "열린 커맨드는 정확히 이 6개뿐이다");
+        assert_eq!(opened.len(), 9, "열린 커맨드는 정확히 이 9개뿐이다");
+    }
+
+    /// 읽기 전용 티어는 채팅을 **보기만** 한다 — 주입은 조작 권한이다.
+    #[tokio::test]
+    async fn viewer_can_follow_chat_but_not_inject() {
+        let (ctx, dir) = crate::webremote::tests::build_ctx("web-chat-perm");
+        ctx.settings.write().unwrap().web_remote_enabled = true;
+        ctx.chat.set_source_factory(Arc::new(|_a, _c| Vec::new()));
+        let viewer = record(ClientPermission::ReadOnly);
+
+        dispatch(&ctx, &viewer, 1, "chat.follow", json!({ "agentId": "a1" }))
+            .await
+            .expect("구독은 읽기 권한");
+
+        for cmd in ["chat.send", "chat.keys"] {
+            let err = dispatch(&ctx, &viewer, 1, cmd, json!({ "agentId": "a1" }))
+                .await
+                .expect_err("주입은 거부");
+            assert_eq!(err.code, "forbidden", "{cmd}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn chat_send_refuses_empty_text_and_unknown_keys() {
+        let (ctx, dir) = crate::webremote::tests::build_ctx("web-chat-args");
+        ctx.settings.write().unwrap().web_remote_enabled = true;
+        let op = record(ClientPermission::Input);
+
+        for text in ["", "   ", "\n"] {
+            let err = dispatch(
+                &ctx,
+                &op,
+                1,
+                "chat.send",
+                json!({ "agentId": "a1", "text": text }),
+            )
+            .await
+            .expect_err("빈 문장 거부");
+            assert_eq!(err.code, "badArgs", "{text:?}");
+        }
+
+        let err = dispatch(
+            &ctx,
+            &op,
+            1,
+            "chat.keys",
+            json!({ "agentId": "a1", "keys": ["enter", "f13"] }),
+        )
+        .await
+        .expect_err("모르는 키 거부");
+        assert_eq!(err.code, "badArgs");
+        assert!(err.message.contains("f13"), "{}", err.message);
+
+        // keys 자체가 없거나 비면 badArgs.
+        for args in [
+            json!({ "agentId": "a1" }),
+            json!({ "agentId": "a1", "keys": [] }),
+        ] {
+            let err = dispatch(&ctx, &op, 1, "chat.keys", args)
+                .await
+                .expect_err("keys 필요");
+            assert_eq!(err.code, "badArgs");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 채팅도 가시성 게이트 안이다 — 프로필에 없는 캐릭터는 구독도 주입도 못 한다.
+    #[tokio::test]
+    async fn chat_commands_respect_visibility() {
+        let (ctx, dir) = crate::webremote::tests::build_ctx("web-chat-visibility");
+        ctx.settings.write().unwrap().web_remote_enabled = true;
+        let op = record(ClientPermission::Input);
+        for (cmd, args) in [
+            ("chat.follow", json!({ "agentId": "ghost" })),
+            ("chat.send", json!({ "agentId": "ghost", "text": "안녕" })),
+            ("chat.keys", json!({ "agentId": "ghost", "keys": ["enter"] })),
+        ] {
+            let err = dispatch(&ctx, &op, 1, cmd, args)
+                .await
+                .expect_err("없는 캐릭터");
+            assert_eq!(err.code, "forbidden", "{cmd}");
+        }
+        assert!(!ctx.chat.is_following("ghost"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
@@ -288,7 +446,7 @@ mod tests {
         let (ctx, dir) = crate::webremote::tests::build_ctx("web-perm");
         ctx.settings.write().unwrap().web_remote_enabled = true;
         let viewer = record(ClientPermission::ReadOnly);
-        let err = dispatch(&ctx, &viewer, "session.start", json!({ "agentId": "a1" }))
+        let err = dispatch(&ctx, &viewer, 1, "session.start", json!({ "agentId": "a1" }))
             .await
             .expect_err("읽기 전용은 거부");
         assert_eq!(err.code, "forbidden");
@@ -300,7 +458,7 @@ mod tests {
         let (ctx, dir) = crate::webremote::tests::build_ctx("web-unknown");
         ctx.settings.write().unwrap().web_remote_enabled = true;
         let op = record(ClientPermission::Input);
-        let err = dispatch(&ctx, &op, "set_app_settings", json!({}))
+        let err = dispatch(&ctx, &op, 1, "set_app_settings", json!({}))
             .await
             .expect_err("테이블 밖은 거부");
         assert_eq!(err.code, "unknownCmd");
@@ -313,7 +471,7 @@ mod tests {
         ctx.settings.write().unwrap().web_remote_enabled = false;
         // 토큰이 살아 있어도 토글이 꺼지면 RPC가 없다.
         let op = record(ClientPermission::Input);
-        let err = dispatch(&ctx, &op, "agents.list", json!({}))
+        let err = dispatch(&ctx, &op, 1, "agents.list", json!({}))
             .await
             .expect_err("꺼져 있으면 거부");
         assert_eq!(err.code, "forbidden");
@@ -326,7 +484,7 @@ mod tests {
         let client = record(ClientPermission::Input);
 
         // 캐릭터별 공유 토글이라는 개념이 없다 — 내 캐릭터는 전부 보인다.
-        let seen = dispatch(&ctx, &client, "agents.list", json!({})).await.unwrap();
+        let seen = dispatch(&ctx, &client, 1, "agents.list", json!({})).await.unwrap();
         assert_eq!(seen.as_array().unwrap().len(), 1, "주인은 전부 본다");
         assert!(ctx.agent_allowed(&client, "a1"));
         // 프로필에 없는 id는 tap이 깔려 있어도 보이지 않는다.
@@ -340,7 +498,7 @@ mod tests {
         let (ctx, dir) = crate::webremote::tests::build_ctx("web-notfound");
         ctx.settings.write().unwrap().web_remote_enabled = true;
         let op = record(ClientPermission::Input);
-        let err = dispatch(&ctx, &op, "session.start", json!({ "agentId": "ghost" }))
+        let err = dispatch(&ctx, &op, 1, "session.start", json!({ "agentId": "ghost" }))
             .await
             .expect_err("없는 캐릭터");
         // 가시성 게이트가 먼저 걸린다(존재 자체를 알려주지 않는다).
@@ -353,7 +511,7 @@ mod tests {
         let (ctx, dir) = crate::webremote::tests::build_ctx("web-args");
         ctx.settings.write().unwrap().web_remote_enabled = true;
         let op = record(ClientPermission::Input);
-        let err = dispatch(&ctx, &op, "session.dispose", json!({}))
+        let err = dispatch(&ctx, &op, 1, "session.dispose", json!({}))
             .await
             .expect_err("agentId 없음");
         assert_eq!(err.code, "badArgs");

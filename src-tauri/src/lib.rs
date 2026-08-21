@@ -523,6 +523,23 @@ pub fn run() {
                 },
             ));
             {
+                // 채팅 뷰(M2)의 전사 소스 — 세션 로그와 **같은 파서·같은 위치
+                // 탐색**을 쓰되 tailer는 별개다(읽기 전용이라 간섭이 없다).
+                let lookup = claude_resume_store.clone();
+                web_remote_ctx
+                    .chat
+                    .set_source_factory(Arc::new(move |_agent_id: &str, _cwd: &str| {
+                        let mut sources: Vec<
+                            Box<dyn crate::session_log::agent_transcript::TranscriptSource>,
+                        > = Vec::new();
+                        sources.extend(crate::session_log::agent_transcript::claude::source(
+                            lookup.clone(),
+                        ));
+                        sources.extend(crate::session_log::agent_transcript::codex::source());
+                        sources
+                    }));
+            }
+            {
                 // 브라우저가 처음 붙을 때 호스트 렌더러에 화면 직렬화를 요청하는 다리.
                 let handle = handle.clone();
                 web_remote_hub.snapshots.set_emitter(Arc::new(move |agent_id, request_id| {

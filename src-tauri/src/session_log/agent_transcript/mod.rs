@@ -268,6 +268,13 @@ impl TranscriptTailer {
         !self.current.is_empty()
     }
 
+    /// 지금 붙어 있는 전사 파일들(정렬 — 호출자가 "바뀌었는가"를 비교한다).
+    pub fn targets(&self) -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = self.current.values().cloned().collect();
+        v.sort();
+        v
+    }
+
     /// 붙어 있는 파일들의 **최근 항목**. 파일 끝에서 `max_bytes`만큼 거슬러
     /// 읽어 파싱하고 마지막 `max_items`개만 남긴다. tick 계열이 파일을 찾은
     /// 뒤에 부른다(그 전에는 붙은 파일이 없어 빈 결과다).

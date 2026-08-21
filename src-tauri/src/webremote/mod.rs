@@ -12,15 +12,18 @@
 // `settings/set`·`create`처럼 네트워크에 내놓으면 안 되는 라우트를 가진다 —
 // 이쪽 Router에는 그런 라우트가 아예 존재하지 않는다(권한 축소를 구조로 보장).
 
+/// 채팅 뷰(M2)의 전사 tail·키 매핑.
+pub mod chat;
 pub mod host;
 pub mod pairing;
 pub mod protocol;
 /// 브라우저 클라이언트용 정적 자산 + allowlist RPC 디스패처.
 pub mod rpc;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -44,9 +47,15 @@ use crate::session::manager::SessionManager;
 use crate::state::SessionRegistry;
 use crate::types::SessionState;
 
+use chat::ChatRegistry;
 use host::WebRemoteHub;
 use pairing::{PairingOutcome, PairingState, ClientRecord, ClientTokenStore};
 use protocol::*;
+
+/// WS 연결마다 붙는 일련번호. 채팅 구독 수명이 **연결**에 매여 있어서
+/// (브라우저를 닫으면 tail이 멈춘다) 클라이언트 토큰이 아니라 연결이 단위다 —
+/// 같은 토큰으로 탭을 두 개 열면 각각이 따로 구독한다.
+static NEXT_CONN_ID: AtomicU64 = AtomicU64::new(1);
 
 /// 브라우저 클라이언트가 WS 업그레이드에 실어 보낼 인증 쿠키
 /// 이름. 브라우저의 WebSocket API는 커스텀 헤더를 붙일 수 없으므로 헤더 인증만
@@ -127,6 +136,8 @@ pub struct WebRemoteContext {
     pub store: ProfileStore,
     pub settings: Arc<RwLock<AppSettings>>,
     pub hub: Arc<WebRemoteHub>,
+    /// 채팅 뷰의 전사 tail 소유자(M2).
+    pub chat: Arc<ChatRegistry>,
     pub tokens: ClientTokenStore,
     pub pairing: Arc<PairingState>,
     pub host_name: String,
@@ -159,12 +170,14 @@ pub struct WebRemoteContextDeps {
 
 impl WebRemoteContext {
     pub fn new(deps: WebRemoteContextDeps) -> Self {
+        let chat = ChatRegistry::new(deps.hub.clone());
         Self {
             manager: deps.manager,
             registry: deps.registry,
             store: deps.store,
             settings: deps.settings,
             hub: deps.hub,
+            chat,
             tokens: ClientTokenStore::new(pairing::token_path(&deps.app_data_dir)),
             pairing: Arc::new(PairingState::default()),
             host_name: deps.host_name,
@@ -520,8 +533,11 @@ async fn ws_route(
 async fn serve_ws(socket: WebSocket, ctx: Arc<WebRemoteContext>, client: ClientRecord) {
     let (mut sink, mut stream) = socket.split();
     let mut rx = ctx.hub.subscribe();
+    let conn = NEXT_CONN_ID.fetch_add(1, Ordering::Relaxed);
     // agentId → 다음에 기대하는 절대 오프셋(구멍 감지 + 재접속 기준점).
     let mut attached: HashMap<String, u64> = HashMap::new();
+    // 채팅을 구독 중인 캐릭터들(터미널 attach와 독립이다 — 채팅 뷰가 주 화면).
+    let mut following: HashSet<String> = HashSet::new();
     let mut last_seen = Instant::now();
     let mut ping = tokio::time::interval(WS_PING_EVERY);
     ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -562,7 +578,7 @@ async fn serve_ws(socket: WebSocket, ctx: Arc<WebRemoteContext>, client: ClientR
                             }).await;
                             continue;
                         };
-                        if handle_client_msg(&mut sink, &ctx, &client, &mut attached, msg).await.is_err() {
+                        if handle_client_msg(&mut sink, &ctx, &client, conn, &mut attached, &mut following, msg).await.is_err() {
                             break;
                         }
                     }
@@ -572,8 +588,15 @@ async fn serve_ws(socket: WebSocket, ctx: Arc<WebRemoteContext>, client: ClientR
             }
             event = rx.recv() => match event {
                 Ok(msg) => {
-                    if let Some(agent) = forwarded_agent(&msg) {
+                    // 터미널 프레임은 attach한 캐릭터에만, 채팅 프레임은 follow한
+                    // 캐릭터에만 간다. 알림·활동·세션 상태는 필터가 없다(§M2).
+                    if let Some(agent) = terminal_agent(&msg) {
                         if !attached.contains_key(agent) {
+                            continue;
+                        }
+                    }
+                    if let HostMsg::Chat { agent_id, .. } = &*msg {
+                        if !following.contains(agent_id) {
                             continue;
                         }
                     }
@@ -622,19 +645,18 @@ async fn serve_ws(socket: WebSocket, ctx: Arc<WebRemoteContext>, client: ClientR
             }
         }
     }
+    ctx.chat.release(conn);
     let _ = sink.close().await;
 }
 
-/// 이 메시지가 특정 캐릭터에 매인 것이면 그 agentId(구독 필터용).
-fn forwarded_agent(msg: &HostMsg) -> Option<&str> {
+/// 이 메시지가 **터미널 미러**에 매인 것이면 그 agentId(attach 구독 필터용).
+///
+/// M2에서 좁혔다: 알림·활동·세션 상태는 채팅 뷰의 재료라 터미널에 붙지 않은
+/// 캐릭터도 받아야 한다(단일 사용자 tailnet — 전체 broadcast로 충분).
+fn terminal_agent(msg: &HostMsg) -> Option<&str> {
     match msg {
         HostMsg::Output(out) => Some(&out.agent_id),
-        HostMsg::Activity { agent_id, .. }
-        | HostMsg::SessionState { agent_id, .. }
-        | HostMsg::Notification { agent_id, .. }
-        | HostMsg::NotificationCleared { agent_id, .. }
-        | HostMsg::Resized { agent_id, .. }
-        | HostMsg::Restore { agent_id, .. } => Some(agent_id),
+        HostMsg::Resized { agent_id, .. } | HostMsg::Restore { agent_id, .. } => Some(agent_id),
         _ => None,
     }
 }
@@ -650,7 +672,9 @@ async fn handle_client_msg(
     sink: &mut WsSink,
     ctx: &Arc<WebRemoteContext>,
     client: &ClientRecord,
+    conn: u64,
     attached: &mut HashMap<String, u64>,
+    following: &mut HashSet<String>,
     msg: ClientMsg,
 ) -> Result<(), ()> {
     match msg {
@@ -694,7 +718,18 @@ async fn handle_client_msg(
             Ok(())
         }
         ClientMsg::Rpc { id, cmd, args } => {
-            let result = rpc::dispatch(ctx, client, &cmd, args).await;
+            // 채팅 구독은 이 연결의 수명에 매인다 — 성공한 follow만 기록해
+            // 연결이 끊길 때 정확히 그만큼 놓는다(중복 follow는 registry가
+            // 멱등이라 여기서 더 셀 것이 없다).
+            let follow_target = (cmd == "chat.follow")
+                .then(|| args.get("agentId").and_then(|v| v.as_str()).map(str::to_string))
+                .flatten();
+            let result = rpc::dispatch(ctx, client, conn, &cmd, args).await;
+            if result.is_ok() {
+                if let Some(agent_id) = follow_target {
+                    following.insert(agent_id);
+                }
+            }
             let msg = match result {
                 Ok(data) => HostMsg::RpcResult {
                     id,
@@ -1770,8 +1805,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 터미널 프레임만 attach 필터를 탄다. 알림·활동·세션 상태는 채팅 뷰의
+    /// 재료라 붙지 않은 캐릭터도 받아야 한다(M2에서 좁힌 규칙).
     #[test]
-    fn forwarded_agent_extracts_target() {
+    fn only_terminal_frames_are_gated_by_attach() {
         let out = HostMsg::Output(RemoteOutput {
             agent_id: "ada".into(),
             session_id: "s".into(),
@@ -1780,11 +1817,91 @@ mod tests {
             data: "x".into(),
             bytes: 1,
         });
-        assert_eq!(forwarded_agent(&out), Some("ada"));
-        assert_eq!(forwarded_agent(&HostMsg::Pong), None);
+        assert_eq!(terminal_agent(&out), Some("ada"));
         assert_eq!(
-            forwarded_agent(&HostMsg::Agents { agents: vec![] }),
+            terminal_agent(&HostMsg::Resized {
+                agent_id: "ada".into(),
+                cols: 80,
+                rows: 24
+            }),
+            Some("ada")
+        );
+        assert_eq!(terminal_agent(&HostMsg::Pong), None);
+        assert_eq!(terminal_agent(&HostMsg::Agents { agents: vec![] }), None);
+
+        // 이 셋은 이제 필터를 타지 않는다.
+        for msg in [
+            HostMsg::Notification {
+                agent_id: "ada".into(),
+                payload: serde_json::json!({}),
+            },
+            HostMsg::Activity {
+                agent_id: "ada".into(),
+                payload: serde_json::json!({}),
+            },
+            HostMsg::SessionState {
+                agent_id: "ada".into(),
+                payload: serde_json::json!({}),
+            },
+            HostMsg::NotificationCleared {
+                agent_id: "ada".into(),
+                ids: vec![],
+            },
+        ] {
+            assert_eq!(terminal_agent(&msg), None, "{msg:?}");
+        }
+        // 채팅 프레임은 별도의 follow 집합으로 거른다.
+        assert_eq!(
+            terminal_agent(&HostMsg::Chat {
+                agent_id: "ada".into(),
+                items: vec![],
+                backfill: false,
+                unavailable: false,
+            }),
             None
         );
+    }
+
+    /// 알림은 터미널에 attach 하지 않아도 브라우저에 도착해야 한다(채팅 카드).
+    #[tokio::test]
+    async fn notifications_reach_a_client_that_never_attached() {
+        let (ctx, dir) = build_ctx("web-notify-unattached");
+        let server = WebRemoteServerState::default();
+        let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
+        let token = pair(port, &ctx).await;
+        let mut socket = open_ws(port, &token).await;
+        let _hello = next_msg(&mut socket).await;
+        let _agents = next_msg(&mut socket).await;
+
+        // attach 없이 알림을 발행한다.
+        let events = crate::webremote::host::WebRemoteEvents::new(ctx.hub.clone());
+        // 구독자가 생길 때까지 잠깐 기다린다(WS 태스크가 subscribe 한다).
+        for _ in 0..50 {
+            if ctx.hub.has_clients() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        crate::state::AppEvents::notification_new(
+            &events,
+            &crate::types::NotificationEvent {
+                id: "n1".into(),
+                agent_id: "a1".into(),
+                session_id: "s1".into(),
+                message: "확인이 필요합니다".into(),
+                dedup_key: "k".into(),
+                at: 1,
+                source: crate::types::NotificationSource::Hook,
+            },
+        );
+        match next_msg(&mut socket).await {
+            HostMsg::Notification { agent_id, payload } => {
+                assert_eq!(agent_id, "a1");
+                assert_eq!(payload["message"], "확인이 필요합니다");
+            }
+            other => panic!("알림이 와야 한다: {other:?}"),
+        }
+        server.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
