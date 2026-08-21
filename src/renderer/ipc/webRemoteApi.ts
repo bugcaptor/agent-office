@@ -39,6 +39,26 @@ export interface WebRemoteStatus {
   pending: PendingPairing[];
 }
 
+/**
+ * tailscale serve 상태(docs/web-remote-design.md §M3). 앱은 아무것도 기억하지
+ * 않는다 — 이 값은 전부 tailscaled에서 방금 읽어 온 사실이다.
+ */
+export interface TailscaleServeStatus {
+  cliFound: boolean;
+  cliPath?: string | null;
+  backendRunning: boolean;
+  dnsName?: string | null;
+  httpsPort: number;
+  /** 우리 웹 원격으로 가는 프록시가 그 포트에 걸려 있는가. */
+  registered: boolean;
+  upstream?: string | null;
+  expectedUpstream?: string | null;
+  /** 그 포트를 **다른 업스트림**이 점유 중 — 켜기를 막는다. */
+  conflict: boolean;
+  httpsUrl?: string | null;
+  error?: string | null;
+}
+
 export const webRemoteApi = {
   hostStatus(): Promise<WebRemoteStatus> {
     return invoke(Commands.webRemoteStatus);
@@ -58,5 +78,16 @@ export const webRemoteApi = {
   /** 호스트 렌더러가 `web-remote-snapshot-request`에 답하는 자리. */
   submitSnapshot(requestId: string, snapshot: string): Promise<void> {
     return invoke(Commands.webRemoteSubmitSnapshot, { requestId, snapshot });
+  },
+  serveStatus(): Promise<TailscaleServeStatus> {
+    return invoke(Commands.tailscaleServeStatus);
+  },
+  /** `tailscale serve --bg --https=47443 http://<tailnet IP>:<포트>` 대행. */
+  serveEnable(): Promise<void> {
+    return invoke(Commands.tailscaleServeEnable);
+  },
+  /** `tailscale serve --https=47443 off` 대행(`serve reset`이 아니다). */
+  serveDisable(): Promise<void> {
+    return invoke(Commands.tailscaleServeDisable);
   },
 };

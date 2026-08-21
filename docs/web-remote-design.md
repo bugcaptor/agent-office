@@ -286,6 +286,30 @@ serve 감지·등록/해제 대행(`ipc/commands/tailscale.rs`, `parse_serve_sta
 `http://<tailnet IP>:47800`이다(아카이브 §10.2의 명령을 그대로 쓰면 안 된다). 가독성 항목(폰트 스텝퍼·패닝·
 `Resized` 발행자)은 폴백 화면 한정이므로 후순위로 강등 — 필요 시만.
 
+#### M3 구현 기록 (2026-08-21 — 코드 완성·실기기 눈검증 대기, kbm #2e5)
+
+설계대로 구현하되 세 가지를 보탰다/조정했다:
+
+- **신규 `ipc/commands/tailscale.rs`** — `WEB_REMOTE_HTTPS_PORT = 47443` 상수,
+  CLI 타임아웃 10초. 순수 파서 `parse_serve_status(json, port)`(TCP/Web 맵 →
+  리스너·업스트림)와 `parse_node_status(json)`(`Self.DNSName` 끝 점 제거 +
+  `BackendState=="Running"`). 픽스처는 이 기계의 실제 출력 — 8443에 살아 있는
+  남의 매핑을 그대로 박아 "우리 포트만 본다"를 테스트로 고정. 커맨드 3개
+  (`tailscale_serve_status`/`enable`/`disable`), `funnel`·`serve reset` 불사용.
+- **업스트림은 설정값이 아니라 실제 바인드된 주소·포트**
+  (`web_remote_server.current_bound()`)에서 온다. enable은 먼저 상태를 읽어
+  47443을 다른 업스트림이 점유 중이면 거부한다(자동 순회 없음) — 이때 UI는
+  아카이브 §10.2대로 **정리 명령을 복사해 사람 손에 맡긴다**(버튼 대행은
+  남의 서비스를 한 클릭에 지울 수 있어 기각).
+- **CLI 탐색은 PATH → `/usr/local/bin` → `/opt/homebrew/bin` →
+  `/Applications/Tailscale.app/…`** — Finder로 뜬 앱의 PATH에는
+  `/usr/local/bin`이 없어 PATH만으로는 실측 설치 위치를 놓친다.
+- `Secure` 쿠키는 `cookie_value(token, secure)`+`forwarded_https(&HeaderMap)`
+  순수 함수로 — `X-Forwarded-Proto`는 프록시 체인 대비 첫 값만 본다.
+- UI(WebRemoteSection): tailnet 바인드 + tailnet 탐지일 때만 HTTPS 블록을
+  그리고 그때만 CLI를 부른다. 접속주소(http·https 각각) 옆 **복사 버튼**
+  (`navigator.clipboard`, 2초 피드백).
+
 ### M4. 기능 확장
 
 allowlist 한 줄씩. 작업폴더 읽기 6종(status/branch/diffFile/log/commitFiles/

@@ -682,6 +682,10 @@ pub fn run() {
             ipc::commands::web_remote_revoke,
             ipc::commands::web_remote_set_permission,
             ipc::commands::web_remote_submit_snapshot,
+            // tailscale serve 대행 — 웹 원격 HTTPS(포트 47443)
+            ipc::commands::tailscale_serve_status,
+            ipc::commands::tailscale_serve_enable,
+            ipc::commands::tailscale_serve_disable,
                         ipc::commands::bot_start,
             ipc::commands::bot_stop,
             ipc::commands::bot_status,

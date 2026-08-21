@@ -140,6 +140,11 @@ export const Commands = {
   webRemoteRevoke: "web_remote_revoke",
   webRemoteSetPermission: "web_remote_set_permission",
   webRemoteSubmitSnapshot: "web_remote_submit_snapshot",
+  // tailscale serve 대행(웹 원격 HTTPS 47443). 상태 정본은 tailscaled라
+  // 앱 설정에 저장하지 않고 매번 조회한다.
+  tailscaleServeStatus: "tailscale_serve_status",
+  tailscaleServeEnable: "tailscale_serve_enable",
+  tailscaleServeDisable: "tailscale_serve_disable",
 } as const;
 
 /**

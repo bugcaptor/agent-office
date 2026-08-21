@@ -349,9 +349,41 @@ async fn pair_start(
     .into_response()
 }
 
+/// 페어링 쿠키 한 줄(순수 함수). `Secure`를 **조건부로만** 붙이는 것이 핵심이다 —
+/// 직결 `http://100.x:47800`에서 붙이면 브라우저가 쿠키를 아예 저장하지 않아
+/// WS 인증(쿠키 경로)이 통째로 깨진다. https는 tailscale serve 경유일 때만이다.
+pub fn cookie_value(token: &str, secure: bool) -> String {
+    let mut value = format!(
+        "{WEB_REMOTE_COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+        pairing::TOKEN_MAX_AGE_SECS
+    );
+    if secure {
+        value.push_str("; Secure");
+    }
+    value
+}
+
+/// tailscaled의 serve 프록시가 붙여 주는 `X-Forwarded-Proto`. 직결 클라이언트가
+/// 이 헤더를 위조해도 **자기 쿠키에 속성이 하나 더 붙을 뿐**이라 무해하다
+/// (권한이 아니라 저장 조건이다). 프록시 체인을 대비해 첫 값만 본다.
+fn forwarded_https(headers: &HeaderMap) -> bool {
+    headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| {
+            v.split(',')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .eq_ignore_ascii_case("https")
+        })
+        .unwrap_or(false)
+}
+
 async fn pair_complete(
     State(ctx): State<Arc<WebRemoteContext>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<PairCompleteRequest>,
 ) -> Response {
     if !ctx.rate.auth_allowed(addr.ip()) {
@@ -388,15 +420,9 @@ async fn pair_complete(
                 proto_version: WEB_REMOTE_PROTO_VERSION,
             })
             .into_response();
-            // 브라우저 인증 쿠키. `Secure`는 https일 때만 의미가 있어 붙이지
-            // 않는다(v1은 tailnet 평문 전제 — tailscale serve로 https를 씌우는
-            // 경로는 M3).
-            if let Ok(value) = format!(
-                "{WEB_REMOTE_COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
-                pairing::TOKEN_MAX_AGE_SECS
-            )
-            .parse()
-            {
+            // 브라우저 인증 쿠키. tailscale serve 경유(https)일 때만 `Secure`가
+            // 붙는다(M3 §10.3) — 직결 http 접속에서 붙이면 쿠키가 저장되지 않는다.
+            if let Ok(value) = cookie_value(&token, forwarded_https(&headers)).parse() {
                 resp.headers_mut()
                     .insert(axum::http::header::SET_COOKIE, value);
             }
@@ -1056,6 +1082,38 @@ mod tests {
     }
 
     #[test]
+    fn cookie_gets_secure_only_behind_the_serve_proxy() {
+        let plain = cookie_value("tok", false);
+        assert!(plain.starts_with(&format!("{WEB_REMOTE_COOKIE_NAME}=tok;")));
+        assert!(plain.contains("HttpOnly"));
+        assert!(plain.contains("SameSite=Strict"));
+        // 직결 http에서 Secure가 붙으면 브라우저가 쿠키를 버린다.
+        assert!(!plain.contains("Secure"));
+
+        let secure = cookie_value("tok", true);
+        assert!(secure.ends_with("; Secure"), "{secure}");
+    }
+
+    #[test]
+    fn forwarded_proto_detects_https() {
+        let mut https = HeaderMap::new();
+        https.insert("x-forwarded-proto", "https".parse().unwrap());
+        assert!(forwarded_https(&https));
+
+        // 프록시 체인은 첫 값이 클라이언트에 가장 가깝다.
+        let mut chain = HeaderMap::new();
+        chain.insert("x-forwarded-proto", "HTTPS, http".parse().unwrap());
+        assert!(forwarded_https(&chain));
+
+        let mut plain = HeaderMap::new();
+        plain.insert("x-forwarded-proto", "http".parse().unwrap());
+        assert!(!forwarded_https(&plain));
+
+        // 직결(헤더 없음) = http.
+        assert!(!forwarded_https(&HeaderMap::new()));
+    }
+
+    #[test]
     fn tailnet_policy_binds_the_tailscale_interface_address() {
         let addrs = [
             IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -1610,6 +1668,8 @@ mod tests {
         assert!(cookie.starts_with(WEB_REMOTE_COOKIE_NAME), "쿠키 발급: {cookie}");
         assert!(cookie.contains("HttpOnly"));
         assert!(cookie.contains("SameSite=Strict"));
+        // 직결(평문)에는 Secure가 없어야 한다 — 붙으면 브라우저가 쿠키를 버린다.
+        assert!(!cookie.contains("Secure"), "직결 쿠키에 Secure: {cookie}");
 
         // 그 쿠키만으로 WS가 열려야 한다(브라우저는 헤더를 못 붙인다).
         let token = cookie
@@ -1629,6 +1689,53 @@ mod tests {
         );
         let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
         assert!(matches!(next_msg(&mut socket).await, HostMsg::Hello { .. }));
+
+        server.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// tailscale serve 경유(=`X-Forwarded-Proto: https`)로 페어링하면 쿠키에
+    /// `Secure`가 붙는다. 헤더 판정이 실제 핸들러까지 배선돼 있는지가 요점이다.
+    #[tokio::test]
+    async fn pairing_behind_serve_issues_a_secure_cookie() {
+        let (ctx, dir) = build_ctx("cookie-secure");
+        let server = WebRemoteServerState::default();
+        let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
+
+        let client = reqwest::Client::new();
+        let started: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/webremote/v1/pair/start"))
+            .json(&serde_json::json!({ "clientName": "폰" }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let pairing_id = started["data"]["pairingId"].as_str().unwrap().to_string();
+        let code = ctx
+            .pairing
+            .list()
+            .into_iter()
+            .find(|p| p.pairing_id == pairing_id)
+            .unwrap()
+            .code;
+        ctx.pairing.approve(&pairing_id, ClientPermission::Input);
+
+        let resp = client
+            .post(format!("http://127.0.0.1:{port}/webremote/v1/pair/complete"))
+            .header("X-Forwarded-Proto", "https")
+            .json(&serde_json::json!({ "pairingId": pairing_id, "code": code }))
+            .send()
+            .await
+            .unwrap();
+        let cookie = resp
+            .headers()
+            .get(reqwest::header::SET_COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        assert!(cookie.contains("; Secure"), "serve 경유 쿠키: {cookie}");
 
         server.shutdown();
         let _ = std::fs::remove_dir_all(&dir);
