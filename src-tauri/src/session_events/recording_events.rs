@@ -40,6 +40,7 @@ impl AppEvents for RecordingAppEvents {
             cwd: Some(event.cwd.clone()),
             shell: Some(event.shell.clone()),
             state: None,
+            tokens: None,
         });
         self.inner.session_started(event);
     }
@@ -62,12 +63,17 @@ impl AppEvents for RecordingAppEvents {
             NotificationSource::Stop => SessionEventKind::Stop,
             NotificationSource::Bell => SessionEventKind::Bell,
         };
-        self.record(SessionEventDraft::simple(
+        let mut draft = SessionEventDraft::simple(
             event.agent_id.clone(),
             event.session_id.clone(),
             kind,
             event.at,
-        ));
+        );
+        // 턴 사용량은 Stop 알림에만 실려 온다(다른 소스에 붙어 오면 무시).
+        if kind == SessionEventKind::Stop {
+            draft.tokens = event.tokens.clone();
+        }
+        self.record(draft);
         self.inner.notification_new(event);
     }
 
@@ -159,6 +165,7 @@ mod tests {
             message: "do not persist this message".into(),
             dedup_key: "do not persist this key".into(),
             at: 1_783_728_000_001,
+            tokens: None,
         });
         let records = read(&root);
         assert_eq!(
@@ -208,6 +215,7 @@ mod tests {
                 message: String::new(),
                 dedup_key: format!("k{offset}"),
                 at: 1_783_728_000_002 + offset as u64,
+                tokens: None,
             });
         }
         events.activity_event(&ActivityEvent {
@@ -235,6 +243,59 @@ mod tests {
         assert_eq!(records[0].agent_role.as_deref(), Some("Platform"));
         assert_eq!(records[0].cwd.as_deref(), Some("/work"));
         assert_eq!(records[0].shell.as_deref(), Some("/bin/zsh"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// 턴 사용량은 stop 레코드에만 실린다 — 같은 값이 다른 소스의 알림에
+    /// 붙어 와도 시계열엔 남지 않아야 한다.
+    #[test]
+    fn stop_notification_carries_turn_tokens_into_the_timeline() {
+        use crate::types::SessionEventTokens;
+        let root = scratch_root();
+        let inner = Arc::new(RecordingEvents::default());
+        let store = Arc::new(SessionEventStore::new(root.clone()));
+        let events = RecordingAppEvents::new(inner, store);
+        let tokens = SessionEventTokens {
+            input: Some(120),
+            output: Some(340),
+            cache_read: Some(9_000),
+            cache_write: Some(50),
+            model: Some("claude-opus-5".into()),
+        };
+        for (offset, source) in [NotificationSource::Stop, NotificationSource::Hook]
+            .into_iter()
+            .enumerate()
+        {
+            events.notification_new(&NotificationEvent {
+                id: format!("n{offset}"),
+                session_id: "s1".into(),
+                agent_id: "a1".into(),
+                source,
+                message: String::new(),
+                dedup_key: format!("k{offset}"),
+                at: 1_783_728_000_000 + offset as u64,
+                tokens: Some(tokens.clone()),
+            });
+        }
+        let records = read(&root);
+        assert_eq!(records[0].kind, SessionEventKind::Stop);
+        assert_eq!(records[0].tokens.as_ref(), Some(&tokens));
+        assert_eq!(records[1].kind, SessionEventKind::Notification);
+        assert_eq!(records[1].tokens, None);
+        // 사용량이 없는 Stop은 필드 자체가 직렬화되지 않는다(과거 파일과 동형).
+        events.notification_new(&NotificationEvent {
+            id: "n2".into(),
+            session_id: "s1".into(),
+            agent_id: "a1".into(),
+            source: NotificationSource::Stop,
+            message: String::new(),
+            dedup_key: "k2".into(),
+            at: 1_783_728_000_002,
+            tokens: None,
+        });
+        let raw = fs::read_to_string(root.join("2026-07-11.jsonl")).unwrap();
+        assert_eq!(raw.lines().count(), 3);
+        assert!(!raw.lines().last().unwrap().contains("tokens"));
         let _ = fs::remove_dir_all(root);
     }
 

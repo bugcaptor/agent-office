@@ -52,6 +52,42 @@ pub struct SessionStateEvent {
     pub external: Option<bool>,
 }
 
+/// 한 턴이 소비한 토큰 사용량. TS `SessionEventTokens`와 동일(camelCase).
+///
+/// 턴 종료(Stop) 시 CLI 전사/rollout에서 뽑아 실어 보내고, 시계열 레코드의
+/// `tokens` 필드로 남는다. 모든 항목이 옵션이다 — 제공자마다 주는 항목이
+/// 다르고 추출 실패 항목은 조용히 생략한다(값이 하나도 없으면 아예 싣지
+/// 않는다). `input`은 **캐시를 제외한** 순수 입력 토큰이다(Claude
+/// `input_tokens`, Codex `input_tokens - cached_input_tokens`) — 셋을 더해야
+/// 그 턴의 전체 입력이 되므로 비용 환산에서 이중 계산이 나지 않는다.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionEventTokens {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_read: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<u64>,
+    /// 그 턴의 대표 모델 ID(예: "claude-opus-5", "gpt-5.4"). 비용 환산 키.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+impl SessionEventTokens {
+    /// 유효한 값이 하나도 없으면(전부 None 또는 카운트가 전부 0) None으로
+    /// 접는다. 호출부가 "빈 tokens 객체"를 시계열에 남기지 않게 하는 관문.
+    pub fn non_empty(self) -> Option<Self> {
+        let counted = [self.input, self.output, self.cache_read, self.cache_write]
+            .into_iter()
+            .flatten()
+            .any(|v| v > 0);
+        counted.then_some(self)
+    }
+}
+
 /// 알림 출처. TS NotificationSource와 동일.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -83,6 +119,14 @@ pub struct NotificationEvent {
     pub message: String,
     pub dedup_key: String,
     pub at: u64,
+    /// Stop 알림에만, 그것도 추출에 성공했을 때만 실리는 그 턴의 토큰 사용량.
+    /// 시계열 기록(`RecordingAppEvents`)이 이 값을 stop 레코드로 옮겨 담는다.
+    ///
+    /// **백엔드 내부 운반 전용이라 wire에 싣지 않는다**(`skip_serializing`) —
+    /// 렌더러는 분석 패널에서 시계열을 통해 읽으므로 실시간 알림 페이로드에
+    /// 넣을 이유가 없고, TS `NotificationEvent` 미러를 그대로 두기 위함이다.
+    #[serde(skip_serializing)]
+    pub tokens: Option<SessionEventTokens>,
 }
 
 /// activity 신호 종류. TS ActivityKind와 동일.
@@ -659,6 +703,7 @@ mod tests {
             message: "needs input".into(),
             dedup_key: "hook:s1".into(),
             at: 1_720_000_000_000,
+            tokens: None,
         };
         let json = serde_json::to_string(&ev).unwrap();
         assert_eq!(

@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::{AgentId, SessionId, SessionState};
 
+pub use crate::types::SessionEventTokens;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionEventKind {
@@ -42,6 +44,8 @@ pub struct SessionEventDraft {
     pub cwd: Option<String>,
     pub shell: Option<String>,
     pub state: Option<SessionState>,
+    /// kind=Stop일 때 그 턴이 쓴 토큰(추출 성공 시에만).
+    pub tokens: Option<SessionEventTokens>,
 }
 
 impl SessionEventDraft {
@@ -61,6 +65,7 @@ impl SessionEventDraft {
             cwd: None,
             shell: None,
             state: None,
+            tokens: None,
         }
     }
 }
@@ -85,4 +90,8 @@ pub struct SessionEventRecord {
     pub shell: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<SessionState>,
+    /// kind=Stop일 때 그 턴이 쓴 토큰. 옵션 추가라 schemaVersion은 1을
+    /// 유지한다 — 토큰이 없는 과거 파일과 섞여도 그대로 읽힌다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<SessionEventTokens>,
 }

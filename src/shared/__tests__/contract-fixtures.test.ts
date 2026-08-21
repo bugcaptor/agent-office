@@ -182,6 +182,26 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expectKeys(parsed, ["schemaVersion", "runId", "seq", "at", "agentId", "sessionId", "kind"]);
     expect(parsed.kind).toBe("tool");
     expect(parsed.seq).toBe(42);
+    // 토큰은 stop에만 실린다 — 다른 종류에는 없어야 한다.
+    expect(parsed.tokens).toBeUndefined();
+  });
+
+  it("SessionEventRecord (stop, 턴 토큰 포함)", () => {
+    const parsed: SessionEventRecord = loadFixture("session-event-record.stop.json") as SessionEventRecord;
+    expectKeys(parsed, [
+      "schemaVersion",
+      "runId",
+      "seq",
+      "at",
+      "agentId",
+      "sessionId",
+      "kind",
+      "tokens",
+    ]);
+    expect(parsed.kind).toBe("stop");
+    expectKeys(parsed.tokens!, ["input", "output", "cacheRead", "cacheWrite", "model"]);
+    expect(parsed.tokens!.model).toBe("claude-opus-5");
+    expect(parsed.tokens!.cacheRead).toBe(98000);
   });
 
   it("UsageSnapshot (both providers, limits[] + null 폴백)", () => {
@@ -313,6 +333,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "activity-event.prompt.json",
       "session-event-record.started.json",
       "session-event-record.tool.json",
+      "session-event-record.stop.json",
       "usage-snapshot.json",
       "get-app-settings-result.json",
       "git-status-result.json",

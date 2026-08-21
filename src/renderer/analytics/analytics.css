@@ -7,7 +7,8 @@
 @import "../styles/tokens.css";
 
 .analytics-dialog {
-  width: min(720px, 92vw);
+  /* 토큰·비용 열이 붙어 표가 넓어져 폭을 키웠다. */
+  width: min(860px, 94vw);
   max-height: 88vh;
   display: flex;
   flex-direction: column;
@@ -125,4 +126,11 @@
 .analytics-deleted {
   color: var(--text-dim);
   font-style: italic;
+}
+
+/* 비용 열이 추정치임을 표 아래에 못박는 각주. */
+.analytics-footnote {
+  margin: calc(var(--unit) * 2) 0 0;
+  color: var(--text-dim);
+  font-size: 0.7rem;
 }

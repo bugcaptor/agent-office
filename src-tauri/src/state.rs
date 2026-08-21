@@ -282,6 +282,7 @@ mod tests {
             message: "needs input".into(),
             dedup_key: format!("hook:{session_id}"),
             at: 1,
+            tokens: None,
         }
     }
 

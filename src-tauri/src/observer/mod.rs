@@ -1,6 +1,7 @@
 pub mod claude;
 pub mod claude_resume_recorder;
 pub mod codex;
+pub mod codex_usage;
 pub mod event;
 pub mod forwarder;
 pub mod hook_command;
@@ -178,6 +179,8 @@ impl ObserverRuntime {
             "stop" => ObserverEvent::Stop {
                 message: event::message(body),
                 running: None,
+                // pi는 전사/rollout 경로가 없어 사용량을 뽑을 곳이 없다.
+                tokens: None,
             },
             _ => return,
         };
@@ -316,6 +319,7 @@ mod tests {
             Some(ObserverEvent::Stop {
                 message: Some("claude stop".into()),
                 running: None,
+                tokens: None,
             }),
         );
         assert_eq!(
@@ -337,6 +341,7 @@ mod tests {
             Some(ObserverEvent::Stop {
                 message: Some("코덱스 작업 완료".into()),
                 running: None,
+                tokens: None,
             }),
         );
         let _ = std::fs::remove_dir_all(dir);
@@ -475,6 +480,7 @@ mod tests {
                     mapped: Some(ObserverEvent::Stop {
                         message: None,
                         running: None,
+                        tokens: None,
                     }),
                 }),
             ],
@@ -605,6 +611,7 @@ mod tests {
                 mapped: Some(ObserverEvent::Stop {
                     message: None,
                     running: None,
+                    tokens: None,
                 }),
             })],
         )

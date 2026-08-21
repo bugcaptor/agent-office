@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use super::event::{
     agent_id, codex_stop_message, hook_cwd, prompt_text, tool_activity_text, tool_description,
 };
+use super::codex_usage::CodexUsageTracker;
 use super::hook_command::forwarder_shell_command;
 use super::{
     AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError, ObserverEvent,
@@ -18,12 +19,21 @@ const CODEX_SUBAGENT_STOP_CONFIG: &str = "AGENT_OFFICE_CODEX_HOOK_SUBAGENT_STOP"
 
 pub struct CodexAdapter {
     forwarder_executable: PathBuf,
+    /// 턴 사용량 추출기(rollout 누계 델타). 훅 body에 사용량이 없어 파일을
+    /// 봐야 하고, 턴 경계 기준을 들고 있어야 해서 어댑터가 소유한다.
+    usage: CodexUsageTracker,
 }
 
 impl CodexAdapter {
     pub fn new(forwarder_executable: PathBuf) -> Self {
+        Self::with_usage_tracker(forwarder_executable, CodexUsageTracker::from_env())
+    }
+
+    /// 테스트/튜닝용: rollout 루트를 주입한 사용량 추출기로 생성한다.
+    pub fn with_usage_tracker(forwarder_executable: PathBuf, usage: CodexUsageTracker) -> Self {
         Self {
             forwarder_executable,
+            usage,
         }
     }
 
@@ -106,11 +116,15 @@ impl ObserverAdapter for CodexAdapter {
 
     fn map_hook(&self, raw: &RawObserverHook<'_>) -> Option<ObserverEvent> {
         match raw.event_name {
-            "UserPromptSubmit" => Some(ObserverEvent::Prompt {
-                text: prompt_text(raw.body),
-                // codex body에 cwd가 없으면 자연히 None(이슈 #44 작업 D).
-                cwd: hook_cwd(raw.body),
-            }),
+            "UserPromptSubmit" => {
+                // 턴 시작 시점의 rollout 누계를 기준으로 잡아 둔다(Stop에서 델타).
+                self.usage.mark_turn_start(raw.body);
+                Some(ObserverEvent::Prompt {
+                    text: prompt_text(raw.body),
+                    // codex body에 cwd가 없으면 자연히 None(이슈 #44 작업 D).
+                    cwd: hook_cwd(raw.body),
+                })
+            }
             // 이슈 #43: claude와 동일하게 도구 요약을 싣되, 서브에이전트 내부 도구
             // (agent_id 있음)는 하트비트만 유지한다. codex는 transcript 꼬리가 없어
             // assistant 내레이션은 항상 None.
@@ -133,6 +147,7 @@ impl ObserverAdapter for CodexAdapter {
             "Stop" => Some(ObserverEvent::Stop {
                 message: codex_stop_message(raw.body),
                 running: None,
+                tokens: self.usage.turn_usage(raw.body),
             }),
             "SubagentStart" => Some(ObserverEvent::SubStart),
             "SubagentStop" => Some(ObserverEvent::SubStop),

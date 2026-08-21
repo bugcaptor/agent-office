@@ -47,6 +47,7 @@
             ObserverEvent::Stop {
                 message: None,
                 running: None,
+                tokens: None,
             },
         );
 
@@ -123,6 +124,7 @@
             ObserverEvent::Stop {
                 message: Some("first".into()),
                 running: Some(2),
+                tokens: None,
             },
         );
         hub.ingest_observer(
@@ -130,6 +132,7 @@
             ObserverEvent::Stop {
                 message: Some("second".into()),
                 running: None,
+                tokens: None,
             },
         );
 
@@ -154,6 +157,7 @@
             ObserverEvent::Stop {
                 message: Some("아직 서브에이전트 진행 중".into()),
                 running: Some(1),
+                tokens: None,
             },
         );
 
@@ -170,6 +174,7 @@
             ObserverEvent::Stop {
                 message: None,
                 running: Some(0),
+                tokens: None,
             },
         );
         let notifications = events.notifications();
@@ -188,6 +193,7 @@
             ObserverEvent::Stop {
                 message: None,
                 running: Some(2),
+                tokens: None,
             },
         );
 
@@ -496,6 +502,7 @@
             ObserverEvent::Stop {
                 message: None,
                 running: Some(0),
+                tokens: None,
             },
         );
     }
@@ -688,6 +695,7 @@
             ObserverEvent::Stop {
                 message: None,
                 running: Some(0),
+                tokens: None,
             },
         );
         clock.advance(6000);
@@ -705,6 +713,7 @@
             ObserverEvent::Stop {
                 message: None,
                 running: Some(1),
+                tokens: None,
             },
         );
         clock.advance(6000);

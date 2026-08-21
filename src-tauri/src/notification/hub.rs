@@ -188,7 +188,11 @@ impl NotificationHub {
                     .filter(|value| !value.trim().is_empty())
                     .unwrap_or_else(|| ATTENTION_FALLBACK.to_string()),
             ),
-            ObserverEvent::Stop { message, running } => {
+            ObserverEvent::Stop {
+                message,
+                running,
+                tokens,
+            } => {
                 let running = running.unwrap_or(0);
                 // 이슈 #41: 턴이 종료되면(자동답변 후 케이스 포함) 보류 중인 질문
                 // 알림을 폐기한다 — 질문+완료 이중 알림 방지. running 값과 무관.
@@ -200,12 +204,13 @@ impl NotificationHub {
                 // 일하는 동안 "일하는 중" 표시가 유지된다(이슈 #25). 최종
                 // Stop(running=0)에서만 알림·정산한다.
                 if running == 0 {
-                    self.ingest(
+                    self.ingest_with_tokens(
                         session_id,
                         NotificationSource::Stop,
                         message
                             .filter(|value| !value.trim().is_empty())
                             .unwrap_or_else(|| STOP_FALLBACK.to_string()),
+                        tokens,
                     )
                 }
             }
@@ -272,6 +277,19 @@ impl NotificationHub {
     }
 
     fn ingest(&self, session_id: &str, source: NotificationSource, message: String) {
+        self.ingest_with_tokens(session_id, source, message, None);
+    }
+
+    /// `ingest` + 턴 토큰 사용량. Stop 경로에서만 Some이 들어온다 — dedup으로
+    /// 억제되거나 세션이 죽어 폐기되면 사용량도 함께 버려진다(그 턴의 시계열
+    /// stop 레코드 자체가 없으므로 붙일 곳이 없다).
+    fn ingest_with_tokens(
+        &self,
+        session_id: &str,
+        source: NotificationSource,
+        message: String,
+        tokens: Option<SessionEventTokens>,
+    ) {
         // 죽은/미지 세션의 hook은 폐기.
         let Some(agent_id) = self.registry.resolve_agent(session_id) else {
             return;
@@ -303,6 +321,7 @@ impl NotificationHub {
             message,
             dedup_key: key,
             at: self.clock.now_ms(),
+            tokens,
         };
 
         // 이슈 #41: 오토모드 홀드. Hook 알림은 hold_duration 동안 보류했다가

@@ -109,6 +109,7 @@ mod tests {
             cwd: None,
             shell: None,
             state: None,
+            tokens: None,
         }
     }
 

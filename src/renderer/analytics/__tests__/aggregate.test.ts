@@ -155,6 +155,55 @@ describe("dailySummary", () => {
   });
 });
 
+describe("dailySummary 토큰", () => {
+  it("stop의 tokens를 stop 시각의 로컬 날짜에 합산하고 비용을 환산한다", () => {
+    const events = [
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0) }),
+      ev({
+        kind: "stop",
+        at: kst(2026, 6, 11, 10, 20),
+        tokens: { input: 1_000, output: 2_000, cacheRead: 10_000, model: "claude-opus-5" },
+      }),
+    ];
+    const daily = dailySummary(events, reconstructTurns(events), KST);
+    const cell = daily["2026-07-11"].a1;
+    expect(cell.tokensIn).toBe(1_000);
+    expect(cell.tokensOut).toBe(2_000);
+    expect(cell.tokensCacheRead).toBe(10_000);
+    expect(cell.tokensCacheWrite).toBe(0);
+    // opus: 1000*5 + 2000*25 + 10000*0.5 = 5000 + 50000 + 5000 = 60000 / 1e6
+    expect(cell.costUsd).toBeCloseTo(0.06, 10);
+    expect(cell.costUnknownTurns).toBe(0);
+  });
+
+  it("tokens 없는 과거 stop이 섞여도 0으로 견딘다", () => {
+    const events = [
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0) }),
+      ev({ kind: "stop", at: kst(2026, 6, 11, 10, 20) }), // 과거 기록 — tokens 없음
+    ];
+    const daily = dailySummary(events, reconstructTurns(events), KST);
+    const cell = daily["2026-07-11"].a1;
+    expect(cell.tokensIn).toBe(0);
+    expect(cell.tokensOut).toBe(0);
+    expect(cell.costUsd).toBe(0);
+    expect(cell.costUnknownTurns).toBe(0);
+  });
+
+  it("자정을 걸친 턴의 토큰은 마감(stop)일에 통째로 귀속한다", () => {
+    const events = [
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 23, 30) }),
+      ev({
+        kind: "stop",
+        at: kst(2026, 6, 12, 0, 30),
+        tokens: { input: 500, model: "claude-sonnet-4-5" },
+      }),
+    ];
+    const daily = dailySummary(events, reconstructTurns(events), KST);
+    expect(daily["2026-07-11"].a1.tokensIn).toBe(0);
+    expect(daily["2026-07-12"].a1.tokensIn).toBe(500);
+  });
+});
+
 describe("agentMeta", () => {
   it("현재 프로필이 있으면 이름과 대표색(비회색)을 쓴다", () => {
     const events = [ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0), agentId: "a1" })];
@@ -256,6 +305,90 @@ describe("aggregate", () => {
     const withRange = aggregate(events, { a1: profile("a1", "Ada") }, KST);
     expect(withRange.summary[0].workedMs).toBe(20 * 60_000);
     expect(withRange.daily["2026-07-11"].a1.turns).toBe(1);
+  });
+});
+
+describe("aggregate 토큰·비용", () => {
+  it("요약에 토큰과 비용을 합산한다", () => {
+    const events = [
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0), agentId: "a1" }),
+      ev({
+        kind: "stop",
+        at: kst(2026, 6, 11, 10, 20),
+        agentId: "a1",
+        tokens: { input: 1_000, output: 1_000, model: "claude-opus-5" },
+      }),
+      ev({ kind: "prompt", at: kst(2026, 6, 12, 10, 0), agentId: "a1" }),
+      ev({
+        kind: "stop",
+        at: kst(2026, 6, 12, 10, 40),
+        agentId: "a1",
+        tokens: { input: 1_000, cacheWrite: 1_000, model: "claude-opus-5" },
+      }),
+    ];
+    const data = aggregate(events, { a1: profile("a1", "Ada") }, KST);
+    const row = data.summary[0];
+    expect(row.tokensIn).toBe(2_000);
+    expect(row.tokensOut).toBe(1_000);
+    expect(row.tokensCacheWrite).toBe(1_000);
+    // (1000*5 + 1000*25) + (1000*5 + 1000*6.25) = 30000 + 11250 = 41250 / 1e6
+    expect(row.costUsd).toBeCloseTo(0.04125, 10);
+    expect(row.costUnknownTurns).toBe(0);
+    // 활동일 판정은 그대로(작업/턴/도구 기준) 2일.
+    expect(row.activeDays).toBe(2);
+  });
+
+  it("미지 모델은 costUnknownTurns로 세고 costUsd에서 뺀다", () => {
+    const events = [
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0), agentId: "a1" }),
+      ev({
+        kind: "stop",
+        at: kst(2026, 6, 11, 10, 20),
+        agentId: "a1",
+        tokens: { input: 1_000_000, model: "llama-3" },
+      }),
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 11, 0), agentId: "a1" }),
+      ev({
+        kind: "stop",
+        at: kst(2026, 6, 11, 11, 20),
+        agentId: "a1",
+        tokens: { input: 1_000_000, model: "claude-haiku-4-5" },
+      }),
+    ];
+    const data = aggregate(events, { a1: profile("a1", "Ada") }, KST);
+    const row = data.summary[0];
+    // 토큰 합계에는 미지 모델도 들어간다(쓴 건 쓴 것).
+    expect(row.tokensIn).toBe(2_000_000);
+    // 비용은 haiku 몫(1$)만.
+    expect(row.costUsd).toBeCloseTo(1, 10);
+    expect(row.costUnknownTurns).toBe(1);
+  });
+
+  it("range 밖 stop의 토큰은 제외한다", () => {
+    const fromAt = kst(2026, 6, 11, 0, 0);
+    const toAt = kst(2026, 6, 12, 23, 59);
+    const events = [
+      // lookback 구간(07-10)에서 시작·마감된 a1 턴 — 토큰이 새면 안 된다.
+      ev({ kind: "prompt", at: kst(2026, 6, 10, 20, 0), agentId: "a1" }),
+      ev({
+        kind: "stop",
+        at: kst(2026, 6, 10, 20, 30),
+        agentId: "a1",
+        tokens: { input: 999_999, model: "claude-opus-5" },
+      }),
+      // 창 안 턴.
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0), agentId: "a1" }),
+      ev({
+        kind: "stop",
+        at: kst(2026, 6, 11, 10, 20),
+        agentId: "a1",
+        tokens: { input: 1_000, model: "claude-opus-5" },
+      }),
+    ];
+    const data = aggregate(events, { a1: profile("a1", "Ada") }, KST, { fromAt, toAt });
+    expect(data.summary[0].tokensIn).toBe(1_000);
+    expect(data.summary[0].costUsd).toBeCloseTo(0.005, 10);
+    expect(data.daily["2026-07-10"]).toBeUndefined();
   });
 });
 

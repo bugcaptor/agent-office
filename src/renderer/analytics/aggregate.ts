@@ -10,6 +10,7 @@
 // 결정적으로 검증한다. 기본은 시스템 로컬(`localDayCalendar`).
 import type { AgentProfile, SessionEventRecord } from "@shared/types";
 import { grayForIndex, representativeColor } from "./colors";
+import { estimateCostUsd } from "./pricing";
 
 const DAY_MS = 86_400_000;
 const pad2 = (n: number): string => String(n).padStart(2, "0");
@@ -82,8 +83,23 @@ function clipTurn(turn: Turn, range: AggregateRange): Turn | null {
   return { ...turn, startAt, endAt };
 }
 
+/**
+ * 토큰·비용 합계. stop 이벤트에 실린 `tokens`만 모은 것이라, 과거 기록이나
+ * 추출 실패 턴은 통째로 빠진다(부재를 견디는 것이 계약).
+ */
+export interface TokenTotals {
+  tokensIn: number;
+  tokensOut: number;
+  tokensCacheRead: number;
+  tokensCacheWrite: number;
+  /** 단가를 아는 레코드만 합산한 추정 비용(USD). */
+  costUsd: number;
+  /** `tokens`는 있었으나 단가를 몰라 costUsd에서 빠진 stop 레코드 수(0이면 완전 집계). */
+  costUnknownTurns: number;
+}
+
 /** 에이전트별·일별 집계 셀. */
-export interface AgentDailyStat {
+export interface AgentDailyStat extends TokenTotals {
   workedMs: number;
   turns: number;
   toolEvents: number;
@@ -99,7 +115,7 @@ export interface AgentMeta {
 }
 
 /** 요약 표 한 행: 메타 + 기간 합계. */
-export interface AgentSummary extends AgentMeta {
+export interface AgentSummary extends AgentMeta, TokenTotals {
   workedMs: number;
   turns: number;
   toolEvents: number;
@@ -212,17 +228,27 @@ function ensureCell(
   agentId: string,
 ): AgentDailyStat {
   const perAgent = (daily[date] ??= {});
-  return (perAgent[agentId] ??= { workedMs: 0, turns: 0, toolEvents: 0 });
+  return (perAgent[agentId] ??= {
+    workedMs: 0,
+    turns: 0,
+    toolEvents: 0,
+    tokensIn: 0,
+    tokensOut: 0,
+    tokensCacheRead: 0,
+    tokensCacheWrite: 0,
+    costUsd: 0,
+    costUnknownTurns: 0,
+  });
 }
 
 /**
  * 로컬 날짜별·에이전트별 집계. 작업시간은 턴을 자정 경계로 분할해 귀속하고,
- * 턴 수는 턴 시작 시각의 로컬 날짜에, 도구 이벤트는 발생 시각의 로컬 날짜에
- * 귀속한다.
+ * 턴 수는 턴 시작 시각의 로컬 날짜에, 도구 이벤트와 토큰/비용은 발생(stop)
+ * 시각의 로컬 날짜에 귀속한다.
  *
  * `range`가 주어지면: 턴은 창으로 클립해 창 안 몫만 작업시간에 귀속하고(겹치지
- * 않는 턴은 버림), 턴 수는 `dayKey(max(startAt, fromAt))`에, 도구 이벤트는 창
- * 안 이벤트만 귀속한다. `range` 미지정 시 전체를 그대로 집계(기존 동작).
+ * 않는 턴은 버림), 턴 수는 `dayKey(max(startAt, fromAt))`에, 도구 이벤트와
+ * 토큰은 창 안 이벤트만 귀속한다. `range` 미지정 시 전체를 그대로 집계(기존 동작).
  */
 export function dailySummary(
   events: readonly SessionEventRecord[],
@@ -242,9 +268,24 @@ export function dailySummary(
     ensureCell(daily, cal.dayKey(turnDayAt), turn.agentId).turns += 1;
   }
   for (const ev of events) {
-    if (ev.kind !== "tool") continue;
     if (range && (ev.at < range.fromAt || ev.at > range.toAt)) continue; // 창 밖 이벤트 제외
-    ensureCell(daily, cal.dayKey(ev.at), ev.agentId).toolEvents += 1;
+    if (ev.kind === "tool") {
+      ensureCell(daily, cal.dayKey(ev.at), ev.agentId).toolEvents += 1;
+      continue;
+    }
+    // 토큰은 stop 이벤트에만 실린다(그것도 추출 성공 시에만). 턴 단위 귀속이
+    // 아니라 stop 시각의 로컬 날짜에 귀속한다 — 턴 자체와 달리 토큰은 마감
+    // 시점에 한꺼번에 확정되는 값이라 쪼갤 근거가 없다.
+    if (ev.kind === "stop" && ev.tokens) {
+      const cell = ensureCell(daily, cal.dayKey(ev.at), ev.agentId);
+      cell.tokensIn += ev.tokens.input ?? 0;
+      cell.tokensOut += ev.tokens.output ?? 0;
+      cell.tokensCacheRead += ev.tokens.cacheRead ?? 0;
+      cell.tokensCacheWrite += ev.tokens.cacheWrite ?? 0;
+      const cost = estimateCostUsd(ev.tokens);
+      if (cost === null) cell.costUnknownTurns += 1;
+      else cell.costUsd += cost;
+    }
   }
   return daily;
 }
@@ -338,7 +379,7 @@ export function aggregate(
   }
   const meta = agentMeta(events, profiles, activeAgents);
 
-  interface Totals {
+  interface Totals extends TokenTotals {
     workedMs: number;
     turns: number;
     toolEvents: number;
@@ -348,7 +389,18 @@ export function aggregate(
   const totalFor = (agentId: string): Totals => {
     let t = totals.get(agentId);
     if (!t) {
-      t = { workedMs: 0, turns: 0, toolEvents: 0, days: new Set() };
+      t = {
+        workedMs: 0,
+        turns: 0,
+        toolEvents: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        tokensCacheRead: 0,
+        tokensCacheWrite: 0,
+        costUsd: 0,
+        costUnknownTurns: 0,
+        days: new Set(),
+      };
       totals.set(agentId, t);
     }
     return t;
@@ -359,6 +411,13 @@ export function aggregate(
       t.workedMs += stat.workedMs;
       t.turns += stat.turns;
       t.toolEvents += stat.toolEvents;
+      t.tokensIn += stat.tokensIn;
+      t.tokensOut += stat.tokensOut;
+      t.tokensCacheRead += stat.tokensCacheRead;
+      t.tokensCacheWrite += stat.tokensCacheWrite;
+      t.costUsd += stat.costUsd;
+      t.costUnknownTurns += stat.costUnknownTurns;
+      // 활동일 판정은 작업/턴/도구만 본다(토큰만 있고 활동이 없는 날은 없다).
       if (stat.workedMs > 0 || stat.turns > 0 || stat.toolEvents > 0) t.days.add(date);
     }
   }
@@ -371,6 +430,12 @@ export function aggregate(
         workedMs: t?.workedMs ?? 0,
         turns: t?.turns ?? 0,
         toolEvents: t?.toolEvents ?? 0,
+        tokensIn: t?.tokensIn ?? 0,
+        tokensOut: t?.tokensOut ?? 0,
+        tokensCacheRead: t?.tokensCacheRead ?? 0,
+        tokensCacheWrite: t?.tokensCacheWrite ?? 0,
+        costUsd: t?.costUsd ?? 0,
+        costUnknownTurns: t?.costUnknownTurns ?? 0,
         activeDays: t?.days.size ?? 0,
       };
     })

@@ -4,8 +4,9 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use super::event::{
-    agent_id, claude_transcript_message, claude_transcript_progress_message, hook_cwd, message,
-    prompt_text, running_subagents, tool_activity_text, transcript_path,
+    agent_id, claude_transcript_message, claude_transcript_progress_message,
+    claude_transcript_usage, hook_cwd, message, prompt_text, running_subagents, tool_activity_text,
+    transcript_path,
 };
 use super::hook_command::forwarder_shell_command;
 use super::{
@@ -271,6 +272,8 @@ impl ObserverAdapter for ClaudeAdapter {
                 Some(ObserverEvent::Stop {
                     message: message(raw.body).or_else(|| claude_transcript_message(raw.body)),
                     running: running_subagents(raw.body),
+                    // 턴 사용량도 같은 전사 파일 꼬리에서 뽑는다(추출 실패는 None).
+                    tokens: claude_transcript_usage(raw.body),
                 })
             }
             _ => None,
@@ -503,6 +506,7 @@ mod tests {
                 Some(ObserverEvent::Stop {
                     message: None,
                     running: None,
+                    tokens: None,
                 }),
             );
         }
@@ -533,6 +537,7 @@ mod tests {
             Some(ObserverEvent::Stop {
                 message: Some("작업을 마쳤습니다".into()),
                 running: None,
+                tokens: None,
             }),
         );
 
@@ -545,8 +550,42 @@ mod tests {
             Some(ObserverEvent::Stop {
                 message: None,
                 running: None,
+                tokens: None,
             }),
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Stop은 완료 본문과 함께 그 턴의 토큰 사용량도 같은 전사 꼬리에서 실어야
+    /// 한다(usage 없는 전사는 tokens=None 으로 강등).
+    #[test]
+    fn claude_stop_carries_turn_usage_from_the_transcript() {
+        let adapter = ClaudeAdapter::new(scratch_dir(), forwarder_exe());
+        let dir = scratch_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("transcript.jsonl");
+        let lines = [
+            r#"{"type":"user","message":{"role":"user","content":"작업 지시"}}"#,
+            r#"{"type":"assistant","message":{"id":"m1","model":"claude-opus-5","role":"assistant","content":[{"type":"text","text":"완료"}],"usage":{"input_tokens":11,"output_tokens":22,"cache_read_input_tokens":33,"cache_creation_input_tokens":44}}}"#,
+        ];
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        let body = serde_json::json!({ "transcript_path": path.to_string_lossy() })
+            .to_string()
+            .into_bytes();
+
+        let Some(ObserverEvent::Stop { tokens, .. }) = adapter.map_hook(&RawObserverHook {
+            event_name: "Stop",
+            body: &body,
+        }) else {
+            panic!("Stop 이벤트가 나와야 한다");
+        };
+        let tokens = tokens.expect("전사에 usage가 있으면 실려야 한다");
+        assert_eq!(tokens.input, Some(11));
+        assert_eq!(tokens.output, Some(22));
+        assert_eq!(tokens.cache_read, Some(33));
+        assert_eq!(tokens.cache_write, Some(44));
+        assert_eq!(tokens.model.as_deref(), Some("claude-opus-5"));
+
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -561,6 +600,7 @@ mod tests {
             Some(ObserverEvent::Stop {
                 message: Some("m".into()),
                 running: None,
+                tokens: None,
             }),
         );
         assert_eq!(
@@ -601,6 +641,7 @@ mod tests {
             Some(ObserverEvent::Stop {
                 message: Some("m".into()),
                 running: None,
+                tokens: None,
             }),
         );
     }
@@ -645,6 +686,7 @@ mod tests {
             Some(ObserverEvent::Stop {
                 message: Some("done".into()),
                 running: Some(2),
+                tokens: None,
             }),
         );
     }

@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::types::SessionEventTokens;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ObserverProvider {
     Claude,
@@ -48,6 +50,9 @@ pub enum ObserverEvent {
     Stop {
         message: Option<String>,
         running: Option<u32>,
+        /// 이 턴이 쓴 토큰(전사/rollout에서 뽑아 실음). 추출 실패·미지원
+        /// 제공자는 None — 시계열에 tokens 필드 자체가 생기지 않는다.
+        tokens: Option<SessionEventTokens>,
     },
 }
 
@@ -371,6 +376,97 @@ fn is_real_user_prompt(value: &serde_json::Value) -> bool {
             arr.iter()
                 .any(|part| part.get("type").and_then(|t| t.as_str()) == Some("text"))
         })
+}
+
+/// 턴 사용량 합산을 위해 전사 꼬리에서 읽는 최대 바이트. 완료 메시지용
+/// `TRANSCRIPT_TAIL_BYTES`(64KB)보다 훨씬 크다 — 한 턴이 도구 호출 수십 개로
+/// 길어지면 그 턴의 첫 assistant 응답이 64KB 밖으로 밀려나 사용량이 통째로
+/// 누락되기 때문이다. Stop 훅은 턴당 1회뿐이라 이 비용을 감당할 수 있다.
+/// 이 상한 안에서 턴 경계(직전 사용자 프롬프트)를 못 찾으면 찾은 데까지만
+/// 합산한다(과소 집계로 강등 — 조용한 폴백 원칙).
+const TRANSCRIPT_USAGE_TAIL_BYTES: u64 = 2 * 1024 * 1024;
+
+/// Claude Stop 훅의 `transcript_path`(JSONL) 꼬리를 읽어 **이번 턴**이 쓴 토큰을
+/// 합산한다. 실패(경로 부재/파일 없음/유효 사용량 없음)는 모두 None.
+///
+/// 턴 경계는 "뒤에서부터 스캔하다 만나는 첫 진짜 사용자 프롬프트"로 잡는다 —
+/// `claude_transcript_progress_message`가 쓰는 판정(`is_real_user_prompt`,
+/// tool_result-only user 줄은 경계가 아님)을 그대로 재사용한다. 세션 누계의
+/// 델타를 기억하는 방식 대신 이 방식을 택한 이유는 (a) 전사에 누계 필드가
+/// 없어 어차피 전 구간을 합산해야 하고, (b) 앱 재시작·세션 입양 후에도 상태
+/// 없이 정확하기 때문이다.
+///
+/// **같은 응답이 여러 줄로 쪼개져 기록된다** — Claude는 assistant 응답 하나를
+/// content 블록별(thinking/text/tool_use)로 나눠 여러 줄에 쓰면서 `message.usage`를
+/// 매 줄에 그대로 복사한다. 줄 단위로 더하면 2~3배 과대 집계되므로 `message.id`로
+/// 중복을 제거한다.
+///
+/// 서브에이전트(`isSidechain`) 줄의 사용량도 합산한다 — 실제로 청구되는 비용이고
+/// 이 턴에 속한다. 다만 경계 판정에서는 스킵한다(서브에이전트의 프롬프트 줄이
+/// 메인 턴 경계로 오인되면 스캔이 조기 종료된다).
+pub fn claude_transcript_usage(body: &[u8]) -> Option<SessionEventTokens> {
+    let path = transcript_path(body)?;
+    let tail = read_file_tail(std::path::Path::new(&path), TRANSCRIPT_USAGE_TAIL_BYTES)?;
+    sum_claude_turn_usage(&tail).non_empty()
+}
+
+/// 전사 꼬리 문자열에서 마지막 턴의 사용량을 합산한다(위 규칙). 순수 함수라
+/// 테스트가 파일 없이 직접 부른다.
+fn sum_claude_turn_usage(tail: &str) -> SessionEventTokens {
+    let mut totals = SessionEventTokens::default();
+    let mut seen_messages: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut input = 0u64;
+    let mut output = 0u64;
+    let mut cache_read = 0u64;
+    let mut cache_write = 0u64;
+
+    for line in tail.lines().rev() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            continue; // 손상/절단 라인(꼬리 앞머리 포함)은 조용히 스킵
+        };
+        let sidechain = value.get("isSidechain").and_then(|v| v.as_bool()) == Some(true);
+        match value.get("type").and_then(|t| t.as_str()) {
+            // 메인 세션의 진짜 사용자 프롬프트 = 턴 시작 → 스캔 종료.
+            Some("user") if !sidechain && is_real_user_prompt(&value) => break,
+            Some("assistant") => {
+                let Some(message) = value.get("message") else {
+                    continue;
+                };
+                // 같은 응답이 블록별로 쪼개져 usage를 반복 기록한다 → id로 1회만.
+                if let Some(id) = message.get("id").and_then(|v| v.as_str()) {
+                    if !seen_messages.insert(id.to_string()) {
+                        continue;
+                    }
+                }
+                // 대표 모델 = 뒤에서부터 처음 만난 메인 세션 응답의 모델
+                // (서브에이전트는 다른 모델을 쓸 수 있어 대표로 삼지 않는다).
+                if totals.model.is_none() && !sidechain {
+                    totals.model = message
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .filter(|m| !m.trim().is_empty())
+                        .map(str::to_string);
+                }
+                let Some(usage) = message.get("usage") else {
+                    continue;
+                };
+                let field = |name: &str| usage.get(name).and_then(serde_json::Value::as_u64);
+                input = input.saturating_add(field("input_tokens").unwrap_or(0));
+                output = output.saturating_add(field("output_tokens").unwrap_or(0));
+                cache_read =
+                    cache_read.saturating_add(field("cache_read_input_tokens").unwrap_or(0));
+                cache_write =
+                    cache_write.saturating_add(field("cache_creation_input_tokens").unwrap_or(0));
+            }
+            _ => continue,
+        }
+    }
+
+    totals.input = Some(input);
+    totals.output = Some(output);
+    totals.cache_read = Some(cache_read);
+    totals.cache_write = Some(cache_write);
+    totals
 }
 
 /// 파일 끝에서 최대 `max` 바이트를 읽어 String으로. 앞머리에서 잘린 멀티바이트는
@@ -736,6 +832,87 @@ mod tests {
         assert_eq!(claude_transcript_progress_message(&missing), None);
         assert_eq!(claude_transcript_progress_message(br#"{}"#), None);
         assert_eq!(claude_transcript_progress_message(b"not json"), None);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn claude_transcript_usage_sums_one_turn_and_deduplicates_split_lines() {
+        use super::claude_transcript_usage;
+        let dir = std::env::temp_dir().join(format!(
+            "agent-office-usage-test-{}",
+            uuid::Uuid::new_v4(),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // 직전 턴(경계 밖) → 사용자 프롬프트 → 이번 턴 응답들.
+        // msg-2 는 thinking/tool_use 로 쪼개져 usage 가 두 줄에 복제돼 있다(1회만 세야 한다).
+        let usage = |input, out, read, write| {
+            format!(
+                r#""usage":{{"input_tokens":{input},"output_tokens":{out},"cache_read_input_tokens":{read},"cache_creation_input_tokens":{write}}}"#
+            )
+        };
+        let lines = [
+            format!(
+                r#"{{"type":"assistant","message":{{"id":"msg-old","model":"claude-opus-5","content":[{{"type":"text","text":"직전 턴"}}],{}}}}}"#,
+                usage(9_999, 9_999, 9_999, 9_999)
+            ),
+            r#"{"type":"user","message":{"role":"user","content":"이번 턴 지시"}}"#.into(),
+            format!(
+                r#"{{"type":"assistant","message":{{"id":"msg-1","model":"claude-opus-5","content":[{{"type":"text","text":"첫 응답"}}],{}}}}}"#,
+                usage(10, 100, 1_000, 50)
+            ),
+            // 도구 결과 user 줄은 턴 경계가 아니다(스캔 계속).
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}"#.into(),
+            format!(
+                r#"{{"type":"assistant","message":{{"id":"msg-2","model":"claude-opus-5","content":[{{"type":"thinking"}}],{}}}}}"#,
+                usage(20, 200, 2_000, 60)
+            ),
+            format!(
+                r#"{{"type":"assistant","message":{{"id":"msg-2","model":"claude-opus-5","content":[{{"type":"tool_use"}}],{}}}}}"#,
+                usage(20, 200, 2_000, 60)
+            ),
+            // 서브에이전트 줄: 사용량은 합산하되 프롬프트 줄은 경계로 보지 않는다.
+            r#"{"type":"user","isSidechain":true,"message":{"role":"user","content":"서브 지시"}}"#.into(),
+            format!(
+                r#"{{"type":"assistant","isSidechain":true,"message":{{"id":"msg-sub","model":"claude-haiku-4-5","content":[{{"type":"text","text":"서브 응답"}}],{}}}}}"#,
+                usage(5, 50, 500, 5)
+            ),
+        ];
+        let path = dir.join("transcript.jsonl");
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        let body = serde_json::json!({ "transcript_path": path.to_string_lossy() })
+            .to_string()
+            .into_bytes();
+
+        let tokens = claude_transcript_usage(&body).unwrap();
+        assert_eq!(tokens.input, Some(10 + 20 + 5));
+        assert_eq!(tokens.output, Some(100 + 200 + 50));
+        assert_eq!(tokens.cache_read, Some(1_000 + 2_000 + 500));
+        assert_eq!(tokens.cache_write, Some(50 + 60 + 5));
+        // 대표 모델은 가장 최근 **메인 세션** 응답의 모델(서브에이전트 모델 아님).
+        assert_eq!(tokens.model.as_deref(), Some("claude-opus-5"));
+
+        // 사용량 라인이 하나도 없으면(프롬프트만 있는 파일) None.
+        let empty = dir.join("empty-turn.jsonl");
+        std::fs::write(
+            &empty,
+            r#"{"type":"user","message":{"role":"user","content":"방금 보낸 지시"}}"#,
+        )
+        .unwrap();
+        let empty_body = serde_json::json!({ "transcript_path": empty.to_string_lossy() })
+            .to_string()
+            .into_bytes();
+        assert_eq!(claude_transcript_usage(&empty_body), None);
+
+        // 파일 부재/필드 부재/비JSON → None 폴백.
+        let missing =
+            serde_json::json!({ "transcript_path": dir.join("nope.jsonl").to_string_lossy() })
+                .to_string()
+                .into_bytes();
+        assert_eq!(claude_transcript_usage(&missing), None);
+        assert_eq!(claude_transcript_usage(br#"{}"#), None);
+        assert_eq!(claude_transcript_usage(b"not json"), None);
 
         let _ = std::fs::remove_dir_all(dir);
     }

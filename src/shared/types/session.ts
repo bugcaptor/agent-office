@@ -158,6 +158,28 @@ export type SessionEventKind =
   | "stop";
 
 /**
+ * 한 턴에서 소비한 토큰 사용량. `kind="stop"` 레코드에만(그것도 추출에 성공한
+ * 경우에만) 실린다. Rust `SessionEventTokens`(camelCase) 미러.
+ *
+ * 모든 필드가 옵션이다 — 제공자/버전마다 실어 주는 항목이 다르고, 추출에
+ * 실패한 항목은 조용히 생략한다. 값이 하나도 없으면 `tokens` 자체를 싣지
+ * 않는다. `input`은 **캐시를 제외한** 순수 입력 토큰이다(Claude
+ * `input_tokens`, Codex `input_tokens - cached_input_tokens`).
+ */
+export interface SessionEventTokens {
+  /** 캐시 히트/기록을 제외한 입력 토큰. */
+  input?: number;
+  /** 출력 토큰(추론 토큰 포함). */
+  output?: number;
+  /** 캐시에서 읽은 입력 토큰(할인 단가). */
+  cacheRead?: number;
+  /** 캐시에 기록한 입력 토큰(할증 단가). Codex는 구분이 없어 항상 생략. */
+  cacheWrite?: number;
+  /** 그 턴의 대표 모델 ID(예: "claude-opus-5", "gpt-5.4"). 비용 환산 키. */
+  model?: string;
+}
+
+/**
  * 세션 원천 이벤트 1건. `<app-data>/session-events/v1/YYYY-MM-DD.jsonl`에
  * 한 줄씩 쌓인 레코드를 `loadSessionEvents`가 그대로 돌려준다(집계는 렌더러가
  * 한다). Rust `SessionEventRecord`(camelCase envelope + 옵션 필드 +
@@ -189,6 +211,11 @@ export interface SessionEventRecord {
   shell?: string;
   /** kind="session_state"일 때 전이한 세션 상태. */
   state?: SessionState;
+  /**
+   * kind="stop"일 때 그 턴이 쓴 토큰(추출 성공 시에만). 과거 기록과 추출
+   * 실패는 undefined — 집계는 반드시 부재를 견뎌야 한다.
+   */
+  tokens?: SessionEventTokens;
 }
 
 /**

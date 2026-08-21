@@ -6,7 +6,12 @@
 // 로딩→집계 표시, 빈/오류+재시도 상태, 기간 전환 재조회. tauriApi는 mock.
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentProfile, SessionEventKind, SessionEventRecord } from "@shared/types";
+import type {
+  AgentProfile,
+  SessionEventKind,
+  SessionEventRecord,
+  SessionEventTokens,
+} from "@shared/types";
 import { useAppStore } from "../../store/appStore";
 
 const loadSessionEvents = vi.fn();
@@ -21,7 +26,12 @@ const { AnalyticsDialog } = await import("../AnalyticsDialog");
 const initialState = useAppStore.getState();
 
 let seq = 0;
-function ev(kind: SessionEventKind, at: number, agentId = "a1"): SessionEventRecord {
+function ev(
+  kind: SessionEventKind,
+  at: number,
+  agentId = "a1",
+  tokens?: SessionEventTokens,
+): SessionEventRecord {
   return {
     schemaVersion: 1,
     runId: "r",
@@ -30,6 +40,7 @@ function ev(kind: SessionEventKind, at: number, agentId = "a1"): SessionEventRec
     agentId,
     sessionId: "s1",
     kind,
+    ...(tokens ? { tokens } : {}),
   };
 }
 
@@ -70,6 +81,45 @@ describe("AnalyticsDialog", () => {
     expect(screen.getByRole("cell", { name: "5분" })).toBeTruthy();
     // 차트 SVG도 그려진다.
     expect(document.querySelector("svg.analytics-chart")).toBeTruthy();
+  });
+
+  it("stop에 실린 토큰과 추정 비용을 셀에 보여준다", async () => {
+    const now = Date.now();
+    loadSessionEvents.mockResolvedValue([
+      ev("prompt", now - 600_000),
+      ev("stop", now - 300_000, "a1", {
+        input: 12_000,
+        output: 3_000,
+        model: "claude-opus-5",
+      }),
+    ]);
+    useAppStore.setState({ agents: { a1: profile("a1", "Ada") } });
+    useAppStore.getState().openModal({ kind: "analytics" });
+
+    render(<AnalyticsDialog />);
+
+    // 토큰 = 입력+출력 = 15,000 → "15.0K", 비용 = (12000*5 + 3000*25)/1e6 = $0.135
+    await waitFor(() => expect(screen.getByRole("cell", { name: "15.0K" })).toBeTruthy());
+    expect(screen.getByRole("cell", { name: "$0.135" })).toBeTruthy();
+    expect(screen.getByRole("cell", { name: "15.0K" }).getAttribute("title")).toBe(
+      "입력 12.0K · 출력 3.0K",
+    );
+    expect(screen.getByText(/공개 API 요율 환산 추정치/)).toBeTruthy();
+  });
+
+  it("토큰이 없는(과거) 기록은 토큰·비용 셀에 —를 보여준다", async () => {
+    const now = Date.now();
+    loadSessionEvents.mockResolvedValue([
+      ev("prompt", now - 600_000),
+      ev("stop", now - 300_000),
+    ]);
+    useAppStore.setState({ agents: { a1: profile("a1", "Ada") } });
+    useAppStore.getState().openModal({ kind: "analytics" });
+
+    render(<AnalyticsDialog />);
+
+    await waitFor(() => expect(screen.getByText("Ada")).toBeTruthy());
+    expect(screen.getAllByRole("cell", { name: "—" })).toHaveLength(2);
   });
 
   it("기간 내 활동이 없으면 빈 상태 문구를 보여준다", async () => {

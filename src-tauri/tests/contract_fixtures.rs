@@ -104,6 +104,8 @@ fn notification_event_matches_fixture() {
         message: "needs input".into(),
         dedup_key: "hook:s1".into(),
         at: 1720000000002,
+        // Hook 알림에는 턴 사용량이 없다 → 직렬화에서 통째로 빠진다(픽스처 불변).
+        tokens: None,
     };
     assert_value_eq(fixture_json, serde_json::to_value(&value).unwrap());
 }
@@ -341,6 +343,11 @@ fn session_event_record_started_roundtrips() {
 #[test]
 fn session_event_record_tool_roundtrips() {
     assert_roundtrip::<SessionEventRecord>(fixture!("session-event-record.tool.json"));
+}
+
+#[test]
+fn session_event_record_stop_with_tokens_roundtrips() {
+    assert_roundtrip::<SessionEventRecord>(fixture!("session-event-record.stop.json"));
 }
 
 #[test]

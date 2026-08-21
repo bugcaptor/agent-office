@@ -10,8 +10,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionEventRecord } from "@shared/types";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
+import type { AgentSummary } from "./aggregate";
 import { aggregate, dayRange, localDayCalendar } from "./aggregate";
 import { DailyBarChart, formatDuration } from "./DailyBarChart";
+import { formatTokens, formatUsd } from "./pricing";
 
 /** 기간 셀렉터 후보(일). */
 const PERIODS = [7, 14, 30] as const;
@@ -34,6 +36,19 @@ function rangeFor(days: number, now: number): { fromAt: number; toAt: number } {
   const d = new Date(now);
   const fromAt = new Date(d.getFullYear(), d.getMonth(), d.getDate() - (days - 1)).getTime();
   return { fromAt, toAt: now };
+}
+
+/**
+ * 토큰 셀 툴팁: 0인 항목은 빼고 나열한다. 전부 0이면 빈 문자열(툴팁 생략).
+ * 예: "입력 12.3K · 출력 4.5K · 캐시읽기 1.2M".
+ */
+function tokenBreakdown(row: AgentSummary): string {
+  const parts: string[] = [];
+  if (row.tokensIn > 0) parts.push(`입력 ${formatTokens(row.tokensIn)}`);
+  if (row.tokensOut > 0) parts.push(`출력 ${formatTokens(row.tokensOut)}`);
+  if (row.tokensCacheRead > 0) parts.push(`캐시읽기 ${formatTokens(row.tokensCacheRead)}`);
+  if (row.tokensCacheWrite > 0) parts.push(`캐시기록 ${formatTokens(row.tokensCacheWrite)}`);
+  return parts.join(" · ");
 }
 
 type LoadState =
@@ -145,31 +160,61 @@ export function AnalyticsDialog() {
                     <th scope="col">작업시간</th>
                     <th scope="col">턴</th>
                     <th scope="col">도구</th>
+                    <th scope="col">토큰</th>
+                    <th
+                      scope="col"
+                      title="공개 API 요율로 환산한 추정치(실제 청구액과 다를 수 있음)"
+                    >
+                      추정 비용
+                    </th>
                     <th scope="col">활동일</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {analytics.data.summary.map((row) => (
-                    <tr key={row.agentId}>
-                      <th scope="row" className="analytics-agent">
-                        <span
-                          className="analytics-swatch"
-                          style={{ background: row.color }}
-                          aria-hidden="true"
-                        />
-                        <span className={row.deleted ? "analytics-deleted" : undefined}>
-                          {row.name}
-                          {row.deleted ? " (삭제됨)" : ""}
-                        </span>
-                      </th>
-                      <td>{formatDuration(row.workedMs)}</td>
-                      <td>{row.turns}</td>
-                      <td>{row.toolEvents}</td>
-                      <td>{row.activeDays}</td>
-                    </tr>
-                  ))}
+                  {analytics.data.summary.map((row) => {
+                    const tokenTotal = row.tokensIn + row.tokensOut;
+                    const breakdown = tokenBreakdown(row);
+                    const hasCost = row.costUsd > 0 || row.costUnknownTurns > 0;
+                    return (
+                      <tr key={row.agentId}>
+                        <th scope="row" className="analytics-agent">
+                          <span
+                            className="analytics-swatch"
+                            style={{ background: row.color }}
+                            aria-hidden="true"
+                          />
+                          <span className={row.deleted ? "analytics-deleted" : undefined}>
+                            {row.name}
+                            {row.deleted ? " (삭제됨)" : ""}
+                          </span>
+                        </th>
+                        <td>{formatDuration(row.workedMs)}</td>
+                        <td>{row.turns}</td>
+                        <td>{row.toolEvents}</td>
+                        <td title={breakdown || undefined}>
+                          {tokenTotal > 0 ? formatTokens(tokenTotal) : "—"}
+                        </td>
+                        <td
+                          title={
+                            row.costUnknownTurns > 0
+                              ? `단가를 모르는 모델 ${row.costUnknownTurns}턴은 제외됨`
+                              : undefined
+                          }
+                        >
+                          {hasCost
+                            ? `${row.costUnknownTurns > 0 ? "~" : ""}${formatUsd(row.costUsd)}`
+                            : "—"}
+                        </td>
+                        <td>{row.activeDays}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+              <p className="analytics-footnote">
+                비용은 공개 API 요율 환산 추정치입니다. 구독제 사용 시 실제 청구와
+                무관합니다.
+              </p>
             </>
           )}
         </div>

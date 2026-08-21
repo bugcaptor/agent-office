@@ -1,7 +1,7 @@
 # 세션 활동 분석 패널 — 설계 스펙
 
-- 날짜: 2026-07-17 (상태 갱신: 2026-07-20)
-- 상태: 정본 — 구현 완료. 구현: `session_events/reader.rs`(Rust), `renderer/analytics/`(집계·UI), 커맨드 `load_session_events`(`ipc/commands/persistence.rs`).
+- 날짜: 2026-07-17 (상태 갱신: 2026-08-21 — §9 토큰·비용 확장 추가)
+- 상태: 정본 — 구현 완료. 구현: `session_events/reader.rs`(Rust), `renderer/analytics/`(집계·UI), 커맨드 `load_session_events`(`ipc/commands/persistence.rs`). 토큰·비용은 `observer/event.rs`·`observer/codex_usage.rs`(추출), `renderer/analytics/pricing.ts`(단가).
 - 선행: `docs/archive/session-event-timeseries-design.md` (수집 계층, archived — 코드가 정본). 그 설계의 비목표였던 "분석 UI"를 이번 범위로 승격한다.
 - usage(한도) 표시와는 별개 기능 — 그쪽은 `docs/usage-design.md` 참조(상호 링크만, 데이터 소스가 다름).
 
@@ -25,7 +25,8 @@
 - 실시간 갱신(열려 있는 동안 새 이벤트 반영), CSV/이미지 내보내기, 시간대 히트맵.
 - 차트 라이브러리 도입. SVG 자체 구현으로 한정한다.
 - `session-times.jsonl`·`SessionTimePanel`의 변경 또는 대체.
-- 수집 측(`SessionEventStore`, `RecordingAppEvents`) 변경.
+- 수집 측(`SessionEventStore`, `RecordingAppEvents`) 변경. — **§9에서 해제됨**:
+  턴 토큰을 실으려면 수집 측에 옵션 필드를 더해야 했다.
 
 ## 3. 선택한 접근
 
@@ -123,3 +124,90 @@ pub fn load_session_events(root: &Path, from_at: u64, to_at: u64) -> Vec<Session
 - 삭제된 캐릭터의 과거 활동이 스냅샷 이름으로 보인다.
 - 수집 경로 코드는 변경되지 않는다.
 - 신규 테스트 전부 통과, 기존 기준선 실패 증가 없음.
+
+## 9. 확장 — 턴 토큰 사용량과 API 환산 비용 (2026-08-21)
+
+분석 표에 **토큰**과 **추정 비용(API 환산)** 열을 더한다. 원천은 CLI가 남기는
+전사/rollout이며, 앱은 턴 종료 시점에 그 턴 몫만 뽑아 시계열에 적어 둔다.
+
+### 9.1 기록 계층
+
+`SessionEventRecord`에 옵션 필드 `tokens`를 더한다(`{input, output, cacheRead,
+cacheWrite, model}`, 전부 옵션). **`schemaVersion`은 1을 유지한다** — 옵션 추가는
+하위호환이고, 토큰이 없는 과거 파일과 한 디렉터리에 섞여도 그대로 읽힌다.
+`kind="stop"` 레코드에만, 그것도 추출에 성공했을 때만 실린다.
+
+배선은 기존 알림 경로를 그대로 탄다:
+`ObserverEvent::Stop{tokens}` → `NotificationHub::ingest_with_tokens` →
+`NotificationEvent{tokens}` → `RecordingAppEvents` → stop 레코드.
+따라서 **알림이 나가지 않는 Stop(서브에이전트 진행 중 running>0, dedup 억제,
+죽은 세션)은 사용량도 함께 버려진다** — 그 턴의 stop 레코드 자체가 없어 붙일
+곳이 없기 때문이다. 의도된 트레이드오프다.
+
+`input`은 **캐시를 제외한 순수 입력**으로 정규화한다(Claude `input_tokens`,
+Codex `input_tokens - cached_input_tokens`). 세 입력 항목을 더해야 전체 입력이
+되므로 비용 환산에서 이중 계산이 나지 않는다.
+
+### 9.2 추출 — Claude
+
+Stop 훅 body의 `transcript_path`(JSONL) **꼬리 2MB**를 읽어 뒤에서부터 스캔하며,
+`type=="assistant"` 줄의 `message.usage`를 합산한다. 종료 조건은 "첫 진짜 사용자
+프롬프트 줄"(`is_real_user_prompt` — tool_result만 있는 user 줄은 경계가 아니다)로,
+완료 메시지 추출(§이슈 #39)이 쓰는 판정을 그대로 재사용한다.
+
+두 가지 함정을 코드가 명시적으로 다룬다.
+
+- **같은 응답이 여러 줄로 쪼개진다.** Claude는 assistant 응답 하나를 content
+  블록별(thinking/text/tool_use)로 나눠 여러 줄에 쓰면서 `message.usage`를 매 줄에
+  **복제**한다. 줄 단위 합산은 2~3배 과대 집계가 되므로 `message.id`로 중복을 제거한다.
+- **서브에이전트(`isSidechain`) 줄.** 사용량은 합산한다(실제 청구되는 비용이고 이
+  턴에 속한다). 다만 경계 판정에서는 스킵한다 — 서브에이전트의 프롬프트 줄을 메인
+  턴 경계로 오인하면 스캔이 조기 종료된다. 대표 `model`은 가장 최근 **메인 세션**
+  응답의 것을 쓴다(서브에이전트는 다른 모델일 수 있다).
+
+**왜 "전 세션 누계의 델타"가 아닌가**: 전사에는 누계 필드가 없어 어차피 구간을
+합산해야 하고, 이 방식은 상태를 들지 않아 앱 재시작·세션 입양 후에도 정확하다.
+꼬리 2MB 안에서 경계를 못 찾으면 찾은 데까지만 합산한다(과소 집계로 강등).
+
+### 9.3 추출 — Codex
+
+Codex 훅 body에는 사용량이 없다. rollout(`<CODEX_HOME>/sessions/YYYY/MM/DD/
+rollout-*.jsonl`)의 `token_count` 이벤트가 `info.total_token_usage`(**세션 누계**)를
+담고 있으므로 **턴 경계 두 지점의 누계 차이**를 쓴다(`observer/codex_usage.rs`).
+
+- UserPromptSubmit에서 기준 누계를 기억한다. 한 턴에 프롬프트가 여러 번 와도(작업
+  중 추가 지시) 기준을 밀지 않는다 — 그 사이에 쓴 토큰이 새기 때문.
+- Stop에서 `현재 − 기준`을 싣고 현재 값을 새 기준으로 갱신한다. 기준이 없으면(앱이
+  세션 도중에 켜짐) **그 턴은 조용히 생략**하고 기준만 심는다 — 세션 누계 전체를 한
+  턴에 몰아넣는 과대 집계보다 누락이 낫다.
+- rollout 찾기는 훅 body의 `session_id`가 파일명 꼬리(`...-<id>.jsonl`)와 같다는
+  규약을 먼저 쓰고, 없으면 `cwd`와 첫 줄 `session_meta.cwd`가 같은 최근 파일로
+  폴백한다(`session_log/agent_transcript/codex.rs`와 같은 휴리스틱). 찾은 경로는
+  세션별로 캐시한다.
+- 모델은 `turn_context.payload.model`. 꼬리에서 만나면 그 값을, 못 만나면 파일
+  앞머리(256KB)에서 읽어 캐시해 둔 첫 모델을 쓴다.
+
+pi는 전사/rollout 경로가 없어 항상 `tokens: None`이다.
+
+### 9.4 비용 환산 (프런트)
+
+단가표는 `renderer/analytics/pricing.ts`. 집계가 이미 프런트 순수 함수라 단가도
+프런트에 두는 편이 일관적이고, 요율이 바뀌어도 표 하나만 고치면 된다.
+
+- 모델 ID를 소문자화해 **부분문자열 패턴 목록을 위에서 아래로 첫 일치**로 훑는다
+  (`fable`/`mythos`/`opus`/`sonnet`/`haiku`/`gpt-5`/`gpt-4.1`/`gemini-2.5-pro`/`gemini`).
+  날짜 접미사가 붙은 ID(`claude-opus-4-5-20250929`)도 자연히 잡힌다.
+- **미지 모델은 비용에서 제외**하고 `costUnknownTurns`로 따로 센다. 화면은 그런 행의
+  비용에 `~`를 붙여 부분 집계임을 드러낸다.
+- 숫자는 공개 API 요율 기준 **대표값**이다. 장문 할증·배치 할인·계약 단가·구독제는
+  반영하지 않으며, 표 아래 각주로 그렇게 못박는다.
+
+### 9.5 표시
+
+요약 표 열: 캐릭터 / 작업시간 / 턴 / 도구 / **토큰** / **추정 비용** / 활동일.
+토큰 셀은 `input+output` 축약값이고 캐시 항목은 툴팁으로 보조한다. 토큰이나 비용이
+없는 행(과거 기록·미지 모델)은 `—`.
+
+토큰·비용은 작업시간과 달리 **자정 경계로 쪼개지 않고 stop 시각의 로컬 날짜에 통째로
+귀속**한다 — 마감 시점에 한꺼번에 확정되는 값이라 시간 비례로 나눌 근거가 없다.
+`range` 게이트는 도구 이벤트와 똑같이 적용한다(창 밖 stop의 토큰은 제외).

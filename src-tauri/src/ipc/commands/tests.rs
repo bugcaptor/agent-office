@@ -898,6 +898,7 @@
             cwd: None,
             shell: None,
             state: None,
+            tokens: None,
         };
         let mut line = serde_json::to_string(&record).unwrap();
         line.push('\n');
