@@ -92,7 +92,17 @@ export function WebRemoteSection() {
 
   useEffect(() => {
     void refreshHost();
-  }, [refreshHost, appSettings.webRemoteEnabled]);
+    // updateAppSettings 저장은 fire-and-forget이라 바인드/포트 변경의 재바인드가
+    // 끝나기 전에 이 effect가 먼저 돌 수 있다 — 잠시 뒤 한 번 더 조회해 새
+    // 주소를 붙잡는다.
+    const timer = window.setTimeout(() => void refreshHost(), 1200);
+    return () => window.clearTimeout(timer);
+  }, [
+    refreshHost,
+    appSettings.webRemoteEnabled,
+    appSettings.webRemoteBind,
+    appSettings.webRemotePort,
+  ]);
 
   // HTTPS는 tailnet에 실제로 열려 있을 때만 의미가 있다 — 루프백 폴백이나
   // 전 네트워크 바인드에서는 serve 업스트림을 잡을 근거가 없다.

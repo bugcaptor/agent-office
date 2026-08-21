@@ -1034,6 +1034,21 @@ impl WebRemoteServerState {
             let _detached = server.handle;
         }
     }
+
+    /// 허용 네트워크·포트 변경 반영용 재기동. `ensure`는 멱등이라 이미 떠 있는
+    /// 리스너의 바인드 주소를 바꾸지 못한다 — 먼저 내리고 새 정책으로 다시 연다.
+    /// graceful shutdown은 신호 즉시 accept를 멈추고 리스너 소켓을 놓지만, 남은
+    /// 연결(웹소켓 tail 등)이 다 빠질 때까지 태스크는 살아 있을 수 있어 짧은
+    /// 시한부로만 기다린다(시한을 넘기면 배수는 백그라운드에 맡긴다).
+    pub async fn rebind(&self, ctx: Arc<WebRemoteContext>, port: u16) -> Option<u16> {
+        let installed = self.installed.lock().unwrap().take();
+        if let Some(server) = installed {
+            let _ = server.shutdown.send(());
+            let _ = tokio::time::timeout(std::time::Duration::from_millis(500), server.handle)
+                .await;
+        }
+        self.ensure(ctx, port).await
+    }
 }
 
 /// 이 머신을 사람이 알아볼 이름(호스트 승인/뷰어 목록에 표시).
@@ -1354,6 +1369,30 @@ mod tests {
                 return serde_json::from_str(&text).expect("호스트 메시지 파싱");
             }
         }
+    }
+
+    /// 허용 네트워크 변경은 rebind로만 반영된다 — ensure는 멱등이라 기존
+    /// 리스너를 그대로 두고, rebind는 내렸다가 새 정책의 주소로 다시 연다.
+    #[tokio::test]
+    async fn rebind_reopens_listener_with_new_bind_policy() {
+        let (ctx, dir) = build_ctx("rebind");
+        let server = WebRemoteServerState::default();
+        let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
+        let loopback = IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+        assert_eq!(server.current_bound().unwrap().ip, loopback);
+
+        ctx.settings.write().unwrap().web_remote_bind = WebRemoteBind::All;
+        // ensure만으로는 그대로다(멱등) — 이게 원래 버그의 재현이다.
+        assert_eq!(server.ensure(ctx.clone(), 0).await, Some(port));
+        assert_eq!(server.current_bound().unwrap().ip, loopback);
+
+        let new_port = server.rebind(ctx.clone(), 0).await.expect("재기동");
+        let bound = server.current_bound().unwrap();
+        assert_eq!(bound.ip, IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+        assert_eq!(bound.port, new_port);
+
+        server.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

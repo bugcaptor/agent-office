@@ -65,6 +65,11 @@ pub(crate) async fn set_app_settings_inner(
     app_state: &AppState,
     settings: AppSettings,
 ) -> Result<(), String> {
+    // 웹 원격 재바인드 판단용 — apply_settings_effects가 캐시를 덮기 전의 값.
+    let (prev_web_bind, prev_web_port) = {
+        let s = app_state.settings.read().unwrap();
+        (s.web_remote_bind, s.web_remote_port)
+    };
     apply_settings_effects(
         &app_state.settings_store,
         &app_state.settings,
@@ -92,12 +97,22 @@ pub(crate) async fn set_app_settings_inner(
 
     // 웹 원격 lifecycle: web_remote_enabled 토글에 따라 수신 서버를 기동/
     // 정지한다. 끄면 리스너만 내려가고 발급 토큰은 남는다(재활성화 시 재페어링
-    // 불필요 — control의 "승인은 지속" 규칙과 같다).
+    // 불필요 — control의 "승인은 지속" 규칙과 같다). ensure는 멱등이라 허용
+    // 네트워크·포트가 바뀐 경우에는 rebind로 내렸다 새 주소로 다시 연다.
     if settings.web_remote_enabled {
-        let _ = app_state
-            .web_remote_server
-            .ensure(app_state.web_remote_ctx.clone(), settings.web_remote_port)
-            .await;
+        let changed = prev_web_bind != settings.web_remote_bind
+            || prev_web_port != settings.web_remote_port;
+        if changed {
+            let _ = app_state
+                .web_remote_server
+                .rebind(app_state.web_remote_ctx.clone(), settings.web_remote_port)
+                .await;
+        } else {
+            let _ = app_state
+                .web_remote_server
+                .ensure(app_state.web_remote_ctx.clone(), settings.web_remote_port)
+                .await;
+        }
     } else {
         app_state.web_remote_server.shutdown();
     }
