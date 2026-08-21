@@ -8,16 +8,41 @@
 import { OFFICE_SCENE } from "./officeScene";
 import { BEACH_SCENE } from "./beachScene";
 import { VALLEY_SCENE } from "./valleyScene";
+import { SPACESHIP_SCENE } from "./spaceshipScene";
+import { CASTLE_SCENE } from "./castleScene";
+import { STEPPE_SCENE } from "./steppeScene";
+import { CRUISE_SCENE } from "./cruiseScene";
+import { FACTORY_SCENE } from "./factoryScene";
+import { VOLCANO_SCENE } from "./volcanoScene";
+import { ZOMBIE_SCENE } from "./zombieScene";
 import type { SceneDef, SceneId } from "./sceneTypes";
 
 export const SCENES: Record<SceneId, SceneDef> = {
   office: OFFICE_SCENE,
   beach: BEACH_SCENE,
   valley: VALLEY_SCENE,
+  spaceship: SPACESHIP_SCENE,
+  castle: CASTLE_SCENE,
+  steppe: STEPPE_SCENE,
+  cruise: CRUISE_SCENE,
+  factory: FACTORY_SCENE,
+  volcano: VOLCANO_SCENE,
+  zombie: ZOMBIE_SCENE,
 };
 
 /** 픽커의 순환 순서(= 기본 풍경이 첫 번째). */
-export const SCENE_ORDER: readonly SceneId[] = ["office", "beach", "valley"];
+export const SCENE_ORDER: readonly SceneId[] = [
+  "office",
+  "beach",
+  "valley",
+  "spaceship",
+  "castle",
+  "steppe",
+  "cruise",
+  "factory",
+  "volcano",
+  "zombie",
+];
 
 export const DEFAULT_SCENE_ID: SceneId = "office";
 

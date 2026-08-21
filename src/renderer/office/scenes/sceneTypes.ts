@@ -17,7 +17,17 @@ import type { Graphics } from "pixi.js";
 import type { OfficeMap, Tile } from "../map/mapData";
 import type { ThemeDef } from "../../theme/themes";
 
-export type SceneId = "office" | "beach" | "valley";
+export type SceneId =
+  | "office"
+  | "beach"
+  | "valley"
+  | "spaceship"
+  | "castle"
+  | "steppe"
+  | "cruise"
+  | "factory"
+  | "volcano"
+  | "zombie";
 
 /** `drawTile`에 넘어가는 한 칸의 문맥. `map`은 이웃 칸을 보고 디테일을
  * 바꾸는 용도(데스크 쌍의 왼쪽에만 랩탑, 보스 책상 상/하단 구분 등). */
