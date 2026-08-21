@@ -33,19 +33,21 @@ src/renderer/office/          (2026-07-20 현재)
     characterFactory.ts     # profile → CharacterAssets (텍스처/애니메이션)
     spriteOverrides.ts      # 커스텀 스프라이트 오버라이드 연결 (이슈 #26 계열)
     spriteResample.ts       # 고해상 커스텀 스프라이트 area 프리필터 축소 (이슈 #47)
+    minimiOverrides.ts      # 커스텀 미니미(단일 프레임) 오버라이드 연결 (§4.8)
+    minimiFactory.ts        # 미니미 프레임 → 텍스처(겉보기 8px 고정) (§4.8)
   entities/
     CharacterEntity.ts      # 상태머신 + Pixi 표시객체 소유
     behaviorFsm.ts          # sitting/idle/walking 상태 전이
     ExclamationOverlay.ts   # 머리 위 "!" 바운스 오버레이
     ThinkingOverlay.ts      # 작업중 말풍선 오버레이 (설계 이후 추가)
-    MiniAgentsOverlay.ts    # 서브에이전트 미니미 오버레이 (설계 이후 추가)
+    MiniAgentsOverlay.ts    # 서브에이전트 미니미 오버레이 (설계 이후 추가, §4.8)
   world/
     OfficeWorld.ts          # 엔티티 컬렉션 관리, A/C 이벤트 → 엔티티 반영
     pathing.ts              # 그리드 좌표 ↔ 픽셀 변환, 목적지 선택
   __tests__/                # prng/palette/characterFactory/deskAssignment/behaviorFsm 등
 ```
 
-커스텀 스프라이트 업로드·정규화·편집은 별도 폴더 `src/renderer/sprite/`(SpriteEditor·spriteCache·spriteNormalize), 초상화는 `src/renderer/portrait/` — 이 문서 범위 밖의 후속 기능이며 `gen/spriteOverrides`가 접점이다.
+커스텀 스프라이트 업로드·정규화·편집은 별도 폴더 `src/renderer/sprite/`(SpriteEditor·spriteCache·minimiCache·spriteNormalize), 초상화는 `src/renderer/portrait/` — 이 문서 범위 밖의 후속 기능이며 `gen/spriteOverrides`·`gen/minimiOverrides`가 접점이다.
 
 핵심 설계 원칙: **`gen/` 이하는 순수 함수** — Pixi/DOM 전역에 의존하지 않고 `OffscreenCanvas`(또는 테스트에서 주입되는 캔버스 팩토리)만 받는다. 결정성/테스트 용이성을 위해서.
 
@@ -1272,6 +1274,43 @@ export interface AgentProfile {
   [k: string]: unknown;
 }
 ```
+
+### 4.8 서브에이전트 미니미 (`entities/MiniAgentsOverlay.ts` + `gen/minimiFactory.ts`)
+
+머리 옆에 뜨는 최대 3마리의 작은 분신. 기본은 **부모 스프라이트 idle0 텍스처를
+공유**해 겉보기 8px(= 부모 겉보기 16px × `MINI_SCALE_FACTOR` 0.5)로 그린다.
+캐릭터별로 **미니미 전용 픽셀아트를 따로 지정**할 수도 있다 — 지정이 없으면
+현행(부모 축소판)이 그대로 유지된다.
+
+데이터/저장 경로는 커스텀 스프라이트와 완전히 같은 모양이다.
+
+| 축 | 커스텀 스프라이트 | 커스텀 미니미 |
+| --- | --- | --- |
+| 프로필 필드 | `spriteUpdatedAt` | `minimiUpdatedAt` |
+| PNG 저장소 | `<data_dir>/sprites/<id>.png` | `<data_dir>/minimis/<id>.png` |
+| IPC | `save/load/delete_sprite` | `save/load/delete_minimi` |
+| 이미지 규격 | 4N×N 4프레임 시트 | **단일 N×N 프레임** (N ∈ [16,256]) |
+| 오버라이드 레지스트리 | `gen/spriteOverrides.ts` | `gen/minimiOverrides.ts` |
+| 부팅 로드/삭제 브리지 | `sprite/spriteCache.ts` | `sprite/minimiCache.ts` |
+| 프리뷰 캐시(zustand) | `spritePreviews` | `minimiPreviews` |
+| 번들(`.aoc.json`) 필드 | `spritePngBase64` | `minimiPngBase64`(선택, v1 하위호환) |
+
+렌더 규약:
+
+- 겉보기 크기는 **항상 `MINIMI_CELL`(8px)** — 커스텀 지정 전후로 크기가
+  변하지 않는다. `spriteResample.MINIMI_CELL === CELL × MINI_SCALE_FACTOR`가
+  테스트로 고정돼 있다.
+- S-적응 프리필터(이슈 #47)는 캐릭터와 **겉보기 크기만 다르게** 적용한다:
+  `D = min(N, 8·S)`(`minimiDetailCellSize`), `sprite.scale = 8/D`. 캐릭터의
+  `D = min(N, 16·S)`와 독립적으로 판단하므로, 부모가 절차 생성(비커스텀)이고
+  미니미만 커스텀인 조합도 창 크기 변화에 정상 반응한다.
+- 소유권: 커스텀 미니미 텍스처는 `CharacterEntity`가 소유하고
+  `replaceMinimi`/`destroy`에서 해제한다. 프리필터를 거치지 않은 패스스루
+  경로는 소스가 `minimiOverrides`의 공유 캔버스라 해제하지 않는다
+  (`CharacterAssets.dispose`와 같은 규약).
+- 라이브 반영: `appearanceKey`가 `minimiUpdatedAt` + 오버라이드 유무를 포함해,
+  지정/해제 시 엔티티가 재생성된다. 재동기화 트리거는 `App.tsx`가
+  `spritePreviews`와 `minimiPreviews`를 묶어 넘기는 `resyncSignal`.
 
 ---
 

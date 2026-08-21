@@ -26,9 +26,11 @@ import { QUEUE_SLOTS } from "../map/mapData";
 import type { OfficeMap } from "../map/mapData";
 import { assignDesks } from "../map/deskAssignment";
 import { createCharacterAssets } from "../gen/characterFactory";
-import { detailCellSize } from "../gen/spriteResample";
+import { detailCellSize, minimiDetailCellSize } from "../gen/spriteResample";
 import { CELL } from "../gen/compositor";
 import { getSpriteOverride } from "../gen/spriteOverrides";
+import { getMinimiOverride } from "../gen/minimiOverrides";
+import { createMinimiAssets } from "../gen/minimiFactory";
 import { CharacterEntity } from "../entities/CharacterEntity";
 import { mulberry32, hashStringToSeed } from "../gen/prng";
 
@@ -49,9 +51,17 @@ const MOVEMENT_RNG_SALT = 0x9e3779b9;
 export const LABEL_ANCHOR_OFFSET_Y = 20;
 
 /** 엔티티 외형을 결정하는 키 — 바뀌면 재생성한다. archetype, seed 편집, 커스텀 시트
- * 등록/변경/해제(spriteUpdatedAt + 오버라이드 유무) 모두 반영. */
+ * 등록/변경/해제(spriteUpdatedAt + 오버라이드 유무), 그리고 미니미 커스텀
+ * 등록/변경/해제(minimiUpdatedAt + 오버라이드 유무)를 모두 반영한다. */
 export function appearanceKey(p: AgentProfile): string {
-  return `${p.archetype ?? "human"}|${p.seed}|${p.spriteUpdatedAt ?? 0}|${getSpriteOverride(p.id) ? 1 : 0}`;
+  return [
+    p.archetype ?? "human",
+    p.seed,
+    p.spriteUpdatedAt ?? 0,
+    getSpriteOverride(p.id) ? 1 : 0,
+    p.minimiUpdatedAt ?? 0,
+    getMinimiOverride(p.id) ? 1 : 0,
+  ].join("|");
 }
 
 /** "starting"/"running" = actively working (character sits at its desk); "exited"/"disposed" = inactive (heads to the break room). */
@@ -189,8 +199,17 @@ export class OfficeWorld {
       if (!slot) continue; // seat shortage: skip for now (planned follow-up: idle wander without a desk)
 
       const assets = createCharacterAssets(p, this.renderScale);
+      const minimi = createMinimiAssets(p.id, this.renderScale);
       const rand = mulberry32(hashStringToSeed(p.id) ^ MOVEMENT_RNG_SALT);
-      const entity = new CharacterEntity(p.id, assets, slot.seat, this.o.map, rand, this.breakReservations);
+      const entity = new CharacterEntity(
+        p.id,
+        assets,
+        slot.seat,
+        this.o.map,
+        rand,
+        this.breakReservations,
+        minimi,
+      );
       entity.setSessionActive(this.sessionActive.get(p.id) ?? false);
       entity.setSubagentCount(this.subagentCounts.get(p.id) ?? 0);
       entity.setPending(this.pendingIds.has(p.id));
@@ -231,19 +250,31 @@ export class OfficeWorld {
    * 카메라 정수 스케일 S 반영(이슈 #47). 커스텀 고해상 시트를 가진 엔티티만
    * D=min(N,16·S)로 재프리필터해 텍스처를 교체한다(FSM/이동 상태는 보존).
    * 절차 생성 스프라이트(항상 16px)와 목표 해상도 D가 그대로인 엔티티는 건너뛴다.
+   *
+   * 커스텀 미니미는 겉보기 크기가 8px이라 D=min(N,8·S)로 **따로** 판단한다 —
+   * 부모가 절차 생성(비커스텀)이어도 미니미만 커스텀일 수 있으므로, 두 갈래를
+   * 독립적으로 검사한다.
    */
   setRenderScale(scale: number): void {
     const s = Math.max(1, Math.round(scale));
     if (s === this.renderScale) return;
     this.renderScale = s;
     for (const [id, entity] of this.entities) {
-      const override = getSpriteOverride(id);
-      if (!override) continue; // 커스텀만 대상(절차 생성은 스케일 무관)
       const p = this.profiles.get(id);
       if (!p) continue;
-      const n = (override as { height?: number }).height ?? CELL;
-      if (detailCellSize(n, s) === entity.cellSize) continue; // 목표 해상도 불변
-      entity.replaceAssets(createCharacterAssets(p, s));
+      const override = getSpriteOverride(id);
+      if (override) {
+        const n = (override as { height?: number }).height ?? CELL;
+        // 목표 해상도가 그대로면 교체 불필요.
+        if (detailCellSize(n, s) !== entity.cellSize) entity.replaceAssets(createCharacterAssets(p, s));
+      }
+      const minimi = getMinimiOverride(id);
+      if (minimi) {
+        const n = (minimi as { height?: number }).height ?? CELL;
+        if (minimiDetailCellSize(n, s) !== entity.minimiCellSize) {
+          entity.replaceMinimi(createMinimiAssets(id, s));
+        }
+      }
     }
   }
 

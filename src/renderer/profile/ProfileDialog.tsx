@@ -28,6 +28,8 @@ import { buildPortraitPrompt, buildSpritePrompt, buildPixelLabSpriteDescription 
 import { PortraitEditor } from "../portrait/PortraitEditor";
 import { SpriteEditor } from "../sprite/SpriteEditor";
 import { clearSpriteOverride } from "../office/gen/spriteOverrides";
+import { clearMinimiOverride } from "../office/gen/minimiOverrides";
+import { loadMinimisFor } from "../sprite/minimiCache";
 import { KEYBOARD_SOUND_PACK_OPTIONS } from "../sound/packs";
 import { previewKeyboardSound, previewVoice } from "../sound/soundManager";
 import type { AvailableShell, TtsVoiceOption } from "@shared/types";
@@ -75,6 +77,11 @@ export function ProfileDialog() {
     editingAgent ? s.spritePreviews[editingAgent.id] : undefined
   );
   const [spriteEditorOpen, setSpriteEditorOpen] = useState(false);
+  const removeMinimiPreview = useAppStore((s) => s.removeMinimiPreview);
+  const minimiPreviewUrl = useAppStore((s) =>
+    editingAgent ? s.minimiPreviews[editingAgent.id] : undefined
+  );
+  const [minimiEditorOpen, setMinimiEditorOpen] = useState(false);
   const [pixellabBusy, setPixellabBusy] = useState(false);
   const [pixellabNote, setPixellabNote] = useState<string | null>(null);
   /** PixelLab 생성 결과 data URL — SpriteEditor initialImage로 전달. */
@@ -252,6 +259,18 @@ export function ProfileDialog() {
     updateAgent(editingAgent.id, { spriteUpdatedAt: undefined });
   };
 
+  const onRemoveMinimi = async () => {
+    if (!editingAgent) return;
+    try {
+      await tauriApi.deleteMinimi(editingAgent.id);
+    } catch (err) {
+      console.warn("ProfileDialog: deleteMinimi failed", err);
+    }
+    clearMinimiOverride(editingAgent.id);
+    removeMinimiPreview(editingAgent.id);
+    updateAgent(editingAgent.id, { minimiUpdatedAt: undefined });
+  };
+
   // ── 캐릭터 내보내기(이슈 #77) ──────────────────────────────
   // 현재 편집 draft(진행 중 편집 반영) + 백엔드에 저장된 초상/스프라이트를 모아
   // 자기완결형 번들 파일로 쓴다. 로컬 환경 필드(cwd/셸/시작명령/봇)는 제외한다.
@@ -261,11 +280,17 @@ export function ProfileDialog() {
     setIoNote(null);
     try {
       const profile = portableFromDraft(draft);
-      const [portraitB64, spriteB64] = await Promise.all([
+      const [portraitB64, spriteB64, minimiB64] = await Promise.all([
         tauriApi.loadPortrait(editingAgent.id),
         tauriApi.loadSprite(editingAgent.id),
+        tauriApi.loadMinimi(editingAgent.id),
       ]);
-      const json = serializeBundle(profile, portraitB64 ?? undefined, spriteB64 ?? undefined);
+      const json = serializeBundle(
+        profile,
+        portraitB64 ?? undefined,
+        spriteB64 ?? undefined,
+        minimiB64 ?? undefined,
+      );
       const saved = await tauriApi.exportCharacterFile(buildExportFileName(profile.name), json);
       setIoNote(saved ? "내보냈습니다." : null); // null=사용자가 취소
     } catch (err) {
@@ -318,6 +343,18 @@ export function ProfileDialog() {
         clearSpriteOverride(id);
         removeSpritePreview(id);
         updateAgent(id, { spriteUpdatedAt: undefined });
+      }
+
+      // 미니미도 스프라이트와 같은 replace 시맨틱(번들에 없으면 제거).
+      if (b.minimiPngBase64) {
+        await tauriApi.saveMinimi(id, b.minimiPngBase64);
+        updateAgent(id, { minimiUpdatedAt: Date.now() });
+        await loadMinimisFor([id]); // 백엔드에서 디코드 → 오버라이드 + 프리뷰 갱신
+      } else {
+        await tauriApi.deleteMinimi(id);
+        clearMinimiOverride(id);
+        removeMinimiPreview(id);
+        updateAgent(id, { minimiUpdatedAt: undefined });
       }
 
       setDraft((d) => applyBundleToDraft(d, b.profile));
@@ -506,6 +543,35 @@ export function ProfileDialog() {
                       </button>
                     )}
                   </>
+                )}
+              </div>
+              {/* 서브에이전트 미니미 — 머리 옆에 뜨는 작은 분신. 지정이 없으면
+                  스프라이트를 그대로 축소해 쓴다. */}
+              <div className="minimi-subsection">
+                <span className="preview-card-title">미니미</span>
+                <img
+                  src={minimiPreviewUrl ?? spritePreviewUrl ?? spriteUrl}
+                  alt="minimi"
+                  width={48}
+                  height={48}
+                  style={{ imageRendering: "pixelated" }}
+                />
+                <span className="sprite-custom-badge">
+                  {minimiPreviewUrl
+                    ? "커스텀 미니미 사용 중"
+                    : "지정 없음 — 스프라이트를 축소해 사용합니다"}
+                </span>
+                {editing && editingAgent && (
+                  <div className="sprite-buttons">
+                    <button className="pixel-btn" onClick={() => setMinimiEditorOpen(true)}>
+                      {minimiPreviewUrl ? "미니미 변경" : "미니미 업로드"}
+                    </button>
+                    {minimiPreviewUrl && (
+                      <button className="pixel-btn" onClick={onRemoveMinimi}>
+                        미니미 제거
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -729,6 +795,13 @@ export function ProfileDialog() {
             setSpriteEditorOpen(false);
             setGeneratedImage(null);
           }}
+        />
+      )}
+      {minimiEditorOpen && editingAgent && (
+        <SpriteEditor
+          agentId={editingAgent.id}
+          target="minimi"
+          onClose={() => setMinimiEditorOpen(false)}
         />
       )}
     </div>

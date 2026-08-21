@@ -124,6 +124,18 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.deleteSprite, { agentId });
   },
 
+  async saveMinimi(agentId, pngBase64) {
+    await invoke(Commands.saveMinimi, { agentId, pngBase64 });
+  },
+
+  async loadMinimi(agentId) {
+    return await invoke(Commands.loadMinimi, { agentId });
+  },
+
+  async deleteMinimi(agentId) {
+    await invoke(Commands.deleteMinimi, { agentId });
+  },
+
   async summarizeText(provider, instruction, text, purpose) {
     return await invoke(Commands.summarizeText, { provider, instruction, text, purpose });
   },

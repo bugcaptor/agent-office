@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { BufferImageSource, Texture, type Sprite } from "pixi.js";
-import { MiniAgentsOverlay } from "../MiniAgentsOverlay";
+import { MiniAgentsOverlay, MINI_SCALE_FACTOR } from "../MiniAgentsOverlay";
+import { MINIMI_CELL } from "../../gen/spriteResample";
+import { CELL } from "../../gen/compositor";
 
 const tex = (): Texture =>
   new Texture({
@@ -58,5 +60,31 @@ describe("MiniAgentsOverlay", () => {
     const o = new MiniAgentsOverlay(sharedTexture, 1);
     o.destroy();
     expect(sharedTexture.destroyed).toBe(false);
+  });
+
+  it("setCustomBase는 배율을 그대로 적용한다(부모 spriteScale과 무관)", () => {
+    const o = new MiniAgentsOverlay(tex(), 2); // 기본 배율 1(=2×0.5)
+    const custom = tex();
+    o.setCustomBase(custom, 0.25);
+    o.root.children.forEach((c) => {
+      const s = c as Sprite;
+      expect(s.texture).toBe(custom);
+      expect(s.scale.x).toBeCloseTo(0.25);
+    });
+  });
+
+  it("setBase는 부모 배율의 절반을 적용한다(기존 계약 유지)", () => {
+    const o = new MiniAgentsOverlay(tex(), 1);
+    const next = tex();
+    o.setBase(next, 4);
+    const s = o.root.children[0] as Sprite;
+    expect(s.texture).toBe(next);
+    expect(s.scale.x).toBeCloseTo(2); // 4 × 0.5
+  });
+
+  it("미니미 겉보기 크기(MINIMI_CELL)는 부모 셀 × MINI_SCALE_FACTOR와 같다", () => {
+    // 커스텀 미니미(minimiFactory의 8/D 배율)와 기본 경로(부모 × 0.5)가
+    // 같은 겉보기 크기여야 지정 전후로 미니미가 커졌다 작아졌다 하지 않는다.
+    expect(MINIMI_CELL).toBe(CELL * MINI_SCALE_FACTOR);
   });
 });

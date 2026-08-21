@@ -112,6 +112,38 @@ export function normalizeSheet(
   return { sheet, n };
 }
 
+/**
+ * 미니미(서브에이전트 축소 캐릭터)용 정규화 — 4프레임 합성 없이 **단일 정사각
+ * N×N 프레임**만 만든다. 4N×N 시트가 들어오면 idle0(첫 프레임)만 잘라 쓴다
+ * (관용 처리). 그 외에는 짧은 변 기준 정사각으로 잘라 N=[16,256]으로 클램프.
+ *
+ * `w`/`h`는 `src`의 원본 픽셀 크기다(캔버스 크기를 신뢰할 수 없는 이미지 소스도
+ * 있으므로 호출부가 명시한다).
+ */
+export function normalizeMinimiFrame(
+  src: CanvasImageSource,
+  w: number,
+  h: number,
+  factory: SpriteCanvasFactory = defaultSpriteCanvasFactory
+): { frame: SpriteCanvas; n: number } {
+  const det = detectSheet(w, h);
+  // 시트면 첫 프레임(정사각 h×h), 아니면 짧은 변 기준 정사각.
+  const side = det.kind === "sheet" ? h : Math.min(w, h);
+  const n = cropCellSize(side);
+  const frame = drawNearest(src, { sx: 0, sy: 0, sw: side, sh: side }, n, n, factory);
+  return { frame, n };
+}
+
+/** 크롭 영역(원본 픽셀 rect)을 미니미용 단일 N×N 프레임으로. N=cropCellSize(rect.sw). */
+export function normalizeMinimiCrop(
+  src: CanvasImageSource,
+  rect: SourceRect,
+  factory: SpriteCanvasFactory = defaultSpriteCanvasFactory
+): { frame: SpriteCanvas; n: number } {
+  const n = cropCellSize(rect.sw);
+  return { frame: drawNearest(src, rect, n, n, factory), n };
+}
+
 /** 크롭 영역(원본 픽셀 rect)을 셀 N=cropCellSize(rect.sw)로 보존해 4N×N 4프레임 시트로. */
 export function normalizeCrop(
   src: CanvasImageSource,

@@ -9,8 +9,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const saveSprite = vi.fn().mockResolvedValue(undefined);
+const saveMinimi = vi.fn().mockResolvedValue(undefined);
 vi.mock("../../ipc/tauriApi", () => ({
-  tauriApi: { saveSprite: (...args: unknown[]) => saveSprite(...args) },
+  tauriApi: {
+    saveSprite: (...args: unknown[]) => saveSprite(...args),
+    saveMinimi: (...args: unknown[]) => saveMinimi(...args),
+  },
 }));
 
 // initialImage 경로는 캔버스 2D를 실제로 쓰므로 jsdom에서는 전부 스텁한다.
@@ -19,6 +23,10 @@ vi.mock("../../ipc/tauriApi", () => ({
 // 오케스트레이션만 다룬다.
 const fakeSheet = {
   toDataURL: () => "data:image/png;base64,SHEET",
+} as unknown as HTMLCanvasElement;
+/** 미니미 경로 산출물(단일 프레임) — 시트와 구분되는 페이로드. */
+const fakeFrame = {
+  toDataURL: () => "data:image/png;base64,FRAME",
 } as unknown as HTMLCanvasElement;
 /** ingestImage 1회당 isFullyOpaque가 정확히 1회 호출된다 — ingest 횟수 관측용. */
 const ingest = vi.hoisted(() => ({ count: 0 }));
@@ -32,9 +40,15 @@ vi.mock("../spriteNormalize", () => ({
   },
   normalizeCrop: () => ({ sheet: fakeSheet, n: 64 }),
   normalizeSheet: () => ({ sheet: fakeSheet, n: 64 }),
+  normalizeMinimiCrop: () => ({ frame: fakeFrame, n: 64 }),
+  normalizeMinimiFrame: () => ({ frame: fakeFrame, n: 64 }),
+  SHEET_COLS: 4,
 }));
 vi.mock("../spriteCache", () => ({
   sheetPreviewUrl: () => "data:image/png;base64,PREVIEW",
+}));
+vi.mock("../minimiCache", () => ({
+  minimiPreviewUrl: () => "data:image/png;base64,MINIMI-PREVIEW",
 }));
 
 /** jsdom Image는 리소스를 로드하지 않는다 — src 대입 시 onload를 비동기로 발화. */
@@ -54,7 +68,10 @@ class FakeImage {
 const { SpriteEditor } = await import("../SpriteEditor");
 
 afterEach(() => cleanup());
-beforeEach(() => saveSprite.mockClear());
+beforeEach(() => {
+  saveSprite.mockClear();
+  saveMinimi.mockClear();
+});
 
 describe("SpriteEditor", () => {
   it("제목/파일 입력/버튼을 렌더한다", () => {
@@ -62,6 +79,14 @@ describe("SpriteEditor", () => {
     expect(screen.getByText("픽셀아트 편집")).toBeTruthy();
     expect(screen.getByText("저장")).toBeTruthy();
     expect(screen.getByText("취소")).toBeTruthy();
+  });
+
+  it("target=\"minimi\"면 미니미 전용 제목과 안내를 보여준다", () => {
+    render(<SpriteEditor agentId="a1" target="minimi" onClose={() => {}} />);
+    expect(screen.getByText("미니미 픽셀아트 편집")).toBeTruthy();
+    expect(
+      screen.getByText("미니미는 걷기/숨쉬기 애니메이션 없이 이 한 장을 그대로 씁니다."),
+    ).toBeTruthy();
   });
 
   it("이미지가 없으면 저장 버튼이 비활성이고 저장이 호출되지 않는다", () => {
@@ -196,6 +221,24 @@ describe("SpriteEditor", () => {
       // 상태 반영(ingest)은 정확히 1회여야 한다.
       await new Promise((r) => setTimeout(r, 0));
       expect(ingest.count).toBe(1);
+    });
+
+    it("target=\"minimi\"면 단일 프레임으로 saveMinimi를 호출한다(saveSprite 아님)", async () => {
+      const onClose = vi.fn();
+      render(
+        <SpriteEditor
+          agentId="a1"
+          target="minimi"
+          onClose={onClose}
+          initialImage="data:image/png;base64,GEN"
+        />,
+      );
+      const save = screen.getByText("저장") as HTMLButtonElement;
+      await waitFor(() => expect(save.disabled).toBe(false));
+      fireEvent.click(save);
+      await waitFor(() => expect(saveMinimi).toHaveBeenCalledWith("a1", "FRAME"));
+      expect(saveSprite).not.toHaveBeenCalled();
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     });
 
     it("마운트 후 initialImage 주입(늦은 생성 응답 난입)은 무시된다", async () => {

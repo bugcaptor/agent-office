@@ -124,6 +124,28 @@
   text-align: center;
 }
 
+/* 스프라이트 카드 안의 "미니미"(서브에이전트 분신) 소섹션. 카드 본문과
+   구분되게 위쪽 구분선만 두고, 이미지/뱃지/버튼은 같은 규칙을 따른다. */
+.minimi-subsection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--unit) * 1.5);
+  width: 100%;
+  margin-top: calc(var(--unit) * 2);
+  padding-top: calc(var(--unit) * 2);
+  border-top: 2px solid var(--border-dark);
+}
+.minimi-subsection > img {
+  image-rendering: pixelated;
+  border: 2px solid var(--border-dark);
+  background: repeating-conic-gradient(
+      rgba(0, 0, 0, 0.06) 0% 25%,
+      transparent 0% 50%
+    )
+    0 0 / 12px 12px var(--bg-panel);
+}
+
 .agent-hover-card {
   position: fixed;
   z-index: 25;

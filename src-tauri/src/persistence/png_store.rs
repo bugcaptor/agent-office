@@ -1,7 +1,7 @@
 // src-tauri/src/persistence/png_store.rs
 //
-// 초상/스프라이트 공용 PNG 파일 저장소. `<dir>/<agentId>.png` 하나당 한 파일.
-// 크기 상한은 인스턴스별 주입(portraits=2MiB, sprites=256KiB).
+// 초상/스프라이트/미니미 공용 PNG 파일 저장소. `<dir>/<agentId>.png` 하나당 한 파일.
+// 크기 상한은 인스턴스별 주입(portraits=2MiB, sprites=1MiB, minimis=1MiB).
 // `profile_store.rs`와 동일한 임시파일+rename 원자적 쓰기를 재사용한다.
 // 이미지 바이트는 profiles.json에 넣지 않는다. 프런트와는 base64로
 // 왕복한다: save는 base64를 받아 디코드 후 검증·저장, load는 파일을 읽어 base64로
@@ -17,6 +17,9 @@ pub const MAX_PORTRAIT_BYTES: usize = 2 * 1024 * 1024;
 /// 커스텀 스프라이트 시트 PNG 상한(설계 C: 1 MiB, 1024×256 RGBA 대응). 정상 경로는
 /// 4N×N PNG(수백 B~수십 KB).
 pub const MAX_SPRITE_BYTES: usize = 1024 * 1024;
+/// 서브에이전트 미니미 PNG 상한(1 MiB). 정상 경로는 단일 N×N PNG(N ∈ [16,256])라
+/// 스프라이트 시트보다도 작지만, 상한은 같은 값으로 맞춘다(입력 경로가 동일).
+pub const MAX_MINIMI_BYTES: usize = 1024 * 1024;
 
 /// PNG 8바이트 시그니처.
 const PNG_MAGIC: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
@@ -291,6 +294,45 @@ mod tests {
     #[test]
     fn sprite_limit_is_one_mib() {
         assert_eq!(MAX_SPRITE_BYTES, 1024 * 1024);
+    }
+
+    #[test]
+    fn minimi_limit_is_one_mib() {
+        assert_eq!(MAX_MINIMI_BYTES, 1024 * 1024);
+    }
+
+    /// 미니미 인스턴스도 스프라이트/초상과 같은 검증·원자적 저장 계약을 그대로 따른다
+    /// (전용 디렉터리만 다르다).
+    #[test]
+    fn minimi_store_roundtrips_and_guards_like_the_others() {
+        let dir = scratch_dir();
+        let store = PngStore::new(dir.clone(), MAX_MINIMI_BYTES);
+        let encoded = b64(&tiny_png_bytes());
+
+        store.save("p1", &encoded, &["p1".to_string()]).expect("save ok");
+        assert_eq!(store.load("p1").expect("load ok"), Some(encoded.clone()));
+
+        // 알 수 없는 id / 경로 조작 id는 거부.
+        assert!(matches!(
+            store.save("nope", &encoded, &["p1".to_string()]).unwrap_err(),
+            PngStoreError::UnknownAgent
+        ));
+        assert!(matches!(
+            store.save("../evil", &encoded, &["../evil".to_string()]).unwrap_err(),
+            PngStoreError::InvalidId
+        ));
+
+        // 상한 초과는 TooLarge.
+        let mut big = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        big.resize(MAX_MINIMI_BYTES + 1, 0u8);
+        assert!(matches!(
+            store.save("p1", &b64(&big), &["p1".to_string()]).unwrap_err(),
+            PngStoreError::TooLarge(_)
+        ));
+
+        store.delete("p1").expect("delete ok");
+        assert_eq!(store.load("p1").expect("load ok"), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

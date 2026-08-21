@@ -647,6 +647,116 @@ describe("CharacterEntity: setSubagentCount / mini overlay", () => {
   });
 });
 
+describe("CharacterEntity: 커스텀 미니미", () => {
+  /** 미니 오버레이의 첫 스프라이트(모든 미니가 같은 텍스처/배율을 공유한다). */
+  const firstMini = (e: CharacterEntity): Sprite => {
+    const mini = e.root.children[3] as unknown as { children: Sprite[] };
+    return mini.children[0];
+  };
+
+  /** 미니미 전용 가짜 에셋. 텍스처는 매번 새로 만들어 부모 idle0과 구분된다. */
+  const makeMinimi = () => ({
+    texture: makeTestCharacterAssets().frames.walk1,
+    scale: 0.25,
+    cellSize: 32,
+    dispose: vi.fn(),
+  });
+
+  it("미주입이면 현행대로 부모 idle0 축소판을 쓴다", () => {
+    const assets = makeTestCharacterAssets();
+    const e = new CharacterEntity("agent-1", assets, SEAT, makeMap(), () => 0.5);
+    expect(firstMini(e).texture).toBe(assets.idle[0]);
+    expect(e.minimiCellSize).toBeNull();
+  });
+
+  it("주입하면 미니미 전용 텍스처/배율을 쓴다(부모 배율과 무관)", () => {
+    const minimi = makeMinimi();
+    const e = new CharacterEntity(
+      "agent-1",
+      makeTestCharacterAssets(),
+      SEAT,
+      makeMap(),
+      () => 0.5,
+      undefined,
+      minimi,
+    );
+    expect(firstMini(e).texture).toBe(minimi.texture);
+    expect(firstMini(e).scale.x).toBeCloseTo(0.25);
+    expect(e.minimiCellSize).toBe(32);
+  });
+
+  it("replaceAssets(부모 시트 교체)가 커스텀 미니미를 덮어쓰지 않는다", () => {
+    const minimi = makeMinimi();
+    const e = new CharacterEntity(
+      "agent-1",
+      makeTestCharacterAssets(),
+      SEAT,
+      makeMap(),
+      () => 0.5,
+      undefined,
+      minimi,
+    );
+    e.replaceAssets(makeTestCharacterAssets());
+    expect(firstMini(e).texture).toBe(minimi.texture);
+    expect(firstMini(e).scale.x).toBeCloseTo(0.25);
+  });
+
+  it("replaceMinimi는 이전 에셋을 해제하고 새 텍스처로 바꾼다", () => {
+    const first = makeMinimi();
+    const e = new CharacterEntity(
+      "agent-1",
+      makeTestCharacterAssets(),
+      SEAT,
+      makeMap(),
+      () => 0.5,
+      undefined,
+      first,
+    );
+    const second = makeMinimi();
+    e.replaceMinimi(second);
+    expect(first.dispose).toHaveBeenCalledTimes(1);
+    expect(firstMini(e).texture).toBe(second.texture);
+    expect(e.minimiCellSize).toBe(32);
+  });
+
+  it("replaceMinimi(null)은 부모 idle0 축소판으로 되돌린다", () => {
+    const minimi = makeMinimi();
+    const assets = makeTestCharacterAssets();
+    const e = new CharacterEntity(
+      "agent-1",
+      assets,
+      SEAT,
+      makeMap(),
+      () => 0.5,
+      undefined,
+      minimi,
+    );
+    e.replaceMinimi(null);
+    expect(minimi.dispose).toHaveBeenCalledTimes(1);
+    expect(firstMini(e).texture).toBe(assets.idle[0]);
+    expect(e.minimiCellSize).toBeNull();
+    // 되돌린 뒤에는 부모 시트 교체가 다시 미니에도 반영돼야 한다.
+    const next = makeTestCharacterAssets();
+    e.replaceAssets(next);
+    expect(firstMini(e).texture).toBe(next.idle[0]);
+  });
+
+  it("destroy가 커스텀 미니미도 해제한다(누수 방지)", () => {
+    const minimi = makeMinimi();
+    const e = new CharacterEntity(
+      "agent-1",
+      makeTestCharacterAssets(),
+      SEAT,
+      makeMap(),
+      () => 0.5,
+      undefined,
+      minimi,
+    );
+    e.destroy();
+    expect(minimi.dispose).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("CharacterEntity: destroy", () => {
   it("destroys the overlays and the root container (and its children)", () => {
     const e = new CharacterEntity("agent-1", makeTestCharacterAssets(), SEAT, makeMap(), () => 0.5);

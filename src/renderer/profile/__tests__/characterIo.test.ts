@@ -16,6 +16,7 @@ import {
   CHARACTER_BUNDLE_SCHEMA_VERSION,
   MAX_PORTRAIT_BYTES,
   MAX_SPRITE_BYTES,
+  MAX_MINIMI_BYTES,
 } from "@shared/types";
 
 function draftWith(over: Partial<DraftProfile>): DraftProfile {
@@ -143,6 +144,36 @@ describe("serialize → parse 라운드트립", () => {
     if (!res.ok) return;
     expect(res.bundle.portraitPngBase64).toBeUndefined();
     expect(res.bundle.spritePngBase64).toBeUndefined();
+    expect(res.bundle.minimiPngBase64).toBeUndefined();
+  });
+
+  it("미니미 PNG도 손실 없이 왕복한다", () => {
+    const profile = portableFromDraft(draftWith({ name: "Nova" }));
+    const json = serializeBundle(profile, undefined, "UE5H-sprite", "UE5H-minimi");
+    const res = parseCharacterBundle(json);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.bundle.spritePngBase64).toBe("UE5H-sprite");
+    expect(res.bundle.minimiPngBase64).toBe("UE5H-minimi");
+  });
+
+  it("미니미가 없으면 키 자체를 넣지 않는다(기존 번들과 동일한 모양)", () => {
+    const json = serializeBundle(portableFromDraft(draftWith({ name: "Nova" })), undefined, "S");
+    expect(json).not.toContain("minimiPngBase64");
+  });
+
+  it("미니미 키가 없는 기존 v1 번들도 그대로 읽힌다(하위호환)", () => {
+    const res = parseCharacterBundle(
+      JSON.stringify({
+        kind: CHARACTER_BUNDLE_KIND,
+        schemaVersion: CHARACTER_BUNDLE_SCHEMA_VERSION,
+        profile: { name: "Old" },
+        spritePngBase64: "S",
+      }),
+    );
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.bundle.minimiPngBase64).toBeUndefined();
   });
 });
 
@@ -195,6 +226,31 @@ describe("parseCharacterBundle 거부 경로", () => {
         schemaVersion: 1,
         profile: { name: "x" },
         spritePngBase64: oversized,
+      }),
+    );
+    expect(res.ok).toBe(false);
+  });
+
+  it("미니미 이미지가 상한 초과면 가져오기 전체를 거부", () => {
+    const oversized = "A".repeat(Math.ceil(((MAX_MINIMI_BYTES + 1024) * 4) / 3));
+    const res = parseCharacterBundle(
+      JSON.stringify({
+        kind: CHARACTER_BUNDLE_KIND,
+        schemaVersion: 1,
+        profile: { name: "x" },
+        minimiPngBase64: oversized,
+      }),
+    );
+    expect(res.ok).toBe(false);
+  });
+
+  it("미니미 이미지 타입이 문자열이 아니면 거부", () => {
+    const res = parseCharacterBundle(
+      JSON.stringify({
+        kind: CHARACTER_BUNDLE_KIND,
+        schemaVersion: 1,
+        profile: { name: "x" },
+        minimiPngBase64: 123,
       }),
     );
     expect(res.ok).toBe(false);

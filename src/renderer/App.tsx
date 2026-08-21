@@ -1,6 +1,6 @@
 import "./layout/layout.css";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { officeBus } from "./ipc/sessionBridge";
 import { OfficeCanvas } from "./office/OfficeCanvas";
 import type { AgentProfile as OfficeAgentProfile } from "./office/types";
@@ -83,6 +83,14 @@ function App() {
   // selector re-triggers B's resync effect whenever a sprite preview is
   // added/updated/removed (see `useOfficeScene`'s `resyncSignal` param).
   const spritePreviews = useAppStore((s) => s.spritePreviews);
+  // 미니미 커스텀 픽셀아트도 같은 이유로 재동기화 신호에 포함한다. 두 맵을
+  // useMemo로 한 객체에 묶어, 둘 중 하나가 실제로 바뀔 때만 새 참조가 되게 한다
+  // (매 렌더 새 객체 리터럴을 넘기면 매번 diff-sync가 돈다).
+  const minimiPreviews = useAppStore((s) => s.minimiPreviews);
+  const appearanceSignal = useMemo(
+    () => ({ spritePreviews, minimiPreviews }),
+    [spritePreviews, minimiPreviews],
+  );
   // 테마 -> Pixi 씬. `THEMES[..]`는 모듈 상수라 참조가 안정적 — 테마가 실제로
   // 바뀔 때만 B의 setTheme 효과가 발화한다. DOM 쪽 토큰은
   // `applyTheme`(store.setTheme / main.tsx 부트)이 이미 처리한다.
@@ -108,7 +116,7 @@ function App() {
       <OfficeCanvas
         bus={officeBus}
         profiles={officeProfiles}
-        resyncSignal={spritePreviews}
+        resyncSignal={appearanceSignal}
         theme={theme}
         scene={scene}
       />

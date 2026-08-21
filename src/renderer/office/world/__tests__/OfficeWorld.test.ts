@@ -18,16 +18,27 @@ import { BufferImageSource, Container, Texture } from "pixi.js";
 
 import type { CharacterAssets } from "../../gen/characterFactory";
 import { setSpriteOverride, resetSpriteOverrides } from "../../gen/spriteOverrides";
+import { setMinimiOverride, resetMinimiOverrides } from "../../gen/minimiOverrides";
+import { MINIMI_CELL } from "../../gen/spriteResample";
 import { OFFICE_MAP, QUEUE_SLOTS, Tile, TILE_SIZE, type OfficeMap } from "../../map/mapData";
 import { tileCenterPx } from "../pathing";
 import { createMockOfficeBus } from "../../bus";
 import type { AgentProfile } from "../../types";
 import { CharacterEntity } from "../../entities/CharacterEntity";
 
-const hoisted = vi.hoisted(() => ({ createCharacterAssetsSpy: vi.fn() }));
+const hoisted = vi.hoisted(() => ({
+  createCharacterAssetsSpy: vi.fn(),
+  createMinimiAssetsSpy: vi.fn(),
+}));
 
 vi.mock("../../gen/characterFactory", () => ({
   createCharacterAssets: hoisted.createCharacterAssetsSpy,
+}));
+
+// 미니미 팩토리도 같은 이유로 목킹한다(Texture.from은 실제 캔버스가 필요).
+// 기본은 null = "커스텀 미니미 없음"(현행 부모 idle0 축소판 경로).
+vi.mock("../../gen/minimiFactory", () => ({
+  createMinimiAssets: hoisted.createMinimiAssetsSpy,
 }));
 
 const { OfficeWorld, appearanceKey, LABEL_ANCHOR_OFFSET_Y } = await import("../OfficeWorld");
@@ -117,11 +128,14 @@ const queuePos = (slot: number) => {
 beforeEach(() => {
   hoisted.createCharacterAssetsSpy.mockReset();
   hoisted.createCharacterAssetsSpy.mockImplementation(() => makeFakeAssets());
+  hoisted.createMinimiAssetsSpy.mockReset();
+  hoisted.createMinimiAssetsSpy.mockImplementation(() => null);
 });
 
 afterEach(() => {
   vi.clearAllMocks();
   resetSpriteOverrides();
+  resetMinimiOverrides();
 });
 
 describe("OfficeWorld.syncAgents: add", () => {
@@ -503,6 +517,63 @@ describe("OfficeWorld.setRenderScale (이슈 #47)", () => {
   });
 });
 
+describe("OfficeWorld.setRenderScale: 커스텀 미니미", () => {
+  /** cellSize를 지정한 가짜 미니미 에셋(실제 Texture 하나만 씀). */
+  const fakeMinimi = (cellSize: number) => ({
+    texture: solidTexture("minimi"),
+    scale: MINIMI_CELL / cellSize,
+    cellSize,
+    dispose: vi.fn(),
+  });
+
+  it("부모가 절차 생성(비커스텀)이어도 미니미가 커스텀이면 S 변경에 반응한다", () => {
+    const { world } = makeWorld();
+    setMinimiOverride("a", { height: 256 } as unknown as CanvasImageSource);
+    // 기본 S=3 → minimiDetailCellSize(256,3)=24
+    hoisted.createMinimiAssetsSpy.mockImplementation(() => fakeMinimi(24));
+    world.syncAgents([profile("a")]);
+    hoisted.createMinimiAssetsSpy.mockClear();
+    hoisted.createCharacterAssetsSpy.mockClear();
+
+    world.setRenderScale(5); // minimiDetailCellSize(256,5)=40 ≠ 24 → 재생성
+
+    expect(hoisted.createMinimiAssetsSpy).toHaveBeenCalledWith("a", 5);
+    // 부모 스프라이트는 커스텀이 아니므로 건드리지 않는다.
+    expect(hoisted.createCharacterAssetsSpy).not.toHaveBeenCalled();
+  });
+
+  it("미니미 목표 해상도 D가 불변이면 미니미를 재생성하지 않는다", () => {
+    const { world } = makeWorld();
+    setMinimiOverride("a", { height: 16 } as unknown as CanvasImageSource);
+    // N=16이라 S가 2 이상이면 D=16으로 고정(8·S >= 16).
+    hoisted.createMinimiAssetsSpy.mockImplementation(() => fakeMinimi(16));
+    world.syncAgents([profile("a")]);
+    hoisted.createMinimiAssetsSpy.mockClear();
+
+    world.setRenderScale(5);
+
+    expect(hoisted.createMinimiAssetsSpy).not.toHaveBeenCalled();
+  });
+
+  it("미니미 오버라이드가 없으면 S 변경에 반응하지 않는다", () => {
+    const { world } = makeWorld();
+    world.syncAgents([profile("a")]);
+    hoisted.createMinimiAssetsSpy.mockClear();
+
+    world.setRenderScale(5);
+
+    expect(hoisted.createMinimiAssetsSpy).not.toHaveBeenCalled();
+  });
+
+  it("엔티티 생성 시 현재 S로 미니미 에셋을 만든다", () => {
+    const { world } = makeWorld();
+    setMinimiOverride("a", { height: 64 } as unknown as CanvasImageSource);
+    hoisted.createMinimiAssetsSpy.mockImplementation(() => fakeMinimi(24));
+    world.syncAgents([profile("a")]);
+    expect(hoisted.createMinimiAssetsSpy).toHaveBeenCalledWith("a", 3); // DEFAULT_RENDER_SCALE
+  });
+});
+
 describe("appearanceKey: archetype 포함", () => {
   const base = mkProfile({ id: "a1", seed: "s1", archetype: "human" });
 
@@ -528,6 +599,33 @@ describe("appearanceKey: archetype 포함", () => {
     setSpriteOverride(base.id, {} as CanvasImageSource);
     const after = appearanceKey(base);
     expect(before).not.toBe(after);
+  });
+
+  it("minimiUpdatedAt 변화가 키에 반영된다", () => {
+    expect(appearanceKey(base)).not.toBe(
+      appearanceKey({ ...base, minimiUpdatedAt: 7 } as AgentProfile),
+    );
+  });
+
+  it("미니미 오버라이드 등록 여부도 키에 반영된다(프로필 불변)", () => {
+    const before = appearanceKey(base);
+    setMinimiOverride(base.id, {} as CanvasImageSource);
+    expect(appearanceKey(base)).not.toBe(before);
+  });
+
+  it("미니미 커스텀 지정/해제는 엔티티 재생성을 유발한다", () => {
+    const { world } = makeWorld();
+    const p = mkProfile({ id: "a1", seed: "s1" });
+    world.syncAgents([p]);
+    expect(hoisted.createCharacterAssetsSpy).toHaveBeenCalledTimes(1);
+
+    setMinimiOverride("a1", {} as CanvasImageSource);
+    world.syncAgents([{ ...p, minimiUpdatedAt: 1 } as AgentProfile]);
+    expect(hoisted.createCharacterAssetsSpy).toHaveBeenCalledTimes(2);
+
+    resetMinimiOverrides();
+    world.syncAgents([p]); // 해제 → 다시 재생성
+    expect(hoisted.createCharacterAssetsSpy).toHaveBeenCalledTimes(3);
   });
 });
 

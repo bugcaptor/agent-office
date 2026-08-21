@@ -1,6 +1,6 @@
 // src-tauri/src/ipc/commands/media.rs
 //
-// Portrait/sprite PNG storage plus the summarizer and PixelLab sprite
+// Portrait/sprite/minimi PNG storage plus the summarizer and PixelLab sprite
 // generation commands. See `super`(`ipc::commands`) module doc for the
 // shared no-lock-across-await contract (`summarize_text` and
 // `generate_sprite_image` are the two exceptions that `.await` while
@@ -85,6 +85,44 @@ pub async fn load_sprite(
 pub async fn delete_sprite(app_state: State<'_, AppState>, agent_id: String) -> Result<(), String> {
     app_state
         .sprite_store
+        .delete(&agent_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn save_minimi(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+    png_base64: String,
+) -> Result<(), String> {
+    let ids: Vec<String> = app_state
+        .store
+        .load()
+        .agents
+        .iter()
+        .map(|a| a.id.clone())
+        .collect();
+    app_state
+        .minimi_store
+        .save(&agent_id, &png_base64, &ids)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_minimi(
+    app_state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<Option<String>, String> {
+    app_state
+        .minimi_store
+        .load(&agent_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn delete_minimi(app_state: State<'_, AppState>, agent_id: String) -> Result<(), String> {
+    app_state
+        .minimi_store
         .delete(&agent_id)
         .map_err(|e| e.to_string())
 }

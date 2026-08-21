@@ -4,6 +4,9 @@
 // 프레임으로 재사용한다. 디코드 이미지를 소스 캔버스로 래스터화해(선택 시 배경
 // 투명화 1회 적용) 크롭/시트 두 경로가 동일 소스를 소비한다. 4N×N 시트는 셀
 // 해상도 보존 패스스루, 그 외는 크롭 → N×N nearest → 4프레임 시트. N ∈ [16,256].
+//
+// `target="minimi"`면 같은 UX로 **단일 N×N 프레임**만 만들어 미니미 저장소에
+// 넣는다(4프레임 합성 없음, 시트 입력은 idle0만 사용).
 import { useCallback, useEffect, useRef, useState } from "react";
 import "../portrait/portrait.css";
 import { useAppStore } from "../store/appStore";
@@ -22,10 +25,15 @@ import {
   detectSheet,
   isFullyOpaque,
   normalizeCrop,
+  normalizeMinimiCrop,
+  normalizeMinimiFrame,
   normalizeSheet,
+  SHEET_COLS,
   type SpriteCanvas,
 } from "./spriteNormalize";
 import { sheetPreviewUrl } from "./spriteCache";
+import { minimiPreviewUrl } from "./minimiCache";
+import { setMinimiOverride } from "../office/gen/minimiOverrides";
 import { CELL } from "../office/gen/compositor";
 
 /** 1:1 크롭 표시 프레임(화면 px). */
@@ -35,17 +43,28 @@ const MAX_SPRITE_B64_LEN = Math.ceil((1024 * 1024 * 4) / 3);
 
 type Mode = "empty" | "crop" | "sheet";
 
+/**
+ * 저장 대상. "sprite"= 캐릭터 스프라이트(4N×N 시트), "minimi"= 서브에이전트
+ * 미니미(단일 N×N 프레임). 크롭/줌·배경 투명화 UX는 완전히 동일하고, 저장
+ * 직전의 정규화와 IPC 경로만 갈라진다.
+ */
+export type SpriteEditorTarget = "sprite" | "minimi";
+
 export function SpriteEditor({
   agentId,
   onClose,
   initialImage,
+  target = "sprite",
 }: {
   agentId: string;
   onClose: () => void;
   /** PixelLab 생성 결과 등 프리로드할 data URL. 지정 시 업로드 없이 시작. */
   initialImage?: string;
+  /** 기본 "sprite". "minimi"면 단일 프레임으로 저장한다. */
+  target?: SpriteEditorTarget;
 }) {
   const setSpritePreview = useAppStore((s) => s.setSpritePreview);
+  const setMinimiPreview = useAppStore((s) => s.setMinimiPreview);
   const updateAgent = useAppStore((s) => s.updateAgent);
 
   const cropCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -248,30 +267,56 @@ export function SpriteEditor({
     (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
   };
 
-  const onSave = async () => {
-    let sheet: SpriteCanvas | null = null;
-    if (mode === "sheet") {
-      sheet = sheetRef.current;
-    } else if (mode === "crop" && srcRef.current && viewRef.current) {
-      const rect = viewToSourceRect(viewRef.current, FRAME, FRAME);
-      sheet = normalizeCrop(srcRef.current, rect).sheet;
+  /** 현재 편집 상태에서 저장할 캔버스를 만든다. target에 따라 4프레임 시트 /
+   *  단일 프레임으로 갈린다. 만들 수 없으면 null. */
+  const buildOutput = (): SpriteCanvas | null => {
+    if (target === "minimi") {
+      // 시트 입력이면 idle0(첫 프레임)만, 크롭 모드면 크롭 영역을 단일 프레임으로.
+      if (mode === "sheet") {
+        const sheet = sheetRef.current;
+        if (!sheet) return null;
+        const n = sheetNRef.current;
+        return normalizeMinimiFrame(sheet, SHEET_COLS * n, n).frame;
+      }
+      if (mode === "crop" && srcRef.current && viewRef.current) {
+        const rect = viewToSourceRect(viewRef.current, FRAME, FRAME);
+        return normalizeMinimiCrop(srcRef.current, rect).frame;
+      }
+      return null;
     }
-    if (!sheet) return;
+    if (mode === "sheet") return sheetRef.current;
+    if (mode === "crop" && srcRef.current && viewRef.current) {
+      const rect = viewToSourceRect(viewRef.current, FRAME, FRAME);
+      return normalizeCrop(srcRef.current, rect).sheet;
+    }
+    return null;
+  };
+
+  const onSave = async () => {
+    const output = buildOutput();
+    if (!output) return;
     setSaving(true);
     setError(null);
     try {
-      const base64 = dataUrlToBase64(sheet.toDataURL("image/png"));
+      const base64 = dataUrlToBase64(output.toDataURL("image/png"));
       if (!base64 || base64.length > MAX_SPRITE_B64_LEN) {
         setError("이미지 인코딩에 실패했거나 1MiB 상한을 초과합니다.");
         return;
       }
-      await tauriApi.saveSprite(agentId, base64);
-      setSpriteOverride(agentId, sheet);
-      setSpritePreview(agentId, sheetPreviewUrl(sheet));
-      updateAgent(agentId, { spriteUpdatedAt: Date.now() });
+      if (target === "minimi") {
+        await tauriApi.saveMinimi(agentId, base64);
+        setMinimiOverride(agentId, output);
+        setMinimiPreview(agentId, minimiPreviewUrl(output));
+        updateAgent(agentId, { minimiUpdatedAt: Date.now() });
+      } else {
+        await tauriApi.saveSprite(agentId, base64);
+        setSpriteOverride(agentId, output);
+        setSpritePreview(agentId, sheetPreviewUrl(output));
+        updateAgent(agentId, { spriteUpdatedAt: Date.now() });
+      }
       onClose();
     } catch (err) {
-      console.warn("SpriteEditor: saveSprite failed", err);
+      console.warn(`SpriteEditor: save failed (${target})`, err);
       setError("저장에 실패했습니다.");
     } finally {
       setSaving(false);
@@ -290,7 +335,9 @@ export function SpriteEditor({
         className="pixel-panel sprite-editor"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <h2 className="pixel-title">픽셀아트 편집</h2>
+        <h2 className="pixel-title">
+          {target === "minimi" ? "미니미 픽셀아트 편집" : "픽셀아트 편집"}
+        </h2>
         <input type="file" accept="image/*" onChange={onFile} />
         <div className="sprite-edit-row">
           {mode !== "sheet" && (
@@ -324,7 +371,14 @@ export function SpriteEditor({
         </label>
         {mode === "sheet" && (
           <p className="sprite-sheet-note">
-            4프레임 시트로 인식했습니다. 셀 해상도를 보존해 저장됩니다.
+            {target === "minimi"
+              ? "4프레임 시트로 인식했습니다. 미니미는 첫 프레임(idle0)만 사용합니다."
+              : "4프레임 시트로 인식했습니다. 셀 해상도를 보존해 저장됩니다."}
+          </p>
+        )}
+        {target === "minimi" && (
+          <p className="sprite-sheet-note">
+            미니미는 걷기/숨쉬기 애니메이션 없이 이 한 장을 그대로 씁니다.
           </p>
         )}
         {error && <p className="portrait-error">{error}</p>}

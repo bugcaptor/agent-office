@@ -27,6 +27,10 @@ export const Commands = {
   saveSprite: "save_sprite",
   loadSprite: "load_sprite",
   deleteSprite: "delete_sprite",
+  // 서브에이전트 미니미 전용 픽셀아트(단일 N×N). 없으면 부모 스프라이트 축소판.
+  saveMinimi: "save_minimi",
+  loadMinimi: "load_minimi",
+  deleteMinimi: "delete_minimi",
   summarizeText: "summarize_text",
   // 설정 화면의 OpenRouter 모델 추천 목록(요약·TTS 공용). 키 없이 부르는
   // 공개 카탈로그라 실패해도 정적 프리셋으로 폴백할 뿐이다.

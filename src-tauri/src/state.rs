@@ -141,6 +141,9 @@ pub struct AppState {
     /// Arc다 — 디렉터리 규약이 두 곳에 복제되지 않는다.
     pub portrait_store: Arc<crate::persistence::png_store::PngStore>,
     pub sprite_store: crate::persistence::png_store::PngStore,
+    /// 서브에이전트 미니미 전용 PNG 저장소(`minimis/<agentId>.png`). 단일 N×N
+    /// 프레임 하나만 담는다 — 없으면 부모 스프라이트 idle0 축소판을 쓴다.
+    pub minimi_store: crate::persistence::png_store::PngStore,
     /// 세션 턴 시계열 로그(session-times.jsonl) — 턴이 종료될 때마다 append.
     pub session_time_store: crate::persistence::session_time_store::SessionTimeStore,
     /// 캐릭터 일기(#56) per-agent 로그(`diaries/<agentId>.jsonl`) — 일기 생성 시 append.

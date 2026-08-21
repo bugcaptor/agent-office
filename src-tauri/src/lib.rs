@@ -67,7 +67,9 @@ use tauri_plugin_window_state::{AppHandleExt as _, StateFlags};
 use crate::notification::hub::{NotificationHub, SystemClock};
 use crate::observer::server::ObserverServerState;
 use crate::observer::ObserverRuntime;
-use crate::persistence::png_store::{PngStore, MAX_PORTRAIT_BYTES, MAX_SPRITE_BYTES};
+use crate::persistence::png_store::{
+    PngStore, MAX_MINIMI_BYTES, MAX_PORTRAIT_BYTES, MAX_SPRITE_BYTES,
+};
 use crate::persistence::profile_store::ProfileStore;
 use crate::persistence::settings_store::{AppSettings, SettingsStore};
 use crate::session::manager::SessionManager;
@@ -464,6 +466,7 @@ pub fn run() {
             let store = ProfileStore::new(data_dir.join("profiles.json"));
             let portrait_store = Arc::new(PngStore::new(data_dir.join("portraits"), MAX_PORTRAIT_BYTES));
             let sprite_store = PngStore::new(data_dir.join("sprites"), MAX_SPRITE_BYTES);
+            let minimi_store = PngStore::new(data_dir.join("minimis"), MAX_MINIMI_BYTES);
             let session_time_store = crate::persistence::session_time_store::SessionTimeStore::new(
                 data_dir.join("session-times.jsonl"),
             );
@@ -613,6 +616,7 @@ pub fn run() {
                 store,
                 portrait_store,
                 sprite_store,
+                minimi_store,
                 session_time_store,
                 diary_store,
                 work_log_store,
@@ -661,6 +665,9 @@ pub fn run() {
             ipc::commands::save_sprite,
             ipc::commands::load_sprite,
             ipc::commands::delete_sprite,
+            ipc::commands::save_minimi,
+            ipc::commands::load_minimi,
+            ipc::commands::delete_minimi,
             ipc::commands::summarize_text,
             ipc::commands::openrouter_list_models,
             ipc::commands::generate_sprite_image,

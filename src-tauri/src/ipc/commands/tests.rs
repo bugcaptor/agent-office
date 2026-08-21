@@ -320,6 +320,10 @@
             profile_dir.join("sprites"),
             crate::persistence::png_store::MAX_SPRITE_BYTES,
         );
+        let minimi_store = crate::persistence::png_store::PngStore::new(
+            profile_dir.join("minimis"),
+            crate::persistence::png_store::MAX_MINIMI_BYTES,
+        );
 
         let settings_store = crate::persistence::settings_store::SettingsStore::new(
             profile_dir.join("settings.json"),
@@ -388,6 +392,7 @@
             store,
             portrait_store,
             sprite_store,
+            minimi_store,
             session_time_store,
             diary_store,
             work_log_store,
@@ -687,6 +692,7 @@
                 portrait_updated_at: None,
                 sprite_request: None,
                 sprite_updated_at: None,
+                minimi_updated_at: None,
                 archetype: None,
                 shell: None,
                 startup_command: None,
@@ -738,6 +744,7 @@
                 portrait_updated_at: None,
                 sprite_request: None,
                 sprite_updated_at: None,
+                minimi_updated_at: None,
                 archetype: None,
                 shell: None,
                 startup_command: None,
@@ -808,6 +815,7 @@
                 portrait_updated_at: None,
                 sprite_request: None,
                 sprite_updated_at: None,
+                minimi_updated_at: None,
                 archetype: None,
                 shell: None,
                 startup_command: None,
@@ -837,6 +845,60 @@
         assert_eq!(state.portrait_store.load("p1").unwrap(), None);
         state.sprite_store.delete("p1").unwrap();
         assert_eq!(state.sprite_store.load("p1").unwrap(), None);
+
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    // save_minimi / load_minimi / delete_minimi — sprite 경로와 동형이되 저장
+    // 디렉터리가 완전히 분리돼 있는지(스프라이트를 덮어쓰지 않는지) 확인한다.
+    #[tokio::test]
+    async fn save_then_load_then_delete_minimi_through_app_state() {
+        let (state, ctl, dir, profile_dir) = build("minimi");
+        let persisted = PersistedState {
+            agents: vec![AgentProfile {
+                id: "p1".into(),
+                name: "Ada".into(),
+                role: "backend".into(),
+                note: "".into(),
+                seed: "seed".into(),
+                created_at: 1,
+                desk_index: 0,
+                assigned_desk_index: None,
+                cwd: None,
+                appearance: None,
+                portrait_updated_at: None,
+                sprite_request: None,
+                sprite_updated_at: None,
+                minimi_updated_at: None,
+                archetype: None,
+                shell: None,
+                startup_command: None,
+                personality_prompt: None,
+                clocked_out: None,
+                keyboard_sound: None,
+                voice_id: None,
+                bot: None,
+            }],
+            version: 1,
+            vacation_mode: None,
+        };
+        state.store.save(&persisted).unwrap();
+        let ids: Vec<String> = state
+            .store
+            .load()
+            .agents
+            .iter()
+            .map(|a| a.id.clone())
+            .collect();
+        let encoded = tiny_png_b64();
+
+        state.minimi_store.save("p1", &encoded, &ids).unwrap();
+        assert_eq!(state.minimi_store.load("p1").unwrap(), Some(encoded));
+        // minimis는 sprites/portraits와 별도 디렉터리다.
+        assert_eq!(state.sprite_store.load("p1").unwrap(), None);
+        assert_eq!(state.portrait_store.load("p1").unwrap(), None);
+        state.minimi_store.delete("p1").unwrap();
+        assert_eq!(state.minimi_store.load("p1").unwrap(), None);
 
         cleanup(&ctl, &dir, &profile_dir);
     }

@@ -82,6 +82,12 @@ export interface AgentOfficeApi {
   loadSprite(agentId: string): Promise<string | null>;
   /** 스프라이트 파일 삭제(없어도 성공). */
   deleteSprite(agentId: string): Promise<void>;
+  /** 미니미 픽셀아트 PNG(base64, data: prefix 없음, 단일 N×N) 저장. */
+  saveMinimi(agentId: string, pngBase64: string): Promise<void>;
+  /** 미니미 PNG base64를 반환, 파일 없으면 null. */
+  loadMinimi(agentId: string): Promise<string | null>;
+  /** 미니미 파일 삭제(없어도 성공). */
+  deleteMinimi(agentId: string): Promise<void>;
   /** 머리 위 라벨 요약: 캡처한 provider의 로컬 CLI를 호출한다. 호출마다 사용자 구독/크레딧을 소모할 수 있다.
    *  purpose로 백엔드 타임아웃을 고른다(#66) — 기본 "label"(20초), 일기는 "diary"(120초). */
   summarizeText(

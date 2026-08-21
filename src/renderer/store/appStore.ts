@@ -157,6 +157,9 @@ interface AppState {
   portraits: Record<string, string>;
   /** 커스텀 스프라이트 프리뷰(idle0 확대) dataURL 캐시. 런타임 전용, 영속 안 함. */
   spritePreviews: Record<string, string>;
+  /** 커스텀 미니미 프리뷰(단일 프레임 확대) dataURL 캐시. 프로필 다이얼로그
+   * 표시용 + "커스텀 미니미 있음" 판정용. 런타임 전용, 영속 안 함. */
+  minimiPreviews: Record<string, string>;
   /** 에이전트별 턴 집계(메모리 전용, 순수 리듀서 상태). */
   timeTracking: Record<string, AgentTurnState>;
   /**
@@ -212,6 +215,8 @@ interface AppState {
   removePortrait(agentId: string): void;
   setSpritePreview(agentId: string, dataUrl: string): void;
   removeSpritePreview(agentId: string): void;
+  setMinimiPreview(agentId: string, dataUrl: string): void;
+  removeMinimiPreview(agentId: string): void;
 
   // ---- session actions ----
   /** `external`은 백엔드 `SessionStateEvent.external` 그대로 — true면 외부(논리)
@@ -384,6 +389,7 @@ export const useAppStore = create<AppState>()(
     xtermTheme: loadStoredXtermThemeOverride(),
     portraits: {},
     spritePreviews: {},
+    minimiPreviews: {},
     timeTracking: {},
     todayWorkedBaseMs: 0,
     memoryWorkedBaselineMs: 0,
@@ -452,6 +458,8 @@ export const useAppStore = create<AppState>()(
         delete portraits[agentId];
         const spritePreviews = { ...s.spritePreviews };
         delete spritePreviews[agentId];
+        const minimiPreviews = { ...s.minimiPreviews };
+        delete minimiPreviews[agentId];
         const timeTracking = { ...s.timeTracking };
         delete timeTracking[agentId];
         const taskLabels = { ...s.taskLabels };
@@ -463,6 +471,7 @@ export const useAppStore = create<AppState>()(
           sessions,
           portraits,
           spritePreviews,
+          minimiPreviews,
           timeTracking,
           taskLabels,
           terminalEpochs,
@@ -724,6 +733,17 @@ export const useAppStore = create<AppState>()(
         const spritePreviews = { ...s.spritePreviews };
         delete spritePreviews[agentId];
         return { spritePreviews };
+      }),
+
+    setMinimiPreview: (agentId, dataUrl) =>
+      set((s) => ({ minimiPreviews: { ...s.minimiPreviews, [agentId]: dataUrl } })),
+
+    removeMinimiPreview: (agentId) =>
+      set((s) => {
+        if (!(agentId in s.minimiPreviews)) return s;
+        const minimiPreviews = { ...s.minimiPreviews };
+        delete minimiPreviews[agentId];
+        return { minimiPreviews };
       }),
 
     applyActivityEvent: (e) =>

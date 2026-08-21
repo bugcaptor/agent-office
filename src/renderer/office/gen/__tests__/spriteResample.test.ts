@@ -5,7 +5,13 @@
 // 픽셀 단위로 못 박는다. DOM/Pixi 비의존이라 node 환경에서 결정적으로 돈다.
 import { describe, expect, it } from "vitest";
 
-import { detailCellSize, areaDownscalePremul, type Rgba } from "../spriteResample";
+import {
+  detailCellSize,
+  minimiDetailCellSize,
+  MINIMI_CELL,
+  areaDownscalePremul,
+  type Rgba,
+} from "../spriteResample";
 
 const rgba = (w: number, h: number, px: number[][]): Rgba => ({
   data: Uint8ClampedArray.from(px.flat()),
@@ -26,6 +32,34 @@ describe("detailCellSize", () => {
     expect(detailCellSize(256, 2.4)).toBe(32); // round(2.4)=2 → 32
     expect(detailCellSize(256, 2.6)).toBe(48); // round(2.6)=3 → 48
     expect(detailCellSize(256, 0)).toBe(16); // max(1,·) → 16
+  });
+
+  it("apparentPx를 주면 그 겉보기 크기 기준으로 계산한다", () => {
+    expect(detailCellSize(256, 3, MINIMI_CELL)).toBe(24); // 8·3
+    expect(detailCellSize(16, 3, MINIMI_CELL)).toBe(16); // 8·3=24 > N → 원본 유지
+  });
+});
+
+describe("minimiDetailCellSize", () => {
+  it("D = min(N, 8·S) — 미니미 겉보기는 캐릭터의 절반", () => {
+    expect(MINIMI_CELL).toBe(8);
+    expect(minimiDetailCellSize(256, 3)).toBe(24);
+    expect(minimiDetailCellSize(256, 1)).toBe(8);
+    expect(minimiDetailCellSize(32, 8)).toBe(32); // 8·8=64 > N → 원본 유지
+    expect(minimiDetailCellSize(16, 1)).toBe(8);
+  });
+
+  it("같은 N/S에서 캐릭터보다 항상 작거나 같은 해상도를 고른다", () => {
+    for (const n of [16, 32, 64, 128, 256]) {
+      for (const s of [1, 2, 3, 5]) {
+        expect(minimiDetailCellSize(n, s)).toBeLessThanOrEqual(detailCellSize(n, s));
+      }
+    }
+  });
+
+  it("S는 정수로 반올림하고 최소 1로 클램프", () => {
+    expect(minimiDetailCellSize(256, 2.4)).toBe(16); // round(2.4)=2 → 16
+    expect(minimiDetailCellSize(256, 0)).toBe(8); // max(1,·) → 8
   });
 });
 

@@ -56,11 +56,13 @@ export function applyBundleToDraft(d: DraftProfile, p: PortableProfile): DraftPr
   };
 }
 
-/** 프로필 + 임베드 이미지(base64)를 자기완결형 번들 JSON 텍스트로 직렬화. */
+/** 프로필 + 임베드 이미지(base64)를 자기완결형 번들 JSON 텍스트로 직렬화.
+ *  `minimiPngBase64`는 선택 — 없으면 키 자체를 넣지 않아 기존 번들과 동일한 모양이 된다. */
 export function serializeBundle(
   profile: PortableProfile,
   portraitPngBase64?: string,
   spritePngBase64?: string,
+  minimiPngBase64?: string,
 ): string {
   const bundle: CharacterBundle = {
     kind: CHARACTER_BUNDLE_KIND,
@@ -68,6 +70,7 @@ export function serializeBundle(
     profile,
     ...(portraitPngBase64 ? { portraitPngBase64 } : {}),
     ...(spritePngBase64 ? { spritePngBase64 } : {}),
+    ...(minimiPngBase64 ? { minimiPngBase64 } : {}),
   };
   return JSON.stringify(bundle, null, 2);
 }

@@ -17,6 +17,8 @@ import {
   drawNearest,
   expandFrameToSheet,
   normalizeCrop,
+  normalizeMinimiCrop,
+  normalizeMinimiFrame,
   normalizeSheet,
   dataUrlToBase64,
   applyBackgroundKey,
@@ -215,6 +217,90 @@ describe("normalizeCrop (크롭 해상도 보존)", () => {
       napiFactory
     );
     expect(n).toBe(16);
+  });
+});
+
+describe("normalizeMinimiFrame (미니미: 단일 프레임)", () => {
+  it("정사각 입력은 N×N 한 장으로 유지한다(4프레임 합성 없음)", () => {
+    const src = createCanvas(64, 64);
+    const sctx = src.getContext("2d");
+    sctx.fillStyle = "#00ff00"; sctx.fillRect(0, 0, 64, 64);
+    const { frame, n } = normalizeMinimiFrame(
+      src as unknown as CanvasImageSource,
+      64,
+      64,
+      napiFactory
+    );
+    expect(n).toBe(64);
+    const c = frame as unknown as ReturnType<typeof createCanvas>;
+    expect(c.width).toBe(64);
+    expect(c.height).toBe(64);
+  });
+
+  it("4N×N 시트가 들어오면 idle0(첫 프레임)만 잘라 쓴다", () => {
+    const N = 32;
+    const src = createCanvas(4 * N, N);
+    const sctx = src.getContext("2d");
+    sctx.fillStyle = "#0000ff"; sctx.fillRect(0, 0, N, N); // idle0 = 파랑
+    sctx.fillStyle = "#00ff00"; sctx.fillRect(N, 0, 3 * N, N); // 나머지 = 초록
+    const { frame, n } = normalizeMinimiFrame(
+      src as unknown as CanvasImageSource,
+      4 * N,
+      N,
+      napiFactory
+    );
+    expect(n).toBe(N);
+    const c = frame as unknown as ReturnType<typeof createCanvas>;
+    expect(c.width).toBe(N);
+    expect(c.height).toBe(N);
+    // 어느 지점을 찍어도 idle0(파랑)이어야 한다 — 초록이 섞이면 시트 전체를 눌러 담은 것.
+    expect(px(frame, 1, 1)).toEqual([0, 0, 255, 255]);
+    expect(px(frame, N - 1, N - 1)).toEqual([0, 0, 255, 255]);
+  });
+
+  it("비정사각은 짧은 변 기준 정사각으로, 범위 밖은 [16,256]으로 클램프", () => {
+    const src = createCanvas(200, 40);
+    const { n } = normalizeMinimiFrame(src as unknown as CanvasImageSource, 200, 40, napiFactory);
+    expect(n).toBe(40); // min(200,40)
+
+    const tiny = createCanvas(8, 8);
+    expect(
+      normalizeMinimiFrame(tiny as unknown as CanvasImageSource, 8, 8, napiFactory).n
+    ).toBe(CELL_MIN);
+
+    const huge = createCanvas(512, 512);
+    expect(
+      normalizeMinimiFrame(huge as unknown as CanvasImageSource, 512, 512, napiFactory).n
+    ).toBe(CELL_MAX);
+  });
+});
+
+describe("normalizeMinimiCrop (미니미: 크롭 → 단일 프레임)", () => {
+  it("크롭 원본 픽셀 크기를 셀 N으로 보존한 N×N 한 장을 만든다", () => {
+    const src = createCanvas(200, 200);
+    const sctx = src.getContext("2d");
+    sctx.fillStyle = "#00ff00"; sctx.fillRect(0, 0, 200, 200);
+    sctx.fillStyle = "#ff0000"; sctx.fillRect(0, 0, 1, 1); // 좌상단 마커
+    const { frame, n } = normalizeMinimiCrop(
+      src as unknown as CanvasImageSource,
+      { sx: 0, sy: 0, sw: 100, sh: 100 },
+      napiFactory
+    );
+    expect(n).toBe(100);
+    const c = frame as unknown as ReturnType<typeof createCanvas>;
+    expect(c.width).toBe(100);
+    expect(c.height).toBe(100); // 4N이 아니다 — 시트가 아니라 한 장
+    expect(px(frame, 0, 0)).toEqual([255, 0, 0, 255]);
+  });
+
+  it("16 미만 크롭은 N=16으로 클램프한다", () => {
+    const src = createCanvas(50, 50);
+    const { n } = normalizeMinimiCrop(
+      src as unknown as CanvasImageSource,
+      { sx: 0, sy: 0, sw: 8, sh: 8 },
+      napiFactory
+    );
+    expect(n).toBe(CELL_MIN);
   });
 });
 

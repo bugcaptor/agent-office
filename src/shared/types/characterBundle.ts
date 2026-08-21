@@ -19,11 +19,13 @@ export const CHARACTER_BUNDLE_SCHEMA_VERSION = 1 as const;
 export const MAX_PORTRAIT_BYTES = 2 * 1024 * 1024;
 /** 스프라이트 시트 PNG 상한(1 MiB) — Rust `png_store::MAX_SPRITE_BYTES` 미러. */
 export const MAX_SPRITE_BYTES = 1024 * 1024;
+/** 미니미 PNG 상한(1 MiB) — Rust `png_store::MAX_MINIMI_BYTES` 미러. */
+export const MAX_MINIMI_BYTES = 1024 * 1024;
 
 /**
  * `AgentProfile`에서 이식 가능한(=캐릭터 정체성·외형) 필드만 추린 부분집합.
  * 제외: id/createdAt/deskIndex/assignedDeskIndex/clockedOut/portraitUpdatedAt/
- * spriteUpdatedAt(가져오기 시 이미지 유무로 재설정), 그리고 로컬 환경 종속값
+ * spriteUpdatedAt/minimiUpdatedAt(가져오기 시 이미지 유무로 재설정), 그리고 로컬 환경 종속값
  * cwd/shell/startupCommand/bot(사용자 결정: 캐릭터만 내보낸다).
  */
 export interface PortableProfile {
@@ -47,6 +49,13 @@ export interface CharacterBundle {
   portraitPngBase64?: string;
   /** 커스텀 스프라이트 시트 PNG(base64, data: prefix 없음). 부재 = 절차 생성. */
   spritePngBase64?: string;
+  /**
+   * 서브에이전트 미니미 픽셀아트 PNG(base64, data: prefix 없음, 단일 N×N).
+   * 부재 = 미니미 커스텀 없음(부모 스프라이트 축소판 사용). **스키마 v1에
+   * 추가된 선택 필드** — 이 키가 없는 기존 v1 번들도 그대로 읽히므로 버전을
+   * 올리지 않는다(하위호환).
+   */
+  minimiPngBase64?: string;
 }
 
 export type ParseBundleResult =
@@ -122,6 +131,15 @@ export function parseCharacterBundle(text: string): ParseBundleResult {
       return fail("스프라이트 이미지가 너무 큽니다(1 MiB 초과). 가져오기를 취소합니다.");
     }
   }
+  const minimi = o.minimiPngBase64;
+  if (minimi !== undefined) {
+    if (typeof minimi !== "string") {
+      return fail("미니미 이미지 데이터가 올바르지 않습니다.");
+    }
+    if (approxDecodedBytes(minimi) > MAX_MINIMI_BYTES) {
+      return fail("미니미 이미지가 너무 큽니다(1 MiB 초과). 가져오기를 취소합니다.");
+    }
+  }
 
   const profile: PortableProfile = {
     name: pr.name,
@@ -142,6 +160,7 @@ export function parseCharacterBundle(text: string): ParseBundleResult {
       profile,
       portraitPngBase64: asString(portrait),
       spritePngBase64: asString(sprite),
+      minimiPngBase64: asString(minimi),
     },
   };
 }

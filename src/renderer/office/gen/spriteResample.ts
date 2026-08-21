@@ -16,10 +16,23 @@
 // 순수(ImageData 배열 위 연산) — DOM/Pixi 비의존이라 vitest로 픽셀 검증 가능.
 import { CELL } from "./compositor";
 
-/** 렌더 스케일 S에서 셀 N의 목표 해상도 D = min(N, 16·S). S는 정수 반올림(최소 1). */
-export function detailCellSize(n: number, renderScale: number): number {
+/** 서브에이전트 미니미의 겉보기 크기(px). 부모 캐릭터(CELL=16)의 절반 —
+ *  `MiniAgentsOverlay`의 `spriteScale * MINI_SCALE_FACTOR(0.5)`와 같은 값이다. */
+export const MINIMI_CELL = CELL / 2; // 8
+
+/**
+ * 렌더 스케일 S에서 셀 N의 목표 해상도 D = min(N, apparentPx·S). S는 정수
+ * 반올림(최소 1). `apparentPx`는 그 스프라이트가 화면에서 차지하는 논리
+ * 픽셀 크기 — 캐릭터는 CELL(16), 미니미는 MINIMI_CELL(8).
+ */
+export function detailCellSize(n: number, renderScale: number, apparentPx: number = CELL): number {
   const s = Math.max(1, Math.round(renderScale));
-  return Math.min(n, CELL * s);
+  return Math.min(n, apparentPx * s);
+}
+
+/** 미니미(겉보기 8px)의 목표 해상도 D = min(N, 8·S). `detailCellSize`의 얇은 래퍼. */
+export function minimiDetailCellSize(n: number, renderScale: number): number {
+  return detailCellSize(n, renderScale, MINIMI_CELL);
 }
 
 export interface Rgba {

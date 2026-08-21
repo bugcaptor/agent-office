@@ -838,6 +838,13 @@ export function ProfileDialog() {
 
 플로우 요약: `＋New Agent` → `openModal({kind:'profile-create'})` → 다이얼로그가 `generateDraft()`로 초기값 → 사용자 편집/재생성 → `저장`시 `addAgent`(스토어, status=starting) → profiles prop 변화로 B `syncAgents`가 캐릭터 생성 → `createSession`(PTY) → A가 `onSessionState`로 `running` 통지 → BottomBar 카운트 반영.
 
+위 코드는 설계 당시 스케치다. 현행 다이얼로그의 "외형" 섹션은 스프라이트 카드
+안에 **미니미(서브에이전트 분신) 소섹션**을 함께 갖는다 — 현재 미니미 프리뷰
+(커스텀 없으면 스프라이트 축소판임을 안내) + 업로드/변경/제거. 업로드는
+`SpriteEditor`를 `target="minimi"`로 재사용해 크롭/줌 UX를 공유하되 **단일 N×N
+프레임**만 저장한다. 저장·로드·삭제·번들 왕복의 전체 계약은
+`docs/subsystem-b-office.md` §4.8 표가 정본이다.
+
 ---
 
 ## 5. 알림 티커 UX
@@ -1469,8 +1476,9 @@ archived: 2026-07-31T09:00:00+09:00   (넘긴 장에만)
 - `memoStore`는 appStore와 비커플링(독립 스토어 관례). 활성 탭이 무엇인지는
   `PostItWidget`이 appStore에서 읽어 `focusAgent`로 밀어 넣는다.
 - 캐릭터 삭제 시 정리는 `memoCleanup.ts`가 appStore의 `agents` 구독에서 사라진 id를
-  잡아 `deleteMemos`를 부른다 — 초상/스프라이트(`portraitCache`/`spriteCache`)와 **같은
-  지점·같은 방식**이다(이 저장소에는 "캐릭터 삭제" 백엔드 커맨드가 없다).
+  잡아 `deleteMemos`를 부른다 — 초상/스프라이트/미니미(`portraitCache`/`spriteCache`/
+  `minimiCache`)와 **같은 지점·같은 방식**이다(이 저장소에는 "캐릭터 삭제" 백엔드
+  커맨드가 없다).
 - 진입점 둘: 터미널 헤더의 `🗒` 토글 버튼(문서 버튼과 뷰 모드 버튼 사이)과 탭 우클릭
   메뉴의 "포스트잇 열기/닫기"·"메모 아카이브". 비활성 탭에서 메뉴로 열면 그 탭으로
   함께 전환한다(사용자가 지목한 캐릭터의 메모가 보이도록).

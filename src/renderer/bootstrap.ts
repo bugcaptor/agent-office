@@ -26,6 +26,7 @@ import { installWindowFocusTracking } from "./ipc/windowFocus";
 import { installPersistence } from "./store/persist";
 import { installPortraitCache } from "./portrait/portraitCache";
 import { installSpriteCache } from "./sprite/spriteCache";
+import { installMinimiCache } from "./sprite/minimiCache";
 import { installMemoCleanup } from "./memo/memoCleanup";
 import { installTaskLabelSummarizer } from "./labels/summarizer";
 import { installGitBranchWatcher } from "./labels/gitBranchWatcher";
@@ -212,6 +213,9 @@ export async function bootApp(): Promise<() => void> {
   const offPersistence = installPersistence();
   const offPortraits = installPortraitCache();
   const offSprites = installSpriteCache();
+  // 서브에이전트 미니미 픽셀아트 — 스프라이트와 같은 지점·같은 방식(로드 +
+  // 캐릭터 삭제 시 PNG 정리).
+  const offMinimis = installMinimiCache();
   // 포스트잇 메모(#79) 정리 브리지 — 초상/스프라이트와 같은 지점·같은 방식으로
   // `agents`에서 사라진 캐릭터의 메모 폴더를 지운다.
   const offMemos = installMemoCleanup();
@@ -246,6 +250,7 @@ export async function bootApp(): Promise<() => void> {
     offPersistence();
     offPortraits();
     offSprites();
+    offMinimis();
     offMemos();
     offSummarizer();
     offGitBranch();

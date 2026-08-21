@@ -43,8 +43,9 @@ const CUSTOM_DESCRIPTOR = {
 } as const;
 
 /** 한 프레임(소스 아틀라스의 i번째 N×N 영역)을 D×D로 area 다운스케일한 nearest
- *  텍스처. 프레임별 개별 소스라 시트 seam bleed가 없다. 순수 리샘플 + 캔버스 I/O. */
-function downscaledFrameTexture(
+ *  텍스처. 프레임별 개별 소스라 시트 seam bleed가 없다. 순수 리샘플 + 캔버스 I/O.
+ *  미니미(단일 프레임)도 같은 프리필터를 쓰므로 `minimiFactory`가 재사용한다. */
+export function downscaledFrameTexture(
   sheet: CanvasImageSource,
   frameIdx: number,
   n: number,

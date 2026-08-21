@@ -29,6 +29,7 @@
 import { Container, Rectangle, Sprite } from "pixi.js";
 
 import type { CharacterAssets } from "../gen/characterFactory";
+import type { MinimiAssets } from "../gen/minimiFactory";
 import { OfficeMap, QUEUE_SLOTS, TILE_SIZE } from "../map/mapData";
 import { GridPos, pickBreakTarget, tileCenterPx, tileKey } from "../world/pathing";
 import { BehaviorState, stepBehavior } from "./behaviorFsm";
@@ -89,6 +90,9 @@ export class CharacterEntity {
     // 월드가 소유한 탕비실 타일 예약 집합(tileKey). 모든 캐릭터가 공유해
     // 쉬는 타일이 겹치지 않게 한다. 미주입 시(단독 테스트 등) 예약 없이 동작.
     private breakReservations?: Set<string>,
+    // 서브에이전트 미니미 전용 커스텀 픽셀아트. null/미주입이면 현행대로
+    // 부모 idle0 축소판을 쓴다. 이 엔티티가 소유(교체·파괴 시 dispose).
+    private minimi: MinimiAssets | null = null,
   ) {
     this.sprite = new Sprite(assets.idle[0]);
     this.spriteScale = APPARENT_CELL / this.assets.cellSize;
@@ -107,6 +111,7 @@ export class CharacterEntity {
     this.thinkOverlay.setVisible(false);
 
     this.miniOverlay = new MiniAgentsOverlay(this.assets.idle[0], this.spriteScale);
+    if (this.minimi) this.miniOverlay.setCustomBase(this.minimi.texture, this.minimi.scale);
     this.miniOverlay.root.position.set(0, -TILE_SIZE); // 머리 위(기존 오버레이와 동일 높이)
     this.root.addChild(this.miniOverlay.root);
 
@@ -135,6 +140,12 @@ export class CharacterEntity {
     return this.assets.cellSize;
   }
 
+  /** 커스텀 미니미의 현재 렌더 셀 크기 D. 커스텀 미니미가 없으면 null.
+   *  캐릭터 본체와 겉보기 크기(8px vs 16px)가 달라 D도 따로 관리한다. */
+  get minimiCellSize(): number | null {
+    return this.minimi?.cellSize ?? null;
+  }
+
   /**
    * 외형은 그대로 두고 텍스처 에셋만 교체한다(커스텀 고해상 시트를 카메라 정수
    * 스케일 S에 맞춰 재프리필터할 때 — 이슈 #47). FSM/이동/애니메이션 상태를
@@ -152,8 +163,23 @@ export class CharacterEntity {
     // 히트 영역은 텍스처 셀(local, pre-scale) 기준이라 새 cellSize를 따른다.
     const n = next.cellSize;
     this.sprite.hitArea = new Rectangle(-n / 2, -n, n, n);
-    this.miniOverlay.setBase(next.idle[0], this.spriteScale);
+    // 커스텀 미니미가 있으면 부모 텍스처로 덮어쓰지 않는다(미니미는 부모
+    // 스프라이트와 독립적인 자기 텍스처·자기 배율을 쓴다).
+    if (!this.minimi) this.miniOverlay.setBase(next.idle[0], this.spriteScale);
     prev.dispose?.();
+  }
+
+  /**
+   * 커스텀 미니미 에셋만 교체한다(S 변경에 따른 재프리필터, 또는 지정 해제).
+   * `null`을 주면 현행 기본(부모 idle0 축소판)으로 되돌린다. 이전 에셋은 여기서
+   * 해제하므로 호출자는 새 에셋만 만들어 넘기면 된다.
+   */
+  replaceMinimi(next: MinimiAssets | null): void {
+    const prev = this.minimi;
+    this.minimi = next;
+    if (next) this.miniOverlay.setCustomBase(next.texture, next.scale);
+    else this.miniOverlay.setBase(this.assets.idle[0], this.spriteScale);
+    prev?.dispose?.();
   }
 
   onClicked(cb: (id: string) => void): void {
@@ -277,6 +303,7 @@ export class CharacterEntity {
     this.miniOverlay.destroy();
     this.root.destroy({ children: true });
     this.assets.dispose?.(); // 커스텀 다운스케일 프레임 텍스처/소스 해제(누수 방지)
+    this.minimi?.dispose?.(); // 커스텀 미니미도 같은 이유로 해제
   }
 
   private setSeatTarget(): void {

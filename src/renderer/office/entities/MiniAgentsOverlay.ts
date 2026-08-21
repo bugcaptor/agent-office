@@ -1,7 +1,8 @@
 // src/renderer/office/entities/MiniAgentsOverlay.ts
 //
-// 부모 캐릭터 머리 옆에 떠다니는 "미니 서브에이전트" 표시. 부모 스프라이트
-// 텍스처를 그대로 재사용(복제 아님)해 축소 클론으로 그린다. 카운트 기반:
+// 부모 캐릭터 머리 옆에 떠다니는 "미니 서브에이전트" 표시. 기본은 부모 스프라이트
+// 텍스처를 그대로 재사용(복제 아님)해 축소 클론으로 그리고, 캐릭터에 미니미 전용
+// 커스텀 픽셀아트가 지정돼 있으면 `setCustomBase`로 그 텍스처를 쓴다. 카운트 기반:
 // setCount(n)이 min(n,3)마리를 보이게 하고, update(dt)가 sin 밥으로 흔든다.
 // ThinkingOverlay 패턴(자식 Container + dt 구동 + 캐릭터가 소유/파괴)을 따른다.
 
@@ -10,7 +11,8 @@ import { Container, Sprite, type Texture } from "pixi.js";
 const SLOT_X = [-11, 11, -15]; // 머리 옆 고정 슬롯
 const MAX_MINIS = SLOT_X.length;
 const SLOT_BASE_Y = [0, -1, 2]; // 미니마다 살짝 다른 기준 높이(머리 라인 근처)
-const MINI_SCALE_FACTOR = 0.5; // 부모 spriteScale 대비
+/** 부모 spriteScale 대비 배율. 겉보기 16px의 절반 = 8px(= `MINIMI_CELL`). */
+export const MINI_SCALE_FACTOR = 0.5;
 const MINI_ALPHA = 0.75;
 const BOB_AMPLITUDE_PX = 1.5;
 const BOB_PERIOD_MS = 1200;
@@ -37,9 +39,23 @@ export class MiniAgentsOverlay {
 
   /** 부모 텍스처/배율 교체(커스텀 시트 S-적응 재생성 시). 텍스처는 부모 소유. */
   setBase(texture: Texture, spriteScale: number): void {
+    this.setTexture(texture, spriteScale * MINI_SCALE_FACTOR);
+  }
+
+  /**
+   * 미니미 전용 커스텀 텍스처로 교체(캐릭터별 미니미 픽셀아트 지정).
+   * `setBase`와 달리 배율을 그대로 받는다 — 커스텀 프레임은 셀 크기 N이
+   * 부모와 무관하므로, 겉보기 8px을 맞추는 배율(MINIMI_CELL/D)을
+   * `minimiFactory`가 계산해 넘긴다. 텍스처는 호출자(캐릭터) 소유.
+   */
+  setCustomBase(texture: Texture, scale: number): void {
+    this.setTexture(texture, scale);
+  }
+
+  private setTexture(texture: Texture, scale: number): void {
     this.minis.forEach((s) => {
       s.texture = texture;
-      s.scale.set(spriteScale * MINI_SCALE_FACTOR);
+      s.scale.set(scale);
     });
   }
 
