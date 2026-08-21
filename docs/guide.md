@@ -114,7 +114,7 @@ agent-office ctl settings set typingSoundEnabled=false
 npm install && npm run tauri dev
 ```
 
-`./scripts/build-and-run.sh`(= `npm start`)는 위 두 단계를 알아서 처리합니다.
+`./scripts/build-and-run.sh`(= `npm start`)는 위 두 단계를 알아서 처리합니다. Windows는 `scripts\build-and-run.cmd`(= `npm run start:win`)가 같은 역할입니다.
 
 ### 릴리즈 빌드
 
@@ -123,6 +123,15 @@ npm install && npm run tauri build
 ```
 
 결과물은 `src-tauri/target/release/`에 생성됩니다(macOS `.dmg`, Windows `.msi`/`.exe`, Linux `.deb`/`.AppImage`).
+
+### Windows 빌드·설치
+
+```powershell
+npm run build:win      # NSIS 인스톨러만 빌드 (src-tauri\target\release\bundle\nsis\)
+npm run install:win    # 빌드 + 현재 사용자 계정에 조용히 설치(/S) + 실행
+```
+
+설치 위치는 `%LOCALAPPDATA%\agent-office`이고 관리자 권한이 필요 없습니다. `install:win`은 `scripts\build-and-run.ps1 --install`과 같습니다.
 
 ### macOS 서명
 

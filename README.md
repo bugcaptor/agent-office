@@ -34,10 +34,19 @@ macOS에서는 자체 서명 인증서(없으면 만들지 물어봅니다)로 �
 
 **Windows**
 
-```bash
-npm install
-npm run tauri dev
+```powershell
+git clone https://github.com/bugcaptor/agent-office.git
+cd agent-office
+.\scripts\build-and-run.cmd
 ```
+
+macOS/Linux와 같은 스크립트의 Windows판입니다(의존성 설치 → 개발 모드 실행). Rust는 MSVC 툴체인이 필요합니다 → [Tauri 사전 준비](https://v2.tauri.app/start/prerequisites/). 설치해서 계속 쓰려면:
+
+```powershell
+.\scripts\build-and-run.cmd --install
+```
+
+NSIS 인스톨러를 빌드해 현재 사용자 계정(`%LOCALAPPDATA%\agent-office`)에 조용히 설치하고 실행합니다. 관리자 권한은 필요 없습니다. 인스톨러 파일만 원하면 `npm run build:win` → `src-tauri\target\release\bundle\nsis\`.
 
 <details>
 <summary><b>또는 — macOS DMG를 받아 설치</b></summary>

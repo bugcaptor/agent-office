@@ -9,7 +9,7 @@
 # designated requirement 가 빌드마다 바뀌어 사진·미디어 라이브러리·이동식 볼륨
 # 권한 프롬프트가 계속 다시 뜬다. 배경은 docs/macos-signing.md 가 정본이다.
 #
-# Windows 는 이 스크립트 대신 `npm install && npm run tauri dev` 를 쓴다.
+# Windows 는 이 스크립트 대신 scripts\build-and-run.cmd 를 쓴다.
 
 set -euo pipefail
 
