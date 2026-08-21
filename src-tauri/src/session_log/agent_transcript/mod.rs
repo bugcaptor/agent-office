@@ -20,8 +20,10 @@ pub mod claude;
 pub mod codex;
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
 
 /// 한 번에 읽어 들이는 최대 바이트. 에이전트가 거대한 도구 결과를 한 번에
 /// 쏟아도 기록 스레드가 한 틱에 묶이지 않게 한다(다음 틱에 이어 읽는다).
@@ -31,6 +33,149 @@ const MAX_READ_PER_TICK: u64 = 2 * 1024 * 1024;
 pub(crate) const MAX_VALUE_CHARS: usize = 1200;
 /// 도구 결과에서 남길 줄 수 상한.
 pub(crate) const MAX_VALUE_LINES: usize = 24;
+
+/// 백필(웹 채팅 진입)에서 파일 끝에서부터 거슬러 읽는 최대 바이트.
+pub const BACKFILL_MAX_BYTES: u64 = 256 * 1024;
+/// 백필로 돌려주는 최대 항목 수(가장 최근 것부터 남긴다).
+pub const BACKFILL_MAX_ITEMS: usize = 100;
+
+// ── 구조화된 채팅 항목 ────────────────────────────────────────────────
+//
+// 세션 로그(문자열)와 웹 채팅 뷰(버블)가 **같은 파싱 결과**를 쓴다:
+// `TranscriptSource::parse`가 JSONL 한 줄을 이 항목들로 바꾸고,
+// `format_items`가 그것을 로그 줄로 되돌린다. 포맷 결합(claude/codex JSONL
+// 스키마)이 한 곳에만 남는다는 것이 이 분리의 목적이다
+// (docs/web-remote-design.md §5 M2).
+
+/// 항목의 화자.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ItemRole {
+    User,
+    Assistant,
+}
+
+/// 항목의 종류. thinking·이미지·서명 블롭은 애초에 항목이 되지 않는다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemKind {
+    Text,
+    ToolUse,
+    ToolResult,
+}
+
+/// 전사 한 조각(= 채팅 버블 하나 / 로그 블록 하나).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptItem {
+    pub role: ItemRole,
+    pub kind: ItemKind,
+    /// 본문. **자르지 않은 원문**이다 — 로그 포매터가 `block`에서 한 번만
+    /// 자르고(이중 클램프는 "… (이하 생략)"를 두 번 붙인다), 와이어로 나갈
+    /// 때는 호출자가 `clamped()`로 자른다.
+    pub text: String,
+    /// 도구 이름. `ToolUse`인데 이름이 없으면 "이름 없는 활동 줄"이다
+    /// (codex의 서브에이전트 활동 — 로그에서 `⤷ …` 한 줄로 나간다).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    #[serde(default)]
+    pub is_error: bool,
+    /// 서브에이전트(sidechain) 대화인가. 로그에서는 `⤷` 표식이 붙는다.
+    #[serde(default)]
+    pub sidechain: bool,
+}
+
+impl TranscriptItem {
+    pub fn speech(role: ItemRole, text: impl Into<String>) -> Self {
+        Self {
+            role,
+            kind: ItemKind::Text,
+            text: text.into(),
+            tool_name: None,
+            is_error: false,
+            sidechain: false,
+        }
+    }
+
+    pub fn tool_use(name: Option<String>, text: impl Into<String>) -> Self {
+        Self {
+            role: ItemRole::Assistant,
+            kind: ItemKind::ToolUse,
+            text: text.into(),
+            tool_name: name,
+            is_error: false,
+            sidechain: false,
+        }
+    }
+
+    pub fn tool_result(text: impl Into<String>, is_error: bool) -> Self {
+        Self {
+            role: ItemRole::User,
+            kind: ItemKind::ToolResult,
+            text: text.into(),
+            tool_name: None,
+            is_error,
+            sidechain: false,
+        }
+    }
+
+    pub fn with_sidechain(mut self, side: bool) -> Self {
+        self.sidechain = side;
+        self
+    }
+
+    /// 와이어로 내보내기 전 본문을 자른다(로그의 `block`과 같은 규칙).
+    pub fn clamped(mut self) -> Self {
+        self.text = clamp_value(&self.text).join("\n");
+        self
+    }
+}
+
+/// 항목들 → 세션 로그 줄들. **문자열 수준에서 예전 `render`와 동일해야 한다**
+/// (기존 세션 로그 픽스처 테스트가 그 계약을 핀으로 박아 둔다).
+pub fn format_items(items: &[TranscriptItem]) -> Vec<String> {
+    items.iter().flat_map(format_item).collect()
+}
+
+fn format_item(item: &TranscriptItem) -> Vec<String> {
+    let mark = |glyph: &str| {
+        if item.sidechain {
+            format!("⤷ {glyph}")
+        } else {
+            glyph.to_string()
+        }
+    };
+    match item.kind {
+        ItemKind::Text => {
+            let glyph = match item.role {
+                ItemRole::User => "▶ 사용자:",
+                ItemRole::Assistant => "⏺ 에이전트:",
+            };
+            block(&mark(glyph), &item.text)
+        }
+        ItemKind::ToolUse => match &item.tool_name {
+            Some(name) => block(&mark(&format!("⚒ {name}:")), &item.text),
+            // 이름 없는 활동 줄 — 표식만 앞에 두고 본문을 그대로 흘린다.
+            None => {
+                let prefix = mark("");
+                let prefix = prefix.trim_end();
+                if prefix.is_empty() {
+                    clamp_value(&item.text)
+                } else {
+                    block(prefix, &item.text)
+                }
+            }
+        },
+        ItemKind::ToolResult => {
+            let glyph = if item.is_error {
+                "⇤ 결과(오류):"
+            } else {
+                "⇤ 결과:"
+            };
+            block(&mark(glyph), &item.text)
+        }
+    }
+}
 
 /// 훅이 알려 준 "지금 이 캐릭터가 쓰고 있는 네이티브 세션" 스냅샷.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,8 +202,14 @@ pub trait TranscriptSource: Send + Sync {
     fn label(&self) -> &'static str;
     /// 지금 이 세션에 붙은 전사 파일. 없거나 모르면 None.
     fn locate(&mut self, agent_id: &str, cwd: &str) -> Option<PathBuf>;
-    /// JSONL 한 줄 → 로그 줄들. 기록할 것이 없으면 빈 벡터.
-    fn render(&self, raw: &str) -> Vec<String>;
+    /// JSONL 한 줄 → 구조화된 항목들. 남길 것이 없으면 빈 벡터.
+    /// **포맷 결합(claude/codex 스키마)은 이 함수 하나에만 있다.**
+    fn parse(&self, raw: &str) -> Vec<TranscriptItem>;
+    /// JSONL 한 줄 → 로그 줄들. 기본 구현이 `parse` + 포매터라 로그와 채팅이
+    /// 절대 어긋나지 않는다(테스트용 가짜 소스만 이걸 덮어쓴다).
+    fn render(&self, raw: &str) -> Vec<String> {
+        format_items(&self.parse(raw))
+    }
 }
 
 /// 파일 하나를 어디까지 읽었는지.
@@ -100,6 +251,52 @@ impl TranscriptTailer {
     /// 붙었을 때 과거 대화 전체를 로그에 다시 쏟지 않기 위함이다 -- 대신
     /// 원본 경로를 한 줄 남겨 그쪽을 찾아갈 수 있게 한다.
     pub fn tick(&mut self) -> Vec<String> {
+        self.tick_with(
+            |source, raw| source.render(raw),
+            |label, path| Some(format!("[{label} 전사 연결: {}]", path.to_string_lossy())),
+        )
+    }
+
+    /// 같은 틱을 **구조화된 항목**으로 받는다(웹 채팅 뷰). 연결 마커는 로그
+    /// 전용이라 여기서는 나오지 않는다.
+    pub fn tick_items(&mut self) -> Vec<TranscriptItem> {
+        self.tick_with(|source, raw| source.parse(raw), |_, _| None)
+    }
+
+    /// 지금 어떤 전사 파일에라도 붙어 있는가(없으면 채팅화 불가 = 터미널 폴백).
+    pub fn has_target(&self) -> bool {
+        !self.current.is_empty()
+    }
+
+    /// 붙어 있는 파일들의 **최근 항목**. 파일 끝에서 `max_bytes`만큼 거슬러
+    /// 읽어 파싱하고 마지막 `max_items`개만 남긴다. tick 계열이 파일을 찾은
+    /// 뒤에 부른다(그 전에는 붙은 파일이 없어 빈 결과다).
+    pub fn backfill(&mut self, max_bytes: u64, max_items: usize) -> Vec<TranscriptItem> {
+        let mut out = Vec::new();
+        let sources = std::mem::take(&mut self.sources);
+        for source in sources.iter() {
+            let Some(path) = self.current.get(source.label()) else {
+                continue;
+            };
+            let Some((chunk, from_start)) = read_tail(path, max_bytes) else {
+                continue;
+            };
+            for line in complete_lines(&chunk, from_start) {
+                out.extend(source.parse(line));
+            }
+        }
+        self.sources = sources;
+        if out.len() > max_items {
+            out.drain(..out.len() - max_items);
+        }
+        out
+    }
+
+    fn tick_with<T>(
+        &mut self,
+        mut convert: impl FnMut(&dyn TranscriptSource, &str) -> Vec<T>,
+        mut marker: impl FnMut(&str, &Path) -> Option<T>,
+    ) -> Vec<T> {
         let mut out = Vec::new();
         // sources를 &mut로 쓰면서 self의 다른 필드도 건드려야 해서 잠시 꺼낸다.
         let mut sources = std::mem::take(&mut self.sources);
@@ -116,18 +313,21 @@ impl TranscriptTailer {
                     offset: start,
                     partial: String::new(),
                 });
-                out.push(format!(
-                    "[{label} 전사 연결: {}]",
-                    path.to_string_lossy()
-                ));
+                out.extend(marker(label, &path));
             }
-            self.read_new(&path, source.as_ref(), &mut out);
+            self.read_new(&path, source.as_ref(), &mut convert, &mut out);
         }
         self.sources = std::mem::take(&mut sources);
         out
     }
 
-    fn read_new(&mut self, path: &Path, source: &dyn TranscriptSource, out: &mut Vec<String>) {
+    fn read_new<T>(
+        &mut self,
+        path: &Path,
+        source: &dyn TranscriptSource,
+        convert: &mut impl FnMut(&dyn TranscriptSource, &str) -> Vec<T>,
+        out: &mut Vec<T>,
+    ) {
         let Some(tail) = self.tails.get_mut(path) else {
             return;
         };
@@ -175,7 +375,7 @@ impl TranscriptTailer {
                     };
                     let line = line.trim_end_matches(['\n', '\r']);
                     if !line.is_empty() {
-                        out.extend(source.render(line));
+                        out.extend(convert(source, line));
                     }
                 }
                 Err(_) => break,
@@ -183,6 +383,39 @@ impl TranscriptTailer {
         }
         tail.offset += read;
     }
+}
+
+/// 파일 끝에서 최대 `max_bytes`를 거슬러 읽는다. 두 번째 값은 **파일 전체를
+/// 읽었는가** — false면 첫 줄이 중간에서 잘렸을 수 있다는 뜻이다.
+fn read_tail(path: &Path, max_bytes: u64) -> Option<(String, bool)> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let start = len.saturating_sub(max_bytes);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut buf = Vec::with_capacity((len - start) as usize);
+    file.read_to_end(&mut buf).ok()?;
+    Some((String::from_utf8_lossy(&buf).into_owned(), start == 0))
+}
+
+/// 꼬리 조각에서 **완전한 줄만** 골라낸다(순수 함수).
+///
+/// - `from_start`가 false면 첫 줄은 중간에서 잘렸을 수 있으므로 버린다.
+///   (JSONL이라 잘린 줄은 어차피 파싱에 실패하지만, 운 나쁘게 파싱되는
+///   조각으로 가짜 항목을 만들지 않도록 규칙으로 못 박는다.)
+/// - 마지막 줄은 개행으로 끝나지 않았으면 "아직 쓰이는 중"이라 버린다.
+pub fn complete_lines(chunk: &str, from_start: bool) -> Vec<&str> {
+    let mut lines: Vec<&str> = chunk.split('\n').collect();
+    // split('\n')의 마지막 조각은 개행 뒤의 나머지다 — 비어 있으면 파일이
+    // 개행으로 끝난 것이고, 아니면 미완성 줄이다. 어느 쪽이든 버린다.
+    lines.pop();
+    if !from_start && !lines.is_empty() {
+        lines.remove(0);
+    }
+    lines
+        .into_iter()
+        .map(|l| l.trim_end_matches('\r'))
+        .filter(|l| !l.is_empty())
+        .collect()
 }
 
 /// JSON 값 안의 긴 문자열은 자리표시로 바꾼 뒤 압축 JSON으로 만든다.
@@ -275,12 +508,17 @@ mod tests {
         fn locate(&mut self, _agent_id: &str, _cwd: &str) -> Option<PathBuf> {
             self.path.exists().then(|| self.path.clone())
         }
-        fn render(&self, raw: &str) -> Vec<String> {
+        fn parse(&self, raw: &str) -> Vec<TranscriptItem> {
             if raw.starts_with("skip") {
                 Vec::new()
             } else {
-                vec![raw.to_string()]
+                vec![TranscriptItem::speech(ItemRole::User, raw)]
             }
+        }
+        /// 이 가짜 소스만 포매터를 우회한다 — 틱 배관(오프셋·부분 줄·회전)을
+        /// 글리프 없이 그대로 확인하기 위해서다.
+        fn render(&self, raw: &str) -> Vec<String> {
+            self.parse(raw).into_iter().map(|i| i.text).collect()
         }
     }
 
@@ -403,5 +641,119 @@ mod tests {
     fn block_indents_continuation_lines() {
         let out = block("⏺", "first\nsecond");
         assert_eq!(out, vec!["⏺ first", "  second"]);
+    }
+
+    // ── 구조화 항목 ↔ 로그 줄 ─────────────────────────────────────────
+
+    #[test]
+    fn formatter_reproduces_the_log_glyphs() {
+        assert_eq!(
+            format_items(&[TranscriptItem::speech(ItemRole::User, "고쳐줘")]),
+            vec!["▶ 사용자: 고쳐줘"]
+        );
+        assert_eq!(
+            format_items(&[TranscriptItem::speech(ItemRole::Assistant, "네")]),
+            vec!["⏺ 에이전트: 네"]
+        );
+        assert_eq!(
+            format_items(&[TranscriptItem::tool_use(
+                Some("Bash".into()),
+                "git status"
+            )]),
+            vec!["⚒ Bash: git status"]
+        );
+        assert_eq!(
+            format_items(&[TranscriptItem::tool_result("clean", false)]),
+            vec!["⇤ 결과: clean"]
+        );
+        assert_eq!(
+            format_items(&[TranscriptItem::tool_result("boom", true)]),
+            vec!["⇤ 결과(오류): boom"]
+        );
+        // sidechain은 표식만 앞에 붙는다.
+        assert_eq!(
+            format_items(&[
+                TranscriptItem::speech(ItemRole::Assistant, "서브에이전트 응답").with_sidechain(true)
+            ]),
+            vec!["⤷ ⏺ 에이전트: 서브에이전트 응답"]
+        );
+        // 이름 없는 활동 줄(codex 서브에이전트) — 표식 + 본문.
+        assert_eq!(
+            format_items(&[
+                TranscriptItem::tool_use(None, "서브에이전트 /a/b: spawn").with_sidechain(true)
+            ]),
+            vec!["⤷ 서브에이전트 /a/b: spawn"]
+        );
+    }
+
+    /// 항목의 `text`는 자르지 않은 원문이고, 자르기는 포매터(또는 `clamped`)가
+    /// **한 번만** 한다 — 두 번 자르면 생략 표시가 두 줄 붙는다.
+    #[test]
+    fn clamping_happens_once() {
+        let long = "가".repeat(5000);
+        let item = TranscriptItem::speech(ItemRole::User, long.clone());
+        assert_eq!(item.text.chars().count(), 5000, "항목은 원문을 들고 있다");
+
+        let lines = format_items(&[item.clone()]);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1].trim(), "… (이하 생략)");
+
+        let clamped = item.clamped();
+        assert!(clamped.text.ends_with("… (이하 생략)"));
+        assert_eq!(clamped.text.lines().count(), 2);
+    }
+
+    #[test]
+    fn complete_lines_drops_partial_head_and_tail() {
+        // 중간부터 읽은 조각 — 첫 줄은 잘렸을 수 있으니 버린다.
+        let out = complete_lines("f-line\"}\nsecond\nthird\npart", false);
+        assert_eq!(out, vec!["second", "third"]);
+
+        // 파일 전체를 읽었으면 첫 줄도 온전하다.
+        let whole = complete_lines("first\nsecond\n", true);
+        assert_eq!(whole, vec!["first", "second"]);
+
+        // 개행이 하나도 없는 조각은 확정된 줄이 없다.
+        assert!(complete_lines("no-newline-yet", false).is_empty());
+        assert!(complete_lines("", true).is_empty());
+        // CRLF와 빈 줄은 걸러진다.
+        assert_eq!(complete_lines("a\r\n\r\nb\r\n", true), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn backfill_returns_the_most_recent_items_from_the_file_tail() {
+        let dir = scratch();
+        let path = dir.join("t.jsonl");
+        for i in 0..10 {
+            append(&path, &format!("line-{i}\n"));
+        }
+        let mut t = tailer(&path);
+        // tick이 파일을 찾아 붙는다(끝에서 시작하므로 항목은 없다).
+        assert!(t.tick_items().is_empty());
+        assert!(t.has_target());
+
+        let items = t.backfill(BACKFILL_MAX_BYTES, 3);
+        assert_eq!(items.len(), 3, "가장 최근 3개만");
+        assert_eq!(items[0].text, "line-7");
+        assert_eq!(items[2].text, "line-9");
+
+        // 상한이 넉넉하면 전부.
+        let all = t.backfill(BACKFILL_MAX_BYTES, 100);
+        assert_eq!(all.len(), 10);
+
+        // 바이트 상한이 걸리면 잘린 첫 줄을 버린다.
+        let small = t.backfill(20, 100);
+        assert!(small.len() < 10, "{small:?}");
+        assert_eq!(small.last().unwrap().text, "line-9");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn backfill_without_a_located_file_is_empty() {
+        let dir = scratch();
+        let mut t = tailer(&dir.join("nope.jsonl"));
+        assert!(!t.has_target());
+        assert!(t.backfill(BACKFILL_MAX_BYTES, 100).is_empty());
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

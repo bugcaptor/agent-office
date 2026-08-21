@@ -20,7 +20,9 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use super::{block, clamp_value, compact_json_brief, AgentSessionLookup, TranscriptSource};
+use super::{
+    clamp_value, compact_json_brief, AgentSessionLookup, ItemRole, TranscriptItem, TranscriptSource,
+};
 
 /// `<CLAUDE_CONFIG_DIR 또는 ~/.claude>/projects`. 홈도 오버라이드도 없으면 None
 /// (그 경우 훅이 알려 준 절대 경로에만 의존한다).
@@ -107,17 +109,17 @@ impl TranscriptSource for ClaudeSource {
         self.find(&session.session_id, &cwd, session.transcript_path.as_deref())
     }
 
-    fn render(&self, raw: &str) -> Vec<String> {
+    fn parse(&self, raw: &str) -> Vec<TranscriptItem> {
         let Ok(v) = serde_json::from_str::<Value>(raw) else {
             return Vec::new();
         };
-        render_entry(&v)
+        parse_entry(&v)
     }
 }
 
-/// JSONL 한 항목 → 로그 줄들. 대화(사용자/에이전트/도구)만 남기고 나머지
+/// JSONL 한 항목 → 채팅 항목들. 대화(사용자/에이전트/도구)만 남기고 나머지
 /// 메타 항목(mode, ai-title, attachment, file-history-snapshot …)은 버린다.
-fn render_entry(v: &Value) -> Vec<String> {
+fn parse_entry(v: &Value) -> Vec<TranscriptItem> {
     let kind = v.get("type").and_then(Value::as_str).unwrap_or("");
     if !matches!(kind, "user" | "assistant") {
         return Vec::new();
@@ -126,17 +128,15 @@ fn render_entry(v: &Value) -> Vec<String> {
     if v.get("isMeta").and_then(Value::as_bool).unwrap_or(false) {
         return Vec::new();
     }
-    // 서브에이전트(sidechain) 대화는 들여쓰기 표식을 붙여 구분한다.
+    // 서브에이전트(sidechain) 대화는 표식을 붙여 구분한다.
     let side = v
         .get("isSidechain")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let mark = |glyph: &str| {
-        if side {
-            format!("⤷ {glyph}")
-        } else {
-            glyph.to_string()
-        }
+    let role = if kind == "user" {
+        ItemRole::User
+    } else {
+        ItemRole::Assistant
     };
 
     let Some(message) = v.get("message") else {
@@ -144,16 +144,14 @@ fn render_entry(v: &Value) -> Vec<String> {
     };
     let mut out = Vec::new();
     match message.get("content") {
-        Some(Value::String(text)) => {
-            if kind == "user" {
-                out.extend(block(&mark("▶ 사용자:"), text));
-            } else {
-                out.extend(block(&mark("⏺ 에이전트:"), text));
-            }
+        // 빈 문자열은 로그에서도 줄이 되지 않았다(clamp가 빈 벡터) — 항목도
+        // 만들지 않아 빈 버블이 생기지 않게 한다.
+        Some(Value::String(text)) if !text.is_empty() => {
+            out.push(TranscriptItem::speech(role, text.clone()).with_sidechain(side));
         }
         Some(Value::Array(blocks)) => {
             for b in blocks {
-                out.extend(render_block(b, kind, &mark));
+                out.extend(parse_block(b, role, side));
             }
         }
         _ => {}
@@ -161,24 +159,19 @@ fn render_entry(v: &Value) -> Vec<String> {
     out
 }
 
-fn render_block(b: &Value, kind: &str, mark: &dyn Fn(&str) -> String) -> Vec<String> {
+fn parse_block(b: &Value, role: ItemRole, side: bool) -> Vec<TranscriptItem> {
     match b.get("type").and_then(Value::as_str).unwrap_or("") {
         "text" => {
             let text = b.get("text").and_then(Value::as_str).unwrap_or("");
             if text.trim().is_empty() {
                 return Vec::new();
             }
-            let glyph = if kind == "user" {
-                mark("▶ 사용자:")
-            } else {
-                mark("⏺ 에이전트:")
-            };
-            block(&glyph, text)
+            vec![TranscriptItem::speech(role, text).with_sidechain(side)]
         }
         "tool_use" => {
             let name = b.get("name").and_then(Value::as_str).unwrap_or("도구");
             let brief = tool_brief(b.get("input"));
-            block(&mark(&format!("⚒ {name}:")), &brief)
+            vec![TranscriptItem::tool_use(Some(name.to_string()), brief).with_sidechain(side)]
         }
         "tool_result" => {
             let body = flatten_content(b.get("content"));
@@ -189,8 +182,7 @@ fn render_block(b: &Value, kind: &str, mark: &dyn Fn(&str) -> String) -> Vec<Str
                 .get("is_error")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            let glyph = if failed { "⇤ 결과(오류):" } else { "⇤ 결과:" };
-            block(&mark(glyph), &body)
+            vec![TranscriptItem::tool_result(body, failed).with_sidechain(side)]
         }
         // thinking/signature/이미지 등은 남기지 않는다 -- 서명 블롭과 base64는
         // 로그를 못 읽게 만들고, 사고 과정은 원본 JSONL에 그대로 있다.
@@ -286,8 +278,14 @@ mod tests {
         }
     }
 
+    /// 세션 로그가 실제로 받는 줄. **파서 분리 후에도 이 문자열이 그대로여야
+    /// 한다** — 아래 케이스들이 그 계약의 핀이다.
     fn render(raw: &str) -> Vec<String> {
-        render_entry(&serde_json::from_str(raw).unwrap())
+        super::super::format_items(&parse_entry(&serde_json::from_str(raw).unwrap()))
+    }
+
+    fn parse(raw: &str) -> Vec<TranscriptItem> {
+        parse_entry(&serde_json::from_str(raw).unwrap())
     }
 
     #[test]
@@ -357,6 +355,64 @@ mod tests {
         ] {
             assert!(render(raw).is_empty(), "{raw}");
         }
+    }
+
+    /// 채팅 뷰가 받는 구조화 항목(같은 픽스처의 다른 표현).
+    #[test]
+    fn structured_items_carry_role_kind_and_tool_name() {
+        let items = parse(
+            r#"{"type":"assistant","message":{"role":"assistant","content":[
+                {"type":"thinking","thinking":"안 남을 것","signature":"AAAA"},
+                {"type":"text","text":"확인하겠습니다."},
+                {"type":"tool_use","id":"t1","name":"Bash","input":{"command":"git status","description":"상태"}}
+            ]}}"#,
+        );
+        assert_eq!(items.len(), 2, "thinking은 항목이 아니다: {items:?}");
+        assert_eq!(items[0].role, ItemRole::Assistant);
+        assert_eq!(items[0].kind, super::super::ItemKind::Text);
+        assert_eq!(items[0].text, "확인하겠습니다.");
+        assert_eq!(items[1].kind, super::super::ItemKind::ToolUse);
+        assert_eq!(items[1].tool_name.as_deref(), Some("Bash"));
+        assert_eq!(items[1].text, "git status");
+        assert!(!items[1].is_error);
+
+        let err = parse(
+            r#"{"type":"user","message":{"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"boom"}]}}"#,
+        );
+        assert_eq!(err.len(), 1);
+        assert_eq!(err[0].kind, super::super::ItemKind::ToolResult);
+        assert!(err[0].is_error);
+        assert_eq!(err[0].text, "boom");
+
+        let side = parse(
+            r#"{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[
+                {"type":"text","text":"서브에이전트 응답"}]}}"#,
+        );
+        assert!(side[0].sidechain);
+
+        // 도구 인자의 블롭은 항목 단계에서 이미 생략된다.
+        let blob = parse(&format!(
+            r#"{{"type":"assistant","message":{{"role":"assistant","content":[
+                {{"type":"tool_use","name":"Task","input":{{"task_name":"x","message":"{}"}}}}]}}}}"#,
+            "g".repeat(500)
+        ));
+        assert!(blob[0].text.contains("(생략 500자)"), "{:?}", blob[0].text);
+        assert!(!blob[0].text.contains("gggg"));
+    }
+
+    /// 와이어 모양(웹 클라이언트의 `protocol.ts` 미러).
+    #[test]
+    fn item_serializes_as_camel_case() {
+        let json = serde_json::to_string(&TranscriptItem::tool_use(
+            Some("Bash".into()),
+            "ls",
+        ))
+        .unwrap();
+        assert!(json.contains("\"role\":\"assistant\""), "{json}");
+        assert!(json.contains("\"kind\":\"tool_use\""), "{json}");
+        assert!(json.contains("\"toolName\":\"Bash\""), "{json}");
+        assert!(json.contains("\"isError\":false"), "{json}");
     }
 
     #[test]

@@ -19,7 +19,7 @@ use std::time::{Duration, SystemTime};
 
 use serde_json::Value;
 
-use super::{block, clamp_value, compact_json_brief, TranscriptSource};
+use super::{clamp_value, compact_json_brief, ItemRole, TranscriptItem, TranscriptSource};
 
 /// 이보다 오래 쓰이지 않은 rollout은 "이미 끝난 세션"으로 보고 붙지 않는다.
 const LIVE_WINDOW: Duration = Duration::from_secs(30 * 60);
@@ -154,15 +154,15 @@ impl TranscriptSource for CodexSource {
         found
     }
 
-    fn render(&self, raw: &str) -> Vec<String> {
+    fn parse(&self, raw: &str) -> Vec<TranscriptItem> {
         let Ok(v) = serde_json::from_str::<Value>(raw) else {
             return Vec::new();
         };
-        render_entry(&v)
+        parse_entry(&v)
     }
 }
 
-fn render_entry(v: &Value) -> Vec<String> {
+fn parse_entry(v: &Value) -> Vec<TranscriptItem> {
     let Some(payload) = v.get("payload") else {
         return Vec::new();
     };
@@ -178,13 +178,23 @@ fn render_entry(v: &Value) -> Vec<String> {
     match (v.get("type").and_then(Value::as_str).unwrap_or(""), sub) {
         // 사용자·에이전트 발화는 event_msg 쪽이 평문이다(response_item의 같은
         // 내용은 암호화 블롭이라 쓸 수 없다).
-        ("event_msg", "user_message") => block("▶ 사용자:", &text("message")),
-        ("event_msg", "agent_message") => block("⏺ 에이전트:", &text("message")),
-        ("event_msg", "patch_apply_end") => block("⚒ 패치 적용:", &text("stdout")),
+        // 빈 발화는 로그에서도 줄이 되지 않았다 — 항목도 만들지 않는다.
+        ("event_msg", "user_message") => speech(ItemRole::User, text("message")),
+        ("event_msg", "agent_message") => speech(ItemRole::Assistant, text("message")),
+        ("event_msg", "patch_apply_end") => {
+            vec![TranscriptItem::tool_use(
+                Some("패치 적용".into()),
+                text("stdout"),
+            )]
+        }
+        // 도구 이름이 없는 활동 줄 — 로그에서는 `⤷ …` 한 줄이 된다.
         ("event_msg", "sub_agent_activity") => {
             let path = text("agent_path");
             let kind = text("kind");
-            vec![format!("⤷ 서브에이전트 {path}: {kind}")]
+            vec![
+                TranscriptItem::tool_use(None, format!("서브에이전트 {path}: {kind}"))
+                    .with_sidechain(true),
+            ]
         }
         ("response_item", "custom_tool_call") | ("response_item", "function_call") => {
             let name = text("name");
@@ -198,7 +208,7 @@ fn render_entry(v: &Value) -> Vec<String> {
             } else {
                 text("input")
             };
-            block(&format!("⚒ {name}:"), &input)
+            vec![TranscriptItem::tool_use(Some(name), input)]
         }
         ("response_item", "custom_tool_call_output")
         | ("response_item", "function_call_output") => {
@@ -206,12 +216,19 @@ fn render_entry(v: &Value) -> Vec<String> {
             if body.trim().is_empty() {
                 return Vec::new();
             }
-            block("⇤ 결과:", &body)
+            vec![TranscriptItem::tool_result(body, false)]
         }
         // 나머지(reasoning=암호화, token_count, world_state, turn_context,
         // task_started/complete=중복)는 남기지 않는다.
         _ => Vec::new(),
     }
+}
+
+fn speech(role: ItemRole, text: String) -> Vec<TranscriptItem> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+    vec![TranscriptItem::speech(role, text)]
 }
 
 fn flatten_output(output: Option<&Value>) -> String {
@@ -240,8 +257,13 @@ pub fn source() -> Option<Box<dyn TranscriptSource>> {
 mod tests {
     use super::*;
 
+    /// 세션 로그가 실제로 받는 줄 — 파서 분리 후에도 그대로여야 한다.
     fn render(raw: &str) -> Vec<String> {
-        render_entry(&serde_json::from_str(raw).unwrap())
+        super::super::format_items(&parse_entry(&serde_json::from_str(raw).unwrap()))
+    }
+
+    fn parse(raw: &str) -> Vec<TranscriptItem> {
+        parse_entry(&serde_json::from_str(raw).unwrap())
     }
 
     #[test]
@@ -270,6 +292,46 @@ mod tests {
             ),
             vec!["⇤ 결과: clean"]
         );
+    }
+
+    /// 서브에이전트 활동은 **도구 이름이 없는 활동 줄**로 표현한다 — 로그
+    /// 문자열이 예전과 같아야 하므로(`⤷ 서브에이전트 …`) 이 표현이 계약이다.
+    #[test]
+    fn sub_agent_activity_stays_a_single_marked_line() {
+        let raw = r#"{"type":"event_msg","payload":{"type":"sub_agent_activity","agent_path":"/a/b","kind":"spawn"}}"#;
+        assert_eq!(render(raw), vec!["⤷ 서브에이전트 /a/b: spawn"]);
+        let items = parse(raw);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].kind, super::super::ItemKind::ToolUse);
+        assert!(items[0].tool_name.is_none());
+        assert!(items[0].sidechain);
+    }
+
+    #[test]
+    fn structured_items_mirror_the_log_lines() {
+        let items = parse(
+            r#"{"type":"event_msg","payload":{"type":"user_message","message":"성운 만들어줘"}}"#,
+        );
+        assert_eq!(items[0].role, ItemRole::User);
+        assert_eq!(items[0].text, "성운 만들어줘");
+
+        let call = parse(
+            r#"{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"git status"}}"#,
+        );
+        assert_eq!(call[0].tool_name.as_deref(), Some("exec"));
+        assert_eq!(call[0].kind, super::super::ItemKind::ToolUse);
+
+        let out = parse(
+            r#"{"type":"response_item","payload":{"type":"custom_tool_call_output","output":[{"type":"input_text","text":"clean"}]}}"#,
+        );
+        assert_eq!(out[0].kind, super::super::ItemKind::ToolResult);
+        assert!(!out[0].is_error, "codex 출력에는 오류 플래그가 없다");
+
+        // 빈 발화는 항목이 되지 않는다.
+        assert!(parse(
+            r#"{"type":"event_msg","payload":{"type":"user_message","message":""}}"#
+        )
+        .is_empty());
     }
 
     #[test]

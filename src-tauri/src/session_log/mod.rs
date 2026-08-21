@@ -373,6 +373,13 @@ mod tests {
         fn locate(&mut self, _agent_id: &str, _cwd: &str) -> Option<std::path::PathBuf> {
             self.path.exists().then(|| self.path.clone())
         }
+        fn parse(&self, raw: &str) -> Vec<agent_transcript::TranscriptItem> {
+            vec![agent_transcript::TranscriptItem::speech(
+                agent_transcript::ItemRole::User,
+                raw,
+            )]
+        }
+        /// 이 테스트는 기록 배관만 본다 — 글리프는 파서 테스트가 지킨다.
         fn render(&self, raw: &str) -> Vec<String> {
             vec![format!("▶ {raw}")]
         }
