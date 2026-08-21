@@ -93,6 +93,9 @@ export function ChatScreen({
         const view = listRef.current;
         stickRef.current = view ? isAtBottom(view) : true;
         setItems((prev) => applyChatFrame(prev, msg));
+        // 펼침 상태는 항목 인덱스에 매여 있다 — 교체 프레임이 오면 그 인덱스가
+        // 다른 항목을 가리키므로 접어 둔다.
+        if (msg.backfill) setExpanded(new Set());
         // 새 대화가 오면 진행 라인은 소임을 다했다.
         setActivity(null);
         if (!stickRef.current) setHasNew(true);

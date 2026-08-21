@@ -268,10 +268,15 @@ tail 스레드는 (1) 전사 파일을 처음 찾았을 때 (2) 붙어 있는 �
    만들지 않으려고 `key_bytes`(순수 함수) 테이블 밖 이름은 `badArgs`이고,
    시퀀스 중 하나라도 모르면 **아무것도 쓰지 않고** 전부 거부한다.
 
-검증: cargo 1043(lib 1011 + 통합 22 + 10) · vitest 1776 · `tsc --noEmit` 0 ·
+검증: cargo 1044(lib 1012 + 통합 22 + 10) · vitest 1776 · `tsc --noEmit` 0 ·
 `npm run web:build` 성공. 새 테스트는 파서 구조화·클램프 1회·`complete_lines`·
 backfill·키 매핑·채팅 allowlist/가시성·attach 없는 알림 도달·chat tail 왕복
-(백필→증분→unavailable)·ChatScreen 렌더 7건.
+(백필→증분→unavailable→늦은 팔로워)·ChatScreen 렌더 7건.
+
+늦은 팔로워 처리는 자체 리뷰에서 두 번 고쳤다: (1) 소스가 하나도 없을 때
+스레드가 즉시 죽어 두 번째로 채팅을 연 화면이 영영 비었고, (2) `resend` 신호를
+틱 분기의 `else`에 두어 틱 경계에 걸린 팔로워가 굶었다. 둘 다 회귀 테스트가
+있다.
 
 ### M3. tailnet HTTPS (#7n 설계분 선별)
 

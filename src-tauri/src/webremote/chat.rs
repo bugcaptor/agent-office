@@ -183,6 +183,15 @@ impl Drop for ChatRegistry {
     }
 }
 
+fn unavailable_frame(agent_id: &str) -> HostMsg {
+    HostMsg::Chat {
+        agent_id: agent_id.to_string(),
+        items: Vec::new(),
+        backfill: false,
+        unavailable: true,
+    }
+}
+
 fn chat_frame(agent_id: &str, items: Vec<TranscriptItem>, backfill: bool) -> HostMsg {
     HostMsg::Chat {
         agent_id: agent_id.to_string(),
@@ -203,17 +212,10 @@ fn spawn_tail(
     let _ = std::thread::Builder::new()
         .name(format!("web-chat-tail-{agent_id}"))
         .spawn(move || {
+            // 소스가 하나도 없어도(지원 CLI 미설치) 스레드는 산다 — 늦게
+            // 합류한 팔로워에게도 "전사 없음"을 알려야 하기 때문이다. 그
+            // 경우 tick은 아무 일도 하지 않는다.
             let mut tailer = TranscriptTailer::new(&agent_id, &cwd, sources);
-            if tailer.is_empty() {
-                // 이 기계에 지원하는 CLI 전사가 하나도 없다 — 터미널 폴백.
-                hub.broadcast(HostMsg::Chat {
-                    agent_id,
-                    items: Vec::new(),
-                    backfill: false,
-                    unavailable: true,
-                });
-                return;
-            }
             // 지금 붙어 있는 전사 파일들. 바뀌면(리줌으로 새 세션 파일) 최근
             // 대화를 다시 실어 보낸다.
             let mut targets: Vec<PathBuf> = Vec::new();
@@ -223,7 +225,17 @@ fn spawn_tail(
                 if stop.load(Ordering::Relaxed) {
                     return;
                 }
-                let asked = resend.swap(false, Ordering::Relaxed);
+                // 뒤늦게 합류한 팔로워 — 틱을 기다리지 않고 바로 채워 준다.
+                // (틱과 **독립**이다: 틱 경계에 걸린 팔로워가 굶지 않게.)
+                if resend.swap(false, Ordering::Relaxed) {
+                    if targets.is_empty() {
+                        announced_unavailable = true;
+                        hub.broadcast(unavailable_frame(&agent_id));
+                    } else {
+                        let back = tailer.backfill(BACKFILL_MAX_BYTES, BACKFILL_MAX_ITEMS);
+                        hub.broadcast(chat_frame(&agent_id, back, true));
+                    }
+                }
                 if since_tick >= CHAT_TICK {
                     since_tick = Duration::ZERO;
                     let items = tailer.tick_items();
@@ -238,25 +250,7 @@ fn spawn_tail(
                     } else if targets.is_empty() && !announced_unavailable {
                         // 전사 파일을 못 찾았다(일반 셸·미지원 CLI).
                         announced_unavailable = true;
-                        hub.broadcast(HostMsg::Chat {
-                            agent_id: agent_id.clone(),
-                            items: Vec::new(),
-                            backfill: false,
-                            unavailable: true,
-                        });
-                    }
-                } else if asked {
-                    // 뒤늦게 합류한 팔로워 — 틱을 기다리지 않고 바로 채워 준다.
-                    if targets.is_empty() {
-                        hub.broadcast(HostMsg::Chat {
-                            agent_id: agent_id.clone(),
-                            items: Vec::new(),
-                            backfill: false,
-                            unavailable: true,
-                        });
-                    } else {
-                        let back = tailer.backfill(BACKFILL_MAX_BYTES, BACKFILL_MAX_ITEMS);
-                        hub.broadcast(chat_frame(&agent_id, back, true));
+                        hub.broadcast(unavailable_frame(&agent_id));
                     }
                 }
                 std::thread::sleep(SLICE);
@@ -428,8 +422,10 @@ mod tests {
     }
 
     /// 소스가 아예 없는 기계(지원 CLI 미설치)도 조용히 죽지 않고 알린다.
+    /// **뒤늦게 합류한 팔로워도** 같은 안내를 받아야 한다 — 그러지 않으면
+    /// 두 번째로 채팅을 연 화면이 영원히 빈 채로 남는다.
     #[test]
-    fn no_sources_at_all_is_unavailable() {
+    fn no_sources_at_all_is_unavailable_for_every_follower() {
         let hub = WebRemoteHub::new();
         let mut rx = hub.subscribe();
         let chat = ChatRegistry::new(hub);
@@ -439,6 +435,49 @@ mod tests {
             HostMsg::Chat { unavailable, .. } => assert!(unavailable),
             other => panic!("chat 프레임이어야 한다: {other:?}"),
         }
+        // 두 번째 연결이 붙는다 — tailer는 이미 돌고 있다.
+        chat.follow("a1", "/w", 2);
+        match wait_chat(&mut rx, Duration::from_secs(3)).expect("늦은 팔로워 안내") {
+            HostMsg::Chat { unavailable, .. } => assert!(unavailable),
+            other => panic!("chat 프레임이어야 한다: {other:?}"),
+        }
+        chat.release(1);
+        chat.release(2);
+    }
+
+    /// 늦게 합류한 팔로워는 틱을 기다리지 않고 곧바로 백필을 받는다.
+    #[test]
+    fn late_follower_gets_a_backfill_without_waiting_for_a_tick() {
+        let dir = scratch();
+        let path = dir.join("t.jsonl");
+        append(&path, "이미-있던-말\n");
+
+        let hub = WebRemoteHub::new();
+        let mut rx = hub.subscribe();
+        let chat = ChatRegistry::new(hub);
+        let p = path.clone();
+        chat.set_source_factory(Arc::new(move |_a, _c| {
+            vec![Box::new(LineSource { path: p.clone() })]
+        }));
+
+        chat.follow("a1", "/w", 1);
+        wait_chat(&mut rx, Duration::from_secs(3)).expect("첫 백필");
+
+        chat.follow("a1", "/w", 2);
+        // 2초 틱보다 빨리 와야 한다.
+        match wait_chat(&mut rx, Duration::from_millis(1500)).expect("늦은 백필") {
+            HostMsg::Chat {
+                items, backfill, ..
+            } => {
+                assert!(backfill);
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].text, "이미-있던-말");
+            }
+            other => panic!("chat 프레임이어야 한다: {other:?}"),
+        }
+        chat.release(1);
+        chat.release(2);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// 두 연결이 같은 캐릭터를 볼 때 하나가 끊겨도 tailer는 남는다.
