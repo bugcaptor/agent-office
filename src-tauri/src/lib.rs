@@ -515,7 +515,7 @@ pub fn run() {
                     settings: settings_cache.clone(),
                     hub: web_remote_hub.clone(),
                     app_data_dir: data_dir.clone(),
-                    host_name: host_name.clone(),
+                    host_name,
                     hub_notify: hub.clone(),
                     observer: observer.clone(),
                     observer_server: observer_server.clone(),

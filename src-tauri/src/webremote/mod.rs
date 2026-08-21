@@ -1095,7 +1095,6 @@ mod tests {
     use crate::session::pty_factory::fake::FakePtyFactory;
     use crate::state::fake::RecordingEvents;
     use crate::state::AppEvents;
-    use futures_util::{SinkExt as _, StreamExt as _};
     use std::time::Duration;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::Message as TMessage;
