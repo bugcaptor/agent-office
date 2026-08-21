@@ -97,7 +97,6 @@
             tts_enabled: false,
             tts_rewrite_model: Default::default(),
             tts_rewrite_provider: Default::default(),
-            peer_share_enabled: false,
             peer_bind: Default::default(),
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
             web_hosting_enabled: false,
@@ -155,7 +154,6 @@
             tts_enabled: false,
             tts_rewrite_model: Default::default(),
             tts_rewrite_provider: Default::default(),
-            peer_share_enabled: false,
             peer_bind: Default::default(),
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
             web_hosting_enabled: false,
@@ -206,7 +204,6 @@
             tts_enabled: false,
             tts_rewrite_model: Default::default(),
             tts_rewrite_provider: Default::default(),
-            peer_share_enabled: false,
             peer_bind: Default::default(),
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
             web_hosting_enabled: false,
@@ -373,10 +370,6 @@
                 live_usage: live_usage.clone(),
             },
         ));
-        let peer_viewer = crate::peer::viewer::ViewerRegistry::new(
-            crate::peer::pairing::PeerHostStore::new(profile_dir.join("peer-hosts.json")),
-            "테스트뷰어".into(),
-        );
         let state = AppState {
             manager,
             hub,
@@ -401,7 +394,6 @@
             control_ctx,
             peer_server: std::sync::Arc::new(crate::peer::PeerServerState::default()),
             peer_ctx,
-            peer_viewer,
             bot_runtime,
             bot_ctx,
             wake_lock: std::sync::Arc::new(crate::power::WakeLock::new()),

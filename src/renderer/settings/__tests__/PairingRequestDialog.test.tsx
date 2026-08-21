@@ -2,11 +2,11 @@
 //
 // src/renderer/settings/__tests__/PairingRequestDialog.test.tsx
 //
-// 페어링 승인 다이얼로그. 회귀 배경: 6자리 코드가 설정 다이얼로그의
-// `peerShareEnabled` 게이트 안에서만 그려져서, **웹 호스팅만 켠 사용자에게는
-// 코드가 어디에도 안 떴다**(브라우저는 통과할 수 없는 숫자를 기다린다).
-// 그래서 여기서 확인하는 계약은 셋이다 — 설정과 무관하게 코드가 뜬다,
-// 승인/거부가 실제 IPC를 부르고 목록에서 빠진다, 만료되면 스스로 사라진다.
+// 페어링 승인 다이얼로그. 회귀 배경: 6자리 코드가 설정 다이얼로그 안에서만
+// 그려져서, 설정을 열어 두지 않은 사용자에게는 코드가 어디에도 안 떴다
+// (브라우저는 통과할 수 없는 숫자를 기다린다). 그래서 여기서 확인하는 계약은
+// 셋이다 — 설정과 무관하게 코드가 뜬다, 승인/거부가 실제 IPC를 부르고 목록에서
+// 빠진다, 만료되면 스스로 사라진다.
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -44,7 +44,7 @@ describe("PairingRequestDialog", () => {
 
   it("브라우저 요청이 오면 설정을 열지 않아도 6자리 코드가 보인다", () => {
     useAppStore.getState().setPeerPending([
-      { pairingId: "p1", code: "042317", viewerName: "휴대폰 브라우저", clientKind: "web" },
+      { pairingId: "p1", code: "042317", viewerName: "휴대폰 브라우저" },
     ]);
     render(<PairingRequestDialog />);
     expect(screen.getByText("042317")).toBeTruthy();

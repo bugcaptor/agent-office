@@ -10,8 +10,8 @@ pub mod agent_paths;
 pub mod api_keys;
 mod bot;
 mod control;
-/// 피어 세션 공유(#7k, docs/peer-session-share-design.md) — 같은 네트워크의
-/// 다른 agent-office가 소유한 세션을 출력/입력만 중계해 보고 조작한다.
+/// 웹 원격(docs/web-remote-design.md) — tailnet의 브라우저가 이 앱의 세션을
+/// 출력/입력만 중계받아 보고 조작한다.
 pub mod peer;
 // Everything(es.exe) 백엔드(이슈 #67) -- markdown.rs 전용 옵트인 스캔 경로.
 mod file_index;
@@ -499,10 +499,8 @@ pub fn run() {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));
             }
 
-            // 피어 세션 공유(#7k, docs/peer-session-share-design.md).
-            //   · 호스트: peer 서버(별도 리스너/Router) + 저장된 공유 목록대로 tap 설치.
-            //   · 뷰어  : 저장된 피어에 자동 재접속하는 얇은 레지스트리.
-            // control 서버와 같은 2단계 옵트인이라 peer_share_enabled가 켜져 있어도
+            // 웹 원격(docs/web-remote-design.md) — 별도 리스너/Router.
+            // control 서버와 같은 2단계 옵트인이라 web_hosting_enabled가 켜져 있어도
             // 페어링 승인 전에는 모든 요청이 401이다.
             // 사용량 스로틀 상태는 네이티브 커맨드와 웹 RPC가 공유한다
             // (폰 폴링이 중복 fetch를 일으키지 않게).
@@ -524,9 +522,8 @@ pub fn run() {
                     live_usage: live_usage.clone(),
                 },
             ));
-            peer_ctx.apply_shares();
             {
-                // 뷰어가 처음 붙을 때 호스트 렌더러에 화면 직렬화를 요청하는 다리.
+                // 브라우저가 처음 붙을 때 호스트 렌더러에 화면 직렬화를 요청하는 다리.
                 let handle = handle.clone();
                 peer_hub.snapshots.set_emitter(Arc::new(move |agent_id, request_id| {
                     let _ = handle.emit(
@@ -545,41 +542,22 @@ pub fn run() {
                             "pairingId": pending.pairing_id,
                             "code": pending.code,
                             "viewerName": pending.viewer_name,
-                            // 브라우저인지 다른 사무실인지, 그리고 코드 수명 —
-                            // 승인 다이얼로그가 문구와 자동 소멸에 쓴다.
-                            "clientKind": pending.client_kind.as_str(),
+                            // 코드 수명 — 승인 다이얼로그가 자동 소멸에 쓴다.
                             "expiresInMs": pending.remaining_ms(),
                         }),
                     );
                 }));
             }
-            // 두 기능이 같은 리스너를 공유한다 — 어느 쪽이든 켜져 있으면 뜬다.
             {
                 let (needs_server, port) = {
                     let s = settings_cache.read().unwrap();
-                    (s.peer_share_enabled || s.web_hosting_enabled, s.peer_port)
+                    (s.web_hosting_enabled, s.peer_port)
                 };
                 if needs_server {
                     let _ = tauri::async_runtime::block_on(
                         peer_server.ensure(peer_ctx.clone(), port),
                     );
                 }
-            }
-            let peer_viewer = crate::peer::viewer::ViewerRegistry::new(
-                crate::peer::pairing::PeerHostStore::new(crate::peer::pairing::hosts_path(
-                    &data_dir,
-                )),
-                host_name,
-            );
-            peer_viewer.set_events(Arc::new(TauriViewerEvents {
-                app: handle.clone(),
-            }));
-            {
-                // 저장된 피어 자동 연결 — 실패해도 백오프 재시도라 부팅을 막지 않는다.
-                let peer_viewer = peer_viewer.clone();
-                tauri::async_runtime::spawn(async move {
-                    peer_viewer.start_all();
-                });
             }
 
             // 캐릭터 봇 모드(#57): 탭별 폴링 태스크 소유자 + 태스크가 쥘 상태 클론.
@@ -633,7 +611,6 @@ pub fn run() {
                 control_ctx,
                 peer_server,
                 peer_ctx,
-                peer_viewer,
                 bot_runtime,
                 bot_ctx,
                 wake_lock,
@@ -682,20 +659,12 @@ pub fn run() {
             ipc::commands::control_revoke,
             // 피어 세션 공유(#7k) — 호스트 역할
             ipc::commands::peer_host_status,
-            ipc::commands::peer_set_shared,
             ipc::commands::peer_pair_approve,
             ipc::commands::peer_pair_reject,
             ipc::commands::peer_revoke,
             ipc::commands::peer_set_permission,
             ipc::commands::submit_peer_snapshot,
             // 피어 세션 공유(#7k) — 뷰어 역할
-            ipc::commands::peer_viewer_status,
-            ipc::commands::peer_pair_start,
-            ipc::commands::peer_pair_finish,
-            ipc::commands::peer_hosts,
-            ipc::commands::peer_connect,
-            ipc::commands::peer_disconnect,
-            ipc::commands::peer_forget_host,
             ipc::commands::bot_start,
             ipc::commands::bot_stop,
             ipc::commands::bot_status,
@@ -782,7 +751,7 @@ pub fn run() {
                 state.manager.dispose_all(); // kill + settings cleanup(동기)
                 state.observer_server.shutdown();
                 state.control_server.shutdown(); // CLI 제어 서버 정지 + control-port 정리(#55)
-                state.peer_server.shutdown(); // 피어 수신 서버 정지(#7k)
+                state.peer_server.shutdown(); // 웹 원격 수신 서버 정지
                 state.bot_runtime.stop_all(); // 봇 폴링 태스크 정지(#57)
                 state.wake_lock.deactivate(); // 잠자기 방지 해제(#68) — OS가 자동 회수도 하지만 이중 안전장치.
                 // wait 스레드가 Disposed 확정 후 OS가 자식 reap. 프로세스 종료는 정상 진행.
@@ -906,7 +875,6 @@ mod tests {
             tts_enabled: false,
             tts_rewrite_model: Default::default(),
             tts_rewrite_provider: Default::default(),
-            peer_share_enabled: false,
             peer_bind: Default::default(),
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
             web_hosting_enabled: false,

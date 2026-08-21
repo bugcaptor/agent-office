@@ -2,8 +2,8 @@
 //
 // 피어 페어링(#7k §결정 5)과 토큰 보관.
 //
-//   호스트: `peer-tokens.json`(0600) — 내가 승인해 준 뷰어들(peerId·토큰·권한).
-//   뷰어  : `peer-hosts.json`(0600) — 내가 붙을 호스트들(주소·토큰).
+//   `peer-tokens.json`(0600) — 내가 승인해 준 브라우저 클라이언트들
+//   (peerId·토큰·권한).
 //
 // 페어링은 2단계다. (1) 뷰어가 `pair/start`를 치면 호스트 앱 UI에 6자리 코드와
 // 승인 다이얼로그가 뜬다. (2) 사람이 승인(+권한 선택)하고, 뷰어가 그 코드로
@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use super::protocol::{PeerClientKind, PeerPermission};
+use super::protocol::PeerPermission;
 
 /// 페어링 코드 유효 시간.
 pub const PAIRING_TTL: Duration = Duration::from_secs(120);
@@ -43,10 +43,6 @@ pub struct PeerRecord {
     #[serde(default)]
     pub permission: PeerPermission,
     pub created_at: u64,
-    /// 앱↔앱 뷰어인가 브라우저인가. 가시성 규칙이 갈린다(웹 호스팅 #7m).
-    /// 기존 토큰 파일에는 없으므로 default = `Peer`(역호환).
-    #[serde(default)]
-    pub kind: PeerClientKind,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -119,79 +115,6 @@ impl PeerTokenStore {
     }
 }
 
-// ── 뷰어: 저장된 호스트 ──────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PeerHostRecord {
-    pub peer_id: String,
-    /// 사람이 읽는 이름(호스트가 알려준 hostName).
-    pub label: String,
-    /// `host:port`.
-    pub address: String,
-    pub token: String,
-    #[serde(default)]
-    pub permission: PeerPermission,
-    /// 앱 시작 시 자동 연결할지. 기본 true.
-    #[serde(default = "default_true")]
-    pub auto_connect: bool,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-struct PeerHostsFile {
-    #[serde(default)]
-    hosts: Vec<PeerHostRecord>,
-}
-
-pub struct PeerHostStore {
-    path: PathBuf,
-}
-
-impl PeerHostStore {
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
-    }
-
-    pub fn load(&self) -> Vec<PeerHostRecord> {
-        let Ok(text) = std::fs::read_to_string(&self.path) else {
-            return Vec::new();
-        };
-        serde_json::from_str::<PeerHostsFile>(&text)
-            .map(|f| f.hosts)
-            .unwrap_or_default()
-    }
-
-    fn save(&self, hosts: &[PeerHostRecord]) -> std::io::Result<()> {
-        if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let text = serde_json::to_string_pretty(&PeerHostsFile {
-            hosts: hosts.to_vec(),
-        })
-        .unwrap_or_else(|_| "{}".into());
-        std::fs::write(&self.path, text)?;
-        super::set_owner_only(&self.path);
-        Ok(())
-    }
-
-    pub fn insert(&self, record: PeerHostRecord) -> std::io::Result<()> {
-        let mut hosts = self.load();
-        hosts.retain(|h| h.peer_id != record.peer_id);
-        hosts.push(record);
-        self.save(&hosts)
-    }
-
-    pub fn remove(&self, peer_id: &str) -> std::io::Result<()> {
-        let mut hosts = self.load();
-        hosts.retain(|h| h.peer_id != peer_id);
-        self.save(&hosts)
-    }
-}
-
 // ── 진행 중인 페어링 ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,8 +129,6 @@ pub struct PendingPairing {
     pub pairing_id: String,
     pub code: String,
     pub viewer_name: String,
-    /// 승인 다이얼로그가 "웹 브라우저"인지 "다른 사무실"인지 구분해 보여준다.
-    pub client_kind: PeerClientKind,
     pub decision: PairingDecision,
     attempts: u8,
     started: Instant,
@@ -244,7 +165,7 @@ pub struct PairingState {
 impl PairingState {
     /// 새 페어링을 열고 (pairingId, 6자리 코드)를 만든다. 동시 대기가 상한을
     /// 넘으면 `None` — 승인 다이얼로그를 폭주시키는 것 자체가 공격이다.
-    pub fn start(&self, viewer_name: &str, client_kind: PeerClientKind) -> Option<PendingPairing> {
+    pub fn start(&self, viewer_name: &str) -> Option<PendingPairing> {
         self.sweep();
         if self.pending.lock().len() >= MAX_PENDING {
             return None;
@@ -253,7 +174,6 @@ impl PairingState {
             pairing_id: uuid::Uuid::new_v4().simple().to_string(),
             code: random_code(),
             viewer_name: viewer_name.to_string(),
-            client_kind,
             decision: PairingDecision::Pending,
             attempts: 0,
             started: Instant::now(),
@@ -426,10 +346,6 @@ pub fn token_path(dir: &Path) -> PathBuf {
     dir.join(super::protocol::PEER_TOKENS_FILE)
 }
 
-pub fn hosts_path(dir: &Path) -> PathBuf {
-    dir.join(super::protocol::PEER_HOSTS_FILE)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,7 +369,7 @@ mod tests {
     #[test]
     fn pairing_requires_both_code_and_human_approval() {
         let state = PairingState::default();
-        let p = state.start("맥북", PeerClientKind::Peer).unwrap();
+        let p = state.start("맥북").unwrap();
         // 승인 전에는 코드가 맞아도 대기.
         assert_eq!(
             state.complete(&p.pairing_id, &p.code),
@@ -474,7 +390,7 @@ mod tests {
     #[test]
     fn wrong_code_three_times_kills_the_pairing() {
         let state = PairingState::default();
-        let p = state.start("낯선 손님", PeerClientKind::Peer).unwrap();
+        let p = state.start("낯선 손님").unwrap();
         state.approve(&p.pairing_id, PeerPermission::Input);
         assert_eq!(
             state.complete(&p.pairing_id, "000000-nope"),
@@ -498,7 +414,7 @@ mod tests {
     #[test]
     fn rejected_pairing_reports_rejection() {
         let state = PairingState::default();
-        let p = state.start("손님", PeerClientKind::Web).unwrap();
+        let p = state.start("손님").unwrap();
         assert!(state.reject(&p.pairing_id));
         assert_eq!(
             state.complete(&p.pairing_id, &p.code),
@@ -510,10 +426,10 @@ mod tests {
     fn pending_pairings_are_capped() {
         let state = PairingState::default();
         for _ in 0..MAX_PENDING {
-            assert!(state.start("손님", PeerClientKind::Web).is_some());
+            assert!(state.start("손님").is_some());
         }
         // 승인 다이얼로그를 폭주시키는 것 자체가 공격이다.
-        assert!(state.start("손님", PeerClientKind::Web).is_none());
+        assert!(state.start("손님").is_none());
     }
 
     #[test]
@@ -562,7 +478,6 @@ mod tests {
                 token: token.clone(),
                 permission: PeerPermission::Input,
                 created_at: now_ms(),
-                kind: PeerClientKind::Peer,
             })
             .unwrap();
 
@@ -597,7 +512,6 @@ mod tests {
                 token: new_token(),
                 permission: PeerPermission::ReadOnly,
                 created_at: 0,
-                kind: PeerClientKind::Web,
             })
             .unwrap();
         let mode = std::fs::metadata(token_path(&dir))
@@ -608,39 +522,4 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    #[test]
-    fn host_store_roundtrip() {
-        let dir = scratch("hosts");
-        let store = PeerHostStore::new(hosts_path(&dir));
-        store
-            .insert(PeerHostRecord {
-                peer_id: "h1".into(),
-                label: "데스크탑".into(),
-                address: "100.64.0.5:47800".into(),
-                token: "t".into(),
-                permission: PeerPermission::Input,
-                auto_connect: true,
-            })
-            .unwrap();
-        let hosts = store.load();
-        assert_eq!(hosts.len(), 1);
-        assert_eq!(hosts[0].address, "100.64.0.5:47800");
-        // 같은 peerId 재삽입은 갱신(중복 없음).
-        store
-            .insert(PeerHostRecord {
-                peer_id: "h1".into(),
-                label: "데스크탑2".into(),
-                address: "100.64.0.6:47800".into(),
-                token: "t2".into(),
-                permission: PeerPermission::ReadOnly,
-                auto_connect: false,
-            })
-            .unwrap();
-        let hosts = store.load();
-        assert_eq!(hosts.len(), 1);
-        assert_eq!(hosts[0].label, "데스크탑2");
-        store.remove("h1").unwrap();
-        assert!(store.load().is_empty());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 }

@@ -129,23 +129,14 @@ export const Commands = {
   // 이미 끝났거나 없는 opId는 조용한 no-op(fire-and-forget으로 부른다).
   workdirGitCancel: "workdir_git_cancel",
   workdirDifftool: "workdir_difftool",
-  // 피어 세션 공유(#7k, docs/peer-session-share-design.md).
-  // 호스트 역할 — 공유 토글·페어링 승인·피어 관리·스냅샷 응답.
+  // 웹 원격(docs/web-remote-design.md) — 앱은 호스트 역할만 한다
+  // (페어링 승인·클라이언트 관리·스냅샷 응답).
   peerHostStatus: "peer_host_status",
-  peerSetShared: "peer_set_shared",
   peerPairApprove: "peer_pair_approve",
   peerPairReject: "peer_pair_reject",
   peerRevoke: "peer_revoke",
   peerSetPermission: "peer_set_permission",
   submitPeerSnapshot: "submit_peer_snapshot",
-  // 뷰어 역할 — 페어링·연결·상태.
-  peerViewerStatus: "peer_viewer_status",
-  peerPairStart: "peer_pair_start",
-  peerPairFinish: "peer_pair_finish",
-  peerHosts: "peer_hosts",
-  peerConnect: "peer_connect",
-  peerDisconnect: "peer_disconnect",
-  peerForgetHost: "peer_forget_host",
 } as const;
 
 /**
@@ -165,13 +156,8 @@ export const Events = {
   mascotState: "mascot-state",
   mascotReady: "mascot-ready",
   mascotOpenTerminal: "mascot-open-terminal",
-  // 피어 세션 공유(#7k). peerStatus는 뷰어 연결/원격 캐릭터 목록 브로드캐스트,
-  // peerSnapshotRequest는 호스트 렌더러에 화면 직렬화를 요청하는 신호,
-  // peerPairRequest는 승인 다이얼로그를 띄우는 신호, peerResized는 호스트가
-  // 소유한 터미널 크기 통지다(뷰어는 이 크기를 따르기만 한다).
-  peerStatus: "peer-status",
+  // 웹 원격. peerSnapshotRequest는 호스트 렌더러에 화면 직렬화를 요청하는
+  // 신호, peerPairRequest는 승인 다이얼로그를 띄우는 신호다.
   peerSnapshotRequest: "peer-snapshot-request",
   peerPairRequest: "peer-pair-request",
-  peerResized: "peer-resized",
-  peerError: "peer-error",
 } as const;

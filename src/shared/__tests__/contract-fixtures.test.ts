@@ -245,7 +245,6 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "ttsEnabled",
       "ttsRewriteModel",
       "ttsRewriteProvider",
-      "peerShareEnabled",
       "peerBind",
       "peerPort",
       "webHostingEnabled",
@@ -261,9 +260,8 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expect(settings.ttsEnabled).toBe(false);
     expect(settings.ttsRewriteModel).toBe("claude-haiku-4-5");
     expect(settings.ttsRewriteProvider).toBe("auto");
-    // 피어 세션 공유(#7k)는 네트워크 표면이라 기본 꺼짐이고, 켜더라도 기본
-    // 허용 범위는 tailnet(+루프백)뿐이다.
-    expect(settings.peerShareEnabled).toBe(false);
+    // 웹 원격은 네트워크 표면이라 기본 꺼짐이고, 켜더라도 기본 허용 범위는
+    // tailnet(+루프백)뿐이다.
     expect(settings.peerBind).toBe("tailnet");
     expect(settings.peerPort).toBe(47800);
     expect(settings.webHostingEnabled).toBe(false);

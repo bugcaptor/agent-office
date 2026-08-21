@@ -21,14 +21,8 @@ pub async fn load_state(app_state: State<'_, AppState>) -> Result<PersistedState
 #[tauri::command(rename_all = "camelCase")]
 pub async fn save_state(
     app_state: State<'_, AppState>,
-    mut state: PersistedState,
+    state: PersistedState,
 ) -> Result<(), String> {
-    // 피어 세션 공유(#7k §결정 3): 원격 캐릭터(`peer:` 키)는 이 앱의 프로필이
-    // 아니다. 렌더러도 저장 전에 거르지만, 영속 계층 진입점에서 한 번 더 막아
-    // "어떤 경로로도 원격 캐릭터가 profiles.json에 남지 않는다"를 보장한다.
-    state
-        .agents
-        .retain(|a| !crate::peer::protocol::is_remote_agent(&a.id));
     app_state.store.save(&state).map_err(|e| e.to_string())
 }
 

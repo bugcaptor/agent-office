@@ -26,7 +26,6 @@ export function PairingScreen({ onPaired }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           viewerName: navigator.userAgent.includes("Mobile") ? "휴대폰 브라우저" : "브라우저",
-          clientKind: "web",
         }),
       });
       const body = await res.json();

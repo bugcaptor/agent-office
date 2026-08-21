@@ -221,12 +221,6 @@ pub struct AppSettings {
     /// 대사 리라이트 공급자. 기본 `auto`(API 키 → env → claude CLI → 생략).
     #[serde(default)]
     pub tts_rewrite_provider: TtsRewriteProvider,
-    /// 피어 세션 공유(#7k, docs/peer-session-share-design.md)의 수신 서버를
-    /// 띄울지. 켜도 **페어링 승인 전에는 모든 요청이 401**이고, 실제로 중계되는
-    /// 캐릭터는 캐릭터별 공유 토글을 켠 것뿐이다(전체 공유 스위치는 없다).
-    /// 네트워크 표면이므로 기본 꺼짐.
-    #[serde(default)]
-    pub peer_share_enabled: bool,
     /// 어떤 원격 주소를 받아 줄지. 기본 `tailnet`(Tailscale 대역 + 루프백).
     #[serde(default)]
     pub peer_bind: PeerBind,
@@ -234,9 +228,9 @@ pub struct AppSettings {
     /// 점유 시에는 +1씩 스캔한 실제 포트를 설정 UI에 표시한다.
     #[serde(default = "default_peer_port")]
     pub peer_port: u16,
-    /// 웹 호스팅(kbm #7m) — 브라우저로 접속해 상태 확인·터미널 조작을 하게
-    /// 한다. peer와 **같은 리스너**를 쓰고(`/web/…`), 켜져 있을 때만 정적
-    /// 자산과 웹 RPC가 응답한다. 페어링 승인은 여전히 필요하다. 기본 꺼짐.
+    /// 웹 원격(docs/web-remote-design.md) — 브라우저로 접속해 상태 확인·터미널
+    /// 조작을 하게 한다. 켜져 있을 때만 리스너가 뜨고 정적 자산·웹 RPC가
+    /// 응답한다. 페어링 승인은 여전히 필요하다. 네트워크 표면이라 기본 꺼짐.
     #[serde(default)]
     pub web_hosting_enabled: bool,
 }
@@ -268,7 +262,6 @@ impl Default for AppSettings {
             tts_enabled: false,
             tts_rewrite_model: TtsRewriteModel::Haiku45,
             tts_rewrite_provider: TtsRewriteProvider::Auto,
-            peer_share_enabled: false,
             peer_bind: PeerBind::Tailnet,
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
             web_hosting_enabled: false,
@@ -276,7 +269,7 @@ impl Default for AppSettings {
     }
 }
 
-/// 피어 서버가 받아 줄 원격 주소 범위(#7k §결정 5). 인터페이스 열거 크레이트를
+/// 웹 원격 서버가 받아 줄 원격 주소 범위. 인터페이스 열거 크레이트를
 /// 새로 들이지 않고 **원격 주소 허용목록**으로 정책을 강제한다 — tailnet 밖
 /// 클라이언트는 페어링조차 시작하지 못하므로 "기본 구성에서 평문이 LAN에
 /// 흐르지 않는다"는 성질은 그대로다.
@@ -425,7 +418,6 @@ mod tests {
             tts_enabled: false,
             tts_rewrite_model: TtsRewriteModel::Haiku45,
             tts_rewrite_provider: TtsRewriteProvider::Auto,
-            peer_share_enabled: false,
             peer_bind: Default::default(),
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
             web_hosting_enabled: false,
@@ -535,7 +527,6 @@ mod tests {
             tts_enabled: false,
             tts_rewrite_model: TtsRewriteModel::Haiku45,
             tts_rewrite_provider: TtsRewriteProvider::Auto,
-            peer_share_enabled: false,
             peer_bind: Default::default(),
             peer_port: crate::peer::protocol::DEFAULT_PEER_PORT,
             web_hosting_enabled: false,

@@ -1,20 +1,15 @@
 // src-tauri/src/ipc/commands/peer.rs
 //
-// 피어 세션 공유(#7k, docs/peer-session-share-design.md)의 렌더러 커맨드.
-// 호스트 역할(공유 토글·페어링 승인·피어 관리)과 뷰어 역할(페어링·연결·상태)이
-// 한 파일에 있다 — 앱 하나가 양쪽을 동시에 한다.
-//
-// 세션 IO(`subscribe_output`/`write_input`)는 여기가 아니라 `session.rs`의
-// 진입점에서 `peer:` 접두사로 라우팅된다(백엔드에서 갈라야 우회 불가능한 게이트다).
+// 웹 원격(docs/web-remote-design.md)의 렌더러 커맨드 — 호스트 역할뿐이다
+// (페어링 승인·클라이언트 관리·화면 스냅샷 응답). 앱↔앱 피어 접속은 범위
+// 밖이라 뷰어 역할 커맨드가 없다.
 
 use tauri::State;
 
-use crate::peer::pairing::PeerHostRecord;
 use crate::peer::protocol::PeerPermission;
-use crate::peer::viewer::{PairStartOutcome, PeerStatus};
 use crate::state::AppState;
 
-/// 설정 다이얼로그 "세션 공유" 탭이 한 번에 읽는 호스트 쪽 상태.
+/// 설정 다이얼로그 "웹 원격" 섹션이 한 번에 읽는 호스트 쪽 상태.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PeerHostStatus {
@@ -22,12 +17,10 @@ pub struct PeerHostStatus {
     pub running: bool,
     pub port: Option<u16>,
     pub host_name: String,
-    /// 뷰어에게 불러 줄 주소 힌트(`100.x.y.z`). 못 구하면 None.
+    /// 브라우저에 불러 줄 주소 힌트(`100.x.y.z`). 못 구하면 None.
     pub address_hint: Option<String>,
     pub bind: String,
-    /// 공유 중인 캐릭터 agentId.
-    pub shared_agents: Vec<String>,
-    /// 승인해 준 뷰어들(토큰은 절대 내보내지 않는다).
+    /// 승인해 준 브라우저들(토큰은 절대 내보내지 않는다).
     pub peers: Vec<PeerSummary>,
     /// 승인 대기 중인 페어링.
     pub pending: Vec<PendingSummary>,
@@ -48,8 +41,6 @@ pub struct PendingSummary {
     pub pairing_id: String,
     pub code: String,
     pub viewer_name: String,
-    /// 승인 다이얼로그가 "웹 브라우저"와 "다른 사무실"을 구분해 보여준다.
-    pub client_kind: String,
     /// 코드가 만료되기까지 남은 시간(ms).
     pub expires_in_ms: u64,
 }
@@ -59,13 +50,12 @@ pub async fn peer_host_status(app_state: State<'_, AppState>) -> Result<PeerHost
     let settings = *app_state.settings.read().unwrap();
     let ctx = &app_state.peer_ctx;
     Ok(PeerHostStatus {
-        enabled: settings.peer_share_enabled,
+        enabled: settings.web_hosting_enabled,
         running: app_state.peer_server.is_running(),
         port: app_state.peer_server.current_port(),
         host_name: ctx.host_name.clone(),
         address_hint: crate::peer::local_addr_hint(),
         bind: settings.peer_bind.as_str().to_string(),
-        shared_agents: ctx.hub.shared_agents(),
         peers: ctx
             .tokens
             .load()
@@ -87,23 +77,12 @@ pub async fn peer_host_status(app_state: State<'_, AppState>) -> Result<PeerHost
                 pairing_id: p.pairing_id,
                 code: p.code,
                 viewer_name: p.viewer_name,
-                client_kind: p.client_kind.as_str().to_string(),
             })
             .collect(),
     })
 }
 
-/// 캐릭터별 공유 토글(전체 공유 스위치는 두지 않는다 — §결정 5).
-#[tauri::command(rename_all = "camelCase")]
-pub async fn peer_set_shared(
-    app_state: State<'_, AppState>,
-    agent_id: String,
-    shared: bool,
-) -> Result<(), String> {
-    app_state.peer_ctx.set_shared(&agent_id, shared)
-}
-
-/// 페어링 승인(권한 선택). 뷰어는 이 뒤에 코드를 제시해야 토큰을 받는다.
+/// 페어링 승인(권한 선택). 브라우저는 이 뒤에 코드를 제시해야 토큰을 받는다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn peer_pair_approve(
     app_state: State<'_, AppState>,
@@ -121,7 +100,7 @@ pub async fn peer_pair_reject(
     Ok(app_state.peer_ctx.pairing.reject(&pairing_id))
 }
 
-/// 승인 취소 — 토큰 폐기. 그 피어의 WS는 다음 재연결에서 401로 막힌다.
+/// 승인 취소 — 토큰 폐기. 그 클라이언트의 WS는 다음 재연결에서 401로 막힌다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn peer_revoke(app_state: State<'_, AppState>, peer_id: String) -> Result<(), String> {
     app_state
@@ -157,72 +136,4 @@ pub async fn submit_peer_snapshot(
         .snapshots
         .submit(&request_id, snapshot);
     Ok(())
-}
-
-// ── 뷰어 역할 ────────────────────────────────────────────────────────
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn peer_viewer_status(app_state: State<'_, AppState>) -> Result<Vec<PeerStatus>, String> {
-    Ok(app_state.peer_viewer.status())
-}
-
-/// 페어링 1단계 — 호스트 화면에 코드가 뜬다.
-#[tauri::command(rename_all = "camelCase")]
-pub async fn peer_pair_start(
-    app_state: State<'_, AppState>,
-    address: String,
-) -> Result<PairStartOutcome, String> {
-    let viewer_name = app_state.peer_viewer.viewer_name().to_string();
-    crate::peer::viewer::pair_start(&address, &viewer_name).await
-}
-
-/// 페어링 2단계 — 코드를 제시한다. 호스트가 아직 승인 버튼을 안 눌렀으면
-/// `Ok(false)`라 렌더러는 잠시 후 다시 부르면 된다.
-#[tauri::command(rename_all = "camelCase")]
-pub async fn peer_pair_finish(
-    app_state: State<'_, AppState>,
-    address: String,
-    pairing_id: String,
-    code: String,
-) -> Result<bool, String> {
-    let record = crate::peer::viewer::pair_complete(&address, &pairing_id, &code).await?;
-    let Some(record) = record else {
-        return Ok(false);
-    };
-    app_state.peer_viewer.remember(record.clone())?;
-    app_state.peer_viewer.connect(record);
-    Ok(true)
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn peer_hosts(app_state: State<'_, AppState>) -> Result<Vec<PeerHostRecord>, String> {
-    Ok(app_state.peer_viewer.hosts())
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn peer_connect(app_state: State<'_, AppState>, peer_id: String) -> Result<(), String> {
-    let Some(record) = app_state
-        .peer_viewer
-        .hosts()
-        .into_iter()
-        .find(|h| h.peer_id == peer_id)
-    else {
-        return Err("저장된 피어가 아닙니다".into());
-    };
-    app_state.peer_viewer.connect(record);
-    Ok(())
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn peer_disconnect(app_state: State<'_, AppState>, peer_id: String) -> Result<(), String> {
-    app_state.peer_viewer.disconnect(&peer_id);
-    Ok(())
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn peer_forget_host(
-    app_state: State<'_, AppState>,
-    peer_id: String,
-) -> Result<(), String> {
-    app_state.peer_viewer.forget(&peer_id)
 }

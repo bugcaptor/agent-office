@@ -1,26 +1,21 @@
 // src-tauri/src/peer/mod.rs
 //
-// 피어 세션 공유(kbm #7k, docs/peer-session-share-design.md).
+// 웹 원격(docs/web-remote-design.md, 선행 docs/archive/web-hosting-design.md).
 //
-// 호스트(A)가 소유·실행 중인 에이전트 세션을 같은 네트워크의 뷰어(B)에서 보고
-// 입력한다. 프로세스·PTY·observer 훅은 전부 호스트에 남고, 건너가는 것은
-// ①출력 바이트 ②화면 스냅샷 ③앱 이벤트 ④입력 넷뿐이다.
-//
-// 왜 sessiond가 아니라 앱↔앱인가(§결정 1): 뷰어가 필요한 것은 PTY 바이트만이
-// 아니라 observer가 파생시킨 캐릭터 상태·알림·프로필인데 그건 앱에만 있다.
-// 게다가 sessiond는 unix 전용·기본 off·세션당 data conn 1개라 팬아웃 자체가
-// 불가능하다. 팬아웃을 앱(OutputSink tap)에서 하면 그 제약을 건드리지 않는다.
+// 앱이 소유·실행 중인 에이전트 세션을 tailnet의 **브라우저**에서 보고 입력한다.
+// 프로세스·PTY·observer 훅은 전부 이 앱에 남고, 건너가는 것은 ①출력 바이트
+// ②화면 스냅샷 ③앱 이벤트 ④입력 넷뿐이다. 앱↔앱 피어 접속은 범위 밖이다 —
+// 클라이언트는 브라우저 하나뿐이고, 가시성은 "내 캐릭터 전부"(주인 의미론)다.
 //
 // control 서버와의 관계: 2단계 옵트인·토큰 파일·상수시간 비교 **패턴만**
 // 재사용하고 리스너와 Router는 분리한다. control은 127.0.0.1 전용이며
 // `settings/set`·`create`처럼 네트워크에 내놓으면 안 되는 라우트를 가진다 —
-// peer Router에는 그런 라우트가 아예 존재하지 않는다(권한 축소를 구조로 보장).
+// 이쪽 Router에는 그런 라우트가 아예 존재하지 않는다(권한 축소를 구조로 보장).
 
 pub mod host;
 pub mod pairing;
 pub mod protocol;
-pub mod viewer;
-/// 웹 호스팅(#7m) — 브라우저 클라이언트용 정적 자산 + allowlist RPC 디스패처.
+/// 브라우저 클라이언트용 정적 자산 + allowlist RPC 디스패처.
 pub mod web;
 
 use std::collections::HashMap;
@@ -53,11 +48,7 @@ use host::PeerHub;
 use pairing::{PairingOutcome, PairingState, PeerRecord, PeerTokenStore};
 use protocol::*;
 
-/// 공유 대상 캐릭터 목록(호스트). 프로필과 분리해 두어 peer 기능이 캐릭터
-/// 스키마를 건드리지 않게 한다.
-pub const PEER_SHARED_FILE: &str = "peer-shared.json";
-
-/// 브라우저 클라이언트(웹 호스팅 #7m)가 WS 업그레이드에 실어 보낼 인증 쿠키
+/// 브라우저 클라이언트가 WS 업그레이드에 실어 보낼 인증 쿠키
 /// 이름. 브라우저의 WebSocket API는 커스텀 헤더를 붙일 수 없으므로 헤더 인증만
 /// 두면 브라우저는 아예 붙지 못한다.
 pub const PEER_COOKIE_NAME: &str = "ao_peer_token";
@@ -125,42 +116,6 @@ pub fn bind_policy_allows(bind: PeerBind, ip: IpAddr) -> bool {
     }
 }
 
-// ── 공유 대상 저장소 ──────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-struct SharedFile {
-    #[serde(default)]
-    agents: Vec<String>,
-}
-
-pub struct PeerShareStore {
-    path: PathBuf,
-}
-
-impl PeerShareStore {
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
-    }
-    pub fn load(&self) -> Vec<String> {
-        let Ok(text) = std::fs::read_to_string(&self.path) else {
-            return Vec::new();
-        };
-        serde_json::from_str::<SharedFile>(&text)
-            .map(|f| f.agents)
-            .unwrap_or_default()
-    }
-    pub fn save(&self, agents: &[String]) -> std::io::Result<()> {
-        if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let text = serde_json::to_string_pretty(&SharedFile {
-            agents: agents.to_vec(),
-        })
-        .unwrap_or_else(|_| "{}".into());
-        std::fs::write(&self.path, text)
-    }
-}
-
 // ── 서버 컨텍스트 ────────────────────────────────────────────────────
 
 /// 페어링 요청이 오면 호스트 렌더러에 승인 다이얼로그를 띄우기 위한 알림.
@@ -173,7 +128,6 @@ pub struct PeerContext {
     pub settings: Arc<RwLock<AppSettings>>,
     pub hub: Arc<PeerHub>,
     pub tokens: PeerTokenStore,
-    pub shares: PeerShareStore,
     pub pairing: Arc<PairingState>,
     pub host_name: String,
     pub app_data_dir: PathBuf,
@@ -212,7 +166,6 @@ impl PeerContext {
             settings: deps.settings,
             hub: deps.hub,
             tokens: PeerTokenStore::new(pairing::token_path(&deps.app_data_dir)),
-            shares: PeerShareStore::new(deps.app_data_dir.join(PEER_SHARED_FILE)),
             pairing: Arc::new(PairingState::default()),
             host_name: deps.host_name,
             app_data_dir: deps.app_data_dir,
@@ -236,33 +189,19 @@ impl PeerContext {
 
     /// 이 클라이언트가 그 캐릭터를 볼 수 있는가.
     ///
-    /// - **브라우저**(`Web`): 내 기계를 내가 조종하는 것이므로 **내 캐릭터 전부**.
-    ///   단 웹 호스팅 토글이 꺼져 있으면 아무것도 못 본다.
-    /// - **앱↔앱 뷰어**(`Peer`): 손님이므로 **캐릭터별 공유 토글을 켠 것만**
-    ///   (#7k의 기존 의미론 — 회귀 금지).
-    ///
-    /// **주의**: 앱↔앱 판정은 `hub.is_shared`(=tap 설치 여부)가 아니라 영속
-    /// 공유 목록을 본다. 웹 클라이언트가 attach 하면서 tap을 깔면 그 캐릭터가
-    /// 앱↔앱 뷰어에게도 보이게 되는 누출이 생기기 때문이다 — tap은 "출력을
-    /// 받아 적는 중"일 뿐 "공유하기로 했다"가 아니다.
-    pub fn agent_allowed(&self, record: &PeerRecord, agent_id: &str) -> bool {
-        if record.kind.is_web() {
-            return self.web_hosting_enabled()
-                && self.store.load().agents.iter().any(|a| a.id == agent_id);
-        }
-        self.shares.load().iter().any(|a| a == agent_id)
+    /// 클라이언트는 브라우저 하나뿐이고 **내 기계를 내가 조종하는 것**이므로
+    /// 내 캐릭터 전부가 대상이다(주인 의미론). 단 웹 원격 토글이 꺼져 있으면
+    /// 아무것도 못 본다 — 매 요청 확인이라 토글이 즉시 반영된다.
+    pub fn agent_allowed(&self, _record: &PeerRecord, agent_id: &str) -> bool {
+        self.web_hosting_enabled() && self.store.load().agents.iter().any(|a| a.id == agent_id)
     }
 
     /// 그 클라이언트에게 보여줄 캐릭터 목록(가시성 규칙은 `agent_allowed`와 동일).
-    pub fn build_agents_for(&self, record: &PeerRecord) -> Vec<PeerAgent> {
-        if record.kind.is_web() {
-            if !self.web_hosting_enabled() {
-                return Vec::new();
-            }
-            return self.agents_from(|_| true);
+    pub fn build_agents_for(&self, _record: &PeerRecord) -> Vec<PeerAgent> {
+        if !self.web_hosting_enabled() {
+            return Vec::new();
         }
-        let shared: std::collections::HashSet<String> = self.shares.load().into_iter().collect();
-        self.agents_from(move |id| shared.contains(id))
+        self.agents_from(|_| true)
     }
 
     pub fn set_pair_notify(&self, f: PairNotifyFn) {
@@ -281,56 +220,6 @@ impl PeerContext {
             .read()
             .map(|s| s.peer_bind)
             .unwrap_or_default()
-    }
-
-    /// 저장된 공유 목록대로 tap을 설치한다(부팅 시 1회, 토글 시 재적용).
-    pub fn apply_shares(self: &Arc<Self>) {
-        let wanted: std::collections::HashSet<String> =
-            self.shares.load().into_iter().collect();
-        for agent in self.hub.shared_agents() {
-            if !wanted.contains(&agent) {
-                self.hub.unshare(&self.manager, &agent);
-            }
-        }
-        for agent in wanted {
-            self.hub.share(&self.manager, &agent);
-        }
-    }
-
-    /// 캐릭터 공유 토글. 저장 + tap 설치/해제 + 뷰어에 목록 재송.
-    pub fn set_shared(self: &Arc<Self>, agent_id: &str, shared: bool) -> Result<(), String> {
-        if protocol::is_remote_agent(agent_id) {
-            // 받은 세션을 다시 남에게 넘기는 체이닝은 v1 비목표다.
-            return Err("원격 캐릭터는 다시 공유할 수 없습니다".into());
-        }
-        let mut agents = self.shares.load();
-        agents.retain(|a| a != agent_id);
-        if shared {
-            agents.push(agent_id.to_string());
-        }
-        agents.sort();
-        self.shares.save(&agents).map_err(|e| e.to_string())?;
-        if shared {
-            self.hub.share(&self.manager, agent_id);
-        } else if !self.web_hosting_enabled() {
-            // 웹 호스팅이 켜져 있으면 tap을 남겨 둔다 — 브라우저는 공유 토글과
-            // 무관하게 어느 캐릭터에나 붙을 수 있으므로, 여기서 tap을 떼면
-            // 붙어 있던 브라우저의 출력이 조용히 멎는다. 가시성은 이미 영속
-            // 공유 목록으로 판정하므로(agent_allowed) 남은 tap이 앱↔앱 뷰어에게
-            // 이 캐릭터를 노출시키지는 않는다.
-            self.hub.unshare(&self.manager, agent_id);
-        }
-        self.hub.broadcast(HostMsg::Agents {
-            agents: self.build_agents(),
-        });
-        Ok(())
-    }
-
-    /// 공유 중인 캐릭터의 뷰어용 메타(앱↔앱 뷰어 기준). 프로필(호스트 소유) +
-    /// 레지스트리 상태 병합. 브로드캐스트용이라 가장 좁은 가시성을 쓴다.
-    pub fn build_agents(&self) -> Vec<PeerAgent> {
-        let shared: std::collections::HashSet<String> = self.shares.load().into_iter().collect();
-        self.agents_from(move |id| shared.contains(id))
     }
 
     /// 프로필 + 실행 상태를 병합해 `PeerAgent`를 만든다. 어떤 캐릭터를 담을지는
@@ -418,10 +307,10 @@ async fn pair_start(
         )
             .into_response();
     }
-    if req.client_kind.is_web() && !ctx.web_hosting_enabled() {
+    if !ctx.web_hosting_enabled() {
         return (
             StatusCode::FORBIDDEN,
-            fail("웹 호스팅이 꺼져 있습니다"),
+            fail("웹 원격이 꺼져 있습니다"),
         )
             .into_response();
     }
@@ -430,7 +319,7 @@ async fn pair_start(
     } else {
         req.viewer_name.trim().chars().take(60).collect()
     };
-    let Some(pending) = ctx.pairing.start(&name, req.client_kind) else {
+    let Some(pending) = ctx.pairing.start(&name) else {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             fail("대기 중인 연결 요청이 너무 많습니다"),
@@ -459,13 +348,6 @@ async fn pair_complete(
         )
             .into_response();
     }
-    let client_kind = ctx
-        .pairing
-        .list()
-        .into_iter()
-        .find(|p| p.pairing_id == req.pairing_id)
-        .map(|p| p.client_kind)
-        .unwrap_or_default();
     match ctx.pairing.complete(&req.pairing_id, &req.code) {
         PairingOutcome::Approved(permission) => {
             let record = PeerRecord {
@@ -476,11 +358,10 @@ async fn pair_complete(
                     .into_iter()
                     .find(|p| p.pairing_id == req.pairing_id)
                     .map(|p| p.viewer_name)
-                    .unwrap_or_else(|| "뷰어".into()),
+                    .unwrap_or_else(|| "브라우저".into()),
                 token: pairing::new_token(),
                 permission,
                 created_at: pairing::now_ms(),
-                kind: client_kind,
             };
             if let Err(e) = ctx.tokens.insert(record.clone()) {
                 return fail(format!("토큰 저장 실패: {e}")).into_response();
@@ -494,10 +375,9 @@ async fn pair_complete(
                 proto_version: PEER_PROTO_VERSION,
             })
             .into_response();
-            // 브라우저 클라이언트(#7m)용 인증 쿠키. 앱↔앱 클라이언트는 본문의
-            // 토큰만 쓰고 이 헤더를 무시하므로 양쪽에 무해하다. `Secure`는
-            // https일 때만 의미가 있어 붙이지 않는다(v1은 tailnet 평문 전제 —
-            // tailscale serve로 https를 씌우는 경로는 #7m §E 참고).
+            // 브라우저 인증 쿠키. `Secure`는 https일 때만 의미가 있어 붙이지
+            // 않는다(v1은 tailnet 평문 전제 — tailscale serve로 https를 씌우는
+            // 경로는 M3).
             if let Ok(value) = format!(
                 "{PEER_COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
                 pairing::TOKEN_MAX_AGE_SECS
@@ -538,7 +418,8 @@ async fn pair_complete(
 
 /// 제시된 토큰을 뽑는다. 세 경로를 모두 본다:
 ///
-/// 1. `X-Agent-Office-Peer-Token` 헤더 — 앱↔앱(뷰어) 경로.
+/// 1. `X-Agent-Office-Peer-Token` 헤더 — 브라우저가 아닌 클라이언트(진단 도구
+///    등)의 경로.
 /// 2. `Cookie: ao_peer_token=…` — **브라우저 경로**. 브라우저의 WebSocket API는
 ///    커스텀 헤더를 붙일 수 없어서(웹 호스팅 #7m §D) 헤더만 보면 브라우저는
 ///    아예 붙지 못한다. 페어링 완료 시 HttpOnly 쿠키를 발급해 두면 업그레이드에
@@ -578,8 +459,8 @@ fn authenticate(ctx: &PeerContext, headers: &HeaderMap) -> Option<PeerRecord> {
     ctx.tokens.authenticate(&presented_token(headers)?)
 }
 
-/// 브라우저 클라이언트가 생기는 순간 필요한 방어(#7m §D). `Origin`이 없으면
-/// 브라우저가 아니다(앱↔앱) → 통과. 있으면 우리가 서빙하는 것과 같은 오리진만
+/// 브라우저 클라이언트에 필요한 방어(#7m §D). `Origin`이 없으면
+/// 브라우저가 아니다 → 통과. 있으면 우리가 서빙하는 것과 같은 오리진만
 /// 허용한다 — 남의 페이지가 사용자의 쿠키를 업고 WS를 여는 것을 막는다.
 fn origin_allowed(headers: &HeaderMap) -> bool {
     let Some(origin) = headers.get(axum::http::header::ORIGIN).and_then(|v| v.to_str().ok()) else {
@@ -1041,16 +922,6 @@ mod tests {
         assert!(bind_policy_allows(PeerBind::Loopback, local));
     }
 
-    #[test]
-    fn share_store_roundtrip() {
-        let dir = std::env::temp_dir().join(format!("peer-share-{}", uuid::Uuid::new_v4()));
-        let store = PeerShareStore::new(dir.join(PEER_SHARED_FILE));
-        assert!(store.load().is_empty());
-        store.save(&["a".into(), "b".into()]).unwrap();
-        assert_eq!(store.load(), vec!["a".to_string(), "b".to_string()]);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
     // ── 페어링 → WS → 복원/입력까지 실제 소켓으로 태우는 통합 테스트 ──────
     //
     // 와이어 계약(라우트·헤더·메시지 tag/필드 케이스)과 권한 게이트는 문서가
@@ -1110,6 +981,9 @@ mod tests {
         ));
         let settings = Arc::new(RwLock::new(AppSettings {
             peer_bind: PeerBind::Loopback,
+            // 페어링·정적자산·RPC가 전부 이 토글을 매 요청 확인한다 —
+            // 켜 두지 않으면 픽스처가 페어링 단계에서 403이다.
+            web_hosting_enabled: true,
             ..AppSettings::default()
         }));
         let observer_server = Arc::new(crate::observer::server::ObserverServerState::default());
@@ -1233,7 +1107,9 @@ mod tests {
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
         let token = pair(port, &ctx).await;
 
-        ctx.set_shared("a1", true).unwrap();
+        // tap은 브라우저가 attach할 때 깔리지만, 여기서는 "이미 한 번 붙었던"
+        // 상태를 만들어 attach 이전 백로그가 링에 남는 경로를 태운다.
+        ctx.hub.share(&ctx.manager, "a1");
         // 스냅샷 요청에는 아무도 답하지 않게 두고(링버퍼 폴백 경로) 백로그를 쌓는다.
         ctx.hub.snapshots.set_emitter(Arc::new(|_, _| {}));
         ctx.hub.push_for_test(
@@ -1326,9 +1202,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 프로필에 없는 agentId는 붙을 수 없다 — 웹은 "내 캐릭터 전부"를 보지만
+    /// 그 목록은 프로필 저장소가 정본이라 임의 문자열로는 tap을 깔 수 없다.
     #[tokio::test]
-    async fn unshared_agent_cannot_be_attached() {
-        let (ctx, dir) = build_ctx("unshared");
+    async fn unknown_agent_cannot_be_attached() {
+        let (ctx, dir) = build_ctx("unknown-agent");
         let server = PeerServerState::default();
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
         let token = pair(port, &ctx).await;
@@ -1339,7 +1217,7 @@ mod tests {
         socket
             .send(TMessage::Text(
                 serde_json::to_string(&ViewerMsg::Attach {
-                    agent_id: "a1".into(), // 공유 토글을 켜지 않았다
+                    agent_id: "ghost".into(), // 프로필에 없는 캐릭터
                     last_offset: None,
                 })
                 .unwrap(),
@@ -1367,7 +1245,6 @@ mod tests {
                 PeerPermission::ReadOnly,
             )
             .unwrap();
-        ctx.set_shared("a1", true).unwrap();
 
         let mut socket = open_ws(port, &token).await;
         match next_msg(&mut socket).await {
@@ -1474,7 +1351,7 @@ mod tests {
 
     #[test]
     fn origin_is_only_checked_for_browsers() {
-        // Origin 없음 = 앱↔앱 → 통과.
+        // Origin 없음 = 브라우저가 아님 → 통과.
         assert!(origin_allowed(&HeaderMap::new()));
 
         let mut same = HeaderMap::new();
@@ -1561,8 +1438,8 @@ mod tests {
 
     // ── 웹 호스팅(#7m) 실경로 ─────────────────────────────────────────
 
-    /// 브라우저 페어링 → 쿠키 WS → RPC까지. `clientKind: "web"`이면 공유
-    /// 토글과 무관하게 내 캐릭터 전부가 보인다(주인 의미론).
+    /// 브라우저 페어링 → 쿠키 WS → RPC까지. 웹 원격 토글이 켜져 있으면
+    /// 내 캐릭터 전부가 보인다(주인 의미론).
     #[tokio::test]
     async fn web_client_pairs_and_drives_rpc_over_the_same_socket() {
         let (ctx, dir) = build_ctx("web-e2e");
@@ -1573,7 +1450,7 @@ mod tests {
         let client = reqwest::Client::new();
         let started: serde_json::Value = client
             .post(format!("http://127.0.0.1:{port}/peer/v1/pair/start"))
-            .json(&serde_json::json!({ "viewerName": "휴대폰", "clientKind": "web" }))
+            .json(&serde_json::json!({ "viewerName": "휴대폰" }))
             .send()
             .await
             .unwrap()
@@ -1587,11 +1464,6 @@ mod tests {
             .into_iter()
             .find(|p| p.pairing_id == pairing_id)
             .unwrap();
-        assert_eq!(
-            pending.client_kind,
-            PeerClientKind::Web,
-            "승인 다이얼로그가 브라우저임을 알아야 한다"
-        );
         ctx.pairing.approve(&pairing_id, PeerPermission::Input);
         let done = client
             .post(format!("http://127.0.0.1:{port}/peer/v1/pair/complete"))
@@ -1617,7 +1489,7 @@ mod tests {
         );
         let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
         assert!(matches!(next_msg(&mut socket).await, HostMsg::Hello { .. }));
-        // 공유 토글을 켠 적이 없는데도 캐릭터가 보인다(주인 의미론).
+        // 캐릭터별 공유 토글 없이 내 캐릭터 전부가 보인다(주인 의미론).
         match next_msg(&mut socket).await {
             HostMsg::Agents { agents } => assert_eq!(agents.len(), 1),
             other => panic!("agents가 와야 한다: {other:?}"),
@@ -1673,6 +1545,7 @@ mod tests {
     #[tokio::test]
     async fn web_assets_are_gated_by_the_toggle() {
         let (ctx, dir) = build_ctx("web-gate");
+        ctx.settings.write().unwrap().web_hosting_enabled = false;
         let server = PeerServerState::default();
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
         let client = reqwest::Client::new();
@@ -1700,21 +1573,35 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// 브라우저 클라이언트가 생겨도 앱↔앱 뷰어의 가시성은 그대로여야 한다.
+    /// 토글을 끄면 이미 발급된 토큰으로 붙어도 아무 캐릭터도 보이지 않고
+    /// attach도 막힌다(매 요청 확인 — 서버 재시작 없이 즉시 차단).
     #[tokio::test]
-    async fn peer_client_visibility_is_unchanged_by_web_hosting() {
-        let (ctx, dir) = build_ctx("web-regression");
-        ctx.settings.write().unwrap().web_hosting_enabled = true;
+    async fn turning_the_toggle_off_hides_every_agent() {
+        let (ctx, dir) = build_ctx("web-toggle-off");
         let server = PeerServerState::default();
         let port = server.ensure(ctx.clone(), 0).await.expect("서버 기동");
-        let token = pair(port, &ctx).await; // clientKind 미지정 = peer
+        let token = pair(port, &ctx).await;
 
+        ctx.settings.write().unwrap().web_hosting_enabled = false;
         let mut socket = open_ws(port, &token).await;
         let _hello = next_msg(&mut socket).await;
         match next_msg(&mut socket).await {
-            // 공유 토글을 켠 적이 없으므로 손님에게는 아무것도 보이면 안 된다.
             HostMsg::Agents { agents } => assert!(agents.is_empty(), "{agents:?}"),
             other => panic!("agents가 와야 한다: {other:?}"),
+        }
+        socket
+            .send(TMessage::Text(
+                serde_json::to_string(&ViewerMsg::Attach {
+                    agent_id: "a1".into(),
+                    last_offset: None,
+                })
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+        match next_msg(&mut socket).await {
+            HostMsg::Error { message } => assert!(message.contains("접근할 수 없는")),
+            other => panic!("에러가 와야 한다: {other:?}"),
         }
         server.shutdown();
         let _ = std::fs::remove_dir_all(&dir);

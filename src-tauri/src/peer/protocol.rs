@@ -1,6 +1,6 @@
 // src-tauri/src/peer/protocol.rs
 //
-// 피어 세션 공유(kbm #7k, docs/peer-session-share-design.md)의 와이어 계약.
+// 웹 원격(docs/web-remote-design.md)의 와이어 계약.
 // 페어링은 HTTP(POST /peer/v1/pair/*), 세션 중계는 WebSocket(GET /peer/v1/ws).
 // 프레이밍은 WS 텍스트 프레임 안의 JSON(camelCase)이고, 확장은 additive-only다
 // (브로커 v2의 협상 관례 준용 — 새 필드는 전부 `#[serde(default)]`).
@@ -19,37 +19,6 @@ pub const DEFAULT_PEER_PORT: u16 = 47800;
 
 /// 호스트가 발급한 peer 토큰 목록(0600).
 pub const PEER_TOKENS_FILE: &str = "peer-tokens.json";
-/// 뷰어가 저장한 피어 호스트 주소+토큰(0600).
-pub const PEER_HOSTS_FILE: &str = "peer-hosts.json";
-
-/// 뷰어 쪽 원격 에이전트 키의 접두사: `peer:<peerId>:<agentId>`.
-/// 이 접두사가 붙은 agentId는 **어떤 로컬 영속 계층에도 저장하지 않는다**(§결정 3).
-pub const PEER_AGENT_PREFIX: &str = "peer:";
-
-/// 페어링한 클라이언트의 종류. 가시성 규칙이 다르다 — 앱↔앱 뷰어(`Peer`)는
-/// **캐릭터별 공유 토글을 켠 것만** 보고(손님 의미론), 브라우저(`Web`)는 내
-/// 기계를 내가 조종하는 것이므로 **내 캐릭터 전부**를 본다(주인 의미론).
-/// 기존 토큰 파일에는 이 필드가 없으므로 `#[serde(default)]` = `Peer`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PeerClientKind {
-    #[default]
-    Peer,
-    Web,
-}
-
-impl PeerClientKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Peer => "peer",
-            Self::Web => "web",
-        }
-    }
-    pub fn is_web(self) -> bool {
-        matches!(self, Self::Web)
-    }
-}
-
 /// 웹 RPC 실패 사유. 폐쇄 집합 — 클라이언트가 문자열로 분기한다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -106,42 +75,18 @@ impl PeerPermission {
     }
 }
 
-/// `peer:<peerId>:<agentId>` 조립.
-pub fn namespaced_agent_id(peer_id: &str, agent_id: &str) -> String {
-    format!("{PEER_AGENT_PREFIX}{peer_id}:{agent_id}")
-}
-
-/// 네임스페이스 키를 (peerId, agentId)로 분해한다. 접두사가 없으면 None
-/// (=로컬 에이전트).
-pub fn split_namespaced(key: &str) -> Option<(&str, &str)> {
-    let rest = key.strip_prefix(PEER_AGENT_PREFIX)?;
-    let (peer, agent) = rest.split_once(':')?;
-    if peer.is_empty() || agent.is_empty() {
-        return None;
-    }
-    Some((peer, agent))
-}
-
-/// 이 키가 원격(피어) 에이전트인가.
-pub fn is_remote_agent(key: &str) -> bool {
-    split_namespaced(key).is_some()
-}
-
 // ── 페어링(HTTP) ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PairStartRequest {
-    /// 뷰어 쪽 표시 이름(호스트 승인 다이얼로그에 그대로 보인다).
+    /// 클라이언트 쪽 표시 이름(호스트 승인 다이얼로그에 그대로 보인다).
     #[serde(default)]
     pub viewer_name: String,
     #[serde(default)]
     pub app_version: String,
     #[serde(default)]
     pub proto_version: u32,
-    /// 브라우저에서 온 요청인지. 승인 다이얼로그 표시와 가시성 규칙이 갈린다.
-    #[serde(default)]
-    pub client_kind: PeerClientKind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -313,31 +258,6 @@ pub enum ViewerMsg {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn namespaced_roundtrip() {
-        let key = namespaced_agent_id("p1", "ada");
-        assert_eq!(key, "peer:p1:ada");
-        assert_eq!(split_namespaced(&key), Some(("p1", "ada")));
-        assert!(is_remote_agent(&key));
-    }
-
-    #[test]
-    fn local_agent_id_is_not_namespaced() {
-        assert_eq!(split_namespaced("ada"), None);
-        assert!(!is_remote_agent("ada"));
-        // 접두사만 있고 본체가 없으면 원격으로 보지 않는다(오분류 방지).
-        assert_eq!(split_namespaced("peer:"), None);
-        assert_eq!(split_namespaced("peer:p1:"), None);
-        assert_eq!(split_namespaced("peer::ada"), None);
-    }
-
-    #[test]
-    fn agent_id_containing_colon_keeps_the_tail_intact() {
-        // agentId에 콜론이 들어와도 첫 콜론만 분리 기준이다.
-        let key = namespaced_agent_id("p1", "a:b");
-        assert_eq!(split_namespaced(&key), Some(("p1", "a:b")));
-    }
 
     #[test]
     fn viewer_msg_wire_shape_is_tagged() {
