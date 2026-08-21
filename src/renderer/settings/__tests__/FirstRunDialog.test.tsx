@@ -51,6 +51,9 @@ describe("FirstRunDialog", () => {
         ttsRewriteModelAnthropic: "claude-haiku-4-5",
         ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
         ttsRewriteProvider: "auto",
+        webRemoteBind: "tailnet",
+        webRemotePort: 47800,
+        webRemoteEnabled: false,
       },
       false,
     );
@@ -89,6 +92,9 @@ describe("FirstRunDialog", () => {
         ttsRewriteModelAnthropic: "claude-haiku-4-5",
         ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
         ttsRewriteProvider: "auto",
+        webRemoteBind: "tailnet",
+        webRemotePort: 47800,
+        webRemoteEnabled: false,
       },
       true,
     );
@@ -127,6 +133,9 @@ describe("FirstRunDialog", () => {
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
+      webRemoteBind: "tailnet",
+      webRemotePort: 47800,
+      webRemoteEnabled: false,
     });
   });
 
@@ -161,6 +170,9 @@ describe("FirstRunDialog", () => {
         ttsRewriteModelAnthropic: "claude-haiku-4-5",
         ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
         ttsRewriteProvider: "auto",
+        webRemoteBind: "tailnet",
+        webRemotePort: 47800,
+        webRemoteEnabled: false,
       },
       true,
     );

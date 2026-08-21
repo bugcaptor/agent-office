@@ -64,6 +64,9 @@ function hydrate(cliEnabled: boolean) {
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
+      webRemoteBind: "tailnet",
+      webRemotePort: 47800,
+      webRemoteEnabled: false,
     },
     false,
   );

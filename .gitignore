@@ -4,6 +4,10 @@ node_modules
 # Build output
 dist
 dist-ssr
+# 웹 호스팅(#7m) 클라이언트 빌드 산출물. rust-embed가 이 폴더를 내장하므로
+# 릴리스 빌드 전에 `npm run web:build`가 채워야 한다(.gitkeep만 추적).
+dist-web/*
+!dist-web/.gitkeep
 src-tauri/target
 vscode-ext/out/
 

@@ -129,6 +129,14 @@ export const Commands = {
   // 이미 끝났거나 없는 opId는 조용한 no-op(fire-and-forget으로 부른다).
   workdirGitCancel: "workdir_git_cancel",
   workdirDifftool: "workdir_difftool",
+  // 웹 원격(docs/web-remote-design.md) — 앱은 호스트 역할만 한다
+  // (페어링 승인·클라이언트 관리·스냅샷 응답).
+  webRemoteStatus: "web_remote_status",
+  webRemotePairApprove: "web_remote_pair_approve",
+  webRemotePairReject: "web_remote_pair_reject",
+  webRemoteRevoke: "web_remote_revoke",
+  webRemoteSetPermission: "web_remote_set_permission",
+  webRemoteSubmitSnapshot: "web_remote_submit_snapshot",
 } as const;
 
 /**
@@ -148,4 +156,8 @@ export const Events = {
   mascotState: "mascot-state",
   mascotReady: "mascot-ready",
   mascotOpenTerminal: "mascot-open-terminal",
+  // 웹 원격. webRemoteSnapshotRequest는 호스트 렌더러에 화면 직렬화를 요청하는
+  // 신호, webRemotePairRequest는 승인 다이얼로그를 띄우는 신호다.
+  webRemoteSnapshotRequest: "web-remote-snapshot-request",
+  webRemotePairRequest: "web-remote-pair-request",
 } as const;

@@ -101,6 +101,9 @@
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
+            web_remote_bind: Default::default(),
+            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
+            web_remote_enabled: false,
         };
 
         // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
@@ -159,6 +162,9 @@
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
+            web_remote_bind: Default::default(),
+            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
+            web_remote_enabled: false,
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
         // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.
@@ -208,6 +214,9 @@
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
+            web_remote_bind: Default::default(),
+            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
+            web_remote_enabled: false,
         };
 
         assert!(set_app_settings_inner(&state, settings.clone()).await.is_ok());
@@ -352,6 +361,24 @@
             ),
             state_lock: std::sync::Arc::new(std::sync::Mutex::new(())),
         });
+        let live_usage = std::sync::Arc::new(crate::usage::LiveUsageState::new());
+        // 웹 원격: 서버는 띄우지 않고 컨텍스트만 만든다 —
+        let web_remote_hub = crate::webremote::host::WebRemoteHub::new();
+        let web_remote_ctx = std::sync::Arc::new(crate::webremote::WebRemoteContext::new(
+            crate::webremote::WebRemoteContextDeps {
+                manager: manager.clone(),
+                registry: registry.clone(),
+                store: store.clone(),
+                settings: settings.clone(),
+                hub: web_remote_hub,
+                app_data_dir: profile_dir.clone(),
+                host_name: "테스트호스트".into(),
+                hub_notify: hub.clone(),
+                observer: observer.clone(),
+                observer_server: observer_server.clone(),
+                live_usage: live_usage.clone(),
+            },
+        ));
         let state = AppState {
             manager,
             hub,
@@ -371,9 +398,11 @@
             session_event_root: profile_dir.join("session-events").join("v1"),
             session_log_root: profile_dir.join("session-logs").join("v1"),
             session_log_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
-            live_usage: crate::usage::LiveUsageState::new(),
+            live_usage: live_usage.clone(),
             control_server,
             control_ctx,
+            web_remote_server: std::sync::Arc::new(crate::webremote::WebRemoteServerState::default()),
+            web_remote_ctx,
             bot_runtime,
             bot_ctx,
             wake_lock: std::sync::Arc::new(crate::power::WakeLock::new()),

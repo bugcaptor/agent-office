@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { SettingsForm } from "./SettingsForm";
+import { WebRemoteSection } from "./WebRemoteSection";
 import { previewVoice } from "../sound/soundManager";
 import { THEMES, THEME_ORDER } from "../theme/themes";
 import type { XtermThemeOverride } from "../terminal/theme";
@@ -83,7 +84,12 @@ function SettingsDialogBody() {
           {tab === "general" && <GeneralTab />}
           {tab === "sound" && <SoundTab />}
           {tab === "system" && <SystemTab />}
-          {tab === "control" && <ControlSection enabled={cliEnabled} />}
+          {tab === "control" && (
+            <>
+              <ControlSection enabled={cliEnabled} />
+              <WebRemoteSection />
+            </>
+          )}
         </div>
 
         <div className="dialog-actions">

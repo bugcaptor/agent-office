@@ -37,7 +37,19 @@ tokio = { version = "1", features = [
     "process",
     "io-util",
 ] }
-axum = "0.7" # latest stable. hook HTTP 서버
+axum = { version = "0.7", features = [
+    "ws",
+] } # hook HTTP 서버 + 피어 세션 공유(#7k)의 WebSocket 호스트
+# 피어 세션 공유(#7k) 뷰어 쪽 WS 클라이언트. TLS feature를 켜지 않아 `ws://`
+# 전용이다 — v1 기밀성은 tailnet(WireGuard)에 위임한다(docs/peer-session-share-design.md §결정 5).
+# axum 0.7의 ws feature와 같은 tungstenite 0.21을 공유하므로 트리가 늘지 않는다.
+tokio-tungstenite = "0.24"
+futures-util = "0.3" # WS Sink/Stream 어댑터(axum ws + tokio-tungstenite 공통)
+# 웹 호스팅(#7m): 웹 클라이언트 번들(dist-web)을 바이너리에 내장한다. debug
+# 빌드에서는 런타임에 디스크를 읽으므로 `vite build --watch`만 돌리면 즉시
+# 반영된다(HMR 프록시 배관 불필요).
+rust-embed = "8"
+mime_guess = "2"
 portable-pty = "0.8" # latest stable. wezterm PTY
 parking_lot = "0.12" # 세션 계층 뮤텍스 — poisoning 없음(패닉 1회가 세션 관리를 앱 재시작까지 벽돌로 만드는 케스케이드 차단)
 uuid = { version = "1", features = ["v4"] } # sessionId/notification id

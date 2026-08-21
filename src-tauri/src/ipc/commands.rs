@@ -25,6 +25,8 @@
 mod bot;
 mod media;
 mod misc;
+// 웹 원격 — 페어링 승인·클라이언트 관리·화면 스냅샷 응답.
+mod web_remote;
 mod persistence;
 mod session;
 // pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가
@@ -51,6 +53,7 @@ use crate::types::*;
 pub(crate) use bot::*;
 pub(crate) use media::*;
 pub(crate) use misc::*;
+pub(crate) use web_remote::*;
 pub(crate) use persistence::*;
 pub(crate) use session::*;
 pub(crate) use settings::*;

@@ -258,6 +258,23 @@ class TerminalRegistry {
   }
 
   /**
+   * 웹 원격: 한 터미널만 flush+직렬화한다. 브라우저가 처음 붙을 때
+   * 호스트가 `web-remote-snapshot-request`로 요청하는 화면 이미지 — 없으면 링버퍼
+   * 리플레이로 폴백하므로, 실패는 조용히 undefined를 돌려주면 된다.
+   * `flushAndSerializeAll`과 같은 이유로 직렬화 전에 write 큐를 비운다.
+   */
+  async flushAndSerialize(agentId: string): Promise<string | undefined> {
+    const e = this.entries.get(agentId);
+    if (!e) return undefined;
+    try {
+      await new Promise<void>((resolve) => e.term.write("", () => resolve()));
+      return e.serialize.serialize();
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * §#49: agentId -> 렌더러가 실제 렌더(소비)한 raw 스트림 바이트 누적치.
    * `flushAndSerializeAll()`과 같은 시점에 읽어(그게 write("", cb)로 큐를 비운
    * 직후라 렌더 완료분이 정확히 반영됨) 스냅샷 업로드/핸드오프에 offset으로

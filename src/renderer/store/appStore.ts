@@ -44,6 +44,7 @@ import type {
   UsageSnapshot,
 } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
+import type { PendingPairing } from "../ipc/webRemoteApi";
 
 const MAX_EXCERPT = 80;
 /** 도구 요약 라벨 갱신 최소 간격(ms). 도구가 빠르게 연달아 와도 라벨이 튀지 않게 스로틀. */
@@ -87,6 +88,9 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   ttsRewriteModelAnthropic: "claude-haiku-4-5",
   ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
   ttsRewriteProvider: "auto",
+  webRemoteBind: "tailnet",
+  webRemotePort: 47800,
+  webRemoteEnabled: false,
 };
 
 /**
@@ -191,6 +195,8 @@ interface AppState {
    * "봇 운전 중" — 로컬 키 입력이 잠기고 배지가 뜬다. 런타임 전용(비영속,
    * 앱 재시작 시 꺼진 상태로 시작). */
   botMode: Record<string, BotAgentStatus>;
+  /** 웹 원격: 승인 대기 중인 페어링(코드 표시용). 런타임 전용. */
+  webRemotePending: PendingPairing[];
 
   // ---- profile actions ----
   addAgent(profile: AgentProfile): void;
@@ -212,6 +218,10 @@ interface AppState {
    * 세션의 전이라 `kind`를 `external`로, 부재/false면 `pty`로 확정한다. */
   setSessionState(e: { agentId: string; status: SessionStatus; external?: boolean }): void;
   setSessionSize(agentId: string, cols: number, rows: number): void;
+
+  // ---- 웹 원격 ----
+  /** 승인 대기 페어링 목록 갱신. */
+  setWebRemotePending(pending: PendingPairing[]): void;
 
   // ---- bot mode (이슈 #57) ----
   /** 이 탭의 봇 모드를 켠다 — 백엔드 폴링 태스크를 띄우고 로컬 입력을 잠근다.
@@ -337,6 +347,9 @@ interface AppState {
         | "keepAwakeEnabled"
         | "sessionLogEnabled"
         | "mascotEnabled"
+        | "webRemoteBind"
+        | "webRemotePort"
+        | "webRemoteEnabled"
         | "ttsEnabled"
         | "ttsRewriteModelAnthropic"
         | "ttsRewriteModelOpenrouter"
@@ -381,6 +394,9 @@ export const useAppStore = create<AppState>()(
     settingsFirstRun: false,
     usage: null,
     botMode: {},
+    webRemotePending: [],
+
+    setWebRemotePending: (pending) => set({ webRemotePending: pending }),
 
     addAgent: (profile) =>
       set((s) => ({

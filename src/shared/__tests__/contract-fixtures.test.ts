@@ -267,6 +267,9 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "ttsRewriteModelAnthropic",
       "ttsRewriteModelOpenrouter",
       "ttsRewriteProvider",
+      "webRemoteBind",
+      "webRemotePort",
+      "webRemoteEnabled",
     ]);
     expect(settings.gitStatusEnabled).toBe(true);
     expect(settings.fileIndexBackend).toBe("walker");
@@ -282,6 +285,11 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expect(settings.ttsRewriteProvider).toBe("auto");
     // 요약 모델 오버라이드는 "비어 있음 = 백엔드 기본 모델"이 기본 상태다.
     expect(settings.summaryModels.codex).toEqual({ light: "", heavy: "" });
+    // 웹 원격은 네트워크 표면이라 기본 꺼짐이고, 켜더라도 기본 허용 범위는
+    // tailnet(+루프백)뿐이다.
+    expect(settings.webRemoteBind).toBe("tailnet");
+    expect(settings.webRemotePort).toBe(47800);
+    expect(settings.webRemoteEnabled).toBe(false);
   });
 
   it("GitStatusResult / GitFileStatus", () => {

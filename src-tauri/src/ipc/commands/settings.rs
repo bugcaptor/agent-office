@@ -90,6 +90,18 @@ pub(crate) async fn set_app_settings_inner(
         app_state.control_server.shutdown();
     }
 
+    // 웹 원격 lifecycle: web_remote_enabled 토글에 따라 수신 서버를 기동/
+    // 정지한다. 끄면 리스너만 내려가고 발급 토큰은 남는다(재활성화 시 재페어링
+    // 불필요 — control의 "승인은 지속" 규칙과 같다).
+    if settings.web_remote_enabled {
+        let _ = app_state
+            .web_remote_server
+            .ensure(app_state.web_remote_ctx.clone(), settings.web_remote_port)
+            .await;
+    } else {
+        app_state.web_remote_server.shutdown();
+    }
+
     // 잠자기 방지(#68) OFF 전환은 즉시 반영 — 렌더러 구독도 곧 set_keep_awake(false)를
     // 보내지만, 백엔드가 권위이자 즉시 해제하는 게이트다. (CLI control 경로는 이 함수를
     // 안 거치지만, 거기서 keep_awake를 끄더라도 lease TTL이 최대 3분 내 backstop 해제한다.)

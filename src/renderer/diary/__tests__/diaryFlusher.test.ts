@@ -50,6 +50,9 @@ const SETTINGS_ON: AppSettings = {
   ttsRewriteModelAnthropic: "claude-haiku-4-5",
   ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
   ttsRewriteProvider: "auto",
+  webRemoteBind: "tailnet",
+  webRemotePort: 47800,
+  webRemoteEnabled: false,
 };
 
 const NOW = 1_000_000_000_000;
