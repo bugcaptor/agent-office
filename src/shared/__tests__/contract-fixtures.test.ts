@@ -126,7 +126,6 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "id",
       "name",
       "role",
-      "note",
       "seed",
       "createdAt",
       "deskIndex",
@@ -142,7 +141,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expectKeys(parsed, ["agents", "version"]);
     expect(parsed.vacationMode).toBeUndefined();
     const profile: AgentProfile = parsed.agents[0];
-    expectKeys(profile, ["id", "name", "role", "note", "seed", "createdAt", "deskIndex"]);
+    expectKeys(profile, ["id", "name", "role", "seed", "createdAt", "deskIndex"]);
     expect(profile.cwd).toBeUndefined();
     expect(profile.startupCommand).toBeUndefined();
   });
