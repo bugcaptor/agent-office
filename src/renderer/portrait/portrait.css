@@ -124,6 +124,85 @@
   text-align: center;
 }
 
+/* 외형 만들기 모드 탭(직접 만들기 / Codex로 생성). 설정 다이얼로그의
+   .settings-tabs와 같은 밑줄 강조 관례를 폼 안에 들어갈 작은 크기로 쓴다. */
+.appearance-tabs {
+  display: flex;
+  gap: 0;
+  margin-top: calc(var(--unit) * 3);
+  border-bottom: 2px solid var(--border-dark);
+}
+.appearance-tab {
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.74rem;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: var(--unit) calc(var(--unit) * 3);
+  cursor: pointer;
+}
+.appearance-tab:hover {
+  color: var(--text);
+}
+.appearance-tab-active {
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border-bottom-color: var(--accent);
+}
+.appearance-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 2);
+  padding: calc(var(--unit) * 2) 0 calc(var(--unit) * 3);
+}
+
+/* 직접 만들기 패널: "초상화 | [버튼들]" 라벨 + 가로 버튼 줄. 카드 안 스택과
+   달리 폭이 넉넉하므로 버튼을 나란히 놓는다. */
+.appearance-manual-row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 2);
+}
+.appearance-manual-row > .form-label-text {
+  flex: 0 0 5.5rem;
+}
+.appearance-manual-row .portrait-buttons,
+.appearance-manual-row .sprite-buttons {
+  flex-direction: row;
+  flex-wrap: wrap;
+  width: auto;
+  margin-top: 0;
+}
+.appearance-manual-row .pixel-btn {
+  width: auto;
+}
+
+/* Codex 생성 패널: 탐지 상태 한 줄 + 생성 버튼 가로 줄 + 경고 캡션. */
+.codexgen-panel {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 2);
+}
+.codexgen-status {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--text-dim);
+}
+.codexgen-panel .sprite-buttons {
+  flex-direction: row;
+  flex-wrap: wrap;
+  width: auto;
+  margin-top: 0;
+}
+.codexgen-panel .sprite-buttons .pixel-btn {
+  width: auto;
+}
+.codexgen-panel .sprite-custom-badge {
+  text-align: left;
+}
+
 /* 스프라이트 카드 안의 "미니미"(서브에이전트 분신) 소섹션. 카드 본문과
    구분되게 위쪽 구분선만 두고, 이미지/뱃지/버튼은 같은 규칙을 따른다. */
 .minimi-subsection {

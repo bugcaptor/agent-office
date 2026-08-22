@@ -7,7 +7,7 @@
 // (store, seeds session as `starting`) -> `tauriApi.createSession` (PTY
 // start) -> close. Editing updates the existing profile in place and never
 // starts a new session.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import { useAppStore } from "../store/appStore";
 import { generateDraft, draftToProfile, buildBotConfig, type DraftProfile } from "./generate";
@@ -24,8 +24,18 @@ import { generateSpritePreview } from "../office/gen/characterFactory";
 import { ARCHETYPE_SELECT_OPTIONS, resolveArchetype, pickArchetype } from "../office/gen/archetypes";
 import { tauriApi } from "../ipc/tauriApi";
 import { sessionOptsFor } from "../ipc/sessionOpts";
-import { buildPortraitPrompt, buildSpritePrompt } from "../portrait/promptBuilder";
+import {
+  buildPortraitPrompt,
+  buildSpritePrompt,
+  buildCodexPortraitPrompt,
+  buildCodexSpritePrompt,
+} from "../portrait/promptBuilder";
 import { PortraitEditor } from "../portrait/PortraitEditor";
+import {
+  CodexGenPanel,
+  codexGenErrorCaption,
+  type CodexGenKind,
+} from "../portrait/CodexGenPanel";
 import { SpriteEditor } from "../sprite/SpriteEditor";
 import { clearSpriteOverride } from "../office/gen/spriteOverrides";
 import { clearMinimiOverride } from "../office/gen/minimiOverrides";
@@ -64,8 +74,17 @@ export function ProfileDialog() {
     editingAgent ? s.minimiPreviews[editingAgent.id] : undefined
   );
   const [minimiEditorOpen, setMinimiEditorOpen] = useState(false);
-  /** Codex 생성 결과 data URL — SpriteEditor initialImage로 전달. */
+  /** Codex 생성 결과 data URL — 각각 SpriteEditor/PortraitEditor initialImage로 전달. */
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [generatedPortrait, setGeneratedPortrait] = useState<string | null>(null);
+  /** "외형" 섹션 모드. 직접 만들기(프롬프트 복사 + 업로드) / Codex로 생성.
+   * 한 번에 하나만 보여 준다 — 두 경로를 나란히 두면 두서없이 보인다. */
+  const [appearanceMode, setAppearanceMode] = useState<"manual" | "codex">("manual");
+  const [codexBusy, setCodexBusy] = useState<CodexGenKind | null>(null);
+  const [codexNote, setCodexNote] = useState<string | null>(null);
+  /** 진행 중 생성 요청의 세션 토큰 — 편집 대상이 바뀌거나 다이얼로그가
+   * 닫히면 무효화된다 (상시 마운트 컴포넌트라 unmount 가드는 무의미). */
+  const codexSeqRef = useRef(0);
 
   const [draft, setDraft] = useState<DraftProfile>(() => generateDraft());
   const [spriteUrl, setSpriteUrl] = useState<string>("");
@@ -91,8 +110,12 @@ export function ProfileDialog() {
   // (rather than closing over the reactive `editingAgent`) keeps this
   // effect's deps honest for exhaustive-deps without an eslint-disable.
   useEffect(() => {
-    // 편집 세션 경계: 이전 세션의 캡션/이미지 정리.
+    // 편집 세션 경계: 진행 중 생성 응답 무효화 + 이전 세션의 캡션/이미지/busy 정리.
+    codexSeqRef.current++;
+    setCodexBusy(null);
+    setCodexNote(null);
     setGeneratedImage(null);
+    setGeneratedPortrait(null);
     setIoBusy(false);
     setIoNote(null);
     if (!editingAgentId) return;
@@ -179,6 +202,61 @@ export function ProfileDialog() {
       await navigator.clipboard.writeText(prompt);
     } catch (err) {
       console.warn("ProfileDialog: clipboard write failed", err);
+    }
+  };
+
+  /** codex CLI로 초상/스프라이트 원본 1장을 만든 뒤, 해당 크롭 편집기를
+   * 프리로드해 연다. 규격화(240×320 / 4프레임 시트)는 편집기가 담당한다. */
+  const onGenerateCodex = async (kind: CodexGenKind) => {
+    if (codexBusy || !editingAgent) return;
+    const seq = ++codexSeqRef.current;
+    const targetAgentId = editingAgent.id;
+    /** 응답 적용 가능 여부: 토큰 유효 + 같은 에이전트의 편집 모달이 여전히 열려 있음. */
+    const stillCurrent = () => {
+      const m = useAppStore.getState().modal;
+      return (
+        codexSeqRef.current === seq &&
+        m.kind === "profile-edit" &&
+        m.agentId === targetAgentId
+      );
+    };
+    setCodexBusy(kind);
+    setCodexNote(null);
+    const prompt =
+      kind === "portrait"
+        ? buildCodexPortraitPrompt({
+            name: draft.name,
+            role: draft.role,
+            note: draft.note,
+            appearance: draft.appearance,
+            seed: draft.seed,
+            archetype: draft.archetype,
+          })
+        : buildCodexSpritePrompt({
+            name: draft.name,
+            role: draft.role,
+            spriteRequest: draft.spriteRequest,
+            appearance: draft.appearance,
+            seed: draft.seed,
+            archetype: draft.archetype,
+          });
+    try {
+      const res = await tauriApi.generateCodexImage(prompt);
+      if (!stillCurrent()) return;
+      const url = `data:image/png;base64,${res.pngBase64}`;
+      if (kind === "portrait") {
+        setGeneratedPortrait(url);
+        setEditorOpen(true);
+      } else {
+        setGeneratedImage(url);
+        setSpriteEditorOpen(true);
+      }
+      setCodexNote("생성 완료 — 편집기에서 확인하고 저장하세요.");
+    } catch (err) {
+      if (!stillCurrent()) return;
+      setCodexNote(codexGenErrorCaption(err));
+    } finally {
+      if (codexSeqRef.current === seq) setCodexBusy(null);
     }
   };
 
@@ -454,20 +532,10 @@ export function ProfileDialog() {
                 {spritePreviewUrl && (
                   <span className="sprite-custom-badge">커스텀 사용 중 — 재생성은 외형에 영향 없음</span>
                 )}
-                <button className="pixel-btn" onClick={onCopySpritePrompt}>
-                  픽셀아트 프롬프트 복사
-                </button>
-                {editing && editingAgent && (
-                  <>
-                    <button className="pixel-btn" onClick={() => setSpriteEditorOpen(true)}>
-                      {spritePreviewUrl ? "픽셀아트 변경" : "픽셀아트 업로드"}
-                    </button>
-                    {spritePreviewUrl && (
-                      <button className="pixel-btn" onClick={onRemoveSprite}>
-                        커스텀 제거
-                      </button>
-                    )}
-                  </>
+                {editing && editingAgent && spritePreviewUrl && (
+                  <button className="pixel-btn" onClick={onRemoveSprite}>
+                    커스텀 제거
+                  </button>
                 )}
               </div>
               {/* 서브에이전트 미니미 — 머리 옆에 뜨는 작은 분신. 지정이 없으면
@@ -515,23 +583,91 @@ export function ProfileDialog() {
                 />
               </div>
               <div className="portrait-buttons">
-                <button className="pixel-btn" onClick={onCopyPrompt}>
-                  초상 프롬프트 복사
-                </button>
-                {editing && editingAgent && (
-                  <>
-                    <button className="pixel-btn" onClick={() => setEditorOpen(true)}>
-                      {portraitUrl ? "이미지 변경" : "이미지 업로드"}
-                    </button>
-                    {portraitUrl && (
-                      <button className="pixel-btn" onClick={onRemovePortrait}>
-                        제거
-                      </button>
-                    )}
-                  </>
+                {editing && editingAgent && portraitUrl && (
+                  <button className="pixel-btn" onClick={onRemovePortrait}>
+                    초상 제거
+                  </button>
                 )}
               </div>
             </div>
+          </div>
+
+          {/* 만드는 방법은 한 번에 하나만 — 직접 만들기와 Codex 생성을 나란히
+              늘어놓으면 무엇을 눌러야 할지 알 수 없다. SettingsDialog와 같은
+              tablist 관례를 작은 크기로 재사용한다. */}
+          <div className="appearance-tabs" role="tablist" aria-label="외형 만들기 방법">
+            {([
+              { id: "manual", label: "직접 만들기" },
+              { id: "codex", label: "Codex로 생성" },
+            ] as const).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`appearance-tab-${t.id}`}
+                aria-selected={appearanceMode === t.id}
+                aria-controls={`appearance-tabpanel-${t.id}`}
+                className={
+                  appearanceMode === t.id
+                    ? "appearance-tab appearance-tab-active"
+                    : "appearance-tab"
+                }
+                onClick={() => setAppearanceMode(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div
+            className="appearance-tabpanel"
+            role="tabpanel"
+            id={`appearance-tabpanel-${appearanceMode}`}
+            aria-labelledby={`appearance-tab-${appearanceMode}`}
+          >
+            {appearanceMode === "manual" ? (
+              <>
+                <p className="form-hint">
+                  프롬프트를 복사해 원하는 이미지 생성 도구에 넣고, 결과 이미지를
+                  올리면 크롭 편집기가 규격에 맞춰 줍니다.
+                </p>
+                <div className="appearance-manual-row">
+                  <span className="form-label-text">초상화</span>
+                  <div className="portrait-buttons">
+                    <button className="pixel-btn" onClick={onCopyPrompt}>
+                      초상 프롬프트 복사
+                    </button>
+                    {editing && editingAgent && (
+                      <button className="pixel-btn" onClick={() => setEditorOpen(true)}>
+                        {portraitUrl ? "이미지 변경" : "이미지 업로드"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="appearance-manual-row">
+                  <span className="form-label-text">스프라이트</span>
+                  <div className="sprite-buttons">
+                    <button className="pixel-btn" onClick={onCopySpritePrompt}>
+                      픽셀아트 프롬프트 복사
+                    </button>
+                    {editing && editingAgent && (
+                      <button className="pixel-btn" onClick={() => setSpriteEditorOpen(true)}>
+                        {spritePreviewUrl ? "픽셀아트 변경" : "픽셀아트 업로드"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {!(editing && editingAgent) && (
+                  <p className="form-hint">저장한 뒤 편집에서 이미지를 올릴 수 있습니다.</p>
+                )}
+              </>
+            ) : (
+              <CodexGenPanel
+                enabled={Boolean(editing && editingAgent)}
+                busy={codexBusy}
+                note={codexNote}
+                onGenerate={onGenerateCodex}
+              />
+            )}
           </div>
           <div className="form-field">
             <label>
@@ -709,7 +845,11 @@ export function ProfileDialog() {
       {editorOpen && editingAgent && (
         <PortraitEditor
           agentId={editingAgent.id}
-          onClose={() => setEditorOpen(false)}
+          initialImage={generatedPortrait ?? undefined}
+          onClose={() => {
+            setEditorOpen(false);
+            setGeneratedPortrait(null);
+          }}
         />
       )}
       {spriteEditorOpen && editingAgent && (

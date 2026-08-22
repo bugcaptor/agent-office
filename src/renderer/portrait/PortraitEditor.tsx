@@ -27,9 +27,12 @@ const FRAME_H = 320;
 export function PortraitEditor({
   agentId,
   onClose,
+  initialImage,
 }: {
   agentId: string;
   onClose: () => void;
+  /** Codex 생성 결과 등 프리로드할 data URL. 지정 시 업로드 없이 시작. */
+  initialImage?: string;
 }) {
   const setPortrait = useAppStore((s) => s.setPortrait);
   const updateAgent = useAppStore((s) => s.updateAgent);
@@ -83,13 +86,9 @@ export function PortraitEditor({
     return () => canvas.removeEventListener("wheel", handleWheel);
   }, [redraw]);
 
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setError(null);
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
+  /** 디코드된 이미지를 에디터 상태로 반영 (파일 업로드/Codex 생성 공통). */
+  const ingestImage = useCallback(
+    (img: HTMLImageElement) => {
       imgRef.current = img;
       viewRef.current = initialCoverView(
         img.naturalWidth,
@@ -99,6 +98,18 @@ export function PortraitEditor({
       );
       setHasImage(true);
       redraw();
+    },
+    [redraw]
+  );
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      ingestImage(img);
       URL.revokeObjectURL(url);
     };
     img.onerror = () => {
@@ -107,6 +118,38 @@ export function PortraitEditor({
     };
     img.src = url;
   };
+
+  // 생성 이미지 프리로드(SpriteEditor와 같은 attempt-once 패턴). data URL이라
+  // revoke 불필요.
+  /** 마운트 시점의 initialImage만 소비 — 마운트 후 prop 변경(늦은 생성 응답의
+   * 난입)은 무시한다. 재생성 정상 경로는 에디터가 닫혔다 새로 마운트된다. */
+  const initialImageAtMount = useRef(initialImage).current;
+  /** initialImage는 정확히 1회만 소비 — retro 토글로 ingestImage identity가
+   * 바뀌어 효과가 재발화해도 사용자 업로드를 덮어쓰지 않는다. */
+  const initialConsumedRef = useRef(false);
+  useEffect(() => {
+    if (!initialImageAtMount || initialConsumedRef.current) return;
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (cancelled || initialConsumedRef.current) return;
+      // 실제 소비 시점에 마킹 — StrictMode 이중 효과(run→cleanup→re-run)에서
+      // run#1이 취소돼도 run#2가 로드하고, ingest 후 재발화는 여전히 차단된다.
+      initialConsumedRef.current = true;
+      ingestImage(img);
+    };
+    img.onerror = () => {
+      // attempt-once: 재발화 시 손상 initialImage 재시도로 업로드 성공 후
+      // 스테일 에러가 재출현하는 경로 차단.
+      if (cancelled || initialConsumedRef.current) return;
+      initialConsumedRef.current = true;
+      setError("생성 이미지를 읽을 수 없습니다.");
+    };
+    img.src = initialImageAtMount;
+    return () => {
+      cancelled = true;
+    };
+  }, [initialImageAtMount, ingestImage]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (!hasImage) return;
