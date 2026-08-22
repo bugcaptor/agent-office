@@ -9,7 +9,7 @@ import type { GitBranchSource } from "../gitBranchWatcher";
 import type { AgentProfile, AgentTaskLabel, SessionStatus } from "../../store/types";
 
 function agent(id: string, cwd?: string): AgentProfile {
-  return { id, name: id, role: "", note: "", seed: id, createdAt: 0, deskIndex: 0, cwd };
+  return { id, name: id, role: "", seed: id, createdAt: 0, deskIndex: 0, cwd };
 }
 
 function src(

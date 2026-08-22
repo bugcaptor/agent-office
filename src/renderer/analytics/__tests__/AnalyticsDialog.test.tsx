@@ -45,7 +45,7 @@ function ev(
 }
 
 function profile(id: string, name: string): AgentProfile {
-  return { id, name, role: "", note: "", seed: `seed-${id}`, createdAt: 0, deskIndex: 0 };
+  return { id, name, role: "", seed: `seed-${id}`, createdAt: 0, deskIndex: 0 };
 }
 
 beforeEach(() => {

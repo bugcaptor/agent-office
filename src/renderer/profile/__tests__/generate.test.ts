@@ -23,7 +23,6 @@ describe("generateDraft", () => {
     expect(draft.name).toBe(NAME_WORDS[0]);
     expect(draft.role).toBe(ROLE_WORDS[0]);
     // 메모 칸은 성격 프롬프트로 통합됐다 — 랜덤 성격도 그쪽에 실린다.
-    expect(draft.note).toBe("");
     expect(draft.personalityPrompt).toBe(`${PERSONALITY_WORDS[0]} 성격`);
   });
 
@@ -35,7 +34,6 @@ describe("generateDraft", () => {
 
     expect(draft.name).toBe(NAME_WORDS[1]);
     expect(draft.role).toBe(ROLE_WORDS[1]);
-    expect(draft.note).toBe("");
     expect(draft.personalityPrompt).toBe(`${PERSONALITY_WORDS[1]} 성격`);
   });
 
@@ -72,17 +70,16 @@ describe("generateDraft", () => {
 });
 
 describe("draftToProfile", () => {
-  it("builds an AgentProfile from a draft, trimming name/role/note and passing seed/deskIndex through", () => {
+  it("builds an AgentProfile from a draft, trimming name/role and passing seed/deskIndex through", () => {
     const before = Date.now();
     const profile = draftToProfile(
-      { name: "  Foo  ", role: " Bar ", note: "  hello  ", seed: "seedseed" },
+      { name: "  Foo  ", role: " Bar ", seed: "seedseed" },
       3
     );
     const after = Date.now();
 
     expect(profile.name).toBe("Foo");
     expect(profile.role).toBe("Bar");
-    expect(profile.note).toBe("hello");
     expect(profile.seed).toBe("seedseed");
     expect(profile.deskIndex).toBe(3);
     expect(profile.createdAt).toBeGreaterThanOrEqual(before);
@@ -91,7 +88,7 @@ describe("draftToProfile", () => {
 
   it("assigns a fresh nanoid id, independent of the seed", () => {
     const profile = draftToProfile(
-      { name: "Foo", role: "Bar", note: "note", seed: "seedseed" },
+      { name: "Foo", role: "Bar", seed: "seedseed" },
       0
     );
     expect(profile.id).toMatch(/^[A-Za-z0-9_-]{21}$/);
@@ -99,7 +96,7 @@ describe("draftToProfile", () => {
   });
 
   it("two profiles built from drafts get distinct ids", () => {
-    const draft = { name: "Foo", role: "Bar", note: "note", seed: "seedseed" };
+    const draft = { name: "Foo", role: "Bar", seed: "seedseed" };
     const a = draftToProfile(draft, 0);
     const b = draftToProfile(draft, 1);
     expect(a.id).not.toBe(b.id);
@@ -107,7 +104,7 @@ describe("draftToProfile", () => {
 
   it("falls back to a random NAME_WORDS entry when the trimmed name is empty", () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
-    const profile = draftToProfile({ name: "   ", role: "Bar", note: "note", seed: "s" }, 0);
+    const profile = draftToProfile({ name: "   ", role: "Bar", seed: "s" }, 0);
     expect(profile.name).toBe(NAME_WORDS[0]);
   });
 });
@@ -115,7 +112,7 @@ describe("draftToProfile", () => {
 describe("draftToProfile cwd handling (Task 3)", () => {
   it("trims surrounding whitespace from cwd", () => {
     const profile = draftToProfile(
-      { name: "Foo", role: "Bar", note: "note", seed: "seed", cwd: "  /a/b  " },
+      { name: "Foo", role: "Bar", seed: "seed", cwd: "  /a/b  " },
       0
     );
     expect(profile.cwd).toBe("/a/b");
@@ -123,7 +120,7 @@ describe("draftToProfile cwd handling (Task 3)", () => {
 
   it("omits the cwd field entirely when it is empty after trimming", () => {
     const profile = draftToProfile(
-      { name: "Foo", role: "Bar", note: "note", seed: "seed", cwd: "   " },
+      { name: "Foo", role: "Bar", seed: "seed", cwd: "   " },
       0
     );
     expect(profile.cwd).toBeUndefined();
@@ -131,7 +128,7 @@ describe("draftToProfile cwd handling (Task 3)", () => {
   });
 
   it("omits the cwd field entirely when it was never set (undefined draft.cwd)", () => {
-    const profile = draftToProfile({ name: "Foo", role: "Bar", note: "note", seed: "seed" }, 0);
+    const profile = draftToProfile({ name: "Foo", role: "Bar", seed: "seed" }, 0);
     expect(profile.cwd).toBeUndefined();
     expect("cwd" in profile).toBe(false);
   });
@@ -140,7 +137,7 @@ describe("draftToProfile cwd handling (Task 3)", () => {
 describe("draftToProfile shell handling", () => {
   it("includes trimmed shell when non-empty", () => {
     const profile = draftToProfile(
-      { name: "Foo", role: "Bar", note: "note", seed: "seed", shell: "  pwsh  " },
+      { name: "Foo", role: "Bar", seed: "seed", shell: "  pwsh  " },
       0
     );
     expect(profile.shell).toBe("pwsh");
@@ -148,7 +145,7 @@ describe("draftToProfile shell handling", () => {
 
   it("omits the shell field entirely when it is empty after trimming", () => {
     const profile = draftToProfile(
-      { name: "Foo", role: "Bar", note: "note", seed: "seed", shell: "   " },
+      { name: "Foo", role: "Bar", seed: "seed", shell: "   " },
       0
     );
     expect(profile.shell).toBeUndefined();
@@ -156,7 +153,7 @@ describe("draftToProfile shell handling", () => {
   });
 
   it("omits the shell field entirely when it was never set (undefined draft.shell)", () => {
-    const profile = draftToProfile({ name: "Foo", role: "Bar", note: "note", seed: "seed" }, 0);
+    const profile = draftToProfile({ name: "Foo", role: "Bar", seed: "seed" }, 0);
     expect(profile.shell).toBeUndefined();
     expect("shell" in profile).toBe(false);
   });
@@ -165,7 +162,7 @@ describe("draftToProfile shell handling", () => {
 describe("draftToProfile startupCommand", () => {
   it("includes trimmed startupCommand when non-empty", () => {
     const profile = draftToProfile(
-      { name: "Foo", role: "Bar", note: "note", seed: "seed", startupCommand: "  source ./init.sh  " },
+      { name: "Foo", role: "Bar", seed: "seed", startupCommand: "  source ./init.sh  " },
       0,
     );
     expect(profile.startupCommand).toBe("source ./init.sh");
@@ -173,7 +170,7 @@ describe("draftToProfile startupCommand", () => {
 
   it("omits the startupCommand field entirely when it is empty after trimming", () => {
     const profile = draftToProfile(
-      { name: "Foo", role: "Bar", note: "note", seed: "seed", startupCommand: "   " },
+      { name: "Foo", role: "Bar", seed: "seed", startupCommand: "   " },
       0,
     );
     expect(profile.startupCommand).toBeUndefined();
@@ -181,7 +178,7 @@ describe("draftToProfile startupCommand", () => {
   });
 
   it("omits the startupCommand field entirely when it was never set", () => {
-    const profile = draftToProfile({ name: "Foo", role: "Bar", note: "note", seed: "seed" }, 0);
+    const profile = draftToProfile({ name: "Foo", role: "Bar", seed: "seed" }, 0);
     expect(profile.startupCommand).toBeUndefined();
     expect("startupCommand" in profile).toBe(false);
   });
@@ -193,7 +190,6 @@ describe("draftToProfile personalityPrompt", () => {
       {
         name: "Foo",
         role: "Bar",
-        note: "note",
         seed: "seed",
         personalityPrompt: "  차분하게 답한다.\n근거를 먼저 제시한다.  ",
       },
@@ -204,7 +200,7 @@ describe("draftToProfile personalityPrompt", () => {
 
   it("omits a whitespace-only personalityPrompt", () => {
     const profile = draftToProfile(
-      { name: "Foo", role: "Bar", note: "note", seed: "seed", personalityPrompt: " \n " },
+      { name: "Foo", role: "Bar", seed: "seed", personalityPrompt: " \n " },
       0,
     );
     expect(profile.personalityPrompt).toBeUndefined();
@@ -212,27 +208,27 @@ describe("draftToProfile personalityPrompt", () => {
   });
 });
 
-describe("draftToProfile appearance", () => {
-  it("includes trimmed appearance when non-empty", () => {
+describe("draftToProfile portraitRequest", () => {
+  it("includes trimmed portraitRequest when non-empty", () => {
     const p = draftToProfile(
-      { name: "A", role: "r", note: "n", seed: "s", appearance: "  glasses  " },
+      { name: "A", role: "r", seed: "s", portraitRequest: "  glasses  " },
       0
     );
-    expect(p.appearance).toBe("glasses");
+    expect(p.portraitRequest).toBe("glasses");
   });
 
-  it("omits appearance when blank", () => {
+  it("omits portraitRequest when blank", () => {
     const p = draftToProfile(
-      { name: "A", role: "r", note: "n", seed: "s", appearance: "   " },
+      { name: "A", role: "r", seed: "s", portraitRequest: "   " },
       0
     );
-    expect("appearance" in p).toBe(false);
+    expect("portraitRequest" in p).toBe(false);
   });
 });
 
 describe("draftToProfile spriteRequest", () => {
   it("draftToProfile은 spriteRequest를 트리밍해 포함하고, 비면 생략한다", () => {
-    const base = { name: "Ada", role: "backend", note: "", seed: "s1" };
+    const base = { name: "Ada", role: "backend", seed: "s1" };
     const withReq = draftToProfile({ ...base, spriteRequest: "  red cloak  " }, 0);
     expect(withReq.spriteRequest).toBe("red cloak");
     const without = draftToProfile({ ...base, spriteRequest: "   " }, 0);
@@ -251,7 +247,7 @@ describe("draftToProfile keyboardSound", () => {
   });
 
   it("선택된 팩 id를 포함하고, 비면 필드를 생략한다", () => {
-    const base = { name: "Ada", role: "backend", note: "", seed: "s1" };
+    const base = { name: "Ada", role: "backend", seed: "s1" };
     const withPack = draftToProfile({ ...base, keyboardSound: "topre-hhkb" }, 0);
     expect(withPack.keyboardSound).toBe("topre-hhkb");
     const without = draftToProfile({ ...base, keyboardSound: "" }, 0);
@@ -268,14 +264,14 @@ describe("draftToProfile archetype", () => {
 
   it("resolves 'auto' (or omitted) to the seed-drawn concrete archetype", () => {
     const seed = "seed-arch";
-    const p = draftToProfile({ name: "A", role: "r", note: "n", seed, archetype: "auto" }, 0);
+    const p = draftToProfile({ name: "A", role: "r", seed, archetype: "auto" }, 0);
     expect(p.archetype).toBe(pickArchetype(seed));
-    const p2 = draftToProfile({ name: "A", role: "r", note: "n", seed }, 0);
+    const p2 = draftToProfile({ name: "A", role: "r", seed }, 0);
     expect(p2.archetype).toBe(pickArchetype(seed));
   });
 
   it("passes an explicitly chosen archetype through", () => {
-    const p = draftToProfile({ name: "A", role: "r", note: "n", seed: "s", archetype: "orc" }, 0);
+    const p = draftToProfile({ name: "A", role: "r", seed: "s", archetype: "orc" }, 0);
     expect(p.archetype).toBe("orc");
   });
 });

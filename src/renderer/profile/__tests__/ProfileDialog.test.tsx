@@ -14,6 +14,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
+import { keyColorsFor, hexColor } from "../../office/gen/archetypes";
 import type { AgentProfile } from "../../store/types";
 import { NAME_WORDS, ROLE_WORDS, PERSONALITY_WORDS } from "../wordlists";
 
@@ -50,7 +51,6 @@ function mkProfile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     id: "a1",
     name: "Existing",
     role: "eng",
-    note: "existing note",
     seed: "existing-seed",
     createdAt: Date.now(),
     deskIndex: 0,
@@ -319,9 +319,9 @@ describe("random initial values (profile-create)", () => {
     expect(arg).toContain("240x320");
   });
 
-  it("생성 모드에서는 픽셀아트 업로드/제거 버튼이 없다", () => {
+  it("생성 모드에서는 스프라이트 업로드/제거 버튼이 없다", () => {
     render(<ProfileDialog />);
-    expect(screen.queryByText("픽셀아트 업로드")).toBeNull();
+    expect(screen.queryByText("스프라이트 업로드")).toBeNull();
     expect(screen.queryByText("커스텀 제거")).toBeNull();
   });
 
@@ -437,7 +437,6 @@ describe("셸 선택 (list_available_shells)", () => {
       id: "a1",
       name: "Existing",
       role: "eng",
-      note: "",
       seed: "existing-seed",
       createdAt: Date.now(),
       deskIndex: 0,
@@ -529,16 +528,17 @@ describe("메모 → 성격 프롬프트 통합", () => {
     const state = useAppStore.getState();
     const id = state.agentOrder[0];
     expect(state.agents[id].personalityPrompt).toBe(personality);
-    expect(state.agents[id].note).toBe("");
     expect(createSession).toHaveBeenCalledWith(
       id,
       expect.objectContaining({ personalityPrompt: personality })
     );
   });
 
-  it("edit: 레거시 메모와 기존 성격 프롬프트를 합쳐 보여 주고, 저장하면 메모가 비워진다", async () => {
+  // 레거시 메모(note) 통합은 백엔드 `ProfileStore::load`(migrate_loaded)가 맡는다 —
+  // 편집창은 실린 성격 프롬프트를 그대로 보여 주고 그대로 저장한다.
+  it("edit: 성격 프롬프트를 그대로 보여 주고 저장한다", async () => {
     useAppStore.getState().addAgent(
-      mkProfile({ note: "백엔드 담당", personalityPrompt: "차분한 성격" })
+      mkProfile({ personalityPrompt: "차분한 성격\n백엔드 담당" })
     );
     useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
     const { getByLabelText, getByText } = render(<ProfileDialog />);
@@ -551,9 +551,9 @@ describe("메모 → 성격 프롬프트 통합", () => {
       await Promise.resolve();
     });
 
-    const agent = useAppStore.getState().agents.a1;
-    expect(agent.personalityPrompt).toBe("차분한 성격\n백엔드 담당");
-    expect(agent.note).toBe("");
+    expect(useAppStore.getState().agents.a1.personalityPrompt).toBe(
+      "차분한 성격\n백엔드 담당"
+    );
   });
 });
 
@@ -569,12 +569,12 @@ describe("editing mode (profile-edit)", () => {
   });
 
   it("loads the existing profile's values instead of a random draft", () => {
+    useAppStore.getState().updateAgent("a1", { personalityPrompt: "차분한 성격" });
     const { getByLabelText } = render(<ProfileDialog />);
     expect((getByLabelText("이름") as HTMLInputElement).value).toBe("Existing");
     expect((getByLabelText("역할") as HTMLInputElement).value).toBe("eng");
-    // 메모는 성격 프롬프트로 통합됐다 — 기존 메모가 그 칸에 합쳐져 보인다.
     expect((getByLabelText("성격 프롬프트") as HTMLTextAreaElement).value).toBe(
-      "existing note"
+      "차분한 성격"
     );
     expect((getByLabelText("시작 폴더") as HTMLInputElement).value).toBe("");
     expect(generateSpritePreview).toHaveBeenCalledWith("existing-seed");
@@ -642,24 +642,40 @@ describe("editing mode (profile-edit)", () => {
   });
 });
 
-describe("픽셀아트 섹션 (edit mode)", () => {
+describe("키 컬러 노출", () => {
+  it("시드에서 결정된 키 컬러를 hex로 보여 주고, 시드가 바뀌면 갱신된다", async () => {
+    useAppStore.getState().addAgent(mkProfile({ archetype: "human" }));
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+    render(<ProfileDialog />);
+
+    const expected = keyColorsFor("existing-seed", "human").map((c) => hexColor(c.rgb));
+    expect(expected.length).toBeGreaterThan(0);
+    for (const hexStr of expected) expect(screen.getByText(hexStr)).toBeTruthy();
+
+    // 시드가 바뀌면(스프라이트 재생성) 색도 따라 바뀐다 — "왜 이 색인지"의 답.
+    fireEvent.click(screen.getByText("스프라이트 재생성"));
+    await waitFor(() => expect(screen.queryByText(expected[0])).toBeNull());
+  });
+});
+
+describe("스프라이트 섹션 (edit mode)", () => {
   beforeEach(() => {
     useAppStore.getState().addAgent(mkProfile());
     useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
   });
 
-  it("픽셀아트 프롬프트 복사는 16x16 프롬프트를 클립보드에 쓴다", async () => {
+  it("스프라이트 프롬프트 복사는 16x16 프롬프트를 클립보드에 쓴다", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
     render(<ProfileDialog />);
-    fireEvent.click(screen.getByText("픽셀아트 프롬프트 복사"));
+    fireEvent.click(screen.getByText("스프라이트 프롬프트 복사"));
     await waitFor(() => expect(writeText).toHaveBeenCalled());
     expect(writeText.mock.calls[0][0]).toContain("16x16 pixel art");
   });
 
-  it("의뢰 문구 입력이 draft에 반영되고 저장 시 spriteRequest로 저장된다", async () => {
+  it("추가 프롬프트 입력이 draft에 반영되고 저장 시 spriteRequest로 저장된다", async () => {
     const { getByLabelText, getByText } = render(<ProfileDialog />);
-    fireEvent.change(getByLabelText(/픽셀아트 의뢰 문구/), {
+    fireEvent.change(getByLabelText(/스프라이트 추가 프롬프트/), {
       target: { value: "red cloak wizard" },
     });
 

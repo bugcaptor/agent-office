@@ -98,7 +98,6 @@ const AGENT: AgentProfile = {
   id: "a1",
   name: "테스트",
   role: "dev",
-  note: "",
   seed: "seed",
   createdAt: 0,
   deskIndex: 0,

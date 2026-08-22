@@ -96,7 +96,6 @@ function mkPersisted(): PersistedState {
         id: "a1",
         name: "Loaded Agent",
         role: "backend",
-        note: "",
         seed: "seed-a1",
         createdAt: Date.now(),
         deskIndex: 0,
@@ -299,7 +298,6 @@ describe("bootApp", () => {
       id: "a2",
       name: "New Agent",
       role: "eng",
-      note: "",
       seed: "seed-a2",
       createdAt: Date.now(),
       deskIndex: 1,
@@ -332,7 +330,6 @@ describe("bootApp", () => {
       id: "a1",
       name: "Agent",
       role: "eng",
-      note: "",
       seed: "seed-a1",
       createdAt: Date.now(),
       deskIndex: 0,
@@ -375,8 +372,8 @@ describe("session-handoff adoption (bootApp)", () => {
   it("seeds every returned session when multiple sessions are adopted", async () => {
     mockApi.loadState.mockResolvedValue({
       agents: [
-        { id: "a1", name: "A1", role: "", note: "", seed: "s1", createdAt: 0, deskIndex: 0 },
-        { id: "a2", name: "A2", role: "", note: "", seed: "s2", createdAt: 0, deskIndex: 1 },
+        { id: "a1", name: "A1", role: "", seed: "s1", createdAt: 0, deskIndex: 0 },
+        { id: "a2", name: "A2", role: "", seed: "s2", createdAt: 0, deskIndex: 1 },
       ],
       version: 1,
     });

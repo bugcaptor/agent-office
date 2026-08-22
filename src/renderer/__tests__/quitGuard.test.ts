@@ -39,7 +39,6 @@ function mkAgent(id: string, clockedOut?: boolean): AgentProfile {
     id,
     name: id,
     role: "",
-    note: "",
     seed: id,
     createdAt: 0,
     deskIndex: 0,

@@ -14,10 +14,6 @@ const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 export interface DraftProfile {
   name: string;
   role: string;
-  /** 레거시 자유 메모. UI에서는 사라졌고(성격 프롬프트로 통합) 편집 시 항상 ""로
-   * 실려 저장 때 비워진다. 기존 프로필의 값은 `mergeLegacyNote`로 성격 프롬프트에
-   * 합쳐진다. */
-  note: string;
   seed: string;
   /** 시작 폴더 입력 값. 빈 문자열 = 홈 디렉터리. */
   cwd?: string;
@@ -27,11 +23,11 @@ export interface DraftProfile {
   startupCommand?: string;
   /** Claude Code에 추가할 캐릭터 성격 프롬프트. 빈 문자열/공백 = 미지정. */
   personalityPrompt?: string;
-  /** 외모 힌트(선택). 빈 문자열/공백 = 미지정. */
-  appearance?: string;
-  /** 픽셀아트 의뢰 문구(선택). 빈 문자열/공백 = 미지정. */
+  /** 초상화 추가 프롬프트(선택). 빈 문자열/공백 = 미지정. */
+  portraitRequest?: string;
+  /** 스프라이트 추가 프롬프트(선택). 빈 문자열/공백 = 미지정. */
   spriteRequest?: string;
-  /** 미니미(소환수) 의뢰 문구(선택). 빈 문자열/공백 = 미지정 → 자동 위임 문구. */
+  /** 미니미(소환수) 추가 프롬프트(선택). 빈 문자열/공백 = 미지정 → 자동 위임 문구. */
   minimiRequest?: string;
   /** 아키타입 선택. "auto" = 시드 추첨(저장 시 확정). 미지정도 "auto"로 취급. */
   archetype?: string;
@@ -53,8 +49,9 @@ export interface DraftProfile {
 
 /**
  * 레거시 `note`를 성격 프롬프트에 합친다(순수). 메모 입력창을 없애고 성격
- * 프롬프트 하나로 통합하면서, 기존 프로필/번들에 남아 있는 메모가 유실되지
- * 않게 편집기로 불러올 때 이 함수를 통과시킨다.
+ * 프롬프트 하나로 통합하면서, 옛 번들에 남아 있는 메모가 유실되지 않게
+ * 가져올 때 이 함수를 통과시킨다. 저장된 프로필 쪽은 백엔드
+ * `ProfileStore::load`의 `migrate_loaded`가 같은 규칙으로 먼저 통합한다.
  *
  * - 둘 중 하나만 있으면 그것을 쓴다.
  * - 둘 다 있으면 줄바꿈으로 잇는다. 단 성격 프롬프트가 이미 메모 문구를
@@ -77,13 +74,12 @@ export function generateDraft(): DraftProfile {
   return {
     name: pick(NAME_WORDS),
     role: pick(ROLE_WORDS),
-    note: "",
     seed: nanoid(8),
     cwd: "",
     shell: "",
     startupCommand: "",
     personalityPrompt: `${personality} 성격`,
-    appearance: "",
+    portraitRequest: "",
     spriteRequest: "",
     minimiRequest: "",
     archetype: "auto",
@@ -124,7 +120,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
   const shell = (d.shell ?? "").trim();
   const startupCommand = (d.startupCommand ?? "").trim();
   const personalityPrompt = (d.personalityPrompt ?? "").trim();
-  const appearance = (d.appearance ?? "").trim();
+  const portraitRequest = (d.portraitRequest ?? "").trim();
   const spriteRequest = (d.spriteRequest ?? "").trim();
   const minimiRequest = (d.minimiRequest ?? "").trim();
   const keyboardSound = (d.keyboardSound ?? "").trim();
@@ -137,7 +133,6 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     id: nanoid(),
     name: d.name.trim() || pick(NAME_WORDS),
     role: d.role.trim(),
-    note: d.note.trim(),
     seed: d.seed,
     createdAt: Date.now(),
     deskIndex,
@@ -146,7 +141,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(shell ? { shell } : {}),
     ...(startupCommand ? { startupCommand } : {}),
     ...(personalityPrompt ? { personalityPrompt } : {}),
-    ...(appearance ? { appearance } : {}),
+    ...(portraitRequest ? { portraitRequest } : {}),
     ...(spriteRequest ? { spriteRequest } : {}),
     ...(minimiRequest ? { minimiRequest } : {}),
     ...(keyboardSound ? { keyboardSound } : {}),

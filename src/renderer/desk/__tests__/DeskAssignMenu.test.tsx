@@ -28,7 +28,6 @@ const mkProfile = (id: string, name: string): AgentProfile => ({
   id,
   name,
   role: "eng",
-  note: "",
   seed: id,
   createdAt: 1,
   deskIndex: 0,

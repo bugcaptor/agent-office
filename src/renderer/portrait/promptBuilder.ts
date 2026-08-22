@@ -11,8 +11,10 @@ import { resolveArchetype, getArchetype, customArchetypeSubject } from "../offic
 export interface PortraitPromptInput {
   name: string;
   role: string;
-  note: string;
-  appearance?: string;
+  /** 성격 프롬프트(옛 "메모"가 통합된 그 칸). 인물 설명 줄로 들어간다. */
+  personality: string;
+  /** 초상화 추가 프롬프트. */
+  portraitRequest?: string;
   seed: string;
   archetype?: string;
 }
@@ -26,8 +28,8 @@ export function buildPortraitPrompt(input: PortraitPromptInput): string {
   const custom = customArchetypeSubject(input.archetype);
   const base = arch.promptDescriptor(pal);
   const desc = custom ? { ...base, subject: custom } : base;
-  const note = input.note.trim();
-  const appearance = (input.appearance ?? "").trim();
+  const personality = input.personality.trim();
+  const request = (input.portraitRequest ?? "").trim();
 
   const firstLine = desc.humanoid
     ? "A bust-up character portrait in the visual style of an early-1990s Japanese PC bishoujo game (PC-98 era)."
@@ -44,8 +46,8 @@ export function buildPortraitPrompt(input: PortraitPromptInput): string {
     "Vertical 3:4 aspect ratio, head-and-shoulders framing, the character facing the viewer.",
     desc.colorHints,
     `Character: ${input.name}, a ${input.role}${subjectSuffix}.`,
-    note ? `Personality / notes: ${note}.` : "",
-    appearance ? `Appearance details: ${appearance}.` : "",
+    personality ? `Personality / notes: ${personality}.` : "",
+    request ? `Appearance details: ${request}.` : "",
     "Output a single 240x320 pixel PNG in a 3:4 portrait ratio. No text, no watermark, no border.",
   ];
   return lines.filter((l) => l.length > 0).join("\n");
@@ -54,9 +56,8 @@ export function buildPortraitPrompt(input: PortraitPromptInput): string {
 export interface SpritePromptInput {
   name: string;
   role: string;
-  /** 픽셀아트 의뢰 문구. 비면 appearance로 폴백. */
+  /** 스프라이트 추가 프롬프트. 초상화 쪽으로 폴백하지 않는다. */
   spriteRequest?: string;
-  appearance?: string;
   seed: string;
   archetype?: string;
 }
@@ -72,8 +73,7 @@ export function buildSpritePrompt(input: SpritePromptInput): string {
   const custom = customArchetypeSubject(input.archetype);
   const base = arch.promptDescriptor(pal);
   const desc = custom ? { ...base, subject: custom } : base;
-  const request =
-    (input.spriteRequest ?? "").trim() || (input.appearance ?? "").trim();
+  const request = (input.spriteRequest ?? "").trim();
   const styleLine = desc.humanoid
     ? "Cute chibi super-deformed proportions with a large head, big expressive sparkling eyes, and a friendly smiling expression; soft bright pastel colors, warm cheerful lighting, clean black outlines, crisp pixel grid, no anti-aliasing, plain solid background, the character centered and facing the viewer."
     : "A cute mascot-like anime style character design with big expressive eyes and a friendly, cheerful look; soft bright pastel colors, warm cheerful lighting, clean black outlines, crisp pixel grid, no anti-aliasing, plain solid background, the character centered and facing the viewer.";
@@ -93,11 +93,10 @@ export function buildSpritePrompt(input: SpritePromptInput): string {
 export interface MinimiPromptInput {
   name: string;
   role: string;
-  /** 미니미(소환수) 전용 의뢰 문구. 비면 "본체에 어울리는 소환수를 알아서" 문구로 자동 폴백. */
+  /** 미니미(소환수) 추가 프롬프트. 비면 "본체에 어울리는 소환수를 알아서" 문구로 자동 폴백. */
   minimiRequest?: string;
-  /** 본체 픽셀아트 의뢰 문구 — 소환수가 주인을 닮게 하는 맥락으로만 쓴다. */
+  /** 본체 스프라이트 추가 프롬프트 — 소환수가 주인을 닮게 하는 맥락으로만 쓴다. */
   spriteRequest?: string;
-  appearance?: string;
   seed: string;
   archetype?: string;
 }
@@ -121,7 +120,7 @@ export function buildMinimiPrompt(input: MinimiPromptInput): string {
   const custom = customArchetypeSubject(input.archetype);
   const base = arch.promptDescriptor(pal);
   const desc = custom ? { ...base, subject: custom } : base;
-  const master = (input.spriteRequest ?? "").trim() || (input.appearance ?? "").trim();
+  const master = (input.spriteRequest ?? "").trim();
   const request = (input.minimiRequest ?? "").trim();
   const subjectSuffix = desc.subject ? ` (${desc.subject})` : "";
 

@@ -18,7 +18,7 @@ import type { AgentProfile } from "../../store/types";
 const initial = useAppStore.getState();
 
 function mkProfile(id: string, name: string): AgentProfile {
-  return { id, name, role: "backend", note: "", seed: id, createdAt: 0, deskIndex: 0 };
+  return { id, name, role: "backend", seed: id, createdAt: 0, deskIndex: 0 };
 }
 
 beforeEach(() => useAppStore.setState(initial, true));

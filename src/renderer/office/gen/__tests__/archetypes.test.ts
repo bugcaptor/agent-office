@@ -8,6 +8,8 @@ import {
   pickArchetype,
   resolveArchetype,
   archetypeOrAuto,
+  keyColorsFor,
+  hexColor,
   ARCHETYPES,
 } from "../archetypes";
 import { generateSheet } from "../characterFactory";
@@ -194,5 +196,36 @@ describe("non-humanoid archetypes (robot/slime/ghost)", () => {
       const b = sheetToPixels(generateSheet("nd", createTestCanvasFactory(), id).sheet);
       expect(a).toEqual(b);
     }
+  });
+});
+
+// ── 키 컬러 노출(kbm #2fh) ────────────────────────────────────────────
+// 편집창이 보여 주는 색은 "프롬프트에 실제로 실리는 그 색"이어야 한다.
+describe("keyColorsFor", () => {
+  it("모든 아키타입에서 색 힌트 라인과 같은 hex를 낸다", () => {
+    for (const id of ARCHETYPE_IDS) {
+      const seed = `seed-${id}`;
+      const arch = getArchetype(id);
+      const hints = arch.promptDescriptor(
+        arch.generatePalette(makeRng(hashStringToSeed(seed))),
+      ).colorHints;
+      const colors = keyColorsFor(seed, id);
+      expect(colors.length).toBeGreaterThan(0);
+      for (const c of colors) {
+        expect(hints).toContain(`${c.en} approximately ${hexColor(c.rgb)}`);
+        expect(c.ko.length).toBeGreaterThan(0);
+        expect(hexColor(c.rgb)).toMatch(/^#[0-9a-f]{6}$/);
+      }
+    }
+  });
+
+  it("같은 시드에 결정적이고, 시드가 바뀌면 색도 바뀐다", () => {
+    expect(keyColorsFor("s1", "human")).toEqual(keyColorsFor("s1", "human"));
+    expect(keyColorsFor("s1", "human")).not.toEqual(keyColorsFor("s2", "human"));
+  });
+
+  it("auto/미지 아키타입도 시드 추첨/human 폴백으로 색을 낸다", () => {
+    expect(keyColorsFor("s1", "auto")).toEqual(keyColorsFor("s1", pickArchetype("s1")));
+    expect(keyColorsFor("s1", "드래곤")).toEqual(keyColorsFor("s1", "human"));
   });
 });

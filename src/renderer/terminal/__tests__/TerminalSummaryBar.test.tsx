@@ -13,7 +13,7 @@ import { TerminalSummaryBar } from "../TerminalSummaryBar";
 import type { AgentProfile } from "../../store/types";
 
 function agent(id: string, cwd?: string): AgentProfile {
-  return { id, name: id, role: "", note: "", seed: "s", createdAt: 0, deskIndex: 0, cwd };
+  return { id, name: id, role: "", seed: "s", createdAt: 0, deskIndex: 0, cwd };
 }
 
 const initialState = useAppStore.getState();

@@ -25,8 +25,51 @@ import {
 interface ArchetypePromptDescriptor {
   humanoid: boolean;  // true -> "bishoujo"/"anime face" 문구 사용
   subject: string;    // 주제 서술자(예: "a green-skinned tusked orc"). human은 "".
-  colorHints: string; // 색 힌트 라인(아키타입별 라벨)
+  colorHints: string; // 색 힌트 라인(아키타입별 라벨) — keyColors에서 파생
+  /** 색 힌트에 들어가는 그 색들. UI 노출용(`keyColorsFor`)이자 colorHints의 원본. */
+  keyColors: KeyColor[];
 }
+
+/**
+ * 프롬프트에 실제로 실리는 "키 컬러" 한 칸. 시드+아키타입에서 결정되며,
+ * 설정창이 이 값을 그대로 보여 준다 — 왜 그 색이 나왔는지 알 수 있게.
+ */
+export interface KeyColor {
+  /** 프롬프트 영문 라벨("Hair color", "Chassis color" 등). */
+  en: string;
+  /** UI 표시용 한국어 라벨. */
+  ko: string;
+  /** 0xRRGGBB. */
+  rgb: number;
+  /** 영문 라인 끝에 붙는 부연(예: "(pale and translucent)"). */
+  note?: string;
+}
+
+/** 키 컬러 목록 -> 프롬프트 색 힌트 라인(문구는 기존과 동일). */
+function colorHintsOf(keyColors: KeyColor[]): string {
+  return keyColors
+    .map((c) => `${c.en} approximately ${hex(c.rgb)}${c.note ? ` ${c.note}` : ""}.`)
+    .join(" ");
+}
+
+/** promptDescriptor 조립 헬퍼 — colorHints를 keyColors에서 한 곳에서 파생시킨다. */
+function describe(
+  humanoid: boolean,
+  subject: string,
+  keyColors: KeyColor[],
+): ArchetypePromptDescriptor {
+  return { humanoid, subject, keyColors, colorHints: colorHintsOf(keyColors) };
+}
+
+// 키 컬러 슬롯(아키타입마다 같은 램프를 다른 이름으로 부른다).
+const kHair = (pal: CharacterPalette): KeyColor => ({ en: "Hair color", ko: "머리", rgb: pal.hair.base });
+const kFur = (pal: CharacterPalette): KeyColor => ({ en: "Fur color", ko: "털", rgb: pal.hair.base });
+const kSkin = (pal: CharacterPalette): KeyColor => ({ en: "Skin color", ko: "피부", rgb: pal.skin.base });
+const kPlating = (pal: CharacterPalette): KeyColor => ({ en: "Plating color", ko: "장갑", rgb: pal.skin.base });
+const kChassis = (pal: CharacterPalette): KeyColor => ({ en: "Chassis color", ko: "본체", rgb: pal.skin.base });
+const kClothing = (pal: CharacterPalette): KeyColor => ({ en: "Clothing color", ko: "옷", rgb: pal.shirt.base });
+const kAccent = (pal: CharacterPalette): KeyColor => ({ en: "Accent color", ko: "포인트", rgb: pal.shirt.base });
+const kBody = (pal: CharacterPalette, note?: string): KeyColor => ({ en: "Body color", ko: "몸체", rgb: pal.skin.base, note });
 
 export type ArchetypeSheet =
   | { kind: "layers"; layers: CharacterLayers }
@@ -81,11 +124,7 @@ const human: Archetype = {
   label: "인간",
   generatePalette: (rng) => generatePalette(rng),
   buildFrames: (rng) => humanoidBuild(rng),
-  promptDescriptor: (pal) => ({
-    humanoid: true,
-    subject: "",
-    colorHints: `Hair color approximately ${hex(pal.hair.base)}. Clothing color approximately ${hex(pal.shirt.base)}.`,
-  }),
+  promptDescriptor: (pal) => describe(true, "", [kHair(pal), kClothing(pal)]),
 };
 
 type Tone = readonly [number, number, number];
@@ -162,37 +201,31 @@ const elf: Archetype = {
   id: "elf", label: "엘프",
   generatePalette: (rng) => humanoidPalette(rng, ELF_SKIN, ELF_HAIR),
   buildFrames: (rng) => humanoidBuild(rng, ELF_EARS),
-  promptDescriptor: (pal) => ({
-    humanoid: true, subject: "a slender pale pointy-eared elf",
-    colorHints: `Hair color approximately ${hex(pal.hair.base)}. Clothing color approximately ${hex(pal.shirt.base)}.`,
-  }),
+  promptDescriptor: (pal) =>
+    describe(true, "a slender pale pointy-eared elf", [kHair(pal), kClothing(pal)]),
 };
 const orc: Archetype = {
   id: "orc", label: "오크",
   generatePalette: (rng) => humanoidPalette(rng, ORC_SKIN, ORC_HAIR),
   buildFrames: (rng) => humanoidBuild(rng, ORC_TUSKS),
-  promptDescriptor: (pal) => ({
-    humanoid: true, subject: "a green-skinned tusked orc",
-    colorHints: `Skin color approximately ${hex(pal.skin.base)}. Clothing color approximately ${hex(pal.shirt.base)}.`,
-  }),
+  promptDescriptor: (pal) =>
+    describe(true, "a green-skinned tusked orc", [kSkin(pal), kClothing(pal)]),
 };
 const beastfolk: Archetype = {
   id: "beastfolk", label: "수인",
   generatePalette: (rng) => humanoidPalette(rng, BEASTFOLK_SKIN, BEASTFOLK_HAIR),
   buildFrames: (rng) => humanoidBuild(rng, BEASTFOLK_EARS, BEASTFOLK_TAIL),
-  promptDescriptor: (pal) => ({
-    humanoid: true, subject: "a beastfolk with animal ears and a tail",
-    colorHints: `Fur color approximately ${hex(pal.hair.base)}. Clothing color approximately ${hex(pal.shirt.base)}.`,
-  }),
+  promptDescriptor: (pal) =>
+    describe(true, "a beastfolk with animal ears and a tail", [kFur(pal), kClothing(pal)]),
 };
 const android: Archetype = {
   id: "android", label: "안드로이드",
   generatePalette: (rng) => humanoidPalette(rng, ANDROID_SKIN, ANDROID_HAIR),
   buildFrames: (rng) => humanoidBuild(rng, ANDROID_OVERLAY),
-  promptDescriptor: (pal) => ({
-    humanoid: true, subject: "a humanoid android with visible panel seams and solid glowing eyes",
-    colorHints: `Plating color approximately ${hex(pal.skin.base)}. Clothing color approximately ${hex(pal.shirt.base)}.`,
-  }),
+  promptDescriptor: (pal) =>
+    describe(true, "a humanoid android with visible panel seams and solid glowing eyes", [
+      kPlating(pal), kClothing(pal),
+    ]),
 };
 
 // ── 비휴머노이드(B5): 파츠(HAIR/CLOTHES/ACCESSORY) 픽 없음 -> descriptor 고정값.
@@ -301,10 +334,8 @@ const robot: Archetype = {
       },
     },
   }),
-  promptDescriptor: (pal) => ({
-    humanoid: false, subject: "a boxy utility robot with a monitor face",
-    colorHints: `Chassis color approximately ${hex(pal.skin.base)}. Accent color approximately ${hex(pal.shirt.base)}.`,
-  }),
+  promptDescriptor: (pal) =>
+    describe(false, "a boxy utility robot with a monitor face", [kChassis(pal), kAccent(pal)]),
 };
 const slime: Archetype = {
   id: "slime", label: "슬라임",
@@ -313,10 +344,8 @@ const slime: Archetype = {
     descriptor: { ...NON_PARTS_DESCRIPTOR },
     sheet: { kind: "frames", frames: { idle0: SLIME_IDLE0, idle1: SLIME_IDLE1, walk0: SLIME_WALK0, walk1: SLIME_WALK1 } },
   }),
-  promptDescriptor: (pal) => ({
-    humanoid: false, subject: "a translucent gelatinous slime creature",
-    colorHints: `Body color approximately ${hex(pal.skin.base)}.`,
-  }),
+  promptDescriptor: (pal) =>
+    describe(false, "a translucent gelatinous slime creature", [kBody(pal)]),
 };
 const ghost: Archetype = {
   id: "ghost", label: "유령",
@@ -325,10 +354,10 @@ const ghost: Archetype = {
     descriptor: { ...NON_PARTS_DESCRIPTOR },
     sheet: { kind: "frames", frames: { idle0: GHOST_IDLE0, idle1: GHOST_IDLE1, walk0: GHOST_WALK0, walk1: GHOST_WALK1 } },
   }),
-  promptDescriptor: (pal) => ({
-    humanoid: false, subject: "a floating pale ghost with no legs and a wavy tattered hem",
-    colorHints: `Body color approximately ${hex(pal.skin.base)} (pale and translucent).`,
-  }),
+  promptDescriptor: (pal) =>
+    describe(false, "a floating pale ghost with no legs and a wavy tattered hem", [
+      kBody(pal, "(pale and translucent)"),
+    ]),
 };
 
 /** 레지스트리. B4(elf/orc/beastfolk/android) + B5(robot/slime/ghost) 완료 — 8종. */
@@ -415,6 +444,22 @@ export function resolveArchetype(archetype: string | undefined, seed: string): s
   if (archetype === "auto") return pickArchetype(seed);
   if (archetype && ARCHETYPES[archetype]) return archetype;
   return "human";
+}
+
+/** 0xRRGGBB -> "#rrggbb". 프롬프트와 UI가 같은 표기를 쓰도록 공개한다. */
+export function hexColor(rgb: number): string {
+  return hex(rgb);
+}
+
+/**
+ * 시드+아키타입이 낳는 키 컬러 — **그림 프롬프트에 실리는 그 색 그대로**다.
+ * 지금까지 내부 자료라 "왜 이 색인지" 알 수 없었으므로 프로필 편집창이 이걸
+ * 그대로 보여 준다. 시드가 바뀌면(스프라이트 재생성) 색도 바뀐다.
+ */
+export function keyColorsFor(seed: string, archetype?: string): KeyColor[] {
+  const arch = getArchetype(resolveArchetype(archetype, seed));
+  const pal = arch.generatePalette(makeRng(hashStringToSeed(seed)));
+  return arch.promptDescriptor(pal).keyColors;
 }
 
 export function composeArchetypeSheet(

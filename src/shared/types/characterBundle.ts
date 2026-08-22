@@ -31,15 +31,22 @@ export const MAX_MINIMI_BYTES = 1024 * 1024;
 export interface PortableProfile {
   name: string;
   role: string;
-  note: string;
   seed: string;
   archetype?: string;
-  appearance?: string;
+  /** 초상화 추가 프롬프트. */
+  portraitRequest?: string;
+  /** 스프라이트 추가 프롬프트. */
   spriteRequest?: string;
-  /** 미니미(소환수) 전용 의뢰 문구. 부재 = 자동 위임 문구 사용. */
+  /** 미니미(소환수) 추가 프롬프트. 부재 = 자동 위임 문구 사용. */
   minimiRequest?: string;
   personalityPrompt?: string;
   keyboardSound?: string;
+  /** **레거시 전용**(옛 번들의 "메모"). 새로 내보내지 않는다 — 가져올 때
+   * `personalityPrompt`에 합치는 입력으로만 읽는다. */
+  legacyNote?: string;
+  /** **레거시 전용**(옛 번들의 "외모 힌트"). 가져올 때 초상화/스프라이트 추가
+   * 프롬프트가 비어 있으면 양쪽에 복사하는 입력으로만 읽는다. */
+  legacyAppearance?: string;
 }
 
 /** 자기완결형 캐릭터 번들. 이미지는 헤더 없는 base64 PNG로 임베드. */
@@ -146,14 +153,16 @@ export function parseCharacterBundle(text: string): ParseBundleResult {
   const profile: PortableProfile = {
     name: pr.name,
     role: asString(pr.role) ?? "",
-    note: asString(pr.note) ?? "",
     seed: asString(pr.seed) ?? "",
     archetype: asString(pr.archetype),
-    appearance: asString(pr.appearance),
+    portraitRequest: asString(pr.portraitRequest),
     spriteRequest: asString(pr.spriteRequest),
     minimiRequest: asString(pr.minimiRequest),
     personalityPrompt: asString(pr.personalityPrompt),
     keyboardSound: asString(pr.keyboardSound),
+    // 옛 번들의 키는 레거시 슬롯으로 받아 둔다(가져오기에서 통합·복사한다).
+    legacyNote: asString(pr.note),
+    legacyAppearance: asString(pr.appearance),
   };
   return {
     ok: true,

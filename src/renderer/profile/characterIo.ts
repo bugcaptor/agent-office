@@ -28,10 +28,9 @@ export function portableFromDraft(d: DraftProfile): PortableProfile {
   return {
     name: d.name.trim(),
     role: d.role.trim(),
-    note: d.note.trim(),
     seed: d.seed,
     archetype: d.archetype && d.archetype !== "auto" ? d.archetype : undefined,
-    appearance: optionalTrim(d.appearance),
+    portraitRequest: optionalTrim(d.portraitRequest),
     spriteRequest: optionalTrim(d.spriteRequest),
     minimiRequest: optionalTrim(d.minimiRequest),
     personalityPrompt: optionalTrim(d.personalityPrompt),
@@ -47,14 +46,15 @@ export function applyBundleToDraft(d: DraftProfile, p: PortableProfile): DraftPr
     ...d,
     name: p.name.trim() || d.name,
     role: p.role ?? "",
-    // 메모는 성격 프롬프트로 통합됐다 — 예전 번들의 note는 합쳐 싣고 비운다.
-    note: "",
     seed: p.seed || d.seed,
     archetype: p.archetype ?? "auto",
-    appearance: p.appearance ?? "",
-    spriteRequest: p.spriteRequest ?? "",
+    // 옛 번들의 "외모 힌트"는 초상/스프라이트 양쪽에 쓰이던 값이라, 비어 있는
+    // 칸에만 복사해 그림 결과가 달라지지 않게 한다(백엔드 migrate_loaded와 같은 규칙).
+    portraitRequest: p.portraitRequest ?? p.legacyAppearance ?? "",
+    spriteRequest: p.spriteRequest ?? p.legacyAppearance ?? "",
     minimiRequest: p.minimiRequest ?? "",
-    personalityPrompt: mergeLegacyNote(p.personalityPrompt, p.note),
+    // 메모는 성격 프롬프트로 통합됐다 — 예전 번들의 note는 합쳐 싣는다.
+    personalityPrompt: mergeLegacyNote(p.personalityPrompt, p.legacyNote),
     keyboardSound: p.keyboardSound ?? "",
   };
 }

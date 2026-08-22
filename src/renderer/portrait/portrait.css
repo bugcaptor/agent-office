@@ -312,3 +312,36 @@
   font-size: 12px;
   opacity: 0.8;
 }
+
+/* ── 키 컬러 노출(ProfileDialog 외형 섹션) ──
+   시드·아키타입이 낳는 팔레트를 그림 프롬프트와 똑같은 값으로 보여 준다.
+   칩(색)+라벨+hex 한 줄씩, 좁은 폭에서는 자연스럽게 줄바꿈. */
+.key-colors {
+  margin-top: calc(var(--unit) * 3);
+}
+.key-color-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--unit) * 2);
+  margin: var(--unit) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.key-color {
+  display: flex;
+  align-items: center;
+  gap: var(--unit);
+  padding: var(--unit) calc(var(--unit) * 1.5);
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--border-dark);
+  font-size: 0.76rem;
+}
+.key-color-chip {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-dark);
+}
+.key-color code {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}

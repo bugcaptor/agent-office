@@ -43,7 +43,6 @@ const profile: AgentProfile = {
   id: "a1",
   name: "Ada",
   role: "backend",
-  note: "",
   seed: "seed-1",
   createdAt: 1,
   deskIndex: 0,

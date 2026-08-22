@@ -43,7 +43,6 @@ function mkProfile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     id: "a1",
     name: "Test Agent",
     role: "backend",
-    note: "",
     seed: "seed-a1",
     createdAt: Date.now(),
     deskIndex: 0,

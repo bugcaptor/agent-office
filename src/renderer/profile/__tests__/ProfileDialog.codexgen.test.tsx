@@ -53,7 +53,6 @@ function mkProfile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     id: "a1",
     name: "Existing",
     role: "eng",
-    note: "",
     seed: "existing-seed",
     createdAt: Date.now(),
     deskIndex: 0,
@@ -90,7 +89,7 @@ describe("외형 모드 탭", () => {
   it("기본은 '직접 만들기'이고 Codex 생성 버튼은 보이지 않는다", () => {
     renderEdit();
     expect(screen.getByText("초상 프롬프트 복사")).toBeTruthy();
-    expect(screen.getByText("픽셀아트 프롬프트 복사")).toBeTruthy();
+    expect(screen.getByText("스프라이트 프롬프트 복사")).toBeTruthy();
     expect(screen.queryByText("초상 생성")).toBeNull();
     expect(screen.queryByText("스프라이트 생성")).toBeNull();
   });
@@ -99,7 +98,7 @@ describe("외형 모드 탭", () => {
     renderEdit();
     await switchToCodexTab();
     expect(screen.queryByText("초상 프롬프트 복사")).toBeNull();
-    expect(screen.queryByText("픽셀아트 프롬프트 복사")).toBeNull();
+    expect(screen.queryByText("스프라이트 프롬프트 복사")).toBeNull();
     expect(screen.getByText("초상 생성")).toBeTruthy();
     expect(screen.getByText("스프라이트 생성")).toBeTruthy();
   });

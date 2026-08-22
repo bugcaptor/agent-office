@@ -39,7 +39,6 @@ function profile(id: string, name: string): AgentProfile {
     id,
     name,
     role: "",
-    note: "",
     seed: `seed-${id}`,
     createdAt: 0,
     deskIndex: 0,

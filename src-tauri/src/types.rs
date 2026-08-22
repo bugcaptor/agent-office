@@ -372,7 +372,11 @@ pub struct AgentProfile {
     pub id: String,
     pub name: String,
     pub role: String,
-    pub note: String,
+    /// **레거시 전용**: 예전 "메모" 입력창의 값. 성격 프롬프트로 통합됐으므로
+    /// 새로 쓰지 않는다(`skip_serializing`) — `ProfileStore::load`가
+    /// `personality_prompt`에 합치고 비운다. 파일에는 `"note"` 키로만 남아 있다.
+    #[serde(rename = "note", skip_serializing, default)]
+    pub legacy_note: Option<String>,
     pub seed: String,
     pub created_at: u64,
     pub desk_index: u32,
@@ -382,19 +386,26 @@ pub struct AgentProfile {
     /// 세션 작업 디렉터리. 미지정 시 백엔드가 홈 디렉터리로 폴백(manager.rs).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub cwd: Option<String>,
-    /// 외모 묘사 힌트(자유 텍스트). 이미지 프롬프트에 반영. 없으면 프롬프트에서 생략.
+    /// **레거시 전용**: 예전 "외모 힌트". 초상/스프라이트 양쪽 프롬프트에 함께
+    /// 쓰이던 값이라 `portrait_request`/`sprite_request`로 갈라졌다. 새로 쓰지
+    /// 않는다(`skip_serializing`) — `ProfileStore::load`가 한 번 옮기고 비운다.
+    #[serde(rename = "appearance", skip_serializing, default)]
+    pub legacy_appearance: Option<String>,
+    /// 초상화 추가 프롬프트(자유 텍스트). 초상 이미지 프롬프트에만 덧붙는다.
+    /// 없으면 프롬프트에서 생략. TS `portraitRequest?: string` 미러.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub appearance: Option<String>,
+    pub portrait_request: Option<String>,
     /// 초상 존재 표시 + 프론트 캐시 무효화 키(epoch ms). 없으면 초상 없음.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub portrait_updated_at: Option<u64>,
-    /// 픽셀아트 프롬프트 의뢰 문구(자유 텍스트). 비면 appearance로 폴백.
+    /// 스프라이트 추가 프롬프트(자유 텍스트). 스프라이트(픽셀아트) 프롬프트에만
+    /// 덧붙는다 — 초상 쪽으로 폴백하지 않는다(레거시 값은 로드 시 복사된다).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub sprite_request: Option<String>,
     /// 커스텀 스프라이트 존재 표시 + 프론트 캐시 무효화 키(epoch ms). 없으면 절차 생성 사용.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub sprite_updated_at: Option<u64>,
-    /// 미니미(소환수) 전용 픽셀아트 의뢰 문구(자유 텍스트). 비면 프롬프트가
+    /// 미니미(소환수) 추가 프롬프트(자유 텍스트). 비면 프롬프트가
     /// "본체에 어울리는 소환수" 자동 위임 문구로 폴백. TS `minimiRequest?: string` 미러.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub minimi_request: Option<String>,
@@ -906,13 +917,14 @@ mod tests {
             id: "p1".into(),
             name: "Ada".into(),
             role: "backend".into(),
-            note: "".into(),
+            legacy_note: None,
             seed: "abc123".into(),
             created_at: 1_720_000_000_003,
             desk_index: 0,
             assigned_desk_index: None,
             cwd: Some("/tmp/proj".into()),
-            appearance: None,
+            legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None,
             sprite_request: None,
             minimi_request: None,
@@ -937,13 +949,14 @@ mod tests {
             id: "p1".into(),
             name: "Ada".into(),
             role: "backend".into(),
-            note: "".into(),
+            legacy_note: None,
             seed: "abc123".into(),
             created_at: 1,
             desk_index: 0,
             assigned_desk_index: None,
             cwd: None,
-            appearance: None,
+            legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None,
             sprite_request: None,
             minimi_request: None,
@@ -965,12 +978,30 @@ mod tests {
     #[test]
     fn agent_profile_deserializes_without_portrait_fields() {
         // 기존(프리-이번기능) profiles.json에는 appearance/portraitUpdatedAt 키가
-        // 아예 없다 -> 여전히 파싱되고 둘 다 None 이어야 한다.
+        // 아예 없다 -> 여전히 파싱되고 셋 다 None 이어야 한다.
         let json = "{\"id\":\"p1\",\"name\":\"Ada\",\"role\":\"backend\",\"note\":\"\",\
                      \"seed\":\"abc123\",\"createdAt\":1720000000003,\"deskIndex\":0}";
         let profile: AgentProfile = serde_json::from_str(json).unwrap();
-        assert_eq!(profile.appearance, None);
+        assert_eq!(profile.legacy_appearance, None);
+        assert_eq!(profile.portrait_request, None);
         assert_eq!(profile.portrait_updated_at, None);
+    }
+
+    #[test]
+    fn agent_profile_reads_legacy_note_and_appearance_keys() {
+        // 레거시 profiles.json: "note"/"appearance" 키만 있고 새 키는 없다.
+        // 전용 legacy_* 필드로 읽히고(마이그레이션 입력), 다시 쓸 때는 사라진다.
+        let json = "{\"id\":\"p1\",\"name\":\"Ada\",\"role\":\"backend\",\
+                     \"note\":\"백엔드 담당\",\"appearance\":\"짧은 검은 머리\",\
+                     \"seed\":\"abc123\",\"createdAt\":1,\"deskIndex\":0}";
+        let profile: AgentProfile = serde_json::from_str(json).unwrap();
+        assert_eq!(profile.legacy_note.as_deref(), Some("백엔드 담당"));
+        assert_eq!(profile.legacy_appearance.as_deref(), Some("짧은 검은 머리"));
+        assert_eq!(profile.portrait_request, None);
+
+        let out = serde_json::to_string(&profile).unwrap();
+        assert!(!out.contains("\"note\""), "레거시 note는 다시 쓰지 않는다: {out}");
+        assert!(!out.contains("\"appearance\""), "레거시 appearance는 다시 쓰지 않는다: {out}");
     }
 
     #[test]
@@ -979,13 +1010,14 @@ mod tests {
             id: "p1".into(),
             name: "Ada".into(),
             role: "backend".into(),
-            note: "".into(),
+            legacy_note: None,
             seed: "abc123".into(),
             created_at: 1,
             desk_index: 0,
             assigned_desk_index: None,
             cwd: None,
-            appearance: Some("short black hair, glasses".into()),
+            legacy_appearance: None,
+            portrait_request: Some("short black hair, glasses".into()),
             portrait_updated_at: Some(1_720_000_000_777),
             sprite_request: None,
             minimi_request: None,
@@ -1001,7 +1033,7 @@ mod tests {
         bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
-        assert!(json.contains("\"appearance\":\"short black hair, glasses\""));
+        assert!(json.contains("\"portraitRequest\":\"short black hair, glasses\""));
         assert!(json.contains("\"portraitUpdatedAt\":1720000000777"));
     }
 
@@ -1011,13 +1043,14 @@ mod tests {
             id: "p1".into(),
             name: "Ada".into(),
             role: "backend".into(),
-            note: "".into(),
+            legacy_note: None,
             seed: "abc123".into(),
             created_at: 1,
             desk_index: 0,
             assigned_desk_index: None,
             cwd: None,
-            appearance: None,
+            legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None,
             sprite_request: None,
             minimi_request: None,
@@ -1033,7 +1066,7 @@ mod tests {
         bot: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
-        assert!(!json.contains("appearance"));
+        assert!(!json.contains("portraitRequest"));
         assert!(!json.contains("portraitUpdatedAt"));
     }
 
@@ -1054,13 +1087,14 @@ mod tests {
             id: "p1".into(),
             name: "Ada".into(),
             role: "backend".into(),
-            note: "".into(),
+            legacy_note: None,
             seed: "abc123".into(),
             created_at: 1,
             desk_index: 0,
             assigned_desk_index: None,
             cwd: None,
-            appearance: None,
+            legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None,
             sprite_request: Some("red cloak wizard".into()),
             minimi_request: None,
@@ -1087,13 +1121,14 @@ mod tests {
             id: "p1".into(),
             name: "Ada".into(),
             role: "backend".into(),
-            note: "".into(),
+            legacy_note: None,
             seed: "abc123".into(),
             created_at: 1,
             desk_index: 0,
             assigned_desk_index: None,
             cwd: None,
-            appearance: None,
+            legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None,
             sprite_request: None,
             minimi_request: None,
@@ -1147,8 +1182,9 @@ mod tests {
     #[test]
     fn agent_profile_serializes_archetype_camel_case_when_present() {
         let profile = AgentProfile {
-            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
-            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), legacy_note: None,
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: Some("orc".into()),
             shell: None,
@@ -1166,8 +1202,9 @@ mod tests {
     #[test]
     fn agent_profile_omits_archetype_when_none() {
         let profile = AgentProfile {
-            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
-            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), legacy_note: None,
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None,
             shell: None,
@@ -1194,8 +1231,9 @@ mod tests {
     #[test]
     fn agent_profile_serializes_keyboard_sound_camel_case_when_present() {
         let profile = AgentProfile {
-            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
-            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), legacy_note: None,
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None,
             shell: None,
@@ -1213,8 +1251,9 @@ mod tests {
     #[test]
     fn agent_profile_omits_keyboard_sound_when_none() {
         let profile = AgentProfile {
-            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
-            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), legacy_note: None,
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None,
             shell: None,
@@ -1241,8 +1280,9 @@ mod tests {
     #[test]
     fn agent_profile_serializes_shell_when_present() {
         let profile = AgentProfile {
-            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
-            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), legacy_note: None,
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None, shell: Some("git-bash".into()), startup_command: None,
             clocked_out: None,
@@ -1258,8 +1298,9 @@ mod tests {
     #[test]
     fn agent_profile_omits_shell_when_none() {
         let profile = AgentProfile {
-            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
-            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), legacy_note: None,
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: None,
@@ -1284,8 +1325,9 @@ mod tests {
     #[test]
     fn agent_profile_serializes_clocked_out_when_present() {
         let profile = AgentProfile {
-            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
-            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), legacy_note: None,
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: Some(true),
@@ -1301,8 +1343,9 @@ mod tests {
     #[test]
     fn agent_profile_omits_clocked_out_when_none() {
         let profile = AgentProfile {
-            id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
-            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
+            id: "p1".into(), name: "Ada".into(), role: "backend".into(), legacy_note: None,
+            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
+            portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: None,

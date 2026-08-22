@@ -57,7 +57,6 @@ function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     id: "a1",
     name: "컴파일러",
     role: "빌드 담당",
-    note: "",
     seed: "x",
     createdAt: 0,
     deskIndex: 0,

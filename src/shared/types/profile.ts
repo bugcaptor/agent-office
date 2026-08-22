@@ -13,7 +13,6 @@ export interface AgentProfile {
   id: string;
   name: string;
   role: string;
-  note: string;
   /** Sprite seed. */
   seed: string;
   createdAt: number;
@@ -31,15 +30,16 @@ export interface AgentProfile {
   startupCommand?: string;
   /** Claude Code 세션에 추가 시스템 프롬프트로 주입할 캐릭터 성격(멀티라인 가능). */
   personalityPrompt?: string;
-  /** 외모 묘사 힌트(자유 텍스트). 이미지 프롬프트에 반영. */
-  appearance?: string;
+  /** 초상화 추가 프롬프트(자유 텍스트). 초상 이미지 프롬프트에만 덧붙는다. */
+  portraitRequest?: string;
   /** 초상 존재 표시 + 프론트 캐시 무효화 키(epoch ms). undefined = 초상 없음. */
   portraitUpdatedAt?: number;
-  /** 픽셀아트 프롬프트 의뢰 문구(자유 텍스트). 비면 appearance로 폴백. */
+  /** 스프라이트 추가 프롬프트(자유 텍스트). 스프라이트 프롬프트에만 덧붙는다
+   * — 초상화 쪽으로 폴백하지 않는다(레거시 `appearance` 값은 로드 시 양쪽에 복사). */
   spriteRequest?: string;
   /** 커스텀 스프라이트 존재 표시 + 프론트 캐시 무효화 키(epoch ms). undefined = 절차 생성 사용. */
   spriteUpdatedAt?: number;
-  /** 미니미(소환수) 전용 픽셀아트 의뢰 문구(자유 텍스트). 비면 프롬프트가
+  /** 미니미(소환수) 추가 프롬프트(자유 텍스트). 비면 프롬프트가
    * "본체에 어울리는 소환수를 알아서 만들어 달라"는 문장으로 자동 폴백한다. */
   minimiRequest?: string;
   /** 서브에이전트 미니미용 커스텀 픽셀아트 존재 표시 + 프론트 캐시 무효화 키(epoch ms).

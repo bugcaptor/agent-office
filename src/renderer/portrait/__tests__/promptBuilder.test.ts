@@ -20,12 +20,12 @@ function expectedHex(seed: string, which: "hair" | "shirt"): string {
 }
 
 describe("buildPortraitPrompt", () => {
-  it("includes name, role, note and appearance", () => {
+  it("includes name, role, personality and portraitRequest", () => {
     const p = buildPortraitPrompt({
       name: "Ada",
       role: "backend engineer",
-      note: "calm and precise",
-      appearance: "short black bob, round glasses",
+      personality: "calm and precise",
+      portraitRequest: "short black bob, round glasses",
       seed: "seed-xyz",
     });
     expect(p).toContain("Ada");
@@ -36,32 +36,32 @@ describe("buildPortraitPrompt", () => {
 
   it("embeds palette-derived hair and clothing hex from the seed", () => {
     const seed = "seed-xyz";
-    const p = buildPortraitPrompt({ name: "A", role: "r", note: "", seed });
+    const p = buildPortraitPrompt({ name: "A", role: "r", personality: "", seed });
     expect(p).toContain(expectedHex(seed, "hair"));
     expect(p).toContain(expectedHex(seed, "shirt"));
   });
 
-  it("omits note/appearance lines when empty/absent", () => {
-    const p = buildPortraitPrompt({ name: "A", role: "r", note: "", seed: "s" });
+  it("omits personality/portraitRequest lines when empty/absent", () => {
+    const p = buildPortraitPrompt({ name: "A", role: "r", personality: "", seed: "s" });
     expect(p).not.toContain("Personality");
     expect(p).not.toContain("Appearance details");
   });
 
   it("states the 90s bishoujo style and 240x320 / 3:4 spec", () => {
-    const p = buildPortraitPrompt({ name: "A", role: "r", note: "", seed: "s" });
+    const p = buildPortraitPrompt({ name: "A", role: "r", personality: "", seed: "s" });
     expect(p.toLowerCase()).toContain("bishoujo");
     expect(p).toContain("240x320");
     expect(p).toContain("3:4");
   });
 
   it("밝고 귀여운 무드 문구를 포함한다 (의도적 계약 변경)", () => {
-    const p = buildPortraitPrompt({ name: "A", role: "r", note: "", seed: "s" });
+    const p = buildPortraitPrompt({ name: "A", role: "r", personality: "", seed: "s" });
     expect(p).toContain("cheerful pastel color grading");
     expect(p).toContain("friendly smile");
   });
 
   it("is deterministic for a given seed", () => {
-    const input = { name: "A", role: "r", note: "n", seed: "same" };
+    const input = { name: "A", role: "r", personality: "n", seed: "same" };
     expect(buildPortraitPrompt(input)).toBe(buildPortraitPrompt(input));
   });
 });
@@ -88,7 +88,7 @@ describe("buildSpritePrompt", () => {
 
   it("같은 seed면 초상 프롬프트와 동일한 머리/옷 hex 색을 쓴다", () => {
     const sprite = buildSpritePrompt(base);
-    const portrait = buildPortraitPrompt({ ...base, note: "" });
+    const portrait = buildPortraitPrompt({ ...base, personality: "" });
     const hexes = portrait.match(/#[0-9a-f]{6}/g)!;
     for (const h of hexes) expect(sprite).toContain(h);
   });
@@ -98,9 +98,9 @@ describe("buildSpritePrompt", () => {
     expect(p).toContain("Details: red cloak wizard.");
   });
 
-  it("spriteRequest가 비면 appearance로 폴백한다", () => {
-    const p = buildSpritePrompt({ ...base, spriteRequest: "  ", appearance: "short black hair" });
-    expect(p).toContain("Details: short black hair.");
+  it("spriteRequest가 비면 Details 줄이 없다(초상화 칸으로 폴백하지 않는다)", () => {
+    const p = buildSpritePrompt({ ...base, spriteRequest: "  " });
+    expect(p).not.toContain("Details:");
   });
 
   it("둘 다 없으면 Details 줄이 없다", () => {
@@ -110,7 +110,7 @@ describe("buildSpritePrompt", () => {
 
 describe("archetype-aware prompts", () => {
   it("human (archetype omitted) prompt is unchanged: bishoujo + hair/clothing hints", () => {
-    const p = buildPortraitPrompt({ name: "A", role: "r", note: "", seed: "s" });
+    const p = buildPortraitPrompt({ name: "A", role: "r", personality: "", seed: "s" });
     expect(p.toLowerCase()).toContain("bishoujo");
     expect(p).toContain("hand-drawn anime face");
     expect(p).toContain("Hair color approximately");
@@ -118,13 +118,13 @@ describe("archetype-aware prompts", () => {
   });
 
   it("orc portrait injects the orc subject and keeps bishoujo (humanoid)", () => {
-    const orc = buildPortraitPrompt({ name: "Grug", role: "sysadmin", note: "", seed: "s", archetype: "orc" });
+    const orc = buildPortraitPrompt({ name: "Grug", role: "sysadmin", personality: "", seed: "s", archetype: "orc" });
     expect(orc).toContain("green-skinned tusked orc");
     expect(orc.toLowerCase()).toContain("bishoujo"); // orc는 휴머노이드 → bishoujo 유지
   });
 
   it("robot portrait is non-humanoid: no bishoujo, uses 'anime style character' + chassis/accent hints", () => {
-    const robot = buildPortraitPrompt({ name: "Unit", role: "ops", note: "", seed: "s", archetype: "robot" });
+    const robot = buildPortraitPrompt({ name: "Unit", role: "ops", personality: "", seed: "s", archetype: "robot" });
     expect(robot.toLowerCase()).not.toContain("bishoujo");
     expect(robot).toContain("anime style character");
     expect(robot).toContain("Chassis color approximately");
@@ -140,12 +140,12 @@ describe("archetype-aware prompts", () => {
 
   it("embedded hex matches the archetype palette (not the human palette)", () => {
     const pal = ARCHETYPES.orc.generatePalette(makeRng(hashStringToSeed("s")));
-    const p = buildPortraitPrompt({ name: "A", role: "r", note: "", seed: "s", archetype: "orc" });
+    const p = buildPortraitPrompt({ name: "A", role: "r", personality: "", seed: "s", archetype: "orc" });
     expect(p).toContain("#" + (pal.skin.base & 0xffffff).toString(16).padStart(6, "0"));
   });
 
   it("unknown archetype falls back to human phrasing", () => {
-    const p = buildPortraitPrompt({ name: "A", role: "r", note: "", seed: "s", archetype: "dragon" });
+    const p = buildPortraitPrompt({ name: "A", role: "r", personality: "", seed: "s", archetype: "dragon" });
     expect(p.toLowerCase()).toContain("bishoujo");
   });
 });
@@ -160,9 +160,9 @@ describe("buildSpritePrompt", () => {
     expect(p).toContain("Details: red cloak wizard.");
   });
 
-  it("spriteRequest가 비면 appearance로 폴백한다", () => {
-    const p = buildSpritePrompt({ ...base, spriteRequest: "  ", appearance: "short black hair" });
-    expect(p).toContain("Details: short black hair.");
+  it("spriteRequest가 비면 Details 줄이 없다(초상화 칸으로 폴백하지 않는다)", () => {
+    const p = buildSpritePrompt({ ...base, spriteRequest: "  " });
+    expect(p).not.toContain("Details:");
   });
 
   it("같은 입력에 결정적이고 시드 팔레트 힌트를 포함한다", () => {
@@ -188,7 +188,7 @@ describe("codex 생성 프롬프트", () => {
   const base = { name: "Ada", role: "engineer", seed: "seed-xyz" };
 
   it("초상: 본문은 클립보드 프롬프트와 같고 규격 줄만 1024x1536으로 바뀐다", () => {
-    const input = { ...base, note: "차분함" };
+    const input = { ...base, personality: "차분함" };
     const clip = buildPortraitPrompt(input);
     const codex = buildCodexPortraitPrompt(input);
     // 규격 줄을 뺀 본문은 완전히 동일해야 한다.
@@ -217,7 +217,7 @@ describe("codex 생성 프롬프트", () => {
 });
 
 describe("목록에 없는 커스텀 아키타입", () => {
-  const base = { name: "Nia", role: "engineer", note: "", seed: "seed-custom" };
+  const base = { name: "Nia", role: "engineer", personality: "", seed: "seed-custom" };
 
   it("초상 프롬프트의 주제 서술자를 적은 문구로 대체한다", () => {
     const p = buildPortraitPrompt({ ...base, archetype: "a tiny wise dragon" });
@@ -266,15 +266,10 @@ describe("미니미(소환수) 프롬프트", () => {
     }
   });
 
-  it("본체 의뢰 문구/외모 힌트는 주인 묘사로만 실린다(의뢰 문구 우선)", () => {
-    const p = buildMinimiPrompt({
-      ...base,
-      spriteRequest: "red cloak wizard",
-      appearance: "short black hair",
-    });
+  it("본체 스프라이트 추가 프롬프트는 주인 묘사로만 실린다", () => {
+    const p = buildMinimiPrompt({ ...base, spriteRequest: "red cloak wizard" });
     expect(p).toContain("Master's appearance: red cloak wizard.");
-    const onlyAppearance = buildMinimiPrompt({ ...base, appearance: "short black hair" });
-    expect(onlyAppearance).toContain("Master's appearance: short black hair.");
+    expect(buildMinimiPrompt(base)).not.toContain("Master's appearance:");
   });
 
   it("커스텀 아키타입 문구가 주인 서술자를 대체한다", () => {

@@ -59,7 +59,7 @@ const SETTINGS_ON: AppSettings = {
 };
 
 function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
-  return { id: "a1", name: "컴파일러", role: "빌드", note: "", seed: "x", createdAt: 0, deskIndex: 0, ...overrides };
+  return { id: "a1", name: "컴파일러", role: "빌드", seed: "x", createdAt: 0, deskIndex: 0, ...overrides };
 }
 
 /** 한 세션에 n개 항목을 특정 시각에 채운 버퍼. */

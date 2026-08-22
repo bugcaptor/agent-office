@@ -7,14 +7,13 @@
 // (store, seeds session as `starting`) -> `tauriApi.createSession` (PTY
 // start) -> close. Editing updates the existing profile in place and never
 // starts a new session.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import { useAppStore } from "../store/appStore";
 import {
   generateDraft,
   draftToProfile,
   buildBotConfig,
-  mergeLegacyNote,
   type DraftProfile,
 } from "./generate";
 import {
@@ -27,7 +26,13 @@ import { parseCharacterBundle } from "@shared/types";
 import { pngBase64ToDataUrl } from "../portrait/portraitCache";
 import { loadSpritesFor } from "../sprite/spriteCache";
 import { generateSpritePreview } from "../office/gen/characterFactory";
-import { resolveArchetype, pickArchetype, archetypeOrAuto } from "../office/gen/archetypes";
+import {
+  resolveArchetype,
+  pickArchetype,
+  archetypeOrAuto,
+  keyColorsFor,
+  hexColor,
+} from "../office/gen/archetypes";
 import { tauriApi } from "../ipc/tauriApi";
 import { sessionOptsFor } from "../ipc/sessionOpts";
 import {
@@ -135,15 +140,14 @@ export function ProfileDialog() {
     setDraft({
       name: agent.name,
       role: agent.role,
-      // 메모 입력창은 성격 프롬프트로 통합됐다 — 남아 있는 레거시 메모는 성격
-      // 프롬프트에 합쳐 보여 주고, note 자체는 빈 값으로 실어 저장 때 비운다.
-      note: "",
       seed: agent.seed,
       cwd: agent.cwd ?? "",
       shell: agent.shell ?? "",
       startupCommand: agent.startupCommand ?? "",
-      personalityPrompt: mergeLegacyNote(agent.personalityPrompt, agent.note),
-      appearance: agent.appearance ?? "",
+      // 레거시 메모는 백엔드(`ProfileStore::load`)가 이미 성격 프롬프트로
+      // 합쳐 실어 준다 — 여기서는 그대로 보여 주기만 한다.
+      personalityPrompt: agent.personalityPrompt ?? "",
+      portraitRequest: agent.portraitRequest ?? "",
       spriteRequest: agent.spriteRequest ?? "",
       minimiRequest: agent.minimiRequest ?? "",
       archetype: agent.archetype ?? "auto",
@@ -161,6 +165,13 @@ export function ProfileDialog() {
     const eff = resolveArchetype(archetypeOrAuto(draft.archetype), draft.seed);
     setSpriteUrl(generateSpritePreview(draft.seed, 6, undefined, undefined, eff));
   }, [draft.seed, draft.archetype]);
+
+  /** 그림 프롬프트에 그대로 실리는 키 컬러(시드+아키타입 결정). 내부 자료로만
+   * 두면 "왜 이 색인지" 알 수 없어 편집창에 그대로 노출한다. */
+  const keyColors = useMemo(
+    () => keyColorsFor(draft.seed, archetypeOrAuto(draft.archetype)),
+    [draft.seed, draft.archetype],
+  );
 
   const regenSeed = () => setDraft((d) => ({ ...d, seed: nanoid(8) }));
   const regenAll = () => setDraft(generateDraft());
@@ -180,8 +191,8 @@ export function ProfileDialog() {
     const prompt = buildPortraitPrompt({
       name: draft.name,
       role: draft.role,
-      note: draft.personalityPrompt ?? "",
-      appearance: draft.appearance,
+      personality: draft.personalityPrompt ?? "",
+      portraitRequest: draft.portraitRequest,
       seed: draft.seed,
       archetype: draft.archetype,
     });
@@ -208,7 +219,6 @@ export function ProfileDialog() {
       name: draft.name,
       role: draft.role,
       spriteRequest: draft.spriteRequest,
-      appearance: draft.appearance,
       seed: draft.seed,
       archetype: draft.archetype,
     });
@@ -227,7 +237,6 @@ export function ProfileDialog() {
       role: draft.role,
       minimiRequest: draft.minimiRequest,
       spriteRequest: draft.spriteRequest,
-      appearance: draft.appearance,
       seed: draft.seed,
       archetype: draft.archetype,
     });
@@ -260,8 +269,8 @@ export function ProfileDialog() {
         ? buildCodexPortraitPrompt({
             name: draft.name,
             role: draft.role,
-            note: draft.personalityPrompt ?? "",
-            appearance: draft.appearance,
+            personality: draft.personalityPrompt ?? "",
+            portraitRequest: draft.portraitRequest,
             seed: draft.seed,
             archetype: draft.archetype,
           })
@@ -271,7 +280,6 @@ export function ProfileDialog() {
               role: draft.role,
               minimiRequest: draft.minimiRequest,
               spriteRequest: draft.spriteRequest,
-              appearance: draft.appearance,
               seed: draft.seed,
               archetype: draft.archetype,
             })
@@ -279,7 +287,6 @@ export function ProfileDialog() {
               name: draft.name,
               role: draft.role,
               spriteRequest: draft.spriteRequest,
-              appearance: draft.appearance,
               seed: draft.seed,
               archetype: draft.archetype,
             });
@@ -432,7 +439,7 @@ export function ProfileDialog() {
       const trimmedShell = (draft.shell ?? "").trim();
       const trimmedStartupCommand = (draft.startupCommand ?? "").trim();
       const trimmedPersonalityPrompt = (draft.personalityPrompt ?? "").trim();
-      const trimmedAppearance = (draft.appearance ?? "").trim();
+      const trimmedPortraitRequest = (draft.portraitRequest ?? "").trim();
       const trimmedSpriteRequest = (draft.spriteRequest ?? "").trim();
       const trimmedMinimiRequest = (draft.minimiRequest ?? "").trim();
       const trimmedKeyboardSound = (draft.keyboardSound ?? "").trim();
@@ -447,14 +454,13 @@ export function ProfileDialog() {
       updateAgent(editingAgent.id, {
         name: draft.name,
         role: draft.role,
-        note: draft.note,
         seed: draft.seed,
         archetype: chosenArchetype,
         cwd: trimmedCwd || undefined,
         shell: trimmedShell || undefined,
         startupCommand: trimmedStartupCommand || undefined,
         personalityPrompt: trimmedPersonalityPrompt || undefined,
-        appearance: trimmedAppearance || undefined,
+        portraitRequest: trimmedPortraitRequest || undefined,
         spriteRequest: trimmedSpriteRequest || undefined,
         minimiRequest: trimmedMinimiRequest || undefined,
         keyboardSound: trimmedKeyboardSound || undefined,
@@ -564,7 +570,7 @@ export function ProfileDialog() {
           </div>
         </section>
 
-        {/* ── 외형: 프리뷰 카드 + 외모 힌트 · 픽셀아트 의뢰 문구 ── */}
+        {/* ── 외형: 프리뷰 카드 + 키 컬러 + 초상화/스프라이트/미니미 추가 프롬프트 ── */}
         <section className="form-section">
           <h3 className="form-section-title">외형</h3>
           <div className="profile-previews">
@@ -643,6 +649,34 @@ export function ProfileDialog() {
             </div>
           </div>
 
+          {/* 키 컬러: 프롬프트에 그대로 실리는 색. 시드(+아키타입)에서 결정되므로
+              '스프라이트 재생성'으로 시드를 바꾸면 함께 바뀐다. */}
+          <div className="key-colors">
+            <span className="form-label-text">키 컬러</span>
+            <ul className="key-color-list">
+              {keyColors.map((c) => (
+                <li
+                  key={c.en}
+                  className="key-color"
+                  title={`${c.en} approximately ${hexColor(c.rgb)}`}
+                >
+                  <span
+                    className="key-color-chip"
+                    style={{ background: hexColor(c.rgb) }}
+                    aria-hidden
+                  />
+                  <span>{c.ko}</span>
+                  <code>{hexColor(c.rgb)}</code>
+                </li>
+              ))}
+            </ul>
+            <p className="form-hint">
+              시드와 아키타입에서 결정되어 초상화·스프라이트·미니미 프롬프트에 이
+              색 그대로 실립니다. 바꾸려면 시드를 바꾸세요(스프라이트 재생성) —
+              아키타입을 바꿔도 달라집니다.
+            </p>
+          </div>
+
           {/* 만드는 방법은 한 번에 하나만 — 직접 만들기와 Codex 생성을 나란히
               늘어놓으면 무엇을 눌러야 할지 알 수 없다. SettingsDialog와 같은
               tablist 관례를 작은 크기로 재사용한다. */}
@@ -698,11 +732,11 @@ export function ProfileDialog() {
                   <span className="form-label-text">스프라이트</span>
                   <div className="sprite-buttons">
                     <button className="pixel-btn" onClick={onCopySpritePrompt}>
-                      픽셀아트 프롬프트 복사
+                      스프라이트 프롬프트 복사
                     </button>
                     {editing && editingAgent && (
                       <button className="pixel-btn" onClick={() => setSpriteEditorOpen(true)}>
-                        {spritePreviewUrl ? "픽셀아트 변경" : "픽셀아트 업로드"}
+                        {spritePreviewUrl ? "스프라이트 변경" : "스프라이트 업로드"}
                       </button>
                     )}
                   </div>
@@ -733,30 +767,33 @@ export function ProfileDialog() {
               />
             )}
           </div>
+          {/* 세 프롬프트 칸은 각자 자기 그림에만 덧붙는다 — 예전처럼 한 칸이
+              다른 그림의 폴백이 되지 않는다(칸 사이 관계를 없애 헷갈림 제거). */}
           <div className="form-field">
             <label>
-              <span className="form-label-text">외모 힌트</span>
+              <span className="form-label-text">초상화 추가 프롬프트</span>
               <input
-                value={draft.appearance ?? ""}
-                onChange={(e) => setDraft({ ...draft, appearance: e.target.value })}
+                value={draft.portraitRequest ?? ""}
+                onChange={(e) => setDraft({ ...draft, portraitRequest: e.target.value })}
                 placeholder="예: 짧은 검은 머리, 안경 (선택)"
               />
             </label>
+            <p className="form-hint">초상 프롬프트에만 덧붙습니다.</p>
           </div>
           <div className="form-field">
             <label>
-              <span className="form-label-text">픽셀아트 의뢰 문구</span>
+              <span className="form-label-text">스프라이트 추가 프롬프트</span>
               <input
                 value={draft.spriteRequest ?? ""}
                 onChange={(e) => setDraft({ ...draft, spriteRequest: e.target.value })}
-                placeholder="예: 빨간 망토를 두른 마법사 (선택, 비면 외모 힌트 사용)"
+                placeholder="예: 빨간 망토를 두른 마법사 (선택)"
               />
             </label>
-            <p className="form-hint">프롬프트 복사와 Codex 생성에 그대로 반영됩니다.</p>
+            <p className="form-hint">스프라이트 프롬프트 복사와 Codex 생성에 그대로 반영됩니다.</p>
           </div>
           <div className="form-field">
             <label>
-              <span className="form-label-text">미니미 의뢰 문구</span>
+              <span className="form-label-text">미니미 추가 프롬프트</span>
               <input
                 value={draft.minimiRequest ?? ""}
                 onChange={(e) => setDraft({ ...draft, minimiRequest: e.target.value })}

@@ -39,7 +39,6 @@ function mkProfile(id: string): AgentProfile {
     id,
     name: `Agent ${id}`,
     role: "eng",
-    note: "",
     seed: id,
     createdAt: Date.now(),
     deskIndex: 0,

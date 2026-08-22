@@ -718,7 +718,7 @@ const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
 export interface DraftProfile {
   name: string;
   role: string;
-  note: string;        // 레거시. 현행은 항상 "" — 아래 4.2.3 참고
+  personalityPrompt?: string;   // 옛 '메모'가 여기로 통합됐다 — 아래 4.2.3 참고
   seed: string;
 }
 
@@ -727,7 +727,7 @@ export function generateDraft(): DraftProfile {
   return {
     name: pick(NAME_WORDS),
     role: pick(ROLE_WORDS),
-    note: `${personality} 성격`,
+    personalityPrompt: `${personality} 성격`,
     seed: nanoid(8),
   };
 }
@@ -737,7 +737,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     id: nanoid(),
     name: d.name.trim() || pick(NAME_WORDS),
     role: d.role.trim(),
-    note: d.note.trim(),
+    ...(d.personalityPrompt?.trim() ? { personalityPrompt: d.personalityPrompt.trim() } : {}),
     seed: d.seed,
     createdAt: Date.now(),
     deskIndex,
@@ -776,7 +776,7 @@ export function ProfileDialog() {
     if (editingAgent) {
       setDraft({
         name: editingAgent.name, role: editingAgent.role,
-        note: editingAgent.note, seed: editingAgent.seed,
+        personalityPrompt: editingAgent.personalityPrompt ?? '', seed: editingAgent.seed,
       });
     }
   }, [editingAgent]);
@@ -793,7 +793,7 @@ export function ProfileDialog() {
     if (editing && editingAgent) {
       updateAgent(editingAgent.id, {
         name: draft.name, role: draft.role,
-        note: draft.note, seed: draft.seed,
+        personalityPrompt: draft.personalityPrompt || undefined, seed: draft.seed,
       });
     } else {
       const profile = draftToProfile(draft, agentOrder.length);
@@ -851,11 +851,11 @@ export function ProfileDialog() {
 무엇을 눌러야 할지 알기 어려웠다. 지금은 한 번에 한 쪽만 보여 준다.
 
 - **탭 바깥(항상 보임)**: 스프라이트/미니미/초상 프리뷰 카드, `스프라이트 재생성`,
-  `커스텀 제거`·`초상 제거`, 미니미 업로드/변경/제거. 아래쪽의 `외모 힌트`·
-  `픽셀아트 의뢰 문구`·`미니미 의뢰 문구` 입력도 두 모드 공통이다(두 경로의
-  프롬프트에 함께 반영).
+  `커스텀 제거`·`초상 제거`, 미니미 업로드/변경/제거, **키 컬러**(§4.2.4).
+  아래쪽의 `초상화 추가 프롬프트`·`스프라이트 추가 프롬프트`·`미니미 추가 프롬프트`
+  입력도 두 모드 공통이다(직접 만들기/Codex 두 경로의 프롬프트에 함께 반영).
 - **`[직접 만들기]` 탭**: `초상 프롬프트 복사` + `이미지 업로드/변경`,
-  `픽셀아트 프롬프트 복사` + `픽셀아트 업로드/변경`, `미니미 프롬프트 복사` +
+  `스프라이트 프롬프트 복사` + `스프라이트 업로드/변경`, `미니미 프롬프트 복사` +
   `미니미 업로드/변경`. 프롬프트를 아무 이미지 생성 도구에나 넣고 결과를 올리는
   경로다.
 - **`[Codex로 생성]` 탭** (`src/renderer/portrait/CodexGenPanel.tsx`): 로컬
@@ -883,13 +883,14 @@ export function ProfileDialog() {
 작은 분신. 그래서 스프라이트 프롬프트를 그대로 재활용하지 않고 전용 빌더를 둔다
 (`promptBuilder.ts`의 `buildMinimiPrompt` / `buildCodexMinimiPrompt`).
 
-- 프로필에 `minimiRequest`(‘미니미 의뢰 문구’) 필드가 있다. 적으면 그대로
+- 프로필에 `minimiRequest`(‘미니미 추가 프롬프트’) 필드가 있다. 적으면 그대로
   `Familiar: …` 줄로 들어간다.
 - **비면 자동 위임 문구**(`autoMinimiRequestLine`)가 대신 들어간다 — "따로 요청이
   없으니 주인에게 어울리는 소환수를 알아서 디자인하라"는 한 줄. 사용자가 아무것도
   적지 않아도 본체와 어울리는 결과가 나오게 하기 위한 기본값이다.
-- 주인의 `spriteRequest`(없으면 `appearance`)는 `Master's appearance:` 줄로만
-  실린다 — 소환수가 주인을 닮게 하는 맥락이지 소환수 자신의 묘사가 아니다.
+- 주인의 `spriteRequest`는 `Master's appearance:` 줄로만 실린다 — 소환수가
+  주인을 닮게 하는 맥락이지 소환수 자신의 묘사가 아니다. (예전에는 비면
+  `appearance`로 폴백했지만, 칸이 §4.2.4처럼 갈라지며 폴백을 없앴다.)
 - 본문은 16×16 단일 프레임 지시(작게 읽히는 단순 실루엣)이고, codex 버전은
   마지막 규격 줄만 1024×1024 투명 배경으로 갈아 끼운다. 결과는
   `SpriteEditor target="minimi"`에 `initialImage`로 프리로드된다.
@@ -901,14 +902,44 @@ export function ProfileDialog() {
 적는 칸이라 사용자가 늘 헷갈렸다. 지금은 **성격 프롬프트 하나**만 둔다.
 
 - 새 캐릭터의 랜덤 초안은 `personalityPrompt`에 `"{성격} 성격"`을 채운다
-  (`note`는 `""`). 즉 랜덤 성격이 실제로 세션에도 반영된다.
+  즉 랜덤 성격이 실제로 세션에도 반영된다.
 - 초상 프롬프트의 `Personality / notes:` 줄은 이제 `personalityPrompt`를 받는다.
-- 스키마의 `AgentProfile.note`는 **레거시로 남긴다**(Rust 미러도 그대로). 편집기를
-  열 때 `mergeLegacyNote(personalityPrompt, note)`로 기존 메모를 성격 프롬프트에
-  합쳐 보여 주고, 저장하면 `note`는 `""`로 비워진다 — 값이 사라지지 않으면서
-  단일 출처가 된다. 같은 병합을 캐릭터 번들 가져오기에도 적용한다
-  (`applyBundleToDraft`). 이미 합쳐진 문자열을 다시 병합해도 중복되지 않는다.
+- 스키마에서 `note`는 사라졌다. 남아 있는 값은 **로드 시 자동 통합**된다:
+  `ProfileStore::load` → `migrate_loaded`가 `personality_prompt`에 합치고
+  레거시 필드를 비운다(Rust `AgentProfile.legacy_note`는 `rename="note"` +
+  `skip_serializing` — 읽기만 하고 다시 쓰지 않으므로 다음 저장에서 키 자체가
+  사라진다). 편집창을 한 번도 열지 않은 사용자도 통합된다. 캐릭터 번들
+  가져오기도 같은 규칙을 쓴다(`applyBundleToDraft` + `mergeLegacyNote`,
+  `PortableProfile.legacyNote`). 이미 합쳐진 문자열을 다시 병합해도 중복되지 않는다.
 - 포스트잇 메모(§13)와는 무관하다 — 그쪽은 사람이 쓰는 작업 기억이다.
+
+#### 4.2.4 그림 프롬프트 3칸과 키 컬러 노출 (kbm #2fh)
+
+**칸 이름이 그림 종류를 그대로 가리킨다.** 예전에는 `외모 힌트`(초상에 쓰이면서
+스프라이트의 폴백이기도 함)와 `픽셀아트 의뢰 문구`가 섞여 있어, 어느 칸이 어느
+그림에 어떻게 쓰이는지 알 수 없었다. 지금은 세 칸이 **각자 자기 그림에만** 덧붙는다.
+
+| 필드 | 라벨 | 들어가는 프롬프트 |
+| --- | --- | --- |
+| `portraitRequest` | 초상화 추가 프롬프트 | `buildPortraitPrompt`의 `Appearance details:` |
+| `spriteRequest` | 스프라이트 추가 프롬프트 | `buildSpritePrompt`의 `Details:` (+ 미니미의 `Master's appearance:`) |
+| `minimiRequest` | 미니미 추가 프롬프트 | `buildMinimiPrompt`의 `Familiar:` (비면 자동 위임 문구) |
+
+칸 사이 폴백은 **없다**. 옛 `appearance` 값은 로드 시 1회 마이그레이션으로
+`portraitRequest`·`spriteRequest` 양쪽(비어 있는 쪽만)에 복사돼 그림 결과가
+달라지지 않는다 — Rust `legacy_appearance`(`rename="appearance"` +
+`skip_serializing`)가 그 1회성을 보장한다. 값을 옮긴 뒤 필드를 즉시 비우므로,
+사용자가 나중에 한쪽을 지워도 다시 채워지지 않는다.
+
+**키 컬러 노출.** 시드+아키타입이 낳는 팔레트는 `colorHints` 줄로 프롬프트에
+실리지만 내부 자료라, 몇 번을 다시 생성해도 "왜 이 색인지" 알 수 없었다. 이제
+편집창 외형 섹션이 그 색을 그대로 보여 준다(`.key-colors` — 칩+한국어 라벨+hex,
+`title`에 영문 프롬프트 문구). 단일 출처는 `archetypes.ts`:
+`ArchetypePromptDescriptor.keyColors`(아키타입마다 `Hair/Fur/Skin/Plating/
+Chassis/Clothing/Accent/Body` 슬롯 조합)에서 `colorHints` 문자열이 파생되고,
+UI는 `keyColorsFor(seed, archetype)`로 같은 값을 읽는다 — 표시와 프롬프트가
+어긋날 수 없다. 색을 바꾸는 방법은 시드 변경(`스프라이트 재생성`)이나 아키타입
+변경뿐이라는 점도 힌트로 적어 둔다.
 
 ---
 
@@ -1457,7 +1488,7 @@ Markdown(기본)과 JSON 두 가지를 지원하되 **UI에는 버튼 하나**�
 
 터미널 오버레이 **우상단에 붙은 쪽지 한 장**. 사람이 캐릭터별 작업 컨텍스트를
 직접 적어 두는 곳이며, 에이전트가 읽거나 쓰지 않는다 — 일기(#56/#60)가 LLM이
-쓰는 기록인 것과 정반대다. `AgentProfile.note`와도 무관하다(그쪽은 프로필 속성).
+쓰는 기록인 것과 정반대다. 프로필의 성격 프롬프트(§4.2.3)와도 무관하다.
 
 ### 13.1 왜 파일이고, 왜 plain text인가
 

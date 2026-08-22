@@ -28,10 +28,9 @@ describe("portableFromDraft", () => {
     const d = draftWith({
       name: "  Nova ",
       role: " 코더 ",
-      note: " 메모 ",
       seed: "seed123",
       archetype: "human",
-      appearance: " 안경 ",
+      portraitRequest: " 안경 ",
       spriteRequest: " 망토 ",
       personalityPrompt: " 성격 ",
       keyboardSound: "typewriter",
@@ -46,10 +45,9 @@ describe("portableFromDraft", () => {
     expect(p).toEqual({
       name: "Nova",
       role: "코더",
-      note: "메모",
       seed: "seed123",
       archetype: "human",
-      appearance: "안경",
+      portraitRequest: "안경",
       spriteRequest: "망토",
       personalityPrompt: "성격",
       keyboardSound: "typewriter",
@@ -68,9 +66,9 @@ describe("portableFromDraft", () => {
 
   it("빈 선택 필드는 undefined로 생략한다", () => {
     const p = portableFromDraft(
-      draftWith({ appearance: "  ", spriteRequest: "", personalityPrompt: "  ", keyboardSound: "" }),
+      draftWith({ portraitRequest: "  ", spriteRequest: "", personalityPrompt: "  ", keyboardSound: "" }),
     );
-    expect(p.appearance).toBeUndefined();
+    expect(p.portraitRequest).toBeUndefined();
     expect(p.spriteRequest).toBeUndefined();
     expect(p.personalityPrompt).toBeUndefined();
     expect(p.keyboardSound).toBeUndefined();
@@ -90,10 +88,9 @@ describe("applyBundleToDraft", () => {
     const next = applyBundleToDraft(cur, {
       name: "New",
       role: "new-role",
-      note: "n",
       seed: "s2",
       archetype: "robot",
-      appearance: "a",
+      portraitRequest: "a",
       spriteRequest: "sr",
       personalityPrompt: "pp",
       keyboardSound: "ks",
@@ -101,7 +98,7 @@ describe("applyBundleToDraft", () => {
     expect(next.name).toBe("New");
     expect(next.role).toBe("new-role");
     expect(next.archetype).toBe("robot");
-    expect(next.appearance).toBe("a");
+    expect(next.portraitRequest).toBe("a");
     // 로컬 환경은 그대로.
     expect(next.cwd).toBe("/keep/me");
     expect(next.shell).toBe("git-bash");
@@ -109,12 +106,34 @@ describe("applyBundleToDraft", () => {
     expect(next.botSlug).toBe("keepbot");
   });
 
+  it("옛 번들의 note/appearance는 성격 프롬프트와 두 추가 프롬프트로 흡수된다", () => {
+    const parsed = parseCharacterBundle(
+      JSON.stringify({
+        kind: CHARACTER_BUNDLE_KIND,
+        schemaVersion: CHARACTER_BUNDLE_SCHEMA_VERSION,
+        profile: {
+          name: "Old",
+          role: "r",
+          seed: "s",
+          note: "백엔드 담당",
+          appearance: "짧은 검은 머리",
+          personalityPrompt: "차분한 성격",
+        },
+      }),
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const next = applyBundleToDraft(draftWith({}), parsed.bundle.profile);
+    expect(next.personalityPrompt).toBe("차분한 성격\n백엔드 담당");
+    expect(next.portraitRequest).toBe("짧은 검은 머리");
+    expect(next.spriteRequest).toBe("짧은 검은 머리");
+  });
+
   it("빈 이름/시드는 기존 draft 값으로 폴백하고, 없는 archetype은 auto", () => {
     const cur = draftWith({ name: "Keep", seed: "keep-seed" });
     const next = applyBundleToDraft(cur, {
       name: "   ",
       role: "",
-      note: "",
       seed: "",
     });
     expect(next.name).toBe("Keep");

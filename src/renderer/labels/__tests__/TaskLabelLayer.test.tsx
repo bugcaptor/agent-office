@@ -12,7 +12,7 @@ import { TaskLabelLayer } from "../TaskLabelLayer";
 import type { AgentProfile } from "@shared/types";
 
 function agent(id: string, cwd?: string): AgentProfile {
-  return { id, name: id, role: "", note: "", seed: "s", createdAt: 0, deskIndex: 0, cwd };
+  return { id, name: id, role: "", seed: "s", createdAt: 0, deskIndex: 0, cwd };
 }
 
 function seedStore(opts: {
