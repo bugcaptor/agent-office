@@ -22,6 +22,7 @@ import { generateSheet, selectLayers } from "./sheetGen";
 export { generateSheet, selectLayers };
 import { detailCellSize, areaDownscalePremul } from "./spriteResample";
 import type { AgentProfile } from "../types";
+import type { ColorOverrides } from "@shared/types";
 
 export interface CharacterAssets {
   base: Texture; // 시트 전체 (nearest). 다운스케일 경로에선 idle0 프레임 텍스처.
@@ -130,7 +131,9 @@ export function createCharacterAssets(profile: AgentProfile, renderScale?: numbe
   if (override) return assetsFromCustomSheet(override, renderScale);
   const seed = profile.seed || profile.id;
   const archetype = resolveArchetype(profile.archetype as string | undefined, seed);
-  const { sheet, descriptor } = generateSheet(seed, defaultCanvasFactory, archetype);
+  const { sheet, descriptor } = generateSheet(
+    seed, defaultCanvasFactory, archetype, profile.colors as ColorOverrides | undefined,
+  );
   const base = Texture.from(sheet.canvas as any);
   base.source.scaleMode = "nearest"; // Pixi v8: 픽셀 선명도
   const frames = {} as Record<FrameName, Texture>;
@@ -176,6 +179,7 @@ const defaultPreviewCanvasFactory: PreviewCanvasFactory = (w, h) => {
  *
  * 동결(frozen): 동기 함수, dataURL을 반환한다. `generateSpritePreview(seed)`
  * 형태로 호출 가능해야 하므로 `scale`/캔버스 팩토리는 전부 기본값을 가진다.
+ * `colors`(사용자 색 오버라이드)는 맨 뒤 선택 인자 — 기존 호출부는 그대로다.
  */
 export function generateSpritePreview(
   seed: string,
@@ -183,8 +187,9 @@ export function generateSpritePreview(
   sheetFactory: CanvasFactory = defaultCanvasFactory,
   outFactory: PreviewCanvasFactory = defaultPreviewCanvasFactory,
   archetype: string = "human",
+  colors?: ColorOverrides,
 ): string {
-  const { sheet } = generateSheet(seed, sheetFactory, archetype);
+  const { sheet } = generateSheet(seed, sheetFactory, archetype, colors);
   const size = CELL * scale;
   const { ctx, canvas } = outFactory(size, size);
   (ctx as { imageSmoothingEnabled: boolean }).imageSmoothingEnabled = false;

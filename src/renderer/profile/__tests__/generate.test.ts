@@ -6,7 +6,7 @@
 // it down via `vi.spyOn(Math, "random")` rather than statistical sampling,
 // so results are exact and non-flaky.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { generateDraft, draftToProfile, mergeLegacyNote } from "../generate";
+import { generateDraft, draftToProfile, mergeLegacyNote, normalizeColors } from "../generate";
 import { NAME_WORDS, ROLE_WORDS, PERSONALITY_WORDS } from "../wordlists";
 import { pickArchetype } from "../../office/gen/archetypes";
 
@@ -294,5 +294,30 @@ describe("mergeLegacyNote (메모 → 성격 프롬프트 통합)", () => {
 
   it("공백만 있는 값은 무시한다", () => {
     expect(mergeLegacyNote("  성격  ", "   ")).toBe("성격");
+  });
+});
+
+// ── 색 오버라이드 정규화(kbm #2fj) ────────────────────────────────────
+describe("normalizeColors", () => {
+  it("빈 슬롯을 걷어내고 값이 있는 것만 남긴다", () => {
+    expect(normalizeColors({ hair: " #0f9d58 ", skin: "  ", shirt: "" })).toEqual({
+      hair: "#0f9d58",
+    });
+  });
+
+  it("남는 게 없으면 undefined — 저장된 프로필에 빈 객체를 쌓지 않는다", () => {
+    expect(normalizeColors({})).toBeUndefined();
+    expect(normalizeColors(undefined)).toBeUndefined();
+    expect(normalizeColors({ hair: "   " })).toBeUndefined();
+  });
+});
+
+describe("draftToProfile: 색 오버라이드", () => {
+  it("고른 색은 프로필에 실리고, 안 골랐으면 키 자체가 없다", () => {
+    const d = generateDraft();
+    expect(draftToProfile({ ...d, colors: { shirt: "#abcdef" } }, 0).colors).toEqual({
+      shirt: "#abcdef",
+    });
+    expect(draftToProfile({ ...d, colors: {} }, 0)).not.toHaveProperty("colors");
   });
 });

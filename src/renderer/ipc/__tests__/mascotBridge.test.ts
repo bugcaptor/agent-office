@@ -171,6 +171,7 @@ describe("installMascotBridge", () => {
       name: "테스터",
       seed: "s1",
       archetype: "cat",
+      colors: null,
       spriteUpdatedAt: 7,
       hasPending: false,
       working: true,

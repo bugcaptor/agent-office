@@ -153,6 +153,7 @@ export function installMascotBridge(io: MascotBridgeIo = defaultIo()): () => voi
       name: agent?.name ?? pick.agentId,
       seed: agent?.seed || pick.agentId,
       archetype: agent?.archetype ?? null,
+      colors: agent?.colors ?? null,
       spriteUpdatedAt: agent?.spriteUpdatedAt ?? null,
       hasPending: pick.hasPending,
       working: pick.working,

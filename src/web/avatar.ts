@@ -34,11 +34,16 @@ const inflight = new Map<string, Promise<string | null>>();
  * 캐시 키. 초상은 `portraitUpdatedAt`이 곧 무효화 키이고(데스크톱 규약과 동일),
  * 절차 생성은 seed+archetype이 결과를 결정한다.
  */
+function colorKey(colors: RemoteAgent["colors"]): string {
+  if (!colors) return "";
+  return (["skin", "hair", "shirt"] as const).map((s) => colors[s] ?? "").join(",");
+}
+
 export function avatarKey(agent: RemoteAgent): string {
   const seed = agent.seed || agent.agentId;
   return agent.portraitUpdatedAt
     ? `portrait:${agent.agentId}:${agent.portraitUpdatedAt}`
-    : `gen:${seed}:${agent.archetype ?? ""}`;
+    : `gen:${seed}:${agent.archetype ?? ""}:${colorKey(agent.colors)}`;
 }
 
 /** 절차 생성 아바타. 캔버스를 못 얻으면 null(호출부는 텍스트만 그린다). */
@@ -48,7 +53,8 @@ function generatedAvatar(agent: RemoteAgent): string | null {
     const { sheet } = generateSheet(
       seed,
       defaultCanvasFactory,
-      resolveArchetype(agent.archetype ?? undefined, seed)
+      resolveArchetype(agent.archetype ?? undefined, seed),
+      agent.colors ?? undefined
     );
     const out = document.createElement("canvas");
     out.width = AVATAR_PX;

@@ -289,3 +289,37 @@ describe("미니미(소환수) 프롬프트", () => {
     expect(buildMinimiPrompt(base)).toBe(buildMinimiPrompt(base));
   });
 });
+
+
+// ── 색 오버라이드(kbm #2fj) ───────────────────────────────────────────
+// 편집창에서 고른 색은 그림 의뢰에도 그대로 실려야 한다 — 안 그러면 생성한
+// 초상/스프라이트가 오피스뷰 캐릭터와 다른 색으로 나온다.
+describe("색 오버라이드 반영", () => {
+  const input = { name: "Ada", role: "coder", seed: "s1", archetype: "human" };
+
+  it("초상/스프라이트/미니미 프롬프트가 모두 고른 색을 싣는다", () => {
+    const colors = { hair: "#0f9d58" };
+    const prompts = [
+      buildPortraitPrompt({ ...input, personality: "", colors }),
+      buildSpritePrompt({ ...input, colors }),
+      buildMinimiPrompt({ ...input, colors }),
+      buildCodexPortraitPrompt({ ...input, personality: "", colors }),
+      buildCodexSpritePrompt({ ...input, colors }),
+      buildCodexMinimiPrompt({ ...input, colors }),
+    ];
+    for (const p of prompts) {
+      expect(p).toContain("Hair color approximately #0f9d58");
+      expect(p).not.toContain(expectedHex("s1", "hair"));
+    }
+  });
+
+  it("지정하지 않은 슬롯은 시드 기본색 그대로다", () => {
+    const p = buildSpritePrompt({ ...input, colors: { hair: "#0f9d58" } });
+    expect(p).toContain(`Clothing color approximately ${expectedHex("s1", "shirt")}`);
+  });
+
+  it("색을 안 주면 기존 프롬프트와 글자 하나 다르지 않다(회귀 계약)", () => {
+    expect(buildSpritePrompt({ ...input, colors: {} })).toBe(buildSpritePrompt(input));
+    expect(buildSpritePrompt({ ...input, colors: undefined })).toBe(buildSpritePrompt(input));
+  });
+});

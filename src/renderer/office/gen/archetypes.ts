@@ -7,8 +7,10 @@
 import { makeRng, hashStringToSeed, type Rng } from "./prng";
 import {
   generatePalette, ramp, contrastRatio, clampShirtRamp, SHIRT_SKIN_MIN_CONTRAST,
+  applyColorOverrides,
   type CharacterPalette,
 } from "./palette";
+import type { ColorOverrides, PaletteSlot } from "@shared/types";
 import {
   BODY_BASE_FRONT, LEGS_WALK_A, LEGS_WALK_B,
   HAIR_VARIANTS, CLOTHES_VARIANTS, ACCESSORY_VARIANTS,
@@ -35,6 +37,9 @@ interface ArchetypePromptDescriptor {
  * 설정창이 이 값을 그대로 보여 준다 — 왜 그 색이 나왔는지 알 수 있게.
  */
 export interface KeyColor {
+  /** 실제로 이 색이 들어가는 팔레트 램프. 아키타입마다 라벨은 달라도 램프는
+   *  셋뿐이라, 사용자 색 오버라이드(`ColorOverrides`)의 키가 된다. */
+  slot: PaletteSlot;
   /** 프롬프트 영문 라벨("Hair color", "Chassis color" 등). */
   en: string;
   /** UI 표시용 한국어 라벨. */
@@ -62,14 +67,14 @@ function describe(
 }
 
 // 키 컬러 슬롯(아키타입마다 같은 램프를 다른 이름으로 부른다).
-const kHair = (pal: CharacterPalette): KeyColor => ({ en: "Hair color", ko: "머리", rgb: pal.hair.base });
-const kFur = (pal: CharacterPalette): KeyColor => ({ en: "Fur color", ko: "털", rgb: pal.hair.base });
-const kSkin = (pal: CharacterPalette): KeyColor => ({ en: "Skin color", ko: "피부", rgb: pal.skin.base });
-const kPlating = (pal: CharacterPalette): KeyColor => ({ en: "Plating color", ko: "장갑", rgb: pal.skin.base });
-const kChassis = (pal: CharacterPalette): KeyColor => ({ en: "Chassis color", ko: "본체", rgb: pal.skin.base });
-const kClothing = (pal: CharacterPalette): KeyColor => ({ en: "Clothing color", ko: "옷", rgb: pal.shirt.base });
-const kAccent = (pal: CharacterPalette): KeyColor => ({ en: "Accent color", ko: "포인트", rgb: pal.shirt.base });
-const kBody = (pal: CharacterPalette, note?: string): KeyColor => ({ en: "Body color", ko: "몸체", rgb: pal.skin.base, note });
+const kHair = (pal: CharacterPalette): KeyColor => ({ slot: "hair", en: "Hair color", ko: "머리", rgb: pal.hair.base });
+const kFur = (pal: CharacterPalette): KeyColor => ({ slot: "hair", en: "Fur color", ko: "털", rgb: pal.hair.base });
+const kSkin = (pal: CharacterPalette): KeyColor => ({ slot: "skin", en: "Skin color", ko: "피부", rgb: pal.skin.base });
+const kPlating = (pal: CharacterPalette): KeyColor => ({ slot: "skin", en: "Plating color", ko: "장갑", rgb: pal.skin.base });
+const kChassis = (pal: CharacterPalette): KeyColor => ({ slot: "skin", en: "Chassis color", ko: "본체", rgb: pal.skin.base });
+const kClothing = (pal: CharacterPalette): KeyColor => ({ slot: "shirt", en: "Clothing color", ko: "옷", rgb: pal.shirt.base });
+const kAccent = (pal: CharacterPalette): KeyColor => ({ slot: "shirt", en: "Accent color", ko: "포인트", rgb: pal.shirt.base });
+const kBody = (pal: CharacterPalette, note?: string): KeyColor => ({ slot: "skin", en: "Body color", ko: "몸체", rgb: pal.skin.base, note });
 
 export type ArchetypeSheet =
   | { kind: "layers"; layers: CharacterLayers }
@@ -456,10 +461,23 @@ export function hexColor(rgb: number): string {
  * 지금까지 내부 자료라 "왜 이 색인지" 알 수 없었으므로 프로필 편집창이 이걸
  * 그대로 보여 준다. 시드가 바뀌면(스프라이트 재생성) 색도 바뀐다.
  */
-export function keyColorsFor(seed: string, archetype?: string): KeyColor[] {
+export function keyColorsFor(
+  seed: string,
+  archetype?: string,
+  colors?: ColorOverrides,
+): KeyColor[] {
   const arch = getArchetype(resolveArchetype(archetype, seed));
   const pal = arch.generatePalette(makeRng(hashStringToSeed(seed)));
-  return arch.promptDescriptor(pal).keyColors;
+  return arch.promptDescriptor(applyColorOverrides(pal, colors)).keyColors;
+}
+
+/**
+ * 시드+아키타입이 정하는 **기본** 팔레트(오버라이드 적용 전). 컬러 피커의
+ * "기본값으로 되돌리기"가 어떤 색으로 돌아갈지 알아야 해서 공개한다.
+ */
+export function basePaletteFor(seed: string, archetype?: string): CharacterPalette {
+  const arch = getArchetype(resolveArchetype(archetype, seed));
+  return arch.generatePalette(makeRng(hashStringToSeed(seed)));
 }
 
 export function composeArchetypeSheet(

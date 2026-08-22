@@ -10,13 +10,22 @@
 import { makeRng, hashStringToSeed } from "./prng";
 import { defaultCanvasFactory, type CanvasFactory } from "./compositor";
 import { getArchetype, composeArchetypeSheet } from "./archetypes";
+import { applyColorOverrides } from "./palette";
+import type { ColorOverrides } from "@shared/types";
 
-/** seed(+archetype) → 결정적 팔레트/시트 스펙. archetype 기본 "human"(레거시 호환). */
-export function selectLayers(seed: string, archetype: string = "human") {
+/** seed(+archetype) → 결정적 팔레트/시트 스펙. archetype 기본 "human"(레거시 호환).
+ *  `colors`가 있으면 시드 팔레트 위에 사용자가 고른 색을 얹는다 — 파츠 픽에 쓰는
+ *  rng 소비 순서는 건드리지 않으므로(팔레트를 만든 **뒤** 치환) 시드 결정성은 그대로다. */
+export function selectLayers(
+  seed: string,
+  archetype: string = "human",
+  colors?: ColorOverrides,
+) {
   const arch = getArchetype(archetype);
   const rng = makeRng(hashStringToSeed(seed));
-  const pal = arch.generatePalette(rng);
-  const built = arch.buildFrames(rng, pal);
+  const base = arch.generatePalette(rng);
+  const built = arch.buildFrames(rng, base);
+  const pal = applyColorOverrides(base, colors);
   return {
     pal,
     descriptor: { archetype: arch.id, ...built.descriptor },
@@ -29,7 +38,8 @@ export function generateSheet(
   seed: string,
   factory: CanvasFactory = defaultCanvasFactory,
   archetype: string = "human",
+  colors?: ColorOverrides,
 ) {
-  const { pal, build, descriptor } = selectLayers(seed, archetype);
+  const { pal, build, descriptor } = selectLayers(seed, archetype, colors);
   return { sheet: composeArchetypeSheet(build, pal, factory), descriptor };
 }

@@ -656,6 +656,73 @@ describe("키 컬러 노출", () => {
     fireEvent.click(screen.getByText("스프라이트 재생성"));
     await waitFor(() => expect(screen.queryByText(expected[0])).toBeNull());
   });
+
+  // ── 색 칩 = 컬러 피커(kbm #2fj) ────────────────────────────────────
+  // 색 하나 때문에 시드를 통째로 다시 뽑지 않아도 되어야 한다.
+  it("색 칩을 누르면 컬러 피커가 뜨고, 적용한 색이 칩·저장값에 반영된다", async () => {
+    useAppStore.getState().addAgent(mkProfile({ archetype: "human" }));
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+    render(<ProfileDialog />);
+
+    const before = keyColorsFor("existing-seed", "human");
+    const hair = before.find((c) => c.slot === "hair")!;
+    fireEvent.click(screen.getByTitle(new RegExp(`^${hair.en} approximately`)));
+
+    const hex = screen.getByLabelText("HEX") as HTMLInputElement;
+    fireEvent.change(hex, { target: { value: "#0f9d58" } });
+    fireEvent.click(screen.getByText("적용"));
+
+    // 칩이 고른 색으로 바뀌고, 시드는 그대로다(다른 슬롯 색은 불변).
+    await waitFor(() => expect(screen.getByText("#0f9d58")).toBeTruthy());
+    const others = before.filter((c) => c.slot !== "hair");
+    for (const c of others) expect(screen.getByText(hexColor(c.rgb))).toBeTruthy();
+
+    fireEvent.click(screen.getByText("저장"));
+    await waitFor(() => expect(useAppStore.getState().modal.kind).toBe("none"));
+    const saved = useAppStore.getState().agents["a1"];
+    expect(saved.colors).toEqual({ hair: "#0f9d58" });
+    expect(saved.seed).toBe("existing-seed");
+  });
+
+  it("'기본값으로'는 오버라이드를 지워 시드 기본색으로 되돌린다", async () => {
+    useAppStore
+      .getState()
+      .addAgent(mkProfile({ archetype: "human", colors: { hair: "#0f9d58" } }));
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+    render(<ProfileDialog />);
+
+    expect(screen.getByText("#0f9d58")).toBeTruthy();
+    fireEvent.click(screen.getByTitle(/^Hair color approximately/));
+    fireEvent.click(screen.getByText("기본값으로"));
+
+    const defaultHair = hexColor(
+      keyColorsFor("existing-seed", "human").find((c) => c.slot === "hair")!.rgb,
+    );
+    await waitFor(() => expect(screen.getByText(defaultHair)).toBeTruthy());
+
+    fireEvent.click(screen.getByText("저장"));
+    await waitFor(() => expect(useAppStore.getState().modal.kind).toBe("none"));
+    // 빈 오버라이드는 저장하지 않는다 — 부재 = 기본색이라는 계약과 같은 뜻.
+    expect(useAppStore.getState().agents["a1"].colors).toBeUndefined();
+  });
+
+  it("취소하면 아무것도 바뀌지 않는다", async () => {
+    useAppStore.getState().addAgent(mkProfile({ archetype: "human" }));
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+    render(<ProfileDialog />);
+
+    const hairHex = hexColor(
+      keyColorsFor("existing-seed", "human").find((c) => c.slot === "hair")!.rgb,
+    );
+    fireEvent.click(screen.getByTitle(/^Hair color approximately/));
+    fireEvent.change(screen.getByLabelText("HEX"), { target: { value: "#0f9d58" } });
+    // "취소"는 프로필 다이얼로그에도 있다 — 피커 패널 안의 것만 누른다.
+    const picker = document.querySelector(".color-picker") as HTMLElement;
+    fireEvent.click(within(picker).getByText("취소"));
+
+    await waitFor(() => expect(screen.queryByLabelText("HEX")).toBeNull());
+    expect(screen.getByText(hairHex)).toBeTruthy();
+  });
 });
 
 describe("스프라이트 섹션 (edit mode)", () => {

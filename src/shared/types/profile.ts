@@ -6,6 +6,19 @@
 import type { BotConfig } from './bot';
 
 /**
+ * 스프라이트 팔레트에서 사용자가 직접 고를 수 있는 색 슬롯. 아키타입마다
+ * 부르는 이름은 달라도(머리/털, 피부/장갑/본체, 옷/포인트) 실제 램프는 이 셋뿐이다.
+ */
+export type PaletteSlot = 'skin' | 'hair' | 'shirt';
+
+/**
+ * 슬롯별 색 오버라이드("#rrggbb"). 시드에서 뽑힌 기본색 대신 이 색을 쓴다 —
+ * 시드를 바꾸지 않고(=스프라이트 재생성 없이) 색만 갈아 끼우는 수단이다.
+ * 부재/빈 객체 = 전부 시드 기본값. Rust `colors` 미러.
+ */
+export type ColorOverrides = Partial<Record<PaletteSlot, string>>;
+
+/**
  * Agent profile (single definition). Mirrors Rust `AgentProfile`.
  */
 export interface AgentProfile {
@@ -47,6 +60,9 @@ export interface AgentProfile {
   minimiUpdatedAt?: number;
   /** 캐릭터 아키타입(종족) id. 부재/알 수 없음 = "human" 폴백, "auto" = 시드 추첨(저장 시 확정). */
   archetype?: string;
+  /** 팔레트 슬롯별 색 오버라이드. 부재/빈 객체 = 시드에서 뽑힌 기본색 그대로.
+   * 스프라이트·초상 프롬프트·분석 대표색이 모두 이 색을 따른다. */
+  colors?: ColorOverrides;
   /** 퇴근(clock-out) 상태. true면 오피스/터미널에서 사라지고 소환 목록에만 남는다.
    * 부재/false = 근무 중. 되돌릴 수 있는 상태이며 프로필 자체는 보존된다. */
   clockedOut?: boolean;

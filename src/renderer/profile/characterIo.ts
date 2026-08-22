@@ -14,7 +14,7 @@ import {
   type CharacterBundle,
   type PortableProfile,
 } from "@shared/types";
-import { mergeLegacyNote, type DraftProfile } from "./generate";
+import { mergeLegacyNote, normalizeColors, type DraftProfile } from "./generate";
 
 /** 빈 문자열/공백은 undefined로(선택 필드 생략). */
 function optionalTrim(v: string | undefined): string | undefined {
@@ -30,6 +30,7 @@ export function portableFromDraft(d: DraftProfile): PortableProfile {
     role: d.role.trim(),
     seed: d.seed,
     archetype: d.archetype && d.archetype !== "auto" ? d.archetype : undefined,
+    colors: normalizeColors(d.colors),
     portraitRequest: optionalTrim(d.portraitRequest),
     spriteRequest: optionalTrim(d.spriteRequest),
     minimiRequest: optionalTrim(d.minimiRequest),
@@ -48,6 +49,8 @@ export function applyBundleToDraft(d: DraftProfile, p: PortableProfile): DraftPr
     role: p.role ?? "",
     seed: p.seed || d.seed,
     archetype: p.archetype ?? "auto",
+    // 색 오버라이드는 통째로 교체한다 — 번들에 없으면 시드 기본색으로 돌아간다.
+    colors: normalizeColors(p.colors) ?? {},
     // 옛 번들의 "외모 힌트"는 초상/스프라이트 양쪽에 쓰이던 값이라, 비어 있는
     // 칸에만 복사해 그림 결과가 달라지지 않게 한다(백엔드 migrate_loaded와 같은 규칙).
     portraitRequest: p.portraitRequest ?? p.legacyAppearance ?? "",

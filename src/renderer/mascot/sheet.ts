@@ -124,6 +124,7 @@ export async function loadMascotFrames(
     seed,
     defaultCanvasFactory,
     resolveArchetype(state.archetype ?? undefined, seed),
+    state.colors ?? undefined,
   );
   const src = sheet.canvas as CanvasImageSource;
   return { idle: [sliceFrame(src, 0, CELL), sliceFrame(src, 1, CELL)], cell: CELL };

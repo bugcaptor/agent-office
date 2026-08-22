@@ -4,6 +4,8 @@
 // `src/shared`로 올리지 않는 이유: 지금 소비자가 웹 클라이언트 하나뿐이고,
 // 데스크톱 렌더러는 이 프로토콜을 모른다(Tauri 커맨드로 직접 간다).
 
+import type { ColorOverrides } from "@shared/types";
+
 export type ClientPermission = "readOnly" | "input";
 
 export interface RemoteAgent {
@@ -21,6 +23,8 @@ export interface RemoteAgent {
   archetype?: string | null;
   /** 커스텀 초상이 있으면 epoch ms(캐시 키). 없으면 절차 생성 아바타. */
   portraitUpdatedAt?: number | null;
+  /** 사용자가 고른 팔레트 색 오버라이드. 절차 생성 아바타를 호스트와 같은 색으로 그린다. */
+  colors?: ColorOverrides | null;
 }
 
 export interface RemoteOutput {

@@ -10,18 +10,20 @@
 import type { AgentProfile } from "@shared/types";
 import { hashStringToSeed, makeRng } from "../office/gen/prng";
 import { getArchetype, resolveArchetype } from "../office/gen/archetypes";
+import { applyColorOverrides } from "../office/gen/palette";
 
 /** 0xRRGGBB 숫자를 "#rrggbb" 문자열로. */
 function toHex(rgb: number): string {
   return "#" + (rgb & 0xffffff).toString(16).padStart(6, "0");
 }
 
-/** 살아있는 프로필의 대표색(스프라이트 셔츠 base). seed에 대해 결정적. */
+/** 살아있는 프로필의 대표색(스프라이트 셔츠 base). seed에 대해 결정적이며,
+ *  사용자가 옷 색을 직접 골랐으면(`colors.shirt`) 그 색이 그대로 대표색이 된다. */
 export function representativeColor(profile: AgentProfile): string {
   const archetypeId = resolveArchetype(profile.archetype, profile.seed);
   const archetype = getArchetype(archetypeId);
   const rng = makeRng(hashStringToSeed(profile.seed));
-  const palette = archetype.generatePalette(rng);
+  const palette = applyColorOverrides(archetype.generatePalette(rng), profile.colors);
   return toHex(palette.shirt.base);
 }
 

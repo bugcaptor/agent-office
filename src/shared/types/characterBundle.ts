@@ -11,6 +11,8 @@
 // 건너뛰는 게 아니라 **가져오기 전체를 거부**한다(사용자 결정).
 
 /** 번들 파일 판별자. profiles.json 등 다른 JSON과 헷갈리지 않게 고정 문자열. */
+import type { ColorOverrides } from './profile';
+
 export const CHARACTER_BUNDLE_KIND = "agent-office.character" as const;
 /** 현재 스키마 버전. 미래 버전 파일은 명확히 거부한다. */
 export const CHARACTER_BUNDLE_SCHEMA_VERSION = 1 as const;
@@ -33,6 +35,8 @@ export interface PortableProfile {
   role: string;
   seed: string;
   archetype?: string;
+  /** 팔레트 슬롯별 색 오버라이드. 외형의 일부이므로 캐릭터와 함께 옮긴다. */
+  colors?: ColorOverrides;
   /** 초상화 추가 프롬프트. */
   portraitRequest?: string;
   /** 스프라이트 추가 프롬프트. */
@@ -79,6 +83,19 @@ function approxDecodedBytes(b64: string): number {
 /** `unknown` → 문자열이면 그대로, 아니면 undefined. */
 function asString(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
+}
+
+/** `unknown` → 색 오버라이드. 슬롯 3종의 문자열 값만 취하고, 하나도 없으면
+ *  undefined(키 자체를 넣지 않는다). hex 형식 검증은 렌더러 팔레트 쪽 담당. */
+function asColors(v: unknown): ColorOverrides | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const o = v as Record<string, unknown>;
+  const out: ColorOverrides = {};
+  for (const slot of ["skin", "hair", "shirt"] as const) {
+    const c = asString(o[slot]);
+    if (c !== undefined) out[slot] = c;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 const fail = (error: string): ParseBundleResult => ({ ok: false, error });
@@ -155,6 +172,7 @@ export function parseCharacterBundle(text: string): ParseBundleResult {
     role: asString(pr.role) ?? "",
     seed: asString(pr.seed) ?? "",
     archetype: asString(pr.archetype),
+    colors: asColors(pr.colors),
     portraitRequest: asString(pr.portraitRequest),
     spriteRequest: asString(pr.spriteRequest),
     minimiRequest: asString(pr.minimiRequest),

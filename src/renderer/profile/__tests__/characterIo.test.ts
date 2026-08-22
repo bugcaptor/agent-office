@@ -284,3 +284,53 @@ describe("buildExportFileName", () => {
     expect(buildExportFileName("   ")).toBe("character.aoc.json");
   });
 });
+
+// ── 색 오버라이드 이식(kbm #2fj) ──────────────────────────────────────
+// 색은 외형의 일부라 캐릭터와 함께 옮겨야 한다. 시드만 옮기고 색을 빠뜨리면
+// 가져온 캐릭터가 원본과 다른 색으로 나온다.
+describe("색 오버라이드 라운드트립", () => {
+  it("고른 색은 번들에 실리고, 빈 슬롯은 걷어낸다", () => {
+    const p = portableFromDraft(
+      draftWith({ colors: { hair: "#0f9d58", skin: "  ", shirt: "" } }),
+    );
+    expect(p.colors).toEqual({ hair: "#0f9d58" });
+  });
+
+  it("색을 하나도 고르지 않았으면 키 자체를 담지 않는다", () => {
+    expect(portableFromDraft(draftWith({ colors: {} })).colors).toBeUndefined();
+    expect(portableFromDraft(draftWith({ colors: undefined })).colors).toBeUndefined();
+  });
+
+  it("가져오기는 색을 통째로 교체한다 — 번들에 없으면 시드 기본색으로 돌아간다", () => {
+    const cur = draftWith({ colors: { hair: "#ff0000", shirt: "#00ff00" } });
+    expect(applyBundleToDraft(cur, { name: "N", role: "", seed: "s" }).colors).toEqual({});
+    expect(
+      applyBundleToDraft(cur, { name: "N", role: "", seed: "s", colors: { skin: "#123456" } })
+        .colors,
+    ).toEqual({ skin: "#123456" });
+  });
+
+  it("직렬화 → 파싱을 거쳐도 색이 보존된다", () => {
+    const text = serializeBundle(portableFromDraft(draftWith({ colors: { shirt: "#abcdef" } })));
+    const res = parseCharacterBundle(text);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.bundle.profile.colors).toEqual({ shirt: "#abcdef" });
+  });
+
+  it("파서는 색 자리에 온 이상한 값을 조용히 걷어낸다", () => {
+    const mk = (colors: unknown) =>
+      JSON.stringify({
+        kind: CHARACTER_BUNDLE_KIND,
+        schemaVersion: CHARACTER_BUNDLE_SCHEMA_VERSION,
+        profile: { name: "N", role: "", seed: "s", colors },
+      });
+    for (const bad of [null, 42, "red", { nope: "#fff" }, {}]) {
+      const res = parseCharacterBundle(mk(bad));
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.bundle.profile.colors).toBeUndefined();
+    }
+    const res = parseCharacterBundle(mk({ hair: "#fff", nope: "#000" }));
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.bundle.profile.colors).toEqual({ hair: "#fff" });
+  });
+});

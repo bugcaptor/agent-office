@@ -594,6 +594,26 @@ describe("appearanceKey: archetype 포함", () => {
     expect(appearanceKey(base)).not.toBe(appearanceKey({ ...base, spriteUpdatedAt: 5 }));
   });
 
+  // 색만 바꿔도 스프라이트를 다시 만들어야 한다(kbm #2fj) — 시드가 그대로라
+  // 색 오버라이드가 키에 실리지 않으면 오피스뷰가 옛 색으로 남는다.
+  it("색 오버라이드가 바뀌면 다른 키를 반환한다", () => {
+    const plain = appearanceKey(base);
+    expect(appearanceKey({ ...base, colors: { hair: "#0f9d58" } })).not.toBe(plain);
+    expect(appearanceKey({ ...base, colors: { hair: "#0f9d58" } })).not.toBe(
+      appearanceKey({ ...base, colors: { hair: "#0f9d59" } }),
+    );
+    // 슬롯이 다르면 같은 색이라도 다른 키.
+    expect(appearanceKey({ ...base, colors: { hair: "#0f9d58" } })).not.toBe(
+      appearanceKey({ ...base, colors: { shirt: "#0f9d58" } }),
+    );
+  });
+
+  it("색 오버라이드가 없거나 비면 기존 키와 같다", () => {
+    const plain = appearanceKey(base);
+    expect(appearanceKey({ ...base, colors: {} })).toBe(plain);
+    expect(appearanceKey({ ...base, colors: undefined })).toBe(plain);
+  });
+
   it("커스텀 스프라이트 오버라이드 등록 여부도 키에 반영된다", () => {
     const before = appearanceKey(base);
     setSpriteOverride(base.id, {} as CanvasImageSource);

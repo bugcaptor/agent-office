@@ -31,8 +31,12 @@ import {
   pickArchetype,
   archetypeOrAuto,
   keyColorsFor,
+  basePaletteFor,
   hexColor,
 } from "../office/gen/archetypes";
+import { ColorPickerDialog } from "./ColorPickerDialog";
+import { normalizeColors } from "./generate";
+import type { PaletteSlot } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { sessionOptsFor } from "../ipc/sessionOpts";
 import {
@@ -102,6 +106,8 @@ export function ProfileDialog() {
   const codexSeqRef = useRef(0);
 
   const [draft, setDraft] = useState<DraftProfile>(() => generateDraft());
+  /** 컬러 피커를 연 슬롯. null이면 닫힘. 슬롯이 곧 다이얼로그의 `key`다. */
+  const [pickingSlot, setPickingSlot] = useState<PaletteSlot | null>(null);
   const [spriteUrl, setSpriteUrl] = useState<string>("");
   const [shells, setShells] = useState<AvailableShell[]>([]);
   /** 캐릭터 내보내기/가져오기(이슈 #77) 진행 표시 + 결과/오류 캡션. */
@@ -151,6 +157,7 @@ export function ProfileDialog() {
       spriteRequest: agent.spriteRequest ?? "",
       minimiRequest: agent.minimiRequest ?? "",
       archetype: agent.archetype ?? "auto",
+      colors: agent.colors ?? {},
       keyboardSound: agent.keyboardSound ?? "",
       voiceId: agent.voiceId ?? "",
       botSlug: agent.bot?.slug ?? "",
@@ -163,15 +170,45 @@ export function ProfileDialog() {
   // seed 또는 archetype 변경 시 라이브 스프라이트 프리뷰 (B의 순수 함수 — 동기, 아키타입 반영)
   useEffect(() => {
     const eff = resolveArchetype(archetypeOrAuto(draft.archetype), draft.seed);
-    setSpriteUrl(generateSpritePreview(draft.seed, 6, undefined, undefined, eff));
-  }, [draft.seed, draft.archetype]);
+    setSpriteUrl(generateSpritePreview(draft.seed, 6, undefined, undefined, eff, draft.colors));
+  }, [draft.seed, draft.archetype, draft.colors]);
 
-  /** 그림 프롬프트에 그대로 실리는 키 컬러(시드+아키타입 결정). 내부 자료로만
-   * 두면 "왜 이 색인지" 알 수 없어 편집창에 그대로 노출한다. */
+  /** 그림 프롬프트에 그대로 실리는 키 컬러(시드+아키타입 결정, 사용자 오버라이드
+   * 반영). 내부 자료로만 두면 "왜 이 색인지" 알 수 없어 편집창에 그대로 노출하고,
+   * 칩을 누르면 그 자리에서 색만 갈아 끼울 수 있다(kbm #2fj). */
   const keyColors = useMemo(
-    () => keyColorsFor(draft.seed, archetypeOrAuto(draft.archetype)),
+    () => keyColorsFor(draft.seed, archetypeOrAuto(draft.archetype), draft.colors),
+    [draft.seed, draft.archetype, draft.colors],
+  );
+
+  /** 시드+아키타입이 정하는 기본 팔레트 — 피커의 "기본값으로"가 돌아갈 색. */
+  const basePalette = useMemo(
+    () => basePaletteFor(draft.seed, archetypeOrAuto(draft.archetype)),
     [draft.seed, draft.archetype],
   );
+
+  /** 슬롯 하나의 색을 확정/해제한다. 해제는 키를 지워 시드 기본색으로 되돌린다 —
+   *  나중에 시드나 아키타입을 바꿔도 색이 따라 움직이게 하기 위해서다. */
+  const setSlotColor = (slot: PaletteSlot, hex: string | null) =>
+    setDraft((d) => {
+      const next = { ...(d.colors ?? {}) };
+      if (hex) next[slot] = hex;
+      else delete next[slot];
+      return { ...d, colors: next };
+    });
+
+  /** 피커가 떠 있는 슬롯의 정보(라벨·현재색·기본색). 닫혀 있으면 null. */
+  const picking = pickingSlot
+    ? {
+        slot: pickingSlot,
+        label: keyColors.find((c) => c.slot === pickingSlot)?.ko ?? "색",
+        value: hexColor(
+          keyColors.find((c) => c.slot === pickingSlot)?.rgb ?? basePalette[pickingSlot].base,
+        ),
+        defaultValue: hexColor(basePalette[pickingSlot].base),
+        overridden: Boolean(draft.colors?.[pickingSlot]),
+      }
+    : null;
 
   const regenSeed = () => setDraft((d) => ({ ...d, seed: nanoid(8) }));
   const regenAll = () => setDraft(generateDraft());
@@ -195,6 +232,7 @@ export function ProfileDialog() {
       portraitRequest: draft.portraitRequest,
       seed: draft.seed,
       archetype: draft.archetype,
+      colors: draft.colors,
     });
     try {
       await navigator.clipboard.writeText(prompt);
@@ -221,6 +259,7 @@ export function ProfileDialog() {
       spriteRequest: draft.spriteRequest,
       seed: draft.seed,
       archetype: draft.archetype,
+      colors: draft.colors,
     });
     try {
       await navigator.clipboard.writeText(prompt);
@@ -239,6 +278,7 @@ export function ProfileDialog() {
       spriteRequest: draft.spriteRequest,
       seed: draft.seed,
       archetype: draft.archetype,
+      colors: draft.colors,
     });
     try {
       await navigator.clipboard.writeText(prompt);
@@ -273,6 +313,7 @@ export function ProfileDialog() {
             portraitRequest: draft.portraitRequest,
             seed: draft.seed,
             archetype: draft.archetype,
+            colors: draft.colors,
           })
         : kind === "minimi"
           ? buildCodexMinimiPrompt({
@@ -282,6 +323,7 @@ export function ProfileDialog() {
               spriteRequest: draft.spriteRequest,
               seed: draft.seed,
               archetype: draft.archetype,
+              colors: draft.colors,
             })
           : buildCodexSpritePrompt({
               name: draft.name,
@@ -289,6 +331,7 @@ export function ProfileDialog() {
               spriteRequest: draft.spriteRequest,
               seed: draft.seed,
               archetype: draft.archetype,
+              colors: draft.colors,
             });
     try {
       const res = await tauriApi.generateCodexImage(prompt);
@@ -456,6 +499,7 @@ export function ProfileDialog() {
         role: draft.role,
         seed: draft.seed,
         archetype: chosenArchetype,
+        colors: normalizeColors(draft.colors),
         cwd: trimmedCwd || undefined,
         shell: trimmedShell || undefined,
         startupCommand: trimmedStartupCommand || undefined,
@@ -649,31 +693,43 @@ export function ProfileDialog() {
             </div>
           </div>
 
-          {/* 키 컬러: 프롬프트에 그대로 실리는 색. 시드(+아키타입)에서 결정되므로
-              '스프라이트 재생성'으로 시드를 바꾸면 함께 바뀐다. */}
+          {/* 키 컬러: 프롬프트에 그대로 실리는 색. 기본값은 시드(+아키타입)가
+              정하지만, 칩을 누르면 그 색만 따로 골라 덮어쓸 수 있다(kbm #2fj) —
+              색 하나 때문에 시드를 통째로 다시 뽑지 않아도 된다. */}
           <div className="key-colors">
             <span className="form-label-text">키 컬러</span>
             <ul className="key-color-list">
-              {keyColors.map((c) => (
-                <li
-                  key={c.en}
-                  className="key-color"
-                  title={`${c.en} approximately ${hexColor(c.rgb)}`}
-                >
-                  <span
-                    className="key-color-chip"
-                    style={{ background: hexColor(c.rgb) }}
-                    aria-hidden
-                  />
-                  <span>{c.ko}</span>
-                  <code>{hexColor(c.rgb)}</code>
-                </li>
-              ))}
+              {keyColors.map((c) => {
+                const custom = Boolean(draft.colors?.[c.slot]);
+                return (
+                  <li key={c.en}>
+                    <button
+                      type="button"
+                      className={custom ? "key-color key-color-custom" : "key-color"}
+                      title={`${c.en} approximately ${hexColor(c.rgb)} — 눌러서 색 고르기`}
+                      onClick={() => setPickingSlot(c.slot)}
+                    >
+                      <span
+                        className="key-color-chip"
+                        style={{ background: hexColor(c.rgb) }}
+                        aria-hidden
+                      />
+                      <span>{c.ko}</span>
+                      <code>{hexColor(c.rgb)}</code>
+                      {custom && (
+                        <span className="key-color-mark" title="직접 고른 색">
+                          ●
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
             <p className="form-hint">
-              시드와 아키타입에서 결정되어 초상화·스프라이트·미니미 프롬프트에 이
-              색 그대로 실립니다. 바꾸려면 시드를 바꾸세요(스프라이트 재생성) —
-              아키타입을 바꿔도 달라집니다.
+              초상화·스프라이트·미니미 프롬프트와 오피스뷰 캐릭터에 이 색 그대로
+              실립니다. 색 칩을 누르면 원하는 색을 직접 고를 수 있고, 손대지 않은
+              색은 시드·아키타입을 바꿀 때마다 함께 바뀝니다.
             </p>
           </div>
 
@@ -987,6 +1043,19 @@ export function ProfileDialog() {
             setMinimiEditorOpen(false);
             setGeneratedMinimi(null);
           }}
+        />
+      )}
+      {picking && (
+        <ColorPickerDialog
+          // 슬롯이 곧 정체성 — 다른 칩을 열면 새로 마운트돼 초기 색이 다시 잡힌다.
+          key={picking.slot}
+          label={picking.label}
+          value={picking.value}
+          defaultValue={picking.defaultValue}
+          overridden={picking.overridden}
+          onApply={(hex) => setSlotColor(picking.slot, hex)}
+          onReset={() => setSlotColor(picking.slot, null)}
+          onClose={() => setPickingSlot(null)}
         />
       )}
     </div>

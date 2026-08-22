@@ -267,6 +267,7 @@ impl WebRemoteContext {
                     rows,
                     archetype: p.archetype,
                     portrait_updated_at: p.portrait_updated_at,
+                    colors: p.colors,
                 }
             })
             .collect()
@@ -1233,6 +1234,7 @@ mod tests {
             sprite_updated_at: None,
             minimi_updated_at: None,
             archetype: None,
+            colors: None,
             shell: None,
             startup_command: None,
             personality_prompt: None,

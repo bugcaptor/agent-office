@@ -87,7 +87,8 @@ describe("폴백 프리뷰의 archetype 반영", () => {
       6,
       undefined,
       undefined,
-      "orc"
+      "orc",
+      undefined, // colors(오버라이드 없음)
     );
   });
 
@@ -102,7 +103,8 @@ describe("폴백 프리뷰의 archetype 반영", () => {
       6,
       undefined,
       undefined,
-      "human"
+      "human",
+      undefined, // colors(오버라이드 없음)
     );
   });
 });

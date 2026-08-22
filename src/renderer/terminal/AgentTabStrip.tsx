@@ -77,7 +77,8 @@ export function AgentTabStrip() {
                 undefined,
                 // 월드(createCharacterAssets)와 동일한 아키타입 해석 —
                 // 누락 시 폴백 썸네일이 항상 human으로 렌더되는 버그.
-                resolveArchetype(agent.archetype, agent.seed || agent.id)
+                resolveArchetype(agent.archetype, agent.seed || agent.id),
+                agent.colors
               )
             : undefined);
         // 탭 툴팁(이슈 #44 T2): 머리 위 라벨과 같은 파생 규칙으로 2줄을 만들어

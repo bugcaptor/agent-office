@@ -111,7 +111,8 @@ export function AgentHoverCard() {
       6,
       undefined,
       undefined,
-      resolveArchetype(agent.archetype, agent.seed || agent.id)
+      resolveArchetype(agent.archetype, agent.seed || agent.id),
+      agent.colors
     );
   // pos가 아직 측정 전(useLayoutEffect 실행 전)이면 원위치로 렌더하되 숨겨서,
   // clamp 적용 전 위치가 잠깐 보이는 점프를 방지한다.

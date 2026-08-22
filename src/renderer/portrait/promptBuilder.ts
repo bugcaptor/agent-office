@@ -7,6 +7,8 @@
 // 치비 비율·파스텔·따뜻한 조명·웃는 표정. 테스트도 이 문구에 맞춰 갱신됨.
 import { makeRng, hashStringToSeed } from "../office/gen/prng";
 import { resolveArchetype, getArchetype, customArchetypeSubject } from "../office/gen/archetypes";
+import { applyColorOverrides } from "../office/gen/palette";
+import type { ColorOverrides } from "@shared/types";
 
 export interface PortraitPromptInput {
   name: string;
@@ -17,12 +19,17 @@ export interface PortraitPromptInput {
   portraitRequest?: string;
   seed: string;
   archetype?: string;
+  /** 사용자가 고른 색 오버라이드. 색 힌트가 이 값을 그대로 싣는다. */
+  colors?: ColorOverrides;
 }
 
 export function buildPortraitPrompt(input: PortraitPromptInput): string {
   const archId = resolveArchetype(input.archetype, input.seed);
   const arch = getArchetype(archId);
-  const pal = arch.generatePalette(makeRng(hashStringToSeed(input.seed)));
+  const pal = applyColorOverrides(
+    arch.generatePalette(makeRng(hashStringToSeed(input.seed))),
+    input.colors,
+  );
   // 목록에 없는 종족을 적어 넣었으면 그 문구가 주제 서술자를 대신한다 —
   // 스프라이트(파츠)는 human으로 폴백해도 그림 의뢰는 적은 대로 나가야 한다.
   const custom = customArchetypeSubject(input.archetype);
@@ -60,6 +67,8 @@ export interface SpritePromptInput {
   spriteRequest?: string;
   seed: string;
   archetype?: string;
+  /** 사용자가 고른 색 오버라이드. 색 힌트가 이 값을 그대로 싣는다. */
+  colors?: ColorOverrides;
 }
 
 /** 오피스 캐릭터 커스텀용: 단일 캐릭터 16×16 픽셀 아트 프롬프트. 시트(4프레임)가
@@ -67,7 +76,10 @@ export interface SpritePromptInput {
 export function buildSpritePrompt(input: SpritePromptInput): string {
   const archId = resolveArchetype(input.archetype, input.seed);
   const arch = getArchetype(archId);
-  const pal = arch.generatePalette(makeRng(hashStringToSeed(input.seed)));
+  const pal = applyColorOverrides(
+    arch.generatePalette(makeRng(hashStringToSeed(input.seed))),
+    input.colors,
+  );
   // 목록에 없는 종족을 적어 넣었으면 그 문구가 주제 서술자를 대신한다 —
   // 스프라이트(파츠)는 human으로 폴백해도 그림 의뢰는 적은 대로 나가야 한다.
   const custom = customArchetypeSubject(input.archetype);
@@ -99,6 +111,8 @@ export interface MinimiPromptInput {
   spriteRequest?: string;
   seed: string;
   archetype?: string;
+  /** 사용자가 고른 색 오버라이드. 색 힌트가 이 값을 그대로 싣는다. */
+  colors?: ColorOverrides;
 }
 
 /** 미니미 의뢰 문구가 비었을 때 자동으로 들어가는 문장(순수, 테스트 대상).
@@ -116,7 +130,10 @@ export function autoMinimiRequestLine(masterName: string): string {
 export function buildMinimiPrompt(input: MinimiPromptInput): string {
   const archId = resolveArchetype(input.archetype, input.seed);
   const arch = getArchetype(archId);
-  const pal = arch.generatePalette(makeRng(hashStringToSeed(input.seed)));
+  const pal = applyColorOverrides(
+    arch.generatePalette(makeRng(hashStringToSeed(input.seed))),
+    input.colors,
+  );
   const custom = customArchetypeSubject(input.archetype);
   const base = arch.promptDescriptor(pal);
   const desc = custom ? { ...base, subject: custom } : base;

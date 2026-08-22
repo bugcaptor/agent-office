@@ -174,7 +174,7 @@ export default function MascotApp() {
   const spriteKey =
     state.agentId === null
       ? null
-      : `${state.agentId}|${state.seed}|${state.archetype}|${state.spriteUpdatedAt}|${dpr}`;
+      : `${state.agentId}|${state.seed}|${state.archetype}|${JSON.stringify(state.colors ?? null)}|${state.spriteUpdatedAt}|${dpr}`;
 
   useEffect(() => {
     if (spriteKey === null) {

@@ -26,6 +26,7 @@ import { QUEUE_SLOTS } from "../map/mapData";
 import type { OfficeMap } from "../map/mapData";
 import { assignDesks } from "../map/deskAssignment";
 import { createCharacterAssets } from "../gen/characterFactory";
+import type { ColorOverrides } from "@shared/types";
 import { detailCellSize, minimiDetailCellSize } from "../gen/spriteResample";
 import { CELL } from "../gen/compositor";
 import { getSpriteOverride } from "../gen/spriteOverrides";
@@ -50,13 +51,25 @@ const MOVEMENT_RNG_SALT = 0x9e3779b9;
  * exported for test-only position lookups via `collectLabelAnchors` (no other entity-position accessor exists). */
 export const LABEL_ANCHOR_OFFSET_Y = 20;
 
-/** 엔티티 외형을 결정하는 키 — 바뀌면 재생성한다. archetype, seed 편집, 커스텀 시트
- * 등록/변경/해제(spriteUpdatedAt + 오버라이드 유무), 그리고 미니미 커스텀
- * 등록/변경/해제(minimiUpdatedAt + 오버라이드 유무)를 모두 반영한다. */
+/** 엔티티 외형을 결정하는 키 — 바뀌면 재생성한다. archetype, seed 편집, 사용자
+ * 색 오버라이드(colors), 커스텀 시트 등록/변경/해제(spriteUpdatedAt + 오버라이드
+ * 유무), 그리고 미니미 커스텀 등록/변경/해제(minimiUpdatedAt + 오버라이드 유무)를
+ * 모두 반영한다. */
+/** 색 오버라이드를 외형 키에 실을 수 있는 안정된 문자열로. 슬롯 순서를 고정해
+ *  키 나열 순서 차이로 헛되이 재생성되지 않게 한다. */
+function colorKey(colors: ColorOverrides | undefined): string {
+  if (!colors) return "";
+  const parts = (["skin", "hair", "shirt"] as const).map((s) => colors[s] ?? "");
+  // 빈 객체는 "오버라이드 없음"과 같은 뜻이라 같은 키여야 한다 — 아니면 저장
+  // 경로가 `{}`를 남기는 것만으로 엔티티가 헛되이 재생성된다.
+  return parts.some(Boolean) ? parts.join(",") : "";
+}
+
 export function appearanceKey(p: AgentProfile): string {
   return [
     p.archetype ?? "human",
     p.seed,
+    colorKey(p.colors as ColorOverrides | undefined),
     p.spriteUpdatedAt ?? 0,
     getSpriteOverride(p.id) ? 1 : 0,
     p.minimiUpdatedAt ?? 0,

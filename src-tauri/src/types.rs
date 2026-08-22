@@ -365,6 +365,20 @@ pub struct NotificationClearedEvent {
     pub ids: Vec<String>,
 }
 
+/// 스프라이트 팔레트 슬롯별 색 오버라이드("#rrggbb"). 시드를 바꾸지 않고
+/// (= 스프라이트 재생성 없이) 색만 갈아 끼우는 수단이다. 검증(형식·범위)은
+/// 렌더러가 하고 여기서는 값을 그대로 보관한다. TS `ColorOverrides` 미러.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColorOverrides {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub skin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub hair: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub shirt: Option<String>,
+}
+
 /// 프로필 스키마(단일 정의).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -417,6 +431,11 @@ pub struct AgentProfile {
     /// 캐릭터 아키타입(종족) id. 부재 = 레거시(로드 시 "human" 백필), 알 수 없음 = "human" 폴백.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub archetype: Option<String>,
+    /// 팔레트 슬롯별 색 오버라이드(kbm #2fj). 없거나 슬롯이 비면 시드에서 뽑힌
+    /// 기본색을 그대로 쓴다. 렌더러가 스프라이트·그림 프롬프트·분석 대표색에
+    /// 모두 적용한다. TS `colors?: ColorOverrides` 미러.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub colors: Option<ColorOverrides>,
     /// 세션 셸 선택 id("powershell" | "pwsh" | "git-bash" | "wsl"). 없으면
     /// 자동 선택(session::shells::resolve_observed). Windows 전용 기능.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -931,6 +950,7 @@ mod tests {
             sprite_updated_at: None,
             minimi_updated_at: None,
             archetype: None,
+            colors: None,
             shell: None,
             startup_command: None,
             clocked_out: None,
@@ -963,6 +983,7 @@ mod tests {
             sprite_updated_at: None,
             minimi_updated_at: None,
             archetype: None,
+            colors: None,
             shell: None,
             startup_command: None,
             clocked_out: None,
@@ -1024,6 +1045,7 @@ mod tests {
             sprite_updated_at: None,
             minimi_updated_at: None,
             archetype: None,
+            colors: None,
             shell: None,
             startup_command: None,
             clocked_out: None,
@@ -1057,6 +1079,7 @@ mod tests {
             sprite_updated_at: None,
             minimi_updated_at: None,
             archetype: None,
+            colors: None,
             shell: None,
             startup_command: None,
             clocked_out: None,
@@ -1101,6 +1124,7 @@ mod tests {
             sprite_updated_at: Some(1_720_000_000_888),
             minimi_updated_at: Some(1_720_000_000_999),
             archetype: None,
+            colors: None,
             shell: None,
             startup_command: None,
             clocked_out: None,
@@ -1135,6 +1159,7 @@ mod tests {
             sprite_updated_at: None,
             minimi_updated_at: None,
             archetype: None,
+            colors: None,
             shell: None,
             startup_command: None,
             clocked_out: None,
@@ -1187,6 +1212,7 @@ mod tests {
             portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: Some("orc".into()),
+            colors: None,
             shell: None,
             startup_command: None,
             clocked_out: None,
@@ -1207,6 +1233,7 @@ mod tests {
             portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None,
+            colors: None,
             shell: None,
             startup_command: None,
             clocked_out: None,
@@ -1236,6 +1263,7 @@ mod tests {
             portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None,
+            colors: None,
             shell: None,
             startup_command: None,
             clocked_out: None,
@@ -1256,6 +1284,7 @@ mod tests {
             portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None,
+            colors: None,
             shell: None,
             startup_command: None,
             clocked_out: None,
@@ -1284,7 +1313,8 @@ mod tests {
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
             portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
-            archetype: None, shell: Some("git-bash".into()), startup_command: None,
+            archetype: None,
+            colors: None, shell: Some("git-bash".into()), startup_command: None,
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
@@ -1302,7 +1332,8 @@ mod tests {
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
             portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
-            archetype: None, shell: None, startup_command: None,
+            archetype: None,
+            colors: None, shell: None, startup_command: None,
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
@@ -1329,7 +1360,8 @@ mod tests {
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
             portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
-            archetype: None, shell: None, startup_command: None,
+            archetype: None,
+            colors: None, shell: None, startup_command: None,
             clocked_out: Some(true),
             personality_prompt: None,
         keyboard_sound: None,
@@ -1347,7 +1379,8 @@ mod tests {
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
             portrait_request: None,
             portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
-            archetype: None, shell: None, startup_command: None,
+            archetype: None,
+            colors: None, shell: None, startup_command: None,
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,

@@ -149,6 +149,10 @@ pub struct RemoteAgent {
     /// `media.portrait`로 PNG를 받아 아바타에 쓰고, None이면 절차 생성이다.
     #[serde(default)]
     pub portrait_updated_at: Option<u64>,
+    /// 사용자가 고른 팔레트 색 오버라이드. 절차 생성 아바타가 호스트 오피스뷰와
+    /// 같은 색으로 그려지려면 seed·archetype만으로는 부족하다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub colors: Option<crate::types::ColorOverrides>,
 }
 
 /// 출력 청크(호스트의 `OutputChunk`를 그대로 옮긴 것 + 절대 오프셋).

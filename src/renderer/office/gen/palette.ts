@@ -1,5 +1,6 @@
 // src/renderer/office/gen/palette.ts
 import type { Rng } from './prng';
+import type { ColorOverrides, PaletteSlot } from '@shared/types';
 
 export interface Ramp { shadow: number; base: number; light: number; } // 0xRRGGBB
 export interface CharacterPalette {
@@ -99,4 +100,85 @@ export function generatePalette(rng: Rng): CharacterPalette {
   const pants = ramp(rng.range(0, 360), rng.range(0.2, 0.6), rng.range(0.22, 0.42));
 
   return { skin, hair, shirt, pants, outline: 0x1a1420 };
+}
+
+// ── 사용자 색 오버라이드(kbm #2fj) ─────────────────────────────────────
+//
+// 키 컬러는 원래 시드에서만 나왔다 — 색 하나가 마음에 안 들면 시드를 통째로
+// 바꾸는 수밖에 없었다(= 스프라이트 전체가 달라진다). 여기서는 슬롯별로 고른
+// 색을 램프 base에 그대로 박고 그림자/하이라이트만 파생해, 파츠 픽(시드)은
+// 그대로 둔 채 색만 갈아 끼운다.
+
+/** 슬롯별 램프 spread(=명도 폭). `generatePalette`가 쓰는 값과 같게 맞춘다. */
+const SLOT_SPREAD: Record<PaletteSlot, number> = { skin: 0.1, hair: 0.14, shirt: 0.16 };
+
+/** "#rgb"/"#rrggbb"(대소문자·# 생략 허용) -> 0xRRGGBB. 형식이 아니면 undefined. */
+export function parseHexColor(input: string | undefined): number | undefined {
+  const t = (input ?? '').trim().replace(/^#/, '');
+  if (/^[0-9a-fA-F]{3}$/.test(t)) {
+    const r = t[0], g = t[1], b = t[2];
+    return Number.parseInt(`${r}${r}${g}${g}${b}${b}`, 16);
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(t)) return Number.parseInt(t, 16);
+  return undefined;
+}
+
+/** 0xRRGGBB -> [h(0..360), s(0..1), l(0..1)]. `hslToRgb`의 역함수. */
+export function rgbToHsl(rgb: number): [number, number, number] {
+  const r = ((rgb >> 16) & 255) / 255;
+  const g = ((rgb >> 8) & 255) / 255;
+  const b = (rgb & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0) return [0, 0, l];
+  const s = d / (1 - Math.abs(2 * l - 1));
+  let h: number;
+  if (max === r) h = 60 * (((g - b) / d) % 6);
+  else if (max === g) h = 60 * ((b - r) / d + 2);
+  else h = 60 * ((r - g) / d + 4);
+  return [((h % 360) + 360) % 360, clamp01(s), l];
+}
+
+/**
+ * 고른 색 하나 -> 램프. **base는 고른 색 그대로**여서 UI 칩·프롬프트 hex·
+ * 스프라이트 픽셀이 정확히 같은 값이 된다(HSL 왕복 오차로 1씩 어긋나지 않게).
+ * 그림자/하이라이트만 HSL 명도를 spread만큼 움직여 파생한다.
+ */
+export function rampFromColor(rgb: number, spread: number): Ramp {
+  const [h, s, l] = rgbToHsl(rgb);
+  return {
+    shadow: hslToRgb(h, s, Math.max(0.06, l - spread)),
+    base: rgb & 0xffffff,
+    light: hslToRgb(h, s, Math.min(0.94, l + spread)),
+  };
+}
+
+/**
+ * 시드가 만든 팔레트에 사용자 오버라이드를 얹는다(순수, 새 객체 반환).
+ * 값이 없거나 hex 형식이 아닌 슬롯은 원본 그대로 둔다.
+ *
+ * 셔츠/피부 최소 대비(`SHIRT_SKIN_MIN_CONTRAST`)는 **여기서 강제하지 않는다** —
+ * 자동 생성이 스스로 지키는 규칙이지, 사용자가 일부러 고른 색을 되돌릴 근거는
+ * 아니기 때문이다(설계 결정).
+ */
+export function applyColorOverrides(
+  pal: CharacterPalette,
+  colors?: ColorOverrides,
+): CharacterPalette {
+  if (!colors) return pal;
+  let out = pal;
+  for (const slot of ['skin', 'hair', 'shirt'] as const) {
+    const rgb = parseHexColor(colors[slot]);
+    if (rgb === undefined) continue;
+    if (out === pal) out = { ...pal };
+    out[slot] = rampFromColor(rgb, SLOT_SPREAD[slot]);
+  }
+  return out;
+}
+
+/** 오버라이드가 하나라도 실제로 적용될지 — 캐시 키/빈 객체 판정에 쓴다. */
+export function hasColorOverrides(colors?: ColorOverrides): boolean {
+  if (!colors) return false;
+  return (['skin', 'hair', 'shirt'] as const).some((s) => parseHexColor(colors[s]) !== undefined);
 }

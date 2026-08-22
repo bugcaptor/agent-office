@@ -6,7 +6,7 @@
 import { nanoid } from "nanoid";
 import { NAME_WORDS, ROLE_WORDS, PERSONALITY_WORDS } from "./wordlists";
 import type { AgentProfile } from "../store/types";
-import type { BotConfig } from "@shared/types";
+import type { BotConfig, ColorOverrides } from "@shared/types";
 import { pickArchetype } from "../office/gen/archetypes";
 
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -31,6 +31,8 @@ export interface DraftProfile {
   minimiRequest?: string;
   /** 아키타입 선택. "auto" = 시드 추첨(저장 시 확정). 미지정도 "auto"로 취급. */
   archetype?: string;
+  /** 팔레트 슬롯별 색 오버라이드. 부재/빈 객체 = 시드 기본색 그대로. */
+  colors?: ColorOverrides;
   /** 키보드 사운드 팩 id(선택). 빈 문자열 = 기본 팩. */
   keyboardSound?: string;
   /** 대사 TTS 보이스 id(선택). 빈 문자열 = 종족 기반 자동 캐스팅. */
@@ -83,6 +85,7 @@ export function generateDraft(): DraftProfile {
     spriteRequest: "",
     minimiRequest: "",
     archetype: "auto",
+    colors: {},
     keyboardSound: "",
     voiceId: "",
     botSlug: "",
@@ -115,6 +118,18 @@ export function buildBotConfig(d: DraftProfile): BotConfig | undefined {
   };
 }
 
+/** 빈 슬롯을 걷어낸 색 오버라이드. 남는 게 없으면 undefined — 저장된 프로필에
+ *  빈 객체가 쌓이지 않게 한다(부재 = 기본색이라는 계약과 같은 뜻). */
+export function normalizeColors(colors: ColorOverrides | undefined): ColorOverrides | undefined {
+  if (!colors) return undefined;
+  const out: ColorOverrides = {};
+  for (const slot of ["skin", "hair", "shirt"] as const) {
+    const v = (colors[slot] ?? "").trim();
+    if (v) out[slot] = v;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile {
   const cwd = (d.cwd ?? "").trim();
   const shell = (d.shell ?? "").trim();
@@ -129,6 +144,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
   const typed = (d.archetype ?? "").trim();
   const archetype = typed && typed !== "auto" ? typed : pickArchetype(d.seed);
   const bot = buildBotConfig(d);
+  const colors = normalizeColors(d.colors);
   return {
     id: nanoid(),
     name: d.name.trim() || pick(NAME_WORDS),
@@ -137,6 +153,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     createdAt: Date.now(),
     deskIndex,
     archetype,
+    ...(colors ? { colors } : {}),
     ...(cwd ? { cwd } : {}),
     ...(shell ? { shell } : {}),
     ...(startupCommand ? { startupCommand } : {}),
