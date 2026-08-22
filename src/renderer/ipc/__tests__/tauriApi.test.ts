@@ -381,6 +381,24 @@ describe("command invocations", () => {
       purpose: "diary",
     });
   });
+
+  it("codexImageStatus는 codex_image_status를 인자 없이 invoke한다", async () => {
+    invoke.mockResolvedValueOnce({ available: true, version: "codex-cli 0.149.0" });
+    const { tauriApi } = await import("../tauriApi");
+    const res = await tauriApi.codexImageStatus();
+    expect(invoke).toHaveBeenCalledWith(Commands.codexImageStatus);
+    expect(res).toEqual({ available: true, version: "codex-cli 0.149.0" });
+  });
+
+  it("generateCodexImage는 generate_codex_image를 prompt와 함께 invoke하고 결과를 반환한다", async () => {
+    invoke.mockResolvedValueOnce({ pngBase64: "AAAA" });
+    const { tauriApi } = await import("../tauriApi");
+    const res = await tauriApi.generateCodexImage("a knight");
+    expect(invoke).toHaveBeenCalledWith(Commands.generateCodexImage, {
+      prompt: "a knight",
+    });
+    expect(res).toEqual({ pngBase64: "AAAA" });
+  });
 });
 
 describe("portrait commands", () => {

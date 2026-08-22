@@ -144,6 +144,14 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.openrouterListModels);
   },
 
+  async codexImageStatus() {
+    return await invoke(Commands.codexImageStatus);
+  },
+
+  async generateCodexImage(prompt) {
+    return await invoke(Commands.generateCodexImage, { prompt });
+  },
+
   async getAppSettings() {
     return await invoke(Commands.getAppSettings);
   },

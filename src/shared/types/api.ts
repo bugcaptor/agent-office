@@ -17,7 +17,7 @@ import type {
   StudyMaterialResult,
 } from './session';
 import type { NotificationEvent, ActivityEvent } from './notification';
-import type { PersistedState } from './profile';
+import type { PersistedState, CodexImageStatus, GeneratedCodexImage } from './profile';
 import type {
   SummaryProvider,
   SummaryPurpose,
@@ -100,6 +100,13 @@ export interface AgentOfficeApi {
    *  카탈로그 조회라 요약/TTS를 켜기 전에도 부를 수 있다. 실패는 호출측이
    *  정적 프리셋 폴백으로 조용히 강등한다. */
   openrouterListModels(): Promise<string[]>;
+  /** 로컬 codex CLI 설치 여부. 미설치도 정상 응답(available:false)이다 —
+   *  프로필 편집의 "Codex로 생성" 모드가 버튼 활성/설치 안내를 정하는 데 쓴다. */
+  codexImageStatus(): Promise<CodexImageStatus>;
+  /** codex CLI의 내장 이미지 생성으로 PNG 1장. 실측 1~3분이 걸리고 사용자의
+   *  Codex 사용량을 차감한다. 실패 메시지는 앱 공통의 `"{code}: {상세}"` 형태로,
+   *  미설치는 `"codex-not-found: …"`다(요약기와 같은 `-not-found` 관례). */
+  generateCodexImage(prompt: string): Promise<GeneratedCodexImage>;
   /** 앱 전역 opt-in 설정 로드. 인자 없음. */
   getAppSettings(): Promise<GetAppSettingsResult>;
   /** 앱 전역 opt-in 설정 저장. */

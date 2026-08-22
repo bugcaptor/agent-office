@@ -15,6 +15,8 @@ import type {
   AdoptedSessionInfo,
   AgentProfile,
   CreateSessionResult,
+  CodexImageStatus,
+  GeneratedCodexImage,
   GetAppSettingsResult,
   NotificationEvent,
   OutputChunk,
@@ -195,6 +197,17 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect(parsed.codex?.windows[0].windowMinutes).toBe(10080);
     expect(parsed.codex?.windows[0].isActive).toBeNull();
     expect(parsed.codex?.planLabel).toBe("prolite");
+  });
+
+  it("CodexImageStatus / GeneratedCodexImage", () => {
+    const ok: CodexImageStatus = JSON.parse('{"available":true,"version":"codex-cli 0.149.0"}');
+    expect(ok.available).toBe(true);
+    expect(ok.version).toBe("codex-cli 0.149.0");
+    // version은 skip_serializing_if — 미설치면 아예 없다.
+    const missing: CodexImageStatus = JSON.parse('{"available":false}');
+    expect(missing.version).toBeUndefined();
+    const img: GeneratedCodexImage = JSON.parse('{"pngBase64":"AAAA"}');
+    expect(img.pngBase64).toBe("AAAA");
   });
 
   it("UsageSnapshot (a failed source is null, not omitted)", () => {

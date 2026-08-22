@@ -9,6 +9,8 @@
 pub mod agent_paths;
 pub mod api_keys;
 mod bot;
+// codex CLI 내장 이미지 생성으로 캐릭터 초상/스프라이트 원본을 만든다(kbm #2fa).
+pub mod codex_imagegen;
 mod control;
 /// 웹 원격(docs/web-remote-design.md) — tailnet의 브라우저가 이 앱의 세션을
 /// 출력/입력만 중계받아 보고 조작한다.
@@ -669,6 +671,8 @@ pub fn run() {
             ipc::commands::delete_minimi,
             ipc::commands::summarize_text,
             ipc::commands::openrouter_list_models,
+            ipc::commands::codex_image_status,
+            ipc::commands::generate_codex_image,
             ipc::commands::get_app_settings,
             ipc::commands::set_app_settings,
             ipc::commands::set_keep_awake,

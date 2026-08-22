@@ -178,3 +178,24 @@ pub async fn summarize_text(
 pub async fn openrouter_list_models() -> Result<Vec<String>, String> {
     crate::summarizer::list_openrouter_models().await
 }
+
+/// 로컬 codex CLI 설치 여부. AppState 비의존 — 프로필 편집의 "Codex로 생성"
+/// 섹션이 버튼 활성/설치 안내를 정하는 데 쓴다. 미설치는 오류가 아니라
+/// `available: false`다(캐시하지 않는다 — 설치 직후 재시도가 바로 통해야 한다).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn codex_image_status() -> Result<crate::codex_imagegen::CodexImageStatus, String> {
+    Ok(crate::codex_imagegen::status().await)
+}
+
+/// codex CLI의 내장 이미지 생성으로 PNG 1장 생성. AppState 비의존
+/// (stateless) — 이 command만은 본문에 .await가 있으나 락을 전혀 잡지
+/// 않으므로 파일 머리말의 "no lock across await" 계약과 무관하다.
+/// 저장 경로 계약은 백엔드(`codex_imagegen`)가 소유한다 — 렌더러는 프롬프트만 준다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn generate_codex_image(
+    prompt: String,
+) -> Result<crate::codex_imagegen::GeneratedCodexImage, String> {
+    crate::codex_imagegen::generate_image(&prompt)
+        .await
+        .map_err(|e| e.to_ipc_string())
+}

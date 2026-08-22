@@ -81,3 +81,28 @@ export function buildSpritePrompt(input: SpritePromptInput): string {
   ];
   return lines.filter((l) => l.length > 0).join("\n");
 }
+
+// ── codex CLI 내장 이미지 생성용(kbm #2fa) ──────────────────────────────
+// 클립보드 프롬프트(buildPortraitPrompt/buildSpritePrompt)와 본문을 그대로
+// 공유하고, codex가 실제로 만들 이미지 규격 한 줄만 갈아 끼운다. 최종 규격화
+// (초상 240×320 / 스프라이트 4프레임 시트)는 기존 크롭 에디터가 담당하므로
+// 여기서는 크롭 여유가 있는 큰 캔버스를 의뢰한다.
+
+/** codex 초상 생성 프롬프트. 세로 1024x1536 — PortraitEditor가 3:4로 크롭한다. */
+export function buildCodexPortraitPrompt(input: PortraitPromptInput): string {
+  const base = buildPortraitPrompt(input)
+    .split("\n")
+    .slice(0, -1) // 마지막 출력 규격 줄만 교체
+    .join("\n");
+  return `${base}\nGenerate a single PNG image, portrait orientation, 1024x1536. No text, no watermark, no border.`;
+}
+
+/** codex 스프라이트 생성 프롬프트. 정사각 1024x1024 + 투명 배경 —
+ * SpriteEditor가 크롭·배경 투명화 후 4프레임 시트로 정규화한다. */
+export function buildCodexSpritePrompt(input: SpritePromptInput): string {
+  const base = buildSpritePrompt(input)
+    .split("\n")
+    .slice(0, -1) // 마지막 "The character fills most of the frame..." 줄 교체
+    .join("\n");
+  return `${base}\nThe character fills most of the frame. Generate a single PNG image, square, 1024x1024, with a fully transparent background. No text, no watermark, no border.`;
+}

@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildPortraitPrompt,
   buildSpritePrompt,
+  buildCodexPortraitPrompt,
+  buildCodexSpritePrompt,
 } from "../promptBuilder";
 import { makeRng, hashStringToSeed } from "../../office/gen/prng";
 import { generatePalette } from "../../office/gen/palette";
@@ -176,5 +178,37 @@ describe("buildSpritePrompt", () => {
     expect(p).toContain("16-bit SNES-era Japanese RPG");
     expect(p).toContain("chibi");
     expect(p).toContain("soft bright pastel colors");
+  });
+});
+
+describe("codex 생성 프롬프트", () => {
+  const base = { name: "Ada", role: "engineer", seed: "seed-xyz" };
+
+  it("초상: 본문은 클립보드 프롬프트와 같고 규격 줄만 1024x1536으로 바뀐다", () => {
+    const input = { ...base, note: "차분함" };
+    const clip = buildPortraitPrompt(input);
+    const codex = buildCodexPortraitPrompt(input);
+    // 규격 줄을 뺀 본문은 완전히 동일해야 한다.
+    expect(codex.split("\n").slice(0, -1)).toEqual(clip.split("\n").slice(0, -1));
+    expect(codex).toContain("1024x1536");
+    expect(codex).not.toContain("240x320");
+    expect(codex).toContain("Ada");
+  });
+
+  it("스프라이트: 규격 줄만 1024x1024 + 투명 배경으로 바뀐다", () => {
+    const clip = buildSpritePrompt(base);
+    const codex = buildCodexSpritePrompt(base);
+    expect(codex.split("\n").slice(0, -1)).toEqual(clip.split("\n").slice(0, -1));
+    expect(codex).toContain("1024x1024");
+    expect(codex).toContain("transparent background");
+    // 스타일 본문은 그대로 남는다(16x16 픽셀아트 룩 지시).
+    expect(codex).toContain("16x16 pixel art style");
+  });
+
+  it("같은 입력에 결정적이고 의뢰 문구를 반영한다", () => {
+    const a = buildCodexSpritePrompt({ ...base, spriteRequest: "red cloak wizard" });
+    const b = buildCodexSpritePrompt({ ...base, spriteRequest: "red cloak wizard" });
+    expect(a).toBe(b);
+    expect(a).toContain("Details: red cloak wizard.");
   });
 });

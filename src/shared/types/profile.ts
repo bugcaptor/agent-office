@@ -68,3 +68,16 @@ export interface PersistedState {
   /** 휴가 모드(보스 책상). 부재 = false. */
   vacationMode?: boolean;
 }
+
+/** 로컬 codex CLI 설치 탐지 결과 (Rust codex_imagegen::CodexImageStatus 미러). */
+export interface CodexImageStatus {
+  available: boolean;
+  /** `codex --version` 첫 줄. 미설치면 없음. */
+  version?: string;
+}
+
+/** codex 이미지 생성 결과 (Rust codex_imagegen::GeneratedCodexImage 미러). */
+export interface GeneratedCodexImage {
+  /** PNG 바이트의 base64(데이터 URL 접두사 없음). */
+  pngBase64: string;
+}

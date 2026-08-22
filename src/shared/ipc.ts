@@ -35,6 +35,9 @@ export const Commands = {
   // 설정 화면의 OpenRouter 모델 추천 목록(요약·TTS 공용). 키 없이 부르는
   // 공개 카탈로그라 실패해도 정적 프리셋으로 폴백할 뿐이다.
   openrouterListModels: "openrouter_list_models",
+  // 로컬 codex CLI 내장 이미지 생성(kbm #2fa) — 설치 탐지 + 프롬프트 1건 생성.
+  codexImageStatus: "codex_image_status",
+  generateCodexImage: "generate_codex_image",
   getAppSettings: "get_app_settings",
   setAppSettings: "set_app_settings",
   // 작업 중 잠자기 방지(이슈 #68) — 렌더러가 "일하는 캐릭터 있음"을 통지.
