@@ -14,7 +14,7 @@ import {
   type CharacterBundle,
   type PortableProfile,
 } from "@shared/types";
-import type { DraftProfile } from "./generate";
+import { mergeLegacyNote, type DraftProfile } from "./generate";
 
 /** 빈 문자열/공백은 undefined로(선택 필드 생략). */
 function optionalTrim(v: string | undefined): string | undefined {
@@ -33,6 +33,7 @@ export function portableFromDraft(d: DraftProfile): PortableProfile {
     archetype: d.archetype && d.archetype !== "auto" ? d.archetype : undefined,
     appearance: optionalTrim(d.appearance),
     spriteRequest: optionalTrim(d.spriteRequest),
+    minimiRequest: optionalTrim(d.minimiRequest),
     personalityPrompt: optionalTrim(d.personalityPrompt),
     keyboardSound: optionalTrim(d.keyboardSound),
   };
@@ -46,12 +47,14 @@ export function applyBundleToDraft(d: DraftProfile, p: PortableProfile): DraftPr
     ...d,
     name: p.name.trim() || d.name,
     role: p.role ?? "",
-    note: p.note ?? "",
+    // 메모는 성격 프롬프트로 통합됐다 — 예전 번들의 note는 합쳐 싣고 비운다.
+    note: "",
     seed: p.seed || d.seed,
     archetype: p.archetype ?? "auto",
     appearance: p.appearance ?? "",
     spriteRequest: p.spriteRequest ?? "",
-    personalityPrompt: p.personalityPrompt ?? "",
+    minimiRequest: p.minimiRequest ?? "",
+    personalityPrompt: mergeLegacyNote(p.personalityPrompt, p.note),
     keyboardSound: p.keyboardSound ?? "",
   };
 }

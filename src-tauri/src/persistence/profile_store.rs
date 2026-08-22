@@ -107,6 +107,7 @@ mod tests {
                 appearance: None,
                 portrait_updated_at: None,
                 sprite_request: None,
+                minimi_request: None,
                 sprite_updated_at: None,
                 minimi_updated_at: None,
                 archetype: None,

@@ -84,12 +84,12 @@ describe("random initial values (profile-create)", () => {
     useAppStore.getState().openModal({ kind: "profile-create" });
   });
 
-  it("fills name/role/note from a random draft and renders a live sprite preview", () => {
+  it("fills name/role/성격 프롬프트 from a random draft and renders a live sprite preview", () => {
     const { getByLabelText, getByAltText } = render(<ProfileDialog />);
 
     const name = getByLabelText("이름") as HTMLInputElement;
     const role = getByLabelText("역할") as HTMLInputElement;
-    const note = getByLabelText("메모") as HTMLTextAreaElement;
+    const note = getByLabelText("성격 프롬프트") as HTMLTextAreaElement;
 
     expect(NAME_WORDS).toContain(name.value);
     expect(ROLE_WORDS).toContain(role.value);
@@ -106,7 +106,7 @@ describe("random initial values (profile-create)", () => {
     const { getByLabelText, getByText, getByAltText } = render(<ProfileDialog />);
     const name = getByLabelText("이름") as HTMLInputElement;
     const role = getByLabelText("역할") as HTMLInputElement;
-    const note = getByLabelText("메모") as HTMLTextAreaElement;
+    const note = getByLabelText("성격 프롬프트") as HTMLTextAreaElement;
     const beforeName = name.value;
     const beforeRole = role.value;
     const beforeNote = note.value;
@@ -139,7 +139,7 @@ describe("random initial values (profile-create)", () => {
     const { getByLabelText, getByText } = render(<ProfileDialog />);
     const name = getByLabelText("이름") as HTMLInputElement;
     const role = getByLabelText("역할") as HTMLInputElement;
-    const note = getByLabelText("메모") as HTMLTextAreaElement;
+    const note = getByLabelText("성격 프롬프트") as HTMLTextAreaElement;
 
     expect(name.value).toBe(NAME_WORDS[0]);
     expect(role.value).toBe(ROLE_WORDS[0]);
@@ -156,6 +156,8 @@ describe("random initial values (profile-create)", () => {
   it("saving adds the agent (status starting) and starts its session, then closes the dialog", async () => {
     const { getByLabelText, getByText } = render(<ProfileDialog />);
     fireEvent.change(getByLabelText("이름"), { target: { value: "새 에이전트" } });
+    // 새 캐릭터는 성격 프롬프트가 랜덤으로 채워진다 — opts를 최소로 보려면 비운다.
+    fireEvent.change(getByLabelText("성격 프롬프트"), { target: { value: "" } });
     fireEvent.change(getByLabelText("역할"), { target: { value: "테스터" } });
 
     await act(async () => {
@@ -182,6 +184,8 @@ describe("random initial values (profile-create)", () => {
   it("passes the trimmed 시작 폴더 value as createSession's cwd opt (Task 3)", async () => {
     const { getByLabelText, getByText } = render(<ProfileDialog />);
     fireEvent.change(getByLabelText("이름"), { target: { value: "새 에이전트" } });
+    // 새 캐릭터는 성격 프롬프트가 랜덤으로 채워진다 — opts를 최소로 보려면 비운다.
+    fireEvent.change(getByLabelText("성격 프롬프트"), { target: { value: "" } });
     fireEvent.change(getByLabelText("시작 폴더"), { target: { value: "  /a/b  " } });
 
     await act(async () => {
@@ -205,6 +209,8 @@ describe("random initial values (profile-create)", () => {
   it("passes the trimmed 시작 명령어 value as createSession's startupCommand opt", async () => {
     const { getByLabelText, getByText } = render(<ProfileDialog />);
     fireEvent.change(getByLabelText("이름"), { target: { value: "새 에이전트" } });
+    // 새 캐릭터는 성격 프롬프트가 랜덤으로 채워진다 — opts를 최소로 보려면 비운다.
+    fireEvent.change(getByLabelText("성격 프롬프트"), { target: { value: "" } });
     fireEvent.change(getByLabelText("시작 명령어"), { target: { value: "  source ./init.sh  " } });
 
     await act(async () => {
@@ -254,6 +260,8 @@ describe("random initial values (profile-create)", () => {
   it("omits cwd but keeps the profile snapshot when 시작 폴더 is blank (Task 3)", async () => {
     const { getByLabelText, getByText } = render(<ProfileDialog />);
     fireEvent.change(getByLabelText("이름"), { target: { value: "새 에이전트" } });
+    // 새 캐릭터는 성격 프롬프트가 랜덤으로 채워진다 — opts를 최소로 보려면 비운다.
+    fireEvent.change(getByLabelText("성격 프롬프트"), { target: { value: "" } });
 
     await act(async () => {
       fireEvent.click(getByText("저장"));
@@ -401,6 +409,8 @@ describe("셸 선택 (list_available_shells)", () => {
 
     const select = await screen.findByLabelText("셸");
     fireEvent.change(getByLabelText("이름"), { target: { value: "새 에이전트" } });
+    // 새 캐릭터는 성격 프롬프트가 랜덤으로 채워진다 — opts를 최소로 보려면 비운다.
+    fireEvent.change(getByLabelText("성격 프롬프트"), { target: { value: "" } });
     fireEvent.change(select, { target: { value: "wsl" } });
 
     await act(async () => {
@@ -495,6 +505,58 @@ describe("키보드 소리 선택", () => {
   });
 });
 
+describe("메모 → 성격 프롬프트 통합", () => {
+  it("create: 메모 입력창이 더 이상 없다", () => {
+    useAppStore.getState().openModal({ kind: "profile-create" });
+    const { queryByLabelText } = render(<ProfileDialog />);
+    expect(queryByLabelText("메모")).toBeNull();
+    expect(queryByLabelText("성격 프롬프트")).not.toBeNull();
+  });
+
+  it("create: 랜덤으로 채워진 성격 프롬프트가 세션 opts로 넘어간다", async () => {
+    useAppStore.getState().openModal({ kind: "profile-create" });
+    const { getByLabelText, getByText } = render(<ProfileDialog />);
+    const personality = (getByLabelText("성격 프롬프트") as HTMLTextAreaElement).value;
+    expect(PERSONALITY_WORDS.some((w) => personality === `${w} 성격`)).toBe(true);
+
+    await act(async () => {
+      fireEvent.click(getByText("저장"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(useAppStore.getState().modal.kind).toBe("none"));
+
+    const state = useAppStore.getState();
+    const id = state.agentOrder[0];
+    expect(state.agents[id].personalityPrompt).toBe(personality);
+    expect(state.agents[id].note).toBe("");
+    expect(createSession).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({ personalityPrompt: personality })
+    );
+  });
+
+  it("edit: 레거시 메모와 기존 성격 프롬프트를 합쳐 보여 주고, 저장하면 메모가 비워진다", async () => {
+    useAppStore.getState().addAgent(
+      mkProfile({ note: "백엔드 담당", personalityPrompt: "차분한 성격" })
+    );
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+    const { getByLabelText, getByText } = render(<ProfileDialog />);
+    expect((getByLabelText("성격 프롬프트") as HTMLTextAreaElement).value).toBe(
+      "차분한 성격\n백엔드 담당"
+    );
+
+    await act(async () => {
+      fireEvent.click(getByText("저장"));
+      await Promise.resolve();
+    });
+
+    const agent = useAppStore.getState().agents.a1;
+    expect(agent.personalityPrompt).toBe("차분한 성격\n백엔드 담당");
+    expect(agent.note).toBe("");
+  });
+});
+
 describe("editing mode (profile-edit)", () => {
   beforeEach(() => {
     useAppStore.getState().addAgent(mkProfile());
@@ -510,7 +572,10 @@ describe("editing mode (profile-edit)", () => {
     const { getByLabelText } = render(<ProfileDialog />);
     expect((getByLabelText("이름") as HTMLInputElement).value).toBe("Existing");
     expect((getByLabelText("역할") as HTMLInputElement).value).toBe("eng");
-    expect((getByLabelText("메모") as HTMLTextAreaElement).value).toBe("existing note");
+    // 메모는 성격 프롬프트로 통합됐다 — 기존 메모가 그 칸에 합쳐져 보인다.
+    expect((getByLabelText("성격 프롬프트") as HTMLTextAreaElement).value).toBe(
+      "existing note"
+    );
     expect((getByLabelText("시작 폴더") as HTMLInputElement).value).toBe("");
     expect(generateSpritePreview).toHaveBeenCalledWith("existing-seed");
   });

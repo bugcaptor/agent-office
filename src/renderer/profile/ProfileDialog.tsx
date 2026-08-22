@@ -10,7 +10,13 @@
 import { useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import { useAppStore } from "../store/appStore";
-import { generateDraft, draftToProfile, buildBotConfig, type DraftProfile } from "./generate";
+import {
+  generateDraft,
+  draftToProfile,
+  buildBotConfig,
+  mergeLegacyNote,
+  type DraftProfile,
+} from "./generate";
 import {
   portableFromDraft,
   applyBundleToDraft,
@@ -27,8 +33,10 @@ import { sessionOptsFor } from "../ipc/sessionOpts";
 import {
   buildPortraitPrompt,
   buildSpritePrompt,
+  buildMinimiPrompt,
   buildCodexPortraitPrompt,
   buildCodexSpritePrompt,
+  buildCodexMinimiPrompt,
 } from "../portrait/promptBuilder";
 import { PortraitEditor } from "../portrait/PortraitEditor";
 import { ArchetypePicker } from "./ArchetypePicker";
@@ -78,6 +86,7 @@ export function ProfileDialog() {
   /** Codex 생성 결과 data URL — 각각 SpriteEditor/PortraitEditor initialImage로 전달. */
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [generatedPortrait, setGeneratedPortrait] = useState<string | null>(null);
+  const [generatedMinimi, setGeneratedMinimi] = useState<string | null>(null);
   /** "외형" 섹션 모드. 직접 만들기(프롬프트 복사 + 업로드) / Codex로 생성.
    * 한 번에 하나만 보여 준다 — 두 경로를 나란히 두면 두서없이 보인다. */
   const [appearanceMode, setAppearanceMode] = useState<"manual" | "codex">("manual");
@@ -117,6 +126,7 @@ export function ProfileDialog() {
     setCodexNote(null);
     setGeneratedImage(null);
     setGeneratedPortrait(null);
+    setGeneratedMinimi(null);
     setIoBusy(false);
     setIoNote(null);
     if (!editingAgentId) return;
@@ -125,14 +135,17 @@ export function ProfileDialog() {
     setDraft({
       name: agent.name,
       role: agent.role,
-      note: agent.note,
+      // 메모 입력창은 성격 프롬프트로 통합됐다 — 남아 있는 레거시 메모는 성격
+      // 프롬프트에 합쳐 보여 주고, note 자체는 빈 값으로 실어 저장 때 비운다.
+      note: "",
       seed: agent.seed,
       cwd: agent.cwd ?? "",
       shell: agent.shell ?? "",
       startupCommand: agent.startupCommand ?? "",
-      personalityPrompt: agent.personalityPrompt ?? "",
+      personalityPrompt: mergeLegacyNote(agent.personalityPrompt, agent.note),
       appearance: agent.appearance ?? "",
       spriteRequest: agent.spriteRequest ?? "",
+      minimiRequest: agent.minimiRequest ?? "",
       archetype: agent.archetype ?? "auto",
       keyboardSound: agent.keyboardSound ?? "",
       voiceId: agent.voiceId ?? "",
@@ -167,7 +180,7 @@ export function ProfileDialog() {
     const prompt = buildPortraitPrompt({
       name: draft.name,
       role: draft.role,
-      note: draft.note,
+      note: draft.personalityPrompt ?? "",
       appearance: draft.appearance,
       seed: draft.seed,
       archetype: draft.archetype,
@@ -206,7 +219,26 @@ export function ProfileDialog() {
     }
   };
 
-  /** codex CLI로 초상/스프라이트 원본 1장을 만든 뒤, 해당 크롭 편집기를
+  /** 미니미(소환수) 프롬프트 복사. 전용 의뢰 문구가 비어 있으면 프롬프트가
+   * 본체에 어울리는 소환수를 알아서 만들어 달라는 문장으로 자동 폴백한다. */
+  const onCopyMinimiPrompt = async () => {
+    const prompt = buildMinimiPrompt({
+      name: draft.name,
+      role: draft.role,
+      minimiRequest: draft.minimiRequest,
+      spriteRequest: draft.spriteRequest,
+      appearance: draft.appearance,
+      seed: draft.seed,
+      archetype: draft.archetype,
+    });
+    try {
+      await navigator.clipboard.writeText(prompt);
+    } catch (err) {
+      console.warn("ProfileDialog: clipboard write failed", err);
+    }
+  };
+
+  /** codex CLI로 초상/스프라이트/미니미 원본 1장을 만든 뒤, 해당 크롭 편집기를
    * 프리로드해 연다. 규격화(240×320 / 4프레임 시트)는 편집기가 담당한다. */
   const onGenerateCodex = async (kind: CodexGenKind) => {
     if (codexBusy || !editingAgent) return;
@@ -228,19 +260,29 @@ export function ProfileDialog() {
         ? buildCodexPortraitPrompt({
             name: draft.name,
             role: draft.role,
-            note: draft.note,
+            note: draft.personalityPrompt ?? "",
             appearance: draft.appearance,
             seed: draft.seed,
             archetype: draft.archetype,
           })
-        : buildCodexSpritePrompt({
-            name: draft.name,
-            role: draft.role,
-            spriteRequest: draft.spriteRequest,
-            appearance: draft.appearance,
-            seed: draft.seed,
-            archetype: draft.archetype,
-          });
+        : kind === "minimi"
+          ? buildCodexMinimiPrompt({
+              name: draft.name,
+              role: draft.role,
+              minimiRequest: draft.minimiRequest,
+              spriteRequest: draft.spriteRequest,
+              appearance: draft.appearance,
+              seed: draft.seed,
+              archetype: draft.archetype,
+            })
+          : buildCodexSpritePrompt({
+              name: draft.name,
+              role: draft.role,
+              spriteRequest: draft.spriteRequest,
+              appearance: draft.appearance,
+              seed: draft.seed,
+              archetype: draft.archetype,
+            });
     try {
       const res = await tauriApi.generateCodexImage(prompt);
       if (!stillCurrent()) return;
@@ -248,6 +290,9 @@ export function ProfileDialog() {
       if (kind === "portrait") {
         setGeneratedPortrait(url);
         setEditorOpen(true);
+      } else if (kind === "minimi") {
+        setGeneratedMinimi(url);
+        setMinimiEditorOpen(true);
       } else {
         setGeneratedImage(url);
         setSpriteEditorOpen(true);
@@ -389,6 +434,7 @@ export function ProfileDialog() {
       const trimmedPersonalityPrompt = (draft.personalityPrompt ?? "").trim();
       const trimmedAppearance = (draft.appearance ?? "").trim();
       const trimmedSpriteRequest = (draft.spriteRequest ?? "").trim();
+      const trimmedMinimiRequest = (draft.minimiRequest ?? "").trim();
       const trimmedKeyboardSound = (draft.keyboardSound ?? "").trim();
       const trimmedVoiceId = (draft.voiceId ?? "").trim();
       // 목록에 없는 자유 입력도 그대로 저장한다(공백만 다듬는다) — 스프라이트는
@@ -410,6 +456,7 @@ export function ProfileDialog() {
         personalityPrompt: trimmedPersonalityPrompt || undefined,
         appearance: trimmedAppearance || undefined,
         spriteRequest: trimmedSpriteRequest || undefined,
+        minimiRequest: trimmedMinimiRequest || undefined,
         keyboardSound: trimmedKeyboardSound || undefined,
         voiceId: trimmedVoiceId || undefined,
         bot: buildBotConfig(draft),
@@ -460,7 +507,7 @@ export function ProfileDialog() {
           </p>
         </header>
 
-        {/* ── 정체성: 이름 · 역할 · 메모 · 아키타입 ────────────── */}
+        {/* ── 정체성: 이름 · 역할 · 성격 프롬프트 · 아키타입 ────── */}
         <section className="form-section">
           <h3 className="form-section-title">정체성</h3>
           <div className="form-row-2">
@@ -483,25 +530,23 @@ export function ProfileDialog() {
               </label>
             </div>
           </div>
-          <div className="form-field">
-            <label>
-              <span className="form-label-text">메모</span>
-              <textarea
-                value={draft.note}
-                onChange={(e) => setDraft({ ...draft, note: e.target.value })}
-              />
-            </label>
-            <p className="form-hint">에이전트를 설명하는 자유 메모 — 초상 프롬프트에 함께 반영됩니다.</p>
-          </div>
+          {/* 예전의 '메모'와 '성격 프롬프트'를 하나로 통합했다 — 둘의 차이가
+              헷갈렸고 실제로 같은 것(캐릭터가 어떤 존재인가)을 적는 칸이었다.
+              기존 메모는 편집기를 열 때 이 칸에 합쳐진다. */}
           <div className="form-field">
             <label>
               <span className="form-label-text">성격 프롬프트</span>
               <textarea
                 value={draft.personalityPrompt ?? ""}
                 onChange={(e) => setDraft({ ...draft, personalityPrompt: e.target.value })}
+                rows={4}
               />
             </label>
-            <p className="form-hint">Claude Code의 시스템 프롬프트에 덧붙일 캐릭터 성격입니다. 여러 줄을 그대로 사용할 수 있습니다.</p>
+            <p className="form-hint">
+              캐릭터가 어떤 존재인지 적습니다. Claude Code의 시스템 프롬프트에
+              덧붙고, 초상 프롬프트·대사 말투에도 함께 반영됩니다. 여러 줄을 그대로
+              쓸 수 있습니다.
+            </p>
           </div>
           <div className="form-field">
             <label>
@@ -662,6 +707,19 @@ export function ProfileDialog() {
                     )}
                   </div>
                 </div>
+                <div className="appearance-manual-row">
+                  <span className="form-label-text">미니미</span>
+                  <div className="sprite-buttons">
+                    <button className="pixel-btn" onClick={onCopyMinimiPrompt}>
+                      미니미 프롬프트 복사
+                    </button>
+                    {editing && editingAgent && (
+                      <button className="pixel-btn" onClick={() => setMinimiEditorOpen(true)}>
+                        {minimiPreviewUrl ? "미니미 변경" : "미니미 업로드"}
+                      </button>
+                    )}
+                  </div>
+                </div>
                 {!(editing && editingAgent) && (
                   <p className="form-hint">저장한 뒤 편집에서 이미지를 올릴 수 있습니다.</p>
                 )}
@@ -695,6 +753,21 @@ export function ProfileDialog() {
               />
             </label>
             <p className="form-hint">프롬프트 복사와 Codex 생성에 그대로 반영됩니다.</p>
+          </div>
+          <div className="form-field">
+            <label>
+              <span className="form-label-text">미니미 의뢰 문구</span>
+              <input
+                value={draft.minimiRequest ?? ""}
+                onChange={(e) => setDraft({ ...draft, minimiRequest: e.target.value })}
+                placeholder="예: 작은 불꽃 정령 (선택, 비면 본체에 어울리는 소환수로 자동 의뢰)"
+              />
+            </label>
+            <p className="form-hint">
+              미니미는 서브에이전트가 일할 때 머리 옆에 뜨는 소환수입니다. 비워
+              두면 본체의 외형·역할에 어울리는 소환수를 알아서 그려 달라는 문구가
+              프롬프트에 자동으로 들어갑니다.
+            </p>
           </div>
         </section>
 
@@ -872,7 +945,11 @@ export function ProfileDialog() {
         <SpriteEditor
           agentId={editingAgent.id}
           target="minimi"
-          onClose={() => setMinimiEditorOpen(false)}
+          initialImage={generatedMinimi ?? undefined}
+          onClose={() => {
+            setMinimiEditorOpen(false);
+            setGeneratedMinimi(null);
+          }}
         />
       )}
     </div>

@@ -14,7 +14,10 @@ const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 export interface DraftProfile {
   name: string;
   role: string;
-  note: string; // personality 기반 초기 노트
+  /** 레거시 자유 메모. UI에서는 사라졌고(성격 프롬프트로 통합) 편집 시 항상 ""로
+   * 실려 저장 때 비워진다. 기존 프로필의 값은 `mergeLegacyNote`로 성격 프롬프트에
+   * 합쳐진다. */
+  note: string;
   seed: string;
   /** 시작 폴더 입력 값. 빈 문자열 = 홈 디렉터리. */
   cwd?: string;
@@ -28,6 +31,8 @@ export interface DraftProfile {
   appearance?: string;
   /** 픽셀아트 의뢰 문구(선택). 빈 문자열/공백 = 미지정. */
   spriteRequest?: string;
+  /** 미니미(소환수) 의뢰 문구(선택). 빈 문자열/공백 = 미지정 → 자동 위임 문구. */
+  minimiRequest?: string;
   /** 아키타입 선택. "auto" = 시드 추첨(저장 시 확정). 미지정도 "auto"로 취급. */
   archetype?: string;
   /** 키보드 사운드 팩 id(선택). 빈 문자열 = 기본 팩. */
@@ -46,19 +51,41 @@ export interface DraftProfile {
   botIdleQuietMs?: string;
 }
 
+/**
+ * 레거시 `note`를 성격 프롬프트에 합친다(순수). 메모 입력창을 없애고 성격
+ * 프롬프트 하나로 통합하면서, 기존 프로필/번들에 남아 있는 메모가 유실되지
+ * 않게 편집기로 불러올 때 이 함수를 통과시킨다.
+ *
+ * - 둘 중 하나만 있으면 그것을 쓴다.
+ * - 둘 다 있으면 줄바꿈으로 잇는다. 단 성격 프롬프트가 이미 메모 문구를
+ *   포함하면(이전에 한 번 합쳐진 경우) 그대로 둔다 — 반복 병합 방지.
+ */
+export function mergeLegacyNote(
+  personalityPrompt: string | undefined,
+  note: string | undefined
+): string {
+  const p = (personalityPrompt ?? "").trim();
+  const n = (note ?? "").trim();
+  if (!n) return p;
+  if (!p) return n;
+  if (p.includes(n)) return p;
+  return `${p}\n${n}`;
+}
+
 export function generateDraft(): DraftProfile {
   const personality = pick(PERSONALITY_WORDS);
   return {
     name: pick(NAME_WORDS),
     role: pick(ROLE_WORDS),
-    note: `${personality} 성격`,
+    note: "",
     seed: nanoid(8),
     cwd: "",
     shell: "",
     startupCommand: "",
-    personalityPrompt: "",
+    personalityPrompt: `${personality} 성격`,
     appearance: "",
     spriteRequest: "",
+    minimiRequest: "",
     archetype: "auto",
     keyboardSound: "",
     voiceId: "",
@@ -99,6 +126,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
   const personalityPrompt = (d.personalityPrompt ?? "").trim();
   const appearance = (d.appearance ?? "").trim();
   const spriteRequest = (d.spriteRequest ?? "").trim();
+  const minimiRequest = (d.minimiRequest ?? "").trim();
   const keyboardSound = (d.keyboardSound ?? "").trim();
   const voiceId = (d.voiceId ?? "").trim();
   // 목록에 없는 자유 입력(커스텀 종족)도 그대로 살린다 — 공백만 다듬는다.
@@ -120,6 +148,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(personalityPrompt ? { personalityPrompt } : {}),
     ...(appearance ? { appearance } : {}),
     ...(spriteRequest ? { spriteRequest } : {}),
+    ...(minimiRequest ? { minimiRequest } : {}),
     ...(keyboardSound ? { keyboardSound } : {}),
     ...(voiceId ? { voiceId } : {}),
     ...(bot ? { bot } : {}),

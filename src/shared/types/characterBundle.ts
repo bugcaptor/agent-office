@@ -36,6 +36,8 @@ export interface PortableProfile {
   archetype?: string;
   appearance?: string;
   spriteRequest?: string;
+  /** 미니미(소환수) 전용 의뢰 문구. 부재 = 자동 위임 문구 사용. */
+  minimiRequest?: string;
   personalityPrompt?: string;
   keyboardSound?: string;
 }
@@ -149,6 +151,7 @@ export function parseCharacterBundle(text: string): ParseBundleResult {
     archetype: asString(pr.archetype),
     appearance: asString(pr.appearance),
     spriteRequest: asString(pr.spriteRequest),
+    minimiRequest: asString(pr.minimiRequest),
     personalityPrompt: asString(pr.personalityPrompt),
     keyboardSound: asString(pr.keyboardSound),
   };

@@ -28,7 +28,7 @@ export function codexGenErrorCaption(err: unknown): string {
   }
 }
 
-export type CodexGenKind = "portrait" | "sprite";
+export type CodexGenKind = "portrait" | "sprite" | "minimi";
 
 export function CodexGenPanel({
   enabled,
@@ -93,6 +93,13 @@ export function CodexGenPanel({
           onClick={() => onGenerate("sprite")}
         >
           {busy === "sprite" ? "스프라이트 생성 중…" : "스프라이트 생성"}
+        </button>
+        <button
+          className="pixel-btn"
+          disabled={!canGenerate}
+          onClick={() => onGenerate("minimi")}
+        >
+          {busy === "minimi" ? "미니미 생성 중…" : "미니미 생성"}
         </button>
       </div>
       {note && <span className="sprite-custom-badge">{note}</span>}

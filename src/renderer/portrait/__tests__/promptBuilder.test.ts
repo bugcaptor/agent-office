@@ -5,6 +5,9 @@ import {
   buildSpritePrompt,
   buildCodexPortraitPrompt,
   buildCodexSpritePrompt,
+  buildMinimiPrompt,
+  buildCodexMinimiPrompt,
+  autoMinimiRequestLine,
 } from "../promptBuilder";
 import { makeRng, hashStringToSeed } from "../../office/gen/prng";
 import { generatePalette } from "../../office/gen/palette";
@@ -236,5 +239,58 @@ describe("목록에 없는 커스텀 아키타입", () => {
     expect(orc).toContain("green-skinned tusked orc");
     const auto = buildPortraitPrompt({ ...base, archetype: "auto" });
     expect(auto).not.toContain("(auto)");
+  });
+});
+
+describe("미니미(소환수) 프롬프트", () => {
+  const base = { name: "Ada", role: "engineer", seed: "seed-xyz" };
+
+  it("소환수 관계와 16x16 단일 프레임 지시를 담는다", () => {
+    const p = buildMinimiPrompt(base);
+    expect(p).toContain("summoned familiar");
+    expect(p).toContain("16x16 pixel art style");
+    expect(p).toContain("Master: Ada, a engineer.");
+  });
+
+  it("전용 의뢰 문구가 있으면 그대로 싣고 자동 위임 문구는 넣지 않는다", () => {
+    const p = buildMinimiPrompt({ ...base, minimiRequest: "a tiny flame spirit" });
+    expect(p).toContain("Familiar: a tiny flame spirit.");
+    expect(p).not.toContain(autoMinimiRequestLine("Ada"));
+  });
+
+  it("전용 의뢰 문구가 비면 본체에 어울리게 만들어 달라는 문구가 자동으로 들어간다", () => {
+    for (const req of [undefined, "", "   "]) {
+      const p = buildMinimiPrompt({ ...base, minimiRequest: req });
+      expect(p).toContain(autoMinimiRequestLine("Ada"));
+      expect(p).not.toContain("Familiar: .");
+    }
+  });
+
+  it("본체 의뢰 문구/외모 힌트는 주인 묘사로만 실린다(의뢰 문구 우선)", () => {
+    const p = buildMinimiPrompt({
+      ...base,
+      spriteRequest: "red cloak wizard",
+      appearance: "short black hair",
+    });
+    expect(p).toContain("Master's appearance: red cloak wizard.");
+    const onlyAppearance = buildMinimiPrompt({ ...base, appearance: "short black hair" });
+    expect(onlyAppearance).toContain("Master's appearance: short black hair.");
+  });
+
+  it("커스텀 아키타입 문구가 주인 서술자를 대체한다", () => {
+    const p = buildMinimiPrompt({ ...base, archetype: "드래곤" });
+    expect(p).toContain("(드래곤)");
+  });
+
+  it("codex 버전은 규격 줄만 1024x1024 + 투명 배경으로 바뀐다", () => {
+    const clip = buildMinimiPrompt(base);
+    const codex = buildCodexMinimiPrompt(base);
+    expect(codex.split("\n").slice(0, -1)).toEqual(clip.split("\n").slice(0, -1));
+    expect(codex).toContain("1024x1024");
+    expect(codex).toContain("transparent background");
+  });
+
+  it("같은 입력에 결정적이다", () => {
+    expect(buildMinimiPrompt(base)).toBe(buildMinimiPrompt(base));
   });
 });

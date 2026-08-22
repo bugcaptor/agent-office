@@ -394,6 +394,10 @@ pub struct AgentProfile {
     /// 커스텀 스프라이트 존재 표시 + 프론트 캐시 무효화 키(epoch ms). 없으면 절차 생성 사용.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub sprite_updated_at: Option<u64>,
+    /// 미니미(소환수) 전용 픽셀아트 의뢰 문구(자유 텍스트). 비면 프롬프트가
+    /// "본체에 어울리는 소환수" 자동 위임 문구로 폴백. TS `minimiRequest?: string` 미러.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub minimi_request: Option<String>,
     /// 서브에이전트 미니미용 커스텀 픽셀아트 존재 표시 + 프론트 캐시 무효화
     /// 키(epoch ms). 없으면 부모 스프라이트 idle0 축소판을 그대로 쓴다.
     /// TS `minimiUpdatedAt?: number` 미러.
@@ -911,6 +915,7 @@ mod tests {
             appearance: None,
             portrait_updated_at: None,
             sprite_request: None,
+            minimi_request: None,
             sprite_updated_at: None,
             minimi_updated_at: None,
             archetype: None,
@@ -941,6 +946,7 @@ mod tests {
             appearance: None,
             portrait_updated_at: None,
             sprite_request: None,
+            minimi_request: None,
             sprite_updated_at: None,
             minimi_updated_at: None,
             archetype: None,
@@ -982,6 +988,7 @@ mod tests {
             appearance: Some("short black hair, glasses".into()),
             portrait_updated_at: Some(1_720_000_000_777),
             sprite_request: None,
+            minimi_request: None,
             sprite_updated_at: None,
             minimi_updated_at: None,
             archetype: None,
@@ -1013,6 +1020,7 @@ mod tests {
             appearance: None,
             portrait_updated_at: None,
             sprite_request: None,
+            minimi_request: None,
             sprite_updated_at: None,
             minimi_updated_at: None,
             archetype: None,
@@ -1055,6 +1063,7 @@ mod tests {
             appearance: None,
             portrait_updated_at: None,
             sprite_request: Some("red cloak wizard".into()),
+            minimi_request: None,
             sprite_updated_at: Some(1_720_000_000_888),
             minimi_updated_at: Some(1_720_000_000_999),
             archetype: None,
@@ -1087,6 +1096,7 @@ mod tests {
             appearance: None,
             portrait_updated_at: None,
             sprite_request: None,
+            minimi_request: None,
             sprite_updated_at: None,
             minimi_updated_at: None,
             archetype: None,
@@ -1139,7 +1149,7 @@ mod tests {
         let profile = AgentProfile {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
-            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None, minimi_updated_at: None,
+            portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: Some("orc".into()),
             shell: None,
             startup_command: None,
@@ -1158,7 +1168,7 @@ mod tests {
         let profile = AgentProfile {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
-            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None, minimi_updated_at: None,
+            portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None,
             shell: None,
             startup_command: None,
@@ -1186,7 +1196,7 @@ mod tests {
         let profile = AgentProfile {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
-            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None, minimi_updated_at: None,
+            portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None,
             shell: None,
             startup_command: None,
@@ -1205,7 +1215,7 @@ mod tests {
         let profile = AgentProfile {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
-            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None, minimi_updated_at: None,
+            portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None,
             shell: None,
             startup_command: None,
@@ -1233,7 +1243,7 @@ mod tests {
         let profile = AgentProfile {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
-            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None, minimi_updated_at: None,
+            portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None, shell: Some("git-bash".into()), startup_command: None,
             clocked_out: None,
             personality_prompt: None,
@@ -1250,7 +1260,7 @@ mod tests {
         let profile = AgentProfile {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
-            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None, minimi_updated_at: None,
+            portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: None,
             personality_prompt: None,
@@ -1276,7 +1286,7 @@ mod tests {
         let profile = AgentProfile {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
-            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None, minimi_updated_at: None,
+            portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: Some(true),
             personality_prompt: None,
@@ -1293,7 +1303,7 @@ mod tests {
         let profile = AgentProfile {
             id: "p1".into(), name: "Ada".into(), role: "backend".into(), note: "".into(),
             seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, appearance: None,
-            portrait_updated_at: None, sprite_request: None, sprite_updated_at: None, minimi_updated_at: None,
+            portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
             archetype: None, shell: None, startup_command: None,
             clocked_out: None,
             personality_prompt: None,

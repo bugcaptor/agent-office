@@ -718,7 +718,7 @@ const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
 export interface DraftProfile {
   name: string;
   role: string;
-  note: string;        // personality 기반 초기 노트
+  note: string;        // 레거시. 현행은 항상 "" — 아래 4.2.3 참고
   seed: string;
 }
 
@@ -821,9 +821,9 @@ export function ProfileDialog() {
           <input value={draft.role}
             onChange={(e) => setDraft({ ...draft, role: e.target.value })} />
         </label>
-        <label>메모
-          <textarea value={draft.note}
-            onChange={(e) => setDraft({ ...draft, note: e.target.value })} />
+        <label>성격 프롬프트
+          <textarea value={draft.personalityPrompt}
+            onChange={(e) => setDraft({ ...draft, personalityPrompt: e.target.value })} />
         </label>
         <div className="dialog-actions">
           {!editing && <button className="pixel-btn" onClick={regenAll}>전체 랜덤</button>}
@@ -852,12 +852,15 @@ export function ProfileDialog() {
 
 - **탭 바깥(항상 보임)**: 스프라이트/미니미/초상 프리뷰 카드, `스프라이트 재생성`,
   `커스텀 제거`·`초상 제거`, 미니미 업로드/변경/제거. 아래쪽의 `외모 힌트`·
-  `픽셀아트 의뢰 문구` 입력도 두 모드 공통이다(두 경로의 프롬프트에 함께 반영).
+  `픽셀아트 의뢰 문구`·`미니미 의뢰 문구` 입력도 두 모드 공통이다(두 경로의
+  프롬프트에 함께 반영).
 - **`[직접 만들기]` 탭**: `초상 프롬프트 복사` + `이미지 업로드/변경`,
-  `픽셀아트 프롬프트 복사` + `픽셀아트 업로드/변경`. 프롬프트를 아무 이미지
-  생성 도구에나 넣고 결과를 올리는 경로다.
+  `픽셀아트 프롬프트 복사` + `픽셀아트 업로드/변경`, `미니미 프롬프트 복사` +
+  `미니미 업로드/변경`. 프롬프트를 아무 이미지 생성 도구에나 넣고 결과를 올리는
+  경로다.
 - **`[Codex로 생성]` 탭** (`src/renderer/portrait/CodexGenPanel.tsx`): 로컬
-  `codex` CLI 설치 탐지 한 줄 + `초상 생성`/`스프라이트 생성` + 진행·결과·오류
+  `codex` CLI 설치 탐지 한 줄 + `초상 생성`/`스프라이트 생성`/`미니미 생성` +
+  진행·결과·오류
   캡션. 패널은 **표시 전용**이고 생성 오케스트레이션(편집 세션 토큰 가드,
   결과를 편집기로 넘기기)은 `ProfileDialog`가 그대로 들고 있다 —
   `ProfileDialog`는 상시 마운트(닫힘 = `return null`)라 늦은 응답 무효화를
@@ -867,12 +870,45 @@ export function ProfileDialog() {
 (`.appearance-tabs` / `.appearance-tab` / `.appearance-tabpanel`).
 
 두 경로 모두 **최종 규격화는 기존 크롭 편집기가 담당한다**. Codex 생성은 크롭
-여유가 있는 큰 캔버스(초상 1024×1536, 스프라이트 1024×1024 투명 배경)를
+여유가 있는 큰 캔버스(초상 1024×1536, 스프라이트·미니미 1024×1024 투명 배경)를
 의뢰하고, 결과 data URL을 `PortraitEditor`/`SpriteEditor`의 `initialImage`로
 프리로드해 연다(둘 다 마운트 시점 값만 1회 소비하는 attempt-once 패턴).
 백엔드 계약은 `src-tauri/src/codex_imagegen/` — 파일 저장 경로(`./out.png`)를
 백엔드가 소유하고 **파일 존재가 유일한 성공 판정**이며, 실패는 앱 공통의
 `"{code}: {상세}"` 문자열(미설치는 `codex-not-found:`)로 온다.
+
+#### 4.2.2 미니미(소환수) 전용 프롬프트
+
+미니미는 **본체의 소환수**다 — 서브에이전트가 일하는 동안 주인 머리 옆에 뜨는
+작은 분신. 그래서 스프라이트 프롬프트를 그대로 재활용하지 않고 전용 빌더를 둔다
+(`promptBuilder.ts`의 `buildMinimiPrompt` / `buildCodexMinimiPrompt`).
+
+- 프로필에 `minimiRequest`(‘미니미 의뢰 문구’) 필드가 있다. 적으면 그대로
+  `Familiar: …` 줄로 들어간다.
+- **비면 자동 위임 문구**(`autoMinimiRequestLine`)가 대신 들어간다 — "따로 요청이
+  없으니 주인에게 어울리는 소환수를 알아서 디자인하라"는 한 줄. 사용자가 아무것도
+  적지 않아도 본체와 어울리는 결과가 나오게 하기 위한 기본값이다.
+- 주인의 `spriteRequest`(없으면 `appearance`)는 `Master's appearance:` 줄로만
+  실린다 — 소환수가 주인을 닮게 하는 맥락이지 소환수 자신의 묘사가 아니다.
+- 본문은 16×16 단일 프레임 지시(작게 읽히는 단순 실루엣)이고, codex 버전은
+  마지막 규격 줄만 1024×1024 투명 배경으로 갈아 끼운다. 결과는
+  `SpriteEditor target="minimi"`에 `initialImage`로 프리로드된다.
+
+#### 4.2.3 ‘메모’를 ‘성격 프롬프트’로 통합
+
+예전에는 **메모**(자유 설명, 초상 프롬프트에만 반영)와 **성격 프롬프트**(세션
+시스템 프롬프트에 주입)가 따로 있었는데, 둘 다 "이 캐릭터가 어떤 존재인가"를
+적는 칸이라 사용자가 늘 헷갈렸다. 지금은 **성격 프롬프트 하나**만 둔다.
+
+- 새 캐릭터의 랜덤 초안은 `personalityPrompt`에 `"{성격} 성격"`을 채운다
+  (`note`는 `""`). 즉 랜덤 성격이 실제로 세션에도 반영된다.
+- 초상 프롬프트의 `Personality / notes:` 줄은 이제 `personalityPrompt`를 받는다.
+- 스키마의 `AgentProfile.note`는 **레거시로 남긴다**(Rust 미러도 그대로). 편집기를
+  열 때 `mergeLegacyNote(personalityPrompt, note)`로 기존 메모를 성격 프롬프트에
+  합쳐 보여 주고, 저장하면 `note`는 `""`로 비워진다 — 값이 사라지지 않으면서
+  단일 출처가 된다. 같은 병합을 캐릭터 번들 가져오기에도 적용한다
+  (`applyBundleToDraft`). 이미 합쳐진 문자열을 다시 병합해도 중복되지 않는다.
+- 포스트잇 메모(§13)와는 무관하다 — 그쪽은 사람이 쓰는 작업 기억이다.
 
 ---
 

@@ -6,7 +6,7 @@
 // it down via `vi.spyOn(Math, "random")` rather than statistical sampling,
 // so results are exact and non-flaky.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { generateDraft, draftToProfile } from "../generate";
+import { generateDraft, draftToProfile, mergeLegacyNote } from "../generate";
 import { NAME_WORDS, ROLE_WORDS, PERSONALITY_WORDS } from "../wordlists";
 import { pickArchetype } from "../../office/gen/archetypes";
 
@@ -22,7 +22,9 @@ describe("generateDraft", () => {
 
     expect(draft.name).toBe(NAME_WORDS[0]);
     expect(draft.role).toBe(ROLE_WORDS[0]);
-    expect(draft.note).toBe(`${PERSONALITY_WORDS[0]} 성격`);
+    // 메모 칸은 성격 프롬프트로 통합됐다 — 랜덤 성격도 그쪽에 실린다.
+    expect(draft.note).toBe("");
+    expect(draft.personalityPrompt).toBe(`${PERSONALITY_WORDS[0]} 성격`);
   });
 
   it("picks a different index when random() returns a higher fraction", () => {
@@ -33,7 +35,8 @@ describe("generateDraft", () => {
 
     expect(draft.name).toBe(NAME_WORDS[1]);
     expect(draft.role).toBe(ROLE_WORDS[1]);
-    expect(draft.note).toBe(`${PERSONALITY_WORDS[1]} 성격`);
+    expect(draft.note).toBe("");
+    expect(draft.personalityPrompt).toBe(`${PERSONALITY_WORDS[1]} 성격`);
   });
 
   it("assigns an 8-char nanoid seed", () => {
@@ -60,7 +63,7 @@ describe("generateDraft", () => {
     const seen = new Set<string>();
     for (let i = 0; i < 20; i += 1) {
       const d = generateDraft();
-      seen.add(`${d.name}|${d.role}|${d.note}|${d.seed}`);
+      seen.add(`${d.name}|${d.role}|${d.personalityPrompt}|${d.seed}`);
     }
     // 20 draws from 20-way choices is astronomically unlikely to collapse to
     // a single value if Math.random is really being consulted each call.
@@ -274,5 +277,26 @@ describe("draftToProfile archetype", () => {
   it("passes an explicitly chosen archetype through", () => {
     const p = draftToProfile({ name: "A", role: "r", note: "n", seed: "s", archetype: "orc" }, 0);
     expect(p.archetype).toBe("orc");
+  });
+});
+
+describe("mergeLegacyNote (메모 → 성격 프롬프트 통합)", () => {
+  it("한쪽만 있으면 그 값을 그대로 쓴다", () => {
+    expect(mergeLegacyNote("성격", "")).toBe("성격");
+    expect(mergeLegacyNote("", "메모")).toBe("메모");
+    expect(mergeLegacyNote(undefined, undefined)).toBe("");
+  });
+
+  it("둘 다 있으면 줄바꿈으로 잇는다", () => {
+    expect(mergeLegacyNote("차분한 성격", "백엔드 담당")).toBe("차분한 성격\n백엔드 담당");
+  });
+
+  it("이미 합쳐진 값은 다시 붙이지 않는다(반복 병합 방지)", () => {
+    const merged = mergeLegacyNote("차분한 성격", "백엔드 담당");
+    expect(mergeLegacyNote(merged, "백엔드 담당")).toBe(merged);
+  });
+
+  it("공백만 있는 값은 무시한다", () => {
+    expect(mergeLegacyNote("  성격  ", "   ")).toBe("성격");
   });
 });
