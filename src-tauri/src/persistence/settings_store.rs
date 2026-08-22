@@ -305,6 +305,25 @@ pub struct AppSettings {
     /// 응답한다. 페어링 승인은 여전히 필요하다. 네트워크 표면이라 기본 꺼짐.
     #[serde(default)]
     pub web_remote_enabled: bool,
+    /// 동료 대화(docs/agent-talk-design.md) — 캐릭터끼리 앱을 거쳐 메시지를
+    /// 주고받게 한다. 남의 세션 stdin에 글자를 밀어 넣는 기능이라 opt-in이고,
+    /// 끄는 순간 대기 중인 메시지까지 버려지는 킬 스위치이기도 하다. 기본 꺼짐.
+    #[serde(default)]
+    pub talk_enabled: bool,
+    /// 한 대화의 왕복 상한(무한 핑퐁 방지). 0은 허용하지 않는다.
+    #[serde(default = "default_talk_max_turns")]
+    pub talk_max_turns: u32,
+    /// 수신자가 이만큼 조용해야 메시지를 주입한다(작업 중 방해 방지).
+    #[serde(default = "default_talk_idle_quiet_ms")]
+    pub talk_idle_quiet_ms: u64,
+}
+
+fn default_talk_max_turns() -> u32 {
+    crate::talk::DEFAULT_MAX_TURNS
+}
+
+fn default_talk_idle_quiet_ms() -> u64 {
+    crate::talk::DEFAULT_IDLE_QUIET_MS
 }
 
 fn default_web_remote_port() -> u16 {
@@ -339,6 +358,9 @@ impl Default for AppSettings {
             web_remote_bind: WebRemoteBind::Tailnet,
             web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
             web_remote_enabled: false,
+            talk_enabled: false,
+            talk_max_turns: default_talk_max_turns(),
+            talk_idle_quiet_ms: default_talk_idle_quiet_ms(),
         }
     }
 }
@@ -529,6 +551,9 @@ mod tests {
             web_remote_bind: Default::default(),
             web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
             web_remote_enabled: false,
+            talk_enabled: false,
+            talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
+            talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -724,6 +749,9 @@ mod tests {
             web_remote_bind: Default::default(),
             web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
             web_remote_enabled: false,
+            talk_enabled: false,
+            talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
+            talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();

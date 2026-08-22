@@ -17,6 +17,12 @@ export interface LabelAnchor {
   y: number;
 }
 
+/**
+ * 말풍선 톤(동료 대화, docs/agent-talk-design.md §7). "say"는 말한 캐릭터
+ * 머리 위 본문 말풍선, "hear"는 상대에게 주는 짧은 도착 표시다.
+ */
+export type TalkBubbleTone = "say" | "hear";
+
 export interface OfficeBus {
   // B subscribes (A -> B, relayed through C). 구독 즉시 현재 상태를 1회
   // replay한다(기본값 상태 false/idle은 생략) — 재마운트된 씬도 상태를 받는다.
@@ -42,6 +48,10 @@ export interface OfficeBus {
   onSubagentCountChanged(cb: (agentId: string, count: number) => void): () => void;
   /** B가 보스 책상 클릭을 알림(책상 주인 지정과 별개 — 보스 자리 클릭 전용 채널). */
   emitBossDeskClicked(): void;
+  /** B가 동료 대화 말풍선을 구독. C가 talk-message 1건을 받아 발신자에겐
+   * "say"(본문), 수신자에겐 "hear"(도착 표시)로 각각 1회씩 발화한다.
+   * 지난 것을 replay하지 않는다 — 말풍선은 그 순간의 연출이다. */
+  onTalkBubble(cb: (agentId: string, text: string, tone: TalkBubbleTone) => void): () => void;
   /** B가 휴가 모드 on/off를 구독 — on이면 줄 전원 이탈.
    * 구독 즉시 현재값을 1회 재생(replay)한다 — 늦게 마운트된 씬도 초기값 수신. */
   onVacationModeChanged(cb: (on: boolean) => void): () => void;
@@ -57,6 +67,8 @@ export interface MockOfficeBus extends OfficeBus {
   triggerSessionStateChanged(agentId: string, state: SessionState): void;
   /** Drives subagent-count changes from a test/manual harness. */
   triggerSubagentCountChanged(agentId: string, count: number): void;
+  /** Drives talk bubbles from a test/manual harness. */
+  triggerTalkBubble(agentId: string, text: string, tone: TalkBubbleTone): void;
   /** Records every agentId passed to `emitAgentClicked` (B -> A/C direction), in order. */
   readonly clickedAgentIds: readonly string[];
   /** Drives the C -> B direction for vacation mode from a test/manual harness. */
@@ -75,6 +87,9 @@ export function createMockOfficeBus(): MockOfficeBus {
   const labelAnchorListeners = new Set<(a: ReadonlyMap<string, LabelAnchor>) => void>();
   const deskClickListeners = new Set<(deskIndex: number, x: number, y: number) => void>();
   const subagentCountListeners = new Set<(agentId: string, count: number) => void>();
+  const talkBubbleListeners = new Set<
+    (agentId: string, text: string, tone: TalkBubbleTone) => void
+  >();
   const vacationModeListeners = new Set<(on: boolean) => void>();
   const clickedAgentIds: string[] = [];
   let bossDeskClickCount = 0;
@@ -124,6 +139,13 @@ export function createMockOfficeBus(): MockOfficeBus {
     },
     triggerSubagentCountChanged(agentId, count) {
       for (const cb of subagentCountListeners) cb(agentId, count);
+    },
+    onTalkBubble(cb) {
+      talkBubbleListeners.add(cb);
+      return () => talkBubbleListeners.delete(cb);
+    },
+    triggerTalkBubble(agentId, text, tone) {
+      for (const cb of talkBubbleListeners) cb(agentId, text, tone);
     },
     triggerNotificationChanged(agentId, hasPending) {
       lastPending.set(agentId, hasPending);

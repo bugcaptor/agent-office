@@ -27,7 +27,7 @@
 // the instant the BottomBar mute toggle flips, instead of waiting for the
 // next notification event.
 import type { SessionState } from "@shared/types";
-import type { LabelAnchor, OfficeBus } from "../office/bus";
+import type { LabelAnchor, OfficeBus, TalkBubbleTone } from "../office/bus";
 import { useAppStore } from "../store/appStore";
 import { pendingAgentIds } from "../store/selectors";
 import { tauriApi } from "./tauriApi";
@@ -45,6 +45,7 @@ type HoverCb = (agentId: string | null, screenX: number, screenY: number) => voi
 type LabelAnchorCb = (anchors: ReadonlyMap<string, LabelAnchor>) => void;
 type DeskClickCb = (deskIndex: number, screenX: number, screenY: number) => void;
 type VacationModeCb = (on: boolean) => void;
+type TalkBubbleCb = (agentId: string, text: string, tone: TalkBubbleTone) => void;
 
 const notifCbs = new Set<NotifCb>();
 const stateCbs = new Set<StateCb>();
@@ -52,6 +53,7 @@ const hoverCbs = new Set<HoverCb>();
 const labelAnchorCbs = new Set<LabelAnchorCb>();
 const deskClickCbs = new Set<DeskClickCb>();
 const vacationModeCbs = new Set<VacationModeCb>();
+const talkBubbleCbs = new Set<TalkBubbleCb>();
 const subagentCounts = new SubagentCountTracker();
 
 // vacationMode -> officeBus relay. 모듈 스코프라 부팅 순서(hydrate ↔ 씬 마운트
@@ -187,6 +189,12 @@ export const officeBus: OfficeBus = {
   onSubagentCountChanged(cb) {
     return subagentCounts.subscribe(cb);
   },
+  onTalkBubble(cb) {
+    // replay 없음 — 말풍선은 그 순간의 연출이라 늦게 마운트된 씬에 되돌려
+    // 줄 "현재 상태"가 없다.
+    talkBubbleCbs.add(cb);
+    return () => talkBubbleCbs.delete(cb);
+  },
   onVacationModeChanged(cb) {
     vacationModeCbs.add(cb);
     // 늦게 마운트된 씬(구독 시점이 언제든)도 현재값을 즉시 받도록 동기 replay.
@@ -271,6 +279,16 @@ export function installSessionBridge(): () => void {
     useAppStore.getState().applyActivityEvent(e);
   });
 
+  // 동료 대화(docs/agent-talk-design.md §7): 말한 순간 발신자 머리 위에 본문
+  // 말풍선을, 수신자 머리 위에 짧은 도착 표시를 띄운다. 본문은 신뢰 불가
+  // 입력이라 정리·절단은 오버레이(bubbleText)가 맡는다.
+  const offTalk = tauriApi.onTalkMessage((e) => {
+    talkBubbleCbs.forEach((cb) => cb(e.from, e.text, "say"));
+    // 자기 자신에게 보낸 메시지는 도착 표시가 방금 띄운 본문을 덮으므로 생략.
+    if (e.to === e.from) return;
+    talkBubbleCbs.forEach((cb) => cb(e.to, `${e.fromName} →`, "hear"));
+  });
+
   // notifications changed -> relay hasPending per known agent + sync the dock badge
   // (badge count = number of distinct agents with an unread notification;
   // this only respects the mute flag, it doesn't own the toggle).
@@ -319,6 +337,7 @@ export function installSessionBridge(): () => void {
     offNotif();
     offCleared();
     offActivity();
+    offTalk();
     offPending();
     offMuted();
     offKeepAwakeTiming();

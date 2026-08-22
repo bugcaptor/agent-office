@@ -28,6 +28,8 @@ pub trait AppEvents: Send + Sync {
     fn notification_new(&self, ev: &NotificationEvent);
     fn notification_cleared(&self, agent_id: &str, ids: &[String]);
     fn activity_event(&self, ev: &ActivityEvent);
+    /// 동료 대화 한 마디(기본 no-op — 미러/테스트 구현은 무시해도 된다).
+    fn talk_message(&self, _ev: &crate::types::TalkEvent) {}
 }
 
 pub struct TauriEvents {
@@ -49,6 +51,9 @@ impl AppEvents for TauriEvents {
     }
     fn activity_event(&self, ev: &ActivityEvent) {
         let _ = self.app.emit("activity-event", ev);
+    }
+    fn talk_message(&self, ev: &crate::types::TalkEvent) {
+        let _ = self.app.emit("talk-message", ev);
     }
 }
 
@@ -79,6 +84,10 @@ impl AppEvents for CompositeEvents {
     fn notification_new(&self, ev: &NotificationEvent) {
         self.primary.notification_new(ev);
         self.secondary.notification_new(ev);
+    }
+    fn talk_message(&self, ev: &crate::types::TalkEvent) {
+        self.primary.talk_message(ev);
+        self.secondary.talk_message(ev);
     }
     fn notification_cleared(&self, agent_id: &str, ids: &[String]) {
         self.primary.notification_cleared(agent_id, ids);
@@ -210,6 +219,10 @@ pub struct AppState {
     /// `tts_rewrite_model`)은 `settings`에 있고 **키는 여기에만** 있다
     /// (설정은 렌더러로 통째로 왕복하므로).
     pub tts: Arc<crate::tts::TtsState>,
+    /// 동료 대화(docs/agent-talk-design.md)의 메시지 큐·대화 상태. control
+    /// 핸들러와 배달 워커가 같은 Arc를 쥐고, `set_app_settings`가 토글·상한을
+    /// 즉시 반영한다(끄면 대기 중 메시지까지 버려지는 킬 스위치).
+    pub talk: Arc<crate::talk::TalkHub>,
 }
 
 // ── 테스트용 페이크 ────────────────────────────────────────────────────

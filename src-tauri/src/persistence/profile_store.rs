@@ -169,6 +169,7 @@ mod tests {
             keyboard_sound: None,
             voice_id: None,
             bot: None,
+            talk_receive: None,
             }],
             version: 1,
             vacation_mode: None,

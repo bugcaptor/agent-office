@@ -250,6 +250,9 @@ fn get_app_settings_result_matches_fixture() {
             web_remote_bind: WebRemoteBind::Tailnet,
             web_remote_port: 47800,
             web_remote_enabled: false,
+            talk_enabled: false,
+            talk_max_turns: 6,
+            talk_idle_quiet_ms: 3000,
         },
         first_run: true,
     };

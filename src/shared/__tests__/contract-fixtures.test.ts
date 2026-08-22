@@ -270,6 +270,9 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "webRemoteBind",
       "webRemotePort",
       "webRemoteEnabled",
+      "talkEnabled",
+      "talkMaxTurns",
+      "talkIdleQuietMs",
     ]);
     expect(settings.gitStatusEnabled).toBe(true);
     expect(settings.fileIndexBackend).toBe("walker");

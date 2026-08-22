@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
 use axum::extract::{Json, Request, State};
+use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -56,6 +57,8 @@ pub struct ControlContext {
     pub store: ProfileStore,
     pub settings: Arc<RwLock<AppSettings>>,
     pub settings_store: SettingsStore,
+    /// 동료 대화 허브(docs/agent-talk-design.md). 큐·대화 상태·킬 스위치를 쥔다.
+    pub talk: Arc<crate::talk::TalkHub>,
     /// 토큰 파일(`control-token`)을 대조할 위치. 서버의 app_data_dir과 동일.
     pub app_data_dir: PathBuf,
     /// `attach --tmux`가 대상 세션 존재를 확인할 때 쓰는 확인기.
@@ -451,6 +454,11 @@ async fn settings_set(
     if obj.contains_key("cliEnabled") || obj.contains_key("cli_enabled") {
         return fail("cliEnabled는 앱 설정에서만 변경할 수 있습니다");
     }
+    // talkEnabled도 같은 이유로 막는다 — 대화 스위치를 에이전트가 스스로 켤 수
+    // 있으면 "사용자가 켰을 때만 대화한다"는 계약이 무너진다(권한 상승).
+    if obj.contains_key("talkEnabled") || obj.contains_key("talk_enabled") {
+        return fail("talkEnabled는 앱 설정에서만 변경할 수 있습니다");
+    }
     let current = ctx.settings.read().unwrap().clone();
     let mut merged = match serde_json::to_value(current) {
         Ok(v) => v,
@@ -471,6 +479,7 @@ async fn settings_set(
         &ctx.hub,
         &ctx.observer_server,
         &ctx.observer,
+        &ctx.talk,
         new.clone(),
     )
     .await
@@ -478,6 +487,225 @@ async fn settings_set(
         Ok(()) => ok(new),
         Err(e) => fail(e),
     }
+}
+
+
+// ── 동료 대화(docs/agent-talk-design.md §3) ──────────────────────────
+
+/// Err를 그대로 `ok:false` 응답으로 바꾼다(대화 핸들러 전용 축약).
+macro_rules! try_or_fail {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(error) => return fail(error),
+        }
+    };
+}
+
+/// 발신자 판정. 인자가 아니라 **세션 헤더**로 정한다 — 앱이 세션 셸에 심어 둔
+/// `AGENT_OFFICE_SESSION` 값을 캐릭터로 되짚으므로, 앱 밖 셸에서는 남을 사칭할
+/// 수 없고 아예 발신도 못 한다(§1).
+fn caller(ctx: &ControlContext, headers: &HeaderMap) -> Result<crate::types::AgentProfile, String> {
+    let sid = headers
+        .get(SESSION_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or("오피스 세션이 아닙니다 — 앱이 띄운 캐릭터 터미널에서 실행하세요")?;
+    ctx.store
+        .load()
+        .agents
+        .into_iter()
+        .find(|a| ctx.manager.session_id_for(&a.id).as_deref() == Some(sid))
+        .ok_or_else(|| "이 세션에 붙은 캐릭터를 찾을 수 없습니다".to_string())
+}
+
+/// 상대 지정 해석 — agentId 우선, 없으면 이름(정확히 일치). 이름이 겹치면
+/// 후보를 돌려주고 거절한다(엉뚱한 사람에게 말이 가는 것보다 낫다).
+fn resolve_target(ctx: &ControlContext, to: &str) -> Result<crate::types::AgentProfile, String> {
+    let agents = ctx.store.load().agents;
+    if let Some(hit) = agents.iter().find(|a| a.id == to) {
+        return Ok(hit.clone());
+    }
+    let by_name: Vec<_> = agents.iter().filter(|a| a.name == to).collect();
+    match by_name.len() {
+        1 => Ok(by_name[0].clone()),
+        0 => Err(format!("그런 동료가 없습니다: {to} (roster로 확인하세요)")),
+        _ => Err(format!(
+            "이름이 겹칩니다: {to} — id로 지정하세요({})",
+            by_name
+                .iter()
+                .map(|a| a.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
+
+/// 이 캐릭터에게 말이 닿는지와 그 사유.
+fn reachability(ctx: &ControlContext, agent: &crate::types::AgentProfile) -> (bool, bool, Option<String>) {
+    let idle_quiet = ctx.talk.config().idle_quiet_ms;
+    if agent.talk_receive == Some(false) {
+        return (false, false, Some("수신 꺼짐".into()));
+    }
+    if !ctx.manager.is_running(&agent.id) {
+        return (false, false, Some("실행 중인 세션 없음".into()));
+    }
+    let busy = ctx
+        .manager
+        .idle_ms(&agent.id)
+        .is_none_or(|ms| ms < idle_quiet);
+    (true, busy, None)
+}
+
+fn talk_gate(ctx: &ControlContext) -> Result<(), String> {
+    if ctx.talk.is_enabled() {
+        Ok(())
+    } else {
+        Err("동료 대화가 꺼져 있습니다 — 앱 설정에서 켜세요".into())
+    }
+}
+
+/// 롱폴링 상한(§3.1). ask의 기본 120초보다 넉넉히 잡되 무한 대기는 없다.
+const MAX_WAIT_MS: u64 = 180_000;
+
+async fn talk_roster(
+    State(ctx): State<Arc<ControlContext>>,
+    headers: HeaderMap,
+) -> Json<serde_json::Value> {
+    try_or_fail!(talk_gate(&ctx));
+    let me = try_or_fail!(caller(&ctx, &headers));
+    let entries: Vec<RosterEntry> = ctx
+        .store
+        .load()
+        .agents
+        .into_iter()
+        .map(|a| {
+            let is_me = a.id == me.id;
+            let (reachable, busy, reason) = if is_me {
+                (false, false, Some("나 자신".into()))
+            } else {
+                reachability(&ctx, &a)
+            };
+            RosterEntry {
+                agent_id: a.id,
+                name: a.name,
+                role: a.role,
+                cwd: a.cwd,
+                reachable,
+                busy,
+                reason,
+                is_me,
+            }
+        })
+        .collect();
+    ok(entries)
+}
+
+async fn talk_send(
+    State(ctx): State<Arc<ControlContext>>,
+    headers: HeaderMap,
+    Json(p): Json<TalkSendParams>,
+) -> Json<serde_json::Value> {
+    try_or_fail!(talk_gate(&ctx));
+    let me = try_or_fail!(caller(&ctx, &headers));
+    let target = try_or_fail!(resolve_target(&ctx, &p.to));
+    let (reachable, _busy, reason) = reachability(&ctx, &target);
+    if !reachable {
+        return fail(format!(
+            "{}에게는 지금 말이 닿지 않습니다: {}",
+            target.name,
+            reason.unwrap_or_else(|| "알 수 없음".into())
+        ));
+    }
+    let (conv_id, msg_id) = try_or_fail!(ctx.talk.enqueue(
+        &me.id,
+        &me.name,
+        &target.id,
+        &target.name,
+        &p.text,
+        p.conv_id.as_deref(),
+    ));
+    let reply = wait_for_reply(&ctx, &me.id, &conv_id, p.wait_ms).await;
+    ok(crate::talk::SendOutcome {
+        conv_id,
+        msg_id,
+        reply,
+    })
+}
+
+async fn talk_reply(
+    State(ctx): State<Arc<ControlContext>>,
+    headers: HeaderMap,
+    Json(p): Json<TalkReplyParams>,
+) -> Json<serde_json::Value> {
+    try_or_fail!(talk_gate(&ctx));
+    let me = try_or_fail!(caller(&ctx, &headers));
+    let conv = match ctx.talk.conversation(&p.conv_id) {
+        Some(c) if c.has(&me.id) => c,
+        Some(_) => return fail("이 대화의 참여자가 아닙니다"),
+        None => return fail(format!("없는 대화입니다: {}", p.conv_id)),
+    };
+    let other = conv.other(&me.id).to_string();
+    let other_name = ctx
+        .store
+        .load()
+        .agents
+        .into_iter()
+        .find(|a| a.id == other)
+        .map(|a| a.name)
+        .unwrap_or_else(|| other.clone());
+    let (conv_id, msg_id) = try_or_fail!(ctx.talk.enqueue(
+        &me.id,
+        &me.name,
+        &other,
+        &other_name,
+        &p.text,
+        Some(&p.conv_id),
+    ));
+    let reply = wait_for_reply(&ctx, &me.id, &conv_id, p.wait_ms).await;
+    ok(crate::talk::SendOutcome {
+        conv_id,
+        msg_id,
+        reply,
+    })
+}
+
+async fn talk_inbox(
+    State(ctx): State<Arc<ControlContext>>,
+    headers: HeaderMap,
+    Json(p): Json<TalkInboxParams>,
+) -> Json<serde_json::Value> {
+    try_or_fail!(talk_gate(&ctx));
+    let me = try_or_fail!(caller(&ctx, &headers));
+    let wait = p.wait_ms.unwrap_or(0).min(MAX_WAIT_MS);
+    ok(ctx.talk.wait(&me.id, None, wait).await)
+}
+
+async fn talk_end(
+    State(ctx): State<Arc<ControlContext>>,
+    headers: HeaderMap,
+    Json(p): Json<TalkEndParams>,
+) -> Json<serde_json::Value> {
+    let me = try_or_fail!(caller(&ctx, &headers));
+    let reason = p.reason.unwrap_or_else(|| "manual".into());
+    try_or_fail!(ctx.talk.end(&me.id, &p.conv_id, &reason));
+    ok(serde_json::Value::Null)
+}
+
+/// `waitMs`가 있으면 그동안 이 대화의 답장을 기다린다. 대기 중임을 허브가
+/// 알기 때문에 배달 워커가 그 답장을 PTY로 밀어 넣지 않는다(§4).
+async fn wait_for_reply(
+    ctx: &ControlContext,
+    me: &str,
+    conv_id: &str,
+    wait_ms: Option<u64>,
+) -> Option<crate::talk::TalkMessage> {
+    let wait = wait_ms.unwrap_or(0).min(MAX_WAIT_MS);
+    if wait == 0 {
+        return None;
+    }
+    ctx.talk.wait(me, Some(conv_id), wait).await.into_iter().next()
 }
 
 fn router(ctx: Arc<ControlContext>) -> Router {
@@ -491,6 +719,11 @@ fn router(ctx: Arc<ControlContext>) -> Router {
         .route("/v1/dispose", post(dispose))
         .route("/v1/notifications", post(notifications))
         .route("/v1/clear", post(clear))
+        .route("/v1/talk/roster", post(talk_roster))
+        .route("/v1/talk/send", post(talk_send))
+        .route("/v1/talk/reply", post(talk_reply))
+        .route("/v1/talk/inbox", post(talk_inbox))
+        .route("/v1/talk/end", post(talk_end))
         .route("/v1/settings/get", post(settings_get))
         .route("/v1/settings/set", post(settings_set))
         .layer(axum::middleware::from_fn_with_state(ctx.clone(), auth))
@@ -659,7 +892,21 @@ mod tests {
         )
     }
 
+    /// 세션 둘 이상을 띄우는 테스트(동료 대화)용 — 매 spawn마다 새 FakeControl을
+    /// 주는 팩토리를 쓴다. 나머지 배선은 `build`와 같다.
+    fn build_multi(tag: &str) -> Fixture {
+        build_inner(
+            tag,
+            Arc::new(|_| tmux::TmuxStatus::Unavailable("테스트 확인기".into())),
+            true,
+        )
+    }
+
     fn build_with_tmux(tag: &str, tmux_probe: tmux::TmuxProbe) -> Fixture {
+        build_inner(tag, tmux_probe, false)
+    }
+
+    fn build_inner(tag: &str, tmux_probe: tmux::TmuxProbe, multi: bool) -> Fixture {
         let events: Arc<RecordingEvents> = Arc::new(RecordingEvents::default());
         let events_dyn: Arc<dyn AppEvents> = events.clone();
         let registry = Arc::new(SessionRegistry::new());
@@ -680,8 +927,13 @@ mod tests {
         let get_observer_url =
             crate::make_observer_url_getter(settings.clone(), observer_server.clone());
         let (fac, ctl) = FakePtyFactory::new();
+        let factory: Arc<dyn crate::session::pty_factory::PtyFactory> = if multi {
+            Arc::new(crate::session::pty_factory::fake::MultiFakePtyFactory::new())
+        } else {
+            Arc::new(fac)
+        };
         let manager = Arc::new(SessionManager::new(
-            Arc::new(fac),
+            factory,
             observer.clone(),
             registry.clone(),
             events_dyn,
@@ -692,6 +944,8 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = ProfileStore::new(dir.join("profiles.json"));
         let settings_store = SettingsStore::new(dir.join("settings.json"));
+        // 대화 테스트는 이 허브를 켜고 쓴다(기본은 꺼짐 = 라우트가 전부 거절).
+        let talk_hub = Arc::new(crate::talk::TalkHub::default());
         let ctx = Arc::new(ControlContext {
             manager,
             observer,
@@ -701,6 +955,7 @@ mod tests {
             store,
             settings,
             settings_store,
+            talk: talk_hub,
             app_data_dir: dir.clone(),
             tmux_probe,
         });
@@ -1278,6 +1533,217 @@ mod tests {
         let _ = std::fs::remove_dir_all(&f._observer_dir);
     }
 
+
+    // ── 동료 대화(docs/agent-talk-design.md) ─────────────────────────
+
+    /// 캐릭터 둘을 띄우고 각자의 세션 id(=발신자 신원 헤더 값)를 돌려준다.
+    async fn two_characters(
+        f: &Fixture,
+        port: u16,
+        token: &str,
+    ) -> (reqwest::Client, String, String) {
+        let profiles = crate::types::PersistedState {
+            agents: vec![profile("a1", "Ada"), profile("a2", "Bob")],
+            version: 1,
+            vacation_mode: None,
+        };
+        f.ctx.store.save(&profiles).unwrap();
+        let client = reqwest::Client::new();
+        let mut sids = Vec::new();
+        for agent in ["a1", "a2"] {
+            let created: serde_json::Value = client
+                .post(format!("http://127.0.0.1:{port}/v1/create"))
+                .header(TOKEN_HEADER, token)
+                .json(&serde_json::json!({ "agentId": agent }))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            sids.push(
+                created["data"]["sessionId"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("create {agent} 실패: {created}"))
+                    .to_string(),
+            );
+        }
+        (client, sids[0].clone(), sids[1].clone())
+    }
+
+    async fn talk_post(
+        client: &reqwest::Client,
+        port: u16,
+        token: &str,
+        route: &str,
+        session: Option<&str>,
+        body: serde_json::Value,
+    ) -> serde_json::Value {
+        let mut req = client
+            .post(format!("http://127.0.0.1:{port}/v1/talk/{route}"))
+            .header(TOKEN_HEADER, token)
+            .json(&body);
+        if let Some(sid) = session {
+            req = req.header(SESSION_HEADER, sid);
+        }
+        req.send().await.unwrap().json().await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn talk_routes_require_the_toggle_and_a_real_office_session() {
+        let f = build_multi("talk-gate");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        let (client, sid_a, _sid_b) = two_characters(&f, port, &token).await;
+
+        // 토글이 꺼져 있으면 무엇도 되지 않는다(킬 스위치가 곧 게이트다).
+        let off = talk_post(&client, port, &token, "roster", Some(&sid_a), serde_json::json!({})).await;
+        assert_eq!(off["ok"], false);
+        assert!(off["error"].as_str().unwrap().contains("꺼져"));
+
+        f.ctx.talk.set_enabled(true);
+        // 세션 헤더가 없으면 발신자를 특정할 수 없다 — 앱 밖 셸은 참여 불가.
+        let anon = talk_post(&client, port, &token, "roster", None, serde_json::json!({})).await;
+        assert_eq!(anon["ok"], false);
+        assert!(anon["error"].as_str().unwrap().contains("오피스 세션"));
+
+        // 남의 세션 id를 지어내도 캐릭터로 이어지지 않는다(사칭 차단).
+        let fake = talk_post(&client, port, &token, "roster", Some("made-up"), serde_json::json!({})).await;
+        assert_eq!(fake["ok"], false);
+
+        let roster = talk_post(&client, port, &token, "roster", Some(&sid_a), serde_json::json!({})).await;
+        assert_eq!(roster["ok"], true);
+        let rows = roster["data"].as_array().unwrap();
+        let me = rows.iter().find(|r| r["agentId"] == "a1").unwrap();
+        let other = rows.iter().find(|r| r["agentId"] == "a2").unwrap();
+        assert_eq!(me["isMe"], true);
+        assert_eq!(me["reachable"], false);
+        assert_eq!(other["reachable"], true);
+        cleanup(&f);
+    }
+
+    #[tokio::test]
+    async fn talk_send_reply_roundtrip_between_two_characters() {
+        let f = build_multi("talk-roundtrip");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        f.ctx.talk.set_enabled(true);
+        let (client, sid_a, sid_b) = two_characters(&f, port, &token).await;
+
+        // 이름으로도 상대를 지정할 수 있다.
+        let sent = talk_post(
+            &client,
+            port,
+            &token,
+            "send",
+            Some(&sid_a),
+            serde_json::json!({ "to": "Bob", "text": "배포 스크립트 어디 있어?" }),
+        )
+        .await;
+        assert_eq!(sent["ok"], true, "{sent}");
+        let conv = sent["data"]["convId"].as_str().unwrap().to_string();
+
+        // 받는 쪽이 대기 중이면 PTY 주입 대신 응답으로 건네준다.
+        let inbox = talk_post(&client, port, &token, "inbox", Some(&sid_b), serde_json::json!({})).await;
+        let msgs = inbox["data"].as_array().unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["convId"], conv.as_str());
+        assert_eq!(msgs[0]["fromName"], "Ada");
+
+        let replied = talk_post(
+            &client,
+            port,
+            &token,
+            "reply",
+            Some(&sid_b),
+            serde_json::json!({ "convId": conv, "text": "scripts/deploy.sh" }),
+        )
+        .await;
+        assert_eq!(replied["ok"], true, "{replied}");
+
+        let back = talk_post(&client, port, &token, "inbox", Some(&sid_a), serde_json::json!({})).await;
+        let msgs = back["data"].as_array().unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["text"], "scripts/deploy.sh");
+
+        // 참여자가 아닌 세션은 그 대화를 닫을 수 없다.
+        let ended = talk_post(
+            &client,
+            port,
+            &token,
+            "end",
+            Some(&sid_a),
+            serde_json::json!({ "convId": conv }),
+        )
+        .await;
+        assert_eq!(ended["ok"], true);
+        cleanup(&f);
+    }
+
+    #[tokio::test]
+    async fn talk_send_refuses_receivers_that_opted_out() {
+        let f = build_multi("talk-optout");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        f.ctx.talk.set_enabled(true);
+        let (client, sid_a, _sid_b) = two_characters(&f, port, &token).await;
+
+        let mut profiles = f.ctx.store.load();
+        profiles
+            .agents
+            .iter_mut()
+            .find(|a| a.id == "a2")
+            .unwrap()
+            .talk_receive = Some(false);
+        f.ctx.store.save(&profiles).unwrap();
+
+        let refused = talk_post(
+            &client,
+            port,
+            &token,
+            "send",
+            Some(&sid_a),
+            serde_json::json!({ "to": "a2", "text": "안녕" }),
+        )
+        .await;
+        assert_eq!(refused["ok"], false);
+        assert!(refused["error"].as_str().unwrap().contains("수신 꺼짐"), "{refused}");
+
+        // 없는 상대도 조용히 큐에 쌓이지 않고 그 자리에서 거절된다.
+        let missing = talk_post(
+            &client,
+            port,
+            &token,
+            "send",
+            Some(&sid_a),
+            serde_json::json!({ "to": "없는사람", "text": "안녕" }),
+        )
+        .await;
+        assert_eq!(missing["ok"], false);
+        cleanup(&f);
+    }
+
+    #[tokio::test]
+    async fn cli_cannot_turn_the_talk_switch_on_by_itself() {
+        let f = build("talk-escalation");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        let client = reqwest::Client::new();
+        let resp: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/settings/set"))
+            .header(TOKEN_HEADER, &token)
+            .json(&serde_json::json!({ "talkEnabled": true }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(resp["ok"], false);
+        assert!(!f.ctx.talk.is_enabled());
+        cleanup(&f);
+    }
+
     fn profile(id: &str, name: &str) -> crate::types::AgentProfile {
         crate::types::AgentProfile {
             id: id.into(),
@@ -1305,6 +1771,7 @@ mod tests {
             keyboard_sound: None,
             voice_id: None,
             bot: None,
+            talk_receive: None,
         }
     }
 }

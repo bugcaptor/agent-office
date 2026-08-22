@@ -56,6 +56,9 @@ const SETTINGS_ON: AppSettings = {
   webRemoteBind: "tailnet",
   webRemotePort: 47800,
   webRemoteEnabled: false,
+  talkEnabled: false,
+  talkMaxTurns: 6,
+  talkIdleQuietMs: 3000,
 };
 
 function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {

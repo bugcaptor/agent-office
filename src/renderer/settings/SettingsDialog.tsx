@@ -13,6 +13,7 @@ import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { SettingsForm } from "./SettingsForm";
 import { WebRemoteSection } from "./WebRemoteSection";
+import { TalkSection } from "./TalkSection";
 import { ModelPicker } from "./ModelPicker";
 import { previewVoice } from "../sound/soundManager";
 import { THEMES, THEME_ORDER } from "../theme/themes";
@@ -89,6 +90,7 @@ function SettingsDialogBody() {
             <>
               <ControlSection enabled={cliEnabled} />
               <WebRemoteSection />
+              <TalkSection />
             </>
           )}
         </div>

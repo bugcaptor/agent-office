@@ -27,6 +27,7 @@ const EXIT_CONNECT: i32 = 2; // 연결 실패(서버 없음/네트워크)
 const EXIT_NO_APP: i32 = 3; // 포트 파일 없음(앱 미실행 또는 CLI 제어 OFF)
 const EXIT_NOT_APPROVED: i32 = 4; // 토큰 없음(미승인)
 const EXIT_UNAUTHORIZED: i32 = 5; // 401(토큰 무효/취소됨)
+const EXIT_NO_REPLY: i32 = 8; // talk ask: 시간 안에 답이 오지 않음
 const EXIT_USAGE: i32 = 64; // 잘못된 사용법
 
 /// 파싱된 CLI 호출. `positionals[0]`이 서브커맨드다.
@@ -259,6 +260,7 @@ fn build_request(p: &Parsed) -> Result<(&'static str, Value), String> {
             }
             Ok(("/v1/clear", Value::Object(o)))
         }
+        "talk" => build_talk_request(p),
         "settings" => match pos.get(1).map(String::as_str) {
             Some("get") => Ok(("/v1/settings/get", json!({}))),
             Some("set") => {
@@ -284,6 +286,59 @@ fn build_request(p: &Parsed) -> Result<(&'static str, Value), String> {
     }
 }
 
+
+/// `talk` 하위 명령(docs/agent-talk-design.md §3.2). 발신자는 보내지 않는다 —
+/// 서버가 세션 헤더로 판정한다.
+fn build_talk_request(p: &Parsed) -> Result<(&'static str, Value), String> {
+    let pos = &p.positionals;
+    let wait_ms = |default_ms: u64| -> Result<u64, String> {
+        match p.kv.get("wait") {
+            Some(v) => v
+                .parse::<u64>()
+                .map(|secs| secs.saturating_mul(1000))
+                .map_err(|_| format!("--wait는 초 단위 숫자여야 합니다: {v}")),
+            None => Ok(default_ms),
+        }
+    };
+    match pos.get(1).map(String::as_str) {
+        Some("roster") => Ok(("/v1/talk/roster", json!({}))),
+        Some(kind @ ("ask" | "send")) => {
+            let to = pos.get(2).ok_or("talk: 상대(캐릭터 id 또는 이름)가 필요합니다")?;
+            let text = pos.get(3).ok_or("talk: 보낼 내용이 필요합니다")?;
+            // ask는 답까지 기다린다(기본 120초), send는 즉시 돌아온다.
+            let default = if kind == "ask" { 120_000 } else { 0 };
+            let mut o = Map::new();
+            o.insert("to".into(), Value::String(to.clone()));
+            o.insert("text".into(), Value::String(text.clone()));
+            o.insert("waitMs".into(), json!(wait_ms(default)?));
+            if let Some(conv) = p.kv.get("conv") {
+                o.insert("convId".into(), Value::String(conv.clone()));
+            }
+            Ok(("/v1/talk/send", Value::Object(o)))
+        }
+        Some("reply") => {
+            let conv = pos.get(2).ok_or("talk reply: 대화 id가 필요합니다")?;
+            let text = pos.get(3).ok_or("talk reply: 답장 내용이 필요합니다")?;
+            Ok((
+                "/v1/talk/reply",
+                json!({ "convId": conv, "text": text, "waitMs": wait_ms(0)? }),
+            ))
+        }
+        Some("inbox") => Ok(("/v1/talk/inbox", json!({ "waitMs": wait_ms(0)? }))),
+        Some("end") => {
+            let conv = pos.get(2).ok_or("talk end: 대화 id가 필요합니다")?;
+            Ok(("/v1/talk/end", json!({ "convId": conv })))
+        }
+        _ => Err("talk: roster|ask|send|reply|inbox|end 중 하나가 필요합니다".into()),
+    }
+}
+
+/// 이 요청이 서버에서 최대 얼마나 붙잡힐 수 있는지(롱폴링). HTTP 타임아웃을
+/// 그만큼 늘려 준다 — 기본 10초로는 `ask`가 항상 연결 실패로 끝난다.
+fn request_wait_ms(body: &Value) -> u64 {
+    body.get("waitMs").and_then(Value::as_u64).unwrap_or(0)
+}
+
 const USAGE: &str = "\
 agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
 
@@ -303,6 +358,12 @@ agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
   dispose <agentId>               세션을 종료한다
   notifications <agentId>         대기 중 알림을 나열한다
   clear <agentId> [id...]         알림을 지운다(id 없으면 전체)
+  talk roster                     말 걸 수 있는 동료를 나열한다
+  talk ask <상대> <내용> [--wait 초]   보내고 답을 기다린다(기본 120초)
+  talk send <상대> <내용> [--conv id]  보내고 즉시 돌아온다
+  talk inbox [--wait 초]          나에게 온 메시지를 가져간다
+  talk reply <convId> <내용>      받은 메시지에 답한다
+  talk end <convId>               대화를 닫는다
   settings get                    현재 앱 설정을 출력한다
   settings set <key=value>...     설정을 변경한다(cliEnabled 제외)
 
@@ -404,7 +465,15 @@ pub fn run(args: Vec<String>) -> i32 {
         }
         Ok((_, value)) => {
             if value.get("ok").and_then(Value::as_bool) == Some(true) {
-                print_success(&parsed, &value["data"]);
+                let data = &value["data"];
+                print_success(&parsed, data);
+                // `ask`는 답을 받아 오는 명령이다 — 시간 안에 못 받으면 성공이 아니다.
+                if parsed.sub() == "talk"
+                    && parsed.positionals.get(1).map(String::as_str) == Some("ask")
+                    && data.get("reply").is_none_or(Value::is_null)
+                {
+                    return EXIT_NO_REPLY;
+                }
                 EXIT_OK
             } else {
                 let msg = value
@@ -424,16 +493,26 @@ async fn send(
     path: &str,
     body: &Value,
 ) -> Result<(u16, Value), String> {
+    // 롱폴링(talk ask/inbox)은 서버가 최대 waitMs 동안 붙잡는다 — 그만큼 여유를 준다.
+    let timeout = Duration::from_secs(10) + Duration::from_millis(request_wait_ms(body));
     let client = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(10))
+        .timeout(timeout)
         .build()
         .map_err(|e| format!("HTTP 클라이언트 생성 실패: {e}"))?;
-    let resp = client
+    let mut req = client
         .post(format!("http://127.0.0.1:{port}{path}"))
         .header(TOKEN_HEADER, token)
-        .json(body)
+        .json(body);
+    // 발신자 신원: 앱이 세션 셸에 심어 둔 값. 없으면 서버가 400으로 거절한다
+    // (앱 밖 셸에서 남을 사칭할 수 없다 — docs/agent-talk-design.md §1).
+    if let Ok(session) = std::env::var("AGENT_OFFICE_SESSION") {
+        if !session.trim().is_empty() {
+            req = req.header(super::protocol::SESSION_HEADER, session);
+        }
+    }
+    let resp = req
         .send()
         .await
         .map_err(|e| format!("연결 실패: {e}"))?;
@@ -573,6 +652,7 @@ fn render_success(parsed: &Parsed, data: &Value) -> String {
             }
             _ => out.push_str("(알림 없음)\n"),
         },
+        "talk" => render_talk(parsed, data, &mut out),
         "settings" => {
             let _ = writeln!(
                 out,
@@ -583,6 +663,70 @@ fn render_success(parsed: &Parsed, data: &Value) -> String {
         _ => out.push_str("ok\n"),
     }
     out
+}
+
+
+/// `talk` 응답의 사람용 출력. 에이전트가 그대로 읽고 판단할 문장이라 사유를
+/// 감추지 않는다(닿지 않는 동료는 이유까지 보여 준다).
+fn render_talk(parsed: &Parsed, data: &Value, out: &mut String) {
+    use std::fmt::Write as _;
+    let msg_line = |m: &Value| {
+        format!(
+            "[{}] {}: {}",
+            m["convId"].as_str().unwrap_or("?"),
+            m["fromName"].as_str().unwrap_or("?"),
+            m["text"].as_str().unwrap_or("")
+        )
+    };
+    match parsed.positionals.get(1).map(String::as_str) {
+        Some("roster") => match data.as_array() {
+            Some(rows) if !rows.is_empty() => {
+                for r in rows {
+                    let mark = if r["reachable"].as_bool() == Some(true) {
+                        if r["busy"].as_bool() == Some(true) {
+                            "작업 중"
+                        } else {
+                            "대기"
+                        }
+                    } else {
+                        r["reason"].as_str().unwrap_or("불가")
+                    };
+                    let _ = writeln!(
+                        out,
+                        "{:<16} {:<12} {:<10} {}",
+                        r["agentId"].as_str().unwrap_or("?"),
+                        r["name"].as_str().unwrap_or(""),
+                        mark,
+                        r["role"].as_str().unwrap_or("")
+                    );
+                }
+            }
+            _ => out.push_str("(동료 없음)\n"),
+        },
+        Some("inbox") => match data.as_array() {
+            Some(rows) if !rows.is_empty() => {
+                for m in rows {
+                    let _ = writeln!(out, "{}", msg_line(m));
+                }
+            }
+            _ => out.push_str("(새 메시지 없음)\n"),
+        },
+        Some("ask" | "send" | "reply") => {
+            let conv = data["convId"].as_str().unwrap_or("?");
+            match data.get("reply") {
+                Some(reply) if !reply.is_null() => {
+                    let _ = writeln!(out, "{}", msg_line(reply));
+                }
+                _ => {
+                    let _ = writeln!(
+                        out,
+                        "보냈습니다(conv={conv}). 답은 나중에 `talk inbox`로 확인하세요."
+                    );
+                }
+            }
+        }
+        _ => out.push_str("ok\n"),
+    }
 }
 
 #[cfg(test)]

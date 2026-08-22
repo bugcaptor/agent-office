@@ -1242,6 +1242,7 @@ mod tests {
             keyboard_sound: None,
             voice_id: None,
             bot: None,
+            talk_receive: None,
         }
     }
 
@@ -1267,6 +1268,9 @@ mod tests {
             // 페어링·정적자산·RPC가 전부 이 토글을 매 요청 확인한다 —
             // 켜 두지 않으면 픽스처가 페어링 단계에서 403이다.
             web_remote_enabled: true,
+            talk_enabled: false,
+            talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
+            talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,
             ..AppSettings::default()
         }));
         let observer_server = Arc::new(crate::observer::server::ObserverServerState::default());

@@ -74,6 +74,9 @@ export interface AgentProfile {
   /** 봇 모드 설정(이슈 #57). 부재 = 기본값. 봇 ON/OFF 자체는 런타임 상태이고
    * 여기엔 지속 설정(slug 별칭·화이트리스트·폴링 주기)만 담는다. Rust `bot` 미러. */
   bot?: BotConfig;
+  /** 동료 대화(docs/agent-talk-design.md) 수신 허용. 부재/true = 받는다,
+   * false = 이 캐릭터에게는 말을 걸 수 없다(roster에서 reachable=false). */
+  talkReceive?: boolean;
 }
 
 /**

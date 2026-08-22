@@ -541,6 +541,9 @@ describe("app settings slice", () => {
       webRemoteBind: "tailnet",
       webRemotePort: 47800,
       webRemoteEnabled: false,
+      talkEnabled: false,
+      talkMaxTurns: 6,
+      talkIdleQuietMs: 3000,
     });
     expect(s.settingsFirstRun).toBe(false);
   });
@@ -580,6 +583,9 @@ describe("app settings slice", () => {
         webRemoteBind: "tailnet",
         webRemotePort: 47800,
         webRemoteEnabled: false,
+        talkEnabled: false,
+        talkMaxTurns: 6,
+        talkIdleQuietMs: 3000,
       },
       true
     );
@@ -617,6 +623,9 @@ describe("app settings slice", () => {
       webRemoteBind: "tailnet",
       webRemotePort: 47800,
       webRemoteEnabled: false,
+      talkEnabled: false,
+      talkMaxTurns: 6,
+      talkIdleQuietMs: 3000,
     });
     expect(s.settingsFirstRun).toBe(true);
   });
@@ -664,6 +673,9 @@ describe("app settings slice", () => {
       webRemoteBind: "tailnet",
       webRemotePort: 47800,
       webRemoteEnabled: false,
+      talkEnabled: false,
+      talkMaxTurns: 6,
+      talkIdleQuietMs: 3000,
     });
   });
 
@@ -702,6 +714,9 @@ describe("app settings slice", () => {
         webRemoteBind: "tailnet",
         webRemotePort: 47800,
         webRemoteEnabled: false,
+        talkEnabled: false,
+        talkMaxTurns: 6,
+        talkIdleQuietMs: 3000,
       },
       true
     );
@@ -746,6 +761,9 @@ describe("app settings slice", () => {
       webRemoteBind: "tailnet",
       webRemotePort: 47800,
       webRemoteEnabled: false,
+      talkEnabled: false,
+      talkMaxTurns: 6,
+      talkIdleQuietMs: 3000,
     });
   });
 

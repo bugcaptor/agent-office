@@ -1,0 +1,142 @@
+/* src/renderer/talk/talk.css
+ *
+ * 동료 대화(docs/agent-talk-design.md §7) 렌더러 스타일. 두 덩어리다:
+ *   1) .talk-widget*  — 하단바 "대화 N" 표시(UsageWidget 옆).
+ *   2) .talk-log-*    — 대화 감사 로그 다이얼로그(analytics.css 관례).
+ *
+ * 색·간격은 전역 토큰(tokens.css)만 참조한다(하드코딩 색 금지).
+ */
+@import "../styles/tokens.css";
+
+/* ---- 하단바 표시 ---- */
+.talk-widget {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--unit);
+  white-space: nowrap;
+}
+
+/* 전달 대기(상대가 바빠 아직 안 닿은) 건수. 있을 때만 렌더된다. */
+.talk-widget-queued {
+  color: var(--accent-warn);
+}
+
+/* ---- 로그 다이얼로그 ---- */
+.talk-log-dialog {
+  width: min(820px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  font-family: "DungGeunMo", monospace;
+  color: var(--text);
+}
+
+.talk-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--unit) * 3);
+}
+
+.talk-log-body {
+  flex: 1;
+  display: flex;
+  gap: calc(var(--unit) * 2);
+  margin-top: calc(var(--unit) * 2);
+  min-height: 0; /* 자식 스크롤이 살아나게 */
+}
+
+.talk-log-dates {
+  width: 132px;
+  flex: 0 0 auto;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-right: 2px solid var(--border-dark);
+}
+
+.talk-log-date {
+  display: block;
+  width: 100%;
+  padding: var(--unit);
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.talk-log-date:hover {
+  background: var(--bg-panel-hi);
+}
+
+.talk-log-date-active {
+  background: var(--bg-panel-hi);
+  color: var(--text);
+}
+
+.talk-log-view {
+  flex: 1;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.talk-log-msg {
+  padding: calc(var(--unit) * 6) calc(var(--unit) * 2);
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.talk-log-conv {
+  margin-bottom: calc(var(--unit) * 3);
+}
+
+.talk-log-conv-head {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--unit) * 2);
+  margin: 0 0 var(--unit);
+  padding-bottom: var(--unit);
+  border-bottom: 1px solid var(--border-dark);
+  font-size: 0.9em;
+}
+
+.talk-log-conv-id {
+  color: var(--text-dim);
+}
+
+.talk-log-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.talk-log-line {
+  display: grid;
+  /* 시각 · 보낸이→받는이 · 종류 · 본문. 본문만 남는 폭을 다 쓰고 줄바꿈한다. */
+  grid-template-columns: auto auto auto 1fr;
+  gap: calc(var(--unit) * 2);
+  padding: var(--unit) 0;
+  align-items: baseline;
+}
+
+.talk-log-when,
+.talk-log-kind {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.talk-log-who {
+  white-space: nowrap;
+}
+
+.talk-log-text {
+  overflow-wrap: anywhere; /* 긴 한 줄(주입 문구)이 다이얼로그를 밀지 않게 */
+}
+
+/* 전달 실패(만료)는 경고색으로 눈에 띄게. */
+.talk-log-line-expire .talk-log-kind {
+  color: var(--accent-error);
+}

@@ -777,3 +777,25 @@ describe("boss desk queue orchestration", () => {
     expect(posOf(world, "a")).toEqual(queuePos(0));
   });
 });
+
+describe("OfficeWorld: 동료 대화 말풍선", () => {
+  it("onTalkBubble이 해당 캐릭터 말풍선을 띄우고, 수명이 다하면 스스로 숨는다", () => {
+    const { bus, world, characterLayer } = makeWorld();
+    world.syncAgents([profile("a1")]);
+    // 엔티티 자식 순서는 [sprite, "!", "...", 미니, 대화 말풍선].
+    const talkRoot = (characterLayer.children[0] as Container).children[4];
+
+    expect(talkRoot.visible).toBe(false);
+    bus.triggerTalkBubble("a1", "안녕하세요", "say");
+    expect(talkRoot.visible).toBe(true);
+
+    settle(world); // 16초분 tick — 말풍선 수명(4.5초)을 훌쩍 넘긴다
+    expect(talkRoot.visible).toBe(false);
+  });
+
+  it("엔티티 없는 id(책상 부족·퇴근)는 조용히 흘려보낸다", () => {
+    const { bus, world } = makeWorld();
+    world.syncAgents([profile("a1")]);
+    expect(() => bus.triggerTalkBubble("nobody", "x", "hear")).not.toThrow();
+  });
+});

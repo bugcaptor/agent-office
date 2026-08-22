@@ -76,6 +76,7 @@ pub(crate) async fn set_app_settings_inner(
         &app_state.hub,
         &app_state.observer_server,
         &app_state.observer,
+        &app_state.talk,
         settings.clone(),
     )
     .await?;
@@ -164,6 +165,7 @@ pub(crate) async fn apply_settings_effects(
     hub: &crate::notification::hub::NotificationHub,
     observer_server: &crate::observer::server::ObserverServerState,
     observer: &std::sync::Arc<crate::observer::ObserverRuntime>,
+    talk: &std::sync::Arc<crate::talk::TalkHub>,
     settings: AppSettings,
 ) -> Result<(), String> {
     // write 가드를 먼저 잡고 쥔 채 저장(동기, await 없음) 후 캐시를 갱신한다 --
@@ -178,6 +180,13 @@ pub(crate) async fn apply_settings_effects(
     }
     // 이슈 #41: 질문 알림 홀드 시간 변경을 즉시 hub 에 반영한다.
     hub.set_hold_duration(std::time::Duration::from_millis(settings.attention_hold_ms));
+    // 동료 대화(docs/agent-talk-design.md §5): 토글과 상한을 즉시 반영한다.
+    // OFF는 킬 스위치라 대기 중 메시지까지 그 자리에서 버려진다.
+    talk.set_config(crate::talk::TalkConfig {
+        max_turns: settings.talk_max_turns.max(1),
+        idle_quiet_ms: settings.talk_idle_quiet_ms,
+    });
+    talk.set_enabled(settings.talk_enabled);
     if settings.observer_enabled {
         let _ = observer_server.ensure(observer.clone()).await;
     }

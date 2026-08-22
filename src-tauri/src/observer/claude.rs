@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::event::{
@@ -26,6 +26,10 @@ pub struct ClaudeAdapter {
     transcript_progress: Mutex<HashMap<String, Instant>>,
     /// tail 읽기 최소 간격(테스트는 with_progress_interval로 조정).
     progress_interval: Duration,
+    /// 훅 설정 파일에 함께 실을 추가 최상위 키(동료 대화의 플러그인 선언 등).
+    /// **쓸 때마다** 호출하므로 스폰과 입양 복구가 같은 값을 받는다 — 설정이
+    /// 그 사이 꺼졌으면 다음 기록부터 조각이 빠진다.
+    extra_settings: Option<Arc<dyn Fn() -> Option<serde_json::Value> + Send + Sync>>,
 }
 
 impl ClaudeAdapter {
@@ -44,7 +48,17 @@ impl ClaudeAdapter {
             forwarder_executable,
             transcript_progress: Mutex::new(HashMap::new()),
             progress_interval,
+            extra_settings: None,
         }
+    }
+
+    /// 훅 설정에 얹을 추가 조각 공급자를 붙인다(lib.rs가 동료 대화 선언을 넣는다).
+    pub fn with_extra_settings(
+        mut self,
+        provider: Arc<dyn Fn() -> Option<serde_json::Value> + Send + Sync>,
+    ) -> Self {
+        self.extra_settings = Some(provider);
+        self
     }
 
     /// PostToolUse를 도구 요약 + (스로틀 통과 시) assistant 내레이션으로 매핑한다.
@@ -123,7 +137,7 @@ impl ClaudeAdapter {
         // 시작·종료한 세션도 리줌 ID를 남기기 위한 등록(리뷰 지적 반영,
         // docs/claude-session-resume-design.md §2). 8개 이벤트 모두 forwarder
         // 명령을 쓴다(위 hook_command 주석: 예전 silent 변형은 불필요).
-        let settings = serde_json::json!({
+        let mut settings = serde_json::json!({
             "hooks": {
                 "UserPromptSubmit": entry(self.hook_command("UserPromptSubmit")?),
                 "PostToolUse": entry(self.hook_command("PostToolUse")?),
@@ -135,6 +149,14 @@ impl ClaudeAdapter {
                 "SessionEnd": entry(self.hook_command("SessionEnd")?),
             },
         });
+        // 동료 대화 등 추가 조각을 최상위에 얹는다(훅 키는 건드리지 않는다).
+        if let Some(extra) = self.extra_settings.as_ref().and_then(|f| f()) {
+            if let (Some(target), Some(extra)) = (settings.as_object_mut(), extra.as_object()) {
+                for (key, value) in extra {
+                    target.insert(key.clone(), value.clone());
+                }
+            }
+        }
         let contents = serde_json::to_vec_pretty(&settings)
             .expect("serializing Claude hook settings cannot fail");
         // temp+rename: 같은 디렉터리에 임시 파일로 쓴 뒤 원자적으로 옮긴다.

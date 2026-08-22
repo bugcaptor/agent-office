@@ -4,12 +4,30 @@
     "summarizerEnabled": false,
     "summaryProvider": "claude",
     "summaryModels": {
-      "claude": { "light": "", "heavy": "" },
-      "codex": { "light": "", "heavy": "" },
-      "agy": { "light": "", "heavy": "" },
-      "gemini": { "light": "", "heavy": "" },
-      "opencode": { "light": "", "heavy": "" },
-      "openrouter": { "light": "", "heavy": "" }
+      "claude": {
+        "light": "",
+        "heavy": ""
+      },
+      "codex": {
+        "light": "",
+        "heavy": ""
+      },
+      "agy": {
+        "light": "",
+        "heavy": ""
+      },
+      "gemini": {
+        "light": "",
+        "heavy": ""
+      },
+      "opencode": {
+        "light": "",
+        "heavy": ""
+      },
+      "openrouter": {
+        "light": "",
+        "heavy": ""
+      }
     },
     "diaryEnabled": false,
     "observerEnabled": false,
@@ -31,7 +49,10 @@
     "ttsRewriteProvider": "auto",
     "webRemoteBind": "tailnet",
     "webRemotePort": 47800,
-    "webRemoteEnabled": false
+    "webRemoteEnabled": false,
+    "talkEnabled": false,
+    "talkMaxTurns": 6,
+    "talkIdleQuietMs": 3000
   },
   "firstRun": true
 }

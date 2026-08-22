@@ -309,6 +309,9 @@ describe("AppSettings (opt-in 설정 계약)", () => {
       webRemoteBind: "tailnet",
       webRemotePort: 47800,
       webRemoteEnabled: false,
+      talkEnabled: false,
+      talkMaxTurns: 6,
+      talkIdleQuietMs: 3000,
     });
   });
 

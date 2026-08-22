@@ -57,6 +57,12 @@ impl AppEvents for RecordingAppEvents {
         self.inner.session_state(event);
     }
 
+    /// 동료 대화는 세션 이벤트로 기록하지 않는다(자체 감사 로그가 있다) —
+    /// 그대로 흘려보내기만 한다.
+    fn talk_message(&self, event: &crate::types::TalkEvent) {
+        self.inner.talk_message(event);
+    }
+
     fn notification_new(&self, event: &NotificationEvent) {
         let kind = match event.source {
             NotificationSource::Hook => SessionEventKind::Notification,

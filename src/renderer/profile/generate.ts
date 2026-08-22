@@ -44,6 +44,10 @@ export interface DraftProfile {
   botWhitelist?: string;
   /** 봇 폴링 주기(초) 입력. 빈 문자열 = 기본 60. 하한 30. */
   botPollIntervalSec?: string;
+  /** 동료 대화 수신 허용(docs/agent-talk-design.md). 기본 true — false일 때만
+   * 프로필에 `talkReceive: false`로 남고, 그러면 아무도 이 캐릭터에게 말을
+   * 걸 수 없다. */
+  talkReceive?: boolean;
   /** 봇 turn-taking 유휴 임계(ms). UI에 노출하지 않지만 편집 저장 시 유실되지
    * 않도록 draft에 실어 라운드트립한다(리뷰 M2). 빈 문자열 = 기본 3000. */
   botIdleQuietMs?: string;
@@ -92,6 +96,7 @@ export function generateDraft(): DraftProfile {
     botWhitelist: "",
     botPollIntervalSec: "",
     botIdleQuietMs: "",
+    talkReceive: true,
   };
 }
 
@@ -164,5 +169,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(keyboardSound ? { keyboardSound } : {}),
     ...(voiceId ? { voiceId } : {}),
     ...(bot ? { bot } : {}),
+    // 기본(수신 허용)은 필드를 아예 두지 않는다 — 끈 경우만 명시적으로 남긴다.
+    ...(d.talkReceive === false ? { talkReceive: false } : {}),
   };
 }

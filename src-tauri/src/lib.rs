@@ -43,6 +43,8 @@ mod shell_export;
 mod sessiond;
 mod state;
 mod summarizer;
+/// 동료 대화(docs/agent-talk-design.md) — 캐릭터끼리 앱을 거쳐 주고받는 메시지.
+pub mod talk;
 mod terminal;
 // 확인 요청 대사 TTS(리라이트+ElevenLabs 합성). 키는 웹뷰에 노출하지 않는다.
 // pub: 커맨드 시그니처(`tts_speak`)가 이 모듈의 와이어 타입을 쓴다.
@@ -405,11 +407,83 @@ pub fn run() {
                     registry.clone(),
                     claude_resume_store.clone(),
                 ));
+            // 동료 대화(docs/agent-talk-design.md): 허브 + 스킬 자산 + 배달 워커.
+            // 스킬(로컬 플러그인)은 토글과 무관하게 만들어 둔다 — 대화를 켠 뒤
+            // 앱을 다시 띄우지 않아도 다음 세션부터 바로 붙게.
+            let talk = Arc::new(crate::talk::TalkHub::default());
+            talk.set_log_dir(data_dir.join("talks"));
+            talk.set_events(events.clone());
+            {
+                let snapshot = settings_cache.read().unwrap();
+                talk.set_config(crate::talk::TalkConfig {
+                    max_turns: snapshot.talk_max_turns.max(1),
+                    idle_quiet_ms: snapshot.talk_idle_quiet_ms,
+                });
+                talk.set_enabled(snapshot.talk_enabled);
+            }
+            let talk_exe = forwarder_executable_path();
+            let talk_cli = crate::talk::skill::shim_path();
+            if let Err(error) = crate::talk::skill::ensure_assets(&data_dir, &talk_exe) {
+                eprintln!("agent-office: talk skill assets failed: {error}");
+            }
+            // 세션마다 부르는 두 갈래: (1) 훅 설정에 얹을 조각(관찰 ON),
+            // (2) talk 전용 설정 파일(관찰 OFF). 둘 다 대화가 꺼져 있으면 None.
+            let talk_fragment = {
+                let settings = settings_cache.clone();
+                let data_dir = data_dir.clone();
+                let exe = talk_exe.clone();
+                Arc::new(move || {
+                    if !settings.read().unwrap().talk_enabled {
+                        return None;
+                    }
+                    let shim = crate::talk::skill::ensure_assets(&data_dir, &exe)
+                        .unwrap_or_else(|_| crate::talk::skill::shim_path());
+                    Some(crate::talk::skill::settings_fragment(&data_dir, &shim))
+                }) as Arc<dyn Fn() -> Option<serde_json::Value> + Send + Sync>
+            };
+            let talk_wiring_provider = {
+                let settings = settings_cache.clone();
+                let data_dir = data_dir.clone();
+                let settings_dir = observer_settings_dir.clone();
+                let exe = talk_exe.clone();
+                Arc::new(move |session_id: &str, has_settings: bool| {
+                    if !settings.read().unwrap().talk_enabled {
+                        return None;
+                    }
+                    let shim = crate::talk::skill::ensure_assets(&data_dir, &exe).ok()?;
+                    // 훅 설정이 이미 있으면 권한 조각은 그쪽에 합쳐져 있다.
+                    let settings_path = if has_settings {
+                        None
+                    } else {
+                        crate::talk::skill::write_talk_only_settings(
+                            &settings_dir,
+                            session_id,
+                            &data_dir,
+                            &shim,
+                        )
+                        .map_err(|error| {
+                            eprintln!("agent-office: talk settings write failed: {error}");
+                        })
+                        .ok()
+                    };
+                    Some(crate::session::manager::TalkWiring {
+                        plugin_dir: crate::talk::skill::plugin_dir(&data_dir),
+                        settings_path,
+                    })
+                })
+                    as Arc<
+                        dyn Fn(&str, bool) -> Option<crate::session::manager::TalkWiring>
+                            + Send
+                            + Sync,
+                    >
+            };
+
             let observer = Arc::new(
-                ObserverRuntime::production(
+                ObserverRuntime::production_with(
                     hub.clone(),
-                    observer_settings_dir,
+                    observer_settings_dir.clone(),
                     forwarder_executable_path(),
+                    Some(talk_fragment),
                 )
                 .with_claude_session_sink(claude_resume_recorder),
             );
@@ -441,6 +515,8 @@ pub fn run() {
                 // 세션 핸드오프(unix 전용, docs/session-handoff-design.md) 소켓/로그
                 // 경로와 AGENT_OFFICE_APP_DATA env 주입(§핵심 5)의 근거.
                 .with_app_data_dir(data_dir.clone())
+                // 동료 대화 스킬 배선(--plugin-dir + 권한 조각).
+                .with_talk_wiring(talk_wiring_provider)
                 // v2 상시 브로커 모드(opt-in, docs/session-broker-v2-design.md).
                 .with_broker_mode(broker_mode)
                 // 터미널 전사 상시 기록(30일·2GB 자율 보존).
@@ -496,6 +572,7 @@ pub fn run() {
                 store: store.clone(),
                 settings: settings_cache.clone(),
                 settings_store: settings_store.clone(),
+                talk: talk.clone(),
                 app_data_dir: data_dir.clone(),
                 tmux_probe: crate::control::tmux::system_probe(),
             });
@@ -609,6 +686,24 @@ pub fn run() {
                 });
             }
 
+            // 배달 워커: 수신자가 한가해지면 큐의 메시지를 PTY에 주입한다.
+            crate::talk::spawn_worker(
+                talk.clone(),
+                manager.clone(),
+                talk_cli.to_string_lossy().into_owned(),
+                {
+                    let store = store.clone();
+                    Arc::new(move |agent_id: &str| {
+                        store
+                            .load()
+                            .agents
+                            .into_iter()
+                            .find(|a| a.id == agent_id)
+                            .map(|a| a.role)
+                    })
+                },
+            );
+
             app.manage(AppState {
                 manager,
                 hub,
@@ -638,6 +733,7 @@ pub fn run() {
                 bot_ctx,
                 wake_lock,
                 tts,
+                talk,
             });
             Ok(())
         })
@@ -726,6 +822,9 @@ pub fn run() {
             ipc::commands::load_diary,
             ipc::commands::save_work_log,
             ipc::commands::load_work_logs,
+            ipc::commands::talk_status,
+            ipc::commands::list_talk_log_dates,
+            ipc::commands::read_talk_log,
             ipc::commands::load_memo,
             ipc::commands::save_memo,
             ipc::commands::archive_memo_sheet,
@@ -911,6 +1010,9 @@ mod tests {
             web_remote_bind: Default::default(),
             web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
             web_remote_enabled: false,
+            talk_enabled: false,
+            talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
+            talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,
         }));
         let registry = Arc::new(SessionRegistry::new());
         let events: Arc<dyn AppEvents> = Arc::new(crate::state::fake::RecordingEvents::default());

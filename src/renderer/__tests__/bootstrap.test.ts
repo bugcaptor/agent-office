@@ -35,6 +35,7 @@ const { mockApi } = vi.hoisted(() => ({
     onNotification: vi.fn(),
     onNotificationCleared: vi.fn(() => vi.fn()),
     onActivity: vi.fn(() => vi.fn()),
+    onTalkMessage: vi.fn(() => vi.fn()),
     appendSessionTurn: vi.fn(),
     loadSessionTurns: vi.fn(),
     handoffSupported: vi.fn(),
@@ -272,6 +273,9 @@ describe("bootApp", () => {
       webRemoteBind: "tailnet",
       webRemotePort: 47800,
       webRemoteEnabled: false,
+      talkEnabled: false,
+      talkMaxTurns: 6,
+      talkIdleQuietMs: 3000,
     });
     expect(s.settingsFirstRun).toBe(false);
     expect(warn).toHaveBeenCalledWith(

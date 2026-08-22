@@ -132,3 +132,68 @@ pub struct PingResult {
     pub agent_count: usize,
     pub running_count: usize,
 }
+
+// ── 동료 대화(docs/agent-talk-design.md §3) ──────────────────────────
+
+/// 발신자 신원 헤더. 값은 앱이 세션 셸에 심어 둔 `AGENT_OFFICE_SESSION`이다 —
+/// 발신 캐릭터를 인자로 받지 않는 이유는 그러면 아무 셸에서나 남을 사칭할 수
+/// 있기 때문이다(§1).
+pub const SESSION_HEADER: &str = "x-agent-office-session";
+
+/// `talk/send` — `to`는 agentId 또는 이름. `waitMs`가 있으면 그동안 답을 기다린다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TalkSendParams {
+    pub to: String,
+    pub text: String,
+    #[serde(default)]
+    pub wait_ms: Option<u64>,
+    /// 이어가는 대화가 있으면 그 id(없으면 새 대화).
+    #[serde(default)]
+    pub conv_id: Option<String>,
+}
+
+/// `talk/reply` — 받은 메시지에 답한다. 상대는 대화가 안다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TalkReplyParams {
+    pub conv_id: String,
+    pub text: String,
+    #[serde(default)]
+    pub wait_ms: Option<u64>,
+}
+
+/// `talk/inbox` — 나에게 온 메시지를 가져간다(롱폴링).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TalkInboxParams {
+    #[serde(default)]
+    pub wait_ms: Option<u64>,
+}
+
+/// `talk/end` — 대화를 닫는다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TalkEndParams {
+    pub conv_id: String,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// `talk/roster`의 한 항목. `reachable=false`면 말이 닿지 않는다(사유는 `reason`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RosterEntry {
+    pub agent_id: String,
+    pub name: String,
+    pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    pub reachable: bool,
+    /// 지금 작업 중인지(배달은 한가해질 때까지 기다린다 — 실패가 아니다).
+    pub busy: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// 나 자신인지(자기 자신에게는 말을 걸 수 없다).
+    pub is_me: bool,
+}

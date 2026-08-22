@@ -66,12 +66,26 @@ impl ObserverRuntime {
         settings_dir: PathBuf,
         forwarder_executable: PathBuf,
     ) -> Self {
+        Self::production_with(hub, settings_dir, forwarder_executable, None)
+    }
+
+    /// Claude 훅 설정 파일에 함께 실을 추가 조각(동료 대화의 플러그인 선언)을
+    /// 주입할 수 있는 변형. 스폰과 입양 복구가 같은 공급자를 쓰게 어댑터가 쥔다.
+    pub fn production_with(
+        hub: Arc<NotificationHub>,
+        settings_dir: PathBuf,
+        forwarder_executable: PathBuf,
+        claude_extra_settings: Option<
+            Arc<dyn Fn() -> Option<serde_json::Value> + Send + Sync>,
+        >,
+    ) -> Self {
+        let mut claude = ClaudeAdapter::new(settings_dir, forwarder_executable.clone());
+        if let Some(provider) = claude_extra_settings {
+            claude = claude.with_extra_settings(provider);
+        }
         Self::new(
             hub,
-            vec![
-                Arc::new(ClaudeAdapter::new(settings_dir, forwarder_executable.clone())),
-                Arc::new(CodexAdapter::new(forwarder_executable)),
-            ],
+            vec![Arc::new(claude), Arc::new(CodexAdapter::new(forwarder_executable))],
         )
     }
 
