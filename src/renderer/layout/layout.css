@@ -512,5 +512,8 @@ body {
 .settings-item small { display: block; opacity: 0.75; margin-top: 2px; }
 /* 볼륨 슬라이더 줄: 체크박스 줄과 달리 값 폭 채우기 + 세로 중앙 정렬 */
 .settings-item input[type="range"] { flex: 1; align-self: center; }
+/* 모델 id 입력(요약기 경량/고급, TTS 리라이트 모델): 남는 폭을 채워
+   OpenRouter처럼 긴 모델 id(예: anthropic/claude-sonnet-4.5)가 잘리지 않게 */
+.settings-item input[type="text"] { flex: 1; min-width: 0; }
 /* 폼 안의 안내 문단(입력이 아니라 설명만 있는 줄) */
 .settings-note { margin: 0; font-size: 0.9em; opacity: 0.75; line-height: 1.5; }
