@@ -87,9 +87,33 @@ impl Drop for HandoffInfo {
     }
 }
 
+/// PTY 마스터에서 읽어낸 "지금 이 터미널에서 무엇이 도는가" 스냅샷
+/// (`shell_activity`의 셸 작업중 판정 입력). unix 전용 개념이다.
+///
+/// - `fg_pgid`: 터미널의 포그라운드 프로세스 그룹(`tcgetpgrp`). 셸 자신의
+///   pgid와 다르면 셸이 프롬프트 대기 중이 아니라 자식 명령을 기다리는 중이다.
+/// - `canonical`: 터미널이 정규 모드(ICANON)인가. 셸의 라인 에디터(zle/readline)와
+///   TUI 프로그램(vim·less·claude 등)은 raw 모드를 쓰고, 배치성 명령
+///   (`npm test`·`cargo build`)은 셸이 복원해 둔 정규 모드를 그대로 쓴다.
+///   이 한 비트가 "대화형 프로그램에 들어가 있는 상태"와 "명령이 도는 중"을
+///   가른다 — 프롬프트 문자열 휴리스틱 없이.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ForegroundSample {
+    pub fg_pgid: Option<i32>,
+    pub canonical: bool,
+}
+
 pub trait PtyControl: Send + Sync {
     fn resize(&self, cols: u16, rows: u16) -> io::Result<()>;
     fn kill(&self) -> io::Result<()>;
+
+    /// 포그라운드 프로세스 그룹 + 터미널 모드 스냅샷. `None`은 **이 컨트롤이
+    /// 기능 자체를 지원하지 않는다**는 뜻이다(Windows, Fake, 브로커 데몬 소유
+    /// 세션 — 마스터 fd가 이 프로세스에 없다). 지원하는 컨트롤은 조회에
+    /// 실패해도 `Some`(fg_pgid=None)을 돌려준다. 기본 구현은 미지원.
+    fn foreground_sample(&self) -> Option<ForegroundSample> {
+        None
+    }
 }
 
 pub trait PtyWaiter: Send {
@@ -144,6 +168,22 @@ impl PtyControl for RealControl {
     }
     fn kill(&self) -> io::Result<()> {
         self.killer.lock().kill()
+    }
+
+    /// portable-pty가 이미 노출하는 `process_group_leader()`(= `tcgetpgrp`)와
+    /// `get_termios()`(= `tcgetattr`)를 그대로 쓴다 — 우리 쪽 unsafe도, 별도
+    /// dup fd도 필요 없다. termios를 못 읽는 마스터는 미지원(None)으로 본다:
+    /// canonical 비트를 모른 채 "포그라운드 != 셸"만 보면 대화형 CLI(claude 등)가
+    /// 영구 작업중으로 잡힌다.
+    #[cfg(unix)]
+    fn foreground_sample(&self) -> Option<ForegroundSample> {
+        use nix::sys::termios::LocalFlags;
+        let master = self.master.lock();
+        let termios = master.get_termios()?;
+        Some(ForegroundSample {
+            fg_pgid: master.process_group_leader(),
+            canonical: termios.local_flags.contains(LocalFlags::ICANON),
+        })
     }
 }
 
@@ -279,6 +319,26 @@ impl PtyControl for AdoptedControl {
             let _ = kill(Pid::from_raw(pid), Signal::SIGKILL);
         }
         Ok(())
+    }
+
+    /// 입양 세션도 마스터 fd를 쥐고 있으므로 같은 판정을 할 수 있다.
+    /// `MasterPty` 트레잇 객체가 아니라 fd 정수 하나뿐이라 `resize`와 마찬가지로
+    /// 저수준 호출을 직접 쓴다.
+    fn foreground_sample(&self) -> Option<ForegroundSample> {
+        use nix::sys::termios::LocalFlags;
+        let fd = self.master_fd.load(std::sync::atomic::Ordering::SeqCst);
+        if fd < 0 {
+            return None;
+        }
+        let termios = nix::sys::termios::tcgetattr(fd).ok()?;
+        let fg_pgid = match unsafe { libc::tcgetpgrp(fd) } {
+            pid if pid > 0 => Some(pid),
+            _ => None,
+        };
+        Some(ForegroundSample {
+            fg_pgid,
+            canonical: termios.local_flags.contains(LocalFlags::ICANON),
+        })
     }
 }
 

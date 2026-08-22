@@ -56,6 +56,8 @@ export interface NotificationEvent {
  * PostToolUse (heartbeat / waiting→working signal). `resume` = the backend's
  * post-completion output heuristic (이슈 #39) deciding the agent is still
  * working after a Stop; the renderer treats it like `tool` for turn purposes.
+ * `idle` = 열린 턴을 알림 없이 정산하는 신호(kbm #2f9, 셸 포그라운드 명령
+ * 종료). 셸 명령마다 완료 알림이 쌓이지 않도록 정산만 하는 갈래다.
  */
 export type ActivityKind =
   | "prompt"
@@ -63,7 +65,8 @@ export type ActivityKind =
   | "sub-start"
   | "sub-stop"
   | "sub-count"
-  | "resume";
+  | "resume"
+  | "idle";
 
 /**
  * Activity signal for session time tracking. Emitted as the `activity-event`

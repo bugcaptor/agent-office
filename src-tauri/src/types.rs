@@ -137,6 +137,9 @@ pub struct NotificationEvent {
 /// (NotificationHub의 출력 휴리스틱이 방출, 이슈 #39). 세 sub-* 는 카운트 기반
 /// 미니 캐릭터 전용이라 시간 추적/시계열엔 기록하지 않지만, resume 은 렌더러의
 /// 턴 상태를 working 으로 되돌리는 신호로 쓰인다(tool 과 동일하게 취급).
+/// idle = 열린 턴을 **알림 없이** 정산하는 신호(kbm #2f9, 셸 포그라운드 명령
+/// 종료). 완료 알림(NotificationSource::Stop)은 에이전트 턴에만 어울리므로,
+/// 셸 명령마다 알림이 쌓이지 않도록 정산만 하는 갈래를 따로 둔다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ActivityKind {
@@ -149,6 +152,7 @@ pub enum ActivityKind {
     #[serde(rename = "sub-count")]
     SubCount,
     Resume,
+    Idle,
 }
 
 /// 세션 시간 추적용 활동 이벤트. NotificationHub의 dedup/큐를 우회해

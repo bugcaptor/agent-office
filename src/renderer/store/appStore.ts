@@ -753,6 +753,29 @@ export const useAppStore = create<AppState>()(
         // sessionBridge가 별도 소유). reduceTurn의 TurnInputKind로 좁히기 위해서도 필요.
         // resume(이슈 #39)은 완료 후 출력 지속 신호 — 턴 목적상 tool과 동일하게
         // 취급해 idle→working으로 복귀시킨다(라벨 갱신 대상은 아니다).
+        // idle(kbm #2f9): 셸 포그라운드 명령이 끝났다는 신호. 완료 알림
+        // (source="stop")과 같은 정산·실황 정리를 하되 알림은 만들지 않는다 —
+        // 셸 명령마다 알림 목록이 불어나면 안 되기 때문이다.
+        if (e.kind === "idle") {
+          const prevTurn = s.timeTracking[e.agentId] ?? initialTurnState();
+          const nextTurn = reduceTurn(prevTurn, { kind: "settle", at: e.at });
+          logSettledTurn(e.agentId, prevTurn, nextTurn, e.at);
+          const timeTracking = { ...s.timeTracking, [e.agentId]: nextTurn };
+          const label = s.taskLabels[e.agentId];
+          if (!label) return { timeTracking };
+          return {
+            timeTracking,
+            taskLabels: {
+              ...s.taskLabels,
+              [e.agentId]: {
+                ...label,
+                latestToolText: undefined,
+                latestAssistantText: undefined,
+                latestToolAt: undefined,
+              },
+            },
+          };
+        }
         if (e.kind !== "prompt" && e.kind !== "tool" && e.kind !== "resume") return {};
         const turnKind = e.kind === "resume" ? "tool" : e.kind;
         const prevTurn = s.timeTracking[e.agentId] ?? initialTurnState();

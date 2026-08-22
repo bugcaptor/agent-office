@@ -74,6 +74,8 @@ export interface ActivityLine {
  * activity 프레임 → 진행 라인. 표시할 것이 없으면 null.
  * `prompt`는 턴 시작, `tool`은 도구 하트비트다(sub-* 는 미니 캐릭터 전용이라
  * 채팅에서는 무시한다 — 서브에이전트 수는 여기서 의미가 없다).
+ * `idle`(kbm #2f9)도 여기서는 null이다 — "진행 라인 없음"이 아니라 "진행 라인을
+ * 거둔다"는 뜻이라, 지우는 쪽은 호출자(ChatScreen)가 명시적으로 처리한다.
  */
 export function activityLine(payload: {
   kind?: string;

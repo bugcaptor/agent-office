@@ -1536,3 +1536,141 @@ return
         drop(_env);
         let _ = std::fs::remove_dir_all(root);
     }
+
+    /// 셸 작업중 감지(kbm #2f9) 종단 확인: 진짜 로그인 셸 세션에서 긴 명령을
+    /// 돌리면 `SessionManager`가 띄운 감시 스레드가 훅 없이도
+    /// prompt(턴 open) → sub-count(미니미) → idle(턴 정산)을 방출한다.
+    #[cfg(unix)]
+    #[tokio::test]
+    #[ignore = "real PTY; run explicitly"]
+    async fn real_shell_foreground_command_drives_activity_without_hooks() {
+        use crate::types::ActivityKind;
+
+        let events = Arc::new(RecordingEvents::default());
+        let registry = Arc::new(SessionRegistry::new());
+        let hub = Arc::new(NotificationHub::new(
+            registry.clone(),
+            events.clone() as Arc<dyn AppEvents>,
+            Arc::new(SystemClock),
+            Duration::from_millis(3000),
+        ));
+        // 훅 URL 없음 = observer 완전 OFF. 이 테스트가 보는 신호는 전부
+        // 포그라운드 감시에서만 나온 것이다.
+        let observer = Arc::new(ObserverRuntime::new(hub.clone(), vec![]));
+        let mgr = Arc::new(SessionManager::new(
+            Arc::new(PortablePtyFactory),
+            observer,
+            registry,
+            events.clone() as Arc<dyn AppEvents>,
+            hub,
+            Arc::new(|| None),
+        ));
+
+        mgr.create(CreateSessionRequest {
+            agent_id: "shellwatch".into(),
+            cols: Some(80),
+            rows: Some(24),
+            cwd: None,
+            shell: None,
+            startup_command: None,
+            personality_prompt: None,
+            autostart_claude: Some(false),
+        })
+        .expect("create real session");
+        // 출력을 계속 빨아들여 셸이 막히지 않게 한다.
+        let _sink = attach_string_collector(&mgr, "shellwatch");
+        tokio::time::sleep(Duration::from_millis(1_500)).await; // 프롬프트 대기
+
+        // 프롬프트에 머무는 동안에는 아무 신호도 없어야 한다.
+        assert!(
+            events.activities().is_empty(),
+            "프롬프트 대기 중 activity: {:?}",
+            events.activities()
+        );
+
+        mgr.write_input("shellwatch", "sleep 4\r");
+        wait_for_timeout(
+            || {
+                events
+                    .activities()
+                    .iter()
+                    .any(|a| a.kind == ActivityKind::Prompt)
+            },
+            Duration::from_secs(6),
+            "셸 포그라운드 명령이 prompt activity를 내지 않았다",
+        )
+        .await;
+
+        let prompt = events
+            .activities()
+            .into_iter()
+            .find(|a| a.kind == ActivityKind::Prompt)
+            .expect("prompt activity");
+        assert_eq!(prompt.agent_id, "shellwatch");
+        assert_eq!(prompt.text.as_deref(), Some("sleep 4"));
+
+        // 미니미 카운트는 prompt 직후 별도로 방출된다(pgrep 조회 한 박자 뒤).
+        wait_for_timeout(
+            || {
+                events
+                    .activities()
+                    .iter()
+                    .any(|a| a.kind == ActivityKind::SubCount && a.count.unwrap_or(0) >= 1)
+            },
+            Duration::from_secs(4),
+            "작업중인데 미니미 카운트가 오지 않았다",
+        )
+        .await;
+
+        // 명령이 끝나고 최소 표시시간이 지나면 정산 신호가 온다.
+        wait_for_timeout(
+            || {
+                events
+                    .activities()
+                    .iter()
+                    .any(|a| a.kind == ActivityKind::Idle)
+            },
+            Duration::from_secs(12),
+            "명령 종료 후 idle activity가 오지 않았다",
+        )
+        .await;
+        // 정산과 함께 미니미도 0으로 거둔다.
+        assert!(events
+            .activities()
+            .iter()
+            .any(|a| a.kind == ActivityKind::SubCount && a.count == Some(0)));
+        // 셸 명령은 완료 알림을 만들지 않는다(알림 목록 오염 금지). 셸이 스스로
+        // 울린 BEL은 기존 폴백 경로라 여기서 따지지 않는다.
+        assert!(
+            !events
+                .notifications()
+                .iter()
+                .any(|n| n.source == NotificationSource::Stop),
+            "{:?}",
+            events.notifications()
+        );
+
+        mgr.dispose("shellwatch");
+    }
+
+    /// 출력을 문자열로 모으는 최소 수집기(위 스모크들의 `attach_collector`와
+    /// 같은 배선 — 이 테스트만 쓰는 사본이라 이름을 분리해 둔다).
+    fn attach_string_collector(
+        mgr: &Arc<SessionManager>,
+        agent_id: &str,
+    ) -> Arc<Mutex<String>> {
+        let output = Arc::new(Mutex::new(String::new()));
+        let output_for_channel = output.clone();
+        let channel: Channel<OutputChunk> = Channel::new(move |body| {
+            if let InvokeResponseBody::Json(s) = body {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                    if let Some(data) = v.get("data").and_then(|d| d.as_str()) {
+                        output_for_channel.lock().push_str(data);
+                    }
+                }
+            }
+            Ok(())
+        });
+        mgr.attach_output(agent_id, channel);
+        output
+    }

@@ -118,7 +118,10 @@ export function ChatScreen({
       if (msg.type === "activity" && msg.agentId === agentId) {
         const payload = msg.payload as { kind?: string; text?: string };
         const line = activityLine(payload);
-        if (line) setActivity(line.text);
+        // idle(kbm #2f9)은 셸 명령이 끝났다는 신호 — 셸 세션에는 뒤따르는 완료
+        // 알림이 없으므로 여기서 진행 라인을 직접 거둔다.
+        if (payload.kind === "idle") setActivity(null);
+        else if (line) setActivity(line.text);
         // 데스크톱에서 사람이 친 프롬프트는 훅이 원문을 그대로 미러한다 —
         // 전사 tail을 기다리지 않고 곧바로 유저 버블로 세운다.
         const echo = promptEcho(payload);

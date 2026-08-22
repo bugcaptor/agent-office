@@ -116,6 +116,21 @@
         assert!(events.notifications().is_empty());
     }
 
+    /// 셸 포그라운드 명령 종료(kbm #2f9). 턴 정산 신호만 내고 알림은 만들지
+    /// 않는다 — 셸 명령마다 완료 알림이 쌓이면 알림 목록이 무의미해진다.
+    #[test]
+    fn idle_activity_settles_a_turn_without_a_notification() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_activity("s1", ActivityKind::Idle);
+
+        let activity = events.activities();
+        assert_eq!(activity.len(), 1);
+        assert_eq!(activity[0].kind, ActivityKind::Idle);
+        assert_eq!(activity[0].agent_id, "a1");
+        assert!(activity[0].count.is_none());
+        assert!(events.notifications().is_empty());
+    }
+
     #[test]
     fn stop_emits_absolute_count_before_notification_and_defaults_to_zero() {
         let (hub, events, _clock) = fixture();

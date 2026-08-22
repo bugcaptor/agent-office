@@ -567,6 +567,15 @@ impl SessionManager {
         let output = self.sink_for(&agent_id);
         let broker_owned = spawned.broker_owned;
         let broker_stream_offset = spawned.broker_stream_offset.clone();
+        // 셸 작업중 감시(kbm #2f9)에 필요한 두 조각을 Session이 소유하기 전에
+        // 떠 둔다. control은 Arc라 복제해도 같은 마스터를 가리킨다.
+        #[cfg(unix)]
+        let watch_control = spawned.control.clone();
+        // 셸 자신의 pgid. spawn 시점의 포그라운드 그룹이 곧 셸이다 -- 알면
+        // 주지 않아도 tracker가 첫 샘플에서 래치하지만, 명령이 이미 도는 채로
+        // 입양된 세션에서 오판하지 않도록 아는 값을 우선한다.
+        #[cfg(unix)]
+        let watch_shell_pgid = spawned.handoff.as_ref().and_then(|h| h.pgid);
         // 세션 로그 기록 시작(§3.1). 같은 sessionId의 파일이 이미 있으면
         // 이어 쓴다 -- 앱 재시작 후 입양된 세션이 한 파일로 이어진다.
         //
@@ -667,6 +676,29 @@ impl SessionManager {
             let outcome = waiter.wait();
             me.on_exit(&sess, outcome);
         });
+
+        // 4) 셸 작업중 감시 스레드(kbm #2f9, unix + 앱이 마스터 fd를 쥔 세션 한정).
+        // 포그라운드 프로세스 그룹을 못 보는 컨트롤(브로커 데몬 소유·Fake)에서는
+        // 아예 띄우지 않는다 -- 감시가 없으면 기존 동작 그대로다.
+        #[cfg(unix)]
+        if watch_control.foreground_sample().is_some() {
+            let weak = Arc::downgrade(&session);
+            crate::session::shell_activity::spawn_watcher(
+                session_id.clone(),
+                watch_control,
+                self.hub.clone(),
+                watch_shell_pgid,
+                Arc::new(move || {
+                    weak.upgrade().is_some_and(|s| {
+                        !s.handed_off.load(Ordering::SeqCst)
+                            && matches!(
+                                *s.state.lock(),
+                                SessionState::Starting | SessionState::Running
+                            )
+                    })
+                }),
+            );
+        }
 
         // Running 전이 (CAS): wait 스레드가 이미 Exited/Disposed로 옮겼다면
         // 덮어쓰지 않는다. state 락을 registry.set_state/emit까지 계속 쥐어

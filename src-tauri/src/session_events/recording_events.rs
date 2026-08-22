@@ -87,12 +87,14 @@ impl AppEvents for RecordingAppEvents {
         let kind = match event.kind {
             ActivityKind::Prompt => Some(SessionEventKind::Prompt),
             ActivityKind::Tool => Some(SessionEventKind::Tool),
-            // 서브에이전트 카운트 신호와 resume(이슈 #39, 출력 휴리스틱 복귀 신호)은
-            // 렌더러 릴레이 전용 — 시계열엔 기록하지 않는다.
+            // 서브에이전트 카운트 신호와 resume(이슈 #39, 출력 휴리스틱 복귀 신호),
+            // idle(kbm #2f9, 셸 명령 종료 = 턴 정산 신호)은 렌더러 릴레이 전용 —
+            // 시계열엔 기록하지 않는다(정산 결과는 세션 시간 로그가 이미 남긴다).
             ActivityKind::SubStart
             | ActivityKind::SubStop
             | ActivityKind::SubCount
-            | ActivityKind::Resume => None,
+            | ActivityKind::Resume
+            | ActivityKind::Idle => None,
         };
         if let Some(kind) = kind {
             self.record(SessionEventDraft::simple(

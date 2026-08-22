@@ -148,6 +148,12 @@ describe("activityLine", () => {
     }
     expect(activityLine({})).toBeNull();
   });
+
+  // idle(kbm #2f9)은 "표시할 진행 라인이 없다"가 아니라 "거두라"는 신호다 —
+  // 여기서는 null을 주고, 실제로 지우는 것은 ChatScreen이 kind로 직접 처리한다.
+  it("idle은 진행 라인을 만들지 않는다", () => {
+    expect(activityLine({ kind: "idle" })).toBeNull();
+  });
 });
 
 describe("호스트 입력 에코", () => {

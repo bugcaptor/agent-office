@@ -392,3 +392,78 @@ temp 청소·강제 삭제를 되돌릴 수단이 없어 그 셸의 `claude` 재
 창에서 분리된 셸의 `claude`는 "관찰"이 아니라 "실행"까지만 보장(래퍼 가드가 비관찰로
 강등). 일반 종료·"모두 종료" 뒤에는 세션 아티팩트가 남지 않고, observer OFF 세션에는
 설정 파일/래퍼가 생기지 않는다.
+
+---
+
+## 12. 셸 탭 작업중 표시 + 미니미 (kbm #2f9)
+
+**요구**: 캐릭터 탭에서 에이전트 CLI가 아니라 **그냥 셸**을 띄워 놓고 긴 명령을
+돌릴 때도, 서브에이전트가 돌 때처럼 캐릭터를 "진행중"으로 보이게 하고 미니미도
+소환한다.
+
+**문제**: 진행중(TurnPhase=working) 판정의 유일한 소스가 에이전트 CLI 훅이라,
+순수 셸 세션에는 `timeTracking` 엔트리 자체가 생기지 않았다(라벨·마스코트·
+keepAwake·세션 시간 전부 유휴).
+
+### 12.1 감지 — 포그라운드 프로세스 그룹 + 터미널 모드
+
+`session/shell_activity.rs`. PTY 마스터만 본다(출력/프롬프트 문자열 휴리스틱 없음):
+
+```
+작업중 = tcgetpgrp(master) != 셸 pgid   AND   터미널이 정규 모드(ICANON)
+```
+
+- 앞 조건: 셸이 프롬프트 대기가 아니라 자식 명령을 기다리는 중.
+- 뒤 조건(**핵심**): zsh/bash의 라인 에디터도, vim·less·`claude` 같은 TUI도
+  터미널을 raw 모드로 쓴다. 반면 `npm test`·`cargo build` 같은 배치 명령은 셸이
+  복원해 둔 정규 모드를 그대로 물려받는다. 이 한 비트가 없으면 **claude를 띄워
+  둔 세션이 영구 작업중으로 잡힌다**(에이전트 CLI의 진짜 작업중 표시는 기존 훅
+  경로가 담당해야 한다). 실물 확인은 `shell_activity`의 `#[ignore]` 스모크
+  2개(`real_shell_foreground_probe_*`, `real_shell_raw_mode_child_*`).
+
+두 값 모두 portable-pty가 이미 노출한다 — `MasterPty::process_group_leader()`
+(=`tcgetpgrp`)와 `get_termios()`(=`tcgetattr`). 우리 쪽 unsafe도, 추가 dup fd도
+없다. `PtyControl::foreground_sample() -> Option<ForegroundSample>`로 감싸고,
+`None`은 **기능 미지원**을 뜻한다(Windows·Fake·브로커 데몬 소유 세션 = 마스터
+fd가 앱에 없음). `RealControl`과 `AdoptedControl`(입양 세션)만 `Some`.
+
+### 12.2 디바운스
+
+`SessionManager::install_session`이 세션당 감시 스레드 하나를 띄운다(4번째
+스레드, `foreground_sample()`이 `Some`일 때만). `alive` 클로저가 false면
+(세션 종료·핸드오프) 스스로 끝난다.
+
+| 상수 | 값 | 의미 |
+| --- | --- | --- |
+| `POLL_INTERVAL_MS` | 500 | 포그라운드 조회 주기 |
+| `BUSY_ONSET_MS` | 1,200 | 이만큼 연속으로 돌아야 작업중으로 **보고**(`ls`·`cd` 깜빡임 차단) |
+| `BUSY_MIN_VISIBLE_MS` | 3,000 | 한 번 보고했으면 최소 유지(연속 명령 사이 점멸 차단) |
+| `JOB_POLL_INTERVAL_MS` | 2,000 | 작업중 동안 미니미 수 재계산 주기 |
+
+판정은 `ShellActivityTracker`(순수 상태 머신 — 시계도 PTY도 모른다)가 갖고,
+스레드는 샘플과 `now_ms`만 먹인다. 다음 명령이 곧바로 이어지면 Stop 없이 새
+Start로 넘어간다(`reduceTurn`의 prompt가 닫고 다시 연다).
+
+### 12.3 방출 — 기존 파이프라인 재사용
+
+| 사건 | 방출 | 렌더러 효과 |
+| --- | --- | --- |
+| 명령 시작 | `ObserverEvent::Prompt { text: 명령줄 }` | 턴 open(working) + 머리 위 라벨 목표 |
+| 미니미 | `ObserverEvent::SubCount { running }` | 서브에이전트 미니미와 **완전히 같은 경로** |
+| 명령 종료 | `ActivityKind::Idle` | 턴 정산(settle) + 턴 중 실황 정리 |
+
+- 명령줄은 `ps -o command= -p <pgid>`(그룹 리더의 pid == pgid) — 시작 시 1회.
+- 미니미 수 = `pgrep -g <pgid>`의 프로세스 수 = 파이프라인 폭/병렬 빌드 자식 수.
+  조회 실패는 최소 1로 폴백. 오버레이가 3으로 클램프한다(subsystem-b §4.8).
+  **한계**: 포그라운드 명령 없이 백그라운드 잡만 도는 상태(`sleep 100 &`)는
+  세지 않는다 — 그 경우 애초에 작업중으로 보지 않는다.
+- **`ActivityKind::Idle` 신설**(types.rs ↔ `shared/types/notification.ts`): 열린
+  턴을 **알림 없이** 정산하는 갈래. 기존 정산 신호는 완료 알림
+  (`NotificationSource::Stop`)뿐이라 그걸 쓰면 셸 명령마다 알림이 쌓인다.
+  시계열 기록에서는 제외(`recording_events.rs`, sub-*/resume와 같은 취급).
+
+### 12.4 범위 밖
+
+- 브로커 데몬 소유 세션·Windows·외부(논리) 세션은 감시 대상이 아니다(마스터 fd
+  부재). 감시가 없으면 기존 동작 그대로다.
+- 대화형 TUI 안에서 도는 작업(예: `claude` 내부 도구 실행)은 여전히 훅 담당.
