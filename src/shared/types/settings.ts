@@ -17,6 +17,13 @@ export type SummaryProvider =
   | "openrouter";
 
 /**
+ * 설정 화면의 "모델 고르기"가 목록을 물어볼 수 있는 서비스. 요약기 provider
+ * 여섯에 TTS 리라이트 전용인 `anthropic`(Anthropic API 직결)을 더한 것이다.
+ * Rust `list_provider_models` 커맨드가 받는 문자열과 같아야 한다.
+ */
+export type ModelCatalogProvider = SummaryProvider | "anthropic";
+
+/**
  * 요약 호출의 목적. 목적별로 백엔드 타임아웃이 다르다(#66) — 라벨(인터랙티브)은
  * 20초, 일기(백그라운드 배치)는 120초. Rust `SummaryPurpose` 미러.
  */

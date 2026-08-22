@@ -32,9 +32,11 @@ export const Commands = {
   loadMinimi: "load_minimi",
   deleteMinimi: "delete_minimi",
   summarizeText: "summarize_text",
-  // 설정 화면의 OpenRouter 모델 추천 목록(요약·TTS 공용). 키 없이 부르는
-  // 공개 카탈로그라 실패해도 정적 프리셋으로 폴백할 뿐이다.
-  openrouterListModels: "openrouter_list_models",
+  // 설정 화면의 서비스별 모델 목록(요약기·TTS 리라이트 공용, kbm #2fc).
+  // provider마다 조회 경로가 다르고(공개 카탈로그·API 키·로컬 CLI) 라이브
+  // 소스가 아예 없는 provider도 있다 — 그래서 실패도 "빈 목록"도 정상이며
+  // 호출측이 정적 프리셋으로 조용히 폴백한다.
+  listProviderModels: "list_provider_models",
   // 로컬 codex CLI 내장 이미지 생성(kbm #2fa) — 설치 탐지 + 프롬프트 1건 생성.
   codexImageStatus: "codex_image_status",
   generateCodexImage: "generate_codex_image",

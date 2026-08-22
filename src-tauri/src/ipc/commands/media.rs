@@ -168,15 +168,26 @@ pub async fn summarize_text(
     .await
 }
 
-/// 설정 화면의 OpenRouter 모델 추천 목록(요약·TTS 공용). AppState 비의존이고
-/// 키도 쓰지 않는다 — 공개 카탈로그 GET 한 번이라 `summarizer_enabled`로
-/// 게이트하지 **않는다**(`tts_list_voices`와 같은 판단: 기능을 켜기 전에도
-/// 어떤 모델을 고를 수 있는지 보여주는 편이 낫다).
+/// 설정 화면의 provider별 모델 카탈로그 조회(요약·TTS 공용). 옛
+/// `openrouter_list_models`를 일곱 개 provider로 일반화한 것 — `claude`/
+/// `anthropic`만 저장된 Anthropic 키를 읽으므로 그때만 `app_state`를 만진다.
+/// `summarizer_enabled`로 게이트하지 **않는다**(`tts_list_voices`와 같은
+/// 판단: 기능을 켜기 전에도 어떤 모델을 고를 수 있는지 보여주는 편이 낫다).
 ///
-/// 실패는 렌더러가 정적 프리셋 폴백으로 조용히 강등한다.
+/// 알 수 없는 provider·라이브 소스가 없는 provider·키 없음·조회 실패는 전부
+/// 빈 목록이다(오류가 아니다) — 렌더러는 이를 정적 프리셋 폴백으로 조용히
+/// 강등한다.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn openrouter_list_models() -> Result<Vec<String>, String> {
-    crate::summarizer::list_openrouter_models().await
+pub async fn list_provider_models(
+    app_state: State<'_, AppState>,
+    provider: String,
+) -> Result<Vec<String>, String> {
+    // 키 조회는 `claude`/`anthropic`일 때만 의미가 있지만, 문자열 비교
+    // 하나 아끼자고 model_catalog에 키 스토어 자체를 넘기는 결합을 만들지
+    // 않는다 — 값으로 떠서 넘기면 이 커맨드는 계속 AppState 비의존인 다른
+    // 커맨드들과 같은 얇은 위임 모양을 유지한다.
+    let anthropic_key = app_state.tts.keys.anthropic_key();
+    Ok(crate::summarizer::list_provider_models(&provider, anthropic_key.as_deref()).await)
 }
 
 /// 로컬 codex CLI 설치 여부. AppState 비의존 — 프로필 편집의 "Codex로 생성"

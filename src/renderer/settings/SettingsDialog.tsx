@@ -13,7 +13,7 @@ import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { SettingsForm } from "./SettingsForm";
 import { WebRemoteSection } from "./WebRemoteSection";
-import { OpenrouterModelDatalist } from "./openrouterModels";
+import { ModelPicker } from "./ModelPicker";
 import { previewVoice } from "../sound/soundManager";
 import { THEMES, THEME_ORDER } from "../theme/themes";
 import type { XtermThemeOverride } from "../terminal/theme";
@@ -170,9 +170,6 @@ function SummaryModelSection() {
   // 기본값은 opencode 자체 구독(opencode-go)을 가정한다. 다른 벤더를 쓰려면
   // 여기에 `opencode models`가 찍어 주는 id를 그대로 넣는다.
   const isOpencode = provider === "opencode";
-  // 모델 id 추천은 TTS 쪽과 같은 목록을 쓴다(중복 정의하면 갈라진다).
-  const modelListId = isOpenrouter ? "summary-openrouter-models" : undefined;
-
   const setModel = (key: "light" | "heavy", value: string) =>
     updateAppSettings({
       summaryModels: {
@@ -196,7 +193,9 @@ function SummaryModelSection() {
           기본값은 opencode 자체 구독(<code>opencode-go</code>)을 가정합니다.
         </p>
       )}
-      <label className="settings-item">
+      {/* 설명 아래 줄에 컨트롤을 둔다 — 나란히 두면 긴 설명이 폭을 다 먹어
+          모델 id가 두세 글자만 보였다(kbm #2fc). */}
+      <div className="settings-item settings-item-stacked">
         <span>
           <strong>{SUMMARY_PROVIDER_LABEL[provider]} 경량 모델</strong>
           <small>
@@ -204,17 +203,15 @@ function SummaryModelSection() {
             <code>{defaults.light}</code>)을 씁니다.
           </small>
         </span>
-        <input
-          type="text"
-          autoComplete="off"
-          spellCheck={false}
-          list={modelListId}
+        <ModelPicker
+          provider={provider}
+          ariaLabel={`${SUMMARY_PROVIDER_LABEL[provider]} 경량 모델`}
           placeholder={defaults.light}
           value={current.light}
-          onChange={(e) => setModel("light", e.target.value)}
+          onChange={(v) => setModel("light", v)}
         />
-      </label>
-      <label className="settings-item">
+      </div>
+      <div className="settings-item settings-item-stacked">
         <span>
           <strong>{SUMMARY_PROVIDER_LABEL[provider]} 고급 모델</strong>
           <small>
@@ -222,22 +219,15 @@ function SummaryModelSection() {
             기본값(<code>{defaults.heavy}</code>)을 씁니다.
           </small>
         </span>
-        <input
-          type="text"
-          autoComplete="off"
-          spellCheck={false}
-          list={modelListId}
+        <ModelPicker
+          provider={provider}
+          ariaLabel={`${SUMMARY_PROVIDER_LABEL[provider]} 고급 모델`}
           placeholder={defaults.heavy}
           value={current.heavy}
-          onChange={(e) => setModel("heavy", e.target.value)}
+          onChange={(v) => setModel("heavy", v)}
         />
-      </label>
-      {isOpenrouter && (
-        <>
-          <OpenrouterModelDatalist id="summary-openrouter-models" />
-          <OpenrouterSummaryTools />
-        </>
-      )}
+      </div>
+      {isOpenrouter && <OpenrouterSummaryTools />}
     </div>
   );
 }
@@ -631,11 +621,6 @@ const REWRITE_VIA_LABEL: Record<TtsRewriteProvider, string> = {
   none: "리라이트 없음 (원문 발화)",
 };
 
-/** 모델 입력 자유 텍스트의 추천 목록(datalist). 강제가 아니라 힌트다 — 새
- * 모델이 나와도 그냥 적어 넣으면 된다. (OpenRouter 쪽은 실시간 카탈로그와
- * 합쳐야 해서 openrouterModels.tsx가 따로 맡는다.) */
-const ANTHROPIC_MODEL_PRESETS = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"];
-
 /**
  * 확인 요청 대사 TTS 설정.
  *
@@ -778,7 +763,7 @@ function TtsSection() {
               같이 띄우면 어느 값이 실제로 쓰이는지 헷갈린다. "자동"과
               "claude CLI"는 Anthropic 모델 id 체계를 쓰므로 같은 칸이다. */}
           {appSettings.ttsRewriteProvider === "openrouter" ? (
-            <label className="settings-item">
+            <div className="settings-item settings-item-stacked">
               <span>
                 <strong>리라이트 모델 (OpenRouter)</strong>
                 <small>
@@ -786,22 +771,17 @@ function TtsSection() {
                   목록에 없는 모델도 직접 입력할 수 있습니다.
                 </small>
               </span>
-              <input
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                list="tts-openrouter-models"
+              <ModelPicker
+                provider="openrouter"
+                ariaLabel="리라이트 모델 (OpenRouter)"
                 placeholder="openai/gpt-5.4-mini"
                 value={appSettings.ttsRewriteModelOpenrouter}
-                onChange={(e) =>
-                  updateAppSettings({ ttsRewriteModelOpenrouter: e.target.value })
-                }
+                onChange={(v) => updateAppSettings({ ttsRewriteModelOpenrouter: v })}
               />
-              <OpenrouterModelDatalist id="tts-openrouter-models" />
-            </label>
+            </div>
           ) : (
             appSettings.ttsRewriteProvider !== "none" && (
-              <label className="settings-item">
+              <div className="settings-item settings-item-stacked">
                 <span>
                   <strong>리라이트 모델 (Anthropic)</strong>
                   <small>
@@ -809,23 +789,14 @@ function TtsSection() {
                     모델도 직접 입력할 수 있습니다.
                   </small>
                 </span>
-                <input
-                  type="text"
-                  autoComplete="off"
-                  spellCheck={false}
-                  list="tts-anthropic-models"
+                <ModelPicker
+                  provider="anthropic"
+                  ariaLabel="리라이트 모델 (Anthropic)"
                   placeholder="claude-haiku-4-5"
                   value={appSettings.ttsRewriteModelAnthropic}
-                  onChange={(e) =>
-                    updateAppSettings({ ttsRewriteModelAnthropic: e.target.value })
-                  }
+                  onChange={(v) => updateAppSettings({ ttsRewriteModelAnthropic: v })}
                 />
-                <datalist id="tts-anthropic-models">
-                  {ANTHROPIC_MODEL_PRESETS.map((m) => (
-                    <option key={m} value={m} />
-                  ))}
-                </datalist>
-              </label>
+              </div>
             )
           )}
 

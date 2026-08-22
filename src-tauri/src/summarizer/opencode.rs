@@ -62,6 +62,102 @@ pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
     }
 }
 
+// 설정 화면의 모델 카탈로그(`list_provider_models`)가 쓰는 두 번째 서브커맨드
+// `opencode models` — `run`과 달리 stdin이 필요 없고(요약이 아니다) 세마포어도
+// 잡지 않는다(model_catalog가 요약 대기열과 분리해 둔다). 실측: 한 줄에 모델
+// id 하나씩, ANSI 색 코드가 섞여 나온다(`run`의 답변 stdout과 달리 여기는
+// 사람이 읽는 목록이라 색을 입힌다) — 그래서 `parse_models_stdout`이 ANSI를
+// 벗겨낸다.
+#[cfg(windows)]
+const MODELS_WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
+$OutputEncoding=New-Object System.Text.UTF8Encoding($false)
+$c = Get-Command opencode -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $c) { exit 3 }
+& $c.Source models
+exit $LASTEXITCODE"#;
+
+#[cfg(windows)]
+fn models_command() -> tokio::process::Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut command = tokio::process::Command::new("powershell.exe");
+    command.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        MODELS_WINDOWS_SCRIPT,
+    ]);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
+#[cfg(not(windows))]
+fn models_command() -> tokio::process::Command {
+    let mut command = tokio::process::Command::new("opencode");
+    command.arg("models");
+    command
+}
+
+/// CSI(ESC '[' ... 최종 바이트) 시퀀스만 제거한다 — `opencode models`가 내는
+/// 색상 코드 정도만 상대하면 되고, 이 CLI는 OSC 등 다른 이스케이프를 쓰지
+/// 않는다. 순수.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next(); // '['
+            for c2 in chars.by_ref() {
+                if ('@'..='~').contains(&c2) {
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// `opencode models` stdout → 모델 id 목록. ANSI를 벗기고, 트림해 빈 줄을
+/// 버린다. 순수.
+pub fn parse_models_stdout(stdout: &str) -> Vec<String> {
+    stdout
+        .lines()
+        .map(strip_ansi)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// 모델 목록 조회. 실패(미설치·타임아웃·비정상 종료)는 전부 빈 목록이다 —
+/// `run_with_timeout`의 CLI 요약 경로와 달리 여기는 "설치 안내"가 필요한
+/// 사용자 액션이 아니라 조용히 강등할 수 있는 조회이므로 오류를 구분해
+/// 돌려주지 않는다(호출측 model_catalog가 그대로 정적 프리셋에 합류시킨다).
+pub async fn list_models(timeout: std::time::Duration) -> Vec<String> {
+    let mut command = models_command();
+    command.current_dir(std::env::temp_dir());
+    command.stdin(std::process::Stdio::null());
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+    command.kill_on_drop(true);
+
+    let Ok(child) = command.spawn() else {
+        // NotFound(미설치)를 포함해 spawn 실패는 전부 여기로 온다.
+        return Vec::new();
+    };
+
+    let Ok(Ok(output)) = tokio::time::timeout(timeout, child.wait_with_output()).await else {
+        return Vec::new();
+    };
+
+    if !output.status.success() {
+        return Vec::new();
+    }
+
+    parse_models_stdout(&String::from_utf8_lossy(&output.stdout))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,6 +165,24 @@ mod tests {
     /// 지시문이 플래그처럼 생겼어도 opencode 플래그로 해석되면 안 된다 —
     /// `--`로 끊는 이유를 고정한다.
     const DANGEROUS_INSTRUCTION: &str = "--auto";
+
+    #[test]
+    fn parse_models_stdout_strips_ansi_and_blank_lines() {
+        let stdout = "\u{1b}[32mopencode-go/deepseek-v4-flash\u{1b}[0m\n\n  \u{1b}[2manthropic/claude-haiku-4.5\u{1b}[0m  \n";
+        assert_eq!(
+            parse_models_stdout(stdout),
+            vec![
+                "opencode-go/deepseek-v4-flash".to_string(),
+                "anthropic/claude-haiku-4.5".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_models_stdout_on_empty_input_is_empty_list() {
+        assert!(parse_models_stdout("").is_empty());
+        assert!(parse_models_stdout("   \n\n").is_empty());
+    }
 
     #[cfg(not(windows))]
     #[test]
@@ -159,7 +273,10 @@ mod tests {
             WINDOWS_SCRIPT.contains("'--', $env:AO_INSTRUCTION)"),
             "{WINDOWS_SCRIPT}"
         );
-        assert!(WINDOWS_SCRIPT.contains("'--agent', 'plan'"), "{WINDOWS_SCRIPT}");
+        assert!(
+            WINDOWS_SCRIPT.contains("'--agent', 'plan'"),
+            "{WINDOWS_SCRIPT}"
+        );
     }
 
     #[cfg(windows)]

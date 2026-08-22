@@ -19,6 +19,7 @@ import type {
 import type { NotificationEvent, ActivityEvent } from './notification';
 import type { PersistedState, CodexImageStatus, GeneratedCodexImage } from './profile';
 import type {
+  ModelCatalogProvider,
   SummaryProvider,
   SummaryPurpose,
   GetAppSettingsResult,
@@ -96,10 +97,13 @@ export interface AgentOfficeApi {
     text: string,
     purpose?: SummaryPurpose,
   ): Promise<string>;
-  /** 설정 화면의 OpenRouter 모델 추천 목록(모델 id 정렬). 키가 필요 없는 공개
-   *  카탈로그 조회라 요약/TTS를 켜기 전에도 부를 수 있다. 실패는 호출측이
-   *  정적 프리셋 폴백으로 조용히 강등한다. */
-  openrouterListModels(): Promise<string[]>;
+  /** 설정 화면의 서비스별 모델 목록(kbm #2fc). provider마다 소스가 다르다 —
+   *  OpenRouter는 키 없는 공개 카탈로그, Anthropic·claude는 저장된 키로 부르는
+   *  `/v1/models`, opencode는 로컬 `opencode models` CLI, 나머지(codex·gemini·
+   *  agy)는 라이브 소스가 없어 **빈 배열**이다. 빈 배열도 실패도 정상 흐름이며
+   *  호출측이 정적 프리셋 폴백으로 조용히 강등한다. 기능을 켜기 전에도 부를 수
+   *  있다(어떤 모델을 고를 수 있는지는 켜기 전에 보여야 한다). */
+  listProviderModels(provider: ModelCatalogProvider): Promise<string[]>;
   /** 로컬 codex CLI 설치 여부. 미설치도 정상 응답(available:false)이다 —
    *  프로필 편집의 "Codex로 생성" 모드가 버튼 활성/설치 안내를 정하는 데 쓴다. */
   codexImageStatus(): Promise<CodexImageStatus>;

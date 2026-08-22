@@ -1,7 +1,9 @@
 mod agy;
+mod anthropic;
 mod claude;
 mod codex;
 mod gemini;
+mod model_catalog;
 mod opencode;
 mod openrouter;
 
@@ -252,6 +254,18 @@ pub async fn list_openrouter_models() -> Result<Vec<String>, String> {
     /// 실패하면 정적 프리셋으로 조용히 폴백할 뿐이다.
     const TIMEOUT_MODELS: Duration = Duration::from_secs(10);
     openrouter::list_models(TIMEOUT_MODELS).await
+}
+
+/// 설정 화면의 provider별 모델 카탈로그 조회(`list_provider_models` 커맨드).
+/// `list_openrouter_models`를 일곱 개 provider로 일반화한 것 — provider
+/// 파싱·라우팅은 `model_catalog`가 갖고, 여기서는 얇은 재노출만 한다.
+///
+/// 알 수 없는 provider 문자열, 라이브 소스가 없는 provider, 키 없음, 조회
+/// 실패는 전부 빈 목록으로 수렴한다(호출측 IPC 커맨드는 이 값을 그대로
+/// `Ok`로 감싸 돌려준다) — 프런트는 빈 배열과 reject를 동일하게 정적
+/// 프리셋 폴백으로 다룬다.
+pub async fn list_provider_models(provider: &str, anthropic_key: Option<&str>) -> Vec<String> {
+    model_catalog::list(provider, anthropic_key).await
 }
 
 /// HTTP 경로의 실행 껍데기. CLI 경로(`run_with_timeout`)와 같은 전역 세마포어와

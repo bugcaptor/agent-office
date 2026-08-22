@@ -517,3 +517,92 @@ body {
 .settings-item input[type="text"] { flex: 1; min-width: 0; }
 /* 폼 안의 안내 문단(입력이 아니라 설명만 있는 줄) */
 .settings-note { margin: 0; font-size: 0.9em; opacity: 0.75; line-height: 1.5; }
+
+/* ── 설명 아래 줄로 내리는 세로 배치(kbm #2fc) ──────────────────────────
+   체크박스 줄은 "네모 + 설명"이라 가로가 옳지만, 드롭다운·텍스트 입력이
+   붙은 줄은 설명이 폭을 다 먹어 컨트롤이 쪼그라들었다(긴 모델 id가 두세
+   글자만 보였다). 그런 줄만 골라 설명 **다음 줄**에 컨트롤을 두고 폭을
+   전부 준다 — 설정창을 넓히거나 별도 팝업을 띄우지 않고도 여유가 생긴다.
+   `:has()`로 자동 적용하고, 컴포넌트가 감싸 선택자에 안 걸리는 줄
+   (ModelPicker)은 명시 클래스로 같은 배치를 받는다. */
+.settings-item:has(> select),
+.settings-item:has(> input[type="text"]),
+.settings-item-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.settings-item:has(> select) > select,
+.settings-item:has(> input[type="text"]) > input[type="text"],
+.settings-item-stacked > select,
+.settings-item-stacked > input[type="text"] {
+  width: 100%;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+}
+
+/* ── 모델 고르기 콤보박스(ModelPicker) ─────────────────────────────────
+   자유 텍스트 입력 + 서비스에서 실시간으로 받아온 목록의 필터링 팝업.
+   목록은 강제가 아니라 힌트라 입력은 언제나 그대로 살아 있다. */
+.model-picker { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.model-picker-field { display: flex; gap: 4px; align-items: stretch; }
+.model-picker-field input[type="text"] { flex: 1; min-width: 0; }
+.model-picker-toggle {
+  flex: 0 0 auto;
+  padding: 0 8px;
+  cursor: pointer;
+  line-height: 1;
+}
+.model-picker-status { font-size: 0.75rem; color: var(--text-dim); }
+.model-picker-status button {
+  font-size: inherit;
+  padding: 0 4px;
+  margin-left: 6px;
+  cursor: pointer;
+}
+/* 팝업은 다이얼로그 스크롤 안에 뜬다 — 화면 밖으로 나가지 않게 높이를 묶고
+   자체 스크롤을 준다(카탈로그가 수백 개다). */
+.model-picker-pop {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg-panel);
+  border: 2px solid var(--border-dark);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.model-picker-group {
+  padding: 4px 8px;
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  background: var(--bg-panel-hi);
+  position: sticky;
+  top: 0;
+}
+.model-picker-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-picker-option:hover,
+.model-picker-option[aria-selected="true"] {
+  background: var(--bg-panel-hi);
+  color: var(--accent);
+}
+.model-picker-empty { padding: 6px 8px; font-size: 0.78rem; color: var(--text-dim); }

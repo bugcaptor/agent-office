@@ -9,7 +9,7 @@
 //  - "요약 테스트"는 전용 커맨드가 아니라 실제 `summarizeText` 경로를 탄다 —
 //    여기서 성공하면 실제 라벨 요약도 성공한다는 뜻이어야 하기 때문이다.
 //  - 모델 추천 목록은 정적 프리셋 + 실시간 카탈로그의 합집합이고, 조회는
-//    세션당 1회다.
+//    provider당 세션 1회다(kbm #2fc부터는 목록을 **펼칠 때** 조회한다).
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSettings, TtsStatus } from "@shared/types";
@@ -17,7 +17,7 @@ import type { AppSettings, TtsStatus } from "@shared/types";
 const ttsKeyStatus = vi.fn<() => Promise<TtsStatus>>();
 const ttsSetKeys = vi.fn<(e?: string, a?: string, o?: string) => Promise<TtsStatus>>();
 const summarizeText = vi.fn<(...args: unknown[]) => Promise<string>>();
-const openrouterListModels = vi.fn<() => Promise<string[]>>();
+const listProviderModels = vi.fn<(p: string) => Promise<string[]>>();
 const setAppSettings = vi.fn<(s: unknown) => Promise<void>>(() => Promise.resolve());
 
 vi.mock("../../ipc/tauriApi", () => ({
@@ -25,14 +25,14 @@ vi.mock("../../ipc/tauriApi", () => ({
     ttsKeyStatus: () => ttsKeyStatus(),
     ttsSetKeys: (e?: string, a?: string, o?: string) => ttsSetKeys(e, a, o),
     summarizeText: (...args: unknown[]) => summarizeText(...args),
-    openrouterListModels: () => openrouterListModels(),
+    listProviderModels: (p: string) => listProviderModels(p),
     setAppSettings: (s: unknown) => setAppSettings(s),
   },
 }));
 
 import { useAppStore } from "../../store/appStore";
 import { SettingsDialog } from "../SettingsDialog";
-import { OPENROUTER_MODEL_PRESETS, resetOpenrouterModelsCache } from "../openrouterModels";
+import { MODEL_PRESETS, resetModelCatalogCache } from "../modelCatalog";
 
 const initialState = useAppStore.getState();
 
@@ -54,19 +54,23 @@ function hydrate(patch: Partial<AppSettings> = {}) {
   useAppStore.getState().openModal({ kind: "settings" });
 }
 
-/** 요약 모델 칸이 가리키는 datalist의 항목들. */
-function datalistValues(id: string): string[] {
-  const el = document.getElementById(id) as HTMLDataListElement | null;
-  return el ? Array.from(el.options).map((o) => o.value) : [];
+/** 모델 픽커를 펼친다(조회는 펼칠 때 시작된다). */
+function openPicker(label: string) {
+  fireEvent.click(screen.getByRole("button", { name: `${label} 목록` }));
+}
+
+/** 펼쳐진 픽커가 보여주는 후보들. */
+function pickerOptions(): string[] {
+  return screen.getAllByRole("option").map((o) => o.textContent ?? "");
 }
 
 beforeEach(() => {
   useAppStore.setState(initialState, true);
-  resetOpenrouterModelsCache();
+  resetModelCatalogCache();
   ttsKeyStatus.mockReset().mockResolvedValue(STATUS);
   ttsSetKeys.mockReset().mockResolvedValue({ ...STATUS, openrouterSet: true });
   summarizeText.mockReset().mockResolvedValue("한 문장 요약입니다.");
-  openrouterListModels.mockReset().mockResolvedValue([]);
+  listProviderModels.mockReset().mockResolvedValue([]);
   setAppSettings.mockClear();
 });
 
@@ -79,7 +83,8 @@ describe("SettingsDialog · OpenRouter 요약 설정", () => {
 
     expect(screen.queryByText("요약 테스트")).toBeNull();
     expect(screen.queryByPlaceholderText("sk-or-…")).toBeNull();
-    expect(openrouterListModels).not.toHaveBeenCalled();
+    // 목록을 펼치기 전에는 어떤 provider든 조회하지 않는다.
+    expect(listProviderModels).not.toHaveBeenCalled();
     expect(ttsKeyStatus).not.toHaveBeenCalled();
   });
 
@@ -157,7 +162,7 @@ describe("SettingsDialog · OpenRouter 요약 설정", () => {
 
   it("모델 추천은 프리셋을 앞에 두고 실시간 카탈로그를 뒤에 붙인다(중복 제거)", async () => {
     // 응답에 프리셋과 겹치는 id가 섞여 있어도 한 번만 나와야 한다.
-    openrouterListModels.mockResolvedValue([
+    listProviderModels.mockResolvedValue([
       "openai/gpt-5.4-mini",
       "zzz/new-model",
       "aaa/other-model",
@@ -165,9 +170,11 @@ describe("SettingsDialog · OpenRouter 요약 설정", () => {
     hydrate({ summaryProvider: "openrouter" });
     render(<SettingsDialog />);
 
+    openPicker("OpenRouter 경량 모델");
+    await waitFor(() => expect(listProviderModels).toHaveBeenCalledWith("openrouter"));
     await waitFor(() =>
-      expect(datalistValues("summary-openrouter-models")).toEqual([
-        ...OPENROUTER_MODEL_PRESETS,
+      expect(pickerOptions()).toEqual([
+        ...MODEL_PRESETS.openrouter,
         "zzz/new-model",
         "aaa/other-model",
       ]),
@@ -175,29 +182,33 @@ describe("SettingsDialog · OpenRouter 요약 설정", () => {
   });
 
   it("카탈로그 조회가 실패해도 조용히 정적 프리셋만 쓴다", async () => {
-    openrouterListModels.mockRejectedValue(new Error("offline"));
+    listProviderModels.mockRejectedValue(new Error("offline"));
     hydrate({ summaryProvider: "openrouter" });
     render(<SettingsDialog />);
 
-    await waitFor(() => expect(openrouterListModels).toHaveBeenCalled());
-    expect(datalistValues("summary-openrouter-models")).toEqual(OPENROUTER_MODEL_PRESETS);
-    // 실패 문구가 설정 화면에 튀어나오지 않는다.
+    openPicker("OpenRouter 경량 모델");
+    await waitFor(() => expect(listProviderModels).toHaveBeenCalled());
+    await waitFor(() => expect(pickerOptions()).toEqual(MODEL_PRESETS.openrouter));
+    // 상류 오류 원문이 설정 화면에 튀어나오지 않는다 — 안내 한 줄로 갈음한다.
     expect(screen.queryByText(/offline/)).toBeNull();
+    screen.getByText(/직접 적어도 됩니다/);
   });
 
   // 다이얼로그는 열고 닫기를 반복하는 창이고 카탈로그는 그 사이에 바뀌지
   // 않는다 — 열 때마다 다시 두드리면 그냥 낭비다.
-  it("카탈로그는 다이얼로그를 다시 열어도 세션당 한 번만 조회한다", async () => {
+  it("카탈로그는 다이얼로그를 다시 열어도 provider당 한 번만 조회한다", async () => {
     hydrate({ summaryProvider: "openrouter" });
     const { rerender } = render(<SettingsDialog />);
-    await waitFor(() => expect(openrouterListModels).toHaveBeenCalledTimes(1));
+    openPicker("OpenRouter 경량 모델");
+    await waitFor(() => expect(listProviderModels).toHaveBeenCalledTimes(1));
 
     useAppStore.getState().closeModal();
     rerender(<SettingsDialog />);
     useAppStore.getState().openModal({ kind: "settings" });
     rerender(<SettingsDialog />);
 
-    await waitFor(() => expect(datalistValues("summary-openrouter-models").length).toBeGreaterThan(0));
-    expect(openrouterListModels).toHaveBeenCalledTimes(1);
+    openPicker("OpenRouter 경량 모델");
+    await waitFor(() => expect(pickerOptions().length).toBeGreaterThan(0));
+    expect(listProviderModels).toHaveBeenCalledTimes(1);
   });
 });

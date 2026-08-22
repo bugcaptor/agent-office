@@ -140,8 +140,8 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.summarizeText, { provider, instruction, text, purpose });
   },
 
-  async openrouterListModels() {
-    return await invoke(Commands.openrouterListModels);
+  async listProviderModels(provider) {
+    return await invoke(Commands.listProviderModels, { provider });
   },
 
   async codexImageStatus() {

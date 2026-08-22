@@ -670,7 +670,7 @@ pub fn run() {
             ipc::commands::load_minimi,
             ipc::commands::delete_minimi,
             ipc::commands::summarize_text,
-            ipc::commands::openrouter_list_models,
+            ipc::commands::list_provider_models,
             ipc::commands::codex_image_status,
             ipc::commands::generate_codex_image,
             ipc::commands::get_app_settings,
