@@ -28,6 +28,8 @@ pub trait AppEvents: Send + Sync {
     fn notification_new(&self, ev: &NotificationEvent);
     fn notification_cleared(&self, agent_id: &str, ids: &[String]);
     fn activity_event(&self, ev: &ActivityEvent);
+    /// 동료 대화 한 마디(기본 no-op — 미러/테스트 구현은 무시해도 된다).
+    fn talk_message(&self, _ev: &crate::types::TalkEvent) {}
 }
 
 pub struct TauriEvents {
@@ -49,6 +51,9 @@ impl AppEvents for TauriEvents {
     }
     fn activity_event(&self, ev: &ActivityEvent) {
         let _ = self.app.emit("activity-event", ev);
+    }
+    fn talk_message(&self, ev: &crate::types::TalkEvent) {
+        let _ = self.app.emit("talk-message", ev);
     }
 }
 
@@ -79,6 +84,10 @@ impl AppEvents for CompositeEvents {
     fn notification_new(&self, ev: &NotificationEvent) {
         self.primary.notification_new(ev);
         self.secondary.notification_new(ev);
+    }
+    fn talk_message(&self, ev: &crate::types::TalkEvent) {
+        self.primary.talk_message(ev);
+        self.secondary.talk_message(ev);
     }
     fn notification_cleared(&self, agent_id: &str, ids: &[String]) {
         self.primary.notification_cleared(agent_id, ids);

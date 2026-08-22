@@ -135,6 +135,8 @@ pub struct TalkHub {
     notify: tokio::sync::Notify,
     /// 감사 로그 루트(`<app_data>/talks`). None이면 기록하지 않는다(테스트).
     log_dir: Mutex<Option<PathBuf>>,
+    /// 렌더러 이벤트 방출구(오피스 말풍선). 부재면 조용히 건너뛴다.
+    events: Mutex<Option<Arc<dyn crate::state::AppEvents>>>,
 }
 
 impl Default for TalkHub {
@@ -145,6 +147,7 @@ impl Default for TalkHub {
             enabled: AtomicBool::new(false),
             notify: tokio::sync::Notify::new(),
             log_dir: Mutex::new(None),
+            events: Mutex::new(None),
         }
     }
 }
@@ -182,6 +185,16 @@ impl TalkHub {
         *self.log_dir.lock().unwrap() = Some(dir);
     }
 
+    /// 오피스 말풍선용 이벤트 방출구를 붙인다(부팅 시 1회).
+    pub fn set_events(&self, events: Arc<dyn crate::state::AppEvents>) {
+        *self.events.lock().unwrap() = Some(events);
+    }
+
+    /// 큐에 쌓인(아직 배달 전) 메시지 수 — 상태 표시용.
+    pub fn queued_len(&self) -> usize {
+        self.inner.lock().unwrap().queue.len()
+    }
+
     /// 살아 있는(끝나지 않은) 대화 스냅샷 — 상태 표시·테스트용.
     pub fn open_conversations(&self) -> Vec<Conversation> {
         self.inner
@@ -206,6 +219,7 @@ impl TalkHub {
         from: &str,
         from_name: &str,
         to: &str,
+        to_name: &str,
         text: &str,
         conv_id: Option<&str>,
     ) -> Result<(String, String), String> {
@@ -302,6 +316,7 @@ impl TalkHub {
         drop(inner);
 
         self.audit("send", &msg, None);
+        self.emit(&msg, to_name);
         self.notify.notify_waiters();
         Ok((conv_id, msg_id))
     }
@@ -411,6 +426,22 @@ impl TalkHub {
         }
         inner.queue = rest;
         ready
+    }
+
+    /// 오피스에 "말했다"를 알린다. 배달(주입)은 나중일 수 있지만, 말풍선은
+    /// 말한 순간 떠야 화면이 대화처럼 읽힌다.
+    fn emit(&self, msg: &TalkMessage, to_name: &str) {
+        let events = self.events.lock().unwrap().clone();
+        let Some(events) = events else { return };
+        events.talk_message(&crate::types::TalkEvent {
+            conv_id: msg.conv_id.clone(),
+            from: msg.from.clone(),
+            from_name: msg.from_name.clone(),
+            to: msg.to.clone(),
+            to_name: to_name.to_string(),
+            text: msg.text.clone(),
+            at: msg.at,
+        });
     }
 
     fn audit(&self, kind: &str, msg: &TalkMessage, note: Option<&str>) {
@@ -524,7 +555,7 @@ mod tests {
     #[test]
     fn enqueue_opens_a_conversation_and_queues_the_message() {
         let h = hub();
-        let (conv, _id) = h.enqueue("hana", "하나", "duri", "빌드 왜 깨졌어?", None).unwrap();
+        let (conv, _id) = h.enqueue("hana", "하나", "duri", "두리", "빌드 왜 깨졌어?", None).unwrap();
         let msgs = h.take("duri", None);
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0].conv_id, conv);
@@ -535,9 +566,9 @@ mod tests {
     #[test]
     fn disabled_hub_refuses_and_kill_switch_drops_queue() {
         let h = TalkHub::default();
-        assert!(h.enqueue("a", "A", "b", "안녕", None).is_err());
+        assert!(h.enqueue("a", "A", "b", "B", "안녕", None).is_err());
         h.set_enabled(true);
-        h.enqueue("a", "A", "b", "안녕", None).unwrap();
+        h.enqueue("a", "A", "b", "B", "안녕", None).unwrap();
         h.set_enabled(false);
         assert!(h.take("b", None).is_empty());
         assert!(h.open_conversations().is_empty());
@@ -546,8 +577,8 @@ mod tests {
     #[test]
     fn rejects_self_talk_and_empty_text() {
         let h = hub();
-        assert!(h.enqueue("a", "A", "a", "혼잣말", None).is_err());
-        assert!(h.enqueue("a", "A", "b", "   ", None).is_err());
+        assert!(h.enqueue("a", "A", "a", "A", "혼잣말", None).is_err());
+        assert!(h.enqueue("a", "A", "b", "B", "   ", None).is_err());
     }
 
     #[test]
@@ -557,11 +588,11 @@ mod tests {
         h.set_config(TalkConfig { max_turns: 100, idle_quiet_ms: 0 });
         for i in 0..RATE_PER_MIN {
             let conv = h.open_conversations().first().map(|c| c.id.clone());
-            let r = h.enqueue("a", "A", "b", &format!("메시지 {i}"), conv.as_deref());
+            let r = h.enqueue("a", "A", "b", "B", &format!("메시지 {i}"), conv.as_deref());
             assert!(r.is_ok(), "{i}번째 발신이 거절됨: {r:?}");
         }
         let conv = h.open_conversations()[0].id.clone();
-        let err = h.enqueue("a", "A", "b", "한 번 더", Some(&conv)).unwrap_err();
+        let err = h.enqueue("a", "A", "b", "B", "한 번 더", Some(&conv)).unwrap_err();
         assert!(err.contains("너무 잦"), "{err}");
     }
 
@@ -569,9 +600,9 @@ mod tests {
     fn conversation_turn_cap_closes_the_conversation() {
         let h = hub();
         h.set_config(TalkConfig { max_turns: 2, idle_quiet_ms: 0 });
-        let (conv, _) = h.enqueue("a", "A", "b", "1", None).unwrap();
-        h.enqueue("b", "B", "a", "2", Some(&conv)).unwrap();
-        let err = h.enqueue("a", "A", "b", "3", Some(&conv)).unwrap_err();
+        let (conv, _) = h.enqueue("a", "A", "b", "B", "1", None).unwrap();
+        h.enqueue("b", "B", "a", "A", "2", Some(&conv)).unwrap();
+        let err = h.enqueue("a", "A", "b", "B", "3", Some(&conv)).unwrap_err();
         assert!(err.contains("왕복 상한"), "{err}");
         assert!(h.open_conversations().is_empty());
     }
@@ -579,16 +610,16 @@ mod tests {
     #[test]
     fn concurrent_conversation_cap() {
         let h = hub();
-        h.enqueue("a", "A", "b", "1", None).unwrap();
-        h.enqueue("a", "A", "c", "2", None).unwrap();
-        let err = h.enqueue("a", "A", "d", "3", None).unwrap_err();
+        h.enqueue("a", "A", "b", "B", "1", None).unwrap();
+        h.enqueue("a", "A", "c", "C", "2", None).unwrap();
+        let err = h.enqueue("a", "A", "d", "D", "3", None).unwrap_err();
         assert!(err.contains("동시"), "{err}");
     }
 
     #[test]
     fn end_requires_participation_and_drops_pending() {
         let h = hub();
-        let (conv, _) = h.enqueue("a", "A", "b", "1", None).unwrap();
+        let (conv, _) = h.enqueue("a", "A", "b", "B", "1", None).unwrap();
         assert!(h.end("zzz", &conv, "manual").is_err());
         h.end("b", &conv, "manual").unwrap();
         assert!(h.take("b", None).is_empty());

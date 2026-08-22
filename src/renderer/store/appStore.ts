@@ -363,6 +363,9 @@ interface AppState {
         | "ttsRewriteModelAnthropic"
         | "ttsRewriteModelOpenrouter"
         | "ttsRewriteProvider"
+        | "talkEnabled"
+        | "talkMaxTurns"
+        | "talkIdleQuietMs"
       >
     >,
   ): void;

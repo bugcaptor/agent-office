@@ -155,3 +155,18 @@ describe("전체 퇴근/전체 출근 토글 버튼", () => {
     expect(clockInAll).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("동료 대화 표시(TalkWidget)", () => {
+  it("talkEnabled가 꺼져 있으면 하단바에 나타나지 않는다", () => {
+    const { queryByLabelText } = render(<BottomBar />);
+    expect(queryByLabelText("동료 대화")).toBeNull();
+  });
+
+  it("켜져 있으면 하단바에 나타난다", () => {
+    useAppStore.setState({
+      appSettings: { ...initialState.appSettings, talkEnabled: true },
+    });
+    const { getByLabelText } = render(<BottomBar />);
+    expect(getByLabelText("동료 대화")).toBeTruthy();
+  });
+});

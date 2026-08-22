@@ -37,6 +37,7 @@ import { WorkdirPalette } from "./workdir/WorkdirPalette";
 import { DiaryDialog } from "./diary/DiaryDialog";
 import { SessionLogDialog } from "./sessionlog/SessionLogDialog";
 import { MemoArchiveDialog } from "./memo/MemoArchiveDialog";
+import { TalkLogDialog } from "./talk/TalkLogDialog";
 import { UIChrome } from "./layout/UIChrome";
 
 // Root component: the 4-layer z-stack.
@@ -162,6 +163,9 @@ function App() {
             여기 모달 층에 상시 마운트하고 webRemotePending으로 self-gate한다. */}
         <PairingRequestDialog />
         <AnalyticsDialog />
+        {/* 동료 대화 감사 로그(docs/agent-talk-design.md §7). 하단바 "대화 N"
+            메뉴에서 열리고, modal.kind로 self-gate한다. */}
+        <TalkLogDialog />
         <UsageDialog />
         <AboutDialog />
       </div>

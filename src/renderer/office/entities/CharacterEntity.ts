@@ -35,7 +35,9 @@ import { GridPos, pickBreakTarget, tileCenterPx, tileKey } from "../world/pathin
 import { BehaviorState, stepBehavior } from "./behaviorFsm";
 import { ExclamationOverlay } from "./ExclamationOverlay";
 import { MiniAgentsOverlay } from "./MiniAgentsOverlay";
+import { TextBubbleOverlay } from "./TextBubbleOverlay";
 import { ThinkingOverlay } from "./ThinkingOverlay";
+import type { TalkBubbleTone } from "../bus";
 
 const WALK_SPEED = 28; // px/sec
 const ANIM_IDLE_MS = 480; // idle frame swap period
@@ -62,6 +64,7 @@ export class CharacterEntity {
   private overlay: ExclamationOverlay;
   private thinkOverlay: ThinkingOverlay;
   private miniOverlay: MiniAgentsOverlay;
+  private talkOverlay: TextBubbleOverlay;
   private state: BehaviorState = "sitting";
   private stateTimer = 0;
   private animTimer = 0;
@@ -114,6 +117,12 @@ export class CharacterEntity {
     if (this.minimi) this.miniOverlay.setCustomBase(this.minimi.texture, this.minimi.scale);
     this.miniOverlay.root.position.set(0, -TILE_SIZE); // 머리 위(기존 오버레이와 동일 높이)
     this.root.addChild(this.miniOverlay.root);
+
+    // 대화 말풍선은 글씨 상자가 커서 생각 말풍선보다 더 위에 두고, 자식 중
+    // 맨 마지막에 붙여 다른 오버레이 위에 그려지게 한다(추가 순서 = 그리는 순서).
+    this.talkOverlay = new TextBubbleOverlay();
+    this.talkOverlay.root.position.set(0, -TILE_SIZE - 6);
+    this.root.addChild(this.talkOverlay.root);
 
     // Seated placement (feet sunk toward the desk so it overlaps the legs).
     const p = tileCenterPx(seat);
@@ -212,6 +221,16 @@ export class CharacterEntity {
     this.miniOverlay.setCount(n);
   }
 
+  /** 동료 대화 말풍선을 머리 위에 띄운다. 이미 떠 있으면 마지막 것으로 교체. */
+  showTalkBubble(text: string, tone: TalkBubbleTone): void {
+    this.talkOverlay.show(text, tone);
+  }
+
+  /** 카메라 정수 스케일 S 반영 — 글씨가 든 말풍선만 1/S로 상쇄한다. */
+  setRenderScale(scale: number): void {
+    this.talkOverlay.setRenderScale(scale);
+  }
+
   /** 좌석(책상 지정) 변경. 앉아 있거나 자리로 걸어가는 중이면 즉시 새
    * 좌석으로 걸어간다. 휴식 중이면 그대로 두고, 복귀 시점에 새 좌석을 쓴다. */
   setSeat(seat: GridPos): void {
@@ -288,6 +307,7 @@ export class CharacterEntity {
     this.root.zIndex = this.root.y; // y-sort refresh
     this.overlay.update(dt);
     this.miniOverlay.update(dt);
+    this.talkOverlay.update(dt);
 
     // Belt-and-suspenders: never let a character leave the map rect.
     const mapPxW = this.map.width * TILE_SIZE;
@@ -301,6 +321,7 @@ export class CharacterEntity {
     this.overlay.destroy();
     this.thinkOverlay.destroy();
     this.miniOverlay.destroy();
+    this.talkOverlay.destroy();
     this.root.destroy({ children: true });
     this.assets.dispose?.(); // 커스텀 다운스케일 프레임 텍스처/소스 해제(누수 방지)
     this.minimi?.dispose?.(); // 커스텀 미니미도 같은 이유로 해제

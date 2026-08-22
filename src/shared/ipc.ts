@@ -62,6 +62,10 @@ export const Commands = {
   botStart: "bot_start",
   botStop: "bot_stop",
   botStatus: "bot_status",
+  // 동료 대화(docs/agent-talk-design.md) — 상태 스냅샷·감사 로그 열람.
+  talkStatus: "talk_status",
+  listTalkLogDates: "list_talk_log_dates",
+  readTalkLog: "read_talk_log",
   listAvailableShells: "list_available_shells",
   openInVscode: "open_in_vscode",
   openInTerminal: "open_in_terminal",
@@ -176,4 +180,7 @@ export const Events = {
   // 신호, webRemotePairRequest는 승인 다이얼로그를 띄우는 신호다.
   webRemoteSnapshotRequest: "web-remote-snapshot-request",
   webRemotePairRequest: "web-remote-pair-request",
+  // 동료 대화(docs/agent-talk-design.md §7). 누가 말한 *순간* 발화한다 —
+  // 실제 배달(주입)은 상대가 한가해질 때까지 늦춰질 수 있다.
+  talkMessage: "talk-message",
 } as const;

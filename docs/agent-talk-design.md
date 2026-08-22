@@ -39,6 +39,13 @@
 `ask`(동기)와 `send`(비동기) 두 가지를 모두 제공한다. `send` 는 즉시 반환하고, 답장은
 나중에 `inbox` 로 받거나 하나의 PTY로 주입된다.
 
+### 2.1 전제: CLI 제어
+
+에이전트가 앱에 말을 거는 통로가 `ctl`(로컬 control 서버)이므로, **CLI 제어가
+켜져 있고 승인까지 돼 있어야** 대화가 동작한다. 대화 스위치가 CLI 제어를 대신
+켜 주지는 않는다 — 그건 권한 상승이다. 대신 설정의 대화 섹션이 미충족 상태를
+경고로 알린다.
+
 ## 3. 프로토콜
 
 ### 3.1 control 서버 신규 라우트 (`POST`, 기존 토큰 인증 그대로)
@@ -70,8 +77,10 @@ agent-office ctl talk reply <convId> <메시지>
 agent-office ctl talk end <convId>
 ```
 
-종료 코드는 기존 규약을 따르고, `6 = talk-disabled`, `7 = unreachable`,
-`8 = timeout` 을 추가한다.
+종료 코드는 기존 규약(0 성공 / 1 서버 거절 / 2 연결 실패 / 3 앱 없음 /
+4 미승인 / 5 인증 실패 / 64 사용법)을 그대로 쓰고, **`8 = ask 시간 안에 답 없음`**
+하나만 더한다. 대화 꺼짐·수신 불가 같은 거절은 전부 1(서버가 사람 문장으로 사유를
+돌려준다) — 사유별 코드를 늘려도 에이전트가 읽는 건 결국 그 문장이다.
 
 ## 4. TalkHub (앱 내부)
 
@@ -116,7 +125,8 @@ TTL 10분을 넘긴 미전달 메시지는 만료시키고 발신자에게 사�
 
 ## 6. 스킬 패키징
 
-`~/.claude` 를 건드리지 않기 위해 **앱 소유 로컬 플러그인 마켓플레이스**로 배포한다.
+`~/.claude` 를 건드리지 않기 위해 **앱 소유 플러그인**을 만들어 두고 세션마다
+`claude --plugin-dir <그 폴더>` 로 물린다("이 세션에서만" 로드되는 플래그다).
 
 ```
 <app_data>/claude-plugin/
@@ -126,15 +136,21 @@ TTL 10분을 넘긴 미전달 메시지는 만료시키고 발신자에게 사�
     skills/talk/SKILL.md
 ```
 
-세션 전용 설정(`<app_data>/observer/claude/<sid>.settings.json`, 이미 존재)에 추가:
+세션 전용 설정(`<app_data>/observer/claude/<sid>.settings.json`, 이미 존재)에는
+**권한 사전 승인만** 얹는다:
 
 ```json
-{
-  "extraKnownMarketplaces": { "agent-office": { "source": { "source": "directory", "path": "<app_data>/claude-plugin" } } },
-  "enabledPlugins": { "agent-office@agent-office": true },
-  "permissions": { "allow": ["Bash(agent-office ctl talk:*)"] }
-}
+{ "permissions": { "allow": ["Bash(<tmp>/agent-office/bin/office-talk:*)"] } }
 ```
+
+- 설정 파일의 `extraKnownMarketplaces`/`enabledPlugins`로 붙이는 길도 있어 보이지만,
+  **실측(claude 2.1.239)에서 `--settings`로 준 그 키들은 마켓플레이스로 등록되지
+  않았다**. 그래서 스킬은 플래그로, 권한만 설정 파일로 나눠 실었다.
+- 관찰(observer)이 꺼져 있어 훅 설정 파일이 없는 세션에는 권한 조각만 담은
+  talk 전용 설정 파일을 따로 써서 `--settings`로 물린다.
+- CLI는 PATH에 `agent-office`가 있다고 가정할 수 없어(맥은 앱 번들 안이다) OS temp에
+  공백 없는 shim(`office-talk` → `<exe> ctl talk "$@"`)을 두고, 스킬 본문과 권한 규칙에
+  그 절대 경로를 박는다.
 
 - 파일은 `observer/claude.rs` 의 기존 원자적 쓰기 패턴(temp+rename, 멱등)을 그대로 따른다.
 - 관찰(observer)이 꺼져 있어도 `talkEnabled` 면 세션 설정 파일을 만들도록 조건을 넓힌다.
@@ -144,9 +160,19 @@ TTL 10분을 넘긴 미전달 메시지는 만료시키고 발신자에게 사�
 - **수신자는 스킬이 없어도 된다** — 주입 문구에 답장 명령이 들어 있다. 따라서 codex·pi
   캐릭터도 수신·답장은 된다(발신은 CLI를 직접 치면 된다).
 
+## 6.1 앱 안 배선
+
+- `AppEvents`에 `talk_message(&TalkEvent)`를 더한다(기본 no-op). 발신 즉시
+  `"talk-message"` 로 렌더러에 직행한다 — 실제 주입은 수신자가 한가해질 때까지
+  늦춰지므로 이 이벤트는 "말했다"이지 "전달됐다"가 아니다.
+- 렌더러 커맨드 셋: `talk_status`(켜짐·대기 수·열린 대화), `list_talk_log_dates`,
+  `read_talk_log(date, limit)`. 대화를 켜고 끄는 건 기존 `set_app_settings`다.
+- `settings/set`(CLI)은 `cliEnabled`와 같은 이유로 **`talkEnabled`를 거절한다** —
+  에이전트가 스스로 대화 스위치를 켤 수 있으면 "사용자가 켰을 때만"이 무너진다.
+
 ## 7. UI
 
-- **설정 › 대화 탭**: `talkEnabled` 토글, 최대 왕복/속도제한/idle 임계 조정, "스킬 설치
+- **설정 › 제어 탭의 "동료 대화" 섹션**: `talkEnabled` 토글, 최대 왕복/속도제한/idle 임계 조정, "스킬 설치
   상태" 표시(플러그인 디렉터리 재생성 버튼), 대화 로그 열기.
 - **하단바**: 대화 켜짐 표시 + 즉시 전체 중지 버튼.
 - **오피스 뷰**: `TextBubbleOverlay`(ThinkingOverlay 패턴) — 발신 시 발신자 머리 위에

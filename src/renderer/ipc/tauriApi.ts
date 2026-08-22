@@ -34,6 +34,7 @@ import type {
   PersistedState,
   SessionStateEvent,
   SessionTurnRecord,
+  TalkEvent,
   WorkLogItem,
 } from "@shared/types";
 
@@ -215,6 +216,18 @@ export const tauriApi: AgentOfficeApi = {
 
   async botStatus() {
     return await invoke(Commands.botStatus);
+  },
+
+  async talkStatus() {
+    return await invoke(Commands.talkStatus);
+  },
+
+  async listTalkLogDates() {
+    return await invoke(Commands.listTalkLogDates);
+  },
+
+  async readTalkLog(date, limit) {
+    return await invoke(Commands.readTalkLog, { date, limit });
   },
 
   async listAvailableShells() {
@@ -452,6 +465,10 @@ export const tauriApi: AgentOfficeApi = {
 
   onActivity(cb) {
     return wrapListen<ActivityEvent>(Events.activityEvent, cb);
+  },
+
+  onTalkMessage(cb) {
+    return wrapListen<TalkEvent>(Events.talkMessage, cb);
   },
 };
 

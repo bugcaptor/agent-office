@@ -115,6 +115,13 @@ export class OfficeWorld {
       }),
     );
     this.unsub.push(
+      o.bus.onTalkBubble((agentId, text, tone) => {
+        // 말풍선은 그 순간의 연출이라 캐시하지 않는다 — 엔티티가 없으면(책상
+        // 부족·퇴근) 그냥 흘려보낸다.
+        this.entities.get(agentId)?.showTalkBubble(text, tone);
+      }),
+    );
+    this.unsub.push(
       o.bus.onVacationModeChanged((on) => {
         this.vacationMode = on;
         this.recomputeQueue();
@@ -213,6 +220,7 @@ export class OfficeWorld {
       entity.setSessionActive(this.sessionActive.get(p.id) ?? false);
       entity.setSubagentCount(this.subagentCounts.get(p.id) ?? 0);
       entity.setPending(this.pendingIds.has(p.id));
+      entity.setRenderScale(this.renderScale); // 말풍선 글씨 배율 상쇄(1/S)
       entity.onClicked((id) => this.o.bus.emitAgentClicked(id));
       entity.onHover((id, x, y) => this.o.bus.emitAgentHoverChanged(id, x, y));
       this.o.characterLayer.addChild(entity.root);
@@ -260,6 +268,7 @@ export class OfficeWorld {
     if (s === this.renderScale) return;
     this.renderScale = s;
     for (const [id, entity] of this.entities) {
+      entity.setRenderScale(s); // 글씨가 든 말풍선은 배율과 무관하게 같은 화면 크기로
       const p = this.profiles.get(id);
       if (!p) continue;
       const override = getSpriteOverride(id);

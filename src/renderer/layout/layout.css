@@ -344,6 +344,21 @@ body {
   opacity: 0.85;
 }
 
+/* 체크박스 줄: 라벨(위)/컨트롤(아래) 기본 배치 대신 "네모 + 라벨" 한 줄로.
+   아래 폼 컨트롤 규칙이 input을 width:100% 인셋 박스로 만들기 때문에
+   체크박스만 폭·여백을 되돌린다. */
+.profile-dialog .form-check > label {
+  flex-direction: row;
+  align-items: center;
+  gap: calc(var(--unit) * 2);
+  cursor: pointer;
+}
+.profile-dialog input[type="checkbox"] {
+  width: auto;
+  flex: none;
+  padding: 0;
+}
+
 /* 입력 + 보조 버튼(찾아보기 등)을 한 줄로 — 입력이 남는 폭을 차지 */
 .profile-dialog .form-control-row {
   display: flex;

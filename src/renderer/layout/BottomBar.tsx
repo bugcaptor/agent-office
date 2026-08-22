@@ -28,6 +28,7 @@ import { SCENES, SCENE_ORDER } from "../office/scenes/scenes";
 import { ContextMenu } from "../ui/ContextMenu";
 import { clockInAgent, clockInAll } from "../agent/clockOut";
 import { UsageWidget } from "../usage/UsageWidget";
+import { TalkWidget } from "../talk/TalkWidget";
 
 export function BottomBar() {
   const openModal = useAppStore((s) => s.openModal);
@@ -99,6 +100,8 @@ export function BottomBar() {
         {runningCount} running · {pendingCount} needs input
       </span>
       <UsageWidget />
+      {/* 동료 대화 표시 + 킬스위치. talkEnabled가 꺼져 있으면 스스로 null 렌더. */}
+      <TalkWidget />
       <button
         type="button"
         className="pixel-btn analytics-btn"

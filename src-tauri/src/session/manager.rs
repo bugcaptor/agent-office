@@ -117,16 +117,23 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// 이 세션에 물릴 동료 대화 배선(§6). `settings_path`는 관찰이 꺼져 있어
+/// 훅 설정 파일이 없을 때만 채워진다.
+pub struct TalkWiring {
+    pub plugin_dir: std::path::PathBuf,
+    pub settings_path: Option<std::path::PathBuf>,
+}
+
 pub struct SessionManager {
     factory: Arc<dyn PtyFactory>,
     /// pub(super): handoff_v1.rs의 adopt_one/handoff_broker.rs의 adopt_one_broker가
     /// `restore_session_artifacts`를 직접 호출한다.
     pub(super) observer: Arc<ObserverRuntime>,
     get_observer_url: Arc<dyn Fn() -> Option<String> + Send + Sync>,
-    /// 동료 대화 스킬 배선(docs/agent-talk-design.md §6). sid를 주면 **관찰이
-    /// 꺼져 있을 때** 쓸 talk 전용 세션 설정 파일을 만들고 그 경로를 돌려준다.
-    /// 대화가 꺼져 있거나 이미 훅 설정 파일이 있으면 None(그쪽에 조각이 합쳐진다).
-    get_talk_settings: Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>,
+    /// 동료 대화 스킬 배선(docs/agent-talk-design.md §6). `(sid, 이미 훅 설정
+    /// 파일이 있는지)`를 주면 이 세션에 물릴 플러그인 폴더와(필요하면) talk 전용
+    /// 설정 파일 경로를 돌려준다. 대화가 꺼져 있으면 None.
+    get_talk_wiring: Arc<dyn Fn(&str, bool) -> Option<TalkWiring> + Send + Sync>,
     /// pub(super): 핸드오프/입양 형제 모듈이 세션 제거 시 레지스트리도 함께 정리한다.
     pub(super) registry: Arc<SessionRegistry>,
     /// pub(super): external.rs가 외부(논리) 세션의 started/state 이벤트를 낸다.
@@ -184,7 +191,7 @@ impl SessionManager {
             factory,
             observer,
             get_observer_url,
-            get_talk_settings: Arc::new(|_| None),
+            get_talk_wiring: Arc::new(|_, _| None),
             registry,
             events,
             hub,
@@ -240,11 +247,11 @@ impl SessionManager {
     /// `AGENT_OFFICE_APP_DATA` env의 근거). `lib.rs`의 프로덕션 부트스트랩만
     /// 호출 — 테스트는 기본 None으로 이 기능을 건드리지 않는다.
     /// 동료 대화 스킬 배선 주입(lib.rs). 기본은 no-op이라 테스트는 신경 쓰지 않는다.
-    pub fn with_talk_settings(
+    pub fn with_talk_wiring(
         mut self,
-        provider: Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>,
+        provider: Arc<dyn Fn(&str, bool) -> Option<TalkWiring> + Send + Sync>,
     ) -> Self {
-        self.get_talk_settings = provider;
+        self.get_talk_wiring = provider;
         self
     }
 
@@ -343,29 +350,48 @@ impl SessionManager {
             }
         }
 
-        // 동료 대화 스킬(§6): 관찰이 꺼져 있으면 훅 설정 파일 자체가 없으므로
-        // talk 선언만 담은 세션 설정 파일을 따로 만들어 `--settings`로 물린다.
-        // 관찰이 켜져 있으면 어댑터가 같은 조각을 훅 설정에 합쳐 놓았다.
-        if !plan
+        // 동료 대화 스킬(§6): 앱 소유 플러그인을 `--plugin-dir`로 이 세션에만
+        // 물린다(사용자 `~/.claude`는 건드리지 않는다). 관찰이 꺼져 있으면 훅
+        // 설정 파일 자체가 없으므로 권한 사전 승인만 담은 talk 전용 설정 파일을
+        // 따로 만들어 `--settings`로 물린다(켜져 있으면 어댑터가 같은 조각을
+        // 훅 설정에 합쳐 놓았다).
+        let has_settings = plan
             .env
             .iter()
-            .any(|(key, _)| key == "AGENT_OFFICE_SETTINGS")
-        {
-            if let Some(path) = (self.get_talk_settings)(session_id) {
+            .any(|(key, _)| key == "AGENT_OFFICE_SETTINGS");
+        if let Some(wiring) = (self.get_talk_wiring)(session_id, has_settings) {
+            plan.env.push((
+                "AGENT_OFFICE_TALK_PLUGIN".into(),
+                wiring.plugin_dir.to_string_lossy().into_owned(),
+            ));
+            let mut claude_args = vec![
+                WrapperArg::Literal("--plugin-dir".into()),
+                WrapperArg::Env("AGENT_OFFICE_TALK_PLUGIN".into()),
+            ];
+            if let Some(path) = &wiring.settings_path {
                 plan.env.push((
                     "AGENT_OFFICE_SETTINGS".into(),
                     path.to_string_lossy().into_owned(),
                 ));
+                claude_args.push(WrapperArg::Literal("--settings".into()));
+                claude_args.push(WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()));
+                plan.cleanup_paths.push(path.clone());
+            }
+            if let Some(claude) = plan
+                .wrappers
+                .iter_mut()
+                .find(|wrapper| wrapper.command == "claude")
+            {
+                claude.prefix_args.extend(claude_args);
+            } else {
                 plan.wrappers.push(CommandWrapperSpec {
                     command: "claude".into(),
-                    prefix_args: vec![
-                        WrapperArg::Literal("--settings".into()),
-                        WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
-                    ],
-                    skip_if_present: vec!["--settings".into()],
-                    skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_SETTINGS".into()),
+                    prefix_args: claude_args,
+                    skip_if_present: vec![],
+                    // 플러그인 폴더가 사라졌으면 스킬만 포기하고 claude는 띄운다
+                    // (없는 경로를 주면 claude가 하드 실패한다 — pi 확장과 같은 가드).
+                    skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_TALK_PLUGIN".into()),
                 });
-                plan.cleanup_paths.push(path);
             }
         }
 

@@ -140,6 +140,7 @@ export function ProfileDialog() {
       botWhitelist: (agent.bot?.whitelist ?? []).join(", "),
       botPollIntervalSec: agent.bot?.pollIntervalSec ? String(agent.bot.pollIntervalSec) : "",
       botIdleQuietMs: agent.bot?.idleQuietMs ? String(agent.bot.idleQuietMs) : "",
+      talkReceive: agent.talkReceive !== false,
     });
   }, [editingAgentId]);
 
@@ -413,6 +414,8 @@ export function ProfileDialog() {
         keyboardSound: trimmedKeyboardSound || undefined,
         voiceId: trimmedVoiceId || undefined,
         bot: buildBotConfig(draft),
+        // 기본(수신 허용)은 필드를 지운다 — 끈 경우만 false로 남긴다.
+        talkReceive: draft.talkReceive === false ? false : undefined,
       });
     } else {
       const profile = draftToProfile(draft, agentOrder.length);
@@ -750,6 +753,20 @@ export function ProfileDialog() {
             agentId={editingAgentId}
             onChange={(voiceId) => setDraft((d) => ({ ...d, voiceId }))}
           />
+          <div className="form-field form-check">
+            <label>
+              <input
+                type="checkbox"
+                checked={draft.talkReceive !== false}
+                onChange={(e) => setDraft({ ...draft, talkReceive: e.target.checked })}
+              />
+              <span className="form-label-text">동료 메시지 받기</span>
+            </label>
+            <p className="form-hint">
+              끄면 다른 캐릭터가 이 캐릭터에게 말을 걸 수 없습니다. (설정 →
+              제어의 <b>동료 대화</b>가 켜져 있을 때만 의미가 있습니다.)
+            </p>
+          </div>
           <div className="form-field">
             <span className="form-label-text">봇 모드 설정</span>
             <p className="form-hint">

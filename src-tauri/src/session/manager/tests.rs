@@ -259,9 +259,100 @@
         (Arc::new(manager), control, recorded, scratch)
     }
 
+    /// 동료 대화 배선을 켠 매니저(플러그인 폴더 + 관찰 OFF일 때의 설정 파일).
+    fn with_talk(manager: SessionManager) -> SessionManager {
+        manager.with_talk_wiring(Arc::new(|_sid: &str, has_settings: bool| {
+            Some(crate::session::manager::TalkWiring {
+                plugin_dir: PathBuf::from("/plugins/agent-office"),
+                settings_path: (!has_settings).then(|| PathBuf::from("/tmp/talk.settings.json")),
+            })
+        }))
+    }
+
     fn cleanup_observer_fixture(control: &FakeControl, scratch: &Path) {
         control.close_output();
         let _ = std::fs::remove_dir_all(scratch);
+    }
+
+    #[tokio::test]
+    async fn talk_adds_plugin_dir_and_its_own_settings_when_observer_is_off() {
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
+        // Arc를 풀 수 없으니 배선을 얹은 매니저를 따로 만든다.
+        let manager = Arc::new(with_talk(Arc::try_unwrap(manager).ok().expect("유일 소유")));
+        manager.create(req("a1", Some(false))).unwrap();
+
+        let wrappers = recorded_wrappers.lock();
+        assert_eq!(wrappers.len(), 1);
+        assert_eq!(wrappers[0].command, "claude");
+        assert_eq!(
+            wrappers[0].prefix_args,
+            vec![
+                WrapperArg::Literal("--plugin-dir".into()),
+                WrapperArg::Env("AGENT_OFFICE_TALK_PLUGIN".into()),
+                WrapperArg::Literal("--settings".into()),
+                WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+            ]
+        );
+        drop(wrappers);
+        let env = control.spawned_env();
+        assert!(env.contains(&(
+            "AGENT_OFFICE_TALK_PLUGIN".into(),
+            "/plugins/agent-office".into()
+        )));
+        assert!(env.contains(&(
+            "AGENT_OFFICE_SETTINGS".into(),
+            "/tmp/talk.settings.json".into()
+        )));
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn talk_reuses_the_hook_settings_file_when_observer_is_on() {
+        let adapters: Vec<Arc<dyn ObserverAdapter>> = vec![Arc::new(PlanAdapter {
+            provider: ObserverProvider::Claude,
+            result: Ok(AdapterSessionPlan {
+                env: vec![("AGENT_OFFICE_SETTINGS".into(), "hooks.json".into())],
+                wrappers: vec![CommandWrapperSpec {
+                    command: "claude".into(),
+                    prefix_args: vec![
+                        WrapperArg::Literal("--settings".into()),
+                        WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+                    ],
+                    skip_if_present: vec!["--settings".into()],
+                    ..Default::default()
+                }],
+                cleanup_paths: vec![],
+            }),
+        })];
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(true, adapters);
+        let manager = Arc::new(with_talk(Arc::try_unwrap(manager).ok().expect("유일 소유")));
+        manager.create(req("a1", Some(false))).unwrap();
+
+        let wrappers = recorded_wrappers.lock();
+        let claude = wrappers
+            .iter()
+            .filter(|w| w.command == "claude")
+            .collect::<Vec<_>>();
+        // 훅 설정 파일이 이미 있으므로 `--settings`는 한 번만, 플러그인만 덧붙는다.
+        assert_eq!(claude.len(), 1);
+        assert_eq!(
+            claude[0].prefix_args,
+            vec![
+                WrapperArg::Literal("--settings".into()),
+                WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+                WrapperArg::Literal("--plugin-dir".into()),
+                WrapperArg::Env("AGENT_OFFICE_TALK_PLUGIN".into()),
+            ]
+        );
+        drop(wrappers);
+        let env = control.spawned_env();
+        assert_eq!(
+            env.iter()
+                .filter(|(k, _)| k == "AGENT_OFFICE_SETTINGS")
+                .count(),
+            1
+        );
+        cleanup_observer_fixture(&control, &scratch);
     }
 
     #[tokio::test]

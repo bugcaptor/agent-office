@@ -69,6 +69,7 @@ export type ModalState =
   | { kind: "confirm-quit" }
   | { kind: "settings" }
   | { kind: "analytics" }
+  | { kind: "talk-log" }
   | { kind: "usage" }
   | { kind: "about" };
 

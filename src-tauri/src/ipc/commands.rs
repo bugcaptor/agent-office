@@ -38,6 +38,8 @@ mod session;
 pub mod settings;
 // 확인 요청 대사 TTS(리라이트+합성). 외부 API 두 곳을 호출하는 유일한 도메인.
 mod tts;
+// 동료 대화 — 상태 스냅샷·감사 로그 열람.
+mod talk;
 mod usage;
 
 // Re-imported here (in addition to each domain file's own scoped `use`s)
@@ -60,6 +62,7 @@ pub(crate) use tailscale::*;
 pub(crate) use persistence::*;
 pub(crate) use session::*;
 pub(crate) use settings::*;
+pub(crate) use talk::*;
 pub(crate) use tts::*;
 pub(crate) use usage::*;
 

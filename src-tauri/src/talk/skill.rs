@@ -5,13 +5,17 @@
 // Claude Code에 스킬을 심는 방법은 셋뿐인데(개인 `~/.claude/skills`, 프로젝트
 // `.claude/skills`, 플러그인) 앞의 둘은 **사용자 설정을 오염시킨다**. 이 앱은
 // `~/.claude`를 건드리지 않는다는 불변식이 있으므로(observer/claude.rs 참고)
-// 앱 소유 디렉터리에 **로컬 플러그인 마켓플레이스**를 만들고, 이미 세션마다
-// 넘기고 있는 `--settings` 파일에 marketplace/plugin 선언만 얹는다. 세션이
-// 끝나면 아무것도 남지 않는다.
+// 앱 소유 디렉터리에 플러그인 하나를 만들어 두고 세션마다
+// `claude --plugin-dir <그 폴더>` 로 물린다 — "이 세션에서만" 로드되는 플래그라
+// 세션이 끝나면 아무것도 남지 않는다.
+//
+// (설정 파일의 `extraKnownMarketplaces`/`enabledPlugins`로도 될 것 같지만
+// 실측 결과 `--settings`로 준 그 키들은 마켓플레이스로 등록되지 않는다 —
+// claude 2.1.239. 그래서 플러그인은 플래그로, 권한 사전 승인만 설정 파일로 한다.)
 //
 //   <app_data>/claude-plugin/
-//     .claude-plugin/marketplace.json
-//     agent-office/.claude-plugin/plugin.json
+//     .claude-plugin/marketplace.json      (플래그 경로에는 불필요하지만, 나중에
+//     agent-office/.claude-plugin/plugin.json   마켓플레이스로 붙일 여지를 남긴다)
 //     agent-office/skills/talk/SKILL.md
 //
 // 스킬 본문과 권한 규칙은 **셸 shim의 절대 경로**를 박아 쓴다. `agent-office`가
@@ -97,22 +101,17 @@ pub fn ensure_plugin(app_data: &Path, shim: &Path) -> std::io::Result<PathBuf> {
     Ok(root)
 }
 
-/// 세션 전용 `--settings`에 얹을 조각. 마켓플레이스·플러그인 활성화 + shim
-/// 실행 사전 승인(매 호출마다 권한 프롬프트가 뜨면 대화가 성립하지 않는다).
-pub fn settings_fragment(app_data: &Path, shim: &Path) -> serde_json::Value {
-    let root = plugin_root(app_data);
-    let mut marketplaces = serde_json::Map::new();
-    marketplaces.insert(
-        MARKETPLACE.to_string(),
-        serde_json::json!({
-            "source": { "source": "directory", "path": root.to_string_lossy() },
-        }),
-    );
-    let mut plugins = serde_json::Map::new();
-    plugins.insert(format!("{PLUGIN}@{MARKETPLACE}"), serde_json::Value::Bool(true));
+/// `claude --plugin-dir`에 넘길 플러그인 폴더.
+pub fn plugin_dir(app_data: &Path) -> PathBuf {
+    plugin_root(app_data).join(PLUGIN)
+}
+
+/// 세션 전용 `--settings`에 얹을 조각 — shim 실행 사전 승인 하나뿐이다.
+/// 대화 한 번에 권한 프롬프트가 두 번 뜨면(발신 CLI + 답장 CLI) 대화가 성립하지
+/// 않는다. 스킬 frontmatter의 `allowed-tools`는 **스킬을 발동한 턴에만** 듣기
+/// 때문에, 스킬 없이 안내 문구만 받고 답장하는 수신자에게는 이 규칙이 필요하다.
+pub fn settings_fragment(_app_data: &Path, shim: &Path) -> serde_json::Value {
     serde_json::json!({
-        "extraKnownMarketplaces": marketplaces,
-        "enabledPlugins": plugins,
         "permissions": { "allow": [format!("Bash({}:*)", shim.to_string_lossy())] },
     })
 }
@@ -258,18 +257,19 @@ mod tests {
     }
 
     #[test]
-    fn fragment_enables_plugin_and_preapproves_shim() {
+    fn fragment_preapproves_only_the_shim() {
         let app_data = PathBuf::from("/data/app");
         let shim = PathBuf::from("/tmp/agent-office/bin/office-talk");
         let f = settings_fragment(&app_data, &shim);
-        assert_eq!(f["enabledPlugins"]["agent-office@agent-office"], true);
-        assert_eq!(
-            f["extraKnownMarketplaces"]["agent-office"]["source"]["path"],
-            "/data/app/claude-plugin"
-        );
         assert_eq!(
             f["permissions"]["allow"][0],
             "Bash(/tmp/agent-office/bin/office-talk:*)"
+        );
+        // 마켓플레이스/플러그인 선언은 --settings로 먹지 않는다(실측) — 넣지 않는다.
+        assert!(f.get("enabledPlugins").is_none());
+        assert_eq!(
+            plugin_dir(&app_data),
+            PathBuf::from("/data/app/claude-plugin/agent-office")
         );
     }
 

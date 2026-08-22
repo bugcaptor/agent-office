@@ -155,6 +155,22 @@ pub enum ActivityKind {
     Idle,
 }
 
+/// 동료 대화 한 마디(docs/agent-talk-design.md). 발신 즉시 렌더러로 직행해
+/// 오피스 말풍선과 대화 로그를 띄운다 — 실제 배달(수신자 PTY 주입)은 수신자가
+/// 한가해질 때까지 늦춰지므로, 이 이벤트는 "말했다"이지 "전달됐다"가 아니다.
+/// TS `TalkEvent`와 1:1.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TalkEvent {
+    pub conv_id: String,
+    pub from: AgentId,
+    pub from_name: String,
+    pub to: AgentId,
+    pub to_name: String,
+    pub text: String,
+    pub at: u64,
+}
+
 /// 세션 시간 추적용 활동 이벤트. NotificationHub의 dedup/큐를 우회해
 /// "activity-event"로 렌더러 직행. TS ActivityEvent와 1:1.
 /// at은 백엔드 now_ms() epoch ms — 렌더러 정산의 유일한 시계.

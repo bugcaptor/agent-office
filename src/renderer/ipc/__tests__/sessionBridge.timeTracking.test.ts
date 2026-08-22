@@ -13,6 +13,7 @@ vi.mock("../tauriApi", () => ({
     onNotification: (cb: any) => ((captured.notif = cb), () => {}),
     onNotificationCleared: () => () => {},
     onActivity: (cb: any) => ((captured.activity = cb), () => {}),
+    onTalkMessage: () => () => {},
     setBadgeCount: vi.fn(),
     appendSessionTurn: vi.fn(),
   },

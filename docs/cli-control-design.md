@@ -92,8 +92,13 @@
 | `/v1/dispose` | `{ agentId }` | `dispose_session` |
 | `/v1/notifications` | `{ agentId }` | `list_notifications` |
 | `/v1/clear` | `{ agentId, ids? }` | `clear_notifications` |
+| `/v1/talk/roster` | `{}` → `RosterEntry[]` | 동료 대화(docs/agent-talk-design.md) |
+| `/v1/talk/send` | `{ to, text, waitMs?, convId? }` | 〃 |
+| `/v1/talk/reply` | `{ convId, text, waitMs? }` | 〃 |
+| `/v1/talk/inbox` | `{ waitMs? }` | 〃 |
+| `/v1/talk/end` | `{ convId, reason? }` | 〃 |
 | `/v1/settings/get` | `{}` | `get_app_settings` |
-| `/v1/settings/set` | `{ <설정필드>: <값>, … }` | `set_app_settings`(cliEnabled 제외) |
+| `/v1/settings/set` | `{ <설정필드>: <값>, … }` | `set_app_settings`(cliEnabled·talkEnabled 제외) |
 
 ## 외부 터미널 attach
 

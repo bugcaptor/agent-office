@@ -412,6 +412,7 @@ pub fn run() {
             // 앱을 다시 띄우지 않아도 다음 세션부터 바로 붙게.
             let talk = Arc::new(crate::talk::TalkHub::default());
             talk.set_log_dir(data_dir.join("talks"));
+            talk.set_events(events.clone());
             {
                 let snapshot = settings_cache.read().unwrap();
                 talk.set_config(crate::talk::TalkConfig {
@@ -440,28 +441,41 @@ pub fn run() {
                     Some(crate::talk::skill::settings_fragment(&data_dir, &shim))
                 }) as Arc<dyn Fn() -> Option<serde_json::Value> + Send + Sync>
             };
-            let talk_settings_provider = {
+            let talk_wiring_provider = {
                 let settings = settings_cache.clone();
                 let data_dir = data_dir.clone();
                 let settings_dir = observer_settings_dir.clone();
                 let exe = talk_exe.clone();
-                Arc::new(move |session_id: &str| {
+                Arc::new(move |session_id: &str, has_settings: bool| {
                     if !settings.read().unwrap().talk_enabled {
                         return None;
                     }
                     let shim = crate::talk::skill::ensure_assets(&data_dir, &exe).ok()?;
-                    crate::talk::skill::write_talk_only_settings(
-                        &settings_dir,
-                        session_id,
-                        &data_dir,
-                        &shim,
-                    )
-                    .map_err(|error| {
-                        eprintln!("agent-office: talk settings write failed: {error}");
+                    // 훅 설정이 이미 있으면 권한 조각은 그쪽에 합쳐져 있다.
+                    let settings_path = if has_settings {
+                        None
+                    } else {
+                        crate::talk::skill::write_talk_only_settings(
+                            &settings_dir,
+                            session_id,
+                            &data_dir,
+                            &shim,
+                        )
+                        .map_err(|error| {
+                            eprintln!("agent-office: talk settings write failed: {error}");
+                        })
+                        .ok()
+                    };
+                    Some(crate::session::manager::TalkWiring {
+                        plugin_dir: crate::talk::skill::plugin_dir(&data_dir),
+                        settings_path,
                     })
-                    .ok()
                 })
-                    as Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>
+                    as Arc<
+                        dyn Fn(&str, bool) -> Option<crate::session::manager::TalkWiring>
+                            + Send
+                            + Sync,
+                    >
             };
 
             let observer = Arc::new(
@@ -501,8 +515,8 @@ pub fn run() {
                 // 세션 핸드오프(unix 전용, docs/session-handoff-design.md) 소켓/로그
                 // 경로와 AGENT_OFFICE_APP_DATA env 주입(§핵심 5)의 근거.
                 .with_app_data_dir(data_dir.clone())
-                // 동료 대화 스킬 배선(관찰 OFF 세션용 폴백).
-                .with_talk_settings(talk_settings_provider)
+                // 동료 대화 스킬 배선(--plugin-dir + 권한 조각).
+                .with_talk_wiring(talk_wiring_provider)
                 // v2 상시 브로커 모드(opt-in, docs/session-broker-v2-design.md).
                 .with_broker_mode(broker_mode)
                 // 터미널 전사 상시 기록(30일·2GB 자율 보존).
@@ -808,6 +822,9 @@ pub fn run() {
             ipc::commands::load_diary,
             ipc::commands::save_work_log,
             ipc::commands::load_work_logs,
+            ipc::commands::talk_status,
+            ipc::commands::list_talk_log_dates,
+            ipc::commands::read_talk_log,
             ipc::commands::load_memo,
             ipc::commands::save_memo,
             ipc::commands::archive_memo_sheet,

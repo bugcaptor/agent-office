@@ -622,6 +622,7 @@ async fn talk_send(
         &me.id,
         &me.name,
         &target.id,
+        &target.name,
         &p.text,
         p.conv_id.as_deref(),
     ));
@@ -646,10 +647,19 @@ async fn talk_reply(
         None => return fail(format!("없는 대화입니다: {}", p.conv_id)),
     };
     let other = conv.other(&me.id).to_string();
+    let other_name = ctx
+        .store
+        .load()
+        .agents
+        .into_iter()
+        .find(|a| a.id == other)
+        .map(|a| a.name)
+        .unwrap_or_else(|| other.clone());
     let (conv_id, msg_id) = try_or_fail!(ctx.talk.enqueue(
         &me.id,
         &me.name,
         &other,
+        &other_name,
         &p.text,
         Some(&p.conv_id),
     ));
