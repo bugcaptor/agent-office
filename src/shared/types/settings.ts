@@ -131,6 +131,14 @@ export interface AppSettings {
    * 조작을 하게 한다. 켜져 있을 때만 리스너가 뜨고, 페어링 승인은 여전히
    * 필요하다. 네트워크 표면이므로 기본 false. */
   webRemoteEnabled: boolean;
+  /** 동료 대화(docs/agent-talk-design.md) — 캐릭터끼리 앱을 거쳐 메시지를
+   * 주고받게 한다. 남의 세션에 글자를 밀어 넣는 기능이라 기본 false이고,
+   * 끄면 대기 중 메시지까지 버려지는 킬 스위치다. */
+  talkEnabled: boolean;
+  /** 한 대화의 왕복 상한(무한 핑퐁 방지). 기본 6. */
+  talkMaxTurns: number;
+  /** 수신자가 이만큼 조용해야 메시지를 주입한다. 기본 3000ms. */
+  talkIdleQuietMs: number;
 }
 
 /** 웹 원격 수신 서버가 받아 줄 원격 주소 범위. */

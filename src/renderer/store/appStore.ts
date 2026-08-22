@@ -92,6 +92,9 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   webRemoteBind: "tailnet",
   webRemotePort: 47800,
   webRemoteEnabled: false,
+  talkEnabled: false,
+  talkMaxTurns: 6,
+  talkIdleQuietMs: 3000,
 };
 
 /**

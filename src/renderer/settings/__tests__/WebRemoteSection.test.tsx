@@ -64,6 +64,9 @@ function hydrate(bind: "tailnet" | "all" = "tailnet") {
     appSettings: {
       ...initialState.appSettings,
       webRemoteEnabled: true,
+      talkEnabled: false,
+      talkMaxTurns: 6,
+      talkIdleQuietMs: 3000,
       webRemoteBind: bind,
       webRemotePort: 47800,
     },

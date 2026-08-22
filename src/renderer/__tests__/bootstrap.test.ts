@@ -273,6 +273,9 @@ describe("bootApp", () => {
       webRemoteBind: "tailnet",
       webRemotePort: 47800,
       webRemoteEnabled: false,
+      talkEnabled: false,
+      talkMaxTurns: 6,
+      talkIdleQuietMs: 3000,
     });
     expect(s.settingsFirstRun).toBe(false);
     expect(warn).toHaveBeenCalledWith(

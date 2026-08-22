@@ -123,6 +123,10 @@ pub struct SessionManager {
     /// `restore_session_artifacts`를 직접 호출한다.
     pub(super) observer: Arc<ObserverRuntime>,
     get_observer_url: Arc<dyn Fn() -> Option<String> + Send + Sync>,
+    /// 동료 대화 스킬 배선(docs/agent-talk-design.md §6). sid를 주면 **관찰이
+    /// 꺼져 있을 때** 쓸 talk 전용 세션 설정 파일을 만들고 그 경로를 돌려준다.
+    /// 대화가 꺼져 있거나 이미 훅 설정 파일이 있으면 None(그쪽에 조각이 합쳐진다).
+    get_talk_settings: Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>,
     /// pub(super): 핸드오프/입양 형제 모듈이 세션 제거 시 레지스트리도 함께 정리한다.
     pub(super) registry: Arc<SessionRegistry>,
     /// pub(super): external.rs가 외부(논리) 세션의 started/state 이벤트를 낸다.
@@ -180,6 +184,7 @@ impl SessionManager {
             factory,
             observer,
             get_observer_url,
+            get_talk_settings: Arc::new(|_| None),
             registry,
             events,
             hub,
@@ -234,6 +239,15 @@ impl SessionManager {
     /// 앱 데이터 디렉터리를 지정한다(세션 핸드오프 소켓/로그 경로,
     /// `AGENT_OFFICE_APP_DATA` env의 근거). `lib.rs`의 프로덕션 부트스트랩만
     /// 호출 — 테스트는 기본 None으로 이 기능을 건드리지 않는다.
+    /// 동료 대화 스킬 배선 주입(lib.rs). 기본은 no-op이라 테스트는 신경 쓰지 않는다.
+    pub fn with_talk_settings(
+        mut self,
+        provider: Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>,
+    ) -> Self {
+        self.get_talk_settings = provider;
+        self
+    }
+
     pub fn with_app_data_dir(mut self, dir: std::path::PathBuf) -> Self {
         self.app_data_dir = Some(dir);
         self
@@ -326,6 +340,32 @@ impl SessionManager {
                     });
                 }
                 Err(error) => eprintln!("agent-office: failed to write pi extension: {error}"),
+            }
+        }
+
+        // 동료 대화 스킬(§6): 관찰이 꺼져 있으면 훅 설정 파일 자체가 없으므로
+        // talk 선언만 담은 세션 설정 파일을 따로 만들어 `--settings`로 물린다.
+        // 관찰이 켜져 있으면 어댑터가 같은 조각을 훅 설정에 합쳐 놓았다.
+        if !plan
+            .env
+            .iter()
+            .any(|(key, _)| key == "AGENT_OFFICE_SETTINGS")
+        {
+            if let Some(path) = (self.get_talk_settings)(session_id) {
+                plan.env.push((
+                    "AGENT_OFFICE_SETTINGS".into(),
+                    path.to_string_lossy().into_owned(),
+                ));
+                plan.wrappers.push(CommandWrapperSpec {
+                    command: "claude".into(),
+                    prefix_args: vec![
+                        WrapperArg::Literal("--settings".into()),
+                        WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+                    ],
+                    skip_if_present: vec!["--settings".into()],
+                    skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_SETTINGS".into()),
+                });
+                plan.cleanup_paths.push(path);
             }
         }
 

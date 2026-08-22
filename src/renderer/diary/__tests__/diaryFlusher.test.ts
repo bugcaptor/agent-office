@@ -54,6 +54,9 @@ const SETTINGS_ON: AppSettings = {
   webRemoteBind: "tailnet",
   webRemotePort: 47800,
   webRemoteEnabled: false,
+  talkEnabled: false,
+  talkMaxTurns: 6,
+  talkIdleQuietMs: 3000,
 };
 
 const NOW = 1_000_000_000_000;

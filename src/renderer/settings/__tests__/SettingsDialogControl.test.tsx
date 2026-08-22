@@ -68,6 +68,9 @@ function hydrate(cliEnabled: boolean) {
       webRemoteBind: "tailnet",
       webRemotePort: 47800,
       webRemoteEnabled: false,
+      talkEnabled: false,
+      talkMaxTurns: 6,
+      talkIdleQuietMs: 3000,
     },
     false,
   );

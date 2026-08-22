@@ -558,6 +558,9 @@ describe("app settings commands", () => {
       webRemoteBind: "tailnet" as const,
       webRemotePort: 47800,
       webRemoteEnabled: false,
+      talkEnabled: false,
+      talkMaxTurns: 6,
+      talkIdleQuietMs: 3000,
     };
     const tauriApi = await importTauriApi();
 
