@@ -129,7 +129,7 @@ function GeneralTab() {
 /** 요약기 provider별 기본 모델(비우면 이 값이 쓰인다) — 백엔드
  * `summarizer::SummaryPurpose`의 하드코딩 값과 같아야 한다. 안내 문구
  * (placeholder)에만 쓰이므로 어긋나도 동작에는 영향이 없다. */
-const SUMMARY_DEFAULT_MODELS: Record<SummaryProvider, { light: string; heavy: string }> = {
+export const SUMMARY_DEFAULT_MODELS: Record<SummaryProvider, { light: string; heavy: string }> = {
   claude: { light: "haiku", heavy: "sonnet" },
   codex: { light: "gpt-5.4-mini", heavy: "gpt-5.4" },
   agy: { light: "gemini-3.6-flash-low", heavy: "gemini-3.1-pro-low" },

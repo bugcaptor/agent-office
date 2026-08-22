@@ -18,6 +18,7 @@ vi.mock("../../ipc/tauriApi", () => ({
 
 import { ModelPicker, filterModels } from "../ModelPicker";
 import { MODEL_PRESETS, resetModelCatalogCache } from "../modelCatalog";
+import { SUMMARY_DEFAULT_MODELS } from "../SettingsDialog";
 
 function options(): string[] {
   return screen.queryAllByRole("option").map((o) => o.textContent ?? "");
@@ -160,5 +161,25 @@ describe("ModelPicker", () => {
     rerender(<ModelPicker provider="opencode" value="" onChange={() => {}} ariaLabel="모델" />);
     await waitFor(() => expect(options()).toContain("oc/only"));
     expect(options()).not.toContain("or/only");
+  });
+});
+
+// 프리셋은 라이브 조회가 없거나 실패할 때 유일하게 남는 목록이다. 요약기가
+// 실제로 쓰는 기본 모델이 거기 없으면 "지금 쓰이는 모델"을 목록에서 고를 수
+// 없다 — 모델 세대가 넘어갈 때마다 실제로 어긋나 온 곳이라 테스트로 고정한다.
+describe("MODEL_PRESETS", () => {
+  it("요약기 기본 모델을 모두 담는다", () => {
+    for (const [provider, defaults] of Object.entries(SUMMARY_DEFAULT_MODELS)) {
+      const presets = MODEL_PRESETS[provider as keyof typeof MODEL_PRESETS];
+      expect(presets, provider).toContain(defaults.light);
+      expect(presets, provider).toContain(defaults.heavy);
+    }
+  });
+
+  it("provider마다 중복 없는 비어 있지 않은 목록이다", () => {
+    for (const [provider, presets] of Object.entries(MODEL_PRESETS)) {
+      expect(presets.length, provider).toBeGreaterThan(0);
+      expect(new Set(presets).size, provider).toBe(presets.length);
+    }
   });
 });

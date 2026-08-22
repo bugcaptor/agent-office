@@ -57,9 +57,179 @@ pub(super) fn build(instruction: &str, purpose: SummaryPurpose, model: &str) -> 
     }
 }
 
+// ── 설정 화면의 모델 카탈로그(`list_provider_models`) ───────────────────────
+//
+// codex CLI에는 `opencode models` 같은 사람용 목록 커맨드가 없지만
+// `codex debug models`가 **모델 카탈로그 원본을 JSON으로** 뱉는다(codex-cli
+// 0.149 실측). 요약 실행 경로(`build`)와 달리 stdin도 세마포어도 쓰지 않는다.
+//
+// 출력은 슬러그당 시스템 프롬프트 전문까지 들어 있어 수백 KB다 — 그래서
+// 파싱은 slug/visibility/priority 세 필드만 본다. `visibility`가 `"hide"`인
+// 항목(내부용 `gpt-reserve`, `codex-auto-review` 등)은 사람이 고를 것이
+// 아니므로 버린다. 정렬은 카탈로그가 주는 `priority` 오름차순 — CLI의 모델
+// 선택 메뉴와 같은 순서다.
+//
+// `debug`는 이름 그대로 안정성을 보장하지 않는 서브커맨드다. 그래서 실패든
+// 형식 변화든 전부 빈 목록으로 눌러 담고(호출측 model_catalog가 정적
+// 프리셋으로 조용히 강등한다), 스키마도 필요한 필드만 느슨하게 읽는다.
+#[cfg(windows)]
+const MODELS_WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
+$OutputEncoding=New-Object System.Text.UTF8Encoding($false)
+$c = Get-Command codex -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $c) { exit 3 }
+& $c.Source debug models
+exit $LASTEXITCODE"#;
+
+#[cfg(windows)]
+fn models_command() -> tokio::process::Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut command = tokio::process::Command::new("powershell.exe");
+    command.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        MODELS_WINDOWS_SCRIPT,
+    ]);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
+#[cfg(not(windows))]
+fn models_command() -> tokio::process::Command {
+    let mut command = tokio::process::Command::new("codex");
+    command.args(["debug", "models"]);
+    command
+}
+
+/// `codex debug models` stdout(JSON) → 모델 slug 목록. 숨김 항목을 버리고
+/// `priority` 오름차순으로 정렬한다(같은 값이면 카탈로그 순서 유지).
+/// 파싱 실패는 오류가 아니라 빈 목록이다. 순수.
+pub fn parse_models_stdout(stdout: &str) -> Vec<String> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(stdout) else {
+        return Vec::new();
+    };
+    let Some(models) = v.get("models").and_then(|m| m.as_array()) else {
+        return Vec::new();
+    };
+    // priority가 없는 항목은 맨 뒤로 — 순서를 잃느니 목록 끝에 붙이는 편이 낫다.
+    let mut rows: Vec<(i64, String)> = models
+        .iter()
+        .filter(|m| {
+            // visibility 자체가 없으면 보여 준다 — 필드가 사라지는 쪽으로
+            // 스키마가 바뀌었을 때 목록이 통째로 비는 것이 더 나쁘다.
+            m.get("visibility")
+                .and_then(|x| x.as_str())
+                .map(|x| x != "hide")
+                .unwrap_or(true)
+        })
+        .filter_map(|m| {
+            let slug = m.get("slug").and_then(|s| s.as_str())?.trim();
+            if slug.is_empty() {
+                return None;
+            }
+            let priority = m
+                .get("priority")
+                .and_then(|p| p.as_i64())
+                .unwrap_or(i64::MAX);
+            Some((priority, slug.to_string()))
+        })
+        .collect();
+    rows.sort_by_key(|(priority, _)| *priority);
+    let mut out: Vec<String> = Vec::with_capacity(rows.len());
+    for (_, slug) in rows {
+        if !out.contains(&slug) {
+            out.push(slug);
+        }
+    }
+    out
+}
+
+/// 모델 목록 조회. 실패(미설치·타임아웃·비정상 종료·형식 변화)는 전부 빈
+/// 목록이다 — opencode::list_models와 같은 계약이다.
+pub async fn list_models(timeout: std::time::Duration) -> Vec<String> {
+    let mut command = models_command();
+    command.current_dir(std::env::temp_dir());
+    command.stdin(std::process::Stdio::null());
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+    command.kill_on_drop(true);
+
+    let Ok(child) = command.spawn() else {
+        return Vec::new();
+    };
+    let Ok(Ok(output)) = tokio::time::timeout(timeout, child.wait_with_output()).await else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    parse_models_stdout(&String::from_utf8_lossy(&output.stdout))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `codex debug models`의 실측 모양(codex-cli 0.149) 축약본. 숨김 항목이
+    /// 걸러지고 priority 오름차순으로 정렬되는지 고정한다.
+    #[test]
+    fn parse_models_stdout_keeps_listed_slugs_in_priority_order() {
+        let stdout = r#"{"models":[
+            {"slug":"gpt-5.4","visibility":"list","priority":16},
+            {"slug":"gpt-reserve","visibility":"hide","priority":3},
+            {"slug":"gpt-5.6-sol","visibility":"list","priority":1},
+            {"slug":"gpt-5.4-mini","visibility":"list","priority":23},
+            {"slug":"codex-auto-review","visibility":"hide","priority":43}
+        ]}"#;
+        assert_eq!(
+            parse_models_stdout(stdout),
+            vec![
+                "gpt-5.6-sol".to_string(),
+                "gpt-5.4".to_string(),
+                "gpt-5.4-mini".to_string(),
+            ]
+        );
+    }
+
+    /// 필드가 빠져도 목록이 통째로 비면 안 된다 — visibility 없음은 보이는
+    /// 것으로, priority 없음은 맨 뒤로.
+    #[test]
+    fn parse_models_stdout_tolerates_missing_optional_fields() {
+        let stdout = r#"{"models":[
+            {"slug":"no-priority"},
+            {"slug":"first","visibility":"list","priority":2},
+            {"slug":"  "},
+            {"nope":true}
+        ]}"#;
+        assert_eq!(
+            parse_models_stdout(stdout),
+            vec!["first".to_string(), "no-priority".to_string()]
+        );
+    }
+
+    /// `debug`는 안정성을 보장하지 않는 서브커맨드다 — 형식이 바뀌거나
+    /// 쓰레기가 나와도 빈 목록으로 강등할 뿐 패닉하지 않는다.
+    #[test]
+    fn parse_models_stdout_on_garbage_or_empty_is_empty_list() {
+        assert!(parse_models_stdout("").is_empty());
+        assert!(parse_models_stdout("not json at all").is_empty());
+        assert!(parse_models_stdout(r#"{"models":"nope"}"#).is_empty());
+        assert!(parse_models_stdout(r#"{"other":[]}"#).is_empty());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn non_windows_models_command_uses_the_json_catalog_subcommand() {
+        let cmd = models_command();
+        assert_eq!(cmd.as_std().get_program(), "codex");
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(args, vec!["debug", "models"]);
+    }
 
     const DANGEROUS_INSTRUCTION: &str = "--dangerously-bypass-approvals-and-sandbox";
 
@@ -289,5 +459,18 @@ exit 0
                 DANGEROUS_INSTRUCTION,
             ]
         );
+    }
+
+    /// 실 CLI 스모크 — `codex debug models`의 출력 형식이 바뀌지 않았는지
+    /// 사람이 확인할 때 쓴다(`debug`는 안정성 보장이 없는 서브커맨드다).
+    #[tokio::test]
+    #[ignore = "codex CLI 실행 필요(수동 스모크)"]
+    async fn live_catalog_smoke() {
+        let models = list_models(std::time::Duration::from_secs(30)).await;
+        assert!(
+            !models.is_empty(),
+            "빈 목록 -- 출력 형식이 바뀌었을 수 있다"
+        );
+        println!("{models:?}");
     }
 }

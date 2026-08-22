@@ -4,15 +4,22 @@
 // `openrouter_list_models` 커맨드를 일곱 개 provider로 일반화한
 // `list_provider_models`(ipc::commands::media)가 이 모듈에 위임한다.
 //
-// 라이브 소스가 없는 provider(codex/gemini/agy)와 알 수 없는 문자열은 오류가
-// 아니라 **빈 목록**이다 — 프런트(src/renderer/settings/modelCatalog.ts와
-// 같은 패턴)는 실패든 빈 배열이든 정적 프리셋으로 조용히 강등하므로, 여기서
-// 굳이 실패를 구분해 돌려줄 이유가 없다. 그래서 이 모듈의 공개 함수는 절대
-// `Err`를 내지 않는다 — 실패는 전부 호출 지점에서 빈 목록으로 눌러 담는다.
+// 이제 일곱 provider 문자열이 모두 라이브 소스를 갖는다:
+//   openrouter  공개 GET 카탈로그
+//   claude/anthropic  Anthropic `/v1/models`(키 필요)
+//   opencode    `opencode models`
+//   codex       `codex debug models`(JSON)
+//   agy         `agy models`(TSV)
+//   gemini      Generative Language API(환경변수 키가 있을 때만)
+// 조회 실패·키 없음·알 수 없는 문자열은 오류가 아니라 **빈 목록**이다 —
+// 프런트(src/renderer/settings/modelCatalog.ts와 같은 패턴)는 실패든 빈
+// 배열이든 정적 프리셋으로 조용히 강등하므로, 여기서 굳이 실패를 구분해
+// 돌려줄 이유가 없다. 그래서 이 모듈의 공개 함수는 절대 `Err`를 내지 않는다 —
+// 실패는 전부 호출 지점에서 빈 목록으로 눌러 담는다.
 
 use std::time::Duration;
 
-use super::{anthropic, opencode};
+use super::{agy, anthropic, codex, gemini, opencode};
 
 /// 설정 화면이 보낼 수 있는 provider 문자열. 파싱을 순수 함수로 분리해
 /// 테스트한다 — 알 수 없는 문자열은 `None`으로 떨어뜨린다(오류가 아니다).
@@ -67,8 +74,10 @@ pub async fn list(provider: &str, anthropic_key: Option<&str>) -> Vec<String> {
                 .unwrap_or_default()
         }
         Provider::Opencode => opencode::list_models(TIMEOUT_MODELS).await,
-        // 라이브 소스가 없다.
-        Provider::Codex | Provider::Gemini | Provider::Agy => Vec::new(),
+        Provider::Codex => codex::list_models(TIMEOUT_MODELS).await,
+        Provider::Agy => agy::list_models(TIMEOUT_MODELS).await,
+        // 환경변수 키가 없으면 네트워크를 타지 않고 빈 목록이다(gemini.rs 주석).
+        Provider::Gemini => gemini::list_models(TIMEOUT_MODELS).await,
     }
 }
 
@@ -105,11 +114,11 @@ mod tests {
             .is_empty());
     }
 
-    #[tokio::test]
-    async fn no_live_source_providers_yield_empty_list() {
-        for p in ["codex", "gemini", "agy"] {
-            assert!(list(p, None).await.is_empty(), "{p}");
-        }
+    /// gemini는 환경변수 키가 있을 때만 라이브 조회를 한다 — 키 이름이
+    /// 조용히 바뀌면 조회가 죽은 채로 통과하므로 여기서 고정한다.
+    #[test]
+    fn gemini_live_source_is_gated_on_env_api_keys() {
+        assert_eq!(gemini::API_KEY_ENVS, ["GEMINI_API_KEY", "GOOGLE_API_KEY"]);
     }
 
     #[tokio::test]

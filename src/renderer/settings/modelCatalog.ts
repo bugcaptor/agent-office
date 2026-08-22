@@ -7,8 +7,10 @@
 //    (오프라인·키 없음·CLI 미설치) 애초에 라이브 소스가 없는 서비스에서도
 //    최소한 이만큼은 보여야 하므로 폴백을 겸한다. 항상 목록 맨 앞이다 —
 //    뒤에 두면 자주 쓰는 것이 수백 개 카탈로그 아래로 밀린다.
-//  - 실시간 카탈로그: `list_provider_models`. provider마다 소스가 다르다
-//    (OpenRouter 공개 카탈로그 / Anthropic `/v1/models` / `opencode models`).
+//  - 실시간 카탈로그: `list_provider_models`. provider마다 소스가 다르다 —
+//    OpenRouter 공개 카탈로그 / Anthropic `/v1/models`(키 필요) /
+//    `opencode models` / `codex debug models` / `agy models` /
+//    Gemini Generative Language API(`GEMINI_API_KEY` 등 환경변수가 있을 때만).
 //
 // 어느 층이든 **강제가 아니라 힌트**다. 모델 id는 그대로 CLI의 `--model`이나
 // API 본문으로 실리므로, 목록에 없는 새 모델도 그냥 적어 넣으면 된다 —
@@ -27,21 +29,44 @@ import { tauriApi } from "../ipc/tauriApi";
  * 한다 — 기본값이 목록에 없으면 "지금 쓰이는 모델"을 고를 수가 없다.
  */
 export const MODEL_PRESETS: Record<ModelCatalogProvider, string[]> = {
-  claude: ["haiku", "sonnet", "opus", "claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"],
-  anthropic: ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"],
-  codex: ["gpt-5.4-mini", "gpt-5.4"],
-  agy: ["gemini-3.6-flash-low", "gemini-3.1-pro-low"],
-  gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
-  opencode: ["opencode-go/deepseek-v4-flash", "opencode-go/deepseek-v4-pro"],
+  claude: [
+    "haiku",
+    "sonnet",
+    "opus",
+    "fable",
+    "claude-haiku-4-5",
+    "claude-sonnet-5",
+    "claude-opus-5",
+    "claude-fable-5",
+  ],
+  anthropic: ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5", "claude-fable-5"],
+  codex: ["gpt-5.4-mini", "gpt-5.4", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"],
+  agy: [
+    "gemini-3.6-flash-low",
+    "gemini-3.1-pro-low",
+    "gemini-3.7-flash-low",
+    "gemini-3.7-flash-medium",
+  ],
+  gemini: [
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-3-flash-preview",
+    "gemini-3.1-pro-preview",
+  ],
+  opencode: [
+    "opencode-go/deepseek-v4-flash",
+    "opencode-go/deepseek-v4-pro",
+    "opencode-go/glm-5.3",
+    "opencode-go/kimi-k3",
+  ],
   openrouter: [
     "openai/gpt-5.4-mini",
     "openai/gpt-5.4",
+    "openai/gpt-5.6-luna",
     "anthropic/claude-haiku-4.5",
-    "google/gemini-2.5-flash",
-    "meta-llama/llama-4-maverick",
+    "google/gemini-3.7-flash",
     "deepseek/deepseek-v4-flash",
     "deepseek/deepseek-v4-pro",
-    "deepseek/deepseek-chat-v3.1",
   ],
 };
 

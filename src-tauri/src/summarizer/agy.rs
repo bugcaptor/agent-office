@@ -54,9 +54,125 @@ pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
     }
 }
 
+// ── 설정 화면의 모델 카탈로그(`list_provider_models`) ───────────────────────
+//
+// agy에는 `agy models`("List available models")가 있다. 실측 출력은 첫 줄에
+// 진행 문구("Fetching available models...")가 오고, 그 뒤로 한 줄에
+// `<id>\t<사람이 읽는 이름>` 형식이다. 요약 실행 경로(`build`)와 달리 stdin도
+// 세마포어도 쓰지 않는다.
+//
+// 파싱은 **탭이 있는 줄만** 취해 첫 필드를 쓴다 — 진행 문구·오류 안내처럼
+// 탭이 없는 줄을 모델 id로 오인하지 않게 하는 값싼 방어다.
+#[cfg(windows)]
+const MODELS_WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
+$OutputEncoding=New-Object System.Text.UTF8Encoding($false)
+$c = Get-Command agy -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $c) { exit 3 }
+& $c.Source models
+exit $LASTEXITCODE"#;
+
+#[cfg(windows)]
+fn models_command() -> tokio::process::Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut command = tokio::process::Command::new("powershell.exe");
+    command.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        MODELS_WINDOWS_SCRIPT,
+    ]);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
+#[cfg(not(windows))]
+fn models_command() -> tokio::process::Command {
+    let mut command = tokio::process::Command::new("agy");
+    command.arg("models");
+    command
+}
+
+/// `agy models` stdout → 모델 id 목록. 탭으로 갈린 줄의 첫 필드만 취하고,
+/// 중복은 첫 등장 순서로 눌러 담는다. 순수.
+pub fn parse_models_stdout(stdout: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in stdout.lines() {
+        let Some((id, _label)) = line.split_once('\t') else {
+            continue;
+        };
+        let id = id.trim();
+        if id.is_empty() || out.iter().any(|m| m == id) {
+            continue;
+        }
+        out.push(id.to_string());
+    }
+    out
+}
+
+/// 모델 목록 조회. 실패(미설치·타임아웃·비정상 종료)는 전부 빈 목록이다 —
+/// opencode::list_models와 같은 계약이다.
+pub async fn list_models(timeout: std::time::Duration) -> Vec<String> {
+    let mut command = models_command();
+    command.current_dir(std::env::temp_dir());
+    command.stdin(std::process::Stdio::null());
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+    command.kill_on_drop(true);
+
+    let Ok(child) = command.spawn() else {
+        return Vec::new();
+    };
+    let Ok(Ok(output)) = tokio::time::timeout(timeout, child.wait_with_output()).await else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    parse_models_stdout(&String::from_utf8_lossy(&output.stdout))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `agy models`의 실측 모양: 첫 줄은 진행 문구(탭 없음), 그 뒤로 `id\t이름`.
+    #[test]
+    fn parse_models_stdout_takes_the_id_field_and_skips_the_progress_line() {
+        let stdout = "Fetching available models...\n                      gemini-3.7-flash-low\tGemini 3.7 Flash (Low)\n                      gemini-3.1-pro-high\tGemini 3.1 Pro (High)\n";
+        assert_eq!(
+            parse_models_stdout(stdout),
+            vec![
+                "gemini-3.7-flash-low".to_string(),
+                "gemini-3.1-pro-high".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_models_stdout_drops_blanks_and_duplicates() {
+        let stdout = "\ta\n  x  \tX\nx\tX again\n\n";
+        assert_eq!(parse_models_stdout(stdout), vec!["x".to_string()]);
+    }
+
+    #[test]
+    fn parse_models_stdout_on_empty_input_is_empty_list() {
+        assert!(parse_models_stdout("").is_empty());
+        assert!(parse_models_stdout("no tabs here\nnor here\n").is_empty());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn non_windows_models_command_invokes_the_models_subcommand_directly() {
+        let cmd = models_command();
+        assert_eq!(cmd.as_std().get_program(), "agy");
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(args, vec!["models"]);
+    }
 
     const DANGEROUS_INSTRUCTION: &str = "--dangerously-skip-permissions";
 
@@ -204,5 +320,18 @@ mod tests {
             instruction,
             Some(std::ffi::OsStr::new(DANGEROUS_INSTRUCTION))
         );
+    }
+
+    /// 실 CLI 스모크 — `agy models`의 TSV 형식이 바뀌지 않았는지 사람이
+    /// 확인할 때 쓴다.
+    #[tokio::test]
+    #[ignore = "agy CLI 실행 필요(수동 스모크)"]
+    async fn live_catalog_smoke() {
+        let models = list_models(std::time::Duration::from_secs(30)).await;
+        assert!(
+            !models.is_empty(),
+            "빈 목록 -- 출력 형식이 바뀌었을 수 있다"
+        );
+        println!("{models:?}");
     }
 }
