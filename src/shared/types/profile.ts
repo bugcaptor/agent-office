@@ -68,10 +68,3 @@ export interface PersistedState {
   /** 휴가 모드(보스 책상). 부재 = false. */
   vacationMode?: boolean;
 }
-
-/** PixelLab 생성 결과 (Rust pixellab::GeneratedImage 미러, camelCase). */
-export interface GeneratedSpriteImage {
-  pngBase64: string;
-  /** usage.type=="usd"일 때만 존재. 구독(generations) 차감이면 없음. */
-  costUsd?: number;
-}

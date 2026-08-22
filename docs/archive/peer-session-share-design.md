@@ -128,7 +128,7 @@ notification_cleared / activity_event)가 이미 **모든 앱 이벤트의 단�
 - **미는 것**: session-state, activity(작업중/대기/주의·서브 카운트 — 같은 스트림이라
   공짜), notification-new/cleared, 프로필 메타(name/role/seed/cwd/브랜치), 터미널
   크기 변경.
-- **포기(v1)**: 사용량 집계, 세션 로그, claude resume 상태, 커스텀 pixellab 스프라이트
+- **포기(v1)**: 사용량 집계, 세션 로그, claude resume 상태, 커스텀 생성 스프라이트
   이미지(v1은 `seed` 기반 기본 스프라이트로 렌더, Phase 2에서 해시 캐시 전송).
 - **프로필 소유권**: 호스트 단독. 뷰어는 읽기 캐시이고 편집 UI는 비활성.
 - **이름 충돌**: 뷰어 씬에서 원격 캐릭터는 `이름@호스트명`으로 표기한다.

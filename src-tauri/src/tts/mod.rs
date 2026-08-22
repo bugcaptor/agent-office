@@ -261,7 +261,7 @@ fn which_claude() -> Option<PathBuf> {
     None
 }
 
-/// IPC로는 `"{code}: {상세}"`로 나간다(pixellab과 같은 관례 — 렌더러가 첫 ':'
+/// IPC로는 `"{code}: {상세}"`로 나간다(앱 공통 관례 — 렌더러가 첫 ':'
 /// 앞 코드로 분기한다).
 #[derive(Debug, Clone, PartialEq)]
 pub enum TtsError {

@@ -1,9 +1,9 @@
 // src-tauri/src/ipc/commands/media.rs
 //
-// Portrait/sprite/minimi PNG storage plus the summarizer and PixelLab sprite
+// Portrait/sprite/minimi PNG storage plus the summarizer and codex image
 // generation commands. See `super`(`ipc::commands`) module doc for the
 // shared no-lock-across-await contract (`summarize_text` and
-// `generate_sprite_image` are the two exceptions that `.await` while
+// `generate_codex_image` are the two exceptions that `.await` while
 // holding no lock).
 
 use tauri::State;
@@ -177,25 +177,4 @@ pub async fn summarize_text(
 #[tauri::command(rename_all = "camelCase")]
 pub async fn openrouter_list_models() -> Result<Vec<String>, String> {
     crate::summarizer::list_openrouter_models().await
-}
-
-/// PixelLab로 64×64 스프라이트 1장 생성. AppState 비의존
-/// (stateless) — 이 command만은 본문에 .await가 있으나 락을 전혀 잡지
-/// 않으므로 파일 머리말의 "no lock across await" 계약과 무관하다.
-#[tauri::command(rename_all = "camelCase")]
-pub async fn generate_sprite_image(
-    description: String,
-) -> Result<crate::pixellab::GeneratedImage, String> {
-    let trimmed = description.trim();
-    if trimmed.is_empty() {
-        return Err("validation: description is empty".to_string());
-    }
-    // pixen maxLength 2000 — 초과분은 뒤를 자른다 (char 경계 안전).
-    let capped: String = trimmed
-        .chars()
-        .take(crate::pixellab::DESCRIPTION_MAX_CHARS)
-        .collect();
-    crate::pixellab::generate_image(&capped)
-        .await
-        .map_err(|e| e.to_ipc_string())
 }

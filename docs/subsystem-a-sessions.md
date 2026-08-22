@@ -58,7 +58,7 @@ src-tauri/src/
   bot/                     # 봇 모드 (docs/bot-mode-design.md)
   control/                 # CLI 제어 서버·클라이언트 (docs/cli-control-design.md)
   usage/                   # 구독 사용량 (docs/usage-design.md)
-  pixellab/ summarizer/    # 스프라이트 생성·요약 외부 API 클라이언트
+  codex_imagegen/ summarizer/  # 이미지 생성(codex CLI)·요약 외부 API 클라이언트
   markdown.rs shell_export.rs terminal.rs vscode.rs api_keys.rs  # 단일 파일 유틸
 ```
 

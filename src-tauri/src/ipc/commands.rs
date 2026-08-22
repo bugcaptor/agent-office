@@ -5,7 +5,7 @@
 // `SessionManager`/`NotificationHub`/`ProfileStore`/`SettingsStore` — no
 // lock is held across an `.await` point. Most bodies have no `.await` at
 // all (`async fn` is required by Tauri for commands that take `State`);
-// the exceptions (`summarize_text`, `generate_sprite_image`,
+// the exceptions (`summarize_text`, `generate_codex_image`,
 // `set_app_settings`) hold no lock when they yield.
 //
 // The `State<'_, AppState>` parameter is named `app_state` everywhere

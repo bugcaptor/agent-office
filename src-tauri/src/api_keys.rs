@@ -5,9 +5,6 @@
 // 패턴으로 여기에 상수를 추가한다. 키 값은 로그/에러 메시지에 절대 싣지
 // 않는다.
 
-/// PixelLab API 키 환경변수 이름.
-pub const PIXELLAB_API_KEY: &str = "PIXELLAB_API_KEY";
-
 /// 봇 모드(#58) Gitea 접근 토큰 환경변수 이름. 봇 시작 시 로그인 셸에서 캡처해
 /// 프로세스 env에 심는다(session::env_capture).
 pub const GITEA_TOKEN: &str = "GITEA_TOKEN";
@@ -36,7 +33,7 @@ mod tests {
     use super::*;
 
     // 주의: cargo test는 병렬 실행 — 전역 env 오염을 피하려고 테스트마다
-    // 고유한 변수 이름을 쓴다 (PIXELLAB_API_KEY 실물은 건드리지 않는다).
+    // 고유한 변수 이름을 쓴다 (실물 키 환경변수는 건드리지 않는다).
     #[test]
     fn returns_trimmed_value_when_set() {
         std::env::set_var("AO_TEST_KEY_SET", "  sk-abc  ");

@@ -27,7 +27,6 @@ mod observer;
 // pub: contract 테스트가 `agent_office_lib::persistence::settings_store::AppSettings`에
 // 닿아야 한다. 로직 변경 없음 — 가시성만 승격.
 pub mod persistence;
-pub mod pixellab;
 mod power;
 // git/es.exe 등 단발 서브프로세스 실행기(spawn+타임아웃+stdout 수집) 공용 구현.
 mod proc_runner;
@@ -670,7 +669,6 @@ pub fn run() {
             ipc::commands::delete_minimi,
             ipc::commands::summarize_text,
             ipc::commands::openrouter_list_models,
-            ipc::commands::generate_sprite_image,
             ipc::commands::get_app_settings,
             ipc::commands::set_app_settings,
             ipc::commands::set_keep_awake,

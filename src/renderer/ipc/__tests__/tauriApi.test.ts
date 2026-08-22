@@ -381,16 +381,6 @@ describe("command invocations", () => {
       purpose: "diary",
     });
   });
-
-  it("generateSpriteImage는 generate_sprite_image를 description과 함께 invoke하고 결과를 반환한다", async () => {
-    invoke.mockResolvedValueOnce({ pngBase64: "AAAA", costUsd: 0.02 });
-    const { tauriApi } = await import("../tauriApi");
-    const res = await tauriApi.generateSpriteImage("a knight");
-    expect(invoke).toHaveBeenCalledWith(Commands.generateSpriteImage, {
-      description: "a knight",
-    });
-    expect(res).toEqual({ pngBase64: "AAAA", costUsd: 0.02 });
-  });
 });
 
 describe("portrait commands", () => {

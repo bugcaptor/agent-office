@@ -4,7 +4,7 @@
 // (`POST /v1/messages`) 원시 HTTP다 — Rust에는 공식 Anthropic SDK가 없다.
 //
 // 순수 로직(build_request_body / parse_response / sanitize_line)과 HTTP(rewrite)를
-// 분리한다 — pixellab.rs와 같은 관례이며, 네트워크 없이 단위 테스트할 수 있는
+// 분리한다 — 앱의 외부 API 클라이언트 공통 관례이며, 네트워크 없이 단위 테스트할 수 있는
 // 부분을 최대화한다.
 //
 // 실패는 전부 "원문 그대로 읽기"로 강등된다(호출측 tts::speak). 키가 없어도,

@@ -903,14 +903,6 @@
         cleanup(&ctl, &dir, &profile_dir);
     }
 
-    // generate_sprite_image: 네트워크 이전의 검증 로직만 테스트한다.
-    // (실 API 호출 테스트 금지 — 빈 description은 HTTP 전에 걸러져야 한다.)
-    #[tokio::test]
-    async fn generate_sprite_image_rejects_empty_description() {
-        let err = generate_sprite_image("   ".to_string()).await.unwrap_err();
-        assert_eq!(err, "validation: description is empty");
-    }
-
     // ---- append_session_turn / load_session_turns ----
 
     #[tokio::test]

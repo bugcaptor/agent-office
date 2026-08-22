@@ -62,7 +62,7 @@ reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls-native-roots",
     "json",
     "blocking",
-] } # PixelLab API 호출 + 봇 모드 Gitea REST 폴링(blocking, spawn_blocking 내에서 호출).
+] } # 요약기 OpenRouter/TTS HTTP + 봇 모드 Gitea REST 폴링(blocking, spawn_blocking 내에서 호출).
 # 루트 CA는 webpki(번들) + OS 스토어(native) 둘 다 신뢰한다. 예전엔 "rustls-tls"
 # (=webpki 번들 전용)라서, 사내 MITM 프록시나 self-signed 루트를 OS에 설치한
 # 환경에서는 앱만 TLS 핸드셰이크에 실패하고 claude CLI·curl은 멀쩡히 통하는

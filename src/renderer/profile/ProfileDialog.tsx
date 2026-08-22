@@ -7,7 +7,7 @@
 // (store, seeds session as `starting`) -> `tauriApi.createSession` (PTY
 // start) -> close. Editing updates the existing profile in place and never
 // starts a new session.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { nanoid } from "nanoid";
 import { useAppStore } from "../store/appStore";
 import { generateDraft, draftToProfile, buildBotConfig, type DraftProfile } from "./generate";
@@ -24,7 +24,7 @@ import { generateSpritePreview } from "../office/gen/characterFactory";
 import { ARCHETYPE_SELECT_OPTIONS, resolveArchetype, pickArchetype } from "../office/gen/archetypes";
 import { tauriApi } from "../ipc/tauriApi";
 import { sessionOptsFor } from "../ipc/sessionOpts";
-import { buildPortraitPrompt, buildSpritePrompt, buildPixelLabSpriteDescription } from "../portrait/promptBuilder";
+import { buildPortraitPrompt, buildSpritePrompt } from "../portrait/promptBuilder";
 import { PortraitEditor } from "../portrait/PortraitEditor";
 import { SpriteEditor } from "../sprite/SpriteEditor";
 import { clearSpriteOverride } from "../office/gen/spriteOverrides";
@@ -34,24 +34,6 @@ import { KEYBOARD_SOUND_PACK_OPTIONS } from "../sound/packs";
 import { previewKeyboardSound, previewVoice } from "../sound/soundManager";
 import type { AvailableShell, TtsVoiceOption } from "@shared/types";
 import "../portrait/portrait.css";
-
-/** IPC 오류 문자열("{code}: {상세}") → 사용자 캡션. */
-export function pixellabErrorCaption(err: unknown): string {
-  const raw = String(err);
-  const code = raw.split(":")[0]?.trim();
-  switch (code) {
-    case "missing_api_key":
-      return "PIXELLAB_API_KEY 환경변수를 설정한 뒤 앱을 재시작하세요.";
-    case "invalid_api_key":
-      return "PixelLab API 키가 유효하지 않습니다.";
-    case "insufficient_credits":
-      return "PixelLab 크레딧이 부족합니다.";
-    case "rate_limited":
-      return "요청이 몰려 있습니다. 잠시 후 다시 시도하세요.";
-    default:
-      return `생성에 실패했습니다: ${raw}`;
-  }
-}
 
 export function ProfileDialog() {
   const modal = useAppStore((s) => s.modal);
@@ -82,13 +64,8 @@ export function ProfileDialog() {
     editingAgent ? s.minimiPreviews[editingAgent.id] : undefined
   );
   const [minimiEditorOpen, setMinimiEditorOpen] = useState(false);
-  const [pixellabBusy, setPixellabBusy] = useState(false);
-  const [pixellabNote, setPixellabNote] = useState<string | null>(null);
-  /** PixelLab 생성 결과 data URL — SpriteEditor initialImage로 전달. */
+  /** Codex 생성 결과 data URL — SpriteEditor initialImage로 전달. */
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
-  /** 진행 중 생성 요청의 세션 토큰 — 편집 대상이 바뀌거나 다이얼로그가
-   * 닫히면 무효화된다 (상시 마운트 컴포넌트라 unmount 가드는 무의미). */
-  const pixellabSeqRef = useRef(0);
 
   const [draft, setDraft] = useState<DraftProfile>(() => generateDraft());
   const [spriteUrl, setSpriteUrl] = useState<string>("");
@@ -114,10 +91,7 @@ export function ProfileDialog() {
   // (rather than closing over the reactive `editingAgent`) keeps this
   // effect's deps honest for exhaustive-deps without an eslint-disable.
   useEffect(() => {
-    // 편집 세션 경계: 진행 중 생성 응답 무효화 + 이전 세션의 캡션/이미지/busy 정리.
-    pixellabSeqRef.current++;
-    setPixellabBusy(false);
-    setPixellabNote(null);
+    // 편집 세션 경계: 이전 세션의 캡션/이미지 정리.
     setGeneratedImage(null);
     setIoBusy(false);
     setIoNote(null);
@@ -205,45 +179,6 @@ export function ProfileDialog() {
       await navigator.clipboard.writeText(prompt);
     } catch (err) {
       console.warn("ProfileDialog: clipboard write failed", err);
-    }
-  };
-
-  const onGeneratePixellab = async () => {
-    if (pixellabBusy || !editingAgent) return;
-    const seq = ++pixellabSeqRef.current;
-    const targetAgentId = editingAgent.id;
-    /** 응답 적용 가능 여부: 토큰 유효 + 같은 에이전트의 편집 모달이 여전히 열려 있음. */
-    const stillCurrent = () => {
-      const m = useAppStore.getState().modal;
-      return (
-        pixellabSeqRef.current === seq &&
-        m.kind === "profile-edit" &&
-        m.agentId === targetAgentId
-      );
-    };
-    setPixellabBusy(true);
-    setPixellabNote(null);
-    const description = buildPixelLabSpriteDescription({
-      name: draft.name,
-      role: draft.role,
-      spriteRequest: draft.spriteRequest,
-      appearance: draft.appearance,
-      seed: draft.seed,
-      archetype: draft.archetype,
-    });
-    try {
-      const res = await tauriApi.generateSpriteImage(description);
-      if (!stillCurrent()) return;
-      setGeneratedImage(`data:image/png;base64,${res.pngBase64}`);
-      setSpriteEditorOpen(true);
-      setPixellabNote(
-        res.costUsd != null ? `생성 완료 · $${res.costUsd.toFixed(2)}` : "생성 완료",
-      );
-    } catch (err) {
-      if (!stillCurrent()) return;
-      setPixellabNote(pixellabErrorCaption(err));
-    } finally {
-      if (pixellabSeqRef.current === seq) setPixellabBusy(false);
     }
   };
 
@@ -524,16 +459,6 @@ export function ProfileDialog() {
                 </button>
                 {editing && editingAgent && (
                   <>
-                    <button
-                      className="pixel-btn"
-                      onClick={onGeneratePixellab}
-                      disabled={pixellabBusy}
-                    >
-                      {pixellabBusy ? "생성 중…" : "PixelLab로 생성"}
-                    </button>
-                    {pixellabNote && (
-                      <span className="sprite-custom-badge">{pixellabNote}</span>
-                    )}
                     <button className="pixel-btn" onClick={() => setSpriteEditorOpen(true)}>
                       {spritePreviewUrl ? "픽셀아트 변경" : "픽셀아트 업로드"}
                     </button>
@@ -580,7 +505,7 @@ export function ProfileDialog() {
               <div className="portrait-current">
                 <img
                   // 호버 카드와 동일한 폴백 체인(초상 > 커스텀 스프라이트 프리뷰 >
-                  // 프로시저럴) — spritePreviewUrl 누락 시 PixelLab 생성 후에도
+                  // 프로시저럴) — spritePreviewUrl 누락 시 스프라이트 생성 후에도
                   // 생성 전 프로시저럴 이미지가 잔존하는 버그.
                   src={portraitUrl ?? spritePreviewUrl ?? spriteUrl}
                   alt="portrait"
@@ -627,7 +552,7 @@ export function ProfileDialog() {
                 placeholder="예: 빨간 망토를 두른 마법사 (선택, 비면 외모 힌트 사용)"
               />
             </label>
-            <p className="form-hint">프롬프트 복사와 PixelLab 생성에 그대로 반영됩니다.</p>
+            <p className="form-hint">프롬프트 복사와 Codex 생성에 그대로 반영됩니다.</p>
           </div>
         </section>
 

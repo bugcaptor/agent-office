@@ -58,7 +58,7 @@ export function SpriteEditor({
 }: {
   agentId: string;
   onClose: () => void;
-  /** PixelLab 생성 결과 등 프리로드할 data URL. 지정 시 업로드 없이 시작. */
+  /** Codex 생성 결과 등 프리로드할 data URL. 지정 시 업로드 없이 시작. */
   initialImage?: string;
   /** 기본 "sprite". "minimi"면 단일 프레임으로 저장한다. */
   target?: SpriteEditorTarget;
@@ -162,7 +162,7 @@ export function SpriteEditor({
     }
   }, []);
 
-  /** 디코드된 이미지를 에디터 상태로 반영 (파일 업로드/PixelLab 생성 공통). */
+  /** 디코드된 이미지를 에디터 상태로 반영 (파일 업로드/Codex 생성 공통). */
   const ingestImage = useCallback(
     (img: HTMLImageElement) => {
       const w = img.naturalWidth;
@@ -211,7 +211,7 @@ export function SpriteEditor({
     img.src = url;
   };
 
-  // PixelLab 생성 이미지 프리로드. data URL이라 revoke 불필요.
+  // 생성 이미지 프리로드. data URL이라 revoke 불필요.
   /** 마운트 시점의 initialImage만 소비 — 마운트 후 prop 변경(늦은 생성 응답의
    * 난입)은 무시한다. 재생성 정상 경로는 에디터가 닫혔다 새로 마운트되므로 영향 없음. */
   const initialImageAtMount = useRef(initialImage).current;

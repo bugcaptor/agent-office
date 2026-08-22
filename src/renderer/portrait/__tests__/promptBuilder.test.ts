@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   buildPortraitPrompt,
   buildSpritePrompt,
-  buildPixelLabSpriteDescription,
 } from "../promptBuilder";
 import { makeRng, hashStringToSeed } from "../../office/gen/prng";
 import { generatePalette } from "../../office/gen/palette";
@@ -146,46 +145,36 @@ describe("archetype-aware prompts", () => {
   });
 });
 
-describe("buildPixelLabSpriteDescription", () => {
+describe("buildSpritePrompt", () => {
   const base = { name: "Ada", role: "engineer", seed: "seed-xyz" };
 
   it("이름/역할/의뢰 문구를 포함한다", () => {
-    const p = buildPixelLabSpriteDescription({ ...base, spriteRequest: "red cloak wizard" });
+    const p = buildSpritePrompt({ ...base, spriteRequest: "red cloak wizard" });
     expect(p).toContain("Ada");
     expect(p).toContain("engineer");
     expect(p).toContain("Details: red cloak wizard.");
   });
 
   it("spriteRequest가 비면 appearance로 폴백한다", () => {
-    const p = buildPixelLabSpriteDescription({ ...base, spriteRequest: "  ", appearance: "short black hair" });
+    const p = buildSpritePrompt({ ...base, spriteRequest: "  ", appearance: "short black hair" });
     expect(p).toContain("Details: short black hair.");
   });
 
-  it("크기·배경 문구가 없다 (image_size/no_background 파라미터가 담당)", () => {
-    const p = buildPixelLabSpriteDescription(base);
-    expect(p).not.toContain("16x16");
-    expect(p.toLowerCase()).not.toContain("background");
-  });
-
   it("같은 입력에 결정적이고 시드 팔레트 힌트를 포함한다", () => {
-    const a = buildPixelLabSpriteDescription(base);
-    const b = buildPixelLabSpriteDescription(base);
+    const a = buildSpritePrompt(base);
+    const b = buildSpritePrompt(base);
     expect(a).toBe(b);
     expect(a).toContain(expectedHex("seed-xyz", "hair"));
   });
 
-  it("buildSpritePrompt와 동일한 JRPG 톤을 공유한다", () => {
-    const p = buildPixelLabSpriteDescription(base);
-    expect(p).toContain("16-bit SNES-era Japanese RPG");
-    expect(p).toContain("chibi");
-    expect(p).toContain("soft bright pastel colors");
-  });
-
   // 계약 갱신(2026-07): 밝고 귀여운 JRPG 톤으로 의도적 문구 변경.
-  // 클립보드 프롬프트는 여전히 크기(16x16)·배경(plain solid background) 문구를 가진다.
-  it("buildSpritePrompt는 크기/배경 문구(16x16/plain solid background)를 유지한다", () => {
+  // 클립보드 프롬프트는 크기(16x16)·배경(plain solid background) 문구를 가진다.
+  it("크기/배경 문구(16x16/plain solid background)를 유지한다", () => {
     const p = buildSpritePrompt(base);
     expect(p).toContain("16x16 pixel art style");
     expect(p).toContain("plain solid background");
+    expect(p).toContain("16-bit SNES-era Japanese RPG");
+    expect(p).toContain("chibi");
+    expect(p).toContain("soft bright pastel colors");
   });
 });

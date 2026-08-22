@@ -15,7 +15,6 @@ import type {
   AdoptedSessionInfo,
   AgentProfile,
   CreateSessionResult,
-  GeneratedSpriteImage,
   GetAppSettingsResult,
   NotificationEvent,
   OutputChunk,
@@ -204,16 +203,6 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     const parsed: UsageSnapshot = JSON.parse(json);
     expect(parsed.claude).toBeNull();
     expect(parsed.codex).toBeNull();
-  });
-
-  it("GeneratedSpriteImage", () => {
-    const json = '{"pngBase64":"AAAA","costUsd":0.02}';
-    const parsed: GeneratedSpriteImage = JSON.parse(json);
-    expect(parsed.pngBase64).toBe("AAAA");
-    expect(parsed.costUsd).toBe(0.02);
-    // cost_usd는 skip_serializing_if — 없는 형태도 유효해야 한다.
-    const noCost: GeneratedSpriteImage = JSON.parse('{"pngBase64":"BBBB"}');
-    expect(noCost.costUsd).toBeUndefined();
   });
 });
 

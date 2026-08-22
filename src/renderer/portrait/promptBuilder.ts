@@ -81,30 +81,3 @@ export function buildSpritePrompt(input: SpritePromptInput): string {
   ];
   return lines.filter((l) => l.length > 0).join("\n");
 }
-
-/** PixelLab create-image-pixen용 프롬프트. buildSpritePrompt와
- * 로직을 공유하되 크기("16x16")·배경("plain solid background") 문구를 뺀다 —
- * 크기는 image_size 파라미터, 배경은 no_background 파라미터가 담당한다.
- * 스타일 톤은 buildSpritePrompt와 동일한 밝고 귀여운 SNES-era JRPG 룩. */
-export function buildPixelLabSpriteDescription(input: SpritePromptInput): string {
-  const archId = resolveArchetype(input.archetype, input.seed);
-  const arch = getArchetype(archId);
-  const pal = arch.generatePalette(makeRng(hashStringToSeed(input.seed)));
-  const desc = arch.promptDescriptor(pal);
-  const request =
-    (input.spriteRequest ?? "").trim() || (input.appearance ?? "").trim();
-  const styleLine = desc.humanoid
-    ? "Cute chibi super-deformed proportions with a large head, big expressive sparkling eyes, and a friendly smiling expression; soft bright pastel colors, warm cheerful lighting, clean black outlines, crisp pixel grid, no anti-aliasing, the character centered and facing the viewer."
-    : "A cute mascot-like anime style character design with big expressive eyes and a friendly, cheerful look; soft bright pastel colors, warm cheerful lighting, clean black outlines, crisp pixel grid, no anti-aliasing, the character centered and facing the viewer.";
-  const subjectSuffix = desc.subject ? ` (${desc.subject})` : "";
-
-  const lines = [
-    "A single full-body video game character sprite in pixel art style, in the bright and cheerful look of a 16-bit SNES-era Japanese RPG.",
-    styleLine,
-    desc.colorHints,
-    `Character: ${input.name}, a ${input.role}${subjectSuffix}.`,
-    request ? `Details: ${request}.` : "",
-    "The character fills most of the frame. No text, no watermark, no border.",
-  ];
-  return lines.filter((l) => l.length > 0).join("\n");
-}

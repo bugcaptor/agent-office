@@ -17,7 +17,7 @@ import type {
   StudyMaterialResult,
 } from './session';
 import type { NotificationEvent, ActivityEvent } from './notification';
-import type { PersistedState, GeneratedSpriteImage } from './profile';
+import type { PersistedState } from './profile';
 import type {
   SummaryProvider,
   SummaryPurpose,
@@ -100,8 +100,6 @@ export interface AgentOfficeApi {
    *  카탈로그 조회라 요약/TTS를 켜기 전에도 부를 수 있다. 실패는 호출측이
    *  정적 프리셋 폴백으로 조용히 강등한다. */
   openrouterListModels(): Promise<string[]>;
-  /** PixelLab로 64×64 스프라이트 1장 생성. 동기 HTTP — 수십 초 걸릴 수 있다. */
-  generateSpriteImage(description: string): Promise<GeneratedSpriteImage>;
   /** 앱 전역 opt-in 설정 로드. 인자 없음. */
   getAppSettings(): Promise<GetAppSettingsResult>;
   /** 앱 전역 opt-in 설정 저장. */
@@ -118,7 +116,7 @@ export interface AgentOfficeApi {
   /** 알림 대사 TTS — 문구를 캐릭터 말투 대사로 리라이트한 뒤 합성해
    * mp3 바이트(base64)를 돌려준다. 설정 `ttsEnabled`가 꺼져 있으면 백엔드가
    * "tts_disabled:"로 reject한다(백엔드가 최종 게이트 — 외부 API 비용 경로).
-   * 실패 메시지는 pixellab과 같은 `"{code}: {상세}"` 형태다. */
+   * 실패 메시지는 앱 공통의 `"{code}: {상세}"` 형태다. */
   ttsSpeak(request: TtsSpeakRequest): Promise<TtsSpeakResult>;
   /** 고를 수 있는 보이스 목록(프로필 다이얼로그 드롭다운용). ElevenLabs 키가
    * 없으면 "missing_elevenlabs_key:"로 reject한다. 키 값은 오지 않는다. */
