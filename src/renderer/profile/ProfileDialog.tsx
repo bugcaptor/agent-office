@@ -21,7 +21,7 @@ import { parseCharacterBundle } from "@shared/types";
 import { pngBase64ToDataUrl } from "../portrait/portraitCache";
 import { loadSpritesFor } from "../sprite/spriteCache";
 import { generateSpritePreview } from "../office/gen/characterFactory";
-import { resolveArchetype, pickArchetype } from "../office/gen/archetypes";
+import { resolveArchetype, pickArchetype, archetypeOrAuto } from "../office/gen/archetypes";
 import { tauriApi } from "../ipc/tauriApi";
 import { sessionOptsFor } from "../ipc/sessionOpts";
 import {
@@ -145,7 +145,7 @@ export function ProfileDialog() {
 
   // seed 또는 archetype 변경 시 라이브 스프라이트 프리뷰 (B의 순수 함수 — 동기, 아키타입 반영)
   useEffect(() => {
-    const eff = resolveArchetype(draft.archetype, draft.seed);
+    const eff = resolveArchetype(archetypeOrAuto(draft.archetype), draft.seed);
     setSpriteUrl(generateSpritePreview(draft.seed, 6, undefined, undefined, eff));
   }, [draft.seed, draft.archetype]);
 
@@ -947,7 +947,7 @@ function VoiceField({
         agentId: agentId ?? "preview",
         agentName: draft.name,
         // 종족은 보이스 캐스팅용, 대사 말투는 편집 중인 성격 프롬프트가 정한다.
-        archetype: resolveArchetype(draft.archetype, draft.seed),
+        archetype: resolveArchetype(archetypeOrAuto(draft.archetype), draft.seed),
         ...(draft.personalityPrompt?.trim() ? { personality: draft.personalityPrompt.trim() } : {}),
         seed: draft.seed,
         ...(selected ? { voiceId: selected } : {}),

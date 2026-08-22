@@ -17,7 +17,11 @@ describe("아키타입 값 변환", () => {
     expect(archetypeInputText("auto")).toBe("자동(시드)");
     expect(normalizeArchetypeInput("오크")).toBe("orc");
     expect(normalizeArchetypeInput("  ORC ")).toBe("orc");
-    expect(normalizeArchetypeInput("")).toBe("auto");
+    // 비우면 빈 값 그대로 — "auto"로 접으면 입력칸이 "자동(시드)"로 되채워져
+    // 새 종족을 적을 수가 없다.
+    expect(normalizeArchetypeInput("")).toBe("");
+    expect(normalizeArchetypeInput("   ")).toBe("");
+    expect(archetypeInputText("")).toBe("");
   });
 
   it("목록에 없는 값은 친 그대로 남고 커스텀으로 판정된다", () => {
@@ -47,6 +51,17 @@ describe("ArchetypePicker", () => {
     cleanup();
     render(<ArchetypePicker value="고양이 마법사" onChange={onChange} />);
     expect(screen.getByText(/목록에 없는 종족/)).toBeTruthy();
+  });
+
+  it("새로 적으려고 비워도 '자동(시드)'로 되채워지지 않는다", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<ArchetypePicker value="드래곤" onChange={onChange} />);
+    const input = screen.getByLabelText("아키타입") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "" } });
+    expect(onChange).toHaveBeenCalledWith("");
+    rerender(<ArchetypePicker value="" onChange={onChange} />);
+    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("");
+    expect(screen.queryByText(/목록에 없는 종족/)).toBeNull();
   });
 
   it("커스텀을 치고 있어도 목록에서 다시 고를 수 있다", () => {

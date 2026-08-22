@@ -7,6 +7,7 @@ import {
   getArchetype,
   pickArchetype,
   resolveArchetype,
+  archetypeOrAuto,
   ARCHETYPES,
 } from "../archetypes";
 import { generateSheet } from "../characterFactory";
@@ -68,6 +69,15 @@ describe("resolveArchetype", () => {
     expect(resolveArchetype("human", "s")).toBe("human");
     expect(resolveArchetype(undefined, "s")).toBe("human");
     expect(resolveArchetype("dragon-that-does-not-exist", "s")).toBe("human");
+  });
+
+  it("archetypeOrAuto: 빈 칸/미지정만 'auto'로 읽고 나머지는 그대로", () => {
+    expect(archetypeOrAuto("")).toBe("auto");
+    expect(archetypeOrAuto("   ")).toBe("auto");
+    expect(archetypeOrAuto(undefined)).toBe("auto");
+    expect(archetypeOrAuto("orc")).toBe("orc");
+    expect(archetypeOrAuto(" 드래곤 ")).toBe("드래곤");
+    expect(resolveArchetype(archetypeOrAuto(""), "s")).toBe(pickArchetype("s"));
   });
 });
 

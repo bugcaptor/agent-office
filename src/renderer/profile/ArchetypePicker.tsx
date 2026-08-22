@@ -37,7 +37,9 @@ export function ArchetypePicker({
   onChange,
   ariaLabel = "아키타입",
 }: {
-  /** 저장값: "auto" | 알려진 id | 자유 텍스트. */
+  /** 저장값: "" (빈 칸=아직 안 정함) | "auto" | 알려진 id | 자유 텍스트.
+   *  빈 칸을 "auto"로 접지 않는다 — 지우자마자 "자동(시드)"로 되채워지면
+   *  새 종족을 적을 수가 없다. 빈 칸의 의미(=자동)는 저장 시점에 정해진다. */
   value: string;
   onChange: (value: string) => void;
   ariaLabel?: string;

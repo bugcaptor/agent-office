@@ -376,15 +376,29 @@ export function archetypeInputText(archetype: string | undefined): string {
 /**
  * 콤보박스에 친 글자 -> 저장값. 알려진 라벨/id와 (공백·대소문자 무시하고)
  * 같으면 그 id로 접고, 그 외에는 친 그대로 커스텀 종족으로 남긴다.
+ *
+ * 빈 칸은 "auto"가 아니라 빈 값이다 — 새로 적으려고 지웠을 뿐인데 "auto"가
+ * 되면 입력칸이 곧바로 "자동(시드)"로 다시 채워져 한 글자도 못 친다.
+ * 빈 값의 의미(=자동)는 저장·미리보기 시점에 archetypeOrAuto가 정한다.
  */
 export function normalizeArchetypeInput(text: string): string {
   const t = text.trim();
-  if (!t) return "auto";
+  if (!t) return "";
   const lower = t.toLowerCase();
   const opt = ARCHETYPE_SELECT_OPTIONS.find(
     (o) => o.label.toLowerCase() === lower || o.value.toLowerCase() === lower,
   );
   return opt ? opt.value : t;
+}
+
+/**
+ * 편집 중의 빈 칸(= 아직 안 정함)을 "auto"로 읽는다. 저장값에는 빈 값이 남지
+ * 않지만(저장 시 시드 추첨으로 확정), 다이얼로그 미리보기·보이스 캐스팅은
+ * 빈 칸 상태에서도 "자동"과 같게 보여야 한다.
+ */
+export function archetypeOrAuto(archetype: string | undefined): string {
+  const t = (archetype ?? "").trim();
+  return t === "" ? "auto" : t;
 }
 
 export function getArchetype(id: string | undefined): Archetype {
