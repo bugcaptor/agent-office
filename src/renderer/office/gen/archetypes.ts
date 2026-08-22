@@ -353,6 +353,40 @@ export const ARCHETYPE_SELECT_OPTIONS: ReadonlyArray<{ value: string; label: str
   { value: "ghost", label: "유령" },
 ];
 
+/**
+ * 목록에 없는 자유 입력(커스텀 종족)이면 그 문구를, 아니면 null.
+ * "auto"와 알려진 id, 빈 값은 커스텀이 아니다 — 스프라이트 생성은 human으로
+ * 폴백하고(그릴 파츠가 없다), 이 문구는 초상/픽셀아트 프롬프트의 주제 서술자로만
+ * 쓰인다.
+ */
+export function customArchetypeSubject(archetype: string | undefined): string | null {
+  const t = (archetype ?? "").trim();
+  if (!t || t === "auto" || ARCHETYPES[t]) return null;
+  return t;
+}
+
+/** 저장값 -> 콤보박스에 보일 글자. 알려진 값은 한국어 라벨, 커스텀은 적은 그대로. */
+export function archetypeInputText(archetype: string | undefined): string {
+  const t = (archetype ?? "").trim();
+  if (!t) return "";
+  const opt = ARCHETYPE_SELECT_OPTIONS.find((o) => o.value === t);
+  return opt ? opt.label : archetype ?? "";
+}
+
+/**
+ * 콤보박스에 친 글자 -> 저장값. 알려진 라벨/id와 (공백·대소문자 무시하고)
+ * 같으면 그 id로 접고, 그 외에는 친 그대로 커스텀 종족으로 남긴다.
+ */
+export function normalizeArchetypeInput(text: string): string {
+  const t = text.trim();
+  if (!t) return "auto";
+  const lower = t.toLowerCase();
+  const opt = ARCHETYPE_SELECT_OPTIONS.find(
+    (o) => o.label.toLowerCase() === lower || o.value.toLowerCase() === lower,
+  );
+  return opt ? opt.value : t;
+}
+
 export function getArchetype(id: string | undefined): Archetype {
   return (id && ARCHETYPES[id]) || ARCHETYPES.human;
 }

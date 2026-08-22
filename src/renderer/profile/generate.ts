@@ -101,7 +101,9 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
   const spriteRequest = (d.spriteRequest ?? "").trim();
   const keyboardSound = (d.keyboardSound ?? "").trim();
   const voiceId = (d.voiceId ?? "").trim();
-  const archetype = d.archetype && d.archetype !== "auto" ? d.archetype : pickArchetype(d.seed);
+  // 목록에 없는 자유 입력(커스텀 종족)도 그대로 살린다 — 공백만 다듬는다.
+  const typed = (d.archetype ?? "").trim();
+  const archetype = typed && typed !== "auto" ? typed : pickArchetype(d.seed);
   const bot = buildBotConfig(d);
   return {
     id: nanoid(),

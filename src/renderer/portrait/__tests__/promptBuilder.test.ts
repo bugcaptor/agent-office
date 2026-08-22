@@ -212,3 +212,29 @@ describe("codex 생성 프롬프트", () => {
     expect(a).toContain("Details: red cloak wizard.");
   });
 });
+
+describe("목록에 없는 커스텀 아키타입", () => {
+  const base = { name: "Nia", role: "engineer", note: "", seed: "seed-custom" };
+
+  it("초상 프롬프트의 주제 서술자를 적은 문구로 대체한다", () => {
+    const p = buildPortraitPrompt({ ...base, archetype: "a tiny wise dragon" });
+    expect(p).toContain("Character: Nia, a engineer (a tiny wise dragon).");
+  });
+
+  it("픽셀아트 프롬프트에도 같은 문구가 들어간다", () => {
+    const p = buildSpritePrompt({
+      name: "Nia",
+      role: "engineer",
+      seed: "seed-custom",
+      archetype: "드래곤",
+    });
+    expect(p).toContain("(드래곤)");
+  });
+
+  it("알려진 id/auto는 아키타입 서술자를 그대로 쓴다", () => {
+    const orc = buildPortraitPrompt({ ...base, archetype: "orc" });
+    expect(orc).toContain("green-skinned tusked orc");
+    const auto = buildPortraitPrompt({ ...base, archetype: "auto" });
+    expect(auto).not.toContain("(auto)");
+  });
+});

@@ -135,13 +135,13 @@ export function ModelPicker({
 
   return (
     <div
-      className="model-picker"
+      className="combo-picker"
       onBlur={(e) => {
         // 픽커 바깥으로 포커스가 나갈 때만 접는다(입력 ↔ 목록 이동은 유지).
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
       }}
     >
-      <div className="model-picker-field">
+      <div className="combo-picker-field">
         <input
           ref={inputRef}
           type="text"
@@ -166,7 +166,7 @@ export function ModelPicker({
         />
         <button
           type="button"
-          className="pixel-btn model-picker-toggle"
+          className="pixel-btn combo-picker-toggle"
           aria-label={`${ariaLabel} 목록`}
           aria-expanded={open}
           onMouseDown={(e) => e.preventDefault()}
@@ -184,7 +184,7 @@ export function ModelPicker({
 
       {open && (
         <>
-          <div className="model-picker-status">
+          <div className="combo-picker-status">
             {catalog.loading
               ? "모델 목록을 불러오는 중…"
               : catalog.failed
@@ -201,14 +201,14 @@ export function ModelPicker({
             )}
           </div>
           <div
-            className="model-picker-pop"
+            className="combo-picker-pop"
             ref={popRef}
             id={listId}
             role="listbox"
             aria-label={ariaLabel}
           >
             {visible.length === 0 ? (
-              <div className="model-picker-empty">
+              <div className="combo-picker-empty">
                 {catalog.loading ? "불러오는 중…" : "맞는 모델이 없습니다 — 그대로 써도 됩니다."}
               </div>
             ) : (
@@ -227,7 +227,7 @@ export function ModelPicker({
                 return (
                   <Fragment key={m}>
                     {header && (
-                      <div className="model-picker-group" role="presentation">
+                      <div className="combo-picker-group" role="presentation">
                         {header}
                       </div>
                     )}
@@ -236,7 +236,7 @@ export function ModelPicker({
                       id={`${listId}-opt-${i}`}
                       role="option"
                       aria-selected={i === active}
-                      className="model-picker-option"
+                      className="combo-picker-option"
                       onMouseDown={(e) => e.preventDefault()}
                       onMouseEnter={() => setActive(i)}
                       onClick={() => commit(m)}

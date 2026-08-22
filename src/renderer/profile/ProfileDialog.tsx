@@ -21,7 +21,7 @@ import { parseCharacterBundle } from "@shared/types";
 import { pngBase64ToDataUrl } from "../portrait/portraitCache";
 import { loadSpritesFor } from "../sprite/spriteCache";
 import { generateSpritePreview } from "../office/gen/characterFactory";
-import { ARCHETYPE_SELECT_OPTIONS, resolveArchetype, pickArchetype } from "../office/gen/archetypes";
+import { resolveArchetype, pickArchetype } from "../office/gen/archetypes";
 import { tauriApi } from "../ipc/tauriApi";
 import { sessionOptsFor } from "../ipc/sessionOpts";
 import {
@@ -31,6 +31,7 @@ import {
   buildCodexSpritePrompt,
 } from "../portrait/promptBuilder";
 import { PortraitEditor } from "../portrait/PortraitEditor";
+import { ArchetypePicker } from "./ArchetypePicker";
 import {
   CodexGenPanel,
   codexGenErrorCaption,
@@ -390,8 +391,13 @@ export function ProfileDialog() {
       const trimmedSpriteRequest = (draft.spriteRequest ?? "").trim();
       const trimmedKeyboardSound = (draft.keyboardSound ?? "").trim();
       const trimmedVoiceId = (draft.voiceId ?? "").trim();
+      // 목록에 없는 자유 입력도 그대로 저장한다(공백만 다듬는다) — 스프라이트는
+      // human으로 폴백하고 그림 프롬프트에는 적은 문구가 들어간다.
+      const trimmedArchetype = (draft.archetype ?? "").trim();
       const chosenArchetype =
-        draft.archetype && draft.archetype !== "auto" ? draft.archetype : pickArchetype(draft.seed);
+        trimmedArchetype && trimmedArchetype !== "auto"
+          ? trimmedArchetype
+          : pickArchetype(draft.seed);
       updateAgent(editingAgent.id, {
         name: draft.name,
         role: draft.role,
@@ -500,16 +506,16 @@ export function ProfileDialog() {
           <div className="form-field">
             <label>
               <span className="form-label-text">아키타입</span>
-              <select
+              <ArchetypePicker
                 value={draft.archetype ?? "auto"}
-                onChange={(e) => setDraft({ ...draft, archetype: e.target.value })}
-              >
-                {ARCHETYPE_SELECT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+                onChange={(v) => setDraft({ ...draft, archetype: v })}
+              />
             </label>
-            <p className="form-hint">스프라이트의 체형·의상 계열을 정합니다. “자동(시드)”이면 시드에 따라 선택됩니다.</p>
+            <p className="form-hint">
+              스프라이트의 체형·의상 계열을 정합니다. “자동(시드)”이면 시드에 따라
+              선택됩니다. 목록에 없는 종족(예: 드래곤)을 적어 넣으면 초상·픽셀아트
+              프롬프트에 그대로 반영되고, 도트 캐릭터는 인간 체형으로 그려집니다.
+            </p>
           </div>
         </section>
 
@@ -517,6 +523,28 @@ export function ProfileDialog() {
         <section className="form-section">
           <h3 className="form-section-title">외형</h3>
           <div className="profile-previews">
+            <div className="portrait-section">
+              <span className="preview-card-title">초상화</span>
+              <div className="portrait-current">
+                <img
+                  // 호버 카드와 동일한 폴백 체인(초상 > 커스텀 스프라이트 프리뷰 >
+                  // 프로시저럴) — spritePreviewUrl 누락 시 스프라이트 생성 후에도
+                  // 생성 전 프로시저럴 이미지가 잔존하는 버그.
+                  src={portraitUrl ?? spritePreviewUrl ?? spriteUrl}
+                  alt="portrait"
+                  width={90}
+                  height={120}
+                  style={{ objectFit: "cover", objectPosition: "top center", imageRendering: "pixelated" }}
+                />
+              </div>
+              <div className="portrait-buttons">
+                {editing && editingAgent && portraitUrl && (
+                  <button className="pixel-btn" onClick={onRemovePortrait}>
+                    초상 제거
+                  </button>
+                )}
+              </div>
+            </div>
             <div className="sprite-preview">
               <span className="preview-card-title">스프라이트</span>
               <img
@@ -565,28 +593,6 @@ export function ProfileDialog() {
                       </button>
                     )}
                   </div>
-                )}
-              </div>
-            </div>
-            <div className="portrait-section">
-              <span className="preview-card-title">초상화</span>
-              <div className="portrait-current">
-                <img
-                  // 호버 카드와 동일한 폴백 체인(초상 > 커스텀 스프라이트 프리뷰 >
-                  // 프로시저럴) — spritePreviewUrl 누락 시 스프라이트 생성 후에도
-                  // 생성 전 프로시저럴 이미지가 잔존하는 버그.
-                  src={portraitUrl ?? spritePreviewUrl ?? spriteUrl}
-                  alt="portrait"
-                  width={90}
-                  height={120}
-                  style={{ objectFit: "cover", objectPosition: "top center", imageRendering: "pixelated" }}
-                />
-              </div>
-              <div className="portrait-buttons">
-                {editing && editingAgent && portraitUrl && (
-                  <button className="pixel-btn" onClick={onRemovePortrait}>
-                    초상 제거
-                  </button>
                 )}
               </div>
             </div>

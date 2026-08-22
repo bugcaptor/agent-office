@@ -6,7 +6,7 @@
 // 톤 방향(의도적 계약 변경): 밝고 귀여운 16비트 일본 RPG(SNES-era JRPG) 룩 —
 // 치비 비율·파스텔·따뜻한 조명·웃는 표정. 테스트도 이 문구에 맞춰 갱신됨.
 import { makeRng, hashStringToSeed } from "../office/gen/prng";
-import { resolveArchetype, getArchetype } from "../office/gen/archetypes";
+import { resolveArchetype, getArchetype, customArchetypeSubject } from "../office/gen/archetypes";
 
 export interface PortraitPromptInput {
   name: string;
@@ -21,7 +21,11 @@ export function buildPortraitPrompt(input: PortraitPromptInput): string {
   const archId = resolveArchetype(input.archetype, input.seed);
   const arch = getArchetype(archId);
   const pal = arch.generatePalette(makeRng(hashStringToSeed(input.seed)));
-  const desc = arch.promptDescriptor(pal);
+  // 목록에 없는 종족을 적어 넣었으면 그 문구가 주제 서술자를 대신한다 —
+  // 스프라이트(파츠)는 human으로 폴백해도 그림 의뢰는 적은 대로 나가야 한다.
+  const custom = customArchetypeSubject(input.archetype);
+  const base = arch.promptDescriptor(pal);
+  const desc = custom ? { ...base, subject: custom } : base;
   const note = input.note.trim();
   const appearance = (input.appearance ?? "").trim();
 
@@ -63,7 +67,11 @@ export function buildSpritePrompt(input: SpritePromptInput): string {
   const archId = resolveArchetype(input.archetype, input.seed);
   const arch = getArchetype(archId);
   const pal = arch.generatePalette(makeRng(hashStringToSeed(input.seed)));
-  const desc = arch.promptDescriptor(pal);
+  // 목록에 없는 종족을 적어 넣었으면 그 문구가 주제 서술자를 대신한다 —
+  // 스프라이트(파츠)는 human으로 폴백해도 그림 의뢰는 적은 대로 나가야 한다.
+  const custom = customArchetypeSubject(input.archetype);
+  const base = arch.promptDescriptor(pal);
+  const desc = custom ? { ...base, subject: custom } : base;
   const request =
     (input.spriteRequest ?? "").trim() || (input.appearance ?? "").trim();
   const styleLine = desc.humanoid

@@ -317,13 +317,17 @@ describe("random initial values (profile-create)", () => {
     expect(screen.queryByText("커스텀 제거")).toBeNull();
   });
 
-  it("renders the archetype select with 자동(시드) + 8 options and saves the chosen archetype", async () => {
+  it("아키타입 콤보박스가 목록에서 고른 종족을 저장한다", async () => {
     render(<ProfileDialog />);
-    const select = await screen.findByLabelText("아키타입");
-    expect(select).toBeTruthy();
-    expect(within(select).getAllByRole("option")).toHaveLength(9);
+    const combo = (await screen.findByLabelText("아키타입")) as HTMLInputElement;
+    expect(combo.value).toBe("자동(시드)");
 
-    fireEvent.change(select, { target: { value: "orc" } });
+    fireEvent.click(screen.getByRole("button", { name: "아키타입 목록" }));
+    const list = screen.getByRole("listbox", { name: "아키타입" });
+    expect(within(list).getAllByRole("option")).toHaveLength(9);
+    fireEvent.click(within(list).getByRole("option", { name: "오크" }));
+    expect(combo.value).toBe("오크");
+
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "저장" }));
       await Promise.resolve();
@@ -335,6 +339,30 @@ describe("random initial values (profile-create)", () => {
     const agents = useAppStore.getState().agents;
     const created = Object.values(agents)[0];
     expect(created.archetype).toBe("orc");
+  });
+
+  it("목록에 없는 종족을 적어 넣으면 그대로 저장되고 프롬프트에도 들어간다", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<ProfileDialog />);
+    const combo = (await screen.findByLabelText("아키타입")) as HTMLInputElement;
+
+    fireEvent.change(combo, { target: { value: "드래곤" } });
+    expect(combo.value).toBe("드래곤");
+
+    fireEvent.click(screen.getByText("초상 프롬프트 복사"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(writeText.mock.calls[0][0] as string).toContain("드래곤");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "저장" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(useAppStore.getState().modal.kind).toBe("none"));
+    const created = Object.values(useAppStore.getState().agents)[0];
+    expect(created.archetype).toBe("드래곤");
   });
 });
 
