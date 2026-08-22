@@ -131,6 +131,100 @@ describe("tab rendering", () => {
     const { queryAllByRole } = render(<AgentTabStrip />);
     expect(queryAllByRole("tab")).toHaveLength(0);
   });
+
+  it("캐릭터 탭 스크롤 영역과 고정 도구 영역을 분리한다", () => {
+    seedThreeTabs();
+    const { container, getAllByRole, getByRole } = render(<AgentTabStrip />);
+    const viewport = container.querySelector(".agent-tab-scroll-viewport") as HTMLElement;
+    const actions = container.querySelector(".agent-tab-strip-actions") as HTMLElement;
+
+    expect(getAllByRole("tab").every((tab) => viewport.contains(tab))).toBe(true);
+    expect(actions.contains(getByRole("button", { name: "문서" }))).toBe(true);
+    expect(actions.contains(getByRole("button", { name: /포스트잇/ }))).toBe(true);
+    expect(actions.contains(getByRole("button", { name: "앱에 꽉 채우기" }))).toBe(true);
+    expect(actions.contains(getByRole("button", { name: /close/i }))).toBe(true);
+    expect(viewport.contains(actions)).toBe(false);
+  });
+});
+
+describe("캐릭터 탭 overflow 스크롤", () => {
+  it("탭이 넘칠 때만 > 버튼을 보이고 클릭하면 오른쪽으로 스크롤한다", () => {
+    seedThreeTabs();
+    const { container, getByRole, queryByRole } = render(<AgentTabStrip />);
+    const viewport = container.querySelector(".agent-tab-scroll-viewport") as HTMLElement;
+    const scrollBy = vi.fn();
+    Object.defineProperties(viewport, {
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, value: 500 },
+      scrollLeft: { configurable: true, value: 0, writable: true },
+      scrollBy: { configurable: true, value: scrollBy },
+    });
+
+    expect(queryByRole("button", { name: "다음 캐릭터 탭 보기" })).toBeNull();
+    fireEvent.scroll(viewport);
+
+    fireEvent.click(getByRole("button", { name: "다음 캐릭터 탭 보기" }));
+    expect(scrollBy).toHaveBeenCalledWith({ left: 150, behavior: "smooth" });
+  });
+
+  it("스크롤 위치에 맞춰 이전/다음 버튼을 갱신한다", () => {
+    seedThreeTabs();
+    const { container, getByRole, queryByRole } = render(<AgentTabStrip />);
+    const viewport = container.querySelector(".agent-tab-scroll-viewport") as HTMLElement;
+    const scrollBy = vi.fn();
+    Object.defineProperties(viewport, {
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, value: 500 },
+      scrollLeft: { configurable: true, value: 100, writable: true },
+      scrollBy: { configurable: true, value: scrollBy },
+    });
+
+    fireEvent.scroll(viewport);
+    fireEvent.click(getByRole("button", { name: "이전 캐릭터 탭 보기" }));
+    expect(scrollBy).toHaveBeenCalledWith({ left: -150, behavior: "smooth" });
+    expect(getByRole("button", { name: "다음 캐릭터 탭 보기" })).toBeTruthy();
+
+    viewport.scrollLeft = 300;
+    fireEvent.scroll(viewport);
+    expect(getByRole("button", { name: "이전 캐릭터 탭 보기" })).toBeTruthy();
+    expect(queryByRole("button", { name: "다음 캐릭터 탭 보기" })).toBeNull();
+  });
+
+  it("창이 넓어져 overflow가 해소되면 스크롤 버튼을 제거한다", () => {
+    seedThreeTabs();
+    const { container, getByRole, queryByRole } = render(<AgentTabStrip />);
+    const viewport = container.querySelector(".agent-tab-scroll-viewport") as HTMLElement;
+    let scrollWidth = 500;
+    Object.defineProperties(viewport, {
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, get: () => scrollWidth },
+      scrollLeft: { configurable: true, value: 0, writable: true },
+    });
+
+    fireEvent(window, new Event("resize"));
+    expect(getByRole("button", { name: "다음 캐릭터 탭 보기" })).toBeTruthy();
+
+    scrollWidth = 200;
+    fireEvent(window, new Event("resize"));
+    expect(queryByRole("button", { name: "이전 캐릭터 탭 보기" })).toBeNull();
+    expect(queryByRole("button", { name: "다음 캐릭터 탭 보기" })).toBeNull();
+  });
+
+  it("후반 탭 선택으로 LRU 순서가 바뀌면 새 활성 탭이 보이도록 왼쪽으로 돌아간다", () => {
+    seedThreeTabs();
+    const { container, getAllByRole } = render(<AgentTabStrip />);
+    const viewport = container.querySelector(".agent-tab-scroll-viewport") as HTMLElement;
+    Object.defineProperty(viewport, "scrollLeft", {
+      configurable: true,
+      value: 180,
+      writable: true,
+    });
+
+    fireEvent.click(getAllByRole("tab")[2]);
+
+    expect(useAppStore.getState().activeTerminalAgentId).toBe("a3");
+    expect(viewport.scrollLeft).toBe(0);
+  });
 });
 
 describe("썸네일 폴백의 archetype 반영", () => {

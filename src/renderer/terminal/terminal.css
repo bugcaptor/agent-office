@@ -16,7 +16,62 @@
   padding: 0 8px;
   background: var(--bg-panel-hi);
   border-bottom: 2px solid var(--border-dark);
+  overflow: hidden;
+}
+
+/* 캐릭터 탭만 줄어들고 가로 스크롤된다. 오른쪽 도구 그룹은 이 영역의
+ * 형제라서 탭 수와 무관하게 항상 제자리를 지킨다. */
+.agent-tab-scroll-shell {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.agent-tab-scroll-viewport {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 4px;
+  height: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.agent-tab-scroll-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.agent-tab-strip-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 4px;
+}
+
+.agent-tab-scroll-button {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--border-dark);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.agent-tab-scroll-button:hover {
+  background: var(--accent);
+  color: #0a0b12;
 }
 
 .agent-tab {
@@ -32,6 +87,7 @@
   padding: 2px 10px;
   cursor: pointer;
   white-space: nowrap;
+  flex: none;
 }
 
 .agent-tab-thumb {
@@ -57,11 +113,8 @@
   line-height: 1;
 }
 
-/* 문서 버튼(이슈 #10): 탭들 오른쪽 끝, 닫기 버튼 왼쪽에 붙는다.
- * margin-left:auto가 여기서 남는 공간을 다 먹어 이 버튼과 닫기 버튼을
- * 함께 오른쪽으로 민다(닫기 버튼의 auto는 남은 공간이 없어 무해). */
+/* 문서 버튼(이슈 #10): 고정 액션 그룹의 첫 버튼. */
 .agent-tab-strip-docs {
-  margin-left: auto;
   flex: none;
   height: 28px;
   font-family: "DungGeunMo", monospace;
@@ -85,8 +138,7 @@
   cursor: default;
 }
 
-/* 포스트잇 토글(이슈 #79): 문서 버튼과 뷰 모드 버튼 사이. 문서 버튼의
-   margin-left:auto가 이 그룹 전체를 오른쪽으로 민다. */
+/* 포스트잇 토글(이슈 #79): 문서 버튼과 뷰 모드 버튼 사이. */
 .agent-tab-strip-memo {
   flex: none;
   width: 28px;
@@ -109,8 +161,7 @@
   border-color: var(--accent);
 }
 
-/* 뷰 모드 순환 버튼(이슈 #69): 문서 버튼과 닫기 버튼 사이. 문서 버튼의
-   margin-left:auto가 이 그룹 전체를 오른쪽으로 민다. */
+/* 뷰 모드 순환 버튼(이슈 #69): 문서 버튼과 닫기 버튼 사이. */
 .agent-tab-strip-viewmode {
   flex: none;
   width: 28px;
@@ -138,8 +189,6 @@
 }
 
 .agent-tab-strip-close {
-  position: sticky;
-  right: 0;
   flex: none;
   width: 28px;
   height: 28px;

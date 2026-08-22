@@ -124,6 +124,8 @@ export function AgentTabStrip() {
   // 활성 에이전트의 cwd(문서 버튼 활성 조건). 없으면 버튼 비활성.
   const activeCwd = activeId ? agents[activeId]?.cwd : undefined;
   const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
+  const tabViewportRef = useRef<HTMLDivElement>(null);
+  const [tabScroll, setTabScroll] = useState({ canScrollLeft: false, canScrollRight: false });
   // 메뉴를 열 때 조회한 Claude 이어하기 후보(agentId → 최신 1건). 엔트리가
   // 있는 에이전트만 "이전 세션 이어하기"가 활성화된다. 열 때마다 비우고
   // 응답 도착까지는 비활성 — 이전 조회의 낡은 ID(/clear 후 등)가 잠깐이라도
@@ -132,6 +134,59 @@ export function AgentTabStrip() {
   // 조회 세대 — 메뉴를 연달아 열 때 늦게 도착한 옛 응답이 최신 상태를
   // 덮지 않게 최신 세대의 응답만 반영한다.
   const resumeFetchSeq = useRef(0);
+
+  // 캐릭터 탭만 별도 viewport에서 스크롤한다. 문서/포스트잇/확대/닫기는
+  // 이 viewport 밖의 고정 액션 그룹에 두어 탭이 많아져도 밀려나지 않는다.
+  const updateTabScroll = useCallback(() => {
+    const viewport = tabViewportRef.current;
+    if (!viewport) return;
+    const overflow = viewport.scrollWidth - viewport.clientWidth > 1;
+    const next = {
+      canScrollLeft: overflow && viewport.scrollLeft > 1,
+      canScrollRight:
+        overflow && viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - 1,
+    };
+    setTabScroll((current) =>
+      current.canScrollLeft === next.canScrollLeft &&
+      current.canScrollRight === next.canScrollRight
+        ? current
+        : next
+    );
+  }, []);
+
+  useEffect(() => {
+    const viewport = tabViewportRef.current;
+    if (!viewport) return;
+
+    updateTabScroll();
+    window.addEventListener("resize", updateTabScroll);
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateTabScroll);
+    observer?.observe(viewport);
+    Array.from(viewport.children).forEach((tab) => observer?.observe(tab));
+    return () => {
+      window.removeEventListener("resize", updateTabScroll);
+      observer?.disconnect();
+    };
+  }, [tabIds, updateTabScroll]);
+
+  // 탭 선택 시 LRU 순서상 활성 탭이 맨 앞으로 이동한다. 이전 스크롤 위치를
+  // 그대로 두면 새 활성 탭이 왼쪽 바깥에 남으므로 시작점도 함께 복구한다.
+  useEffect(() => {
+    const viewport = tabViewportRef.current;
+    if (!viewport || activeId === null) return;
+    viewport.scrollLeft = 0;
+    updateTabScroll();
+  }, [activeId, updateTabScroll]);
+
+  const scrollTabs = useCallback((direction: -1 | 1) => {
+    const viewport = tabViewportRef.current;
+    if (!viewport) return;
+    viewport.scrollBy({
+      left: direction * Math.max(120, viewport.clientWidth * 0.75),
+      behavior: "smooth",
+    });
+  }, []);
 
   // 이슈 #42: 해당 에이전트 터미널의 현재 버퍼를 뽑아 외부 에디터로 내보낸다.
   // 미생성 터미널(getPlainText === undefined)은 무시. 파일명은 프로필 이름 폴백.
@@ -225,95 +280,130 @@ export function AgentTabStrip() {
   }, [hasBots, applyBotStatus]);
 
   return (
-    <div className="agent-tab-strip" role="tablist">
-      {tabs.map((tab) => (
+    <div className="agent-tab-strip">
+      <div className="agent-tab-scroll-shell">
+        {tabScroll.canScrollLeft && (
+          <button
+            type="button"
+            className="agent-tab-scroll-button agent-tab-scroll-prev"
+            aria-label="이전 캐릭터 탭 보기"
+            title="이전 캐릭터 탭 보기"
+            onClick={() => scrollTabs(-1)}
+          >
+            &lt;
+          </button>
+        )}
+        <div
+          ref={tabViewportRef}
+          className="agent-tab-scroll-viewport"
+          role="tablist"
+          onScroll={updateTabScroll}
+        >
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={tab.id === activeId}
+              className={tab.id === activeId ? "agent-tab agent-tab-active" : "agent-tab"}
+              title={tab.title}
+              onClick={() => openTerminal(tab.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setMenu({ agentId: tab.id, x: e.clientX, y: e.clientY });
+                // 메뉴가 열리는 동안 이어하기 후보를 조회한다. 응답이 오면
+                // 리렌더되어 해당 항목의 활성 여부가 갱신된다(약간의 지연 허용).
+                // 조회 전엔 항상 비운다 — 실패하면 비활성인 채로 남는다.
+                setResumeEntries({});
+                const seq = ++resumeFetchSeq.current;
+                void tauriApi
+                  .listClaudeResumeSessions()
+                  .then((entries) => {
+                    if (resumeFetchSeq.current === seq) setResumeEntries(entries);
+                  })
+                  .catch((err) => console.warn("이어하기 후보 조회 실패", err));
+              }}
+            >
+              {tab.thumb && (
+                <img className="agent-tab-thumb" src={tab.thumb} alt="" aria-hidden="true" />
+              )}
+              {botMode[tab.id] &&
+                (() => {
+                  const bs = botStatusText(botMode[tab.id]);
+                  return (
+                    <span
+                      className="agent-tab-bot"
+                      title={bs.detail ? `${bs.title} · ${bs.detail}` : bs.title}
+                      aria-hidden="true"
+                    >
+                      {bs.icon}
+                    </span>
+                  );
+                })()}
+              {tab.name}
+            </button>
+          ))}
+        </div>
+        {tabScroll.canScrollRight && (
+          <button
+            type="button"
+            className="agent-tab-scroll-button agent-tab-scroll-next"
+            aria-label="다음 캐릭터 탭 보기"
+            title="다음 캐릭터 탭 보기"
+            onClick={() => scrollTabs(1)}
+          >
+            &gt;
+          </button>
+        )}
+      </div>
+      <div className="agent-tab-strip-actions" role="group" aria-label="터미널 도구">
         <button
-          key={tab.id}
           type="button"
-          role="tab"
-          aria-selected={tab.id === activeId}
-          className={tab.id === activeId ? "agent-tab agent-tab-active" : "agent-tab"}
-          title={tab.title}
-          onClick={() => openTerminal(tab.id)}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setMenu({ agentId: tab.id, x: e.clientX, y: e.clientY });
-            // 메뉴가 열리는 동안 이어하기 후보를 조회한다. 응답이 오면
-            // 리렌더되어 해당 항목의 활성 여부가 갱신된다(약간의 지연 허용).
-            // 조회 전엔 항상 비운다 — 실패하면 비활성인 채로 남는다.
-            setResumeEntries({});
-            const seq = ++resumeFetchSeq.current;
-            void tauriApi
-              .listClaudeResumeSessions()
-              .then((entries) => {
-                if (resumeFetchSeq.current === seq) setResumeEntries(entries);
-              })
-              .catch((err) => console.warn("이어하기 후보 조회 실패", err));
+          className="agent-tab-strip-docs"
+          // 활성 에이전트 cwd를 root로 마크다운 문서 팔레트 오픈. cwd 없으면 비활성.
+          title="마크다운 문서 열기"
+          disabled={!activeCwd}
+          onClick={() => {
+            if (activeId && activeCwd) openMarkdownPalette(activeCwd, activeId);
           }}
         >
-          {tab.thumb && (
-            <img className="agent-tab-thumb" src={tab.thumb} alt="" aria-hidden="true" />
-          )}
-          {botMode[tab.id] &&
-            (() => {
-              const bs = botStatusText(botMode[tab.id]);
-              return (
-                <span
-                  className="agent-tab-bot"
-                  title={bs.detail ? `${bs.title} · ${bs.detail}` : bs.title}
-                  aria-hidden="true"
-                >
-                  {bs.icon}
-                </span>
-              );
-            })()}
-          {tab.name}
+          문서
         </button>
-      ))}
-      <button
-        type="button"
-        className="agent-tab-strip-docs"
-        // 활성 에이전트 cwd를 root로 마크다운 문서 팔레트 오픈. cwd 없으면 비활성.
-        title="마크다운 문서 열기"
-        disabled={!activeCwd}
-        onClick={() => {
-          if (activeId && activeCwd) openMarkdownPalette(activeCwd, activeId);
-        }}
-      >
-        문서
-      </button>
-      <button
-        type="button"
-        className={
-          memoVisible ? "agent-tab-strip-memo agent-tab-strip-memo-on" : "agent-tab-strip-memo"
-        }
-        // 포스트잇 토글(이슈 #79). 위젯은 늘 활성 탭의 장을 보여주므로 이
-        // 버튼도 전역 토글이다 — 켜진 상태는 악센트색으로 구분.
-        title={memoVisible ? "포스트잇 닫기" : "포스트잇 열기"}
-        aria-label={memoVisible ? "포스트잇 닫기" : "포스트잇 열기"}
-        aria-pressed={memoVisible}
-        onClick={toggleMemo}
-      >
-        🗒
-      </button>
-      <button
-        type="button"
-        className={`agent-tab-strip-viewmode mode-${viewMode}`}
-        // 토글: windowed↔filled. 아이콘은 현재 모드, title은 누르면 갈 다음 모드를 안내한다.
-        title={VIEW_MODE_BUTTON[viewMode].label}
-        aria-label={VIEW_MODE_BUTTON[viewMode].label}
-        onClick={cycleTerminalViewMode}
-      >
-        {VIEW_MODE_BUTTON[viewMode].icon}
-      </button>
-      <button
-        type="button"
-        className="agent-tab-strip-close"
-        aria-label="Close terminal overlay"
-        onClick={closeTerminal}
-      >
-        ×
-      </button>
+        <button
+          type="button"
+          className={
+            memoVisible
+              ? "agent-tab-strip-memo agent-tab-strip-memo-on"
+              : "agent-tab-strip-memo"
+          }
+          // 포스트잇 토글(이슈 #79). 위젯은 늘 활성 탭의 장을 보여주므로 이
+          // 버튼도 전역 토글이다 — 켜진 상태는 악센트색으로 구분.
+          title={memoVisible ? "포스트잇 닫기" : "포스트잇 열기"}
+          aria-label={memoVisible ? "포스트잇 닫기" : "포스트잇 열기"}
+          aria-pressed={memoVisible}
+          onClick={toggleMemo}
+        >
+          🗒
+        </button>
+        <button
+          type="button"
+          className={`agent-tab-strip-viewmode mode-${viewMode}`}
+          // 토글: windowed↔filled. 아이콘은 현재 모드, title은 누르면 갈 다음 모드를 안내한다.
+          title={VIEW_MODE_BUTTON[viewMode].label}
+          aria-label={VIEW_MODE_BUTTON[viewMode].label}
+          onClick={cycleTerminalViewMode}
+        >
+          {VIEW_MODE_BUTTON[viewMode].icon}
+        </button>
+        <button
+          type="button"
+          className="agent-tab-strip-close"
+          aria-label="Close terminal overlay"
+          onClick={closeTerminal}
+        >
+          ×
+        </button>
+      </div>
       {menu && (
         <ContextMenu
           x={menu.x}
