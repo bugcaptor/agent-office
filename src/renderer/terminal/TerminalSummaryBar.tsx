@@ -33,15 +33,22 @@ export function TerminalSummaryBar() {
     currentMax: SUMMARY_CURRENT_MAX,
     branch: cwd ? gitBranches[cwd] : undefined,
   });
-  // 표시할 게 없으면(라벨 없음) 바 자체를 렌더하지 않아 레이아웃 점프를 피한다.
-  if (!line1 && !line2) return null;
-
   // 세션이 starting/running이 아니면 실황(line2)은 stale이다 — 목표(line1)만
   // 흐리게 남긴다(완료 세션 탭도 스트립에 남아있다).
   const status = sessions[activeId]?.status;
   const live = status === "starting" || status === "running";
   const phase = timeTracking[activeId]?.phase ?? "idle";
   const shownLine2 = live ? line2 : undefined;
+
+  // 표시할 게 없어도(라벨 없음) 바를 *자리만* 남긴 채 숨긴다 — 예전에는 null을
+  // 반환했는데, 그러면 첫 프롬프트로 라벨이 생기는 순간 패널 flex 열의 높이가
+  // 22px 바뀌어 xterm rows가 줄고 PTY resize가 나간다. pi의 기본 TUI(regular)는
+  // resize마다 `ESC[2J ESC[H ESC[3J`로 화면+**스크롤백**을 지우고 다시 그리므로
+  // (pi v0.84.2 PTY 실측), 하필 pi가 막 일을 시작한 시점에 터미널 히스토리가
+  // 통째로 날아간다. 자리를 항상 잡아 두면 그 resize 자체가 사라진다.
+  if (!line1 && !line2) {
+    return <div className="terminal-summary-bar terminal-summary-hidden" aria-hidden="true" />;
+  }
 
   return (
     <div

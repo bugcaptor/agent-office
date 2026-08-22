@@ -1763,6 +1763,8 @@
     struct RecordedResolverCall {
         selected: Option<String>,
         wrappers: Vec<String>,
+        /// 래퍼 스펙 원본(가드/prefix까지 검사해야 하는 테스트용).
+        specs: Vec<CommandWrapperSpec>,
     }
 
     /// Builds a `shell_resolver` that copies the selected id and wrapper names
@@ -1782,6 +1784,7 @@
                     .iter()
                     .map(|wrapper| wrapper.command.clone())
                     .collect(),
+                specs: wrappers.to_vec(),
             });
             shells::ResolvedShell {
                 program: "/bin/sh".to_string(),
@@ -1838,6 +1841,41 @@
         let rec = rec.as_ref().expect("resolver must have been called");
         assert_eq!(rec.selected.as_deref(), Some("git-bash"));
         assert_eq!(rec.wrappers, vec!["claude", "pi"]);
+
+        cleanup(&ctl, &dir);
+    }
+
+    /// `pi -e <없는 경로>`는 경고가 아니라 하드 실패다("Extension path does not
+    /// exist" 후 즉시 종료, pi v0.84.2 실측). 확장 파일은 OS temp에 있어 장수
+    /// 세션에서 청소될 수 있으므로, claude와 같은 파일-부재 강등 가드가 붙어
+    /// 있어야 pi가 관찰만 포기하고 정상 실행된다.
+    #[tokio::test]
+    async fn pi_wrapper_degrades_to_unobserved_when_the_extension_file_is_missing() {
+        let captured = Arc::new(Mutex::new(None));
+        let resolver = recording_resolver(captured.clone(), vec![]);
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver(resolver);
+
+        mgr.create(req("a1", None)).unwrap();
+
+        let rec = captured.lock();
+        let rec = rec.as_ref().expect("resolver must have been called");
+        let pi = rec
+            .specs
+            .iter()
+            .find(|spec| spec.command == "pi")
+            .expect("pi wrapper must be planned when hooks are ON");
+        assert_eq!(
+            pi.skip_prefix_if_env_file_missing.as_deref(),
+            Some("AGENT_OFFICE_PI_EXT"),
+        );
+        assert_eq!(
+            pi.prefix_args,
+            vec![
+                WrapperArg::Literal("-e".into()),
+                WrapperArg::Env("AGENT_OFFICE_PI_EXT".into()),
+            ],
+        );
+        drop(rec);
 
         cleanup(&ctl, &dir);
     }

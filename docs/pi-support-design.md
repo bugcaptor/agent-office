@@ -4,8 +4,12 @@
 상태: 부분표류 — **구현 완료·main 머지·눈검증 완료(이슈 #8 닫음)**. 단, 구현 후
 훅 파이프라인이 observer/adapter 구조로 리팩터되어 **본문 §1의 file:line 근거와
 상수·필드명 다수가 구식**이다(`notification/hook_server.rs`·`hook_settings.rs` →
-`observer/` 등). 이벤트 매핑(§2)·결정 D1~D3·스파이크 실측(§9)은 여전히 유효한
-설계 근거다. 현행 구조는 바로 아래 §0.5 요약과 코드가 정본.
+`observer/` 등). 결정 D1~D3은 여전히 유효한 설계 근거다. 현행 구조는 바로 아래
+§0.5 요약과 코드가 정본.
+
+> **⚠️ 이벤트 매핑은 §2.2/§9(pi v0.80.3 기준)가 아니라 §10(pi v0.84.2 재실측,
+> 2026-08-22)이 정본이다.** `agent_end`→`agent_settled`, `tool_execution_end`→
+> `tool_execution_start` 등 완료·상태 판정이 바뀌었다.
 
 ## 0.5 현행 구조 요약 (2026-07-20, observer/adapter 리팩터 반영)
 
@@ -397,3 +401,96 @@ session_start(reason:startup) → input(source:interactive, text=프롬프트)
 - **S1/S2 미결(자동화 불가)**: steer/followUp 발화 횟수·ESC abort 시 agent_end 발화 여부는 대화형 PTY 필요 → Phase 4 수동 체크리스트로 이관. §2.2 매핑에는 영향 없음.
 
 **결론: Phase 0 목표(유일한 미확정 리스크였던 이벤트 경계) 달성. Phase 1(백엔드) 진행 가능.**
+
+---
+
+## 10. v0.84.2 재실측과 판정 수정 (2026-08-22, kbm #2f8)
+
+사용자 보고: "pi 지원이 불완전하다 — 스크롤이 자꾸 리셋되고 상태를 제대로 못
+잡는다." 로컬 pi **v0.84.2**(설계 당시는 0.80.3)로 PTY·확장 양쪽을 재실측했다.
+아래가 §2.2 매핑표를 대체하는 현행 정본이다.
+
+### 10.1 확정 매핑 (v0.84.2)
+
+| 앱 source | Pi 이벤트 | 바뀐 이유 |
+|---|---|---|
+| `prompt` | `before_agent_start` | 그대로. body에 `cwd`(process.cwd())를 추가해 라벨의 프로젝트명/브랜치가 pi의 실제 작업 디렉터리를 따르게 했다 |
+| `tool` | **`tool_execution_start`** (was `tool_execution_end`) | `ToolExecutionEndEvent`에는 `args`가 없다(`toolCallId`/`toolName`/`result`/`isError`뿐) → 라벨 실황("지금 무엇을 하는 중")을 실을 수 없다. start는 `args`가 있고 더 이른 시점이라 오래 걸리는 도구도 즉시 working으로 보인다. body = `{tool_name, tool_input}` |
+| `tool` | **`message_end`(role=assistant, 5s 스로틀)** (신규) | 턴 중간 내레이션. Claude는 전사 파일 tail에서 뽑지만 pi 확장은 메시지를 직접 본다. body = `{assistant}` |
+| `stop` | **`agent_settled`** (was `agent_end`) | 아래 10.2 |
+| `stop` | `session_shutdown` | 그대로. 단 **열린 턴이 있을 때만** 보낸다 — 평범한 pi 종료마다 "Pi session ended" 알림이 뜨던 것을 없앴다 |
+
+### 10.2 `agent_end`는 완료 신호가 아니다 (핵심 수정)
+
+`agent_end`는 *에이전트 루프 1회*가 끝날 때마다 발화한다. pi는 자동 재시도
+(재시도 가능한 API 오류)·자동 컨텍스트 압축·스트리밍 중 큐잉된 후속 메시지가
+있으면 **같은 사용자 요청 안에서** 루프를 다시 돈다:
+
+```js
+// dist/core/agent-session.js — _runAgentPrompt
+this._isAgentRunActive = true;
+try {
+  await this.agent.prompt(messages);
+  while (await this._handlePostAgentRun()) await this.agent.continue(); // 재시도/압축/큐
+} finally {
+  ...
+  await this._emitAgentSettled();   // agent_settled — 정확히 1회, 중단·오류 포함
+}
+```
+
+즉 `agent_end`로 정산하면 (a) 아직 일하는 중에 캐릭터가 idle로 튀고 (b) "Pi
+finished a task" 완료 알림이 먼저 뜨며 (c) 이어지는 구간의 작업 시간이 유실된다.
+`agent_settled`("no automatic retry, compaction, or queued continuation will run")가
+정확한 완료 경계이고, `finally`에 있어 **ESC 중단/오류 종료에서도 반드시 발화**한다
+— 설계 §9의 미결 항목 S2가 여기서 해소됐다.
+
+확장은 `agent_settled`가 없는 pi 버전을 위해 `agent_end` → 1.5s 지연 폴백만
+남긴다(그 사이 `agent_settled`가 오면 취소).
+
+### 10.3 `-e` 경로가 사라지면 pi가 아예 뜨지 않는다
+
+`pi -e <없는 경로>`는 경고가 아니라 하드 실패다:
+
+```
+Error: Failed to load extension "...": Extension path does not exist: ...
+Hint: Start without extensions using "pi -ne".
+```
+
+확장 파일은 OS temp(`<tmp>/agent-office/pi/`)에 있어 장수 세션에서 청소될 수 있다.
+그래서 `pi` 래퍼 스펙에 claude와 같은 `skip_prefix_if_env_file_missing`
+가드(이슈 #40)를 걸어, 파일이 없으면 관찰만 포기하고 `command pi "$@"`로 실행을
+보장한다.
+
+### 10.4 스크롤 리셋의 원인은 pi 쪽이다 (앱에서 완전 해결 불가)
+
+pi의 기본 TUI는 `--tui-mode regular`(= `TuiMainScreen`)이고 **대체 스크린 버퍼를
+쓰지 않는다**. 이 렌더러는 터미널 폭/높이가 바뀔 때마다 전체 재그리기를 하며,
+그 첫 바이트가 `ESC[2J ESC[H ESC[3J` — 화면 지우기 + **스크롤백 지우기**다
+(`node_modules/@earendil-works/pi-tui/dist/tui-main-screen.js`의 `fullRender(true)`).
+PTY 실측:
+
+| 상황 | ESC[3J | 비고 |
+|---|---|---|
+| 기동 | 0 | |
+| 높이 변경(30→29행) | **1** | 스크롤백 소멸 |
+| 폭 변경(100→90열) | **1** | 스크롤백 소멸 |
+| 같은 크기로 재설정 | 0 | TIOCSWINSZ가 SIGWINCH를 안 쏨 → 앱의 중복 resize는 무해 |
+| 긴 스트리밍 응답(24행, 112KB 출력) | 0 | 평상시 차등 렌더는 멀쩡하다 |
+| `--tui-mode fullscreen` + 폭/높이 변경 | **0** | `ESC[?1049h`(대체 화면) 사용, 호스트 스크롤백 무손상 |
+
+따라서 앱이 할 수 있는 일은 **resize 자체를 덜 일으키는 것**뿐이다. 이번에 줄인 것:
+
+- 활성 탭 요약 바(`TerminalSummaryBar`)를 조건부 렌더에서 **자리 고정 +
+  visibility 토글**로 바꿨다. 예전에는 첫 프롬프트로 라벨이 생기는 순간 패널
+  높이가 22px 바뀌어 → xterm rows 감소 → PTY resize → 하필 pi가 막 일을 시작한
+  시점에 스크롤백이 통째로 날아갔다.
+- 입양 세션 재도색 nudge(`TerminalRegistry.redrawNudge`, rows-1 → rows로 resize
+  2회)를 **크기가 실제로 그대로일 때만** 수행하도록 좁혔다. 활성화 시 fit 결과가
+  백엔드가 알던 크기와 이미 다르면 SIGWINCH가 이미 갔으므로 nudge가 불필요하고,
+  그대로 두면 앱 재시작마다 pi 스크롤백이 두 번 날아간다.
+
+**남는 부분(앱에서 못 고침)**: 창 크기 조절·터미널 뷰 모드(windowed↔filled) 전환
+같은 진짜 resize는 여전히 pi 스크롤백을 지운다. 결정적 회피책은 pi 쪽 설정이다 —
+`pi --tui-mode fullscreen`(또는 pi 설정의 `tuiMode`)로 대체 화면을 쓰면 resize가
+호스트 스크롤백을 건드리지 않는다(위 표 마지막 행). 앱이 이 플래그를 강제 주입할지는
+사용자가 고른 pi UI를 덮어쓰는 문제라 제품 결정으로 남긴다.

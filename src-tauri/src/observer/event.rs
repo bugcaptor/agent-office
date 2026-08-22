@@ -256,6 +256,63 @@ fn truncate_tool_text(text: &str) -> String {
     }
 }
 
+/// Pi 확장이 `tool_execution_start`에서 실어 보낸 `{tool_name, tool_input}`을
+/// 라벨용 도구 요약으로 만든다(Claude의 `tool_activity_text` 대응). 도구 이름이
+/// Claude와 다르고(소문자) 인자 필드명도 달라서(`path`/`command`/`pattern`)
+/// 별도 매핑이 필요하다 — 실측 근거는 pi v0.84.2의
+/// `dist/core/tools/{bash,read,write,edit,ls,find,grep}.js` 파라미터 스키마.
+/// tool_name 부재/공백/비문자열이면 None.
+pub fn pi_tool_activity_text(body: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let tool_name = value.get("tool_name")?.as_str()?.trim();
+    if tool_name.is_empty() {
+        return None;
+    }
+    let detail = value
+        .get("tool_input")
+        .and_then(|input| pi_tool_activity_detail(tool_name, input));
+    let summary = match detail {
+        Some(detail) => format!("{tool_name}: {detail}"),
+        None => tool_name.to_string(),
+    };
+    Some(truncate_tool_text(&summary))
+}
+
+/// pi 도구 이름 기준으로 인자에서 detail 한 조각을 뽑는다. 미지 도구(확장이 등록한
+/// 커스텀 툴 포함)는 None → 도구 이름만 표시한다.
+fn pi_tool_activity_detail(tool_name: &str, input: &serde_json::Value) -> Option<String> {
+    let is_sep = |c: char| c == '/' || c == '\\';
+    let raw = match tool_name {
+        "bash" => input
+            .get("command")?
+            .as_str()?
+            .lines()
+            .next()?
+            .trim()
+            .to_string(),
+        "read" | "write" | "edit" | "ls" => {
+            let path = input.get("path")?.as_str()?.trim();
+            let trimmed = path.trim_end_matches(is_sep);
+            match trimmed.rsplit(is_sep).next() {
+                Some(name) if !name.is_empty() => name.to_string(),
+                _ => trimmed.to_string(),
+            }
+        }
+        "find" | "grep" => input.get("pattern")?.as_str()?.trim().to_string(),
+        _ => return None,
+    };
+    (!raw.is_empty()).then_some(raw)
+}
+
+/// Pi 확장이 `message_end`(assistant)에서 뽑아 실어 보낸 턴 중간 내레이션.
+/// Claude는 전사 파일 tail에서 같은 것을 뽑지만(claude_transcript_progress_message),
+/// pi 확장은 프로세스 안에서 메시지를 직접 보므로 body에 담아 온다. 절단 규칙은
+/// 완료 메시지와 동일.
+pub fn pi_assistant_text(body: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    truncate_stop_message(value.get("assistant")?.as_str()?)
+}
+
 /// Claude 훅 body의 top-level `transcript_path`. 공백/부재/비문자열은 None.
 pub fn transcript_path(body: &[u8]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
@@ -768,6 +825,103 @@ mod tests {
         .into_bytes();
         let out = tool_activity_text(&body).unwrap();
         assert_eq!(out.chars().count(), MAX_TOOL_TEXT_CHARS + 1); // +1 은 ellipsis
+        assert!(out.ends_with('…'));
+    }
+
+    // pi v0.84.2 `tool_execution_start` 실측 페이로드(spy 확장으로 덤프)를 픽스처로
+    // 쓴다: {"toolName":"read","args":{"path":"..."}} / {"toolName":"bash",
+    // "args":{"command":"echo done"}}. 확장이 이를 {tool_name, tool_input}로
+    // 감싸 POST한다.
+    #[test]
+    fn pi_tool_activity_text_summarizes_pi_tool_names_and_arguments() {
+        use super::{pi_tool_activity_text, MAX_TOOL_TEXT_CHARS};
+
+        assert_eq!(
+            pi_tool_activity_text(
+                br#"{"tool_name":"bash","tool_input":{"command":"  echo done  \nsecond"}}"#
+            )
+            .as_deref(),
+            Some("bash: echo done"),
+        );
+        assert_eq!(
+            pi_tool_activity_text(br#"{"tool_name":"read","tool_input":{"path":"/a/b/spy2.ts"}}"#)
+                .as_deref(),
+            Some("read: spy2.ts"),
+        );
+        assert_eq!(
+            pi_tool_activity_text(br#"{"tool_name":"write","tool_input":{"path":"C:\\x\\y.rs"}}"#)
+                .as_deref(),
+            Some("write: y.rs"),
+        );
+        assert_eq!(
+            pi_tool_activity_text(br#"{"tool_name":"edit","tool_input":{"path":"src/main.rs"}}"#)
+                .as_deref(),
+            Some("edit: main.rs"),
+        );
+        assert_eq!(
+            pi_tool_activity_text(br#"{"tool_name":"ls","tool_input":{"path":"/only/dir/"}}"#)
+                .as_deref(),
+            Some("ls: dir"),
+        );
+        assert_eq!(
+            pi_tool_activity_text(br#"{"tool_name":"grep","tool_input":{"pattern":"TODO"}}"#)
+                .as_deref(),
+            Some("grep: TODO"),
+        );
+        assert_eq!(
+            pi_tool_activity_text(br#"{"tool_name":"find","tool_input":{"pattern":"**/*.ts"}}"#)
+                .as_deref(),
+            Some("find: **/*.ts"),
+        );
+        // 확장이 등록한 커스텀 툴 등 미지 도구 / 인자 부재 → 도구 이름만.
+        assert_eq!(
+            pi_tool_activity_text(br#"{"tool_name":"my_tool","tool_input":{"foo":"bar"}}"#)
+                .as_deref(),
+            Some("my_tool"),
+        );
+        assert_eq!(
+            pi_tool_activity_text(br#"{"tool_name":"bash","tool_input":{}}"#).as_deref(),
+            Some("bash"),
+        );
+        // Claude 대문자 이름은 pi 매핑에 없다 → 이름만(교차 오염 방지).
+        assert_eq!(
+            pi_tool_activity_text(br#"{"tool_name":"Bash","tool_input":{"command":"x"}}"#)
+                .as_deref(),
+            Some("Bash"),
+        );
+        // tool_name 부재/공백/비JSON → None.
+        assert_eq!(
+            pi_tool_activity_text(br#"{"tool_input":{"command":"x"}}"#),
+            None
+        );
+        assert_eq!(pi_tool_activity_text(br#"{"tool_name":"  "}"#), None);
+        assert_eq!(pi_tool_activity_text(b"not json"), None);
+
+        // 멀티바이트 절단 + "…" 부착.
+        let long_cmd = "가".repeat(200);
+        let body = serde_json::json!({ "tool_name": "bash", "tool_input": { "command": long_cmd } })
+            .to_string()
+            .into_bytes();
+        let out = pi_tool_activity_text(&body).unwrap();
+        assert_eq!(out.chars().count(), MAX_TOOL_TEXT_CHARS + 1);
+        assert!(out.ends_with('…'));
+    }
+
+    #[test]
+    fn pi_assistant_text_trims_and_truncates_like_stop_messages() {
+        use super::{pi_assistant_text, MAX_STOP_MESSAGE_CHARS};
+        assert_eq!(
+            pi_assistant_text(r#"{"assistant":"  파일을 읽는 중  "}"#.as_bytes()).as_deref(),
+            Some("파일을 읽는 중"),
+        );
+        assert_eq!(pi_assistant_text(br#"{"assistant":"   "}"#), None);
+        assert_eq!(pi_assistant_text(br#"{"tool_name":"bash"}"#), None);
+        assert_eq!(pi_assistant_text(b"not json"), None);
+
+        let long = "가".repeat(MAX_STOP_MESSAGE_CHARS + 50);
+        let body = serde_json::json!({ "assistant": long }).to_string().into_bytes();
+        let out = pi_assistant_text(&body).unwrap();
+        assert_eq!(out.chars().count(), MAX_STOP_MESSAGE_CHARS + 1);
         assert!(out.ends_with('…'));
     }
 

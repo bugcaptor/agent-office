@@ -60,13 +60,32 @@ describe("TerminalSummaryBar", () => {
     expect(bar.className).toContain("terminal-summary-stale");
   });
 
-  it("라벨이 없으면(표시할 것 없음) 바 자체를 렌더하지 않는다", () => {
+  // 표시할 게 없어도 바는 자리를 지킨다. 라벨이 생길 때 패널 높이가 변하면
+  // xterm rows가 줄어 PTY resize가 나가고, pi 기본 TUI는 resize마다 스크롤백을
+  // 지운다 — 그래서 조건부 렌더 대신 visibility 토글이다.
+  it("라벨이 없으면(표시할 것 없음) 내용 없이 자리만 남긴 바를 렌더한다", () => {
     seed({ label: undefined, status: "running" });
     // cwd만 있는 라벨 없는 상태 — line1은 프로젝트명이 나오므로 라벨 없음 검증을
     // 위해 agents에서도 cwd를 비운다.
     useAppStore.setState({ agents: { a1: agent("a1") } });
     const { container } = render(<TerminalSummaryBar />);
-    expect(container.querySelector(".terminal-summary-bar")).toBeNull();
+    const bar = container.querySelector(".terminal-summary-bar");
+    expect(bar).not.toBeNull();
+    expect(bar!.className).toContain("terminal-summary-hidden");
+    expect(bar!.textContent).toBe("");
+  });
+
+  it("라벨이 생겨도 바가 새로 나타나지 않는다(레이아웃/터미널 rows 불변)", () => {
+    seed({ label: undefined, status: "running" });
+    useAppStore.setState({ agents: { a1: agent("a1") } });
+    const { container, rerender } = render(<TerminalSummaryBar />);
+    expect(container.querySelectorAll(".terminal-summary-bar")).toHaveLength(1);
+
+    seed({ label: { goal: "버그 수정" }, status: "running" });
+    rerender(<TerminalSummaryBar />);
+    const bars = container.querySelectorAll(".terminal-summary-bar");
+    expect(bars).toHaveLength(1);
+    expect(bars[0].className).not.toContain("terminal-summary-hidden");
   });
 
   it("활성 터미널이 없으면 아무것도 렌더하지 않는다", () => {

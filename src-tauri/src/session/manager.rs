@@ -317,7 +317,12 @@ impl SessionManager {
                             WrapperArg::Env("AGENT_OFFICE_PI_EXT".into()),
                         ],
                         skip_if_present: vec![],
-                        ..Default::default()
+                        // 확장 파일은 OS temp에 있어 장수 세션에서는 청소될 수 있다.
+                        // `pi -e <없는 경로>`는 경고가 아니라 **하드 실패**다
+                        // ("Extension path does not exist" 후 즉시 종료, pi v0.84.2
+                        // 실측) — claude와 같은 강등 가드를 걸어, 파일이 사라지면
+                        // 관찰만 포기하고 pi 실행은 보장한다(이슈 #40과 동일 취지).
+                        skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_PI_EXT".into()),
                     });
                 }
                 Err(error) => eprintln!("agent-office: failed to write pi extension: {error}"),

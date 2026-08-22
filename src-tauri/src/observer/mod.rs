@@ -172,9 +172,12 @@ impl ObserverRuntime {
                 text: event::prompt_text(body),
                 cwd: event::hook_cwd(body),
             },
+            // pi 확장은 `tool_execution_start`의 {toolName,args}를 {tool_name,
+            // tool_input}로, `message_end`(assistant)의 텍스트를 {assistant}로
+            // 실어 보낸다 — Claude의 PostToolUse 매핑과 같은 라벨 실황 두 갈래.
             "tool" => ObserverEvent::Tool {
-                text: None,
-                assistant: None,
+                text: event::pi_tool_activity_text(body),
+                assistant: event::pi_assistant_text(body),
             },
             "stop" => ObserverEvent::Stop {
                 message: event::message(body),

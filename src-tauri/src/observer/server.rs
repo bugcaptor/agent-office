@@ -337,6 +337,69 @@ mod tests {
         state.shutdown();
     }
 
+    /// pi v0.84.2 확장이 실제로 보내는 한 턴짜리 시퀀스를 그대로 재생한다.
+    /// 페이로드는 spy 확장으로 덤프한 실측 이벤트에서 옮겨 온 것:
+    ///   before_agent_start(prompt, cwd)
+    ///   tool_execution_start(read {path}) / tool_execution_start(bash {command})
+    ///   message_end(assistant, text 블록)
+    ///   agent_settled
+    /// 기대: 프롬프트 원문·도구 요약·내레이션이 라벨 파이프라인에 실리고,
+    /// 완료 알림은 정확히 1건.
+    #[tokio::test]
+    async fn routes_pi_v084_turn_sequence_into_labelled_activities_and_one_stop() {
+        let (runtime, events) = fixture();
+        let state = ObserverServerState::default();
+        let port = state.ensure(runtime).await.unwrap();
+        let client = reqwest::Client::new();
+
+        for (source, body) in [
+            (
+                "prompt",
+                r#"{"prompt":"버그 고쳐줘","cwd":"/Users/me/dev/agent-office"}"#,
+            ),
+            (
+                "tool",
+                r#"{"tool_name":"read","tool_input":{"path":"/Users/me/dev/agent-office/src/main.rs"}}"#,
+            ),
+            (
+                "tool",
+                r#"{"tool_name":"bash","tool_input":{"command":"echo done"}}"#,
+            ),
+            ("tool", r#"{"assistant":"원인을 좁히는 중"}"#),
+            ("stop", r#"{"message":"Pi finished a task"}"#),
+        ] {
+            client
+                .post(format!(
+                    "http://127.0.0.1:{port}/hook?session=s1&source={source}&agent=pi"
+                ))
+                .body(body)
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+        }
+
+        let activities = events.activities();
+        // prompt + tool×3 + Stop이 부수적으로 내는 SubCount 1건.
+        assert_eq!(activities.len(), 5);
+        assert_eq!(activities[0].kind, ActivityKind::Prompt);
+        assert_eq!(activities[0].text.as_deref(), Some("버그 고쳐줘"));
+        assert_eq!(activities[0].cwd.as_deref(), Some("/Users/me/dev/agent-office"));
+        assert_eq!(activities[1].kind, ActivityKind::Tool);
+        assert_eq!(activities[1].text.as_deref(), Some("read: main.rs"));
+        assert_eq!(activities[2].text.as_deref(), Some("bash: echo done"));
+        assert_eq!(activities[3].assistant_text.as_deref(), Some("원인을 좁히는 중"));
+        assert_eq!(activities[3].text, None);
+        assert_eq!(activities[4].kind, ActivityKind::SubCount);
+
+        let notifications = events.notifications();
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].source, NotificationSource::Stop);
+        assert_eq!(notifications[0].message, "Pi finished a task");
+        state.shutdown();
+    }
+
     #[tokio::test]
     async fn routes_existing_pi_source_query_contract() {
         let (runtime, events) = fixture();

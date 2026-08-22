@@ -331,10 +331,21 @@ class TerminalRegistry {
     if (!e || !e.opened) return;
     requestAnimationFrame(() => {
       try {
+        // 백엔드가 알고 있던 크기를 onResize(=setSessionSize)가 덮어쓰기 전에 읽어 둔다.
+        const known = useAppStore.getState().sessions[agentId];
         e.fit.fit();
         onResize(e.term.cols, e.term.rows);
         e.term.focus();
-        if (this.pendingNudge.delete(agentId)) this.redrawNudge(agentId, e, onResize);
+        if (this.pendingNudge.delete(agentId)) {
+          // 방금 보낸 resize가 이미 크기를 바꿨으면 SIGWINCH가 이미 갔다 —
+          // nudge는 불필요하고, 오히려 해롭다: nudge는 rows-1 → rows로 resize를
+          // 두 번 더 쏘는데, pi 기본 TUI(regular)는 resize마다 `ESC[3J`로
+          // 스크롤백을 지워 버린다(pi v0.84.2 PTY 실측). 크기가 그대로일 때만
+          // (TIOCSWINSZ가 SIGWINCH를 안 쏘는 경우) nudge한다.
+          const alreadyResized =
+            known !== undefined && (known.cols !== e.term.cols || known.rows !== e.term.rows);
+          if (!alreadyResized) this.redrawNudge(agentId, e, onResize);
+        }
       } catch {
         /* container measured 0 (e.g. hidden again before the frame ran) */
       }

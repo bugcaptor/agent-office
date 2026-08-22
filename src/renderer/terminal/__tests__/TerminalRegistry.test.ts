@@ -531,6 +531,33 @@ describe("markAdopted / redraw nudge", () => {
     expect(onResize).toHaveBeenLastCalledWith(80, 24);
   });
 
+  // pi 기본 TUI(regular)는 resize마다 `ESC[2J ESC[H ESC[3J`로 스크롤백까지 지우고
+  // 다시 그린다(pi v0.84.2 PTY 실측). nudge는 resize를 두 번 더 쏘므로, 방금 보낸
+  // fit 결과가 이미 백엔드 크기와 다르면(=SIGWINCH가 이미 갔으면) 생략해야 한다.
+  it("adopted agent: skips the nudge when the fit already changed the size the backend knew", async () => {
+    const terminalRegistry = await importRegistry();
+    const { useAppStore } = await import("../../store/appStore");
+    useAppStore.setState({
+      sessions: {
+        // FakeTerminal은 80x24로 fit된다 — 백엔드가 알던 크기와 다르므로
+        // activate()의 onResize 한 번으로 이미 SIGWINCH가 간다.
+        a1: { agentId: "a1", status: "running", cols: 100, rows: 30, lastActivityAt: 0 },
+      },
+    });
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+    terminalRegistry.markAdopted(["a1"]);
+
+    const onResize = vi.fn();
+    terminalRegistry.activate("a1", onResize);
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(onResize).toHaveBeenCalledTimes(1);
+    expect(onResize).toHaveBeenCalledWith(80, 24);
+    expect(resize).not.toHaveBeenCalled(); // rows-1 nudge 없음
+    expect(fitMock).toHaveBeenCalledTimes(1);
+  });
+
   it("only nudges once — a second activate() for the same agent does not re-trigger it", async () => {
     const terminalRegistry = await importRegistry();
     const host = document.createElement("div");
