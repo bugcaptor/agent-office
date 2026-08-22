@@ -43,6 +43,7 @@ describe("SettingsDialog", () => {
           codex: { light: "", heavy: "" },
           agy: { light: "", heavy: "" },
           gemini: { light: "", heavy: "" },
+          opencode: { light: "", heavy: "" },
           openrouter: { light: "", heavy: "" },
         },
         diaryEnabled: false,
@@ -86,6 +87,7 @@ describe("SettingsDialog", () => {
         codex: { light: "", heavy: "" },
         agy: { light: "", heavy: "" },
         gemini: { light: "", heavy: "" },
+        opencode: { light: "", heavy: "" },
         openrouter: { light: "", heavy: "" },
       },
       diaryEnabled: false,
@@ -123,6 +125,7 @@ describe("SettingsDialog", () => {
           codex: { light: "", heavy: "" },
           agy: { light: "", heavy: "" },
           gemini: { light: "", heavy: "" },
+          opencode: { light: "", heavy: "" },
           openrouter: { light: "", heavy: "" },
         },
         diaryEnabled: false,
@@ -172,6 +175,7 @@ describe("SettingsDialog", () => {
           codex: { light: "", heavy: "" },
           agy: { light: "", heavy: "" },
           gemini: { light: "", heavy: "" },
+          opencode: { light: "", heavy: "" },
           openrouter: { light: "", heavy: "" },
         },
         diaryEnabled: false,
@@ -337,6 +341,35 @@ describe("SettingsDialog", () => {
     fireEvent.change(light, { target: { value: "anthropic/claude-haiku-4.5" } });
     expect(useAppStore.getState().appSettings.summaryModels.openrouter).toEqual({
       light: "anthropic/claude-haiku-4.5",
+      heavy: "",
+    });
+  });
+
+  // opencode는 한 CLI가 여러 벤더를 묶어서 모델 id가 `provider/model`이다 —
+  // 기본값이 opencode 자체 구독(opencode-go)이라는 것을 안내해야 다른 벤더를
+  // 쓰는 사용자가 왜 요약이 실패하는지 알 수 있다.
+  it("opencode를 고르면 CLI·모델 표기 안내와 opencode 기본 모델이 뜬다", () => {
+    useAppStore
+      .getState()
+      .hydrateSettings(
+        { ...useAppStore.getState().appSettings, summaryProvider: "opencode" },
+        false,
+      );
+    useAppStore.getState().openModal({ kind: "settings" });
+    render(<SettingsDialog />);
+
+    expect(screen.getByText(/opencode models/)).toBeTruthy();
+    const light = screen.getByPlaceholderText(
+      "opencode-go/deepseek-v4-flash",
+    ) as HTMLInputElement;
+    expect(screen.getByPlaceholderText("opencode-go/deepseek-v4-pro")).toBeTruthy();
+    // 다른 provider의 칸·안내는 보이지 않는다.
+    expect(screen.queryByPlaceholderText("haiku")).toBeNull();
+    expect(screen.queryByText(/OPENROUTER_API_KEY/)).toBeNull();
+
+    fireEvent.change(light, { target: { value: "opencode-go/glm-5.3" } });
+    expect(useAppStore.getState().appSettings.summaryModels.opencode).toEqual({
+      light: "opencode-go/glm-5.3",
       heavy: "",
     });
   });

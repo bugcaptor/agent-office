@@ -132,6 +132,10 @@ const SUMMARY_DEFAULT_MODELS: Record<SummaryProvider, { light: string; heavy: st
   codex: { light: "gpt-5.4-mini", heavy: "gpt-5.4" },
   agy: { light: "gemini-3.6-flash-low", heavy: "gemini-3.1-pro-low" },
   gemini: { light: "gemini-2.5-flash", heavy: "gemini-2.5-pro" },
+  opencode: {
+    light: "opencode-go/deepseek-v4-flash",
+    heavy: "opencode-go/deepseek-v4-pro",
+  },
   openrouter: { light: "openai/gpt-5.4-mini", heavy: "openai/gpt-5.4" },
 };
 
@@ -140,6 +144,7 @@ const SUMMARY_PROVIDER_LABEL: Record<SummaryProvider, string> = {
   codex: "Codex",
   agy: "Antigravity (agy)",
   gemini: "Gemini",
+  opencode: "opencode",
   openrouter: "OpenRouter",
 };
 
@@ -161,6 +166,10 @@ function SummaryModelSection() {
   // OpenRouter만 CLI가 아니라 HTTP라 API 키가 따로 필요하다 — 키 입력과 연결
   // 테스트는 아래 OpenrouterSummaryTools가 맡는다(저장소는 소리·음성 탭과 공유).
   const isOpenrouter = provider === "openrouter";
+  // opencode는 한 CLI가 여러 벤더를 묶는다 — 모델 id가 `provider/model`이고
+  // 기본값은 opencode 자체 구독(opencode-go)을 가정한다. 다른 벤더를 쓰려면
+  // 여기에 `opencode models`가 찍어 주는 id를 그대로 넣는다.
+  const isOpencode = provider === "opencode";
   // 모델 id 추천은 TTS 쪽과 같은 목록을 쓴다(중복 정의하면 갈라진다).
   const modelListId = isOpenrouter ? "summary-openrouter-models" : undefined;
 
@@ -178,6 +187,13 @@ function SummaryModelSection() {
         <p className="settings-note">
           OpenRouter 요약은 API 키(또는 환경변수 <code>OPENROUTER_API_KEY</code>)를
           씁니다. 키가 없으면 요약이 실패하고 원문이 그대로 표시됩니다.
+        </p>
+      )}
+      {isOpencode && (
+        <p className="settings-note">
+          opencode 요약은 설치된 <code>opencode</code> CLI를 부릅니다. 모델 id는
+          <code> provider/model</code> 표기이고(<code>opencode models</code>로 확인),
+          기본값은 opencode 자체 구독(<code>opencode-go</code>)을 가정합니다.
         </p>
       )}
       <label className="settings-item">

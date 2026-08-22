@@ -44,7 +44,7 @@ fn default_tts_rewrite_model_openrouter() -> String {
 /// 요약(라벨·일기·학습자료)에 사용할 제공자. 기존 설정과의 호환을 위해
 /// 기본은 Claude.
 ///
-/// 앞의 넷은 로컬 CLI를 서브프로세스로 부르고, `Openrouter`만 HTTP(OpenAI 호환
+/// 앞의 다섯은 로컬 CLI를 서브프로세스로 부르고, `Openrouter`만 HTTP(OpenAI 호환
 /// chat/completions) 경로다 — CLI 설치 없이 한 키로 여러 벤더 모델을 쓰려는
 /// 사용자를 위한 갈래이고, 키는 TTS와 같은 0600 키 스토어를 공유한다.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -55,6 +55,9 @@ pub enum SummaryProvider {
     Codex,
     Agy,
     Gemini,
+    /// opencode CLI(sst/opencode). 자체 구독(opencode-go)과 여러 벤더를 한
+    /// CLI로 묶어 쓰는 갈래 — 모델 id가 `<provider>/<model>` 표기다.
+    Opencode,
     Openrouter,
 }
 
@@ -65,6 +68,7 @@ impl SummaryProvider {
             Self::Codex => "codex",
             Self::Agy => "agy",
             Self::Gemini => "gemini",
+            Self::Opencode => "opencode",
             Self::Openrouter => "openrouter",
         }
     }
@@ -167,6 +171,9 @@ pub struct SummaryModels {
     pub agy: SummaryModelOverride,
     #[serde(default)]
     pub gemini: SummaryModelOverride,
+    /// opencode 모델 id(`<provider>/<model>` 표기 — `opencode models` 출력 형식).
+    #[serde(default)]
+    pub opencode: SummaryModelOverride,
     /// OpenRouter 모델 id(`<벤더>/<모델>` 표기). 다른 슬롯과 마찬가지로
     /// `#[serde(default)]`라 이 키가 없는 구 설정 파일도 그대로 로드된다.
     #[serde(default)]
@@ -181,6 +188,7 @@ impl SummaryModels {
             SummaryProvider::Codex => &self.codex,
             SummaryProvider::Agy => &self.agy,
             SummaryProvider::Gemini => &self.gemini,
+            SummaryProvider::Opencode => &self.opencode,
             SummaryProvider::Openrouter => &self.openrouter,
         }
     }
@@ -584,6 +592,7 @@ mod tests {
             SummaryProvider::Codex,
             SummaryProvider::Agy,
             SummaryProvider::Gemini,
+            SummaryProvider::Opencode,
             SummaryProvider::Openrouter,
         ] {
             let json = serde_json::to_string(&provider).unwrap();
@@ -593,7 +602,44 @@ mod tests {
         assert_eq!(SummaryProvider::Codex.as_str(), "codex");
         assert_eq!(SummaryProvider::Agy.as_str(), "agy");
         assert_eq!(SummaryProvider::Gemini.as_str(), "gemini");
+        assert_eq!(SummaryProvider::Opencode.as_str(), "opencode");
         assert_eq!(SummaryProvider::Openrouter.as_str(), "openrouter");
+    }
+
+    // opencode 슬롯이 없는 구 설정 파일도 그대로 열려야 한다(openrouter를 뒤에
+    // 붙였을 때와 같은 계약) — 못 열면 다른 설정까지 기본값으로 잃는다.
+    #[test]
+    fn load_settings_without_the_opencode_slot_still_reads_the_others() {
+        let file = scratch_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(
+            &file,
+            br#"{"version":1,"summarizerEnabled":true,"summaryProvider":"gemini",
+                "summaryModels":{"claude":{"light":"opus","heavy":""},
+                "codex":{"light":"","heavy":""},"agy":{"light":"","heavy":""},
+                "gemini":{"light":"","heavy":""},
+                "openrouter":{"light":"openai/gpt-5.4-nano","heavy":""}}}"#,
+        )
+        .unwrap();
+        let (s, first_run) = SettingsStore::new(file.clone()).load();
+        assert!(!first_run);
+        assert!(s.summarizer_enabled, "구 파일의 다른 값이 폴백되면 안 된다");
+        assert_eq!(s.summary_provider, SummaryProvider::Gemini);
+        assert_eq!(s.summary_models.openrouter.light, "openai/gpt-5.4-nano");
+        assert_eq!(s.summary_models.opencode, SummaryModelOverride::default());
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn opencode_provider_round_trips_through_the_settings_file() {
+        let file = scratch_file();
+        let store = SettingsStore::new(file.clone());
+        let mut edited = AppSettings::default();
+        edited.summary_provider = SummaryProvider::Opencode;
+        edited.summary_models.opencode.light = "opencode-go/glm-5.3".to_string();
+        store.save(&edited).unwrap();
+        assert_eq!(store.load(), (edited, false));
+        let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
     // OpenRouter 슬롯이 없는 구 설정 파일도 그대로 열려야 한다 — 못 열면

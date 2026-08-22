@@ -76,6 +76,15 @@ export function SettingsForm({
           <input
             type="radio"
             name="summary-provider"
+            checked={value.summaryProvider === "opencode"}
+            onChange={() => onChange({ summaryProvider: "opencode" })}
+          />
+          opencode
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="summary-provider"
             checked={value.summaryProvider === "openrouter"}
             onChange={() => onChange({ summaryProvider: "openrouter" })}
           />

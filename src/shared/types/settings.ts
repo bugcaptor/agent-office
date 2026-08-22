@@ -5,10 +5,16 @@
 
 /**
  * 요약(라벨·일기·학습자료)에 사용할 provider. Rust `SummaryProvider` 미러.
- * 앞의 넷은 로컬 CLI를 부르고, `openrouter`만 HTTP 경로다(키는 TTS와 같은
+ * 앞의 다섯은 로컬 CLI를 부르고, `openrouter`만 HTTP 경로다(키는 TTS와 같은
  * 백엔드 키 스토어 또는 `OPENROUTER_API_KEY` 환경변수를 쓴다).
  */
-export type SummaryProvider = "claude" | "codex" | "agy" | "gemini" | "openrouter";
+export type SummaryProvider =
+  | "claude"
+  | "codex"
+  | "agy"
+  | "gemini"
+  | "opencode"
+  | "openrouter";
 
 /**
  * 요약 호출의 목적. 목적별로 백엔드 타임아웃이 다르다(#66) — 라벨(인터랙티브)은
@@ -46,6 +52,8 @@ export interface SummaryModels {
   codex: SummaryModelOverride;
   agy: SummaryModelOverride;
   gemini: SummaryModelOverride;
+  /** opencode 모델 id(`provider/model` 표기 — `opencode models` 출력 형식). */
+  opencode: SummaryModelOverride;
   /** OpenRouter 모델 id(`벤더/모델` 표기). */
   openrouter: SummaryModelOverride;
 }

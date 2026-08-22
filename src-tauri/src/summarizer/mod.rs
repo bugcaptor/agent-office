@@ -2,6 +2,7 @@ mod agy;
 mod claude;
 mod codex;
 mod gemini;
+mod opencode;
 mod openrouter;
 
 use std::process::Stdio;
@@ -102,6 +103,16 @@ impl SummaryPurpose {
         }
     }
 
+    /// opencode CLI의 모델 id는 `<provider>/<model>` 표기다(`opencode models`
+    /// 출력 형식). 기본은 opencode 자체 구독(`opencode-go`)의 저가/고가 한 쌍 —
+    /// 다른 벤더는 각자 인증이 필요하지만 이쪽은 opencode 로그인만으로 쓴다.
+    pub(super) fn opencode_model(self) -> &'static str {
+        match self {
+            Self::Label | Self::Diary => "opencode-go/deepseek-v4-flash",
+            Self::Study => "opencode-go/deepseek-v4-pro",
+        }
+    }
+
     /// OpenRouter 모델 id는 `<벤더>/<모델>` 표기다. TTS 리라이트의
     /// OpenRouter 기본과 같은 계열을 쓴다.
     pub(super) fn openrouter_model(self) -> &'static str {
@@ -120,6 +131,7 @@ fn default_model(provider: SummaryProvider, purpose: SummaryPurpose) -> &'static
         SummaryProvider::Codex => purpose.codex_model(),
         SummaryProvider::Agy => purpose.agy_model(),
         SummaryProvider::Gemini => purpose.gemini_model(),
+        SummaryProvider::Opencode => purpose.opencode_model(),
         SummaryProvider::Openrouter => purpose.openrouter_model(),
     }
 }
@@ -223,6 +235,7 @@ pub async fn summarize(
         SummaryProvider::Codex => codex::build(instruction, purpose, &model),
         SummaryProvider::Agy => agy::build(instruction, &model),
         SummaryProvider::Gemini => gemini::build(instruction, &model),
+        SummaryProvider::Opencode => opencode::build(instruction, &model),
         // 위에서 이미 갈라져 나갔다.
         SummaryProvider::Openrouter => unreachable!("openrouter는 HTTP 경로로 처리된다"),
     };
@@ -511,6 +524,11 @@ exit "$AO_FAKE_EXIT"
             (SummaryProvider::Codex, "gpt-5.4-mini", "gpt-5.4"),
             (SummaryProvider::Agy, "gemini-3.6-flash-low", "gemini-3.1-pro-low"),
             (SummaryProvider::Gemini, "gemini-2.5-flash", "gemini-2.5-pro"),
+            (
+                SummaryProvider::Opencode,
+                "opencode-go/deepseek-v4-flash",
+                "opencode-go/deepseek-v4-pro",
+            ),
             (
                 SummaryProvider::Openrouter,
                 "openai/gpt-5.4-mini",

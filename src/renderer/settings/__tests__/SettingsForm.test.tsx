@@ -26,6 +26,7 @@ describe("SettingsForm", () => {
     expect((screen.getByRole("radio", { name: "Codex" }) as HTMLInputElement).checked).toBe(false);
     expect((screen.getByRole("radio", { name: "Antigravity (agy)" }) as HTMLInputElement).checked).toBe(false);
     expect((screen.getByRole("radio", { name: "Gemini" }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("radio", { name: "opencode" }) as HTMLInputElement).checked).toBe(false);
     expect((screen.getByRole("radio", { name: /OpenRouter/ }) as HTMLInputElement).checked).toBe(false);
     expect((screen.getByRole("checkbox", { name: /에이전트 관찰/ }) as HTMLInputElement).checked).toBe(false);
 
@@ -38,6 +39,9 @@ describe("SettingsForm", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Gemini" }));
     expect(onChange).toHaveBeenCalledWith({ summaryProvider: "agy" });
     expect(onChange).toHaveBeenCalledWith({ summaryProvider: "gemini" });
+
+    fireEvent.click(screen.getByRole("radio", { name: "opencode" }));
+    expect(onChange).toHaveBeenCalledWith({ summaryProvider: "opencode" });
 
     // CLI가 아닌 HTTP 경로도 같은 라디오 그룹에서 고른다.
     fireEvent.click(screen.getByRole("radio", { name: /OpenRouter/ }));
