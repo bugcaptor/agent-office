@@ -160,6 +160,11 @@ describe("THEMES 레지스트리 무결성", () => {
       "--accent-error": "#ff5c6a",
       "--text": "#c8d0e0",
       "--text-dim": "#8a93b0",
+      // 포스트잇 지면은 테마 도입 이후에 추가된 토큰이라 "원본 보존" 계약 밖이다.
+      "--postit-paper": "#2b3040",
+      "--postit-note": "#21252f",
+      "--postit-ink": "#d3d9e6",
+      "--postit-ink-dim": "#9099ad",
     });
     expect(THEMES.midnight.pixi).toMatchObject({
       background: 0x1b1b24,

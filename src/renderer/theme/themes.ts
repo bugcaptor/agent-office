@@ -28,6 +28,14 @@ export const CSS_TOKEN_KEYS = [
   "--accent-error",
   "--text",
   "--text-dim",
+  // 포스트잇 위젯 전용 지면색(memo.css). 예전에는 노란 반투명 레이어를
+  // --bg-panel-hi 위에 겹쳐 만들었는데, 어두운 테마에서 종이·글자가 함께
+  // 탁해져 대비가 무너졌다(#미드나이트 흐릿함). 테마마다 지면/필기면/잉크를
+  // 직접 고르게 해 밝은 테마는 노란 쪽지, 어두운 테마는 회색조 다크 쪽지로 간다.
+  "--postit-paper",
+  "--postit-note",
+  "--postit-ink",
+  "--postit-ink-dim",
 ] as const;
 type CssTokenKey = (typeof CSS_TOKEN_KEYS)[number];
 
@@ -97,6 +105,11 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       "--accent-error": "#d6336c",
       "--text": "#3a3428",
       "--text-dim": "#857a66",
+      /* 포스트잇: 고전적인 노란 쪽지 + 더 밝은 필기면. */
+      "--postit-paper": "#f7e4af",
+      "--postit-note": "#fdf4dc",
+      "--postit-ink": "#3a3428",
+      "--postit-ink-dim": "#7b6f58",
     },
     pixi: {
       background: 0xd9ccb4, // 맵 밖 레터박스: 바닥보다 살짝 어둡게 → 맵이 떠 보인다
@@ -165,6 +178,12 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       "--accent-error": "#ff5c6a",
       "--text": "#c8d0e0",
       "--text-dim": "#8a93b0",
+      /* 포스트잇: One Dark 계열 다크 쪽지 — 테마의 청보라 기운만 살짝 남긴
+         회색조 지면(카드) + 더 어두운 필기면 + 밝은 잉크(대비 ≥ 10:1). */
+      "--postit-paper": "#2b3040",
+      "--postit-note": "#21252f",
+      "--postit-ink": "#d3d9e6",
+      "--postit-ink-dim": "#9099ad",
     },
     pixi: {
       background: 0x1b1b24,
@@ -229,6 +248,11 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       "--accent-error": "#d64550",
       "--text": "#4a2b3c",
       "--text-dim": "#9a7286",
+      /* 포스트잇: 블러시 테마에 맞춘 살구빛 쪽지. */
+      "--postit-paper": "#f7ddc0",
+      "--postit-note": "#fdf1e0",
+      "--postit-ink": "#4a2b3c",
+      "--postit-ink-dim": "#8f6a7c",
     },
     pixi: {
       background: 0xe9cfda,
@@ -294,6 +318,11 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       "--accent-error": "#ff7a5c",
       "--text": "#8dffa8",
       "--text-dim": "#43a35e",
+      /* 포스트잇: 인광 초록 모노크롬 — CRT 지면 + 형광 잉크. */
+      "--postit-paper": "#16341c",
+      "--postit-note": "#0a1c0e",
+      "--postit-ink": "#a8ffbe",
+      "--postit-ink-dim": "#58b872",
     },
     // midnight의 명암 구조(바닥 < 벽 < 가구 < 하이라이트)를 그대로 초록으로 옮김.
     pixi: {

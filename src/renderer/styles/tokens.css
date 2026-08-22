@@ -22,5 +22,10 @@
   --accent-error: #d6336c;
   --text: #3a3428;
   --text-dim: #857a66;
+  /* 포스트잇 위젯 지면(memo.css) — 테마별 실값은 themes.ts. */
+  --postit-paper: #f7e4af;
+  --postit-note: #fdf4dc;
+  --postit-ink: #3a3428;
+  --postit-ink-dim: #7b6f58;
   --unit: 4px; /* pixel grid unit */
 }
