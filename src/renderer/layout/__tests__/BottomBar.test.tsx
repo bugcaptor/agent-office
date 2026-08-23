@@ -8,10 +8,10 @@
 // - "출근" (🏠) button shows the clocked-out count and is disabled at 0.
 // - Clicking "출근" opens a menu listing clocked-out agents by name;
 //   selecting one calls `clockInAgent(agent.id)`.
-// - The bulk button toggles by state: "전체 퇴근" when anyone is on duty
-//   (opens the `confirm-clock-out-all` modal; actual clockOutAll call is
-//   ConfirmClockOutDialog's responsibility), "전체 출근" when everyone is
-//   clocked out (calls `clockInAll` directly).
+// - The "전체 출퇴근" bulk button opens a menu with "전체 출근" (calls
+//   `clockInAll` directly) and "전체 퇴근" (opens the `confirm-clock-out-all`
+//   modal; the actual clockOutAll call is ConfirmClockOutDialog's
+//   responsibility). Items are disabled when their target set is empty.
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
@@ -122,36 +122,58 @@ describe("정보 버튼(ℹ)", () => {
   });
 });
 
-describe("전체 퇴근/전체 출근 토글 버튼", () => {
-  it("에이전트가 하나도 없으면 전체 출근(비활성)을 보여준다", () => {
+describe("전체 출퇴근 버튼", () => {
+  it("에이전트가 하나도 없으면 버튼이 비활성", () => {
     const { getByRole } = render(<BottomBar />);
-    const btn = getByRole("button", { name: "전체 출근" }) as HTMLButtonElement;
+    const btn = getByRole("button", { name: "전체 출퇴근" }) as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
   });
 
-  it("근무 중인 에이전트가 있으면 전체 퇴근이 활성화되고 클릭하면 confirm-clock-out-all 모달을 연다", () => {
-    useAppStore.getState().addAgent(mkProfile("a1"));
+  it("클릭하면 전체 출근/전체 퇴근 두 항목이 메뉴로 뜬다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1"));
+    s.addAgent(mkProfile("a2"));
+    s.clockOut("a2");
     const { getByRole } = render(<BottomBar />);
 
-    const btn = getByRole("button", { name: "전체 퇴근" }) as HTMLButtonElement;
-    expect(btn.disabled).toBe(false);
-
-    fireEvent.click(btn);
-    expect(useAppStore.getState().modal).toEqual({ kind: "confirm-clock-out-all" });
+    fireEvent.click(getByRole("button", { name: "전체 출퇴근" }));
+    expect(getByRole("menuitem", { name: /전체 출근/ })).toBeTruthy();
+    expect(getByRole("menuitem", { name: /전체 퇴근/ })).toBeTruthy();
   });
 
-  it("전부 퇴근한 상태(근무 중 0명)면 전체 출근 버튼으로 바뀌고 클릭하면 clockInAll을 호출한다", () => {
+  it("전체 퇴근을 고르면 confirm-clock-out-all 모달이 열리고 메뉴는 닫힌다", () => {
+    useAppStore.getState().addAgent(mkProfile("a1"));
+    const { getByRole, queryByRole } = render(<BottomBar />);
+
+    fireEvent.click(getByRole("button", { name: "전체 출퇴근" }));
+    fireEvent.click(getByRole("menuitem", { name: /전체 퇴근/ }));
+
+    expect(useAppStore.getState().modal).toEqual({ kind: "confirm-clock-out-all" });
+    expect(queryByRole("menu")).toBeNull();
+  });
+
+  it("전체 출근을 고르면 clockInAll을 호출한다", () => {
     const s = useAppStore.getState();
     s.addAgent(mkProfile("a1"));
     s.clockOut("a1");
-    const { getByRole, queryByRole } = render(<BottomBar />);
+    const { getByRole } = render(<BottomBar />);
 
-    expect(queryByRole("button", { name: "전체 퇴근" })).toBeNull();
-    const btn = getByRole("button", { name: "전체 출근" }) as HTMLButtonElement;
-    expect(btn.disabled).toBe(false);
+    fireEvent.click(getByRole("button", { name: "전체 출퇴근" }));
+    fireEvent.click(getByRole("menuitem", { name: /전체 출근/ }));
 
-    fireEvent.click(btn);
     expect(clockInAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("근무 중이 0명이면 전체 퇴근 항목이, 퇴근자가 0명이면 전체 출근 항목이 비활성", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1")); // 근무 중 1, 퇴근 0
+    const { getByRole } = render(<BottomBar />);
+
+    fireEvent.click(getByRole("button", { name: "전체 출퇴근" }));
+    const inItem = getByRole("menuitem", { name: /전체 출근/ }) as HTMLButtonElement;
+    const outItem = getByRole("menuitem", { name: /전체 퇴근/ }) as HTMLButtonElement;
+    expect(inItem.disabled).toBe(true);
+    expect(outItem.disabled).toBe(false);
   });
 });
 

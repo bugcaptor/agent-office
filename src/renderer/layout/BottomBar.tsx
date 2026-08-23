@@ -4,10 +4,12 @@
 // left (opens `ProfileDialog` in create mode), next to it a "출근"
 // (clock-in) button showing the clocked-out count that opens a `ContextMenu`
 // listing clocked-out agents by name (selecting one calls `clockInAgent`),
-// and a bulk clock button that toggles by state: when anyone is on duty it is
-// "전체 퇴근" (opens a `confirm-clock-out-all` modal → `clockOutAll`); when
-// everyone is clocked out it becomes "전체 출근" (calls `clockInAll` directly,
-// no confirm — clock-in is non-destructive). Then a running/pending status summary in
+// and a "전체 출퇴근" bulk button that opens a `ContextMenu` with two choices:
+// "전체 출근" (calls `clockInAll` directly, no confirm — clock-in is
+// non-destructive) and "전체 퇴근" (opens a `confirm-clock-out-all` modal →
+// `clockOutAll`). Each item is disabled when its target set is empty, and the
+// button itself is disabled only when there are no agents at all.
+// Then a running/pending status summary in
 // the center, a settings (⚙) button that
 // opens `SettingsDialog` (선택적 에이전트 연동 2종), an info (ℹ) button
 // right after it that opens `AboutDialog` (앱 이름/버전/라이선스), and the
@@ -46,6 +48,7 @@ export function BottomBar() {
   const [summonMenu, setSummonMenu] = useState<{ x: number; y: number } | null>(null);
   const [themeMenu, setThemeMenu] = useState<{ x: number; y: number } | null>(null);
   const [sceneMenu, setSceneMenu] = useState<{ x: number; y: number } | null>(null);
+  const [clockAllMenu, setClockAllMenu] = useState<{ x: number; y: number } | null>(null);
 
   return (
     <footer className="bottom-bar pixel-panel">
@@ -67,23 +70,39 @@ export function BottomBar() {
       >
         🏠 출근 ({clockedOutCount})
       </button>
-      {onDutyCount === 0 ? (
-        <button
-          type="button"
-          className="pixel-btn clock-in-all-btn"
-          disabled={clockedOutCount === 0}
-          onClick={() => clockInAll()}
-        >
-          전체 출근
-        </button>
-      ) : (
-        <button
-          type="button"
-          className="pixel-btn clock-out-all-btn"
-          onClick={() => openModal({ kind: "confirm-clock-out-all" })}
-        >
-          전체 퇴근
-        </button>
+      <button
+        type="button"
+        className="pixel-btn clock-all-btn"
+        aria-haspopup="menu"
+        disabled={onDutyCount === 0 && clockedOutCount === 0}
+        onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setClockAllMenu({ x: rect.left, y: rect.top });
+        }}
+      >
+        전체 출퇴근
+      </button>
+      {clockAllMenu && (
+        <ContextMenu
+          x={clockAllMenu.x}
+          y={clockAllMenu.y}
+          onClose={() => setClockAllMenu(null)}
+          items={[
+            {
+              icon: "🏠",
+              label: `전체 출근 (터미널 켜기, ${clockedOutCount}명)`,
+              disabled: clockedOutCount === 0,
+              onSelect: () => clockInAll(),
+            },
+            {
+              icon: "🌙",
+              label: `전체 퇴근 (${onDutyCount}명)`,
+              danger: true,
+              disabled: onDutyCount === 0,
+              onSelect: () => openModal({ kind: "confirm-clock-out-all" }),
+            },
+          ]}
+        />
       )}
       {summonMenu && (
         <ContextMenu
