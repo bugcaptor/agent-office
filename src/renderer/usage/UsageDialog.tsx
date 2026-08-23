@@ -7,10 +7,11 @@
 // stale(>30분)이면 provider 블록을 흐리게 + 표시한다.
 // 설계: docs/usage-limits-design.md §3. 폴링·스토어 갱신은 UsageWidget 소관.
 import { useEffect, useState, type ReactNode } from "react";
-import type { ProviderUsage } from "@shared/types";
+import type { ClaudeLiveStatus, CodexLiveStatus, ProviderUsage } from "@shared/types";
 import { useAppStore } from "../store/appStore";
 import {
   PROVIDER_SHORT,
+  describeCodexLiveStatus,
   describeLiveStatus,
   formatCountdown,
   formatFreshness,
@@ -95,9 +96,8 @@ function ProviderSection({ usage, now }: { usage: ProviderUsage; now: number }) 
       <div className="usage-freshness">
         {formatFreshness(usage.fetchedAtMs, now)}
         {stale && " · 오래됨"}
-        {/* Claude는 갱신 조건이 상황에 따라 달라서(실시간 조회 성공 여부)
-            아래 진단 줄이 대신 설명한다 — 여기 고정 문구를 두면 거짓말이 된다. */}
-        {usage.provider === "codex" && " · Codex CLI 실행 중에만 갱신됨"}
+        {/* 두 provider 모두 갱신 조건이 상황에 따라 달라졌다(실시간 조회
+            성공 여부) — 고정 문구 대신 진단 줄이 설명한다. */}
       </div>
     </section>
   );
@@ -113,20 +113,27 @@ export function UsageDialog() {
 
   if (!open) return null;
 
-  // Claude 실시간 조회 진단 — "왜 이 숫자가 안 움직이는지"의 답. 성공 중일
-  // 때도 한 줄 남겨 둔다(정상임을 확인할 수 있어야 진단으로 쓸모가 있다).
-  const live = usage?.claudeLive ?? null;
-  const described = describeLiveStatus(live);
-  const liveNote =
-    live && described ? (
+  // 실시간 조회 진단 — "왜 이 숫자가 안 움직이는지"의 답. 성공 중일 때도 한
+  // 줄 남겨 둔다(정상임을 확인할 수 있어야 진단으로 쓸모가 있다). provider
+  // 마다 조회 경로가 달라(Claude=HTTPS 직접 조회, Codex=codex CLI RPC)
+  // 진단도 각자 것을 그린다.
+  const liveNote = (
+    status: ClaudeLiveStatus | CodexLiveStatus | null | undefined,
+    described: ReturnType<typeof describeLiveStatus>,
+  ): ReactNode =>
+    status && described ? (
       <p className={`usage-live-note usage-live-${described.level}`}>
         {described.text}
         {(() => {
-          const attempts = formatLiveAttempts(live, now);
+          const attempts = formatLiveAttempts(status, now);
           return attempts ? <span className="usage-live-attempts">{attempts}</span> : null;
         })()}
       </p>
     ) : null;
+  const notes: Record<"claude" | "codex", ReactNode> = {
+    claude: liveNote(usage?.claudeLive, describeLiveStatus(usage?.claudeLive)),
+    codex: liveNote(usage?.codexLive, describeCodexLiveStatus(usage?.codexLive)),
+  };
 
   return (
     <div
@@ -143,7 +150,7 @@ export function UsageDialog() {
         <div className="usage-body">
           {PROVIDERS.map((p) => {
             const pu = usage ? usage[p] : null;
-            const note = p === "claude" ? liveNote : null;
+            const note = notes[p];
             const body = !pu ? (
               <section className="usage-provider usage-provider-empty">
                 <div className="usage-provider-head">
@@ -153,7 +160,7 @@ export function UsageDialog() {
                 <p className="usage-empty-msg">
                   {p === "claude"
                     ? "사용량 데이터가 없습니다. Claude Code에서 /usage를 한 번 열면 로컬 캐시가 생깁니다."
-                    : "사용량 데이터가 없습니다. Codex CLI를 한 번 실행하면 로컬 캐시가 생깁니다."}
+                    : "사용량 데이터가 없습니다. codex login 후 앱이 직접 조회하거나, Codex CLI를 한 번 실행하면 로컬 기록이 생깁니다."}
                 </p>
               </section>
             ) : (

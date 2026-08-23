@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import type {
   ClaudeLiveStatus,
+  CodexLiveStatus,
   ProviderUsage,
   UsageSnapshot,
   UsageWindow,
@@ -13,6 +14,7 @@ import type {
 import {
   STALE_THRESHOLD_MS,
   badgeWindows,
+  describeCodexLiveStatus,
   describeLiveStatus,
   formatAgo,
   formatCountdown,
@@ -53,12 +55,17 @@ function live(partial: Partial<ClaudeLiveStatus> = {}): ClaudeLiveStatus {
   };
 }
 
+function codexLiveStatus(partial: Partial<CodexLiveStatus> = {}): CodexLiveStatus {
+  return { outcome: "ok", detail: null, lastAttemptMs: null, lastSuccessMs: null, ...partial };
+}
+
 function snap(
   claude: ProviderUsage | null,
   codex: ProviderUsage | null,
   claudeLive: ClaudeLiveStatus = live(),
+  codexLive: CodexLiveStatus = codexLiveStatus(),
 ): UsageSnapshot {
-  return { claude, codex, claudeLive };
+  return { claude, codex, claudeLive, codexLive };
 }
 
 describe("usageLevel 임계 70/90", () => {
@@ -381,5 +388,69 @@ describe("formatLiveAttempts", () => {
       via: "curl",
     });
     expect(formatLiveAttempts(s, NOW)).toBe("마지막 시도 1분 전 · 마지막 성공 20분 전 (curl 우회)");
+  });
+});
+
+describe("describeCodexLiveStatus", () => {
+  it("성공은 ok 단계 한 줄 — 정상임을 확인할 수 있어야 진단으로 쓸모가 있다", () => {
+    const note = describeCodexLiveStatus(codexLiveStatus())!;
+    expect(note.level).toBe("ok");
+    expect(note.short).toBe("실시간 조회 정상");
+  });
+
+  it("실패는 사유별 문구 + rollout 강등 안내를 함께 준다", () => {
+    const missing = describeCodexLiveStatus(codexLiveStatus({ outcome: "cli_missing" }))!;
+    expect(missing.level).toBe("error");
+    expect(missing.text).toContain("~/.codex/sessions");
+    const rpc = describeCodexLiveStatus(
+      codexLiveStatus({ outcome: "rpc_error", detail: "not logged in" }),
+    )!;
+    expect(rpc.text).toContain("not logged in");
+    expect(rpc.text).toContain("codex login");
+    expect(describeCodexLiveStatus(codexLiveStatus({ outcome: "timeout" }))!.level).toBe("warn");
+  });
+
+  it("아직 시도 전이면 경고 단계", () => {
+    const note = describeCodexLiveStatus(codexLiveStatus({ outcome: "never_attempted" }))!;
+    expect(note.level).toBe("warn");
+    expect(note.short).toBe("실시간 조회 대기 중");
+  });
+
+  it("필드 자체가 없으면(구버전 응답) 아무것도 표시하지 않는다", () => {
+    expect(describeCodexLiveStatus(null)).toBeNull();
+    expect(describeCodexLiveStatus(undefined)).toBeNull();
+  });
+
+  it("formatLiveAttempts는 via가 없는 Codex 진단도 그대로 받는다", () => {
+    const text = formatLiveAttempts(
+      codexLiveStatus({ lastAttemptMs: 1_000, lastSuccessMs: 1_000 }),
+      61_000,
+    );
+    expect(text).toBe("마지막 시도 1분 전 · 마지막 성공 1분 전");
+  });
+});
+
+describe("모델별 창 라벨", () => {
+  it("session_model은 5시간 창에 모델명을 곁들인다", () => {
+    expect(windowLabel(win({ kind: "session_model", label: "Spark" }))).toBe("5시간 · Spark");
+    expect(windowLabel(win({ kind: "session_model", label: null }))).toBe("5시간 (모델별)");
+  });
+
+  it("뱃지의 5시간 자리는 모델별 창이 가로채지 않는다", () => {
+    // session_model만 있고 plain session이 없으면 5시간 자리는 비고, 가장
+    // 절박한 창 하나만 나온다(모델 창이 계정 전체 한도인 척하지 않게).
+    const windows = [
+      win({ kind: "weekly", usedPercent: 30 }),
+      win({ kind: "session_model", label: "Spark", usedPercent: 4 }),
+    ];
+    expect(badgeWindows(provider(windows)).map((w) => w.kind)).toEqual(["weekly"]);
+  });
+});
+
+describe("mergeUsageSnapshot codexLive", () => {
+  it("진단은 병합하지 않고 항상 최신 응답을 쓴다", () => {
+    const prev = snap(null, null, live(), codexLiveStatus({ outcome: "cli_missing" }));
+    const next = snap(null, null, live(), codexLiveStatus({ outcome: "ok" }));
+    expect(mergeUsageSnapshot(prev, next).codexLive.outcome).toBe("ok");
   });
 });

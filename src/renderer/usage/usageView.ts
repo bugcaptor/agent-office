@@ -7,6 +7,7 @@
 
 import type {
   ClaudeLiveStatus,
+  CodexLiveStatus,
   FetchTransport,
   ProviderUsage,
   UsageSnapshot,
@@ -59,13 +60,15 @@ export function badgeWindows(usage: ProviderUsage | null): UsageWindow[] {
   return [session, urgentRest];
 }
 
-/** 윈도 종류 한국어 라벨. weekly_model은 모델명(label)을 곁들인다. */
+/** 윈도 종류 한국어 라벨. 모델별 창은 모델명(label)을 곁들인다. */
 export function windowLabel(w: UsageWindow): string {
   switch (w.kind) {
     case "session":
       return "5시간";
     case "weekly":
       return "주간";
+    case "session_model":
+      return w.label ? `5시간 · ${w.label}` : "5시간 (모델별)";
     case "weekly_model":
       return w.label ? `주간 · ${w.label}` : "주간 (모델별)";
     case "unknown":
@@ -232,14 +235,90 @@ export function describeLiveStatus(
   }
 }
 
-/** 진단 문구 뒤에 붙일 "마지막 시도 N분 전 · 마지막 성공 N분 전". */
-export function formatLiveAttempts(status: ClaudeLiveStatus, now: number): string {
+// ── Codex 실시간 조회 진단 표시 ──────────────────────────────────────
+//
+// Claude와 같은 목적, 다른 어휘. Codex는 앱이 자격증명을 만지지 않고 codex
+// CLI(`codex app-server`의 account/rateLimits/read RPC)에 물어보므로, 실패는
+// 인증이 아니라 "CLI가 없다/죽었다/모르는 응답을 줬다"로 나타난다. 실패하면
+// 표시값은 rollout jsonl 스냅샷으로 강등되는데, 그건 Codex CLI가 실제로 돌
+// 때만 갱신된다 — 그게 "쓰지도 않았는데 숫자가 그대로"의 정체다.
+
+/** Codex 실패 문구 뒤에 공통으로 붙인다. */
+const CODEX_CACHE_FALLBACK_NOTE =
+  "표시값은 로컬 세션 기록(~/.codex/sessions)이며, 이 기록은 Codex CLI가 실제로 돌 때만 갱신됩니다";
+
+/**
+ * Codex 실시간 조회 상태 → 표시 문구. `null`(구버전 백엔드 응답 등 필드
+ * 부재)이면 아무것도 표시하지 않는다.
+ */
+export function describeCodexLiveStatus(
+  status: CodexLiveStatus | null | undefined,
+): LiveStatusNote | null {
+  if (!status) return null;
+  switch (status.outcome) {
+    case "ok":
+      return {
+        level: "ok",
+        text: "앱이 codex CLI에 사용량을 직접 물어보는 중 (최대 15분 간격)",
+        short: "실시간 조회 정상",
+      };
+    case "never_attempted":
+      return {
+        level: "warn",
+        text: `실시간 조회를 아직 시도하지 않음 — ${CODEX_CACHE_FALLBACK_NOTE}`,
+        short: "실시간 조회 대기 중",
+      };
+    case "cli_missing":
+      return {
+        level: "error",
+        text: `실시간 조회 실패: codex 실행 파일을 찾지 못했습니다(PATH 확인). ${CODEX_CACHE_FALLBACK_NOTE}`,
+        short: "실시간 조회 실패(codex 없음)",
+      };
+    case "cli_failed":
+      return {
+        level: "error",
+        text: `실시간 조회 실패: codex가 응답 없이 종료했습니다(${status.detail ?? "원인 불명"}). ${CODEX_CACHE_FALLBACK_NOTE}`,
+        short: "실시간 조회 실패(codex 종료)",
+      };
+    case "timeout":
+      return {
+        level: "warn",
+        text: `실시간 조회 실패: codex 응답이 시간 안에 오지 않았습니다. ${CODEX_CACHE_FALLBACK_NOTE}`,
+        short: "실시간 조회 실패(시간 초과)",
+      };
+    case "rpc_error":
+      return {
+        level: "error",
+        text:
+          `실시간 조회 실패: codex가 오류를 돌려줬습니다(${status.detail ?? "알 수 없음"})` +
+          ` — 로그인이 필요할 수 있습니다(codex login). ${CODEX_CACHE_FALLBACK_NOTE}`,
+        short: "실시간 조회 실패(codex 오류)",
+      };
+    case "unexpected_response":
+      return {
+        level: "warn",
+        text:
+          "실시간 조회 실패: codex app-server 응답 형태가 바뀌었습니다" +
+          `(${status.detail ?? "알 수 없음"}). ${CODEX_CACHE_FALLBACK_NOTE}`,
+        short: "실시간 조회 실패(응답 형태)",
+      };
+  }
+}
+
+/**
+ * 진단 문구 뒤에 붙일 "마지막 시도 N분 전 · 마지막 성공 N분 전".
+ * 두 provider의 진단이 공유하는 필드만 읽는다(`via`는 Claude에만 있다).
+ */
+export function formatLiveAttempts(
+  status: ClaudeLiveStatus | CodexLiveStatus,
+  now: number,
+): string {
   const parts: string[] = [];
   if (status.lastAttemptMs !== null) parts.push(`마지막 시도 ${formatAgo(status.lastAttemptMs, now)}`);
   if (status.lastSuccessMs !== null) {
     // 실패 중이어도 "그 값을 무엇으로 받아왔는지"는 남는다(via는 마지막
     // 성공의 수단이다) — 우회로 연명 중인 환경을 여기서도 읽을 수 있게 한다.
-    const via = detour(status.via);
+    const via = detour("via" in status ? status.via : null);
     const suffix = via ? ` (${transportLabel(via)} 우회)` : "";
     parts.push(`마지막 성공 ${formatAgo(status.lastSuccessMs, now)}${suffix}`);
   } else if (status.outcome !== "never_attempted") parts.push("성공 이력 없음");
@@ -280,5 +359,6 @@ export function mergeUsageSnapshot(
     // 진단은 병합하지 않고 항상 최신 응답을 쓴다 — 값(누적)과 달리 "지금
     // 상태"라서 이전 것을 살려두면 이미 복구된 실패가 남는다.
     claudeLive: next.claudeLive ?? prev?.claudeLive,
+    codexLive: next.codexLive ?? prev?.codexLive,
   };
 }

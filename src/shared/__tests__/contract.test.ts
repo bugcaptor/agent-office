@@ -197,6 +197,10 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect(parsed.codex?.windows[0].windowMinutes).toBe(10080);
     expect(parsed.codex?.windows[0].isActive).toBeNull();
     expect(parsed.codex?.planLabel).toBe("prolite");
+    // Codex 실시간 조회(codex app-server RPC)의 모델별 버킷은 창 길이가 같아도
+    // 계정 전체 한도와 종류로 구분된다(session_model).
+    expect(parsed.codex?.windows[1].kind).toBe("session_model");
+    expect(parsed.codexLive.outcome).toBe("rpc_error");
   });
 
   it("CodexImageStatus / GeneratedCodexImage", () => {

@@ -34,6 +34,14 @@
         "resetsAtMs": 1784786662000,
         "windowMinutes": 10080,
         "isActive": null
+      },
+      {
+        "kind": "session_model",
+        "label": "GPT-5.3-Codex-Spark",
+        "usedPercent": 4.0,
+        "resetsAtMs": 1784297554000,
+        "windowMinutes": 300,
+        "isActive": null
       }
     ]
   },
@@ -44,5 +52,11 @@
     "lastAttemptMs": 1784281400000,
     "lastSuccessMs": 1784280000000,
     "via": "curl"
+  },
+  "codexLive": {
+    "outcome": "rpc_error",
+    "detail": "not logged in",
+    "lastAttemptMs": 1784281400000,
+    "lastSuccessMs": null
   }
 }

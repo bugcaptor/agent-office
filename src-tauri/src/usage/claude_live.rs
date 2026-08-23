@@ -289,6 +289,11 @@ pub(super) fn should_try_fallback(last_fallback_attempt_ms: Option<i64>, now_ms:
 #[derive(Default)]
 pub struct LiveUsageState {
     inner: Mutex<LiveUsageInner>,
+    /// Codex 실시간 조회 상태. 별도 Arc를 앱 전역에 다시 배선하지 않으려고
+    /// 같은 그릇에 담았다 — 이 구조체는 이미 "사용량 실시간 조회의 메모리
+    /// 상태"로 네이티브 커맨드와 웹 RPC가 공유하고 있고, Codex도 같은 폴링에
+    /// 얹히기 때문이다. 두 provider의 상태는 서로 독립이다.
+    pub(super) codex: super::codex_live::CodexLiveState,
 }
 
 #[derive(Default)]

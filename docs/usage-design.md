@@ -1,8 +1,8 @@
-# 구독 사용량(usage) 표시 설계 — 캐시 미러 + Claude 실시간 조회
+# 구독 사용량(usage) 표시 설계 — 캐시 미러 + 실시간 조회(Claude·Codex)
 
-상태: 정본 — 구현 완료 (v1 캐시 미러 = 이슈 #22, Claude live fetch = 이슈 #33/PR #34, 실패 사유 표시 = §7, 2026-07-29). 병합: 2026-07-20 (`usage-limits-design.md` + `claude-usage-live-fetch-design.md` 통합, 원본은 `docs/archive/`).
+상태: 정본 — 구현 완료 (v1 캐시 미러 = 이슈 #22, Claude live fetch = 이슈 #33/PR #34, 실패 사유 표시 = §7, Codex live fetch = §9 / kbm #2h8, 2026-08-23). 병합: 2026-07-20 (`usage-limits-design.md` + `claude-usage-live-fetch-design.md` 통합, 원본은 `docs/archive/`).
 
-구현 파일: 백엔드 `src-tauri/src/usage/{mod,claude,codex,claude_live}.rs`, 커맨드 `load_usage_snapshot`·`resolve_usage_roots`는 `ipc/commands/usage.rs`. 프런트 `src/renderer/usage/{UsageWidget,UsageDialog}.tsx`·`usageView.ts`. 와이어 타입은 `src/shared/types/usage.ts`(배럴 `shared/types.ts` 경유).
+구현 파일: 백엔드 `src-tauri/src/usage/{mod,claude,codex,claude_live,claude_live_fallback,codex_live}.rs`, 커맨드 `load_usage_snapshot`·`resolve_usage_roots`는 `ipc/commands/usage.rs`. 프런트 `src/renderer/usage/{UsageWidget,UsageDialog}.tsx`·`usageView.ts`. 와이어 타입은 `src/shared/types/usage.ts`(배럴 `shared/types.ts` 경유).
 
 세션 활동 분석(작업시간 시계열)은 별개 기능 — `docs/session-analytics-design.md` 참조.
 
@@ -402,3 +402,101 @@ curl 우회로 받아온 것"이라는 설명이 성립해야 하기 때문이�
   curl 폴백이 윈도를 파싱하는지, `claude` 갈래가 **실패하더라도 과금이 0인지**.
 - TS: `via`별 문구(curl/claude_cli 우회 알림, direct·null은 우회 문구 없음),
   실패 중에도 `formatLiveAttempts`에 우회 꼬리표가 남는지.
+
+## 9. Codex 사용량 실시간 조회 (kbm #2h8, 2026-08-23)
+
+### 9.1 문제
+
+§2의 Codex 소스는 rollout jsonl에 남은 `rate_limits` 스냅샷이다 — **CLI가 실제로
+돌 때만** 갱신된다. Claude의 `.claude.json` 캐시 미러와 똑같은 문제(며칠 쉬면
+숫자가 그날에 멈춰 있고, 리셋 경계를 지나도 100%로 남아 있다)를 가진다.
+
+### 9.2 결정 — CLI에 물어본다 (토큰을 만지지 않는다)
+
+Claude는 자격증명을 우리가 읽어 비공식 HTTP 엔드포인트를 직접 쳐야 했지만
+(§6), Codex는 **CLI가 라이브 조회 RPC를 이미 노출한다**:
+
+```
+codex app-server --listen stdio://        # 줄바꿈 구분 JSON-RPC
+→ initialize (clientInfo 필수) → initialized → account/rateLimits/read
+```
+
+토큰 읽기·갱신·계정 선택을 전부 codex가 처리하므로 Keychain 접근도, UA 위장도,
+curl 우회 체인도 없다. 실측(codex-cli 0.149.0) 왕복 0.69초.
+
+응답(요약):
+
+```jsonc
+{
+  "rateLimits": {            // 기본 버킷 — rollout 스냅샷과 같은 의미
+    "limitId": "codex", "planType": "prolite",
+    "primary": {"usedPercent": 29, "windowDurationMins": 10080, "resetsAt": 1787998886},
+    "secondary": null, "credits": {"hasCredits": false, "balance": "0"}
+  },
+  "rateLimitsByLimitId": {   // 모델별 버킷 — rollout에는 아예 없던 정보
+    "codex_bengalfox": {"limitName": "GPT-5.3-Codex-Spark",
+      "primary": {"usedPercent": 4, "windowDurationMins": 300, ...},
+      "secondary": {"usedPercent": 7, "windowDurationMins": 10080, ...}}
+  },
+  "rateLimitResetCredits": {"availableCount": 1, "credits": [...]}
+}
+```
+
+**세 줄을 한꺼번에 쏟아붓고 stdin을 닫는 방식은 못 쓴다** — 서버가 EOF를 보는
+즉시 응답 없이 종료한다(실측). 응답을 읽어 가며 다음 요청을 쓴다.
+
+`app-server`는 experimental 서브커맨드라 계약이 바뀔 수 있다. 그래서 실패든
+형식 변화든 전부 `Err`로 눌러 담고, 조립 단계가 rollout 값으로 조용히 강등한다
+(`merge_provider` — Claude와 같은 "fetched_at_ms 큰 쪽" 규칙).
+
+### 9.3 구조
+
+- `usage/codex_live.rs` — 자식 프로세스 stdio JSON-RPC(20초 상한, `kill_on_drop`
+  + 명시적 `start_kill`), 순수 파서(`parse_rate_limits`), 스로틀 상태
+  (`CodexLiveState`). Windows는 summarizer와 같은 PowerShell 경유 `codex` 해석을
+  쓰되 stdin은 그대로 물려준다(대화형 왕복이라 `ReadToEnd` 불가).
+- 스로틀 판단은 **Claude와 같은 함수**(`claude_live::should_fetch`)를 재사용한다:
+  5분 하한 · 15분 정기 리프레시 · 리셋 경계를 지난 윈도가 있으면 조기 조회.
+  자식 프로세스를 띄우는 경로라 "폴링마다 돌지 않는다"는 요구가 Claude보다 강하다.
+- 상태 그릇은 `LiveUsageState`에 필드로 얹었다(`live.codex`) — 이 구조체가 이미
+  네이티브 커맨드와 웹 RPC가 공유하는 "실시간 조회 메모리 상태"라, 별도 Arc를
+  앱 전역에 다시 배선하지 않았다.
+- 두 provider의 조회는 `tokio::join!`으로 동시에 돈다(폴링 1회의 지연이 합이
+  되지 않게). 실패 모드가 겹치지 않아 한쪽이 다른 쪽을 막지 않는다.
+
+### 9.4 계약 확장
+
+```ts
+type UsageWindowKind = "session" | "weekly" | "session_model" | "weekly_model" | "unknown";
+
+type CodexLiveOutcome =
+  | "never_attempted" | "ok"
+  | "cli_missing" | "cli_failed" | "timeout" | "rpc_error" | "unexpected_response";
+
+interface CodexLiveStatus {
+  outcome: CodexLiveOutcome;
+  detail: string | null;
+  lastAttemptMs: number | null;
+  lastSuccessMs: number | null;
+}
+interface UsageSnapshot { /* …기존… */ codexLive: CodexLiveStatus }
+```
+
+- `CodexLiveOutcome`은 Claude의 `LiveFetchOutcome`과 **일부러 분리했다**. 이쪽
+  실패는 HTTP 상태코드가 아니라 "CLI가 없다/죽었다/모르는 응답을 줬다"의
+  어휘다. 자격증명을 앱이 만지지 않으므로 `tokenSource`·`via`도 없다.
+- `session_model`을 새로 뒀다. 모델별 버킷의 5시간 창이 `session`으로 오면
+  뱃지의 "5시간" 자리(`badgeWindows`)를 모델 한도가 가로채 계정 전체 한도인
+  것처럼 보인다 — 종류로 구분하고 모델명은 `label`에 싣는다.
+- 기본 버킷과 `limitId`가 같은 `rateLimitsByLimitId` 항목은 중복이라 건너뛴다.
+  순회 순서는 serde_json Map(BTreeMap) 키 정렬이라 결정적이다.
+
+### 9.5 테스트
+
+- Rust 순수 함수: 실측 응답 → 기본 버킷 + 모델 버킷 창 매핑(초→ms, 300/10080
+  종류, 중복 limitId 제외), `limitName` 부재 시 limitId 폴백, 모르는 창 길이는
+  `unknown` + 원본 분 유지, `planType: "unknown"` 무시, JSON-RPC error 분류,
+  detail 절단, 스로틀·상태 전이(실패가 마지막 성공을 지우지 않는다).
+- 수동 스모크(`#[ignore]`, `-- --ignored codex_live_smoke`): 실제 CLI 왕복.
+- TS: 사유별 문구와 rollout 강등 안내, `formatLiveAttempts`가 `via` 없는 진단도
+  받는지, `session_model` 라벨과 뱃지 5시간 자리 비침입.

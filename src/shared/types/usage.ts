@@ -8,7 +8,17 @@
  * (serde snake_case) 미러. 설계: docs/usage-limits-design.md §3.
  * `unknown`은 미래 확장 대비 폴백(예: 매핑 안 된 codex window_minutes).
  */
-export type UsageWindowKind = "session" | "weekly" | "weekly_model" | "unknown";
+export type UsageWindowKind =
+  | "session"
+  | "weekly"
+  /**
+   * 모델별 5시간 창(Codex `rateLimitsByLimitId`의 이름 붙은 버킷). `session`과
+   * 구분해 두어야 뱃지의 "5시간" 자리를 모델별 창이 가로채지 않는다 — 모델
+   * 표시명은 `label`에 온다.
+   */
+  | "session_model"
+  | "weekly_model"
+  | "unknown";
 
 /**
  * 한도 윈도 1개. Rust `UsageWindow`(camelCase) 미러. 단위는 전부 백엔드에서
@@ -39,10 +49,11 @@ export interface UsageWindow {
 export interface ProviderUsage {
   provider: "claude" | "codex";
   /**
-   * 신선도 기준 시각(epoch ms). 출처마다 갱신 조건이 다르다: Codex는 CLI가
-   * 돌 때 rollout에 남는 스냅샷, Claude는 앱의 실시간 조회(성공 시) 또는
-   * `~/.claude.json` 캐시 미러다. 후자는 CLI가 `/usage`를 열 때만 갱신되므로
-   * 며칠씩 멈춰 있을 수 있다 — 그 이유는 `claudeLive`가 설명한다.
+   * 신선도 기준 시각(epoch ms). 출처마다 갱신 조건이 다르다: 앱의 실시간
+   * 조회가 성공하면 그 조회 시각이고, 실패하면 로컬 캐시(Claude는
+   * `~/.claude.json`, Codex는 rollout jsonl)의 시각이다. 캐시 쪽은 CLI가
+   * 실제로 돌아야만 갱신되므로 며칠씩 멈춰 있을 수 있다 — 그 이유는
+   * `claudeLive`/`codexLive`가 설명한다.
    */
   fetchedAtMs: number;
   /** codex plan_type, claude organizationRateLimitTier 등. 없으면 null. */
@@ -110,6 +121,44 @@ export interface ClaudeLiveStatus {
 }
 
 /**
+ * Codex 실시간 조회(`codex app-server`의 `account/rateLimits/read` RPC)의
+ * 마지막 시도 결과. Rust `CodexLiveOutcome`(serde snake_case) 미러.
+ *
+ * Claude의 `LiveFetchOutcome`과 **일부러 분리된 어휘**다 — 이쪽은 우리가
+ * 토큰을 만지지 않고 codex CLI에 물어보는 경로라, 실패가 HTTP 상태코드가
+ * 아니라 "CLI가 없다/죽었다/모르는 응답을 줬다"로 나타난다.
+ *
+ * 이 값이 `ok`가 아니면 화면의 Codex 숫자는 rollout jsonl(`~/.codex/sessions`)
+ * 에 남은 스냅샷이고, 그 스냅샷은 **Codex CLI가 실제로 돌 때만** 갱신된다.
+ */
+export type CodexLiveOutcome =
+  | "never_attempted"
+  | "ok"
+  /** `codex` 실행 파일을 찾지 못함(미설치·PATH 밖). */
+  | "cli_missing"
+  /** 프로세스는 떴는데 응답 없이 죽었거나 파이프가 끊김. */
+  | "cli_failed"
+  | "timeout"
+  /** 서버가 JSON-RPC error를 돌려줌(미로그인·계정 문제 등). */
+  | "rpc_error"
+  | "unexpected_response";
+
+/**
+ * Codex 실시간 조회 진단. Rust `CodexLiveStatus` 미러(camelCase). 스냅샷마다
+ * 항상 존재한다 — "아직 모름"은 null이 아니라 `never_attempted`다.
+ * 자격증명을 앱이 만지지 않으므로 Claude와 달리 `tokenSource`/`via`가 없다.
+ */
+export interface CodexLiveStatus {
+  outcome: CodexLiveOutcome;
+  /** 진단 보조(예: "not logged in", "시간 초과"). 없으면 null. */
+  detail: string | null;
+  /** 마지막 시도 시각(epoch ms). 스로틀에 막혀 건너뛴 폴링은 시도가 아니다. */
+  lastAttemptMs: number | null;
+  /** 마지막 성공 시각(epoch ms). 한 번도 성공한 적 없으면 null. */
+  lastSuccessMs: number | null;
+}
+
+/**
  * `load_usage_snapshot` 응답. Rust `UsageSnapshot` 미러. 파싱에 실패한 소스는
  * 해당 provider가 null이며, 커맨드 자체는 항상 성공한다.
  */
@@ -117,4 +166,5 @@ export interface UsageSnapshot {
   claude: ProviderUsage | null;
   codex: ProviderUsage | null;
   claudeLive: ClaudeLiveStatus;
+  codexLive: CodexLiveStatus;
 }

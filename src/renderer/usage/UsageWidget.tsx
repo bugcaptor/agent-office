@@ -27,6 +27,7 @@ import type { ProviderUsage } from "@shared/types";
 import {
   PROVIDER_SHORT,
   badgeWindows,
+  describeCodexLiveStatus,
   describeLiveStatus,
   mergeUsageSnapshot,
   usageLevel,
@@ -46,7 +47,7 @@ function ProviderBadge({
 }: {
   provider: "claude" | "codex";
   usage: ProviderUsage | null;
-  /** Claude 실시간 조회 진단(있으면 툴팁에 덧붙이고 뱃지를 표시색으로 물들인다). */
+  /** 실시간 조회 진단(있으면 툴팁에 덧붙이고 뱃지를 표시색으로 물들인다). */
   note: LiveStatusNote | null;
 }) {
   const short = PROVIDER_SHORT[provider];
@@ -115,7 +116,12 @@ export function UsageWidget() {
     };
   }, [setUsage]);
 
-  const liveNote = describeLiveStatus(usage?.claudeLive);
+  // provider마다 실시간 조회 경로가 다르다(Claude=HTTPS 직접 조회,
+  // Codex=codex CLI RPC) — 진단도 각자 것을 붙인다.
+  const notes = {
+    claude: describeLiveStatus(usage?.claudeLive),
+    codex: describeCodexLiveStatus(usage?.codexLive),
+  };
   return (
     <button
       type="button"
@@ -129,7 +135,7 @@ export function UsageWidget() {
           key={p}
           provider={p}
           usage={usage ? usage[p] : null}
-          note={p === "claude" ? liveNote : null}
+          note={notes[p]}
         />
       ))}
     </button>

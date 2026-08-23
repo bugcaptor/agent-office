@@ -13,12 +13,14 @@ mod claude;
 mod claude_live;
 mod claude_live_fallback;
 mod codex;
+mod codex_live;
 
 use std::path::Path;
 
 use serde::Serialize;
 
 pub use claude_live::LiveUsageState;
+pub use codex_live::{CodexLiveOutcome, CodexLiveStatus};
 
 /// Claude 실시간 조회의 마지막 시도 결과. TS `LiveFetchOutcome` 미러
 /// (serde snake_case). 왜 표시값이 낡았는지를 UI가 사용자에게 설명하기 위한
@@ -96,6 +98,10 @@ pub struct ClaudeLiveStatus {
 pub enum UsageWindowKind {
     Session,
     Weekly,
+    /// 모델별 5시간 창(Codex `rateLimitsByLimitId`의 이름 붙은 버킷).
+    /// `Session`과 구분해 두어야 뱃지의 "5시간" 자리를 모델별 창이 가로채지
+    /// 않는다 — 라벨(모델 표시명)은 `UsageWindow::label`에 있다.
+    SessionModel,
     WeeklyModel,
     Unknown,
 }
@@ -150,6 +156,9 @@ pub struct UsageSnapshot {
     /// Claude 실시간 조회 진단(항상 존재). 파일 캐시만 읽는 동기 경로에서는
     /// `NeverAttempted`가 그대로 나간다.
     pub claude_live: ClaudeLiveStatus,
+    /// Codex 실시간 조회 진단(항상 존재). 같은 규칙 — 동기 경로에서는
+    /// `NeverAttempted`.
+    pub codex_live: CodexLiveStatus,
 }
 
 /// `claude_root`(홈, `.claude.json`이 이 아래)와 `codex_root`(`~/.codex`,
@@ -160,12 +169,16 @@ pub fn load_usage_snapshot(claude_root: &Path, codex_root: &Path) -> UsageSnapsh
         claude: claude::load(claude_root),
         codex: codex::load(codex_root),
         claude_live: ClaudeLiveStatus::default(),
+        codex_live: CodexLiveStatus::default(),
     }
 }
 
 /// 실시간 조회를 얹은 조립(이슈 #33, docs/claude-usage-live-fetch-design.md
-/// §3.2). 커맨드가 이것에 위임한다. 동기 `load_usage_snapshot`(파일 캐시
-/// 미러)은 그대로 두고 그 결과의 claude 필드만 실시간 값으로 보강한다.
+/// §3.2 · Codex는 kbm #2h8, docs/usage-design.md §8). 커맨드가 이것에
+/// 위임한다. 동기 `load_usage_snapshot`(파일 캐시 미러)은 그대로 두고 그
+/// 결과의 claude·codex 필드를 각각 실시간 값으로 보강한다. 두 provider의
+/// 조회는 서로 독립이라 동시에 돌리고(join), 한쪽 실패가 다른 쪽을 막지
+/// 않는다.
 ///
 /// 흐름:
 /// 1. 파일 캐시 스냅샷을 먼저 읽는다(항상 성공, 실패 소스는 None).
@@ -190,6 +203,22 @@ pub async fn load_usage_snapshot_with_live(
 ) -> UsageSnapshot {
     let mut snapshot = load_usage_snapshot(claude_root, codex_root);
 
+    // 두 provider의 실시간 조회는 자원도 실패 모드도 겹치지 않는다 —
+    // 동시에 돌려 폴링 1회의 지연이 둘의 합이 되지 않게 한다.
+    tokio::join!(
+        refresh_claude_live(live, claude_config_dir, now_ms),
+        refresh_codex_live(&live.codex, now_ms),
+    );
+
+    snapshot.claude = merge_provider(snapshot.claude.take(), live.last_success());
+    snapshot.claude_live = live.status();
+    snapshot.codex = merge_provider(snapshot.codex.take(), live.codex.last_success());
+    snapshot.codex_live = live.codex.status();
+    snapshot
+}
+
+/// Claude 실시간 조회 1회분(스로틀 통과 시에만 실제로 돈다).
+async fn refresh_claude_live(live: &LiveUsageState, claude_config_dir: &Path, now_ms: i64) {
     // 락 안에서 스로틀 판단 + last_attempt 갱신(중복 fetch 차단) → 락 해제 후 fetch.
     if live.begin_attempt_if_due(now_ms) {
         match claude_live::read_access_token(claude_config_dir).await {
@@ -212,9 +241,18 @@ pub async fn load_usage_snapshot_with_live(
         }
     }
 
-    snapshot.claude = merge_claude(snapshot.claude.take(), live.last_success());
-    snapshot.claude_live = live.status();
-    snapshot
+}
+
+/// Codex 실시간 조회 1회분. 실패는 조용히 기록만 하고 끝난다 — 표시값은
+/// rollout 스냅샷(codex::load) 또는 직전 성공 값이 그대로 쓰인다.
+async fn refresh_codex_live(live: &codex_live::CodexLiveState, now_ms: i64) {
+    if !live.begin_attempt_if_due(now_ms) {
+        return;
+    }
+    match codex_live::fetch_live(now_ms).await {
+        Ok(usage) => live.record_success(usage),
+        Err(failure) => live.record_failure(failure),
+    }
 }
 
 /// 1차(앱 내 reqwest) 조회가 실패했을 때의 우회 체인. curl → claude CLI 순으로
@@ -298,8 +336,10 @@ fn detail_or(failure: &claude_live::LiveFailure) -> String {
 /// 파일 캐시와 실시간 결과 중 `fetched_at_ms`가 큰 쪽을 고른다(렌더러
 /// fresherProvider와 같은 규칙 — Claude Code가 방금 캐시를 갱신했다면 그쪽이
 /// 이길 수 있다). 동률·live 우선(이 기능의 취지). live가 이기면 plan_label을
-/// 파일 캐시에서 접목한다(live 응답엔 plan_label이 없음). 설계 §3.2.
-fn merge_claude(
+/// 파일 캐시에서 접목한다(Claude live 응답엔 plan_label이 없고, Codex는
+/// 있지만 없을 때를 대비해 같은 규칙을 쓴다). 설계 §3.2. 두 provider가
+/// 같은 규칙을 쓰므로 이름은 provider 중립이다.
+fn merge_provider(
     file: Option<ProviderUsage>,
     live: Option<ProviderUsage>,
 ) -> Option<ProviderUsage> {
@@ -378,42 +418,42 @@ mod tests {
     }
 
     #[test]
-    fn merge_claude_live_wins_when_fresher_and_grafts_plan_label() {
+    fn merge_provider_live_wins_when_fresher_and_grafts_plan_label() {
         // live는 plan_label이 없다(응답에 없음). 파일 캐시에서 접목해야 한다.
         let file = provider(1_000, Some("max_20x"));
         let live = provider(2_000, None);
-        let merged = merge_claude(Some(file), Some(live)).unwrap();
+        let merged = merge_provider(Some(file), Some(live)).unwrap();
         assert_eq!(merged.fetched_at_ms, 2_000, "더 신선한 live가 이겨야");
         assert_eq!(merged.plan_label.as_deref(), Some("max_20x"), "plan_label 접목");
     }
 
     #[test]
-    fn merge_claude_file_wins_when_it_is_fresher() {
+    fn merge_provider_file_wins_when_it_is_fresher() {
         // Claude Code가 방금 캐시를 갱신한 경우 파일이 이길 수 있어야 한다.
         let file = provider(5_000, Some("max_20x"));
         let live = provider(2_000, None);
-        let merged = merge_claude(Some(file), Some(live)).unwrap();
+        let merged = merge_provider(Some(file), Some(live)).unwrap();
         assert_eq!(merged.fetched_at_ms, 5_000);
         assert_eq!(merged.plan_label.as_deref(), Some("max_20x"));
     }
 
     #[test]
-    fn merge_claude_falls_back_to_file_when_no_live() {
+    fn merge_provider_falls_back_to_file_when_no_live() {
         let file = provider(1_000, Some("max_20x"));
-        let merged = merge_claude(Some(file), None).unwrap();
+        let merged = merge_provider(Some(file), None).unwrap();
         assert_eq!(merged.fetched_at_ms, 1_000);
     }
 
     #[test]
-    fn merge_claude_uses_live_when_no_file() {
+    fn merge_provider_uses_live_when_no_file() {
         let live = provider(2_000, None);
-        let merged = merge_claude(None, Some(live)).unwrap();
+        let merged = merge_provider(None, Some(live)).unwrap();
         assert_eq!(merged.fetched_at_ms, 2_000);
         assert_eq!(merged.plan_label, None);
     }
 
     #[test]
-    fn merge_claude_none_when_both_absent() {
-        assert_eq!(merge_claude(None, None), None);
+    fn merge_provider_none_when_both_absent() {
+        assert_eq!(merge_provider(None, None), None);
     }
 }
