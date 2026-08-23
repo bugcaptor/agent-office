@@ -15,7 +15,16 @@
 // 오른쪽 절반의 첫 칸 tx10이라 서쪽으로 뻗는다).
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
-import { adaptColor, adaptPalette, sceneColorMode } from "./sceneColor";
+import type { QuietGroup } from "./sceneColor";
+import {
+  SCENE_CHROMA_CUT,
+  adaptColor,
+  adaptPalette,
+  desaturateColor,
+  desaturatePalette,
+  quietPalette,
+  sceneColorMode,
+} from "./sceneColor";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -44,7 +53,7 @@ export const CASTLE_MAP = buildSceneMap(GRID, BREAK_ROOM);
 const CRENEL_ROW = 0;
 const WINDOW_ROW = 1;
 
-const CASTLE_PALETTE = {
+const CASTLE_PALETTE_RAW = {
   stoneA: 0x8e8a83,
   stoneB: 0x847f78,
   stoneSeam: 0x9d9890,
@@ -62,10 +71,6 @@ const CASTLE_PALETTE = {
   bannerCloth: 0x8c2a33,
   bannerTrim: 0xe0b957,
   moss: 0x5d7a44,
-  carpetRed: 0xa82f36,
-  carpetDark: 0x86232b,
-  carpetGold: 0xd9ac4c,
-  carpetGoldHi: 0xf0d089,
   deskWood: 0x6d4a2c,
   deskTop: 0x8d6238,
   deskShade: 0x4a3120,
@@ -106,10 +111,41 @@ const CASTLE_PALETTE = {
   daisStep: 0xb4ada2,
 };
 
+// 대전당 잔무늬 죽이기 — 플래그스톤 체커·줄눈·그늘·균열·물때를 돌 바탕으로,
+// 벽의 모르타르 격자를 벽돌 바탕으로 당긴다. 스테인드글라스·깃발·횃불(성을
+// 성이게 하는 색)은 그대로.
+const CASTLE_QUIET: readonly QuietGroup<typeof CASTLE_PALETTE_RAW>[] = [
+  {
+    base: "stoneA",
+    keys: ["stoneB", "stoneSeam", "stoneShade", "stoneCrack", "stoneStain"],
+    amount: 0.6,
+  },
+  { base: "wallStone", keys: ["wallMortar", "wallStoneHi"], amount: 0.45 },
+];
+
+/** 캐릭터가 읽히도록 배경 잔무늬를 죽인 실사용 팔레트. */
+// 횃불·촛불만 색을 남긴다(어두운 돌 홀에서 유일한 광원).
+// 성벽에 걸린 깃발과 스테인드글라스는 무대 밖 장식이라 진해도 된다.
+const CASTLE_BANNER = {
+  keys: ["bannerCloth", "bannerTrim", "glassBlue", "glassRed", "glassGold"],
+  amount: 0.05,
+} as const;
+
+const CASTLE_FIRE = {
+  keys: ["flame", "flameCore", "candleFlame"],
+  amount: 0.2,
+} as const;
+
+const CASTLE_PALETTE = desaturatePalette(
+  quietPalette(CASTLE_PALETTE_RAW, CASTLE_QUIET),
+  SCENE_CHROMA_CUT,
+  [CASTLE_FIRE, CASTLE_BANNER],
+);
+
 type CastlePalette = typeof CASTLE_PALETTE;
 
 /** 레터박스(맵 밖) 배경 — 석재 바닥보다 훨씬 어두운 성벽 그늘색. */
-const CASTLE_BACKGROUND = 0x33302e;
+const CASTLE_BACKGROUND = desaturateColor(0x33302e, SCENE_CHROMA_CUT);
 
 /** 결정적 흩뿌리기(바닥 균열·돌 얼룩·창·휘장 배치). 베이크된 정적 텍스처라 난수 금지. */
 const scatter = (tx: number, ty: number, mod: number): number => (tx * 61 + ty * 113) % mod;
@@ -117,22 +153,16 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 61 + ty *
 function castleTileDraw(pal: CastlePalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
     const stone = (tx + ty) % 2 === 0 ? pal.stoneA : pal.stoneB;
-    /** 이 칸이 카펫으로 읽히는가 — 카펫 위에 얹힌 연회 테이블도 카펫 취급해야
-     * 테이블 둘레에 금테가 끼어들지 않는다. */
-    const onCarpet = (x: number, y: number): boolean => {
-      const n = map.tiles[y]?.[x];
-      return n === Tile.Rug || n === Tile.Table;
-    };
     switch (t) {
       case Tile.Floor: {
-        // 플래그스톤: 체커 두 톤 + 위/왼쪽 줄눈, 아래/오른쪽 그늘 → 돌판 격자
+        // 플래그스톤: 체커 두 톤 + 위/왼쪽 줄눈. 반대편 그늘까지 두르면 칸마다
+        // 사각 테두리가 생겨 바닥이 격자 무늬로 진동한다 — 한쪽 줄눈만으로도
+        // 돌판 경계는 충분히 읽힌다.
         g.rect(0, 0, s, s).fill(stone);
         g.rect(0, 0, s, 1).fill(pal.stoneSeam);
         g.rect(0, 0, 1, s).fill(pal.stoneSeam);
-        g.rect(0, s - 1, s, 1).fill(pal.stoneShade);
-        g.rect(s - 1, 0, 1, s).fill(pal.stoneShade);
         // 장식은 드물게 — 촘촘하면 대전당 바닥이 아니라 폐허로 보인다.
-        const k = scatter(tx, ty, 11);
+        const k = scatter(tx, ty, 19);
         if (k === 0) {
           // 균열: 꺾인 1px 선
           g.rect(4, 4, 1, 3).fill(pal.stoneCrack);
@@ -205,32 +235,11 @@ function castleTileDraw(pal: CastlePalette): TileDrawFn {
         break;
       }
       case Tile.Rug: {
-        // 붉은 카펫: 금색 테두리는 "카펫이 아닌 이웃" 쪽 변에만 그린다 —
-        // 그래야 두 칸 폭 통로와 넓은 연회장이 각각 하나의 융단으로 읽힌다.
-        g.rect(0, 0, s, s).fill(pal.carpetRed);
-        // 짜여진 결(1px) + 가운데 마름모 무늬
-        g.rect(0, 4, s, 1).fill(pal.carpetDark);
-        g.rect(0, 12, s, 1).fill(pal.carpetDark);
-        g.rect(6, 6, 4, 4).fill(pal.carpetDark);
-        g.rect(7, 5, 2, 6).fill(pal.carpetDark);
-        g.rect(5, 7, 6, 2).fill(pal.carpetDark);
-        g.rect(7, 7, 2, 2).fill(pal.carpetGold);
-        if (!onCarpet(tx, ty - 1)) {
-          g.rect(0, 0, s, 2).fill(pal.carpetGold);
-          g.rect(0, 0, s, 1).fill(pal.carpetGoldHi);
-        }
-        if (!onCarpet(tx, ty + 1)) {
-          g.rect(0, s - 2, s, 2).fill(pal.carpetGold);
-          g.rect(0, s - 1, s, 1).fill(pal.carpetGoldHi);
-        }
-        if (!onCarpet(tx - 1, ty)) {
-          g.rect(0, 0, 2, s).fill(pal.carpetGold);
-          g.rect(0, 0, 1, s).fill(pal.carpetGoldHi);
-        }
-        if (!onCarpet(tx + 1, ty)) {
-          g.rect(s - 2, 0, 2, s).fill(pal.carpetGold);
-          g.rect(s - 1, 0, 1, s).fill(pal.carpetGoldHi);
-        }
+        // 카펫을 걷어낸 대전당 — 라운지도 그냥 돌바닥이다. 붉은 융단은 맵에서
+        // 가장 채도 높은 면이라 통로와 연회장을 통째로 붉게 물들이고 있었다.
+        g.rect(0, 0, s, s).fill(stone);
+        g.rect(0, 0, s, 1).fill(pal.stoneSeam);
+        g.rect(0, 0, 1, s).fill(pal.stoneSeam);
         break;
       }
       case Tile.DeskTop: {
@@ -308,10 +317,8 @@ function castleTileDraw(pal: CastlePalette): TileDrawFn {
         break;
       }
       case Tile.Table: {
-        // 연회 목재 테이블: 카펫 위에 놓이면 바닥도 카펫으로 깔아 융단이
-        // 테이블 밑에서 끊겨 보이지 않게 한다.
-        const overCarpet = onCarpet(tx - 1, ty) || onCarpet(tx + 1, ty);
-        g.rect(0, 0, s, s).fill(overCarpet ? pal.carpetRed : stone);
+        // 연회 목재 테이블(가구 타일이라 스스로 바닥을 깐다).
+        g.rect(0, 0, s, s).fill(stone);
         g.rect(0, 5, s, 3).fill(pal.feastTop); // 상판
         g.rect(0, 8, s, 3).fill(pal.feastWood); // 앞치마
         g.rect(0, 11, s, 1).fill(pal.deskShade);

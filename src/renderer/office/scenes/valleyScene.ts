@@ -10,7 +10,16 @@
 // `buildSceneMap`이 보스 위치에서 유도한다).
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
-import { adaptColor, adaptPalette, sceneColorMode } from "./sceneColor";
+import type { QuietGroup } from "./sceneColor";
+import {
+  SCENE_CHROMA_CUT,
+  adaptColor,
+  adaptPalette,
+  desaturateColor,
+  desaturatePalette,
+  quietPalette,
+  sceneColorMode,
+} from "./sceneColor";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -35,7 +44,7 @@ const BREAK_ROOM: TileRect = { x: 13, y: 10, w: 5, h: 2 };
 
 export const VALLEY_MAP = buildSceneMap(GRID, BREAK_ROOM);
 
-const VALLEY_PALETTE = {
+const VALLEY_PALETTE_RAW = {
   grassA: 0x6faf57,
   grassB: 0x63a04d,
   grassDot: 0x86c46b,
@@ -82,10 +91,31 @@ const VALLEY_PALETTE = {
   smoke: 0xc3c7c9,
 };
 
+// 풀밭 잔무늬 죽이기 — 체커 두 톤과 풀포기 점을 풀 바탕으로 당긴다.
+// 개울·들꽃·침엽수(계곡을 계곡이게 하는 색)는 그대로.
+const VALLEY_QUIET: readonly QuietGroup<typeof VALLEY_PALETTE_RAW>[] = [
+  { base: "grassA", keys: ["grassB", "grassDot"], amount: 0.6 },
+];
+
+/** 캐릭터가 읽히도록 배경 잔무늬를 죽인 실사용 팔레트. */
+// 개울과 능선 너머 경치는 맵 밖 풍경이라 진해도 사람과 경쟁하지 않는다.
+const VALLEY_KEEP = [
+  {
+    keys: ["streamDeep", "streamMid", "streamFoam", "ridgeSky", "ridgeRock", "ridgeSnow"],
+    amount: 0.05,
+  },
+] as const;
+
+const VALLEY_PALETTE = desaturatePalette(
+  quietPalette(VALLEY_PALETTE_RAW, VALLEY_QUIET),
+  SCENE_CHROMA_CUT,
+  VALLEY_KEEP,
+);
+
 type ValleyPalette = typeof VALLEY_PALETTE;
 
 /** 레터박스(맵 밖) 배경 — 풀밭보다 어두운 숲 그늘색. */
-const VALLEY_BACKGROUND = 0x3f5a3c;
+const VALLEY_BACKGROUND = desaturateColor(0x3f5a3c, SCENE_CHROMA_CUT);
 
 /** 결정적 흩뿌리기(자갈/들꽃/나무 배치). 베이크된 정적 텍스처라 난수 금지. */
 const scatter = (tx: number, ty: number, mod: number): number => (tx * 97 + ty * 41) % mod;
@@ -96,10 +126,9 @@ function valleyTileDraw(pal: ValleyPalette): TileDrawFn {
     switch (t) {
       case Tile.Floor: {
         g.rect(0, 0, s, s).fill(grass);
-        g.rect(2, 4, 1, 2).fill(pal.grassDot); // 풀포기 1px
-        g.rect(s - 4, s - 6, 1, 2).fill(pal.grassDot);
+        g.rect(2, 4, 1, 2).fill(pal.grassDot); // 풀포기 1px — 칸마다 하나만
         // 해변과 같은 이유로 드물게 — 풀밭이 잡동사니로 보이지 않을 만큼만.
-        const k = scatter(tx, ty, 13);
+        const k = scatter(tx, ty, 19);
         if (k === 0) {
           // 자갈길 조각
           g.rect(4, 7, 3, 2).fill(pal.pebble);

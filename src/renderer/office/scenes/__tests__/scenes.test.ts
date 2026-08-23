@@ -16,7 +16,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Graphics } from "pixi.js";
 
 import { DEFAULT_SCENE_ID, SCENES, SCENE_ORDER, isSceneId, nextSceneId } from "../scenes";
-import { adaptColor, adaptPalette, sceneColorMode } from "../sceneColor";
+import {
+  adaptColor,
+  adaptPalette,
+  desaturateColor,
+  desaturatePalette,
+  quietPalette,
+  sceneColorMode,
+} from "../sceneColor";
 import { OFFICE_MAP, Tile } from "../../map/mapData";
 import { isWalkable } from "../../world/pathing";
 import { THEMES, THEME_ORDER } from "../../../theme/themes";
@@ -172,15 +179,15 @@ describe("SCENES 레지스트리 무결성", () => {
 });
 
 describe("sceneColor", () => {
-  it("테마 → 모드 매핑(밝은 테마는 원색, midnight은 황혼, pipboy는 초록)", () => {
-    expect(sceneColorMode("daylight")).toBe("identity");
-    expect(sceneColorMode("sakura")).toBe("identity");
+  it("테마 → 모드 매핑(밝은 테마는 한낮, midnight은 황혼, pipboy는 초록)", () => {
+    expect(sceneColorMode("daylight")).toBe("soft");
+    expect(sceneColorMode("sakura")).toBe("soft");
     expect(sceneColorMode("midnight")).toBe("dusk");
     expect(sceneColorMode("pipboy")).toBe("green");
   });
 
   it("결정적이다: 같은 입력이면 몇 번을 불러도 같은 값", () => {
-    for (const mode of ["identity", "dusk", "green"] as const) {
+    for (const mode of ["identity", "soft", "dusk", "green"] as const) {
       for (const c of [0x000000, 0x123456, 0xf2dfae, 0xffffff]) {
         expect(adaptColor(c, mode)).toBe(adaptColor(c, mode));
       }
@@ -188,7 +195,7 @@ describe("sceneColor", () => {
   });
 
   it("항상 유효한 0xRRGGBB를 낸다", () => {
-    for (const mode of ["identity", "dusk", "green"] as const) {
+    for (const mode of ["identity", "soft", "dusk", "green"] as const) {
       for (const c of [0x000000, 0x0f4670, 0xef6f6c, 0xffffff]) {
         const out = adaptColor(c, mode);
         expect(Number.isInteger(out)).toBe(true);
@@ -201,6 +208,30 @@ describe("sceneColor", () => {
   it("identity는 입력을 그대로 돌려준다", () => {
     expect(adaptColor(0x123456, "identity")).toBe(0x123456);
     expect(adaptColor(0xffffff, "identity")).toBe(0xffffff);
+  });
+
+  it("soft는 채도를 덜어 낸다(원색보다 회색에 가깝다)", () => {
+    const chroma = (c: number) => {
+      const [r, g, b] = [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
+      return Math.max(r, g, b) - Math.min(r, g, b);
+    };
+    for (const c of [0xef6f6c, 0x2a92c9, 0x0f4670, 0x6faf57]) {
+      expect(chroma(adaptColor(c, "soft"))).toBeLessThan(chroma(c));
+    }
+    // 무채색은 안개만 옅게 탈 뿐 색이 생기지 않는다.
+    expect(chroma(adaptColor(0x808080, "soft"))).toBeLessThanOrEqual(chroma(0xf7f1e4));
+  });
+
+  it("soft는 대비를 남긴다(어두운 색이 밝은 색보다 계속 어둡다)", () => {
+    const luma = (c: number) =>
+      0.299 * ((c >> 16) & 0xff) + 0.587 * ((c >> 8) & 0xff) + 0.114 * (c & 0xff);
+    const pairs: Array<[number, number]> = [
+      [0x0f4670, 0x2a92c9],
+      [0xd8bc86, 0xf2dfae],
+    ];
+    for (const [dark, light] of pairs) {
+      expect(luma(adaptColor(dark, "soft"))).toBeLessThan(luma(adaptColor(light, "soft")));
+    }
   });
 
   it("dusk는 어둡게 만든다(원색보다 휘도가 낮다)", () => {
@@ -220,10 +251,59 @@ describe("sceneColor", () => {
     }
   });
 
+  it("desaturateColor는 휘도를 지키면서 채도만 깎는다", () => {
+    const luma = (c: number) =>
+      0.299 * ((c >> 16) & 0xff) + 0.587 * ((c >> 8) & 0xff) + 0.114 * (c & 0xff);
+    const chroma = (c: number) => {
+      const [r, g, b] = [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
+      return Math.max(r, g, b) - Math.min(r, g, b);
+    };
+    for (const c of [0xd8531e, 0x2a92c9, 0x6faf57]) {
+      const out = desaturateColor(c, 0.5);
+      expect(chroma(out)).toBeLessThan(chroma(c));
+      expect(luma(out)).toBeCloseTo(luma(c), 0); // 밝기는 그대로
+    }
+    expect(chroma(desaturateColor(0xd8531e, 1))).toBe(0); // 완전한 회색
+    expect(desaturateColor(0x123456, 0)).toBe(0x123456);
+  });
+
+  it("desaturatePalette의 keep 목록은 더 약한 감쇠를 받는다", () => {
+    const chroma = (c: number) => {
+      const [r, g, b] = [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
+      return Math.max(r, g, b) - Math.min(r, g, b);
+    };
+    const pal = { rock: 0x8a5a3c, lava: 0xf05a1a };
+    const out = desaturatePalette(pal, 0.9, [{ keys: ["lava"], amount: 0.1 }]);
+    expect(chroma(out.lava)).toBeGreaterThan(chroma(out.rock));
+    expect(pal.lava).toBe(0xf05a1a); // 입력 불변
+  });
+
+  it("quietPalette는 지정한 키만 바탕색 쪽으로 당긴다", () => {
+    const pal = { base: 0x000000, mark: 0xffffff, keep: 0xff0000 };
+    const out = quietPalette(pal, [{ base: "base", keys: ["mark"], amount: 0.5 }]);
+    expect(out.mark).toBe(0x808080); // 절반만큼 바탕에 묻힘
+    expect(out.keep).toBe(0xff0000); // 목록에 없으면 그대로
+    expect(out.base).toBe(0x000000);
+    expect(pal.mark).toBe(0xffffff); // 입력 불변
+  });
+
+  it("quietPalette의 amount 1은 무늬를 바탕과 같은 색으로 지운다", () => {
+    const pal = { base: 0x123456, mark: 0xffffff };
+    expect(quietPalette(pal, [{ base: "base", keys: ["mark"], amount: 1 }]).mark).toBe(0x123456);
+    expect(quietPalette(pal, [{ base: "base", keys: ["mark"], amount: 0 }]).mark).toBe(0xffffff);
+  });
+
+  it("quietPalette는 그룹 순서에 영향받지 않는다(바탕은 항상 원본에서 읽는다)", () => {
+    const pal = { a: 0x000000, b: 0xffffff, c: 0x808080 };
+    const g1 = { base: "a" as const, keys: ["b" as const], amount: 0.5 };
+    const g2 = { base: "b" as const, keys: ["c" as const], amount: 0.5 };
+    expect(quietPalette(pal, [g1, g2])).toEqual(quietPalette(pal, [g2, g1]));
+  });
+
   it("adaptPalette는 원본을 변형하지 않고 새 객체를 만든다", () => {
     const pal = { a: 0x112233, b: 0xff8800 };
     const snapshot = { ...pal };
-    for (const mode of ["identity", "dusk", "green"] as const) {
+    for (const mode of ["identity", "soft", "dusk", "green"] as const) {
       const out = adaptPalette(pal, mode);
       expect(out).not.toBe(pal);
       expect(Object.keys(out).sort()).toEqual(Object.keys(pal).sort());

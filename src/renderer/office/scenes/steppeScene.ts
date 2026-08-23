@@ -12,7 +12,16 @@
 // 게르 하단 행을 따라 서쪽으로 뻗는다(방향은 `buildSceneMap`이 유도한다).
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
-import { adaptColor, adaptPalette, sceneColorMode } from "./sceneColor";
+import type { QuietGroup } from "./sceneColor";
+import {
+  SCENE_CHROMA_CUT,
+  adaptColor,
+  adaptPalette,
+  desaturateColor,
+  desaturatePalette,
+  quietPalette,
+  sceneColorMode,
+} from "./sceneColor";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -41,7 +50,7 @@ export const STEPPE_MAP = buildSceneMap(GRID, BREAK_ROOM);
 /** 하늘·먼 산이 차지하는 위쪽 Wall 줄 수 — 그 아래 Wall은 언덕 능선으로 그린다. */
 const SKY_ROWS = 2;
 
-const STEPPE_PALETTE = {
+const STEPPE_PALETTE_RAW = {
   grassA: 0x86a94e,
   grassB: 0x7a9c46,
   grassBlade: 0x9dc165,
@@ -109,10 +118,31 @@ const STEPPE_PALETTE = {
   gerShade: 0x6c7a44,
 };
 
+// 초원 잔무늬 죽이기 — 체커 두 톤과 바람결(풀날)을 풀 바탕으로 당긴다.
+// 야생화·게르·설산은 초원의 특징이라 손대지 않는다.
+const STEPPE_QUIET: readonly QuietGroup<typeof STEPPE_PALETTE_RAW>[] = [
+  { base: "grassA", keys: ["grassB", "grassBlade"], amount: 0.62 },
+];
+
+/** 캐릭터가 읽히도록 배경 잔무늬를 죽인 실사용 팔레트. */
+// 지평선 너머 하늘·구름·설산.
+const STEPPE_KEEP = [
+  {
+    keys: ["skyHigh", "skyLow", "cloud", "cloudShade", "mountainFar", "mountainSnow"],
+    amount: 0.1,
+  },
+] as const;
+
+const STEPPE_PALETTE = desaturatePalette(
+  quietPalette(STEPPE_PALETTE_RAW, STEPPE_QUIET),
+  SCENE_CHROMA_CUT,
+  STEPPE_KEEP,
+);
+
 type SteppePalette = typeof STEPPE_PALETTE;
 
 /** 레터박스(맵 밖) 배경 — 풀밭보다 한 단계 어두운 초원 그늘색. */
-const STEPPE_BACKGROUND = 0x4e6b3c;
+const STEPPE_BACKGROUND = desaturateColor(0x4e6b3c, SCENE_CHROMA_CUT);
 
 /** 결정적 흩뿌리기(풀포기/야생화/구름/봉우리 높이). 베이크된 정적 텍스처라
  * 난수를 쓰면 재베이크마다 무늬가 바뀐다 — 해변/계곡과 같은 이유. */
@@ -124,13 +154,12 @@ function steppeTileDraw(pal: SteppePalette): TileDrawFn {
     switch (t) {
       case Tile.Floor: {
         g.rect(0, 0, s, s).fill(grass);
-        // 바람에 한쪽으로 눕는 풀결(1px 두 갈래) — 오피스 바닥 코너 도트 자리.
+        // 바람에 한쪽으로 눕는 풀결 — 한 갈래만. 두 갈래를 칸마다 찍으면
+        // 초원 전체가 잔털로 뒤덮여 캐릭터가 파묻힌다.
         g.rect(3, 4, 1, 3).fill(pal.grassBlade);
         g.rect(4, 6, 1, 2).fill(pal.grassBlade);
-        g.rect(s - 5, s - 8, 1, 3).fill(pal.grassBlade);
-        g.rect(s - 6, s - 5, 1, 2).fill(pal.grassBlade);
         // 장식은 드물게 — 촘촘하면 초원이 아니라 화단으로 보인다.
-        const k = scatter(tx, ty, 11);
+        const k = scatter(tx, ty, 17);
         if (k === 0) {
           // 노란 야생화 두 송이
           g.rect(5, 10, 1, 3).fill(pal.stemGreen);

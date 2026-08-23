@@ -15,7 +15,16 @@ import type { Graphics } from "pixi.js";
 
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
-import { adaptColor, adaptPalette, sceneColorMode } from "./sceneColor";
+import type { QuietGroup } from "./sceneColor";
+import {
+  SCENE_CHROMA_CUT,
+  adaptColor,
+  adaptPalette,
+  desaturateColor,
+  desaturatePalette,
+  quietPalette,
+  sceneColorMode,
+} from "./sceneColor";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -40,7 +49,7 @@ const BREAK_ROOM: TileRect = { x: 2, y: 10, w: 5, h: 2 };
 
 export const FACTORY_MAP = buildSceneMap(GRID, BREAK_ROOM);
 
-const FACTORY_PALETTE = {
+const FACTORY_PALETTE_RAW = {
   concreteA: 0x9a9a94,
   concreteB: 0x93938c,
   concreteSeam: 0x7f7f78,
@@ -92,10 +101,31 @@ const FACTORY_PALETTE = {
   beacon: 0xf2803a,
 };
 
+// 작업장 잔무늬 죽이기 — 슬래브 체커·이음매·균열·기름때·볼트를 콘크리트
+// 바탕으로, 벽돌 격자를 벽돌 바탕으로 당긴다. 위험 스트라이프·드럼통·비상등
+// (공장을 공장이게 하는 색)은 그대로.
+const FACTORY_QUIET: readonly QuietGroup<typeof FACTORY_PALETTE_RAW>[] = [
+  {
+    base: "concreteA",
+    keys: ["concreteB", "concreteSeam", "crack", "oilStain", "bolt"],
+    amount: 0.58,
+  },
+  { base: "brick", keys: ["brickDark", "brickHi", "mortar"], amount: 0.45 },
+  // 노랑-검정 빗금은 공장의 특징이라 없애지 않되, 라운지 두 줄을 통째로 덮는
+  // 최대 대비 무늬라 그대로 두면 그 위의 캐릭터가 빗금에 썰려 보인다.
+  { base: "hazardYellow", keys: ["hazardDark", "hazardEdge"], amount: 0.5 },
+];
+
+/** 캐릭터가 읽히도록 배경 잔무늬를 죽인 실사용 팔레트. */
+const FACTORY_PALETTE = desaturatePalette(
+  quietPalette(FACTORY_PALETTE_RAW, FACTORY_QUIET),
+  SCENE_CHROMA_CUT,
+);
+
 type FactoryPalette = typeof FACTORY_PALETTE;
 
 /** 레터박스(맵 밖) 배경 — 바닥보다 어두운 공장 그늘색. */
-const FACTORY_BACKGROUND = 0x4a4a46;
+const FACTORY_BACKGROUND = desaturateColor(0x4a4a46, SCENE_CHROMA_CUT);
 
 /** 결정적 흩뿌리기(균열/기름 얼룩/볼트 자국/벽 설비). 베이크된 정적 텍스처라
  * 난수를 쓰면 재베이크마다 무늬가 바뀐다 — 해변·계곡과 같은 이유. */
@@ -143,7 +173,7 @@ function factoryTileDraw(pal: FactoryPalette): TileDrawFn {
         g.rect(0, s - 1, s, 1).fill(pal.concreteSeam);
         g.rect(s - 1, 0, 1, s).fill(pal.concreteSeam);
         // 장식은 드물게 — 촘촘하면 작업장이 아니라 폐허로 보인다.
-        const k = scatter(tx, ty, 11);
+        const k = scatter(tx, ty, 19);
         if (k === 0) {
           // 균열: 1px 계단
           g.rect(3, 4, 3, 1).fill(pal.crack);

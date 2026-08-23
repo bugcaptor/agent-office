@@ -16,7 +16,16 @@
 // 기지 한가운데, 매트 라운지와 드럼통 모닥불은 아래쪽, 보급소는 우측 하단이다.
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
-import { adaptColor, adaptPalette, sceneColorMode } from "./sceneColor";
+import type { QuietGroup } from "./sceneColor";
+import {
+  SCENE_CHROMA_CUT,
+  adaptColor,
+  adaptPalette,
+  desaturateColor,
+  desaturatePalette,
+  quietPalette,
+  sceneColorMode,
+} from "./sceneColor";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -41,7 +50,7 @@ const BREAK_ROOM: TileRect = { x: 8, y: 10, w: 4, h: 2 };
 
 export const ZOMBIE_MAP = buildSceneMap(GRID, BREAK_ROOM);
 
-const ZOMBIE_PALETTE = {
+const ZOMBIE_PALETTE_RAW = {
   asphaltA: 0x5c584f,
   asphaltB: 0x545045,
   crack: 0x3b3830,
@@ -105,10 +114,30 @@ const ZOMBIE_PALETTE = {
   towerDark: 0x2b2419,
 };
 
+// 폐허 노면 잔무늬 죽이기 — 아스팔트 체커와 금 간 자국을 노면 바탕으로 당긴다.
+// 잡초·모닥불·판자벽(폐허를 폐허이게 하는 색)은 그대로.
+const ZOMBIE_QUIET: readonly QuietGroup<typeof ZOMBIE_PALETTE_RAW>[] = [
+  { base: "asphaltA", keys: ["asphaltB", "crack"], amount: 0.6 },
+  { base: "mat", keys: ["matStripe", "matEdge", "matPatch"], amount: 0.5 },
+];
+
+/** 캐릭터가 읽히도록 배경 잔무늬를 죽인 실사용 팔레트. */
+// 모닥불·랜턴만 색을 남긴다(폐허에서 유일하게 살아 있는 빛).
+const ZOMBIE_FIRE = {
+  keys: ["flame", "flameCore", "ember", "lanternGlow"],
+  amount: 0.2,
+} as const;
+
+const ZOMBIE_PALETTE = desaturatePalette(
+  quietPalette(ZOMBIE_PALETTE_RAW, ZOMBIE_QUIET),
+  SCENE_CHROMA_CUT,
+  [ZOMBIE_FIRE],
+);
+
 type ZombiePalette = typeof ZOMBIE_PALETTE;
 
 /** 레터박스(맵 밖) 배경 — 아스팔트보다 한 단계 어두운 잿빛 그늘. */
-const ZOMBIE_BACKGROUND = 0x3c3a34;
+const ZOMBIE_BACKGROUND = desaturateColor(0x3c3a34, SCENE_CHROMA_CUT);
 
 /** 결정적 흩뿌리기(균열/잡초/낙엽/폐타이어 배치). 베이크된 정적 텍스처라
  * 난수·시각(Date.now)을 쓰면 재베이크마다 무늬가 바뀐다. */
@@ -120,13 +149,12 @@ function zombieTileDraw(pal: ZombiePalette): TileDrawFn {
     switch (t) {
       case Tile.Floor: {
         g.rect(0, 0, s, s).fill(ground);
-        // 금 간 자국 — 칸마다 어긋나게 밀어 격자로 읽히지 않게 한다.
+        // 금 간 자국 — 칸마다 어긋나게 밀어 격자로 읽히지 않게 한다. 세 갈래를
+        // 다 그으면 노면이 온통 금이라 캐릭터의 윤곽과 경쟁한다: 가로 한 줄만.
         const c = scatter(tx, ty, 4);
         g.rect(3 + c, 5, 6, 1).fill(pal.crack);
-        g.rect(8 + c, 6, 1, 3).fill(pal.crack);
-        g.rect(s - 5, s - 4, 3, 1).fill(pal.crack);
         // 장식은 해변·계곡과 같은 이유로 드물게 — 촘촘하면 폐허가 아니라 쓰레기장이 된다.
-        const k = scatter(tx, ty, 15);
+        const k = scatter(tx, ty, 23);
         if (k === 0) {
           // 갈라진 틈에서 올라온 잡초
           g.rect(3, 13, 7, 1).fill(pal.crack);

@@ -16,7 +16,16 @@
 // sceneColor.ts가 자동 변환한다.
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
-import { adaptColor, adaptPalette, sceneColorMode } from "./sceneColor";
+import type { QuietGroup } from "./sceneColor";
+import {
+  SCENE_CHROMA_CUT,
+  adaptColor,
+  adaptPalette,
+  desaturateColor,
+  desaturatePalette,
+  quietPalette,
+  sceneColorMode,
+} from "./sceneColor";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -46,7 +55,7 @@ export const VOLCANO_MAP = buildSceneMap(GRID, BREAK_ROOM);
 /** 용암 호수가 차지하는 행 수 — 이 위(포함)의 Wall은 호수로, 아래는 암벽으로 그린다. */
 const LAVA_ROWS = 2;
 
-const VOLCANO_PALETTE = {
+const VOLCANO_PALETTE_RAW = {
   basaltA: 0x2f2a2c,
   basaltB: 0x37312f,
   basaltSeam: 0x1f1a1b,
@@ -89,10 +98,44 @@ const VOLCANO_PALETTE = {
   throneCore: 0xffd06a,
 };
 
+// 화산지대 잔무늬 죽이기 — 현무암 체커·잔금·화산재를 암반 바탕으로 당긴다.
+// 용암·발광 균열·화로(화산을 화산이게 하는 불빛)는 절대 건드리지 않는다 —
+// 어두운 바닥이 조용해질수록 그 빛이 오히려 또렷해진다.
+const VOLCANO_QUIET: readonly QuietGroup<typeof VOLCANO_PALETTE_RAW>[] = [
+  { base: "basaltA", keys: ["basaltB", "basaltSeam", "ash", "ashHi"], amount: 0.55 },
+  { base: "obsidian", keys: ["obsidianEdge", "obsidianHi"], amount: 0.5 },
+];
+
+/** 캐릭터가 읽히도록 배경 잔무늬를 죽인 실사용 팔레트. */
+// 불빛만은 색을 남긴다 — 화산에서 주황은 장식이 아니라 "여기가 뜨겁다"는
+// 정보다. 회색으로 만들면 용암이 그냥 갈색 진흙이 된다.
+const VOLCANO_FIRE = {
+  keys: [
+    "crack",
+    "crackHot",
+    "lavaDeep",
+    "lavaMid",
+    "lavaHot",
+    "forgeGlow",
+    "forgeCore",
+    "barGlow",
+    "throneLava",
+    "throneCore",
+    "bloom",
+  ],
+  amount: 0.2,
+} as const;
+
+const VOLCANO_PALETTE = desaturatePalette(
+  quietPalette(VOLCANO_PALETTE_RAW, VOLCANO_QUIET),
+  SCENE_CHROMA_CUT,
+  [VOLCANO_FIRE],
+);
+
 type VolcanoPalette = typeof VOLCANO_PALETTE;
 
 /** 레터박스(맵 밖) 배경 — 재가 내려앉은 하늘. 현무암보다 한 단계 어둡다. */
-const VOLCANO_BACKGROUND = 0x1b1517;
+const VOLCANO_BACKGROUND = desaturateColor(0x1b1517, SCENE_CHROMA_CUT);
 
 /** 타일 좌표에서 나오는 결정적 해시 — 균열 발광/화산재/기포를 흩뿌리는 데 쓴다.
  * (베이크된 정적 텍스처라 난수를 쓰면 재베이크마다 무늬가 바뀐다.) */
@@ -104,11 +147,11 @@ function volcanoTileDraw(pal: VolcanoPalette): TileDrawFn {
     switch (t) {
       case Tile.Floor: {
         g.rect(0, 0, s, s).fill(basalt);
-        // 굳은 용암의 잔금(1px) — 오피스 바닥의 코너 도트 자리.
+        // 굳은 용암의 잔금 — 칸마다 하나만. 두 갈래를 다 그으면 바닥이
+        // 술렁여서 그 위를 걷는 캐릭터가 묻힌다.
         g.rect(2, 4, 4, 1).fill(pal.basaltSeam);
-        g.rect(s - 7, s - 5, 5, 1).fill(pal.basaltSeam);
         // 장식은 드물게 — 촘촘하면 화산지대가 아니라 불꽃놀이가 된다.
-        const k = scatter(tx, ty, 19);
+        const k = scatter(tx, ty, 29);
         if (k === 0) {
           // 발광 균열: 갈라진 틈 사이로 마그마가 비친다
           g.rect(2, 9, 6, 1).fill(pal.crack);

@@ -16,7 +16,15 @@
 // sceneColor.ts가 자동 변환한다.
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
-import { adaptColor, adaptPalette, sceneColorMode } from "./sceneColor";
+import type { QuietGroup } from "./sceneColor";
+import {
+  adaptColor,
+  adaptPalette,
+  desaturateColor,
+  desaturatePalette,
+  quietPalette,
+  sceneColorMode,
+} from "./sceneColor";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 // 위 2줄은 뷰포트(창밖 우주), ty4/ty7이 좌석 행, ty5/ty8이 콘솔 스테이션
@@ -59,12 +67,13 @@ const PLANET_R = 13;
 // 왼쪽 칸이 오른쪽 절반을, 오른쪽 칸이 왼쪽 절반을 그리면 구 하나가 된다.
 const HOLO_SPHERE = [2, 3, 4, 4, 4, 4, 3, 2] as const;
 
-const SPACESHIP_PALETTE = {
+const SPACESHIP_PALETTE_RAW = {
   deckA: 0x5a6472,
   deckB: 0x515b69,
   deckSeam: 0x3d4552,
   deckStain: 0x454e5b,
   rivet: 0x7d8797,
+  deckRivet: 0x7d8797, // 바닥 전용 사본(quietPalette가 데크에 묻힌다)
   hatch: 0x6e7887,
   guideLamp: 0x4fd8d0,
   spaceVoid: 0x0a0f1e,
@@ -82,14 +91,16 @@ const SPACESHIP_PALETTE = {
   bulkheadShade: 0x333b46,
   warnStripe: 0xe0b23c,
   warnDark: 0x2c333d,
-  holoPad: 0x123241,
+  holoPad: 0x474d54, // 라운지 바닥: 데크보다 한 단계 어두운 정도까지만(예전 남색 유리판은 검은 구덩이로 보였다)
   holoGrid: 0x2f8fa0,
   holoGlow: 0x7ff0e4,
   consoleBody: 0x4a5464,
   consoleTop: 0x6a7484,
   consoleShade: 0x2f3743,
-  screen: 0x0f2c3a,
-  screenGlow: 0x5fe0c8,
+  // 터미널 화면: 청록 배경 + 시안 글자는 좌석마다 여덟 번 반복돼 화면 전체에서
+  // 가장 눈에 띄는 색 덩어리가 된다. 무채색 저대비로 낮춰 콘솔이 배경으로 물러난다.
+  screen: 0x23262a,
+  screenGlow: 0x7b8085,
   btnRed: 0xe0563f,
   btnGreen: 0x62d06a,
   btnAmber: 0xe6b23f,
@@ -105,21 +116,48 @@ const SPACESHIP_PALETTE = {
   rackShade: 0x2b323c,
   crate: 0xa8763f,
   crateHi: 0xc9974f,
-  counterBody: 0x59636f,
-  counterTop: 0x818c99,
-  counterShade: 0x363e49,
-  tray: 0xd6dce4,
-  dispenser: 0x9aa4b2,
+  // 보급·급식 카운터(탕비실): 푸른 기 없는 어두운 회색 설비.
+  counterBody: 0x4b4e51,
+  counterTop: 0x63676a,
+  counterShade: 0x2f3133,
+  tray: 0x8f9294,
+  dispenser: 0x777a7d,
   captainSeat: 0x3a4250,
   captainSeatHi: 0x59647a,
   captainRail: 0x7d8797,
-  captainScreen: 0x0e2f42,
+  captainScreen: 0x23262a, // 함장석 콘솔도 같은 무채색 화면
 };
+
+// 데크 잔무늬 죽이기 — 패널 체커·이음선·리벳·얼룩을 데크 바탕으로 당긴다.
+// 홀로그램·발광 램프·스크린(우주선을 우주선이게 하는 빛)은 그대로 둔다.
+// deckRivet은 바닥 전용 사본이다 — 같은 은색이라도 가구(해치·함장석 레일)의
+// 리벳은 또렷해야 하고 바닥의 리벳만 묻혀야 한다.
+/**
+ * 우주선만 특별히 센 채도 감쇠 — 사실상 흑백 함선.
+ *
+ * 강철 회색 바탕에 청록 발광이 얹힌 팔레트라 색을 조금만 남겨도 그 청록이
+ * 화면에서 유일한 유채색이 되어 시선을 독점한다. 색을 거의 다 빼면 남는 것은
+ * 명암뿐이고, 그 위를 걷는 캐릭터가 화면에서 유일하게 색을 가진 존재가 된다.
+ */
+const SPACESHIP_CHROMA_CUT = 0.92;
+
+const SPACESHIP_QUIET: readonly QuietGroup<typeof SPACESHIP_PALETTE_RAW>[] = [
+  { base: "deckA", keys: ["deckB", "deckSeam", "deckStain", "deckRivet"], amount: 0.62 },
+  // 홀로 패드는 캐릭터가 모여 앉는 자리다 — 격자는 지우고 발광점만 남긴다.
+  { base: "holoPad", keys: ["holoGrid"], amount: 0.5 },
+  { base: "holoPad", keys: ["holoGlow"], amount: 0.3 },
+];
+
+/** 캐릭터가 읽히도록 배경 잔무늬를 죽인 실사용 팔레트. */
+const SPACESHIP_PALETTE = desaturatePalette(
+  quietPalette(SPACESHIP_PALETTE_RAW, SPACESHIP_QUIET),
+  SPACESHIP_CHROMA_CUT,
+);
 
 type SpaceshipPalette = typeof SPACESHIP_PALETTE;
 
 /** 레터박스(맵 밖) 배경 — 데크보다 어두운 선체 그늘색. */
-const SPACESHIP_BACKGROUND = 0x141a24;
+const SPACESHIP_BACKGROUND = desaturateColor(0x141a24, SPACESHIP_CHROMA_CUT);
 
 /** 결정적 흩뿌리기(별·패널 얼룩·경고 스트라이프). 베이크된 정적 텍스처라
  * 난수를 쓰면 재베이크마다 무늬가 바뀐다 — 해변/계곡과 같은 이유, 계수만 다르다. */
@@ -136,12 +174,12 @@ function spaceshipTileDraw(pal: SpaceshipPalette): TileDrawFn {
         // 패널 이음선(위·왼쪽 1px) + 네 귀퉁이 리벳
         g.rect(0, 0, s, 1).fill(pal.deckSeam);
         g.rect(0, 0, 1, s).fill(pal.deckSeam);
-        g.rect(2, 2, 1, 1).fill(pal.rivet);
-        g.rect(s - 3, 2, 1, 1).fill(pal.rivet);
-        g.rect(2, s - 3, 1, 1).fill(pal.rivet);
-        g.rect(s - 3, s - 3, 1, 1).fill(pal.rivet);
+        // 리벳은 대각으로 둘만 — 네 귀퉁이를 다 찍으면 칸마다 사각 점무늬가
+        // 생겨 바닥 전체가 격자로 진동한다.
+        g.rect(2, 2, 1, 1).fill(pal.deckRivet);
+        g.rect(s - 3, s - 3, 1, 1).fill(pal.deckRivet);
         // 장식은 드물게 — 촘촘하면 격납고가 아니라 고물상으로 보인다.
-        const k = scatter(tx, ty, 17);
+        const k = scatter(tx, ty, 29);
         if (k === 0) {
           // 점검 해치: 볼트 링 두른 사각 뚜껑
           g.rect(4, 5, 8, 7).fill(pal.hatch);

@@ -16,7 +16,16 @@
 // sceneColor.ts가 자동 변환한다.
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
-import { adaptColor, adaptPalette, sceneColorMode } from "./sceneColor";
+import type { QuietGroup } from "./sceneColor";
+import {
+  SCENE_CHROMA_CUT,
+  adaptColor,
+  adaptPalette,
+  desaturateColor,
+  desaturatePalette,
+  quietPalette,
+  sceneColorMode,
+} from "./sceneColor";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 // 작업대는 ty3(4쌍)·ty10(4쌍) = 좌석 8개로 오피스와 같다. 두 줄의 열 위상을
@@ -47,7 +56,7 @@ export const CRUISE_MAP = buildSceneMap(GRID, BREAK_ROOM);
 /** 바다가 보이는 행 — 이 위(포함)는 Wall을 바다·난간으로, 아래는 선체 벽으로 그린다. */
 const SEA_ROWS = 2;
 
-const CRUISE_PALETTE = {
+const CRUISE_PALETTE_RAW = {
   teakA: 0xc9a06a,
   teakB: 0xbe9460,
   teakSeam: 0x8f6a3c,
@@ -101,10 +110,31 @@ const CRUISE_PALETTE = {
   helmHi: 0xc08a52,
 };
 
+// 티크 갑판 잔무늬 죽이기 — 널 두 톤·코킹·옹이를 갑판 바탕으로 당긴다.
+// 바다·수영장·차양(크루즈를 크루즈이게 하는 색)은 그대로.
+const CRUISE_QUIET: readonly QuietGroup<typeof CRUISE_PALETTE_RAW>[] = [
+  { base: "teakA", keys: ["teakB", "teakSeam", "teakKnot"], amount: 0.6 },
+  // 수면의 물결·그늘만 죽인다. 흰 타일 코핑(poolTile/poolLine)은 풀의 윤곽을
+  // 그리는 구조라 남긴다.
+  { base: "poolWater", keys: ["poolFoam", "poolDeep"], amount: 0.45 },
+];
+
+/** 캐릭터가 읽히도록 배경 잔무늬를 죽인 실사용 팔레트. */
+// 난간 너머 바다와 하늘 — 해변과 같은 이유로 진하게 남긴다.
+const CRUISE_KEEP = [
+  { keys: ["seaDeep", "seaHorizon", "seaMid", "seaFoam", "skyA", "skyHi"], amount: 0.05 },
+] as const;
+
+const CRUISE_PALETTE = desaturatePalette(
+  quietPalette(CRUISE_PALETTE_RAW, CRUISE_QUIET),
+  SCENE_CHROMA_CUT,
+  CRUISE_KEEP,
+);
+
 type CruisePalette = typeof CRUISE_PALETTE;
 
 /** 레터박스(맵 밖) 배경 — 갑판보다 훨씬 어두운 먼바다 남색. */
-const CRUISE_BACKGROUND = 0x0d3352;
+const CRUISE_BACKGROUND = desaturateColor(0x0d3352, SCENE_CHROMA_CUT);
 
 /** 타일 좌표에서 나오는 결정적 해시 — 갑판 옹이/물결 하이라이트를 흩뿌리는 데
  * 쓴다. (베이크된 정적 텍스처라 난수를 쓰면 재베이크마다 무늬가 바뀐다.) */
@@ -113,21 +143,21 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 53 + ty *
 function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
   /** 티크 갑판 바닥 — 가구 타일도 바닥 베이크에서 빠지므로 스스로 이걸 깐다.
    * 널빤지 이음선 위상은 tx와 무관하게 고정해 칸 경계를 넘어 결이 이어진다. */
-  const deck = (g: Parameters<TileDrawFn>[0], tx: number, ty: number, s: number): void => {
+  const deck = (g: Parameters<TileDrawFn>[0], s: number): void => {
     g.rect(0, 0, s, s).fill(pal.teakA);
     g.rect(5, 0, 5, s).fill(pal.teakB); // 널 하나만 톤을 살짝 달리해 결이 보이게
     g.rect(4, 0, 1, s).fill(pal.teakSeam); // 코킹(이음선)
     g.rect(10, 0, 1, s).fill(pal.teakSeam);
     g.rect(15, 0, 1, s).fill(pal.teakSeam);
-    g.rect(0, 3 + scatter(tx, ty, 9), 4, 1).fill(pal.teakSeam); // 널 이음(버트 조인트)
+    // 버트 조인트는 뺐다 — 칸마다 위치가 달라 갑판에 잡음처럼 흩뿌려진다.
   };
 
   return (g, { t, tx, ty, s, map }) => {
     switch (t) {
       case Tile.Floor: {
-        deck(g, tx, ty, s);
+        deck(g, s);
         // 장식은 드물게 — 촘촘하면 잘 닦인 갑판이 아니라 잡동사니로 보인다.
-        const k = scatter(tx, ty, 13);
+        const k = scatter(tx, ty, 23);
         if (k === 0) {
           // 옹이: 가운데가 짙은 타원
           g.rect(6, 7, 3, 2).fill(pal.teakKnot);
@@ -215,7 +245,7 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
       }
       case Tile.DeskTop: {
         const isLeft = map.tiles[ty][tx - 1] !== Tile.DeskTop;
-        deck(g, tx, ty, s);
+        deck(g, s);
         // 차양(어닝): 4px 줄무늬. 줄 위상을 tx로 이어 붙여 2칸짜리 쌍이 하나의
         // 차양으로 읽히게 한다(칸 단위로 통짜 색을 칠하면 청백 블록처럼 보인다).
         g.rect(0, 0, s, 4).fill(pal.awningB);
@@ -248,7 +278,7 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
         break;
       }
       case Tile.Plant: {
-        deck(g, tx, ty, s);
+        deck(g, s);
         // 테라코타 화분에 심은 야자. 열 기준으로 잎 방향을 번갈아 — 이 맵의
         // 화분 세 자리가 전부 같은 모습이 되지 않게(합 기준이면 뭉친다).
         g.rect(3, 10, 10, 2).fill(pal.potTerra); // 화분 테두리
@@ -272,7 +302,7 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
       case Tile.Counter: {
         // 칵테일 바: 마호가니 카운터 + 백바 선반 + 황동 풋레일.
         // 이 맵의 Counter는 세로로 쌓이므로(현측 두 칸) ty 기준으로 번갈아 꾸민다.
-        deck(g, tx, ty, s);
+        deck(g, s);
         g.rect(0, 1, s, 4).fill(pal.barWood); // 백바 선반
         g.rect(0, 4, s, 1).fill(pal.barTopHi);
         if (ty % 2 === 0) {
@@ -309,7 +339,7 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
       }
       case Tile.Table: {
         // 풀사이드 라운드 테이블: 흰 리넨을 덮은 원형 상판 + 황동 외다리.
-        deck(g, tx, ty, s);
+        deck(g, s);
         g.rect(6, 1, 4, 2).fill(pal.glass); // 상판 위 음료
         g.rect(7, 3, 2, 1).fill(pal.champagne);
         g.rect(4, 4, 8, 1).fill(pal.cloth); // 원형 실루엣(계단식 4단)
@@ -326,7 +356,7 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
         // 선장 브리지(세로 1×2): 위 칸이 레이더 마스트·파노라마 창,
         // 아래 칸이 조타륜이 보이는 선교 정면.
         const isLower = map.tiles[ty - 1]?.[tx] === Tile.BossDesk;
-        deck(g, tx, ty, s);
+        deck(g, s);
         if (!isLower) {
           g.rect(7, 0, 2, 4).fill(pal.mast); // 마스트
           g.rect(3, 1, 10, 1).fill(pal.mast); // 회전 레이더 바

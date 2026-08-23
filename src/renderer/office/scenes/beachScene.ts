@@ -10,7 +10,16 @@
 // sceneColor.ts가 자동 변환한다.
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
-import { adaptColor, adaptPalette, sceneColorMode } from "./sceneColor";
+import type { QuietGroup } from "./sceneColor";
+import {
+  SCENE_CHROMA_CUT,
+  adaptColor,
+  adaptPalette,
+  desaturateColor,
+  desaturatePalette,
+  quietPalette,
+  sceneColorMode,
+} from "./sceneColor";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 // 위 2줄은 바다(수평선+파도), ty2/ty5는 좌석 행, ty3/ty6은 파라솔 작업대
@@ -41,7 +50,7 @@ export const BEACH_MAP = buildSceneMap(GRID, BREAK_ROOM);
 /** 바다가 시작되는 행 — 이 위(포함)는 Wall을 바다로, 아래는 모래언덕으로 그린다. */
 const SEA_ROWS = 2;
 
-const BEACH_PALETTE = {
+const BEACH_PALETTE_RAW = {
   sandA: 0xf2dfae,
   sandB: 0xe9d19e,
   sandDot: 0xd8bc86,
@@ -68,11 +77,14 @@ const BEACH_PALETTE = {
   palmFrond: 0x3f9e5e,
   palmFrondHi: 0x5cbf78,
   coconut: 0x6b4526,
-  tikiThatch: 0xd9a441,
-  tikiThatchHi: 0xefc86a,
-  tikiWood: 0x9c6236,
-  tikiTop: 0xf1d9a0,
-  tikiDeco: 0x3fb0a5,
+  // 티키 바(탕비실): 황금 짚 + 갈색 통나무는 모래 위에서 유일하게 짙은
+  // 덩어리라 시선을 끌어당겼다. 모래와 같은 계열의 흰색으로 올려 모래보다
+  // 밝은 쪽으로 분리한다(어둡게가 아니라 밝게 떨어뜨린다).
+  tikiThatch: 0xf5eeda,
+  tikiThatchHi: 0xfdfaf0,
+  tikiWood: 0xdad0bb,
+  tikiTop: 0xfbf6ea,
+  tikiDeco: 0xc9bfa9,
   tableWood: 0xc98f57,
   tableTop: 0xe8be86,
   towerWood: 0xe0b070,
@@ -81,10 +93,30 @@ const BEACH_PALETTE = {
   towerWindow: 0x2f4a63,
 };
 
+// 모래사장 잔무늬 죽이기 — 체커 두 톤과 잔물결 자국을 모래 바탕으로 당긴다.
+// 바다·타월·파라솔(해변을 해변이게 하는 색)은 그대로 둔다.
+const BEACH_QUIET: readonly QuietGroup<typeof BEACH_PALETTE_RAW>[] = [
+  { base: "sandA", keys: ["sandB", "sandDot"], amount: 0.6 },
+];
+
+/** 캐릭터가 읽히도록 배경 잔무늬를 죽인 실사용 팔레트. */
+// 바다는 맵 밖 경치다 — 캐릭터가 밟는 무대가 아니라 그 너머라 진해도 된다.
+// 파라솔 천막은 무대 안이지만 해변의 표식이라 절반만 깎아 붉은 기를 남긴다.
+const BEACH_KEEP = [
+  { keys: ["seaDeep", "seaHorizon", "seaMid", "seaFoam"], amount: 0.05 },
+  { keys: ["canopyA", "canopyB"], amount: 0.3 },
+] as const;
+
+const BEACH_PALETTE = desaturatePalette(
+  quietPalette(BEACH_PALETTE_RAW, BEACH_QUIET),
+  SCENE_CHROMA_CUT,
+  BEACH_KEEP,
+);
+
 type BeachPalette = typeof BEACH_PALETTE;
 
 /** 레터박스(맵 밖) 배경 — 모래보다 한 단계 어둡게 해 맵이 떠 보이게 한다. */
-const BEACH_BACKGROUND = 0xc9ae83;
+const BEACH_BACKGROUND = desaturateColor(0xc9ae83, SCENE_CHROMA_CUT);
 
 /** 타일 좌표에서 나오는 결정적 해시 — 조개/불가사리/풀포기를 흩뿌리는 데 쓴다.
  * (베이크된 정적 텍스처라 난수를 쓰면 재베이크마다 무늬가 바뀐다.) */
@@ -97,10 +129,9 @@ function beachTileDraw(pal: BeachPalette): TileDrawFn {
       case Tile.Floor: {
         g.rect(0, 0, s, s).fill(sand);
         // 잔물결 자국(1px) — 오피스 바닥의 코너 도트 자리.
-        g.rect(2, 3, 3, 1).fill(pal.sandDot);
-        g.rect(s - 6, s - 5, 4, 1).fill(pal.sandDot);
+        g.rect(2, 3, 3, 1).fill(pal.sandDot); // 칸마다 하나만
         // 장식은 드물게 — 촘촘하면 모래사장이 아니라 잡동사니로 보인다.
-        const k = scatter(tx, ty, 17);
+        const k = scatter(tx, ty, 23);
         if (k === 0) {
           // 조개: 부채꼴 두 줄
           g.rect(6, 8, 4, 1).fill(pal.shell);
