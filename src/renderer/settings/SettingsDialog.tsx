@@ -17,6 +17,7 @@ import { TalkSection } from "./TalkSection";
 import { ModelPicker } from "./ModelPicker";
 import { previewVoice } from "../sound/soundManager";
 import { THEMES, THEME_ORDER } from "../theme/themes";
+import { XTERM_PALETTES, XTERM_PALETTE_ORDER } from "../terminal/palettes";
 import type { XtermThemeOverride } from "../terminal/theme";
 import type {
   ControlStatus,
@@ -595,8 +596,8 @@ function TerminalThemeItem() {
       <span>
         <strong>터미널 색상</strong>
         <small>
-          터미널 창 색만 별도 테마로 고정합니다. 기본값(테마 따름)이면 앱 테마를
-          바꿀 때 터미널도 함께 바뀝니다.
+          터미널 창 색만 별도 팔레트로 고정합니다. 기본값(테마 따름)이면 앱
+          테마를 바꿀 때 터미널도 함께 바뀝니다.
         </small>
       </span>
       <select
@@ -604,11 +605,21 @@ function TerminalThemeItem() {
         onChange={(e) => setXtermTheme(e.target.value as XtermThemeOverride)}
       >
         <option value="auto">테마 따름 (기본)</option>
-        {THEME_ORDER.map((id) => (
-          <option key={id} value={id}>
-            {THEMES[id].label}
-          </option>
-        ))}
+        <optgroup label="앱 테마 팔레트">
+          {THEME_ORDER.map((id) => (
+            <option key={id} value={id}>
+              {THEMES[id].label}
+            </option>
+          ))}
+        </optgroup>
+        {/* 앱 테마와 짝이 없는, 터미널에만 적용되는 팔레트(terminal/palettes.ts). */}
+        <optgroup label="터미널 전용 팔레트">
+          {XTERM_PALETTE_ORDER.map((id) => (
+            <option key={id} value={id}>
+              {XTERM_PALETTES[id].label}
+            </option>
+          ))}
+        </optgroup>
       </select>
     </label>
   );

@@ -5,6 +5,7 @@
 // 최소 localStorage 스텁)으로 쓴다.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { THEMES } from "../../theme/themes";
+import { XTERM_PALETTES } from "../palettes";
 import {
   DEFAULT_XTERM_THEME_OVERRIDE,
   XTERM_THEME_STORAGE_KEY,
@@ -15,13 +16,17 @@ import {
   resolveXtermTheme,
   storedXtermBackground,
   xtermBackground,
+  xtermSourceLabel,
 } from "../theme";
 
 describe("isXtermThemeOverride", () => {
-  it("auto와 실재하는 테마 id만 참", () => {
+  it("auto와 실재하는 테마 id / 터미널 전용 팔레트 id만 참", () => {
     expect(isXtermThemeOverride("auto")).toBe(true);
     expect(isXtermThemeOverride("pipboy")).toBe(true);
     expect(isXtermThemeOverride("daylight")).toBe(true);
+    expect(isXtermThemeOverride("catppuccin-mocha")).toBe(true);
+    expect(isXtermThemeOverride("catppuccin-latte")).toBe(true);
+    expect(isXtermThemeOverride("catppuccin")).toBe(false);
     expect(isXtermThemeOverride("neon")).toBe(false);
     expect(isXtermThemeOverride("")).toBe(false);
     expect(isXtermThemeOverride(null)).toBe(false);
@@ -46,6 +51,17 @@ describe("해석(auto / 고정)", () => {
     for (const id of Object.keys(THEMES) as Array<keyof typeof THEMES>) {
       expect(resolveXtermTheme(id, "auto")).toBe(THEMES[id].xterm);
     }
+  });
+
+  it("터미널 전용 팔레트로 고정하면 앱 테마와 무관하게 그 팔레트를 쓴다", () => {
+    for (const id of Object.keys(XTERM_PALETTES) as Array<keyof typeof XTERM_PALETTES>) {
+      expect(effectiveXtermThemeId("daylight", id)).toBe(id);
+      expect(resolveXtermTheme("daylight", id)).toBe(XTERM_PALETTES[id].xterm);
+      expect(xtermBackground("pipboy", id)).toBe(XTERM_PALETTES[id].xterm.background);
+      expect(xtermSourceLabel(id)).toBe(XTERM_PALETTES[id].label);
+    }
+    // 앱 테마 쪽 라벨도 같은 창구로 나온다.
+    expect(xtermSourceLabel("midnight")).toBe(THEMES.midnight.label);
   });
 });
 
