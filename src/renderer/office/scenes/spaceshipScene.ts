@@ -133,13 +133,15 @@ const SPACESHIP_PALETTE_RAW = {
 // deckRivet은 바닥 전용 사본이다 — 같은 은색이라도 가구(해치·함장석 레일)의
 // 리벳은 또렷해야 하고 바닥의 리벳만 묻혀야 한다.
 /**
- * 우주선만 특별히 센 채도 감쇠 — 사실상 흑백 함선.
+ * 우주선만 다른 씬보다 센 채도 감쇠.
  *
  * 강철 회색 바탕에 청록 발광이 얹힌 팔레트라 색을 조금만 남겨도 그 청록이
- * 화면에서 유일한 유채색이 되어 시선을 독점한다. 색을 거의 다 빼면 남는 것은
- * 명암뿐이고, 그 위를 걷는 캐릭터가 화면에서 유일하게 색을 가진 존재가 된다.
+ * 화면에서 유일한 유채색이 되어 시선을 독점한다. 그렇다고 거의 다 빼면(0.92)
+ * 함선이 흑백 사진이 되어 홀로그램도 발광이 아니라 흰 얼룩으로 읽힌다 —
+ * 청록이 "빛나는 것"으로 보일 만큼은 남기고, 다른 씬보다 두 배 깎는 선에서
+ * 멈춘다.
  */
-const SPACESHIP_CHROMA_CUT = 0.92;
+const SPACESHIP_CHROMA_CUT = 0.56;
 
 const SPACESHIP_QUIET: readonly QuietGroup<typeof SPACESHIP_PALETTE_RAW>[] = [
   { base: "deckA", keys: ["deckB", "deckSeam", "deckStain", "deckRivet"], amount: 0.62 },

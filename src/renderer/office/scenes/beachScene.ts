@@ -104,7 +104,7 @@ const BEACH_QUIET: readonly QuietGroup<typeof BEACH_PALETTE_RAW>[] = [
 // 파라솔 천막은 무대 안이지만 해변의 표식이라 절반만 깎아 붉은 기를 남긴다.
 const BEACH_KEEP = [
   { keys: ["seaDeep", "seaHorizon", "seaMid", "seaFoam"], amount: 0.05 },
-  { keys: ["canopyA", "canopyB"], amount: 0.3 },
+  { keys: ["canopyA", "canopyB"], amount: 0.15 },
 ] as const;
 
 const BEACH_PALETTE = desaturatePalette(

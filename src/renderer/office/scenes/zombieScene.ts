@@ -125,7 +125,7 @@ const ZOMBIE_QUIET: readonly QuietGroup<typeof ZOMBIE_PALETTE_RAW>[] = [
 // 모닥불·랜턴만 색을 남긴다(폐허에서 유일하게 살아 있는 빛).
 const ZOMBIE_FIRE = {
   keys: ["flame", "flameCore", "ember", "lanternGlow"],
-  amount: 0.2,
+  amount: 0.08,
 } as const;
 
 const ZOMBIE_PALETTE = desaturatePalette(

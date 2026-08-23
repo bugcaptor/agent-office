@@ -111,12 +111,16 @@ export function adaptColor(color: number, mode: SceneColorMode): number {
  *
  * 씬은 "구경거리"가 아니라 캐릭터가 걸어 다니는 **무대**다. 무대가 캐릭터만큼
  * 진한 색을 쓰면 눈이 어디를 봐야 할지 정하지 못해 화면 전체가 어지럽다.
- * 캐릭터 스프라이트는 이 변환을 거치지 않으므로, 배경의 채도를 깎는 것만으로
+ * 캐릭터 스프라이트는 이 변환을 거치지 않으므로, 배경의 채도를 조금만 깎아도
  * 사람이 배경에서 떠오른다.
  *
- * quietPalette(무늬의 세기)와는 다른 축이다: 저쪽은 대비를, 이쪽은 색을 다룬다.
+ * 다만 절반 넘게 깎으면(0.55) 무대가 아니라 빛바랜 사진이 된다 — 캐릭터는
+ * 확실히 떠오르지만 풍경 자체가 죽어 어느 씬을 골라도 같은 잿빛으로 보인다.
+ * 사람이 떠오르는 데 필요한 것은 "회색 배경"이 아니라 캐릭터보다 한 단계
+ * 낮은 채도이므로, 색기는 남기고 한 단계만 눌러 둔다. 넓은 면의 어지러움은
+ * 채도가 아니라 무늬의 문제이고 그건 quietPalette가 따로 맡는다.
  */
-export const SCENE_CHROMA_CUT = 0.55;
+export const SCENE_CHROMA_CUT = 0.28;
 
 /** 색 하나의 채도만 깎는다(휘도는 유지). 0=그대로, 1=완전한 회색. */
 export function desaturateColor(color: number, amount: number): number {

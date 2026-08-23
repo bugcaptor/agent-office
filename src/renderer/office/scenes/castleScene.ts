@@ -133,7 +133,7 @@ const CASTLE_BANNER = {
 
 const CASTLE_FIRE = {
   keys: ["flame", "flameCore", "candleFlame"],
-  amount: 0.2,
+  amount: 0.08,
 } as const;
 
 const CASTLE_PALETTE = desaturatePalette(

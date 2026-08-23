@@ -123,7 +123,7 @@ const VOLCANO_FIRE = {
     "throneCore",
     "bloom",
   ],
-  amount: 0.2,
+  amount: 0.08,
 } as const;
 
 const VOLCANO_PALETTE = desaturatePalette(
