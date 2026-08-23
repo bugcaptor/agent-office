@@ -406,20 +406,26 @@ impl SessionManager {
                 WrapperArg::Literal("--append-system-prompt".into()),
                 WrapperArg::Env("AGENT_OFFICE_PERSONA".into()),
             ];
-            if let Some(claude) = plan
-                .wrappers
-                .iter_mut()
-                .find(|wrapper| wrapper.command == "claude")
-            {
-                claude.prefix_args.extend(persona_args);
-            } else {
-                plan.wrappers.push(CommandWrapperSpec {
-                    command: "claude".into(),
-                    prefix_args: persona_args.into(),
-                    skip_if_present: vec![],
-                    ..Default::default()
-                });
-            }
+            merge_wrapper_args(&mut plan.wrappers, "claude", persona_args.into());
+
+            // Codex에는 `--append-system-prompt`가 없다. 같은 자리(기본
+            // 지침을 덮지 않고 **덧붙이는** 채널)는 `developer_instructions`
+            // 설정값이다 — `-c` 한 방으로 주입되고, codex 자신의 정체성·기본
+            // 지침은 그대로 둔 채 지시만 얹힌다(codex-cli 0.149 실측).
+            // 참고: `instructions`는 기본 지침을 통째로 **대체**하므로 쓰면
+            // 안 된다.
+            plan.env.push((
+                "AGENT_OFFICE_CODEX_PERSONA".into(),
+                codex_persona_config(personality_prompt),
+            ));
+            merge_wrapper_args(
+                &mut plan.wrappers,
+                "codex",
+                vec![
+                    WrapperArg::Literal("-c".into()),
+                    WrapperArg::Env("AGENT_OFFICE_CODEX_PERSONA".into()),
+                ],
+            );
         }
 
         let mut env = vec![("AGENT_OFFICE_SESSION".into(), session_id.to_string())];
@@ -1106,3 +1112,48 @@ mod tests;
 // `tests` module above already does via `use super::*`.
 #[cfg(test)]
 mod real_pty_smoke;
+
+/// 같은 command의 래퍼가 이미 있으면 prefix_args를 이어 붙이고, 없으면 새
+/// 래퍼를 하나 만든다. persona 주입이 관찰 배선(어댑터가 만든 래퍼) 위에
+/// 얹히는 자리라 claude·codex 두 갈래가 같은 규칙을 쓴다.
+fn merge_wrapper_args(
+    wrappers: &mut Vec<CommandWrapperSpec>,
+    command: &str,
+    args: Vec<WrapperArg>,
+) {
+    if let Some(existing) = wrappers.iter_mut().find(|wrapper| wrapper.command == command) {
+        existing.prefix_args.extend(args);
+    } else {
+        wrappers.push(CommandWrapperSpec {
+            command: command.into(),
+            prefix_args: args,
+            skip_if_present: vec![],
+            ..Default::default()
+        });
+    }
+}
+
+/// persona 텍스트 → codex `-c` 인자 하나(`developer_instructions="..."`).
+///
+/// codex는 `-c key=value`의 value를 TOML로 파싱하고 실패하면 원문 문자열로
+/// 쓰지만, 그 폴백에 기대면 따옴표로 시작하는 persona가 어중간하게 파싱될
+/// 수 있다. 그래서 **항상 유효한 TOML 기본 문자열**로 만든다: 역슬래시·
+/// 큰따옴표를 이스케이프하고 개행·탭은 `\n`·`\t`로, 나머지 제어문자는
+/// 버린다(개행이 그대로 들어가면 TOML 기본 문자열이 깨진다).
+fn codex_persona_config(prompt: &str) -> String {
+    let mut out = String::with_capacity(prompt.len() + 32);
+    out.push_str("developer_instructions=\"");
+    for ch in prompt.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => {}
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}

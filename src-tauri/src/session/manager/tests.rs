@@ -411,22 +411,42 @@
             claude_wrappers[0].skip_if_present,
             vec!["--settings"]
         );
+        // Codex는 별도 래퍼로 같은 persona를 받는다(어댑터가 claude만 배선한
+        // 경우에도 빠지지 않아야 한다 — 이게 빠져 있어서 codex 세션에만
+        // 성격이 주입되지 않았다).
+        let codex_wrappers = wrappers
+            .iter()
+            .filter(|wrapper| wrapper.command == "codex")
+            .collect::<Vec<_>>();
+        assert_eq!(codex_wrappers.len(), 1);
+        assert_eq!(
+            codex_wrappers[0].prefix_args,
+            vec![
+                WrapperArg::Literal("-c".into()),
+                WrapperArg::Env("AGENT_OFFICE_CODEX_PERSONA".into()),
+            ]
+        );
         drop(wrappers);
         assert!(control
             .spawned_env()
             .contains(&("AGENT_OFFICE_PERSONA".into(), prompt.into())));
+        // 개행은 TOML 기본 문자열 이스케이프로 한 줄에 담긴다.
+        assert!(control.spawned_env().contains(&(
+            "AGENT_OFFICE_CODEX_PERSONA".into(),
+            r#"developer_instructions="차분하게 답한다.\n근거를 먼저 제시한다.""#.into()
+        )));
         cleanup_observer_fixture(&control, &scratch);
     }
 
     #[tokio::test]
-    async fn persona_pushes_one_claude_wrapper_when_observer_is_off() {
+    async fn persona_pushes_claude_and_codex_wrappers_when_observer_is_off() {
         let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
         manager
             .create(req_with_persona("a1", Some("해적처럼 말한다.".into())))
             .unwrap();
 
         let wrappers = recorded_wrappers.lock();
-        assert_eq!(wrappers.len(), 1);
+        assert_eq!(wrappers.len(), 2, "claude·codex 두 CLI 모두 persona를 받는다");
         assert_eq!(wrappers[0].command, "claude");
         assert_eq!(
             wrappers[0].prefix_args,
@@ -436,11 +456,35 @@
             ]
         );
         assert!(wrappers[0].skip_if_present.is_empty());
+        assert_eq!(wrappers[1].command, "codex");
+        assert_eq!(
+            wrappers[1].prefix_args,
+            vec![
+                WrapperArg::Literal("-c".into()),
+                WrapperArg::Env("AGENT_OFFICE_CODEX_PERSONA".into()),
+            ]
+        );
         drop(wrappers);
-        assert!(control
-            .spawned_env()
-            .contains(&("AGENT_OFFICE_PERSONA".into(), "해적처럼 말한다.".into())));
+        let env = control.spawned_env();
+        assert!(env.contains(&("AGENT_OFFICE_PERSONA".into(), "해적처럼 말한다.".into())));
+        assert!(env.contains(&(
+            "AGENT_OFFICE_CODEX_PERSONA".into(),
+            r#"developer_instructions="해적처럼 말한다.""#.into()
+        )));
         cleanup_observer_fixture(&control, &scratch);
+    }
+
+    /// persona 텍스트는 항상 **유효한 TOML 기본 문자열**로 감싼다 — codex의
+    /// "파싱 실패 시 원문" 폴백에 기대면 따옴표로 시작하는 성격 설명이
+    /// 어중간하게 파싱된다.
+    #[test]
+    fn codex_persona_config_escapes_into_a_single_toml_line() {
+        let config = crate::session::manager::codex_persona_config("따옴표 \"인용\"과 역슬래시 \\ 그리고\n줄바꿈\t탭\u{7}벨");
+        assert_eq!(
+            config,
+            r#"developer_instructions="따옴표 \"인용\"과 역슬래시 \\ 그리고\n줄바꿈\t탭벨""#
+        );
+        assert!(!config.contains('\n'), "실제 개행이 남으면 TOML이 깨진다");
     }
 
     #[tokio::test]
@@ -454,7 +498,8 @@
         assert!(control
             .spawned_env()
             .iter()
-            .all(|(key, _)| key != "AGENT_OFFICE_PERSONA"));
+            .all(|(key, _)| key != "AGENT_OFFICE_PERSONA"
+                && key != "AGENT_OFFICE_CODEX_PERSONA"));
         cleanup_observer_fixture(&control, &scratch);
     }
 
