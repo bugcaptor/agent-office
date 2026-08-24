@@ -59,6 +59,7 @@ interface AgentOfficeApi {
 | `diary/`, `labels/`, `desk/`, `agent/`, `portrait/`, `sprite/` | 일기·라벨·책상·캐릭터 편집·초상·스프라이트 편집 |
 | `memo/` | 에이전트별 포스트잇 메모 — 위젯·아카이브 다이얼로그 (§13) |
 | `settings/`, `about/`, `sound/`, `ui/` | 설정(CLI 제어 승인 UI 포함)·정보·사운드·공용 위젯(ContextMenu 등) |
+| `i18n/` (+ `src/shared/i18n/`) | i18next 런타임·번역 카탈로그·언어별 프롬프트/판정규칙/낱말 (§14, i18n-design 문서) |
 
 ## 1. 앱 레이아웃 & 윈도우 설계
 
@@ -1578,3 +1579,44 @@ archived: 2026-07-31T09:00:00+09:00   (넘긴 장에만)
 - 진입점 둘: 터미널 헤더의 `🗒` 토글 버튼(문서 버튼과 뷰 모드 버튼 사이)과 탭 우클릭
   메뉴의 "포스트잇 열기/닫기"·"메모 아카이브". 비활성 탭에서 메뉴로 열면 그 탭으로
   함께 전환한다(사용자가 지목한 캐릭터의 메모가 보이도록).
+
+## 14. UI 다국어(i18n) — 한국어/영어
+
+정본은 **[docs/i18n-design.md](i18n-design.md)**. 여기서는 UI 서브시스템에 걸리는
+부분만 요약한다.
+
+- **런타임**: i18next + react-i18next. 인스턴스는 `src/renderer/i18n/index.ts`가
+  `createInstance()`로 만들고 **모듈 로드 시점에 동기로** init한다(`main.tsx`가 `App`보다
+  먼저 `import "./i18n"` — 테마 선적용과 같은 이유로 첫 페인트 문구 플래시를 막는다).
+  진짜 설정(`AppSettings.language`)은 비동기라, 그때까지는 `localStorage`에 캐시해 둔
+  지난번 해석 결과(`agent-office.lang`)를 쓰고 부팅이 `applyLanguageSetting`으로 교정한다.
+- **카탈로그**: `src/shared/i18n/locales/{ko,en}/*.json`(9 네임스페이스). `catalog.ts`가
+  `import.meta.glob` eager로 모아 `resources`를 만든다. **지원 언어 목록·설정 드롭다운
+  항목이 전부 이 glob에서 도출되므로 언어 추가 = 폴더 추가**다. renderer가 아니라 shared에
+  둔 것은 웹 리모트가 나중에 같은 JSON을 재사용할 여지를 남긴 것이다.
+- **React 밖에서도 쓴다**: PixiJS 씬(`OfficeScene`의 휴가 팻말)·zustand 스토어
+  (`workdirStore`/`markdownStore`/`sessionLogStore`)·순수 모듈(`relativeTime`,
+  `themes.ts`)이 모듈 `t`를 직접 import한다. 컴포넌트는 `useTranslation()`을 써야
+  언어 변경 시 리렌더가 걸린다.
+- **모듈 최상위에서 `t()`를 부르지 않는다.** 레지스트리 상수(§6.4 테마, §6.5 풍경,
+  사운드 팩, xterm 팔레트, 종족)는 번역문 대신 **`labelKey`**를 담고 소비처가 렌더 시점에
+  번역한다. `packs.ts`의 목록 정렬 기준도 라벨이 아니라 키다 — 번역문으로 정렬하면 모듈
+  로드 시점의 언어로 순서가 굳는다.
+- **뷰모델은 문구를 만들지 않는다.** `usageView`·`sessionlog/format`은 완성 문장 대신
+  `TextKey {key, params}`(`src/renderer/shared/textKey.ts`)를 돌려주고 렌더 컴포넌트가
+  `renderText(text, t)`로 푼다. 보간값 안에 다시 `TextKey`를 중첩할 수 있다(i18next `$t()`는
+  고정 키만 되므로 런타임에 고르는 키는 이쪽이어야 한다). 문구 조립이 아예 필요 없으면
+  더 가볍게 — `agentStats`는 `label` + `departed: boolean`만 돌려주고 "(퇴사)"는 렌더가 붙인다.
+- **백엔드 에러**: Rust는 `"{code}"` 또는 `"{code}: {상세}"`로 실패하고 문구는 프런트가
+  고른다(`src/renderer/shared/backendError.ts` → `common:errors.*`). 기술적 상세는
+  번역하지 않고 괄호에 원문 그대로 붙인다. `src/shared`도 같은 규약이다
+  (`parseCharacterBundle`은 `CharacterBundleError` 코드를 돌려준다 — shared는 renderer에
+  의존할 수 없어 `t()`를 부를 수 없다).
+- **콘텐츠는 번역하지 않는다.** 일기 본문·수상 소감·포스트잇·동료 대화 로그 본문은 생성
+  당시 언어로 쓰인 사료라 원문 그대로 보존한다. 다이얼로그는 껍데기(제목·버튼·빈 상태)만
+  번역한다.
+- **지킴 장치**: `catalogParity.test.ts`(키 집합·보간 이름·빈 값·en 한글 잔류),
+  `noHardcodedHangul.test.ts` + `hangulScan.ts`(TS AST 스캔 — 이 저장소는 한국어 주석이
+  많아 grep으로는 못 한다. 래칫 98 → 0, 지금은 전면 금지), `src/test-setup.ts`(테스트
+  언어를 ko 고정 — jsdom `navigator.language`가 `en-US`라 안 그러면 기존 단언이 전부 깨진다).
+- **마스코트 창은 별도 webview**라 언어 전환이 실시간 전파되지 않는다(다음 창 생성 때 반영).
