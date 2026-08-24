@@ -641,7 +641,12 @@ export function ProfileDialog() {
                   alt="portrait"
                   width={90}
                   height={120}
-                  style={{ objectFit: "cover", objectPosition: "top center", imageRendering: "pixelated" }}
+                  // 초상은 부드럽게 축소(240×320 → 90×120), 스프라이트 폴백은 nearest 확대.
+                  style={{
+                    objectFit: "cover",
+                    objectPosition: "top center",
+                    imageRendering: portraitUrl ? "auto" : "pixelated",
+                  }}
                 />
               </div>
               <div className="portrait-buttons">

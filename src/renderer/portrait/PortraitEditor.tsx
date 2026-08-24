@@ -54,7 +54,9 @@ export function PortraitEditor({
     const view = viewRef.current;
     if (!canvas || !img || !view) return;
     const ctx = canvas.getContext("2d")!;
-    ctx.imageSmoothingEnabled = false;
+    // 초상은 원본(보통 1024px 안팎)을 240×320으로 줄여 넣는다 — 월드 스프라이트와
+    // 달리 nearest로 줄이면 픽셀이 솎아져 자글거린다. 부드럽게 리샘플한다.
+    setSmoothing(ctx, true);
     ctx.clearRect(0, 0, FRAME_W, FRAME_H);
     const r = viewToSourceRect(view, FRAME_W, FRAME_H);
     ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, 0, 0, FRAME_W, FRAME_H);
@@ -246,7 +248,14 @@ export function PortraitEditor({
   );
 }
 
-/** ctx 내용을 1/4 해상도로 nearest 다운→업스케일 + 채널 포스터라이즈(제자리). */
+/** 캔버스 리샘플 품질 토글. 초상은 축소가 기본이라 부드럽게(고품질) 쓰고,
+ *  레트로 블록을 되돌리는 확대만 nearest로 끈다. */
+function setSmoothing(ctx: CanvasRenderingContext2D, on: boolean): void {
+  ctx.imageSmoothingEnabled = on;
+  if (on) ctx.imageSmoothingQuality = "high";
+}
+
+/** ctx 내용을 1/4 해상도로 부드럽게 다운 → nearest 업스케일 + 채널 포스터라이즈(제자리). */
 function applyRetroInPlace(
   ctx: CanvasRenderingContext2D
 ): void {
@@ -255,13 +264,15 @@ function applyRetroInPlace(
   small.width = w;
   small.height = h;
   const sctx = small.getContext("2d")!;
-  sctx.imageSmoothingEnabled = false;
+  // 다운스케일은 부드럽게(면적 평균에 가깝게) — nearest로 줄이면 큰 픽셀 하나하나가
+  // 원본의 우연한 한 점이 돼 색이 튄다. 되돌리는 확대만 nearest로 각을 살린다.
+  setSmoothing(sctx, true);
   sctx.drawImage(ctx.canvas, 0, 0, w, h);
   const id = sctx.getImageData(0, 0, w, h);
   const posterized = posterizeRgba(id.data, RETRO_LEVELS);
   for (let i = 0; i < id.data.length; i++) id.data[i] = posterized[i];
   sctx.putImageData(id, 0, 0);
-  ctx.imageSmoothingEnabled = false;
+  setSmoothing(ctx, false); // 되돌리는 확대만 nearest — 레트로 블록의 각을 살린다
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.drawImage(small, 0, 0, w, h, 0, 0, ctx.canvas.width, ctx.canvas.height);
 }
@@ -276,7 +287,7 @@ function renderOutputPng(
   out.width = OUT_W;
   out.height = OUT_H;
   const ctx = out.getContext("2d")!;
-  ctx.imageSmoothingEnabled = false;
+  setSmoothing(ctx, true); // 미리보기(redraw)와 같은 리샘플 — 보이는 대로 저장된다
   const r = viewToSourceRect(view, OUT_W, OUT_H);
   ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, 0, 0, OUT_W, OUT_H);
   if (retro) applyRetroInPlace(ctx);

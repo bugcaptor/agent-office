@@ -35,8 +35,8 @@ import type { LabelAnchor, OfficeAwardee, OfficeBus } from "./bus";
 import type { AgentProfile } from "./types";
 import { awardeeEquals, resolveAwardeeSeat, shouldShowAwardFrame } from "./awardee";
 import { TrophyOverlay } from "./entities/TrophyOverlay";
-import { AwardFrameOverlay } from "./entities/AwardFrameOverlay";
-import { loadAwardPortraitTexture } from "./gen/awardPortraitTexture";
+import { AwardFrameOverlay, awardPhotoSlotPx } from "./entities/AwardFrameOverlay";
+import { awardPortraitTexture, loadAwardPortraitSource } from "./gen/awardPortraitTexture";
 import { tauriApi } from "../ipc/tauriApi";
 
 export interface OfficeSceneOptions {
@@ -90,8 +90,13 @@ export class OfficeScene {
   private profiles: readonly AgentProfile[] = [];
   private awardPortraitReq = 0;
   private awardPortraitTexture?: Texture;
+  /** 디코드한 초상 원본 — 카메라 정수 스케일 S가 바뀌면 여기서 텍스처를 다시
+   * 프리필터한다(IPC 재요청 없음). */
+  private awardPortraitSrc?: HTMLCanvasElement;
   /** awardPortraitTexture가 어느 달의 것인지 — 같은 달이면 재구축 시 IPC를 다시 타지 않는다. */
   private awardPortraitFor?: string;
+  /** 초상 텍스처를 프리필터한 카메라 정수 스케일 S. */
+  private awardRenderScale = 1;
 
   constructor(opts: OfficeSceneOptions) {
     this.opts = opts;
@@ -348,7 +353,7 @@ export class OfficeScene {
     this.awardFrame.setVisible(show);
     if (!show) return;
     if (this.awardPortraitTexture && this.awardPortraitFor === this.awardee?.month) {
-      this.awardFrame.showPhoto(this.awardPortraitTexture); // 캐시 재적용 — 재구축돼도 IPC 재요청 없음
+      this.awardFrame.showPhoto(this.awardPortraitTexture, this.awardRenderScale); // 캐시 재적용 — 재구축돼도 IPC 재요청 없음
     } else {
       this.awardFrame.showSilhouette();
       this.loadAwardPortrait();
@@ -366,23 +371,46 @@ export class OfficeScene {
     const reqId = ++this.awardPortraitReq;
     void tauriApi
       .loadAwardPortrait(awardee.month)
-      .then((b64) => (b64 ? loadAwardPortraitTexture(b64) : null))
-      .then((texture) => {
+      .then((b64) => (b64 ? loadAwardPortraitSource(b64) : null))
+      .then((src) => {
+        if (!src) return; // 초상 없음/디코드 실패 — 실루엣 유지
         if (reqId !== this.awardPortraitReq || this.awardee?.month !== awardee.month) {
-          texture?.destroy(true); // stale — 이 사이 수상자가 바뀌었다
-          return;
+          return; // stale — 이 사이 수상자가 바뀌었다
         }
-        if (!texture) return; // 디코드 실패 — 실루엣 유지
+        const texture = awardPortraitTexture(src, this.awardPhotoSlot(), this.awardRenderScale);
+        this.awardPortraitSrc = src;
         this.awardPortraitTexture = texture;
         this.awardPortraitFor = awardee.month;
-        this.awardFrame?.showPhoto(texture);
+        this.awardFrame?.showPhoto(texture, this.awardRenderScale);
       })
       .catch((err) => console.warn("OfficeScene: 수상자 초상 로드 실패", err));
+  }
+
+  private awardPhotoSlot(): { w: number; h: number } {
+    return awardPhotoSlotPx(awardFrameRectPx());
+  }
+
+  /**
+   * 카메라 정수 스케일 S 반영 — 초상은 사진칸(14×14 월드 px)에 17배 축소돼
+   * 들어가므로 물리 해상도에 맞춰 area 프리필터해 둔다(이슈 #47과 같은 처방).
+   * S가 바뀔 때만 원본 캔버스에서 텍스처를 다시 만든다(IPC 재요청 없음).
+   */
+  private setAwardRenderScale(scale: number): void {
+    const s = Math.max(1, Math.round(scale));
+    if (s === this.awardRenderScale) return;
+    this.awardRenderScale = s;
+    const src = this.awardPortraitSrc;
+    if (!src) return;
+    const old = this.awardPortraitTexture;
+    this.awardPortraitTexture = awardPortraitTexture(src, this.awardPhotoSlot(), s);
+    this.updateAwardFrame(); // 사진이 떠 있으면 새 텍스처로 갈아 끼운다
+    old?.destroy(true); // 스프라이트를 교체한 뒤에 파기한다
   }
 
   private disposePortraitTexture(): void {
     this.awardPortraitTexture?.destroy(true);
     this.awardPortraitTexture = undefined;
+    this.awardPortraitSrc = undefined;
     this.awardPortraitFor = undefined;
   }
 
@@ -520,6 +548,7 @@ export class OfficeScene {
     // 커스텀 고해상 시트를 이 정수 스케일에 맞춰 프리필터(이슈 #47). S가 바뀔
     // 때만 커스텀 엔티티 텍스처를 재생성한다(내부에서 no-op 가드).
     this.world.setRenderScale(scale);
+    this.setAwardRenderScale(scale); // 벽 폴라로이드 초상도 같은 S로 프리필터(내부 no-op 가드)
     this.bossSignLabel?.scale.set(1 / scale);
     // Center, snapped to integer position to preserve sharpness.
     this.worldContainer.position.set(

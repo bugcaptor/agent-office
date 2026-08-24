@@ -237,6 +237,14 @@
   max-width: 220px;
 }
 
+/* 초상 전용 부드러운 축소. 초상 원본은 240×320이라 어디에 놓든 축소돼 보이는데,
+   픽셀아트용 nearest(image-rendering: pixelated)로 줄이면 원본 픽셀이 솎아져
+   자글거린다. 스프라이트 폴백을 쓰는 자리도 있어 CSS로 일괄 적용하지 않고,
+   "지금 보이는 것이 초상일 때"만 이 클래스를 얹는다. */
+.portrait-smooth {
+  image-rendering: auto;
+}
+
 .agent-hover-portrait {
   width: 120px;
   height: 160px;

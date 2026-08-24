@@ -111,11 +111,13 @@
   overflow: hidden;
 }
 
+/* 여기 들어오는 것은 항상 초상(현재 초상 또는 수상 시점 스냅샷)이다 — 240×320을
+   148×148로 줄이므로 nearest면 자글거린다. 폴백은 별도 컴포넌트라 영향 없다. */
 .awards-trophy-frame img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 .awards-trophy-badge {

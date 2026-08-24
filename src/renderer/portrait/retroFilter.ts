@@ -1,7 +1,7 @@
 // src/renderer/portrait/retroFilter.ts
 //
 // 레트로(90년대 저해상) 필터의 순수 수학. 실제 다운/업스케일은 PortraitEditor가
-// canvas(imageSmoothingEnabled=false)로 nearest-neighbor 처리하고, 여기서는
+// canvas로 처리하고(다운스케일은 부드럽게, 되돌리는 업스케일만 nearest), 여기서는
 // 크기 상수와 채널 포스터라이즈(단계 축소)만 담당한다.
 
 /** 1/4 해상도 다운스케일 격자(3:4). */

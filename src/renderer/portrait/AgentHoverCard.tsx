@@ -125,7 +125,11 @@ export function AgentHoverCard() {
       className="agent-hover-card"
       style={{ left, top, visibility: pos ? "visible" : "hidden" }}
     >
-      <img className="agent-hover-portrait" src={src} alt={agent.name} />
+      <img
+        className={`agent-hover-portrait${portraitUrl ? " portrait-smooth" : ""}`}
+        src={src}
+        alt={agent.name}
+      />
       <div className="agent-hover-meta">
         <div className="agent-hover-name">{agent.name}</div>
         <div className="agent-hover-role">{agent.role}</div>

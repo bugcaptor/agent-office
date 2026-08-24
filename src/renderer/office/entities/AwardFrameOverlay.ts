@@ -48,6 +48,14 @@ export interface AwardFramePalette {
 
 /** 사진칸 좌·우·상 여백(px). 아래 여백은 남는 높이 전부(폴라로이드의 그 넓은 턱). */
 const MARGIN_PX = 2;
+
+/** 카드 크기 → 사진칸 크기(월드 px, 정사각). 초상 텍스처를 이 크기에 맞춰
+ *  프리필터해야 해서(`gen/awardPortraitTexture.ts`) 오버레이 바깥에서도 쓴다 —
+ *  여백 상수의 단일 출처를 유지하려고 함수로 뺐다. */
+export function awardPhotoSlotPx(outer: { w: number; h: number }): { w: number; h: number } {
+  const w = outer.w - MARGIN_PX * 2;
+  return { w, h: w }; // 사진칸은 정사각 — 남는 높이가 폴라로이드의 아래 턱이다
+}
 /** 카드 그림자 오프셋(px). */
 const SHADOW_PX = 1;
 /** 압정을 축으로 한 기울기(rad, 약 -3.4°). 픽셀아트라 크게 주면 사진 스프라이트에
@@ -83,9 +91,9 @@ export class AwardFrameOverlay {
     this.cardH = outerSize.h;
     this.photoX = MARGIN_PX;
     this.photoY = MARGIN_PX;
-    this.photoW = outerSize.w - MARGIN_PX * 2;
-    // 사진칸은 정사각. 남는 높이가 곧 폴라로이드의 아래 턱이다.
-    this.photoH = this.photoW;
+    const slot = awardPhotoSlotPx(outerSize);
+    this.photoW = slot.w;
+    this.photoH = slot.h;
 
     // 압정 위치를 축으로 카드만 기운다(압정은 벽에 박힌 것이라 안 기운다).
     const pinX = Math.round(outerSize.w / 2);
@@ -157,14 +165,19 @@ export class AwardFrameOverlay {
   /** 초상 텍스처를 "contain" 방식(비율 유지, nearest 스케일)으로 사진칸에
    * 넣는다. 실루엣은 뒤에 남겨 두고 사진을 그 위에 얹는다(카드에 붙으므로
    * 카드와 같이 기운다). */
-  showPhoto(texture: Texture): void {
+  showPhoto(texture: Texture, renderScale = 1): void {
     this.photo?.destroy();
     texture.source.scaleMode = "nearest";
     const sprite = new Sprite(texture);
     sprite.anchor.set(0.5);
-    const scale = Math.min(this.photoW / texture.width, this.photoH / texture.height);
-    sprite.width = Math.round(texture.width * scale);
-    sprite.height = Math.round(texture.height * scale);
+    // 텍스처는 물리 픽셀 해상도(월드 px × S)로 프리필터돼 온다 — 월드 px로
+    // 환산해서 맞춰야 텍셀:물리픽셀이 1:1이 된다(반올림하면 그 비가 깨진다).
+    const s = Math.max(1, Math.round(renderScale));
+    const texW = texture.width / s;
+    const texH = texture.height / s;
+    const scale = Math.min(this.photoW / texW, this.photoH / texH);
+    sprite.width = texW * scale;
+    sprite.height = texH * scale;
     sprite.position.set(
       Math.round(this.photoX + this.photoW / 2),
       Math.round(this.photoY + this.photoH / 2),
