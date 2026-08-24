@@ -58,3 +58,9 @@
   background: var(--border-dark);
   opacity: 0.5;
 }
+/* 섹션 헤더 — 클릭 불가 표제. 작게·흐리게 둬서 항목과 구분한다. */
+.context-menu-header {
+  padding: 6px 10px 2px;
+  font-size: 0.85em;
+  color: var(--text-dim);
+}

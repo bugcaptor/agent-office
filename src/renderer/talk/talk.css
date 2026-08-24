@@ -1,25 +1,12 @@
 /* src/renderer/talk/talk.css
  *
- * 동료 대화(docs/agent-talk-design.md §7) 렌더러 스타일. 두 덩어리다:
- *   1) .talk-widget*  — 하단바 "대화 N" 표시(UsageWidget 옆).
- *   2) .talk-log-*    — 대화 감사 로그 다이얼로그(analytics.css 관례).
+ * 동료 대화(docs/agent-talk-design.md §7) 렌더러 스타일 — 대화 감사 로그
+ * 다이얼로그(.talk-log-*, analytics.css 관례). 하단바 표시(열린 대화 수
+ * 배지 · 메뉴)는 BottomBar.tsx의 "📊 기록" 버튼에 흡수됐다.
  *
  * 색·간격은 전역 토큰(tokens.css)만 참조한다(하드코딩 색 금지).
  */
 @import "../styles/tokens.css";
-
-/* ---- 하단바 표시 ---- */
-.talk-widget {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--unit);
-  white-space: nowrap;
-}
-
-/* 전달 대기(상대가 바빠 아직 안 닿은) 건수. 있을 때만 렌더된다. */
-.talk-widget-queued {
-  color: var(--accent-warn);
-}
 
 /* ---- 로그 다이얼로그 ---- */
 .talk-log-dialog {

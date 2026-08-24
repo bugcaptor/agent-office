@@ -12,10 +12,16 @@
 //   `clockInAll` directly) and "전체 퇴근" (opens the `confirm-clock-out-all`
 //   modal; the actual clockOutAll call is ConfirmClockOutDialog's
 //   responsibility). Items are disabled when their target set is empty.
-import { cleanup, fireEvent, render } from "@testing-library/react";
+// - "📊 기록" merges 분석/우수사원/동료 대화(TalkWidget이 하던 일)로 —
+//   talkEnabled가 꺼져 있으면 대화 항목 2개가 메뉴에 없고, 켜져 있으면
+//   있으며 열린 대화 수가 버튼 배지로도 뜬다.
+// - "🎨 {풍경}·{테마}"는 풍경/테마 두 값을 한 버튼에 보여주고, 메뉴는
+//   "풍경"/"테마" 섹션 헤더로 나뉜다.
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
 import type { AgentProfile } from "../../store/types";
+import type { TalkStatus } from "@shared/types";
 
 const clockInAgent = vi.fn();
 const clockInAll = vi.fn();
@@ -23,6 +29,19 @@ vi.mock("../../agent/clockOut", () => ({
   clockInAgent: (...args: unknown[]) => clockInAgent(...args),
   clockInAll: (...args: unknown[]) => clockInAll(...args),
 }));
+
+const talkStatus = vi.fn();
+const setAppSettings = vi.fn((_settings: unknown) => Promise.resolve());
+vi.mock("../../ipc/tauriApi", () => ({
+  tauriApi: {
+    talkStatus: (...a: unknown[]) => talkStatus(...a),
+    setAppSettings: (settings: unknown) => setAppSettings(settings),
+  },
+}));
+
+function talkStatusOf(overrides: Partial<TalkStatus> = {}): TalkStatus {
+  return { enabled: true, queued: 0, conversations: [], ...overrides };
+}
 
 const { BottomBar } = await import("../BottomBar");
 
@@ -44,6 +63,8 @@ beforeEach(() => {
   useAppStore.setState(initialState, true);
   clockInAgent.mockClear();
   clockInAll.mockClear();
+  talkStatus.mockReset();
+  talkStatus.mockResolvedValue(talkStatusOf());
 });
 
 afterEach(() => cleanup());
@@ -92,25 +113,62 @@ describe("출근 버튼(🏠)", () => {
   });
 });
 
-describe("테마 드롭다운", () => {
-  it("클릭하면 전 테마가 메뉴로 뜨고, 고르면 그 테마로 바뀌며 메뉴가 닫힌다", async () => {
-    const { THEMES, THEME_ORDER, DEFAULT_THEME_ID } = await import("../../theme/themes");
-    const { getByRole, queryByRole } = render(<BottomBar />);
+describe("풍경·테마 통합 버튼", () => {
+  it("라벨에 현재 풍경·테마 값을 둘 다 보여준다", async () => {
+    const { THEMES, DEFAULT_THEME_ID } = await import("../../theme/themes");
+    const { SCENES, DEFAULT_SCENE_ID } = await import("../../office/scenes/scenes");
+    const { getByRole } = render(<BottomBar />);
 
-    const btn = getByRole("button", { name: "테마 선택" });
+    const btn = getByRole("button", { name: "풍경·테마 선택" });
+    expect(btn.textContent).toContain(SCENES[DEFAULT_SCENE_ID].label);
     expect(btn.textContent).toContain(THEMES[DEFAULT_THEME_ID].label);
+  });
 
-    fireEvent.click(btn);
+  it("메뉴가 '풍경'/'테마' 섹션 헤더로 나뉘고, 각 섹션에 값이 모두 나온다", async () => {
+    const { THEME_ORDER } = await import("../../theme/themes");
+    const { SCENES, SCENE_ORDER } = await import("../../office/scenes/scenes");
+    const { THEMES } = await import("../../theme/themes");
+    const { getByRole, getByText } = render(<BottomBar />);
+
+    fireEvent.click(getByRole("button", { name: "풍경·테마 선택" }));
+
+    expect(getByText("풍경")).toBeTruthy();
+    expect(getByText("테마")).toBeTruthy();
+    for (const id of SCENE_ORDER) {
+      expect(getByRole("menuitem", { name: new RegExp(SCENES[id].label) })).toBeTruthy();
+    }
     for (const id of THEME_ORDER) {
       // 현재 테마는 체크 아이콘이 붙으므로 이름이 라벨과 정확히 같지 않다.
       expect(getByRole("menuitem", { name: new RegExp(THEMES[id].label) })).toBeTruthy();
     }
+  });
 
+  it("테마를 고르면 setTheme이 불리고 메뉴가 닫힌다", async () => {
+    const { DEFAULT_THEME_ID } = await import("../../theme/themes");
+    const { getByRole, queryByRole } = render(<BottomBar />);
+
+    fireEvent.click(getByRole("button", { name: "풍경·테마 선택" }));
     fireEvent.click(getByRole("menuitem", { name: /핍보이/ }));
+
     expect(useAppStore.getState().theme).toBe("pipboy");
     expect(queryByRole("menu")).toBeNull();
 
     useAppStore.getState().setTheme(DEFAULT_THEME_ID); // 모듈 전역 DOM/영속 원복
+  });
+
+  it("풍경을 고르면 setScene이 불리고 메뉴가 닫힌다", async () => {
+    const { SCENES, SCENE_ORDER, DEFAULT_SCENE_ID } = await import("../../office/scenes/scenes");
+    const other = SCENE_ORDER.find((id) => id !== DEFAULT_SCENE_ID);
+    if (!other) throw new Error("테스트용 대체 풍경이 없다");
+    const { getByRole, queryByRole } = render(<BottomBar />);
+
+    fireEvent.click(getByRole("button", { name: "풍경·테마 선택" }));
+    fireEvent.click(getByRole("menuitem", { name: new RegExp(SCENES[other].label) }));
+
+    expect(useAppStore.getState().scene).toBe(other);
+    expect(queryByRole("menu")).toBeNull();
+
+    useAppStore.getState().setScene(DEFAULT_SCENE_ID); // 원복
   });
 });
 
@@ -177,17 +235,77 @@ describe("전체 출퇴근 버튼", () => {
   });
 });
 
-describe("동료 대화 표시(TalkWidget)", () => {
-  it("talkEnabled가 꺼져 있으면 하단바에 나타나지 않는다", () => {
-    const { queryByLabelText } = render(<BottomBar />);
-    expect(queryByLabelText("동료 대화")).toBeNull();
-  });
-
-  it("켜져 있으면 하단바에 나타난다", () => {
+describe("기록 버튼(📊, 분석·우수사원·동료 대화 통합)", () => {
+  function enableTalk(): void {
     useAppStore.setState({
       appSettings: { ...initialState.appSettings, talkEnabled: true },
     });
-    const { getByLabelText } = render(<BottomBar />);
-    expect(getByLabelText("동료 대화")).toBeTruthy();
+  }
+
+  it("분석/우수사원을 고르면 각각 모달을 열고 메뉴가 닫힌다", () => {
+    const { getByRole, getByText, queryByRole } = render(<BottomBar />);
+
+    fireEvent.click(getByRole("button", { name: "기록" }));
+    fireEvent.click(getByText("세션 활동 분석"));
+    expect(useAppStore.getState().modal).toEqual({ kind: "analytics" });
+    expect(queryByRole("menu")).toBeNull();
+
+    fireEvent.click(getByRole("button", { name: "기록" }));
+    fireEvent.click(getByText("이 달의 우수사원"));
+    expect(useAppStore.getState().modal).toEqual({ kind: "awards" });
+  });
+
+  it("talkEnabled가 꺼져 있으면 대화 로그/전체 중지 항목이 메뉴에 없고 배지도 없다", () => {
+    const { getByRole, queryByText } = render(<BottomBar />);
+
+    const btn = getByRole("button", { name: "기록" });
+    expect(btn.textContent).toBe("📊 기록");
+
+    fireEvent.click(btn);
+    expect(queryByText(/대화 로그 보기/)).toBeNull();
+    expect(queryByText("대화 전체 중지")).toBeNull();
+  });
+
+  it("talkEnabled가 켜져 있으면 열린 대화 수가 버튼 배지·메뉴 항목에 반영된다", async () => {
+    enableTalk();
+    talkStatus.mockResolvedValue({
+      enabled: true,
+      queued: 0,
+      conversations: [
+        { id: "c1", a: "a1", b: "a2", turns: 2, startedAt: 1 },
+        { id: "c2", a: "a1", b: "a3", turns: 6, startedAt: 2, ended: "max-turns" },
+      ],
+    });
+    const { getByRole, getByText } = render(<BottomBar />);
+    await waitFor(() => expect(talkStatus).toHaveBeenCalled());
+
+    const btn = getByRole("button", { name: "기록" });
+    await waitFor(() => expect(btn.textContent).toBe("📊 기록 ·1"));
+
+    fireEvent.click(btn);
+    expect(getByText("대화 로그 보기 (1)")).toBeTruthy();
+    expect(getByText("대화 전체 중지")).toBeTruthy();
+  });
+
+  it("'대화 로그 보기'가 talk-log 모달을 연다", async () => {
+    enableTalk();
+    const { getByRole, getByText } = render(<BottomBar />);
+    await waitFor(() => expect(talkStatus).toHaveBeenCalled());
+
+    fireEvent.click(getByRole("button", { name: "기록" }));
+    fireEvent.click(getByText(/대화 로그 보기/));
+    expect(useAppStore.getState().modal).toEqual({ kind: "talk-log" });
+  });
+
+  it("'대화 전체 중지'가 talkEnabled:false로 저장한다(킬스위치)", async () => {
+    enableTalk();
+    const { getByRole, getByText } = render(<BottomBar />);
+    await waitFor(() => expect(talkStatus).toHaveBeenCalled());
+
+    fireEvent.click(getByRole("button", { name: "기록" }));
+    fireEvent.click(getByText("대화 전체 중지"));
+
+    expect(useAppStore.getState().appSettings.talkEnabled).toBe(false);
+    expect(setAppSettings).toHaveBeenCalledWith(expect.objectContaining({ talkEnabled: false }));
   });
 });

@@ -125,3 +125,79 @@ describe("ContextMenu", () => {
     expect(screen.getAllByRole("menuitem")).toHaveLength(2);
   });
 });
+
+describe("ContextMenu 섹션 헤더", () => {
+  it("헤더를 렌더하되 menuitem/separator로는 잡히지 않는다", () => {
+    render(
+      <ContextMenu
+        x={10}
+        y={10}
+        items={[
+          { header: "풍경" },
+          { label: "오피스", onSelect: () => {} },
+          { header: "테마" },
+          { label: "밝음", onSelect: () => {} },
+        ]}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByText("풍경")).toBeTruthy();
+    expect(screen.getByText("테마")).toBeTruthy();
+    expect(screen.getAllByRole("menuitem")).toHaveLength(2);
+    // 헤더는 menuitem이 아니라 클릭해도 onSelect 계열 핸들러가 없다(버튼이 아님).
+    expect(screen.getByText("풍경").tagName).not.toBe("BUTTON");
+  });
+
+  it("뒤에 항목이 하나도 없는(다음 헤더 전까지) 헤더는 제거한다", () => {
+    render(
+      <ContextMenu
+        x={10}
+        y={10}
+        items={[
+          { header: "빈 섹션" }, // 항목 없음 → 제거
+          { header: "테마" },
+          { label: "밝음", onSelect: () => {} },
+        ]}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.queryByText("빈 섹션")).toBeNull();
+    expect(screen.getByText("테마")).toBeTruthy();
+  });
+
+  it("헤더 바로 앞/뒤의 구분선을 흡수한다(맨 앞 구분선 규칙과 별개로 항상)", () => {
+    render(
+      <ContextMenu
+        x={10}
+        y={10}
+        items={[
+          { label: "A", onSelect: () => {} },
+          { separator: true }, // 헤더 직전 → 제거
+          { header: "섹션" },
+          { separator: true }, // 헤더 직후 → 제거
+          { label: "B", onSelect: () => {} },
+        ]}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.queryAllByRole("separator")).toHaveLength(0);
+    expect(screen.getAllByRole("menuitem")).toHaveLength(2);
+    expect(screen.getByText("섹션")).toBeTruthy();
+  });
+
+  it("모든 항목이 제거돼 헤더가 맨 뒤에 남는 경우도 제거한다", () => {
+    render(
+      <ContextMenu
+        x={10}
+        y={10}
+        items={[
+          { label: "A", onSelect: () => {} },
+          { header: "빈 섹션" }, // 뒤에 항목 없음 → 제거
+        ]}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.queryByText("빈 섹션")).toBeNull();
+    expect(screen.getAllByRole("menuitem")).toHaveLength(1);
+  });
+});
