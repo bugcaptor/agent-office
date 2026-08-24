@@ -450,6 +450,13 @@ describe("award trophy + frame (이 달의 우수사원, docs/employee-of-the-mo
     expect(internals.trophyOverlay?.root.visible).toBe(true);
     expect(internals.trophyOverlay?.root.x).toBe(expected.x);
     expect(internals.trophyOverlay?.root.y).toBe(expected.y - 2);
+    // zIndex는 y가 아니라 **얹힌 책상 상판의 정렬값 + 1**이다. 가구는 자기 아래
+    // 모서리((ty+1)*TILE_SIZE)로 정렬하므로 y를 그대로 쓰면 트로피가 자기가
+    // 올라앉은 책상 뒤로 들어가 통째로 가려진다(회귀: "트로피 안 보이는데?").
+    const deskSortKey = (seat.ty + 1 + 1) * 16;
+    expect(internals.trophyOverlay?.root.zIndex).toBeGreaterThan(deskSortKey);
+    // 책상 남쪽 타일에 선 캐릭터(그 타일 중심 = deskSortKey + 8)보다는 뒤에 온다.
+    expect(internals.trophyOverlay?.root.zIndex).toBeLessThan(deskSortKey + 8);
     expect(internals.awardFrame?.root.visible).toBe(true);
     // hasPortrait:false -> 초상 IPC를 아예 타지 않는다.
     expect(tauri.loadAwardPortrait).not.toHaveBeenCalled();

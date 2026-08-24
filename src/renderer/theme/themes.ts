@@ -63,9 +63,10 @@ export const TILE_PALETTE_KEYS = [
   "trophyCup", // 책상 위 트로피 컵/손잡이
   "trophyCupShine", // 트로피 광택 하이라이트
   "trophyBase", // 트로피 받침/기둥
-  "frameBorder", // 벽 액자 테두리
-  "frameMat", // 벽 액자 안쪽 매트(정적 배경)
-  "frameSilhouette", // 액자 안 초상 없음 폴백 실루엣
+  "trophyRibbon", // 트로피 목 리본 + 받침 명패(금색 일변도를 깨는 포인트 색)
+  "frameBorder", // 벽 폴라로이드: 그림자·압정·인물 실루엣(짙은 축)
+  "frameMat", // 벽 폴라로이드: 카드 종이(밝은 축)
+  "frameSilhouette", // 벽 폴라로이드: 사진칸 바탕 + 아래 턱의 별(중간 축)
 ] as const;
 type TilePaletteKey = (typeof TILE_PALETTE_KEYS)[number];
 
@@ -142,6 +143,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       trophyCup: 0xe0a53d, // 골드 트로피
       trophyCupShine: 0xfff0c2,
       trophyBase: 0x8a6a2f, // 짙은 황동 받침
+      trophyRibbon: 0xc0453a, // 딥 레드 리본 — 골드·오크 웜톤 사이에서 유일한 한색 대비축
       frameBorder: 0x96682f, // deskEdge와 같은 계열의 짙은 액자 테두리
       frameMat: 0xf7f0dd, // 밝은 매트
       frameSilhouette: 0xb7a98a,
@@ -222,6 +224,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       trophyCup: 0xd9b84a, // 골드 트로피(어두운 배경에서도 도드라지게)
       trophyCupShine: 0xf3e2a0,
       trophyBase: 0x6b5a2e,
+      trophyRibbon: 0xd4534d, // 어두운 배경이라 daylight보다 한 단계 밝은 레드
       frameBorder: 0x6b5a2e, // 짙은 황동 액자 테두리
       frameMat: 0x33384a, // 벽보다 살짝 밝은 매트
       frameSilhouette: 0x5a6178,
@@ -297,6 +300,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       trophyCup: 0xe0a85c, // 골드 트로피(블러시 배경에 어울리는 살구빛 웜톤)
       trophyCupShine: 0xffe9c2,
       trophyBase: 0x8a6a4a,
+      trophyRibbon: 0x4f9a94, // 블러시·로즈 일색이라 레드는 묻힌다 — 보색 틸로 간다
       frameBorder: 0xa2685a, // deskEdge와 같은 계열의 로즈브라운 테두리
       frameMat: 0xfbeef4, // counterTop과 같은 계열의 밝은 매트
       frameSilhouette: 0xc48a9a,
@@ -376,6 +380,9 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       trophyCup: 0x2e8a55,
       trophyCupShine: 0x8dffa8, // = --text(가장 밝은 인광 초록)
       trophyBase: 0x1b4a28,
+      // 이 테마만 유채색 포인트를 안 쓴다(인광 초록 모노크롬 규칙). 리본은
+      // 색상이 아니라 **명도**로 구분한다 — 컵보다 밝고 하이라이트보다 어둡게.
+      trophyRibbon: 0x4bbf6b,
       frameBorder: 0x2e8a55,
       frameMat: 0x0f2a16,
       frameSilhouette: 0x1f6b35,

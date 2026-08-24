@@ -152,17 +152,47 @@ load_award_portrait(month)                           -> string | null  // base64
 
 ## 7. 오피스 씬 연출
 
-수상자 책상에 트로피, 벽에 수상자 액자를 **절차적으로**(에셋 파일 없이 Pixi `Graphics`) 그린다.
+수상자 책상에 트로피, 벽에 수상자 사진을 **절차적으로**(에셋 파일 없이 Pixi `Graphics`) 그린다.
+
+**벽 사진은 액자가 아니라 압정으로 꽂은 작은 폴라로이드다.** 첫 구현(28×28 정사각 액자 + 짙은 테두리 + 매트 + 정면 흉상, 벽 **정중앙** tx8-9에 단 하나)이 눈검증에서 "영정사진 같다 / 수령님 초상화 같다"를 받았다. 도상이 정확히 겹쳤기 때문이다 — 정사각 + 어두운 테두리 + 정면 흉상 + 정중앙 단독 배치 + 축하 맥락 표지 0. 세 축을 동시에 바꿔 깬다.
+
+| 축 | 전 | 후 |
+|---|---|---|
+| 형태 | 정사각 액자(테두리 2px + 매트 2px) | 폴라로이드 카드 — 사진칸 14×14 + **넓은 아래 턱 5px**(이 비대칭이 정체) + 1px 그림자 + 압정 |
+| 크기 | 28×28 | 18×21 |
+| 배치 | 정중앙 간격(tx8-9) 중앙정렬 | 오른쪽 간격(tx12-13), 그 안에서도 왼쪽 4px — "누가 붙여둔 사진" |
+| 맥락 | 없음 | 아래 턱 중앙에 3px 십자 별 + 압정을 축으로 -0.06rad 기울기 |
+
+기울기는 압정을 pivot으로 **카드만** 돈다(압정은 벽에 박힌 것이라 안 돈다). 픽셀아트라 각도를 크게 주면 nearest 스케일 사진에 계단 아티팩트가 보이므로 격식만 깨질 만큼 아주 조금이다.
+
+수상 표현이 벽 사진뿐도 아니다 — 트로피가 수상자 **책상 위**에 올라간다. 벽 사진은 "누가 받았는지"를 알리는 보조 표시라 작아도 된다.
+
+**책상 트로피**(`entities/TrophyOverlay.ts`)도 눈검증을 두 번 반영했다.
+
+- *"트로피 안 보이는데?"* — 정렬 버그였다. 가구는 자기 **아래 모서리**로 y-sort하는데(`TileRenderer.buildFurniture`: `zIndex = (ty+1)*TILE_SIZE`) 트로피는 `zIndex = root.y`를 써서 상판 중앙값(`ty*16+6`)이 상판 정렬값(`ty*16+16`)보다 작았다 → **자기가 올라앉은 책상 뒤로** 들어가 통째로 가려졌다. 이제 `(deskTy+1)*TILE_SIZE + 1`을 쓴다. 남쪽에 선 캐릭터(`(deskTy+1)*16+8`)는 여전히 앞, 북쪽에 앉은 캐릭터는 뒤다.
+- *"좌우로 너무 넓다 / 금색밖에 없어서 구분이 안 감"* — 폭 12px → 8px로 줄이고 목 리본·받침 명패에 포인트 색 `trophyRibbon`(팔레트 축 신규)을 넣었지만, 12×12px 안에 컵·손잡이·기둥·받침을 손으로 다 읽히게 그리는 건 도트 예산이 근본적으로 빡빡했다.
+- *"차라리 유니코드에서 트로피 찾아서 확대해서 보여주는 게 어때"* — **채택**. 지금 그림의 1순위는 🏆 글리프를 구운 스프라이트이고, 위의 절차적 드로잉은 폴백으로 남았다.
+
+**이모지 굽기**(`gen/emojiTexture.ts`). 시스템 이모지 폰트로 220px에 그린 뒤 글리프 경계로 크롭해 **nearest로 13px 축소**한다. 처음부터 13px로 `fillText`하면 안티에일리어싱에 뭉개져 픽셀아트가 깨진다(눈검증) — 크게 그린 뒤 줄이는 것이 핵심이다. 폰트 디자이너가 최적화해 둔 실루엣(손잡이·잘록한 목·짙은 받침)이 그대로 살아남아 손그림보다 훨씬 트로피로 읽힌다.
+
+| 결정 | 값 | 근거 |
+|---|---|---|
+| 크기 | 13px(외곽선 포함 15px) | 16px로 구우면 손잡이가 책상 타일 밖으로 나간다 |
+| 색 | **원색 그대로** | 회색조 후 테마 컵색 틴트도 렌더해 봤지만 네 테마 전부 탁해지고 pipboy에선 거의 사라진다. 트로피는 씬에서 유일하게 튀어야 하는 소품이다 |
+| 외곽선 | 1px, `darken(trophyBase, 0.45)` | 원색 이모지가 웜톤 책상에 묻힌다. `trophyBase`를 그대로 두르면 명도가 비슷해 테두리가 아니라 얼룩으로 보였다(눈검증) — 채널을 0.45로 눌러야 네 테마 전부에서 윤곽으로 읽힌다. 글리프를 줄이는 대신 **텍스처를 사방 1px 키워** 두른다(11px로 줄이면 눈에 띄게 뭉개진다) |
+| 폴백 | 절차적 도트 드로잉 | 이모지 폰트 없음 / 2d 컨텍스트 없음(jsdom·헤드리스)이면 `bakeEmojiTexture`가 null을 낸다. 이 계약이 깨지면 트로피가 통째로 사라지므로 테스트로 못 박았다 |
+
+플랫폼 폰트에 의존한다는 점은 남는 한계다 — macOS는 Apple Color Emoji, Windows는 Segoe UI Emoji로 모양이 다르다. 텍스처는 (문자, 크기, 외곽선색)으로 캐시돼 씬 재구축·테마 왕복에서 다시 굽지 않는다.
 
 - 상태 배선은 `OfficeBus`에 awardee 계약을 추가하고 `sessionBridge.ts`(실구현)·`createMockOfficeBus`(테스트)에 구현한 뒤 씬이 구독해 **부분 갱신**한다. 씬 전체 재생성은 하지 않는다. 선례는 `OfficeScene.buildBossDesk()` + `onVacationModeChanged`(휴가팻말)이며, 이것이 A/C↔B 사이의 유일한 확립된 확장 경로다.
 - 책상 좌표는 `assignedDeskIndex` → `deskAssignment.assignDesks` → `DeskSlot.seat` → `tileCenterPx(seat)` 체인으로 얻는다. 책상 위 소품의 기존 선례는 `scenes/officeScene.ts`의 `Tile.DeskTop` 케이스(랩탑) — `g.rect().fill()` 절차적 드로잉이며 텍스처가 아니다.
-- 벽 장식은 현재 전무하다. `Tile.Wall` 케이스에 좌표 조건부로 액자 틀을 그린다. **액자 틀 색은 테마 팔레트 축**(`theme/themes.ts`의 `TILE_PALETTE_KEYS`)을 쓰고, 안에 들어가는 초상만 별도 텍스처로 분리한다.
+- 벽 장식은 타일 드로잉(`Tile.Wall`)이 아니라 **표시객체**(`entities/AwardFrameOverlay.ts`)가 그린다. 벽이 한 겹(16px)뿐이라 타일에 구우면 내부 콘텐츠가 8×22px로 눌려 "문짝"이 됐다. 배치(위치+카드 크기)의 단일 출처는 `scenes/officeScene.ts`의 `awardFrameRectPx()`. **색은 테마 팔레트 축**(`theme/themes.ts`의 `TILE_PALETTE_KEYS`의 `frameBorder`=그림자·압정·실루엣 / `frameMat`=카드 종이 / `frameSilhouette`=사진칸 바탕·별)을 쓰고, 안에 들어가는 초상만 별도 텍스처로 분리한다.
 - 초상 → Pixi 텍스처 경로는 아직 없다(`portraitCache`는 DOM `<img>` 전용). `sprite/spriteCache.ts`의 `decodeSheet(b64)` → canvas → `Texture.from(canvas)` 패턴을 재사용한다.
 - 픽셀 그리드는 `TILE_SIZE = 16`, `antialias:false` / `roundPixels:true` / `resolution:1`로 서브픽셀을 원천 차단한다. 난수가 필요하면 `hashStringToSeed(agentId)` + `mulberry32`만 쓴다(결정성 관례).
 
 ## 8. 테스트
 
-**vitest** — `selection.test.ts`: 결정성(같은 입력 → 같은 결과, 입력 unmutated), 4단계 동점 전부, 임계 미달 → `winner: null`, deleted/bot 제외, `clockedOut` 포함됨, `fixedOffsetCalendar`로 월 경계·연말연시. `speechGenerator.test.ts`: 월 필터, 균등 샘플링, 문자 예산·절단, 일기 없음 경로, 실패 사유 매핑. `awardsStore.test.ts`: 기존 레코드 skip, 누락 월만 확정, 12개월 캡, 진행 중인 달 미확정, 인플라이트 중복 가드.
+**vitest** — `selection.test.ts`: 결정성(같은 입력 → 같은 결과, 입력 unmutated), 4단계 동점 전부, 임계 미달 → `winner: null`, deleted/bot 제외, `clockedOut` 포함됨, `fixedOffsetCalendar`로 월 경계·연말연시. `speechGenerator.test.ts`: 월 필터, 균등 샘플링, 예산 역산(편수·편당)·문장 경계 절단, 프롬프트 총량이 백엔드 상한 아래로 유지됨, 출력 클램프(`clampSpeech`), 일기 없음 경로, 실패 사유 매핑. `AwardFrameOverlay.test.ts`: 폴라로이드 형태(아래 턱 > 위 여백), 별, 압정 비회전 + 카드 회전축, 사진 contain. `awardsStore.test.ts`: 기존 레코드 skip, 누락 월만 확정, 12개월 캡, 진행 중인 달 미확정, 인플라이트 중복 가드.
 
 **cargo** — `awards_store`: 라운드트립, temp+rename 원자성, `month` 키 검증 거부, 미래 `version` 로드 거부 + 파일 보존, upsert-if-absent, speech append, 초상 원본 없을 때 `hasPortrait:false`, 복사 성공 시 `load_portrait`가 Some.
 

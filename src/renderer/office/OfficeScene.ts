@@ -278,7 +278,7 @@ export class OfficeScene {
   }
 
   /**
-   * "이 달의 우수사원" 표시객체(책상 트로피 + 벽 액자)를 만들고 bus를
+   * "이 달의 우수사원" 표시객체(책상 트로피 + 벽 폴라로이드)를 만들고 bus를
    * 구독한다. 좌표/가시성은 최신 awardee + profiles로 결정되므로, 구독 전에
    * 한 번 `updateAwardDisplays()`로 최신 상태를 먼저 복원한다 — 휴가 팻말과
    * 같은 이유(bus replay는 subscribe 시점에만 오고, 값이 안 바뀌었으면
@@ -309,7 +309,7 @@ export class OfficeScene {
     });
   }
 
-  /** 트로피 좌석 + 액자 표시 여부를 최신 awardee/profiles로 재계산한다. */
+  /** 트로피 좌석 + 벽 폴라로이드 표시 여부를 최신 awardee/profiles로 재계산한다. */
   private updateAwardDisplays(): void {
     this.updateTrophy();
     this.updateAwardFrame();
@@ -325,16 +325,23 @@ export class OfficeScene {
       this.trophyOverlay.setVisible(false);
       return;
     }
-    const p = tileCenterPx({ tx: seat.tx + 1, ty: seat.ty + 1 });
+    const deskTy = seat.ty + 1; // 좌석은 상판 바로 위 타일 — 상판 행은 seat.ty + 1
+    const p = tileCenterPx({ tx: seat.tx + 1, ty: deskTy });
     this.trophyOverlay.root.position.set(p.x, p.y - 2); // 책상 상판 위에 살짝 얹힌 높이
-    this.trophyOverlay.root.zIndex = this.trophyOverlay.root.y; // 캐릭터/가구와 동일한 y-sort 규칙
+    // zIndex는 y가 아니라 **얹힌 책상의 정렬값 + 1**이다. 가구는 자기 아래
+    // 모서리로 정렬하므로(TileRenderer.buildFurniture: `(ty+1)*TILE_SIZE`) 책상
+    // 상판의 정렬값이 상판 *중앙*보다 10px 크고, 트로피에 y를 그대로 쓰면
+    // 트로피가 자기가 올라앉은 책상 뒤로 들어가 통째로 가려진다(눈검증:
+    // "트로피 안 보이는데?"). 이 규칙이면 남쪽에 선 캐릭터((ty+1)*16+8)는
+    // 여전히 트로피 앞에, 북쪽에 앉은 캐릭터는 뒤에 온다.
+    this.trophyOverlay.root.zIndex = (deskTy + 1) * TILE_SIZE + 1;
     this.trophyOverlay.setVisible(true);
   }
 
-  /** 액자(틀+매트+콘텐츠 전체) 표시 여부. `AwardFrameOverlay`가 틀까지 통째로
-   * 그리므로 `root.visible` 하나로 전체를 켜고 끈다 — 수상자가 없으면 틀도
-   * 벽에 남기지 않는다. 현재는 오피스 씬에만 액자 아트가 있어 다른 풍경에서는
-   * 항상 숨긴다. */
+  /** 벽 폴라로이드(카드+압정+콘텐츠 전체) 표시 여부. `AwardFrameOverlay`가
+   * 카드와 압정까지 통째로 그리므로 `root.visible` 하나로 전체를 켜고 끈다 —
+   * 수상자가 없으면 빈 카드를 벽에 남기지 않는다. 현재는 오피스 씬에만 이
+   * 아트가 있어 다른 풍경에서는 항상 숨긴다. */
   private updateAwardFrame(): void {
     if (!this.awardFrame) return;
     const show = this.scene.id === "office" && shouldShowAwardFrame(this.awardee);

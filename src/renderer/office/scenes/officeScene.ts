@@ -13,35 +13,41 @@ import { OFFICE_MAP, Tile, TILE_SIZE } from "../map/mapData";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 /**
- * "이 달의 우수사원" 액자 위치(docs/employee-of-the-month-design.md §7).
+ * "이 달의 우수사원" 벽 사진 위치(docs/employee-of-the-month-design.md §7).
  *
- * 이전 설계는 액자를 왼쪽 측벽 세로 1×2칸(tx0·ty2~3)에 타일 드로잉으로
- * 구웠으나, 오피스 벽은 한 겹(16px)뿐이라 테두리(2px)+매트(2px)를 빼면
- * 내부 콘텐츠가 8×22px밖에 안 남고, 세로로 긴 실루엣이 우측 보스 책상
- * (tx17·ty7~8)과 헷갈릴 만큼 닮아 "문짝"으로 보였다(눈검증 확인).
+ * 첫 설계는 왼쪽 측벽 세로 1×2칸(tx0·ty2~3)에 타일 드로잉으로 구웠으나, 오피스
+ * 벽은 한 겹(16px)뿐이라 내부 콘텐츠가 8×22px밖에 안 남아 "문짝"으로 보였다.
+ * 그래서 타일 격자에서 완전히 빼내 `entities/AwardFrameOverlay.ts` 표시객체
+ * 하나가 카드·압정·콘텐츠를 다 그리게 했다 — 16px 타일 폭에 묶이지 않는다.
  *
- * 대신 액자를 타일 격자에서 완전히 빼내 `entities/AwardFrameOverlay.ts` 표시
- * 객체 하나가 틀·매트·콘텐츠를 다 그리게 한다 — 16px 타일 폭에 묶이지 않는다.
- * 상단 벽(ty0)에 걸고 그 아래 완전히 빈 통로 행(ty1)까지 늘어뜨린다(벽 장식이
- * 아래 행으로 살짝 겹치는 건 픽셀아트 관용구이고, ty1은 GRID 전체가 Floor라
- * 겹칠 대상이 없다). 가로 위치는 데스크 쌍(tx2-3/6-7/10-11/14-15) 사이의 빈
- * 간격(tx8-9)을 근거로 잡는다 — 그 간격 중앙에 놓으면 데스크와도 겹치지 않고
- * 정중앙이라 눈에 띈다.
+ * 두 번째 설계(28×28 정사각 액자, 정중앙 tx8-9)는 눈검증에서 "영정사진 같다"가
+ * 나왔다. 정사각 + 어두운 테두리 + 정면 흉상 + **벽 정중앙 단독 배치**가 그
+ * 도상 그대로였기 때문이다. 지금은 압정으로 꽂은 작은 폴라로이드(18×21)이고
+ * (형태 근거는 오버레이 파일 주석), 배치도 다음 두 가지로 신격화를 깬다.
+ *
+ *  - **정중앙을 피한다**: 데스크 쌍(tx2-3/6-7/10-11/14-15) 사이 간격 중 정중앙인
+ *    tx8-9 대신 오른쪽 간격 tx12-13에 꽂는다.
+ *  - **그 안에서도 중앙정렬을 안 한다**: 간격 왼쪽에서 4px 지점 — "누가 붙여둔
+ *    사진" 느낌.
+ *
+ * 세로로는 상단 벽(ty0)에 걸고 그 아래 빈 통로 행(ty1)까지 살짝 늘어뜨린다
+ * (벽 장식이 아래 행으로 겹치는 건 픽셀아트 관용구이고, ty1은 GRID 전체가
+ * Floor라 겹칠 대상이 없다).
  */
-const AWARD_FRAME_GAP_TX = 8; // 데스크 쌍 사이 빈 간격(tx8-9, 2칸 폭)의 시작 타일
-const AWARD_FRAME_SIZE = 28; // 외곽 사각형 한 변(px) — 정사각
+const AWARD_FRAME_GAP_TX = 12; // 꽂을 데스크 쌍 사이 간격(tx12-13, 2칸 폭)의 시작 타일
+const AWARD_FRAME_GAP_INSET = 4; // 간격 왼쪽 끝에서 이만큼 — 중앙정렬을 일부러 피한다
+const AWARD_FRAME_W = 18; // 폴라로이드 카드 폭(px)
+const AWARD_FRAME_H = 21; // 카드 높이(px) — 사진칸 14 + 상단 여백 2 + 아래 턱 5
 const AWARD_FRAME_Y = 4; // 월드 y(px) — ty0 벽 띠(0~16) 안쪽, wallTop 하이라이트(3px) 아래부터
 
 /**
- * 액자 "외곽" 사각형(틀 바깥 경계)의 월드 px 좌표. `AwardFrameOverlay`가 이
- * 크기를 받아 테두리·매트·콘텐츠 영역을 스스로 유도하므로, 여기서는 배치
- * 지오메트리(위치+크기)만 단일 출처로 낸다.
+ * 폴라로이드 카드의 월드 px 좌표. `AwardFrameOverlay`가 이 크기를 받아 사진칸·
+ * 아래 턱·압정 위치를 스스로 유도하므로, 여기서는 배치 지오메트리(위치+크기)만
+ * 단일 출처로 낸다.
  */
 export function awardFrameRectPx(): { x: number; y: number; w: number; h: number } {
-  const s = TILE_SIZE;
-  const gapW = s * 2; // tx8-9 두 칸 폭
-  const x = AWARD_FRAME_GAP_TX * s + (gapW - AWARD_FRAME_SIZE) / 2; // 간격 중앙 정렬
-  return { x, y: AWARD_FRAME_Y, w: AWARD_FRAME_SIZE, h: AWARD_FRAME_SIZE };
+  const x = AWARD_FRAME_GAP_TX * TILE_SIZE + AWARD_FRAME_GAP_INSET;
+  return { x, y: AWARD_FRAME_Y, w: AWARD_FRAME_W, h: AWARD_FRAME_H };
 }
 
 /** 오피스 타일 드로잉을 팔레트에 바인딩한다. */
