@@ -396,7 +396,7 @@ function steppeTileDraw(pal: SteppePalette): TileDrawFn {
 
 export const STEPPE_SCENE: SceneDef = {
   id: "steppe",
-  label: "몽골 초원",
+  labelKey: "office:scene.steppe",
   map: STEPPE_MAP,
   resolve: (theme) => {
     const mode = sceneColorMode(theme.id);

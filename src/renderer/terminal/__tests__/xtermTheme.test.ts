@@ -4,7 +4,7 @@
 // localStorage 영속/복원. terminalViewMode.test.ts와 같은 패턴(node 환경 +
 // 최소 localStorage 스텁)으로 쓴다.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { THEMES } from "../../theme/themes";
+import { THEMES, themeLabel } from "../../theme/themes";
 import { XTERM_PALETTES, xtermPaletteLabel } from "../palettes";
 import {
   DEFAULT_XTERM_THEME_OVERRIDE,
@@ -61,7 +61,7 @@ describe("해석(auto / 고정)", () => {
       expect(xtermSourceLabel(id)).toBe(xtermPaletteLabel(id));
     }
     // 앱 테마 쪽 라벨도 같은 창구로 나온다.
-    expect(xtermSourceLabel("midnight")).toBe(THEMES.midnight.label);
+    expect(xtermSourceLabel("midnight")).toBe(themeLabel("midnight"));
   });
 });
 

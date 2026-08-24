@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { t } from "@renderer/i18n";
 import { makeRng, hashStringToSeed } from "../prng";
 import { generatePalette, contrastRatio, luminance } from "../palette";
 import {
@@ -21,11 +22,12 @@ describe("archetype registry", () => {
       "human", "elf", "orc", "beastfolk", "robot", "android", "slime", "ghost",
     ]);
     expect(ARCHETYPES.human).toBeDefined();
-    expect(ARCHETYPES.human.label).toBe("인간");
+    expect(t(ARCHETYPES.human.labelKey)).toBe("인간");
   });
 
   it("select options are 자동(시드) + the 8 archetypes", () => {
-    expect(ARCHETYPE_SELECT_OPTIONS[0]).toEqual({ value: "auto", label: "자동(시드)" });
+    expect(ARCHETYPE_SELECT_OPTIONS[0].value).toBe("auto");
+    expect(t(ARCHETYPE_SELECT_OPTIONS[0].labelKey)).toBe("자동(시드)");
     expect(ARCHETYPE_SELECT_OPTIONS).toHaveLength(9);
   });
 
@@ -100,7 +102,7 @@ describe("humanoid archetypes (elf/orc/beastfolk/android)", () => {
     };
     for (const id of ids) {
       expect(ARCHETYPES[id]).toBeDefined();
-      expect(ARCHETYPES[id].label).toBe(labels[id]);
+      expect(t(ARCHETYPES[id].labelKey)).toBe(labels[id]);
       const rng = makeRng(hashStringToSeed("p"));
       expect(ARCHETYPES[id].promptDescriptor(ARCHETYPES[id].generatePalette(rng)).humanoid).toBe(true);
     }
@@ -147,7 +149,7 @@ describe("non-humanoid archetypes (robot/slime/ghost)", () => {
     const labels: Record<string, string> = { robot: "로봇", slime: "슬라임", ghost: "유령" };
     for (const id of ids) {
       expect(ARCHETYPES[id]).toBeDefined();
-      expect(ARCHETYPES[id].label).toBe(labels[id]);
+      expect(t(ARCHETYPES[id].labelKey)).toBe(labels[id]);
       const pal = ARCHETYPES[id].generatePalette(makeRng(1));
       expect(ARCHETYPES[id].promptDescriptor(pal).humanoid).toBe(false);
     }
@@ -213,7 +215,8 @@ describe("keyColorsFor", () => {
       expect(colors.length).toBeGreaterThan(0);
       for (const c of colors) {
         expect(hints).toContain(`${c.en} approximately ${hexColor(c.rgb)}`);
-        expect(c.ko.length).toBeGreaterThan(0);
+        expect(t(c.labelKey).length).toBeGreaterThan(0);
+        expect(t(c.labelKey)).not.toBe(c.labelKey); // 카탈로그에 실제로 있는 키
         expect(hexColor(c.rgb)).toMatch(/^#[0-9a-f]{6}$/);
       }
     }

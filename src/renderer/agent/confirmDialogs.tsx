@@ -14,6 +14,8 @@
 // 버그를 여기서 바로잡았다). 경고색은 하드코딩 #e0574a 대신 테마 토큰
 // `--accent-warn`을 쓴다.
 import type { ReactNode } from "react";
+import { Trans, useTranslation } from "react-i18next";
+
 import { useAppStore } from "../store/appStore";
 import { deleteAgent } from "./deleteAgent";
 import { restartAgentSession } from "./restartAgentSession";
@@ -25,7 +27,7 @@ interface ConfirmDialogProps {
   /** `confirm-<slug>-dialog` / `confirm-<slug>-warning` 클래스의 어근. */
   slug: string;
   title: string;
-  /** 확인 버튼 라벨(취소 버튼은 항상 "취소"). */
+  /** 확인 버튼 라벨(취소 버튼은 항상 `app:confirm.cancel`). */
   confirmLabel: string;
   /** 확인 시 실행할 동작. 호출 뒤 모달은 껍데기가 닫는다. */
   onConfirm: () => void;
@@ -50,6 +52,7 @@ export function ConfirmDialog({
   warning,
   footer,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation("app");
   const closeModal = useAppStore((s) => s.closeModal);
 
   return (
@@ -79,7 +82,7 @@ export function ConfirmDialog({
             {confirmLabel}
           </button>
           <button className="pixel-btn" onClick={closeModal}>
-            취소
+            {t("confirm.cancel")}
           </button>
         </div>
       </div>
@@ -103,6 +106,7 @@ export function useConfirmTarget(agentId: string | undefined) {
 
 /** 캐릭터 삭제 확인. 실행 중이면 세션 종료 경고. */
 export function ConfirmDeleteDialog() {
+  const { t } = useTranslation("app");
   const modal = useAppStore((s) => s.modal);
   const agentId = modal.kind === "confirm-delete" ? modal.agentId : undefined;
   const { name, running } = useConfirmTarget(agentId);
@@ -112,15 +116,20 @@ export function ConfirmDeleteDialog() {
   return (
     <ConfirmDialog
       slug="delete"
-      title="캐릭터 삭제"
-      confirmLabel="삭제"
+      title={t("confirm.delete.title")}
+      confirmLabel={t("confirm.delete.confirm")}
       onConfirm={() => {
         if (agentId) void deleteAgent(agentId);
       }}
-      warning={running && "실행 중인 세션이 종료됩니다."}
+      warning={running && t("confirm.delete.warning")}
     >
       <p>
-        정말 <strong>{name}</strong> 캐릭터를 삭제할까요?
+        <Trans
+          t={t}
+          i18nKey="confirm.delete.body"
+          values={{ name }}
+          components={{ strong: <strong /> }}
+        />
       </p>
     </ConfirmDialog>
   );
@@ -128,6 +137,7 @@ export function ConfirmDeleteDialog() {
 
 /** 터미널 재시작 확인. 실행 중이면 종료+스크롤백 소실 경고. */
 export function ConfirmRestartDialog() {
+  const { t } = useTranslation("app");
   const modal = useAppStore((s) => s.modal);
   const agentId = modal.kind === "confirm-restart" ? modal.agentId : undefined;
   const { name, running } = useConfirmTarget(agentId);
@@ -137,15 +147,20 @@ export function ConfirmRestartDialog() {
   return (
     <ConfirmDialog
       slug="restart"
-      title="터미널 재시작"
-      confirmLabel="재시작"
+      title={t("confirm.restart.title")}
+      confirmLabel={t("confirm.restart.confirm")}
       onConfirm={() => {
         if (agentId) void restartAgentSession(agentId);
       }}
-      warning={running && "실행 중인 세션이 종료되고 스크롤백이 지워집니다."}
+      warning={running && t("confirm.restart.warning")}
     >
       <p>
-        정말 <strong>{name}</strong>의 터미널을 재시작할까요?
+        <Trans
+          t={t}
+          i18nKey="confirm.restart.body"
+          values={{ name }}
+          components={{ strong: <strong /> }}
+        />
       </p>
     </ConfirmDialog>
   );
@@ -153,6 +168,7 @@ export function ConfirmRestartDialog() {
 
 /** 이전 Claude 세션 이어하기 확인. 캡처된 native sessionId를 함께 넘긴다. */
 export function ConfirmResumeDialog() {
+  const { t } = useTranslation("app");
   const modal = useAppStore((s) => s.modal);
   const agentId = modal.kind === "confirm-resume" ? modal.agentId : undefined;
   const sessionId = modal.kind === "confirm-resume" ? modal.sessionId : undefined;
@@ -163,15 +179,20 @@ export function ConfirmResumeDialog() {
   return (
     <ConfirmDialog
       slug="resume"
-      title="이전 세션 이어하기"
-      confirmLabel="이어하기"
+      title={t("confirm.resume.title")}
+      confirmLabel={t("confirm.resume.confirm")}
       onConfirm={() => {
         if (agentId && sessionId) void resumeAgentSession(agentId, sessionId);
       }}
-      warning={running && "실행 중인 세션이 종료되고 스크롤백이 지워집니다."}
+      warning={running && t("confirm.resume.warning")}
     >
       <p>
-        <strong>{name}</strong>의 현재 세션을 종료하고 이전 Claude 세션을 이어할까요?
+        <Trans
+          t={t}
+          i18nKey="confirm.resume.body"
+          values={{ name }}
+          components={{ strong: <strong /> }}
+        />
       </p>
     </ConfirmDialog>
   );
@@ -182,6 +203,7 @@ export function ConfirmResumeDialog() {
  * FSM 규칙대로 탕비실로 이동하고, 캐릭터 클릭으로 재소환된다.
  */
 export function ConfirmTerminateDialog() {
+  const { t } = useTranslation("app");
   const modal = useAppStore((s) => s.modal);
   const agentId = modal.kind === "confirm-terminate" ? modal.agentId : undefined;
   const { name, running } = useConfirmTarget(agentId);
@@ -191,18 +213,20 @@ export function ConfirmTerminateDialog() {
   return (
     <ConfirmDialog
       slug="terminate"
-      title="터미널 종료"
-      confirmLabel="종료"
+      title={t("confirm.terminate.title")}
+      confirmLabel={t("confirm.terminate.confirm")}
       onConfirm={() => {
         if (agentId) void terminateAgentSession(agentId);
       }}
-      warning={
-        running &&
-        "실행 중인 세션이 종료됩니다. 캐릭터는 탕비실에서 대기하며, 캐릭터를 클릭하면 새 세션이 시작됩니다."
-      }
+      warning={running && t("confirm.terminate.warning")}
     >
       <p>
-        정말 <strong>{name}</strong>의 터미널을 종료할까요?
+        <Trans
+          t={t}
+          i18nKey="confirm.terminate.body"
+          values={{ name }}
+          components={{ strong: <strong /> }}
+        />
       </p>
     </ConfirmDialog>
   );
@@ -215,6 +239,7 @@ export function ConfirmTerminateDialog() {
  * 때문이다. 확인하면 그래도 봇을 켠다(경고는 running과 무관하게 항상 표시).
  */
 export function ConfirmBotStartDialog() {
+  const { t } = useTranslation("app");
   const modal = useAppStore((s) => s.modal);
   const startBot = useAppStore((s) => s.startBot);
   const agentId = modal.kind === "confirm-bot-start" ? modal.agentId : undefined;
@@ -225,16 +250,21 @@ export function ConfirmBotStartDialog() {
   return (
     <ConfirmDialog
       slug="bot-start"
-      title="봇 모드 시작"
-      confirmLabel="그래도 켜기"
+      title={t("confirm.botStart.title")}
+      confirmLabel={t("confirm.botStart.confirm")}
       onConfirm={() => {
         if (agentId) void startBot(agentId);
       }}
-      warning="맨 셸에서 봇을 켜면 봇이 보내는 작업 지시문이 셸 명령으로 잘못 입력되어 에러가 납니다. 터미널에 claude를 먼저 띄운 뒤 켜는 것을 권장합니다."
-      footer={<p>그래도 봇 모드를 켤까요?</p>}
+      warning={t("confirm.botStart.warning")}
+      footer={<p>{t("confirm.botStart.footer")}</p>}
     >
       <p>
-        <strong>{name}</strong>의 터미널에서 에이전트(claude 등)가 실행 중인지 확인할 수 없습니다.
+        <Trans
+          t={t}
+          i18nKey="confirm.botStart.body"
+          values={{ name }}
+          components={{ strong: <strong /> }}
+        />
       </p>
     </ConfirmDialog>
   );
@@ -247,6 +277,7 @@ export function ConfirmBotStartDialog() {
  * 끝나므로 항상 경고를 띄운다.
  */
 export function ConfirmClockOutDialog() {
+  const { t } = useTranslation("app");
   const modal = useAppStore((s) => s.modal);
   const agentId = modal.kind === "confirm-clock-out" ? modal.agentId : undefined;
   const { name, running } = useConfirmTarget(agentId);
@@ -262,8 +293,8 @@ export function ConfirmClockOutDialog() {
   return (
     <ConfirmDialog
       slug="clock-out"
-      title={isAll ? "전체 퇴근" : "퇴근"}
-      confirmLabel="퇴근"
+      title={isAll ? t("confirm.clockOut.titleAll") : t("confirm.clockOut.title")}
+      confirmLabel={t("confirm.clockOut.confirm")}
       onConfirm={() => {
         if (isAll) {
           void clockOutAll();
@@ -273,14 +304,19 @@ export function ConfirmClockOutDialog() {
       }}
       warning={
         (isAll || running) &&
-        (isAll ? "진행 중인 세션이 모두 종료됩니다." : "진행 중인 세션이 종료됩니다.")
+        (isAll ? t("confirm.clockOut.warningAll") : t("confirm.clockOut.warning"))
       }
     >
       {isAll ? (
-        <p>근무 중인 캐릭터 {onDutyCount}명을 모두 퇴근시킬까요?</p>
+        <p>{t("confirm.clockOut.bodyAll", { count: onDutyCount })}</p>
       ) : (
         <p>
-          정말 <strong>{name}</strong> 캐릭터를 퇴근시킬까요?
+          <Trans
+            t={t}
+            i18nKey="confirm.clockOut.body"
+            values={{ name }}
+            components={{ strong: <strong /> }}
+          />
         </p>
       )}
     </ConfirmDialog>

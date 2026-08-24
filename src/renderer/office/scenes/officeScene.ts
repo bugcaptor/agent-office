@@ -133,7 +133,7 @@ export function officeTileDraw(pal: OfficeTilePalette): TileDrawFn {
 
 export const OFFICE_SCENE: SceneDef = {
   id: "office",
-  label: "사무실",
+  labelKey: "office:scene.office",
   map: OFFICE_MAP,
   // 테마 팔레트 직결 — 씬 색 변환(sceneColor)을 거치지 않는 유일한 씬이다.
   resolve: (theme) => ({

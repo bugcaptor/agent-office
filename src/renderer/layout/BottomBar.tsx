@@ -214,7 +214,7 @@ export function BottomBar() {
           setSceneThemeMenu({ x: rect.left, y: rect.top });
         }}
       >
-        🎨 {SCENES[scene].label} · {THEMES[theme].label}
+        🎨 {t(SCENES[scene].labelKey)} · {t(THEMES[theme].labelKey)}
       </button>
       {sceneThemeMenu && (
         <ContextMenu
@@ -226,14 +226,14 @@ export function BottomBar() {
             ...SCENE_ORDER.map((id) => ({
               // 현재 항목만 체크 아이콘.
               icon: id === scene ? "✔" : undefined,
-              label: SCENES[id].label,
+              label: t(SCENES[id].labelKey),
               onSelect: () => setScene(id),
             })),
             { header: t("bottomBar.themeHeader") },
             ...THEME_ORDER.map((id) => ({
               // 현재 테마는 체크로 표시(아이콘 슬롯 폭은 나머지 항목도 유지한다).
               icon: id === theme ? "✔" : undefined,
-              label: THEMES[id].label,
+              label: t(THEMES[id].labelKey),
               onSelect: () => setTheme(id),
             })),
           ]}

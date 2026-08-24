@@ -14,6 +14,7 @@
 //   고정"을 고를 수 있으므로 앱 테마와 1:1로 묶여 있지는 않다.
 // - 캐릭터 스프라이트 팔레트(office/gen/palette.ts)는 에이전트별 절차
 //   생성이므로 테마 대상이 아니다.
+import { t } from "@renderer/i18n";
 import type { ITheme } from "@xterm/xterm";
 
 /** tokens.css가 선언하는 색 토큰 전부(--unit 같은 비색상 토큰 제외). */
@@ -84,8 +85,10 @@ export type ThemeId = "daylight" | "midnight" | "sakura" | "pipboy";
 
 export interface ThemeDef {
   id: ThemeId;
-  /** 픽커 버튼/드롭다운에 그대로 노출되는 한국어 라벨. */
-  label: string;
+  /** 픽커 버튼/드롭다운에 노출되는 라벨의 **번역 키**(`office` 네임스페이스).
+   *  이 레지스트리는 모듈 최상위 상수라 `t()`를 부를 수 없다 — 값이 아니라
+   *  키를 담고 렌더 시점에 번역한다(`themeLabel`, 또는 컴포넌트의 `t`). */
+  labelKey: string;
   css: Record<CssTokenKey, string>;
   pixi: PixiThemePalette;
   /**
@@ -101,7 +104,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
   // 밝고 따뜻한 주간 오피스 — 새 기본 테마.
   daylight: {
     id: "daylight",
-    label: "밝음",
+    labelKey: "office:theme.daylight",
     css: {
       "--bg-base": "#f2ede2",
       "--bg-panel": "#fbf6ea",
@@ -181,7 +184,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
   // 테마 도입 이전의 기존 룩 — tokens.css/PAL/배경 0x1b1b24를 그대로 보존.
   midnight: {
     id: "midnight",
-    label: "미드나이트",
+    labelKey: "office:theme.midnight",
     css: {
       "--bg-base": "#12131a",
       "--bg-panel": "#1e2130",
@@ -258,7 +261,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
   // 파스텔 핑크 — 블러시 패널 + 플럼 텍스트.
   sakura: {
     id: "sakura",
-    label: "벚꽃",
+    labelKey: "office:theme.sakura",
     css: {
       "--bg-base": "#f5e0e8",
       "--bg-panel": "#fcf0f5",
@@ -335,7 +338,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
   // 초록 계열이며, App 루트에 스캔라인 오버레이(.crt-overlay)가 겹친다.
   pipboy: {
     id: "pipboy",
-    label: "핍보이",
+    labelKey: "office:theme.pipboy",
     css: {
       "--bg-base": "#071209",
       "--bg-panel": "#0c1f10",
@@ -427,6 +430,13 @@ export const DEFAULT_THEME_ID: ThemeId = "daylight";
 
 export function isThemeId(v: unknown): v is ThemeId {
   return typeof v === "string" && v in THEMES;
+}
+
+/** 픽커에 노출할 테마 라벨(호출 시점 번역 — 언어 변경을 따라간다).
+ *  React 컴포넌트는 이걸 쓰지 말고 자기 `useTranslation`의 `t`로 번역해야
+ *  언어가 바뀔 때 리렌더가 걸린다(`t(THEMES[id].labelKey)`). */
+export function themeLabel(id: ThemeId): string {
+  return t(THEMES[id].labelKey);
 }
 
 /**

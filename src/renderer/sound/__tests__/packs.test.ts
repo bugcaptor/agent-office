@@ -7,6 +7,7 @@ import {
   groupSampleUrlsByPack,
   listPackOptions,
   packGain,
+  packLabel,
   pickPackSamples,
   resolvePackId,
 } from "../packs";
@@ -45,7 +46,8 @@ describe("listPackOptions", () => {
     const opts = listPackOptions(["my-custom-pack"]);
     const custom = opts.find((o) => o.id === "my-custom-pack");
     expect(custom).toBeDefined();
-    expect(custom!.label).toBe("my-custom-pack");
+    expect(custom!.labelKey).toBeUndefined(); // 번역할 이름이 없다
+    expect(packLabel(custom!, (k) => k)).toBe("my-custom-pack");
   });
 });
 

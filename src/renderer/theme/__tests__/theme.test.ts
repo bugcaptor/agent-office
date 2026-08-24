@@ -18,6 +18,7 @@ import {
   TILE_PALETTE_KEYS,
   isThemeId,
   nextThemeId,
+  themeLabel,
 } from "../themes";
 import { THEME_STORAGE_KEY, applyTheme, loadStoredThemeId } from "../applyTheme";
 
@@ -51,7 +52,8 @@ describe("THEMES 레지스트리 무결성", () => {
   it("모든 테마가 id 일치 + 비어있지 않은 한국어 라벨을 가진다", () => {
     for (const id of ALL_IDS) {
       expect(THEMES[id].id).toBe(id);
-      expect(THEMES[id].label.length).toBeGreaterThan(0);
+      expect(themeLabel(id).length).toBeGreaterThan(0);
+      expect(themeLabel(id)).not.toBe(THEMES[id].labelKey); // 카탈로그에 실제로 있는 키
     }
   });
 

@@ -4,7 +4,8 @@
 // 의존이 없어 node 환경에서 돈다.
 import { describe, expect, it } from "vitest";
 import type { TalkLogEntry } from "@shared/types";
-import { groupByConversation, kindLabel, participantsOf } from "../talkLogView";
+import { initI18nForTest, t as translate, SOURCE_LANGUAGE } from "@renderer/i18n";
+import { groupByConversation, kindLabel, kindLabelKey, participantsOf } from "../talkLogView";
 
 function entry(over: Partial<TalkLogEntry> & { convId: string; at: number }): TalkLogEntry {
   return {
@@ -61,10 +62,34 @@ describe("participantsOf", () => {
 });
 
 describe("kindLabel", () => {
-  it("알려진 종류는 한국어로, 모르는 값은 그대로", () => {
-    expect(kindLabel("send")).toBe("말함");
-    expect(kindLabel("deliver")).toBe("전달됨");
-    expect(kindLabel("expire")).toBe("전달 실패(만료)");
-    expect(kindLabel("future-kind")).toBe("future-kind");
+  // 순수 함수는 키만 고른다 — 문구는 카탈로그 몫이라 여기서 단언하지 않는다.
+  it("알려진 종류는 키를 고르고, 모르는 값은 키가 없다", () => {
+    expect(kindLabelKey("send")).toBe("talk.kindSend");
+    expect(kindLabelKey("deliver")).toBe("talk.kindDeliver");
+    expect(kindLabelKey("expire")).toBe("talk.kindExpire");
+    expect(kindLabelKey("future-kind")).toBeUndefined();
+  });
+
+  it("모르는 종류는 t를 태우지 않고 원문 그대로 보여 준다", () => {
+    const spy = (key: string) => `translated:${key}`;
+    expect(kindLabel("send", spy)).toBe("translated:talk.kindSend");
+    expect(kindLabel("future-kind", spy)).toBe("future-kind");
+  });
+
+  // 정본(ko) 문구는 이 카탈로그 렌더 테스트가 명세로 지킨다.
+  it("ko 카탈로그가 예전 문구를 그대로 낸다", async () => {
+    await initI18nForTest(SOURCE_LANGUAGE);
+    const tr = (key: string) => translate(`activity:${key}`);
+    expect(kindLabel("send", tr)).toBe("말함");
+    expect(kindLabel("deliver", tr)).toBe("전달됨");
+    expect(kindLabel("expire", tr)).toBe("전달 실패(만료)");
+  });
+
+  it("en 카탈로그도 말이 되는 문구를 낸다", async () => {
+    await initI18nForTest("en");
+    const tr = (key: string) => translate(`activity:${key}`);
+    expect(kindLabel("send", tr)).toBe("said");
+    expect(kindLabel("expire", tr)).toBe("delivery failed (expired)");
+    await initI18nForTest(SOURCE_LANGUAGE); // 파일 간 언어 상태 누수 방지
   });
 });

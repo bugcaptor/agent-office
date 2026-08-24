@@ -442,7 +442,7 @@ function spaceshipTileDraw(pal: SpaceshipPalette): TileDrawFn {
 
 export const SPACESHIP_SCENE: SceneDef = {
   id: "spaceship",
-  label: "우주선",
+  labelKey: "office:scene.spaceship",
   map: SPACESHIP_MAP,
   resolve: (theme) => {
     const mode = sceneColorMode(theme.id);

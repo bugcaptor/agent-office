@@ -14,6 +14,7 @@
 // 종료한다. 캔슬해도 작업 로그는 디스크에 남아 다음 실행에 이어진다. 밀린 게
 // 없으면(대부분) 예전처럼 즉시 종료한다.
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
@@ -28,6 +29,7 @@ import {
 type Phase = "confirm" | "flushing";
 
 export function ConfirmQuitDialog() {
+  const { t } = useTranslation("app");
   const modal = useAppStore((s) => s.modal);
   const closeModal = useAppStore((s) => s.closeModal);
   const hasRunningSession = useAppStore((s) =>
@@ -63,7 +65,7 @@ export function ConfirmQuitDialog() {
         const snapshots = await terminalRegistry.flushAndSerializeAll();
         await tauriApi.handoffSessions(snapshots, terminalRegistry.getRenderedBytes());
       } catch (err) {
-        console.warn("종료 확인: 세션 핸드오프 실패 — 터미널 유지 없이 종료 진행", err);
+        console.warn("confirm-quit: session handoff failed, quitting without keeping terminals", err);
       }
     }
 
@@ -94,14 +96,18 @@ export function ConfirmQuitDialog() {
     return (
       <div className="modal-backdrop">
         <div className="pixel-panel confirm-quit-dialog">
-          <h2 className="pixel-title">일기 쓰는 중…</h2>
+          <h2 className="pixel-title">{t("confirm.quit.flushTitle")}</h2>
           <p>
-            종료 전에 오늘 한 일을 일기로 남기는 중입니다
-            {progress.total > 0 ? ` (${progress.done}/${progress.total})` : ""}.
+            {progress.total > 0
+              ? t("confirm.quit.flushBodyProgress", {
+                  done: progress.done,
+                  total: progress.total,
+                })
+              : t("confirm.quit.flushBody")}
           </p>
           <div className="dialog-actions">
             <button className="pixel-btn" onClick={() => cancelRef.current?.()}>
-              건너뛰고 종료
+              {t("confirm.quit.skip")}
             </button>
           </div>
         </div>
@@ -117,31 +123,31 @@ export function ConfirmQuitDialog() {
       }}
     >
       <div className="pixel-panel confirm-quit-dialog">
-        <h2 className="pixel-title">종료 확인</h2>
+        <h2 className="pixel-title">{t("confirm.quit.title")}</h2>
         {showHandoffOptions ? (
           <>
-            <p>실행 중인 터미널이 있습니다. 터미널을 그대로 둔 채 종료할 수 있습니다.</p>
+            <p>{t("confirm.quit.handoffBody")}</p>
             <div className="dialog-actions">
               <button className="pixel-btn primary" onClick={() => void beginQuit(true)}>
-                터미널 유지하고 종료
+                {t("confirm.quit.keepTerminals")}
               </button>
               <button className="pixel-btn" onClick={() => void beginQuit(false)}>
-                모두 종료하고 종료
+                {t("confirm.quit.closeAll")}
               </button>
               <button className="pixel-btn" onClick={closeModal}>
-                취소
+                {t("confirm.quit.cancel")}
               </button>
             </div>
           </>
         ) : (
           <>
-            <p>아직 퇴근하지 않은 에이전트가 있습니다. 지금 종료하면 실행 중인 세션이 모두 중단됩니다.</p>
+            <p>{t("confirm.quit.body")}</p>
             <div className="dialog-actions">
               <button className="pixel-btn primary" onClick={() => void beginQuit(false)}>
-                종료
+                {t("confirm.quit.confirm")}
               </button>
               <button className="pixel-btn" onClick={closeModal}>
-                취소
+                {t("confirm.quit.cancel")}
               </button>
             </div>
           </>

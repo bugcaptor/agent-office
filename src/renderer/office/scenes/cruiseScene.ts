@@ -391,7 +391,7 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
 
 export const CRUISE_SCENE: SceneDef = {
   id: "cruise",
-  label: "호화 크루즈",
+  labelKey: "office:scene.cruise",
   map: CRUISE_MAP,
   resolve: (theme) => {
     const mode = sceneColorMode(theme.id);

@@ -17,6 +17,7 @@
 //   있으며 열린 대화 수가 버튼 배지로도 뜬다.
 // - "🎨 {풍경}·{테마}"는 풍경/테마 두 값을 한 버튼에 보여주고, 메뉴는
 //   "풍경"/"테마" 섹션 헤더로 나뉜다.
+import { t } from "@renderer/i18n";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
@@ -120,8 +121,8 @@ describe("풍경·테마 통합 버튼", () => {
     const { getByRole } = render(<BottomBar />);
 
     const btn = getByRole("button", { name: "풍경·테마 선택" });
-    expect(btn.textContent).toContain(SCENES[DEFAULT_SCENE_ID].label);
-    expect(btn.textContent).toContain(THEMES[DEFAULT_THEME_ID].label);
+    expect(btn.textContent).toContain(t(SCENES[DEFAULT_SCENE_ID].labelKey));
+    expect(btn.textContent).toContain(t(THEMES[DEFAULT_THEME_ID].labelKey));
   });
 
   it("메뉴가 '풍경'/'테마' 섹션 헤더로 나뉘고, 각 섹션에 값이 모두 나온다", async () => {
@@ -135,11 +136,11 @@ describe("풍경·테마 통합 버튼", () => {
     expect(getByText("풍경")).toBeTruthy();
     expect(getByText("테마")).toBeTruthy();
     for (const id of SCENE_ORDER) {
-      expect(getByRole("menuitem", { name: new RegExp(SCENES[id].label) })).toBeTruthy();
+      expect(getByRole("menuitem", { name: new RegExp(t(SCENES[id].labelKey)) })).toBeTruthy();
     }
     for (const id of THEME_ORDER) {
       // 현재 테마는 체크 아이콘이 붙으므로 이름이 라벨과 정확히 같지 않다.
-      expect(getByRole("menuitem", { name: new RegExp(THEMES[id].label) })).toBeTruthy();
+      expect(getByRole("menuitem", { name: new RegExp(t(THEMES[id].labelKey)) })).toBeTruthy();
     }
   });
 
@@ -163,7 +164,7 @@ describe("풍경·테마 통합 버튼", () => {
     const { getByRole, queryByRole } = render(<BottomBar />);
 
     fireEvent.click(getByRole("button", { name: "풍경·테마 선택" }));
-    fireEvent.click(getByRole("menuitem", { name: new RegExp(SCENES[other].label) }));
+    fireEvent.click(getByRole("menuitem", { name: new RegExp(t(SCENES[other].labelKey)) }));
 
     expect(useAppStore.getState().scene).toBe(other);
     expect(queryByRole("menu")).toBeNull();

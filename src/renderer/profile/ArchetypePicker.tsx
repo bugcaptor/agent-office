@@ -18,15 +18,18 @@ import {
   normalizeArchetypeInput,
   customArchetypeSubject,
 } from "../office/gen/archetypes";
+import type { ArchetypeOption } from "../office/gen/archetypes";
 
-/** 친 글자가 라벨/id 어디에든 들어 있으면 후보. 빈 질의면 전부. */
+/** 친 글자가 라벨/id 어디에든 들어 있으면 후보. 빈 질의면 전부.
+ *  라벨은 데이터가 키만 들고 있으므로 호출자의 `t`로 번역해 비교한다. */
 export function filterArchetypeOptions(
   query: string,
-): ReadonlyArray<{ value: string; label: string }> {
+  t: (key: string) => string,
+): ReadonlyArray<ArchetypeOption> {
   const q = query.trim().toLowerCase();
   if (!q) return ARCHETYPE_SELECT_OPTIONS;
   const hit = ARCHETYPE_SELECT_OPTIONS.filter(
-    (o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q),
+    (o) => t(o.labelKey).toLowerCase().includes(q) || o.value.toLowerCase().includes(q),
   );
   // 걸리는 게 없으면 목록을 숨기지 않고 전부 보여 준다 — 커스텀을 치는 중에
   // 목록이 사라졌다 나타났다 하면 산만하고, 되돌아갈 길도 없어진다.
@@ -56,11 +59,11 @@ export function ArchetypePicker({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
 
-  const text = archetypeInputText(value);
+  const text = archetypeInputText(value, t);
   const custom = customArchetypeSubject(value);
   // 목록에서 고른 값이면(=커스텀이 아니면) 좁히지 않는다 — 라벨을 그대로
   // 질의로 쓰면 고르자마자 목록이 그 한 줄로 쪼그라들어 다시 못 바꾼다.
-  const visible = useMemo(() => filterArchetypeOptions(custom ?? ""), [custom]);
+  const visible = useMemo(() => filterArchetypeOptions(custom ?? "", t), [custom, t]);
 
   useEffect(() => {
     if (!open) return;
@@ -136,7 +139,7 @@ export function ArchetypePicker({
           value={text}
           onFocus={() => setOpen(true)}
           onChange={(e) => {
-            onChange(normalizeArchetypeInput(e.target.value));
+            onChange(normalizeArchetypeInput(e.target.value, t));
             setOpen(true);
           }}
           onKeyDown={onKeyDown}
@@ -183,7 +186,7 @@ export function ArchetypePicker({
               onMouseEnter={() => setActive(i)}
               onClick={() => commit(o.value)}
             >
-              {o.label}
+              {t(o.labelKey)}
             </button>
           ))}
         </div>

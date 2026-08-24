@@ -22,6 +22,7 @@
 // from `bus` and tears down entities — neither depends on the Pixi app being
 // initialized, and it must not leak listeners on the pre-init destroy path.
 import { Application, Container, Graphics, Rectangle, Text, type FederatedPointerEvent, type Texture, type Ticker } from "pixi.js";
+import { i18n, t } from "../i18n";
 import { TileRenderer } from "./map/TileRenderer";
 import { BOSS_DESK_RECT, TILE_SIZE, type OfficeMap, type TileRect } from "./map/mapData";
 import { tileCenterPx } from "./world/pathing";
@@ -77,6 +78,10 @@ export class OfficeScene {
   private bossSignLabel?: Text;
   private offVacation?: () => void;
   private offHoverGate?: () => void;
+  /** 휴가 팻말 글씨의 언어 갱신 구독 해제자. 씬은 여러 번 만들어졌다 없어지므로
+   *  팻말을 파기하는 곳에서 반드시 함께 떼어 낸다 — 남으면 파기된 Pixi `Text`를
+   *  건드리게 된다. */
+  private offLanguage?: () => void;
   /** 휴가 모드 최신값 — 씬 재구축 후 팻말 표시 상태를 되살리기 위해 보관. */
   private vacationOn = false;
   // "이 달의 우수사원" 오피스 연출(docs/employee-of-the-month-design.md §7).
@@ -255,8 +260,10 @@ export class OfficeScene {
     sign.addChild(board);
     this.bossSignBoard = board;
     // 글씨는 월드 배율에서 비정수 리샘플링으로 깨져, applyCamera가 1/scale로 상쇄한다.
+    // 문구는 React 밖이라 언어를 바꿔도 저절로 안 바뀐다 — `languageChanged`를
+    // 구독해 `.text`만 갈아 끼운다(씬 재구축 없이).
     const label = new Text({
-      text: "휴가중",
+      text: t("office:sign.vacation"),
       style: { fontFamily: "DungGeunMo", fontSize: 11, fill: this.theme.pixi.text },
       resolution: 2,
     });
@@ -264,6 +271,11 @@ export class OfficeScene {
     label.position.set(1 - 2.25, -3.5);
     sign.addChild(label);
     this.bossSignLabel = label;
+    const onLanguageChanged = (): void => {
+      if (this.bossSignLabel) this.bossSignLabel.text = t("office:sign.vacation");
+    };
+    i18n.on("languageChanged", onLanguageChanged);
+    this.offLanguage = () => i18n.off("languageChanged", onLanguageChanged);
     this.paintBossSign();
     const p = tileCenterPx({ tx: rect.x, ty: rect.y + rect.h - 1 });
     sign.position.set(p.x, p.y);
@@ -383,7 +395,7 @@ export class OfficeScene {
         this.awardPortraitFor = awardee.month;
         this.awardFrame?.showPhoto(texture, this.awardRenderScale);
       })
-      .catch((err) => console.warn("OfficeScene: 수상자 초상 로드 실패", err));
+      .catch((err) => console.warn("OfficeScene: failed to load awardee portrait", err));
   }
 
   private awardPhotoSlot(): { w: number; h: number } {
@@ -487,6 +499,8 @@ export class OfficeScene {
     }
     this.offVacation?.(); // buildBossDesk가 다시 구독한다 — 중복 구독 방지
     this.offVacation = undefined;
+    this.offLanguage?.(); // 팻말과 한 몸 — 파기 전에 떼어야 죽은 Text를 건드리지 않는다
+    this.offLanguage = undefined;
     if (this.bossSign) {
       this.overlayLayer.removeChild(this.bossSign);
       this.bossSign.destroy({ children: true });
@@ -599,6 +613,8 @@ export class OfficeScene {
       this.onWake = undefined;
     }
     this.offVacation?.();
+    this.offLanguage?.();
+    this.offLanguage = undefined;
     this.offAwardee?.();
     this.trophyOverlay?.destroy();
     this.trophyOverlay = undefined;

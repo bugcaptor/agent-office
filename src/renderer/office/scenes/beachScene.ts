@@ -282,7 +282,7 @@ function beachTileDraw(pal: BeachPalette): TileDrawFn {
 
 export const BEACH_SCENE: SceneDef = {
   id: "beach",
-  label: "바캉스 해변",
+  labelKey: "office:scene.beach",
   map: BEACH_MAP,
   resolve: (theme) => {
     const mode = sceneColorMode(theme.id);

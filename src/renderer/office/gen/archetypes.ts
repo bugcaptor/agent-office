@@ -40,10 +40,14 @@ export interface KeyColor {
   /** 실제로 이 색이 들어가는 팔레트 램프. 아키타입마다 라벨은 달라도 램프는
    *  셋뿐이라, 사용자 색 오버라이드(`ColorOverrides`)의 키가 된다. */
   slot: PaletteSlot;
-  /** 프롬프트 영문 라벨("Hair color", "Chassis color" 등). */
+  /** 프롬프트 영문 라벨("Hair color", "Chassis color" 등). **표시용이 아니라
+   *  이미지 생성 프롬프트에 그대로 실리는 문구다** — 번역 대상이 아니다. */
   en: string;
-  /** UI 표시용 한국어 라벨. */
-  ko: string;
+  /** UI(색 칩·컬러 피커 제목)에 노출되는 이름의 **번역 키**(`office` 네임스페이스).
+   *  이 모듈은 모듈 최상위 상수 팩토리라 `t()`를 부를 수 없고, `src/web`도
+   *  import하므로 i18n 런타임에 의존하지 않는다 — 키만 담고, 번역은 소비처
+   *  컴포넌트가 자기 `t`로 한다(`t(c.labelKey)`). */
+  labelKey: string;
   /** 0xRRGGBB. */
   rgb: number;
   /** 영문 라인 끝에 붙는 부연(예: "(pale and translucent)"). */
@@ -67,14 +71,14 @@ function describe(
 }
 
 // 키 컬러 슬롯(아키타입마다 같은 램프를 다른 이름으로 부른다).
-const kHair = (pal: CharacterPalette): KeyColor => ({ slot: "hair", en: "Hair color", ko: "머리", rgb: pal.hair.base });
-const kFur = (pal: CharacterPalette): KeyColor => ({ slot: "hair", en: "Fur color", ko: "털", rgb: pal.hair.base });
-const kSkin = (pal: CharacterPalette): KeyColor => ({ slot: "skin", en: "Skin color", ko: "피부", rgb: pal.skin.base });
-const kPlating = (pal: CharacterPalette): KeyColor => ({ slot: "skin", en: "Plating color", ko: "장갑", rgb: pal.skin.base });
-const kChassis = (pal: CharacterPalette): KeyColor => ({ slot: "skin", en: "Chassis color", ko: "본체", rgb: pal.skin.base });
-const kClothing = (pal: CharacterPalette): KeyColor => ({ slot: "shirt", en: "Clothing color", ko: "옷", rgb: pal.shirt.base });
-const kAccent = (pal: CharacterPalette): KeyColor => ({ slot: "shirt", en: "Accent color", ko: "포인트", rgb: pal.shirt.base });
-const kBody = (pal: CharacterPalette, note?: string): KeyColor => ({ slot: "skin", en: "Body color", ko: "몸체", rgb: pal.skin.base, note });
+const kHair = (pal: CharacterPalette): KeyColor => ({ slot: "hair", en: "Hair color", labelKey: "office:keyColor.hair", rgb: pal.hair.base });
+const kFur = (pal: CharacterPalette): KeyColor => ({ slot: "hair", en: "Fur color", labelKey: "office:keyColor.fur", rgb: pal.hair.base });
+const kSkin = (pal: CharacterPalette): KeyColor => ({ slot: "skin", en: "Skin color", labelKey: "office:keyColor.skin", rgb: pal.skin.base });
+const kPlating = (pal: CharacterPalette): KeyColor => ({ slot: "skin", en: "Plating color", labelKey: "office:keyColor.plating", rgb: pal.skin.base });
+const kChassis = (pal: CharacterPalette): KeyColor => ({ slot: "skin", en: "Chassis color", labelKey: "office:keyColor.chassis", rgb: pal.skin.base });
+const kClothing = (pal: CharacterPalette): KeyColor => ({ slot: "shirt", en: "Clothing color", labelKey: "office:keyColor.clothing", rgb: pal.shirt.base });
+const kAccent = (pal: CharacterPalette): KeyColor => ({ slot: "shirt", en: "Accent color", labelKey: "office:keyColor.accent", rgb: pal.shirt.base });
+const kBody = (pal: CharacterPalette, note?: string): KeyColor => ({ slot: "skin", en: "Body color", labelKey: "office:keyColor.body", rgb: pal.skin.base, note });
 
 export type ArchetypeSheet =
   | { kind: "layers"; layers: CharacterLayers }
@@ -87,7 +91,9 @@ interface ArchetypeBuild {
 
 export interface Archetype {
   id: string;
-  label: string;
+  /** 콤보박스에 노출되는 라벨의 **번역 키**(`office` 네임스페이스). 값이 아니라
+   *  키를 담는 이유는 `KeyColor.labelKey`와 같다. */
+  labelKey: string;
   generatePalette(rng: Rng): CharacterPalette;
   buildFrames(rng: Rng, pal: CharacterPalette): ArchetypeBuild;
   promptDescriptor(pal: CharacterPalette): ArchetypePromptDescriptor;
@@ -126,7 +132,7 @@ function humanoidBuild(
 //    파츠 픽 순서 그대로 -> seed 단위 바이트 동일.
 const human: Archetype = {
   id: "human",
-  label: "인간",
+  labelKey: "office:archetype.human",
   generatePalette: (rng) => generatePalette(rng),
   buildFrames: (rng) => humanoidBuild(rng),
   promptDescriptor: (pal) => describe(true, "", [kHair(pal), kClothing(pal)]),
@@ -203,28 +209,28 @@ const ANDROID_OVERLAY: PixelRows = [
 ];
 
 const elf: Archetype = {
-  id: "elf", label: "엘프",
+  id: "elf", labelKey: "office:archetype.elf",
   generatePalette: (rng) => humanoidPalette(rng, ELF_SKIN, ELF_HAIR),
   buildFrames: (rng) => humanoidBuild(rng, ELF_EARS),
   promptDescriptor: (pal) =>
     describe(true, "a slender pale pointy-eared elf", [kHair(pal), kClothing(pal)]),
 };
 const orc: Archetype = {
-  id: "orc", label: "오크",
+  id: "orc", labelKey: "office:archetype.orc",
   generatePalette: (rng) => humanoidPalette(rng, ORC_SKIN, ORC_HAIR),
   buildFrames: (rng) => humanoidBuild(rng, ORC_TUSKS),
   promptDescriptor: (pal) =>
     describe(true, "a green-skinned tusked orc", [kSkin(pal), kClothing(pal)]),
 };
 const beastfolk: Archetype = {
-  id: "beastfolk", label: "수인",
+  id: "beastfolk", labelKey: "office:archetype.beastfolk",
   generatePalette: (rng) => humanoidPalette(rng, BEASTFOLK_SKIN, BEASTFOLK_HAIR),
   buildFrames: (rng) => humanoidBuild(rng, BEASTFOLK_EARS, BEASTFOLK_TAIL),
   promptDescriptor: (pal) =>
     describe(true, "a beastfolk with animal ears and a tail", [kFur(pal), kClothing(pal)]),
 };
 const android: Archetype = {
-  id: "android", label: "안드로이드",
+  id: "android", labelKey: "office:archetype.android",
   generatePalette: (rng) => humanoidPalette(rng, ANDROID_SKIN, ANDROID_HAIR),
   buildFrames: (rng) => humanoidBuild(rng, ANDROID_OVERLAY),
   promptDescriptor: (pal) =>
@@ -327,7 +333,7 @@ function ghostPalette(rng: Rng): CharacterPalette {
 }
 
 const robot: Archetype = {
-  id: "robot", label: "로봇",
+  id: "robot", labelKey: "office:archetype.robot",
   generatePalette: robotPalette,
   buildFrames: () => ({
     descriptor: { ...NON_PARTS_DESCRIPTOR },
@@ -343,7 +349,7 @@ const robot: Archetype = {
     describe(false, "a boxy utility robot with a monitor face", [kChassis(pal), kAccent(pal)]),
 };
 const slime: Archetype = {
-  id: "slime", label: "슬라임",
+  id: "slime", labelKey: "office:archetype.slime",
   generatePalette: slimePalette,
   buildFrames: () => ({
     descriptor: { ...NON_PARTS_DESCRIPTOR },
@@ -353,7 +359,7 @@ const slime: Archetype = {
     describe(false, "a translucent gelatinous slime creature", [kBody(pal)]),
 };
 const ghost: Archetype = {
-  id: "ghost", label: "유령",
+  id: "ghost", labelKey: "office:archetype.ghost",
   generatePalette: ghostPalette,
   buildFrames: () => ({
     descriptor: { ...NON_PARTS_DESCRIPTOR },
@@ -375,16 +381,22 @@ export const ARCHETYPE_IDS = [
   "human", "elf", "orc", "beastfolk", "robot", "android", "slime", "ghost",
 ] as const;
 
-export const ARCHETYPE_SELECT_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: "auto", label: "자동(시드)" },
-  { value: "human", label: "인간" },
-  { value: "elf", label: "엘프" },
-  { value: "orc", label: "오크" },
-  { value: "beastfolk", label: "수인" },
-  { value: "robot", label: "로봇" },
-  { value: "android", label: "안드로이드" },
-  { value: "slime", label: "슬라임" },
-  { value: "ghost", label: "유령" },
+/** 콤보박스 한 줄. 라벨은 값이 아니라 `office` 네임스페이스의 **번역 키**다. */
+export interface ArchetypeOption {
+  value: string;
+  labelKey: string;
+}
+
+export const ARCHETYPE_SELECT_OPTIONS: ReadonlyArray<ArchetypeOption> = [
+  { value: "auto", labelKey: "office:archetype.auto" },
+  { value: "human", labelKey: "office:archetype.human" },
+  { value: "elf", labelKey: "office:archetype.elf" },
+  { value: "orc", labelKey: "office:archetype.orc" },
+  { value: "beastfolk", labelKey: "office:archetype.beastfolk" },
+  { value: "robot", labelKey: "office:archetype.robot" },
+  { value: "android", labelKey: "office:archetype.android" },
+  { value: "slime", labelKey: "office:archetype.slime" },
+  { value: "ghost", labelKey: "office:archetype.ghost" },
 ];
 
 /**
@@ -399,12 +411,17 @@ export function customArchetypeSubject(archetype: string | undefined): string | 
   return t;
 }
 
-/** 저장값 -> 콤보박스에 보일 글자. 알려진 값은 한국어 라벨, 커스텀은 적은 그대로. */
-export function archetypeInputText(archetype: string | undefined): string {
-  const t = (archetype ?? "").trim();
-  if (!t) return "";
-  const opt = ARCHETYPE_SELECT_OPTIONS.find((o) => o.value === t);
-  return opt ? opt.label : archetype ?? "";
+/** 저장값 -> 콤보박스에 보일 글자. 알려진 값은 번역된 라벨, 커스텀은 적은 그대로.
+ *  `t`는 호출자(컴포넌트)의 번역 함수 — 이 모듈이 직접 번역하면 모듈 로드
+ *  시점의 언어에 굳어 버린다(workdir/status.ts와 같은 관례). */
+export function archetypeInputText(
+  archetype: string | undefined,
+  t: (key: string) => string,
+): string {
+  const v = (archetype ?? "").trim();
+  if (!v) return "";
+  const opt = ARCHETYPE_SELECT_OPTIONS.find((o) => o.value === v);
+  return opt ? t(opt.labelKey) : archetype ?? "";
 }
 
 /**
@@ -415,14 +432,14 @@ export function archetypeInputText(archetype: string | undefined): string {
  * 되면 입력칸이 곧바로 "자동(시드)"로 다시 채워져 한 글자도 못 친다.
  * 빈 값의 의미(=자동)는 저장·미리보기 시점에 archetypeOrAuto가 정한다.
  */
-export function normalizeArchetypeInput(text: string): string {
-  const t = text.trim();
-  if (!t) return "";
-  const lower = t.toLowerCase();
+export function normalizeArchetypeInput(text: string, t: (key: string) => string): string {
+  const v = text.trim();
+  if (!v) return "";
+  const lower = v.toLowerCase();
   const opt = ARCHETYPE_SELECT_OPTIONS.find(
-    (o) => o.label.toLowerCase() === lower || o.value.toLowerCase() === lower,
+    (o) => t(o.labelKey).toLowerCase() === lower || o.value.toLowerCase() === lower,
   );
-  return opt ? opt.value : t;
+  return opt ? opt.value : v;
 }
 
 /**

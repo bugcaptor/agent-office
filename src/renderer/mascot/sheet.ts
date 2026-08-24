@@ -90,7 +90,7 @@ function decodeSheet(b64: string): Promise<CanvasImageSource> {
       ctx.drawImage(img, 0, 0, w, h);
       resolve(canvas);
     };
-    img.onerror = () => reject(new Error("mascot: 스프라이트 시트 디코드 실패"));
+    img.onerror = () => reject(new Error("mascot: failed to decode the sprite sheet"));
     img.src = `data:image/png;base64,${b64}`;
   });
 }
@@ -115,7 +115,7 @@ export async function loadMascotFrames(
         return { idle: [frameAt(sheet, 0, n, d), frameAt(sheet, 1, n, d)], cell: d };
       }
     } catch (err) {
-      console.warn("mascot: 커스텀 스프라이트 로드 실패 — 절차 생성으로 폴백", err);
+      console.warn("mascot: custom sprite load failed, falling back to generation", err);
     }
   }
 

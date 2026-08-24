@@ -55,18 +55,29 @@ export function participantsOf(
   return out;
 }
 
-/** 로그 종류 표시 문구. 알 수 없는 값은 그대로 보여 준다(백엔드가 늘려도 안 깨지게). */
-export function kindLabel(kind: string): string {
+/**
+ * 로그 종류 → `activity` 네임스페이스의 라벨 키. 모르는 값은 키가 없다
+ * (undefined) — 백엔드가 종류를 늘려도 화면이 안 깨지게 원문을 그대로 보여
+ * 주려는 것이다(workdir/status.ts의 statusLabelKey와 같은 관례).
+ */
+export function kindLabelKey(kind: string): string | undefined {
   switch (kind) {
     case "send":
-      return "말함";
+      return "talk.kindSend";
     case "deliver":
-      return "전달됨";
+      return "talk.kindDeliver";
     case "expire":
-      return "전달 실패(만료)";
+      return "talk.kindExpire";
     default:
-      return kind;
+      return undefined;
   }
+}
+
+/** 로그 종류 표시 문구. `t`는 `activity` 네임스페이스에 바인딩된 번역 함수.
+ *  알 수 없는 값은 그대로 보여 준다(백엔드가 늘려도 안 깨지게). */
+export function kindLabel(kind: string, t: (key: string) => string): string {
+  const key = kindLabelKey(kind);
+  return key ? t(key) : kind;
 }
 
 /** 하루치 로그라 날짜는 생략하고 시:분:초만. */

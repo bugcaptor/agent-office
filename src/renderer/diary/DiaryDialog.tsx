@@ -5,12 +5,18 @@
 // 보여주고, "일기 쓰기" 버튼으로 지금까지의 작업 로그를 한 편으로 남긴다
 // (수동 트리거 — 비용·기대 UX상 사용자 요청 기반). "내보내기"(#65)는 일기
 // 전체를 Markdown/JSON 파일로 저장한다. 일기 자체는 읽기 전용 뷰.
+//
+// i18n: 번역 대상은 껍데기(제목·버튼·빈 상태·안내)뿐이다. `entry.body`는 생성
+// 당시 언어로 쓰인 사료라 그대로 보여준다(재번역하지 않는다).
+import { useTranslation } from "react-i18next";
+
 import { useDiaryStore } from "./diaryStore";
 import { useEscapeToClose } from "../shared/useEscapeToClose";
 import { formatWhen } from "./diaryExport";
 import "./diary.css";
 
 export function DiaryDialog() {
+  const { t } = useTranslation("journal");
   const overlay = useDiaryStore((s) => s.overlay);
   const entries = useDiaryStore((s) => s.entries);
   const loading = useDiaryStore((s) => s.loading);
@@ -37,9 +43,13 @@ export function DiaryDialog() {
         if (e.button === 0 && e.target === e.currentTarget) closeDiary();
       }}
     >
-      <div className="pixel-panel diary-dialog" role="dialog" aria-label={`${overlay.agentName}의 일기`}>
+      <div
+        className="pixel-panel diary-dialog"
+        role="dialog"
+        aria-label={t("diary.dialogAria", { name: overlay.agentName })}
+      >
         <div className="diary-header">
-          <h2 className="diary-title">📔 {overlay.agentName}의 일기</h2>
+          <h2 className="diary-title">{t("diary.title", { name: overlay.agentName })}</h2>
           <div className="diary-actions">
             <button
               type="button"
@@ -47,30 +57,30 @@ export function DiaryDialog() {
               disabled={generating}
               onClick={() => void writeNow(overlay.agentId)}
             >
-              {generating ? "쓰는 중…" : "일기 쓰기"}
+              {generating ? t("diary.writing") : t("diary.write")}
             </button>
             <button
               type="button"
               className="pixel-btn"
               disabled={exporting || entries.length === 0}
-              title={entries.length === 0 ? "내보낼 일기가 없습니다" : "일기 전체를 파일로 저장"}
+              title={entries.length === 0 ? t("diary.exportNoneTitle") : t("diary.exportTitle")}
               onClick={() => void exportNow(overlay.agentId)}
             >
-              {exporting ? "내보내는 중…" : "내보내기"}
+              {exporting ? t("diary.exporting") : t("diary.export")}
             </button>
             <button type="button" className="pixel-btn" onClick={closeDiary}>
-              닫기
+              {t("diary.close")}
             </button>
           </div>
         </div>
 
-        {backfilling && <div className="diary-notice">밀린 일기 쓰는 중…</div>}
+        {backfilling && <div className="diary-notice">{t("diary.backfilling")}</div>}
         {notice && <div className="diary-notice">{notice}</div>}
 
         {loading ? (
-          <div className="diary-empty">불러오는 중…</div>
+          <div className="diary-empty">{t("diary.loading")}</div>
         ) : ordered.length === 0 ? (
-          <div className="diary-empty">아직 일기가 없습니다. ‘일기 쓰기’로 첫 일기를 남겨 보세요.</div>
+          <div className="diary-empty">{t("diary.empty")}</div>
         ) : (
           <ul className="diary-list">
             {ordered.map((entry) => (

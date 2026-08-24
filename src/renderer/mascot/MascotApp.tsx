@@ -7,6 +7,14 @@
 // 부팅 레이스: main은 상태가 바뀔 때만 emit하므로, 이 창이 리스너를 걸기 전에
 // 지나간 상태는 영영 못 받는다. 리스너 설치가 끝난 직후 `mascot-ready`를 쏴서
 // main이 현재 상태를 다시 보내게 하는 핸드셰이크로 막는다.
+//
+// i18n 한계(의도된 것): 이 창은 **메인 창과 다른 webview**이고 설정을 직접 읽지
+// 않는다. `main.tsx`가 `import "../i18n"`으로 i18next를 켜지만 언어는 메인 창이
+// localStorage에 남긴 캐시값으로 정해지고, 메인 창에서 언어를 바꿔도 **여기로
+// 실시간 전파되지 않는다** — 다음 마스코트 창 생성 때 반영된다. 지금 이 창에
+// 번역 대상 문구가 사실상 없어(캔버스와 배지뿐) 실해가 없으므로 그대로 둔다.
+// 나중에 텍스트가 늘면 `mascot-state` 페이로드에 언어를 실어 보내거나 전용
+// 이벤트로 `applyLanguageSetting`을 밀어 주어야 한다.
 import { useEffect, useRef, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import {
@@ -109,7 +117,7 @@ export default function MascotApp() {
           /* main이 아직 없으면 다음 상태 변화 때 자연히 받는다 */
         });
       })
-      .catch((err) => console.warn("mascot: 상태 구독 실패", err));
+      .catch((err) => console.warn("mascot: failed to subscribe to state", err));
     return () => {
       disposed = true;
       un?.();
@@ -118,7 +126,7 @@ export default function MascotApp() {
 
   // ---- 위치 복원 + 이동 저장 ----
   useEffect(() => {
-    void restorePosition().catch((err) => console.warn("mascot: 위치 복원 실패", err));
+    void restorePosition().catch((err) => console.warn("mascot: failed to restore position", err));
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     let un: (() => void) | null = null;
@@ -135,7 +143,7 @@ export default function MascotApp() {
         if (disposed) f();
         else un = f;
       })
-      .catch((err) => console.warn("mascot: 이동 구독 실패", err));
+      .catch((err) => console.warn("mascot: failed to subscribe to window moves", err));
 
     return () => {
       disposed = true;
@@ -161,7 +169,7 @@ export default function MascotApp() {
         if (disposed) f();
         else un = f;
       })
-      .catch((err) => console.warn("mascot: 배율 변화 구독 실패", err));
+      .catch((err) => console.warn("mascot: failed to subscribe to scale changes", err));
     return () => {
       disposed = true;
       un?.();
@@ -189,7 +197,7 @@ export default function MascotApp() {
         framesRef.current = frames;
         setFramesVersion((v) => v + 1); // 애니 루프를 다시 걸어 즉시 다시 그리게 한다.
       })
-      .catch((err) => console.warn("mascot: 스프라이트 생성 실패", err));
+      .catch((err) => console.warn("mascot: failed to build sprite frames", err));
     return () => {
       cancelled = true;
     };
@@ -250,7 +258,7 @@ export default function MascotApp() {
     e.currentTarget.releasePointerCapture(e.pointerId);
     void getCurrentWindow()
       .startDragging()
-      .catch((err) => console.warn("mascot: 드래그 시작 실패", err));
+      .catch((err) => console.warn("mascot: failed to start dragging", err));
   };
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -261,7 +269,7 @@ export default function MascotApp() {
     if (agentId === null) return;
     void tauriApi
       .mascotActivate(agentId)
-      .catch((err) => console.warn("mascot: 활성화 실패", err));
+      .catch((err) => console.warn("mascot: activation failed", err));
   };
 
   return (

@@ -52,7 +52,7 @@ export function useTalkStatus(enabled: boolean): TalkStatusSnapshot {
         setQueued(status.queued);
       } catch (err) {
         // 실패는 콘솔 경고로만 — 다음 폴링이 재시도한다(이전 값 유지).
-        console.warn("talk: 상태 조회 실패", err);
+        console.warn("talk: status poll failed", err);
       }
     };
     void poll();

@@ -13,7 +13,7 @@
 // 순수 로직(스토어/xterm 런타임 의존 없음)이라 appStore와 applyTheme이 모두
 // 안전하게 import할 수 있다 — `ITheme`은 type-only import.
 import type { ITheme } from "@xterm/xterm";
-import { THEMES, isThemeId } from "../theme/themes";
+import { THEMES, isThemeId, themeLabel } from "../theme/themes";
 import type { ThemeId } from "../theme/themes";
 import { XTERM_PALETTES, isXtermPaletteId, xtermPaletteLabel } from "./palettes";
 import type { XtermPalette, XtermPaletteId } from "./palettes";
@@ -48,10 +48,10 @@ export function xtermPaletteOf(source: XtermSourceId): XtermPalette {
   return isThemeId(source) ? THEMES[source].xterm : XTERM_PALETTES[source].xterm;
 }
 
-/** 출처 id → 셀렉터에 노출할 라벨. 터미널 전용 팔레트 쪽은 카탈로그 키를
- *  들고 있어 호출 시점에 번역한다(`xtermPaletteLabel`). */
+/** 출처 id → 셀렉터에 노출할 라벨. 두 레지스트리 모두 카탈로그 키를 들고
+ *  있어 호출 시점에 번역한다(`themeLabel`/`xtermPaletteLabel`). */
 export function xtermSourceLabel(source: XtermSourceId): string {
-  return isThemeId(source) ? THEMES[source].label : xtermPaletteLabel(source);
+  return isThemeId(source) ? themeLabel(source) : xtermPaletteLabel(source);
 }
 
 /** 앱 테마 + 오버라이드 → xterm `ITheme`. */

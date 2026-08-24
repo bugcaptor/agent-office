@@ -4,7 +4,13 @@
 // 스냅샷만 주고(docs/usage-limits-design.md §3), "가장 절박한 윈도 선택",
 // 임계 색상, 카운트다운·신선도 포맷 같은 해석·표시는 여기서 한다. React·스토어
 // 의존 없음 — 단위 테스트 대상(설계 §4).
+//
+// i18n: 표시 함수들은 **완성된 문장이 아니라 번역 키 설명자(TextKey)**를
+// 돌려준다. 문장을 여기서 만들어 버리면 언어를 바꿔도 안 바뀌고, 순수 함수
+// 테스트가 문구에 묶인다. 실제 번역은 `t`를 쥔 UsageDialog/UsageWidget이
+// `renderText`로 한다(workdir/status.ts와 같은 결의 결정).
 
+import type { TextKey } from "@renderer/shared/textKey";
 import type {
   ClaudeLiveStatus,
   CodexLiveStatus,
@@ -60,61 +66,81 @@ export function badgeWindows(usage: ProviderUsage | null): UsageWindow[] {
   return [session, urgentRest];
 }
 
-/** 윈도 종류 한국어 라벨. 모델별 창은 모델명(label)을 곁들인다. */
-export function windowLabel(w: UsageWindow): string {
+/** 윈도 종류 라벨 키. 모델별 창은 모델명(label)을 곁들인다. */
+export function windowLabel(w: UsageWindow): TextKey {
   switch (w.kind) {
     case "session":
-      return "5시간";
+      return { key: "usage.window.session" };
     case "weekly":
-      return "주간";
+      return { key: "usage.window.weekly" };
     case "session_model":
-      return w.label ? `5시간 · ${w.label}` : "5시간 (모델별)";
+      return w.label
+        ? { key: "usage.window.sessionModel", params: { label: w.label } }
+        : { key: "usage.window.sessionModelGeneric" };
     case "weekly_model":
-      return w.label ? `주간 · ${w.label}` : "주간 (모델별)";
+      return w.label
+        ? { key: "usage.window.weeklyModel", params: { label: w.label } }
+        : { key: "usage.window.weeklyModelGeneric" };
     case "unknown":
-      return w.windowMinutes ? `${w.windowMinutes}분 창` : "기타";
+      return w.windowMinutes
+        ? { key: "usage.window.minutes", params: { minutes: w.windowMinutes } }
+        : { key: "usage.window.other" };
   }
 }
 
 /**
- * 리셋까지 남은 시간을 "N시간 N분 후 리셋"으로. 이미 지났으면 "리셋 대기 중",
- * resetsAtMs가 null이면 빈 문자열. 하루 이상은 "N일 N시간 후 리셋".
+ * 리셋까지 남은 시간("N시간 N분 후 리셋") 키. 이미 지났으면 "리셋 대기 중",
+ * resetsAtMs가 null이면 null(표시 없음 — 예전의 빈 문자열 자리). 하루 이상은
+ * "N일 N시간 후 리셋".
  */
-export function formatCountdown(resetsAtMs: number | null, now: number): string {
-  if (resetsAtMs === null) return "";
+export function formatCountdown(resetsAtMs: number | null, now: number): TextKey | null {
+  if (resetsAtMs === null) return null;
   const diff = resetsAtMs - now;
-  if (diff <= 0) return "리셋 대기 중";
+  if (diff <= 0) return { key: "usage.countdown.pending" };
   const totalMin = Math.floor(diff / 60000);
   const days = Math.floor(totalMin / (60 * 24));
   const hours = Math.floor((totalMin % (60 * 24)) / 60);
   const mins = totalMin % 60;
-  if (days > 0) return `${days}일 ${hours}시간 후 리셋`;
-  if (hours > 0) return `${hours}시간 ${mins}분 후 리셋`;
-  return `${mins}분 후 리셋`;
+  if (days > 0) return { key: "usage.countdown.days", params: { days, hours } };
+  if (hours > 0) return { key: "usage.countdown.hours", params: { hours, mins } };
+  return { key: "usage.countdown.mins", params: { mins } };
+}
+
+/** 경과 시간 문구의 갈래. ago("N분 전")와 freshness("N분 전 기준")가 공유한다. */
+type AgoVariant = "justNow" | "days" | "hours" | "mins";
+
+/**
+ * 경과 시간 → 갈래 + 보간 파라미터. 임계값(1분 / 60분 / 24시간)과 내림 규칙은
+ * 손조립 시절 그대로다 — 표기가 바뀌는 지점을 건드리면 체감이 달라진다.
+ */
+function agoParts(atMs: number, now: number): { variant: AgoVariant; params?: Record<string, number> } {
+  const diff = Math.max(0, now - atMs);
+  const totalMin = Math.floor(diff / 60000);
+  if (totalMin < 1) return { variant: "justNow" };
+  const days = Math.floor(totalMin / (60 * 24));
+  const hours = Math.floor((totalMin % (60 * 24)) / 60);
+  const mins = totalMin % 60;
+  if (days > 0) return { variant: "days", params: { days } };
+  if (hours > 0) return { variant: "hours", params: { hours, mins } };
+  return { variant: "mins", params: { mins } };
 }
 
 /**
  * 과거 시각을 "N분 전"으로. 1분 미만은 "방금", 1시간 이상은 "N시간 N분 전",
  * 하루 이상은 "N일 전".
  */
-export function formatAgo(atMs: number, now: number): string {
-  const diff = Math.max(0, now - atMs);
-  const totalMin = Math.floor(diff / 60000);
-  if (totalMin < 1) return "방금";
-  const days = Math.floor(totalMin / (60 * 24));
-  const hours = Math.floor((totalMin % (60 * 24)) / 60);
-  const mins = totalMin % 60;
-  if (days > 0) return `${days}일 전`;
-  if (hours > 0) return `${hours}시간 ${mins}분 전`;
-  return `${mins}분 전`;
+export function formatAgo(atMs: number, now: number): TextKey {
+  const { variant, params } = agoParts(atMs, now);
+  return { key: `usage.ago.${variant}`, params };
 }
 
 /**
- * 신선도를 "N분 전 기준"으로. 1분 미만은 "방금 기준", 1시간 이상은
- * "N시간 N분 전 기준", 하루 이상은 "N일 전 기준".
+ * 신선도를 "N분 전 기준"으로. ago와 같은 갈래를 쓰되 키만 다르다 — "{{ago}}
+ * 기준"처럼 조립하면 언어마다 어순이 다른 자리를 번역자가 못 고친다.
  */
-export function formatFreshness(fetchedAtMs: number, now: number): string {
-  return `${formatAgo(fetchedAtMs, now)} 기준`;
+export function formatFreshness(fetchedAtMs: number, now: number): TextKey {
+  const { variant, params } = agoParts(fetchedAtMs, now);
+  return { key: `usage.freshness.${variant}`, params };
 }
 
 /** 신선도가 STALE_THRESHOLD_MS를 넘었는지. */
@@ -127,31 +153,30 @@ export function isStale(fetchedAtMs: number, now: number): boolean {
 // 왜 필요한가: 실시간 조회가 실패하면 화면 숫자는 `~/.claude.json` 캐시
 // 미러로 조용히 강등되는데, 그 캐시는 Claude Code에서 `/usage`를 열 때만
 // 갱신된다(일반 대화로는 절대 안 갱신됨 — CLI 2.1.220 실측). 그래서 "쓰고
-// 있는데 숫자가 며칠째 그대로"가 원인 불명으로 보인다. 사유를 문장으로
+// 있는데 숫자가 며칠째 그대로"가 원인 불명으로 보인다. 사유를 문구 키로
 // 돌려주는 건 여기(순수 함수), 그리기는 UsageDialog/UsageWidget이 한다.
+//
+// "표시값은 로컬 캐시…" 꼬리말은 카탈로그 쪽에서 i18next `$t()` 중첩으로
+// 붙인다(`usage.live.cacheNote`) — 실패 문구마다 같은 문장을 복사하지 않게.
 
 /** 진단 문구 한 줄 + 심각도(색). */
 export interface LiveStatusNote {
   level: "ok" | "warn" | "error";
   /** 상세 모달용 전체 문장. */
-  text: string;
+  text: TextKey;
   /** 위젯 툴팁용 짧은 꼬리표. */
-  short: string;
+  short: TextKey;
 }
 
-/** 캐시 미러가 왜 안 움직이는지 — 실패 문구 뒤에 공통으로 붙인다. */
-const CACHE_FALLBACK_NOTE =
-  "표시값은 로컬 캐시(~/.claude.json)이며, 이 캐시는 Claude Code에서 /usage를 열 때만 갱신됩니다";
-
 /** 전송 수단 표시명. `direct`는 우회가 아니므로 라벨을 쓰지 않는다. */
-export function transportLabel(via: FetchTransport): string {
+export function transportLabel(via: FetchTransport): TextKey {
   switch (via) {
     case "direct":
-      return "직접 조회";
+      return { key: "usage.transport.direct" };
     case "curl":
-      return "curl";
+      return { key: "usage.transport.curl" };
     case "claude_cli":
-      return "claude CLI";
+      return { key: "usage.transport.claudeCli" };
   }
 }
 
@@ -161,7 +186,7 @@ function detour(via: FetchTransport | null | undefined): FetchTransport | null {
 }
 
 /**
- * 실시간 조회 상태 → 표시 문구. `null`(구버전 백엔드 응답 등 필드 부재)이면
+ * 실시간 조회 상태 → 표시 문구 키. `null`(구버전 백엔드 응답 등 필드 부재)이면
  * 아무것도 표시하지 않는다.
  */
 export function describeLiveStatus(
@@ -177,60 +202,69 @@ export function describeLiveStatus(
       if (via) {
         return {
           level: "ok",
-          text:
-            `앱이 사용량을 ${transportLabel(via)} 우회로 조회 중 — 앱에서 직접 거는 HTTPS가 ` +
-            "이 환경에서 막혀 있습니다(사내 프록시·사설 인증서 등). 표시값은 최신입니다",
-          short: `실시간 조회 정상(${transportLabel(via)} 우회)`,
+          text: { key: "usage.live.okDetour", params: { via: transportLabel(via) } },
+          short: { key: "usage.live.okDetourShort", params: { via: transportLabel(via) } },
         };
       }
       return {
         level: "ok",
-        text: "앱이 사용량을 직접 조회 중 (최대 15분 간격)",
-        short: "실시간 조회 정상",
+        text: { key: "usage.live.okDirect" },
+        short: { key: "usage.live.okDirectShort" },
       };
     }
     case "never_attempted":
       return {
         level: "warn",
-        text: `실시간 조회를 아직 시도하지 않음 — ${CACHE_FALLBACK_NOTE}`,
-        short: "실시간 조회 대기 중",
+        text: { key: "usage.live.neverAttempted" },
+        short: { key: "usage.live.waitingShort" },
       };
     case "no_credentials":
       return {
         level: "error",
-        text:
-          "실시간 조회 실패: 자격증명을 읽지 못했습니다 — Keychain 접근이 거부/잠겼거나 " +
-          `.credentials.json이 없습니다. ${CACHE_FALLBACK_NOTE}`,
-        short: "실시간 조회 실패(자격증명 없음)",
+        text: { key: "usage.live.noCredentials" },
+        short: { key: "usage.live.noCredentialsShort" },
       };
     case "unauthorized":
       return {
         level: "error",
-        text:
-          `실시간 조회 실패: 토큰이 거부됐습니다(${status.detail ?? "HTTP 401"})` +
-          (status.tokenSource === "file"
-            ? " — Keychain 대신 .credentials.json 파일 토큰으로 폴백했고 그 토큰이 만료됐을 수 있습니다"
-            : " — 재로그인(claude /login)이 필요할 수 있습니다") +
-          `. ${CACHE_FALLBACK_NOTE}`,
-        short: "실시간 조회 실패(인증 거부)",
+        text: {
+          key:
+            status.tokenSource === "file"
+              ? "usage.live.unauthorizedFile"
+              : "usage.live.unauthorizedKeychain",
+          params: { detail: status.detail ?? "HTTP 401" },
+        },
+        short: { key: "usage.live.unauthorizedShort" },
       };
     case "http_error":
       return {
         level: "error",
-        text: `실시간 조회 실패: 서버 오류(${status.detail ?? "HTTP 오류"}). ${CACHE_FALLBACK_NOTE}`,
-        short: `실시간 조회 실패(${status.detail ?? "HTTP 오류"})`,
+        text: {
+          key: "usage.live.httpError",
+          params: { detail: status.detail ?? { key: "usage.live.detailHttpError" } },
+        },
+        short: {
+          key: "usage.live.httpErrorShort",
+          params: { detail: status.detail ?? { key: "usage.live.detailHttpError" } },
+        },
       };
     case "network_error":
       return {
         level: "warn",
-        text: `실시간 조회 실패: 네트워크 ${status.detail ?? "오류"}. ${CACHE_FALLBACK_NOTE}`,
-        short: "실시간 조회 실패(네트워크)",
+        text: {
+          key: "usage.live.networkError",
+          params: { detail: status.detail ?? { key: "usage.live.detailError" } },
+        },
+        short: { key: "usage.live.networkErrorShort" },
       };
     case "unexpected_response":
       return {
         level: "warn",
-        text: `실시간 조회 실패: 응답 형태가 바뀌었습니다(${status.detail ?? "알 수 없음"}). ${CACHE_FALLBACK_NOTE}`,
-        short: "실시간 조회 실패(응답 형태)",
+        text: {
+          key: "usage.live.unexpected",
+          params: { detail: status.detail ?? { key: "usage.live.detailUnknown" } },
+        },
+        short: { key: "usage.live.unexpectedShort" },
       };
   }
 }
@@ -242,13 +276,10 @@ export function describeLiveStatus(
 // 인증이 아니라 "CLI가 없다/죽었다/모르는 응답을 줬다"로 나타난다. 실패하면
 // 표시값은 rollout jsonl 스냅샷으로 강등되는데, 그건 Codex CLI가 실제로 돌
 // 때만 갱신된다 — 그게 "쓰지도 않았는데 숫자가 그대로"의 정체다.
-
-/** Codex 실패 문구 뒤에 공통으로 붙인다. */
-const CODEX_CACHE_FALLBACK_NOTE =
-  "표시값은 로컬 세션 기록(~/.codex/sessions)이며, 이 기록은 Codex CLI가 실제로 돌 때만 갱신됩니다";
+// 공통 꼬리말은 `usage.codexLive.cacheNote`(카탈로그 `$t()` 중첩).
 
 /**
- * Codex 실시간 조회 상태 → 표시 문구. `null`(구버전 백엔드 응답 등 필드
+ * Codex 실시간 조회 상태 → 표시 문구 키. `null`(구버전 백엔드 응답 등 필드
  * 부재)이면 아무것도 표시하지 않는다.
  */
 export function describeCodexLiveStatus(
@@ -259,70 +290,83 @@ export function describeCodexLiveStatus(
     case "ok":
       return {
         level: "ok",
-        text: "앱이 codex CLI에 사용량을 직접 물어보는 중 (최대 15분 간격)",
-        short: "실시간 조회 정상",
+        text: { key: "usage.codexLive.ok" },
+        short: { key: "usage.live.okDirectShort" },
       };
     case "never_attempted":
       return {
         level: "warn",
-        text: `실시간 조회를 아직 시도하지 않음 — ${CODEX_CACHE_FALLBACK_NOTE}`,
-        short: "실시간 조회 대기 중",
+        text: { key: "usage.codexLive.neverAttempted" },
+        short: { key: "usage.live.waitingShort" },
       };
     case "cli_missing":
       return {
         level: "error",
-        text: `실시간 조회 실패: codex 실행 파일을 찾지 못했습니다(PATH 확인). ${CODEX_CACHE_FALLBACK_NOTE}`,
-        short: "실시간 조회 실패(codex 없음)",
+        text: { key: "usage.codexLive.cliMissing" },
+        short: { key: "usage.codexLive.cliMissingShort" },
       };
     case "cli_failed":
       return {
         level: "error",
-        text: `실시간 조회 실패: codex가 응답 없이 종료했습니다(${status.detail ?? "원인 불명"}). ${CODEX_CACHE_FALLBACK_NOTE}`,
-        short: "실시간 조회 실패(codex 종료)",
+        text: {
+          key: "usage.codexLive.cliFailed",
+          params: { detail: status.detail ?? { key: "usage.codexLive.detailUnknownCause" } },
+        },
+        short: { key: "usage.codexLive.cliFailedShort" },
       };
     case "timeout":
       return {
         level: "warn",
-        text: `실시간 조회 실패: codex 응답이 시간 안에 오지 않았습니다. ${CODEX_CACHE_FALLBACK_NOTE}`,
-        short: "실시간 조회 실패(시간 초과)",
+        text: { key: "usage.codexLive.timeout" },
+        short: { key: "usage.codexLive.timeoutShort" },
       };
     case "rpc_error":
       return {
         level: "error",
-        text:
-          `실시간 조회 실패: codex가 오류를 돌려줬습니다(${status.detail ?? "알 수 없음"})` +
-          ` — 로그인이 필요할 수 있습니다(codex login). ${CODEX_CACHE_FALLBACK_NOTE}`,
-        short: "실시간 조회 실패(codex 오류)",
+        text: {
+          key: "usage.codexLive.rpcError",
+          params: { detail: status.detail ?? { key: "usage.live.detailUnknown" } },
+        },
+        short: { key: "usage.codexLive.rpcErrorShort" },
       };
     case "unexpected_response":
       return {
         level: "warn",
-        text:
-          "실시간 조회 실패: codex app-server 응답 형태가 바뀌었습니다" +
-          `(${status.detail ?? "알 수 없음"}). ${CODEX_CACHE_FALLBACK_NOTE}`,
-        short: "실시간 조회 실패(응답 형태)",
+        text: {
+          key: "usage.codexLive.unexpected",
+          params: { detail: status.detail ?? { key: "usage.live.detailUnknown" } },
+        },
+        short: { key: "usage.codexLive.unexpectedShort" },
       };
   }
 }
 
 /**
- * 진단 문구 뒤에 붙일 "마지막 시도 N분 전 · 마지막 성공 N분 전".
+ * 진단 문구 뒤에 붙일 "마지막 시도 N분 전 · 마지막 성공 N분 전"의 **조각들**.
+ * 잇는 건(가운뎃점) 렌더 쪽 몫이다 — 조각 수가 0~2개로 달라지는 자리라
+ * 카탈로그에 넣어 봐야 번역자가 손댈 게 없다.
  * 두 provider의 진단이 공유하는 필드만 읽는다(`via`는 Claude에만 있다).
  */
 export function formatLiveAttempts(
   status: ClaudeLiveStatus | CodexLiveStatus,
   now: number,
-): string {
-  const parts: string[] = [];
-  if (status.lastAttemptMs !== null) parts.push(`마지막 시도 ${formatAgo(status.lastAttemptMs, now)}`);
+): TextKey[] {
+  const parts: TextKey[] = [];
+  if (status.lastAttemptMs !== null) {
+    parts.push({ key: "usage.attempts.lastAttempt", params: { ago: formatAgo(status.lastAttemptMs, now) } });
+  }
   if (status.lastSuccessMs !== null) {
     // 실패 중이어도 "그 값을 무엇으로 받아왔는지"는 남는다(via는 마지막
     // 성공의 수단이다) — 우회로 연명 중인 환경을 여기서도 읽을 수 있게 한다.
     const via = detour("via" in status ? status.via : null);
-    const suffix = via ? ` (${transportLabel(via)} 우회)` : "";
-    parts.push(`마지막 성공 ${formatAgo(status.lastSuccessMs, now)}${suffix}`);
-  } else if (status.outcome !== "never_attempted") parts.push("성공 이력 없음");
-  return parts.join(" · ");
+    const ago = formatAgo(status.lastSuccessMs, now);
+    parts.push(
+      via
+        ? { key: "usage.attempts.lastSuccessVia", params: { ago, via: transportLabel(via) } }
+        : { key: "usage.attempts.lastSuccess", params: { ago } },
+    );
+  } else if (status.outcome !== "never_attempted") parts.push({ key: "usage.attempts.noSuccess" });
+  return parts;
 }
 
 /**

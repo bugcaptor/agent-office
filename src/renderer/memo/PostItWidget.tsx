@@ -14,12 +14,15 @@
 // 바뀐다. React는 루트 컨테이너에 리스너를 붙이므로 여기서
 // stopPropagation 하면 window 리스너까지 도달하지 않는다.
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
+
 import { useAppStore } from "../store/appStore";
 import { useMemoStore } from "./memoStore";
 import { formatMemoWhen } from "./memoFormat";
 import "./memo.css";
 
 export function PostItWidget() {
+  const { t } = useTranslation("journal");
   const visible = useMemoStore((s) => s.visible);
   const activeId = useAppStore((s) => s.activeTerminalAgentId);
   const agentName = useAppStore((s) => (activeId ? s.agents[activeId]?.name : undefined));
@@ -67,7 +70,7 @@ export function PostItWidget() {
     <div
       className="pixel-panel postit"
       role="group"
-      aria-label={`${agentName ?? "캐릭터"}의 포스트잇 메모`}
+      aria-label={t("memo.widgetAria", { name: agentName ?? t("memo.fallbackName") })}
       // 위젯 내부 키 입력이 터미널 오버레이의 전역 단축키로 새지 않게 한다.
       onKeyDown={(e) => e.stopPropagation()}
       onKeyUp={(e) => e.stopPropagation()}
@@ -76,13 +79,13 @@ export function PostItWidget() {
     >
       <div className="postit-header">
         <span className="postit-title" title={agentName ?? undefined}>
-          🗒 {agentName ?? "메모"}
+          🗒 {agentName ?? t("memo.headerFallback")}
         </span>
         <button
           type="button"
           className="postit-x"
-          title="포스트잇 닫기"
-          aria-label="포스트잇 닫기"
+          title={t("memo.close")}
+          aria-label={t("memo.close")}
           onClick={() => setVisible(false)}
         >
           ×
@@ -91,8 +94,8 @@ export function PostItWidget() {
 
       <textarea
         className="postit-text"
-        aria-label="포스트잇 메모 본문"
-        placeholder={loading ? "불러오는 중…" : "이 캐릭터에게 맡긴 일, 다음에 이어갈 것…"}
+        aria-label={t("memo.bodyAria")}
+        placeholder={loading ? t("memo.loading") : t("memo.placeholder")}
         spellCheck={false}
         disabled={!ready}
         value={draft}
@@ -104,35 +107,31 @@ export function PostItWidget() {
         <button
           type="button"
           className="pixel-btn postit-btn"
-          title="메모 전체를 클립보드로 복사(콘솔에 붙여 넣어 쓰세요)"
+          title={t("memo.copyAllTitle")}
           disabled={!ready || draft === ""}
           onClick={() => void copyAll()}
         >
-          전체 복사
+          {t("memo.copyAll")}
         </button>
         <button
           type="button"
           className="pixel-btn postit-btn"
-          title={
-            canArchive
-              ? "지금 장을 아카이브하고 새 빈 장을 펼칩니다(삭제 아님)"
-              : "빈 장은 넘길 수 없습니다"
-          }
+          title={canArchive ? t("memo.flipTitle") : t("memo.flipEmptyTitle")}
           disabled={!canArchive}
           onClick={() => void archiveNow()}
         >
-          {archiving ? "넘기는 중…" : "한 장 넘기기"}
+          {archiving ? t("memo.flipping") : t("memo.flip")}
         </button>
         <button
           type="button"
           className="pixel-btn postit-btn"
-          title="넘긴 지난 장들을 봅니다"
+          title={t("memo.archiveTitle")}
           disabled={activeId === null}
           onClick={() => {
-            if (activeId) void openArchive(activeId, agentName ?? "캐릭터");
+            if (activeId) void openArchive(activeId, agentName ?? t("memo.fallbackName"));
           }}
         >
-          아카이브
+          {t("memo.archive")}
         </button>
       </div>
 
@@ -141,7 +140,8 @@ export function PostItWidget() {
         // 저장 시각을 렌더러가 추측해 표시하지 않는다(진실은 디스크의 헤더다) —
         // 대신 "지금 미저장 편집이 있는가"와 이 장이 시작된 시각만 보여준다.
         <div className="postit-stamp">
-          {dirty ? "저장 중…" : "저장됨"} · {formatMemoWhen(sheet.created)} 시작
+          {dirty ? t("memo.saving") : t("memo.saved")} ·{" "}
+          {t("memo.startedAt", { when: formatMemoWhen(sheet.created) })}
         </div>
       )}
     </div>

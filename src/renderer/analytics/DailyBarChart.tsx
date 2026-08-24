@@ -3,6 +3,8 @@
 // 일별 작업시간 스택 막대(SVG 자체 구현 — 차트 라이브러리 비도입, 설계 비목표).
 // 가로 = 로컬 일, 세로 = 작업시간, 스택 = 에이전트. 세로축 단위(분/시간)는
 // 최댓값에 따라 자동. 막대 조각 hover 시 <title>로 상세를 보여준다.
+import { useTranslation } from "react-i18next";
+import { renderText, type TextKey } from "../shared/textKey";
 import type { AgentDailyStat, AgentMeta } from "./aggregate";
 
 interface Props {
@@ -17,10 +19,14 @@ interface Props {
 const HOUR_MS = 3_600_000;
 const MIN_MS = 60_000;
 
-/** 작업시간 표기: 1시간 미만은 분, 이상은 시간(소수 1자리). */
-export function formatDuration(ms: number): string {
-  if (ms < HOUR_MS) return `${Math.round(ms / MIN_MS)}분`;
-  return `${(ms / HOUR_MS).toFixed(1)}시간`;
+/**
+ * 작업시간 표기 키: 1시간 미만은 분, 이상은 시간(소수 1자리). 반올림·자릿수
+ * 규칙은 그대로 두고 문구만 카탈로그로 옮겼다 — 표 셀과 차트 y축 눈금이 같은
+ * 규칙을 써야 눈금과 값이 어긋나지 않는다.
+ */
+export function formatDuration(ms: number): TextKey {
+  if (ms < HOUR_MS) return { key: "analytics.durMinutes", params: { minutes: Math.round(ms / MIN_MS) } };
+  return { key: "analytics.durHours", params: { hours: (ms / HOUR_MS).toFixed(1) } };
 }
 
 // SVG 좌표계(px). width는 CSS로 100% 스케일, viewBox로 비율 유지.
@@ -33,6 +39,7 @@ const BAR_W = 22;
 const GAP = 12;
 
 export function DailyBarChart({ days, agents, daily }: Props) {
+  const { t } = useTranslation("activity");
   const totals = days.map((date) => {
     const perAgent = daily[date] ?? {};
     return agents.reduce((sum, a) => sum + (perAgent[a.agentId]?.workedMs ?? 0), 0);
@@ -48,20 +55,23 @@ export function DailyBarChart({ days, agents, daily }: Props) {
 
   const scale = (ms: number): number => (maxTotal > 0 ? (PLOT_H * ms) / maxTotal : 0);
 
+  /** 표기 키(TextKey) → 문구. y축 눈금과 막대 툴팁이 같이 쓴다. */
+  const t2 = (d: TextKey): string => renderText(d, t);
+
   return (
     <div className="analytics-chart-scroll">
       <svg
         className="analytics-chart"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label="일별 작업시간 스택 막대"
+        aria-label={t("analytics.chartAria")}
         preserveAspectRatio="xMinYMin meet"
       >
         {/* y축 눈금선 + 라벨 */}
-        {ticks.map((t) => {
-          const y = baseY - PLOT_H * t;
+        {ticks.map((tick) => {
+          const y = baseY - PLOT_H * tick;
           return (
-            <g key={t}>
+            <g key={tick}>
               <line
                 className="analytics-chart-grid"
                 x1={PAD_L}
@@ -70,7 +80,7 @@ export function DailyBarChart({ days, agents, daily }: Props) {
                 y2={y}
               />
               <text className="analytics-chart-ytick" x={PAD_L - 6} y={y + 3} textAnchor="end">
-                {formatDuration(maxTotal * t)}
+                {t2(formatDuration(maxTotal * tick))}
               </text>
             </g>
           );
@@ -97,7 +107,13 @@ export function DailyBarChart({ days, agents, daily }: Props) {
                     height={h}
                     fill={a.color}
                   >
-                    <title>{`${a.name} · ${formatDuration(ms)} · ${date}`}</title>
+                    <title>
+                      {t("analytics.chartBar", {
+                        name: a.name,
+                        duration: t2(formatDuration(ms)),
+                        date,
+                      })}
+                    </title>
                   </rect>
                 );
               })}

@@ -358,7 +358,7 @@ function volcanoTileDraw(pal: VolcanoPalette): TileDrawFn {
 
 export const VOLCANO_SCENE: SceneDef = {
   id: "volcano",
-  label: "화산지대",
+  labelKey: "office:scene.volcano",
   map: VOLCANO_MAP,
   resolve: (theme) => {
     const mode = sceneColorMode(theme.id);

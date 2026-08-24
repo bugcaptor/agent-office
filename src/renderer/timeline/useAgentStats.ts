@@ -61,7 +61,7 @@ export function useAgentStats(open: boolean): UseAgentStatsResult {
       })
       .catch((err) => {
         if (cancelled) return;
-        console.warn("useAgentStats: loadSessionTurns 실패", err);
+        console.warn("useAgentStats: loadSessionTurns failed", err);
         setError(true);
         setInFlight(false);
       });

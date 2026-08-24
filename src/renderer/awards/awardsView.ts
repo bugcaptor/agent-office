@@ -2,6 +2,12 @@
 //
 // AwardsDialog가 쓰는 순수 표시 로직. 컴포넌트에서 분리해 두면 vitest로
 // jsdom 없이 바로 검증할 수 있다(usageView.ts/talkLogView.ts와 같은 관례).
+//
+// i18n: 완성된 문구를 만들어 돌려주는 곳(`formatWorkedHm`)은 **호출 시점에**
+// 번역하고, 상태를 서술하는 곳(`speechButtonState`)은 문구가 아니라 **키**를
+// 담는다 — 후자는 값이 렌더 사이에 살아남을 수 있어, 언어를 바꿨을 때 이미
+// 계산된 상태가 옛 언어로 남지 않게 하려는 것이다(workdir/status.ts와 같은 관례).
+import { t } from "@renderer/i18n";
 import type { AwardWinner } from "@shared/types";
 
 /** 작업시간을 "43시간 0분" 식으로. AnalyticsDialog의 `formatDuration`(반올림 소수)과
@@ -10,14 +16,15 @@ export function formatWorkedHm(ms: number): string {
   const totalMinutes = Math.max(0, Math.round(ms / 60_000));
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  return `${hours}시간 ${minutes}분`;
+  return t("journal:awards.workedHm", { hours, minutes });
 }
 
 /** 수상 소감 버튼 비활성 사유. 우선순위: 수상자 없음 > 프로필 삭제됨 > 요약기
  * OFF > 생성 중. 앞의 것이 뒤의 것을 가린다(둘 다 참이면 더 근본적인 사유를 보인다). */
 export type SpeechButtonState =
   | { disabled: false }
-  | { disabled: true; reason: string };
+  /** `reasonKey`는 `journal` 네임스페이스의 키다(표시는 호출자의 `t`가 한다). */
+  | { disabled: true; reasonKey: string };
 
 export interface SpeechButtonInput {
   winner: AwardWinner | null;
@@ -31,22 +38,16 @@ export interface SpeechButtonInput {
 
 export function speechButtonState(input: SpeechButtonInput): SpeechButtonState {
   if (input.winner === null) {
-    return { disabled: true, reason: "이 달은 수상자가 없어 소감을 들을 수 없습니다." };
+    return { disabled: true, reasonKey: "awards.speechReason.noWinner" };
   }
   if (!input.profileExists) {
-    return {
-      disabled: true,
-      reason: "수상자 캐릭터가 남아 있지 않아 소감을 들을 수 없습니다.",
-    };
+    return { disabled: true, reasonKey: "awards.speechReason.profileMissing" };
   }
   if (!input.summarizerEnabled) {
-    return {
-      disabled: true,
-      reason: "설정에서 요약 기능을 켜면 소감을 들을 수 있습니다.",
-    };
+    return { disabled: true, reasonKey: "awards.speechReason.disabled" };
   }
   if (input.generating) {
-    return { disabled: true, reason: "소감을 생성하는 중입니다." };
+    return { disabled: true, reasonKey: "awards.speechReason.generating" };
   }
   return { disabled: false };
 }

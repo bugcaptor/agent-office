@@ -362,7 +362,7 @@ function zombieTileDraw(pal: ZombiePalette): TileDrawFn {
 
 export const ZOMBIE_SCENE: SceneDef = {
   id: "zombie",
-  label: "좀비 마을",
+  labelKey: "office:scene.zombie",
   map: ZOMBIE_MAP,
   resolve: (theme) => {
     const mode = sceneColorMode(theme.id);

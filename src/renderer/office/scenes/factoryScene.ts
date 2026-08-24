@@ -411,7 +411,7 @@ function factoryTileDraw(pal: FactoryPalette): TileDrawFn {
 
 export const FACTORY_SCENE: SceneDef = {
   id: "factory",
-  label: "공장",
+  labelKey: "office:scene.factory",
   map: FACTORY_MAP,
   resolve: (theme) => {
     const mode = sceneColorMode(theme.id);

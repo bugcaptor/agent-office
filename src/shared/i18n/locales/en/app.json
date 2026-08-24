@@ -1,0 +1,67 @@
+{
+  "about": {
+    "version": "Version {{version}}",
+    "desc": "A desktop app that shows the terminal sessions of many AI coding agents as a pixel office scene",
+    "close": "Close"
+  },
+  "confirm": {
+    "cancel": "Cancel",
+    "delete": {
+      "title": "Delete character",
+      "confirm": "Delete",
+      "warning": "The running session will be terminated.",
+      "body": "Delete the character <strong>{{name}}</strong>?"
+    },
+    "restart": {
+      "title": "Restart terminal",
+      "confirm": "Restart",
+      "warning": "The running session ends and the scrollback is cleared.",
+      "body": "Restart <strong>{{name}}</strong>’s terminal?"
+    },
+    "resume": {
+      "title": "Resume previous session",
+      "confirm": "Resume",
+      "warning": "The running session ends and the scrollback is cleared.",
+      "body": "End <strong>{{name}}</strong>’s current session and resume the previous Claude session?"
+    },
+    "terminate": {
+      "title": "Close terminal",
+      "confirm": "Close",
+      "warning": "The running session ends. The character waits in the break room, and clicking them starts a new session.",
+      "body": "Close <strong>{{name}}</strong>’s terminal?"
+    },
+    "botStart": {
+      "title": "Start bot mode",
+      "confirm": "Turn on anyway",
+      "warning": "On a bare shell the bot’s instructions are typed in as shell commands and error out. Start claude in the terminal first, then turn the bot on.",
+      "body": "Cannot tell whether an agent (claude and such) is running in <strong>{{name}}</strong>’s terminal.",
+      "footer": "Turn bot mode on anyway?"
+    },
+    "clockOut": {
+      "title": "Clock out",
+      "titleAll": "Clock out all",
+      "confirm": "Clock out",
+      "warning": "The running session will be terminated.",
+      "warningAll": "All running sessions will be terminated.",
+      "body": "Clock out the character <strong>{{name}}</strong>?",
+      "bodyAll_one": "Clock out the {{count}} character on duty?",
+      "bodyAll_other": "Clock out all {{count}} characters on duty?"
+    },
+    "quit": {
+      "flushTitle": "Writing diaries…",
+      "flushBody": "Writing today’s work into diaries before quitting.",
+      "flushBodyProgress": "Writing today’s work into diaries before quitting ({{done}}/{{total}}).",
+      "skip": "Skip and quit",
+      "title": "Confirm quit",
+      "handoffBody": "Terminals are running. You can quit and leave them running.",
+      "keepTerminals": "Quit, keep terminals",
+      "closeAll": "Close all and quit",
+      "body": "Some agents have not clocked out. Quitting now stops every running session.",
+      "confirm": "Quit",
+      "cancel": "Cancel"
+    }
+  },
+  "shell": {
+    "lightsOff": "Everyone has clocked out"
+  }
+}

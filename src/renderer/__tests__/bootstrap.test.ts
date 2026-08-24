@@ -291,7 +291,7 @@ describe("bootApp", () => {
     });
     expect(s.settingsFirstRun).toBe(false);
     expect(warn).toHaveBeenCalledWith(
-      "bootstrap: 앱 설정 로드 실패 — 기본값(전부 OFF)으로 진행",
+      "bootstrap: app settings load failed, continuing with defaults (all off)",
       expect.any(Error)
     );
 
@@ -414,7 +414,7 @@ describe("session-handoff adoption (bootApp)", () => {
     expect(useAppStore.getState().agentOrder).toEqual(["a1"]); // hydrate still ran
     expect(markAdopted).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(
-      "bootstrap: 세션 입양 실패 — 이전 세션 없이 진행",
+      "bootstrap: session adoption failed, continuing without prior sessions",
       expect.any(Error)
     );
 
@@ -464,7 +464,7 @@ describe("bot mode seeding (bootApp)", () => {
 
     expect(useAppStore.getState().botMode).toEqual({});
     expect(warn).toHaveBeenCalledWith(
-      "bootstrap: 봇 상태 조회 실패 — 봇 모드 없이 진행",
+      "bootstrap: bot status query failed, continuing without bot mode",
       expect.any(Error)
     );
 

@@ -53,8 +53,10 @@ export interface SceneRender {
 
 export interface SceneDef {
   id: SceneId;
-  /** 픽커 드롭다운에 그대로 노출되는 한국어 라벨. */
-  label: string;
+  /** 픽커 드롭다운에 노출되는 라벨의 **번역 키**(`office` 네임스페이스). 이
+   *  레지스트리는 모듈 최상위 상수라 `t()`를 부를 수 없다 — 값이 아니라 키를
+   *  담고 렌더 시점에 번역한다. 그래야 언어를 바꿨을 때 함께 바뀐다. */
+  labelKey: string;
   /** 씬의 타일 맵. 좌석/보스 책상/줄 슬롯/라운지가 전부 여기서 유도된다. */
   map: OfficeMap;
   /**

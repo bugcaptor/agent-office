@@ -6,8 +6,12 @@
 // 신선도는 SessionTimePanel의 1초 tick 패턴(로컬 시계, 재조회 아님)으로 갱신하고,
 // stale(>30분)이면 provider 블록을 흐리게 + 표시한다.
 // 설계: docs/usage-limits-design.md §3. 폴링·스토어 갱신은 UsageWidget 소관.
+//
+// 문구는 usageView가 키(TextKey)로만 돌려주므로 여기서 `renderText`로 푼다.
 import { useEffect, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { ClaudeLiveStatus, CodexLiveStatus, ProviderUsage } from "@shared/types";
+import { renderText } from "../shared/textKey";
 import { useAppStore } from "../store/appStore";
 import {
   PROVIDER_SHORT,
@@ -55,6 +59,7 @@ function ProviderBlock({ children, note }: { children: ReactNode; note: ReactNod
 }
 
 function ProviderSection({ usage, now }: { usage: ProviderUsage; now: number }) {
+  const { t } = useTranslation("activity");
   const stale = isStale(usage.fetchedAtMs, now);
   return (
     <section className={`usage-provider${stale ? " usage-stale" : ""}`}>
@@ -66,12 +71,15 @@ function ProviderSection({ usage, now }: { usage: ProviderUsage; now: number }) 
         {usage.windows.map((w, i) => {
           const pct = Math.round(w.usedPercent);
           const countdown = formatCountdown(w.resetsAtMs, now);
+          const label = renderText(windowLabel(w), t);
           return (
             <li key={`${w.kind}-${w.label ?? ""}-${i}`} className="usage-window">
               <div className="usage-window-row">
                 <span className="usage-window-label">
-                  {windowLabel(w)}
-                  {w.isActive === true && <span className="usage-active-tag">지금 적용 중</span>}
+                  {label}
+                  {w.isActive === true && (
+                    <span className="usage-active-tag">{t("usage.dialog.activeTag")}</span>
+                  )}
                 </span>
                 <span className="usage-window-pct">{pct}%</span>
               </div>
@@ -81,21 +89,23 @@ function ProviderSection({ usage, now }: { usage: ProviderUsage; now: number }) 
                 aria-valuenow={pct}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-label={`${windowLabel(w)} 사용률`}
+                aria-label={t("usage.dialog.barAria", { label })}
               >
                 <span
                   className={`usage-bar-fill usage-level-${usageLevel(w.usedPercent)}`}
                   style={{ width: `${Math.min(100, Math.max(0, w.usedPercent))}%` }}
                 />
               </div>
-              {countdown && <span className="usage-countdown">{countdown}</span>}
+              {countdown && (
+                <span className="usage-countdown">{renderText(countdown, t)}</span>
+              )}
             </li>
           );
         })}
       </ul>
       <div className="usage-freshness">
-        {formatFreshness(usage.fetchedAtMs, now)}
-        {stale && " · 오래됨"}
+        {renderText(formatFreshness(usage.fetchedAtMs, now), t)}
+        {stale && t("usage.dialog.staleSuffix")}
         {/* 두 provider 모두 갱신 조건이 상황에 따라 달라졌다(실시간 조회
             성공 여부) — 고정 문구 대신 진단 줄이 설명한다. */}
       </div>
@@ -104,6 +114,7 @@ function ProviderSection({ usage, now }: { usage: ProviderUsage; now: number }) 
 }
 
 export function UsageDialog() {
+  const { t } = useTranslation("activity");
   const modal = useAppStore((s) => s.modal);
   const closeModal = useAppStore((s) => s.closeModal);
   const usage = useAppStore((s) => s.usage);
@@ -123,9 +134,13 @@ export function UsageDialog() {
   ): ReactNode =>
     status && described ? (
       <p className={`usage-live-note usage-live-${described.level}`}>
-        {described.text}
+        {renderText(described.text, t)}
         {(() => {
-          const attempts = formatLiveAttempts(status, now);
+          // 조각 사이의 가운뎃점은 순수 함수가 아니라 여기서 잇는다 — 조각
+          // 수가 0~2개로 달라져 카탈로그에 넣을 문장이 아니다.
+          const attempts = formatLiveAttempts(status, now)
+            .map((part) => renderText(part, t))
+            .join(" · ");
           return attempts ? <span className="usage-live-attempts">{attempts}</span> : null;
         })()}
       </p>
@@ -144,7 +159,7 @@ export function UsageDialog() {
     >
       <div className="pixel-panel usage-dialog">
         <div className="usage-head">
-          <h2 className="pixel-title">구독 사용량</h2>
+          <h2 className="pixel-title">{t("usage.dialog.title")}</h2>
         </div>
 
         <div className="usage-body">
@@ -159,8 +174,8 @@ export function UsageDialog() {
                 </div>
                 <p className="usage-empty-msg">
                   {p === "claude"
-                    ? "사용량 데이터가 없습니다. Claude Code에서 /usage를 한 번 열면 로컬 캐시가 생깁니다."
-                    : "사용량 데이터가 없습니다. codex login 후 앱이 직접 조회하거나, Codex CLI를 한 번 실행하면 로컬 기록이 생깁니다."}
+                    ? t("usage.dialog.emptyClaude")
+                    : t("usage.dialog.emptyCodex")}
                 </p>
               </section>
             ) : (
@@ -176,7 +191,7 @@ export function UsageDialog() {
 
         <div className="dialog-actions">
           <button className="pixel-btn" onClick={closeModal}>
-            닫기
+            {t("usage.dialog.close")}
           </button>
         </div>
       </div>

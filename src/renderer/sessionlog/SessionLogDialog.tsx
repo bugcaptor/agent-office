@@ -6,12 +6,15 @@
 // 목록은 10개씩 페이징하고, 한 개를 고르면 그때 동작 영역(편집기로 열기 /
 // 학습자료 만들기)이 열린다. 고르기 전에는 동작을 보여주지 않는다 — 무엇에
 // 적용될지 모르는 버튼을 띄우지 않기 위해서다.
+import { useTranslation } from "react-i18next";
 import { useSessionLogStore, PAGE_SIZE } from "./sessionLogStore";
 import { useEscapeToClose } from "../shared/useEscapeToClose";
+import { renderText } from "../shared/textKey";
 import { formatBytes, formatDuration, formatWhen, shortenPath } from "./format";
 import "./sessionLog.css";
 
 export function SessionLogDialog() {
+  const { t } = useTranslation("activity");
   const overlay = useSessionLogStore((s) => s.overlay);
   const items = useSessionLogStore((s) => s.items);
   const total = useSessionLogStore((s) => s.total);
@@ -45,29 +48,31 @@ export function SessionLogDialog() {
       <div
         className="pixel-panel slog-dialog"
         role="dialog"
-        aria-label={`${overlay.agentName}의 세션 로그`}
+        aria-label={t("sessionLog.dialogAria", { name: overlay.agentName })}
       >
         <div className="slog-header">
-          <h2 className="slog-title">📜 {overlay.agentName}의 세션 로그</h2>
+          <h2 className="slog-title">{t("sessionLog.title", { name: overlay.agentName })}</h2>
           <button type="button" className="pixel-btn" onClick={close}>
-            닫기
+            {t("sessionLog.close")}
           </button>
         </div>
 
         {notice && <div className="slog-notice">{notice}</div>}
 
         {loading ? (
-          <div className="slog-empty">불러오는 중…</div>
+          <div className="slog-empty">{t("sessionLog.loading")}</div>
         ) : items.length === 0 ? (
           <div className="slog-empty">
-            아직 남은 세션 로그가 없습니다.
+            {t("sessionLog.emptyTitle")}
             <br />
-            터미널을 쓰면 자동으로 기록됩니다(최근 30일 보관).
+            {t("sessionLog.emptyHint")}
           </div>
         ) : (
           <ul className="slog-list">
             {items.map((item) => {
               const active = selected === item.path;
+              const when = formatWhen(item.startedAt);
+              const duration = formatDuration(item.startedAt, item.modifiedAt);
               return (
                 <li key={item.path}>
                   <button
@@ -76,9 +81,9 @@ export function SessionLogDialog() {
                     aria-pressed={active}
                     onClick={() => select(active ? null : item.path)}
                   >
-                    <span className="slog-when">{formatWhen(item.startedAt)}</span>
+                    <span className="slog-when">{when ?? t("sessionLog.whenUnknown")}</span>
                     <span className="slog-meta">
-                      {formatDuration(item.startedAt, item.modifiedAt)}
+                      {duration && renderText(duration, t)}
                     </span>
                     <span className="slog-meta">{formatBytes(item.bytes)}</span>
                     <span className="slog-cwd" title={item.cwd}>
@@ -118,16 +123,16 @@ export function SessionLogDialog() {
         {selected && (
           <div className="slog-actions">
             <button type="button" className="pixel-btn" onClick={() => void openInEditor()}>
-              편집기로 열기
+              {t("sessionLog.openInEditor")}
             </button>
             <button
               type="button"
               className="pixel-btn primary"
               disabled={generating}
-              title="이 세션 로그를 회고·학습용 문서로 정리합니다"
+              title={t("sessionLog.makeStudyTitle")}
               onClick={() => void makeStudyMaterial()}
             >
-              {generating ? "만드는 중…" : "학습자료 만들기"}
+              {generating ? t("sessionLog.makingStudy") : t("sessionLog.makeStudy")}
             </button>
           </div>
         )}

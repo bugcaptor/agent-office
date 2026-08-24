@@ -45,7 +45,7 @@ export function loadAwardPortraitSource(b64: string): Promise<HTMLCanvasElement 
       resolve(canvas);
     };
     img.onerror = () => {
-      console.warn("awardPortraitTexture: 초상 디코드 실패");
+      console.warn("awardPortraitTexture: portrait decode failed");
       resolve(null);
     };
     img.src = `data:image/png;base64,${b64}`;

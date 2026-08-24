@@ -85,7 +85,7 @@ export function installWorkLogPersister(deps: WorkLogPersisterDeps = {}): WorkLo
     try {
       await save(agentId, log.items(agentId));
     } catch (err) {
-      console.warn(`workLogPersister: 스냅샷 저장 실패(agent=${agentId})`, err);
+      console.warn(`workLogPersister: snapshot save failed (agent=${agentId})`, err);
     }
   }
 
@@ -163,7 +163,7 @@ export async function restoreWorkLogs(deps: RestoreWorkLogsDeps = {}): Promise<v
   try {
     all = await loadAll();
   } catch (err) {
-    console.warn("workLogPersister: 작업 로그 복원 로드 실패", err);
+    console.warn("workLogPersister: failed to load work logs for restore", err);
     return;
   }
 
@@ -179,7 +179,7 @@ export async function restoreWorkLogs(deps: RestoreWorkLogsDeps = {}): Promise<v
       try {
         await save(agentId, fresh);
       } catch (err) {
-        console.warn(`workLogPersister: 복원 프루닝 저장 실패(agent=${agentId})`, err);
+        console.warn(`workLogPersister: pruned-restore save failed (agent=${agentId})`, err);
       }
     }
   }

@@ -49,10 +49,12 @@ describe("buildAgentStatsRows", () => {
     expect(rows[0]).toMatchObject({ totalWorkedMs: 1000, todayWorkedMs: 400 });
   });
 
+  // "(퇴사)" 문구는 i18n 카탈로그(timeline.departed)로 옮겼다 — 순수 함수는
+  // 축약 id와 departed 플래그만 내고, 문구는 SessionTimePanel이 붙인다.
   it("labels a disk-only agent missing from the roster as departed", () => {
     const disk = { deadbeefcafe1234: { totalWorkedMs: 300, todayWorkedMs: 0 } };
     const rows = buildAgentStatsRows(disk, {}, {}, {});
-    expect(rows[0]).toMatchObject({ agentId: "deadbeefcafe1234", label: "deadbeef… (퇴사)", departed: true });
+    expect(rows[0]).toMatchObject({ agentId: "deadbeefcafe1234", label: "deadbeef", departed: true });
   });
 
   it("includes an in-memory-only new agent with no disk record", () => {

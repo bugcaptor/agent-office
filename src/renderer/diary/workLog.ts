@@ -11,6 +11,7 @@
 // 이다(#75): 새 세션 활동이 아직 일기화 안 된 옛 세션 항목을 밀어내 유실시키지
 // 않도록, 세션당 항목 상한 + 세션 개수 상한으로 이원화한다. 일기를 생성하고 나면
 // generator가 clear로 소진한다.
+import { t } from "@renderer/i18n";
 import { useAppStore } from "../store/appStore";
 import type { AgentTaskLabel } from "../store/types";
 import type { WorkLogItem, WorkLogKind } from "@shared/types";
@@ -170,6 +171,10 @@ export const FORMAT_BUDGET_CHARS = 1_900;
 /**
  * 로그 항목들을 일기 생성 입력용 텍스트로 조립한다. 시간순, 종류별 접두어를 붙인다.
  *
+ * 종류 접두어·중략 표시는 UI 문구와 같은 카탈로그(`journal:diary.log.*`)에서 온다 —
+ * 조립은 호출 시점에 하므로 지금 설정된 언어를 따른다. 항목 본문(`item.text`)은
+ * 세션이 실제로 남긴 기록이라 손대지 않는다.
+ *
  * 예산(FORMAT_BUDGET_CHARS) 이내면 전부 그대로 잇는다. 초과하면 **우선순위 기반
  * 축소**(#66): (1) `prompt`(+목표)는 일기의 뼈대이므로 전량 보존, (2) 남은 예산에
  * `tool`/`narration`을 **최신 우선**으로 채우되 출력은 시간순 유지, (3) 탈락한
@@ -177,14 +182,17 @@ export const FORMAT_BUDGET_CHARS = 1_900;
  * 꼬리 절단이라 긴 세션의 최신 작업이 통째로 유실됐다.
  */
 export function formatWorkLog(items: WorkLogItem[]): string {
+  // 모듈 최상위가 아니라 호출 시점에 번역한다 — 상수로 굳히면 언어 변경이 안 먹는다.
   const label: Record<WorkLogKind, string> = {
-    prompt: "지시",
-    tool: "도구",
-    narration: "진행",
+    prompt: t("journal:diary.log.prompt"),
+    tool: t("journal:diary.log.tool"),
+    narration: t("journal:diary.log.narration"),
   };
   const render = (i: WorkLogItem): string => {
     const head = `- [${label[i.kind]}] ${i.text}`;
-    return i.kind === "prompt" && i.goal ? `${head} (목표: ${i.goal})` : head;
+    return i.kind === "prompt" && i.goal
+      ? `${head} ${t("journal:diary.log.goal", { goal: i.goal })}`
+      : head;
   };
 
   const lines = items.map(render);
@@ -217,7 +225,7 @@ export function formatWorkLog(items: WorkLogItem[]): string {
   items.forEach((_, idx) => {
     if (kept.has(idx)) {
       if (dropRun > 0) {
-        out.push(`- (중략: ${dropRun}개 항목)`);
+        out.push(`- ${t("journal:diary.log.omitted", { count: dropRun })}`);
         dropRun = 0;
       }
       out.push(lines[idx]);
@@ -225,7 +233,7 @@ export function formatWorkLog(items: WorkLogItem[]): string {
       dropRun += 1;
     }
   });
-  if (dropRun > 0) out.push(`- (중략: ${dropRun}개 항목)`);
+  if (dropRun > 0) out.push(`- ${t("journal:diary.log.omitted", { count: dropRun })}`);
   return out.join("\n");
 }
 

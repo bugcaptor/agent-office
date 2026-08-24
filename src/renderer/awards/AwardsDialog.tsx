@@ -9,6 +9,8 @@
 // top5 + 수상 소감. `winner: null`인 달은 빈 상태로, 레코드가 아예 없으면
 // 다이얼로그 전체가 빈 상태로 바뀐다.
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+
 import { useAppStore } from "../store/appStore";
 import { useAwardsStore } from "./awardsStore";
 import type { ProvisionalAward } from "./awardsStore";
@@ -32,6 +34,7 @@ function PortraitFallback() {
 }
 
 export function AwardsDialog() {
+  const { t } = useTranslation("journal");
   const modal = useAppStore((s) => s.modal);
   const closeModal = useAppStore((s) => s.closeModal);
   const agents = useAppStore((s) => s.agents);
@@ -114,7 +117,7 @@ export function AwardsDialog() {
         if (!cancelled) setSnapshotUrl(b64 ? pngBase64ToDataUrl(b64) : null);
       })
       .catch((err) => {
-        console.warn(`awards: 초상 스냅샷 로드 실패(month=${record.month})`, err);
+        console.warn(`awards: portrait snapshot load failed (month=${record.month})`, err);
         if (!cancelled) setSnapshotUrl(null);
       });
     return () => {
@@ -145,25 +148,23 @@ export function AwardsDialog() {
         if (e.button === 0 && e.target === e.currentTarget) closeModal();
       }}
     >
-      <div className="pixel-panel awards-dialog" role="dialog" aria-label="이 달의 우수사원">
+      <div className="pixel-panel awards-dialog" role="dialog" aria-label={t("awards.dialogAria")}>
         <div className="awards-head">
           <div className="awards-nav">
             <button
               type="button"
               className="pixel-btn"
-              aria-label="이전 달"
+              aria-label={t("awards.prevMonth")}
               disabled={!canPrev}
               onClick={() => canPrev && selectMonth(months[idx - 1])}
             >
               ◀
             </button>
-            <h2 className="pixel-title">
-              {selectedMonth ?? "—"} 이 달의 우수사원
-            </h2>
+            <h2 className="pixel-title">{t("awards.title", { month: selectedMonth ?? "—" })}</h2>
             <button
               type="button"
               className="pixel-btn"
-              aria-label="다음 달"
+              aria-label={t("awards.nextMonth")}
               disabled={!canNext}
               onClick={() => canNext && selectMonth(months[idx + 1])}
             >
@@ -173,7 +174,7 @@ export function AwardsDialog() {
           {months.length > 0 && (
             <select
               className="awards-month-select"
-              aria-label="확정된 월 목록"
+              aria-label={t("awards.monthListAria")}
               value={selectedMonth ?? ""}
               onChange={(e) => selectMonth(e.target.value)}
             >
@@ -188,38 +189,40 @@ export function AwardsDialog() {
             </select>
           )}
           <button type="button" className="pixel-btn" onClick={closeModal}>
-            닫기
+            {t("awards.close")}
           </button>
         </div>
 
         {isLatest && provisional?.winner && (
           <p className="awards-provisional-banner">
-            이번 달 잠정 선두: {provisional.winner.name}
+            {t("awards.provisional", { name: provisional.winner.name })}
           </p>
         )}
 
         {!loaded ? (
-          <p className="awards-msg">불러오는 중…</p>
+          <p className="awards-msg">{t("awards.loading")}</p>
         ) : awards.length === 0 ? (
           <div className="awards-msg">
-            <p>아직 시상 기록이 없습니다.</p>
+            <p>{t("awards.emptyAll")}</p>
             {error && (
               <p className="awards-msg-error">
                 {error}{" "}
                 <button type="button" className="pixel-btn" onClick={() => void load()}>
-                  재시도
+                  {t("awards.retry")}
                 </button>
               </p>
             )}
           </div>
         ) : !record ? (
-          <p className="awards-msg">불러오는 중…</p>
+          <p className="awards-msg">{t("awards.loading")}</p>
         ) : winner === null ? (
           <div className="awards-empty">
-            <p>이 달은 수상자가 없습니다.</p>
+            <p>{t("awards.noWinner")}</p>
             <p className="awards-empty-hint">
-              최소 활동 {DEFAULT_MIN_ACTIVE_DAYS}일 · {Math.round(DEFAULT_MIN_WORKED_MS / 60_000)}분
-              미만인 캐릭터는 후보에서 제외됩니다.
+              {t("awards.noWinnerHint", {
+                days: DEFAULT_MIN_ACTIVE_DAYS,
+                minutes: Math.round(DEFAULT_MIN_WORKED_MS / 60_000),
+              })}
             </p>
           </div>
         ) : (
@@ -237,33 +240,35 @@ export function AwardsDialog() {
               </div>
               <div className="awards-winner-name">{winner.name}</div>
               <div className="awards-winner-role">{winner.role}</div>
-              <div className="awards-award-count">{awardCountFor(winner.agentId)}회 수상</div>
+              <div className="awards-award-count">
+                {t("awards.awardCount", { count: awardCountFor(winner.agentId) })}
+              </div>
             </div>
 
             <div className="awards-right">
               <dl className="awards-stats">
                 <div className="awards-stat">
-                  <dt>작업시간</dt>
+                  <dt>{t("awards.statWorked")}</dt>
                   <dd>{formatWorkedHm(winner.stats.workedMs)}</dd>
                 </div>
                 <div className="awards-stat">
-                  <dt>턴</dt>
+                  <dt>{t("awards.statTurns")}</dt>
                   <dd>{winner.stats.turns}</dd>
                 </div>
                 <div className="awards-stat">
-                  <dt>도구 호출</dt>
+                  <dt>{t("awards.statTools")}</dt>
                   <dd>{winner.stats.toolEvents}</dd>
                 </div>
                 <div className="awards-stat">
-                  <dt>활동일</dt>
-                  <dd>{winner.stats.activeDays}일</dd>
+                  <dt>{t("awards.statActiveDays")}</dt>
+                  <dd>{t("awards.days", { count: winner.stats.activeDays })}</dd>
                 </div>
                 <div className="awards-stat">
-                  <dt>토큰</dt>
+                  <dt>{t("awards.statTokens")}</dt>
                   <dd>{formatTokens(winner.stats.tokensIn + winner.stats.tokensOut)}</dd>
                 </div>
                 <div className="awards-stat">
-                  <dt>추정 비용</dt>
+                  <dt>{t("awards.statCost")}</dt>
                   <dd>{formatUsd(winner.stats.costUsd)}</dd>
                 </div>
               </dl>
@@ -271,11 +276,11 @@ export function AwardsDialog() {
               <table className="awards-table">
                 <thead>
                   <tr>
-                    <th scope="col">순위</th>
-                    <th scope="col">이름</th>
-                    <th scope="col">작업시간</th>
-                    <th scope="col">턴</th>
-                    <th scope="col">활동일</th>
+                    <th scope="col">{t("awards.colRank")}</th>
+                    <th scope="col">{t("awards.colName")}</th>
+                    <th scope="col">{t("awards.colWorked")}</th>
+                    <th scope="col">{t("awards.colTurns")}</th>
+                    <th scope="col">{t("awards.colActiveDays")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -290,14 +295,14 @@ export function AwardsDialog() {
                       <td>{row.name}</td>
                       <td>{formatWorkedHm(row.workedMs)}</td>
                       <td>{row.turns}</td>
-                      <td>{row.activeDays}일</td>
+                      <td>{t("awards.days", { count: row.activeDays })}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
 
               <section className="awards-speech">
-                <h3 className="awards-section-title">수상 소감</h3>
+                <h3 className="awards-section-title">{t("awards.speechTitle")}</h3>
                 {error && (
                   <div className="awards-error">
                     <p>{error}</p>
@@ -307,7 +312,7 @@ export function AwardsDialog() {
                       disabled={btnState.disabled}
                       onClick={() => void generateSpeechFor(record.month)}
                     >
-                      재시도
+                      {t("awards.retry")}
                     </button>
                   </div>
                 )}
@@ -316,10 +321,12 @@ export function AwardsDialog() {
                     type="button"
                     className="pixel-btn primary"
                     disabled={btnState.disabled}
-                    title={btnState.disabled ? btnState.reason : undefined}
+                    title={btnState.disabled ? t(btnState.reasonKey) : undefined}
                     onClick={() => void generateSpeechFor(record.month)}
                   >
-                    {generating[record.month] ? "생성하는 중…" : "🎤 수상 소감 듣기"}
+                    {generating[record.month]
+                      ? t("awards.speechGenerating")
+                      : t("awards.speechListen")}
                   </button>
                 ) : (
                   <>
@@ -333,14 +340,18 @@ export function AwardsDialog() {
                       type="button"
                       className="pixel-btn"
                       disabled={btnState.disabled}
-                      title={btnState.disabled ? btnState.reason : undefined}
+                      title={btnState.disabled ? t(btnState.reasonKey) : undefined}
                       onClick={() => void generateSpeechFor(record.month)}
                     >
-                      {generating[record.month] ? "생성하는 중…" : "다시 듣기"}
+                      {generating[record.month]
+                        ? t("awards.speechGenerating")
+                        : t("awards.speechAgain")}
                     </button>
                     {previousSpeeches.length > 0 && (
                       <details className="awards-speech-prev">
-                        <summary>이전 소감 {previousSpeeches.length}개 보기</summary>
+                        <summary>
+                          {t("awards.speechPrev", { count: previousSpeeches.length })}
+                        </summary>
                         <ul>
                           {previousSpeeches.map((s, i) => (
                             <li key={`${s.at}-${i}`} className="awards-speech-prev-item">

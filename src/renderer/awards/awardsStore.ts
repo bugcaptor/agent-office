@@ -10,6 +10,8 @@
 // 흔들리면 기록의 의미가 없다). 그래서 후보가 한 명도 없던 달도 `winner: null`로
 // 확정해 "계산했고 수상자가 없었다"를 남긴다.
 import { create } from "zustand";
+
+import { t } from "@renderer/i18n";
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
 import {
@@ -61,22 +63,22 @@ export interface ProvisionalAward extends SelectionResult {
   at: number;
 }
 
-/** 소감 생성 실패 사유 → 사용자 안내 문구. */
+/**
+ * 소감 생성 실패 사유(코드) → `journal` 카탈로그 키. 생성기가 내려주는 것은
+ * 코드이므로 문구는 표시 시점에 만든다(diaryStore의 NOTICE_KEYS와 같은 관례).
+ */
+const SPEECH_ERROR_KEYS: Record<SpeechFailReason, string> = {
+  "no-winner": "awards.speechError.noWinner",
+  "profile-missing": "awards.speechError.profileMissing",
+  disabled: "awards.speechError.disabled",
+  "cli-missing": "awards.speechError.cliMissing",
+  timeout: "awards.speechError.timeout",
+  failed: "awards.speechError.failed",
+};
+
+/** 소감 생성 실패 사유 → 사용자 안내 문구(호출 시점에 번역). */
 function speechNoticeFor(reason: SpeechFailReason): string {
-  switch (reason) {
-    case "no-winner":
-      return "그 달은 수상자가 없어 소감을 쓸 수 없습니다.";
-    case "profile-missing":
-      return "수상자 캐릭터가 남아 있지 않아 소감을 쓸 수 없습니다.";
-    case "disabled":
-      return "설정에서 요약기를 먼저 켜 주세요.";
-    case "cli-missing":
-      return "선택한 CLI를 찾지 못해 소감을 쓰지 못했습니다.";
-    case "timeout":
-      return "생성이 오래 걸려 실패했습니다. 잠시 후 다시 시도하세요.";
-    case "failed":
-      return "소감 생성에 실패했습니다. 잠시 후 다시 시도하세요.";
-  }
+  return t(`journal:${SPEECH_ERROR_KEYS[reason]}`);
 }
 
 /** 현재 프로필 맵. appStore를 액션 안에서 늦게 읽어 모듈 로드 순서에 얽히지 않는다. */
@@ -183,8 +185,8 @@ export const useAwardsStore = create<AwardsState>((set, get) => ({
       const file = await awardsApi.loadAwards();
       set({ awards: file.awards, loaded: true, error: undefined });
     } catch (err) {
-      console.warn("awards: 시상 기록 로드 실패", err);
-      set({ loaded: true, error: "시상 기록을 불러오지 못했습니다." });
+      console.warn("awards: failed to load award records", err);
+      set({ loaded: true, error: t("journal:awards.error.loadFailed") });
     }
   },
 
@@ -217,8 +219,8 @@ export const useAwardsStore = create<AwardsState>((set, get) => ({
       }
       set({ error: undefined });
     } catch (err) {
-      console.warn("awards: 소급 확정 실패", err);
-      set({ error: "지난달 시상을 확정하지 못했습니다." });
+      console.warn("awards: backfill finalization failed", err);
+      set({ error: t("journal:awards.error.finalizeFailed") });
     } finally {
       set({ finalizing: false });
     }
@@ -238,8 +240,8 @@ export const useAwardsStore = create<AwardsState>((set, get) => ({
       );
       return { month, at: now, ...pick };
     } catch (err) {
-      console.warn("awards: 잠정 1위 계산 실패", err);
-      set({ error: "이번 달 현황을 계산하지 못했습니다." });
+      console.warn("awards: failed to compute the provisional leader", err);
+      set({ error: t("journal:awards.error.provisionalFailed") });
       return null;
     }
   },
@@ -248,7 +250,7 @@ export const useAwardsStore = create<AwardsState>((set, get) => ({
     if (get().generating[month]) return; // 인플라이트 가드(더블클릭 등)
     const record = get().awards.find((a) => a.month === month);
     if (!record) {
-      set({ error: "그 달의 시상 기록이 없습니다." });
+      set({ error: t("journal:awards.error.noRecord") });
       return;
     }
     const agentId = record.winner?.agentId;
@@ -268,8 +270,8 @@ export const useAwardsStore = create<AwardsState>((set, get) => ({
       const file = await awardsApi.appendAwardSpeech(month, result.speech);
       set({ awards: file.awards, error: undefined });
     } catch (err) {
-      console.warn("awards: 수상 소감 저장 실패", err);
-      set({ error: "수상 소감을 저장하지 못했습니다." });
+      console.warn("awards: failed to save the acceptance speech", err);
+      set({ error: t("journal:awards.error.saveSpeechFailed") });
     } finally {
       set((s) => {
         const next = { ...s.generating };

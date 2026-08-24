@@ -2,6 +2,7 @@
 // 아키타입 콤보박스 — 자유 텍스트 계약(목록에 없는 종족을 그대로 적기).
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { t } from "@renderer/i18n";
 import { ArchetypePicker, filterArchetypeOptions } from "../ArchetypePicker";
 import {
   archetypeInputText,
@@ -13,20 +14,20 @@ afterEach(() => cleanup());
 
 describe("아키타입 값 변환", () => {
   it("알려진 id는 한국어 라벨로 보이고, 라벨/id 어느 쪽을 쳐도 id로 접힌다", () => {
-    expect(archetypeInputText("orc")).toBe("오크");
-    expect(archetypeInputText("auto")).toBe("자동(시드)");
-    expect(normalizeArchetypeInput("오크")).toBe("orc");
-    expect(normalizeArchetypeInput("  ORC ")).toBe("orc");
+    expect(archetypeInputText("orc", t)).toBe("오크");
+    expect(archetypeInputText("auto", t)).toBe("자동(시드)");
+    expect(normalizeArchetypeInput("오크", t)).toBe("orc");
+    expect(normalizeArchetypeInput("  ORC ", t)).toBe("orc");
     // 비우면 빈 값 그대로 — "auto"로 접으면 입력칸이 "자동(시드)"로 되채워져
     // 새 종족을 적을 수가 없다.
-    expect(normalizeArchetypeInput("")).toBe("");
-    expect(normalizeArchetypeInput("   ")).toBe("");
-    expect(archetypeInputText("")).toBe("");
+    expect(normalizeArchetypeInput("", t)).toBe("");
+    expect(normalizeArchetypeInput("   ", t)).toBe("");
+    expect(archetypeInputText("", t)).toBe("");
   });
 
   it("목록에 없는 값은 친 그대로 남고 커스텀으로 판정된다", () => {
-    expect(normalizeArchetypeInput("드래곤")).toBe("드래곤");
-    expect(archetypeInputText("드래곤")).toBe("드래곤");
+    expect(normalizeArchetypeInput("드래곤", t)).toBe("드래곤");
+    expect(archetypeInputText("드래곤", t)).toBe("드래곤");
     expect(customArchetypeSubject("드래곤")).toBe("드래곤");
     expect(customArchetypeSubject("orc")).toBeNull();
     expect(customArchetypeSubject("auto")).toBeNull();
@@ -34,9 +35,9 @@ describe("아키타입 값 변환", () => {
   });
 
   it("걸리는 후보가 없으면 목록을 비우지 않고 전부 보여 준다", () => {
-    expect(filterArchetypeOptions("오크").map((o) => o.value)).toEqual(["orc"]);
-    expect(filterArchetypeOptions("드래곤")).toHaveLength(9);
-    expect(filterArchetypeOptions("")).toHaveLength(9);
+    expect(filterArchetypeOptions("오크", t).map((o) => o.value)).toEqual(["orc"]);
+    expect(filterArchetypeOptions("드래곤", t)).toHaveLength(9);
+    expect(filterArchetypeOptions("", t)).toHaveLength(9);
   });
 });
 

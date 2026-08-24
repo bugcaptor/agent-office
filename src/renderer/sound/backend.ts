@@ -83,7 +83,7 @@ export function createWebAudioBackend(deps: WebAudioDeps = {}): SoundBackend | n
   try {
     ctx = createContext();
   } catch (err) {
-    console.warn("sound: AudioContext 생성 실패 — 사운드 비활성", err);
+    console.warn("sound: AudioContext creation failed — sound disabled", err);
     return null;
   }
   const resumeTarget =
@@ -124,7 +124,7 @@ export function createWebAudioBackend(deps: WebAudioDeps = {}): SoundBackend | n
         .filter((b): b is AudioBuffer => b !== null)
         .map((buf) => ({ buf, gain }));
       if (samples.length === 0) {
-        console.warn(`sound: 키프레스 샘플 로드 실패 (팩 ${packId}) — 폴백 사용`);
+        console.warn(`sound: keypress samples failed to load (pack ${packId}) — using fallback`);
         return;
       }
       keySamplesByPack.set(packId, samples);
@@ -215,7 +215,7 @@ export function createWebAudioBackend(deps: WebAudioDeps = {}): SoundBackend | n
     try {
       ctx = createContext();
     } catch (err) {
-      console.warn("sound: AudioContext 재생성 실패 — 다음 기회에 재시도", err);
+      console.warn("sound: AudioContext rebuild failed — will retry later", err);
       rebuilding = false;
       return;
     }
@@ -284,7 +284,7 @@ export function createWebAudioBackend(deps: WebAudioDeps = {}): SoundBackend | n
       try {
         buf = await ctx.decodeAudioData(mp3.slice(0));
       } catch (err) {
-        console.warn("sound: 대사 오디오 디코드 실패 — 발화 생략", err);
+        console.warn("sound: voice audio decode failed — skipping utterance", err);
         return;
       }
       if (disposed) return;

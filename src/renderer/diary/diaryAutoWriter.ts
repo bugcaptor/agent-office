@@ -15,6 +15,7 @@
 //
 // diaryEnabled=false면 flusher가 CLI를 호출하지 않고 조용히 폴백하므로 자동 생성은
 // 전혀 일어나지 않는다. CLI 미설치·실패·타임아웃도 조용한 폴백이다.
+import { t } from "@renderer/i18n";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { maybeSendOsNotification } from "../ipc/osNotify";
@@ -82,8 +83,9 @@ export function installDiaryAutoWriter(deps: DiaryAutoWriterDeps = {}): () => vo
   // 생성 성공 시: OS 알림 + 오버레이가 그 캐릭터를 열고 있으면 갱신.
   const onWritten = (agentId: string, entry: DiaryEntry): void => {
     const state = useAppStore.getState();
-    const name = state.agents[agentId]?.name ?? "캐릭터";
-    notify(`📔 ${name}의 일기`, previewBody(entry.body));
+    const name = state.agents[agentId]?.name ?? t("journal:diary.fallbackName");
+    // 알림 제목은 UI 문구, 본문은 생성된 일기 그대로(재번역하지 않는다).
+    notify(t("journal:diary.title", { name }), previewBody(entry.body));
     const diary = useDiaryStore.getState();
     if (diary.overlay?.agentId === agentId) void diary.refresh(agentId);
   };

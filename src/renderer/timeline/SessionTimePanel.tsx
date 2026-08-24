@@ -8,6 +8,7 @@
 // display. A 통계 toggle reveals per-agent cumulative worked totals (오늘/총)
 // aggregated from the disk log via useAgentStats.
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSessionTimeRows, useTodayWorkedMs, type SessionTimeRow } from "../store/selectors";
 import { useAgentStats } from "./useAgentStats";
 import { formatDuration } from "./format";
@@ -32,30 +33,36 @@ function useOneSecondTick(active: boolean): number {
 
 /** 통계 뷰 본문 — statsOpen && !collapsed일 때만 마운트(그래야 훅 로드가 발화). */
 function AgentStatsSection() {
+  const { t } = useTranslation("activity");
   const { rows, loading, error, retry } = useAgentStats(true);
   if (error) {
     return (
       <div className="stp-stats-msg">
-        통계를 불러오지 못했습니다{" "}
+        {t("timeline.statsError")}{" "}
         <button type="button" className="stp-stats-retry" onClick={retry}>
-          다시 시도
+          {t("timeline.retry")}
         </button>
       </div>
     );
   }
   if (loading && rows.length === 0) {
-    return <div className="stp-stats-msg">불러오는 중…</div>;
+    return <div className="stp-stats-msg">{t("timeline.loading")}</div>;
   }
   if (rows.length === 0) {
-    return <div className="stp-stats-msg">기록 없음</div>;
+    return <div className="stp-stats-msg">{t("timeline.noRecords")}</div>;
   }
   return (
     <ul className="stp-stats">
       {rows.map((r) => (
         <li key={r.agentId} className={`stp-stat-row${r.departed ? " departed" : ""}`}>
-          <span className="stp-stat-name">{r.label}</span>
+          <span className="stp-stat-name">
+            {r.departed ? t("timeline.departed", { short: r.label }) : r.label}
+          </span>
           <span className="stp-stat-vals">
-            오늘 {formatDuration(r.todayWorkedMs)} · 총 {formatDuration(r.totalWorkedMs)}
+            {t("timeline.statVals", {
+              today: formatDuration(r.todayWorkedMs),
+              total: formatDuration(r.totalWorkedMs),
+            })}
           </span>
         </li>
       ))}
@@ -64,6 +71,7 @@ function AgentStatsSection() {
 }
 
 export function SessionTimePanel() {
+  const { t } = useTranslation("activity");
   const rows = useSessionTimeRows();
   const todayWorkedMs = useTodayWorkedMs();
   const [collapsed, setCollapsed] = useState(false);
@@ -74,26 +82,26 @@ export function SessionTimePanel() {
   return (
     <div className="session-time-panel pixel-panel">
       <div className="stp-head">
-        <span className="stp-title">세션 시간</span>
+        <span className="stp-title">{t("timeline.title")}</span>
         <button
           type="button"
           className="stp-toggle"
-          aria-label={collapsed ? "펼치기" : "접기"}
+          aria-label={collapsed ? t("timeline.expand") : t("timeline.collapse")}
           onClick={() => setCollapsed((c) => !c)}
         >
           {collapsed ? "▸" : "▾"}
         </button>
       </div>
       <div className="stp-today">
-        <span>오늘 {formatDuration(todayWorkedMs)}</span>
+        <span>{t("timeline.todayTotal", { total: formatDuration(todayWorkedMs) })}</span>
         <button
           type="button"
           className="stp-stats-toggle"
           aria-expanded={statsOpen}
-          aria-label={statsOpen ? "통계 접기" : "통계 펼치기"}
+          aria-label={statsOpen ? t("timeline.statsCollapse") : t("timeline.statsExpand")}
           onClick={() => setStatsOpen((s) => !s)}
         >
-          통계 {statsOpen ? "▾" : "▸"}
+          {t("timeline.statsToggle")} {statsOpen ? "▾" : "▸"}
         </button>
       </div>
       {!collapsed && statsOpen && <AgentStatsSection />}
@@ -114,7 +122,11 @@ export function SessionTimePanel() {
                   {r.phase !== "idle" ? formatDuration(live) : "—"}
                 </span>
                 <span className="stp-cum">
-                  진행 {formatDuration(r.workedMs)} · 총 {formatDuration(r.totalMs)} · {r.turns}턴
+                  {t("timeline.rowCum", {
+                    worked: formatDuration(r.workedMs),
+                    total: formatDuration(r.totalMs),
+                    turns: t("timeline.turns", { count: r.turns }),
+                  })}
                 </span>
               </li>
             );

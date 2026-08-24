@@ -12,6 +12,7 @@
 // `Graphics` 생성/드로우는 렌더 컨텍스트가 필요 없어 여기서 그대로 돌린다
 // (TileRenderer.test.ts와 같은 판단). jsdom은 localStorage 스텁 때문에 쓴다.
 
+import { t } from "@renderer/i18n";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Graphics } from "pixi.js";
 
@@ -55,7 +56,8 @@ describe("SCENES 레지스트리 무결성", () => {
   it("모든 풍경이 id 일치 + 비어있지 않은 한국어 라벨을 가진다", () => {
     for (const [id, scene] of Object.entries(SCENES)) {
       expect(scene.id).toBe(id);
-      expect(scene.label.trim().length).toBeGreaterThan(0);
+      expect(t(scene.labelKey).trim().length).toBeGreaterThan(0);
+      expect(t(scene.labelKey)).not.toBe(scene.labelKey); // 카탈로그에 실제로 있는 키
     }
   });
 

@@ -370,7 +370,7 @@ function castleTileDraw(pal: CastlePalette): TileDrawFn {
 
 export const CASTLE_SCENE: SceneDef = {
   id: "castle",
-  label: "중세 성",
+  labelKey: "office:scene.castle",
   map: CASTLE_MAP,
   resolve: (theme) => {
     const mode = sceneColorMode(theme.id);

@@ -1,6 +1,8 @@
 import "./layout/layout.css";
 
 import { useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
+
 import { officeBus } from "./ipc/sessionBridge";
 import { OfficeCanvas } from "./office/OfficeCanvas";
 import type { AgentProfile as OfficeAgentProfile } from "./office/types";
@@ -72,6 +74,7 @@ import { UIChrome } from "./layout/UIChrome";
 //                                     FirstRunDialog which gates on
 //                                     `settingsFirstRun`.
 function App() {
+  const { t } = useTranslation("app");
   const agents = useAgentList();
   // The store's `AgentProfile` (src/shared/types.ts) is structurally
   // richer than office/types.ts's `AgentProfile` (id/name/role/seed + an
@@ -124,7 +127,7 @@ function App() {
       />
       {lightsOff && (
         <div className="office-lights-off" aria-hidden="true">
-          <span className="office-lights-off-label">모두 퇴근했습니다</span>
+          <span className="office-lights-off-label">{t("shell.lightsOff")}</span>
         </div>
       )}
       <TaskLabelLayer bus={officeBus} />

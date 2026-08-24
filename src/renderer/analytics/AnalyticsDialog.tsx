@@ -7,7 +7,9 @@
 // 설계: docs/session-analytics-design.md §4.4. 실시간 갱신은 비목표 —
 // 열려 있는 동안 새 이벤트를 반영하지 않는다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { SessionEventRecord } from "@shared/types";
+import { renderText, type Translate } from "../shared/textKey";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import type { AgentSummary } from "./aggregate";
@@ -40,14 +42,17 @@ function rangeFor(days: number, now: number): { fromAt: number; toAt: number } {
 
 /**
  * 토큰 셀 툴팁: 0인 항목은 빼고 나열한다. 전부 0이면 빈 문자열(툴팁 생략).
- * 예: "입력 12.3K · 출력 4.5K · 캐시읽기 1.2M".
+ * 예: "입력 12.3K · 출력 4.5K · 캐시읽기 1.2M". 항목 수가 0~4개로 달라지는
+ * 자리라 잇는 가운뎃점은 카탈로그가 아니라 여기서 붙인다.
  */
-function tokenBreakdown(row: AgentSummary): string {
+function tokenBreakdown(row: AgentSummary, t: Translate): string {
   const parts: string[] = [];
-  if (row.tokensIn > 0) parts.push(`입력 ${formatTokens(row.tokensIn)}`);
-  if (row.tokensOut > 0) parts.push(`출력 ${formatTokens(row.tokensOut)}`);
-  if (row.tokensCacheRead > 0) parts.push(`캐시읽기 ${formatTokens(row.tokensCacheRead)}`);
-  if (row.tokensCacheWrite > 0) parts.push(`캐시기록 ${formatTokens(row.tokensCacheWrite)}`);
+  if (row.tokensIn > 0) parts.push(t("analytics.tokenIn", { value: formatTokens(row.tokensIn) }));
+  if (row.tokensOut > 0) parts.push(t("analytics.tokenOut", { value: formatTokens(row.tokensOut) }));
+  if (row.tokensCacheRead > 0)
+    parts.push(t("analytics.tokenCacheRead", { value: formatTokens(row.tokensCacheRead) }));
+  if (row.tokensCacheWrite > 0)
+    parts.push(t("analytics.tokenCacheWrite", { value: formatTokens(row.tokensCacheWrite) }));
   return parts.join(" · ");
 }
 
@@ -57,6 +62,7 @@ type LoadState =
   | { status: "ready"; records: SessionEventRecord[]; fromAt: number; toAt: number };
 
 export function AnalyticsDialog() {
+  const { t } = useTranslation("activity");
   const modal = useAppStore((s) => s.modal);
   const closeModal = useAppStore((s) => s.closeModal);
   const profiles = useAppStore((s) => s.agents);
@@ -80,7 +86,7 @@ export function AnalyticsDialog() {
       setLoad({ status: "ready", records, fromAt, toAt });
     } catch (err) {
       if (gen !== genRef.current) return; // 낡은 실패도 무시
-      console.warn("분석: 세션 이벤트 로드 실패", err);
+      console.warn("analytics: failed to load session events", err);
       setLoad({ status: "error" });
     }
   }, []);
@@ -111,8 +117,8 @@ export function AnalyticsDialog() {
     >
       <div className="pixel-panel analytics-dialog">
         <div className="analytics-head">
-          <h2 className="pixel-title">세션 활동 분석</h2>
-          <div className="analytics-period" role="group" aria-label="기간 선택">
+          <h2 className="pixel-title">{t("analytics.title")}</h2>
+          <div className="analytics-period" role="group" aria-label={t("analytics.periodAria")}>
             {PERIODS.map((p) => (
               <button
                 key={p}
@@ -121,7 +127,7 @@ export function AnalyticsDialog() {
                 aria-pressed={p === period}
                 onClick={() => setPeriod(p)}
               >
-                {p}일
+                {t("analytics.periodDays", { days: p })}
               </button>
             ))}
           </div>
@@ -129,22 +135,22 @@ export function AnalyticsDialog() {
 
         <div className="analytics-body">
           {load.status === "loading" && (
-            <p className="analytics-msg">불러오는 중…</p>
+            <p className="analytics-msg">{t("analytics.loading")}</p>
           )}
           {load.status === "error" && (
             <div className="analytics-msg analytics-error">
-              <p>세션 이벤트를 불러오지 못했습니다.</p>
+              <p>{t("analytics.loadError")}</p>
               <button
                 type="button"
                 className="pixel-btn"
                 onClick={() => void fetchRange(period)}
               >
-                재시도
+                {t("analytics.retry")}
               </button>
             </div>
           )}
           {load.status === "ready" && analytics && analytics.data.summary.length === 0 && (
-            <p className="analytics-msg">이 기간에 기록된 세션 활동이 없습니다.</p>
+            <p className="analytics-msg">{t("analytics.empty")}</p>
           )}
           {load.status === "ready" && analytics && analytics.data.summary.length > 0 && (
             <>
@@ -156,24 +162,21 @@ export function AnalyticsDialog() {
               <table className="analytics-table">
                 <thead>
                   <tr>
-                    <th scope="col">캐릭터</th>
-                    <th scope="col">작업시간</th>
-                    <th scope="col">턴</th>
-                    <th scope="col">도구</th>
-                    <th scope="col">토큰</th>
-                    <th
-                      scope="col"
-                      title="공개 API 요율로 환산한 추정치(실제 청구액과 다를 수 있음)"
-                    >
-                      추정 비용
+                    <th scope="col">{t("analytics.colAgent")}</th>
+                    <th scope="col">{t("analytics.colWorked")}</th>
+                    <th scope="col">{t("analytics.colTurns")}</th>
+                    <th scope="col">{t("analytics.colTools")}</th>
+                    <th scope="col">{t("analytics.colTokens")}</th>
+                    <th scope="col" title={t("analytics.costHint")}>
+                      {t("analytics.colCost")}
                     </th>
-                    <th scope="col">활동일</th>
+                    <th scope="col">{t("analytics.colDays")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {analytics.data.summary.map((row) => {
                     const tokenTotal = row.tokensIn + row.tokensOut;
-                    const breakdown = tokenBreakdown(row);
+                    const breakdown = tokenBreakdown(row, t);
                     const hasCost = row.costUsd > 0 || row.costUnknownTurns > 0;
                     return (
                       <tr key={row.agentId}>
@@ -185,10 +188,10 @@ export function AnalyticsDialog() {
                           />
                           <span className={row.deleted ? "analytics-deleted" : undefined}>
                             {row.name}
-                            {row.deleted ? " (삭제됨)" : ""}
+                            {row.deleted ? t("analytics.deletedSuffix") : ""}
                           </span>
                         </th>
-                        <td>{formatDuration(row.workedMs)}</td>
+                        <td>{renderText(formatDuration(row.workedMs), t)}</td>
                         <td>{row.turns}</td>
                         <td>{row.toolEvents}</td>
                         <td title={breakdown || undefined}>
@@ -197,7 +200,7 @@ export function AnalyticsDialog() {
                         <td
                           title={
                             row.costUnknownTurns > 0
-                              ? `단가를 모르는 모델 ${row.costUnknownTurns}턴은 제외됨`
+                              ? t("analytics.costUnknownHint", { count: row.costUnknownTurns })
                               : undefined
                           }
                         >
@@ -211,17 +214,14 @@ export function AnalyticsDialog() {
                   })}
                 </tbody>
               </table>
-              <p className="analytics-footnote">
-                비용은 공개 API 요율 환산 추정치입니다. 구독제 사용 시 실제 청구와
-                무관합니다.
-              </p>
+              <p className="analytics-footnote">{t("analytics.footnote")}</p>
             </>
           )}
         </div>
 
         <div className="dialog-actions">
           <button className="pixel-btn" onClick={closeModal}>
-            닫기
+            {t("analytics.close")}
           </button>
         </div>
       </div>

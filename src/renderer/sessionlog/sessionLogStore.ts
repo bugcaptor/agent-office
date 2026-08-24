@@ -7,6 +7,7 @@
 // 전부 들고 오지 않는다. 항목을 고르면 그때 동작(편집기로 열기 / 학습자료
 // 만들기)이 노출된다.
 import { create } from "zustand";
+import { t } from "@renderer/i18n";
 import { tauriApi } from "../ipc/tauriApi";
 import type { SessionLogItem } from "@shared/types";
 import { useMarkdownStore } from "../markdown/markdownStore";
@@ -44,22 +45,31 @@ interface SessionLogState {
   makeStudyMaterial(): Promise<void>;
 }
 
-/** 백엔드 실패 문자열 → 사용자 안내. */
+/**
+ * 백엔드 실패 문자열 → 사용자 안내.
+ *
+ * React 밖(zustand 액션)이라 훅이 아니라 모듈 `t`를 쓴다 — 다만 **호출
+ * 시점**에만 부른다(모듈 최상위에서 부르면 언어를 바꿔도 문구가 굳는다).
+ *
+ * 빈 로그 판정만 정규식인 건, 백엔드(`session_log/study.rs`)가 한국어 에러
+ * 문자열("빈 로그입니다")을 그대로 돌려주기 때문이다. 이건 화면에 나가는
+ * 문구가 아니라 **백엔드 응답을 알아보는 패턴**이라 카탈로그 대상이 아니다.
+ */
 function noticeForError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes("summarizer-disabled")) {
-    return "설정에서 ‘요약기’를 먼저 켜 주세요. 학습자료는 그 CLI로 만듭니다.";
+    return t("activity:sessionLog.errSummarizerOff");
   }
   if (message.includes("-not-found")) {
-    return "선택한 CLI를 찾지 못했습니다. 설정의 요약기 provider를 확인하세요.";
+    return t("activity:sessionLog.errCliNotFound");
   }
   if (message === "timeout") {
-    return "생성이 너무 오래 걸려 중단했습니다. 더 짧은 세션 로그로 시도해 보세요.";
+    return t("activity:sessionLog.errTimeout");
   }
-  if (message.includes("빈 로그")) {
-    return "이 로그에는 정리할 내용이 없습니다.";
+  if (/빈 로그/.test(message)) {
+    return t("activity:sessionLog.errEmptyLog");
   }
-  return `학습자료를 만들지 못했습니다: ${message}`;
+  return t("activity:sessionLog.errGeneric", { message });
 }
 
 export const useSessionLogStore = create<SessionLogState>((set, get) => ({
@@ -108,9 +118,9 @@ export const useSessionLogStore = create<SessionLogState>((set, get) => ({
       if (get().overlay?.agentId !== agentId) return;
       set({ items: result.items, total: result.total, loading: false });
     } catch (err) {
-      console.warn("session-log: 목록 로드 실패", err);
+      console.warn("session-log: failed to load the list", err);
       if (get().overlay?.agentId !== agentId) return;
-      set({ loading: false, notice: "세션 로그 목록을 불러오지 못했습니다." });
+      set({ loading: false, notice: t("activity:sessionLog.noticeListError") });
     }
   },
 
@@ -120,8 +130,8 @@ export const useSessionLogStore = create<SessionLogState>((set, get) => ({
     try {
       await tauriApi.openSessionLog(path);
     } catch (err) {
-      console.warn("session-log: 편집기로 열기 실패", err);
-      set({ notice: "편집기로 열지 못했습니다." });
+      console.warn("session-log: failed to open in the editor", err);
+      set({ notice: t("activity:sessionLog.noticeOpenError") });
     }
   },
 
@@ -131,7 +141,7 @@ export const useSessionLogStore = create<SessionLogState>((set, get) => ({
     if (!overlay || !path || get().generating) return;
     const { agentId } = overlay;
 
-    set({ generating: true, notice: "학습자료를 만드는 중입니다… (수십 초 걸립니다)" });
+    set({ generating: true, notice: t("activity:sessionLog.noticeGenerating") });
     try {
       const result = await tauriApi.generateStudyMaterial(agentId, path);
       set({ generating: false, notice: null });
@@ -143,7 +153,7 @@ export const useSessionLogStore = create<SessionLogState>((set, get) => ({
         useSessionLogStore.getState().open(agentId, agentName);
       });
     } catch (err) {
-      console.warn("session-log: 학습자료 생성 실패", err);
+      console.warn("session-log: failed to generate study material", err);
       set({ generating: false, notice: noticeForError(err) });
     }
   },

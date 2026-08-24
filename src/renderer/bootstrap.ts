@@ -60,7 +60,7 @@ async function adoptDetachedSessions(): Promise<void> {
     }
     terminalRegistry.markAdopted(adopted.map((a) => a.agentId));
   } catch (err) {
-    console.warn("bootstrap: 세션 입양 실패 — 이전 세션 없이 진행", err);
+    console.warn("bootstrap: session adoption failed, continuing without prior sessions", err);
   }
 }
 
@@ -81,7 +81,7 @@ async function seedBotMode(): Promise<void> {
     const status = await tauriApi.botStatus();
     useAppStore.getState().seedBotStatus(status);
   } catch (err) {
-    console.warn("bootstrap: 봇 상태 조회 실패 — 봇 모드 없이 진행", err);
+    console.warn("bootstrap: bot status query failed, continuing without bot mode", err);
   }
 }
 
@@ -99,7 +99,7 @@ function finalizeAwardsInBackground(): void {
   void (async () => {
     await useAwardsStore.getState().load();
     await useAwardsStore.getState().ensureFinalized();
-  })().catch((err) => console.warn("bootstrap: 시상 소급 확정 실패", err));
+  })().catch((err) => console.warn("bootstrap: award backfill finalization failed", err));
 }
 
 /** 브로커 모드 주기 스냅샷 업로드 간격(ms). 크래시 생존 화면 복원의 신선도. */
@@ -134,7 +134,7 @@ function installSnapshotUploader(): () => void {
           const renderedBytes = terminalRegistry.getRenderedBytes();
           await tauriApi.uploadSessionSnapshots(snapshots, renderedBytes);
         })().catch((err) => {
-          console.warn("bootstrap: 세션 스냅샷 업로드 실패", err);
+          console.warn("bootstrap: session snapshot upload failed", err);
         });
       }, SNAPSHOT_UPLOAD_INTERVAL_MS);
     })
@@ -207,7 +207,7 @@ export async function bootApp(): Promise<() => void> {
     // 여기서 한 번 전환된다 — 캐시도 함께 갱신돼 다음 부팅은 플래시가 없다.
     applyLanguageSetting(settings.language);
   } catch (err) {
-    console.warn("bootstrap: 앱 설정 로드 실패 — 기본값(전부 OFF)으로 진행", err);
+    console.warn("bootstrap: app settings load failed, continuing with defaults (all off)", err);
   }
 
   // "오늘 일한 시간" 헤드라인 베이스 — 실패해도 부팅 계속(base=0, loadState
@@ -218,7 +218,7 @@ export async function bootApp(): Promise<() => void> {
     const base = sumWorkedSince(records, startOfLocalDay(Date.now()));
     useAppStore.getState().setTodayWorkedBase(base, 0);
   } catch (err) {
-    console.warn("bootstrap: 오늘 작업 시간 로드 실패 — 0으로 시작", err);
+    console.warn("bootstrap: today-worked load failed, starting from 0", err);
   }
 
   const offBridge = installSessionBridge();

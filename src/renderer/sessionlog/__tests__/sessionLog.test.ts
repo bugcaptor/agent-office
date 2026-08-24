@@ -1,10 +1,16 @@
 // 세션 로그 보기(docs/session-log-design.md §7)의 표시 포맷과 스토어 동작.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { SOURCE_LANGUAGE, initI18nForTest, t as translate } from "@renderer/i18n";
+import { renderText } from "@renderer/shared/textKey";
 import { formatBytes, formatDuration, formatWhen, shortenPath } from "../format";
 import { useSessionLogStore, PAGE_SIZE } from "../sessionLogStore";
 import { tauriApi } from "../../ipc/tauriApi";
 import { useMarkdownStore } from "../../markdown/markdownStore";
 import type { SessionLogItem } from "@shared/types";
+
+/** `activity` 네임스페이스에 바인딩된 번역 함수(모듈 t는 ns 접두가 필요). */
+const tr = (key: string, params?: Record<string, string | number>) =>
+  translate(`activity:${key}`, params);
 
 function item(overrides: Partial<SessionLogItem> = {}): SessionLogItem {
   return {
@@ -24,15 +30,43 @@ describe("format", () => {
     expect(formatWhen(at)).toBe("2026-07-25 14:03");
   });
 
-  it("시각이 없으면 미상으로 표시한다", () => {
-    expect(formatWhen(0)).toBe("시각 미상");
+  // 문구는 카탈로그로 옮겼다 — 순수 함수는 "표시 없음(null)"과 키·보간만 낸다.
+  it("시각이 없으면 null을 내고, 문구는 호출자가 고른다", () => {
+    expect(formatWhen(0)).toBeNull();
   });
 
-  it("지속 시간을 사람 단위로 접는다", () => {
-    expect(formatDuration(0, 30_000)).toBe("1분 미만");
-    expect(formatDuration(0, 12 * 60_000)).toBe("12분");
-    expect(formatDuration(0, 60 * 60_000)).toBe("1시간");
-    expect(formatDuration(0, 95 * 60_000)).toBe("1시간 35분");
+  it("지속 시간을 사람 단위로 접는다(키 기준)", () => {
+    expect(formatDuration(0, 30_000)).toEqual({ key: "sessionLog.durUnderMinute" });
+    expect(formatDuration(0, 12 * 60_000)).toEqual({
+      key: "sessionLog.durMinutes",
+      params: { minutes: 12 },
+    });
+    expect(formatDuration(0, 60 * 60_000)).toEqual({
+      key: "sessionLog.durHours",
+      params: { hours: 1 },
+    });
+    expect(formatDuration(0, 95 * 60_000)).toEqual({
+      key: "sessionLog.durHoursMinutes",
+      params: { hours: 1, rest: 35 },
+    });
+    expect(formatDuration(0, -1)).toBeNull();
+  });
+
+  it("정본(ko) 카탈로그가 예전 문구를 그대로 낸다", () => {
+    const render = (ms: number) => renderText(formatDuration(0, ms)!, tr);
+    expect(render(30_000)).toBe("1분 미만");
+    expect(render(12 * 60_000)).toBe("12분");
+    expect(render(60 * 60_000)).toBe("1시간");
+    expect(render(95 * 60_000)).toBe("1시간 35분");
+    expect(tr("sessionLog.whenUnknown")).toBe("시각 미상");
+  });
+
+  it("en 카탈로그도 짧고 말이 되는 문구를 낸다", async () => {
+    await initI18nForTest("en");
+    const render = (ms: number) => renderText(formatDuration(0, ms)!, tr);
+    expect(render(30_000)).toBe("under 1m");
+    expect(render(95 * 60_000)).toBe("1h 35m");
+    await initI18nForTest(SOURCE_LANGUAGE);
   });
 
   it("파일 크기를 단위로 접는다", () => {

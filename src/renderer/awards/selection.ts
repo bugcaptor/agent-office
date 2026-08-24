@@ -44,10 +44,10 @@ export interface SelectionResult {
 /** "YYYY-MM" 파싱. 형식이 어긋나면 던진다(호출부 버그를 조용히 넘기지 않는다). */
 function parseMonthKey(monthKey: string): { year: number; month: number } {
   const m = /^(\d{4})-(\d{2})$/.exec(monthKey);
-  if (!m) throw new Error(`잘못된 monthKey: ${monthKey}`);
+  if (!m) throw new Error(`invalid monthKey: ${monthKey}`);
   const year = Number(m[1]);
   const month = Number(m[2]);
-  if (month < 1 || month > 12) throw new Error(`잘못된 monthKey: ${monthKey}`);
+  if (month < 1 || month > 12) throw new Error(`invalid monthKey: ${monthKey}`);
   return { year, month };
 }
 

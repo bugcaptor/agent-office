@@ -10,6 +10,7 @@
 // 자리 없는 에이전트가 자동(해시) 배정으로 선점할 수 있다 — 그 규칙은
 // office/map/deskAssignment.ts 소관.
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { officeBus } from "../ipc/sessionBridge";
 import { useAppStore } from "../store/appStore";
@@ -22,6 +23,7 @@ interface DeskClickTarget {
 }
 
 export function DeskAssignMenu() {
+  const { t } = useTranslation("office");
   const [target, setTarget] = useState<DeskClickTarget | null>(null);
   const agents = useAppStore((s) => s.agents);
   const agentOrder = useAppStore((s) => s.agentOrder);
@@ -38,7 +40,7 @@ export function DeskAssignMenu() {
 
   const items: ContextMenuItem[] = [
     // 헤더(선택 불가): 어느 책상인지 표시.
-    { label: `${deskIndex + 1}번 책상 주인`, onSelect: () => {}, disabled: true },
+    { label: t("desk.ownerHeader", { index: deskIndex + 1 }), onSelect: () => {}, disabled: true },
     ...agentOrder
       .filter((id) => agents[id])
       .map((id) => ({
@@ -46,7 +48,7 @@ export function DeskAssignMenu() {
         onSelect: () => assignDesk(deskIndex, id),
       })),
     {
-      label: "지정 해제",
+      label: t("desk.unassign"),
       onSelect: () => assignDesk(deskIndex, null),
       disabled: ownerId === undefined,
     },

@@ -9,6 +9,7 @@
 // Markdown은 본문을 이스케이프하지 않는다: 일기 본문에 코드블록·`#` 등이 있어도
 // 원문 그대로 보존하는 편이 "사람이 읽는 문서"라는 목적에 맞다.
 
+import { t } from "@renderer/i18n";
 import {
   DIARY_BUNDLE_KIND,
   DIARY_BUNDLE_SCHEMA_VERSION,
@@ -38,11 +39,12 @@ export function sanitizeFileBase(name: string): string {
 
 /** 저장 다이얼로그 초기 파일명: `<캐릭터명>-일기-<YYYYMMDD-HHmm>.md`.
  *  확장자는 기본 필터(Markdown)에 맞추고, 사용자가 `.json`으로 바꾸면 백엔드가
- *  JSON 본문을 쓴다. */
+ *  JSON 본문을 쓴다. 이름 틀 전체가 카탈로그 키다(`journal:diary.file.name`) —
+ *  언어마다 가운데 낱말이 달라지므로 조각을 코드에서 잇지 않는다. */
 export function diaryFileName(agentName: string, at: number): string {
   const d = new Date(at);
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
-  return `${sanitizeFileBase(agentName)}-일기-${stamp}.md`;
+  return t("journal:diary.file.name", { name: sanitizeFileBase(agentName), stamp });
 }
 
 /**
@@ -52,7 +54,13 @@ export function diaryFileName(agentName: string, at: number): string {
  * 여기서 던지지는 않는다).
  */
 export function formatDiaryMarkdown(agentName: string, entries: DiaryEntry[]): string {
-  const lines: string[] = [`# ${agentName}의 일기`, "", `총 ${entries.length}편`, ""];
+  // 머리말은 UI 문구(생성 시점 언어)로 쓴다 — 일기 **본문**은 사료라 손대지 않는다.
+  const lines: string[] = [
+    `# ${t("journal:diary.file.heading", { name: agentName })}`,
+    "",
+    t("journal:diary.file.count", { count: entries.length }),
+    "",
+  ];
   for (const e of entries) {
     lines.push(`## ${formatWhen(e.at)}`, "", e.body.trimEnd(), "");
   }

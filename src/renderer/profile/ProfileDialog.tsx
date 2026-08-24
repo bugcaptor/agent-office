@@ -35,6 +35,7 @@ import {
   basePaletteFor,
   hexColor,
 } from "../office/gen/archetypes";
+import type { KeyColor } from "../office/gen/archetypes";
 import { ColorPickerDialog } from "./ColorPickerDialog";
 import { normalizeColors } from "./generate";
 import type { PaletteSlot } from "@shared/types";
@@ -60,7 +61,7 @@ import { SpriteEditor } from "../sprite/SpriteEditor";
 import { clearSpriteOverride } from "../office/gen/spriteOverrides";
 import { clearMinimiOverride } from "../office/gen/minimiOverrides";
 import { loadMinimisFor } from "../sprite/minimiCache";
-import { KEYBOARD_SOUND_PACK_OPTIONS } from "../sound/packs";
+import { KEYBOARD_SOUND_PACK_OPTIONS, packLabel } from "../sound/packs";
 import { previewKeyboardSound, previewVoice } from "../sound/soundManager";
 import type { AvailableShell, TtsVoiceOption } from "@shared/types";
 import "../portrait/portrait.css";
@@ -225,11 +226,16 @@ export function ProfileDialog() {
       return { ...d, colors: next };
     });
 
+  /** 색 칩·피커 제목에 쓸 슬롯 이름. 키 컬러 데이터는 번역 키만 들고 있으므로
+   *  (아키타입마다 "머리"/"털"/"본체"로 이름이 다르다) 여기서 번역한다. */
+  const keyColorLabel = (c: KeyColor | undefined): string =>
+    c ? t(c.labelKey) : t("keyColor.fallbackLabel");
+
   /** 피커가 떠 있는 슬롯의 정보(라벨·현재색·기본색). 닫혀 있으면 null. */
   const picking = pickingSlot
     ? {
         slot: pickingSlot,
-        label: keyColors.find((c) => c.slot === pickingSlot)?.ko ?? t("keyColor.fallbackLabel"),
+        label: keyColorLabel(keyColors.find((c) => c.slot === pickingSlot)),
         value: hexColor(
           keyColors.find((c) => c.slot === pickingSlot)?.rgb ?? basePalette[pickingSlot].base,
         ),
@@ -744,7 +750,7 @@ export function ProfileDialog() {
                         style={{ background: hexColor(c.rgb) }}
                         aria-hidden
                       />
-                      <span>{c.ko}</span>
+                      <span>{t(c.labelKey)}</span>
                       <code>{hexColor(c.rgb)}</code>
                       {custom && (
                         <span className="key-color-mark" title={t("keyColor.customMark")}>
@@ -930,7 +936,7 @@ export function ProfileDialog() {
               >
                 <option value="">{t("terminal.keyboardSoundDefault")}</option>
                 {KEYBOARD_SOUND_PACK_OPTIONS.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
+                  <option key={p.id} value={p.id}>{packLabel(p, t)}</option>
                 ))}
               </select>
             </label>

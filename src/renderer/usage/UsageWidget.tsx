@@ -21,6 +21,8 @@
 // mergeUsageSnapshot으로 이전 값 위에 덮어써(일시 파싱 실패가 유효 값을
 // 지우지 않게) 저장한다.
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import { renderText } from "../shared/textKey";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import type { ProviderUsage } from "@shared/types";
@@ -50,23 +52,38 @@ function ProviderBadge({
   /** 실시간 조회 진단(있으면 툴팁에 덧붙이고 뱃지를 표시색으로 물들인다). */
   note: LiveStatusNote | null;
 }) {
+  const { t } = useTranslation("activity");
   const short = PROVIDER_SHORT[provider];
   const windows = badgeWindows(usage);
   // 폭이 빠듯한 BottomBar(설계 §BottomBar 800px)라 글자를 늘리지 않는다 —
   // 사유는 툴팁과 상세 모달에, 여기서는 색 힌트만 준다.
   const degraded = note && note.level !== "ok" ? ` usage-badge-${note.level}` : "";
-  const noteSuffix = note && note.level !== "ok" ? ` (${note.short})` : "";
+  const noteSuffix =
+    note && note.level !== "ok"
+      ? t("usage.widget.noteSuffix", { note: renderText(note.short, t) })
+      : "";
   if (windows.length === 0) {
     return (
       <span
         className={`usage-badge usage-badge-empty${degraded}`}
-        title={`${short}: 데이터 없음${noteSuffix}`}
+        title={t("usage.widget.empty", { short, suffix: noteSuffix })}
       >
         <span className="usage-badge-label">{short}</span> <span className="usage-badge-pct">—</span>
       </span>
     );
   }
-  const title = `${short}: ${windows.map((w) => `${windowLabel(w)} ${Math.round(w.usedPercent)}%`).join(" · ")}${noteSuffix}`;
+  const title = t("usage.widget.title", {
+    short,
+    windows: windows
+      .map((w) =>
+        t("usage.widget.windowPct", {
+          label: renderText(windowLabel(w), t),
+          pct: Math.round(w.usedPercent),
+        }),
+      )
+      .join(" · "),
+    suffix: noteSuffix,
+  });
   return (
     <span className={`usage-badge${degraded}`} title={title}>
       {/* usage-badge-label은 BottomBar가 좁을 때 usage.css 미디어 쿼리로
@@ -85,6 +102,7 @@ function ProviderBadge({
 }
 
 export function UsageWidget() {
+  const { t } = useTranslation("activity");
   const usage = useAppStore((s) => s.usage);
   const setUsage = useAppStore((s) => s.setUsage);
   const openModal = useAppStore((s) => s.openModal);
@@ -103,7 +121,7 @@ export function UsageWidget() {
         if (!cancelled) setUsage(mergeUsageSnapshot(useAppStore.getState().usage, snap));
       } catch (err) {
         // 실패는 콘솔 경고로만 — 다음 폴링이 재시도한다(이전 값 유지).
-        console.warn("usage: 스냅샷 로드 실패", err);
+        console.warn("usage: failed to load snapshot", err);
       } finally {
         inFlight = false;
       }
@@ -126,8 +144,8 @@ export function UsageWidget() {
     <button
       type="button"
       className="pixel-btn usage-widget"
-      aria-label="구독 사용량"
-      title="구독 사용량 상세 보기"
+      aria-label={t("usage.widget.aria")}
+      title={t("usage.widget.tooltip")}
       onClick={() => openModal({ kind: "usage" })}
     >
       {PROVIDERS.map((p) => (

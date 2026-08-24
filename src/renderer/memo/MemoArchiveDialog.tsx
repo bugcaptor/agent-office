@@ -7,6 +7,8 @@
 //
 // 좌: 넘긴 장 목록(최신순, 생성·수정·아카이브 시각). 우: 고른 장의 본문 —
 // 읽기 전용이고 복사만 된다(과거 장을 되살리는 기능은 범위 밖).
+import { useTranslation } from "react-i18next";
+
 import { useMemoStore } from "./memoStore";
 import { useEscapeToClose } from "../shared/useEscapeToClose";
 import { formatMemoWhen } from "./memoFormat";
@@ -20,6 +22,7 @@ function previewOf(content: string): string {
 }
 
 export function MemoArchiveDialog() {
+  const { t } = useTranslation("journal");
   const target = useMemoStore((s) => s.archive);
   const items = useMemoStore((s) => s.archiveItems);
   const loading = useMemoStore((s) => s.archiveLoading);
@@ -44,22 +47,24 @@ export function MemoArchiveDialog() {
       <div
         className="pixel-panel memo-archive-dialog"
         role="dialog"
-        aria-label={`${target.agentName}의 메모 아카이브`}
+        aria-label={t("memo.archiveAria", { name: target.agentName })}
       >
         <div className="memo-archive-header">
-          <h2 className="memo-archive-title">🗒 {target.agentName}의 메모 아카이브</h2>
+          <h2 className="memo-archive-title">
+            {t("memo.archiveHeading", { name: target.agentName })}
+          </h2>
           <div className="memo-archive-actions">
             <button
               type="button"
               className="pixel-btn"
               disabled={!selected}
-              title={selected ? "이 장의 본문을 복사" : "먼저 장을 고르세요"}
+              title={selected ? t("memo.copyTitle") : t("memo.copyPickFirst")}
               onClick={() => void copySelected()}
             >
-              복사
+              {t("memo.copy")}
             </button>
             <button type="button" className="pixel-btn" onClick={closeArchive}>
-              닫기
+              {t("memo.archiveClose")}
             </button>
           </div>
         </div>
@@ -67,11 +72,9 @@ export function MemoArchiveDialog() {
         {notice && <div className="memo-archive-notice">{notice}</div>}
 
         {loading ? (
-          <div className="memo-archive-empty">불러오는 중…</div>
+          <div className="memo-archive-empty">{t("memo.archiveLoading")}</div>
         ) : items.length === 0 ? (
-          <div className="memo-archive-empty">
-            아직 넘긴 장이 없습니다. 포스트잇에서 ‘한 장 넘기기’를 하면 여기 쌓입니다.
-          </div>
+          <div className="memo-archive-empty">{t("memo.archiveEmpty")}</div>
         ) : (
           <div className="memo-archive-body">
             <ul className="memo-archive-list">
@@ -87,10 +90,13 @@ export function MemoArchiveDialog() {
                     onClick={() => void selectSheet(item.sheetId)}
                   >
                     <span className="memo-archive-item-when">
-                      {formatMemoWhen(item.archived)} 넘김
+                      {t("memo.itemFlipped", { when: formatMemoWhen(item.archived) })}
                     </span>
                     <span className="memo-archive-item-sub">
-                      {formatMemoWhen(item.created)} 시작 · {formatMemoWhen(item.updated)} 수정
+                      {t("memo.itemSub", {
+                        created: formatMemoWhen(item.created),
+                        updated: formatMemoWhen(item.updated),
+                      })}
                     </span>
                   </button>
                 </li>
@@ -100,12 +106,12 @@ export function MemoArchiveDialog() {
               {selected ? (
                 <>
                   <div className="memo-archive-view-head">
-                    {previewOf(selected.content) || "(빈 장)"}
+                    {previewOf(selected.content) || t("memo.emptySheet")}
                   </div>
                   <pre className="memo-archive-view-body">{selected.content}</pre>
                 </>
               ) : (
-                <div className="memo-archive-empty">왼쪽에서 장을 고르세요.</div>
+                <div className="memo-archive-empty">{t("memo.pickSheet")}</div>
               )}
             </div>
           </div>

@@ -636,7 +636,7 @@ function TerminalThemeItem() {
         <optgroup label={t("system.terminalThemeAppGroup")}>
           {THEME_ORDER.map((id) => (
             <option key={id} value={id}>
-              {THEMES[id].label}
+              {t(THEMES[id].labelKey)}
             </option>
           ))}
         </optgroup>

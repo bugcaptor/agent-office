@@ -80,6 +80,7 @@ const { OfficeScene, computeIntegerScale, bindHoverGate } = await import("../Off
 const { createMockOfficeBus } = await import("../bus");
 const { OfficeWorld } = await import("../world/OfficeWorld");
 const { BufferImageSource, Texture } = await import("pixi.js");
+const { i18n, initI18nForTest } = await import("../../i18n");
 
 // `createCharacterAssets`가 실제로 하는 일(cellSize=16의 4프레임 텍스처 세트)을
 // 최소한으로 흉내낸다 — OfficeWorld.test.ts의 makeFakeAssets와 같은 이유·같은 모양.
@@ -369,6 +370,76 @@ describe("setScene (풍경 교체)", () => {
     expect(signOf().visible).toBe(false);
 
     officeScene.destroy();
+  });
+});
+
+describe("휴가 팻말 문구의 언어 전환 (Pixi Text는 React 밖이다)", () => {
+  /** 팻말 글씨(Pixi `Text`). 씬이 직접 들고 있는 참조를 그대로 본다. */
+  const labelOf = (s: unknown) => (s as { bossSignLabel?: { text: string } }).bossSignLabel!;
+
+  /** i18next EventEmitter의 `languageChanged` 구독자 수(내부 `observers` Map).
+   *  리스너 누수는 곧 파기된 Pixi 객체 접근이라 개수 자체를 계약으로 본다. */
+  const languageListeners = (): number => {
+    const obs = (i18n as unknown as { observers?: Record<string, Map<unknown, number>> })
+      .observers;
+    return obs?.languageChanged?.size ?? 0;
+  };
+
+  async function makeStartedScene() {
+    const canvas = document.createElement("canvas");
+    const officeScene = new OfficeScene({ canvas, bus: createMockOfficeBus() });
+    const initPromise = officeScene.init();
+    state.initResolvers.forEach((resolve) => resolve());
+    await initPromise;
+    return officeScene;
+  }
+
+  // 언어는 파일 전역 상태다 — 정본(ko)으로 되돌려 다른 테스트에 새지 않게 한다.
+  afterEach(async () => {
+    await initI18nForTest();
+  });
+
+  it("언어를 바꾸면 씬 재구축 없이 팻말 글씨만 바뀐다", async () => {
+    const officeScene = await makeStartedScene();
+    const sign = (officeScene as unknown as { bossSign?: unknown }).bossSign;
+    const label = labelOf(officeScene);
+    expect(label.text).toBe("휴가중");
+
+    await initI18nForTest("en");
+
+    expect(label.text).toBe("ON LEAVE");
+    // 같은 표시객체를 그대로 쓴다(글씨만 교체 — 씬/팻말 재구축 없음).
+    expect((officeScene as unknown as { bossSign?: unknown }).bossSign).toBe(sign);
+    expect(labelOf(officeScene)).toBe(label);
+
+    officeScene.destroy();
+  });
+
+  it("destroy()가 언어 리스너를 떼어 낸다(파기된 Text 접근 방지)", async () => {
+    const before = languageListeners();
+    const officeScene = await makeStartedScene();
+    expect(languageListeners()).toBe(before + 1);
+
+    officeScene.destroy();
+
+    expect(languageListeners()).toBe(before);
+    // 리스너가 남았다면 파기된 Text의 `.text`를 건드려 여기서 터진다.
+    await initI18nForTest("en");
+  });
+
+  it("풍경을 바꿔도 리스너가 하나만 유지된다(팻말 재구축 시 중복 구독 방지)", async () => {
+    const { SCENES } = await import("../scenes/scenes");
+    const before = languageListeners();
+    const officeScene = await makeStartedScene();
+
+    officeScene.setScene(SCENES.beach);
+    expect(languageListeners()).toBe(before + 1);
+
+    await initI18nForTest("en");
+    expect(labelOf(officeScene).text).toBe("ON LEAVE");
+
+    officeScene.destroy();
+    expect(languageListeners()).toBe(before);
   });
 });
 

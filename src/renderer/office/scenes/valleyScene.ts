@@ -315,7 +315,7 @@ function valleyTileDraw(pal: ValleyPalette): TileDrawFn {
 
 export const VALLEY_SCENE: SceneDef = {
   id: "valley",
-  label: "산 계곡",
+  labelKey: "office:scene.valley",
   map: VALLEY_MAP,
   resolve: (theme) => {
     const mode = sceneColorMode(theme.id);

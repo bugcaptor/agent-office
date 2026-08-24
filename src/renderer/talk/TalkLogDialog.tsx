@@ -12,6 +12,7 @@
 // 그래서 스토어의 프로필로 이름을 풀고, 모르는 id는 id를 그대로 보여 준다
 // (삭제된 캐릭터의 옛 기록도 남아 있어야 하므로 "알 수 없음"으로 뭉개지 않는다).
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { TalkLogEntry } from "@shared/types";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
@@ -25,6 +26,7 @@ type LoadState =
   | { status: "ready"; entries: TalkLogEntry[] };
 
 export function TalkLogDialog() {
+  const { t } = useTranslation("activity");
   const modal = useAppStore((s) => s.modal);
   const closeModal = useAppStore((s) => s.closeModal);
   const agents = useAppStore((s) => s.agents);
@@ -58,7 +60,7 @@ export function TalkLogDialog() {
         if (list.length === 0) setLoad({ status: "ready", entries: [] });
       } catch (err) {
         if (cancelled) return;
-        console.warn("talk: 로그 날짜 목록 실패", err);
+        console.warn("talk: failed to list log dates", err);
         setDates([]);
         setLoad({ status: "error" });
       }
@@ -77,7 +79,7 @@ export function TalkLogDialog() {
       setLoad({ status: "ready", entries });
     } catch (err) {
       if (gen !== genRef.current) return;
-      console.warn("talk: 로그 읽기 실패", err);
+      console.warn("talk: failed to read log", err);
       setLoad({ status: "error" });
     }
   }, []);
@@ -98,11 +100,15 @@ export function TalkLogDialog() {
         if (e.button === 0 && e.target === e.currentTarget) closeModal();
       }}
     >
-      <div className="pixel-panel talk-log-dialog" role="dialog" aria-label="동료 대화 로그">
+      <div
+        className="pixel-panel talk-log-dialog"
+        role="dialog"
+        aria-label={t("talk.dialogAria")}
+      >
         <div className="talk-log-head">
-          <h2 className="pixel-title">💬 동료 대화 로그</h2>
+          <h2 className="pixel-title">{t("talk.title")}</h2>
           <button type="button" className="pixel-btn" onClick={closeModal}>
-            닫기
+            {t("talk.close")}
           </button>
         </div>
 
@@ -125,12 +131,14 @@ export function TalkLogDialog() {
           </ul>
 
           <div className="talk-log-view">
-            {load.status === "loading" && <p className="talk-log-msg">불러오는 중…</p>}
+            {load.status === "loading" && (
+              <p className="talk-log-msg">{t("talk.loading")}</p>
+            )}
             {load.status === "error" && (
-              <p className="talk-log-msg">대화 로그를 불러오지 못했습니다.</p>
+              <p className="talk-log-msg">{t("talk.loadError")}</p>
             )}
             {load.status === "ready" && groups.length === 0 && (
-              <p className="talk-log-msg">기록된 대화가 없습니다.</p>
+              <p className="talk-log-msg">{t("talk.empty")}</p>
             )}
             {load.status === "ready" &&
               groups.map((g) => (
@@ -153,7 +161,7 @@ export function TalkLogDialog() {
                         <span className="talk-log-who">
                           {e.fromName} → {nameOf(e.to)}
                         </span>
-                        <span className="talk-log-kind">{kindLabel(e.kind)}</span>
+                        <span className="talk-log-kind">{kindLabel(e.kind, t)}</span>
                         <span className="talk-log-text">{e.text}</span>
                       </li>
                     ))}

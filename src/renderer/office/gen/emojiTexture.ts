@@ -159,7 +159,7 @@ function bake(char: string, size: number, outline?: number): Texture | null {
     texture.source.scaleMode = "nearest";
     return texture;
   } catch (err) {
-    console.warn(`emojiTexture: ${char} 굽기 실패 — 절차적 폴백 유지`, err);
+    console.warn(`emojiTexture: failed to bake ${char} — keeping procedural fallback`, err);
     return null;
   }
 }

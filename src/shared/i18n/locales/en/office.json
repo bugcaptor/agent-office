@@ -1,0 +1,54 @@
+{
+  "scene": {
+    "office": "Office",
+    "beach": "Beach",
+    "valley": "Valley",
+    "spaceship": "Spaceship",
+    "castle": "Castle",
+    "steppe": "Steppe",
+    "cruise": "Cruise",
+    "factory": "Factory",
+    "volcano": "Volcano",
+    "zombie": "Zombie Town"
+  },
+  "theme": {
+    "daylight": "Daylight",
+    "midnight": "Midnight",
+    "sakura": "Sakura",
+    "pipboy": "Pip-Boy"
+  },
+  "archetype": {
+    "auto": "Auto (seed)",
+    "human": "Human",
+    "elf": "Elf",
+    "orc": "Orc",
+    "beastfolk": "Beastfolk",
+    "robot": "Robot",
+    "android": "Android",
+    "slime": "Slime",
+    "ghost": "Ghost"
+  },
+  "keyColor": {
+    "hair": "Hair",
+    "fur": "Fur",
+    "skin": "Skin",
+    "plating": "Plating",
+    "chassis": "Chassis",
+    "clothing": "Clothes",
+    "accent": "Accent",
+    "body": "Body"
+  },
+  "soundPack": {
+    "cherryKc1000": "Mechanical — Cherry KC1000",
+    "topreHhkb": "Topre — HHKB (thocky)",
+    "mechClicky": "Mechanical — Clicky (crisp)",
+    "membrane": "Membrane — Office"
+  },
+  "sign": {
+    "vacation": "ON LEAVE"
+  },
+  "desk": {
+    "ownerHeader": "Desk {{index}} owner",
+    "unassign": "Unassign"
+  }
+}

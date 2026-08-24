@@ -12,6 +12,8 @@
 // 즉 사용자가 인지하는 "저장"은 항상 자동이고, 마지막 타이핑은 어떤 경로로든
 // 반드시 디스크에 닿는다.
 import { create } from "zustand";
+
+import { t } from "@renderer/i18n";
 import { tauriApi } from "../ipc/tauriApi";
 import type { MemoSheet, MemoSheetMeta } from "@shared/types";
 import { loadStoredMemoVisible, persistMemoVisible } from "./memoVisibility";
@@ -140,9 +142,9 @@ export const useMemoStore = create<MemoState>((set, get) => ({
       if (get().agentId !== agentId) return;
       set({ sheet, draft: sheet.content, dirty: false, loading: false });
     } catch (err) {
-      console.warn("memo: 메모 로드 실패", err);
+      console.warn("memo: failed to load the sheet", err);
       if (get().agentId !== agentId) return;
-      set({ loading: false, notice: "메모를 불러오지 못했습니다." });
+      set({ loading: false, notice: t("journal:memo.notice.loadFailed") });
     }
   },
 
@@ -165,9 +167,9 @@ export const useMemoStore = create<MemoState>((set, get) => ({
     try {
       await tauriApi.saveMemo(agentId, sheet.sheetId, draft);
     } catch (err) {
-      console.warn("memo: 메모 저장 실패", err);
+      console.warn("memo: failed to save the sheet", err);
       // 실패는 되돌린다 — 다음 flush에서 재시도된다.
-      set({ dirty: true, notice: "메모를 저장하지 못했습니다." });
+      set({ dirty: true, notice: t("journal:memo.notice.saveFailed") });
     }
   },
 
@@ -190,28 +192,28 @@ export const useMemoStore = create<MemoState>((set, get) => ({
         draft: fresh.content,
         dirty: false,
         archiving: false,
-        notice: "한 장 넘겼습니다. 지난 장은 ‘메모 아카이브’에서 볼 수 있습니다.",
+        notice: t("journal:memo.notice.flipped"),
       });
     } catch (err) {
-      console.warn("memo: 한 장 넘기기 실패", err);
+      console.warn("memo: failed to flip the sheet", err);
       if (get().agentId !== agentId) {
         set({ archiving: false });
         return;
       }
-      set({ archiving: false, notice: "한 장 넘기지 못했습니다." });
+      set({ archiving: false, notice: t("journal:memo.notice.flipFailed") });
     }
   },
 
   copyAll: async () => {
     const text = get().draft;
     if (text === "") {
-      set({ notice: "복사할 내용이 없습니다." });
+      set({ notice: t("journal:memo.notice.copyEmpty") });
       return;
     }
     set({
       notice: (await writeClipboard(text))
-        ? "메모 전체를 복사했습니다."
-        : "복사에 실패했습니다.",
+        ? t("journal:memo.notice.copiedAll")
+        : t("journal:memo.notice.copyFailed"),
     });
   },
 
@@ -231,9 +233,9 @@ export const useMemoStore = create<MemoState>((set, get) => ({
       if (get().archive?.agentId !== agentId) return;
       set({ archiveItems: items, archiveLoading: false });
     } catch (err) {
-      console.warn("memo: 아카이브 목록 로드 실패", err);
+      console.warn("memo: failed to load the archive list", err);
       if (get().archive?.agentId !== agentId) return;
-      set({ archiveLoading: false, archiveNotice: "아카이브를 불러오지 못했습니다." });
+      set({ archiveLoading: false, archiveNotice: t("journal:memo.notice.archiveLoadFailed") });
     }
   },
 
@@ -256,9 +258,9 @@ export const useMemoStore = create<MemoState>((set, get) => ({
       if (get().archive?.agentId !== agentId) return;
       set({ archiveSelected: sheet });
     } catch (err) {
-      console.warn("memo: 아카이브 장 읽기 실패", err);
+      console.warn("memo: failed to read the archived sheet", err);
       if (get().archive?.agentId !== agentId) return;
-      set({ archiveNotice: "이 장을 읽지 못했습니다." });
+      set({ archiveNotice: t("journal:memo.notice.sheetReadFailed") });
     }
   },
 
@@ -267,8 +269,8 @@ export const useMemoStore = create<MemoState>((set, get) => ({
     if (!sheet) return;
     set({
       archiveNotice: (await writeClipboard(sheet.content))
-        ? "이 장을 복사했습니다."
-        : "복사에 실패했습니다.",
+        ? t("journal:memo.notice.copiedSheet")
+        : t("journal:memo.notice.copyFailed"),
     });
   },
 }));

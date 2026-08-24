@@ -15,9 +15,13 @@ export interface AgentStatsAgg {
 /** 통계 뷰 렌더 행(정렬 완료). */
 export interface AgentStatsRow {
   agentId: string;
-  /** 표시 이름(명부에 있으면 name, 없으면 축약 id + "(퇴사)"). */
+  /**
+   * 표시 이름(명부에 있으면 name, 없으면 축약 id). **퇴사 표기는 붙이지
+   * 않는다** — "(퇴사)" 같은 문구는 언어마다 다르므로 `departed`를 보고
+   * 렌더 쪽이 `timeline.departed` 키로 붙인다(정렬도 이 순수 값 기준).
+   */
   label: string;
-  /** 명부에서 사라진 과거 에이전트면 true(dim 표시용). */
+  /** 명부에서 사라진 과거 에이전트면 true(dim 표시 + 퇴사 문구용). */
   departed: boolean;
   totalWorkedMs: number;
   todayWorkedMs: number;
@@ -40,9 +44,9 @@ export function aggregateByAgent(
   return out;
 }
 
-/** 명부에 없는 과거 에이전트용 축약 라벨. */
+/** 명부에 없는 과거 에이전트용 축약 id(퇴사 문구는 렌더 쪽에서 붙인다). */
 function departedLabel(agentId: string): string {
-  return `${agentId.slice(0, 8)}… (퇴사)`;
+  return agentId.slice(0, 8);
 }
 
 /**

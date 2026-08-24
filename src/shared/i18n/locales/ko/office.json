@@ -1,0 +1,54 @@
+{
+  "scene": {
+    "office": "사무실",
+    "beach": "바캉스 해변",
+    "valley": "산 계곡",
+    "spaceship": "우주선",
+    "castle": "중세 성",
+    "steppe": "몽골 초원",
+    "cruise": "호화 크루즈",
+    "factory": "공장",
+    "volcano": "화산지대",
+    "zombie": "좀비 마을"
+  },
+  "theme": {
+    "daylight": "밝음",
+    "midnight": "미드나이트",
+    "sakura": "벚꽃",
+    "pipboy": "핍보이"
+  },
+  "archetype": {
+    "auto": "자동(시드)",
+    "human": "인간",
+    "elf": "엘프",
+    "orc": "오크",
+    "beastfolk": "수인",
+    "robot": "로봇",
+    "android": "안드로이드",
+    "slime": "슬라임",
+    "ghost": "유령"
+  },
+  "keyColor": {
+    "hair": "머리",
+    "fur": "털",
+    "skin": "피부",
+    "plating": "장갑",
+    "chassis": "본체",
+    "clothing": "옷",
+    "accent": "포인트",
+    "body": "몸체"
+  },
+  "soundPack": {
+    "cherryKc1000": "기계식 — Cherry KC1000",
+    "topreHhkb": "토프레 — HHKB (통통)",
+    "mechClicky": "기계식 — 클릭키 (카랑카랑)",
+    "membrane": "멤브레인 — 사무용"
+  },
+  "sign": {
+    "vacation": "휴가중"
+  },
+  "desk": {
+    "ownerHeader": "{{index}}번 책상 주인",
+    "unassign": "지정 해제"
+  }
+}

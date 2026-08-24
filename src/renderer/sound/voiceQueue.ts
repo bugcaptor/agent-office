@@ -69,7 +69,7 @@ export function createVoiceQueue(deps: VoiceQueueDeps): VoiceQueue {
           await deps.play(base64ToBytes(result.audioBase64));
         } catch (err) {
           // 키 미설정·쿼터 초과·네트워크 실패 등. 경고만 남기고 다음으로.
-          console.warn("tts: 대사 발화 실패", err);
+          console.warn("tts: utterance failed", err);
         }
       }
     } finally {

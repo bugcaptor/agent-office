@@ -87,7 +87,7 @@ export class DiaryFlusher {
   flushAgent(agentId: string, opts: FlushAgentOpts): Promise<void> {
     const prev = this.running.get(agentId) ?? Promise.resolve();
     const next = prev.then(() => this.handle(agentId, opts)).catch((err) => {
-      console.warn(`diaryFlusher: flush 실패(agent=${agentId})`, err);
+      console.warn(`diaryFlusher: flush failed (agent=${agentId})`, err);
     });
     this.running.set(agentId, next);
     void next.finally(() => {
@@ -196,7 +196,7 @@ export class DiaryFlusher {
         result = await this.generate(agentId, {}, sessionId);
       } catch (err) {
         this.attempted.add(key); // 예외는 재시도하지 않는다(조용한 폴백).
-        console.warn(`diaryFlusher: 일기 생성 예외(agent=${agentId})`, err);
+        console.warn(`diaryFlusher: diary generation threw (agent=${agentId})`, err);
         continue;
       }
       // in-flight면 표시하지 않고 다음 트리거에서 재시도 — 자격 있는 일기를
@@ -211,7 +211,7 @@ export class DiaryFlusher {
           continue;
         }
         // 상한 초과 — 아래에서 attempted 확정(조용한 폴백).
-        console.warn(`diaryFlusher: 타임아웃 재시도 상한 초과 — 포기(${key})`);
+        console.warn(`diaryFlusher: timeout retry limit exceeded, giving up (${key})`);
       }
       // 그 외(성공·disabled·cli-missing·failed·타임아웃 상한초과)는 표시해 재시도 방지.
       this.attempted.add(key);

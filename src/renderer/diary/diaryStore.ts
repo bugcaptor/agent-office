@@ -6,6 +6,8 @@
 // 오케스트레이션(로드/생성)은 스토어 액션이 직접 tauriApi·generateDiary를
 // 호출한다(테스트는 목으로 검증).
 import { create } from "zustand";
+
+import { t } from "@renderer/i18n";
 import { tauriApi } from "../ipc/tauriApi";
 import type { DiaryEntry } from "@shared/types";
 import { generateDiary, type DiaryResult } from "./diaryGenerator";
@@ -19,23 +21,24 @@ export interface DiaryOverlayTarget {
   agentName: string;
 }
 
-/** 생성 결과 사유 → 사용자 안내 문구. */
+/**
+ * 생성 실패 사유(코드) → `journal` 카탈로그 키. 생성기가 내려주는 것은 코드이고
+ * 문구는 표시 계층의 몫이라, 여기에는 키만 둔다(characterBundle 에러 매핑과 같은
+ * 관례). 문구 자체를 만들지 않으므로 모듈 로드 시점 언어에 굳지 않는다.
+ */
+const NOTICE_KEYS: Record<Extract<DiaryResult, { ok: false }>["reason"], string> = {
+  disabled: "diary.notice.disabled",
+  "no-work": "diary.notice.noWork",
+  "in-flight": "diary.notice.inFlight",
+  "cli-missing": "diary.notice.cliMissing",
+  timeout: "diary.notice.timeout",
+  failed: "diary.notice.failed",
+};
+
+/** 생성 결과 → 사용자 안내 문구(호출 시점에 번역). */
 function noticeFor(result: DiaryResult): string {
-  if (result.ok) return "일기를 한 편 썼습니다.";
-  switch (result.reason) {
-    case "disabled":
-      return "설정에서 ‘캐릭터 일기’를 먼저 켜 주세요.";
-    case "no-work":
-      return "아직 기록할 작업이 없습니다. 세션에서 무언가 한 뒤 다시 시도하세요.";
-    case "in-flight":
-      return "이미 일기를 쓰는 중입니다.";
-    case "cli-missing":
-      return "선택한 CLI를 찾지 못해 일기를 쓰지 못했습니다.";
-    case "timeout":
-      return "생성이 오래 걸려 미뤘습니다. 잠시 후 자동으로 다시 시도합니다.";
-    case "failed":
-      return "일기 생성에 실패했습니다. 잠시 후 다시 시도하세요.";
-  }
+  if (result.ok) return t("journal:diary.notice.written");
+  return t(`journal:${NOTICE_KEYS[result.reason]}`);
 }
 
 interface DiaryState {
@@ -91,9 +94,9 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       if (get().overlay?.agentId !== agentId) return;
       set({ entries, loading: false });
     } catch (err) {
-      console.warn("diary: 일기 로드 실패", err);
+      console.warn("diary: failed to load entries", err);
       if (get().overlay?.agentId !== agentId) return;
-      set({ loading: false, notice: "일기를 불러오지 못했습니다." });
+      set({ loading: false, notice: t("journal:diary.notice.loadFailed") });
     }
   },
 
@@ -129,7 +132,7 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     if (overlay?.agentId !== agentId) return;
     const entries = get().entries;
     if (entries.length === 0) {
-      set({ notice: "내보낼 일기가 없습니다." });
+      set({ notice: t("journal:diary.notice.exportEmpty") });
       return;
     }
 
@@ -145,11 +148,15 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       const saved = await tauriApi.exportDiaryFile(defaultName, markdown, json);
       // 내보내는 사이 다른 캐릭터로 전환됐으면 안내를 덮지 않는다(stale 방지).
       if (get().overlay?.agentId !== agentId) return;
-      set({ notice: saved ? `일기를 내보냈습니다: ${saved}` : "내보내기를 취소했습니다." });
+      set({
+        notice: saved
+          ? t("journal:diary.notice.exported", { path: saved })
+          : t("journal:diary.notice.exportCancelled"),
+      });
     } catch (err) {
-      console.warn("diary: 일기 내보내기 실패", err);
+      console.warn("diary: failed to export entries", err);
       if (get().overlay?.agentId !== agentId) return;
-      set({ notice: "일기를 내보내지 못했습니다." });
+      set({ notice: t("journal:diary.notice.exportFailed") });
     } finally {
       set({ exporting: false });
     }
