@@ -1,0 +1,177 @@
+{
+  "dialog": {
+    "titleCreate": "New agent",
+    "titleEdit": "Edit agent",
+    "subCreate": "Create a profile for a new agent. Saving starts a terminal session.",
+    "subEdit": "Edit the profile. Changes apply as soon as you save.",
+    "randomizeAll": "Randomize all",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "identity": {
+    "section": "Identity",
+    "name": "Name",
+    "role": "Role",
+    "awardBadge": "🏆 {{n}} awards in total",
+    "personality": "Personality prompt",
+    "personalityHint": "Describe who this character is. It is appended to Claude Code's system prompt and also feeds the portrait prompt and the character's speech style. Multiple lines are kept as written.",
+    "archetype": "Archetype",
+    "archetypeHint": "Sets the sprite's body type and outfit family. With “Auto (seed)” the seed decides. Typing a species that is not on the list (a dragon, say) carries straight into the portrait and pixel-art prompts, while the dot character is drawn with a human body."
+  },
+  "appearance": {
+    "section": "Appearance",
+    "tablistLabel": "How to make the appearance",
+    "tabManual": "Make it yourself",
+    "tabCodex": "Generate with Codex",
+    "manualHint": "Copy the prompt into the image generator of your choice, then upload the result — the crop editor fits it to spec.",
+    "saveFirstHint": "Save first, then upload images from the edit dialog."
+  },
+  "keyColor": {
+    "label": "Key colors",
+    "hint": "These exact colors go into the portrait, sprite, and minimi prompts, and into the office-view character. Click a swatch to pick a color yourself; colors you leave alone follow the seed and archetype whenever those change.",
+    "chipTitle": "{{name}} approximately {{hex}} — click to pick a color",
+    "customMark": "Hand-picked color",
+    "fallbackLabel": "Color"
+  },
+  "portrait": {
+    "label": "Portrait",
+    "remove": "Remove portrait",
+    "copyPrompt": "Copy portrait prompt",
+    "upload": "Upload image",
+    "change": "Change image",
+    "requestLabel": "Extra portrait prompt",
+    "requestPlaceholder": "e.g. short black hair, glasses (optional)",
+    "requestHint": "Appended to the portrait prompt only.",
+    "editorTitle": "Edit portrait",
+    "retroFilter": "Retro pixel filter"
+  },
+  "sprite": {
+    "label": "Sprite",
+    "regen": "Regenerate sprite",
+    "customBadge": "Using a custom sprite — regenerating does not change it",
+    "removeCustom": "Remove custom",
+    "copyPrompt": "Copy sprite prompt",
+    "upload": "Upload sprite",
+    "change": "Change sprite",
+    "requestLabel": "Extra sprite prompt",
+    "requestPlaceholder": "e.g. a wizard in a red cloak (optional)",
+    "requestHint": "Carried into both the copied sprite prompt and Codex generation.",
+    "editorTitle": "Edit pixel art",
+    "previewLabel": "16×16 preview",
+    "transparentToggle": "Make background transparent (by top-left pixel color)",
+    "sheetNote": "Recognized as a 4-frame sheet. It is saved at the original cell resolution.",
+    "tooLarge": "Encoding the image failed, or it exceeds the 1MiB limit."
+  },
+  "minimi": {
+    "label": "Minimi",
+    "customBadge": "Using a custom minimi",
+    "emptyBadge": "None set — the sprite is scaled down instead",
+    "upload": "Upload minimi",
+    "change": "Change minimi",
+    "remove": "Remove minimi",
+    "copyPrompt": "Copy minimi prompt",
+    "requestLabel": "Extra minimi prompt",
+    "requestPlaceholder": "e.g. a small flame spirit (optional; if empty, one matching the character is requested automatically)",
+    "requestHint": "The minimi is the familiar that pops up beside the character's head while a subagent works. Leave it empty and the prompt automatically asks for a familiar that suits the character's look and role.",
+    "editorTitle": "Edit minimi pixel art",
+    "sheetNote": "Recognized as a 4-frame sheet. The minimi uses only the first frame (idle0).",
+    "singleFrameNote": "The minimi uses this single image as is, with no walk or breathing animation."
+  },
+  "terminal": {
+    "section": "Terminal",
+    "cwd": "Start folder",
+    "cwdPlaceholder": "Empty means the home directory (you can type or paste a path)",
+    "browse": "Browse…",
+    "startupCommand": "Startup command",
+    "startupCommandPlaceholder": "e.g. source ./init.sh or mysetup.bat (optional, runs in every new terminal)",
+    "startupCommandHint": "Runs automatically every time a new terminal session opens.",
+    "keyboardSound": "Keyboard sound",
+    "keyboardSoundDefault": "Default",
+    "keyboardSoundHint": "The sound this agent makes while typing. Picking one plays a preview.",
+    "talkReceive": "Receive messages from coworkers",
+    "talkReceiveHint": "Turn this off and no other character can talk to this one. (It only matters while <b>Coworker chat</b> is on under Settings → Control.)",
+    "shell": "Shell",
+    "shellAuto": "Auto (default)",
+    "shellNoHooks": "{{label}} (no time tracking)"
+  },
+  "bot": {
+    "section": "Bot mode settings",
+    "sectionHint": "Right-click the terminal tab → “Start bot mode” and this character reacts to slash commands posted on its repository's Gitea issues, working on them automatically. The settings below persist for the bot.",
+    "slug": "Bot slash alias",
+    "slugPlaceholder": "e.g. nova (optional; derived from the name when empty)",
+    "slugHint": "Call this character from an issue with <code>/alias</code>. Leave it empty to derive one from the name (spaces removed, lowercased).",
+    "whitelist": "Bot whitelist",
+    "whitelistPlaceholder": "Extra allowed Gitea accounts, comma separated (optional)",
+    "whitelistHint": "Accounts allowed to trigger commands. The logged-in tea account is always included.",
+    "poll": "Bot poll interval (sec)",
+    "pollPlaceholder": "Default 60, minimum 30"
+  },
+  "voice": {
+    "label": "Voice (TTS)",
+    "auto": "Auto (cast by species)",
+    "missingOption": "{{id}} (not in the list)",
+    "preview": "Preview",
+    "hintDisabled": "Turn on ‘Read notification lines aloud (TTS)’ in Settings to choose a voice.",
+    "hintEnabled": "Leave it empty and a voice is chosen automatically from the character's species and seed.",
+    "mutedNote": " Mute is on, so real notifications are not spoken (previews still are).",
+    "keyMissing": "Save an ElevenLabs API key in Settings to choose a voice.",
+    "listFailed": "Could not load the voice list: {{error}}",
+    "spoken": "Spoken: {{line}}",
+    "spokenNone": "Nothing could be spoken.",
+    "previewFailed": "Preview failed: {{error}}"
+  },
+  "io": {
+    "export": "Export",
+    "import": "Import",
+    "exported": "Exported.",
+    "exportFailed": "Export failed.",
+    "imported": "Imported. Press ‘Save’ to apply.",
+    "importFailed": "Import failed."
+  },
+  "codex": {
+    "generated": "Done — check it in the editor and save.",
+    "detecting": "Checking for the codex CLI…",
+    "available": "codex CLI available",
+    "availableVersion": "codex CLI available — {{version}}",
+    "unavailable": "Could not find the codex CLI. Install it, log in, and reopen this tab.",
+    "saveFirstHint": "Save first, then generate from the edit dialog.",
+    "portrait": "Generate portrait",
+    "portraitBusy": "Generating portrait…",
+    "sprite": "Generate sprite",
+    "spriteBusy": "Generating sprite…",
+    "minimi": "Generate minimi",
+    "minimiBusy": "Generating minimi…",
+    "hint": "This uses the local codex CLI's image generation as is. One image usually takes 1–3 minutes and draws down your Codex usage. The result opens in the crop editor for you to review before saving.",
+    "errNotFound": "Could not find the codex CLI. Install it and try again.",
+    "errTimeout": "Generation did not finish in time. Try again.",
+    "errNoOutput": "codex did not save an image. Try again: {{detail}}",
+    "errGeneric": "Generation failed: {{error}}"
+  },
+  "archetype": {
+    "ariaLabel": "Archetype",
+    "listAriaLabel": "{{label}} list",
+    "placeholder": "Auto (seed) — you can also type a species that is not listed",
+    "customNote": "Species not on the list — used verbatim in the art request; the dot character uses a human body."
+  },
+  "color": {
+    "title": "Pick a {{label}} color",
+    "svAriaLabel": "{{label}} saturation and brightness",
+    "hueAriaLabel": "{{label}} hue",
+    "presets": "Preset colors",
+    "resetTitle": "Revert to {{hex}}, the default the seed chose",
+    "reset": "Reset to default",
+    "cancel": "Cancel",
+    "apply": "Apply"
+  },
+  "editor": {
+    "pickImage": "Choose an image",
+    "readFailed": "Could not read that image. Choose a different file.",
+    "generatedReadFailed": "Could not read the generated image.",
+    "saveFailed": "Saving failed.",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "generate": {
+    "personalityPrompt": "{{word}} personality"
+  }
+}

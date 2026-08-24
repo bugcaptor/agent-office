@@ -17,7 +17,12 @@ import { useAppStore } from "../../store/appStore";
 import { useAwardsStore } from "../../awards/awardsStore";
 import { keyColorsFor, hexColor } from "../../office/gen/archetypes";
 import type { AgentProfile } from "../../store/types";
-import { NAME_WORDS, ROLE_WORDS, PERSONALITY_WORDS } from "../wordlists";
+import { WORDLISTS } from "@renderer/i18n/wordlists";
+
+// 낱말 목록은 언어별 자료로 `@renderer/i18n/wordlists`에 있다. 테스트 UI 언어는
+// 정본 ko로 고정돼 있으므로(src/test-setup.ts) ko 목록을 그대로 기대값으로 쓴다.
+const { names: NAME_WORDS, roles: ROLE_WORDS, personalities: PERSONALITY_WORDS } =
+  WORDLISTS.ko;
 
 const generateSpritePreview = vi.fn((seed: string) => `data:image/png;base64,PREVIEW-${seed}`);
 vi.mock("../../office/gen/characterFactory", () => ({

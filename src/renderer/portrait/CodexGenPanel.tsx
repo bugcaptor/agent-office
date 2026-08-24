@@ -7,6 +7,10 @@
 // 버튼·캡션 렌더링만 한다. ProfileDialog는 상시 마운트(닫힘 = return null)라
 // 늦은 응답 무효화를 unmount가 아니라 편집 세션 토큰으로 해야 하기 때문이다.
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+// 컴포넌트 밖(순수 함수 `codexGenErrorCaption`)에서 쓰는 번역 함수.
+// 컴포넌트 안에서는 훅(useTranslation)을 써야 언어 변경에 리렌더가 걸린다.
+import { t as translate } from "@renderer/i18n";
 import { tauriApi } from "../ipc/tauriApi";
 import type { CodexImageStatus } from "@shared/types";
 
@@ -16,15 +20,17 @@ export function codexGenErrorCaption(err: unknown): string {
   const code = raw.split(":")[0]?.trim() ?? "";
   // 미설치는 요약기와 같은 `-not-found` 관례를 따른다(포함 검사).
   if (code.includes("-not-found")) {
-    return "codex CLI를 찾을 수 없습니다. 설치한 뒤 다시 시도하세요.";
+    return translate("profile:codex.errNotFound");
   }
   switch (code) {
     case "timeout":
-      return "생성이 시간 안에 끝나지 않았습니다. 다시 시도하세요.";
+      return translate("profile:codex.errTimeout");
     case "no_output":
-      return `codex가 이미지를 저장하지 않았습니다. 다시 시도하세요: ${raw.slice(raw.indexOf(":") + 1).trim()}`;
+      return translate("profile:codex.errNoOutput", {
+        detail: raw.slice(raw.indexOf(":") + 1).trim(),
+      });
     default:
-      return `생성에 실패했습니다: ${raw}`;
+      return translate("profile:codex.errGeneric", { error: raw });
   }
 }
 
@@ -44,6 +50,7 @@ export function CodexGenPanel({
   note: string | null;
   onGenerate: (kind: CodexGenKind) => void;
 }) {
+  const { t } = useTranslation("profile");
   const [status, setStatus] = useState<CodexImageStatus | null>(null);
 
   // 탐지는 패널이 열릴 때 1회. 캐시하지 않는다 — 설치 직후 탭을 다시 열면
@@ -71,13 +78,15 @@ export function CodexGenPanel({
     <div className="codexgen-panel">
       <p className="codexgen-status">
         {detecting
-          ? "codex CLI 확인 중…"
+          ? t("codex.detecting")
           : available
-            ? `codex CLI 사용 가능${status?.version ? ` — ${status.version}` : ""}`
-            : "codex CLI를 찾을 수 없습니다. 설치하고 로그인한 뒤 다시 열어 주세요."}
+            ? status?.version
+              ? t("codex.availableVersion", { version: status.version })
+              : t("codex.available")
+            : t("codex.unavailable")}
       </p>
       {!enabled && (
-        <p className="form-hint">저장한 뒤 편집에서 생성할 수 있습니다.</p>
+        <p className="form-hint">{t("codex.saveFirstHint")}</p>
       )}
       <div className="sprite-buttons">
         <button
@@ -85,29 +94,25 @@ export function CodexGenPanel({
           disabled={!canGenerate}
           onClick={() => onGenerate("portrait")}
         >
-          {busy === "portrait" ? "초상 생성 중…" : "초상 생성"}
+          {busy === "portrait" ? t("codex.portraitBusy") : t("codex.portrait")}
         </button>
         <button
           className="pixel-btn"
           disabled={!canGenerate}
           onClick={() => onGenerate("sprite")}
         >
-          {busy === "sprite" ? "스프라이트 생성 중…" : "스프라이트 생성"}
+          {busy === "sprite" ? t("codex.spriteBusy") : t("codex.sprite")}
         </button>
         <button
           className="pixel-btn"
           disabled={!canGenerate}
           onClick={() => onGenerate("minimi")}
         >
-          {busy === "minimi" ? "미니미 생성 중…" : "미니미 생성"}
+          {busy === "minimi" ? t("codex.minimiBusy") : t("codex.minimi")}
         </button>
       </div>
       {note && <span className="sprite-custom-badge">{note}</span>}
-      <p className="form-hint">
-        로컬 codex CLI의 이미지 생성 기능을 그대로 씁니다. 한 장에 보통 1~3분이
-        걸리고, 여러분의 Codex 사용량이 차감됩니다. 결과는 크롭 편집기로 열려
-        확인한 뒤 저장합니다.
-      </p>
+      <p className="form-hint">{t("codex.hint")}</p>
     </div>
   );
 }

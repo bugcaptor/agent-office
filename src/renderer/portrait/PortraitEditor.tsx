@@ -5,6 +5,7 @@
 // 구현한다. 크롭 좌표 변환/레트로 수학은 순수 모듈(cropMath/retroFilter)에
 // 위임하고 여기서는 canvas 드로잉·상호작용·저장 배선만 담당한다.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import "./portrait.css";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
@@ -34,6 +35,7 @@ export function PortraitEditor({
   /** Codex 생성 결과 등 프리로드할 data URL. 지정 시 업로드 없이 시작. */
   initialImage?: string;
 }) {
+  const { t } = useTranslation("profile");
   const setPortrait = useAppStore((s) => s.setPortrait);
   const updateAgent = useAppStore((s) => s.updateAgent);
 
@@ -115,7 +117,7 @@ export function PortraitEditor({
       URL.revokeObjectURL(url);
     };
     img.onerror = () => {
-      setError("이미지를 읽을 수 없습니다. 다른 파일을 선택하세요.");
+      setError(t("editor.readFailed"));
       URL.revokeObjectURL(url);
     };
     img.src = url;
@@ -145,7 +147,7 @@ export function PortraitEditor({
       // 스테일 에러가 재출현하는 경로 차단.
       if (cancelled || initialConsumedRef.current) return;
       initialConsumedRef.current = true;
-      setError("생성 이미지를 읽을 수 없습니다.");
+      setError(t("editor.generatedReadFailed"));
     };
     img.src = initialImageAtMount;
     return () => {
@@ -184,7 +186,7 @@ export function PortraitEditor({
       onClose();
     } catch (err) {
       console.warn("PortraitEditor: savePortrait failed", err);
-      setError("저장에 실패했습니다.");
+      setError(t("editor.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -206,7 +208,7 @@ export function PortraitEditor({
         className="pixel-panel portrait-editor"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <h2 className="pixel-title">초상 편집</h2>
+        <h2 className="pixel-title">{t("portrait.editorTitle")}</h2>
         <input type="file" accept="image/*" onChange={onFile} />
         <div className="portrait-crop-frame">
           <canvas
@@ -219,7 +221,7 @@ export function PortraitEditor({
             onPointerUp={onPointerUp}
           />
           {!hasImage && (
-            <div className="portrait-crop-hint">이미지를 선택하세요</div>
+            <div className="portrait-crop-hint">{t("editor.pickImage")}</div>
           )}
         </div>
         <label className="portrait-retro-toggle">
@@ -228,7 +230,7 @@ export function PortraitEditor({
             checked={retro}
             onChange={(e) => setRetro(e.target.checked)}
           />
-          레트로 픽셀 필터
+          {t("portrait.retroFilter")}
         </label>
         {error && <p className="portrait-error">{error}</p>}
         <div className="dialog-actions">
@@ -237,10 +239,10 @@ export function PortraitEditor({
             disabled={!hasImage || saving}
             onClick={onSave}
           >
-            저장
+            {t("editor.save")}
           </button>
           <button className="pixel-btn" onClick={onClose}>
-            취소
+            {t("editor.cancel")}
           </button>
         </div>
       </div>

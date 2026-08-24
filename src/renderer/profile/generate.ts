@@ -4,7 +4,8 @@
 // reads `Math.random()` directly — no injected rng seam (tests pin this
 // down with `vi.spyOn(Math, "random")` instead).
 import { nanoid } from "nanoid";
-import { NAME_WORDS, ROLE_WORDS, PERSONALITY_WORDS } from "./wordlists";
+import { t } from "@renderer/i18n";
+import { currentWordlists } from "@renderer/i18n/wordlists";
 import type { AgentProfile } from "../store/types";
 import type { BotConfig, ColorOverrides } from "@shared/types";
 import { pickArchetype } from "../office/gen/archetypes";
@@ -76,15 +77,18 @@ export function mergeLegacyNote(
 }
 
 export function generateDraft(): DraftProfile {
-  const personality = pick(PERSONALITY_WORDS);
+  // 낱말 목록도 문구도 **호출 시점에** 고른다 — 모듈 로드 때 굳히면 언어를
+  // 바꿔도 이전 언어의 초안이 계속 나온다.
+  const words = currentWordlists();
+  const personality = pick(words.personalities);
   return {
-    name: pick(NAME_WORDS),
-    role: pick(ROLE_WORDS),
+    name: pick(words.names),
+    role: pick(words.roles),
     seed: nanoid(8),
     cwd: "",
     shell: "",
     startupCommand: "",
-    personalityPrompt: `${personality} 성격`,
+    personalityPrompt: t("profile:generate.personalityPrompt", { word: personality }),
     portraitRequest: "",
     spriteRequest: "",
     minimiRequest: "",
@@ -152,7 +156,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
   const colors = normalizeColors(d.colors);
   return {
     id: nanoid(),
-    name: d.name.trim() || pick(NAME_WORDS),
+    name: d.name.trim() || pick(currentWordlists().names),
     role: d.role.trim(),
     seed: d.seed,
     createdAt: Date.now(),

@@ -14,6 +14,7 @@
 // 조회는 목록을 **처음 펼칠 때** 시작한다(`useModelCatalog(provider, opened)`).
 // 설정창을 열기만 한 사용자는 네트워크도 로컬 CLI도 건드리지 않는다.
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ModelCatalogProvider } from "@shared/types";
 import { useModelCatalog } from "./modelCatalog";
 
@@ -47,6 +48,7 @@ export function ModelPicker({
   placeholder?: string;
   ariaLabel: string;
 }) {
+  const { t } = useTranslation("settings");
   const baseId = useId();
   const listId = `${baseId}-list`;
   const [open, setOpen] = useState(false);
@@ -167,7 +169,7 @@ export function ModelPicker({
         <button
           type="button"
           className="pixel-btn combo-picker-toggle"
-          aria-label={`${ariaLabel} 목록`}
+          aria-label={t("modelPicker.listAria", { label: ariaLabel })}
           aria-expanded={open}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
@@ -186,17 +188,19 @@ export function ModelPicker({
         <>
           <div className="combo-picker-status">
             {catalog.loading
-              ? "모델 목록을 불러오는 중…"
+              ? t("modelPicker.loading")
               : catalog.failed
-                ? "목록을 불러오지 못했습니다 — 모델 id를 직접 적어도 됩니다."
-                : `${filtered.length}개${hidden > 0 ? ` (앞 ${MAX_VISIBLE}개 표시)` : ""}`}
+                ? t("modelPicker.failed")
+                : hidden > 0
+                  ? t("modelPicker.countTruncated", { n: filtered.length, max: MAX_VISIBLE })
+                  : t("modelPicker.count", { n: filtered.length })}
             {!catalog.loading && (
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={catalog.reload}
               >
-                새로고침
+                {t("modelPicker.reload")}
               </button>
             )}
           </div>
@@ -209,7 +213,7 @@ export function ModelPicker({
           >
             {visible.length === 0 ? (
               <div className="combo-picker-empty">
-                {catalog.loading ? "불러오는 중…" : "맞는 모델이 없습니다 — 그대로 써도 됩니다."}
+                {catalog.loading ? t("modelPicker.loadingShort") : t("modelPicker.empty")}
               </div>
             ) : (
               visible.map((m, i) => {
@@ -219,10 +223,10 @@ export function ModelPicker({
                 const header =
                   i === 0
                     ? preset
-                      ? "자주 쓰는 모델"
-                      : "서비스 목록"
+                      ? t("modelPicker.groupPreset")
+                      : t("modelPicker.groupCatalog")
                     : !preset && presetSet.has(visible[i - 1])
-                      ? "서비스 목록"
+                      ? t("modelPicker.groupCatalog")
                       : null;
                 return (
                   <Fragment key={m}>

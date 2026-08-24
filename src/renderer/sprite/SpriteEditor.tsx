@@ -8,6 +8,7 @@
 // `target="minimi"`면 같은 UX로 **단일 N×N 프레임**만 만들어 미니미 저장소에
 // 넣는다(4프레임 합성 없음, 시트 입력은 idle0만 사용).
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import "../portrait/portrait.css";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
@@ -63,6 +64,7 @@ export function SpriteEditor({
   /** 기본 "sprite". "minimi"면 단일 프레임으로 저장한다. */
   target?: SpriteEditorTarget;
 }) {
+  const { t } = useTranslation("profile");
   const setSpritePreview = useAppStore((s) => s.setSpritePreview);
   const setMinimiPreview = useAppStore((s) => s.setMinimiPreview);
   const updateAgent = useAppStore((s) => s.updateAgent);
@@ -205,7 +207,7 @@ export function SpriteEditor({
       URL.revokeObjectURL(url);
     };
     img.onerror = () => {
-      setError("이미지를 읽을 수 없습니다. 다른 파일을 선택하세요.");
+      setError(t("editor.readFailed"));
       URL.revokeObjectURL(url);
     };
     img.src = url;
@@ -234,7 +236,7 @@ export function SpriteEditor({
       // 스테일 에러가 재출현하는 경로 차단.
       if (cancelled || initialConsumedRef.current) return;
       initialConsumedRef.current = true;
-      setError("생성 이미지를 읽을 수 없습니다.");
+      setError(t("editor.generatedReadFailed"));
     };
     img.src = initialImageAtMount;
     return () => {
@@ -300,7 +302,7 @@ export function SpriteEditor({
     try {
       const base64 = dataUrlToBase64(output.toDataURL("image/png"));
       if (!base64 || base64.length > MAX_SPRITE_B64_LEN) {
-        setError("이미지 인코딩에 실패했거나 1MiB 상한을 초과합니다.");
+        setError(t("sprite.tooLarge"));
         return;
       }
       if (target === "minimi") {
@@ -317,7 +319,7 @@ export function SpriteEditor({
       onClose();
     } catch (err) {
       console.warn(`SpriteEditor: save failed (${target})`, err);
-      setError("저장에 실패했습니다.");
+      setError(t("editor.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -336,7 +338,7 @@ export function SpriteEditor({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <h2 className="pixel-title">
-          {target === "minimi" ? "미니미 픽셀아트 편집" : "픽셀아트 편집"}
+          {target === "minimi" ? t("minimi.editorTitle") : t("sprite.editorTitle")}
         </h2>
         <input type="file" accept="image/*" onChange={onFile} />
         <div className="sprite-edit-row">
@@ -352,13 +354,13 @@ export function SpriteEditor({
                 onPointerUp={onPointerUp}
               />
               {mode === "empty" && (
-                <div className="portrait-crop-hint">이미지를 선택하세요</div>
+                <div className="portrait-crop-hint">{t("editor.pickImage")}</div>
               )}
             </div>
           )}
           <div className="sprite-preview-box">
             <canvas ref={previewCanvasRef} width={CELL} height={CELL} />
-            <span className="sprite-preview-label">16×16 미리보기</span>
+            <span className="sprite-preview-label">{t("sprite.previewLabel")}</span>
           </div>
         </div>
         <label className="sprite-transparent-toggle">
@@ -367,19 +369,15 @@ export function SpriteEditor({
             checked={transparentBg}
             onChange={(e) => onToggleTransparent(e.target.checked)}
           />
-          배경 투명화 (좌상단 픽셀 색 기준)
+          {t("sprite.transparentToggle")}
         </label>
         {mode === "sheet" && (
           <p className="sprite-sheet-note">
-            {target === "minimi"
-              ? "4프레임 시트로 인식했습니다. 미니미는 첫 프레임(idle0)만 사용합니다."
-              : "4프레임 시트로 인식했습니다. 셀 해상도를 보존해 저장됩니다."}
+            {target === "minimi" ? t("minimi.sheetNote") : t("sprite.sheetNote")}
           </p>
         )}
         {target === "minimi" && (
-          <p className="sprite-sheet-note">
-            미니미는 걷기/숨쉬기 애니메이션 없이 이 한 장을 그대로 씁니다.
-          </p>
+          <p className="sprite-sheet-note">{t("minimi.singleFrameNote")}</p>
         )}
         {error && <p className="portrait-error">{error}</p>}
         <div className="dialog-actions">
@@ -388,10 +386,10 @@ export function SpriteEditor({
             disabled={!hasImage || saving}
             onClick={onSave}
           >
-            저장
+            {t("editor.save")}
           </button>
           <button className="pixel-btn" onClick={onClose}>
-            취소
+            {t("editor.cancel")}
           </button>
         </div>
       </div>

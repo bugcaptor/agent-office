@@ -1,0 +1,177 @@
+{
+  "dialog": {
+    "titleCreate": "새 에이전트",
+    "titleEdit": "에이전트 편집",
+    "subCreate": "새 에이전트의 프로필을 만듭니다. 저장하면 터미널 세션이 시작됩니다.",
+    "subEdit": "프로필을 수정합니다. 저장하면 바로 반영됩니다.",
+    "randomizeAll": "전체 랜덤",
+    "save": "저장",
+    "cancel": "취소"
+  },
+  "identity": {
+    "section": "정체성",
+    "name": "이름",
+    "role": "역할",
+    "awardBadge": "🏆 통산 {{n}}회 수상",
+    "personality": "성격 프롬프트",
+    "personalityHint": "캐릭터가 어떤 존재인지 적습니다. Claude Code의 시스템 프롬프트에 덧붙고, 초상 프롬프트·대사 말투에도 함께 반영됩니다. 여러 줄을 그대로 쓸 수 있습니다.",
+    "archetype": "아키타입",
+    "archetypeHint": "스프라이트의 체형·의상 계열을 정합니다. “자동(시드)”이면 시드에 따라 선택됩니다. 목록에 없는 종족(예: 드래곤)을 적어 넣으면 초상·픽셀아트 프롬프트에 그대로 반영되고, 도트 캐릭터는 인간 체형으로 그려집니다."
+  },
+  "appearance": {
+    "section": "외형",
+    "tablistLabel": "외형 만들기 방법",
+    "tabManual": "직접 만들기",
+    "tabCodex": "Codex로 생성",
+    "manualHint": "프롬프트를 복사해 원하는 이미지 생성 도구에 넣고, 결과 이미지를 올리면 크롭 편집기가 규격에 맞춰 줍니다.",
+    "saveFirstHint": "저장한 뒤 편집에서 이미지를 올릴 수 있습니다."
+  },
+  "keyColor": {
+    "label": "키 컬러",
+    "hint": "초상화·스프라이트·미니미 프롬프트와 오피스뷰 캐릭터에 이 색 그대로 실립니다. 색 칩을 누르면 원하는 색을 직접 고를 수 있고, 손대지 않은 색은 시드·아키타입을 바꿀 때마다 함께 바뀝니다.",
+    "chipTitle": "{{name}} approximately {{hex}} — 눌러서 색 고르기",
+    "customMark": "직접 고른 색",
+    "fallbackLabel": "색"
+  },
+  "portrait": {
+    "label": "초상화",
+    "remove": "초상 제거",
+    "copyPrompt": "초상 프롬프트 복사",
+    "upload": "이미지 업로드",
+    "change": "이미지 변경",
+    "requestLabel": "초상화 추가 프롬프트",
+    "requestPlaceholder": "예: 짧은 검은 머리, 안경 (선택)",
+    "requestHint": "초상 프롬프트에만 덧붙습니다.",
+    "editorTitle": "초상 편집",
+    "retroFilter": "레트로 픽셀 필터"
+  },
+  "sprite": {
+    "label": "스프라이트",
+    "regen": "스프라이트 재생성",
+    "customBadge": "커스텀 사용 중 — 재생성은 외형에 영향 없음",
+    "removeCustom": "커스텀 제거",
+    "copyPrompt": "스프라이트 프롬프트 복사",
+    "upload": "스프라이트 업로드",
+    "change": "스프라이트 변경",
+    "requestLabel": "스프라이트 추가 프롬프트",
+    "requestPlaceholder": "예: 빨간 망토를 두른 마법사 (선택)",
+    "requestHint": "스프라이트 프롬프트 복사와 Codex 생성에 그대로 반영됩니다.",
+    "editorTitle": "픽셀아트 편집",
+    "previewLabel": "16×16 미리보기",
+    "transparentToggle": "배경 투명화 (좌상단 픽셀 색 기준)",
+    "sheetNote": "4프레임 시트로 인식했습니다. 셀 해상도를 보존해 저장됩니다.",
+    "tooLarge": "이미지 인코딩에 실패했거나 1MiB 상한을 초과합니다."
+  },
+  "minimi": {
+    "label": "미니미",
+    "customBadge": "커스텀 미니미 사용 중",
+    "emptyBadge": "지정 없음 — 스프라이트를 축소해 사용합니다",
+    "upload": "미니미 업로드",
+    "change": "미니미 변경",
+    "remove": "미니미 제거",
+    "copyPrompt": "미니미 프롬프트 복사",
+    "requestLabel": "미니미 추가 프롬프트",
+    "requestPlaceholder": "예: 작은 불꽃 정령 (선택, 비면 본체에 어울리는 소환수로 자동 의뢰)",
+    "requestHint": "미니미는 서브에이전트가 일할 때 머리 옆에 뜨는 소환수입니다. 비워 두면 본체의 외형·역할에 어울리는 소환수를 알아서 그려 달라는 문구가 프롬프트에 자동으로 들어갑니다.",
+    "editorTitle": "미니미 픽셀아트 편집",
+    "sheetNote": "4프레임 시트로 인식했습니다. 미니미는 첫 프레임(idle0)만 사용합니다.",
+    "singleFrameNote": "미니미는 걷기/숨쉬기 애니메이션 없이 이 한 장을 그대로 씁니다."
+  },
+  "terminal": {
+    "section": "터미널",
+    "cwd": "시작 폴더",
+    "cwdPlaceholder": "비워두면 홈 디렉터리 (직접 입력·붙여넣기 가능)",
+    "browse": "찾아보기…",
+    "startupCommand": "시작 명령어",
+    "startupCommandPlaceholder": "예: source ./init.sh 또는 mysetup.bat (선택, 새 터미널마다 실행)",
+    "startupCommandHint": "새 터미널 세션이 열릴 때마다 자동으로 실행됩니다.",
+    "keyboardSound": "키보드 소리",
+    "keyboardSoundDefault": "기본",
+    "keyboardSoundHint": "이 에이전트가 타이핑할 때 나는 소리입니다. 고르면 미리 들려줍니다.",
+    "talkReceive": "동료 메시지 받기",
+    "talkReceiveHint": "끄면 다른 캐릭터가 이 캐릭터에게 말을 걸 수 없습니다. (설정 → 제어의 <b>동료 대화</b>가 켜져 있을 때만 의미가 있습니다.)",
+    "shell": "셸",
+    "shellAuto": "자동 (기본)",
+    "shellNoHooks": "{{label}} (시간 추적 미지원)"
+  },
+  "bot": {
+    "section": "봇 모드 설정",
+    "sectionHint": "터미널 탭 우클릭 → “봇 모드 시작”으로 켜면, 이 캐릭터가 담당 저장소의 Gitea 이슈에 달린 슬래시 명령에 반응해 자동으로 작업합니다. 아래는 봇의 지속 설정입니다.",
+    "slug": "봇 슬래시 별칭",
+    "slugPlaceholder": "예: nova (선택, 비우면 이름에서 자동 파생)",
+    "slugHint": "이슈에서 <code>/별칭</code> 으로 이 캐릭터를 호출합니다. 비우면 이름에서 파생합니다(공백 제거·소문자).",
+    "whitelist": "봇 화이트리스트",
+    "whitelistPlaceholder": "추가 허용 Gitea 계정, 콤마 구분 (선택)",
+    "whitelistHint": "명령을 발동할 수 있는 계정. tea 로그인 계정 본인은 항상 포함됩니다.",
+    "poll": "봇 폴링 주기(초)",
+    "pollPlaceholder": "기본 60, 하한 30"
+  },
+  "voice": {
+    "label": "목소리 (TTS)",
+    "auto": "자동 (종족에 맞춰 배정)",
+    "missingOption": "{{id}} (목록에 없음)",
+    "preview": "미리듣기",
+    "hintDisabled": "설정에서 ‘알림 대사 읽어주기(TTS)’를 켜면 목소리를 고를 수 있습니다.",
+    "hintEnabled": "비워두면 캐릭터 종족과 시드에 맞춰 자동으로 정해집니다.",
+    "mutedNote": " 무음 모드가 켜져 있어 실제 알림은 발화되지 않습니다(미리듣기는 들립니다).",
+    "keyMissing": "설정에서 ElevenLabs API 키를 저장하면 목소리를 고를 수 있습니다.",
+    "listFailed": "목소리 목록을 불러오지 못했습니다: {{error}}",
+    "spoken": "발화: {{line}}",
+    "spokenNone": "발화할 수 없었습니다.",
+    "previewFailed": "미리듣기 실패: {{error}}"
+  },
+  "io": {
+    "export": "내보내기",
+    "import": "가져오기",
+    "exported": "내보냈습니다.",
+    "exportFailed": "내보내기에 실패했습니다.",
+    "imported": "가져왔습니다. ‘저장’을 눌러 반영하세요.",
+    "importFailed": "가져오기에 실패했습니다."
+  },
+  "codex": {
+    "generated": "생성 완료 — 편집기에서 확인하고 저장하세요.",
+    "detecting": "codex CLI 확인 중…",
+    "available": "codex CLI 사용 가능",
+    "availableVersion": "codex CLI 사용 가능 — {{version}}",
+    "unavailable": "codex CLI를 찾을 수 없습니다. 설치하고 로그인한 뒤 다시 열어 주세요.",
+    "saveFirstHint": "저장한 뒤 편집에서 생성할 수 있습니다.",
+    "portrait": "초상 생성",
+    "portraitBusy": "초상 생성 중…",
+    "sprite": "스프라이트 생성",
+    "spriteBusy": "스프라이트 생성 중…",
+    "minimi": "미니미 생성",
+    "minimiBusy": "미니미 생성 중…",
+    "hint": "로컬 codex CLI의 이미지 생성 기능을 그대로 씁니다. 한 장에 보통 1~3분이 걸리고, 여러분의 Codex 사용량이 차감됩니다. 결과는 크롭 편집기로 열려 확인한 뒤 저장합니다.",
+    "errNotFound": "codex CLI를 찾을 수 없습니다. 설치한 뒤 다시 시도하세요.",
+    "errTimeout": "생성이 시간 안에 끝나지 않았습니다. 다시 시도하세요.",
+    "errNoOutput": "codex가 이미지를 저장하지 않았습니다. 다시 시도하세요: {{detail}}",
+    "errGeneric": "생성에 실패했습니다: {{error}}"
+  },
+  "archetype": {
+    "ariaLabel": "아키타입",
+    "listAriaLabel": "{{label}} 목록",
+    "placeholder": "자동(시드) — 목록에 없는 종족도 적을 수 있습니다",
+    "customNote": "목록에 없는 종족 — 그림 의뢰에 그대로 쓰이고, 도트 캐릭터는 인간 체형을 씁니다."
+  },
+  "color": {
+    "title": "{{label}} 색 고르기",
+    "svAriaLabel": "{{label}} 채도·명도",
+    "hueAriaLabel": "{{label}} 색상",
+    "presets": "프리셋 색",
+    "resetTitle": "시드가 정한 기본색 {{hex}}으로 되돌립니다",
+    "reset": "기본값으로",
+    "cancel": "취소",
+    "apply": "적용"
+  },
+  "editor": {
+    "pickImage": "이미지를 선택하세요",
+    "readFailed": "이미지를 읽을 수 없습니다. 다른 파일을 선택하세요.",
+    "generatedReadFailed": "생성 이미지를 읽을 수 없습니다.",
+    "saveFailed": "저장에 실패했습니다.",
+    "save": "저장",
+    "cancel": "취소"
+  },
+  "generate": {
+    "personalityPrompt": "{{word}} 성격"
+  }
+}

@@ -9,7 +9,7 @@
 // 나눠, 닫으면 본체가 언마운트되며 탭 상태가 함께 사라지게 한다(이 컴포넌트는
 // App에 상시 마운트돼 있어 useState만으로는 초기화되지 않는다).
 import { useCallback, useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { LANGUAGE_SYSTEM, applyLanguageSetting, availableLanguages } from "../i18n";
 import { tauriApi } from "../ipc/tauriApi";
@@ -33,12 +33,14 @@ import type {
 
 type SettingsTabId = "general" | "sound" | "system" | "control";
 
-/** 화면 순서 = 이 배열 순서. 첫 항목이 열 때마다의 기본 탭이다. */
-const SETTINGS_TABS: { id: SettingsTabId; label: string }[] = [
-  { id: "general", label: "일반" },
-  { id: "sound", label: "소리·음성" },
-  { id: "system", label: "시스템" },
-  { id: "control", label: "제어" },
+/** 화면 순서 = 이 배열 순서. 첫 항목이 열 때마다의 기본 탭이다.
+ *  모듈 최상위라 `t()`를 부를 수 없어 라벨이 아니라 **키**를 담는다 —
+ *  언어를 바꾸면 렌더 시점에 다시 번역된다. */
+const SETTINGS_TABS: { id: SettingsTabId; labelKey: string }[] = [
+  { id: "general", labelKey: "dialog.tabGeneral" },
+  { id: "sound", labelKey: "dialog.tabSound" },
+  { id: "system", labelKey: "dialog.tabSystem" },
+  { id: "control", labelKey: "dialog.tabControl" },
 ];
 
 export function SettingsDialog() {
@@ -48,6 +50,7 @@ export function SettingsDialog() {
 }
 
 function SettingsDialogBody() {
+  const { t } = useTranslation("settings");
   const closeModal = useAppStore((s) => s.closeModal);
   const cliEnabled = useAppStore((s) => s.appSettings.cliEnabled);
   const [tab, setTab] = useState<SettingsTabId>(SETTINGS_TABS[0].id);
@@ -60,21 +63,21 @@ function SettingsDialogBody() {
       }}
     >
       <div className="pixel-panel settings-dialog">
-        <h2 className="pixel-title">설정</h2>
+        <h2 className="pixel-title">{t("dialog.title")}</h2>
 
-        <div className="settings-tabs" role="tablist" aria-label="설정 분류">
-          {SETTINGS_TABS.map((t) => (
+        <div className="settings-tabs" role="tablist" aria-label={t("dialog.tabsAria")}>
+          {SETTINGS_TABS.map((item) => (
             <button
-              key={t.id}
+              key={item.id}
               type="button"
               role="tab"
-              id={`settings-tab-${t.id}`}
-              aria-selected={tab === t.id}
-              aria-controls={`settings-tabpanel-${t.id}`}
-              className={tab === t.id ? "settings-tab settings-tab-active" : "settings-tab"}
-              onClick={() => setTab(t.id)}
+              id={`settings-tab-${item.id}`}
+              aria-selected={tab === item.id}
+              aria-controls={`settings-tabpanel-${item.id}`}
+              className={tab === item.id ? "settings-tab settings-tab-active" : "settings-tab"}
+              onClick={() => setTab(item.id)}
             >
-              {t.label}
+              {t(item.labelKey)}
             </button>
           ))}
         </div>
@@ -100,7 +103,7 @@ function SettingsDialogBody() {
 
         <div className="dialog-actions">
           <button className="pixel-btn" onClick={closeModal}>
-            닫기
+            {t("dialog.close")}
           </button>
         </div>
       </div>
@@ -183,6 +186,7 @@ export const SUMMARY_DEFAULT_MODELS: Record<SummaryProvider, { light: string; he
   openrouter: { light: "openai/gpt-5.4-mini", heavy: "openai/gpt-5.4" },
 };
 
+/** 서비스 이름은 고유명사라 번역하지 않는다 — 모듈 최상위 상수로 남겨도 된다. */
 const SUMMARY_PROVIDER_LABEL: Record<SummaryProvider, string> = {
   claude: "Claude",
   codex: "Codex",
@@ -202,6 +206,7 @@ const SUMMARY_PROVIDER_LABEL: Record<SummaryProvider, string> = {
  * 오타가 나면 그 요약이 실패해 원문 폴백으로 강등되는 편이 낫다.
  */
 function SummaryModelSection() {
+  const { t } = useTranslation("settings");
   const provider = useAppStore((s) => s.appSettings.summaryProvider);
   const summaryModels = useAppStore((s) => s.appSettings.summaryModels);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
@@ -226,30 +231,33 @@ function SummaryModelSection() {
     <div className="settings-form">
       {isOpenrouter && (
         <p className="settings-note">
-          OpenRouter 요약은 API 키(또는 환경변수 <code>OPENROUTER_API_KEY</code>)를
-          씁니다. 키가 없으면 요약이 실패하고 원문이 그대로 표시됩니다.
+          <Trans t={t} i18nKey="general.openrouterNote" components={{ code: <code /> }} />
         </p>
       )}
       {isOpencode && (
         <p className="settings-note">
-          opencode 요약은 설치된 <code>opencode</code> CLI를 부릅니다. 모델 id는
-          <code> provider/model</code> 표기이고(<code>opencode models</code>로 확인),
-          기본값은 opencode 자체 구독(<code>opencode-go</code>)을 가정합니다.
+          <Trans t={t} i18nKey="general.opencodeNote" components={{ code: <code /> }} />
         </p>
       )}
       {/* 설명 아래 줄에 컨트롤을 둔다 — 나란히 두면 긴 설명이 폭을 다 먹어
           모델 id가 두세 글자만 보였다(kbm #2fc). */}
       <div className="settings-item settings-item-stacked">
         <span>
-          <strong>{SUMMARY_PROVIDER_LABEL[provider]} 경량 모델</strong>
+          <strong>{t("general.lightModelTitle", { provider: SUMMARY_PROVIDER_LABEL[provider] })}</strong>
           <small>
-            작업 라벨 요약과 캐릭터 일기에 쓰는 모델입니다. 비우면 기본값(
-            <code>{defaults.light}</code>)을 씁니다.
+            <Trans
+              t={t}
+              i18nKey="general.lightModelHelp"
+              values={{ model: defaults.light }}
+              components={{ code: <code /> }}
+            />
           </small>
         </span>
         <ModelPicker
           provider={provider}
-          ariaLabel={`${SUMMARY_PROVIDER_LABEL[provider]} 경량 모델`}
+          ariaLabel={t("general.lightModelTitle", {
+            provider: SUMMARY_PROVIDER_LABEL[provider],
+          })}
           placeholder={defaults.light}
           value={current.light}
           onChange={(v) => setModel("light", v)}
@@ -257,15 +265,21 @@ function SummaryModelSection() {
       </div>
       <div className="settings-item settings-item-stacked">
         <span>
-          <strong>{SUMMARY_PROVIDER_LABEL[provider]} 고급 모델</strong>
+          <strong>{t("general.heavyModelTitle", { provider: SUMMARY_PROVIDER_LABEL[provider] })}</strong>
           <small>
-            세션 로그 학습자료처럼 긴 글을 정리할 때 쓰는 모델입니다. 비우면
-            기본값(<code>{defaults.heavy}</code>)을 씁니다.
+            <Trans
+              t={t}
+              i18nKey="general.heavyModelHelp"
+              values={{ model: defaults.heavy }}
+              components={{ code: <code /> }}
+            />
           </small>
         </span>
         <ModelPicker
           provider={provider}
-          ariaLabel={`${SUMMARY_PROVIDER_LABEL[provider]} 고급 모델`}
+          ariaLabel={t("general.heavyModelTitle", {
+            provider: SUMMARY_PROVIDER_LABEL[provider],
+          })}
           placeholder={defaults.heavy}
           value={current.heavy}
           onChange={(v) => setModel("heavy", v)}
@@ -276,18 +290,23 @@ function SummaryModelSection() {
   );
 }
 
-/** 요약 테스트가 실패했을 때 그대로 보여주면 뜻이 통하지 않는 코드들.
- *  나머지는 원문을 보여준다 — 상류 오류는 종류가 열려 있다. */
-const SUMMARY_TEST_ERROR_LABEL: Record<string, string> = {
-  "summarizer-disabled": "요약 기능이 꺼져 있습니다(일반 탭에서 켜세요)",
-  "openrouter-key-missing": "OpenRouter API 키가 없습니다",
+/** 요약 테스트가 실패했을 때 그대로 보여주면 뜻이 통하지 않는 코드들 → 번역 키.
+ *  여기 없는 코드는 원문을 보여준다 — 상류 오류는 종류가 열려 있다. */
+const SUMMARY_TEST_ERROR_KEY: Record<string, string> = {
+  "summarizer-disabled": "general.errorSummarizerDisabled",
+  "openrouter-key-missing": "general.errorOpenrouterKeyMissing",
 };
 
-/** 요약 테스트에 쓰는 표본. 짧아야 한다 — 크레딧을 쓰는 실제 호출이다. */
-const SUMMARY_TEST_INSTRUCTION = "다음 텍스트를 한 문장으로 요약하라.";
-const SUMMARY_TEST_TEXT =
-  "설정 화면에서 OpenRouter 연결을 확인하려고 보낸 시험 문장입니다. " +
-  "요약이 돌아오면 키와 경량 모델 설정이 모두 올바른 것입니다.";
+/** "있음 / 있음(환경변수) / 없음" — 키 상태 한 조각. 요약 탭과 소리·음성 탭이
+ *  같은 저장소를 보므로 문구도 하나로 공유한다. */
+function keyStateLabel(
+  t: (key: string) => string,
+  set: boolean,
+  fromEnv: boolean
+): string {
+  if (!set) return t("keys.absent");
+  return fromEnv ? t("keys.presentEnv") : t("keys.present");
+}
 
 /**
  * OpenRouter 요약을 위한 키 입력과 연결 테스트.
@@ -301,6 +320,7 @@ const SUMMARY_TEST_TEXT =
  * 돼야 하기 때문이다.
  */
 function OpenrouterSummaryTools() {
+  const { t } = useTranslation("settings");
   const [status, setStatus] = useState<TtsStatus | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
@@ -325,9 +345,9 @@ function OpenrouterSummaryTools() {
       // 앞 두 칸은 undefined — 여기서는 OpenRouter 키만 건드린다.
       setStatus(await tauriApi.ttsSetKeys(undefined, undefined, apiKey));
       setApiKey("");
-      setNote("키를 저장했습니다.");
+      setNote(t("keys.savedNote"));
     } catch (err) {
-      setNote(`키 저장 실패: ${String(err)}`);
+      setNote(t("keys.saveFailed", { error: String(err) }));
     } finally {
       setBusy(false);
     }
@@ -340,9 +360,9 @@ function OpenrouterSummaryTools() {
     setNote(null);
     try {
       setStatus(await tauriApi.ttsSetKeys(undefined, undefined, ""));
-      setNote("키를 삭제했습니다.");
+      setNote(t("keys.deletedNote"));
     } catch (err) {
-      setNote(`키 삭제 실패: ${String(err)}`);
+      setNote(t("keys.deleteFailed", { error: String(err) }));
     } finally {
       setBusy(false);
     }
@@ -352,16 +372,18 @@ function OpenrouterSummaryTools() {
     setBusy(true);
     setNote(null);
     try {
+      // 표본은 짧아야 한다 — 크레딧을 쓰는 실제 호출이다.
       const out = await tauriApi.summarizeText(
         "openrouter",
-        SUMMARY_TEST_INSTRUCTION,
-        SUMMARY_TEST_TEXT,
+        t("general.summaryTestInstruction"),
+        t("general.summaryTestText"),
         "label",
       );
-      setNote(`요약: ${out}`);
+      setNote(t("general.summaryResult", { text: out }));
     } catch (err) {
       const code = String(err);
-      setNote(`요약 실패: ${SUMMARY_TEST_ERROR_LABEL[code] ?? code}`);
+      const key = SUMMARY_TEST_ERROR_KEY[code];
+      setNote(t("general.summaryFailed", { error: key ? t(key) : code }));
     } finally {
       setBusy(false);
     }
@@ -371,29 +393,23 @@ function OpenrouterSummaryTools() {
     <div className="settings-item" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
       <div style={{ fontSize: 12, opacity: 0.85 }}>
         {status
-          ? `OpenRouter 키 ${
-              status.openrouterSet
-                ? status.openrouterFromEnv
-                  ? "있음(환경변수)"
-                  : "있음"
-                : "없음"
-            }`
-          : "상태 조회 중…"}
+          ? t("general.openrouterKeyState", {
+              state: keyStateLabel(t, status.openrouterSet, status.openrouterFromEnv),
+            })
+          : t("keys.statusLoading")}
       </div>
 
       <label className="settings-item">
         <span>
-          <strong>OpenRouter API 키</strong>
+          <strong>{t("general.openrouterKeyTitle")}</strong>
           <small>
-            이 키는 <b>소리·음성</b> 탭의 OpenRouter 키와 같은 저장소를 씁니다
-            (어느 쪽에서 넣어도 같습니다). 저장하면 앱에만 보관되고 화면에 다시
-            표시되지 않습니다.
+            <Trans t={t} i18nKey="general.openrouterKeyHelp" components={{ b: <b /> }} />
           </small>
         </span>
         <input
           type="password"
           autoComplete="off"
-          placeholder={status?.openrouterSet ? "저장됨 (변경 시 입력)" : "sk-or-…"}
+          placeholder={status?.openrouterSet ? t("keys.savedPlaceholder") : "sk-or-…"}
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
         />
@@ -401,14 +417,14 @@ function OpenrouterSummaryTools() {
 
       <div style={{ display: "flex", gap: 8 }}>
         <button className="pixel-btn" disabled={busy || apiKey === ""} onClick={saveKey}>
-          키 저장
+          {t("keys.save")}
         </button>
         <button className="pixel-btn" disabled={busy} onClick={test}>
-          {busy ? "요약 테스트 중…" : "요약 테스트"}
+          {busy ? t("general.summaryTesting") : t("general.summaryTest")}
         </button>
         {status?.openrouterSet && !status.openrouterFromEnv && (
           <button className="pixel-btn" disabled={busy} onClick={deleteKey}>
-            키 삭제
+            {t("keys.delete")}
           </button>
         )}
       </div>
@@ -419,6 +435,7 @@ function OpenrouterSummaryTools() {
 
 /** 소리·음성 — 효과음/볼륨/알림 지연 + 대사 읽어주기(TTS). */
 function SoundTab() {
+  const { t } = useTranslation("settings");
   const appSettings = useAppStore((s) => s.appSettings);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
 
@@ -432,8 +449,8 @@ function SoundTab() {
             onChange={(e) => updateAppSettings({ typingSoundEnabled: e.target.checked })}
           />
           <span>
-            <strong>타건음</strong>
-            <small>에이전트가 일할 때 나는 키보드 타이핑 소리입니다.</small>
+            <strong>{t("sound.typingTitle")}</strong>
+            <small>{t("sound.typingHelp")}</small>
           </span>
         </label>
         <label className="settings-item">
@@ -443,14 +460,14 @@ function SoundTab() {
             onChange={(e) => updateAppSettings({ notifySoundEnabled: e.target.checked })}
           />
           <span>
-            <strong>알림음</strong>
-            <small>알림이 왔을 때의 딩과 세션 시작·종료 효과음입니다.</small>
+            <strong>{t("sound.notifyTitle")}</strong>
+            <small>{t("sound.notifyHelp")}</small>
           </span>
         </label>
         <label className="settings-item">
           <span>
-            <strong>볼륨</strong>
-            <small>위 스위치들과 대사 읽어주기가 함께 씁니다.</small>
+            <strong>{t("sound.volumeTitle")}</strong>
+            <small>{t("sound.volumeHelp")}</small>
           </span>
           <input
             type="range"
@@ -467,12 +484,8 @@ function SoundTab() {
         </label>
         <label className="settings-item">
           <span>
-            <strong>질문 알림 지연 (초)</strong>
-            <small>
-              질문 알림을 이 시간만큼 보류하고, 그 사이 에이전트가 계속
-              일하면(오토모드 자동 승인 등) 알림을 내지 않습니다. 0이면 즉시
-              알림.
-            </small>
+            <strong>{t("sound.attentionHoldTitle")}</strong>
+            <small>{t("sound.attentionHoldHelp")}</small>
           </span>
           <input
             type="number"
@@ -493,6 +506,7 @@ function SoundTab() {
 
 /** 시스템 — 앱 바깥(OS·저장소·외부 앱)에 닿는 설정과 터미널 색상. */
 function SystemTab() {
+  const { t } = useTranslation("settings");
   const appSettings = useAppStore((s) => s.appSettings);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
 
@@ -505,11 +519,8 @@ function SystemTab() {
           onChange={(e) => updateAppSettings({ gitStatusEnabled: e.target.checked })}
         />
         <span>
-          <strong>작업 폴더 git 상태 표시</strong>
-          <small>
-            "작업 폴더 보기"에서 파일별 git 변경 상태(수정·추가·삭제 등)를
-            조회해 뱃지로 보여줍니다. 거대 저장소에서 느리면 끄세요.
-          </small>
+          <strong>{t("system.gitStatusTitle")}</strong>
+          <small>{t("system.gitStatusHelp")}</small>
         </span>
       </label>
       <label className="settings-item">
@@ -519,12 +530,8 @@ function SystemTab() {
           onChange={(e) => updateAppSettings({ keepAwakeEnabled: e.target.checked })}
         />
         <span>
-          <strong>작업 중 시스템 잠자기 방지</strong>
-          <small>
-            캐릭터가 작업하는 동안 컴퓨터가 자동으로 잠들지 않게 합니다. 화면은
-            꺼질 수 있으며, 뚜껑을 닫거나 수동으로 재우는 것은 막지 않습니다.
-            (macOS·Windows)
-          </small>
+          <strong>{t("system.keepAwakeTitle")}</strong>
+          <small>{t("system.keepAwakeHelp")}</small>
         </span>
       </label>
       <label className="settings-item">
@@ -534,13 +541,8 @@ function SystemTab() {
           onChange={(e) => updateAppSettings({ sessionLogEnabled: e.target.checked })}
         />
         <span>
-          <strong>세션 로그 남기기</strong>
-          <small>
-            터미널에서 오간 내용(AI 대화·명령·출력)을 읽을 수 있는 텍스트로
-            파일에 기록합니다. 캐릭터 탭 우클릭 "세션 로그 보기"에서 열람하고
-            학습자료로 정리할 수 있습니다. 30일이 지나거나 전체 2GB를 넘으면
-            오래된 것부터 자동 삭제됩니다.
-          </small>
+          <strong>{t("system.sessionLogTitle")}</strong>
+          <small>{t("system.sessionLogHelp")}</small>
         </span>
       </label>
       <label className="settings-item">
@@ -550,21 +552,14 @@ function SystemTab() {
           onChange={(e) => updateAppSettings({ mascotEnabled: e.target.checked })}
         />
         <span>
-          <strong>데스크톱 마스코트</strong>
-          <small>
-            지금 활동 중인 캐릭터를 앱 창과 별개의 작은 창으로 항상 위에
-            띄웁니다. 알림이 오면 그 자리에서 알리고, 클릭하면 해당 캐릭터의
-            터미널이 열립니다.
-          </small>
+          <strong>{t("system.mascotTitle")}</strong>
+          <small>{t("system.mascotHelp")}</small>
         </span>
       </label>
       <label className="settings-item">
         <span>
-          <strong>외부 터미널 앱</strong>
-          <small>
-            터미널 탭 우클릭 "OS 터미널로 열기"가 사용할 앱입니다. macOS
-            전용 — 다른 OS에서는 무시됩니다.
-          </small>
+          <strong>{t("system.externalTerminalTitle")}</strong>
+          <small>{t("system.externalTerminalHelp")}</small>
         </span>
         <select
           value={appSettings.externalTerminal}
@@ -574,17 +569,14 @@ function SystemTab() {
             })
           }
         >
-          <option value="terminal">Terminal (기본)</option>
+          <option value="terminal">{t("system.terminalDefault")}</option>
           <option value="iterm">iTerm2</option>
         </select>
       </label>
       <label className="settings-item">
         <span>
-          <strong>셸 출력 에디터</strong>
-          <small>
-            터미널 탭 우클릭 "셸 출력을 에디터로 보기"(단축키 Cmd/Ctrl+Shift+E)가
-            .txt를 열 때 사용할 앱입니다.
-          </small>
+          <strong>{t("system.externalEditorTitle")}</strong>
+          <small>{t("system.externalEditorHelp")}</small>
         </span>
         <select
           value={appSettings.externalEditor}
@@ -594,17 +586,14 @@ function SystemTab() {
             })
           }
         >
-          <option value="system">시스템 기본</option>
+          <option value="system">{t("system.editorSystem")}</option>
           <option value="vscode">VS Code</option>
         </select>
       </label>
       <label className="settings-item">
         <span>
-          <strong>파일 목록 백엔드</strong>
-          <small>
-            Everything(es.exe)은 Windows 전용·문서(md) 팔레트 한정, 실패
-            시 자동으로 기본 스캐너를 사용합니다.
-          </small>
+          <strong>{t("system.fileIndexTitle")}</strong>
+          <small>{t("system.fileIndexHelp")}</small>
         </span>
         <select
           value={appSettings.fileIndexBackend}
@@ -614,7 +603,7 @@ function SystemTab() {
             })
           }
         >
-          <option value="walker">기본 스캐너 (walker)</option>
+          <option value="walker">{t("system.fileIndexWalker")}</option>
           <option value="everything">Everything (es.exe)</option>
         </select>
       </label>
@@ -629,24 +618,22 @@ function SystemTab() {
  * 직접 바인딩한다(테마 자체와 같은 계층 — theme/applyTheme.ts 참고).
  */
 function TerminalThemeItem() {
+  const { t } = useTranslation("settings");
   const xtermTheme = useAppStore((s) => s.xtermTheme);
   const setXtermTheme = useAppStore((s) => s.setXtermTheme);
 
   return (
     <label className="settings-item">
       <span>
-        <strong>터미널 색상</strong>
-        <small>
-          터미널 창 색만 별도 팔레트로 고정합니다. 기본값(테마 따름)이면 앱
-          테마를 바꿀 때 터미널도 함께 바뀝니다.
-        </small>
+        <strong>{t("system.terminalThemeTitle")}</strong>
+        <small>{t("system.terminalThemeHelp")}</small>
       </span>
       <select
         value={xtermTheme}
         onChange={(e) => setXtermTheme(e.target.value as XtermThemeOverride)}
       >
-        <option value="auto">테마 따름 (기본)</option>
-        <optgroup label="앱 테마 팔레트">
+        <option value="auto">{t("system.terminalThemeAuto")}</option>
+        <optgroup label={t("system.terminalThemeAppGroup")}>
           {THEME_ORDER.map((id) => (
             <option key={id} value={id}>
               {THEMES[id].label}
@@ -654,7 +641,7 @@ function TerminalThemeItem() {
           ))}
         </optgroup>
         {/* 앱 테마와 짝이 없는, 터미널에만 적용되는 팔레트(terminal/palettes.ts). */}
-        <optgroup label="터미널 전용 팔레트">
+        <optgroup label={t("system.terminalThemeOwnGroup")}>
           {XTERM_PALETTE_ORDER.map((id) => (
             <option key={id} value={id}>
               {XTERM_PALETTES[id].label}
@@ -666,13 +653,14 @@ function TerminalThemeItem() {
   );
 }
 
-/** 리라이트 경로 라벨 → 사람이 읽는 이름. "자동"이 실제로 무엇을 고를지 알려준다. */
-const REWRITE_VIA_LABEL: Record<TtsRewriteProvider, string> = {
-  auto: "자동",
-  api: "Anthropic API",
-  openrouter: "OpenRouter",
-  "claude-cli": "claude CLI (구독)",
-  none: "리라이트 없음 (원문 발화)",
+/** 리라이트 경로 라벨 → 사람이 읽는 이름의 **번역 키**. "자동"이 실제로 무엇을
+ *  고를지 알려준다. 모듈 최상위라 값이 아니라 키를 담는다(렌더 시점에 번역). */
+const REWRITE_VIA_LABEL_KEY: Record<TtsRewriteProvider, string> = {
+  auto: "tts.viaAuto",
+  api: "tts.viaApi",
+  openrouter: "tts.viaOpenrouter",
+  "claude-cli": "tts.viaClaudeCli",
+  none: "tts.viaNone",
 };
 
 /**
@@ -686,6 +674,7 @@ const REWRITE_VIA_LABEL: Record<TtsRewriteProvider, string> = {
  * 버튼(빈 문자열 `""`을 보냄)으로만 한다.
  */
 function TtsSection() {
+  const { t } = useTranslation("settings");
   const appSettings = useAppStore((s) => s.appSettings);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
   // 미리듣기는 무음 모드에서도 울린다(방금 누른 버튼이 침묵하면 고장으로
@@ -725,9 +714,9 @@ function TtsSection() {
       setElevenlabs("");
       setAnthropic("");
       setOpenrouter("");
-      setNote("키를 저장했습니다.");
+      setNote(t("keys.savedNote"));
     } catch (err) {
-      setNote(`키 저장 실패: ${String(err)}`);
+      setNote(t("keys.saveFailed", { error: String(err) }));
     } finally {
       setBusy(false);
     }
@@ -746,9 +735,9 @@ function TtsSection() {
         key === "openrouter" ? "" : undefined,
       );
       setStatus(next);
-      setNote("키를 삭제했습니다.");
+      setNote(t("keys.deletedNote"));
     } catch (err) {
-      setNote(`키 삭제 실패: ${String(err)}`);
+      setNote(t("keys.deleteFailed", { error: String(err) }));
     } finally {
       setBusy(false);
     }
@@ -759,9 +748,9 @@ function TtsSection() {
     setNote(null);
     try {
       const line = await previewVoice();
-      setNote(line ? `발화: ${line}` : "발화할 수 없었습니다.");
+      setNote(line ? t("tts.previewSpoken", { line }) : t("tts.previewNone"));
     } catch (err) {
-      setNote(`시청 실패: ${String(err)}`);
+      setNote(t("tts.previewFailed", { error: String(err) }));
     } finally {
       setBusy(false);
     }
@@ -776,13 +765,8 @@ function TtsSection() {
           onChange={(e) => updateAppSettings({ ttsEnabled: e.target.checked })}
         />
         <span>
-          <strong>알림 대사 읽어주기 (TTS)</strong>
-          <small>
-            캐릭터가 확인을 기다리거나 작업을 마쳤을 때, 그 알림 문구를 캐릭터
-            말투의 짧은 대사로 바꿔 목소리로 읽어줍니다(벨 알림은 제외).
-            목소리는 캐릭터 종족에 맞춰 자동으로 정해지며, 캐릭터 편집에서 직접
-            고를 수도 있습니다. ElevenLabs 음성 합성 크레딧을 소모하므로 기본 꺼짐.
-          </small>
+          <strong>{t("tts.title")}</strong>
+          <small>{t("tts.help")}</small>
         </span>
       </label>
 
@@ -790,11 +774,9 @@ function TtsSection() {
         <>
           <label className="settings-item">
             <span>
-              <strong>대사 리라이트</strong>
+              <strong>{t("tts.rewriteTitle")}</strong>
               <small>
-                시스템 문구를 캐릭터 말투로 바꾸는 방법입니다. claude CLI는 API
-                키 없이 쓸 수 있지만 <b>구독 사용량을 소모합니다</b>. "리라이트
-                없음"은 원문 문구를 그대로 읽습니다.
+                <Trans t={t} i18nKey="tts.rewriteHelp" components={{ b: <b /> }} />
               </small>
             </span>
             <select
@@ -805,11 +787,11 @@ function TtsSection() {
                 })
               }
             >
-              <option value="auto">자동 (API 키 → claude CLI → 끄기)</option>
-              <option value="api">Anthropic API 키</option>
+              <option value="auto">{t("tts.rewriteAuto")}</option>
+              <option value="api">{t("tts.rewriteApi")}</option>
               <option value="openrouter">OpenRouter</option>
-              <option value="claude-cli">claude CLI (구독 사용량 소모)</option>
-              <option value="none">리라이트 없음 (원문 발화)</option>
+              <option value="claude-cli">{t("tts.rewriteClaudeCli")}</option>
+              <option value="none">{t("tts.rewriteNone")}</option>
             </select>
           </label>
 
@@ -819,15 +801,18 @@ function TtsSection() {
           {appSettings.ttsRewriteProvider === "openrouter" ? (
             <div className="settings-item settings-item-stacked">
               <span>
-                <strong>리라이트 모델 (OpenRouter)</strong>
+                <strong>{t("tts.modelOpenrouterTitle")}</strong>
                 <small>
-                  OpenRouter 모델 id를 <code>벤더/모델</code> 형식으로 적습니다.
-                  목록에 없는 모델도 직접 입력할 수 있습니다.
+                  <Trans
+                    t={t}
+                    i18nKey="tts.modelOpenrouterHelp"
+                    components={{ code: <code /> }}
+                  />
                 </small>
               </span>
               <ModelPicker
                 provider="openrouter"
-                ariaLabel="리라이트 모델 (OpenRouter)"
+                ariaLabel={t("tts.modelOpenrouterTitle")}
                 placeholder="openai/gpt-5.4-mini"
                 value={appSettings.ttsRewriteModelOpenrouter}
                 onChange={(v) => updateAppSettings({ ttsRewriteModelOpenrouter: v })}
@@ -837,15 +822,12 @@ function TtsSection() {
             appSettings.ttsRewriteProvider !== "none" && (
               <div className="settings-item settings-item-stacked">
                 <span>
-                  <strong>리라이트 모델 (Anthropic)</strong>
-                  <small>
-                    한 줄 대사 변환이라 기본(Haiku)으로 충분합니다. 목록에 없는
-                    모델도 직접 입력할 수 있습니다.
-                  </small>
+                  <strong>{t("tts.modelAnthropicTitle")}</strong>
+                  <small>{t("tts.modelAnthropicHelp")}</small>
                 </span>
                 <ModelPicker
                   provider="anthropic"
-                  ariaLabel="리라이트 모델 (Anthropic)"
+                  ariaLabel={t("tts.modelAnthropicTitle")}
                   placeholder="claude-haiku-4-5"
                   value={appSettings.ttsRewriteModelAnthropic}
                   onChange={(v) => updateAppSettings({ ttsRewriteModelAnthropic: v })}
@@ -860,44 +842,37 @@ function TtsSection() {
           >
             <div style={{ fontSize: 12, opacity: 0.85 }}>
               {status
-                ? `ElevenLabs 키 ${
-                    status.elevenlabsSet
-                      ? status.elevenlabsFromEnv
-                        ? "있음(환경변수)"
-                        : "있음"
-                      : "없음"
-                  } · Anthropic 키 ${
-                    status.anthropicSet
-                      ? status.anthropicFromEnv
-                        ? "있음(환경변수)"
-                        : "있음"
-                      : "없음"
-                  } · OpenRouter 키 ${
-                    status.openrouterSet
-                      ? status.openrouterFromEnv
-                        ? "있음(환경변수)"
-                        : "있음"
-                      : "없음"
-                  } · claude CLI ${status.claudeCliAvailable ? "있음" : "없음"} → 리라이트: ${
-                    REWRITE_VIA_LABEL[status.effectiveRewriteVia]
-                  }`
-                : "상태 조회 중…"}
+                ? t("tts.keyStatus", {
+                    elevenlabs: keyStateLabel(
+                      t,
+                      status.elevenlabsSet,
+                      status.elevenlabsFromEnv
+                    ),
+                    anthropic: keyStateLabel(t, status.anthropicSet, status.anthropicFromEnv),
+                    openrouter: keyStateLabel(
+                      t,
+                      status.openrouterSet,
+                      status.openrouterFromEnv
+                    ),
+                    claudeCli: status.claudeCliAvailable
+                      ? t("keys.present")
+                      : t("keys.absent"),
+                    rewrite: t(REWRITE_VIA_LABEL_KEY[status.effectiveRewriteVia]),
+                  })
+                : t("keys.statusLoading")}
             </div>
 
             <label className="settings-item">
               <span>
-                <strong>ElevenLabs API 키</strong>
+                <strong>{t("tts.elevenlabsKeyTitle")}</strong>
                 <small>
-                  음성 합성에 필수입니다. 저장하면 앱에만 보관되고 화면에 다시
-                  표시되지 않습니다. 비워두고 저장하면 기존 키가 그대로
-                  유지됩니다 — 삭제하려면 아래 "키 삭제" 버튼을 쓰세요
-                  (<code>ELEVENLABS_API_KEY</code> 환경변수도 폴백으로 인정).
+                  <Trans t={t} i18nKey="tts.elevenlabsKeyHelp" components={{ code: <code /> }} />
                 </small>
               </span>
               <input
                 type="password"
                 autoComplete="off"
-                placeholder={status?.elevenlabsSet ? "저장됨 (변경 시 입력)" : "xi-…"}
+                placeholder={status?.elevenlabsSet ? t("keys.savedPlaceholder") : "xi-…"}
                 value={elevenlabs}
                 onChange={(e) => setElevenlabs(e.target.value)}
               />
@@ -905,24 +880,22 @@ function TtsSection() {
             {status?.elevenlabsSet && !status.elevenlabsFromEnv && (
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button className="pixel-btn" disabled={busy} onClick={() => deleteKey("elevenlabs")}>
-                  ElevenLabs 키 삭제
+                  {t("tts.deleteElevenlabs")}
                 </button>
               </div>
             )}
 
             <label className="settings-item">
               <span>
-                <strong>Anthropic API 키 (선택)</strong>
+                <strong>{t("tts.anthropicKeyTitle")}</strong>
                 <small>
-                  대사 리라이트에만 쓰입니다. 비어 있으면{" "}
-                  <code>ANTHROPIC_API_KEY</code> 환경변수를 쓰고, 그것도 없으면
-                  claude CLI로 넘어갑니다.
+                  <Trans t={t} i18nKey="tts.anthropicKeyHelp" components={{ code: <code /> }} />
                 </small>
               </span>
               <input
                 type="password"
                 autoComplete="off"
-                placeholder={status?.anthropicSet ? "저장됨 (변경 시 입력)" : "sk-ant-…"}
+                placeholder={status?.anthropicSet ? t("keys.savedPlaceholder") : "sk-ant-…"}
                 value={anthropic}
                 onChange={(e) => setAnthropic(e.target.value)}
               />
@@ -930,23 +903,26 @@ function TtsSection() {
             {status?.anthropicSet && !status.anthropicFromEnv && (
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button className="pixel-btn" disabled={busy} onClick={() => deleteKey("anthropic")}>
-                  Anthropic 키 삭제
+                  {t("tts.deleteAnthropic")}
                 </button>
               </div>
             )}
 
             <label className="settings-item">
               <span>
-                <strong>OpenRouter API 키 (선택)</strong>
+                <strong>{t("tts.openrouterKeyTitle")}</strong>
                 <small>
-                  위에서 공급자를 <b>OpenRouter</b>로 골랐을 때만 쓰입니다. 비어
-                  있으면 <code>OPENROUTER_API_KEY</code> 환경변수를 씁니다.
+                  <Trans
+                    t={t}
+                    i18nKey="tts.openrouterKeyHelp"
+                    components={{ b: <b />, code: <code /> }}
+                  />
                 </small>
               </span>
               <input
                 type="password"
                 autoComplete="off"
-                placeholder={status?.openrouterSet ? "저장됨 (변경 시 입력)" : "sk-or-…"}
+                placeholder={status?.openrouterSet ? t("keys.savedPlaceholder") : "sk-or-…"}
                 value={openrouter}
                 onChange={(e) => setOpenrouter(e.target.value)}
               />
@@ -954,7 +930,7 @@ function TtsSection() {
             {status?.openrouterSet && !status.openrouterFromEnv && (
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button className="pixel-btn" disabled={busy} onClick={() => deleteKey("openrouter")}>
-                  OpenRouter 키 삭제
+                  {t("tts.deleteOpenrouter")}
                 </button>
               </div>
             )}
@@ -965,17 +941,14 @@ function TtsSection() {
                 disabled={busy || (elevenlabs === "" && anthropic === "" && openrouter === "")}
                 onClick={saveKeys}
               >
-                키 저장
+                {t("keys.save")}
               </button>
               <button className="pixel-btn" disabled={busy} onClick={preview}>
-                시청 (미리듣기)
+                {t("tts.preview")}
               </button>
             </div>
             {muted && (
-              <div style={{ fontSize: 12, opacity: 0.85 }}>
-                무음 모드가 켜져 있어 실제 알림은 발화되지 않습니다 (미리듣기는
-                들립니다).
-              </div>
+              <div style={{ fontSize: 12, opacity: 0.85 }}>{t("tts.mutedNote")}</div>
             )}
             {note && <div style={{ fontSize: 12, opacity: 0.85 }}>{note}</div>}
           </div>
@@ -992,6 +965,7 @@ function TtsSection() {
  * 401. 승인은 지속되며 "승인 취소"로 토큰을 폐기할 수 있다.
  */
 function ControlSection({ enabled }: { enabled: boolean }) {
+  const { t } = useTranslation("settings");
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
   const [status, setStatus] = useState<ControlStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1037,11 +1011,9 @@ function ControlSection({ enabled }: { enabled: boolean }) {
           onChange={(e) => updateAppSettings({ cliEnabled: e.target.checked })}
         />
         <span>
-          <strong>CLI 제어 (외부 조종)</strong>
+          <strong>{t("control.title")}</strong>
           <small>
-            <code>agent-office ctl …</code> 또는 스크립트가 이 앱을 조종하도록
-            로컬(127.0.0.1) 제어 서버를 엽니다. 켜도 아래에서 <b>명시적으로
-            승인</b>해야 명령이 실행됩니다(2단계). 보안 표면이므로 기본 꺼짐.
+            <Trans t={t} i18nKey="control.help" components={{ b: <b />, code: <code /> }} />
           </small>
         </span>
       </label>
@@ -1049,36 +1021,36 @@ function ControlSection({ enabled }: { enabled: boolean }) {
       {enabled && (
         <div className="settings-item" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
           <div style={{ fontSize: 12, opacity: 0.85 }}>
-            상태:{" "}
+            {t("control.statusLabel")}{" "}
             {status
-              ? `서버 ${status.running ? `실행 중(포트 ${status.port ?? "?"})` : "정지"} · ${
-                  status.approved ? "승인됨" : "미승인"
-                }`
-              : "조회 중…"}
+              ? t("control.statusLine", {
+                  server: status.running
+                    ? t("control.serverRunning", { port: status.port ?? "?" })
+                    : t("control.serverStopped"),
+                  approval: status.approved ? t("control.approved") : t("control.unapproved"),
+                })
+              : t("control.loading")}
           </div>
 
           {status && !status.approved && (
             <button className="pixel-btn" disabled={busy} onClick={approve}>
-              CLI 제어 승인 (토큰 발급)
+              {t("control.approve")}
             </button>
           )}
           {status && status.approved && (
             <>
               <button className="pixel-btn" disabled={busy} onClick={revoke}>
-                승인 취소 (토큰 폐기)
+                {t("control.revoke")}
               </button>
               <div style={{ fontSize: 12, opacity: 0.85 }}>
-                <div style={{ marginBottom: 4 }}>
-                  세션 터미널 안에서는 바로 사용할 수 있습니다:
-                </div>
+                <div style={{ marginBottom: 4 }}>{t("control.usageIntro")}</div>
                 <code style={{ display: "block", whiteSpace: "pre-wrap" }}>
                   agent-office ctl status{"\n"}
                   agent-office ctl list{"\n"}
                   agent-office ctl send &lt;agentId&gt; "npm test" --enter
                 </code>
                 <div style={{ marginTop: 6, opacity: 0.7 }}>
-                  외부 스크립트는 app_data 자동발견을 씁니다:{" "}
-                  <code>{status.appDataDir}</code>
+                  {t("control.appDataNote")} <code>{status.appDataDir}</code>
                 </div>
               </div>
             </>

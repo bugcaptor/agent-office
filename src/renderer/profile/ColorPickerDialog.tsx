@@ -12,6 +12,7 @@
 // "기본값으로"는 오버라이드를 지우는 것이지 기본색을 오버라이드로 박는 것이
 // 아니다 — 나중에 시드나 아키타입을 바꾸면 색이 따라 움직여야 하기 때문이다.
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useEscapeToClose } from "../shared/useEscapeToClose";
 import {
   PRESET_SWATCHES,
@@ -53,6 +54,7 @@ export function ColorPickerDialog({
   onReset,
   onClose,
 }: ColorPickerDialogProps) {
+  const { t } = useTranslation("profile");
   // HSV를 상태로 들고 hex는 그때그때 파생한다 — 채도 0/명도 0에서도 색상이
   // 살아 있어야 슬라이더가 제자리를 지킨다(hex만 들고 있으면 정보가 사라진다).
   const [hsv, setHsv] = useState<Hsv>(() => hexToHsv(value));
@@ -116,13 +118,13 @@ export function ColorPickerDialog({
       }}
     >
       <div className="pixel-panel color-picker" onMouseDown={(e) => e.stopPropagation()}>
-        <h2 className="pixel-title">{label} 색 고르기</h2>
+        <h2 className="pixel-title">{t("color.title", { label })}</h2>
 
         <div
           ref={svRef}
           className="cp-sv"
           role="application"
-          aria-label={`${label} 채도·명도`}
+          aria-label={t("color.svAriaLabel", { label })}
           style={{
             width: SV_W,
             height: SV_H,
@@ -142,7 +144,7 @@ export function ColorPickerDialog({
           ref={hueRef}
           className="cp-hue"
           role="application"
-          aria-label={`${label} 색상`}
+          aria-label={t("color.hueAriaLabel", { label })}
           style={{ width: SV_W }}
           {...dragHandlers(pickFromHue)}
         >
@@ -168,7 +170,7 @@ export function ColorPickerDialog({
           </label>
         </div>
 
-        <div className="cp-presets" aria-label="프리셋 색">
+        <div className="cp-presets" aria-label={t("color.presets")}>
           {PRESET_SWATCHES.map((row, ri) => (
             <div className="cp-preset-row" key={ri}>
               {row.map((c) => (
@@ -190,17 +192,17 @@ export function ColorPickerDialog({
           <button
             className="pixel-btn"
             disabled={!overridden}
-            title={`시드가 정한 기본색 ${defaultValue}으로 되돌립니다`}
+            title={t("color.resetTitle", { hex: defaultValue })}
             onClick={() => {
               onReset();
               onClose();
             }}
           >
-            기본값으로
+            {t("color.reset")}
           </button>
           <span className="cp-spacer" />
           <button className="pixel-btn" onClick={onClose}>
-            취소
+            {t("color.cancel")}
           </button>
           <button
             className="pixel-btn"
@@ -209,7 +211,7 @@ export function ColorPickerDialog({
               onClose();
             }}
           >
-            적용
+            {t("color.apply")}
           </button>
         </div>
       </div>

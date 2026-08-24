@@ -9,6 +9,7 @@
 // 알아서 하므로 여기에 설치 버튼이 없다).
 
 import { useCallback, useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
@@ -24,6 +25,7 @@ const IDLE_QUIET_MAX = 60000;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export function TalkSection() {
+  const { t } = useTranslation("settings");
   const appSettings = useAppStore((s) => s.appSettings);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
   const enabled = appSettings.talkEnabled;
@@ -52,24 +54,17 @@ export function TalkSection() {
           onChange={(e) => updateAppSettings({ talkEnabled: e.target.checked })}
         />
         <span>
-          <strong>동료 대화 (캐릭터끼리 말 걸기)</strong>
+          <strong>{t("talk.title")}</strong>
           <small>
-            켜면 캐릭터가 <b>다른 캐릭터 세션에 메시지를 보낼</b> 수 있습니다.
-            사용자가 세션에서 <code>/agent-office:talk</code> 스킬을 <b>명시적으로
-            발동했을 때만</b> 대화가 시작되고, 이 스위치를 끄면 <b>대기 중인
-            메시지까지 즉시 버려집니다</b>. 남의 세션에 글자를 밀어 넣는
-            기능이므로 기본 꺼짐.
+            <Trans t={t} i18nKey="talk.help" components={{ b: <b />, code: <code /> }} />
           </small>
         </span>
       </label>
 
       <label className="settings-item">
         <span>
-          <strong>대화 왕복 상한</strong>
-          <small>
-            한 대화에서 오갈 수 있는 메시지 수. 여기에 닿으면 대화를 끝냅니다(둘이
-            무한히 주고받는 것을 막는 안전장치).
-          </small>
+          <strong>{t("talk.maxTurnsTitle")}</strong>
+          <small>{t("talk.maxTurnsHelp")}</small>
         </span>
         <input
           type="number"
@@ -91,11 +86,8 @@ export function TalkSection() {
 
       <label className="settings-item">
         <span>
-          <strong>주입 유휴 대기 (ms)</strong>
-          <small>
-            받는 캐릭터가 이만큼 조용해야 메시지를 터미널에 넣습니다. 일하는
-            중이면 한가해질 때까지 미뤄 두므로, 말을 건 즉시 닿지는 않습니다.
-          </small>
+          <strong>{t("talk.idleQuietTitle")}</strong>
+          <small>{t("talk.idleQuietHelp")}</small>
         </span>
         <input
           type="number"
@@ -118,16 +110,21 @@ export function TalkSection() {
 
       {enabled && !ready && (
         <p className="settings-note" role="alert">
-          ⚠ 동료 대화는 <b>CLI 제어</b>를 거쳐 동작합니다. 위 “CLI 제어”를 켜고{" "}
-          <b>승인</b>까지 해 두세요 — 지금은{" "}
-          {!appSettings.cliEnabled ? "꺼져 있어" : "승인되지 않아"} 캐릭터가 서로
-          말을 걸어도 전부 실패합니다.
+          <Trans
+            t={t}
+            i18nKey="talk.controlWarn"
+            values={{
+              reason: appSettings.cliEnabled
+                ? t("talk.reasonUnapproved")
+                : t("talk.reasonDisabled"),
+            }}
+            components={{ b: <b /> }}
+          />
         </p>
       )}
 
       <p className="settings-note">
-        대화는 세션 안에서 <code>/agent-office:talk</code> 으로 발동합니다 — 스킬은
-        앱이 자동으로 설치하므로 따로 설치할 것이 없습니다.
+        <Trans t={t} i18nKey="talk.skillNote" components={{ code: <code /> }} />
       </p>
     </div>
   );

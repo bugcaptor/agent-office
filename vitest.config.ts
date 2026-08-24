@@ -29,6 +29,9 @@ export default defineConfig({
     // Renderer component tests opt into jsdom per-file via a leading
     // `// @vitest-environment jsdom` docblock comment.
     environment: "node",
+    // 테스트 UI 언어를 정본(ko)으로 고정한다 — jsdom의 navigator.language가
+    // en-US라 그냥 두면 컴포넌트가 영어로 렌더된다. 자세한 이유는 그 파일 참고.
+    setupFiles: ["./src/test-setup.ts"],
     // Scaffold has no tests yet — treat that as a pass instead of a failure.
     passWithNoTests: true,
     exclude: [...configDefaults.exclude, ".claude/**", ".superpowers/**"],

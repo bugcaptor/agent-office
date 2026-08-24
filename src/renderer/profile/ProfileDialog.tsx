@@ -8,6 +8,7 @@
 // start) -> close. Editing updates the existing profile in place and never
 // starts a new session.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { nanoid } from "nanoid";
 import { useAppStore } from "../store/appStore";
 import {
@@ -65,6 +66,7 @@ import type { AvailableShell, TtsVoiceOption } from "@shared/types";
 import "../portrait/portrait.css";
 
 export function ProfileDialog() {
+  const { t } = useTranslation("profile");
   const modal = useAppStore((s) => s.modal);
   const closeModal = useAppStore((s) => s.closeModal);
   const addAgent = useAppStore((s) => s.addAgent);
@@ -206,7 +208,7 @@ export function ProfileDialog() {
   const picking = pickingSlot
     ? {
         slot: pickingSlot,
-        label: keyColors.find((c) => c.slot === pickingSlot)?.ko ?? "색",
+        label: keyColors.find((c) => c.slot === pickingSlot)?.ko ?? t("keyColor.fallbackLabel"),
         value: hexColor(
           keyColors.find((c) => c.slot === pickingSlot)?.rgb ?? basePalette[pickingSlot].base,
         ),
@@ -225,7 +227,7 @@ export function ProfileDialog() {
       const picked = await tauriApi.pickDirectory(draft.cwd?.trim() || undefined);
       if (picked) setDraft((d) => ({ ...d, cwd: picked }));
     } catch (err) {
-      console.warn("폴더 선택 다이얼로그 실패", err);
+      console.warn("ProfileDialog: pickDirectory failed", err);
     }
   };
 
@@ -352,7 +354,7 @@ export function ProfileDialog() {
         setGeneratedImage(url);
         setSpriteEditorOpen(true);
       }
-      setCodexNote("생성 완료 — 편집기에서 확인하고 저장하세요.");
+      setCodexNote(t("codex.generated"));
     } catch (err) {
       if (!stillCurrent()) return;
       setCodexNote(codexGenErrorCaption(err));
@@ -406,10 +408,10 @@ export function ProfileDialog() {
         minimiB64 ?? undefined,
       );
       const saved = await tauriApi.exportCharacterFile(buildExportFileName(profile.name), json);
-      setIoNote(saved ? "내보냈습니다." : null); // null=사용자가 취소
+      setIoNote(saved ? t("io.exported") : null); // null=사용자가 취소
     } catch (err) {
       console.warn("ProfileDialog: exportCharacter failed", err);
-      setIoNote("내보내기에 실패했습니다.");
+      setIoNote(t("io.exportFailed"));
     } finally {
       setIoBusy(false);
     }
@@ -472,10 +474,10 @@ export function ProfileDialog() {
       }
 
       setDraft((d) => applyBundleToDraft(d, b.profile));
-      setIoNote("가져왔습니다. ‘저장’을 눌러 반영하세요.");
+      setIoNote(t("io.imported"));
     } catch (err) {
       console.warn("ProfileDialog: importCharacter failed", err);
-      setIoNote("가져오기에 실패했습니다.");
+      setIoNote(t("io.importFailed"));
     } finally {
       setIoBusy(false);
     }
@@ -556,21 +558,21 @@ export function ProfileDialog() {
       <div className="pixel-panel profile-dialog">
         {/* ── 헤더 ─────────────────────────────────────────────── */}
         <header className="profile-dialog-header">
-          <h2 className="pixel-title">{editing ? "에이전트 편집" : "새 에이전트"}</h2>
+          <h2 className="pixel-title">
+            {editing ? t("dialog.titleEdit") : t("dialog.titleCreate")}
+          </h2>
           <p className="profile-dialog-sub">
-            {editing
-              ? "프로필을 수정합니다. 저장하면 바로 반영됩니다."
-              : "새 에이전트의 프로필을 만듭니다. 저장하면 터미널 세션이 시작됩니다."}
+            {editing ? t("dialog.subEdit") : t("dialog.subCreate")}
           </p>
         </header>
 
         {/* ── 정체성: 이름 · 역할 · 성격 프롬프트 · 아키타입 ────── */}
         <section className="form-section">
-          <h3 className="form-section-title">정체성</h3>
+          <h3 className="form-section-title">{t("identity.section")}</h3>
           <div className="form-row-2">
             <div className="form-field">
               <label>
-                <span className="form-label-text">이름</span>
+                <span className="form-label-text">{t("identity.name")}</span>
                 <input
                   value={draft.name}
                   onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -579,7 +581,7 @@ export function ProfileDialog() {
             </div>
             <div className="form-field">
               <label>
-                <span className="form-label-text">역할</span>
+                <span className="form-label-text">{t("identity.role")}</span>
                 <input
                   value={draft.role}
                   onChange={(e) => setDraft({ ...draft, role: e.target.value })}
@@ -589,7 +591,7 @@ export function ProfileDialog() {
           </div>
           {editing && editingAgent && awardCountFor(editingAgent.id) > 0 && (
             <p className="profile-award-badge">
-              🏆 통산 {awardCountFor(editingAgent.id)}회 수상
+              {t("identity.awardBadge", { n: awardCountFor(editingAgent.id) })}
             </p>
           )}
           {/* 예전의 '메모'와 '성격 프롬프트'를 하나로 통합했다 — 둘의 차이가
@@ -597,41 +599,33 @@ export function ProfileDialog() {
               기존 메모는 편집기를 열 때 이 칸에 합쳐진다. */}
           <div className="form-field">
             <label>
-              <span className="form-label-text">성격 프롬프트</span>
+              <span className="form-label-text">{t("identity.personality")}</span>
               <textarea
                 value={draft.personalityPrompt ?? ""}
                 onChange={(e) => setDraft({ ...draft, personalityPrompt: e.target.value })}
                 rows={4}
               />
             </label>
-            <p className="form-hint">
-              캐릭터가 어떤 존재인지 적습니다. Claude Code의 시스템 프롬프트에
-              덧붙고, 초상 프롬프트·대사 말투에도 함께 반영됩니다. 여러 줄을 그대로
-              쓸 수 있습니다.
-            </p>
+            <p className="form-hint">{t("identity.personalityHint")}</p>
           </div>
           <div className="form-field">
             <label>
-              <span className="form-label-text">아키타입</span>
+              <span className="form-label-text">{t("identity.archetype")}</span>
               <ArchetypePicker
                 value={draft.archetype ?? "auto"}
                 onChange={(v) => setDraft({ ...draft, archetype: v })}
               />
             </label>
-            <p className="form-hint">
-              스프라이트의 체형·의상 계열을 정합니다. “자동(시드)”이면 시드에 따라
-              선택됩니다. 목록에 없는 종족(예: 드래곤)을 적어 넣으면 초상·픽셀아트
-              프롬프트에 그대로 반영되고, 도트 캐릭터는 인간 체형으로 그려집니다.
-            </p>
+            <p className="form-hint">{t("identity.archetypeHint")}</p>
           </div>
         </section>
 
         {/* ── 외형: 프리뷰 카드 + 키 컬러 + 초상화/스프라이트/미니미 추가 프롬프트 ── */}
         <section className="form-section">
-          <h3 className="form-section-title">외형</h3>
+          <h3 className="form-section-title">{t("appearance.section")}</h3>
           <div className="profile-previews">
             <div className="portrait-section">
-              <span className="preview-card-title">초상화</span>
+              <span className="preview-card-title">{t("portrait.label")}</span>
               <div className="portrait-current">
                 <img
                   // 호버 카드와 동일한 폴백 체인(초상 > 커스텀 스프라이트 프리뷰 >
@@ -652,13 +646,13 @@ export function ProfileDialog() {
               <div className="portrait-buttons">
                 {editing && editingAgent && portraitUrl && (
                   <button className="pixel-btn" onClick={onRemovePortrait}>
-                    초상 제거
+                    {t("portrait.remove")}
                   </button>
                 )}
               </div>
             </div>
             <div className="sprite-preview">
-              <span className="preview-card-title">스프라이트</span>
+              <span className="preview-card-title">{t("sprite.label")}</span>
               <img
                 src={spritePreviewUrl ?? spriteUrl}
                 alt="sprite"
@@ -667,21 +661,21 @@ export function ProfileDialog() {
               />
               <div className="sprite-buttons">
                 <button className="pixel-btn" onClick={regenSeed}>
-                  스프라이트 재생성
+                  {t("sprite.regen")}
                 </button>
                 {spritePreviewUrl && (
-                  <span className="sprite-custom-badge">커스텀 사용 중 — 재생성은 외형에 영향 없음</span>
+                  <span className="sprite-custom-badge">{t("sprite.customBadge")}</span>
                 )}
                 {editing && editingAgent && spritePreviewUrl && (
                   <button className="pixel-btn" onClick={onRemoveSprite}>
-                    커스텀 제거
+                    {t("sprite.removeCustom")}
                   </button>
                 )}
               </div>
               {/* 서브에이전트 미니미 — 머리 옆에 뜨는 작은 분신. 지정이 없으면
                   스프라이트를 그대로 축소해 쓴다. */}
               <div className="minimi-subsection">
-                <span className="preview-card-title">미니미</span>
+                <span className="preview-card-title">{t("minimi.label")}</span>
                 <img
                   src={minimiPreviewUrl ?? spritePreviewUrl ?? spriteUrl}
                   alt="minimi"
@@ -690,18 +684,16 @@ export function ProfileDialog() {
                   style={{ imageRendering: "pixelated" }}
                 />
                 <span className="sprite-custom-badge">
-                  {minimiPreviewUrl
-                    ? "커스텀 미니미 사용 중"
-                    : "지정 없음 — 스프라이트를 축소해 사용합니다"}
+                  {minimiPreviewUrl ? t("minimi.customBadge") : t("minimi.emptyBadge")}
                 </span>
                 {editing && editingAgent && (
                   <div className="sprite-buttons">
                     <button className="pixel-btn" onClick={() => setMinimiEditorOpen(true)}>
-                      {minimiPreviewUrl ? "미니미 변경" : "미니미 업로드"}
+                      {minimiPreviewUrl ? t("minimi.change") : t("minimi.upload")}
                     </button>
                     {minimiPreviewUrl && (
                       <button className="pixel-btn" onClick={onRemoveMinimi}>
-                        미니미 제거
+                        {t("minimi.remove")}
                       </button>
                     )}
                   </div>
@@ -714,7 +706,7 @@ export function ProfileDialog() {
               정하지만, 칩을 누르면 그 색만 따로 골라 덮어쓸 수 있다(kbm #2fj) —
               색 하나 때문에 시드를 통째로 다시 뽑지 않아도 된다. */}
           <div className="key-colors">
-            <span className="form-label-text">키 컬러</span>
+            <span className="form-label-text">{t("keyColor.label")}</span>
             <ul className="key-color-list">
               {keyColors.map((c) => {
                 const custom = Boolean(draft.colors?.[c.slot]);
@@ -723,7 +715,7 @@ export function ProfileDialog() {
                     <button
                       type="button"
                       className={custom ? "key-color key-color-custom" : "key-color"}
-                      title={`${c.en} approximately ${hexColor(c.rgb)} — 눌러서 색 고르기`}
+                      title={t("keyColor.chipTitle", { name: c.en, hex: hexColor(c.rgb) })}
                       onClick={() => setPickingSlot(c.slot)}
                     >
                       <span
@@ -734,7 +726,7 @@ export function ProfileDialog() {
                       <span>{c.ko}</span>
                       <code>{hexColor(c.rgb)}</code>
                       {custom && (
-                        <span className="key-color-mark" title="직접 고른 색">
+                        <span className="key-color-mark" title={t("keyColor.customMark")}>
                           ●
                         </span>
                       )}
@@ -743,36 +735,38 @@ export function ProfileDialog() {
                 );
               })}
             </ul>
-            <p className="form-hint">
-              초상화·스프라이트·미니미 프롬프트와 오피스뷰 캐릭터에 이 색 그대로
-              실립니다. 색 칩을 누르면 원하는 색을 직접 고를 수 있고, 손대지 않은
-              색은 시드·아키타입을 바꿀 때마다 함께 바뀝니다.
-            </p>
+            <p className="form-hint">{t("keyColor.hint")}</p>
           </div>
 
           {/* 만드는 방법은 한 번에 하나만 — 직접 만들기와 Codex 생성을 나란히
               늘어놓으면 무엇을 눌러야 할지 알 수 없다. SettingsDialog와 같은
               tablist 관례를 작은 크기로 재사용한다. */}
-          <div className="appearance-tabs" role="tablist" aria-label="외형 만들기 방법">
+          <div
+            className="appearance-tabs"
+            role="tablist"
+            aria-label={t("appearance.tablistLabel")}
+          >
+            {/* 라벨은 키로 들고 렌더 시점에 번역한다 — 상수 배열에서 t()를 미리
+                부르면 언어를 바꿔도 문구가 그대로 남는다. */}
             {([
-              { id: "manual", label: "직접 만들기" },
-              { id: "codex", label: "Codex로 생성" },
-            ] as const).map((t) => (
+              { id: "manual", labelKey: "appearance.tabManual" },
+              { id: "codex", labelKey: "appearance.tabCodex" },
+            ] as const).map((tab) => (
               <button
-                key={t.id}
+                key={tab.id}
                 type="button"
                 role="tab"
-                id={`appearance-tab-${t.id}`}
-                aria-selected={appearanceMode === t.id}
-                aria-controls={`appearance-tabpanel-${t.id}`}
+                id={`appearance-tab-${tab.id}`}
+                aria-selected={appearanceMode === tab.id}
+                aria-controls={`appearance-tabpanel-${tab.id}`}
                 className={
-                  appearanceMode === t.id
+                  appearanceMode === tab.id
                     ? "appearance-tab appearance-tab-active"
                     : "appearance-tab"
                 }
-                onClick={() => setAppearanceMode(t.id)}
+                onClick={() => setAppearanceMode(tab.id)}
               >
-                {t.label}
+                {t(tab.labelKey)}
               </button>
             ))}
           </div>
@@ -784,51 +778,48 @@ export function ProfileDialog() {
           >
             {appearanceMode === "manual" ? (
               <>
-                <p className="form-hint">
-                  프롬프트를 복사해 원하는 이미지 생성 도구에 넣고, 결과 이미지를
-                  올리면 크롭 편집기가 규격에 맞춰 줍니다.
-                </p>
+                <p className="form-hint">{t("appearance.manualHint")}</p>
                 <div className="appearance-manual-row">
-                  <span className="form-label-text">초상화</span>
+                  <span className="form-label-text">{t("portrait.label")}</span>
                   <div className="portrait-buttons">
                     <button className="pixel-btn" onClick={onCopyPrompt}>
-                      초상 프롬프트 복사
+                      {t("portrait.copyPrompt")}
                     </button>
                     {editing && editingAgent && (
                       <button className="pixel-btn" onClick={() => setEditorOpen(true)}>
-                        {portraitUrl ? "이미지 변경" : "이미지 업로드"}
+                        {portraitUrl ? t("portrait.change") : t("portrait.upload")}
                       </button>
                     )}
                   </div>
                 </div>
                 <div className="appearance-manual-row">
-                  <span className="form-label-text">스프라이트</span>
+                  <span className="form-label-text">{t("sprite.label")}</span>
                   <div className="sprite-buttons">
                     <button className="pixel-btn" onClick={onCopySpritePrompt}>
-                      스프라이트 프롬프트 복사
+                      {t("sprite.copyPrompt")}
                     </button>
                     {editing && editingAgent && (
                       <button className="pixel-btn" onClick={() => setSpriteEditorOpen(true)}>
-                        {spritePreviewUrl ? "스프라이트 변경" : "스프라이트 업로드"}
+                        {spritePreviewUrl ? t("sprite.change") : t("sprite.upload")}
                       </button>
                     )}
                   </div>
                 </div>
                 <div className="appearance-manual-row">
-                  <span className="form-label-text">미니미</span>
+                  <span className="form-label-text">{t("minimi.label")}</span>
                   <div className="sprite-buttons">
                     <button className="pixel-btn" onClick={onCopyMinimiPrompt}>
-                      미니미 프롬프트 복사
+                      {t("minimi.copyPrompt")}
                     </button>
                     {editing && editingAgent && (
                       <button className="pixel-btn" onClick={() => setMinimiEditorOpen(true)}>
-                        {minimiPreviewUrl ? "미니미 변경" : "미니미 업로드"}
+                        {minimiPreviewUrl ? t("minimi.change") : t("minimi.upload")}
                       </button>
                     )}
                   </div>
                 </div>
                 {!(editing && editingAgent) && (
-                  <p className="form-hint">저장한 뒤 편집에서 이미지를 올릴 수 있습니다.</p>
+                  <p className="form-hint">{t("appearance.saveFirstHint")}</p>
                 )}
               </>
             ) : (
@@ -844,75 +835,71 @@ export function ProfileDialog() {
               다른 그림의 폴백이 되지 않는다(칸 사이 관계를 없애 헷갈림 제거). */}
           <div className="form-field">
             <label>
-              <span className="form-label-text">초상화 추가 프롬프트</span>
+              <span className="form-label-text">{t("portrait.requestLabel")}</span>
               <input
                 value={draft.portraitRequest ?? ""}
                 onChange={(e) => setDraft({ ...draft, portraitRequest: e.target.value })}
-                placeholder="예: 짧은 검은 머리, 안경 (선택)"
+                placeholder={t("portrait.requestPlaceholder")}
               />
             </label>
-            <p className="form-hint">초상 프롬프트에만 덧붙습니다.</p>
+            <p className="form-hint">{t("portrait.requestHint")}</p>
           </div>
           <div className="form-field">
             <label>
-              <span className="form-label-text">스프라이트 추가 프롬프트</span>
+              <span className="form-label-text">{t("sprite.requestLabel")}</span>
               <input
                 value={draft.spriteRequest ?? ""}
                 onChange={(e) => setDraft({ ...draft, spriteRequest: e.target.value })}
-                placeholder="예: 빨간 망토를 두른 마법사 (선택)"
+                placeholder={t("sprite.requestPlaceholder")}
               />
             </label>
-            <p className="form-hint">스프라이트 프롬프트 복사와 Codex 생성에 그대로 반영됩니다.</p>
+            <p className="form-hint">{t("sprite.requestHint")}</p>
           </div>
           <div className="form-field">
             <label>
-              <span className="form-label-text">미니미 추가 프롬프트</span>
+              <span className="form-label-text">{t("minimi.requestLabel")}</span>
               <input
                 value={draft.minimiRequest ?? ""}
                 onChange={(e) => setDraft({ ...draft, minimiRequest: e.target.value })}
-                placeholder="예: 작은 불꽃 정령 (선택, 비면 본체에 어울리는 소환수로 자동 의뢰)"
+                placeholder={t("minimi.requestPlaceholder")}
               />
             </label>
-            <p className="form-hint">
-              미니미는 서브에이전트가 일할 때 머리 옆에 뜨는 소환수입니다. 비워
-              두면 본체의 외형·역할에 어울리는 소환수를 알아서 그려 달라는 문구가
-              프롬프트에 자동으로 들어갑니다.
-            </p>
+            <p className="form-hint">{t("minimi.requestHint")}</p>
           </div>
         </section>
 
         {/* ── 터미널: 시작 폴더 · 시작 명령어 · 셸 ─────────────── */}
         <section className="form-section">
-          <h3 className="form-section-title">터미널</h3>
+          <h3 className="form-section-title">{t("terminal.section")}</h3>
           <div className="form-field">
             <label>
-              <span className="form-label-text">시작 폴더</span>
+              <span className="form-label-text">{t("terminal.cwd")}</span>
               <div className="form-control-row">
                 <input
                   value={draft.cwd ?? ""}
                   onChange={(e) => setDraft({ ...draft, cwd: e.target.value })}
-                  placeholder="비워두면 홈 디렉터리 (직접 입력·붙여넣기 가능)"
+                  placeholder={t("terminal.cwdPlaceholder")}
                 />
                 <button type="button" className="pixel-btn" onClick={onBrowseCwd}>
-                  찾아보기…
+                  {t("terminal.browse")}
                 </button>
               </div>
             </label>
           </div>
           <div className="form-field">
             <label>
-              <span className="form-label-text">시작 명령어</span>
+              <span className="form-label-text">{t("terminal.startupCommand")}</span>
               <input
                 value={draft.startupCommand ?? ""}
                 onChange={(e) => setDraft({ ...draft, startupCommand: e.target.value })}
-                placeholder="예: source ./init.sh 또는 mysetup.bat (선택, 새 터미널마다 실행)"
+                placeholder={t("terminal.startupCommandPlaceholder")}
               />
             </label>
-            <p className="form-hint">새 터미널 세션이 열릴 때마다 자동으로 실행됩니다.</p>
+            <p className="form-hint">{t("terminal.startupCommandHint")}</p>
           </div>
           <div className="form-field">
             <label>
-              <span className="form-label-text">키보드 소리</span>
+              <span className="form-label-text">{t("terminal.keyboardSound")}</span>
               <select
                 value={draft.keyboardSound ?? ""}
                 onChange={(e) => {
@@ -920,13 +907,13 @@ export function ProfileDialog() {
                   previewKeyboardSound(e.target.value || undefined, editingAgentId);
                 }}
               >
-                <option value="">기본</option>
+                <option value="">{t("terminal.keyboardSoundDefault")}</option>
                 {KEYBOARD_SOUND_PACK_OPTIONS.map((p) => (
                   <option key={p.id} value={p.id}>{p.label}</option>
                 ))}
               </select>
             </label>
-            <p className="form-hint">이 에이전트가 타이핑할 때 나는 소리입니다. 고르면 미리 들려줍니다.</p>
+            <p className="form-hint">{t("terminal.keyboardSoundHint")}</p>
           </div>
           <VoiceField
             draft={draft}
@@ -940,69 +927,69 @@ export function ProfileDialog() {
                 checked={draft.talkReceive !== false}
                 onChange={(e) => setDraft({ ...draft, talkReceive: e.target.checked })}
               />
-              <span className="form-label-text">동료 메시지 받기</span>
+              <span className="form-label-text">{t("terminal.talkReceive")}</span>
             </label>
+            {/* 문장 한가운데 <b>가 끼어 있어 키를 쪼개면 어순이 다른 언어에서
+                말이 안 된다 — Trans로 태그째 번역한다. */}
             <p className="form-hint">
-              끄면 다른 캐릭터가 이 캐릭터에게 말을 걸 수 없습니다. (설정 →
-              제어의 <b>동료 대화</b>가 켜져 있을 때만 의미가 있습니다.)
+              <Trans t={t} i18nKey="terminal.talkReceiveHint" components={{ b: <b /> }} />
             </p>
           </div>
           <div className="form-field">
-            <span className="form-label-text">봇 모드 설정</span>
-            <p className="form-hint">
-              터미널 탭 우클릭 → “봇 모드 시작”으로 켜면, 이 캐릭터가 담당 저장소의 Gitea
-              이슈에 달린 슬래시 명령에 반응해 자동으로 작업합니다. 아래는 봇의 지속 설정입니다.
-            </p>
+            <span className="form-label-text">{t("bot.section")}</span>
+            <p className="form-hint">{t("bot.sectionHint")}</p>
           </div>
           <div className="form-field">
             <label>
-              <span className="form-label-text">봇 슬래시 별칭</span>
+              <span className="form-label-text">{t("bot.slug")}</span>
               <input
                 value={draft.botSlug ?? ""}
                 onChange={(e) => setDraft({ ...draft, botSlug: e.target.value })}
-                placeholder="예: nova (선택, 비우면 이름에서 자동 파생)"
+                placeholder={t("bot.slugPlaceholder")}
               />
             </label>
+            {/* <code>가 문장 중간이라 talkReceiveHint와 같은 이유로 Trans. */}
             <p className="form-hint">
-              이슈에서 <code>/별칭</code> 으로 이 캐릭터를 호출합니다. 비우면 이름에서 파생합니다(공백 제거·소문자).
+              <Trans t={t} i18nKey="bot.slugHint" components={{ code: <code /> }} />
             </p>
           </div>
           <div className="form-field">
             <label>
-              <span className="form-label-text">봇 화이트리스트</span>
+              <span className="form-label-text">{t("bot.whitelist")}</span>
               <input
                 value={draft.botWhitelist ?? ""}
                 onChange={(e) => setDraft({ ...draft, botWhitelist: e.target.value })}
-                placeholder="추가 허용 Gitea 계정, 콤마 구분 (선택)"
+                placeholder={t("bot.whitelistPlaceholder")}
               />
             </label>
-            <p className="form-hint">명령을 발동할 수 있는 계정. tea 로그인 계정 본인은 항상 포함됩니다.</p>
+            <p className="form-hint">{t("bot.whitelistHint")}</p>
           </div>
           <div className="form-field">
             <label>
-              <span className="form-label-text">봇 폴링 주기(초)</span>
+              <span className="form-label-text">{t("bot.poll")}</span>
               <input
                 type="number"
                 min={30}
                 value={draft.botPollIntervalSec ?? ""}
                 onChange={(e) => setDraft({ ...draft, botPollIntervalSec: e.target.value })}
-                placeholder="기본 60, 하한 30"
+                placeholder={t("bot.pollPlaceholder")}
               />
             </label>
           </div>
           {shells.length > 0 && (
             <div className="form-field">
               <label>
-                <span className="form-label-text">셸</span>
+                <span className="form-label-text">{t("terminal.shell")}</span>
                 <select
                   value={draft.shell ?? ""}
                   onChange={(e) => setDraft({ ...draft, shell: e.target.value })}
                 >
-                  <option value="">자동 (기본)</option>
+                  <option value="">{t("terminal.shellAuto")}</option>
                   {shells.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.label}
-                      {!s.hooksSupported ? " (시간 추적 미지원)" : ""}
+                      {s.hooksSupported
+                        ? s.label
+                        : t("terminal.shellNoHooks", { label: s.label })}
                     </option>
                   ))}
                 </select>
@@ -1015,7 +1002,7 @@ export function ProfileDialog() {
         <div className="dialog-actions">
           {!editing && (
             <button className="pixel-btn dialog-action-aux" onClick={regenAll}>
-              전체 랜덤
+              {t("dialog.randomizeAll")}
             </button>
           )}
           {editing && editingAgent && (
@@ -1025,23 +1012,23 @@ export function ProfileDialog() {
                 onClick={onExportCharacter}
                 disabled={ioBusy}
               >
-                내보내기
+                {t("io.export")}
               </button>
               <button
                 className="pixel-btn"
                 onClick={onImportCharacter}
                 disabled={ioBusy}
               >
-                가져오기
+                {t("io.import")}
               </button>
               {ioNote && <span className="profile-io-note">{ioNote}</span>}
             </div>
           )}
           <button className="pixel-btn primary" onClick={onSave}>
-            저장
+            {t("dialog.save")}
           </button>
           <button className="pixel-btn" onClick={closeModal}>
-            취소
+            {t("dialog.cancel")}
           </button>
         </div>
       </div>
@@ -1113,6 +1100,7 @@ function VoiceField({
   agentId?: string;
   onChange: (voiceId: string) => void;
 }) {
+  const { t } = useTranslation("profile");
   const ttsEnabled = useAppStore((s) => s.appSettings.ttsEnabled);
   const muted = useAppStore((s) => s.muted);
   const [voices, setVoices] = useState<TtsVoiceOption[]>([]);
@@ -1138,8 +1126,8 @@ function VoiceField({
         // 키가 없으면 목록도 못 받는다 — 설정으로 안내한다.
         setNote(
           String(err).startsWith("missing_elevenlabs_key")
-            ? "설정에서 ElevenLabs API 키를 저장하면 목소리를 고를 수 있습니다."
-            : `목소리 목록을 불러오지 못했습니다: ${String(err)}`
+            ? t("voice.keyMissing")
+            : t("voice.listFailed", { error: String(err) })
         );
       }
     })();
@@ -1166,9 +1154,9 @@ function VoiceField({
         seed: draft.seed,
         ...(selected ? { voiceId: selected } : {}),
       });
-      setNote(line ? `발화: ${line}` : "발화할 수 없었습니다.");
+      setNote(line ? t("voice.spoken", { line }) : t("voice.spokenNone"));
     } catch (err) {
-      setNote(`미리듣기 실패: ${String(err)}`);
+      setNote(t("voice.previewFailed", { error: String(err) }));
     } finally {
       setBusy(false);
     }
@@ -1177,15 +1165,17 @@ function VoiceField({
   return (
     <div className="form-field">
       <label>
-        <span className="form-label-text">목소리 (TTS)</span>
+        <span className="form-label-text">{t("voice.label")}</span>
         <div className="form-control-row">
           <select
             value={selected}
             disabled={disabled}
             onChange={(e) => onChange(e.target.value)}
           >
-            <option value="">자동 (종족에 맞춰 배정)</option>
-            {missing && <option value={selected}>{selected} (목록에 없음)</option>}
+            <option value="">{t("voice.auto")}</option>
+            {missing && (
+              <option value={selected}>{t("voice.missingOption", { id: selected })}</option>
+            )}
             {voices.map((v) => (
               <option key={v.voiceId} value={v.voiceId}>
                 {v.labels ? `${v.name} — ${v.labels}` : v.name}
@@ -1198,15 +1188,13 @@ function VoiceField({
             disabled={!ttsEnabled || busy}
             onClick={preview}
           >
-            미리듣기
+            {t("voice.preview")}
           </button>
         </div>
       </label>
       <p className="form-hint">
-        {!ttsEnabled
-          ? "설정에서 ‘알림 대사 읽어주기(TTS)’를 켜면 목소리를 고를 수 있습니다."
-          : "비워두면 캐릭터 종족과 시드에 맞춰 자동으로 정해집니다."}
-        {muted && " 무음 모드가 켜져 있어 실제 알림은 발화되지 않습니다(미리듣기는 들립니다)."}
+        {!ttsEnabled ? t("voice.hintDisabled") : t("voice.hintEnabled")}
+        {muted && t("voice.mutedNote")}
       </p>
       {note && <p className="form-hint">{note}</p>}
     </div>

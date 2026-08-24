@@ -9,6 +9,7 @@
 // 명령뿐이다(설정 변경·봇 조작은 열리지 않는다).
 
 import { useCallback, useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { webRemoteApi } from "../ipc/webRemoteApi";
 import type {
@@ -18,10 +19,13 @@ import type {
 } from "../ipc/webRemoteApi";
 import type { WebRemoteBindPolicy } from "@shared/types";
 
-const BIND_LABEL: Record<WebRemoteBindPolicy, string> = {
-  tailnet: "Tailscale 망만 (권장)",
-  all: "모든 네트워크 (평문 전송 주의)",
-  loopback: "이 컴퓨터만 (사실상 비활성)",
+/** 드롭다운 순서와 각 항목의 번역 키. 모듈 최상위라 `t()`를 부를 수 없어
+ *  값이 아니라 **키**를 담는다 — 언어를 바꾸면 렌더 시점에 다시 번역된다. */
+const BIND_ORDER: WebRemoteBindPolicy[] = ["tailnet", "all", "loopback"];
+const BIND_LABEL_KEY: Record<WebRemoteBindPolicy, string> = {
+  tailnet: "webRemote.bindTailnet",
+  all: "webRemote.bindAll",
+  loopback: "webRemote.bindLoopback",
 };
 
 /**
@@ -30,6 +34,7 @@ const BIND_LABEL: Record<WebRemoteBindPolicy, string> = {
  * 별도 토스트 인프라 없이 버튼 라벨만 바꾼다.
  */
 function CopyButton({ text, label }: { text: string; label: string }) {
+  const { t } = useTranslation("settings");
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -53,12 +58,13 @@ function CopyButton({ text, label }: { text: string; label: string }) {
         })();
       }}
     >
-      {copied ? "복사됨" : "복사"}
+      {copied ? t("webRemote.copied") : t("webRemote.copy")}
     </button>
   );
 }
 
 export function WebRemoteSection() {
+  const { t } = useTranslation("settings");
   const appSettings = useAppStore((s) => s.appSettings);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
   const setWebRemotePending = useAppStore((s) => s.setWebRemotePending);
@@ -135,13 +141,9 @@ export function WebRemoteSection() {
           onChange={(e) => updateAppSettings({ webRemoteEnabled: e.target.checked })}
         />
         <span>
-          <strong>웹 원격 (브라우저로 접속해서 작업)</strong>
+          <strong>{t("webRemote.title")}</strong>
           <small>
-            폰이나 다른 컴퓨터의 <b>브라우저</b>로 접속해 상태를 보고 터미널을
-            조작합니다. 세션은 <b>이 컴퓨터에서 계속 돌고</b> 출력/입력만
-            중계됩니다. 켜도 <b>페어링을 승인</b>해야 붙을 수 있고, 브라우저에는
-            <b>정해진 명령만</b> 열립니다(설정 변경·봇 조작은 열리지 않습니다).
-            네트워크 표면이므로 기본 꺼짐.
+            <Trans t={t} i18nKey="webRemote.help" components={{ b: <b /> }} />
           </small>
         </span>
       </label>
@@ -150,11 +152,8 @@ export function WebRemoteSection() {
         <>
           <label className="settings-item">
             <span>
-              <strong>허용 네트워크</strong>
-              <small>
-                Tailscale 망만 허용하면 tailnet(WireGuard)이 암호화를 맡습니다.
-                모든 네트워크를 허용하면 같은 LAN에 평문으로 흐릅니다.
-              </small>
+              <strong>{t("webRemote.bindTitle")}</strong>
+              <small>{t("webRemote.bindHelp")}</small>
             </span>
             <select
               value={appSettings.webRemoteBind}
@@ -162,9 +161,9 @@ export function WebRemoteSection() {
                 updateAppSettings({ webRemoteBind: e.target.value as WebRemoteBindPolicy })
               }
             >
-              {(Object.keys(BIND_LABEL) as WebRemoteBindPolicy[]).map((k) => (
+              {BIND_ORDER.map((k) => (
                 <option key={k} value={k}>
-                  {BIND_LABEL[k]}
+                  {t(BIND_LABEL_KEY[k])}
                 </option>
               ))}
             </select>
@@ -175,35 +174,39 @@ export function WebRemoteSection() {
             style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}
           >
             <div style={{ fontSize: 12, opacity: 0.85 }}>
-              상태: {host ? (host.running ? `수신 중 (이름: ${host.hostName})` : "정지") : "조회 중…"}
+              {t("webRemote.statusLabel")}{" "}
+              {host
+                ? host.running
+                  ? t("webRemote.listening", { name: host.hostName })
+                  : t("webRemote.stopped")
+                : t("webRemote.loading")}
             </div>
             {host && appSettings.webRemoteBind === "tailnet" && !host.tailnetFound && (
               <div style={{ fontSize: 12, color: "var(--accent-warn)" }}>
-                <b>Tailscale이 감지되지 않았습니다</b> — 이 컴퓨터에서만 접속할 수
-                있게 <code>127.0.0.1</code>에만 열었습니다. Tailscale을 켜고 앱을
-                다시 시작하거나, 허용 네트워크를 바꾸세요.
+                <Trans
+                  t={t}
+                  i18nKey="webRemote.tailnetMissing"
+                  components={{ b: <b />, code: <code /> }}
+                />
               </div>
             )}
-            <div style={{ fontSize: 12, opacity: 0.85 }}>브라우저에서 이 주소로 접속하세요</div>
+            <div style={{ fontSize: 12, opacity: 0.85 }}>{t("webRemote.urlIntro")}</div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               <code style={{ fontSize: 13, flex: 1 }}>
                 {httpUrl ?? (
                   <>
-                    http://&lt;이 컴퓨터 주소&gt;:{host?.port ?? appSettings.webRemotePort}/web/
+                    http://&lt;{t("webRemote.hostPlaceholder")}&gt;:
+                    {host?.port ?? appSettings.webRemotePort}/web/
                   </>
                 )}
               </code>
-              {httpUrl && <CopyButton text={httpUrl} label="접속 주소 복사" />}
+              {httpUrl && <CopyButton text={httpUrl} label={t("webRemote.copyUrlAria")} />}
             </div>
             <div style={{ fontSize: 12, opacity: 0.7 }}>
-              브라우저에서 <b>연결 요청</b>을 누르면 이 앱에 <b>6자리 코드와 승인
-              창</b>이 뜹니다. 그 코드를 브라우저에 입력하세요(설정 창을 닫아 두어도
-              뜹니다).
+              <Trans t={t} i18nKey="webRemote.pairHint" components={{ b: <b /> }} />
             </div>
             {!host?.running && (
-              <div style={{ fontSize: 12, opacity: 0.7 }}>
-                서버가 아직 뜨지 않았습니다 — 잠시 후 이 화면을 다시 열어 보세요.
-              </div>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>{t("webRemote.notRunning")}</div>
             )}
 
             {serveVisible && (
@@ -221,32 +224,28 @@ export function WebRemoteSection() {
                   <strong>HTTPS (tailscale serve)</strong>
                 </div>
                 {serve === null && (
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>조회 중…</div>
+                  <div style={{ fontSize: 12, opacity: 0.7 }}>{t("webRemote.loading")}</div>
                 )}
                 {serve && !serve.cliFound && (
                   <div style={{ fontSize: 12, opacity: 0.7 }}>
-                    Tailscale 명령줄 도구를 찾지 못했습니다 — HTTPS 없이 위 http
-                    주소로 접속하세요(tailnet 자체가 암호화합니다). Tailscale 앱의
-                    <b> Install CLI</b>를 실행하면 여기서 켤 수 있습니다.
+                    <Trans t={t} i18nKey="webRemote.serveNoCli" components={{ b: <b /> }} />
                   </div>
                 )}
                 {serve?.cliFound && serve.registered && (
                   <>
                     <div style={{ fontSize: 12, opacity: 0.85 }}>
-                      HTTPS로 열려 있습니다. 이 주소로 접속하세요
+                      {t("webRemote.serveOnIntro")}
                     </div>
                     <div
                       style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}
                     >
                       <code style={{ fontSize: 13, flex: 1 }}>{serve.httpsUrl}</code>
                       {serve.httpsUrl && (
-                        <CopyButton text={serve.httpsUrl} label="HTTPS 주소 복사" />
+                        <CopyButton text={serve.httpsUrl} label={t("webRemote.copyHttpsAria")} />
                       )}
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.7 }}>
-                      이 매핑은 <b>Tailscale이 기억</b>합니다 — 앱을 꺼도, 컴퓨터를
-                      다시 켜도 남아 있습니다(앱이 꺼져 있으면 접속만 실패합니다).
-                      첫 접속은 인증서 발급으로 몇 초 걸릴 수 있습니다.
+                      <Trans t={t} i18nKey="webRemote.serveOnNote" components={{ b: <b /> }} />
                     </div>
                     <div>
                       <button
@@ -254,7 +253,7 @@ export function WebRemoteSection() {
                         disabled={serveBusy}
                         onClick={() => runServe(() => webRemoteApi.serveDisable())}
                       >
-                        HTTPS 끄기
+                        {t("webRemote.serveOff")}
                       </button>
                     </div>
                   </>
@@ -262,16 +261,20 @@ export function WebRemoteSection() {
                 {serve?.cliFound && !serve.registered && (
                   <>
                     <div style={{ fontSize: 12, opacity: 0.7 }}>
-                      Tailscale에 HTTPS 프록시(포트 {serve.httpsPort})를 등록해
-                      <code> https://</code> 주소로 접속할 수 있습니다. 브라우저
-                      경고 없이 붙고, 쿠키도 <code>Secure</code>로 발급됩니다.
+                      <Trans
+                        t={t}
+                        i18nKey="webRemote.serveOffIntro"
+                        values={{ port: serve.httpsPort }}
+                        components={{ code: <code /> }}
+                      />
                     </div>
                     {serve.conflict && (
                       <>
                         <div style={{ fontSize: 12, color: "var(--accent-warn)" }}>
-                          포트 {serve.httpsPort}을 이미 다른 곳이 쓰고 있습니다
-                          ({serve.upstream}). 앱은 남의 설정을 덮어쓰지 않습니다 —
-                          그 매핑이 필요 없다면 아래 명령으로 직접 지우세요.
+                          {t("webRemote.serveConflict", {
+                            port: serve.httpsPort,
+                            upstream: serve.upstream,
+                          })}
                         </div>
                         {/* 설계의 "최후에는 복사 가능한 명령으로 폴백". 앱 자신이
                             예전에 등록해 둔 낡은 매핑(포트·tailnet IP가 바뀐 경우)도
@@ -285,7 +288,7 @@ export function WebRemoteSection() {
                           </code>
                           <CopyButton
                             text={`tailscale serve --https=${serve.httpsPort} off`}
-                            label="정리 명령 복사"
+                            label={t("webRemote.copyCleanupAria")}
                           />
                         </div>
                       </>
@@ -296,7 +299,7 @@ export function WebRemoteSection() {
                         disabled={serveBusy || serve.conflict || !host?.running}
                         onClick={() => runServe(() => webRemoteApi.serveEnable())}
                       >
-                        HTTPS 켜기
+                        {t("webRemote.serveOn")}
                       </button>
                     </div>
                   </>
@@ -309,7 +312,9 @@ export function WebRemoteSection() {
 
             {host && host.clients.length > 0 && (
               <>
-                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>승인된 브라우저</div>
+                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
+                  {t("webRemote.clients")}
+                </div>
                 {host.clients.map((p) => (
                   <div
                     key={p.clientId}
@@ -327,8 +332,8 @@ export function WebRemoteSection() {
                           .finally(() => setBusy(false));
                       }}
                     >
-                      <option value="input">입력 허용</option>
-                      <option value="readOnly">읽기 전용</option>
+                      <option value="input">{t("webRemote.permInput")}</option>
+                      <option value="readOnly">{t("webRemote.permReadOnly")}</option>
                     </select>
                     <button
                       className="pixel-btn"
@@ -341,7 +346,7 @@ export function WebRemoteSection() {
                           .finally(() => setBusy(false));
                       }}
                     >
-                      승인 취소
+                      {t("webRemote.revoke")}
                     </button>
                   </div>
                 ))}

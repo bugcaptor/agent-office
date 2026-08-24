@@ -12,6 +12,7 @@
 // 스스로 지운다(만료된 코드를 계속 띄우면 상대는 통과할 수 없는 숫자를 친다).
 
 import { useEffect } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { webRemoteApi } from "../ipc/webRemoteApi";
 import type { ClientPermission } from "../ipc/webRemoteApi";
@@ -20,6 +21,7 @@ import type { ClientPermission } from "../ipc/webRemoteApi";
 const PAIRING_TTL_MS = 120_000;
 
 export function PairingRequestDialog() {
+  const { t } = useTranslation("settings");
   const pending = useAppStore((s) => s.webRemotePending);
   const setWebRemotePending = useAppStore((s) => s.setWebRemotePending);
 
@@ -63,34 +65,37 @@ export function PairingRequestDialog() {
     <div className="modal-backdrop">
       {/* backdrop 클릭으로는 닫지 않는다 — 승인/거부는 명시적 선택이어야 한다. */}
       <div className="pixel-panel pairing-request-dialog">
-        <h2 className="pixel-title">연결 요청</h2>
+        <h2 className="pixel-title">{t("pairing.title")}</h2>
         <p>
-          <b>{current.clientName}</b> (웹 브라우저) 이(가) 이 사무실에 연결하려
-          합니다.
+          <Trans
+            t={t}
+            i18nKey="pairing.request"
+            values={{ name: current.clientName }}
+            components={{ b: <b /> }}
+          />
         </p>
-        <p>브라우저 화면에 이 코드를 입력하세요:</p>
+        <p>{t("pairing.enterCode")}</p>
         <div
           className="pairing-request-code"
           style={{ fontSize: 32, letterSpacing: 6, fontFamily: "monospace", textAlign: "center" }}
         >
           {current.code}
         </div>
-        <p style={{ color: "var(--accent-warn)" }}>
-          모르는 요청이면 거부하세요. 승인하면 내 캐릭터의 터미널을 보고 정해진
-          명령을 쓸 수 있게 됩니다.
-        </p>
+        <p style={{ color: "var(--accent-warn)" }}>{t("pairing.warn")}</p>
         {pending.length > 1 && (
-          <p style={{ fontSize: 12, opacity: 0.75 }}>대기 중인 요청 {pending.length - 1}건 더</p>
+          <p style={{ fontSize: 12, opacity: 0.75 }}>
+            {t("pairing.more", { n: pending.length - 1 })}
+          </p>
         )}
         <div className="dialog-actions">
           <button className="pixel-btn primary" onClick={() => approve("input")}>
-            승인 (입력 허용)
+            {t("pairing.approveInput")}
           </button>
           <button className="pixel-btn" onClick={() => approve("readOnly")}>
-            승인 (읽기 전용)
+            {t("pairing.approveReadOnly")}
           </button>
           <button className="pixel-btn" onClick={reject}>
-            거부
+            {t("pairing.reject")}
           </button>
         </div>
       </div>

@@ -11,6 +11,7 @@
 // 겉모습·키보드 조작은 설정창 모델 콤보박스(ModelPicker)와 같은 관례를 쓴다
 // — 스타일 클래스(.combo-picker*)도 공유한다.
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ARCHETYPE_SELECT_OPTIONS,
   archetypeInputText,
@@ -35,15 +36,19 @@ export function filterArchetypeOptions(
 export function ArchetypePicker({
   value,
   onChange,
-  ariaLabel = "아키타입",
+  ariaLabel,
 }: {
   /** 저장값: "" (빈 칸=아직 안 정함) | "auto" | 알려진 id | 자유 텍스트.
    *  빈 칸을 "auto"로 접지 않는다 — 지우자마자 "자동(시드)"로 되채워지면
    *  새 종족을 적을 수가 없다. 빈 칸의 의미(=자동)는 저장 시점에 정해진다. */
   value: string;
   onChange: (value: string) => void;
+  /** 미지정이면 기본 라벨("아키타입")을 번역해 쓴다. 기본값을 매개변수
+   *  자리에 둘 수 없는 이유: 번역은 렌더 시점에 골라야 한다. */
   ariaLabel?: string;
 }) {
+  const { t } = useTranslation("profile");
+  const label = ariaLabel ?? t("archetype.ariaLabel");
   const baseId = useId();
   const listId = `${baseId}-list`;
   const [open, setOpen] = useState(false);
@@ -118,7 +123,7 @@ export function ArchetypePicker({
           ref={inputRef}
           type="text"
           role="combobox"
-          aria-label={ariaLabel}
+          aria-label={label}
           aria-expanded={open}
           aria-controls={listId}
           aria-autocomplete="list"
@@ -127,7 +132,7 @@ export function ArchetypePicker({
           }
           autoComplete="off"
           spellCheck={false}
-          placeholder="자동(시드) — 목록에 없는 종족도 적을 수 있습니다"
+          placeholder={t("archetype.placeholder")}
           value={text}
           onFocus={() => setOpen(true)}
           onChange={(e) => {
@@ -139,7 +144,7 @@ export function ArchetypePicker({
         <button
           type="button"
           className="pixel-btn combo-picker-toggle"
-          aria-label={`${ariaLabel} 목록`}
+          aria-label={t("archetype.listAriaLabel", { label })}
           aria-expanded={open}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
@@ -155,10 +160,7 @@ export function ArchetypePicker({
       </div>
 
       {custom && (
-        <div className="combo-picker-status">
-          목록에 없는 종족 — 그림 의뢰에 그대로 쓰이고, 도트 캐릭터는 인간 체형을
-          씁니다.
-        </div>
+        <div className="combo-picker-status">{t("archetype.customNote")}</div>
       )}
 
       {open && (
@@ -167,7 +169,7 @@ export function ArchetypePicker({
           ref={popRef}
           id={listId}
           role="listbox"
-          aria-label={ariaLabel}
+          aria-label={label}
         >
           {visible.map((o, i) => (
             <button
