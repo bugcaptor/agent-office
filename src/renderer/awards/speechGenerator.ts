@@ -8,9 +8,22 @@
 // 타임아웃(120초)이 필요하고, 새 variant를 만들면 백엔드까지 건드려야 한다.
 //
 // 근거 자료로 그 달의 일기를 넣는다. 통계 숫자만으로는 "무엇을 해서" 우수사원이
-// 됐는지가 안 나오기 때문이다. 다만 한 달치 일기 전부는 프롬프트로 감당이 안 돼
-// 균등 간격 샘플링 + 편당 절단 + 총 예산으로 줄인다(최신 몇 편만 쓰면 월초의
-// 일이 통째로 빠져 "한 달을 돌아보는" 소감이 되지 않는다).
+// 됐는지가 안 나오기 때문이다.
+//
+// ## 분량은 여기서 기계적으로 정한다
+//
+// 백엔드 요약기는 "diary" 목적 입력을 `TEXT_MAX_CHARS`(2,000자)에서 자른다
+// (`src-tauri/src/summarizer/mod.rs`의 `cap_text`). 그 절단은 head 60% +
+// `…(중략)…` + tail 40%라 **월 중간이 통째로 날아간다** — 월 전체를 균등
+// 간격으로 훑어 놓고 정작 가운데를 백엔드가 버리면 "한 달을 돌아보는" 소감이
+// 되지 않는다. 그래서 프롬프트 총량을 `PROMPT_BUDGET_CHARS`(백엔드 상한보다
+// 작게)로 잡고, 성격·수상 정보를 먼저 확보한 뒤 **남는 예산 전부**를 일기
+// 발췌에 준다. 백엔드 `cap_text`는 이제 안전망일 뿐 실제로는 걸리지 않는다.
+//
+// 출력도 같은 이유로 프런트에서 잠근다(`clampSpeech`). OpenRouter만 max_tokens를
+// 걸 수 있고 CLI provider(claude/codex/…)는 상한이 없어 프롬프트의 "2~4문장"
+// 지시가 유일한 제어인데, 그 지시는 지켜지지 않을 때가 있다. UI 카드도 씬
+// 말풍선도 짧은 소감을 전제로 하므로 문장 단위로 잘라 길이를 보장한다.
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { sanitizeDiaryBody } from "../diary/diaryGenerator";
@@ -25,26 +38,54 @@ import type {
 } from "@shared/types";
 
 export const AWARD_SPEECH_SYSTEM_PROMPT =
-  "너는 사내 시상식에서 '이 달의 우수사원'으로 호명된 캐릭터 본인이다. 아래 [성격]을 문체로 삼아, [수상 정보]와 [지난달 일기]를 근거로 1인칭 한국어 수상 소감을 써라. 분량은 2~4문장. [수상 정보]의 수치 하나쯤은 자연스럽게 녹여도 좋지만 통계를 나열하지 마라. [성격]이 비어 있으면 담백한 중립 문체로 써라. 규칙: 한국어만, 사과·메타발언·머리말·따옴표·마크다운 금지, 소감 본문만 출력.";
+  "너는 사내 시상식에서 '이 달의 우수사원'으로 호명된 캐릭터 본인이다. 아래 [성격]을 문체로 삼아, [수상 정보]와 [지난달 일기]를 근거로 1인칭 한국어 수상 소감을 써라. 분량은 2~4문장, 200자 이내. [수상 정보]의 수치 하나쯤은 자연스럽게 녹여도 좋지만 통계를 나열하지 마라. [성격]이 비어 있으면 담백한 중립 문체로 써라. 규칙: 한국어만, 사과·메타발언·머리말·따옴표·마크다운 금지, 소감 본문만 출력.";
+
+/**
+ * 프롬프트(성격 + 수상 정보 + 일기 발췌) 총 글자 예산.
+ *
+ * 백엔드 `TEXT_MAX_CHARS`(2,000)보다 작게 잡아 `cap_text`의 중략이 절대
+ * 안 걸리게 한다 — 블록 머리말·개행 몫과 계산 오차를 흡수하는 여유다.
+ */
+export const PROMPT_BUDGET_CHARS = 1_900;
+
+/** 성격 프롬프트 절단 한도. 성격이 길어도 일기 발췌 예산을 다 먹지 못하게 한다. */
+export const PERSONALITY_MAX_CHARS = 300;
+
+/** 소감 출력 상한(글자). 프롬프트의 "200자 이내"보다 약간 넉넉하게 — 상한은
+ * 지시가 어긋났을 때만 발동하는 안전망이다. */
+export const SPEECH_MAX_CHARS = 240;
+
+/** 소감 출력 상한(문장). 프롬프트의 "2~4문장"과 같은 값. */
+export const SPEECH_MAX_SENTENCES = 4;
+
+/** 발췌 한 줄의 고정 접두 `- YYYY-MM-DD: ` 길이. */
+const LINE_PREFIX_CHARS = 14;
+
+/** 발췌 한 편의 최소 본문 길이. 이보다 잘게 쪼갤 바에는 편수를 줄인다 —
+ * 30편을 한 줄씩 늘어놓는 것보다 10편을 문장째로 읽히게 두는 쪽이 낫다. */
+const MIN_BODY_CHARS = 60;
 
 /** 일기 발췌 분량 한도. */
 export interface ExcerptLimits {
-  /** 샘플링 없이 전부 담는 최대 편수. 넘으면 이 수만큼 균등 간격으로 뽑는다. */
+  /** 담을 최대 편수. 예산이 모자라면 이보다 줄어든다. */
   maxEntries: number;
-  /** 한 편당 담는 최대 글자 수. 넘으면 자르고 `…`를 붙인다. */
+  /** 한 편당 담는 최대 글자 수(예산이 넉넉해도 이 이상은 안 담는다). */
   perEntryChars: number;
-  /** 발췌 전체 글자 예산. 넘기 직전에 멈춘다. */
+  /** 발췌 전체 글자 예산. 렌더 결과가 이 안에 들어가는 편수를 고른다. */
   totalChars: number;
 }
 
 export const DEFAULT_EXCERPT_LIMITS: ExcerptLimits = {
-  maxEntries: 20,
-  perEntryChars: 300,
-  totalChars: 8_000,
+  maxEntries: 10,
+  perEntryChars: 200,
+  totalChars: 1_500,
 };
 
 /** 일기가 한 편도 없을 때 프롬프트에 넣는 자리 표시. */
 const NO_DIARY = "(일기 없음)";
+
+/** 문장 끝으로 볼 문자. */
+const SENTENCE_END = /[.!?…。]/;
 
 /** 생성 결과 사유 — diaryGenerator의 사유 어휘를 그대로 쓴다(+시상 전용 둘). */
 export type SpeechFailReason =
@@ -73,6 +114,7 @@ export interface SpeechDeps {
   /** 일기의 월 귀속 판정에 쓸 캘린더. 부재 시 시스템 로컬. */
   cal?: DayCalendar;
   now?: () => number;
+  /** 발췌 한도 강제(테스트). 부재 시 남는 프롬프트 예산에서 역산한다. */
   limits?: ExcerptLimits;
 }
 
@@ -90,19 +132,78 @@ function evenIndices(n: number, count: number): number[] {
   return out;
 }
 
-/** 편당 절단. 자른 경우에만 `…`를 붙인다. */
-function truncate(body: string, max: number): string {
+/** 코드포인트 길이(이모지·한글 안전). */
+function len(s: string): number {
+  return Array.from(s).length;
+}
+
+/**
+ * `max`자 안에서 자르되 되도록 문장 경계에서 끊는다. 문장 중간에서 뚝 끊긴
+ * 조각은 LLM이 그대로 인용해 어색한 소감을 만들기 쉽다. 경계가 너무 앞이면
+ * (담을 내용의 절반도 못 채우면) 그냥 하드 컷 + `…`. 결과는 `…`를 포함해
+ * 항상 `max`자 이하다(백엔드 `cap_text`와 같은 약속).
+ */
+export function cutAtSentence(body: string, max: number): string {
   const chars = Array.from(body);
   if (chars.length <= max) return body;
-  return `${chars.slice(0, max).join("")}…`;
+  const head = chars.slice(0, max);
+  for (let i = head.length - 1; i >= Math.floor(max * 0.5); i--) {
+    if (SENTENCE_END.test(head[i])) return head.slice(0, i + 1).join("").trimEnd();
+  }
+  return `${chars.slice(0, Math.max(0, max - 1)).join("").trimEnd()}…`;
+}
+
+/** 문장 단위 분해. 연속 부호(`…`, `!!`)는 한 문장으로 묶고 개행도 경계로 본다. */
+export function splitSentences(text: string): string[] {
+  const chars = Array.from(text);
+  const out: string[] = [];
+  let start = 0;
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i];
+    const isBreak =
+      c === "\n" || (SENTENCE_END.test(c) && !SENTENCE_END.test(chars[i + 1] ?? ""));
+    if (!isBreak) continue;
+    const s = chars.slice(start, i + 1).join("").trim();
+    if (s) out.push(s);
+    start = i + 1;
+  }
+  const rest = chars.slice(start).join("").trim();
+  if (rest) out.push(rest);
+  return out;
+}
+
+/**
+ * 소감 출력을 문장 단위로 잘라 길이를 보장한다. 문장을 통째로 버리므로 끝이
+ * 깔끔하고, 한 문장이 통째로 상한을 넘길 때만 마지막 수단으로 글자 절단한다.
+ */
+export function clampSpeech(
+  text: string,
+  maxChars: number = SPEECH_MAX_CHARS,
+  maxSentences: number = SPEECH_MAX_SENTENCES,
+): string {
+  let parts = splitSentences(text).slice(0, maxSentences);
+  if (parts.length === 0) return "";
+  while (parts.length > 1 && len(parts.join(" ")) > maxChars) parts = parts.slice(0, -1);
+  const out = parts.join(" ");
+  return len(out) > maxChars ? cutAtSentence(out, maxChars) : out;
+}
+
+/** 남는 프롬프트 예산으로 발췌 한도를 만든다. 기본 한도를 넘지는 않는다. */
+export function excerptLimitsFor(
+  budget: number,
+  base: ExcerptLimits = DEFAULT_EXCERPT_LIMITS,
+): ExcerptLimits {
+  return { ...base, totalChars: Math.max(0, Math.min(base.totalChars, budget)) };
 }
 
 /**
  * 그 달 일기를 프롬프트에 넣을 발췌 한 덩이로 만든다.
  *
  * `month`에 속한 항목만 남기고(월 판정은 selection의 monthKeyOf 재사용),
- * 편수가 한도를 넘으면 월 전체 흐름이 보이게 균등 간격으로 뽑는다(최신 우선이
- * 아니다). 각 편은 날짜를 붙여 절단하고, 총 예산을 넘기 직전에 멈춘다.
+ * **예산 안에 실제로 들어가는 가장 많은 편수**를 고른다 — 편수를 위에서부터
+ * 내려가며 렌더해 보고 처음 들어맞는 것을 쓴다. 뽑기는 최신 우선이 아니라
+ * 균등 간격(양끝 포함)이라 월 전체 흐름이 남고, 편당 분량도 그 편수에 맞춰
+ * 다시 정해진다(편수↑ → 편당↓, 단 `MIN_BODY_CHARS` 아래로는 안 간다).
  * 남는 게 없으면 `(일기 없음)`.
  */
 export function buildDiaryExcerpt(
@@ -117,18 +218,22 @@ export function buildDiaryExcerpt(
     .sort((a, b) => a.at - b.at);
   if (inMonth.length === 0) return NO_DIARY;
 
-  const picked = evenIndices(inMonth.length, limits.maxEntries).map((i) => inMonth[i]);
+  // 접두 + 개행 몫(절단 표시 `…`는 cutAtSentence가 자기 예산 안에서 쓴다).
+  const overhead = LINE_PREFIX_CHARS + 1;
 
-  const lines: string[] = [];
-  let used = 0;
-  for (const e of picked) {
-    const line = `- ${cal.dayKey(e.at)}: ${truncate(e.body.trim(), limits.perEntryChars)}`;
-    const cost = Array.from(line).length + (lines.length > 0 ? 1 : 0); // 줄바꿈 몫
-    if (used + cost > limits.totalChars) break;
-    lines.push(line);
-    used += cost;
+  for (let count = Math.min(limits.maxEntries, inMonth.length); count >= 1; count--) {
+    const perEntry = Math.min(
+      limits.perEntryChars,
+      Math.max(MIN_BODY_CHARS, Math.floor(limits.totalChars / count) - overhead),
+    );
+    const lines = evenIndices(inMonth.length, count).map((i) => {
+      const e = inMonth[i];
+      return `- ${cal.dayKey(e.at)}: ${cutAtSentence(e.body.trim(), perEntry)}`;
+    });
+    const cost = lines.reduce((n, l) => n + len(l) + 1, 0) - 1; // 마지막 개행 제외
+    if (cost <= limits.totalChars) return lines.join("\n");
   }
-  return lines.length > 0 ? lines.join("\n") : NO_DIARY;
+  return NO_DIARY;
 }
 
 /** 수상 정보 블록. 작업시간은 시간 단위 반올림(초 단위 숫자는 소감에 방해된다). */
@@ -170,7 +275,6 @@ export async function generateSpeech(
   const loadDiaryFn = deps.loadDiaryFn ?? ((agentId: string) => tauriApi.loadDiary(agentId));
   const now = deps.now ?? Date.now;
   const cal = deps.cal ?? localDayCalendar;
-  const limits = deps.limits ?? DEFAULT_EXCERPT_LIMITS;
 
   // 설정은 필요한 것만 늦게 읽는다(전부 주입한 테스트는 스토어를 안 건드린다).
   const settings =
@@ -189,17 +293,26 @@ export async function generateSpeech(
     console.warn(`awards: 일기 로드 실패 — 통계만으로 소감 생성(agent=${winner.agentId})`, err);
   }
 
-  const personality = profile.personalityPrompt?.trim() ?? "";
-  const userText = [
+  // 고정 블록(성격 + 수상 정보)을 먼저 확보하고, 남는 예산 전부를 일기에 준다.
+  const personality = cutAtSentence(
+    profile.personalityPrompt?.trim() ?? "",
+    PERSONALITY_MAX_CHARS,
+  );
+  const head = [
     `[성격]\n${personality || "(없음)"}`,
     `[수상 정보]\n${formatAwardInfo(record, priorAwardCount)}`,
-    `[지난달 일기]\n${buildDiaryExcerpt(entries, record.month, cal, limits)}`,
   ].join("\n\n");
+  const diaryHeader = "\n\n[지난달 일기]\n";
+  const limits = deps.limits ?? excerptLimitsFor(PROMPT_BUDGET_CHARS - len(head) - len(diaryHeader));
+
+  const userText = `${head}${diaryHeader}${buildDiaryExcerpt(entries, record.month, cal, limits)}`;
 
   try {
     const raw = await summarizeFn(provider, AWARD_SPEECH_SYSTEM_PROMPT, userText);
-    const text = sanitizeDiaryBody(raw);
-    if (text === null) return { ok: false, reason: "failed" };
+    const sanitized = sanitizeDiaryBody(raw);
+    if (sanitized === null) return { ok: false, reason: "failed" };
+    const text = clampSpeech(sanitized);
+    if (text === "") return { ok: false, reason: "failed" };
     return { ok: true, speech: { at: now(), provider, text } };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

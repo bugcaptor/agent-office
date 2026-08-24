@@ -14,7 +14,12 @@ import { fixedOffsetCalendar } from "../../analytics/aggregate";
 import {
   AWARD_SPEECH_SYSTEM_PROMPT,
   buildDiaryExcerpt,
+  clampSpeech,
+  DEFAULT_EXCERPT_LIMITS,
   generateSpeech,
+  PERSONALITY_MAX_CHARS,
+  PROMPT_BUDGET_CHARS,
+  SPEECH_MAX_CHARS,
   type SpeechDeps,
 } from "../speechGenerator";
 import type { AgentProfile, AwardRecord, DiaryEntry } from "@shared/types";
@@ -139,17 +144,31 @@ describe("buildDiaryExcerpt", () => {
     expect(out).not.toContain("일기29");
   });
 
-  it("기본 한도는 20편·편당 300자다", () => {
+  it("기본 한도는 예산(1,500자)에서 역산한 10편·편당 135자다", () => {
+    // 편수를 위에서부터 시도해 예산에 실제로 들어맞는 첫 편수를 쓴다.
+    // 10편 × (접두 14 + 절단본 135) + 개행 9 = 1,499자 ≤ 1,500.
     const long = "가".repeat(500);
     const entries = Array.from({ length: 25 }, (_, i) => entry(julyAt(i + 1), `${i}:${long}`));
     const out = buildDiaryExcerpt(entries, "2026-07", KST);
     const lines = out.split("\n");
-    expect(lines).toHaveLength(20);
+    expect(lines).toHaveLength(10);
     for (const line of lines) {
       expect(line.endsWith("…")).toBe(true);
-      // "- YYYY-MM-DD: " 접두 14자 + 본문 300자 + "…" 1자.
-      expect(Array.from(line)).toHaveLength(14 + 300 + 1);
+      expect(Array.from(line)).toHaveLength(14 + 135);
     }
+    expect(Array.from(out).length).toBeLessThanOrEqual(DEFAULT_EXCERPT_LIMITS.totalChars);
+  });
+
+  it("문장부호가 있으면 문장 경계에서 끊는다(중간이 뚝 끊기지 않게)", () => {
+    const body = `${"가".repeat(80)}. ${"나".repeat(80)}. ${"다".repeat(80)}.`;
+    const out = buildDiaryExcerpt([entry(julyAt(3), body)], "2026-07", KST, {
+      maxEntries: 1,
+      perEntryChars: 100,
+      totalChars: 1_000,
+    });
+    expect(out.endsWith("…")).toBe(false);
+    expect(out.endsWith(".")).toBe(true);
+    expect(out).not.toContain("나");
   });
 
   it("짧은 일기는 자르지 않고 …도 붙이지 않는다", () => {
@@ -274,5 +293,67 @@ describe("generateSpeech", () => {
     summarize.mockResolvedValue("```\n\n```");
     const r = await generateSpeech(record(), profile(), 0, deps());
     expect(r).toEqual({ ok: false, reason: "failed" });
+  });
+});
+
+describe("clampSpeech", () => {
+  it("문장 수 상한을 넘으면 앞에서부터 남기고 뒤를 버린다", () => {
+    const out = clampSpeech("하나. 둘! 셋? 넷. 다섯.");
+    expect(out).toBe("하나. 둘! 셋? 넷.");
+  });
+
+  it("글자 상한을 넘으면 문장 단위로 버려 끝을 깔끔하게 남긴다", () => {
+    const a = `${"가".repeat(150)}.`;
+    const b = `${"나".repeat(150)}.`;
+    const out = clampSpeech(`${a} ${b}`);
+    expect(out).toBe(a);
+    expect(Array.from(out).length).toBeLessThanOrEqual(SPEECH_MAX_CHARS);
+  });
+
+  it("한 문장이 통째로 상한을 넘으면 마지막 수단으로 글자 절단한다", () => {
+    const out = clampSpeech("가".repeat(400));
+    expect(Array.from(out).length).toBe(SPEECH_MAX_CHARS); // `…` 포함 상한 이하
+    expect(out.endsWith("…")).toBe(true);
+  });
+
+  it("연속 부호는 한 문장으로 묶고 개행도 문장 경계로 본다", () => {
+    expect(clampSpeech("정말요?! 네.\n감사합니다.")).toBe("정말요?! 네. 감사합니다.");
+  });
+
+  it("상한 안이면 그대로 둔다", () => {
+    expect(clampSpeech("고맙습니다. 다음 달도 잘 하겠습니다.")).toBe(
+      "고맙습니다. 다음 달도 잘 하겠습니다.",
+    );
+  });
+});
+
+describe("프롬프트 예산", () => {
+  it("일기가 아무리 많아도 프롬프트 총량이 백엔드 상한 아래로 유지된다", async () => {
+    // 백엔드 cap_text(2,000자)의 head/tail 중략에 걸리면 월 가운데가 통째로
+    // 날아간다 — 프런트에서 미리 잘라 그 절단이 발동하지 않게 한다.
+    const entries = Array.from({ length: 60 }, (_, i) =>
+      entry(julyAt((i % 28) + 1), "가".repeat(1_000)),
+    );
+    loadDiary.mockResolvedValue(entries);
+    await generateSpeech(record(), profile({ personalityPrompt: "무뚝뚝함" }), 0, deps());
+    const text = summarize.mock.calls[0][2] as string;
+    expect(Array.from(text).length).toBeLessThanOrEqual(PROMPT_BUDGET_CHARS);
+  });
+
+  it("성격이 길면 잘라 일기 발췌 예산을 지킨다", async () => {
+    loadDiary.mockResolvedValue([entry(julyAt(4), "리팩터링을 했다")]);
+    await generateSpeech(record(), profile({ personalityPrompt: "성".repeat(900) }), 0, deps());
+    const text = summarize.mock.calls[0][2] as string;
+    const personality = text.split("\n\n")[0].replace("[성격]\n", "");
+    expect(Array.from(personality).length).toBeLessThanOrEqual(PERSONALITY_MAX_CHARS);
+    // 성격이 예산을 다 먹지 않아 일기는 그대로 들어간다.
+    expect(text).toContain("리팩터링을 했다");
+  });
+
+  it("출력도 상한을 넘으면 잘라서 저장한다", async () => {
+    summarize.mockResolvedValue(`${"가".repeat(300)}. ${"나".repeat(300)}.`);
+    const r = await generateSpeech(record(), profile(), 0, deps());
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(Array.from(r.speech.text).length).toBeLessThanOrEqual(SPEECH_MAX_CHARS);
   });
 });
