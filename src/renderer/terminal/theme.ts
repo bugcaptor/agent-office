@@ -15,7 +15,7 @@
 import type { ITheme } from "@xterm/xterm";
 import { THEMES, isThemeId } from "../theme/themes";
 import type { ThemeId } from "../theme/themes";
-import { XTERM_PALETTES, isXtermPaletteId } from "./palettes";
+import { XTERM_PALETTES, isXtermPaletteId, xtermPaletteLabel } from "./palettes";
 import type { XtermPalette, XtermPaletteId } from "./palettes";
 
 /**
@@ -48,9 +48,10 @@ export function xtermPaletteOf(source: XtermSourceId): XtermPalette {
   return isThemeId(source) ? THEMES[source].xterm : XTERM_PALETTES[source].xterm;
 }
 
-/** 출처 id → 셀렉터에 노출할 라벨. */
+/** 출처 id → 셀렉터에 노출할 라벨. 터미널 전용 팔레트 쪽은 카탈로그 키를
+ *  들고 있어 호출 시점에 번역한다(`xtermPaletteLabel`). */
 export function xtermSourceLabel(source: XtermSourceId): string {
-  return isThemeId(source) ? THEMES[source].label : XTERM_PALETTES[source].label;
+  return isThemeId(source) ? THEMES[source].label : xtermPaletteLabel(source);
 }
 
 /** 앱 테마 + 오버라이드 → xterm `ITheme`. */

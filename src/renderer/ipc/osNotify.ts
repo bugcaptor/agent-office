@@ -34,7 +34,7 @@ export async function maybeSendOsNotification(title: string, body: string): Prom
     if (!permissionGranted) return;
     sendNotification({ title, body });
   } catch (err) {
-    console.warn("osNotify: OS 알림 발송 실패", err);
+    console.warn("osNotify: OS notification send failed", err);
   }
 }
 

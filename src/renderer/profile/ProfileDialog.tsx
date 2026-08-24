@@ -23,7 +23,7 @@ import {
   serializeBundle,
   buildExportFileName,
 } from "./characterIo";
-import { parseCharacterBundle } from "@shared/types";
+import { parseCharacterBundle, type CharacterBundleError } from "@shared/types";
 import { pngBase64ToDataUrl } from "../portrait/portraitCache";
 import { loadSpritesFor } from "../sprite/spriteCache";
 import { generateSpritePreview } from "../office/gen/characterFactory";
@@ -64,6 +64,27 @@ import { KEYBOARD_SOUND_PACK_OPTIONS } from "../sound/packs";
 import { previewKeyboardSound, previewVoice } from "../sound/soundManager";
 import type { AvailableShell, TtsVoiceOption } from "@shared/types";
 import "../portrait/portrait.css";
+
+/** `parseCharacterBundle`이 돌려주는 실패 코드 → `common` 카탈로그 키.
+ *  파서는 `src/shared`에 있어 renderer의 `t()`를 부를 수 없으므로(그리고 문구는
+ *  그리는 쪽 언어를 따라야 하므로) 번역은 여기서 한다 — SettingsDialog의
+ *  `SUMMARY_TEST_ERROR_KEY`와 같은 관례. `Record<CharacterBundleError, …>`라
+ *  코드가 늘면 타입 검사에서 걸린다. */
+const BUNDLE_ERROR_KEY: Record<CharacterBundleError, string> = {
+  "bundle-not-json": "common:errors.bundleNotJson",
+  "bundle-not-character-file": "common:errors.bundleNotCharacterFile",
+  "bundle-schema-version-missing": "common:errors.bundleSchemaVersionMissing",
+  "bundle-schema-version-newer": "common:errors.bundleSchemaVersionNewer",
+  "bundle-schema-version-unsupported": "common:errors.bundleSchemaVersionUnsupported",
+  "bundle-profile-missing": "common:errors.bundleProfileMissing",
+  "bundle-profile-name-missing": "common:errors.bundleProfileNameMissing",
+  "bundle-portrait-invalid": "common:errors.bundlePortraitInvalid",
+  "bundle-portrait-too-large": "common:errors.bundlePortraitTooLarge",
+  "bundle-sprite-invalid": "common:errors.bundleSpriteInvalid",
+  "bundle-sprite-too-large": "common:errors.bundleSpriteTooLarge",
+  "bundle-minimi-invalid": "common:errors.bundleMinimiInvalid",
+  "bundle-minimi-too-large": "common:errors.bundleMinimiTooLarge",
+};
 
 export function ProfileDialog() {
   const { t } = useTranslation("profile");
@@ -434,7 +455,7 @@ export function ProfileDialog() {
       }
       const res = parseCharacterBundle(text);
       if (!res.ok) {
-        setIoNote(res.error);
+        setIoNote(t(BUNDLE_ERROR_KEY[res.error]));
         setIoBusy(false);
         return;
       }

@@ -25,6 +25,7 @@
 // `git.truncated`로 안내한다. 행의 상대경로는 앞쪽이 말줄임되고(이슈 #71,
 // workdir.css) 전체 경로는 행 `title` 툴팁으로 확인한다.
 import { useEffect, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useWorkdirStore } from "./workdirStore";
 import { WorkdirDetailPane } from "./WorkdirDetailPane";
 import { WorkdirRepoLogPane } from "./WorkdirRepoLogPane";
@@ -49,6 +50,7 @@ function basename(path: string): string {
 }
 
 export function WorkdirPalette() {
+  const { t } = useTranslation("workdir");
   const palette = useWorkdirStore((s) => s.palette);
   const listing = useWorkdirStore((s) => (s.palette ? s.listing[s.palette.root] : undefined));
   const search = useWorkdirStore((s) => s.search);
@@ -205,16 +207,21 @@ export function WorkdirPalette() {
 
   // 브랜치 요약 문자열.
   const branchSummary = (() => {
-    if (!gitStatusEnabled) return "git 상태 꺼짐";
-    if (gitLoading && !git) return "git 상태 조회 중…";
-    if (git?.canceled) return "git 상태 조회 취소됨";
-    if (git?.timedOut) return "git 상태 조회 시간 초과";
-    if (!git?.isRepo) return "git 저장소 아님";
+    if (!gitStatusEnabled) return t("palette.gitOff");
+    if (gitLoading && !git) return t("palette.gitLoading");
+    if (git?.canceled) return t("palette.gitCanceled");
+    if (git?.timedOut) return t("palette.gitTimedOut");
+    if (!git?.isRepo) return t("palette.notRepo");
     const parts: string[] = [git.branch ?? "(detached)"];
     if (git.ahead) parts.push(`↑${git.ahead}`);
     if (git.behind) parts.push(`↓${git.behind}`);
     // 상한(5000)에 걸렸으면 "+"를 붙여 더 있음을 알린다(이슈 #70).
-    parts.push(`· 변경 ${git.entries.length}${git.truncated ? "+" : ""}개`);
+    parts.push(
+      t("palette.changedCount", {
+        count: git.entries.length,
+        plus: git.truncated ? "+" : "",
+      }),
+    );
     return parts.join(" ");
   })();
 
@@ -228,13 +235,16 @@ export function WorkdirPalette() {
       <div
         className={detailOpen || viewMode === "log" ? "wd-panel wd-panel-wide" : "wd-panel"}
         role="dialog"
-        aria-label="작업 폴더 보기"
+        aria-label={t("palette.title")}
       >
         <div className="wd-header">
           <div className="wd-branch" title={root}>
             {branchSummary}
             {listing && (
-              <span className="wd-updated"> · {formatRelativeTime(listing.fetchedAt)} 기준</span>
+              <span className="wd-updated">
+                {" "}
+                {t("palette.updated", { time: formatRelativeTime(listing.fetchedAt) })}
+              </span>
             )}
           </div>
           <div className="wd-header-actions">
@@ -244,67 +254,67 @@ export function WorkdirPalette() {
               <button
                 type="button"
                 className="wd-btn wd-btn-mini"
-                title="진행 중인 git 상태 조회를 중단합니다"
+                title={t("palette.cancelGitTitle")}
                 onClick={() => cancelOp(gitOpId)}
               >
-                취소
+                {t("palette.cancel")}
               </button>
             )}
             <button
               type="button"
               className="wd-refresh"
-              title="새로고침"
+              title={t("palette.refresh")}
               onClick={onRefresh}
             >
               ↻
             </button>
             {/* 파일 목록 ↔ 저장소 전체 커밋 로그 브라우저(이슈 #54). */}
-            <div className="wd-seg" role="group" aria-label="뷰">
+            <div className="wd-seg" role="group" aria-label={t("palette.viewAria")}>
               <button
                 type="button"
                 className={viewMode === "files" ? "wd-seg-btn wd-seg-active" : "wd-seg-btn"}
                 onClick={() => setViewMode("files")}
               >
-                파일
+                {t("palette.viewFiles")}
               </button>
               <button
                 type="button"
                 className={viewMode === "log" ? "wd-seg-btn wd-seg-active" : "wd-seg-btn"}
                 disabled={!hasGit}
-                title={hasGit ? "" : "git 저장소여야 커밋 로그를 볼 수 있습니다"}
+                title={hasGit ? "" : t("palette.viewLogDisabled")}
                 onClick={() => setViewMode("log")}
               >
-                커밋 로그
+                {t("palette.viewLog")}
               </button>
             </div>
             {viewMode === "files" && (
-              <div className="wd-seg" role="group" aria-label="필터">
+              <div className="wd-seg" role="group" aria-label={t("palette.filterAria")}>
                 <button
                   type="button"
                   className={changedOnly ? "wd-seg-btn" : "wd-seg-btn wd-seg-active"}
                   onClick={() => setChangedOnly(false)}
                 >
-                  전체
+                  {t("palette.filterAll")}
                 </button>
                 <button
                   type="button"
                   className={changedOnly ? "wd-seg-btn wd-seg-active" : "wd-seg-btn"}
                   disabled={!hasGit}
-                  title={hasGit ? "" : "git 상태가 있어야 사용할 수 있습니다"}
+                  title={hasGit ? "" : t("palette.filterChangedDisabled")}
                   onClick={() => setChangedOnly(true)}
                 >
-                  변경만
+                  {t("palette.filterChanged")}
                 </button>
               </div>
             )}
-            <label className="wd-git-toggle" title="파일별 git 상태 조회(거대 저장소에서 끄기)">
+            <label className="wd-git-toggle" title={t("palette.gitToggleTitle")}>
               <input type="checkbox" checked={gitStatusEnabled} onChange={toggleGit} />
-              <span>git 상태</span>
+              <span>{t("palette.gitToggle")}</span>
             </label>
             <button
               type="button"
               className="wd-close"
-              aria-label="닫기"
+              aria-label={t("palette.close")}
               onClick={closePalette}
             >
               ×
@@ -319,7 +329,7 @@ export function WorkdirPalette() {
           ref={inputRef}
           className="wd-input"
           type="text"
-          placeholder="파일 이름 또는 경로로 검색…  (⌘/더블클릭: 즉시 열기)"
+          placeholder={t("palette.searchPlaceholder")}
           value={query}
           spellCheck={false}
           onChange={(e) => setQuery(e.target.value)}
@@ -328,37 +338,35 @@ export function WorkdirPalette() {
         <div className="wd-body">
           <div className="wd-list-pane">
             {searchActive && search?.truncated ? (
-              <div className="wd-note">일치 항목이 많아 일부(5000개)만 표시됩니다.</div>
+              <div className="wd-note">{t("palette.searchTruncated")}</div>
             ) : (
               listing?.truncated &&
-              !changedOnly && <div className="wd-note">파일이 많아 일부(5000개)만 표시됩니다.</div>
+              !changedOnly && <div className="wd-note">{t("palette.listTruncated")}</div>
             )}
-            {searchLoading && <div className="wd-note wd-note-dim">검색 중…</div>}
+            {searchLoading && <div className="wd-note wd-note-dim">{t("palette.searching")}</div>}
             {git?.canceled && (
               <div className="wd-note">
-                git 상태 조회를 취소했습니다.{" "}
+                {t("palette.gitCanceledNote")}{" "}
                 <button type="button" className="wd-btn wd-btn-mini" onClick={() => void refreshGit(root)}>
-                  다시 시도
+                  {t("palette.retry")}
                 </button>
               </div>
             )}
             {git?.timedOut && (
-              <div className="wd-note">
-                git 상태 조회가 시간 초과됐습니다. 설정에서 끌 수 있습니다.
-              </div>
+              <div className="wd-note">{t("palette.gitTimedOutNote")}</div>
             )}
             {git?.truncated && (
-              <div className="wd-note">변경된 파일이 많아 일부(5000개)만 표시됩니다.</div>
+              <div className="wd-note">{t("palette.gitTruncated")}</div>
             )}
             {listing === undefined && !changedOnly ? (
-              <div className="wd-empty">목록을 불러오는 중…</div>
+              <div className="wd-empty">{t("palette.listLoading")}</div>
             ) : results.length === 0 ? (
               <div className="wd-empty">
                 {changedOnly
-                  ? "변경된 파일이 없습니다."
+                  ? t("palette.emptyChanged")
                   : rows.length === 0
-                    ? "파일이 없습니다."
-                    : "일치하는 파일이 없습니다."}
+                    ? t("palette.emptyFiles")
+                    : t("palette.emptyMatch")}
               </div>
             ) : (
               <ul className="wd-list" ref={listRef} role="listbox">
@@ -389,8 +397,8 @@ export function WorkdirPalette() {
                           ? `wd-badge wd-badge-${item.status}`
                           : "wd-badge wd-badge-empty"
                       }
-                      title={item.status ? `${statusLabel(item.status)} (${item.xy})` : ""}
-                      aria-label={item.status ? statusLabel(item.status) : undefined}
+                      title={item.status ? `${statusLabel(item.status, t)} (${item.xy})` : ""}
+                      aria-label={item.status ? statusLabel(item.status, t) : undefined}
                     >
                       {item.status ?? ""}
                     </span>

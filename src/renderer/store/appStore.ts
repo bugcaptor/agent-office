@@ -597,7 +597,7 @@ export const useAppStore = create<AppState>()(
       try {
         await tauriApi.botStop(agentId);
       } catch (err) {
-        console.warn("bot: 중단 실패", err);
+        console.warn("bot: stop failed", err);
       }
       set((s) => {
         const next = { ...s.botMode };
@@ -934,7 +934,7 @@ export const useAppStore = create<AppState>()(
       const next = { ...get().appSettings, ...patch };
       set({ appSettings: next });
       // fire-and-forget: 저장 실패는 콘솔 경고로만(다음 부팅 때 이전 값 복원됨).
-      void tauriApi.setAppSettings(next).catch((err) => console.warn("settings: 저장 실패", err));
+      void tauriApi.setAppSettings(next).catch((err) => console.warn("settings: save failed", err));
     },
 
     completeFirstRun: (choice) => {

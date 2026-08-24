@@ -213,7 +213,8 @@ describe("parseCharacterBundle 거부 경로", () => {
     );
     expect(res.ok).toBe(false);
     if (res.ok) return;
-    expect(res.error).toContain("최신");
+    // 파서는 문구가 아니라 안정적인 코드를 돌려준다(번역은 ProfileDialog 담당).
+    expect(res.error).toBe("bundle-schema-version-newer");
   });
 
   it("이름 없는 프로필은 거부", () => {

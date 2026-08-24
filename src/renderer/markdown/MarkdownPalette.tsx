@@ -12,11 +12,13 @@
 // 헤더에 캐시 기준 시각("N분 전 기준")과 새로고침 버튼을 둔다(이슈 #67) —
 // 새로고침은 TTL을 무시하고 강제로 재스캔한다(refreshListing force:true).
 import { useEffect, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useMarkdownStore } from "./markdownStore";
 import { emptyQueryPriority, fuzzyFilter } from "./fuzzy";
 import { formatRelativeTime } from "../shared/relativeTime";
 
 export function MarkdownPalette() {
+  const { t } = useTranslation("workdir");
   const palette = useMarkdownStore((s) => s.palette);
   const listing = useMarkdownStore((s) => (s.palette ? s.listing[s.palette.root] : undefined));
   const setQuery = useMarkdownStore((s) => s.setQuery);
@@ -96,12 +98,12 @@ export function MarkdownPalette() {
         if (e.button === 0 && e.target === e.currentTarget) closePalette();
       }}
     >
-      <div className="md-palette" role="dialog" aria-label="마크다운 문서 열기">
+      <div className="md-palette" role="dialog" aria-label={t("markdown.paletteTitle")}>
         <input
           ref={inputRef}
           className="md-palette-input"
           type="text"
-          placeholder="파일 이름 또는 경로로 검색…"
+          placeholder={t("markdown.searchPlaceholder")}
           value={query}
           spellCheck={false}
           onChange={(e) => setQuery(e.target.value)}
@@ -109,11 +111,13 @@ export function MarkdownPalette() {
         />
         {listing && (
           <div className="md-palette-header">
-            <span className="md-palette-updated">{formatRelativeTime(listing.fetchedAt)} 기준</span>
+            <span className="md-palette-updated">
+              {t("markdown.updated", { time: formatRelativeTime(listing.fetchedAt) })}
+            </span>
             <button
               type="button"
               className="md-palette-refresh"
-              title="새로고침"
+              title={t("markdown.refresh")}
               onClick={() => void refreshListing(palette.root, { force: true })}
             >
               ↻
@@ -121,13 +125,13 @@ export function MarkdownPalette() {
           </div>
         )}
         {listing?.truncated && (
-          <div className="md-palette-note">파일이 많아 일부만 표시됩니다.</div>
+          <div className="md-palette-note">{t("markdown.listTruncated")}</div>
         )}
         {files === undefined ? (
-          <div className="md-palette-empty">목록을 불러오는 중…</div>
+          <div className="md-palette-empty">{t("markdown.listLoading")}</div>
         ) : results.length === 0 ? (
           <div className="md-palette-empty">
-            {files.length === 0 ? "마크다운 파일이 없습니다." : "일치하는 파일이 없습니다."}
+            {files.length === 0 ? t("markdown.emptyFiles") : t("markdown.emptyMatch")}
           </div>
         ) : (
           <ul className="md-palette-list" ref={listRef} role="listbox">

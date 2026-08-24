@@ -10,7 +10,12 @@
 // 조회 중단 UI(타임아웃 개편): 거대 저장소의 로그/변경파일/ diff 조회는 분 단위가
 // 될 수 있어, 모든 "불러오는 중…" 자리에 취소 버튼을 두고 취소된 결과에는 "다시
 // 시도"를 붙인다(상세 페인과 같은 관례).
+//
+// i18n: 커밋·변경파일 어휘("이 커밋이 바꾼 파일" 등)와 diff 본문 문구는 상세
+// 페인과 글자 그대로 같으므로 `detail.*`/`diff.*` 키를 그대로 재사용한다 —
+// 같은 문구를 두 벌 두면 번역이 갈라진다.
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useWorkdirStore } from "./workdirStore";
 import { DiffView } from "./DiffView";
 import { statusLabel } from "./status";
@@ -56,27 +61,33 @@ function DiffBody({
   onCancel?: () => void;
   onRetry?: () => void;
 }) {
+  const { t } = useTranslation("workdir");
   const aborted = !!diff && (diff.canceled || diff.timedOut);
   if (loading && (!diff || aborted))
-    return <BusyNote text="변경점 불러오는 중…" actionLabel="취소" onAction={onCancel} />;
-  if (!diff) return <div className="wd-detail-empty">파일을 선택하세요.</div>;
+    return (
+      <BusyNote text={t("diff.loading")} actionLabel={t("palette.cancel")} onAction={onCancel} />
+    );
+  if (!diff) return <div className="wd-detail-empty">{t("diff.selectFile")}</div>;
   if (diff.canceled)
-    return <BusyNote text="조회를 취소했습니다." actionLabel="다시 시도" onAction={onRetry} />;
+    return (
+      <BusyNote text={t("diff.canceled")} actionLabel={t("palette.retry")} onAction={onRetry} />
+    );
   if (diff.timedOut)
-    return <BusyNote text="조회가 시간 초과됐습니다." actionLabel="다시 시도" onAction={onRetry} />;
-  if (diff.binary) return <div className="wd-detail-empty">바이너리 파일이라 diff를 표시할 수 없습니다.</div>;
-  if (diff.diff.trim() === "") return <div className="wd-detail-empty">표시할 변경이 없습니다.</div>;
+    return (
+      <BusyNote text={t("diff.timedOut")} actionLabel={t("palette.retry")} onAction={onRetry} />
+    );
+  if (diff.binary) return <div className="wd-detail-empty">{t("diff.binary")}</div>;
+  if (diff.diff.trim() === "") return <div className="wd-detail-empty">{t("diff.empty")}</div>;
   return (
     <>
-      {diff.truncated && (
-        <div className="wd-note">변경이 커서 일부(최대 5000줄)만 표시됩니다.</div>
-      )}
+      {diff.truncated && <div className="wd-note">{t("diff.truncated")}</div>}
       <DiffView diff={diff.diff} />
     </>
   );
 }
 
 export function WorkdirRepoLogPane() {
+  const { t } = useTranslation("workdir");
   const root = useWorkdirStore((s) => s.palette?.root ?? "");
   const rl = useWorkdirStore((s) => (s.palette ? s.repoLog[s.palette.root] : undefined));
   const loadRepoLog = useWorkdirStore((s) => s.loadRepoLog);
@@ -118,7 +129,7 @@ export function WorkdirRepoLogPane() {
         <input
           className="wd-input wd-log-search"
           type="text"
-          placeholder="커밋 메시지 검색…"
+          placeholder={t("repoLog.searchPlaceholder")}
           value={text}
           spellCheck={false}
           onChange={(e) => onSearchChange(e.target.value)}
@@ -130,13 +141,13 @@ export function WorkdirRepoLogPane() {
             }
           }}
         />
-        <label className="wd-git-toggle" title="모든 브랜치/참조의 커밋을 함께 봅니다">
+        <label className="wd-git-toggle" title={t("repoLog.allBranchesTitle")}>
           <input
             type="checkbox"
             checked={rl?.allBranches ?? false}
             onChange={(e) => setRepoLogAllBranches(e.target.checked)}
           />
-          <span>전체 브랜치</span>
+          <span>{t("repoLog.allBranches")}</span>
         </label>
       </div>
 
@@ -144,28 +155,28 @@ export function WorkdirRepoLogPane() {
         {/* 좌: 커밋 목록 */}
         <div className="wd-log-commits">
           {rl?.timedOut && (
-            <div className="wd-note">로그 조회가 시간 초과됐습니다. 검색을 좁혀 보세요.</div>
+            <div className="wd-note">{t("repoLog.timedOut")}</div>
           )}
           {commits === undefined && rl?.loading ? (
             <BusyNote
-              text="로그를 불러오는 중…"
-              actionLabel="취소"
+              text={t("repoLog.loading")}
+              actionLabel={t("palette.cancel")}
               onAction={() => cancelOp(rl?.opId)}
             />
           ) : commits === undefined && rl?.canceled ? (
             <BusyNote
-              text="조회를 취소했습니다."
-              actionLabel="다시 시도"
+              text={t("diff.canceled")}
+              actionLabel={t("palette.retry")}
               onAction={() => void loadRepoLog(true)}
             />
           ) : commits === undefined ? (
-            <div className="wd-empty">로그를 불러오는 중…</div>
+            <div className="wd-empty">{t("repoLog.loading")}</div>
           ) : commits.length === 0 ? (
             <div className="wd-empty">
-              {appliedQuery ? "검색과 일치하는 커밋이 없습니다." : "커밋이 없습니다."}
+              {appliedQuery ? t("repoLog.emptyMatch") : t("repoLog.empty")}
             </div>
           ) : (
-            <ul className="wd-history" role="listbox" aria-label="커밋 목록">
+            <ul className="wd-history" role="listbox" aria-label={t("detail.commitListAria")}>
               {commits.map((c) => (
                 <li
                   key={c.hash}
@@ -186,7 +197,7 @@ export function WorkdirRepoLogPane() {
               ))}
               {rl?.hasMore && (
                 <li className="wd-cf-more" onClick={() => loadRepoLog(false)}>
-                  {rl?.loading ? "불러오는 중…" : "더 보기…"}
+                  {rl?.loading ? t("palette.loadingMore") : t("palette.loadMore")}
                 </li>
               )}
             </ul>
@@ -196,36 +207,34 @@ export function WorkdirRepoLogPane() {
         {/* 우: 선택 커밋의 변경파일 + 고른 파일 diff */}
         <div className="wd-log-detail">
           {!selectedCommit ? (
-            <div className="wd-detail-empty">커밋을 선택하면 바뀐 파일이 나옵니다.</div>
+            <div className="wd-detail-empty">{t("repoLog.selectCommit")}</div>
           ) : (
             <>
-              <ul className="wd-commit-files wd-log-files" aria-label="이 커밋이 바꾼 파일">
+              <ul className="wd-commit-files wd-log-files" aria-label={t("detail.commitFilesAria")}>
                 {rl?.filesLoading && !rl?.files ? (
                   <li className="wd-cf-note">
-                    변경파일 불러오는 중…{" "}
+                    {t("detail.commitFilesLoading")}{" "}
                     <button
                       type="button"
                       className="wd-btn wd-btn-mini"
                       onClick={() => cancelOp(rl?.filesOpId)}
                     >
-                      취소
+                      {t("palette.cancel")}
                     </button>
                   </li>
                 ) : rl?.filesCanceled && !rl?.files ? (
                   <li className="wd-cf-note">
-                    조회를 취소했습니다.{" "}
+                    {t("diff.canceled")}{" "}
                     <button
                       type="button"
                       className="wd-btn wd-btn-mini"
                       onClick={() => void selectRepoCommit(selectedCommit)}
                     >
-                      다시 시도
+                      {t("palette.retry")}
                     </button>
                   </li>
                 ) : (rl?.files ?? []).length === 0 ? (
-                  <li className="wd-cf-note">
-                    표시할 파일 변경이 없습니다(병합 커밋일 수 있음).
-                  </li>
+                  <li className="wd-cf-note">{t("detail.commitFilesEmpty")}</li>
                 ) : (
                   <>
                     {(rl?.files ?? []).map((f) => (
@@ -237,8 +246,8 @@ export function WorkdirRepoLogPane() {
                       >
                         <span
                           className={`wd-badge wd-badge-${f.status}`}
-                          title={statusLabel(f.status)}
-                          aria-label={statusLabel(f.status)}
+                          title={statusLabel(f.status, t)}
+                          aria-label={statusLabel(f.status, t)}
                         >
                           {f.status}
                         </span>
@@ -248,7 +257,7 @@ export function WorkdirRepoLogPane() {
                     ))}
                     {rl?.filesHasMore && (
                       <li className="wd-cf-more" onClick={() => loadMoreRepoFiles()}>
-                        {rl?.filesLoading ? "불러오는 중…" : "더 보기…"}
+                        {rl?.filesLoading ? t("palette.loadingMore") : t("palette.loadMore")}
                       </li>
                     )}
                   </>
@@ -263,10 +272,10 @@ export function WorkdirRepoLogPane() {
                     <button
                       type="button"
                       className="wd-btn"
-                      title="이 커밋의 변경을 외부 비교 도구로 엽니다"
+                      title={t("detail.difftoolTitle")}
                       onClick={() => openRepoDifftool()}
                     >
-                      외부 도구로 비교
+                      {t("detail.difftool")}
                     </button>
                   </div>
                   <DiffBody

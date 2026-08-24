@@ -19,6 +19,7 @@
 // (store.muted를 뒤집는다; 토글 시 배지 리싱크는 여기가 아니라
 // ipc/sessionBridge.ts의 installSessionBridge가 담당).
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import {
   useAgentList,
@@ -35,6 +36,7 @@ import { UsageWidget } from "../usage/UsageWidget";
 import { useTalkStatus } from "../talk/useTalkStatus";
 
 export function BottomBar() {
+  const { t } = useTranslation("common");
   const openModal = useAppStore((s) => s.openModal);
   const muted = useAppStore((s) => s.muted);
   const toggleMuted = useAppStore((s) => s.toggleMuted);
@@ -59,9 +61,9 @@ export function BottomBar() {
   // 문구를 여기로 옮긴다(talkEnabled가 꺼져 있으면 대화 정보는 뺀다).
   const recordTitle = talkEnabled
     ? talkQueued > 0
-      ? `세션 활동 분석 · 이 달의 우수사원 · 열린 대화 ${openTalkCount}건 · 전달 대기 ${talkQueued}건 (상대가 한가해지면 전달)`
-      : `세션 활동 분석 · 이 달의 우수사원 · 열린 대화 ${openTalkCount}건`
-    : "세션 활동 분석 · 이 달의 우수사원";
+      ? t("bottomBar.recordsTitleQueued", { open: openTalkCount, queued: talkQueued })
+      : t("bottomBar.recordsTitleTalk", { open: openTalkCount })
+    : t("bottomBar.recordsTitle");
 
   return (
     <footer className="bottom-bar pixel-panel">
@@ -70,7 +72,7 @@ export function BottomBar() {
         className="pixel-btn primary new-agent-btn"
         onClick={() => openModal({ kind: "profile-create" })}
       >
-        ＋ New Agent
+        {t("bottomBar.newAgent")}
       </button>
       <button
         type="button"
@@ -81,7 +83,7 @@ export function BottomBar() {
           setSummonMenu({ x: rect.left, y: rect.top });
         }}
       >
-        🏠 출근 ({clockedOutCount})
+        {t("bottomBar.clockIn", { n: clockedOutCount })}
       </button>
       <button
         type="button"
@@ -93,7 +95,7 @@ export function BottomBar() {
           setClockAllMenu({ x: rect.left, y: rect.top });
         }}
       >
-        전체 출퇴근
+        {t("bottomBar.clockAll")}
       </button>
       {clockAllMenu && (
         <ContextMenu
@@ -103,13 +105,13 @@ export function BottomBar() {
           items={[
             {
               icon: "🏠",
-              label: `전체 출근 (터미널 켜기, ${clockedOutCount}명)`,
+              label: t("bottomBar.clockInAll", { n: clockedOutCount }),
               disabled: clockedOutCount === 0,
               onSelect: () => clockInAll(),
             },
             {
               icon: "🌙",
-              label: `전체 퇴근 (${onDutyCount}명)`,
+              label: t("bottomBar.clockOutAll", { n: onDutyCount }),
               danger: true,
               disabled: onDutyCount === 0,
               onSelect: () => openModal({ kind: "confirm-clock-out-all" }),
@@ -129,13 +131,13 @@ export function BottomBar() {
         />
       )}
       <span className="bottom-bar-status">
-        {runningCount} running · {pendingCount} needs input
+        {t("bottomBar.status", { running: runningCount, pending: pendingCount })}
       </span>
       <UsageWidget />
       <button
         type="button"
         className="pixel-btn records-btn"
-        aria-label="기록"
+        aria-label={t("bottomBar.recordsAria")}
         aria-haspopup="menu"
         title={recordTitle}
         onClick={(e) => {
@@ -143,7 +145,8 @@ export function BottomBar() {
           setRecordMenu({ x: rect.left, y: rect.top });
         }}
       >
-        📊 기록{talkEnabled && openTalkCount > 0 ? ` ·${openTalkCount}` : ""}
+        {t("bottomBar.records")}
+        {talkEnabled && openTalkCount > 0 ? ` ·${openTalkCount}` : ""}
       </button>
       {recordMenu && (
         <ContextMenu
@@ -153,12 +156,12 @@ export function BottomBar() {
           items={[
             {
               icon: "📊",
-              label: "세션 활동 분석",
+              label: t("bottomBar.analytics"),
               onSelect: () => openModal({ kind: "analytics" }),
             },
             {
               icon: "🏆",
-              label: "이 달의 우수사원",
+              label: t("bottomBar.awards"),
               onSelect: () => openModal({ kind: "awards" }),
             },
             // talkEnabled가 꺼져 있으면 대화 항목 2개(+ 그 앞 구분선)를 아예
@@ -168,12 +171,12 @@ export function BottomBar() {
                   { separator: true as const },
                   {
                     icon: "💬",
-                    label: `대화 로그 보기 (${openTalkCount})`,
+                    label: t("bottomBar.talkLog", { n: openTalkCount }),
                     onSelect: () => openModal({ kind: "talk-log" }),
                   },
                   {
                     icon: "⛔",
-                    label: "대화 전체 중지",
+                    label: t("bottomBar.talkStop"),
                     danger: true,
                     onSelect: () => updateAppSettings({ talkEnabled: false }),
                   },
@@ -185,8 +188,8 @@ export function BottomBar() {
       <button
         type="button"
         className="pixel-btn settings-btn"
-        aria-label="설정"
-        title="설정 (선택적 에이전트 연동)"
+        aria-label={t("bottomBar.settingsAria")}
+        title={t("bottomBar.settingsTitle")}
         onClick={() => openModal({ kind: "settings" })}
       >
         ⚙
@@ -194,8 +197,8 @@ export function BottomBar() {
       <button
         type="button"
         className="pixel-btn about-btn"
-        aria-label="정보"
-        title="Agent Office 정보"
+        aria-label={t("bottomBar.aboutAria")}
+        title={t("bottomBar.aboutTitle")}
         onClick={() => openModal({ kind: "about" })}
       >
         ℹ
@@ -203,9 +206,9 @@ export function BottomBar() {
       <button
         type="button"
         className="pixel-btn scene-theme-btn"
-        aria-label="풍경·테마 선택"
+        aria-label={t("bottomBar.sceneThemeAria")}
         aria-haspopup="menu"
-        title="오피스 풍경·테마 목록에서 고르기"
+        title={t("bottomBar.sceneThemeTitle")}
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           setSceneThemeMenu({ x: rect.left, y: rect.top });
@@ -219,14 +222,14 @@ export function BottomBar() {
           y={sceneThemeMenu.y}
           onClose={() => setSceneThemeMenu(null)}
           items={[
-            { header: "풍경" },
+            { header: t("bottomBar.sceneHeader") },
             ...SCENE_ORDER.map((id) => ({
               // 현재 항목만 체크 아이콘.
               icon: id === scene ? "✔" : undefined,
               label: SCENES[id].label,
               onSelect: () => setScene(id),
             })),
-            { header: "테마" },
+            { header: t("bottomBar.themeHeader") },
             ...THEME_ORDER.map((id) => ({
               // 현재 테마는 체크로 표시(아이콘 슬롯 폭은 나머지 항목도 유지한다).
               icon: id === theme ? "✔" : undefined,
@@ -240,7 +243,7 @@ export function BottomBar() {
         type="button"
         className="pixel-btn mute-btn"
         aria-pressed={muted}
-        aria-label={muted ? "Unmute notifications" : "Mute notifications"}
+        aria-label={muted ? t("bottomBar.unmuteAria") : t("bottomBar.muteAria")}
         onClick={toggleMuted}
       >
         {muted ? "🔇" : "🔔"}

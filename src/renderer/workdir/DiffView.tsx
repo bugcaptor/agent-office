@@ -5,6 +5,7 @@
 //   diff/index/---/+++/new file 등 → 메타(흐리게), @@ → hunk 헤더(강조),
 //   '+' → 추가(초록), '-' → 삭제(빨강), 그 외 → 문맥.
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 /** 한 줄의 diff 종류에 맞는 CSS 클래스를 고른다. */
 function classifyDiffLine(line: string): string {
@@ -34,6 +35,7 @@ function classifyDiffLine(line: string): string {
 
 /** unified diff 텍스트를 줄 단위 색상 블록으로 렌더한다. */
 export function DiffView({ diff }: { diff: string }) {
+  const { t } = useTranslation("workdir");
   // 마지막 개행으로 생기는 빈 원소는 버린다.
   const lines = useMemo(() => {
     const arr = diff.split("\n");
@@ -42,7 +44,7 @@ export function DiffView({ diff }: { diff: string }) {
   }, [diff]);
 
   return (
-    <div className="wd-diff" role="group" aria-label="변경 내용">
+    <div className="wd-diff" role="group" aria-label={t("diff.viewAria")}>
       {lines.map((line, i) => (
         // eslint-disable-next-line react/no-array-index-key -- diff 줄은 위치가 곧 정체성.
         <div key={i} className={classifyDiffLine(line)}>

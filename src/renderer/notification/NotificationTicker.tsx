@@ -13,19 +13,23 @@
 // character sprite. Calling it here instead of re-deriving both steps keeps
 // the two entry points (ticker card, office sprite) from drifting apart.
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "../store/appStore";
 import { officeBus } from "../ipc/sessionBridge";
+import { relativeTimeFormatter } from "../shared/relativeTime";
 import { dedupeLatestPerAgent } from "./dedupe";
 import type { Notification } from "../store/types";
 
 const MAX_VISIBLE = 5;
-const rtf = new Intl.RelativeTimeFormat("ko", { numeric: "auto" });
 
-/** "방금" under 45s, otherwise the coarsest unit (minute, then hour) that keeps the number small. */
-function relTime(ts: number): string {
+/** "방금" under 45s, otherwise the coarsest unit (minute, then hour) that keeps
+ *  the number small. 문구는 `Intl.RelativeTimeFormat`(현재 언어)이 만든다 —
+ *  카탈로그에 두는 건 Intl이 못 만드는 임계 구간 문구뿐. */
+function relTime(t: (key: string) => string, ts: number): string {
   const diffSec = Math.round((ts - Date.now()) / 1000);
-  if (Math.abs(diffSec) < 45) return "방금";
+  if (Math.abs(diffSec) < 45) return t("time.justNow");
+  const rtf = relativeTimeFormatter();
   const diffMin = Math.round(diffSec / 60);
   if (Math.abs(diffMin) < 60) return rtf.format(diffMin, "minute");
   return rtf.format(Math.round(diffMin / 60), "hour");
@@ -38,6 +42,7 @@ const TYPE_ICON: Record<Notification["type"], string> = {
 };
 
 export function NotificationTicker() {
+  const { t } = useTranslation("common");
   const notifications = useAppStore(useShallow((s) => s.notifications));
   const agents = useAppStore((s) => s.agents);
 
@@ -64,13 +69,13 @@ export function NotificationTicker() {
             <span className="ticker-body">
               <span className="ticker-name">{agent?.name ?? n.agentId}</span>
               <span className="ticker-msg">{n.excerpt}</span>
-              <span className="ticker-time">{relTime(n.createdAt)}</span>
+              <span className="ticker-time">{relTime(t, n.createdAt)}</span>
             </span>
           </button>
         );
       })}
       {overflow > 0 && (
-        <div className="ticker-overflow pixel-panel">+{overflow} more</div>
+        <div className="ticker-overflow pixel-panel">{t("ticker.more", { n: overflow })}</div>
       )}
     </div>
   );

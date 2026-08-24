@@ -8,11 +8,13 @@
 // sprites: session 재생성 + openTerminal + 백엔드 알림 클리어), targeting the
 // most recently used terminal tab, falling back to the first created agent
 // when nothing was ever opened.
+import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { useAgentCount, usePendingCount, useRunningCount } from "../store/selectors";
 import { officeBus } from "../ipc/sessionBridge";
 
 export function TopBar() {
+  const { t } = useTranslation("common");
   const agentCount = useAgentCount();
   const runningCount = useRunningCount();
   const pendingCount = usePendingCount();
@@ -23,16 +25,16 @@ export function TopBar() {
       type="button"
       className="top-bar pixel-panel"
       disabled={targetAgentId === null}
-      title="터미널 열기"
+      title={t("topBar.openTerminal")}
       onClick={() => {
         if (targetAgentId) officeBus.emitAgentClicked(targetAgentId);
       }}
     >
       <span className="top-bar-title">Agent Office</span>
       <span className="top-bar-stats">
-        <span className="top-bar-badge">{agentCount} agents</span>
+        <span className="top-bar-badge">{t("topBar.agents", { count: agentCount })}</span>
         <span className="top-bar-counts">
-          {runningCount} running · {pendingCount} pending
+          {t("topBar.counts", { running: runningCount, pending: pendingCount })}
         </span>
       </span>
     </button>

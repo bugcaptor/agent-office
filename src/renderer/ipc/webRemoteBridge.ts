@@ -51,14 +51,14 @@ export function installWebRemoteBridge(): () => void {
         unlisteners.push(un);
       })
       .catch((err) => {
-        console.warn("webRemoteBridge: 이벤트 구독 실패", err);
+        console.warn("webRemoteBridge: event subscribe failed", err);
       });
   };
 
   track(
     listen<SnapshotRequest>(Events.webRemoteSnapshotRequest, (e) => {
       void answerSnapshot(e.payload).catch((err) => {
-        console.warn("webRemoteBridge: 스냅샷 응답 실패", err);
+        console.warn("webRemoteBridge: snapshot reply failed", err);
       });
     })
   );

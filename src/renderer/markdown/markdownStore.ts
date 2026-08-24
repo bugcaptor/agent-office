@@ -170,7 +170,7 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
       }));
     } catch (err) {
       // 실패 시 기존 캐시·fetchedAt은 그대로 유지한다.
-      console.warn("markdown: 목록 재스캔 실패", err);
+      console.warn("markdown: listing rescan failed", err);
     } finally {
       listingInFlight.end(root);
     }
@@ -300,7 +300,7 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
           : s,
       );
     } catch (err) {
-      console.warn("markdown: 다시 불러오기 실패", err);
+      console.warn("markdown: reload from disk failed", err);
     }
   },
 

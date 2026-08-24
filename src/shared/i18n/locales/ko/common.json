@@ -1,5 +1,59 @@
 {
   "_meta": {
     "label": "한국어"
+  },
+  "time": {
+    "justNow": "방금"
+  },
+  "topBar": {
+    "openTerminal": "터미널 열기",
+    "agents_one": "{{count}} agents",
+    "agents_other": "{{count}} agents",
+    "counts": "{{running}} running · {{pending}} pending"
+  },
+  "bottomBar": {
+    "newAgent": "＋ New Agent",
+    "clockIn": "🏠 출근 ({{n}})",
+    "clockAll": "전체 출퇴근",
+    "clockInAll": "전체 출근 (터미널 켜기, {{n}}명)",
+    "clockOutAll": "전체 퇴근 ({{n}}명)",
+    "status": "{{running}} running · {{pending}} needs input",
+    "records": "📊 기록",
+    "recordsAria": "기록",
+    "recordsTitle": "세션 활동 분석 · 이 달의 우수사원",
+    "recordsTitleTalk": "세션 활동 분석 · 이 달의 우수사원 · 열린 대화 {{open}}건",
+    "recordsTitleQueued": "세션 활동 분석 · 이 달의 우수사원 · 열린 대화 {{open}}건 · 전달 대기 {{queued}}건 (상대가 한가해지면 전달)",
+    "analytics": "세션 활동 분석",
+    "awards": "이 달의 우수사원",
+    "talkLog": "대화 로그 보기 ({{n}})",
+    "talkStop": "대화 전체 중지",
+    "settingsAria": "설정",
+    "settingsTitle": "설정 (선택적 에이전트 연동)",
+    "aboutAria": "정보",
+    "aboutTitle": "Agent Office 정보",
+    "sceneThemeAria": "풍경·테마 선택",
+    "sceneThemeTitle": "오피스 풍경·테마 목록에서 고르기",
+    "sceneHeader": "풍경",
+    "themeHeader": "테마",
+    "muteAria": "Mute notifications",
+    "unmuteAria": "Unmute notifications"
+  },
+  "ticker": {
+    "more": "+{{n}} more"
+  },
+  "errors": {
+    "bundleNotJson": "파일을 JSON으로 읽을 수 없습니다.",
+    "bundleNotCharacterFile": "Agent Office 캐릭터 파일이 아닙니다.",
+    "bundleSchemaVersionMissing": "스키마 버전 정보가 없습니다.",
+    "bundleSchemaVersionNewer": "더 최신 버전에서 만든 파일입니다. 앱을 업데이트한 뒤 다시 시도하세요.",
+    "bundleSchemaVersionUnsupported": "지원하지 않는 스키마 버전입니다.",
+    "bundleProfileMissing": "프로필 데이터가 없습니다.",
+    "bundleProfileNameMissing": "프로필에 이름이 없습니다.",
+    "bundlePortraitInvalid": "초상 이미지 데이터가 올바르지 않습니다.",
+    "bundlePortraitTooLarge": "초상 이미지가 너무 큽니다(2 MiB 초과). 가져오기를 취소합니다.",
+    "bundleSpriteInvalid": "스프라이트 이미지 데이터가 올바르지 않습니다.",
+    "bundleSpriteTooLarge": "스프라이트 이미지가 너무 큽니다(1 MiB 초과). 가져오기를 취소합니다.",
+    "bundleMinimiInvalid": "미니미 이미지 데이터가 올바르지 않습니다.",
+    "bundleMinimiTooLarge": "미니미 이미지가 너무 큽니다(1 MiB 초과). 가져오기를 취소합니다."
   }
 }

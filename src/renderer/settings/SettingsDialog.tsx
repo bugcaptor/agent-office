@@ -644,7 +644,7 @@ function TerminalThemeItem() {
         <optgroup label={t("system.terminalThemeOwnGroup")}>
           {XTERM_PALETTE_ORDER.map((id) => (
             <option key={id} value={id}>
-              {XTERM_PALETTES[id].label}
+              {t(XTERM_PALETTES[id].labelKey)}
             </option>
           ))}
         </optgroup>

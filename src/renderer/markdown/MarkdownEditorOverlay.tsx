@@ -9,6 +9,7 @@
 // self-gate 관례: 항상 마운트, 편집기 없으면 null 렌더. 키 이벤트는 오버레이에서
 // stopPropagation해 터미널/전역 단축키로 새지 않게 한다.
 import { useMemo } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { useMarkdownStore, isEditorDirty } from "./markdownStore";
@@ -25,6 +26,7 @@ function renderMarkdown(src: string): string {
 }
 
 export function MarkdownEditorOverlay() {
+  const { t } = useTranslation("workdir");
   const editor = useMarkdownStore((s) => s.editor);
   const discardConfirm = useMarkdownStore((s) => s.discardConfirm);
   const setContent = useMarkdownStore((s) => s.setContent);
@@ -80,11 +82,19 @@ export function MarkdownEditorOverlay() {
 
   return (
     <div className="md-overlay md-editor-overlay" onKeyDown={onKeyDown}>
-      <div className="md-editor" role="dialog" aria-label={`마크다운 편집기: ${editor.relPath}`}>
+      <div
+        className="md-editor"
+        role="dialog"
+        aria-label={t("markdown.editorAria", { path: editor.relPath })}
+      >
         <div className="md-editor-bar">
           <span className="md-editor-path" title={editor.relPath}>
             {editor.relPath}
-            {dirty && <span className="md-editor-dirty" aria-label="저장되지 않은 변경">●</span>}
+            {dirty && (
+              <span className="md-editor-dirty" aria-label={t("markdown.unsaved")}>
+                ●
+              </span>
+            )}
           </span>
           <div className="md-editor-bar-actions">
             <button
@@ -93,7 +103,7 @@ export function MarkdownEditorOverlay() {
               aria-pressed={editor.mode === "source"}
               onClick={() => setMode("source")}
             >
-              소스
+              {t("markdown.tabSource")}
             </button>
             <button
               type="button"
@@ -101,12 +111,12 @@ export function MarkdownEditorOverlay() {
               aria-pressed={editor.mode === "preview"}
               onClick={() => setMode("preview")}
             >
-              미리보기
+              {t("markdown.tabPreview")}
             </button>
             <button
               type="button"
               className="md-editor-close"
-              aria-label="편집기 닫기"
+              aria-label={t("markdown.closeEditor")}
               onClick={requestClose}
             >
               ×
@@ -116,10 +126,10 @@ export function MarkdownEditorOverlay() {
 
         <div className="md-editor-body">
           {editor.loading ? (
-            <div className="md-editor-status">불러오는 중…</div>
+            <div className="md-editor-status">{t("markdown.loading")}</div>
           ) : editor.loadError ? (
             <div className="md-editor-status md-editor-error">
-              파일을 열 수 없습니다: {editor.loadError}
+              {t("markdown.loadError", { error: editor.loadError })}
             </div>
           ) : editor.mode === "source" ? (
             <textarea
@@ -153,19 +163,24 @@ export function MarkdownEditorOverlay() {
           }}
         >
           <div className="pixel-panel md-confirm">
-            <h2 className="pixel-title">저장되지 않은 변경</h2>
+            <h2 className="pixel-title">{t("markdown.unsaved")}</h2>
             <p>
-              <strong>{editor.relPath}</strong>에 저장하지 않은 변경이 있습니다.
+              <Trans
+                t={t}
+                i18nKey="markdown.discardBody"
+                values={{ path: editor.relPath }}
+                components={{ b: <strong /> }}
+              />
             </p>
             <div className="dialog-actions">
               <button className="pixel-btn primary" onClick={() => void saveThenClose()}>
-                저장 후 닫기
+                {t("markdown.saveAndClose")}
               </button>
               <button className="pixel-btn" onClick={closeEditor}>
-                버리고 닫기
+                {t("markdown.discardAndClose")}
               </button>
               <button className="pixel-btn" onClick={cancelDiscard}>
-                취소
+                {t("markdown.cancel")}
               </button>
             </div>
           </div>
@@ -181,17 +196,17 @@ export function MarkdownEditorOverlay() {
           }}
         >
           <div className="pixel-panel md-confirm">
-            <h2 className="pixel-title">저장 충돌</h2>
-            <p>다른 곳에서 파일이 변경되었습니다. 어떻게 할까요?</p>
+            <h2 className="pixel-title">{t("markdown.conflictTitle")}</h2>
+            <p>{t("markdown.conflictBody")}</p>
             <div className="dialog-actions">
               <button className="pixel-btn" onClick={() => void reloadFromDisk()}>
-                다시 불러오기(내 변경 버림)
+                {t("markdown.conflictReload")}
               </button>
               <button className="pixel-btn primary" onClick={() => void overwrite()}>
-                내 내용으로 덮어쓰기
+                {t("markdown.conflictOverwrite")}
               </button>
               <button className="pixel-btn" onClick={cancelConflict}>
-                취소
+                {t("markdown.cancel")}
               </button>
             </div>
           </div>

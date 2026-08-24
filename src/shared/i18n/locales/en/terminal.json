@@ -1,0 +1,60 @@
+{
+  "tab": {
+    "scrollPrev": "Scroll tabs left",
+    "scrollNext": "Scroll tabs right",
+    "toolsAria": "Terminal tools",
+    "docs": "Docs",
+    "docsTitle": "Open Markdown docs",
+    "memoOpen": "Open notes",
+    "memoClose": "Close notes",
+    "viewModeFill": "Fill app window",
+    "viewModeWindowed": "Back to windowed"
+  },
+  "menu": {
+    "restart": "Restart terminal",
+    "resume": "Resume last session",
+    "terminate": "Stop terminal",
+    "botStart": "Start bot mode",
+    "botStop": "Stop bot mode",
+    "workdir": "Show work folder",
+    "vscode": "Open in VS Code",
+    "osTerminal": "Open in OS terminal",
+    "exportShell": "Shell output in editor",
+    "diary": "Show diary",
+    "memoArchive": "Note archive",
+    "sessionLogs": "Show session logs",
+    "profileEdit": "Edit profile",
+    "clockOut": "Clock out",
+    "deleteAgent": "Delete character",
+    "characterFallback": "Character"
+  },
+  "bot": {
+    "stop": "Stop bot",
+    "stopConfirm": "Turn bot mode off and drive this tab yourself? The bot workflow in progress will be interrupted.",
+    "checking": "Checking…",
+    "nextCheck": "Next check in {{seconds}}s",
+    "errorTitle": "Bot error",
+    "errorUnknown": "Unknown error",
+    "startingTitle": "Starting bot…",
+    "startingDetail": "Checking repo and account",
+    "workingIssueTitle": "Working on issue #{{issue}}",
+    "workingTitle": "Working",
+    "workingDetail": "The terminal stays locked while the agent works",
+    "watchingTitle": "Watching issues",
+    "watchingDetail": "Waiting for a {{slug}} command",
+    "slashFallback": "slash"
+  },
+  "host": {
+    "externalTitle": "Connected to an external terminal",
+    "externalDetail": "This session lives in a terminal outside the app, so there is no screen mirroring. Only alerts and the personality prompt run through this character.",
+    "detach": "Disconnect",
+    "exited": "The process exited.",
+    "relaunch": "Relaunch"
+  },
+  "palette": {
+    "latte": "Catppuccin Latte",
+    "frappe": "Catppuccin Frappé",
+    "macchiato": "Catppuccin Macchiato",
+    "mocha": "Catppuccin Mocha"
+  }
+}

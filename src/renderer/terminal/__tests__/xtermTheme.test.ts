@@ -5,7 +5,7 @@
 // 최소 localStorage 스텁)으로 쓴다.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { THEMES } from "../../theme/themes";
-import { XTERM_PALETTES } from "../palettes";
+import { XTERM_PALETTES, xtermPaletteLabel } from "../palettes";
 import {
   DEFAULT_XTERM_THEME_OVERRIDE,
   XTERM_THEME_STORAGE_KEY,
@@ -58,7 +58,7 @@ describe("해석(auto / 고정)", () => {
       expect(effectiveXtermThemeId("daylight", id)).toBe(id);
       expect(resolveXtermTheme("daylight", id)).toBe(XTERM_PALETTES[id].xterm);
       expect(xtermBackground("pipboy", id)).toBe(XTERM_PALETTES[id].xterm.background);
-      expect(xtermSourceLabel(id)).toBe(XTERM_PALETTES[id].label);
+      expect(xtermSourceLabel(id)).toBe(xtermPaletteLabel(id));
     }
     // 앱 테마 쪽 라벨도 같은 창구로 나온다.
     expect(xtermSourceLabel("midnight")).toBe(THEMES.midnight.label);

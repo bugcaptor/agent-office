@@ -10,10 +10,12 @@
 // stopBot). 오버레이는 terminal-mount 안에 있어 탭 스트립은 덮지 않는다 —
 // 탭 우클릭 메뉴로도 끌 수 있다.
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { botStatusText, nextPollSeconds } from "./botStatusText";
 
 export function BotOverlay({ agentId }: { agentId: string }) {
+  const { t } = useTranslation("terminal");
   const status = useAppStore((s) => s.botMode[agentId]);
   const stopBot = useAppStore((s) => s.stopBot);
   // 카운트다운 갱신용 1초 틱. 봇이 켜져 있을 때만 돈다.
@@ -29,14 +31,14 @@ export function BotOverlay({ agentId }: { agentId: string }) {
   const { icon, title, detail } = botStatusText(status);
   const secs = status.phase === "error" ? undefined : nextPollSeconds(status, now);
   const countdown =
-    secs == null ? undefined : secs <= 0 ? "확인 중…" : `다음 확인까지 ${secs}초`;
+    secs == null
+      ? undefined
+      : secs <= 0
+        ? t("bot.checking")
+        : t("bot.nextCheck", { seconds: secs });
 
   const onStop = () => {
-    if (
-      window.confirm(
-        "봇 모드를 끄고 이 탭을 직접 조작할까요? 진행 중인 봇 작업 흐름이 중단됩니다."
-      )
-    ) {
+    if (window.confirm(t("bot.stopConfirm"))) {
       void stopBot(agentId);
     }
   };
@@ -62,7 +64,7 @@ export function BotOverlay({ agentId }: { agentId: string }) {
           {countdown && <div className="bot-overlay-countdown">{countdown}</div>}
         </div>
         <button type="button" className="pixel-btn bot-overlay-stop" onClick={onStop}>
-          봇 끄기
+          {t("bot.stop")}
         </button>
       </div>
     </div>

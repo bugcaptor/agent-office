@@ -63,13 +63,13 @@ function defaultIo(): MascotBridgeIo {
   return {
     emitState(state) {
       void emit(Events.mascotState, state).catch((err) =>
-        console.warn("mascotBridge: 상태 방출 실패", err),
+        console.warn("mascotBridge: state emit failed", err),
       );
     },
     setVisible(visible) {
       void tauriApi
         .setMascotVisible(visible)
-        .catch((err) => console.warn("mascotBridge: 창 표시 전환 실패", err));
+        .catch((err) => console.warn("mascotBridge: window visibility toggle failed", err));
     },
     onMascotReady(cb) {
       return wrapListen<unknown>(Events.mascotReady, () => cb());

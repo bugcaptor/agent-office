@@ -14,6 +14,7 @@
 // 배경으로도 3:1)은 여기 적용하지 않는다. 특히 latte는 유채색을 세그먼트
 // 배경으로 쓰는 프롬프트(agnoster류)에서 글자 대비가 낮다(빨강 1.15:1).
 // 밝은 배경을 원하면서 그런 프롬프트를 쓴다면 앱 테마의 "밝음"이 낫다.
+import { t } from "@renderer/i18n";
 import type { ITheme } from "@xterm/xterm";
 
 /** 배경/전경은 필수 — theme.ts가 `--term-bg`를 항상 얻을 수 있어야 한다. */
@@ -21,8 +22,10 @@ export type XtermPalette = ITheme & { background: string; foreground: string };
 
 export interface XtermPaletteDef {
   id: XtermPaletteId;
-  /** 셀렉터에 그대로 노출되는 라벨. */
-  label: string;
+  /** 셀렉터에 노출되는 라벨의 **번역 키**. 이 레지스트리는 모듈 최상위 상수라
+   *  `t()`를 부를 수 없다 — 값이 아니라 키를 담고 렌더 시점에 번역한다
+   *  (`xtermPaletteLabel`). 그래야 언어를 바꿨을 때 함께 바뀐다. */
+  labelKey: string;
   xterm: XtermPalette;
 }
 
@@ -36,7 +39,7 @@ export const XTERM_PALETTES: Record<XtermPaletteId, XtermPaletteDef> = {
   // 유일한 밝은 플레이버.
   "catppuccin-latte": {
     id: "catppuccin-latte",
-    label: "카푸치노 라떼",
+    labelKey: "terminal:palette.latte",
     xterm: {
       background: "#eff1f5",
       foreground: "#4c4f69",
@@ -64,7 +67,7 @@ export const XTERM_PALETTES: Record<XtermPaletteId, XtermPaletteDef> = {
   // 어두운 세 플레이버는 frappe → macchiato → mocha 순으로 더 어두워진다.
   "catppuccin-frappe": {
     id: "catppuccin-frappe",
-    label: "카푸치노 프라페",
+    labelKey: "terminal:palette.frappe",
     xterm: {
       background: "#303446",
       foreground: "#c6d0f5",
@@ -91,7 +94,7 @@ export const XTERM_PALETTES: Record<XtermPaletteId, XtermPaletteDef> = {
   },
   "catppuccin-macchiato": {
     id: "catppuccin-macchiato",
-    label: "카푸치노 마키아토",
+    labelKey: "terminal:palette.macchiato",
     xterm: {
       background: "#24273a",
       foreground: "#cad3f5",
@@ -118,7 +121,7 @@ export const XTERM_PALETTES: Record<XtermPaletteId, XtermPaletteDef> = {
   },
   "catppuccin-mocha": {
     id: "catppuccin-mocha",
-    label: "카푸치노 모카",
+    labelKey: "terminal:palette.mocha",
     xterm: {
       background: "#1e1e2e",
       foreground: "#cdd6f4",
@@ -152,6 +155,11 @@ export const XTERM_PALETTE_ORDER: readonly XtermPaletteId[] = [
   "catppuccin-macchiato",
   "catppuccin-mocha",
 ];
+
+/** 셀렉터에 노출할 팔레트 라벨(호출 시점 번역 — 언어 변경을 따라간다). */
+export function xtermPaletteLabel(id: XtermPaletteId): string {
+  return t(XTERM_PALETTES[id].labelKey);
+}
 
 export function isXtermPaletteId(v: unknown): v is XtermPaletteId {
   return typeof v === "string" && v in XTERM_PALETTES;

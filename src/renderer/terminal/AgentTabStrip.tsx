@@ -13,6 +13,7 @@
 //   break TUI apps (vim etc.) that need a real Escape keystroke delivered to
 //   the shell; overlay close is header-X-button/Cmd+W only.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "../store/appStore";
 import { generateSpritePreview } from "../office/gen/characterFactory";
@@ -33,9 +34,11 @@ import type { ClaudeResumeEntry } from "@shared/types";
 
 // 뷰 모드 토글 버튼(이슈 #69)의 아이콘/툴팁. title은 "누르면 가는 다음 모드"를
 // 안내한다(windowed↔filled). aria-label도 동일.
-const VIEW_MODE_BUTTON: Record<TerminalViewMode, { icon: string; label: string }> = {
-  windowed: { icon: "⤢", label: "앱에 꽉 채우기" },
-  filled: { icon: "❐", label: "창 모드로 복귀" },
+// 모듈 최상위라 `t()`를 부를 수 없어 라벨이 아니라 **키**를 담는다 —
+// 언어를 바꾸면 렌더 시점에 다시 번역된다.
+const VIEW_MODE_BUTTON: Record<TerminalViewMode, { icon: string; labelKey: string }> = {
+  windowed: { icon: "⤢", labelKey: "tab.viewModeFill" },
+  filled: { icon: "❐", labelKey: "tab.viewModeWindowed" },
 };
 
 // 꽉 채우기 토글 단축키는 OS "확대" 관례를 따른다: macOS는 Ctrl+Cmd+F, 그 외는 F11.
@@ -44,6 +47,7 @@ const IS_MAC =
   /mac/i.test(navigator.platform || navigator.userAgent || "");
 
 export function AgentTabStrip() {
+  const { t } = useTranslation("terminal");
   const isOpen = useAppStore((s) => s.activeTerminalAgentId !== null);
   const activeId = useAppStore((s) => s.activeTerminalAgentId);
   // `recentAgentIds` (string[]) is used directly rather than mapped to
@@ -123,6 +127,8 @@ export function AgentTabStrip() {
   const openMemoArchive = useMemoStore((s) => s.openArchive);
   // 활성 에이전트의 cwd(문서 버튼 활성 조건). 없으면 버튼 비활성.
   const activeCwd = activeId ? agents[activeId]?.cwd : undefined;
+  // 이름 없는 프로필로 오버레이(일기·메모·세션 로그)를 열 때 쓸 표시명 폴백.
+  const characterFallback = t("menu.characterFallback");
   const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
   const tabViewportRef = useRef<HTMLDivElement>(null);
   const [tabScroll, setTabScroll] = useState({ canScrollLeft: false, canScrollRight: false });
@@ -196,7 +202,7 @@ export function AgentTabStrip() {
       if (text === undefined) return;
       void tauriApi
         .exportTerminalOutput(agents[agentId]?.name ?? agentId, text)
-        .catch((err) => console.warn("셸 출력 내보내기 실패", err));
+        .catch((err) => console.warn("AgentTabStrip: shell output export failed", err));
     },
     [agents]
   );
@@ -286,8 +292,8 @@ export function AgentTabStrip() {
           <button
             type="button"
             className="agent-tab-scroll-button agent-tab-scroll-prev"
-            aria-label="이전 캐릭터 탭 보기"
-            title="이전 캐릭터 탭 보기"
+            aria-label={t("tab.scrollPrev")}
+            title={t("tab.scrollPrev")}
             onClick={() => scrollTabs(-1)}
           >
             &lt;
@@ -321,7 +327,9 @@ export function AgentTabStrip() {
                   .then((entries) => {
                     if (resumeFetchSeq.current === seq) setResumeEntries(entries);
                   })
-                  .catch((err) => console.warn("이어하기 후보 조회 실패", err));
+                  .catch((err) =>
+                    console.warn("AgentTabStrip: resume candidate lookup failed", err)
+                  );
               }}
             >
               {tab.thumb && (
@@ -348,26 +356,26 @@ export function AgentTabStrip() {
           <button
             type="button"
             className="agent-tab-scroll-button agent-tab-scroll-next"
-            aria-label="다음 캐릭터 탭 보기"
-            title="다음 캐릭터 탭 보기"
+            aria-label={t("tab.scrollNext")}
+            title={t("tab.scrollNext")}
             onClick={() => scrollTabs(1)}
           >
             &gt;
           </button>
         )}
       </div>
-      <div className="agent-tab-strip-actions" role="group" aria-label="터미널 도구">
+      <div className="agent-tab-strip-actions" role="group" aria-label={t("tab.toolsAria")}>
         <button
           type="button"
           className="agent-tab-strip-docs"
           // 활성 에이전트 cwd를 root로 마크다운 문서 팔레트 오픈. cwd 없으면 비활성.
-          title="마크다운 문서 열기"
+          title={t("tab.docsTitle")}
           disabled={!activeCwd}
           onClick={() => {
             if (activeId && activeCwd) openMarkdownPalette(activeCwd, activeId);
           }}
         >
-          문서
+          {t("tab.docs")}
         </button>
         <button
           type="button"
@@ -378,8 +386,8 @@ export function AgentTabStrip() {
           }
           // 포스트잇 토글(이슈 #79). 위젯은 늘 활성 탭의 장을 보여주므로 이
           // 버튼도 전역 토글이다 — 켜진 상태는 악센트색으로 구분.
-          title={memoVisible ? "포스트잇 닫기" : "포스트잇 열기"}
-          aria-label={memoVisible ? "포스트잇 닫기" : "포스트잇 열기"}
+          title={memoVisible ? t("tab.memoClose") : t("tab.memoOpen")}
+          aria-label={memoVisible ? t("tab.memoClose") : t("tab.memoOpen")}
           aria-pressed={memoVisible}
           onClick={toggleMemo}
         >
@@ -389,8 +397,8 @@ export function AgentTabStrip() {
           type="button"
           className={`agent-tab-strip-viewmode mode-${viewMode}`}
           // 토글: windowed↔filled. 아이콘은 현재 모드, title은 누르면 갈 다음 모드를 안내한다.
-          title={VIEW_MODE_BUTTON[viewMode].label}
-          aria-label={VIEW_MODE_BUTTON[viewMode].label}
+          title={t(VIEW_MODE_BUTTON[viewMode].labelKey)}
+          aria-label={t(VIEW_MODE_BUTTON[viewMode].labelKey)}
           onClick={cycleTerminalViewMode}
         >
           {VIEW_MODE_BUTTON[viewMode].icon}
@@ -412,13 +420,13 @@ export function AgentTabStrip() {
           items={[
             // ── 세션 제어: 인앱 PTY 생명주기 ──
             {
-              label: "터미널 재시작",
+              label: t("menu.restart"),
               icon: "🔄",
               onSelect: () =>
                 openModal({ kind: "confirm-restart", agentId: menu.agentId }),
             },
             {
-              label: "이전 세션 이어하기",
+              label: t("menu.resume"),
               icon: "⏮️",
               // 캡처된 Claude native 세션이 있을 때만 활성 — 없으면 비활성.
               disabled: !resumeEntries[menu.agentId],
@@ -433,7 +441,7 @@ export function AgentTabStrip() {
               },
             },
             {
-              label: "터미널 종료",
+              label: t("menu.terminate"),
               icon: "⏹️",
               // PTY가 살아있을 때만 의미가 있다 — 이미 exited/idle이면 캐릭터는
               // 탕비실(또는 재소환 대기)이므로 비활성화.
@@ -446,7 +454,7 @@ export function AgentTabStrip() {
             // 봇 모드(이슈 #57): 켜면 이 탭이 Gitea 이슈의 슬래시 명령에 반응해
             // 자동 작업한다. 켜는 동안 로컬 키 입력은 잠긴다. 끌 땐 한 번 더 확인.
             {
-              label: menu.agentId in botMode ? "봇 모드 끄기" : "봇 모드 시작",
+              label: menu.agentId in botMode ? t("menu.botStop") : t("menu.botStart"),
               icon: "🤖",
               // 새로 켤 땐 세션이 살아 있어야 프롬프트를 주입할 수 있다. 이미 켜진
               // 경우엔 끄기이므로 항상 활성.
@@ -456,11 +464,7 @@ export function AgentTabStrip() {
               onSelect: () => {
                 const aid = menu.agentId;
                 if (aid in botMode) {
-                  if (
-                    window.confirm(
-                      "봇 모드를 끄고 이 탭을 직접 조작할까요? 진행 중인 봇 작업 흐름이 중단됩니다."
-                    )
-                  ) {
+                  if (window.confirm(t("bot.stopConfirm"))) {
                     void stopBot(aid);
                   }
                 } else if (looksLikeAgentRunning(terminalRegistry.getPlainText(aid))) {
@@ -475,7 +479,7 @@ export function AgentTabStrip() {
             { separator: true },
             // ── 열기/보기: 작업 폴더·외부 도구·출력 ──
             {
-              label: "작업 폴더 보기",
+              label: t("menu.workdir"),
               icon: "📁",
               // 작업 폴더(cwd) 미설정 프로필은 비활성화 — 홈 디렉터리 폴백 없음.
               disabled: !agents[menu.agentId]?.cwd,
@@ -485,7 +489,7 @@ export function AgentTabStrip() {
               },
             },
             {
-              label: "VS Code로 열기",
+              label: t("menu.vscode"),
               icon: "💻",
               // 작업 폴더(cwd) 미설정 프로필은 비활성화 — 홈 디렉터리 폴백 없음.
               disabled: !agents[menu.agentId]?.cwd,
@@ -494,12 +498,14 @@ export function AgentTabStrip() {
                 if (!cwd) return;
                 void tauriApi
                   .openInVscode(cwd)
-                  .catch((err) => console.warn("VS Code 열기 실패", err));
+                  .catch((err) =>
+                    console.warn("AgentTabStrip: open in VS Code failed", err)
+                  );
               },
             },
             {
               // 인앱 PTY(터미널 재시작/종료)와 구분되는 외부 OS 터미널 앱.
-              label: "OS 터미널로 열기",
+              label: t("menu.osTerminal"),
               icon: "⌨️",
               disabled: !agents[menu.agentId]?.cwd,
               onSelect: () => {
@@ -507,12 +513,14 @@ export function AgentTabStrip() {
                 if (!cwd) return;
                 void tauriApi
                   .openInTerminal(cwd)
-                  .catch((err) => console.warn("OS 터미널 열기 실패", err));
+                  .catch((err) =>
+                    console.warn("AgentTabStrip: open in OS terminal failed", err)
+                  );
               },
             },
             {
               // 이슈 #42: 현재 터미널 버퍼(스크롤백 포함)를 .txt로 내보내 에디터로 연다.
-              label: "셸 출력을 에디터로 보기",
+              label: t("menu.exportShell"),
               icon: "📄",
               // 터미널이 아직 만들어지지 않았으면(has === false) 뽑을 버퍼가 없다.
               disabled: !terminalRegistry.has(menu.agentId),
@@ -521,16 +529,16 @@ export function AgentTabStrip() {
             {
               // 이슈 #56: 캐릭터 일기 열람/생성. 오버레이 안에서 "일기 쓰기"로
               // 지금까지의 작업 로그를 성격 문체의 일기 한 편으로 남긴다.
-              label: "일기 보기",
+              label: t("menu.diary"),
               icon: "📔",
               onSelect: () =>
-                openDiary(menu.agentId, agents[menu.agentId]?.name ?? "캐릭터"),
+                openDiary(menu.agentId, agents[menu.agentId]?.name ?? characterFallback),
             },
             {
               // 이슈 #79: 포스트잇 메모 위젯 토글. 위젯은 늘 활성 탭의 장을
               // 보여주므로, 활성이 아닌 탭에서 열면 그 탭으로 함께 전환한다
               // (사용자가 지목한 캐릭터의 메모가 보이도록).
-              label: memoVisible ? "포스트잇 닫기" : "포스트잇 열기",
+              label: memoVisible ? t("tab.memoClose") : t("tab.memoOpen"),
               icon: "🗒",
               onSelect: () => {
                 if (memoVisible && menu.agentId === activeId) {
@@ -543,29 +551,35 @@ export function AgentTabStrip() {
             },
             {
               // 이슈 #79: 넘긴 지난 장들. 위젯 열림 여부와 무관하게 볼 수 있다.
-              label: "메모 아카이브",
+              label: t("menu.memoArchive"),
               icon: "🗂",
               onSelect: () =>
-                void openMemoArchive(menu.agentId, agents[menu.agentId]?.name ?? "캐릭터"),
+                void openMemoArchive(
+                  menu.agentId,
+                  agents[menu.agentId]?.name ?? characterFallback
+                ),
             },
             {
               // docs/session-log-design.md: 상시 기록된 터미널 전사 목록.
               // 하나를 고르면 편집기로 열거나 학습자료로 정리할 수 있다.
-              label: "세션 로그 보기",
+              label: t("menu.sessionLogs"),
               icon: "📜",
               onSelect: () =>
-                openSessionLogs(menu.agentId, agents[menu.agentId]?.name ?? "캐릭터"),
+                openSessionLogs(
+                  menu.agentId,
+                  agents[menu.agentId]?.name ?? characterFallback
+                ),
             },
             { separator: true },
             // ── 프로필/생명주기 ──
             {
-              label: "프로필 편집",
+              label: t("menu.profileEdit"),
               icon: "✏️",
               onSelect: () =>
                 openModal({ kind: "profile-edit", agentId: menu.agentId }),
             },
             {
-              label: "퇴근",
+              label: t("menu.clockOut"),
               icon: "🏠",
               onSelect: () =>
                 openModal({ kind: "confirm-clock-out", agentId: menu.agentId }),
@@ -573,7 +587,7 @@ export function AgentTabStrip() {
             { separator: true },
             // 파괴적(되돌릴 수 없음) — 경고색으로 강조하고 구분선으로 격리.
             {
-              label: "캐릭터 삭제",
+              label: t("menu.deleteAgent"),
               icon: "🗑️",
               danger: true,
               onSelect: () =>

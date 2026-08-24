@@ -15,6 +15,7 @@ import {
   XTERM_PALETTES,
   XTERM_PALETTE_ORDER,
   isXtermPaletteId,
+  xtermPaletteLabel,
 } from "../palettes";
 import { THEMES } from "../../theme/themes";
 
@@ -58,7 +59,7 @@ describe("XTERM_PALETTES 레지스트리 무결성", () => {
   it("id 일치 + 비어있지 않은 라벨", () => {
     for (const id of ALL_IDS) {
       expect(XTERM_PALETTES[id].id).toBe(id);
-      expect(XTERM_PALETTES[id].label.length).toBeGreaterThan(0);
+      expect(xtermPaletteLabel(id).length).toBeGreaterThan(0);
     }
   });
 

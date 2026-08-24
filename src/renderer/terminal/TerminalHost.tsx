@@ -16,6 +16,7 @@
 // is the `tauriApi` module, so `resize` is called on that
 // import directly instead of a `window.api` global.
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
@@ -57,6 +58,7 @@ function TerminalMount({ agentId }: { agentId: string }) {
 }
 
 function ExternalMount({ agentId }: { agentId: string }) {
+  const { t } = useTranslation("terminal");
   const isActive = useAppStore((s) => s.activeTerminalAgentId === agentId);
   const [detaching, setDetaching] = useState(false);
 
@@ -80,18 +82,15 @@ function ExternalMount({ agentId }: { agentId: string }) {
         <span className="terminal-external-icon" aria-hidden="true">
           🔗
         </span>
-        <div className="terminal-external-title">외부 터미널 세션에 연결됨</div>
-        <div className="terminal-external-detail">
-          앱 밖 터미널의 세션이라 화면 미러링은 없습니다. 알림과 성격 프롬프트만 이
-          캐릭터를 통해 동작합니다.
-        </div>
+        <div className="terminal-external-title">{t("host.externalTitle")}</div>
+        <div className="terminal-external-detail">{t("host.externalDetail")}</div>
         <button
           type="button"
           className="pixel-btn"
           onClick={detach}
           disabled={detaching}
         >
-          연결 해제
+          {t("host.detach")}
         </button>
       </div>
     </div>
@@ -99,6 +98,7 @@ function ExternalMount({ agentId }: { agentId: string }) {
 }
 
 function PtyMount({ agentId }: { agentId: string }) {
+  const { t } = useTranslation("terminal");
   const hostRef = useRef<HTMLDivElement>(null);
   const isActive = useAppStore((s) => s.activeTerminalAgentId === agentId);
   const isExited = useAppStore((s) => s.sessions[agentId]?.status === "exited");
@@ -158,9 +158,9 @@ function PtyMount({ agentId }: { agentId: string }) {
       <BotOverlay agentId={agentId} />
       {isExited && (
         <div className="terminal-exited-banner" role="alert">
-          <span>프로세스가 종료되었습니다.</span>
+          <span>{t("host.exited")}</span>
           <button type="button" className="pixel-btn primary" onClick={relaunch}>
-            다시 띄우기
+            {t("host.relaunch")}
           </button>
         </div>
       )}

@@ -367,7 +367,7 @@ function cancel(opId?: string): void {
   if (!opId) return;
   void tauriApi.workdirGitCancel(opId).catch((err) => {
     // 취소 실패는 사용자 흐름에 영향이 없다(조회가 이미 끝났을 뿐일 수 있다).
-    console.warn("workdir: git 조회 취소 실패", err);
+    console.warn("workdir: git cancel failed", err);
   });
 }
 
@@ -468,7 +468,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
             });
           }
         } catch (err) {
-          console.warn("workdir: 서버사이드 검색 실패", err);
+          console.warn("workdir: server-side search failed", err);
           if (gen === searchGen) set({ search: null, searchLoading: false });
         }
       })();
@@ -512,7 +512,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
       }));
     } catch (err) {
       // 실패 시 기존 캐시·fetchedAt은 그대로 유지한다.
-      console.warn("workdir: 파일 목록 조회 실패", err);
+      console.warn("workdir: file listing failed", err);
     } finally {
       listingInFlight.end(root);
     }
@@ -547,7 +547,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
         gitOpId: omitKey(s.gitOpId, root),
       }));
     } catch (err) {
-      console.warn("workdir: git 상태 조회 실패", err);
+      console.warn("workdir: git status failed", err);
       set((s) => ({
         gitLoading: { ...s.gitLoading, [root]: false },
         gitOpId: omitKey(s.gitOpId, root),
@@ -568,7 +568,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     // 그 외 파일은 외부 에디터(VS Code 등)로 절대경로를 넘겨 연다.
     void tauriApi
       .openInVscode(joinPath(root, relPath))
-      .catch((err) => console.warn(`파일 열기 실패: ${name}`, err));
+      .catch((err) => console.warn(`workdir: open file failed: ${name}`, err));
   },
 
   openDetail: (root, relPath, name, status) => {
@@ -629,7 +629,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     // 마크다운 포함 항상 외부 에디터로. 팔레트는 유지(참조용).
     void tauriApi
       .openInVscode(joinPath(d.root, d.relPath))
-      .catch((err) => console.warn(`외부 열기 실패: ${d.name}`, err));
+      .catch((err) => console.warn(`workdir: open external failed: ${d.name}`, err));
   },
 
   openInApp: () => {
@@ -715,7 +715,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
           : s,
       );
     } catch (err) {
-      console.warn("workdir: diff 조회 실패", err);
+      console.warn("workdir: diff failed", err);
       set((s) =>
         s.detail && s.detail.gen === gen
           ? { detail: { ...s.detail, diffLoading: false, diffOpId: undefined } }
@@ -753,7 +753,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
           : s,
       );
     } catch (err) {
-      console.warn("workdir: 히스토리 조회 실패", err);
+      console.warn("workdir: file history failed", err);
       set((s) =>
         s.detail && s.detail.relPath === relPath
           ? { detail: { ...s.detail, historyLoading: false, historyOpId: undefined } }
@@ -805,7 +805,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
           : s,
       );
     } catch (err) {
-      console.warn("workdir: 커밋 diff 조회 실패", err);
+      console.warn("workdir: commit diff failed", err);
       set((s) =>
         s.detail && s.detail.selectedCommit === hash
           ? { detail: { ...s.detail, commitDiffLoading: false, commitDiffOpId: undefined } }
@@ -873,7 +873,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
           : s,
       );
     } catch (err) {
-      console.warn("workdir: 커밋 변경파일 조회 실패", err);
+      console.warn("workdir: commit files failed", err);
       set((s) =>
         s.detail && s.detail.expandedCommit === hash
           ? { detail: { ...s.detail, commitFilesLoading: false, commitFilesOpId: undefined } }
@@ -924,7 +924,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
           : s,
       );
     } catch (err) {
-      console.warn("workdir: 커밋 변경파일 추가 조회 실패", err);
+      console.warn("workdir: commit files next page failed", err);
       set((s) =>
         s.detail && s.detail.expandedCommit === expandedCommit
           ? { detail: { ...s.detail, commitFilesLoading: false, commitFilesOpId: undefined } }
@@ -940,7 +940,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     const rel = d.selectedCommitFile ?? d.relPath;
     void tauriApi
       .workdirDifftool(d.root, rel, d.diffMode, commit)
-      .catch((err) => console.warn("외부 비교 도구 실행 실패", err));
+      .catch((err) => console.warn("workdir: difftool launch failed", err));
   },
 
   // ================= 커밋 로그 브라우저(이슈 #54, 2단계) =================
@@ -1004,7 +1004,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
         opId: undefined,
       });
     } catch (err) {
-      console.warn("workdir: 리포 로그 조회 실패", err);
+      console.warn("workdir: repo log failed", err);
       const cur = get().repoLog[root];
       if (cur && cur.gen === gen) {
         setRepoLog(set, root, { ...cur, loading: false, opId: undefined });
@@ -1066,7 +1066,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
         filesOpId: undefined,
       });
     } catch (err) {
-      console.warn("workdir: 로그 커밋 변경파일 조회 실패", err);
+      console.warn("workdir: repo log commit files failed", err);
       const cur = get().repoLog[root];
       if (cur && cur.selectedCommit === hash) {
         setRepoLog(set, root, { ...cur, filesLoading: false, filesOpId: undefined });
@@ -1105,7 +1105,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
         filesOpId: undefined,
       });
     } catch (err) {
-      console.warn("workdir: 로그 변경파일 추가 조회 실패", err);
+      console.warn("workdir: repo log commit files next page failed", err);
       const cur = get().repoLog[root];
       if (cur && cur.selectedCommit === hash) {
         setRepoLog(set, root, { ...cur, filesLoading: false, filesOpId: undefined });
@@ -1135,7 +1135,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
       if (!cur || cur.selectedFile !== path || cur.selectedCommit !== hash) return;
       setRepoLog(set, root, { ...cur, fileDiff: res, fileDiffLoading: false, fileDiffOpId: undefined });
     } catch (err) {
-      console.warn("workdir: 로그 파일 diff 조회 실패", err);
+      console.warn("workdir: repo log file diff failed", err);
       const cur = get().repoLog[root];
       if (cur && cur.selectedFile === path) {
         setRepoLog(set, root, { ...cur, fileDiffLoading: false, fileDiffOpId: undefined });
@@ -1150,7 +1150,7 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     if (!rl || !rl.selectedCommit || !rl.selectedFile) return;
     void tauriApi
       .workdirDifftool(p.root, rl.selectedFile, "worktreeVsHead", rl.selectedCommit)
-      .catch((err) => console.warn("외부 비교 도구 실행 실패", err));
+      .catch((err) => console.warn("workdir: difftool launch failed", err));
   },
 }));
 

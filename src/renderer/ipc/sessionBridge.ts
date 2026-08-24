@@ -345,7 +345,7 @@ export function installSessionBridge(): () => void {
   // 백엔드 웨이크락을 구동한다. 백엔드가 설정으로 게이트하므로 설정이 꺼져 있으면
   // 통지는 무시된다(여기서도 enabled=false면 즉시 해제 통지).
   const keepAwake = createKeepAwakeController((active) => {
-    void tauriApi.setKeepAwake(active).catch((err) => console.warn("keepAwake: 통지 실패", err));
+    void tauriApi.setKeepAwake(active).catch((err) => console.warn("keepAwake: notify failed", err));
   });
   const recomputeKeepAwake = () => {
     const s = useAppStore.getState();

@@ -71,9 +71,30 @@ export interface CharacterBundle {
   minimiPngBase64?: string;
 }
 
+/**
+ * 파싱 실패 사유. **문구가 아니라 안정적인 코드**다 — `src/shared`는 renderer에
+ * 의존할 수 없어 여기서 `t()`를 부를 수 없고, 부를 수 있더라도 이 결과는 그리는
+ * 쪽(ProfileDialog)이 자기 언어로 옮겨야 한다. 코드↔문구 매핑은 renderer의
+ * `common:errors.*` 카탈로그에 있다(SettingsDialog의 백엔드 오류 코드 매핑과 같은 관례).
+ */
+export type CharacterBundleError =
+  | "bundle-not-json"
+  | "bundle-not-character-file"
+  | "bundle-schema-version-missing"
+  | "bundle-schema-version-newer"
+  | "bundle-schema-version-unsupported"
+  | "bundle-profile-missing"
+  | "bundle-profile-name-missing"
+  | "bundle-portrait-invalid"
+  | "bundle-portrait-too-large"
+  | "bundle-sprite-invalid"
+  | "bundle-sprite-too-large"
+  | "bundle-minimi-invalid"
+  | "bundle-minimi-too-large";
+
 export type ParseBundleResult =
   | { ok: true; bundle: CharacterBundle }
-  | { ok: false; error: string };
+  | { ok: false; error: CharacterBundleError };
 
 /** base64 문자열의 디코드 후 대략 바이트 수(패딩 무시한 상한 근사). */
 function approxDecodedBytes(b64: string): number {
@@ -98,72 +119,72 @@ function asColors(v: unknown): ColorOverrides | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-const fail = (error: string): ParseBundleResult => ({ ok: false, error });
+const fail = (error: CharacterBundleError): ParseBundleResult => ({ ok: false, error });
 
 /**
  * 번들 파일 텍스트를 파싱·검증한다. 성공 시 정규화된 `CharacterBundle`,
- * 실패 시 사용자에게 보일 한국어 오류 문자열을 돌려준다. 어떤 경우에도 예외를
- * 던지지 않는다(호출부가 결과만 분기).
+ * 실패 시 `CharacterBundleError` 코드를 돌려준다(문구는 호출부가 번역한다).
+ * 어떤 경우에도 예외를 던지지 않는다(호출부가 결과만 분기).
  */
 export function parseCharacterBundle(text: string): ParseBundleResult {
   let raw: unknown;
   try {
     raw = JSON.parse(text);
   } catch {
-    return fail("파일을 JSON으로 읽을 수 없습니다.");
+    return fail("bundle-not-json");
   }
   if (!raw || typeof raw !== "object") {
-    return fail("Agent Office 캐릭터 파일이 아닙니다.");
+    return fail("bundle-not-character-file");
   }
   const o = raw as Record<string, unknown>;
   if (o.kind !== CHARACTER_BUNDLE_KIND) {
-    return fail("Agent Office 캐릭터 파일이 아닙니다.");
+    return fail("bundle-not-character-file");
   }
   if (typeof o.schemaVersion !== "number") {
-    return fail("스키마 버전 정보가 없습니다.");
+    return fail("bundle-schema-version-missing");
   }
   if (o.schemaVersion > CHARACTER_BUNDLE_SCHEMA_VERSION) {
-    return fail("더 최신 버전에서 만든 파일입니다. 앱을 업데이트한 뒤 다시 시도하세요.");
+    return fail("bundle-schema-version-newer");
   }
   if (o.schemaVersion !== CHARACTER_BUNDLE_SCHEMA_VERSION) {
-    return fail("지원하지 않는 스키마 버전입니다.");
+    return fail("bundle-schema-version-unsupported");
   }
 
   const p = o.profile;
   if (!p || typeof p !== "object") {
-    return fail("프로필 데이터가 없습니다.");
+    return fail("bundle-profile-missing");
   }
   const pr = p as Record<string, unknown>;
   if (typeof pr.name !== "string" || pr.name.trim() === "") {
-    return fail("프로필에 이름이 없습니다.");
+    return fail("bundle-profile-name-missing");
   }
 
   // 임베드 이미지 검증 — 상한 초과면 이미지만 건너뛰지 않고 전체 거부(사용자 결정).
   const portrait = o.portraitPngBase64;
   if (portrait !== undefined) {
     if (typeof portrait !== "string") {
-      return fail("초상 이미지 데이터가 올바르지 않습니다.");
+      return fail("bundle-portrait-invalid");
     }
     if (approxDecodedBytes(portrait) > MAX_PORTRAIT_BYTES) {
-      return fail("초상 이미지가 너무 큽니다(2 MiB 초과). 가져오기를 취소합니다.");
+      return fail("bundle-portrait-too-large");
     }
   }
   const sprite = o.spritePngBase64;
   if (sprite !== undefined) {
     if (typeof sprite !== "string") {
-      return fail("스프라이트 이미지 데이터가 올바르지 않습니다.");
+      return fail("bundle-sprite-invalid");
     }
     if (approxDecodedBytes(sprite) > MAX_SPRITE_BYTES) {
-      return fail("스프라이트 이미지가 너무 큽니다(1 MiB 초과). 가져오기를 취소합니다.");
+      return fail("bundle-sprite-too-large");
     }
   }
   const minimi = o.minimiPngBase64;
   if (minimi !== undefined) {
     if (typeof minimi !== "string") {
-      return fail("미니미 이미지 데이터가 올바르지 않습니다.");
+      return fail("bundle-minimi-invalid");
     }
     if (approxDecodedBytes(minimi) > MAX_MINIMI_BYTES) {
-      return fail("미니미 이미지가 너무 큽니다(1 MiB 초과). 가져오기를 취소합니다.");
+      return fail("bundle-minimi-too-large");
     }
   }
 

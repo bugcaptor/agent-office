@@ -1,5 +1,59 @@
 {
   "_meta": {
     "label": "English"
+  },
+  "time": {
+    "justNow": "just now"
+  },
+  "topBar": {
+    "openTerminal": "Open terminal",
+    "agents_one": "{{count}} agent",
+    "agents_other": "{{count}} agents",
+    "counts": "{{running}} running · {{pending}} pending"
+  },
+  "bottomBar": {
+    "newAgent": "＋ New Agent",
+    "clockIn": "🏠 Clock in ({{n}})",
+    "clockAll": "Clock all",
+    "clockInAll": "Clock in all (start terminals, {{n}})",
+    "clockOutAll": "Clock out all ({{n}})",
+    "status": "{{running}} running · {{pending}} needs input",
+    "records": "📊 Log",
+    "recordsAria": "Log",
+    "recordsTitle": "Session analytics · Employee of the month",
+    "recordsTitleTalk": "Session analytics · Employee of the month · {{open}} open talks",
+    "recordsTitleQueued": "Session analytics · Employee of the month · {{open}} open talks · {{queued}} queued (sent once the peer is free)",
+    "analytics": "Session analytics",
+    "awards": "Employee of the month",
+    "talkLog": "Talk log ({{n}})",
+    "talkStop": "Stop all talk",
+    "settingsAria": "Settings",
+    "settingsTitle": "Settings (optional agent integrations)",
+    "aboutAria": "About",
+    "aboutTitle": "About Agent Office",
+    "sceneThemeAria": "Pick scene and theme",
+    "sceneThemeTitle": "Pick an office scene and theme from the list",
+    "sceneHeader": "Scene",
+    "themeHeader": "Theme",
+    "muteAria": "Mute notifications",
+    "unmuteAria": "Unmute notifications"
+  },
+  "ticker": {
+    "more": "+{{n}} more"
+  },
+  "errors": {
+    "bundleNotJson": "Could not read the file as JSON.",
+    "bundleNotCharacterFile": "Not an Agent Office character file.",
+    "bundleSchemaVersionMissing": "No schema version information.",
+    "bundleSchemaVersionNewer": "Made by a newer version. Update the app and try again.",
+    "bundleSchemaVersionUnsupported": "Unsupported schema version.",
+    "bundleProfileMissing": "No profile data.",
+    "bundleProfileNameMissing": "The profile has no name.",
+    "bundlePortraitInvalid": "Portrait image data is invalid.",
+    "bundlePortraitTooLarge": "Portrait image is too large (over 2 MiB). Import cancelled.",
+    "bundleSpriteInvalid": "Sprite image data is invalid.",
+    "bundleSpriteTooLarge": "Sprite image is too large (over 1 MiB). Import cancelled.",
+    "bundleMinimiInvalid": "Minimi image data is invalid.",
+    "bundleMinimiTooLarge": "Minimi image is too large (over 1 MiB). Import cancelled."
   }
 }

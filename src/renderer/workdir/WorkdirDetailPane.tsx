@@ -14,6 +14,7 @@
 // 죽인다). 중단된 결과는 사유를 구분해 보여준다 — 사용자가 끊었으면 "조회를
 // 취소했습니다", 백스톱 타임아웃이면 "조회 시간 초과" — 둘 다 **다시 시도** 버튼으로
 // 새 opId 조회를 건다.
+import { useTranslation } from "react-i18next";
 import { useWorkdirStore, isMarkdownPath } from "./workdirStore";
 import { DiffView } from "./DiffView";
 import { statusLabel } from "./status";
@@ -42,11 +43,12 @@ function BusyNote({
   );
 }
 
-/** diff 모드 → 탭 라벨(추적 파일용 3탭). */
-const MODE_TABS: { mode: GitDiffMode; label: string; title: string }[] = [
-  { mode: "worktreeVsHead", label: "전체", title: "워킹트리 ↔ HEAD(스테이지+미스테이지 합본)" },
-  { mode: "indexVsHead", label: "스테이지됨", title: "인덱스 ↔ HEAD(git add 된 변경)" },
-  { mode: "worktreeVsIndex", label: "미스테이지", title: "워킹트리 ↔ 인덱스(아직 add 안 된 변경)" },
+/** diff 모드 → 탭 라벨(추적 파일용 3탭). 모듈 최상위라 `t()`를 부를 수 없어
+ *  라벨이 아니라 **키**를 담는다(SettingsDialog의 SETTINGS_TABS와 같은 관례). */
+const MODE_TABS: { mode: GitDiffMode; labelKey: string; titleKey: string }[] = [
+  { mode: "worktreeVsHead", labelKey: "detail.modeAll", titleKey: "detail.modeAllTitle" },
+  { mode: "indexVsHead", labelKey: "detail.modeStaged", titleKey: "detail.modeStagedTitle" },
+  { mode: "worktreeVsIndex", labelKey: "detail.modeUnstaged", titleKey: "detail.modeUnstagedTitle" },
 ];
 
 /** 경로의 마지막 세그먼트(파일명). */
@@ -68,24 +70,31 @@ function DiffBody({
   onCancel?: () => void;
   onRetry?: () => void;
 }) {
+  const { t } = useTranslation("workdir");
   // 중단된 이전 결과가 남아 있어도 재조회 중이면 진행 표시가 우선이다.
   const aborted = !!diff && (diff.canceled || diff.timedOut);
   if (loading && (!diff || aborted))
-    return <BusyNote text="변경점 불러오는 중…" actionLabel="취소" onAction={onCancel} />;
-  if (!diff) return <div className="wd-detail-empty">변경점을 선택하세요.</div>;
+    return (
+      <BusyNote
+        text={t("diff.loading")}
+        actionLabel={t("palette.cancel")}
+        onAction={onCancel}
+      />
+    );
+  if (!diff) return <div className="wd-detail-empty">{t("diff.selectDiff")}</div>;
   if (diff.canceled)
-    return <BusyNote text="조회를 취소했습니다." actionLabel="다시 시도" onAction={onRetry} />;
+    return (
+      <BusyNote text={t("diff.canceled")} actionLabel={t("palette.retry")} onAction={onRetry} />
+    );
   if (diff.timedOut)
     return (
-      <BusyNote text="조회가 시간 초과됐습니다." actionLabel="다시 시도" onAction={onRetry} />
+      <BusyNote text={t("diff.timedOut")} actionLabel={t("palette.retry")} onAction={onRetry} />
     );
-  if (diff.binary) return <div className="wd-detail-empty">바이너리 파일이라 diff를 표시할 수 없습니다.</div>;
-  if (diff.diff.trim() === "") return <div className="wd-detail-empty">표시할 변경이 없습니다.</div>;
+  if (diff.binary) return <div className="wd-detail-empty">{t("diff.binary")}</div>;
+  if (diff.diff.trim() === "") return <div className="wd-detail-empty">{t("diff.empty")}</div>;
   return (
     <>
-      {diff.truncated && (
-        <div className="wd-note">변경이 커서 일부(최대 5000줄)만 표시됩니다.</div>
-      )}
+      {diff.truncated && <div className="wd-note">{t("diff.truncated")}</div>}
       <DiffView diff={diff.diff} />
     </>
   );
@@ -93,11 +102,13 @@ function DiffBody({
 
 /** git 상태 뱃지 span(파일 목록·커밋 파일 공통 모양). */
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation("workdir");
+  const label = statusLabel(status, t);
   return (
     <span
       className={`wd-badge wd-badge-${status}`}
-      title={statusLabel(status)}
-      aria-label={statusLabel(status)}
+      title={label}
+      aria-label={label}
     >
       {status}
     </span>
@@ -105,6 +116,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export function WorkdirDetailPane() {
+  const { t } = useTranslation("workdir");
   const detail = useWorkdirStore((s) => s.detail);
   const closeDetail = useWorkdirStore((s) => s.closeDetail);
   const setDetailTab = useWorkdirStore((s) => s.setDetailTab);
@@ -143,14 +155,14 @@ export function WorkdirDetailPane() {
       : null;
 
   return (
-    <div className="wd-detail" role="region" aria-label="파일 메뉴·변경점·히스토리">
+    <div className="wd-detail" role="region" aria-label={t("detail.regionAria")}>
       <div className="wd-detail-head">
         <div className="wd-detail-title" title={detail.relPath}>
           {detail.status && <StatusBadge status={detail.status} />}
           {detail.name}
           <span className="wd-detail-path">{detail.relPath}</span>
         </div>
-        <button type="button" className="wd-close" aria-label="상세 닫기" onClick={closeDetail}>
+        <button type="button" className="wd-close" aria-label={t("detail.close")} onClick={closeDetail}>
           ×
         </button>
       </div>
@@ -159,19 +171,19 @@ export function WorkdirDetailPane() {
         <button
           type="button"
           className="wd-btn"
-          title="OS 기본/VS Code 등 외부 프로그램으로 엽니다"
+          title={t("detail.openExternalTitle")}
           onClick={() => openExternal()}
         >
-          외부 프로그램으로 열기
+          {t("detail.openExternal")}
         </button>
         {canInApp && (
           <button
             type="button"
             className="wd-btn"
-            title="인앱 마크다운 뷰어/편집기로 엽니다"
+            title={t("detail.openInAppTitle")}
             onClick={() => openInApp()}
           >
-            인앱 뷰어로 열기
+            {t("detail.openInApp")}
           </button>
         )}
       </div>
@@ -184,7 +196,7 @@ export function WorkdirDetailPane() {
           className={detail.tab === "diff" ? "wd-tab wd-tab-active" : "wd-tab"}
           onClick={() => setDetailTab("diff")}
         >
-          변경점
+          {t("detail.tabDiff")}
         </button>
         <button
           type="button"
@@ -193,25 +205,25 @@ export function WorkdirDetailPane() {
           className={detail.tab === "history" ? "wd-tab wd-tab-active" : "wd-tab"}
           onClick={() => setDetailTab("history")}
         >
-          히스토리
+          {t("detail.tabHistory")}
         </button>
       </div>
 
       {detail.tab === "diff" ? (
         <div className="wd-detail-body">
           {!detail.isUntracked && (
-            <div className="wd-seg wd-mode-seg" role="group" aria-label="diff 관점">
-              {MODE_TABS.map((t) => (
+            <div className="wd-seg wd-mode-seg" role="group" aria-label={t("detail.modeAria")}>
+              {MODE_TABS.map((tab) => (
                 <button
-                  key={t.mode}
+                  key={tab.mode}
                   type="button"
-                  title={t.title}
+                  title={t(tab.titleKey)}
                   className={
-                    detail.diffMode === t.mode ? "wd-seg-btn wd-seg-active" : "wd-seg-btn"
+                    detail.diffMode === tab.mode ? "wd-seg-btn wd-seg-active" : "wd-seg-btn"
                   }
-                  onClick={() => setDiffMode(t.mode)}
+                  onClick={() => setDiffMode(tab.mode)}
                 >
-                  {t.label}
+                  {t(tab.labelKey)}
                 </button>
               ))}
             </div>
@@ -227,21 +239,21 @@ export function WorkdirDetailPane() {
         <div className="wd-detail-body">
           {detail.historyLoading && !detail.history ? (
             <BusyNote
-              text="히스토리 불러오는 중…"
-              actionLabel="취소"
+              text={t("detail.historyLoading")}
+              actionLabel={t("palette.cancel")}
               onAction={() => cancelOp(detail.historyOpId)}
             />
           ) : detail.historyCanceled && !detail.history ? (
             <BusyNote
-              text="조회를 취소했습니다."
-              actionLabel="다시 시도"
+              text={t("diff.canceled")}
+              actionLabel={t("palette.retry")}
               onAction={() => void loadHistory()}
             />
           ) : !detail.history || detail.history.length === 0 ? (
-            <div className="wd-detail-empty">커밋 히스토리가 없습니다.</div>
+            <div className="wd-detail-empty">{t("detail.historyEmpty")}</div>
           ) : (
             <>
-              <ul className="wd-history" role="listbox" aria-label="커밋 목록">
+              <ul className="wd-history" role="listbox" aria-label={t("detail.commitListAria")}>
                 {detail.history.map((c) => {
                   const expanded = detail.expandedCommit === c.hash;
                   const active = detail.selectedCommit === c.hash;
@@ -257,7 +269,7 @@ export function WorkdirDetailPane() {
                           type="button"
                           className="wd-commit-toggle"
                           aria-expanded={expanded}
-                          title={expanded ? "변경파일 접기" : "이 커밋이 바꾼 파일 보기"}
+                          title={expanded ? t("detail.collapseFiles") : t("detail.expandFiles")}
                           onClick={() => toggleCommitExpand(c.hash)}
                         >
                           {expanded ? "▾" : "▸"}
@@ -271,33 +283,31 @@ export function WorkdirDetailPane() {
                         </div>
                       </div>
                       {expanded && (
-                        <ul className="wd-commit-files" aria-label="이 커밋이 바꾼 파일">
+                        <ul className="wd-commit-files" aria-label={t("detail.commitFilesAria")}>
                           {detail.commitFilesLoading && !detail.commitFiles ? (
                             <li className="wd-cf-note">
-                              변경파일 불러오는 중…{" "}
+                              {t("detail.commitFilesLoading")}{" "}
                               <button
                                 type="button"
                                 className="wd-btn wd-btn-mini"
                                 onClick={() => cancelOp(detail.commitFilesOpId)}
                               >
-                                취소
+                                {t("palette.cancel")}
                               </button>
                             </li>
                           ) : detail.commitFilesCanceled && !detail.commitFiles ? (
                             <li className="wd-cf-note">
-                              조회를 취소했습니다.{" "}
+                              {t("diff.canceled")}{" "}
                               <button
                                 type="button"
                                 className="wd-btn wd-btn-mini"
                                 onClick={() => void retryCommitFiles(c.hash)}
                               >
-                                다시 시도
+                                {t("palette.retry")}
                               </button>
                             </li>
                           ) : (detail.commitFiles ?? []).length === 0 ? (
-                            <li className="wd-cf-note">
-                              표시할 파일 변경이 없습니다(병합 커밋일 수 있음).
-                            </li>
+                            <li className="wd-cf-note">{t("detail.commitFilesEmpty")}</li>
                           ) : (
                             <>
                               {(detail.commitFiles ?? []).map((f) => (
@@ -322,7 +332,9 @@ export function WorkdirDetailPane() {
                                   className="wd-cf-more"
                                   onClick={() => loadMoreCommitFiles()}
                                 >
-                                  {detail.commitFilesLoading ? "불러오는 중…" : "더 보기…"}
+                                  {detail.commitFilesLoading
+                                    ? t("palette.loadingMore")
+                                    : t("palette.loadMore")}
                                 </li>
                               )}
                             </>
@@ -334,7 +346,9 @@ export function WorkdirDetailPane() {
                 })}
               </ul>
               {detail.historyHasMore && (
-                <div className="wd-note">최근 {detail.history.length}개만 표시됩니다.</div>
+                <div className="wd-note">
+                  {t("detail.historyLimit", { count: detail.history.length })}
+                </div>
               )}
               {detail.selectedCommit && (
                 <div className="wd-commit-diff">
@@ -347,10 +361,10 @@ export function WorkdirDetailPane() {
                     <button
                       type="button"
                       className="wd-btn"
-                      title="이 커밋의 변경을 외부 비교 도구로 엽니다"
+                      title={t("detail.difftoolTitle")}
                       onClick={() => openDifftool(detail.selectedCommit)}
                     >
-                      외부 도구로 비교
+                      {t("detail.difftool")}
                     </button>
                   </div>
                   <DiffBody

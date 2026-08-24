@@ -39,7 +39,7 @@ export function installWindowFocusTracking(): () => void {
         .catch(() => {});
     }
   } catch (err) {
-    console.warn("windowFocus: 포커스 추적 설치 실패 — 항상 포커스로 간주", err);
+    console.warn("windowFocus: focus tracking setup failed — assuming always focused", err);
   }
 
   return () => {
