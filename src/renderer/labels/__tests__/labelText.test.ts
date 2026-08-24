@@ -1,5 +1,5 @@
 // src/renderer/labels/__tests__/labelText.test.ts
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   deriveTaskLabelLines,
   firstLine,
@@ -9,6 +9,7 @@ import {
   truncateChars,
 } from "../labelText";
 import type { AgentTaskLabel } from "../../store/types";
+import { SOURCE_LANGUAGE, initI18nForTest } from "../../i18n";
 
 describe("projectNameFromCwd", () => {
   it("basename을 돌려준다 (POSIX)", () => {
@@ -126,6 +127,56 @@ describe("requestSentence", () => {
     expect(requestSentence(undefined)).toBeUndefined();
     expect(requestSentence("   \n  ")).toBeUndefined();
     expect(requestSentence("...!!")).toBeUndefined();
+  });
+});
+
+// 영어는 요청이 **문두**에 실린다(ko는 어미) — 규칙의 닻이 통째로 뒤집히므로
+// ko 테스트를 번역만 해서는 이 차이를 못 잡는다. 여기서는 "문두 규칙이 실제로
+// 가점을 주는가"와 "가점이 없어도 마지막 조각 규칙이 답을 내는가"를 본다.
+describe("requestSentence (en 규칙)", () => {
+  beforeAll(async () => {
+    await initI18nForTest("en");
+  });
+  afterAll(async () => {
+    await initI18nForTest(SOURCE_LANGUAGE);
+  });
+
+  it("맥락 서술 뒤 명령문으로 시작하는 조각을 고른다", () => {
+    expect(
+      requestSentence("The label still shows the raw prompt. Fix the summarizer fallback")
+    ).toBe("Fix the summarizer fallback");
+  });
+
+  it("정중형(please)·청유형(let's)·희망형(I want)도 요청으로 본다", () => {
+    expect(requestSentence("This is context. Please add a regression test")).toBe(
+      "Please add a regression test"
+    );
+    expect(requestSentence("Some background here. Let's split the store")).toBe(
+      "Let's split the store"
+    );
+    expect(requestSentence("Some background here. I want the badge to update live")).toBe(
+      "I want the badge to update live"
+    );
+  });
+
+  it("동점이면 마지막(뒤쪽) 조각을 고른다", () => {
+    expect(requestSentence("Check the logs first. Then deploy the build")).toBe(
+      "Then deploy the build"
+    );
+  });
+
+  it("요청 규칙에 안 걸리면 마지막 조각", () => {
+    expect(requestSentence("First sentence. Second sentence")).toBe("Second sentence");
+  });
+
+  it("인삿말뿐인 조각은 후보에서 뺀다", () => {
+    expect(requestSentence("Hey there. Fix the login bug")).toBe("Fix the login bug");
+  });
+
+  it("요청 동사를 앞머리로 갖는 낱말은 오탐하지 않는다", () => {
+    // "Added"/"Testing"은 동사 목록의 앞머리지만 `\b`가 막는다 — 가점이 없으니
+    // 두 조각이 동점이 되어 마지막 조각이 나온다.
+    expect(requestSentence("Added the parser. Testing it now")).toBe("Testing it now");
   });
 });
 

@@ -1,8 +1,5 @@
 {
   "files": [
-    "src/renderer/awards/speechGenerator.ts",
-    "src/renderer/diary/diaryGenerator.ts",
-    "src/renderer/labels/summarizer.ts",
     "src/renderer/sound/soundManager.ts"
   ]
 }

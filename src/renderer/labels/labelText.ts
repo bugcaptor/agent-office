@@ -17,6 +17,9 @@
 // 순수성을 유지한다(런타임 import가 섞이면 이 파일을 쓰는 곳마다 스토어를
 // 끌고 들어온다).
 import type { AgentTaskLabel } from "../store/types";
+// 언어별 텍스트 판정 규칙(요청 어미/문두, 인삿말). 스토어가 아니라 i18n 계층이라
+// 위 순수성 규칙에 걸리지 않는다 — 다만 **호출 시점에** 골라야 언어 전환을 따라간다.
+import { currentTextRules } from "../i18n/textRules";
 
 /** cwd의 basename. `/`와 `\` 둘 다 구분자로 취급, 트레일링 구분자 무시. */
 export function projectNameFromCwd(cwd: string | undefined): string | undefined {
@@ -97,21 +100,9 @@ export function firstLine(text: string | undefined, max: number): string | undef
   return truncateChars(line, max);
 }
 
-// 명령·요청·소망 어미(끝 부호 제거 후 말미에서 판정). 하나라도 맞으면 요청 문장으로 가점(+2).
-// 과도한 열거보다 소수의 견고한 정규식으로 다듬는다(이슈 #44 작업 A).
-const REQUEST_ENDINGS: RegExp[] = [
-  /줘$/, // 해줘·고쳐줘
-  /주세요$/, // 해주세요
-  /(해라|하라)$/, // 해라·하라
-  /(하자|합시다)$/, // 하자·합시다
-  /할\s?것$/, // 할 것·할것
-  /해야\s?(해|한다|함)$/, // 해야 해/한다/함
-  /[가-힣]해$/, // 반말 명령: 코멘트해·추가해
-  /(하고\s?싶|좋겠)[가-힣]*$/, // 소망: 하고 싶다·좋겠다
-];
-
-// 인삿말뿐인 조각(짧고 인사로 시작) — 요청 후보에서 제외한다.
-const GREETING_START = /^(안녕|하이|헬로|반가|hi|hello)/i;
+// 요청 문장 판정과 인삿말 판정은 **언어별 규칙**이라 i18n/textRules.ts에 산다.
+// 한국어는 요청이 어미에 실리고 영어는 문두에 실려서, 목록을 번역하는 게 아니라
+// 닻이 통째로 뒤집힌다 — 그 차이를 규칙 쪽에 두고 여기서는 적용만 한다.
 
 /** 줄바꿈 → 문장 종결 부호(`. ! ? … 。`) 순으로 나눠, 내용 있는 조각만 남긴다. */
 function splitSentences(text: string): string[] {
@@ -126,15 +117,16 @@ function splitSentences(text: string): string[] {
   return out;
 }
 
-/** 조각 점수: 끝 부호를 무시하고 요청·명령·소망 어미로 끝나면 2, 아니면 0. */
+/** 조각 점수: 끝 부호를 무시하고 지금 언어의 요청 규칙에 맞으면 2, 아니면 0. */
 function scoreFragment(fragment: string): number {
   const core = fragment.replace(/[\s.?!~…]+$/u, "");
-  return REQUEST_ENDINGS.some((re) => re.test(core)) ? 2 : 0;
+  return currentTextRules().requestPatterns.some((re) => re.test(core)) ? 2 : 0;
 }
 
 /** 인삿말뿐인(짧은) 조각인가. */
 function isGreetingOnly(fragment: string): boolean {
-  return GREETING_START.test(fragment) && Array.from(fragment).length <= 12;
+  const rules = currentTextRules();
+  return rules.greetingStart.test(fragment) && Array.from(fragment).length <= rules.greetingMaxChars;
 }
 
 /**

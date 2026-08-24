@@ -2,7 +2,7 @@
 //
 // 캐릭터 일기(#56) 생성기. 요약기 파이프라인을 그대로 재사용한다: 렌더러가
 // 설정의 provider(요약기와 공유, summaryProvider)를 골라
-// tauriApi.summarizeText(provider, DIARY_SYSTEM_PROMPT, userText)로 위임한다.
+// tauriApi.summarizeText(provider, 일기 시스템 프롬프트, userText)로 위임한다.
 // "일기"는 다른 시스템 프롬프트 + 성격 프롬프트 + 누적 작업 로그를 넣은 같은 호출이다.
 //
 // opt-in 게이트: appSettings.diaryEnabled=false면 CLI를 호출하지 않는다
@@ -14,16 +14,14 @@
 // 명시해 그 세션 로그만 담고, 수동 경로는 인자 없이 현재 세션을 유추한다. 성공 시
 // append_diary_entry로 영속화하고 그 세션의 작업 로그를 소진(clear)해 다음 일기가
 // 새 작업만 담게 한다.
+//
+// 시스템 프롬프트·블록 머리말·본문 최소 길이는 UI 언어를 따른다 —
+// `i18n/promptProfiles.ts`의 `diaryPromptProfile()`이 호출 시점에 고른다.
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
+import { diaryPromptProfile } from "../i18n/promptProfiles";
 import type { DiaryEntry, SummaryProvider } from "@shared/types";
 import { formatWorkLog, workLog, type WorkLog } from "./workLog";
-
-export const DIARY_SYSTEM_PROMPT =
-  "너는 한 캐릭터의 일기 작성기다. 아래 [성격]을 문체로 삼아, [작업 로그]를 1인칭 한국어 일기 한 편으로 써라. 성격에 따라 초등학생 일기처럼 쓰기도 하고 차가운 작업 일지처럼 쓰기도 한다 — [성격]의 말투·태도를 문체에 그대로 반영하라. [성격]이 비어 있으면 담백한 중립 문체로 써라. 반드시 실제로 한 일(수정한 파일·실행한 명령·목표)이 드러나야 한다(작업 로그를 겸한다). 분량은 3~8문장. 규칙: 한국어만, 사과·메타발언·머리말·따옴표·마크다운 금지, 일기 본문만 출력.";
-
-/** 일기 본문 최소 길이(공백 제외). 이보다 짧으면 생성 실패로 본다. */
-const BODY_MIN_CHARS = 4;
 
 /** 생성 결과 사유 — 호출부(UI)가 사용자 피드백에 쓴다. */
 export type DiaryResult =
@@ -45,8 +43,15 @@ export interface DiaryGeneratorDeps {
   log?: WorkLog;
 }
 
-/** 응답 정제: 코드펜스·머리말·따옴표 제거, 공백 정규화. 비면 null. */
-export function sanitizeDiaryBody(raw: string): string | null {
+/**
+ * 응답 정제: 코드펜스·머리말·따옴표 제거, 공백 정규화. 비면 null.
+ * `minChars`는 언어별 하한(같은 분량이 영문은 글자를 더 먹는다) — 생략하면
+ * 지금 UI 언어의 값을 쓴다.
+ */
+export function sanitizeDiaryBody(
+  raw: string,
+  minChars: number = diaryPromptProfile().bodyMinChars,
+): string | null {
   const s = raw
     .replace(/```[a-zA-Z]*\n?/g, "")
     .replace(/```/g, "")
@@ -56,7 +61,7 @@ export function sanitizeDiaryBody(raw: string): string | null {
     .filter((l) => l.length > 0)
     .join("\n")
     .trim();
-  if (Array.from(s.replace(/\s/g, "")).length < BODY_MIN_CHARS) return null;
+  if (Array.from(s.replace(/\s/g, "")).length < minChars) return null;
   return s;
 }
 
@@ -99,12 +104,14 @@ export async function generateDiary(
   const sessionId =
     targetSessionId ?? state.taskLabels[agentId]?.sessionId ?? items[items.length - 1].sessionId;
 
-  const userText = `[성격]\n${personality || "(없음)"}\n\n[작업 로그]\n${formatWorkLog(items)}`;
+  // 프롬프트와 머리말은 한 벌이므로 한 번만 고른다.
+  const profile = diaryPromptProfile();
+  const userText = `${profile.headers.personality}\n${personality || profile.noneText}\n\n${profile.headers.workLog}\n${formatWorkLog(items)}`;
 
   inflight.add(agentId);
   try {
-    const raw = await summarizeFn(provider, DIARY_SYSTEM_PROMPT, userText);
-    const body = sanitizeDiaryBody(raw);
+    const raw = await summarizeFn(provider, profile.systemPrompt, userText);
+    const body = sanitizeDiaryBody(raw, profile.bodyMinChars);
     if (body === null) return { ok: false, reason: "failed" };
     const entry: DiaryEntry = { at: now(), sessionId, body };
     await appendFn(agentId, entry);
@@ -114,21 +121,21 @@ export async function generateDiary(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes(`${provider}-not-found`)) {
-      console.warn(`diary: ${provider} CLI 미설치 — 일기 생성 건너뜀`);
+      console.warn(`diary: ${provider} CLI not found — skipping diary generation`);
       return { ok: false, reason: "cli-missing" };
     }
     // 백엔드 요약기 타임아웃(#66). 정확히 "timeout"일 때만 — provider stderr에
     // "timeout"이 섞인 exit 에러("… exited 1: … timeout …")를 오분류하지 않는다.
     // 타임아웃은 영구 실패가 아니라 재시도 가능 사유다(flusher가 보존·재시도).
     if (message === "timeout") {
-      console.warn(`diary: 요약기 타임아웃 — 재시도 대기(agent=${agentId})`);
+      console.warn(`diary: summarizer timeout — awaiting retry (agent=${agentId})`);
       return { ok: false, reason: "timeout" };
     }
     if (message.includes("summarizer-disabled")) {
       // 설정 OFF 경합 — 스토어 게이트가 다음 요청을 막는다.
       return { ok: false, reason: "disabled" };
     }
-    console.warn(`diary: 일기 생성 실패(agent=${agentId})`, err);
+    console.warn(`diary: generation failed (agent=${agentId})`, err);
     return { ok: false, reason: "failed" };
   } finally {
     inflight.delete(agentId);

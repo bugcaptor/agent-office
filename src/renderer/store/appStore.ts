@@ -20,6 +20,7 @@ import type {
 import { initialTurnState, reduceTurn } from "../timeline/turnReducer";
 import type { AgentTurnState, TurnInput } from "../timeline/turnReducer";
 import { requestSentence } from "../labels/labelText";
+import { currentTextRules } from "../i18n/textRules";
 import { applyTerminalBg, applyTheme, loadStoredThemeId } from "../theme/applyTheme";
 import type { ThemeId } from "../theme/themes";
 import { loadStoredSceneId, persistSceneId } from "../office/scenes/sceneStorage";
@@ -49,15 +50,17 @@ import type { PendingPairing } from "../ipc/webRemoteApi";
 const MAX_EXCERPT = 80;
 /** 도구 요약 라벨 갱신 최소 간격(ms). 도구가 빠르게 연달아 와도 라벨이 튀지 않게 스로틀. */
 const TOOL_LABEL_MIN_INTERVAL_MS = 2000;
-/** goalFallback 갱신 최소 문자 수 — 이보다 짧은 요청 문장은 목적을 담기 어렵다(이슈 #44). */
-const GOAL_FALLBACK_MIN_CHARS = 6;
-/** 맞장구성 지시 판정: 이 토큰으로 "시작"하고 뒤에 공백·부호가 오거나 그 자체로
- * 끝날 때만. "네트워크"류 오탐을 막기 위해 토큰 경계를 요구한다(이슈 #44 작업 A). */
-const BACKCHANNEL_START = /^(응|네|넵|예|그래|좋아|오케이|오케|ㅇㅋ|알겠|고마|감사)(?=[\s,.!?~…]|$)/;
-
-/** 요청 문장이 목표 폴백을 갱신할 만한가 — 충분히 길고 맞장구성이 아니어야 한다. */
+/**
+ * 요청 문장이 목표 폴백을 갱신할 만한가 — 충분히 길고 맞장구성이 아니어야 한다.
+ * 기준(최소 글자 수·맞장구 토큰)은 언어마다 다르므로 `i18n/textRules`가 갖고
+ * 있고, **호출 시점에** 고른다(모듈 최상위에 굳히면 언어 변경이 안 먹는다).
+ */
 function isMeaningfulGoalFallback(cand: string): boolean {
-  return Array.from(cand).length >= GOAL_FALLBACK_MIN_CHARS && !BACKCHANNEL_START.test(cand);
+  const rules = currentTextRules();
+  return (
+    Array.from(cand).length >= rules.goalFallbackMinChars &&
+    !rules.backchannelStart.test(cand)
+  );
 }
 const DEFAULT_APP_SETTINGS: AppSettings = {
   version: 1,

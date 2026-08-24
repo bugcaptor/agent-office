@@ -4,7 +4,7 @@
 // 받는다(이전 goal을 컨텍스트로 넘겨 후속 지시엔 목표 유지 바이어스). 캐시,
 // stale 폐기, claude-not-found 영구 비활성, 실패 백오프, opt-in 게이트.
 // summarizeFn/시계 전부 주입.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // 연속 prompt는 이전 턴을 정산하므로 appendSessionTurn이 호출된다 — 실
 // tauriApi(invoke)를 타지 않도록 모킹(다른 시간추적 테스트와 동일 컨벤션).
@@ -16,8 +16,9 @@ vi.mock("../../ipc/tauriApi", () => ({
 }));
 
 import { useAppStore } from "../../store/appStore";
+import { SOURCE_LANGUAGE, initI18nForTest } from "@renderer/i18n";
+import { labelPromptProfile } from "../../i18n/promptProfiles";
 import {
-  LABEL_SYSTEM_PROMPT,
   deriveContextText,
   installTaskLabelSummarizer,
   sanitizeLabelPair,
@@ -117,7 +118,7 @@ describe("installTaskLabelSummarizer", () => {
     expect(summarizeFn).toHaveBeenCalledTimes(1);
     const [provider, instruction, text] = summarizeFn.mock.calls[0];
     expect(provider).toBe("claude");
-    expect(instruction).toBe(LABEL_SYSTEM_PROMPT);
+    expect(instruction).toBe(labelPromptProfile().systemPrompt);
     // 첫 프롬프트 → 이전 목표는 (없음), 새 지시 원문 포함.
     expect(text).toContain("(없음)");
     expect(text).toContain("버그 고쳐줘");
@@ -280,7 +281,7 @@ describe("installTaskLabelSummarizer", () => {
     expect(summarizeFn).toHaveBeenCalledTimes(2);
     const [provider, instruction, text] = summarizeFn.mock.calls[1];
     expect(provider).toBe("codex");
-    expect(instruction).toBe(LABEL_SYSTEM_PROMPT);
+    expect(instruction).toBe(labelPromptProfile().systemPrompt);
     expect(text).toContain("버그 고쳐줘");
   });
 
@@ -748,5 +749,79 @@ describe("sanitizeSummary", () => {
 
   it("치환 문자(U+FFFD) 포함 응답은 null", () => {
     expect(sanitizeSummary("버그 � 수정")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// en 프로필 — 위 ko 묶음과 같은 성질을 영어 규칙으로도 확인한다. 프로필만
+// 갈아 끼우면 되는 게 아니라 **거부 마커·머리말·길이 상한이 실제로 먹는지**가
+// 관건이다(대소문자, 영어 머리말, 더 큰 글자 상한).
+// ---------------------------------------------------------------------------
+describe("정제(en 프로필)", () => {
+  beforeEach(async () => {
+    await initI18nForTest("en");
+  });
+
+  afterAll(async () => {
+    await initI18nForTest(SOURCE_LANGUAGE); // 정본 복구(파일 간 언어 상태 누수 방지)
+  });
+
+  it("정상 두 줄을 목표/현재로 나눈다", () => {
+    expect(sanitizeLabelPair("Fix login bug\nFix tests")).toEqual({
+      goal: "Fix login bug",
+      current: "Fix tests",
+    });
+  });
+
+  it("영어 머리말(Line 1:/Summary:/Goal:)을 각 줄에서 제거한다", () => {
+    expect(sanitizeLabelPair("Line 1: Fix login bug\nLine 2: Fix tests")).toEqual({
+      goal: "Fix login bug",
+      current: "Fix tests",
+    });
+    expect(sanitizeLabelPair("Goal: Fix login bug\nSummary: Fix tests")).toEqual({
+      goal: "Fix login bug",
+      current: "Fix tests",
+    });
+  });
+
+  it("대문자로 시작하는 거부 응답도 잡는다(ko의 s.includes로는 놓치던 것)", () => {
+    expect(sanitizeLabelPair("Fix login bug\nSorry, I cannot summarize this")).toBeNull();
+    expect(sanitizeSummary("I'm sorry, but I cannot help with that")).toBeNull();
+    expect(sanitizeSummary("Encoding error occurred")).toBeNull();
+  });
+
+  it("거부 마커를 닮았을 뿐인 정상 라벨은 통과시킨다", () => {
+    expect(sanitizeSummary("Cannot reproduce crash")).toBe("Cannot reproduce crash");
+  });
+
+  it("과길이 판정이 en 상한(ko보다 큼)을 쓴다", () => {
+    const en = labelPromptProfile("en").summaryMaxChars;
+    const ko = labelPromptProfile("ko").summaryMaxChars;
+    // ko 상한은 넘지만 en 상한 안 — ko 프로필이었다면 거부됐을 길이다.
+    expect(sanitizeSummary("a".repeat(ko + 1))).toBe("a".repeat(ko + 1));
+    expect(sanitizeSummary("a".repeat(en))).toBe("a".repeat(en));
+    expect(sanitizeSummary("a".repeat(en + 1))).toBeNull();
+  });
+
+  it("정황 절단 상한도 en 값을 쓴다", () => {
+    const en = labelPromptProfile("en").contextMaxChars;
+    const out = deriveContextText({ sessionId: "s1", latestAssistantText: "a".repeat(en * 2) });
+    expect(out && Array.from(out).length).toBe(en);
+  });
+
+  it("프롬프트와 입력 블록 머리말이 en 프로필을 따른다", async () => {
+    const summarizeFn = vi.fn<SummarizeFn>().mockResolvedValue(pair("Fix login bug", "Fix tests"));
+    teardown = installTaskLabelSummarizer({ summarizeFn });
+    useAppStore.getState().applyActivityEvent(promptEvent({ text: "fix the login bug" }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const profile = labelPromptProfile("en");
+    const [, instruction, userText] = summarizeFn.mock.calls[0];
+    expect(instruction).toBe(profile.systemPrompt);
+    expect(userText).toContain(profile.headers.prevGoal);
+    expect(userText).toContain(profile.headers.newInstruction);
+    expect(userText).toContain(profile.noneText); // 이전 목표 없음
+    expect(useAppStore.getState().taskLabels["a1"].goal).toBe("Fix login bug");
   });
 });

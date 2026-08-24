@@ -27,18 +27,17 @@
 // 보내지 않는다(원문 폴백). ON 상태에서 레이스로 "summarizer-disabled"
 // 에러를 받으면(설정이 막 꺼진 경합) 쿨다운/영구비활성 없이 그냥 무시한다 —
 // 스토어 설정이 단일 진실원이므로 다음 요청은 게이트가 이미 최신값으로 막거나 통과시킨다.
+//
+// 프롬프트와 정제 상수(길이 상한·거부 마커·머리말 정규식)는 UI 언어를 따른다 —
+// `i18n/promptProfiles.ts`의 `labelPromptProfile()`이 **호출 시점에** 고른다.
 import { useAppStore } from "../store/appStore";
 import type { AgentTaskLabel } from "../store/types";
 import { tauriApi } from "../ipc/tauriApi";
+import { hasMetaMarker, labelPromptProfile } from "../i18n/promptProfiles";
+import type { LabelPromptProfile } from "../i18n/promptProfiles";
 import type { SummaryProvider } from "@shared/types";
 
-export const LABEL_SYSTEM_PROMPT =
-  "너는 코딩 세션 라벨 생성기다. [이전 목표], [새 지시], 그리고 있을 경우 [초기 작업 정황]을 보고 정확히 두 줄을 출력하라. 1줄: 세션 목표(한국어 명사구 12자 이내). [초기 작업 정황]이 있으면 그것이 이 세션이 실제로 무엇을 하는지 보여주는 근거이므로, 이슈·티켓 번호만 가리키는 모호한 지시(예: '이슈 40 해결')보다 우선해 목표를 구체화하라. [초기 작업 정황]이 없으면: 새 지시가 새로운 작업이면 새로 뽑고, 이전 작업의 후속·보완 지시이거나 판단이 애매하면 이전 목표를 그대로 출력하라. 이전 목표가 (없음)이면 새로 뽑아라. 2줄: 새 지시 요약 — 한국어 18자 이내 한 줄. 규칙: 정확히 두 줄, 한국어만, 사과·설명·따옴표·번호·머리말 금지. 판단 불가면 1줄은 이전 목표(없으면 '작업 중'), 2줄은 '작업 중'. 예) 이전 목표: 로그인 버그 수정 / 새 지시: 테스트도 고쳐줘 → 1줄 '로그인 버그 수정', 2줄 '테스트 수정'. 예) 이전 목표: (없음) / 새 지시: 이슈 40 해결 / 초기 작업 정황: Claude 훅 설정 파일을 복구하는 중 → 1줄 '훅 설정 복구', 2줄 '이슈 40 해결'";
 const FAILURE_COOLDOWN_MS = 30_000;
-const SUMMARY_MAX_CHARS = 40;
-/** [초기 작업 정황] 주입 텍스트 상한. 목적 추론엔 목표(12자)보다 문맥이 더 필요. */
-const CONTEXT_MAX_CHARS = 120;
-const META_MARKERS = ["인코딩", "죄송", "할 수 없"];
 
 /**
  * 세션 초기 작업 정황(assistant 내레이션 우선, 없으면 도구 요약)을 요약 입력용으로
@@ -50,44 +49,54 @@ export function deriveContextText(label: AgentTaskLabel): string | undefined {
   if (!raw) return undefined;
   const s = raw.replace(/\s+/g, " ").replace(/�/g, "").trim();
   if (!s) return undefined;
+  const max = labelPromptProfile().contextMaxChars;
   const chars = Array.from(s);
-  return chars.length > CONTEXT_MAX_CHARS ? chars.slice(0, CONTEXT_MAX_CHARS).join("") : s;
+  return chars.length > max ? chars.slice(0, max).join("") : s;
 }
 
 /** 한 줄을 라벨용으로 정제. 따옴표·머리말 제거, 메타·깨짐·과길이는 null. */
-function sanitizeLine(line: string): string | null {
+function sanitizeLine(line: string, profile: LabelPromptProfile): string | null {
   const s = line
     .trim()
     .replace(/^["'`]+|["'`]+$/g, "")
-    .replace(/^(1줄|2줄|요약|목표)\s*[:：]\s*/, "")
+    .replace(profile.linePrefixPattern, "")
     .trim();
   if (!s) return null;
-  if (Array.from(s).length > SUMMARY_MAX_CHARS) return null;
+  if (Array.from(s).length > profile.summaryMaxChars) return null;
   if (s.includes("�") || /\?{2,}/.test(s) || /^[\s?]+$/.test(s)) return null;
-  if (META_MARKERS.some((m) => s.includes(m))) return null;
+  if (hasMetaMarker(s, profile.metaMarkers)) return null;
   return s;
 }
 
 /** LLM 응답 첫 비공백 줄을 라벨용으로 정제(단일 줄 정제). 거부 시 null. */
-export function sanitizeSummary(raw: string): string | null {
+export function sanitizeSummary(
+  raw: string,
+  profile: LabelPromptProfile = labelPromptProfile(),
+): string | null {
   const firstLine = raw.split("\n").map((l) => l.trim()).find((l) => l.length > 0);
   if (!firstLine) return null;
-  return sanitizeLine(firstLine);
+  return sanitizeLine(firstLine, profile);
 }
 
 /**
  * 통합 응답을 목표/현재 쌍으로 정제. 비공백 줄 앞 2개를 취하며, 2줄 미만이거나
  * 한 줄이라도 sanitizeLine이 거부하면 전체 null(쿨다운 재시도).
+ *
+ * `profile`은 요청을 낸 시점의 것을 넘긴다 — 응답을 기다리는 사이에 사용자가
+ * 언어를 바꿔도 그 요청은 보낼 때의 규칙으로 판정해야 한다.
  */
-export function sanitizeLabelPair(raw: string): { goal: string; current: string } | null {
+export function sanitizeLabelPair(
+  raw: string,
+  profile: LabelPromptProfile = labelPromptProfile(),
+): { goal: string; current: string } | null {
   const lines = raw
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l.length > 0)
     .slice(0, 2);
   if (lines.length < 2) return null;
-  const goal = sanitizeLine(lines[0]);
-  const current = sanitizeLine(lines[1]);
+  const goal = sanitizeLine(lines[0], profile);
+  const current = sanitizeLine(lines[1], profile);
   if (goal === null || current === null) return null;
   return { goal, current };
 }
@@ -201,16 +210,20 @@ export function installTaskLabelSummarizer(deps: SummarizerDeps = {}): () => voi
     markEnriched();
     inflight.add(key);
     activeIdentityKeys.add(identityKey);
+    // 요청 하나는 한 프로필로 일관되게 — 프롬프트를 만들 때와 응답을 판정할 때
+    // 사이에 언어가 바뀌어도 규칙이 섞이지 않게 여기서 한 번만 고른다.
+    const profile = labelPromptProfile();
     void (async () => {
       try {
+        const h = profile.headers;
         const contextBlock =
           identity.contextText !== undefined
-            ? `\n[초기 작업 정황]\n${identity.contextText}`
+            ? `\n${h.context}\n${identity.contextText}`
             : "";
-        const userText = `[이전 목표]\n${identity.prevGoal ?? "(없음)"}\n[새 지시]\n${identity.sourceText}${contextBlock}`;
+        const userText = `${h.prevGoal}\n${identity.prevGoal ?? profile.noneText}\n${h.newInstruction}\n${identity.sourceText}${contextBlock}`;
         // 호출 1회당 선택 provider의 사용자 구독/크레딧을 소모할 수 있다.
-        const raw = await summarizeFn(identity.provider, LABEL_SYSTEM_PROMPT, userText);
-        const pair = sanitizeLabelPair(raw);
+        const raw = await summarizeFn(identity.provider, profile.systemPrompt, userText);
+        const pair = sanitizeLabelPair(raw, profile);
         if (pair === null) {
           // 두 줄 미만·메타·깨짐·과길이 응답 — 실패로 처리(30초 쿨다운, 원문 폴백 표시).
           cooldownUntil.set(identity.agentId, now() + FAILURE_COOLDOWN_MS);
@@ -223,13 +236,13 @@ export function installTaskLabelSummarizer(deps: SummarizerDeps = {}): () => voi
         if (message.includes(`${identity.provider}-not-found`)) {
           disabledProviders.add(identity.provider);
           console.warn(
-            `taskLabels: ${identity.provider} CLI 미설치 — 해당 provider 요약 비활성(원문 폴백 표시)`,
+            `taskLabels: ${identity.provider} CLI not found — summaries disabled for this provider (raw fallback)`,
           );
         } else if (message.includes("summarizer-disabled")) {
           // 설정 OFF 경합 — 스토어 게이트가 다음 요청을 막는다. 쿨다운 불필요.
         } else {
           console.warn(
-            `taskLabels: 요약 실패(agent=${identity.agentId})`,
+            `taskLabels: summary failed (agent=${identity.agentId})`,
             err,
           );
           cooldownUntil.set(identity.agentId, now() + FAILURE_COOLDOWN_MS);

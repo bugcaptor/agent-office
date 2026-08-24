@@ -2,13 +2,14 @@
 //
 // taskLabels 슬라이스: prompt 이벤트 축적, 세션 교체 리셋,
 // 요약 반영, removeAgent 정리.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityEvent, NotificationEvent } from "@shared/types";
 
 // 일부 케이스(연속 prompt)는 턴을 정산하므로 appendSessionTurn이 호출된다 —
 // 실 tauriApi(invoke)를 타지 않도록 모킹(다른 시간추적 테스트와 동일 컨벤션).
 vi.mock("../../ipc/tauriApi", () => ({ tauriApi: { appendSessionTurn: vi.fn() } }));
 
+import { SOURCE_LANGUAGE, initI18nForTest } from "@renderer/i18n";
 import { useAppStore } from "../appStore";
 
 function promptEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
@@ -215,5 +216,43 @@ describe("applyActivityEvent(tool) → taskLabels 실황", () => {
     expect(l.latestToolAt).toBeUndefined();
     // 프롬프트 소스는 보존(idle이어도 목표/원문은 남는다).
     expect(l.firstPromptText).toBe("첫 지시");
+  });
+});
+
+// goalFallback 판정 상수(최소 글자 수·맞장구 토큰)는 i18n/textRules가 언어별로
+// 갖고 있다. ko 케이스는 위 묶음이 지키고, 여기서는 en 규칙이 실제로 먹는지 본다.
+describe("goalFallback 판정(en 규칙)", () => {
+  beforeEach(async () => {
+    await initI18nForTest("en");
+  });
+
+  afterAll(async () => {
+    await initI18nForTest(SOURCE_LANGUAGE); // 정본 복구
+  });
+
+  it("충분히 긴 지시는 goalFallback을 갱신한다", () => {
+    const s = useAppStore.getState();
+    s.applyActivityEvent(promptEvent({ text: "fix the login bug" }));
+    s.applyActivityEvent(promptEvent({ text: "add regression tests too", at: 2000 }));
+    expect(useAppStore.getState().taskLabels["a1"].goalFallback).toBe("add regression tests too");
+  });
+
+  it("짧은 맞장구(ok)는 유지한다 — en 하한은 ko(6자)보다 크다", () => {
+    const s = useAppStore.getState();
+    s.applyActivityEvent(promptEvent({ text: "fix the login bug" }));
+    s.applyActivityEvent(promptEvent({ text: "ok", at: 2000 }));
+    s.applyActivityEvent(promptEvent({ text: "sure", at: 3000 }));
+    // 길이는 넘지만 맞장구로 시작 → 유지.
+    s.applyActivityEvent(promptEvent({ text: "thanks, that looks right now", at: 4000 }));
+    expect(useAppStore.getState().taskLabels["a1"].goalFallback).toBe("fix the login bug");
+  });
+
+  it("맞장구를 닮았을 뿐인 지시는 갱신한다(단어 경계)", () => {
+    const s = useAppStore.getState();
+    s.applyActivityEvent(promptEvent({ text: "fix the login bug" }));
+    s.applyActivityEvent(promptEvent({ text: "yesterday regression triage", at: 2000 }));
+    expect(useAppStore.getState().taskLabels["a1"].goalFallback).toBe(
+      "yesterday regression triage",
+    );
   });
 });

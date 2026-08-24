@@ -3,7 +3,7 @@
 // 일기 생성기: opt-in 게이트, 작업 로그 없음 스킵, 성격 문체 주입, 성공 시
 // append+세션 로그 소진, CLI 미설치/실패 조용한 폴백, 인플라이트 중복 방지.
 // summarizeFn/appendFn/시계/버퍼 전부 주입.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
@@ -12,8 +12,10 @@ vi.mock("../../ipc/tauriApi", () => ({
   },
 }));
 
+import { SOURCE_LANGUAGE, initI18nForTest } from "@renderer/i18n";
 import { useAppStore } from "../../store/appStore";
-import { DIARY_SYSTEM_PROMPT, generateDiary, sanitizeDiaryBody } from "../diaryGenerator";
+import { diaryPromptProfile } from "../../i18n/promptProfiles";
+import { generateDiary, sanitizeDiaryBody } from "../diaryGenerator";
 import { WorkLog } from "../workLog";
 import type { AgentProfile, AppSettings } from "@shared/types";
 
@@ -123,7 +125,7 @@ describe("generateDiary", () => {
     expect(result.ok).toBe(true);
     const [provider, instruction, text] = summarizeFn.mock.calls[0];
     expect(provider).toBe("claude"); // summaryProvider 공유
-    expect(instruction).toBe(DIARY_SYSTEM_PROMPT);
+    expect(instruction).toBe(diaryPromptProfile().systemPrompt);
     expect(text).toContain("명랑한 초등학생");
     expect(text).toContain("이슈 56 해줘");
     expect(text).toContain("Bash: cargo test");
@@ -225,5 +227,39 @@ describe("generateDiary", () => {
     release();
     expect((await first).ok).toBe(true);
     expect(summarizeFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+// en 프로필 — 프롬프트와 블록 머리말이 UI 언어를 따르는지.
+describe("일기 생성(en 프로필)", () => {
+  beforeEach(async () => {
+    useAppStore.getState().hydrateSettings(SETTINGS_ON, false);
+    await initI18nForTest("en");
+  });
+
+  afterAll(async () => {
+    await initI18nForTest(SOURCE_LANGUAGE); // 정본 복구
+  });
+
+  it("en 시스템 프롬프트와 en 머리말로 호출한다", async () => {
+    const summarizeFn = vi.fn().mockResolvedValue("Shipped the fix today. Tests are green.");
+    const appendFn = vi.fn().mockResolvedValue(undefined);
+    const r = await generateDiary("a1", { summarizeFn, appendFn, now: () => 1, log: seededLog() });
+
+    expect(r.ok).toBe(true);
+    const p = diaryPromptProfile("en");
+    const [, instruction, text] = summarizeFn.mock.calls[0];
+    expect(instruction).toBe(p.systemPrompt);
+    expect(text).toContain(`${p.headers.personality}\n${p.noneText}`);
+    expect(text).toContain(p.headers.workLog);
+  });
+
+  it("본문 최소 길이 하한도 en 값(ko보다 큼)을 쓴다", () => {
+    const ko = diaryPromptProfile("ko").bodyMinChars;
+    const en = diaryPromptProfile("en").bodyMinChars;
+    expect(en).toBeGreaterThan(ko);
+    // ko 하한은 넘지만 en 하한 미만 — ko 프로필이었다면 통과했을 길이다.
+    expect(sanitizeDiaryBody("a".repeat(ko))).toBeNull();
+    expect(sanitizeDiaryBody("a".repeat(en))).toBe("a".repeat(en));
   });
 });

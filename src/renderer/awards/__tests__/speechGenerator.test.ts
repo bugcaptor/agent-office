@@ -3,23 +3,20 @@
 // 수상 소감 생성기: 일기 발췌의 월 필터·균등 샘플링·절단·예산, 일기 0편 경로,
 // 프로필 없음, 요약기 실패 사유 매핑(diaryGenerator와 같은 어휘). summarize·
 // loadDiary·시계·provider·게이트를 전부 주입해 스토어/IPC 없이 검증한다.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // appStore를 거쳐 들어오는 tauriApi 모듈을 차단한다(테스트는 전부 주입으로 돈다).
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: { summarizeText: vi.fn(), loadDiary: vi.fn(), setAppSettings: vi.fn() },
 }));
 
+import { SOURCE_LANGUAGE, initI18nForTest } from "@renderer/i18n";
 import { fixedOffsetCalendar } from "../../analytics/aggregate";
+import { speechPromptProfile } from "../../i18n/promptProfiles";
 import {
-  AWARD_SPEECH_SYSTEM_PROMPT,
   buildDiaryExcerpt,
   clampSpeech,
-  DEFAULT_EXCERPT_LIMITS,
   generateSpeech,
-  PERSONALITY_MAX_CHARS,
-  PROMPT_BUDGET_CHARS,
-  SPEECH_MAX_CHARS,
   type SpeechDeps,
 } from "../speechGenerator";
 import type { AgentProfile, AwardRecord, DiaryEntry } from "@shared/types";
@@ -156,7 +153,7 @@ describe("buildDiaryExcerpt", () => {
       expect(line.endsWith("…")).toBe(true);
       expect(Array.from(line)).toHaveLength(14 + 135);
     }
-    expect(Array.from(out).length).toBeLessThanOrEqual(DEFAULT_EXCERPT_LIMITS.totalChars);
+    expect(Array.from(out).length).toBeLessThanOrEqual(speechPromptProfile().excerptLimits.totalChars);
   });
 
   it("문장부호가 있으면 문장 경계에서 끊는다(중간이 뚝 끊기지 않게)", () => {
@@ -214,7 +211,7 @@ describe("generateSpeech", () => {
     expect(summarize).toHaveBeenCalledTimes(1);
     const [provider, instruction, text] = summarize.mock.calls[0] as [string, string, string];
     expect(provider).toBe("claude");
-    expect(instruction).toBe(AWARD_SPEECH_SYSTEM_PROMPT);
+    expect(instruction).toBe(speechPromptProfile().systemPrompt);
     expect(text).toContain("[성격]\n무뚝뚝함");
     expect(text).toContain("월: 2026-07");
     expect(text).toContain("작업 시간: 약 12시간"); // 12h → 시간 단위 반올림
@@ -307,12 +304,12 @@ describe("clampSpeech", () => {
     const b = `${"나".repeat(150)}.`;
     const out = clampSpeech(`${a} ${b}`);
     expect(out).toBe(a);
-    expect(Array.from(out).length).toBeLessThanOrEqual(SPEECH_MAX_CHARS);
+    expect(Array.from(out).length).toBeLessThanOrEqual(speechPromptProfile().speechMaxChars);
   });
 
   it("한 문장이 통째로 상한을 넘으면 마지막 수단으로 글자 절단한다", () => {
     const out = clampSpeech("가".repeat(400));
-    expect(Array.from(out).length).toBe(SPEECH_MAX_CHARS); // `…` 포함 상한 이하
+    expect(Array.from(out).length).toBe(speechPromptProfile().speechMaxChars); // `…` 포함 상한 이하
     expect(out.endsWith("…")).toBe(true);
   });
 
@@ -337,7 +334,7 @@ describe("프롬프트 예산", () => {
     loadDiary.mockResolvedValue(entries);
     await generateSpeech(record(), profile({ personalityPrompt: "무뚝뚝함" }), 0, deps());
     const text = summarize.mock.calls[0][2] as string;
-    expect(Array.from(text).length).toBeLessThanOrEqual(PROMPT_BUDGET_CHARS);
+    expect(Array.from(text).length).toBeLessThanOrEqual(speechPromptProfile().promptBudgetChars);
   });
 
   it("성격이 길면 잘라 일기 발췌 예산을 지킨다", async () => {
@@ -345,7 +342,7 @@ describe("프롬프트 예산", () => {
     await generateSpeech(record(), profile({ personalityPrompt: "성".repeat(900) }), 0, deps());
     const text = summarize.mock.calls[0][2] as string;
     const personality = text.split("\n\n")[0].replace("[성격]\n", "");
-    expect(Array.from(personality).length).toBeLessThanOrEqual(PERSONALITY_MAX_CHARS);
+    expect(Array.from(personality).length).toBeLessThanOrEqual(speechPromptProfile().personalityMaxChars);
     // 성격이 예산을 다 먹지 않아 일기는 그대로 들어간다.
     expect(text).toContain("리팩터링을 했다");
   });
@@ -354,6 +351,59 @@ describe("프롬프트 예산", () => {
     summarize.mockResolvedValue(`${"가".repeat(300)}. ${"나".repeat(300)}.`);
     const r = await generateSpeech(record(), profile(), 0, deps());
     expect(r.ok).toBe(true);
-    if (r.ok) expect(Array.from(r.speech.text).length).toBeLessThanOrEqual(SPEECH_MAX_CHARS);
+    if (r.ok) expect(Array.from(r.speech.text).length).toBeLessThanOrEqual(speechPromptProfile().speechMaxChars);
+  });
+});
+
+// en 프로필 — 프롬프트·머리말·sentinel·출력 상한이 UI 언어를 따르는지.
+describe("수상 소감(en 프로필)", () => {
+  beforeEach(async () => {
+    await initI18nForTest("en");
+  });
+
+  afterAll(async () => {
+    await initI18nForTest(SOURCE_LANGUAGE); // 정본 복구
+  });
+
+  it("en 프롬프트·머리말로 조립하고 수상 정보도 영어로 낸다", async () => {
+    loadDiary.mockResolvedValue([entry(julyAt(4), "Refactored the build script.")]);
+    summarize.mockResolvedValue("Thanks, everyone. The build held up all month.");
+    const r = await generateSpeech(record(), profile({ personalityPrompt: "terse" }), 2, deps());
+
+    expect(r.ok).toBe(true);
+    const p = speechPromptProfile("en");
+    const [, instruction, text] = summarize.mock.calls[0] as [string, string, string];
+    expect(instruction).toBe(p.systemPrompt);
+    expect(text).toContain(`${p.headers.personality}\nterse`);
+    expect(text).toContain("Month: 2026-07");
+    expect(text).toContain("Time worked: about 12 hours");
+    expect(text).toContain("Turns: 84");
+    expect(text).toContain("Active days: 15");
+    expect(text).toContain("Awards to date: 3 (including this one)");
+    expect(text).toContain("Refactored the build script.");
+  });
+
+  it("일기가 없으면 en sentinel을 넣는다", async () => {
+    loadDiary.mockResolvedValue([]);
+    const p = speechPromptProfile("en");
+    const r = await generateSpeech(record(), profile(), 0, deps());
+    expect(r.ok).toBe(true);
+    expect(summarize.mock.calls[0][2] as string).toContain(`${p.headers.diary}\n${p.noDiaryText}`);
+    expect(p.noDiaryText).toBe("(no diary)");
+  });
+
+  it("출력 상한이 en 값(ko보다 큼)이라 ko라면 잘렸을 소감도 남는다", async () => {
+    const ko = speechPromptProfile("ko").speechMaxChars;
+    const en = speechPromptProfile("en").speechMaxChars;
+    expect(en).toBeGreaterThan(ko);
+    // ko 상한은 넘지만 en 상한 안에 드는 두 문장.
+    const long = `${"a".repeat(ko - 20)}. ${"b".repeat(30)}.`;
+    summarize.mockResolvedValue(long);
+    const r = await generateSpeech(record(), profile(), 0, deps());
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(Array.from(r.speech.text).length).toBeGreaterThan(ko);
+      expect(Array.from(r.speech.text).length).toBeLessThanOrEqual(en);
+    }
   });
 });
