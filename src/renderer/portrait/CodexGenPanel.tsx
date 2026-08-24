@@ -12,26 +12,32 @@ import { useTranslation } from "react-i18next";
 // 컴포넌트 안에서는 훅(useTranslation)을 써야 언어 변경에 리렌더가 걸린다.
 import { t as translate } from "@renderer/i18n";
 import { tauriApi } from "../ipc/tauriApi";
+import { backendErrorText, parseBackendError } from "../shared/backendError";
 import type { CodexImageStatus } from "@shared/types";
+
+/** 이 패널 전용 코드 → 번역 키. 공통 매핑(`BACKEND_ERROR_KEY`)에 두지 않는
+ *  이유는 안내가 "codex CLI를 설치하라"처럼 이 기능에 매여 있기 때문이다. */
+type CodexGenErrorCode = "timeout" | "no_output";
+
+const CODEX_GEN_ERROR_KEY: Record<CodexGenErrorCode, string> = {
+  timeout: "profile:codex.errTimeout",
+  no_output: "profile:codex.errNoOutput",
+};
 
 /** IPC 오류 문자열("{code}: {상세}") → 사용자 캡션. */
 export function codexGenErrorCaption(err: unknown): string {
-  const raw = String(err);
-  const code = raw.split(":")[0]?.trim() ?? "";
-  // 미설치는 요약기와 같은 `-not-found` 관례를 따른다(포함 검사).
+  const { code, detail } = parseBackendError(err);
+  // 미설치는 요약기와 같은 `{provider}-not-found` 관례를 따른다(포함 검사).
   if (code.includes("-not-found")) {
     return translate("profile:codex.errNotFound");
   }
-  switch (code) {
-    case "timeout":
-      return translate("profile:codex.errTimeout");
-    case "no_output":
-      return translate("profile:codex.errNoOutput", {
-        detail: raw.slice(raw.indexOf(":") + 1).trim(),
-      });
-    default:
-      return translate("profile:codex.errGeneric", { error: raw });
+  // no_output만 상세를 문장 안에 끼워 넣는 전용 문구가 있다.
+  if (code === "no_output") {
+    return translate(CODEX_GEN_ERROR_KEY.no_output, { detail });
   }
+  const key = CODEX_GEN_ERROR_KEY[code as CodexGenErrorCode];
+  if (key) return translate(key);
+  return translate("profile:codex.errGeneric", { error: backendErrorText(err) });
 }
 
 export type CodexGenKind = "portrait" | "sprite" | "minimi";

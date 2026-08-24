@@ -214,13 +214,17 @@ async fn run_cli(cli: &Path, args: &[&str]) -> Result<String, String> {
 
     let output = tokio::time::timeout(CLI_TIMEOUT, command.output())
         .await
-        .map_err(|_| "tailscale 명령이 응답하지 않습니다".to_string())?
-        .map_err(|e| format!("tailscale 실행 실패: {e}"))?;
+        .map_err(|_| "timeout".to_string())?
+        .map_err(|e| format!("tailscale-spawn-failed: {e}"))?;
 
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout).to_string());
     }
-    Err(summarize_stderr(&String::from_utf8_lossy(&output.stderr)))
+    // stderr 원문(tailscale 자신의 영어 메시지)은 번역하지 않고 상세로 붙인다.
+    Err(format!(
+        "tailscale-cli-error: {}",
+        summarize_stderr(&String::from_utf8_lossy(&output.stderr))
+    ))
 }
 
 /// stderr에서 사람이 읽을 한 줄을 뽑는다(마지막 비어 있지 않은 줄, 200자 상한).
@@ -230,7 +234,7 @@ fn summarize_stderr(stderr: &str) -> String {
         .rev()
         .map(|l| l.trim())
         .find(|l| !l.is_empty())
-        .unwrap_or("알 수 없는 오류");
+        .unwrap_or("unknown error");
     line.chars().take(200).collect()
 }
 
@@ -325,10 +329,10 @@ pub async fn tailscale_serve_status(
 #[tauri::command(rename_all = "camelCase")]
 pub async fn tailscale_serve_enable(app_state: State<'_, AppState>) -> Result<(), String> {
     let Some(upstream) = expected_upstream(&app_state) else {
-        return Err("웹 원격 서버가 아직 떠 있지 않습니다 — 먼저 웹 원격을 켜세요".into());
+        return Err("web-remote-down".into());
     };
     let Some(cli) = find_cli() else {
-        return Err("Tailscale CLI를 찾지 못했습니다".into());
+        return Err("tailscale-cli-not-found".into());
     };
 
     // 남의 매핑을 덮어쓰지 않는다(자동 포트 순회도 하지 않는다 — 설계 §10.2).
@@ -336,7 +340,7 @@ pub async fn tailscale_serve_enable(app_state: State<'_, AppState>) -> Result<()
     if before.conflict {
         let found = before.upstream.unwrap_or_default();
         return Err(format!(
-            "포트 {WEB_REMOTE_HTTPS_PORT}은 이미 다른 서비스가 쓰고 있습니다({found}) — 그 매핑을 먼저 정리하세요"
+            "serve-port-conflict: {WEB_REMOTE_HTTPS_PORT} -> {found}"
         ));
     }
 
@@ -351,7 +355,7 @@ pub async fn tailscale_serve_enable(app_state: State<'_, AppState>) -> Result<()
 #[tauri::command(rename_all = "camelCase")]
 pub async fn tailscale_serve_disable(_app_state: State<'_, AppState>) -> Result<(), String> {
     let Some(cli) = find_cli() else {
-        return Err("Tailscale CLI를 찾지 못했습니다".into());
+        return Err("tailscale-cli-not-found".into());
     };
     let https_flag = format!("--https={WEB_REMOTE_HTTPS_PORT}");
     run_cli(&cli, &["serve", &https_flag, "off"])
@@ -453,7 +457,7 @@ mod tests {
     fn stderr_summary_takes_the_last_line() {
         let raw = "usage: tailscale serve\n\nerror: invalid port\n\n";
         assert_eq!(summarize_stderr(raw), "error: invalid port");
-        assert_eq!(summarize_stderr("   \n"), "알 수 없는 오류");
+        assert_eq!(summarize_stderr("   \n"), "unknown error");
         assert_eq!(summarize_stderr(&"x".repeat(500)).chars().count(), 200);
     }
 }

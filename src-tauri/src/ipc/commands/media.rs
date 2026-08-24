@@ -141,12 +141,12 @@ pub async fn summarize_text(
 ) -> Result<String, String> {
     // 설정 가드는 .await 이전에 떨어뜨린다(no-lock-across-await 계약) — 모델
     // 오버라이드는 값으로 복제해 들고 나온다.
-    let models = {
+    let (models, lang) = {
         let guard = app_state.settings.read().unwrap();
         if !guard.summarizer_enabled {
             return Err("summarizer-disabled".to_string());
         }
-        guard.summary_models.clone()
+        (guard.summary_models.clone(), crate::i18n::ui_lang(&guard))
     };
     // OpenRouter 경로만 API 키를 쓴다 — 다른 provider일 때 굳이 키 파일을
     // 읽지 않는다(라벨 요약은 자주 도는 경로다).
@@ -164,6 +164,7 @@ pub async fn summarize_text(
         &text,
         &models,
         openrouter_key.as_deref(),
+        lang,
     )
     .await
 }

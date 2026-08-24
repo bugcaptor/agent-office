@@ -67,6 +67,7 @@
                 "text",
                 &Default::default(),
                 None,
+                crate::i18n::Lang::Ko,
             )
             .await
         };
@@ -122,6 +123,7 @@
                 "   ",
                 &Default::default(),
                 None,
+                crate::i18n::Lang::Ko,
             )
             .await
         };

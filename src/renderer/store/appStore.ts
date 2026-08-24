@@ -45,6 +45,7 @@ import type {
   UsageSnapshot,
 } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
+import { backendErrorText } from "../shared/backendError";
 import type { PendingPairing } from "../ipc/webRemoteApi";
 
 const MAX_EXCERPT = 80;
@@ -589,7 +590,8 @@ export const useAppStore = create<AppState>()(
               running: false,
               phase: "error",
               pollIntervalSec: 60,
-              error: String(err),
+              // 백엔드가 코드를 내면 카탈로그 문구로, 아니면 원문 그대로.
+              error: backendErrorText(err),
             },
           },
         }));

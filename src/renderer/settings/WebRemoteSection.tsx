@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { webRemoteApi } from "../ipc/webRemoteApi";
+import { backendErrorText } from "../shared/backendError";
 import type {
   WebRemoteStatus,
   ClientPermission,
@@ -127,7 +128,7 @@ export function WebRemoteSection() {
     setServeBusy(true);
     setServeError(null);
     void action()
-      .catch((err: unknown) => setServeError(String(err)))
+      .catch((err: unknown) => setServeError(backendErrorText(err)))
       .then(refreshServe)
       .finally(() => setServeBusy(false));
   };

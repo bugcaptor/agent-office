@@ -20,8 +20,40 @@ use crate::observer::event::{message as observer_message, prompt_text, ObserverE
 use crate::state::{AppEvents, SessionRegistry};
 use crate::types::*;
 
-const ATTENTION_FALLBACK: &str = "확인이 필요합니다";
-const STOP_FALLBACK: &str = "작업이 완료되었습니다.";
+// ── 훅 본문에 문구가 없을 때의 기본 알림 문구 ──────────────────────────
+//
+// 화면(알림 목록·OS 알림)에 그대로 뜨고 TTS로도 읽히는 **사용자 문구**라 UI
+// 언어를 따라간다. 카탈로그는 프런트에만 있으므로(crate::i18n 머리말) 여기서는
+// 언어별 상수만 두고, ko/en 값이 프런트 카탈로그와 어긋나지 않는지는
+// `hub/tests.rs`의 파리티 테스트가 지킨다.
+//
+// **ATTENTION_FALLBACK은 프런트와 짝이다.** `src/renderer/sound/soundManager.ts`의
+// 미리듣기 문구(`previewMessage()`)가 이 값과 같아야 "시청 버튼으로 들리는 것이
+// 실제 훅 알림과 같은 파이프라인·같은 톤"이 성립한다. 어느 한쪽만 고치면
+// `attention_fallback_matches_the_frontend_preview_message` 테스트가 깨진다.
+const ATTENTION_FALLBACK_KO: &str = "확인이 필요합니다";
+const ATTENTION_FALLBACK_EN: &str = "Needs your confirmation";
+const STOP_FALLBACK_KO: &str = "작업이 완료되었습니다.";
+const STOP_FALLBACK_EN: &str = "The work is done.";
+
+/// 카탈로그 키(`common:notification.attentionFallback`). Rust는 카탈로그를 읽지
+/// 않지만, 파리티 테스트가 프런트 JSON에서 이 키를 찾아 위 상수와 대조한다.
+#[cfg(test)]
+pub(crate) const ATTENTION_FALLBACK_CATALOG_KEY: &str = "notification.attentionFallback";
+
+fn attention_fallback(lang: crate::i18n::Lang) -> &'static str {
+    match lang {
+        crate::i18n::Lang::Ko => ATTENTION_FALLBACK_KO,
+        crate::i18n::Lang::En => ATTENTION_FALLBACK_EN,
+    }
+}
+
+fn stop_fallback(lang: crate::i18n::Lang) -> &'static str {
+    match lang {
+        crate::i18n::Lang::Ko => STOP_FALLBACK_KO,
+        crate::i18n::Lang::En => STOP_FALLBACK_EN,
+    }
+}
 
 // ── 출력 기반 "아직 작업중" 복귀 휴리스틱 상수(이슈 #39) ────────────────
 //
@@ -99,6 +131,9 @@ pub struct NotificationHub {
     held: Mutex<HashMap<SessionId, HeldNotification>>,
     /// Hook 알림 보류 시간. 0이면 즉시 방출(현행 동작 = 기존 테스트 불변).
     hold_duration: Mutex<Duration>,
+    /// 기본 알림 문구의 언어. hold_duration과 같은 경로로 주입된다(lib.rs 부팅
+    /// + apply_settings_effects) — 허브는 설정을 직접 보지 않는다.
+    lang: Mutex<crate::i18n::Lang>,
 }
 
 impl NotificationHub {
@@ -123,6 +158,9 @@ impl NotificationHub {
             // 기본 0 = 즉시 방출. 실제 값은 lib.rs가 설정 로드 직후
             // set_hold_duration으로 주입한다(기존 테스트는 0으로 현행 동작 유지).
             hold_duration: Mutex::new(Duration::ZERO),
+            // 기본 ko: 기존 테스트가 한국어 폴백 문구를 기대한다. 실제 값은
+            // lib.rs가 설정 로드 직후 set_lang으로 주입한다.
+            lang: Mutex::new(crate::i18n::Lang::Ko),
         }
     }
 
@@ -130,6 +168,16 @@ impl NotificationHub {
     /// set_app_settings가 호출. 0이면 즉시 방출(홀드 비활성).
     pub fn set_hold_duration(&self, d: Duration) {
         *self.hold_duration.lock().unwrap() = d;
+    }
+
+    /// 기본 알림 문구의 언어를 주입한다. 설정 로드/변경 시 lib.rs·
+    /// `apply_settings_effects`가 호출한다(`set_hold_duration`과 같은 경로).
+    pub fn set_lang(&self, lang: crate::i18n::Lang) {
+        *self.lang.lock().unwrap() = lang;
+    }
+
+    fn lang(&self) -> crate::i18n::Lang {
+        *self.lang.lock().unwrap()
     }
 
     /// 테스트 전용: 출력 휴리스틱 임계치를 주입한다(FakeClock 과 함께 결정론적 검증).
@@ -148,10 +196,11 @@ impl NotificationHub {
 
     /// axum 핸들러가 호출: 원본 hook body에서 메시지 추출 후 ingest.
     pub fn ingest_hook(&self, session_id: &str, source: NotificationSource, body: &[u8]) {
+        let lang = self.lang();
         let message = observer_message(body).unwrap_or_else(|| {
             match source {
-                NotificationSource::Stop => STOP_FALLBACK,
-                _ => ATTENTION_FALLBACK,
+                NotificationSource::Stop => stop_fallback(lang),
+                _ => attention_fallback(lang),
             }
             .to_string()
         });
@@ -186,7 +235,7 @@ impl NotificationHub {
                 NotificationSource::Hook,
                 message
                     .filter(|value| !value.trim().is_empty())
-                    .unwrap_or_else(|| ATTENTION_FALLBACK.to_string()),
+                    .unwrap_or_else(|| attention_fallback(self.lang()).to_string()),
             ),
             ObserverEvent::Stop {
                 message,
@@ -209,7 +258,7 @@ impl NotificationHub {
                         NotificationSource::Stop,
                         message
                             .filter(|value| !value.trim().is_empty())
-                            .unwrap_or_else(|| STOP_FALLBACK.to_string()),
+                            .unwrap_or_else(|| stop_fallback(self.lang()).to_string()),
                         tokens,
                     )
                 }

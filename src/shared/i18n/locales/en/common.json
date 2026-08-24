@@ -41,6 +41,9 @@
   "ticker": {
     "more": "+{{n}} more"
   },
+  "notification": {
+    "attentionFallback": "Needs your confirmation"
+  },
   "errors": {
     "bundleNotJson": "Could not read the file as JSON.",
     "bundleNotCharacterFile": "Not an Agent Office character file.",
@@ -54,6 +57,30 @@
     "bundleSpriteInvalid": "Sprite image data is invalid.",
     "bundleSpriteTooLarge": "Sprite image is too large (over 1 MiB). Import cancelled.",
     "bundleMinimiInvalid": "Minimi image data is invalid.",
-    "bundleMinimiTooLarge": "Minimi image is too large (over 1 MiB). Import cancelled."
+    "bundleMinimiTooLarge": "Minimi image is too large (over 1 MiB). Import cancelled.",
+    "pathOutsideRoot": "That path is outside the allowed folder.",
+    "rootNotFound": "Could not find the working folder.",
+    "rootNotADirectory": "The working folder is not a directory.",
+    "fileNotFound": "Could not find the file.",
+    "notAFile": "Not a file.",
+    "notUtf8": "Cannot open a file that is not UTF-8 text.",
+    "fileTooLarge": "The file is too large.",
+    "statFailed": "Could not read the file information.",
+    "readFailed": "Could not read the file.",
+    "writeFailed": "Could not save the file.",
+    "noParentDir": "Could not determine the file's parent folder.",
+    "logReadFailed": "Could not read the session log.",
+    "studySaveFailed": "Could not save the study material.",
+    "keySaveFailed": "Could not save the API key.",
+    "ttsDisabled": "TTS is turned off in settings.",
+    "ttsKeyMissing": "No ElevenLabs API key is configured.",
+    "ttsEmptyMessage": "There is nothing to speak.",
+    "ttsNoVoice": "No voice is available.",
+    "webRemoteDown": "The web remote server is not up yet — turn on web remote first.",
+    "tailscaleCliNotFound": "Could not find the Tailscale CLI.",
+    "tailscaleServeConflict": "Another service already uses that HTTPS port — clear that mapping first.",
+    "tailscaleSpawnFailed": "Failed to run tailscale.",
+    "tailscaleCliError": "The tailscale command failed.",
+    "timeout": "It did not respond in time."
   }
 }

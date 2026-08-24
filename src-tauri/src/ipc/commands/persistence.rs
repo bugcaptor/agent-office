@@ -218,7 +218,7 @@ pub async fn open_session_log(
 ) -> Result<(), String> {
     let file = std::path::PathBuf::from(&path);
     if !crate::session_log::store::is_inside_root(&app_state.session_log_root, &file) {
-        return Err("세션 로그 폴더 밖의 경로입니다".to_string());
+        return Err("path-outside-root".to_string());
     }
     let use_vscode = {
         let guard = app_state.settings.read().unwrap();
@@ -241,15 +241,19 @@ pub async fn generate_study_material(
 ) -> Result<crate::types::StudyMaterialResult, String> {
     let file = std::path::PathBuf::from(&path);
     if !crate::session_log::store::is_inside_root(&app_state.session_log_root, &file) {
-        return Err("세션 로그 폴더 밖의 경로입니다".to_string());
+        return Err("path-outside-root".to_string());
     }
     // 설정 가드는 await 이전에 떨어뜨린다(no-lock-across-await 계약).
-    let (provider, models) = {
+    let (provider, models, lang) = {
         let guard = app_state.settings.read().unwrap();
         if !guard.summarizer_enabled {
             return Err("summarizer-disabled".to_string());
         }
-        (guard.summary_provider, guard.summary_models.clone())
+        (
+            guard.summary_provider,
+            guard.summary_models.clone(),
+            crate::i18n::ui_lang(&guard),
+        )
     };
     // OpenRouter 경로만 API 키를 쓴다(요약기 HTTP 갈래).
     let openrouter_key = if provider
@@ -266,6 +270,7 @@ pub async fn generate_study_material(
         provider,
         &models,
         openrouter_key.as_deref(),
+        lang,
     )
     .await?;
     Ok(crate::types::StudyMaterialResult {

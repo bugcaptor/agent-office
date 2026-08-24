@@ -9,6 +9,7 @@
 import { create } from "zustand";
 import { t } from "@renderer/i18n";
 import { tauriApi } from "../ipc/tauriApi";
+import { backendErrorText, parseBackendError } from "../shared/backendError";
 import type { SessionLogItem } from "@shared/types";
 import { useMarkdownStore } from "../markdown/markdownStore";
 
@@ -46,30 +47,39 @@ interface SessionLogState {
 }
 
 /**
+ * 이 화면에서만 다르게 말해야 하는 백엔드 코드들 → 번역 키. 여기 없는 코드는
+ * 공통 매핑(`backendErrorText`)이 다루고, 그것도 모르면 원문이 나간다.
+ *
+ * `empty-log`·`summarizer-disabled`는 공통 매핑에 두지 않았다 — 같은 코드라도
+ * 설정 화면과 이 목록에서 해야 할 안내가 다르기 때문이다.
+ */
+type SessionLogErrorCode = "summarizer-disabled" | "timeout" | "empty-log";
+
+const SESSION_LOG_ERROR_KEY: Record<SessionLogErrorCode, string> = {
+  "summarizer-disabled": "activity:sessionLog.errSummarizerOff",
+  timeout: "activity:sessionLog.errTimeout",
+  "empty-log": "activity:sessionLog.errEmptyLog",
+};
+
+/**
  * 백엔드 실패 문자열 → 사용자 안내.
  *
  * React 밖(zustand 액션)이라 훅이 아니라 모듈 `t`를 쓴다 — 다만 **호출
  * 시점**에만 부른다(모듈 최상위에서 부르면 언어를 바꿔도 문구가 굳는다).
  *
- * 빈 로그 판정만 정규식인 건, 백엔드(`session_log/study.rs`)가 한국어 에러
- * 문자열("빈 로그입니다")을 그대로 돌려주기 때문이다. 이건 화면에 나가는
- * 문구가 아니라 **백엔드 응답을 알아보는 패턴**이라 카탈로그 대상이 아니다.
+ * 판정은 전부 **코드**로 한다. 예전에는 빈 로그만 `/빈 로그/` 정규식이었는데
+ * (백엔드가 한국어 문자열을 돌려주던 시절의 임시 방편), 이제 `study.rs`가
+ * `empty-log`를 낸다.
  */
 function noticeForError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  if (message.includes("summarizer-disabled")) {
-    return t("activity:sessionLog.errSummarizerOff");
-  }
-  if (message.includes("-not-found")) {
+  const { code } = parseBackendError(err);
+  // 요약기 provider별 미설치는 `{provider}-not-found`라 코드가 열려 있다.
+  if (code.endsWith("-not-found")) {
     return t("activity:sessionLog.errCliNotFound");
   }
-  if (message === "timeout") {
-    return t("activity:sessionLog.errTimeout");
-  }
-  if (/빈 로그/.test(message)) {
-    return t("activity:sessionLog.errEmptyLog");
-  }
-  return t("activity:sessionLog.errGeneric", { message });
+  const key = SESSION_LOG_ERROR_KEY[code as SessionLogErrorCode];
+  if (key) return t(key);
+  return t("activity:sessionLog.errGeneric", { message: backendErrorText(err) });
 }
 
 export const useSessionLogStore = create<SessionLogState>((set, get) => ({

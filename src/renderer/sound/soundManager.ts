@@ -18,6 +18,7 @@
 //   딩은 **생략하지 않고** 그대로 울린다 — 딩은 즉시 나고 대사는 리라이트+합성
 //   왕복(수 초) 뒤에 오므로 겹치지 않는다. 딩이 "왔다"는 신호, 대사가 "무엇을"
 //   이라 역할이 다르고, 발화가 실패하는 경우에도 알림을 놓치지 않는다.
+import { t } from "@renderer/i18n";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { MIN_CHUNK_LETTERS, TypingScheduler, meaningfulCount } from "./typing";
@@ -53,10 +54,22 @@ export function previewKeyboardSound(packId?: string, agentId = "preview"): void
   }
 }
 
-/** 설정 다이얼로그 "시청" 버튼이 쓰는 샘플 문구 — 실제 훅 알림의 기본 문구
- * (`notification/hub.rs`의 ATTENTION_FALLBACK)와 같게 둬서, 들리는 것이 실제
- * 발화와 같은 파이프라인·같은 톤임을 확인할 수 있게 한다. */
-export const PREVIEW_MESSAGE = "확인이 필요합니다";
+/**
+ * 설정 다이얼로그 "시청" 버튼이 쓰는 샘플 문구 — 실제 훅 알림의 기본 문구
+ * (`notification/hub.rs`의 `ATTENTION_FALLBACK_*`)와 **같아야** 들리는 것이 실제
+ * 발화와 같은 파이프라인·같은 톤임을 확인할 수 있다.
+ *
+ * 그 짝을 언어마다 유지하려고 값을 카탈로그(`common:notification.attentionFallback`)에
+ * 두고 양쪽이 그것을 본다: 프런트는 여기서 읽고, Rust는 상수를 두되
+ * `notification/hub/tests.rs`의 파리티 테스트가 같은 JSON과 대조한다. 어느
+ * 한쪽만 고치면 그 테스트가 깨진다.
+ *
+ * 상수가 아니라 **함수**인 이유: 모듈 로드 시점에 굳히면 언어를 바꿔도 옛
+ * 문구가 계속 나온다(카탈로그를 쓰는 다른 순수 모듈과 같은 관례).
+ */
+export function previewMessage(): string {
+  return t("common:notification.attentionFallback");
+}
 
 /**
  * 대사 TTS 미리듣기. 큐를 거치지 않고 즉시 1회 합성·재생하고, 실제로 발화된
@@ -84,7 +97,7 @@ export async function previewVoice(overrides: Partial<TtsSpeakRequest> = {}): Pr
     archetype: agent?.archetype,
     ...(agent?.personalityPrompt ? { personality: agent.personalityPrompt } : {}),
     seed: agent?.seed ?? "preview",
-    message: PREVIEW_MESSAGE,
+    message: previewMessage(),
     kind: "question",
     ...overrides,
   });

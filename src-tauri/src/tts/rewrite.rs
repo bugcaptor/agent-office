@@ -19,6 +19,8 @@
 //     캡하므로, 300 같은 값을 주면 사고에 다 먹혀 본문이 빈 채로 잘린다.
 //  3) 응답의 `text` 블록만 이어붙인다(thinking 블록은 건너뛴다).
 
+use crate::i18n::Lang;
+
 pub const BASE_URL: &str = "https://api.anthropic.com/v1/messages";
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 /// 리라이트는 인터랙티브 경로다 — 이 시간을 넘기면 원문으로 강등한다.
@@ -62,7 +64,7 @@ impl SpeakKind {
     }
 }
 
-pub const SYSTEM_PROMPT_QUESTION: &str = "너는 픽셀 오피스 게임 캐릭터의 대사 작가다. \
+pub const SYSTEM_PROMPT_QUESTION_KO: &str = "너는 픽셀 오피스 게임 캐릭터의 대사 작가다. \
 AI 코딩 에이전트가 **사용자 확인을 기다리며** 낸 시스템 알림 문구를, 주어진 캐릭터(이름·성격)의 \
 말투로 된 짧은 한국어 대사 한 줄로 바꿔라. 사용자에게 판단을 청하는 말이다.
 
@@ -78,7 +80,7 @@ AI 코딩 에이전트가 **사용자 확인을 기다리며** 낸 시스템 알
 대사 안에 0~2개 넣어 조심스럽게 묻는 감정을 지시한다.
 - 대사만 출력한다. 따옴표, 설명, 머리말, 캐릭터 이름 접두사를 붙이지 않는다.";
 
-pub const SYSTEM_PROMPT_DONE: &str = "너는 픽셀 오피스 게임 캐릭터의 대사 작가다. \
+pub const SYSTEM_PROMPT_DONE_KO: &str = "너는 픽셀 오피스 게임 캐릭터의 대사 작가다. \
 AI 코딩 에이전트가 **작업을 마치고** 낸 시스템 알림 문구를, 주어진 캐릭터(이름·성격)의 \
 말투로 된 짧은 한국어 대사 한 줄로 바꿔라. 일을 끝내고 보고하는 말이다 — 묻지 말고 알려라.
 
@@ -93,12 +95,54 @@ AI 코딩 에이전트가 **작업을 마치고** 낸 시스템 알림 문구를
 대사 안에 0~2개 넣어 뿌듯하거나 홀가분한 감정을 지시한다.
 - 대사만 출력한다. 따옴표, 설명, 머리말, 캐릭터 이름 접두사를 붙이지 않는다.";
 
+pub const SYSTEM_PROMPT_QUESTION_EN: &str = "You write the lines a pixel-office game character says. \
+An AI coding agent has raised a system notice **while waiting for the user to confirm something**. \
+Turn that notice into one short English line spoken in the voice of the given character (name, personality). \
+It is a line that asks the user to decide.
+
+Rules:
+- One line, at most 120 characters. No line breaks.
+- The core meaning — what needs confirming — must survive.
+- This is relaying, not adapting. Do not invent facts, subjects, or events that are not in the source.
+- Let the personality show only in the grain of the voice (word choice, cadence). Do not pull settings or \
+world-building props (magic, battles, forests) from the personality description into the line as subject matter. \
+With no personality given, write in plain everyday English.
+- If a work context is given, let the line sit naturally in it. The context is also a limit on subject matter — do not invent.
+- If the source says nothing specific, do not dress it up; just ask for confirmation plainly.
+- Put 0 to 2 ElevenLabs v3 audio tags ([nervous], [curious], [whispers], [hesitant], [excited], and the like) \
+inside the line to direct a cautious, questioning delivery.
+- Output the line only. No quotes, explanations, prefixes, or character-name prefix.";
+
+pub const SYSTEM_PROMPT_DONE_EN: &str = "You write the lines a pixel-office game character says. \
+An AI coding agent has raised a system notice **after finishing its work**. \
+Turn that notice into one short English line spoken in the voice of the given character (name, personality). \
+It is a line reporting a finished job — tell, do not ask.
+
+Rules:
+- One line, at most 120 characters. No line breaks.
+- The core meaning — what was finished — must survive. If the source carries no detail, plainly report completion.
+- This is relaying, not adapting. Do not invent facts, subjects, or events that are not in the source.
+- Let the personality show only in the grain of the voice (word choice, cadence). Do not pull settings or \
+world-building props (magic, battles, forests) from the personality description into the line as subject matter. \
+With no personality given, write in plain everyday English.
+- If a work context is given, let the line sit naturally in it. The context is also a limit on subject matter — do not invent.
+- Put 0 to 2 ElevenLabs v3 audio tags ([cheerful], [relieved], [sighs], [proud], [tired], and the like) \
+inside the line to direct a proud or relieved delivery.
+- Output the line only. No quotes, explanations, prefixes, or character-name prefix.";
+
 /// 상황별 시스템 프롬프트. API 경로와 claude CLI 경로가 같은 것을 쓴다 —
 /// 경로에 따라 어조가 달라지면 사용자에게는 그냥 버그로 보인다.
-pub fn system_prompt(kind: SpeakKind) -> &'static str {
-    match kind {
-        SpeakKind::Question => SYSTEM_PROMPT_QUESTION,
-        SpeakKind::Done => SYSTEM_PROMPT_DONE,
+///
+/// `lang`은 UI 언어(`crate::i18n::ui_lang`)다. 캐릭터가 사용자에게 말하는
+/// 대사이므로 화면 언어를 따라간다. ko 원문은 Phase 6에서 **이동만** 했고
+/// en은 번역이 아니라 같은 규칙을 영어로 다시 쓴 것이다(프런트
+/// `promptProfiles.ts`와 같은 판단).
+pub fn system_prompt(kind: SpeakKind, lang: Lang) -> &'static str {
+    match (kind, lang) {
+        (SpeakKind::Question, Lang::Ko) => SYSTEM_PROMPT_QUESTION_KO,
+        (SpeakKind::Done, Lang::Ko) => SYSTEM_PROMPT_DONE_KO,
+        (SpeakKind::Question, Lang::En) => SYSTEM_PROMPT_QUESTION_EN,
+        (SpeakKind::Done, Lang::En) => SYSTEM_PROMPT_DONE_EN,
     }
 }
 
@@ -154,19 +198,21 @@ impl std::fmt::Display for RewriteError {
 /// 나오게 참고용으로만 싣는다(빈 문자열/공백뿐이면 블록 자체를 생략).
 pub fn build_user_content(
     kind: SpeakKind,
+    lang: Lang,
     agent_name: &str,
     personality: Option<&str>,
     context: Option<&str>,
     message: &str,
 ) -> String {
+    let l = labels(lang);
     let name = if agent_name.trim().is_empty() {
-        "이름 없음"
+        l.unnamed
     } else {
         agent_name.trim()
     };
     let situation = match kind {
-        SpeakKind::Question => "사용자 확인을 기다리는 요청",
-        SpeakKind::Done => "작업을 마친 완료 보고",
+        SpeakKind::Question => l.situation_question,
+        SpeakKind::Done => l.situation_done,
     };
     // 성격은 멀티라인 자유 텍스트다 — 줄 구조를 살려 구분자로 감싼다.
     let personality_block = personality
@@ -174,7 +220,8 @@ pub fn build_user_content(
         .filter(|p| !p.is_empty())
         .map(|p| {
             let truncated: String = p.chars().take(MAX_PERSONALITY_CHARS).collect();
-            format!("캐릭터 성격(말투에만 반영):\n<personality>\n{truncated}\n</personality>\n\n")
+            let head = l.personality_head;
+            format!("{head}\n<personality>\n{truncated}\n</personality>\n\n")
         })
         .unwrap_or_default();
     let context_block = context
@@ -182,20 +229,72 @@ pub fn build_user_content(
         .filter(|c| !c.is_empty())
         .map(|c| {
             let truncated: String = c.chars().take(MAX_CONTEXT_CHARS).collect();
-            format!("최근 작업 맥락(참고용):\n<context>\n{truncated}\n</context>\n\n")
+            let head = l.context_head;
+            format!("{head}\n<context>\n{truncated}\n</context>\n\n")
         })
         .unwrap_or_default();
     let src: String = message.chars().take(MAX_SOURCE_CHARS).collect();
+    let (name_head, situation_head, notice_head) = (l.name_head, l.situation_head, l.notice_head);
     format!(
-        "캐릭터 이름: {name}\n상황: {situation}\n\n{personality_block}{context_block}원문 알림 문구:\n<notice>\n{src}\n</notice>"
+        "{name_head} {name}\n{situation_head} {situation}\n\n{personality_block}{context_block}{notice_head}\n<notice>\n{src}\n</notice>"
     )
 }
 
-pub fn build_request_body(kind: SpeakKind, model: &str, user_content: &str) -> serde_json::Value {
+/// user 메시지의 블록 머리말 묶음. 시스템 프롬프트와 **한 벌**이라 같이 갈린다
+/// — 영어 시스템 프롬프트에 한국어 머리말을 붙이면 모델이 그 신호를 따라
+/// 한국어로 답한다(프런트 `promptProfiles.ts`의 `headers`와 같은 이유로
+/// 프롬프트 옆에 둔다).
+struct UserContentLabels {
+    name_head: &'static str,
+    situation_head: &'static str,
+    situation_question: &'static str,
+    situation_done: &'static str,
+    personality_head: &'static str,
+    context_head: &'static str,
+    notice_head: &'static str,
+    unnamed: &'static str,
+}
+
+/// ko 값은 Phase 6 이전 문자열 그대로다(이동만 — 튜닝 아님).
+const LABELS_KO: UserContentLabels = UserContentLabels {
+    name_head: "캐릭터 이름:",
+    situation_head: "상황:",
+    situation_question: "사용자 확인을 기다리는 요청",
+    situation_done: "작업을 마친 완료 보고",
+    personality_head: "캐릭터 성격(말투에만 반영):",
+    context_head: "최근 작업 맥락(참고용):",
+    notice_head: "원문 알림 문구:",
+    unnamed: "이름 없음",
+};
+
+const LABELS_EN: UserContentLabels = UserContentLabels {
+    name_head: "Character name:",
+    situation_head: "Situation:",
+    situation_question: "a request waiting for the user to confirm",
+    situation_done: "a report that the work is finished",
+    personality_head: "Character personality (voice only):",
+    context_head: "Recent work context (for reference):",
+    notice_head: "Source notice text:",
+    unnamed: "Unnamed",
+};
+
+fn labels(lang: Lang) -> &'static UserContentLabels {
+    match lang {
+        Lang::Ko => &LABELS_KO,
+        Lang::En => &LABELS_EN,
+    }
+}
+
+pub fn build_request_body(
+    kind: SpeakKind,
+    lang: Lang,
+    model: &str,
+    user_content: &str,
+) -> serde_json::Value {
     serde_json::json!({
         "model": model,
         "max_tokens": MAX_TOKENS,
-        "system": system_prompt(kind),
+        "system": system_prompt(kind, lang),
         "messages": [{ "role": "user", "content": user_content }],
     })
 }
@@ -264,6 +363,7 @@ pub fn sanitize_line(raw: &str) -> String {
 pub async fn rewrite(
     api_key: &str,
     kind: SpeakKind,
+    lang: Lang,
     model: &str,
     agent_name: &str,
     personality: Option<&str>,
@@ -279,8 +379,9 @@ pub async fn rewrite(
         .map_err(|e| RewriteError::Network(e.to_string()))?;
     let body = build_request_body(
         kind,
+        lang,
         model,
-        &build_user_content(kind, agent_name, personality, context, message),
+        &build_user_content(kind, lang, agent_name, personality, context, message),
     );
     let resp = client
         .post(BASE_URL)
@@ -307,7 +408,7 @@ mod tests {
     fn body_omits_sampling_and_thinking_params() {
         // sonnet-5/opus-5는 temperature류를 받으면 400이고, thinking은 과제
         // 지시대로 아예 보내지 않는다.
-        let b = build_request_body(SpeakKind::Question, "claude-opus-5", "hi");
+        let b = build_request_body(SpeakKind::Question, Lang::Ko, "claude-opus-5", "hi");
         let obj = b.as_object().unwrap();
         for forbidden in ["temperature", "top_p", "top_k", "thinking"] {
             assert!(!obj.contains_key(forbidden), "{forbidden} 를 보내면 안 된다");
@@ -321,6 +422,7 @@ mod tests {
     fn user_content_carries_character_and_source() {
         let c = build_user_content(
             SpeakKind::Question,
+            Lang::Ko,
             "무지",
             Some("차분하고 말수가 적다"),
             None,
@@ -333,7 +435,9 @@ mod tests {
 
     #[test]
     fn user_content_falls_back_for_blank_name() {
-        let c = build_user_content(SpeakKind::Question, "  ", None, None, "m");
+        let c = build_user_content(
+            SpeakKind::Question,
+            Lang::Ko, "  ", None, None, "m");
         assert!(c.contains("이름 없음"));
     }
 
@@ -342,6 +446,7 @@ mod tests {
     fn user_content_injects_personality_block_when_present() {
         let c = build_user_content(
             SpeakKind::Question,
+            Lang::Ko,
             "무지",
             Some("차분하게 말한다.\n근거를 먼저 든다."),
             None,
@@ -356,16 +461,22 @@ mod tests {
 
     #[test]
     fn user_content_omits_personality_block_when_absent_or_blank() {
-        let none_p = build_user_content(SpeakKind::Question, "무지", None, None, "m");
+        let none_p = build_user_content(
+            SpeakKind::Question,
+            Lang::Ko, "무지", None, None, "m");
         assert!(!none_p.contains("캐릭터 성격"), "{none_p}");
-        let blank_p = build_user_content(SpeakKind::Question, "무지", Some(" \n "), None, "m");
+        let blank_p = build_user_content(
+            SpeakKind::Question,
+            Lang::Ko, "무지", Some(" \n "), None, "m");
         assert!(!blank_p.contains("캐릭터 성격"), "{blank_p}");
     }
 
     #[test]
     fn user_content_truncates_personality_by_chars_not_bytes() {
         let long = "성".repeat(2000);
-        let c = build_user_content(SpeakKind::Question, "무지", Some(&long), None, "m");
+        let c = build_user_content(
+            SpeakKind::Question,
+            Lang::Ko, "무지", Some(&long), None, "m");
         let start = c.find("<personality>\n").unwrap() + "<personality>\n".len();
         let end = c.find("\n</personality>").unwrap();
         assert_eq!(c[start..end].chars().count(), MAX_PERSONALITY_CHARS);
@@ -375,10 +486,17 @@ mod tests {
     // 성격을 밀어내고 종족 클리셰가 대사를 지배한다. 보이스 캐스팅에만 남긴다.
     #[test]
     fn prompts_never_mention_archetype() {
-        for p in [SYSTEM_PROMPT_QUESTION, SYSTEM_PROMPT_DONE] {
+        for p in [
+            SYSTEM_PROMPT_QUESTION_KO,
+            SYSTEM_PROMPT_DONE_KO,
+            SYSTEM_PROMPT_QUESTION_EN,
+            SYSTEM_PROMPT_DONE_EN,
+        ] {
             assert!(!p.contains("archetype"), "{p}");
         }
-        let c = build_user_content(SpeakKind::Question, "무지", Some("명랑하다"), None, "m");
+        let c = build_user_content(
+            SpeakKind::Question,
+            Lang::Ko, "무지", Some("명랑하다"), None, "m");
         assert!(!c.contains("archetype"), "{c}");
         assert!(!c.contains("human"), "{c}");
     }
@@ -388,6 +506,7 @@ mod tests {
     fn user_content_injects_context_block_when_present() {
         let c = build_user_content(
             SpeakKind::Question,
+            Lang::Ko,
             "무지",
             None,
             Some("빌드 스크립트를 정리하는 중"),
@@ -403,16 +522,22 @@ mod tests {
 
     #[test]
     fn user_content_omits_context_block_when_absent_or_blank() {
-        let none_ctx = build_user_content(SpeakKind::Question, "무지", None, None, "m");
+        let none_ctx = build_user_content(
+            SpeakKind::Question,
+            Lang::Ko, "무지", None, None, "m");
         assert!(!none_ctx.contains("최근 작업 맥락"), "{none_ctx}");
-        let blank_ctx = build_user_content(SpeakKind::Question, "무지", None, Some("   "), "m");
+        let blank_ctx = build_user_content(
+            SpeakKind::Question,
+            Lang::Ko, "무지", None, Some("   "), "m");
         assert!(!blank_ctx.contains("최근 작업 맥락"), "{blank_ctx}");
     }
 
     #[test]
     fn user_content_truncates_context_by_chars_not_bytes() {
         let long = "가".repeat(1000);
-        let c = build_user_content(SpeakKind::Question, "무지", None, Some(&long), "m");
+        let c = build_user_content(
+            SpeakKind::Question,
+            Lang::Ko, "무지", None, Some(&long), "m");
         let ctx_start = c.find("<context>\n").unwrap() + "<context>\n".len();
         let ctx_end = c.find("\n</context>").unwrap();
         let injected = &c[ctx_start..ctx_end];
@@ -422,8 +547,8 @@ mod tests {
     // ── 상황(question/done) 분기 ──────────────────────────────────────
     #[test]
     fn done_prompt_asks_for_a_report_not_a_question() {
-        let q = system_prompt(SpeakKind::Question);
-        let d = system_prompt(SpeakKind::Done);
+        let q = system_prompt(SpeakKind::Question, Lang::Ko);
+        let d = system_prompt(SpeakKind::Done, Lang::Ko);
         assert_ne!(q, d, "완료 보고를 질문투로 읽으면 안 된다");
         assert!(d.contains("작업을 마치고"), "{d}");
         assert!(q.contains("사용자 확인을 기다리며"), "{q}");
@@ -433,8 +558,12 @@ mod tests {
 
     #[test]
     fn user_content_states_the_situation_for_each_kind() {
-        let q = build_user_content(SpeakKind::Question, "무지", None, None, "m");
-        let d = build_user_content(SpeakKind::Done, "무지", None, None, "m");
+        let q = build_user_content(
+            SpeakKind::Question,
+            Lang::Ko, "무지", None, None, "m");
+        let d = build_user_content(
+            SpeakKind::Done,
+            Lang::Ko, "무지", None, None, "m");
         assert!(q.contains("사용자 확인을 기다리는 요청"), "{q}");
         assert!(d.contains("작업을 마친 완료 보고"), "{d}");
     }
@@ -443,19 +572,19 @@ mod tests {
     // 금지 + 맥락도 소재의 한계다(지어내기 금지). 양쪽 프롬프트에 다 있어야 한다.
     #[test]
     fn both_prompts_forbid_fabrication_and_worldbuilding_props() {
-        for p in [SYSTEM_PROMPT_QUESTION, SYSTEM_PROMPT_DONE] {
+        for p in [SYSTEM_PROMPT_QUESTION_KO, SYSTEM_PROMPT_DONE_KO] {
             assert!(p.contains("지어내지 마라"), "{p}");
             assert!(p.contains("소재로 끌어오지 마라"), "{p}");
             assert!(p.contains("작업 맥락이 주어지면"), "{p}");
         }
         // 확인 요청 쪽에만 있는 폴백: 원문이 빈약하면 담백하게.
-        assert!(SYSTEM_PROMPT_QUESTION.contains("담백하게 확인만 청하라"));
+        assert!(SYSTEM_PROMPT_QUESTION_KO.contains("담백하게 확인만 청하라"));
     }
 
     #[test]
     fn body_carries_the_kind_specific_system_prompt() {
-        let d = build_request_body(SpeakKind::Done, "claude-haiku-4-5", "hi");
-        assert_eq!(d["system"], SYSTEM_PROMPT_DONE);
+        let d = build_request_body(SpeakKind::Done, Lang::Ko, "claude-haiku-4-5", "hi");
+        assert_eq!(d["system"], SYSTEM_PROMPT_DONE_KO);
     }
 
     #[test]
@@ -529,7 +658,107 @@ mod tests {
     // (앱이 아는 목록으로 걸러내면 새 모델이 나올 때마다 앱을 고쳐야 한다).
     #[test]
     fn model_id_passes_through_verbatim() {
-        let b = build_request_body(SpeakKind::Question, "claude-future-9", "hi");
+        let b = build_request_body(SpeakKind::Question, Lang::Ko, "claude-future-9", "hi");
         assert_eq!(b["model"], "claude-future-9");
     }
+
+    // ── UI 언어 분기 ───────────────────────────────────────────────────
+    //
+    // ko 프롬프트는 Phase 6에서 **이동만** 했다(튜닝 아님). en은 번역이 아니라
+    // 같은 규칙을 영어로 다시 쓴 것이라, 검증은 "언어가 실제로 갈리는가"와
+    // "각 언어 프롬프트에 다른 언어가 새지 않는가"로 한다.
+    #[test]
+    fn system_prompt_splits_by_language() {
+        for kind in [SpeakKind::Question, SpeakKind::Done] {
+            let ko = system_prompt(kind, Lang::Ko);
+            let en = system_prompt(kind, Lang::En);
+            assert_ne!(ko, en, "{kind:?}");
+            // 출력 언어 지시가 서로 반대여야 한다.
+            assert!(ko.contains("한국어 대사"), "{ko}");
+            assert!(en.contains("English line"), "{en}");
+            // 영어 프롬프트에 한글이 섞이면 모델이 한국어로 답한다.
+            assert!(!en.chars().any(|c| ('가'..='힣').contains(&c)), "{en}");
+        }
+    }
+
+    // 두 언어 모두 같은 안전 규칙(지어내기 금지·오디오 태그·한 줄 상한)을 담아야
+    // 한다 — 언어를 바꿨다고 대사 품질 계약이 달라지면 안 된다.
+    #[test]
+    fn english_prompts_keep_the_same_guardrails() {
+        for p in [SYSTEM_PROMPT_QUESTION_EN, SYSTEM_PROMPT_DONE_EN] {
+            assert!(p.contains("Do not invent"), "{p}");
+            assert!(p.contains("at most 120 characters"), "{p}");
+            assert!(p.contains("ElevenLabs v3 audio tags"), "{p}");
+            assert!(p.contains("world-building props"), "{p}");
+        }
+        assert!(SYSTEM_PROMPT_QUESTION_EN.contains("[nervous]"));
+        assert!(SYSTEM_PROMPT_DONE_EN.contains("[relieved]"));
+    }
+
+    // 시스템 프롬프트와 user 블록 머리말은 한 벌이다 — 영어 프롬프트에 한국어
+    // 머리말이 붙으면 그 자체가 "한국어로 답하라"는 신호가 된다.
+    #[test]
+    fn user_content_labels_follow_the_same_language() {
+        let ko = build_user_content(
+            SpeakKind::Question,
+            Lang::Ko,
+            "무지",
+            Some("차분하다"),
+            Some("빌드 정리 중"),
+            "확인이 필요합니다",
+        );
+        let en = build_user_content(
+            SpeakKind::Question,
+            Lang::En,
+            "Muzi",
+            Some("calm"),
+            Some("cleaning up the build"),
+            "needs confirmation",
+        );
+        assert!(ko.contains("캐릭터 이름: 무지"), "{ko}");
+        assert!(en.contains("Character name: Muzi"), "{en}");
+        assert!(en.contains("Situation: a request waiting for the user to confirm"), "{en}");
+        assert!(en.contains("Character personality (voice only):"), "{en}");
+        assert!(en.contains("Recent work context (for reference):"), "{en}");
+        assert!(en.contains("Source notice text:"), "{en}");
+        // 사용자 원문 외에는 한글이 없어야 한다.
+        assert!(!en.chars().any(|c| ('가'..='힣').contains(&c)), "{en}");
+        // 빈 이름 폴백도 언어를 탄다.
+        let blank = build_user_content(SpeakKind::Done, Lang::En, "  ", None, None, "m");
+        assert!(blank.contains("Character name: Unnamed"), "{blank}");
+    }
+
+    // 세 리라이트 경로(Anthropic API / OpenRouter / claude CLI)가 같은 언어의
+    // 같은 프롬프트를 써야 한다 — 경로에 따라 대사 언어가 달라지면 버그다.
+    #[test]
+    fn request_body_carries_the_language_specific_prompt() {
+        let ko = build_request_body(SpeakKind::Question, Lang::Ko, "m", "c");
+        let en = build_request_body(SpeakKind::Question, Lang::En, "m", "c");
+        assert_eq!(ko["system"], SYSTEM_PROMPT_QUESTION_KO);
+        assert_eq!(en["system"], SYSTEM_PROMPT_QUESTION_EN);
+    }
+
+
+    // ko 렌더 결과 전체를 리터럴로 못 박는다 — Phase 6은 머리말을 상수로
+    // **옮기기만** 했으므로 바이트 한 칸도 달라지면 안 된다(프롬프트 한 글자가
+    // 대사 품질을 바꾼다).
+    #[test]
+    fn korean_user_content_is_byte_identical_to_the_pre_phase6_shape() {
+        let c = build_user_content(
+            SpeakKind::Question,
+            Lang::Ko,
+            "무지",
+            Some("차분하다"),
+            Some("빌드 정리 중"),
+            "확인이 필요합니다",
+        );
+        assert_eq!(
+            c,
+            "캐릭터 이름: 무지\n상황: 사용자 확인을 기다리는 요청\n\n\
+캐릭터 성격(말투에만 반영):\n<personality>\n차분하다\n</personality>\n\n\
+최근 작업 맥락(참고용):\n<context>\n빌드 정리 중\n</context>\n\n\
+원문 알림 문구:\n<notice>\n확인이 필요합니다\n</notice>"
+        );
+    }
+
 }

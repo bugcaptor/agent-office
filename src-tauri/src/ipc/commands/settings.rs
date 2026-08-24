@@ -180,11 +180,14 @@ pub(crate) async fn apply_settings_effects(
     }
     // 이슈 #41: 질문 알림 홀드 시간 변경을 즉시 hub 에 반영한다.
     hub.set_hold_duration(std::time::Duration::from_millis(settings.attention_hold_ms));
+    // 기본 알림 문구(문구 없는 훅의 폴백)도 UI 언어를 따라간다.
+    hub.set_lang(crate::i18n::ui_lang(&settings));
     // 동료 대화(docs/agent-talk-design.md §5): 토글과 상한을 즉시 반영한다.
     // OFF는 킬 스위치라 대기 중 메시지까지 그 자리에서 버려진다.
     talk.set_config(crate::talk::TalkConfig {
         max_turns: settings.talk_max_turns.max(1),
         idle_quiet_ms: settings.talk_idle_quiet_ms,
+        lang: crate::i18n::ui_lang(&settings),
     });
     talk.set_enabled(settings.talk_enabled);
     if settings.observer_enabled {

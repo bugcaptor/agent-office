@@ -13,6 +13,7 @@ import { Trans, useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { LANGUAGE_SYSTEM, applyLanguageSetting, availableLanguages } from "../i18n";
 import { tauriApi } from "../ipc/tauriApi";
+import { backendErrorText } from "../shared/backendError";
 import { SettingsForm } from "./SettingsForm";
 import { WebRemoteSection } from "./WebRemoteSection";
 import { TalkSection } from "./TalkSection";
@@ -291,10 +292,14 @@ function SummaryModelSection() {
 }
 
 /** 요약 테스트가 실패했을 때 그대로 보여주면 뜻이 통하지 않는 코드들 → 번역 키.
- *  여기 없는 코드는 원문을 보여준다 — 상류 오류는 종류가 열려 있다. */
-const SUMMARY_TEST_ERROR_KEY: Record<string, string> = {
-  "summarizer-disabled": "general.errorSummarizerDisabled",
-  "openrouter-key-missing": "general.errorOpenrouterKeyMissing",
+ *  이 화면 전용 안내라 공통 매핑(`BACKEND_ERROR_KEY`)이 아니라 여기 둔다 —
+ *  여기에도 공통에도 없는 코드는 원문을 보여준다(상류 오류는 종류가 열려 있다).
+ *  키는 `settings` 네임스페이스라 접두사가 없다(`t`의 기본 ns). */
+type SummaryTestErrorCode = "summarizer-disabled" | "openrouter-key-missing";
+
+const SUMMARY_TEST_ERROR_KEY: Record<SummaryTestErrorCode, string> = {
+  "summarizer-disabled": "settings:general.errorSummarizerDisabled",
+  "openrouter-key-missing": "settings:general.errorOpenrouterKeyMissing",
 };
 
 /** "있음 / 있음(환경변수) / 없음" — 키 상태 한 조각. 요약 탭과 소리·음성 탭이
@@ -347,7 +352,7 @@ function OpenrouterSummaryTools() {
       setApiKey("");
       setNote(t("keys.savedNote"));
     } catch (err) {
-      setNote(t("keys.saveFailed", { error: String(err) }));
+      setNote(t("keys.saveFailed", { error: backendErrorText(err) }));
     } finally {
       setBusy(false);
     }
@@ -362,7 +367,7 @@ function OpenrouterSummaryTools() {
       setStatus(await tauriApi.ttsSetKeys(undefined, undefined, ""));
       setNote(t("keys.deletedNote"));
     } catch (err) {
-      setNote(t("keys.deleteFailed", { error: String(err) }));
+      setNote(t("keys.deleteFailed", { error: backendErrorText(err) }));
     } finally {
       setBusy(false);
     }
@@ -381,9 +386,9 @@ function OpenrouterSummaryTools() {
       );
       setNote(t("general.summaryResult", { text: out }));
     } catch (err) {
-      const code = String(err);
-      const key = SUMMARY_TEST_ERROR_KEY[code];
-      setNote(t("general.summaryFailed", { error: key ? t(key) : code }));
+      setNote(
+        t("general.summaryFailed", { error: backendErrorText(err, SUMMARY_TEST_ERROR_KEY) })
+      );
     } finally {
       setBusy(false);
     }
@@ -716,7 +721,7 @@ function TtsSection() {
       setOpenrouter("");
       setNote(t("keys.savedNote"));
     } catch (err) {
-      setNote(t("keys.saveFailed", { error: String(err) }));
+      setNote(t("keys.saveFailed", { error: backendErrorText(err) }));
     } finally {
       setBusy(false);
     }
@@ -737,7 +742,7 @@ function TtsSection() {
       setStatus(next);
       setNote(t("keys.deletedNote"));
     } catch (err) {
-      setNote(t("keys.deleteFailed", { error: String(err) }));
+      setNote(t("keys.deleteFailed", { error: backendErrorText(err) }));
     } finally {
       setBusy(false);
     }
@@ -750,7 +755,7 @@ function TtsSection() {
       const line = await previewVoice();
       setNote(line ? t("tts.previewSpoken", { line }) : t("tts.previewNone"));
     } catch (err) {
-      setNote(t("tts.previewFailed", { error: String(err) }));
+      setNote(t("tts.previewFailed", { error: backendErrorText(err) }));
     } finally {
       setBusy(false);
     }

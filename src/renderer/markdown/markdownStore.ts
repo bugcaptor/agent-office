@@ -11,6 +11,7 @@
 // - 저장 충돌("CONFLICT" 접두 reject)은 `conflict` 플래그로 다이얼로그를 띄운다.
 import { create } from "zustand";
 import { tauriApi } from "../ipc/tauriApi";
+import { backendErrorText, parseBackendError } from "../shared/backendError";
 import { createInFlightTracker, isStale } from "../shared/createListingCache";
 import type { MarkdownFileEntry } from "@shared/types";
 
@@ -124,14 +125,17 @@ export function isEditorDirty(editor: EditorState | null): boolean {
   return editor !== null && editor.content !== editor.baseline;
 }
 
-/** reject 값에서 "CONFLICT" 접두 여부와 메시지 문자열을 뽑는다. */
+/**
+ * reject 값 → 화면에 보일 한 줄. 백엔드(`markdown.rs`)는 `"{code}: {상세}"`를
+ * 돌려주므로 코드는 카탈로그 문구로 옮기고 상세(경로·OS 오류)는 원문 그대로
+ * 붙인다. 모르는 코드는 원문이 그대로 나온다.
+ */
 function toErrorMessage(err: unknown): string {
-  if (typeof err === "string") return err;
-  if (err instanceof Error) return err.message;
-  return String(err);
+  return backendErrorText(err);
 }
+/** 충돌 판정은 **코드**로 한다 — `markdown.rs`가 `"CONFLICT: {상대경로}"`를 낸다. */
 function isConflict(err: unknown): boolean {
-  return toErrorMessage(err).startsWith("CONFLICT");
+  return parseBackendError(err).code === "CONFLICT";
 }
 
 export const useMarkdownStore = create<MarkdownState>()((set, get) => ({

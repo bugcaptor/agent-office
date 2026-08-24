@@ -19,6 +19,9 @@ pub mod webremote;
 mod file_index;
 // markdown.rs/workdir::list_workdir_files가 공유하는 병렬 스캔 워커.
 mod file_scan;
+// UI 언어 해석(AppSettings.language → Lang). AI 프롬프트를 만드는 모듈들이
+// 공유한다 — 번역 카탈로그는 프런트에만 있다.
+pub mod i18n;
 // pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가
 // `agent_office_lib::ipc::commands::settings::GetAppSettingsResult`에 닿아야 한다.
 // 로직 변경 없음 — 가시성만 승격.
@@ -350,6 +353,7 @@ pub fn run() {
             let (settings, settings_first_run) = settings_store.load();
             // 이슈 #41: 오토모드 질문 알림 홀드 시간을 설정에서 주입한다.
             hub.set_hold_duration(Duration::from_millis(settings.attention_hold_ms));
+            hub.set_lang(crate::i18n::ui_lang(&settings));
             // 500ms 간격 단일 스위퍼로 만료된 보류 알림을 방출한다(훅별 타이머 없이).
             {
                 let hub = hub.clone();
@@ -418,6 +422,7 @@ pub fn run() {
                 talk.set_config(crate::talk::TalkConfig {
                     max_turns: snapshot.talk_max_turns.max(1),
                     idle_quiet_ms: snapshot.talk_idle_quiet_ms,
+                    lang: crate::i18n::ui_lang(&snapshot),
                 });
                 talk.set_enabled(snapshot.talk_enabled);
             }

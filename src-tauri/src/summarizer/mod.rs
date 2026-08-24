@@ -167,12 +167,36 @@ fn permits() -> &'static Semaphore {
     PERMITS.get_or_init(|| Semaphore::new(MAX_CONCURRENT))
 }
 
+/// 중략 마커. **AI에게 보내는 텍스트 안에 박혀 나가므로** UI 언어를 따라간다 —
+/// 한국어 마커가 영어 프롬프트 한가운데 나타나면 모델에게 언어 신호로 읽힌다.
+/// ko 값은 Phase 6 이전 문자열 그대로다(이동만).
+///
+/// **길이 계약**: 어느 언어든 `MARKER_MAX_CHARS`(100자) 이하여야 한다.
+/// `cap_text`의 출력은 항상 `max_chars` 이하라 마커가 길어져도 상한이
+/// 깨지지는 않지만, 프런트 `promptProfiles.ts`의
+/// `speechPromptProfile.promptBudgetChars = 1900`은 여기 `TEXT_MAX_CHARS`(2,000)에서
+/// **여유를 두고** 잡은 값이라 "1,900자 프롬프트는 절대 중략되지 않는다"가
+/// 성립해야 한다. 그 여유(100자)가 곧 마커 길이 예산이다 —
+/// `truncation_marker_fits_the_frontend_prompt_budget` 테스트가 이 관계를 못 박는다.
+pub fn truncation_marker(lang: crate::i18n::Lang) -> &'static str {
+    match lang {
+        crate::i18n::Lang::Ko => "\n…(중략)…\n",
+        crate::i18n::Lang::En => "\n…(truncated)…\n",
+    }
+}
+
+/// `TEXT_MAX_CHARS`와 프런트 프롬프트 예산(1,900자) 사이의 여유. 어느 언어의
+/// 중략 마커도 이보다 길면 안 된다(위 `truncation_marker` 주석 참고).
+/// 계약을 지키는 것은 테스트라 런타임 코드는 이 값을 읽지 않는다.
+#[cfg(test)]
+const MARKER_MAX_CHARS: usize = TEXT_MAX_CHARS - 1_900;
+
 /// 초과 입력을 캡한다. 예전에는 앞 `TEXT_MAX_CHARS`자만 남기는 꼬리 절단이라
 /// 시간순 append된 작업 로그의 **최신 부분이 통째로 유실**됐다(#66). 이제
 /// head 60% + 중략 표시 + tail 40%로 머리(첫 지시)와 꼬리(최근 작업)를 함께
 /// 보존한다. 프런트의 우선순위 축소(`formatWorkLog`)가 실패하거나 다른 경로가
 /// 긴 입력을 줄 때의 안전망 — 출력은 항상 `TEXT_MAX_CHARS` 이하다.
-fn cap_text(text: &str, max_chars: usize) -> Result<String, String> {
+fn cap_text(text: &str, max_chars: usize, lang: crate::i18n::Lang) -> Result<String, String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Err("validation: text is empty".to_string());
@@ -181,14 +205,14 @@ fn cap_text(text: &str, max_chars: usize) -> Result<String, String> {
     if chars.len() <= max_chars {
         return Ok(trimmed.to_string());
     }
-    const MARKER: &str = "\n…(중략)…\n";
-    let marker_len = MARKER.chars().count();
+    let marker = truncation_marker(lang);
+    let marker_len = marker.chars().count();
     let budget = max_chars.saturating_sub(marker_len);
     let head_len = budget * 60 / 100;
     let tail_len = budget - head_len;
     let head: String = chars[..head_len].iter().collect();
     let tail: String = chars[chars.len() - tail_len..].iter().collect();
-    Ok(format!("{head}{MARKER}{tail}"))
+    Ok(format!("{head}{marker}{tail}"))
 }
 
 fn bounded_detail(detail: &str) -> String {
@@ -213,8 +237,11 @@ pub async fn summarize(
     text: &str,
     models: &SummaryModels,
     openrouter_key: Option<&str>,
+    // 중략 마커의 언어. 지시문(`instruction`)의 언어와 같아야 한다 — 호출측이
+    // `crate::i18n::ui_lang`으로 한 번 해석해 둘 다에 같은 값을 흘린다.
+    lang: crate::i18n::Lang,
 ) -> Result<String, String> {
-    let capped = cap_text(text, purpose.max_chars())?;
+    let capped = cap_text(text, purpose.max_chars(), lang)?;
     let model = resolve_model(provider, purpose, models);
 
     // OpenRouter는 서브프로세스가 아니라 HTTP다 — 로그인 셸 PATH 병합(CLI 전용)도,
@@ -504,6 +531,7 @@ exit "$AO_FAKE_EXIT"
             "   ",
             &SummaryModels::default(),
             None,
+            crate::i18n::Lang::Ko,
         )
         .await
         .unwrap_err();
@@ -522,6 +550,7 @@ exit "$AO_FAKE_EXIT"
                 "작업 로그",
                 &SummaryModels::default(),
                 key,
+                crate::i18n::Lang::Ko,
             )
             .await
             .unwrap_err();
@@ -609,20 +638,20 @@ exit "$AO_FAKE_EXIT"
     fn cap_text_counts_unicode_scalars_not_bytes() {
         let input = "가".repeat(TEXT_MAX_CHARS + 5);
         // head+tail 보존이라 총 길이는 정확히 캡(중략 마커 포함)에 맞춘다.
-        assert_eq!(cap_text(&input, TEXT_MAX_CHARS).unwrap().chars().count(), TEXT_MAX_CHARS);
+        assert_eq!(cap_text(&input, TEXT_MAX_CHARS, crate::i18n::Lang::Ko).unwrap().chars().count(), TEXT_MAX_CHARS);
     }
 
     #[test]
     fn cap_text_passes_through_when_within_budget() {
         let input = "가".repeat(TEXT_MAX_CHARS);
-        assert_eq!(cap_text(&input, TEXT_MAX_CHARS).unwrap(), input);
+        assert_eq!(cap_text(&input, TEXT_MAX_CHARS, crate::i18n::Lang::Ko).unwrap(), input);
     }
 
     #[test]
     fn cap_text_preserves_both_head_and_tail() {
         // 앞뒤를 구분할 수 있게 머리엔 'H', 꼬리엔 'T'를 채운다.
         let input = format!("{}{}", "H".repeat(TEXT_MAX_CHARS), "T".repeat(TEXT_MAX_CHARS));
-        let capped = cap_text(&input, TEXT_MAX_CHARS).unwrap();
+        let capped = cap_text(&input, TEXT_MAX_CHARS, crate::i18n::Lang::Ko).unwrap();
         assert!(capped.starts_with('H'), "머리(첫 지시)가 유실됨");
         assert!(capped.ends_with('T'), "꼬리(최근 작업)가 유실됨");
         assert!(capped.contains("(중략)"), "중략 표시가 없음");
@@ -702,4 +731,43 @@ exit "$AO_FAKE_EXIT"
         );
         drop(second);
     }
+
+    // ── 중략 마커의 언어 ───────────────────────────────────────────────
+    #[test]
+    fn truncation_marker_follows_the_ui_language() {
+        use crate::i18n::Lang;
+        let input = "H".repeat(TEXT_MAX_CHARS * 2);
+        let ko = cap_text(&input, TEXT_MAX_CHARS, Lang::Ko).unwrap();
+        let en = cap_text(&input, TEXT_MAX_CHARS, Lang::En).unwrap();
+        assert!(ko.contains("(중략)"), "{ko}");
+        assert!(en.contains("(truncated)"), "{en}");
+        // 영어 프롬프트에 한국어가 섞여 나가면 안 된다 — 그게 이 분기의 이유다.
+        assert!(!en.contains("중략"), "{en}");
+        // 어느 언어든 상한은 그대로다.
+        for capped in [&ko, &en] {
+            assert_eq!(capped.chars().count(), TEXT_MAX_CHARS);
+        }
+    }
+
+    // 프런트 `promptProfiles.ts`의 speechPromptProfile.promptBudgetChars(1,900)는
+    // 여기 TEXT_MAX_CHARS(2,000)에서 여유를 두고 잡은 값이다. 마커가 그 여유보다
+    // 길어지면 "수상 소감 프롬프트는 절대 중략되지 않는다"는 전제가 깨진다.
+    #[test]
+    fn truncation_marker_fits_the_frontend_prompt_budget() {
+        for lang in [crate::i18n::Lang::Ko, crate::i18n::Lang::En] {
+            let n = truncation_marker(lang).chars().count();
+            assert!(n <= MARKER_MAX_CHARS, "{}: {n}자", lang.code());
+        }
+        // 1,900자 입력은 어느 언어에서도 그대로 통과한다(중략 없음).
+        let budget_sized = "가".repeat(1_900);
+        for lang in [crate::i18n::Lang::Ko, crate::i18n::Lang::En] {
+            assert_eq!(
+                cap_text(&budget_sized, TEXT_MAX_CHARS, lang).unwrap(),
+                budget_sized,
+                "{}",
+                lang.code()
+            );
+        }
+    }
+
 }

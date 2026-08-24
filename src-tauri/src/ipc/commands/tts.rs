@@ -86,6 +86,6 @@ pub async fn tts_set_keys(
         .tts
         .keys
         .set(elevenlabs, anthropic, openrouter)
-        .map_err(|e| format!("cache: 키 저장 실패 ({e})"))?;
+        .map_err(|e| format!("key-save-failed: {e}"))?;
     Ok(tts_status(&app_state))
 }

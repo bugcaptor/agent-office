@@ -3,8 +3,9 @@
 // 에이전트 작업 폴더 안의 마크다운 파일을 프런트가 목록·읽기·쓰기 할 수 있게
 // 하는 IPC 커맨드 3종(`markdown_list_files`/`markdown_read_file`/
 // `markdown_write_file`)의 구현부. vscode.rs/shell_export.rs와 같은 골격 --
-// `#[tauri::command]` 얇은 래퍼가 테스트 가능한 순수 함수에 위임하고, 에러는
-// 사용자에게 그대로 보여줄 수 있는 한국어 문자열이다.
+// `#[tauri::command]` 얇은 래퍼가 테스트 가능한 순수 함수에 위임한다. 에러는
+// `"{code}: {상세}"`(앱 공통 관례) — 문구가 아니라 안정적인 코드를 내려보내고,
+// 사용자에게 보일 문장은 프런트 카탈로그(`common:errors.*`)가 고른다.
 //
 // 핵심 안전장치는 "경로 봉쇄(path containment)"다. root와 root.join(rel_path)를
 // 각각 canonicalize한 뒤, 결과가 canonical root 하위인지 확인한다. 이렇게 하면
@@ -81,12 +82,12 @@ fn version_token(meta: &std::fs::Metadata) -> String {
 /// 여기서 "찾을 수 없음" 취지의 에러가 된다.
 fn resolve_within_root(root: &str, rel_path: &str) -> Result<(PathBuf, PathBuf), String> {
     let canon_root = std::fs::canonicalize(root)
-        .map_err(|e| format!("작업 폴더를 찾을 수 없습니다: {root} ({e})"))?;
+        .map_err(|e| format!("root-not-found: {root} ({e})"))?;
     let joined = canon_root.join(rel_path);
     let canon_target = std::fs::canonicalize(&joined)
-        .map_err(|e| format!("파일을 찾을 수 없습니다: {rel_path} ({e})"))?;
+        .map_err(|e| format!("file-not-found: {rel_path} ({e})"))?;
     if !canon_target.starts_with(&canon_root) {
-        return Err(format!("작업 폴더 밖의 경로는 접근할 수 없습니다: {rel_path}"));
+        return Err(format!("path-outside-root: {rel_path}"));
     }
     Ok((canon_root, canon_target))
 }
@@ -120,9 +121,9 @@ pub fn list_markdown_files_with_backend(
 
     if backend == FileIndexBackend::Everything {
         let canon_root = std::fs::canonicalize(root)
-            .map_err(|e| format!("작업 폴더를 찾을 수 없습니다: {root} ({e})"))?;
+            .map_err(|e| format!("root-not-found: {root} ({e})"))?;
         if !canon_root.is_dir() {
-            return Err(format!("작업 폴더가 디렉터리가 아닙니다: {root}"));
+            return Err(format!("root-not-a-directory: {root}"));
         }
         if let Some((scanned, truncated)) =
             crate::file_index::list_markdown_files_via_everything(&canon_root)
@@ -159,21 +160,21 @@ pub fn read_markdown_file(root: &str, rel_path: &str) -> Result<MarkdownReadResu
     let (_canon_root, target) = resolve_within_root(root, rel_path)?;
 
     let meta = std::fs::metadata(&target)
-        .map_err(|e| format!("파일 정보를 읽지 못했습니다: {rel_path} ({e})"))?;
+        .map_err(|e| format!("stat-failed: {rel_path} ({e})"))?;
     if !meta.is_file() {
-        return Err(format!("파일이 아닙니다: {rel_path}"));
+        return Err(format!("not-a-file: {rel_path}"));
     }
     if meta.len() > MAX_READ_BYTES {
         return Err(format!(
-            "파일이 너무 큼: {rel_path} ({} bytes, 최대 {MAX_READ_BYTES} bytes)",
+            "file-too-large: {rel_path} ({} bytes, max {MAX_READ_BYTES} bytes)",
             meta.len()
         ));
     }
 
     let bytes = std::fs::read(&target)
-        .map_err(|e| format!("파일을 읽지 못했습니다: {rel_path} ({e})"))?;
+        .map_err(|e| format!("read-failed: {rel_path} ({e})"))?;
     let content = String::from_utf8(bytes)
-        .map_err(|_| format!("UTF-8 텍스트가 아닌 파일은 열 수 없습니다: {rel_path}"))?;
+        .map_err(|_| format!("not-utf8: {rel_path}"))?;
     let version = version_token(&meta);
     Ok(MarkdownReadResult { content, version })
 }
@@ -193,15 +194,15 @@ pub fn write_markdown_file(
     let (_canon_root, target) = resolve_within_root(root, rel_path)?;
 
     let meta = std::fs::metadata(&target)
-        .map_err(|e| format!("파일 정보를 읽지 못했습니다: {rel_path} ({e})"))?;
+        .map_err(|e| format!("stat-failed: {rel_path} ({e})"))?;
     if !meta.is_file() {
-        return Err(format!("파일이 아닙니다: {rel_path}"));
+        return Err(format!("not-a-file: {rel_path}"));
     }
     let current_version = version_token(&meta);
     if current_version != expected_version {
         // 접두사 "CONFLICT"로 프런트가 충돌을 판별한다(뒤 설명은 참고용).
         return Err(format!(
-            "CONFLICT: 파일이 다른 곳에서 수정되었습니다: {rel_path}"
+            "CONFLICT: {rel_path}"
         ));
     }
 
@@ -209,18 +210,18 @@ pub fn write_markdown_file(
     // rename하면 cross-device로 실패할 수 있으므로 부모 디렉터리를 쓴다.
     let parent = target
         .parent()
-        .ok_or_else(|| format!("파일의 상위 폴더를 알 수 없습니다: {rel_path}"))?;
+        .ok_or_else(|| format!("no-parent-dir: {rel_path}"))?;
     let tmp = parent.join(format!(".md-tmp-{}", uuid::Uuid::new_v4()));
     std::fs::write(&tmp, content.as_bytes())
-        .map_err(|e| format!("파일을 저장하지 못했습니다: {rel_path} ({e})"))?;
+        .map_err(|e| format!("write-failed: {rel_path} ({e})"))?;
     if let Err(e) = std::fs::rename(&tmp, &target) {
         let _ = std::fs::remove_file(&tmp);
-        return Err(format!("파일 저장에 실패했습니다: {rel_path} ({e})"));
+        return Err(format!("write-failed: {rel_path} ({e})"));
     }
 
     // 저장 후 새 version을 다시 계산해 돌려준다.
     let new_meta = std::fs::metadata(&target)
-        .map_err(|e| format!("저장 후 파일 정보를 읽지 못했습니다: {rel_path} ({e})"))?;
+        .map_err(|e| format!("stat-failed: {rel_path} ({e})"))?;
     Ok(MarkdownWriteResult {
         version: version_token(&new_meta),
     })
@@ -310,7 +311,7 @@ mod tests {
             FileIndexBackend::Everything,
         )
         .unwrap_err();
-        assert!(err.contains("작업 폴더"), "err={err}");
+        assert!(err.starts_with("root-not-found:"), "err={err}");
     }
 
     /// 마크다운 확장자 필터: md/mdx/markdown(대소문자 무시)만 통과.
@@ -408,7 +409,7 @@ mod tests {
         fs::write(root.join("ok.md"), "ok").unwrap();
 
         let err = read_markdown_file(root.to_str().unwrap(), "../secret.md").unwrap_err();
-        assert!(err.contains("작업 폴더"), "err={err}");
+        assert!(err.starts_with("path-outside-root:"), "err={err}");
     }
 
     /// 절대경로 rel_path도 거부.
@@ -420,7 +421,7 @@ mod tests {
         // /etc/hosts 등 실존 절대경로를 rel_path로 줘도 root 밖이라 거부.
         let err = read_markdown_file(root.to_str().unwrap(), "/etc/hosts").unwrap_err();
         assert!(
-            err.contains("작업 폴더") || err.contains("찾을 수 없"),
+            err.starts_with("path-outside-root:") || err.starts_with("file-not-found:"),
             "err={err}"
         );
     }
@@ -438,7 +439,7 @@ mod tests {
         std::os::unix::fs::symlink(&outside, root.join("link.md")).unwrap();
 
         let err = read_markdown_file(root.to_str().unwrap(), "link.md").unwrap_err();
-        assert!(err.contains("작업 폴더"), "err={err}");
+        assert!(err.starts_with("path-outside-root:"), "err={err}");
     }
 
     /// 비UTF-8 파일은 읽기 거부.
@@ -449,7 +450,7 @@ mod tests {
         // 유효하지 않은 UTF-8 바이트열.
         fs::write(root.join("bin.md"), [0xff, 0xfe, 0x00, 0x80]).unwrap();
         let err = read_markdown_file(root.to_str().unwrap(), "bin.md").unwrap_err();
-        assert!(err.contains("UTF-8"), "err={err}");
+        assert!(err.starts_with("not-utf8:"), "err={err}");
     }
 
     /// 2 MiB 초과 파일은 읽기 거부.
@@ -460,7 +461,7 @@ mod tests {
         let big = vec![b'a'; (MAX_READ_BYTES as usize) + 1];
         fs::write(root.join("big.md"), big).unwrap();
         let err = read_markdown_file(root.to_str().unwrap(), "big.md").unwrap_err();
-        assert!(err.contains("너무 큼"), "err={err}");
+        assert!(err.starts_with("file-too-large:"), "err={err}");
     }
 
     /// 확장자 판별 헬퍼 단위 검증.

@@ -16,6 +16,8 @@
 // 시스템 프롬프트는 Anthropic 경로와 **같은 것**을 쓴다(`rewrite::system_prompt`).
 // 경로에 따라 어조가 달라지면 사용자에게는 그냥 버그로 보인다.
 
+use crate::i18n::Lang;
+
 use super::rewrite::{sanitize_line, system_prompt, RewriteError, SpeakKind, MAX_TOKENS};
 
 pub const BASE_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
@@ -24,12 +26,17 @@ pub const BASE_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 pub const TIMEOUT_SECS: u64 = 20;
 
 /// system + user 두 메시지의 OpenAI 호환 본문. 순수.
-pub fn build_request_body(kind: SpeakKind, model: &str, user_content: &str) -> serde_json::Value {
+pub fn build_request_body(
+    kind: SpeakKind,
+    lang: Lang,
+    model: &str,
+    user_content: &str,
+) -> serde_json::Value {
     serde_json::json!({
         "model": model,
         "max_tokens": MAX_TOKENS,
         "messages": [
-            { "role": "system", "content": system_prompt(kind) },
+            { "role": "system", "content": system_prompt(kind, lang) },
             { "role": "user", "content": user_content },
         ],
     })
@@ -80,6 +87,7 @@ pub fn parse_response(status: u16, body: &str) -> Result<String, RewriteError> {
 pub async fn rewrite(
     api_key: &str,
     kind: SpeakKind,
+    lang: Lang,
     model: &str,
     agent_name: &str,
     personality: Option<&str>,
@@ -95,8 +103,9 @@ pub async fn rewrite(
         .map_err(|e| RewriteError::Network(e.to_string()))?;
     let body = build_request_body(
         kind,
+        lang,
         model,
-        &super::rewrite::build_user_content(kind, agent_name, personality, context, message),
+        &super::rewrite::build_user_content(kind, lang, agent_name, personality, context, message),
     );
     let resp = client
         .post(BASE_URL)
@@ -120,12 +129,12 @@ mod tests {
 
     #[test]
     fn body_is_openai_shaped_with_system_and_user_messages() {
-        let b = build_request_body(SpeakKind::Question, "openai/gpt-5.4-mini", "hi");
+        let b = build_request_body(SpeakKind::Question, Lang::Ko, "openai/gpt-5.4-mini", "hi");
         let obj = b.as_object().unwrap();
         assert_eq!(obj["model"], "openai/gpt-5.4-mini");
         assert_eq!(obj["max_tokens"], MAX_TOKENS);
         assert_eq!(obj["messages"][0]["role"], "system");
-        assert_eq!(obj["messages"][0]["content"], system_prompt(SpeakKind::Question));
+        assert_eq!(obj["messages"][0]["content"], system_prompt(SpeakKind::Question, Lang::Ko));
         assert_eq!(obj["messages"][1]["role"], "user");
         assert_eq!(obj["messages"][1]["content"], "hi");
         // 어떤 모델을 골라도 400이 나지 않도록 샘플링 파라미터는 보내지 않는다.
@@ -137,10 +146,10 @@ mod tests {
     // 완료 보고는 Anthropic 경로와 같은 프롬프트를 써야 한다.
     #[test]
     fn done_kind_swaps_the_system_prompt_like_the_anthropic_path() {
-        let q = build_request_body(SpeakKind::Question, "m", "c");
-        let d = build_request_body(SpeakKind::Done, "m", "c");
+        let q = build_request_body(SpeakKind::Question, Lang::Ko, "m", "c");
+        let d = build_request_body(SpeakKind::Done, Lang::Ko, "m", "c");
         assert_ne!(q["messages"][0]["content"], d["messages"][0]["content"]);
-        assert_eq!(d["messages"][0]["content"], system_prompt(SpeakKind::Done));
+        assert_eq!(d["messages"][0]["content"], system_prompt(SpeakKind::Done, Lang::Ko));
     }
 
     #[test]
@@ -198,7 +207,7 @@ mod tests {
     #[tokio::test]
     async fn blank_key_fails_before_touching_the_network() {
         assert_eq!(
-            rewrite("   ", SpeakKind::Question, "m", "무지", None, None, "확인").await,
+            rewrite("   ", SpeakKind::Question, Lang::Ko, "m", "무지", None, None, "확인").await,
             Err(RewriteError::MissingApiKey)
         );
     }

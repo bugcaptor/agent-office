@@ -1,5 +1,9 @@
     use super::fake::FakeClock;
-    use super::{dedup_key, Clock, NotificationHub};
+    use super::{
+        attention_fallback, dedup_key, stop_fallback, Clock, NotificationHub,
+        ATTENTION_FALLBACK_CATALOG_KEY, ATTENTION_FALLBACK_EN, ATTENTION_FALLBACK_KO,
+    };
+    use crate::i18n::Lang;
     use crate::observer::event::ObserverEvent;
     use crate::state::fake::RecordingEvents;
     use crate::state::SessionRegistry;
@@ -1046,4 +1050,56 @@
             handle.now().duration_since(instant_before),
             Duration::from_millis(2000)
         );
+    }
+
+    // ── 기본 알림 문구의 언어 · 프런트와의 짝 ────────────────────────────
+    //
+    // ATTENTION_FALLBACK은 프런트 미리듣기 문구(`soundManager.previewMessage()`)와
+    // **같아야** "시청 버튼으로 들리는 것 = 실제 훅 알림"이 성립한다. 프런트는
+    // 카탈로그(`common:notification.attentionFallback`)에서 읽으므로, 여기서는
+    // 그 JSON을 직접 읽어 Rust 상수와 대조한다 — 어느 한쪽만 고치면 깨진다.
+    #[test]
+    fn attention_fallback_matches_the_frontend_preview_message() {
+        for (lang_dir, expected) in [("ko", ATTENTION_FALLBACK_KO), ("en", ATTENTION_FALLBACK_EN)] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("src/shared/i18n/locales")
+                .join(lang_dir)
+                .join("common.json");
+            let raw = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("카탈로그를 읽지 못했다 {}: {e}", path.display()));
+            let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            // ATTENTION_FALLBACK_CATALOG_KEY = "notification.attentionFallback"
+            let mut node = &json;
+            for segment in ATTENTION_FALLBACK_CATALOG_KEY.split('.') {
+                node = node
+                    .get(segment)
+                    .unwrap_or_else(|| panic!("{lang_dir}/common.json에 {segment}가 없다"));
+            }
+            assert_eq!(
+                node.as_str().unwrap(),
+                expected,
+                "{lang_dir}: 백엔드 기본 알림 문구와 프런트 미리듣기 문구가 어긋났다"
+            );
+        }
+    }
+
+    #[test]
+    fn fallback_messages_split_by_language() {
+        assert_ne!(attention_fallback(Lang::Ko), attention_fallback(Lang::En));
+        assert_ne!(stop_fallback(Lang::Ko), stop_fallback(Lang::En));
+        for text in [attention_fallback(Lang::En), stop_fallback(Lang::En)] {
+            assert!(!text.chars().any(|c| ('가'..='힣').contains(&c)), "{text}");
+        }
+    }
+
+    // 훅 본문에 문구가 없을 때 방출되는 알림이 주입된 언어를 따른다.
+    #[test]
+    fn hook_without_a_message_uses_the_injected_language() {
+        let (hub, events, _clock) = fixture();
+        hub.set_lang(Lang::En);
+        hub.ingest_hook("s1", NotificationSource::Hook, b"{}");
+        let notified = events.notifications();
+        assert_eq!(notified.len(), 1);
+        assert_eq!(notified[0].message, ATTENTION_FALLBACK_EN);
     }

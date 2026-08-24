@@ -40,6 +40,7 @@ import { ColorPickerDialog } from "./ColorPickerDialog";
 import { normalizeColors } from "./generate";
 import type { PaletteSlot } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
+import { backendErrorText, parseBackendError } from "../shared/backendError";
 import { sessionOptsFor } from "../ipc/sessionOpts";
 import {
   buildPortraitPrompt,
@@ -1151,10 +1152,11 @@ function VoiceField({
         if (!alive) return;
         setVoices([]);
         // 키가 없으면 목록도 못 받는다 — 설정으로 안내한다.
+        // 키 없음만 전용 안내(설정으로 유도)이고 나머지는 공통 매핑에 맡긴다.
         setNote(
-          String(err).startsWith("missing_elevenlabs_key")
+          parseBackendError(err).code === "missing_elevenlabs_key"
             ? t("voice.keyMissing")
-            : t("voice.listFailed", { error: String(err) })
+            : t("voice.listFailed", { error: backendErrorText(err) })
         );
       }
     })();
@@ -1183,7 +1185,7 @@ function VoiceField({
       });
       setNote(line ? t("voice.spoken", { line }) : t("voice.spokenNone"));
     } catch (err) {
-      setNote(t("voice.previewFailed", { error: String(err) }));
+      setNote(t("voice.previewFailed", { error: backendErrorText(err) }));
     } finally {
       setBusy(false);
     }

@@ -163,6 +163,10 @@ pub struct RewriteConfig {
     pub provider: TtsRewriteProvider,
     pub model_anthropic: String,
     pub model_openrouter: String,
+    /// 대사를 쓸 언어(UI 언어). 캐릭터가 **사용자에게** 하는 말이므로 화면
+    /// 언어를 따라간다 — 여기서 한 번 해석해 세 리라이트 경로(API·OpenRouter·
+    /// claude CLI)에 같은 값을 흘린다.
+    pub lang: crate::i18n::Lang,
 }
 
 impl RewriteConfig {
@@ -188,6 +192,7 @@ impl RewriteConfig {
                 &s.tts_rewrite_model_openrouter,
                 DEFAULT_TTS_REWRITE_MODEL_OPENROUTER,
             ),
+            lang: crate::i18n::ui_lang(s),
         }
     }
 }
@@ -261,8 +266,12 @@ fn which_claude() -> Option<PathBuf> {
     None
 }
 
-/// IPC로는 `"{code}: {상세}"`로 나간다(앱 공통 관례 — 렌더러가 첫 ':'
-/// 앞 코드로 분기한다).
+/// IPC로는 `"{code}"` 또는 `"{code}: {기술적 상세}"`로 나간다(앱 공통 관례 —
+/// 렌더러가 첫 ':' 앞 코드로 분기한다).
+///
+/// **문구는 싣지 않는다.** 사용자에게 보일 한국어/영어 문장은 프런트 카탈로그
+/// (`common:errors.*`)가 갖고, 백엔드는 안정적인 코드와 (있으면) 번역하지 않을
+/// 기술적 상세만 내려보낸다 — 사용자가 개발자에게 그대로 전달할 원문이다.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TtsError {
     Disabled,
@@ -286,15 +295,20 @@ impl TtsError {
     }
 
     pub fn to_ipc_string(&self) -> String {
+        // 코드만으로 뜻이 완결되는 사유는 상세를 붙이지 않는다(붙일 기술 정보가
+        // 없다) — 프런트가 코드로 카탈로그 문구를 고른다.
         let detail = match self {
-            Self::Disabled => "TTS 설정이 꺼져 있습니다".to_string(),
-            Self::MissingElevenLabsKey => "ElevenLabs API 키가 설정되지 않았습니다".to_string(),
-            Self::EmptyMessage => "발화할 문구가 없습니다".to_string(),
-            Self::NoVoiceAvailable => "사용할 수 있는 보이스가 없습니다".to_string(),
-            Self::Synth(e) => format!("{e}"),
-            Self::Cache(d) => d.clone(),
+            Self::Disabled
+            | Self::MissingElevenLabsKey
+            | Self::EmptyMessage
+            | Self::NoVoiceAvailable => None,
+            Self::Synth(e) => Some(format!("{e}")),
+            Self::Cache(d) => Some(d.clone()),
         };
-        format!("{}: {}", self.code(), detail)
+        match detail {
+            Some(d) => format!("{}: {}", self.code(), d),
+            None => self.code().to_string(),
+        }
     }
 }
 
@@ -453,6 +467,7 @@ pub async fn speak(
         RewriteRoute::Api(key) => rewrite::rewrite(
             key,
             req.kind,
+            cfg.lang,
             &cfg.model_anthropic,
             &req.agent_name,
             req.personality.as_deref(),
@@ -464,6 +479,7 @@ pub async fn speak(
         RewriteRoute::OpenRouter(key) => openrouter::rewrite(
             key,
             req.kind,
+            cfg.lang,
             &cfg.model_openrouter,
             &req.agent_name,
             req.personality.as_deref(),
@@ -475,6 +491,7 @@ pub async fn speak(
         // claude CLI는 Anthropic 모델 id 체계를 쓴다(API 경로와 같은 값).
         RewriteRoute::ClaudeCli => cli::rewrite_via_cli(
             req.kind,
+            cfg.lang,
             &cfg.model_anthropic,
             &req.agent_name,
             req.personality.as_deref(),
@@ -633,6 +650,57 @@ mod tests {
         }
     }
 
+    // 백엔드는 코드만 내려보내고 문구는 프런트 카탈로그(common:errors.*)가 고른다 —
+    // 에러 문자열에 사람 언어가 섞여 있으면 UI 언어를 바꿔도 그 줄만 안 바뀐다.
+    #[test]
+    fn ipc_error_strings_carry_no_human_language() {
+        for e in [
+            TtsError::Disabled,
+            TtsError::MissingElevenLabsKey,
+            TtsError::EmptyMessage,
+            TtsError::NoVoiceAvailable,
+        ] {
+            // 붙일 기술 정보가 없는 사유는 코드 하나가 전부다.
+            assert_eq!(e.to_ipc_string(), e.code());
+        }
+        // 기술적 상세가 있는 사유만 "{code}: {detail}"이고, 그 상세는 번역하지 않는다.
+        let cache = TtsError::Cache("write /tmp/a.mp3: permission denied".into());
+        assert_eq!(
+            cache.to_ipc_string(),
+            "cache: write /tmp/a.mp3: permission denied"
+        );
+        for e in [
+            TtsError::Disabled,
+            TtsError::MissingElevenLabsKey,
+            TtsError::EmptyMessage,
+            TtsError::NoVoiceAvailable,
+            TtsError::Synth(synth::SynthError::InvalidApiKey),
+            cache,
+        ] {
+            let s = e.to_ipc_string();
+            assert!(
+                !s.chars().any(|c| ('가'..='힣').contains(&c)),
+                "에러에 한글이 남아 있다: {s}"
+            );
+        }
+    }
+
+    // 프런트 `parseBackendError`는 첫 ':' 앞을 코드로 읽는다 — 코드 자체에
+    // 콜론·공백이 들어가면 그 계약이 깨진다.
+    #[test]
+    fn error_codes_are_single_tokens() {
+        for e in [
+            TtsError::Disabled,
+            TtsError::MissingElevenLabsKey,
+            TtsError::EmptyMessage,
+            TtsError::NoVoiceAvailable,
+            TtsError::Cache("d".into()),
+        ] {
+            let code = e.code();
+            assert!(!code.contains(':') && !code.contains(' '), "{code}");
+        }
+    }
+
     // ── 리라이트 공급자 체인 ──────────────────────────────────────────
     #[test]
     fn auto_prefers_api_key_then_cli_then_skips() {
@@ -756,6 +824,19 @@ mod tests {
         assert_eq!(cfg.provider, TtsRewriteProvider::OpenRouter);
         assert_eq!(cfg.model_anthropic, "claude-opus-5");
         assert_eq!(cfg.model_openrouter, "google/gemini-3-pro");
+    }
+
+    // 대사 언어는 설정에서 한 번 해석해 세 리라이트 경로에 같은 값으로 흐른다.
+    #[test]
+    fn rewrite_config_resolves_the_ui_language_once() {
+        let mut s = AppSettings::default();
+        s.language = "ko".into();
+        assert_eq!(RewriteConfig::from_settings(&s).lang, crate::i18n::Lang::Ko);
+        s.language = "en-US".into();
+        assert_eq!(RewriteConfig::from_settings(&s).lang, crate::i18n::Lang::En);
+        // 카탈로그가 없는 언어는 판단하지 않고 en으로 떨어진다.
+        s.language = "ja".into();
+        assert_eq!(RewriteConfig::from_settings(&s).lang, crate::i18n::Lang::En);
     }
 
     // 설정 입력을 비운 상태는 "기본 모델"이다 — 빈 model이 실려 매 발화가

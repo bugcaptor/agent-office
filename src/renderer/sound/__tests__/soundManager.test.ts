@@ -11,7 +11,8 @@ vi.mock("../../ipc/tauriApi", () => ({
 }));
 
 import { useAppStore } from "../../store/appStore";
-import { installSoundManager, previewKeyboardSound } from "../soundManager";
+import { initI18nForTest } from "@renderer/i18n";
+import { installSoundManager, previewKeyboardSound, previewMessage } from "../soundManager";
 import type { SoundBackend } from "../backend";
 import type {
   NotificationEvent,
@@ -447,5 +448,22 @@ describe("installSoundManager", () => {
     useAppStore.getState().addAgent(AGENT);
     expect(m.dataCbs.size).toBe(0);
     off(); // no-op, 예외 없음
+  });
+});
+
+// TTS 미리듣기 문구는 Rust `notification/hub.rs`의 ATTENTION_FALLBACK과 **짝**이다
+// (시청 버튼으로 들리는 것이 실제 훅 알림과 같아야 한다). 값을 카탈로그
+// (`common:notification.attentionFallback`)에 두고 양쪽이 그것을 보게 했으므로,
+// 여기서는 프런트가 그 카탈로그를 언어별로 제대로 읽는지만 본다 — Rust 상수와의
+// 대조는 `src-tauri/src/notification/hub/tests.rs`의 파리티 테스트가 한다.
+describe("TTS 미리듣기 문구", () => {
+  afterEach(async () => {
+    await initI18nForTest(); // 정본(ko)으로 복구
+  });
+
+  it("카탈로그에서 읽고 언어를 따라간다", async () => {
+    expect(previewMessage()).toBe("확인이 필요합니다");
+    await initI18nForTest("en");
+    expect(previewMessage()).toBe("Needs your confirmation");
   });
 });
