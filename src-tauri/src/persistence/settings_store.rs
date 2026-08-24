@@ -204,6 +204,14 @@ impl SummaryModels {
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub version: u32,
+    /// UI 언어 — `"system"`(OS 로케일 따름, 기본) 또는 BCP47 코드(`"ko"`, `"en"`).
+    /// 유효값을 여기서 열거하지 않는 게 의도다: 번역 카탈로그 폴더만 추가하면
+    /// 언어가 늘어나는 구조라(`src/shared/i18n/catalog.ts`) 언어 추가 때 Rust를
+    /// 고치게 만들지 않는다. 카탈로그에 없는 값은 렌더러가 조용히 폴백한다.
+    /// 백엔드에서는 AI 프롬프트의 출력 언어를 정하는 데 쓴다(`crate::i18n`).
+    /// `#[serde(default)]`라 기존 설정 파일에 키가 없으면 `"system"`.
+    #[serde(default = "default_language")]
+    pub language: String,
     #[serde(default, alias = "claudeCliEnabled")]
     pub summarizer_enabled: bool,
     #[serde(default)]
@@ -318,6 +326,10 @@ pub struct AppSettings {
     pub talk_idle_quiet_ms: u64,
 }
 
+fn default_language() -> String {
+    "system".to_string()
+}
+
 fn default_talk_max_turns() -> u32 {
     crate::talk::DEFAULT_MAX_TURNS
 }
@@ -334,6 +346,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             version: 1,
+            language: default_language(),
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
             summary_models: SummaryModels::default(),
@@ -527,6 +540,7 @@ mod tests {
         let store = SettingsStore::new(file.clone());
         let s = AppSettings {
             version: 1,
+            language: "system".to_string(),
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Claude,
             summary_models: SummaryModels::default(),
@@ -725,6 +739,7 @@ mod tests {
         let store = SettingsStore::new(file.clone());
         let settings = AppSettings {
             version: 1,
+            language: "system".to_string(),
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Codex,
             summary_models: SummaryModels::default(),
@@ -852,6 +867,33 @@ mod tests {
         assert_eq!(s.tts_rewrite_model_anthropic, "claude-haiku-4-5");
         assert_eq!(s.tts_rewrite_model_openrouter, "openai/gpt-5.4-mini");
         assert_eq!(s.tts_rewrite_provider, TtsRewriteProvider::Auto);
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    // ── UI 언어 ────────────────────────────────────────────────────────
+    //
+    // 언어 키가 없던 시절의 설정 파일은 `"system"`(OS 로케일 따름)이 되어야
+    // 한다 — 기존 사용자가 업데이트했다고 갑자기 영어로 뜨면 안 된다.
+    #[test]
+    fn load_settings_without_language_defaults_to_system() {
+        let file = scratch_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, br#"{"version":1,"summarizerEnabled":true}"#).unwrap();
+        let (s, _) = SettingsStore::new(file.clone()).load();
+        assert_eq!(s.language, "system");
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    // 카탈로그에 없는 값이 와도 백엔드는 판단하지 않는다 — 저장/로드를 그대로
+    // 왕복시키고, 실제로 쓸 언어로 좁히는 일은 렌더러(catalog.matchLanguage)가
+    // 한다. 언어가 늘어날 때 Rust를 고치지 않기 위한 계약이다.
+    #[test]
+    fn unknown_language_round_trips_untouched() {
+        let file = scratch_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, br#"{"version":1,"language":"ja"}"#).unwrap();
+        let (s, _) = SettingsStore::new(file.clone()).load();
+        assert_eq!(s.language, "ja");
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 

@@ -36,6 +36,7 @@ describe("SettingsDialog", () => {
     useAppStore.getState().hydrateSettings(
       {
         version: 1,
+        language: "system",
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {
@@ -83,6 +84,7 @@ describe("SettingsDialog", () => {
 
     expect(useAppStore.getState().appSettings).toEqual({
       version: 1,
+      language: "system",
       summarizerEnabled: false,
       summaryProvider: "codex",
       summaryModels: {
@@ -124,6 +126,7 @@ describe("SettingsDialog", () => {
     useAppStore.getState().hydrateSettings(
       {
         version: 1,
+        language: "system",
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {
@@ -177,6 +180,7 @@ describe("SettingsDialog", () => {
     useAppStore.getState().hydrateSettings(
       {
         version: 1,
+        language: "system",
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {

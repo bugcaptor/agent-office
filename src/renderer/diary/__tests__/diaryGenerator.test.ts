@@ -19,6 +19,7 @@ import type { AgentProfile, AppSettings } from "@shared/types";
 
 const SETTINGS_ON: AppSettings = {
   version: 1,
+  language: "system",
   summarizerEnabled: false,
   summaryProvider: "claude",
   summaryModels: {

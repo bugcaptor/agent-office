@@ -10,7 +10,7 @@
 //    여기서 성공하면 실제 라벨 요약도 성공한다는 뜻이어야 하기 때문이다.
 //  - 모델 추천 목록은 정적 프리셋 + 실시간 카탈로그의 합집합이고, 조회는
 //    provider당 세션 1회다(kbm #2fc부터는 목록을 **펼칠 때** 조회한다).
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSettings, TtsStatus } from "@shared/types";
 
@@ -59,9 +59,12 @@ function openPicker(label: string) {
   fireEvent.click(screen.getByRole("button", { name: `${label} 목록` }));
 }
 
-/** 펼쳐진 픽커가 보여주는 후보들. */
+/** 펼쳐진 픽커가 보여주는 후보들. 픽커의 listbox 안으로 범위를 좁힌다 —
+ * 같은 탭에 언어 선택 `<select>`가 있어 화면 전체 `option` 조회는 그쪽까지 문다. */
 function pickerOptions(): string[] {
-  return screen.getAllByRole("option").map((o) => o.textContent ?? "");
+  return within(screen.getByRole("listbox"))
+    .getAllByRole("option")
+    .map((o) => o.textContent ?? "");
 }
 
 beforeEach(() => {

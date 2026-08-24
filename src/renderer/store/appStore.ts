@@ -61,6 +61,7 @@ function isMeaningfulGoalFallback(cand: string): boolean {
 }
 const DEFAULT_APP_SETTINGS: AppSettings = {
   version: 1,
+  language: "system",
   summarizerEnabled: false,
   summaryProvider: "claude",
   summaryModels: {
@@ -339,6 +340,7 @@ interface AppState {
     patch: Partial<
       Pick<
         AppSettings,
+        | "language"
         | "summarizerEnabled"
         | "summaryProvider"
         | "summaryModels"

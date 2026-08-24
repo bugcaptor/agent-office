@@ -62,6 +62,7 @@ beforeEach(() => {
   useAppStore.getState().hydrateSettings(
     {
       version: 1,
+      language: "system",
       summarizerEnabled: true,
       summaryProvider: "claude",
       summaryModels: {
@@ -151,6 +152,7 @@ describe("installTaskLabelSummarizer", () => {
       useAppStore.getState().hydrateSettings(
         {
           version: 1,
+          language: "system",
           summarizerEnabled: true,
           summaryProvider: provider,
           summaryModels: {
@@ -435,6 +437,7 @@ describe("installTaskLabelSummarizer", () => {
     useAppStore.getState().hydrateSettings(
       {
         version: 1,
+        language: "system",
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {

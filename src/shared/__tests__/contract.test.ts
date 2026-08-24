@@ -282,6 +282,7 @@ describe("AppSettings (opt-in 설정 계약)", () => {
     expect(parsed.firstRun).toBe(true);
     expect(parsed.settings).toEqual({
       version: 1,
+      language: "system",
       summarizerEnabled: false,
       summaryProvider: "claude",
       summaryModels: {

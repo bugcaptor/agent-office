@@ -80,6 +80,7 @@
         let (state, ctl, dir, profile_dir) = build("summarize-enabled");
         *state.settings.write().unwrap() = crate::persistence::settings_store::AppSettings {
             version: 1,
+            language: "system".to_string(),
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Codex,
             summary_models: Default::default(),
@@ -144,6 +145,7 @@
 
         let new_settings = crate::persistence::settings_store::AppSettings {
             version: 1,
+            language: "system".to_string(),
             summarizer_enabled: true,
             summary_provider: SummaryProvider::Claude,
             summary_models: Default::default(),
@@ -199,6 +201,7 @@
         state.observer_server.shutdown();
         let settings = crate::persistence::settings_store::AppSettings {
             version: 1,
+            language: "system".to_string(),
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
             summary_models: Default::default(),

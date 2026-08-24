@@ -245,6 +245,7 @@ fn get_app_settings_result_matches_fixture() {
     let value = GetAppSettingsResult {
         settings: AppSettings {
             version: 1,
+            language: "system".to_string(),
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
             summary_models: SummaryModels::default(),

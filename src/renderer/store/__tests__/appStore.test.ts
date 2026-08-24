@@ -510,6 +510,7 @@ describe("app settings slice", () => {
     const s = useAppStore.getState();
     expect(s.appSettings).toEqual({
       version: 1,
+      language: "system",
       summarizerEnabled: false,
       summaryProvider: "claude",
       summaryModels: {
@@ -552,6 +553,7 @@ describe("app settings slice", () => {
     useAppStore.getState().hydrateSettings(
       {
         version: 1,
+        language: "system",
         summarizerEnabled: true,
         summaryProvider: "codex",
         summaryModels: {
@@ -592,6 +594,7 @@ describe("app settings slice", () => {
     const s = useAppStore.getState();
     expect(s.appSettings).toEqual({
       version: 1,
+      language: "system",
       summarizerEnabled: true,
       summaryProvider: "codex",
       summaryModels: {
@@ -642,6 +645,7 @@ describe("app settings slice", () => {
  }, observerEnabled: true });
     expect(setAppSettingsMock).toHaveBeenCalledWith({
       version: 1,
+      language: "system",
       summarizerEnabled: false,
       summaryProvider: "codex",
       summaryModels: {
@@ -683,6 +687,7 @@ describe("app settings slice", () => {
     useAppStore.getState().hydrateSettings(
       {
         version: 1,
+        language: "system",
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {
@@ -730,6 +735,7 @@ describe("app settings slice", () => {
     expect(s.settingsFirstRun).toBe(false);
     expect(s.appSettings).toEqual({
       version: 1,
+      language: "system",
       summarizerEnabled: true,
       summaryProvider: "codex",
       summaryModels: {

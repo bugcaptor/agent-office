@@ -68,6 +68,14 @@ export interface SummaryModels {
 /** 앱 전역 opt-in 설정 — Rust `persistence::settings_store::AppSettings` 미러. */
 export interface AppSettings {
   version: number;
+  /**
+   * UI 언어 — `"system"`(OS 로케일 따름, 기본) 또는 BCP47 언어 코드(`"ko"`, `"en"`).
+   * 유니언이 아니라 **자유 문자열**인 게 의도다: 카탈로그 폴더만 추가하면 언어가
+   * 늘어나는 구조(src/shared/i18n/catalog.ts)라, 언어를 추가할 때 이 타입 계약과
+   * Rust 미러를 함께 고쳐야 하는 상황을 만들지 않는다. 카탈로그에 없는 값은
+   * 런타임이 조용히 폴백한다. Rust `AppSettings::language` 미러.
+   */
+  language: string;
   /** 머리 위 라벨 요약용 로컬 CLI 호출 허용. */
   summarizerEnabled: boolean;
   /** 라벨 요약에 사용할 로컬 CLI provider. */

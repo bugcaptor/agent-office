@@ -9,7 +9,9 @@
 // 나눠, 닫으면 본체가 언마운트되며 탭 상태가 함께 사라지게 한다(이 컴포넌트는
 // App에 상시 마운트돼 있어 useState만으로는 초기화되지 않는다).
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
+import { LANGUAGE_SYSTEM, applyLanguageSetting, availableLanguages } from "../i18n";
 import { tauriApi } from "../ipc/tauriApi";
 import { SettingsForm } from "./SettingsForm";
 import { WebRemoteSection } from "./WebRemoteSection";
@@ -113,6 +115,7 @@ function GeneralTab() {
 
   return (
     <>
+      <LanguageItem />
       <SettingsForm
         value={{
           summarizerEnabled: appSettings.summarizerEnabled,
@@ -124,6 +127,44 @@ function GeneralTab() {
       />
       <SummaryModelSection />
     </>
+  );
+}
+
+/**
+ * UI 언어 선택. 항목은 번역 카탈로그에 실제로 있는 언어에서 도출되므로
+ * (`availableLanguages()`), 언어를 추가할 때 이 컴포넌트는 고치지 않는다.
+ *
+ * 저장(`updateAppSettings`)과 적용(`applyLanguageSetting`)을 **둘 다** 부른다:
+ * 저장은 다음 부팅용이고, 적용은 지금 화면을 즉시 바꾸기 위한 것이다(재시작
+ * 불필요). 부팅 경로에서도 같은 함수를 부르므로 두 경로의 해석 규칙이 하나다.
+ */
+function LanguageItem() {
+  const { t } = useTranslation("settings");
+  const language = useAppStore((s) => s.appSettings.language);
+  const updateAppSettings = useAppStore((s) => s.updateAppSettings);
+
+  return (
+    <label className="settings-item">
+      <span>
+        <strong>{t("language.title")}</strong>
+        <small>{t("language.help")}</small>
+      </span>
+      <select
+        value={language}
+        onChange={(e) => {
+          const next = e.target.value;
+          updateAppSettings({ language: next });
+          applyLanguageSetting(next);
+        }}
+      >
+        <option value={LANGUAGE_SYSTEM}>{t("language.system")}</option>
+        {availableLanguages().map((l) => (
+          <option key={l.code} value={l.code}>
+            {l.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

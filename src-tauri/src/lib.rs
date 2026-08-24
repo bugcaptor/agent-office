@@ -995,6 +995,7 @@ mod tests {
     async fn observer_url_getter_reflects_live_settings_cache_after_server_started() {
         let settings_cache = Arc::new(RwLock::new(AppSettings {
             version: 1,
+            language: "system".to_string(),
             summarizer_enabled: false,
             summary_provider: SummaryProvider::Claude,
             summary_models: Default::default(),

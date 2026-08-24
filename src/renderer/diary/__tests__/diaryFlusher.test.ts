@@ -23,6 +23,7 @@ import type { SessionRuntime as StoreSessionRuntime } from "../../store/types";
 
 const SETTINGS_ON: AppSettings = {
   version: 1,
+  language: "system",
   summarizerEnabled: false,
   summaryProvider: "claude",
   summaryModels: {

@@ -258,6 +258,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     const settings: AppSettings = parsed.settings;
     expectKeys(settings, [
       "version",
+      "language",
       "summarizerEnabled",
       "summaryProvider",
       "summaryModels",

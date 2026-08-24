@@ -24,6 +24,7 @@ describe("FirstRunDialog", () => {
     useAppStore.getState().hydrateSettings(
       {
         version: 1,
+        language: "system",
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {
@@ -69,6 +70,7 @@ describe("FirstRunDialog", () => {
     useAppStore.getState().hydrateSettings(
       {
         version: 1,
+        language: "system",
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {
@@ -114,6 +116,7 @@ describe("FirstRunDialog", () => {
     expect(s.settingsFirstRun).toBe(false);
     expect(s.appSettings).toEqual({
       version: 1,
+      language: "system",
       summarizerEnabled: false,
       summaryProvider: "codex",
       summaryModels: {
@@ -155,6 +158,7 @@ describe("FirstRunDialog", () => {
     useAppStore.getState().hydrateSettings(
       {
         version: 1,
+        language: "system",
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {

@@ -19,6 +19,7 @@
 //   is a defensive, redundant fill (plus cols/rows, which that event doesn't
 //   carry) against any invoke/event-arrival race, not the sole source of truth.
 import { useAppStore } from "./store/appStore";
+import { applyLanguageSetting } from "./i18n";
 import { installSessionBridge } from "./ipc/sessionBridge";
 import { installWebRemoteBridge } from "./ipc/webRemoteBridge";
 import { installMascotBridge } from "./ipc/mascotBridge";
@@ -201,6 +202,10 @@ export async function bootApp(): Promise<() => void> {
   try {
     const { settings, firstRun } = await tauriApi.getAppSettings();
     useAppStore.getState().hydrateSettings(settings, firstRun);
+    // 저장된 언어를 적용한다. i18n은 이미 localStorage 캐시로 초기화돼 있으므로
+    // 보통은 같은 값이라 no-op이고, 다르면(첫 실행·설정 파일을 밖에서 고침)
+    // 여기서 한 번 전환된다 — 캐시도 함께 갱신돼 다음 부팅은 플래시가 없다.
+    applyLanguageSetting(settings.language);
   } catch (err) {
     console.warn("bootstrap: 앱 설정 로드 실패 — 기본값(전부 OFF)으로 진행", err);
   }

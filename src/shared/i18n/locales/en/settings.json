@@ -1,0 +1,7 @@
+{
+  "language": {
+    "title": "Language",
+    "help": "The language used for the app UI and for the characters. Text the AI newly writes — character lines, diaries, award speeches — follows this too (already-written text stays as it is).",
+    "system": "Follow system setting"
+  }
+}

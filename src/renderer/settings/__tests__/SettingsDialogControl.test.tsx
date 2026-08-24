@@ -37,6 +37,7 @@ function hydrate(cliEnabled: boolean) {
   useAppStore.getState().hydrateSettings(
     {
       version: 1,
+      language: "system",
       summarizerEnabled: false,
       summaryProvider: "claude",
       summaryModels: {

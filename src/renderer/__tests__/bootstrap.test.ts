@@ -135,6 +135,7 @@ beforeEach(() => {
   mockApi.getAppSettings.mockResolvedValue({
     settings: {
       version: 1,
+      language: "system",
       summarizerEnabled: false,
       summaryProvider: "claude",
       summaryModels: {
@@ -198,6 +199,7 @@ describe("bootApp", () => {
     mockApi.getAppSettings.mockResolvedValue({
       settings: {
         version: 1,
+        language: "system",
         summarizerEnabled: true,
         summaryProvider: "codex",
         summaryModels: {
@@ -222,6 +224,7 @@ describe("bootApp", () => {
     const s = useAppStore.getState();
     expect(s.appSettings).toEqual({
       version: 1,
+      language: "system",
       summarizerEnabled: true,
       summaryProvider: "codex",
       summaryModels: {
@@ -250,6 +253,7 @@ describe("bootApp", () => {
     const s = useAppStore.getState();
     expect(s.appSettings).toEqual({
       version: 1,
+      language: "system",
       summarizerEnabled: false,
       summaryProvider: "claude",
       summaryModels: {

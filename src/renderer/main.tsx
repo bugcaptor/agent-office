@@ -5,6 +5,10 @@
 import "pixi.js/unsafe-eval";
 import React from "react";
 import ReactDOM from "react-dom/client";
+// i18n은 App보다 **먼저** 로드돼야 한다 — 모듈 로드 시점에 동기로 초기화되므로
+// 첫 render 때 이미 언어가 정해져 있다(테마 선적용과 같은 이유: 문구 플래시 차단).
+// 실제 설정(AppSettings.language)은 비동기라, 그때까지는 localStorage 캐시를 쓴다.
+import "./i18n";
 import App from "./App";
 import { bootApp } from "./bootstrap";
 import { applyTheme } from "./theme/applyTheme";

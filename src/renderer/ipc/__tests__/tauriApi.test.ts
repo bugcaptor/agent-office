@@ -501,6 +501,7 @@ describe("app settings commands", () => {
     invoke.mockResolvedValueOnce({
       settings: {
         version: 1,
+        language: "system",
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {
@@ -527,6 +528,7 @@ describe("app settings commands", () => {
   it("setAppSettings는 set_app_settings에 { settings }를 전달한다", async () => {
     const s = {
       version: 1,
+      language: "system",
       summarizerEnabled: true,
       summaryProvider: "codex" as const,
       summaryModels: {
