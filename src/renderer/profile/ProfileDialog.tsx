@@ -47,6 +47,7 @@ import {
   buildCodexSpritePrompt,
   buildCodexMinimiPrompt,
 } from "../portrait/promptBuilder";
+import { useAwardsStore } from "../awards/awardsStore";
 import { PortraitEditor } from "../portrait/PortraitEditor";
 import { ArchetypePicker } from "./ArchetypePicker";
 import {
@@ -81,6 +82,9 @@ export function ProfileDialog() {
   const portraitUrl = useAppStore((s) =>
     editingAgent ? s.portraits[editingAgent.id] : undefined
   );
+  // "이 달의 우수사원" 통산 수상 횟수 뱃지(docs/employee-of-the-month-design.md
+  // §6) — 스토어에서 count만 읽는 소규모 표시. 0회면 뱃지를 그리지 않는다.
+  const awardCountFor = useAwardsStore((s) => s.awardCountFor);
   const [editorOpen, setEditorOpen] = useState(false);
   const removeSpritePreview = useAppStore((s) => s.removeSpritePreview);
   const spritePreviewUrl = useAppStore((s) =>
@@ -583,6 +587,11 @@ export function ProfileDialog() {
               </label>
             </div>
           </div>
+          {editing && editingAgent && awardCountFor(editingAgent.id) > 0 && (
+            <p className="profile-award-badge">
+              🏆 통산 {awardCountFor(editingAgent.id)}회 수상
+            </p>
+          )}
           {/* 예전의 '메모'와 '성격 프롬프트'를 하나로 통합했다 — 둘의 차이가
               헷갈렸고 실제로 같은 것(캐릭터가 어떤 존재인가)을 적는 칸이었다.
               기존 메모는 편집기를 열 때 이 칸에 합쳐진다. */}

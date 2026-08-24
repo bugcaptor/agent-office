@@ -1,0 +1,285 @@
+/* src/renderer/awards/awards.css
+ *
+ * "이 달의 우수사원"(AwardsDialog) 전용 스타일. 전역 modal-backdrop/
+ * pixel-panel/pixel-btn/pixel-title 위에 얹는다. analytics.css/talk.css와
+ * 같은 관례로 styles/tokens.css 토큰만 참조한다(하드코딩 색 금지). 픽셀
+ * 오피스 앱이므로 트로피 연출은 과하지 않게 — 액자 + 작은 🏆 배지 정도로 절제.
+ */
+@import "../styles/tokens.css";
+
+.awards-dialog {
+  width: min(760px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  font-family: "DungGeunMo", monospace;
+  color: var(--text);
+}
+
+.awards-head {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 2);
+  flex-wrap: wrap;
+}
+
+.awards-nav {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--unit) * 2);
+}
+
+.awards-head .pixel-title {
+  margin: 0;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+.awards-month-select {
+  font: inherit;
+  background: var(--bg-panel-hi);
+  color: var(--text);
+  border: 2px solid var(--border-dark);
+  padding: var(--unit);
+}
+
+/* 닫기 버튼을 오른쪽 끝으로 민다. */
+.awards-head > .pixel-btn:last-child {
+  margin-left: auto;
+}
+
+.awards-provisional-banner {
+  margin: calc(var(--unit) * 2) 0 0;
+  padding: var(--unit) calc(var(--unit) * 2);
+  border: 2px dashed var(--accent);
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.awards-msg {
+  padding: calc(var(--unit) * 6) calc(var(--unit) * 2);
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.awards-msg-error {
+  color: var(--accent-error);
+}
+
+.awards-empty {
+  padding: calc(var(--unit) * 8) calc(var(--unit) * 2);
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.awards-empty-hint {
+  font-size: 0.75rem;
+  margin-top: var(--unit);
+}
+
+/* ── 본문: 좌(트로피) · 우(통계/순위/소감) ─────────────────────── */
+.awards-body {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: calc(var(--unit) * 3);
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  gap: calc(var(--unit) * 4);
+}
+
+.awards-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--unit);
+  text-align: center;
+}
+
+.awards-trophy-frame {
+  position: relative;
+  width: 148px;
+  height: 148px;
+  flex: none;
+  background: var(--bg-panel-hi);
+  border: 4px solid var(--border-dark);
+  box-shadow:
+    inset 2px 2px 0 var(--border-lite),
+    inset -2px -2px 0 var(--border-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.awards-trophy-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+.awards-trophy-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  font-size: 22px;
+  filter: drop-shadow(1px 1px 0 var(--border-dark));
+}
+
+.awards-portrait-fallback {
+  width: 60%;
+  height: 60%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  opacity: 0.5;
+}
+
+.awards-silhouette-head {
+  width: 40%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--text-dim);
+  margin-bottom: 4%;
+}
+
+.awards-silhouette-body {
+  width: 90%;
+  height: 45%;
+  background: var(--text-dim);
+  border-radius: 50% 50% 0 0 / 30% 30% 0 0;
+}
+
+.awards-winner-name {
+  font-size: 1.05rem;
+  margin-top: var(--unit);
+}
+
+.awards-winner-role {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.awards-award-count {
+  color: var(--accent);
+  font-size: 0.78rem;
+}
+
+.awards-right {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 3);
+  min-width: 0;
+}
+
+/* ── 통계 배지 ─────────────────────────────────────────────── */
+.awards-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: var(--unit);
+  margin: 0;
+}
+
+.awards-stat {
+  border: 2px solid var(--border-dark);
+  background: var(--bg-panel-hi);
+  padding: var(--unit) calc(var(--unit) * 2);
+}
+
+.awards-stat dt {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+}
+
+.awards-stat dd {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+/* ── 순위표 ────────────────────────────────────────────────── */
+.awards-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.awards-table th,
+.awards-table td {
+  padding: var(--unit) calc(var(--unit) * 2);
+  text-align: right;
+  border-bottom: 1px solid var(--border-dark);
+}
+
+.awards-table thead th {
+  color: var(--text-dim);
+  border-bottom: 2px solid var(--border-dark);
+}
+
+.awards-table th:nth-child(2),
+.awards-table td:nth-child(2) {
+  text-align: left;
+}
+
+.awards-table-winner-row {
+  background: var(--bg-panel-hi);
+  font-weight: bold;
+}
+
+/* ── 수상 소감 ─────────────────────────────────────────────── */
+.awards-section-title {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.awards-speech-card {
+  border-left: 3px solid var(--accent);
+  padding-left: calc(var(--unit) * 3);
+  margin: calc(var(--unit) * 2) 0;
+}
+
+.awards-speech-text {
+  font-family: "Galmuri11", "DungGeunMo", monospace;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.awards-speech-meta {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  margin: var(--unit) 0 0;
+}
+
+.awards-speech-prev {
+  margin-top: var(--unit);
+  font-size: 0.8rem;
+}
+
+.awards-speech-prev summary {
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.awards-speech-prev ul {
+  list-style: none;
+  margin: var(--unit) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 2);
+}
+
+.awards-error {
+  border: 2px dashed var(--accent-error);
+  color: var(--accent-error);
+  padding: var(--unit) calc(var(--unit) * 2);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--unit);
+  font-size: 0.8rem;
+}

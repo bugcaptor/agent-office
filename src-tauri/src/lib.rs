@@ -551,6 +551,10 @@ pub fn run() {
                 crate::persistence::diary_store::DiaryStore::new(data_dir.join("diaries"));
             let work_log_store =
                 crate::persistence::work_log_store::WorkLogStore::new(data_dir.join("worklogs"));
+            // 이 달의 우수사원: 문서 1개(`awards/awards.json`)와 초상 스냅샷
+            // 하위 폴더(`awards/portraits/`)를 루트 하나 아래 함께 둔다.
+            let awards_store =
+                crate::persistence::awards_store::AwardsStore::new(data_dir.join("awards"));
             // 포스트잇 메모(#79): 캐릭터별 하위 폴더(`memos/<agentId>/`)를 갖는다.
             let memo_store =
                 crate::persistence::memo_store::MemoStore::new(data_dir.join("memos"));
@@ -716,6 +720,7 @@ pub fn run() {
                 session_time_store,
                 diary_store,
                 work_log_store,
+                awards_store,
                 memo_store,
                 claude_resume_store,
                 settings_store,
@@ -825,6 +830,10 @@ pub fn run() {
             ipc::commands::talk_status,
             ipc::commands::list_talk_log_dates,
             ipc::commands::read_talk_log,
+            ipc::commands::load_awards,
+            ipc::commands::finalize_award,
+            ipc::commands::append_award_speech,
+            ipc::commands::load_award_portrait,
             ipc::commands::load_memo,
             ipc::commands::save_memo,
             ipc::commands::archive_memo_sheet,

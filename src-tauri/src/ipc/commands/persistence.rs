@@ -290,3 +290,62 @@ pub async fn list_claude_resume_sessions(
 > {
     Ok(app_state.claude_resume_store.load_all())
 }
+
+/// 이 달의 우수사원 시상 파일 전체(`awards/awards.json`)를 읽는다.
+/// 파일이 없으면 빈 문서(version 1)를 돌려주고, 손상·미래 버전은 Err로 알린다
+/// (그 경우에도 파일은 덮어쓰지 않는다).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_awards(app_state: State<'_, AppState>) -> Result<AwardsFile, String> {
+    app_state.awards_store.load().map_err(|e| e.to_string())
+}
+
+/// 한 달치 시상을 확정한다(write-once — 같은 달이 이미 있으면 현재 파일을 그대로
+/// 돌려준다). `portrait_agent_id`가 있으면 그 캐릭터의 현재 초상 파일을 확정 시점
+/// 스냅샷으로 복사한다. 경로는 PngStore가 아는 규약을 그대로 쓴다(agentId 검증 포함).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn finalize_award(
+    app_state: State<'_, AppState>,
+    record: crate::types::AwardRecord,
+    portrait_agent_id: Option<String>,
+) -> Result<AwardsFile, String> {
+    let portrait_source = match portrait_agent_id.as_deref() {
+        Some(agent_id) => Some(
+            app_state
+                .portrait_store
+                .portrait_path(agent_id)
+                .map_err(|e| e.to_string())?,
+        ),
+        None => None,
+    };
+    app_state
+        .awards_store
+        .finalize(record, portrait_source)
+        .map_err(|e| e.to_string())
+}
+
+/// 해당 월 레코드에 수상 소감 한 편을 append한다(이전 소감은 보존).
+/// 본문 생성은 렌더러가 `summarize_text`로 이미 마친 상태 — 여기선 저장만 한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn append_award_speech(
+    app_state: State<'_, AppState>,
+    month: String,
+    speech: crate::types::AwardSpeech,
+) -> Result<AwardsFile, String> {
+    app_state
+        .awards_store
+        .append_speech(&month, speech)
+        .map_err(|e| e.to_string())
+}
+
+/// 확정 시점 초상 스냅샷(`awards/portraits/<month>.png`)을 base64로 읽는다.
+/// 없으면 null — 초상 없이 확정된 달도 정상이다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_award_portrait(
+    app_state: State<'_, AppState>,
+    month: String,
+) -> Result<Option<String>, String> {
+    app_state
+        .awards_store
+        .load_portrait(&month)
+        .map_err(|e| e.to_string())
+}

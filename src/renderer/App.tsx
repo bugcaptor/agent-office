@@ -22,6 +22,7 @@ import { PairingRequestDialog } from "./settings/PairingRequestDialog";
 import { AnalyticsDialog } from "./analytics/AnalyticsDialog";
 import { UsageDialog } from "./usage/UsageDialog";
 import { AboutDialog } from "./about/AboutDialog";
+import { AwardsDialog } from "./awards/AwardsDialog";
 import { useAppStore } from "./store/appStore";
 import { useAgentList, useLightsOff } from "./store/selectors";
 import { THEMES } from "./theme/themes";
@@ -65,9 +66,9 @@ import { UIChrome } from "./layout/UIChrome";
 //                                     ConfirmRestartDialog/ConfirmClockOutDialog/
 //                                     ConfirmQuitDialog/SettingsDialog/
 //                                     FirstRunDialog/AnalyticsDialog/
-//                                     UsageDialog/AboutDialog, all always
-//                                     mounted, each self-gated (`null`
-//                                     render) on `modal.kind` except
+//                                     UsageDialog/AboutDialog/AwardsDialog,
+//                                     all always mounted, each self-gated
+//                                     (`null` render) on `modal.kind` except
 //                                     FirstRunDialog which gates on
 //                                     `settingsFirstRun`.
 function App() {
@@ -168,6 +169,9 @@ function App() {
         <TalkLogDialog />
         <UsageDialog />
         <AboutDialog />
+        {/* 이 달의 우수사원(docs/employee-of-the-month-design.md §6). 하단바
+            트로피 버튼에서 열리고, modal.kind로 self-gate한다. */}
+        <AwardsDialog />
       </div>
     </div>
   );

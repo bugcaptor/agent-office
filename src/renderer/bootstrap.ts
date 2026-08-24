@@ -35,6 +35,7 @@ import { installWorkLogPersister, restoreWorkLogs } from "./diary/workLogPersist
 import { installDiaryAutoWriter } from "./diary/diaryAutoWriter";
 import { installQuitGuard } from "./quitGuard";
 import { installSoundManager } from "./sound/soundManager";
+import { useAwardsStore } from "./awards/awardsStore";
 import { tauriApi } from "./ipc/tauriApi";
 import { terminalRegistry } from "./terminal/TerminalRegistry";
 import type { PersistedState } from "./store/types";
@@ -81,6 +82,23 @@ async function seedBotMode(): Promise<void> {
   } catch (err) {
     console.warn("bootstrap: 봇 상태 조회 실패 — 봇 모드 없이 진행", err);
   }
+}
+
+/**
+ * 이 달의 우수사원(docs/employee-of-the-month-design.md §3) 부팅 시 자동 확정:
+ * 시상 기록을 읽고, 완료됐지만 아직 레코드가 없는 달을 소급 확정한다(최대
+ * 12개월). `adoptDetachedSessions`/`seedBotMode`와 달리 **await하지 않는다** —
+ * 최대 12번의 순차 IPC 왕복이 필요해 부팅 시퀀스 전체(요약기·git 브랜치 워처·
+ * 일기·quitGuard 등 이후 단계)를 지연시킬 수 있고, 화면에 당장 필요한 데이터도
+ * 아니다(다이얼로그를 열 때 한 번 더 보정되므로 이 호출이 끝나기 전에 사용자가
+ * 열어도 그때 다시 시도된다). 실패해도 스토어의 `error`에만 남고 부팅에는
+ * 영향 없다(두 액션 모두 내부에서 try/catch로 삼킨다).
+ */
+function finalizeAwardsInBackground(): void {
+  void (async () => {
+    await useAwardsStore.getState().load();
+    await useAwardsStore.getState().ensureFinalized();
+  })().catch((err) => console.warn("bootstrap: 시상 소급 확정 실패", err));
 }
 
 /** 브로커 모드 주기 스냅샷 업로드 간격(ms). 크래시 생존 화면 복원의 신선도. */
@@ -241,6 +259,8 @@ export async function bootApp(): Promise<() => void> {
   const offDayRollover = installDayRollover();
   // 세션 브로커 v2 주기 스냅샷 업로드(브로커 모드일 때만 타이머 가동).
   const offSnapshotUploader = installSnapshotUploader();
+  // 이 달의 우수사원 소급 확정 — fire-and-forget(위 함수 주석 참고).
+  finalizeAwardsInBackground();
 
   return () => {
     offBridge();

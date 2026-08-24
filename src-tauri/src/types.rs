@@ -316,6 +316,93 @@ pub struct MemoSheetMeta {
     pub archived: String,
 }
 
+/// 이 달의 우수사원 시상 파일 전체. TS `AwardsFile` 미러. 디스크 원본은
+/// `awards/awards.json` 단일 문서(temp+rename 원자적 쓰기)다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwardsFile {
+    /// 스키마 버전(현재 1). 미래 값이면 로드를 거부하고 파일을 보존한다.
+    pub version: u32,
+    /// month 오름차순.
+    pub awards: Vec<AwardRecord>,
+}
+
+/// 한 달치 시상 레코드. `month`가 파일 내 유일 키다. TS `AwardRecord` 미러.
+/// 캐릭터가 삭제되거나 이름·초상이 바뀌어도 과거 시상 화면이 온전해야 하므로
+/// 표시에 필요한 값을 전부 자기 안에 스냅샷한다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwardRecord {
+    /// 로컬 기준 "YYYY-MM". 초상 스냅샷 파일명에도 쓰이므로 백엔드가 형식을 검증한다.
+    pub month: String,
+    /// 확정 시각(epoch ms).
+    pub decided_at: u64,
+    /// 이 레코드를 만든 선정 규칙 버전.
+    pub rules_version: u32,
+    /// 수상자. 자격 후보가 없던 달은 null(그래도 레코드는 남겨 재계산을 막는다).
+    /// 키 자체는 항상 나간다 — TS가 `AwardWinner | null`(옵셔널 아님)로 받는다.
+    pub winner: Option<AwardWinner>,
+    /// 확정 시점 상위 5인 스냅샷(수상자 포함, 순위순).
+    pub leaderboard: Vec<AwardStanding>,
+    /// 수상 소감. 재생성하면 append하고 이전 소감은 보존한다. 마지막 원소가 대표 소감.
+    pub speeches: Vec<AwardSpeech>,
+}
+
+/// 수상자 스냅샷. TS `AwardWinner` 미러.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwardWinner {
+    pub agent_id: String,
+    /// 확정 시점 이름(개명·삭제에 영향받지 않게 스냅샷).
+    pub name: String,
+    /// 확정 시점 역할.
+    pub role: String,
+    /// 확정 시점 아키타입(있으면).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub archetype: Option<String>,
+    /// `awards/portraits/<month>.png` 스냅샷이 존재하는지.
+    pub has_portrait: bool,
+    pub stats: AwardStats,
+}
+
+/// 수상 근거가 된 그 달 통계 스냅샷. TS `AwardStats` 미러.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwardStats {
+    pub worked_ms: u64,
+    pub turns: u64,
+    pub tool_events: u64,
+    pub active_days: u64,
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+    /// 비용은 소수라 유일하게 f64다(그래서 이 계열 타입은 `Eq`를 못 단다).
+    pub cost_usd: f64,
+}
+
+/// 순위표 한 행 스냅샷. TS `AwardStanding` 미러.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwardStanding {
+    pub agent_id: String,
+    /// 확정 시점 이름.
+    pub name: String,
+    pub worked_ms: u64,
+    pub turns: u64,
+    pub active_days: u64,
+}
+
+/// 생성된 수상 소감 한 편. TS `AwardSpeech` 미러.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwardSpeech {
+    /// 생성 시각(epoch ms).
+    pub at: u64,
+    /// 생성에 쓴 요약 provider(claude/codex/gemini/openrouter/...).
+    pub provider: String,
+    /// 소감 본문(1인칭, 캐릭터 말투).
+    pub text: String,
+}
+
 /// renderer→backend 세션 생성 옵션. 프런트 AgentOfficeApi.createSession(agentId, opts?).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1478,6 +1565,80 @@ mod tests {
         assert!(json.contains("\"totalMs\":3000"), "{json}");
         assert!(json.contains("\"workedMs\":2000"), "{json}");
         assert!(json.contains("\"waitedMs\":1000"), "{json}");
+    }
+
+    #[test]
+    fn awards_file_serializes_camel_case_and_roundtrips() {
+        let file = AwardsFile {
+            version: 1,
+            awards: vec![AwardRecord {
+                month: "2026-03".into(),
+                decided_at: 1_700_000_000_000,
+                rules_version: 1,
+                winner: Some(AwardWinner {
+                    agent_id: "a1".into(),
+                    name: "김코드".into(),
+                    role: "백엔드".into(),
+                    archetype: Some("engineer".into()),
+                    has_portrait: true,
+                    stats: AwardStats {
+                        worked_ms: 7_200_000,
+                        turns: 42,
+                        tool_events: 130,
+                        active_days: 11,
+                        tokens_in: 1_000,
+                        tokens_out: 2_000,
+                        cost_usd: 1.25,
+                    },
+                }),
+                leaderboard: vec![AwardStanding {
+                    agent_id: "a1".into(),
+                    name: "김코드".into(),
+                    worked_ms: 7_200_000,
+                    turns: 42,
+                    active_days: 11,
+                }],
+                speeches: vec![AwardSpeech {
+                    at: 1_700_000_001_000,
+                    provider: "claude".into(),
+                    text: "다들 고생 많았습니다.".into(),
+                }],
+            }],
+        };
+        let json = serde_json::to_string(&file).unwrap();
+        for key in [
+            "\"decidedAt\"",
+            "\"rulesVersion\"",
+            "\"agentId\"",
+            "\"hasPortrait\"",
+            "\"workedMs\"",
+            "\"toolEvents\"",
+            "\"activeDays\"",
+            "\"tokensIn\"",
+            "\"tokensOut\"",
+            "\"costUsd\"",
+        ] {
+            assert!(json.contains(key), "{key} missing in {json}");
+        }
+        let parsed: AwardsFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, file);
+    }
+
+    /// `archetype`만 생략 대상이다 — `winner`는 없어도 키가 null로 나가야 한다
+    /// (TS가 `AwardWinner | null`(옵셔널 아님)로 받는다).
+    #[test]
+    fn award_record_omits_archetype_but_keeps_a_null_winner() {
+        let record = AwardRecord {
+            month: "2026-03".into(),
+            decided_at: 1,
+            rules_version: 1,
+            winner: None,
+            leaderboard: Vec::new(),
+            speeches: Vec::new(),
+        };
+        let json = serde_json::to_string(&record).unwrap();
+        assert!(json.contains("\"winner\":null"), "{json}");
+        assert!(!json.contains("archetype"), "{json}");
     }
 
     #[test]

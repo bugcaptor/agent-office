@@ -27,8 +27,10 @@
 // the instant the BottomBar mute toggle flips, instead of waiting for the
 // next notification event.
 import type { SessionState } from "@shared/types";
-import type { LabelAnchor, OfficeBus, TalkBubbleTone } from "../office/bus";
+import type { LabelAnchor, OfficeAwardee, OfficeBus, TalkBubbleTone } from "../office/bus";
+import { awardeeEquals, latestAwardee } from "../office/awardee";
 import { useAppStore } from "../store/appStore";
+import { useAwardsStore } from "../awards/awardsStore";
 import { pendingAgentIds } from "../store/selectors";
 import { tauriApi } from "./tauriApi";
 import { sessionOptsFor } from "./sessionOpts";
@@ -46,6 +48,7 @@ type LabelAnchorCb = (anchors: ReadonlyMap<string, LabelAnchor>) => void;
 type DeskClickCb = (deskIndex: number, screenX: number, screenY: number) => void;
 type VacationModeCb = (on: boolean) => void;
 type TalkBubbleCb = (agentId: string, text: string, tone: TalkBubbleTone) => void;
+type AwardeeCb = (awardee: OfficeAwardee | null) => void;
 
 const notifCbs = new Set<NotifCb>();
 const stateCbs = new Set<StateCb>();
@@ -54,6 +57,7 @@ const labelAnchorCbs = new Set<LabelAnchorCb>();
 const deskClickCbs = new Set<DeskClickCb>();
 const vacationModeCbs = new Set<VacationModeCb>();
 const talkBubbleCbs = new Set<TalkBubbleCb>();
+const awardeeCbs = new Set<AwardeeCb>();
 const subagentCounts = new SubagentCountTracker();
 
 // vacationMode -> officeBus relay. 모듈 스코프라 부팅 순서(hydrate ↔ 씬 마운트
@@ -62,6 +66,21 @@ useAppStore.subscribe(
   (s) => s.vacationMode,
   (on) => vacationModeCbs.forEach((cb) => cb(on)),
 );
+
+// awards -> officeBus awardee relay(같은 이유로 모듈 스코프). `useAwardsStore`는
+// (다른 곳과 달리) `subscribeWithSelector` 미들웨어가 없어 셀렉터 오버로드를
+// 못 쓴다 — 대신 전체 상태 구독 + `latestAwardee`로 직접 파생 비교한다.
+// `latestAwardee`가 뽑아낸 값이 실제로 바뀔 때만 발화한다(loaded/finalizing
+// 같은 무관한 필드 변화나, load()가 매번 배열을 새로 만들어도 내용이 같으면
+// 씬이 헛되이 트로피/액자를 다시 계산하지 않도록) — `awards`가 처음 로드되기
+// 전에도 latestAwardee([])=null로 안전하게 시작한다.
+let lastAwardee: OfficeAwardee | null = latestAwardee(useAwardsStore.getState().awards);
+useAwardsStore.subscribe((state) => {
+  const next = latestAwardee(state.awards);
+  if (awardeeEquals(lastAwardee, next)) return;
+  lastAwardee = next;
+  awardeeCbs.forEach((cb) => cb(next));
+});
 
 // Agents with an in-flight createSession, so a double-click (two
 // emitAgentClicked in a row) can only ever produce ONE createSession call.
@@ -200,6 +219,13 @@ export const officeBus: OfficeBus = {
     // 늦게 마운트된 씬(구독 시점이 언제든)도 현재값을 즉시 받도록 동기 replay.
     cb(useAppStore.getState().vacationMode);
     return () => vacationModeCbs.delete(cb);
+  },
+  onAwardeeChanged(cb) {
+    awardeeCbs.add(cb);
+    // 늦게 마운트된 씬도 현재값을 즉시 받도록 동기 replay(lastAwardee가 항상
+    // useAwardsStore.getState().awards의 최신 파생값과 일치하게 유지된다).
+    cb(lastAwardee);
+    return () => awardeeCbs.delete(cb);
   },
   emitBossDeskClicked() {
     useAppStore.getState().toggleVacationMode();

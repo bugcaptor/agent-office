@@ -295,6 +295,14 @@ body {
   font-size: 0.78rem;
 }
 
+/* "이 달의 우수사원" 통산 수상 뱃지(docs/employee-of-the-month-design.md §6).
+   이름/역할 필드 바로 아래 — 0회면 컴포넌트가 렌더 자체를 안 한다. */
+.profile-award-badge {
+  margin: calc(var(--unit) * -1) 0 0;
+  color: var(--accent);
+  font-size: 0.78rem;
+}
+
 /* ── 폼 섹션: 소제목(라인 장식) + 필드 스택 ── */
 .profile-dialog .form-section {
   display: flex;

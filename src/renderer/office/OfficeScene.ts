@@ -21,7 +21,7 @@
 // unconditionally (before the `started` guard) since it only unsubscribes
 // from `bus` and tears down entities — neither depends on the Pixi app being
 // initialized, and it must not leak listeners on the pre-init destroy path.
-import { Application, Container, Graphics, Rectangle, Text, type FederatedPointerEvent, type Ticker } from "pixi.js";
+import { Application, Container, Graphics, Rectangle, Text, type FederatedPointerEvent, type Texture, type Ticker } from "pixi.js";
 import { TileRenderer } from "./map/TileRenderer";
 import { BOSS_DESK_RECT, TILE_SIZE, type OfficeMap, type TileRect } from "./map/mapData";
 import { tileCenterPx } from "./world/pathing";
@@ -29,9 +29,15 @@ import { OfficeWorld } from "./world/OfficeWorld";
 import { THEMES } from "../theme/themes";
 import type { ThemeDef } from "../theme/themes";
 import { SCENES } from "./scenes/scenes";
+import { awardFrameRectPx } from "./scenes/officeScene";
 import type { SceneDef, SceneRender } from "./scenes/sceneTypes";
-import type { LabelAnchor, OfficeBus } from "./bus";
+import type { LabelAnchor, OfficeAwardee, OfficeBus } from "./bus";
 import type { AgentProfile } from "./types";
+import { awardeeEquals, resolveAwardeeSeat, shouldShowAwardFrame } from "./awardee";
+import { TrophyOverlay } from "./entities/TrophyOverlay";
+import { AwardFrameOverlay } from "./entities/AwardFrameOverlay";
+import { loadAwardPortraitTexture } from "./gen/awardPortraitTexture";
+import { tauriApi } from "../ipc/tauriApi";
 
 export interface OfficeSceneOptions {
   canvas: HTMLCanvasElement;
@@ -73,6 +79,19 @@ export class OfficeScene {
   private offHoverGate?: () => void;
   /** 휴가 모드 최신값 — 씬 재구축 후 팻말 표시 상태를 되살리기 위해 보관. */
   private vacationOn = false;
+  // "이 달의 우수사원" 오피스 연출(docs/employee-of-the-month-design.md §7).
+  private trophyOverlay?: TrophyOverlay;
+  private awardFrame?: AwardFrameOverlay;
+  private offAwardee?: () => void;
+  /** 확정 수상자 최신값 — 씬 재구축 후 표시 상태를 되살리기 위해 보관(bus는 값이
+   * 바뀔 때만 발화하므로 재구축 직후엔 replay가 안 온다 — vacationOn과 동일 이유). */
+  private awardee: OfficeAwardee | null = null;
+  /** 트로피 좌석 계산에 쓰는 최신 로스터 — syncAgents가 채운다. */
+  private profiles: readonly AgentProfile[] = [];
+  private awardPortraitReq = 0;
+  private awardPortraitTexture?: Texture;
+  /** awardPortraitTexture가 어느 달의 것인지 — 같은 달이면 재구축 시 IPC를 다시 타지 않는다. */
+  private awardPortraitFor?: string;
 
   constructor(opts: OfficeSceneOptions) {
     this.opts = opts;
@@ -126,6 +145,7 @@ export class OfficeScene {
     this.buildMapLayers();
     this.buildDeskHitAreas();
     this.buildBossDesk();
+    this.buildAwardDisplays();
 
     this.applyCamera();
     this.started = true;
@@ -172,11 +192,19 @@ export class OfficeScene {
     this.applyCamera();
   }
 
-  /** 현재 씬×테마 드로잉으로 정적 바닥/벽 레이어 + 가구를 (재)구축한다. */
+  /** 현재 씬×테마 드로잉으로 정적 바닥/벽 레이어 + 가구를 (재)구축한다.
+   *
+   * `addChildAt(…, 0)`으로 floorLayer 맨 아래에 꽂는다(append가 아니라) —
+   * 액자 오버레이(`buildAwardDisplays`)도 이제 floorLayer에 있고, `repaint()`는
+   * 데스크/보스 히트영역·액자를 그대로 둔 채 이 메서드만 다시 불러 floorTiles를
+   * 교체한다. append였다면 새 floorTiles가 기존 액자보다 나중에 추가돼 그 위를
+   * 덮어버린다(벽 타일에 액자가 가려짐) — 맨 아래 고정이면 순서와 무관하게
+   * 항상 바닥에 깔린다.
+   */
   private buildMapLayers(): void {
     const tiles = new TileRenderer(this.map, TILE_SIZE, this.render.drawTile);
     this.floorTiles = tiles.build();
-    this.floorLayer.addChild(this.floorTiles);
+    this.floorLayer.addChildAt(this.floorTiles, 0);
     this.furnitureTiles = tiles.buildFurniture();
     this.sortableLayer.addChild(...this.furnitureTiles);
   }
@@ -250,6 +278,108 @@ export class OfficeScene {
   }
 
   /**
+   * "이 달의 우수사원" 표시객체(책상 트로피 + 벽 액자)를 만들고 bus를
+   * 구독한다. 좌표/가시성은 최신 awardee + profiles로 결정되므로, 구독 전에
+   * 한 번 `updateAwardDisplays()`로 최신 상태를 먼저 복원한다 — 휴가 팻말과
+   * 같은 이유(bus replay는 subscribe 시점에만 오고, 값이 안 바뀌었으면
+   * 재구축 후에도 다시 안 온다).
+   */
+  private buildAwardDisplays(): void {
+    const trophy = new TrophyOverlay(this.theme.pixi);
+    trophy.setVisible(false);
+    this.sortableLayer.addChild(trophy.root);
+    this.trophyOverlay = trophy;
+
+    const rect = awardFrameRectPx();
+    const frame = new AwardFrameOverlay(this.theme.pixi, rect);
+    frame.root.position.set(rect.x, rect.y);
+    frame.setVisible(false);
+    // floorLayer에 둔다(overlayLayer가 아니라) — 벽 타일이 이미 floorLayer에
+    // 있어 그 위에 자연히 겹치고, sortableLayer의 캐릭터·가구는 전부 이
+    // 레이어보다 위라 "벽에 걸린 그림 앞을 사람이 지나간다"가 z-order 계산
+    // 없이 그냥 성립한다.
+    this.floorLayer.addChild(frame.root);
+    this.awardFrame = frame;
+
+    this.updateAwardDisplays();
+    this.offAwardee = this.opts.bus.onAwardeeChanged((awardee) => {
+      if (awardeeEquals(this.awardee, awardee)) return; // 같은 값 재발화는 무시 — 재조회/재도색 없음
+      this.awardee = awardee;
+      this.updateAwardDisplays();
+    });
+  }
+
+  /** 트로피 좌석 + 액자 표시 여부를 최신 awardee/profiles로 재계산한다. */
+  private updateAwardDisplays(): void {
+    this.updateTrophy();
+    this.updateAwardFrame();
+  }
+
+  /** 수상자 좌석(책상) 위치로 트로피를 옮긴다. 좌석이 없으면(프로필 삭제/책상
+   * 부족) 숨긴다. 책상 쌍의 오른쪽 타일(랩탑이 없는 쪽 — officeTileDraw의
+   * DeskTop 케이스는 왼쪽 타일에만 랩탑을 그린다) 위에 얹는다. */
+  private updateTrophy(): void {
+    if (!this.trophyOverlay) return;
+    const seat = resolveAwardeeSeat(this.map, this.awardee?.agentId ?? null, this.profiles);
+    if (!seat) {
+      this.trophyOverlay.setVisible(false);
+      return;
+    }
+    const p = tileCenterPx({ tx: seat.tx + 1, ty: seat.ty + 1 });
+    this.trophyOverlay.root.position.set(p.x, p.y - 2); // 책상 상판 위에 살짝 얹힌 높이
+    this.trophyOverlay.root.zIndex = this.trophyOverlay.root.y; // 캐릭터/가구와 동일한 y-sort 규칙
+    this.trophyOverlay.setVisible(true);
+  }
+
+  /** 액자(틀+매트+콘텐츠 전체) 표시 여부. `AwardFrameOverlay`가 틀까지 통째로
+   * 그리므로 `root.visible` 하나로 전체를 켜고 끈다 — 수상자가 없으면 틀도
+   * 벽에 남기지 않는다. 현재는 오피스 씬에만 액자 아트가 있어 다른 풍경에서는
+   * 항상 숨긴다. */
+  private updateAwardFrame(): void {
+    if (!this.awardFrame) return;
+    const show = this.scene.id === "office" && shouldShowAwardFrame(this.awardee);
+    this.awardFrame.setVisible(show);
+    if (!show) return;
+    if (this.awardPortraitTexture && this.awardPortraitFor === this.awardee?.month) {
+      this.awardFrame.showPhoto(this.awardPortraitTexture); // 캐시 재적용 — 재구축돼도 IPC 재요청 없음
+    } else {
+      this.awardFrame.showSilhouette();
+      this.loadAwardPortrait();
+    }
+  }
+
+  /** 확정 수상자의 초상을 비동기 로드해 액자에 반영한다. 초상이 없거나 로드에
+   * 실패하면 실루엣 폴백을 유지한다. 그 사이 수상자가 바뀌면(reqId/month 불일치)
+   * 도착한 텍스처를 버린다(stale 반영 방지). */
+  private loadAwardPortrait(): void {
+    const awardee = this.awardee;
+    if (!awardee) return;
+    this.disposePortraitTexture();
+    if (!awardee.hasPortrait) return;
+    const reqId = ++this.awardPortraitReq;
+    void tauriApi
+      .loadAwardPortrait(awardee.month)
+      .then((b64) => (b64 ? loadAwardPortraitTexture(b64) : null))
+      .then((texture) => {
+        if (reqId !== this.awardPortraitReq || this.awardee?.month !== awardee.month) {
+          texture?.destroy(true); // stale — 이 사이 수상자가 바뀌었다
+          return;
+        }
+        if (!texture) return; // 디코드 실패 — 실루엣 유지
+        this.awardPortraitTexture = texture;
+        this.awardPortraitFor = awardee.month;
+        this.awardFrame?.showPhoto(texture);
+      })
+      .catch((err) => console.warn("OfficeScene: 수상자 초상 로드 실패", err));
+  }
+
+  private disposePortraitTexture(): void {
+    this.awardPortraitTexture?.destroy(true);
+    this.awardPortraitTexture = undefined;
+    this.awardPortraitFor = undefined;
+  }
+
+  /**
    * 테마 전환: 배경색을 라이브로 갱신하고, `build()`가 한 장으로 베이크해 둔
    * 타일 텍스처를 파기 후 새 색으로 재베이크한다. 맵(지오메트리)은 그대로라
    * 히트영역·보스 책상·월드는 손대지 않는다. 캐릭터 엔티티도 sortableLayer에
@@ -283,6 +413,7 @@ export class OfficeScene {
     this.repaint();
     this.buildDeskHitAreas();
     this.buildBossDesk();
+    this.buildAwardDisplays();
     this.applyCamera(); // 맵 크기가 달라질 수 있고, 팻말 글씨 배율도 여기서 다시 건다
     this.publishLabelAnchors(); // 순간이동한 캐릭터의 라벨을 즉시 따라오게
   }
@@ -303,6 +434,8 @@ export class OfficeScene {
     this.furnitureTiles = [];
     this.buildMapLayers();
     this.paintBossSign();
+    this.trophyOverlay?.paint(this.theme.pixi);
+    this.awardFrame?.paint(this.theme.pixi);
   }
 
   /** 좌석/보스 히트영역과 휴가 팻말을 파기한다(풍경 전환 전용). */
@@ -325,6 +458,18 @@ export class OfficeScene {
       this.bossSign = undefined;
       this.bossSignBoard = undefined;
       this.bossSignLabel = undefined;
+    }
+    this.offAwardee?.(); // buildAwardDisplays가 다시 구독한다 — 중복 구독 방지
+    this.offAwardee = undefined;
+    if (this.trophyOverlay) {
+      this.sortableLayer.removeChild(this.trophyOverlay.root);
+      this.trophyOverlay.destroy();
+      this.trophyOverlay = undefined;
+    }
+    if (this.awardFrame) {
+      this.floorLayer.removeChild(this.awardFrame.root);
+      this.awardFrame.destroy(); // 텍스처는 안 건드린다(awardPortraitTexture는 캐시로 남아 재구축 후 재적용됨)
+      this.awardFrame = undefined;
     }
   }
 
@@ -390,7 +535,9 @@ export class OfficeScene {
    */
   syncAgents(profiles: readonly AgentProfile[]): void {
     if (!this.started) return; // init() hasn't finished; nothing to sync into yet
+    this.profiles = profiles; // 트로피 좌석 계산(updateTrophy)이 최신 로스터를 참조
     this.world.syncAgents(profiles);
+    this.updateTrophy(); // 로스터/책상 배정이 바뀌면 수상자 좌석도 바뀔 수 있다
   }
 
   /** 캐릭터 머리 위 월드좌표를 화면좌표로 투영해 bus로 발행한다(매 tick).
@@ -416,6 +563,12 @@ export class OfficeScene {
       this.onWake = undefined;
     }
     this.offVacation?.();
+    this.offAwardee?.();
+    this.trophyOverlay?.destroy();
+    this.trophyOverlay = undefined;
+    this.awardFrame?.destroy();
+    this.awardFrame = undefined;
+    this.disposePortraitTexture();
     this.offHoverGate?.();
     this.world.destroy(); // unconditional: only unsubscribes bus + destroys entities, no Pixi dependency
     if (!this.started) return; // init() never completed -> nothing else to tear down yet

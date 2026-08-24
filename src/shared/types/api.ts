@@ -29,6 +29,7 @@ import type {
 import type { BotAgentStatus, BotStatus } from './bot';
 import type { TalkStatus, TalkLogEntry, TalkEvent } from './talk';
 import type { TtsSpeakRequest, TtsSpeakResult, TtsStatus, TtsVoiceOption } from './tts';
+import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
 import type { MemoSheet, MemoSheetMeta } from './memo';
 import type { UsageSnapshot } from './usage';
@@ -208,6 +209,18 @@ export interface AgentOfficeApi {
   saveWorkLog(agentId: string, items: WorkLogItem[]): Promise<void>;
   /** 전 캐릭터의 작업 로그 스냅샷을 읽는다(부팅 복원용). 손상/부재는 건너뛴다. */
   loadWorkLogs(): Promise<Record<string, WorkLogItem[]>>;
+  /** 이 달의 우수사원 시상 파일 전체를 읽는다. 파일이 없으면 빈 문서(version 1).
+   *  손상·미래 버전이면 reject하며, 그 경우에도 백엔드는 파일을 덮어쓰지 않는다. */
+  loadAwards(): Promise<AwardsFile>;
+  /** 한 달치 시상을 확정한다(write-once — 같은 달이 이미 있으면 아무것도 하지 않고
+   *  현재 파일을 그대로 돌려준다). `portraitAgentId`를 주면 그 캐릭터의 현재 초상을
+   *  확정 시점 스냅샷으로 복사한다. 복사에 실패하면(원본 부재 포함) 저장되는
+   *  레코드의 `winner.hasPortrait`가 false로 낮춰진다. 반환은 갱신된 파일 전체. */
+  finalizeAward(record: AwardRecord, portraitAgentId?: string): Promise<AwardsFile>;
+  /** 해당 월 레코드에 수상 소감을 append한다(이전 소감 보존). 없는 달이면 reject. */
+  appendAwardSpeech(month: string, speech: AwardSpeech): Promise<AwardsFile>;
+  /** 확정 시점 초상 스냅샷을 base64(헤더 없는 표준 base64)로 읽는다. 없으면 null. */
+  loadAwardPortrait(month: string): Promise<string | null>;
   /** 포스트잇 메모(#79) 현재 장을 읽는다. 없으면 백엔드가 새 빈 장을 만들어
    *  돌려주므로 "장이 없는 상태"는 렌더러에 존재하지 않는다. */
   loadMemo(agentId: AgentId): Promise<MemoSheet>;

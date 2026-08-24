@@ -44,6 +44,11 @@ const { mockApi } = vi.hoisted(() => ({
     botStatus: vi.fn(),
     sessionBrokerMode: vi.fn(),
     uploadSessionSnapshots: vi.fn(),
+    // 이 달의 우수사원(#89) 부팅 시 자동 확정(fire-and-forget) — 스텁을 둬서
+    // 실패 경고로 테스트 출력이 지저분해지지 않게 한다.
+    loadAwards: vi.fn(),
+    finalizeAward: vi.fn(),
+    loadSessionEvents: vi.fn(),
     // 라벨 브랜치 폴링(installGitBranchWatcher) — 부팅 직후 라이브 탭이 없으면
     // 호출되지 않지만, 스텁을 둬서 배선이 실수로 늘어도 조용히 죽지 않게 한다.
     workdirGitBranch: vi.fn().mockResolvedValue({ isRepo: false, branch: null }),
@@ -155,6 +160,9 @@ beforeEach(() => {
   mockApi.botStatus.mockResolvedValue({ agents: {} });
   mockApi.sessionBrokerMode.mockResolvedValue(false);
   mockApi.uploadSessionSnapshots.mockResolvedValue(undefined);
+  mockApi.loadAwards.mockResolvedValue({ version: 1, awards: [] });
+  mockApi.finalizeAward.mockResolvedValue({ version: 1, awards: [] });
+  mockApi.loadSessionEvents.mockResolvedValue([]);
   markAdopted.mockClear();
   serializeAll.mockClear();
   serializeAll.mockReturnValue({});

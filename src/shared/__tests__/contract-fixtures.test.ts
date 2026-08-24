@@ -25,6 +25,11 @@ import type {
   AdoptedSessionInfo,
   AgentProfile,
   AppSettings,
+  AwardRecord,
+  AwardsFile,
+  AwardSpeech,
+  AwardStanding,
+  AwardWinner,
   BotAgentStatus,
   BotStatus,
   CreateSessionRequest,
@@ -338,6 +343,47 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expect(a1.error).toBeUndefined();
   });
 
+  it("AwardsFile / AwardRecord / AwardWinner / AwardStanding / AwardSpeech", () => {
+    const parsed: AwardsFile = loadFixture("awards-file.json") as AwardsFile;
+    expectKeys(parsed, ["version", "awards"]);
+    expect(parsed.version).toBe(1);
+
+    // 수상자 없는 달도 레코드로 남는다(재계산 방지) -- winner는 옵셔널이
+    // 아니라 nullable이므로 키 자체는 항상 나가야 한다.
+    const empty: AwardRecord = parsed.awards[0];
+    expectKeys(empty, [
+      "month",
+      "decidedAt",
+      "rulesVersion",
+      "winner",
+      "leaderboard",
+      "speeches",
+    ]);
+    expect(empty.winner).toBeNull();
+    expect(empty.leaderboard).toHaveLength(0);
+
+    const rec: AwardRecord = parsed.awards[1];
+    expect(rec.month).toBe("2026-07");
+    const winner: AwardWinner = rec.winner!;
+    expectKeys(winner, ["agentId", "name", "role", "archetype", "hasPortrait", "stats"]);
+    expectKeys(winner.stats, [
+      "workedMs",
+      "turns",
+      "toolEvents",
+      "activeDays",
+      "tokensIn",
+      "tokensOut",
+      "costUsd",
+    ]);
+    expect(winner.hasPortrait).toBe(true);
+    const standing: AwardStanding = rec.leaderboard[0];
+    expectKeys(standing, ["agentId", "name", "workedMs", "turns", "activeDays"]);
+    // 재생성하면 append -- 마지막 원소가 대표 소감이다.
+    const speech: AwardSpeech = rec.speeches[rec.speeches.length - 1];
+    expectKeys(speech, ["at", "provider", "text"]);
+    expect(speech.provider).toBe("openrouter");
+  });
+
   it("fixtures parse as valid JSON (sanity: raw text is well-formed)", () => {
     for (const name of [
       "session-state-event.exit.json",
@@ -357,6 +403,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "git-status-result.json",
       "git-file-history-result.json",
       "bot-status.json",
+      "awards-file.json",
     ]) {
       expect(() => JSON.parse(loadFixtureRaw(name))).not.toThrow();
     }

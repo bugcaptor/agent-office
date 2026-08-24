@@ -9,8 +9,40 @@
 // 파생 상수들의 소비처가 많고, 이리로 옮기면 mapData ↔ scenes 순환 참조가
 // 생긴다. 씬은 그 맵을 가리키기만 한다.
 import type { OfficeTilePalette } from "../../theme/themes";
-import { OFFICE_MAP, Tile } from "../map/mapData";
+import { OFFICE_MAP, Tile, TILE_SIZE } from "../map/mapData";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
+
+/**
+ * "이 달의 우수사원" 액자 위치(docs/employee-of-the-month-design.md §7).
+ *
+ * 이전 설계는 액자를 왼쪽 측벽 세로 1×2칸(tx0·ty2~3)에 타일 드로잉으로
+ * 구웠으나, 오피스 벽은 한 겹(16px)뿐이라 테두리(2px)+매트(2px)를 빼면
+ * 내부 콘텐츠가 8×22px밖에 안 남고, 세로로 긴 실루엣이 우측 보스 책상
+ * (tx17·ty7~8)과 헷갈릴 만큼 닮아 "문짝"으로 보였다(눈검증 확인).
+ *
+ * 대신 액자를 타일 격자에서 완전히 빼내 `entities/AwardFrameOverlay.ts` 표시
+ * 객체 하나가 틀·매트·콘텐츠를 다 그리게 한다 — 16px 타일 폭에 묶이지 않는다.
+ * 상단 벽(ty0)에 걸고 그 아래 완전히 빈 통로 행(ty1)까지 늘어뜨린다(벽 장식이
+ * 아래 행으로 살짝 겹치는 건 픽셀아트 관용구이고, ty1은 GRID 전체가 Floor라
+ * 겹칠 대상이 없다). 가로 위치는 데스크 쌍(tx2-3/6-7/10-11/14-15) 사이의 빈
+ * 간격(tx8-9)을 근거로 잡는다 — 그 간격 중앙에 놓으면 데스크와도 겹치지 않고
+ * 정중앙이라 눈에 띈다.
+ */
+const AWARD_FRAME_GAP_TX = 8; // 데스크 쌍 사이 빈 간격(tx8-9, 2칸 폭)의 시작 타일
+const AWARD_FRAME_SIZE = 28; // 외곽 사각형 한 변(px) — 정사각
+const AWARD_FRAME_Y = 4; // 월드 y(px) — ty0 벽 띠(0~16) 안쪽, wallTop 하이라이트(3px) 아래부터
+
+/**
+ * 액자 "외곽" 사각형(틀 바깥 경계)의 월드 px 좌표. `AwardFrameOverlay`가 이
+ * 크기를 받아 테두리·매트·콘텐츠 영역을 스스로 유도하므로, 여기서는 배치
+ * 지오메트리(위치+크기)만 단일 출처로 낸다.
+ */
+export function awardFrameRectPx(): { x: number; y: number; w: number; h: number } {
+  const s = TILE_SIZE;
+  const gapW = s * 2; // tx8-9 두 칸 폭
+  const x = AWARD_FRAME_GAP_TX * s + (gapW - AWARD_FRAME_SIZE) / 2; // 간격 중앙 정렬
+  return { x, y: AWARD_FRAME_Y, w: AWARD_FRAME_SIZE, h: AWARD_FRAME_SIZE };
+}
 
 /** 오피스 타일 드로잉을 팔레트에 바인딩한다. */
 export function officeTileDraw(pal: OfficeTilePalette): TileDrawFn {

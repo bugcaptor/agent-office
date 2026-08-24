@@ -216,3 +216,70 @@ describe("OfficeBus: onVacationModeChanged", () => {
     expect(b).toHaveBeenCalledWith(false);
   });
 });
+
+describe("OfficeBus: onAwardeeChanged (이 달의 우수사원)", () => {
+  const awardee1 = { agentId: "a1", name: "하나", month: "2026-07", hasPortrait: true };
+  const awardee2 = { agentId: "a2", name: "두리", month: "2026-08", hasPortrait: false };
+
+  it("replays the current value (default null) immediately on subscribe", () => {
+    const bus = createMockOfficeBus();
+    const cb = vi.fn();
+    bus.onAwardeeChanged(cb);
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith(null);
+  });
+
+  it("replays the last triggered value immediately on subscribe (contract: late-mounting scene)", () => {
+    const bus = createMockOfficeBus();
+    bus.triggerAwardeeChanged(awardee1);
+
+    const late = vi.fn();
+    bus.onAwardeeChanged(late);
+
+    expect(late).toHaveBeenCalledTimes(1);
+    expect(late).toHaveBeenCalledWith(awardee1);
+  });
+
+  it("delivers a triggered event to every subscribed listener", () => {
+    const bus = createMockOfficeBus();
+    const a = vi.fn();
+    const b = vi.fn();
+    bus.onAwardeeChanged(a);
+    bus.onAwardeeChanged(b);
+    a.mockClear();
+    b.mockClear();
+
+    bus.triggerAwardeeChanged(awardee1);
+
+    expect(a).toHaveBeenCalledWith(awardee1);
+    expect(b).toHaveBeenCalledWith(awardee1);
+  });
+
+  it("수상자 교체(트리거)가 최신값으로 다시 발화한다", () => {
+    const bus = createMockOfficeBus();
+    const seen: unknown[] = [];
+    bus.onAwardeeChanged((a) => seen.push(a));
+
+    bus.triggerAwardeeChanged(awardee1);
+    bus.triggerAwardeeChanged(awardee2);
+    bus.triggerAwardeeChanged(null);
+
+    expect(seen).toEqual([null, awardee1, awardee2, null]);
+  });
+
+  it("stops delivering to a listener after it unsubscribes, without affecting others", () => {
+    const bus = createMockOfficeBus();
+    const a = vi.fn();
+    const b = vi.fn();
+    const unsubA = bus.onAwardeeChanged(a);
+    bus.onAwardeeChanged(b);
+    a.mockClear();
+    b.mockClear();
+
+    unsubA();
+    bus.triggerAwardeeChanged(awardee1);
+
+    expect(a).not.toHaveBeenCalled();
+    expect(b).toHaveBeenCalledWith(awardee1);
+  });
+});

@@ -79,10 +79,32 @@ const { maybeSendOsNotification } = vi.hoisted(() => ({
 vi.mock("../osNotify", () => ({ maybeSendOsNotification }));
 
 import { useAppStore } from "../../store/appStore";
+import { useAwardsStore } from "../../awards/awardsStore";
 import type { AgentProfile } from "../../store/types";
 import { installSessionBridge, officeBus } from "../sessionBridge";
+import type { AwardRecord } from "@shared/types";
 
 const initialState = useAppStore.getState();
+const initialAwardsState = useAwardsStore.getState();
+
+function mkAwardRecord(month: string, winnerAgentId: string | null): AwardRecord {
+  return {
+    month,
+    decidedAt: 0,
+    rulesVersion: 1,
+    winner: winnerAgentId
+      ? {
+          agentId: winnerAgentId,
+          name: `Name-${winnerAgentId}`,
+          role: "eng",
+          hasPortrait: true,
+          stats: { workedMs: 0, turns: 0, toolEvents: 0, activeDays: 0, tokensIn: 0, tokensOut: 0, costUsd: 0 },
+        }
+      : null,
+    leaderboard: [],
+    speeches: [],
+  };
+}
 
 function mkProfile(overrides: Partial<AgentProfile> = {}): AgentProfile {
   return {
@@ -113,6 +135,7 @@ let cleanup: () => void;
 
 beforeEach(() => {
   useAppStore.setState(initialState, true);
+  useAwardsStore.setState(initialAwardsState, true);
   Object.values(mockApi).forEach((fn) => fn.mockClear());
   maybeSendOsNotification.mockClear();
   capture.onSessionState = undefined;
@@ -472,6 +495,71 @@ describe("officeBus.onVacationModeChanged / emitBossDeskClicked (vacation mode)"
     officeBus.emitBossDeskClicked();
     expect(useAppStore.getState().vacationMode).toBe(true);
     expect(seen).toEqual([false, true]);
+    off();
+  });
+});
+
+describe("officeBus.onAwardeeChanged (이 달의 우수사원, docs/employee-of-the-month-design.md §7)", () => {
+  it("구독 즉시 현재값(기본 null)을 replay한다", () => {
+    const seen: unknown[] = [];
+    const off = officeBus.onAwardeeChanged((a) => seen.push(a));
+    expect(seen).toEqual([null]);
+    off();
+  });
+
+  it("useAwardsStore.awards가 바뀌면 최신 확정 수상자를 relay한다", () => {
+    const seen: unknown[] = [];
+    const off = officeBus.onAwardeeChanged((a) => seen.push(a));
+    seen.length = 0; // 초기 replay 제거
+
+    useAwardsStore.setState({ awards: [mkAwardRecord("2026-07", "a1")] });
+
+    expect(seen).toEqual([
+      { agentId: "a1", name: "Name-a1", month: "2026-07", hasPortrait: true },
+    ]);
+    off();
+  });
+
+  it("수상자가 바뀌면(다음 달 확정) 최신값으로 다시 relay한다", () => {
+    useAwardsStore.setState({ awards: [mkAwardRecord("2026-07", "a1")] });
+    const seen: unknown[] = [];
+    const off = officeBus.onAwardeeChanged((a) => seen.push(a));
+    seen.length = 0;
+
+    useAwardsStore.setState({
+      awards: [mkAwardRecord("2026-07", "a1"), mkAwardRecord("2026-08", "a2")],
+    });
+
+    expect(seen).toEqual([
+      { agentId: "a2", name: "Name-a2", month: "2026-08", hasPortrait: true },
+    ]);
+    off();
+  });
+
+  it("같은 값으로 귀결되는 변화는 재발화하지 않는다(예: 무관한 필드만 바뀜)", () => {
+    useAwardsStore.setState({ awards: [mkAwardRecord("2026-07", "a1")] });
+    const seen: unknown[] = [];
+    const off = officeBus.onAwardeeChanged((a) => seen.push(a));
+    seen.length = 0;
+
+    // awards 내용은 그대로, 무관한 필드(loaded)만 바뀜 -> latestAwardee 결과 불변.
+    useAwardsStore.setState({ loaded: true });
+    // 같은 winner를 담은 새 배열 인스턴스로 교체해도(참조만 다름) 값은 동일.
+    useAwardsStore.setState({ awards: [mkAwardRecord("2026-07", "a1")] });
+
+    expect(seen).toEqual([]);
+    off();
+  });
+
+  it("확정 수상자가 없어지면(winner:null만 있는 배열) null로 relay한다", () => {
+    useAwardsStore.setState({ awards: [mkAwardRecord("2026-07", "a1")] });
+    const seen: unknown[] = [];
+    const off = officeBus.onAwardeeChanged((a) => seen.push(a));
+    seen.length = 0;
+
+    useAwardsStore.setState({ awards: [mkAwardRecord("2026-08", null)] });
+
+    expect(seen).toEqual([null]);
     off();
   });
 });

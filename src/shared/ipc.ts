@@ -81,6 +81,12 @@ export const Commands = {
   // 캐릭터 일기(이슈 #56) — per-agent 일기 append/load.
   appendDiaryEntry: "append_diary_entry",
   loadDiary: "load_diary",
+  // 이 달의 우수사원 — 시상 문서 로드, 한 달 확정(write-once), 소감 append,
+  // 확정 시점 초상 스냅샷 로드.
+  loadAwards: "load_awards",
+  finalizeAward: "finalize_award",
+  appendAwardSpeech: "append_award_speech",
+  loadAwardPortrait: "load_award_portrait",
   // 캐릭터 일기(이슈 #60) — 작업 로그 스냅샷 save/load(영속 보존·부팅 복원).
   saveWorkLog: "save_work_log",
   loadWorkLogs: "load_work_logs",

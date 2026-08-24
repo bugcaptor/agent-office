@@ -10,9 +10,11 @@
 // `clockOutAll`). Each item is disabled when its target set is empty, and the
 // button itself is disabled only when there are no agents at all.
 // Then a running/pending status summary in
-// the center, a settings (⚙) button that
-// opens `SettingsDialog` (선택적 에이전트 연동 2종), an info (ℹ) button
-// right after it that opens `AboutDialog` (앱 이름/버전/라이선스), and the
+// the center, an analytics (📊) button that opens `AnalyticsDialog`, a
+// trophy (🏆) button right after it that opens `AwardsDialog`("이 달의
+// 우수사원" — docs/employee-of-the-month-design.md §6), a settings (⚙)
+// button that opens `SettingsDialog` (선택적 에이전트 연동 2종), an info (ℹ)
+// button right after it that opens `AboutDialog` (앱 이름/버전/라이선스), and the
 // mute toggle on the right (flips `store.muted`; the actual badge resync on
 // toggle lives in `ipc/sessionBridge.ts`'s `installSessionBridge`, not
 // here).
@@ -129,6 +131,15 @@ export function BottomBar() {
         onClick={() => openModal({ kind: "analytics" })}
       >
         📊 분석
+      </button>
+      <button
+        type="button"
+        className="pixel-btn awards-btn"
+        aria-label="이 달의 우수사원"
+        title="이 달의 우수사원"
+        onClick={() => openModal({ kind: "awards" })}
+      >
+        🏆 우수사원
       </button>
       <button
         type="button"

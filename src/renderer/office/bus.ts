@@ -23,6 +23,21 @@ export interface LabelAnchor {
  */
 export type TalkBubbleTone = "say" | "hear";
 
+/**
+ * "이 달의 우수사원"(docs/employee-of-the-month-design.md §7) 확정 수상자를
+ * 씬에 전달하는 최소 정보. 스냅샷 전체가 아니라 씬이 그리는 데 필요한 값만 —
+ * 실제 초상 픽셀은 별도로 `tauriApi.loadAwardPortrait(month)`가 담당한다.
+ */
+export interface OfficeAwardee {
+  agentId: string;
+  /** 확정 시점 이름(스냅샷) — 씬은 표시에만 쓰고 프로필 이름과 동기화하지 않는다. */
+  name: string;
+  /** 확정된 달 "YYYY-MM" — 초상 로드 키. */
+  month: string;
+  /** 그 달 초상 스냅샷이 존재하는지(false/로드 실패 시 씬이 실루엣으로 대체). */
+  hasPortrait: boolean;
+}
+
 export interface OfficeBus {
   // B subscribes (A -> B, relayed through C). 구독 즉시 현재 상태를 1회
   // replay한다(기본값 상태 false/idle은 생략) — 재마운트된 씬도 상태를 받는다.
@@ -55,6 +70,9 @@ export interface OfficeBus {
   /** B가 휴가 모드 on/off를 구독 — on이면 줄 전원 이탈.
    * 구독 즉시 현재값을 1회 재생(replay)한다 — 늦게 마운트된 씬도 초기값 수신. */
   onVacationModeChanged(cb: (on: boolean) => void): () => void;
+  /** B가 "이 달의 우수사원" 확정 수상자를 구독 — 자격 수상자가 없으면 null.
+   * 구독 즉시 현재값을 1회 재생(replay)한다 — 늦게 마운트된 씬도 초기값 수신. */
+  onAwardeeChanged(cb: (awardee: OfficeAwardee | null) => void): () => void;
 }
 
 type NotificationListener = (agentId: string, hasPending: boolean) => void;
@@ -75,6 +93,8 @@ export interface MockOfficeBus extends OfficeBus {
   triggerVacationModeChanged(on: boolean): void;
   /** Counts every `emitBossDeskClicked` call (B -> A/C direction). */
   readonly bossDeskClickCount: number;
+  /** Drives the C -> B direction for the current awardee from a test/manual harness. */
+  triggerAwardeeChanged(awardee: OfficeAwardee | null): void;
 }
 
 /** In-memory pub/sub `OfficeBus` implementation. No Pixi/DOM/IPC dependency. */
@@ -91,9 +111,11 @@ export function createMockOfficeBus(): MockOfficeBus {
     (agentId: string, text: string, tone: TalkBubbleTone) => void
   >();
   const vacationModeListeners = new Set<(on: boolean) => void>();
+  const awardeeListeners = new Set<(a: OfficeAwardee | null) => void>();
   const clickedAgentIds: string[] = [];
   let bossDeskClickCount = 0;
   let vacationMode = false;
+  let awardee: OfficeAwardee | null = null;
   // 구독 시점 replay용 마지막 상태.
   const lastPending = new Map<string, boolean>();
   const lastSessionState = new Map<string, SessionState>();
@@ -170,6 +192,15 @@ export function createMockOfficeBus(): MockOfficeBus {
     },
     get bossDeskClickCount() {
       return bossDeskClickCount;
+    },
+    onAwardeeChanged(cb) {
+      awardeeListeners.add(cb);
+      cb(awardee);
+      return () => awardeeListeners.delete(cb);
+    },
+    triggerAwardeeChanged(next) {
+      awardee = next;
+      for (const cb of awardeeListeners) cb(next);
     },
   };
 }

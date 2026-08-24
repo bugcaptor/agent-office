@@ -14,6 +14,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
+import { useAwardsStore } from "../../awards/awardsStore";
 import { keyColorsFor, hexColor } from "../../office/gen/archetypes";
 import type { AgentProfile } from "../../store/types";
 import { NAME_WORDS, ROLE_WORDS, PERSONALITY_WORDS } from "../wordlists";
@@ -826,5 +827,67 @@ describe("modal kind 가드 (Task A2 회귀)", () => {
     const { container } = render(<ProfileDialog />);
 
     expect(container.firstChild).toBeNull();
+  });
+});
+
+describe("이 달의 우수사원 뱃지(docs/employee-of-the-month-design.md §6)", () => {
+  const initialAwardsState = useAwardsStore.getState();
+
+  afterEach(() => {
+    useAwardsStore.setState(initialAwardsState, true);
+  });
+
+  it("통산 수상 횟수가 0회면 뱃지를 그리지 않는다", () => {
+    useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+
+    const { container } = render(<ProfileDialog />);
+
+    expect(container.querySelector(".profile-award-badge")).toBeNull();
+  });
+
+  it("통산 수상 횟수가 있으면 뱃지를 그린다", () => {
+    useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
+    useAwardsStore.setState({
+      awards: [
+        {
+          month: "2026-06",
+          decidedAt: 0,
+          rulesVersion: 1,
+          winner: {
+            agentId: "a1",
+            name: "Existing",
+            role: "eng",
+            hasPortrait: false,
+            stats: {
+              workedMs: 0,
+              turns: 0,
+              toolEvents: 0,
+              activeDays: 0,
+              tokensIn: 0,
+              tokensOut: 0,
+              costUsd: 0,
+            },
+          },
+          leaderboard: [],
+          speeches: [],
+        },
+      ],
+    });
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+
+    const { container } = render(<ProfileDialog />);
+
+    expect(container.querySelector(".profile-award-badge")?.textContent).toBe(
+      "🏆 통산 1회 수상"
+    );
+  });
+
+  it("create 모드(편집 대상 없음)에서는 뱃지를 그리지 않는다", () => {
+    useAppStore.getState().openModal({ kind: "profile-create" });
+
+    const { container } = render(<ProfileDialog />);
+
+    expect(container.querySelector(".profile-award-badge")).toBeNull();
   });
 });

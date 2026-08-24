@@ -27,13 +27,13 @@ use agent_office_lib::persistence::settings_store::{
 use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
     ActivityEvent, ActivityKind, AdoptedSessionInfo, AgentProfile, BotAgentStatus, BotPhase,
-    BotStatus, CreateSessionRequest, CreateSessionResult, MemoSheet, MemoSheetMeta,
+    AwardsFile, BotStatus, CreateSessionRequest, CreateSessionResult, MemoSheet, MemoSheetMeta,
     NotificationEvent, NotificationSource, OutputChunk, PersistedState, SessionExitInfo,
     SessionState, SessionStateEvent,
 };
 use agent_office_lib::usage::{
-    ClaudeLiveStatus, FetchTransport, LiveFetchOutcome, Provider, ProviderUsage, TokenSource,
-    UsageSnapshot, UsageWindow, UsageWindowKind,
+    ClaudeLiveStatus, CodexLiveOutcome, CodexLiveStatus, FetchTransport, LiveFetchOutcome, Provider,
+    ProviderUsage, TokenSource, UsageSnapshot, UsageWindow, UsageWindowKind,
 };
 use agent_office_lib::workdir::{GitCommitEntry, GitFileHistoryResult, GitFileStatus, GitStatusResult};
 
@@ -193,14 +193,25 @@ fn usage_snapshot_matches_fixture() {
             provider: Provider::Codex,
             fetched_at_ms: 1784287217595,
             plan_label: Some("prolite".into()),
-            windows: vec![UsageWindow {
-                kind: UsageWindowKind::Weekly,
-                label: None,
-                used_percent: 11.0,
-                resets_at_ms: Some(1784786662000),
-                window_minutes: Some(10080),
-                is_active: None,
-            }],
+            windows: vec![
+                UsageWindow {
+                    kind: UsageWindowKind::Weekly,
+                    label: None,
+                    used_percent: 11.0,
+                    resets_at_ms: Some(1784786662000),
+                    window_minutes: Some(10080),
+                    is_active: None,
+                },
+                // 모델별 5시간 창 — Codex는 `label`에 모델명을 실어 보낸다.
+                UsageWindow {
+                    kind: UsageWindowKind::SessionModel,
+                    label: Some("GPT-5.3-Codex-Spark".into()),
+                    used_percent: 4.0,
+                    resets_at_ms: Some(1784297554000),
+                    window_minutes: Some(300),
+                    is_active: None,
+                },
+            ],
         }),
         // 실시간 조회가 실패해도 스냅샷은 파일 캐시로 정상 반환된다 — 대신
         // 사유가 실려 나가 UI가 "표시값이 왜 낡았는지"를 말할 수 있다(§7).
@@ -215,6 +226,14 @@ fn usage_snapshot_matches_fixture() {
             last_attempt_ms: Some(1784281400000),
             last_success_ms: Some(1784280000000),
             via: Some(FetchTransport::Curl),
+        },
+        // Codex 쪽은 갈래가 없어 진단이 단순하다 — app-server RPC 한 번이
+        // 전부라 `via`/`tokenSource`가 없고, 미로그인이 가장 흔한 실패다.
+        codex_live: CodexLiveStatus {
+            outcome: CodexLiveOutcome::RpcError,
+            detail: Some("not logged in".into()),
+            last_attempt_ms: Some(1784281400000),
+            last_success_ms: None,
         },
     };
     assert_value_eq(fixture_json, serde_json::to_value(&value).unwrap());
@@ -399,4 +418,30 @@ fn memo_sheet_current_has_no_archived_key() {
 #[test]
 fn memo_sheet_meta_roundtrips() {
     assert_roundtrip::<MemoSheetMeta>(fixture!("memo-sheet-meta.json"));
+}
+
+#[test]
+fn awards_file_roundtrips() {
+    assert_roundtrip::<AwardsFile>(fixture!("awards-file.json"));
+}
+
+#[test]
+fn awards_record_keeps_null_winner_and_omits_absent_archetype() {
+    // `winner`는 옵셔널이 아니라 nullable이다 -- 수상자 없는 달도 키가 나가야
+    // 렌더러가 "확정됐지만 수상자 없음"과 "미확정"을 구분한다. 반대로
+    // `archetype`은 부재여야 한다(TS `archetype?`).
+    let parsed: AwardsFile = serde_json::from_str(fixture!("awards-file.json")).unwrap();
+    let value = serde_json::to_value(&parsed).unwrap();
+    let awards = value["awards"].as_array().unwrap();
+
+    let empty = &awards[0];
+    assert!(empty.get("winner").is_some(), "winner 키가 사라지면 안 된다");
+    assert!(empty["winner"].is_null());
+
+    let winner = &awards[1]["winner"];
+    assert_eq!(winner["archetype"], "engineer");
+    let mut stripped = parsed.awards[1].winner.clone().unwrap();
+    stripped.archetype = None;
+    let stripped = serde_json::to_value(&stripped).unwrap();
+    assert!(stripped.get("archetype").is_none());
 }

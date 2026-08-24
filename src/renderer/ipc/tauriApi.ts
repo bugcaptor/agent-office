@@ -27,6 +27,8 @@ import type {
   ActivityEvent,
   AgentOfficeApi,
   AppSettings,
+  AwardRecord,
+  AwardSpeech,
   DiaryEntry,
   NotificationClearedEvent,
   NotificationEvent,
@@ -284,6 +286,25 @@ export const tauriApi: AgentOfficeApi = {
 
   async loadWorkLogs() {
     return await invoke(Commands.loadWorkLogs);
+  },
+
+  async loadAwards() {
+    return await invoke(Commands.loadAwards);
+  },
+
+  async finalizeAward(record: AwardRecord, portraitAgentId?: string) {
+    return await invoke(Commands.finalizeAward, {
+      record,
+      portraitAgentId: portraitAgentId ?? null,
+    });
+  },
+
+  async appendAwardSpeech(month: string, speech: AwardSpeech) {
+    return await invoke(Commands.appendAwardSpeech, { month, speech });
+  },
+
+  async loadAwardPortrait(month: string) {
+    return await invoke(Commands.loadAwardPortrait, { month });
   },
 
   async loadMemo(agentId: string) {

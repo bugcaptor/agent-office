@@ -22,6 +22,7 @@ export * from './types/bot';
 export * from './types/profile';
 export * from './types/characterBundle';
 export * from './types/diary';
+export * from './types/awards';
 export * from './types/memo';
 export * from './types/usage';
 export * from './types/settings';

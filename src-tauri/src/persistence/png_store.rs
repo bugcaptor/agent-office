@@ -84,6 +84,14 @@ impl PngStore {
         self.dir.join(format!("{agent_id}.png"))
     }
 
+    /// `<dir>/<agentId>.png`의 절대 경로. base64 왕복이 아니라 **파일 자체**를
+    /// 다뤄야 하는 호출부(우수사원 초상 스냅샷 복사 등)가 디렉터리 규약을
+    /// 재조립하지 않게 열어 둔다. id 검증은 여기서도 그대로 거친다.
+    pub fn portrait_path(&self, agent_id: &str) -> Result<PathBuf, PngStoreError> {
+        Self::validate_id(agent_id)?;
+        Ok(self.path_for(agent_id))
+    }
+
     /// base64 PNG를 검증 후 원자적으로 저장한다. `known_ids`는 현재 저장된 프로필
     /// id 목록(존재 검증용).
     pub fn save(

@@ -59,6 +59,13 @@ export const TILE_PALETTE_KEYS = [
   "tableTop",
   "laptopLid",
   "laptopBody",
+  // "이 달의 우수사원" 오피스 연출(docs/employee-of-the-month-design.md §7).
+  "trophyCup", // 책상 위 트로피 컵/손잡이
+  "trophyCupShine", // 트로피 광택 하이라이트
+  "trophyBase", // 트로피 받침/기둥
+  "frameBorder", // 벽 액자 테두리
+  "frameMat", // 벽 액자 안쪽 매트(정적 배경)
+  "frameSilhouette", // 액자 안 초상 없음 폴백 실루엣
 ] as const;
 type TilePaletteKey = (typeof TILE_PALETTE_KEYS)[number];
 
@@ -132,6 +139,12 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       tableTop: 0xe0bc8a,
       laptopLid: 0x525a6e, // 랩탑 뚜껑 등판(슬레이트)
       laptopBody: 0x3a4050, // 랩탑 본체/디테일(더 어두운 슬레이트)
+      trophyCup: 0xe0a53d, // 골드 트로피
+      trophyCupShine: 0xfff0c2,
+      trophyBase: 0x8a6a2f, // 짙은 황동 받침
+      frameBorder: 0x96682f, // deskEdge와 같은 계열의 짙은 액자 테두리
+      frameMat: 0xf7f0dd, // 밝은 매트
+      frameSilhouette: 0xb7a98a,
     },
     // 밝은 배경의 터미널 — ANSI 16색은 "밝을수록 잘 보인다"가 뒤집히므로
     // 흰색 계열을 어둡게 보정하고, bright는 더 진하게(대비 강화) 간다.
@@ -206,6 +219,12 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       tableTop: 0x6f4d2e,
       laptopLid: 0x5b647e, // 랩탑 뚜껑 등판(어두운 배경 대비 살짝 밝은 슬레이트)
       laptopBody: 0x424a60,
+      trophyCup: 0xd9b84a, // 골드 트로피(어두운 배경에서도 도드라지게)
+      trophyCupShine: 0xf3e2a0,
+      trophyBase: 0x6b5a2e,
+      frameBorder: 0x6b5a2e, // 짙은 황동 액자 테두리
+      frameMat: 0x33384a, // 벽보다 살짝 밝은 매트
+      frameSilhouette: 0x5a6178,
     },
     // 터미널 테마 도입 이전의 유일한 팔레트(구 XTERM_THEME)를 값 그대로 이관.
     // "green-CRT meets modern dark" — 가독성 유지한 레트로.
@@ -275,6 +294,12 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       tableTop: 0xdcb09c,
       laptopLid: 0x6e5d73, // 랩탑 뚜껑 등판(플럼 그레이)
       laptopBody: 0x504256,
+      trophyCup: 0xe0a85c, // 골드 트로피(블러시 배경에 어울리는 살구빛 웜톤)
+      trophyCupShine: 0xffe9c2,
+      trophyBase: 0x8a6a4a,
+      frameBorder: 0xa2685a, // deskEdge와 같은 계열의 로즈브라운 테두리
+      frameMat: 0xfbeef4, // counterTop과 같은 계열의 밝은 매트
+      frameSilhouette: 0xc48a9a,
     },
     // 밝은 블러시 배경 + 플럼 전경. 유채색 6색은 daylight와 같은 이유로
     // 전경·배경 겸용 균형 휘도에 맞춘다(이 배경/black에서는 양방향 약 3.5:1).
@@ -346,6 +371,14 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       tableTop: 0x24743a,
       laptopLid: 0x2e8a55, // 랩탑(가구보다 한 단계 밝게)
       laptopBody: 0x1d5c39,
+      // 골드 대신 이 테마의 인광 초록 모노크롬을 그대로 따른다(plant와 같은
+      // 가장 밝은 톤을 트로피 하이라이트로).
+      trophyCup: 0x2e8a55,
+      trophyCupShine: 0x8dffa8, // = --text(가장 밝은 인광 초록)
+      trophyBase: 0x1b4a28,
+      frameBorder: 0x2e8a55,
+      frameMat: 0x0f2a16,
+      frameSilhouette: 0x1f6b35,
     },
     // 완전 단색은 로그 가독성을 죽인다(빨강 에러/노랑 경고 구분 불가) —
     // 색상(hue) 정체성은 남기되 채도를 낮추고 전부 초록 쪽으로 기울인다.

@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "awards": [
+    {
+      "month": "2026-06",
+      "decidedAt": 1751328000000,
+      "rulesVersion": 1,
+      "winner": null,
+      "leaderboard": [],
+      "speeches": []
+    },
+    {
+      "month": "2026-07",
+      "decidedAt": 1754006400000,
+      "rulesVersion": 1,
+      "winner": {
+        "agentId": "agent-nari",
+        "name": "나리",
+        "role": "백엔드",
+        "archetype": "engineer",
+        "hasPortrait": true,
+        "stats": {
+          "workedMs": 154800000,
+          "turns": 412,
+          "toolEvents": 1877,
+          "activeDays": 19,
+          "tokensIn": 3120000,
+          "tokensOut": 486000,
+          "costUsd": 42.75
+        }
+      },
+      "leaderboard": [
+        {
+          "agentId": "agent-nari",
+          "name": "나리",
+          "workedMs": 154800000,
+          "turns": 412,
+          "activeDays": 19
+        },
+        {
+          "agentId": "agent-haru",
+          "name": "하루",
+          "workedMs": 98400000,
+          "turns": 301,
+          "activeDays": 14
+        }
+      ],
+      "speeches": [
+        {
+          "at": 1754010000000,
+          "provider": "claude",
+          "text": "이 정도는 예상했지만, 그래도 기분은 좋군요."
+        },
+        {
+          "at": 1754096400000,
+          "provider": "openrouter",
+          "text": "한 달 내내 로그를 뒤졌으니 받을 만합니다."
+        }
+      ]
+    }
+  ]
+}
