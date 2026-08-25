@@ -16,18 +16,23 @@ import type {
   ClaudeLiveStatus,
   CodexLiveStatus,
   FetchTransport,
+  GeminiLiveStatus,
   ProviderUsage,
   UsageSnapshot,
   UsageWindow,
 } from "@shared/types";
 
 /** 사용량을 표시하는 provider와 그 고정 순서. */
-export const USAGE_PROVIDERS = ["claude", "codex", "antigravity"] as const;
+export const USAGE_PROVIDERS = ["claude", "codex", "antigravity", "gemini"] as const;
 
 export type UsageProvider = (typeof USAGE_PROVIDERS)[number];
 
 /** provider별 실시간 조회 진단의 합집합. 공통 필드만 읽는 자리에서 쓴다. */
-export type AnyLiveStatus = ClaudeLiveStatus | CodexLiveStatus | AntigravityLiveStatus;
+export type AnyLiveStatus =
+  | ClaudeLiveStatus
+  | CodexLiveStatus
+  | AntigravityLiveStatus
+  | GeminiLiveStatus;
 
 /** 신선도가 이보다 오래되면(ms) stale로 보고 흐리게 표시한다. */
 export const STALE_THRESHOLD_MS = 30 * 60 * 1000;
@@ -57,6 +62,7 @@ export const PROVIDER_SHORT: Record<UsageProvider, string> = {
   claude: "CL",
   codex: "CX",
   antigravity: "AG",
+  gemini: "GM",
 };
 
 /** 스냅샷에서 provider의 값을 꺼낸다(스냅샷이 없으면 null). */
@@ -80,6 +86,8 @@ export function providerLive(
       return snapshot.codexLive;
     case "antigravity":
       return snapshot.antigravityLive;
+    case "gemini":
+      return snapshot.geminiLive;
   }
 }
 
@@ -157,6 +165,9 @@ export function windowLabel(w: UsageWindow): TextKey {
         ? { key: "usage.window.weeklyModel", params: { label: w.label } }
         : { key: "usage.window.weeklyModelGeneric" };
     case "unknown":
+      // 라벨이 있으면 그것이 유일한 뜻이다(Gemini의 모델별 버킷은 창 길이를
+      // 주지 않는다) — "기타"로 뭉개면 어느 모델 얘기인지 알 수 없다.
+      if (w.label) return { key: "usage.window.labelled", params: { label: w.label } };
       return w.windowMinutes
         ? { key: "usage.window.minutes", params: { minutes: w.windowMinutes } }
         : { key: "usage.window.other" };
@@ -486,6 +497,107 @@ export function describeAntigravityLiveStatus(
   }
 }
 
+// ── Gemini 실시간 조회 진단 표시 ─────────────────────────────────────
+//
+// Claude와 같은 HTTP 어휘(우리가 직접 조회하는 경로라서)에 이 API만의 두
+// 갈래가 더 있다. `ineligible`은 **오류가 아니다** — 계정에 Code Assist
+// 라이선스가 없다는 사실 진술이고, 개인 무료 티어가 Antigravity로 이관된 뒤의
+// 기본 상태다. 그래서 error가 아니라 warn 단계로 두고 "Antigravity를 보라"고
+// 안내한다. `project_required`는 반대로 env 한 줄이면 풀린다.
+
+/**
+ * Gemini 실시간 조회 상태 → 표시 문구 키. `null`(구버전 백엔드 응답 등 필드
+ * 부재)이면 아무것도 표시하지 않는다.
+ */
+export function describeGeminiLiveStatus(
+  status: GeminiLiveStatus | null | undefined,
+): LiveStatusNote | null {
+  if (!status) return null;
+  switch (status.outcome) {
+    case "ok":
+      return {
+        level: "ok",
+        text: { key: "usage.geminiLive.ok" },
+        short: { key: "usage.live.okDirectShort" },
+      };
+    case "never_attempted":
+      return {
+        level: "warn",
+        text: { key: "usage.geminiLive.neverAttempted" },
+        short: { key: "usage.live.waitingShort" },
+      };
+    case "no_credentials":
+      return {
+        level: "error",
+        text: { key: "usage.geminiLive.noCredentials" },
+        short: { key: "usage.live.noCredentialsShort" },
+      };
+    case "refresh_failed":
+      return {
+        level: "error",
+        text: {
+          key: "usage.geminiLive.refreshFailed",
+          params: { detail: status.detail ?? { key: "usage.live.detailUnknown" } },
+        },
+        short: { key: "usage.geminiLive.refreshFailedShort" },
+      };
+    case "unauthorized":
+      return {
+        level: "error",
+        text: {
+          key: "usage.geminiLive.unauthorized",
+          params: { detail: status.detail ?? "HTTP 401" },
+        },
+        short: { key: "usage.live.unauthorizedShort" },
+      };
+    case "ineligible":
+      return {
+        level: "warn",
+        text: {
+          key: "usage.geminiLive.ineligible",
+          params: { detail: status.detail ?? { key: "usage.geminiLive.detailNoLicense" } },
+        },
+        short: { key: "usage.geminiLive.ineligibleShort" },
+      };
+    case "project_required":
+      return {
+        level: "error",
+        text: { key: "usage.geminiLive.projectRequired" },
+        short: { key: "usage.geminiLive.projectRequiredShort" },
+      };
+    case "http_error":
+      return {
+        level: "error",
+        text: {
+          key: "usage.geminiLive.httpError",
+          params: { detail: status.detail ?? { key: "usage.live.detailHttpError" } },
+        },
+        short: {
+          key: "usage.live.httpErrorShort",
+          params: { detail: status.detail ?? { key: "usage.live.detailHttpError" } },
+        },
+      };
+    case "network_error":
+      return {
+        level: "warn",
+        text: {
+          key: "usage.geminiLive.networkError",
+          params: { detail: status.detail ?? { key: "usage.live.detailError" } },
+        },
+        short: { key: "usage.live.networkErrorShort" },
+      };
+    case "unexpected_response":
+      return {
+        level: "warn",
+        text: {
+          key: "usage.geminiLive.unexpected",
+          params: { detail: status.detail ?? { key: "usage.live.detailUnknown" } },
+        },
+        short: { key: "usage.live.unexpectedShort" },
+      };
+  }
+}
+
 /**
  * provider 하나의 실시간 조회 진단을 해석한다. provider마다 조회 경로가 달라
  * (Claude=HTTPS 직접 조회, Codex=codex CLI RPC, Antigravity=agy print 모드)
@@ -504,6 +616,8 @@ export function describeProviderLive(
       return describeCodexLiveStatus(snapshot.codexLive);
     case "antigravity":
       return describeAntigravityLiveStatus(snapshot.antigravityLive);
+    case "gemini":
+      return describeGeminiLiveStatus(snapshot.geminiLive);
   }
 }
 
@@ -564,10 +678,12 @@ export function mergeUsageSnapshot(
     claude: fresherProvider(prev?.claude ?? null, next.claude),
     codex: fresherProvider(prev?.codex ?? null, next.codex),
     antigravity: fresherProvider(prev?.antigravity ?? null, next.antigravity),
+    gemini: fresherProvider(prev?.gemini ?? null, next.gemini),
     // 진단은 병합하지 않고 항상 최신 응답을 쓴다 — 값(누적)과 달리 "지금
     // 상태"라서 이전 것을 살려두면 이미 복구된 실패가 남는다.
     claudeLive: next.claudeLive ?? prev?.claudeLive,
     codexLive: next.codexLive ?? prev?.codexLive,
     antigravityLive: next.antigravityLive ?? prev?.antigravityLive,
+    geminiLive: next.geminiLive ?? prev?.geminiLive,
   };
 }

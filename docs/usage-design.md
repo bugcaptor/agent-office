@@ -1,12 +1,12 @@
-# 구독 사용량(usage) 표시 설계 — 캐시 미러 + 실시간 조회(Claude·Codex·Antigravity)
+# 구독 사용량(usage) 표시 설계 — 캐시 미러 + 실시간 조회(Claude·Codex·Antigravity·Gemini)
 
-상태: 정본 — 구현 완료 (v1 캐시 미러 = 이슈 #22, Claude live fetch = 이슈 #33/PR #34, 실패 사유 표시 = §7, Codex live fetch = §9 / kbm #2h8, 하루 넘게 실패한 provider 숨김 = §10 · Antigravity provider = §11 / kbm #2j4, 2026-08-25). 병합: 2026-07-20 (`usage-limits-design.md` + `claude-usage-live-fetch-design.md` 통합, 원본은 `docs/archive/`).
+상태: 정본 — 구현 완료 (v1 캐시 미러 = 이슈 #22, Claude live fetch = 이슈 #33/PR #34, 실패 사유 표시 = §7, Codex live fetch = §9 / kbm #2h8, 하루 넘게 실패한 provider 숨김 = §10 · Antigravity provider = §11 · Gemini provider = §12 / kbm #2j4, 2026-08-25). 병합: 2026-07-20 (`usage-limits-design.md` + `claude-usage-live-fetch-design.md` 통합, 원본은 `docs/archive/`).
 
-구현 파일: 백엔드 `src-tauri/src/usage/{mod,claude,codex,claude_live,claude_live_fallback,codex_live,antigravity_live}.rs`, 커맨드 `load_usage_snapshot`·`resolve_usage_roots`는 `ipc/commands/usage.rs`. 프런트 `src/renderer/usage/{UsageWidget,UsageDialog}.tsx`·`usageView.ts`. 와이어 타입은 `src/shared/types/usage.ts`(배럴 `shared/types.ts` 경유).
+구현 파일: 백엔드 `src-tauri/src/usage/{mod,claude,codex,claude_live,claude_live_fallback,codex_live,antigravity_live,gemini_live}.rs`, 커맨드 `load_usage_snapshot`·`resolve_usage_roots`는 `ipc/commands/usage.rs`. 프런트 `src/renderer/usage/{UsageWidget,UsageDialog}.tsx`·`usageView.ts`. 와이어 타입은 `src/shared/types/usage.ts`(배럴 `shared/types.ts` 경유).
 
 세션 활동 분석(작업시간 시계열)은 별개 기능 — `docs/session-analytics-design.md` 참조.
 
-Claude Code·Codex CLI·Antigravity 구독 정액제의 시간별(5시간 세션)·주간 한도 사용률과 리셋까지 남은 시간을 앱에 표시한다. 하루 넘게 값을 못 가져온 provider는 표시하지 않는다(§10).
+Claude Code·Codex CLI·Antigravity·Gemini CLI 구독 정액제의 시간별(5시간 세션)·주간 한도 사용률과 리셋까지 남은 시간을 앱에 표시한다. 하루 넘게 값을 못 가져온 provider는 표시하지 않는다(§10).
 
 ## 1. 목표 / 비목표
 
@@ -88,6 +88,7 @@ Claude Code·Codex CLI·Antigravity 구독 정액제의 시간별(5시간 세션
 - `claude_live.rs` — Claude OAuth usage 능동 조회(§6).
 - `codex_live.rs` — codex app-server RPC 조회(§9).
 - `antigravity_live.rs` — `agy -p /usage` print 모드 조회(§11). 파일 캐시가 없어 이 경로가 유일한 소스다.
+- `gemini_live.rs` — Code Assist `retrieveUserQuota` 직접 조회(§12). 라이선스 있는 계정 전용이고, 역시 파일 캐시가 없다.
 - IPC 커맨드 `load_usage_snapshot` (인자 없음) → `UsageSnapshot`. 실패한 소스는 해당 provider가 `null`일 뿐 커맨드는 성공한다. 루트 경로는 기본 홈 디렉터리 하위(`~/.codex`, `~/.claude.json`)이되, CLI가 실제로 존중하는 표준 환경변수 오버라이드를 지원한다: Codex는 `CODEX_HOME`(설정 시 `<CODEX_HOME>/sessions`), Claude는 `CLAUDE_CONFIG_DIR`(설정 시 `<CLAUDE_CONFIG_DIR>/.claude.json` — `claude.rs::load`의 파일명 결합 로직은 그대로, 루트만 바뀐다). 빈 문자열 env는 미설정으로 취급. 전역 `std::env::var` 접근과 분리한 순수 함수 `resolve_usage_roots(home, codex_home_env, claude_config_env) -> (PathBuf, PathBuf)`(`ipc/commands/usage.rs`)로 테스트한다(전역 env를 건드리지 않고 조합 검증).
 
 ### 와이어 타입 (`src/shared/types/usage.ts` ↔ Rust serde 미러)
@@ -553,8 +554,11 @@ BottomBar 폭만 먹는다), 모달은 안내 한 줄(`usage.dialog.allHidden`)�
 OAuth 클라이언트가 자격을 잃었다(2026-08-25 실측): `loadCodeAssist`는
 `IneligibleTierError: UNSUPPORTED_CLIENT`("migrate to the Antigravity suite"),
 `POST cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`는 403
-`SUBSCRIPTION_REQUIRED`를 돌려준다. 조회할 한도 자체가 Antigravity로 옮겨왔으므로
-provider도 하나만 둔다.
+`SUBSCRIPTION_REQUIRED`를 돌려준다. 개인 계정에서는 조회할 한도 자체가
+Antigravity로 옮겨왔다.
+
+> 이건 **개인 계정** 이야기다. 라이선스가 있는 기업 계정은 gemini CLI를 그대로
+> 쓰고 그쪽 한도는 Code Assist에 남아 있다 — 별도 provider로 §12에서 다룬다.
 
 ### 11.2 데이터 소스 — `agy -p /usage --output-format json`
 
@@ -639,3 +643,129 @@ Windows는 `.cmd` 셰임 대비로 codex_live와 같은 PowerShell 경유 해석
   `unknown` + `window_minutes: null`, 스로틀, 실패가 마지막 성공을 안 지움.
 - 수동 스모크(`#[ignore]`, `-- --ignored antigravity_live`): 실제 `agy` 왕복.
 - TS: 사유별 문구 키와 detail 전달.
+
+## 12. Gemini CLI provider (kbm #2j4, 2026-08-25)
+
+### 12.1 누구를 위한 경로인가
+
+§11에서 "gemini CLI는 경로가 없다"고 적었는데, 그건 **개인 계정** 이야기다.
+Gemini Code Assist 라이선스가 있는 계정(기업/Standard·Enterprise)은 gemini
+CLI를 그대로 쓰고 있고, 그쪽 한도는 Antigravity가 아니라 Code Assist에 있다.
+그래서 provider를 하나 더 둔다. 라이선스가 없는 계정에서는 이 provider가 값을
+내놓지 않는 것이 **정상**이며(§12.3의 `ineligible`), §10의 숨김 규칙에 따라
+화면에서 조용히 빠진다.
+
+### 12.2 조회 — Code Assist 내부 API 직접 호출
+
+gemini CLI에는 물어볼 창구가 없다. print 모드가 슬래시 명령을 확장하지 않고
+(`agy`와 다른 점) 사용량 서브커맨드도 없다. 그래서 claude_live와 같은 결로
+**우리가 자격증명을 읽어 비공식 엔드포인트를 직접 친다**(gemini-cli 0.42.0
+번들 실측):
+
+```
+POST {CODE_ASSIST_ENDPOINT}/v1internal:loadCodeAssist
+     {"cloudaicompanionProject": <projectId?>, "metadata": {...}}
+  → {"cloudaicompanionProject": "...", "currentTier": {...}, "paidTier": {...}}
+    또는 {"ineligibleTiers": [{"reasonCode": "...", "reasonMessage": "..."}]}
+
+POST {CODE_ASSIST_ENDPOINT}/v1internal:retrieveUserQuota
+     {"project": <projectId>}
+  → {"buckets": [{"modelId": "...", "remainingFraction": 0.25,
+                  "remainingAmount": "60", "resetTime": "..."}]}
+```
+
+- `remainingFraction`은 **잔여**다(Antigravity와 같다). `used_percent`는 여집합.
+- 버킷은 모델별이고 **창 길이를 주지 않는다.** 그래서 창 종류는 `Unknown`이고
+  라벨에 모델 ID를 싣는다 — 5시간인지 하루인지 지어내지 않는다. 이를 위해
+  `windowLabel`의 `unknown` 갈래가 라벨을 먼저 본다(`usage.window.labelled`).
+  기존 provider는 `unknown`에 라벨을 달지 않으므로 동작 변화가 없다.
+- `plan_label`은 `paidTier.name ?? currentTier.name`(예: "Gemini Code Assist
+  Standard").
+- projectId는 `GOOGLE_CLOUD_PROJECT` → `GOOGLE_CLOUD_PROJECT_ID` env가 우선이고
+  (CLI와 같은 순서) 없으면 `loadCodeAssist`의 `cloudaicompanionProject`.
+  성공하면 projectId·플랜명을 상태에 캐시해 이후 폴링은 왕복을 하나 줄인다.
+  실패하면 캐시를 **버린다** — 계정·권한이 바뀐 경우 낡은 projectId로 계속
+  물으면 영영 복구되지 않는다.
+- `CODE_ASSIST_ENDPOINT`·`CODE_ASSIST_API_VERSION` env 오버라이드를 그대로
+  존중한다(기업 환경에서 프록시·스테이징을 가리키는 경우가 있다).
+
+### 12.3 실패 갈래 — `ineligible`과 `project_required`를 나누는 이유
+
+```ts
+type GeminiLiveOutcome =
+  | "never_attempted" | "ok"
+  | "no_credentials" | "refresh_failed" | "unauthorized"
+  | "ineligible"        // 계정에 Code Assist 라이선스가 없다
+  | "project_required"  // GOOGLE_CLOUD_PROJECT 미설정
+  | "http_error" | "network_error" | "unexpected_response";
+```
+
+Claude의 HTTP 어휘에 둘을 더 세웠다. **고치는 방법이 정반대**라서다:
+`ineligible`은 재로그인해도 소용없는 사실 진술이고(그래서 error가 아니라 warn
+단계로 두고 "Antigravity를 보라"고 안내한다), `project_required`는 env 한 줄이면
+풀린다.
+
+가르는 규칙은 CLI의 `throwIneligibleOrProjectIdError`를 그대로 따른다 —
+projectId를 못 얻었을 때 응답에 `ineligibleTiers`가 있으면 라이선스 문제,
+없으면 env 누락. **이 API는 자격 없음을 200 본문으로 알려 주기도 해서**(개인
+계정 실측) 상태코드만 봐서는 구분되지 않는다. 403 본문에
+`SUBSCRIPTION_REQUIRED`/`UNSUPPORTED_CLIENT`가 실려 오는 경로도 같은 판단을
+한다(`http_failure`).
+
+### 12.4 자격증명과 토큰 갱신
+
+gemini CLI는 (1) OS Keychain(`gemini-cli-oauth`/`main-account`), (2) 암호화 파일
+`~/.gemini/gemini-credentials.json`, (3) 레거시 평문 `~/.gemini/oauth_creds.json`
+순으로 자격증명을 둔다. 우리는 **(1)과 (3)만** 읽는다.
+
+**알려진 공백**: (2)는 `scrypt("gemini-cli-oauth", "<hostname>-<username>-gemini-cli")`
+로 유도한 키의 AES-256-GCM이다. 구현은 가능하지만 크립토 의존을 둘 더 들여야
+하고 실증할 계정이 아직 없다. 그 상태의 사용자에게는 `no_credentials`로 보인다.
+필요해지면 여기서 시작하면 된다.
+
+만료된 액세스 토큰은 `oauth2.googleapis.com/token`에 refresh_token grant로
+갱신하되 **메모리 안에만 둔다.** CLI의 저장소에는 쓰지 않는다 — 남의 상태를
+고쳐 쓸 이유가 없다. 토큰 문자열은 로그·진단 어디에도 넣지 않는다(claude_live와
+같은 규율).
+
+**OAuth 클라이언트는 저장소에 하드코딩하지 않는다.** 갱신에 필요한
+client_id/secret은 설치된 gemini-cli 번들에서 읽는다(`OAUTH_CLIENT_ID = "`·
+`OAUTH_CLIENT_SECRET = "` 표지 뒤의 따옴표 값, PATH의 `gemini` → 심링크 해석 →
+그 디렉터리의 `*.js` 청크). 설치형 앱 클라이언트라 secret이 기밀은 아니지만
+(공개 npm 번들에 평문으로 들어 있다) 우리 저장소에 박아 두면 두 가지가 깨진다:
+비밀 스캐너가 잡는 패턴이라 미러 푸시가 막히거나 발급자에게 경보가 가고,
+값이 로테이션되는 순간 우리 코드가 조용히 죽는다. 설치본에서 읽으면 사용자가
+쓰는 CLI와 항상 같은 값을 쓰게 되어 둘 다 사라진다.
+
+스캔은 프로세스당 한 번만 하고 결과(`None` 포함)를 캐시한다 — 수십 MB를 읽는
+일이라 폴링마다 되풀이할 게 못 된다. `GEMINI_OAUTH_CLIENT_ID`·
+`GEMINI_OAUTH_CLIENT_SECRET` env로 덮어쓸 수 있고(자체 클라이언트를 쓰는 기업
+환경), **둘 다 있어야** 적용된다. 어느 쪽으로도 못 얻으면 갱신만 불가능해지고
+(`refresh_failed`), 아직 안 만료된 액세스 토큰으로는 그대로 돈다.
+
+### 12.5 테스트
+
+- Rust 순수 함수: env 우선순위와 빈 문자열 취급, 엔드포인트 오버라이드,
+  두 자격증명 모양 파싱, 만료 여유(skew), 200 본문의 `ineligibleTiers`가
+  `project_required`를 이긴다, 403 본문 분류, 버킷→창 매핑(잔여→사용,
+  라벨=모델 ID, `window_minutes: null`), 번들 청크에서 OAuth 클라이언트 추출
+  (한쪽만 있는 청크·빈 값은 거른다), env 오버라이드는 양쪽이 다 있어야 적용,
+  스로틀·상태 전이(실패가 계정 캐시는 버리되 마지막 성공 값은 지킨다).
+- 수동 스모크(`#[ignore]`, `-- --ignored gemini_live`): 설치된 번들에서 OAuth
+  클라이언트를 실제로 읽어내는지(값은 출력하지 않고 모양만 본다), 그리고 실제
+  자격증명으로 왕복.
+  라이선스 없는 계정에서는 `Ineligible`이 정상이므로 성공이 아니라 **분류가
+  서는지**를 본다. 실측으로 자격증명 읽기 → 토큰 갱신 → loadCodeAssist →
+  분류까지 확인했다(2026-08-25). 한도 응답 자체는 라이선스 계정에서 실증 필요.
+- TS: 사유별 문구 키와 단계(ineligible=warn, project_required=error).
+
+### 12.6 함정 — 위임 테스트의 스로틀 선점
+
+`load_usage_snapshot_body_delegates_and_never_errors`는 "네트워크·Keychain에
+닿지 않는다"를 스로틀 선점으로 보장한다. **스로틀 상태는 provider마다 따로다**
+— Claude 것만 선점하면 나머지 셋이 그대로 나가서 개발 머신에서 `codex
+app-server`·`agy -p /usage` 자식 프로세스를 띄우고 Code Assist API와 Keychain에
+닿는다. 실측으로 테스트 프로세스가 10초 가까이 늘어졌고, 같은 바이너리의
+타이밍 민감한 sessiond 테스트가 그 부하로 깨졌다. `LiveUsageState::
+preempt_all_attempts`가 넷을 한꺼번에 선점한다 — provider를 더 붙일 때 여기도
+같이 늘려야 한다.

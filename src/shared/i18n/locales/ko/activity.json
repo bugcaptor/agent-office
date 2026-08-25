@@ -8,7 +8,8 @@
       "weeklyModel": "주간 · {{label}}",
       "weeklyModelGeneric": "주간 (모델별)",
       "minutes": "{{minutes}}분 창",
-      "other": "기타"
+      "other": "기타",
+      "labelled": "{{label}}"
     },
     "countdown": {
       "pending": "리셋 대기 중",
@@ -85,6 +86,23 @@
       "commandFailedShort": "실시간 조회 실패(agy 오류)",
       "unexpected": "실시간 조회 실패: agy /usage 응답 형태가 바뀌었습니다({{detail}}). $t(activity:usage.antigravityLive.noCacheNote)"
     },
+    "geminiLive": {
+      "noCacheNote": "Gemini CLI는 사용량을 로컬에 남기지 않아, 조회에 실패하면 직전 조회 값이 남거나 표시 자체가 사라집니다",
+      "ok": "앱이 Code Assist에 사용량을 직접 조회 중 (최대 15분 간격)",
+      "neverAttempted": "실시간 조회를 아직 시도하지 않음 — $t(activity:usage.geminiLive.noCacheNote)",
+      "noCredentials": "실시간 조회 실패: gemini CLI 자격증명을 읽지 못했습니다 — 로그인하지 않았거나, 암호화 파일 저장소를 쓰고 있습니다(현재 지원 범위 밖). $t(activity:usage.geminiLive.noCacheNote)",
+      "refreshFailed": "실시간 조회 실패: 토큰 갱신이 거부됐습니다({{detail}}) — gemini 재로그인이 필요할 수 있습니다. $t(activity:usage.geminiLive.noCacheNote)",
+      "refreshFailedShort": "실시간 조회 실패(토큰 갱신)",
+      "unauthorized": "실시간 조회 실패: 토큰이 거부됐습니다({{detail}}) — gemini 재로그인이 필요할 수 있습니다. $t(activity:usage.geminiLive.noCacheNote)",
+      "ineligible": "이 계정에는 Gemini Code Assist 라이선스가 없어 표시할 한도가 없습니다({{detail}}). 개인 무료 티어는 Antigravity로 이관됐으니 그쪽 사용량을 보세요.",
+      "ineligibleShort": "Code Assist 라이선스 없음",
+      "detailNoLicense": "라이선스 없음",
+      "projectRequired": "실시간 조회 실패: 조회할 프로젝트를 정하지 못했습니다 — `GOOGLE_CLOUD_PROJECT` 환경변수를 설정하세요(기업 계정에서 필요). $t(activity:usage.geminiLive.noCacheNote)",
+      "projectRequiredShort": "GOOGLE_CLOUD_PROJECT 필요",
+      "httpError": "실시간 조회 실패: 서버 오류({{detail}}). $t(activity:usage.geminiLive.noCacheNote)",
+      "networkError": "실시간 조회 실패: 네트워크 {{detail}}. $t(activity:usage.geminiLive.noCacheNote)",
+      "unexpected": "실시간 조회 실패: Code Assist 응답 형태가 바뀌었습니다({{detail}}). $t(activity:usage.geminiLive.noCacheNote)"
+    },
     "attempts": {
       "lastAttempt": "마지막 시도 {{ago}}",
       "lastSuccess": "마지막 성공 {{ago}}",
@@ -100,7 +118,8 @@
       "empty": {
         "claude": "사용량 데이터가 없습니다. Claude Code에서 /usage를 한 번 열면 로컬 캐시가 생깁니다.",
         "codex": "사용량 데이터가 없습니다. codex login 후 앱이 직접 조회하거나, Codex CLI를 한 번 실행하면 로컬 기록이 생깁니다.",
-        "antigravity": "사용량 데이터가 없습니다. Antigravity CLI(agy)를 설치하고 로그인하면 앱이 직접 조회합니다."
+        "antigravity": "사용량 데이터가 없습니다. Antigravity CLI(agy)를 설치하고 로그인하면 앱이 직접 조회합니다.",
+        "gemini": "사용량 데이터가 없습니다. Gemini Code Assist 라이선스가 있는 계정으로 gemini에 로그인하면 앱이 직접 조회합니다."
       },
       "allHidden": "표시할 사용량이 없습니다. 어떤 CLI에서도 하루 넘게 사용량을 가져오지 못했습니다."
     },

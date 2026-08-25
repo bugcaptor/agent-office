@@ -47,7 +47,7 @@ export interface UsageWindow {
  * `windows`는 가변 배열 — UI가 "5시간+주간 둘 다 있음"을 하드코딩하지 않는다.
  */
 export interface ProviderUsage {
-  provider: "claude" | "codex" | "antigravity";
+  provider: "claude" | "codex" | "antigravity" | "gemini";
   /**
    * 신선도 기준 시각(epoch ms). 출처마다 갱신 조건이 다르다: 앱의 실시간
    * 조회가 성공하면 그 조회 시각이고, 실패하면 로컬 캐시(Claude는
@@ -197,6 +197,45 @@ export interface AntigravityLiveStatus {
 }
 
 /**
+ * Gemini CLI 실시간 조회(Code Assist `v1internal:retrieveUserQuota`)의 마지막
+ * 시도 결과. Rust `GeminiLiveOutcome`(serde snake_case) 미러.
+ *
+ * Claude와 같은 HTTP 어휘를 쓰되 이 API에만 있는 두 갈래가 더 있다. 둘을
+ * 나눈 이유는 **고치는 방법이 정반대**라서다: `ineligible`은 재로그인해도
+ * 소용없고(계정에 Code Assist 라이선스가 없다 — 개인 무료 티어가 Antigravity로
+ * 이관된 뒤의 기본 상태이기도 하다), `project_required`는 env 한 줄이면 된다.
+ */
+export type GeminiLiveOutcome =
+  | "never_attempted"
+  | "ok"
+  /** 자격증명을 어느 출처에서도 읽지 못함(미로그인·암호화 파일 저장소). */
+  | "no_credentials"
+  /** 토큰 갱신이 거부됨(refresh_token 폐기·재로그인 필요). */
+  | "refresh_failed"
+  | "unauthorized"
+  /** 이 계정에 Code Assist 라이선스가 없다. 오류가 아니라 "볼 것이 없음". */
+  | "ineligible"
+  /** `GOOGLE_CLOUD_PROJECT`가 필요하다(기업 계정 설정 누락). */
+  | "project_required"
+  | "http_error"
+  | "network_error"
+  | "unexpected_response";
+
+/**
+ * Gemini 실시간 조회 진단. Rust `GeminiLiveStatus` 미러(camelCase). 스냅샷마다
+ * 항상 존재한다 — "아직 모름"은 null이 아니라 `never_attempted`.
+ */
+export interface GeminiLiveStatus {
+  outcome: GeminiLiveOutcome;
+  /** 진단 보조(예: "HTTP 401", 서버가 준 자격 없음 사유). 없으면 null. */
+  detail: string | null;
+  /** 마지막 시도 시각(epoch ms). 스로틀에 막혀 건너뛴 폴링은 시도가 아니다. */
+  lastAttemptMs: number | null;
+  /** 마지막 성공 시각(epoch ms). 한 번도 성공한 적 없으면 null. */
+  lastSuccessMs: number | null;
+}
+
+/**
  * `load_usage_snapshot` 응답. Rust `UsageSnapshot` 미러. 파싱에 실패한 소스는
  * 해당 provider가 null이며, 커맨드 자체는 항상 성공한다.
  */
@@ -208,7 +247,13 @@ export interface UsageSnapshot {
    * 성공하지 않았으면 항상 null이다(다른 두 provider와 다른 점).
    */
   antigravity: ProviderUsage | null;
+  /**
+   * Gemini CLI 사용량. Antigravity와 같은 성질(로컬 캐시 없음)이고, 게다가
+   * Code Assist 라이선스가 없는 계정에서는 영영 null이다(정상 — `ineligible`).
+   */
+  gemini: ProviderUsage | null;
   claudeLive: ClaudeLiveStatus;
   codexLive: CodexLiveStatus;
   antigravityLive: AntigravityLiveStatus;
+  geminiLive: GeminiLiveStatus;
 }

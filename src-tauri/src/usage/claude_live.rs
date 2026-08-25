@@ -296,6 +296,8 @@ pub struct LiveUsageState {
     pub(super) codex: super::codex_live::CodexLiveState,
     /// Antigravity 실시간 조회 상태. Codex와 같은 이유로 같은 그릇에 담았다.
     pub(super) antigravity: super::antigravity_live::AntigravityLiveState,
+    /// Gemini 실시간 조회 상태. 같은 이유.
+    pub(super) gemini: super::gemini_live::GeminiLiveState,
 }
 
 #[derive(Default)]
@@ -339,6 +341,22 @@ impl LiveUsageState {
             guard.last_attempt_ms = Some(now_ms);
         }
         due
+    }
+
+    /// **모든** provider의 시도 시각을 선점해 이번 폴링에서 아무도 실제 조회를
+    /// 하지 않게 만든다. 위임 테스트 전용 장치다.
+    ///
+    /// 왜 필요한가: provider마다 스로틀 상태가 따로라(claude/codex/antigravity/
+    /// gemini) Claude 것만 선점하면 나머지 셋은 그대로 돌아 나간다 — 개발
+    /// 머신에서 `codex app-server`·`agy -p /usage` 자식 프로세스를 띄우고
+    /// Code Assist API와 Keychain에까지 닿는다(실측: 테스트 프로세스가 10초
+    /// 가까이 늘어지며 같은 바이너리의 타이밍 민감한 테스트를 깨뜨렸다).
+    /// "토큰이 없으니 자연 강등되겠지"는 개발 머신에서 성립하지 않는다.
+    pub(crate) fn preempt_all_attempts(&self, now_ms: i64) {
+        self.begin_attempt_if_due(now_ms);
+        self.codex.begin_attempt_if_due(now_ms);
+        self.antigravity.begin_attempt_if_due(now_ms);
+        self.gemini.begin_attempt_if_due(now_ms);
     }
 
     /// 폴백을 시도해도 되는지 판단하고, 통과하면 `last_fallback_attempt_ms`를

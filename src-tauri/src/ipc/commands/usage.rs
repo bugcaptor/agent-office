@@ -75,6 +75,7 @@ pub(crate) async fn load_usage_snapshot_body(
     let claude_config_dir = resolve_claude_config_dir(&home, claude_config_env.as_deref());
     crate::usage::load_usage_snapshot_with_live(
         live,
+        &home,
         &claude_root,
         &claude_config_dir,
         &codex_root,

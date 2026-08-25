@@ -208,6 +208,14 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect(parsed.antigravity?.windows[0].kind).toBe("weekly_model");
     expect(parsed.antigravity?.windows[0].label).toBe("Gemini Models");
     expect(parsed.antigravityLive.outcome).toBe("ok");
+    // Gemini 버킷은 창 길이를 주지 않는다 — kind는 unknown이고 뜻은 라벨
+    // (모델 ID)이 진다. windowMinutes를 지어내지 않는 것이 계약의 일부다.
+    expect(parsed.gemini?.provider).toBe("gemini");
+    expect(parsed.gemini?.planLabel).toBe("Gemini Code Assist Standard");
+    expect(parsed.gemini?.windows[0].kind).toBe("unknown");
+    expect(parsed.gemini?.windows[0].label).toBe("gemini-3-pro");
+    expect(parsed.gemini?.windows[0].windowMinutes).toBeNull();
+    expect(parsed.geminiLive.outcome).toBe("ok");
   });
 
   it("CodexImageStatus / GeneratedCodexImage", () => {

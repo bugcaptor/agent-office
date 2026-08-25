@@ -68,6 +68,21 @@
       }
     ]
   },
+  "gemini": {
+    "provider": "gemini",
+    "fetchedAtMs": 1784287350000,
+    "planLabel": "Gemini Code Assist Standard",
+    "windows": [
+      {
+        "kind": "unknown",
+        "label": "gemini-3-pro",
+        "usedPercent": 75.0,
+        "resetsAtMs": 1784332800000,
+        "windowMinutes": null,
+        "isActive": null
+      }
+    ]
+  },
   "claudeLive": {
     "outcome": "unauthorized",
     "tokenSource": "file",
@@ -87,5 +102,11 @@
     "detail": null,
     "lastAttemptMs": 1784287300000,
     "lastSuccessMs": 1784287300000
+  },
+  "geminiLive": {
+    "outcome": "ok",
+    "detail": null,
+    "lastAttemptMs": 1784287350000,
+    "lastSuccessMs": 1784287350000
   }
 }

@@ -35,6 +35,7 @@ const PROVIDER_NAME: Record<UsageProvider, string> = {
   claude: "Claude Code",
   codex: "Codex CLI",
   antigravity: "Antigravity",
+  gemini: "Gemini CLI",
 };
 
 /** 표시용 1초 tick(로컬 시계). 모달이 열려 있을 때만 돈다. */
@@ -131,7 +132,7 @@ export function UsageDialog() {
 
   // 실시간 조회 진단 — "왜 이 숫자가 안 움직이는지"의 답. 성공 중일 때도 한
   // 줄 남겨 둔다(정상임을 확인할 수 있어야 진단으로 쓸모가 있다). provider
-  // 마다 조회 경로가 달라(Claude=HTTPS 직접 조회, Codex=codex CLI RPC,
+  // 마다 조회 경로가 달라(Claude·Gemini=HTTPS 직접 조회, Codex=codex CLI RPC,
   // Antigravity=agy print 모드) 진단도 각자 것을 그린다 — 갈래는
   // usageView.describeProviderLive가 쥔다.
   const liveNote = (provider: UsageProvider): ReactNode => {

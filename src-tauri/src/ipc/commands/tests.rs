@@ -1137,14 +1137,17 @@
     //
     // 커맨드 본체가 AppState 없이 호출 가능하고 파일 캐시 미러 폴백으로 항상
     // 성공하는지만 확인한다. 개발 머신엔 실 자격증명이 있을 수 있으므로 live
-    // 경로(Keychain 자식 프로세스·실 API 호출)는 스로틀 선점으로 결정적으로
-    // 차단한다 — 이 테스트는 네트워크·Keychain에 절대 닿지 않아야 한다.
+    // 경로(Keychain 자식 프로세스·실 API 호출·CLI 자식 프로세스)는 스로틀
+    // 선점으로 결정적으로 차단한다 — 이 테스트는 네트워크·Keychain·자식
+    // 프로세스에 절대 닿지 않아야 한다.
     #[tokio::test]
     async fn load_usage_snapshot_body_delegates_and_never_errors() {
         let live = crate::usage::LiveUsageState::new();
         let now = 1_784_281_391_475;
         // 스로틀 선점: 직전에 시도한 것으로 기록해 5분 하한에 걸리게 한다.
-        assert!(live.begin_attempt_if_due(now - 1));
+        // **네 provider 전부** 선점해야 한다 — 스로틀 상태가 provider마다
+        // 따로라 하나만 막으면 나머지가 그대로 밖으로 나간다.
+        live.preempt_all_attempts(now - 1);
         // 두 번 호출해도(폴링 흉내) 패닉/에러 없이 스냅샷을 돌려준다.
         let _snap = load_usage_snapshot_body(&live, now).await;
         let _snap2 = load_usage_snapshot_body(&live, now + 60_000).await;

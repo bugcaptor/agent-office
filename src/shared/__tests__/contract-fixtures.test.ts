@@ -217,6 +217,8 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "codexLive",
       "antigravity",
       "antigravityLive",
+      "gemini",
+      "geminiLive",
     ]);
     const claude: ProviderUsage = parsed.claude!;
     expectKeys(claude, ["provider", "fetchedAtMs", "planLabel", "windows"]);
@@ -248,6 +250,14 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "lastAttemptMs",
       "lastSuccessMs",
     ]);
+    // Gemini: 창 길이를 모르는 버킷이라 kind=unknown + windowMinutes=null이고,
+    // 라벨(모델 ID)이 없으면 화면에서 뜻이 서지 않는다.
+    const gemini: ProviderUsage = parsed.gemini!;
+    expectKeys(gemini, ["provider", "fetchedAtMs", "planLabel", "windows"]);
+    expect(gemini.windows[0].kind).toBe("unknown");
+    expect(gemini.windows[0].label).toBe("gemini-3-pro");
+    expect(gemini.windows[0].windowMinutes).toBeNull();
+    expectKeys(parsed.geminiLive, ["outcome", "detail", "lastAttemptMs", "lastSuccessMs"]);
     expect(codex.windows[1].label).toBe("GPT-5.3-Codex-Spark");
     // 실시간 조회 진단은 실패해도 스냅샷과 함께 항상 온다 — 픽스처는 실제로
     // 흔한 조합(Keychain이 막혀 파일 토큰 폴백 → 401)에 폴백 체인의 모양까지

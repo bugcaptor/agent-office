@@ -33,8 +33,8 @@ use agent_office_lib::types::{
 };
 use agent_office_lib::usage::{
     AntigravityLiveOutcome, AntigravityLiveStatus, ClaudeLiveStatus, CodexLiveOutcome,
-    CodexLiveStatus, FetchTransport, LiveFetchOutcome, Provider, ProviderUsage, TokenSource,
-    UsageSnapshot, UsageWindow, UsageWindowKind,
+    CodexLiveStatus, FetchTransport, GeminiLiveOutcome, GeminiLiveStatus, LiveFetchOutcome,
+    Provider, ProviderUsage, TokenSource, UsageSnapshot, UsageWindow, UsageWindowKind,
 };
 use agent_office_lib::workdir::{GitCommitEntry, GitFileHistoryResult, GitFileStatus, GitStatusResult};
 
@@ -241,6 +241,21 @@ fn usage_snapshot_matches_fixture() {
                 },
             ],
         }),
+        // Gemini도 파일 캐시가 없다. 버킷이 창 길이를 주지 않아 종류는
+        // `Unknown`이고 뜻은 라벨(모델 ID)이 진다 — "며칠 창"을 지어내지 않는다.
+        gemini: Some(ProviderUsage {
+            provider: Provider::Gemini,
+            fetched_at_ms: 1784287350000,
+            plan_label: Some("Gemini Code Assist Standard".into()),
+            windows: vec![UsageWindow {
+                kind: UsageWindowKind::Unknown,
+                label: Some("gemini-3-pro".into()),
+                used_percent: 75.0,
+                resets_at_ms: Some(1784332800000),
+                window_minutes: None,
+                is_active: None,
+            }],
+        }),
         // 실시간 조회가 실패해도 스냅샷은 파일 캐시로 정상 반환된다 — 대신
         // 사유가 실려 나가 UI가 "표시값이 왜 낡았는지"를 말할 수 있다(§7).
         // 픽스처는 실제로 흔한 조합(Keychain이 막혀 파일 토큰으로 폴백 →
@@ -271,6 +286,14 @@ fn usage_snapshot_matches_fixture() {
             detail: None,
             last_attempt_ms: Some(1784287300000),
             last_success_ms: Some(1784287300000),
+        },
+        // Gemini 진단도 같은 네 필드. 값이 실려 있는 스냅샷이므로 성공 갈래다
+        // — 파일 캐시가 없어 `ineligible`과 값이 공존할 수 없기 때문이다.
+        gemini_live: GeminiLiveStatus {
+            outcome: GeminiLiveOutcome::Ok,
+            detail: None,
+            last_attempt_ms: Some(1784287350000),
+            last_success_ms: Some(1784287350000),
         },
     };
     assert_value_eq(fixture_json, serde_json::to_value(&value).unwrap());

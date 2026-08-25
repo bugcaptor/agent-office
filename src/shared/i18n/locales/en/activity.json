@@ -8,7 +8,8 @@
       "weeklyModel": "Weekly · {{label}}",
       "weeklyModelGeneric": "Weekly (per model)",
       "minutes": "{{minutes}}m window",
-      "other": "Other"
+      "other": "Other",
+      "labelled": "{{label}}"
     },
     "countdown": {
       "pending": "Awaiting reset",
@@ -85,6 +86,23 @@
       "commandFailedShort": "live lookup failed (agy error)",
       "unexpected": "Live lookup failed: the agy /usage response shape changed ({{detail}}). $t(activity:usage.antigravityLive.noCacheNote)"
     },
+    "geminiLive": {
+      "noCacheNote": "The Gemini CLI keeps no local usage copy, so a failed lookup leaves the last fetched value — or nothing at all",
+      "ok": "Querying Code Assist directly (at most every 15 minutes)",
+      "neverAttempted": "Live lookup not attempted yet — $t(activity:usage.geminiLive.noCacheNote)",
+      "noCredentials": "Live lookup failed: could not read the gemini CLI credentials — you are not signed in, or they live in the encrypted file store (not supported yet). $t(activity:usage.geminiLive.noCacheNote)",
+      "refreshFailed": "Live lookup failed: token refresh was rejected ({{detail}}) — you may need to sign in to gemini again. $t(activity:usage.geminiLive.noCacheNote)",
+      "refreshFailedShort": "live lookup failed (token refresh)",
+      "unauthorized": "Live lookup failed: the token was rejected ({{detail}}) — you may need to sign in to gemini again. $t(activity:usage.geminiLive.noCacheNote)",
+      "ineligible": "This account has no Gemini Code Assist license, so there is no limit to show ({{detail}}). The individual free tier moved to Antigravity — check its usage instead.",
+      "ineligibleShort": "no Code Assist license",
+      "detailNoLicense": "no license",
+      "projectRequired": "Live lookup failed: no project to query — set the `GOOGLE_CLOUD_PROJECT` environment variable (required for workspace accounts). $t(activity:usage.geminiLive.noCacheNote)",
+      "projectRequiredShort": "GOOGLE_CLOUD_PROJECT needed",
+      "httpError": "Live lookup failed: server error ({{detail}}). $t(activity:usage.geminiLive.noCacheNote)",
+      "networkError": "Live lookup failed: network {{detail}}. $t(activity:usage.geminiLive.noCacheNote)",
+      "unexpected": "Live lookup failed: the Code Assist response shape changed ({{detail}}). $t(activity:usage.geminiLive.noCacheNote)"
+    },
     "attempts": {
       "lastAttempt": "last try {{ago}}",
       "lastSuccess": "last success {{ago}}",
@@ -100,7 +118,8 @@
       "empty": {
         "claude": "No usage data. Open /usage once in Claude Code to create the local cache.",
         "codex": "No usage data. Run codex login so the app can fetch it, or run Codex CLI once to create local records.",
-        "antigravity": "No usage data. Install the Antigravity CLI (agy) and sign in, and the app will fetch it directly."
+        "antigravity": "No usage data. Install the Antigravity CLI (agy) and sign in, and the app will fetch it directly.",
+        "gemini": "No usage data. Sign in to gemini with an account that has a Gemini Code Assist license and the app will fetch it directly."
       },
       "allHidden": "No usage to show — nothing could be fetched from any CLI for over a day."
     },
