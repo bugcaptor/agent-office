@@ -45,6 +45,29 @@
       }
     ]
   },
+  "antigravity": {
+    "provider": "antigravity",
+    "fetchedAtMs": 1784287300000,
+    "planLabel": null,
+    "windows": [
+      {
+        "kind": "weekly_model",
+        "label": "Gemini Models",
+        "usedPercent": 89.35,
+        "resetsAtMs": 1784620227000,
+        "windowMinutes": 10080,
+        "isActive": null
+      },
+      {
+        "kind": "weekly_model",
+        "label": "Claude and GPT models",
+        "usedPercent": 0.0,
+        "resetsAtMs": 1784904561000,
+        "windowMinutes": 10080,
+        "isActive": null
+      }
+    ]
+  },
   "claudeLive": {
     "outcome": "unauthorized",
     "tokenSource": "file",
@@ -58,5 +81,11 @@
     "detail": "not logged in",
     "lastAttemptMs": 1784281400000,
     "lastSuccessMs": null
+  },
+  "antigravityLive": {
+    "outcome": "ok",
+    "detail": null,
+    "lastAttemptMs": 1784287300000,
+    "lastSuccessMs": 1784287300000
   }
 }

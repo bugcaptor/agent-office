@@ -1,7 +1,7 @@
 // src/renderer/usage/usageView.ts
 //
 // 구독 사용량(rate limit) 표시용 순수 함수 모음. 백엔드는 정규화된 원시
-// 스냅샷만 주고(docs/usage-limits-design.md §3), "가장 절박한 윈도 선택",
+// 스냅샷만 주고(docs/usage-design.md §3), "가장 절박한 윈도 선택",
 // 임계 색상, 카운트다운·신선도 포맷 같은 해석·표시는 여기서 한다. React·스토어
 // 의존 없음 — 단위 테스트 대상(설계 §4).
 //
@@ -12,6 +12,7 @@
 
 import type { TextKey } from "@renderer/shared/textKey";
 import type {
+  AntigravityLiveStatus,
   ClaudeLiveStatus,
   CodexLiveStatus,
   FetchTransport,
@@ -20,8 +21,27 @@ import type {
   UsageWindow,
 } from "@shared/types";
 
+/** 사용량을 표시하는 provider와 그 고정 순서. */
+export const USAGE_PROVIDERS = ["claude", "codex", "antigravity"] as const;
+
+export type UsageProvider = (typeof USAGE_PROVIDERS)[number];
+
+/** provider별 실시간 조회 진단의 합집합. 공통 필드만 읽는 자리에서 쓴다. */
+export type AnyLiveStatus = ClaudeLiveStatus | CodexLiveStatus | AntigravityLiveStatus;
+
 /** 신선도가 이보다 오래되면(ms) stale로 보고 흐리게 표시한다. */
 export const STALE_THRESHOLD_MS = 30 * 60 * 1000;
+
+/**
+ * 신선도가 이보다 오래되면(ms) 그 provider를 **화면에서 통째로 뺀다**
+ * (흐리게가 아니라 아예 표시하지 않음, kbm #2j4).
+ *
+ * 왜 흐리게로는 부족한가: 하루가 지나도록 갱신되지 않은 숫자는 "낡은 참값"이
+ * 아니라 사실상 무의미하다 — 5시간 창은 네 번 넘게, 주간 창도 리셋 경계를
+ * 지났을 수 있다. 흐린 숫자는 계속 읽히고, 읽히면 오해를 부른다. 자리만
+ * 차지하는 `—`도 같은 이유로 뺀다.
+ */
+export const DEAD_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
 /** 사용률 임계 단계. <70 기본 / ≥70 경고 / ≥90 위험. */
 export type UsageLevel = "normal" | "warn" | "danger";
@@ -33,10 +53,65 @@ export function usageLevel(usedPercent: number): UsageLevel {
 }
 
 /** BottomBar 뱃지 접두. */
-export const PROVIDER_SHORT: Record<"claude" | "codex", string> = {
+export const PROVIDER_SHORT: Record<UsageProvider, string> = {
   claude: "CL",
   codex: "CX",
+  antigravity: "AG",
 };
+
+/** 스냅샷에서 provider의 값을 꺼낸다(스냅샷이 없으면 null). */
+export function providerUsage(
+  snapshot: UsageSnapshot | null | undefined,
+  provider: UsageProvider,
+): ProviderUsage | null {
+  return snapshot ? (snapshot[provider] ?? null) : null;
+}
+
+/** 스냅샷에서 provider의 실시간 조회 진단을 꺼낸다(없으면 undefined). */
+export function providerLive(
+  snapshot: UsageSnapshot | null | undefined,
+  provider: UsageProvider,
+): AnyLiveStatus | undefined {
+  if (!snapshot) return undefined;
+  switch (provider) {
+    case "claude":
+      return snapshot.claudeLive;
+    case "codex":
+      return snapshot.codexLive;
+    case "antigravity":
+      return snapshot.antigravityLive;
+  }
+}
+
+/**
+ * 이 provider를 화면에서 아예 빼야 하는지(설계: kbm #2j4).
+ *
+ * - 값이 있으면 신선도만 본다 — 하루보다 낡았으면 뺀다.
+ * - 값이 없으면 **한 번이라도 시도해 봤는지**로 가른다. 아직 시도 전
+ *   (`never_attempted`)이나 진단 자체가 없으면(구버전 응답) 부팅 직후일 수
+ *   있으니 남겨 두고, 시도했는데도 값이 하나도 없으면(미설치·미로그인) 뺀다.
+ *   이 갈래에는 "며칠째"를 잴 시각이 없다 — 실패 시작 시각을 앱 재시작 너머로
+ *   보존하지 않기 때문이다. 애초에 보여줄 숫자가 없으므로 기다릴 이유도 없다.
+ */
+export function isProviderGone(
+  usage: ProviderUsage | null,
+  live: AnyLiveStatus | null | undefined,
+  now: number,
+): boolean {
+  if (usage) return now - usage.fetchedAtMs > DEAD_THRESHOLD_MS;
+  if (!live || live.outcome === "never_attempted") return false;
+  return true;
+}
+
+/** 지금 그려야 할 provider 목록(고정 순서 유지). 전부 빠지면 빈 배열. */
+export function visibleUsageProviders(
+  snapshot: UsageSnapshot | null | undefined,
+  now: number,
+): UsageProvider[] {
+  return USAGE_PROVIDERS.filter(
+    (p) => !isProviderGone(providerUsage(snapshot, p), providerLive(snapshot, p), now),
+  );
+}
 
 /**
  * provider의 가장 절박한 윈도(usedPercent 최대) 하나. 윈도가 없으면 null.
@@ -341,16 +416,104 @@ export function describeCodexLiveStatus(
   }
 }
 
+// ── Antigravity 실시간 조회 진단 표시 ────────────────────────────────
+//
+// Codex와 같은 결(자격증명을 앱이 만지지 않고 CLI에 물어본다)이되, 결정적
+// 차이가 하나 있다: **강등할 로컬 파일 캐시가 없다.** 그래서 실패 문구의
+// 꼬리말이 "표시값은 로컬 캐시…"가 아니라 "표시값이 없거나 직전 조회 값"이다
+// (`usage.antigravityLive.noCacheNote`).
+
+/**
+ * Antigravity 실시간 조회 상태 → 표시 문구 키. `null`(구버전 백엔드 응답 등
+ * 필드 부재)이면 아무것도 표시하지 않는다.
+ */
+export function describeAntigravityLiveStatus(
+  status: AntigravityLiveStatus | null | undefined,
+): LiveStatusNote | null {
+  if (!status) return null;
+  switch (status.outcome) {
+    case "ok":
+      return {
+        level: "ok",
+        text: { key: "usage.antigravityLive.ok" },
+        short: { key: "usage.live.okDirectShort" },
+      };
+    case "never_attempted":
+      return {
+        level: "warn",
+        text: { key: "usage.antigravityLive.neverAttempted" },
+        short: { key: "usage.live.waitingShort" },
+      };
+    case "cli_missing":
+      return {
+        level: "error",
+        text: { key: "usage.antigravityLive.cliMissing" },
+        short: { key: "usage.antigravityLive.cliMissingShort" },
+      };
+    case "cli_failed":
+      return {
+        level: "error",
+        text: {
+          key: "usage.antigravityLive.cliFailed",
+          params: { detail: status.detail ?? { key: "usage.codexLive.detailUnknownCause" } },
+        },
+        short: { key: "usage.antigravityLive.cliFailedShort" },
+      };
+    case "timeout":
+      return {
+        level: "warn",
+        text: { key: "usage.antigravityLive.timeout" },
+        short: { key: "usage.codexLive.timeoutShort" },
+      };
+    case "command_failed":
+      return {
+        level: "error",
+        text: {
+          key: "usage.antigravityLive.commandFailed",
+          params: { detail: status.detail ?? { key: "usage.live.detailUnknown" } },
+        },
+        short: { key: "usage.antigravityLive.commandFailedShort" },
+      };
+    case "unexpected_response":
+      return {
+        level: "warn",
+        text: {
+          key: "usage.antigravityLive.unexpected",
+          params: { detail: status.detail ?? { key: "usage.live.detailUnknown" } },
+        },
+        short: { key: "usage.codexLive.unexpectedShort" },
+      };
+  }
+}
+
+/**
+ * provider 하나의 실시간 조회 진단을 해석한다. provider마다 조회 경로가 달라
+ * (Claude=HTTPS 직접 조회, Codex=codex CLI RPC, Antigravity=agy print 모드)
+ * 해석 함수도 각자 것이며, 이 갈래를 화면 컴포넌트마다 되풀이하지 않도록
+ * 한 곳에 모아 둔다.
+ */
+export function describeProviderLive(
+  snapshot: UsageSnapshot | null | undefined,
+  provider: UsageProvider,
+): LiveStatusNote | null {
+  if (!snapshot) return null;
+  switch (provider) {
+    case "claude":
+      return describeLiveStatus(snapshot.claudeLive);
+    case "codex":
+      return describeCodexLiveStatus(snapshot.codexLive);
+    case "antigravity":
+      return describeAntigravityLiveStatus(snapshot.antigravityLive);
+  }
+}
+
 /**
  * 진단 문구 뒤에 붙일 "마지막 시도 N분 전 · 마지막 성공 N분 전"의 **조각들**.
  * 잇는 건(가운뎃점) 렌더 쪽 몫이다 — 조각 수가 0~2개로 달라지는 자리라
  * 카탈로그에 넣어 봐야 번역자가 손댈 게 없다.
  * 두 provider의 진단이 공유하는 필드만 읽는다(`via`는 Claude에만 있다).
  */
-export function formatLiveAttempts(
-  status: ClaudeLiveStatus | CodexLiveStatus,
-  now: number,
-): TextKey[] {
+export function formatLiveAttempts(status: AnyLiveStatus, now: number): TextKey[] {
   const parts: TextKey[] = [];
   if (status.lastAttemptMs !== null) {
     parts.push({ key: "usage.attempts.lastAttempt", params: { ago: formatAgo(status.lastAttemptMs, now) } });
@@ -400,9 +563,11 @@ export function mergeUsageSnapshot(
   return {
     claude: fresherProvider(prev?.claude ?? null, next.claude),
     codex: fresherProvider(prev?.codex ?? null, next.codex),
+    antigravity: fresherProvider(prev?.antigravity ?? null, next.antigravity),
     // 진단은 병합하지 않고 항상 최신 응답을 쓴다 — 값(누적)과 달리 "지금
     // 상태"라서 이전 것을 살려두면 이미 복구된 실패가 남는다.
     claudeLive: next.claudeLive ?? prev?.claudeLive,
     codexLive: next.codexLive ?? prev?.codexLive,
+    antigravityLive: next.antigravityLive ?? prev?.antigravityLive,
   };
 }

@@ -201,6 +201,13 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     // 계정 전체 한도와 종류로 구분된다(session_model).
     expect(parsed.codex?.windows[1].kind).toBe("session_model");
     expect(parsed.codexLive.outcome).toBe("rpc_error");
+    // Antigravity는 파일 캐시가 없어 live 성공 때만 값이 실린다. 모든 버킷이
+    // 모델 그룹 소속이라 창 종류는 항상 모델별 갈래이고 라벨이 그룹명이다.
+    expect(parsed.antigravity?.provider).toBe("antigravity");
+    expect(parsed.antigravity?.planLabel).toBeNull();
+    expect(parsed.antigravity?.windows[0].kind).toBe("weekly_model");
+    expect(parsed.antigravity?.windows[0].label).toBe("Gemini Models");
+    expect(parsed.antigravityLive.outcome).toBe("ok");
   });
 
   it("CodexImageStatus / GeneratedCodexImage", () => {

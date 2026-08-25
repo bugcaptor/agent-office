@@ -11,6 +11,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { SOURCE_LANGUAGE, initI18nForTest, t as translate } from "@renderer/i18n";
 import { renderText } from "@renderer/shared/textKey";
 import type {
+  AntigravityLiveStatus,
   ClaudeLiveStatus,
   CodexLiveStatus,
   ProviderUsage,
@@ -18,10 +19,14 @@ import type {
   UsageWindow,
 } from "@shared/types";
 import {
+  DEAD_THRESHOLD_MS,
   STALE_THRESHOLD_MS,
   badgeWindows,
+  describeAntigravityLiveStatus,
   describeCodexLiveStatus,
   describeLiveStatus,
+  isProviderGone,
+  visibleUsageProviders,
   formatAgo,
   formatCountdown,
   formatFreshness,
@@ -76,13 +81,21 @@ function codexLiveStatus(partial: Partial<CodexLiveStatus> = {}): CodexLiveStatu
   return { outcome: "ok", detail: null, lastAttemptMs: null, lastSuccessMs: null, ...partial };
 }
 
+function antigravityLiveStatus(
+  partial: Partial<AntigravityLiveStatus> = {},
+): AntigravityLiveStatus {
+  return { outcome: "ok", detail: null, lastAttemptMs: null, lastSuccessMs: null, ...partial };
+}
+
 function snap(
   claude: ProviderUsage | null,
   codex: ProviderUsage | null,
   claudeLive: ClaudeLiveStatus = live(),
   codexLive: CodexLiveStatus = codexLiveStatus(),
+  antigravity: ProviderUsage | null = null,
+  antigravityLive: AntigravityLiveStatus = antigravityLiveStatus(),
 ): UsageSnapshot {
-  return { claude, codex, claudeLive, codexLive };
+  return { claude, codex, antigravity, claudeLive, codexLive, antigravityLive };
 }
 
 describe("usageLevel 임계 70/90", () => {
@@ -520,6 +533,90 @@ describe("모델별 창 라벨", () => {
       win({ kind: "session_model", label: "Spark", usedPercent: 4 }),
     ];
     expect(badgeWindows(provider(windows)).map((w) => w.kind)).toEqual(["weekly"]);
+  });
+});
+
+describe("isProviderGone (하루 넘게 실패하면 아예 숨김)", () => {
+  const now = 10 * DEAD_THRESHOLD_MS;
+  const at = (fetchedAtMs: number): ProviderUsage => ({
+    provider: "claude",
+    fetchedAtMs,
+    planLabel: null,
+    windows: [win({ usedPercent: 10 })],
+  });
+
+  it("값이 하루 이내면 남긴다 — 30분 stale 경계와 무관하다", () => {
+    expect(isProviderGone(at(now - STALE_THRESHOLD_MS - 1), live(), now)).toBe(false);
+    expect(isProviderGone(at(now - DEAD_THRESHOLD_MS), live(), now)).toBe(false);
+  });
+
+  it("값이 하루보다 낡으면 뺀다", () => {
+    expect(isProviderGone(at(now - DEAD_THRESHOLD_MS - 1), live(), now)).toBe(true);
+  });
+
+  it("값이 없어도 첫 조회 전이면 남긴다(부팅 직후)", () => {
+    expect(isProviderGone(null, live({ outcome: "never_attempted" }), now)).toBe(false);
+    // 진단 필드 자체가 없는 구버전 응답도 같은 취급.
+    expect(isProviderGone(null, null, now)).toBe(false);
+  });
+
+  it("시도했는데 값이 하나도 없으면 뺀다(미설치·미로그인)", () => {
+    expect(isProviderGone(null, codexLiveStatus({ outcome: "cli_missing" }), now)).toBe(true);
+    // 조회는 성공했다는데 값이 없는 경우도 보여줄 숫자가 없기는 마찬가지다.
+    expect(isProviderGone(null, codexLiveStatus({ outcome: "ok" }), now)).toBe(true);
+  });
+});
+
+describe("visibleUsageProviders", () => {
+  const now = 10 * DEAD_THRESHOLD_MS;
+  const fresh = (): ProviderUsage => ({
+    provider: "claude",
+    fetchedAtMs: now,
+    planLabel: null,
+    windows: [win({ usedPercent: 10 })],
+  });
+
+  it("고정 순서를 유지한다", () => {
+    const s = snap(fresh(), fresh(), live(), codexLiveStatus(), fresh());
+    expect(visibleUsageProviders(s, now)).toEqual(["claude", "codex", "antigravity"]);
+  });
+
+  it("낡거나 값 없는 provider만 빠진다", () => {
+    const stale = { ...fresh(), fetchedAtMs: now - DEAD_THRESHOLD_MS - 1 };
+    const s = snap(stale, fresh(), live(), codexLiveStatus(), null, antigravityLiveStatus());
+    expect(visibleUsageProviders(s, now)).toEqual(["codex"]);
+  });
+
+  it("스냅샷이 아직 없으면 전부 남긴다(첫 폴링 전)", () => {
+    expect(visibleUsageProviders(null, now)).toEqual(["claude", "codex", "antigravity"]);
+  });
+});
+
+describe("describeAntigravityLiveStatus", () => {
+  it("성공은 ok 단계", () => {
+    expect(describeAntigravityLiveStatus(antigravityLiveStatus())!.level).toBe("ok");
+  });
+
+  it("agy 부재는 error 단계 + 전용 키", () => {
+    const note = describeAntigravityLiveStatus(
+      antigravityLiveStatus({ outcome: "cli_missing" }),
+    )!;
+    expect(note.level).toBe("error");
+    expect(note.text).toEqual({ key: "usage.antigravityLive.cliMissing" });
+  });
+
+  it("명령 실패는 detail을 실어 나른다", () => {
+    const note = describeAntigravityLiveStatus(
+      antigravityLiveStatus({ outcome: "command_failed", detail: "not logged in" }),
+    )!;
+    expect(note.text).toEqual({
+      key: "usage.antigravityLive.commandFailed",
+      params: { detail: "not logged in" },
+    });
+  });
+
+  it("진단이 없으면 아무것도 그리지 않는다", () => {
+    expect(describeAntigravityLiveStatus(null)).toBeNull();
   });
 });
 

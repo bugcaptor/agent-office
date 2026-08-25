@@ -72,6 +72,19 @@
       "unexpectedShort": "실시간 조회 실패(응답 형태)",
       "detailUnknownCause": "원인 불명"
     },
+    "antigravityLive": {
+      "noCacheNote": "Antigravity는 사용량을 로컬에 남기지 않아, 조회에 실패하면 직전 조회 값이 남거나 표시 자체가 사라집니다",
+      "ok": "앱이 agy CLI에 사용량을 직접 물어보는 중 (최대 15분 간격)",
+      "neverAttempted": "실시간 조회를 아직 시도하지 않음 — $t(activity:usage.antigravityLive.noCacheNote)",
+      "cliMissing": "실시간 조회 실패: agy 실행 파일을 찾지 못했습니다(Antigravity CLI 설치·PATH 확인). $t(activity:usage.antigravityLive.noCacheNote)",
+      "cliMissingShort": "실시간 조회 실패(agy 없음)",
+      "cliFailed": "실시간 조회 실패: agy가 결과 없이 종료했습니다({{detail}}). $t(activity:usage.antigravityLive.noCacheNote)",
+      "cliFailedShort": "실시간 조회 실패(agy 종료)",
+      "timeout": "실시간 조회 실패: agy 응답이 시간 안에 오지 않았습니다. $t(activity:usage.antigravityLive.noCacheNote)",
+      "commandFailed": "실시간 조회 실패: agy가 오류를 돌려줬습니다({{detail}}) — 로그인이 필요할 수 있습니다(agy 실행 후 로그인). $t(activity:usage.antigravityLive.noCacheNote)",
+      "commandFailedShort": "실시간 조회 실패(agy 오류)",
+      "unexpected": "실시간 조회 실패: agy /usage 응답 형태가 바뀌었습니다({{detail}}). $t(activity:usage.antigravityLive.noCacheNote)"
+    },
     "attempts": {
       "lastAttempt": "마지막 시도 {{ago}}",
       "lastSuccess": "마지막 성공 {{ago}}",
@@ -83,9 +96,13 @@
       "activeTag": "지금 적용 중",
       "barAria": "{{label}} 사용률",
       "staleSuffix": " · 오래됨",
-      "emptyClaude": "사용량 데이터가 없습니다. Claude Code에서 /usage를 한 번 열면 로컬 캐시가 생깁니다.",
-      "emptyCodex": "사용량 데이터가 없습니다. codex login 후 앱이 직접 조회하거나, Codex CLI를 한 번 실행하면 로컬 기록이 생깁니다.",
-      "close": "닫기"
+      "close": "닫기",
+      "empty": {
+        "claude": "사용량 데이터가 없습니다. Claude Code에서 /usage를 한 번 열면 로컬 캐시가 생깁니다.",
+        "codex": "사용량 데이터가 없습니다. codex login 후 앱이 직접 조회하거나, Codex CLI를 한 번 실행하면 로컬 기록이 생깁니다.",
+        "antigravity": "사용량 데이터가 없습니다. Antigravity CLI(agy)를 설치하고 로그인하면 앱이 직접 조회합니다."
+      },
+      "allHidden": "표시할 사용량이 없습니다. 어떤 CLI에서도 하루 넘게 사용량을 가져오지 못했습니다."
     },
     "widget": {
       "aria": "구독 사용량",

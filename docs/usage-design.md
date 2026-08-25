@@ -1,12 +1,12 @@
-# 구독 사용량(usage) 표시 설계 — 캐시 미러 + 실시간 조회(Claude·Codex)
+# 구독 사용량(usage) 표시 설계 — 캐시 미러 + 실시간 조회(Claude·Codex·Antigravity)
 
-상태: 정본 — 구현 완료 (v1 캐시 미러 = 이슈 #22, Claude live fetch = 이슈 #33/PR #34, 실패 사유 표시 = §7, Codex live fetch = §9 / kbm #2h8, 2026-08-23). 병합: 2026-07-20 (`usage-limits-design.md` + `claude-usage-live-fetch-design.md` 통합, 원본은 `docs/archive/`).
+상태: 정본 — 구현 완료 (v1 캐시 미러 = 이슈 #22, Claude live fetch = 이슈 #33/PR #34, 실패 사유 표시 = §7, Codex live fetch = §9 / kbm #2h8, 하루 넘게 실패한 provider 숨김 = §10 · Antigravity provider = §11 / kbm #2j4, 2026-08-25). 병합: 2026-07-20 (`usage-limits-design.md` + `claude-usage-live-fetch-design.md` 통합, 원본은 `docs/archive/`).
 
-구현 파일: 백엔드 `src-tauri/src/usage/{mod,claude,codex,claude_live,claude_live_fallback,codex_live}.rs`, 커맨드 `load_usage_snapshot`·`resolve_usage_roots`는 `ipc/commands/usage.rs`. 프런트 `src/renderer/usage/{UsageWidget,UsageDialog}.tsx`·`usageView.ts`. 와이어 타입은 `src/shared/types/usage.ts`(배럴 `shared/types.ts` 경유).
+구현 파일: 백엔드 `src-tauri/src/usage/{mod,claude,codex,claude_live,claude_live_fallback,codex_live,antigravity_live}.rs`, 커맨드 `load_usage_snapshot`·`resolve_usage_roots`는 `ipc/commands/usage.rs`. 프런트 `src/renderer/usage/{UsageWidget,UsageDialog}.tsx`·`usageView.ts`. 와이어 타입은 `src/shared/types/usage.ts`(배럴 `shared/types.ts` 경유).
 
 세션 활동 분석(작업시간 시계열)은 별개 기능 — `docs/session-analytics-design.md` 참조.
 
-Claude Code와 Codex CLI 구독 정액제의 시간별(5시간 세션)·주간 한도 사용률과 리셋까지 남은 시간을 앱에 표시한다.
+Claude Code·Codex CLI·Antigravity 구독 정액제의 시간별(5시간 세션)·주간 한도 사용률과 리셋까지 남은 시간을 앱에 표시한다. 하루 넘게 값을 못 가져온 provider는 표시하지 않는다(§10).
 
 ## 1. 목표 / 비목표
 
@@ -86,6 +86,8 @@ Claude Code와 Codex CLI 구독 정액제의 시간별(5시간 세션)·주간 �
 - `claude.rs` — `<claude_root>/.claude.json` 파싱. 루트 경로를 인자로 받아 테스트에서 tempdir 주입.
 - `codex.rs` — `<codex_root>/sessions` 스캔. 동일하게 루트 주입.
 - `claude_live.rs` — Claude OAuth usage 능동 조회(§6).
+- `codex_live.rs` — codex app-server RPC 조회(§9).
+- `antigravity_live.rs` — `agy -p /usage` print 모드 조회(§11). 파일 캐시가 없어 이 경로가 유일한 소스다.
 - IPC 커맨드 `load_usage_snapshot` (인자 없음) → `UsageSnapshot`. 실패한 소스는 해당 provider가 `null`일 뿐 커맨드는 성공한다. 루트 경로는 기본 홈 디렉터리 하위(`~/.codex`, `~/.claude.json`)이되, CLI가 실제로 존중하는 표준 환경변수 오버라이드를 지원한다: Codex는 `CODEX_HOME`(설정 시 `<CODEX_HOME>/sessions`), Claude는 `CLAUDE_CONFIG_DIR`(설정 시 `<CLAUDE_CONFIG_DIR>/.claude.json` — `claude.rs::load`의 파일명 결합 로직은 그대로, 루트만 바뀐다). 빈 문자열 env는 미설정으로 취급. 전역 `std::env::var` 접근과 분리한 순수 함수 `resolve_usage_roots(home, codex_home_env, claude_config_env) -> (PathBuf, PathBuf)`(`ipc/commands/usage.rs`)로 테스트한다(전역 env를 건드리지 않고 조합 검증).
 
 ### 와이어 타입 (`src/shared/types/usage.ts` ↔ Rust serde 미러)
@@ -500,3 +502,140 @@ interface UsageSnapshot { /* …기존… */ codexLive: CodexLiveStatus }
 - 수동 스모크(`#[ignore]`, `-- --ignored codex_live_smoke`): 실제 CLI 왕복.
 - TS: 사유별 문구와 rollout 강등 안내, `formatLiveAttempts`가 `via` 없는 진단도
   받는지, `session_model` 라벨과 뱃지 5시간 자리 비침입.
+
+## 10. 하루 넘게 못 가져온 provider 숨김 (kbm #2j4, 2026-08-25)
+
+### 10.1 문제
+
+§7이 "왜 낡았는지"를 말해 주게 되면서 실패는 설명되지만 **사라지지는** 않았다.
+표시값이 며칠째 그대로인 provider도 흐린 숫자(`.usage-stale`, opacity 0.5)나
+dim `—`로 계속 남는다. 하루가 지난 값은 "낡은 참값"이 아니라 사실상 무의미하다
+— 5시간 창은 네 번 넘게, 주간 창도 리셋 경계를 지났을 수 있다. 흐린 숫자는
+그래도 읽히고, 읽히면 오해를 부른다. 자리만 차지하는 `—`도 마찬가지다.
+
+### 10.2 결정 — 임계 24시간, 뱃지와 모달 양쪽에서 제거
+
+`usageView.isProviderGone(usage, live, now)`:
+
+- 값이 있으면 신선도만 본다. `now - fetchedAtMs > DEAD_THRESHOLD_MS`(24시간)이면 뺀다.
+- 값이 없으면 **한 번이라도 시도했는지**로 가른다. `never_attempted`(또는 진단
+  필드 자체가 없는 구버전 응답)면 부팅 직후일 수 있으니 남기고, 시도했는데도
+  값이 하나도 없으면(미설치·미로그인) 뺀다.
+
+두 번째 갈래에 24시간을 적용하지 않는 이유: 실패 시작 시각을 앱 재시작 너머로
+보존하지 않아 "며칠째"를 잴 기준이 없고, 애초에 보여줄 숫자가 없으므로 기다릴
+이유도 없다.
+
+기존 30분 stale(흐리게)은 그대로 둔다 — 둘은 층이 다르다. 30분은 "조금 낡음",
+24시간은 "표시할 가치 없음".
+
+`visibleUsageProviders(snapshot, now)`가 `USAGE_PROVIDERS` 고정 순서를 유지한 채
+남은 provider만 돌려주고, `UsageWidget`(뱃지)과 `UsageDialog`(모달 블록)가 같은
+목록을 쓴다. 셋 다 빠지면 위젯은 **버튼 자체를 렌더하지 않고**(빈 버튼은
+BottomBar 폭만 먹는다), 모달은 안내 한 줄(`usage.dialog.allHidden`)만 남긴다.
+
+뱃지 쪽 판정 시각은 별도 tick 없이 렌더 시각(`Date.now()`)이다 — 60초 폴링이
+어차피 새 스냅샷 객체를 스토어에 넣어 다시 그려지고, 임계값이 24시간이라 60초
+해상도로 충분하다. 모달은 이미 1초 tick이 돈다.
+
+### 10.3 테스트
+
+- TS 순수 함수: 24시간 경계 양옆, 30분 stale 경계와 무관함, `never_attempted`는
+  남기고 시도 후 무데이터는 뺌, `visibleUsageProviders` 순서 유지.
+- TSX(모달): 시도 후 무데이터 provider가 안내 문구째 사라짐, 25시간 낡은 값이
+  흐리게가 아니라 아예 안 그려짐, 전부 빠지면 안내 한 줄만.
+
+## 11. Antigravity provider (kbm #2j4, 2026-08-25)
+
+### 11.1 왜 gemini CLI가 아니라 Antigravity인가
+
+개인 계정의 Gemini Code Assist 무료 티어가 Antigravity로 이관되면서 gemini CLI의
+OAuth 클라이언트가 자격을 잃었다(2026-08-25 실측): `loadCodeAssist`는
+`IneligibleTierError: UNSUPPORTED_CLIENT`("migrate to the Antigravity suite"),
+`POST cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`는 403
+`SUBSCRIPTION_REQUIRED`를 돌려준다. 조회할 한도 자체가 Antigravity로 옮겨왔으므로
+provider도 하나만 둔다.
+
+### 11.2 데이터 소스 — `agy -p /usage --output-format json`
+
+**파일 캐시 미러가 없다.** Antigravity는 사용량 스냅샷을 로컬에 남기지 않아
+(`~/.gemini/antigravity-cli/` 전수 확인) Claude·Codex처럼 "실패하면 파일로 강등"
+하는 층이 없다. 실패는 곧 표시 없음이고, 그래서 §10의 숨김 규칙과 자연히 맞물린다.
+
+조회 수단은 codex_live와 같은 결 — 자격증명을 앱이 만지지 않고 CLI에 물어본다.
+`agy`의 print 모드는 슬래시 명령을 그대로 실행하고 구조화 결과를 준다:
+
+```json
+{"status":"SUCCESS","num_turns":0,"usage":{"total_tokens":0},
+ "command":{"name":"usage","data":{"groups":[
+   {"name":"Gemini Models","buckets":[
+     {"id":"gemini-weekly","window":"weekly",
+      "remaining_fraction":0.1064912,"reset_time":"2026-08-29T06:50:27Z"}]},
+   {"name":"Claude and GPT models","buckets":[
+     {"id":"3p-weekly","window":"weekly",
+      "remaining_fraction":1,"reset_time":"2026-09-01T12:39:21Z"}]}]}}}
+```
+
+값 규약 둘:
+
+1. `remaining_fraction`은 **잔여**다. `used_percent`는 그 여집합(`(1-f)*100`).
+2. 모델 턴을 돌지 않는다(`num_turns: 0`, tokens 0) — 사용량을 보려고 사용량을
+   쓰지 않는다. 다만 에이전트 백엔드 콜드 스타트로 **1회 8~10초**가 걸린다.
+   codex_live보다도 스로틀이 절실하다(§6.1과 같은 5분 하한 / 15분 정기 판단인
+   `claude_live::should_fetch`를 그대로 쓴다).
+
+창 매핑: 모든 버킷이 모델 그룹 소속이라 종류는 항상 모델별 갈래
+(`weekly` → `weekly_model`, `session`/`five_hour` → `session_model`, 그 외
+`unknown`)이고 라벨은 그룹명이다. 그래야 라벨 없이는 뜻이 서지 않는 값임이
+UI에 드러나고, 뱃지의 "5시간" 자리(§9.4와 같은 이유)를 가로채지 않는다.
+`plan_label`은 없다 — 응답이 티어 이름을 주지 않는다.
+
+### 11.3 계약 확장
+
+```ts
+type AntigravityLiveOutcome =
+  | "never_attempted" | "ok"
+  | "cli_missing" | "cli_failed" | "timeout"
+  | "command_failed"          // CLI가 실패 status를 돌려줌(미로그인 등)
+  | "unexpected_response";
+
+interface AntigravityLiveStatus {
+  outcome: AntigravityLiveOutcome;
+  detail: string | null;
+  lastAttemptMs: number | null;
+  lastSuccessMs: number | null;
+}
+interface UsageSnapshot {
+  /* …기존… */
+  antigravity: ProviderUsage | null;   // 파일 캐시가 없어 live 성공 때만 채워진다
+  antigravityLive: AntigravityLiveStatus;
+}
+```
+
+Codex의 `CodexLiveOutcome`과 어휘가 겹치지만 분리했다 — 이쪽은 JSON-RPC가 아니라
+print 모드 1회 실행이라 "RPC 오류"가 없고, 대신 CLI가 붙여 주는 `status` 필드가
+실패 갈래를 가른다(`command_failed`). 진단 문구의 꼬리말도 다르다: 강등할 캐시가
+없으므로 "표시값은 로컬 캐시…"가 아니라
+`usage.antigravityLive.noCacheNote`("직전 조회 값이 남거나 표시 자체가 사라진다").
+
+`Provider`는 `"claude" | "codex" | "antigravity"`, 뱃지 접두는 `AG`,
+모달 표시명은 `Antigravity`.
+
+### 11.4 실행 경로
+
+`Command::new("agy")`(PATH)가 1차. `NotFound`일 때만 `~/.local/bin/agy`(=
+`agy install` 기본 위치)를 한 번 더 본다 — 번들 앱의 최소 PATH가 로그인 셸
+PATH로 보강되지 않은 환경(`session/env_capture.rs`)에서 그 한 걸음이 차이를
+만든다. 다른 실패(권한·타임아웃)는 두 번 띄우지 않는다. cwd는 `temp_dir()`
+(print 모드가 cwd를 프로젝트로 잡으려 든다), 상한은 45초이고 CLI에 주는
+`--print-timeout`은 30초로 더 짧게 둬 CLI가 스스로 정리할 기회를 준다.
+Windows는 `.cmd` 셰임 대비로 codex_live와 같은 PowerShell 경유 해석을 쓴다.
+
+### 11.5 테스트
+
+- Rust 순수 함수: 실측 출력 → 두 주간 창 매핑(잔여→사용 변환, 그룹명 라벨,
+  ISO→ms), 배너 줄 섞임 무시, 비-SUCCESS status → `command_failed`,
+  groups 부재·빈 버킷·비-JSON → `unexpected_response`, 모르는 창 종류는
+  `unknown` + `window_minutes: null`, 스로틀, 실패가 마지막 성공을 안 지움.
+- 수동 스모크(`#[ignore]`, `-- --ignored antigravity_live`): 실제 `agy` 왕복.
+- TS: 사유별 문구 키와 detail 전달.

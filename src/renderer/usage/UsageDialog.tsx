@@ -4,33 +4,38 @@
 // 때만 렌더한다(AnalyticsDialog와 동일한 셀프 게이팅). provider별로 플랜 라벨·
 // 신선도와 각 윈도의 픽셀 바(사용률)·리셋 카운트다운을 보여준다. 카운트다운·
 // 신선도는 SessionTimePanel의 1초 tick 패턴(로컬 시계, 재조회 아님)으로 갱신하고,
-// stale(>30분)이면 provider 블록을 흐리게 + 표시한다.
-// 설계: docs/usage-limits-design.md §3. 폴링·스토어 갱신은 UsageWidget 소관.
+// stale(>30분)이면 provider 블록을 흐리게 + 표시한다. 하루(24시간)를 넘기면
+// 흐리게가 아니라 provider 블록 자체가 사라진다(kbm #2j4,
+// usageView.isProviderGone) — 뱃지와 같은 판정을 쓴다. 셋 다 사라지면 안내
+// 문구 한 줄만 남는다.
+// 설계: docs/usage-design.md §3. 폴링·스토어 갱신은 UsageWidget 소관.
 //
 // 문구는 usageView가 키(TextKey)로만 돌려주므로 여기서 `renderText`로 푼다.
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { ClaudeLiveStatus, CodexLiveStatus, ProviderUsage } from "@shared/types";
+import type { ProviderUsage } from "@shared/types";
 import { renderText } from "../shared/textKey";
 import { useAppStore } from "../store/appStore";
 import {
   PROVIDER_SHORT,
-  describeCodexLiveStatus,
-  describeLiveStatus,
+  describeProviderLive,
   formatCountdown,
   formatFreshness,
   formatLiveAttempts,
   isStale,
+  providerLive,
+  providerUsage,
   usageLevel,
+  visibleUsageProviders,
   windowLabel,
+  type UsageProvider,
 } from "./usageView";
 
-const PROVIDER_NAME: Record<"claude" | "codex", string> = {
+const PROVIDER_NAME: Record<UsageProvider, string> = {
   claude: "Claude Code",
   codex: "Codex CLI",
+  antigravity: "Antigravity",
 };
-
-const PROVIDERS = ["claude", "codex"] as const;
 
 /** 표시용 1초 tick(로컬 시계). 모달이 열려 있을 때만 돈다. */
 function useOneSecondTick(active: boolean): number {
@@ -45,7 +50,7 @@ function useOneSecondTick(active: boolean): number {
 }
 
 /**
- * provider 블록 + (Claude만) 실시간 조회 진단 줄. 진단은 `.usage-stale`
+ * provider 블록 + 실시간 조회 진단 줄. 진단은 `.usage-stale`
  * (opacity 0.5) 바깥에 둔다 — 값이 낡아서 흐려진 블록 안에 "왜 낡았는지"를
  * 넣으면 정작 읽어야 할 설명이 같이 흐려진다(opacity는 자식이 되돌릴 수 없다).
  */
@@ -126,13 +131,13 @@ export function UsageDialog() {
 
   // 실시간 조회 진단 — "왜 이 숫자가 안 움직이는지"의 답. 성공 중일 때도 한
   // 줄 남겨 둔다(정상임을 확인할 수 있어야 진단으로 쓸모가 있다). provider
-  // 마다 조회 경로가 달라(Claude=HTTPS 직접 조회, Codex=codex CLI RPC)
-  // 진단도 각자 것을 그린다.
-  const liveNote = (
-    status: ClaudeLiveStatus | CodexLiveStatus | null | undefined,
-    described: ReturnType<typeof describeLiveStatus>,
-  ): ReactNode =>
-    status && described ? (
+  // 마다 조회 경로가 달라(Claude=HTTPS 직접 조회, Codex=codex CLI RPC,
+  // Antigravity=agy print 모드) 진단도 각자 것을 그린다 — 갈래는
+  // usageView.describeProviderLive가 쥔다.
+  const liveNote = (provider: UsageProvider): ReactNode => {
+    const status = providerLive(usage, provider);
+    const described = describeProviderLive(usage, provider);
+    return status && described ? (
       <p className={`usage-live-note usage-live-${described.level}`}>
         {renderText(described.text, t)}
         {(() => {
@@ -145,10 +150,8 @@ export function UsageDialog() {
         })()}
       </p>
     ) : null;
-  const notes: Record<"claude" | "codex", ReactNode> = {
-    claude: liveNote(usage?.claudeLive, describeLiveStatus(usage?.claudeLive)),
-    codex: liveNote(usage?.codexLive, describeCodexLiveStatus(usage?.codexLive)),
   };
+  const visible = visibleUsageProviders(usage, now);
 
   return (
     <div
@@ -163,20 +166,19 @@ export function UsageDialog() {
         </div>
 
         <div className="usage-body">
-          {PROVIDERS.map((p) => {
-            const pu = usage ? usage[p] : null;
-            const note = notes[p];
+          {visible.length === 0 && (
+            <p className="usage-empty-msg">{t("usage.dialog.allHidden")}</p>
+          )}
+          {visible.map((p) => {
+            const pu = providerUsage(usage, p);
+            const note = liveNote(p);
             const body = !pu ? (
               <section className="usage-provider usage-provider-empty">
                 <div className="usage-provider-head">
                   <span className="usage-provider-name">{PROVIDER_NAME[p]}</span>
                   <span className="usage-badge-empty">{PROVIDER_SHORT[p]}</span>
                 </div>
-                <p className="usage-empty-msg">
-                  {p === "claude"
-                    ? t("usage.dialog.emptyClaude")
-                    : t("usage.dialog.emptyCodex")}
-                </p>
+                <p className="usage-empty-msg">{t(`usage.dialog.empty.${p}`)}</p>
               </section>
             ) : (
               <ProviderSection usage={pu} now={now} />

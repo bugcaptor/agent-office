@@ -210,7 +210,14 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
 
   it("UsageSnapshot (both providers, limits[] + null 폴백)", () => {
     const parsed: UsageSnapshot = loadFixture("usage-snapshot.json") as UsageSnapshot;
-    expectKeys(parsed, ["claude", "claudeLive", "codex", "codexLive"]);
+    expectKeys(parsed, [
+      "claude",
+      "claudeLive",
+      "codex",
+      "codexLive",
+      "antigravity",
+      "antigravityLive",
+    ]);
     const claude: ProviderUsage = parsed.claude!;
     expectKeys(claude, ["provider", "fetchedAtMs", "planLabel", "windows"]);
     expect(claude.windows).toHaveLength(2);
@@ -228,6 +235,19 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     // 실시간 조회(codex app-server RPC)에만 오는 모델별 버킷. 창 길이가
     // 같아도 계정 전체 한도와 종류로 구분된다.
     expect(codex.windows[1].kind).toBe("session_model");
+    // Antigravity: 파일 캐시가 없는 provider라 planLabel도 없다(응답에 티어
+    // 이름이 오지 않는다). 진단은 다른 provider와 같은 네 필드다.
+    const antigravity: ProviderUsage = parsed.antigravity!;
+    expectKeys(antigravity, ["provider", "fetchedAtMs", "planLabel", "windows"]);
+    expect(antigravity.planLabel).toBeNull();
+    expect(antigravity.windows).toHaveLength(2);
+    expect(antigravity.windows[0].label).toBe("Gemini Models");
+    expectKeys(parsed.antigravityLive, [
+      "outcome",
+      "detail",
+      "lastAttemptMs",
+      "lastSuccessMs",
+    ]);
     expect(codex.windows[1].label).toBe("GPT-5.3-Codex-Spark");
     // 실시간 조회 진단은 실패해도 스냅샷과 함께 항상 온다 — 픽스처는 실제로
     // 흔한 조합(Keychain이 막혀 파일 토큰 폴백 → 401)에 폴백 체인의 모양까지

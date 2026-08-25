@@ -72,6 +72,19 @@
       "unexpectedShort": "Live fetch failed (response shape)",
       "detailUnknownCause": "cause unknown"
     },
+    "antigravityLive": {
+      "noCacheNote": "Antigravity keeps no local usage copy, so a failed lookup leaves the last fetched value — or nothing at all",
+      "ok": "Asking the agy CLI directly (at most every 15 minutes)",
+      "neverAttempted": "Live lookup not attempted yet — $t(activity:usage.antigravityLive.noCacheNote)",
+      "cliMissing": "Live lookup failed: agy executable not found (check the Antigravity CLI install and PATH). $t(activity:usage.antigravityLive.noCacheNote)",
+      "cliMissingShort": "live lookup failed (agy not found)",
+      "cliFailed": "Live lookup failed: agy exited without a result ({{detail}}). $t(activity:usage.antigravityLive.noCacheNote)",
+      "cliFailedShort": "live lookup failed (agy exited)",
+      "timeout": "Live lookup failed: agy did not answer in time. $t(activity:usage.antigravityLive.noCacheNote)",
+      "commandFailed": "Live lookup failed: agy returned an error ({{detail}}) — you may need to sign in (run agy and log in). $t(activity:usage.antigravityLive.noCacheNote)",
+      "commandFailedShort": "live lookup failed (agy error)",
+      "unexpected": "Live lookup failed: the agy /usage response shape changed ({{detail}}). $t(activity:usage.antigravityLive.noCacheNote)"
+    },
     "attempts": {
       "lastAttempt": "last try {{ago}}",
       "lastSuccess": "last success {{ago}}",
@@ -83,9 +96,13 @@
       "activeTag": "in effect",
       "barAria": "{{label}} usage",
       "staleSuffix": " · stale",
-      "emptyClaude": "No usage data. Open /usage once in Claude Code to create the local cache.",
-      "emptyCodex": "No usage data. Run codex login so the app can fetch it, or run Codex CLI once to create local records.",
-      "close": "Close"
+      "close": "Close",
+      "empty": {
+        "claude": "No usage data. Open /usage once in Claude Code to create the local cache.",
+        "codex": "No usage data. Run codex login so the app can fetch it, or run Codex CLI once to create local records.",
+        "antigravity": "No usage data. Install the Antigravity CLI (agy) and sign in, and the app will fetch it directly."
+      },
+      "allHidden": "No usage to show — nothing could be fetched from any CLI for over a day."
     },
     "widget": {
       "aria": "Usage",

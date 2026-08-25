@@ -6,6 +6,11 @@
 // 보이게). 퍼센트마다 자기 usedPercent 기준 색(임계 70/90, tokens.css 토큰),
 // 데이터 없으면 dim `—`. 클릭하면 상세 모달을 연다.
 //
+// 하루 넘게 갱신되지 못한 provider(또는 시도했는데 값이 하나도 없는
+// provider)는 흐리게가 아니라 **뱃지에서 통째로 빠진다**(kbm #2j4,
+// usageView.isProviderGone). 셋 다 빠지면 위젯 버튼 자체를 그리지 않는다 —
+// 빈 버튼은 BottomBar에서 폭만 먹는다.
+//
 // 폭에 따른 병기 규칙(PR #37 봇 P2 — 800px 기본 폭에서 두 번째 퍼센트가
 // 항상 보이면 .bottom-bar-status가 말줄임으로 잘림): 좁은 폭(<960px)에서는
 // 첫 번째(5시간) 창만 보이고, 두 번째 이후 창은 warn/danger(≥70%)일 때만
@@ -16,7 +21,7 @@
 // 무관하게 항상 전체 창 정보를 포함한다.
 //
 // 폴링: 마운트 시 1회 + 60초 간격으로 loadUsageSnapshot을 invoke해 스토어에
-// 저장한다(설계 docs/usage-limits-design.md §3). 파일 읽기가 저비용이라
+// 저장한다(설계 docs/usage-design.md §3). 파일 읽기가 저비용이라
 // 백엔드 타이머/파일 워처 없이 단순 폴링으로 충분. 응답의 provider별 null은
 // mergeUsageSnapshot으로 이전 값 위에 덮어써(일시 파싱 실패가 유효 값을
 // 지우지 않게) 저장한다.
@@ -29,25 +34,25 @@ import type { ProviderUsage } from "@shared/types";
 import {
   PROVIDER_SHORT,
   badgeWindows,
-  describeCodexLiveStatus,
-  describeLiveStatus,
+  describeProviderLive,
   mergeUsageSnapshot,
+  providerUsage,
   usageLevel,
+  visibleUsageProviders,
   windowLabel,
   type LiveStatusNote,
+  type UsageProvider,
 } from "./usageView";
 
 /** 폴링 주기(ms). */
 const POLL_INTERVAL_MS = 60_000;
-
-const PROVIDERS = ["claude", "codex"] as const;
 
 function ProviderBadge({
   provider,
   usage,
   note,
 }: {
-  provider: "claude" | "codex";
+  provider: UsageProvider;
   usage: ProviderUsage | null;
   /** 실시간 조회 진단(있으면 툴팁에 덧붙이고 뱃지를 표시색으로 물들인다). */
   note: LiveStatusNote | null;
@@ -134,12 +139,12 @@ export function UsageWidget() {
     };
   }, [setUsage]);
 
-  // provider마다 실시간 조회 경로가 다르다(Claude=HTTPS 직접 조회,
-  // Codex=codex CLI RPC) — 진단도 각자 것을 붙인다.
-  const notes = {
-    claude: describeLiveStatus(usage?.claudeLive),
-    codex: describeCodexLiveStatus(usage?.codexLive),
-  };
+  // 숨김 판정은 렌더 시각 기준이다. 별도 tick을 두지 않는 이유: 폴링이
+  // 60초마다 새 스냅샷 객체를 스토어에 넣어 어차피 다시 그려지고, 임계값이
+  // 24시간이라 60초 해상도로 충분하다.
+  const visible = visibleUsageProviders(usage, Date.now());
+  if (visible.length === 0) return null;
+
   return (
     <button
       type="button"
@@ -148,12 +153,12 @@ export function UsageWidget() {
       title={t("usage.widget.tooltip")}
       onClick={() => openModal({ kind: "usage" })}
     >
-      {PROVIDERS.map((p) => (
+      {visible.map((p) => (
         <ProviderBadge
           key={p}
           provider={p}
-          usage={usage ? usage[p] : null}
-          note={notes[p]}
+          usage={providerUsage(usage, p)}
+          note={describeProviderLive(usage, p)}
         />
       ))}
     </button>

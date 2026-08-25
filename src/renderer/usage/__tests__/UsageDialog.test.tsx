@@ -43,8 +43,17 @@ function snapshot(): UsageSnapshot {
       lastSuccessMs: null,
       via: null,
     },
+    // 아직 첫 조회 전이라 값이 없어도 숨기지 않는 갈래(usageView.isProviderGone)
+    // — 여기서 "데이터 없음" 안내 문구를 확인한다.
     codexLive: {
-      outcome: "ok",
+      outcome: "never_attempted",
+      detail: null,
+      lastAttemptMs: null,
+      lastSuccessMs: null,
+    },
+    antigravity: null,
+    antigravityLive: {
+      outcome: "never_attempted",
       detail: null,
       lastAttemptMs: null,
       lastSuccessMs: null,
@@ -105,6 +114,70 @@ describe("UsageDialog", () => {
     expect(note).toContain("last try 1m ago · never succeeded");
     expect(container.textContent).not.toContain("usage.");
     expect(container.textContent).not.toContain("$t(");
+  });
+
+  it("시도했는데 값이 하나도 없는 provider는 블록째 사라진다", () => {
+    // codex는 조회에 성공했다는데 값이 없다(미로그인 등) → 안내 문구도 없이 뺀다.
+    const snap = snapshot();
+    useAppStore.setState({
+      usage: { ...snap, codexLive: { ...snap.codexLive, outcome: "cli_missing" } },
+    });
+    useAppStore.getState().openModal({ kind: "usage" });
+    const { container } = render(<UsageDialog />);
+
+    expect(container.textContent).not.toContain("Codex CLI");
+    expect(screen.queryByText(/codex login/)).toBeNull();
+    // 남은 provider(claude)는 그대로다.
+    expect(container.querySelector(".usage-window-pct")?.textContent).toBe("61%");
+  });
+
+  it("하루 넘게 낡은 값은 흐리게가 아니라 아예 그리지 않는다", () => {
+    const snap = snapshot();
+    useAppStore.setState({
+      usage: {
+        ...snap,
+        claude: { ...snap.claude!, fetchedAtMs: NOW - 25 * 60 * 60 * 1000 },
+      },
+    });
+    useAppStore.getState().openModal({ kind: "usage" });
+    const { container } = render(<UsageDialog />);
+
+    expect(container.textContent).not.toContain("Claude Code");
+    expect(container.querySelector(".usage-window-pct")).toBeNull();
+    // 셋 다 빠지면 안내 한 줄만 남는다(codex·antigravity는 never_attempted라
+    // 값이 없어도 남지만 여기서는 "데이터 없음" 문구를 그린다).
+    expect(screen.getByText("구독 사용량")).toBeTruthy();
+  });
+
+  it("모든 provider가 빠지면 안내 문구 한 줄만 남는다", () => {
+    const gone = {
+      outcome: "cli_missing",
+      detail: null,
+      lastAttemptMs: NOW,
+      lastSuccessMs: null,
+    } as const;
+    useAppStore.setState({
+      usage: {
+        claude: null,
+        codex: null,
+        antigravity: null,
+        claudeLive: {
+          outcome: "no_credentials",
+          tokenSource: null,
+          detail: null,
+          lastAttemptMs: NOW,
+          lastSuccessMs: null,
+          via: null,
+        },
+        codexLive: gone,
+        antigravityLive: gone,
+      },
+    });
+    useAppStore.getState().openModal({ kind: "usage" });
+    const { container } = render(<UsageDialog />);
+
+    expect(screen.getByText(/표시할 사용량이 없습니다/)).toBeTruthy();
+    expect(container.querySelector(".usage-provider")).toBeNull();
   });
 
   it("닫기 버튼이 모달을 닫는다", () => {

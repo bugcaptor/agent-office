@@ -47,7 +47,7 @@ export interface UsageWindow {
  * `windows`는 가변 배열 — UI가 "5시간+주간 둘 다 있음"을 하드코딩하지 않는다.
  */
 export interface ProviderUsage {
-  provider: "claude" | "codex";
+  provider: "claude" | "codex" | "antigravity";
   /**
    * 신선도 기준 시각(epoch ms). 출처마다 갱신 조건이 다르다: 앱의 실시간
    * 조회가 성공하면 그 조회 시각이고, 실패하면 로컬 캐시(Claude는
@@ -159,12 +159,56 @@ export interface CodexLiveStatus {
 }
 
 /**
+ * Antigravity 실시간 조회(`agy -p /usage --output-format json`)의 마지막 시도
+ * 결과. Rust `AntigravityLiveOutcome`(serde snake_case) 미러.
+ *
+ * Codex와 어휘가 겹치지만 **분리돼 있다** — 이쪽은 JSON-RPC가 아니라 print
+ * 모드 1회 실행이라 "RPC 오류"가 없고, 대신 CLI가 붙여 주는 `status` 필드가
+ * 실패 갈래를 가른다.
+ *
+ * 이 값이 `ok`가 아니면 화면의 Antigravity 숫자는 **직전 성공 값이거나 아예
+ * 없다** — Claude·Codex와 달리 강등할 로컬 파일 캐시가 없기 때문이다.
+ */
+export type AntigravityLiveOutcome =
+  | "never_attempted"
+  | "ok"
+  /** `agy` 실행 파일을 찾지 못함(미설치·PATH 밖). */
+  | "cli_missing"
+  /** 프로세스는 떴는데 실패로 끝났거나 출력이 없었다. */
+  | "cli_failed"
+  | "timeout"
+  /** CLI가 실패 status를 돌려줌(미로그인·계정 문제 등). */
+  | "command_failed"
+  | "unexpected_response";
+
+/**
+ * Antigravity 실시간 조회 진단. Rust `AntigravityLiveStatus` 미러(camelCase).
+ * 스냅샷마다 항상 존재한다 — "아직 모름"은 null이 아니라 `never_attempted`.
+ * Codex와 마찬가지로 자격증명을 앱이 만지지 않아 `tokenSource`/`via`가 없다.
+ */
+export interface AntigravityLiveStatus {
+  outcome: AntigravityLiveOutcome;
+  /** 진단 보조(예: "not logged in", "시간 초과"). 없으면 null. */
+  detail: string | null;
+  /** 마지막 시도 시각(epoch ms). 스로틀에 막혀 건너뛴 폴링은 시도가 아니다. */
+  lastAttemptMs: number | null;
+  /** 마지막 성공 시각(epoch ms). 한 번도 성공한 적 없으면 null. */
+  lastSuccessMs: number | null;
+}
+
+/**
  * `load_usage_snapshot` 응답. Rust `UsageSnapshot` 미러. 파싱에 실패한 소스는
  * 해당 provider가 null이며, 커맨드 자체는 항상 성공한다.
  */
 export interface UsageSnapshot {
   claude: ProviderUsage | null;
   codex: ProviderUsage | null;
+  /**
+   * Antigravity 사용량. **로컬 파일 캐시가 없어** 실시간 조회가 한 번도
+   * 성공하지 않았으면 항상 null이다(다른 두 provider와 다른 점).
+   */
+  antigravity: ProviderUsage | null;
   claudeLive: ClaudeLiveStatus;
   codexLive: CodexLiveStatus;
+  antigravityLive: AntigravityLiveStatus;
 }
