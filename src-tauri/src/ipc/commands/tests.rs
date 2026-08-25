@@ -381,6 +381,7 @@
                 profile_dir.join("bot-state.json"),
             ),
             state_lock: std::sync::Arc::new(std::sync::Mutex::new(())),
+            bot_arms: std::sync::Arc::new(crate::state::BotPromptArms::new()),
         });
         let live_usage = std::sync::Arc::new(crate::usage::LiveUsageState::new());
         // 웹 원격: 서버는 띄우지 않고 컨텍스트만 만든다 —
@@ -1020,6 +1021,7 @@
             shell: None,
             state: None,
             tokens: None,
+            origin: None,
         };
         let mut line = serde_json::to_string(&record).unwrap();
         line.push('\n');

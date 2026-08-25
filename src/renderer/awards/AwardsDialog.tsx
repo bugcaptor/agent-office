@@ -278,7 +278,13 @@ export function AwardsDialog() {
                   <tr>
                     <th scope="col">{t("awards.colRank")}</th>
                     <th scope="col">{t("awards.colName")}</th>
-                    <th scope="col">{t("awards.colWorked")}</th>
+                    <th scope="col">
+                      {/* 봇 주입 턴은 순위에서 빠져 있다 — 그런 사원이 하나라도
+                          있을 때만 열 제목에 그 사실을 밝힌다(규칙 v2). */}
+                      {record.leaderboard.some((row) => (row.botWorkedMs ?? 0) > 0)
+                        ? t("awards.colWorkedNoBot")
+                        : t("awards.colWorked")}
+                    </th>
                     <th scope="col">{t("awards.colTurns")}</th>
                     <th scope="col">{t("awards.colActiveDays")}</th>
                   </tr>

@@ -264,6 +264,7 @@ mod tests {
                 worked_ms: 7_200_000,
                 turns: 42,
                 active_days: 11,
+                bot_worked_ms: None,
             }],
             speeches: Vec::new(),
         }

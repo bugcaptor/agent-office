@@ -59,6 +59,11 @@ export interface Turn {
   sessionId: string;
   startAt: number;
   endAt: number;
+  /**
+   * 턴을 연 prompt의 출처. 봇이 주입한 프롬프트로 시작한 턴만 `"bot"`이고,
+   * 사람이 친 프롬프트(그리고 출처 표식이 없던 과거 이벤트)는 undefined다.
+   */
+  origin?: "bot";
 }
 
 /**
@@ -98,11 +103,21 @@ export interface TokenTotals {
   costUnknownTurns: number;
 }
 
-/** 에이전트별·일별 집계 셀. */
+/**
+ * 에이전트별·일별 집계 셀.
+ *
+ * `workedMs`/`turns`는 **총계**다(봇 몫 포함) — 분석 패널이 보여주는 "그 캐릭터
+ * 자리에서 실제로 돌아간 시간"이라 봇이 돌린 몫도 들어가야 한다. 시상 선정만
+ * 사람 몫을 따로 봐야 해서 봇 몫을 `bot*`로 **분리 누적**해 둔다(빼서 쓴다).
+ */
 export interface AgentDailyStat extends TokenTotals {
   workedMs: number;
   turns: number;
   toolEvents: number;
+  /** `workedMs` 중 봇이 주입한 프롬프트로 시작한 턴의 몫. */
+  botWorkedMs: number;
+  /** `turns` 중 봇이 주입한 프롬프트로 시작한 턴의 수. */
+  botTurns: number;
 }
 
 /** 에이전트 표시 메타(이름·색·삭제 여부). */
@@ -121,6 +136,18 @@ export interface AgentSummary extends AgentMeta, TokenTotals {
   toolEvents: number;
   /** 활동(작업/턴/도구)이 하나라도 있던 로컬 날짜 수. */
   activeDays: number;
+  /** `workedMs` 중 봇 주입 턴의 몫(시상은 이걸 빼고 본다). */
+  botWorkedMs: number;
+  /** `turns` 중 봇 주입 턴의 수. */
+  botTurns: number;
+  /**
+   * 봇 몫을 뺀 **사람 몫 작업**이 있던 로컬 날짜 수. 날짜 집합은 뺄셈으로
+   * 복원할 수 없어(한 날에 사람·봇이 섞인다) 별도로 센다.
+   *
+   * 도구 이벤트는 출처를 나눌 수 없어 이 판정에서 뺀다 — 봇만 돌린 날이
+   * 도구 이벤트 때문에 사람 활동일로 잡히면 표식이 무의미해진다.
+   */
+  humanActiveDays: number;
 }
 
 /** 집계 결과 묶음. */
@@ -168,6 +195,9 @@ export function reconstructTurns(events: readonly SessionEventRecord[]): Turn[] 
     const first = sorted[0];
     const last = sorted[sorted.length - 1];
     let openStart: number | null = null;
+    // 턴의 출처는 **턴을 연 prompt**의 것이다. 이어지는 prompt는 같은 턴으로
+    // 흡수되므로(위 규칙) 출처도 덮어쓰지 않는다.
+    let openOrigin: "bot" | undefined;
 
     const close = (endAt: number): void => {
       if (openStart !== null && endAt > openStart) {
@@ -176,14 +206,19 @@ export function reconstructTurns(events: readonly SessionEventRecord[]): Turn[] 
           sessionId: first.sessionId,
           startAt: openStart,
           endAt,
+          ...(openOrigin ? { origin: openOrigin } : {}),
         });
       }
       openStart = null;
+      openOrigin = undefined;
     };
 
     for (const ev of sorted) {
       if (ev.kind === "prompt") {
-        if (openStart === null) openStart = ev.at;
+        if (openStart === null) {
+          openStart = ev.at;
+          openOrigin = ev.origin;
+        }
       } else if (ev.kind === "stop") {
         close(ev.at);
       } else if (
@@ -232,6 +267,8 @@ function ensureCell(
     workedMs: 0,
     turns: 0,
     toolEvents: 0,
+    botWorkedMs: 0,
+    botTurns: 0,
     tokensIn: 0,
     tokensOut: 0,
     tokensCacheRead: 0,
@@ -260,12 +297,19 @@ export function dailySummary(
   for (const turn of turns) {
     const clipped = range ? clipTurn(turn, range) : turn;
     if (!clipped) continue; // 창과 겹치지 않는 턴은 버림
+    const isBot = turn.origin === "bot";
     for (const slice of splitTurnByDay(clipped.startAt, clipped.endAt, cal)) {
-      ensureCell(daily, slice.date, turn.agentId).workedMs += slice.ms;
+      const cell = ensureCell(daily, slice.date, turn.agentId);
+      cell.workedMs += slice.ms;
+      // 봇 몫은 총계에서 빼지 않고 **따로도** 쌓는다 — 분석 패널의 수치는
+      // 그대로 두고 시상만 빼서 보게 하려는 것이다.
+      if (isBot) cell.botWorkedMs += slice.ms;
     }
     // 턴 수: 창이 있으면 창 안으로 당긴 시작(=max(startAt, fromAt))의 로컬 날짜.
     const turnDayAt = range ? Math.max(turn.startAt, range.fromAt) : turn.startAt;
-    ensureCell(daily, cal.dayKey(turnDayAt), turn.agentId).turns += 1;
+    const startCell = ensureCell(daily, cal.dayKey(turnDayAt), turn.agentId);
+    startCell.turns += 1;
+    if (isBot) startCell.botTurns += 1;
   }
   for (const ev of events) {
     if (range && (ev.at < range.fromAt || ev.at > range.toAt)) continue; // 창 밖 이벤트 제외
@@ -383,7 +427,11 @@ export function aggregate(
     workedMs: number;
     turns: number;
     toolEvents: number;
+    botWorkedMs: number;
+    botTurns: number;
     days: Set<string>;
+    /** 사람 몫 작업(봇 몫을 뺀 workedMs/turns)이 있던 날. */
+    humanDays: Set<string>;
   }
   const totals = new Map<string, Totals>();
   const totalFor = (agentId: string): Totals => {
@@ -393,6 +441,8 @@ export function aggregate(
         workedMs: 0,
         turns: 0,
         toolEvents: 0,
+        botWorkedMs: 0,
+        botTurns: 0,
         tokensIn: 0,
         tokensOut: 0,
         tokensCacheRead: 0,
@@ -400,6 +450,7 @@ export function aggregate(
         costUsd: 0,
         costUnknownTurns: 0,
         days: new Set(),
+        humanDays: new Set(),
       };
       totals.set(agentId, t);
     }
@@ -411,6 +462,8 @@ export function aggregate(
       t.workedMs += stat.workedMs;
       t.turns += stat.turns;
       t.toolEvents += stat.toolEvents;
+      t.botWorkedMs += stat.botWorkedMs;
+      t.botTurns += stat.botTurns;
       t.tokensIn += stat.tokensIn;
       t.tokensOut += stat.tokensOut;
       t.tokensCacheRead += stat.tokensCacheRead;
@@ -419,6 +472,11 @@ export function aggregate(
       t.costUnknownTurns += stat.costUnknownTurns;
       // 활동일 판정은 작업/턴/도구만 본다(토큰만 있고 활동이 없는 날은 없다).
       if (stat.workedMs > 0 || stat.turns > 0 || stat.toolEvents > 0) t.days.add(date);
+      // 사람 활동일은 도구를 빼고 본다 — 도구 이벤트는 출처를 나눌 수 없어서,
+      // 봇만 돌린 날이 도구 때문에 사람 활동일로 새는 것을 막는다.
+      if (stat.workedMs - stat.botWorkedMs > 0 || stat.turns - stat.botTurns > 0) {
+        t.humanDays.add(date);
+      }
     }
   }
 
@@ -437,6 +495,9 @@ export function aggregate(
         costUsd: t?.costUsd ?? 0,
         costUnknownTurns: t?.costUnknownTurns ?? 0,
         activeDays: t?.days.size ?? 0,
+        botWorkedMs: t?.botWorkedMs ?? 0,
+        botTurns: t?.botTurns ?? 0,
+        humanActiveDays: t?.humanDays.size ?? 0,
       };
     })
     .sort((a, b) => {

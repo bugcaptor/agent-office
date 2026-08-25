@@ -1,24 +1,30 @@
 // src/renderer/awards/__tests__/selection.test.ts
 //
 // 선정 로직의 결정성(같은 입력 → 같은 결과, 입력 불변), 4단계 동점 처리,
-// 임계 미달/삭제/봇 제외, 퇴근은 제외 사유가 아님, 그리고 월 경계 계산을
-// fixedOffsetCalendar(540)로 못박아 검증한다(시스템 TZ와 무관하게 결정적).
+// 임계 미달/삭제, 봇 몫이 사람 몫에서 빠지는 것, 퇴근은 제외 사유가 아님,
+// 그리고 월 경계 계산을 fixedOffsetCalendar(540)로 못박아 검증한다(시스템
+// TZ와 무관하게 결정적).
 import { describe, expect, it } from "vitest";
 import { fixedOffsetCalendar, type AgentSummary } from "../../analytics/aggregate";
 import {
   DEFAULT_MIN_ACTIVE_DAYS,
   DEFAULT_MIN_WORKED_MS,
-  isBotProfile,
+  humanTurns,
+  humanWorkedMs,
   monthKeyOf,
   monthRange,
   pickWinner,
   shiftMonth,
 } from "../selection";
-import type { AgentProfile } from "@shared/types";
 
 const KST = fixedOffsetCalendar(540);
 
+/**
+ * 기본은 "봇 몫 0"이다 — `humanActiveDays`는 따로 주지 않으면 `activeDays`를
+ * 따라간다(봇이 없으면 둘이 같다는 집계 계약을 테스트에서도 유지).
+ */
 function summary(overrides: Partial<AgentSummary> & { agentId: string }): AgentSummary {
+  const activeDays = overrides.activeDays ?? DEFAULT_MIN_ACTIVE_DAYS;
   return {
     name: overrides.agentId,
     color: "#fff",
@@ -26,7 +32,10 @@ function summary(overrides: Partial<AgentSummary> & { agentId: string }): AgentS
     workedMs: DEFAULT_MIN_WORKED_MS,
     turns: 10,
     toolEvents: 5,
-    activeDays: DEFAULT_MIN_ACTIVE_DAYS,
+    activeDays,
+    botWorkedMs: 0,
+    botTurns: 0,
+    humanActiveDays: activeDays,
     tokensIn: 0,
     tokensOut: 0,
     tokensCacheRead: 0,
@@ -37,28 +46,13 @@ function summary(overrides: Partial<AgentSummary> & { agentId: string }): AgentS
   };
 }
 
-function profile(overrides: Partial<AgentProfile> & { id: string }): AgentProfile {
-  return {
-    name: overrides.id,
-    role: "개발",
-    seed: "s",
-    createdAt: 0,
-    deskIndex: 0,
-    ...overrides,
-  };
-}
-
-function profileMap(...list: AgentProfile[]): Record<string, AgentProfile> {
-  return Object.fromEntries(list.map((p) => [p.id, p]));
-}
-
 describe("pickWinner — 정렬과 결정성", () => {
   it("workedMs 내림차순 1위가 수상자다", () => {
     const rows = [
       summary({ agentId: "a", workedMs: 3_600_000 }),
       summary({ agentId: "b", workedMs: 7_200_000 }),
     ];
-    const r = pickWinner(rows, {});
+    const r = pickWinner(rows);
     expect(r.winner?.agentId).toBe("b");
     expect(r.leaderboard.map((s) => s.agentId)).toEqual(["b", "a"]);
   });
@@ -68,7 +62,7 @@ describe("pickWinner — 정렬과 결정성", () => {
       summary({ agentId: "a", turns: 5 }),
       summary({ agentId: "b", turns: 9 }),
     ];
-    expect(pickWinner(rows, {}).winner?.agentId).toBe("b");
+    expect(pickWinner(rows).winner?.agentId).toBe("b");
   });
 
   it("workedMs·turns 동점이면 activeDays가 많은 쪽", () => {
@@ -76,14 +70,14 @@ describe("pickWinner — 정렬과 결정성", () => {
       summary({ agentId: "a", activeDays: 3 }),
       summary({ agentId: "b", activeDays: 7 }),
     ];
-    expect(pickWinner(rows, {}).winner?.agentId).toBe("b");
+    expect(pickWinner(rows).winner?.agentId).toBe("b");
   });
 
   it("셋 다 동점이면 agentId 사전식으로 앞선 쪽(완전한 타이브레이크)", () => {
     const rows = [summary({ agentId: "zeta" }), summary({ agentId: "alpha" })];
-    expect(pickWinner(rows, {}).winner?.agentId).toBe("alpha");
+    expect(pickWinner(rows).winner?.agentId).toBe("alpha");
     // 입력 순서를 뒤집어도 같은 결과 — 정렬이 안정성에 기대지 않는다.
-    expect(pickWinner(rows.slice().reverse(), {}).winner?.agentId).toBe("alpha");
+    expect(pickWinner(rows.slice().reverse()).winner?.agentId).toBe("alpha");
   });
 
   it("같은 입력이면 같은 결과이고 입력 배열/원소를 변형하지 않는다", () => {
@@ -93,8 +87,8 @@ describe("pickWinner — 정렬과 결정성", () => {
       summary({ agentId: "c", workedMs: 5_400_000 }),
     ];
     const before = JSON.parse(JSON.stringify(rows));
-    const first = pickWinner(rows, {});
-    const second = pickWinner(rows, {});
+    const first = pickWinner(rows);
+    const second = pickWinner(rows);
     expect(first.leaderboard.map((s) => s.agentId)).toEqual(
       second.leaderboard.map((s) => s.agentId),
     );
@@ -106,7 +100,7 @@ describe("pickWinner — 정렬과 결정성", () => {
     const rows = Array.from({ length: 8 }, (_, i) =>
       summary({ agentId: `a${i}`, workedMs: 10_000_000 - i * 1000 }),
     );
-    const r = pickWinner(rows, {});
+    const r = pickWinner(rows);
     expect(r.leaderboard).toHaveLength(5);
     expect(r.leaderboard.map((s) => s.agentId)).toEqual(["a0", "a1", "a2", "a3", "a4"]);
   });
@@ -118,7 +112,7 @@ describe("pickWinner — 후보 제외", () => {
       summary({ agentId: "a", activeDays: DEFAULT_MIN_ACTIVE_DAYS - 1 }),
       summary({ agentId: "b", workedMs: DEFAULT_MIN_WORKED_MS - 1 }),
     ];
-    expect(pickWinner(rows, {})).toEqual({ winner: null, leaderboard: [] });
+    expect(pickWinner(rows)).toEqual({ winner: null, leaderboard: [] });
   });
 
   it("삭제된 캐릭터는 후보에서 뺀다", () => {
@@ -126,54 +120,107 @@ describe("pickWinner — 후보 제외", () => {
       summary({ agentId: "gone", workedMs: 99_000_000, deleted: true }),
       summary({ agentId: "here", workedMs: 3_600_000 }),
     ];
-    const r = pickWinner(rows, {});
+    const r = pickWinner(rows);
     expect(r.winner?.agentId).toBe("here");
     expect(r.leaderboard.map((s) => s.agentId)).toEqual(["here"]);
   });
 
-  it("봇 모드로 설정된 캐릭터는 후보에서 뺀다", () => {
+  it("봇 시간만 있는 캐릭터는 사람 몫이 임계 미달이라 후보에서 빠진다", () => {
+    // 규칙 v1은 프로필에 봇 설정이 있다는 이유로 캐릭터를 통째로 뺐다. v2는
+    // 프로필을 아예 보지 않고, 봇이 돌린 몫만 빼서 사람 몫으로 판정한다.
     const rows = [
-      summary({ agentId: "bot", workedMs: 99_000_000 }),
+      summary({
+        agentId: "botonly",
+        workedMs: 99_000_000,
+        botWorkedMs: 99_000_000,
+        turns: 400,
+        botTurns: 400,
+        activeDays: 20,
+        humanActiveDays: 0,
+      }),
       summary({ agentId: "human", workedMs: 3_600_000 }),
     ];
-    const profiles = profileMap(
-      profile({ id: "bot", bot: { whitelist: ["someone"] } }),
-      profile({ id: "human" }),
-    );
-    expect(pickWinner(rows, profiles).winner?.agentId).toBe("human");
+    const r = pickWinner(rows);
+    expect(r.winner?.agentId).toBe("human");
+    expect(r.leaderboard.map((s) => s.agentId)).toEqual(["human"]);
+  });
+
+  it("봇 시간이 섞인 캐릭터는 사람 몫만으로 겨룬다(캐릭터째 빠지지 않는다)", () => {
+    // 실제 관측 사례: 총 59.4h 1위가 봇 설정 하나 때문에 통째로 빠지고
+    // 18.5h가 수상했다. 이제 봇 몫만 빠지므로 사람 몫이 남으면 겨룬다.
+    const rows = [
+      summary({
+        agentId: "mixed",
+        workedMs: 59_400_000,
+        botWorkedMs: 20_000_000, // 사람 몫 39.4M
+        turns: 200,
+        botTurns: 60,
+        activeDays: 20,
+        humanActiveDays: 15,
+      }),
+      summary({ agentId: "human", workedMs: 18_500_000, activeDays: 12 }),
+    ];
+    const r = pickWinner(rows);
+    expect(r.winner?.agentId).toBe("mixed");
+    expect(r.leaderboard.map((s) => s.agentId)).toEqual(["mixed", "human"]);
+  });
+
+  it("사람 몫이 뒤집히면 순위도 뒤집힌다(총계가 아니라 사람 몫으로 정렬)", () => {
+    const rows = [
+      summary({ agentId: "botheavy", workedMs: 90_000_000, botWorkedMs: 80_000_000 }),
+      summary({ agentId: "steady", workedMs: 30_000_000, botWorkedMs: 0 }),
+    ];
+    // 총계로는 botheavy가 3배지만 사람 몫은 10M 대 30M이다.
+    expect(pickWinner(rows).winner?.agentId).toBe("steady");
+  });
+
+  it("사람 workedMs 동점이면 사람 turns로, 그 다음 사람 activeDays로 가른다", () => {
+    const byTurns = [
+      summary({ agentId: "a", turns: 20, botTurns: 15 }), // 사람 5
+      summary({ agentId: "b", turns: 10, botTurns: 1 }), // 사람 9
+    ];
+    expect(pickWinner(byTurns).winner?.agentId).toBe("b");
+
+    const byDays = [
+      summary({ agentId: "a", activeDays: 20, humanActiveDays: 3 }),
+      summary({ agentId: "b", activeDays: 5, humanActiveDays: 5 }),
+    ];
+    expect(pickWinner(byDays).winner?.agentId).toBe("b");
+  });
+
+  it("사람 활동일이 임계 미달이면 총 활동일이 넉넉해도 후보가 아니다", () => {
+    const rows = [
+      summary({
+        agentId: "a",
+        workedMs: 99_000_000,
+        botWorkedMs: 0,
+        activeDays: 30,
+        humanActiveDays: DEFAULT_MIN_ACTIVE_DAYS - 1,
+      }),
+    ];
+    expect(pickWinner(rows).winner).toBeNull();
+  });
+
+  it("origin이 없던 옛 이벤트 집계(봇 몫 0)는 전부 사람 몫으로 잡힌다", () => {
+    // 하위호환: aggregate가 과거 파일에서 만들어 내는 요약은 bot* 가 0이다.
+    const rows = [summary({ agentId: "legacy", workedMs: 7_200_000, turns: 40 })];
+    expect(humanWorkedMs(rows[0])).toBe(7_200_000);
+    expect(humanTurns(rows[0])).toBe(40);
+    expect(pickWinner(rows).winner?.agentId).toBe("legacy");
   });
 
   it("퇴근(clockedOut)은 제외 사유가 아니다", () => {
+    // 프로필을 아예 보지 않으므로 clockedOut도 판정에 끼어들 여지가 없다.
     const rows = [summary({ agentId: "off", workedMs: 7_200_000 })];
-    const profiles = profileMap(profile({ id: "off", clockedOut: true }));
-    expect(pickWinner(rows, profiles).winner?.agentId).toBe("off");
+    expect(pickWinner(rows).winner?.agentId).toBe("off");
   });
 
   it("임계는 옵션으로 낮출 수 있다", () => {
     const rows = [summary({ agentId: "a", activeDays: 1, workedMs: 60_000 })];
-    expect(pickWinner(rows, {}).winner).toBeNull();
+    expect(pickWinner(rows).winner).toBeNull();
     expect(
-      pickWinner(rows, {}, { minActiveDays: 1, minWorkedMs: 1000 }).winner?.agentId,
+      pickWinner(rows, { minActiveDays: 1, minWorkedMs: 1000 }).winner?.agentId,
     ).toBe("a");
-  });
-});
-
-describe("isBotProfile", () => {
-  it("bot 필드가 없으면 봇이 아니다", () => {
-    expect(isBotProfile(profile({ id: "a" }))).toBe(false);
-    expect(isBotProfile(undefined)).toBe(false);
-  });
-
-  it("빈 껍데기(설정값 없음)는 봇으로 보지 않는다", () => {
-    expect(isBotProfile(profile({ id: "a", bot: { whitelist: [] } }))).toBe(false);
-  });
-
-  it("slug·화이트리스트·주기 중 하나라도 있으면 봇이다", () => {
-    expect(isBotProfile(profile({ id: "a", bot: { slug: "nova", whitelist: [] } }))).toBe(true);
-    expect(isBotProfile(profile({ id: "a", bot: { whitelist: ["me"] } }))).toBe(true);
-    expect(
-      isBotProfile(profile({ id: "a", bot: { whitelist: [], pollIntervalSec: 60 } })),
-    ).toBe(true);
   });
 });
 

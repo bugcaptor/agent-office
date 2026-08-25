@@ -29,7 +29,15 @@ import {
   type AwardsFile,
   type SessionEventRecord,
 } from "@shared/types";
-import { monthKeyOf, monthRange, pickWinner, shiftMonth, type SelectionResult } from "./selection";
+import {
+  humanTurns,
+  humanWorkedMs,
+  monthKeyOf,
+  monthRange,
+  pickWinner,
+  shiftMonth,
+  type SelectionResult,
+} from "./selection";
 import { generateSpeech, type SpeechFailReason } from "./speechGenerator";
 
 /**
@@ -134,10 +142,12 @@ function buildRecord(
       // 초상이 있으면 백엔드가 확정 시점 스냅샷을 떠 둔다.
       hasPortrait: profile?.portraitUpdatedAt !== undefined,
       stats: {
-        workedMs: top.workedMs,
-        turns: top.turns,
+        // 순위를 매긴 값과 같은 사람 몫을 스냅샷한다 — 같은 화면의 순위표
+        // 1행과 숫자가 어긋나면 사용자가 납득할 수 없다(규칙 v2).
+        workedMs: humanWorkedMs(top),
+        turns: humanTurns(top),
         toolEvents: top.toolEvents,
-        activeDays: top.activeDays,
+        activeDays: top.humanActiveDays,
         tokensIn: top.tokensIn,
         tokensOut: top.tokensOut,
         costUsd: top.costUsd,
@@ -147,9 +157,11 @@ function buildRecord(
   const leaderboard: AwardStanding[] = pick.leaderboard.map((s) => ({
     agentId: s.agentId,
     name: s.name,
-    workedMs: s.workedMs,
-    turns: s.turns,
-    activeDays: s.activeDays,
+    workedMs: humanWorkedMs(s),
+    turns: humanTurns(s),
+    activeDays: s.humanActiveDays,
+    // 봇 몫이 0이면 키 자체를 넣지 않는다(v1 레코드와 같은 모양).
+    ...(s.botWorkedMs > 0 ? { botWorkedMs: s.botWorkedMs } : {}),
   }));
   return {
     month,
@@ -170,7 +182,9 @@ async function selectForRange(
 ): Promise<SelectionResult> {
   const events: SessionEventRecord[] = await tauriApi.loadSessionEvents(fromAt - LOOKBACK_MS, toAt);
   const data = aggregate(events, profiles, cal, { fromAt, toAt });
-  return pickWinner(data.summary, profiles);
+  // `profiles`는 집계의 이름·색·삭제 판정에만 쓰인다 — 선정은 집계 결과(사람
+  // 몫)만 본다(규칙 v2에서 프로필 기반 봇 제외를 없앴다).
+  return pickWinner(data.summary);
 }
 
 export const useAwardsStore = create<AwardsState>((set, get) => ({

@@ -26,6 +26,10 @@ pub struct BotContext {
     /// `bot-state.json` load-modify-save 직렬화 락(모든 봇 탭이 공유하는 단일
     /// 파일의 lost-update 방지, 리뷰 C1).
     pub state_lock: Arc<Mutex<()>>,
+    /// 봇 주입 표식(kbm #2j8). `inject`가 write_input 직전에 arm하고, 세션
+    /// 이벤트 기록기(`RecordingAppEvents`)가 뒤따르는 prompt 하나로 소비한다 —
+    /// 그 턴이 "이 달의 우수사원" 집계에서 사람 몫에서 빠진다.
+    pub bot_arms: Arc<crate::state::BotPromptArms>,
 }
 
 /// 봇 잡의 해석된 실행 파라미터(폴링 태스크가 기동 시 한 번 계산).
@@ -188,11 +192,16 @@ pub fn single_line(text: &str) -> String {
 ///    유실되고 꼬리만 입력창에 남는다(실사용 관측).
 /// 2) **제출 지연** — 텍스트를 먼저 쓰고 잠깐 쉰 뒤 CR을 따로 보낸다(둘이 한
 ///    입력 이벤트로 합쳐져 Enter가 무시되는 것을 막는다).
-fn inject(manager: &SessionManager, agent_id: &str, text: &str) {
+///
+/// 쓰기 **직전에** 봇 주입 표식을 arm한다(kbm #2j8). 주입은 사람 입력과 완전히
+/// 같은 경로라 이벤트만 보고는 구분할 수 없으므로, 이 시점이 출처를 아는 유일한
+/// 지점이다. 표식은 뒤따르는 prompt 이벤트 하나가 소비한다.
+fn inject(ctx: &BotContext, agent_id: &str, text: &str) {
     let one_line = single_line(text);
-    manager.write_input(agent_id, &one_line);
+    ctx.bot_arms.arm(agent_id, now_ms());
+    ctx.manager.write_input(agent_id, &one_line);
     std::thread::sleep(std::time::Duration::from_millis(INJECT_SUBMIT_DELAY_MS));
-    manager.write_input(agent_id, "\r");
+    ctx.manager.write_input(agent_id, "\r");
 }
 
 /// 봇 시작 시 커서를 현재 최신 지점으로 프라임한다(리뷰: 과거 소급 트리거 방지).
@@ -285,7 +294,7 @@ pub fn poll_once(ctx: &BotContext, p: &BotParams, cancel: &AtomicBool) -> Result
                 }
                 let directive = directive_for(&c.body, &p.slug);
                 inject(
-                    &ctx.manager,
+                    ctx,
                     &p.agent_id,
                     &initial_prompt(&p.agent_id, &p.name, &p.repo_slug, issue_num, directive.as_deref()),
                 );
@@ -307,7 +316,7 @@ pub fn poll_once(ctx: &BotContext, p: &BotParams, cancel: &AtomicBool) -> Result
                 break;
             }
             let safe = sanitize_untrusted(&c.body);
-            inject(&ctx.manager, &p.agent_id, &relay_prompt(issue_num, &c.user.login, &safe));
+            inject(ctx, &p.agent_id, &relay_prompt(issue_num, &c.user.login, &safe));
             state.mark_processed(c.id);
             state.advance_cursor(&c.updated_at);
         } else {
@@ -339,7 +348,7 @@ pub fn poll_once(ctx: &BotContext, p: &BotParams, cancel: &AtomicBool) -> Result
                 let directive = directive_for(&i.body, &p.slug)
                     .or_else(|| directive_for(&i.title, &p.slug));
                 inject(
-                    &ctx.manager,
+                    ctx,
                     &p.agent_id,
                     &initial_prompt(&p.agent_id, &p.name, &p.repo_slug, i.number, directive.as_deref()),
                 );
@@ -361,7 +370,7 @@ pub fn poll_once(ctx: &BotContext, p: &BotParams, cancel: &AtomicBool) -> Result
                 let issue = job.issue;
                 let marker = command::bot_marker(&p.agent_id);
                 inject(
-                    &ctx.manager,
+                    ctx,
                     &p.agent_id,
                     &report_prompt(issue, &p.name, &p.repo_slug, &marker),
                 );

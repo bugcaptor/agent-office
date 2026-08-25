@@ -137,6 +137,46 @@ impl SessionRegistry {
     }
 }
 
+/// 봇 주입 프롬프트에 붙는 표식이 만료되는 시간(ms). 주입 직후 세션이 죽어
+/// prompt 이벤트가 끝내 안 오면, 그 표식이 남아 **다음 사람 프롬프트**를
+/// 봇으로 오염시킨다. 2분이면 CLI가 입력을 큐잉했다가 처리하는 지연을 다
+/// 덮으면서, 사람이 다시 앉기 전에 확실히 만료된다.
+pub const BOT_PROMPT_ARM_TTL_MS: u64 = 120_000;
+
+/// 봇 주입 표식(agentId → armed_at epoch ms). `bot/runner.rs::inject`가
+/// `write_input` 직전에 arm하고, `RecordingAppEvents`가 그 agent의 다음 prompt
+/// 이벤트 하나로 **소비**한다.
+///
+/// 왜 세션이 아니라 이런 표식인가: 봇은 별도 세션을 띄우지 않고 이미 떠 있는
+/// 터미널에 프롬프트를 밀어넣는다. 세션도 agentId도 사람이 쓸 때와 같아서
+/// 세션 단위로는 구분할 수 없고, 유일한 구분선이 턴 단위다(kbm #2j8).
+#[derive(Default)]
+pub struct BotPromptArms {
+    armed: std::sync::Mutex<HashMap<AgentId, u64>>,
+}
+
+impl BotPromptArms {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 다음 프롬프트 하나를 봇 것으로 표식한다(`now` = epoch ms). 이미 arm돼
+    /// 있으면 시각만 갱신한다 — 주입이 연달아 두 번 들어가도 표식은 하나다.
+    pub fn arm(&self, agent_id: &str, now: u64) {
+        self.armed.lock().unwrap().insert(agent_id.to_string(), now);
+    }
+
+    /// 표식을 소비한다. 한 번 쓰면 지워지므로 두 번째 프롬프트는 사람 몫이다.
+    /// `at`(프롬프트 이벤트 시각)이 arm 시각에서 TTL을 넘겼으면 만료로 보고
+    /// 버린다(소비는 하되 봇으로 세지 않는다).
+    pub fn consume(&self, agent_id: &str, at: u64) -> bool {
+        let Some(armed_at) = self.armed.lock().unwrap().remove(agent_id) else {
+            return false;
+        };
+        at.saturating_sub(armed_at) <= BOT_PROMPT_ARM_TTL_MS
+    }
+}
+
 /// `tauri::Manager::manage()`가 보관하는 앱 전역 상태. 커맨드는 전부
 /// `State<'_, AppState>`를 통해 이 구조체의 필드로만 위임한다.
 ///

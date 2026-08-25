@@ -1,21 +1,31 @@
 use std::sync::Arc;
 
-use crate::state::AppEvents;
+use crate::state::{AppEvents, BotPromptArms};
 use crate::types::{
     ActivityEvent, ActivityKind, NotificationEvent, NotificationSource, SessionStateEvent,
 };
 
 use super::store::SessionEventStore;
-use super::types::{SessionEventDraft, SessionEventKind, SessionStartedEvent};
+use super::types::{PromptOrigin, SessionEventDraft, SessionEventKind, SessionStartedEvent};
 
 pub struct RecordingAppEvents {
     inner: Arc<dyn AppEvents>,
     store: Arc<SessionEventStore>,
+    /// 봇 주입 표식(`bot/runner.rs::inject`가 arm). prompt 이벤트가 소비한다.
+    bot_arms: Arc<BotPromptArms>,
 }
 
 impl RecordingAppEvents {
-    pub fn new(inner: Arc<dyn AppEvents>, store: Arc<SessionEventStore>) -> Self {
-        Self { inner, store }
+    pub fn new(
+        inner: Arc<dyn AppEvents>,
+        store: Arc<SessionEventStore>,
+        bot_arms: Arc<BotPromptArms>,
+    ) -> Self {
+        Self {
+            inner,
+            store,
+            bot_arms,
+        }
     }
 
     fn record(&self, draft: SessionEventDraft) {
@@ -41,6 +51,7 @@ impl AppEvents for RecordingAppEvents {
             shell: Some(event.shell.clone()),
             state: None,
             tokens: None,
+            origin: None,
         });
         self.inner.session_started(event);
     }
@@ -103,12 +114,20 @@ impl AppEvents for RecordingAppEvents {
             | ActivityKind::Idle => None,
         };
         if let Some(kind) = kind {
-            self.record(SessionEventDraft::simple(
+            let mut draft = SessionEventDraft::simple(
                 event.agent_id.clone(),
                 event.session_id.clone(),
                 kind,
                 event.at,
-            ));
+            );
+            // 턴을 여는 prompt만 출처를 갖는다. 표식은 한 번 쓰면 사라지므로
+            // 뒤이은 사람 프롬프트는 사람 몫으로 남는다(kbm #2j8).
+            if kind == SessionEventKind::Prompt
+                && self.bot_arms.consume(&event.agent_id, event.at)
+            {
+                draft.origin = Some(PromptOrigin::Bot);
+            }
+            self.record(draft);
         }
         self.inner.activity_event(event);
     }
@@ -120,7 +139,7 @@ mod tests {
     use crate::session_events::store::SessionEventStore;
     use crate::session_events::types::{SessionEventKind, SessionEventRecord, SessionStartedEvent};
     use crate::state::fake::RecordingEvents;
-    use crate::state::AppEvents;
+    use crate::state::{AppEvents, BOT_PROMPT_ARM_TTL_MS};
     use crate::types::{
         ActivityEvent, ActivityKind, NotificationEvent, NotificationSource, SessionState,
         SessionStateEvent,
@@ -154,7 +173,7 @@ mod tests {
         let root = scratch_root();
         let inner = Arc::new(RecordingEvents::default());
         let store = Arc::new(SessionEventStore::new(root.clone()));
-        let events = RecordingAppEvents::new(inner.clone(), store);
+        let events = RecordingAppEvents::new(inner.clone(), store, Arc::new(BotPromptArms::new()));
         events.activity_event(&ActivityEvent {
             agent_id: "a1".into(),
             session_id: "s1".into(),
@@ -193,7 +212,7 @@ mod tests {
         let root = scratch_root();
         let inner = Arc::new(RecordingEvents::default());
         let store = Arc::new(SessionEventStore::new(root.clone()));
-        let events = RecordingAppEvents::new(inner, store);
+        let events = RecordingAppEvents::new(inner, store, Arc::new(BotPromptArms::new()));
         events.session_started(&SessionStartedEvent {
             agent_id: "a1".into(),
             session_id: "s1".into(),
@@ -262,7 +281,7 @@ mod tests {
         let root = scratch_root();
         let inner = Arc::new(RecordingEvents::default());
         let store = Arc::new(SessionEventStore::new(root.clone()));
-        let events = RecordingAppEvents::new(inner, store);
+        let events = RecordingAppEvents::new(inner, store, Arc::new(BotPromptArms::new()));
         let tokens = SessionEventTokens {
             input: Some(120),
             output: Some(340),
@@ -312,7 +331,7 @@ mod tests {
         let root = scratch_root();
         let inner = Arc::new(RecordingEvents::default());
         let store = Arc::new(SessionEventStore::new(root.clone()));
-        let events = RecordingAppEvents::new(inner, store);
+        let events = RecordingAppEvents::new(inner, store, Arc::new(BotPromptArms::new()));
         let states = [
             SessionState::Starting,
             SessionState::Running,
@@ -345,7 +364,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let inner = Arc::new(RecordingEvents::default());
         let store = Arc::new(SessionEventStore::new(root.clone()));
-        let events = RecordingAppEvents::new(inner.clone(), store);
+        let events = RecordingAppEvents::new(inner.clone(), store, Arc::new(BotPromptArms::new()));
         events.activity_event(&ActivityEvent {
             agent_id: "a1".into(),
             session_id: "s1".into(),
@@ -373,7 +392,7 @@ mod tests {
         fs::write(&root, b"not a directory").unwrap();
         let inner = Arc::new(RecordingEvents::default());
         let store = Arc::new(SessionEventStore::new(root.clone()));
-        let events = RecordingAppEvents::new(inner.clone(), store);
+        let events = RecordingAppEvents::new(inner.clone(), store, Arc::new(BotPromptArms::new()));
         events.activity_event(&ActivityEvent {
             agent_id: "a1".into(),
             session_id: "s1".into(),
@@ -386,5 +405,165 @@ mod tests {
         });
         assert_eq!(inner.activities().len(), 1);
         fs::remove_file(root).unwrap();
+    }
+
+    // ── 봇 주입 표식(kbm #2j8) ────────────────────────────────────────────
+
+    fn prompt(agent_id: &str, at: u64) -> ActivityEvent {
+        ActivityEvent {
+            agent_id: agent_id.into(),
+            session_id: "s1".into(),
+            kind: ActivityKind::Prompt,
+            at,
+            text: None,
+            assistant_text: None,
+            cwd: None,
+            count: None,
+        }
+    }
+
+    /// arm된 뒤 **처음 하나**만 봇이다 — 봇 주입은 1회 프롬프트이고, 그 뒤
+    /// 사람이 이어서 치는 프롬프트까지 봇으로 새면 안 된다.
+    #[test]
+    fn armed_agent_marks_only_the_next_prompt_as_bot() {
+        let root = scratch_root();
+        let inner = Arc::new(RecordingEvents::default());
+        let store = Arc::new(SessionEventStore::new(root.clone()));
+        let arms = Arc::new(BotPromptArms::new());
+        let events = RecordingAppEvents::new(inner, store, arms.clone());
+
+        arms.arm("a1", 1_783_728_000_000);
+        events.activity_event(&prompt("a1", 1_783_728_000_010));
+        events.activity_event(&prompt("a1", 1_783_728_000_020));
+
+        let records = read(&root);
+        assert_eq!(
+            records.iter().map(|r| r.origin).collect::<Vec<_>>(),
+            vec![Some(PromptOrigin::Bot), None]
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// 주입 직후 세션이 죽어 프롬프트가 끝내 안 오면, 남은 표식이 한참 뒤의
+    /// 사람 프롬프트를 오염시키면 안 된다.
+    #[test]
+    fn expired_arm_is_dropped_instead_of_marking_a_later_human_prompt() {
+        let root = scratch_root();
+        let inner = Arc::new(RecordingEvents::default());
+        let store = Arc::new(SessionEventStore::new(root.clone()));
+        let arms = Arc::new(BotPromptArms::new());
+        let events = RecordingAppEvents::new(inner, store, arms.clone());
+
+        let armed_at = 1_783_728_000_000;
+        arms.arm("a1", armed_at);
+        events.activity_event(&prompt("a1", armed_at + BOT_PROMPT_ARM_TTL_MS + 1));
+
+        let records = read(&root);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].origin, None);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// TTL 경계 정확히 위(=만료 아님)까지는 봇으로 인정한다.
+    #[test]
+    fn arm_at_exactly_the_ttl_boundary_still_counts_as_bot() {
+        let root = scratch_root();
+        let inner = Arc::new(RecordingEvents::default());
+        let store = Arc::new(SessionEventStore::new(root.clone()));
+        let arms = Arc::new(BotPromptArms::new());
+        let events = RecordingAppEvents::new(inner, store, arms.clone());
+
+        let armed_at = 1_783_728_000_000;
+        arms.arm("a1", armed_at);
+        events.activity_event(&prompt("a1", armed_at + BOT_PROMPT_ARM_TTL_MS));
+
+        let records = read(&root);
+        assert_eq!(records[0].origin, Some(PromptOrigin::Bot));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// 표식은 agent별이다 — 봇 탭의 arm이 옆자리 사람 프롬프트로 새면 안 된다.
+    #[test]
+    fn arm_does_not_leak_to_another_agent() {
+        let root = scratch_root();
+        let inner = Arc::new(RecordingEvents::default());
+        let store = Arc::new(SessionEventStore::new(root.clone()));
+        let arms = Arc::new(BotPromptArms::new());
+        let events = RecordingAppEvents::new(inner, store, arms.clone());
+
+        arms.arm("a1", 1_783_728_000_000);
+        events.activity_event(&prompt("a2", 1_783_728_000_010));
+        events.activity_event(&prompt("a1", 1_783_728_000_020));
+
+        let records = read(&root);
+        let by_agent: Vec<(String, Option<PromptOrigin>)> = records
+            .iter()
+            .map(|r| (r.agent_id.clone(), r.origin))
+            .collect();
+        assert_eq!(
+            by_agent,
+            vec![
+                ("a2".to_string(), None),
+                ("a1".to_string(), Some(PromptOrigin::Bot))
+            ]
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// 사람 프롬프트에는 `origin` **키 자체가** 나가지 않는다(옵션 추가라
+    /// schemaVersion 1을 유지하는 근거 — 과거 파일과 바이트 모양이 같다).
+    #[test]
+    fn human_prompt_omits_the_origin_key_entirely() {
+        let root = scratch_root();
+        let inner = Arc::new(RecordingEvents::default());
+        let store = Arc::new(SessionEventStore::new(root.clone()));
+        let events = RecordingAppEvents::new(inner, store, Arc::new(BotPromptArms::new()));
+
+        events.activity_event(&prompt("a1", 1_783_728_000_000));
+
+        let raw = fs::read_to_string(root.join("2026-07-11.jsonl")).unwrap();
+        assert!(!raw.contains("origin"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// 봇 프롬프트는 `"origin":"bot"`으로 나간다(TS 미러 `origin?: "bot"`).
+    #[test]
+    fn bot_prompt_serializes_origin_as_snake_case_bot() {
+        let root = scratch_root();
+        let inner = Arc::new(RecordingEvents::default());
+        let store = Arc::new(SessionEventStore::new(root.clone()));
+        let arms = Arc::new(BotPromptArms::new());
+        let events = RecordingAppEvents::new(inner, store, arms.clone());
+
+        arms.arm("a1", 1_783_728_000_000);
+        events.activity_event(&prompt("a1", 1_783_728_000_000));
+
+        let raw = fs::read_to_string(root.join("2026-07-11.jsonl")).unwrap();
+        assert!(raw.contains("\"origin\":\"bot\""));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// prompt가 아닌 종류는 표식을 소비하지 않는다 — 봇 주입과 프롬프트 사이에
+    /// 도구 이벤트가 끼어도 표식이 엉뚱한 곳에서 사라지면 안 된다.
+    #[test]
+    fn non_prompt_events_do_not_consume_the_arm() {
+        let root = scratch_root();
+        let inner = Arc::new(RecordingEvents::default());
+        let store = Arc::new(SessionEventStore::new(root.clone()));
+        let arms = Arc::new(BotPromptArms::new());
+        let events = RecordingAppEvents::new(inner, store, arms.clone());
+
+        arms.arm("a1", 1_783_728_000_000);
+        let mut tool = prompt("a1", 1_783_728_000_005);
+        tool.kind = ActivityKind::Tool;
+        events.activity_event(&tool);
+        events.activity_event(&prompt("a1", 1_783_728_000_010));
+
+        let records = read(&root);
+        assert_eq!(
+            records.iter().map(|r| r.origin).collect::<Vec<_>>(),
+            vec![None, Some(PromptOrigin::Bot)]
+        );
+        let _ = fs::remove_dir_all(root);
     }
 }

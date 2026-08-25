@@ -45,6 +45,7 @@ impl SessionEventStore {
             shell: draft.shell,
             state: draft.state,
             tokens: draft.tokens,
+            origin: draft.origin,
         };
         let path = self.path_for(record.at)?;
         fs::create_dir_all(&self.root)?;

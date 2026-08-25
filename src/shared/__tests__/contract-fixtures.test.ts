@@ -188,6 +188,28 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expect(parsed.seq).toBe(42);
     // 토큰은 stop에만 실린다 — 다른 종류에는 없어야 한다.
     expect(parsed.tokens).toBeUndefined();
+    // 출처는 봇 주입 prompt에만 실린다.
+    expect(parsed.origin).toBeUndefined();
+  });
+
+  it("SessionEventRecord (prompt, 봇 주입 출처)", () => {
+    const parsed: SessionEventRecord = loadFixture(
+      "session-event-record.prompt.bot.json",
+    ) as SessionEventRecord;
+    expectKeys(parsed, [
+      "schemaVersion",
+      "runId",
+      "seq",
+      "at",
+      "agentId",
+      "sessionId",
+      "kind",
+      "origin",
+    ]);
+    expect(parsed.kind).toBe("prompt");
+    expect(parsed.origin).toBe("bot");
+    // 옵션 추가라 스키마 버전은 1을 유지한다(출처 없는 과거 파일과 섞여 읽힌다).
+    expect(parsed.schemaVersion).toBe(1);
   });
 
   it("SessionEventRecord (stop, 턴 토큰 포함)", () => {
@@ -407,8 +429,21 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "costUsd",
     ]);
     expect(winner.hasPortrait).toBe(true);
+    // 규칙 v2 레코드: 순위 값은 사람 몫이고, 봇 시간이 0인 행은 `botWorkedMs`
+    // 키 자체가 없다(옵션 추가라 파일 version은 1을 유지한다).
+    expect(rec.rulesVersion).toBe(2);
     const standing: AwardStanding = rec.leaderboard[0];
     expectKeys(standing, ["agentId", "name", "workedMs", "turns", "activeDays"]);
+    const botStanding: AwardStanding = rec.leaderboard[1];
+    expectKeys(botStanding, [
+      "agentId",
+      "name",
+      "workedMs",
+      "turns",
+      "activeDays",
+      "botWorkedMs",
+    ]);
+    expect(botStanding.botWorkedMs).toBe(21_600_000);
     // 재생성하면 append -- 마지막 원소가 대표 소감이다.
     const speech: AwardSpeech = rec.speeches[rec.speeches.length - 1];
     expectKeys(speech, ["at", "provider", "text"]);
@@ -429,6 +464,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "session-event-record.started.json",
       "session-event-record.tool.json",
       "session-event-record.stop.json",
+      "session-event-record.prompt.bot.json",
       "usage-snapshot.json",
       "get-app-settings-result.json",
       "git-status-result.json",

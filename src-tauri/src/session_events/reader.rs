@@ -110,6 +110,7 @@ mod tests {
             shell: None,
             state: None,
             tokens: None,
+            origin: None,
         }
     }
 

@@ -15,10 +15,15 @@ export const AWARDS_SCHEMA_VERSION = 1 as const;
 
 /**
  * 현재 선정 규칙 버전. 규칙이 바뀌어도 과거 레코드를 그 시절 규칙으로 해석할 수
- * 있도록 레코드마다 박아 둔다. v1 = workedMs → turns → activeDays → agentId
- * 사전식 비교, 최소 활동 임계(3일 / 30분), 봇 제외.
+ * 있도록 레코드마다 박아 둔다.
+ *
+ * - v1 = workedMs → turns → activeDays → agentId 사전식 비교, 최소 활동
+ *   임계(3일 / 30분), **프로필에 봇 설정이 있으면 캐릭터를 통째로 제외**.
+ * - v2 = 같은 사전식 비교·같은 임계지만 전부 **사람 몫**(총계 - 봇 주입 턴 몫)
+ *   기준이다. 캐릭터 단위 봇 제외는 없앴다 — v1은 봇 시간의 출처를 보지 않고
+ *   프로필만 봐서, 봇을 한 번 붙여준 캐릭터를 영구 출전정지로 만들었다.
  */
-export const AWARD_RULES_VERSION = 1 as const;
+export const AWARD_RULES_VERSION = 2 as const;
 
 /** 시상 파일 전체. Rust `AwardsFile` 미러. */
 export interface AwardsFile {
@@ -57,7 +62,13 @@ export interface AwardWinner {
   stats: AwardStats;
 }
 
-/** 수상 근거가 된 그 달 통계 스냅샷. Rust `AwardStats` 미러. */
+/**
+ * 수상 근거가 된 그 달 통계 스냅샷. Rust `AwardStats` 미러.
+ *
+ * 규칙 v2부터 `workedMs`/`turns`/`activeDays`는 순위표와 같은 **사람 몫**이다
+ * (같은 화면의 순위표 1행과 숫자가 어긋나지 않게). `toolEvents`·토큰·비용은
+ * 출처를 나눌 수 없어 총계 그대로다.
+ */
 export interface AwardStats {
   workedMs: number;
   turns: number;
@@ -68,7 +79,12 @@ export interface AwardStats {
   costUsd: number;
 }
 
-/** 순위표 한 행 스냅샷. Rust `AwardStanding` 미러. */
+/**
+ * 순위표 한 행 스냅샷. Rust `AwardStanding` 미러.
+ *
+ * 규칙 v2부터 `workedMs`/`turns`/`activeDays`는 **사람 몫**이다(순위를 매긴
+ * 바로 그 값). v1 레코드는 총계였다 — `rulesVersion`으로 구분한다.
+ */
 export interface AwardStanding {
   agentId: string;
   /** 확정 시점 이름. */
@@ -76,6 +92,11 @@ export interface AwardStanding {
   workedMs: number;
   turns: number;
   activeDays: number;
+  /**
+   * 순위에서 빠진 봇 주입 턴의 작업시간(ms). 0이면 생략한다 — v1 레코드에는
+   * 아예 없다. UI가 "(봇 제외)" 표기를 붙일지 판단하는 근거다.
+   */
+  botWorkedMs?: number;
 }
 
 /** 생성된 수상 소감 한 편. Rust `AwardSpeech` 미러. */

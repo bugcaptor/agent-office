@@ -437,6 +437,22 @@ fn session_event_record_stop_with_tokens_roundtrips() {
 }
 
 #[test]
+fn session_event_record_bot_prompt_origin_roundtrips() {
+    assert_roundtrip::<SessionEventRecord>(fixture!("session-event-record.prompt.bot.json"));
+}
+
+#[test]
+fn session_event_record_origin_is_absent_for_human_prompts() {
+    // TS 미러가 `origin?: "bot"`이라 사람 프롬프트에는 키 자체가 없어야 한다
+    // (null이 아니라 부재 — `tokens`와 같은 계약).
+    let parsed: SessionEventRecord =
+        serde_json::from_str(fixture!("session-event-record.tool.json")).unwrap();
+    assert!(parsed.origin.is_none());
+    let json = serde_json::to_string(&parsed).unwrap();
+    assert!(!json.contains("origin"));
+}
+
+#[test]
 fn bot_status_roundtrips() {
     assert_roundtrip::<BotStatus>(fixture!("bot-status.json"));
 }

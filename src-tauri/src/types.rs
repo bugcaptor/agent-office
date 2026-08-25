@@ -389,6 +389,10 @@ pub struct AwardStanding {
     pub worked_ms: u64,
     pub turns: u64,
     pub active_days: u64,
+    /// 순위에서 빠진 봇 주입 턴의 작업시간(ms). 0이면 생략하고, 규칙 v1
+    /// 레코드에는 아예 없다(옵션 추가라 파일 version은 1을 유지한다).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub bot_worked_ms: Option<u64>,
 }
 
 /// 생성된 수상 소감 한 편. TS `AwardSpeech` 미러.
@@ -1597,6 +1601,7 @@ mod tests {
                     worked_ms: 7_200_000,
                     turns: 42,
                     active_days: 11,
+                    bot_worked_ms: Some(600_000),
                 }],
                 speeches: vec![AwardSpeech {
                     at: 1_700_000_001_000,
@@ -1617,6 +1622,7 @@ mod tests {
             "\"tokensIn\"",
             "\"tokensOut\"",
             "\"costUsd\"",
+            "\"botWorkedMs\"",
         ] {
             assert!(json.contains(key), "{key} missing in {json}");
         }
@@ -1639,6 +1645,25 @@ mod tests {
         let json = serde_json::to_string(&record).unwrap();
         assert!(json.contains("\"winner\":null"), "{json}");
         assert!(!json.contains("archetype"), "{json}");
+    }
+
+    /// 봇 몫이 없는 순위표 행은 `botWorkedMs` 키 자체가 나가지 않는다 — 규칙
+    /// v1 레코드와 파일 모양이 같아야 파일 version 1을 유지할 수 있다.
+    #[test]
+    fn award_standing_omits_bot_worked_ms_when_absent() {
+        let standing = AwardStanding {
+            agent_id: "a1".into(),
+            name: "김코드".into(),
+            worked_ms: 7_200_000,
+            turns: 42,
+            active_days: 11,
+            bot_worked_ms: None,
+        };
+        let json = serde_json::to_string(&standing).unwrap();
+        assert!(!json.contains("botWorkedMs"), "{json}");
+        // 없는 키로 저장된 v1 레코드도 그대로 읽힌다.
+        let parsed: AwardStanding = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, standing);
     }
 
     #[test]

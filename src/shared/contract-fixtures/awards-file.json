@@ -12,7 +12,7 @@
     {
       "month": "2026-07",
       "decidedAt": 1754006400000,
-      "rulesVersion": 1,
+      "rulesVersion": 2,
       "winner": {
         "agentId": "agent-nari",
         "name": "나리",
@@ -42,7 +42,8 @@
           "name": "하루",
           "workedMs": 98400000,
           "turns": 301,
-          "activeDays": 14
+          "activeDays": 14,
+          "botWorkedMs": 21600000
         }
       ],
       "speeches": [

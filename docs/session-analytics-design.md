@@ -211,3 +211,27 @@ pi는 전사/rollout 경로가 없어 항상 `tokens: None`이다.
 토큰·비용은 작업시간과 달리 **자정 경계로 쪼개지 않고 stop 시각의 로컬 날짜에 통째로
 귀속**한다 — 마감 시점에 한꺼번에 확정되는 값이라 시간 비례로 나눌 근거가 없다.
 `range` 게이트는 도구 이벤트와 똑같이 적용한다(창 밖 stop의 토큰은 제외).
+
+## 10. 확장 — 프롬프트 출처(봇 주입) 분리 (2026-08-25)
+
+"이 달의 우수사원"이 사람 몫만 세려면 턴 하나하나가 사람에게서 온 것인지 봇에게서
+온 것인지 알아야 한다. 결정과 근거의 정본은 `docs/employee-of-the-month-design.md`
+§2이고, 여기에는 **시계열 계층에 무엇이 늘었는지**만 적는다.
+
+`SessionEventRecord`에 옵션 필드 `origin`(`"bot"` 하나뿐)을 더한다. **`schemaVersion`은
+1을 유지한다** — `tokens`(§9.1)와 같은 이유로 옵션 추가는 하위호환이고, 출처가 없는
+과거 파일과 한 디렉터리에 섞여도 그대로 읽힌다. `kind="prompt"` 레코드에만, 그것도
+봇이 주입했을 때만 실린다(사람 프롬프트는 키 자체가 없다).
+
+봇은 별도 세션을 띄우지 않고 이미 떠 있는 터미널에 `write_input`으로 프롬프트를
+밀어넣으므로 세션·agentId로는 구분할 수 없다. 그래서 배선은 알림 경로가 아니라
+**주입 지점에서 시작하는 표식**이다: `bot/runner.rs::inject()`가 쓰기 직전에
+`state.rs`의 `BotPromptArms`에 그 agent를 arm → `RecordingAppEvents`가 그 agent의
+다음 prompt 이벤트 **하나**로 소비. 표식은 소비되면 사라지고 **TTL 120초**로
+만료된다(주입 직후 세션이 죽어 프롬프트가 끝내 안 올 때, 남은 표식이 다음 사람
+프롬프트를 오염시키는 것을 막는다).
+
+집계(`aggregate.ts`)는 `Turn`에 턴을 연 prompt의 `origin`을 싣고, `AgentDailyStat`·
+`AgentSummary`에 `botWorkedMs`/`botTurns`를 **분리 누적**한다. 기존 `workedMs`/`turns`는
+**총계 그대로**다 — 분석 패널이 보여주는 수치는 바뀌지 않는다. 날짜 집합만은 뺄셈으로
+복원할 수 없어 `humanActiveDays`를 따로 센다.

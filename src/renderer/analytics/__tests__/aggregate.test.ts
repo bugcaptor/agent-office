@@ -402,3 +402,90 @@ describe("dayRange", () => {
     expect(dayRange(kst(2026, 6, 12, 0, 0), kst(2026, 6, 10, 0, 0), KST)).toEqual([]);
   });
 });
+
+describe("봇 주입 턴 분리(kbm #2j8)", () => {
+  it("턴은 자기를 연 prompt의 origin을 물려받고, 뒤이은 prompt는 덮어쓰지 않는다", () => {
+    const p1 = kst(2026, 6, 11, 10, 0);
+    const p2 = kst(2026, 6, 11, 10, 5);
+    const stop = kst(2026, 6, 11, 10, 30);
+    const turns = reconstructTurns([
+      ev({ kind: "prompt", at: p1, origin: "bot" }),
+      ev({ kind: "prompt", at: p2 }), // 같은 턴으로 흡수 — 출처를 바꾸지 않는다
+      ev({ kind: "stop", at: stop }),
+    ]);
+    expect(turns).toEqual([
+      { agentId: "a1", sessionId: "s1", startAt: p1, endAt: stop, origin: "bot" },
+    ]);
+  });
+
+  it("origin이 없는 프롬프트로 열린 턴에는 origin 키가 붙지 않는다(하위호환)", () => {
+    const turns = reconstructTurns([
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0) }),
+      ev({ kind: "stop", at: kst(2026, 6, 11, 10, 10) }),
+    ]);
+    expect(turns[0].origin).toBeUndefined();
+  });
+
+  it("봇 몫은 총계에서 빼지 않고 bot* 로 따로 쌓인다", () => {
+    const events = [
+      // 봇 턴 20분.
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 9, 0), origin: "bot" }),
+      ev({ kind: "stop", at: kst(2026, 6, 11, 9, 20) }),
+      // 사람 턴 40분.
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0) }),
+      ev({ kind: "stop", at: kst(2026, 6, 11, 10, 40) }),
+    ];
+    const data = aggregate(events, { a1: profile("a1", "Ada") }, KST);
+    const row = data.summary[0];
+    // 총계는 그대로 — 분석 패널에 보이는 수치는 바뀌지 않는다.
+    expect(row.workedMs).toBe(60 * 60_000);
+    expect(row.turns).toBe(2);
+    expect(row.botWorkedMs).toBe(20 * 60_000);
+    expect(row.botTurns).toBe(1);
+    const cell = data.daily["2026-07-11"].a1;
+    expect(cell.workedMs).toBe(60 * 60_000);
+    expect(cell.botWorkedMs).toBe(20 * 60_000);
+    expect(cell.botTurns).toBe(1);
+  });
+
+  it("자정을 걸친 봇 턴은 봇 몫도 날짜별로 쪼개진다", () => {
+    const events = [
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 23, 0), origin: "bot" }),
+      ev({ kind: "stop", at: kst(2026, 6, 12, 1, 0) }),
+    ];
+    const data = aggregate(events, {}, KST);
+    expect(data.daily["2026-07-11"].a1.botWorkedMs).toBe(60 * 60_000);
+    expect(data.daily["2026-07-12"].a1.botWorkedMs).toBe(60 * 60_000);
+    // 턴 수는 시작 날짜에만.
+    expect(data.daily["2026-07-11"].a1.botTurns).toBe(1);
+    expect(data.daily["2026-07-12"].a1.botTurns).toBe(0);
+  });
+
+  it("봇만 돌린 날은 사람 활동일로 세지 않는다(도구 이벤트가 있어도)", () => {
+    const events = [
+      // 07-10: 봇만 + 도구.
+      ev({ kind: "prompt", at: kst(2026, 6, 10, 9, 0), origin: "bot" }),
+      ev({ kind: "tool", at: kst(2026, 6, 10, 9, 5) }),
+      ev({ kind: "stop", at: kst(2026, 6, 10, 9, 30) }),
+      // 07-11: 사람.
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 9, 0) }),
+      ev({ kind: "stop", at: kst(2026, 6, 11, 9, 30) }),
+    ];
+    const row = aggregate(events, {}, KST).summary[0];
+    expect(row.activeDays).toBe(2);
+    expect(row.humanActiveDays).toBe(1);
+  });
+
+  it("origin이 전혀 없는 과거 이벤트는 전부 사람 몫이다", () => {
+    const events = [
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 9, 0) }),
+      ev({ kind: "stop", at: kst(2026, 6, 11, 9, 30) }),
+      ev({ kind: "prompt", at: kst(2026, 6, 12, 9, 0) }),
+      ev({ kind: "stop", at: kst(2026, 6, 12, 9, 30) }),
+    ];
+    const row = aggregate(events, {}, KST).summary[0];
+    expect(row.botWorkedMs).toBe(0);
+    expect(row.botTurns).toBe(0);
+    expect(row.humanActiveDays).toBe(row.activeDays);
+  });
+});

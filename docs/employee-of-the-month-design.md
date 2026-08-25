@@ -1,6 +1,6 @@
 # 이 달의 우수사원 (Employee of the Month) 설계
 
-상태: 정본 — 2026-08-24 신설. kbm #2hx.
+상태: 정본 — 2026-08-24 신설(kbm #2hx). 2026-08-25 선정 규칙 v2로 개정(kbm #2j8, §2·§8).
 
 한 달에 한 번 우수사원을 뽑아 시상 화면에 초상·통계·순위표를 보여주고, 캐릭터가 자기 성격과 지난달 일기를 바탕으로 수상 소감을 말하게 한다. 수상 내역과 소감은 영구 기록되어 나중에 열람할 수 있다.
 
@@ -11,15 +11,17 @@
 - **레코드는 자기완결적이다.** 캐릭터를 삭제하거나 개명하거나 초상을 바꿔도 과거 시상 화면이 온전히 재구성되어야 한다.
 - 원천 데이터는 전부 기존 것을 재사용한다. 새로 만드는 것은 수상 기록 영속화·선정 로직·소감 생성기·시상 UI·씬 연출뿐이다.
 
-## 2. 선정 규칙 (rulesVersion 1)
+## 2. 선정 규칙 (rulesVersion 2)
 
 가중합이 아니라 **사전식(lexicographic) 비교**다. 가중치 합성은 단위 정규화가 그 달의 후보 구성에 의존해 설명하기 어렵고, "가장 오래 일한 사원"이라는 직관적 서사가 낫다. `aggregate()`의 기본 정렬(workedMs 내림차순)과도 일치한다.
 
+비교와 임계 판정은 전부 **사람 몫**으로 한다 — 총계에서 봇이 주입한 프롬프트로 시작한 턴의 몫을 뺀 값이다(`humanWorkedMs = workedMs - botWorkedMs`, `humanTurns = turns - botTurns`, `humanActiveDays`).
+
 | 순서 | 기준 | 방향 |
 |---|---|---|
-| 1 | `workedMs` | 내림차순 |
-| 2 | `turns` | 내림차순 |
-| 3 | `activeDays` | 내림차순 |
+| 1 | 사람 `workedMs` | 내림차순 |
+| 2 | 사람 `turns` | 내림차순 |
+| 3 | 사람 `activeDays` | 내림차순 |
 | 4 | `agentId` | 오름차순 (최종 결정성 보장) |
 
 **후보 자격**
@@ -27,13 +29,21 @@
 | 조건 | 처리 | 근거 |
 |---|---|---|
 | `deleted === true` | 제외 | 현재 프로필이 없어 초상·성격이 없다. 시상 화면을 구성할 수 없다 |
-| 봇 모드 캐릭터 | 제외 | 자동 실행 봇이 작업시간을 매달 독식하면 기능의 재미가 죽는다 |
-| `activeDays < 3` | 제외 | 월말에 만든 캐릭터·1회성 실험이 우연히 1위가 되는 왜곡 방지 |
-| `workedMs < 30분` | 제외 | 위와 같음 |
+| 사람 `activeDays < 3` | 제외 | 월말에 만든 캐릭터·1회성 실험이 우연히 1위가 되는 왜곡 방지 |
+| 사람 `workedMs < 30분` | 제외 | 위와 같음. 봇으로만 돌아간 캐릭터는 여기 걸려 자연히 빠진다 |
+| 봇 모드 캐릭터 | **제외하지 않음** | 프로필이 아니라 턴의 출처를 본다(아래) |
 | `clockedOut` | **제외하지 않음** | 현재 상태일 뿐 그 달의 실적과 무관하다 |
 | 연속 수상 | **허용** | 페널티는 과설계. 실제로 제일 일한 캐릭터가 받는 게 자연스럽다 |
 
 "생성일 기준 제외"는 별도로 두지 않는다 — 최소 활동 임계값이 같은 효과를 내면서 규칙이 하나 줄어든다.
+
+**왜 v1이 틀렸나 (kbm #2j8).** v1은 `isBotProfile(profile)`로 **봇 시간의 출처를 보지 않고 프로필만 보고** 캐릭터를 통째로 후보에서 뺐다. 그래서 봇 기능을 한 번이라도 붙여준 캐릭터는 그 뒤로 사람이 아무리 일을 시켜도 영구 출전정지가 됐다 — 실제 데이터에서 7명 중 4명이 제외되고, 압도적 1위(59.4h, 2위의 2.5배)가 빠진 채 18.5h짜리가 선두가 되어 있었다. 봇은 **별도 세션을 띄우지 않는다**: `bot/runner.rs::inject()`가 `write_input`으로 이미 떠 있는 터미널에 프롬프트를 밀어넣으므로 세션도 agentId도 사람이 쓸 때와 같다. 구분선은 **턴 단위**에만 있고, 마침 `workedMs`가 턴 합산이라 결이 맞는다. 그래서 v2는 프로필을 아예 보지 않고 턴의 출처만 본다.
+
+**출처는 어떻게 남기나.** `inject()`가 `write_input` **직전에** 그 agent를 arm하고(`state.rs`의 `BotPromptArms`, agentId → armed_at), `RecordingAppEvents`가 그 agent의 **다음 prompt 이벤트 하나**로 표식을 소비해 `SessionEventRecord.origin = "bot"`을 세운다. 표식은 한 번 쓰면 사라지므로 뒤이은 사람 프롬프트는 오염되지 않고, **TTL 120초**를 넘기면 만료된다(주입 직후 세션이 죽어 프롬프트가 끝내 안 올 때 표식이 남아 다음 사람 프롬프트를 봇으로 만드는 것을 막는다). `origin`은 옵션 필드이고 봇일 때만 나가므로 `schemaVersion`은 1을 유지한다(`tokens` 선례). **출처가 없던 과거 이벤트는 전부 사람 몫으로 집계되는 것이 의도된 동작이다.**
+
+**집계에서 총계는 건드리지 않는다.** `AgentDailyStat`·`AgentSummary`의 `workedMs`/`turns`는 봇 몫을 포함한 **총계 그대로**이고, 봇 몫을 `botWorkedMs`/`botTurns`로 **분리 누적**한다 — 분석 패널이 보여주는 "그 자리에서 실제로 돌아간 시간"은 바뀌면 안 되기 때문이다. 다만 날짜 집합은 뺄셈으로 복원할 수 없어(한 날에 사람·봇이 섞인다) `humanActiveDays`를 따로 센다. 이 판정에서 **도구 이벤트는 뺀다** — 도구는 출처를 나눌 수 없어서, 봇만 돌린 날이 도구 때문에 사람 활동일로 새면 표식이 무의미해진다.
+
+**시상 레코드의 수치도 사람 몫이다.** `AwardStanding`과 `AwardWinner.stats`의 `workedMs`/`turns`/`activeDays`는 순위를 매긴 바로 그 값(사람 몫)을 스냅샷한다 — 같은 화면의 순위표 1행과 수상자 배지 숫자가 어긋나면 사용자가 납득할 수 없다. `toolEvents`·토큰·비용은 출처를 나눌 수 없어 총계 그대로다. 순위표 행에는 빠진 몫을 `botWorkedMs?`(0이면 생략)로 남겨, 그런 사원이 하나라도 있으면 UI가 작업시간 열 제목에 "(봇 제외)"를 붙인다. v1 레코드는 총계였다 — `rulesVersion`으로 구분한다. **이미 확정된 레코드는 재계산하지 않는다**(write-once).
 
 **경계**: 자격자 1명 → 그대로 수상. 자격자 0명(전원 임계 미달 포함) → `winner: null` 레코드를 **기록한다**. 기록해 두어야 매 부팅마다 그 달을 재계산하지 않는다.
 
@@ -78,7 +88,8 @@ interface AwardWinner {
   stats: { workedMs; turns; toolEvents; activeDays; tokensIn; tokensOut; costUsd }
 }
 
-interface AwardStanding { agentId; name; workedMs; turns; activeDays }
+// v2: workedMs/turns/activeDays는 사람 몫. botWorkedMs는 0이면 생략.
+interface AwardStanding { agentId; name; workedMs; turns; activeDays; botWorkedMs? }
 interface AwardSpeech { at: number; provider: string; text: string }
 ```
 
@@ -192,9 +203,9 @@ load_award_portrait(month)                           -> string | null  // base64
 
 ## 8. 테스트
 
-**vitest** — `selection.test.ts`: 결정성(같은 입력 → 같은 결과, 입력 unmutated), 4단계 동점 전부, 임계 미달 → `winner: null`, deleted/bot 제외, `clockedOut` 포함됨, `fixedOffsetCalendar`로 월 경계·연말연시. `speechGenerator.test.ts`: 월 필터, 균등 샘플링, 예산 역산(편수·편당)·문장 경계 절단, 프롬프트 총량이 백엔드 상한 아래로 유지됨, 출력 클램프(`clampSpeech`), 일기 없음 경로, 실패 사유 매핑. `AwardFrameOverlay.test.ts`: 폴라로이드 형태(아래 턱 > 위 여백), 별, 압정 비회전 + 카드 회전축, 사진 contain. `awardsStore.test.ts`: 기존 레코드 skip, 누락 월만 확정, 12개월 캡, 진행 중인 달 미확정, 인플라이트 중복 가드.
+**vitest** — `selection.test.ts`: 결정성(같은 입력 → 같은 결과, 입력 unmutated), 4단계 동점 전부(사람 몫 기준), 임계 미달 → `winner: null`, deleted 제외, `clockedOut` 포함됨, **봇 시간만 있는 캐릭터는 사람 몫 임계 미달로 빠짐**, **봇 시간이 섞인 캐릭터는 캐릭터째 빠지지 않고 사람 몫으로 겨룸**(총계 1위와 사람 몫 1위가 뒤집히는 경우 포함), 사람 활동일 임계, `origin`이 없던 옛 집계(bot* = 0)는 전부 사람 몫, `fixedOffsetCalendar`로 월 경계·연말연시. `aggregate.test.ts`: 턴이 자기를 연 prompt의 `origin`을 물려받고 뒤이은 prompt가 덮어쓰지 않음, 봇 몫이 총계에서 빠지지 않고 `bot*`로 따로 쌓임, 자정을 걸친 봇 턴의 날짜 분할, 봇만 돌린 날은 도구 이벤트가 있어도 사람 활동일이 아님, `origin` 없는 과거 이벤트의 하위호환. `AwardsDialog.test.tsx`: 봇 시간이 0이 아닌 행이 있을 때만 작업시간 열에 "(봇 제외)". `speechGenerator.test.ts`: 월 필터, 균등 샘플링, 예산 역산(편수·편당)·문장 경계 절단, 프롬프트 총량이 백엔드 상한 아래로 유지됨, 출력 클램프(`clampSpeech`), 일기 없음 경로, 실패 사유 매핑. `AwardFrameOverlay.test.ts`: 폴라로이드 형태(아래 턱 > 위 여백), 별, 압정 비회전 + 카드 회전축, 사진 contain. `awardsStore.test.ts`: 기존 레코드 skip, 누락 월만 확정, 12개월 캡, 진행 중인 달 미확정, 인플라이트 중복 가드.
 
-**cargo** — `awards_store`: 라운드트립, temp+rename 원자성, `month` 키 검증 거부, 미래 `version` 로드 거부 + 파일 보존, upsert-if-absent, speech append, 초상 원본 없을 때 `hasPortrait:false`, 복사 성공 시 `load_portrait`가 Some.
+**cargo** — `awards_store`: 라운드트립, temp+rename 원자성, `month` 키 검증 거부, 미래 `version` 로드 거부 + 파일 보존, upsert-if-absent, speech append, 초상 원본 없을 때 `hasPortrait:false`, 복사 성공 시 `load_portrait`가 Some. `AwardStanding`은 봇 몫이 없으면 `botWorkedMs` 키 자체를 생략(v1 레코드와 같은 모양). `recording_events`: arm 후 **첫 프롬프트 하나만** 봇이고 두 번째는 사람, TTL(120초) 만료 시 arm 무시, TTL 경계값은 봇, 다른 agentId로 새지 않음, prompt가 아닌 이벤트는 표식을 소비하지 않음, 사람 프롬프트는 `origin` 키 자체가 안 나가고 봇은 `"origin":"bot"`.
 
 **계약** — Rust struct ↔ TS 미러 직렬화 일치(`src/shared/contract-fixtures/`).
 

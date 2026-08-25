@@ -69,6 +69,7 @@
     "colRank": "순위",
     "colName": "이름",
     "colWorked": "작업시간",
+    "colWorkedNoBot": "작업시간 (봇 제외)",
     "colTurns": "턴",
     "colActiveDays": "활동일",
     "speechTitle": "수상 소감",

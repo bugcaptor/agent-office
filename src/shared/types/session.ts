@@ -216,6 +216,16 @@ export interface SessionEventRecord {
    * 실패는 undefined — 집계는 반드시 부재를 견뎌야 한다.
    */
   tokens?: SessionEventTokens;
+  /**
+   * kind="prompt"일 때 그 프롬프트의 출처. **봇 주입만** 표식이 붙고 사람이 친
+   * 프롬프트는 필드 자체가 없다. 봇은 별도 세션을 띄우지 않고 이미 떠 있는
+   * 터미널에 프롬프트를 밀어넣으므로(백엔드 `bot/runner.rs::inject`) 세션·
+   * agentId로는 구분할 수 없고, 구분선이 턴 단위에만 있다.
+   *
+   * 이 필드가 생기기 전의 과거 이벤트에는 당연히 없다 — 전부 사람 몫으로
+   * 집계되는 것이 의도된 동작이다.
+   */
+  origin?: "bot";
 }
 
 /**

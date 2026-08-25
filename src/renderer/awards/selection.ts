@@ -9,7 +9,6 @@
 //
 // 월 경계 계산도 여기 모았다. 타임존 의존은 aggregate.ts와 같은 `DayCalendar`로
 // 주입 가능하게 두어, 테스트에서 `fixedOffsetCalendar(540)`로 못박아 검증한다.
-import type { AgentProfile } from "@shared/types";
 import {
   localDayCalendar,
   type AggregateRange,
@@ -103,34 +102,33 @@ export function shiftMonth(monthKey: string, delta: number): string {
 }
 
 /**
- * 프로필이 봇 모드로 설정돼 있는지.
+ * 그 캐릭터가 **사람에게 부려져** 일한 시간(ms).
  *
- * `AgentProfile.bot`은 봇의 지속 설정만 담고, 아무것도 설정하지 않았으면 아예
- * 필드가 없다(`generate.ts`의 `buildBotConfig`가 undefined를 돌려준다). 다만 옛
- * 프로필에 빈 껍데기가 남아 있을 수 있어, 실질적인 설정이 하나라도 있을 때만
- * 봇으로 본다. 봇은 사람이 부린 캐릭터가 아니므로 시상 후보에서 뺀다.
+ * 규칙 v1은 프로필에 봇 설정이 있으면 그 캐릭터를 통째로 후보에서 뺐다. 그건
+ * 틀렸다 — 봇 시간의 **출처를 보지 않고 프로필만 봤기** 때문에, 봇 기능을 한 번
+ * 붙여준 캐릭터가 그 뒤로 사람이 아무리 일을 시켜도 영구 출전정지가 됐다.
+ * 실제 구분선은 턴 단위에 있고(봇은 사람과 같은 세션에 프롬프트를 밀어넣는다),
+ * 집계가 그 몫을 `botWorkedMs`로 분리해 주므로 빼서 보면 된다.
  */
-export function isBotProfile(profile: AgentProfile | undefined): boolean {
-  const bot = profile?.bot;
-  if (!bot) return false;
-  return (
-    (bot.slug ?? "").trim().length > 0 ||
-    (bot.whitelist?.length ?? 0) > 0 ||
-    bot.pollIntervalSec !== undefined ||
-    bot.idleQuietMs !== undefined
-  );
+export function humanWorkedMs(s: AgentSummary): number {
+  return Math.max(0, s.workedMs - s.botWorkedMs);
+}
+
+/** 사람이 시킨 턴 수(전체 턴 - 봇 주입 턴). */
+export function humanTurns(s: AgentSummary): number {
+  return Math.max(0, s.turns - s.botTurns);
 }
 
 /**
  * 수상자와 순위표를 고른다. 결정적이고 입력을 변형하지 않는다.
  *
- * 제외: 삭제된 캐릭터, 봇 모드 설정, 최소 활동일/작업시간 미달.
+ * 제외: 삭제된 캐릭터, 최소 활동일/작업시간 미달. **판정은 전부 사람 몫**이라
+ * 봇으로만 돌아간 캐릭터는 자연히 임계에 걸려 빠진다(프로필 기반 제외 없음).
  * 퇴근(clockedOut)은 제외 사유가 아니다 — 그 달에 일한 사실은 남는다.
- * 정렬: workedMs ↓ → turns ↓ → activeDays ↓ → agentId 사전식 ↑.
+ * 정렬: 사람 workedMs ↓ → 사람 turns ↓ → 사람 activeDays ↓ → agentId 사전식 ↑.
  */
 export function pickWinner(
   summary: readonly AgentSummary[],
-  profiles: Record<string, AgentProfile>,
   opts: SelectionOptions = {},
 ): SelectionResult {
   const minActiveDays = opts.minActiveDays ?? DEFAULT_MIN_ACTIVE_DAYS;
@@ -138,9 +136,8 @@ export function pickWinner(
 
   const eligible = summary.filter((s) => {
     if (s.deleted) return false;
-    if (isBotProfile(profiles[s.agentId])) return false;
-    if (s.activeDays < minActiveDays) return false;
-    if (s.workedMs < minWorkedMs) return false;
+    if (s.humanActiveDays < minActiveDays) return false;
+    if (humanWorkedMs(s) < minWorkedMs) return false;
     return true;
   });
 
@@ -153,8 +150,12 @@ export function pickWinner(
 
 /** 시상 순위 비교자(작을수록 상위). 동점은 agentId 사전식으로 완전히 깬다. */
 export function compareForAward(a: AgentSummary, b: AgentSummary): number {
-  if (a.workedMs !== b.workedMs) return b.workedMs - a.workedMs;
-  if (a.turns !== b.turns) return b.turns - a.turns;
-  if (a.activeDays !== b.activeDays) return b.activeDays - a.activeDays;
+  const aw = humanWorkedMs(a);
+  const bw = humanWorkedMs(b);
+  if (aw !== bw) return bw - aw;
+  const at = humanTurns(a);
+  const bt = humanTurns(b);
+  if (at !== bt) return bt - at;
+  if (a.humanActiveDays !== b.humanActiveDays) return b.humanActiveDays - a.humanActiveDays;
   return a.agentId < b.agentId ? -1 : a.agentId > b.agentId ? 1 : 0;
 }

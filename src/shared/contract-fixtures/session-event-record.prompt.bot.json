@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "runId": "run-1",
+  "seq": 44,
+  "at": 1783728300000,
+  "agentId": "a1",
+  "sessionId": "s1",
+  "kind": "prompt",
+  "origin": "bot"
+}

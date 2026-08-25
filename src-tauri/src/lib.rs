@@ -326,10 +326,14 @@ pub fn run() {
             let tauri_events: Arc<dyn AppEvents> = Arc::new(TauriEvents {
                 app: handle.clone(),
             });
+            // 봇 주입 표식(kbm #2j8): 기록기와 봇 러너가 같은 Arc를 쥐어야
+            // "주입 직전 arm → 다음 prompt가 소비"가 성립한다.
+            let bot_arms = Arc::new(crate::state::BotPromptArms::new());
             let recording_events: Arc<dyn AppEvents> = Arc::new(
                 crate::session_events::recording_events::RecordingAppEvents::new(
                     tauri_events,
                     event_store,
+                    bot_arms.clone(),
                 ),
             );
             // 웹 원격: 허브를 이벤트 배선보다 먼저 만들어, 붙어 있는
@@ -679,6 +683,7 @@ pub fn run() {
                     data_dir.join("bot-state.json"),
                 ),
                 state_lock: Arc::new(std::sync::Mutex::new(())),
+                bot_arms: bot_arms.clone(),
             });
 
             // 작업 중 잠자기 방지(#68): 웨이크락 소유자 + lease 만료 감시 태스크.

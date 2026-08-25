@@ -160,6 +160,28 @@ describe("수상자가 있는 달", () => {
     const table = container.querySelector(".awards-table")!;
     expect(table.textContent).toContain("Ada Lovelace");
     expect(table.textContent).toContain("Grace Hopper");
+    // 봇 시간이 0인 순위표는 열 제목을 그대로 둔다.
+    expect(table.querySelector("thead")!.textContent).toContain("작업시간");
+    expect(table.querySelector("thead")!.textContent).not.toContain("봇 제외");
+  });
+
+  it("봇 시간이 있는 사원이 있으면 작업시간 열에 (봇 제외)를 밝힌다", () => {
+    useAppStore.setState({ agents: { a1: mkProfile() } });
+    seedAwardsStore({
+      awards: [
+        mkRecord("2026-07", {
+          leaderboard: [
+            mkStanding(),
+            mkStanding({ agentId: "a2", name: "Grace Hopper", botWorkedMs: 3_600_000 }),
+          ],
+        }),
+      ],
+    });
+
+    const { container } = openDialog();
+
+    const thead = container.querySelector(".awards-table thead")!;
+    expect(thead.textContent).toContain("봇 제외");
   });
 
   it("통산 수상 횟수를 보여준다(awardCountFor)", () => {

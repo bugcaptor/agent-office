@@ -4,6 +4,7 @@
 // 진행 중인 이번 달 제외, 빈 달도 winner:null로 확정), 수상자 스냅샷 조립,
 // 소감 인플라이트 가드. IPC·appStore·소감 생성기를 전부 목으로 대체한다.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AWARD_RULES_VERSION } from "@shared/types";
 import type { AgentProfile, AwardRecord, AwardsFile, SessionEventRecord } from "@shared/types";
 
 const h = vi.hoisted(() => ({
@@ -168,7 +169,7 @@ describe("ensureFinalized", () => {
       expect(rec.leaderboard).toEqual([]);
       expect(rec.speeches).toEqual([]);
       expect(rec.decidedAt).toBe(NOW);
-      expect(rec.rulesVersion).toBe(1);
+      expect(rec.rulesVersion).toBe(AWARD_RULES_VERSION);
       expect(call[1]).toBeUndefined(); // 초상 스냅샷 요청 없음
     }
     expect(useAwardsStore.getState().awards).toHaveLength(BACKFILL_MONTHS);
