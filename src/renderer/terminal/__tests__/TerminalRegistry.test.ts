@@ -44,8 +44,29 @@ class FakeTerminal {
   constructor(options: unknown) {
     this.options = options;
   }
+  // xterm의 `_inputEvent` 가드가 보는 내부 플래그. 실물과 같은 자리에 둔다 —
+  // 공개 `Terminal`은 래퍼일 뿐이고 이 플래그는 그 안의 `_core`에 산다(래퍼에
+  // 쓰면 조용한 no-op이 된다).
+  _core = { _keyDownSeen: false, _keyPressHandled: false };
+  /** true면 xterm이 insertText를 통째로 버리는 상황을 흉내 낸다(가드가 무력해진 경우). */
+  dropInsertText = false;
   loadAddon = loadAddonMock;
-  open = openMock;
+  /**
+   * 실제 xterm처럼 textarea를 컨테이너 안에 넣고(=input이 조상으로 올라간다),
+   * `_inputEvent`를 흉내 내는 리스너를 **우리 코드보다 먼저** 건다(실물도 open()이
+   * 먼저다). insertText만 처리하고, stale 플래그가 서 있으면 통째로 버린다 —
+   * 이 버림이 곧 "음절이 통째로 사라지는" 그 버그다.
+   */
+  open = (el: HTMLElement) => {
+    openMock(el);
+    el.appendChild(this.textarea);
+    this.textarea.addEventListener("input", (ev) => {
+      const e = ev as InputEvent;
+      if (e.inputType !== "insertText" || !e.data) return;
+      if (this.dropInsertText || this._core._keyDownSeen || this._core._keyPressHandled) return;
+      this.emitInput(e.data);
+    });
+  };
   dispose = disposeMock;
   focus = focusMock;
   write = writeMock;
@@ -57,9 +78,24 @@ class FakeTerminal {
   emitInput(data: string) {
     this.dataHandler?.(data);
   }
-  /** Test helper: simulate the IME finalizing a composed syllable. */
-  emitCompositionEnd() {
-    this.textarea.dispatchEvent(new Event("compositionend"));
+  /**
+   * Test helper: WebKit이 한글 조합을 흘리는 방식 그대로 textarea `input`을 쏜다.
+   * 새 음절은 `insertText`, 조합 갱신은 `insertReplacementText`.
+   */
+  emitTextInput(inputType: string, data: string) {
+    this.textarea.dispatchEvent(new InputEvent("input", { inputType, data }));
+  }
+  /**
+   * Test helper: simulate the IME finalizing a composed syllable. `data`를 주면
+   * 실제 브라우저처럼 커밋 문자열을 실은 CompositionEvent가 날아간다(워치독이
+   * 보는 값). 안 주면 데이터 없는 이벤트 — 워치독은 조용하고 타이밍 가드만 선다.
+   */
+  emitCompositionEnd(data?: string) {
+    this.textarea.dispatchEvent(
+      data === undefined
+        ? new Event("compositionend")
+        : new CompositionEvent("compositionend", { data })
+    );
   }
   attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
     this.keyEventHandler = handler;
@@ -165,6 +201,14 @@ beforeEach(() => {
     clipboard: { writeText: clipboardWriteText, readText: clipboardReadText },
   });
 });
+
+/**
+ * IME 우회 코드는 플랫폼별로 갈라진다(중복 가드=Windows, 커밋 유실 워치독=macOS).
+ * 모듈 로드 시점에 `navigator.platform`을 읽으므로 importRegistry() *전에* 부른다.
+ */
+function setPlatform(value: string) {
+  Object.defineProperty(globalThis.navigator, "platform", { value, configurable: true });
+}
 
 /** Builds a minimal fake keydown/keyup event as attachCustomKeyEventHandler receives it. */
 function makeKeyEvent(overrides: Partial<KeyboardEvent> & { key: string }): KeyboardEvent {
@@ -670,7 +714,13 @@ describe("copy/paste key handling", () => {
   });
 });
 
-describe("Hangul/IME double-input guard", () => {
+describe("Hangul/IME double-input guard (Windows 전용)", () => {
+  // WebView2 이중 입력 가드다. macOS에는 그 중복이 없고 오히려 진짜 입력을
+  // 잡아먹으므로, 이 describe는 non-mac을 명시적으로 깔고 돈다.
+  beforeEach(() => {
+    setPlatform("Win32");
+  });
+
   it("drops the second of two identical emissions right after compositionend", async () => {
     const terminalRegistry = await importRegistry();
     const host = document.createElement("div");
@@ -753,6 +803,220 @@ describe("Hangul/IME double-input guard", () => {
 
     expect(clipboardReadText).not.toHaveBeenCalled();
     expect(result).toBe(true);
+  });
+});
+
+describe("WebKit 한글 조합 미러링", () => {
+  // macOS WebKit은 한글 IME에 composition 이벤트를 안 쏘고, 조합 갱신을
+  // input(insertReplacementText)으로만 흘린다. xterm 5.5는 insertText만 처리하므로
+  // 각 음절의 첫 자모만 나가고 나머지는 증발한다 — 그 갱신을 우리가 미러링한다.
+
+  /** PTY로 나간 청크들을 실제 줄로 되돌린다(DEL은 한 글자 지움). */
+  function applyToLine(chunks: string[]): string {
+    const line: string[] = [];
+    for (const ch of chunks.join("")) {
+      if (ch === "\x7f") line.pop();
+      else line.push(ch);
+    }
+    return line.join("");
+  }
+
+  function sentChunks(): string[] {
+    return writeInput.mock.calls.map((c) => c[1] as string);
+  }
+
+  function mount() {
+    const host = document.createElement("div");
+    return { host };
+  }
+
+  it("insertText(새 음절)는 xterm이 보내고, 우리는 한 번 더 보내지 않는다", async () => {
+    const terminalRegistry = await importRegistry();
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    fake.emitTextInput("insertText", "ㅎ");
+
+    expect(sentChunks()).toEqual(["ㅎ"]);
+  });
+
+  it("조합 갱신은 DEL로 지우고 새 꼴을 쓴다", async () => {
+    const terminalRegistry = await importRegistry();
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    fake.emitTextInput("insertText", "ㅎ"); // xterm이 "ㅎ"를 보낸 상태
+    fake.emitTextInput("insertReplacementText", "하");
+    fake.emitTextInput("insertReplacementText", "한");
+
+    // 한 번의 write로 묶어 보낸다 — 중간 상태가 깜빡이지 않게.
+    expect(sentChunks()).toEqual(["ㅎ", "\x7f하", "\x7f한"]);
+  });
+
+  it('"한글": WebKit 실측 시퀀스를 그대로 먹이면 줄이 정확히 복원된다', async () => {
+    const terminalRegistry = await importRegistry();
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    // Safari 트레이스 그대로: 새 음절은 insertText, 갱신은 insertReplacementText.
+    // insertText는 xterm이 PTY로 보내므로 테스트도 같이 흉내 낸다.
+    const feed = (type: string, data: string) => fake.emitTextInput(type, data);
+    feed("insertText", "ㅎ");
+    feed("insertReplacementText", "하");
+    feed("insertReplacementText", "한");
+    feed("insertReplacementText", "한"); // 받침이 빠지기 직전 되돌림
+    feed("insertText", "ㄱ");
+    feed("insertReplacementText", "그");
+    feed("insertReplacementText", "글");
+
+    expect(applyToLine(sentChunks())).toBe("한글");
+  });
+
+  it("받침이 다음 음절로 넘어가도 줄이 정확하다", async () => {
+    const terminalRegistry = await importRegistry();
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    const feed = (type: string, data: string) => fake.emitTextInput(type, data);
+    // "한가": 한 -> 한ㄱ -> (ㄱ이 다음 음절로) 한/가
+    feed("insertText", "ㅎ");
+    feed("insertReplacementText", "하");
+    feed("insertReplacementText", "한");
+    feed("insertReplacementText", "한");
+    feed("insertText", "ㄱ");
+    feed("insertReplacementText", "가");
+
+    expect(applyToLine(sentChunks())).toBe("한가");
+  });
+
+  it("조합 키가 아닌 keydown은 꼬리 추적을 접는다(Enter 뒤 갱신은 DEL 없이 쓴다)", async () => {
+    const terminalRegistry = await importRegistry();
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    fake.emitTextInput("insertText", "ㅎ");
+    fake.emitKeyEvent(makeKeyEvent({ key: "Enter", keyCode: 13 }));
+    fake.emitTextInput("insertReplacementText", "하");
+
+    expect(sentChunks()).toEqual(["ㅎ", "하"]);
+  });
+
+  it("조합 키(keyCode 229) keydown은 꼬리를 지우지 않는다", async () => {
+    const terminalRegistry = await importRegistry();
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    fake.emitTextInput("insertText", "ㅎ");
+    fake.emitKeyEvent(makeKeyEvent({ key: "ㅏ", keyCode: 229 }));
+    fake.emitTextInput("insertReplacementText", "하");
+
+    expect(sentChunks()).toEqual(["ㅎ", "\x7f하"]);
+  });
+
+  it("composition 이벤트가 오는 플랫폼에서는 비켜난다(xterm 몫)", async () => {
+    const terminalRegistry = await importRegistry();
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    fake.textarea.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+    fake.emitTextInput("insertReplacementText", "하");
+
+    expect(writeInput).not.toHaveBeenCalled();
+  });
+
+  it("붙여넣기 같은 다른 inputType 뒤에는 DEL을 쏘지 않는다", async () => {
+    const terminalRegistry = await importRegistry();
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    fake.emitTextInput("insertText", "ㅎ");
+    fake.emitTextInput("insertFromPaste", "붙여넣기");
+    fake.emitTextInput("insertReplacementText", "하");
+
+    expect(sentChunks()).toEqual(["ㅎ", "하"]);
+  });
+
+  it("안전망: xterm이 insertText를 흘려도 음절이 살아남는다", async () => {
+    const terminalRegistry = await importRegistry();
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    // 가드 청소가 무력해진 상황(예: 다음 xterm에서 내부 필드 이름이 바뀜).
+    fake.dropInsertText = true;
+    fake.emitTextInput("insertText", "ㅎ");
+    fake.emitTextInput("insertReplacementText", "하");
+
+    expect(sentChunks()).toEqual(["ㅎ", "\x7f하"]);
+  });
+
+  it("조합 input이 xterm에 닿기 전에 stale 가드 플래그를 내린다", async () => {
+    const terminalRegistry = await importRegistry();
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    // 앞 키를 아직 안 뗀 상태(_keyDownSeen) + 직전에 ASCII를 친 상태(_keyPressHandled).
+    // 둘 다 xterm의 `_inputEvent`가 insertText를 통째로 버리게 만든다.
+    fake._core._keyDownSeen = true;
+    fake._core._keyPressHandled = true;
+    fake.emitTextInput("insertText", "ㅌ");
+
+    expect(fake._core._keyDownSeen).toBe(false);
+    expect(fake._core._keyPressHandled).toBe(false);
+  });
+
+  it("ASCII 본인의 input(직전 keypress)은 xterm 플래그를 건드리지 않는다", async () => {
+    const terminalRegistry = await importRegistry();
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    // ASCII는 keydown -> keypress -> input 순서. keypress로 이미 보냈으므로
+    // `_keyPressHandled`를 내리면 같은 글자가 두 번 나간다.
+    fake.emitKeyEvent(makeKeyEvent({ key: "a", keyCode: 65 }));
+    fake.emitKeyEvent(makeKeyEvent({ key: "a", type: "keypress" } as never));
+    fake._core._keyPressHandled = true; // xterm이 keypress로 이미 보냈다는 표시
+    fake.emitTextInput("insertText", "a");
+
+    expect(fake._core._keyPressHandled).toBe(true);
+    expect(writeInput).not.toHaveBeenCalled(); // 우리가 덧붙이지 않는다
+  });
+
+  it("composition 이벤트를 쏘는 플랫폼에서는 xterm 플래그에 손대지 않는다", async () => {
+    const terminalRegistry = await importRegistry();
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    fake.textarea.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+    fake.textarea.dispatchEvent(new CompositionEvent("compositionend", { data: "안" }));
+    fake._core._keyDownSeen = true;
+    fake.emitTextInput("insertText", "ㅌ");
+
+    expect(fake._core._keyDownSeen).toBe(true);
+  });
+
+  it("봇 운전 중이면 조합 갱신도 나가지 않는다", async () => {
+    const terminalRegistry = await importRegistry();
+    const { useAppStore } = await import("../../store/appStore");
+    useAppStore.setState({ botMode: { a1: { agentId: "a1" } as never } });
+    const { host } = mount();
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    fake.emitTextInput("insertText", "ㅎ");
+    fake.emitTextInput("insertReplacementText", "하");
+
+    expect(writeInput).not.toHaveBeenCalled();
   });
 });
 

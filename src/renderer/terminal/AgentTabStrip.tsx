@@ -26,6 +26,7 @@ import { useWorkdirStore } from "../workdir/workdirStore";
 import { useDiaryStore } from "../diary/diaryStore";
 import { useSessionLogStore } from "../sessionlog/sessionLogStore";
 import { useMemoStore } from "../memo/memoStore";
+import { IS_MAC } from "../shared/platform";
 import { terminalRegistry } from "./TerminalRegistry";
 import { looksLikeAgentRunning } from "./botGuard";
 import { botStatusText } from "./botStatusText";
@@ -41,10 +42,6 @@ const VIEW_MODE_BUTTON: Record<TerminalViewMode, { icon: string; labelKey: strin
   filled: { icon: "❐", labelKey: "tab.viewModeWindowed" },
 };
 
-// 꽉 채우기 토글 단축키는 OS "확대" 관례를 따른다: macOS는 Ctrl+Cmd+F, 그 외는 F11.
-const IS_MAC =
-  typeof navigator !== "undefined" &&
-  /mac/i.test(navigator.platform || navigator.userAgent || "");
 
 export function AgentTabStrip() {
   const { t } = useTranslation("terminal");
