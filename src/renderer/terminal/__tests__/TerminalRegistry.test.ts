@@ -30,6 +30,8 @@ const focusMock = vi.fn();
 const writeMock = vi.fn((_data?: string, cb?: () => void) => cb?.());
 const loadAddonMock = vi.fn();
 const fitMock = vi.fn();
+// xterm 사적 API: 숨은 동안 오염된 뷰포트 지오메트리를 되돌리는 강제 재동기화.
+const syncScrollAreaMock = vi.fn();
 const pasteMock = vi.fn();
 let selectionValue: string | undefined;
 
@@ -53,6 +55,8 @@ class FakeTerminal {
   /** 실물 `_keyPressHandled`: keypress로 이미 보냈다는 표시. 서면 input을 버린다. */
   keyPressHandled = false;
   loadAddon = loadAddonMock;
+  /** 실물 xterm의 사적 내부 — TerminalRegistry.syncViewport가 이 경로로 들어온다. */
+  _core = { viewport: { syncScrollArea: syncScrollAreaMock } };
   /**
    * 실제 xterm처럼 textarea를 컨테이너 안에 넣고(=input이 조상을 거쳐 내려온다),
    * `_inputEvent`를 흉내 내는 리스너를 capture=true로, **우리 코드보다 먼저**
@@ -426,6 +430,29 @@ describe("activate / refit", () => {
     expect(fitMock).toHaveBeenCalledTimes(1);
     expect(onResize).toHaveBeenCalledWith(80, 24);
     expect(focusMock).not.toHaveBeenCalled();
+  });
+
+  it("activate() forces a viewport re-sync so a terminal hidden during output can scroll to the bottom again", async () => {
+    // display:none인 동안 xterm Viewport가 offsetHeight 0으로 스크롤 영역 높이를
+    // 짧게 굳혀 버린다(xterm.js #494). fit()이 같은 크기를 내면 xterm 내부
+    // syncScrollArea가 안 불리므로 여기서 강제로 부른다.
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+
+    terminalRegistry.activate("a1", vi.fn());
+
+    expect(syncScrollAreaMock).toHaveBeenCalledWith(true);
+  });
+
+  it("refit() forces a viewport re-sync too", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+
+    terminalRegistry.refit("a1", vi.fn());
+
+    expect(syncScrollAreaMock).toHaveBeenCalledWith(true);
   });
 
   it("refit() is a no-op before attach/open", async () => {

@@ -553,6 +553,8 @@ class TerminalRegistry {
         // 백엔드가 알고 있던 크기를 onResize(=setSessionSize)가 덮어쓰기 전에 읽어 둔다.
         const known = useAppStore.getState().sessions[agentId];
         e.fit.fit();
+        // 숨어 있는 동안 오염된 스크롤 영역 높이를 여기서 되돌린다(syncViewport 주석).
+        this.syncViewport(e.term);
         onResize(e.term.cols, e.term.rows);
         e.term.focus();
         if (this.pendingNudge.delete(agentId)) {
@@ -610,7 +612,42 @@ class TerminalRegistry {
     const e = this.entries.get(agentId);
     if (!e || !e.opened) return;
     e.fit.fit();
+    // 컨테이너가 한 행보다 작게 바뀌면 fit()이 resize를 안 내 뷰포트 지오메트리가
+    // 그대로 남는다 — activate()와 같은 이유로 여기서도 재동기화한다.
+    this.syncViewport(e.term);
     onResize(e.term.cols, e.term.rows);
+  }
+
+  /**
+   * xterm 뷰포트 지오메트리 강제 재동기화.
+   *
+   * 오버레이가 닫혀 있거나(TerminalOverlay의 display:none) 다른 탭이 활성인 동안에도
+   * PTY 출력은 계속 이 xterm에 write된다. 그때 xterm의 Viewport는 출력마다
+   * `_innerRefresh()`를 돌며 스크롤 영역 높이를
+   * `rowH * lines.length + (viewportElement.offsetHeight - canvas.height)`로 다시 쓰는데,
+   * 숨겨져 있으면 `offsetHeight === 0`이라 **한 화면 높이만큼 짧은 값**으로 굳는다
+   * (xterm.js #494). 다시 보일 때 fit()이 같은 cols/rows를 내면 FitAddon도
+   * `Terminal.resize()`도 조기 반환해 `_afterResize()`의 syncScrollArea(true)가 안 불리고,
+   * 스크롤백이 가득 찬 뒤에는 `syncScrollArea()`의 네 검사(버퍼 길이/뷰포트 높이/ydisp/
+   * 셀 높이)가 전부 "변화 없음"이라 스스로 재측정할 기회도 없다. 결과: DOM 스크롤 범위가
+   * ydisp=ybase에 필요한 값보다 한 화면 모자란 채 고정 → 휠을 조금만 올려도 한 화면씩
+   * 튀고(_handleScroll이 scrollTop으로 절대 행을 역산한다), 아무리 내려도 바닥에 못 닿는다.
+   *
+   * syncScrollArea(true)를 강제로 부르면 2번 검사
+   * (`_lastRecordedViewportHeight !== css.canvas.height`, 0 !== 실제 높이)가 걸려 즉시
+   * 재계산된다. PTY로 나가는 resize가 없으므로 `ESC[3J`로 스크롤백을 지우는 TUI에도 무해하다.
+   * 사적 API라 없으면 조용히 넘어간다.
+   */
+  private syncViewport(term: Terminal): void {
+    try {
+      (
+        term as unknown as {
+          _core?: { viewport?: { syncScrollArea?: (immediate?: boolean) => void } };
+        }
+      )._core?.viewport?.syncScrollArea?.(true);
+    } catch {
+      /* 사적 API 형태가 바뀌었거나 뷰포트가 아직 없다 — 스크롤 범위만 늦게 맞을 뿐 무해 */
+    }
   }
 
   /** Real teardown — only on explicit session removal. */
