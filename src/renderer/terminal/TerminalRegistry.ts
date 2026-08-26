@@ -83,7 +83,8 @@ class TerminalRegistry {
 
     const term = new Terminal({
       theme: this.currentTheme(),
-      fontFamily: '"SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace',
+      fontFamily:
+        '"SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace',
       fontSize: 13,
       lineHeight: 1.2,
       cursorBlink: true,
@@ -105,7 +106,6 @@ class TerminalRegistry {
     // compositionend 직후에 똑같은 청크가 연달아 나오면 둘째를 버린다.
     // macOS는 애초에 composition 이벤트가 안 오므로(아래 (2)) 이 가드가 걸릴
     // 일이 없고, 걸린다면 진짜 입력을 먹는 쪽이라 아예 꺼 둔다.
-    let emitSeq = 0; // PTY로 나간 청크 수 — (3)의 안전망이 "xterm이 보냈나"를 본다
     const IME_COMMIT_WINDOW_MS = 80; // "a compositionend happened just now"
     const IME_DUP_ADJ_MS = 20; // the echo lands right on top of the commit
     let compositionEndedAt = -Infinity;
@@ -131,123 +131,192 @@ class TerminalRegistry {
       }
       lastData = data;
       lastDataAt = now;
-      emitSeq++;
       tauriApi.writeInput(agentId, data);
     };
-    term.onData(writeInput);
 
-    // ── (2) WebKit 한글 조합 미러링 ───────────────────────────────────────
-    // macOS WebKit(WKWebView/Safari)은 한글 IME에 **composition 이벤트를 아예
-    // 쏘지 않는다**(Safari 실측 트레이스: compositionstart/update/end 0건).
-    // 대신 조합을 이렇게 흘린다 — "한글" 입력 시:
-    //   input insertText            "ㅎ"  ← 새 음절 시작
-    //   input insertReplacementText "하"  ← 조합 갱신(줄 끝 글자를 갈아끼움)
-    //   input insertReplacementText "한"
-    //   input insertText            "ㄱ"  ← 다음 음절 시작
-    // xterm 5.5의 `_inputEvent`는 `insertText`만 처리하므로 각 음절의 **첫
-    // 자모만** PTY로 나가고 나머지 조합은 통째로 증발한다("한글입력" ->
-    // "ㅎㄱㅇㄹ"). 앞 음절 받침이 뒤로 넘어갈 때(`한ㄱ`+ㅏ -> `한`/`가`)만
-    // 완성 음절이 insertText로 도착해 살아남는다 — "가나다라"만 멀쩡해 보이는
-    // 이유다.
+    // ── (1.5) 키별 원장(ledger): xterm과 미러의 중복 발신 상쇄 ────────────
+    // macOS WebKit에서는 "한 번의 키가 무엇을 보냈는가"를 **순서로 판별할 수
+    // 없다**. IME가 매개하는 `input`은 그 키의 keydown/keypress보다 먼저 오기도
+    // 하고 나중에 오기도 한다(이번 버그의 핵심 성질).
     //
-    // 그래서 조합 갱신을 우리가 직접 미러링한다: PTY 줄 끝에 우리가 보내 둔
-    // 꼬리(imeTail)를 기억하고, 갱신이 오면 공통 접두사만 남기고 DEL로 지운 뒤
-    // 새 꼴을 이어 쓴다. TUI 입장에선 사람이 백스페이스로 고쳐 쓰는 것과 같아
-    // 조합이 화면에서 그대로 굴러간다. 한 번의 write로 묶어 보내 중간 상태가
-    // 깜빡이지 않게 한다.
+    // 스페이스가 두 칸 들어가던 것이 그 증거다: xterm `evaluateKeyboardEvent`의
+    // default 분기는 `ev.keyCode >= 48`이라 스페이스(32)는 `result.key`가 비어
+    // `_keyDown`이 그냥 통과시키고, 결국 `_keyPress`가 charCode 32로 " "를 보낸다.
+    // 그런데 조합을 커밋하는 스페이스의 `input`은 그 keypress보다 **먼저** 도착해서
+    //   keydown(32) → input(" " 미러가 보냄) → keypress(32, xterm이 또 보냄)
+    // 이 된다. "직전에 keypress가 있었나" 같은 순서 전제로는 이 방향을 못 막는다.
     //
-    // composition 이벤트가 정상으로 오는 플랫폼(Chrome/WebView2)에서는
-    // `insertReplacementText`가 오지 않으므로 이 경로는 아예 돌지 않는다.
-    // 그래도 조합 중이면 xterm에 맡기도록 명시적으로 비켜 준다.
-    // ── (3) xterm `_inputEvent` 가드의 stale 플래그 청소 ─────────────────
-    // 위 (2)를 고쳐도 음절이 **통째로** 빠지는 일이 남는다. Safari 실측에서
-    // insertText 28건 중 2건이 xterm에서 조용히 버려졌다. `_inputEvent`의 가드가
-    //   `ev.data && inputType === "insertText" && (!ev.composed || !_keyDownSeen)`
-    // 를 통과한 뒤 다시 `if (_keyPressHandled) return false`로 막는데, WebKit은
-    // 조합의 `input`을 keydown보다 **먼저** 쏘므로 두 플래그가 늘 *앞 키*의
-    // 상태로 남아 있다:
-    //   · 앞 키를 놓기 전에 다음 키를 누르면(굴려치기) `_keyDownSeen`이 true인
-    //     채로 도착 — trace: keydown ㅌ → input "트" → keyup ㅌ, "트" 증발.
-    //   · 직전에 ASCII/문장부호를 쳤으면 `_keyPressHandled`가 true로 남는다 —
-    //     trace: "," 전송 → input "ㄹ" → keyup ",", "ㄹ" 증발.
-    // 그래서 input이 xterm에 닿기 전(컨테이너 캡처 단계)에 두 플래그를 내려
-    // 준다. 방금 keypress가 있었던 입력, 즉 ASCII 본인의 input은 건드리지 않아야
-    // xterm이 keypress로 이미 보낸 글자가 두 번 나가지 않는다.
-    //
-    // xterm의 내부 필드를 건드리는 유일한 자리다. 공개 API로는 저 가드를 우회할
-    // 수 없고(이벤트를 가로채면 ASCII 경로까지 우리가 떠안아야 한다), 필드가
-    // 사라지면 조용히 손대지 않는 쪽으로 물러난다 — 그 경우 증상만 예전으로
-    // 돌아가고 다른 것이 깨지지는 않는다. composition 이벤트가 정상으로 오는
-    // 플랫폼(Chrome/WebView2)에서는 아예 손대지 않는다.
-    let keyPressPending = false;
-    let sawComposition = false;
-    let emitSeqAtInputStart = 0; // 이번 input 이벤트 직전의 emitSeq
-    let xtermOwnsInput = false; // 이번 input은 xterm이 이미 책임졌다(ASCII·조합 경로)
-    const clearStaleInputGuards = () => {
-      emitSeqAtInputStart = emitSeq;
-      xtermOwnsInput = false;
-      if (sawComposition) {
-        xtermOwnsInput = true;
+    // 그래서 순서를 따지지 않는다. keydown마다 원장 두 칸을 비우고, 한쪽이 보낸
+    // 청크를 반대쪽이 그대로 다시 보내려 하면 **정확히 같은 문자열 1회**만
+    // 상쇄한다. 어느 쪽이 먼저 오든 결과가 같다. 같은 글자를 연달아 쳐도
+    // (`ㅋㅋ`, 스페이스 연타) keydown마다 원장이 비므로 진짜 입력은 안 먹힌다.
+    let xtermSent = ""; // 이번 키에서 xterm이 보낸 청크(미러가 상쇄할 몫)
+    let mirrorSent = ""; // 이번 키에서 미러가 보낸 청크(xterm이 상쇄할 몫)
+
+    // xterm 발신구. 미러는 `writeInput`을 직접 부르므로 이 경로로 오지 않는다 —
+    // 여기 들어오는 건 keypress/제어키/`term.paste()` 등 순수 xterm의 결론뿐이다.
+    term.onData((data) => {
+      if (data && data === mirrorSent) {
+        mirrorSent = ""; // 미러가 이미 보냈다 — 소비하고 버린다
         return;
       }
-      if (keyPressPending) {
-        keyPressPending = false; // ASCII 본인의 input — xterm이 keypress로 이미 보냈다
-        xtermOwnsInput = true;
-        return;
-      }
-      // 플래그는 공개 `Terminal` 래퍼가 아니라 그 안의 `_core`(browser/Terminal)에
-      // 있다. 래퍼에 그냥 쓰면 조용한 no-op이 된다 — 실제로 한 번 당했다.
-      const core = (term as unknown as { _core?: unknown })._core ?? term;
-      const priv = core as { _keyDownSeen?: boolean; _keyPressHandled?: boolean };
-      if (typeof priv._keyDownSeen === "boolean") priv._keyDownSeen = false;
-      if (typeof priv._keyPressHandled === "boolean") priv._keyPressHandled = false;
+      writeInput(data);
+      xtermSent = data;
+    });
+
+    // ── (2) macOS WKWebView 한글 조합: 우리가 **유일한** writer가 된다 ────
+    // Tauri WKWebView는 한글 IME에 **composition 이벤트를 쏘지 않는다**.
+    // 앱 안에서 뜬 실측 트레이스(2026-08-26, "가 나 다"):
+    //   mirror prev=""      next="ㄱ"    keydown key="ㄱ" keyCode=229 isComposing=false
+    //   mirror prev="ㄱ"    next="가"    keydown key="ㅏ" keyCode=229 isComposing=false
+    //   compositionstart/update/end 0건, isComposing은 끝까지 false
+    // 즉 조합은 숨은 textarea의 `value`가 바뀌며 `input`으로만 흘러나오고,
+    // 커밋 시점에도 값이 그대로라 patch가 ""인 input이 한 번 더 올 뿐이다.
+    //
+    // ⚠ **Safari로 재면 다른 결과가 나온다.** 같은 WebKit인데도 Safari는
+    // compositionstart/update/end를 정상으로 쏘고 inputType도 insertCompositionText다
+    // (같은 날 실측). 이 영역은 반드시 **앱 안에서** 재야 한다 — Safari 트레이스를
+    // 근거로 세운 예전 판(insertText/insertReplacementText 분기)이 계속 어긋났던 이유다.
+    //
+    // 이 한 줄에 쓰겠다고 나서는 주체가 셋이라 교통정리가 필요하다:
+    //   (a) xterm `_inputEvent` — textarea의 capture 리스너. `insertText`만 동기로
+    //       그대로 보낸다(조합 갱신은 통째로 증발).
+    //   (b) xterm `CompositionHelper._handleAnyTextareaChanges` — `Terminal._keyDown`은
+    //       "조합 중이 아닌데 keyCode 229가 왔으면" 이걸 부른다. 여기선
+    //       `_isComposing`이 **항상** false라 한글 키마다 매번 돈다. 이 함수는
+    //       `oldValue = textarea.value`를 찍고 `setTimeout(0)` 뒤 `newValue`와 비교해
+    //       **비동기로** 제 나름의 결론을 쏜다(길어지면 `replace` diff, 짧아지면 DEL,
+    //       길이가 같은데 다르면 newValue 통째로). 우리 미러와 경쟁하는 비동기 writer라
+    //       반드시 막아야 한다.
+    //   (c) 우리 미러(아래).
+    //
+    // 그래서 macOS에서는 (a)(b)를 둘 다 걷어내고 (c) 하나만 남긴다:
+    //   · (b)는 커스텀 키 핸들러가 keyCode 229 keydown에 **false**를 돌려주면
+    //     막힌다 — `_keyDown`은 커스텀 핸들러가 false면 `_compositionHelper
+    //     .keydown()`을 부르기 전에 빠져나간다(xterm 5.5 browser/Terminal.ts).
+    //     229 keydown에서 xterm이 하는 일은 저 호출 하나뿐이라 잃는 것도 없다.
+    //   · (a)는 컨테이너의 **캡처** 단계에서 `stopPropagation()`으로 막는다.
+    //     xterm은 textarea에 capture=true로 걸지만, 조상인 컨테이너의 캡처
+    //     리스너가 언제나 먼저 돈다. 이 덕에 예전 판이 쓰던 xterm 사설 필드
+    //     (`_keyDownSeen`/`_keyPressHandled`) 조작과 그 안전망이 통째로 사라졌다.
+    //
+    // 미러 자체는 inputType을 **믿지 않는다**. WebKit은 커밋 재전달·백스페이스
+    // 등에서 insertText/insertReplacementText가 오락가락한다. 대신 "우리가 PTY에
+    // 이미 반영해 둔 textarea 값"(prevValue)을 들고, 소유한 input마다 현재
+    // `textarea.value`와 공통 접두사만 남긴 뒤
+    // `DEL * (지울 길이) + 새 꼬리`를 **한 번의 write로** 보낸다. TUI 입장에선
+    // 사람이 백스페이스로 고쳐 쓰는 것과 같아 조합이 화면에서 그대로 굴러가고,
+    // 중간 상태가 깜빡이지도 않는다. 비교는 코드포인트 배열([...s])로 해서
+    // 서로게이트 페어(이모지)가 반쪽 나지 않게 한다.
+    //
+    // 소유 판정:
+    //   · imeComposing(진짜 composition 이벤트가 오는 IME — 일본어/중국어,
+    //     Chrome/WebView2)이면 손 뗀다: stopPropagation도 write도 하지 않는다.
+    //   · non-mac이면 손 뗀다 — 위 (1) 가드가 Windows 몫을 그대로 맡는다.
+    //   · 그 외(맥 한글 조합·ASCII 본인의 input) → 우리 소유: stopPropagation +
+    //     diff write. "xterm이 이미 같은 걸 보냈나"는 순서로 판별하지 않고 위
+    //     (1.5) 원장으로 상쇄한다.
+    const DEL = "\x7f";
+    // WKWebView는 textarea 줄 끝 공백을 U+00A0(NBSP)로 채워 넣는다. 앱 실측:
+    //   mirror patch=" " xtermSent=" " 인데도 상쇄 실패 → 공백 두 칸
+    //   prev="가\u00a0" vs next="가 ㄴ" → 접두사가 1자만 일치 → 패치에 공백이 또 딸려 나감
+    // xterm이 keypress로 보내는 건 U+0020이므로, textarea에서 읽는 값과 상쇄 비교는
+    // 항상 이 정규화를 거친다. 사용자가 친 것은 어차피 평범한 공백이다.
+    const NBSP = /\u00a0/g;
+    const normalizeSpace = (v: string) => v.replace(NBSP, " ");
+    const taValue = () => normalizeSpace(term.textarea?.value ?? "");
+    let imeComposing = false;
+    let pasteSeen = false;
+    // 우리가 PTY에 이미 반영해 둔 textarea.value. 이 값과 현재 값의 차이가
+    // 곧 PTY로 보낼 패치다.
+    let prevValue = "";
+
+    /**
+     * 기준선 리싱크. xterm은 우리 모르게 textarea.value를 비운다 —
+     * Enter/Ctrl+C의 `textarea.value = ''`(browser/Terminal.ts `_keyDown`)와
+     * blur 핸들러가 그렇다. 커스텀 키 핸들러는 그 비우기 **전에** 불리므로
+     * 지금 값을 읽으면 안 되고, 그 태스크의 동기 처리가 끝난 뒤에 읽어야 한다.
+     * `input`은 별도 태스크라 마이크로태스크가 항상 그보다 먼저 끝난다.
+     * 이 리싱크가 빠지면 다음 조합에서 사라진 길이만큼 DEL이 새어 나가
+     * 진짜 프롬프트 글자를 지워 먹는다.
+     */
+    const resyncSoon = () => {
+      const ta = term.textarea;
+      if (!ta) return;
+      queueMicrotask(() => {
+        prevValue = taValue();
+      });
     };
 
-    const DEL = "\x7f";
-    let imeTail = ""; // PTY 줄 끝에 보내 놓은, 아직 조합 중인 꼬리
-    let imeComposing = false;
-
-    const onTextareaInput = (ev: InputEvent) => {
-      if (imeComposing) return; // composition 경로가 살아 있는 플랫폼 — xterm 몫
-      if (ev.inputType === "insertText") {
-        // 새 음절의 시작. 정상이면 xterm의 `_inputEvent`가 방금(이 이벤트 안에서)
-        // PTY로 보냈으니 우리는 "줄 끝이 지금 이것"이라고 기억만 한다.
-        //
-        // 안전망: (3)이 무력해지면(예: 다음 xterm에서 필드 이름이 바뀌면) xterm이
-        // 이 음절을 통째로 버린다. 그때는 우리가 직접 보낸다 — xterm이 이 이벤트
-        // 동안 아무 것도 안 보냈고, 이 입력이 xterm 소유가 아닐 때만.
-        const data = ev.data ?? "";
-        if (!xtermOwnsInput && data && emitSeq === emitSeqAtInputStart) writeInput(data);
-        imeTail = data;
+    const onContainerInput = (ev: Event) => {
+      if (!IS_MAC) return; // Windows/Linux: 조합은 xterm+IME 몫
+      const ta = term.textarea;
+      if (!ta) return;
+      if (imeComposing) return; // composition 경로가 살아 있는 IME — xterm 몫
+      if (pasteSeen) {
+        // 붙여넣기의 뒤끝 input. 내용은 xterm이 paste 이벤트에서 이미 보냈다.
+        pasteSeen = false;
+        prevValue = taValue();
         return;
       }
-      if (ev.inputType !== "insertReplacementText") {
-        imeTail = ""; // 붙여넣기·삭제 등 — 꼬리 추적을 포기한다
-        return;
-      }
-      const next = ev.data ?? "";
-      const before = [...imeTail];
+      const next = taValue();
+      const before = [...prevValue];
       const after = [...next];
       let same = 0;
-      while (same < before.length && same < after.length && before[same] === after[same]) same++;
-      const patch = DEL.repeat(before.length - same) + after.slice(same).join("");
-      if (patch) writeInput(patch);
-      imeTail = next;
+      while (
+        same < before.length &&
+        same < after.length &&
+        before[same] === after[same]
+      )
+        same++;
+      const patch =
+        DEL.repeat(before.length - same) + after.slice(same).join("");
+
+      ev.stopPropagation(); // (a) 차단: xterm `_inputEvent`가 이 이벤트를 못 본다
+      prevValue = next;
+      if (!patch) return;
+      if (patch === normalizeSpace(xtermSent)) {
+        // xterm이 이번 키에서 이미 똑같이 보냈다(스페이스의 keypress, ASCII 본인의
+        // input…). 소비하고 버린다 — 기준선은 위에서 이미 갱신했다.
+        xtermSent = "";
+        return;
+      }
+      // 실측 트레이스 `keypress "," → input "ㄹ" → keyup ","`처럼 xterm이 보낸 것과
+      // 다른 청크는 반드시 살아남는다 — 상쇄는 같은 문자열 1회뿐이다.
+      writeInput(patch);
+      mirrorSent = patch;
     };
 
     // The hidden textarea only exists after term.open(); attach() calls this.
     let compositionBound = false;
     const onCompositionStart = () => {
-      imeComposing = true;
-      sawComposition = true; // 이 플랫폼은 조합을 제대로 알려 준다 — (3)에서 손 뗀다
-      imeTail = "";
+      imeComposing = true; // 이 플랫폼은 조합을 제대로 알려 준다 — 손 뗀다
+      prevValue = taValue();
     };
     const onCompositionEnd = () => {
       imeComposing = false;
       compositionEndedAt = performance.now();
+      // 커밋 문자열은 xterm이 보낸다(`_finalizeComposition`의 setTimeout(0)).
+      // 우리는 그 결과를 기준선으로만 받아 적는다.
+      resyncSoon();
     };
     const onTextareaBlur = () => {
-      imeTail = ""; // 포커스가 떠나면 줄 끝을 더 이상 알 수 없다
+      // xterm이 blur에서 textarea를 비운다 — 기준선도 같이 비워야 한다.
+      resyncSoon();
+    };
+    const onTextareaPaste = () => {
+      // xterm이 paste를 직접 처리해 PTY로 보내고 `textarea.value = ''`까지 한다
+      // (browser/Clipboard.ts `paste`). 그 뒤 브라우저 기본 동작이 붙여넣은 글을
+      // textarea에 넣으며 input을 한 번 더 쏘는데, 그건 이미 나간 내용이라
+      // 우리가 diff로 또 보내면 안 된다 — 그 input은 기준선만 맞추고 넘긴다.
+      // 마이크로태스크는 같은 태스크의 input보다 항상 나중이라 플래그가 남지 않는다.
+      pasteSeen = true;
+      const ta = term.textarea;
+      if (!ta) return;
+      queueMicrotask(() => {
+        pasteSeen = false;
+        prevValue = taValue();
+      });
     };
     const bindComposition = () => {
       if (compositionBound) return;
@@ -256,29 +325,42 @@ class TerminalRegistry {
       compositionBound = true;
       ta.addEventListener("compositionstart", onCompositionStart);
       ta.addEventListener("compositionend", onCompositionEnd);
-      // xterm보다 나중에 등록된다 — insertText 경로에서 xterm이 먼저 보내고
-      // 우리가 꼬리를 기억하는 순서가 되어야 맞다.
-      ta.addEventListener("input", onTextareaInput as EventListener);
       ta.addEventListener("blur", onTextareaBlur);
-      // 반대로 (3)은 xterm보다 **먼저** 돌아야 한다. 같은 노드에 건 리스너는
-      // 등록 순서를 따르므로(xterm이 먼저 등록했다) 조상인 컨테이너의 캡처
-      // 단계에 건다 — 캡처는 대상 노드의 리스너보다 항상 앞선다.
-      container.addEventListener("input", clearStaleInputGuards, true);
+      ta.addEventListener("paste", onTextareaPaste);
+      // input은 xterm의 textarea 리스너보다 **먼저** 받아야 한다(소유했을 때
+      // stopPropagation으로 xterm을 통째로 비켜 세우기 때문). 같은 노드에 건
+      // 리스너는 등록 순서를 따르는데 xterm이 open()에서 먼저 걸었으므로,
+      // 조상인 컨테이너의 캡처 단계에 건다 — 캡처는 대상 노드의 리스너보다
+      // 항상 앞선다.
+      container.addEventListener("input", onContainerInput, true);
     };
 
     // Copy/paste key handling (fires only while THIS terminal is focused, so it is
     // naturally scoped per-agent in the multi-terminal keep-alive registry).
     term.attachCustomKeyEventHandler((event) => {
-      // (3)의 판별: ASCII는 keydown -> keypress -> input 순서라 input 시점에
-      // keypress가 방금 있었다. 조합 키는 input이 keydown보다 먼저 와서 없다.
-      if (event.type === "keydown") keyPressPending = false;
-      else if (event.type === "keypress") keyPressPending = true;
+      // (1.5) 원장은 키 하나가 단위다. xterm이 이 키를 처리하기 **전에** 비운다.
+      if (event.type === "keydown") {
+        xtermSent = "";
+        mirrorSent = "";
+      }
 
       // 조합 키(keyCode 229)가 아닌 keydown은 xterm이 제어 시퀀스로 바꿔 보내
-      // 줄 끝을 우리가 모르게 바꾼다(Enter/Backspace/화살표…). 꼬리 추적을 접는다.
-      // 조합 키의 input은 keydown보다 **먼저** 오므로(WebKit 실측) 이 리셋이
-      // 같은 키의 조합 갱신을 지우는 일은 없다.
-      if (event.type === "keydown" && event.keyCode !== 229) imeTail = "";
+      // 줄 끝을 우리가 모르게 바꾸고(Enter/Backspace/화살표…), Enter·Ctrl+C는
+      // textarea까지 비운다. 기준선을 그 뒤 값으로 다시 맞춘다.
+      if (event.type === "keydown" && event.keyCode !== 229) resyncSoon();
+
+      // (b) 차단: 이 false 하나가 `CompositionHelper._handleAnyTextareaChanges`
+      // (setTimeout(0)으로 제멋대로 쓰는 세 번째 writer)를 통째로 막는다.
+      // 진짜 조합 이벤트가 오는 IME(일본어/중국어)에서는 xterm이 조합을 제대로
+      // 굴리고 있으므로 비켜 준다 — 거기서 막으면 조합 중 Enter가 통째로 증발한다.
+      if (
+        IS_MAC &&
+        event.type === "keydown" &&
+        !imeComposing &&
+        (event.keyCode === 229 || event.isComposing)
+      ) {
+        return false;
+      }
       if (event.isComposing || event.keyCode === 229) return true; // let xterm/IME own composition
       if (event.type !== "keydown") return true; // ignore keypress/keyup
       const mod = event.ctrlKey || event.metaKey;
@@ -305,6 +387,10 @@ class TerminalRegistry {
           .readText()
           .then((t) => {
             if (t) term.paste(t);
+            // term.paste는 `textarea.value = ''`까지 한다(browser/Clipboard.ts).
+            // keydown 시점의 리싱크는 이 시점보다 앞서므로 여기서 한 번 더 맞춘다 —
+            // 안 그러면 다음 조합에서 사라진 길이만큼 DEL이 새어 나간다.
+            resyncSoon();
           })
           .catch(() => {});
         return false; // swallow — never send raw ^V
@@ -456,7 +542,10 @@ class TerminalRegistry {
   }
 
   /** On show: fit + resize IPC + focus, deferred one frame so layout (display:none -> block) has settled. */
-  activate(agentId: string, onResize: (cols: number, rows: number) => void): void {
+  activate(
+    agentId: string,
+    onResize: (cols: number, rows: number) => void,
+  ): void {
     const e = this.entries.get(agentId);
     if (!e || !e.opened) return;
     requestAnimationFrame(() => {
@@ -473,7 +562,8 @@ class TerminalRegistry {
           // 스크롤백을 지워 버린다(pi v0.84.2 PTY 실측). 크기가 그대로일 때만
           // (TIOCSWINSZ가 SIGWINCH를 안 쏘는 경우) nudge한다.
           const alreadyResized =
-            known !== undefined && (known.cols !== e.term.cols || known.rows !== e.term.rows);
+            known !== undefined &&
+            (known.cols !== e.term.cols || known.rows !== e.term.rows);
           if (!alreadyResized) this.redrawNudge(agentId, e, onResize);
         }
       } catch {
@@ -501,7 +591,7 @@ class TerminalRegistry {
   private redrawNudge(
     agentId: string,
     e: Entry,
-    onResize: (cols: number, rows: number) => void
+    onResize: (cols: number, rows: number) => void,
   ): void {
     if (e.term.rows <= 1) return; // too small to shrink by one row — skip
     tauriApi.resize(agentId, e.term.cols, e.term.rows - 1);

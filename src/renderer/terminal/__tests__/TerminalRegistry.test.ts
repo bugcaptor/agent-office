@@ -44,28 +44,34 @@ class FakeTerminal {
   constructor(options: unknown) {
     this.options = options;
   }
-  // xterm의 `_inputEvent` 가드가 보는 내부 플래그. 실물과 같은 자리에 둔다 —
-  // 공개 `Terminal`은 래퍼일 뿐이고 이 플래그는 그 안의 `_core`에 산다(래퍼에
-  // 쓰면 조용한 no-op이 된다).
-  _core = { _keyDownSeen: false, _keyPressHandled: false };
-  /** true면 xterm이 insertText를 통째로 버리는 상황을 흉내 낸다(가드가 무력해진 경우). */
-  dropInsertText = false;
+  /**
+   * xterm의 textarea `input` 리스너(=`_inputEvent`)가 실제로 이 이벤트를 받은
+   * 횟수. 우리 코드가 컨테이너 캡처 단계에서 `stopPropagation()`으로 xterm을
+   * 비켜 세웠는지 보는 창이다.
+   */
+  xtermInputSeen = 0;
+  /** 실물 `_keyPressHandled`: keypress로 이미 보냈다는 표시. 서면 input을 버린다. */
+  keyPressHandled = false;
   loadAddon = loadAddonMock;
   /**
-   * 실제 xterm처럼 textarea를 컨테이너 안에 넣고(=input이 조상으로 올라간다),
-   * `_inputEvent`를 흉내 내는 리스너를 **우리 코드보다 먼저** 건다(실물도 open()이
-   * 먼저다). insertText만 처리하고, stale 플래그가 서 있으면 통째로 버린다 —
-   * 이 버림이 곧 "음절이 통째로 사라지는" 그 버그다.
+   * 실제 xterm처럼 textarea를 컨테이너 안에 넣고(=input이 조상을 거쳐 내려온다),
+   * `_inputEvent`를 흉내 내는 리스너를 capture=true로, **우리 코드보다 먼저**
+   * 건다(실물도 open()이 먼저다). insertText만 동기로 그대로 쏜다.
    */
   open = (el: HTMLElement) => {
     openMock(el);
     el.appendChild(this.textarea);
-    this.textarea.addEventListener("input", (ev) => {
-      const e = ev as InputEvent;
-      if (e.inputType !== "insertText" || !e.data) return;
-      if (this.dropInsertText || this._core._keyDownSeen || this._core._keyPressHandled) return;
-      this.emitInput(e.data);
-    });
+    this.textarea.addEventListener(
+      "input",
+      (ev) => {
+        this.xtermInputSeen++;
+        const e = ev as InputEvent;
+        if (e.inputType !== "insertText" || !e.data) return;
+        if (this.keyPressHandled) return;
+        this.emitInput(e.data);
+      },
+      true,
+    );
   };
   dispose = disposeMock;
   focus = focusMock;
@@ -79,11 +85,14 @@ class FakeTerminal {
     this.dataHandler?.(data);
   }
   /**
-   * Test helper: WebKit이 한글 조합을 흘리는 방식 그대로 textarea `input`을 쏜다.
-   * 새 음절은 `insertText`, 조합 갱신은 `insertReplacementText`.
+   * Test helper: WebKit이 한글 조합을 흘리는 방식 그대로 — textarea.value를 **먼저**
+   * 새 값으로 바꾼 뒤 `input`을 쏜다. 미러가 보는 것은 inputType이 아니라 이 value다.
    */
-  emitTextInput(inputType: string, data: string) {
-    this.textarea.dispatchEvent(new InputEvent("input", { inputType, data }));
+  emitTextInput(inputType: string, data: string | null, value?: string) {
+    if (value !== undefined) this.textarea.value = value;
+    this.textarea.dispatchEvent(
+      new InputEvent("input", { inputType, data, bubbles: true }),
+    );
   }
   /**
    * Test helper: simulate the IME finalizing a composed syllable. `data`를 주면
@@ -94,15 +103,29 @@ class FakeTerminal {
     this.textarea.dispatchEvent(
       data === undefined
         ? new Event("compositionend")
-        : new CompositionEvent("compositionend", { data })
+        : new CompositionEvent("compositionend", { data }),
     );
   }
   attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean) {
     this.keyEventHandler = handler;
   }
-  /** Test helper: simulate a key event reaching xterm's custom handler. */
+  /**
+   * Test helper: simulate a key event reaching xterm's custom handler.
+   * 실물 xterm은 커스텀 핸들러가 통과시킨 Enter/Ctrl+C keydown에서 textarea를
+   * 비운다(browser/Terminal.ts `_keyDown`) — 미러의 기준선 리싱크가 이 비우기를
+   * 제대로 따라잡는지 보려면 목도 같이 비워야 한다.
+   */
   emitKeyEvent(event: KeyboardEvent): boolean | undefined {
-    return this.keyEventHandler?.(event);
+    const result = this.keyEventHandler?.(event);
+    if (
+      result !== false &&
+      event.type === "keydown" &&
+      (event.key === "Enter" ||
+        (event.ctrlKey && event.key.toLowerCase() === "c"))
+    ) {
+      this.textarea.value = "";
+    }
+    return result;
   }
   hasSelection() {
     return selectionValue !== undefined && selectionValue.length > 0;
@@ -114,7 +137,9 @@ class FakeTerminal {
   buffer = {
     active: {
       length: 0,
-      getLine(_i: number):
+      getLine(
+        _i: number,
+      ):
         | { translateToString(trimRight?: boolean): string; isWrapped: boolean }
         | undefined {
         return undefined;
@@ -154,7 +179,9 @@ class FakeSerializeAddon {
 
 vi.mock("@xterm/xterm", () => ({ Terminal: FakeTerminal }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: FakeFitAddon }));
-vi.mock("@xterm/addon-serialize", () => ({ SerializeAddon: FakeSerializeAddon }));
+vi.mock("@xterm/addon-serialize", () => ({
+  SerializeAddon: FakeSerializeAddon,
+}));
 
 const writeInput = vi.fn();
 const resize = vi.fn();
@@ -178,7 +205,9 @@ beforeEach(() => {
   disposeMock.mockReset();
   focusMock.mockReset();
   // 콜백 호출 구현을 유지해야 flushAndSerializeAll(§P1)의 write("", cb)가 resolve된다.
-  writeMock.mockReset().mockImplementation((_data?: string, cb?: () => void) => cb?.());
+  writeMock
+    .mockReset()
+    .mockImplementation((_data?: string, cb?: () => void) => cb?.());
   loadAddonMock.mockReset();
   fitMock.mockReset();
   pasteMock.mockReset();
@@ -207,11 +236,16 @@ beforeEach(() => {
  * 모듈 로드 시점에 `navigator.platform`을 읽으므로 importRegistry() *전에* 부른다.
  */
 function setPlatform(value: string) {
-  Object.defineProperty(globalThis.navigator, "platform", { value, configurable: true });
+  Object.defineProperty(globalThis.navigator, "platform", {
+    value,
+    configurable: true,
+  });
 }
 
 /** Builds a minimal fake keydown/keyup event as attachCustomKeyEventHandler receives it. */
-function makeKeyEvent(overrides: Partial<KeyboardEvent> & { key: string }): KeyboardEvent {
+function makeKeyEvent(
+  overrides: Partial<KeyboardEvent> & { key: string },
+): KeyboardEvent {
   return {
     type: "keydown",
     ctrlKey: false,
@@ -291,12 +325,18 @@ describe("data wiring direction", () => {
     const terminalRegistry = await importRegistry();
     terminalRegistry.ensure("a1");
 
-    const [, backendCb] = onData.mock.calls[0] as [string, (d: string, bytes: number) => void];
+    const [, backendCb] = onData.mock.calls[0] as [
+      string,
+      (d: string, bytes: number) => void,
+    ];
     backendCb("hello from pty", 13);
 
     // §#49: write now takes a completion callback so the renderer can count the
     // rendered raw bytes for snapshot offset accounting.
-    expect(writeMock).toHaveBeenCalledWith("hello from pty", expect.any(Function));
+    expect(writeMock).toHaveBeenCalledWith(
+      "hello from pty",
+      expect.any(Function),
+    );
   });
 
   it("user keystrokes (term.onData) call tauriApi.writeInput(agentId, data)", async () => {
@@ -406,8 +446,12 @@ describe("serializeAll (session handoff snapshot)", () => {
     const host = document.createElement("div");
     terminalRegistry.attach("a1", host);
     terminalRegistry.attach("a2", host);
-    const e1 = terminalRegistry.get("a1")! as unknown as { serialize: FakeSerializeAddon };
-    const e2 = terminalRegistry.get("a2")! as unknown as { serialize: FakeSerializeAddon };
+    const e1 = terminalRegistry.get("a1")! as unknown as {
+      serialize: FakeSerializeAddon;
+    };
+    const e2 = terminalRegistry.get("a2")! as unknown as {
+      serialize: FakeSerializeAddon;
+    };
     e1.serialize.serialize.mockReturnValue("SCREEN-A1");
     e2.serialize.serialize.mockReturnValue("SCREEN-A2");
 
@@ -421,8 +465,12 @@ describe("serializeAll (session handoff snapshot)", () => {
     const host = document.createElement("div");
     terminalRegistry.attach("a1", host);
     terminalRegistry.attach("a2", host);
-    const e1 = terminalRegistry.get("a1")! as unknown as { serialize: FakeSerializeAddon };
-    const e2 = terminalRegistry.get("a2")! as unknown as { serialize: FakeSerializeAddon };
+    const e1 = terminalRegistry.get("a1")! as unknown as {
+      serialize: FakeSerializeAddon;
+    };
+    const e2 = terminalRegistry.get("a2")! as unknown as {
+      serialize: FakeSerializeAddon;
+    };
     e1.serialize.serialize.mockImplementation(() => {
       throw new Error("serialize boom");
     });
@@ -445,8 +493,12 @@ describe("flushAndSerializeAll (broker v2 §P1)", () => {
     const host = document.createElement("div");
     terminalRegistry.attach("a1", host);
     terminalRegistry.attach("a2", host);
-    const e1 = terminalRegistry.get("a1")! as unknown as { serialize: FakeSerializeAddon };
-    const e2 = terminalRegistry.get("a2")! as unknown as { serialize: FakeSerializeAddon };
+    const e1 = terminalRegistry.get("a1")! as unknown as {
+      serialize: FakeSerializeAddon;
+    };
+    const e2 = terminalRegistry.get("a2")! as unknown as {
+      serialize: FakeSerializeAddon;
+    };
     e1.serialize.serialize.mockReturnValue("SCREEN-A1");
     e2.serialize.serialize.mockReturnValue("SCREEN-A2");
     writeMock.mockClear();
@@ -463,8 +515,12 @@ describe("flushAndSerializeAll (broker v2 §P1)", () => {
     const host = document.createElement("div");
     terminalRegistry.attach("a1", host);
     terminalRegistry.attach("a2", host);
-    const e1 = terminalRegistry.get("a1")! as unknown as { serialize: FakeSerializeAddon };
-    const e2 = terminalRegistry.get("a2")! as unknown as { serialize: FakeSerializeAddon };
+    const e1 = terminalRegistry.get("a1")! as unknown as {
+      serialize: FakeSerializeAddon;
+    };
+    const e2 = terminalRegistry.get("a2")! as unknown as {
+      serialize: FakeSerializeAddon;
+    };
     e1.serialize.serialize.mockImplementation(() => {
       throw new Error("serialize boom");
     });
@@ -480,7 +536,10 @@ describe("renderedBytes accumulation (§#49)", () => {
   it("accumulates each chunk's raw byte count on write, keyed by agentId", async () => {
     const terminalRegistry = await importRegistry();
     terminalRegistry.ensure("a1");
-    const [, cb] = onData.mock.calls[0] as [string, (d: string, bytes: number) => void];
+    const [, cb] = onData.mock.calls[0] as [
+      string,
+      (d: string, bytes: number) => void,
+    ];
 
     cb("ab", 2);
     cb("cde", 3);
@@ -491,7 +550,10 @@ describe("renderedBytes accumulation (§#49)", () => {
   it("does not count bytes=0 restore-snapshot chunks", async () => {
     const terminalRegistry = await importRegistry();
     terminalRegistry.ensure("a1");
-    const [, cb] = onData.mock.calls[0] as [string, (d: string, bytes: number) => void];
+    const [, cb] = onData.mock.calls[0] as [
+      string,
+      (d: string, bytes: number) => void,
+    ];
 
     cb("RESTORED-SCREEN-IMAGE", 0); // 복원 청크: base가 이미 이 지점을 가리키므로 제외
     cb("live", 4);
@@ -503,8 +565,12 @@ describe("renderedBytes accumulation (§#49)", () => {
     const terminalRegistry = await importRegistry();
     terminalRegistry.ensure("a1");
     terminalRegistry.ensure("a2");
-    const cbA1 = (onData.mock.calls[0] as [string, (d: string, b: number) => void])[1];
-    const cbA2 = (onData.mock.calls[1] as [string, (d: string, b: number) => void])[1];
+    const cbA1 = (
+      onData.mock.calls[0] as [string, (d: string, b: number) => void]
+    )[1];
+    const cbA2 = (
+      onData.mock.calls[1] as [string, (d: string, b: number) => void]
+    )[1];
 
     cbA1("xxx", 3);
     cbA2("yy", 2);
@@ -515,7 +581,10 @@ describe("renderedBytes accumulation (§#49)", () => {
   it("counts only after the write completion callback runs (render completion, not enqueue)", async () => {
     const terminalRegistry = await importRegistry();
     terminalRegistry.ensure("a1");
-    const [, cb] = onData.mock.calls[0] as [string, (d: string, b: number) => void];
+    const [, cb] = onData.mock.calls[0] as [
+      string,
+      (d: string, b: number) => void,
+    ];
 
     // Hold the completion callback: bytes must not count until the write queue
     // drains (that's the whole point of accounting on the write callback).
@@ -585,7 +654,13 @@ describe("markAdopted / redraw nudge", () => {
       sessions: {
         // FakeTerminal은 80x24로 fit된다 — 백엔드가 알던 크기와 다르므로
         // activate()의 onResize 한 번으로 이미 SIGWINCH가 간다.
-        a1: { agentId: "a1", status: "running", cols: 100, rows: 30, lastActivityAt: 0 },
+        a1: {
+          agentId: "a1",
+          status: "running",
+          cols: 100,
+          rows: 30,
+          lastActivityAt: 0,
+        },
       },
     });
     const host = document.createElement("div");
@@ -804,12 +879,32 @@ describe("Hangul/IME double-input guard (Windows 전용)", () => {
     expect(clipboardReadText).not.toHaveBeenCalled();
     expect(result).toBe(true);
   });
+
+  it("mac이 아니면 textarea input에 손대지 않는다(xterm/IME 몫)", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+
+    fake.emitTextInput("insertText", "ㅎ", "ㅎ");
+    fake.emitTextInput("insertReplacementText", "하", "하");
+
+    // 캡처 단계에서 끊지 않았고(둘 다 xterm에 닿았다), 미러가 덧붙이지도 않았다.
+    expect(fake.xtermInputSeen).toBe(2);
+    expect(writeInput.mock.calls.map((c) => c[1])).toEqual(["ㅎ"]);
+  });
 });
 
-describe("WebKit 한글 조합 미러링", () => {
-  // macOS WebKit은 한글 IME에 composition 이벤트를 안 쏘고, 조합 갱신을
-  // input(insertReplacementText)으로만 흘린다. xterm 5.5는 insertText만 처리하므로
-  // 각 음절의 첫 자모만 나가고 나머지는 증발한다 — 그 갱신을 우리가 미러링한다.
+describe("macOS WebKit 한글 조합 미러링", () => {
+  // macOS WebKit은 한글 IME에 composition 이벤트를 안 쏘고, 조합을 hidden
+  // textarea의 value 변화 + input 이벤트로만 흘린다. 게다가 xterm에는 세 번째
+  // writer(`CompositionHelper._handleAnyTextareaChanges`)가 있어 "조합 중이
+  // 아닌데 온 keyCode 229 keydown"마다 setTimeout(0)으로 제 나름의 결론을 쏜다.
+  // 그래서 macOS에서는 우리가 유일한 writer가 되도록 xterm의 두 경로를 막고,
+  // textarea.value 전체 diff로 미러링한다.
+  beforeEach(() => {
+    setPlatform("MacIntel");
+  });
 
   /** PTY로 나간 청크들을 실제 줄로 되돌린다(DEL은 한 글자 지움). */
   function applyToLine(chunks: string[]): string {
@@ -825,196 +920,358 @@ describe("WebKit 한글 조합 미러링", () => {
     return writeInput.mock.calls.map((c) => c[1] as string);
   }
 
-  function mount() {
-    const host = document.createElement("div");
-    return { host };
-  }
-
-  it("insertText(새 음절)는 xterm이 보내고, 우리는 한 번 더 보내지 않는다", async () => {
+  async function mountMac() {
     const terminalRegistry = await importRegistry();
-    const { host } = mount();
+    const host = document.createElement("div");
     terminalRegistry.attach("a1", host);
     const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+    /** WebKit 트레이스 한 줄: (inputType, data, 그 시점의 textarea.value). */
+    const feed = (inputType: string, data: string | null, value: string) =>
+      fake.emitTextInput(inputType, data, value);
+    /** 키 하나의 keydown. 원장이 여기서 비워진다. */
+    const keyDown = (key: string, keyCode: number) =>
+      fake.emitKeyEvent(makeKeyEvent({ key, keyCode }));
+    /**
+     * xterm의 `_keyPress`: 커스텀 핸들러를 거친 뒤 charCode를 그대로
+     * `triggerDataEvent`로 흘린다(= term.onData). 스페이스(32)가 이 경로로 나간다.
+     */
+    const xtermKeyPress = (key: string) => {
+      fake.emitKeyEvent(makeKeyEvent({ key, type: "keypress" } as never));
+      fake.emitInput(key);
+    };
+    return { terminalRegistry, fake, feed, keyDown, xtermKeyPress };
+  }
 
-    fake.emitTextInput("insertText", "ㅎ");
+  it('"한글": WebKit 실측 시퀀스를 그대로 먹이면 PTY 누적 결과가 정확히 "한글"', async () => {
+    const { feed } = await mountMac();
+
+    feed("insertText", "ㅎ", "ㅎ");
+    feed("insertReplacementText", "하", "하");
+    feed("insertReplacementText", "한", "한");
+    feed("insertText", "ㄱ", "한ㄱ");
+    feed("insertReplacementText", "그", "한그");
+    feed("insertReplacementText", "글", "한글");
+
+    // 공통 접두사는 건드리지 않고 바뀐 꼬리만 한 번의 write로 나간다.
+    expect(sentChunks()).toEqual([
+      "ㅎ",
+      "\x7f하",
+      "\x7f한",
+      "ㄱ",
+      "\x7f그",
+      "\x7f글",
+    ]);
+    expect(applyToLine(sentChunks())).toBe("한글");
+  });
+
+  it('"계": 앞 자모가 줄에 남지 않는다(증상 "성ㄱ계" 회귀)', async () => {
+    const { feed } = await mountMac();
+
+    feed("insertText", "ㄱ", "ㄱ");
+    feed("insertReplacementText", "계", "계");
+
+    expect(sentChunks()).toEqual(["ㄱ", "\x7f계"]);
+    expect(applyToLine(sentChunks())).toBe("계");
+  });
+
+  it("문장부호 커밋: 커밋 input이 keydown보다 먼저 와도 음절이 두 번 나가지 않는다", async () => {
+    const { fake, feed } = await mountMac();
+    feed("insertText", "ㅎ", "ㅎ");
+    feed("insertReplacementText", "해", "해");
+
+    // WebKit 실측: 조합의 input이 keydown보다 먼저 도착하는 순서.
+    feed("insertText", "?", "해?");
+    fake.emitKeyEvent(makeKeyEvent({ key: "?", keyCode: 229 }));
+
+    expect(applyToLine(sentChunks())).toBe("해?"); // "해해?"가 아니다
+  });
+
+  it("문장부호 커밋: keydown이 먼저 와도 음절이 두 번 나가지 않는다", async () => {
+    const { fake, feed } = await mountMac();
+    feed("insertText", "ㅎ", "ㅎ");
+    feed("insertReplacementText", "해", "해");
+
+    // 순서가 뒤집히는 것이 이번 버그의 핵심이라 반대 순서도 고정한다.
+    fake.emitKeyEvent(makeKeyEvent({ key: "?", keyCode: 229 }));
+    feed("insertText", "?", "해?");
+
+    expect(applyToLine(sentChunks())).toBe("해?");
+  });
+
+  it('"ㅋㅋ" 같은 같은 음절 연타가 먹히지 않는다', async () => {
+    const { feed, keyDown } = await mountMac();
+
+    keyDown("ㅋ", 229);
+    feed("insertText", "ㅋ", "ㅋ");
+    keyDown("ㅋ", 229);
+    feed("insertText", "ㅋ", "ㅋㅋ");
+
+    expect(sentChunks()).toEqual(["ㅋ", "ㅋ"]);
+    expect(applyToLine(sentChunks())).toBe("ㅋㅋ");
+  });
+
+  it("조합 중 Backspace(229로 도착)가 DEL 한 번으로 미러된다", async () => {
+    const { fake, feed } = await mountMac();
+    feed("insertText", "ㅎ", "ㅎ");
+    feed("insertReplacementText", "하", "하");
+    feed("insertReplacementText", "한", "한");
+    writeInput.mockClear();
+
+    fake.emitKeyEvent(makeKeyEvent({ key: "Backspace", keyCode: 229 }));
+    fake.emitTextInput("deleteContentBackward", null, "하");
+
+    const patch = sentChunks().join("");
+    expect([...patch].filter((c) => c === "\x7f")).toHaveLength(1);
+    expect(applyToLine(["한", ...sentChunks()])).toBe("하");
+  });
+
+  it("Enter 뒤 xterm이 textarea를 비워도 다음 조합에서 DEL이 새어 나가지 않는다", async () => {
+    const { fake, feed } = await mountMac();
+    feed("insertText", "ㅎ", "ㅎ");
+
+    // 실물 xterm은 Enter keydown에서 `textarea.value = ''`을 한다(목이 흉내 낸다).
+    fake.emitKeyEvent(makeKeyEvent({ key: "Enter", keyCode: 13 }));
+    await Promise.resolve(); // 기준선 리싱크(queueMicrotask)
+    writeInput.mockClear();
+
+    feed("insertText", "ㅎ", "ㅎ");
+
+    expect(sentChunks()).toEqual(["ㅎ"]); // DEL 없음 — 진짜 프롬프트를 지우지 않는다
+  });
+
+  it("blur 뒤에도 DEL이 새어 나가지 않는다", async () => {
+    const { fake, feed } = await mountMac();
+    feed("insertText", "ㅎ", "ㅎ");
+
+    fake.textarea.value = ""; // xterm의 blur 핸들러가 비운다
+    fake.textarea.dispatchEvent(new Event("blur"));
+    await Promise.resolve();
+    writeInput.mockClear();
+
+    feed("insertText", "ㅎ", "ㅎ");
 
     expect(sentChunks()).toEqual(["ㅎ"]);
   });
 
-  it("조합 갱신은 DEL로 지우고 새 꼴을 쓴다", async () => {
-    const terminalRegistry = await importRegistry();
-    const { host } = mount();
-    terminalRegistry.attach("a1", host);
-    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+  it("keyCode 229 keydown에서 커스텀 핸들러가 false를 반환한다(_handleAnyTextareaChanges 차단)", async () => {
+    const { fake } = await mountMac();
 
-    fake.emitTextInput("insertText", "ㅎ"); // xterm이 "ㅎ"를 보낸 상태
-    fake.emitTextInput("insertReplacementText", "하");
-    fake.emitTextInput("insertReplacementText", "한");
-
-    // 한 번의 write로 묶어 보낸다 — 중간 상태가 깜빡이지 않게.
-    expect(sentChunks()).toEqual(["ㅎ", "\x7f하", "\x7f한"]);
+    // 이 false 하나가 `Terminal._keyDown`을 `_compositionHelper.keydown()` 앞에서
+    // 끊는다 — 세 번째 writer가 아예 돌지 않는다.
+    expect(fake.emitKeyEvent(makeKeyEvent({ key: "ㅎ", keyCode: 229 }))).toBe(
+      false,
+    );
   });
 
-  it('"한글": WebKit 실측 시퀀스를 그대로 먹이면 줄이 정확히 복원된다', async () => {
-    const terminalRegistry = await importRegistry();
-    const { host } = mount();
-    terminalRegistry.attach("a1", host);
-    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+  it("우리가 소유한 input은 xterm의 `_inputEvent`에 닿지 않는다", async () => {
+    const { fake, feed } = await mountMac();
 
-    // Safari 트레이스 그대로: 새 음절은 insertText, 갱신은 insertReplacementText.
-    // insertText는 xterm이 PTY로 보내므로 테스트도 같이 흉내 낸다.
-    const feed = (type: string, data: string) => fake.emitTextInput(type, data);
-    feed("insertText", "ㅎ");
-    feed("insertReplacementText", "하");
-    feed("insertReplacementText", "한");
-    feed("insertReplacementText", "한"); // 받침이 빠지기 직전 되돌림
-    feed("insertText", "ㄱ");
-    feed("insertReplacementText", "그");
-    feed("insertReplacementText", "글");
+    feed("insertText", "ㅎ", "ㅎ");
 
-    expect(applyToLine(sentChunks())).toBe("한글");
+    expect(fake.xtermInputSeen).toBe(0); // 캡처 단계에서 끊었다
+    expect(sentChunks()).toEqual(["ㅎ"]); // 그래도 한 번은 나갔다
   });
 
-  it("받침이 다음 음절로 넘어가도 줄이 정확하다", async () => {
-    const terminalRegistry = await importRegistry();
-    const { host } = mount();
-    terminalRegistry.attach("a1", host);
-    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+  it("진짜 composition 이벤트가 오는 IME에서는 손을 뗀다(xterm 몫)", async () => {
+    const { fake, feed } = await mountMac();
 
-    const feed = (type: string, data: string) => fake.emitTextInput(type, data);
-    // "한가": 한 -> 한ㄱ -> (ㄱ이 다음 음절로) 한/가
-    feed("insertText", "ㅎ");
-    feed("insertReplacementText", "하");
-    feed("insertReplacementText", "한");
-    feed("insertReplacementText", "한");
-    feed("insertText", "ㄱ");
-    feed("insertReplacementText", "가");
+    fake.textarea.dispatchEvent(
+      new CompositionEvent("compositionstart", { data: "" }),
+    );
+    feed("insertText", "あ", "あ");
 
-    expect(applyToLine(sentChunks())).toBe("한가");
+    expect(fake.xtermInputSeen).toBe(1); // stopPropagation 하지 않았다
+    expect(sentChunks()).toEqual(["あ"]); // xterm이 보낸 한 번뿐
   });
 
-  it("조합 키가 아닌 keydown은 꼬리 추적을 접는다(Enter 뒤 갱신은 DEL 없이 쓴다)", async () => {
-    const terminalRegistry = await importRegistry();
-    const { host } = mount();
-    terminalRegistry.attach("a1", host);
-    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+  it("조합 중(composition 이벤트가 오는 IME) 229 keydown은 막지 않는다", async () => {
+    const { fake } = await mountMac();
 
-    fake.emitTextInput("insertText", "ㅎ");
-    fake.emitKeyEvent(makeKeyEvent({ key: "Enter", keyCode: 13 }));
-    fake.emitTextInput("insertReplacementText", "하");
+    // 여기서 막으면 조합 중 Enter가 통째로 증발한다 — xterm이 조합을 굴리게 둔다.
+    fake.textarea.dispatchEvent(
+      new CompositionEvent("compositionstart", { data: "" }),
+    );
 
-    expect(sentChunks()).toEqual(["ㅎ", "하"]);
+    expect(fake.emitKeyEvent(makeKeyEvent({ key: "a", keyCode: 229 }))).toBe(
+      true,
+    );
   });
 
-  it("조합 키(keyCode 229) keydown은 꼬리를 지우지 않는다", async () => {
-    const terminalRegistry = await importRegistry();
-    const { host } = mount();
-    terminalRegistry.attach("a1", host);
-    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+  it("ASCII 본인의 input은 xterm의 keypress와 상쇄돼 한 번만 나간다", async () => {
+    const { fake, keyDown, xtermKeyPress } = await mountMac();
 
-    fake.emitTextInput("insertText", "ㅎ");
-    fake.emitKeyEvent(makeKeyEvent({ key: "ㅏ", keyCode: 229 }));
-    fake.emitTextInput("insertReplacementText", "하");
+    // ASCII는 keydown -> keypress -> input 순서. keypress로 xterm이 이미 보냈다.
+    keyDown("a", 65);
+    xtermKeyPress("a");
+    fake.emitTextInput("insertText", "a", "a");
 
-    expect(sentChunks()).toEqual(["ㅎ", "\x7f하"]);
+    expect(sentChunks()).toEqual(["a"]);
   });
 
-  it("composition 이벤트가 오는 플랫폼에서는 비켜난다(xterm 몫)", async () => {
-    const terminalRegistry = await importRegistry();
-    const { host } = mount();
-    terminalRegistry.attach("a1", host);
-    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+  it('xterm이 보낸 것과 다른 청크는 상쇄되지 않는다(실측 트레이스 keypress "," -> input "ㄹ")', async () => {
+    const { fake, keyDown, xtermKeyPress } = await mountMac();
 
-    fake.textarea.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
-    fake.emitTextInput("insertReplacementText", "하");
+    // WebKit 실측: keypress ","로 xterm이 ","를 보낸 뒤, 다음 조합의 input이
+    // 그 키의 keydown보다 **먼저** 도착한다. 상쇄는 같은 문자열 1회뿐이라
+    // "ㄹ"은 반드시 살아남아야 한다.
+    keyDown(",", 188);
+    xtermKeyPress(",");
+    fake.emitTextInput("insertText", "ㄹ", "ㄹ");
 
-    expect(writeInput).not.toHaveBeenCalled();
+    expect(sentChunks()).toEqual([",", "ㄹ"]);
   });
 
-  it("붙여넣기 같은 다른 inputType 뒤에는 DEL을 쏘지 않는다", async () => {
-    const terminalRegistry = await importRegistry();
-    const { host } = mount();
-    terminalRegistry.attach("a1", host);
-    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+  it("조합 뒤 스페이스: input이 keypress보다 **먼저** 와도 한 칸만 들어간다", async () => {
+    const { feed, keyDown, xtermKeyPress } = await mountMac();
+    feed("insertText", "ㅎ", "ㅎ");
+    feed("insertReplacementText", "해", "해");
+    writeInput.mockClear();
 
-    fake.emitTextInput("insertText", "ㅎ");
-    fake.emitTextInput("insertFromPaste", "붙여넣기");
-    fake.emitTextInput("insertReplacementText", "하");
+    // 스페이스(32)는 `evaluateKeyboardEvent`의 `keyCode >= 48` 조건에 걸려
+    // `_keyDown`을 그냥 통과하고 `_keyPress`로 나간다. 그런데 조합을 커밋하는
+    // 스페이스의 input은 그 keypress보다 먼저 온다 — 이게 "두 칸" 버그였다.
+    keyDown(" ", 32);
+    feed("insertText", " ", "해 ");
+    xtermKeyPress(" ");
 
-    expect(sentChunks()).toEqual(["ㅎ", "하"]);
+    expect(sentChunks()).toEqual([" "]);
   });
 
-  it("안전망: xterm이 insertText를 흘려도 음절이 살아남는다", async () => {
-    const terminalRegistry = await importRegistry();
-    const { host } = mount();
-    terminalRegistry.attach("a1", host);
-    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+  it("조합 뒤 스페이스: keypress가 먼저 와도 한 칸만 들어간다", async () => {
+    const { feed, keyDown, xtermKeyPress } = await mountMac();
+    feed("insertText", "ㅎ", "ㅎ");
+    feed("insertReplacementText", "해", "해");
+    writeInput.mockClear();
 
-    // 가드 청소가 무력해진 상황(예: 다음 xterm에서 내부 필드 이름이 바뀜).
-    fake.dropInsertText = true;
-    fake.emitTextInput("insertText", "ㅎ");
-    fake.emitTextInput("insertReplacementText", "하");
+    keyDown(" ", 32);
+    xtermKeyPress(" ");
+    feed("insertText", " ", "해 ");
 
-    expect(sentChunks()).toEqual(["ㅎ", "\x7f하"]);
+    expect(sentChunks()).toEqual([" "]);
   });
 
-  it("조합 input이 xterm에 닿기 전에 stale 가드 플래그를 내린다", async () => {
-    const terminalRegistry = await importRegistry();
-    const { host } = mount();
-    terminalRegistry.attach("a1", host);
-    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+  it("영문 상태의 스페이스 연타는 친 만큼 들어간다", async () => {
+    const { keyDown, xtermKeyPress } = await mountMac();
 
-    // 앞 키를 아직 안 뗀 상태(_keyDownSeen) + 직전에 ASCII를 친 상태(_keyPressHandled).
-    // 둘 다 xterm의 `_inputEvent`가 insertText를 통째로 버리게 만든다.
-    fake._core._keyDownSeen = true;
-    fake._core._keyPressHandled = true;
-    fake.emitTextInput("insertText", "ㅌ");
+    // input 이벤트 없이 keypress만 오는 평범한 경로. 원장이 keydown마다 비므로
+    // 같은 " "가 연달아 와도 상쇄되지 않는다.
+    keyDown(" ", 32);
+    xtermKeyPress(" ");
+    keyDown(" ", 32);
+    xtermKeyPress(" ");
 
-    expect(fake._core._keyDownSeen).toBe(false);
-    expect(fake._core._keyPressHandled).toBe(false);
+    expect(sentChunks()).toEqual([" ", " "]);
   });
 
-  it("ASCII 본인의 input(직전 keypress)은 xterm 플래그를 건드리지 않는다", async () => {
-    const terminalRegistry = await importRegistry();
-    const { host } = mount();
-    terminalRegistry.attach("a1", host);
-    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+  it("조합 뒤 스페이스를 연달아 쳐도 친 만큼 들어간다", async () => {
+    const { feed, keyDown, xtermKeyPress } = await mountMac();
+    feed("insertText", "ㅎ", "ㅎ");
+    feed("insertReplacementText", "해", "해");
+    writeInput.mockClear();
 
-    // ASCII는 keydown -> keypress -> input 순서. keypress로 이미 보냈으므로
-    // `_keyPressHandled`를 내리면 같은 글자가 두 번 나간다.
-    fake.emitKeyEvent(makeKeyEvent({ key: "a", keyCode: 65 }));
-    fake.emitKeyEvent(makeKeyEvent({ key: "a", type: "keypress" } as never));
-    fake._core._keyPressHandled = true; // xterm이 keypress로 이미 보냈다는 표시
-    fake.emitTextInput("insertText", "a");
+    keyDown(" ", 32);
+    feed("insertText", " ", "해 ");
+    xtermKeyPress(" ");
+    keyDown(" ", 32);
+    feed("insertText", " ", "해  ");
+    xtermKeyPress(" ");
 
-    expect(fake._core._keyPressHandled).toBe(true);
-    expect(writeInput).not.toHaveBeenCalled(); // 우리가 덧붙이지 않는다
+    expect(sentChunks()).toEqual([" ", " "]);
   });
 
-  it("composition 이벤트를 쏘는 플랫폼에서는 xterm 플래그에 손대지 않는다", async () => {
-    const terminalRegistry = await importRegistry();
-    const { host } = mount();
-    terminalRegistry.attach("a1", host);
-    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+  // ── NBSP 정규화 회귀(§normalizeSpace) ────────────────────────────────────
+  // 앱 실측 트레이스(수정 전): WKWebView는 textarea 줄 끝 공백을 U+00A0(NBSP)로
+  // 채운다. xterm의 `_keyPress`가 보내는 건 평범한 U+0020이라, 정규화 없이
+  // 문자 그대로 비교/diff하면 (1) 원장 상쇄가 실패해 공백이 두 칸 들어가고,
+  // (2) 다음 음절의 diff에서 접두사가 어긋나 공백이 패치에 또 딸려 나온다.
+  //   keydown " " keyCode=32          → 원장 초기화
+  //   xterm.onData " "  → PTY " "     ← U+0020 (정상, xterm의 _keyPress)
+  //   mirror patch=" " xtermSent=" "  → 상쇄 실패 → PTY 한 번 더   ← 공백 두 칸
+  //   mirror patch=" ㄴ" prev="가 " next="가 ㄴ"  ← 접두사가 1자만 일치
+  // 아래 테스트들은 이 트레이스를 textarea에 **실제 U+00A0**을 넣어 재현한다.
+  it('조합 뒤 스페이스: textarea가 NBSP(U+00A0)로 채워져도 PTY 공백은 정확히 한 칸(앱 실측 트레이스)', async () => {
+    const { feed, keyDown, xtermKeyPress } = await mountMac();
+    feed("insertText", "가", "가");
+    writeInput.mockClear();
 
-    fake.textarea.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
-    fake.textarea.dispatchEvent(new CompositionEvent("compositionend", { data: "안" }));
-    fake._core._keyDownSeen = true;
-    fake.emitTextInput("insertText", "ㅌ");
+    keyDown(" ", 32);
+    xtermKeyPress(" "); // xterm _keyPress: term.onData로 U+0020 " "를 먼저 보냄
+    feed("insertText", " ", "가 "); // WKWebView: 실제 값은 NBSP
 
-    expect(fake._core._keyDownSeen).toBe(true);
+    expect(sentChunks()).toEqual([" "]); // 정규화로 상쇄 성공 -> 공백 두 칸이 아니다
+  });
+
+  it('그 다음 음절: prevValue가 NBSP 정규화된 "가 "일 때 "가 ㄴ"의 패치는 공백 없이 "ㄴ"뿐이다(회귀: "성ㄱ계"류 접두사 어긋남)', async () => {
+    const { feed, keyDown, xtermKeyPress } = await mountMac();
+    feed("insertText", "가", "가");
+    keyDown(" ", 32);
+    xtermKeyPress(" ");
+    feed("insertText", " ", "가 "); // prevValue가 정규화된 "가 "(U+0020)로 갱신됨
+    writeInput.mockClear();
+
+    keyDown("ㄴ", 78);
+    feed("insertText", "ㄴ", "가 ㄴ"); // 다음 음절 시작
+
+    expect(sentChunks()).toEqual(["ㄴ"]); // 공백이 다시 딸려 나가지 않는다
+  });
+
+  it('"가 나 다" 전체 실측 시퀀스: PTY 누적이 정확히 "가 나 다"(공백 U+0020 하나씩)', async () => {
+    const { feed, keyDown, xtermKeyPress } = await mountMac();
+
+    feed("insertText", "가", "가");
+    keyDown(" ", 32);
+    xtermKeyPress(" ");
+    feed("insertText", " ", "가 ");
+
+    keyDown("ㄴ", 78);
+    feed("insertText", "ㄴ", "가 ㄴ");
+    keyDown("ㅏ", 65);
+    feed("insertReplacementText", "나", "가 나");
+
+    keyDown(" ", 32);
+    xtermKeyPress(" ");
+    feed("insertText", " ", "가 나 ");
+
+    keyDown("ㄷ", 68);
+    feed("insertText", "ㄷ", "가 나 ㄷ");
+    keyDown("ㅏ", 65);
+    feed("insertReplacementText", "다", "가 나 다");
+
+    expect(applyToLine(sentChunks())).toBe("가 나 다");
+  });
+
+  it("NBSP가 섞인 리싱크(blur 시점 값이 NBSP를 품음)에도 다음 조합에서 DEL이 새어 나가지 않는다", async () => {
+    const { fake, feed, keyDown } = await mountMac();
+    feed("insertText", "가", "가");
+    keyDown(" ", 32);
+    fake.emitInput(" "); // xterm 몫의 스페이스 발신(키프레스 대역)
+    feed("insertText", " ", "가 ");
+
+    // xterm의 blur 핸들러가 실제로는 textarea.value를 비우지만(browser/Clipboard.ts
+    // 류 정리 경로), WKWebView 특유의 트레일링 NBSP가 비워지기 전에 리싱크가 먼저
+    // 값을 읽는 경우를 흉내 — resyncSoon이 raw NBSP를 그대로 기준선으로 삼으면
+    // 다음 조합의 diff에서 접두사가 어긋나 DEL이 샌다.
+    fake.textarea.value = "가 ";
+    fake.textarea.dispatchEvent(new Event("blur"));
+    await Promise.resolve(); // resyncSoon의 queueMicrotask
+    writeInput.mockClear();
+
+    keyDown("ㄴ", 78);
+    feed("insertText", "ㄴ", "가 ㄴ");
+
+    expect(sentChunks()).toEqual(["ㄴ"]); // DEL 없음 — 진짜 프롬프트를 지우지 않는다
   });
 
   it("봇 운전 중이면 조합 갱신도 나가지 않는다", async () => {
     const terminalRegistry = await importRegistry();
     const { useAppStore } = await import("../../store/appStore");
     useAppStore.setState({ botMode: { a1: { agentId: "a1" } as never } });
-    const { host } = mount();
+    const host = document.createElement("div");
     terminalRegistry.attach("a1", host);
     const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
 
-    fake.emitTextInput("insertText", "ㅎ");
-    fake.emitTextInput("insertReplacementText", "하");
+    fake.emitTextInput("insertText", "ㅎ", "ㅎ");
+    fake.emitTextInput("insertReplacementText", "하", "하");
 
     expect(writeInput).not.toHaveBeenCalled();
   });
@@ -1049,7 +1306,9 @@ describe("theme + font options", () => {
     terminalRegistry.setTheme(THEMES.pipboy.xterm);
 
     for (const e of [a, b]) {
-      const opts = (e.term as unknown as FakeTerminal).options as { theme: unknown };
+      const opts = (e.term as unknown as FakeTerminal).options as {
+        theme: unknown;
+      };
       expect(opts.theme).toEqual(THEMES.pipboy.xterm);
     }
 
