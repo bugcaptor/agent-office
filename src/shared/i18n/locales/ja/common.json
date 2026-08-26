@@ -1,0 +1,86 @@
+{
+  "_meta": {
+    "label": "日本語"
+  },
+  "time": {
+    "justNow": "たった今"
+  },
+  "topBar": {
+    "openTerminal": "ターミナルを開く",
+    "agents_one": "{{count}} agents",
+    "agents_other": "{{count}} agents",
+    "counts": "{{running}} running · {{pending}} pending"
+  },
+  "bottomBar": {
+    "newAgent": "＋ New Agent",
+    "clockIn": "🏠 出勤 ({{n}})",
+    "clockAll": "全員出退勤",
+    "clockInAll": "全員出勤（ターミナル起動、{{n}}人）",
+    "clockOutAll": "全員退勤（{{n}}人）",
+    "status": "{{running}} running · {{pending}} needs input",
+    "records": "📊 記録",
+    "recordsAria": "記録",
+    "recordsTitle": "セッション活動分析 · 今月の優秀社員",
+    "recordsTitleTalk": "セッション活動分析 · 今月の優秀社員 · 進行中の会話 {{open}}件",
+    "recordsTitleQueued": "セッション活動分析 · 今月の優秀社員 · 進行中の会話 {{open}}件 · 送信待ち {{queued}}件（相手の手が空いたら送信）",
+    "analytics": "セッション活動分析",
+    "awards": "今月の優秀社員",
+    "talkLog": "会話ログを見る ({{n}})",
+    "talkStop": "会話をすべて停止",
+    "settingsAria": "設定",
+    "settingsTitle": "設定（任意のエージェント連携）",
+    "aboutAria": "情報",
+    "aboutTitle": "Agent Office について",
+    "sceneThemeAria": "風景・テーマの選択",
+    "sceneThemeTitle": "オフィスの風景・テーマを一覧から選ぶ",
+    "sceneHeader": "風景",
+    "themeHeader": "テーマ",
+    "muteAria": "通知をミュート",
+    "unmuteAria": "通知のミュートを解除"
+  },
+  "ticker": {
+    "more": "+{{n}}件"
+  },
+  "notification": {
+    "attentionFallback": "確認が必要です"
+  },
+  "errors": {
+    "bundleNotJson": "ファイルを JSON として読み込めませんでした。",
+    "bundleNotCharacterFile": "Agent Office のキャラクターファイルではありません。",
+    "bundleSchemaVersionMissing": "スキーマバージョンの情報がありません。",
+    "bundleSchemaVersionNewer": "より新しいバージョンで作られたファイルです。アプリを更新してからもう一度お試しください。",
+    "bundleSchemaVersionUnsupported": "対応していないスキーマバージョンです。",
+    "bundleProfileMissing": "プロフィールのデータがありません。",
+    "bundleProfileNameMissing": "プロフィールに名前がありません。",
+    "bundlePortraitInvalid": "ポートレート画像のデータが正しくありません。",
+    "bundlePortraitTooLarge": "ポートレート画像が大きすぎます（2 MiB 超）。インポートを中止しました。",
+    "bundleSpriteInvalid": "スプライト画像のデータが正しくありません。",
+    "bundleSpriteTooLarge": "スプライト画像が大きすぎます（1 MiB 超）。インポートを中止しました。",
+    "bundleMinimiInvalid": "ミニミ画像のデータが正しくありません。",
+    "bundleMinimiTooLarge": "ミニミ画像が大きすぎます（1 MiB 超）。インポートを中止しました。",
+    "pathOutsideRoot": "許可されたフォルダーの外のパスです。",
+    "rootNotFound": "作業フォルダーが見つかりませんでした。",
+    "rootNotADirectory": "作業フォルダーがディレクトリではありません。",
+    "fileNotFound": "ファイルが見つかりませんでした。",
+    "notAFile": "ファイルではありません。",
+    "notUtf8": "UTF-8 テキストではないファイルは開けません。",
+    "fileTooLarge": "ファイルが大きすぎます。",
+    "statFailed": "ファイル情報を読み取れませんでした。",
+    "readFailed": "ファイルを読み込めませんでした。",
+    "writeFailed": "ファイルを保存できませんでした。",
+    "noParentDir": "ファイルの親フォルダーが分かりません。",
+    "logReadFailed": "セッションログを読み込めませんでした。",
+    "studySaveFailed": "学習資料を保存できませんでした。",
+    "keySaveFailed": "API キーを保存できませんでした。",
+    "ttsDisabled": "設定で TTS がオフになっています。",
+    "ttsKeyMissing": "ElevenLabs の API キーが設定されていません。",
+    "ttsEmptyMessage": "読み上げる文がありません。",
+    "ttsNoVoice": "利用できるボイスがありません。",
+    "webRemoteDown": "Web リモートサーバーがまだ起動していません — 先に Web リモートをオンにしてください。",
+    "tailscaleCliNotFound": "Tailscale CLI が見つかりませんでした。",
+    "tailscaleServeConflict": "その HTTPS ポートは別のサービスが使用中です — 先にそのマッピングを整理してください。",
+    "tailscaleSpawnFailed": "tailscale の実行に失敗しました。",
+    "tailscaleCliError": "tailscale コマンドが失敗しました。",
+    "timeout": "時間内に応答しませんでした。"
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "scene": {
+    "office": "オフィス",
+    "beach": "バカンスのビーチ",
+    "valley": "山の渓谷",
+    "spaceship": "宇宙船",
+    "castle": "中世の城",
+    "steppe": "モンゴルの草原",
+    "cruise": "豪華クルーズ",
+    "factory": "工場",
+    "volcano": "火山地帯",
+    "zombie": "ゾンビタウン"
+  },
+  "theme": {
+    "daylight": "デイライト",
+    "midnight": "ミッドナイト",
+    "sakura": "桜",
+    "pipboy": "ピップボーイ"
+  },
+  "archetype": {
+    "auto": "自動（シード）",
+    "human": "人間",
+    "elf": "エルフ",
+    "orc": "オーク",
+    "beastfolk": "獣人",
+    "robot": "ロボット",
+    "android": "アンドロイド",
+    "slime": "スライム",
+    "ghost": "ゴースト"
+  },
+  "keyColor": {
+    "hair": "髪",
+    "fur": "毛",
+    "skin": "肌",
+    "plating": "装甲",
+    "chassis": "本体",
+    "clothing": "服",
+    "accent": "アクセント",
+    "body": "ボディ"
+  },
+  "soundPack": {
+    "cherryKc1000": "メカニカル — Cherry KC1000",
+    "topreHhkb": "トプレ — HHKB（コトコト）",
+    "mechClicky": "メカニカル — クリッキー（カチカチ）",
+    "membrane": "メンブレン — オフィス"
+  },
+  "sign": {
+    "vacation": "休暇中"
+  },
+  "desk": {
+    "ownerHeader": "{{index}}番デスクの担当",
+    "unassign": "指定解除"
+  }
+}

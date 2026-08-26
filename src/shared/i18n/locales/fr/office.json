@@ -1,0 +1,54 @@
+{
+  "scene": {
+    "office": "Bureau",
+    "beach": "Plage",
+    "valley": "Vallée",
+    "spaceship": "Vaisseau",
+    "castle": "Château",
+    "steppe": "Steppe",
+    "cruise": "Croisière",
+    "factory": "Usine",
+    "volcano": "Volcan",
+    "zombie": "Ville zombie"
+  },
+  "theme": {
+    "daylight": "Plein jour",
+    "midnight": "Minuit",
+    "sakura": "Sakura",
+    "pipboy": "Pip-Boy"
+  },
+  "archetype": {
+    "auto": "Auto (graine)",
+    "human": "Humain",
+    "elf": "Elfe",
+    "orc": "Orc",
+    "beastfolk": "Homme-bête",
+    "robot": "Robot",
+    "android": "Androïde",
+    "slime": "Slime",
+    "ghost": "Fantôme"
+  },
+  "keyColor": {
+    "hair": "Cheveux",
+    "fur": "Fourrure",
+    "skin": "Peau",
+    "plating": "Blindage",
+    "chassis": "Châssis",
+    "clothing": "Vêtements",
+    "accent": "Accent",
+    "body": "Corps"
+  },
+  "soundPack": {
+    "cherryKc1000": "Mécanique — Cherry KC1000",
+    "topreHhkb": "Topre — HHKB (feutré)",
+    "mechClicky": "Mécanique — Clicky (claquant)",
+    "membrane": "Membrane — Bureau"
+  },
+  "sign": {
+    "vacation": "EN CONGÉ"
+  },
+  "desk": {
+    "ownerHeader": "Occupant du bureau {{index}}",
+    "unassign": "Libérer"
+  }
+}

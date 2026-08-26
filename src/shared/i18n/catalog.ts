@@ -79,14 +79,37 @@ export function languageLabel(lang: string): string {
 }
 
 /**
+ * 지역 코드를 문자(script)까지 넓힌 코드로 바꾼다 — `zh-TW` → `zh-Hant`,
+ * `zh-CN` → `zh-Hans`. 문자가 없으면 null.
+ *
+ * 이게 없으면 `zh-*`가 전부 프리픽스 일치로 잡혀 정렬상 앞에 오는 `zh-Hans`에
+ * 붙는다. 대만·홍콩 사용자에게 간체가 나가는 건 오답이다. 지역→문자 표는
+ * `Intl.Locale.maximize()`(CLDR)가 들고 있으니 우리가 관리하지 않는다.
+ */
+function scriptCode(locale: string): string | null {
+  try {
+    const l = new Intl.Locale(locale).maximize();
+    return l.script ? `${l.language}-${l.script}` : null;
+  } catch {
+    return null; // 파싱할 수 없는 로케일 문자열
+  }
+}
+
+/**
  * 임의의 로케일 문자열(`ko-KR`, `en-US`, `system` 아님)을 보유 카탈로그 중
- * 하나로 좁힌다. 정확히 일치 → 프리픽스 일치(`en-GB` → `en`) → 폴백 순.
+ * 하나로 좁힌다. 정확히 일치 → 문자 일치(`zh-TW` → `zh-Hant`) → 프리픽스
+ * 일치(`en-GB` → `en`) → 폴백 순.
  */
 export function matchLanguage(locale: string | null | undefined): string {
   if (!locale) return FALLBACK_LANGUAGE;
   const lower = locale.toLowerCase();
   const exact = SUPPORTED_LANGUAGES.find((l) => l.toLowerCase() === lower);
   if (exact) return exact;
+  const script = scriptCode(locale)?.toLowerCase();
+  if (script) {
+    const byScript = SUPPORTED_LANGUAGES.find((l) => l.toLowerCase() === script);
+    if (byScript) return byScript;
+  }
   const prefix = lower.split("-")[0];
   const byPrefix = SUPPORTED_LANGUAGES.find((l) => l.toLowerCase().split("-")[0] === prefix);
   if (byPrefix) return byPrefix;

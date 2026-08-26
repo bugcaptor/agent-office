@@ -1,0 +1,60 @@
+{
+  "tab": {
+    "scrollPrev": "看上一个角色标签",
+    "scrollNext": "看下一个角色标签",
+    "toolsAria": "终端工具",
+    "docs": "文档",
+    "docsTitle": "打开 Markdown 文档",
+    "memoOpen": "打开便签",
+    "memoClose": "关闭便签",
+    "viewModeFill": "填满应用窗口",
+    "viewModeWindowed": "回到窗口模式"
+  },
+  "menu": {
+    "restart": "重启终端",
+    "resume": "继续上次会话",
+    "terminate": "关闭终端",
+    "botStart": "启动机器人模式",
+    "botStop": "关闭机器人模式",
+    "workdir": "查看工作文件夹",
+    "vscode": "用 VS Code 打开",
+    "osTerminal": "用系统终端打开",
+    "exportShell": "在编辑器里看 shell 输出",
+    "diary": "查看日记",
+    "memoArchive": "便签归档",
+    "sessionLogs": "查看会话日志",
+    "profileEdit": "编辑资料",
+    "clockOut": "下班",
+    "deleteAgent": "删除角色",
+    "characterFallback": "角色"
+  },
+  "bot": {
+    "stop": "关闭机器人",
+    "stopConfirm": "关闭机器人模式，改由你自己操作这个标签页吗？正在进行的机器人流程会中断。",
+    "checking": "确认中…",
+    "nextCheck": "距下次确认 {{seconds}} 秒",
+    "errorTitle": "机器人错误",
+    "errorUnknown": "未知错误",
+    "startingTitle": "机器人启动中…",
+    "startingDetail": "正在确认仓库和账号",
+    "workingIssueTitle": "正在处理议题 #{{issue}}",
+    "workingTitle": "正在处理任务",
+    "workingDetail": "智能体工作期间终端会被锁定",
+    "watchingTitle": "正在监视议题",
+    "watchingDetail": "等待 {{slug}} 命令",
+    "slashFallback": "斜杠"
+  },
+  "host": {
+    "externalTitle": "已连接到外部终端会话",
+    "externalDetail": "这是应用之外终端里的会话，所以没有画面镜像。只有通知和性格提示词通过这个角色运行。",
+    "detach": "断开连接",
+    "exited": "进程已退出。",
+    "relaunch": "重新启动"
+  },
+  "palette": {
+    "latte": "Catppuccin Latte",
+    "frappe": "Catppuccin Frappé",
+    "macchiato": "Catppuccin Macchiato",
+    "mocha": "Catppuccin Mocha"
+  }
+}

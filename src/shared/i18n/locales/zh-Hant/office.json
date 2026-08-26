@@ -1,0 +1,54 @@
+{
+  "scene": {
+    "office": "辦公室",
+    "beach": "度假海灘",
+    "valley": "山谷",
+    "spaceship": "太空船",
+    "castle": "中世紀城堡",
+    "steppe": "蒙古草原",
+    "cruise": "豪華郵輪",
+    "factory": "工廠",
+    "volcano": "火山地帶",
+    "zombie": "殭屍小鎮"
+  },
+  "theme": {
+    "daylight": "明亮",
+    "midnight": "午夜",
+    "sakura": "櫻花",
+    "pipboy": "Pip-Boy"
+  },
+  "archetype": {
+    "auto": "自動（種子）",
+    "human": "人類",
+    "elf": "精靈",
+    "orc": "半獸人",
+    "beastfolk": "獸人",
+    "robot": "機器人",
+    "android": "仿生人",
+    "slime": "史萊姆",
+    "ghost": "幽靈"
+  },
+  "keyColor": {
+    "hair": "頭髮",
+    "fur": "毛髮",
+    "skin": "皮膚",
+    "plating": "裝甲",
+    "chassis": "機身",
+    "clothing": "衣服",
+    "accent": "點綴色",
+    "body": "身體"
+  },
+  "soundPack": {
+    "cherryKc1000": "機械式 — Cherry KC1000",
+    "topreHhkb": "Topre — HHKB（渾厚）",
+    "mechClicky": "機械式 — Clicky（清脆）",
+    "membrane": "薄膜式 — 辦公室"
+  },
+  "sign": {
+    "vacation": "休假中"
+  },
+  "desk": {
+    "ownerHeader": "{{index}} 號桌主人",
+    "unassign": "取消指定"
+  }
+}

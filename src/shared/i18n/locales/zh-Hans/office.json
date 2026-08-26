@@ -1,0 +1,54 @@
+{
+  "scene": {
+    "office": "办公室",
+    "beach": "海滩",
+    "valley": "山谷",
+    "spaceship": "飞船",
+    "castle": "城堡",
+    "steppe": "草原",
+    "cruise": "邮轮",
+    "factory": "工厂",
+    "volcano": "火山",
+    "zombie": "僵尸小镇"
+  },
+  "theme": {
+    "daylight": "日光",
+    "midnight": "午夜",
+    "sakura": "樱花",
+    "pipboy": "Pip-Boy"
+  },
+  "archetype": {
+    "auto": "自动（种子）",
+    "human": "人类",
+    "elf": "精灵",
+    "orc": "兽人",
+    "beastfolk": "兽族",
+    "robot": "机器人",
+    "android": "仿生人",
+    "slime": "史莱姆",
+    "ghost": "幽灵"
+  },
+  "keyColor": {
+    "hair": "头发",
+    "fur": "毛发",
+    "skin": "皮肤",
+    "plating": "装甲",
+    "chassis": "机身",
+    "clothing": "衣服",
+    "accent": "点缀色",
+    "body": "身体"
+  },
+  "soundPack": {
+    "cherryKc1000": "机械轴 — Cherry KC1000",
+    "topreHhkb": "静电容 — HHKB（闷响）",
+    "mechClicky": "机械轴 — 青轴（清脆）",
+    "membrane": "薄膜 — 办公"
+  },
+  "sign": {
+    "vacation": "休假中"
+  },
+  "desk": {
+    "ownerHeader": "{{index}} 号桌主人",
+    "unassign": "取消指定"
+  }
+}

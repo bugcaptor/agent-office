@@ -1,0 +1,67 @@
+{
+  "about": {
+    "version": "Version {{version}}",
+    "desc": "Une application de bureau qui affiche les sessions de terminal de plusieurs agents de code IA sous forme de bureau en pixel art",
+    "close": "Fermer"
+  },
+  "confirm": {
+    "cancel": "Annuler",
+    "delete": {
+      "title": "Supprimer le personnage",
+      "confirm": "Supprimer",
+      "warning": "La session en cours sera interrompue.",
+      "body": "Supprimer le personnage <strong>{{name}}</strong> ?"
+    },
+    "restart": {
+      "title": "Redémarrer le terminal",
+      "confirm": "Redémarrer",
+      "warning": "La session en cours s’arrête et l’historique d’affichage est effacé.",
+      "body": "Redémarrer le terminal de <strong>{{name}}</strong> ?"
+    },
+    "resume": {
+      "title": "Reprendre la session précédente",
+      "confirm": "Reprendre",
+      "warning": "La session en cours s’arrête et l’historique d’affichage est effacé.",
+      "body": "Terminer la session actuelle de <strong>{{name}}</strong> et reprendre la session Claude précédente ?"
+    },
+    "terminate": {
+      "title": "Fermer le terminal",
+      "confirm": "Fermer",
+      "warning": "La session en cours s’arrête. Le personnage attend en salle de pause ; cliquez dessus pour démarrer une nouvelle session.",
+      "body": "Fermer le terminal de <strong>{{name}}</strong> ?"
+    },
+    "botStart": {
+      "title": "Démarrer le mode bot",
+      "confirm": "Activer quand même",
+      "warning": "Dans un shell nu, les consignes du bot sont saisies comme des commandes shell et provoquent des erreurs. Lancez d’abord claude dans le terminal, puis activez le bot.",
+      "body": "Impossible de savoir si un agent (claude ou autre) tourne dans le terminal de <strong>{{name}}</strong>.",
+      "footer": "Activer quand même le mode bot ?"
+    },
+    "clockOut": {
+      "title": "Fin de service",
+      "titleAll": "Fin de service générale",
+      "confirm": "Partir",
+      "warning": "La session en cours sera interrompue.",
+      "warningAll": "Toutes les sessions en cours seront interrompues.",
+      "body": "Faire partir le personnage <strong>{{name}}</strong> ?",
+      "bodyAll_one": "Faire partir {{count}} personnage en service ?",
+      "bodyAll_other": "Faire partir les {{count}} personnages en service ?"
+    },
+    "quit": {
+      "flushTitle": "Rédaction des journaux…",
+      "flushBody": "Le travail du jour est consigné dans les journaux avant la fermeture.",
+      "flushBodyProgress": "Le travail du jour est consigné dans les journaux avant la fermeture ({{done}}/{{total}}).",
+      "skip": "Ignorer et quitter",
+      "title": "Confirmer la fermeture",
+      "handoffBody": "Des terminaux tournent encore. Vous pouvez quitter en les laissant ouverts.",
+      "keepTerminals": "Quitter, garder les terminaux",
+      "closeAll": "Tout fermer et quitter",
+      "body": "Certains agents n’ont pas encore terminé leur service. Quitter maintenant interrompt toutes les sessions en cours.",
+      "confirm": "Quitter",
+      "cancel": "Annuler"
+    }
+  },
+  "shell": {
+    "lightsOff": "Tout le monde est parti"
+  }
+}

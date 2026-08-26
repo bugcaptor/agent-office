@@ -1,0 +1,60 @@
+{
+  "tab": {
+    "scrollPrev": "前のタブへスクロール",
+    "scrollNext": "次のタブへスクロール",
+    "toolsAria": "ターミナルツール",
+    "docs": "文書",
+    "docsTitle": "Markdown ドキュメントを開く",
+    "memoOpen": "付箋を開く",
+    "memoClose": "付箋を閉じる",
+    "viewModeFill": "アプリ全体に表示",
+    "viewModeWindowed": "ウィンドウ表示に戻す"
+  },
+  "menu": {
+    "restart": "ターミナルを再起動",
+    "resume": "前回のセッションを再開",
+    "terminate": "ターミナルを終了",
+    "botStart": "ボットモード開始",
+    "botStop": "ボットモード停止",
+    "workdir": "作業フォルダーを表示",
+    "vscode": "VS Code で開く",
+    "osTerminal": "OS のターミナルで開く",
+    "exportShell": "シェル出力をエディターで表示",
+    "diary": "日記を見る",
+    "memoArchive": "メモアーカイブ",
+    "sessionLogs": "セッションログを見る",
+    "profileEdit": "プロフィールを編集",
+    "clockOut": "退勤",
+    "deleteAgent": "キャラクターを削除",
+    "characterFallback": "キャラクター"
+  },
+  "bot": {
+    "stop": "ボット停止",
+    "stopConfirm": "ボットモードをオフにして、このタブを自分で操作しますか？進行中のボット作業は中断されます。",
+    "checking": "確認中…",
+    "nextCheck": "次の確認まで{{seconds}}秒",
+    "errorTitle": "ボットエラー",
+    "errorUnknown": "不明なエラー",
+    "startingTitle": "ボットを起動中…",
+    "startingDetail": "リポジトリ・アカウントを確認中",
+    "workingIssueTitle": "イシュー #{{issue}} を処理中",
+    "workingTitle": "作業を処理中",
+    "workingDetail": "エージェントの作業中はターミナルがロックされます",
+    "watchingTitle": "イシューを監視中",
+    "watchingDetail": "{{slug}} コマンドを待機中",
+    "slashFallback": "スラッシュ"
+  },
+  "host": {
+    "externalTitle": "外部ターミナルのセッションに接続中",
+    "externalDetail": "アプリ外のターミナルのセッションなので画面ミラーリングはありません。通知と性格プロンプトだけがこのキャラクターを通して動作します。",
+    "detach": "接続を解除",
+    "exited": "プロセスが終了しました。",
+    "relaunch": "もう一度起動"
+  },
+  "palette": {
+    "latte": "Catppuccin Latte",
+    "frappe": "Catppuccin Frappé",
+    "macchiato": "Catppuccin Macchiato",
+    "mocha": "Catppuccin Mocha"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "tab": {
+    "scrollPrev": "上一個角色分頁",
+    "scrollNext": "下一個角色分頁",
+    "toolsAria": "終端機工具",
+    "docs": "文件",
+    "docsTitle": "開啟 Markdown 文件",
+    "memoOpen": "開啟便利貼",
+    "memoClose": "關閉便利貼",
+    "viewModeFill": "填滿程式視窗",
+    "viewModeWindowed": "回到視窗模式"
+  },
+  "menu": {
+    "restart": "重新啟動終端機",
+    "resume": "接續上一個工作階段",
+    "terminate": "關閉終端機",
+    "botStart": "啟動機器人模式",
+    "botStop": "關閉機器人模式",
+    "workdir": "查看工作資料夾",
+    "vscode": "以 VS Code 開啟",
+    "osTerminal": "以系統終端機開啟",
+    "exportShell": "在編輯器中查看 shell 輸出",
+    "diary": "查看日記",
+    "memoArchive": "便利貼封存",
+    "sessionLogs": "查看工作階段記錄",
+    "profileEdit": "編輯角色資料",
+    "clockOut": "下班",
+    "deleteAgent": "刪除角色",
+    "characterFallback": "角色"
+  },
+  "bot": {
+    "stop": "關閉機器人",
+    "stopConfirm": "要關閉機器人模式，改由自己操作這個分頁嗎？進行中的機器人工作流程會中斷。",
+    "checking": "確認中…",
+    "nextCheck": "距離下次確認 {{seconds}} 秒",
+    "errorTitle": "機器人錯誤",
+    "errorUnknown": "不明的錯誤",
+    "startingTitle": "機器人啟動中…",
+    "startingDetail": "確認儲存庫與帳號中",
+    "workingIssueTitle": "處理議題 #{{issue}} 中",
+    "workingTitle": "處理工作中",
+    "workingDetail": "代理工作期間終端機會鎖住",
+    "watchingTitle": "監看議題中",
+    "watchingDetail": "等待 {{slug}} 指令",
+    "slashFallback": "斜線"
+  },
+  "host": {
+    "externalTitle": "已連線到外部終端機工作階段",
+    "externalDetail": "這是程式外終端機的工作階段，因此沒有畫面鏡像。只有通知與個性提示會透過這個角色運作。",
+    "detach": "中斷連線",
+    "exited": "處理程序已結束。",
+    "relaunch": "重新啟動"
+  },
+  "palette": {
+    "latte": "Catppuccin Latte",
+    "frappe": "Catppuccin Frappé",
+    "macchiato": "Catppuccin Macchiato",
+    "mocha": "Catppuccin Mocha"
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "dialog": {
+    "titleCreate": "Nouvel agent",
+    "titleEdit": "Modifier l'agent",
+    "subCreate": "Créez le profil d'un nouvel agent. L'enregistrement démarre une session de terminal.",
+    "subEdit": "Modifiez le profil. Les changements s'appliquent dès l'enregistrement.",
+    "randomizeAll": "Tout au hasard",
+    "save": "Enregistrer",
+    "cancel": "Annuler"
+  },
+  "identity": {
+    "section": "Identité",
+    "name": "Nom",
+    "role": "Rôle",
+    "awardBadge": "🏆 {{n}} distinctions au total",
+    "personality": "Prompt de personnalité",
+    "personalityHint": "Décrivez qui est ce personnage. Le texte est ajouté au prompt système de Claude Code et alimente aussi le prompt du portrait et le style de parole du personnage. Le multiligne est conservé tel quel.",
+    "archetype": "Archétype",
+    "archetypeHint": "Définit la morphologie et la famille de tenue du sprite. Avec « Auto (graine) », c'est la graine qui décide. Saisir une espèce absente de la liste (un dragon, par exemple) se reporte tel quel dans les prompts de portrait et de pixel art, tandis que le personnage en pixels est dessiné avec un corps humain."
+  },
+  "appearance": {
+    "section": "Apparence",
+    "tablistLabel": "Méthode de création de l'apparence",
+    "tabManual": "Faire soi-même",
+    "tabCodex": "Générer avec Codex",
+    "manualHint": "Copiez le prompt dans le générateur d'images de votre choix, puis téléversez le résultat — l'éditeur de recadrage l'ajuste au format.",
+    "saveFirstHint": "Enregistrez d'abord, puis téléversez les images depuis la fenêtre d'édition."
+  },
+  "keyColor": {
+    "label": "Couleurs clés",
+    "hint": "Ces couleurs exactes sont reprises dans les prompts de portrait, de sprite et de minimi, ainsi que dans le personnage de la vue bureau. Cliquez sur une pastille pour choisir vous-même une couleur ; celles que vous ne touchez pas suivent la graine et l'archétype à chaque changement.",
+    "chipTitle": "{{name}} environ {{hex}} — cliquez pour choisir une couleur",
+    "customMark": "Couleur choisie à la main",
+    "fallbackLabel": "Couleur"
+  },
+  "portrait": {
+    "label": "Portrait",
+    "remove": "Retirer le portrait",
+    "copyPrompt": "Copier le prompt du portrait",
+    "upload": "Téléverser une image",
+    "change": "Changer l'image",
+    "requestLabel": "Prompt de portrait supplémentaire",
+    "requestPlaceholder": "ex. cheveux noirs courts, lunettes (facultatif)",
+    "requestHint": "Ajouté au prompt du portrait uniquement.",
+    "editorTitle": "Modifier le portrait",
+    "retroFilter": "Filtre pixel rétro"
+  },
+  "sprite": {
+    "label": "Sprite",
+    "regen": "Régénérer le sprite",
+    "customBadge": "Sprite personnalisé actif — la régénération ne change rien",
+    "removeCustom": "Retirer le personnalisé",
+    "copyPrompt": "Copier le prompt du sprite",
+    "upload": "Téléverser un sprite",
+    "change": "Changer le sprite",
+    "requestLabel": "Prompt de sprite supplémentaire",
+    "requestPlaceholder": "ex. un mage à la cape rouge (facultatif)",
+    "requestHint": "Repris à la fois dans le prompt de sprite copié et dans la génération Codex.",
+    "editorTitle": "Modifier le pixel art",
+    "previewLabel": "Aperçu 16×16",
+    "transparentToggle": "Rendre le fond transparent (couleur du pixel en haut à gauche)",
+    "sheetNote": "Reconnu comme une planche de 4 images. Enregistré à la résolution de cellule d'origine.",
+    "tooLarge": "L'encodage de l'image a échoué, ou elle dépasse la limite de 1 MiB."
+  },
+  "minimi": {
+    "label": "Minimi",
+    "customBadge": "Minimi personnalisé actif",
+    "emptyBadge": "Aucun défini — le sprite est réduit à la place",
+    "upload": "Téléverser un minimi",
+    "change": "Changer le minimi",
+    "remove": "Retirer le minimi",
+    "copyPrompt": "Copier le prompt du minimi",
+    "requestLabel": "Prompt de minimi supplémentaire",
+    "requestPlaceholder": "ex. un petit esprit de flamme (facultatif ; si vide, on en demande un assorti au personnage)",
+    "requestHint": "Le minimi est le familier qui apparaît à côté de la tête du personnage pendant qu'un sous-agent travaille. Laissez le champ vide et le prompt demande automatiquement un familier assorti à l'allure et au rôle du personnage.",
+    "editorTitle": "Modifier le pixel art du minimi",
+    "sheetNote": "Reconnu comme une planche de 4 images. Le minimi n'utilise que la première (idle0).",
+    "singleFrameNote": "Le minimi utilise cette seule image telle quelle, sans animation de marche ni de respiration."
+  },
+  "terminal": {
+    "section": "Terminal",
+    "cwd": "Dossier de départ",
+    "cwdPlaceholder": "Vide = dossier personnel (saisie ou collage possible)",
+    "browse": "Parcourir…",
+    "startupCommand": "Commande de démarrage",
+    "startupCommandPlaceholder": "ex. source ./init.sh ou mysetup.bat (facultatif, lancé à chaque nouveau terminal)",
+    "startupCommandHint": "Exécutée automatiquement à chaque ouverture d'une session de terminal.",
+    "keyboardSound": "Son du clavier",
+    "keyboardSoundDefault": "Par défaut",
+    "keyboardSoundHint": "Le son que fait cet agent en tapant. En choisir un lance un aperçu.",
+    "talkReceive": "Recevoir les messages des collègues",
+    "talkReceiveHint": "Désactivez-le et aucun autre personnage ne pourra parler à celui-ci. (Cela ne compte que si la <b>discussion entre collègues</b> est activée dans Paramètres → Contrôle.)",
+    "shell": "Shell",
+    "shellAuto": "Auto (par défaut)",
+    "shellNoHooks": "{{label}} (sans suivi du temps)"
+  },
+  "bot": {
+    "section": "Paramètres du mode bot",
+    "sectionHint": "Clic droit sur l'onglet de terminal → « Démarrer le mode bot » : ce personnage réagit alors aux commandes slash publiées sur les tickets Gitea de son dépôt et les traite automatiquement. Les réglages ci-dessous sont conservés pour le bot.",
+    "slug": "Alias slash du bot",
+    "slugPlaceholder": "ex. nova (facultatif ; dérivé du nom si vide)",
+    "slugHint": "Appelez ce personnage depuis un ticket avec <code>/alias</code>. Laissez vide pour le dériver du nom (espaces retirés, en minuscules).",
+    "whitelist": "Liste blanche du bot",
+    "whitelistPlaceholder": "Comptes Gitea autorisés en plus, séparés par des virgules (facultatif)",
+    "whitelistHint": "Comptes autorisés à déclencher des commandes. Le compte tea connecté est toujours inclus.",
+    "poll": "Intervalle d'interrogation du bot (s)",
+    "pollPlaceholder": "60 par défaut, minimum 30"
+  },
+  "voice": {
+    "label": "Voix (TTS)",
+    "auto": "Auto (attribuée par espèce)",
+    "missingOption": "{{id}} (absent de la liste)",
+    "preview": "Écouter",
+    "hintDisabled": "Activez « Lecture vocale des notifications (TTS) » dans les paramètres pour choisir une voix.",
+    "hintEnabled": "Laissez vide et une voix est choisie automatiquement selon l'espèce et la graine du personnage.",
+    "mutedNote": " Le mode muet est activé : les vraies notifications ne sont pas prononcées (les aperçus le sont).",
+    "keyMissing": "Enregistrez une clé API ElevenLabs dans les paramètres pour choisir une voix.",
+    "listFailed": "Impossible de charger la liste des voix : {{error}}",
+    "spoken": "Prononcé : {{line}}",
+    "spokenNone": "Impossible de prononcer quoi que ce soit.",
+    "previewFailed": "Échec de l'aperçu : {{error}}"
+  },
+  "io": {
+    "export": "Exporter",
+    "import": "Importer",
+    "exported": "Exporté.",
+    "exportFailed": "Échec de l'export.",
+    "imported": "Importé. Appuyez sur « Enregistrer » pour appliquer.",
+    "importFailed": "Échec de l'import."
+  },
+  "codex": {
+    "generated": "Terminé — vérifiez dans l'éditeur et enregistrez.",
+    "detecting": "Recherche du CLI codex…",
+    "available": "CLI codex disponible",
+    "availableVersion": "CLI codex disponible — {{version}}",
+    "unavailable": "CLI codex introuvable. Installez-le, connectez-vous, puis rouvrez cet onglet.",
+    "saveFirstHint": "Enregistrez d'abord, puis générez depuis la fenêtre d'édition.",
+    "portrait": "Générer le portrait",
+    "portraitBusy": "Génération du portrait…",
+    "sprite": "Générer le sprite",
+    "spriteBusy": "Génération du sprite…",
+    "minimi": "Générer le minimi",
+    "minimiBusy": "Génération du minimi…",
+    "hint": "Utilise telle quelle la génération d'images du CLI codex local. Une image prend en général 1 à 3 minutes et entame votre quota Codex. Le résultat s'ouvre dans l'éditeur de recadrage pour relecture avant enregistrement.",
+    "errNotFound": "CLI codex introuvable. Installez-le et réessayez.",
+    "errTimeout": "La génération ne s'est pas terminée à temps. Réessayez.",
+    "errNoOutput": "codex n'a pas enregistré d'image. Réessayez : {{detail}}",
+    "errGeneric": "Échec de la génération : {{error}}"
+  },
+  "archetype": {
+    "ariaLabel": "Archétype",
+    "listAriaLabel": "Liste {{label}}",
+    "placeholder": "Auto (graine) — vous pouvez aussi saisir une espèce absente de la liste",
+    "customNote": "Espèce absente de la liste — reprise telle quelle dans la demande de dessin ; le personnage en pixels utilise un corps humain."
+  },
+  "color": {
+    "title": "Choisir une couleur {{label}}",
+    "svAriaLabel": "Saturation et luminosité {{label}}",
+    "hueAriaLabel": "Teinte {{label}}",
+    "presets": "Couleurs prédéfinies",
+    "resetTitle": "Revenir à {{hex}}, la couleur par défaut choisie par la graine",
+    "reset": "Valeur par défaut",
+    "cancel": "Annuler",
+    "apply": "Appliquer"
+  },
+  "editor": {
+    "pickImage": "Choisissez une image",
+    "readFailed": "Impossible de lire cette image. Choisissez un autre fichier.",
+    "generatedReadFailed": "Impossible de lire l'image générée.",
+    "saveFailed": "Échec de l'enregistrement.",
+    "save": "Enregistrer",
+    "cancel": "Annuler"
+  },
+  "generate": {
+    "personalityPrompt": "personnalité {{word}}"
+  }
+}

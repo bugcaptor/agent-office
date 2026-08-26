@@ -1,8 +1,8 @@
-# UI 다국어(i18n) 설계 — 한국어 / 영어
+# UI 다국어(i18n) 설계 — 한국어 / 영어 / 일본어 / 중국어(간체·번체) / 프랑스어
 
-상태: 정본 — 구현 완료 (2026-08-25). 이행은 커밋 6개로 나뉘어 있다: `44b0f56`(인프라·언어 설정) → `aa18f5e`(설정·프로필 화면) → `c4284c3`(터미널·작업 폴더·마크다운) → `dbf428d`(남은 UI + 뷰모델 `TextKey`) → `57d04d3`(AI 프롬프트·언어 규칙 프로필) → `d6b735a`(백엔드 프롬프트 언어 + 에러 코드화).
+상태: 정본 — 구현 완료 (2026-08-25). 이행은 커밋 6개로 나뉘어 있다: `44b0f56`(인프라·언어 설정) → `aa18f5e`(설정·프로필 화면) → `c4284c3`(터미널·작업 폴더·마크다운) → `dbf428d`(남은 UI + 뷰모델 `TextKey`) → `57d04d3`(AI 프롬프트·언어 규칙 프로필) → `d6b735a`(백엔드 프롬프트 언어 + 에러 코드화). 이후 2026-08-26에 ja·zh-Hans·zh-Hant·fr **UI 카탈로그만** 추가했다 — 프롬프트·판정 규칙·낱말·Rust `Lang`은 설계대로 en 폴백이다(§5).
 
-구현 파일: 카탈로그 `src/shared/i18n/catalog.ts` + `src/shared/i18n/locales/{ko,en}/*.json`(9 네임스페이스 × 2 언어 = 18개). 런타임 글루 `src/renderer/i18n/index.ts`. 언어별 코드 자산 `src/renderer/i18n/{promptProfiles,textRules,wordlists}.ts`. 뷰모델 장치 `src/renderer/shared/textKey.ts`, 에러 매핑 `src/renderer/shared/backendError.ts`. 백엔드 `src-tauri/src/i18n.rs`. 설정 필드는 `AppSettings.language`(`src/shared/types/settings.ts` ↔ `src-tauri/src/persistence/settings_store.rs`).
+구현 파일: 카탈로그 `src/shared/i18n/catalog.ts` + `src/shared/i18n/locales/{ko,en,ja,zh-Hans,zh-Hant,fr}/*.json`(9 네임스페이스 × 6 언어 = 54개). 런타임 글루 `src/renderer/i18n/index.ts`. 언어별 코드 자산 `src/renderer/i18n/{promptProfiles,textRules,wordlists}.ts`. 뷰모델 장치 `src/renderer/shared/textKey.ts`, 에러 매핑 `src/renderer/shared/backendError.ts`. 백엔드 `src-tauri/src/i18n.rs`. 설정 필드는 `AppSettings.language`(`src/shared/types/settings.ts` ↔ `src-tauri/src/persistence/settings_store.rs`).
 
 이 앱은 한국어 전용으로 만들어졌다. 이 문서는 그 전제를 **한국어를 정본으로 둔 채** 걷어낸 방법과, 걷다가 밟은 함정을 남긴다.
 
@@ -122,6 +122,16 @@ language: string;   // "system" | "ko" | "en" | …
 3. 부팅이 설정을 받으면 `bootstrap.ts`가 `applyLanguageSetting(settings.language)`로 교정한다. 보통은 캐시와 같아서 no-op이고, 다르면(첫 실행·설정 파일을 밖에서 고침) 여기서 한 번 전환되며 캐시도 갱신돼 **다음 부팅부터는 플래시가 없다.**
 
 테마(`loadStoredThemeId`)·터미널 뷰 모드(`terminalViewMode.ts`)가 이미 쓰는 관례를 그대로 따른 것이다. `applyLanguageSetting`은 이미 그 언어면 아무것도 하지 않는다 — 흔한 no-op 경로에서 불필요한 `languageChanged` 방출을 막는다(§7의 Pixi 리스너·`useTranslation` 리렌더가 전부 여기 매달려 있다).
+
+### 2.7 폴더 이름은 BCP47 — 중국어는 지역이 아니라 **문자**로 가른다
+
+폴더 이름이 곧 언어 코드다(`ko`, `en`, `ja`, `fr`). 중국어만 `zh-Hans`/`zh-Hant`로 **문자(script) 부표**를 쓴다. `zh-CN`/`zh-TW`처럼 지역으로 가르지 않은 이유: 간체·번체를 가르는 축은 국가가 아니라 문자다. 싱가포르(`zh-SG`)는 간체, 홍콩·마카오(`zh-HK`/`zh-MO`)는 번체라 지역으로 갈라 두면 폴더가 계속 늘어난다.
+
+대신 OS 로케일 쪽에서 문제가 생긴다. OS는 `zh-TW`를 준다. 프리픽스 일치(`zh-TW` → `zh`)만 두면 `SUPPORTED_LANGUAGES`가 정렬돼 있으니 앞에 오는 **`zh-Hans`에 전부 붙는다** — 대만 사용자에게 간체가 나간다.
+
+그래서 `matchLanguage`는 3단이다: **정확 일치 → 문자 일치 → 프리픽스 일치 → 폴백**. 가운데 단계가 `Intl.Locale(locale).maximize()`로 `zh-TW` → `zh-Hant-TW` → `zh-Hant`를 얻는다. 지역→문자 표는 CLDR(브라우저)이 들고 있으니 **우리가 관리하지 않는다**. `en-US` 같은 코드는 `en-Latn`이 되어 목록에 없으므로 그대로 프리픽스 단계로 흘러간다. `src/shared/i18n/__tests__/matchLanguage.test.ts`가 이 순서를 못 박는다.
+
+문자 부표를 쓰는 언어를 더 넣을 때(`sr-Cyrl`, `pt-BR` 같은 지역 변종 등)도 같은 장치가 그대로 돈다.
 
 ## 3. 구조 지도
 
@@ -318,12 +328,13 @@ i18next에도 `$t()` 중첩이 있지만 역할이 다르다: `$t()`는 카탈�
 
 ## 5. 언어를 추가하는 법
 
-`fr`을 예로 든다.
+지금 카탈로그가 있는 언어는 여섯이다 — `ko`(정본) / `en`(폴백) / `ja` / `zh-Hans` / `zh-Hant` / `fr`. 일곱 번째로 `de`를 넣는다고 하자.
 
-1. **`src/shared/i18n/locales/fr/` 를 만들고 JSON 9개를 넣는다.** 파일 이름·키 구조는 `ko/`와 정확히 같아야 한다(빠뜨리면 파리티 테스트가 무엇이 없는지 알려 준다).
-2. **`fr/common.json`에 `_meta.label`을 넣는다.** 값은 **그 언어로 표기한 언어 이름**(`"Français"`). 설정 드롭다운에 이 값이 그대로 나간다. 빠뜨리면 코드(`fr`)가 표시되고 파리티 테스트가 실패한다.
-3. **복수형 키를 맞춘다.** ko/en에 `_one`/`_other`가 있는 키는 fr에도 있어야 한다.
-4. `npx vitest run --dir src` — 파리티 테스트가 키 누락·보간 이름 불일치·빈 값·en 아닌 언어의 한글 잔류를 잡는다.
+1. **`src/shared/i18n/locales/de/` 를 만들고 JSON 9개를 넣는다.** 파일 이름·키 구조는 `ko/`와 정확히 같아야 한다(빠뜨리면 파리티 테스트가 무엇이 없는지 알려 준다).
+2. **`de/common.json`에 `_meta.label`을 넣는다.** 값은 **그 언어로 표기한 언어 이름**(`"Deutsch"`; 기존 값은 `"한국어"`, `"English"`, `"日本語"`, `"简体中文"`, `"繁體中文"`, `"Français"`). 설정 드롭다운에 이 값이 그대로 나간다. 빠뜨리면 코드(`de`)가 표시되고 파리티 테스트가 실패한다.
+3. **복수형 키를 맞춘다.** ko/en에 `_one`/`_other`가 있는 키는 de에도 있어야 한다. 복수 구분이 없는 언어(ja·zh)도 **키는 둘 다 두고 값을 같게** 쓴다 — 파리티는 키 집합 동일성을 요구한다.
+4. 문자 부표가 필요한 언어면 §2.7을 본다(폴더 이름만 `zh-Hant`처럼 쓰면 `matchLanguage`가 알아서 붙는다).
+5. `npx vitest run --dir src` — 파리티 테스트가 키 누락·보간 이름 불일치·빈 값·en 아닌 언어의 한글 잔류를 잡는다.
 
 **코드를 고칠 필요가 없는 것**: 지원 언어 목록, 설정 드롭다운, `AppSettings.language` 타입(TS·Rust 양쪽), 폴백 해석. 전부 카탈로그 폴더에서 도출된다(§2.2, §2.3).
 
@@ -335,6 +346,8 @@ i18next에도 `$t()` 중첩이 있지만 역할이 다르다: `$t()`는 카탈�
 | `textRules.ts` 규칙 | 영어 판정 규칙으로 목표 추출이 돈다(프랑스어 요청 문장을 잘 못 잡는다) |
 | `wordlists.ts` 낱말 | 랜덤 프로필 초안이 영어 이름/역할로 나온다 |
 | `src-tauri/src/i18n.rs`의 `Lang` variant | 백엔드 프롬프트(TTS 리라이트·학습자료·중략 마커·훅 알림 기본 문구)가 영어로 돈다 |
+
+ja·zh-Hans·zh-Hant·fr가 지금 정확히 이 상태다(2026-08-26): **UI는 그 언어, 요약·일기·소감은 영어.**
 
 **이건 미완성이 아니라 설계된 상태다.** 프롬프트는 기계 번역해서 넣으면 출력 품질이 무너지므로, 그 언어를 쓰는 사람이 실제 출력을 보며 튜닝해서 넣어야 한다. UI만 먼저 프랑스어로 쓰고 프롬프트는 영어로 도는 상태가 유효한 중간 지점이다.
 

@@ -1,0 +1,67 @@
+{
+  "about": {
+    "version": "版本 {{version}}",
+    "desc": "把多个 AI 编码智能体的终端会话呈现为像素办公室场景的桌面应用",
+    "close": "关闭"
+  },
+  "confirm": {
+    "cancel": "取消",
+    "delete": {
+      "title": "删除角色",
+      "confirm": "删除",
+      "warning": "正在运行的会话会被终止。",
+      "body": "确定删除角色 <strong>{{name}}</strong> 吗？"
+    },
+    "restart": {
+      "title": "重启终端",
+      "confirm": "重启",
+      "warning": "正在运行的会话会结束，滚动缓冲也会被清空。",
+      "body": "确定重启 <strong>{{name}}</strong> 的终端吗？"
+    },
+    "resume": {
+      "title": "继续上次会话",
+      "confirm": "继续",
+      "warning": "正在运行的会话会结束，滚动缓冲也会被清空。",
+      "body": "结束 <strong>{{name}}</strong> 的当前会话，继续上次的 Claude 会话吗？"
+    },
+    "terminate": {
+      "title": "关闭终端",
+      "confirm": "关闭",
+      "warning": "正在运行的会话会结束。角色会在茶水间待命，点一下角色就会开始新会话。",
+      "body": "确定关闭 <strong>{{name}}</strong> 的终端吗？"
+    },
+    "botStart": {
+      "title": "启动机器人模式",
+      "confirm": "仍然开启",
+      "warning": "在纯 shell 上开启机器人，机器人发出的指令会被当成 shell 命令输入而报错。建议先在终端里启动 claude 再开。",
+      "body": "无法确认 <strong>{{name}}</strong> 的终端里是否有智能体（claude 等）在运行。",
+      "footer": "仍要开启机器人模式吗？"
+    },
+    "clockOut": {
+      "title": "下班",
+      "titleAll": "全体下班",
+      "confirm": "下班",
+      "warning": "正在进行的会话会被终止。",
+      "warningAll": "所有正在进行的会话都会被终止。",
+      "body": "确定让角色 <strong>{{name}}</strong> 下班吗？",
+      "bodyAll_one": "让 {{count}} 名在岗角色全部下班吗？",
+      "bodyAll_other": "让 {{count}} 名在岗角色全部下班吗？"
+    },
+    "quit": {
+      "flushTitle": "正在写日记…",
+      "flushBody": "退出前正在把今天做的事写成日记。",
+      "flushBodyProgress": "退出前正在把今天做的事写成日记（{{done}}/{{total}}）。",
+      "skip": "跳过并退出",
+      "title": "确认退出",
+      "handoffBody": "有终端正在运行。可以保留终端再退出。",
+      "keepTerminals": "保留终端并退出",
+      "closeAll": "全部关闭并退出",
+      "body": "还有智能体没下班。现在退出会中断所有正在运行的会话。",
+      "confirm": "退出",
+      "cancel": "取消"
+    }
+  },
+  "shell": {
+    "lightsOff": "大家都下班了"
+  }
+}

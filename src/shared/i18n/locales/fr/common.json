@@ -1,0 +1,86 @@
+{
+  "_meta": {
+    "label": "Français"
+  },
+  "time": {
+    "justNow": "à l’instant"
+  },
+  "topBar": {
+    "openTerminal": "Ouvrir le terminal",
+    "agents_one": "{{count}} agent",
+    "agents_other": "{{count}} agents",
+    "counts": "{{running}} en cours · {{pending}} en attente"
+  },
+  "bottomBar": {
+    "newAgent": "＋ Nouvel agent",
+    "clockIn": "🏠 Arrivée ({{n}})",
+    "clockAll": "Pointage global",
+    "clockInAll": "Arrivée générale (démarrer les terminaux, {{n}})",
+    "clockOutAll": "Départ général ({{n}})",
+    "status": "{{running}} en cours · {{pending}} à confirmer",
+    "records": "📊 Bilan",
+    "recordsAria": "Bilan",
+    "recordsTitle": "Analyse des sessions · Employé du mois",
+    "recordsTitleTalk": "Analyse des sessions · Employé du mois · {{open}} échanges ouverts",
+    "recordsTitleQueued": "Analyse des sessions · Employé du mois · {{open}} échanges ouverts · {{queued}} en attente (envoyés dès que le destinataire est libre)",
+    "analytics": "Analyse des sessions",
+    "awards": "Employé du mois",
+    "talkLog": "Journal des échanges ({{n}})",
+    "talkStop": "Arrêter tous les échanges",
+    "settingsAria": "Paramètres",
+    "settingsTitle": "Paramètres (intégrations d’agents optionnelles)",
+    "aboutAria": "À propos",
+    "aboutTitle": "À propos d’Agent Office",
+    "sceneThemeAria": "Choisir le décor et le thème",
+    "sceneThemeTitle": "Choisir un décor de bureau et un thème dans la liste",
+    "sceneHeader": "Décor",
+    "themeHeader": "Thème",
+    "muteAria": "Couper les notifications",
+    "unmuteAria": "Rétablir les notifications"
+  },
+  "ticker": {
+    "more": "+{{n}} de plus"
+  },
+  "notification": {
+    "attentionFallback": "Une confirmation est requise"
+  },
+  "errors": {
+    "bundleNotJson": "Impossible de lire le fichier en JSON.",
+    "bundleNotCharacterFile": "Ce n’est pas un fichier de personnage Agent Office.",
+    "bundleSchemaVersionMissing": "Aucune information de version de schéma.",
+    "bundleSchemaVersionNewer": "Fichier créé par une version plus récente. Mettez l’application à jour puis réessayez.",
+    "bundleSchemaVersionUnsupported": "Version de schéma non prise en charge.",
+    "bundleProfileMissing": "Aucune donnée de profil.",
+    "bundleProfileNameMissing": "Le profil n’a pas de nom.",
+    "bundlePortraitInvalid": "Les données de l’image de portrait sont invalides.",
+    "bundlePortraitTooLarge": "L’image de portrait est trop grande (plus de 2 MiB). Import annulé.",
+    "bundleSpriteInvalid": "Les données de l’image de sprite sont invalides.",
+    "bundleSpriteTooLarge": "L’image de sprite est trop grande (plus de 1 MiB). Import annulé.",
+    "bundleMinimiInvalid": "Les données de l’image du minimi sont invalides.",
+    "bundleMinimiTooLarge": "L’image du minimi est trop grande (plus de 1 MiB). Import annulé.",
+    "pathOutsideRoot": "Ce chemin est en dehors du dossier autorisé.",
+    "rootNotFound": "Dossier de travail introuvable.",
+    "rootNotADirectory": "Le dossier de travail n’est pas un répertoire.",
+    "fileNotFound": "Fichier introuvable.",
+    "notAFile": "Ce n’est pas un fichier.",
+    "notUtf8": "Impossible d’ouvrir un fichier qui n’est pas du texte UTF-8.",
+    "fileTooLarge": "Le fichier est trop volumineux.",
+    "statFailed": "Impossible de lire les informations du fichier.",
+    "readFailed": "Impossible de lire le fichier.",
+    "writeFailed": "Impossible d’enregistrer le fichier.",
+    "noParentDir": "Impossible de déterminer le dossier parent du fichier.",
+    "logReadFailed": "Impossible de lire le journal de session.",
+    "studySaveFailed": "Impossible d’enregistrer le support d’apprentissage.",
+    "keySaveFailed": "Impossible d’enregistrer la clé API.",
+    "ttsDisabled": "La TTS est désactivée dans les paramètres.",
+    "ttsKeyMissing": "Aucune clé API ElevenLabs n’est configurée.",
+    "ttsEmptyMessage": "Il n’y a rien à énoncer.",
+    "ttsNoVoice": "Aucune voix disponible.",
+    "webRemoteDown": "Le serveur de contrôle web n’est pas encore lancé — activez d’abord le contrôle web.",
+    "tailscaleCliNotFound": "CLI Tailscale introuvable.",
+    "tailscaleServeConflict": "Un autre service utilise déjà ce port HTTPS — supprimez d’abord ce mappage.",
+    "tailscaleSpawnFailed": "Échec du lancement de tailscale.",
+    "tailscaleCliError": "La commande tailscale a échoué.",
+    "timeout": "Aucune réponse dans le délai imparti."
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "_meta": {
+    "label": "简体中文"
+  },
+  "time": {
+    "justNow": "刚刚"
+  },
+  "topBar": {
+    "openTerminal": "打开终端",
+    "agents_one": "{{count}} 个智能体",
+    "agents_other": "{{count}} 个智能体",
+    "counts": "{{running}} 运行中 · {{pending}} 待处理"
+  },
+  "bottomBar": {
+    "newAgent": "＋ 新建智能体",
+    "clockIn": "🏠 上班（{{n}}）",
+    "clockAll": "全体上下班",
+    "clockInAll": "全体上班（启动终端，{{n}} 名）",
+    "clockOutAll": "全体下班（{{n}} 名）",
+    "status": "{{running}} 运行中 · {{pending}} 待输入",
+    "records": "📊 记录",
+    "recordsAria": "记录",
+    "recordsTitle": "会话活动分析 · 本月优秀员工",
+    "recordsTitleTalk": "会话活动分析 · 本月优秀员工 · {{open}} 个进行中的对话",
+    "recordsTitleQueued": "会话活动分析 · 本月优秀员工 · {{open}} 个进行中的对话 · {{queued}} 条待转达（对方空闲后发送）",
+    "analytics": "会话活动分析",
+    "awards": "本月优秀员工",
+    "talkLog": "查看对话日志（{{n}}）",
+    "talkStop": "停止全部对话",
+    "settingsAria": "设置",
+    "settingsTitle": "设置（可选的智能体集成）",
+    "aboutAria": "关于",
+    "aboutTitle": "关于 Agent Office",
+    "sceneThemeAria": "选择场景与主题",
+    "sceneThemeTitle": "从办公室场景和主题列表中挑选",
+    "sceneHeader": "场景",
+    "themeHeader": "主题",
+    "muteAria": "静音通知",
+    "unmuteAria": "取消静音通知"
+  },
+  "ticker": {
+    "more": "+{{n}} 更多"
+  },
+  "notification": {
+    "attentionFallback": "需要确认"
+  },
+  "errors": {
+    "bundleNotJson": "无法把文件按 JSON 读取。",
+    "bundleNotCharacterFile": "不是 Agent Office 角色文件。",
+    "bundleSchemaVersionMissing": "缺少 schema 版本信息。",
+    "bundleSchemaVersionNewer": "该文件由更新的版本创建。请先更新应用再试。",
+    "bundleSchemaVersionUnsupported": "不支持的 schema 版本。",
+    "bundleProfileMissing": "缺少角色资料数据。",
+    "bundleProfileNameMissing": "角色资料里没有名字。",
+    "bundlePortraitInvalid": "肖像图片数据无效。",
+    "bundlePortraitTooLarge": "肖像图片过大（超过 2 MiB）。已取消导入。",
+    "bundleSpriteInvalid": "精灵图数据无效。",
+    "bundleSpriteTooLarge": "精灵图过大（超过 1 MiB）。已取消导入。",
+    "bundleMinimiInvalid": "Minimi 图片数据无效。",
+    "bundleMinimiTooLarge": "Minimi 图片过大（超过 1 MiB）。已取消导入。",
+    "pathOutsideRoot": "该路径在允许的文件夹之外。",
+    "rootNotFound": "未找到工作文件夹。",
+    "rootNotADirectory": "工作文件夹不是目录。",
+    "fileNotFound": "未找到文件。",
+    "notAFile": "不是文件。",
+    "notUtf8": "无法打开非 UTF-8 文本的文件。",
+    "fileTooLarge": "文件过大。",
+    "statFailed": "无法读取文件信息。",
+    "readFailed": "无法读取文件。",
+    "writeFailed": "无法保存文件。",
+    "noParentDir": "无法确定文件的上级文件夹。",
+    "logReadFailed": "无法读取会话日志。",
+    "studySaveFailed": "无法保存学习资料。",
+    "keySaveFailed": "无法保存 API 密钥。",
+    "ttsDisabled": "设置里的 TTS 已关闭。",
+    "ttsKeyMissing": "未设置 ElevenLabs API 密钥。",
+    "ttsEmptyMessage": "没有要朗读的内容。",
+    "ttsNoVoice": "没有可用的语音。",
+    "webRemoteDown": "网页远程服务器还没启动 — 请先开启网页远程。",
+    "tailscaleCliNotFound": "未找到 Tailscale CLI。",
+    "tailscaleServeConflict": "该 HTTPS 端口已被其他服务占用 — 请先清理那个映射。",
+    "tailscaleSpawnFailed": "无法运行 tailscale。",
+    "tailscaleCliError": "tailscale 命令执行失败。",
+    "timeout": "未在时限内响应。"
+  }
+}

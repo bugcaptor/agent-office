@@ -1,0 +1,86 @@
+{
+  "_meta": {
+    "label": "繁體中文"
+  },
+  "time": {
+    "justNow": "剛剛"
+  },
+  "topBar": {
+    "openTerminal": "開啟終端機",
+    "agents_one": "{{count}} 個代理",
+    "agents_other": "{{count}} 個代理",
+    "counts": "執行中 {{running}} · 待處理 {{pending}}"
+  },
+  "bottomBar": {
+    "newAgent": "＋ 新增代理",
+    "clockIn": "🏠 上班 ({{n}})",
+    "clockAll": "全體上下班",
+    "clockInAll": "全體上班（啟動終端機，{{n}} 人）",
+    "clockOutAll": "全體下班（{{n}} 人）",
+    "status": "執行中 {{running}} · 待輸入 {{pending}}",
+    "records": "📊 紀錄",
+    "recordsAria": "紀錄",
+    "recordsTitle": "工作階段活動分析 · 本月最佳員工",
+    "recordsTitleTalk": "工作階段活動分析 · 本月最佳員工 · 進行中的對話 {{open}} 則",
+    "recordsTitleQueued": "工作階段活動分析 · 本月最佳員工 · 進行中的對話 {{open}} 則 · 待傳送 {{queued}} 則（對方有空時傳送）",
+    "analytics": "工作階段活動分析",
+    "awards": "本月最佳員工",
+    "talkLog": "查看對話紀錄 ({{n}})",
+    "talkStop": "停止所有對話",
+    "settingsAria": "設定",
+    "settingsTitle": "設定（選用的代理整合）",
+    "aboutAria": "關於",
+    "aboutTitle": "關於 Agent Office",
+    "sceneThemeAria": "選擇場景與主題",
+    "sceneThemeTitle": "從辦公室場景與主題清單中選擇",
+    "sceneHeader": "場景",
+    "themeHeader": "主題",
+    "muteAria": "關閉通知音效",
+    "unmuteAria": "開啟通知音效"
+  },
+  "ticker": {
+    "more": "+{{n}} 則"
+  },
+  "notification": {
+    "attentionFallback": "需要您確認"
+  },
+  "errors": {
+    "bundleNotJson": "無法將檔案讀取為 JSON。",
+    "bundleNotCharacterFile": "不是 Agent Office 角色檔。",
+    "bundleSchemaVersionMissing": "沒有結構描述版本資訊。",
+    "bundleSchemaVersionNewer": "這是較新版本建立的檔案。請更新程式後再試一次。",
+    "bundleSchemaVersionUnsupported": "不支援的結構描述版本。",
+    "bundleProfileMissing": "沒有角色資料。",
+    "bundleProfileNameMissing": "角色資料中沒有名稱。",
+    "bundlePortraitInvalid": "肖像圖片資料不正確。",
+    "bundlePortraitTooLarge": "肖像圖片太大（超過 2 MiB），已取消匯入。",
+    "bundleSpriteInvalid": "精靈圖資料不正確。",
+    "bundleSpriteTooLarge": "精靈圖太大（超過 1 MiB），已取消匯入。",
+    "bundleMinimiInvalid": "Minimi 圖片資料不正確。",
+    "bundleMinimiTooLarge": "Minimi 圖片太大（超過 1 MiB），已取消匯入。",
+    "pathOutsideRoot": "路徑在允許的資料夾之外。",
+    "rootNotFound": "找不到工作資料夾。",
+    "rootNotADirectory": "工作資料夾不是目錄。",
+    "fileNotFound": "找不到檔案。",
+    "notAFile": "這不是檔案。",
+    "notUtf8": "無法開啟非 UTF-8 文字的檔案。",
+    "fileTooLarge": "檔案太大。",
+    "statFailed": "無法讀取檔案資訊。",
+    "readFailed": "無法讀取檔案。",
+    "writeFailed": "無法儲存檔案。",
+    "noParentDir": "無法判斷檔案的上層資料夾。",
+    "logReadFailed": "無法讀取工作階段記錄。",
+    "studySaveFailed": "無法儲存學習資料。",
+    "keySaveFailed": "無法儲存 API 金鑰。",
+    "ttsDisabled": "TTS 設定已關閉。",
+    "ttsKeyMissing": "尚未設定 ElevenLabs API 金鑰。",
+    "ttsEmptyMessage": "沒有可朗讀的內容。",
+    "ttsNoVoice": "沒有可用的語音。",
+    "webRemoteDown": "網頁遙控伺服器尚未啟動 — 請先開啟網頁遙控。",
+    "tailscaleCliNotFound": "找不到 Tailscale CLI。",
+    "tailscaleServeConflict": "該 HTTPS 連接埠已被其他服務使用 — 請先清除該對應。",
+    "tailscaleSpawnFailed": "無法執行 tailscale。",
+    "tailscaleCliError": "tailscale 指令執行失敗。",
+    "timeout": "在時限內沒有回應。"
+  }
+}

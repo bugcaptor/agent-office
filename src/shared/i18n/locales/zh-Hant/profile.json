@@ -1,0 +1,177 @@
+{
+  "dialog": {
+    "titleCreate": "新增 Agent",
+    "titleEdit": "編輯 Agent",
+    "subCreate": "為新的 Agent 建立設定檔。儲存後就會開始終端機工作階段。",
+    "subEdit": "修改設定檔。儲存後立即生效。",
+    "randomizeAll": "全部隨機",
+    "save": "儲存",
+    "cancel": "取消"
+  },
+  "identity": {
+    "section": "身分",
+    "name": "名稱",
+    "role": "職務",
+    "awardBadge": "🏆 累計獲獎 {{n}} 次",
+    "personality": "個性提示",
+    "personalityHint": "寫下這個角色是什麼樣的存在。它會附加在 Claude Code 的系統提示後面，也會一併反映到肖像提示和台詞語氣上。可以直接寫成多行。",
+    "archetype": "原型",
+    "archetypeHint": "決定 Sprite 的體型與服裝系列。選「自動（種子）」時由種子決定。填入清單裡沒有的種族（例如龍），會原樣反映到肖像和像素圖提示，點陣角色則以人類體型繪製。"
+  },
+  "appearance": {
+    "section": "外觀",
+    "tablistLabel": "外觀製作方式",
+    "tabManual": "自己製作",
+    "tabCodex": "用 Codex 產生",
+    "manualHint": "複製提示貼進你想用的圖片生成工具，再上傳結果圖片，裁切編輯器會幫你調成規格。",
+    "saveFirstHint": "儲存之後就能在編輯畫面上傳圖片。"
+  },
+  "keyColor": {
+    "label": "主色",
+    "hint": "這些顏色會原樣用在肖像、Sprite、迷你分身提示以及辦公室畫面的角色上。按一下色塊可以自己挑顏色；沒有動過的顏色，會隨種子和原型的變更一起改變。",
+    "chipTitle": "{{name}} 約 {{hex}} — 按一下挑選顏色",
+    "customMark": "自己挑的顏色",
+    "fallbackLabel": "顏色"
+  },
+  "portrait": {
+    "label": "肖像",
+    "remove": "移除肖像",
+    "copyPrompt": "複製肖像提示",
+    "upload": "上傳圖片",
+    "change": "更換圖片",
+    "requestLabel": "肖像追加提示",
+    "requestPlaceholder": "例：短黑髮、眼鏡（選填）",
+    "requestHint": "只會附加到肖像提示。",
+    "editorTitle": "編輯肖像",
+    "retroFilter": "復古像素濾鏡"
+  },
+  "sprite": {
+    "label": "Sprite",
+    "regen": "重新產生 Sprite",
+    "customBadge": "使用自訂 Sprite — 重新產生不影響外觀",
+    "removeCustom": "移除自訂",
+    "copyPrompt": "複製 Sprite 提示",
+    "upload": "上傳 Sprite",
+    "change": "更換 Sprite",
+    "requestLabel": "Sprite 追加提示",
+    "requestPlaceholder": "例：披著紅斗篷的魔法師（選填）",
+    "requestHint": "複製 Sprite 提示和用 Codex 產生時都會原樣帶入。",
+    "editorTitle": "編輯像素圖",
+    "previewLabel": "16×16 預覽",
+    "transparentToggle": "背景透明化（以左上角像素顏色為準）",
+    "sheetNote": "已辨識為 4 影格圖表。會保留單格解析度儲存。",
+    "tooLarge": "圖片編碼失敗，或超過 1MiB 上限。"
+  },
+  "minimi": {
+    "label": "迷你分身",
+    "customBadge": "使用自訂迷你分身",
+    "emptyBadge": "未指定 — 會縮小 Sprite 來用",
+    "upload": "上傳迷你分身",
+    "change": "更換迷你分身",
+    "remove": "移除迷你分身",
+    "copyPrompt": "複製迷你分身提示",
+    "requestLabel": "迷你分身追加提示",
+    "requestPlaceholder": "例：小小的火焰精靈（選填，留空會自動委託繪製與本體相襯的召喚獸）",
+    "requestHint": "迷你分身是子 Agent 工作時浮在頭旁邊的召喚獸。留空時，提示會自動加上一句，請對方畫一隻符合本體外觀與職務的召喚獸。",
+    "editorTitle": "編輯迷你分身像素圖",
+    "sheetNote": "已辨識為 4 影格圖表。迷你分身只使用第一格（idle0）。",
+    "singleFrameNote": "迷你分身沒有走路／呼吸動畫，直接用這一張。"
+  },
+  "terminal": {
+    "section": "終端機",
+    "cwd": "起始資料夾",
+    "cwdPlaceholder": "留空就用家目錄（可直接輸入或貼上）",
+    "browse": "瀏覽…",
+    "startupCommand": "啟動指令",
+    "startupCommandPlaceholder": "例：source ./init.sh 或 mysetup.bat（選填，每個新終端機都會執行）",
+    "startupCommandHint": "每次開啟新的終端機工作階段時都會自動執行。",
+    "keyboardSound": "鍵盤聲",
+    "keyboardSoundDefault": "預設",
+    "keyboardSoundHint": "這個 Agent 打字時發出的聲音。選取後會先試聽。",
+    "talkReceive": "接收同事訊息",
+    "talkReceiveHint": "關閉後，其他角色就無法向這個角色搭話。（只有在設定 → 控制的<b>同事對話</b>開啟時才有意義。）",
+    "shell": "Shell",
+    "shellAuto": "自動（預設）",
+    "shellNoHooks": "{{label}}（不支援時間追蹤）"
+  },
+  "bot": {
+    "section": "機器人模式設定",
+    "sectionHint": "在終端機分頁右鍵 →「開始機器人模式」開啟後，這個角色會對負責儲存庫的 Gitea 議題上的斜線指令做出反應，自動處理工作。下面是機器人的持續設定。",
+    "slug": "機器人斜線別名",
+    "slugPlaceholder": "例：nova（選填，留空會從名稱自動衍生）",
+    "slugHint": "在議題裡用 <code>/別名</code> 呼叫這個角色。留空時會從名稱衍生（去掉空白、轉小寫）。",
+    "whitelist": "機器人白名單",
+    "whitelistPlaceholder": "額外允許的 Gitea 帳號，以逗號分隔（選填）",
+    "whitelistHint": "可以發動指令的帳號。tea 登入帳號本人一定包含在內。",
+    "poll": "機器人輪詢週期（秒）",
+    "pollPlaceholder": "預設 60，下限 30"
+  },
+  "voice": {
+    "label": "聲音（TTS）",
+    "auto": "自動（依種族指派）",
+    "missingOption": "{{id}}（不在清單中）",
+    "preview": "試聽",
+    "hintDisabled": "在設定開啟「通知台詞朗讀（TTS）」就能挑選聲音。",
+    "hintEnabled": "留空時會依角色種族和種子自動決定。",
+    "mutedNote": " 靜音模式開著，實際通知不會唸出來（試聽仍聽得到）。",
+    "keyMissing": "在設定儲存 ElevenLabs API 金鑰就能挑選聲音。",
+    "listFailed": "無法載入聲音清單：{{error}}",
+    "spoken": "已唸出：{{line}}",
+    "spokenNone": "無法唸出。",
+    "previewFailed": "試聽失敗：{{error}}"
+  },
+  "io": {
+    "export": "匯出",
+    "import": "匯入",
+    "exported": "已匯出。",
+    "exportFailed": "匯出失敗。",
+    "imported": "已匯入。請按「儲存」套用。",
+    "importFailed": "匯入失敗。"
+  },
+  "codex": {
+    "generated": "已產生 — 請在編輯器確認後儲存。",
+    "detecting": "正在確認 codex CLI…",
+    "available": "codex CLI 可用",
+    "availableVersion": "codex CLI 可用 — {{version}}",
+    "unavailable": "找不到 codex CLI。請安裝並登入後再重新開啟。",
+    "saveFirstHint": "儲存之後就能在編輯畫面產生。",
+    "portrait": "產生肖像",
+    "portraitBusy": "產生肖像中…",
+    "sprite": "產生 Sprite",
+    "spriteBusy": "產生 Sprite 中…",
+    "minimi": "產生迷你分身",
+    "minimiBusy": "產生迷你分身中…",
+    "hint": "直接使用本機 codex CLI 的圖片生成功能。一張通常要 1～3 分鐘，並會扣掉你的 Codex 用量。結果會用裁切編輯器開啟，確認後再儲存。",
+    "errNotFound": "找不到 codex CLI。請安裝後再試一次。",
+    "errTimeout": "產生沒有在時限內完成。請再試一次。",
+    "errNoOutput": "codex 沒有儲存圖片。請再試一次：{{detail}}",
+    "errGeneric": "產生失敗：{{error}}"
+  },
+  "archetype": {
+    "ariaLabel": "原型",
+    "listAriaLabel": "{{label}} 清單",
+    "placeholder": "自動（種子）— 也可以填清單裡沒有的種族",
+    "customNote": "清單裡沒有的種族 — 會原樣用在繪圖委託，點陣角色則用人類體型。"
+  },
+  "color": {
+    "title": "挑選 {{label}} 顏色",
+    "svAriaLabel": "{{label}} 彩度・明度",
+    "hueAriaLabel": "{{label}} 色相",
+    "presets": "預設顏色",
+    "resetTitle": "還原成種子決定的預設色 {{hex}}",
+    "reset": "還原預設值",
+    "cancel": "取消",
+    "apply": "套用"
+  },
+  "editor": {
+    "pickImage": "請選擇圖片",
+    "readFailed": "無法讀取這張圖片。請選擇其他檔案。",
+    "generatedReadFailed": "無法讀取產生的圖片。",
+    "saveFailed": "儲存失敗。",
+    "save": "儲存",
+    "cancel": "取消"
+  },
+  "generate": {
+    "personalityPrompt": "{{word}} 個性"
+  }
+}

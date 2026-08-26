@@ -1,0 +1,67 @@
+{
+  "about": {
+    "version": "版本 {{version}}",
+    "desc": "把多個 AI 編碼代理的終端機工作階段化為像素辦公室場景的桌面程式",
+    "close": "關閉"
+  },
+  "confirm": {
+    "cancel": "取消",
+    "delete": {
+      "title": "刪除角色",
+      "confirm": "刪除",
+      "warning": "執行中的工作階段會結束。",
+      "body": "確定要刪除角色 <strong>{{name}}</strong> 嗎？"
+    },
+    "restart": {
+      "title": "重新啟動終端機",
+      "confirm": "重新啟動",
+      "warning": "執行中的工作階段會結束，捲動紀錄也會清除。",
+      "body": "要重新啟動 <strong>{{name}}</strong> 的終端機嗎？"
+    },
+    "resume": {
+      "title": "接續上一個工作階段",
+      "confirm": "接續",
+      "warning": "執行中的工作階段會結束，捲動紀錄也會清除。",
+      "body": "要結束 <strong>{{name}}</strong> 目前的工作階段，接續上一個 Claude 工作階段嗎？"
+    },
+    "terminate": {
+      "title": "關閉終端機",
+      "confirm": "關閉",
+      "warning": "執行中的工作階段會結束。角色會在茶水間待命，點一下角色就會開始新的工作階段。",
+      "body": "要關閉 <strong>{{name}}</strong> 的終端機嗎？"
+    },
+    "botStart": {
+      "title": "啟動機器人模式",
+      "confirm": "仍要開啟",
+      "warning": "在純 shell 上開啟機器人，機器人送出的工作指示會被當成 shell 指令而出錯。建議先在終端機啟動 claude 再開啟。",
+      "body": "無法確認 <strong>{{name}}</strong> 的終端機是否正在執行代理（claude 等）。",
+      "footer": "仍要開啟機器人模式嗎？"
+    },
+    "clockOut": {
+      "title": "下班",
+      "titleAll": "全體下班",
+      "confirm": "下班",
+      "warning": "進行中的工作階段會結束。",
+      "warningAll": "所有進行中的工作階段都會結束。",
+      "body": "確定要讓角色 <strong>{{name}}</strong> 下班嗎？",
+      "bodyAll_one": "要讓上班中的 {{count}} 位角色全部下班嗎？",
+      "bodyAll_other": "要讓上班中的 {{count}} 位角色全部下班嗎？"
+    },
+    "quit": {
+      "flushTitle": "正在寫日記…",
+      "flushBody": "結束前正在把今天做的事寫成日記。",
+      "flushBodyProgress": "結束前正在把今天做的事寫成日記（{{done}}/{{total}}）。",
+      "skip": "略過並結束",
+      "title": "確認結束",
+      "handoffBody": "還有終端機在執行。可以保留終端機直接結束。",
+      "keepTerminals": "保留終端機並結束",
+      "closeAll": "全部關閉並結束",
+      "body": "還有代理尚未下班。現在結束會中斷所有執行中的工作階段。",
+      "confirm": "結束",
+      "cancel": "取消"
+    }
+  },
+  "shell": {
+    "lightsOff": "大家都下班了"
+  }
+}

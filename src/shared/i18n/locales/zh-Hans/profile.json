@@ -1,0 +1,177 @@
+{
+  "dialog": {
+    "titleCreate": "新建智能体",
+    "titleEdit": "编辑智能体",
+    "subCreate": "为新智能体创建档案。保存后即开始终端会话。",
+    "subEdit": "修改档案。保存后立即生效。",
+    "randomizeAll": "全部随机",
+    "save": "保存",
+    "cancel": "取消"
+  },
+  "identity": {
+    "section": "身份",
+    "name": "名字",
+    "role": "职位",
+    "awardBadge": "🏆 累计获奖 {{n}} 次",
+    "personality": "性格提示词",
+    "personalityHint": "描述这个角色是什么样的存在。它会附加到 Claude Code 的系统提示词中，也会体现在肖像提示词和台词口吻上。可以直接写多行。",
+    "archetype": "原型",
+    "archetypeHint": "决定精灵图的体型与服饰系列。选“自动（种子）”时由种子决定。填写列表之外的种族（例如龙）会原样带入肖像与像素画提示词，而点阵角色仍以人类体型绘制。"
+  },
+  "appearance": {
+    "section": "外观",
+    "tablistLabel": "外观制作方式",
+    "tabManual": "自己制作",
+    "tabCodex": "用 Codex 生成",
+    "manualHint": "复制提示词放进你喜欢的图像生成工具，再上传结果图片，裁剪编辑器会按规格调整。",
+    "saveFirstHint": "保存之后可在编辑中上传图片。"
+  },
+  "keyColor": {
+    "label": "主色",
+    "hint": "这些颜色会原样用于肖像、精灵图、迷你分身的提示词以及办公室视图中的角色。点击色块可自行选色；未手动改过的颜色会随种子和原型的变化一起变。",
+    "chipTitle": "{{name}} 约 {{hex}} —— 点击选取颜色",
+    "customMark": "手动选取的颜色",
+    "fallbackLabel": "颜色"
+  },
+  "portrait": {
+    "label": "肖像",
+    "remove": "移除肖像",
+    "copyPrompt": "复制肖像提示词",
+    "upload": "上传图片",
+    "change": "更换图片",
+    "requestLabel": "肖像追加提示词",
+    "requestPlaceholder": "例如：黑色短发、戴眼镜（可选）",
+    "requestHint": "仅附加到肖像提示词。",
+    "editorTitle": "编辑肖像",
+    "retroFilter": "复古像素滤镜"
+  },
+  "sprite": {
+    "label": "精灵图",
+    "regen": "重新生成精灵图",
+    "customBadge": "正在使用自定义精灵图 —— 重新生成不影响外观",
+    "removeCustom": "移除自定义",
+    "copyPrompt": "复制精灵图提示词",
+    "upload": "上传精灵图",
+    "change": "更换精灵图",
+    "requestLabel": "精灵图追加提示词",
+    "requestPlaceholder": "例如：披红色斗篷的法师（可选）",
+    "requestHint": "复制精灵图提示词和用 Codex 生成时都会原样带上。",
+    "editorTitle": "编辑像素画",
+    "previewLabel": "16×16 预览",
+    "transparentToggle": "背景透明化（以左上角像素颜色为准）",
+    "sheetNote": "已识别为 4 帧图集。将保留单元格分辨率保存。",
+    "tooLarge": "图片编码失败，或超过 1MiB 上限。"
+  },
+  "minimi": {
+    "label": "迷你分身",
+    "customBadge": "正在使用自定义迷你分身",
+    "emptyBadge": "未指定 —— 将缩小精灵图使用",
+    "upload": "上传迷你分身",
+    "change": "更换迷你分身",
+    "remove": "移除迷你分身",
+    "copyPrompt": "复制迷你分身提示词",
+    "requestLabel": "迷你分身追加提示词",
+    "requestPlaceholder": "例如：小小的火焰精灵（可选，留空则自动委托绘制与本体相衬的召唤兽）",
+    "requestHint": "迷你分身是子智能体工作时出现在角色头旁的召唤兽。留空时，提示词会自动加上“画一只与本体外观和职位相衬的召唤兽”的要求。",
+    "editorTitle": "编辑迷你分身像素画",
+    "sheetNote": "已识别为 4 帧图集。迷你分身只使用第一帧（idle0）。",
+    "singleFrameNote": "迷你分身没有走路和呼吸动画，直接使用这一张图。"
+  },
+  "terminal": {
+    "section": "终端",
+    "cwd": "起始文件夹",
+    "cwdPlaceholder": "留空则使用主目录（可直接输入或粘贴）",
+    "browse": "浏览…",
+    "startupCommand": "启动命令",
+    "startupCommandPlaceholder": "例如：source ./init.sh 或 mysetup.bat（可选，每个新终端都会执行）",
+    "startupCommandHint": "每次打开新的终端会话时都会自动执行。",
+    "keyboardSound": "键盘声",
+    "keyboardSoundDefault": "默认",
+    "keyboardSoundHint": "此智能体打字时发出的声音。选择后会试听。",
+    "talkReceive": "接收同事消息",
+    "talkReceiveHint": "关闭后其他角色无法向这个角色搭话。（仅在设置 → 控制的<b>同事对话</b>开启时才有意义。）",
+    "shell": "Shell",
+    "shellAuto": "自动（默认）",
+    "shellNoHooks": "{{label}}（不支持计时）"
+  },
+  "bot": {
+    "section": "机器人模式设置",
+    "sectionHint": "在终端标签页右键 →“启动机器人模式”开启后，此角色会响应所属仓库 Gitea 议题中的斜杠命令并自动作业。以下是机器人的持久设置。",
+    "slug": "机器人斜杠别名",
+    "slugPlaceholder": "例如：nova（可选，留空则从名字自动推导）",
+    "slugHint": "在议题中用 <code>/别名</code> 呼叫此角色。留空则从名字推导（去空格·转小写）。",
+    "whitelist": "机器人白名单",
+    "whitelistPlaceholder": "额外允许的 Gitea 账号，用逗号分隔（可选）",
+    "whitelistHint": "可以触发命令的账号。tea 登录账号本人始终包含在内。",
+    "poll": "机器人轮询间隔（秒）",
+    "pollPlaceholder": "默认 60，下限 30"
+  },
+  "voice": {
+    "label": "声音（TTS）",
+    "auto": "自动（按种族分配）",
+    "missingOption": "{{id}}（不在列表中）",
+    "preview": "试听",
+    "hintDisabled": "在设置中打开‘朗读通知台词（TTS）’后即可挑选声音。",
+    "hintEnabled": "留空则按角色种族和种子自动决定。",
+    "mutedNote": " 静音模式已开启，实际通知不会朗读（试听仍可听到）。",
+    "keyMissing": "在设置中保存 ElevenLabs API 密钥后即可挑选声音。",
+    "listFailed": "无法加载声音列表：{{error}}",
+    "spoken": "朗读：{{line}}",
+    "spokenNone": "没有可朗读的内容。",
+    "previewFailed": "试听失败：{{error}}"
+  },
+  "io": {
+    "export": "导出",
+    "import": "导入",
+    "exported": "已导出。",
+    "exportFailed": "导出失败。",
+    "imported": "已导入。请按‘保存’使其生效。",
+    "importFailed": "导入失败。"
+  },
+  "codex": {
+    "generated": "生成完成 —— 请在编辑器中确认后保存。",
+    "detecting": "正在检查 codex CLI…",
+    "available": "codex CLI 可用",
+    "availableVersion": "codex CLI 可用 —— {{version}}",
+    "unavailable": "找不到 codex CLI。请安装并登录后重新打开。",
+    "saveFirstHint": "保存之后可在编辑中生成。",
+    "portrait": "生成肖像",
+    "portraitBusy": "正在生成肖像…",
+    "sprite": "生成精灵图",
+    "spriteBusy": "正在生成精灵图…",
+    "minimi": "生成迷你分身",
+    "minimiBusy": "正在生成迷你分身…",
+    "hint": "直接使用本地 codex CLI 的图像生成功能。一张通常需要 1~3 分钟，并会扣减你的 Codex 用量。结果会在裁剪编辑器中打开，确认后再保存。",
+    "errNotFound": "找不到 codex CLI。请安装后重试。",
+    "errTimeout": "生成未在时限内完成。请重试。",
+    "errNoOutput": "codex 没有保存图片。请重试：{{detail}}",
+    "errGeneric": "生成失败：{{error}}"
+  },
+  "archetype": {
+    "ariaLabel": "原型",
+    "listAriaLabel": "{{label}} 列表",
+    "placeholder": "自动（种子）—— 也可以填写列表之外的种族",
+    "customNote": "列表之外的种族 —— 会原样用于绘图委托，点阵角色则使用人类体型。"
+  },
+  "color": {
+    "title": "选取{{label}}颜色",
+    "svAriaLabel": "{{label}} 饱和度·明度",
+    "hueAriaLabel": "{{label}} 色相",
+    "presets": "预设颜色",
+    "resetTitle": "恢复为种子指定的默认色 {{hex}}",
+    "reset": "恢复默认",
+    "cancel": "取消",
+    "apply": "应用"
+  },
+  "editor": {
+    "pickImage": "请选择图片",
+    "readFailed": "无法读取该图片。请选择其他文件。",
+    "generatedReadFailed": "无法读取生成的图片。",
+    "saveFailed": "保存失败。",
+    "save": "保存",
+    "cancel": "取消"
+  },
+  "generate": {
+    "personalityPrompt": "{{word}} 性格"
+  }
+}

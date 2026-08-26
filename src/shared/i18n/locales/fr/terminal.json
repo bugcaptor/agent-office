@@ -1,0 +1,60 @@
+{
+  "tab": {
+    "scrollPrev": "Onglets vers la gauche",
+    "scrollNext": "Onglets vers la droite",
+    "toolsAria": "Outils du terminal",
+    "docs": "Docs",
+    "docsTitle": "Ouvrir les documents Markdown",
+    "memoOpen": "Ouvrir les notes",
+    "memoClose": "Fermer les notes",
+    "viewModeFill": "Remplir la fenêtre",
+    "viewModeWindowed": "Retour en fenêtre"
+  },
+  "menu": {
+    "restart": "Redémarrer le terminal",
+    "resume": "Reprendre la dernière session",
+    "terminate": "Arrêter le terminal",
+    "botStart": "Démarrer le mode bot",
+    "botStop": "Arrêter le mode bot",
+    "workdir": "Voir le dossier de travail",
+    "vscode": "Ouvrir dans VS Code",
+    "osTerminal": "Ouvrir dans le terminal système",
+    "exportShell": "Sortie du shell dans l’éditeur",
+    "diary": "Voir le journal",
+    "memoArchive": "Archives des notes",
+    "sessionLogs": "Voir les journaux de session",
+    "profileEdit": "Modifier le profil",
+    "clockOut": "Fin de service",
+    "deleteAgent": "Supprimer le personnage",
+    "characterFallback": "Personnage"
+  },
+  "bot": {
+    "stop": "Arrêter le bot",
+    "stopConfirm": "Arrêter le mode bot et piloter cet onglet vous-même ? Le flux de travail du bot en cours sera interrompu.",
+    "checking": "Vérification…",
+    "nextCheck": "Prochaine vérification dans {{seconds}} s",
+    "errorTitle": "Erreur du bot",
+    "errorUnknown": "Erreur inconnue",
+    "startingTitle": "Démarrage du bot…",
+    "startingDetail": "Vérification du dépôt et du compte",
+    "workingIssueTitle": "Traitement du ticket #{{issue}}",
+    "workingTitle": "Traitement en cours",
+    "workingDetail": "Le terminal reste verrouillé pendant que l’agent travaille",
+    "watchingTitle": "Surveillance des tickets",
+    "watchingDetail": "En attente d’une commande {{slug}}",
+    "slashFallback": "slash"
+  },
+  "host": {
+    "externalTitle": "Connecté à un terminal externe",
+    "externalDetail": "Cette session vit dans un terminal hors de l’application, il n’y a donc pas de miroir d’écran. Seules les alertes et l’invite de personnalité passent par ce personnage.",
+    "detach": "Déconnecter",
+    "exited": "Le processus s’est terminé.",
+    "relaunch": "Relancer"
+  },
+  "palette": {
+    "latte": "Catppuccin Latte",
+    "frappe": "Catppuccin Frappé",
+    "macchiato": "Catppuccin Macchiato",
+    "mocha": "Catppuccin Mocha"
+  }
+}

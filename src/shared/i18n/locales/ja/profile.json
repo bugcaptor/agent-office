@@ -1,0 +1,177 @@
+{
+  "dialog": {
+    "titleCreate": "新しいエージェント",
+    "titleEdit": "エージェントの編集",
+    "subCreate": "新しいエージェントのプロフィールを作ります。保存するとターミナルセッションが始まります。",
+    "subEdit": "プロフィールを編集します。保存するとすぐに反映されます。",
+    "randomizeAll": "すべてランダム",
+    "save": "保存",
+    "cancel": "キャンセル"
+  },
+  "identity": {
+    "section": "アイデンティティ",
+    "name": "名前",
+    "role": "役割",
+    "awardBadge": "🏆 通算 {{n}} 回受賞",
+    "personality": "性格プロンプト",
+    "personalityHint": "このキャラクターがどんな存在かを書きます。Claude Code のシステムプロンプトに追加され、肖像プロンプトやセリフの口調にも反映されます。複数行をそのまま書けます。",
+    "archetype": "アーキタイプ",
+    "archetypeHint": "スプライトの体型・衣装の系統を決めます。「自動（シード）」ならシードに応じて選ばれます。一覧にない種族（例：ドラゴン）を書き入れると肖像・ピクセルアートのプロンプトにそのまま反映され、ドットキャラクターは人間の体型で描かれます。"
+  },
+  "appearance": {
+    "section": "外見",
+    "tablistLabel": "外見の作り方",
+    "tabManual": "自分で作る",
+    "tabCodex": "Codex で生成",
+    "manualHint": "プロンプトをコピーして好みの画像生成ツールに入れ、できた画像をアップロードすると、クロップエディターが規格に合わせてくれます。",
+    "saveFirstHint": "保存したあと、編集画面から画像をアップロードできます。"
+  },
+  "keyColor": {
+    "label": "キーカラー",
+    "hint": "肖像・スプライト・ミニミのプロンプトと、オフィスビューのキャラクターにこの色がそのまま使われます。色チップを押すと好きな色を直接選べます。手を付けていない色は、シードやアーキタイプを変えるたびに一緒に変わります。",
+    "chipTitle": "{{name}} 約 {{hex}} — 押して色を選ぶ",
+    "customMark": "手動で選んだ色",
+    "fallbackLabel": "色"
+  },
+  "portrait": {
+    "label": "肖像画",
+    "remove": "肖像を削除",
+    "copyPrompt": "肖像プロンプトをコピー",
+    "upload": "画像をアップロード",
+    "change": "画像を変更",
+    "requestLabel": "肖像画の追加プロンプト",
+    "requestPlaceholder": "例：短い黒髪、眼鏡（任意）",
+    "requestHint": "肖像プロンプトにのみ追加されます。",
+    "editorTitle": "肖像の編集",
+    "retroFilter": "レトロピクセルフィルター"
+  },
+  "sprite": {
+    "label": "スプライト",
+    "regen": "スプライトを再生成",
+    "customBadge": "カスタムを使用中 — 再生成しても外見は変わりません",
+    "removeCustom": "カスタムを削除",
+    "copyPrompt": "スプライトプロンプトをコピー",
+    "upload": "スプライトをアップロード",
+    "change": "スプライトを変更",
+    "requestLabel": "スプライトの追加プロンプト",
+    "requestPlaceholder": "例：赤いマントをまとった魔法使い（任意）",
+    "requestHint": "スプライトプロンプトのコピーと Codex 生成にそのまま反映されます。",
+    "editorTitle": "ピクセルアートの編集",
+    "previewLabel": "16×16 プレビュー",
+    "transparentToggle": "背景を透過（左上ピクセルの色を基準）",
+    "sheetNote": "4フレームのシートとして認識しました。セルの解像度を保って保存されます。",
+    "tooLarge": "画像のエンコードに失敗したか、1MiB の上限を超えています。"
+  },
+  "minimi": {
+    "label": "ミニミ",
+    "customBadge": "カスタムのミニミを使用中",
+    "emptyBadge": "指定なし — スプライトを縮小して使います",
+    "upload": "ミニミをアップロード",
+    "change": "ミニミを変更",
+    "remove": "ミニミを削除",
+    "copyPrompt": "ミニミプロンプトをコピー",
+    "requestLabel": "ミニミの追加プロンプト",
+    "requestPlaceholder": "例：小さな炎の精霊（任意、空にすると本体に似合う使い魔を自動で依頼）",
+    "requestHint": "ミニミは、サブエージェントが働くときに頭の横に現れる使い魔です。空にしておくと、本体の外見や役割に似合う使い魔を描いてほしいという文言がプロンプトに自動で入ります。",
+    "editorTitle": "ミニミのピクセルアート編集",
+    "sheetNote": "4フレームのシートとして認識しました。ミニミは最初のフレーム（idle0）だけを使います。",
+    "singleFrameNote": "ミニミは歩行や呼吸のアニメーションなしで、この一枚をそのまま使います。"
+  },
+  "terminal": {
+    "section": "ターミナル",
+    "cwd": "開始フォルダー",
+    "cwdPlaceholder": "空ならホームディレクトリ（直接入力・貼り付けも可）",
+    "browse": "参照…",
+    "startupCommand": "起動コマンド",
+    "startupCommandPlaceholder": "例：source ./init.sh または mysetup.bat（任意、新しいターミナルごとに実行）",
+    "startupCommandHint": "新しいターミナルセッションが開くたびに自動で実行されます。",
+    "keyboardSound": "キーボード音",
+    "keyboardSoundDefault": "既定",
+    "keyboardSoundHint": "このエージェントがタイピングするときに鳴る音です。選ぶと試聴できます。",
+    "talkReceive": "同僚のメッセージを受け取る",
+    "talkReceiveHint": "オフにすると、他のキャラクターがこのキャラクターに話しかけられなくなります。（設定 → 制御の <b>同僚との会話</b> がオンのときだけ意味があります。）",
+    "shell": "シェル",
+    "shellAuto": "自動（既定）",
+    "shellNoHooks": "{{label}}（時間計測に非対応）"
+  },
+  "bot": {
+    "section": "ボットモード設定",
+    "sectionHint": "ターミナルタブの右クリック →「ボットモード開始」でオンにすると、このキャラクターが担当リポジトリの Gitea イシューに書かれたスラッシュコマンドに反応して自動で作業します。以下はボットの永続設定です。",
+    "slug": "ボットのスラッシュ別名",
+    "slugPlaceholder": "例：nova（任意、空なら名前から自動生成）",
+    "slugHint": "イシューで <code>/別名</code> と書いてこのキャラクターを呼び出します。空にすると名前から生成します（空白を削除・小文字化）。",
+    "whitelist": "ボットのホワイトリスト",
+    "whitelistPlaceholder": "追加で許可する Gitea アカウント、カンマ区切り（任意）",
+    "whitelistHint": "コマンドを発動できるアカウントです。tea のログインアカウント本人は常に含まれます。",
+    "poll": "ボットのポーリング間隔（秒）",
+    "pollPlaceholder": "既定 60、下限 30"
+  },
+  "voice": {
+    "label": "声（TTS）",
+    "auto": "自動（種族に合わせて割り当て）",
+    "missingOption": "{{id}}（一覧にありません）",
+    "preview": "試聴",
+    "hintDisabled": "設定で「通知セリフの読み上げ（TTS）」をオンにすると声を選べます。",
+    "hintEnabled": "空にしておくと、キャラクターの種族とシードに合わせて自動で決まります。",
+    "mutedNote": " 無音モードがオンのため、実際の通知は発話されません（プレビューは聞こえます）。",
+    "keyMissing": "設定で ElevenLabs API キーを保存すると声を選べます。",
+    "listFailed": "声の一覧を読み込めませんでした：{{error}}",
+    "spoken": "発話：{{line}}",
+    "spokenNone": "発話できませんでした。",
+    "previewFailed": "試聴に失敗しました：{{error}}"
+  },
+  "io": {
+    "export": "エクスポート",
+    "import": "インポート",
+    "exported": "エクスポートしました。",
+    "exportFailed": "エクスポートに失敗しました。",
+    "imported": "インポートしました。「保存」を押して反映してください。",
+    "importFailed": "インポートに失敗しました。"
+  },
+  "codex": {
+    "generated": "生成完了 — エディターで確認して保存してください。",
+    "detecting": "codex CLI を確認中…",
+    "available": "codex CLI は利用可能",
+    "availableVersion": "codex CLI は利用可能 — {{version}}",
+    "unavailable": "codex CLI が見つかりません。インストールしてログインしたあと、開き直してください。",
+    "saveFirstHint": "保存したあと、編集画面から生成できます。",
+    "portrait": "肖像を生成",
+    "portraitBusy": "肖像を生成中…",
+    "sprite": "スプライトを生成",
+    "spriteBusy": "スプライトを生成中…",
+    "minimi": "ミニミを生成",
+    "minimiBusy": "ミニミを生成中…",
+    "hint": "ローカルの codex CLI の画像生成機能をそのまま使います。1枚あたり通常 1〜3 分かかり、あなたの Codex 使用量が消費されます。結果はクロップエディターで開いて確認してから保存します。",
+    "errNotFound": "codex CLI が見つかりません。インストールしてから再試行してください。",
+    "errTimeout": "生成が時間内に終わりませんでした。もう一度お試しください。",
+    "errNoOutput": "codex が画像を保存しませんでした。もう一度お試しください：{{detail}}",
+    "errGeneric": "生成に失敗しました：{{error}}"
+  },
+  "archetype": {
+    "ariaLabel": "アーキタイプ",
+    "listAriaLabel": "{{label}} 一覧",
+    "placeholder": "自動（シード） — 一覧にない種族も書けます",
+    "customNote": "一覧にない種族 — 作画の依頼にそのまま使われ、ドットキャラクターは人間の体型を使います。"
+  },
+  "color": {
+    "title": "{{label}} の色を選ぶ",
+    "svAriaLabel": "{{label}} の彩度・明度",
+    "hueAriaLabel": "{{label}} の色相",
+    "presets": "プリセットの色",
+    "resetTitle": "シードが決めた既定色 {{hex}} に戻します",
+    "reset": "既定値に戻す",
+    "cancel": "キャンセル",
+    "apply": "適用"
+  },
+  "editor": {
+    "pickImage": "画像を選択してください",
+    "readFailed": "画像を読み込めません。別のファイルを選んでください。",
+    "generatedReadFailed": "生成された画像を読み込めません。",
+    "saveFailed": "保存に失敗しました。",
+    "save": "保存",
+    "cancel": "キャンセル"
+  },
+  "generate": {
+    "personalityPrompt": "{{word}}な性格"
+  }
+}
