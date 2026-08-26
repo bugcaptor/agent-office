@@ -24,9 +24,12 @@ use super::model::{WorkdirFileEntry, WorkdirListResult, WorkdirSearchResult};
 use crate::file_scan::walk_files;
 
 /// root 아래 파일을 스캔한다. markdown.rs와 동일한 워커를 확장자 필터 없이
-/// 쓴다: `.gitignore`를 존중하고 hidden을 스킵하며 심링크는 따라가지 않는다.
-pub fn list_workdir_files(root: &str) -> Result<WorkdirListResult, String> {
-    let (scanned, truncated) = walk_files(root, None)?;
+/// 쓴다: 심링크는 따라가지 않고, `include_ignored`가 false면 `.gitignore`를
+/// 존중하며 hidden을 스킵한다. true면 무시 규칙과 hidden 스킵을 모두 끄고
+/// (`.git/` 내부만 제외) 디스크에 있는 그대로를 보여준다 -- 팔레트의
+/// "숨김·무시 포함" 토글(앱 설정 `workdirShowIgnored`)이 그리로 온다.
+pub fn list_workdir_files(root: &str, include_ignored: bool) -> Result<WorkdirListResult, String> {
+    let (scanned, truncated) = walk_files(root, None, include_ignored)?;
     let files = scanned
         .into_iter()
         .map(|f| WorkdirFileEntry {
@@ -42,8 +45,14 @@ pub fn list_workdir_files(root: &str) -> Result<WorkdirListResult, String> {
 /// 실패/타임아웃이면(`None`) 조용히 `used_index: false` + 빈 목록으로 답한다
 /// (에러가 아니다 -- 호출부가 이 신호로 클라이언트 fuzzy 필터 폴백으로
 /// 되돌아간다). `query`가 공백뿐이면 es.exe를 부르지도 않고 즉시
-/// `used_index: false` + 빈 목록을 돌려준다.
-pub fn search_workdir_files(root: &str, query: &str) -> Result<WorkdirSearchResult, String> {
+/// `used_index: false` + 빈 목록을 돌려준다. `include_ignored`는 목록 스캔과
+/// 같은 의미다 -- true면 gitignore/숨김 필터를 적용하지 않는다(팔레트 토글과
+/// 어긋나지 않게 하기 위함).
+pub fn search_workdir_files(
+    root: &str,
+    query: &str,
+    include_ignored: bool,
+) -> Result<WorkdirSearchResult, String> {
     let canon_root = std::fs::canonicalize(root)
         .map_err(|e| format!("작업 폴더를 찾을 수 없습니다: {root} ({e})"))?;
     if query.trim().is_empty() {
@@ -53,7 +62,7 @@ pub fn search_workdir_files(root: &str, query: &str) -> Result<WorkdirSearchResu
             used_index: false,
         });
     }
-    match crate::file_index::search_files_via_everything(&canon_root, query) {
+    match crate::file_index::search_files_via_everything(&canon_root, query, include_ignored) {
         Some((scanned, truncated)) => {
             let files = scanned
                 .into_iter()
@@ -85,12 +94,52 @@ mod tests {
         // tests 모듈 기준 super::super = workdir(listing의 부모)이므로
         // super::super::status는 workdir::status를 가리킨다.
         assert!(super::super::status::collect_git_status("/definitely/not/a/dir/xyzzy", None).is_err());
-        assert!(list_workdir_files("/definitely/not/a/dir/xyzzy").is_err());
+        assert!(list_workdir_files("/definitely/not/a/dir/xyzzy", false).is_err());
+    }
+
+    /// 기본(무시 존중) 스캔은 `.gitignore` 대상과 dot 파일을 빼고, 토글을 켠
+    /// 스캔은 둘 다 담는다. `.git/` 내부는 어느 쪽에서도 나오지 않는다.
+    #[test]
+    fn include_ignored_reveals_gitignored_and_hidden_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join(".gitignore"), "ignored.txt\n").unwrap();
+        std::fs::write(root.join("visible.txt"), "v").unwrap();
+        std::fs::write(root.join("ignored.txt"), "i").unwrap();
+        std::fs::write(root.join(".hidden"), "h").unwrap();
+        std::fs::create_dir(root.join(".git")).unwrap();
+        std::fs::write(root.join(".git").join("HEAD"), "ref: refs/heads/main").unwrap();
+        let root = root.to_str().unwrap();
+
+        let paths = |include_ignored: bool| -> Vec<String> {
+            list_workdir_files(root, include_ignored)
+                .unwrap()
+                .files
+                .into_iter()
+                .map(|f| f.rel_path)
+                .collect()
+        };
+
+        let default_scan = paths(false);
+        assert!(default_scan.contains(&"visible.txt".to_string()), "{default_scan:?}");
+        assert!(!default_scan.contains(&"ignored.txt".to_string()), "{default_scan:?}");
+        assert!(!default_scan.contains(&".hidden".to_string()), "{default_scan:?}");
+
+        let full_scan = paths(true);
+        assert!(full_scan.contains(&"visible.txt".to_string()), "{full_scan:?}");
+        assert!(full_scan.contains(&"ignored.txt".to_string()), "{full_scan:?}");
+        assert!(full_scan.contains(&".hidden".to_string()), "{full_scan:?}");
+        assert!(full_scan.contains(&".gitignore".to_string()), "{full_scan:?}");
+        // `.git/` 내부는 무시 규칙을 꺼도 항상 제외.
+        assert!(
+            !full_scan.iter().any(|p| p.starts_with(".git/")),
+            "{full_scan:?}"
+        );
     }
 
     #[test]
     fn search_nonexistent_root_is_error() {
-        assert!(search_workdir_files("/definitely/not/a/dir/xyzzy", "abc").is_err());
+        assert!(search_workdir_files("/definitely/not/a/dir/xyzzy", "abc", false).is_err());
     }
 
     /// 빈 쿼리(공백뿐)는 es.exe를 부르지 않고 즉시 used_index:false + 빈 목록.
@@ -98,7 +147,7 @@ mod tests {
     fn search_blank_query_short_circuits_without_index() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_str().unwrap();
-        let result = search_workdir_files(root, "   ").unwrap();
+        let result = search_workdir_files(root, "   ", false).unwrap();
         assert!(!result.used_index);
         assert!(result.files.is_empty());
         assert!(!result.truncated);
@@ -111,7 +160,7 @@ mod tests {
     fn search_never_errors_regardless_of_es_availability() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_str().unwrap();
-        let result = search_workdir_files(root, "abc");
+        let result = search_workdir_files(root, "abc", false);
         assert!(result.is_ok(), "result={result:?}");
     }
 }

@@ -57,7 +57,9 @@ pub fn list_markdown_files_via_everything(canon_root: &Path) -> Option<(Vec<Scan
 }
 
 /// Everything 백엔드로 root 아래에서 `user_query`와 일치하는 파일을 검색한다
-/// (이슈 #67 workdir 팔레트 서버사이드 검색). `list_markdown_files_via_everything`과
+/// (이슈 #67 workdir 팔레트 서버사이드 검색). `include_ignored`면 무시·숨김
+/// 규칙을 적용하지 않는다(팔레트의 "숨김·무시" 토글과 같은 조건으로 검색해야
+/// 목록과 결과가 어긋나지 않는다). `list_markdown_files_via_everything`과
 /// 대칭 구조 -- 후보 조회·`.gitignore` 목록 조회 중 하나라도 실패하면(`None`)
 /// 전체를 폴백 신호로 돌려준다. `user_query`가 비어 있으면(공백뿐)
 /// `find_files_matching`이 `None`을 주므로 여기서도 `None`이 된다(호출부가
@@ -65,9 +67,15 @@ pub fn list_markdown_files_via_everything(canon_root: &Path) -> Option<(Vec<Scan
 pub fn search_files_via_everything(
     canon_root: &Path,
     user_query: &str,
+    include_ignored: bool,
 ) -> Option<(Vec<ScannedFile>, bool)> {
     let root = strip_verbatim_prefix(canon_root);
     let candidates = es_runner::find_files_matching(&root, user_query)?;
+    // "숨김·무시 포함"이 켜져 있으면 gitignore 목록 조회 자체가 필요 없다 --
+    // 워커 경로와 마찬가지로 `.git/` 내부만 걸러 내고 후보를 그대로 쓴다.
+    if include_ignored {
+        return Some(gitignore_filter::build_unfiltered_result(&root, candidates));
+    }
     let gitignore_files = es_runner::find_gitignore_files(&root)?;
     Some(gitignore_filter::build_result(
         &root,

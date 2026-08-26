@@ -85,6 +85,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   externalEditor: "system",
   attentionHoldMs: 5000,
   gitStatusEnabled: true,
+  workdirShowIgnored: false,
   fileIndexBackend: "walker",
   cliEnabled: false,
   keepAwakeEnabled: false,
@@ -357,6 +358,7 @@ interface AppState {
         | "externalEditor"
         | "attentionHoldMs"
         | "gitStatusEnabled"
+        | "workdirShowIgnored"
         | "fileIndexBackend"
         | "cliEnabled"
         | "keepAwakeEnabled"

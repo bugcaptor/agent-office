@@ -42,9 +42,20 @@ where
 
 /// `list_workdir_files`의 Tauri 커맨드 래퍼. 시작 폴더 UI가 `~/dev/foo`류
 /// 입력을 허용하므로 세션 생성과 동일한 틸드 확장을 거친다(open_in_vscode 관례).
+///
+/// `includeIgnored`는 앱 설정에서 읽지 않고 프런트가 그때의 토글 값을 그대로
+/// 실어 보낸다 -- 팔레트에서 토글을 누른 직후 곧바로 재조회가 나가는데, 설정
+/// 저장이 아직 백엔드에 반영되지 않았을 수 있어 설정을 읽으면 한 번은 옛 값으로
+/// 스캔하게 된다. 생략되면(구버전 호출) 기존 동작인 false.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn workdir_list_files(root: String) -> Result<WorkdirListResult, String> {
-    list_workdir_files(&crate::session::manager::expand_tilde(root))
+pub async fn workdir_list_files(
+    root: String,
+    include_ignored: Option<bool>,
+) -> Result<WorkdirListResult, String> {
+    list_workdir_files(
+        &crate::session::manager::expand_tilde(root),
+        include_ignored.unwrap_or(false),
+    )
 }
 
 /// `search_workdir_files`의 Tauri 커맨드 래퍼(이슈 #67 -- 목록이 5000개
@@ -58,6 +69,7 @@ pub async fn workdir_list_files(root: String) -> Result<WorkdirListResult, Strin
 pub async fn workdir_search_files(
     root: String,
     query: String,
+    include_ignored: Option<bool>,
     app_state: tauri::State<'_, crate::state::AppState>,
 ) -> Result<WorkdirSearchResult, String> {
     use crate::persistence::settings_store::FileIndexBackend;
@@ -70,7 +82,11 @@ pub async fn workdir_search_files(
             used_index: false,
         });
     }
-    search_workdir_files(&crate::session::manager::expand_tilde(root), &query)
+    search_workdir_files(
+        &crate::session::manager::expand_tilde(root),
+        &query,
+        include_ignored.unwrap_or(false),
+    )
 }
 
 /// `collect_git_status`의 Tauri 커맨드 래퍼. `opId`를 주면 조회 중

@@ -29,11 +29,18 @@ pub struct ScannedFile {
 /// root 아래 파일을 병렬로 스캔한다. `ext_filter`가 `Some`이면 그 확장자
 /// (소문자, 점 없이) 목록에 속하는 파일만, `None`이면 전체 파일을 담는다.
 ///
+/// `include_ignored`가 true면 무시 규칙(.gitignore/.ignore/global/exclude)과
+/// hidden 스킵을 모두 끄고 실제로 디스크에 있는 파일을 전부 담는다 -- "작업
+/// 폴더 보기"에서 빌드 산출물·`.env`처럼 gitignore된 파일이 아예 보이지 않던
+/// 문제를 풀기 위한 스위치다. 이때도 `.git/` 내부만은 언제나 건너뛴다
+/// (오브젝트 파일 수만 개가 MAX_LIST를 통째로 먹어 목록이 무의미해진다).
+///
 /// 반환은 (relPath 오름차순 정렬된 결과, truncated). `canonicalize`·`is_dir`
 /// 체크·경로 정규화·MAX_LIST 조기 종료 로직을 모두 여기서 처리한다.
 pub fn walk_files(
     root: &str,
     ext_filter: Option<&[&str]>,
+    include_ignored: bool,
 ) -> Result<(Vec<ScannedFile>, bool), String> {
     let canon_root = std::fs::canonicalize(root)
         .map_err(|e| format!("작업 폴더를 찾을 수 없습니다: {root} ({e})"))?;
@@ -42,11 +49,20 @@ pub fn walk_files(
     }
 
     let mut builder = WalkBuilder::new(&canon_root);
+    let respect_ignores = !include_ignored;
     builder
         .follow_links(false) // 심링크는 따라가지 않는다(root 밖 유출 방지).
-        .hidden(true) // 숨김 파일/폴더 스킵.
-        .git_ignore(true) // .gitignore 존중.
+        .hidden(respect_ignores) // 숨김 파일/폴더 스킵.
+        .git_ignore(respect_ignores) // .gitignore 존중.
+        .git_global(respect_ignores) // 전역 gitignore.
+        .git_exclude(respect_ignores) // .git/info/exclude.
+        .ignore(respect_ignores) // .ignore 파일.
+        .parents(respect_ignores) // 상위 디렉터리의 무시 규칙.
         .require_git(false); // .git이 없어도 .gitignore를 적용.
+    // `.git/` 내부는 무시 규칙을 껐을 때도 항상 제외한다 -- 오브젝트/팩 파일이
+    // 수만 개라 MAX_LIST를 통째로 먹어 목록이 쓸모없어진다. depth 0(root
+    // 자신)은 건드리지 않는다(root 이름이 우연히 `.git`이어도 스캔은 돌아야).
+    builder.filter_entry(|entry| entry.depth() == 0 || entry.file_name() != ".git");
 
     let files: Mutex<Vec<ScannedFile>> = Mutex::new(Vec::new());
     let truncated = AtomicBool::new(false);

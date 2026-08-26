@@ -12,6 +12,7 @@ const {
   searchFiles,
   gitStatus,
   openInVscode,
+  openInFileManager,
   updateSettings,
   diffFile,
   fileHistory,
@@ -32,6 +33,7 @@ const {
     truncated: false,
   }),
   openInVscode: vi.fn().mockResolvedValue(undefined),
+  openInFileManager: vi.fn().mockResolvedValue(undefined),
   updateSettings: vi.fn(),
   diffFile: vi
     .fn()
@@ -42,7 +44,7 @@ const {
   gitCancel: vi.fn().mockResolvedValue(undefined),
 }));
 
-const settings = { gitStatusEnabled: true };
+const settings = { gitStatusEnabled: true, workdirShowIgnored: false };
 
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
@@ -50,6 +52,7 @@ vi.mock("../../ipc/tauriApi", () => ({
     workdirSearchFiles: (...a: unknown[]) => searchFiles(...a),
     workdirGitStatus: (...a: unknown[]) => gitStatus(...a),
     openInVscode: (...a: unknown[]) => openInVscode(...a),
+    openInFileManager: (...a: unknown[]) => openInFileManager(...a),
     workdirDiffFile: (...a: unknown[]) => diffFile(...a),
     workdirFileHistory: (...a: unknown[]) => fileHistory(...a),
     workdirDiffCommit: (...a: unknown[]) => diffCommit(...a),
@@ -96,11 +99,13 @@ const GIT = {
 beforeEach(() => {
   useWorkdirStore.setState(initialState, true);
   settings.gitStatusEnabled = true;
+  settings.workdirShowIgnored = false;
   openInVscode.mockClear();
+  openInFileManager.mockClear();
   updateSettings.mockClear();
   useWorkdirStore.setState({
     palette: { root: "/root", agentId: "agent1", query: "", selectedIndex: 0, changedOnly: false, viewMode: "files" },
-    listing: { "/root": { files: FILES, truncated: false, fetchedAt: Date.now() } },
+    listing: { "/root": { files: FILES, truncated: false, fetchedAt: Date.now(), includeIgnored: false } },
     git: { "/root": GIT },
     gitLoading: {},
   });
@@ -159,9 +164,26 @@ describe("WorkdirPalette", () => {
 
   it("git 토글 해제는 updateAppSettings를 부른다", () => {
     render(<WorkdirPalette />);
-    const checkbox = screen.getByRole("checkbox");
+    // 헤더에는 체크박스가 둘(git 상태 / 숨김·무시) — 첫 번째가 git 토글이다.
+    const checkbox = screen.getAllByRole("checkbox")[0]!;
     fireEvent.click(checkbox);
     expect(updateSettings).toHaveBeenCalledWith({ gitStatusEnabled: false });
+  });
+
+  it("숨김·무시 토글은 설정을 켜고 목록을 강제 재조회한다", () => {
+    render(<WorkdirPalette />);
+    listFiles.mockClear();
+    const checkbox = screen.getAllByRole("checkbox")[1]!;
+    fireEvent.click(checkbox);
+    expect(updateSettings).toHaveBeenCalledWith({ workdirShowIgnored: true });
+    // force:true라 TTL이 남아 있어도 다시 훑는다(스캔 조건이 바뀌었으므로).
+    expect(listFiles).toHaveBeenCalled();
+  });
+
+  it("탐색기 열기 버튼은 루트 경로로 openInFileManager를 부른다", () => {
+    render(<WorkdirPalette />);
+    fireEvent.click(screen.getByText(/📂/));
+    expect(openInFileManager).toHaveBeenCalledWith("/root");
   });
 
   it("Esc로 팔레트를 닫는다", () => {

@@ -244,6 +244,10 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.openInTerminal, { path });
   },
 
+  async openInFileManager(path) {
+    await invoke(Commands.openInFileManager, { path });
+  },
+
   async exportTerminalOutput(agentName, content) {
     return await invoke(Commands.exportTerminalOutput, { agentName, content });
   },
@@ -390,12 +394,16 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.markdownWriteFile, { root, relPath, content, expectedVersion });
   },
 
-  async workdirListFiles(root) {
-    return await invoke(Commands.workdirListFiles, { root });
+  async workdirListFiles(root, includeIgnored) {
+    return await invoke(Commands.workdirListFiles, { root, includeIgnored: !!includeIgnored });
   },
 
-  async workdirSearchFiles(root, query) {
-    return await invoke(Commands.workdirSearchFiles, { root, query });
+  async workdirSearchFiles(root, query, includeIgnored) {
+    return await invoke(Commands.workdirSearchFiles, {
+      root,
+      query,
+      includeIgnored: !!includeIgnored,
+    });
   },
 
   async workdirGitStatus(root, opId) {

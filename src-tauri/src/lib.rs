@@ -19,6 +19,8 @@ pub mod webremote;
 mod file_index;
 // markdown.rs/workdir::list_workdir_files가 공유하는 병렬 스캔 워커.
 mod file_scan;
+// 작업 폴더를 OS 파일 탐색기(Finder/탐색기)로 여는 런처.
+mod file_manager;
 // UI 언어 해석(AppSettings.language → Lang). AI 프롬프트를 만드는 모듈들이
 // 공유한다 — 번역 카탈로그는 프런트에만 있다.
 pub mod i18n;
@@ -812,6 +814,7 @@ pub fn run() {
             ipc::commands::bot_status,
             ipc::commands::open_in_vscode,
             ipc::commands::open_in_terminal,
+            ipc::commands::open_in_file_manager,
             ipc::commands::export_terminal_output,
             markdown::markdown_list_files,
             markdown::markdown_read_file,
@@ -1018,6 +1021,7 @@ mod tests {
             external_editor: Default::default(),
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            workdir_show_ignored: false,
             file_index_backend: Default::default(),
             cli_enabled: false,
             keep_awake_enabled: false,

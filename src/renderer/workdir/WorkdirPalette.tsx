@@ -2,7 +2,13 @@
 //
 // 작업 폴더 보기 오버레이(이슈 #11). 에이전트 cwd를 root로 파일 목록을 보여주고,
 // 파일별 git 상태를 단일 문자 뱃지로 얹는다. 헤더에 브랜치 요약과 [전체|변경만]
-// 필터, git 상태 on/off 토글을 둔다(토글은 전역 설정과 같은 값 — 상태 이원화 방지).
+// 필터, git 상태 on/off 토글, "숨김·무시" 포함 토글, 루트를 OS 파일 탐색기로
+// 여는 버튼을 둔다(두 토글 모두 전역 설정과 같은 값 — 상태 이원화 방지).
+//
+// "숨김·무시" 토글: 목록 스캔은 기본적으로 `.gitignore`를 존중하고 dot 파일을
+// 스킵하므로 빌드 산출물·`.env` 같은 파일이 아예 보이지 않는다. 토글을 켜면
+// 무시 규칙과 hidden 스킵을 모두 끈 스캔으로 다시 훑는다(`.git/` 내부는 그때도
+// 제외). 켜면 5000개 상한에 걸리기 쉬워 기본은 꺼짐이다.
 //
 // self-gate 관례(MarkdownPalette와 동일): 항상 마운트되며 팔레트가 없으면 null.
 // 키 이벤트는 여기서 stopPropagation해 터미널/전역 단축키로 새지 않게 한다.
@@ -33,6 +39,8 @@ import { statusLabel } from "./status";
 import { useAppStore } from "../store/appStore";
 import { fuzzyFilter, fuzzyRank } from "../markdown/fuzzy";
 import { formatRelativeTime } from "../shared/relativeTime";
+import { IS_MAC, IS_WINDOWS } from "../shared/platform";
+import { tauriApi } from "../ipc/tauriApi";
 import type { GitFileStatus } from "@shared/types";
 
 /** 목록 행 하나(전체/변경만 공통). status/xy는 git 뱃지용(없을 수 있음). */
@@ -73,6 +81,7 @@ export function WorkdirPalette() {
   const refreshListing = useWorkdirStore((s) => s.refreshListing);
 
   const gitStatusEnabled = useAppStore((s) => s.appSettings.gitStatusEnabled);
+  const showIgnored = useAppStore((s) => s.appSettings.workdirShowIgnored);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -199,6 +208,28 @@ export function WorkdirPalette() {
     else if (changedOnly) setChangedOnly(false); // 데이터가 사라지므로 전체로 복귀.
   };
 
+  // 숨김·무시 포함 토글: 전역 설정과 동일 값. 스캔 조건이 바뀌므로 목록을
+  // 강제로 다시 훑는다(캐시는 조건이 다르면 어차피 못 쓴다).
+  const toggleIgnored = () => {
+    updateAppSettings({ workdirShowIgnored: !showIgnored });
+    void refreshListing(root, { force: true });
+  };
+
+  // 루트를 OS 파일 탐색기(Finder/탐색기)로 연다. 실패(경로 부재 등)는 콘솔
+  // 경고로만 남긴다 — 팔레트에는 띄울 자리가 없고 치명적이지 않다.
+  const revealRoot = () => {
+    void tauriApi
+      .openInFileManager(root)
+      .catch((err) => console.warn("workdir: reveal in file manager failed", err));
+  };
+
+  // 파일 탐색기의 OS별 이름(맥=Finder, 윈도=탐색기, 그 외=파일 관리자).
+  const revealLabel = IS_MAC
+    ? t("palette.revealFinder")
+    : IS_WINDOWS
+      ? t("palette.revealExplorer")
+      : t("palette.revealFileManager");
+
   // 새로고침 버튼(이슈 #67): TTL을 무시하고 목록·git 상태를 강제로 다시 조회.
   const onRefresh = () => {
     void refreshListing(root, { force: true });
@@ -262,6 +293,14 @@ export function WorkdirPalette() {
             )}
             <button
               type="button"
+              className="wd-reveal"
+              title={t("palette.revealTitle", { path: root })}
+              onClick={revealRoot}
+            >
+              📂 {revealLabel}
+            </button>
+            <button
+              type="button"
               className="wd-refresh"
               title={t("palette.refresh")}
               onClick={onRefresh}
@@ -311,6 +350,12 @@ export function WorkdirPalette() {
               <input type="checkbox" checked={gitStatusEnabled} onChange={toggleGit} />
               <span>{t("palette.gitToggle")}</span>
             </label>
+            {viewMode === "files" && (
+              <label className="wd-git-toggle" title={t("palette.ignoredToggleTitle")}>
+                <input type="checkbox" checked={showIgnored} onChange={toggleIgnored} />
+                <span>{t("palette.ignoredToggle")}</span>
+              </label>
+            )}
             <button
               type="button"
               className="wd-close"

@@ -323,6 +323,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "externalEditor",
       "attentionHoldMs",
       "gitStatusEnabled",
+      "workdirShowIgnored",
       "fileIndexBackend",
       "cliEnabled",
       "keepAwakeEnabled",
@@ -340,6 +341,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "talkIdleQuietMs",
     ]);
     expect(settings.gitStatusEnabled).toBe(true);
+    expect(settings.workdirShowIgnored).toBe(false);
     expect(settings.fileIndexBackend).toBe("walker");
     expect(settings.cliEnabled).toBe(false);
     expect(settings.keepAwakeEnabled).toBe(false);

@@ -100,6 +100,8 @@
   "system": {
     "gitStatusTitle": "État git du dossier de travail",
     "gitStatusHelp": "Récupère l'état git de chaque fichier (modifié, ajouté, supprimé…) dans « Parcourir le dossier de travail » et l'affiche sous forme de badge. Désactivez-le si les gros dépôts semblent lents.",
+    "workdirShowIgnoredTitle": "Afficher les fichiers ignorés et cachés",
+    "workdirShowIgnoredHelp": "Inclut les fichiers ignorés par .gitignore et les fichiers cachés (commençant par un point) dans la liste « Parcourir le dossier de travail ». Avec de gros artefacts de build (node_modules, target…), la liste peut atteindre la limite de 5000 entrées et être tronquée. Le dossier .git/ reste exclu dans tous les cas.",
     "keepAwakeTitle": "Empêcher la veille pendant le travail",
     "keepAwakeHelp": "Empêche l'ordinateur de se mettre en veille tout seul pendant qu'un personnage travaille. L'écran peut quand même s'éteindre, et fermer le capot ou mettre en veille à la main n'est pas bloqué. (macOS, Windows)",
     "sessionLogTitle": "Conserver les journaux de session",

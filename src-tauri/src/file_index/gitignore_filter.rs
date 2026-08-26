@@ -179,6 +179,48 @@ pub fn filter_candidates(
     out
 }
 
+/// 무시 규칙·hidden 스킵을 적용하지 않은 결과("숨김·무시 포함" 토글 경로).
+/// `.git/` 내부만은 제외하고(오브젝트 파일이 상한을 통째로 먹는다) 나머지
+/// 후보를 그대로 담는다 -- `file_scan::walk_files(include_ignored=true)`와
+/// 같은 규칙이다. 정렬·MAX_LIST 절단은 `build_result`와 동일.
+pub fn build_unfiltered_result(
+    canon_root: &Path,
+    candidates: Vec<PathBuf>,
+) -> (Vec<ScannedFile>, bool) {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for f in candidates {
+        if f == canon_root || !f.starts_with(canon_root) {
+            continue;
+        }
+        let Ok(rel) = f.strip_prefix(canon_root) else {
+            continue;
+        };
+        // `.git/` 내부 제외 -- 첫 컴포넌트가 `.git`이면 스킵.
+        if rel
+            .components()
+            .next()
+            .map(|c| c.as_os_str() == ".git")
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        let rel_path = normalize_separators(rel);
+        let name = f
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        out.push((rel_path, name));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    let truncated = out.len() > MAX_LIST;
+    out.truncate(MAX_LIST);
+    let files = out
+        .into_iter()
+        .map(|(rel_path, name)| ScannedFile { rel_path, name })
+        .collect();
+    (files, truncated)
+}
+
 /// `filter_candidates` + MAX_LIST 절단. `markdown.rs`의 Everything 백엔드가
 /// `MarkdownListResult`로 감싸기 좋은 형태(파일 목록, truncated)로 쓴다.
 pub fn build_result(

@@ -8,3 +8,9 @@
 export const IS_MAC =
   typeof navigator !== "undefined" &&
   /mac/i.test(navigator.platform || navigator.userAgent || "");
+
+/** 지금 렌더러가 Windows에서 돌고 있는가. 파일 탐색기 이름("탐색기" vs
+ *  "Finder")처럼 OS별 표기가 갈리는 곳에서 쓴다. */
+export const IS_WINDOWS =
+  typeof navigator !== "undefined" &&
+  /win/i.test(navigator.platform || navigator.userAgent || "");

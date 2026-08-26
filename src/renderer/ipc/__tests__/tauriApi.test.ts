@@ -548,6 +548,7 @@ describe("app settings commands", () => {
       externalEditor: "system" as const,
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      workdirShowIgnored: false,
       fileIndexBackend: "walker" as const,
       cliEnabled: false,
       keepAwakeEnabled: false,

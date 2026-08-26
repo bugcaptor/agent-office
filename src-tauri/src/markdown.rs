@@ -97,7 +97,7 @@ fn resolve_within_root(root: &str, rel_path: &str) -> Result<(PathBuf, PathBuf),
 /// 않는다. require_git(false)로 `.git`이 없는 폴더에서도 .gitignore를
 /// 적용한다.
 pub fn list_markdown_files(root: &str) -> Result<MarkdownListResult, String> {
-    let (scanned, truncated) = walk_files(root, Some(&MARKDOWN_EXTENSIONS))?;
+    let (scanned, truncated) = walk_files(root, Some(&MARKDOWN_EXTENSIONS), false)?;
     let files = scanned
         .into_iter()
         .map(|f| MarkdownFileEntry {

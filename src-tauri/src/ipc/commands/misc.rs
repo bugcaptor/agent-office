@@ -94,6 +94,14 @@ pub async fn open_in_terminal(
     )
 }
 
+/// 작업 폴더를 OS 파일 탐색기(macOS Finder / Windows 탐색기 / Linux 기본 파일
+/// 관리자)로 연다. 전달/확장 규칙은 `open_in_vscode`와 동일. 구현/OS별 실행
+/// 전략은 `crate::file_manager` 참조.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_in_file_manager(path: String) -> Result<(), String> {
+    crate::file_manager::open_dir_in_file_manager(&crate::session::manager::expand_tilde(path))
+}
+
 /// 이슈 #42: 셸 출력(터미널 버퍼 plain text)을 임시 .txt 파일로 쓰고 사용자가
 /// 설정한 외부 에디터로 연다. `content`는 렌더러(TerminalRegistry.getPlainText)가
 /// 추출한 현재 화면(스크롤백 포함), `agent_name`은 파일명에 쓸 표시 이름이다.

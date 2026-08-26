@@ -531,6 +531,17 @@ function SystemTab() {
       <label className="settings-item">
         <input
           type="checkbox"
+          checked={appSettings.workdirShowIgnored}
+          onChange={(e) => updateAppSettings({ workdirShowIgnored: e.target.checked })}
+        />
+        <span>
+          <strong>{t("system.workdirShowIgnoredTitle")}</strong>
+          <small>{t("system.workdirShowIgnoredHelp")}</small>
+        </span>
+      </label>
+      <label className="settings-item">
+        <input
+          type="checkbox"
           checked={appSettings.keepAwakeEnabled}
           onChange={(e) => updateAppSettings({ keepAwakeEnabled: e.target.checked })}
         />

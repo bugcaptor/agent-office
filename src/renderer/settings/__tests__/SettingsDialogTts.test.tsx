@@ -72,6 +72,7 @@ function hydrate(patch: Partial<AppSettings> = {}) {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      workdirShowIgnored: false,
       fileIndexBackend: "walker",
       cliEnabled: false,
       keepAwakeEnabled: false,

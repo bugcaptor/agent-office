@@ -65,6 +65,9 @@ export interface WorkdirListing {
   truncated: boolean;
   /** 이 캐시가 채워진 시각(Date.now()) — TTL 판정·"N분 전" 표시에 쓰인다. */
   fetchedAt: number;
+  /** 이 캐시를 만든 스캔이 무시·숨김 파일까지 담았는지. 지금 설정과 다르면
+   *  TTL이 남아 있어도 캐시를 못 쓴다(다른 조건으로 뜬 목록이므로). */
+  includeIgnored: boolean;
 }
 
 /** 캐시 재사용 유효기간(이슈 #67): 이보다 오래되면 팔레트를 열 때 백그라운드로
@@ -455,7 +458,9 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
     searchDebounceTimer = setTimeout(() => {
       void (async () => {
         try {
-          const res = await tauriApi.workdirSearchFiles(root, query);
+          // 목록 스캔과 같은 조건으로 검색해야 결과가 어긋나지 않는다.
+          const includeIgnored = useAppStore.getState().appSettings.workdirShowIgnored;
+          const res = await tauriApi.workdirSearchFiles(root, query, includeIgnored);
           const curP = get().palette;
           // stale 가드: 그 사이 root/query가 바뀌었거나 더 최신 요청이 나갔으면 폐기.
           if (gen !== searchGen || !curP || curP.root !== root || curP.query !== query) return;
@@ -499,15 +504,25 @@ export const useWorkdirStore = create<WorkdirState>()((set, get) => ({
 
   refreshListing: async (root, opts) => {
     const force = opts?.force ?? false;
+    const includeIgnored = useAppStore.getState().appSettings.workdirShowIgnored;
+    const cached = get().listing[root];
+    // 무시·숨김 포함 여부가 캐시와 다르면 TTL과 무관하게 다시 스캔한다 —
+    // 조건이 다른 목록을 그대로 쓰면 토글을 눌러도 화면이 그대로다.
+    const modeChanged = cached !== undefined && cached.includeIgnored !== includeIgnored;
     // TTL 이내면(force가 아닌 한) 스킵 — 캐시가 없으면 isStale이 true를 준다.
-    if (!force && !isStale(get().listing[root], LISTING_TTL_MS)) return;
+    if (!force && !modeChanged && !isStale(cached, LISTING_TTL_MS)) return;
     if (!listingInFlight.begin(root)) return; // 이미 진행 중이면 중복 실행하지 않는다.
     try {
-      const res = await tauriApi.workdirListFiles(root);
+      const res = await tauriApi.workdirListFiles(root, includeIgnored);
       set((s) => ({
         listing: {
           ...s.listing,
-          [root]: { files: res.files, truncated: res.truncated, fetchedAt: Date.now() },
+          [root]: {
+            files: res.files,
+            truncated: res.truncated,
+            fetchedAt: Date.now(),
+            includeIgnored,
+          },
         },
       }));
     } catch (err) {

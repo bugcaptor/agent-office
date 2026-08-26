@@ -252,6 +252,12 @@ pub struct AppSettings {
     /// 저장소에서 git status가 무거울 수 있어 끌 수 있게 한다. 기본 켜짐.
     #[serde(default = "default_true")]
     pub git_status_enabled: bool,
+    /// "작업 폴더 보기"에서 `.gitignore`로 무시된 파일과 숨김(dot) 파일까지
+    /// 목록에 담을지. 켜면 `target/`·`node_modules/` 같은 산출물이 통째로
+    /// 들어와 5000개 상한을 금방 채울 수 있어 기본 꺼짐 -- `#[serde(default)]`라
+    /// 기존 설정 파일에 키가 없으면 false.
+    #[serde(default)]
+    pub workdir_show_ignored: bool,
     /// 파일 목록(마크다운 팔레트) 스캔 백엔드(이슈 #67). `#[serde(default)]`라
     /// 기존 설정 파일에 키가 없으면 `FileIndexBackend::Walker`(기본값)로
     /// 폴백한다.
@@ -359,6 +365,7 @@ impl Default for AppSettings {
             external_editor: ExternalEditor::System,
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            workdir_show_ignored: false,
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
             keep_awake_enabled: false,
@@ -553,6 +560,7 @@ mod tests {
             external_editor: ExternalEditor::System,
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            workdir_show_ignored: false,
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
             keep_awake_enabled: false,
@@ -752,6 +760,7 @@ mod tests {
             external_editor: ExternalEditor::Vscode,
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            workdir_show_ignored: false,
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
             keep_awake_enabled: false,

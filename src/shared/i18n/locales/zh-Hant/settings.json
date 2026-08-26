@@ -100,6 +100,8 @@
   "system": {
     "gitStatusTitle": "顯示工作資料夾的 git 狀態",
     "gitStatusHelp": "在「瀏覽工作資料夾」查詢每個檔案的 git 變更狀態（修改、新增、刪除等）並以標記顯示。在超大儲存庫覺得慢就關掉。",
+    "workdirShowIgnoredTitle": "在清單中顯示被忽略與隱藏的檔案",
+    "workdirShowIgnoredHelp": "在「瀏覽工作資料夾」的檔案清單中包含被 .gitignore 忽略的檔案與隱藏（以 . 開頭）的檔案。建置產物（node_modules、target 等）多時，清單可能達到 5000 筆上限而被截斷。無論是否開啟，.git/ 內部都會排除。",
     "keepAwakeTitle": "工作時防止系統睡眠",
     "keepAwakeHelp": "角色工作期間不讓電腦自動進入睡眠。螢幕仍可能關閉，闔上螢幕或手動睡眠也不會被擋。（macOS・Windows）",
     "sessionLogTitle": "保留工作階段紀錄",

@@ -100,6 +100,8 @@
   "system": {
     "gitStatusTitle": "作業フォルダーの git 状態を表示",
     "gitStatusHelp": "「作業フォルダーを見る」でファイルごとの git 変更状態（変更・追加・削除など）を取得してバッジで表示します。巨大なリポジトリで遅いときはオフにしてください。",
+    "workdirShowIgnoredTitle": "無視・隠しファイルも一覧に表示",
+    "workdirShowIgnoredHelp": "「作業フォルダーを見る」の一覧に .gitignore で無視されたファイルと隠し（. で始まる）ファイルも含めます。ビルド成果物（node_modules、target など）が多いと一覧が 5000 件の上限で切り詰められます。.git/ の中はオンでも除外されます。",
     "keepAwakeTitle": "作業中のスリープを防ぐ",
     "keepAwakeHelp": "キャラクターが作業している間、コンピューターが自動でスリープしないようにします。画面は消えることがあり、ふたを閉じたり手動でスリープさせたりするのは妨げません。（macOS・Windows）",
     "sessionLogTitle": "セッションログを残す",

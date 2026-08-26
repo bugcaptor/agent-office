@@ -100,6 +100,8 @@
   "system": {
     "gitStatusTitle": "Git status in work folder",
     "gitStatusHelp": "Looks up each file's git change state (modified, added, deleted…) in \"Browse work folder\" and shows it as a badge. Turn it off if huge repos feel slow.",
+    "workdirShowIgnoredTitle": "Show ignored and hidden files",
+    "workdirShowIgnoredHelp": "Includes .gitignore'd files and hidden (dot) files in the \"Browse work folder\" list. With big build outputs (node_modules, target…) the list may hit the 5000-item cap and get truncated. The .git/ directory stays excluded either way.",
     "keepAwakeTitle": "Prevent sleep while working",
     "keepAwakeHelp": "Keeps the computer from sleeping on its own while a character works. The display may still turn off, and closing the lid or sleeping by hand is not blocked. (macOS, Windows)",
     "sessionLogTitle": "Keep session logs",

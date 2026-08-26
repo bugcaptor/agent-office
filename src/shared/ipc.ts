@@ -69,6 +69,7 @@ export const Commands = {
   listAvailableShells: "list_available_shells",
   openInVscode: "open_in_vscode",
   openInTerminal: "open_in_terminal",
+  openInFileManager: "open_in_file_manager",
   exportTerminalOutput: "export_terminal_output",
   pickDirectory: "pick_directory",
   // 캐릭터 내보내기/가져오기(이슈 #77) — 저장/열기 다이얼로그 경유 텍스트 파일 rw.

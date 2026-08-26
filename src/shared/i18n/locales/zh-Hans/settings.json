@@ -100,6 +100,8 @@
   "system": {
     "gitStatusTitle": "显示工作文件夹的 git 状态",
     "gitStatusHelp": "在“查看工作文件夹”中查询每个文件的 git 变更状态（修改·新增·删除等）并以徽标显示。若在超大仓库中变慢请关闭。",
+    "workdirShowIgnoredTitle": "在列表中显示被忽略和隐藏的文件",
+    "workdirShowIgnoredHelp": "在“查看工作文件夹”的文件列表中包含被 .gitignore 忽略的文件和隐藏（以 . 开头）的文件。构建产物（node_modules、target 等）较多时，列表可能触及 5000 条上限而被截断。无论是否开启，.git/ 内部都会排除。",
     "keepAwakeTitle": "工作时阻止系统睡眠",
     "keepAwakeHelp": "角色工作期间不让电脑自动进入睡眠。屏幕仍可能关闭，合上盖子或手动睡眠也不会被阻止。（macOS·Windows）",
     "sessionLogTitle": "保存会话日志",

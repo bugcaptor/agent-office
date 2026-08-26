@@ -167,6 +167,9 @@ export interface AgentOfficeApi {
   openInVscode(path: string): Promise<void>;
   /** 디렉터리를 OS 기본 터미널 앱으로 연다. 경로 부재/실행 실패 시 reject. */
   openInTerminal(path: string): Promise<void>;
+  /** 디렉터리를 OS 파일 탐색기(macOS Finder / Windows 탐색기 / Linux 기본 파일
+   * 관리자)로 연다. 경로 부재/실행 실패 시 reject. */
+  openInFileManager(path: string): Promise<void>;
   /** 셸 출력(터미널 버퍼 plain text)을 임시 .txt로 쓰고 설정한 외부 에디터로
    * 연다. 쓴 파일의 절대 경로를 반환, 쓰기/실행 실패 시 reject. */
   exportTerminalOutput(agentName: string, content: string): Promise<string>;
@@ -289,16 +292,22 @@ export interface AgentOfficeApi {
     content: string,
     expectedVersion: string,
   ): Promise<MarkdownWriteResult>;
-  /** `root` 하위의 전체 파일 목록(이슈 #11, .gitignore 존중·hidden 스킵).
+  /** `root` 하위의 전체 파일 목록(이슈 #11). `includeIgnored`가 false(기본)면
+   * `.gitignore`를 존중하고 hidden을 스킵한다. true면 무시 규칙·hidden 스킵을
+   * 모두 끄고 디스크에 있는 그대로를 담는다(`.git/` 내부만은 언제나 제외).
    * 상한(5000) 초과 시 `truncated=true`. */
-  workdirListFiles(root: string): Promise<WorkdirListResult>;
+  workdirListFiles(root: string, includeIgnored?: boolean): Promise<WorkdirListResult>;
   /** `root` 아래에서 `query`와 일치하는 파일을 서버사이드(Everything)로
    * 검색한다(이슈 #67) — `workdirListFiles`가 5000개 상한에 걸려 잘랐더라도,
    * 이 검색은 인덱스를 다시 훑어 상한 밖 파일도 찾아낼 수 있다. Walker
    * 백엔드/빈 쿼리/es.exe 실패는 모두 `usedIndex=false` + 빈 `files`로
    * 조용히 답한다(에러가 아니다) — 호출부는 이 신호로 기존 클라이언트 fuzzy
    * 필터로 되돌아가야 한다. */
-  workdirSearchFiles(root: string, query: string): Promise<WorkdirSearchResult>;
+  workdirSearchFiles(
+    root: string,
+    query: string,
+    includeIgnored?: boolean,
+  ): Promise<WorkdirSearchResult>;
   /** `root`의 git 상태(porcelain v2). 저장소 아님/타임아웃/취소는 reject가
    * 아니라 `isRepo=false`/`timedOut=true`/`canceled=true` 필드로 표현한다.
    * `opId`를 주면 조회 도중 `workdirGitCancel(opId)`로 끊을 수 있다(이하 조회

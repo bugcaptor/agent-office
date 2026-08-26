@@ -318,6 +318,7 @@ fn get_app_settings_result_matches_fixture() {
             external_editor: ExternalEditor::System,
             attention_hold_ms: 5000,
             git_status_enabled: true,
+            workdir_show_ignored: false,
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
             keep_awake_enabled: false,

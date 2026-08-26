@@ -32,9 +32,14 @@ const {
   gitCancel: vi.fn(),
 }));
 
-// gitStatusEnabled/fileIndexBackend를 테스트마다 바꾸기 위한 가변 셋팅.
-const settings: { gitStatusEnabled: boolean; fileIndexBackend: "walker" | "everything" } = {
+// gitStatusEnabled/workdirShowIgnored/fileIndexBackend를 테스트마다 바꾸기 위한 가변 셋팅.
+const settings: {
+  gitStatusEnabled: boolean;
+  workdirShowIgnored: boolean;
+  fileIndexBackend: "walker" | "everything";
+} = {
   gitStatusEnabled: true,
+  workdirShowIgnored: false,
   fileIndexBackend: "walker",
 };
 
@@ -145,7 +150,7 @@ describe("팔레트 열기", () => {
       agentId: "agent1",
       changedOnly: false,
     });
-    expect(listFiles).toHaveBeenCalledWith("/root");
+    expect(listFiles).toHaveBeenCalledWith("/root", false);
     expect(gitStatus).toHaveBeenCalledWith("/root", expect.any(String));
 
     await vi.waitFor(() => {
@@ -663,7 +668,7 @@ describe("서버사이드 검색(이슈 #67)", () => {
     expect(useWorkdirStore.getState().searchLoading).toBe(true);
 
     await vi.advanceTimersByTimeAsync(250);
-    expect(searchFiles).toHaveBeenCalledWith("/root", "wd");
+    expect(searchFiles).toHaveBeenCalledWith("/root", "wd", false);
     expect(useWorkdirStore.getState().search).toEqual({
       root: "/root",
       query: "wd",
@@ -725,7 +730,7 @@ describe("서버사이드 검색(이슈 #67)", () => {
     await vi.advanceTimersByTimeAsync(250);
 
     expect(searchFiles).toHaveBeenCalledTimes(1);
-    expect(searchFiles).toHaveBeenCalledWith("/root", "wor");
+    expect(searchFiles).toHaveBeenCalledWith("/root", "wor", false);
   });
 
   it("응답이 늦게 도착해도 그 사이 더 최신 요청이 나갔으면(stale) 폐기한다", async () => {

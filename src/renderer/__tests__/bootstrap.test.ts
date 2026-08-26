@@ -273,6 +273,7 @@ describe("bootApp", () => {
       externalEditor: "system",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
+      workdirShowIgnored: false,
       fileIndexBackend: "walker",
       cliEnabled: false,
       keepAwakeEnabled: false,

@@ -105,6 +105,10 @@ export interface AppSettings {
   /** "작업 폴더 보기"(이슈 #11)에서 파일별 git 상태 뱃지를 조회할지. 거대
    * 저장소에서 무거울 수 있어 끌 수 있다. 기본 true. */
   gitStatusEnabled: boolean;
+  /** "작업 폴더 보기"에서 `.gitignore`로 무시된 파일·숨김(dot) 파일까지 목록에
+   * 담을지. 켜면 빌드 산출물이 통째로 들어와 5000개 상한을 금방 채울 수 있어
+   * 기본 false. `.git/` 내부는 켜도 항상 제외한다. */
+  workdirShowIgnored: boolean;
   /** 파일 목록 백엔드. everything은 es.exe(Windows) 필요, 문서(md) 팔레트에만
    * 적용, 실패 시 자동 폴백. 기본 walker. */
   fileIndexBackend: FileIndexBackend;
