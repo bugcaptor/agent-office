@@ -255,6 +255,9 @@ class TerminalRegistry {
       if (imeComposing) return; // composition 경로가 살아 있는 IME — xterm 몫
       if (pasteSeen) {
         // 붙여넣기의 뒤끝 input. 내용은 xterm이 paste 이벤트에서 이미 보냈다.
+        // 여기서 전파까지 끊지 않으면 xterm `_inputEvent`가 WebKit의
+        // insertText를 다시 onData로 흘려 같은 문자열이 연속으로 붙는다.
+        ev.stopPropagation();
         pasteSeen = false;
         prevValue = taValue();
         return;
@@ -304,12 +307,14 @@ class TerminalRegistry {
       // xterm이 blur에서 textarea를 비운다 — 기준선도 같이 비워야 한다.
       resyncSoon();
     };
-    const onTextareaPaste = () => {
+    const onTextareaPaste = (ev: ClipboardEvent) => {
       // xterm이 paste를 직접 처리해 PTY로 보내고 `textarea.value = ''`까지 한다
-      // (browser/Clipboard.ts `paste`). 그 뒤 브라우저 기본 동작이 붙여넣은 글을
-      // textarea에 넣으며 input을 한 번 더 쏘는데, 그건 이미 나간 내용이라
-      // 우리가 diff로 또 보내면 안 된다 — 그 input은 기준선만 맞추고 넘긴다.
-      // 마이크로태스크는 같은 태스크의 input보다 항상 나중이라 플래그가 남지 않는다.
+      // (browser/Clipboard.ts `paste`). macOS에서는 그 뒤 브라우저 기본 동작이
+      // 붙여넣은 글을 textarea에 또 넣고 insertText input을 내는 경우가 있다.
+      // xterm 리스너가 먼저 등록돼 이미 발신을 마쳤으므로 기본 동작을 취소하고,
+      // 혹시 WebKit이 후속 input까지 내더라도 pasteSeen 분기에서 전파를 끊는다.
+      if (!IS_MAC) return;
+      ev.preventDefault();
       pasteSeen = true;
       const ta = term.textarea;
       if (!ta) return;

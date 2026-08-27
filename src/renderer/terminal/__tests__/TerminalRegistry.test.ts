@@ -920,6 +920,21 @@ describe("Hangul/IME double-input guard (Windows 전용)", () => {
     expect(fake.xtermInputSeen).toBe(2);
     expect(writeInput.mock.calls.map((c) => c[1])).toEqual(["ㅎ"]);
   });
+
+  it("mac이 아니면 native paste 기본 동작을 취소하지 않는다", async () => {
+    const terminalRegistry = await importRegistry();
+    const host = document.createElement("div");
+    terminalRegistry.attach("a1", host);
+    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
+    const pasteEvent = new Event("paste", {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    fake.textarea.dispatchEvent(pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(false);
+  });
 });
 
 describe("macOS WebKit 한글 조합 미러링", () => {
@@ -968,6 +983,26 @@ describe("macOS WebKit 한글 조합 미러링", () => {
     };
     return { terminalRegistry, fake, feed, keyDown, xtermKeyPress };
   }
+
+  it("native paste 뒤 insertText가 와도 붙여넣은 문자열은 PTY로 한 번만 나간다", async () => {
+    const { fake } = await mountMac();
+
+    // 실물 xterm의 paste 리스너가 clipboardData를 이미 onData로 보낸 상태.
+    fake.emitInput("붙여넣기");
+    const pasteEvent = new Event("paste", {
+      bubbles: true,
+      cancelable: true,
+    });
+    fake.textarea.dispatchEvent(pasteEvent);
+
+    // WKWebView가 기본 붙여넣기 뒤 insertText까지 내는 경로를 재현한다.
+    // 이 이벤트는 컨테이너 캡처에서 끊겨 xterm `_inputEvent`에 닿지 않아야 한다.
+    fake.emitTextInput("insertText", "붙여넣기", "붙여넣기");
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(fake.xtermInputSeen).toBe(0);
+    expect(sentChunks()).toEqual(["붙여넣기"]);
+  });
 
   it('"한글": WebKit 실측 시퀀스를 그대로 먹이면 PTY 누적 결과가 정확히 "한글"', async () => {
     const { feed } = await mountMac();
