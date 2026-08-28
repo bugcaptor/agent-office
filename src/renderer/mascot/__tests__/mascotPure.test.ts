@@ -9,18 +9,22 @@ import {
 } from "../protocol";
 import { createDragDetector, DRAG_THRESHOLD_PX } from "../drag";
 import {
+  anchorOf,
+  clampToArea,
   defaultPosition,
   isOnMonitor,
   MASCOT_FALLBACK_TASKBAR_INSET_PX,
   MASCOT_MARGIN_PX,
-  readSavedPosition,
-  resolvePosition,
+  MASCOT_POS_KEY,
+  readSavedAnchor,
+  resolveAnchoredPosition,
+  topLeftOf,
   usableArea,
-  writeSavedPosition,
+  writeSavedAnchor,
   type MonitorRect,
 } from "../position";
 import { mascotDetailCell, mascotSheetDims, usesCustomSheet } from "../sheet";
-import { computeMascotLayout, foldOverflow } from "../layout";
+import { computeMascotLayout, computeMascotWindowRect, foldOverflow } from "../layout";
 
 const state = (patch: Partial<MascotState> = {}): MascotState => ({
   ...HIDDEN_MASCOT_STATE,
@@ -150,6 +154,97 @@ describe("layout", () => {
     const over = Array.from({ length: 13 }, (_, i) => `l${i}`);
     expect(foldOverflow(over).overflowCount).toBe(2);
   });
+
+  describe("computeMascotWindowRect (C9)", () => {
+    const mon = (patch: Partial<MonitorRect> = {}): MonitorRect => ({
+      x: 0,
+      y: 0,
+      width: 1920,
+      height: 1080,
+      scaleFactor: 1,
+      ...patch,
+    });
+
+    it("dpr 1: 물리 px = 논리 px, 앵커(하단중앙) 기준으로 재배치한다", () => {
+      // 스프라이트만 있는(칸 0) 기존 120×140 창이 (100,860)에 있다고 하자.
+      const rect = computeMascotWindowRect({
+        lightCount: 0,
+        vertical: false,
+        hasSprite: true,
+        dpr: 1,
+        currentPos: { x: 100, y: 860 },
+        currentSize: { width: 120, height: 140 },
+        monitors: [mon()],
+        primary: mon(),
+      });
+      // 앵커 = (100+60, 860+140) = (160, 1000). 새 크기도 120×140이라
+      // top-left는 그대로 (100, 860) — 칸 수가 그대로면 자리가 안 변한다.
+      expect(rect).toEqual({ width: 120, height: 140, x: 100, y: 860 });
+    });
+
+    it("칸이 늘면 하단중앙 앵커를 유지한 채 위/옆으로만 커진다", () => {
+      const rect = computeMascotWindowRect({
+        lightCount: 4,
+        vertical: false,
+        hasSprite: true,
+        dpr: 1,
+        currentPos: { x: 100, y: 860 }, // 120×140일 때의 top-left
+        currentSize: { width: 120, height: 140 },
+        monitors: [mon()],
+        primary: mon(),
+      });
+      // 새 크기 120×170(스프라이트140+strip30, n=4는 폭 120 이내). 앵커
+      // (160,1000) 고정 → top-left = (160-60, 1000-170) = (100, 830).
+      expect(rect).toEqual({ width: 120, height: 170, x: 100, y: 830 });
+    });
+
+    it("dpr 2면 물리 px로 2배 환산해서 계산한다", () => {
+      const rect = computeMascotWindowRect({
+        lightCount: 0,
+        vertical: false,
+        hasSprite: true,
+        dpr: 2,
+        currentPos: { x: 200, y: 1720 }, // 240×280 물리 창의 top-left
+        currentSize: { width: 240, height: 280 },
+        monitors: [mon({ scaleFactor: 2, width: 3840, height: 2160 })],
+        primary: mon({ scaleFactor: 2, width: 3840, height: 2160 }),
+      });
+      expect(rect).toEqual({ width: 240, height: 280, x: 200, y: 1720 });
+    });
+
+    it("리사이즈로 화면 밖을 침범하면 현재 걸친 모니터 안으로 클램프한다", () => {
+      const rect = computeMascotWindowRect({
+        lightCount: 12,
+        vertical: true, // 세로 12칸 → 매우 높은 창
+        hasSprite: true,
+        dpr: 1,
+        currentPos: { x: 100, y: 10 }, // 화면 위쪽 끝 근처
+        currentSize: { width: 120, height: 140 },
+        monitors: [mon()],
+        primary: mon(),
+      });
+      // 세로 모드 12칸: height = 140 + (12+18*12+6*11) = 140+294 = 434,
+      // width = max(120, 30) = 120. 앵커를 그대로 따르면 top이 화면 밖(y<0)
+      // 이라 클램프가 y=0으로 되돌린다.
+      expect(rect.width).toBe(120);
+      expect(rect.height).toBe(434);
+      expect(rect.y).toBe(0);
+    });
+
+    it("모니터 목록이 비면 클램프 없이 앵커 결과를 그대로 쓴다", () => {
+      const rect = computeMascotWindowRect({
+        lightCount: 0,
+        vertical: false,
+        hasSprite: false,
+        dpr: 1,
+        currentPos: { x: -500, y: -500 },
+        currentSize: { width: 120, height: 140 },
+        monitors: [],
+        primary: null,
+      });
+      expect(rect).toEqual({ width: 0, height: 0, x: -500 + 60, y: -500 + 140 });
+    });
+  });
 });
 
 describe("drag detector", () => {
@@ -230,7 +325,7 @@ describe("position", () => {
     const m = mon({ workArea: { x: 0, y: 0, width: 1920, height: 1080 - 48 } });
     const overTaskbar = { x: 1700, y: 1080 - 60 };
     expect(isOnMonitor(overTaskbar, size, m)).toBe(true);
-    expect(resolvePosition(overTaskbar, size, [m], m)).toEqual(overTaskbar);
+    expect(resolveAnchoredPosition(anchorOf(overTaskbar, size), size, [m], m)).toEqual(overTaskbar);
   });
 
   it("usableArea는 workArea를 그대로 돌려주고, 없으면 하단만 줄인다", () => {
@@ -244,23 +339,30 @@ describe("position", () => {
     });
   });
 
-  it("화면에 걸치는 저장 위치는 그대로 쓴다", () => {
+  it("앵커 왕복: anchorOf/topLeftOf는 서로 역함수다", () => {
+    const pos = { x: 1700, y: 900 };
+    expect(topLeftOf(anchorOf(pos, size), size)).toEqual(pos);
+  });
+
+  it("화면에 걸치는 저장 앵커는 그대로 쓴다", () => {
     const saved = { x: 1700, y: 900 };
-    expect(resolvePosition(saved, size, [mon()], mon())).toEqual(saved);
+    expect(resolveAnchoredPosition(anchorOf(saved, size), size, [mon()], mon())).toEqual(saved);
   });
 
-  it("모니터가 사라져 화면 밖이 된 저장 위치는 주 모니터 기본 위치로 되돌린다", () => {
+  it("모니터가 사라져 화면 밖이 된 저장 앵커는 주 모니터 기본 위치로 되돌린다", () => {
     const saved = { x: 3000, y: 400 }; // 떼어낸 외장 모니터 자리
-    expect(resolvePosition(saved, size, [mon()], mon())).toEqual(defaultPosition(mon(), size));
+    expect(resolveAnchoredPosition(anchorOf(saved, size), size, [mon()], mon())).toEqual(
+      defaultPosition(mon(), size),
+    );
   });
 
-  it("모니터 조회가 비면 저장값을 믿는다", () => {
+  it("모니터 조회가 비면 저장 앵커를 믿는다", () => {
     const saved = { x: 3000, y: 400 };
-    expect(resolvePosition(saved, size, [], null)).toEqual(saved);
+    expect(resolveAnchoredPosition(anchorOf(saved, size), size, [], null)).toEqual(saved);
   });
 
-  it("저장값이 없으면 주 모니터 기본 위치", () => {
-    expect(resolvePosition(null, size, [mon(), mon({ x: 1920 })], mon({ x: 1920 }))).toEqual(
+  it("저장 앵커가 없으면 주 모니터 기본 위치", () => {
+    expect(resolveAnchoredPosition(null, size, [mon(), mon({ x: 1920 })], mon({ x: 1920 }))).toEqual(
       defaultPosition(mon({ x: 1920 }), size),
     );
   });
@@ -270,17 +372,38 @@ describe("position", () => {
     expect(isOnMonitor({ x: -500, y: 500 }, size, mon())).toBe(false);
   });
 
-  it("localStorage 왕복 — 손상값은 없는 것으로 취급", () => {
+  it("clampToArea: 화면 밖으로 나가면 모니터 안으로 밀어 넣고, 안이면 그대로 둔다", () => {
+    const m = mon();
+    expect(clampToArea({ x: -50, y: 2000 }, size, m)).toEqual({ x: 0, y: 1080 - 140 });
+    expect(clampToArea({ x: 100, y: 100 }, size, m)).toEqual({ x: 100, y: 100 });
+  });
+
+  it("clampToArea: 창이 모니터보다 크면 좌상단을 모니터 좌상단에 맞춘다", () => {
+    const small = mon({ width: 80, height: 80 });
+    expect(clampToArea({ x: 500, y: 500 }, size, small)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("localStorage 앵커 왕복 — 손상값은 없는 것으로 취급", () => {
     const store = new Map<string, string>();
     const storage = {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),
     };
-    expect(readSavedPosition(storage)).toBeNull();
-    writeSavedPosition(storage, { x: 10.6, y: 20.4 });
-    expect(readSavedPosition(storage)).toEqual({ x: 11, y: 20 });
-    store.set("agent-office.mascot.pos", "{oops");
-    expect(readSavedPosition(storage)).toBeNull();
+    expect(readSavedAnchor(storage, size)).toBeNull();
+    writeSavedAnchor(storage, { ax: 500.6, ay: 600.4 });
+    expect(readSavedAnchor(storage, size)).toEqual({ ax: 501, ay: 600 });
+    store.set(MASCOT_POS_KEY, "{oops");
+    expect(readSavedAnchor(storage, size)).toBeNull();
+  });
+
+  it("구형 {x,y} 저장값은 assumedSize로 앵커 환산해 오차 없이 같은 자리로 복원한다(§0.4)", () => {
+    const store = new Map<string, string>();
+    store.set(MASCOT_POS_KEY, JSON.stringify({ x: 1700, y: 900 }));
+    const storage = { getItem: (k: string) => store.get(k) ?? null };
+    const migrated = readSavedAnchor(storage, size);
+    expect(migrated).toEqual(anchorOf({ x: 1700, y: 900 }, size));
+    // 마운트 직후 실측 크기(size)로 되읽으면 정확히 같은 top-left가 나온다.
+    expect(topLeftOf(migrated!, size)).toEqual({ x: 1700, y: 900 });
   });
 });
 

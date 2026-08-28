@@ -34,19 +34,24 @@ import {
   type MascotLight,
   type MascotState,
 } from "./protocol";
-import { foldOverflow } from "./layout";
+import { computeMascotWindowRect, foldOverflow } from "./layout";
 import { loadMascotFrames, type MascotFrames } from "./sheet";
 import { createDragDetector } from "./drag";
 import {
-  readSavedPosition,
-  resolvePosition,
-  writeSavedPosition,
+  anchorOf,
+  readSavedAnchor,
+  resolveAnchoredPosition,
+  writeSavedAnchor,
   type MonitorRect,
 } from "./position";
 import "./mascot.css";
 
 /** 창 이동 저장 디바운스(ms) — 드래그 중 매 프레임 쓰지 않게. */
 const SAVE_DEBOUNCE_MS = 500;
+/** 신호등 레이아웃 변화 → 창 리사이즈 적용 디바운스(ms). 에이전트 모드는
+ *  턴 경계마다 칸 수가 바뀌므로(결정 2), 연속 변화 중 리사이즈가 폭주하지
+ *  않게 마지막 값만 적용한다(docs/mascot-lights-design.md §5.3). */
+const LAYOUT_DEBOUNCE_MS = 300;
 
 const toRect = (m: Monitor): MonitorRect => ({
   x: m.position.x,
@@ -69,7 +74,7 @@ const toRect = (m: Monitor): MonitorRect => ({
 const readDpr = (): number =>
   typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
 
-/** 저장된 위치로 창을 옮긴다(없거나 화면 밖이면 주 모니터 우하단). */
+/** 저장된 앵커로 창을 옮긴다(없거나 화면 밖이면 주 모니터 우하단). */
 async function restorePosition(): Promise<void> {
   const win = getCurrentWindow();
   const [size, monitors, primary] = await Promise.all([
@@ -77,13 +82,56 @@ async function restorePosition(): Promise<void> {
     availableMonitors(),
     primaryMonitor(),
   ]);
-  const pos = resolvePosition(
-    readSavedPosition(typeof localStorage === "undefined" ? null : localStorage),
-    { width: size.width, height: size.height },
+  const currentSize = { width: size.width, height: size.height };
+  const anchor = readSavedAnchor(
+    typeof localStorage === "undefined" ? null : localStorage,
+    currentSize,
+  );
+  const pos = resolveAnchoredPosition(
+    anchor,
+    currentSize,
     monitors.map(toRect),
     primary ? toRect(primary) : null,
   );
   if (pos) await win.setPosition(new PhysicalPosition(pos.x, pos.y));
+}
+
+/**
+ * C9: 신호등 레이아웃(칸 수·방향·스프라이트 유무)이 바뀌었을 때 창 크기를
+ * 다시 맞춘다. 앵커는 저장값이 아니라 **호출 시점**의 `outerPosition()`/
+ * `outerSize()`에서 다시 뽑는다 — 사용자가 방금 끌어다 둔 자리를 존중하기
+ * 위해서다. 계산은 순수 함수(`computeMascotWindowRect`)에 전부 맡기고,
+ * 여기서는 Tauri 호출로 값을 모으고 결과를 적용하는 얇은 배선만 한다.
+ */
+async function applyMascotLayout(
+  lightCount: number,
+  vertical: boolean,
+  hasSprite: boolean,
+  dpr: number,
+): Promise<void> {
+  const win = getCurrentWindow();
+  const [pos, size, monitors, primary] = await Promise.all([
+    win.outerPosition(),
+    win.outerSize(),
+    availableMonitors(),
+    primaryMonitor(),
+  ]);
+  const rect = computeMascotWindowRect({
+    lightCount,
+    vertical,
+    hasSprite,
+    dpr,
+    currentPos: { x: pos.x, y: pos.y },
+    currentSize: { width: size.width, height: size.height },
+    monitors: monitors.map(toRect),
+    primary: primary ? toRect(primary) : null,
+  });
+  await tauriApi.setMascotLayout(rect.width, rect.height, rect.x, rect.y);
+  // set_mascot_layout이 유발하는 onMoved도 같은 앵커로 계산되므로 멱등하다.
+  writeSavedAnchor(
+    typeof localStorage === "undefined" ? null : localStorage,
+    anchorOf({ x: rect.x, y: rect.y }, { width: rect.width, height: rect.height }),
+  );
 }
 
 export default function MascotApp() {
@@ -99,6 +147,11 @@ export default function MascotApp() {
   // 본문에서 읽을 최신 상태는 ref로 들고 effect는 아래 spriteKey에만 반응시킨다.
   const stateRef = useRef(state);
   stateRef.current = state;
+  // 레이아웃 적용 effect는 파생 키(아래 layoutKey)에만 반응시키고 dpr 변화만
+  // 으로는 재실행하지 않는다(§C9 — 트리거는 칸 수·방향·스프라이트 유무뿐).
+  // 그래도 실제 호출 시점의 최신 dpr은 필요하므로 ref로 들고 있는다.
+  const dprRef = useRef(dpr);
+  dprRef.current = dpr;
 
   // ---- main → mascot 상태 수신 + ready 핸드셰이크 ----
   useEffect(() => {
@@ -138,7 +191,18 @@ export default function MascotApp() {
         if (timer !== null) clearTimeout(timer);
         timer = setTimeout(() => {
           timer = null;
-          writeSavedPosition(typeof localStorage === "undefined" ? null : localStorage, payload);
+          // 앵커 환산에 필요한 크기는 이 시점에 다시 읽는다 — payload는 위치만
+          // 담고 있고, onMoved가 리사이즈 직후(C9)에도 발화할 수 있어 크기가
+          // 방금 바뀌었을 수 있다.
+          void getCurrentWindow()
+            .outerSize()
+            .then((size) => {
+              writeSavedAnchor(
+                typeof localStorage === "undefined" ? null : localStorage,
+                anchorOf(payload, { width: size.width, height: size.height }),
+              );
+            })
+            .catch((err) => console.warn("mascot: failed to read size for anchor save", err));
         }, SAVE_DEBOUNCE_MS);
       })
       .then((f) => {
@@ -207,6 +271,32 @@ export default function MascotApp() {
   }, [spriteKey, dpr]);
 
   const backing = Math.round(MASCOT_SPRITE_PX * dpr);
+
+  // ---- 신호등 레이아웃 변화 → 창 크기 재적용(C9) ----
+  // 표시 칸 수(오버플로 칩 포함)·세로 여부·스프라이트 유무가 바뀔 때만
+  // 발동한다 — 상태 emit마다가 아니라 이 파생 키가 실제로 바뀔 때만.
+  const { shown: shownLights, overflowCount } = foldOverflow(state.lights);
+  const displayedLightCount = shownLights.length + (overflowCount > 0 ? 1 : 0);
+  const hasSprite = state.agentId !== null;
+  const layoutKey = `${displayedLightCount}|${state.lightsVertical}|${hasSprite}`;
+
+  useEffect(() => {
+    // 스프라이트도 없고 칸도 없으면(완전히 숨김) 0×0으로 줄일 이유가 없다 —
+    // 어차피 mascotBridge가 곧 visible:false로 창을 감춘다. 그대로 두면
+    // 부팅 직후 HIDDEN_MASCOT_STATE 순간 0×0으로 리사이즈했다가 실제 상태가
+    // 도착하는 즉시 다시 정상 크기로 되돌리는 낭비 왕복과, 그 사이
+    // writeSavedAnchor가 0×0 기준으로 앵커를 오염시키는 것을 막는다.
+    if (!hasSprite && displayedLightCount === 0) return;
+    const timer = setTimeout(() => {
+      void applyMascotLayout(displayedLightCount, state.lightsVertical, hasSprite, dprRef.current).catch(
+        (err) => console.warn("mascot: failed to apply layout", err),
+      );
+    }, LAYOUT_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // layoutKey가 위 세 값을 그대로 인코딩한다 — dpr은 dprRef로 최신값을
+    // 읽으므로 dpr 변화 자체는 재실행 트리거가 아니다(의도된 것, §C9).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey]);
 
   // ---- idle 애니메이션 루프. 숨김 상태에서는 아예 돌지 않는다 ----
   // backing/framesVersion이 바뀌면 루프를 다시 건다: 캔버스 크기 변경은 내용을
@@ -281,8 +371,6 @@ export default function MascotApp() {
       .mascotActivate(light.clickAgentId)
       .catch((err) => console.warn("mascot: light activation failed", err));
   };
-
-  const { shown: shownLights, overflowCount } = foldOverflow(state.lights);
 
   return (
     <div className="mascot-root">

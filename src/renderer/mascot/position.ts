@@ -11,6 +11,12 @@
 // 떼고 재시작하면 저장된 좌표가 어느 화면에도 없어 마스코트가 보이지 않는
 // 곳에 뜬다. 복원 좌표가 현재 모니터 중 하나에 (여유를 두고) 걸칠 때만 쓰고,
 // 아니면 주 모니터 기본 위치로 되돌린다.
+//
+// 저장 포맷은 창의 top-left가 아니라 **하단중앙 앵커**다
+// (docs/mascot-lights-design.md §5.3). 신호등 strip이 붙으면서 창 크기가
+// 상태에 따라 동적으로 바뀌므로(C9), top-left를 그대로 저장하면 "그때의
+// 레이아웃"에 종속된 값이 되어 크기가 바뀔 때마다 마스코트가 미끄러진다.
+// 앵커(창의 bottom-center)는 창 크기와 무관해 리사이즈에도 자리가 고정된다.
 
 export const MASCOT_POS_KEY = "agent-office.mascot.pos";
 /** 기본 위치 여백(논리 px — 모니터 배율로 환산해 쓴다). 작업 영역 우하단에서
@@ -48,6 +54,12 @@ export interface MonitorRect extends Rect {
    * 위치이므로, 복원 시 화면 밖으로 오인해 되돌리면 안 된다.
    */
   workArea?: Rect;
+}
+
+/** 창의 하단중앙 앵커점(물리 px) — 창 크기가 바뀌어도 이 점은 고정하고 싶다. */
+export interface Anchor {
+  ax: number;
+  ay: number;
 }
 
 /**
@@ -94,39 +106,75 @@ export function defaultPosition(m: MonitorRect, size: Size): Point {
   };
 }
 
+/** 창의 좌상단+크기 → 하단중앙 앵커. `topLeftOf`의 역함수. 순수. */
+export function anchorOf(pos: Point, size: Size): Anchor {
+  return { ax: pos.x + size.width / 2, ay: pos.y + size.height };
+}
+
+/** 하단중앙 앵커+크기 → 좌상단. `anchorOf`의 역함수. 순수. */
+export function topLeftOf(a: Anchor, size: Size): Point {
+  return { x: a.ax - size.width / 2, y: a.ay - size.height };
+}
+
 /**
- * 복원 위치 결정 — 저장값이 어느 모니터에도 걸치지 않으면(모니터 해제 등)
- * 주 모니터 기본 위치로 폴백한다. 모니터 목록이 비면 저장값을 그대로 믿는다
- * (모니터 조회 실패보다 사용자가 마지막에 둔 자리가 낫다). 순수.
+ * 창(pos, size)이 모니터 `m`의 전체 경계를 벗어나면 안으로 밀어 넣는다
+ * (리사이즈로 화면 밖을 침범하는 경우 대비 — C9). 창이 모니터보다 크면
+ * 좌상단을 모니터 좌상단에 맞춘다. `isOnMonitor`와 같은 전체 경계 기준이며
+ * workArea(작업표시줄)는 고려하지 않는다 — 화면 밖 탈출만 막으면 된다. 순수.
  */
-export function resolvePosition(
-  saved: Point | null,
+export function clampToArea(pos: Point, size: Size, m: MonitorRect): Point {
+  const clampAxis = (value: number, min: number, extent: number): number =>
+    Math.max(min, Math.min(value, min + extent));
+  return {
+    x: clampAxis(pos.x, m.x, m.width - size.width),
+    y: clampAxis(pos.y, m.y, m.height - size.height),
+  };
+}
+
+/**
+ * 복원 위치 결정 — 앵커에서 환산한 top-left가 어느 모니터에도 걸치지 않으면
+ * (모니터 해제 등) 주 모니터 기본 위치로 폴백한다. 모니터 목록이 비면 앵커를
+ * 그대로 믿는다(모니터 조회 실패보다 사용자가 마지막에 둔 자리가 낫다).
+ * 앵커 자체가 없으면(최초 실행) 바로 기본 위치. 순수.
+ */
+export function resolveAnchoredPosition(
+  a: Anchor | null,
   size: Size,
   monitors: ReadonlyArray<MonitorRect>,
   primary: MonitorRect | null,
 ): Point | null {
-  if (saved !== null) {
-    if (monitors.length === 0) return saved;
-    if (monitors.some((m) => isOnMonitor(saved, size, m))) return saved;
+  if (a !== null) {
+    const topLeft = topLeftOf(a, size);
+    if (monitors.length === 0) return topLeft;
+    if (monitors.some((m) => isOnMonitor(topLeft, size, m))) return topLeft;
   }
   const base = primary ?? monitors[0] ?? null;
   return base === null ? null : defaultPosition(base, size);
 }
 
-/** localStorage에서 저장 위치 읽기. 없거나 깨졌으면 null. */
-export function readSavedPosition(storage: Pick<Storage, "getItem"> | null): Point | null {
+/**
+ * localStorage에서 저장 앵커 읽기. 없거나 깨졌으면 null. 구버전이 저장한
+ * top-left `{x,y}` 포맷을 만나면 `assumedSize`(호출 시점의 `outerSize()`)로
+ * 앵커를 환산해 마이그레이션한다 — 마운트 직후라 창이 아직 기본 크기이므로
+ * 이 환산은 오차 없이 같은 자리를 복원한다(docs/mascot-lights-design.md §5.3).
+ */
+export function readSavedAnchor(
+  storage: Pick<Storage, "getItem"> | null,
+  assumedSize: Size,
+): Anchor | null {
   if (!storage) return null;
   try {
     const raw = storage.getItem(MASCOT_POS_KEY);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      Number.isFinite((parsed as Point).x) &&
-      Number.isFinite((parsed as Point).y)
-    ) {
-      return { x: (parsed as Point).x, y: (parsed as Point).y };
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const rec = parsed as Record<string, unknown>;
+    if (Number.isFinite(rec.ax) && Number.isFinite(rec.ay)) {
+      return { ax: rec.ax as number, ay: rec.ay as number };
+    }
+    // 구형 top-left 포맷 — assumedSize로 앵커 환산(마이그레이션).
+    if (Number.isFinite(rec.x) && Number.isFinite(rec.y)) {
+      return anchorOf({ x: rec.x as number, y: rec.y as number }, assumedSize);
     }
   } catch {
     /* 손상값은 없는 것과 같이 취급 */
@@ -134,11 +182,11 @@ export function readSavedPosition(storage: Pick<Storage, "getItem"> | null): Poi
   return null;
 }
 
-export function writeSavedPosition(storage: Pick<Storage, "setItem"> | null, pos: Point): void {
+export function writeSavedAnchor(storage: Pick<Storage, "setItem"> | null, a: Anchor): void {
   try {
     storage?.setItem(
       MASCOT_POS_KEY,
-      JSON.stringify({ x: Math.round(pos.x), y: Math.round(pos.y) }),
+      JSON.stringify({ ax: Math.round(a.ax), ay: Math.round(a.ay) }),
     );
   } catch {
     /* 저장 실패(프라이빗 모드 등)는 무시 — 위치는 편의 기능이다 */

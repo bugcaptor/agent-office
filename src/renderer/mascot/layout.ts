@@ -9,6 +9,15 @@
 // MascotApp.tsx의 몫이라 여기서는 손대지 않는다.
 
 import { LIGHT_GAP, LIGHT_PX, LIGHT_STRIP_PAD, MASCOT_WINDOW_H, MASCOT_WINDOW_W, MAX_LIGHTS } from "./protocol";
+import {
+  anchorOf,
+  clampToArea,
+  isOnMonitor,
+  topLeftOf,
+  type MonitorRect,
+  type Point,
+  type Size,
+} from "./position";
 
 /** 램프가 나열되는 방향의 strip 길이(논리 px). 칸이 없으면 0(strip 자체가 없다). */
 function stripLength(count: number): number {
@@ -62,4 +71,40 @@ export function foldOverflow<T>(
     shown: lights.slice(0, shownCount),
     overflowCount: lights.length - shownCount,
   };
+}
+
+/**
+ * C9(동적 리사이즈): 새 논리 레이아웃 + **현재** 창의 물리 위치/크기로부터
+ * `set_mascot_layout`에 넘길 물리 px 사각형을 계산한다. 앵커(하단중앙)는
+ * 저장값이 아니라 호출 시점의 `outerPosition()`/`outerSize()`에서 다시 뽑는다
+ * — 사용자가 방금 끌어다 둔 자리를 존중하기 위해서다(계획 C9). 화면 밖으로
+ * 밀려나면 창이 현재 걸쳐 있는 모니터(없으면 주 모니터, 그마저 없으면 목록의
+ * 첫 모니터) 안으로 clampToArea가 되돌린다. Tauri API를 전혀 부르지 않는
+ * 순수 함수라 vitest로 앵커→top-left→클램프 전 과정을 검증할 수 있다.
+ */
+export function computeMascotWindowRect(input: {
+  lightCount: number;
+  vertical: boolean;
+  hasSprite: boolean;
+  /** 물리 px 환산 배율. */
+  dpr: number;
+  /** 리사이즈 직전 창의 물리 px 좌상단. */
+  currentPos: Point;
+  /** 리사이즈 직전 창의 물리 px 크기. */
+  currentSize: Size;
+  monitors: ReadonlyArray<MonitorRect>;
+  primary: MonitorRect | null;
+}): { width: number; height: number; x: number; y: number } {
+  const { lightCount, vertical, hasSprite, dpr, currentPos, currentSize, monitors, primary } = input;
+  const logical = computeMascotLayout({ lightCount, vertical, hasSprite });
+  const physicalSize: Size = {
+    width: Math.round(logical.width * dpr),
+    height: Math.round(logical.height * dpr),
+  };
+  const anchor = anchorOf(currentPos, currentSize);
+  const topLeft = topLeftOf(anchor, physicalSize);
+  const monitor =
+    monitors.find((m) => isOnMonitor(currentPos, currentSize, m)) ?? primary ?? monitors[0] ?? null;
+  const pos = monitor ? clampToArea(topLeft, physicalSize, monitor) : topLeft;
+  return { width: physicalSize.width, height: physicalSize.height, x: pos.x, y: pos.y };
 }
