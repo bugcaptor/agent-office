@@ -9,6 +9,11 @@
 // 열려 있든 아니든) 이미 60초 주기로 loadUsageSnapshot을 돌려 스토어(s.usage)
 // 를 채운다. 여기서는 그 스토어를 읽기만 한다 — 폴링을 중복 실행하면 백엔드
 // 파일 읽기가 두 배로 돌 뿐 얻는 게 없다.
+//
+// 표현은 BottomBar 뱃지를 그대로 따른다: provider별 `CL 12%·61%`를 **한 줄에**
+// 나란히 붙인다(예전에는 provider마다 줄을 나누고 창 이름까지 적어 판때기가
+// 커져 터미널을 그만큼 가렸다). 창 이름을 포함한 전문은 title 툴팁과 상세
+// 모달에 그대로 남아 있어 정보 손실이 아니라 표시 축약이다.
 import { useTranslation } from "react-i18next";
 import { renderText } from "../shared/textKey";
 import { useAppStore } from "../store/appStore";
@@ -26,7 +31,7 @@ import {
 } from "./usageView";
 import "./usage.css";
 
-function FloatLine({
+function FloatBadge({
   provider,
   usage,
   note,
@@ -49,12 +54,12 @@ function FloatLine({
 
   if (windows.length === 0) {
     return (
-      <div
-        className={`usage-float-line usage-badge-empty${degraded}`}
+      <span
+        className={`usage-float-badge usage-badge-empty${degraded}`}
         title={t("usage.widget.empty", { short, suffix: noteSuffix })}
       >
         <span className="usage-badge-label">{short}</span> <span className="usage-badge-pct">—</span>
-      </div>
+      </span>
     );
   }
 
@@ -72,18 +77,17 @@ function FloatLine({
   });
 
   return (
-    <div className={`usage-float-line${degraded}`} title={title}>
+    <span className={`usage-float-badge${degraded}`} title={title}>
       <span className="usage-badge-label">{short}</span>{" "}
       {windows.map((w, i) => (
         <span key={i}>
           {i > 0 && <span className="usage-badge-sep">·</span>}
-          <span className="usage-float-window-label">{renderText(windowLabel(w), t)}</span>{" "}
           <span className={`usage-badge-pct usage-level-${usageLevel(w.usedPercent)}`}>
             {Math.round(w.usedPercent)}%
           </span>
         </span>
       ))}
-    </div>
+    </span>
   );
 }
 
@@ -113,7 +117,7 @@ export function UsageFloat() {
       onClick={() => openModal({ kind: "usage" })}
     >
       {visible.map((p) => (
-        <FloatLine
+        <FloatBadge
           key={p}
           provider={p}
           usage={providerUsage(usage, p)}

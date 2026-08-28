@@ -809,10 +809,18 @@ preempt_all_attempts`가 넷을 한꺼번에 선점한다 — provider를 더 �
 앱 기본 창 폭(800px)이 900px 미만이라 그대로 뒀다면 라벨이 계속 숨어 있었을
 것이다.
 
-스타일: 우측 아래 10px 여백, `color-mix()` + `backdrop-filter: blur(6px)`로
-반투명, 기본 `opacity: .72` → hover/focus에서 1 — 터미널 내용을 가리는
-면적과 시선 방해를 최소화하는 게 목적이라 상시 또렷하게 두지 않는다.
-클릭하면 `UsageWidget`과 동일하게 `openModal({ kind: "usage" })`.
+**개정(2026-08-28) — 한 줄 압축**: provider마다 줄을 나누고 창 이름
+(`5h`/`주` 등)까지 적던 세로 배치를 걷어내고, BottomBar 뱃지와 같은 모양
+(`CL 12%·61%`)으로 **한 줄에 나란히** 붙인다(`.usage-float`가 `inline-flex`
+row, `FloatBadge`가 `.usage-float-badge`). 창 이름을 포함한 전문은 title
+툴팁과 상세 모달에 그대로 있으므로 정보 손실이 아니라 표시 축약이다.
+
+스타일: 우측 인셋 **24px**(10px이던 예전 값은 xterm 뷰포트 스크롤바 —
+WebKit 기본 ≈15px — 를 통째로 덮어 스크롤 위치를 볼 수도 잡을 수도 없었다),
+아래 8px, 글자 10px, `color-mix()` + `backdrop-filter: blur(6px)`로 반투명,
+기본 `opacity: .72` → hover/focus에서 1 — 터미널 내용을 가리는 면적과 시선
+방해를 최소화하는 게 목적이라 상시 또렷하게 두지 않는다. 클릭하면
+`UsageWidget`과 동일하게 `openModal({ kind: "usage" })`.
 
 ### 13.4 테스트
 

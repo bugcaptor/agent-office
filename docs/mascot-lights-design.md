@@ -35,7 +35,7 @@
 
 - 마스코트 창(label `mascot`, 120×102 논리px, tauri.conf.json) 하단에 신호등
   strip 렌더. 가로(기본)/세로 배열 설정.
-- 상태 3종: `off` / `working`(초록+▶) / `attention`(노랑+`!`). 집계·선정은
+- 상태 3종: `off` / `working`(초록) / `attention`(노랑) — 색만. 집계·선정은
   main 렌더러의 순수 함수(§3)로 하고, 기존 `mascot-state` 이벤트 페이로드를
   additive 확장해 밀어 넣는다(§4).
 - 에이전트 모드: **상태가 OFF가 아닌 에이전트만**(working ∪ attention), `agentOrder`
@@ -291,8 +291,10 @@ MASCOT_WINDOW_H = 96 + 6 = 102 // 창의 스프라이트 몫
     `[에이전트 이름, 프로젝트명, 작업명]` 중 있는 것만 `" · "`로 이어 붙인
     전체 텍스트다. 잘린 `label`을 호버로 보완한다 — `title={light.tooltip ||
     light.label}`.
-- **상태 표식**: 얼굴 우하단 13px 원 배지 — working `▶`(인라인 SVG polygon),
-  attention `!`. off는 표식 없음.
+- **상태 표식(폐기, 2026-08-28)**: 예전에는 얼굴 우하단에 13px 원 배지로
+  working `▶`, attention `!`를 얹었다. 28px 원판에서 배지가 얼굴을 그만큼
+  가려 **걷어냈다** — 상태는 테두리 색·글로우·애니메이션만으로 알린다
+  (`.mascot-light-mark`와 관련 JSX는 삭제).
 - **wide 칸(개정 2026-08-28)**: `mascotLightsLabel==="task"`면 60자 절단
   텍스트가 54px 타일에서 심하게 잘리므로 타일 폭을 96px로 넓힌다
   (`LIGHT_TILE_W_WIDE`, `mascot.css .mascot-lights-wide .mascot-light`).
@@ -302,12 +304,16 @@ MASCOT_WINDOW_H = 96 + 6 = 102 // 창의 스프라이트 몫
   마스코트 창은 그 결과(불리언)만 받는다 — 다른 렌더 관심사(`lightsFace`/
   `lightsVertical`)와 같은 규약.
 
-| 상태 | 얼굴 테두리 | 글로우 | 표식 배지 | 애니메이션 |
-|---|---|---|---|---|
-| `off` | `#4a4d57` | 없음 | 없음 | 없음. 타일 opacity 0.62 |
-| `working` | `#35c04a` | `0 0 6px rgba(53,192,74,.75)` | `#35c04a` 바탕 + `▶ #eafff0` | `lights-pulse`: opacity 1↔0.7, 1200ms |
-| `attention` | `#ffcc33` | `0 0 6px rgba(255,204,51,.8)` | `#ffcc33` 바탕 + `! #3a2600` — **배지(.mascot-badge)와 동일 팔레트** | `lights-blink`: translateY 0↔−2px, 600ms — 배지 바운스와 동주기 |
-| 오버플로 칩 | — | — | `+k` `#cfd3dc` 12px, 타일과 같은 54×48 판 | 없음 |
+| 상태 | 얼굴 테두리 | 글로우 | 애니메이션 |
+|---|---|---|---|
+| `off` | `#4a4d57` | 없음 | 없음. 타일 opacity 0.62 |
+| `working` | `#35c04a` | `0 0 0 1px rgba(53,192,74,.55), 0 0 9px rgba(53,192,74,.9)` | `lights-pulse`: opacity 1↔0.7, 1200ms |
+| `attention` | `#ffcc33` | `0 0 0 1px rgba(255,204,51,.6), 0 0 9px rgba(255,204,51,.95)` | `lights-blink`: translateY 0↔−2px, 600ms — 배지 바운스와 동주기 |
+| 오버플로 칩 | — | — | 없음(`+k` `#cfd3dc` 12px, 타일과 같은 54×48 판) |
+
+표식을 걷어낸 뒤 색이 유일한 신호가 됐으므로 글로우에 1px 링을 덧대 세기를
+올렸다. **테두리 두께(2px)는 상태별로 바꾸지 않는다** — border-box 28px에서
+두께가 바뀌면 안쪽 24px 얼굴이 상태에 따라 다르게 잘려 덜컹인다.
 
 - strip 배경은 완전 투명(칸 사이 틈은 창이 클릭을 삼키지만 면적이 작아 수용).
 - 호버: `title={label}` (OS 네이티브 툴팁 — 이름이 잘렸을 때의 전체 이름도 여기).
@@ -423,7 +429,7 @@ system.mascotLightsLabelTask     "작업명"
 
 ## 12. 눈검증 목록 (사람이 직접)
 
-1. agents 모드: 놀고 있으면 칸 없음, 턴 시작→칸이 생기며 GREEN+▶ 펄스,
+1. agents 모드: 놀고 있으면 칸 없음, 턴 시작→칸이 생기며 GREEN 펄스,
    질문 발생→YELLOW+`!`(배지와 동주기), 답 입력→GREEN 복귀, 완료+알림 클리어
    →칸이 사라지고 뒤 칸이 앞으로 밀려온다. 두세 에이전트가 동시에 턴을
    오갈 때 창 리사이즈가 떨리지 않는다(§5.3 디바운스).

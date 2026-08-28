@@ -185,14 +185,25 @@ function LightFace({ light, dpr, face }: { light: MascotLight; dpr: number; face
   const wantsPortrait = face === "portrait" && avatar !== null && avatar.portraitUpdatedAt !== null;
   const pKey = wantsPortrait && avatar !== null ? portraitKey(avatar) : null;
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
+  // 프레임은 state로 들고 있는다 — 로드 완료 시점에 바로 그리던 예전 코드는
+  // 그때 캔버스가 마운트돼 있지 않으면(초상 모드라 <img>가 대신 붙어 있는
+  // 경우) 영영 그릴 기회를 잃었다. 설정을 초상→스프라이트로 바꾸면 캔버스가
+  // 새로 붙는데 로더 effect는 [key, backing]에만 반응해 다시 돌지 않았고,
+  // 빈 캔버스 뒤로 .mascot-light-face의 배경(#1b1c22)만 남아 "검게" 보였다.
+  // `null`은 "아직 로드 중"과 "로드했는데 실패"를 구분하지 못한다 — 후자는
+  // 영영 안 그려질 캔버스(=검은 원판)이므로 첫 글자로 물러나야 한다.
+  const [frames, setFrames] = useState<MascotFrames | null | "failed">(null);
+  const showsPortrait = wantsPortrait && portraitUrl !== null;
 
   useEffect(() => {
-    if (avatar === null) return;
+    if (avatar === null) {
+      setFrames(null);
+      return;
+    }
     let cancelled = false;
-    void loadAvatarFrames(avatar, dpr).then((frames) => {
-      if (cancelled || frames === null) return;
-      const canvas = ref.current;
-      if (canvas) drawAvatar(canvas, frames);
+    setFrames(null); // 얼굴 좌표가 바뀌었다 — 이전 프레임/실패 표시를 버린다.
+    void loadAvatarFrames(avatar, dpr).then((f) => {
+      if (!cancelled) setFrames(f ?? "failed");
     });
     return () => {
       cancelled = true;
@@ -200,6 +211,15 @@ function LightFace({ light, dpr, face }: { light: MascotLight; dpr: number; face
     // key가 avatar의 모든 얼굴 좌표 + dpr을 인코딩한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, backing]);
+
+  // 그리기는 "캔버스가 실제로 화면에 있는" 렌더 뒤에 한다. showsPortrait가
+  // 풀리는 순간(초상 모드 해제/초상 로드 실패)에도 여기가 다시 돌아 새로 붙은
+  // 캔버스를 채운다. backing 변화도 캔버스 내용을 지우므로 의존성에 둔다.
+  useEffect(() => {
+    if (showsPortrait || frames === null || frames === "failed") return;
+    const canvas = ref.current;
+    if (canvas) drawAvatar(canvas, frames);
+  }, [frames, backing, showsPortrait]);
 
   useEffect(() => {
     if (pKey === null || avatar === null) {
@@ -217,11 +237,14 @@ function LightFace({ light, dpr, face }: { light: MascotLight; dpr: number; face
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pKey]);
 
-  if (avatar === null) {
+  // 얼굴을 만들 대표 에이전트가 없거나(세션 없는 프로젝트 폴더) 시트 생성이
+  // 실패했으면 첫 글자로 물러난다 — 빈 캔버스를 남기면 원판 배경(#1b1c22)만
+  // 보여 "검게 나온다".
+  if (avatar === null || (frames === "failed" && !showsPortrait)) {
     // 비번역 텍스트만 쓴다(설계 결정 9) — 이름의 첫 글자다.
     return <span className="mascot-light-initial">{[...light.label][0] ?? "?"}</span>;
   }
-  if (wantsPortrait && portraitUrl !== null) {
+  if (showsPortrait && portraitUrl !== null) {
     return <img className="mascot-light-portrait" src={portraitUrl} alt="" draggable={false} />;
   }
   return (
@@ -631,20 +654,10 @@ export default function MascotApp() {
               title={light.tooltip || light.label}
               onClick={() => onLightClick(light)}
             >
+              {/* 상태는 원판 테두리 색·글로우·애니메이션만으로 알린다 —
+                  예전의 ▶/! 표식은 28px 원판에서 얼굴을 가려 걷어냈다. */}
               <div className="mascot-light-face">
                 <LightFace light={light} dpr={dpr} face={state.lightsFace} />
-                {light.state === "working" && (
-                  <span className="mascot-light-mark" aria-hidden="true">
-                    <svg width="10" height="10" viewBox="0 0 18 18">
-                      <polygon points="6,4 14,9 6,14" fill="#eafff0" />
-                    </svg>
-                  </span>
-                )}
-                {light.state === "attention" && (
-                  <span className="mascot-light-mark" aria-hidden="true">
-                    !
-                  </span>
-                )}
               </div>
               {/* 이름은 대상(프로젝트 폴더명 또는 에이전트명) 원문 — 비번역(결정 9). */}
               <div className="mascot-light-name">{light.label}</div>

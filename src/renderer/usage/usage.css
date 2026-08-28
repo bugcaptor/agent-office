@@ -134,20 +134,25 @@
  * 두면 라벨이 사라진다. 이 패널은 폭 제약이 없으므로 항상 전부 보여준다. */
 .usage-float {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
+  /* 우측 인셋은 xterm 뷰포트 스크롤바(WebKit 기본 ≈15px) 바깥으로 물러난
+   * 값이다 — 10px이던 예전에는 판때기가 스크롤바를 그대로 덮어 스크롤 위치를
+   * 볼 수도, 잡을 수도 없었다. */
+  right: 24px;
+  bottom: 8px;
   z-index: 5; /* 오버레이 패널 안에서 터미널 위. 포스트잇(memo.css)도 5지만
                  포스트잇은 우상단, 이 패널은 우하단이라 공간이 겹치지 않는다. */
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: calc(var(--unit) / 2);
-  padding: 5px 6px;
+  /* BottomBar 뱃지처럼 한 줄(row)로 나란히 — provider마다 줄을 나누던 예전
+   * 세로 배치는 터미널을 세로로 크게 가렸다. */
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: calc(var(--unit) * 1.5);
+  padding: 2px 6px;
   font-family: "DungGeunMo", monospace;
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 10px;
+  line-height: 1.3;
   color: var(--text);
-  text-align: right;
+  white-space: nowrap;
   background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
   border: 1px solid var(--border-dark);
   border-radius: 3px;
@@ -162,8 +167,12 @@
   opacity: 1;
 }
 
-.usage-float-line {
-  display: block;
+/* JSX의 `{" "}` 공백 텍스트 노드는 flex 컨테이너에서 무시된다 — 라벨과
+   퍼센트가 붙지 않게 gap으로 띄운다(BottomBar .usage-badge와 같은 값). */
+.usage-float-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--unit) / 2);
   white-space: nowrap;
 }
 
@@ -177,11 +186,6 @@
 .usage-float .usage-badge-warn .usage-badge-pct,
 .usage-float .usage-badge-error .usage-badge-pct {
   text-decoration: none;
-}
-
-.usage-float-window-label {
-  color: var(--text-dim);
-  font-size: 0.95em;
 }
 
 /* ── 상세 모달 ───────────────────────────────────────────── */

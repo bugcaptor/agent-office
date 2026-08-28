@@ -186,20 +186,6 @@
   font: 700 13px/1 ui-sans-serif, system-ui, sans-serif;
 }
 
-/* 상태 표식(▶ / !) — 얼굴 오른쪽 아래에 작게 얹는다. */
-.mascot-light-mark {
-  position: absolute;
-  right: -1px;
-  bottom: -1px;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font: 700 10px/1 ui-sans-serif, system-ui, sans-serif;
-}
-
 /* 대상 이름. 한 줄로 잘라내고(폭 54px) 어두운 그림자로 대비를 확보한다. */
 .mascot-light-name {
   max-width: 100%;
@@ -229,27 +215,23 @@
   opacity: 0.62;
 }
 
+/* 표식(▶/!)을 걷어낸 뒤로 색이 유일한 신호다 — 글로우와 바깥 링을 키워
+   작은 원판에서도 상태가 바로 읽히게 한다. 테두리 두께는 2px 그대로 둔다:
+   두께를 바꾸면 안쪽 24px 얼굴이 상태에 따라 다르게 잘려 덜컹인다. */
 .mascot-light-working .mascot-light-face {
   border-color: #35c04a;
-  box-shadow: 0 0 6px rgba(53, 192, 74, 0.75);
+  box-shadow:
+    0 0 0 1px rgba(53, 192, 74, 0.55),
+    0 0 9px rgba(53, 192, 74, 0.9);
   animation: lights-pulse 1200ms ease-in-out infinite;
 }
-.mascot-light-working .mascot-light-mark {
-  background: #35c04a;
-  border: 1px solid #175c26;
-}
-
 .mascot-light-attention .mascot-light-face {
   border-color: #ffcc33;
-  box-shadow: 0 0 6px rgba(255, 204, 51, 0.8);
+  box-shadow:
+    0 0 0 1px rgba(255, 204, 51, 0.6),
+    0 0 9px rgba(255, 204, 51, 0.95);
   animation: lights-blink 600ms ease-in-out infinite;
 }
-.mascot-light-attention .mascot-light-mark {
-  background: #ffcc33;
-  border: 1px solid #8a5a00;
-  color: #3a2600;
-}
-
 @keyframes lights-pulse {
   0%,
   100% {
