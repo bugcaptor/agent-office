@@ -20,6 +20,7 @@ import {
   type MonitorRect,
 } from "../position";
 import { mascotDetailCell, mascotSheetDims, usesCustomSheet } from "../sheet";
+import { computeMascotLayout, foldOverflow } from "../layout";
 
 const state = (patch: Partial<MascotState> = {}): MascotState => ({
   ...HIDDEN_MASCOT_STATE,
@@ -52,6 +53,103 @@ describe("protocol", () => {
     expect(sameMascotState(state(), state({ hasPending: true }))).toBe(false);
   });
 
+  it("lights 부재는 하위호환으로 빈 배열이 된다", () => {
+    const parsed = parseMascotState({ visible: true });
+    expect(parsed?.lights).toEqual([]);
+    expect(parsed?.lightsVertical).toBe(false);
+  });
+
+  it("lights 항목을 파싱하고, 상태값이 3종 밖이면 off로 강등한다", () => {
+    const parsed = parseMascotState({
+      visible: true,
+      lights: [
+        { id: "a1", label: "철수", state: "attention", clickAgentId: "a1" },
+        { id: "p1", label: "repo", state: "bogus", clickAgentId: null },
+      ],
+      lightsVertical: true,
+    });
+    expect(parsed?.lights).toEqual([
+      { id: "a1", label: "철수", state: "attention", clickAgentId: "a1" },
+      { id: "p1", label: "repo", state: "off", clickAgentId: null },
+    ]);
+    expect(parsed?.lightsVertical).toBe(true);
+  });
+
+  it("id/label이 없는 lights 항목은 개별적으로 드롭한다", () => {
+    const parsed = parseMascotState({
+      visible: true,
+      lights: [{ id: "a1", label: "철수", state: "working" }, { id: "no-label" }, "nope"],
+    });
+    expect(parsed?.lights).toEqual([
+      { id: "a1", label: "철수", state: "working", clickAgentId: null },
+    ]);
+  });
+
+  it("sameMascotState는 lights 항목 차이도 감지한다(dedupe 회귀)", () => {
+    const a = state({ lights: [{ id: "a1", label: "a", state: "working", clickAgentId: "a1" }] });
+    const b = state({ lights: [{ id: "a1", label: "a", state: "attention", clickAgentId: "a1" }] });
+    expect(sameMascotState(a, state({ ...a }))).toBe(true);
+    expect(sameMascotState(a, b)).toBe(false);
+    expect(sameMascotState(a, state({ lights: [] }))).toBe(false);
+  });
+
+});
+
+describe("layout", () => {
+  it("가로 모드: strip 두께 30, n=4는 창 기본 폭 120 이내, n=12는 294", () => {
+    expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: true })).toEqual({
+      width: 120,
+      height: 140 + 30,
+    });
+    expect(computeMascotLayout({ lightCount: 12, vertical: false, hasSprite: true })).toEqual({
+      width: 294,
+      height: 140 + 30,
+    });
+  });
+
+  it("가로 모드: 스프라이트 없으면 폭은 strip 폭 그대로, 높이는 strip 두께뿐", () => {
+    expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: false })).toEqual({
+      width: 12 + 18 * 4 + 6 * 3,
+      height: 30,
+    });
+  });
+
+  it("세로 모드: 폭은 max(스프라이트 폭, 30), 높이는 스프라이트 + stripH", () => {
+    expect(computeMascotLayout({ lightCount: 12, vertical: true, hasSprite: true })).toEqual({
+      width: 120,
+      height: 140 + 294,
+    });
+    expect(computeMascotLayout({ lightCount: 1, vertical: true, hasSprite: false })).toEqual({
+      width: 30,
+      height: 18 + 12,
+    });
+  });
+
+  it("0칸이면 strip 두께가 0이라 스프라이트만큼만 남는다", () => {
+    expect(computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: true })).toEqual({
+      width: 120,
+      height: 140,
+    });
+    expect(computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: false })).toEqual({
+      width: 0,
+      height: 0,
+    });
+  });
+
+  it("foldOverflow: 상한 이하면 그대로, 넘으면 앞 (max-1)칸 + 칩 개수", () => {
+    const lights = Array.from({ length: 12 }, (_, i) => `l${i}`);
+    expect(foldOverflow(lights, 12)).toEqual({ shown: lights, overflowCount: 0 });
+
+    const over = Array.from({ length: 13 }, (_, i) => `l${i}`);
+    const folded = foldOverflow(over, 12);
+    expect(folded.shown).toEqual(over.slice(0, 11));
+    expect(folded.overflowCount).toBe(2);
+  });
+
+  it("foldOverflow: 기본 상한(MAX_LIGHTS=12)을 쓴다", () => {
+    const over = Array.from({ length: 13 }, (_, i) => `l${i}`);
+    expect(foldOverflow(over).overflowCount).toBe(2);
+  });
 });
 
 describe("drag detector", () => {

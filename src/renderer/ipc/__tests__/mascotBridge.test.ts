@@ -137,6 +137,35 @@ function setIdle(agentId: string) {
   });
 }
 
+function setWaiting(agentId: string, waitingSince: number | null) {
+  useAppStore.setState({
+    timeTracking: {
+      ...useAppStore.getState().timeTracking,
+      [agentId]: {
+        phase: "waiting",
+        turnStartedAt: null,
+        waitingSince,
+        waitedInTurnMs: 0,
+        totalMs: 0,
+        workedMs: 0,
+        waitedMs: 0,
+        turns: 0,
+      },
+    },
+  });
+}
+
+/** 신호등 설정 3필드만 골라 갱신한다(나머지 appSettings는 그대로). */
+function setLightsSettings(patch: {
+  mascotLightsMode?: "off" | "agents" | "projects";
+  mascotLightsVertical?: boolean;
+  mascotLightsProjects?: string[];
+}) {
+  useAppStore.setState({
+    appSettings: { ...useAppStore.getState().appSettings, ...patch },
+  });
+}
+
 beforeEach(() => {
   useAppStore.setState(initialState, true);
   vi.useFakeTimers();
@@ -175,6 +204,8 @@ describe("installMascotBridge", () => {
       spriteUpdatedAt: 7,
       hasPending: false,
       working: true,
+      lights: [],
+      lightsVertical: false,
     });
     expect(h.visibles).toEqual([true]);
     off();
@@ -278,5 +309,113 @@ describe("installMascotBridge", () => {
     off();
     setWorking("a1", 100);
     expect(h.states).toEqual([]);
+  });
+});
+
+describe("installMascotBridge · 신호등(lights)", () => {
+  it("스프라이트 대상이 없어도 lights가 있으면 창이 뜬다(agentId:null)", () => {
+    seed(); // a1, mascotEnabled=true
+    setLightsSettings({ mascotLightsMode: "agents" });
+    const h = harness();
+    const off = installMascotBridge(h.io);
+    // waiting은 pickMascotTarget(스프라이트)에서는 제외되지만(결정 1),
+    // 신호등에서는 attention이다 — 알림을 지운 뒤에도 남는 차이.
+    setWaiting("a1", 50);
+    expect(h.last()).toMatchObject({
+      visible: true,
+      agentId: null,
+      lights: [{ id: "a1", label: "테스터", state: "attention", clickAgentId: "a1" }],
+    });
+    off();
+  });
+
+  it("스프라이트 linger가 다 돼도 lights가 남아 있으면 창이 계속 떠 있는다(스프라이트만 접힌다)", () => {
+    seed([mkProfile({ id: "a1" }), mkProfile({ id: "b1", seed: "s-b1" })]);
+    setLightsSettings({ mascotLightsMode: "agents" });
+    const h = harness();
+    const off = installMascotBridge(h.io);
+
+    setWorking("a1", 100); // 스프라이트 대상 + a1 신호등 GREEN
+    setWaiting("b1", 10); // b1 신호등 YELLOW(스프라이트 pick에는 관여하지 않음)
+    expect(h.last()).toMatchObject({ visible: true, agentId: "a1" });
+
+    setIdle("a1"); // 스프라이트 대상 소멸 → linger 시작. b1은 여전히 attention.
+    expect(h.last()).toMatchObject({ visible: true, agentId: "a1", working: false });
+
+    vi.advanceTimersByTime(MASCOT_HIDE_LINGER_MS);
+    const after = h.last();
+    expect(after).toMatchObject({ visible: true, agentId: null });
+    expect(after?.lights).toEqual([
+      { id: "b1", label: "테스터", state: "attention", clickAgentId: "b1" },
+    ]);
+    // 스프라이트 자체는 사라져야 한다(창은 lights 때문에 떠 있을 뿐).
+    expect(h.visibles).toEqual([true]); // visible이 계속 true라 show/hide 전환이 없다
+    off();
+  });
+
+  it("lights가 없으면(기능 꺼짐) linger 만료 시 기존대로 완전히 숨는다", () => {
+    seed(); // mascotLightsMode 기본값 off
+    const h = harness();
+    const off = installMascotBridge(h.io);
+    setWorking("a1", 100);
+    setIdle("a1");
+    vi.advanceTimersByTime(MASCOT_HIDE_LINGER_MS);
+    expect(h.last()).toEqual(HIDDEN_MASCOT_STATE);
+    off();
+  });
+
+  it("mascotLightsVertical 변경만으로도 재방출된다", () => {
+    seed();
+    const h = harness();
+    const off = installMascotBridge(h.io);
+    const before = h.states.length;
+    setLightsSettings({ mascotLightsVertical: true });
+    expect(h.states.length).toBe(before + 1);
+    expect(h.last()?.lightsVertical).toBe(true);
+    off();
+  });
+
+  it("mascotLightsMode/mascotLightsProjects 변경이 신호등 칸에 즉시 반영된다", () => {
+    seed([mkProfile({ id: "a1", cwd: "/dev/proj" })]);
+    setWorking("a1", 10);
+    const h = harness();
+    const off = installMascotBridge(h.io);
+    expect(h.last()?.lights).toEqual([]); // 기본 off
+
+    setLightsSettings({ mascotLightsMode: "projects", mascotLightsProjects: ["/dev/proj"] });
+    expect(h.last()?.lights).toEqual([
+      { id: "/dev/proj", label: "proj", state: "working", clickAgentId: "a1" },
+    ]);
+    off();
+  });
+
+  it("mascotEnabled=false면 lights가 있어도 즉시 완전히 숨긴다", () => {
+    seed();
+    setLightsSettings({ mascotLightsMode: "agents" });
+    const h = harness();
+    const off = installMascotBridge(h.io);
+    setWaiting("a1", 50);
+    expect(h.last()?.lights.length).toBeGreaterThan(0);
+
+    useAppStore.setState({
+      appSettings: { ...useAppStore.getState().appSettings, mascotEnabled: false },
+    });
+    expect(h.last()).toEqual(HIDDEN_MASCOT_STATE);
+    off();
+  });
+
+  it("taskLabels가 바뀌어도 신호등 결과가 같으면 재방출하지 않는다", () => {
+    seed([mkProfile({ id: "a1", cwd: "/dev/proj" })]);
+    setLightsSettings({ mascotLightsMode: "projects", mascotLightsProjects: ["/dev/proj"] });
+    setWorking("a1", 10);
+    const h = harness();
+    const off = installMascotBridge(h.io);
+    const before = h.states.length;
+    // 소속·상태에 영향 없는 taskLabels 갱신(예: 프롬프트 텍스트만 변경).
+    useAppStore.setState({
+      taskLabels: { ...useAppStore.getState().taskLabels, a1: { sessionId: "s1" } },
+    });
+    expect(h.states.length).toBe(before); // 결과가 같아 dedupe로 흡수된다
+    off();
   });
 });

@@ -51,8 +51,10 @@ function normalizeCwd(cwd: string): string {
  * profileCwd가 `~`/`~/...`이면 프런트는 홈 경로를 모르므로 `~` 뒤 나머지(suffix)가
  * sessionCwd 안에 경로 경계로 등장하고 그 뒤가 끝이거나 `/`인지로 판정한다
  * (`~` 단독이면 홈 전체라 항상 안으로 본다).
+ *
+ * 신호등의 프로젝트 소속 판정(mascotLights.ts)도 같은 규칙을 쓴다.
  */
-function isInsideCwd(sessionCwd: string, profileCwd: string): boolean {
+export function isInsideCwd(sessionCwd: string, profileCwd: string): boolean {
   const session = normalizeCwd(sessionCwd);
   const profile = normalizeCwd(profileCwd);
   if (profile === "~" || profile.startsWith("~/")) {
