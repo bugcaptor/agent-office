@@ -175,6 +175,10 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.mascotActivate, { agentId });
   },
 
+  async setMascotLayout(width: number, height: number, x: number, y: number) {
+    await invoke(Commands.setMascotLayout, { width, height, x, y });
+  },
+
   async ttsSpeak(request) {
     return await invoke(Commands.ttsSpeak, { request });
   },

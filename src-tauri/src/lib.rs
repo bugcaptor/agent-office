@@ -791,6 +791,7 @@ pub fn run() {
             ipc::commands::set_keep_awake,
             ipc::commands::set_mascot_visible,
             ipc::commands::mascot_activate,
+            ipc::commands::set_mascot_layout,
             ipc::commands::tts_speak,
             ipc::commands::tts_list_voices,
             ipc::commands::tts_key_status,

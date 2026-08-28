@@ -48,6 +48,9 @@ export const Commands = {
   // 마스코트 클릭 시 main 포커스 + 터미널 열기 요청.
   setMascotVisible: "set_mascot_visible",
   mascotActivate: "mascot_activate",
+  // 마스코트 신호등(docs/mascot-lights-design.md §5.3) — 창 크기·위치를
+  // (물리 px) 한 번에 적용. mascot 창의 동적 리사이즈 전용.
+  setMascotLayout: "set_mascot_layout",
   // 알림 대사 TTS — 질문/완료 알림 문구를 캐릭터 대사로 리라이트 + 합성(백엔드
   // 전담: API 키는 웹뷰로 나오지 않고 오디오 바이트만 온다).
   ttsSpeak: "tts_speak",

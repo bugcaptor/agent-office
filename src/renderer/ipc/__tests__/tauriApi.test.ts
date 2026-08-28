@@ -304,6 +304,17 @@ describe("command invocations", () => {
     expect(invoke).toHaveBeenCalledWith(Commands.resize, { agentId: "a1", cols: 100, rows: 40 });
   });
 
+  it("setMascotLayout invokes set_mascot_layout with width/height/x/y", async () => {
+    const tauriApi = await importTauriApi();
+    await tauriApi.setMascotLayout(120, 170, 100, 830);
+    expect(invoke).toHaveBeenCalledWith(Commands.setMascotLayout, {
+      width: 120,
+      height: 170,
+      x: 100,
+      y: 830,
+    });
+  });
+
   it("clearNotifications maps missing ids to null", async () => {
     const tauriApi = await importTauriApi();
     tauriApi.clearNotifications("a1");

@@ -51,6 +51,36 @@ pub async fn set_mascot_visible(app: AppHandle, visible: bool) -> Result<(), Str
     Ok(())
 }
 
+/// 마스코트 신호등(docs/mascot-lights-design.md §5.3) — 창 크기(칸 수·방향·
+/// 스프라이트 유무에 따라 계산된 값)와 하단중앙 앵커로 환산된 위치를 한 번에
+/// 적용한다. `width`/`height`/`x`/`y`는 전부 **물리 px**(렌더러가 dpr로 환산해
+/// 넘긴다). 창이 없으면 조용히 no-op.
+///
+/// `set_resizable(true)` → `set_size` → `set_position` → `set_resizable(false)`
+/// 순으로 감싸는 이유: tauri.conf.json에서 마스코트 창은 `resizable:false`로
+/// 만들어지는데(사용자가 테두리를 끌어 늘리지 못하게), Windows에서는
+/// non-resizable 창에 대해 **프로그램이 거는** `set_size` 호출도 무시되는
+/// 사례가 보고돼 있다(§10). 매 호출마다 잠깐 resizable을 켰다 다시 끄면
+/// 사용자 조작 여지는 그대로 막으면서 프로그램 리사이즈만 허용할 수 있다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn set_mascot_layout(
+    app: AppHandle,
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("mascot") {
+        win.set_resizable(true).map_err(|e| e.to_string())?;
+        win.set_size(tauri::PhysicalSize::new(width, height))
+            .map_err(|e| e.to_string())?;
+        win.set_position(tauri::PhysicalPosition::new(x, y))
+            .map_err(|e| e.to_string())?;
+        win.set_resizable(false).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// 마스코트 클릭(이슈 #72): main 창을 앞으로 끌어올린 뒤 해당 에이전트의
 /// 터미널을 열라고 main에 알린다. 포커스/표시는 Rust가 수행하므로 마스코트
 /// 창에는 창 조작 권한을 주지 않아도 된다(권한 표면 최소화).

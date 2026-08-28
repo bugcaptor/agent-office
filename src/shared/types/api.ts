@@ -126,6 +126,10 @@ export interface AgentOfficeApi {
   /** 마스코트 클릭(#72) — main 창을 앞으로 올리고 해당 에이전트 터미널을
    * 열도록 main에 요청한다. 마스코트 창에서만 호출한다. */
   mascotActivate(agentId: string): Promise<void>;
+  /** 마스코트 신호등(docs/mascot-lights-design.md §5.3) — 창 크기·위치를 한 번에
+   * 적용한다. 인자 전부 **물리 px**(mascot 창이 dpr로 환산해 넘긴다). 창이
+   * 없으면 조용히 no-op. */
+  setMascotLayout(width: number, height: number, x: number, y: number): Promise<void>;
   /** 알림 대사 TTS — 문구를 캐릭터 말투 대사로 리라이트한 뒤 합성해
    * mp3 바이트(base64)를 돌려준다. 설정 `ttsEnabled`가 꺼져 있으면 백엔드가
    * "tts_disabled:"로 reject한다(백엔드가 최종 게이트 — 외부 API 비용 경로).
