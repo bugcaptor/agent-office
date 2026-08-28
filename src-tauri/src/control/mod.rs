@@ -27,10 +27,10 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::Router;
-use serde::Serialize;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
+use crate::httpapi::{ct_eq, fail, ok, session_state_str, set_owner_only};
 use crate::notification::hub::NotificationHub;
 use crate::observer::server::ObserverServerState;
 use crate::observer::ObserverRuntime;
@@ -103,35 +103,6 @@ pub fn revoke_token_at(dir: &Path) -> std::io::Result<()> {
     }
 }
 
-#[cfg(unix)]
-fn set_owner_only(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-}
-#[cfg(not(unix))]
-fn set_owner_only(_path: &Path) {}
-
-/// 타이밍 부채널을 줄이는 상수시간 비교(길이는 고정이라 누설 무해).
-fn ct_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
-}
-
-fn session_state_str(state: SessionState) -> &'static str {
-    match state {
-        SessionState::Starting => "starting",
-        SessionState::Running => "running",
-        SessionState::Exited => "exited",
-        SessionState::Disposed => "disposed",
-    }
-}
-
 /// catch_unwind 페이로드에서 사람이 읽을 메시지를 뽑는다(commands.rs와 동일).
 fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
     panic
@@ -139,15 +110,6 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
         .map(|s| s.to_string())
         .or_else(|| panic.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "unknown panic".into())
-}
-
-// ── 응답 봉투 ────────────────────────────────────────────────────────
-
-fn ok<T: Serialize>(data: T) -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "ok": true, "data": data }))
-}
-fn fail(msg: impl Into<String>) -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "ok": false, "error": msg.into() }))
 }
 
 // ── 인증 미들웨어 ────────────────────────────────────────────────────
@@ -488,7 +450,6 @@ async fn settings_set(
         Err(e) => fail(e),
     }
 }
-
 
 // ── 동료 대화(docs/agent-talk-design.md §3) ──────────────────────────
 
@@ -1532,7 +1493,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&f.dir);
         let _ = std::fs::remove_dir_all(&f._observer_dir);
     }
-
 
     // ── 동료 대화(docs/agent-talk-design.md) ─────────────────────────
 

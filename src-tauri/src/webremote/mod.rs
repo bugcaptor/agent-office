@@ -22,7 +22,7 @@ pub mod rpc;
 
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -38,6 +38,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
+use crate::httpapi::{ct_eq, fail, ok, session_state_str, set_owner_only};
 use crate::notification::hub::NotificationHub;
 use crate::observer::server::ObserverServerState;
 use crate::observer::ObserverRuntime;
@@ -70,27 +71,6 @@ pub const WS_TOKEN_PROTOCOL_PREFIX: &str = "agent-office.token.";
 const WS_PING_EVERY: Duration = Duration::from_secs(20);
 /// 이 시간 동안 아무것도 못 받으면 연결을 버린다(좀비 뷰어 정리).
 const WS_IDLE_TIMEOUT: Duration = Duration::from_secs(45);
-
-// ── 파일 권한 / 상수시간 비교(control과 동일 규칙) ────────────────────
-
-#[cfg(unix)]
-fn set_owner_only(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-}
-#[cfg(not(unix))]
-fn set_owner_only(_path: &Path) {}
-
-fn ct_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
-}
 
 /// tailnet(Tailscale CGNAT 대역 100.64.0.0/10) 주소인가.
 pub fn is_tailnet_addr(ip: IpAddr) -> bool {
@@ -272,24 +252,6 @@ impl WebRemoteContext {
             })
             .collect()
     }
-}
-
-fn session_state_str(state: SessionState) -> &'static str {
-    match state {
-        SessionState::Starting => "starting",
-        SessionState::Running => "running",
-        SessionState::Exited => "exited",
-        SessionState::Disposed => "disposed",
-    }
-}
-
-// ── 응답 봉투 ────────────────────────────────────────────────────────
-
-fn ok<T: serde::Serialize>(data: T) -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "ok": true, "data": data }))
-}
-fn fail(msg: impl Into<String>) -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "ok": false, "error": msg.into() }))
 }
 
 // ── 원격 주소 정책 미들웨어 ───────────────────────────────────────────

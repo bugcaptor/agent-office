@@ -23,6 +23,8 @@ mod file_scan;
 mod file_manager;
 // UI 언어 해석(AppSettings.language → Lang). AI 프롬프트를 만드는 모듈들이
 // 공유한다 — 번역 카탈로그는 프런트에만 있다.
+/// control·webremote 두 HTTP 서버가 공유하는 응답 봉투와 토큰 파일 규칙.
+pub mod httpapi;
 pub mod i18n;
 // pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가
 // `agent_office_lib::ipc::commands::settings::GetAppSettingsResult`에 닿아야 한다.
