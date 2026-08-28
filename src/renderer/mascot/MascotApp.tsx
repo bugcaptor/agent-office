@@ -25,17 +25,19 @@ import {
   type Monitor,
 } from "@tauri-apps/api/window";
 import { Events } from "@shared/ipc";
+import type { MascotLightsFace } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import {
   HIDDEN_MASCOT_STATE,
   LIGHT_AVATAR_PX,
   MASCOT_ANIM_IDLE_MS,
   MASCOT_SPRITE_PX,
+  maxLightsFor,
   parseMascotState,
   type MascotLight,
   type MascotState,
 } from "./protocol";
-import { avatarKey, drawAvatar, loadAvatarFrames } from "./avatar";
+import { avatarKey, drawAvatar, loadAvatarFrames, loadPortraitUrl, portraitKey } from "./avatar";
 import { computeMascotWindowRect, foldOverflow } from "./layout";
 import { loadMascotFrames, type MascotFrames } from "./sheet";
 import { createDragDetector } from "./drag";
@@ -141,6 +143,7 @@ async function computeAppliedRect(
   lightCount: number,
   vertical: boolean,
   hasSprite: boolean,
+  wide: boolean,
   dpr: number,
   anchor: Anchor,
   anchorSize: Size,
@@ -155,6 +158,7 @@ async function computeAppliedRect(
     lightCount,
     vertical,
     hasSprite,
+    wide,
     dpr,
     currentPos,
     currentSize: anchorSize,
@@ -167,12 +171,20 @@ async function computeAppliedRect(
  * 신호등 칸의 얼굴. 아바타 좌표가 있으면 대표 에이전트의 머리를 잘라 그리고,
  * 없으면(세션 없는 프로젝트 폴더) 이름 첫 글자 원판으로 대체한다. 캔버스
  * 백킹 해상도는 dpr을 따라가고, 좌표가 바뀔 때만 다시 그린다.
+ *
+ * `face==="portrait"`이고 대표 에이전트에 초상이 있으면(`portraitUpdatedAt`
+ * 있음) 스프라이트 캔버스 대신 초상 이미지를 띄운다. 로드가 아직 끝나지
+ * 않았거나 실패했으면(null) 항상 그려 둔 스프라이트 캔버스가 그대로 보인다
+ * — 깜빡임 없는 폴백.
  */
-function LightFace({ light, dpr }: { light: MascotLight; dpr: number }) {
+function LightFace({ light, dpr, face }: { light: MascotLight; dpr: number; face: MascotLightsFace }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const avatar = light.avatar;
   const key = avatar === null ? null : avatarKey(avatar, dpr);
   const backing = Math.round(LIGHT_AVATAR_PX * dpr);
+  const wantsPortrait = face === "portrait" && avatar !== null && avatar.portraitUpdatedAt !== null;
+  const pKey = wantsPortrait && avatar !== null ? portraitKey(avatar) : null;
+  const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (avatar === null) return;
@@ -189,9 +201,28 @@ function LightFace({ light, dpr }: { light: MascotLight; dpr: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, backing]);
 
+  useEffect(() => {
+    if (pKey === null || avatar === null) {
+      setPortraitUrl(null);
+      return;
+    }
+    let cancelled = false;
+    void loadPortraitUrl(avatar).then((url) => {
+      if (!cancelled) setPortraitUrl(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // pKey가 agentId + portraitUpdatedAt을 인코딩한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pKey]);
+
   if (avatar === null) {
     // 비번역 텍스트만 쓴다(설계 결정 9) — 이름의 첫 글자다.
     return <span className="mascot-light-initial">{[...light.label][0] ?? "?"}</span>;
+  }
+  if (wantsPortrait && portraitUrl !== null) {
+    return <img className="mascot-light-portrait" src={portraitUrl} alt="" draggable={false} />;
   }
   return (
     <canvas
@@ -250,6 +281,7 @@ export default function MascotApp() {
     lightCount: number,
     vertical: boolean,
     hasSprite: boolean,
+    wide: boolean,
     dpr: number,
     gen: number,
   ): Promise<void> => {
@@ -259,6 +291,7 @@ export default function MascotApp() {
       lightCount,
       vertical,
       hasSprite,
+      wide,
       dpr,
       anchorRef.current,
       lastSizeRef.current,
@@ -419,12 +452,17 @@ export default function MascotApp() {
   const backing = Math.round(MASCOT_SPRITE_PX * dpr);
 
   // ---- 신호등 레이아웃 변화 → 창 크기 재적용(C9) ----
-  // 표시 칸 수(오버플로 칩 포함)·세로 여부·스프라이트 유무가 바뀔 때만
-  // 발동한다 — 상태 emit마다가 아니라 이 파생 키가 실제로 바뀔 때만.
-  const { shown: shownLights, overflowCount } = foldOverflow(state.lights);
+  // 표시 칸 수(오버플로 칩 포함)·세로 여부·스프라이트 유무·wide 여부가 바뀔
+  // 때만 발동한다 — 상태 emit마다가 아니라 이 파생 키가 실제로 바뀔 때만.
+  // maxLightsFor: wide(작업명 라벨)이고 가로 배열이면 상한을 8→5로 낮춘다
+  // (칸이 넓어져 8칸이면 창이 지나치게 길어진다) — 세로 배열은 줄이지 않는다.
+  const { shown: shownLights, overflowCount } = foldOverflow(
+    state.lights,
+    maxLightsFor(state.lightsWide, state.lightsVertical),
+  );
   const displayedLightCount = shownLights.length + (overflowCount > 0 ? 1 : 0);
   const hasSprite = state.agentId !== null;
-  const layoutKey = `${displayedLightCount}|${state.lightsVertical}|${hasSprite}`;
+  const layoutKey = `${displayedLightCount}|${state.lightsVertical}|${hasSprite}|${state.lightsWide}`;
 
   useEffect(() => {
     // 스프라이트도 없고 칸도 없으면(완전히 숨김) 0×0으로 줄일 이유가 없다 —
@@ -435,12 +473,17 @@ export default function MascotApp() {
     if (!hasSprite && displayedLightCount === 0) return;
     const timer = setTimeout(() => {
       const gen = ++seqRef.current; // C2: 이 호출의 세대를 못박는다
-      void applyLayout(displayedLightCount, state.lightsVertical, hasSprite, dprRef.current, gen).catch(
-        (err) => console.warn("mascot: failed to apply layout", err),
-      );
+      void applyLayout(
+        displayedLightCount,
+        state.lightsVertical,
+        hasSprite,
+        state.lightsWide,
+        dprRef.current,
+        gen,
+      ).catch((err) => console.warn("mascot: failed to apply layout", err));
     }, LAYOUT_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-    // layoutKey가 위 세 값을 그대로 인코딩한다 — dpr은 dprRef로 최신값을
+    // layoutKey가 위 네 값을 그대로 인코딩한다 — dpr은 dprRef로 최신값을
     // 읽으므로 dpr 변화 자체는 재실행 트리거가 아니다(의도된 것, §C9).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutKey]);
@@ -575,7 +618,7 @@ export default function MascotApp() {
       )}
       {state.lights.length > 0 && (
         <div
-          className={`mascot-lights${state.lightsVertical ? " mascot-lights-vertical" : " mascot-lights-horizontal"}`}
+          className={`mascot-lights${state.lightsVertical ? " mascot-lights-vertical" : " mascot-lights-horizontal"}${state.lightsWide ? " mascot-lights-wide" : ""}`}
           onPointerDown={onStripPointerDown}
           onPointerMove={onStripPointerMove}
           onPointerUp={onStripPointerUp}
@@ -585,11 +628,11 @@ export default function MascotApp() {
             <div
               key={light.id}
               className={`mascot-light mascot-light-${light.state}${light.clickAgentId === null ? " mascot-light-noclick" : ""}`}
-              title={light.label}
+              title={light.tooltip || light.label}
               onClick={() => onLightClick(light)}
             >
               <div className="mascot-light-face">
-                <LightFace light={light} dpr={dpr} />
+                <LightFace light={light} dpr={dpr} face={state.lightsFace} />
                 {light.state === "working" && (
                   <span className="mascot-light-mark" aria-hidden="true">
                     <svg width="10" height="10" viewBox="0 0 18 18">

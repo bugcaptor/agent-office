@@ -13,6 +13,7 @@ import {
   LIGHT_STRIP_PAD,
   LIGHT_TILE_H,
   LIGHT_TILE_W,
+  LIGHT_TILE_W_WIDE,
   MASCOT_WINDOW_H,
   MASCOT_WINDOW_W,
   MAX_LIGHTS,
@@ -27,19 +28,24 @@ import {
   type Size,
 } from "./position";
 
+/** wide(작업명 라벨) 칸일 때의 타일 폭 — 아니면 기본 폭. */
+function tileW(wide: boolean): number {
+  return wide ? LIGHT_TILE_W_WIDE : LIGHT_TILE_W;
+}
+
 /** 램프가 나열되는 방향의 strip 길이(논리 px). 칸이 없으면 0(strip 자체가 없다).
  *  칸이 원이 아니라 [얼굴 + 이름] 타일이 되면서 가로/세로 치수가 달라졌다 —
  *  나열 방향에 따라 쓰는 변이 다르다. */
-function stripLength(count: number, vertical: boolean): number {
+function stripLength(count: number, vertical: boolean, wide: boolean): number {
   if (count <= 0) return 0;
-  const tile = vertical ? LIGHT_TILE_H : LIGHT_TILE_W;
+  const tile = vertical ? LIGHT_TILE_H : tileW(wide);
   return LIGHT_STRIP_PAD * 2 + tile * count + LIGHT_GAP * (count - 1);
 }
 
 /** strip의 직교(두께) 방향 길이(논리 px). 칸이 없으면 0. */
-function stripThickness(count: number, vertical: boolean): number {
+function stripThickness(count: number, vertical: boolean, wide: boolean): number {
   if (count <= 0) return 0;
-  return (vertical ? LIGHT_TILE_W : LIGHT_TILE_H) + LIGHT_STRIP_PAD * 2;
+  return (vertical ? tileW(wide) : LIGHT_TILE_H) + LIGHT_STRIP_PAD * 2;
 }
 
 /**
@@ -51,19 +57,21 @@ export function computeMascotLayout(input: {
   lightCount: number;
   vertical: boolean;
   hasSprite: boolean;
+  /** true = 칸을 wide(96px) 타일로 계산한다(`mascotLightsLabel==="task"`). */
+  wide: boolean;
 }): { width: number; height: number } {
-  const { lightCount, vertical, hasSprite } = input;
+  const { lightCount, vertical, hasSprite, wide } = input;
   const spriteW = hasSprite ? MASCOT_WINDOW_W : 0;
   const spriteH = hasSprite ? MASCOT_WINDOW_H : 0;
   if (vertical) {
     return {
-      width: Math.max(spriteW, stripThickness(lightCount, true)),
-      height: spriteH + stripLength(lightCount, true),
+      width: Math.max(spriteW, stripThickness(lightCount, true, wide)),
+      height: spriteH + stripLength(lightCount, true, wide),
     };
   }
   return {
-    width: Math.max(spriteW, stripLength(lightCount, false)),
-    height: spriteH + stripThickness(lightCount, false),
+    width: Math.max(spriteW, stripLength(lightCount, false, wide)),
+    height: spriteH + stripThickness(lightCount, false, wide),
   };
 }
 
@@ -98,6 +106,8 @@ export function computeMascotWindowRect(input: {
   lightCount: number;
   vertical: boolean;
   hasSprite: boolean;
+  /** true = 칸을 wide(96px) 타일로 계산한다(`mascotLightsLabel==="task"`). */
+  wide: boolean;
   /** 물리 px 환산 배율. */
   dpr: number;
   /** 리사이즈 직전 창의 물리 px 좌상단. */
@@ -107,8 +117,9 @@ export function computeMascotWindowRect(input: {
   monitors: ReadonlyArray<MonitorRect>;
   primary: MonitorRect | null;
 }): { width: number; height: number; x: number; y: number } {
-  const { lightCount, vertical, hasSprite, dpr, currentPos, currentSize, monitors, primary } = input;
-  const logical = computeMascotLayout({ lightCount, vertical, hasSprite });
+  const { lightCount, vertical, hasSprite, wide, dpr, currentPos, currentSize, monitors, primary } =
+    input;
+  const logical = computeMascotLayout({ lightCount, vertical, hasSprite, wide });
   const physicalSize: Size = {
     width: Math.round(logical.width * dpr),
     height: Math.round(logical.height * dpr),

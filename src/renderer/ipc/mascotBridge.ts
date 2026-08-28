@@ -36,8 +36,12 @@ import {
 import { officeBus } from "./sessionBridge";
 import { tauriApi } from "./tauriApi";
 
-/** visible·lights·lightsVertical을 뺀 스프라이트 전용 필드 — buildState가 조립하는 단위. */
-type SpriteFields = Omit<MascotState, "visible" | "lights" | "lightsVertical">;
+/** visible·lights·lightsVertical·lightsFace·lightsWide를 뺀 스프라이트 전용
+ *  필드 — buildState가 조립하는 단위. */
+type SpriteFields = Omit<
+  MascotState,
+  "visible" | "lights" | "lightsVertical" | "lightsFace" | "lightsWide"
+>;
 
 /** 스프라이트 대상이 없을 때(활동 없음, linger도 소진)의 빈 값. */
 const EMPTY_SPRITE: SpriteFields = {
@@ -151,6 +155,7 @@ export function installMascotBridge(io: MascotBridgeIo = defaultIo()): () => voi
 
     const lights = computeMascotLights({
       mode: s.appSettings.mascotLightsMode,
+      labelMode: s.appSettings.mascotLightsLabel,
       projects: s.appSettings.mascotLightsProjects,
       agentOrder: s.agentOrder,
       agents: s.agents,
@@ -217,6 +222,11 @@ export function installMascotBridge(io: MascotBridgeIo = defaultIo()): () => voi
       ...sprite,
       lights,
       lightsVertical: s.appSettings.mascotLightsVertical,
+      lightsFace: s.appSettings.mascotLightsFace,
+      // 마스코트 창은 설정 의미를 모르고 렌더 관심사(칸 폭)만 받는다 —
+      // task 라벨은 60자 절단 텍스트가 들어가 54px 타일에서 심하게 잘리므로
+      // wide(96px) 타일로 넓힌다(§7 개정).
+      lightsWide: s.appSettings.mascotLightsLabel === "task",
     };
   };
 

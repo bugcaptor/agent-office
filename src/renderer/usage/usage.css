@@ -124,6 +124,66 @@
   }
 }
 
+/* ── filled 뷰 모드 플로팅 패널(이슈 #69) ─────────────────────────── */
+/* BottomBar가 filled 모드에서 가려질 때 우측 아래에 뜨는 반투명 판때기.
+ * BottomBar 뱃지(.usage-badge*)와 같은 클래스를 재사용해 색 규칙(위
+ * .usage-level-*, .usage-badge-warn/error, .usage-badge-empty)을 그대로
+ * 얻는다. 다만 그 클래스들에 걸린 BottomBar 전용 폭 대응(라벨 기본 숨김·
+ * 900px부터 표시, 899.98px 이하에서 밑줄 대체)은 이 패널에는 적용하지
+ * 않는다 — 앱 기본 창 폭(tauri.conf.json 800×600)이 그 경계 아래라 그대로
+ * 두면 라벨이 사라진다. 이 패널은 폭 제약이 없으므로 항상 전부 보여준다. */
+.usage-float {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 5; /* 오버레이 패널 안에서 터미널 위. 포스트잇(memo.css)도 5지만
+                 포스트잇은 우상단, 이 패널은 우하단이라 공간이 겹치지 않는다. */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: calc(var(--unit) / 2);
+  padding: 5px 6px;
+  font-family: "DungGeunMo", monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text);
+  text-align: right;
+  background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
+  border: 1px solid var(--border-dark);
+  border-radius: 3px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: pointer;
+  opacity: 0.72;
+  transition: opacity 0.15s ease-out;
+}
+.usage-float:hover,
+.usage-float:focus-visible {
+  opacity: 1;
+}
+
+.usage-float-line {
+  display: block;
+  white-space: nowrap;
+}
+
+/* 이 패널 안에서는 항상 라벨을 보여준다(BottomBar 기본 숨김 규칙 무효화). */
+.usage-float .usage-badge-label {
+  display: inline;
+}
+
+/* BottomBar의 899.98px 이하 밑줄 대체(라벨이 안 보일 때의 대안 표시)는 이
+ * 패널에서는 라벨이 항상 보이므로 불필요 — 무효화한다. */
+.usage-float .usage-badge-warn .usage-badge-pct,
+.usage-float .usage-badge-error .usage-badge-pct {
+  text-decoration: none;
+}
+
+.usage-float-window-label {
+  color: var(--text-dim);
+  font-size: 0.95em;
+}
+
 /* ── 상세 모달 ───────────────────────────────────────────── */
 .usage-dialog {
   width: min(460px, 92vw);

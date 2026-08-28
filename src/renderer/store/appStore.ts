@@ -94,6 +94,9 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   mascotLightsMode: "off",
   mascotLightsVertical: false,
   mascotLightsProjects: [],
+  mascotLightsFace: "sprite",
+  mascotLightsLabel: "auto",
+  usageFloatEnabled: true,
   ttsEnabled: false,
   ttsRewriteModelAnthropic: "claude-haiku-4-5",
   ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -370,6 +373,9 @@ interface AppState {
         | "mascotLightsMode"
         | "mascotLightsVertical"
         | "mascotLightsProjects"
+        | "mascotLightsFace"
+        | "mascotLightsLabel"
+        | "usageFloatEnabled"
         | "webRemoteBind"
         | "webRemotePort"
         | "webRemoteEnabled"

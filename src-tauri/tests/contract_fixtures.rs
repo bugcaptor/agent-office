@@ -21,8 +21,9 @@
 
 use agent_office_lib::ipc::commands::settings::GetAppSettingsResult;
 use agent_office_lib::persistence::settings_store::{
-    AppSettings, ExternalEditor, ExternalTerminal, FileIndexBackend, MascotLightsMode,
-    SummaryModels, SummaryProvider, TtsRewriteProvider, WebRemoteBind,
+    AppSettings, ExternalEditor, ExternalTerminal, FileIndexBackend, MascotLightsFace,
+    MascotLightsLabel, MascotLightsMode, SummaryModels, SummaryProvider, TtsRewriteProvider,
+    WebRemoteBind,
 };
 use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
@@ -327,6 +328,9 @@ fn get_app_settings_result_matches_fixture() {
             mascot_lights_mode: MascotLightsMode::Off,
             mascot_lights_vertical: false,
             mascot_lights_projects: Vec::new(),
+            mascot_lights_face: MascotLightsFace::Sprite,
+            mascot_lights_label: MascotLightsLabel::Auto,
+            usage_float_enabled: true,
             tts_enabled: false,
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),

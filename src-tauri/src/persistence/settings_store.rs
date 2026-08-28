@@ -96,6 +96,31 @@ pub enum MascotLightsMode {
     Projects,
 }
 
+/// 신호등 칸 얼굴 원판에 무엇을 띄울지. 기본은 스프라이트(현행) — `Portrait`를
+/// 골라도 초상이 없는 에이전트(`portrait_updated_at` 없음)는 렌더러가 스프라이트
+/// 얼굴로 폴백한다.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MascotLightsFace {
+    #[default]
+    Sprite,
+    Portrait,
+}
+
+/// 신호등 칸에 표시할 텍스트. 기본 `Auto` = 현행 그대로(에이전트 모드는 에이전트
+/// 이름, 프로젝트 모드는 폴더 basename). 고른 값이 그 칸에서 비어 있으면(예:
+/// cwd 없는 에이전트에 `Project`) 렌더러가 `Auto`로 폴백한다 — 빈 칸을 만들지
+/// 않는다.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MascotLightsLabel {
+    #[default]
+    Auto,
+    Agent,
+    Project,
+    Task,
+}
+
 /// 셸 출력 내보내기(.txt)를 열 외부 에디터. 기본은 OS 기본 연결(open/xdg-open).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -311,6 +336,21 @@ pub struct AppSettings {
     /// 순서). 절대경로 문자열 — `mascotLightsMode==="projects"`일 때만 쓰인다.
     #[serde(default)]
     pub mascot_lights_projects: Vec<String>,
+    /// 신호등 칸 얼굴 원판에 스프라이트 대신 초상화를 띄울지. `#[serde(default)]`라
+    /// 기존 설정 파일에 키가 없으면 `MascotLightsFace::Sprite`(기본값).
+    #[serde(default)]
+    pub mascot_lights_face: MascotLightsFace,
+    /// 신호등 칸에 표시할 텍스트 선택. `#[serde(default)]`라 기존 설정 파일에
+    /// 키가 없으면 `MascotLightsLabel::Auto`(기본값).
+    #[serde(default)]
+    pub mascot_lights_label: MascotLightsLabel,
+    /// 터미널 오버레이 filled 모드(이슈 #69)에서 패널 우측 아래에 반투명 LLM
+    /// 사용량 플로트(`UsageFloat`, docs/usage-design.md §13)를 띄울지. 꺼도
+    /// 하단바 사용량 뱃지는 그대로 보인다. 기존 설정 파일에 키가 없으면
+    /// 기존 동작을 유지해야 하므로 `#[serde(default)]`(bool 기본 false)가
+    /// 아니라 `default_true`를 쓴다.
+    #[serde(default = "default_true")]
+    pub usage_float_enabled: bool,
     /// 확인 요청 대사 TTS — 질문(Hook) 알림 문구를 캐릭터 말투 대사로 리라이트한 뒤
     /// ElevenLabs로 합성해 캐릭터 목소리로 재생한다. 외부 API 두 곳을 호출해
     /// 유료 크레딧을 소모하므로 opt-in — 기본 꺼짐. API 키는 이 구조체가 아니라
@@ -398,6 +438,9 @@ impl Default for AppSettings {
             mascot_lights_mode: MascotLightsMode::Off,
             mascot_lights_vertical: false,
             mascot_lights_projects: Vec::new(),
+            mascot_lights_face: MascotLightsFace::Sprite,
+            mascot_lights_label: MascotLightsLabel::Auto,
+            usage_float_enabled: true,
             tts_enabled: false,
             tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
             tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),
@@ -596,6 +639,9 @@ mod tests {
             mascot_lights_mode: MascotLightsMode::Off,
             mascot_lights_vertical: false,
             mascot_lights_projects: Vec::new(),
+            mascot_lights_face: MascotLightsFace::Sprite,
+            mascot_lights_label: MascotLightsLabel::Auto,
+            usage_float_enabled: true,
             tts_enabled: false,
             tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
             tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),
@@ -799,6 +845,9 @@ mod tests {
             mascot_lights_mode: MascotLightsMode::Off,
             mascot_lights_vertical: false,
             mascot_lights_projects: Vec::new(),
+            mascot_lights_face: MascotLightsFace::Sprite,
+            mascot_lights_label: MascotLightsLabel::Auto,
+            usage_float_enabled: true,
             tts_enabled: false,
             tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
             tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),

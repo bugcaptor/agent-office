@@ -10,7 +10,7 @@
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
-import type { MascotLightsMode } from "@shared/types";
+import type { MascotLightsFace, MascotLightsLabel, MascotLightsMode } from "@shared/types";
 
 export function MascotLightsSection() {
   const { t } = useTranslation("settings");
@@ -54,6 +54,42 @@ export function MascotLightsSection() {
           <option value="off">{t("system.mascotLightsModeOff")}</option>
           <option value="agents">{t("system.mascotLightsModeAgents")}</option>
           <option value="projects">{t("system.mascotLightsModeProjects")}</option>
+        </select>
+      </label>
+
+      <label className="settings-item">
+        <span>
+          <strong>{t("system.mascotLightsFaceTitle")}</strong>
+          <small>{t("system.mascotLightsFaceHelp")}</small>
+        </span>
+        <select
+          disabled={disabled}
+          value={appSettings.mascotLightsFace}
+          onChange={(e) =>
+            updateAppSettings({ mascotLightsFace: e.target.value as MascotLightsFace })
+          }
+        >
+          <option value="sprite">{t("system.mascotLightsFaceSprite")}</option>
+          <option value="portrait">{t("system.mascotLightsFacePortrait")}</option>
+        </select>
+      </label>
+
+      <label className="settings-item">
+        <span>
+          <strong>{t("system.mascotLightsLabelTitle")}</strong>
+          <small>{t("system.mascotLightsLabelHelp")}</small>
+        </span>
+        <select
+          disabled={disabled}
+          value={appSettings.mascotLightsLabel}
+          onChange={(e) =>
+            updateAppSettings({ mascotLightsLabel: e.target.value as MascotLightsLabel })
+          }
+        >
+          <option value="auto">{t("system.mascotLightsLabelAuto")}</option>
+          <option value="agent">{t("system.mascotLightsLabelAgent")}</option>
+          <option value="project">{t("system.mascotLightsLabelProject")}</option>
+          <option value="task">{t("system.mascotLightsLabelTask")}</option>
         </select>
       </label>
 

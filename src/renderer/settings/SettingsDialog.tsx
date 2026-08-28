@@ -575,6 +575,17 @@ function SystemTab() {
       </label>
       <MascotLightsSection />
       <label className="settings-item">
+        <input
+          type="checkbox"
+          checked={appSettings.usageFloatEnabled}
+          onChange={(e) => updateAppSettings({ usageFloatEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>{t("system.usageFloatTitle")}</strong>
+          <small>{t("system.usageFloatHelp")}</small>
+        </span>
+      </label>
+      <label className="settings-item">
         <span>
           <strong>{t("system.externalTerminalTitle")}</strong>
           <small>{t("system.externalTerminalHelp")}</small>

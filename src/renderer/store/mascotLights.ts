@@ -10,13 +10,26 @@
 // 타입만 필요하므로 반드시 `import type`으로만 가져와 순수성을 유지한다
 // (labelText.ts:15-18과 같은 규칙).
 import type { MascotLight, MascotLightAvatar, MascotLightState } from "../mascot/protocol";
-import type { ColorOverrides } from "@shared/types";
-import { effectiveCwd, isInsideCwd, projectNameFromCwd } from "../labels/labelText";
+import type { ColorOverrides, MascotLightsLabel } from "@shared/types";
+import {
+  effectiveCwd,
+  isInsideCwd,
+  projectAnchorCwd,
+  projectNameFromCwd,
+  requestSentence,
+  truncateChars,
+} from "../labels/labelText";
 import type { AgentTaskLabel } from "./types";
 import type { TurnPhase } from "../timeline/turnReducer";
 
+/** `mascotLightsLabel==="task"`일 때 작업명 절단 길이(chars). */
+const TASK_LABEL_MAX_CHARS = 60;
+
 export interface ComputeMascotLightsInput {
   mode: "off" | "agents" | "projects";
+  /** 칸에 표시할 텍스트 선택(§7 개정). 고른 값이 그 칸에서 비어 있으면 auto로
+   *  폴백한다(빈 칸 방지). */
+  labelMode: MascotLightsLabel;
   /** 프로젝트 모드에서 칸을 받을 폴더 목록. 표시 순서 = 이 배열 순서. */
   projects: ReadonlyArray<string>;
   /** 근무 중 에이전트 순회 순서(생성 순). */
@@ -32,6 +45,8 @@ export interface ComputeMascotLightsInput {
         archetype?: string;
         colors?: ColorOverrides;
         spriteUpdatedAt?: number;
+        /** 초상 존재 표시 + 캐시 무효화 키(§6 개정 — 칸 얼굴 스프라이트/초상 선택). */
+        portraitUpdatedAt?: number;
       }
     | undefined
   >;
@@ -153,6 +168,83 @@ function avatarOf(
     archetype: agent.archetype ?? null,
     colors: agent.colors ?? null,
     spriteUpdatedAt: agent.spriteUpdatedAt ?? null,
+    portraitUpdatedAt: agent.portraitUpdatedAt ?? null,
+  };
+}
+
+/** 에이전트 이름 — 없으면 id로 폴백(항상 비어 있지 않다, 값이 없는 label의
+ *  최종 폴백 대상이기도 하다). */
+function agentNameOf(agentId: string, agents: ComputeMascotLightsInput["agents"]): string {
+  return agents[agentId]?.name ?? agentId;
+}
+
+/**
+ * 에이전트의 프로젝트명(정체성 앵커 기준, labelText.ts와 같은 규칙) —
+ * `projectAnchorCwd(세션 cwd, 프로필 cwd)`의 basename. 둘 다 없으면 undefined.
+ */
+function agentProjectNameOf(
+  agentId: string,
+  agents: ComputeMascotLightsInput["agents"],
+  taskLabels: ComputeMascotLightsInput["taskLabels"],
+): string | undefined {
+  const agent = agents[agentId];
+  return projectNameFromCwd(projectAnchorCwd(taskLabels[agentId]?.cwd, agent?.cwd));
+}
+
+/**
+ * 에이전트의 작업명(목표 > 저장된 요청 폴백 > 첫 프롬프트 요청 문장) —
+ * `TASK_LABEL_MAX_CHARS`로 절단. 셋 다 없으면 undefined.
+ */
+function agentTaskNameOf(
+  agentId: string,
+  taskLabels: ComputeMascotLightsInput["taskLabels"],
+): string | undefined {
+  const label = taskLabels[agentId];
+  const text = label?.goal ?? label?.goalFallback ?? requestSentence(label?.firstPromptText);
+  return text ? truncateChars(text, TASK_LABEL_MAX_CHARS) : undefined;
+}
+
+/**
+ * agents 모드 칸 하나의 표시 텍스트(§7 개정) — `label`은 `labelMode`로 고른
+ * 값, 비어 있으면(cwd/작업 없음) `auto`(에이전트 이름)로 폴백한다. `tooltip`은
+ * labelMode와 무관하게 [이름, 프로젝트명, 작업명] 중 있는 것만 이어 붙인다.
+ */
+function agentLightText(
+  agentId: string,
+  labelMode: MascotLightsLabel,
+  input: ComputeMascotLightsInput,
+): { label: string; tooltip: string } {
+  const name = agentNameOf(agentId, input.agents);
+  const project = agentProjectNameOf(agentId, input.agents, input.taskLabels);
+  const task = agentTaskNameOf(agentId, input.taskLabels);
+  const chosen =
+    labelMode === "project" ? project : labelMode === "task" ? task : name; // auto/agent 둘 다 이름
+  return {
+    label: chosen ?? name,
+    tooltip: [name, project, task].filter(Boolean).join(" · "),
+  };
+}
+
+/**
+ * projects 모드 칸 하나의 표시 텍스트(§7 개정) — `label`은 `labelMode`로 고른
+ * 값, 비어 있으면(대표 없음 등) `auto`(폴더 basename)로 폴백한다. `tooltip`
+ * 순서는 agentLightText와 동일하게 [대표 이름, 프로젝트명, 작업명].
+ */
+function projectLightText(
+  project: string,
+  representative: string | null,
+  labelMode: MascotLightsLabel,
+  input: ComputeMascotLightsInput,
+): { label: string; tooltip: string } {
+  const folderName = projectNameFromCwd(project) ?? project;
+  const repName = representative !== null ? agentNameOf(representative, input.agents) : undefined;
+  const repTask =
+    representative !== null ? agentTaskNameOf(representative, input.taskLabels) : undefined;
+  const chosen =
+    labelMode === "agent" ? repName : labelMode === "task" ? repTask : folderName; // auto/project 둘 다 폴더명
+  return {
+    label: chosen ?? folderName,
+    tooltip: [repName, folderName, repTask].filter(Boolean).join(" · "),
   };
 }
 
@@ -177,9 +269,11 @@ export function computeMascotLights(input: ComputeMascotLightsInput): MascotLigh
       if (!agent || agent.clockedOut) continue;
       const state = atomicState(id, input.timeTracking, pending);
       if (state === "off") continue;
+      const { label, tooltip } = agentLightText(id, input.labelMode, input);
       out.push({
         id,
-        label: agent.name ?? id,
+        label,
+        tooltip,
         state,
         clickAgentId: id,
         avatar: avatarOf(id, input.agents),
@@ -203,9 +297,11 @@ export function computeMascotLights(input: ComputeMascotLightsInput): MascotLigh
   return projects.map((project) => {
     const members = membersOf(project, input);
     const representative = representativeOf(members, input);
+    const { label, tooltip } = projectLightText(project, representative, input.labelMode, input);
     return {
       id: project,
-      label: projectNameFromCwd(project) ?? project,
+      label,
+      tooltip,
       state: aggregateState(members, input.timeTracking, pending),
       clickAgentId: representative,
       // 얼굴은 클릭 대상과 같은 에이전트다 — "이 칸을 누르면 누가 나오나"를

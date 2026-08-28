@@ -3,6 +3,8 @@
 import { describe, expect, it } from "vitest";
 import {
   HIDDEN_MASCOT_STATE,
+  MAX_LIGHTS_WIDE,
+  maxLightsFor,
   parseMascotState,
   sameMascotState,
   type MascotState,
@@ -73,10 +75,30 @@ describe("protocol", () => {
       lightsVertical: true,
     });
     expect(parsed?.lights).toEqual([
-      { id: "a1", label: "철수", state: "attention", clickAgentId: "a1", avatar: null },
-      { id: "p1", label: "repo", state: "off", clickAgentId: null, avatar: null },
+      { id: "a1", label: "철수", tooltip: "철수", state: "attention", clickAgentId: "a1", avatar: null },
+      { id: "p1", label: "repo", tooltip: "repo", state: "off", clickAgentId: null, avatar: null },
     ]);
     expect(parsed?.lightsVertical).toBe(true);
+  });
+
+  it("tooltip이 문자열이면 그대로, 아니면(손상/부재) label로 접힌다", () => {
+    const withTooltip = parseMascotState({
+      visible: true,
+      lights: [{ id: "a1", label: "철수", tooltip: "철수 · proj · 작업", state: "off" }],
+    });
+    expect(withTooltip?.lights[0].tooltip).toBe("철수 · proj · 작업");
+
+    const withoutTooltip = parseMascotState({
+      visible: true,
+      lights: [{ id: "a1", label: "철수", tooltip: 42, state: "off" }],
+    });
+    expect(withoutTooltip?.lights[0].tooltip).toBe("철수");
+  });
+
+  it("lightsFace 부재/손상 페이로드는 하위호환으로 sprite로 접힌다", () => {
+    expect(parseMascotState({ visible: true })?.lightsFace).toBe("sprite");
+    expect(parseMascotState({ visible: true, lightsFace: "bogus" })?.lightsFace).toBe("sprite");
+    expect(parseMascotState({ visible: true, lightsFace: "portrait" })?.lightsFace).toBe("portrait");
   });
 
   it("id/label이 없는 lights 항목은 개별적으로 드롭한다", () => {
@@ -85,7 +107,7 @@ describe("protocol", () => {
       lights: [{ id: "a1", label: "철수", state: "working" }, { id: "no-label" }, "nope"],
     });
     expect(parsed?.lights).toEqual([
-      { id: "a1", label: "철수", state: "working", clickAgentId: null, avatar: null },
+      { id: "a1", label: "철수", tooltip: "철수", state: "working", clickAgentId: null, avatar: null },
     ]);
   });
 
@@ -104,6 +126,7 @@ describe("protocol", () => {
             archetype: "cat",
             colors: { hair: "#ff0000", bogus: 1 },
             spriteUpdatedAt: 42,
+            portraitUpdatedAt: 7,
           },
         },
         { id: "p2", label: "repo2", state: "off", clickAgentId: null, avatar: { seed: "s2" } },
@@ -115,8 +138,25 @@ describe("protocol", () => {
       archetype: "cat",
       colors: { hair: "#ff0000" },
       spriteUpdatedAt: 42,
+      portraitUpdatedAt: 7,
     });
     expect(parsed?.lights[1].avatar).toBeNull();
+  });
+
+  it("avatar의 portraitUpdatedAt 부재는 null로 접힌다(스프라이트 폴백 신호)", () => {
+    const parsed = parseMascotState({
+      visible: true,
+      lights: [
+        {
+          id: "p1",
+          label: "repo",
+          state: "working",
+          clickAgentId: "a1",
+          avatar: { agentId: "a1", seed: "s1" },
+        },
+      ],
+    });
+    expect(parsed?.lights[0].avatar).toMatchObject({ portraitUpdatedAt: null });
   });
 
   it("sameMascotState는 avatar 차이도 감지한다(얼굴 교체가 dedupe에 먹히지 않게)", () => {
@@ -126,9 +166,17 @@ describe("protocol", () => {
           {
             id: "p1",
             label: "repo",
+            tooltip: "repo",
             state: "working",
             clickAgentId: "a1",
-            avatar: { agentId: "a1", seed: "s1", archetype: null, colors: null, spriteUpdatedAt },
+            avatar: {
+              agentId: "a1",
+              seed: "s1",
+              archetype: null,
+              colors: null,
+              spriteUpdatedAt,
+              portraitUpdatedAt: null,
+            },
           },
         ],
       });
@@ -137,16 +185,70 @@ describe("protocol", () => {
     expect(sameMascotState(withAvatar(1), state({ lights: [{ ...withAvatar(1).lights[0], avatar: null }] }))).toBe(false);
   });
 
+  it("sameMascotState는 avatar의 portraitUpdatedAt 차이도 감지한다(초상 교체가 dedupe에 먹히지 않게)", () => {
+    const withPortrait = (portraitUpdatedAt: number | null) =>
+      state({
+        lights: [
+          {
+            id: "p1",
+            label: "repo",
+            tooltip: "repo",
+            state: "working",
+            clickAgentId: "a1",
+            avatar: {
+              agentId: "a1",
+              seed: "s1",
+              archetype: null,
+              colors: null,
+              spriteUpdatedAt: null,
+              portraitUpdatedAt,
+            },
+          },
+        ],
+      });
+    expect(sameMascotState(withPortrait(1), withPortrait(1))).toBe(true);
+    expect(sameMascotState(withPortrait(1), withPortrait(2))).toBe(false);
+    expect(sameMascotState(withPortrait(null), withPortrait(1))).toBe(false);
+  });
+
+  it("sameMascotState는 lightsFace 차이도 감지한다", () => {
+    expect(sameMascotState(state({ lightsFace: "sprite" }), state({ lightsFace: "portrait" }))).toBe(
+      false,
+    );
+  });
+
+  it("lightsWide 부재/손상 페이로드는 하위호환으로 false로 접힌다", () => {
+    expect(parseMascotState({ visible: true })?.lightsWide).toBe(false);
+    expect(parseMascotState({ visible: true, lightsWide: "yes" })?.lightsWide).toBe(false);
+    expect(parseMascotState({ visible: true, lightsWide: true })?.lightsWide).toBe(true);
+  });
+
+  it("sameMascotState는 lightsWide 차이도 감지한다", () => {
+    expect(sameMascotState(state({ lightsWide: false }), state({ lightsWide: true }))).toBe(false);
+  });
+
   it("sameMascotState는 lights 항목 차이도 감지한다(dedupe 회귀)", () => {
     const a = state({
-      lights: [{ id: "a1", label: "a", state: "working", clickAgentId: "a1", avatar: null }],
+      lights: [{ id: "a1", label: "a", tooltip: "a", state: "working", clickAgentId: "a1", avatar: null }],
     });
     const b = state({
-      lights: [{ id: "a1", label: "a", state: "attention", clickAgentId: "a1", avatar: null }],
+      lights: [{ id: "a1", label: "a", tooltip: "a", state: "attention", clickAgentId: "a1", avatar: null }],
     });
     expect(sameMascotState(a, state({ ...a }))).toBe(true);
     expect(sameMascotState(a, b)).toBe(false);
     expect(sameMascotState(a, state({ lights: [] }))).toBe(false);
+  });
+
+  it("sameMascotState는 lights 항목의 tooltip 차이도 감지한다", () => {
+    const a = state({
+      lights: [{ id: "a1", label: "a", tooltip: "a", state: "working", clickAgentId: "a1", avatar: null }],
+    });
+    const b = state({
+      lights: [
+        { id: "a1", label: "a", tooltip: "a · proj", state: "working", clickAgentId: "a1", avatar: null },
+      ],
+    });
+    expect(sameMascotState(a, b)).toBe(false);
   });
 
 });
@@ -154,42 +256,81 @@ describe("protocol", () => {
 describe("layout", () => {
   // 치수: 타일 54×48, 간격 6, strip 여백 6, 스프라이트 영역 102(96+여유 6).
   it("가로 모드: strip 두께 60(48+여백12), n=4면 폭 246으로 스프라이트 폭을 넘어선다", () => {
-    expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: true })).toEqual({
+    expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: true, wide: false })).toEqual({
       width: 12 + 54 * 4 + 6 * 3,
       height: 102 + 60,
     });
-    expect(computeMascotLayout({ lightCount: 8, vertical: false, hasSprite: true })).toEqual({
+    expect(computeMascotLayout({ lightCount: 8, vertical: false, hasSprite: true, wide: false })).toEqual({
       width: 486,
       height: 102 + 60,
     });
   });
 
   it("가로 모드: 스프라이트 없으면 폭은 strip 폭 그대로, 높이는 strip 두께뿐", () => {
-    expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: false })).toEqual({
+    expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: false, wide: false })).toEqual({
       width: 12 + 54 * 4 + 6 * 3,
       height: 60,
     });
   });
 
   it("세로 모드: 폭은 max(스프라이트 폭, 타일 폭+여백), 높이는 스프라이트 + stripH", () => {
-    expect(computeMascotLayout({ lightCount: 8, vertical: true, hasSprite: true })).toEqual({
+    expect(computeMascotLayout({ lightCount: 8, vertical: true, hasSprite: true, wide: false })).toEqual({
       width: 120,
       height: 102 + (12 + 48 * 8 + 6 * 7),
     });
-    expect(computeMascotLayout({ lightCount: 1, vertical: true, hasSprite: false })).toEqual({
+    expect(computeMascotLayout({ lightCount: 1, vertical: true, hasSprite: false, wide: false })).toEqual({
       width: 54 + 12,
       height: 48 + 12,
     });
   });
 
   it("0칸이면 strip 두께가 0이라 스프라이트만큼만 남는다", () => {
-    expect(computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: true })).toEqual({
+    expect(computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: true, wide: false })).toEqual({
       width: 120,
       height: 102,
     });
-    expect(computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: false })).toEqual({
+    expect(computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: false, wide: false })).toEqual({
       width: 0,
       height: 0,
+    });
+  });
+
+  // §7 개정 — wide(작업명 라벨) 칸일 때의 폭/최대 칸 수.
+  describe("wide(작업명 라벨, §7 개정)", () => {
+    it("가로 모드: wide 타일(96px)로 strip 길이를 계산한다", () => {
+      expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: true, wide: true })).toEqual({
+        width: 12 + 96 * 4 + 6 * 3,
+        height: 102 + 60,
+      });
+    });
+
+    it("세로 모드: wide 타일(96px)이 strip 두께(폭 방향)가 된다 — 스프라이트 폭(120)이 더 넓어 창 폭은 그대로다", () => {
+      // width = max(스프라이트 폭 120, stripThickness) = max(120, 96+12=108) = 120.
+      expect(computeMascotLayout({ lightCount: 3, vertical: true, hasSprite: true, wide: true })).toEqual({
+        width: 120,
+        height: 102 + (12 + 48 * 3 + 6 * 2),
+      });
+      // 스프라이트가 없으면 stripThickness(108)가 그대로 창 폭이 된다 — wide가
+      // 실제로 폭을 넓히는 걸 여기서 확인한다(기본 타일이면 54+12=66).
+      expect(computeMascotLayout({ lightCount: 3, vertical: true, hasSprite: false, wide: true })).toEqual({
+        width: 96 + 12,
+        height: 12 + 48 * 3 + 6 * 2,
+      });
+    });
+
+    it("maxLightsFor: 가로+wide만 5칸으로 줄고, 세로는 wide여도 8칸을 유지한다", () => {
+      expect(maxLightsFor(true, false)).toBe(MAX_LIGHTS_WIDE);
+      expect(maxLightsFor(true, false)).toBe(5);
+      expect(maxLightsFor(true, true)).toBe(8);
+      expect(maxLightsFor(false, false)).toBe(8);
+      expect(maxLightsFor(false, true)).toBe(8);
+    });
+
+    it("foldOverflow에 maxLightsFor(true, false)를 넘기면 6번째 칸부터 오버플로 칩으로 접힌다", () => {
+      const over = Array.from({ length: 6 }, (_, i) => `l${i}`);
+      const folded = foldOverflow(over, maxLightsFor(true, false));
+      expect(folded.shown).toHaveLength(4);
+      expect(folded.overflowCount).toBe(2);
     });
   });
 
@@ -226,6 +367,7 @@ describe("layout", () => {
         lightCount: 0,
         vertical: false,
         hasSprite: true,
+        wide: false,
         dpr: 1,
         currentPos: { x: 100, y: 898 },
         currentSize: { width: 120, height: 102 },
@@ -242,6 +384,7 @@ describe("layout", () => {
         lightCount: 4,
         vertical: false,
         hasSprite: true,
+        wide: false,
         dpr: 1,
         currentPos: { x: 100, y: 898 }, // 120×102일 때의 top-left
         currentSize: { width: 120, height: 102 },
@@ -258,6 +401,7 @@ describe("layout", () => {
         lightCount: 0,
         vertical: false,
         hasSprite: true,
+        wide: false,
         dpr: 2,
         currentPos: { x: 200, y: 1720 }, // 240×204 물리 창의 top-left
         currentSize: { width: 240, height: 204 },
@@ -272,6 +416,7 @@ describe("layout", () => {
         lightCount: 8,
         vertical: true, // 세로 8칸 → 매우 높은 창
         hasSprite: true,
+        wide: false,
         dpr: 1,
         currentPos: { x: 100, y: 10 }, // 화면 위쪽 끝 근처
         currentSize: { width: 120, height: 102 },
@@ -291,6 +436,7 @@ describe("layout", () => {
         lightCount: 0,
         vertical: false,
         hasSprite: false,
+        wide: false,
         dpr: 1,
         currentPos: { x: -500, y: -500 },
         currentSize: { width: 120, height: 140 },
@@ -309,6 +455,7 @@ describe("layout", () => {
         lightCount: 0,
         vertical: false,
         hasSprite: true,
+        wide: false,
         dpr: 1.5,
         currentPos: { x: 1000, y: 800 },
         currentSize: { width: 243, height: 90 },
@@ -328,6 +475,7 @@ describe("layout", () => {
         lightCount: 0,
         vertical: false,
         hasSprite: true,
+        wide: false,
         dpr: 1.5,
         currentPos: { x: 1000, y: 800 },
         currentSize: { width: 441, height: 255 },

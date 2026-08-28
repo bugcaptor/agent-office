@@ -35,7 +35,15 @@ function openSystemTab() {
 
 function hydrate(
   lights: Partial<
-    Pick<AppSettings, "mascotEnabled" | "mascotLightsMode" | "mascotLightsVertical" | "mascotLightsProjects">
+    Pick<
+      AppSettings,
+      | "mascotEnabled"
+      | "mascotLightsMode"
+      | "mascotLightsVertical"
+      | "mascotLightsProjects"
+      | "mascotLightsFace"
+      | "mascotLightsLabel"
+    >
   >,
 ) {
   useAppStore.getState().hydrateSettings(
@@ -70,6 +78,9 @@ function hydrate(
       mascotLightsMode: "off",
       mascotLightsVertical: false,
       mascotLightsProjects: [],
+      mascotLightsFace: "sprite",
+      mascotLightsLabel: "auto",
+      usageFloatEnabled: true,
       ttsEnabled: false,
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -111,6 +122,32 @@ describe("MascotLightsSection", () => {
     expect(setAppSettings.mock.calls[0][0].mascotLightsMode).toBe("agents");
   });
 
+  it("칸 얼굴 셀렉터 변경이 스토어와 저장 payload에 반영된다", () => {
+    hydrate({ mascotEnabled: true, mascotLightsFace: "sprite" });
+    render(<SettingsDialog />);
+    openSystemTab();
+
+    fireEvent.change(screen.getByRole("combobox", { name: /칸에 띄울 얼굴/ }), {
+      target: { value: "portrait" },
+    });
+
+    expect(useAppStore.getState().appSettings.mascotLightsFace).toBe("portrait");
+    expect(setAppSettings.mock.calls[0][0].mascotLightsFace).toBe("portrait");
+  });
+
+  it("칸에 표시할 이름 셀렉터 변경이 스토어와 저장 payload에 반영된다", () => {
+    hydrate({ mascotEnabled: true, mascotLightsLabel: "auto" });
+    render(<SettingsDialog />);
+    openSystemTab();
+
+    fireEvent.change(screen.getByRole("combobox", { name: /칸에 표시할 이름/ }), {
+      target: { value: "task" },
+    });
+
+    expect(useAppStore.getState().appSettings.mascotLightsLabel).toBe("task");
+    expect(setAppSettings.mock.calls[0][0].mascotLightsLabel).toBe("task");
+  });
+
   it("세로 배열 체크박스가 저장 payload에 반영된다", () => {
     hydrate({ mascotEnabled: true, mascotLightsVertical: false });
     render(<SettingsDialog />);
@@ -132,8 +169,12 @@ describe("MascotLightsSection", () => {
     openSystemTab();
 
     const modeSelect = screen.getByRole("combobox", { name: /상태 신호등/ }) as HTMLSelectElement;
+    const faceSelect = screen.getByRole("combobox", { name: /칸에 띄울 얼굴/ }) as HTMLSelectElement;
+    const labelSelect = screen.getByRole("combobox", { name: /칸에 표시할 이름/ }) as HTMLSelectElement;
     const verticalCheckbox = screen.getByRole("checkbox", { name: /세로로 표시/ }) as HTMLInputElement;
     expect(modeSelect.disabled).toBe(true);
+    expect(faceSelect.disabled).toBe(true);
+    expect(labelSelect.disabled).toBe(true);
     expect(verticalCheckbox.disabled).toBe(true);
     for (const btn of screen.getAllByRole("button", { name: /추가|제거/ })) {
       expect((btn as HTMLButtonElement).disabled).toBe(true);

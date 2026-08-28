@@ -11,7 +11,7 @@
 // mascot이 결정적으로 재생성하고(main과 같은 외형 보장), 커스텀 시트는 mascot이
 // `load_sprite` 커맨드로 직접 읽는다. 페이로드는 항상 작다.
 
-import type { ColorOverrides } from "@shared/types";
+import type { ColorOverrides, MascotLightsFace } from "@shared/types";
 
 /** 창 크기와 스프라이트 배치(논리 px). tauri.conf.json의 mascot 창 크기와 짝. */
 export const MASCOT_WINDOW_W = 120;
@@ -41,6 +41,22 @@ export const LIGHT_STRIP_PAD = 6;
  *  칸이 이름표를 단 타일이 되면서 폭이 커져(54px) 12칸이면 창이 600px을 넘는다 —
  *  데스크톱 위젯 한도에 맞춰 8칸으로 줄였다(8칸 가로 = 486px). */
 export const MAX_LIGHTS = 8;
+/** 작업명(`mascotLightsLabel==="task"`) 표시 시 칸 폭(논리 px) — 60자 절단
+ *  텍스트가 한 줄 안에서 조금 더 읽히도록 54→96px로 넓힌다. */
+export const LIGHT_TILE_W_WIDE = 96;
+/** wide 칸일 때 가로 배열의 최대 칸 수 — 5칸 가로 = 12+96*5+6*4 = 516px로
+ *  기존 8칸(486px)과 비슷한 창 폭을 유지한다(오버플로 칩 포함). */
+export const MAX_LIGHTS_WIDE = 5;
+
+/**
+ * 신호등 최대 칸 수를 wide/vertical에 맞춰 고른다. **세로 배열은 줄이지
+ * 않는다** — 세로 strip은 칸이 늘어도 화면 폭(taile 폭 1개분)만 차지하고
+ * 늘어나는 건 높이뿐이라, wide 타일이 늘려 잡아먹는 자원은 가로 배열에서만
+ * 문제가 된다(사용자 확정).
+ */
+export function maxLightsFor(wide: boolean, vertical: boolean): number {
+  return wide && !vertical ? MAX_LIGHTS_WIDE : MAX_LIGHTS;
+}
 
 /** 신호등 램프 하나의 상태(docs/mascot-lights-design.md §3). */
 export type MascotLightState = "off" | "working" | "attention";
@@ -60,14 +76,21 @@ export interface MascotLightAvatar {
   colors: ColorOverrides | null;
   /** 커스텀 시트 존재 표시 + 캐시 무효화 키. null이면 절차 생성 경로. */
   spriteUpdatedAt: number | null;
+  /** 초상 존재 표시 + 캐시 무효화 키. null이면 초상 없음(스프라이트 폴백). */
+  portraitUpdatedAt: number | null;
 }
 
 /** 신호등 램프 하나 — 에이전트(agents 모드) 또는 프로젝트 폴더(projects 모드). */
 export interface MascotLight {
   /** 안정 키 — agentId 또는 프로젝트 폴더 경로(설정 원문). */
   id: string;
-  /** 툴팁 텍스트 — 에이전트 이름 또는 폴더 basename. 비번역(마스코트 창 안은 번역 문자열 금지). */
+  /** 칸 아래 표시할 이름 — `mascotLightsLabel` 설정으로 고른 텍스트(에이전트
+   *  이름/프로젝트명/작업명 중 하나, 값이 비면 auto로 폴백). 잘릴 수 있다(칸
+   *  폭 안에서 말줄임). 비번역(마스코트 창 안은 번역 문자열 금지). */
   label: string;
+  /** 호버 툴팁 — [에이전트 이름, 프로젝트명, 작업명] 중 있는 것만 " · "로 이어
+   *  붙인 전체 텍스트(잘린 label을 여기서 확인). 비번역. */
+  tooltip: string;
   state: MascotLightState;
   /** 클릭 시 활성화할 대표 에이전트. null이면 클릭 no-op. */
   clickAgentId: string | null;
@@ -98,6 +121,12 @@ export interface MascotState {
   lights: MascotLight[];
   /** true = 신호등을 세로로 배열. */
   lightsVertical: boolean;
+  /** 신호등 칸 얼굴 원판에 스프라이트/초상화 중 무엇을 띄울지(설정 미러). */
+  lightsFace: MascotLightsFace;
+  /** true = 칸을 넓게(96px) 그린다 — `mascotLightsLabel==="task"`일 때만.
+   *  마스코트 창은 설정 의미를 모르고 렌더 관심사(칸 폭)만 받는다(기존
+   *  lightsFace/lightsVertical과 같은 규약). */
+  lightsWide: boolean;
 }
 
 export const HIDDEN_MASCOT_STATE: MascotState = {
@@ -112,6 +141,8 @@ export const HIDDEN_MASCOT_STATE: MascotState = {
   working: false,
   lights: [],
   lightsVertical: false,
+  lightsFace: "sprite",
+  lightsWide: false,
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -151,10 +182,11 @@ function avatarOf(v: unknown): MascotLightAvatar | null {
     archetype: str(v.archetype),
     colors: colorsOf(v.colors),
     spriteUpdatedAt: num(v.spriteUpdatedAt),
+    portraitUpdatedAt: num(v.portraitUpdatedAt),
   };
 }
 
-/** 두 아바타가 같은가(dedupe용) — 얼굴을 바꾸는 5필드만 본다. */
+/** 두 아바타가 같은가(dedupe용) — 얼굴을 바꾸는 6필드만 본다. */
 function sameAvatar(a: MascotLightAvatar | null, b: MascotLightAvatar | null): boolean {
   if (a === null || b === null) return a === b;
   return (
@@ -162,6 +194,7 @@ function sameAvatar(a: MascotLightAvatar | null, b: MascotLightAvatar | null): b
     a.seed === b.seed &&
     a.archetype === b.archetype &&
     a.spriteUpdatedAt === b.spriteUpdatedAt &&
+    a.portraitUpdatedAt === b.portraitUpdatedAt &&
     sameColors(a.colors, b.colors)
   );
 }
@@ -170,6 +203,8 @@ function sameAvatar(a: MascotLightAvatar | null, b: MascotLightAvatar | null): b
  * 램프 항목 하나의 형태 가드. id/label은 문자열 필수, state는 3종 밖이면 "off"로
  * 강등(전송 측 버그로 창이 죽는 것보다 안전 쪽으로), clickAgentId는 문자열이거나
  * null. id/label이 없으면 항목 자체를 버린다(호출부가 개별 드롭 처리).
+ * tooltip은 문자열이 아니면 label로 접는다(구버전/손상 페이로드도 호버가
+ * 아예 비지 않게).
  */
 function lightOf(v: unknown): MascotLight | null {
   if (!isRecord(v)) return null;
@@ -181,6 +216,7 @@ function lightOf(v: unknown): MascotLight | null {
   return {
     id,
     label,
+    tooltip: str(v.tooltip) ?? label,
     state,
     clickAgentId: str(v.clickAgentId),
     avatar: avatarOf(v.avatar),
@@ -198,7 +234,7 @@ function lightsOf(v: unknown): MascotLight[] {
   return out;
 }
 
-/** 두 램프 목록이 같은가(dedupe용) — 길이와 항목별 5필드를 순서대로 비교. */
+/** 두 램프 목록이 같은가(dedupe용) — 길이와 항목별 6필드를 순서대로 비교. */
 function sameLights(a: MascotLight[], b: MascotLight[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((la, i) => {
@@ -206,6 +242,7 @@ function sameLights(a: MascotLight[], b: MascotLight[]): boolean {
     return (
       la.id === lb.id &&
       la.label === lb.label &&
+      la.tooltip === lb.tooltip &&
       la.state === lb.state &&
       la.clickAgentId === lb.clickAgentId &&
       sameAvatar(la.avatar, lb.avatar)
@@ -232,6 +269,8 @@ export function parseMascotState(payload: unknown): MascotState | null {
     working: payload.working === true,
     lights: lightsOf(payload.lights),
     lightsVertical: payload.lightsVertical === true,
+    lightsFace: payload.lightsFace === "portrait" ? "portrait" : "sprite",
+    lightsWide: payload.lightsWide === true,
   };
 }
 
@@ -248,6 +287,8 @@ export function sameMascotState(a: MascotState, b: MascotState): boolean {
     a.hasPending === b.hasPending &&
     a.working === b.working &&
     sameLights(a.lights, b.lights) &&
-    a.lightsVertical === b.lightsVertical
+    a.lightsVertical === b.lightsVertical &&
+    a.lightsFace === b.lightsFace &&
+    a.lightsWide === b.lightsWide
   );
 }

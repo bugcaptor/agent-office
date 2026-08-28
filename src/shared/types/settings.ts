@@ -44,6 +44,14 @@ export type FileIndexBackend = "walker" | "everything";
  * Rust `MascotLightsMode` 미러. 기본 off. */
 export type MascotLightsMode = "off" | "agents" | "projects";
 
+/** 신호등 칸 얼굴 원판에 무엇을 띄울지 — Rust MascotLightsFace 미러. 기본 sprite. */
+export type MascotLightsFace = "sprite" | "portrait";
+
+/** 신호등 칸에 표시할 텍스트 — Rust MascotLightsLabel 미러. 기본 auto(모드에
+ * 맞춘 현행 동작: agents 모드=에이전트 이름, projects 모드=폴더 basename). 고른
+ * 값이 그 칸에서 비어 있으면(cwd 없음 등) auto로 폴백한다. */
+export type MascotLightsLabel = "auto" | "agent" | "project" | "task";
+
 import type { TtsRewriteProvider } from './tts';
 
 /**
@@ -138,6 +146,18 @@ export interface AppSettings {
   /** 신호등 프로젝트 모드에서 칸을 받을 저장소 폴더 목록(표시 순서 = 등록
    * 순서). `mascotLightsMode==="projects"`일 때만 쓰인다. 기본 빈 배열. */
   mascotLightsProjects: string[];
+  /** 신호등 칸 얼굴 원판에 스프라이트 얼굴 대신 초상화를 띄울지. `portrait`을
+   * 골라도 초상이 없는 에이전트(`portraitUpdatedAt` 없음)는 스프라이트 얼굴로
+   * 폴백한다. 기본 "sprite". */
+  mascotLightsFace: MascotLightsFace;
+  /** 신호등 칸에 표시할 텍스트 선택. 고른 값이 비어 있는 칸(예: cwd 없는
+   * 에이전트에 `project`)은 렌더러가 `auto`로 폴백한다. 기본 "auto". */
+  mascotLightsLabel: MascotLightsLabel;
+  /** 터미널 오버레이 filled 모드(이슈 #69)에서 패널 우측 아래에 반투명 LLM
+   * 사용량 플로트(`UsageFloat`, docs/usage-design.md §13)를 띄울지. 꺼도
+   * 하단바(BottomBar)의 사용량 뱃지는 그대로 보인다. 기존 동작 유지가
+   * 기본이라 true(opt-out). */
+  usageFloatEnabled: boolean;
   /** 알림 대사 TTS(질문·완료 알림을 캐릭터 목소리로 발화). 외부 유료 API 두 곳을
    * 호출하므로 opt-in — 기본 false. API 키는 이 구조체에 없다(백엔드 0600 파일). */
   ttsEnabled: boolean;

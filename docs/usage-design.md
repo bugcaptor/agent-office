@@ -769,3 +769,55 @@ app-server`·`agy -p /usage` 자식 프로세스를 띄우고 Code Assist API와
 타이밍 민감한 sessiond 테스트가 그 부하로 깨졌다. `LiveUsageState::
 preempt_all_attempts`가 넷을 한꺼번에 선점한다 — provider를 더 붙일 때 여기도
 같이 늘려야 한다.
+
+## 13. filled 뷰 모드 플로팅 표시 (이슈 #69, 2026-08-28)
+
+### 13.1 문제
+
+터미널 뷰 모드(`terminalViewMode`, "windowed" | "filled")의 filled에서는
+터미널 오버레이 패널이 앱 창을 완전히 덮는다. BottomBar는 그 아래 깔려
+화면에서 안 보이므로, 거기 상주하는 `UsageWidget` 뱃지도 함께 사라진다 —
+터미널을 채워서 쓰는 동안은 사용량을 확인할 방법이 없었다.
+
+### 13.2 결정 — 같은 스토어를 읽는 별도 플로팅 컴포넌트
+
+`UsageFloat.tsx`를 신설해 `TerminalOverlay`의 `.terminal-overlay-panel` 안,
+`PostItWidget`과 같은 자리(패널 우상단이 아니라 **우하단**)에 얹는다. 새
+폴링 루프를 만들지 않는다 — `UsageWidget`이 BottomBar에 항상 마운트돼 있어
+(오버레이가 열렸든 닫혔든) 이미 60초 주기로 `s.usage`를 채우고 있으므로,
+`UsageFloat`은 그 스토어 값을 읽기만 한다. 표시 조건은 셋 다 참이어야 한다:
+
+1. `terminalViewMode === "filled"`
+2. 터미널 오버레이가 열려 있음(`activeTerminalAgentId !== null`)
+3. `visibleUsageProviders`가 비어 있지 않음(가릴 provider 자체가 없으면 빈
+   판때기를 띄우지 않는다)
+
+**개정(2026-08-28)**: 설정 `usageFloatEnabled`(기본 `true`, 설정 화면 시스템
+탭 "꽉 채우기 모드 사용량 표시")로 이 컴포넌트 자체를 끌 수 있다 — 위 3조건
+앞에 추가되는 네 번째 게이트다. 꺼도 BottomBar의 `UsageWidget` 뱃지는(그
+컴포넌트와 별개로 상시 마운트라) windowed 모드에서 그대로 보인다 — 사용량을
+아예 못 보게 하는 게 아니라 filled 모드의 반투명 플로트만 끄는 옵트아웃.
+
+### 13.3 표시 — BottomBar 뱃지의 폭 제약을 상속하지 않는다
+
+`UsageWidget`의 뱃지 클래스(`.usage-badge-label/-pct/-sep/-empty/-warn/-error`,
+`.usage-level-*`)를 그대로 재사용해 색 규칙을 공짜로 얻지만, 그 클래스들에
+걸린 BottomBar 전용 반응형 규칙(라벨 900px 미만 숨김, 두 번째 창 960px 미만
+숨김, 899.98px 미만 밑줄 대체)은 `.usage-float` 스코프 아래에서 무효화한다
+— 이 패널은 화면 자체가 폭이지 BottomBar처럼 다른 컨트롤과 폭을 다투지
+않으므로, `badgeWindows`가 고른 창(최대 2개)을 항상 라벨까지 전부 보여준다.
+앱 기본 창 폭(800px)이 900px 미만이라 그대로 뒀다면 라벨이 계속 숨어 있었을
+것이다.
+
+스타일: 우측 아래 10px 여백, `color-mix()` + `backdrop-filter: blur(6px)`로
+반투명, 기본 `opacity: .72` → hover/focus에서 1 — 터미널 내용을 가리는
+면적과 시선 방해를 최소화하는 게 목적이라 상시 또렷하게 두지 않는다.
+클릭하면 `UsageWidget`과 동일하게 `openModal({ kind: "usage" })`.
+
+### 13.4 테스트
+
+- `UsageFloat.test.tsx`: 표시 조건 3가지(뷰 모드, 터미널 열림, provider
+  존재) 각각의 게이트, 클릭 시 모달 오픈.
+- 문구·색 임계·provider 숨김 판정 자체는 `usageView` 순수 함수 테스트와
+  `UsageDialog`/`UsageWidget` 테스트가 이미 덮는다 — 여기서 되풀이하지
+  않는다.

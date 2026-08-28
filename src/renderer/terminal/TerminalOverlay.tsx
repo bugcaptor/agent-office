@@ -23,6 +23,7 @@ import { AgentTabStrip } from "./AgentTabStrip";
 import { TerminalSummaryBar } from "./TerminalSummaryBar";
 import { TerminalHost } from "./TerminalHost";
 import { PostItWidget } from "../memo/PostItWidget";
+import { UsageFloat } from "../usage/UsageFloat";
 
 export function TerminalOverlay() {
   const isOpen = useAppStore((s) => s.activeTerminalAgentId !== null);
@@ -60,6 +61,13 @@ export function TerminalOverlay() {
             진실은 디스크다). 패널이 positioning context가 되도록
             layout.css의 .terminal-overlay-panel에 position:relative가 있다. */}
         <PostItWidget />
+        {/* filled 뷰 모드 사용량 플로팅(이슈 #69). PostItWidget과 같은 이유로
+            조건부 렌더여도 무해하다 — keep-alive 불변식은 AgentTabStrip/
+            TerminalHost(그 아래 xterm)에만 걸려 있고, 이 위젯은 그 트리와
+            무관한 형제이며 진실은 스토어(s.usage)에 있다. 표시 여부는
+            컴포넌트 내부(뷰 모드 + 오버레이 열림 + 표시할 provider 존재)가 스스로
+            판단한다. */}
+        <UsageFloat />
       </div>
     </div>
   );

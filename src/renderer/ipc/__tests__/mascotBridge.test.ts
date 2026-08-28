@@ -206,6 +206,8 @@ describe("installMascotBridge", () => {
       working: true,
       lights: [],
       lightsVertical: false,
+      lightsFace: "sprite",
+      lightsWide: false,
     });
     expect(h.visibles).toEqual([true]);
     off();
@@ -363,6 +365,7 @@ describe("installMascotBridge · 신호등(lights)", () => {
       {
         id: "b1",
         label: "테스터",
+        tooltip: "테스터",
         state: "attention",
         clickAgentId: "b1",
         avatar: {
@@ -371,6 +374,7 @@ describe("installMascotBridge · 신호등(lights)", () => {
           archetype: null,
           colors: null,
           spriteUpdatedAt: null,
+          portraitUpdatedAt: null,
         },
       },
     ]);
@@ -425,6 +429,24 @@ describe("installMascotBridge · 신호등(lights)", () => {
     off();
   });
 
+  it("mascotLightsFace 변경만으로도 재방출되고, 칸의 avatar가 portraitUpdatedAt을 나른다", () => {
+    seed([mkProfile({ id: "a1", portraitUpdatedAt: 42 })]);
+    setLightsSettings({ mascotLightsMode: "agents" });
+    setWorking("a1", 100);
+    const h = harness();
+    const off = installMascotBridge(h.io);
+    expect(h.last()?.lightsFace).toBe("sprite");
+    expect(h.last()?.lights[0]?.avatar).toMatchObject({ portraitUpdatedAt: 42 });
+
+    const before = h.states.length;
+    useAppStore.setState({
+      appSettings: { ...useAppStore.getState().appSettings, mascotLightsFace: "portrait" },
+    });
+    expect(h.states.length).toBe(before + 1);
+    expect(h.last()?.lightsFace).toBe("portrait");
+    off();
+  });
+
   it("mascotLightsMode/mascotLightsProjects 변경이 신호등 칸에 즉시 반영된다", () => {
     seed([mkProfile({ id: "a1", cwd: "/dev/proj" })]);
     setWorking("a1", 10);
@@ -437,6 +459,7 @@ describe("installMascotBridge · 신호등(lights)", () => {
       {
         id: "/dev/proj",
         label: "proj",
+        tooltip: "테스터 · proj",
         state: "working",
         clickAgentId: "a1",
         // 칸의 얼굴 = 대표 에이전트의 스프라이트 좌표(§6 개정).
@@ -446,6 +469,7 @@ describe("installMascotBridge · 신호등(lights)", () => {
           archetype: null,
           colors: null,
           spriteUpdatedAt: null,
+          portraitUpdatedAt: null,
         },
       },
     ]);

@@ -1,6 +1,16 @@
 # 마스코트 신호등(status lights strip) 설계
 
 상태: 정본 — 2026-08-28 설계 확정(결정 1·2·6은 사용자가 직접 택했다). 구현 완료(리뷰 반영 포함).
+**2026-08-28 개정: 칸 표시 이름 선택 설정(`mascotLightsLabel`) 추가**
+(§6·§7) — 칸 아래 이름을 자동(현행)/에이전트 이름/프로젝트 이름/작업명 중
+고를 수 있다. 값이 그 칸에서 비면(예: cwd 없는 에이전트에 `project`) 자동으로
+폴백해 빈 칸을 만들지 않는다. 새로 생긴 `tooltip`(이름·프로젝트명·작업명을
+있는 것만 이어 붙인 전체 텍스트)이 잘린 label을 호버로 보완한다. `task`를
+고르면 60자 절단 텍스트가 잘 보이도록 칸 폭을 54→96px로 넓히고(가로 배열만)
+최대 칸 수도 8→5로 줄인다.
+**2026-08-28 개정: 칸 얼굴 스프라이트/초상 선택 설정(`mascotLightsFace`) 추가**
+(§6·§7) — 얼굴 원판에 현행 스프라이트 대신 초상화를 띄우는 옵션. 기본은
+스프라이트(기존 동작 그대로).
 **2026-08-28 개정(사용자 요청, §6·§5.1)**: 칸이 18px 원 하나에서 **[프로필 얼굴 +
 대상 이름] 타일(54×48)**로 바뀌었고, 스프라이트 영역의 죽은 공간(140−96=44px)을
 없애 캐릭터가 strip 위에 올라선 모습이 되도록 창의 스프라이트 몫을 102px로 줄였다.
@@ -256,10 +266,41 @@ MASCOT_WINDOW_H = 96 + 6 = 102 // 창의 스프라이트 몫
   애니메이션 없음(칸마다 raf를 돌리지 않는다). 스프라이트 확보 경로는 본체와
   같은 `loadMascotFrames`(커스텀 시트 → 실패 시 절차 생성)이고, 좌표+배율 키로
   캐시한다. `avatar === null`이면 **이름 첫 글자**(비번역) 원판.
+  - **개정(2026-08-28) — 초상 선택**: 설정 `mascotLightsFace==="portrait"`이고
+    대표 에이전트에 초상이 있으면(`avatar.portraitUpdatedAt != null`) 위
+    스프라이트 캔버스 대신 초상 이미지(`avatar.ts loadPortraitUrl` →
+    `tauriApi.loadPortrait`)를 `<img class="mascot-light-portrait">`로 띄운다.
+    초상은 main 창의 초상 캐시와 별개로 마스코트 창이 직접 읽는다(창 간
+    프로토콜은 좌표(agentId+portraitUpdatedAt)만 나른다 — 픽셀 비전송 규약).
+    초상이 없거나(`portraitUpdatedAt === null`) 로드가 아직 안 끝났거나
+    실패하면 **항상 그려 둔 스프라이트 캔버스**가 그대로 보인다 — 깜빡임 없는
+    자동 폴백. 초상은 240×320 세로 이미지라 `object-fit: cover;
+    object-position: center top`으로 얼굴(위쪽)만 원판에 채운다.
 - **이름**: 8px/9px, `#e6e8ee`, 한 줄 말줄임(`text-overflow: ellipsis`),
   어두운 text-shadow로 어떤 바탕에서도 읽히게. 원문 그대로라 비번역(결정 9).
+  - **개정(2026-08-28) — 표시 이름 선택**: 설정 `mascotLightsLabel`로 무엇을
+    보여줄지 고른다(`store/mascotLights.ts`가 칸마다 계산) — `auto`(기존
+    동작: agents 모드=에이전트 이름, projects 모드=폴더 basename), `agent`(항상
+    에이전트 이름 — projects 모드는 대표 에이전트), `project`(프로젝트명 —
+    agents 모드는 `projectAnchorCwd(세션 cwd, 프로필 cwd)`의 basename,
+    projects 모드는 폴더명으로 `auto`와 동일), `task`(목표(goal) > 저장된 요청
+    폴백 > 첫 프롬프트 요청 문장을 60자로 절단 — projects 모드는 대표
+    에이전트의 것). **고른 값이 그 칸에서 비면(cwd/작업 정보 없음) 항상
+    `auto`로 폴백**해 빈 칸을 만들지 않는다.
+  - **`tooltip`(신규 필드)**: `MascotLight.tooltip`은 labelMode와 무관하게
+    `[에이전트 이름, 프로젝트명, 작업명]` 중 있는 것만 `" · "`로 이어 붙인
+    전체 텍스트다. 잘린 `label`을 호버로 보완한다 — `title={light.tooltip ||
+    light.label}`.
 - **상태 표식**: 얼굴 우하단 13px 원 배지 — working `▶`(인라인 SVG polygon),
   attention `!`. off는 표식 없음.
+- **wide 칸(개정 2026-08-28)**: `mascotLightsLabel==="task"`면 60자 절단
+  텍스트가 54px 타일에서 심하게 잘리므로 타일 폭을 96px로 넓힌다
+  (`LIGHT_TILE_W_WIDE`, `mascot.css .mascot-lights-wide .mascot-light`).
+  가로 배열에서만 최대 칸 수도 8→5로 줄인다(`maxLightsFor` — 세로 배열은
+  칸이 늘어도 폭 1개분만 차지해 줄일 이유가 없다). 이 판단은 main 창이
+  하고(`mascotBridge.ts`: `lightsWide = mascotLightsLabel==="task"`),
+  마스코트 창은 그 결과(불리언)만 받는다 — 다른 렌더 관심사(`lightsFace`/
+  `lightsVertical`)와 같은 규약.
 
 | 상태 | 얼굴 테두리 | 글로우 | 표식 배지 | 애니메이션 |
 |---|---|---|---|---|
@@ -282,8 +323,10 @@ MASCOT_WINDOW_H = 96 + 6 = 102 // 창의 스프라이트 몫
 | `mascotLightsMode` / `mascot_lights_mode` | `"off"\|"agents"\|"projects"` (Rust enum, serde lowercase — `ExternalTerminal` 선례) | `"off"` | 마스코트 토글(SettingsDialog.tsx:567) 아래 라디오/셀렉트. `mascotEnabled=false`면 비활성화 |
 | `mascotLightsVertical` / `mascot_lights_vertical` | bool | false | 체크박스 "세로로 표시" |
 | `mascotLightsProjects` / `mascot_lights_projects` | string[] / `Vec<String>` | `[]` | 폴더 목록 편집기: 추가(`tauriApi.pickDirectory` — ProfileDialog.tsx:255 선례), 제거. 순서 = 표시 순서. projects 모드일 때만 노출 |
+| `mascotLightsFace` / `mascot_lights_face` | `"sprite"\|"portrait"` (Rust enum, serde lowercase — `MascotLightsMode` 선례) | `"sprite"` | 셀렉트 "칸에 띄울 얼굴". `portrait`을 골라도 초상 없는 캐릭터는 스프라이트로 폴백(§6 개정) |
+| `mascotLightsLabel` / `mascot_lights_label` | `"auto"\|"agent"\|"project"\|"task"` (Rust enum, serde lowercase) | `"auto"` | 셀렉트 "칸에 표시할 이름". 값이 그 칸에서 비면 `auto`로 폴백. `task`는 칸 폭을 96px로 넓히고 가로 배열 최대 칸 수를 5로 줄인다(§6 개정) |
 
-Rust `AppSettings`(settings_store.rs)에 `#[serde(default)]` 3필드 추가 —
+Rust `AppSettings`(settings_store.rs)에 `#[serde(default)]` 5필드 추가 —
 mascot_enabled와 같은 요령. 갱신 대상: `Default` impl, settings_store
 테스트의 구조체 리터럴, `contract_fixtures.rs`, `get-app-settings-result.json`
 픽스처, TS `AppSettings`(settings.ts:127 아래), appStore `DEFAULT_APP_SETTINGS`
@@ -303,6 +346,16 @@ system.mascotLightsProjectsTitle "프로젝트 폴더"
 system.mascotLightsProjectsAdd   "폴더 추가…"
 system.mascotLightsProjectsRemove "제거"
 system.mascotLightsProjectsEmpty "아직 등록된 폴더가 없습니다."
+system.mascotLightsFaceTitle     "칸에 띄울 얼굴"
+system.mascotLightsFaceHelp      (초상 선택 시 폴백 안내 포함)
+system.mascotLightsFaceSprite    "스프라이트"
+system.mascotLightsFacePortrait  "초상화"
+system.mascotLightsLabelTitle    "칸에 표시할 이름"
+system.mascotLightsLabelHelp     (작업명 선택 시 칸 확장 + 값 없을 때 auto 폴백 안내)
+system.mascotLightsLabelAuto     "자동(모드에 맞춤)"
+system.mascotLightsLabelAgent    "에이전트 이름"
+system.mascotLightsLabelProject  "프로젝트 이름"
+system.mascotLightsLabelTask     "작업명"
 ```
 
 마스코트 창 내부에는 번역 문자열 없음(결정 9).

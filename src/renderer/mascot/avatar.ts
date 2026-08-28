@@ -11,8 +11,14 @@
 //
 // 같은 에이전트가 여러 칸(중첩 프로젝트 폴더)에 나오거나 리렌더가 반복돼도
 // 시트를 다시 만들지 않도록 좌표+배율 키로 프라미스를 캐시한다.
+//
+// 설정(`mascotLightsFace`)이 "portrait"이면 위 스프라이트 얼굴 대신 초상화를
+// 띄운다 — 이 파일 아래쪽의 `loadPortraitUrl`이 그 로더다. 초상은 main 창의
+// 초상 캐시(`portraitCache.ts`)와 달리 마스코트 창이 `tauriApi.loadPortrait`로
+// 직접 읽는다(창 간에 픽셀을 나르지 않는 프로토콜 규약, protocol.ts 헤더 참고).
 import { loadMascotFrames, type MascotFrames } from "./sheet";
 import type { MascotLightAvatar } from "./protocol";
+import { tauriApi } from "../ipc/tauriApi";
 
 /**
  * 16×16 셀에서 얼굴로 잘라낼 사각형(셀 한 변에 대한 비율).
@@ -74,4 +80,39 @@ export function drawAvatar(canvas: HTMLCanvasElement, frames: MascotFrames): voi
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(frames.idle[0], sx, sy, s, s, 0, 0, canvas.width, canvas.height);
+}
+
+/** 초상 캐시 키 — agentId + portraitUpdatedAt(캐시 무효화). */
+export function portraitKey(avatar: MascotLightAvatar): string {
+  return `${avatar.agentId}|${avatar.portraitUpdatedAt ?? ""}`;
+}
+
+const portraitCache = new Map<string, Promise<string | null>>();
+
+/**
+ * 칸 얼굴용 초상 dataURL 확보(캐시). `portraitUpdatedAt`이 없으면(초상 없음)
+ * 즉시 null — 호출부가 스프라이트 얼굴로 폴백한다. 실패/빈 응답도 null로
+ * 접되, 캐시에는 남기지 않는다(다음 초상 등록 시 바로 다시 시도되도록).
+ */
+export function loadPortraitUrl(avatar: MascotLightAvatar): Promise<string | null> {
+  if (avatar.portraitUpdatedAt === null) return Promise.resolve(null);
+  const key = portraitKey(avatar);
+  const hit = portraitCache.get(key);
+  if (hit) return hit;
+  const promise = tauriApi
+    .loadPortrait(avatar.agentId)
+    .then((b64) => {
+      if (b64) return `data:image/png;base64,${b64}`;
+      // 빈 응답(파일 없음) — 캐시에 남기지 않는다: 초상이 뒤늦게 등록되면
+      // 다음 호출에서 바로 다시 시도되게 한다.
+      portraitCache.delete(key);
+      return null;
+    })
+    .catch((err) => {
+      portraitCache.delete(key);
+      console.warn("mascot: failed to load light portrait", err);
+      return null;
+    });
+  portraitCache.set(key, promise);
+  return promise;
 }
