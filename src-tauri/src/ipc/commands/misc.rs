@@ -31,8 +31,14 @@ pub async fn set_badge_count(app: AppHandle, count: i64) -> Result<(), String> {
 /// 이 커맨드로만 제어한다(런타임 create/destroy 없음 — 라이프사이클이 단순하고
 /// capability의 window 매칭이 정적으로 유지된다). 창이 없으면 조용히 no-op.
 ///
-/// `focus:false` 설정 덕에 show()가 포커스를 훔치지 않는다 — 사용자가 다른 앱에
-/// 타이핑하는 중에 마스코트가 떠도 입력이 끊기지 않는다.
+/// 포커스를 절대 훔치지 않는다: `focus:false`는 창 생성 시점만 막고, show()는
+/// 내부적으로 makeKeyAndOrderFront(tao window.rs `set_visible`)라 그것만으로는
+/// 부족하다. 그래서 `focusable:false`를 함께 켠다 — tao가 `canBecomeKeyWindow`/
+/// `canBecomeMainWindow`를 NO로 덮으므로(TaoWindow 클래스) show()도 클릭도
+/// 마스코트를 key 창으로 만들지 못한다. 사용자가 터미널에 타이핑하는 중에
+/// 마스코트가 뜨거나 마스코트를 드래그해도 입력 포커스가 끊기지 않는다.
+/// 드래그(`startDragging` → tao `drag_window`)는 performWindowDragWithEvent라
+/// key 창을 요구하지 않고, 클릭 히트는 `acceptFirstMouse:true`가 보장한다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn set_mascot_visible(app: AppHandle, visible: bool) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("mascot") {

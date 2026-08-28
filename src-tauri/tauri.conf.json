@@ -33,6 +33,7 @@
         "minimizable": false,
         "shadow": false,
         "focus": false,
+        "focusable": false,
         "acceptFirstMouse": true,
         "visibleOnAllWorkspaces": true,
         "visible": false

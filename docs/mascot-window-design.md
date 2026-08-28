@@ -88,7 +88,8 @@
       "maximizable": false,
       "minimizable": false,
       "shadow": false,
-      "focus": false,               // show() 시 포커스 스틸 방지
+      "focus": false,               // 창 생성 시 포커스 스틸 방지
+      "focusable": false,           // key 창이 아예 못 됨 — show()/클릭/드래그 전부 포커스 스틸 없음
       "acceptFirstMouse": true,     // macOS: 비포커스 상태 첫 클릭도 히트
       "visibleOnAllWorkspaces": true, // macOS Spaces 어디서든 보임
       "visible": false              // 표시 여부는 main의 mascotBridge가 결정
@@ -459,3 +460,20 @@ tauriApi.ts에는 `AgentOfficeApi`(shared/types/api.ts) 인터페이스에 두 �
      작업표시줄 미노출, workArea 기준 기본 위치, 배율 다른 모니터 이동 시 선명도
      유지, 클릭→포커스+터미널, 드래그 이동이 정상 동작 확인. macOS와 갈리는
      동작이 없어 `#[cfg]`/`set_ignore_cursor_events` 추가 도입은 하지 않았다.
+9. **`focusable:false` 추가 — 포커스 스틸 완전 차단**(후속 반영, 2026-08-28).
+   `focus:false`만으로는 부족했다. 그 값은 **창 생성 시점의 초기 포커스**만
+   막고, 이후 `set_mascot_visible(true)` → `WebviewWindow::show()`는 tao의
+   `set_visible(true)`가 `makeKeyAndOrderFront:`를 호출한다
+   (tao 0.35.3 `platform_impl/macos/window.rs:668-673`). 즉 에이전트가 작업을
+   시작해 마스코트가 뜰 때마다 앱 창 밖(터미널 등)의 입력 포커스를 가져갔고,
+   마스코트를 클릭·드래그할 때도 마찬가지였다.
+   `focusable:false`(`tauri-utils` `WindowConfig::focusable`)를 켜면 tao의
+   `TaoWindow` 클래스가 `canBecomeKeyWindow`/`canBecomeMainWindow`를 NO로
+   덮으므로(같은 파일 `is_focusable`, 408-433) `makeKeyAndOrderFront:`도 key로
+   만들지 못하고 그냥 앞으로만 올린다. Windows에서는 `WS_EX_NOACTIVATE`에 해당.
+   기존 상호작용은 그대로다 — 드래그는 `startDragging` → tao `drag_window`가
+   `performWindowDragWithEvent:`라 key 창을 요구하지 않고(931-), 클릭 히트는
+   `acceptFirstMouse:true`가 비활성 창에서도 첫 클릭을 뷰로 전달한다.
+   마스코트에는 키보드 입력이 없으므로 포커스 불가로 잃는 기능이 없다.
+   클릭 시 main 창을 앞으로 올리는 것은 `mascot_activate`가 명시적으로 하므로
+   영향 없다.
