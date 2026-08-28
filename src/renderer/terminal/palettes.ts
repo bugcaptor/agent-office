@@ -8,9 +8,10 @@
 // 씬·패널 색을 만들 필요가 없다 — 그래서 ThemeDef가 아니라 ITheme만 든
 // 가벼운 레코드로 따로 둔다. 해석/영속은 theme.ts가 두 레지스트리를 함께 본다.
 //
-// 값은 Catppuccin 공식 Windows Terminal 포트(catppuccin/windows-terminal)의
-// 스킴을 그대로 옮긴 것이다. 정체성이 곧 존재 이유이므로 우리 취향으로
-// 보정하지 않는다 — 앱 테마에 걸린 대비 계약(유채색 6색이 ANSI black 위
+// 값은 각 스킴의 정본을 그대로 옮긴 것이다 — Catppuccin은 공식 Windows
+// Terminal 포트(catppuccin/windows-terminal), apple-clear-dark는 macOS 26
+// 터미널.app의 "Clear Dark" 프로파일(com.apple.Terminal.plist의 NSColor 값을
+// 0-255로 반올림). 정체성이 곧 존재 이유이므로 우리 취향으로 보정하지 않는다 — 앱 테마에 걸린 대비 계약(유채색 6색이 ANSI black 위
 // 배경으로도 3:1)은 여기 적용하지 않는다. 특히 latte는 유채색을 세그먼트
 // 배경으로 쓰는 프롬프트(agnoster류)에서 글자 대비가 낮다(빨강 1.15:1).
 // 밝은 배경을 원하면서 그런 프롬프트를 쓴다면 앱 테마의 "밝음"이 낫다.
@@ -33,7 +34,8 @@ export type XtermPaletteId =
   | "catppuccin-latte"
   | "catppuccin-frappe"
   | "catppuccin-macchiato"
-  | "catppuccin-mocha";
+  | "catppuccin-mocha"
+  | "apple-clear-dark";
 
 export const XTERM_PALETTES: Record<XtermPaletteId, XtermPaletteDef> = {
   // 유일한 밝은 플레이버.
@@ -146,6 +148,37 @@ export const XTERM_PALETTES: Record<XtermPaletteId, XtermPaletteDef> = {
       brightWhite: "#a6adc8",
     },
   },
+  // macOS 26 터미널.app 기본 프로파일 "Clear Dark"의 이식.
+  // 원본 배경은 알파 0.95 + 배경 블러(반투명 창)지만, 이쪽 터미널 호스트는
+  // 뒤에 씬이 깔려 있어 비치면 글자가 읽히지 않는다 — 불투명하게 쓴다.
+  // 커서 색은 원본 프로파일에 없어(시스템 기본) 본문 글자색을 그대로 쓴다.
+  "apple-clear-dark": {
+    id: "apple-clear-dark",
+    labelKey: "terminal:palette.appleClearDark",
+    xterm: {
+      background: "#191d27",
+      foreground: "#e0e0e0",
+      cursor: "#e0e0e0",
+      cursorAccent: "#191d27",
+      selectionBackground: "#273d4c",
+      black: "#35424c",
+      red: "#b45648",
+      green: "#6caa71",
+      yellow: "#c4ac62",
+      blue: "#6d96b4",
+      magenta: "#bd7bcd",
+      cyan: "#7ccbcd",
+      white: "#dee5eb",
+      brightBlack: "#465c6d",
+      brightRed: "#df6c5a",
+      brightGreen: "#79be7e",
+      brightYellow: "#e5c872",
+      brightBlue: "#67b5ed",
+      brightMagenta: "#d389e5",
+      brightCyan: "#84dde0",
+      brightWhite: "#e5eff5",
+    },
+  },
 };
 
 /** 셀렉터 표시 순서(밝은 것부터). */
@@ -154,6 +187,7 @@ export const XTERM_PALETTE_ORDER: readonly XtermPaletteId[] = [
   "catppuccin-frappe",
   "catppuccin-macchiato",
   "catppuccin-mocha",
+  "apple-clear-dark",
 ];
 
 /** 셀렉터에 노출할 팔레트 라벨(호출 시점 번역 — 언어 변경을 따라간다). */

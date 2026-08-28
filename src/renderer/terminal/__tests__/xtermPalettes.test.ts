@@ -8,7 +8,8 @@
 // - 앱 테마 id와 팔레트 id가 겹치지 않음(오버라이드 해석이 모호해진다)
 //
 // 유채색 6색의 "ANSI black 위 배경으로도 3:1" 계약은 여기 적용하지 않는다 —
-// 값이 Catppuccin 공식 스킴의 이식이라 우리 취향으로 보정하지 않기 때문.
+// 값이 바깥 스킴(Catppuccin, macOS 터미널.app)의 이식이라 우리 취향으로
+// 보정하지 않기 때문.
 // 대신 전경 가독성 하한만 지킨다(palettes.ts 상단 주석 참고).
 import { describe, expect, it } from "vitest";
 import {
