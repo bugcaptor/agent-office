@@ -17,6 +17,7 @@ import { backendErrorText } from "../shared/backendError";
 import { SettingsForm } from "./SettingsForm";
 import { WebRemoteSection } from "./WebRemoteSection";
 import { TalkSection } from "./TalkSection";
+import { MascotLightsSection } from "./MascotLightsSection";
 import { ModelPicker } from "./ModelPicker";
 import { previewVoice } from "../sound/soundManager";
 import { THEMES, THEME_ORDER } from "../theme/themes";
@@ -572,6 +573,7 @@ function SystemTab() {
           <small>{t("system.mascotHelp")}</small>
         </span>
       </label>
+      <MascotLightsSection />
       <label className="settings-item">
         <span>
           <strong>{t("system.externalTerminalTitle")}</strong>
