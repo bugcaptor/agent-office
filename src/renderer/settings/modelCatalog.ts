@@ -25,7 +25,7 @@ import { tauriApi } from "../ipc/tauriApi";
 
 /**
  * 서비스별 "자주 쓰는 것" 상단 고정 목록 겸 라이브 조회 실패 시의 폴백.
- * 요약기 기본 모델(SettingsDialog의 SUMMARY_DEFAULT_MODELS)을 포함해야
+ * 요약기 기본 모델(SummarySection의 SUMMARY_DEFAULT_MODELS)을 포함해야
  * 한다 — 기본값이 목록에 없으면 "지금 쓰이는 모델"을 고를 수가 없다.
  */
 export const MODEL_PRESETS: Record<ModelCatalogProvider, string[]> = {

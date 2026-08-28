@@ -18,7 +18,7 @@ vi.mock("../../ipc/tauriApi", () => ({
 
 import { ModelPicker, filterModels } from "../ModelPicker";
 import { MODEL_PRESETS, resetModelCatalogCache } from "../modelCatalog";
-import { SUMMARY_DEFAULT_MODELS } from "../SettingsDialog";
+import { SUMMARY_DEFAULT_MODELS } from "../SummarySection";
 
 function options(): string[] {
   return screen.queryAllByRole("option").map((o) => o.textContent ?? "");
