@@ -110,7 +110,8 @@ pub enum MascotLightsFace {
 /// 신호등 칸에 표시할 텍스트. 기본 `Auto` = 현행 그대로(에이전트 모드는 에이전트
 /// 이름, 프로젝트 모드는 폴더 basename). 고른 값이 그 칸에서 비어 있으면(예:
 /// cwd 없는 에이전트에 `Project`) 렌더러가 `Auto`로 폴백한다 — 빈 칸을 만들지
-/// 않는다.
+/// 않는다. `ProjectTask`는 칸을 두 줄로 그린다 — 첫 줄 프로젝트명, 둘째 줄
+/// 작업명(렌더러는 이때 타일을 세로로도 키운다, `LIGHT_TILE_H_TALL`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MascotLightsLabel {
@@ -119,6 +120,7 @@ pub enum MascotLightsLabel {
     Agent,
     Project,
     Task,
+    ProjectTask,
 }
 
 /// 셸 출력 내보내기(.txt)를 열 외부 에디터. 기본은 OS 기본 연결(open/xdg-open).
@@ -892,6 +894,24 @@ mod tests {
             SettingsStore::new(file.clone()).load().0,
             AppSettings::default()
         );
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    // 신호등 칸 라벨(§7) — 새 값 `projecttask`가 다른 값들과 같은 lowercase
+    // 규약으로 직렬화되고, 설정 파일 왕복도 그대로 통과하는지 확인한다.
+    #[test]
+    fn mascot_lights_label_project_task_serializes_lowercase_and_round_trips() {
+        assert_eq!(
+            serde_json::to_string(&MascotLightsLabel::ProjectTask).unwrap(),
+            "\"projecttask\""
+        );
+
+        let file = scratch_file();
+        let store = SettingsStore::new(file.clone());
+        let mut edited = AppSettings::default();
+        edited.mascot_lights_label = MascotLightsLabel::ProjectTask;
+        store.save(&edited).unwrap();
+        assert_eq!(store.load(), (edited, false));
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 

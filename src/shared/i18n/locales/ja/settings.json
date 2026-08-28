@@ -123,6 +123,7 @@
     "mascotLightsLabelAgent": "エージェント名",
     "mascotLightsLabelProject": "プロジェクト名",
     "mascotLightsLabelTask": "作業名",
+    "mascotLightsLabelProjectTask": "プロジェクト＋作業",
     "mascotLightsVerticalTitle": "縦に表示",
     "mascotLightsProjectsTitle": "プロジェクトフォルダ",
     "mascotLightsProjectsAdd": "フォルダを追加…",

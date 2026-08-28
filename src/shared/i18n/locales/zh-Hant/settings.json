@@ -123,6 +123,7 @@
     "mascotLightsLabelAgent": "Agent 名稱",
     "mascotLightsLabelProject": "專案名稱",
     "mascotLightsLabelTask": "工作名稱",
+    "mascotLightsLabelProjectTask": "專案 + 工作",
     "mascotLightsVerticalTitle": "垂直顯示",
     "mascotLightsProjectsTitle": "專案資料夾",
     "mascotLightsProjectsAdd": "新增資料夾…",

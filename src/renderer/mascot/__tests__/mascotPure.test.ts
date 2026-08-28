@@ -75,8 +75,24 @@ describe("protocol", () => {
       lightsVertical: true,
     });
     expect(parsed?.lights).toEqual([
-      { id: "a1", label: "철수", tooltip: "철수", state: "attention", clickAgentId: "a1", avatar: null },
-      { id: "p1", label: "repo", tooltip: "repo", state: "off", clickAgentId: null, avatar: null },
+      {
+        id: "a1",
+        label: "철수",
+        sublabel: null,
+        tooltip: "철수",
+        state: "attention",
+        clickAgentId: "a1",
+        avatar: null,
+      },
+      {
+        id: "p1",
+        label: "repo",
+        sublabel: null,
+        tooltip: "repo",
+        state: "off",
+        clickAgentId: null,
+        avatar: null,
+      },
     ]);
     expect(parsed?.lightsVertical).toBe(true);
   });
@@ -107,7 +123,15 @@ describe("protocol", () => {
       lights: [{ id: "a1", label: "철수", state: "working" }, { id: "no-label" }, "nope"],
     });
     expect(parsed?.lights).toEqual([
-      { id: "a1", label: "철수", tooltip: "철수", state: "working", clickAgentId: null, avatar: null },
+      {
+        id: "a1",
+        label: "철수",
+        sublabel: null,
+        tooltip: "철수",
+        state: "working",
+        clickAgentId: null,
+        avatar: null,
+      },
     ]);
   });
 
@@ -166,6 +190,7 @@ describe("protocol", () => {
           {
             id: "p1",
             label: "repo",
+            sublabel: null,
             tooltip: "repo",
             state: "working",
             clickAgentId: "a1",
@@ -192,6 +217,7 @@ describe("protocol", () => {
           {
             id: "p1",
             label: "repo",
+            sublabel: null,
             tooltip: "repo",
             state: "working",
             clickAgentId: "a1",
@@ -229,10 +255,14 @@ describe("protocol", () => {
 
   it("sameMascotState는 lights 항목 차이도 감지한다(dedupe 회귀)", () => {
     const a = state({
-      lights: [{ id: "a1", label: "a", tooltip: "a", state: "working", clickAgentId: "a1", avatar: null }],
+      lights: [
+        { id: "a1", label: "a", sublabel: null, tooltip: "a", state: "working", clickAgentId: "a1", avatar: null },
+      ],
     });
     const b = state({
-      lights: [{ id: "a1", label: "a", tooltip: "a", state: "attention", clickAgentId: "a1", avatar: null }],
+      lights: [
+        { id: "a1", label: "a", sublabel: null, tooltip: "a", state: "attention", clickAgentId: "a1", avatar: null },
+      ],
     });
     expect(sameMascotState(a, state({ ...a }))).toBe(true);
     expect(sameMascotState(a, b)).toBe(false);
@@ -241,14 +271,68 @@ describe("protocol", () => {
 
   it("sameMascotState는 lights 항목의 tooltip 차이도 감지한다", () => {
     const a = state({
-      lights: [{ id: "a1", label: "a", tooltip: "a", state: "working", clickAgentId: "a1", avatar: null }],
+      lights: [
+        { id: "a1", label: "a", sublabel: null, tooltip: "a", state: "working", clickAgentId: "a1", avatar: null },
+      ],
     });
     const b = state({
       lights: [
-        { id: "a1", label: "a", tooltip: "a · proj", state: "working", clickAgentId: "a1", avatar: null },
+        {
+          id: "a1",
+          label: "a",
+          sublabel: null,
+          tooltip: "a · proj",
+          state: "working",
+          clickAgentId: "a1",
+          avatar: null,
+        },
       ],
     });
     expect(sameMascotState(a, b)).toBe(false);
+  });
+
+  it("sameMascotState는 lights 항목의 sublabel 차이도 감지한다(§7 개정)", () => {
+    const a = state({
+      lights: [
+        { id: "a1", label: "proj", sublabel: null, tooltip: "proj", state: "working", clickAgentId: "a1", avatar: null },
+      ],
+    });
+    const b = state({
+      lights: [
+        {
+          id: "a1",
+          label: "proj",
+          sublabel: "작업 중",
+          tooltip: "proj",
+          state: "working",
+          clickAgentId: "a1",
+          avatar: null,
+        },
+      ],
+    });
+    expect(sameMascotState(a, b)).toBe(false);
+  });
+
+  it("lightsTall 부재/손상 페이로드는 하위호환으로 false로 접힌다", () => {
+    expect(parseMascotState({ visible: true })?.lightsTall).toBe(false);
+    expect(parseMascotState({ visible: true, lightsTall: "yes" })?.lightsTall).toBe(false);
+    expect(parseMascotState({ visible: true, lightsTall: true })?.lightsTall).toBe(true);
+  });
+
+  it("sameMascotState는 lightsTall 차이도 감지한다", () => {
+    expect(sameMascotState(state({ lightsTall: false }), state({ lightsTall: true }))).toBe(false);
+  });
+
+  it("lights 항목에 sublabel이 실리면 그대로 파싱하고, 없으면 null이다", () => {
+    const parsed = parseMascotState({
+      visible: true,
+      lights: [
+        { id: "a1", label: "proj-a", sublabel: "작업 중", state: "working", clickAgentId: "a1" },
+        { id: "a2", label: "proj-b", state: "off", clickAgentId: null },
+      ],
+    });
+    expect(parsed?.lights[0].sublabel).toBe("작업 중");
+    expect(parsed?.lights[1].sublabel).toBeNull();
   });
 
 });
@@ -256,40 +340,40 @@ describe("protocol", () => {
 describe("layout", () => {
   // 치수: 타일 54×48, 간격 6, strip 여백 6, 스프라이트 영역 102(96+여유 6).
   it("가로 모드: strip 두께 60(48+여백12), n=4면 폭 246으로 스프라이트 폭을 넘어선다", () => {
-    expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: true, wide: false })).toEqual({
+    expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: true, wide: false, tall: false })).toEqual({
       width: 12 + 54 * 4 + 6 * 3,
       height: 102 + 60,
     });
-    expect(computeMascotLayout({ lightCount: 8, vertical: false, hasSprite: true, wide: false })).toEqual({
+    expect(computeMascotLayout({ lightCount: 8, vertical: false, hasSprite: true, wide: false, tall: false })).toEqual({
       width: 486,
       height: 102 + 60,
     });
   });
 
   it("가로 모드: 스프라이트 없으면 폭은 strip 폭 그대로, 높이는 strip 두께뿐", () => {
-    expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: false, wide: false })).toEqual({
+    expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: false, wide: false, tall: false })).toEqual({
       width: 12 + 54 * 4 + 6 * 3,
       height: 60,
     });
   });
 
   it("세로 모드: 폭은 max(스프라이트 폭, 타일 폭+여백), 높이는 스프라이트 + stripH", () => {
-    expect(computeMascotLayout({ lightCount: 8, vertical: true, hasSprite: true, wide: false })).toEqual({
+    expect(computeMascotLayout({ lightCount: 8, vertical: true, hasSprite: true, wide: false, tall: false })).toEqual({
       width: 120,
       height: 102 + (12 + 48 * 8 + 6 * 7),
     });
-    expect(computeMascotLayout({ lightCount: 1, vertical: true, hasSprite: false, wide: false })).toEqual({
+    expect(computeMascotLayout({ lightCount: 1, vertical: true, hasSprite: false, wide: false, tall: false })).toEqual({
       width: 54 + 12,
       height: 48 + 12,
     });
   });
 
   it("0칸이면 strip 두께가 0이라 스프라이트만큼만 남는다", () => {
-    expect(computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: true, wide: false })).toEqual({
+    expect(computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: true, wide: false, tall: false })).toEqual({
       width: 120,
       height: 102,
     });
-    expect(computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: false, wide: false })).toEqual({
+    expect(computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: false, wide: false, tall: false })).toEqual({
       width: 0,
       height: 0,
     });
@@ -298,7 +382,7 @@ describe("layout", () => {
   // §7 개정 — wide(작업명 라벨) 칸일 때의 폭/최대 칸 수.
   describe("wide(작업명 라벨, §7 개정)", () => {
     it("가로 모드: wide 타일(96px)로 strip 길이를 계산한다", () => {
-      expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: true, wide: true })).toEqual({
+      expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: true, wide: true, tall: false })).toEqual({
         width: 12 + 96 * 4 + 6 * 3,
         height: 102 + 60,
       });
@@ -306,13 +390,13 @@ describe("layout", () => {
 
     it("세로 모드: wide 타일(96px)이 strip 두께(폭 방향)가 된다 — 스프라이트 폭(120)이 더 넓어 창 폭은 그대로다", () => {
       // width = max(스프라이트 폭 120, stripThickness) = max(120, 96+12=108) = 120.
-      expect(computeMascotLayout({ lightCount: 3, vertical: true, hasSprite: true, wide: true })).toEqual({
+      expect(computeMascotLayout({ lightCount: 3, vertical: true, hasSprite: true, wide: true, tall: false })).toEqual({
         width: 120,
         height: 102 + (12 + 48 * 3 + 6 * 2),
       });
       // 스프라이트가 없으면 stripThickness(108)가 그대로 창 폭이 된다 — wide가
       // 실제로 폭을 넓히는 걸 여기서 확인한다(기본 타일이면 54+12=66).
-      expect(computeMascotLayout({ lightCount: 3, vertical: true, hasSprite: false, wide: true })).toEqual({
+      expect(computeMascotLayout({ lightCount: 3, vertical: true, hasSprite: false, wide: true, tall: false })).toEqual({
         width: 96 + 12,
         height: 12 + 48 * 3 + 6 * 2,
       });
@@ -331,6 +415,38 @@ describe("layout", () => {
       const folded = foldOverflow(over, maxLightsFor(true, false));
       expect(folded.shown).toHaveLength(4);
       expect(folded.overflowCount).toBe(2);
+    });
+  });
+
+  // 신규 — tall(프로젝트+작업 두 줄 라벨, `mascotLightsLabel==="projecttask"`)
+  // 칸일 때의 높이/두께. wide와 마찬가지로 폭 상한(maxLightsFor)은 건드리지
+  // 않는다(설계에서 손대지 않기로 확정).
+  describe("tall(프로젝트+작업 두 줄 라벨)", () => {
+    it("가로 모드: tall 타일(60px)이 strip 두께(높이 방향)가 된다", () => {
+      // 두께 = tileH(tall) + 여백12 = 60+12 = 72(기본 60보다 12 크다).
+      expect(
+        computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: true, wide: true, tall: true }),
+      ).toEqual({
+        width: 12 + 96 * 4 + 6 * 3,
+        height: 102 + 72,
+      });
+    });
+
+    it("세로 모드: tall 타일(60px)로 strip 길이(높이 방향)를 계산한다", () => {
+      expect(
+        computeMascotLayout({ lightCount: 3, vertical: true, hasSprite: true, wide: true, tall: true }),
+      ).toEqual({
+        width: 120,
+        height: 102 + (12 + 60 * 3 + 6 * 2),
+      });
+      // 스프라이트가 없어도 strip 길이만 창 높이가 된다 — tall이 기본(48)보다
+      // 실제로 커지는 걸 여기서 확인한다.
+      expect(
+        computeMascotLayout({ lightCount: 3, vertical: true, hasSprite: false, wide: true, tall: true }),
+      ).toEqual({
+        width: 96 + 12,
+        height: 12 + 60 * 3 + 6 * 2,
+      });
     });
   });
 
@@ -368,6 +484,7 @@ describe("layout", () => {
         vertical: false,
         hasSprite: true,
         wide: false,
+        tall: false,
         dpr: 1,
         currentPos: { x: 100, y: 898 },
         currentSize: { width: 120, height: 102 },
@@ -385,6 +502,7 @@ describe("layout", () => {
         vertical: false,
         hasSprite: true,
         wide: false,
+        tall: false,
         dpr: 1,
         currentPos: { x: 100, y: 898 }, // 120×102일 때의 top-left
         currentSize: { width: 120, height: 102 },
@@ -402,6 +520,7 @@ describe("layout", () => {
         vertical: false,
         hasSprite: true,
         wide: false,
+        tall: false,
         dpr: 2,
         currentPos: { x: 200, y: 1720 }, // 240×204 물리 창의 top-left
         currentSize: { width: 240, height: 204 },
@@ -417,6 +536,7 @@ describe("layout", () => {
         vertical: true, // 세로 8칸 → 매우 높은 창
         hasSprite: true,
         wide: false,
+        tall: false,
         dpr: 1,
         currentPos: { x: 100, y: 10 }, // 화면 위쪽 끝 근처
         currentSize: { width: 120, height: 102 },
@@ -437,6 +557,7 @@ describe("layout", () => {
         vertical: false,
         hasSprite: false,
         wide: false,
+        tall: false,
         dpr: 1,
         currentPos: { x: -500, y: -500 },
         currentSize: { width: 120, height: 140 },
@@ -456,6 +577,7 @@ describe("layout", () => {
         vertical: false,
         hasSprite: true,
         wide: false,
+        tall: false,
         dpr: 1.5,
         currentPos: { x: 1000, y: 800 },
         currentSize: { width: 243, height: 90 },
@@ -476,6 +598,7 @@ describe("layout", () => {
         vertical: false,
         hasSprite: true,
         wide: false,
+        tall: false,
         dpr: 1.5,
         currentPos: { x: 1000, y: 800 },
         currentSize: { width: 441, height: 255 },

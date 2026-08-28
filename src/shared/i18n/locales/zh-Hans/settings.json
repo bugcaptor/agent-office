@@ -123,6 +123,7 @@
     "mascotLightsLabelAgent": "智能体名称",
     "mascotLightsLabelProject": "项目名称",
     "mascotLightsLabelTask": "任务名",
+    "mascotLightsLabelProjectTask": "项目 + 任务",
     "mascotLightsVerticalTitle": "垂直显示",
     "mascotLightsProjectsTitle": "项目文件夹",
     "mascotLightsProjectsAdd": "添加文件夹…",

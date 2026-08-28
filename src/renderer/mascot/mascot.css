@@ -124,6 +124,15 @@
   width: 96px;
 }
 
+/* tall(프로젝트+작업 두 줄 라벨, `mascotLightsLabel==="projecttask"`) — 둘째
+   줄(작업명)이 들어갈 자리만큼 칸을 높인다(protocol.ts LIGHT_TILE_H_TALL(60)과
+   짝 — 기존 48에 둘째 줄 9px + gap 2px). 오버플로 칩은 첫 줄뿐이라 높이지
+   않는다(wide 칩과 같은 관례). */
+.mascot-lights-tall .mascot-light,
+.mascot-lights-tall .mascot-light-chip {
+  height: 60px;
+}
+
 /* 칸 하나 = [얼굴 원판 + 이름] 타일. 예전에는 18px 원 하나뿐이라 "무엇이
    켜졌는지"는 툴팁을 띄워야만 알 수 있었다 — 대시보드로서는 반쪽이라
    대상(프로젝트/에이전트) 이름과 대표 에이전트의 얼굴을 칸 안에 넣었다.
@@ -191,6 +200,22 @@
   max-width: 100%;
   color: #e6e8ee;
   font: 500 8px/9px ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.2px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+/* 둘째 줄(작업명) — `mascotLightsLabel==="projecttask"`일 때만 렌더된다.
+   `.mascot-light-name`과 같은 절단/그림자 규칙을 쓰되 색만 흐리게 해 시각적
+   위계를 준다(첫 줄이 주 텍스트). */
+.mascot-light-sub {
+  max-width: 100%;
+  color: #b9bec9;
+  font: 400 8px/9px ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.2px;
   text-align: center;
   white-space: nowrap;

@@ -49,8 +49,9 @@ export type MascotLightsFace = "sprite" | "portrait";
 
 /** 신호등 칸에 표시할 텍스트 — Rust MascotLightsLabel 미러. 기본 auto(모드에
  * 맞춘 현행 동작: agents 모드=에이전트 이름, projects 모드=폴더 basename). 고른
- * 값이 그 칸에서 비어 있으면(cwd 없음 등) auto로 폴백한다. */
-export type MascotLightsLabel = "auto" | "agent" | "project" | "task";
+ * 값이 그 칸에서 비어 있으면(cwd 없음 등) auto로 폴백한다. `projecttask`는
+ * 칸을 두 줄로 그린다 — 첫 줄 프로젝트명, 둘째 줄 작업명(타일도 세로로 커진다). */
+export type MascotLightsLabel = "auto" | "agent" | "project" | "task" | "projecttask";
 
 import type { TtsRewriteProvider } from './tts';
 

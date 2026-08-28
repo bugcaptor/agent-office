@@ -208,6 +208,7 @@ describe("installMascotBridge", () => {
       lightsVertical: false,
       lightsFace: "sprite",
       lightsWide: false,
+      lightsTall: false,
     });
     expect(h.visibles).toEqual([true]);
     off();
@@ -365,6 +366,7 @@ describe("installMascotBridge · 신호등(lights)", () => {
       {
         id: "b1",
         label: "테스터",
+        sublabel: null,
         tooltip: "테스터",
         state: "attention",
         clickAgentId: "b1",
@@ -459,6 +461,7 @@ describe("installMascotBridge · 신호등(lights)", () => {
       {
         id: "/dev/proj",
         label: "proj",
+        sublabel: null,
         tooltip: "테스터 · proj",
         state: "working",
         clickAgentId: "a1",

@@ -55,6 +55,7 @@ describe("computeMascotLights", () => {
       expect(lights[0]).toEqual({
         id: "a",
         label: "A",
+        sublabel: null,
         tooltip: "A",
         state: "working",
         clickAgentId: "a",
@@ -70,6 +71,7 @@ describe("computeMascotLights", () => {
       expect(lights[1]).toEqual({
         id: "c",
         label: "C",
+        sublabel: null,
         tooltip: "C",
         state: "attention",
         clickAgentId: "c",
@@ -108,6 +110,7 @@ describe("computeMascotLights", () => {
         {
           id: "a",
           label: "A",
+          sublabel: null,
           tooltip: "A",
           state: "attention",
           clickAgentId: "a",
@@ -136,6 +139,7 @@ describe("computeMascotLights", () => {
         {
           id: "a",
           label: "A",
+          sublabel: null,
           tooltip: "A",
           state: "attention",
           clickAgentId: "a",
@@ -189,6 +193,7 @@ describe("computeMascotLights", () => {
         {
           id: "/dev/proj-a",
           label: "proj-a",
+          sublabel: null,
           tooltip: "a · proj-a",
           state: "working",
           clickAgentId: "a",
@@ -204,6 +209,7 @@ describe("computeMascotLights", () => {
         {
           id: "/dev/idle-repo",
           label: "idle-repo",
+          sublabel: null,
           tooltip: "idle-repo",
           state: "off",
           clickAgentId: null,
@@ -268,6 +274,7 @@ describe("computeMascotLights", () => {
       expect(lights[0]).toEqual({
         id: "/dev/proj",
         label: "proj",
+        sublabel: null,
         tooltip: "proj",
         state: "off",
         clickAgentId: null,
@@ -564,6 +571,63 @@ describe("computeMascotLights", () => {
         );
         expect(lights[0].tooltip).toBe("철수 · proj-a · 테스트 작성");
       });
+
+      // 신규 — projecttask(§7 확장): label=프로젝트명, sublabel=작업명.
+      it("projecttask는 label에 프로젝트명, sublabel에 작업명을 싣는다", () => {
+        const lights = computeMascotLights(
+          base({
+            labelMode: "projecttask",
+            agentOrder: ["a"],
+            agents: { a: fullAgent },
+            taskLabels: { a: fullTaskLabel },
+            timeTracking: { a: turn("working", { turnStartedAt: 1 }) },
+          }),
+        );
+        expect(lights[0].label).toBe("proj-a");
+        expect(lights[0].sublabel).toBe("테스트 작성");
+      });
+
+      it("projecttask인데 작업 정보가 없으면 sublabel은 null이다(label은 여전히 프로젝트명)", () => {
+        const lights = computeMascotLights(
+          base({
+            labelMode: "projecttask",
+            agentOrder: ["a"],
+            agents: { a: fullAgent },
+            timeTracking: { a: turn("working", { turnStartedAt: 1 }) },
+          }),
+        );
+        expect(lights[0].label).toBe("proj-a");
+        expect(lights[0].sublabel).toBeNull();
+      });
+
+      it("projecttask인데 cwd가 없으면 label도 auto(이름)로 폴백한다", () => {
+        const lights = computeMascotLights(
+          base({
+            labelMode: "projecttask",
+            agentOrder: ["a"],
+            agents: { a: { name: "철수" } },
+            taskLabels: { a: fullTaskLabel },
+            timeTracking: { a: turn("working", { turnStartedAt: 1 }) },
+          }),
+        );
+        expect(lights[0].label).toBe("철수");
+        expect(lights[0].sublabel).toBe("테스트 작성");
+      });
+
+      it("projecttask가 아닌 labelMode는 sublabel이 항상 null이다", () => {
+        for (const labelMode of ["auto", "agent", "project", "task"] as const) {
+          const lights = computeMascotLights(
+            base({
+              labelMode,
+              agentOrder: ["a"],
+              agents: { a: fullAgent },
+              taskLabels: { a: fullTaskLabel },
+              timeTracking: { a: turn("working", { turnStartedAt: 1 }) },
+            }),
+          );
+          expect(lights[0].sublabel).toBeNull();
+        }
+      });
     });
 
     describe("projects 모드", () => {
@@ -670,6 +734,70 @@ describe("computeMascotLights", () => {
           }),
         );
         expect(lights[0].tooltip).toBe("proj");
+      });
+
+      // 신규 — projecttask(§7 확장): label=폴더 basename, sublabel=대표의 작업명.
+      it("projecttask는 label에 폴더명, sublabel에 대표 에이전트의 작업명을 싣는다", () => {
+        const lights = computeMascotLights(
+          base({
+            mode: "projects",
+            labelMode: "projecttask",
+            projects: [proj],
+            agentOrder: ["a"],
+            agents: { a: { name: "철수", cwd: proj } },
+            taskLabels: { a: { sessionId: "s1", goal: "테스트 작성" } },
+            timeTracking: { a: turn("working", { turnStartedAt: 1 }) },
+          }),
+        );
+        expect(lights[0].label).toBe("proj");
+        expect(lights[0].sublabel).toBe("테스트 작성");
+      });
+
+      it("projecttask인데 대표는 있지만 작업 정보가 없으면 sublabel은 null이다", () => {
+        const lights = computeMascotLights(
+          base({
+            mode: "projects",
+            labelMode: "projecttask",
+            projects: [proj],
+            agentOrder: ["a"],
+            agents: { a: { name: "철수", cwd: proj } },
+            timeTracking: { a: turn("working", { turnStartedAt: 1 }) },
+          }),
+        );
+        expect(lights[0].label).toBe("proj");
+        expect(lights[0].sublabel).toBeNull();
+      });
+
+      it("projecttask인데 대표가 없으면 label은 폴더명 그대로, sublabel은 null이다", () => {
+        const lights = computeMascotLights(
+          base({
+            mode: "projects",
+            labelMode: "projecttask",
+            projects: [proj],
+            agentOrder: [],
+            agents: {},
+            timeTracking: {},
+          }),
+        );
+        expect(lights[0].label).toBe("proj");
+        expect(lights[0].sublabel).toBeNull();
+      });
+
+      it("projecttask가 아닌 labelMode는 sublabel이 항상 null이다", () => {
+        for (const labelMode of ["auto", "agent", "project", "task"] as const) {
+          const lights = computeMascotLights(
+            base({
+              mode: "projects",
+              labelMode,
+              projects: [proj],
+              agentOrder: ["a"],
+              agents: { a: { name: "철수", cwd: proj } },
+              taskLabels: { a: { sessionId: "s1", goal: "테스트 작성" } },
+              timeTracking: { a: turn("working", { turnStartedAt: 1 }) },
+            }),
+          );
+          expect(lights[0].sublabel).toBeNull();
+        }
       });
     });
   });

@@ -144,6 +144,7 @@ async function computeAppliedRect(
   vertical: boolean,
   hasSprite: boolean,
   wide: boolean,
+  tall: boolean,
   dpr: number,
   anchor: Anchor,
   anchorSize: Size,
@@ -159,6 +160,7 @@ async function computeAppliedRect(
     vertical,
     hasSprite,
     wide,
+    tall,
     dpr,
     currentPos,
     currentSize: anchorSize,
@@ -305,6 +307,7 @@ export default function MascotApp() {
     vertical: boolean,
     hasSprite: boolean,
     wide: boolean,
+    tall: boolean,
     dpr: number,
     gen: number,
   ): Promise<void> => {
@@ -315,6 +318,7 @@ export default function MascotApp() {
       vertical,
       hasSprite,
       wide,
+      tall,
       dpr,
       anchorRef.current,
       lastSizeRef.current,
@@ -485,7 +489,7 @@ export default function MascotApp() {
   );
   const displayedLightCount = shownLights.length + (overflowCount > 0 ? 1 : 0);
   const hasSprite = state.agentId !== null;
-  const layoutKey = `${displayedLightCount}|${state.lightsVertical}|${hasSprite}|${state.lightsWide}`;
+  const layoutKey = `${displayedLightCount}|${state.lightsVertical}|${hasSprite}|${state.lightsWide}|${state.lightsTall}`;
 
   useEffect(() => {
     // 스프라이트도 없고 칸도 없으면(완전히 숨김) 0×0으로 줄일 이유가 없다 —
@@ -501,12 +505,13 @@ export default function MascotApp() {
         state.lightsVertical,
         hasSprite,
         state.lightsWide,
+        state.lightsTall,
         dprRef.current,
         gen,
       ).catch((err) => console.warn("mascot: failed to apply layout", err));
     }, LAYOUT_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-    // layoutKey가 위 네 값을 그대로 인코딩한다 — dpr은 dprRef로 최신값을
+    // layoutKey가 위 다섯 값을 그대로 인코딩한다 — dpr은 dprRef로 최신값을
     // 읽으므로 dpr 변화 자체는 재실행 트리거가 아니다(의도된 것, §C9).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutKey]);
@@ -641,7 +646,7 @@ export default function MascotApp() {
       )}
       {state.lights.length > 0 && (
         <div
-          className={`mascot-lights${state.lightsVertical ? " mascot-lights-vertical" : " mascot-lights-horizontal"}${state.lightsWide ? " mascot-lights-wide" : ""}`}
+          className={`mascot-lights${state.lightsVertical ? " mascot-lights-vertical" : " mascot-lights-horizontal"}${state.lightsWide ? " mascot-lights-wide" : ""}${state.lightsTall ? " mascot-lights-tall" : ""}`}
           onPointerDown={onStripPointerDown}
           onPointerMove={onStripPointerMove}
           onPointerUp={onStripPointerUp}
@@ -661,6 +666,12 @@ export default function MascotApp() {
               </div>
               {/* 이름은 대상(프로젝트 폴더명 또는 에이전트명) 원문 — 비번역(결정 9). */}
               <div className="mascot-light-name">{light.label}</div>
+              {/* 둘째 줄(작업명) — `mascotLightsLabel==="projecttask"`일 때만
+                  채워진다(sublabel). 없으면 렌더하지 않는다 — tall 모드에서도
+                  칸 높이는 CSS(.mascot-lights-tall)가 일괄로 맞춘다. */}
+              {light.sublabel !== null && (
+                <div className="mascot-light-sub">{light.sublabel}</div>
+              )}
             </div>
           ))}
           {overflowCount > 0 && (

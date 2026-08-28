@@ -123,6 +123,7 @@
     "mascotLightsLabelAgent": "에이전트 이름",
     "mascotLightsLabelProject": "프로젝트 이름",
     "mascotLightsLabelTask": "작업명",
+    "mascotLightsLabelProjectTask": "프로젝트 + 작업",
     "mascotLightsVerticalTitle": "세로로 표시",
     "mascotLightsProjectsTitle": "프로젝트 폴더",
     "mascotLightsProjectsAdd": "폴더 추가…",

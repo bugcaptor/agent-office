@@ -197,6 +197,7 @@ export interface MascotState {
 LIGHT_AVATAR_PX = 28 // 칸 안 프로필 원판 지름
 LIGHT_TILE_W = 54    // 칸(타일) 폭
 LIGHT_TILE_H = 48    // 칸(타일) 높이
+LIGHT_TILE_H_TALL = 60 // 두 줄 라벨(projecttask) 칸 높이(§7 개정)
 LIGHT_GAP = 6        // 칸 간격
 LIGHT_STRIP_PAD = 6  // strip 내부 여백
 MAX_LIGHTS = 8       // 오버플로 접기 상한(칩 포함 8칸)
@@ -215,6 +216,10 @@ MASCOT_WINDOW_H = 96 + 6 = 102 // 창의 스프라이트 몫
 - **죽은 공간 제거(개정)**: 예전 스프라이트 몫 140은 96px 캔버스 아래로 44px의
   빈 공간을 남겨(≈0.46배) 캐릭터가 strip 위에 붕 떠 보였다. 102로 줄이고
   캔버스를 래퍼 하단 정렬(`align-items:flex-end`)해 발이 strip 윗변에 닿는다.
+- **`projecttask` 라벨(개정)**: 칸을 두 줄(첫 줄 프로젝트명, 둘째 줄 작업명)로
+  그리는 만큼 타일 높이가 48→60(`LIGHT_TILE_H_TALL`)으로 커진다 — wide(96px
+  폭)도 함께 켜진다(작업명이 실리므로). 가로 모드 두께는 60+12=72, 세로 모드
+  strip 길이의 타일 변도 60을 쓴다.
 - 신규 `src/renderer/mascot/layout.ts`(순수, vitest 대상):
   `computeMascotLayout({ lightCount, vertical, hasSprite }) → { width, height }`
   + `foldOverflow(lights, MAX_LIGHTS) → { shown, overflowCount }`.
@@ -330,7 +335,7 @@ MASCOT_WINDOW_H = 96 + 6 = 102 // 창의 스프라이트 몫
 | `mascotLightsVertical` / `mascot_lights_vertical` | bool | false | 체크박스 "세로로 표시" |
 | `mascotLightsProjects` / `mascot_lights_projects` | string[] / `Vec<String>` | `[]` | 폴더 목록 편집기: 추가(`tauriApi.pickDirectory` — ProfileDialog.tsx:255 선례), 제거. 순서 = 표시 순서. projects 모드일 때만 노출 |
 | `mascotLightsFace` / `mascot_lights_face` | `"sprite"\|"portrait"` (Rust enum, serde lowercase — `MascotLightsMode` 선례) | `"sprite"` | 셀렉트 "칸에 띄울 얼굴". `portrait`을 골라도 초상 없는 캐릭터는 스프라이트로 폴백(§6 개정) |
-| `mascotLightsLabel` / `mascot_lights_label` | `"auto"\|"agent"\|"project"\|"task"` (Rust enum, serde lowercase) | `"auto"` | 셀렉트 "칸에 표시할 이름". 값이 그 칸에서 비면 `auto`로 폴백. `task`는 칸 폭을 96px로 넓히고 가로 배열 최대 칸 수를 5로 줄인다(§6 개정) |
+| `mascotLightsLabel` / `mascot_lights_label` | `"auto"\|"agent"\|"project"\|"task"\|"projecttask"` (Rust enum, serde lowercase) | `"auto"` | 셀렉트 "칸에 표시할 이름". 값이 그 칸에서 비면 `auto`로 폴백. `task`는 칸 폭을 96px로 넓히고 가로 배열 최대 칸 수를 5로 줄인다(§6 개정). `projecttask`는 칸을 두 줄(첫 줄=프로젝트명, 둘째 줄=작업명)로 그리며 폭(96px)과 높이(60px, `LIGHT_TILE_H_TALL`)를 함께 넓힌다 — 작업명이 없는 칸은 둘째 줄이 비지만 타일 높이는 그대로다 |
 
 Rust `AppSettings`(settings_store.rs)에 `#[serde(default)]` 5필드 추가 —
 mascot_enabled와 같은 요령. 갱신 대상: `Default` impl, settings_store
@@ -362,6 +367,7 @@ system.mascotLightsLabelAuto     "자동(모드에 맞춤)"
 system.mascotLightsLabelAgent    "에이전트 이름"
 system.mascotLightsLabelProject  "프로젝트 이름"
 system.mascotLightsLabelTask     "작업명"
+system.mascotLightsLabelProjectTask "프로젝트 + 작업"
 ```
 
 마스코트 창 내부에는 번역 문자열 없음(결정 9).

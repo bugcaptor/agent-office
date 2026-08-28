@@ -33,6 +33,10 @@ export const LIGHT_AVATAR_PX = 28;
 export const LIGHT_TILE_W = 54;
 /** 램프 칸(타일) 높이(논리 px). */
 export const LIGHT_TILE_H = 48;
+/** 둘째 줄 라벨(`mascotLightsLabel==="projecttask"`) 표시 시 칸 높이(논리 px).
+ *  현행 48 = 패딩7(위3+아래4) + 얼굴28 + gap2 + 라벨9 + 여유2. 여기에 둘째 줄
+ *  (작업명) 9px과 그 위 gap 2px를 더해 60. */
+export const LIGHT_TILE_H_TALL = 60;
 /** 램프 사이 간격(논리 px). */
 export const LIGHT_GAP = 6;
 /** strip 내부 여백(논리 px, 사방 동일). */
@@ -88,6 +92,9 @@ export interface MascotLight {
    *  이름/프로젝트명/작업명 중 하나, 값이 비면 auto로 폴백). 잘릴 수 있다(칸
    *  폭 안에서 말줄임). 비번역(마스코트 창 안은 번역 문자열 금지). */
   label: string;
+  /** 둘째 줄 — `mascotLightsLabel==="projecttask"`일 때만 채워진다(작업명).
+   *  그 외 모드는 항상 null. 비번역. */
+  sublabel: string | null;
   /** 호버 툴팁 — [에이전트 이름, 프로젝트명, 작업명] 중 있는 것만 " · "로 이어
    *  붙인 전체 텍스트(잘린 label을 여기서 확인). 비번역. */
   tooltip: string;
@@ -123,10 +130,15 @@ export interface MascotState {
   lightsVertical: boolean;
   /** 신호등 칸 얼굴 원판에 스프라이트/초상화 중 무엇을 띄울지(설정 미러). */
   lightsFace: MascotLightsFace;
-  /** true = 칸을 넓게(96px) 그린다 — `mascotLightsLabel==="task"`일 때만.
-   *  마스코트 창은 설정 의미를 모르고 렌더 관심사(칸 폭)만 받는다(기존
-   *  lightsFace/lightsVertical과 같은 규약). */
+  /** true = 칸을 넓게(96px) 그린다 — `mascotLightsLabel==="task"` 또는
+   *  `"projecttask"`일 때(작업명이 실리면 폭도 넓어야 한다). 마스코트 창은
+   *  설정 의미를 모르고 렌더 관심사(칸 폭)만 받는다(기존 lightsFace/
+   *  lightsVertical과 같은 규약). */
   lightsWide: boolean;
+  /** true = 칸을 두 줄 높이(60px, `LIGHT_TILE_H_TALL`)로 그린다 —
+   *  `mascotLightsLabel==="projecttask"`일 때만. lightsWide와 같은 규약(렌더
+   *  관심사만 받는다). */
+  lightsTall: boolean;
 }
 
 export const HIDDEN_MASCOT_STATE: MascotState = {
@@ -143,6 +155,7 @@ export const HIDDEN_MASCOT_STATE: MascotState = {
   lightsVertical: false,
   lightsFace: "sprite",
   lightsWide: false,
+  lightsTall: false,
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -204,7 +217,7 @@ function sameAvatar(a: MascotLightAvatar | null, b: MascotLightAvatar | null): b
  * 강등(전송 측 버그로 창이 죽는 것보다 안전 쪽으로), clickAgentId는 문자열이거나
  * null. id/label이 없으면 항목 자체를 버린다(호출부가 개별 드롭 처리).
  * tooltip은 문자열이 아니면 label로 접는다(구버전/손상 페이로드도 호버가
- * 아예 비지 않게).
+ * 아예 비지 않게). sublabel은 문자열이 아니면 null(값 없음, 둘째 줄 미표시).
  */
 function lightOf(v: unknown): MascotLight | null {
   if (!isRecord(v)) return null;
@@ -216,6 +229,7 @@ function lightOf(v: unknown): MascotLight | null {
   return {
     id,
     label,
+    sublabel: str(v.sublabel),
     tooltip: str(v.tooltip) ?? label,
     state,
     clickAgentId: str(v.clickAgentId),
@@ -234,7 +248,7 @@ function lightsOf(v: unknown): MascotLight[] {
   return out;
 }
 
-/** 두 램프 목록이 같은가(dedupe용) — 길이와 항목별 6필드를 순서대로 비교. */
+/** 두 램프 목록이 같은가(dedupe용) — 길이와 항목별 7필드를 순서대로 비교. */
 function sameLights(a: MascotLight[], b: MascotLight[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((la, i) => {
@@ -242,6 +256,7 @@ function sameLights(a: MascotLight[], b: MascotLight[]): boolean {
     return (
       la.id === lb.id &&
       la.label === lb.label &&
+      la.sublabel === lb.sublabel &&
       la.tooltip === lb.tooltip &&
       la.state === lb.state &&
       la.clickAgentId === lb.clickAgentId &&
@@ -271,6 +286,7 @@ export function parseMascotState(payload: unknown): MascotState | null {
     lightsVertical: payload.lightsVertical === true,
     lightsFace: payload.lightsFace === "portrait" ? "portrait" : "sprite",
     lightsWide: payload.lightsWide === true,
+    lightsTall: payload.lightsTall === true,
   };
 }
 
@@ -289,6 +305,7 @@ export function sameMascotState(a: MascotState, b: MascotState): boolean {
     sameLights(a.lights, b.lights) &&
     a.lightsVertical === b.lightsVertical &&
     a.lightsFace === b.lightsFace &&
-    a.lightsWide === b.lightsWide
+    a.lightsWide === b.lightsWide &&
+    a.lightsTall === b.lightsTall
   );
 }

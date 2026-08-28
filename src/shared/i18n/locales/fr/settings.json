@@ -123,6 +123,7 @@
     "mascotLightsLabelAgent": "Nom de l'agent",
     "mascotLightsLabelProject": "Nom du projet",
     "mascotLightsLabelTask": "Nom de la tâche",
+    "mascotLightsLabelProjectTask": "Projet + tâche",
     "mascotLightsVerticalTitle": "Afficher verticalement",
     "mascotLightsProjectsTitle": "Dossiers de projet",
     "mascotLightsProjectsAdd": "Ajouter un dossier…",

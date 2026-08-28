@@ -208,19 +208,29 @@ function agentTaskNameOf(
  * agents 모드 칸 하나의 표시 텍스트(§7 개정) — `label`은 `labelMode`로 고른
  * 값, 비어 있으면(cwd/작업 없음) `auto`(에이전트 이름)로 폴백한다. `tooltip`은
  * labelMode와 무관하게 [이름, 프로젝트명, 작업명] 중 있는 것만 이어 붙인다.
+ * `projecttask`는 둘째 줄용 `sublabel`(작업명)을 함께 채운다 — 없으면 null(칸
+ * 높이는 tall 모드라 그대로 유지되고 둘째 줄만 비게 그린다).
  */
 function agentLightText(
   agentId: string,
   labelMode: MascotLightsLabel,
   input: ComputeMascotLightsInput,
-): { label: string; tooltip: string } {
+): { label: string; sublabel: string | null; tooltip: string } {
   const name = agentNameOf(agentId, input.agents);
   const project = agentProjectNameOf(agentId, input.agents, input.taskLabels);
   const task = agentTaskNameOf(agentId, input.taskLabels);
+  if (labelMode === "projecttask") {
+    return {
+      label: project ?? name,
+      sublabel: task ?? null,
+      tooltip: [name, project, task].filter(Boolean).join(" · "),
+    };
+  }
   const chosen =
     labelMode === "project" ? project : labelMode === "task" ? task : name; // auto/agent 둘 다 이름
   return {
     label: chosen ?? name,
+    sublabel: null,
     tooltip: [name, project, task].filter(Boolean).join(" · "),
   };
 }
@@ -228,22 +238,31 @@ function agentLightText(
 /**
  * projects 모드 칸 하나의 표시 텍스트(§7 개정) — `label`은 `labelMode`로 고른
  * 값, 비어 있으면(대표 없음 등) `auto`(폴더 basename)로 폴백한다. `tooltip`
- * 순서는 agentLightText와 동일하게 [대표 이름, 프로젝트명, 작업명].
+ * 순서는 agentLightText와 동일하게 [대표 이름, 프로젝트명, 작업명]. `projecttask`는
+ * 둘째 줄용 `sublabel`(대표 에이전트 작업명)을 함께 채운다 — 없으면 null.
  */
 function projectLightText(
   project: string,
   representative: string | null,
   labelMode: MascotLightsLabel,
   input: ComputeMascotLightsInput,
-): { label: string; tooltip: string } {
+): { label: string; sublabel: string | null; tooltip: string } {
   const folderName = projectNameFromCwd(project) ?? project;
   const repName = representative !== null ? agentNameOf(representative, input.agents) : undefined;
   const repTask =
     representative !== null ? agentTaskNameOf(representative, input.taskLabels) : undefined;
+  if (labelMode === "projecttask") {
+    return {
+      label: folderName,
+      sublabel: repTask ?? null,
+      tooltip: [repName, folderName, repTask].filter(Boolean).join(" · "),
+    };
+  }
   const chosen =
     labelMode === "agent" ? repName : labelMode === "task" ? repTask : folderName; // auto/project 둘 다 폴더명
   return {
     label: chosen ?? folderName,
+    sublabel: null,
     tooltip: [repName, folderName, repTask].filter(Boolean).join(" · "),
   };
 }
@@ -269,10 +288,11 @@ export function computeMascotLights(input: ComputeMascotLightsInput): MascotLigh
       if (!agent || agent.clockedOut) continue;
       const state = atomicState(id, input.timeTracking, pending);
       if (state === "off") continue;
-      const { label, tooltip } = agentLightText(id, input.labelMode, input);
+      const { label, sublabel, tooltip } = agentLightText(id, input.labelMode, input);
       out.push({
         id,
         label,
+        sublabel,
         tooltip,
         state,
         clickAgentId: id,
@@ -297,10 +317,16 @@ export function computeMascotLights(input: ComputeMascotLightsInput): MascotLigh
   return projects.map((project) => {
     const members = membersOf(project, input);
     const representative = representativeOf(members, input);
-    const { label, tooltip } = projectLightText(project, representative, input.labelMode, input);
+    const { label, sublabel, tooltip } = projectLightText(
+      project,
+      representative,
+      input.labelMode,
+      input,
+    );
     return {
       id: project,
       label,
+      sublabel,
       tooltip,
       state: aggregateState(members, input.timeTracking, pending),
       clickAgentId: representative,

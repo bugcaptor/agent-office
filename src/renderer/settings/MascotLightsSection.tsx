@@ -90,6 +90,7 @@ export function MascotLightsSection() {
           <option value="agent">{t("system.mascotLightsLabelAgent")}</option>
           <option value="project">{t("system.mascotLightsLabelProject")}</option>
           <option value="task">{t("system.mascotLightsLabelTask")}</option>
+          <option value="projecttask">{t("system.mascotLightsLabelProjectTask")}</option>
         </select>
       </label>
 

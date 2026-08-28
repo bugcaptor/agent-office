@@ -148,6 +148,19 @@ describe("MascotLightsSection", () => {
     expect(setAppSettings.mock.calls[0][0].mascotLightsLabel).toBe("task");
   });
 
+  it("칸에 표시할 이름 셀렉터에서 프로젝트+작업을 고르면 projecttask로 저장된다", () => {
+    hydrate({ mascotEnabled: true, mascotLightsLabel: "auto" });
+    render(<SettingsDialog />);
+    openSystemTab();
+
+    fireEvent.change(screen.getByRole("combobox", { name: /칸에 표시할 이름/ }), {
+      target: { value: "projecttask" },
+    });
+
+    expect(useAppStore.getState().appSettings.mascotLightsLabel).toBe("projecttask");
+    expect(setAppSettings.mock.calls[0][0].mascotLightsLabel).toBe("projecttask");
+  });
+
   it("세로 배열 체크박스가 저장 payload에 반영된다", () => {
     hydrate({ mascotEnabled: true, mascotLightsVertical: false });
     render(<SettingsDialog />);

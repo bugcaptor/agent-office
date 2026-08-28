@@ -36,11 +36,11 @@ import {
 import { officeBus } from "./sessionBridge";
 import { tauriApi } from "./tauriApi";
 
-/** visible·lights·lightsVertical·lightsFace·lightsWide를 뺀 스프라이트 전용
- *  필드 — buildState가 조립하는 단위. */
+/** visible·lights·lightsVertical·lightsFace·lightsWide·lightsTall을 뺀
+ *  스프라이트 전용 필드 — buildState가 조립하는 단위. */
 type SpriteFields = Omit<
   MascotState,
-  "visible" | "lights" | "lightsVertical" | "lightsFace" | "lightsWide"
+  "visible" | "lights" | "lightsVertical" | "lightsFace" | "lightsWide" | "lightsTall"
 >;
 
 /** 스프라이트 대상이 없을 때(활동 없음, linger도 소진)의 빈 값. */
@@ -225,8 +225,14 @@ export function installMascotBridge(io: MascotBridgeIo = defaultIo()): () => voi
       lightsFace: s.appSettings.mascotLightsFace,
       // 마스코트 창은 설정 의미를 모르고 렌더 관심사(칸 폭)만 받는다 —
       // task 라벨은 60자 절단 텍스트가 들어가 54px 타일에서 심하게 잘리므로
-      // wide(96px) 타일로 넓힌다(§7 개정).
-      lightsWide: s.appSettings.mascotLightsLabel === "task",
+      // wide(96px) 타일로 넓힌다(§7 개정). projecttask도 작업명이 둘째 줄에
+      // 실리므로 같은 이유로 wide가 필요하다.
+      lightsWide:
+        s.appSettings.mascotLightsLabel === "task" ||
+        s.appSettings.mascotLightsLabel === "projecttask",
+      // projecttask만 칸을 두 줄(tall)로 그린다 — 첫 줄 프로젝트명, 둘째 줄
+      // 작업명.
+      lightsTall: s.appSettings.mascotLightsLabel === "projecttask",
     };
   };
 
