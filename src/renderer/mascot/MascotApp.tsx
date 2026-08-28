@@ -28,12 +28,14 @@ import { Events } from "@shared/ipc";
 import { tauriApi } from "../ipc/tauriApi";
 import {
   HIDDEN_MASCOT_STATE,
+  LIGHT_AVATAR_PX,
   MASCOT_ANIM_IDLE_MS,
   MASCOT_SPRITE_PX,
   parseMascotState,
   type MascotLight,
   type MascotState,
 } from "./protocol";
+import { avatarKey, drawAvatar, loadAvatarFrames } from "./avatar";
 import { computeMascotWindowRect, foldOverflow } from "./layout";
 import { loadMascotFrames, type MascotFrames } from "./sheet";
 import { createDragDetector } from "./drag";
@@ -159,6 +161,47 @@ async function computeAppliedRect(
     monitors: monitors.map(toRect),
     primary: primary ? toRect(primary) : null,
   });
+}
+
+/**
+ * 신호등 칸의 얼굴. 아바타 좌표가 있으면 대표 에이전트의 머리를 잘라 그리고,
+ * 없으면(세션 없는 프로젝트 폴더) 이름 첫 글자 원판으로 대체한다. 캔버스
+ * 백킹 해상도는 dpr을 따라가고, 좌표가 바뀔 때만 다시 그린다.
+ */
+function LightFace({ light, dpr }: { light: MascotLight; dpr: number }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const avatar = light.avatar;
+  const key = avatar === null ? null : avatarKey(avatar, dpr);
+  const backing = Math.round(LIGHT_AVATAR_PX * dpr);
+
+  useEffect(() => {
+    if (avatar === null) return;
+    let cancelled = false;
+    void loadAvatarFrames(avatar, dpr).then((frames) => {
+      if (cancelled || frames === null) return;
+      const canvas = ref.current;
+      if (canvas) drawAvatar(canvas, frames);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // key가 avatar의 모든 얼굴 좌표 + dpr을 인코딩한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, backing]);
+
+  if (avatar === null) {
+    // 비번역 텍스트만 쓴다(설계 결정 9) — 이름의 첫 글자다.
+    return <span className="mascot-light-initial">{[...light.label][0] ?? "?"}</span>;
+  }
+  return (
+    <canvas
+      ref={ref}
+      className="mascot-light-avatar"
+      width={backing}
+      height={backing}
+      style={{ width: LIGHT_AVATAR_PX, height: LIGHT_AVATAR_PX }}
+    />
+  );
 }
 
 export default function MascotApp() {
@@ -484,13 +527,18 @@ export default function MascotApp() {
   // 삼켜 램프 클릭이 죽으므로 쓰지 않는다(drag.ts 헤더 참고).
   const stripDetector = useRef(createDragDetector()).current;
   const onStripPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.target !== e.currentTarget) return; // 램프 위에서 시작 — 무시
-    e.currentTarget.setPointerCapture(e.pointerId);
+    // 칸이 [얼굴 + 이름] 타일이 되면서 strip 여백이 6px밖에 남지 않아, 예전처럼
+    // 타일 위 pointerdown을 무시하면 창을 잡을 곳이 사실상 사라진다. 버블링으로
+    // 올라온 타일발 pointerdown도 드래그 후보로 받되 **포인터 캡처는 걸지 않는다**
+    // — 캡처를 걸면 이어지는 click까지 strip으로 리타깃돼 칸별 onClick이 죽는다.
+    if (e.target === e.currentTarget) e.currentTarget.setPointerCapture(e.pointerId);
     stripDetector.down(e.screenX, e.screenY);
   };
   const onStripPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (stripDetector.move(e.screenX, e.screenY) !== "start-drag") return;
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     void getCurrentWindow()
       .startDragging()
       .catch((err) => console.warn("mascot: failed to start dragging(strip)", err));
@@ -540,17 +588,23 @@ export default function MascotApp() {
               title={light.label}
               onClick={() => onLightClick(light)}
             >
-              {light.state === "working" && (
-                // .mascot-light는 border-box 18px에 border 1px라 콘텐츠 박스는
-                // 16×16이다 — svg를 18×18로 두면 사방 1px씩 넘친다(사소함,
-                // 화살표가 viewBox 중앙이라 지금은 안 보이지만 폴리곤을
-                // 손대면 잘린다). viewBox는 유지하고 렌더 크기만 콘텐츠
-                // 박스에 맞춘다.
-                <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
-                  <polygon points="6,4 14,9 6,14" fill="#eafff0" />
-                </svg>
-              )}
-              {light.state === "attention" && <span aria-hidden="true">!</span>}
+              <div className="mascot-light-face">
+                <LightFace light={light} dpr={dpr} />
+                {light.state === "working" && (
+                  <span className="mascot-light-mark" aria-hidden="true">
+                    <svg width="10" height="10" viewBox="0 0 18 18">
+                      <polygon points="6,4 14,9 6,14" fill="#eafff0" />
+                    </svg>
+                  </span>
+                )}
+                {light.state === "attention" && (
+                  <span className="mascot-light-mark" aria-hidden="true">
+                    !
+                  </span>
+                )}
+              </div>
+              {/* 이름은 대상(프로젝트 폴더명 또는 에이전트명) 원문 — 비번역(결정 9). */}
+              <div className="mascot-light-name">{light.label}</div>
             </div>
           ))}
           {overflowCount > 0 && (

@@ -324,7 +324,21 @@ describe("installMascotBridge · 신호등(lights)", () => {
     expect(h.last()).toMatchObject({
       visible: true,
       agentId: null,
-      lights: [{ id: "a1", label: "테스터", state: "attention", clickAgentId: "a1" }],
+      lights: [
+        {
+          id: "a1",
+          label: "테스터",
+          state: "attention",
+          clickAgentId: "a1",
+          avatar: {
+            agentId: "a1",
+            seed: "seed-a1",
+            archetype: null,
+            colors: null,
+            spriteUpdatedAt: null,
+          },
+        },
+      ],
     });
     off();
   });
@@ -346,7 +360,19 @@ describe("installMascotBridge · 신호등(lights)", () => {
     const after = h.last();
     expect(after).toMatchObject({ visible: true, agentId: null });
     expect(after?.lights).toEqual([
-      { id: "b1", label: "테스터", state: "attention", clickAgentId: "b1" },
+      {
+        id: "b1",
+        label: "테스터",
+        state: "attention",
+        clickAgentId: "b1",
+        avatar: {
+          agentId: "b1",
+          seed: "s-b1",
+          archetype: null,
+          colors: null,
+          spriteUpdatedAt: null,
+        },
+      },
     ]);
     // 스프라이트 자체는 사라져야 한다(창은 lights 때문에 떠 있을 뿐).
     expect(h.visibles).toEqual([true]); // visible이 계속 true라 show/hide 전환이 없다
@@ -408,7 +434,20 @@ describe("installMascotBridge · 신호등(lights)", () => {
 
     setLightsSettings({ mascotLightsMode: "projects", mascotLightsProjects: ["/dev/proj"] });
     expect(h.last()?.lights).toEqual([
-      { id: "/dev/proj", label: "proj", state: "working", clickAgentId: "a1" },
+      {
+        id: "/dev/proj",
+        label: "proj",
+        state: "working",
+        clickAgentId: "a1",
+        // 칸의 얼굴 = 대표 에이전트의 스프라이트 좌표(§6 개정).
+        avatar: {
+          agentId: "a1",
+          seed: "seed-a1",
+          archetype: null,
+          colors: null,
+          spriteUpdatedAt: null,
+        },
+      },
     ]);
     off();
   });

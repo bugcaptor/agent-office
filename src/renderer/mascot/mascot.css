@@ -26,17 +26,20 @@
 
 /* 스프라이트 + 배지를 함께 묶는 래퍼 — 배지의 absolute 기준이 여기로
    옮겨왔다(strip이 아래 붙어도 배지 위치가 스프라이트에 고정된다).
-   높이를 창의 스프라이트 몫(protocol.ts MASCOT_WINDOW_H=140)으로 고정한다.
-   캔버스 자체는 96px(MASCOT_SPRITE_PX)뿐이라 고정하지 않으면 래퍼가
-   96px로 줄어들어, layout.ts가 계산해 창에 실제로 적용하는 높이(스프라이트
-   140 + strip)와 44px 어긋난다 — 그 죽은 공간이 창 하단에 생겨 스프라이트가
-   나타나거나 linger로 접힐 때마다 strip이 44px씩 튀었다(리뷰 B2). 캔버스는
-   기본 블록 흐름으로 래퍼 상단에 붙으므로(아래 오버라이드 없음) 화면상
-   위치는 신호등 도입 이전과 동일하게 보존된다. */
+   높이는 창의 스프라이트 몫(protocol.ts MASCOT_WINDOW_H)과 정확히 같아야
+   한다 — 어긋나면 그 차이가 죽은 공간이 되어 스프라이트가 나타나거나
+   linger로 접힐 때마다 strip이 그만큼 튄다(리뷰 B2).
+   예전에는 140px이었다: 캔버스 96px 아래로 44px(≈0.46배)의 빈 공간이 남아
+   캐릭터가 신호등 위에 붕 떠 보였다. 이제 스프라이트(96) + 여유(6)뿐이고,
+   캔버스를 래퍼 **하단**에 붙여(align-items:flex-end) 캐릭터 발이 strip
+   윗변에 닿게 한다. 남긴 6px는 알림 hop(-4px)과 배지가 창 밖으로 잘리지
+   않게 하는 머리 위 여유다. */
 .mascot-sprite-wrap {
   position: relative;
   flex: 0 0 auto;
-  height: 140px;
+  display: flex;
+  align-items: flex-end;
+  height: 102px;
 }
 
 /* 스프라이트 자체. 클릭/드래그 히트 영역도 여기뿐이라 투명한 여백을
@@ -95,10 +98,10 @@
 }
 
 /* ── 신호등 strip(docs/mascot-lights-design.md §6) ─────────────────────
-   치수는 protocol.ts의 LIGHT_PX(18)/LIGHT_GAP(6)/LIGHT_STRIP_PAD(6)와
-   맞춘다. 배경은 완전 투명 — 램프 사이 틈이 데스크톱 클릭을 삼키지만
-   면적이 작아 수용한다(설계 §10). 색은 테마 토큰을 쓰지 않는다(파일 헤더
-   원칙 — 이 창은 전역 스타일을 로드하지 않는다). */
+   치수는 protocol.ts의 LIGHT_TILE_W(54)/LIGHT_TILE_H(48)/LIGHT_AVATAR_PX(28)/
+   LIGHT_GAP(6)/LIGHT_STRIP_PAD(6)와 맞춘다. 배경은 완전 투명 — 칸 사이 틈이
+   데스크톱 클릭을 삼키지만 면적이 작아 수용한다(설계 §10). 색은 테마 토큰을
+   쓰지 않는다(파일 헤더 원칙 — 이 창은 전역 스타일을 로드하지 않는다). */
 .mascot-lights {
   flex: 0 0 auto;
   display: flex;
@@ -114,17 +117,81 @@
   flex-direction: column;
 }
 
+/* 칸 하나 = [얼굴 원판 + 이름] 타일. 예전에는 18px 원 하나뿐이라 "무엇이
+   켜졌는지"는 툴팁을 띄워야만 알 수 있었다 — 대시보드로서는 반쪽이라
+   대상(프로젝트/에이전트) 이름과 대표 에이전트의 얼굴을 칸 안에 넣었다.
+   투명 창 위 텍스트라 반투명 판을 깔고 그림자를 준다(어떤 바탕에서도 읽히게). */
 .mascot-light {
   flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1px solid;
+  width: 54px;
+  height: 48px;
   box-sizing: border-box;
+  padding: 3px 2px 4px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: rgba(18, 19, 24, 0.55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+}
+
+/* 얼굴 원판 — 상태색 테두리가 곧 신호등 불빛이다. */
+.mascot-light-face {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid;
+  box-sizing: border-box;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  background: #1b1c22;
+}
+
+.mascot-light-avatar {
+  display: block;
+  image-rendering: pixelated;
+  /* 원판 테두리 안쪽을 꽉 채운다(border-box 28px − border 2px×2 = 24px). */
+  width: 24px;
+  height: 24px;
+}
+
+/* 얼굴을 만들 대표 에이전트가 없는 칸(세션 없는 프로젝트 폴더) — 이름 첫 글자. */
+.mascot-light-initial {
+  color: #9aa0ad;
+  font: 700 13px/1 ui-sans-serif, system-ui, sans-serif;
+}
+
+/* 상태 표식(▶ / !) — 얼굴 오른쪽 아래에 작게 얹는다. */
+.mascot-light-mark {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 10px/1 ui-sans-serif, system-ui, sans-serif;
+}
+
+/* 대상 이름. 한 줄로 잘라내고(폭 54px) 어두운 그림자로 대비를 확보한다. */
+.mascot-light-name {
+  max-width: 100%;
+  color: #e6e8ee;
+  font: 500 8px/9px ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.2px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
 }
 
 /* clickAgentId===null인 칸(소속 없음/클릭 no-op) — 손가락 커서를 보이면
@@ -135,24 +202,32 @@
   cursor: default;
 }
 
+.mascot-light-off .mascot-light-face {
+  border-color: #4a4d57;
+}
 .mascot-light-off {
-  background: #2a2a2a;
-  border-color: #111;
-  opacity: 0.55;
+  opacity: 0.62;
 }
 
-.mascot-light-working {
-  background: #35c04a;
-  border-color: #175c26;
+.mascot-light-working .mascot-light-face {
+  border-color: #35c04a;
+  box-shadow: 0 0 6px rgba(53, 192, 74, 0.75);
   animation: lights-pulse 1200ms ease-in-out infinite;
 }
+.mascot-light-working .mascot-light-mark {
+  background: #35c04a;
+  border: 1px solid #175c26;
+}
 
-.mascot-light-attention {
-  background: #ffcc33;
-  border-color: #8a5a00;
-  color: #3a2600;
-  font: 700 12px/1 ui-sans-serif, system-ui, sans-serif;
+.mascot-light-attention .mascot-light-face {
+  border-color: #ffcc33;
+  box-shadow: 0 0 6px rgba(255, 204, 51, 0.8);
   animation: lights-blink 600ms ease-in-out infinite;
+}
+.mascot-light-attention .mascot-light-mark {
+  background: #ffcc33;
+  border: 1px solid #8a5a00;
+  color: #3a2600;
 }
 
 @keyframes lights-pulse {
@@ -175,17 +250,17 @@
   }
 }
 
-/* 오버플로 칩("+k") — 넘친 칸을 하나로 뭉친다. 클릭 no-op이라 기본 커서. */
+/* 오버플로 칩("+k") — 넘친 칸을 하나로 뭉친다. 클릭 no-op이라 기본 커서.
+   타일과 같은 자리를 차지해야 layout.ts의 폭 계산과 어긋나지 않는다. */
 .mascot-light-chip {
   flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1px solid #222;
+  width: 54px;
+  height: 48px;
   box-sizing: border-box;
-  background: #444;
-  color: #ddd;
-  font: 400 10px/1 ui-sans-serif, system-ui, sans-serif;
+  border-radius: 9px;
+  background: rgba(18, 19, 24, 0.55);
+  color: #cfd3dc;
+  font: 600 12px/1 ui-sans-serif, system-ui, sans-serif;
   display: flex;
   align-items: center;
   justify-content: center;

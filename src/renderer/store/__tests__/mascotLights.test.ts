@@ -51,8 +51,20 @@ describe("computeMascotLights", () => {
         }),
       );
       expect(lights.map((l) => l.id)).toEqual(["a", "c"]);
-      expect(lights[0]).toEqual({ id: "a", label: "A", state: "working", clickAgentId: "a" });
-      expect(lights[1]).toEqual({ id: "c", label: "C", state: "attention", clickAgentId: "c" });
+      expect(lights[0]).toEqual({
+        id: "a",
+        label: "A",
+        state: "working",
+        clickAgentId: "a",
+        avatar: { agentId: "a", seed: "a", archetype: null, colors: null, spriteUpdatedAt: null },
+      });
+      expect(lights[1]).toEqual({
+        id: "c",
+        label: "C",
+        state: "attention",
+        clickAgentId: "c",
+        avatar: { agentId: "c", seed: "c", archetype: null, colors: null, spriteUpdatedAt: null },
+      });
     });
 
     it("전원 idle이면 빈 배열(결정 2 — 일이 없으면 칸이 사라진다)", () => {
@@ -75,7 +87,9 @@ describe("computeMascotLights", () => {
           notifications: [{ agentId: "a" }],
         }),
       );
-      expect(lights).toEqual([{ id: "a", label: "A", state: "attention", clickAgentId: "a" }]);
+      expect(lights).toEqual([
+        { id: "a", label: "A", state: "attention", clickAgentId: "a", avatar: { agentId: "a", seed: "a", archetype: null, colors: null, spriteUpdatedAt: null } },
+      ]);
     });
 
     it("waiting은 attention으로 매핑되고, 알림을 지운 뒤에도(=pending 없이) 남는다", () => {
@@ -87,7 +101,9 @@ describe("computeMascotLights", () => {
           notifications: [],
         }),
       );
-      expect(lights).toEqual([{ id: "a", label: "A", state: "attention", clickAgentId: "a" }]);
+      expect(lights).toEqual([
+        { id: "a", label: "A", state: "attention", clickAgentId: "a", avatar: { agentId: "a", seed: "a", archetype: null, colors: null, spriteUpdatedAt: null } },
+      ]);
     });
 
     it("clockedOut 에이전트는 제외된다", () => {
@@ -125,8 +141,20 @@ describe("computeMascotLights", () => {
         }),
       );
       expect(lights).toEqual([
-        { id: "/dev/proj-a", label: "proj-a", state: "working", clickAgentId: "a" },
-        { id: "/dev/idle-repo", label: "idle-repo", state: "off", clickAgentId: null },
+        {
+          id: "/dev/proj-a",
+          label: "proj-a",
+          state: "working",
+          clickAgentId: "a",
+          avatar: { agentId: "a", seed: "a", archetype: null, colors: null, spriteUpdatedAt: null },
+        },
+        {
+          id: "/dev/idle-repo",
+          label: "idle-repo",
+          state: "off",
+          clickAgentId: null,
+          avatar: null,
+        },
       ]);
     });
 
@@ -188,6 +216,7 @@ describe("computeMascotLights", () => {
         label: "proj",
         state: "off",
         clickAgentId: null,
+        avatar: null,
       });
     });
 
@@ -269,6 +298,46 @@ describe("computeMascotLights", () => {
           }),
         );
         expect(lights[0].clickAgentId).toBe("a");
+      });
+
+      it("칸의 얼굴(avatar)은 대표 에이전트의 스프라이트 좌표를 그대로 나른다", () => {
+        const lights = computeMascotLights(
+          base({
+            mode: "projects",
+            projects: [proj],
+            agentOrder: ["a"],
+            agents: {
+              a: {
+                cwd: proj,
+                seed: "s-a",
+                archetype: "cat",
+                colors: { hair: "#ff0000" },
+                spriteUpdatedAt: 99,
+              },
+            },
+            timeTracking: { a: turn("working", { turnStartedAt: 1 }) },
+          }),
+        );
+        expect(lights[0].avatar).toEqual({
+          agentId: "a",
+          seed: "s-a",
+          archetype: "cat",
+          colors: { hair: "#ff0000" },
+          spriteUpdatedAt: 99,
+        });
+      });
+
+      it("seed가 없는 프로필은 agentId를 시드로 폴백한다(절차 생성 규약)", () => {
+        const lights = computeMascotLights(
+          base({
+            mode: "projects",
+            projects: [proj],
+            agentOrder: ["a"],
+            agents: { a: { cwd: proj } },
+            timeTracking: { a: turn("working", { turnStartedAt: 1 }) },
+          }),
+        );
+        expect(lights[0].avatar).toMatchObject({ agentId: "a", seed: "a" });
       });
 
       it("소속 에이전트가 없으면 clickAgentId는 null(클릭 no-op)", () => {

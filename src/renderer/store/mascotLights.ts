@@ -9,7 +9,8 @@
 // 이 모듈은 스토어 런타임에 의존하지 않는 순수 모듈이다 — 아래 타입들은
 // 타입만 필요하므로 반드시 `import type`으로만 가져와 순수성을 유지한다
 // (labelText.ts:15-18과 같은 규칙).
-import type { MascotLight, MascotLightState } from "../mascot/protocol";
+import type { MascotLight, MascotLightAvatar, MascotLightState } from "../mascot/protocol";
+import type { ColorOverrides } from "@shared/types";
 import { effectiveCwd, isInsideCwd, projectNameFromCwd } from "../labels/labelText";
 import type { AgentTaskLabel } from "./types";
 import type { TurnPhase } from "../timeline/turnReducer";
@@ -20,7 +21,20 @@ export interface ComputeMascotLightsInput {
   projects: ReadonlyArray<string>;
   /** 근무 중 에이전트 순회 순서(생성 순). */
   agentOrder: ReadonlyArray<string>;
-  agents: Record<string, { name?: string; cwd?: string; clockedOut?: boolean } | undefined>;
+  agents: Record<
+    string,
+    | {
+        name?: string;
+        cwd?: string;
+        clockedOut?: boolean;
+        /** 칸에 띄울 얼굴을 다시 만드는 데 필요한 스프라이트 좌표(§6). */
+        seed?: string;
+        archetype?: string;
+        colors?: ColorOverrides;
+        spriteUpdatedAt?: number;
+      }
+    | undefined
+  >;
   timeTracking: Record<
     string,
     { phase: TurnPhase; turnStartedAt: number | null; waitingSince: number | null } | undefined
@@ -123,6 +137,26 @@ function representativeOf(
 }
 
 /**
+ * 칸에 띄울 얼굴 좌표. 대표가 없거나(세션 없는 폴더) 프로필이 사라졌으면 null
+ * — 그 칸은 이름 첫 글자 원판으로 대체된다.
+ */
+function avatarOf(
+  agentId: string | null,
+  agents: ComputeMascotLightsInput["agents"],
+): MascotLightAvatar | null {
+  if (agentId === null) return null;
+  const agent = agents[agentId];
+  if (!agent) return null;
+  return {
+    agentId,
+    seed: agent.seed || agentId,
+    archetype: agent.archetype ?? null,
+    colors: agent.colors ?? null,
+    spriteUpdatedAt: agent.spriteUpdatedAt ?? null,
+  };
+}
+
+/**
  * 신호등 칸 목록 집계(§3). `mode==="off"`이거나 결과가 0칸이면 빈 배열 —
  * mascotBridge는 이 배열이 비어 있으면 strip 자체가 없는 것으로 취급한다.
  *
@@ -143,7 +177,13 @@ export function computeMascotLights(input: ComputeMascotLightsInput): MascotLigh
       if (!agent || agent.clockedOut) continue;
       const state = atomicState(id, input.timeTracking, pending);
       if (state === "off") continue;
-      out.push({ id, label: agent.name ?? id, state, clickAgentId: id });
+      out.push({
+        id,
+        label: agent.name ?? id,
+        state,
+        clickAgentId: id,
+        avatar: avatarOf(id, input.agents),
+      });
     }
     return out;
   }
@@ -162,11 +202,15 @@ export function computeMascotLights(input: ComputeMascotLightsInput): MascotLigh
 
   return projects.map((project) => {
     const members = membersOf(project, input);
+    const representative = representativeOf(members, input);
     return {
       id: project,
       label: projectNameFromCwd(project) ?? project,
       state: aggregateState(members, input.timeTracking, pending),
-      clickAgentId: representativeOf(members, input),
+      clickAgentId: representative,
+      // 얼굴은 클릭 대상과 같은 에이전트다 — "이 칸을 누르면 누가 나오나"를
+      // 그림으로 미리 보여 준다(설계 §6 개정).
+      avatar: avatarOf(representative, input.agents),
     };
   });
 }

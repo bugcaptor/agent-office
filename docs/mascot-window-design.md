@@ -14,7 +14,9 @@
 **포함(v1)**
 
 - 새 Tauri 웹뷰 창 `mascot`: transparent · decorations:false · alwaysOnTop ·
-  skipTaskbar · resizable:false · focus:false · shadow:false, 120×140 논리픽셀.
+  skipTaskbar · resizable:false · focus:false · shadow:false, 120×102 논리픽셀
+  (초기값 — 신호등 strip이 붙으면 동적으로 커진다. 140→102 축소 경위는
+  docs/mascot-lights-design.md §5.1 개정).
 - 활동 중 캐릭터 **1명**의 스프라이트만 렌더(절차 생성 + 커스텀 시트 모두).
   **Pixi 미사용** — 순수 `generateSheet` + 2D 캔버스로 충분하다(§4.2).
 - main(진실의 원천, zustand) → mascot 상태 푸시(Tauri 이벤트) + ready 핸드셰이크.
@@ -79,7 +81,7 @@
       "label": "mascot",
       "url": "mascot.html",
       "title": "Agent Office Mascot",
-      "width": 120, "height": 140,
+      "width": 120, "height": 102,
       "transparent": true,
       "decorations": false,
       "alwaysOnTop": true,

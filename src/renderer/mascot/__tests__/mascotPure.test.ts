@@ -73,8 +73,8 @@ describe("protocol", () => {
       lightsVertical: true,
     });
     expect(parsed?.lights).toEqual([
-      { id: "a1", label: "철수", state: "attention", clickAgentId: "a1" },
-      { id: "p1", label: "repo", state: "off", clickAgentId: null },
+      { id: "a1", label: "철수", state: "attention", clickAgentId: "a1", avatar: null },
+      { id: "p1", label: "repo", state: "off", clickAgentId: null, avatar: null },
     ]);
     expect(parsed?.lightsVertical).toBe(true);
   });
@@ -85,13 +85,65 @@ describe("protocol", () => {
       lights: [{ id: "a1", label: "철수", state: "working" }, { id: "no-label" }, "nope"],
     });
     expect(parsed?.lights).toEqual([
-      { id: "a1", label: "철수", state: "working", clickAgentId: null },
+      { id: "a1", label: "철수", state: "working", clickAgentId: null, avatar: null },
     ]);
   });
 
+  it("lights 항목의 avatar를 파싱하고, agentId/seed가 없으면 null로 접는다", () => {
+    const parsed = parseMascotState({
+      visible: true,
+      lights: [
+        {
+          id: "p1",
+          label: "repo",
+          state: "working",
+          clickAgentId: "a1",
+          avatar: {
+            agentId: "a1",
+            seed: "s1",
+            archetype: "cat",
+            colors: { hair: "#ff0000", bogus: 1 },
+            spriteUpdatedAt: 42,
+          },
+        },
+        { id: "p2", label: "repo2", state: "off", clickAgentId: null, avatar: { seed: "s2" } },
+      ],
+    });
+    expect(parsed?.lights[0].avatar).toEqual({
+      agentId: "a1",
+      seed: "s1",
+      archetype: "cat",
+      colors: { hair: "#ff0000" },
+      spriteUpdatedAt: 42,
+    });
+    expect(parsed?.lights[1].avatar).toBeNull();
+  });
+
+  it("sameMascotState는 avatar 차이도 감지한다(얼굴 교체가 dedupe에 먹히지 않게)", () => {
+    const withAvatar = (spriteUpdatedAt: number | null) =>
+      state({
+        lights: [
+          {
+            id: "p1",
+            label: "repo",
+            state: "working",
+            clickAgentId: "a1",
+            avatar: { agentId: "a1", seed: "s1", archetype: null, colors: null, spriteUpdatedAt },
+          },
+        ],
+      });
+    expect(sameMascotState(withAvatar(1), withAvatar(1))).toBe(true);
+    expect(sameMascotState(withAvatar(1), withAvatar(2))).toBe(false);
+    expect(sameMascotState(withAvatar(1), state({ lights: [{ ...withAvatar(1).lights[0], avatar: null }] }))).toBe(false);
+  });
+
   it("sameMascotState는 lights 항목 차이도 감지한다(dedupe 회귀)", () => {
-    const a = state({ lights: [{ id: "a1", label: "a", state: "working", clickAgentId: "a1" }] });
-    const b = state({ lights: [{ id: "a1", label: "a", state: "attention", clickAgentId: "a1" }] });
+    const a = state({
+      lights: [{ id: "a1", label: "a", state: "working", clickAgentId: "a1", avatar: null }],
+    });
+    const b = state({
+      lights: [{ id: "a1", label: "a", state: "attention", clickAgentId: "a1", avatar: null }],
+    });
     expect(sameMascotState(a, state({ ...a }))).toBe(true);
     expect(sameMascotState(a, b)).toBe(false);
     expect(sameMascotState(a, state({ lights: [] }))).toBe(false);
@@ -100,39 +152,40 @@ describe("protocol", () => {
 });
 
 describe("layout", () => {
-  it("가로 모드: strip 두께 30, n=4는 창 기본 폭 120 이내, n=12는 294", () => {
+  // 치수: 타일 54×48, 간격 6, strip 여백 6, 스프라이트 영역 102(96+여유 6).
+  it("가로 모드: strip 두께 60(48+여백12), n=4면 폭 246으로 스프라이트 폭을 넘어선다", () => {
     expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: true })).toEqual({
-      width: 120,
-      height: 140 + 30,
+      width: 12 + 54 * 4 + 6 * 3,
+      height: 102 + 60,
     });
-    expect(computeMascotLayout({ lightCount: 12, vertical: false, hasSprite: true })).toEqual({
-      width: 294,
-      height: 140 + 30,
+    expect(computeMascotLayout({ lightCount: 8, vertical: false, hasSprite: true })).toEqual({
+      width: 486,
+      height: 102 + 60,
     });
   });
 
   it("가로 모드: 스프라이트 없으면 폭은 strip 폭 그대로, 높이는 strip 두께뿐", () => {
     expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: false })).toEqual({
-      width: 12 + 18 * 4 + 6 * 3,
-      height: 30,
+      width: 12 + 54 * 4 + 6 * 3,
+      height: 60,
     });
   });
 
-  it("세로 모드: 폭은 max(스프라이트 폭, 30), 높이는 스프라이트 + stripH", () => {
-    expect(computeMascotLayout({ lightCount: 12, vertical: true, hasSprite: true })).toEqual({
+  it("세로 모드: 폭은 max(스프라이트 폭, 타일 폭+여백), 높이는 스프라이트 + stripH", () => {
+    expect(computeMascotLayout({ lightCount: 8, vertical: true, hasSprite: true })).toEqual({
       width: 120,
-      height: 140 + 294,
+      height: 102 + (12 + 48 * 8 + 6 * 7),
     });
     expect(computeMascotLayout({ lightCount: 1, vertical: true, hasSprite: false })).toEqual({
-      width: 30,
-      height: 18 + 12,
+      width: 54 + 12,
+      height: 48 + 12,
     });
   });
 
   it("0칸이면 strip 두께가 0이라 스프라이트만큼만 남는다", () => {
     expect(computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: true })).toEqual({
       width: 120,
-      height: 140,
+      height: 102,
     });
     expect(computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: false })).toEqual({
       width: 0,
@@ -150,9 +203,11 @@ describe("layout", () => {
     expect(folded.overflowCount).toBe(2);
   });
 
-  it("foldOverflow: 기본 상한(MAX_LIGHTS=12)을 쓴다", () => {
-    const over = Array.from({ length: 13 }, (_, i) => `l${i}`);
-    expect(foldOverflow(over).overflowCount).toBe(2);
+  it("foldOverflow: 기본 상한(MAX_LIGHTS=8)을 쓴다", () => {
+    const over = Array.from({ length: 9 }, (_, i) => `l${i}`);
+    const folded = foldOverflow(over);
+    expect(folded.shown).toHaveLength(7);
+    expect(folded.overflowCount).toBe(2);
   });
 
   describe("computeMascotWindowRect (C9)", () => {
@@ -166,20 +221,20 @@ describe("layout", () => {
     });
 
     it("dpr 1: 물리 px = 논리 px, 앵커(하단중앙) 기준으로 재배치한다", () => {
-      // 스프라이트만 있는(칸 0) 기존 120×140 창이 (100,860)에 있다고 하자.
+      // 스프라이트만 있는(칸 0) 기존 120×102 창이 (100,898)에 있다고 하자.
       const rect = computeMascotWindowRect({
         lightCount: 0,
         vertical: false,
         hasSprite: true,
         dpr: 1,
-        currentPos: { x: 100, y: 860 },
-        currentSize: { width: 120, height: 140 },
+        currentPos: { x: 100, y: 898 },
+        currentSize: { width: 120, height: 102 },
         monitors: [mon()],
         primary: mon(),
       });
-      // 앵커 = (100+60, 860+140) = (160, 1000). 새 크기도 120×140이라
-      // top-left는 그대로 (100, 860) — 칸 수가 그대로면 자리가 안 변한다.
-      expect(rect).toEqual({ width: 120, height: 140, x: 100, y: 860 });
+      // 앵커 = (100+60, 898+102) = (160, 1000). 새 크기도 120×102라
+      // top-left는 그대로 (100, 898) — 칸 수가 그대로면 자리가 안 변한다.
+      expect(rect).toEqual({ width: 120, height: 102, x: 100, y: 898 });
     });
 
     it("칸이 늘면 하단중앙 앵커를 유지한 채 위/옆으로만 커진다", () => {
@@ -188,14 +243,14 @@ describe("layout", () => {
         vertical: false,
         hasSprite: true,
         dpr: 1,
-        currentPos: { x: 100, y: 860 }, // 120×140일 때의 top-left
-        currentSize: { width: 120, height: 140 },
+        currentPos: { x: 100, y: 898 }, // 120×102일 때의 top-left
+        currentSize: { width: 120, height: 102 },
         monitors: [mon()],
         primary: mon(),
       });
-      // 새 크기 120×170(스프라이트140+strip30, n=4는 폭 120 이내). 앵커
-      // (160,1000) 고정 → top-left = (160-60, 1000-170) = (100, 830).
-      expect(rect).toEqual({ width: 120, height: 170, x: 100, y: 830 });
+      // 새 크기 246×162(스프라이트102 + strip두께60, n=4의 strip 폭 246).
+      // 앵커 (160,1000) 고정 → top-left = (160-123, 1000-162) = (37, 838).
+      expect(rect).toEqual({ width: 246, height: 162, x: 37, y: 838 });
     });
 
     it("dpr 2면 물리 px로 2배 환산해서 계산한다", () => {
@@ -204,30 +259,30 @@ describe("layout", () => {
         vertical: false,
         hasSprite: true,
         dpr: 2,
-        currentPos: { x: 200, y: 1720 }, // 240×280 물리 창의 top-left
-        currentSize: { width: 240, height: 280 },
+        currentPos: { x: 200, y: 1720 }, // 240×204 물리 창의 top-left
+        currentSize: { width: 240, height: 204 },
         monitors: [mon({ scaleFactor: 2, width: 3840, height: 2160 })],
         primary: mon({ scaleFactor: 2, width: 3840, height: 2160 }),
       });
-      expect(rect).toEqual({ width: 240, height: 280, x: 200, y: 1720 });
+      expect(rect).toEqual({ width: 240, height: 204, x: 200, y: 1720 });
     });
 
     it("리사이즈로 화면 밖을 침범하면 현재 걸친 모니터 안으로 클램프한다", () => {
       const rect = computeMascotWindowRect({
-        lightCount: 12,
-        vertical: true, // 세로 12칸 → 매우 높은 창
+        lightCount: 8,
+        vertical: true, // 세로 8칸 → 매우 높은 창
         hasSprite: true,
         dpr: 1,
         currentPos: { x: 100, y: 10 }, // 화면 위쪽 끝 근처
-        currentSize: { width: 120, height: 140 },
+        currentSize: { width: 120, height: 102 },
         monitors: [mon()],
         primary: mon(),
       });
-      // 세로 모드 12칸: height = 140 + (12+18*12+6*11) = 140+294 = 434,
-      // width = max(120, 30) = 120. 앵커를 그대로 따르면 top이 화면 밖(y<0)
+      // 세로 모드 8칸: height = 102 + (12+48*8+6*7) = 102+438 = 540,
+      // width = max(120, 58) = 120. 앵커를 그대로 따르면 top이 화면 밖(y<0)
       // 이라 클램프가 y=0으로 되돌린다.
       expect(rect.width).toBe(120);
-      expect(rect.height).toBe(434);
+      expect(rect.height).toBe(540);
       expect(rect.y).toBe(0);
     });
 
@@ -246,28 +301,28 @@ describe("layout", () => {
     });
 
     it("dpr 1.5: strip-only → 스프라이트 등장 전환에서도 x/y가 정수다(B1 회귀)", () => {
-      // 램프 3칸(스프라이트 없음)의 물리 크기는 117×45 — dpr 1.5에서 논리
-      // strip 폭(78)이 물리 117(홀수)이 된다. 여기서 스프라이트가 등장하면
-      // 앵커 역산 중 절반 나누기에서 .5가 남는다(리뷰 B1 실측 재현).
+      // 램프 3칸(스프라이트 없음)의 논리 폭 162가 dpr 1.5에서 물리 243(홀수)이
+      // 된다. 여기서 칸이 사라지고 스프라이트만 남으면(물리 폭 180, 짝수) 앵커
+      // 역산의 절반 나누기에서 .5가 남는다(리뷰 B1 실측 재현).
       const mon = { x: 0, y: 0, width: 1920, height: 1080, scaleFactor: 1.5 };
       const rect = computeMascotWindowRect({
-        lightCount: 3,
+        lightCount: 0,
         vertical: false,
         hasSprite: true,
         dpr: 1.5,
         currentPos: { x: 1000, y: 800 },
-        currentSize: { width: 117, height: 45 },
+        currentSize: { width: 243, height: 90 },
         monitors: [mon],
         primary: mon,
       });
       expect(Number.isInteger(rect.x)).toBe(true);
       expect(Number.isInteger(rect.y)).toBe(true);
-      expect(rect.x).toBe(969); // Math.round(1000 + 117/2 - 180/2) = Math.round(968.5)
+      expect(rect.x).toBe(1032); // Math.round(1000 + 243/2 - 180/2) = Math.round(1031.5)
     });
 
     it("dpr 1.5: 스프라이트 유지 + 칸 수 축소(strip 폭 홀수) 전환에서도 정수다(B1 회귀)", () => {
-      // 12칸(물리 폭 441, 홀수)에서 0칸(스프라이트만, 물리 폭 180)으로 줄어드는
-      // 반대 방향 — currentSize가 홀수인 쪽에서도 같은 문제가 난다.
+      // 칸이 많은 상태(물리 폭 441, 홀수)에서 0칸(스프라이트만, 물리 폭 180)으로
+      // 줄어드는 반대 방향 — currentSize가 홀수인 쪽에서도 같은 문제가 난다.
       const mon = { x: 0, y: 0, width: 1920, height: 1080, scaleFactor: 1.5 };
       const rect = computeMascotWindowRect({
         lightCount: 0,

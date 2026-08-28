@@ -15,24 +15,52 @@ import type { ColorOverrides } from "@shared/types";
 
 /** 창 크기와 스프라이트 배치(논리 px). tauri.conf.json의 mascot 창 크기와 짝. */
 export const MASCOT_WINDOW_W = 120;
-export const MASCOT_WINDOW_H = 140;
 /** 스프라이트 렌더 박스 한 변(px) = CELL(16) × 프리뷰 관례 배율(6). */
 export const MASCOT_SPRITE_PX = 96;
+/** 스프라이트 위 여유(논리 px) — 알림 시 hop(-4px)·배지가 창 밖으로 잘리지
+ *  않을 만큼만. 예전 값(140)은 스프라이트 96 아래로 44px의 죽은 공간을 남겨
+ *  캐릭터가 신호등 위에 붕 떠 보였다. */
+export const MASCOT_SPRITE_HEADROOM = 6;
+/** 스프라이트 영역이 차지하는 창 높이(논리 px). */
+export const MASCOT_WINDOW_H = MASCOT_SPRITE_PX + MASCOT_SPRITE_HEADROOM;
 /** idle 프레임 교체 주기(ms). CharacterEntity의 ANIM_IDLE_MS와 같은 값 —
  *  오피스 씬의 캐릭터와 호흡이 어긋나 보이지 않게. */
 export const MASCOT_ANIM_IDLE_MS = 480;
 
-/** 신호등 램프(원) 지름(논리 px). */
-export const LIGHT_PX = 18;
+/** 램프 안 프로필 그림(원) 지름(논리 px). */
+export const LIGHT_AVATAR_PX = 28;
+/** 램프 칸(타일) 폭(논리 px) — 프로필 그림 + 이름 한 줄이 들어간다. */
+export const LIGHT_TILE_W = 54;
+/** 램프 칸(타일) 높이(논리 px). */
+export const LIGHT_TILE_H = 48;
 /** 램프 사이 간격(논리 px). */
 export const LIGHT_GAP = 6;
 /** strip 내부 여백(논리 px, 사방 동일). */
 export const LIGHT_STRIP_PAD = 6;
-/** 신호등 최대 칸 수(오버플로 칩 포함) — 이를 넘으면 앞 MAX_LIGHTS-1칸 + `+k` 칩. */
-export const MAX_LIGHTS = 12;
+/** 신호등 최대 칸 수(오버플로 칩 포함) — 이를 넘으면 앞 MAX_LIGHTS-1칸 + `+k` 칩.
+ *  칸이 이름표를 단 타일이 되면서 폭이 커져(54px) 12칸이면 창이 600px을 넘는다 —
+ *  데스크톱 위젯 한도에 맞춰 8칸으로 줄였다(8칸 가로 = 486px). */
+export const MAX_LIGHTS = 8;
 
 /** 신호등 램프 하나의 상태(docs/mascot-lights-design.md §3). */
 export type MascotLightState = "off" | "working" | "attention";
+
+/**
+ * 램프 칸에 얼굴을 띄울 에이전트의 스프라이트 좌표(설계 §6 개정). 에이전트
+ * 모드는 그 에이전트 자신, 프로젝트 모드는 대표 에이전트(clickAgentId)다.
+ * 픽셀이 아니라 재생성 좌표만 나른다 — `MascotState`의 스프라이트 필드와 같은
+ * 규약이라 마스코트 창이 결정적으로 같은 얼굴을 다시 만든다.
+ */
+export interface MascotLightAvatar {
+  /** 커스텀 시트 로드 키이자 캐시 키. */
+  agentId: string;
+  /** 절차 생성 시드(프로필의 seed || id). */
+  seed: string;
+  archetype: string | null;
+  colors: ColorOverrides | null;
+  /** 커스텀 시트 존재 표시 + 캐시 무효화 키. null이면 절차 생성 경로. */
+  spriteUpdatedAt: number | null;
+}
 
 /** 신호등 램프 하나 — 에이전트(agents 모드) 또는 프로젝트 폴더(projects 모드). */
 export interface MascotLight {
@@ -43,6 +71,9 @@ export interface MascotLight {
   state: MascotLightState;
   /** 클릭 시 활성화할 대표 에이전트. null이면 클릭 no-op. */
   clickAgentId: string | null;
+  /** 칸에 얼굴을 띄울 에이전트. null이면 이름 첫 글자 원판으로 대체한다
+   *  (세션이 없는 프로젝트 폴더). */
+  avatar: MascotLightAvatar | null;
 }
 
 /** main → mascot 상태 스냅샷. 항상 전체 상태(델타 아님)라 수신측이 멱등하다. */
@@ -107,6 +138,34 @@ const sameColors = (a: ColorOverrides | null, b: ColorOverrides | null): boolean
 
 const LIGHT_STATES = new Set(["off", "working", "attention"]);
 
+/** 아바타 좌표 가드 — agentId/seed 문자열이 없으면 통째로 버린다(얼굴 없이
+ *  이름 첫 글자로 폴백). 나머지는 부재를 null로 접는다. */
+function avatarOf(v: unknown): MascotLightAvatar | null {
+  if (!isRecord(v)) return null;
+  const agentId = str(v.agentId);
+  const seed = str(v.seed);
+  if (agentId === null || seed === null) return null;
+  return {
+    agentId,
+    seed,
+    archetype: str(v.archetype),
+    colors: colorsOf(v.colors),
+    spriteUpdatedAt: num(v.spriteUpdatedAt),
+  };
+}
+
+/** 두 아바타가 같은가(dedupe용) — 얼굴을 바꾸는 5필드만 본다. */
+function sameAvatar(a: MascotLightAvatar | null, b: MascotLightAvatar | null): boolean {
+  if (a === null || b === null) return a === b;
+  return (
+    a.agentId === b.agentId &&
+    a.seed === b.seed &&
+    a.archetype === b.archetype &&
+    a.spriteUpdatedAt === b.spriteUpdatedAt &&
+    sameColors(a.colors, b.colors)
+  );
+}
+
 /**
  * 램프 항목 하나의 형태 가드. id/label은 문자열 필수, state는 3종 밖이면 "off"로
  * 강등(전송 측 버그로 창이 죽는 것보다 안전 쪽으로), clickAgentId는 문자열이거나
@@ -119,7 +178,13 @@ function lightOf(v: unknown): MascotLight | null {
   if (id === null || label === null) return null;
   const rawState = typeof v.state === "string" ? v.state : "off";
   const state = (LIGHT_STATES.has(rawState) ? rawState : "off") as MascotLightState;
-  return { id, label, state, clickAgentId: str(v.clickAgentId) };
+  return {
+    id,
+    label,
+    state,
+    clickAgentId: str(v.clickAgentId),
+    avatar: avatarOf(v.avatar),
+  };
 }
 
 /** 램프 목록 가드 — 부재/비배열은 하위호환으로 빈 배열, 항목별 실패는 개별 드롭. */
@@ -133,7 +198,7 @@ function lightsOf(v: unknown): MascotLight[] {
   return out;
 }
 
-/** 두 램프 목록이 같은가(dedupe용) — 길이와 항목별 4필드를 순서대로 비교. */
+/** 두 램프 목록이 같은가(dedupe용) — 길이와 항목별 5필드를 순서대로 비교. */
 function sameLights(a: MascotLight[], b: MascotLight[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((la, i) => {
@@ -142,7 +207,8 @@ function sameLights(a: MascotLight[], b: MascotLight[]): boolean {
       la.id === lb.id &&
       la.label === lb.label &&
       la.state === lb.state &&
-      la.clickAgentId === lb.clickAgentId
+      la.clickAgentId === lb.clickAgentId &&
+      sameAvatar(la.avatar, lb.avatar)
     );
   });
 }

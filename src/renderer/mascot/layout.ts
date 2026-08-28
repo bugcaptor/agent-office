@@ -8,7 +8,15 @@
 // 치수는 전부 논리 px. 창 실제 적용(물리 px 환산·set_mascot_layout 호출)은
 // MascotApp.tsx의 몫이라 여기서는 손대지 않는다.
 
-import { LIGHT_GAP, LIGHT_PX, LIGHT_STRIP_PAD, MASCOT_WINDOW_H, MASCOT_WINDOW_W, MAX_LIGHTS } from "./protocol";
+import {
+  LIGHT_GAP,
+  LIGHT_STRIP_PAD,
+  LIGHT_TILE_H,
+  LIGHT_TILE_W,
+  MASCOT_WINDOW_H,
+  MASCOT_WINDOW_W,
+  MAX_LIGHTS,
+} from "./protocol";
 import {
   anchorOf,
   clampToArea,
@@ -19,21 +27,25 @@ import {
   type Size,
 } from "./position";
 
-/** 램프가 나열되는 방향의 strip 길이(논리 px). 칸이 없으면 0(strip 자체가 없다). */
-function stripLength(count: number): number {
+/** 램프가 나열되는 방향의 strip 길이(논리 px). 칸이 없으면 0(strip 자체가 없다).
+ *  칸이 원이 아니라 [얼굴 + 이름] 타일이 되면서 가로/세로 치수가 달라졌다 —
+ *  나열 방향에 따라 쓰는 변이 다르다. */
+function stripLength(count: number, vertical: boolean): number {
   if (count <= 0) return 0;
-  return LIGHT_STRIP_PAD * 2 + LIGHT_PX * count + LIGHT_GAP * (count - 1);
+  const tile = vertical ? LIGHT_TILE_H : LIGHT_TILE_W;
+  return LIGHT_STRIP_PAD * 2 + tile * count + LIGHT_GAP * (count - 1);
 }
 
 /** strip의 직교(두께) 방향 길이(논리 px). 칸이 없으면 0. */
-function stripThickness(count: number): number {
-  return count <= 0 ? 0 : LIGHT_PX + LIGHT_STRIP_PAD * 2;
+function stripThickness(count: number, vertical: boolean): number {
+  if (count <= 0) return 0;
+  return (vertical ? LIGHT_TILE_W : LIGHT_TILE_H) + LIGHT_STRIP_PAD * 2;
 }
 
 /**
  * 마스코트 창이 가져야 할 크기(논리 px) — 스프라이트 유무·칸 수·배열 방향으로
- * 결정한다. 가로 모드는 strip이 폭 방향으로 늘어나고 두께(30px)가 스프라이트
- * 아래에 얹히며, 세로 모드는 반대다.
+ * 결정한다. 가로 모드는 strip이 폭 방향으로 늘어나고 두께(타일 높이 + 여백)가
+ * 스프라이트 아래에 얹히며, 세로 모드는 반대다.
  */
 export function computeMascotLayout(input: {
   lightCount: number;
@@ -45,13 +57,13 @@ export function computeMascotLayout(input: {
   const spriteH = hasSprite ? MASCOT_WINDOW_H : 0;
   if (vertical) {
     return {
-      width: Math.max(spriteW, stripThickness(lightCount)),
-      height: spriteH + stripLength(lightCount),
+      width: Math.max(spriteW, stripThickness(lightCount, true)),
+      height: spriteH + stripLength(lightCount, true),
     };
   }
   return {
-    width: Math.max(spriteW, stripLength(lightCount)),
-    height: spriteH + stripThickness(lightCount),
+    width: Math.max(spriteW, stripLength(lightCount, false)),
+    height: spriteH + stripThickness(lightCount, false),
   };
 }
 

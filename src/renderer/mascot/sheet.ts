@@ -43,6 +43,16 @@ export function mascotDetailCell(n: number, dpr = 1, spritePx = MASCOT_SPRITE_PX
   return detailCellSize(n, (spritePx * Math.max(1, dpr)) / CELL);
 }
 
+/**
+ * 스프라이트 한 벌을 결정적으로 재생성하는 데 필요한 최소 좌표. 마스코트
+ * 본체(`MascotState`)와 신호등 칸의 얼굴(`MascotLightAvatar`)이 같은 규약을
+ * 쓰므로, 로더는 이 구조만 요구한다.
+ */
+export type MascotSpriteSource = Pick<
+  MascotState,
+  "agentId" | "seed" | "archetype" | "colors" | "spriteUpdatedAt"
+>;
+
 /** 이 상태가 커스텀 시트를 써야 하는가(= 저장된 스프라이트가 있는가). 순수. */
 export function usesCustomSheet(state: Pick<MascotState, "agentId" | "spriteUpdatedAt">): boolean {
   return state.agentId !== null && state.spriteUpdatedAt !== null;
@@ -100,7 +110,7 @@ function decodeSheet(b64: string): Promise<CanvasImageSource> {
  * 절차 생성으로 조용히 폴백한다(마스코트가 통째로 사라지는 것보다 낫다).
  */
 export async function loadMascotFrames(
-  state: MascotState,
+  state: MascotSpriteSource,
   dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1,
 ): Promise<MascotFrames | null> {
   if (state.agentId === null) return null;

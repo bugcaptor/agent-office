@@ -1,6 +1,10 @@
 # 마스코트 신호등(status lights strip) 설계
 
 상태: 정본 — 2026-08-28 설계 확정(결정 1·2·6은 사용자가 직접 택했다). 구현 완료(리뷰 반영 포함).
+**2026-08-28 개정(사용자 요청, §6·§5.1)**: 칸이 18px 원 하나에서 **[프로필 얼굴 +
+대상 이름] 타일(54×48)**로 바뀌었고, 스프라이트 영역의 죽은 공간(140−96=44px)을
+없애 캐릭터가 strip 위에 올라선 모습이 되도록 창의 스프라이트 몫을 102px로 줄였다.
+칸이 넓어진 만큼 상한도 12칸 → 8칸.
 전제: docs/mascot-window-design.md(이슈 #72, 구현 완료)의 마스코트 창 위에 얹는다.
 
 마스코트 창 아래에 **신호등 줄(strip)**을 붙인다. 칸(램프) 하나가 대상 하나의
@@ -19,7 +23,7 @@
 
 **포함(v1)**
 
-- 마스코트 창(label `mascot`, 120×140 논리px, tauri.conf.json) 하단에 신호등
+- 마스코트 창(label `mascot`, 120×102 논리px, tauri.conf.json) 하단에 신호등
   strip 렌더. 가로(기본)/세로 배열 설정.
 - 상태 3종: `off` / `working`(초록+▶) / `attention`(노랑+`!`). 집계·선정은
   main 렌더러의 순수 함수(§3)로 하고, 기존 `mascot-state` 이벤트 페이로드를
@@ -59,7 +63,7 @@
 | 5 | 창 크기: 고정 확보 vs 동적 리사이즈, 앵커 | **동적 리사이즈.** 목표 크기는 순수 함수(§5)로 계산, **하단중앙 앵커**(창의 bottom-center 화면좌표 보존)로 위치 보정, 리사이즈+이동은 Rust 커맨드 `set_mascot_layout` 한 번으로 원자 수행. 위치 영속은 top-left가 아니라 **앵커 좌표**로 저장 방식 변경(§5.3) | 최대 칸수만큼 투명 영역을 미리 확보하면 그 영역이 데스크톱 클릭을 삼킨다(Tauri는 픽셀 단위 히트테스트가 없다 — 현 창이 작아서만 용인된 문제). 하단중앙 앵커는 현 CSS가 스프라이트를 하단 정렬(mascot.css `.mascot-root` align-items:flex-end)하는 것과 일치하고, 스프라이트가 linger 후 접힐 때 strip이 제자리에 남는다. Rust 경유는 capability 추가(`allow-set-size` 등)를 피하고 Windows의 non-resizable 리사이즈 제약(§10)을 한 곳에서 완화한다 |
 | 6 | 마스코트 OFF일 때 신호등만? 활동 없을 때 가시성은? | **사용자 확정(2026-08-28): `mascotEnabled`가 상위 게이트 — 마스코트 OFF면 신호등도 없다.** 창 가시성 규칙 확장: `visible = mascotEnabled && (스프라이트 대상 있음 ∨ linger 중 ∨ lights.length > 0)`. 즉 신호등 모드가 켜져 있고 칸이 1개 이상이면 활동이 없어도 창이 뜬다 | 신호등은 OFF 상태도 정보이므로 상시 표시가 존재 이유다. 독립 게이트는 창 라이프사이클·설정 UI를 복잡하게 하므로 v1 제외 — 단 이 결정은 설정 enum 하나로 나중에 뒤집을 수 있어(mode≠off가 창을 켜게) 되돌리기 싸다. 닫히는 문 아님 |
 | 7 | 칸 클릭 동작 | **대표 에이전트를 `mascot_activate`(misc.rs:55)로 활성화**(main 포커스+터미널 열기+알림 클리어 — 기존 경로 재사용). 대표 선정: ① 그 칸에서 pending 최신 ② waiting 중 `waitingSince` 최신 ③ working 중 `turnStartedAt` 최신 ④ (프로젝트 모드) 소속 에이전트 중 agentOrder 첫째. 소속이 없으면 `clickAgentId=null` → 클릭 no-op | 에이전트 모드는 자명(칸=에이전트). 프로젝트 모드는 "그 프로젝트에서 지금 봐야 할 세션"이 클릭 의도다 — 마스코트 pick과 같은 급성도 순서를 프로젝트 범위로 좁혀 적용 |
-| 8 | 넘칠 때 | **최대 12칸(MAX_LIGHTS). 초과 시 앞 11칸 + `+k` 오버플로 칩 1칸**(칩 클릭 no-op). 접기는 mascot 쪽 순수 함수 — main은 항상 전체 목록을 보낸다 | 12칸 가로 = 창 폭 약 294px(§5.1)로 데스크톱 위젯 한도 내. 렌더 관심사(몇 개까지 그릴지)는 렌더 쪽에 두면 프로토콜이 단순하다 |
+| 8 | 넘칠 때 | **최대 8칸(MAX_LIGHTS). 초과 시 앞 7칸 + `+k` 오버플로 칩 1칸**(칩 클릭 no-op). 접기는 mascot 쪽 순수 함수 — main은 항상 전체 목록을 보낸다 | 개정 전에는 18px 원 12칸(폭 294px)이었다. 칸이 [얼굴+이름] 타일(54px)이 되면서 12칸은 폭 726px로 데스크톱 위젯 한도를 넘는다 — 8칸 가로 = 486px로 맞췄다. 렌더 관심사(몇 개까지 그릴지)는 렌더 쪽에 두면 프로토콜이 단순하다 |
 | 9 | i18n | **마스코트 창 안에는 번역 문자열을 넣지 않는다.** 툴팁 = 이름(에이전트명/폴더 basename), 오버플로 칩 = `+숫자` — 전부 비번역 텍스트. 설정 다이얼로그 문자열만 locale 6종에 추가(§7) | MascotApp.tsx 상단 주석이 명시한 한계: 마스코트 창은 언어 변경이 실시간 전파되지 않는다. 상태 단어("작업중")를 툴팁에 넣는 순간 그 한계에 걸린다 — 넣지 않으면 문제 자체가 없다. 하드코딩 문자열 테스트도 자연 통과 |
 | 10 | 렌더 기술 | **DOM + CSS(+인라인 SVG 화살표).** 캔버스 미사용 | 형태 3종·개수 ≤12·애니는 CSS keyframes로 충분. 배지(.mascot-badge)가 이미 같은 방식이고, 캔버스는 스프라이트 전용으로 남긴다 |
 
@@ -78,6 +82,11 @@ export interface MascotLight {
   state: MascotLightState;
   /** 클릭 시 활성화할 대표 에이전트(결정 7). null = 클릭 no-op. */
   clickAgentId: string | null;
+  /** 칸에 얼굴을 띄울 에이전트의 스프라이트 좌표(개정 §6). 대표 에이전트와
+   *  같은 에이전트다 — "누르면 누가 나오나"를 그림으로 미리 보여 준다.
+   *  null(세션 없는 폴더)이면 이름 첫 글자 원판으로 대체. */
+  avatar: { agentId: string; seed: string; archetype: string | null;
+            colors: ColorOverrides | null; spriteUpdatedAt: number | null } | null;
 }
 
 export function computeMascotLights(input: {
@@ -175,25 +184,34 @@ export interface MascotState {
 ### 5.1 치수 (protocol.ts 상수 추가, 전부 논리 px)
 
 ```
-LIGHT_PX = 18        // 램프 지름
-LIGHT_GAP = 6        // 램프 간격
+LIGHT_AVATAR_PX = 28 // 칸 안 프로필 원판 지름
+LIGHT_TILE_W = 54    // 칸(타일) 폭
+LIGHT_TILE_H = 48    // 칸(타일) 높이
+LIGHT_GAP = 6        // 칸 간격
 LIGHT_STRIP_PAD = 6  // strip 내부 여백
-MAX_LIGHTS = 12      // 오버플로 접기 상한(칩 포함 12칸)
+MAX_LIGHTS = 8       // 오버플로 접기 상한(칩 포함 8칸)
+
+MASCOT_SPRITE_PX = 96          // 스프라이트 렌더 박스
+MASCOT_SPRITE_HEADROOM = 6     // 알림 hop(-4px)·배지가 잘리지 않을 머리 위 여유
+MASCOT_WINDOW_H = 96 + 6 = 102 // 창의 스프라이트 몫
 ```
 
-- strip 두께(직교 방향) = 18 + 6×2 = **30**.
-- 가로 모드: stripW(n) = 12 + 18n + 6(n−1). n=4까지는 창 기본 폭 120 이내,
-  n=12면 294. 창 폭 = max(120·스프라이트 표시 시, stripW). 창 높이 =
-  (스프라이트 140 or 0) + 30.
-- 세로 모드: stripH(n) = 12 + 18n + 6(n−1). 창 폭 = max(스프라이트 폭, 30),
-  창 높이 = 스프라이트 + stripH. n=12·스프라이트 포함 = 140+294 = 434.
+- 가로 모드: 두께 = 48 + 6×2 = **60**, stripW(n) = 12 + 54n + 6(n−1).
+  n=4면 246, n=8이면 486. 창 폭 = max(120·스프라이트 표시 시, stripW).
+  창 높이 = (스프라이트 102 or 0) + 60.
+- 세로 모드: 두께 = 54 + 12 = **66**, stripH(n) = 12 + 48n + 6(n−1).
+  창 폭 = max(스프라이트 폭, 66), 창 높이 = 스프라이트 + stripH.
+  n=8·스프라이트 포함 = 102+438 = 540.
+- **죽은 공간 제거(개정)**: 예전 스프라이트 몫 140은 96px 캔버스 아래로 44px의
+  빈 공간을 남겨(≈0.46배) 캐릭터가 strip 위에 붕 떠 보였다. 102로 줄이고
+  캔버스를 래퍼 하단 정렬(`align-items:flex-end`)해 발이 strip 윗변에 닿는다.
 - 신규 `src/renderer/mascot/layout.ts`(순수, vitest 대상):
   `computeMascotLayout({ lightCount, vertical, hasSprite }) → { width, height }`
   + `foldOverflow(lights, MAX_LIGHTS) → { shown, overflowCount }`.
 
 ### 5.2 DOM 배치 (mascot.css 개편)
 
-`.mascot-root`를 세로 플렉스 컬럼·하단 정렬로: `[스프라이트 래퍼(140px, 배지
+`.mascot-root`를 세로 플렉스 컬럼·하단 정렬로: `[스프라이트 래퍼(102px, 배지
 포함)] → [strip]`. 배지(.mascot-badge)의 absolute 기준을 창 루트에서 **스프라이트
 래퍼**로 옮긴다(strip이 아래 붙어도 배지 위치 불변). 스프라이트 대상이 없으면
 래퍼를 DOM에서 제거(높이 0) — strip만 남는다.
@@ -207,7 +225,7 @@ MAX_LIGHTS = 12      // 오버플로 접기 상한(칩 포함 12칸)
 - 저장: `onMoved` 디바운스 시 `anchor = { x: pos.x + outerW/2, y: pos.y + outerH }`
   (물리 px)를 기존 키 `agent-office.mascot.pos`에 `{ ax, ay }` 형태로 저장.
   구형 `{ x, y }` 값을 읽으면 마이그레이션: 읽는 시점의 `outerSize()`로 앵커를
-  환산한다 — 마운트 직후라 창은 아직 기본 120×140(물리)이므로 "당시 기본 창으로
+  환산한다 — 마운트 직후라 창은 아직 기본 크기(물리)이므로 "당시 기본 창으로
   가정"이 곧 실측값이고, **오차 없이** 같은 자리가 나온다.
 - 복원·리사이즈 공통: `topLeft = { x: ax − w/2, y: ay − h }` → 모니터 클램프
   (`isOnMonitor` 재사용 + 신규 `clampToArea` — 리사이즈로 화면 밖 침범 시
@@ -227,22 +245,35 @@ MAX_LIGHTS = 12      // 오버플로 접기 상한(칩 포함 12칸)
 
 ## 6. 시각 명세
 
-공통: 지름 18px 원, `border: 1px solid`, box-sizing border-box, 글리프 중앙 정렬.
-색은 테마 토큰을 쓰지 않는다 — 마스코트 창은 전역 스타일을 로드하지 않는 것이
-원칙(mascot.css 헤더)이고, 배지가 이미 하드코딩 팔레트를 쓴다.
+칸 하나 = **[프로필 얼굴 원판 + 대상 이름] 타일**(54×48, radius 9,
+`rgba(18,19,24,.55)` 판). 예전에는 18px 원 하나뿐이라 "무엇이 켜졌는지"를
+알려면 툴팁을 띄워야 했다 — 대시보드로서 반쪽이라 이름과 얼굴을 칸에 넣었다.
+색은 테마 토큰을 쓰지 않는다(마스코트 창은 전역 스타일 미로드 원칙).
 
-| 상태 | 배경 | 테두리 | 글리프 | 애니메이션 |
+- **얼굴**: 28px 원판(`border: 2px solid` = 상태색). 대표 에이전트 스프라이트
+  idle0의 **머리 영역만 잘라** 채운다(16×16 셀 기준 (2,1)–(13,12) 정사각형,
+  `avatar.ts AVATAR_CROP`) — 전신을 28px에 넣으면 얼굴이 3~4px로 뭉개진다.
+  애니메이션 없음(칸마다 raf를 돌리지 않는다). 스프라이트 확보 경로는 본체와
+  같은 `loadMascotFrames`(커스텀 시트 → 실패 시 절차 생성)이고, 좌표+배율 키로
+  캐시한다. `avatar === null`이면 **이름 첫 글자**(비번역) 원판.
+- **이름**: 8px/9px, `#e6e8ee`, 한 줄 말줄임(`text-overflow: ellipsis`),
+  어두운 text-shadow로 어떤 바탕에서도 읽히게. 원문 그대로라 비번역(결정 9).
+- **상태 표식**: 얼굴 우하단 13px 원 배지 — working `▶`(인라인 SVG polygon),
+  attention `!`. off는 표식 없음.
+
+| 상태 | 얼굴 테두리 | 글로우 | 표식 배지 | 애니메이션 |
 |---|---|---|---|---|
-| `off` | `#2a2a2a` | `#111` | 없음 | 없음. opacity 0.55 |
-| `working` | `#35c04a` | `#175c26` | 오른쪽 화살표 ▶ — 인라인 SVG `<polygon points="6,4 14,9 6,14">` fill `#eafff0` | `lights-pulse`: opacity 1↔0.7, 1200ms ease-in-out 무한 |
-| `attention` | `#ffcc33` | `#8a5a00` | `!` `#3a2600`, 700 12px — **배지(.mascot-badge)와 동일 팔레트** | `lights-blink`: translateY 0↔−2px, 600ms — 배지 바운스와 동주기 |
-| 오버플로 칩 | `#444` | `#222` | `+k` `#ddd` 10px | 없음 |
+| `off` | `#4a4d57` | 없음 | 없음 | 없음. 타일 opacity 0.62 |
+| `working` | `#35c04a` | `0 0 6px rgba(53,192,74,.75)` | `#35c04a` 바탕 + `▶ #eafff0` | `lights-pulse`: opacity 1↔0.7, 1200ms |
+| `attention` | `#ffcc33` | `0 0 6px rgba(255,204,51,.8)` | `#ffcc33` 바탕 + `! #3a2600` — **배지(.mascot-badge)와 동일 팔레트** | `lights-blink`: translateY 0↔−2px, 600ms — 배지 바운스와 동주기 |
+| 오버플로 칩 | — | — | `+k` `#cfd3dc` 12px, 타일과 같은 54×48 판 | 없음 |
 
-- strip 배경은 완전 투명(램프 사이 틈은 창이 클릭을 삼키지만 면적이 작아 수용).
-- 호버: `title={label}` (OS 네이티브 툴팁 — 스프라이트 캔버스의 `title={name}`과
-  동일 관례, MascotApp.tsx:288).
-- 클릭 히트 = 램프 엘리먼트만. 드래그는 기존 detector를 strip 여백이 아닌
-  스프라이트 캔버스에만 유지(v1 — 램프 위 드래그 시작은 지원 안 함).
+- strip 배경은 완전 투명(칸 사이 틈은 창이 클릭을 삼키지만 면적이 작아 수용).
+- 호버: `title={label}` (OS 네이티브 툴팁 — 이름이 잘렸을 때의 전체 이름도 여기).
+- 클릭 히트 = 타일 전체. **드래그는 타일 위에서도 시작할 수 있다**(개정) —
+  칸이 커져 strip 여백이 6px뿐이라 예전처럼 타일발 pointerdown을 무시하면 창을
+  잡을 곳이 없다. 단 타일발 pointerdown에는 **포인터 캡처를 걸지 않는다**:
+  캡처하면 이어지는 click이 strip으로 리타깃돼 칸 클릭이 죽는다.
 
 ## 7. 설정
 
@@ -296,7 +327,7 @@ system.mascotLightsProjectsEmpty "아직 등록된 폴더가 없습니다."
 | `src/shared/i18n/locales/*/settings.json` ×6 | 수정 | §7 키 |
 | `docs/mascot-window-design.md` | 수정 | 부록 B에 "신호등이 가시성·창 크기 규칙을 확장" 각주 |
 
-변경하지 않는 것: capabilities/mascot.json, tauri.conf.json(초기 120×140 유지 —
+변경하지 않는 것: capabilities/mascot.json (tauri.conf.json은 초기 높이만 102로 —
 첫 상태 수신 후 JS가 레이아웃 적용), 오피스 씬·알림 파이프라인 전부.
 
 ## 9. 테스트 계획 (vitest)
