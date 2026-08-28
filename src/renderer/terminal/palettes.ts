@@ -35,10 +35,11 @@ export type XtermPaletteId =
   | "catppuccin-frappe"
   | "catppuccin-macchiato"
   | "catppuccin-mocha"
-  | "apple-clear-dark";
+  | "apple-clear-dark"
+  | "apple-clear-light";
 
 export const XTERM_PALETTES: Record<XtermPaletteId, XtermPaletteDef> = {
-  // 유일한 밝은 플레이버.
+  // 밝은 팔레트는 latte와 apple-clear-light 둘뿐이다.
   "catppuccin-latte": {
     id: "catppuccin-latte",
     labelKey: "terminal:palette.latte",
@@ -179,11 +180,43 @@ export const XTERM_PALETTES: Record<XtermPaletteId, XtermPaletteDef> = {
       brightWhite: "#e5eff5",
     },
   },
+  // macOS 26 터미널.app 기본 프로파일 "Clear Light"의 이식 — Clear Dark의 밝은
+  // 짝이다. 원본은 알파 0.93 + 배경 블러이나 같은 이유로 불투명하게 쓴다.
+  // 커서는 원본이 57% 알파의 회색이라 흰 배경 위에서 #b6b6b6로 흐려지는데,
+  // 그러면 블록 커서 안의 글자가 안 읽힌다 — 알파를 뺀 원색을 쓴다.
+  "apple-clear-light": {
+    id: "apple-clear-light",
+    labelKey: "terminal:palette.appleClearLight",
+    xterm: {
+      background: "#ffffff",
+      foreground: "#2d3840",
+      cursor: "#7f7f7f",
+      cursorAccent: "#ffffff",
+      selectionBackground: "#dfe8ee",
+      black: "#2d3840",
+      red: "#b45648",
+      green: "#6caa71",
+      yellow: "#c4ac62",
+      blue: "#5685a8",
+      magenta: "#ad64be",
+      cyan: "#69c6c9",
+      white: "#c1c8cc",
+      brightBlack: "#506573",
+      brightRed: "#df6c5a",
+      brightGreen: "#79be7e",
+      brightYellow: "#e5c872",
+      brightBlue: "#49a2e1",
+      brightMagenta: "#d389e5",
+      brightCyan: "#77e1e5",
+      brightWhite: "#d8e1e7",
+    },
+  },
 };
 
 /** 셀렉터 표시 순서(밝은 것부터). */
 export const XTERM_PALETTE_ORDER: readonly XtermPaletteId[] = [
   "catppuccin-latte",
+  "apple-clear-light",
   "catppuccin-frappe",
   "catppuccin-macchiato",
   "catppuccin-mocha",

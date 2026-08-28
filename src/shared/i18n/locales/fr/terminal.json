@@ -56,6 +56,7 @@
     "frappe": "Catppuccin Frappé",
     "macchiato": "Catppuccin Macchiato",
     "mocha": "Catppuccin Mocha",
-    "appleClearDark": "macOS Clear Dark"
+    "appleClearDark": "macOS Clear Dark",
+    "appleClearLight": "macOS Clear Light"
   }
 }
