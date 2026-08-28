@@ -10,7 +10,7 @@ use std::path::Path;
 
 use chrono::{DateTime, NaiveDate, Utc};
 
-use super::types::SessionEventRecord;
+use super::types::{SessionEventKind, SessionEventRecord};
 
 /// `from_at..=to_at`(epoch ms) 범위의 세션 이벤트를 읽어 정렬해 돌려준다.
 ///
@@ -20,8 +20,15 @@ use super::types::SessionEventRecord;
 /// - 없는 파일·열기 실패(I/O 오류)는 해당 파일만 건너뛴다.
 /// - 빈 줄·파싱 불가 줄은 조용히 건너뛴다(부분 기록 내구성, 선행 설계 §7).
 /// - `from_at <= at <= to_at`(양끝 포함)로 거른 뒤 `(at, runId, seq)`로 정렬.
-/// - 반환은 항상 성공한다(오류는 결과 축소로만 나타난다, 설계 §6).
-pub fn load_session_events(root: &Path, from_at: u64, to_at: u64) -> Vec<SessionEventRecord> {
+/// - `kinds`가 `Some`이면 그 목록에 든 `kind`만 남긴다(파싱 직후 버려 나머지는
+///   메모리에도, wire에도 안 올린다). `None`이면 현행 그대로 전부 돌려준다 —
+///   분석 패널(전체 kind가 필요)은 계속 `None`을 넘긴다.
+pub fn load_session_events(
+    root: &Path,
+    from_at: u64,
+    to_at: u64,
+    kinds: Option<&[SessionEventKind]>,
+) -> Vec<SessionEventRecord> {
     if from_at > to_at {
         return Vec::new();
     }
@@ -40,7 +47,10 @@ pub fn load_session_events(root: &Path, from_at: u64, to_at: u64) -> Vec<Session
             }
             // 파싱 불가(부분 write로 잘린 마지막 줄 등)는 조용히 스킵.
             if let Ok(record) = serde_json::from_str::<SessionEventRecord>(line) {
-                if record.at >= from_at && record.at <= to_at {
+                if record.at >= from_at
+                    && record.at <= to_at
+                    && kinds.is_none_or(|ks| ks.contains(&record.kind))
+                {
                     out.push(record);
                 }
             }
@@ -128,7 +138,7 @@ mod tests {
     #[test]
     fn missing_root_yields_empty() {
         let root = scratch_root();
-        assert!(load_session_events(&root, D10_EVENING, D12_MIDNIGHT).is_empty());
+        assert!(load_session_events(&root, D10_EVENING, D12_MIDNIGHT, None).is_empty());
     }
 
     #[test]
@@ -138,7 +148,7 @@ mod tests {
         write_day(&root, "2026-07-11", &[rec(D11_MIDNIGHT, "r", 2)]);
         write_day(&root, "2026-07-12", &[rec(D12_MIDNIGHT, "r", 3)]);
 
-        let got = load_session_events(&root, D10_EVENING, D12_MIDNIGHT);
+        let got = load_session_events(&root, D10_EVENING, D12_MIDNIGHT, None);
 
         assert_eq!(got.len(), 3);
         assert_eq!(got.iter().map(|r| r.at).collect::<Vec<_>>(), vec![
@@ -156,7 +166,7 @@ mod tests {
         // 2026-07-11 파일 없음.
         write_day(&root, "2026-07-12", &[rec(D12_MIDNIGHT, "r", 3)]);
 
-        let got = load_session_events(&root, D10_EVENING, D12_MIDNIGHT);
+        let got = load_session_events(&root, D10_EVENING, D12_MIDNIGHT, None);
 
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].at, D10_EVENING);
@@ -173,7 +183,7 @@ mod tests {
         let body = format!("{good}\n\n   \nnot json at all\n{{\"partial\":\n{good2}\n");
         fs::write(root.join("2026-07-11.jsonl"), body).unwrap();
 
-        let got = load_session_events(&root, D11_MIDNIGHT, D11_LATER);
+        let got = load_session_events(&root, D11_MIDNIGHT, D11_LATER, None);
 
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].at, D11_MIDNIGHT);
@@ -195,7 +205,7 @@ mod tests {
         write_day(&root, "2026-07-12", &[rec(D12_MIDNIGHT, "r", 9)]);
 
         // 스캔 범위는 07-10..07-12지만 at 필터가 D11_MIDNIGHT..=D11_LATER.
-        let got = load_session_events(&root, D11_MIDNIGHT, D11_LATER);
+        let got = load_session_events(&root, D11_MIDNIGHT, D11_LATER, None);
 
         assert_eq!(got.len(), 3);
         assert_eq!(got.first().unwrap().at, D11_MIDNIGHT);
@@ -214,7 +224,7 @@ mod tests {
             rec(D11_MIDNIGHT, "r-a", 1),
         ]);
 
-        let got = load_session_events(&root, D11_MIDNIGHT, D11_LATER);
+        let got = load_session_events(&root, D11_MIDNIGHT, D11_LATER, None);
 
         let keys: Vec<_> = got
             .iter()
@@ -230,10 +240,41 @@ mod tests {
     }
 
     #[test]
+    fn kinds_filter_keeps_only_listed_kinds() {
+        let root = scratch_root();
+        let mut stop = rec(D11_MIDNIGHT, "r", 1);
+        stop.kind = SessionEventKind::Stop;
+        let mut tool = rec(D11_MIDNIGHT + 10, "r", 2);
+        tool.kind = SessionEventKind::Tool;
+        let mut bell = rec(D11_LATER, "r", 3);
+        bell.kind = SessionEventKind::Bell;
+        write_day(&root, "2026-07-11", &[stop.clone(), tool, bell]);
+
+        let got = load_session_events(&root, D11_MIDNIGHT, D11_LATER, Some(&[SessionEventKind::Stop]));
+
+        assert_eq!(got, vec![stop]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn kinds_none_returns_every_kind_as_before() {
+        let root = scratch_root();
+        let mut stop = rec(D11_MIDNIGHT, "r", 1);
+        stop.kind = SessionEventKind::Stop;
+        let tool = rec(D11_MIDNIGHT + 10, "r", 2);
+        write_day(&root, "2026-07-11", &[stop, tool]);
+
+        let got = load_session_events(&root, D11_MIDNIGHT, D11_MIDNIGHT + 10, None);
+
+        assert_eq!(got.len(), 2);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn reversed_range_yields_empty() {
         let root = scratch_root();
         write_day(&root, "2026-07-11", &[rec(D11_MIDNIGHT, "r", 1)]);
-        assert!(load_session_events(&root, D11_LATER, D11_MIDNIGHT).is_empty());
+        assert!(load_session_events(&root, D11_LATER, D11_MIDNIGHT, None).is_empty());
         let _ = fs::remove_dir_all(root);
     }
 }

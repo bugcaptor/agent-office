@@ -10,6 +10,7 @@ import type {
   SessionStateEvent,
   SessionTurnRecord,
   SessionEventRecord,
+  SessionEventKind,
   AdoptedSessionInfo,
   AvailableShell,
   ClaudeResumeEntry,
@@ -242,9 +243,16 @@ export interface AgentOfficeApi {
   readMemoSheet(agentId: AgentId, sheetId: string): Promise<MemoSheet>;
   /** 캐릭터 삭제 시 그 캐릭터의 메모 폴더를 통째로 정리한다. 부재는 무해 통과. */
   deleteMemos(agentId: AgentId): Promise<void>;
-  /** 세션 이벤트 시계열에서 `fromAt..=toAt`(epoch ms) 범위를 읽는다(분석 패널용).
-   * 없는 파일·손상 줄은 건너뛰며 항상 성공한다. `(at, runId, seq)` 정렬. */
-  loadSessionEvents(fromAt: number, toAt: number): Promise<SessionEventRecord[]>;
+  /** 세션 이벤트 시계열에서 `fromAt..=toAt`(epoch ms) 범위를 읽는다(분석 패널용,
+   * 터미널 요약 바 사용량 시드용). 없는 파일·손상 줄은 건너뛰며 항상 성공한다.
+   * `(at, runId, seq)` 정렬. `kinds`를 넘기면 그 kind만 받는다(백엔드가 파싱
+   * 직후 버림 — docs/session-analytics-design.md §11) — 생략하면(옵션) 현행
+   * 그대로 전체를 받는다(분석 패널은 이 인자를 안 쓴다). */
+  loadSessionEvents(
+    fromAt: number,
+    toAt: number,
+    kinds?: SessionEventKind[],
+  ): Promise<SessionEventRecord[]>;
   /** 한 캐릭터의 세션 로그 목록 한 페이지(최신순). 없는 캐릭터·읽기 실패는
    * 빈 페이지로 흡수돼 항상 성공한다. `limit`은 백엔드가 1..100으로 클램프한다. */
   listSessionLogs(agentId: AgentId, offset: number, limit: number): Promise<SessionLogPage>;

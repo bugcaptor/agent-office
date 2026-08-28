@@ -57,6 +57,13 @@ async function adoptDetachedSessions(): Promise<void> {
     for (const info of adopted) {
       useAppStore.getState().setSessionState({ agentId: info.agentId, status: "running" });
       useAppStore.getState().setSessionSize(info.agentId, info.cols, info.rows);
+      // 세션 사용량(터미널 요약 바, docs/session-analytics-design.md §11.2):
+      // 이 방어적 시드 루프도 session-state 이벤트와 마찬가지로 sessionId를
+      // 잡아둬야 한다 — 이벤트가 유실/지연되면 sessionUsage[agentId]가
+      // undefined로 남아 시드에 누계가 있어도 사용량 스팬이 아예 안 뜬다.
+      // 같은 sessionId면 noteUsageSession이 no-op이라 정상 도착 경로와 안
+      // 충돌한다.
+      useAppStore.getState().noteUsageSession(info.agentId, info.sessionId);
     }
     terminalRegistry.markAdopted(adopted.map((a) => a.agentId));
   } catch (err) {

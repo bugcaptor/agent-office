@@ -131,6 +131,8 @@
     "mascotLightsProjectsEmpty": "尚未新增任何資料夾。",
     "usageFloatTitle": "填滿模式用量浮動顯示",
     "usageFloatHelp": "當終端機撐滿整個應用視窗時，在右下角以半透明面板顯示用量。關閉後只能在底部列查看用量。",
+    "sessionCostTitle": "顯示目前工作階段的權杖與費用",
+    "sessionCostHelp": "在終端機上方工作列右側顯示目前工作階段累計使用的權杖數，以及依公開 API 費率換算的預估費用。這僅是估算值，並非訂閱制的實際帳單金額。",
     "externalTerminalTitle": "外部終端機程式",
     "externalTerminalHelp": "終端機分頁右鍵「用 OS 終端機開啟」要使用的程式。僅限 macOS — 其他系統會忽略。",
     "terminalDefault": "Terminal（預設）",

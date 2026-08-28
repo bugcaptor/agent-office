@@ -58,5 +58,19 @@
     "mocha": "Catppuccin Mocha",
     "appleClearDark": "macOS 清透深色",
     "appleClearLight": "macOS 清透淺色"
+  },
+  "summary": {
+    "usage": {
+      "tokenIn": "輸入 {{value}}",
+      "tokenOut": "輸出 {{value}}",
+      "tokenCacheRead": "快取讀取 {{value}}",
+      "tokenCacheWrite": "快取寫入 {{value}}",
+      "turns_one": "{{count}} 回合",
+      "turns_other": "{{count}} 回合",
+      "model": "模型 {{model}}",
+      "costUnknownHint_one": "已排除沒有單價的模型 {{count}} 回合",
+      "costUnknownHint_other": "已排除沒有單價的模型 {{count}} 回合",
+      "footnote": "以公開 API 費率換算的估算值"
+    }
   }
 }

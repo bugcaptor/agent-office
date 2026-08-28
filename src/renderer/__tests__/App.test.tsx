@@ -39,6 +39,9 @@ vi.mock("../ipc/tauriApi", () => ({
     clearNotifications: (...args: unknown[]) => clearNotifications(...args),
     onData: vi.fn(() => vi.fn()),
     listAvailableShells: vi.fn().mockResolvedValue([]),
+    // TerminalSummaryBar가 항상 마운트되며 useSessionUsageSeed를 부른다
+    // (sessionCostEnabled 기본 true) — 시드 조회 목업.
+    loadSessionEvents: vi.fn().mockResolvedValue([]),
   },
 }));
 

@@ -331,6 +331,7 @@ fn get_app_settings_result_matches_fixture() {
             mascot_lights_face: MascotLightsFace::Sprite,
             mascot_lights_label: MascotLightsLabel::Auto,
             usage_float_enabled: true,
+            session_cost_enabled: true,
             tts_enabled: false,
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),

@@ -253,6 +253,15 @@
   color: var(--text-dim);
 }
 
+/* 현재 세션 토큰·비용(이슈 #44 2단계, docs/session-analytics-design.md §11).
+ * margin-left:auto가 우측 정렬을 만든다 — line1/line2가 짧아도 항상 오른쪽 끝. */
+.terminal-summary-usage {
+  margin-left: auto;
+  flex: none;
+  padding-left: 10px;
+  color: var(--text-dim);
+}
+
 /* 완료(비활성) 세션: 실황 없이 목표만 남고 전체를 흐리게. */
 .terminal-summary-stale {
   opacity: 0.5;

@@ -262,6 +262,9 @@ export function installSessionBridge(): () => void {
     });
     // 시간 추적: 세션 종료(exited/disposed) 시 열린 턴 강제 정산(백엔드 e.at 사용).
     useAppStore.getState().applySessionTiming(e.agentId, e.state, e.at);
+    // 세션 사용량(터미널 요약 바): sessionId를 잡아둬야 stop이 아직 안 온
+    // 세션에도 시드를 붙일 수 있다(docs/session-analytics-design.md §11).
+    useAppStore.getState().noteUsageSession(e.agentId, e.sessionId);
     stateCbs.forEach((cb) => cb(e.agentId, e.state));
     if (e.state === "exited" || e.state === "disposed") subagentCounts.reset(e.agentId);
   });
@@ -272,6 +275,8 @@ export function installSessionBridge(): () => void {
     // 시간 추적은 pushNotification 억제와 무관하게 항상 공급(활성 터미널이어도 집계).
     // Stop 카운트 reset 안전망은 백엔드 Stop→sub-count(0 fallback)로 이동했다.
     store.applyNotificationTiming(e);
+    // 세션 사용량(터미널 요약 바): tokens가 실린 Stop만 내부에서 반영(no-op 안전).
+    store.applyNotificationUsage(e);
     // 이슈 #39: 창이 비포커스일 때만 OS 데스크탑 알림 발송(터미널이 열려 있어도).
     // 제목=에이전트 이름/ID, 본문=메시지 excerpt.
     if (!store.windowFocused) {

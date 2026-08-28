@@ -34,6 +34,7 @@ import type {
   NotificationEvent,
   OutputChunk,
   PersistedState,
+  SessionEventKind,
   SessionStateEvent,
   SessionTurnRecord,
   TalkEvent,
@@ -339,8 +340,9 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.deleteMemos, { agentId });
   },
 
-  async loadSessionEvents(fromAt: number, toAt: number) {
-    return await invoke(Commands.loadSessionEvents, { fromAt, toAt });
+  async loadSessionEvents(fromAt: number, toAt: number, kinds?: SessionEventKind[]) {
+    // Rust는 Option<Vec<SessionEventKind>> — 미전달(undefined)은 필터 없음(전체).
+    return await invoke(Commands.loadSessionEvents, { fromAt, toAt, kinds: kinds ?? null });
   },
 
   async listSessionLogs(agentId: string, offset: number, limit: number) {

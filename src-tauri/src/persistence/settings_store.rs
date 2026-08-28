@@ -353,6 +353,12 @@ pub struct AppSettings {
     /// 아니라 `default_true`를 쓴다.
     #[serde(default = "default_true")]
     pub usage_float_enabled: bool,
+    /// 터미널 위 요약 바 오른쪽에 현재 세션의 누적 토큰과 공개 API 요율로 환산한
+    /// 추정 비용을 띄울지. 이미 수집 중인 턴 토큰(`SessionEventTokens`)을 재사용할
+    /// 뿐 추가 호출이 없어 기본 켜짐(opt-out). 표시되는 숫자는 추정치일 뿐
+    /// 구독제 실제 청구액이 아니다.
+    #[serde(default = "default_true")]
+    pub session_cost_enabled: bool,
     /// 확인 요청 대사 TTS — 질문(Hook) 알림 문구를 캐릭터 말투 대사로 리라이트한 뒤
     /// ElevenLabs로 합성해 캐릭터 목소리로 재생한다. 외부 API 두 곳을 호출해
     /// 유료 크레딧을 소모하므로 opt-in — 기본 꺼짐. API 키는 이 구조체가 아니라
@@ -443,6 +449,7 @@ impl Default for AppSettings {
             mascot_lights_face: MascotLightsFace::Sprite,
             mascot_lights_label: MascotLightsLabel::Auto,
             usage_float_enabled: true,
+            session_cost_enabled: true,
             tts_enabled: false,
             tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
             tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),
@@ -644,6 +651,7 @@ mod tests {
             mascot_lights_face: MascotLightsFace::Sprite,
             mascot_lights_label: MascotLightsLabel::Auto,
             usage_float_enabled: true,
+            session_cost_enabled: true,
             tts_enabled: false,
             tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
             tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),
@@ -850,6 +858,7 @@ mod tests {
             mascot_lights_face: MascotLightsFace::Sprite,
             mascot_lights_label: MascotLightsLabel::Auto,
             usage_float_enabled: true,
+            session_cost_enabled: true,
             tts_enabled: false,
             tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
             tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),

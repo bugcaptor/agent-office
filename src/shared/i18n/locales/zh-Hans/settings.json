@@ -131,6 +131,8 @@
     "mascotLightsProjectsEmpty": "尚未添加任何文件夹。",
     "usageFloatTitle": "填充模式用量悬浮显示",
     "usageFloatHelp": "当终端撑满整个应用窗口时，在右下角以半透明面板显示用量。关闭后只能在底栏查看用量。",
+    "sessionCostTitle": "显示当前会话的令牌与费用",
+    "sessionCostHelp": "在终端上方工作栏的右侧显示当前会话累计使用的令牌数，以及按公开 API 费率换算的预估费用。这只是估算值，并非订阅制的实际账单金额。",
     "externalTerminalTitle": "外部终端应用",
     "externalTerminalHelp": "终端标签页右键“用系统终端打开”所使用的应用。仅限 macOS —— 其他系统会忽略。",
     "terminalDefault": "Terminal（默认）",

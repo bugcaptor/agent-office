@@ -1036,6 +1036,7 @@ mod tests {
             mascot_lights_face: Default::default(),
             mascot_lights_label: Default::default(),
             usage_float_enabled: true,
+            session_cost_enabled: true,
             tts_enabled: false,
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),

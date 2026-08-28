@@ -174,20 +174,27 @@ pub async fn delete_memos(
         .map_err(|e| e.to_string())
 }
 
-/// 세션 이벤트 시계열에서 `from_at..=to_at`(epoch ms) 범위를 읽는다(분석 패널용).
-/// 읽기 전용 — 수집 측 `SessionEventStore`는 건드리지 않는다
-/// (docs/session-analytics-design.md §4.2). reader가 없는 파일·손상 줄을
-/// 건너뛰므로 반환은 항상 성공한다.
+/// 세션 이벤트 시계열에서 `from_at..=to_at`(epoch ms) 범위를 읽는다(분석 패널용,
+/// 터미널 요약 바 사용량 시드용). 읽기 전용 — 수집 측 `SessionEventStore`는
+/// 건드리지 않는다(docs/session-analytics-design.md §4.2). reader가 없는
+/// 파일·손상 줄을 건너뛰므로 반환은 항상 성공한다.
+///
+/// `kinds`가 `Some`이면 그 kind만 남기고 나머지는 파싱 직후 버린다(§11) —
+/// 예를 들어 사용량 시드는 `["stop"]`만 필요한데 3일치 JSONL 전량(대부분
+/// tool/notification/prompt)을 렌더러로 넘기는 낭비를 막는다. `None`(생략)이면
+/// 현행 그대로 전체를 돌려준다 — 분석 패널은 인자를 안 넘겨 기존 동작 유지.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn load_session_events(
     app_state: State<'_, AppState>,
     from_at: u64,
     to_at: u64,
+    kinds: Option<Vec<crate::session_events::types::SessionEventKind>>,
 ) -> Result<Vec<crate::session_events::types::SessionEventRecord>, String> {
     Ok(crate::session_events::reader::load_session_events(
         &app_state.session_event_root,
         from_at,
         to_at,
+        kinds.as_deref(),
     ))
 }
 

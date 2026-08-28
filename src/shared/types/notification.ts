@@ -4,6 +4,7 @@
 // time-tracking signal. See src/shared/types.ts for the frozen-contract overview.
 
 import type { AgentId, SessionId } from './common';
+import type { SessionEventTokens } from './session';
 
 /**
  * Notification source. Mirrors Rust `NotificationSource` (serde lowercase).
@@ -48,6 +49,9 @@ export interface NotificationEvent {
   message: string;
   dedupKey: string;
   at: number;
+  /** Stop 알림에만, 그것도 추출에 성공했을 때만 실리는 그 턴의 토큰 사용량.
+   *  질문/벨 알림과 과거 이벤트에는 키 자체가 없다 — 소비자는 부재를 견뎌야 한다. */
+  tokens?: SessionEventTokens;
 }
 
 /**

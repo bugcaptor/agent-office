@@ -335,6 +335,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "mascotLightsFace",
       "mascotLightsLabel",
       "usageFloatEnabled",
+      "sessionCostEnabled",
       "ttsEnabled",
       "ttsRewriteModelAnthropic",
       "ttsRewriteModelOpenrouter",

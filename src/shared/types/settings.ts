@@ -159,6 +159,11 @@ export interface AppSettings {
    * 하단바(BottomBar)의 사용량 뱃지는 그대로 보인다. 기존 동작 유지가
    * 기본이라 true(opt-out). */
   usageFloatEnabled: boolean;
+  /** 터미널 위 요약 바 오른쪽에 현재 세션의 누적 토큰과 공개 API 요율로 환산한
+   * 추정 비용을 띄울지. 이미 수집 중인 턴 토큰을 재사용할 뿐 추가 호출이
+   * 없어 기본 true(opt-out). 표시되는 숫자는 추정치일 뿐 구독제 실제
+   * 청구액이 아니다. */
+  sessionCostEnabled: boolean;
   /** 알림 대사 TTS(질문·완료 알림을 캐릭터 목소리로 발화). 외부 유료 API 두 곳을
    * 호출하므로 opt-in — 기본 false. API 키는 이 구조체에 없다(백엔드 0600 파일). */
   ttsEnabled: boolean;

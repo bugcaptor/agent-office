@@ -47,6 +47,8 @@ import type {
 import { tauriApi } from "../ipc/tauriApi";
 import { backendErrorText } from "../shared/backendError";
 import type { PendingPairing } from "../ipc/webRemoteApi";
+import { addTurn, emptyTotals } from "../usage/sessionCost";
+import type { SessionUsageTotals } from "../usage/sessionCost";
 
 const MAX_EXCERPT = 80;
 /** 도구 요약 라벨 갱신 최소 간격(ms). 도구가 빠르게 연달아 와도 라벨이 튀지 않게 스로틀. */
@@ -97,6 +99,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   mascotLightsFace: "sprite",
   mascotLightsLabel: "auto",
   usageFloatEnabled: true,
+  sessionCostEnabled: true,
   ttsEnabled: false,
   ttsRewriteModelAnthropic: "claude-haiku-4-5",
   ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -179,6 +182,28 @@ interface AppState {
   /** 에이전트별 턴 집계(메모리 전용, 순수 리듀서 상태). */
   timeTracking: Record<string, AgentTurnState>;
   /**
+   * 터미널 요약 바에 그리는 "현재 세션" 토큰·비용 실시간 누계. 세션이 바뀌면
+   * (또는 처음 잡히면) `{ sessionId, totals: emptyTotals() }`로 리셋된다 —
+   * `noteUsageSession`/`applyNotificationUsage` 참조. 런타임 전용(비영속).
+   */
+  sessionUsage: Record<string, { sessionId: string; totals: SessionUsageTotals }>;
+  /**
+   * `useSessionUsageSeed`가 앱 수명당 1회 심는 과거 시드(`{at, bySession}`).
+   * `at` 이하 시각의 알림은 이미 시드에 들어 있으므로 `applyNotificationUsage`가
+   * 이중 계산을 막는 데 쓴다. null = 아직 시딩 전(또는 설정이 꺼짐). 런타임
+   * 전용(비영속) — `docs/session-analytics-design.md` §11.
+   */
+  sessionUsageSeed: { at: number; bySession: Record<string, SessionUsageTotals> } | null;
+  /**
+   * `applyNotificationUsage`가 **실제로 누계에 반영한 첫 턴**의 `e.at`(무시된
+   * 알림은 기록하지 않는다). `useSessionUsageSeed`가 시드 컷오프를 여기에
+   * 묶는다(`firstAt - 1`) — "훅이 언제 돌았나"가 아니라 "실시간이 언제부터
+   * 세었나"에 묶어야, 시드가 늦게 심겨도(설정을 뒤늦게 켠 경우 등) 실시간과
+   * 겹치는 구간이 구조적으로 없다(§11.3). null = 아직 실시간이 한 턴도 안
+   * 반영함. 런타임 전용(비영속).
+   */
+  sessionUsageFirstAt: number | null;
+  /**
    * "오늘 일한 시간" 헤드라인 베이스: 부팅 시 JSONL에서 산출한 오늘자 합
    * (자정 리셋 시 0). `memoryWorkedBaselineMs`와 함께 이후 Σ메모리 workedMs
    * 델타를 더해 오늘 총량을 구한다(계산은 selectors.useTodayWorkedMs).
@@ -207,6 +232,15 @@ interface AppState {
   appSettings: AppSettings;
   /** true = settings.json 부재(첫 실행) — 온보딩 다이얼로그 표시 트리거. */
   settingsFirstRun: boolean;
+  /**
+   * `hydrateSettings`가 실제로 불렸는지(부트 시 `getAppSettings` IPC 왕복이
+   * 끝났는지). 스토어 생성 시점의 `appSettings`는 `DEFAULT_APP_SETTINGS`
+   * 플레이스홀더라 그것만으로는 "진짜 설정이 왔는지" 구분이 안 된다 —
+   * `useSessionUsageSeed`가 이 값이 true가 될 때까지 시딩을 미루는 게이트로
+   * 쓴다(§11.5). `AppSettings`의 필드가 아니다(영속 대상 아님, 계약 밖).
+   * 런타임 전용, 초기값 false.
+   */
+  settingsHydrated: boolean;
   /** 구독 사용량 스냅샷. null = 아직 로드 전. UsageWidget이 60초 폴링으로 채운다.
    * 런타임 전용(비영속). */
   usage: UsageSnapshot | null;
@@ -324,6 +358,17 @@ interface AppState {
   applyActivityEvent(e: ActivityEvent): void;
   applyNotificationTiming(e: NotificationEvent): void;
   applySessionTiming(agentId: string, state: SessionState, at: number): void;
+
+  // ---- session usage (터미널 요약 바 토큰·비용, docs/session-analytics-design.md §11) ----
+  /** 이 에이전트가 지금 이 `sessionId`를 쓰고 있음을 알린다. 엔트리가
+   * 없거나 세션이 바뀌었으면 누계를 0으로 새로 깐다(같으면 no-op). */
+  noteUsageSession(agentId: string, sessionId: string): void;
+  /** `e.tokens`가 있는 알림(Stop)만 세션 누계에 더한다. 시드가 이미 깔려
+   * 있고 `e.at <= sessionUsageSeed.at`이면 그 턴은 시드에 이미 들어 있으므로
+   * 무시한다(이중 계산 방지). */
+  applyNotificationUsage(e: NotificationEvent): void;
+  /** `useSessionUsageSeed`가 부팅 후 1회 호출. 이미 시드가 있으면 no-op. */
+  setSessionUsageSeed(seed: { at: number; bySession: Record<string, SessionUsageTotals> }): void;
   /**
    * "오늘" 헤드라인 베이스+기준선을 함께 세팅. 부팅 시 `(base, 0)`,
    * 로컬 자정 리셋 시 `(0, 현재 Σ메모리 workedMs)`.
@@ -376,6 +421,7 @@ interface AppState {
         | "mascotLightsFace"
         | "mascotLightsLabel"
         | "usageFloatEnabled"
+        | "sessionCostEnabled"
         | "webRemoteBind"
         | "webRemotePort"
         | "webRemoteEnabled"
@@ -418,6 +464,9 @@ export const useAppStore = create<AppState>()(
     spritePreviews: {},
     minimiPreviews: {},
     timeTracking: {},
+    sessionUsage: {},
+    sessionUsageSeed: null,
+    sessionUsageFirstAt: null,
     todayWorkedBaseMs: 0,
     memoryWorkedBaselineMs: 0,
     taskLabels: {},
@@ -425,6 +474,7 @@ export const useAppStore = create<AppState>()(
     terminalEpochs: {},
     appSettings: DEFAULT_APP_SETTINGS,
     settingsFirstRun: false,
+    settingsHydrated: false,
     usage: null,
     botMode: {},
     webRemotePending: [],
@@ -489,6 +539,8 @@ export const useAppStore = create<AppState>()(
         delete minimiPreviews[agentId];
         const timeTracking = { ...s.timeTracking };
         delete timeTracking[agentId];
+        const sessionUsage = { ...s.sessionUsage };
+        delete sessionUsage[agentId];
         const taskLabels = { ...s.taskLabels };
         delete taskLabels[agentId];
         const terminalEpochs = { ...s.terminalEpochs };
@@ -500,6 +552,7 @@ export const useAppStore = create<AppState>()(
           spritePreviews,
           minimiPreviews,
           timeTracking,
+          sessionUsage,
           taskLabels,
           terminalEpochs,
           agentOrder: s.agentOrder.filter((id) => id !== agentId),
@@ -918,6 +971,38 @@ export const useAppStore = create<AppState>()(
         return { timeTracking: { ...s.timeTracking, [agentId]: next } };
       }),
 
+    noteUsageSession: (agentId, sessionId) =>
+      set((s) => {
+        const prev = s.sessionUsage[agentId];
+        if (prev && prev.sessionId === sessionId) return s; // 같은 세션 — no-op(같은 참조).
+        return {
+          sessionUsage: { ...s.sessionUsage, [agentId]: { sessionId, totals: emptyTotals() } },
+        };
+      }),
+
+    applyNotificationUsage: (e) =>
+      set((s) => {
+        if (!e.tokens) return s;
+        // 시드가 이미 이 턴을 포함한다 — 실시간으로 다시 더하면 이중 계산.
+        if (s.sessionUsageSeed && e.at <= s.sessionUsageSeed.at) return s;
+        const prev = s.sessionUsage[e.agentId];
+        const entry =
+          prev && prev.sessionId === e.sessionId ? prev : { sessionId: e.sessionId, totals: emptyTotals() };
+        return {
+          sessionUsage: {
+            ...s.sessionUsage,
+            [e.agentId]: { sessionId: e.sessionId, totals: addTurn(entry.totals, e.tokens) },
+          },
+          // 실시간이 실제로 반영한 첫 턴의 시각만 기록(이미 있으면 유지) — B의
+          // 시드 컷오프 기준. 여기서 무시되고 return s로 빠진 알림(위 두 가드)은
+          // 반영이 아니므로 잡지 않는다.
+          sessionUsageFirstAt: s.sessionUsageFirstAt ?? e.at,
+        };
+      }),
+
+    setSessionUsageSeed: (seed) =>
+      set((s) => (s.sessionUsageSeed ? s : { sessionUsageSeed: seed })),
+
     setTodayWorkedBase: (baseMs, baselineMs) =>
       set({ todayWorkedBaseMs: baseMs, memoryWorkedBaselineMs: baselineMs }),
 
@@ -947,7 +1032,8 @@ export const useAppStore = create<AppState>()(
 
     setUsage: (snapshot) => set({ usage: snapshot }),
 
-    hydrateSettings: (settings, firstRun) => set({ appSettings: settings, settingsFirstRun: firstRun }),
+    hydrateSettings: (settings, firstRun) =>
+      set({ appSettings: settings, settingsFirstRun: firstRun, settingsHydrated: true }),
 
     updateAppSettings: (patch) => {
       const next = { ...get().appSettings, ...patch };

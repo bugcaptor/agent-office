@@ -131,6 +131,8 @@
     "mascotLightsProjectsEmpty": "まだフォルダが登録されていません。",
     "usageFloatTitle": "フィルモードの使用量表示",
     "usageFloatHelp": "ターミナルをアプリのウィンドウ全体に広げたとき、右下に半透明の使用量パネルを表示します。オフにすると下部バーだけで確認できます。",
+    "sessionCostTitle": "現在のセッションのトークン・費用を表示",
+    "sessionCostHelp": "ターミナル上部の作業バー右側に、現在のセッションで使ったトークンと公開APIレートで換算した推定費用を表示します。サブスクリプションの実際の請求額ではありません。",
     "externalTerminalTitle": "外部ターミナルアプリ",
     "externalTerminalHelp": "ターミナルタブの右クリック「OS のターミナルで開く」で使うアプリです。macOS 専用 — 他の OS では無視されます。",
     "terminalDefault": "Terminal（既定）",

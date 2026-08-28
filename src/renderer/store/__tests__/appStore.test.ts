@@ -12,8 +12,9 @@
 // needing a separate file.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BotAgentStatus } from "@shared/types";
+import type { BotAgentStatus, SessionEventRecord } from "@shared/types";
 import type { AgentProfile, NotificationEvent } from "../types";
+import { aggregateSeed, mergeTotals } from "../../usage/sessionCost";
 
 const { setAppSettingsMock, appendSessionTurnMock } = vi.hoisted(() => ({
   setAppSettingsMock: vi.fn().mockResolvedValue(undefined),
@@ -505,6 +506,171 @@ describe("timeTracking slice", () => {
   });
 });
 
+describe("session usage slice", () => {
+  it("noteUsageSession: 엔트리가 없으면 emptyTotals로 새로 깐다", () => {
+    const s = useAppStore.getState();
+    s.noteUsageSession("a1", "s1");
+    expect(useAppStore.getState().sessionUsage["a1"]).toEqual({
+      sessionId: "s1",
+      totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0, costUnknownTurns: 0, turns: 0 },
+    });
+  });
+
+  it("noteUsageSession: sessionId가 바뀌면 누계를 0으로 리셋한다", () => {
+    const s = useAppStore.getState();
+    s.noteUsageSession("a1", "s1");
+    s.applyNotificationUsage({
+      id: "n1", sessionId: "s1", agentId: "a1", source: "stop",
+      message: "done", dedupKey: "k1", at: 100,
+      tokens: { input: 100, model: "claude-opus-5" },
+    });
+    expect(useAppStore.getState().sessionUsage["a1"].totals.turns).toBe(1);
+
+    s.noteUsageSession("a1", "s2"); // 새 세션 → 리셋
+    expect(useAppStore.getState().sessionUsage["a1"]).toEqual({
+      sessionId: "s2",
+      totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0, costUnknownTurns: 0, turns: 0 },
+    });
+  });
+
+  it("noteUsageSession: 같은 sessionId면 no-op(같은 참조)", () => {
+    const s = useAppStore.getState();
+    s.noteUsageSession("a1", "s1");
+    const before = useAppStore.getState().sessionUsage;
+    s.noteUsageSession("a1", "s1");
+    expect(useAppStore.getState().sessionUsage).toBe(before);
+  });
+
+  it("applyNotificationUsage: tokens가 없으면 no-op", () => {
+    const s = useAppStore.getState();
+    s.noteUsageSession("a1", "s1");
+    const before = useAppStore.getState().sessionUsage;
+    s.applyNotificationUsage({
+      id: "n1", sessionId: "s1", agentId: "a1", source: "hook",
+      message: "?", dedupKey: "k1", at: 100,
+    });
+    expect(useAppStore.getState().sessionUsage).toBe(before);
+  });
+
+  it("applyNotificationUsage: tokens가 있으면 세션 판정 후 addTurn으로 누적한다", () => {
+    const s = useAppStore.getState();
+    s.applyNotificationUsage({
+      id: "n1", sessionId: "s1", agentId: "a1", source: "stop",
+      message: "done", dedupKey: "k1", at: 100,
+      tokens: { input: 100, output: 50, model: "claude-opus-5" },
+    });
+    s.applyNotificationUsage({
+      id: "n2", sessionId: "s1", agentId: "a1", source: "stop",
+      message: "done", dedupKey: "k2", at: 200,
+      tokens: { input: 10, output: 5, model: "claude-opus-5" },
+    });
+    const entry = useAppStore.getState().sessionUsage["a1"];
+    expect(entry.sessionId).toBe("s1");
+    expect(entry.totals.input).toBe(110);
+    expect(entry.totals.turns).toBe(2);
+  });
+
+  it("applyNotificationUsage: e.at <= sessionUsageSeed.at인 알림은 이중 계산을 막기 위해 무시한다", () => {
+    const s = useAppStore.getState();
+    s.setSessionUsageSeed({ at: 500, bySession: { s1: { input: 1000, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 1, costUnknownTurns: 0, turns: 1 } } });
+    s.applyNotificationUsage({
+      id: "n1", sessionId: "s1", agentId: "a1", source: "stop",
+      message: "done", dedupKey: "k1", at: 500, // == seed.at → 무시
+      tokens: { input: 100, model: "claude-opus-5" },
+    });
+    expect(useAppStore.getState().sessionUsage["a1"]).toBeUndefined();
+
+    s.applyNotificationUsage({
+      id: "n2", sessionId: "s1", agentId: "a1", source: "stop",
+      message: "done", dedupKey: "k2", at: 501, // > seed.at → 반영
+      tokens: { input: 100, model: "claude-opus-5" },
+    });
+    expect(useAppStore.getState().sessionUsage["a1"].totals.turns).toBe(1);
+  });
+
+  it("applyNotificationUsage: 이전 항목과 sessionId가 다르면 누계를 새로 깔고 이번 턴부터 센다", () => {
+    // noteUsageSession을 거치지 않고 알림만으로도 세션 전환이 감지돼야 한다
+    // (session-state 유실 시에도 applyNotificationUsage가 안전망 역할).
+    const s = useAppStore.getState();
+    s.applyNotificationUsage({
+      id: "n1", sessionId: "s1", agentId: "a1", source: "stop",
+      message: "done", dedupKey: "k1", at: 100,
+      tokens: { input: 100, model: "claude-opus-5" },
+    });
+    s.applyNotificationUsage({
+      id: "n2", sessionId: "s2", agentId: "a1", source: "stop",
+      message: "done", dedupKey: "k2", at: 200,
+      tokens: { input: 10, model: "claude-opus-5" },
+    });
+    const entry = useAppStore.getState().sessionUsage["a1"];
+    expect(entry.sessionId).toBe("s2");
+    expect(entry.totals.turns).toBe(1);
+    expect(entry.totals.input).toBe(10);
+  });
+
+  it("B 리뷰 수정: sessionUsageFirstAt은 실시간이 실제로 반영한 첫 턴의 at을 기록하고, 그 뒤 도착한 시드가 그 턴을 다시 잡지 않는다", () => {
+    const s = useAppStore.getState();
+    expect(useAppStore.getState().sessionUsageFirstAt).toBeNull();
+
+    // 실시간이 시드보다 먼저 두 턴을 반영.
+    s.applyNotificationUsage({
+      id: "n1", sessionId: "s1", agentId: "a1", source: "stop",
+      message: "done", dedupKey: "k1", at: 100,
+      tokens: { input: 100, model: "claude-opus-5" },
+    });
+    s.applyNotificationUsage({
+      id: "n2", sessionId: "s1", agentId: "a1", source: "stop",
+      message: "done", dedupKey: "k2", at: 200,
+      tokens: { input: 10, model: "claude-opus-5" },
+    });
+    expect(useAppStore.getState().sessionUsageFirstAt).toBe(100); // 첫 턴 시각 그대로, 두 번째 턴에는 안 바뀜.
+
+    // 시드가 뒤늦게 도착한다고 가정 — 컷오프는 firstAt-1(=99)이어야 한다.
+    // 실제 JSONL에는 실시간과 같은 두 레코드가 함께 실려 있어도(정상 동작:
+    // Stop 알림과 시계열 기록은 같은 이벤트를 두 경로로 내보낸다) at>cut이라
+    // aggregateSeed에서 제외된다 — 이게 안 되면 정확히 2배가 된다(리뷰 B).
+    const cut = useAppStore.getState().sessionUsageFirstAt! - 1;
+    expect(cut).toBe(99);
+    const records: SessionEventRecord[] = [
+      {
+        schemaVersion: 1, runId: "r", seq: 1, at: 50, agentId: "a1", sessionId: "s1",
+        kind: "stop", tokens: { input: 5, model: "claude-opus-5" },
+      },
+      {
+        schemaVersion: 1, runId: "r", seq: 2, at: 100, agentId: "a1", sessionId: "s1",
+        kind: "stop", tokens: { input: 100, model: "claude-opus-5" },
+      },
+      {
+        schemaVersion: 1, runId: "r", seq: 3, at: 200, agentId: "a1", sessionId: "s1",
+        kind: "stop", tokens: { input: 10, model: "claude-opus-5" },
+      },
+    ];
+    s.setSessionUsageSeed({ at: cut, bySession: aggregateSeed(records, cut) });
+
+    const seedTotals = useAppStore.getState().sessionUsageSeed!.bySession["s1"];
+    const liveTotals = useAppStore.getState().sessionUsage["a1"].totals;
+    const merged = mergeTotals(seedTotals, liveTotals);
+    // 5(시드, 유일하게 cut 이전) + 100 + 10(실시간 두 턴) = 115 — 두 배가 아니다.
+    expect(merged.input).toBe(115);
+    expect(merged.turns).toBe(3);
+  });
+
+  it("setSessionUsageSeed: 이미 시드가 있으면 no-op(한 번만 깔림)", () => {
+    const s = useAppStore.getState();
+    s.setSessionUsageSeed({ at: 100, bySession: {} });
+    s.setSessionUsageSeed({ at: 999, bySession: {} });
+    expect(useAppStore.getState().sessionUsageSeed!.at).toBe(100);
+  });
+
+  it("removeAgent drops the agent's sessionUsage entry", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.noteUsageSession("a1", "s1");
+    s.removeAgent("a1");
+    expect(useAppStore.getState().sessionUsage["a1"]).toBeUndefined();
+  });
+});
+
 describe("app settings slice", () => {
   it("초기값: 전부 OFF, firstRun=false", () => {
     const s = useAppStore.getState();
@@ -542,6 +708,7 @@ describe("app settings slice", () => {
       mascotLightsFace: "sprite",
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
+      sessionCostEnabled: true,
       ttsEnabled: false,
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -592,6 +759,7 @@ describe("app settings slice", () => {
         mascotLightsFace: "sprite",
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
+        sessionCostEnabled: true,
         ttsEnabled: false,
         ttsRewriteModelAnthropic: "claude-haiku-4-5",
         ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -640,6 +808,7 @@ describe("app settings slice", () => {
       mascotLightsFace: "sprite",
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
+      sessionCostEnabled: true,
       ttsEnabled: false,
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -652,6 +821,13 @@ describe("app settings slice", () => {
       talkIdleQuietMs: 3000,
     });
     expect(s.settingsFirstRun).toBe(true);
+    // A 리뷰 수정: hydrateSettings가 실제로 불렸음을 settingsHydrated로 표시
+    // (useSessionUsageSeed가 이 값이 true가 될 때까지 시딩을 미루는 게이트).
+    expect(s.settingsHydrated).toBe(true);
+  });
+
+  it("settingsHydrated 초기값은 false(hydrateSettings 전)", () => {
+    expect(useAppStore.getState().settingsHydrated).toBe(false);
   });
 
   it("updateAppSettings가 스토어를 갱신하고 백엔드에 저장한다", () => {
@@ -698,6 +874,7 @@ describe("app settings slice", () => {
       mascotLightsFace: "sprite",
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
+      sessionCostEnabled: true,
       ttsEnabled: false,
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -747,6 +924,7 @@ describe("app settings slice", () => {
         mascotLightsFace: "sprite",
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
+        sessionCostEnabled: true,
         ttsEnabled: false,
         ttsRewriteModelAnthropic: "claude-haiku-4-5",
         ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -802,6 +980,7 @@ describe("app settings slice", () => {
       mascotLightsFace: "sprite",
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
+      sessionCostEnabled: true,
       ttsEnabled: false,
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",

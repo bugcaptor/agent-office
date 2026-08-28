@@ -58,5 +58,19 @@
     "mocha": "Catppuccin Mocha",
     "appleClearDark": "macOS Clear Dark",
     "appleClearLight": "macOS Clear Light"
+  },
+  "summary": {
+    "usage": {
+      "tokenIn": "entrée {{value}}",
+      "tokenOut": "sortie {{value}}",
+      "tokenCacheRead": "lecture cache {{value}}",
+      "tokenCacheWrite": "écriture cache {{value}}",
+      "turns_one": "{{count}} tour",
+      "turns_other": "{{count}} tours",
+      "model": "modèle {{model}}",
+      "costUnknownHint_one": "{{count}} tour sur un modèle sans tarif exclu",
+      "costUnknownHint_other": "{{count}} tours sur des modèles sans tarif exclus",
+      "footnote": "Estimation au tarif API public"
+    }
   }
 }

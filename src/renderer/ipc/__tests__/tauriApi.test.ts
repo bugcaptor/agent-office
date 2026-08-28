@@ -304,6 +304,28 @@ describe("command invocations", () => {
     expect(invoke).toHaveBeenCalledWith(Commands.resize, { agentId: "a1", cols: 100, rows: 40 });
   });
 
+  it("loadSessionEvents omits kinds as null when not given", async () => {
+    invoke.mockResolvedValueOnce([]);
+    const tauriApi = await importTauriApi();
+    await tauriApi.loadSessionEvents(0, 1000);
+    expect(invoke).toHaveBeenCalledWith(Commands.loadSessionEvents, {
+      fromAt: 0,
+      toAt: 1000,
+      kinds: null,
+    });
+  });
+
+  it("loadSessionEvents forwards a kinds filter as-is", async () => {
+    invoke.mockResolvedValueOnce([]);
+    const tauriApi = await importTauriApi();
+    await tauriApi.loadSessionEvents(0, 1000, ["stop"]);
+    expect(invoke).toHaveBeenCalledWith(Commands.loadSessionEvents, {
+      fromAt: 0,
+      toAt: 1000,
+      kinds: ["stop"],
+    });
+  });
+
   it("setMascotLayout invokes set_mascot_layout with width/height/x/y", async () => {
     const tauriApi = await importTauriApi();
     await tauriApi.setMascotLayout(120, 170, 100, 830);
@@ -571,6 +593,7 @@ describe("app settings commands", () => {
       mascotLightsFace: "sprite" as const,
       mascotLightsLabel: "auto" as const,
       usageFloatEnabled: true,
+      sessionCostEnabled: true,
       ttsEnabled: false,
       ttsRewriteModelAnthropic: "claude-haiku-4-5" as const,
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini" as const,

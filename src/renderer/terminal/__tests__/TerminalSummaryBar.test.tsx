@@ -5,12 +5,24 @@
 // 활성 탭 요약 바(이슈 #44 T1): activeTerminalAgentId의 라벨을 머리 위 라벨과
 // 같은 파생 규칙으로 한 줄 표시한다. 세션이 starting/running이 아니면 실황
 // (line2)은 stale이므로 억제하고 line1만 흐리게. 라벨이 없으면 미표시.
+//
+// 이슈 #44 2단계: 오른쪽 끝 사용량(토큰·비용) 스팬(docs/session-analytics-design.md
+// §11). useSessionUsageSeed가 매 렌더 호출되므로 tauriApi.loadSessionEvents를
+// 목업해 실제 invoke를 타지 않게 한다 — 아래 사용량 테스트는 시드 자체를
+// setSessionUsageSeed로 직접 심어 검증하므로 훅의 fetch 결과에는 의존하지 않는다.
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentProfile } from "../../store/types";
+
+vi.mock("../../ipc/tauriApi", () => ({
+  tauriApi: { loadSessionEvents: vi.fn().mockResolvedValue([]) },
+}));
+
 import { useAppStore } from "../../store/appStore";
 import { initialTurnState } from "../../timeline/turnReducer";
+import { formatTokens, formatUsd } from "../../analytics/pricing";
+import type { SessionUsageTotals } from "../../usage/sessionCost";
 import { TerminalSummaryBar } from "../TerminalSummaryBar";
-import type { AgentProfile } from "../../store/types";
 
 function agent(id: string, cwd?: string): AgentProfile {
   return { id, name: id, role: "", seed: "s", createdAt: 0, deskIndex: 0, cwd };
@@ -29,7 +41,9 @@ function seed(opts: {
   status?: "idle" | "starting" | "running" | "exited" | "disposed";
   label?: Partial<import("../../store/types").AgentTaskLabel>;
   phase?: "idle" | "working" | "waiting";
+  sessionCostEnabled?: boolean;
 }) {
+  const s = useAppStore.getState();
   useAppStore.setState({
     activeTerminalAgentId: opts.activeId === undefined ? "a1" : opts.activeId,
     agents: { a1: agent("a1", "/Users/me/dev/agent-office") },
@@ -38,6 +52,7 @@ function seed(opts: {
     },
     taskLabels: opts.label ? { a1: { sessionId: "s1", ...opts.label } } : {},
     timeTracking: { a1: { ...initialTurnState(), phase: opts.phase ?? "working" } },
+    appSettings: { ...s.appSettings, sessionCostEnabled: opts.sessionCostEnabled ?? s.appSettings.sessionCostEnabled },
   });
 }
 
@@ -92,5 +107,125 @@ describe("TerminalSummaryBar", () => {
     seed({ activeId: null, label: { goal: "버그 수정" } });
     const { container } = render(<TerminalSummaryBar />);
     expect(container.querySelector(".terminal-summary-bar")).toBeNull();
+  });
+});
+
+describe("TerminalSummaryBar 사용량 스팬 (이슈 #44 2단계)", () => {
+  function mkTotals(overrides: Partial<SessionUsageTotals> = {}): SessionUsageTotals {
+    return {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      costUsd: 0,
+      costUnknownTurns: 0,
+      turns: 0,
+      ...overrides,
+    };
+  }
+
+  it("설정(sessionCostEnabled)이 꺼져 있으면 사용량이 있어도 스팬을 렌더하지 않는다", () => {
+    seed({ label: { goal: "버그 수정" }, sessionCostEnabled: false });
+    useAppStore.setState({
+      sessionUsage: {
+        a1: { sessionId: "s1", totals: mkTotals({ input: 1000, output: 500, turns: 2, model: "claude-opus-5" }) },
+      },
+    });
+    const { container } = render(<TerminalSummaryBar />);
+    expect(container.querySelector(".terminal-summary-usage")).toBeNull();
+  });
+
+  it("turns===0이면 사용량 스팬을 렌더하지 않는다", () => {
+    seed({ label: { goal: "버그 수정" }, sessionCostEnabled: true });
+    useAppStore.setState({
+      sessionUsage: { a1: { sessionId: "s1", totals: mkTotals() } },
+    });
+    const { container } = render(<TerminalSummaryBar />);
+    expect(container.querySelector(".terminal-summary-usage")).toBeNull();
+  });
+
+  it("라벨이 없어도 사용량만 있으면 바가 보인다(hidden 클래스 없음)", () => {
+    seed({ label: undefined, status: "running", sessionCostEnabled: true });
+    useAppStore.setState({
+      agents: { a1: agent("a1") }, // cwd도 비워 라벨 부재를 확실히 한다.
+      sessionUsage: {
+        a1: { sessionId: "s1", totals: mkTotals({ input: 1000, output: 500, costUsd: 0.01, turns: 2, model: "claude-opus-5" }) },
+      },
+    });
+    const { container } = render(<TerminalSummaryBar />);
+    const bar = container.querySelector(".terminal-summary-bar")!;
+    expect(bar.className).not.toContain("terminal-summary-hidden");
+    const usage = bar.querySelector(".terminal-summary-usage");
+    expect(usage).not.toBeNull();
+    expect(usage!.textContent).toBe(`${formatTokens(1500)} · ${formatUsd(0.01)}`);
+  });
+
+  it("시드와 실시간 누계를 합쳐서 그린다", () => {
+    seed({ label: { goal: "버그 수정" }, sessionCostEnabled: true });
+    useAppStore.setState({
+      sessionUsage: {
+        a1: { sessionId: "s1", totals: mkTotals({ input: 100, output: 50, costUsd: 0.1, turns: 1, model: "claude-opus-5" }) },
+      },
+      sessionUsageSeed: {
+        at: 500,
+        bySession: {
+          s1: mkTotals({ input: 900, output: 450, costUsd: 0.4, turns: 4, model: "claude-opus-5" }),
+        },
+      },
+    });
+    const { container } = render(<TerminalSummaryBar />);
+    const usage = container.querySelector(".terminal-summary-usage")!;
+    expect(usage).not.toBeNull();
+    // 입력 100+900=1000, 출력 50+450=500 → 합계 1500 토큰, 비용 0.1+0.4=0.5, 턴 1+4=5.
+    expect(usage.textContent).toBe(`${formatTokens(1500)} · ${formatUsd(0.5)}`);
+    expect(usage.getAttribute("title")).toContain("5턴");
+  });
+
+  it("costUnknownTurns가 있으면 비용 앞에 물결(~)을 붙이고 툴팁에 뜻을 남긴다", () => {
+    seed({ label: { goal: "버그 수정" }, sessionCostEnabled: true });
+    useAppStore.setState({
+      sessionUsage: {
+        a1: {
+          sessionId: "s1",
+          totals: mkTotals({ input: 100, costUsd: 0.1, costUnknownTurns: 1, turns: 2, model: "llama-3" }),
+        },
+      },
+    });
+    const { container } = render(<TerminalSummaryBar />);
+    const usage = container.querySelector(".terminal-summary-usage")!;
+    expect(usage.textContent).toBe(`${formatTokens(100)} · ~${formatUsd(0.1)}`);
+    // D-2: "~"의 뜻이 툴팁에 한 줄 더 있어야 한다(summary.usage.costUnknownHint).
+    expect(usage.getAttribute("title")).toContain("1턴");
+    expect(usage.getAttribute("title")).toContain("제외");
+  });
+
+  it("D-1: 비용을 하나도 모르면(costUnknownTurns===turns) 비용 자리를 —로 떨구고 토큰은 그대로 보여준다", () => {
+    seed({ label: { goal: "버그 수정" }, sessionCostEnabled: true });
+    useAppStore.setState({
+      sessionUsage: {
+        a1: {
+          sessionId: "s1",
+          totals: mkTotals({ input: 1_000_000, output: 200_000, costUsd: 0, costUnknownTurns: 2, turns: 2, model: "llama-3" }),
+        },
+      },
+    });
+    const { container } = render(<TerminalSummaryBar />);
+    const usage = container.querySelector(".terminal-summary-usage")!;
+    expect(usage.textContent).toBe(`${formatTokens(1_200_000)} · —`);
+  });
+
+  it("D-3: 캐시만 있는 턴(input+output===0, cacheRead>0)이면 토큰 자리를 0이 아니라 —로 보여준다", () => {
+    seed({ label: { goal: "버그 수정" }, sessionCostEnabled: true });
+    useAppStore.setState({
+      sessionUsage: {
+        a1: {
+          sessionId: "s1",
+          totals: mkTotals({ input: 0, output: 0, cacheRead: 500, costUsd: 0.0012, turns: 1, model: "claude-opus-5" }),
+        },
+      },
+    });
+    const { container } = render(<TerminalSummaryBar />);
+    const usage = container.querySelector(".terminal-summary-usage")!;
+    expect(usage.textContent).toBe(`— · ${formatUsd(0.0012)}`);
   });
 });

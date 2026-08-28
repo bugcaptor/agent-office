@@ -235,3 +235,161 @@ pi는 전사/rollout 경로가 없어 항상 `tokens: None`이다.
 `AgentSummary`에 `botWorkedMs`/`botTurns`를 **분리 누적**한다. 기존 `workedMs`/`turns`는
 **총계 그대로**다 — 분석 패널이 보여주는 수치는 바뀌지 않는다. 날짜 집합만은 뺄셈으로
 복원할 수 없어 `humanActiveDays`를 따로 센다.
+
+## 11. 확장 — 터미널 요약 바의 현재 세션 토큰·비용 (2026-08-28)
+
+분석 패널(§9)은 열어야 보이고 기간(일) 단위다. 터미널을 열어 두고 일하는 동안
+"지금 이 세션이 얼마나 먹었는지"를 실시간으로 보고 싶다는 요구가 따로 있어,
+활성 탭 요약 바(`TerminalSummaryBar`, §4.4의 그 바가 아니라 이슈 #44 T1의 라벨
+바) 오른쪽 끝에 같은 턴 단위 토큰·비용을 얹었다. **분석 패널과 데이터 원천은
+같다**(§9.1의 stop 레코드 `tokens`) — 여기는 그것을 "지금 이 세션"으로 좁혀
+실시간으로 보여줄 뿐, 새 추출·단가 로직을 만들지 않는다(`renderer/analytics/pricing.ts`
+그대로 재사용).
+
+### 11.1 왜 실시간 wire가 필요했나 — `skip_serializing` 해제
+
+`NotificationEvent.tokens`는 원래 백엔드 내부 운반 전용이었다(`RecordingAppEvents`가
+stop 레코드로 옮겨 담는 것 말고는 쓸 데가 없어서 `#[serde(skip_serializing)]`로
+막아 뒀다 — §9.1 도입 당시). 실시간 표시는 정확히 그 알림 페이로드가 필요하므로
+`skip_serializing_if = "Option::is_none"`으로 바꿨다: 값이 없는 알림(질문/벨,
+추출 실패)은 여전히 `tokens` 키 자체가 안 실려 TS `NotificationEvent.tokens?`
+미러와 계약이 그대로 맞고, 값이 있는 Stop만 camelCase 하위 필드와 함께 wire에
+오른다.
+
+### 11.2 세션 경계와 리셋 규칙
+
+누계는 **에이전트가 아니라 세션**에 붙는다 — 같은 에이전트라도 세션을 재시작하면
+(재시작/재소환/resume) 이전 세션이 쓴 토큰은 새 세션의 누계가 아니다. 스토어는
+`sessionUsage: Record<agentId, {sessionId, totals}>`로 "이 에이전트가 지금 붙어 있는
+세션과 그 세션의 누계"만 들고, `noteUsageSession(agentId, sessionId)`가 세션이
+바뀐 걸 감지하면 `totals`를 `emptyTotals()`로 리셋한다. 이 함수는 `session-state`
+이벤트마다 불린다 — Stop이 아직 한 번도 안 온 새 세션에도 `sessionId`가 먼저
+잡혀 있어야, 나중에 시드(§11.3)를 그 세션에 붙일 자리가 생기기 때문이다.
+
+`bootstrap.ts`의 세션 핸드오프 입양 폴백(`adoptDetachedSessions`)도 같은 이유로
+`noteUsageSession`을 부른다 — `session-state` 이벤트가 유실되거나 부팅 초반
+경합으로 늦게 도착하면 `sessionUsage[agentId]`가 undefined로 남아, 시드에 그
+세션의 누계가 멀쩡히 있어도 사용량 스팬이 아예 안 뜨는 문제가 있었다(코드
+리뷰 C). `AdoptedSessionInfo`에 이미 `sessionId`가 실려 있어 추가 호출이
+거저다 — 같은 sessionId로 두 번 불려도 `noteUsageSession`은 no-op이라
+`session-state` 경로와 충돌하지 않는다.
+
+### 11.3 시드 + 이중 계산 방지(3일 창의 한계)
+
+방금 재시작한 앱은 실시간 알림이 하나도 안 왔으니 누계가 0으로 보인다 — 그
+세션이 어제부터 계속 진행 중이었어도. `useSessionUsageSeed` 훅이 **앱 수명당
+1회**, `loadSessionEvents(cut - 3일, cut, ["stop"])`로 과거 세션 이벤트를 읽어
+`aggregateSeed`(kind=stop ∧ tokens 존재 ∧ `at <= cut`만 세션별 합산)로 초기
+누계를 만들고 `sessionUsageSeed = {at: cut, bySession}`에 한 번만 심는다(이미
+있으면 no-op — 재시도하지 않는다는 뜻이기도 하다. 실패해도 조용히 삼키고 실시간
+누계만 보여준다).
+
+**이중 계산을 막는 경계(컷오프 `cut`)는 "훅이 도는 시각"이 아니라 "실시간이
+실제로 처음 센 턴의 시각"이다.** 처음 버전은 시드를 부르는 시각(`Date.now()`)을
+그대로 컷오프로 썼는데, 이건 **순서 의존**이었다 — 시드가 부르기 전에 실시간
+알림이 먼저 몇 턴을 반영해 버리면(예: A 수정으로 설정 하이드레이션을 기다리게
+되면서 시딩이 늦게 시작되는 경우), 그 구간이 실시간 누계에도 들어가고 시드
+조회 범위(`cut`이 그 이후 시각이므로)에도 다시 걸려 **토큰·비용·턴 수가 정확히
+2배**로 집계됐다(코드 리뷰 B). 순서가 코드로 강제되지 않는 한 이 경합은 항상
+재현 가능하다.
+
+그래서 스토어에 `sessionUsageFirstAt: number | null`을 두고,
+`applyNotificationUsage`가 **실제로 누계에 반영한 첫 턴**의 `e.at`을 기록한다
+(무시된 알림은 기록하지 않는다 — 판정 자체가 바뀌진 않는다, 아래 참조). 훅은
+`cut = firstAt !== null ? firstAt - 1 : Date.now()`로 컷오프를 잡는다 — 실시간이
+이미 어떤 턴을 반영했으면 그 턴 바로 이전까지만 시드가 긁으므로, 시드가 아무리
+늦게 도착해도 실시간과 겹치는 구간이 **구조적으로** 없다. 아직 실시간이 한
+턴도 못 봤으면 지금 이 순간까지 긁는다 — 그 뒤에 오는 실시간 알림은 이 시각보다
+뒤에 온다(원래 경계와 동일한 안전성). `applyNotificationUsage`의 판정 자체
+(`e.at <= sessionUsageSeed.at`이면 버림)는 그대로다 — 늦게 도착한 과거 알림을
+거르는 방어는 여전히 필요하다.
+
+화면에 낼 값은 `sessionUsage[activeId].totals`(cut 이후 실시간 누계)와
+`sessionUsageSeed.bySession[그 sessionId]`(cut 이전 누계)를 `mergeTotals`로
+더한 것이다.
+
+**3일 창의 한계**: 세션이 3일보다 오래 열려 있었으면 그 이전 몫은 시드에서
+빠져 화면 누계가 실제보다 적게 보인다. 받아들인 트레이드오프다 — `loadSessionEvents`
+조회 범위를 무제한으로 늘리면 매 부팅마다 큰 JSONL을 읽어야 하고, 애초에 "지금
+이 세션 누계"는 참고용 실시간 수치이지 정산 근거가 아니다(정확한 기간 집계는
+분석 패널 몫).
+
+### 11.4 승계된 트레이드오프 — 억제된 Stop은 사용량도 버려진다
+
+§9.1에서 이미 정한 대로: 알림이 나가지 않는 Stop(서브에이전트 진행 중, dedup
+억제, 죽은 세션)은 그 턴의 stop 레코드 자체가 없어 시계열에도 안 남는다. 이
+확장은 그 시계열을 그대로 읽으므로 같은 구멍을 그대로 물려받는다 — 터미널 요약
+바의 누계도 분석 패널과 똑같이 그런 턴을 놓친다. 새 손실 지점이 아니라 기존
+한계의 재사용이다.
+
+### 11.5 설정 게이트 — 하이드레이션을 기다린다
+
+`AppSettings.sessionCostEnabled`(기본 **true**, opt-out) — 이미 수집 중인 턴
+토큰을 재사용할 뿐 추가 API 호출이 없어 기본 켜짐으로 잡았다(구독 한도 게이지
+쪽 `usageFloatEnabled`와 같은 결). 꺼져 있으면 `useSessionUsageSeed`가 아예
+`loadSessionEvents`를 부르지 않고(불필요한 파일 읽기 자체를 생략), 요약 바도
+사용량 스팬을 렌더하지 않는다.
+
+다만 "꺼져 있으면"을 판정하려면 **진짜 설정값이 스토어에 와 있어야** 한다.
+`appStore`는 생성 시점에 `appSettings`를 `DEFAULT_APP_SETTINGS`(sessionCostEnabled
+= true) 플레이스홀더로 채우고, `bootApp`이 `getAppSettings` IPC 왕복을 마친
+뒤에야 `hydrateSettings`로 실제 값을 심는다. React의 첫 커밋에서 도는 effect는
+그 IPC 왕복보다 먼저 실행되므로, `enabled` 값만 보고 판정하면 **설정을 꺼 놓은
+사용자에게도 부팅마다 시드 조회가 나갔다**(코드 리뷰 A). 그래서 스토어에 런타임
+전용 `settingsHydrated: boolean`(초기 false)을 두고 `hydrateSettings`가 이걸
+true로 세운다 — `AppSettings`의 필드는 아니다(영속 대상도, 계약도 아니라서
+Rust/픽스처 churn이 없다). `useSessionUsageSeed`는 `settingsHydrated &&
+sessionCostEnabled`가 **처음 참이 되는 시점**에만 시도하고, 그 전에는 모듈
+스코프 `attempted` 플래그도 세우지 않는다 — 하이드레이션이 끝내 실패해
+`hydrateSettings`가 안 불리면(부팅 IPC 실패 등) 이 훅은 영영 시도하지 않는데,
+시드 없이 실시간 누계만 쓰는 것이 그 경우의 의도된 강등이다.
+
+### 11.6 표시 형식과 바 높이 불변식
+
+형식은 `1.2M · $0.42` — 토큰은 `input+output`을 `formatTokens`로 축약(분석 패널과
+같은 규칙), 캐시 읽기/쓰기는 셀에 안 넣고 `title` 툴팁에만(입력/출력/캐시읽기/
+캐시쓰기/턴 수/대표 모델 + "공개 API 요율 기준 추정치" 각주). `costUnknownTurns > 0`
+(§9.4처럼 단가를 모르는 모델이 섞였을 때)이면 비용 앞에 `~`를 붙여 부분 집계임을
+드러낸다. 토큰이 실린 턴이 하나도 없으면(`turns === 0`) 스팬 자체를 렌더하지 않는다.
+
+세 표시 강등 규칙(코드 리뷰 D, 분석 패널 `AnalyticsDialog`와 같은 결):
+- **비용을 하나도 모를 때**(`costUnknownTurns === turns`) — `~$0.0000`처럼 백만
+  토큰짜리 세션이 공짜로 보이는 대신 비용 자리를 `—`로 떨군다. 토큰 자리는
+  그대로 의미 있게 보여준다.
+- **일부만 모를 때**(`0 < costUnknownTurns < turns`) — `~` 접두는 그대로 두되,
+  `title` 툴팁에 `summary.usage.costUnknownHint`(unknown 턴 수를 넣은 한 줄,
+  activity 네임스페이스의 같은 키와 같은 톤)를 더해 `~`의 뜻을 남긴다. 이 키는
+  `{ko,en,ja,fr,zh-Hans,zh-Hant}/terminal.json` 여섯 곳 모두에 있다.
+- **캐시만 있는 턴**(`input + output === 0`인데 `cacheRead > 0`) — 토큰 자리를
+  `0`이 아니라 `—`로 보여준다(그대로 두면 "쓴 토큰 없음"으로 오해).
+
+(참고: `AnalyticsDialog`에도 "비용을 하나도 모를 때" 문제가 원래부터 있지만,
+그 컴포넌트는 이번 §11 확장 범위 밖이라 손대지 않았다.)
+
+`TerminalSummaryBar`는 **라벨이 없어도 바 자체는 자리를 지키는 불변식**이 있다
+(높이가 바뀌면 xterm rows가 바뀌어 PTY resize가 나가고, pi 기본 TUI가 resize마다
+스크롤백을 지운다 — 파일 헤더 주석 참조). 사용량 스팬을 더해도 바 높이(22px)는
+그대로다: `margin-left: auto`로 오른쪽에 붙이는 `flex: none` 스팬 하나를 얹었을
+뿐 바의 `height`는 손대지 않았다. 그리고 이 스팬은 라벨과 독립이라, 라벨이 없고
+사용량만 있는 상태에서도 바가 (숨김이 아니라) 보인다 — "숨김"은 라벨도 사용량도
+둘 다 없을 때만이다.
+
+### 11.7 kind 필터와 부팅 크리티컬 패스 이탈
+
+실측(최근 4일치 JSONL)으로는 15,480줄/약 4.5MB 중 시딩이 실제로 쓰는
+`kind=stop ∧ tokens 존재` 줄은 156줄(1.0%)뿐이었다 — 나머지 99%는 렌더러가
+받아서 바로 버리는 tool/notification/prompt 등이다. `load_session_events`
+리더에 `kinds: Option<&[SessionEventKind]>` 필터를 더해 그 버림을 파싱 직후
+Rust 쪽에서 끝낸다(`None`이면 현행 그대로 전부 — 분석 패널은 인자를 안 써서
+동작이 그대로다). IPC 커맨드도 같은 모양의 옵셔널 `kinds`를 받고,
+`loadSessionEvents(fromAt, toAt, kinds?)`가 5접점 계약
+(`ipc/commands.rs`/`lib.rs`/`shared/ipc.ts`/`renderer/ipc/tauriApi.ts`/
+`shared/types/api.ts`)을 그대로 통과한다. `useSessionUsageSeed`는 `["stop"]`만
+넘긴다.
+
+시딩 자체도 부팅 크리티컬 패스에서 뺐다 — 게이트(§11.5)를 통과한 뒤
+`setTimeout(..., 0)`으로 한 틱 미루고 언마운트 시 타이머를 정리한다. §11.3의
+`firstAt` 기반 컷오프 덕에 이 지연이 안전하다: 시딩이 늦게 끝나서 그 사이
+실시간 알림이 먼저 몇 턴을 반영해도, 컷오프를 스토어에서 **실행 시점에 직접**
+읽어(훅 클로저에 캡처해 둔 값이 아니라) `firstAt`을 최신값으로 잡으므로 이중
+계산이 생기지 않는다.

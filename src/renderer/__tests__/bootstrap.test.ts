@@ -285,6 +285,7 @@ describe("bootApp", () => {
       mascotLightsFace: "sprite",
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
+      sessionCostEnabled: true,
       ttsEnabled: false,
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -382,6 +383,10 @@ describe("session-handoff adoption (bootApp)", () => {
     expect(session.cols).toBe(120);
     expect(session.rows).toBe(40);
     expect(markAdopted).toHaveBeenCalledWith(["a1"]);
+
+    // 세션 사용량(§11.2·11 리뷰 C): 입양 폴백도 noteUsageSession을 불러
+    // session-state 이벤트가 유실/지연돼도 사용량 스팬이 죽지 않는다.
+    expect(useAppStore.getState().sessionUsage.a1?.sessionId).toBe("s-old");
   });
 
   it("does not touch the store or mark anything when adoptDetachedSessions resolves empty (default/unsupported)", async () => {

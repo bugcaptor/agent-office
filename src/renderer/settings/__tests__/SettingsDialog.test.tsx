@@ -68,6 +68,7 @@ describe("SettingsDialog", () => {
         mascotLightsFace: "sprite",
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
+        sessionCostEnabled: true,
         ttsEnabled: false,
         ttsRewriteModelAnthropic: "claude-haiku-4-5",
         ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -123,6 +124,7 @@ describe("SettingsDialog", () => {
       mascotLightsFace: "sprite",
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
+      sessionCostEnabled: true,
       ttsEnabled: false,
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -172,6 +174,7 @@ describe("SettingsDialog", () => {
         mascotLightsFace: "sprite",
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
+        sessionCostEnabled: true,
         ttsEnabled: false,
         ttsRewriteModelAnthropic: "claude-haiku-4-5",
         ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -233,6 +236,7 @@ describe("SettingsDialog", () => {
         mascotLightsFace: "sprite",
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
+        sessionCostEnabled: true,
         ttsEnabled: false,
         ttsRewriteModelAnthropic: "claude-haiku-4-5",
         ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -253,6 +257,65 @@ describe("SettingsDialog", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /꽉 채우기 모드 사용량 표시/ }));
 
     expect(useAppStore.getState().appSettings.usageFloatEnabled).toBe(false);
+  });
+
+  it("현재 세션 토큰·비용 표시 체크박스가 즉시 반영된다(updateAppSettings 배선)", () => {
+    useAppStore.getState().hydrateSettings(
+      {
+        version: 1,
+        language: "system",
+        summarizerEnabled: false,
+        summaryProvider: "claude",
+        summaryModels: {
+          claude: { light: "", heavy: "" },
+          codex: { light: "", heavy: "" },
+          agy: { light: "", heavy: "" },
+          gemini: { light: "", heavy: "" },
+          opencode: { light: "", heavy: "" },
+          openrouter: { light: "", heavy: "" },
+        },
+        diaryEnabled: false,
+        observerEnabled: false,
+        typingSoundEnabled: true,
+        notifySoundEnabled: true,
+        soundVolume: 0.5,
+        externalTerminal: "terminal",
+        externalEditor: "system",
+        attentionHoldMs: 5000,
+        gitStatusEnabled: true,
+        workdirShowIgnored: false,
+        fileIndexBackend: "walker",
+        cliEnabled: false,
+        keepAwakeEnabled: false,
+        sessionLogEnabled: true,
+        mascotEnabled: false,
+        mascotLightsMode: "off",
+        mascotLightsVertical: false,
+        mascotLightsProjects: [],
+        mascotLightsFace: "sprite",
+        mascotLightsLabel: "auto",
+        usageFloatEnabled: true,
+        sessionCostEnabled: true,
+        ttsEnabled: false,
+        ttsRewriteModelAnthropic: "claude-haiku-4-5",
+        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
+        ttsRewriteProvider: "auto",
+        webRemoteBind: "tailnet",
+        webRemotePort: 47800,
+        webRemoteEnabled: false,
+        talkEnabled: false,
+        talkMaxTurns: 6,
+        talkIdleQuietMs: 3000,
+      },
+      false,
+    );
+    useAppStore.getState().openModal({ kind: "settings" });
+
+    render(<SettingsDialog />);
+    openTab("시스템");
+    fireEvent.click(screen.getByRole("checkbox", { name: /현재 세션 토큰·비용 표시/ }));
+
+    expect(useAppStore.getState().appSettings.sessionCostEnabled).toBe(false);
   });
 
   it("셸 출력 에디터 셀렉터가 VS Code 선택을 즉시 반영한다", () => {
@@ -291,6 +354,7 @@ describe("SettingsDialog", () => {
         mascotLightsFace: "sprite",
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
+        sessionCostEnabled: true,
         ttsEnabled: false,
         ttsRewriteModelAnthropic: "claude-haiku-4-5",
         ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",

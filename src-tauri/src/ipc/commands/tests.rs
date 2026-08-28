@@ -106,6 +106,7 @@
             mascot_lights_face: Default::default(),
             mascot_lights_label: Default::default(),
             usage_float_enabled: true,
+            session_cost_enabled: true,
             tts_enabled: false,
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
@@ -179,6 +180,7 @@
             mascot_lights_face: Default::default(),
             mascot_lights_label: Default::default(),
             usage_float_enabled: true,
+            session_cost_enabled: true,
             tts_enabled: false,
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
@@ -242,6 +244,7 @@
             mascot_lights_face: Default::default(),
             mascot_lights_label: Default::default(),
             usage_float_enabled: true,
+            session_cost_enabled: true,
             tts_enabled: false,
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
@@ -1057,6 +1060,7 @@
             &state.session_event_root,
             1_783_728_000_000,
             1_783_728_000_001,
+            None,
         );
 
         assert_eq!(loaded, vec![record]);
@@ -1070,6 +1074,7 @@
             &state.session_event_root,
             0,
             u64::MAX / 2,
+            None,
         );
         assert!(loaded.is_empty());
         cleanup(&ctl, &dir, &profile_dir);

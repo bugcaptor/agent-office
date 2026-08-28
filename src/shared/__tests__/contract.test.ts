@@ -75,6 +75,8 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     const parsed: NotificationEvent = JSON.parse(loadFixtureRaw("notification-event.json"));
     expect(parsed.source).toBe("hook");
     expect(notificationType(parsed.source)).toBe("question");
+    // tokens는 옵션 — 값이 없는 알림(hook)에는 키 자체가 없다.
+    expect(parsed.tokens).toBeUndefined();
   });
 
   it("OutputChunk", () => {
@@ -329,6 +331,7 @@ describe("AppSettings (opt-in 설정 계약)", () => {
       mascotLightsFace: "sprite",
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
+      sessionCostEnabled: true,
       ttsEnabled: false,
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",

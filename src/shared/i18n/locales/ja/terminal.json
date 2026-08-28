@@ -58,5 +58,19 @@
     "mocha": "Catppuccin Mocha",
     "appleClearDark": "macOS クリアダーク",
     "appleClearLight": "macOS クリアライト"
+  },
+  "summary": {
+    "usage": {
+      "tokenIn": "入力 {{value}}",
+      "tokenOut": "出力 {{value}}",
+      "tokenCacheRead": "キャッシュ読取 {{value}}",
+      "tokenCacheWrite": "キャッシュ書込 {{value}}",
+      "turns_one": "{{count}}ターン",
+      "turns_other": "{{count}}ターン",
+      "model": "モデル {{model}}",
+      "costUnknownHint_one": "単価が不明なモデルの {{count}}ターンは除外",
+      "costUnknownHint_other": "単価が不明なモデルの {{count}}ターンは除外",
+      "footnote": "公開 API 料金換算の推定値"
+    }
   }
 }

@@ -58,5 +58,19 @@
     "mocha": "Catppuccin Mocha",
     "appleClearDark": "macOS 清透深色",
     "appleClearLight": "macOS 清透浅色"
+  },
+  "summary": {
+    "usage": {
+      "tokenIn": "输入 {{value}}",
+      "tokenOut": "输出 {{value}}",
+      "tokenCacheRead": "缓存读取 {{value}}",
+      "tokenCacheWrite": "缓存写入 {{value}}",
+      "turns_one": "{{count}} 轮",
+      "turns_other": "{{count}} 轮",
+      "model": "模型 {{model}}",
+      "costUnknownHint_one": "已排除 {{count}} 轮未知定价的模型",
+      "costUnknownHint_other": "已排除 {{count}} 轮未知定价的模型",
+      "footnote": "按公开 API 费率折算的估值"
+    }
   }
 }

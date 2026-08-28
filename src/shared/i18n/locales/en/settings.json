@@ -131,6 +131,8 @@
     "mascotLightsProjectsEmpty": "No folders added yet.",
     "usageFloatTitle": "Usage float in fill mode",
     "usageFloatHelp": "Shows a translucent usage panel in the bottom-right when the terminal fills the whole app window. When off, usage is only shown in the bottom bar.",
+    "sessionCostTitle": "Show current session tokens & cost",
+    "sessionCostHelp": "Shows the current session's cumulative tokens and an estimated cost (based on public API rates) on the right side of the bar above the terminal. This is an estimate, not your actual subscription bill.",
     "externalTerminalTitle": "External terminal",
     "externalTerminalHelp": "The app used by a terminal tab's right-click \"Open in OS terminal\". macOS only — ignored elsewhere.",
     "terminalDefault": "Terminal (default)",

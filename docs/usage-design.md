@@ -29,6 +29,10 @@ Claude Code·Codex CLI·Antigravity·Gemini CLI 구독 정액제의 시간별(5�
 > §7). 다만 그 집계는 이 게이지와 데이터 소스도 표시 위치도 다르다: 게이지는
 > 구독 한도 스냅샷(`rate_limits`/`cachedUsageUtilization`)을, 분석 패널은 세션
 > 이벤트 시계열의 stop 레코드에 실린 턴 사용량을 쓴다.
+>
+> 같은 턴 단위 토큰/비용을 **터미널 요약 바**(활성 탭, 실시간)에도 작게 띄운다 —
+> 이 문서의 구독 한도 게이지와는 별개 기능이니 혼동하지 말 것.
+> `docs/session-analytics-design.md` §11 참조.
 
 ## 2. 데이터 소스 (2026-07 실측)
 

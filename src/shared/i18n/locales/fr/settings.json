@@ -131,6 +131,8 @@
     "mascotLightsProjectsEmpty": "Aucun dossier ajouté pour l'instant.",
     "usageFloatTitle": "Flottant d'utilisation en mode plein",
     "usageFloatHelp": "Affiche un panneau translucide d'utilisation en bas à droite quand le terminal remplit toute la fenêtre de l'app. Désactivé, l'utilisation reste visible seulement dans la barre du bas.",
+    "sessionCostTitle": "Afficher les jetons et le coût de la session en cours",
+    "sessionCostHelp": "Affiche à droite de la barre au-dessus du terminal le total de jetons utilisés par la session en cours et un coût estimé selon les tarifs publics de l'API. C'est une estimation, pas le montant réel de votre facture d'abonnement.",
     "externalTerminalTitle": "Terminal externe",
     "externalTerminalHelp": "L'app utilisée par « Ouvrir dans le terminal du système » du menu contextuel d'un onglet de terminal. macOS uniquement — ignoré ailleurs.",
     "terminalDefault": "Terminal (par défaut)",

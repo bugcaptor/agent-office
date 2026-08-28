@@ -120,12 +120,11 @@ pub struct NotificationEvent {
     pub dedup_key: String,
     pub at: u64,
     /// Stop 알림에만, 그것도 추출에 성공했을 때만 실리는 그 턴의 토큰 사용량.
-    /// 시계열 기록(`RecordingAppEvents`)이 이 값을 stop 레코드로 옮겨 담는다.
-    ///
-    /// **백엔드 내부 운반 전용이라 wire에 싣지 않는다**(`skip_serializing`) —
-    /// 렌더러는 분석 패널에서 시계열을 통해 읽으므로 실시간 알림 페이로드에
-    /// 넣을 이유가 없고, TS `NotificationEvent` 미러를 그대로 두기 위함이다.
-    #[serde(skip_serializing)]
+    /// 시계열 기록(`RecordingAppEvents`)이 이 값을 stop 레코드로 옮겨 담을 뿐만
+    /// 아니라, 렌더러가 터미널 요약 바에 현재 세션 누계를 실시간으로 그리는 데도
+    /// 이 값이 필요해 wire에 싣는다(`skip_serializing_if`). 옵션이라 값이 없는
+    /// 알림(질문/벨, 추출 실패한 과거 이벤트 등)에는 키 자체가 아예 빠진다.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tokens: Option<SessionEventTokens>,
 }
 
@@ -866,6 +865,34 @@ mod tests {
             "{\"id\":\"n1\",\"sessionId\":\"s1\",\"agentId\":\"a1\",\"source\":\"hook\",\
              \"message\":\"needs input\",\"dedupKey\":\"hook:s1\",\"at\":1720000000000}"
         );
+        assert!(!json.contains("\"tokens\""), "{json}");
+    }
+
+    /// tokens가 Some이면 wire에 camelCase 하위 필드와 함께 실린다(Stop 알림 →
+    /// 렌더러 실시간 세션 요약 바).
+    #[test]
+    fn notification_event_serializes_tokens_when_present() {
+        let ev = NotificationEvent {
+            id: "n1".into(),
+            session_id: "s1".into(),
+            agent_id: "a1".into(),
+            source: NotificationSource::Stop,
+            message: "done".into(),
+            dedup_key: "stop:s1".into(),
+            at: 1,
+            tokens: Some(SessionEventTokens {
+                input: Some(100),
+                output: Some(50),
+                cache_read: Some(20),
+                cache_write: Some(10),
+                model: Some("claude-opus-5".into()),
+            }),
+        };
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(json.contains("\"tokens\""), "{json}");
+        assert!(json.contains("\"cacheRead\":20"), "{json}");
+        assert!(json.contains("\"cacheWrite\":10"), "{json}");
+        assert!(json.contains("\"model\":\"claude-opus-5\""), "{json}");
     }
 
     #[test]

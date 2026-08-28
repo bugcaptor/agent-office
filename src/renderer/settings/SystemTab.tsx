@@ -90,6 +90,17 @@ export function SystemTab() {
         </span>
       </label>
       <label className="settings-item">
+        <input
+          type="checkbox"
+          checked={appSettings.sessionCostEnabled}
+          onChange={(e) => updateAppSettings({ sessionCostEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>{t("system.sessionCostTitle")}</strong>
+          <small>{t("system.sessionCostHelp")}</small>
+        </span>
+      </label>
+      <label className="settings-item">
         <span>
           <strong>{t("system.externalTerminalTitle")}</strong>
           <small>{t("system.externalTerminalHelp")}</small>

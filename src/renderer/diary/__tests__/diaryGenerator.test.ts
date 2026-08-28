@@ -53,6 +53,7 @@ const SETTINGS_ON: AppSettings = {
   mascotLightsFace: "sprite",
   mascotLightsLabel: "auto",
   usageFloatEnabled: true,
+  sessionCostEnabled: true,
   ttsEnabled: false,
   ttsRewriteModelAnthropic: "claude-haiku-4-5",
   ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
