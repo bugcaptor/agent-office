@@ -4,18 +4,31 @@
  * 테마 배경색이 들어오는 순간 투명 창이 불투명한 사각형이 된다.
  */
 
+/* 신호등(docs/mascot-lights-design.md) strip이 붙으면서 세로 컬럼 배치로
+   바뀌었다: [스프라이트 래퍼] 위, [strip] 아래. 창이 아직 내용에 맞춰
+   동적으로 리사이즈되지 않는 시점(C9 전)에는 justify-content:flex-end로
+   콘텐츠를 하단중앙에 붙여 기존 스프라이트 전용 레이아웃과 같은 자리를
+   유지한다. */
 .mascot-root {
   position: relative;
   width: 100%;
   height: 100%;
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
   background: transparent;
 }
 
-/* 스프라이트 자체. 창 하단 중앙에 붙는다. 클릭/드래그 히트 영역도 여기뿐이라
-   투명한 여백을 눌러도 아무 일이 없다. */
+/* 스프라이트 + 배지를 함께 묶는 래퍼 — 배지의 absolute 기준이 여기로
+   옮겨왔다(strip이 아래 붙어도 배지 위치가 스프라이트에 고정된다). */
+.mascot-sprite-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+/* 스프라이트 자체. 클릭/드래그 히트 영역도 여기뿐이라 투명한 여백을
+   눌러도 아무 일이 없다. */
 .mascot-sprite {
   display: block;
   image-rendering: pixelated;
@@ -67,4 +80,94 @@
   50% {
     transform: translateY(-6px);
   }
+}
+
+/* ── 신호등 strip(docs/mascot-lights-design.md §6) ─────────────────────
+   치수는 protocol.ts의 LIGHT_PX(18)/LIGHT_GAP(6)/LIGHT_STRIP_PAD(6)와
+   맞춘다. 배경은 완전 투명 — 램프 사이 틈이 데스크톱 클릭을 삼키지만
+   면적이 작아 수용한다(설계 §10). 색은 테마 토큰을 쓰지 않는다(파일 헤더
+   원칙 — 이 창은 전역 스타일을 로드하지 않는다). */
+.mascot-lights {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  background: transparent;
+  box-sizing: border-box;
+}
+.mascot-lights-horizontal {
+  flex-direction: row;
+}
+.mascot-lights-vertical {
+  flex-direction: column;
+}
+
+.mascot-light {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.mascot-light-off {
+  background: #2a2a2a;
+  border-color: #111;
+  opacity: 0.55;
+}
+
+.mascot-light-working {
+  background: #35c04a;
+  border-color: #175c26;
+  animation: lights-pulse 1200ms ease-in-out infinite;
+}
+
+.mascot-light-attention {
+  background: #ffcc33;
+  border-color: #8a5a00;
+  color: #3a2600;
+  font: 700 12px/1 ui-sans-serif, system-ui, sans-serif;
+  animation: lights-blink 600ms ease-in-out infinite;
+}
+
+@keyframes lights-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes lights-blink {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+/* 오버플로 칩("+k") — 넘친 칸을 하나로 뭉친다. 클릭 no-op이라 기본 커서. */
+.mascot-light-chip {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid #222;
+  box-sizing: border-box;
+  background: #444;
+  color: #ddd;
+  font: 400 10px/1 ui-sans-serif, system-ui, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
 }

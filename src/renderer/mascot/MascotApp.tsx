@@ -31,8 +31,10 @@ import {
   MASCOT_ANIM_IDLE_MS,
   MASCOT_SPRITE_PX,
   parseMascotState,
+  type MascotLight,
   type MascotState,
 } from "./protocol";
+import { foldOverflow } from "./layout";
 import { loadMascotFrames, type MascotFrames } from "./sheet";
 import { createDragDetector } from "./drag";
 import {
@@ -272,25 +274,63 @@ export default function MascotApp() {
       .catch((err) => console.warn("mascot: activation failed", err));
   };
 
+  // ---- 신호등 램프 클릭: 대표 에이전트를 활성화(clickAgentId=null이면 no-op) ----
+  const onLightClick = (light: MascotLight) => {
+    if (light.clickAgentId === null) return;
+    void tauriApi
+      .mascotActivate(light.clickAgentId)
+      .catch((err) => console.warn("mascot: light activation failed", err));
+  };
+
+  const { shown: shownLights, overflowCount } = foldOverflow(state.lights);
+
   return (
     <div className="mascot-root">
-      {state.hasPending && (
-        <div className="mascot-badge" aria-hidden="true">
-          !
+      {state.agentId !== null && (
+        <div className="mascot-sprite-wrap">
+          {state.hasPending && (
+            <div className="mascot-badge" aria-hidden="true">
+              !
+            </div>
+          )}
+          <canvas
+            ref={canvasRef}
+            className={`mascot-sprite${state.hasPending ? " pending" : ""}`}
+            width={backing}
+            height={backing}
+            style={{ width: MASCOT_SPRITE_PX, height: MASCOT_SPRITE_PX }}
+            title={state.name ?? undefined}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={() => detector.cancel()}
+          />
         </div>
       )}
-      <canvas
-        ref={canvasRef}
-        className={`mascot-sprite${state.hasPending ? " pending" : ""}`}
-        width={backing}
-        height={backing}
-        style={{ width: MASCOT_SPRITE_PX, height: MASCOT_SPRITE_PX }}
-        title={state.name ?? undefined}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={() => detector.cancel()}
-      />
+      {state.lights.length > 0 && (
+        <div
+          className={`mascot-lights${state.lightsVertical ? " mascot-lights-vertical" : " mascot-lights-horizontal"}`}
+        >
+          {shownLights.map((light) => (
+            <div
+              key={light.id}
+              className={`mascot-light mascot-light-${light.state}`}
+              title={light.label}
+              onClick={() => onLightClick(light)}
+            >
+              {light.state === "working" && (
+                <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+                  <polygon points="6,4 14,9 6,14" fill="#eafff0" />
+                </svg>
+              )}
+              {light.state === "attention" && <span aria-hidden="true">!</span>}
+            </div>
+          ))}
+          {overflowCount > 0 && (
+            <div className="mascot-light-chip">{`+${overflowCount}`}</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
