@@ -35,7 +35,10 @@ export function MascotLightsSection() {
   };
 
   return (
-    <div className="settings-form">
+    // SystemTab이 이미 `.settings-form`을 열어 둔 상태라 여기서 또 열면
+    // 중첩되어 위아래 margin(12px 0)이 겹친다(사소함 — 이 섹션만 24px로
+    // 벌어져 주변과 어긋난다). 프래그먼트로 SystemTab의 폼에 바로 얹는다.
+    <>
       <label className="settings-item">
         <span>
           <strong>{t("system.mascotLightsTitle")}</strong>
@@ -67,7 +70,11 @@ export function MascotLightsSection() {
       </label>
 
       {appSettings.mascotLightsMode === "projects" && (
-        <div className="settings-item-stacked mascot-lights-projects">
+        // `settings-item-stacked`는 항상 `settings-item`과 짝을 이룬다 —
+        // display:flex가 `.settings-item`에만 있어(layout.css:534)
+        // 단독으로 쓰면 flex-direction:column/gap이 전혀 적용되지 않는다
+        // (사소함, 다른 사용처는 전부 두 클래스 쌍).
+        <div className="settings-item settings-item-stacked mascot-lights-projects">
           <span>
             <strong>{t("system.mascotLightsProjectsTitle")}</strong>
           </span>
@@ -100,6 +107,6 @@ export function MascotLightsSection() {
           </button>
         </div>
       )}
-    </div>
+    </>
   );
 }

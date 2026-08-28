@@ -353,6 +353,30 @@ describe("installMascotBridge · 신호등(lights)", () => {
     off();
   });
 
+  it("a1 스프라이트가 linger 중이어도 b1의 램프는 idle 전환 즉시 꺼진다(여운 금지, T2)", () => {
+    seed([mkProfile({ id: "a1" }), mkProfile({ id: "b1", seed: "s-b1" })]);
+    setLightsSettings({ mascotLightsMode: "agents" });
+    const h = harness();
+    const off = installMascotBridge(h.io);
+
+    setWorking("a1", 100); // 스프라이트 pick = a1
+    // b1은 waiting으로 둔다 — working이면 a1이 idle 되는 순간 pickMascotTarget이
+    // 스프라이트를 b1로 넘겨 linger 자체가 안 걸린다(waiting은 스프라이트
+    // pick에서 제외되므로 신호등에만 attention으로 반영된다, 결정 1).
+    setWaiting("b1", 10);
+    expect(h.last()?.lights.map((l) => l.id)).toEqual(["a1", "b1"]);
+
+    setIdle("a1"); // a1 스프라이트 linger 시작 — 창은 계속 a1을 조용히 보여준다.
+    expect(h.last()).toMatchObject({ agentId: "a1", working: false });
+    expect(h.last()?.lights.map((l) => l.id)).toEqual(["b1"]); // a1은 신호등에서 즉시 제외
+
+    setIdle("b1"); // b1도 idle — linger 없이 곧바로 lights에서 빠져야 한다.
+    expect(h.last()?.lights).toEqual([]);
+    // linger가 아직 안 끝났으므로 스프라이트는 여전히 a1(조용한 모습)을 보여준다.
+    expect(h.last()).toMatchObject({ agentId: "a1", working: false, visible: true });
+    off();
+  });
+
   it("lights가 없으면(기능 꺼짐) linger 만료 시 기존대로 완전히 숨는다", () => {
     seed(); // mascotLightsMode 기본값 off
     const h = harness();

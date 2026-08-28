@@ -185,6 +185,9 @@ describe("MascotLightsSection", () => {
     await Promise.resolve();
 
     expect(useAppStore.getState().appSettings.mascotLightsProjects).toEqual(["/repo/a"]);
+    // T3: 상태가 그대로인 것만 보면 핸들러가 통째로 죽어도(예외로 조기 종료)
+    // 통과한다 — 저장 호출 자체가 없었는지도 함께 확인한다.
+    expect(setAppSettings).not.toHaveBeenCalled();
   });
 
   it("제거 버튼이 인덱스로 해당 폴더만 지운다", () => {

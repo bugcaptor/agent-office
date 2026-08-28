@@ -1,6 +1,6 @@
 # 마스코트 신호등(status lights strip) 설계
 
-상태: 정본 — 2026-08-28 설계 확정(결정 1·2·6은 사용자가 직접 택했다). 구현 대기.
+상태: 정본 — 2026-08-28 설계 확정(결정 1·2·6은 사용자가 직접 택했다). 구현 완료(리뷰 반영 포함).
 전제: docs/mascot-window-design.md(이슈 #72, 구현 완료)의 마스코트 창 위에 얹는다.
 
 마스코트 창 아래에 **신호등 줄(strip)**을 붙인다. 칸(램프) 하나가 대상 하나의
@@ -102,6 +102,10 @@ export function computeMascotLights(input: {
 - 프로젝트 집계: 소속 에이전트 상태의 max(attention > working > off).
 - 대표(clickAgentId): 결정 7의 우선순위. clockedOut 에이전트는 소속·집계·대표
   전부에서 제외(에이전트 모드와 동일 기준).
+- **알려진 제약(E2, 문서화로 충분 — 결정 3 위배 아님)**: 중첩 폴더(예: A와
+  A/sub)를 둘 다 등록하면 A/sub 세션이 두 칸 모두의 소속에 잡혀 두 칸이 같이
+  켜지고 대표도 같다 — 경로 포함 판정(`isInsideCwd`)의 자연스러운 귀결이라
+  v1은 이대로 둔다.
 
 ## 4. 프로토콜 확장 (`src/renderer/mascot/protocol.ts`)
 
@@ -277,7 +281,7 @@ system.mascotLightsProjectsEmpty "아직 등록된 폴더가 없습니다."
 | 파일 | 신규/수정 | 내용 |
 |---|---|---|
 | `src/renderer/store/mascotLights.ts` (+`__tests__`) | 신규 | `computeMascotLights` 순수 집계(§3) |
-| `src/renderer/labels/labelText.ts` | 수정 | `isInsideCwd`·`normalizeCwd` export 승격(로직 무변경) |
+| `src/renderer/labels/labelText.ts` | 수정 | `isInsideCwd` export 승격(로직 무변경) — `normalizeCwd`는 모듈 내부에서만 쓰여 승격이 불필요했다(실제로 하지 않음) |
 | `src/renderer/mascot/protocol.ts` | 수정 | `MascotLight`·상수·`lights`/`lightsVertical` 필드·파서·dedupe(§4) |
 | `src/renderer/mascot/layout.ts` (+tests) | 신규 | `computeMascotLayout`·`foldOverflow`(§5.1) |
 | `src/renderer/mascot/MascotApp.tsx` | 수정 | strip 렌더·램프 클릭(`mascotActivate`)·레이아웃 변화 시 `setMascotLayout` 호출·스프라이트 영역 접기 |

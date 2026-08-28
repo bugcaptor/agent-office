@@ -148,7 +148,19 @@ export function computeMascotLights(input: ComputeMascotLightsInput): MascotLigh
     return out;
   }
 
-  return input.projects.map((project) => {
+  // E1: settings.json을 직접 편집해 빈 문자열/중복 경로가 들어올 수 있다.
+  // 빈 문자열은 isInsideCwd(cwd, "")가 모든 절대경로에 true라 전체 세션을
+  // 그 칸 하나로 삼켜 버리고, 중복 경로는 React key(light.id) 충돌을 낳아
+  // 경고는 물론 클릭 대상까지 헷갈리게 한다 — 둘 다 여기서 걸러낸다.
+  const seen = new Set<string>();
+  const projects: string[] = [];
+  for (const project of input.projects) {
+    if (project.trim() === "" || seen.has(project)) continue;
+    seen.add(project);
+    projects.push(project);
+  }
+
+  return projects.map((project) => {
     const members = membersOf(project, input);
     return {
       id: project,

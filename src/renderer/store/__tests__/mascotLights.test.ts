@@ -191,6 +191,19 @@ describe("computeMascotLights", () => {
       });
     });
 
+    it("빈 문자열(공백만)과 중복 경로는 칸 목록에서 제외된다(E1)", () => {
+      const lights = computeMascotLights(
+        base({
+          mode: "projects",
+          projects: ["/dev/proj-a", "", "   ", "/dev/proj-a", "/dev/proj-b"],
+          agentOrder: ["a"],
+          agents: { a: { cwd: "/dev/proj-a" } },
+          timeTracking: { a: turn("working", { turnStartedAt: 1 }) },
+        }),
+      );
+      expect(lights.map((l) => l.id)).toEqual(["/dev/proj-a", "/dev/proj-b"]);
+    });
+
     describe("대표(clickAgentId) 선정 우선순위", () => {
       const proj = "/dev/proj";
       const agents = { a: { cwd: proj }, b: { cwd: proj }, c: { cwd: proj } };
@@ -270,6 +283,47 @@ describe("computeMascotLights", () => {
         );
         expect(lights[0].clickAgentId).toBeNull();
       });
+
+      it("소속이 아닌 에이전트의 최신 알림은 대표 선정에서 건너뛴다(memberSet 검사, T4)", () => {
+        const lights = computeMascotLights(
+          base({
+            mode: "projects",
+            projects: ["/dev/proj-a", "/dev/proj-b"],
+            agentOrder: ["a", "x"],
+            agents: { a: { cwd: "/dev/proj-a" }, x: { cwd: "/dev/proj-b" } },
+            timeTracking: { a: turn("waiting", { waitingSince: 10 }), x: turn("idle") },
+            // x(proj-b 소속)의 알림이 더 최신이지만 proj-a의 대표가 되면 안 된다.
+            notifications: [{ agentId: "x" }],
+          }),
+        );
+        const projA = lights.find((l) => l.id === "/dev/proj-a");
+        expect(projA?.clickAgentId).toBe("a");
+      });
     });
+
+    it("agentOrder에는 있지만 agents에 없는 유령 id는 소속 계산에서 안전히 건너뛴다(T4)", () => {
+      const lights = computeMascotLights(
+        base({
+          mode: "projects",
+          projects: ["/dev/proj"],
+          agentOrder: ["ghost", "a"],
+          agents: { a: { cwd: "/dev/proj" } },
+          timeTracking: { a: turn("working", { turnStartedAt: 1 }) },
+        }),
+      );
+      expect(lights[0].state).toBe("working");
+      expect(lights[0].clickAgentId).toBe("a");
+    });
+  });
+
+  it("agents 모드: agentOrder에는 있지만 agents에 없는 유령 id는 건너뛴다(T4)", () => {
+    const lights = computeMascotLights(
+      base({
+        agentOrder: ["ghost", "a"],
+        agents: { a: { name: "A" } },
+        timeTracking: { a: turn("working", { turnStartedAt: 1 }) },
+      }),
+    );
+    expect(lights.map((l) => l.id)).toEqual(["a"]);
   });
 });
