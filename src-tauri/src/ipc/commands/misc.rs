@@ -72,11 +72,15 @@ pub async fn set_mascot_layout(
 ) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("mascot") {
         win.set_resizable(true).map_err(|e| e.to_string())?;
-        win.set_size(tauri::PhysicalSize::new(width, height))
-            .map_err(|e| e.to_string())?;
-        win.set_position(tauri::PhysicalPosition::new(x, y))
-            .map_err(|e| e.to_string())?;
+        // set_size/set_position이 실패해도 set_resizable(false)는 반드시
+        // 실행한다 — `?`로 조기 반환하면 그 뒤로 사용자가 창 테두리를 끌어
+        // 늘릴 수 있게 된 채 다음 성공 호출 전까지 남는다(리뷰 C3). 결과를
+        // 변수로 받아 두고 resizable 복원 다음에 반환한다.
+        let result = win
+            .set_size(tauri::PhysicalSize::new(width, height))
+            .and_then(|_| win.set_position(tauri::PhysicalPosition::new(x, y)));
         win.set_resizable(false).map_err(|e| e.to_string())?;
+        result.map_err(|e| e.to_string())?;
     }
     Ok(())
 }

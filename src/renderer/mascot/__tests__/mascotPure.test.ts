@@ -244,6 +244,44 @@ describe("layout", () => {
       });
       expect(rect).toEqual({ width: 0, height: 0, x: -500 + 60, y: -500 + 140 });
     });
+
+    it("dpr 1.5: strip-only → 스프라이트 등장 전환에서도 x/y가 정수다(B1 회귀)", () => {
+      // 램프 3칸(스프라이트 없음)의 물리 크기는 117×45 — dpr 1.5에서 논리
+      // strip 폭(78)이 물리 117(홀수)이 된다. 여기서 스프라이트가 등장하면
+      // 앵커 역산 중 절반 나누기에서 .5가 남는다(리뷰 B1 실측 재현).
+      const mon = { x: 0, y: 0, width: 1920, height: 1080, scaleFactor: 1.5 };
+      const rect = computeMascotWindowRect({
+        lightCount: 3,
+        vertical: false,
+        hasSprite: true,
+        dpr: 1.5,
+        currentPos: { x: 1000, y: 800 },
+        currentSize: { width: 117, height: 45 },
+        monitors: [mon],
+        primary: mon,
+      });
+      expect(Number.isInteger(rect.x)).toBe(true);
+      expect(Number.isInteger(rect.y)).toBe(true);
+      expect(rect.x).toBe(969); // Math.round(1000 + 117/2 - 180/2) = Math.round(968.5)
+    });
+
+    it("dpr 1.5: 스프라이트 유지 + 칸 수 축소(strip 폭 홀수) 전환에서도 정수다(B1 회귀)", () => {
+      // 12칸(물리 폭 441, 홀수)에서 0칸(스프라이트만, 물리 폭 180)으로 줄어드는
+      // 반대 방향 — currentSize가 홀수인 쪽에서도 같은 문제가 난다.
+      const mon = { x: 0, y: 0, width: 1920, height: 1080, scaleFactor: 1.5 };
+      const rect = computeMascotWindowRect({
+        lightCount: 0,
+        vertical: false,
+        hasSprite: true,
+        dpr: 1.5,
+        currentPos: { x: 1000, y: 800 },
+        currentSize: { width: 441, height: 255 },
+        monitors: [mon],
+        primary: mon,
+      });
+      expect(Number.isInteger(rect.x)).toBe(true);
+      expect(Number.isInteger(rect.y)).toBe(true);
+    });
   });
 });
 

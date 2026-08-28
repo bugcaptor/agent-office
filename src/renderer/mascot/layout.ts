@@ -106,5 +106,16 @@ export function computeMascotWindowRect(input: {
   const monitor =
     monitors.find((m) => isOnMonitor(currentPos, currentSize, m)) ?? primary ?? monitors[0] ?? null;
   const pos = monitor ? clampToArea(topLeft, physicalSize, monitor) : topLeft;
-  return { width: physicalSize.width, height: physicalSize.height, x: pos.x, y: pos.y };
+  // B1: 논리 폭은 짝수(120, 30, 24n+6)지만 dpr 1.5류에서 물리 strip 폭은
+  // 항상 홀수라(예: 45×1.5=67.5→반올림 후에도 앵커 역산 중 절반 나누기에서
+  // .5가 남는다) topLeft가 x.5로 끝날 수 있다. Rust `set_mascot_layout`의
+  // x/y는 i32라 소수점 인자를 주면 serde_json 역직렬화가 거부해 호출 자체가
+  // 실패한다(창이 다시는 리사이즈되지 않는다) — 클램프 이후 정수로 반올림해
+  // 그 경로를 원천 차단한다.
+  return {
+    width: physicalSize.width,
+    height: physicalSize.height,
+    x: Math.round(pos.x),
+    y: Math.round(pos.y),
+  };
 }

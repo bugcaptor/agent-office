@@ -5,26 +5,38 @@
  */
 
 /* 신호등(docs/mascot-lights-design.md) strip이 붙으면서 세로 컬럼 배치로
-   바뀌었다: [스프라이트 래퍼] 위, [strip] 아래. 창이 아직 내용에 맞춰
-   동적으로 리사이즈되지 않는 시점(C9 전)에는 justify-content:flex-end로
-   콘텐츠를 하단중앙에 붙여 기존 스프라이트 전용 레이아웃과 같은 자리를
-   유지한다. */
+   바뀌었다: [스프라이트 래퍼] 위, [strip] 아래. 창은 매번 컨텐츠 크기에
+   정확히 맞춰 리사이즈되므로(layout.ts computeMascotLayout,
+   MascotApp.tsx applyLayout — C9) 위→아래로 쌓기만 하면 하단중앙 앵커와
+   맞아떨어진다.
+   `height`/`justify-content:flex-end`는 예전에 지우지 못한 죽은 코드였다
+   — mascot.html의 `#root`에 높이가 없어(퍼센트 높이는 컨테이닝 블록 높이가
+   auto면 auto다) 여기 `height:100%`도 auto로 계산되고, 그래서
+   `justify-content:flex-end`는 아무 일도 하지 않았다(분배할 여유 공간
+   자체가 없다). 실제로는 콘텐츠가 항상 창 상단에 붙어 있었다(리뷰 B2) —
+   그 사실과 어긋나던 이전 주석을 지우고 죽은 선언도 함께 정리한다. */
 .mascot-root {
   position: relative;
   width: 100%;
-  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
   background: transparent;
 }
 
 /* 스프라이트 + 배지를 함께 묶는 래퍼 — 배지의 absolute 기준이 여기로
-   옮겨왔다(strip이 아래 붙어도 배지 위치가 스프라이트에 고정된다). */
+   옮겨왔다(strip이 아래 붙어도 배지 위치가 스프라이트에 고정된다).
+   높이를 창의 스프라이트 몫(protocol.ts MASCOT_WINDOW_H=140)으로 고정한다.
+   캔버스 자체는 96px(MASCOT_SPRITE_PX)뿐이라 고정하지 않으면 래퍼가
+   96px로 줄어들어, layout.ts가 계산해 창에 실제로 적용하는 높이(스프라이트
+   140 + strip)와 44px 어긋난다 — 그 죽은 공간이 창 하단에 생겨 스프라이트가
+   나타나거나 linger로 접힐 때마다 strip이 44px씩 튀었다(리뷰 B2). 캔버스는
+   기본 블록 흐름으로 래퍼 상단에 붙으므로(아래 오버라이드 없음) 화면상
+   위치는 신호등 도입 이전과 동일하게 보존된다. */
 .mascot-sprite-wrap {
   position: relative;
   flex: 0 0 auto;
+  height: 140px;
 }
 
 /* 스프라이트 자체. 클릭/드래그 히트 영역도 여기뿐이라 투명한 여백을
@@ -113,6 +125,14 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
+}
+
+/* clickAgentId===null인 칸(소속 없음/클릭 no-op) — 손가락 커서를 보이면
+   눌러도 반응이 없어 사용자를 헷갈리게 한다(리뷰 E3). off 상태라도 대표가
+   있으면(§3 대표 선정 ④) 여전히 클릭 가능하므로, 이 클래스는 색상 상태가
+   아니라 clickAgentId 유무로만 붙는다. */
+.mascot-light-noclick {
+  cursor: default;
 }
 
 .mascot-light-off {
