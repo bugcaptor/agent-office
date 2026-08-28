@@ -91,6 +91,9 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   keepAwakeEnabled: false,
   sessionLogEnabled: true,
   mascotEnabled: false,
+  mascotLightsMode: "off",
+  mascotLightsVertical: false,
+  mascotLightsProjects: [],
   ttsEnabled: false,
   ttsRewriteModelAnthropic: "claude-haiku-4-5",
   ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
@@ -364,6 +367,9 @@ interface AppState {
         | "keepAwakeEnabled"
         | "sessionLogEnabled"
         | "mascotEnabled"
+        | "mascotLightsMode"
+        | "mascotLightsVertical"
+        | "mascotLightsProjects"
         | "webRemoteBind"
         | "webRemotePort"
         | "webRemoteEnabled"

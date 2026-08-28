@@ -329,6 +329,9 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "keepAwakeEnabled",
       "sessionLogEnabled",
       "mascotEnabled",
+      "mascotLightsMode",
+      "mascotLightsVertical",
+      "mascotLightsProjects",
       "ttsEnabled",
       "ttsRewriteModelAnthropic",
       "ttsRewriteModelOpenrouter",
@@ -348,6 +351,9 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     // 세션 로그는 이 앱에서 몇 안 되는 기본 켜짐(opt-out) 설정이다.
     expect(settings.sessionLogEnabled).toBe(true);
     expect(settings.mascotEnabled).toBe(false);
+    expect(settings.mascotLightsMode).toBe("off");
+    expect(settings.mascotLightsVertical).toBe(false);
+    expect(settings.mascotLightsProjects).toEqual([]);
     // TTS는 외부 유료 API 두 곳을 호출하므로 기본 꺼짐, 리라이트는 자동 체인.
     expect(settings.ttsEnabled).toBe(false);
     expect(settings.ttsRewriteModelAnthropic).toBe("claude-haiku-4-5");

@@ -85,6 +85,17 @@ pub enum ExternalTerminal {
     Iterm,
 }
 
+/// 마스코트 신호등(docs/mascot-lights-design.md) 대상 선택 모드. 기본은 꺼짐 —
+/// `mascot_enabled`가 상위 게이트이고 이 값이 `off`가 아니어야 strip이 뜬다.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MascotLightsMode {
+    #[default]
+    Off,
+    Agents,
+    Projects,
+}
+
 /// 셸 출력 내보내기(.txt)를 열 외부 에디터. 기본은 OS 기본 연결(open/xdg-open).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -287,6 +298,19 @@ pub struct AppSettings {
     /// 화면을 상시 점유하는 시스템 표면이라 opt-in — 기본 꺼짐.
     #[serde(default)]
     pub mascot_enabled: bool,
+    /// 마스코트 신호등(docs/mascot-lights-design.md) 대상 선택 모드. `mascot_enabled`가
+    /// 상위 게이트이고, 이 값이 `off`가 아니면 활동이 없어도 신호등 때문에
+    /// 마스코트 창이 떠 있을 수 있다. `#[serde(default)]`라 기존 설정 파일에
+    /// 키가 없으면 `off`.
+    #[serde(default)]
+    pub mascot_lights_mode: MascotLightsMode,
+    /// 신호등 칸을 세로로 배열할지(기본 가로).
+    #[serde(default)]
+    pub mascot_lights_vertical: bool,
+    /// 신호등 프로젝트 모드에서 칸을 받을 저장소 폴더 목록(표시 순서 = 저장
+    /// 순서). 절대경로 문자열 — `mascotLightsMode==="projects"`일 때만 쓰인다.
+    #[serde(default)]
+    pub mascot_lights_projects: Vec<String>,
     /// 확인 요청 대사 TTS — 질문(Hook) 알림 문구를 캐릭터 말투 대사로 리라이트한 뒤
     /// ElevenLabs로 합성해 캐릭터 목소리로 재생한다. 외부 API 두 곳을 호출해
     /// 유료 크레딧을 소모하므로 opt-in — 기본 꺼짐. API 키는 이 구조체가 아니라
@@ -371,6 +395,9 @@ impl Default for AppSettings {
             keep_awake_enabled: false,
             session_log_enabled: true,
             mascot_enabled: false,
+            mascot_lights_mode: MascotLightsMode::Off,
+            mascot_lights_vertical: false,
+            mascot_lights_projects: Vec::new(),
             tts_enabled: false,
             tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
             tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),
@@ -566,6 +593,9 @@ mod tests {
             keep_awake_enabled: false,
             session_log_enabled: true,
             mascot_enabled: false,
+            mascot_lights_mode: MascotLightsMode::Off,
+            mascot_lights_vertical: false,
+            mascot_lights_projects: Vec::new(),
             tts_enabled: false,
             tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
             tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),
@@ -766,6 +796,9 @@ mod tests {
             keep_awake_enabled: false,
             session_log_enabled: true,
             mascot_enabled: false,
+            mascot_lights_mode: MascotLightsMode::Off,
+            mascot_lights_vertical: false,
+            mascot_lights_projects: Vec::new(),
             tts_enabled: false,
             tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
             tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),

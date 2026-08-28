@@ -40,6 +40,10 @@ export type ExternalEditorApp = "system" | "vscode";
 /** 파일 목록 스캔 백엔드 — Rust `FileIndexBackend` 미러. 기본 walker. */
 export type FileIndexBackend = "walker" | "everything";
 
+/** 마스코트 신호등(docs/mascot-lights-design.md) 대상 선택 모드 —
+ * Rust `MascotLightsMode` 미러. 기본 off. */
+export type MascotLightsMode = "off" | "agents" | "projects";
+
 import type { TtsRewriteProvider } from './tts';
 
 /**
@@ -125,6 +129,15 @@ export interface AppSettings {
   /** 데스크톱 마스코트 창(이슈 #72) — 활동 중인 캐릭터 1명을 앱 창과 별개의
    * 투명·최상단 창으로 띄운다. 화면을 상시 점유하므로 기본 false. */
   mascotEnabled: boolean;
+  /** 마스코트 신호등 대상 선택 모드. `mascotEnabled`가 상위 게이트이고, 이
+   * 값이 `off`가 아니면 활동이 없어도 신호등 때문에 마스코트 창이 떠 있을 수
+   * 있다. 기본 "off". */
+  mascotLightsMode: MascotLightsMode;
+  /** 신호등 칸을 세로로 배열할지. 기본 false(가로). */
+  mascotLightsVertical: boolean;
+  /** 신호등 프로젝트 모드에서 칸을 받을 저장소 폴더 목록(표시 순서 = 등록
+   * 순서). `mascotLightsMode==="projects"`일 때만 쓰인다. 기본 빈 배열. */
+  mascotLightsProjects: string[];
   /** 알림 대사 TTS(질문·완료 알림을 캐릭터 목소리로 발화). 외부 유료 API 두 곳을
    * 호출하므로 opt-in — 기본 false. API 키는 이 구조체에 없다(백엔드 0600 파일). */
   ttsEnabled: boolean;
