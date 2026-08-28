@@ -17,15 +17,7 @@
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
-import {
-  SCENE_CHROMA_CUT,
-  adaptColor,
-  adaptPalette,
-  desaturateColor,
-  desaturatePalette,
-  quietPalette,
-  sceneColorMode,
-} from "./sceneColor";
+import { defineScene } from "./defineScene";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -126,16 +118,7 @@ const VOLCANO_FIRE = {
   amount: 0.08,
 } as const;
 
-const VOLCANO_PALETTE = desaturatePalette(
-  quietPalette(VOLCANO_PALETTE_RAW, VOLCANO_QUIET),
-  SCENE_CHROMA_CUT,
-  [VOLCANO_FIRE],
-);
-
-type VolcanoPalette = typeof VOLCANO_PALETTE;
-
-/** 레터박스(맵 밖) 배경 — 재가 내려앉은 하늘. 현무암보다 한 단계 어둡다. */
-const VOLCANO_BACKGROUND = desaturateColor(0x1b1517, SCENE_CHROMA_CUT);
+type VolcanoPalette = typeof VOLCANO_PALETTE_RAW;
 
 /** 타일 좌표에서 나오는 결정적 해시 — 균열 발광/화산재/기포를 흩뿌리는 데 쓴다.
  * (베이크된 정적 텍스처라 난수를 쓰면 재베이크마다 무늬가 바뀐다.) */
@@ -356,15 +339,14 @@ function volcanoTileDraw(pal: VolcanoPalette): TileDrawFn {
   };
 }
 
-export const VOLCANO_SCENE: SceneDef = {
+export const VOLCANO_SCENE: SceneDef = defineScene({
   id: "volcano",
   labelKey: "office:scene.volcano",
   map: VOLCANO_MAP,
-  resolve: (theme) => {
-    const mode = sceneColorMode(theme.id);
-    return {
-      background: adaptColor(VOLCANO_BACKGROUND, mode),
-      drawTile: volcanoTileDraw(adaptPalette(VOLCANO_PALETTE, mode)),
-    };
-  },
-};
+  raw: VOLCANO_PALETTE_RAW,
+  quiet: VOLCANO_QUIET,
+  keep: [VOLCANO_FIRE],
+  /** 레터박스(맵 밖) 배경 — 재가 내려앉은 하늘. 현무암보다 한 단계 어둡다. */
+  background: 0x1b1517,
+  draw: volcanoTileDraw,
+});

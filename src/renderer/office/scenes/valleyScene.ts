@@ -11,15 +11,7 @@
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
-import {
-  SCENE_CHROMA_CUT,
-  adaptColor,
-  adaptPalette,
-  desaturateColor,
-  desaturatePalette,
-  quietPalette,
-  sceneColorMode,
-} from "./sceneColor";
+import { defineScene } from "./defineScene";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -106,16 +98,7 @@ const VALLEY_KEEP = [
   },
 ] as const;
 
-const VALLEY_PALETTE = desaturatePalette(
-  quietPalette(VALLEY_PALETTE_RAW, VALLEY_QUIET),
-  SCENE_CHROMA_CUT,
-  VALLEY_KEEP,
-);
-
-type ValleyPalette = typeof VALLEY_PALETTE;
-
-/** 레터박스(맵 밖) 배경 — 풀밭보다 어두운 숲 그늘색. */
-const VALLEY_BACKGROUND = desaturateColor(0x3f5a3c, SCENE_CHROMA_CUT);
+type ValleyPalette = typeof VALLEY_PALETTE_RAW;
 
 /** 결정적 흩뿌리기(자갈/들꽃/나무 배치). 베이크된 정적 텍스처라 난수 금지. */
 const scatter = (tx: number, ty: number, mod: number): number => (tx * 97 + ty * 41) % mod;
@@ -313,15 +296,14 @@ function valleyTileDraw(pal: ValleyPalette): TileDrawFn {
   };
 }
 
-export const VALLEY_SCENE: SceneDef = {
+export const VALLEY_SCENE: SceneDef = defineScene({
   id: "valley",
   labelKey: "office:scene.valley",
   map: VALLEY_MAP,
-  resolve: (theme) => {
-    const mode = sceneColorMode(theme.id);
-    return {
-      background: adaptColor(VALLEY_BACKGROUND, mode),
-      drawTile: valleyTileDraw(adaptPalette(VALLEY_PALETTE, mode)),
-    };
-  },
-};
+  raw: VALLEY_PALETTE_RAW,
+  quiet: VALLEY_QUIET,
+  keep: VALLEY_KEEP,
+  /** 레터박스(맵 밖) 배경 — 풀밭보다 어두운 숲 그늘색. */
+  background: 0x3f5a3c,
+  draw: valleyTileDraw,
+});

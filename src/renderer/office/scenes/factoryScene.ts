@@ -16,15 +16,7 @@ import type { Graphics } from "pixi.js";
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
-import {
-  SCENE_CHROMA_CUT,
-  adaptColor,
-  adaptPalette,
-  desaturateColor,
-  desaturatePalette,
-  quietPalette,
-  sceneColorMode,
-} from "./sceneColor";
+import { defineScene } from "./defineScene";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -116,16 +108,7 @@ const FACTORY_QUIET: readonly QuietGroup<typeof FACTORY_PALETTE_RAW>[] = [
   { base: "hazardYellow", keys: ["hazardDark", "hazardEdge"], amount: 0.5 },
 ];
 
-/** 캐릭터가 읽히도록 배경 잔무늬를 죽인 실사용 팔레트. */
-const FACTORY_PALETTE = desaturatePalette(
-  quietPalette(FACTORY_PALETTE_RAW, FACTORY_QUIET),
-  SCENE_CHROMA_CUT,
-);
-
-type FactoryPalette = typeof FACTORY_PALETTE;
-
-/** 레터박스(맵 밖) 배경 — 바닥보다 어두운 공장 그늘색. */
-const FACTORY_BACKGROUND = desaturateColor(0x4a4a46, SCENE_CHROMA_CUT);
+type FactoryPalette = typeof FACTORY_PALETTE_RAW;
 
 /** 결정적 흩뿌리기(균열/기름 얼룩/볼트 자국/벽 설비). 베이크된 정적 텍스처라
  * 난수를 쓰면 재베이크마다 무늬가 바뀐다 — 해변·계곡과 같은 이유. */
@@ -409,15 +392,13 @@ function factoryTileDraw(pal: FactoryPalette): TileDrawFn {
   };
 }
 
-export const FACTORY_SCENE: SceneDef = {
+export const FACTORY_SCENE: SceneDef = defineScene({
   id: "factory",
   labelKey: "office:scene.factory",
   map: FACTORY_MAP,
-  resolve: (theme) => {
-    const mode = sceneColorMode(theme.id);
-    return {
-      background: adaptColor(FACTORY_BACKGROUND, mode),
-      drawTile: factoryTileDraw(adaptPalette(FACTORY_PALETTE, mode)),
-    };
-  },
-};
+  raw: FACTORY_PALETTE_RAW,
+  quiet: FACTORY_QUIET,
+  /** 레터박스(맵 밖) 배경 — 바닥보다 어두운 공장 그늘색. */
+  background: 0x4a4a46,
+  draw: factoryTileDraw,
+});

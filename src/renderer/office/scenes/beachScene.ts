@@ -11,15 +11,7 @@
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
-import {
-  SCENE_CHROMA_CUT,
-  adaptColor,
-  adaptPalette,
-  desaturateColor,
-  desaturatePalette,
-  quietPalette,
-  sceneColorMode,
-} from "./sceneColor";
+import { defineScene } from "./defineScene";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 // 위 2줄은 바다(수평선+파도), ty2/ty5는 좌석 행, ty3/ty6은 파라솔 작업대
@@ -107,16 +99,7 @@ const BEACH_KEEP = [
   { keys: ["canopyA", "canopyB"], amount: 0.15 },
 ] as const;
 
-const BEACH_PALETTE = desaturatePalette(
-  quietPalette(BEACH_PALETTE_RAW, BEACH_QUIET),
-  SCENE_CHROMA_CUT,
-  BEACH_KEEP,
-);
-
-type BeachPalette = typeof BEACH_PALETTE;
-
-/** 레터박스(맵 밖) 배경 — 모래보다 한 단계 어둡게 해 맵이 떠 보이게 한다. */
-const BEACH_BACKGROUND = desaturateColor(0xc9ae83, SCENE_CHROMA_CUT);
+type BeachPalette = typeof BEACH_PALETTE_RAW;
 
 /** 타일 좌표에서 나오는 결정적 해시 — 조개/불가사리/풀포기를 흩뿌리는 데 쓴다.
  * (베이크된 정적 텍스처라 난수를 쓰면 재베이크마다 무늬가 바뀐다.) */
@@ -280,15 +263,14 @@ function beachTileDraw(pal: BeachPalette): TileDrawFn {
   };
 }
 
-export const BEACH_SCENE: SceneDef = {
+export const BEACH_SCENE: SceneDef = defineScene({
   id: "beach",
   labelKey: "office:scene.beach",
   map: BEACH_MAP,
-  resolve: (theme) => {
-    const mode = sceneColorMode(theme.id);
-    return {
-      background: adaptColor(BEACH_BACKGROUND, mode),
-      drawTile: beachTileDraw(adaptPalette(BEACH_PALETTE, mode)),
-    };
-  },
-};
+  raw: BEACH_PALETTE_RAW,
+  quiet: BEACH_QUIET,
+  keep: BEACH_KEEP,
+  /** 레터박스(맵 밖) 배경 — 모래보다 한 단계 어둡게 해 맵이 떠 보이게 한다. */
+  background: 0xc9ae83,
+  draw: beachTileDraw,
+});

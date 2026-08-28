@@ -17,14 +17,7 @@
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
-import {
-  adaptColor,
-  adaptPalette,
-  desaturateColor,
-  desaturatePalette,
-  quietPalette,
-  sceneColorMode,
-} from "./sceneColor";
+import { defineScene } from "./defineScene";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 // 위 2줄은 뷰포트(창밖 우주), ty4/ty7이 좌석 행, ty5/ty8이 콘솔 스테이션
@@ -150,16 +143,7 @@ const SPACESHIP_QUIET: readonly QuietGroup<typeof SPACESHIP_PALETTE_RAW>[] = [
   { base: "holoPad", keys: ["holoGlow"], amount: 0.3 },
 ];
 
-/** 캐릭터가 읽히도록 배경 잔무늬를 죽인 실사용 팔레트. */
-const SPACESHIP_PALETTE = desaturatePalette(
-  quietPalette(SPACESHIP_PALETTE_RAW, SPACESHIP_QUIET),
-  SPACESHIP_CHROMA_CUT,
-);
-
-type SpaceshipPalette = typeof SPACESHIP_PALETTE;
-
-/** 레터박스(맵 밖) 배경 — 데크보다 어두운 선체 그늘색. */
-const SPACESHIP_BACKGROUND = desaturateColor(0x141a24, SPACESHIP_CHROMA_CUT);
+type SpaceshipPalette = typeof SPACESHIP_PALETTE_RAW;
 
 /** 결정적 흩뿌리기(별·패널 얼룩·경고 스트라이프). 베이크된 정적 텍스처라
  * 난수를 쓰면 재베이크마다 무늬가 바뀐다 — 해변/계곡과 같은 이유, 계수만 다르다. */
@@ -440,15 +424,14 @@ function spaceshipTileDraw(pal: SpaceshipPalette): TileDrawFn {
   };
 }
 
-export const SPACESHIP_SCENE: SceneDef = {
+export const SPACESHIP_SCENE: SceneDef = defineScene({
   id: "spaceship",
   labelKey: "office:scene.spaceship",
   map: SPACESHIP_MAP,
-  resolve: (theme) => {
-    const mode = sceneColorMode(theme.id);
-    return {
-      background: adaptColor(SPACESHIP_BACKGROUND, mode),
-      drawTile: spaceshipTileDraw(adaptPalette(SPACESHIP_PALETTE, mode)),
-    };
-  },
-};
+  raw: SPACESHIP_PALETTE_RAW,
+  quiet: SPACESHIP_QUIET,
+  /** 레터박스(맵 밖) 배경 — 데크보다 어두운 선체 그늘색. */
+  background: 0x141a24,
+  chromaCut: SPACESHIP_CHROMA_CUT,
+  draw: spaceshipTileDraw,
+});

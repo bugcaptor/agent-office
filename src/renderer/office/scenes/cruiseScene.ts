@@ -17,15 +17,7 @@
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
-import {
-  SCENE_CHROMA_CUT,
-  adaptColor,
-  adaptPalette,
-  desaturateColor,
-  desaturatePalette,
-  quietPalette,
-  sceneColorMode,
-} from "./sceneColor";
+import { defineScene } from "./defineScene";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 // 작업대는 ty3(4쌍)·ty10(4쌍) = 좌석 8개로 오피스와 같다. 두 줄의 열 위상을
@@ -125,16 +117,7 @@ const CRUISE_KEEP = [
   { keys: ["seaDeep", "seaHorizon", "seaMid", "seaFoam", "skyA", "skyHi"], amount: 0.05 },
 ] as const;
 
-const CRUISE_PALETTE = desaturatePalette(
-  quietPalette(CRUISE_PALETTE_RAW, CRUISE_QUIET),
-  SCENE_CHROMA_CUT,
-  CRUISE_KEEP,
-);
-
-type CruisePalette = typeof CRUISE_PALETTE;
-
-/** 레터박스(맵 밖) 배경 — 갑판보다 훨씬 어두운 먼바다 남색. */
-const CRUISE_BACKGROUND = desaturateColor(0x0d3352, SCENE_CHROMA_CUT);
+type CruisePalette = typeof CRUISE_PALETTE_RAW;
 
 /** 타일 좌표에서 나오는 결정적 해시 — 갑판 옹이/물결 하이라이트를 흩뿌리는 데
  * 쓴다. (베이크된 정적 텍스처라 난수를 쓰면 재베이크마다 무늬가 바뀐다.) */
@@ -389,15 +372,14 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
   };
 }
 
-export const CRUISE_SCENE: SceneDef = {
+export const CRUISE_SCENE: SceneDef = defineScene({
   id: "cruise",
   labelKey: "office:scene.cruise",
   map: CRUISE_MAP,
-  resolve: (theme) => {
-    const mode = sceneColorMode(theme.id);
-    return {
-      background: adaptColor(CRUISE_BACKGROUND, mode),
-      drawTile: cruiseTileDraw(adaptPalette(CRUISE_PALETTE, mode)),
-    };
-  },
-};
+  raw: CRUISE_PALETTE_RAW,
+  quiet: CRUISE_QUIET,
+  keep: CRUISE_KEEP,
+  /** 레터박스(맵 밖) 배경 — 갑판보다 훨씬 어두운 먼바다 남색. */
+  background: 0x0d3352,
+  draw: cruiseTileDraw,
+});

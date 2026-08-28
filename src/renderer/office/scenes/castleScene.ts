@@ -16,15 +16,7 @@
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
-import {
-  SCENE_CHROMA_CUT,
-  adaptColor,
-  adaptPalette,
-  desaturateColor,
-  desaturatePalette,
-  quietPalette,
-  sceneColorMode,
-} from "./sceneColor";
+import { defineScene } from "./defineScene";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -136,16 +128,7 @@ const CASTLE_FIRE = {
   amount: 0.08,
 } as const;
 
-const CASTLE_PALETTE = desaturatePalette(
-  quietPalette(CASTLE_PALETTE_RAW, CASTLE_QUIET),
-  SCENE_CHROMA_CUT,
-  [CASTLE_FIRE, CASTLE_BANNER],
-);
-
-type CastlePalette = typeof CASTLE_PALETTE;
-
-/** 레터박스(맵 밖) 배경 — 석재 바닥보다 훨씬 어두운 성벽 그늘색. */
-const CASTLE_BACKGROUND = desaturateColor(0x33302e, SCENE_CHROMA_CUT);
+type CastlePalette = typeof CASTLE_PALETTE_RAW;
 
 /** 결정적 흩뿌리기(바닥 균열·돌 얼룩·창·휘장 배치). 베이크된 정적 텍스처라 난수 금지. */
 const scatter = (tx: number, ty: number, mod: number): number => (tx * 61 + ty * 113) % mod;
@@ -368,15 +351,14 @@ function castleTileDraw(pal: CastlePalette): TileDrawFn {
   };
 }
 
-export const CASTLE_SCENE: SceneDef = {
+export const CASTLE_SCENE: SceneDef = defineScene({
   id: "castle",
   labelKey: "office:scene.castle",
   map: CASTLE_MAP,
-  resolve: (theme) => {
-    const mode = sceneColorMode(theme.id);
-    return {
-      background: adaptColor(CASTLE_BACKGROUND, mode),
-      drawTile: castleTileDraw(adaptPalette(CASTLE_PALETTE, mode)),
-    };
-  },
-};
+  raw: CASTLE_PALETTE_RAW,
+  quiet: CASTLE_QUIET,
+  keep: [CASTLE_FIRE, CASTLE_BANNER],
+  /** 레터박스(맵 밖) 배경 — 석재 바닥보다 훨씬 어두운 성벽 그늘색. */
+  background: 0x33302e,
+  draw: castleTileDraw,
+});

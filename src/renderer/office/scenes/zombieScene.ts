@@ -17,15 +17,7 @@
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
-import {
-  SCENE_CHROMA_CUT,
-  adaptColor,
-  adaptPalette,
-  desaturateColor,
-  desaturatePalette,
-  quietPalette,
-  sceneColorMode,
-} from "./sceneColor";
+import { defineScene } from "./defineScene";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -128,16 +120,7 @@ const ZOMBIE_FIRE = {
   amount: 0.08,
 } as const;
 
-const ZOMBIE_PALETTE = desaturatePalette(
-  quietPalette(ZOMBIE_PALETTE_RAW, ZOMBIE_QUIET),
-  SCENE_CHROMA_CUT,
-  [ZOMBIE_FIRE],
-);
-
-type ZombiePalette = typeof ZOMBIE_PALETTE;
-
-/** 레터박스(맵 밖) 배경 — 아스팔트보다 한 단계 어두운 잿빛 그늘. */
-const ZOMBIE_BACKGROUND = desaturateColor(0x3c3a34, SCENE_CHROMA_CUT);
+type ZombiePalette = typeof ZOMBIE_PALETTE_RAW;
 
 /** 결정적 흩뿌리기(균열/잡초/낙엽/폐타이어 배치). 베이크된 정적 텍스처라
  * 난수·시각(Date.now)을 쓰면 재베이크마다 무늬가 바뀐다. */
@@ -360,15 +343,14 @@ function zombieTileDraw(pal: ZombiePalette): TileDrawFn {
   };
 }
 
-export const ZOMBIE_SCENE: SceneDef = {
+export const ZOMBIE_SCENE: SceneDef = defineScene({
   id: "zombie",
   labelKey: "office:scene.zombie",
   map: ZOMBIE_MAP,
-  resolve: (theme) => {
-    const mode = sceneColorMode(theme.id);
-    return {
-      background: adaptColor(ZOMBIE_BACKGROUND, mode),
-      drawTile: zombieTileDraw(adaptPalette(ZOMBIE_PALETTE, mode)),
-    };
-  },
-};
+  raw: ZOMBIE_PALETTE_RAW,
+  quiet: ZOMBIE_QUIET,
+  keep: [ZOMBIE_FIRE],
+  /** 레터박스(맵 밖) 배경 — 아스팔트보다 한 단계 어두운 잿빛 그늘. */
+  background: 0x3c3a34,
+  draw: zombieTileDraw,
+});

@@ -13,15 +13,7 @@
 import type { TileRect } from "../map/mapData";
 import { L, Tile, buildSceneMap } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
-import {
-  SCENE_CHROMA_CUT,
-  adaptColor,
-  adaptPalette,
-  desaturateColor,
-  desaturatePalette,
-  quietPalette,
-  sceneColorMode,
-} from "./sceneColor";
+import { defineScene } from "./defineScene";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -133,16 +125,7 @@ const STEPPE_KEEP = [
   },
 ] as const;
 
-const STEPPE_PALETTE = desaturatePalette(
-  quietPalette(STEPPE_PALETTE_RAW, STEPPE_QUIET),
-  SCENE_CHROMA_CUT,
-  STEPPE_KEEP,
-);
-
-type SteppePalette = typeof STEPPE_PALETTE;
-
-/** 레터박스(맵 밖) 배경 — 풀밭보다 한 단계 어두운 초원 그늘색. */
-const STEPPE_BACKGROUND = desaturateColor(0x4e6b3c, SCENE_CHROMA_CUT);
+type SteppePalette = typeof STEPPE_PALETTE_RAW;
 
 /** 결정적 흩뿌리기(풀포기/야생화/구름/봉우리 높이). 베이크된 정적 텍스처라
  * 난수를 쓰면 재베이크마다 무늬가 바뀐다 — 해변/계곡과 같은 이유. */
@@ -394,15 +377,14 @@ function steppeTileDraw(pal: SteppePalette): TileDrawFn {
   };
 }
 
-export const STEPPE_SCENE: SceneDef = {
+export const STEPPE_SCENE: SceneDef = defineScene({
   id: "steppe",
   labelKey: "office:scene.steppe",
   map: STEPPE_MAP,
-  resolve: (theme) => {
-    const mode = sceneColorMode(theme.id);
-    return {
-      background: adaptColor(STEPPE_BACKGROUND, mode),
-      drawTile: steppeTileDraw(adaptPalette(STEPPE_PALETTE, mode)),
-    };
-  },
-};
+  raw: STEPPE_PALETTE_RAW,
+  quiet: STEPPE_QUIET,
+  keep: STEPPE_KEEP,
+  /** 레터박스(맵 밖) 배경 — 풀밭보다 한 단계 어두운 초원 그늘색. */
+  background: 0x4e6b3c,
+  draw: steppeTileDraw,
+});
