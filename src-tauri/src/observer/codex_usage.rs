@@ -11,6 +11,14 @@
 // 누계 차이가 가장 단순하고 견고하다. 앱이 도중에 껐다 켜져 기준이 없으면
 // 그 턴은 조용히 생략한다(과대 집계보다 누락이 낫다).
 //
+// 단, 신선한 세션(첫 턴이 시작될 때까지 `token_count`가 한 번도 안 실린
+// rollout)은 예외다 — 파일 전체를 읽었는데도 `token_count`가 없다면 그건
+// "기준을 못 구함"이 아니라 "누계가 진짜 0"이 증명된 것이므로 기준 0을 심는다.
+// 그래야 그 세션의 첫 턴이 통째로 생략되지 않는다. 이 증명은 파일이 꼬리
+// 읽기 상한(`ROLLOUT_TAIL_BYTES`) 안에 통째로 들어올 때만 성립한다 — 상한에
+// 걸려 잘린 큰 파일은 꼬리에 `token_count`가 없어도 앞쪽 어딘가에 있을 수
+// 있으므로 기존대로 생략한다.
+//
 // rollout 파일 찾기: 훅 body의 `session_id`가 rollout 파일명 꼬리
 // (`...-<session_id>.jsonl`)와 같다는 규약을 먼저 쓰고, 없으면 body의 `cwd`와
 // 첫 줄(`session_meta`)의 cwd가 같은 최근 파일로 폴백한다(agent_transcript/
@@ -109,8 +117,16 @@ impl CodexUsageTracker {
                 return;
             }
         }
-        let Some((current, _)) = self.read_current(body, &key) else {
+        let Some((path, _head_model)) = self.locate(body, &key) else {
             return;
+        };
+        let current = match read_tail_usage(&path) {
+            Some((cumulative, _)) => cumulative,
+            // 파일 전체를 읽었는데 token_count가 없다 = 누계가 진짜 0인 신선한
+            // 세션. 꼬리 상한에 걸려 잘린 파일은 이 증명이 안 되므로 기존대로
+            // 생략한다(위 헤더 주석 참고).
+            None if whole_file_scanned(&path) => Cumulative::default(),
+            None => return,
         };
         self.baselines.lock().unwrap().insert(key, current);
     }
@@ -205,7 +221,7 @@ fn find_by_session_id(sessions: &Path, session_id: &str) -> Option<PathBuf> {
 }
 
 /// 첫 줄 `session_meta.payload.cwd`가 같고 최근에 쓰인 rollout 중 가장 새 것.
-/// 서브에이전트 스레드(`thread_source == "subagent"`)는 제외한다.
+/// 부모 스레드가 있는(=서브 스레드) rollout은 제외한다.
 fn find_by_cwd(sessions: &Path, cwd: &str) -> Option<PathBuf> {
     let now = SystemTime::now();
     let mut best: Option<(SystemTime, PathBuf)> = None;
@@ -229,7 +245,8 @@ fn find_by_cwd(sessions: &Path, cwd: &str) -> Option<PathBuf> {
     best.map(|(_, path)| path)
 }
 
-/// 첫 줄(session_meta)의 cwd. 서브에이전트 스레드면 None.
+/// 첫 줄(session_meta)의 cwd. 서브 스레드(서브에이전트, guardian_review 등)면
+/// None.
 fn head_meta_cwd(path: &Path) -> Option<String> {
     use std::io::{BufRead, BufReader};
     let file = std::fs::File::open(path).ok()?;
@@ -240,7 +257,14 @@ fn head_meta_cwd(path: &Path) -> Option<String> {
         return None;
     }
     let payload = value.get("payload")?;
-    if payload.get("thread_source").and_then(Value::as_str) == Some("subagent") {
+    // `thread_source == "subagent"` 단일 비교로는 부족했다 — 실측에서 같은
+    // cwd에 `thread_source: "guardian_review"`이면서 `parent_thread_id`를
+    // 들고 있는 rollout이 확인됐다(서브 스레드지만 값이 "subagent"가 아니었다).
+    // 부모가 있는 스레드는 종류를 불문하고 배제한다.
+    if payload
+        .get("parent_thread_id")
+        .is_some_and(|id| !id.is_null())
+    {
         return None;
     }
     payload
@@ -280,6 +304,16 @@ fn read_tail_usage(path: &Path) -> Option<(Cumulative, Option<String>)> {
         }
     }
     None
+}
+
+/// 파일 전체가 꼬리 읽기(`ROLLOUT_TAIL_BYTES`) 범위 안에 들어오는가. 이게
+/// 참이어야 "꼬리에 token_count가 없다"가 "누계가 진짜 0이다"의 증명이 된다
+/// (결정 B) — 그렇지 않으면 앞쪽 어딘가에 있는 token_count를 놓친 것일 수
+/// 있다.
+fn whole_file_scanned(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .map(|m| m.len() <= ROLLOUT_TAIL_BYTES)
+        .unwrap_or(false)
 }
 
 /// `{"type":"turn_context","payload":{"model":"gpt-5.4",...}}` → 모델 이름.
@@ -492,6 +526,91 @@ mod tests {
         let disabled = CodexUsageTracker::new(None);
         disabled.mark_turn_start(&hook);
         assert_eq!(disabled.turn_usage(&hook), None);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fresh_session_without_token_count_gets_a_zero_baseline() {
+        let root = scratch();
+        // 신선한 세션 — 아직 token_count가 한 번도 안 실렸다. 파일 전체가
+        // 꼬리 상한보다 훨씬 작으니 "누계가 진짜 0"임이 증명돼 기준 0을 심는다.
+        let path = write_rollout(&root, "sess-1", &[meta("/w"), TURN_CONTEXT.into()]);
+        let tracker = CodexUsageTracker::new(Some(root.join("sessions")));
+        let hook = body("sess-1", "/w");
+
+        tracker.mark_turn_start(&hook);
+
+        let mut content = std::fs::read_to_string(&path).unwrap();
+        content.push('\n');
+        content.push_str(&token_count(500, 0, 50));
+        std::fs::write(&path, content).unwrap();
+
+        // 기준이 0이었으므로 이번 턴 전체가 그대로 집계된다(생략되지 않는다).
+        let tokens = tracker.turn_usage(&hook).unwrap();
+        assert_eq!(tokens.input, Some(500));
+        assert_eq!(tokens.output, Some(50));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn truncated_tail_without_token_count_still_skips_the_turn() {
+        let root = scratch();
+        // 꼬리 상한(1MB)보다 크게 패딩 — token_count가 없어도 "파일 전체를
+        // 봤다"는 증명이 안 되므로(꼬리 밖 어딘가에 있을 수 있음) 기준 0을
+        // 심지 않는다(결정 B).
+        let padding = "x".repeat(ROLLOUT_TAIL_BYTES as usize + 1024);
+        write_rollout(&root, "sess-1", &[meta("/w"), TURN_CONTEXT.into(), padding]);
+        let tracker = CodexUsageTracker::new(Some(root.join("sessions")));
+        let hook = body("sess-1", "/w");
+
+        tracker.mark_turn_start(&hook);
+        // 기준이 안 심어졌으므로 첫 Stop은 여전히 생략된다.
+        assert_eq!(tracker.turn_usage(&hook), None);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sub_thread_rollouts_are_ignored_by_the_cwd_fallback() {
+        let root = scratch();
+        // user 스레드 rollout(먼저 생성 — 더 오래됨).
+        let user_path = write_rollout(
+            &root,
+            "sess-1",
+            &[meta("/w"), TURN_CONTEXT.into(), token_count(100, 0, 10)],
+        );
+        // 서브 스레드 rollout. thread_source가 "subagent"가 아니라
+        // "guardian_review"라 예전 필터를 통과했지만, parent_thread_id를
+        // 들고 있어(실측 사례) 새 필터로 배제돼야 한다. 나중에 써서 더
+        // 최근이다.
+        let sub_meta = r#"{"type":"session_meta","payload":{"id":"sess-2","cwd":"/w","originator":"cli","thread_source":"guardian_review","parent_thread_id":"sess-1"}}"#;
+        write_rollout(
+            &root,
+            "sess-2",
+            &[
+                sub_meta.to_string(),
+                TURN_CONTEXT.into(),
+                token_count(9_999, 0, 999),
+            ],
+        );
+
+        let tracker = CodexUsageTracker::new(Some(root.join("sessions")));
+        // session_id 없이 cwd만 실어 폴백을 강제한다.
+        let hook = serde_json::json!({ "cwd": "/w" }).to_string().into_bytes();
+
+        // user rollout(100/10)이 골라져야 기준이 맞는다. 서브 스레드가
+        // 골라졌다면 기준이 9999/999가 돼 아래 델타가 어긋난다.
+        tracker.mark_turn_start(&hook);
+        let mut content = std::fs::read_to_string(&user_path).unwrap();
+        content.push('\n');
+        content.push_str(&token_count(300, 0, 30));
+        std::fs::write(&user_path, content).unwrap();
+
+        let tokens = tracker.turn_usage(&hook).unwrap();
+        assert_eq!(tokens.input, Some(200));
+        assert_eq!(tokens.output, Some(20));
 
         let _ = std::fs::remove_dir_all(root);
     }
