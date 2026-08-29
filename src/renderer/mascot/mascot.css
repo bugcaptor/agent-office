@@ -136,7 +136,8 @@
 /* 칸 하나 = [얼굴 원판 + 이름] 타일. 예전에는 18px 원 하나뿐이라 "무엇이
    켜졌는지"는 툴팁을 띄워야만 알 수 있었다 — 대시보드로서는 반쪽이라
    대상(프로젝트/에이전트) 이름과 대표 에이전트의 얼굴을 칸 안에 넣었다.
-   투명 창 위 텍스트라 반투명 판을 깔고 그림자를 준다(어떤 바탕에서도 읽히게). */
+   [실험] 판 없이 완전 투명으로. 이름 텍스트는 옅은 글자 + 어두운 외곽선
+   (text-shadow 스트로크)으로 스스로 대비를 만든다. */
 .mascot-light {
   flex: 0 0 auto;
   width: 54px;
@@ -145,7 +146,7 @@
   padding: 3px 2px 4px;
   border-radius: 9px;
   border: 1px solid transparent;
-  background: rgba(18, 19, 24, 0.55);
+  background: transparent;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -195,33 +196,41 @@
   font: 700 13px/1 ui-sans-serif, system-ui, sans-serif;
 }
 
-/* 대상 이름. 한 줄로 잘라내고(폭 54px) 어두운 그림자로 대비를 확보한다. */
+/* 대상 이름. 한 줄로 잘라낸다(폭 54px). 판이 없으므로 옅은 글자 + 어두운
+   외곽선으로 어떤 바탕에서도 읽히게 한다. */
 .mascot-light-name {
   max-width: 100%;
-  color: #e6e8ee;
+  color: #ffffff;
   font: 500 8px/9px ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.2px;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.85),
+    1px -1px 0 rgba(0, 0, 0, 0.85),
+    -1px 1px 0 rgba(0, 0, 0, 0.85),
+    1px 1px 0 rgba(0, 0, 0, 0.85);
   pointer-events: none;
 }
 
 /* 둘째 줄(작업명) — `mascotLightsLabel==="projecttask"`일 때만 렌더된다.
-   `.mascot-light-name`과 같은 절단/그림자 규칙을 쓰되 색만 흐리게 해 시각적
-   위계를 준다(첫 줄이 주 텍스트). */
+   첫째 줄과 같은 절단·외곽선 규칙을 쓰되 색만 흐리게 해 위계를 준다. */
 .mascot-light-sub {
   max-width: 100%;
-  color: #b9bec9;
+  color: #d5dae3;
   font: 400 8px/9px ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.2px;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.85),
+    1px -1px 0 rgba(0, 0, 0, 0.85),
+    -1px 1px 0 rgba(0, 0, 0, 0.85),
+    1px 1px 0 rgba(0, 0, 0, 0.85);
   pointer-events: none;
 }
 
@@ -285,9 +294,14 @@
   height: 48px;
   box-sizing: border-box;
   border-radius: 9px;
-  background: rgba(18, 19, 24, 0.55);
-  color: #cfd3dc;
+  background: transparent;
+  color: #ffffff;
   font: 600 12px/1 ui-sans-serif, system-ui, sans-serif;
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.85),
+    1px -1px 0 rgba(0, 0, 0, 0.85),
+    -1px 1px 0 rgba(0, 0, 0, 0.85),
+    1px 1px 0 rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
