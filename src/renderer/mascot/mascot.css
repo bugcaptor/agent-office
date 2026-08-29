@@ -109,6 +109,16 @@
   padding: 6px;
   background: transparent;
   box-sizing: border-box;
+
+  /* 판이 없는 글자용 외곽선. 8방향인 이유 — 대각 4방향만 깔면 글자의 좌우/
+     상하 정면에는 스트로크가 닿지 않아 "옆구리가 뚫린" 외곽선으로 보인다.
+     불투명 검정인 이유 — 반투명이면 겹치는 자리마다 농도가 달라져 얼룩이
+     지고, 밝은 바탕이 스트로크를 뚫고 올라와 글자가 반투명해 보인다.
+     마지막 흐린 층은 스트로크 바깥을 한 번 더 눌러 밝은 바탕에서 띄운다. */
+  --light-text-stroke:
+    -1px -1px 0 #000, 0 -1px 0 #000, 1px -1px 0 #000, -1px 0 0 #000,
+    1px 0 0 #000, -1px 1px 0 #000, 0 1px 0 #000, 1px 1px 0 #000,
+    0 1px 3px rgba(0, 0, 0, 0.75);
 }
 .mascot-lights-horizontal {
   flex-direction: row;
@@ -136,8 +146,8 @@
 /* 칸 하나 = [얼굴 원판 + 이름] 타일. 예전에는 18px 원 하나뿐이라 "무엇이
    켜졌는지"는 툴팁을 띄워야만 알 수 있었다 — 대시보드로서는 반쪽이라
    대상(프로젝트/에이전트) 이름과 대표 에이전트의 얼굴을 칸 안에 넣었다.
-   [실험] 판 없이 완전 투명으로. 이름 텍스트는 옅은 글자 + 어두운 외곽선
-   (text-shadow 스트로크)으로 스스로 대비를 만든다. */
+   [실험] 판 없이 완전 투명으로. 이름 텍스트는 흰 글자 + 불투명 검정 8방향
+   외곽선(--light-text-stroke)으로 스스로 대비를 만든다. */
 .mascot-light {
   flex: 0 0 auto;
   width: 54px;
@@ -207,30 +217,23 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.85),
-    1px -1px 0 rgba(0, 0, 0, 0.85),
-    -1px 1px 0 rgba(0, 0, 0, 0.85),
-    1px 1px 0 rgba(0, 0, 0, 0.85);
+  text-shadow: var(--light-text-stroke);
   pointer-events: none;
 }
 
 /* 둘째 줄(작업명) — `mascotLightsLabel==="projecttask"`일 때만 렌더된다.
-   첫째 줄과 같은 절단·외곽선 규칙을 쓰되 색만 흐리게 해 위계를 준다. */
+   첫째 줄과 같은 절단·외곽선 규칙을 쓴다. 위계는 굵기(400 vs 500)로만 준다 —
+   색까지 낮추면 어두운 스트로크와 섞여 글자가 반투명해 보인다. */
 .mascot-light-sub {
   max-width: 100%;
-  color: #d5dae3;
+  color: #eef1f6;
   font: 400 8px/9px ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.2px;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.85),
-    1px -1px 0 rgba(0, 0, 0, 0.85),
-    -1px 1px 0 rgba(0, 0, 0, 0.85),
-    1px 1px 0 rgba(0, 0, 0, 0.85);
+  text-shadow: var(--light-text-stroke);
   pointer-events: none;
 }
 
@@ -297,11 +300,7 @@
   background: transparent;
   color: #ffffff;
   font: 600 12px/1 ui-sans-serif, system-ui, sans-serif;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.85),
-    1px -1px 0 rgba(0, 0, 0, 0.85),
-    -1px 1px 0 rgba(0, 0, 0, 0.85),
-    1px 1px 0 rgba(0, 0, 0, 0.85);
+  text-shadow: var(--light-text-stroke);
   display: flex;
   align-items: center;
   justify-content: center;
