@@ -110,15 +110,10 @@
   background: transparent;
   box-sizing: border-box;
 
-  /* 판이 없는 글자용 외곽선. 8방향인 이유 — 대각 4방향만 깔면 글자의 좌우/
-     상하 정면에는 스트로크가 닿지 않아 "옆구리가 뚫린" 외곽선으로 보인다.
-     불투명 검정인 이유 — 반투명이면 겹치는 자리마다 농도가 달라져 얼룩이
-     지고, 밝은 바탕이 스트로크를 뚫고 올라와 글자가 반투명해 보인다.
-     마지막 흐린 층은 스트로크 바깥을 한 번 더 눌러 밝은 바탕에서 띄운다. */
-  --light-text-stroke:
-    -1px -1px 0 #000, 0 -1px 0 #000, 1px -1px 0 #000, -1px 0 0 #000,
-    1px 0 0 #000, -1px 1px 0 #000, 0 1px 0 #000, 1px 1px 0 #000,
-    0 1px 3px rgba(0, 0, 0, 0.75);
+  /* 글자 뒤에 까는 판. 외곽선(text-shadow 스트로크)만으로도 대비는 나지만
+     8px 글자에서는 획 사이를 스트로크가 파고들어 글자가 뭉개진다 — 판이
+     읽기에는 낫다. 얼굴 원판에는 깔지 않는다(사진을 가린다). */
+  --light-plate: rgba(16, 17, 22, 0.78);
 }
 .mascot-lights-horizontal {
   flex-direction: row;
@@ -146,8 +141,8 @@
 /* 칸 하나 = [얼굴 원판 + 이름] 타일. 예전에는 18px 원 하나뿐이라 "무엇이
    켜졌는지"는 툴팁을 띄워야만 알 수 있었다 — 대시보드로서는 반쪽이라
    대상(프로젝트/에이전트) 이름과 대표 에이전트의 얼굴을 칸 안에 넣었다.
-   [실험] 판 없이 완전 투명으로. 이름 텍스트는 흰 글자 + 불투명 검정 8방향
-   외곽선(--light-text-stroke)으로 스스로 대비를 만든다. */
+   칸 자체는 투명하고, 글자 줄에만 어두운 판(--light-plate)을 깐다 — 얼굴
+   원판까지 판으로 덮으면 사진이 어두워진다. */
 .mascot-light {
   flex: 0 0 auto;
   width: 54px;
@@ -206,42 +201,44 @@
   font: 700 13px/1 ui-sans-serif, system-ui, sans-serif;
 }
 
-/* 대상 이름. 한 줄로 잘라낸다(폭 54px). 판이 없으므로 옅은 글자 + 어두운
-   외곽선으로 어떤 바탕에서도 읽히게 한다.
-   padding/음수 margin 짝 — `overflow: hidden`의 잘라내는 경계는 패딩 박스라,
-   패딩이 0이면 첫/끝 글자의 외곽선이 글자 바로 옆에서 잘려 나간다(양 끝만
-   외곽선이 얇아 보이던 원인). 패딩으로 스트로크 자리를 만들고 같은 크기의
-   음수 margin으로 되돌려 바깥 레이아웃(칸 폭·높이)은 그대로 둔다. */
+/* 대상 이름. 한 줄로 잘라낸다(폭 54px). 어두운 판 위의 옅은 글자로 어떤
+   바탕에서도 읽히게 한다.
+   padding/음수 margin 짝 — 판이 글자보다 조금 넓어야 읽히는데 패딩을 그냥
+   주면 칸 폭·높이가 늘어 protocol.ts의 타일 상수와 어긋난다. 같은 크기의
+   음수 margin으로 되돌려 바깥에서 본 크기는 그대로 둔다. 가로 3px은 판이
+   정확히 타일 폭(54px)에서 멈추게 하는 값이고, 세로 1px은 tall 모드에서 두
+   줄의 판이 겹치지 않고 딱 맞닿게 하는 값이다(줄 사이 gap 2px = 1px+1px). */
 .mascot-light-name {
   max-width: 100%;
-  padding: 2px 3px;
-  margin: -2px -3px;
-  color: #ffffff;
+  padding: 1px 3px;
+  margin: -1px -3px;
+  background: var(--light-plate);
+  border-radius: 4px;
+  color: #eaecf2;
   font: 500 8px/9px ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.2px;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow: var(--light-text-stroke);
   pointer-events: none;
 }
 
 /* 둘째 줄(작업명) — `mascotLightsLabel==="projecttask"`일 때만 렌더된다.
-   첫째 줄과 같은 절단·외곽선 규칙을 쓴다. 위계는 굵기(400 vs 500)로만 준다 —
-   색까지 낮추면 어두운 스트로크와 섞여 글자가 반투명해 보인다. */
+   첫째 줄과 같은 절단·판 규칙을 쓰되 색만 흐리게 해 위계를 준다. */
 .mascot-light-sub {
   max-width: 100%;
-  padding: 2px 3px;
-  margin: -2px -3px;
-  color: #eef1f6;
+  padding: 1px 3px;
+  margin: -1px -3px;
+  background: var(--light-plate);
+  border-radius: 4px;
+  color: #b9bec9;
   font: 400 8px/9px ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.2px;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow: var(--light-text-stroke);
   pointer-events: none;
 }
 
@@ -305,10 +302,9 @@
   height: 48px;
   box-sizing: border-box;
   border-radius: 9px;
-  background: transparent;
-  color: #ffffff;
+  background: var(--light-plate);
+  color: #cfd3dc;
   font: 600 12px/1 ui-sans-serif, system-ui, sans-serif;
-  text-shadow: var(--light-text-stroke);
   display: flex;
   align-items: center;
   justify-content: center;
