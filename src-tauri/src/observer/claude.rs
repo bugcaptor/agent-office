@@ -3,10 +3,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::types::SessionEventTokens;
+
 use super::event::{
-    agent_id, claude_transcript_message, claude_transcript_progress_message,
-    claude_transcript_usage, hook_cwd, message, prompt_text, running_subagents, tool_activity_text,
-    transcript_path,
+    agent_id, claude_file_usage, claude_subagent_transcripts, claude_transcript_message,
+    claude_transcript_progress_message, hook_cwd, message, prompt_text, running_subagents,
+    tool_activity_text, transcript_path,
 };
 use super::hook_command::forwarder_shell_command;
 use super::{
@@ -18,26 +20,41 @@ use super::{
 /// 매 PostToolUse마다 읽지 않도록 transcript_path별로 이 간격을 둔다(이슈 #43).
 const TRANSCRIPT_PROGRESS_INTERVAL: Duration = Duration::from_secs(5);
 
+/// 전사 파일 하나에 대한 사용량 스캔 상태.
+#[derive(Default)]
+struct UsageWatermark {
+    /// 마지막으로 합산한 `message.id`. 다음 스캔은 이 지점까지만 거슬러 올라간다.
+    message_id: Option<String>,
+    /// 그때 본 파일 크기. 전사는 append-only라 크기가 같으면 내용도 같고, 다시
+    /// 읽어 봐야 델타가 0이므로 스캔 자체를 건너뛴다. 서브에이전트 전사는 한
+    /// 세션에 수십 개씩 쌓이고 대부분 이미 끝나 있어(=크기 고정) 이 스킵이
+    /// 매 Stop마다 수십 MB 재읽기를 없앤다.
+    scanned_len: u64,
+}
+
 pub struct ClaudeAdapter {
     settings_dir: PathBuf,
     forwarder_executable: PathBuf,
     /// transcript_path별 마지막 tail 읽기 "시도" 시각(스로틀 기준). 읽기 실패해도
     /// 시도 시각을 기록하므로 다음 interval까지 재시도하지 않는다.
     transcript_progress: Mutex<HashMap<String, Instant>>,
-    /// transcript_path별 턴 사용량 워터마크(마지막으로 합산한 `message.id`).
+    /// 전사 경로별 턴 사용량 워터마크. 키는 메인 전사만이 아니라 **서브에이전트
+    /// 전사 경로도 포함**한다(`claude_subagent_transcripts`) — 파일마다 독립적으로
+    /// "어디까지 셌는지"를 들고 델타만 싣는다.
+    ///
     /// `transcript_progress`와는 수명이 다르다 — 저건 스로틀용이라 Stop에서 그
     /// 경로 엔트리를 지우지만, 이건 **지우지 않는다**. 같은 프롬프트 창 안에서
     /// Stop이 두 번째로 와도(백그라운드 서브에이전트가 남아 있던 running>0
     /// Stop 뒤의 재호출) 직전 몫을 다시 세지 않으려면 그 경계를 넘어 남아
     /// 있어야 하기 때문이다. 세션이 끝나도 맵에서 안 지워지는 누수가 있지만
-    /// 세션당 문자열 2개(경로+id) 규모라 무시할 만하다.
+    /// 경로당 문자열 2개 규모라 무시할 만하다.
     ///
-    /// 값이 `Arc<Mutex<Option<String>>>`인 이유: 훅 수신은 axum+tokio
-    /// 멀티스레드이고 forwarder에 1회 재시도가 있어 같은 Stop body가 겹쳐
-    /// 들어올 수 있다. 바깥 맵 락은 경로별 락을 꺼내는 동안만 짧게 잡고,
-    /// 조회~전사 읽기~합산~갱신 전 구간은 그 경로별 내부 락으로 직렬화한다
-    /// (전역 락을 IO 동안 잡으면 다른 세션의 Stop 훅까지 막힌다).
-    transcript_usage_watermark: Mutex<HashMap<String, Arc<Mutex<Option<String>>>>>,
+    /// 값이 `Arc<Mutex<..>>`인 이유: 훅 수신은 axum+tokio 멀티스레드이고
+    /// forwarder에 1회 재시도가 있어 같은 Stop body가 겹쳐 들어올 수 있다.
+    /// 바깥 맵 락은 경로별 락을 꺼내는 동안만 짧게 잡고, 조회~전사 읽기~합산~
+    /// 갱신 전 구간은 그 경로별 내부 락으로 직렬화한다(전역 락을 IO 동안 잡으면
+    /// 다른 세션의 Stop 훅까지 막힌다).
+    transcript_usage_watermark: Mutex<HashMap<String, Arc<Mutex<UsageWatermark>>>>,
     /// tail 읽기 최소 간격(테스트는 with_progress_interval로 조정).
     progress_interval: Duration,
     /// 훅 설정 파일에 함께 실을 추가 최상위 키(동료 대화의 플러그인 선언 등).
@@ -65,6 +82,58 @@ impl ClaudeAdapter {
             progress_interval,
             extra_settings: None,
         }
+    }
+
+    /// 이번 턴의 사용량 = **메인 전사 + 이 세션의 서브에이전트 전사들**.
+    ///
+    /// CLI 2.1.x는 Task 서브에이전트 대화를 `<session>/subagents/*.jsonl`에 따로
+    /// 쓴다 — 메인 전사만 읽으면 그 몫(실측상 세션 토큰의 약 2/3)이 통째로
+    /// 빠진다. 파일마다 워터마크가 독립이라 서브에이전트가 Stop 이후에도 계속
+    /// append하는 경우(다음 Stop이 그 뒤를 이어 센다)도 자연히 커버된다.
+    ///
+    /// 메인 쪽이 None이어도(사용량 줄이 없던 턴) 서브 몫이 있으면 그것만으로
+    /// 이벤트를 낸다.
+    fn turn_usage(&self, transcript: &Path) -> Option<SessionEventTokens> {
+        let mut total = self.usage_for_path(transcript);
+        for sub in claude_subagent_transcripts(transcript) {
+            let Some(tokens) = self.usage_for_path(&sub) else {
+                continue;
+            };
+            total = Some(match total {
+                // 메인 것을 self로 둬야 대표 모델이 메인 쪽으로 유지된다.
+                Some(acc) => acc.merged(tokens),
+                None => tokens,
+            });
+        }
+        total
+    }
+
+    /// 전사 파일 하나의 "직전 스캔 이후" 사용량. 경로별 락을 조회~읽기~합산~
+    /// 갱신 내내 유지해 겹친 Stop(포워더 재시도 등)이 같은 구간을 두 번 싣는
+    /// 경합을 막는다(바깥 맵 락은 그 락을 꺼내는 동안만 잡는다).
+    fn usage_for_path(&self, path: &Path) -> Option<SessionEventTokens> {
+        let len = std::fs::metadata(path).ok()?.len();
+        let path_lock = self
+            .transcript_usage_watermark
+            .lock()
+            .unwrap()
+            .entry(path.to_string_lossy().into_owned())
+            .or_default()
+            .clone();
+        let mut mark = path_lock.lock().unwrap();
+        // 크기가 그대로면 append가 없었다는 뜻 — 읽어도 델타가 0이다.
+        if mark.scanned_len == len {
+            return None;
+        }
+        let scanned = claude_file_usage(path, mark.message_id.as_deref());
+        // 합산에 실패해도(유효 사용량 줄 없음) 크기는 기록한다 — 안 그러면
+        // 그런 파일을 매 Stop마다 다시 읽는다.
+        mark.scanned_len = len;
+        let (tokens, newest_id) = scanned?;
+        if let Some(newest_id) = newest_id {
+            mark.message_id = Some(newest_id);
+        }
+        Some(tokens)
     }
 
     /// 훅 설정에 얹을 추가 조각 공급자를 붙인다(lib.rs가 동료 대화 선언을 넣는다).
@@ -308,27 +377,10 @@ impl ObserverAdapter for ClaudeAdapter {
                 if let Some(path) = transcript_path(raw.body) {
                     self.transcript_progress.lock().unwrap().remove(&path);
                 }
-                // 턴 사용량도 같은 전사 파일 꼬리에서 뽑는다(추출 실패는 None).
-                // 워터마크로 직전 호출까지 합산한 몫을 제외해 이중 계산을 막는다.
-                // 같은 전사에 대한 겹친 Stop(재시도 등)이 조회~갱신 사이를 비집고
-                // 들어와 같은 구간을 두 번 싣지 않도록, 경로별 락을 조회~전사
-                // 읽기~합산~갱신 내내 유지한다(바깥 맵 락은 그 락을 꺼내는 동안만).
-                let tokens = transcript_path(raw.body).and_then(|path| {
-                    let path_lock = self
-                        .transcript_usage_watermark
-                        .lock()
-                        .unwrap()
-                        .entry(path)
-                        .or_insert_with(|| Arc::new(Mutex::new(None)))
-                        .clone();
-                    let mut watermark = path_lock.lock().unwrap();
-                    let (tokens, newest_id) =
-                        claude_transcript_usage(raw.body, watermark.as_deref())?;
-                    if let Some(newest_id) = newest_id {
-                        *watermark = Some(newest_id);
-                    }
-                    Some(tokens)
-                });
+                // 턴 사용량은 메인 전사 + 이 세션의 서브에이전트 전사들에서 뽑는다
+                // (추출 실패는 None).
+                let tokens =
+                    transcript_path(raw.body).and_then(|path| self.turn_usage(Path::new(&path)));
                 Some(ObserverEvent::Stop {
                     message: message(raw.body).or_else(|| claude_transcript_message(raw.body)),
                     running: running_subagents(raw.body),
@@ -980,6 +1032,83 @@ mod tests {
 
         // 디렉터리 부재는 조용히 no-op(패닉 없음).
         super::gc_stale_settings(&scratch_dir(), Duration::ZERO);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// CLI 2.1.x는 Task 서브에이전트 대화를 메인 전사가 아니라
+    /// `<session>/subagents/*.jsonl`에 쓴다 — 메인만 읽으면 그 몫(실측상 세션
+    /// 토큰의 약 2/3)이 통째로 빠진다. Stop이 둘을 합산하고, 두 번째 Stop은
+    /// 각 파일의 워터마크 뒤 델타만 싣는지 본다.
+    #[test]
+    fn claude_stop_sums_subagent_transcripts_and_then_only_their_delta() {
+        let dir = scratch_dir();
+        let subagents = dir.join("sess-1").join("subagents");
+        std::fs::create_dir_all(&subagents).unwrap();
+        let transcript = dir.join("sess-1.jsonl");
+        let sub = subagents.join("agent-aaa.jsonl");
+
+        let assistant = |id: &str, input: u64, output: u64, sidechain: bool| {
+            format!(
+                r#"{{"type":"assistant","isSidechain":{sidechain},"message":{{"id":"{id}","model":"claude-opus-5","usage":{{"input_tokens":{input},"output_tokens":{output},"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}}}}"#
+            )
+        };
+        std::fs::write(
+            &transcript,
+            [
+                r#"{"type":"user","message":{"role":"user","content":"작업"}}"#.to_string(),
+                assistant("msg-main-1", 10, 5, false),
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            &sub,
+            [
+                r#"{"type":"user","isSidechain":true,"message":{"role":"user","content":"하위 작업"}}"#.to_string(),
+                assistant("msg-sub-1", 100, 50, true),
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let adapter = ClaudeAdapter::new(scratch_dir(), forwarder_exe());
+        let body = serde_json::json!({ "transcript_path": transcript.to_string_lossy() })
+            .to_string()
+            .into_bytes();
+        let stop = || {
+            adapter.map_hook(&RawObserverHook {
+                event_name: "Stop",
+                body: &body,
+            })
+        };
+
+        let Some(ObserverEvent::Stop { tokens, .. }) = stop() else {
+            panic!("Stop 이벤트가 나와야 한다");
+        };
+        let tokens = tokens.expect("메인+서브 사용량");
+        assert_eq!(tokens.input, Some(110));
+        assert_eq!(tokens.output, Some(55));
+        // 대표 모델은 메인 세션 응답의 것(서브는 다른 모델일 수 있다).
+        assert_eq!(tokens.model.as_deref(), Some("claude-opus-5"));
+
+        // 파일이 그대로면 두 번째 Stop은 아무것도 세지 않는다.
+        let Some(ObserverEvent::Stop { tokens, .. }) = stop() else {
+            panic!("Stop 이벤트가 나와야 한다");
+        };
+        assert_eq!(tokens, None);
+
+        // 서브에이전트만 더 돌았다면 그 델타만 실린다.
+        let mut grown = std::fs::read_to_string(&sub).unwrap();
+        grown.push('\n');
+        grown.push_str(&assistant("msg-sub-2", 7, 3, true));
+        std::fs::write(&sub, grown).unwrap();
+        let Some(ObserverEvent::Stop { tokens, .. }) = stop() else {
+            panic!("Stop 이벤트가 나와야 한다");
+        };
+        let tokens = tokens.expect("서브 델타");
+        assert_eq!(tokens.input, Some(7));
+        assert_eq!(tokens.output, Some(3));
 
         let _ = std::fs::remove_dir_all(dir);
     }

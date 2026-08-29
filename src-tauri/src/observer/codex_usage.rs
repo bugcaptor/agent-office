@@ -49,6 +49,12 @@ const ROLLOUT_HEAD_BYTES: u64 = 256 * 1024;
 /// cwd 폴백에서 "살아 있는" 파일로 볼 최대 무수정 시간.
 const LIVE_WINDOW: Duration = Duration::from_secs(30 * 60);
 
+/// 턴 시작 시각과 파일 시각(mtime, `session_meta.timestamp`)을 비교할 때 주는
+/// 여유. 두 시각은 출처가 달라(우리 시계 vs 파일시스템/Codex 기록) 경계에서
+/// 몇백 ms가 엇갈릴 수 있는데, 그 때문에 이번 턴에 생긴 서브스레드를 통째로
+/// 놓치는 쪽이 몇 초 이전 것을 포함하는 쪽보다 나쁘다.
+const TIMESTAMP_SLACK: Duration = Duration::from_secs(2);
+
 /// rollout `info.total_token_usage` 누계 스냅샷.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct Cumulative {
@@ -64,6 +70,15 @@ impl Cumulative {
             input: self.input.saturating_sub(previous.input),
             cached_input: self.cached_input.saturating_sub(previous.cached_input),
             output: self.output.saturating_sub(previous.output),
+        }
+    }
+
+    /// `self + other`(메인 스레드 몫 + 서브스레드 몫 합산용).
+    fn plus(self, other: Self) -> Self {
+        Self {
+            input: self.input.saturating_add(other.input),
+            cached_input: self.cached_input.saturating_add(other.cached_input),
+            output: self.output.saturating_add(other.output),
         }
     }
 
@@ -87,9 +102,44 @@ pub struct CodexUsageTracker {
     sessions_root: Option<PathBuf>,
     /// 키(세션 ID 또는 cwd) → 마지막 턴 경계의 누계.
     baselines: Mutex<HashMap<String, Cumulative>>,
+    /// 키 → 마지막 턴 경계를 심은 시각. 서브스레드 rollout이 "이번 턴에 새로
+    /// 생긴 것"인지 판정하는 기준이다(`subthread_delta`).
+    turn_started: Mutex<HashMap<String, SystemTime>>,
     /// 키 → (rollout 경로, 앞머리에서 읽은 모델). 매 턴 디렉터리를 다시 훑지
     /// 않기 위한 캐시. 경로가 사라지면 다음 조회에서 자연히 다시 찾는다.
-    located: Mutex<HashMap<String, (PathBuf, Option<String>)>>,
+    located: Mutex<HashMap<String, Located>>,
+    /// 키 → 이 세션의 서브스레드 rollout별 마지막 턴 경계 누계. 메인과 같은
+    /// 델타 규칙을 파일마다 독립적으로 적용한다.
+    sub_baselines: Mutex<HashMap<String, HashMap<PathBuf, Cumulative>>>,
+    /// rollout 경로 → 첫 줄(`session_meta`)에서 읽은 스레드 신원. 첫 줄은 절대
+    /// 안 바뀌므로 영구 캐시다(부모 추적에 매 Stop마다 모든 rollout의 첫 줄이
+    /// 필요한데, 그때마다 다시 읽지 않기 위해). `None`은 "첫 줄이 session_meta가
+    /// 아님"을 캐시한 것.
+    meta_cache: Mutex<HashMap<PathBuf, Option<ThreadMeta>>>,
+}
+
+/// 찾아낸 메인 rollout과 거기서 뽑은 부수 정보.
+#[derive(Debug, Clone)]
+struct Located {
+    path: PathBuf,
+    /// 파일 앞머리에서 읽은 대표 모델(꼬리에서 찾으면 그쪽이 우선한다).
+    model: Option<String>,
+    /// 이 스레드의 id. 서브스레드(`parent_thread_id`)를 이 값으로 찾는다.
+    thread_id: Option<String>,
+}
+
+/// rollout 첫 줄(`session_meta`)에서 뽑은 스레드 신원.
+#[derive(Debug, Clone, Default)]
+struct ThreadMeta {
+    /// 이 스레드의 id(`payload.id`).
+    id: Option<String>,
+    /// 부모 스레드 id(`payload.parent_thread_id`). 있으면 서브스레드다
+    /// (서브에이전트·guardian_review 등 — `thread_source` 값은 종류마다 다르다).
+    parent: Option<String>,
+    /// 작업 디렉터리(`payload.cwd`).
+    cwd: Option<String>,
+    /// 스레드 시작 시각(줄의 `timestamp`).
+    started_at: Option<SystemTime>,
 }
 
 impl CodexUsageTracker {
@@ -97,7 +147,10 @@ impl CodexUsageTracker {
         Self {
             sessions_root,
             baselines: Mutex::new(HashMap::new()),
+            turn_started: Mutex::new(HashMap::new()),
             located: Mutex::new(HashMap::new()),
+            sub_baselines: Mutex::new(HashMap::new()),
+            meta_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -117,18 +170,28 @@ impl CodexUsageTracker {
                 return;
             }
         }
-        let Some((path, _head_model)) = self.locate(body, &key) else {
+        let Some(located) = self.locate(body, &key) else {
             return;
         };
-        let current = match read_tail_usage(&path) {
+        let current = match read_tail_usage(&located.path) {
             Some((cumulative, _)) => cumulative,
             // 파일 전체를 읽었는데 token_count가 없다 = 누계가 진짜 0인 신선한
             // 세션. 꼬리 상한에 걸려 잘린 파일은 이 증명이 안 되므로 기존대로
             // 생략한다(위 헤더 주석 참고).
-            None if whole_file_scanned(&path) => Cumulative::default(),
+            None if whole_file_scanned(&located.path) => Cumulative::default(),
             None => return,
         };
-        self.baselines.lock().unwrap().insert(key, current);
+        self.mark_turn_boundary(&key, current);
+    }
+
+    /// 턴 경계(기준 누계 + 그 시각)를 함께 심는다. 시각은 서브스레드 rollout이
+    /// "이번 턴에 새로 생긴 것"인지 판정하는 데 쓴다.
+    fn mark_turn_boundary(&self, key: &str, current: Cumulative) {
+        self.baselines.lock().unwrap().insert(key.to_string(), current);
+        self.turn_started
+            .lock()
+            .unwrap()
+            .insert(key.to_string(), SystemTime::now());
     }
 
     /// 턴 종료(Stop) — 기준 대비 델타를 돌려주고, 현재 누계를 새 기준으로
@@ -136,9 +199,25 @@ impl CodexUsageTracker {
     /// 다음 턴부터 정상 집계되게 한다.
     pub fn turn_usage(&self, body: &[u8]) -> Option<SessionEventTokens> {
         let key = self.key_for(body)?;
-        let (current, model) = self.read_current(body, &key)?;
-        let previous = self.baselines.lock().unwrap().insert(key, current);
-        current.delta(previous?).into_tokens(model).non_empty()
+        let located = self.locate(body, &key)?;
+        let (current, tail_model) = read_tail_usage(&located.path)?;
+        let model = tail_model.or_else(|| located.model.clone());
+
+        let previous = self.baselines.lock().unwrap().get(&key).copied();
+        let turn_started = self.turn_started.lock().unwrap().get(&key).copied();
+
+        // 서브스레드 몫은 메인 기준이 있든 없든 훑는다 — 기준이 없어 이번 턴을
+        // 생략하는 경우에도 서브 쪽 기준을 같이 심어 둬야 다음 턴이 정확하다.
+        let sub = match (located.thread_id.as_deref(), turn_started) {
+            (Some(thread), Some(started)) => self.subthread_delta(&key, thread, started),
+            _ => Cumulative::default(),
+        };
+
+        self.mark_turn_boundary(&key, current);
+        // 기준이 없으면(앱이 세션 도중에 켜짐) 이번 턴은 통째로 생략한다 —
+        // 세션 누계 전체를 한 턴에 몰아넣는 과대 집계보다 누락이 낫다.
+        let main = current.delta(previous?);
+        main.plus(sub).into_tokens(model).non_empty()
     }
 
     /// 이 세션을 식별하는 캐시 키. 훅 body의 native session_id 우선, 없으면 cwd.
@@ -147,20 +226,13 @@ impl CodexUsageTracker {
         native_session_id(body).or_else(|| hook_cwd(body))
     }
 
-    /// 현재 누계와 대표 모델. rollout을 못 찾거나 `token_count`가 없으면 None.
-    fn read_current(&self, body: &[u8], key: &str) -> Option<(Cumulative, Option<String>)> {
-        let (path, head_model) = self.locate(body, key)?;
-        let (cumulative, tail_model) = read_tail_usage(&path)?;
-        Some((cumulative, tail_model.or(head_model)))
-    }
-
     /// 이 세션의 rollout 경로(+앞머리 모델)를 찾는다. 캐시된 경로가 아직
     /// 존재하면 그대로 쓴다.
-    fn locate(&self, body: &[u8], key: &str) -> Option<(PathBuf, Option<String>)> {
+    fn locate(&self, body: &[u8], key: &str) -> Option<Located> {
         {
             let located = self.located.lock().unwrap();
             if let Some(entry) = located.get(key) {
-                if entry.0.exists() {
+                if entry.path.exists() {
                     return Some(entry.clone());
                 }
             }
@@ -169,14 +241,122 @@ impl CodexUsageTracker {
         let path = native_session_id(body)
             .and_then(|id| find_by_session_id(root, &id))
             .or_else(|| hook_cwd(body).and_then(|cwd| find_by_cwd(root, &cwd)))?;
-        let model = read_head_model(&path);
-        let entry = (path, model);
+        let entry = Located {
+            model: read_head_model(&path),
+            thread_id: self.head_meta(&path).and_then(|meta| meta.id),
+            path,
+        };
         self.located
             .lock()
             .unwrap()
             .insert(key.to_string(), entry.clone());
         Some(entry)
     }
+
+    /// 이 세션의 **서브스레드 rollout들**이 이번 턴에 쓴 몫.
+    ///
+    /// Codex는 서브에이전트·guardian_review를 별도 스레드로 돌리고 각자의
+    /// rollout에 기록하는데, `info.total_token_usage`는 **스레드별 누계**라
+    /// 메인 rollout만 보면 그 몫이 어디에도 안 잡힌다(실측 누락 비중 약 39%).
+    /// `find_by_cwd`가 서브스레드를 배제하는 규칙(메인 rollout 식별용)은 그대로
+    /// 두고, 합산 단계인 여기서만 되불러온다.
+    ///
+    /// 후보는 (a) 이미 기준을 심어 둔 이 세션의 서브 + (b) 턴 시작 이후에 쓰인
+    /// rollout이다. 이번 턴 몫이라면 mtime이 턴 시작보다 뒤일 수밖에 없고, 그
+    /// 전에 끝난 서브는 이미 그때의 Stop에서 (a)에 들어와 있다.
+    fn subthread_delta(&self, key: &str, main_thread: &str, turn_started: SystemTime) -> Cumulative {
+        let Some(root) = self.sessions_root.as_ref() else {
+            return Cumulative::default();
+        };
+        let files = rollout_files(root);
+        let mut baselines = self.sub_baselines.lock().unwrap();
+        let known = baselines.entry(key.to_string()).or_default();
+
+        let mut candidates: Vec<PathBuf> = known.keys().cloned().collect();
+        for path in &files {
+            if known.contains_key(path) {
+                continue;
+            }
+            let touched = std::fs::metadata(path).and_then(|meta| meta.modified()).ok();
+            if touched.is_none_or(|at| at + TIMESTAMP_SLACK < turn_started) {
+                continue;
+            }
+            candidates.push(path.clone());
+        }
+        if candidates.is_empty() {
+            return Cumulative::default();
+        }
+
+        // 부모 사슬을 따라 올라가려면 id로도 찾을 수 있어야 한다(서브의 서브).
+        let mut by_id: HashMap<String, ThreadMeta> = HashMap::new();
+        for path in &files {
+            if let Some(meta) = self.head_meta(path) {
+                if let Some(id) = meta.id.clone() {
+                    by_id.insert(id, meta);
+                }
+            }
+        }
+
+        let mut total = Cumulative::default();
+        for path in candidates {
+            let Some(meta) = self.head_meta(&path) else {
+                continue;
+            };
+            if !descends_from(&meta, main_thread, &by_id) {
+                continue;
+            }
+            let Some((current, _)) = read_tail_usage(&path) else {
+                continue;
+            };
+            match known.get(&path).copied() {
+                Some(previous) => total = total.plus(current.delta(previous)),
+                // 처음 보는 서브: 이 턴 안에서 시작된 스레드면 누계 전체가 이 턴
+                // 몫이다. 그보다 먼저 시작된 스레드(앱이 세션 도중에 켜진 경우
+                // 등)는 어디까지가 이 턴인지 모르므로 기준만 심고 이번 턴은
+                // 생략한다 — 메인 쪽 규칙과 같은 결(과대보다 누락).
+                None if meta
+                    .started_at
+                    .is_some_and(|at| at + TIMESTAMP_SLACK >= turn_started) =>
+                {
+                    total = total.plus(current);
+                }
+                None => {}
+            }
+            known.insert(path, current);
+        }
+        total
+    }
+
+    /// rollout 첫 줄의 스레드 신원(캐시). 첫 줄은 변하지 않으므로 한 번만 읽는다.
+    fn head_meta(&self, path: &Path) -> Option<ThreadMeta> {
+        if let Some(cached) = self.meta_cache.lock().unwrap().get(path) {
+            return cached.clone();
+        }
+        let meta = read_head_meta(path);
+        self.meta_cache
+            .lock()
+            .unwrap()
+            .insert(path.to_path_buf(), meta.clone());
+        meta
+    }
+}
+
+/// `meta`의 부모 사슬이 `main_thread`에 닿는가(서브의 서브까지). 상한은 순환
+/// 방어용이다 — 실측 깊이는 1이다.
+fn descends_from(
+    meta: &ThreadMeta,
+    main_thread: &str,
+    by_id: &HashMap<String, ThreadMeta>,
+) -> bool {
+    let mut parent = meta.parent.clone();
+    for _ in 0..8 {
+        let Some(id) = parent else { return false };
+        if id == main_thread {
+            return true;
+        }
+        parent = by_id.get(&id).and_then(|meta| meta.parent.clone());
+    }
+    false
 }
 
 /// `sessions/YYYY/MM/DD` 아래 모든 rollout 파일 경로(순서 무관).
@@ -235,7 +415,12 @@ fn find_by_cwd(sessions: &Path, cwd: &str) -> Option<PathBuf> {
         {
             continue;
         }
-        if head_meta_cwd(&path).as_deref() != Some(cwd) {
+        // 부모가 있는 스레드(서브에이전트·guardian_review 등)는 메인 rollout
+        // 후보가 아니다 — 사용량 합산에서는 `subthread_delta`가 따로 되불러온다.
+        let Some(meta) = read_head_meta(&path) else {
+            continue;
+        };
+        if meta.parent.is_some() || meta.cwd.as_deref() != Some(cwd) {
             continue;
         }
         if best.as_ref().is_none_or(|(at, _)| modified > *at) {
@@ -245,9 +430,14 @@ fn find_by_cwd(sessions: &Path, cwd: &str) -> Option<PathBuf> {
     best.map(|(_, path)| path)
 }
 
-/// 첫 줄(session_meta)의 cwd. 서브 스레드(서브에이전트, guardian_review 등)면
-/// None.
-fn head_meta_cwd(path: &Path) -> Option<String> {
+/// 첫 줄(`session_meta`)에서 스레드 신원을 읽는다. 첫 줄이 `session_meta`가
+/// 아니면(잘린 파일 등) None.
+///
+/// `parent_thread_id`가 서브스레드 판정의 유일한 기준이다 — 처음엔
+/// `thread_source == "subagent"` 단일 비교였지만, 같은 cwd에
+/// `thread_source: "guardian_review"`이면서 부모를 든 rollout이 실측에서
+/// 확인됐다(서브 스레드인데 값이 "subagent"가 아니었다).
+fn read_head_meta(path: &Path) -> Option<ThreadMeta> {
     use std::io::{BufRead, BufReader};
     let file = std::fs::File::open(path).ok()?;
     let mut line = String::new();
@@ -257,20 +447,31 @@ fn head_meta_cwd(path: &Path) -> Option<String> {
         return None;
     }
     let payload = value.get("payload")?;
-    // `thread_source == "subagent"` 단일 비교로는 부족했다 — 실측에서 같은
-    // cwd에 `thread_source: "guardian_review"`이면서 `parent_thread_id`를
-    // 들고 있는 rollout이 확인됐다(서브 스레드지만 값이 "subagent"가 아니었다).
-    // 부모가 있는 스레드는 종류를 불문하고 배제한다.
-    if payload
-        .get("parent_thread_id")
-        .is_some_and(|id| !id.is_null())
-    {
-        return None;
-    }
-    payload
-        .get("cwd")
-        .and_then(Value::as_str)
-        .map(str::to_string)
+    let text = |field: &str| {
+        payload
+            .get(field)
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string)
+    };
+    Some(ThreadMeta {
+        id: text("id"),
+        parent: text("parent_thread_id"),
+        cwd: text("cwd"),
+        started_at: value
+            .get("timestamp")
+            .or_else(|| payload.get("timestamp"))
+            .and_then(Value::as_str)
+            .and_then(parse_rfc3339),
+    })
+}
+
+/// `2026-08-29T00:00:47.547Z` → SystemTime. 파싱 실패는 None(그러면 그 스레드는
+/// "이번 턴에 새로 생겼다"는 증명이 없는 것으로 취급된다).
+fn parse_rfc3339(text: &str) -> Option<SystemTime> {
+    chrono::DateTime::parse_from_rfc3339(text)
+        .ok()
+        .map(|at| SystemTime::from(at.with_timezone(&chrono::Utc)))
 }
 
 /// 파일 앞머리에서 첫 `turn_context.payload.model`.
@@ -613,5 +814,114 @@ mod tests {
         assert_eq!(tokens.output, Some(20));
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// `session_meta` 한 줄(부모/시각 지정 가능).
+    fn meta_line(id: &str, cwd: &str, parent: Option<&str>, at: SystemTime) -> String {
+        let timestamp = chrono::DateTime::<chrono::Utc>::from(at).to_rfc3339();
+        let parent = match parent {
+            Some(parent) => format!(r#""{parent}""#),
+            None => "null".to_string(),
+        };
+        format!(
+            r#"{{"timestamp":"{timestamp}","type":"session_meta","payload":{{"id":"{id}","cwd":"{cwd}","parent_thread_id":{parent},"originator":"cli"}}}}"#
+        )
+    }
+
+    /// Codex는 서브에이전트·guardian_review를 **별도 rollout**으로 돌리고
+    /// `total_token_usage`는 스레드별 누계다 — 메인만 보면 그 몫(실측 약 39%)이
+    /// 어디에도 안 잡힌다. 이번 턴에 생긴 서브스레드는 누계 전체가 이 턴 몫이다.
+    #[test]
+    fn stop_adds_subthread_rollouts_spawned_during_this_turn() {
+        let root = scratch();
+        let sessions = root.join("sessions");
+        let main = write_rollout(
+            &root,
+            "sess-1",
+            &[
+                meta_line("sess-1", "/w", None, SystemTime::now()),
+                TURN_CONTEXT.into(),
+                token_count(1_000, 800, 100),
+            ],
+        );
+        let tracker = CodexUsageTracker::new(Some(sessions));
+        let hook = body("sess-1", "/w");
+        tracker.mark_turn_start(&hook);
+
+        // 턴 도중: 메인 누계가 늘고, 서브스레드 rollout이 새로 생긴다.
+        let mut grown = std::fs::read_to_string(&main).unwrap();
+        grown.push('\n');
+        grown.push_str(&token_count(3_500, 2_800, 400));
+        std::fs::write(&main, grown).unwrap();
+        write_rollout(
+            &root,
+            "sub-1",
+            &[
+                meta_line("sub-1", "/w", Some("sess-1"), SystemTime::now()),
+                TURN_CONTEXT.into(),
+                token_count(500, 100, 50),
+            ],
+        );
+
+        let tokens = tracker.turn_usage(&hook).unwrap();
+        // 메인 델타(2500/2000/300) + 서브 누계 전체(500/100/50).
+        // 순수 입력 = (2500+500) - (2000+100) = 900.
+        assert_eq!(tokens.input, Some(900));
+        assert_eq!(tokens.cache_read, Some(2_100));
+        assert_eq!(tokens.output, Some(350));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 턴 시작보다 먼저 생긴 서브스레드는 어디까지가 이 턴인지 모른다 — 기준만
+    /// 심고 이번 턴은 생략하되, 다음 턴부터는 델타가 정상으로 잡힌다.
+    #[test]
+    fn subthread_older_than_the_turn_only_plants_a_baseline() {
+        let root = scratch();
+        let sessions = root.join("sessions");
+        let main = write_rollout(
+            &root,
+            "sess-1",
+            &[
+                meta_line("sess-1", "/w", None, SystemTime::now()),
+                TURN_CONTEXT.into(),
+                token_count(1_000, 0, 100),
+            ],
+        );
+        let old_start = SystemTime::now() - Duration::from_secs(3_600);
+        let sub = write_rollout(
+            &root,
+            "sub-1",
+            &[
+                meta_line("sub-1", "/w", Some("sess-1"), old_start),
+                TURN_CONTEXT.into(),
+                token_count(9_000, 0, 900),
+            ],
+        );
+        let tracker = CodexUsageTracker::new(Some(sessions));
+        let hook = body("sess-1", "/w");
+        tracker.mark_turn_start(&hook);
+
+        let mut grown = std::fs::read_to_string(&main).unwrap();
+        grown.push('\n');
+        grown.push_str(&token_count(1_200, 0, 150));
+        std::fs::write(&main, grown).unwrap();
+
+        // 첫 턴: 서브의 옛 누계 9000은 안 실린다(메인 델타 200/50만).
+        let tokens = tracker.turn_usage(&hook).unwrap();
+        assert_eq!(tokens.input, Some(200));
+        assert_eq!(tokens.output, Some(50));
+
+        // 다음 턴: 서브가 더 돌면 그 델타는 실린다.
+        tracker.mark_turn_start(&hook);
+        let mut grown = std::fs::read_to_string(&sub).unwrap();
+        grown.push('\n');
+        grown.push_str(&token_count(9_400, 0, 950));
+        std::fs::write(&sub, grown).unwrap();
+        let tokens = tracker.turn_usage(&hook).unwrap();
+        assert_eq!(tokens.input, Some(400));
+        assert_eq!(tokens.output, Some(50));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

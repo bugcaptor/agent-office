@@ -86,6 +86,27 @@ impl SessionEventTokens {
             .any(|v| v > 0);
         counted.then_some(self)
     }
+
+    /// 여러 원천의 사용량을 더한다(메인 전사 + 서브에이전트 전사, 메인
+    /// rollout + 서브스레드 rollout). 항목은 한쪽만 있으면 그 값이 되고 둘 다
+    /// 없으면 None을 유지한다 — "측정 안 됨"과 "0"을 뭉개지 않기 위해서다.
+    /// `model`은 `self`(대개 메인 세션) 쪽을 우선한다: 서브에이전트는 다른
+    /// 모델을 쓸 수 있어 대표로 삼지 않는다.
+    pub fn merged(self, other: Self) -> Self {
+        fn add(a: Option<u64>, b: Option<u64>) -> Option<u64> {
+            match (a, b) {
+                (None, None) => None,
+                _ => Some(a.unwrap_or(0).saturating_add(b.unwrap_or(0))),
+            }
+        }
+        Self {
+            input: add(self.input, other.input),
+            output: add(self.output, other.output),
+            cache_read: add(self.cache_read, other.cache_read),
+            cache_write: add(self.cache_write, other.cache_write),
+            model: self.model.or(other.model),
+        }
+    }
 }
 
 /// 알림 출처. TS NotificationSource와 동일.

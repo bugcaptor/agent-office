@@ -443,10 +443,10 @@ fn is_real_user_prompt(value: &serde_json::Value) -> bool {
 /// 합산한다(과소 집계로 강등 — 조용한 폴백 원칙).
 const TRANSCRIPT_USAGE_TAIL_BYTES: u64 = 2 * 1024 * 1024;
 
-/// Claude Stop 훅의 `transcript_path`(JSONL) 꼬리를 읽어 **이번 턴**이 쓴 토큰을
-/// 합산한다. 실패(경로 부재/파일 없음/유효 사용량 없음)는 모두 None. 성공하면
-/// 합산값과 함께 이번에 센 것 중 **가장 최근** `message.id`(다음 호출의 워터마크
-/// 후보)를 돌려준다.
+/// 전사 파일(JSONL) 꼬리를 읽어 **직전 스캔 이후** 그 파일이 쓴 토큰을 합산한다.
+/// 메인 전사와 서브에이전트 전사(`claude_subagent_transcripts`)가 같은 함수를 쓴다.
+/// 실패(파일 없음/유효 사용량 없음)는 모두 None. 성공하면 합산값과 함께 이번에
+/// 센 것 중 **가장 최근** `message.id`(다음 호출의 워터마크 후보)를 돌려준다.
 ///
 /// 스캔 종료 조건은 `watermark` 유무로 갈린다.
 ///
@@ -457,10 +457,9 @@ const TRANSCRIPT_USAGE_TAIL_BYTES: u64 = 2 * 1024 * 1024;
 ///   (a) 전사에 누계 필드가 없어 어차피 전 구간을 합산해야 하고, (b) 앱 재시작·
 ///   세션 입양 후에도 상태 없이 정확하기 때문이다.
 /// - `watermark == Some(id)`: 프롬프트 경계에서 멈추지 않고 **워터마크 id를 만날
-///   때까지** 계속 스캔한다 — 백그라운드 서브에이전트가 Stop 이후에도 사이드체인
-///   줄을 계속 append하고, 그 완료가 `task-notification`을 새 user 프롬프트로
-///   주입하는 경로에서는 프롬프트 경계가 워터마크보다 먼저 걸려 그 사이드체인
-///   몫(대개 이 턴 비용의 대부분)이 통째로 누락되기 때문이다. 다만 워터마크
+///   때까지** 계속 스캔한다 — 서브에이전트가 끝나면 claude가 `task-notification`을
+///   새 user 프롬프트로 주입하므로, 프롬프트 경계에서 멈추면 그 주입 줄이
+///   워터마크보다 먼저 걸려 직전 Stop 이후의 몫이 새 나간다. 다만 워터마크
 ///   줄이 꼬리 상한(2MB) 밖으로 밀려나 무제한 과대 집계가 되는 걸 막기 위해,
 ///   **처음 만난(=가장 최근) 진짜 사용자 프롬프트 지점의 합계를 스냅샷**해
 ///   두었다가 워터마크를 끝내 못 만나면(꼬리 소진) 그 스냅샷으로 강등한다.
@@ -473,19 +472,57 @@ const TRANSCRIPT_USAGE_TAIL_BYTES: u64 = 2 * 1024 * 1024;
 /// 매 줄에 그대로 복사한다. 줄 단위로 더하면 2~3배 과대 집계되므로 `message.id`로
 /// 중복을 제거한다.
 ///
-/// 서브에이전트(`isSidechain`) 줄의 사용량도 합산한다 — 실제로 청구되는 비용이고
-/// 이 턴에 속한다. 다만 경계 판정에서는 스킵한다(서브에이전트의 프롬프트 줄이
-/// 메인 턴 경계로 오인되면 스캔이 조기 종료된다).
+/// `isSidechain` 줄(서브에이전트)의 사용량은 합산하되 **경계 판정에서는 스킵**한다.
+/// 지금 CLI는 그 줄들을 별도 파일에 쓰지만(`claude_subagent_transcripts`), 그
+/// 파일을 이 함수로 읽을 때 "모든 줄이 사이드체인"이라는 사실이 곧 "프롬프트
+/// 경계가 안 잡힌다 = 워터마크 뒤 전부가 이 턴 몫"이라는 원하는 동작이 된다.
+/// 옛 전사(사이드체인이 메인 파일에 섞여 있던 시절)도 같은 규칙으로 그대로 읽힌다.
+pub fn claude_file_usage(
+    path: &std::path::Path,
+    watermark: Option<&str>,
+) -> Option<(SessionEventTokens, Option<String>)> {
+    let tail = read_file_tail(path, TRANSCRIPT_USAGE_TAIL_BYTES)?;
+    let (totals, newest_id) = sum_claude_turn_usage(&tail, watermark);
+    // 못 셌으면 None — 호출부가 기존 워터마크를 그대로 유지한다(전사에 애초에
+    // 유효 사용량 줄이 없는 경우 등, 조용한 폴백 원칙).
+    totals.non_empty().map(|t| (t, newest_id))
+}
+
+/// 훅 body의 `transcript_path`로 위 함수를 부르는 얇은 래퍼. 프로덕션 경로는
+/// 메인/서브 전사를 경로로 직접 다루므로(`ClaudeAdapter::turn_usage`) 테스트에서만
+/// 쓴다 — body 파싱까지 묶어 검증하기 위해 남겨 둔다.
+#[cfg(test)]
 pub fn claude_transcript_usage(
     body: &[u8],
     watermark: Option<&str>,
 ) -> Option<(SessionEventTokens, Option<String>)> {
     let path = transcript_path(body)?;
-    let tail = read_file_tail(std::path::Path::new(&path), TRANSCRIPT_USAGE_TAIL_BYTES)?;
-    let (totals, newest_id) = sum_claude_turn_usage(&tail, watermark);
-    // 못 셌으면 None — 호출부가 기존 워터마크를 그대로 유지한다(전사에 애초에
-    // 유효 사용량 줄이 없는 경우 등, 조용한 폴백 원칙).
-    totals.non_empty().map(|t| (t, newest_id))
+    claude_file_usage(std::path::Path::new(&path), watermark)
+}
+
+/// 메인 전사 경로에서 **이 세션의 서브에이전트 전사들**을 유도한다.
+/// `<dir>/<session>.jsonl` → `<dir>/<session>/subagents/*.jsonl`.
+///
+/// CLI 2.1.x는 Task 서브에이전트 대화를 메인 전사가 아니라 이 디렉터리에 쓴다
+/// (2026-06-05 이후 파일이 실측된다). 예전에는 `isSidechain:true` 줄로 메인
+/// 전사에 섞여 있어 메인 꼬리 스캔만으로 잡혔지만, 지금은 여기를 따로 읽지
+/// 않으면 서브에이전트 토큰이 **통째로** 빠진다(실측 누락 비중 약 2/3).
+/// 디렉터리가 없으면 빈 벡터 — 서브에이전트를 안 쓴 세션의 정상 경로다.
+pub fn claude_subagent_transcripts(transcript: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let (Some(stem), Some(parent)) = (transcript.file_stem(), transcript.parent()) else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(parent.join(stem).join("subagents")) else {
+        return Vec::new();
+    };
+    let mut files: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("jsonl"))
+        .collect();
+    // 읽기 순서는 OS 마음이라 정렬해 둔다(로그·테스트 재현성).
+    files.sort();
+    files
 }
 
 /// 전사 꼬리 문자열에서 마지막 턴의 사용량을 합산한다(위 규칙). 순수 함수라
