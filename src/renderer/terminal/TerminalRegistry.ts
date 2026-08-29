@@ -23,6 +23,7 @@ import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
 import { resolveXtermTheme } from "./theme";
 import { createImeBridge } from "./imeBridge";
+import { createScrollbackGuard, type ScrollbackGuard } from "./scrollbackGuard";
 
 interface Entry {
   term: Terminal;
@@ -41,6 +42,9 @@ interface Entry {
   // base(백엔드 attach 시점) + 이 값. 복원 스냅샷 청크는 bytes=0이라 제외된다.
   // 세션 attach 시점(엔트리 생성)부터 0에서 시작한다.
   renderedBytes: number;
+  // PTY 스트림에서 `ESC[3J`(스크롤백 지우기)를 떼어 내는 필터. pi 기본 TUI가
+  // resize마다 스크롤백을 날리는 것을 막는다(scrollbackGuard.ts 헤더 참조).
+  scrollbackGuard: ScrollbackGuard;
 }
 
 /** TIOCSWINSZ가 같은 크기면 SIGWINCH를 안 쏘는 문제를 강제 재도색으로 우회하는 데 걸리는 대기(ms). */
@@ -157,8 +161,13 @@ class TerminalRegistry {
     // 스냅샷 offset 회계에 쓴다. flushAndSerializeAll이 write("", cb)로 큐를
     // 비운 직후 읽으면 렌더 완료분이 정확히 반영된다. bytes=0 복원 청크는
     // 자연히 제외된다.
+    // `ESC[3J`(스크롤백 지우기)만 떼어 낸다 — pi 기본 TUI가 resize마다 앱
+    // 터미널 히스토리를 통째로 지우는 것을 막는 유일한 앱 측 수단이다
+    // (scrollbackGuard.ts 헤더에 근거와 대가). 붙들린 경계 조각은 렌더되는
+    // 게 없으므로 renderedBytes 회계는 그대로 chunk.bytes를 더한다.
+    const scrollbackGuard = createScrollbackGuard();
     const disposeData = tauriApi.onData(agentId, (data, bytes) => {
-      term.write(data, () => {
+      term.write(scrollbackGuard.filter(data), () => {
         const cur = this.entries.get(agentId);
         if (cur) cur.renderedBytes += bytes;
       });
@@ -173,6 +182,7 @@ class TerminalRegistry {
       opened: false,
       bindComposition: ime.bindComposition,
       renderedBytes: 0,
+      scrollbackGuard,
     };
     this.entries.set(agentId, e);
     return e;
@@ -213,7 +223,9 @@ class TerminalRegistry {
     const out: Record<string, string> = {};
     for (const [agentId, e] of this.entries) {
       try {
-        await new Promise<void>((resolve) => e.term.write("", () => resolve()));
+        await new Promise<void>((resolve) =>
+          e.term.write(e.scrollbackGuard.flush(), () => resolve()),
+        );
         out[agentId] = e.serialize.serialize();
       } catch {
         /* 이 터미널만 스킵 -- 나머지 스냅샷은 정상 전달 */
@@ -232,7 +244,9 @@ class TerminalRegistry {
     const e = this.entries.get(agentId);
     if (!e) return undefined;
     try {
-      await new Promise<void>((resolve) => e.term.write("", () => resolve()));
+      await new Promise<void>((resolve) =>
+        e.term.write(e.scrollbackGuard.flush(), () => resolve()),
+      );
       return e.serialize.serialize();
     } catch {
       return undefined;

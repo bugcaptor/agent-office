@@ -489,8 +489,78 @@ PTY 실측:
   백엔드가 알던 크기와 이미 다르면 SIGWINCH가 이미 갔으므로 nudge가 불필요하고,
   그대로 두면 앱 재시작마다 pi 스크롤백이 두 번 날아간다.
 
-**남는 부분(앱에서 못 고침)**: 창 크기 조절·터미널 뷰 모드(windowed↔filled) 전환
-같은 진짜 resize는 여전히 pi 스크롤백을 지운다. 결정적 회피책은 pi 쪽 설정이다 —
-`pi --tui-mode fullscreen`(또는 pi 설정의 `tuiMode`)로 대체 화면을 쓰면 resize가
-호스트 스크롤백을 건드리지 않는다(위 표 마지막 행). 앱이 이 플래그를 강제 주입할지는
-사용자가 고른 pi UI를 덮어쓰는 문제라 제품 결정으로 남긴다.
+**남는 부분(2026-08-22 시점)**: 창 크기 조절·터미널 뷰 모드(windowed↔filled) 전환
+같은 진짜 resize는 여전히 pi 스크롤백을 지웠다. 회피책 후보는 `pi --tui-mode
+fullscreen`(또는 pi 설정의 `tuiMode`)이지만 사용자가 고른 pi UI를 앱이 덮어쓰는
+문제라 제품 결정으로 남겼다 — 2026-08-29에 §11로 다르게 매듭지었다.
+
+
+---
+
+## 11. v0.84.4 재보고와 두 번째 수정 (2026-08-29)
+
+사용자 재보고: "pi를 쓰면 스크롤이 롤백된다. 그리고 에이전트가 작업중 파악도
+못한다." 로컬 pi **v0.84.4**로 다시 실측했다. 두 증상은 원인이 서로 다르다.
+
+### 11.1 이벤트 매핑은 멀쩡하다 (재실측)
+
+가짜 훅 서버를 띄우고 확장을 그대로 물려 pi를 돌렸더니 §10.1 매핑이 전부 정상
+발화한다 — 회귀 없음. 0.84.4의 `ExtensionAPI.on` 시그니처에도 여섯 이벤트가
+그대로 있다(`dist/core/extensions/types.d.ts:916-934`).
+
+```
+prompt {"prompt":"...","cwd":"..."}
+tool   {"tool_name":"read","tool_input":{...}}
+tool   {"assistant":"The version is **0.6.6**."}
+stop   {"message":"Pi finished a task"}
+```
+
+### 11.2 "작업중 파악 못함"의 진짜 원인 — 확장에 스테일 포트 재시도가 없었다
+
+옵저버 서버는 매 실행 **포트 0**으로 바인딩한다(`observer/server.rs`의
+`TcpListener::bind(("127.0.0.1", 0))`) — 앱을 껐다 켜면 포트가 바뀐다. 입양된
+세션(`adopt_detached_sessions`)의 셸 env `AGENT_OFFICE_HOOK_URL`은 스폰 시점
+포트를 그대로 들고 있으므로 죽은 포트를 친다. claude/codex 훅은 Rust
+forwarder가 `AGENT_OFFICE_APP_DATA/observer-port`를 읽어 1회 재시도해
+살아남지만(§핵심 5, `observer/forwarder.rs:47-59`), **pi 확장은 node `fetch`로
+직접 POST하고 실패를 `.catch(() => {})`로 삼켰다** — 재시도 경로가 아예 없었다.
+결과: 앱 재시작 뒤 입양된 pi 세션만 조용히 관찰 불가.
+
+수정: 확장이 forwarder와 같은 포트 파일 재시도를 갖는다.
+
+- `process.getBuiltinModule?.("node:fs")`로 fs를 얻는다(없으면 재시도만 포기 —
+  pi 패키지 의존이나 top-level import를 늘리지 않는다).
+- 연결 실패 시 `AGENT_OFFICE_APP_DATA/observer-port`의 포트로 URL의 **포트만**
+  바꿔 1회 재시도한다. 루프백 평문(`http:` + `127.0.0.1`) 제약은 forwarder의
+  `parse_local_hook_url`과 같다.
+- 재시도가 성공하면 그 URL을 이후 POST에도 쓴다(매번 죽은 포트를 먼저 때리지
+  않도록).
+
+실측(죽은 포트 45999 + 포트 파일 45777): prompt·tool·stop 세 건 모두 45777에
+도착. 곁가지로 `AGENT_OFFICE_PI_EXT`(OS temp)가 청소된 입양 세션은 여전히
+래퍼 가드로 `running pi unobserved` 강등된다 — 관찰만 잃고 pi는 뜬다(§10.3).
+
+### 11.3 스크롤 롤백 — 앱이 `ESC[3J`를 걸러낸다
+
+먼저 원인을 좁혔다. resize를 **한 번도 내지 않고** 실제 작업(툴 2회 + 스트리밍,
+122KB 출력)을 PTY로 돌린 결과 `ESC[3J` **0회**, `PI_DEBUG_REDRAW=1` 로그도
+`first render`(clear=false) 한 줄뿐이다. 0.84.4에 새로 생긴 `clearOnShrink`
+경로는 `PI_CLEAR_ON_SHRINK === "1"` 옵트인이라 기본 꺼짐
+(`pi-tui/dist/tui.js:112`). 즉 §10.4 결론 그대로 **폭/높이 변경만이 트리거**다.
+
+앱이 resize를 아무리 줄여도 창 크기 조절 자체는 없앨 수 없으므로, 이번에는
+스트림 쪽에서 끊는다 — `src/renderer/terminal/scrollbackGuard.ts`가 PTY→xterm
+write 경로에서 **`ESC[3J`(스크롤백 지우기)만** 떼어 낸다. `ESC[2J`(보이는 화면
+지우기)와 `ESC[H`(홈)는 통과시키므로 pi는 예전처럼 현재 화면을 다시 그리고,
+그 위의 스크롤백만 살아남는다. `--tui-mode fullscreen` 주입을 택하지 않은 이유는
+그쪽이 사용자가 고른 pi UI를 앱이 덮어쓰는 선택이기 때문이다(§10.4).
+
+- 청크 경계: 시퀀스가 두 청크에 걸쳐 오면 꼬리의 진부분 접두사(`ESC`, `ESC[`,
+  `ESC[3`, 최대 3바이트)를 붙들었다가 다음 청크 앞에 이어 붙인다. 붙들린 조각은
+  그 자체로 아무것도 렌더하지 않지만, 스냅샷(handoff/웹원격)은 "지금까지 렌더된
+  것"이어야 하므로 `flushAndSerialize*`가 직렬화 전에 `flush()`로 게워 낸다.
+- `renderedBytes`(§#49) 회계는 그대로 chunk의 raw 바이트를 더한다 — 필터는
+  렌더 내용만 바꾸고 스트림 소비 지점을 바꾸지 않는다.
+- **대가**: agent-office 터미널 안에서는 `clear` 등이 스크롤백을 지우지 못한다
+  (pi 세션뿐 아니라 전 세션 공통). 앱이 보여 주는 히스토리를 자식 프로세스가
+  지우는 쪽이 더 손해라는 판단(사용자 결정).

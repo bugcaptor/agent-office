@@ -559,6 +559,73 @@ describe("flushAndSerializeAll (broker v2 §P1)", () => {
   });
 });
 
+describe("scrollback guard (ESC[3J filtering)", () => {
+  it("strips ESC[3J from PTY output but keeps the rest of pi's fullRender prologue", async () => {
+    const terminalRegistry = await importRegistry();
+    terminalRegistry.ensure("a1");
+    const [, cb] = onData.mock.calls[0] as [
+      string,
+      (d: string, bytes: number) => void,
+    ];
+    writeMock.mockClear();
+
+    cb("\x1b[2J\x1b[H\x1b[3Jredrawn", 20);
+
+    expect(writeMock.mock.calls[0]?.[0]).toBe("\x1b[2J\x1b[Hredrawn");
+  });
+
+  it("still counts the full raw byte size of a chunk it filtered", async () => {
+    const terminalRegistry = await importRegistry();
+    terminalRegistry.ensure("a1");
+    const [, cb] = onData.mock.calls[0] as [
+      string,
+      (d: string, bytes: number) => void,
+    ];
+
+    cb("\x1b[3Jab", 6);
+
+    expect(terminalRegistry.getRenderedBytes()).toEqual({ a1: 6 });
+  });
+
+  it("strips a sequence split across two chunks and keeps each terminal independent", async () => {
+    const terminalRegistry = await importRegistry();
+    terminalRegistry.ensure("a1");
+    terminalRegistry.ensure("a2");
+    const cbA1 = (
+      onData.mock.calls[0] as [string, (d: string, b: number) => void]
+    )[1];
+    const cbA2 = (
+      onData.mock.calls[1] as [string, (d: string, b: number) => void]
+    )[1];
+    writeMock.mockClear();
+
+    cbA1("keep\x1b[3", 7);
+    cbA2("\x1b[3Jother", 9); // a2의 완전한 시퀀스가 a1의 대기 조각과 섞이면 안 된다
+    cbA1("Jmore", 5);
+
+    expect(writeMock.mock.calls.map((c) => c[0])).toEqual([
+      "keep",
+      "other",
+      "more",
+    ]);
+  });
+
+  it("flushes a held partial before serializing (snapshot must not lose bytes)", async () => {
+    const terminalRegistry = await importRegistry();
+    terminalRegistry.ensure("a1");
+    const [, cb] = onData.mock.calls[0] as [
+      string,
+      (d: string, bytes: number) => void,
+    ];
+
+    cb("x\x1b[3", 4);
+    writeMock.mockClear();
+    await terminalRegistry.flushAndSerializeAll();
+
+    expect(writeMock.mock.calls[0]?.[0]).toBe("\x1b[3");
+  });
+});
+
 describe("renderedBytes accumulation (§#49)", () => {
   it("accumulates each chunk's raw byte count on write, keyed by agentId", async () => {
     const terminalRegistry = await importRegistry();

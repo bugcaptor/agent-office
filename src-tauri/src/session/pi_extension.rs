@@ -17,7 +17,7 @@
 //   agent_settled       → source=stop   {"message":"Pi finished a task"}
 //   session_shutdown    → source=stop   {"message":"Pi session ended"} (열린 턴일 때만)
 //
-// v1 대비 바뀐 판정 두 가지(둘 다 v0.84.2 코드/실측 근거):
+// v1 대비 바뀐 것(1·2는 v0.84.2 코드/실측 근거, 3은 앱 재시작 회귀):
 //
 // 1. 완료 신호를 `agent_end` → `agent_settled`로 옮겼다. `agent_end`는 *에이전트
 //    루프 한 번*이 끝날 때마다 나오고, pi는 자동 재시도(재시도 가능한 API 오류)·
@@ -32,6 +32,15 @@
 //    end 이벤트에는 `args`가 없어(ToolExecutionEndEvent = toolCallId/toolName/
 //    result/isError) 라벨에 "지금 무엇을 하는 중"을 실을 수 없고, start가 더 이른
 //    시점이라 오래 걸리는 도구에서도 즉시 working으로 보인다.
+//
+// 3. 스테일 포트 재시도를 넣었다(2026-08-29). 옵저버 서버는 매 실행마다 포트
+//    0으로 바인딩하므로 앱을 껐다 켜면 포트가 바뀌는데, 입양된 세션의 env
+//    (`AGENT_OFFICE_HOOK_URL`)는 스폰 시점 포트를 그대로 들고 있다. claude/
+//    codex 훅은 Rust forwarder가 `AGENT_OFFICE_APP_DATA/observer-port`를 읽어
+//    1회 재시도하지만(observer/forwarder.rs), pi 확장은 node fetch로 직접
+//    POST하고 실패를 삼켜 버려서 **앱 재시작 뒤 입양된 pi 세션만 조용히
+//    관찰 불가**가 됐다. 이제 확장도 같은 포트 파일을 읽어 1회 재시도하고,
+//    성공한 URL을 이후 POST에도 쓴다.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -43,25 +52,60 @@ use std::path::{Path, PathBuf};
 const PI_EXTENSION_TS: &str = r#"// agent-office-pi.ts — agent-office가 생성. 편집 금지(부팅 시 덮어씀).
 // Pi 라이프사이클 이벤트를 agent-office 로컬 훅 서버로 POST해 작업상태를 알린다.
 export default function agentOffice(pi: any) {
-  const url = process.env.AGENT_OFFICE_HOOK_URL;
   const session = process.env.AGENT_OFFICE_SESSION;
+  let url = process.env.AGENT_OFFICE_HOOK_URL;
   if (!url || !session) return; // agent-office 밖: 완전 no-op
 
   const g = globalThis as any;
   if (g.__AGENT_OFFICE_PI_HOOKED__) return; // -e 중복 지정 방어
   g.__AGENT_OFFICE_PI_HOOKED__ = true;
 
+  // 스테일 포트 재시도(observer/forwarder.rs와 같은 계약). 옵저버 서버는 매
+  // 실행마다 포트 0으로 바인딩하므로 앱을 껐다 켜면 포트가 바뀌는데, 입양된
+  // 세션의 env는 스폰 시점 포트를 그대로 들고 있다 — claude/codex는 Rust
+  // forwarder가 포트 파일을 읽어 재시도하지만 pi 확장은 여기서 직접 해야 한다.
+  // 실패하면 재시도만 포기(관찰은 부가 기능이라 pi 동작에 영향 없음).
+  const fs = (process as any).getBuiltinModule?.("node:fs");
+  const appData = process.env.AGENT_OFFICE_APP_DATA;
+  const portFileUrl = (): string | undefined => {
+    if (!fs || !appData) return undefined;
+    try {
+      const text = String(fs.readFileSync(`${appData}/observer-port`, "utf8")).trim();
+      const port = Number.parseInt(text, 10);
+      if (!Number.isInteger(port) || port <= 0 || port > 65535) return undefined;
+      const parsed = new URL(url as string);
+      // 루프백 평문만 — forwarder의 parse_local_hook_url과 같은 제약.
+      if (parsed.protocol !== "http:" || parsed.hostname !== "127.0.0.1") return undefined;
+      parsed.port = String(port);
+      return parsed.toString();
+    } catch {
+      return undefined;
+    }
+  };
+
+  const send = (target: string, source: string, body: unknown) =>
+    fetch(`${target}?session=${session}&source=${source}&agent=pi`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+      signal: AbortSignal.timeout(2000),
+    });
+
   // POST 직렬화 큐: prompt→tool 역전으로 백엔드 at 타임스탬프가 뒤집히는 것 방지.
   let chain: Promise<unknown> = Promise.resolve();
   const post = (source: string, body: unknown) => {
-    chain = chain.then(() =>
-      fetch(`${url}?session=${session}&source=${source}&agent=pi`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body ?? {}),
-        signal: AbortSignal.timeout(2000),
-      }).catch(() => {}) // 앱이 내려가 있어도 pi는 무사
-    );
+    chain = chain.then(async () => {
+      try {
+        await send(url as string, source, body);
+        return;
+      } catch { /* 연결 실패 — 아래에서 최신 포트로 1회 재시도 */ }
+      const retry = portFileUrl();
+      if (!retry || retry === url) return; // 앱이 내려가 있어도 pi는 무사
+      try {
+        await send(retry, source, body);
+        url = retry; // 이후 POST는 곧장 새 포트로
+      } catch { /* 그래도 안 되면 조용히 포기 */ }
+    });
   };
 
   // 핸들러 예외가 pi 턴을 깨지 않도록 등록·호출 양쪽을 감싼다.
@@ -224,6 +268,19 @@ mod tests {
             !PI_EXTENSION_TS.contains("on(\"agent_end\", () => post(\"stop\""),
             "agent_end must not post stop directly",
         );
+    }
+
+    /// 앱 재시작 회귀 방지: 옵저버 포트는 매 실행 새로 잡히므로 입양된 세션의
+    /// `AGENT_OFFICE_HOOK_URL`은 죽은 포트를 가리킨다. 확장이 forwarder와 같은
+    /// 포트 파일 재시도를 갖고 있어야 pi만 조용히 관찰 불가가 되지 않는다.
+    #[test]
+    fn extension_source_retries_on_the_observer_port_file() {
+        assert!(PI_EXTENSION_TS.contains("AGENT_OFFICE_APP_DATA"));
+        assert!(PI_EXTENSION_TS.contains("observer-port"));
+        // 재시도 성공 시 새 URL을 계속 쓴다(매번 죽은 포트를 먼저 때리지 않도록).
+        assert!(PI_EXTENSION_TS.contains("url = retry"));
+        // forwarder의 parse_local_hook_url과 같은 루프백 평문 제약.
+        assert!(PI_EXTENSION_TS.contains("127.0.0.1"));
     }
 
     #[test]
