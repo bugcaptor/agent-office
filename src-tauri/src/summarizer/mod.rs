@@ -157,6 +157,24 @@ pub(super) fn resolve_model(
     }
 }
 
+/// 이 provider의 CLI를 부를 실행 명령. 설정 오버라이드가 있으면 그것,
+/// 없으면 기본 이름(`provider.as_str()` — `claude`, `codex`, `agy`, `gemini`,
+/// `opencode`가 각각 그대로 실행 파일 이름이다). 순수.
+///
+/// 오버라이드는 모델 id와 같은 성격의 자유 입력이라 앱이 존재 여부를 미리
+/// 확인하지 않는다 — 없는 명령이면 spawn이 `-not-found`로 떨어지고 요약은
+/// 원문 폴백으로 강등된다(기존 미설치 경로와 같다).
+///
+/// `Openrouter`에는 의미가 없다(HTTP 경로) — 호출측이 그 전에 갈라져 나간다.
+pub(super) fn resolve_command(provider: SummaryProvider, models: &SummaryModels) -> String {
+    let picked = models.for_provider(provider).command.trim();
+    if picked.is_empty() {
+        provider.as_str().to_string()
+    } else {
+        picked.to_string()
+    }
+}
+
 pub(super) struct ProviderCommand {
     pub command: std::process::Command,
     pub provider: SummaryProvider,
@@ -243,6 +261,7 @@ pub async fn summarize(
 ) -> Result<String, String> {
     let capped = cap_text(text, purpose.max_chars(), lang)?;
     let model = resolve_model(provider, purpose, models);
+    let program = resolve_command(provider, models);
 
     // OpenRouter는 서브프로세스가 아니라 HTTP다 — 로그인 셸 PATH 병합(CLI 전용)도,
     // stdin 파이프도 필요 없다. 세마포어와 목적별 타임아웃만 CLI 경로와 공유한다.
@@ -260,11 +279,11 @@ pub async fn summarize(
     // 멱등이라 첫 호출만 로그인 셸을 돌리고, 블로킹 호출이라 blocking 풀에서 실행한다.
     let _ = tokio::task::spawn_blocking(crate::session::env_capture::ensure_captured).await;
     let command = match provider {
-        SummaryProvider::Claude => claude::build(instruction, &model),
-        SummaryProvider::Codex => codex::build(instruction, purpose, &model),
-        SummaryProvider::Agy => agy::build(instruction, &model),
-        SummaryProvider::Gemini => gemini::build(instruction, &model),
-        SummaryProvider::Opencode => opencode::build(instruction, &model),
+        SummaryProvider::Claude => claude::build(&program, instruction, &model),
+        SummaryProvider::Codex => codex::build(&program, instruction, purpose, &model),
+        SummaryProvider::Agy => agy::build(&program, instruction, &model),
+        SummaryProvider::Gemini => gemini::build(&program, instruction, &model),
+        SummaryProvider::Opencode => opencode::build(&program, instruction, &model),
         // 위에서 이미 갈라져 나갔다.
         SummaryProvider::Openrouter => unreachable!("openrouter는 HTTP 경로로 처리된다"),
     };
@@ -291,8 +310,12 @@ pub async fn list_openrouter_models() -> Result<Vec<String>, String> {
 /// 실패는 전부 빈 목록으로 수렴한다(호출측 IPC 커맨드는 이 값을 그대로
 /// `Ok`로 감싸 돌려준다) — 프런트는 빈 배열과 reject를 동일하게 정적
 /// 프리셋 폴백으로 다룬다.
-pub async fn list_provider_models(provider: &str, anthropic_key: Option<&str>) -> Vec<String> {
-    model_catalog::list(provider, anthropic_key).await
+pub async fn list_provider_models(
+    provider: &str,
+    anthropic_key: Option<&str>,
+    command: Option<&str>,
+) -> Vec<String> {
+    model_catalog::list(provider, anthropic_key, command).await
 }
 
 /// HTTP 경로의 실행 껍데기. CLI 경로(`run_with_timeout`)와 같은 전역 세마포어와
@@ -625,6 +648,43 @@ exit "$AO_FAKE_EXIT"
             "gemini-2.5-pro",
             "light만 채웠으면 heavy는 기본값 그대로"
         );
+    }
+
+    /// 오버라이드가 없으면 provider 이름이 곧 실행 파일 이름이다 — 다섯 CLI가
+    /// 다 그렇다. 이 관계가 조용히 깨지면 기본 설정에서 요약이 통째로 죽는다.
+    #[test]
+    fn default_command_is_the_provider_name_for_every_cli_provider() {
+        let none = SummaryModels::default();
+        for provider in [
+            SummaryProvider::Claude,
+            SummaryProvider::Codex,
+            SummaryProvider::Agy,
+            SummaryProvider::Gemini,
+            SummaryProvider::Opencode,
+        ] {
+            assert_eq!(resolve_command(provider, &none), provider.as_str());
+        }
+    }
+
+    /// 별개 계정 래퍼(`claude-t` 같은 것)를 부르는 것이 이 필드의 존재 이유다.
+    #[test]
+    fn command_override_wins_and_is_scoped_to_its_provider() {
+        let mut models = SummaryModels::default();
+        models.claude.command = "claude-t".into();
+        assert_eq!(resolve_command(SummaryProvider::Claude, &models), "claude-t");
+        assert_eq!(
+            resolve_command(SummaryProvider::Codex, &models),
+            "codex",
+            "다른 provider는 자기 오버라이드만 본다"
+        );
+    }
+
+    /// 빈 명령을 그대로 spawn하면 `-not-found`도 아닌 알 수 없는 실패가 된다.
+    #[test]
+    fn blank_command_override_falls_back_to_the_default_name() {
+        let mut models = SummaryModels::default();
+        models.claude.command = "   ".into();
+        assert_eq!(resolve_command(SummaryProvider::Claude, &models), "claude");
     }
 
     #[test]

@@ -11,9 +11,9 @@ use crate::persistence::settings_store::SummaryProvider;
 // 모델명은 reasoning effort를 접미로 포함한다(`agy models` 출력 기준,
 // 예: gemini-3.6-flash-low) — 별도 --effort 플래그는 쓰지 않는다.
 #[cfg(not(windows))]
-const UNIX_SCRIPT: &str = r#"command -v agy >/dev/null 2>&1 || exit 3
+const UNIX_SCRIPT: &str = r#"command -v "${AO_PROGRAM}" >/dev/null 2>&1 || exit 3
 in=$(cat)
-exec agy --print "${AO_INSTRUCTION}
+exec "${AO_PROGRAM}" --print "${AO_INSTRUCTION}
 
 ${in}" --model "${AO_MODEL}" --output-format text"#;
 
@@ -21,19 +21,20 @@ ${in}" --model "${AO_MODEL}" --output-format text"#;
 const WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
 [Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
 $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$c = Get-Command agy -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+$c = Get-Command $env:AO_PROGRAM -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 $in = [Console]::In.ReadToEnd()
 & $c.Source --print ($env:AO_INSTRUCTION + "`n`n" + $in) --model $env:AO_MODEL --output-format text
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
+pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCommand {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = std::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT]);
     command.creation_flags(CREATE_NO_WINDOW);
+    command.env("AO_PROGRAM", program);
     command.env("AO_INSTRUCTION", instruction);
     command.env("AO_MODEL", model);
     ProviderCommand {
@@ -43,9 +44,10 @@ pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
 }
 
 #[cfg(not(windows))]
-pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
+pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCommand {
     let mut command = std::process::Command::new("/bin/sh");
     command.args(["-c", UNIX_SCRIPT]);
+    command.env("AO_PROGRAM", program);
     command.env("AO_INSTRUCTION", instruction);
     command.env("AO_MODEL", model);
     ProviderCommand {
@@ -66,13 +68,13 @@ pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
 #[cfg(windows)]
 const MODELS_WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
 $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$c = Get-Command agy -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+$c = Get-Command $env:AO_PROGRAM -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 & $c.Source models
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-fn models_command() -> tokio::process::Command {
+fn models_command(program: &str) -> tokio::process::Command {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = tokio::process::Command::new("powershell.exe");
@@ -83,12 +85,13 @@ fn models_command() -> tokio::process::Command {
         MODELS_WINDOWS_SCRIPT,
     ]);
     command.creation_flags(CREATE_NO_WINDOW);
+    command.env("AO_PROGRAM", program);
     command
 }
 
 #[cfg(not(windows))]
-fn models_command() -> tokio::process::Command {
-    let mut command = tokio::process::Command::new("agy");
+fn models_command(program: &str) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(program);
     command.arg("models");
     command
 }
@@ -112,8 +115,8 @@ pub fn parse_models_stdout(stdout: &str) -> Vec<String> {
 
 /// 모델 목록 조회. 실패(미설치·타임아웃·비정상 종료)는 전부 빈 목록이다 —
 /// opencode::list_models와 같은 계약이다.
-pub async fn list_models(timeout: std::time::Duration) -> Vec<String> {
-    let mut command = models_command();
+pub async fn list_models(timeout: std::time::Duration, program: &str) -> Vec<String> {
+    let mut command = models_command(program);
     command.current_dir(std::env::temp_dir());
     command.stdin(std::process::Stdio::null());
     command.stdout(std::process::Stdio::piped());
@@ -164,7 +167,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn non_windows_models_command_invokes_the_models_subcommand_directly() {
-        let cmd = models_command();
+        let cmd = models_command("agy");
         assert_eq!(cmd.as_std().get_program(), "agy");
         let args: Vec<_> = cmd
             .as_std()
@@ -174,12 +177,30 @@ mod tests {
         assert_eq!(args, vec!["models"]);
     }
 
+    /// agy만 셸 래퍼를 거치므로, 커스텀 명령이 인자가 아니라 **환경변수**로
+    /// 들어가고 스크립트가 그것을 따옴표로 감싸 부르는지 함께 못 박는다 —
+    /// 공백이 든 경로를 넣어도 단어 분리되지 않아야 한다.
+    #[cfg(not(windows))]
+    #[test]
+    fn custom_program_travels_through_the_env_and_is_quoted_in_the_script() {
+        let spec = build("/opt/my tools/agy-t", "요약 지시", "gemini-3.6-flash-low");
+        let env = spec
+            .command
+            .get_envs()
+            .find(|(k, _)| *k == "AO_PROGRAM")
+            .and_then(|(_, v)| v)
+            .map(|v| v.to_string_lossy().to_string());
+        assert_eq!(env.as_deref(), Some("/opt/my tools/agy-t"));
+        assert!(UNIX_SCRIPT.contains(r#"command -v "${AO_PROGRAM}""#), "{UNIX_SCRIPT}");
+        assert!(UNIX_SCRIPT.contains(r#"exec "${AO_PROGRAM}""#), "{UNIX_SCRIPT}");
+    }
+
     const DANGEROUS_INSTRUCTION: &str = "--dangerously-skip-permissions";
 
     #[cfg(not(windows))]
     #[test]
     fn unix_command_wraps_agy_in_sh_with_env_instruction_and_model() {
-        let spec = build("요약 지시", "gemini-3.6-flash-low");
+        let spec = build("agy", "요약 지시", "gemini-3.6-flash-low");
         assert_eq!(spec.provider, SummaryProvider::Agy);
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "/bin/sh");
@@ -204,7 +225,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn explicit_model_is_passed_through() {
-        let spec = build("학습자료 지시", "gemini-3.1-pro-low");
+        let spec = build("agy", "학습자료 지시", "gemini-3.1-pro-low");
         let model = spec
             .command
             .get_envs()
@@ -219,7 +240,7 @@ mod tests {
     fn unix_script_gates_missing_cli_and_reads_stdin_before_invoking() {
         let gate = UNIX_SCRIPT.find("|| exit 3").unwrap();
         let stdin_read = UNIX_SCRIPT.find("in=$(cat)").unwrap();
-        let invocation = UNIX_SCRIPT.find("exec agy").unwrap();
+        let invocation = UNIX_SCRIPT.find(r#"exec "${AO_PROGRAM}""#).unwrap();
         assert!(gate < stdin_read && stdin_read < invocation, "{UNIX_SCRIPT}");
     }
 
@@ -250,7 +271,7 @@ mod tests {
             std::iter::once(dir.clone()).chain(std::env::split_paths(&original_path)),
         )
         .unwrap();
-        let mut spec = build(DANGEROUS_INSTRUCTION, "gemini-3.6-flash-low");
+        let mut spec = build("agy", DANGEROUS_INSTRUCTION, "gemini-3.6-flash-low");
         spec.command.env("PATH", path);
         spec.command.env("AO_CAPTURE_FILE", &capture);
         spec.command.stdin(Stdio::piped());
@@ -301,7 +322,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_command_uses_powershell_with_no_window_flag_and_env_instruction() {
-        let spec = build(DANGEROUS_INSTRUCTION, "gemini-3.6-flash-low");
+        let spec = build("agy", DANGEROUS_INSTRUCTION, "gemini-3.6-flash-low");
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "powershell.exe");
         let args: Vec<_> = cmd
@@ -327,7 +348,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "agy CLI 실행 필요(수동 스모크)"]
     async fn live_catalog_smoke() {
-        let models = list_models(std::time::Duration::from_secs(30)).await;
+        let models = list_models(std::time::Duration::from_secs(30), "agy").await;
         assert!(
             !models.is_empty(),
             "빈 목록 -- 출력 형식이 바뀌었을 수 있다"

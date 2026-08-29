@@ -80,11 +80,12 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("SettingsDialog · OpenRouter 요약 설정", () => {
-  it("다른 요약기에서는 키 입력도 테스트 버튼도 없고 카탈로그를 조회하지 않는다", () => {
+  it("다른 요약기에서는 키 입력이 없고 카탈로그도 조회하지 않는다", () => {
     hydrate({ summaryProvider: "claude" });
     render(<SettingsDialog />);
 
-    expect(screen.queryByText("요약 테스트")).toBeNull();
+    // 테스트 버튼은 provider를 가리지 않는다 — 키 입력만 OpenRouter 전용이다.
+    expect(screen.getByText("요약 테스트")).toBeTruthy();
     expect(screen.queryByPlaceholderText("sk-or-…")).toBeNull();
     // 목록을 펼치기 전에는 어떤 provider든 조회하지 않는다.
     expect(listProviderModels).not.toHaveBeenCalled();

@@ -37,6 +37,8 @@
     "observerHelp": "Claude・Codex・Pi の通知と時間計測は、これから作るターミナルから適用されます。オフのときはビックリマークの通知とセッションの時間計測が動作しません。",
     "openrouterNote": "OpenRouter の要約は API キー（または環境変数 <code>OPENROUTER_API_KEY</code>）を使います。キーがないと要約に失敗し、原文がそのまま表示されます。",
     "opencodeNote": "opencode の要約はインストール済みの <code>opencode</code> CLI を呼びます。モデル id は<code> provider/model</code> の表記で（<code>opencode models</code> で確認）、既定値は opencode 自体のサブスクリプション（<code>opencode-go</code>）を前提にしています。",
+    "commandTitle": "{{provider}} 実行コマンド",
+    "commandHelp": "要約のときに呼ぶコマンドです。空にすると <code>{{command}}</code> を呼びます。別アカウント用のラッパースクリプトや絶対パスを指定できます — プログラム 1 つだけで、引数は入れないでください。",
     "lightModelTitle": "{{provider}} 軽量モデル",
     "lightModelHelp": "タスクラベルの要約とキャラクターの日記に使うモデルです。空にすると既定値（<code>{{model}}</code>）を使います。",
     "heavyModelTitle": "{{provider}} 上位モデル",
@@ -49,8 +51,9 @@
     "summaryResult": "要約：{{text}}",
     "summaryFailed": "要約に失敗しました：{{error}}",
     "summaryTestInstruction": "次のテキストを一文で要約してください。",
-    "summaryTestText": "設定画面から OpenRouter の接続を確認するために送ったテスト文です。要約が返ってくれば、キーと軽量モデルの設定はどちらも正しいということです。",
+    "summaryTestText": "設定画面から要約器がちゃんと応答するか確認するために送ったテスト文です。要約が返ってくれば、実行コマンドと軽量モデルの設定はどちらも正しいということです。",
     "errorSummarizerDisabled": "要約機能がオフになっています（一般タブでオンにしてください）",
+    "errorCommandNotFound": "実行コマンドが見つかりません（インストール状況と実行コマンド欄を確認してください）",
     "errorOpenrouterKeyMissing": "OpenRouter API キーがありません"
   },
   "sound": {

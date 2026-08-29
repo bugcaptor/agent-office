@@ -10,19 +10,20 @@ use crate::persistence::settings_store::SummaryProvider;
 const WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
 [Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
 $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$c = Get-Command gemini -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+$c = Get-Command $env:AO_PROGRAM -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 $in = [Console]::In.ReadToEnd()
 $in | & $c.Source --prompt $env:AO_INSTRUCTION --model $env:AO_MODEL --output-format text --skip-trust
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
+pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCommand {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = std::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT]);
     command.creation_flags(CREATE_NO_WINDOW);
+    command.env("AO_PROGRAM", program);
     command.env("AO_INSTRUCTION", instruction);
     command.env("AO_MODEL", model);
     ProviderCommand {
@@ -32,8 +33,8 @@ pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
 }
 
 #[cfg(not(windows))]
-pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
-    let mut command = std::process::Command::new("gemini");
+pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCommand {
+    let mut command = std::process::Command::new(program);
     command.args([
         "--prompt",
         instruction,
@@ -194,7 +195,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn non_windows_command_passes_instruction_model_and_trust_flags() {
-        let spec = build("요약 지시", "gemini-2.5-flash");
+        let spec = build("gemini", "요약 지시", "gemini-2.5-flash");
         assert_eq!(spec.provider, SummaryProvider::Gemini);
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "gemini");
@@ -222,7 +223,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn explicit_model_is_passed_through() {
-        let spec = build("학습자료 지시", "gemini-2.5-pro");
+        let spec = build("gemini", "학습자료 지시", "gemini-2.5-pro");
         let args: Vec<_> = spec
             .command
             .get_args()
@@ -251,7 +252,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_command_uses_powershell_with_no_window_flag_and_env_instruction() {
-        let spec = build("요약 지시", "gemini-2.5-flash");
+        let spec = build("gemini", "요약 지시", "gemini-2.5-flash");
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "powershell.exe");
         let args: Vec<_> = cmd

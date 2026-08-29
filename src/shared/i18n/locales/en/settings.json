@@ -37,6 +37,8 @@
     "observerHelp": "Alerts and timing for Claude, Codex and Pi apply to terminals created from now on. When off, the exclamation alert and session timing do not work.",
     "openrouterNote": "OpenRouter summaries use an API key (or the <code>OPENROUTER_API_KEY</code> variable). Without a key the summary fails and the raw text is shown.",
     "opencodeNote": "opencode summaries call the installed <code>opencode</code> CLI. Model ids use<code> provider/model</code> form (see <code>opencode models</code>), and the default assumes opencode's own plan (<code>opencode-go</code>).",
+    "commandTitle": "{{provider}} command",
+    "commandHelp": "Command to run for summaries. Leave empty to run <code>{{command}}</code>. You can point this at a wrapper script for a separate account, or at an absolute path — one program only, no arguments.",
     "lightModelTitle": "{{provider}} light model",
     "lightModelHelp": "Model used for task labels and character diaries. Leave empty for the default (<code>{{model}}</code>).",
     "heavyModelTitle": "{{provider}} heavy model",
@@ -49,8 +51,9 @@
     "summaryResult": "Summary: {{text}}",
     "summaryFailed": "Summary failed: {{error}}",
     "summaryTestInstruction": "Summarize the following text in one sentence.",
-    "summaryTestText": "This is a test sentence sent from the settings screen to check the OpenRouter connection. If a summary comes back, both the key and the light model are set correctly.",
+    "summaryTestText": "This is a test sentence sent from the settings screen to check that the summarizer actually answers. If a summary comes back, both the command and the light model are set correctly.",
     "errorSummarizerDisabled": "Summaries are turned off (turn them on in the General tab)",
+    "errorCommandNotFound": "Command not found (check that it is installed and that the command field is right)",
     "errorOpenrouterKeyMissing": "No OpenRouter API key"
   },
   "sound": {

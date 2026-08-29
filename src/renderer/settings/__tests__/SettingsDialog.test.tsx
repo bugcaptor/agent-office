@@ -40,12 +40,12 @@ describe("SettingsDialog", () => {
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {
-          claude: { light: "", heavy: "" },
-          codex: { light: "", heavy: "" },
-          agy: { light: "", heavy: "" },
-          gemini: { light: "", heavy: "" },
-          opencode: { light: "", heavy: "" },
-          openrouter: { light: "", heavy: "" },
+          claude: { light: "", heavy: "", command: "" },
+          codex: { light: "", heavy: "", command: "" },
+          agy: { light: "", heavy: "", command: "" },
+          gemini: { light: "", heavy: "", command: "" },
+          opencode: { light: "", heavy: "", command: "" },
+          openrouter: { light: "", heavy: "", command: "" },
         },
         diaryEnabled: false,
         observerEnabled: false,
@@ -96,12 +96,12 @@ describe("SettingsDialog", () => {
       summarizerEnabled: false,
       summaryProvider: "codex",
       summaryModels: {
-        claude: { light: "", heavy: "" },
-        codex: { light: "", heavy: "" },
-        agy: { light: "", heavy: "" },
-        gemini: { light: "", heavy: "" },
-        opencode: { light: "", heavy: "" },
-        openrouter: { light: "", heavy: "" },
+        claude: { light: "", heavy: "", command: "" },
+        codex: { light: "", heavy: "", command: "" },
+        agy: { light: "", heavy: "", command: "" },
+        gemini: { light: "", heavy: "", command: "" },
+        opencode: { light: "", heavy: "", command: "" },
+        openrouter: { light: "", heavy: "", command: "" },
       },
       diaryEnabled: false,
       observerEnabled: true,
@@ -146,12 +146,12 @@ describe("SettingsDialog", () => {
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {
-          claude: { light: "", heavy: "" },
-          codex: { light: "", heavy: "" },
-          agy: { light: "", heavy: "" },
-          gemini: { light: "", heavy: "" },
-          opencode: { light: "", heavy: "" },
-          openrouter: { light: "", heavy: "" },
+          claude: { light: "", heavy: "", command: "" },
+          codex: { light: "", heavy: "", command: "" },
+          agy: { light: "", heavy: "", command: "" },
+          gemini: { light: "", heavy: "", command: "" },
+          opencode: { light: "", heavy: "", command: "" },
+          openrouter: { light: "", heavy: "", command: "" },
         },
         diaryEnabled: false,
         observerEnabled: false,
@@ -208,12 +208,12 @@ describe("SettingsDialog", () => {
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {
-          claude: { light: "", heavy: "" },
-          codex: { light: "", heavy: "" },
-          agy: { light: "", heavy: "" },
-          gemini: { light: "", heavy: "" },
-          opencode: { light: "", heavy: "" },
-          openrouter: { light: "", heavy: "" },
+          claude: { light: "", heavy: "", command: "" },
+          codex: { light: "", heavy: "", command: "" },
+          agy: { light: "", heavy: "", command: "" },
+          gemini: { light: "", heavy: "", command: "" },
+          opencode: { light: "", heavy: "", command: "" },
+          openrouter: { light: "", heavy: "", command: "" },
         },
         diaryEnabled: false,
         observerEnabled: false,
@@ -267,12 +267,12 @@ describe("SettingsDialog", () => {
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {
-          claude: { light: "", heavy: "" },
-          codex: { light: "", heavy: "" },
-          agy: { light: "", heavy: "" },
-          gemini: { light: "", heavy: "" },
-          opencode: { light: "", heavy: "" },
-          openrouter: { light: "", heavy: "" },
+          claude: { light: "", heavy: "", command: "" },
+          codex: { light: "", heavy: "", command: "" },
+          agy: { light: "", heavy: "", command: "" },
+          gemini: { light: "", heavy: "", command: "" },
+          opencode: { light: "", heavy: "", command: "" },
+          openrouter: { light: "", heavy: "", command: "" },
         },
         diaryEnabled: false,
         observerEnabled: false,
@@ -326,12 +326,12 @@ describe("SettingsDialog", () => {
         summarizerEnabled: false,
         summaryProvider: "claude",
         summaryModels: {
-          claude: { light: "", heavy: "" },
-          codex: { light: "", heavy: "" },
-          agy: { light: "", heavy: "" },
-          gemini: { light: "", heavy: "" },
-          opencode: { light: "", heavy: "" },
-          openrouter: { light: "", heavy: "" },
+          claude: { light: "", heavy: "", command: "" },
+          codex: { light: "", heavy: "", command: "" },
+          agy: { light: "", heavy: "", command: "" },
+          gemini: { light: "", heavy: "", command: "" },
+          opencode: { light: "", heavy: "", command: "" },
+          openrouter: { light: "", heavy: "", command: "" },
         },
         diaryEnabled: false,
         observerEnabled: false,
@@ -481,9 +481,9 @@ describe("SettingsDialog", () => {
     fireEvent.change(heavy, { target: { value: "gpt-5.4-pro" } });
 
     const models = useAppStore.getState().appSettings.summaryModels;
-    expect(models.codex).toEqual({ light: "gpt-5.4-nano", heavy: "gpt-5.4-pro" });
+    expect(models.codex).toEqual({ light: "gpt-5.4-nano", heavy: "gpt-5.4-pro", command: "" });
     // 다른 provider의 칸은 건드리지 않는다.
-    expect(models.claude).toEqual({ light: "", heavy: "" });
+    expect(models.claude).toEqual({ light: "", heavy: "", command: "" });
   });
 
   // OpenRouter는 유일한 비-CLI 경로라 API 키가 따로 필요하다 — 어디서 넣는지
@@ -508,6 +508,7 @@ describe("SettingsDialog", () => {
     expect(useAppStore.getState().appSettings.summaryModels.openrouter).toEqual({
       light: "anthropic/claude-haiku-4.5",
       heavy: "",
+      command: "",
     });
   });
 
@@ -537,6 +538,7 @@ describe("SettingsDialog", () => {
     expect(useAppStore.getState().appSettings.summaryModels.opencode).toEqual({
       light: "opencode-go/glm-5.3",
       heavy: "",
+      command: "",
     });
   });
 

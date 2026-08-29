@@ -364,7 +364,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expect(settings.ttsRewriteModelOpenrouter).toBe("openai/gpt-5.4-mini");
     expect(settings.ttsRewriteProvider).toBe("auto");
     // 요약 모델 오버라이드는 "비어 있음 = 백엔드 기본 모델"이 기본 상태다.
-    expect(settings.summaryModels.codex).toEqual({ light: "", heavy: "" });
+    expect(settings.summaryModels.codex).toEqual({ light: "", heavy: "", command: "" });
     // 웹 원격은 네트워크 표면이라 기본 꺼짐이고, 켜더라도 기본 허용 범위는
     // tailnet(+루프백)뿐이다.
     expect(settings.webRemoteBind).toBe("tailnet");

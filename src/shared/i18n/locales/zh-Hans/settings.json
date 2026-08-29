@@ -37,6 +37,8 @@
     "observerHelp": "Claude、Codex、Pi 的通知与计时从此后新建的终端开始生效。关闭时，感叹号通知和会话计时都不工作。",
     "openrouterNote": "OpenRouter 摘要使用 API 密钥（或环境变量 <code>OPENROUTER_API_KEY</code>）。没有密钥时摘要会失败，直接显示原文。",
     "opencodeNote": "opencode 摘要会调用已安装的 <code>opencode</code> CLI。模型 id 采用<code> provider/model</code> 写法（可用 <code>opencode models</code> 查看），默认值假定使用 opencode 自家订阅（<code>opencode-go</code>）。",
+    "commandTitle": "{{provider}} 执行命令",
+    "commandHelp": "做摘要时调用的命令。留空则调用 <code>{{command}}</code>。可以填指向其他账号的包装脚本或绝对路径 —— 只填一个程序，不要带参数。",
     "lightModelTitle": "{{provider}} 轻量模型",
     "lightModelHelp": "用于任务标签摘要和角色日记的模型。留空则使用默认值（<code>{{model}}</code>）。",
     "heavyModelTitle": "{{provider}} 高级模型",
@@ -49,8 +51,9 @@
     "summaryResult": "摘要：{{text}}",
     "summaryFailed": "摘要失败：{{error}}",
     "summaryTestInstruction": "请用一句话概括以下文字。",
-    "summaryTestText": "这是从设置界面发出的测试语句，用于确认 OpenRouter 连接。若能收到摘要，说明密钥和轻量模型的设置都正确。",
+    "summaryTestText": "这是从设置界面发出的测试语句，用于确认摘要器确实会响应。若能收到摘要，说明执行命令和轻量模型的设置都正确。",
     "errorSummarizerDisabled": "摘要功能已关闭（请在常规标签页开启）",
+    "errorCommandNotFound": "找不到执行命令（请确认是否已安装，以及执行命令栏是否正确）",
     "errorOpenrouterKeyMissing": "没有 OpenRouter API 密钥"
   },
   "sound": {

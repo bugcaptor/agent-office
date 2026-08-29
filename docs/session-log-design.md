@@ -263,6 +263,16 @@ Codex는 `CODEX_HOME`으로 데이터 루트를 통째로 옮길 수 있다. `~/
 위 표의 하드코딩 기본값을 쓴다. 해석은 `summarizer::resolve_model`(순수)이 하고,
 provider 빌더(`claude.rs` 등)는 정해진 모델 문자열을 받기만 한다.
 
+부를 **실행 명령**도 같은 자리에서 덮어쓸 수 있다(`summaryModels`의 `command`
+칸, kbm #2nv). 비우면 provider 이름이 곧 실행 파일 이름이다(`claude`, `codex`,
+…). 값은 프로그램 하나 — PATH의 이름이거나 절대경로다. 인자를 받지 않는 것은
+요약 호출의 인자 규약을 provider 빌더가 계속 쥐고 있어야 하기 때문이고, 인자가
+필요하면 래퍼 스크립트를 만들면 된다. 이 칸이 있는 이유가 바로 그런 래퍼다 —
+별개 계정으로 로그인한 `claude-t` 같은 것. 해석은 `summarizer::resolve_command`
+(순수)가 하고, 설정 화면의 모델 카탈로그 조회(`list_provider_models`)도 같은
+명령을 쓴다. 커스텀 명령을 넣어 둔 사용자에게 기본 바이너리의 모델 목록을 보여
+주면 목록과 실행이 어긋난다. OpenRouter는 HTTP라 이 칸이 없다.
+
 지금은 `TEXT_MAX_CHARS`가 전역 상수이고 모델이 `claude.rs`에 하드코딩돼 있다.
 둘 다 `SummaryPurpose`에서 갈라지도록 바꾼다(기존 두 목적의 동작은 그대로).
 

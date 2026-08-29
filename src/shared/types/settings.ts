@@ -64,6 +64,13 @@ export interface SummaryModelOverride {
   light: string;
   /** 학습자료(긴 전사 구조화)에 쓸 모델 id. */
   heavy: string;
+  /**
+   * 이 provider의 CLI를 부를 실행 명령. 빈 문자열이면 기본 이름(`claude`,
+   * `codex`, …). 프로그램 하나(PATH의 이름 또는 절대경로)이고 인자는 받지
+   * 않는다 — 인자가 필요하면 래퍼 스크립트를 만든다. 별개 계정으로 붙는
+   * `claude-t` 같은 래퍼를 쓰라고 있는 칸이다. OpenRouter는 HTTP라 무시된다.
+   */
+  command: string;
 }
 
 /** 요약기 provider별 모델 오버라이드 — Rust `SummaryModels` 미러. */

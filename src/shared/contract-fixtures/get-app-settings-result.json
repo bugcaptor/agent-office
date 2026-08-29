@@ -7,27 +7,33 @@
     "summaryModels": {
       "claude": {
         "light": "",
-        "heavy": ""
+        "heavy": "",
+        "command": ""
       },
       "codex": {
         "light": "",
-        "heavy": ""
+        "heavy": "",
+        "command": ""
       },
       "agy": {
         "light": "",
-        "heavy": ""
+        "heavy": "",
+        "command": ""
       },
       "gemini": {
         "light": "",
-        "heavy": ""
+        "heavy": "",
+        "command": ""
       },
       "opencode": {
         "light": "",
-        "heavy": ""
+        "heavy": "",
+        "command": ""
       },
       "openrouter": {
         "light": "",
-        "heavy": ""
+        "heavy": "",
+        "command": ""
       }
     },
     "diaryEnabled": false,

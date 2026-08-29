@@ -5,7 +5,7 @@ use crate::persistence::settings_store::SummaryProvider;
 const WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
 [Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
 $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$c = Get-Command codex -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+$c = Get-Command $env:AO_PROGRAM -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 $in = [Console]::In.ReadToEnd()
 $effort = $env:AO_EFFORT
@@ -15,12 +15,18 @@ $in | & $c.Source @aoArgs
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-pub(super) fn build(instruction: &str, purpose: SummaryPurpose, model: &str) -> ProviderCommand {
+pub(super) fn build(
+    program: &str,
+    instruction: &str,
+    purpose: SummaryPurpose,
+    model: &str,
+) -> ProviderCommand {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = std::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT]);
     command.creation_flags(CREATE_NO_WINDOW);
+    command.env("AO_PROGRAM", program);
     command.env("AO_INSTRUCTION", instruction);
     command.env("AO_MODEL", model);
     command.env("AO_EFFORT", purpose.codex_effort());
@@ -31,9 +37,14 @@ pub(super) fn build(instruction: &str, purpose: SummaryPurpose, model: &str) -> 
 }
 
 #[cfg(not(windows))]
-pub(super) fn build(instruction: &str, purpose: SummaryPurpose, model: &str) -> ProviderCommand {
+pub(super) fn build(
+    program: &str,
+    instruction: &str,
+    purpose: SummaryPurpose,
+    model: &str,
+) -> ProviderCommand {
     let config = format!("model_reasoning_effort=\"{}\"", purpose.codex_effort());
-    let mut command = std::process::Command::new("codex");
+    let mut command = std::process::Command::new(program);
     command.args([
         "exec",
         "--ignore-user-config",
@@ -75,13 +86,13 @@ pub(super) fn build(instruction: &str, purpose: SummaryPurpose, model: &str) -> 
 #[cfg(windows)]
 const MODELS_WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
 $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$c = Get-Command codex -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+$c = Get-Command $env:AO_PROGRAM -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 & $c.Source debug models
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-fn models_command() -> tokio::process::Command {
+fn models_command(program: &str) -> tokio::process::Command {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = tokio::process::Command::new("powershell.exe");
@@ -92,12 +103,13 @@ fn models_command() -> tokio::process::Command {
         MODELS_WINDOWS_SCRIPT,
     ]);
     command.creation_flags(CREATE_NO_WINDOW);
+    command.env("AO_PROGRAM", program);
     command
 }
 
 #[cfg(not(windows))]
-fn models_command() -> tokio::process::Command {
-    let mut command = tokio::process::Command::new("codex");
+fn models_command(program: &str) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(program);
     command.args(["debug", "models"]);
     command
 }
@@ -147,8 +159,8 @@ pub fn parse_models_stdout(stdout: &str) -> Vec<String> {
 
 /// 모델 목록 조회. 실패(미설치·타임아웃·비정상 종료·형식 변화)는 전부 빈
 /// 목록이다 — opencode::list_models와 같은 계약이다.
-pub async fn list_models(timeout: std::time::Duration) -> Vec<String> {
-    let mut command = models_command();
+pub async fn list_models(timeout: std::time::Duration, program: &str) -> Vec<String> {
+    let mut command = models_command(program);
     command.current_dir(std::env::temp_dir());
     command.stdin(std::process::Stdio::null());
     command.stdout(std::process::Stdio::piped());
@@ -221,7 +233,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn non_windows_models_command_uses_the_json_catalog_subcommand() {
-        let cmd = models_command();
+        let cmd = models_command("codex");
         assert_eq!(cmd.as_std().get_program(), "codex");
         let args: Vec<_> = cmd
             .as_std()
@@ -248,7 +260,7 @@ mod tests {
 
     #[test]
     fn codex_command_pins_low_cost_isolated_contract() {
-        let spec = build("요약 지시", SummaryPurpose::Label, "gpt-5.4-mini");
+        let spec = build("codex", "요약 지시", SummaryPurpose::Label, "gpt-5.4-mini");
         let rendered = command_debug(&spec.command);
         let config = "model_reasoning_effort=\"low\"";
         for expected in [
@@ -278,7 +290,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn codex_command_terminates_options_before_dangerous_instruction() {
-        let spec = build(DANGEROUS_INSTRUCTION, SummaryPurpose::Label, "gpt-5.4-mini");
+        let spec = build("codex", DANGEROUS_INSTRUCTION, SummaryPurpose::Label, "gpt-5.4-mini");
         let args: Vec<_> = spec
             .command
             .get_args()
@@ -337,7 +349,7 @@ mod tests {
             std::iter::once(dir.clone()).chain(std::env::split_paths(&original_path)),
         )
         .unwrap();
-        let mut spec = build(DANGEROUS_INSTRUCTION, SummaryPurpose::Label, "gpt-5.4-mini");
+        let mut spec = build("codex", DANGEROUS_INSTRUCTION, SummaryPurpose::Label, "gpt-5.4-mini");
         spec.command.env("PATH", path);
         spec.command.env("AO_CAPTURE_FILE", &capture);
         let output = spec.command.output().unwrap();
@@ -393,7 +405,7 @@ exit 0
             std::iter::once(dir.clone()).chain(std::env::split_paths(&original_path)),
         )
         .unwrap();
-        let mut spec = build(DANGEROUS_INSTRUCTION, SummaryPurpose::Label, "gpt-5.4-mini");
+        let mut spec = build("codex", DANGEROUS_INSTRUCTION, SummaryPurpose::Label, "gpt-5.4-mini");
         spec.command.env("PATH", path);
         spec.command.env("AO_CAPTURE_FILE", &capture);
         let output = spec.command.output().unwrap();
@@ -432,7 +444,7 @@ exit 0
     #[cfg(not(windows))]
     #[test]
     fn codex_command_terminates_options_before_dangerous_instruction() {
-        let spec = build(DANGEROUS_INSTRUCTION, SummaryPurpose::Label, "gpt-5.4-mini");
+        let spec = build("codex", DANGEROUS_INSTRUCTION, SummaryPurpose::Label, "gpt-5.4-mini");
         assert_eq!(spec.command.get_program(), "codex");
         let args: Vec<_> = spec
             .command
@@ -466,7 +478,7 @@ exit 0
     #[tokio::test]
     #[ignore = "codex CLI 실행 필요(수동 스모크)"]
     async fn live_catalog_smoke() {
-        let models = list_models(std::time::Duration::from_secs(30)).await;
+        let models = list_models(std::time::Duration::from_secs(30), "codex").await;
         assert!(
             !models.is_empty(),
             "빈 목록 -- 출력 형식이 바뀌었을 수 있다"

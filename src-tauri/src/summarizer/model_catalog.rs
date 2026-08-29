@@ -56,9 +56,21 @@ const TIMEOUT_MODELS: Duration = Duration::from_secs(10);
 /// `list_provider_models` 커맨드의 실제 구현. `anthropic_key`는 호출측(IPC
 /// 커맨드)이 키 스토어에서 값으로 떠서 넘긴다 — 이 모듈은 `AppState`도 락도
 /// 모른다. `claude`/`anthropic` 두 provider 문자열이 같은 키를 공유한다.
-pub async fn list(provider: &str, anthropic_key: Option<&str>) -> Vec<String> {
+///
+/// `command`도 같은 이유로 호출측이 설정에서 떠서 넘기는 값이다 — 요약을 실제로
+/// 실행할 명령(`summarizer::resolve_command`)과 **같은 것**이어야 한다. 커스텀
+/// 명령을 넣어 둔 사용자에게 기본 바이너리의 모델 목록을 보여 주면 목록과 실행이
+/// 어긋난다. `None`이나 빈 값이면 기본 이름이고, CLI를 부르지 않는 provider
+/// (openrouter·claude/anthropic·gemini)에서는 무시된다.
+pub async fn list(provider: &str, anthropic_key: Option<&str>, command: Option<&str>) -> Vec<String> {
     let Some(p) = Provider::parse(provider) else {
         return Vec::new();
+    };
+    let program = |default: &'static str| -> String {
+        match command.map(str::trim) {
+            Some(c) if !c.is_empty() => c.to_string(),
+            _ => default.to_string(),
+        }
     };
     match p {
         // OpenRouter는 기존 경로(공개 GET, 키 불필요) 그대로 재사용한다.
@@ -73,9 +85,9 @@ pub async fn list(provider: &str, anthropic_key: Option<&str>) -> Vec<String> {
                 .await
                 .unwrap_or_default()
         }
-        Provider::Opencode => opencode::list_models(TIMEOUT_MODELS).await,
-        Provider::Codex => codex::list_models(TIMEOUT_MODELS).await,
-        Provider::Agy => agy::list_models(TIMEOUT_MODELS).await,
+        Provider::Opencode => opencode::list_models(TIMEOUT_MODELS, &program("opencode")).await,
+        Provider::Codex => codex::list_models(TIMEOUT_MODELS, &program("codex")).await,
+        Provider::Agy => agy::list_models(TIMEOUT_MODELS, &program("agy")).await,
         // 환경변수 키가 없으면 네트워크를 타지 않고 빈 목록이다(gemini.rs 주석).
         Provider::Gemini => gemini::list_models(TIMEOUT_MODELS).await,
     }
@@ -109,7 +121,7 @@ mod tests {
 
     #[tokio::test]
     async fn unsupported_provider_string_yields_empty_list_not_an_error() {
-        assert!(list("not-a-provider", Some("sk-ant-whatever"))
+        assert!(list("not-a-provider", Some("sk-ant-whatever"), None)
             .await
             .is_empty());
     }
@@ -126,8 +138,11 @@ mod tests {
         // 키가 없거나 공백뿐이면 네트워크를 타지 않고 즉시 빈 목록이어야
         // 한다 — 느려서가 아니라 스펙(키 없음 = 반드시 빈 목록)을 고정한다.
         for provider in ["claude", "anthropic"] {
-            assert!(list(provider, None).await.is_empty(), "{provider}");
-            assert!(list(provider, Some("   ")).await.is_empty(), "{provider}");
+            assert!(list(provider, None, None).await.is_empty(), "{provider}");
+            assert!(
+                list(provider, Some("   "), None).await.is_empty(),
+                "{provider}"
+            );
         }
     }
 }

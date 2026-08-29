@@ -37,6 +37,8 @@
     "observerHelp": "Claude、Codex、Pi 的通知與計時只對之後新建的終端機生效。關閉時，驚嘆號通知和工作階段計時都不會運作。",
     "openrouterNote": "OpenRouter 摘要會用 API 金鑰（或環境變數 <code>OPENROUTER_API_KEY</code>）。沒有金鑰時摘要會失敗，直接顯示原文。",
     "opencodeNote": "opencode 摘要會呼叫已安裝的 <code>opencode</code> CLI。模型 id 是<code> provider/model</code> 格式（可用 <code>opencode models</code> 查詢），預設值假設你用的是 opencode 自家訂閱（<code>opencode-go</code>）。",
+    "commandTitle": "{{provider}} 執行命令",
+    "commandHelp": "做摘要時呼叫的命令。留空就呼叫 <code>{{command}}</code>。可以填指向其他帳號的包裝腳本或絕對路徑 —— 只填一個程式，不要帶參數。",
     "lightModelTitle": "{{provider}} 輕量模型",
     "lightModelHelp": "工作標籤摘要和角色日記使用的模型。留空就用預設值（<code>{{model}}</code>）。",
     "heavyModelTitle": "{{provider}} 進階模型",
@@ -49,8 +51,9 @@
     "summaryResult": "摘要：{{text}}",
     "summaryFailed": "摘要失敗：{{error}}",
     "summaryTestInstruction": "請用一句話摘要以下文字。",
-    "summaryTestText": "這是從設定畫面送出、用來確認 OpenRouter 連線的測試句。如果摘要回得來，代表金鑰和輕量模型設定都正確。",
+    "summaryTestText": "這是從設定畫面送出、用來確認摘要器真的會回應的測試句。如果摘要回得來，代表執行命令和輕量模型設定都正確。",
     "errorSummarizerDisabled": "摘要功能已關閉（請在一般分頁開啟）",
+    "errorCommandNotFound": "找不到執行命令（請確認是否已安裝，以及執行命令欄是否正確）",
     "errorOpenrouterKeyMissing": "沒有 OpenRouter API 金鑰"
   },
   "sound": {

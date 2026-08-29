@@ -188,7 +188,43 @@ pub async fn list_provider_models(
     // 않는다 — 값으로 떠서 넘기면 이 커맨드는 계속 AppState 비의존인 다른
     // 커맨드들과 같은 얇은 위임 모양을 유지한다.
     let anthropic_key = app_state.tts.keys.anthropic_key();
-    Ok(crate::summarizer::list_provider_models(&provider, anthropic_key.as_deref()).await)
+    // 요약을 실제로 실행할 명령과 같은 것을 목록 조회에도 쓴다 — 커스텀 명령을
+    // 넣어 둔 사용자에게 기본 바이너리의 목록을 보여 주면 목록과 실행이 어긋난다.
+    // 설정 가드는 .await 이전에 값으로 떠서 놓는다(no-lock-across-await 계약).
+    let command = {
+        let guard = app_state.settings.read().unwrap();
+        summary_command_for_name(&guard.summary_models, &provider)
+    };
+    Ok(crate::summarizer::list_provider_models(
+        &provider,
+        anthropic_key.as_deref(),
+        command.as_deref(),
+    )
+    .await)
+}
+
+/// 카탈로그 provider 문자열 → 그 provider의 실행 명령 오버라이드(빈 값이면
+/// `None`). `anthropic`은 CLI가 아니라 HTTP라 대응하는 명령이 없다.
+fn summary_command_for_name(
+    models: &crate::persistence::settings_store::SummaryModels,
+    provider: &str,
+) -> Option<String> {
+    use crate::persistence::settings_store::SummaryProvider;
+    let p = match provider {
+        "claude" => SummaryProvider::Claude,
+        "codex" => SummaryProvider::Codex,
+        "agy" => SummaryProvider::Agy,
+        "gemini" => SummaryProvider::Gemini,
+        "opencode" => SummaryProvider::Opencode,
+        "openrouter" => SummaryProvider::Openrouter,
+        _ => return None,
+    };
+    let c = models.for_provider(p).command.trim();
+    if c.is_empty() {
+        None
+    } else {
+        Some(c.to_string())
+    }
 }
 
 /// 로컬 codex CLI 설치 여부. AppState 비의존 — 프로필 편집의 "Codex로 생성"

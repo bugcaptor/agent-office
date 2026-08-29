@@ -194,6 +194,17 @@ pub struct SummaryModelOverride {
     /// 학습자료(긴 전사 구조화)에 쓸 모델 id.
     #[serde(default)]
     pub heavy: String,
+    /// 이 provider의 CLI를 부를 **실행 명령**. 빈 문자열이면 기본 이름
+    /// (`SummaryProvider::as_str()` — `claude`, `codex`, …).
+    ///
+    /// 값은 프로그램 하나다(PATH에서 찾을 이름 또는 절대경로). 인자는 받지
+    /// 않는다 — 요약 호출의 인자 규약은 provider 모듈이 쥐고 있어야 하고,
+    /// 인자가 필요한 사용자는 래퍼 스크립트를 만들면 된다. 이 필드가 있는
+    /// 이유가 바로 그런 래퍼다(별개 계정으로 붙는 `claude-t` 같은 것).
+    ///
+    /// `Openrouter`는 HTTP 경로라 이 값을 쓰지 않는다.
+    #[serde(default)]
+    pub command: String,
 }
 
 /// 요약기 provider별 모델 오버라이드 모음. 전 필드 `#[serde(default)]`라
@@ -1087,7 +1098,7 @@ mod tests {
         assert_eq!(s.summary_models.for_provider(SummaryProvider::Codex).light, "");
         let json = serde_json::to_string(&s).unwrap();
         assert!(
-            json.contains(r#""summaryModels":{"claude":{"light":"","heavy":""}"#),
+            json.contains(r#""summaryModels":{"claude":{"light":"","heavy":"","command":""}"#),
             "{json}"
         );
 

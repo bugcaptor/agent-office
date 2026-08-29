@@ -37,6 +37,8 @@
     "observerHelp": "Claude, Codex, Pi의 알림과 시간측정은 새로 만든 터미널부터 적용됩니다. 꺼져 있으면 느낌표 알림과 세션 시간측정이 동작하지 않습니다.",
     "openrouterNote": "OpenRouter 요약은 API 키(또는 환경변수 <code>OPENROUTER_API_KEY</code>)를 씁니다. 키가 없으면 요약이 실패하고 원문이 그대로 표시됩니다.",
     "opencodeNote": "opencode 요약은 설치된 <code>opencode</code> CLI를 부릅니다. 모델 id는<code> provider/model</code> 표기이고(<code>opencode models</code>로 확인), 기본값은 opencode 자체 구독(<code>opencode-go</code>)을 가정합니다.",
+    "commandTitle": "{{provider}} 실행 명령",
+    "commandHelp": "요약할 때 부를 명령입니다. 비우면 <code>{{command}}</code>를 부릅니다. 다른 계정으로 붙는 래퍼 스크립트나 절대경로를 넣을 수 있습니다 — 프로그램 하나만 적고 인자는 넣지 마세요.",
     "lightModelTitle": "{{provider}} 경량 모델",
     "lightModelHelp": "작업 라벨 요약과 캐릭터 일기에 쓰는 모델입니다. 비우면 기본값(<code>{{model}}</code>)을 씁니다.",
     "heavyModelTitle": "{{provider}} 고급 모델",
@@ -49,8 +51,9 @@
     "summaryResult": "요약: {{text}}",
     "summaryFailed": "요약 실패: {{error}}",
     "summaryTestInstruction": "다음 텍스트를 한 문장으로 요약하라.",
-    "summaryTestText": "설정 화면에서 OpenRouter 연결을 확인하려고 보낸 시험 문장입니다. 요약이 돌아오면 키와 경량 모델 설정이 모두 올바른 것입니다.",
+    "summaryTestText": "설정 화면에서 요약기가 실제로 응답하는지 확인하려고 보낸 시험 문장입니다. 요약이 돌아오면 실행 명령과 경량 모델 설정이 모두 올바른 것입니다.",
     "errorSummarizerDisabled": "요약 기능이 꺼져 있습니다(일반 탭에서 켜세요)",
+    "errorCommandNotFound": "실행 명령을 찾을 수 없습니다(설치 여부와 실행 명령 칸을 확인하세요)",
     "errorOpenrouterKeyMissing": "OpenRouter API 키가 없습니다"
   },
   "sound": {

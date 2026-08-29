@@ -21,7 +21,7 @@ use crate::persistence::settings_store::SummaryProvider;
 const WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
 [Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
 $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$c = Get-Command opencode -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+$c = Get-Command $env:AO_PROGRAM -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 $in = [Console]::In.ReadToEnd()
 $aoArgs = @('run', '--pure', '--agent', 'plan', '--model', $env:AO_MODEL, '--', $env:AO_INSTRUCTION)
@@ -29,12 +29,13 @@ $in | & $c.Source @aoArgs
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
+pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCommand {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = std::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT]);
     command.creation_flags(CREATE_NO_WINDOW);
+    command.env("AO_PROGRAM", program);
     command.env("AO_INSTRUCTION", instruction);
     command.env("AO_MODEL", model);
     ProviderCommand {
@@ -44,8 +45,8 @@ pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
 }
 
 #[cfg(not(windows))]
-pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
-    let mut command = std::process::Command::new("opencode");
+pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCommand {
+    let mut command = std::process::Command::new(program);
     command.args([
         "run",
         "--pure",
@@ -71,13 +72,13 @@ pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
 #[cfg(windows)]
 const MODELS_WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
 $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$c = Get-Command opencode -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+$c = Get-Command $env:AO_PROGRAM -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 & $c.Source models
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-fn models_command() -> tokio::process::Command {
+fn models_command(program: &str) -> tokio::process::Command {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = tokio::process::Command::new("powershell.exe");
@@ -88,12 +89,13 @@ fn models_command() -> tokio::process::Command {
         MODELS_WINDOWS_SCRIPT,
     ]);
     command.creation_flags(CREATE_NO_WINDOW);
+    command.env("AO_PROGRAM", program);
     command
 }
 
 #[cfg(not(windows))]
-fn models_command() -> tokio::process::Command {
-    let mut command = tokio::process::Command::new("opencode");
+fn models_command(program: &str) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(program);
     command.arg("models");
     command
 }
@@ -134,8 +136,8 @@ pub fn parse_models_stdout(stdout: &str) -> Vec<String> {
 /// `run_with_timeout`의 CLI 요약 경로와 달리 여기는 "설치 안내"가 필요한
 /// 사용자 액션이 아니라 조용히 강등할 수 있는 조회이므로 오류를 구분해
 /// 돌려주지 않는다(호출측 model_catalog가 그대로 정적 프리셋에 합류시킨다).
-pub async fn list_models(timeout: std::time::Duration) -> Vec<String> {
-    let mut command = models_command();
+pub async fn list_models(timeout: std::time::Duration, program: &str) -> Vec<String> {
+    let mut command = models_command(program);
     command.current_dir(std::env::temp_dir());
     command.stdin(std::process::Stdio::null());
     command.stdout(std::process::Stdio::piped());
@@ -187,7 +189,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn non_windows_command_pins_the_one_shot_read_only_contract() {
-        let spec = build("요약 지시", "opencode-go/deepseek-v4-flash");
+        let spec = build("opencode", "요약 지시", "opencode-go/deepseek-v4-flash");
         assert_eq!(spec.provider, SummaryProvider::Opencode);
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "opencode");
@@ -216,7 +218,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn explicit_model_is_passed_through() {
-        let spec = build("학습자료 지시", "opencode-go/deepseek-v4-pro");
+        let spec = build("opencode", "학습자료 지시", "opencode-go/deepseek-v4-pro");
         let args: Vec<_> = spec
             .command
             .get_args()
@@ -237,7 +239,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn flag_like_instruction_stays_behind_the_separator() {
-        let spec = build(DANGEROUS_INSTRUCTION, "opencode-go/deepseek-v4-flash");
+        let spec = build("opencode", DANGEROUS_INSTRUCTION, "opencode-go/deepseek-v4-flash");
         let args: Vec<_> = spec
             .command
             .get_args()
@@ -282,7 +284,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_command_uses_powershell_with_no_window_flag_and_env_instruction() {
-        let spec = build(DANGEROUS_INSTRUCTION, "opencode-go/deepseek-v4-flash");
+        let spec = build("opencode", DANGEROUS_INSTRUCTION, "opencode-go/deepseek-v4-flash");
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "powershell.exe");
         let args: Vec<_> = cmd

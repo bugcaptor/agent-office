@@ -37,6 +37,8 @@
     "observerHelp": "Les alertes et le chronométrage pour Claude, Codex et Pi s'appliquent aux terminaux créés à partir de maintenant. Désactivés, l'alerte en point d'exclamation et le chronométrage des sessions ne fonctionnent pas.",
     "openrouterNote": "Les résumés OpenRouter utilisent une clé API (ou la variable <code>OPENROUTER_API_KEY</code>). Sans clé, le résumé échoue et le texte brut est affiché.",
     "opencodeNote": "Les résumés opencode appellent le CLI <code>opencode</code> installé. Les ids de modèle suivent la forme<code> provider/model</code> (voir <code>opencode models</code>), et la valeur par défaut suppose l'abonnement propre à opencode (<code>opencode-go</code>).",
+    "commandTitle": "Commande {{provider}}",
+    "commandHelp": "Commande à exécuter pour les résumés. Laissez vide pour exécuter <code>{{command}}</code>. Vous pouvez pointer vers un script d'encapsulation pour un compte distinct, ou vers un chemin absolu — un seul programme, sans arguments.",
     "lightModelTitle": "Modèle léger {{provider}}",
     "lightModelHelp": "Modèle utilisé pour les libellés de tâche et les journaux des personnages. Laissez vide pour la valeur par défaut (<code>{{model}}</code>).",
     "heavyModelTitle": "Modèle avancé {{provider}}",
@@ -49,8 +51,9 @@
     "summaryResult": "Résumé : {{text}}",
     "summaryFailed": "Échec du résumé : {{error}}",
     "summaryTestInstruction": "Résume le texte suivant en une phrase.",
-    "summaryTestText": "Ceci est une phrase de test envoyée depuis l'écran des paramètres pour vérifier la connexion OpenRouter. Si un résumé revient, la clé et le modèle léger sont tous deux correctement configurés.",
+    "summaryTestText": "Ceci est une phrase de test envoyée depuis l'écran des paramètres pour vérifier que le résumeur répond bien. Si un résumé revient, la commande et le modèle léger sont tous deux correctement configurés.",
     "errorSummarizerDisabled": "Les résumés sont désactivés (activez-les dans l'onglet Général)",
+    "errorCommandNotFound": "Commande introuvable (vérifiez qu'elle est installée et que le champ de commande est correct)",
     "errorOpenrouterKeyMissing": "Aucune clé API OpenRouter"
   },
   "sound": {

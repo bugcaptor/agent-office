@@ -5,19 +5,20 @@ use crate::persistence::settings_store::SummaryProvider;
 const WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
 [Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
 $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$c = Get-Command claude -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+$c = Get-Command $env:AO_PROGRAM -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 $in = [Console]::In.ReadToEnd()
 $in | & $c.Source -p $env:AO_INSTRUCTION --model $env:AO_MODEL --output-format text --max-turns 1
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
+pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCommand {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = std::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT]);
     command.creation_flags(CREATE_NO_WINDOW);
+    command.env("AO_PROGRAM", program);
     command.env("AO_INSTRUCTION", instruction);
     command.env("AO_MODEL", model);
     ProviderCommand {
@@ -27,8 +28,8 @@ pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
 }
 
 #[cfg(not(windows))]
-pub(super) fn build(instruction: &str, model: &str) -> ProviderCommand {
-    let mut command = std::process::Command::new("claude");
+pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCommand {
+    let mut command = std::process::Command::new(program);
     command.args([
         "-p",
         instruction,
@@ -64,7 +65,7 @@ mod tests {
 
     #[test]
     fn claude_command_pins_existing_behavior() {
-        let spec = build("요약 지시", "haiku");
+        let spec = build("claude", "요약 지시", "haiku");
         let rendered = command_debug(&spec.command);
         assert!(rendered.contains("haiku"), "{rendered}");
         assert!(rendered.contains("--output-format"), "{rendered}");
@@ -93,7 +94,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_command_uses_powershell_with_no_window_flag_and_env_instruction() {
-        let spec = build("요약 지시", "haiku");
+        let spec = build("claude", "요약 지시", "haiku");
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "powershell.exe");
         let args: Vec<_> = cmd
@@ -117,16 +118,32 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn explicit_model_is_passed_through() {
-        let spec = build("학습자료 지시", "sonnet");
+        let spec = build("claude", "학습자료 지시", "sonnet");
         let rendered = command_debug(&spec.command);
         assert!(rendered.contains("sonnet"), "{rendered}");
         assert!(!rendered.contains("haiku"), "{rendered}");
     }
 
+    /// 커스텀 실행 명령(별개 계정 래퍼 `claude-t` 같은 것)이 그대로 프로그램이
+    /// 돼야 한다 — 인자 규약은 건드리지 않는다.
+    #[cfg(not(windows))]
+    #[test]
+    fn custom_program_replaces_the_binary_but_keeps_the_arguments() {
+        let spec = build("claude-t", "요약 지시", "haiku");
+        assert_eq!(spec.command.get_program(), "claude-t");
+        let args: Vec<_> = spec
+            .command
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(args[0], "-p");
+        assert!(args.contains(&"--max-turns".to_string()), "{args:?}");
+    }
+
     #[cfg(not(windows))]
     #[test]
     fn non_windows_command_passes_instruction_and_model_flags() {
-        let spec = build("요약 지시", "haiku");
+        let spec = build("claude", "요약 지시", "haiku");
         let cmd = spec.command;
         assert_eq!(cmd.get_program(), "claude");
         let args: Vec<_> = cmd
