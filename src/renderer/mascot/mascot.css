@@ -207,9 +207,15 @@
 }
 
 /* 대상 이름. 한 줄로 잘라낸다(폭 54px). 판이 없으므로 옅은 글자 + 어두운
-   외곽선으로 어떤 바탕에서도 읽히게 한다. */
+   외곽선으로 어떤 바탕에서도 읽히게 한다.
+   padding/음수 margin 짝 — `overflow: hidden`의 잘라내는 경계는 패딩 박스라,
+   패딩이 0이면 첫/끝 글자의 외곽선이 글자 바로 옆에서 잘려 나간다(양 끝만
+   외곽선이 얇아 보이던 원인). 패딩으로 스트로크 자리를 만들고 같은 크기의
+   음수 margin으로 되돌려 바깥 레이아웃(칸 폭·높이)은 그대로 둔다. */
 .mascot-light-name {
   max-width: 100%;
+  padding: 2px 3px;
+  margin: -2px -3px;
   color: #ffffff;
   font: 500 8px/9px ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.2px;
@@ -226,6 +232,8 @@
    색까지 낮추면 어두운 스트로크와 섞여 글자가 반투명해 보인다. */
 .mascot-light-sub {
   max-width: 100%;
+  padding: 2px 3px;
+  margin: -2px -3px;
   color: #eef1f6;
   font: 400 8px/9px ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.2px;
