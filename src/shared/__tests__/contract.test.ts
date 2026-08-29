@@ -26,6 +26,7 @@ import type {
   SessionState,
   SessionStateEvent,
   SessionStatus,
+  TurnUsageEvent,
   UsageSnapshot,
   UsageWindow,
 } from "../types";
@@ -75,8 +76,15 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     const parsed: NotificationEvent = JSON.parse(loadFixtureRaw("notification-event.json"));
     expect(parsed.source).toBe("hook");
     expect(notificationType(parsed.source)).toBe("question");
-    // tokens는 옵션 — 값이 없는 알림(hook)에는 키 자체가 없다.
-    expect(parsed.tokens).toBeUndefined();
+  });
+
+  it("TurnUsageEvent", () => {
+    // 알림과 분리된 "turn-usage" 채널. tokens는 옵션이 아니다(값이 있을 때만 방출).
+    const parsed: TurnUsageEvent = JSON.parse(loadFixtureRaw("turn-usage-event.json"));
+    expect(parsed.agentId).toBe("a1");
+    expect(parsed.sessionId).toBe("s1");
+    expect(parsed.tokens.input).toBe(1200);
+    expect(parsed.tokens.model).toBe("claude-opus-5");
   });
 
   it("OutputChunk", () => {
@@ -169,6 +177,14 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect(parsed.cwd).toBeUndefined();
     expect(parsed.shell).toBeUndefined();
     expect(parsed.state).toBeUndefined();
+  });
+
+  it("SessionEventRecord (usage, 신규 사용량 레코드)", () => {
+    // 신규 기록 경로: 턴 사용량은 kind="usage"에 실린다(과거 파일은 kind="stop").
+    const parsed: SessionEventRecord = JSON.parse(loadFixtureRaw("session-event-record.usage.json"));
+    expect(parsed.kind).toBe("usage");
+    expect(parsed.tokens?.input).toBe(1200);
+    expect(parsed.tokens?.model).toBe("claude-opus-5");
   });
 
   it("SessionEventRecord (session_state, state 필드 있음)", () => {
@@ -277,6 +293,8 @@ describe("Commands / Events name constants", () => {
     expect(Events.sessionState).toBe("session-state");
     expect(Events.notificationNew).toBe("notification-new");
     expect(Events.notificationCleared).toBe("notification-cleared");
+    // 알림과 분리된 사용량 채널(억제된 Stop에서도 온다).
+    expect(Events.turnUsage).toBe("turn-usage");
 
     // 마스코트 창(이슈 #72) — Rust `emit_to`/커맨드 이름과 짝이 맞아야 한다.
     expect(Commands.setMascotVisible).toBe("set_mascot_visible");

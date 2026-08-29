@@ -29,8 +29,8 @@ use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
     ActivityEvent, ActivityKind, AdoptedSessionInfo, AgentProfile, BotAgentStatus, BotPhase,
     AwardsFile, BotStatus, CreateSessionRequest, CreateSessionResult, MemoSheet, MemoSheetMeta,
-    NotificationEvent, NotificationSource, OutputChunk, PersistedState, SessionExitInfo,
-    SessionState, SessionStateEvent,
+    NotificationEvent, NotificationSource, OutputChunk, PersistedState, SessionEventTokens,
+    SessionExitInfo, SessionState, SessionStateEvent, TurnUsageEvent,
 };
 use agent_office_lib::usage::{
     AntigravityLiveOutcome, AntigravityLiveStatus, ClaudeLiveStatus, CodexLiveOutcome,
@@ -106,8 +106,26 @@ fn notification_event_matches_fixture() {
         message: "needs input".into(),
         dedup_key: "hook:s1".into(),
         at: 1720000000002,
-        // Hook 알림에는 턴 사용량이 없다 → 직렬화에서 통째로 빠진다(픽스처 불변).
-        tokens: None,
+    };
+    assert_value_eq(fixture_json, serde_json::to_value(&value).unwrap());
+}
+
+/// 알림과 분리된 "turn-usage" 채널. `tokens`는 Option이 아니므로(계약상
+/// 값이 있을 때만 방출) 픽스처도 항상 필드를 갖는다.
+#[test]
+fn turn_usage_event_matches_fixture() {
+    let fixture_json = fixture!("turn-usage-event.json");
+    let value = TurnUsageEvent {
+        agent_id: "a1".into(),
+        session_id: "s1".into(),
+        at: 1783728200000,
+        tokens: SessionEventTokens {
+            input: Some(1200),
+            output: Some(3400),
+            cache_read: Some(98000),
+            cache_write: Some(2500),
+            model: Some("claude-opus-5".into()),
+        },
     };
     assert_value_eq(fixture_json, serde_json::to_value(&value).unwrap());
 }
@@ -442,7 +460,15 @@ fn session_event_record_tool_roundtrips() {
 
 #[test]
 fn session_event_record_stop_with_tokens_roundtrips() {
+    // 과거 파일 호환: kind=Stop에 tokens가 실린 레코드도 여전히 읽힌다(신규
+    // 기록 경로는 더 이상 이 모양을 만들지 않지만, 파일 포맷은 계속 지원한다).
     assert_roundtrip::<SessionEventRecord>(fixture!("session-event-record.stop.json"));
+}
+
+#[test]
+fn session_event_record_usage_roundtrips() {
+    // 신규 기록 경로: 턴 사용량은 kind=Usage 레코드에 실린다(`turn_usage`가 만듦).
+    assert_roundtrip::<SessionEventRecord>(fixture!("session-event-record.usage.json"));
 }
 
 #[test]

@@ -155,11 +155,14 @@ export type SessionEventKind =
   | "tool"
   | "notification"
   | "bell"
-  | "stop";
+  | "stop"
+  | "usage";
 
 /**
- * 한 턴에서 소비한 토큰 사용량. `kind="stop"` 레코드에만(그것도 추출에 성공한
- * 경우에만) 실린다. Rust `SessionEventTokens`(camelCase) 미러.
+ * 한 턴에서 소비한 토큰 사용량. 과거 파일은 `kind="stop"` 레코드에(그것도 추출에
+ * 성공한 경우에만) 실렸고, 신규 파일은 `kind="usage"` 레코드에 실린다(`kind="stop"`엔
+ * 더 이상 안 실린다) — 소비자는 **kind가 아니라 tokens 유무**로 합산해야 신구
+ * 파일을 모두 커버한다. Rust `SessionEventTokens`(camelCase) 미러.
  *
  * 모든 필드가 옵션이다 — 제공자/버전마다 실어 주는 항목이 다르고, 추출에
  * 실패한 항목은 조용히 생략한다. 값이 하나도 없으면 `tokens` 자체를 싣지
@@ -212,8 +215,9 @@ export interface SessionEventRecord {
   /** kind="session_state"일 때 전이한 세션 상태. */
   state?: SessionState;
   /**
-   * kind="stop"일 때 그 턴이 쓴 토큰(추출 성공 시에만). 과거 기록과 추출
-   * 실패는 undefined — 집계는 반드시 부재를 견뎌야 한다.
+   * 그 턴이 쓴 토큰(추출 성공 시에만). 과거 파일은 kind="stop"에, 신규 파일은
+   * kind="usage"에 실린다 — 집계는 kind가 아니라 tokens 유무로 판단해야
+   * 신구 파일을 모두 커버한다. 추출 실패/부재는 undefined.
    */
   tokens?: SessionEventTokens;
   /**

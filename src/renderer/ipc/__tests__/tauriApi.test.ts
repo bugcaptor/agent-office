@@ -229,6 +229,25 @@ describe("wrapListen (session-state / notification-new / notification-cleared)",
     expect(unlistenSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("subscribes onTurnUsage to the exact event name and forwards the payload", async () => {
+    let handler: ((e: { payload: unknown }) => void) | undefined;
+    listen.mockImplementation((_event: string, h: (e: { payload: unknown }) => void) => {
+      handler = h;
+      return Promise.resolve(vi.fn());
+    });
+
+    const tauriApi = await importTauriApi();
+    const cb = vi.fn();
+    tauriApi.onTurnUsage(cb);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(listen).toHaveBeenCalledWith(Events.turnUsage, expect.any(Function));
+    const payload = { agentId: "a1", sessionId: "s1", at: 1, tokens: { input: 100 } };
+    handler?.({ payload });
+    expect(cb).toHaveBeenCalledWith(payload);
+  });
+
   it("a throwing callback does not prevent future events (onNotificationCleared)", async () => {
     let handler: ((e: { payload: unknown }) => void) | undefined;
     listen.mockImplementation((_event: string, h: (e: { payload: unknown }) => void) => {

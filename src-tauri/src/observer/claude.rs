@@ -24,6 +24,20 @@ pub struct ClaudeAdapter {
     /// transcript_path별 마지막 tail 읽기 "시도" 시각(스로틀 기준). 읽기 실패해도
     /// 시도 시각을 기록하므로 다음 interval까지 재시도하지 않는다.
     transcript_progress: Mutex<HashMap<String, Instant>>,
+    /// transcript_path별 턴 사용량 워터마크(마지막으로 합산한 `message.id`).
+    /// `transcript_progress`와는 수명이 다르다 — 저건 스로틀용이라 Stop에서 그
+    /// 경로 엔트리를 지우지만, 이건 **지우지 않는다**. 같은 프롬프트 창 안에서
+    /// Stop이 두 번째로 와도(백그라운드 서브에이전트가 남아 있던 running>0
+    /// Stop 뒤의 재호출) 직전 몫을 다시 세지 않으려면 그 경계를 넘어 남아
+    /// 있어야 하기 때문이다. 세션이 끝나도 맵에서 안 지워지는 누수가 있지만
+    /// 세션당 문자열 2개(경로+id) 규모라 무시할 만하다.
+    ///
+    /// 값이 `Arc<Mutex<Option<String>>>`인 이유: 훅 수신은 axum+tokio
+    /// 멀티스레드이고 forwarder에 1회 재시도가 있어 같은 Stop body가 겹쳐
+    /// 들어올 수 있다. 바깥 맵 락은 경로별 락을 꺼내는 동안만 짧게 잡고,
+    /// 조회~전사 읽기~합산~갱신 전 구간은 그 경로별 내부 락으로 직렬화한다
+    /// (전역 락을 IO 동안 잡으면 다른 세션의 Stop 훅까지 막힌다).
+    transcript_usage_watermark: Mutex<HashMap<String, Arc<Mutex<Option<String>>>>>,
     /// tail 읽기 최소 간격(테스트는 with_progress_interval로 조정).
     progress_interval: Duration,
     /// 훅 설정 파일에 함께 실을 추가 최상위 키(동료 대화의 플러그인 선언 등).
@@ -47,6 +61,7 @@ impl ClaudeAdapter {
             settings_dir,
             forwarder_executable,
             transcript_progress: Mutex::new(HashMap::new()),
+            transcript_usage_watermark: Mutex::new(HashMap::new()),
             progress_interval,
             extra_settings: None,
         }
@@ -288,14 +303,36 @@ impl ObserverAdapter for ClaudeAdapter {
             // 실려 오는 경로(pi 등 미래 확장)는 그대로 우선한다.
             "Stop" => {
                 // 턴 종료 → 이 transcript의 progress 스로틀 엔트리 제거(맵 누수 방지).
+                // 사용량 워터마크는 지우지 않는다(위 필드 주석 참고 — 같은 프롬프트
+                // 창의 2회차 Stop이 필요로 한다).
                 if let Some(path) = transcript_path(raw.body) {
                     self.transcript_progress.lock().unwrap().remove(&path);
                 }
+                // 턴 사용량도 같은 전사 파일 꼬리에서 뽑는다(추출 실패는 None).
+                // 워터마크로 직전 호출까지 합산한 몫을 제외해 이중 계산을 막는다.
+                // 같은 전사에 대한 겹친 Stop(재시도 등)이 조회~갱신 사이를 비집고
+                // 들어와 같은 구간을 두 번 싣지 않도록, 경로별 락을 조회~전사
+                // 읽기~합산~갱신 내내 유지한다(바깥 맵 락은 그 락을 꺼내는 동안만).
+                let tokens = transcript_path(raw.body).and_then(|path| {
+                    let path_lock = self
+                        .transcript_usage_watermark
+                        .lock()
+                        .unwrap()
+                        .entry(path)
+                        .or_insert_with(|| Arc::new(Mutex::new(None)))
+                        .clone();
+                    let mut watermark = path_lock.lock().unwrap();
+                    let (tokens, newest_id) =
+                        claude_transcript_usage(raw.body, watermark.as_deref())?;
+                    if let Some(newest_id) = newest_id {
+                        *watermark = Some(newest_id);
+                    }
+                    Some(tokens)
+                });
                 Some(ObserverEvent::Stop {
                     message: message(raw.body).or_else(|| claude_transcript_message(raw.body)),
                     running: running_subagents(raw.body),
-                    // 턴 사용량도 같은 전사 파일 꼬리에서 뽑는다(추출 실패는 None).
-                    tokens: claude_transcript_usage(raw.body),
+                    tokens,
                 })
             }
             _ => None,
@@ -607,6 +644,66 @@ mod tests {
         assert_eq!(tokens.cache_read, Some(33));
         assert_eq!(tokens.cache_write, Some(44));
         assert_eq!(tokens.model.as_deref(), Some("claude-opus-5"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 워터마크(S5): 같은 전사에 대해 Stop이 두 번 오면(백그라운드 서브에이전트가
+    /// 남아 있던 running>0 Stop 뒤 재호출 등) 1회차가 이미 합산한 몫을 2회차가
+    /// 다시 세면 안 된다. 그 사이 새 assistant 줄이 추가되면 2회차는 그 증분만
+    /// 실어야 한다.
+    #[test]
+    fn repeated_stop_on_the_same_transcript_only_carries_the_increment() {
+        let adapter = ClaudeAdapter::new(scratch_dir(), forwarder_exe());
+        let dir = scratch_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("transcript.jsonl");
+        let lines = [
+            r#"{"type":"user","message":{"role":"user","content":"작업 지시"}}"#.to_string(),
+            r#"{"type":"assistant","message":{"id":"m1","model":"claude-opus-5","role":"assistant","content":[{"type":"text","text":"1차 응답"}],"usage":{"input_tokens":11,"output_tokens":22,"cache_read_input_tokens":33,"cache_creation_input_tokens":44}}}"#.to_string(),
+        ];
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        let body = serde_json::json!({ "transcript_path": path.to_string_lossy() })
+            .to_string()
+            .into_bytes();
+
+        // 1회차: 평소대로 합산된다.
+        let Some(ObserverEvent::Stop { tokens, .. }) = adapter.map_hook(&RawObserverHook {
+            event_name: "Stop",
+            body: &body,
+        }) else {
+            panic!("Stop 이벤트가 나와야 한다");
+        };
+        let tokens = tokens.expect("전사에 usage가 있으면 실려야 한다");
+        assert_eq!(tokens.input, Some(11));
+
+        // 2회차: 새 줄이 안 늘었으므로 워터마크가 전부 걸러 None.
+        let Some(ObserverEvent::Stop { tokens, .. }) = adapter.map_hook(&RawObserverHook {
+            event_name: "Stop",
+            body: &body,
+        }) else {
+            panic!("Stop 이벤트가 나와야 한다");
+        };
+        assert_eq!(tokens, None, "직전 Stop이 이미 합산한 몫을 다시 세면 안 된다");
+
+        // 그 사이 새 assistant 줄이 추가되면(같은 프롬프트 창 안에서 Stop이 또
+        // 온 경우 — 백그라운드 서브에이전트가 남아 있던 running>0 Stop 뒤의
+        // 재호출 등) 3회차는 증분만 싣는다. **진짜 user 프롬프트 줄은 넣지
+        // 않는다** — 넣으면 프롬프트 경계만으로도 같은 결과가 나와 워터마크가
+        // 실제로 이 결과를 만들었는지 증명하지 못한다(필수 3).
+        let mut appended = lines.clone().to_vec();
+        appended.push(r#"{"type":"assistant","message":{"id":"m2","model":"claude-opus-5","role":"assistant","content":[{"type":"text","text":"2차 응답"}],"usage":{"input_tokens":5,"output_tokens":6,"cache_read_input_tokens":7,"cache_creation_input_tokens":8}}}"#.to_string());
+        std::fs::write(&path, appended.join("\n")).unwrap();
+
+        let Some(ObserverEvent::Stop { tokens, .. }) = adapter.map_hook(&RawObserverHook {
+            event_name: "Stop",
+            body: &body,
+        }) else {
+            panic!("Stop 이벤트가 나와야 한다");
+        };
+        let tokens = tokens.expect("증분이 있으면 실려야 한다");
+        assert_eq!(tokens.input, Some(5));
+        assert_eq!(tokens.output, Some(6));
 
         let _ = std::fs::remove_dir_all(dir);
     }

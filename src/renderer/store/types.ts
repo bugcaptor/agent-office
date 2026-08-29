@@ -14,10 +14,11 @@ import type {
   NotificationType,
   PersistedState,
   SessionStatus,
+  TurnUsageEvent,
 } from "@shared/types";
 import { notificationType } from "@shared/types";
 
-export type { AgentProfile, NotificationEvent, PersistedState, SessionStatus };
+export type { AgentProfile, NotificationEvent, PersistedState, SessionStatus, TurnUsageEvent };
 export { notificationType };
 
 /**

@@ -17,7 +17,7 @@ import type {
   SessionLogPage,
   StudyMaterialResult,
 } from './session';
-import type { NotificationEvent, ActivityEvent } from './notification';
+import type { NotificationEvent, ActivityEvent, TurnUsageEvent } from './notification';
 import type { PersistedState, CodexImageStatus, GeneratedCodexImage } from './profile';
 import type {
   ModelCatalogProvider,
@@ -200,6 +200,9 @@ export interface AgentOfficeApi {
   onNotificationCleared(cb: (p: { agentId: string; ids: string[] }) => void): () => void;
   /** activity-event(prompt/tool) 구독. Returns an unsubscribe function. */
   onActivity(cb: (e: ActivityEvent) => void): () => void;
+  /** turn-usage(한 턴의 토큰 사용량) 구독. notification-new와 독립된 채널이라
+   * 서브에이전트로 억제된 Stop에서도 온다. Returns an unsubscribe function. */
+  onTurnUsage(cb: (e: TurnUsageEvent) => void): () => void;
   /** talk-message(동료 대화) 구독 — 누가 말한 순간 온다(배달 완료가 아니다).
    * Returns an unsubscribe function. */
   onTalkMessage(cb: (e: TalkEvent) => void): () => void;

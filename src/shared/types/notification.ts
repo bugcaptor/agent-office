@@ -49,9 +49,18 @@ export interface NotificationEvent {
   message: string;
   dedupKey: string;
   at: number;
-  /** Stop 알림에만, 그것도 추출에 성공했을 때만 실리는 그 턴의 토큰 사용량.
-   *  질문/벨 알림과 과거 이벤트에는 키 자체가 없다 — 소비자는 부재를 견뎌야 한다. */
-  tokens?: SessionEventTokens;
+}
+
+/**
+ * 한 턴의 토큰 사용량. 이벤트명 "turn-usage". Rust `TurnUsageEvent` 미러.
+ * 알림(notification-new)과 독립이라 서브에이전트로 억제된 Stop에서도 온다
+ * (docs/session-analytics-design.md §9.1).
+ */
+export interface TurnUsageEvent {
+  agentId: AgentId;
+  sessionId: SessionId;
+  at: number;
+  tokens: SessionEventTokens;
 }
 
 /**

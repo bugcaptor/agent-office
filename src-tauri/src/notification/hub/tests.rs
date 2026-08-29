@@ -202,6 +202,80 @@
         assert_eq!(notifications[0].message, "작업이 완료되었습니다.");
     }
 
+    /// 사용량용 토큰 픽스처(0을 넣으면 `non_empty()`가 걸러내므로 항상 양수).
+    fn tokens_fixture() -> SessionEventTokens {
+        SessionEventTokens {
+            input: Some(100),
+            output: Some(50),
+            cache_read: Some(20),
+            cache_write: Some(10),
+            model: Some("claude-opus-5".into()),
+        }
+    }
+
+    /// 백그라운드 서브에이전트가 남아 running==0 게이트가 완료 알림을 억제해도,
+    /// `turn_usage`는 그 게이트와 무관하게 방출돼야 한다(결정 A/E, 이슈 배경).
+    #[test]
+    fn suppressed_stop_still_emits_turn_usage() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Stop {
+                message: Some("아직 서브에이전트 진행 중".into()),
+                running: Some(1),
+                tokens: Some(tokens_fixture()),
+            },
+        );
+
+        assert!(events.notifications().is_empty());
+        let usages = events.usages();
+        assert_eq!(usages.len(), 1);
+        assert_eq!(usages[0].agent_id, "a1");
+        assert_eq!(usages[0].session_id, "s1");
+        assert_eq!(usages[0].at, _clock.now_ms());
+        assert_eq!(usages[0].tokens, tokens_fixture());
+    }
+
+    /// 죽은/미지 세션의 Stop은 agentId를 못 찾으므로 사용량도 폐기된다(알림
+    /// 경로와 동일한 원칙: 붙일 곳이 없는 데이터는 남기지 않는다).
+    #[test]
+    fn dead_session_stop_drops_usage() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_observer(
+            "unknown-session",
+            ObserverEvent::Stop {
+                message: Some("done".into()),
+                running: Some(0),
+                tokens: Some(tokens_fixture()),
+            },
+        );
+
+        assert!(events.usages().is_empty());
+        assert!(events.notifications().is_empty());
+    }
+
+    /// 최종 Stop(running=0)에서는 알림과 사용량이 둘 다 나간다 — 사용량 분리가
+    /// 기존 알림 경로를 깨지 않는다는 회귀 방지.
+    #[test]
+    fn stop_with_running_zero_emits_both() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Stop {
+                message: Some("done".into()),
+                running: Some(0),
+                tokens: Some(tokens_fixture()),
+            },
+        );
+
+        let notifications = events.notifications();
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].source, NotificationSource::Stop);
+        let usages = events.usages();
+        assert_eq!(usages.len(), 1);
+        assert_eq!(usages[0].tokens, tokens_fixture());
+    }
+
     #[test]
     fn stop_snapshot_preserves_two_running_subagents_after_delta_events() {
         let (hub, events, _clock) = fixture();

@@ -227,6 +227,9 @@ export function reconstructTurns(events: readonly SessionEventRecord[]): Turn[] 
       ) {
         close(ev.at);
       }
+      // kind="usage"는 여기 안 걸린다 — prompt/stop/session_state 어디에도
+      // 속하지 않는 별도 채널이라 턴을 열지도 닫지도 않는다(알림과 분리된
+      // 사용량 이벤트일 뿐, 턴 경계 판정과는 무관하다).
     }
     // 데이터 끝까지 안 닫힌 턴 → 세션 마지막 이벤트 시각으로 마감.
     if (openStart !== null) close(last.at);
@@ -317,10 +320,12 @@ export function dailySummary(
       ensureCell(daily, cal.dayKey(ev.at), ev.agentId).toolEvents += 1;
       continue;
     }
-    // 토큰은 stop 이벤트에만 실린다(그것도 추출 성공 시에만). 턴 단위 귀속이
-    // 아니라 stop 시각의 로컬 날짜에 귀속한다 — 턴 자체와 달리 토큰은 마감
-    // 시점에 한꺼번에 확정되는 값이라 쪼갤 근거가 없다.
-    if (ev.kind === "stop" && ev.tokens) {
+    // 토큰은 tokens가 실린 이벤트에만 있다(추출 성공 시에만) — kind는 안 본다.
+    // 과거 파일은 kind="stop"에, 신규 파일은 kind="usage"에 실리므로 kind로
+    // 걸러내면 한쪽 세대가 통째로 빠진다. 턴 단위 귀속이 아니라 그 이벤트
+    // 시각의 로컬 날짜에 귀속한다 — 턴 자체와 달리 토큰은 마감 시점에
+    // 한꺼번에 확정되는 값이라 쪼갤 근거가 없다.
+    if (ev.tokens) {
       const cell = ensureCell(daily, cal.dayKey(ev.at), ev.agentId);
       cell.tokensIn += ev.tokens.input ?? 0;
       cell.tokensOut += ev.tokens.output ?? 0;

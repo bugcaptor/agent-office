@@ -14,6 +14,10 @@ pub enum SessionEventKind {
     Notification,
     Bell,
     Stop,
+    /// 한 턴의 토큰 사용량 전용 레코드("usage"). 알림(Stop)과 분리된 채널
+    /// `AppEvents::turn_usage`가 기록한다 — 과거 파일은 이 kind가 없고
+    /// 대신 kind=Stop 레코드의 `tokens`에 실려 있었다(session-analytics-design §9.1).
+    Usage,
 }
 
 /// 프롬프트를 누가 넣었는지. 사람이 직접 친 프롬프트는 표식이 없다(필드 자체가
@@ -57,7 +61,9 @@ pub struct SessionEventDraft {
     pub cwd: Option<String>,
     pub shell: Option<String>,
     pub state: Option<SessionState>,
-    /// kind=Stop일 때 그 턴이 쓴 토큰(추출 성공 시에만).
+    /// kind=Usage일 때 그 턴이 쓴 토큰(추출 성공 시에만). 과거 파일은 이 값이
+    /// kind=Stop 드래프트에 실렸다 — 소비자는 kind가 아니라 tokens의 유무로
+    /// 합산해야 신구 파일을 모두 커버한다.
     pub tokens: Option<SessionEventTokens>,
     /// kind=Prompt일 때 그 프롬프트의 출처(봇 주입만 표식, 사람은 None).
     pub origin: Option<PromptOrigin>,
@@ -106,8 +112,11 @@ pub struct SessionEventRecord {
     pub shell: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<SessionState>,
-    /// kind=Stop일 때 그 턴이 쓴 토큰. 옵션 추가라 schemaVersion은 1을
-    /// 유지한다 — 토큰이 없는 과거 파일과 섞여도 그대로 읽힌다.
+    /// 한 턴이 쓴 토큰. 과거 파일은 kind=Stop 레코드에 실렸고, 신규 파일은
+    /// kind=Usage 레코드에 실린다(kind=Stop엔 더 이상 안 실린다) — 소비자는
+    /// **kind가 아니라 tokens 유무**로 합산해야 신구 파일이 모두 커버된다.
+    /// 옵션 추가라 schemaVersion은 1을 유지한다 — 토큰이 없는 과거 파일과
+    /// 섞여도 그대로 읽힌다.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tokens: Option<SessionEventTokens>,
     /// kind=Prompt일 때 그 프롬프트의 출처. `tokens`와 같은 선례로 옵션 추가라

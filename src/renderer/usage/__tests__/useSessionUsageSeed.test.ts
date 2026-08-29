@@ -96,7 +96,7 @@ describe("useSessionUsageSeed", () => {
     renderHook(() => useSessionUsageSeed());
     await flush();
 
-    expect(loadSessionEvents).toHaveBeenCalledWith(5000 - 1 - SEED_WINDOW_MS, 5000 - 1, ["stop"]);
+    expect(loadSessionEvents).toHaveBeenCalledWith(5000 - 1 - SEED_WINDOW_MS, 5000 - 1, ["stop", "usage"]);
   });
 
   it("firstAt이 없으면 지금(Date.now())을 컷오프로 써서 조회한다", async () => {
@@ -108,7 +108,7 @@ describe("useSessionUsageSeed", () => {
     renderHook(() => useSessionUsageSeed());
     await flush();
 
-    expect(loadSessionEvents).toHaveBeenCalledWith(now - SEED_WINDOW_MS, now, ["stop"]);
+    expect(loadSessionEvents).toHaveBeenCalledWith(now - SEED_WINDOW_MS, now, ["stop", "usage"]);
   });
 
   it("loadSessionEvents가 reject해도 조용히 삼키고 재시도하지 않는다", async () => {

@@ -33,6 +33,7 @@ const { mockApi, capture } = vi.hoisted(() => {
     onNotification?: (e: NotificationEvent) => void;
     onNotificationCleared?: (e: NotificationClearedEvent) => void;
     onActivity?: (e: unknown) => void;
+    onTurnUsage?: (e: unknown) => void;
     onTalkMessage?: (e: TalkEvent) => void;
   } = {};
   const mockApi = {
@@ -60,6 +61,10 @@ const { mockApi, capture } = vi.hoisted(() => {
     }),
     onActivity: vi.fn((cb: (e: unknown) => void) => {
       capture.onActivity = cb;
+      return vi.fn();
+    }),
+    onTurnUsage: vi.fn((cb: (e: unknown) => void) => {
+      capture.onTurnUsage = cb;
       return vi.fn();
     }),
     onTalkMessage: vi.fn((cb: (e: TalkEvent) => void) => {
@@ -142,6 +147,7 @@ beforeEach(() => {
   capture.onNotification = undefined;
   capture.onNotificationCleared = undefined;
   capture.onActivity = undefined;
+  capture.onTurnUsage = undefined;
   capture.onTalkMessage = undefined;
   cleanup = installSessionBridge();
 });

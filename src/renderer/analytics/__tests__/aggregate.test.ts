@@ -203,6 +203,61 @@ describe("dailySummary 토큰", () => {
   });
 });
 
+describe("kind=usage (알림과 분리된 사용량 채널)", () => {
+  it("① usage 레코드의 tokens도 발생 시각의 로컬 날짜에 합산·비용 환산된다", () => {
+    const events = [
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0) }),
+      ev({
+        kind: "usage",
+        at: kst(2026, 6, 11, 10, 20),
+        tokens: { input: 1_000, output: 2_000, cacheRead: 10_000, model: "claude-opus-5" },
+      }),
+    ];
+    const daily = dailySummary(events, reconstructTurns(events), KST);
+    const cell = daily["2026-07-11"].a1;
+    expect(cell.tokensIn).toBe(1_000);
+    expect(cell.tokensOut).toBe(2_000);
+    expect(cell.tokensCacheRead).toBe(10_000);
+    // opus: 1000*5 + 2000*25 + 10000*0.5 = 60000 / 1e6
+    expect(cell.costUsd).toBeCloseTo(0.06, 10);
+  });
+
+  it("② usage는 턴을 닫지 않는다 — prompt→usage→stop에서 endAt은 stop 시각이다", () => {
+    const start = kst(2026, 6, 11, 10, 0);
+    const usageAt = kst(2026, 6, 11, 10, 5);
+    const stop = kst(2026, 6, 11, 10, 30);
+    const turns = reconstructTurns([
+      ev({ kind: "prompt", at: start }),
+      ev({ kind: "usage", at: usageAt, tokens: { input: 10 } }),
+      ev({ kind: "stop", at: stop }),
+    ]);
+    expect(turns).toEqual([{ agentId: "a1", sessionId: "s1", startAt: start, endAt: stop }]);
+  });
+
+  it("③ prompt+usage만 있는 세션은 조기 마감되지 않고 마지막 이벤트(usage)로 마감된다", () => {
+    const start = kst(2026, 6, 11, 10, 0);
+    const usageAt = kst(2026, 6, 11, 10, 10);
+    const turns = reconstructTurns([
+      ev({ kind: "prompt", at: start }),
+      ev({ kind: "usage", at: usageAt, tokens: { input: 10 } }),
+    ]);
+    // stop/session_state 부재 → usage가 턴을 닫지 못하므로, tool과 같은 처리
+    // (세션 마지막 이벤트 시각으로 강제 마감)로 떨어진다.
+    expect(turns).toEqual([{ agentId: "a1", sessionId: "s1", startAt: start, endAt: usageAt }]);
+  });
+
+  it("④ usage 레코드는 toolEvents에 섞이지 않는다(kind==='tool'만 센다)", () => {
+    const events = [
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0) }),
+      ev({ kind: "tool", at: kst(2026, 6, 11, 10, 5) }),
+      ev({ kind: "usage", at: kst(2026, 6, 11, 10, 10), tokens: { input: 10 } }),
+      ev({ kind: "stop", at: kst(2026, 6, 11, 10, 20) }),
+    ];
+    const daily = dailySummary(events, reconstructTurns(events), KST);
+    expect(daily["2026-07-11"].a1.toolEvents).toBe(1);
+  });
+});
+
 describe("agentMeta", () => {
   it("현재 프로필이 있으면 이름과 대표색(비회색)을 쓴다", () => {
     const events = [ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0), agentId: "a1" })];

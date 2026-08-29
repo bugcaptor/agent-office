@@ -16,6 +16,7 @@ import type {
   PersistedState,
   SessionRuntime,
   SessionStatus,
+  TurnUsageEvent,
 } from "./types";
 import { initialTurnState, reduceTurn } from "../timeline/turnReducer";
 import type { AgentTurnState, TurnInput } from "../timeline/turnReducer";
@@ -184,19 +185,19 @@ interface AppState {
   /**
    * 터미널 요약 바에 그리는 "현재 세션" 토큰·비용 실시간 누계. 세션이 바뀌면
    * (또는 처음 잡히면) `{ sessionId, totals: emptyTotals() }`로 리셋된다 —
-   * `noteUsageSession`/`applyNotificationUsage` 참조. 런타임 전용(비영속).
+   * `noteUsageSession`/`applyTurnUsage` 참조. 런타임 전용(비영속).
    */
   sessionUsage: Record<string, { sessionId: string; totals: SessionUsageTotals }>;
   /**
    * `useSessionUsageSeed`가 앱 수명당 1회 심는 과거 시드(`{at, bySession}`).
-   * `at` 이하 시각의 알림은 이미 시드에 들어 있으므로 `applyNotificationUsage`가
+   * `at` 이하 시각의 사용량은 이미 시드에 들어 있으므로 `applyTurnUsage`가
    * 이중 계산을 막는 데 쓴다. null = 아직 시딩 전(또는 설정이 꺼짐). 런타임
    * 전용(비영속) — `docs/session-analytics-design.md` §11.
    */
   sessionUsageSeed: { at: number; bySession: Record<string, SessionUsageTotals> } | null;
   /**
-   * `applyNotificationUsage`가 **실제로 누계에 반영한 첫 턴**의 `e.at`(무시된
-   * 알림은 기록하지 않는다). `useSessionUsageSeed`가 시드 컷오프를 여기에
+   * `applyTurnUsage`가 **실제로 누계에 반영한 첫 턴**의 `e.at`(무시된
+   * 사용량은 기록하지 않는다). `useSessionUsageSeed`가 시드 컷오프를 여기에
    * 묶는다(`firstAt - 1`) — "훅이 언제 돌았나"가 아니라 "실시간이 언제부터
    * 세었나"에 묶어야, 시드가 늦게 심겨도(설정을 뒤늦게 켠 경우 등) 실시간과
    * 겹치는 구간이 구조적으로 없다(§11.3). null = 아직 실시간이 한 턴도 안
@@ -363,10 +364,10 @@ interface AppState {
   /** 이 에이전트가 지금 이 `sessionId`를 쓰고 있음을 알린다. 엔트리가
    * 없거나 세션이 바뀌었으면 누계를 0으로 새로 깐다(같으면 no-op). */
   noteUsageSession(agentId: string, sessionId: string): void;
-  /** `e.tokens`가 있는 알림(Stop)만 세션 누계에 더한다. 시드가 이미 깔려
-   * 있고 `e.at <= sessionUsageSeed.at`이면 그 턴은 시드에 이미 들어 있으므로
-   * 무시한다(이중 계산 방지). */
-  applyNotificationUsage(e: NotificationEvent): void;
+  /** turn-usage 이벤트를 세션 누계에 더한다(알림과 분리된 채널이라 서브에이전트로
+   * 억제된 Stop에서도 온다). 시드가 이미 깔려 있고 `e.at <= sessionUsageSeed.at`
+   * 이면 그 턴은 시드에 이미 들어 있으므로 무시한다(이중 계산 방지). */
+  applyTurnUsage(e: TurnUsageEvent): void;
   /** `useSessionUsageSeed`가 부팅 후 1회 호출. 이미 시드가 있으면 no-op. */
   setSessionUsageSeed(seed: { at: number; bySession: Record<string, SessionUsageTotals> }): void;
   /**
@@ -980,9 +981,8 @@ export const useAppStore = create<AppState>()(
         };
       }),
 
-    applyNotificationUsage: (e) =>
+    applyTurnUsage: (e: TurnUsageEvent) =>
       set((s) => {
-        if (!e.tokens) return s;
         // 시드가 이미 이 턴을 포함한다 — 실시간으로 다시 더하면 이중 계산.
         if (s.sessionUsageSeed && e.at <= s.sessionUsageSeed.at) return s;
         const prev = s.sessionUsage[e.agentId];
@@ -994,8 +994,8 @@ export const useAppStore = create<AppState>()(
             [e.agentId]: { sessionId: e.sessionId, totals: addTurn(entry.totals, e.tokens) },
           },
           // 실시간이 실제로 반영한 첫 턴의 시각만 기록(이미 있으면 유지) — B의
-          // 시드 컷오프 기준. 여기서 무시되고 return s로 빠진 알림(위 두 가드)은
-          // 반영이 아니므로 잡지 않는다.
+          // 시드 컷오프 기준. 여기서 무시되고 return s로 빠진 사용량 이벤트(위
+          // 시드 컷오프 가드)는 반영이 아니므로 잡지 않는다.
           sessionUsageFirstAt: s.sessionUsageFirstAt ?? e.at,
         };
       }),

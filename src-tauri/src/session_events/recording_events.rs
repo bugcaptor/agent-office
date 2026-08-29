@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::state::{AppEvents, BotPromptArms};
 use crate::types::{
     ActivityEvent, ActivityKind, NotificationEvent, NotificationSource, SessionStateEvent,
+    TurnUsageEvent,
 };
 
 use super::store::SessionEventStore;
@@ -80,22 +81,34 @@ impl AppEvents for RecordingAppEvents {
             NotificationSource::Stop => SessionEventKind::Stop,
             NotificationSource::Bell => SessionEventKind::Bell,
         };
-        let mut draft = SessionEventDraft::simple(
+        let draft = SessionEventDraft::simple(
             event.agent_id.clone(),
             event.session_id.clone(),
             kind,
             event.at,
         );
-        // 턴 사용량은 Stop 알림에만 실려 온다(다른 소스에 붙어 오면 무시).
-        if kind == SessionEventKind::Stop {
-            draft.tokens = event.tokens.clone();
-        }
         self.record(draft);
         self.inner.notification_new(event);
     }
 
     fn notification_cleared(&self, agent_id: &str, ids: &[String]) {
         self.inner.notification_cleared(agent_id, ids);
+    }
+
+    /// 한 턴의 토큰 사용량을 kind=Usage 레코드로 남긴다. 과거 파일은 이 값이
+    /// kind=Stop 레코드에 실렸지만(알림에 업힌 계측), 지금은 `notification_new`가
+    /// 더 이상 tokens를 만지지 않으므로 stop 레코드엔 안 실린다 — 소비자는
+    /// kind가 아니라 tokens 유무로 합산해야 신구 파일을 모두 커버한다.
+    fn turn_usage(&self, event: &TurnUsageEvent) {
+        let mut draft = SessionEventDraft::simple(
+            event.agent_id.clone(),
+            event.session_id.clone(),
+            SessionEventKind::Usage,
+            event.at,
+        );
+        draft.tokens = Some(event.tokens.clone());
+        self.record(draft);
+        self.inner.turn_usage(event);
     }
 
     fn activity_event(&self, event: &ActivityEvent) {
@@ -192,7 +205,6 @@ mod tests {
             message: "do not persist this message".into(),
             dedup_key: "do not persist this key".into(),
             at: 1_783_728_000_001,
-            tokens: None,
         });
         let records = read(&root);
         assert_eq!(
@@ -242,7 +254,6 @@ mod tests {
                 message: String::new(),
                 dedup_key: format!("k{offset}"),
                 at: 1_783_728_000_002 + offset as u64,
-                tokens: None,
             });
         }
         events.activity_event(&ActivityEvent {
@@ -273,15 +284,20 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
-    /// 턴 사용량은 stop 레코드에만 실린다 — 같은 값이 다른 소스의 알림에
-    /// 붙어 와도 시계열엔 남지 않아야 한다.
+    /// 턴 사용량은 `turn_usage`가 kind=Usage 레코드로 따로 남기고, `notification_new`가
+    /// 만드는 stop 레코드에는 이제 tokens가 전혀 실리지 않는다 — 알림과 사용량이
+    /// 서로 다른 채널이라는 계약을 시계열 기록 계층에서도 확인한다. `inner`를
+    /// move하지 않고 `clone()`으로 넘겨야(≈189행 선례) `self.inner.turn_usage(event)`
+    /// 전달까지 이 테스트가 실제로 검증한다 — move하면 `inner.usages()`를 볼 수
+    /// 없어, 그 forward 호출을 지워도(=하위 홉이 조용히 사라져도) 이 테스트는
+    /// 그린인 채로 남는다(필수 2).
     #[test]
-    fn stop_notification_carries_turn_tokens_into_the_timeline() {
+    fn turn_usage_writes_a_usage_record_and_stop_stays_token_free() {
         use crate::types::SessionEventTokens;
         let root = scratch_root();
         let inner = Arc::new(RecordingEvents::default());
         let store = Arc::new(SessionEventStore::new(root.clone()));
-        let events = RecordingAppEvents::new(inner, store, Arc::new(BotPromptArms::new()));
+        let events = RecordingAppEvents::new(inner.clone(), store, Arc::new(BotPromptArms::new()));
         let tokens = SessionEventTokens {
             input: Some(120),
             output: Some(340),
@@ -289,40 +305,38 @@ mod tests {
             cache_write: Some(50),
             model: Some("claude-opus-5".into()),
         };
-        for (offset, source) in [NotificationSource::Stop, NotificationSource::Hook]
-            .into_iter()
-            .enumerate()
-        {
-            events.notification_new(&NotificationEvent {
-                id: format!("n{offset}"),
-                session_id: "s1".into(),
-                agent_id: "a1".into(),
-                source,
-                message: String::new(),
-                dedup_key: format!("k{offset}"),
-                at: 1_783_728_000_000 + offset as u64,
-                tokens: Some(tokens.clone()),
-            });
-        }
-        let records = read(&root);
-        assert_eq!(records[0].kind, SessionEventKind::Stop);
-        assert_eq!(records[0].tokens.as_ref(), Some(&tokens));
-        assert_eq!(records[1].kind, SessionEventKind::Notification);
-        assert_eq!(records[1].tokens, None);
-        // 사용량이 없는 Stop은 필드 자체가 직렬화되지 않는다(과거 파일과 동형).
+        let usage_event = TurnUsageEvent {
+            agent_id: "a1".into(),
+            session_id: "s1".into(),
+            at: 1_783_728_000_000,
+            tokens: tokens.clone(),
+        };
+        events.turn_usage(&usage_event);
         events.notification_new(&NotificationEvent {
-            id: "n2".into(),
+            id: "n0".into(),
             session_id: "s1".into(),
             agent_id: "a1".into(),
             source: NotificationSource::Stop,
             message: String::new(),
-            dedup_key: "k2".into(),
-            at: 1_783_728_000_002,
-            tokens: None,
+            dedup_key: "k0".into(),
+            at: 1_783_728_000_001,
         });
+        let records = read(&root);
+        assert_eq!(records[0].kind, SessionEventKind::Usage);
+        assert_eq!(records[0].tokens.as_ref(), Some(&tokens));
+        assert_eq!(records[1].kind, SessionEventKind::Stop);
+        assert_eq!(records[1].tokens, None);
+        // stop 레코드엔 "tokens" 키 자체가 나가지 않는다(과거 파일과 동형이 아니라
+        // 이제 신규 stop은 원천적으로 tokens를 안 만든다는 확인).
         let raw = fs::read_to_string(root.join("2026-07-11.jsonl")).unwrap();
-        assert_eq!(raw.lines().count(), 3);
+        assert_eq!(raw.lines().count(), 2);
         assert!(!raw.lines().last().unwrap().contains("tokens"));
+        // `self.inner.turn_usage(event)` 전달이 실제로 일어났는지 — 하위 홉 확인.
+        let forwarded = inner.usages();
+        assert_eq!(forwarded.len(), 1);
+        assert_eq!(forwarded[0].agent_id, usage_event.agent_id);
+        assert_eq!(forwarded[0].at, usage_event.at);
+        assert_eq!(forwarded[0].tokens, usage_event.tokens);
         let _ = fs::remove_dir_all(root);
     }
 

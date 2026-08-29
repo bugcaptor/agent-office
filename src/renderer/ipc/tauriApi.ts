@@ -38,6 +38,7 @@ import type {
   SessionStateEvent,
   SessionTurnRecord,
   TalkEvent,
+  TurnUsageEvent,
   WorkLogItem,
 } from "@shared/types";
 
@@ -500,6 +501,10 @@ export const tauriApi: AgentOfficeApi = {
 
   onActivity(cb) {
     return wrapListen<ActivityEvent>(Events.activityEvent, cb);
+  },
+
+  onTurnUsage(cb) {
+    return wrapListen<TurnUsageEvent>(Events.turnUsage, cb);
   },
 
   onTalkMessage(cb) {

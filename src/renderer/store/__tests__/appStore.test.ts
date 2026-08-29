@@ -519,9 +519,8 @@ describe("session usage slice", () => {
   it("noteUsageSession: sessionId가 바뀌면 누계를 0으로 리셋한다", () => {
     const s = useAppStore.getState();
     s.noteUsageSession("a1", "s1");
-    s.applyNotificationUsage({
-      id: "n1", sessionId: "s1", agentId: "a1", source: "stop",
-      message: "done", dedupKey: "k1", at: 100,
+    s.applyTurnUsage({
+      sessionId: "s1", agentId: "a1", at: 100,
       tokens: { input: 100, model: "claude-opus-5" },
     });
     expect(useAppStore.getState().sessionUsage["a1"].totals.turns).toBe(1);
@@ -541,27 +540,14 @@ describe("session usage slice", () => {
     expect(useAppStore.getState().sessionUsage).toBe(before);
   });
 
-  it("applyNotificationUsage: tokens가 없으면 no-op", () => {
+  it("applyTurnUsage: 세션 판정 후 addTurn으로 누적한다", () => {
     const s = useAppStore.getState();
-    s.noteUsageSession("a1", "s1");
-    const before = useAppStore.getState().sessionUsage;
-    s.applyNotificationUsage({
-      id: "n1", sessionId: "s1", agentId: "a1", source: "hook",
-      message: "?", dedupKey: "k1", at: 100,
-    });
-    expect(useAppStore.getState().sessionUsage).toBe(before);
-  });
-
-  it("applyNotificationUsage: tokens가 있으면 세션 판정 후 addTurn으로 누적한다", () => {
-    const s = useAppStore.getState();
-    s.applyNotificationUsage({
-      id: "n1", sessionId: "s1", agentId: "a1", source: "stop",
-      message: "done", dedupKey: "k1", at: 100,
+    s.applyTurnUsage({
+      sessionId: "s1", agentId: "a1", at: 100,
       tokens: { input: 100, output: 50, model: "claude-opus-5" },
     });
-    s.applyNotificationUsage({
-      id: "n2", sessionId: "s1", agentId: "a1", source: "stop",
-      message: "done", dedupKey: "k2", at: 200,
+    s.applyTurnUsage({
+      sessionId: "s1", agentId: "a1", at: 200,
       tokens: { input: 10, output: 5, model: "claude-opus-5" },
     });
     const entry = useAppStore.getState().sessionUsage["a1"];
@@ -570,36 +556,32 @@ describe("session usage slice", () => {
     expect(entry.totals.turns).toBe(2);
   });
 
-  it("applyNotificationUsage: e.at <= sessionUsageSeed.at인 알림은 이중 계산을 막기 위해 무시한다", () => {
+  it("applyTurnUsage: e.at <= sessionUsageSeed.at인 사용량은 이중 계산을 막기 위해 무시한다", () => {
     const s = useAppStore.getState();
     s.setSessionUsageSeed({ at: 500, bySession: { s1: { input: 1000, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 1, costUnknownTurns: 0, turns: 1 } } });
-    s.applyNotificationUsage({
-      id: "n1", sessionId: "s1", agentId: "a1", source: "stop",
-      message: "done", dedupKey: "k1", at: 500, // == seed.at → 무시
+    s.applyTurnUsage({
+      sessionId: "s1", agentId: "a1", at: 500, // == seed.at → 무시
       tokens: { input: 100, model: "claude-opus-5" },
     });
     expect(useAppStore.getState().sessionUsage["a1"]).toBeUndefined();
 
-    s.applyNotificationUsage({
-      id: "n2", sessionId: "s1", agentId: "a1", source: "stop",
-      message: "done", dedupKey: "k2", at: 501, // > seed.at → 반영
+    s.applyTurnUsage({
+      sessionId: "s1", agentId: "a1", at: 501, // > seed.at → 반영
       tokens: { input: 100, model: "claude-opus-5" },
     });
     expect(useAppStore.getState().sessionUsage["a1"].totals.turns).toBe(1);
   });
 
-  it("applyNotificationUsage: 이전 항목과 sessionId가 다르면 누계를 새로 깔고 이번 턴부터 센다", () => {
-    // noteUsageSession을 거치지 않고 알림만으로도 세션 전환이 감지돼야 한다
-    // (session-state 유실 시에도 applyNotificationUsage가 안전망 역할).
+  it("applyTurnUsage: 이전 항목과 sessionId가 다르면 누계를 새로 깔고 이번 턴부터 센다", () => {
+    // noteUsageSession을 거치지 않고 사용량만으로도 세션 전환이 감지돼야 한다
+    // (session-state 유실 시에도 applyTurnUsage가 안전망 역할).
     const s = useAppStore.getState();
-    s.applyNotificationUsage({
-      id: "n1", sessionId: "s1", agentId: "a1", source: "stop",
-      message: "done", dedupKey: "k1", at: 100,
+    s.applyTurnUsage({
+      sessionId: "s1", agentId: "a1", at: 100,
       tokens: { input: 100, model: "claude-opus-5" },
     });
-    s.applyNotificationUsage({
-      id: "n2", sessionId: "s2", agentId: "a1", source: "stop",
-      message: "done", dedupKey: "k2", at: 200,
+    s.applyTurnUsage({
+      sessionId: "s2", agentId: "a1", at: 200,
       tokens: { input: 10, model: "claude-opus-5" },
     });
     const entry = useAppStore.getState().sessionUsage["a1"];
@@ -613,14 +595,12 @@ describe("session usage slice", () => {
     expect(useAppStore.getState().sessionUsageFirstAt).toBeNull();
 
     // 실시간이 시드보다 먼저 두 턴을 반영.
-    s.applyNotificationUsage({
-      id: "n1", sessionId: "s1", agentId: "a1", source: "stop",
-      message: "done", dedupKey: "k1", at: 100,
+    s.applyTurnUsage({
+      sessionId: "s1", agentId: "a1", at: 100,
       tokens: { input: 100, model: "claude-opus-5" },
     });
-    s.applyNotificationUsage({
-      id: "n2", sessionId: "s1", agentId: "a1", source: "stop",
-      message: "done", dedupKey: "k2", at: 200,
+    s.applyTurnUsage({
+      sessionId: "s1", agentId: "a1", at: 200,
       tokens: { input: 10, model: "claude-opus-5" },
     });
     expect(useAppStore.getState().sessionUsageFirstAt).toBe(100); // 첫 턴 시각 그대로, 두 번째 턴에는 안 바뀜.

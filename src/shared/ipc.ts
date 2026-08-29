@@ -193,4 +193,8 @@ export const Events = {
   // 동료 대화(docs/agent-talk-design.md §7). 누가 말한 *순간* 발화한다 —
   // 실제 배달(주입)은 상대가 한가해질 때까지 늦춰질 수 있다.
   talkMessage: "talk-message",
+  // 한 턴의 토큰 사용량. notificationNew와 분리된 채널이라, 백그라운드
+  // 서브에이전트가 남아 완료 알림이 억제된 Stop에서도 이 이벤트만은 온다
+  // (docs/session-analytics-design.md §9.1).
+  turnUsage: "turn-usage",
 } as const;

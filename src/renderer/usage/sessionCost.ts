@@ -81,11 +81,15 @@ export function mergeTotals(a: SessionUsageTotals, b: SessionUsageTotals): Sessi
 }
 
 /**
- * 과거 세션 이벤트 기록에서 세션별 누계를 시딩한다. `kind === "stop"`이고
- * `tokens`가 있고 `at <= maxAt`인 레코드만 `sessionId`별로 합산한다 — 뒤 두
- * 조건은 실시간 누적과의 이중 계산을 막는 경계선이고, 스토어의
- * `applyNotificationUsage`가 세우는 `e.at > sessionUsageSeed.at` 판정과 짝을
- * 이룬다(이 함수가 `maxAt`으로 자른 시점 이후 알림만 실시간이 더한다).
+ * 과거 세션 이벤트 기록에서 세션별 누계를 시딩한다. `tokens`가 있고
+ * `at <= maxAt`인 레코드만 `sessionId`별로 합산한다 — **kind는 안 본다**.
+ * 과거 파일은 `kind="stop"`에, 신규 파일은 `kind="usage"`에 토큰이 실리므로
+ * kind로 걸러내면 한쪽 세대의 파일이 통째로 빠진다. `tokens` 유무·`at<=maxAt`
+ * 두 조건이 실시간 누적과의 이중 계산을 막는 경계선이고, 스토어의
+ * `applyTurnUsage`가 세우는 `e.at > sessionUsageSeed.at` 판정과 짝을 이룬다
+ * (이 함수가 `maxAt`으로 자른 시점 이후 사용량만 실시간이 더한다). 신규
+ * stop 레코드는 애초에 tokens가 없으므로, 전환기에도 같은 턴이 usage와
+ * stop 양쪽에 실려 두 번 잡히는 일은 구조적으로 없다.
  */
 export function aggregateSeed(
   records: SessionEventRecord[],
@@ -93,7 +97,7 @@ export function aggregateSeed(
 ): Record<SessionId, SessionUsageTotals> {
   const out: Record<SessionId, SessionUsageTotals> = {};
   for (const r of records) {
-    if (r.kind !== "stop" || !r.tokens || r.at > maxAt) continue;
+    if (!r.tokens || r.at > maxAt) continue;
     const prev = out[r.sessionId] ?? emptyTotals();
     out[r.sessionId] = addTurn(prev, r.tokens);
   }

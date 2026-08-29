@@ -31,6 +31,7 @@ vi.mock("../tauriApi", () => ({
     onNotification: (cb: (e: NotificationEvent) => void) => ((captured.notif = cb), () => {}),
     onNotificationCleared: () => () => {},
     onActivity: (cb: (e: ActivityEvent) => void) => ((captured.activity = cb), () => {}),
+    onTurnUsage: () => () => {},
     onTalkMessage: () => () => {},
     setBadgeCount: vi.fn(),
     appendSessionTurn: vi.fn(),

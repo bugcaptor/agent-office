@@ -1,0 +1,12 @@
+{
+  "agentId": "a1",
+  "sessionId": "s1",
+  "at": 1783728200000,
+  "tokens": {
+    "input": 1200,
+    "output": 3400,
+    "cacheRead": 98000,
+    "cacheWrite": 2500,
+    "model": "claude-opus-5"
+  }
+}

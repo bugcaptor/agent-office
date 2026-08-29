@@ -90,16 +90,18 @@ describe("mergeTotals", () => {
 });
 
 describe("aggregateSeed", () => {
-  it("kind=stop, tokens 존재, at<=maxAt인 레코드만 sessionId별로 합산한다", () => {
+  it("kind 불문 tokens 존재·at<=maxAt인 레코드만 sessionId별로 합산한다", () => {
     const records: SessionEventRecord[] = [
+      // 과거 파일: 토큰이 kind=stop에 실려 있다.
       record({ sessionId: "s1", at: 100, kind: "stop", tokens: { input: 10, model: "claude-opus-5" } }),
-      record({ sessionId: "s1", at: 200, kind: "stop", tokens: { input: 20, model: "claude-opus-5" } }),
-      // kind가 stop이 아니면 제외
-      record({ sessionId: "s1", at: 150, kind: "tool", tokens: { input: 999 } }),
-      // tokens가 없으면 제외
+      // 신규 파일: 토큰이 kind=usage에 실려 있다 — 둘 다 kind 불문 합산된다.
+      record({ sessionId: "s1", at: 200, kind: "usage", tokens: { input: 20, model: "claude-opus-5" } }),
+      // tool은 tokens가 없으므로(실제로 안 실림) 자연히 제외된다.
+      record({ sessionId: "s1", at: 150, kind: "tool" }),
+      // tokens가 없으면 kind가 stop이어도 제외(신규 stop은 tokens가 없다).
       record({ sessionId: "s1", at: 160, kind: "stop" }),
       // at > maxAt이면 제외
-      record({ sessionId: "s1", at: 9999, kind: "stop", tokens: { input: 999 } }),
+      record({ sessionId: "s1", at: 9999, kind: "usage", tokens: { input: 999 } }),
       // 다른 세션은 따로 집계
       record({ sessionId: "s2", at: 50, kind: "stop", tokens: { input: 5, model: "claude-haiku-4-5" } }),
     ];
@@ -108,6 +110,17 @@ describe("aggregateSeed", () => {
     expect(out["s1"].turns).toBe(2);
     expect(out["s2"].input).toBe(5);
     expect(out["s2"].turns).toBe(1);
+  });
+
+  it("usage/stop 혼재에서도 이중 계산이 없다(신규 stop엔 tokens가 없으므로 같은 턴이 두 번 안 잡힌다)", () => {
+    const records: SessionEventRecord[] = [
+      // 한 턴이 실제로 남기는 신규 기록 모양: usage(토큰 실림) + stop(토큰 없음).
+      record({ sessionId: "s1", at: 100, kind: "usage", tokens: { input: 10, model: "claude-opus-5" } }),
+      record({ sessionId: "s1", at: 101, kind: "stop" }),
+    ];
+    const out = aggregateSeed(records, 1000);
+    expect(out["s1"].input).toBe(10);
+    expect(out["s1"].turns).toBe(1);
   });
 
   it("해당하는 레코드가 없으면 빈 객체", () => {

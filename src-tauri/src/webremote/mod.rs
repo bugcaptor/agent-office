@@ -1109,7 +1109,6 @@ mod tests {
                 dedup_key: "k".into(),
                 at: 1,
                 source: crate::types::NotificationSource::Hook,
-                tokens: None,
             },
         );
         match next_msg(&mut socket).await {

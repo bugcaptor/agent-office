@@ -30,6 +30,17 @@ pub trait AppEvents: Send + Sync {
     fn activity_event(&self, ev: &ActivityEvent);
     /// 동료 대화 한 마디(기본 no-op — 미러/테스트 구현은 무시해도 된다).
     fn talk_message(&self, _ev: &crate::types::TalkEvent) {}
+    /// 한 턴의 토큰 사용량(기본 no-op). 알림과 분리된 채널이라 `notification_new`
+    /// 억제 여부와 무관하게 방출된다 — `talk_message` 선례와 동일하게 기본
+    /// no-op으로 둬 이 이벤트를 안 쓰는 구현체(테스트 더블 등)가 강제로
+    /// 구현하지 않아도 되게 한다. **주의**: 이 기본 no-op은 "안 써도 되는"
+    /// 구현체용이다. 다른 `AppEvents`를 감싸거나 미러링하는 데코레이터
+    /// (`RecordingAppEvents`, `CompositeEvents` 등)는 **반드시** 안쪽/각 갈래로
+    /// forward해야 한다 — 그렇지 않으면 이 이벤트가 배선 중간에서 조용히
+    /// 사라진다(실제로 한 번 그렇게 유실됐었다, 필수 2 참고). `WebRemoteEvents`가
+    /// 이 이벤트를 안 받는 것은 예외적으로 **의도된** 동작이다(웹 원격은 토큰을
+    /// 표시하지 않는다) — 새 데코레이터를 추가할 때 이 두 경우를 헷갈리지 말 것.
+    fn turn_usage(&self, _ev: &crate::types::TurnUsageEvent) {}
 }
 
 pub struct TauriEvents {
@@ -54,6 +65,9 @@ impl AppEvents for TauriEvents {
     }
     fn talk_message(&self, ev: &crate::types::TalkEvent) {
         let _ = self.app.emit("talk-message", ev);
+    }
+    fn turn_usage(&self, ev: &crate::types::TurnUsageEvent) {
+        let _ = self.app.emit("turn-usage", ev);
     }
 }
 
@@ -96,6 +110,10 @@ impl AppEvents for CompositeEvents {
     fn activity_event(&self, ev: &ActivityEvent) {
         self.primary.activity_event(ev);
         self.secondary.activity_event(ev);
+    }
+    fn turn_usage(&self, ev: &crate::types::TurnUsageEvent) {
+        self.primary.turn_usage(ev);
+        self.secondary.turn_usage(ev);
     }
 }
 
@@ -279,7 +297,9 @@ pub struct AppState {
 pub mod fake {
     use super::AppEvents;
     use crate::session_events::types::SessionStartedEvent;
-    use crate::types::{ActivityEvent, NotificationEvent, SessionState, SessionStateEvent};
+    use crate::types::{
+        ActivityEvent, NotificationEvent, SessionState, SessionStateEvent, TurnUsageEvent,
+    };
     use std::sync::Mutex;
 
     #[derive(Default)]
@@ -290,6 +310,7 @@ pub mod fake {
         notifications: Mutex<Vec<NotificationEvent>>,
         cleared: Mutex<Vec<(String, Vec<String>)>>,
         activities: Mutex<Vec<ActivityEvent>>,
+        usages: Mutex<Vec<TurnUsageEvent>>,
     }
 
     impl AppEvents for RecordingEvents {
@@ -315,6 +336,9 @@ pub mod fake {
         }
         fn activity_event(&self, ev: &ActivityEvent) {
             self.activities.lock().unwrap().push(ev.clone());
+        }
+        fn turn_usage(&self, ev: &TurnUsageEvent) {
+            self.usages.lock().unwrap().push(ev.clone());
         }
     }
 
@@ -358,13 +382,17 @@ pub mod fake {
         pub fn activities(&self) -> Vec<ActivityEvent> {
             self.activities.lock().unwrap().clone()
         }
+        /// 지금까지 방출된 turn-usage 이벤트 전체.
+        pub fn usages(&self) -> Vec<TurnUsageEvent> {
+            self.usages.lock().unwrap().clone()
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::fake::RecordingEvents;
-    use super::{AppEvents, SessionRegistry};
+    use super::{AppEvents, CompositeEvents, SessionRegistry};
     use crate::types::*;
 
     fn state_event(session_id: &str, agent_id: &str, state: SessionState) -> SessionStateEvent {
@@ -387,7 +415,6 @@ mod tests {
             message: "needs input".into(),
             dedup_key: format!("hook:{session_id}"),
             at: 1,
-            tokens: None,
         }
     }
 
@@ -502,6 +529,42 @@ mod tests {
         let events: std::sync::Arc<dyn AppEvents> = recorder.clone();
         events.session_state(&state_event("s1", "a1", SessionState::Running));
         assert_eq!(recorder.states(), vec![SessionState::Running]);
+    }
+
+    // ---- CompositeEvents ----
+
+    /// 필수 2 회귀 테스트: `CompositeEvents::turn_usage`가 primary·secondary
+    /// 양쪽에 도달하는지. lib.rs의 최상위 배선(hub → CompositeEvents(primary=
+    /// RecordingAppEvents(→TauriEvents), secondary=WebRemoteEvents))에서 이
+    /// 전달이 빠지면 이벤트가 조용히 한쪽에서 사라진다.
+    #[test]
+    fn composite_events_forwards_turn_usage_to_both_primary_and_secondary() {
+        let primary = std::sync::Arc::new(RecordingEvents::default());
+        let secondary = std::sync::Arc::new(RecordingEvents::default());
+        let composite = CompositeEvents::new(primary.clone(), secondary.clone());
+
+        let usage = TurnUsageEvent {
+            agent_id: "a1".into(),
+            session_id: "s1".into(),
+            at: 1_783_728_000_000,
+            tokens: SessionEventTokens {
+                input: Some(10),
+                output: Some(20),
+                cache_read: Some(30),
+                cache_write: Some(40),
+                model: Some("claude-opus-5".into()),
+            },
+        };
+        composite.turn_usage(&usage);
+
+        let primary_usages = primary.usages();
+        let secondary_usages = secondary.usages();
+        assert_eq!(primary_usages.len(), 1);
+        assert_eq!(secondary_usages.len(), 1);
+        assert_eq!(primary_usages[0].agent_id, "a1");
+        assert_eq!(secondary_usages[0].agent_id, "a1");
+        assert_eq!(primary_usages[0].tokens, usage.tokens);
+        assert_eq!(secondary_usages[0].tokens, usage.tokens);
     }
 
     // ---- SessionRegistry ----

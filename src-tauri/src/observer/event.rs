@@ -444,14 +444,29 @@ fn is_real_user_prompt(value: &serde_json::Value) -> bool {
 const TRANSCRIPT_USAGE_TAIL_BYTES: u64 = 2 * 1024 * 1024;
 
 /// Claude Stop 훅의 `transcript_path`(JSONL) 꼬리를 읽어 **이번 턴**이 쓴 토큰을
-/// 합산한다. 실패(경로 부재/파일 없음/유효 사용량 없음)는 모두 None.
+/// 합산한다. 실패(경로 부재/파일 없음/유효 사용량 없음)는 모두 None. 성공하면
+/// 합산값과 함께 이번에 센 것 중 **가장 최근** `message.id`(다음 호출의 워터마크
+/// 후보)를 돌려준다.
 ///
-/// 턴 경계는 "뒤에서부터 스캔하다 만나는 첫 진짜 사용자 프롬프트"로 잡는다 —
-/// `claude_transcript_progress_message`가 쓰는 판정(`is_real_user_prompt`,
-/// tool_result-only user 줄은 경계가 아님)을 그대로 재사용한다. 세션 누계의
-/// 델타를 기억하는 방식 대신 이 방식을 택한 이유는 (a) 전사에 누계 필드가
-/// 없어 어차피 전 구간을 합산해야 하고, (b) 앱 재시작·세션 입양 후에도 상태
-/// 없이 정확하기 때문이다.
+/// 스캔 종료 조건은 `watermark` 유무로 갈린다.
+///
+/// - `watermark == None`(앱 재시작 직후 등 직전 합산 지점을 모를 때): 뒤에서부터
+///   스캔하다 만나는 첫 진짜 사용자 프롬프트(`claude_transcript_progress_message`가
+///   쓰는 판정 `is_real_user_prompt`, tool_result-only user 줄은 경계가 아님)에서
+///   break한다. 세션 누계의 델타를 기억하는 방식 대신 이 방식을 택한 이유는
+///   (a) 전사에 누계 필드가 없어 어차피 전 구간을 합산해야 하고, (b) 앱 재시작·
+///   세션 입양 후에도 상태 없이 정확하기 때문이다.
+/// - `watermark == Some(id)`: 프롬프트 경계에서 멈추지 않고 **워터마크 id를 만날
+///   때까지** 계속 스캔한다 — 백그라운드 서브에이전트가 Stop 이후에도 사이드체인
+///   줄을 계속 append하고, 그 완료가 `task-notification`을 새 user 프롬프트로
+///   주입하는 경로에서는 프롬프트 경계가 워터마크보다 먼저 걸려 그 사이드체인
+///   몫(대개 이 턴 비용의 대부분)이 통째로 누락되기 때문이다. 다만 워터마크
+///   줄이 꼬리 상한(2MB) 밖으로 밀려나 무제한 과대 집계가 되는 걸 막기 위해,
+///   **처음 만난(=가장 최근) 진짜 사용자 프롬프트 지점의 합계를 스냅샷**해
+///   두었다가 워터마크를 끝내 못 만나면(꼬리 소진) 그 스냅샷으로 강등한다.
+///   워터마크를 만나면 스냅샷은 버리고 그 지점까지의 **전체 합계**를 쓴다 —
+///   이게 정상 경로다. **앱을 재시작하면 워터마크가 없어져** 그 세션의 다음
+///   턴 창이 실제보다 한 턴만큼 과대 집계될 수 있다(수용된 한계, 결정 C와 별개).
 ///
 /// **같은 응답이 여러 줄로 쪼개져 기록된다** — Claude는 assistant 응답 하나를
 /// content 블록별(thinking/text/tool_use)로 나눠 여러 줄에 쓰면서 `message.usage`를
@@ -461,21 +476,36 @@ const TRANSCRIPT_USAGE_TAIL_BYTES: u64 = 2 * 1024 * 1024;
 /// 서브에이전트(`isSidechain`) 줄의 사용량도 합산한다 — 실제로 청구되는 비용이고
 /// 이 턴에 속한다. 다만 경계 판정에서는 스킵한다(서브에이전트의 프롬프트 줄이
 /// 메인 턴 경계로 오인되면 스캔이 조기 종료된다).
-pub fn claude_transcript_usage(body: &[u8]) -> Option<SessionEventTokens> {
+pub fn claude_transcript_usage(
+    body: &[u8],
+    watermark: Option<&str>,
+) -> Option<(SessionEventTokens, Option<String>)> {
     let path = transcript_path(body)?;
     let tail = read_file_tail(std::path::Path::new(&path), TRANSCRIPT_USAGE_TAIL_BYTES)?;
-    sum_claude_turn_usage(&tail).non_empty()
+    let (totals, newest_id) = sum_claude_turn_usage(&tail, watermark);
+    // 못 셌으면 None — 호출부가 기존 워터마크를 그대로 유지한다(전사에 애초에
+    // 유효 사용량 줄이 없는 경우 등, 조용한 폴백 원칙).
+    totals.non_empty().map(|t| (t, newest_id))
 }
 
 /// 전사 꼬리 문자열에서 마지막 턴의 사용량을 합산한다(위 규칙). 순수 함수라
 /// 테스트가 파일 없이 직접 부른다.
-fn sum_claude_turn_usage(tail: &str) -> SessionEventTokens {
+fn sum_claude_turn_usage(
+    tail: &str,
+    watermark: Option<&str>,
+) -> (SessionEventTokens, Option<String>) {
     let mut totals = SessionEventTokens::default();
     let mut seen_messages: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut newest_id: Option<String> = None;
     let mut input = 0u64;
     let mut output = 0u64;
     let mut cache_read = 0u64;
     let mut cache_write = 0u64;
+    // watermark가 있을 때만 쓰는 폴백: 처음(=가장 최근) 만난 진짜 사용자 프롬프트
+    // 지점까지의 합계 스냅샷. 워터마크를 끝내 못 만나면(꼬리 밖으로 밀려남) 이걸로
+    // 강등한다.
+    let mut prompt_boundary_snapshot: Option<(u64, u64, u64, u64)> = None;
+    let mut watermark_hit = false;
 
     for line in tail.lines().rev() {
         let Ok(value) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
@@ -483,14 +513,34 @@ fn sum_claude_turn_usage(tail: &str) -> SessionEventTokens {
         };
         let sidechain = value.get("isSidechain").and_then(|v| v.as_bool()) == Some(true);
         match value.get("type").and_then(|t| t.as_str()) {
-            // 메인 세션의 진짜 사용자 프롬프트 = 턴 시작 → 스캔 종료.
-            Some("user") if !sidechain && is_real_user_prompt(&value) => break,
+            // 메인 세션의 진짜 사용자 프롬프트 = 턴 시작.
+            // watermark가 없으면 지금까지가 전부다 → 스캔 종료.
+            // watermark가 있으면 그 뒤(더 과거)에 워터마크가 있을 수 있으니
+            // 스냅샷만 남기고 계속 스캔한다(필수 1).
+            Some("user") if !sidechain && is_real_user_prompt(&value) => {
+                if watermark.is_none() {
+                    break;
+                }
+                prompt_boundary_snapshot
+                    .get_or_insert((input, output, cache_read, cache_write));
+            }
             Some("assistant") => {
                 let Some(message) = value.get("message") else {
                     continue;
                 };
+                let msg_id = message.get("id").and_then(|v| v.as_str());
+                // 결정 E: 워터마크 비교는 dedup 삽입보다 **먼저** — 꼬리부터
+                // 스캔하므로 같은 id의 더 새 줄이 먼저 나온다. dedup을 먼저
+                // 태우면 그 줄이 카운트된 뒤 break해 이중 계산이 된다.
+                if msg_id == watermark && msg_id.is_some() {
+                    watermark_hit = true;
+                    break;
+                }
+                if let Some(id) = msg_id {
+                    newest_id.get_or_insert_with(|| id.to_string());
+                }
                 // 같은 응답이 블록별로 쪼개져 usage를 반복 기록한다 → id로 1회만.
-                if let Some(id) = message.get("id").and_then(|v| v.as_str()) {
+                if let Some(id) = msg_id {
                     if !seen_messages.insert(id.to_string()) {
                         continue;
                     }
@@ -519,11 +569,23 @@ fn sum_claude_turn_usage(tail: &str) -> SessionEventTokens {
         }
     }
 
+    // 워터마크가 있었는데 꼬리를 다 훑고도 못 만났다면(꼬리 밖으로 밀려남) 전체
+    // 합계 대신 프롬프트 경계 스냅샷으로 강등한다. 프롬프트 경계조차 못 만났으면
+    // (전사가 온통 한 턴뿐이라 스냅샷이 없으면) 전체 합계를 그대로 쓴다.
+    if watermark.is_some() && !watermark_hit {
+        if let Some((si, so, sr, sw)) = prompt_boundary_snapshot {
+            input = si;
+            output = so;
+            cache_read = sr;
+            cache_write = sw;
+        }
+    }
+
     totals.input = Some(input);
     totals.output = Some(output);
     totals.cache_read = Some(cache_read);
     totals.cache_write = Some(cache_write);
-    totals
+    (totals, newest_id)
 }
 
 /// 파일 끝에서 최대 `max` 바이트를 읽어 String으로. 앞머리에서 잘린 멀티바이트는
@@ -1039,13 +1101,26 @@ mod tests {
             .to_string()
             .into_bytes();
 
-        let tokens = claude_transcript_usage(&body).unwrap();
+        let (tokens, newest_id) = claude_transcript_usage(&body, None).unwrap();
         assert_eq!(tokens.input, Some(10 + 20 + 5));
         assert_eq!(tokens.output, Some(100 + 200 + 50));
         assert_eq!(tokens.cache_read, Some(1_000 + 2_000 + 500));
         assert_eq!(tokens.cache_write, Some(50 + 60 + 5));
         // 대표 모델은 가장 최근 **메인 세션** 응답의 모델(서브에이전트 모델 아님).
         assert_eq!(tokens.model.as_deref(), Some("claude-opus-5"));
+        // 워터마크 후보 = 뒤에서부터 처음 만난(=가장 최근) message.id.
+        assert_eq!(newest_id.as_deref(), Some("msg-sub"));
+
+        // 워터마크가 msg-1이면 msg-1과 그 이전(직전 턴 msg-old 포함)은 스캔에서
+        // 제외되고, msg-2/msg-sub 몫만 합산된다.
+        let (tokens, newest_id) = claude_transcript_usage(&body, Some("msg-1")).unwrap();
+        assert_eq!(tokens.input, Some(20 + 5));
+        assert_eq!(tokens.output, Some(200 + 50));
+        assert_eq!(newest_id.as_deref(), Some("msg-sub"));
+
+        // 워터마크가 이번 스캔에서 가장 최근 id(msg-sub)와 같으면 합산할 게
+        // 없어 합계가 전부 0 → non_empty()가 걸러내 None.
+        assert_eq!(claude_transcript_usage(&body, Some("msg-sub")), None);
 
         // 사용량 라인이 하나도 없으면(프롬프트만 있는 파일) None.
         let empty = dir.join("empty-turn.jsonl");
@@ -1057,16 +1132,130 @@ mod tests {
         let empty_body = serde_json::json!({ "transcript_path": empty.to_string_lossy() })
             .to_string()
             .into_bytes();
-        assert_eq!(claude_transcript_usage(&empty_body), None);
+        assert_eq!(claude_transcript_usage(&empty_body, None), None);
 
         // 파일 부재/필드 부재/비JSON → None 폴백.
         let missing =
             serde_json::json!({ "transcript_path": dir.join("nope.jsonl").to_string_lossy() })
                 .to_string()
                 .into_bytes();
-        assert_eq!(claude_transcript_usage(&missing), None);
-        assert_eq!(claude_transcript_usage(br#"{}"#), None);
-        assert_eq!(claude_transcript_usage(b"not json"), None);
+        assert_eq!(claude_transcript_usage(&missing, None), None);
+        assert_eq!(claude_transcript_usage(br#"{}"#, None), None);
+        assert_eq!(claude_transcript_usage(b"not json", None), None);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 필수 1 회귀 테스트: 서브에이전트가 Stop 이후에도 사이드체인 줄을 계속
+    /// append하고, 그 완료가 `task-notification`을 새 user 프롬프트로 주입하는
+    /// 경로에서 워터마크가 프롬프트 경계보다 우선해야 사이드체인 몫이 안 새어
+    /// 나간다. 워터마크 뒤에 사이드체인 줄 → user 프롬프트 주입 줄 → 새 메인
+    /// 응답 순서로 쌓는다.
+    #[test]
+    fn watermark_scan_reaches_past_a_prompt_boundary_to_collect_trailing_sidechain_usage() {
+        use super::claude_transcript_usage;
+        let dir = std::env::temp_dir().join(format!(
+            "agent-office-usage-watermark-test-{}",
+            uuid::Uuid::new_v4(),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let usage = |input, out, read, write| {
+            format!(
+                r#""usage":{{"input_tokens":{input},"output_tokens":{out},"cache_read_input_tokens":{read},"cache_creation_input_tokens":{write}}}"#
+            )
+        };
+        let lines = [
+            // 직전 Stop이 이미 합산한 지점(워터마크) — 다시 세면 안 된다.
+            format!(
+                r#"{{"type":"assistant","message":{{"id":"msg-wm","model":"claude-opus-5","content":[{{"type":"text","text":"워터마크 응답"}}],{}}}}}"#,
+                usage(1, 1, 1, 1)
+            ),
+            // 백그라운드 서브에이전트가 Stop#1 이후에도 계속 append한 사이드체인.
+            r#"{"type":"user","isSidechain":true,"message":{"role":"user","content":"서브 지시"}}"#.into(),
+            format!(
+                r#"{{"type":"assistant","isSidechain":true,"message":{{"id":"msg-sub","model":"claude-haiku-4-5","content":[{{"type":"text","text":"서브 응답"}}],{}}}}}"#,
+                usage(5, 50, 500, 5)
+            ),
+            // 서브 완료 후 claude가 task-notification을 새 user 프롬프트로 주입.
+            r#"{"type":"user","message":{"role":"user","content":"[task-notification] 서브 완료"}}"#.into(),
+            // Stop#2 직전 새 메인 응답.
+            format!(
+                r#"{{"type":"assistant","message":{{"id":"msg-new","model":"claude-opus-5","content":[{{"type":"text","text":"새 응답"}}],{}}}}}"#,
+                usage(10, 100, 1_000, 50)
+            ),
+        ];
+        let path = dir.join("transcript.jsonl");
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        let body = serde_json::json!({ "transcript_path": path.to_string_lossy() })
+            .to_string()
+            .into_bytes();
+
+        let (tokens, newest_id) = claude_transcript_usage(&body, Some("msg-wm")).unwrap();
+        // 사이드체인(msg-sub) 몫과 메인(msg-new) 몫이 프롬프트 경계를 넘어 모두 합산된다.
+        assert_eq!(tokens.input, Some(5 + 10));
+        assert_eq!(tokens.output, Some(50 + 100));
+        assert_eq!(tokens.cache_read, Some(500 + 1_000));
+        assert_eq!(tokens.cache_write, Some(5 + 50));
+        assert_eq!(newest_id.as_deref(), Some("msg-new"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 필수 1 회귀 테스트: 워터마크 id가 2MB 꼬리 안에 없으면(꼬리 밖으로
+    /// 밀려남) 무제한 과대 집계 대신 프롬프트 경계 스냅샷으로 강등한다 —
+    /// 그 앞(더 과거) 구간의 사용량은 섞이지 않는다. 결과가 워터마크 없이
+    /// 프롬프트 경계에서 멈춘 스캔과 같아야 한다.
+    #[test]
+    fn watermark_not_found_in_tail_demotes_to_the_prompt_boundary_snapshot() {
+        use super::claude_transcript_usage;
+        let dir = std::env::temp_dir().join(format!(
+            "agent-office-usage-watermark-demote-test-{}",
+            uuid::Uuid::new_v4(),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let usage = |input, out, read, write| {
+            format!(
+                r#""usage":{{"input_tokens":{input},"output_tokens":{out},"cache_read_input_tokens":{read},"cache_creation_input_tokens":{write}}}"#
+            )
+        };
+        let lines = [
+            // 프롬프트 경계보다 앞(더 과거) 구간 — 섞이면 안 된다.
+            format!(
+                r#"{{"type":"assistant","message":{{"id":"msg-old","model":"claude-opus-5","content":[{{"type":"text","text":"직전 턴"}}],{}}}}}"#,
+                usage(999, 999, 999, 999)
+            ),
+            r#"{"type":"user","message":{"role":"user","content":"이번 턴 지시"}}"#.into(),
+            format!(
+                r#"{{"type":"assistant","message":{{"id":"msg-new","model":"claude-opus-5","content":[{{"type":"text","text":"응답"}}],{}}}}}"#,
+                usage(10, 100, 1_000, 50)
+            ),
+            format!(
+                r#"{{"type":"assistant","isSidechain":true,"message":{{"id":"msg-sub","model":"claude-haiku-4-5","content":[{{"type":"text","text":"서브 응답"}}],{}}}}}"#,
+                usage(5, 50, 500, 5)
+            ),
+        ];
+        let path = dir.join("transcript.jsonl");
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        let body = serde_json::json!({ "transcript_path": path.to_string_lossy() })
+            .to_string()
+            .into_bytes();
+
+        let (no_watermark, _) = claude_transcript_usage(&body, None).unwrap();
+        let (demoted, newest_id) =
+            claude_transcript_usage(&body, Some("msg-does-not-exist")).unwrap();
+
+        // 워터마크를 못 찾았을 때의 결과는 워터마크 없이 프롬프트 경계에서
+        // 멈춘 스캔과 정확히 같다 — 그 앞 msg-old의 999는 안 섞인다.
+        assert_eq!(demoted.input, no_watermark.input);
+        assert_eq!(demoted.output, no_watermark.output);
+        assert_eq!(demoted.cache_read, no_watermark.cache_read);
+        assert_eq!(demoted.cache_write, no_watermark.cache_write);
+        assert_eq!(demoted.input, Some(10 + 5));
+        assert_eq!(demoted.output, Some(100 + 50));
+        // newest_id는 스냅샷/폴백과 무관하게 "뒤에서부터 처음 만난 것" 그대로.
+        assert_eq!(newest_id.as_deref(), Some("msg-sub"));
 
         let _ = std::fs::remove_dir_all(dir);
     }

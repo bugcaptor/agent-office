@@ -1,6 +1,11 @@
 // src-tauri/src/notification/hub.rs
 //
-// NotificationHub + Clock. `SessionManager` holds an `Arc<NotificationHub>`
+// NotificationHub + Clock. 턴 토큰 사용량(`AppEvents::turn_usage`)은 알림
+// 경로(dedup/hold/running==0 게이트)와 **분리**돼 있다 — `ingest_observer`의
+// Stop 팔에서 알림 게이트보다 먼저 방출하므로, 게이트가 알림을 억제해도
+// 사용량은 유실되지 않는다(docs/session-analytics-design.md §9.1).
+//
+// `SessionManager` holds an `Arc<NotificationHub>`
 // concretely (not a trait object), and even SessionManager's own unit tests
 // need a real `NotificationHub` to construct one — so this module has to
 // exist and compile before SessionManager's tests can run, even though this
@@ -246,6 +251,22 @@ impl NotificationHub {
                 // 이슈 #41: 턴이 종료되면(자동답변 후 케이스 포함) 보류 중인 질문
                 // 알림을 폐기한다 — 질문+완료 이중 알림 방지. running 값과 무관.
                 self.held.lock().unwrap().remove(session_id);
+                // 사용량은 알림(running==0 게이트)·dedup과 완전히 독립된 채널로
+                // 먼저 방출한다 — 백그라운드 서브에이전트가 남아 아래 running==0
+                // 게이트가 알림을 억제해도, 그 턴이 쓴 토큰만은 유실되지 않는다
+                // (이 게이트 때문에 그 턴의 running==0 Stop이 다시는 오지 않는다:
+                // 서브 완료 후 claude가 task-notification을 새 프롬프트로 주입해
+                // 새 턴을 열어버린다 — docs/session-analytics-design.md §9.1).
+                if let Some(tokens) = tokens.clone() {
+                    if let Some(agent_id) = self.registry.resolve_agent(session_id) {
+                        self.events.turn_usage(&TurnUsageEvent {
+                            agent_id,
+                            session_id: session_id.to_string(),
+                            at: self.clock.now_ms(),
+                            tokens,
+                        });
+                    }
+                }
                 self.ingest_subagent_count(session_id, running);
                 // 백그라운드 서브에이전트가 아직 도는 중의 Stop은 턴 경계일 뿐
                 // 완료가 아니다 — 알림을 내지 않는다(이슈 #27). 렌더러의 턴
@@ -253,13 +274,12 @@ impl NotificationHub {
                 // 일하는 동안 "일하는 중" 표시가 유지된다(이슈 #25). 최종
                 // Stop(running=0)에서만 알림·정산한다.
                 if running == 0 {
-                    self.ingest_with_tokens(
+                    self.ingest(
                         session_id,
                         NotificationSource::Stop,
                         message
                             .filter(|value| !value.trim().is_empty())
                             .unwrap_or_else(|| stop_fallback(self.lang()).to_string()),
-                        tokens,
                     )
                 }
             }
@@ -325,20 +345,11 @@ impl NotificationHub {
         );
     }
 
+    /// hook/Stop/Bell 알림을 dedup·홀드 규칙을 거쳐 방출한다. 턴 토큰 사용량은
+    /// 이 경로에 실리지 않는다 — `ingest_observer`의 Stop 팔이 `AppEvents::turn_usage`로
+    /// 먼저 따로 방출한다(위 주석 참고). 그래서 dedup으로 억제되거나 세션이
+    /// 죽어 알림이 폐기돼도 사용량은 영향받지 않는다.
     fn ingest(&self, session_id: &str, source: NotificationSource, message: String) {
-        self.ingest_with_tokens(session_id, source, message, None);
-    }
-
-    /// `ingest` + 턴 토큰 사용량. Stop 경로에서만 Some이 들어온다 — dedup으로
-    /// 억제되거나 세션이 죽어 폐기되면 사용량도 함께 버려진다(그 턴의 시계열
-    /// stop 레코드 자체가 없으므로 붙일 곳이 없다).
-    fn ingest_with_tokens(
-        &self,
-        session_id: &str,
-        source: NotificationSource,
-        message: String,
-        tokens: Option<SessionEventTokens>,
-    ) {
         // 죽은/미지 세션의 hook은 폐기.
         let Some(agent_id) = self.registry.resolve_agent(session_id) else {
             return;
@@ -370,7 +381,6 @@ impl NotificationHub {
             message,
             dedup_key: key,
             at: self.clock.now_ms(),
-            tokens,
         };
 
         // 이슈 #41: 오토모드 홀드. Hook 알림은 hold_duration 동안 보류했다가

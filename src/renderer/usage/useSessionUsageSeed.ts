@@ -3,8 +3,8 @@
 // 터미널 요약 바 사용량 표시용 과거 시드 로더(docs/session-analytics-design.md
 // §11). 방금 재시작한 앱에서 계속 진행 중이던 세션의 누계가 0으로 보이지
 // 않도록, 부팅 뒤 한 번 최근 `SEED_WINDOW_MS` 구간의 세션 이벤트를 읽어
-// `aggregateSeed`로 세션별 누계를 스토어에 심는다. 그 뒤로는 실시간 알림
-// (`applyNotificationUsage`)이 `at > seed.at`인 턴만 더해 이중 계산을 막는다.
+// `aggregateSeed`로 세션별 누계를 스토어에 심는다. 그 뒤로는 실시간 사용량
+// (`applyTurnUsage`)이 `at > seed.at`인 턴만 더해 이중 계산을 막는다.
 //
 // 설정 `sessionCostEnabled`가 꺼져 있으면 아무것도 하지 않는다 — 표시 자체를
 // 안 쓰는데 세션 이벤트 파일을 읽을 이유가 없다. 모듈 스코프 플래그
@@ -58,8 +58,11 @@ export function useSessionUsageSeed(): void {
       // 뒤에 오는 실시간 알림은 이 시각보다 뒤에 온다(§11.3 원래 경계와 동일).
       const firstAt = useAppStore.getState().sessionUsageFirstAt;
       const cut = firstAt !== null ? firstAt - 1 : Date.now();
+      // "stop"·"usage" 둘 다 읽는다 — 과거 파일은 tokens가 stop에, 신규
+      // 파일은 usage에 실리므로 두 kind 모두 스캔해야 신구 파일을 다 커버한다
+      // (실제 합산 판정은 `aggregateSeed`가 tokens 유무로 한다).
       void tauriApi
-        .loadSessionEvents(cut - SEED_WINDOW_MS, cut, ["stop"])
+        .loadSessionEvents(cut - SEED_WINDOW_MS, cut, ["stop", "usage"])
         .then((records) => {
           useAppStore.getState().setSessionUsageSeed({ at: cut, bySession: aggregateSeed(records, cut) });
         })
