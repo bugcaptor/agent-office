@@ -135,14 +135,31 @@ pub fn load_session_events(root: &Path, from_at: u64, to_at: u64) -> Vec<Session
 `SessionEventRecord`에 옵션 필드 `tokens`를 더한다(`{input, output, cacheRead,
 cacheWrite, model}`, 전부 옵션). **`schemaVersion`은 1을 유지한다** — 옵션 추가는
 하위호환이고, 토큰이 없는 과거 파일과 한 디렉터리에 섞여도 그대로 읽힌다.
-`kind="stop"` 레코드에만, 그것도 추출에 성공했을 때만 실린다.
+과거 파일은 `kind="stop"` 레코드에 실렸지만, 지금은 전용 `kind="usage"` 레코드에만
+실린다(아래 배선 참고) — **소비자는 kind가 아니라 tokens 유무로 합산해야** 신구
+파일을 모두 커버한다.
 
-배선은 기존 알림 경로를 그대로 탄다:
-`ObserverEvent::Stop{tokens}` → `NotificationHub::ingest_with_tokens` →
-`NotificationEvent{tokens}` → `RecordingAppEvents` → stop 레코드.
-따라서 **알림이 나가지 않는 Stop(서브에이전트 진행 중 running>0, dedup 억제,
-죽은 세션)은 사용량도 함께 버려진다** — 그 턴의 stop 레코드 자체가 없어 붙일
-곳이 없기 때문이다. 의도된 트레이드오프다.
+**배선은 알림과 분리된 별도 채널이다**: `ObserverEvent::Stop{tokens}` → hub가
+알림 게이트(`running==0`)·dedup보다 **먼저** `AppEvents::turn_usage`를 호출 →
+`RecordingAppEvents`가 `kind="usage"` 레코드를 기록하고 `TauriEvents`가
+`"turn-usage"` 이벤트를 emit한다(`CompositeEvents`가 둘 다에 전달). 알림 경로
+(`notification_new`)는 더 이상 tokens를 만지지 않으므로, 신규 `kind="stop"`
+레코드에는 tokens가 애초에 안 실린다.
+
+원래는 사용량 계측이 알림 방출에 업혀 있었다 — Stop이 dedup·hold·`running==0`
+게이트로 억제되면 그 턴의 stop 레코드 자체가 안 생겨 토큰이 영구 유실됐다.
+특히 백그라운드 서브에이전트가 남은 채 턴이 끝나는 흔한 경우가 문제였다: 그
+턴의 `running==0` Stop은 영영 오지 않는다 — 서브 완료 후 claude가
+`task-notification`을 새 user 프롬프트로 주입해 새 턴을 열어 버리고, 그
+프롬프트가 다음 사용량 스캔의 경계가 되기 때문이다(실전사로 확인). 사용량을
+알림에서 분리해 이 유실 경로를 없앴다 — 지금은 억제된 Stop에서도
+`turn_usage`가 먼저 방출된다(§11.1에 실시간 wire 쪽 변화를 이어서 적는다).
+
+전환기 이중 계산은 **구조적으로 없다**: 새로 쓰이는 `kind="stop"` 레코드에는
+애초에 tokens가 안 실리므로, 과거 stop 레코드(tokens 있음)와 신규 usage
+레코드가 겹쳐 같은 턴을 두 번 세는 경우가 생기지 않는다. 남는 유실은
+**죽은/미지 세션뿐**이다 — hub가 `resolve_agent`로 agentId를 못 찾는
+session_id의 Stop은 usage도 알림도 둘 다 폐기된다(붙일 곳이 없다).
 
 `input`은 **캐시를 제외한 순수 입력**으로 정규화한다(Claude `input_tokens`,
 Codex `input_tokens - cached_input_tokens`). 세 입력 항목을 더해야 전체 입력이
@@ -151,9 +168,12 @@ Codex `input_tokens - cached_input_tokens`). 세 입력 항목을 더해야 전�
 ### 9.2 추출 — Claude
 
 Stop 훅 body의 `transcript_path`(JSONL) **꼬리 2MB**를 읽어 뒤에서부터 스캔하며,
-`type=="assistant"` 줄의 `message.usage`를 합산한다. 종료 조건은 "첫 진짜 사용자
-프롬프트 줄"(`is_real_user_prompt` — tool_result만 있는 user 줄은 경계가 아니다)로,
-완료 메시지 추출(§이슈 #39)이 쓰는 판정을 그대로 재사용한다.
+`type=="assistant"` 줄의 `message.usage`를 합산한다. 스캔 종료 조건은
+**워터마크 유무로 갈린다**(우선순위 규칙, 아래 참고): 워터마크가 없으면
+"첫 진짜 사용자 프롬프트 줄"(`is_real_user_prompt` — tool_result만 있는 user
+줄은 경계가 아니다, 완료 메시지 추출(§이슈 #39)이 쓰는 판정을 그대로 재사용)에서
+멈추고, 워터마크가 있으면 프롬프트 경계를 넘어 워터마크 `message.id`를 만날
+때까지 계속 스캔한다.
 
 두 가지 함정을 코드가 명시적으로 다룬다.
 
@@ -169,6 +189,46 @@ Stop 훅 body의 `transcript_path`(JSONL) **꼬리 2MB**를 읽어 뒤에서부�
 합산해야 하고, 이 방식은 상태를 들지 않아 앱 재시작·세션 입양 후에도 정확하다.
 꼬리 2MB 안에서 경계를 못 찾으면 찾은 데까지만 합산한다(과소 집계로 강등).
 
+**워터마크(이중 계산 방지) — 프롬프트 경계보다 우선한다**: `ClaudeAdapter`가
+transcript_path별로 마지막 합산 시점의 가장 최근 `message.id`를
+`transcript_usage_watermark: Mutex<HashMap<String, Arc<Mutex<Option<String>>>>>`에
+들고 있다. `transcript_progress`(내레이션 스로틀용, Stop에서 지운다)와는
+수명이 달라 별도 맵이다 — 같은 프롬프트 창 안에서 Stop이 두 번째로 와도
+(백그라운드 서브에이전트가 남아 있던 `running>0` Stop 뒤 재호출 등) 그
+경계를 넘어 남아 있어야 직전 Stop이 이미 합산한 몫을 다시 세지 않는다.
+
+프롬프트 경계에서 그냥 멈추면 안 되는 이유가 따로 있다: 서브에이전트는
+Stop 이후에도 사이드체인(`isSidechain:true`) 줄을 계속 append하고(대개 이 턴
+비용의 대부분), 서브 완료 후 claude가 `task-notification`을 새 user 프롬프트로
+주입한다. 그 주입 줄이 워터마크보다 먼저 걸려 버리면 그 사이드체인 몫이
+통째로 새 나간다. 그래서 워터마크가 있을 때는 프롬프트 경계에서 **첫 진짜
+사용자 프롬프트 지점까지의 합계를 스냅샷**만 해 두고 계속 스캔해 워터마크
+`message.id`를 찾는다. 워터마크를 만나면 스냅샷은 버리고 그 지점까지의
+**전체 합계**를 쓴다(정상 경로). 워터마크가 2MB 꼬리 밖으로 밀려나 끝내 못
+찾으면 무제한 과대 집계 대신 **프롬프트 경계 스냅샷으로 강등**한다 — 이 경우
+다음 Stop부터는 워터마크가 최근 id로 갱신돼 있으므로 다시 짧아진다.
+워터마크가 아예 없으면(앱 재시작 직후 등) 종전과 동일하게 프롬프트 경계에서
+멈춘다 — 이 경로는 동작 변화가 없다.
+
+워터마크 비교는 **`message.id` 중복 제거(dedup) 삽입보다 먼저** 한다 —
+꼬리부터 스캔하므로 같은 id의 더 새 줄이 먼저 나오는데, dedup을 먼저 태우면
+그 줄이 카운트된 뒤에야 워터마크에 걸려 이중 계산이 되기 때문이다. 대표
+`model`과 다음 워터마크 후보(`newest_id`, "뒤에서부터 처음 만난 것")는 이
+스냅샷/강등과 무관하게 그대로 결정된다.
+
+앱을 재시작하면 이 맵이 비므로, 재시작 후 첫 Stop이 잡는 턴 창이 실제보다
+한 턴만큼 과대 집계될 수 있다 — 수용된 한계다. 맵은 세션이 끝나도 지워지지
+않는 누수가 있지만 세션당 문자열 2개(경로+id) 규모라 무시할 만하다.
+
+**동시성(TOCTOU)**: 훅 수신은 axum+tokio 멀티스레드고 forwarder에 1회 재시도가
+있어 같은 Stop body가 겹쳐 들어올 수 있다. 조회(`get`)와 갱신(`insert`)을
+따로 락을 잡으면 두 스레드가 같은 워터마크를 읽고 같은 구간을 두 번 합산하는
+경합이 생긴다(막으려던 이중 계산이 되레 재발). 그래서 값 타입을
+`Arc<Mutex<Option<String>>>`로 둬 전사 경로별 락을 얻은 뒤, 그 내부 락을
+조회~전사 읽기~합산~갱신 내내 유지해 같은 경로에 대한 겹친 Stop을 직렬화한다.
+바깥 맵 락은 그 경로별 락을 꺼내는 짧은 순간만 잡는다 — 전역 락을 IO 동안
+잡으면 다른 세션의 Stop 훅(2초 타임아웃)까지 막힌다.
+
 ### 9.3 추출 — Codex
 
 Codex 훅 body에는 사용량이 없다. rollout(`<CODEX_HOME>/sessions/YYYY/MM/DD/
@@ -179,13 +239,30 @@ rollout-*.jsonl`)의 `token_count` 이벤트가 `info.total_token_usage`(**세�
   중 추가 지시) 기준을 밀지 않는다 — 그 사이에 쓴 토큰이 새기 때문.
 - Stop에서 `현재 − 기준`을 싣고 현재 값을 새 기준으로 갱신한다. 기준이 없으면(앱이
   세션 도중에 켜짐) **그 턴은 조용히 생략**하고 기준만 심는다 — 세션 누계 전체를 한
-  턴에 몰아넣는 과대 집계보다 누락이 낫다.
+  턴에 몰아넣는 과대 집계보다 누락이 낫다. **단, 신선한 세션은 예외다**:
+  UserPromptSubmit 시점에 rollout을 찾았는데 꼬리에 `token_count`가 한 번도 없고,
+  그 시점에 파일 전체가 꼬리 읽기 상한(`ROLLOUT_TAIL_BYTES` = 1MB) 안에 이미 다
+  들어와 있으면(`metadata(path).len() <= ROLLOUT_TAIL_BYTES`) "누계가 진짜
+  0"임이 증명된 것으로 보고 기준 0을 심는다 — 그래야 그 세션의 첫 턴이 통째로
+  생략되지 않는다. 이 증명이 안 되는(꼬리 상한에 걸려 잘린) 파일은 기존대로
+  생략한다 — 앞쪽 어딘가에 `token_count`가 있을 수 있는데 못 봤을 뿐인지,
+  진짜 0인지 구분이 안 되기 때문이다.
 - rollout 찾기는 훅 body의 `session_id`가 파일명 꼬리(`...-<id>.jsonl`)와 같다는
   규약을 먼저 쓰고, 없으면 `cwd`와 첫 줄 `session_meta.cwd`가 같은 최근 파일로
   폴백한다(`session_log/agent_transcript/codex.rs`와 같은 휴리스틱). 찾은 경로는
   세션별로 캐시한다.
+- cwd 폴백(`find_by_cwd`)은 **부모 스레드가 있는 rollout을 제외**한다. 처음엔
+  `session_meta.payload.thread_source == "subagent"` 단일 비교였지만, 같은 cwd에
+  `thread_source: "guardian_review"`이면서 `parent_thread_id`를 든 rollout이
+  실측에서 확인됐다(서브 스레드인데 값이 "subagent"가 아니었다) — 지금은
+  `payload.parent_thread_id`가 null이 아니면(어떤 thread_source든) 배제한다.
 - 모델은 `turn_context.payload.model`. 꼬리에서 만나면 그 값을, 못 만나면 파일
   앞머리(256KB)에서 읽어 캐시해 둔 첫 모델을 쓴다.
+
+**미대응 한계 — rollout 생성 레이스**: 새 세션의 rollout 파일이 아직 디스크에
+안 나타난 극초반 구간에는 cwd 폴백이 옛 세션의 rollout을 잘못 고를 가능성이
+이론상 있다. `session_meta`의 timestamp를 비교해 더 새 rollout만 고르는 보조
+규칙을 검토했으나 구현하지 않았다 — 실사용에서 관측되면 그때 추가한다.
 
 pi는 전사/rollout 경로가 없어 항상 `tokens: None`이다.
 
@@ -242,19 +319,43 @@ pi는 전사/rollout 경로가 없어 항상 `tokens: None`이다.
 "지금 이 세션이 얼마나 먹었는지"를 실시간으로 보고 싶다는 요구가 따로 있어,
 활성 탭 요약 바(`TerminalSummaryBar`, §4.4의 그 바가 아니라 이슈 #44 T1의 라벨
 바) 오른쪽 끝에 같은 턴 단위 토큰·비용을 얹었다. **분석 패널과 데이터 원천은
-같다**(§9.1의 stop 레코드 `tokens`) — 여기는 그것을 "지금 이 세션"으로 좁혀
-실시간으로 보여줄 뿐, 새 추출·단가 로직을 만들지 않는다(`renderer/analytics/pricing.ts`
-그대로 재사용).
+같다**(§9.1의 `tokens` — 추출 로직도 동일) — 여기는 그것을 "지금 이 세션"으로
+좁혀 실시간으로 보여줄 뿐, 새 추출·단가 로직을 만들지 않는다
+(`renderer/analytics/pricing.ts` 그대로 재사용).
 
-### 11.1 왜 실시간 wire가 필요했나 — `skip_serializing` 해제
+### 11.1 왜 알림에서 분리했나 — `turn-usage` 신설
 
-`NotificationEvent.tokens`는 원래 백엔드 내부 운반 전용이었다(`RecordingAppEvents`가
-stop 레코드로 옮겨 담는 것 말고는 쓸 데가 없어서 `#[serde(skip_serializing)]`로
-막아 뒀다 — §9.1 도입 당시). 실시간 표시는 정확히 그 알림 페이로드가 필요하므로
-`skip_serializing_if = "Option::is_none"`으로 바꿨다: 값이 없는 알림(질문/벨,
-추출 실패)은 여전히 `tokens` 키 자체가 안 실려 TS `NotificationEvent.tokens?`
-미러와 계약이 그대로 맞고, 값이 있는 Stop만 camelCase 하위 필드와 함께 wire에
-오른다.
+처음엔 `NotificationEvent.tokens`를 그대로 wire에 실어 실시간 표시에 쓰는
+쪽으로 갔었다(§9.1 도입 당시엔 백엔드 내부 운반 전용이라
+`#[serde(skip_serializing)]`로 막혀 있었다). 하지만 알림 페이로드에 얹는
+방식은 §9.1이 이미 갖고 있던 근본 문제를 그대로 물려받는다 — 알림이
+dedup·hold·`running==0` 게이트로 억제되면 그 턴의 토큰도 함께 사라진다.
+하필 실시간 표시가 가장 아쉬운 순간(백그라운드 서브에이전트가 남은 채 턴이
+끝나는 흔한 경우)마다 이 게이트가 걸려, 터미널 요약 바의 토큰·비용이
+대부분 세션에서 뜨지 않는 상태였다.
+
+그래서 사용량을 알림에서 완전히 분리했다: `NotificationEvent.tokens` 필드는
+**삭제**하고, 대신 독립 이벤트 `"turn-usage"`(`TurnUsageEvent`, Option이
+아닌 `tokens` — 값이 있을 때만 방출한다는 계약을 타입으로 못박는다)를
+신설해 hub가 알림 게이트·dedup보다 **먼저** 방출한다(§9.1). 실시간 표시는
+더 이상 `NotificationEvent`를 거치지 않고 `tauriApi.onTurnUsage`를 구독해
+`appStore.applyTurnUsage(e: TurnUsageEvent)`로 누계를 갱신한다.
+
+이벤트를 새로 하나 추가하는 일이라 손대는 접점이 커맨드의 5접점(§4.2)과는
+다르다 — 실제로 고친 7곳:
+
+| # | 파일 | 역할 |
+|---|---|---|
+| 1 | `src-tauri/src/types.rs` | `TurnUsageEvent` 정의 |
+| 2 | `src-tauri/src/state.rs` | `AppEvents::turn_usage` 기본 no-op / `TauriEvents` emit / `CompositeEvents` 전달 / 테스트용 `RecordingEvents` 수집 |
+| 3 | `src/shared/ipc.ts` | `Events.turnUsage = "turn-usage"` |
+| 4 | `src/shared/types/notification.ts` | TS `TurnUsageEvent` 미러 |
+| 5 | `src/shared/types/api.ts` | `AgentOfficeApi.onTurnUsage` |
+| 6 | `src/renderer/ipc/tauriApi.ts` | `onTurnUsage` 구현 |
+| 7 | `src/renderer/ipc/sessionBridge.ts` | 구독 배선 |
+
+`lib.rs`(커맨드 등록)와 `ipc/commands*`는 이번엔 손대지 않았다 — 이벤트는
+커맨드가 아니라서 그 접점들이 아예 관여하지 않는다.
 
 ### 11.2 세션 경계와 리셋 규칙
 
@@ -276,32 +377,34 @@ stop 레코드로 옮겨 담는 것 말고는 쓸 데가 없어서 `#[serde(skip
 
 ### 11.3 시드 + 이중 계산 방지(3일 창의 한계)
 
-방금 재시작한 앱은 실시간 알림이 하나도 안 왔으니 누계가 0으로 보인다 — 그
+방금 재시작한 앱은 실시간 사용량이 하나도 안 왔으니 누계가 0으로 보인다 — 그
 세션이 어제부터 계속 진행 중이었어도. `useSessionUsageSeed` 훅이 **앱 수명당
-1회**, `loadSessionEvents(cut - 3일, cut, ["stop"])`로 과거 세션 이벤트를 읽어
-`aggregateSeed`(kind=stop ∧ tokens 존재 ∧ `at <= cut`만 세션별 합산)로 초기
-누계를 만들고 `sessionUsageSeed = {at: cut, bySession}`에 한 번만 심는다(이미
-있으면 no-op — 재시도하지 않는다는 뜻이기도 하다. 실패해도 조용히 삼키고 실시간
-누계만 보여준다).
+1회**, `loadSessionEvents(cut - 3일, cut, ["stop", "usage"])`로 과거 세션
+이벤트를 읽어 `aggregateSeed`(**tokens 존재** ∧ `at <= cut`만 세션별 합산 —
+kind는 안 본다) 로 초기 누계를 만들고 `sessionUsageSeed = {at: cut, bySession}`에
+한 번만 심는다(이미 있으면 no-op — 재시도하지 않는다는 뜻이기도 하다. 실패해도
+조용히 삼키고 실시간 누계만 보여준다). `"stop"`·`"usage"` 둘 다 읽는 이유는
+과거 파일이 tokens를 stop에, 신규 파일이 usage에 싣기 때문이다(§9.1) — kind로
+걸러내면 한쪽 세대의 파일이 통째로 빠진다.
 
 **이중 계산을 막는 경계(컷오프 `cut`)는 "훅이 도는 시각"이 아니라 "실시간이
 실제로 처음 센 턴의 시각"이다.** 처음 버전은 시드를 부르는 시각(`Date.now()`)을
 그대로 컷오프로 썼는데, 이건 **순서 의존**이었다 — 시드가 부르기 전에 실시간
-알림이 먼저 몇 턴을 반영해 버리면(예: A 수정으로 설정 하이드레이션을 기다리게
+사용량이 먼저 몇 턴을 반영해 버리면(예: A 수정으로 설정 하이드레이션을 기다리게
 되면서 시딩이 늦게 시작되는 경우), 그 구간이 실시간 누계에도 들어가고 시드
 조회 범위(`cut`이 그 이후 시각이므로)에도 다시 걸려 **토큰·비용·턴 수가 정확히
 2배**로 집계됐다(코드 리뷰 B). 순서가 코드로 강제되지 않는 한 이 경합은 항상
 재현 가능하다.
 
 그래서 스토어에 `sessionUsageFirstAt: number | null`을 두고,
-`applyNotificationUsage`가 **실제로 누계에 반영한 첫 턴**의 `e.at`을 기록한다
-(무시된 알림은 기록하지 않는다 — 판정 자체가 바뀌진 않는다, 아래 참조). 훅은
+`applyTurnUsage`가 **실제로 누계에 반영한 첫 턴**의 `e.at`을 기록한다
+(무시된 사용량은 기록하지 않는다 — 판정 자체가 바뀌진 않는다, 아래 참조). 훅은
 `cut = firstAt !== null ? firstAt - 1 : Date.now()`로 컷오프를 잡는다 — 실시간이
 이미 어떤 턴을 반영했으면 그 턴 바로 이전까지만 시드가 긁으므로, 시드가 아무리
 늦게 도착해도 실시간과 겹치는 구간이 **구조적으로** 없다. 아직 실시간이 한
-턴도 못 봤으면 지금 이 순간까지 긁는다 — 그 뒤에 오는 실시간 알림은 이 시각보다
-뒤에 온다(원래 경계와 동일한 안전성). `applyNotificationUsage`의 판정 자체
-(`e.at <= sessionUsageSeed.at`이면 버림)는 그대로다 — 늦게 도착한 과거 알림을
+턴도 못 봤으면 지금 이 순간까지 긁는다 — 그 뒤에 오는 실시간 사용량은 이 시각보다
+뒤에 온다(원래 경계와 동일한 안전성). `applyTurnUsage`의 판정 자체
+(`e.at <= sessionUsageSeed.at`이면 버림)는 그대로다 — 늦게 도착한 과거 사용량을
 거르는 방어는 여전히 필요하다.
 
 화면에 낼 값은 `sessionUsage[activeId].totals`(cut 이후 실시간 누계)와
@@ -314,13 +417,41 @@ stop 레코드로 옮겨 담는 것 말고는 쓸 데가 없어서 `#[serde(skip
 이 세션 누계"는 참고용 실시간 수치이지 정산 근거가 아니다(정확한 기간 집계는
 분석 패널 몫).
 
-### 11.4 승계된 트레이드오프 — 억제된 Stop은 사용량도 버려진다
+### 11.4 해소된 문제와 남은 한계
 
-§9.1에서 이미 정한 대로: 알림이 나가지 않는 Stop(서브에이전트 진행 중, dedup
-억제, 죽은 세션)은 그 턴의 stop 레코드 자체가 없어 시계열에도 안 남는다. 이
-확장은 그 시계열을 그대로 읽으므로 같은 구멍을 그대로 물려받는다 — 터미널 요약
-바의 누계도 분석 패널과 똑같이 그런 턴을 놓친다. 새 손실 지점이 아니라 기존
-한계의 재사용이다.
+**"억제된 Stop은 사용량도 버려진다"는 해소됐다.** 원래는 백그라운드
+서브에이전트가 남은 채 턴이 끝나면 hub의 `running==0` 게이트가 알림을
+억제하고, 그 턴의 stop 레코드 자체가 안 생겨 토큰이 영구 유실됐다(§9.1) —
+그 턴의 `running==0` Stop은 영영 오지 않는다: 서브 완료 후 claude가
+`task-notification`을 새 user 프롬프트로 주입해 새 턴을 열어 버리고, 그
+프롬프트가 다음 사용량 스캔의 경계가 되기 때문이다(실전사로 확인). 해결은
+사용량을 알림 경로에서 완전히 분리한 것이다(§11.1) — `turn-usage`는 hub의
+게이트·dedup보다 먼저 방출되므로 억제된 Stop에서도 유실되지 않는다.
+
+**잔존 한계**는 다음 세 가지로 재정의된다.
+
+- **죽은/미지 세션**: hub가 `resolve_agent`로 agentId를 못 찾는 session_id의
+  Stop은 usage도 알림도 둘 다 폐기된다 — 붙일 agentId 자체가 없다.
+- **앱 재시작 후 첫 Stop의 워터마크 부재**(Claude, §9.2): 워터마크는 프로세스
+  메모리에만 있어 앱을 재시작하면 사라진다. 재시작 후 첫 Stop이 잡는 턴 창이
+  실제보다 한 턴만큼 과대 집계될 수 있다.
+- **Codex 장수 세션의 꼬리 상한**(§9.3): rollout이 꼬리 읽기 상한(1MB)보다
+  커진 세션은 `token_count`를 못 찾아도 "누계가 진짜 0"이라는 증명이 안 되므로
+  기준 0을 심지 않는다 — 신선한 세션과 달리 그 첫 턴은 여전히 생략될 수 있다.
+- **죽은/미지 세션에서 usage가 폐기돼도 워터마크는 이미 전진해 있다**
+  (Claude, §9.2): `map_hook`이 워터마크를 전진시키는 건 `ClaudeAdapter`가
+  전사를 스캔한 부수효과일 뿐, hub가 그 `ObserverEvent::Stop`을 실제로
+  `turn_usage`로 이어 붙이는 데 성공했는지와 무관하다. hub가 `resolve_agent`
+  실패로 그 Stop을 버려도(위 첫 항목) 워터마크는 이미 다음 `message.id`로
+  갱신된 뒤다 — 입양/재시작 직후 registry 등록 전에 훅이 먼저 도착하는 경로가
+  실재해서, 그 구간의 토큰은 다음 Stop이 와도 워터마크 뒤라 다시 셀 방법이
+  없이 영구 유실된다.
+- **요약 바의 "턴 수" 의미가 바뀌었다**: 억제된 Stop도 이제 usage를 낸다
+  (§11.1). 그래서 사용자가 한 번 지시한 요청이 백그라운드 서브에이전트를
+  띄우면, 그 진행 중 Stop과 서브 완료 후 Stop이 각각 usage를 하나씩 내
+  요약 바의 턴 수가 2로 잡힌다 — 예전의 "턴 = 억제되지 않은 완료 알림"과는
+  다른 의미다. 다만 분석 패널의 `reconstructTurns`가 세는 턴 경계(프롬프트~
+  다음 프롬프트/session_state)와는 오히려 더 가까워졌다.
 
 ### 11.5 설정 게이트 — 하이드레이션을 기다린다
 
@@ -384,12 +515,14 @@ Rust 쪽에서 끝낸다(`None`이면 현행 그대로 전부 — 분석 패널�
 동작이 그대로다). IPC 커맨드도 같은 모양의 옵셔널 `kinds`를 받고,
 `loadSessionEvents(fromAt, toAt, kinds?)`가 5접점 계약
 (`ipc/commands.rs`/`lib.rs`/`shared/ipc.ts`/`renderer/ipc/tauriApi.ts`/
-`shared/types/api.ts`)을 그대로 통과한다. `useSessionUsageSeed`는 `["stop"]`만
-넘긴다.
+`shared/types/api.ts`)을 그대로 통과한다. `useSessionUsageSeed`는 지금은
+`["stop", "usage"]`를 넘긴다(§9.1의 kind 분리 이후 — 실측 당시엔 `kind=stop`뿐이었다).
+(이 5접점은 **커맨드** 계약이다. **이벤트**를 추가할 때 손대는 접점은 다르다 —
+`turn-usage` 신설이 실제로 고친 7곳은 §11.1 끝의 표 참고.)
 
 시딩 자체도 부팅 크리티컬 패스에서 뺐다 — 게이트(§11.5)를 통과한 뒤
 `setTimeout(..., 0)`으로 한 틱 미루고 언마운트 시 타이머를 정리한다. §11.3의
 `firstAt` 기반 컷오프 덕에 이 지연이 안전하다: 시딩이 늦게 끝나서 그 사이
-실시간 알림이 먼저 몇 턴을 반영해도, 컷오프를 스토어에서 **실행 시점에 직접**
+실시간 사용량이 먼저 몇 턴을 반영해도, 컷오프를 스토어에서 **실행 시점에 직접**
 읽어(훅 클로저에 캡처해 둔 값이 아니라) `firstAt`을 최신값으로 잡으므로 이중
 계산이 생기지 않는다.
