@@ -325,7 +325,7 @@ impl SessionManager {
             })
             .unwrap_or_default();
         if observer_url.is_some() {
-            match pi_extension::ensure_extension() {
+            match pi_extension::ensure_extension(self.app_data_dir.as_deref()) {
                 Ok(path) => {
                     plan.env.push((
                         "AGENT_OFFICE_PI_EXT".into(),
@@ -338,7 +338,9 @@ impl SessionManager {
                             WrapperArg::Env("AGENT_OFFICE_PI_EXT".into()),
                         ],
                         skip_if_present: vec![],
-                        // 확장 파일은 OS temp에 있어 장수 세션에서는 청소될 수 있다.
+                        // 확장 파일은 app_data(`<app_data>/observer/pi`)에 있고
+                        // 부팅 때마다 다시 쓰이지만, app_data가 없는 구성은 여전히
+                        // OS temp로 떨어지고 사용자가 파일을 지울 수도 있다.
                         // `pi -e <없는 경로>`는 경고가 아니라 **하드 실패**다
                         // ("Extension path does not exist" 후 즉시 종료, pi v0.84.2
                         // 실측) — claude와 같은 강등 가드를 걸어, 파일이 사라지면

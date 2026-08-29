@@ -394,6 +394,15 @@ pub fn run() {
             // --settings <없는 파일>`이 하드 실패했다. app_data는 앱 수명주기가
             // 소유하며 입양 시 복구(restore_session_artifacts)로 재작성된다.
             let observer_settings_dir = data_dir.join("observer").join("claude");
+            // 같은 이유로 pi 확장 파일도 app_data에 둔다. 이건 세션별이 아니라
+            // 정적 파일 하나라 입양 복구(restore_session_artifacts) 대상이 아니고,
+            // 대신 부팅 때 여기서 한 번 다시 써 둔다 — 그러면 재시작 전에 스폰돼
+            // `AGENT_OFFICE_PI_EXT`를 들고 있는 입양 세션의 경로가 계속 유효하다.
+            if let Err(error) =
+                crate::session::pi_extension::ensure_extension(Some(&data_dir))
+            {
+                eprintln!("agent-office: failed to write pi extension at boot: {error}");
+            }
             // 더블-크래시 등으로 정리 못 한 설정 아티팩트가 app_data에 영구화되지
             // 않도록 부트 시 1회 백그라운드로 30일 초과분을 청소한다(살아 있는
             // 세션은 매 입양마다 재작성돼 mtime이 갱신되므로 안전).

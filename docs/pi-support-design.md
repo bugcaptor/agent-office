@@ -537,8 +537,7 @@ forwarder가 `AGENT_OFFICE_APP_DATA/observer-port`를 읽어 1회 재시도해
   않도록).
 
 실측(죽은 포트 45999 + 포트 파일 45777): prompt·tool·stop 세 건 모두 45777에
-도착. 곁가지로 `AGENT_OFFICE_PI_EXT`(OS temp)가 청소된 입양 세션은 여전히
-래퍼 가드로 `running pi unobserved` 강등된다 — 관찰만 잃고 pi는 뜬다(§10.3).
+도착. 확장 파일 위치 문제는 §11.4에서 함께 정리했다.
 
 ### 11.3 스크롤 롤백 — 앱이 `ESC[3J`를 걸러낸다
 
@@ -564,3 +563,24 @@ write 경로에서 **`ESC[3J`(스크롤백 지우기)만** 떼어 낸다. `ESC[2
 - **대가**: agent-office 터미널 안에서는 `clear` 등이 스크롤백을 지우지 못한다
   (pi 세션뿐 아니라 전 세션 공통). 앱이 보여 주는 히스토리를 자식 프로세스가
   지우는 쪽이 더 손해라는 판단(사용자 결정).
+
+### 11.4 확장 파일을 app_data로 옮겼다 (§10.3의 뒷정리)
+
+`AGENT_OFFICE_PI_EXT`가 가리키던 `<tmp>/agent-office/pi/agent-office-pi.ts`는
+앱이 꺼진 사이 시스템 청소로 사라질 수 있었다. 그러면 입양된 세션의 env가 없는
+경로를 가리켜 래퍼 가드가 `running pi unobserved`로 강등한다 — pi는 뜨지만
+관찰은 영영 안 붙는다(§10.3의 가드는 pi가 하드 실패하는 것만 막아 준다).
+
+Claude 훅 설정이 이슈 #40에서 간 길을 그대로 간다:
+
+- 정본 위치가 **`<app_data>/observer/pi/agent-office-pi.ts`**다
+  (`pi_extension::ensure_extension(app_data)` / `extension_dir`). claude는
+  `<app_data>/observer/claude`.
+- 세션별이 아니라 정적 파일 하나라 입양 복구(`restore_session_artifacts`)의
+  대상이 아니다. 대신 **부팅 때 `lib.rs`가 한 번 다시 쓴다** — 경로가 세션과
+  무관하게 고정이므로, 재시작 전에 스폰돼 env를 들고 있는 입양 세션도 그대로
+  유효한 파일을 가리킨다.
+- `app_data`가 없는 구성(테스트 등)은 예전 temp 경로로 떨어진다. 래퍼의
+  `skip_prefix_if_env_file_missing` 강등 가드는 그대로 남는다 — 사용자가 파일을
+  지우는 경우까지 막아 주지는 못하기 때문이다.
+- GC는 두지 않았다. 세션마다 쌓이는 claude 설정과 달리 파일이 하나뿐이다.

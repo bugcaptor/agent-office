@@ -201,11 +201,30 @@ pub fn write_extension(base: &Path) -> io::Result<PathBuf> {
     Ok(p)
 }
 
-/// Writes the extension into the process-wide scratch location
-/// (`<tmp>/agent-office/pi/agent-office-pi.ts`) and returns its path. Safe to
-/// call once per session — every call rewrites the same static file.
-pub fn ensure_extension() -> io::Result<PathBuf> {
-    let base = std::env::temp_dir().join("agent-office").join("pi");
+/// 확장 파일을 담는 디렉터리. claude 훅 설정(`<app_data>/observer/claude`)과
+/// 같은 결로 `<app_data>/observer/pi`를 쓴다.
+pub fn extension_dir(app_data: &Path) -> PathBuf {
+    app_data.join("observer").join("pi")
+}
+
+/// 확장 파일을 안정 경로에 써 넣고 그 경로(env `AGENT_OFFICE_PI_EXT`에 실리는
+/// 값)를 돌려준다. 세션마다 불러도 안전하다 — 내용이 정적이라 매번 같은 파일을
+/// 덮어쓴다.
+///
+/// 이슈 #40과 같은 이유로 **app_data**가 정본 위치다. 예전에는 OS temp
+/// (`<tmp>/agent-office/pi`)에 뒀는데, 앱이 꺼진 사이 시스템 청소로 파일이
+/// 사라지면 입양된 세션의 `AGENT_OFFICE_PI_EXT`가 없는 경로를 가리켜 래퍼
+/// 가드가 pi를 관찰 없이 띄웠다(`pi -e <없는 경로>`는 하드 실패라 가드가 있다).
+/// app_data는 앱 수명주기가 소유하고, 부팅 때 `lib.rs`가 한 번 다시 써 두므로
+/// 입양된 세션의 env 경로가 계속 유효하다.
+///
+/// `app_data`가 None이면(테스트·app_data 없는 구성) 예전 temp 경로로 떨어진다 —
+/// 관찰은 되지만 청소에 취약한 예전 동작 그대로다.
+pub fn ensure_extension(app_data: Option<&Path>) -> io::Result<PathBuf> {
+    let base = match app_data {
+        Some(dir) => extension_dir(dir),
+        None => std::env::temp_dir().join("agent-office").join("pi"),
+    };
     write_extension(&base)
 }
 
@@ -228,6 +247,37 @@ mod tests {
         assert_eq!(contents, PI_EXTENSION_TS, "file must contain the embedded source verbatim");
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 이슈 #40과 같은 취지: 확장 파일의 정본 위치는 app_data다. OS temp는 앱이
+    /// 꺼진 사이 청소될 수 있어, 입양된 세션의 `AGENT_OFFICE_PI_EXT`가 없는
+    /// 경로를 가리키면 래퍼 가드가 pi를 관찰 없이 띄운다.
+    #[test]
+    fn ensure_extension_writes_under_app_data_when_given_one() {
+        let app_data = scratch_dir();
+        let p = ensure_extension(Some(&app_data)).expect("ensure_extension succeeds");
+
+        assert_eq!(p, app_data.join("observer").join("pi").join(EXTENSION_FILENAME));
+        assert!(p.is_file());
+        assert_eq!(extension_dir(&app_data), p.parent().unwrap());
+
+        let _ = std::fs::remove_dir_all(&app_data);
+    }
+
+    /// app_data가 없는 구성(테스트 등)은 예전 temp 경로로 떨어진다 — 관찰은
+    /// 되되 청소에 취약한 예전 동작 그대로.
+    #[test]
+    fn ensure_extension_falls_back_to_os_temp_without_app_data() {
+        let p = ensure_extension(None).expect("temp fallback succeeds");
+
+        assert_eq!(
+            p,
+            std::env::temp_dir()
+                .join("agent-office")
+                .join("pi")
+                .join(EXTENSION_FILENAME),
+        );
+        assert!(p.is_file());
     }
 
     #[test]
