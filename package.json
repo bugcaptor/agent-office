@@ -13,6 +13,7 @@
     "cert:mac": "./scripts/make-signing-cert.sh",
     "build:mac": "tauri build --bundles app && ./scripts/sign-macos.sh",
     "install:mac": "tauri build --bundles app && ./scripts/sign-macos.sh --install",
+    "build:mac:dmg": "APPLE_SIGNING_IDENTITY=\"${APPLE_SIGNING_IDENTITY:-Agent Office Local Signing}\" tauri build --bundles dmg",
     "start:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-and-run.ps1",
     "build:win": "tauri build --bundles nsis",
     "install:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-and-run.ps1 --install",
