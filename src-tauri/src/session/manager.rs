@@ -16,6 +16,7 @@ use std::sync::Arc;
 // 못 뜨는 벽돌 상태. parking_lot은 패닉한 스레드가 락을 풀고 지나가므로
 // 오염이 전파되지 않는다. (session_layer_survives_a_panicking_output_channel
 // 회귀 테스트 참조.)
+use chrono::Timelike;
 use parking_lot::Mutex;
 
 use tauri::ipc::Channel;
@@ -566,11 +567,12 @@ impl SessionManager {
                 match capability {
                     Ok(version) => {
                         let version = *version;
+                        let now = chrono::Local::now();
                         let spec = tmux_host::HostSpec {
-                            agent_name: &profile.name,
                             agent_id: &req.agent_id,
                             sid: &session_id,
                             cwd: &actual_cwd,
+                            hms: (now.hour(), now.minute(), now.second()),
                             env: &tmux_host::pane_env(&env),
                             startup_command: req.startup_command.as_deref(),
                         };

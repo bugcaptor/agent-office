@@ -1176,15 +1176,19 @@
         let (mgr, _events, ctl, dir) = build_with_tmux_runner(tmux_runner);
 
         let result = mgr.create(req_with_tmux_host("a1", Some(true))).unwrap();
-        let expected_name =
-            crate::session::tmux_host::session_name("a1", "a1", &result.session_id);
 
         let calls = tmux_calls.lock().clone();
         let new_session = calls
             .iter()
             .find(|c| c[0] == "new-session")
             .expect("new-session must be attempted");
-        assert_eq!(new_session[3], expected_name, "new-session -s <name>: {new_session:?}");
+        // 이름은 시각에서 나오므로 여기서 다시 계산하지 않는다 -- 실제로 쓴
+        // 이름을 argv에서 받아 나머지 경로가 전부 같은 이름을 쓰는지 본다.
+        let expected_name = new_session[3].clone();
+        assert!(
+            expected_name.starts_with("ao-"),
+            "호스팅 세션 이름은 ao- 접두를 지킨다: {expected_name}"
+        );
         assert!(
             new_session
                 .iter()
@@ -1229,9 +1233,13 @@
         let (tmux_runner, tmux_calls) = fake_tmux_runner(Some("tmux 3.4"));
         let (mgr, _events, ctl, dir) = build_with_tmux_runner(tmux_runner);
 
-        let result = mgr.create(req_with_tmux_host("a1", Some(true))).unwrap();
-        let expected_name =
-            crate::session::tmux_host::session_name("a1", "a1", &result.session_id);
+        mgr.create(req_with_tmux_host("a1", Some(true))).unwrap();
+        let expected_name = tmux_calls
+            .lock()
+            .iter()
+            .find(|c| c[0] == "new-session")
+            .expect("new-session must be attempted")[3]
+            .clone();
 
         mgr.dispose("a1");
 

@@ -182,7 +182,7 @@ eval "$(agent-office ctl attach 캐릭터ID)"
   "tmux 호스팅"을 켜서 **앱이 직접 만드는** 세션은 이름이 전부 `ao-` 접두로
   시작한다는 것만이 사용자와 맺는 유일한 계약이고, 그 이름을 다루는 쪽
   (`tmux_host.rs`의 생성·gc·kill·attach)은 전부 `-t '=<name>'` 정확일치를
-  쓴다 — 접두 매칭으로 `ao-nova-ab12cd`가 `ao-nova-ab12cdef`를 잘못 잡는
+  쓴다 — 접두 매칭으로 `ao-agent-office-2134`가 `ao-agent-office-213456`을 잘못 잡는
   사고를 막기 위해서다. 두 매칭 방식이 공존하는 건 대상 이름을 누가
   짓느냐가 다르기 때문이지 결함이 아니다. 상세는
   `docs/tmux-hosting-design.md`.

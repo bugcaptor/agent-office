@@ -45,12 +45,16 @@ pub fn system_runner() -> TmuxRunner {
     })
 }
 
-/// 호스팅 세션 이름을 만들 때 실패하지 않는 폴백.
-const SLUG_FALLBACK: &str = "agent";
+/// 슬러그에 ASCII가 하나도 안 남을 때의 폴백(순한글 폴더명 등).
+const SLUG_FALLBACK: &str = "work";
 
-/// 캐릭터 이름에서 tmux 세션 이름 조각을 뽑는다. 소문자화 → `[a-z0-9]` 외
-/// 전부 `-` → 연속 `-` 압축 → 앞뒤 `-` 제거 → 최대 12자. 비면 `"agent"`.
-pub fn slug(raw: &str) -> String {
+/// 작업 폴더 슬러그의 최대 길이. 캐릭터 이름 조각(12자)보다 넉넉하다 —
+/// 이름에 남는 사람이 읽는 정보가 이제 이것뿐이라 잘리면 손해가 크다.
+const DIR_SLUG_MAX: usize = 20;
+
+/// tmux 세션 이름에 쓸 조각을 뽑는다. 소문자화 → `[a-z0-9]` 외 전부 `-` →
+/// 연속 `-` 압축 → 앞뒤 `-` 제거 → 최대 `max_len`자. 비면 `"work"`.
+pub fn slug(raw: &str, max_len: usize) -> String {
     let lower = raw.to_lowercase();
     let mut out = String::with_capacity(lower.len());
     let mut last_was_dash = false;
@@ -64,7 +68,7 @@ pub fn slug(raw: &str) -> String {
         }
     }
     let trimmed = out.trim_matches('-');
-    let truncated: String = trimmed.chars().take(12).collect();
+    let truncated: String = trimmed.chars().take(max_len).collect();
     let truncated = truncated.trim_end_matches('-');
     if truncated.is_empty() {
         SLUG_FALLBACK.to_string()
@@ -73,17 +77,38 @@ pub fn slug(raw: &str) -> String {
     }
 }
 
-/// gc(고아 정리) 접두사. `agent_id`를 섞어 이름이 같은 두 캐릭터가 서로의
-/// 세션을 건드리지 않게 한다(agentId는 nanoid라 실질적으로 유일).
-pub fn gc_prefix(agent_name: &str, agent_id: &str) -> String {
-    let id_part: String = agent_id.chars().take(6).collect::<String>().to_lowercase();
-    format!("ao-{}-{}-", slug(agent_name), id_part)
+/// 세션 소유자(agentId)를 적어 두는 tmux 사용자 옵션. gc가 "그 캐릭터 것만"
+/// 죽이는 근거가 이름이 아니라 이 옵션이다 — 그래야 이름을 사람이 읽기 좋게
+/// 자유롭게 지을 수 있다.
+pub const AGENT_OPTION: &str = "@ao_agent";
+
+/// 작업 폴더(cwd)의 마지막 조각에서 뽑은 슬러그. `/a/b/agent-office/` →
+/// `agent-office`. 경로가 통째로 비면 폴백.
+pub fn dir_slug(cwd: &str) -> String {
+    let trimmed = cwd.trim_end_matches('/');
+    let base = trimmed.rsplit('/').next().unwrap_or(trimmed);
+    slug(base, DIR_SLUG_MAX)
 }
 
-/// 실제 tmux 세션 이름. `gc_prefix` + sid 앞 6자.
-pub fn session_name(agent_name: &str, agent_id: &str, sid: &str) -> String {
-    let sid_part: String = sid.chars().take(6).collect();
-    format!("{}{}", gc_prefix(agent_name, agent_id), sid_part)
+/// 실제 tmux 세션 이름. `ao-<폴더 슬러그>-<HHMM>`이 기본형이고, 그 이름이
+/// 이미 있으면 초까지, 그래도 겹치면 sid 조각까지 붙여 피한다. `taken`은
+/// gc 직전에 받아 둔 `list-sessions` 결과(우리 것이 아닌 세션도 포함)다.
+pub fn session_name(cwd: &str, hms: (u32, u32, u32), sid: &str, taken: &[&str]) -> String {
+    let dir = dir_slug(cwd);
+    let (h, m, sec) = hms;
+    let sid_part: String = sid.chars().take(4).collect();
+    let candidates = [
+        format!("ao-{dir}-{h:02}{m:02}"),
+        format!("ao-{dir}-{h:02}{m:02}{sec:02}"),
+        format!("ao-{dir}-{h:02}{m:02}{sec:02}-{sid_part}"),
+    ];
+    for candidate in &candidates {
+        if !taken.contains(&candidate.as_str()) {
+            return candidate.clone();
+        }
+    }
+    // 셋 다 겹치는 건 같은 초에 같은 sid 앞 4자가 또 나온 경우뿐이다.
+    format!("ao-{dir}-{h:02}{m:02}{sec:02}-{sid}")
 }
 
 /// `"tmux 3.5a"`, `"tmux 3.1c"`, `"tmux next-3.4"` 같은 `tmux -V` 출력에서
@@ -113,27 +138,59 @@ pub fn supports_env_flag(version: (u32, u32)) -> bool {
     version >= (3, 2)
 }
 
-/// `tmux list-sessions -F "#{session_name} #{session_attached}"` 출력을
-/// `(이름, attached)` 목록으로 파싱한다. attached는 `"0"`이 아니면 true.
-pub fn parse_sessions(stdout: &str) -> Vec<(String, bool)> {
+/// `list-sessions` 한 줄.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionRow {
+    pub name: String,
+    pub attached: bool,
+    /// `AGENT_OPTION` 값. 우리가 만들지 않은 세션이면 빈 문자열.
+    pub owner: String,
+}
+
+/// gc·이름 중복 판정에 쓰는 `list-sessions` argv.
+///
+/// 구분자가 공백이 아니라 탭인 이유: 세션 이름에는 공백이 들어갈 수 있고
+/// (밖에서 사람이 만든 세션), 이름을 맨 뒤로 보내야 앞 두 칸만 잘라내고
+/// 나머지를 통째로 이름으로 받을 수 있다.
+pub fn list_sessions_args() -> Vec<String> {
+    vec![
+        "list-sessions".to_string(),
+        "-F".to_string(),
+        format!("#{{session_attached}}\t#{{{AGENT_OPTION}}}\t#{{session_name}}"),
+    ]
+}
+
+/// `list_sessions_args` 출력을 행 목록으로 파싱한다. attached는 `"0"`이
+/// 아니면 true.
+pub fn parse_sessions(stdout: &str) -> Vec<SessionRow> {
     stdout
         .lines()
         .filter_map(|line| {
-            let line = line.trim();
+            let line = line.trim_end_matches('\r');
             if line.is_empty() {
                 return None;
             }
-            let (name, attached) = line.rsplit_once(' ')?;
-            Some((name.to_string(), attached != "0"))
+            let mut parts = line.splitn(3, '\t');
+            let attached = parts.next()?;
+            let owner = parts.next()?;
+            let name = parts.next()?;
+            if name.is_empty() {
+                return None;
+            }
+            Some(SessionRow {
+                name: name.to_string(),
+                attached: attached != "0",
+                owner: owner.to_string(),
+            })
         })
         .collect()
 }
 
-/// `list`에서 `prefix`로 시작하고 붙어 있지 않은 세션 이름만 골라낸다(고아).
-pub fn orphans<'a>(list: &'a [(String, bool)], prefix: &str) -> Vec<&'a str> {
+/// `list`에서 이 캐릭터가 만들었고 붙어 있지 않은 세션 이름만 골라낸다(고아).
+pub fn orphans<'a>(list: &'a [SessionRow], agent_id: &str) -> Vec<&'a str> {
     list.iter()
-        .filter(|(name, attached)| !attached && name.starts_with(prefix))
-        .map(|(name, _)| name.as_str())
+        .filter(|row| !row.attached && !row.owner.is_empty() && row.owner == agent_id)
+        .map(|row| row.name.as_str())
         .collect()
 }
 
@@ -176,13 +233,25 @@ pub fn send_keys_args(name: &str, command: &str) -> Vec<String> {
     ]
 }
 
+/// `set-option -t '=<name>' @ao_agent <agentId>` argv. 세션 소유자 표시.
+pub fn set_owner_args(name: &str, agent_id: &str) -> Vec<String> {
+    vec![
+        "set-option".to_string(),
+        "-t".to_string(),
+        format!("={name}"),
+        AGENT_OPTION.to_string(),
+        agent_id.to_string(),
+    ]
+}
+
 /// `kill-session -t '=<name>'` argv.
 pub fn kill_session_args(name: &str) -> Vec<String> {
     vec!["kill-session".to_string(), "-t".to_string(), format!("={name}")]
 }
 
 /// 우리가 만든 이름에 정확히 붙는 attach 명령. `-t`는 `=` 정확일치를 써서
-/// `ao-nova-ab12cd`가 `ao-nova-ab12cdef`를 잡는 접두 매칭 사고를 막는다.
+/// `ao-agent-office-2134`가 `ao-agent-office-213456`을 잡는 접두 매칭 사고를
+/// 막는다(중복 회피가 초를 덧붙이므로 실제로 생길 수 있는 짝이다).
 /// `ctl attach --tmux`(사용자가 손으로 치는 이름)는 퍼지 매칭이 편의이므로
 /// `control/tmux.rs::attach_command`를 그대로 쓴다 — 이건 별개.
 pub fn attach_command_exact(name: &str) -> String {
@@ -213,10 +282,12 @@ pub fn probe_version(runner: &TmuxRunner) -> Result<(u32, u32), HostError> {
 
 /// 새 호스팅 세션을 만들 때 필요한 값.
 pub struct HostSpec<'a> {
-    pub agent_name: &'a str,
     pub agent_id: &'a str,
     pub sid: &'a str,
     pub cwd: &'a str,
+    /// 세션 시작 시각(로컬) `(시, 분, 초)`. 이름에 들어간다. 호출자가 넘기는
+    /// 이유는 테스트 때문이다 — 여기서 시계를 직접 읽으면 이름을 못 박는다.
+    pub hms: (u32, u32, u32),
     pub env: &'a [(String, String)],
     /// pane에 주입할 시작 명령(있으면 send-keys). None/공백이면 미주입.
     pub startup_command: Option<&'a str>,
@@ -235,13 +306,7 @@ pub fn ensure_hosted(
     if !supports_env_flag(version) {
         return Err(HostError::TooOld(version));
     }
-    let prefix = gc_prefix(spec.agent_name, spec.agent_id);
-    let list_argv = vec![
-        "list-sessions".to_string(),
-        "-F".to_string(),
-        "#{session_name} #{session_attached}".to_string(),
-    ];
-    let list_run = runner(&list_argv).map_err(HostError::Missing)?;
+    let list_run = runner(&list_sessions_args()).map_err(HostError::Missing)?;
     let sessions = if list_run.ok {
         parse_sessions(&list_run.stdout)
     } else if list_run.stderr.contains("no server running") {
@@ -249,15 +314,24 @@ pub fn ensure_hosted(
     } else {
         return Err(HostError::Failed(list_run.stderr));
     };
-    for orphan in orphans(&sessions, &prefix) {
+    for orphan in orphans(&sessions, spec.agent_id) {
         kill(runner, orphan);
     }
 
-    let name = session_name(spec.agent_name, spec.agent_id, spec.sid);
+    let taken: Vec<&str> = sessions.iter().map(|row| row.name.as_str()).collect();
+    let name = session_name(spec.cwd, spec.hms, spec.sid, &taken);
     let env = pane_env(spec.env);
     let new_run = runner(&new_session_args(&name, spec.cwd, &env)).map_err(HostError::Missing)?;
     if !new_run.ok {
         return Err(HostError::Failed(new_run.stderr));
+    }
+
+    // 소유자 표시는 best-effort다. 실패해도 세션 자체는 멀쩡하니 죽이지
+    // 않는다 — 대신 이 세션은 나중에 gc가 못 알아보고 남을 수 있다.
+    match runner(&set_owner_args(&name, spec.agent_id)) {
+        Ok(run) if run.ok => {}
+        Ok(run) => eprintln!("tmux set-option {AGENT_OPTION} '{name}' 실패: {}", run.stderr),
+        Err(e) => eprintln!("tmux set-option {AGENT_OPTION} '{name}' 실행 실패: {e}"),
     }
 
     if let Some(command) = spec.startup_command {
@@ -289,21 +363,50 @@ mod tests {
 
     #[test]
     fn slug_normalizes_and_falls_back() {
-        assert_eq!(slug("김철수"), "agent");
-        assert_eq!(slug("Nova Kim"), "nova-kim");
-        assert_eq!(slug("a.b:c"), "a-b-c");
-        assert_eq!(slug("abcdefghijklmnop"), "abcdefghijkl"); // 12자 절단
-        assert_eq!(slug(""), "agent");
-        assert_eq!(slug("---"), "agent");
+        assert_eq!(slug("김철수", 12), "work");
+        assert_eq!(slug("Nova Kim", 12), "nova-kim");
+        assert_eq!(slug("a.b:c", 12), "a-b-c");
+        assert_eq!(slug("abcdefghijklmnop", 12), "abcdefghijkl"); // 절단
+        assert_eq!(slug("", 12), "work");
+        assert_eq!(slug("---", 12), "work");
     }
 
     #[test]
-    fn gc_prefix_differs_by_agent_id_for_same_name() {
-        let a = gc_prefix("Nova", "aaaaaaaaaaaa");
-        let b = gc_prefix("Nova", "bbbbbbbbbbbb");
-        assert_ne!(a, b);
-        assert!(a.starts_with("ao-nova-aaaaaa-"));
-        assert!(b.starts_with("ao-nova-bbbbbb-"));
+    fn dir_slug_takes_last_path_segment() {
+        assert_eq!(dir_slug("/Users/me/dev/agent-office"), "agent-office");
+        assert_eq!(dir_slug("/Users/me/dev/agent-office/"), "agent-office");
+        assert_eq!(dir_slug("/Users/me/dev/ex-07-raylib_space"), "ex-07-raylib-space");
+        assert_eq!(dir_slug("/Users/me/dev/작업"), "work");
+        assert_eq!(dir_slug("/"), "work");
+        // 20자 절단.
+        assert_eq!(dir_slug("/x/abcdefghijklmnopqrstuvwxyz"), "abcdefghijklmnopqrst");
+    }
+
+    #[test]
+    fn session_name_uses_folder_and_start_time() {
+        assert_eq!(
+            session_name("/Users/me/dev/agent-office", (9, 5, 3), "abcdef", &[]),
+            "ao-agent-office-0905"
+        );
+        assert_eq!(
+            session_name("/Users/me/dev/agent-office", (21, 34, 56), "abcdef", &[]),
+            "ao-agent-office-2134"
+        );
+    }
+
+    #[test]
+    fn session_name_escalates_on_collision() {
+        let cwd = "/Users/me/dev/agent-office";
+        let taken1 = vec!["ao-agent-office-2134"];
+        assert_eq!(
+            session_name(cwd, (21, 34, 56), "abcdef", &taken1),
+            "ao-agent-office-213456"
+        );
+        let taken2 = vec!["ao-agent-office-2134", "ao-agent-office-213456"];
+        assert_eq!(
+            session_name(cwd, (21, 34, 56), "abcdef", &taken2),
+            "ao-agent-office-213456-abcd"
+        );
     }
 
     #[test]
@@ -325,15 +428,23 @@ mod tests {
 
     #[test]
     fn parse_sessions_and_orphans_filter_correctly() {
-        let stdout = "ao-nova-ab12cd-000001 0\nao-nova-ab12cd-000002 1\nao-kim-ef34gh-000001 0\nmy-manual-session 0\n";
+        let stdout = "0\tab12cdef\tao-agent-office-2134\n\
+                      1\tab12cdef\tao-agent-office-2140\n\
+                      0\tef34ghij\tao-agent-office-2150\n\
+                      0\t\tmy manual session\n";
         let sessions = parse_sessions(stdout);
         assert_eq!(sessions.len(), 4);
-        assert_eq!(sessions[0], ("ao-nova-ab12cd-000001".to_string(), false));
-        assert_eq!(sessions[1], ("ao-nova-ab12cd-000002".to_string(), true));
+        assert_eq!(sessions[0].name, "ao-agent-office-2134");
+        assert!(!sessions[0].attached);
+        assert_eq!(sessions[0].owner, "ab12cdef");
+        assert!(sessions[1].attached);
+        // 이름에 공백이 있어도 통째로 이름이다(구분자가 탭이라).
+        assert_eq!(sessions[3].name, "my manual session");
+        assert_eq!(sessions[3].owner, "");
 
-        let orphaned = orphans(&sessions, "ao-nova-ab12cd-");
-        // 붙은 것 제외, 다른 캐릭터 접두 제외, ao- 아닌 사용자 세션 제외.
-        assert_eq!(orphaned, vec!["ao-nova-ab12cd-000001"]);
+        let orphaned = orphans(&sessions, "ab12cdef");
+        // 붙은 것 제외, 다른 캐릭터 소유 제외, 소유자 없는 사용자 세션 제외.
+        assert_eq!(orphaned, vec!["ao-agent-office-2134"]);
     }
 
     #[test]
@@ -377,7 +488,10 @@ mod tests {
 
     #[test]
     fn ensure_hosted_kills_orphans_and_builds_new_session_args() {
-        let list_stdout = "ao-nova-ab12cd-000001 0\nao-nova-ab12cd-000002 0\nao-nova-ab12cd-000003 1\n";
+        let list_stdout = "0\tab12cdef\tao-work-0901\n\
+                           0\tab12cdef\tao-work-0902\n\
+                           1\tab12cdef\tao-work-0903\n\
+                           0\tef34ghij\tao-work-0904\n";
         let (runner, calls) = fake_runner(TmuxRun {
             ok: true,
             stdout: list_stdout.to_string(),
@@ -385,32 +499,44 @@ mod tests {
         });
         let env = vec![("ZDOTDIR".to_string(), "/tmp/shim".to_string())];
         let spec = HostSpec {
-            agent_name: "Nova",
             agent_id: "ab12cdef",
             sid: "000099xyz",
-            cwd: "/work",
+            cwd: "/Users/me/dev/agent-office",
+            hms: (21, 34, 56),
             env: &env,
             startup_command: Some("claude --resume abc"),
         };
         let name = ensure_hosted(&runner, (3, 4), spec).unwrap();
-        assert_eq!(name, "ao-nova-ab12cd-000099");
+        assert_eq!(name, "ao-agent-office-2134");
 
         let calls = calls.lock().unwrap();
-        // list-sessions, kill x2(고아만), new-session, send-keys.
+        // list-sessions, kill x2(내 고아만), new-session, set-option, send-keys.
         assert_eq!(calls[0][0], "list-sessions");
         let kills: Vec<&Vec<String>> = calls.iter().filter(|c| c[0] == "kill-session").collect();
         assert_eq!(kills.len(), 2);
-        assert_eq!(kills[0], &vec!["kill-session".to_string(), "-t".to_string(), "=ao-nova-ab12cd-000001".to_string()]);
-        assert_eq!(kills[1], &vec!["kill-session".to_string(), "-t".to_string(), "=ao-nova-ab12cd-000002".to_string()]);
+        assert_eq!(kills[0], &vec!["kill-session".to_string(), "-t".to_string(), "=ao-work-0901".to_string()]);
+        assert_eq!(kills[1], &vec!["kill-session".to_string(), "-t".to_string(), "=ao-work-0902".to_string()]);
 
         let new_session = calls.iter().find(|c| c[0] == "new-session").unwrap();
         assert_eq!(new_session[1], "-d");
         assert_eq!(new_session[2], "-s");
-        assert_eq!(new_session[3], "ao-nova-ab12cd-000099");
+        assert_eq!(new_session[3], "ao-agent-office-2134");
         assert_eq!(new_session[4], "-c");
-        assert_eq!(new_session[5], "/work");
+        assert_eq!(new_session[5], "/Users/me/dev/agent-office");
         assert_eq!(new_session[6], "-e");
         assert_eq!(new_session[7], "ZDOTDIR=/tmp/shim");
+
+        let set_option = calls.iter().find(|c| c[0] == "set-option").unwrap();
+        assert_eq!(
+            set_option,
+            &vec![
+                "set-option".to_string(),
+                "-t".to_string(),
+                "=ao-agent-office-2134".to_string(),
+                "@ao_agent".to_string(),
+                "ab12cdef".to_string(),
+            ]
+        );
 
         let send_keys = calls.iter().find(|c| c[0] == "send-keys").unwrap();
         assert_eq!(
@@ -418,11 +544,34 @@ mod tests {
             &vec![
                 "send-keys".to_string(),
                 "-t".to_string(),
-                "=ao-nova-ab12cd-000099".to_string(),
+                "=ao-agent-office-2134".to_string(),
                 "claude --resume abc".to_string(),
                 "Enter".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn ensure_hosted_avoids_names_already_in_use() {
+        let list_stdout = "1\tef34ghij\tao-agent-office-2134\n";
+        let (runner, calls) = fake_runner(TmuxRun {
+            ok: true,
+            stdout: list_stdout.to_string(),
+            stderr: String::new(),
+        });
+        let spec = HostSpec {
+            agent_id: "ab12cdef",
+            sid: "000099xyz",
+            cwd: "/Users/me/dev/agent-office",
+            hms: (21, 34, 56),
+            env: &[],
+            startup_command: None,
+        };
+        let name = ensure_hosted(&runner, (3, 4), spec).unwrap();
+        assert_eq!(name, "ao-agent-office-213456");
+        let calls = calls.lock().unwrap();
+        // 남의 세션은 붙어 있든 아니든 죽이지 않는다.
+        assert!(!calls.iter().any(|c| c[0] == "kill-session"));
     }
 
     #[test]
@@ -433,10 +582,10 @@ mod tests {
             stderr: String::new(),
         });
         let spec = HostSpec {
-            agent_name: "Nova",
             agent_id: "ab12cdef",
             sid: "000099xyz",
-            cwd: "/work",
+            cwd: "/Users/me/dev/agent-office",
+            hms: (21, 34, 56),
             env: &[],
             startup_command: None,
         };
@@ -453,15 +602,15 @@ mod tests {
             stderr: "no server running".to_string(),
         });
         let spec = HostSpec {
-            agent_name: "Nova",
             agent_id: "ab12cdef",
             sid: "000099xyz",
-            cwd: "/work",
+            cwd: "/Users/me/dev/agent-office",
+            hms: (21, 34, 56),
             env: &[],
             startup_command: None,
         };
         let name = ensure_hosted(&runner, (3, 4), spec).unwrap();
-        assert_eq!(name, "ao-nova-ab12cd-000099");
+        assert_eq!(name, "ao-agent-office-2134");
         let calls = calls.lock().unwrap();
         assert!(!calls.iter().any(|c| c[0] == "kill-session"));
         assert!(calls.iter().any(|c| c[0] == "new-session"));
@@ -484,10 +633,10 @@ mod tests {
             stderr: String::new(),
         });
         let spec = HostSpec {
-            agent_name: "Nova",
             agent_id: "ab12cdef",
             sid: "000099xyz",
-            cwd: "/work",
+            cwd: "/Users/me/dev/agent-office",
+            hms: (21, 34, 56),
             env: &[],
             startup_command: None,
         };
