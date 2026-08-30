@@ -52,6 +52,8 @@ export interface DraftProfile {
   /** 봇 turn-taking 유휴 임계(ms). UI에 노출하지 않지만 편집 저장 시 유실되지
    * 않도록 draft에 실어 라운드트립한다(리뷰 M2). 빈 문자열 = 기본 3000. */
   botIdleQuietMs?: string;
+  /** tmux 자동 호스팅. 켜면 셸 선택이 무의미해진다(유닉스 전용). 기본 false. */
+  tmuxHost?: boolean;
 }
 
 /**
@@ -101,6 +103,7 @@ export function generateDraft(): DraftProfile {
     botPollIntervalSec: "",
     botIdleQuietMs: "",
     talkReceive: true,
+    tmuxHost: false,
   };
 }
 
@@ -175,5 +178,6 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(bot ? { bot } : {}),
     // 기본(수신 허용)은 필드를 아예 두지 않는다 — 끈 경우만 명시적으로 남긴다.
     ...(d.talkReceive === false ? { talkReceive: false } : {}),
+    ...(d.tmuxHost ? { tmuxHost: true } : {}),
   };
 }

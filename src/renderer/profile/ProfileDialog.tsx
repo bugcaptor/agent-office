@@ -128,6 +128,7 @@ export function ProfileDialog() {
         bot: buildBotConfig(draft),
         // 기본(수신 허용)은 필드를 지운다 — 끈 경우만 false로 남긴다.
         talkReceive: draft.talkReceive === false ? false : undefined,
+        tmuxHost: draft.tmuxHost ? true : undefined,
       });
     } else {
       const profile = draftToProfile(draft, agentOrder.length);

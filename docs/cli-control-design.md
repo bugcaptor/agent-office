@@ -175,6 +175,17 @@ eval "$(agent-office ctl attach 캐릭터ID)"
   `ctl attach … --tmux …`를 한 번 더 실행한다(프로필에 저장하는 옵션은 후속 과제).
 - **봇 inject**: `write_input`은 tmux 클라이언트의 stdin으로 가므로 **활성
   pane**에 입력된다. 봇 모드로 쓸 tmux 세션은 pane 하나만 두는 것을 권한다.
+- **프로필의 tmux 자동 호스팅과는 별개**: 여기(`--tmux <target>`)는 사용자가
+  이미 손으로 만들어 둔 임의의 tmux 세션에 즉석으로 붙는 용도라서 `target`은
+  사용자가 손으로 치는 이름이고, 그래서 tmux 기본값인 접두/fnmatch 퍼지
+  매칭(`attach_command`, `-t <target>`)을 그대로 쓴다. 반대로 프로필에서
+  "tmux 호스팅"을 켜서 **앱이 직접 만드는** 세션은 이름이 전부 `ao-` 접두로
+  시작한다는 것만이 사용자와 맺는 유일한 계약이고, 그 이름을 다루는 쪽
+  (`tmux_host.rs`의 생성·gc·kill·attach)은 전부 `-t '=<name>'` 정확일치를
+  쓴다 — 접두 매칭으로 `ao-nova-ab12cd`가 `ao-nova-ab12cdef`를 잘못 잡는
+  사고를 막기 위해서다. 두 매칭 방식이 공존하는 건 대상 이름을 누가
+  짓느냐가 다르기 때문이지 결함이 아니다. 상세는
+  `docs/tmux-hosting-design.md`.
 
 ## 발견 순서와 오버라이드
 

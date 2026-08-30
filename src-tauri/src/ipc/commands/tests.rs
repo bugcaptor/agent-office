@@ -473,6 +473,7 @@
             startup_command: None,
             personality_prompt: None,
             autostart_claude: None,
+            tmux_host: None,
         }
     }
 
@@ -495,6 +496,7 @@
             personality_prompt: None,
             agent_name: Some("Compiler".into()),
             agent_role: Some("Platform".into()),
+            tmux_host: None,
         };
         assert_eq!(
             event_profile("a1", &opts),
@@ -527,6 +529,7 @@
                 startup_command: None,
                 personality_prompt: None,
                 autostart_claude: None, // command body always passes None -> manager defaults to false
+                tmux_host: None,
             })
             .unwrap();
 
@@ -551,6 +554,7 @@
             personality_prompt: None,
             agent_name: None,
             agent_role: None,
+            tmux_host: None,
         };
         // create_session 본문과 동일한 매핑.
         let request = CreateSessionRequest {
@@ -562,6 +566,7 @@
             startup_command: opts.startup_command.clone(),
             personality_prompt: opts.personality_prompt.clone(),
             autostart_claude: None,
+            tmux_host: None,
         };
         assert_eq!(request.shell, Some("git-bash".to_string()));
     }
@@ -579,6 +584,7 @@
             personality_prompt: None,
             agent_name: None,
             agent_role: None,
+            tmux_host: None,
         };
         let request = CreateSessionRequest {
             agent_id: "a1".into(),
@@ -589,6 +595,7 @@
             startup_command: opts.startup_command.clone(),
             personality_prompt: opts.personality_prompt.clone(),
             autostart_claude: None,
+            tmux_host: None,
         };
         assert_eq!(
             request.startup_command,
@@ -749,6 +756,7 @@
                 voice_id: None,
                 bot: None,
                 talk_receive: None,
+                tmux_host: None,
             }],
             version: 1,
             vacation_mode: None,
@@ -805,6 +813,7 @@
                 voice_id: None,
                 bot: None,
                 talk_receive: None,
+                tmux_host: None,
             }],
             version: 1,
             vacation_mode: None,
@@ -880,6 +889,7 @@
                 voice_id: None,
                 bot: None,
                 talk_receive: None,
+                tmux_host: None,
             }],
             version: 1,
             vacation_mode: None,
@@ -938,6 +948,7 @@
                 voice_id: None,
                 bot: None,
                 talk_receive: None,
+                tmux_host: None,
             }],
             version: 1,
             vacation_mode: None,

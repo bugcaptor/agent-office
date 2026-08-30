@@ -90,6 +90,8 @@
     "keyboardSoundHint": "이 에이전트가 타이핑할 때 나는 소리입니다. 고르면 미리 들려줍니다.",
     "talkReceive": "동료 메시지 받기",
     "talkReceiveHint": "끄면 다른 캐릭터가 이 캐릭터에게 말을 걸 수 없습니다. (설정 → 제어의 <b>동료 대화</b>가 켜져 있을 때만 의미가 있습니다.)",
+    "tmuxHost": "tmux 호스팅",
+    "tmuxHostHint": "켜면 새 세션을 tmux 세션으로 띄우고 앱은 거기 붙기만 합니다. 프로필의 셸 선택이 무의미해집니다(pane 셸은 시스템 기본을 씁니다). macOS·Linux 전용.",
     "shell": "셸",
     "shellAuto": "자동 (기본)",
     "shellNoHooks": "{{label}} (시간 추적 미지원)"

@@ -5,8 +5,8 @@
 // 이미지 저장·표시 같은 부수효과는 호출부(ProfileDialog)가 tauriApi/스토어로
 // 수행하고, 여기서는 값 변환만 담당한다(vitest로 직접 검증).
 //
-// "로컬 환경에 관련된 것"(cwd·shell·startupCommand·bot 설정)은 내보내지 않고,
-// 가져올 때도 건드리지 않는다(현재 draft 값 유지) — 캐릭터 정체성·외형만 이식한다.
+// "로컬 환경에 관련된 것"(cwd·shell·startupCommand·bot 설정·tmuxHost)은 내보내지
+// 않고, 가져올 때도 건드리지 않는다(현재 draft 값 유지) — 캐릭터 정체성·외형만 이식한다.
 
 import {
   CHARACTER_BUNDLE_KIND,

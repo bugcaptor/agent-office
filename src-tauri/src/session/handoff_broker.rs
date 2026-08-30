@@ -24,8 +24,27 @@ impl SessionManager {
         snapshots: &std::collections::HashMap<String, String>,
         rendered_bytes: &std::collections::HashMap<String, u64>,
     ) -> usize {
+        // tmux 자동 호스팅 세션(kbm #2pc)은 app_data_dir 확인보다 **먼저** 마킹한다
+        // -- 아래 조기 return이 걸리면 세션을 하나도 안 건드리고 0을 리턴하므로,
+        // 마킹이 그 뒤에 있으면 무용지물이다. handoff_v1.rs의 handoff_all과 같은
+        // 순서다(그쪽은 브로커 모드면 이 함수로 위임하고 끝나므로, 이 경로가
+        // 브로커 모드에서 호스팅 세션을 보존하는 유일한 자리다).
+        let mut hosted_count = 0usize;
+        {
+            let map = self.sessions.lock();
+            for (_, s) in map.iter() {
+                if *s.state.lock() == SessionState::Running
+                    && s.hosted_tmux.is_some()
+                    && !s.handed_off.load(Ordering::SeqCst)
+                {
+                    s.handed_off.store(true, Ordering::SeqCst);
+                    hosted_count += 1;
+                }
+            }
+        }
+
         let Some(app_data_dir) = self.app_data_dir.clone() else {
-            return 0;
+            return hosted_count;
         };
         let ids: Vec<AgentId> = {
             let map = self.sessions.lock();
@@ -35,17 +54,29 @@ impl SessionManager {
                 .collect()
         };
         if ids.is_empty() {
-            return 0;
+            return hosted_count;
         }
         let socket_path = crate::sessiond::client::default_socket_path(&app_data_dir);
         let log_path = crate::sessiond::client::default_log_path(&app_data_dir);
         let exe_path = std::env::current_exe().unwrap_or_default();
         let client =
             crate::sessiond::client::connect_or_spawn(&socket_path, &exe_path, &log_path).ok();
-        let mut count = 0;
+        // 위에서 미리 마킹한 호스팅 세션도 "유지됨" 카운트에 든다.
+        let mut count = hosted_count;
         for agent_id in ids {
             let Some(sess) = self.find(&agent_id) else { continue };
             if sess.handed_off.load(Ordering::SeqCst) {
+                continue;
+            }
+            if sess.hosted_tmux.is_some() {
+                // tmux 자동 호스팅 세션(kbm #2pc): 브로커 소유든 v1 폴백이든
+                // 상관없이 존속은 tmux가 맡는다. `handed_off`를 "이 세션의
+                // 수명을 다른 주체가 가져갔다"는 뜻으로 확장해서 세워
+                // dispose_all()이 건드리지 않게 한다 -- broker_owned 분기보다
+                // 먼저 걸러야 스냅샷 업로드/data 소켓 shutdown 같은 브로커
+                // 전용 정리를 겪지 않는다.
+                sess.handed_off.store(true, Ordering::SeqCst);
+                count += 1;
                 continue;
             }
             if sess.broker_owned {
@@ -242,6 +273,7 @@ impl SessionManager {
             spawned,
             None, // eof_stop_gate: 브로커는 Wait RPC로 종료를 관측한다.
             initial_output,
+            None, // hosted_tmux: 입양 경로는 tmux 소유권을 복원하지 않는다(M3 범위 밖)
         );
         Some(AdoptedSessionInfo {
             agent_id: info.agent_id.clone(),

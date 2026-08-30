@@ -77,10 +77,11 @@ pub(super) async fn create(
         name: p.name.clone().unwrap_or_else(|| p.agent_id.clone()),
         role: p.role.clone(),
     };
-    // 성격 프롬프트는 디스크 프로필에서 읽는다 — 렌더러 create_session이 늘
-    // 함께 보내는 값이라, CLI로 띄운 세션만 성격 없이 뜨면 안 된다(M3에서
-    // 고친 결함: 예전엔 무조건 None이었다). 프로필이 없으면 기존대로 None.
-    let personality_prompt = profile_personality(&ctx, &p.agent_id);
+    // 성격 프롬프트·tmux 호스팅 여부는 디스크 프로필에서 읽는다 — 렌더러
+    // create_session이 늘 함께 보내는 값이라, CLI로 띄운 세션만 성격 없이
+    // 뜨면 안 된다(M3에서 고친 결함: 예전엔 무조건 None이었다). 프로필이
+    // 없으면 기존대로 None.
+    let (personality_prompt, tmux_host) = profile_create_extras(&ctx, &p.agent_id);
     match crate::ipc::commands::spawn_session(
         &ctx.manager,
         &ctx.observer,
@@ -95,6 +96,7 @@ pub(super) async fn create(
             startup_command: p.startup_command,
             personality_prompt,
             autostart_claude: None,
+            tmux_host,
         },
         profile,
     )
@@ -105,14 +107,12 @@ pub(super) async fn create(
     }
 }
 
-/// 디스크 프로필의 성격 프롬프트(없으면 None). create/attach가 공유한다.
-fn profile_personality(ctx: &ControlContext, agent_id: &str) -> Option<String> {
-    ctx.store
-        .load()
-        .agents
-        .into_iter()
-        .find(|a| a.id == agent_id)
-        .and_then(|a| a.personality_prompt)
+/// 디스크 프로필의 성격 프롬프트·tmux 호스팅 여부(없으면 둘 다 None). `create`가 쓴다.
+fn profile_create_extras(ctx: &ControlContext, agent_id: &str) -> (Option<String>, Option<bool>) {
+    match ctx.store.load().agents.into_iter().find(|a| a.id == agent_id) {
+        Some(a) => (a.personality_prompt, a.tmux_host),
+        None => (None, None),
+    }
 }
 
 /// 앱 밖 터미널을 캐릭터에 붙인다 — 응답 `script`를 그 터미널에서 eval하면
@@ -189,6 +189,7 @@ pub(super) async fn attach(
                     startup_command: Some(startup_command),
                     personality_prompt,
                     autostart_claude: None,
+                    tmux_host: None,
                 },
                 profile,
             )

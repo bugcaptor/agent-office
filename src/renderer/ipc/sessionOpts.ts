@@ -18,6 +18,7 @@ export function sessionOptsFor(
     shell?: string;
     startupCommand?: string;
     personalityPrompt?: string;
+    tmuxHost?: boolean;
   },
   overrides?: { startupCommand?: string },
 ): CreateSessionOptions | undefined {
@@ -30,5 +31,6 @@ export function sessionOptsFor(
   if (a?.shell) o.shell = a.shell;
   if (startupCommand) o.startupCommand = startupCommand;
   if (a?.personalityPrompt) o.personalityPrompt = a.personalityPrompt;
+  if (a?.tmuxHost) o.tmuxHost = true;
   return Object.keys(o).length ? o : undefined;
 }

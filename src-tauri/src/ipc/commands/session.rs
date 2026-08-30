@@ -23,6 +23,8 @@ pub struct SessionOpts {
     pub personality_prompt: Option<String>,
     pub agent_name: Option<String>,
     pub agent_role: Option<String>,
+    /// tmux 자동 호스팅 여부. 프런트가 프로필의 `tmuxHost`를 그대로 실어 보낸다.
+    pub tmux_host: Option<bool>,
 }
 
 pub(crate) fn event_profile(agent_id: &str, opts: &SessionOpts) -> AgentEventProfile {
@@ -65,6 +67,7 @@ pub(crate) async fn create_session_inner(
             startup_command: o.startup_command,
             personality_prompt: o.personality_prompt,
             autostart_claude: None, // 항상 기본 false (SessionManager::create의 unwrap_or(false))
+            tmux_host: o.tmux_host,
         },
         profile,
     )

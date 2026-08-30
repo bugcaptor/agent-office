@@ -70,6 +70,8 @@ export interface CreateSessionOptions {
   agentName?: string;
   /** Historical profile role copied into session_started analytics only. */
   agentRole?: string;
+  /** tmux 자동 호스팅 여부. 유닉스 전용, 부재/false = 기존처럼 직접 셸을 띄운다. */
+  tmuxHost?: boolean;
 }
 
 /**

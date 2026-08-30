@@ -412,6 +412,7 @@ mod tests {
             voice_id: None,
             bot: None,
             talk_receive: None,
+            tmux_host: None,
         }
     }
 

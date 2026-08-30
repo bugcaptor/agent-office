@@ -15,5 +15,6 @@ pub mod poll_reader;
 pub mod pty_factory;
 pub mod shell_activity;
 pub mod shells;
+pub mod tmux_host;
 pub mod wrapper_script;
 pub mod zsh_wrapper;

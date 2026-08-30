@@ -29,6 +29,7 @@
 | [bot-mode-design.md](bot-mode-design.md) | 캐릭터 봇 모드 — Gitea 이슈 폴링·프롬프트 주입·PR 완료 판정 | 정본 — 구현 완료(#57/#58/#61) |
 | [cli-control-design.md](cli-control-design.md) | `agent-office ctl` 외부 CLI 제어 — 로컬 axum 서버 + 2단계 승인 | 정본 — 구현 완료(#55) |
 | [external-session-attach-design.md](external-session-attach-design.md) | 외부 터미널/tmux 세션에 캐릭터 붙이기 — PTY 없는 논리 세션·`ctl attach` eval 스크립트·tmux 클라이언트 스폰 | 정본 — 구현 완료(kbm #2by), 눈검증 대기 |
+| [tmux-hosting-design.md](tmux-hosting-design.md) | 프로필 설정으로 tmux 세션 자동 호스팅 — 소환 시 앱이 직접 tmux 세션을 만들고 이름·gc·수명을 관리 | 정본 — 구현 완료(kbm #2pc) |
 | [employee-of-the-month-design.md](employee-of-the-month-design.md) | 이 달의 우수사원 — 월간 결정적 선정·수상 기록 영속화·LLM 수상 소감·시상 화면·씬 연출 | 정본 (2026-08-24 신설, kbm #2hx) — 구현 중 |
 | [i18n-design.md](i18n-design.md) | UI 다국어(한국어/영어) — i18next 카탈로그·언어별 프롬프트 프로필·입력 판정 규칙·하드코딩 한글 금지 장치 | 정본 (2026-08-25 신설) — 구현 완료 |
 | [claude-session-resume-design.md](claude-session-resume-design.md) | Claude native 세션 ID 캡처·`--resume` 이어하기 | 정본 — 구현 완료(#20) |

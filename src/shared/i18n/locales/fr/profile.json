@@ -90,6 +90,8 @@
     "keyboardSoundHint": "Le son que fait cet agent en tapant. En choisir un lance un aperçu.",
     "talkReceive": "Recevoir les messages des collègues",
     "talkReceiveHint": "Désactivez-le et aucun autre personnage ne pourra parler à celui-ci. (Cela ne compte que si la <b>discussion entre collègues</b> est activée dans Paramètres → Contrôle.)",
+    "tmuxHost": "Hébergement tmux",
+    "tmuxHostHint": "Une fois activé, les nouvelles sessions démarrent comme une session tmux et l'application ne fait que s'y attacher. Le choix de shell du profil devient sans effet (le shell du pane est celui par défaut du système). macOS/Linux uniquement.",
     "shell": "Shell",
     "shellAuto": "Auto (par défaut)",
     "shellNoHooks": "{{label}} (sans suivi du temps)"

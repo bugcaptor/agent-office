@@ -51,6 +51,7 @@
             startup_command: None,
             personality_prompt: None,
             autostart_claude: autostart,
+            tmux_host: None,
         }
     }
 
@@ -64,6 +65,7 @@
             startup_command: None,
             personality_prompt: None,
             autostart_claude: Some(false),
+            tmux_host: None,
         }
     }
 
@@ -77,6 +79,7 @@
             startup_command: None,
             personality_prompt: None,
             autostart_claude: Some(false),
+            tmux_host: None,
         }
     }
 
@@ -91,6 +94,7 @@
             personality_prompt: None,
             // autostart OFF: startup_command 주입만 단독 검증(두 주입이 겹치지 않게).
             autostart_claude: Some(false),
+            tmux_host: None,
         }
     }
 
@@ -107,6 +111,21 @@
             startup_command: None,
             personality_prompt,
             autostart_claude: Some(false),
+            tmux_host: None,
+        }
+    }
+
+    fn req_with_tmux_host(agent_id: &str, tmux_host: Option<bool>) -> CreateSessionRequest {
+        CreateSessionRequest {
+            agent_id: agent_id.into(),
+            cols: None,
+            rows: None,
+            cwd: None,
+            shell: None,
+            startup_command: Some("claude --resume abc".into()),
+            personality_prompt: None,
+            autostart_claude: Some(false),
+            tmux_host,
         }
     }
 
@@ -1065,6 +1084,268 @@
             .with_shell_resolver(resolver),
         );
         (mgr, events, ctl, dir)
+    }
+
+    // ---- tmux 자동 호스팅(M3, kbm #2pc) ----
+
+    /// tmux 자동 호스팅 테스트용 가짜 러너. 호출된 모든 argv를 순서대로
+    /// 기록한다. `-V`는 `version`(Some이면 그 raw stdout, None이면 러너
+    /// 실행 자체가 실패한 것으로 흉내낸다) 응답을 주고, `list-sessions`는
+    /// 항상 "고아 없음"(no server running)을 준다 -- 고아 정리는 이
+    /// 마일스톤의 관심사가 아니다(순수 로직은 tmux_host.rs 자체 테스트가
+    /// 이미 커버한다).
+    fn fake_tmux_runner(
+        version: Option<&str>,
+    ) -> (
+        crate::session::tmux_host::TmuxRunner,
+        Arc<Mutex<Vec<Vec<String>>>>,
+    ) {
+        let calls: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
+        let calls_for_closure = calls.clone();
+        let version = version.map(|s| s.to_string());
+        let runner: crate::session::tmux_host::TmuxRunner = Arc::new(move |argv: &[String]| {
+            calls_for_closure.lock().push(argv.to_vec());
+            match argv.first().map(String::as_str) {
+                Some("-V") => match &version {
+                    Some(v) => Ok(crate::session::tmux_host::TmuxRun {
+                        ok: true,
+                        stdout: v.clone(),
+                        stderr: String::new(),
+                    }),
+                    None => Err("no such file or directory".to_string()),
+                },
+                Some("list-sessions") => Ok(crate::session::tmux_host::TmuxRun {
+                    ok: false,
+                    stdout: String::new(),
+                    stderr: "no server running".to_string(),
+                }),
+                _ => Ok(crate::session::tmux_host::TmuxRun {
+                    ok: true,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                }),
+            }
+        });
+        (runner, calls)
+    }
+
+    /// `build_with_shell_resolver`처럼 결정적 셸 리졸버(zsh 고정, 항상 같은
+    /// ZDOTDIR)를 쓰되 tmux 러너도 주입한다 -- `-e ZDOTDIR=...`가 new-session
+    /// argv에 들어가는지를 호스트의 실제 `$SHELL`과 무관하게 확정적으로
+    /// 검증하기 위함이다.
+    fn build_with_tmux_runner(
+        tmux_runner: crate::session::tmux_host::TmuxRunner,
+    ) -> (
+        Arc<SessionManager>,
+        Arc<RecordingEvents>,
+        Arc<FakeControl>,
+        PathBuf,
+    ) {
+        let events = Arc::new(RecordingEvents::default());
+        let reg = registry();
+        let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
+        let dir = scratch_observer_dir();
+        let observer = claude_observer(hub.clone(), dir.clone());
+        let (fac, ctl) = FakePtyFactory::new();
+        let mgr = Arc::new(
+            SessionManager::new(
+                Arc::new(fac),
+                observer,
+                reg,
+                events.clone() as Arc<dyn AppEvents>,
+                hub,
+                Arc::new(|| Some("http://127.0.0.1:12345/hook".into())),
+            )
+            .with_shell_resolver(Arc::new(|_selected, _wrappers| shells::ResolvedShell {
+                program: "/bin/zsh".to_string(),
+                args: vec!["-l".into(), "-i".into()],
+                extra_env: vec![(
+                    "ZDOTDIR".into(),
+                    "/tmp/agent-office-test-zdotdir".into(),
+                )],
+            }))
+            .with_tmux_runner(tmux_runner),
+        );
+        (mgr, events, ctl, dir)
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn tmux_host_wires_new_session_env_and_sends_attach_command_to_pty_stdin() {
+        let (tmux_runner, tmux_calls) = fake_tmux_runner(Some("tmux 3.4"));
+        let (mgr, _events, ctl, dir) = build_with_tmux_runner(tmux_runner);
+
+        let result = mgr.create(req_with_tmux_host("a1", Some(true))).unwrap();
+        let expected_name =
+            crate::session::tmux_host::session_name("a1", "a1", &result.session_id);
+
+        let calls = tmux_calls.lock().clone();
+        let new_session = calls
+            .iter()
+            .find(|c| c[0] == "new-session")
+            .expect("new-session must be attempted");
+        assert_eq!(new_session[3], expected_name, "new-session -s <name>: {new_session:?}");
+        assert!(
+            new_session
+                .iter()
+                .any(|a| a == "ZDOTDIR=/tmp/agent-office-test-zdotdir"),
+            "new-session argv must carry -e ZDOTDIR=...: {new_session:?}"
+        );
+        assert!(
+            new_session
+                .iter()
+                .any(|a| a == &format!("AGENT_OFFICE_SESSION={}", result.session_id)),
+            "new-session argv must carry -e AGENT_OFFICE_SESSION=<sid>: {new_session:?}"
+        );
+        assert!(
+            !new_session.iter().any(|a| a.starts_with("TERM=")),
+            "pane env must not carry TERM: {new_session:?}"
+        );
+
+        let send_keys = calls
+            .iter()
+            .find(|c| c[0] == "send-keys")
+            .expect("send-keys must be attempted");
+        assert!(
+            send_keys.contains(&"claude --resume abc".to_string()),
+            "send-keys must carry the profile's original startup command: {send_keys:?}"
+        );
+
+        assert_eq!(
+            ctl.writes_utf8(),
+            format!("exec tmux attach-session -t '={expected_name}'\r"),
+            "app PTY stdin must get the attach command, not the profile's startup command"
+        );
+
+        let sess = mgr.find("a1").unwrap();
+        assert_eq!(sess.hosted_tmux.as_deref(), Some(expected_name.as_str()));
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn tmux_host_dispose_kills_the_hosted_tmux_session() {
+        let (tmux_runner, tmux_calls) = fake_tmux_runner(Some("tmux 3.4"));
+        let (mgr, _events, ctl, dir) = build_with_tmux_runner(tmux_runner);
+
+        let result = mgr.create(req_with_tmux_host("a1", Some(true))).unwrap();
+        let expected_name =
+            crate::session::tmux_host::session_name("a1", "a1", &result.session_id);
+
+        mgr.dispose("a1");
+
+        let calls = tmux_calls.lock().clone();
+        let kill = calls
+            .iter()
+            .find(|c| c[0] == "kill-session")
+            .expect("kill-session must be attempted");
+        assert_eq!(
+            kill,
+            &vec!["kill-session".to_string(), "-t".to_string(), format!("={expected_name}")],
+        );
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn tmux_host_falls_back_to_normal_session_when_tmux_is_missing() {
+        let (tmux_runner, tmux_calls) = fake_tmux_runner(None);
+        let (mgr, _events, ctl, dir) = build_with_tmux_runner(tmux_runner);
+
+        let result = mgr.create(req_with_tmux_host("a1", Some(true))).unwrap();
+        assert_eq!(result.state, SessionState::Running);
+
+        assert_eq!(ctl.writes_utf8(), "claude --resume abc\r");
+
+        let calls = tmux_calls.lock().clone();
+        assert!(!calls.iter().any(|c| c[0] == "new-session"));
+
+        let sess = mgr.find("a1").unwrap();
+        assert!(sess.hosted_tmux.is_none());
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn tmux_host_falls_back_to_normal_session_when_tmux_is_too_old() {
+        let (tmux_runner, tmux_calls) = fake_tmux_runner(Some("tmux 3.1c"));
+        let (mgr, _events, ctl, dir) = build_with_tmux_runner(tmux_runner);
+
+        mgr.create(req_with_tmux_host("a1", Some(true))).unwrap();
+
+        assert_eq!(ctl.writes_utf8(), "claude --resume abc\r");
+
+        let calls = tmux_calls.lock().clone();
+        assert!(!calls.iter().any(|c| c[0] == "new-session"));
+
+        let sess = mgr.find("a1").unwrap();
+        assert!(sess.hosted_tmux.is_none());
+
+        cleanup(&ctl, &dir);
+    }
+
+    // ---- 세션 핸드오프에서 tmux 호스팅 세션 제외(M4, kbm #2pc) ----
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn handoff_all_marks_hosted_tmux_session_handed_off_without_app_data_dir() {
+        let (tmux_runner, _tmux_calls) = fake_tmux_runner(Some("tmux 3.4"));
+        let (mgr, _events, ctl, dir) = build_with_tmux_runner(tmux_runner);
+
+        mgr.create(req_with_tmux_host("a1", Some(true))).unwrap();
+        let sess = mgr.find("a1").unwrap();
+        assert!(
+            sess.hosted_tmux.is_some(),
+            "session must actually be hosted for this test to mean anything"
+        );
+
+        // app_data_dir 미설정(테스트 기본값) -- sessiond가 없어도 tmux 호스팅
+        // 세션은 보존돼야 한다.
+        let handed = mgr.handoff_all(
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
+        assert_eq!(
+            handed, 1,
+            "a hosted session must be preserved even without app_data_dir/sessiond"
+        );
+        assert!(sess.handed_off.load(Ordering::SeqCst));
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn handoff_all_then_dispose_all_does_not_kill_the_hosted_tmux_session() {
+        // 회귀 가드: handoff_all이 handed_off를 세운 뒤에는 dispose_all()이
+        // 이 세션을 건드리지 않아야 한다(kill-session도, 앱 PTY kill도).
+        let (tmux_runner, tmux_calls) = fake_tmux_runner(Some("tmux 3.4"));
+        let (mgr, _events, ctl, dir) = build_with_tmux_runner(tmux_runner);
+
+        mgr.create(req_with_tmux_host("a1", Some(true))).unwrap();
+        let handed = mgr.handoff_all(
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
+        assert_eq!(handed, 1);
+
+        mgr.dispose_all();
+
+        let calls = tmux_calls.lock().clone();
+        assert!(
+            !calls.iter().any(|c| c[0] == "kill-session"),
+            "handed-off hosted session must survive dispose_all: {calls:?}"
+        );
+        assert_eq!(
+            ctl.kill_count(),
+            0,
+            "the app PTY(=tmux client) must not be killed either"
+        );
+
+        cleanup(&ctl, &dir);
     }
 
     #[cfg(not(windows))]

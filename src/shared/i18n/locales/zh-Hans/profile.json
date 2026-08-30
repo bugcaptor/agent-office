@@ -90,6 +90,8 @@
     "keyboardSoundHint": "此智能体打字时发出的声音。选择后会试听。",
     "talkReceive": "接收同事消息",
     "talkReceiveHint": "关闭后其他角色无法向这个角色搭话。（仅在设置 → 控制的<b>同事对话</b>开启时才有意义。）",
+    "tmuxHost": "tmux 托管",
+    "tmuxHostHint": "开启后，新会话会以 tmux 会话方式启动，应用只负责附加上去。此时角色的 Shell 选择将不再起作用（pane 的 Shell 由系统默认决定）。仅限 macOS/Linux。",
     "shell": "Shell",
     "shellAuto": "自动（默认）",
     "shellNoHooks": "{{label}}（不支持计时）"

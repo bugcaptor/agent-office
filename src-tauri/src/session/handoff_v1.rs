@@ -28,18 +28,42 @@ impl SessionManager {
         if self.broker_mode() {
             return self.handoff_all_broker(snapshots, rendered_bytes);
         }
+
+        // tmux 자동 호스팅 세션(kbm #2pc): 이 세션의 존속은 sessiond가 아니라
+        // tmux가 맡는다. `handed_off`를 "이 세션의 수명을 다른 주체가
+        // 가져갔다"는 뜻으로 확장해서 세우면 dispose_all()의 handed_off 조기
+        // return이 이 세션을 건드리지 않는다(kill-session이 돌지 않는다).
+        // **app_data_dir 확인·sessiond 접속보다 먼저 해야 한다** -- 아래는
+        // 그 둘이 없거나 실패하면 세션을 하나도 안 건드리고 0을 리턴하므로,
+        // 마킹이 그 뒤에 있으면 무용지물이다(sessiond 없이도 tmux 호스팅
+        // 세션은 보존돼야 한다).
+        let mut hosted_count = 0usize;
+        let mut hosted_ids: std::collections::HashSet<AgentId> = std::collections::HashSet::new();
+        {
+            let map = self.sessions.lock();
+            for (agent_id, s) in map.iter() {
+                if *s.state.lock() == SessionState::Running && s.hosted_tmux.is_some() {
+                    s.handed_off.store(true, Ordering::SeqCst);
+                    hosted_ids.insert(agent_id.clone());
+                    hosted_count += 1;
+                }
+            }
+        }
+
         let Some(app_data_dir) = self.app_data_dir.clone() else {
-            return 0;
+            return hosted_count;
         };
         let ids: Vec<AgentId> = {
             let map = self.sessions.lock();
             map.iter()
-                .filter(|(_, s)| *s.state.lock() == SessionState::Running)
+                .filter(|(a, s)| {
+                    *s.state.lock() == SessionState::Running && !hosted_ids.contains(a.as_str())
+                })
                 .map(|(a, _)| a.clone())
                 .collect()
         };
         if ids.is_empty() {
-            return 0;
+            return hosted_count;
         }
 
         let socket_path = crate::sessiond::client::default_socket_path(&app_data_dir);
@@ -50,19 +74,21 @@ impl SessionManager {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("agent-office: handoff_all could not reach sessiond: {e}");
-                    return 0;
+                    return hosted_count;
                 }
             };
 
-        ids.iter()
-            .filter(|agent_id| {
-                let snapshot = snapshots
-                    .get(agent_id.as_str())
-                    .map(|s| s.clone().into_bytes())
-                    .unwrap_or_default();
-                self.handoff_one(agent_id, &client, snapshot)
-            })
-            .count()
+        hosted_count
+            + ids
+                .iter()
+                .filter(|agent_id| {
+                    let snapshot = snapshots
+                        .get(agent_id.as_str())
+                        .map(|s| s.clone().into_bytes())
+                        .unwrap_or_default();
+                    self.handoff_one(agent_id, &client, snapshot)
+                })
+                .count()
     }
 
     #[cfg(not(unix))]
@@ -262,6 +288,7 @@ impl SessionManager {
             spawned,
             Some(stop_gate),
             Some(initial_output),
+            None, // hosted_tmux: 입양 경로는 tmux 소유권을 복원하지 않는다(M3 범위 밖)
         );
         Some(AdoptedSessionInfo {
             agent_id: agent_id.to_string(),

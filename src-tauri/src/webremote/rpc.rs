@@ -125,6 +125,7 @@ pub async fn dispatch(
                     startup_command: profile.startup_command.clone(),
                     personality_prompt: profile.personality_prompt.clone(),
                     autostart_claude: None,
+                    tmux_host: profile.tmux_host,
                 },
                 AgentEventProfile {
                     name: profile.name.clone(),

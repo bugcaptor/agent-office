@@ -45,6 +45,19 @@
 - 응답 script는 코멘트 2줄(eval 무해) — pane 안에서 `eval "$(agent-office ctl attach <agentId>)"`를 실행하라는 안내. pane 셸은 in-app 세션(tmux 클라이언트)이 live이므로 **BindExisting으로 같은 sid에 합류** — 훅·persona가 앱 탭(미러 뷰)과 같은 세션에 귀속된다.
 - 시맨틱: 앱 창 크기가 tmux window 크기에 영향(window-size latest). dispose는 클라이언트만 종료(tmux 서버 무사, 비파괴). Exited 후 "다시 띄우기"는 프로필 startup_command 기준이라 tmux 재접속이 아님. 봇 inject는 활성 pane으로 가므로 단일 pane 세션 권장. 상세는 `cli-control-design.md`의 tmux 절.
 
+### 5.1 프로필의 tmux 자동 호스팅과의 분담
+
+`ctl attach --tmux`는 **사용자가 이미 손으로 만들어 둔 임의의 tmux 세션**에
+즉석으로 붙는 용도다. 그와 별개로, 프로필에서 "tmux 호스팅"을 켜면 앱이
+**세션 자체를 새로 만들고** 이름·gc·수명까지 관리한다(kbm #2pc,
+`docs/tmux-hosting-design.md`) — 매번 앱이 `new-session`으로 새 tmux 세션을
+띄우고 그 안에 앱 PTY가 붙으므로, "밖에서 만든 tmux에 붙기"가 필요하던 자리
+상당수를 흡수한다. 다만 두 경로는 겹치지 않고 공존한다: `ctl attach --tmux`는
+사용자가 부른 임의 이름을 퍼지 매칭으로 찾아 붙고, 자동 호스팅은 `ao-` 접두
+이름을 앱이 직접 짓고 `=` 정확일치로만 다룬다(위 pane 안 `eval` 합류 방식은
+자동 호스팅에서도 그대로 재사용된다 — 두 경로 모두 종착지는 같은 "앱 PTY로
+tmux attach" 메커니즘이다).
+
 ## 6. 프런트
 
 - `SessionStateEvent.external?: boolean`(additive, skip_if_none) → `SessionRuntime.kind: "pty"|"external"`. kind는 매 전이의 external 유무로 확정(PTY 경로는 항상 미포함 → 자동 "pty" 복귀).

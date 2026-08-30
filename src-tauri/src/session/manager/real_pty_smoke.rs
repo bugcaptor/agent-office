@@ -179,6 +179,7 @@ return
                 startup_command: None,
                 personality_prompt: None,
                 autostart_claude: Some(false),
+                tmux_host: None,
             })
             .expect("real PTY spawn should succeed");
         assert_eq!(created.state, SessionState::Running);
@@ -323,6 +324,7 @@ return
                 startup_command: None,
                 personality_prompt: None,
                 autostart_claude: Some(false),
+                tmux_host: None,
             })
             .expect("real PTY spawn should succeed");
         assert_eq!(created.state, SessionState::Running);
@@ -340,6 +342,7 @@ return
             startup_command: None,
             personality_prompt: None,
             autostart_claude: Some(false),
+            tmux_host: None,
         })
         .expect("real PTY spawn should succeed for a2");
         mgr1.write_input("a2", "echo backlog-marker-24680\n");
@@ -552,6 +555,7 @@ return
                 startup_command: None,
                 personality_prompt: None,
                 autostart_claude: Some(false),
+                tmux_host: None,
             })
             .expect("broker spawn should succeed");
         assert_eq!(created.state, SessionState::Running);
@@ -705,6 +709,7 @@ return
             startup_command: None,
             personality_prompt: None,
             autostart_claude: Some(false),
+            tmux_host: None,
         })
         .expect("broker spawn should succeed");
         let out1 = attach_collector(&mgr1, "a1");
@@ -866,6 +871,7 @@ return
                 startup_command: None,
                 personality_prompt: None,
                 autostart_claude: Some(false),
+                tmux_host: None,
             }
         }
 
@@ -992,6 +998,7 @@ return
                 startup_command: None,
                 personality_prompt: None,
                 autostart_claude: Some(false),
+                tmux_host: None,
             })
             .unwrap();
         // detach: 자식은 데몬 소유로 남는다(곧 sleep이 끝나 스스로 죽는다).
@@ -1089,6 +1096,7 @@ return
             startup_command: Some("echo mash-marker".into()),
             personality_prompt: None,
             autostart_claude: Some(false),
+            tmux_host: None,
         };
         let create_with_watchdog = |manager: Arc<SessionManager>, label: String| async move {
             let handle = tokio::task::spawn_blocking(move || manager.create(request()));
@@ -1247,6 +1255,7 @@ return
                 startup_command: None,
                 personality_prompt: None,
                 autostart_claude: Some(false),
+                tmux_host: None,
             })
             .unwrap();
 
@@ -1575,6 +1584,7 @@ return
             startup_command: None,
             personality_prompt: None,
             autostart_claude: Some(false),
+            tmux_host: None,
         })
         .expect("create real session");
         // 출력을 계속 빨아들여 셸이 막히지 않게 한다.

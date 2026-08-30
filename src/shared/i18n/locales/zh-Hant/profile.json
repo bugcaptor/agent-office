@@ -90,6 +90,8 @@
     "keyboardSoundHint": "這個 Agent 打字時發出的聲音。選取後會先試聽。",
     "talkReceive": "接收同事訊息",
     "talkReceiveHint": "關閉後，其他角色就無法向這個角色搭話。（只有在設定 → 控制的<b>同事對話</b>開啟時才有意義。）",
+    "tmuxHost": "tmux 代管",
+    "tmuxHostHint": "開啟後，新工作階段會以 tmux 工作階段方式啟動，應用程式只負責附加上去。這時角色的 Shell 選擇就不再有作用（pane 的 Shell 由系統預設決定）。僅限 macOS/Linux。",
     "shell": "Shell",
     "shellAuto": "自動（預設）",
     "shellNoHooks": "{{label}}（不支援時間追蹤）"

@@ -90,6 +90,8 @@
     "keyboardSoundHint": "The sound this agent makes while typing. Picking one plays a preview.",
     "talkReceive": "Receive messages from coworkers",
     "talkReceiveHint": "Turn this off and no other character can talk to this one. (It only matters while <b>Coworker chat</b> is on under Settings → Control.)",
+    "tmuxHost": "tmux hosting",
+    "tmuxHostHint": "When on, new sessions launch as a tmux session and the app just attaches to it. The profile's shell choice becomes moot (the pane shell is whatever the system default is). macOS/Linux only.",
     "shell": "Shell",
     "shellAuto": "Auto (default)",
     "shellNoHooks": "{{label}} (no time tracking)"

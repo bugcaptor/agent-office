@@ -77,6 +77,11 @@ export interface AgentProfile {
   /** 동료 대화(docs/agent-talk-design.md) 수신 허용. 부재/true = 받는다,
    * false = 이 캐릭터에게는 말을 걸 수 없다(roster에서 reachable=false). */
   talkReceive?: boolean;
+  /** 이 캐릭터의 세션을 tmux로 자동 호스팅. true면 새 세션을 tmux 세션으로
+   * 띄우고 앱 PTY는 거기 attach만 한다 — 켜면 프로필의 셸 선택은 무의미해진다
+   * (pane 셸은 tmux/시스템 기본이 정한다). **유닉스 전용**, Windows에서는 무시.
+   * 부재/false = 기존처럼 직접 셸을 띄운다. */
+  tmuxHost?: boolean;
 }
 
 /**

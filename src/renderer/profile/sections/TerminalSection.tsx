@@ -10,6 +10,7 @@ import { VoiceField } from "./VoiceField";
 import type { DraftProfile } from "../generate";
 import type { AvailableShell } from "@shared/types";
 import type { Dispatch, SetStateAction } from "react";
+import { IS_WINDOWS } from "../../shared/platform";
 
 export function TerminalSection({
   draft,
@@ -135,6 +136,19 @@ export function TerminalSection({
           />
         </label>
       </div>
+      {!IS_WINDOWS && (
+        <div className="form-field form-check">
+          <label>
+            <input
+              type="checkbox"
+              checked={draft.tmuxHost === true}
+              onChange={(e) => setDraft({ ...draft, tmuxHost: e.target.checked })}
+            />
+            <span className="form-label-text">{t("terminal.tmuxHost")}</span>
+          </label>
+          <p className="form-hint">{t("terminal.tmuxHostHint")}</p>
+        </div>
+      )}
       {shells.length > 0 && (
         <div className="form-field">
           <label>

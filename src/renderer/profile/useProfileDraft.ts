@@ -68,6 +68,7 @@ export function useProfileDraft(editingAgentId: string | undefined) {
       botPollIntervalSec: agent.bot?.pollIntervalSec ? String(agent.bot.pollIntervalSec) : "",
       botIdleQuietMs: agent.bot?.idleQuietMs ? String(agent.bot.idleQuietMs) : "",
       talkReceive: agent.talkReceive !== false,
+      tmuxHost: agent.tmuxHost === true,
     });
   }, [editingAgentId]);
 
