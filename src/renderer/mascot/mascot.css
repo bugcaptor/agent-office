@@ -201,19 +201,30 @@
   font: 700 13px/1 ui-sans-serif, system-ui, sans-serif;
 }
 
-/* 대상 이름. 한 줄로 잘라낸다(폭 54px). 어두운 판 위의 옅은 글자로 어떤
-   바탕에서도 읽히게 한다.
+/* 글자 줄을 감싸는 판. 두 줄(projecttask)일 때 줄마다 판을 깔면 검은 상자가
+   두 개로 보여 지저분하다 — 판은 하나로 감싸고 줄은 그 안에 얹는다.
    padding/음수 margin 짝 — 판이 글자보다 조금 넓어야 읽히는데 패딩을 그냥
    주면 칸 폭·높이가 늘어 protocol.ts의 타일 상수와 어긋난다. 같은 크기의
    음수 margin으로 되돌려 바깥에서 본 크기는 그대로 둔다. 가로 3px은 판이
-   정확히 타일 폭(54px)에서 멈추게 하는 값이고, 세로 1px은 tall 모드에서 두
-   줄의 판이 겹치지 않고 딱 맞닿게 하는 값이다(줄 사이 gap 2px = 1px+1px). */
-.mascot-light-name {
+   정확히 타일 폭(54px)에서 멈추게 하는 값이고, 안쪽 gap 2px은 줄 간격을
+   예전(줄마다 판일 때의 gap)과 같게 유지한다. */
+.mascot-light-text {
   max-width: 100%;
+  min-width: 0;
   padding: 1px 3px;
   margin: -1px -3px;
   background: var(--light-plate);
   border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+}
+
+/* 대상 이름. 한 줄로 잘라낸다(폭 54px). 어두운 판 위의 옅은 글자로 어떤
+   바탕에서도 읽히게 한다. */
+.mascot-light-name {
+  max-width: 100%;
   color: #eaecf2;
   font: 500 8px/9px ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.2px;
@@ -221,17 +232,12 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  pointer-events: none;
 }
 
 /* 둘째 줄(작업명) — `mascotLightsLabel==="projecttask"`일 때만 렌더된다.
-   첫째 줄과 같은 절단·판 규칙을 쓰되 색만 흐리게 해 위계를 준다. */
+   첫째 줄과 같은 절단 규칙을 쓰되 색만 흐리게 해 위계를 준다. */
 .mascot-light-sub {
   max-width: 100%;
-  padding: 1px 3px;
-  margin: -1px -3px;
-  background: var(--light-plate);
-  border-radius: 4px;
   color: #b9bec9;
   font: 400 8px/9px ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.2px;
@@ -239,7 +245,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  pointer-events: none;
 }
 
 /* clickAgentId===null인 칸(소속 없음/클릭 no-op) — 손가락 커서를 보이면

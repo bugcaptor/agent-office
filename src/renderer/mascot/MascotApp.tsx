@@ -664,14 +664,18 @@ export default function MascotApp() {
               <div className="mascot-light-face">
                 <LightFace light={light} dpr={dpr} face={state.lightsFace} />
               </div>
-              {/* 이름은 대상(프로젝트 폴더명 또는 에이전트명) 원문 — 비번역(결정 9). */}
-              <div className="mascot-light-name">{light.label}</div>
-              {/* 둘째 줄(작업명) — `mascotLightsLabel==="projecttask"`일 때만
-                  채워진다(sublabel). 없으면 렌더하지 않는다 — tall 모드에서도
-                  칸 높이는 CSS(.mascot-lights-tall)가 일괄로 맞춘다. */}
-              {light.sublabel !== null && (
-                <div className="mascot-light-sub">{light.sublabel}</div>
-              )}
+              {/* 글자 줄은 판 하나로 묶는다 — 줄마다 판을 깔면 두 줄일 때
+                  검은 상자가 둘로 보인다. */}
+              <div className="mascot-light-text">
+                {/* 이름은 대상(프로젝트 폴더명 또는 에이전트명) 원문 — 비번역(결정 9). */}
+                <div className="mascot-light-name">{light.label}</div>
+                {/* 둘째 줄(작업명) — `mascotLightsLabel==="projecttask"`일 때만
+                    채워진다(sublabel). 없으면 렌더하지 않는다 — tall 모드에서도
+                    칸 높이는 CSS(.mascot-lights-tall)가 일괄로 맞춘다. */}
+                {light.sublabel !== null && (
+                  <div className="mascot-light-sub">{light.sublabel}</div>
+                )}
+              </div>
             </div>
           ))}
           {overflowCount > 0 && (
