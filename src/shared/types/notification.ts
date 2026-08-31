@@ -55,12 +55,18 @@ export interface NotificationEvent {
  * 한 턴의 토큰 사용량. 이벤트명 "turn-usage". Rust `TurnUsageEvent` 미러.
  * 알림(notification-new)과 독립이라 서브에이전트로 억제된 Stop에서도 온다
  * (docs/session-analytics-design.md §9.1).
+ *
+ * `partial`: 턴이 끝나기 전의 중간 관측(true, claude 어댑터의 PostToolUse
+ * 스로틀 통과 시)인지 턴이 실제로 끝난 것(false, Stop)인지(§11.9). 소비자
+ * (`sessionCost.addTurn`)는 partial인 이벤트로 턴 수를 올리면 안 된다 — 한
+ * 턴 안에서 도구를 여러 번 부르면 그만큼 partial 이벤트가 여러 번 온다.
  */
 export interface TurnUsageEvent {
   agentId: AgentId;
   sessionId: SessionId;
   at: number;
   tokens: SessionEventTokens;
+  partial: boolean;
 }
 
 /**

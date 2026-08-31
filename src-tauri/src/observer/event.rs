@@ -38,6 +38,13 @@ pub enum ObserverEvent {
         text: Option<String>,
         /// 턴 중간 assistant 내레이션(claude transcript 꼬리, 스로틀 적용). codex는 항상 None.
         assistant: Option<String>,
+        /// 턴 "중간"에 지금까지 이 도구 이벤트가 관측한 토큰 델타(claude 어댑터
+        /// 한정, PostToolUse의 5초 progress 스로틀을 그대로 얹는다 — 매 도구마다
+        /// 전사를 다시 읽지 않는다). Stop의 `tokens`와 같은 워터마크 델타 추출을
+        /// 쓰므로 이중 계산이 없다: 여기서 한 번 세면 다음 스캔(다른 Tool 또는
+        /// 그 턴의 최종 Stop)은 그 뒤 증분만 잡는다. 스로틀 미통과·추출 실패·
+        /// codex/pi는 항상 None.
+        tokens: Option<SessionEventTokens>,
     },
     SubStart,
     SubStop,

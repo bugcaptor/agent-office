@@ -8,5 +8,6 @@
     "cacheRead": 98000,
     "cacheWrite": 2500,
     "model": "claude-opus-5"
-  }
+  },
+  "partial": false
 }

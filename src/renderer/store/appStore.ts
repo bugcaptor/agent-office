@@ -366,7 +366,9 @@ interface AppState {
   noteUsageSession(agentId: string, sessionId: string): void;
   /** turn-usage 이벤트를 세션 누계에 더한다(알림과 분리된 채널이라 서브에이전트로
    * 억제된 Stop에서도 온다). 시드가 이미 깔려 있고 `e.at <= sessionUsageSeed.at`
-   * 이면 그 턴은 시드에 이미 들어 있으므로 무시한다(이중 계산 방지). */
+   * 이면 그 턴은 시드에 이미 들어 있으므로 무시한다(이중 계산 방지). `e.partial`은
+   * 그대로 `addTurn`에 넘긴다 — PostToolUse 중간 갱신(partial:true)은 토큰·비용은
+   * 반영하되 턴 수는 안 올린다(§11.9). */
   applyTurnUsage(e: TurnUsageEvent): void;
   /** `useSessionUsageSeed`가 부팅 후 1회 호출. 이미 시드가 있으면 no-op. */
   setSessionUsageSeed(seed: { at: number; bySession: Record<string, SessionUsageTotals> }): void;
@@ -991,7 +993,7 @@ export const useAppStore = create<AppState>()(
         return {
           sessionUsage: {
             ...s.sessionUsage,
-            [e.agentId]: { sessionId: e.sessionId, totals: addTurn(entry.totals, e.tokens) },
+            [e.agentId]: { sessionId: e.sessionId, totals: addTurn(entry.totals, e.tokens, e.partial) },
           },
           // 실시간이 실제로 반영한 첫 턴의 시각만 기록(이미 있으면 유지) — B의
           // 시드 컷오프 기준. 여기서 무시되고 return s로 빠진 사용량 이벤트(위

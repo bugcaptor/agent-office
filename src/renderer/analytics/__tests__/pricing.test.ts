@@ -3,7 +3,7 @@
 // pricing.ts 순수 함수 검증: 패턴 매칭 우선순위(구체 패턴이 먼저), 미지/부재
 // 모델 → null, 캐시 단가가 반영된 총액, 표시 포맷 경계(자릿수·K/M 축약).
 import { describe, expect, it } from "vitest";
-import { estimateCostUsd, formatTokens, formatUsd, rateFor } from "../pricing";
+import { estimateCostUsd, formatTokenPair, formatTokens, formatUsd, rateFor } from "../pricing";
 
 describe("rateFor", () => {
   it("부분문자열로 실제 모델 ID를 잡는다", () => {
@@ -86,5 +86,24 @@ describe("formatTokens", () => {
     expect(formatTokens(999_999)).toBe("1000.0K"); // 경계: 1M 미만은 K 유지
     expect(formatTokens(1_000_000)).toBe("1.0M");
     expect(formatTokens(0)).toBe("0");
+  });
+});
+
+describe("formatTokenPair", () => {
+  it("캐시가 있으면 순수 입출력 뒤에 공백·CH 표식·괄호로 전체를 병기한다", () => {
+    expect(formatTokenPair(11_700, 1_680_000)).toBe("11.7K CH(1.7M)");
+  });
+
+  it("전체가 0이면 —", () => {
+    expect(formatTokenPair(0, 0)).toBe("—");
+  });
+
+  it("캐시가 없어 순수·전체가 같으면 괄호 없이 단독 표기", () => {
+    expect(formatTokenPair(500, 500)).toBe(formatTokens(500));
+    expect(formatTokenPair(500, 500)).not.toContain("CH");
+  });
+
+  it("캐시만 있는 턴(순수 입출력 0)은 0 CH(전체)로 정직하게 그린다", () => {
+    expect(formatTokenPair(0, 500)).toBe("0 CH(500)");
   });
 });

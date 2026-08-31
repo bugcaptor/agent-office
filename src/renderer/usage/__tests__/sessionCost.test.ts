@@ -67,6 +67,33 @@ describe("addTurn", () => {
     const t3 = addTurn(t2, { input: 10, model: "claude-opus-5" });
     expect(t3.model).toBe("claude-opus-5");
   });
+
+  // 턴 중간 갱신(§11.9): PostToolUse가 낸 partial 사용량은 토큰·비용은 그대로
+  // 더하되 turns/costUnknownTurns는 올리지 않는다 — 그 턴의 최종 Stop이
+  // partial:false로 다시 잡히면서 그때 턴 하나로 센다.
+  it("partial=true면 토큰·비용은 더하되 turns를 올리지 않는다", () => {
+    const t1 = addTurn(emptyTotals(), { input: 100, output: 50, model: "claude-opus-5" }, true);
+    expect(t1.input).toBe(100);
+    expect(t1.output).toBe(50);
+    expect(t1.costUsd).toBeGreaterThan(0);
+    expect(t1.turns).toBe(0);
+
+    // 같은 턴 안에서 도구를 두 번 더 불러도(partial 두 번) turns는 여전히 0.
+    const t2 = addTurn(t1, { input: 10, model: "claude-opus-5" }, true);
+    expect(t2.turns).toBe(0);
+    expect(t2.input).toBe(110);
+
+    // 그 턴의 최종 Stop(partial 기본값 false)이 와야 비로소 turns가 1이 된다.
+    const t3 = addTurn(t2, { input: 5, model: "claude-opus-5" });
+    expect(t3.turns).toBe(1);
+  });
+
+  it("partial=true에서 단가를 모르는 모델은 costUnknownTurns를 올리지 않는다", () => {
+    const t1 = addTurn(emptyTotals(), { input: 1000, model: "llama-3" }, true);
+    expect(t1.costUsd).toBe(0);
+    expect(t1.costUnknownTurns).toBe(0);
+    expect(t1.turns).toBe(0);
+  });
 });
 
 describe("mergeTotals", () => {
@@ -125,5 +152,23 @@ describe("aggregateSeed", () => {
 
   it("해당하는 레코드가 없으면 빈 객체", () => {
     expect(aggregateSeed([], 1000)).toEqual({});
+  });
+
+  // §11.9: partial:true인 usage 레코드(PostToolUse 중간 갱신)는 토큰은
+  // 더하되 turns는 안 올린다. partial 필드가 없는 과거 레코드는 false로
+  // 취급해 turns를 올린다(하위호환).
+  it("partial:true 레코드는 토큰만 더하고 turns는 안 올린다", () => {
+    const records: SessionEventRecord[] = [
+      record({ sessionId: "s1", at: 100, kind: "usage", tokens: { input: 10, model: "claude-opus-5" }, partial: true }),
+      record({ sessionId: "s1", at: 150, kind: "usage", tokens: { input: 5, model: "claude-opus-5" }, partial: true }),
+      // 이 턴의 최종 Stop 유래 usage: partial:false로 비로소 turns가 오른다.
+      record({ sessionId: "s1", at: 200, kind: "usage", tokens: { input: 2, model: "claude-opus-5" }, partial: false }),
+      // partial 필드가 아예 없는 과거 레코드는 false로 취급(하위호환).
+      record({ sessionId: "s2", at: 50, kind: "stop", tokens: { input: 7, model: "claude-opus-5" } }),
+    ];
+    const out = aggregateSeed(records, 1000);
+    expect(out["s1"].input).toBe(17);
+    expect(out["s1"].turns).toBe(1);
+    expect(out["s2"].turns).toBe(1);
   });
 });

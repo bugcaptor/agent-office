@@ -554,6 +554,7 @@ mod tests {
                 cache_write: Some(40),
                 model: Some("claude-opus-5".into()),
             },
+            partial: false,
         };
         composite.turn_usage(&usage);
 

@@ -148,6 +148,14 @@ pub struct NotificationEvent {
 /// 토큰이 영구 유실되는 원인이었다(docs/session-analytics-design.md §9.1).
 /// `tokens`가 Option이 아닌 이유: 값이 있을 때만 방출한다는 계약을 타입으로
 /// 못박는다 -- 호출부가 빈 사용량으로 이벤트를 만들 일이 아예 없다.
+///
+/// `partial`: 이 사용량이 턴이 끝나기 **전**의 중간 관측인지(true, claude
+/// 어댑터의 PostToolUse 스로틀 통과 시) 턴이 실제로 끝난 시점의 것인지(false,
+/// Stop)를 구분한다(§9.9/§11.9). 워터마크 델타 추출이라 이중 계산은 없지만
+/// (같은 구간을 두 번 세지 않는다), "턴이 몇 번 있었는지" 세는 소비자
+/// (`sessionCost.addTurn`)는 partial인 방출로 턴 수를 올리면 안 된다 — 한
+/// 턴 안에서 도구를 여러 번 부르면 그만큼 partial 이벤트가 여러 번 나가기
+/// 때문이다.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnUsageEvent {
@@ -155,6 +163,7 @@ pub struct TurnUsageEvent {
     pub session_id: SessionId,
     pub at: u64,
     pub tokens: SessionEventTokens,
+    pub partial: bool,
 }
 
 /// activity 신호 종류. TS ActivityKind와 동일.
@@ -922,12 +931,32 @@ mod tests {
                 cache_write: Some(10),
                 model: Some("claude-opus-5".into()),
             },
+            partial: false,
         };
         let json = serde_json::to_string(&ev).unwrap();
         assert!(json.contains("\"tokens\""), "{json}");
         assert!(json.contains("\"cacheRead\":20"), "{json}");
         assert!(json.contains("\"cacheWrite\":10"), "{json}");
         assert!(json.contains("\"model\":\"claude-opus-5\""), "{json}");
+        assert!(json.contains("\"partial\":false"), "{json}");
+    }
+
+    /// `partial: true`(PostToolUse 중간 갱신)도 다른 필드와 나란히 그대로
+    /// 직렬화된다 — 옵션이 아니라 항상 실리는 필드다.
+    #[test]
+    fn turn_usage_event_serializes_partial_true_for_mid_turn_updates() {
+        let ev = TurnUsageEvent {
+            agent_id: "a1".into(),
+            session_id: "s1".into(),
+            at: 1,
+            tokens: SessionEventTokens {
+                input: Some(5),
+                ..Default::default()
+            },
+            partial: true,
+        };
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(json.contains("\"partial\":true"), "{json}");
     }
 
     #[test]

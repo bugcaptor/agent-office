@@ -228,7 +228,7 @@ describe("TerminalSummaryBar 사용량 스팬 (이슈 #44 2단계)", () => {
     const usage = container.querySelector(".terminal-summary-usage")!;
     // 예전에는 "—"였다 — 캐시가 셀에서 통째로 안 보이던 시절의 규칙이고,
     // 지금은 괄호가 그 값을 그리므로 0을 숨길 이유가 없다.
-    expect(usage.textContent).toBe(`${formatTokens(0)}(${formatTokens(500)}) · ${formatUsd(0.0012)}`);
+    expect(usage.textContent).toBe(`${formatTokens(0)} CH(${formatTokens(500)}) · ${formatUsd(0.0012)}`);
   });
 
   it("캐시가 있으면 순수 입출력과 캐시 포함 전체를 병기하고 괄호의 뜻을 툴팁에 남긴다", () => {
@@ -254,7 +254,7 @@ describe("TerminalSummaryBar 사용량 스팬 (이슈 #44 2단계)", () => {
     // 순수 입출력 11,703 / 전체 1,676,733 — 예전에는 앞의 숫자만 그려서
     // 실제의 0.7%만 보였다.
     expect(usage.textContent).toBe(
-      `${formatTokens(11_703)}(${formatTokens(1_676_733)}) · ${formatUsd(3.4)}`,
+      `${formatTokens(11_703)} CH(${formatTokens(1_676_733)}) · ${formatUsd(3.4)}`,
     );
     expect(usage.getAttribute("title")).toContain("괄호");
   });

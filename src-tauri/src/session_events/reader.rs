@@ -121,6 +121,7 @@ mod tests {
             state: None,
             tokens: None,
             origin: None,
+            partial: None,
         }
     }
 

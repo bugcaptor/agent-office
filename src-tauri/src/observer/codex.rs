@@ -128,15 +128,19 @@ impl ObserverAdapter for CodexAdapter {
             // 이슈 #43: claude와 동일하게 도구 요약을 싣되, 서브에이전트 내부 도구
             // (agent_id 있음)는 하트비트만 유지한다. codex는 transcript 꼬리가 없어
             // assistant 내레이션은 항상 None.
+            // codex는 rollout에서 턴 경계 델타로만 사용량을 뽑는다(§9.3) — 도구
+            // 이벤트 중간 갱신은 claude 어댑터 한정 기능이라 항상 tokens: None.
             "PostToolUse" => Some(if agent_id(raw.body).is_some() {
                 ObserverEvent::Tool {
                     text: None,
                     assistant: None,
+                    tokens: None,
                 }
             } else {
                 ObserverEvent::Tool {
                     text: tool_activity_text(raw.body),
                     assistant: None,
+                    tokens: None,
                 }
             }),
             "PermissionRequest" => Some(ObserverEvent::Attention {
@@ -429,6 +433,7 @@ mod tests {
             Some(ObserverEvent::Tool {
                 text: Some("Grep: TODO".into()),
                 assistant: None,
+                tokens: None,
             }),
         );
         // 서브에이전트 내부 도구(agent_id)는 하트비트만.
@@ -440,6 +445,7 @@ mod tests {
             Some(ObserverEvent::Tool {
                 text: None,
                 assistant: None,
+                tokens: None,
             }),
         );
     }

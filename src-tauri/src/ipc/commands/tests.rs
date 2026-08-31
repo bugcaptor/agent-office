@@ -1057,6 +1057,7 @@
             state: None,
             tokens: None,
             origin: None,
+            partial: None,
         };
         let mut line = serde_json::to_string(&record).unwrap();
         line.push('\n');

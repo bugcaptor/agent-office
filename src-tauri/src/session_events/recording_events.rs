@@ -53,6 +53,7 @@ impl AppEvents for RecordingAppEvents {
             state: None,
             tokens: None,
             origin: None,
+            partial: None,
         });
         self.inner.session_started(event);
     }
@@ -99,6 +100,12 @@ impl AppEvents for RecordingAppEvents {
     /// kind=Stop 레코드에 실렸지만(알림에 업힌 계측), 지금은 `notification_new`가
     /// 더 이상 tokens를 만지지 않으므로 stop 레코드엔 안 실린다 — 소비자는
     /// kind가 아니라 tokens 유무로 합산해야 신구 파일을 모두 커버한다.
+    ///
+    /// `partial`도 그대로 싣는다(§11.9) — hub가 PostToolUse 중간 갱신에는
+    /// `true`를, Stop에는 `false`를 실어 보낸다. 이걸 안 남기면 재부팅 후
+    /// `aggregateSeed`가 과거 기록만 보고 "이 usage 레코드가 턴을 하나 닫은
+    /// 것인지, 아직 진행 중인 턴의 중간 스냅샷인지"를 구분 못 해 턴 수가
+    /// 부풀거나 유실된다.
     fn turn_usage(&self, event: &TurnUsageEvent) {
         let mut draft = SessionEventDraft::simple(
             event.agent_id.clone(),
@@ -107,6 +114,7 @@ impl AppEvents for RecordingAppEvents {
             event.at,
         );
         draft.tokens = Some(event.tokens.clone());
+        draft.partial = Some(event.partial);
         self.record(draft);
         self.inner.turn_usage(event);
     }
@@ -310,8 +318,10 @@ mod tests {
             session_id: "s1".into(),
             at: 1_783_728_000_000,
             tokens: tokens.clone(),
+            partial: false,
         };
         events.turn_usage(&usage_event);
+        assert_eq!(read(&root)[0].partial, Some(false));
         events.notification_new(&NotificationEvent {
             id: "n0".into(),
             session_id: "s1".into(),
@@ -337,6 +347,31 @@ mod tests {
         assert_eq!(forwarded[0].agent_id, usage_event.agent_id);
         assert_eq!(forwarded[0].at, usage_event.at);
         assert_eq!(forwarded[0].tokens, usage_event.tokens);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// 턴 중간 갱신(§11.9): PostToolUse가 낸 `partial: true` usage 이벤트도
+    /// kind=Usage 레코드에 그 값 그대로 남는다 — 재부팅 시드가 이 레코드를
+    /// "이미 끝난 턴"으로 잘못 세면 안 되기 때문에 partial 자체가 파일에
+    /// 남아야 한다.
+    #[test]
+    fn turn_usage_persists_the_partial_flag_for_mid_turn_updates() {
+        use crate::types::SessionEventTokens;
+        let root = scratch_root();
+        let inner = Arc::new(RecordingEvents::default());
+        let store = Arc::new(SessionEventStore::new(root.clone()));
+        let events = RecordingAppEvents::new(inner, store, Arc::new(BotPromptArms::new()));
+        events.turn_usage(&TurnUsageEvent {
+            agent_id: "a1".into(),
+            session_id: "s1".into(),
+            at: 1_783_728_000_000,
+            tokens: SessionEventTokens {
+                input: Some(5),
+                ..Default::default()
+            },
+            partial: true,
+        });
+        assert_eq!(read(&root)[0].partial, Some(true));
         let _ = fs::remove_dir_all(root);
     }
 

@@ -48,8 +48,25 @@ export function emptyTotals(): SessionUsageTotals {
  * 안 건드림). 비용을 모르는 모델(`estimateCostUsd` → `null`)은 `costUsd`에
  * 더하지 않고 `costUnknownTurns`만 올린다. `model`은 이 턴에 실려 있으면
  * 그 값으로 갱신한다(가장 최근 턴이 대표 모델).
+ *
+ * `partial`(기본 false): 이 사용량이 턴이 끝나기 **전**의 중간 관측인지
+ * (`TurnUsageEvent.partial`, claude 어댑터의 PostToolUse 중간 갱신 —
+ * docs/session-analytics-design.md §11.9). 토큰·비용은 partial이어도 그대로
+ * 더한다(그만큼 실제로 썼으므로), 하지만 **`turns`는 올리지 않는다** — 한
+ * 턴 안에서 도구를 여러 번 부르면 그만큼 partial 이벤트가 여러 번 오는데,
+ * 매번 턴을 하나씩 잡으면 "지금까지 3번 도구를 썼다"가 "턴이 3개였다"로
+ * 둔갑한다. 그 턴의 최종 Stop이 `partial:false`로 다시 잡히면서 그때
+ * `turns`가 실제로 오른다. `costUnknownTurns`도 같은 이유로 partial에서는
+ * 올리지 않는다 — 단가를 모르는 턴이라도 그 턴의 Stop 델타가 같은 모델로
+ * 다시 잡히므로 거기서 표시된다(드물게 그 턴의 마지막 도구 이후 usage 줄이
+ * 하나도 없어 Stop 델타가 비면, 그 턴은 애초에 tokens가 없어 addTurn 자체가
+ * 안 불리므로 단가 미상 표시가 통째로 빠질 수 있다 — 수용된 한계).
  */
-export function addTurn(totals: SessionUsageTotals, tokens: SessionEventTokens): SessionUsageTotals {
+export function addTurn(
+  totals: SessionUsageTotals,
+  tokens: SessionEventTokens,
+  partial = false,
+): SessionUsageTotals {
   const cost = estimateCostUsd(tokens);
   return {
     input: totals.input + (tokens.input ?? 0),
@@ -57,8 +74,8 @@ export function addTurn(totals: SessionUsageTotals, tokens: SessionEventTokens):
     cacheRead: totals.cacheRead + (tokens.cacheRead ?? 0),
     cacheWrite: totals.cacheWrite + (tokens.cacheWrite ?? 0),
     costUsd: totals.costUsd + (cost ?? 0),
-    costUnknownTurns: totals.costUnknownTurns + (cost === null ? 1 : 0),
-    turns: totals.turns + 1,
+    costUnknownTurns: totals.costUnknownTurns + (!partial && cost === null ? 1 : 0),
+    turns: totals.turns + (partial ? 0 : 1),
     model: tokens.model ?? totals.model,
   };
 }
@@ -90,6 +107,11 @@ export function mergeTotals(a: SessionUsageTotals, b: SessionUsageTotals): Sessi
  * (이 함수가 `maxAt`으로 자른 시점 이후 사용량만 실시간이 더한다). 신규
  * stop 레코드는 애초에 tokens가 없으므로, 전환기에도 같은 턴이 usage와
  * stop 양쪽에 실려 두 번 잡히는 일은 구조적으로 없다.
+ *
+ * `r.partial`도 `addTurn`에 그대로 넘긴다(§11.9) — 이 필드가 생기기 전의
+ * 과거 레코드는 `undefined`이고, 전부 Stop 유래(=턴이 끝난 것)이므로
+ * `?? false`로 강등한다. 그렇지 않고 partial 유무를 무시하면 재부팅 시드가
+ * PostToolUse 중간 갱신 레코드까지 턴으로 세어 `turns`가 실제보다 부푼다.
  */
 export function aggregateSeed(
   records: SessionEventRecord[],
@@ -99,7 +121,7 @@ export function aggregateSeed(
   for (const r of records) {
     if (!r.tokens || r.at > maxAt) continue;
     const prev = out[r.sessionId] ?? emptyTotals();
-    out[r.sessionId] = addTurn(prev, r.tokens);
+    out[r.sessionId] = addTurn(prev, r.tokens, r.partial ?? false);
   }
   return out;
 }

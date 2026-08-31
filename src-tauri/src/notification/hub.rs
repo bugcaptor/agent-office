@@ -5,6 +5,11 @@
 // Stop 팔에서 알림 게이트보다 먼저 방출하므로, 게이트가 알림을 억제해도
 // 사용량은 유실되지 않는다(docs/session-analytics-design.md §9.1).
 //
+// `ingest_observer`의 Tool 팔도 같은 `emit_turn_usage`를 탄다(§11.9) — 턴이
+// 끝나기 전에도(claude 어댑터의 PostToolUse 스로틀 통과 시) `partial: true`로
+// 중간 사용량을 낸다. Stop의 `partial: false`와 구분해야 소비자(렌더러
+// `addTurn`)가 턴 수를 이중으로 세지 않는다.
+//
 // `SessionManager` holds an `Arc<NotificationHub>`
 // concretely (not a trait object), and even SessionManager's own unit tests
 // need a real `NotificationHub` to construct one — so this module has to
@@ -229,7 +234,21 @@ impl NotificationHub {
             ObserverEvent::Prompt { text, cwd } => {
                 self.ingest_activity_inner(session_id, ActivityKind::Prompt, text, None, cwd)
             }
-            ObserverEvent::Tool { text, assistant } => {
+            ObserverEvent::Tool {
+                text,
+                assistant,
+                tokens,
+            } => {
+                // 턴 중간 갱신(claude 어댑터 한정, PostToolUse의 5초 스로틀 통과
+                // 시에만 tokens가 Some): Stop과 같은 독립 채널로 즉시
+                // turn_usage를 낸다 — 알림 게이트·dedup과 무관하고, 요약 바가
+                // Stop까지 안 기다리고 도구마다 갱신되게 하려는 것이다.
+                // `partial: true`로 표시해 소비자가 이 턴이 아직 안 끝났음을
+                // 알게 한다(이 턴의 최종 Stop이 다시 partial:false로 정산한다
+                // — 워터마크 델타라 이중 계산이 없다는 근거는 §11.9 참고).
+                if let Some(tokens) = tokens.clone() {
+                    self.emit_turn_usage(session_id, tokens, true);
+                }
                 self.ingest_activity_inner(session_id, ActivityKind::Tool, text, assistant, None)
             }
             ObserverEvent::SubStart => self.ingest_activity(session_id, ActivityKind::SubStart),
@@ -258,14 +277,7 @@ impl NotificationHub {
                 // 서브 완료 후 claude가 task-notification을 새 프롬프트로 주입해
                 // 새 턴을 열어버린다 — docs/session-analytics-design.md §9.1).
                 if let Some(tokens) = tokens.clone() {
-                    if let Some(agent_id) = self.registry.resolve_agent(session_id) {
-                        self.events.turn_usage(&TurnUsageEvent {
-                            agent_id,
-                            session_id: session_id.to_string(),
-                            at: self.clock.now_ms(),
-                            tokens,
-                        });
-                    }
+                    self.emit_turn_usage(session_id, tokens, false);
                 }
                 self.ingest_subagent_count(session_id, running);
                 // 백그라운드 서브에이전트가 아직 도는 중의 Stop은 턴 경계일 뿐
@@ -317,6 +329,22 @@ impl NotificationHub {
             count: None,
         };
         self.events.activity_event(&ev);
+    }
+
+    /// `TurnUsageEvent`를 알림/dedup과 무관한 독립 채널로 방출한다. Stop(턴이
+    /// 완전히 끝난 시점, `partial: false`)과 PostToolUse(턴 중간 갱신,
+    /// `partial: true`)가 공유하는 공통 경로다 — 죽은/미지 세션은 붙일 곳이
+    /// 없으므로 조용히 폐기한다(알림 경로와 같은 원칙).
+    fn emit_turn_usage(&self, session_id: &str, tokens: SessionEventTokens, partial: bool) {
+        if let Some(agent_id) = self.registry.resolve_agent(session_id) {
+            self.events.turn_usage(&TurnUsageEvent {
+                agent_id,
+                session_id: session_id.to_string(),
+                at: self.clock.now_ms(),
+                tokens,
+                partial,
+            });
+        }
     }
 
     fn ingest_subagent_count(&self, session_id: &str, running: u32) {

@@ -67,6 +67,12 @@ pub struct SessionEventDraft {
     pub tokens: Option<SessionEventTokens>,
     /// kind=Prompt일 때 그 프롬프트의 출처(봇 주입만 표식, 사람은 None).
     pub origin: Option<PromptOrigin>,
+    /// kind=Usage일 때 이 사용량이 턴 중간 관측인지(`Some(true)`, PostToolUse)
+    /// 턴이 실제로 끝난 것인지(`Some(false)`, Stop). 이 필드가 생기기 전
+    /// 레코드는 전부 Stop 유래였으므로 `None`은 소비자가 `false`로 취급해야
+    /// 한다(§11.9) — 안 그러면 재부팅 시드 집계에서 과거 파일의 턴 수가
+    /// 유실되거나 부풀 수 있다.
+    pub partial: Option<bool>,
 }
 
 impl SessionEventDraft {
@@ -88,6 +94,7 @@ impl SessionEventDraft {
             state: None,
             tokens: None,
             origin: None,
+            partial: None,
         }
     }
 }
@@ -124,4 +131,12 @@ pub struct SessionEventRecord {
     /// 읽히고, 그 프롬프트는 전부 사람 몫으로 집계된다.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub origin: Option<PromptOrigin>,
+    /// kind=Usage일 때 그 사용량이 턴 중간 관측(PostToolUse, `Some(true)`)인지
+    /// 턴이 끝난 것(Stop, `Some(false)`)인지(§11.9). `tokens`/`origin`과 같은
+    /// 선례로 옵션 추가라 schemaVersion은 1을 유지한다 — **이 필드가 없는
+    /// 과거 레코드는 전부 Stop 유래이므로 소비자는 없으면 `false`로 취급해야
+    /// 한다.** 그렇게 안 하면(예: "partial이면 없는 값도 true로 본다") 재부팅
+    /// 시드가 과거 파일의 턴 수를 실제보다 적게 잡는다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partial: Option<bool>,
 }

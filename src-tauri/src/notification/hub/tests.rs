@@ -43,6 +43,7 @@
             ObserverEvent::Tool {
                 text: None,
                 assistant: None,
+                tokens: None,
             },
         );
         hub.ingest_observer("s1", ObserverEvent::Attention { message: None });
@@ -78,6 +79,7 @@
             ObserverEvent::Tool {
                 text: Some("Bash: npm test".into()),
                 assistant: Some("파일을 살펴보는 중".into()),
+                tokens: None,
             },
         );
         let activity = events.activities();
@@ -234,6 +236,7 @@
         assert_eq!(usages[0].session_id, "s1");
         assert_eq!(usages[0].at, _clock.now_ms());
         assert_eq!(usages[0].tokens, tokens_fixture());
+        assert!(!usages[0].partial, "Stop의 turn-usage는 partial이 아니어야 한다");
     }
 
     /// 죽은/미지 세션의 Stop은 agentId를 못 찾으므로 사용량도 폐기된다(알림
@@ -274,6 +277,52 @@
         let usages = events.usages();
         assert_eq!(usages.len(), 1);
         assert_eq!(usages[0].tokens, tokens_fixture());
+        // Stop이 낸 사용량은 "이 턴이 끝났다"는 확정치다 — partial: false.
+        assert!(!usages[0].partial, "Stop의 turn-usage는 partial이 아니어야 한다");
+    }
+
+    /// 턴 중간 갱신(§11.9): PostToolUse가 tokens를 실으면(claude 어댑터의 5초
+    /// 스로틀 통과 시) hub가 Stop과 같은 독립 채널로 즉시 turn-usage를 내되
+    /// `partial: true`로 표시한다 — 알림 파이프라인은 이 값을 전혀 건드리지
+    /// 않는다(Tool은 애초에 알림을 안 낸다).
+    #[test]
+    fn tool_with_tokens_emits_partial_turn_usage() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Tool {
+                text: Some("Bash: npm test".into()),
+                assistant: None,
+                tokens: Some(tokens_fixture()),
+            },
+        );
+
+        let usages = events.usages();
+        assert_eq!(usages.len(), 1);
+        assert_eq!(usages[0].agent_id, "a1");
+        assert_eq!(usages[0].session_id, "s1");
+        assert_eq!(usages[0].tokens, tokens_fixture());
+        assert!(usages[0].partial, "PostToolUse 중간 사용량은 partial:true여야 한다");
+        assert!(events.notifications().is_empty());
+    }
+
+    /// 스로틀 안(claude 어댑터의 progress_due 미통과)이라 tokens가 None인
+    /// PostToolUse는 hub 레벨에서도 turn-usage를 아예 안 낸다 — 활동 신호
+    /// (라벨용 text/assistant)는 평소대로 나간다.
+    #[test]
+    fn tool_without_tokens_emits_no_turn_usage() {
+        let (hub, events, _clock) = fixture();
+        hub.ingest_observer(
+            "s1",
+            ObserverEvent::Tool {
+                text: Some("Bash: npm test".into()),
+                assistant: None,
+                tokens: None,
+            },
+        );
+
+        assert!(events.usages().is_empty());
+        assert_eq!(events.activities().len(), 1);
     }
 
     #[test]
@@ -724,6 +773,7 @@
             ObserverEvent::Tool {
                 text: None,
                 assistant: None,
+                tokens: None,
             },
         ); // 계속 일하는 신호 → 폐기
         assert!(hub.pending("s1").is_empty());

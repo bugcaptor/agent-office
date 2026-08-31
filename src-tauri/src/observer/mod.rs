@@ -192,6 +192,9 @@ impl ObserverRuntime {
             "tool" => ObserverEvent::Tool {
                 text: event::pi_tool_activity_text(body),
                 assistant: event::pi_assistant_text(body),
+                // pi는 전사/rollout 경로가 없어 사용량을 뽑을 곳이 없다(claude
+                // 어댑터 한정 중간 갱신 기능).
+                tokens: None,
             },
             "stop" => ObserverEvent::Stop {
                 message: event::message(body),
@@ -280,6 +283,7 @@ mod tests {
             Some(ObserverEvent::Tool {
                 text: None,
                 assistant: None,
+                tokens: None,
             }),
         );
         assert_eq!(
@@ -574,6 +578,7 @@ mod tests {
             Some(ObserverEvent::Tool {
                 text: None,
                 assistant: None,
+                tokens: None,
             }),
             sink.clone(),
         );
@@ -651,6 +656,7 @@ mod tests {
             Some(ObserverEvent::Tool {
                 text: None,
                 assistant: None,
+                tokens: None,
             }),
             sink.clone(),
         );
@@ -742,6 +748,7 @@ mod tests {
                 mapped: Some(ObserverEvent::Tool {
                     text: None,
                     assistant: None,
+                    tokens: None,
                 }),
             })],
         );

@@ -522,6 +522,7 @@ describe("session usage slice", () => {
     s.applyTurnUsage({
       sessionId: "s1", agentId: "a1", at: 100,
       tokens: { input: 100, model: "claude-opus-5" },
+      partial: false,
     });
     expect(useAppStore.getState().sessionUsage["a1"].totals.turns).toBe(1);
 
@@ -545,10 +546,12 @@ describe("session usage slice", () => {
     s.applyTurnUsage({
       sessionId: "s1", agentId: "a1", at: 100,
       tokens: { input: 100, output: 50, model: "claude-opus-5" },
+      partial: false,
     });
     s.applyTurnUsage({
       sessionId: "s1", agentId: "a1", at: 200,
       tokens: { input: 10, output: 5, model: "claude-opus-5" },
+      partial: false,
     });
     const entry = useAppStore.getState().sessionUsage["a1"];
     expect(entry.sessionId).toBe("s1");
@@ -562,12 +565,14 @@ describe("session usage slice", () => {
     s.applyTurnUsage({
       sessionId: "s1", agentId: "a1", at: 500, // == seed.at → 무시
       tokens: { input: 100, model: "claude-opus-5" },
+      partial: false,
     });
     expect(useAppStore.getState().sessionUsage["a1"]).toBeUndefined();
 
     s.applyTurnUsage({
       sessionId: "s1", agentId: "a1", at: 501, // > seed.at → 반영
       tokens: { input: 100, model: "claude-opus-5" },
+      partial: false,
     });
     expect(useAppStore.getState().sessionUsage["a1"].totals.turns).toBe(1);
   });
@@ -579,10 +584,12 @@ describe("session usage slice", () => {
     s.applyTurnUsage({
       sessionId: "s1", agentId: "a1", at: 100,
       tokens: { input: 100, model: "claude-opus-5" },
+      partial: false,
     });
     s.applyTurnUsage({
       sessionId: "s2", agentId: "a1", at: 200,
       tokens: { input: 10, model: "claude-opus-5" },
+      partial: false,
     });
     const entry = useAppStore.getState().sessionUsage["a1"];
     expect(entry.sessionId).toBe("s2");
@@ -598,10 +605,12 @@ describe("session usage slice", () => {
     s.applyTurnUsage({
       sessionId: "s1", agentId: "a1", at: 100,
       tokens: { input: 100, model: "claude-opus-5" },
+      partial: false,
     });
     s.applyTurnUsage({
       sessionId: "s1", agentId: "a1", at: 200,
       tokens: { input: 10, model: "claude-opus-5" },
+      partial: false,
     });
     expect(useAppStore.getState().sessionUsageFirstAt).toBe(100); // 첫 턴 시각 그대로, 두 번째 턴에는 안 바뀜.
 

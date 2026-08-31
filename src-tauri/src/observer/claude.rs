@@ -145,23 +145,45 @@ impl ClaudeAdapter {
         self
     }
 
-    /// PostToolUse를 도구 요약 + (스로틀 통과 시) assistant 내레이션으로 매핑한다.
+    /// PostToolUse를 도구 요약 + (스로틀 통과 시) assistant 내레이션 + 턴 중간
+    /// 토큰 사용량으로 매핑한다.
+    ///
+    /// 세션 사용량 중간 갱신(터미널 요약 바가 Stop까지 안 기다리고 도구마다
+    /// 갱신되게): `progress_due`가 이미 갖고 있던 transcript_path별 5초 스로틀
+    /// 위에 그대로 얹는다 — 도구마다 전사를 다시 읽으면 비용이 크므로, 내레이션
+    /// tail 읽기와 같은 예산으로 `self.turn_usage`(Stop이 쓰는 그 함수)를 부른다.
+    /// `turn_usage`는 파일별 워터마크 델타라 같은 구간을 두 번 세지 않는다 —
+    /// 여기서 한 번 세면 그 뒤 Tool이든 그 턴의 최종 Stop이든 다음 스캔은 그
+    /// 뒤 증분만 잡는다(호출부 주석 `ObserverEvent::Tool::tokens` 참고).
     fn map_post_tool_use(&self, body: &[u8]) -> ObserverEvent {
-        // 서브에이전트 내부 도구(agent_id 있음)는 하트비트만 유지하고 텍스트를
-        // 싣지 않는다 — 부모 라벨이 서브에이전트 도구/내레이션으로 오염되는 걸 막는다.
+        let due = self.progress_due(body);
+        let tokens_if_due = || {
+            due.then(|| transcript_path(body).and_then(|path| self.turn_usage(Path::new(&path))))
+                .flatten()
+        };
+        // 서브에이전트 내부 도구(agent_id 있음)는 하트비트만 유지하고 라벨용
+        // 텍스트를 싣지 않는다 — 부모 라벨이 서브에이전트 도구/내레이션으로
+        // 오염되는 걸 막는다. 다만 tokens는 싣는다: 서브 갈래의 transcript_path는
+        // 서브 자신의 `subagents/*.jsonl`을 가리키므로(메인과 무관한 별도
+        // 워터마크 엔트리), 여기서 세도 메인 세션의 다음 Stop 합산과 겹치지 않는다.
         if agent_id(body).is_some() {
             return ObserverEvent::Tool {
                 text: None,
                 assistant: None,
+                tokens: tokens_if_due(),
             };
         }
         let text = tool_activity_text(body);
-        let assistant = if self.progress_due(body) {
+        let assistant = if due {
             claude_transcript_progress_message(body)
         } else {
             None
         };
-        ObserverEvent::Tool { text, assistant }
+        ObserverEvent::Tool {
+            text,
+            assistant,
+            tokens: tokens_if_due(),
+        }
     }
 
     /// transcript_path별 스로틀: 마지막 읽기 시도 후 progress_interval이 지났으면
@@ -787,6 +809,7 @@ mod tests {
             Some(ObserverEvent::Tool {
                 text: None,
                 assistant: None,
+                tokens: None,
             }),
         );
         assert_eq!(
@@ -901,6 +924,7 @@ mod tests {
             Some(ObserverEvent::Tool {
                 text: Some("Bash: npm test".into()),
                 assistant: None, // transcript_path 부재 → 내레이션 없음
+                tokens: None,    // transcript_path 부재 → 사용량도 없음
             }),
         );
     }
@@ -927,13 +951,18 @@ mod tests {
                 body: &body,
             })
         };
+        // 이 전사엔 usage 필드가 없는 assistant 줄뿐이라(내레이션 검증 전용
+        // 픽스처) due=true여도 tokens는 항상 None — 이 테스트의 관심사는
+        // 내레이션 스로틀이지 사용량 추출이 아니다.
         let with_narration = Some(ObserverEvent::Tool {
             text: None,
             assistant: Some("진행 중".into()),
+            tokens: None,
         });
         let without = Some(ObserverEvent::Tool {
             text: None,
             assistant: None,
+            tokens: None,
         });
 
         // interval ZERO: 매 호출마다 tail을 읽어 내레이션을 싣는다.
@@ -957,6 +986,53 @@ mod tests {
             body: &body,
         });
         assert_eq!(post(&throttled), with_narration);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// 세션 사용량 중간 갱신(터미널 요약 바가 Stop까지 안 기다림): PostToolUse도
+    /// Stop과 같은 워터마크 델타로 `tokens`를 싣되, 그 위에 내레이션과 같은 5초
+    /// progress 스로틀이 얹힌다 — 스로틀 안의 두 번째 호출은 파일을 다시 읽지
+    /// 않으므로 tokens가 항상 None이다(도구 요약 텍스트가 유무와 무관하게).
+    #[test]
+    fn post_tool_use_carries_mid_turn_token_usage_and_throttles_it_like_narration() {
+        use std::time::Duration;
+        let dir = scratch_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("transcript.jsonl");
+        let lines = [
+            r#"{"type":"user","message":{"role":"user","content":"작업 지시"}}"#.to_string(),
+            r#"{"type":"assistant","message":{"id":"m1","model":"claude-opus-5","role":"assistant","content":[{"type":"text","text":"진행 중"}],"usage":{"input_tokens":11,"output_tokens":22,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"#.to_string(),
+        ];
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        let body = serde_json::json!({ "tool_name": "Bash", "transcript_path": path.to_string_lossy() })
+            .to_string()
+            .into_bytes();
+
+        // 큰 interval: 첫 호출만 스로틀을 통과해 사용량을 싣고, 그 사이 파일이
+        // 그대로여도 두 번째 호출은 애초에 안 읽으므로(due=false) tokens: None.
+        let adapter = ClaudeAdapter::with_progress_interval(
+            scratch_dir(),
+            forwarder_exe(),
+            Duration::from_secs(3600),
+        );
+        let post = || {
+            adapter.map_hook(&RawObserverHook {
+                event_name: "PostToolUse",
+                body: &body,
+            })
+        };
+        let Some(ObserverEvent::Tool { tokens, .. }) = post() else {
+            panic!("Tool 이벤트가 나와야 한다");
+        };
+        let tokens = tokens.expect("첫 호출은 스로틀을 통과해 사용량을 실어야 한다");
+        assert_eq!(tokens.input, Some(11));
+        assert_eq!(tokens.output, Some(22));
+
+        let Some(ObserverEvent::Tool { tokens, .. }) = post() else {
+            panic!("Tool 이벤트가 나와야 한다");
+        };
+        assert_eq!(tokens, None, "스로틀 안의 두 번째 호출은 tokens를 싣지 않는다");
 
         let _ = std::fs::remove_dir_all(dir);
     }

@@ -232,6 +232,13 @@ export interface SessionEventRecord {
    * 집계되는 것이 의도된 동작이다.
    */
   origin?: "bot";
+  /**
+   * kind="usage"일 때 이 사용량이 턴 중간 관측(true, PostToolUse)인지 턴이
+   * 끝난 것(false, Stop)인지(§11.9). 이 필드가 생기기 전의 과거 레코드는
+   * 전부 Stop 유래였으므로 **없으면 `false`로 취급해야 한다** — 그렇지
+   * 않으면 재부팅 집계에서 과거 파일의 턴 수가 유실되거나 부풀 수 있다.
+   */
+  partial?: boolean;
 }
 
 /**

@@ -126,6 +126,7 @@ fn turn_usage_event_matches_fixture() {
             cache_write: Some(2500),
             model: Some("claude-opus-5".into()),
         },
+        partial: false,
     };
     assert_value_eq(fixture_json, serde_json::to_value(&value).unwrap());
 }

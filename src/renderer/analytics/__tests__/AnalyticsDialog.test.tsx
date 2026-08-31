@@ -126,8 +126,8 @@ describe("AnalyticsDialog", () => {
 
     // 순수 입출력 11,703("11.7K") / 캐시 포함 전체 1,676,733("1.7M").
     // 예전에는 앞의 숫자만 그려서 실제의 0.7%만 보였다.
-    await waitFor(() => expect(screen.getByRole("cell", { name: "11.7K(1.7M)" })).toBeTruthy());
-    expect(screen.getByRole("cell", { name: "11.7K(1.7M)" }).getAttribute("title")).toContain(
+    await waitFor(() => expect(screen.getByRole("cell", { name: "11.7K CH(1.7M)" })).toBeTruthy());
+    expect(screen.getByRole("cell", { name: "11.7K CH(1.7M)" }).getAttribute("title")).toContain(
       "괄호 안은 캐시 포함 전체 토큰",
     );
   });
