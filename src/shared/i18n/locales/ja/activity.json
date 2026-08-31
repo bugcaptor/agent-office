@@ -175,6 +175,7 @@
     "tokenOut": "出力 {{value}}",
     "tokenCacheRead": "キャッシュ読取 {{value}}",
     "tokenCacheWrite": "キャッシュ書込 {{value}}",
+    "tokenPairHint": "括弧内はキャッシュを含む総トークン",
     "chartAria": "日別の作業時間の積み上げ棒グラフ",
     "chartBar": "{{name}} · {{duration}} · {{date}}",
     "durMinutes": "{{minutes}}分",

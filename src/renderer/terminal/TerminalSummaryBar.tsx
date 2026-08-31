@@ -16,7 +16,7 @@
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { deriveTaskLabelLines, effectiveCwd } from "../labels/labelText";
-import { formatTokens, formatUsd } from "../analytics/pricing";
+import { formatTokenPair, formatTokens, formatUsd } from "../analytics/pricing";
 import { mergeTotals, type SessionUsageTotals } from "../usage/sessionCost";
 import { useSessionUsageSeed } from "../usage/useSessionUsageSeed";
 import type { Translate } from "../shared/textKey";
@@ -42,6 +42,11 @@ function usageTooltip(totals: SessionUsageTotals, t: Translate): string {
   parts.push(t("summary.usage.turns", { count: totals.turns }));
   if (totals.model) parts.push(t("summary.usage.model", { model: totals.model }));
   const lines = [parts.join(" · ")];
+  // 셀에 괄호가 붙었으면(캐시가 있는 세션) 그 괄호의 뜻을 한 줄로 밝힌다 —
+  // 내역이 아래 줄에 다 있어도 "11.7K(1.7M)"의 두 숫자가 뭔지가 안 닫힌다.
+  if (grossTokens(totals) !== netTokens(totals)) {
+    lines.push(t("summary.usage.tokenPairHint"));
+  }
   // costUnknownTurns > 0이면 셀에 "~"가 붙는데, 그 뜻이 어디에도 안 나오면
   // 사용자가 그게 뭔지 알 길이 없다 — 여기 한 줄로 명시.
   if (totals.costUnknownTurns > 0) {
@@ -51,15 +56,19 @@ function usageTooltip(totals: SessionUsageTotals, t: Translate): string {
   return lines.join("\n");
 }
 
-/**
- * 토큰 셀 텍스트. `input + output === 0`인데 `cacheRead > 0`이면("캐시만 있는
- * 턴") "0"이 아니라 "—"로 떨군다 — analytics 패널의 `tokenTotal > 0 ? … : "—"`
- * 와 같은 결.
- */
+/** 캐시를 뺀 순수 입출력 토큰. */
+function netTokens(totals: SessionUsageTotals): number {
+  return totals.input + totals.output;
+}
+
+/** 캐시 읽기·쓰기까지 포함한 전체 토큰(= 비용 셀이 실제로 환산하는 대상). */
+function grossTokens(totals: SessionUsageTotals): number {
+  return totals.input + totals.output + totals.cacheRead + totals.cacheWrite;
+}
+
+/** 토큰 셀 텍스트. 표기 규칙은 `pricing.formatTokenPair`(분석 패널과 공유). */
 function usageTokenText(totals: SessionUsageTotals): string {
-  const total = totals.input + totals.output;
-  if (total === 0 && totals.cacheRead > 0) return "—";
-  return formatTokens(total);
+  return formatTokenPair(netTokens(totals), grossTokens(totals));
 }
 
 /**

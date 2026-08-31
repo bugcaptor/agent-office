@@ -175,6 +175,7 @@
     "tokenOut": "출력 {{value}}",
     "tokenCacheRead": "캐시읽기 {{value}}",
     "tokenCacheWrite": "캐시기록 {{value}}",
+    "tokenPairHint": "괄호 안은 캐시 포함 전체 토큰",
     "chartAria": "일별 작업시간 스택 막대",
     "chartBar": "{{name}} · {{duration}} · {{date}}",
     "durMinutes": "{{minutes}}분",

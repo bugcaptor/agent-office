@@ -175,6 +175,7 @@
     "tokenOut": "输出 {{value}}",
     "tokenCacheRead": "缓存读取 {{value}}",
     "tokenCacheWrite": "缓存写入 {{value}}",
+    "tokenPairHint": "括号内为含缓存的总 token",
     "chartAria": "每日工作时长堆叠柱状图",
     "chartBar": "{{name}} · {{duration}} · {{date}}",
     "durMinutes": "{{minutes}} 分钟",

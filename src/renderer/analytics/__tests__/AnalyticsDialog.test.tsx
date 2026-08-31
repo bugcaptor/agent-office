@@ -107,6 +107,31 @@ describe("AnalyticsDialog", () => {
     expect(screen.getByText(/공개 API 요율 환산 추정치/)).toBeTruthy();
   });
 
+  it("캐시가 있으면 토큰 셀에 순수 입출력과 캐시 포함 전체를 병기한다", async () => {
+    const now = Date.now();
+    loadSessionEvents.mockResolvedValue([
+      ev("prompt", now - 600_000),
+      ev("stop", now - 300_000, "a1", {
+        input: 44,
+        output: 11_659,
+        cacheRead: 1_557_532,
+        cacheWrite: 107_498,
+        model: "claude-opus-5",
+      }),
+    ]);
+    useAppStore.setState({ agents: { a1: profile("a1", "Ada") } });
+    useAppStore.getState().openModal({ kind: "analytics" });
+
+    render(<AnalyticsDialog />);
+
+    // 순수 입출력 11,703("11.7K") / 캐시 포함 전체 1,676,733("1.7M").
+    // 예전에는 앞의 숫자만 그려서 실제의 0.7%만 보였다.
+    await waitFor(() => expect(screen.getByRole("cell", { name: "11.7K(1.7M)" })).toBeTruthy());
+    expect(screen.getByRole("cell", { name: "11.7K(1.7M)" }).getAttribute("title")).toContain(
+      "괄호 안은 캐시 포함 전체 토큰",
+    );
+  });
+
   it("토큰이 없는(과거) 기록은 토큰·비용 셀에 —를 보여준다", async () => {
     const now = Date.now();
     loadSessionEvents.mockResolvedValue([

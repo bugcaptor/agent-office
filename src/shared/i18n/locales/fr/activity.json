@@ -175,6 +175,7 @@
     "tokenOut": "sortie {{value}}",
     "tokenCacheRead": "lecture cache {{value}}",
     "tokenCacheWrite": "écriture cache {{value}}",
+    "tokenPairHint": "Entre parenthèses : total des tokens, cache inclus",
     "chartAria": "Temps de travail par jour, barres empilées",
     "chartBar": "{{name}} · {{duration}} · {{date}}",
     "durMinutes": "{{minutes}} min",

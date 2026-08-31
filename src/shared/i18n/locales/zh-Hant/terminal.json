@@ -70,6 +70,7 @@
       "model": "模型 {{model}}",
       "costUnknownHint_one": "已排除沒有單價的模型 {{count}} 回合",
       "costUnknownHint_other": "已排除沒有單價的模型 {{count}} 回合",
+      "tokenPairHint": "括號內為含快取的總 token",
       "footnote": "以公開 API 費率換算的估算值"
     }
   }

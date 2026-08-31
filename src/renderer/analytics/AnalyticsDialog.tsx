@@ -15,7 +15,7 @@ import { tauriApi } from "../ipc/tauriApi";
 import type { AgentSummary } from "./aggregate";
 import { aggregate, dayRange, localDayCalendar } from "./aggregate";
 import { DailyBarChart, formatDuration } from "./DailyBarChart";
-import { formatTokens, formatUsd } from "./pricing";
+import { formatTokenPair, formatTokens, formatUsd } from "./pricing";
 
 /** 기간 셀렉터 후보(일). */
 const PERIODS = [7, 14, 30] as const;
@@ -53,7 +53,23 @@ function tokenBreakdown(row: AgentSummary, t: Translate): string {
     parts.push(t("analytics.tokenCacheRead", { value: formatTokens(row.tokensCacheRead) }));
   if (row.tokensCacheWrite > 0)
     parts.push(t("analytics.tokenCacheWrite", { value: formatTokens(row.tokensCacheWrite) }));
-  return parts.join(" · ");
+  const lines = parts.length > 0 ? [parts.join(" · ")] : [];
+  // 셀에 괄호가 붙었으면(캐시가 있는 행) 그 괄호의 뜻을 한 줄 덧붙인다 —
+  // 요약 바의 usageTooltip과 같은 결.
+  if (lines.length > 0 && netTokens(row) !== grossTokens(row)) {
+    lines.push(t("analytics.tokenPairHint"));
+  }
+  return lines.join("\n");
+}
+
+/** 캐시를 뺀 순수 입출력 토큰. */
+function netTokens(row: AgentSummary): number {
+  return row.tokensIn + row.tokensOut;
+}
+
+/** 캐시 읽기·쓰기까지 포함한 전체 토큰(= 비용 열이 실제로 환산하는 대상). */
+function grossTokens(row: AgentSummary): number {
+  return row.tokensIn + row.tokensOut + row.tokensCacheRead + row.tokensCacheWrite;
 }
 
 type LoadState =
@@ -175,7 +191,6 @@ export function AnalyticsDialog() {
                 </thead>
                 <tbody>
                   {analytics.data.summary.map((row) => {
-                    const tokenTotal = row.tokensIn + row.tokensOut;
                     const breakdown = tokenBreakdown(row, t);
                     const hasCost = row.costUsd > 0 || row.costUnknownTurns > 0;
                     return (
@@ -195,7 +210,7 @@ export function AnalyticsDialog() {
                         <td>{row.turns}</td>
                         <td>{row.toolEvents}</td>
                         <td title={breakdown || undefined}>
-                          {tokenTotal > 0 ? formatTokens(tokenTotal) : "—"}
+                          {formatTokenPair(netTokens(row), grossTokens(row))}
                         </td>
                         <td
                           title={

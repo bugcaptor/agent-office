@@ -70,6 +70,7 @@
       "model": "模型 {{model}}",
       "costUnknownHint_one": "已排除 {{count}} 轮未知定价的模型",
       "costUnknownHint_other": "已排除 {{count}} 轮未知定价的模型",
+      "tokenPairHint": "括号内为含缓存的总 token",
       "footnote": "按公开 API 费率折算的估值"
     }
   }

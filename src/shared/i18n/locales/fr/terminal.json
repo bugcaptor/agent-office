@@ -70,6 +70,7 @@
       "model": "modèle {{model}}",
       "costUnknownHint_one": "{{count}} tour sur un modèle sans tarif exclu",
       "costUnknownHint_other": "{{count}} tours sur des modèles sans tarif exclus",
+      "tokenPairHint": "Entre parenthèses : total des tokens, cache inclus",
       "footnote": "Estimation au tarif API public"
     }
   }

@@ -214,7 +214,7 @@ describe("TerminalSummaryBar 사용량 스팬 (이슈 #44 2단계)", () => {
     expect(usage.textContent).toBe(`${formatTokens(1_200_000)} · —`);
   });
 
-  it("D-3: 캐시만 있는 턴(input+output===0, cacheRead>0)이면 토큰 자리를 0이 아니라 —로 보여준다", () => {
+  it("D-3: 캐시만 있는 턴(input+output===0, cacheRead>0)이면 괄호로 캐시 포함 전체를 보여준다", () => {
     seed({ label: { goal: "버그 수정" }, sessionCostEnabled: true });
     useAppStore.setState({
       sessionUsage: {
@@ -226,6 +226,52 @@ describe("TerminalSummaryBar 사용량 스팬 (이슈 #44 2단계)", () => {
     });
     const { container } = render(<TerminalSummaryBar />);
     const usage = container.querySelector(".terminal-summary-usage")!;
-    expect(usage.textContent).toBe(`— · ${formatUsd(0.0012)}`);
+    // 예전에는 "—"였다 — 캐시가 셀에서 통째로 안 보이던 시절의 규칙이고,
+    // 지금은 괄호가 그 값을 그리므로 0을 숨길 이유가 없다.
+    expect(usage.textContent).toBe(`${formatTokens(0)}(${formatTokens(500)}) · ${formatUsd(0.0012)}`);
+  });
+
+  it("캐시가 있으면 순수 입출력과 캐시 포함 전체를 병기하고 괄호의 뜻을 툴팁에 남긴다", () => {
+    seed({ label: { goal: "버그 수정" }, sessionCostEnabled: true });
+    useAppStore.setState({
+      sessionUsage: {
+        a1: {
+          sessionId: "s1",
+          totals: mkTotals({
+            input: 44,
+            output: 11_659,
+            cacheRead: 1_557_532,
+            cacheWrite: 107_498,
+            costUsd: 3.4,
+            turns: 30,
+            model: "claude-opus-5",
+          }),
+        },
+      },
+    });
+    const { container } = render(<TerminalSummaryBar />);
+    const usage = container.querySelector(".terminal-summary-usage")!;
+    // 순수 입출력 11,703 / 전체 1,676,733 — 예전에는 앞의 숫자만 그려서
+    // 실제의 0.7%만 보였다.
+    expect(usage.textContent).toBe(
+      `${formatTokens(11_703)}(${formatTokens(1_676_733)}) · ${formatUsd(3.4)}`,
+    );
+    expect(usage.getAttribute("title")).toContain("괄호");
+  });
+
+  it("캐시가 없으면 괄호를 붙이지 않는다(같은 숫자 두 번 쓰지 않음)", () => {
+    seed({ label: { goal: "버그 수정" }, sessionCostEnabled: true });
+    useAppStore.setState({
+      sessionUsage: {
+        a1: {
+          sessionId: "s1",
+          totals: mkTotals({ input: 1000, output: 500, costUsd: 0.01, turns: 2, model: "claude-opus-5" }),
+        },
+      },
+    });
+    const { container } = render(<TerminalSummaryBar />);
+    const usage = container.querySelector(".terminal-summary-usage")!;
+    expect(usage.textContent).toBe(`${formatTokens(1500)} · ${formatUsd(0.01)}`);
+    expect(usage.getAttribute("title")).not.toContain("괄호");
   });
 });

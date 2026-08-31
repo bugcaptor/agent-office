@@ -175,6 +175,7 @@
     "tokenOut": "輸出 {{value}}",
     "tokenCacheRead": "快取讀取 {{value}}",
     "tokenCacheWrite": "快取寫入 {{value}}",
+    "tokenPairHint": "括號內為含快取的總 token",
     "chartAria": "每日工作時間堆疊長條圖",
     "chartBar": "{{name}} · {{duration}} · {{date}}",
     "durMinutes": "{{minutes}} 分",

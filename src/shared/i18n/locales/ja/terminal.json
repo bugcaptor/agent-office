@@ -70,6 +70,7 @@
       "model": "モデル {{model}}",
       "costUnknownHint_one": "単価が不明なモデルの {{count}}ターンは除外",
       "costUnknownHint_other": "単価が不明なモデルの {{count}}ターンは除外",
+      "tokenPairHint": "括弧内はキャッシュを含む総トークン",
       "footnote": "公開 API 料金換算の推定値"
     }
   }
