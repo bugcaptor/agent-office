@@ -16,6 +16,7 @@
     "clockIn": "🏠 Clock in ({{n}})",
     "clockAll": "Clock all",
     "clockInAll": "Clock in all (start terminals, {{n}})",
+    "summonAllToDesk": "Everyone back to desks (start terminals, {{n}})",
     "clockOutAll": "Clock out all ({{n}})",
     "status": "{{running}} running · {{pending}} needs input",
     "records": "📊 Log",

@@ -37,6 +37,7 @@ import { sessionOptsFor } from "./sessionOpts";
 import { SubagentCountTracker } from "./subagentCounts";
 import { maybeSendOsNotification } from "./osNotify";
 import { computeAnyWorking, createKeepAwakeController } from "../power/keepAwake";
+import { isNotifySuppressed } from "../agent/summonSuppress";
 
 /** OS 알림 본문 길이 상한(제목 옆 본문은 짧게). */
 const OS_NOTIFY_BODY_MAX = 120;
@@ -271,13 +272,22 @@ export function installSessionBridge(): () => void {
 
   const offNotif = tauriApi.onNotification((e) => {
     const store = useAppStore.getState();
-    store.pushNotification(e);
+    // "전체 자리로" 소환 직후의 짧은 억제 창(summonSuppress.ts): 사용자가 방금
+    // 스스로 부른 것이라 알릴 내용이 아닌데도, 셸이 뜨자마자 직전 턴의 잔여
+    // Stop이 밀려 들어와 캐릭터가 앉기도 전에 pending으로 바뀌던 문제를 막는다.
+    // 스토어에 넣지 않고 백엔드에서도 그 id만 지워 양쪽 상태를 맞춘다.
+    const summonSuppressed = isNotifySuppressed(e.agentId);
+    if (summonSuppressed) {
+      tauriApi.clearNotifications(e.agentId, [e.id]);
+    } else {
+      store.pushNotification(e);
+    }
     // 시간 추적은 pushNotification 억제와 무관하게 항상 공급(활성 터미널이어도 집계).
     // Stop 카운트 reset 안전망은 백엔드 Stop→sub-count(0 fallback)로 이동했다.
     store.applyNotificationTiming(e);
     // 이슈 #39: 창이 비포커스일 때만 OS 데스크탑 알림 발송(터미널이 열려 있어도).
     // 제목=에이전트 이름/ID, 본문=메시지 excerpt.
-    if (!store.windowFocused) {
+    if (!summonSuppressed && !store.windowFocused) {
       const agent = store.agents[e.agentId];
       const title = agent?.name ?? e.agentId;
       const body =

@@ -16,6 +16,7 @@
     "clockIn": "🏠 上班（{{n}}）",
     "clockAll": "全体上下班",
     "clockInAll": "全体上班（启动终端，{{n}} 名）",
+    "summonAllToDesk": "全体回座位（启动终端，{{n}} 名）",
     "clockOutAll": "全体下班（{{n}} 名）",
     "status": "{{running}} 运行中 · {{pending}} 待输入",
     "records": "📊 记录",

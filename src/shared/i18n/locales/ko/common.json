@@ -16,6 +16,7 @@
     "clockIn": "🏠 출근 ({{n}})",
     "clockAll": "전체 출퇴근",
     "clockInAll": "전체 출근 (터미널 켜기, {{n}}명)",
+    "summonAllToDesk": "전체 자리로 (터미널 띄우기, {{n}}명)",
     "clockOutAll": "전체 퇴근 ({{n}}명)",
     "status": "{{running}} running · {{pending}} needs input",
     "records": "📊 기록",

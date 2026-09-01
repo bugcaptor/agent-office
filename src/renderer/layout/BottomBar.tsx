@@ -2,10 +2,12 @@
 //
 // Bottom bar (좌→우): "＋ New Agent"(ProfileDialog 생성 모드) · "🏠 출근"
 // (퇴근한 에이전트 수 배지, 클릭 시 이름별 ContextMenu → clockInAgent) ·
-// "전체 출퇴근"(ContextMenu 두 항목: "전체 출근"은 clockInAll을 즉시
-// 호출 — 출근은 비파괴적이라 확인 없음, "전체 퇴근"은
-// confirm-clock-out-all 모달을 연다 → clockOutAll; 각 항목은 대상 집합이
-// 비면 disabled, 버튼 자체는 에이전트가 하나도 없을 때만 disabled) · 가운데
+// "전체 출퇴근"(ContextMenu 세 항목: "전체 출근"은 clockInAll을 즉시
+// 호출 — 출근은 비파괴적이라 확인 없음, "전체 자리로"는 출근했지만
+// 세션이 없어 탕비실에 있는 사람 전원의 터미널을 띄운다 →
+// summonAllToDesk, "전체 퇴근"은 confirm-clock-out-all 모달을 연다 →
+// clockOutAll; 각 항목은 대상 집합이 비면 disabled, 버튼 자체는
+// 에이전트가 하나도 없을 때만 disabled) · 가운데
 // 가동/대기 상태 요약 텍스트 · `UsageWidget` · "📊 기록"(분석/우수사원/
 // 동료 대화를 묶은 ContextMenu — 세션 활동 분석(AnalyticsDialog), 이 달의
 // 우수사원(AwardsDialog), 그리고 talkEnabled가 켜져 있을 때만 구분선 +
@@ -23,6 +25,7 @@ import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import {
   useAgentList,
+  useAwayFromDeskCount,
   useClockedOutAgents,
   useClockedOutCount,
   usePendingCount,
@@ -32,6 +35,7 @@ import { THEMES, THEME_ORDER } from "../theme/themes";
 import { SCENES, SCENE_ORDER } from "../office/scenes/scenes";
 import { ContextMenu } from "../ui/ContextMenu";
 import { clockInAgent, clockInAll } from "../agent/clockOut";
+import { summonAllToDesk } from "../agent/summonToDesk";
 import { UsageWidget } from "../usage/UsageWidget";
 import { useTalkStatus } from "../talk/useTalkStatus";
 
@@ -51,6 +55,7 @@ export function BottomBar() {
   const onDutyCount = useAgentList().length;
   const clockedOutAgents = useClockedOutAgents();
   const clockedOutCount = useClockedOutCount();
+  const awayFromDeskCount = useAwayFromDeskCount();
   const { open: openTalkCount, queued: talkQueued } = useTalkStatus(talkEnabled);
   const [summonMenu, setSummonMenu] = useState<{ x: number; y: number } | null>(null);
   const [sceneThemeMenu, setSceneThemeMenu] = useState<{ x: number; y: number } | null>(null);
@@ -108,6 +113,12 @@ export function BottomBar() {
               label: t("bottomBar.clockInAll", { n: clockedOutCount }),
               disabled: clockedOutCount === 0,
               onSelect: () => clockInAll(),
+            },
+            {
+              icon: "🪑",
+              label: t("bottomBar.summonAllToDesk", { n: awayFromDeskCount }),
+              disabled: awayFromDeskCount === 0,
+              onSelect: () => summonAllToDesk(),
             },
             {
               icon: "🌙",

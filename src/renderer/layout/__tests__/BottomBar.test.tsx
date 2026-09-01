@@ -9,9 +9,11 @@
 // - Clicking "출근" opens a menu listing clocked-out agents by name;
 //   selecting one calls `clockInAgent(agent.id)`.
 // - The "전체 출퇴근" bulk button opens a menu with "전체 출근" (calls
-//   `clockInAll` directly) and "전체 퇴근" (opens the `confirm-clock-out-all`
-//   modal; the actual clockOutAll call is ConfirmClockOutDialog's
-//   responsibility). Items are disabled when their target set is empty.
+//   `clockInAll` directly), "전체 자리로" (calls `summonAllToDesk` for
+//   on-duty agents with no live session) and "전체 퇴근" (opens the
+//   `confirm-clock-out-all` modal; the actual clockOutAll call is
+//   ConfirmClockOutDialog's responsibility). Items are disabled when their
+//   target set is empty.
 // - "📊 기록" merges 분석/우수사원/동료 대화(TalkWidget이 하던 일)로 —
 //   talkEnabled가 꺼져 있으면 대화 항목 2개가 메뉴에 없고, 켜져 있으면
 //   있으며 열린 대화 수가 버튼 배지로도 뜬다.
@@ -29,6 +31,11 @@ const clockInAll = vi.fn();
 vi.mock("../../agent/clockOut", () => ({
   clockInAgent: (...args: unknown[]) => clockInAgent(...args),
   clockInAll: (...args: unknown[]) => clockInAll(...args),
+}));
+
+const summonAllToDesk = vi.fn();
+vi.mock("../../agent/summonToDesk", () => ({
+  summonAllToDesk: (...args: unknown[]) => summonAllToDesk(...args),
 }));
 
 const talkStatus = vi.fn();
@@ -64,6 +71,7 @@ beforeEach(() => {
   useAppStore.setState(initialState, true);
   clockInAgent.mockClear();
   clockInAll.mockClear();
+  summonAllToDesk.mockClear();
   talkStatus.mockReset();
   talkStatus.mockResolvedValue(talkStatusOf());
 });
@@ -188,7 +196,7 @@ describe("전체 출퇴근 버튼", () => {
     expect(btn.disabled).toBe(true);
   });
 
-  it("클릭하면 전체 출근/전체 퇴근 두 항목이 메뉴로 뜬다", () => {
+  it("클릭하면 전체 출근/전체 자리로/전체 퇴근 세 항목이 메뉴로 뜬다", () => {
     const s = useAppStore.getState();
     s.addAgent(mkProfile("a1"));
     s.addAgent(mkProfile("a2"));
@@ -197,6 +205,7 @@ describe("전체 출퇴근 버튼", () => {
 
     fireEvent.click(getByRole("button", { name: "전체 출퇴근" }));
     expect(getByRole("menuitem", { name: /전체 출근/ })).toBeTruthy();
+    expect(getByRole("menuitem", { name: /전체 자리로/ })).toBeTruthy();
     expect(getByRole("menuitem", { name: /전체 퇴근/ })).toBeTruthy();
   });
 
@@ -221,6 +230,37 @@ describe("전체 출퇴근 버튼", () => {
     fireEvent.click(getByRole("menuitem", { name: /전체 출근/ }));
 
     expect(clockInAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("전체 자리로는 세션 없는 근무자 수를 배지로 보여주고 summonAllToDesk를 부른다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1"));
+    s.setSessionState({ agentId: "a1", status: "exited" }); // 세션 없음 → 탕비실
+    s.addAgent(mkProfile("a2"));
+    s.setSessionState({ agentId: "a2", status: "running" }); // 자리에 앉아 있음
+    s.addAgent(mkProfile("a3"));
+    s.clockOut("a3"); // 퇴근자는 대상이 아니다
+    const { getByRole } = render(<BottomBar />);
+
+    fireEvent.click(getByRole("button", { name: "전체 출퇴근" }));
+    const item = getByRole("menuitem", { name: /전체 자리로/ }) as HTMLButtonElement;
+    expect(item.textContent).toContain("1");
+    expect(item.disabled).toBe(false);
+
+    fireEvent.click(item);
+    expect(summonAllToDesk).toHaveBeenCalledTimes(1);
+  });
+
+  it("탕비실에 아무도 없으면 전체 자리로 항목이 비활성", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1"));
+    s.setSessionState({ agentId: "a1", status: "running" });
+    const { getByRole } = render(<BottomBar />);
+
+    fireEvent.click(getByRole("button", { name: "전체 출퇴근" }));
+    expect((getByRole("menuitem", { name: /전체 자리로/ }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
   });
 
   it("근무 중이 0명이면 전체 퇴근 항목이, 퇴근자가 0명이면 전체 출근 항목이 비활성", () => {

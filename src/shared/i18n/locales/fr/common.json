@@ -16,6 +16,7 @@
     "clockIn": "🏠 Arrivée ({{n}})",
     "clockAll": "Pointage global",
     "clockInAll": "Arrivée générale (démarrer les terminaux, {{n}})",
+    "summonAllToDesk": "Tous au bureau (démarrer les terminaux, {{n}})",
     "clockOutAll": "Départ général ({{n}})",
     "status": "{{running}} en cours · {{pending}} à confirmer",
     "records": "📊 Bilan",

@@ -10,6 +10,7 @@
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "./appStore";
+import type { SessionStatus } from "@shared/types";
 import { initialTurnState } from "../timeline/turnReducer";
 import type { TurnPhase } from "../timeline/turnReducer";
 
@@ -27,6 +28,29 @@ export const useClockedOutAgents = () =>
 /** 퇴근한 에이전트 수(소환 버튼 배지용). */
 export const useClockedOutCount = () =>
   useAppStore((s) => s.agentOrder.reduce((n, id) => n + (s.agents[id]?.clockedOut ? 1 : 0), 0));
+
+/**
+ * 출근했지만 터미널(세션)이 없어 탕비실에 있는 에이전트 id 목록, 생성 순서.
+ *
+ * "세션 없음"의 판정은 `sessionBridge.ensureSession`의 needsStart와 같은 조건
+ * (엔트리 없음 · idle · exited)이다 — 그래야 "여기 뜨는 사람 = 소환하면 실제로
+ * 터미널이 뜨는 사람"이 되어 버튼 배지와 동작이 어긋나지 않는다.
+ * `behaviorFsm` 기준의 탕비실행 조건(sessionActive가 아님)과도 같은 집합이다.
+ */
+export const awayFromDeskIds = (s: {
+  agentOrder: string[];
+  agents: Record<string, { clockedOut?: boolean } | undefined>;
+  sessions: Record<string, { status: SessionStatus } | undefined>;
+}): string[] =>
+  s.agentOrder.filter((id) => {
+    const a = s.agents[id];
+    if (!a || a.clockedOut) return false;
+    const status = s.sessions[id]?.status;
+    return status === undefined || status === "idle" || status === "exited";
+  });
+
+/** 탕비실에 있는(=소환 대상) 에이전트 수. "전체 자리로" 메뉴 배지용. */
+export const useAwayFromDeskCount = () => useAppStore((s) => awayFromDeskIds(s).length);
 
 export const useAgentCount = () => useAppStore((s) => s.agentOrder.length);
 

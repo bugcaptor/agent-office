@@ -16,6 +16,7 @@
     "clockIn": "🏠 出勤 ({{n}})",
     "clockAll": "全員出退勤",
     "clockInAll": "全員出勤（ターミナル起動、{{n}}人）",
+    "summonAllToDesk": "全員着席（ターミナル起動、{{n}}人）",
     "clockOutAll": "全員退勤（{{n}}人）",
     "status": "{{running}} running · {{pending}} needs input",
     "records": "📊 記録",

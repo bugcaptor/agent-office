@@ -87,6 +87,10 @@ import { useAppStore } from "../../store/appStore";
 import { useAwardsStore } from "../../awards/awardsStore";
 import type { AgentProfile } from "../../store/types";
 import { installSessionBridge, officeBus } from "../sessionBridge";
+import {
+  resetNotifySuppression,
+  suppressNotifications,
+} from "../../agent/summonSuppress";
 import type { AwardRecord } from "@shared/types";
 
 const initialState = useAppStore.getState();
@@ -149,6 +153,7 @@ beforeEach(() => {
   capture.onActivity = undefined;
   capture.onTurnUsage = undefined;
   capture.onTalkMessage = undefined;
+  resetNotifySuppression();
   cleanup = installSessionBridge();
 });
 
@@ -207,6 +212,51 @@ describe("installSessionBridge / onNotification", () => {
     capture.onNotification?.(mkNotifEvent({ agentId: "a1" }));
 
     expect(mockApi.setBadgeCount).not.toHaveBeenCalled();
+  });
+});
+
+describe("installSessionBridge / onNotification 소환 억제 창", () => {
+  // "전체 자리로" 소환 직후 잔여 Stop이 캐릭터를 곧장 pending으로 만들던 문제
+  // (agent/summonSuppress.ts). 억제 창 안에서는 스토어에 넣지 않고 백엔드의
+  // 그 알림만 지우되, 시간 집계는 그대로 흘려보낸다.
+  it("억제 창 안의 알림은 스토어에 들어가지 않고 백엔드에서 그 id만 지운다", () => {
+    useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
+    suppressNotifications("a1");
+
+    capture.onNotification?.(mkNotifEvent({ agentId: "a1", id: "n1" }));
+
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+    expect(mockApi.clearNotifications).toHaveBeenCalledWith("a1", ["n1"]);
+  });
+
+  it("억제 창 안에서는 비포커스여도 OS 알림을 보내지 않는다", () => {
+    useAppStore.getState().addAgent(mkProfile({ id: "a1", name: "코더" }));
+    useAppStore.getState().setWindowFocused(false);
+    suppressNotifications("a1");
+
+    capture.onNotification?.(mkNotifEvent({ agentId: "a1", source: "stop", message: "완료" }));
+
+    expect(maybeSendOsNotification).not.toHaveBeenCalled();
+  });
+
+  it("억제는 그 에이전트에만 걸린다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile({ id: "a1" }));
+    s.addAgent(mkProfile({ id: "a2" }));
+    suppressNotifications("a1");
+
+    capture.onNotification?.(mkNotifEvent({ agentId: "a2", id: "n2" }));
+
+    expect(useAppStore.getState().notifications.map((n) => n.agentId)).toEqual(["a2"]);
+  });
+
+  it("억제 창이 만료되면 다시 스토어에 들어간다", () => {
+    useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
+    suppressNotifications("a1", 3000, Date.now() - 5000); // 이미 지난 창
+
+    capture.onNotification?.(mkNotifEvent({ agentId: "a1", id: "n1" }));
+
+    expect(useAppStore.getState().notifications).toHaveLength(1);
   });
 });
 
