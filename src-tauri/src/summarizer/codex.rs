@@ -5,7 +5,9 @@ use crate::persistence::settings_store::SummaryProvider;
 const WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
 [Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
 $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$c = Get-Command $env:AO_PROGRAM -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+# npm은 cmd와 ps1 shim을 함께 둔다. 실행 정책 영향을 받지 않는 cmd를 먼저 고른다.
+$c = Get-Command $env:AO_PROGRAM -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $c) { $c = Get-Command $env:AO_PROGRAM -CommandType ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1 }
 if (-not $c) { exit 3 }
 $in = [Console]::In.ReadToEnd()
 $effort = $env:AO_EFFORT
@@ -86,7 +88,9 @@ pub(super) fn build(
 #[cfg(windows)]
 const MODELS_WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
 $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
-$c = Get-Command $env:AO_PROGRAM -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+# 요약 실행과 같은 shim 우선순위를 써야 모델 조회만 따로 실패하지 않는다.
+$c = Get-Command $env:AO_PROGRAM -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $c) { $c = Get-Command $env:AO_PROGRAM -CommandType ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1 }
 if (-not $c) { exit 3 }
 & $c.Source debug models
 exit $LASTEXITCODE"#;
@@ -439,6 +443,54 @@ exit 0
                 DANGEROUS_INSTRUCTION,
             ]
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_powershell_prefers_npm_cmd_shim_over_ps1_shim() {
+        let dir = std::env::temp_dir().join(format!("ao-codex-cmd-first-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let capture = dir.join("selected.txt");
+        std::fs::write(
+            dir.join("codex.cmd"),
+            "@echo off\r\necho cmd>\"%AO_CAPTURE_FILE%\"\r\nexit /b 0\r\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("codex.ps1"),
+            "[IO.File]::WriteAllText($env:AO_CAPTURE_FILE, 'ps1')\nexit 0\n",
+        )
+        .unwrap();
+
+        let original_path = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::env::join_paths(
+            std::iter::once(dir.clone()).chain(std::env::split_paths(&original_path)),
+        )
+        .unwrap();
+        let mut spec = build("codex", "요약 지시", SummaryPurpose::Label, "gpt-5.4-mini");
+        spec.command.env("PATH", path);
+        spec.command.env("AO_CAPTURE_FILE", &capture);
+        let output = spec.command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let selected = std::fs::read_to_string(&capture).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(selected.trim(), "cmd");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_codex_scripts_fall_back_to_ps1_only_after_application_lookup() {
+        for script in [WINDOWS_SCRIPT, MODELS_WINDOWS_SCRIPT] {
+            let application = script.find("-CommandType Application ").unwrap();
+            let external_script = script.find("-CommandType ExternalScript ").unwrap();
+            assert!(application < external_script, "{script}");
+        }
     }
 
     #[cfg(not(windows))]
