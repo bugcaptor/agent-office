@@ -495,6 +495,8 @@ interface UsageSnapshot { /* …기존… */ codexLive: CodexLiveStatus }
 - `session_model`을 새로 뒀다. 모델별 버킷의 5시간 창이 `session`으로 오면
   뱃지의 "5시간" 자리(`badgeWindows`)를 모델 한도가 가로채 계정 전체 한도인
   것처럼 보인다 — 종류로 구분하고 모델명은 `label`에 싣는다.
+- 컴팩트 뱃지는 Codex의 라벨 없는 기본 버킷만 대표값으로 쓴다. Spark 같은
+  모델별 특수 한도는 사용률이 더 높아도 대표하지 않으며 상세 모달에서만 본다.
 - 기본 버킷과 `limitId`가 같은 `rateLimitsByLimitId` 항목은 중복이라 건너뛴다.
   순회 순서는 serde_json Map(BTreeMap) 키 정렬이라 결정적이다.
 

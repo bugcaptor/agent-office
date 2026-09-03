@@ -63,8 +63,11 @@ function win(partial: Partial<UsageWindow>): UsageWindow {
   };
 }
 
-function provider(windows: UsageWindow[]): ProviderUsage {
-  return { provider: "claude", fetchedAtMs: 0, planLabel: null, windows };
+function provider(
+  windows: UsageWindow[],
+  name: ProviderUsage["provider"] = "claude",
+): ProviderUsage {
+  return { provider: name, fetchedAtMs: 0, planLabel: null, windows };
 }
 
 function live(partial: Partial<ClaudeLiveStatus> = {}): ClaudeLiveStatus {
@@ -197,6 +200,26 @@ describe("badgeWindows", () => {
     expect(result.map((w) => w.kind)).toEqual(["session", "weekly_model"]);
     expect(result[1].label).toBe("B");
     expect(result[1].usedPercent).toBe(70);
+  });
+
+  it("Codex는 사용률이 더 높은 Spark 대신 계정 전체 주간 창을 대표로 고른다", () => {
+    const u = provider(
+      [
+        win({ kind: "weekly", usedPercent: 18 }),
+        win({ kind: "session_model", label: "GPT-5.3-Codex-Spark", usedPercent: 80 }),
+        win({ kind: "weekly_model", label: "GPT-5.3-Codex-Spark", usedPercent: 90 }),
+      ],
+      "codex",
+    );
+    expect(badgeWindows(u)).toEqual([u.windows[0]]);
+  });
+
+  it("Codex에 모델별 특수 한도만 있으면 대표값으로 삼지 않는다", () => {
+    const u = provider(
+      [win({ kind: "weekly_model", label: "GPT-5.3-Codex-Spark", usedPercent: 90 })],
+      "codex",
+    );
+    expect(badgeWindows(u)).toEqual([]);
   });
 });
 

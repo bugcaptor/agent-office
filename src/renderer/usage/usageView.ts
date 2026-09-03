@@ -135,14 +135,22 @@ export function mostUrgentWindow(usage: ProviderUsage | null): UsageWindow | nul
  * 창] 순서로 반환한다. session 창이 없으면 [가장 절박한 창] 하나만, 윈도
  * 자체가 없으면 빈 배열(이슈 #36 — 주간 창이 더 절박할 때 5시간 창 변동이
  * 뱃지에서 안 보이던 문제).
+ *
+ * Codex의 모델별 버킷(예: Spark)은 특정 모델에만 쓸 수 있는 특수 한도다.
+ * 계정 전체 사용량의 대표값이 아니므로 컴팩트 뱃지에서는 제외하고, 라벨 없는
+ * 기본 버킷만 고른다. 모델별 값은 상세 모달의 전체 윈도 목록에 그대로 남는다.
  */
 export function badgeWindows(usage: ProviderUsage | null): UsageWindow[] {
   if (!usage || usage.windows.length === 0) return [];
-  const session = usage.windows.find((w) => w.kind === "session") ?? null;
-  const rest = usage.windows.filter((w) => w.kind !== "session");
+  const windows =
+    usage.provider === "codex"
+      ? usage.windows.filter((w) => w.label === null)
+      : usage.windows;
+  if (windows.length === 0) return [];
+  const session = windows.find((w) => w.kind === "session") ?? null;
+  const rest = windows.filter((w) => w.kind !== "session");
   if (!session) {
-    const urgent = mostUrgentWindow(usage);
-    return urgent ? [urgent] : [];
+    return [rest.reduce((best, w) => (w.usedPercent > best.usedPercent ? w : best))];
   }
   if (rest.length === 0) return [session];
   const urgentRest = rest.reduce((best, w) => (w.usedPercent > best.usedPercent ? w : best));
