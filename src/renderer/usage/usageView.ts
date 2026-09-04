@@ -131,10 +131,15 @@ export function mostUrgentWindow(usage: ProviderUsage | null): UsageWindow | nul
 }
 
 /**
- * 뱃지에 표시할 윈도 목록(최대 2). [5시간(session) 창, 나머지 중 가장 절박한
- * 창] 순서로 반환한다. session 창이 없으면 [가장 절박한 창] 하나만, 윈도
- * 자체가 없으면 빈 배열(이슈 #36 — 주간 창이 더 절박할 때 5시간 창 변동이
- * 뱃지에서 안 보이던 문제).
+ * 뱃지에 표시할 윈도 목록(최대 2). [5시간(session) 창, 계정 전체 주간(weekly)
+ * 창] 순서로 반환한다. 주간 창이 없으면 두 번째 자리는 나머지 중 가장 절박한
+ * 창으로 채운다. session 창이 없으면 두 번째 자리 후보 하나만, 윈도 자체가
+ * 없으면 빈 배열(이슈 #36 — 주간 창이 더 절박할 때 5시간 창 변동이 뱃지에서
+ * 안 보이던 문제).
+ *
+ * 두 번째 자리는 모델별 주간 창(예: Claude Fable)의 사용률이 총 주간 사용률보다
+ * 높아도 총 주간 창을 우선한다 — 뱃지는 계정 전체 한도의 대표값이고, 모델별
+ * 값은 상세 모달에서 본다.
  *
  * Codex의 모델별 버킷(예: Spark)은 특정 모델에만 쓸 수 있는 특수 한도다.
  * 계정 전체 사용량의 대표값이 아니므로 컴팩트 뱃지에서는 제외하고, 라벨 없는
@@ -149,12 +154,13 @@ export function badgeWindows(usage: ProviderUsage | null): UsageWindow[] {
   if (windows.length === 0) return [];
   const session = windows.find((w) => w.kind === "session") ?? null;
   const rest = windows.filter((w) => w.kind !== "session");
-  if (!session) {
-    return [rest.reduce((best, w) => (w.usedPercent > best.usedPercent ? w : best))];
-  }
-  if (rest.length === 0) return [session];
-  const urgentRest = rest.reduce((best, w) => (w.usedPercent > best.usedPercent ? w : best));
-  return [session, urgentRest];
+  const second =
+    rest.length === 0
+      ? null
+      : (rest.find((w) => w.kind === "weekly") ??
+        rest.reduce((best, w) => (w.usedPercent > best.usedPercent ? w : best)));
+  if (!session) return second ? [second] : [];
+  return second ? [session, second] : [session];
 }
 
 /** 윈도 종류 라벨 키. 모델별 창은 모델명(label)을 곁들인다. */

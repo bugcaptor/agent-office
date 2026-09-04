@@ -166,9 +166,28 @@ describe("badgeWindows", () => {
     expect(badgeWindows(u).map((w) => w.kind)).toEqual(["session", "weekly"]);
   });
 
-  it("session이 없으면 가장 절박한 창 하나만", () => {
+  it("Claude 모델별 주간(Fable)이 총 주간보다 높아도 두 번째 자리는 총 주간 창", () => {
+    const u = provider([
+      win({ kind: "session", usedPercent: 12 }),
+      win({ kind: "weekly", usedPercent: 18 }),
+      win({ kind: "weekly_model", label: "Fable", usedPercent: 64 }),
+    ]);
+    const result = badgeWindows(u);
+    expect(result.map((w) => w.kind)).toEqual(["session", "weekly"]);
+    expect(result[1].usedPercent).toBe(18);
+  });
+
+  it("session이 없고 총 주간 창이 있으면 그 창 하나만", () => {
     const u = provider([
       win({ kind: "weekly", usedPercent: 18 }),
+      win({ kind: "weekly_model", label: "Fable", usedPercent: 64 }),
+    ]);
+    expect(badgeWindows(u).map((w) => w.usedPercent)).toEqual([18]);
+  });
+
+  it("session도 총 주간 창도 없으면 가장 절박한 창 하나만", () => {
+    const u = provider([
+      win({ kind: "weekly_model", label: "A", usedPercent: 18 }),
       win({ kind: "weekly_model", usedPercent: 24 }),
     ]);
     const result = badgeWindows(u);
@@ -189,7 +208,7 @@ describe("badgeWindows", () => {
     expect(result[0].kind).toBe("session");
   });
 
-  it("weekly_model 여러 개 중 최대를 두 번째로 고른다", () => {
+  it("총 주간 창이 없으면 weekly_model 여러 개 중 최대를 두 번째로 고른다", () => {
     const u = provider([
       win({ kind: "session", usedPercent: 12 }),
       win({ kind: "weekly_model", label: "A", usedPercent: 40 }),
