@@ -41,6 +41,7 @@ import type {
   TurnUsageEvent,
   WorkLogItem,
   RunRecipeUserInput,
+  RunRecipeStartInput,
 } from "@shared/types";
 
 /** One Channel per agentId, fanned out to however many onData callbacks are registered. */
@@ -180,6 +181,18 @@ export const tauriApi: AgentOfficeApi = {
 
   async runRecipesProbeTarget(root) {
     return await invoke(Commands.runRecipesProbeTarget, { root });
+  },
+
+  async runRecipeStart(input: RunRecipeStartInput) {
+    return await invoke(Commands.runRecipeStart, { input });
+  },
+
+  async runRecipeStatus(agentId) {
+    return await invoke(Commands.runRecipeStatus, { agentId });
+  },
+
+  async runRecipeStop(agentId) {
+    await invoke(Commands.runRecipeStop, { agentId });
   },
 
   async setKeepAwake(active: boolean) {

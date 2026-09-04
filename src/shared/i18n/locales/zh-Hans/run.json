@@ -1,7 +1,7 @@
 {
   "title": "运行配方",
   "close": "关闭",
-  "current": { "title": "当前活动", "stop": "停止" },
+  "current": { "title": "正在运行", "stop": "停止" },
   "section": { "agent": "角色发现的命令", "user": "手动添加的命令" },
   "source": { "agent": "发现", "user": "手动" },
   "recipe": {
@@ -24,11 +24,11 @@
     "clear": "清除发现结果"
   },
   "notice": {
-    "started": "已在新终端中启动命令。",
-    "injected": "已将命令发送到角色终端。",
-    "starting": "终端正在启动，请稍后重试。",
-    "external": "无法向外部终端会话发送输入。",
-    "failed": "没有可用于此命令的终端。",
+    "started": "已在独立进程中启动命令。",
+    "alreadyRunning": "已有命令正在运行，请先停止它。",
+    "stopped": "已停止正在运行的进程。",
+    "stopFailed": "无法停止正在运行的进程。",
+    "failed": "无法启动命令进程。",
     "probe": {
       "injected": "已让角色检查项目命令。",
       "starting": "终端正在启动，请稍后重试。",

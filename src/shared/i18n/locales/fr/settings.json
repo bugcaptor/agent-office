@@ -110,7 +110,7 @@
     "sessionLogTitle": "Conserver les journaux de session",
     "sessionLogHelp": "Enregistre ce qui est passé par le terminal (tours d'IA, commandes, sortie) dans un fichier texte lisible. Ouvrez-le depuis « Voir le journal de session » du menu contextuel d'un onglet de personnage et transformez-le en fiche. Les journaux de plus de 30 jours, ou au-delà de 2 Go au total, sont supprimés en commençant par les plus anciens.",
     "runRecipesTitle": "Recettes d’exécution du projet",
-    "runRecipesHelp": "Ajoute un menu Exécuter… aux onglets de personnage pour rechercher les commandes de développement, de test et de compilation du projet, puis les lancer dans le terminal de ce personnage. Désactivé par défaut.",
+    "runRecipesHelp": "Ajoute un menu Exécuter… aux onglets de personnage pour rechercher les commandes du projet et les lancer dans des processus distincts sans toucher au terminal de l’agent. Désactivé par défaut.",
     "mascotTitle": "Mascotte de bureau",
     "mascotHelp": "Affiche le personnage actif dans une petite fenêtre toujours au premier plan, séparée de l'app. Les notifications y apparaissent, et un clic ouvre le terminal de ce personnage.",
     "mascotLightsTitle": "Voyants d'état",

@@ -284,6 +284,8 @@ pub struct AppState {
     /// 핸들러와 배달 워커가 같은 Arc를 쥐고, `set_app_settings`가 토글·상한을
     /// 즉시 반영한다(끄면 대기 중 메시지까지 버려지는 킬 스위치).
     pub talk: Arc<crate::talk::TalkHub>,
+    /// 레시피 실행은 에이전트 PTY와 격리된 전용 프로세스다.
+    pub run_recipes: Arc<crate::run_recipes::RunRecipeRuntime>,
 }
 
 // ── 테스트용 페이크 ────────────────────────────────────────────────────

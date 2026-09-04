@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   save: vi.fn(),
   clear: vi.fn(),
   writeInput: vi.fn(),
+  status: vi.fn(),
+  stop: vi.fn(),
   execute: vi.fn(),
   probe: vi.fn(),
 }));
@@ -19,12 +21,13 @@ vi.mock("../../ipc/tauriApi", () => ({
     runRecipesUserSave: mocks.save,
     runRecipesAgentClear: mocks.clear,
     writeInput: mocks.writeInput,
+    runRecipeStatus: mocks.status,
+    runRecipeStop: mocks.stop,
   },
 }));
 vi.mock("../execute", () => ({
   executeRunRecipe: mocks.execute,
   probeRunRecipes: mocks.probe,
-  activeRecipeText: (_profile: unknown, text: string | undefined) => text ?? "",
 }));
 
 const { RunPalette } = await import("../RunPalette");
@@ -57,7 +60,9 @@ beforeEach(() => {
   mocks.save.mockReset().mockResolvedValue(undefined);
   mocks.clear.mockReset().mockResolvedValue(undefined);
   mocks.writeInput.mockReset();
-  mocks.execute.mockReset().mockResolvedValue("injected");
+  mocks.status.mockReset().mockResolvedValue(null);
+  mocks.stop.mockReset().mockResolvedValue(undefined);
+  mocks.execute.mockReset().mockResolvedValue("started");
   mocks.probe.mockReset().mockResolvedValue("injected");
 });
 
@@ -74,7 +79,7 @@ describe("RunPalette", () => {
     await waitFor(() => expect(useRunStore.getState().palette).toBeNull());
   });
 
-  it("조사/직접 레시피를 그리고 행 클릭으로 해당 캐릭터 세션에서 실행한다", async () => {
+  it("조사/직접 레시피를 그리고 행 클릭으로 별도 실행 프로세스를 시작한다", async () => {
     useRunStore.setState({ palette: { root: "/work/p", agentId: "a1" }, result });
     const { getByRole, getByText } = render(<RunPalette />);
 
@@ -83,6 +88,25 @@ describe("RunPalette", () => {
     fireEvent.click(getByRole("button", { name: /Frontend tests/ }));
 
     await waitFor(() => expect(mocks.execute).toHaveBeenCalledWith("a1", "/work/p", result.agentRecipes[0]));
+    expect(mocks.writeInput).not.toHaveBeenCalled();
+  });
+
+  it("실행 중인 프로세스를 표시하고 전용 중단 IPC로 끝낸다", async () => {
+    mocks.status.mockResolvedValue({
+      agentId: "a1",
+      recipeId: "dev",
+      label: "Dev server",
+      command: "npm run dev",
+      startedAt: 1,
+    });
+    useRunStore.setState({ palette: { root: "/work/p", agentId: "a1" }, result });
+    const { getByRole, getByText } = render(<RunPalette />);
+
+    await waitFor(() => expect(getByText(/Dev server · npm run dev/)).toBeTruthy());
+    fireEvent.click(getByRole("button", { name: "중단" }));
+
+    await waitFor(() => expect(mocks.stop).toHaveBeenCalledWith("a1"));
+    expect(mocks.writeInput).not.toHaveBeenCalled();
   });
 
   it("실행 제출 중 연속 클릭을 무시하고 백엔드가 정규화한 root를 쓴다", async () => {
@@ -108,7 +132,7 @@ describe("RunPalette", () => {
       "/Users/me/work/p",
       result.agentRecipes[0],
     );
-    finish("injected");
+    finish("started");
     await waitFor(() =>
       expect((runButton as HTMLButtonElement).disabled).toBe(false),
     );

@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { RunRecipe } from "@shared/types";
+import type { RunRecipe, RunRecipeProcess } from "@shared/types";
 
 import { tauriApi } from "../ipc/tauriApi";
 import { useEscapeToClose } from "../shared/useEscapeToClose";
 import { useAppStore } from "../store/appStore";
-import { activeRecipeText, executeRunRecipe, probeRunRecipes } from "./execute";
+import { executeRunRecipe, probeRunRecipes } from "./execute";
 import { useRunStore } from "./runStore";
 import "./run.css";
 
@@ -71,23 +71,17 @@ export function RunPalette() {
   const deleteUserRecipe = useRunStore((s) => s.deleteUserRecipe);
   const clearAgentRecipes = useRunStore((s) => s.clearAgentRecipes);
   const enabled = useAppStore((s) => s.appSettings.runRecipesEnabled);
-  const profile = useAppStore((s) =>
-    palette ? s.agents[palette.agentId] : undefined,
-  );
-  const session = useAppStore((s) =>
-    palette ? s.sessions[palette.agentId] : undefined,
-  );
   const turn = useAppStore((s) =>
     palette ? s.timeTracking[palette.agentId] : undefined,
-  );
-  const taskLabel = useAppStore((s) =>
-    palette ? s.taskLabels[palette.agentId] : undefined,
   );
   const [label, setLabel] = useState("");
   const [command, setCommand] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
+  const [runningProcess, setRunningProcess] =
+    useState<RunRecipeProcess | null>(null);
   const actionInFlight = useRef(false);
+  const processStatusGeneration = useRef(0);
   const lastSettledTurns = useRef<number | undefined>(undefined);
   const refreshAfterLoad = useRef(false);
 
@@ -95,6 +89,34 @@ export function RunPalette() {
     if (palette && !enabled) closePalette();
   }, [palette, enabled, closePalette]);
   useEscapeToClose(palette !== null && enabled, closePalette);
+
+  // 전용 실행 프로세스는 팔레트를 닫아도 계속 돈다. 다시 열었을 때와 자연
+  // 종료 뒤 상태를 맞추려고, 열린 동안만 가볍게 조회한다.
+  useEffect(() => {
+    if (!palette) {
+      processStatusGeneration.current += 1;
+      setRunningProcess(null);
+      return;
+    }
+    let disposed = false;
+    const poll = async () => {
+      const generation = ++processStatusGeneration.current;
+      try {
+        const process = await tauriApi.runRecipeStatus(palette.agentId);
+        if (!disposed && generation === processStatusGeneration.current) {
+          setRunningProcess(process);
+        }
+      } catch (statusError) {
+        console.warn("RunPalette: process status failed", statusError);
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 500);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [palette]);
 
   // notification Stop이나 shell idle이 turns를 올리면 캐릭터가 방금 쓴 파일을 다시 읽는다.
   useEffect(() => {
@@ -120,16 +142,6 @@ export function RunPalette() {
     }
   }, [palette, refresh, result, turn?.turns]);
 
-  const currentText = useMemo(() => {
-    if (session?.kind === "external" || turn?.phase === "idle") return "";
-    return activeRecipeText(
-      profile,
-      taskLabel?.latestToolText ??
-        taskLabel?.latestAssistantText ??
-        taskLabel?.latestPromptText,
-    );
-  }, [profile, session?.kind, taskLabel, turn?.phase]);
-
   if (!palette || !enabled) return null;
 
   const run = async (recipe: RunRecipe) => {
@@ -143,7 +155,37 @@ export function RunPalette() {
         result?.root ?? palette.root,
         recipe,
       );
+      if (outcome === "started") {
+        const generation = ++processStatusGeneration.current;
+        try {
+          const process = await tauriApi.runRecipeStatus(palette.agentId);
+          if (generation === processStatusGeneration.current) {
+            setRunningProcess(process);
+          }
+        } catch (statusError) {
+          console.warn("RunPalette: process status failed", statusError);
+        }
+      }
       setNotice(t(`notice.${outcome}`));
+    } finally {
+      actionInFlight.current = false;
+      setActing(false);
+    }
+  };
+
+  const stop = async () => {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
+    setActing(true);
+    setNotice(null);
+    try {
+      await tauriApi.runRecipeStop(palette.agentId);
+      processStatusGeneration.current += 1;
+      setRunningProcess(null);
+      setNotice(t("notice.stopped"));
+    } catch (stopError) {
+      console.warn("RunPalette: process stop failed", stopError);
+      setNotice(t("notice.stopFailed"));
     } finally {
       actionInFlight.current = false;
       setActing(false);
@@ -205,13 +247,16 @@ export function RunPalette() {
           </button>
         </header>
 
-        {currentText && (
+        {runningProcess && (
           <div className="run-current">
             <span>{t("current.title")}</span>
-            <code>{currentText}</code>
+            <code title={runningProcess.command}>
+              {runningProcess.label} · {runningProcess.command}
+            </code>
             <button
               type="button"
-              onClick={() => tauriApi.writeInput(palette.agentId, "\x03")}
+              disabled={busy}
+              onClick={() => void stop()}
             >
               {t("current.stop")}
             </button>
@@ -233,7 +278,7 @@ export function RunPalette() {
                   <RecipeRow
                     key={recipe.id}
                     recipe={recipe}
-                    disabled={busy}
+                    disabled={busy || runningProcess !== null}
                     onRun={() => void run(recipe)}
                   />
                 ))}
@@ -251,7 +296,7 @@ export function RunPalette() {
                   <RecipeRow
                     key={recipe.id}
                     recipe={recipe}
-                    disabled={busy}
+                    disabled={busy || runningProcess !== null}
                     onRun={() => void run(recipe)}
                     onDelete={() => void deleteUserRecipe(recipe.id)}
                   />

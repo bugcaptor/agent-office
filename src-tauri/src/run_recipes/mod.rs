@@ -4,6 +4,8 @@
 mod agent_file;
 mod commands;
 mod paths;
+mod runner;
 mod user_store;
 
 pub(crate) use commands::*;
+pub use runner::RunRecipeRuntime;

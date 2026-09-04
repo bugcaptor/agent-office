@@ -1,7 +1,7 @@
 {
   "title": "執行配方",
   "close": "關閉",
-  "current": { "title": "目前活動", "stop": "停止" },
+  "current": { "title": "執行中", "stop": "停止" },
   "section": { "agent": "角色找到的指令", "user": "手動加入的指令" },
   "source": { "agent": "找到", "user": "手動" },
   "recipe": {
@@ -24,11 +24,11 @@
     "clear": "清除調查結果"
   },
   "notice": {
-    "started": "已在新終端機中啟動指令。",
-    "injected": "已將指令傳送到角色終端機。",
-    "starting": "終端機正在啟動，請稍後再試。",
-    "external": "無法向外部終端機工作階段傳送輸入。",
-    "failed": "沒有可用來執行此指令的終端機。",
+    "started": "已在獨立程序中啟動指令。",
+    "alreadyRunning": "已有指令正在執行，請先停止它。",
+    "stopped": "已停止執行中的程序。",
+    "stopFailed": "無法停止執行中的程序。",
+    "failed": "無法啟動指令程序。",
     "probe": {
       "injected": "已請角色檢查專案指令。",
       "starting": "終端機正在啟動，請稍後再試。",

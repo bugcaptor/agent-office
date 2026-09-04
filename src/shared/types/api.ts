@@ -51,6 +51,8 @@ import type {
 } from './git';
 import type {
   RunRecipeProbeTarget,
+  RunRecipeProcess,
+  RunRecipeStartInput,
   RunRecipesReadResult,
   RunRecipeUserInput,
 } from './run';
@@ -131,6 +133,12 @@ export interface AgentOfficeApi {
   runRecipesAgentClear(root: string): Promise<void>;
   /** 조사 파일 절대 경로를 계산하고 부모 폴더를 만든다. */
   runRecipesProbeTarget(root: string): Promise<RunRecipeProbeTarget>;
+  /** 레시피를 캐릭터 PTY와 분리한 전용 프로세스로 시작한다. */
+  runRecipeStart(input: RunRecipeStartInput): Promise<RunRecipeProcess>;
+  /** 캐릭터에 속한 현재 실행 프로세스. 없거나 끝났으면 null이다. */
+  runRecipeStatus(agentId: string): Promise<RunRecipeProcess | null>;
+  /** 캐릭터에 속한 실행 프로세스와 그 자식 프로세스를 종료한다. */
+  runRecipeStop(agentId: string): Promise<void>;
   /** 작업 중 잠자기 방지(#68) — "일하는 캐릭터 있음(true)/없음(false)" 통지.
    * true는 lease를 갱신하므로 주기적으로 재호출한다. 설정이 꺼져 있으면 백엔드가
    * 조용히 무시한다. */

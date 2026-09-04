@@ -38,3 +38,23 @@ export interface RunRecipeProbeTarget {
   root: string;
   agentFilePath: string;
 }
+
+/** PTY와 분리한 실행 프로세스를 시작할 때 백엔드에 넘기는 값. */
+export interface RunRecipeStartInput {
+  agentId: string;
+  recipeId: string;
+  label: string;
+  command: string;
+  root: string;
+  cwd?: string;
+  shell?: string;
+}
+
+/** 현재 살아 있는 실행 레시피 프로세스. 캐릭터마다 하나만 둘 수 있다. */
+export interface RunRecipeProcess {
+  agentId: string;
+  recipeId: string;
+  label: string;
+  command: string;
+  startedAt: number;
+}

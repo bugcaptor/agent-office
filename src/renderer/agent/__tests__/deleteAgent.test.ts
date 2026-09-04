@@ -11,9 +11,11 @@ import { useAppStore } from "../../store/appStore";
 import type { AgentProfile } from "../../store/types";
 
 const disposeSession = vi.fn().mockResolvedValue(undefined);
+const runRecipeStop = vi.fn().mockResolvedValue(undefined);
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     disposeSession: (...args: unknown[]) => disposeSession(...args),
+    runRecipeStop: (...args: unknown[]) => runRecipeStop(...args),
   },
 }));
 
@@ -42,18 +44,20 @@ const initialState = useAppStore.getState();
 beforeEach(() => {
   useAppStore.setState(initialState, true);
   disposeSession.mockClear();
+  runRecipeStop.mockClear();
   destroy.mockClear();
   disposeSession.mockResolvedValue(undefined);
 });
 
 describe("deleteAgent 오케스트레이션", () => {
-  it("disposeSession 호출 + removeAgent 캐스케이드 + TerminalRegistry.destroy 호출", async () => {
+  it("실행 프로세스와 PTY 종료 + removeAgent 캐스케이드 + TerminalRegistry.destroy 호출", async () => {
     const s = useAppStore.getState();
     s.addAgent(mkProfile("a1"));
     s.openTerminal("a1");
 
     await deleteAgent("a1");
 
+    expect(runRecipeStop).toHaveBeenCalledWith("a1");
     expect(disposeSession).toHaveBeenCalledWith("a1");
     const st = useAppStore.getState();
     expect(st.agents.a1).toBeUndefined();

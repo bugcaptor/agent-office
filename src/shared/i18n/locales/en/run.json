@@ -1,7 +1,7 @@
 {
   "title": "Run recipes",
   "close": "Close",
-  "current": { "title": "Current activity", "stop": "Stop" },
+  "current": { "title": "Running", "stop": "Stop" },
   "section": {
     "agent": "Discovered by the character",
     "user": "Added manually"
@@ -27,11 +27,11 @@
     "clear": "Clear discovery"
   },
   "notice": {
-    "started": "Started a new terminal with the command.",
-    "injected": "Sent the command to the character terminal.",
-    "starting": "The terminal is starting. Try again in a moment.",
-    "external": "Input cannot be sent to an external terminal session.",
-    "failed": "No terminal is available for this command.",
+    "started": "Started the command in a separate process.",
+    "alreadyRunning": "Another command is already running. Stop it first.",
+    "stopped": "Stopped the running process.",
+    "stopFailed": "Could not stop the running process.",
+    "failed": "Could not start the command process.",
     "probe": {
       "injected": "Asked the character to inspect the project commands.",
       "starting": "The terminal is starting. Try again in a moment.",

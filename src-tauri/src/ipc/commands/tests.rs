@@ -460,6 +460,7 @@
             wake_lock: std::sync::Arc::new(crate::power::WakeLock::new()),
             tts: std::sync::Arc::new(crate::tts::TtsState::new(&profile_dir)),
             talk: std::sync::Arc::new(crate::talk::TalkHub::default()),
+            run_recipes: std::sync::Arc::new(crate::run_recipes::RunRecipeRuntime::default()),
         };
         (state, ctl, observer_dir, profile_dir)
     }

@@ -1,7 +1,7 @@
 {
   "title": "Recettes d’exécution",
   "close": "Fermer",
-  "current": { "title": "Activité en cours", "stop": "Arrêter" },
+  "current": { "title": "En cours", "stop": "Arrêter" },
   "section": {
     "agent": "Trouvées par le personnage",
     "user": "Ajoutées manuellement"
@@ -27,11 +27,11 @@
     "clear": "Effacer les résultats"
   },
   "notice": {
-    "started": "Un nouveau terminal a été lancé avec la commande.",
-    "injected": "La commande a été envoyée au terminal du personnage.",
-    "starting": "Le terminal démarre. Réessayez dans un instant.",
-    "external": "Impossible d’envoyer une saisie à une session de terminal externe.",
-    "failed": "Aucun terminal n’est disponible pour cette commande.",
+    "started": "La commande a été lancée dans un processus distinct.",
+    "alreadyRunning": "Une autre commande est déjà en cours. Arrêtez-la d’abord.",
+    "stopped": "Le processus en cours a été arrêté.",
+    "stopFailed": "Impossible d’arrêter le processus en cours.",
+    "failed": "Impossible de lancer le processus de commande.",
     "probe": {
       "injected": "Le personnage examine les commandes du projet.",
       "starting": "Le terminal démarre. Réessayez dans un instant.",

@@ -632,7 +632,7 @@ describe("app settings commands", () => {
     expect(invoke).toHaveBeenCalledWith(Commands.setAppSettings, { settings: s });
   });
 
-  it("실행 레시피 네 커맨드의 인자와 결과를 그대로 잇는다", async () => {
+  it("실행 레시피 저장과 프로세스 커맨드의 인자와 결과를 그대로 잇는다", async () => {
     const readResult = {
       root: "/work/p",
       agentFilePath: "/data/p.agent.json",
@@ -641,7 +641,21 @@ describe("app settings commands", () => {
       userRecipes: [],
     };
     const probeResult = { root: "/work/p", agentFilePath: "/data/p.agent.json" };
-    invoke.mockResolvedValueOnce(readResult).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(probeResult);
+    const process = {
+      agentId: "a1",
+      recipeId: "test",
+      label: "Test",
+      command: "npm test",
+      startedAt: 1,
+    };
+    invoke
+      .mockResolvedValueOnce(readResult)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(probeResult)
+      .mockResolvedValueOnce(process)
+      .mockResolvedValueOnce(process)
+      .mockResolvedValueOnce(undefined);
     const tauriApi = await importTauriApi();
     const recipes = [{ id: "test", label: "Test", command: "npm test", createdAt: "now" }];
 
@@ -649,11 +663,18 @@ describe("app settings commands", () => {
     await tauriApi.runRecipesUserSave("/work/p", recipes);
     await tauriApi.runRecipesAgentClear("/work/p");
     await expect(tauriApi.runRecipesProbeTarget("/work/p")).resolves.toBe(probeResult);
+    const input = { agentId: "a1", recipeId: "test", label: "Test", command: "npm test", root: "/work/p" };
+    await expect(tauriApi.runRecipeStart(input)).resolves.toBe(process);
+    await expect(tauriApi.runRecipeStatus("a1")).resolves.toBe(process);
+    await tauriApi.runRecipeStop("a1");
 
     expect(invoke).toHaveBeenNthCalledWith(1, Commands.runRecipesRead, { root: "/work/p" });
     expect(invoke).toHaveBeenNthCalledWith(2, Commands.runRecipesUserSave, { root: "/work/p", recipes });
     expect(invoke).toHaveBeenNthCalledWith(3, Commands.runRecipesAgentClear, { root: "/work/p" });
     expect(invoke).toHaveBeenNthCalledWith(4, Commands.runRecipesProbeTarget, { root: "/work/p" });
+    expect(invoke).toHaveBeenNthCalledWith(5, Commands.runRecipeStart, { input });
+    expect(invoke).toHaveBeenNthCalledWith(6, Commands.runRecipeStatus, { agentId: "a1" });
+    expect(invoke).toHaveBeenNthCalledWith(7, Commands.runRecipeStop, { agentId: "a1" });
   });
 
   it("listAvailableShells invokes list_available_shells with no args and returns the resolved list", async () => {

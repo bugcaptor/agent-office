@@ -1,7 +1,8 @@
 // src/renderer/agent/deleteAgent.ts
 //
 // 캐릭터 삭제 오케스트레이터. 순서를 보장한다:
-//   ① tauriApi.disposeSession — PTY 종료. 세션이 없거나 이미 죽었어도 무시.
+//   ① tauriApi.runRecipeStop + disposeSession — 별도 실행 프로세스와 PTY 종료.
+//      둘 다 없거나 이미 죽었어도 무시.
 //      이 await 이후에 스토어 상태를 읽는다 — await 이전에 읽으면 IPC 대기
 //      중 스토어가 변할 수 있어(예: 겹치는 삭제 호출) 낡은 상태로 판단하게
 //      된다.
@@ -20,12 +21,16 @@ import { tauriApi } from "../ipc/tauriApi";
 import { terminalRegistry } from "../terminal/TerminalRegistry";
 
 export async function deleteAgent(agentId: string): Promise<void> {
-  // ① PTY 종료. 실패(세션 없음/이미 종료)해도 삭제는 계속 진행.
-  try {
-    await tauriApi.disposeSession(agentId);
-  } catch (err) {
-    console.warn(`deleteAgent: disposeSession failed for ${agentId}`, err);
-  }
+  // ① 별도 실행 프로세스와 PTY를 함께 정리한다. 한쪽이 없거나 실패해도
+  // 다른 쪽과 캐릭터 삭제는 계속 진행한다.
+  await Promise.all([
+    tauriApi.runRecipeStop(agentId).catch((err) => {
+      console.warn(`deleteAgent: runRecipeStop failed for ${agentId}`, err);
+    }),
+    tauriApi.disposeSession(agentId).catch((err) => {
+      console.warn(`deleteAgent: disposeSession failed for ${agentId}`, err);
+    }),
+  ]);
 
   // 상태 스냅샷은 disposeSession await 이후에 읽는다. await 이전에 읽으면
   // IPC 대기 중 스토어가 변한 경우(예: 겹치는 삭제 호출) 낡은 상태로 탭

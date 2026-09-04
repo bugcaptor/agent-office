@@ -1,8 +1,29 @@
 use crate::{
     state::AppState,
-    types::{RunRecipeProbeTarget, RunRecipeUserInput, RunRecipesReadResult},
+    types::{RunRecipeProbeTarget, RunRecipeProcess, RunRecipeStartInput, RunRecipeUserInput, RunRecipesReadResult},
 };
 use tauri::State;
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn run_recipe_start(
+    app_state: State<'_, AppState>, input: RunRecipeStartInput,
+) -> Result<RunRecipeProcess, String> {
+    app_state.run_recipes.start(input)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn run_recipe_status(
+    app_state: State<'_, AppState>, agent_id: String,
+) -> Result<Option<RunRecipeProcess>, String> {
+    app_state.run_recipes.status(&agent_id)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn run_recipe_stop(
+    app_state: State<'_, AppState>, agent_id: String,
+) -> Result<(), String> {
+    app_state.run_recipes.stop(&agent_id)
+}
 
 fn targets(
     app_state: &AppState,

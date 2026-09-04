@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   writeInput: vi.fn(),
   probeTarget: vi.fn(),
-  guardedCreate: vi.fn(),
+  start: vi.fn(),
   getState: vi.fn(),
 }));
 
@@ -12,10 +12,8 @@ vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     writeInput: mocks.writeInput,
     runRecipesProbeTarget: mocks.probeTarget,
+    runRecipeStart: mocks.start,
   },
-}));
-vi.mock("../../ipc/sessionBridge", () => ({
-  runGuardedCreateSession: mocks.guardedCreate,
 }));
 vi.mock("../../store/appStore", () => ({ useAppStore: { getState: mocks.getState } }));
 
@@ -24,7 +22,6 @@ const {
   executeRunRecipe,
   injectAndSubmit,
   probeRunRecipes,
-  recipeCommand,
   wslPath,
 } = await import("../execute");
 
@@ -34,41 +31,20 @@ beforeEach(() => {
   vi.useRealTimers();
   mocks.writeInput.mockReset();
   mocks.probeTarget.mockReset();
-  mocks.guardedCreate.mockReset();
+  mocks.start.mockReset().mockResolvedValue({
+    agentId: "a1",
+    recipeId: "test",
+    label: "Test",
+    command: "npm test",
+    startedAt: 1,
+  });
   mocks.getState.mockReset();
 });
 
-describe("recipeCommand", () => {
-  it("cwd가 없으면 원문 명령을 그대로 둔다", () => {
-    expect(recipeCommand("/work/p", recipe)).toBe("npm test");
-  });
-
-  it("POSIX 셸은 서브셸 cd로 감싸고 작은따옴표를 이스케이프한다", () => {
-    expect(recipeCommand("/work/a'b", { ...recipe, cwd: "web" }, "zsh")).toBe(
-      `( cd '/work/a'\"'\"'b/web' && npm test )`,
-    );
-  });
-
-  it("PowerShell은 Push/Pop-Location으로 원래 위치를 복구한다", () => {
-    expect(recipeCommand("C:\\Work", { ...recipe, cwd: "web" }, "pwsh")).toBe(
-      "& { Push-Location -LiteralPath 'C:\\Work\\web'; try { npm test } finally { Pop-Location } }",
-    );
-  });
-
-  it("Windows의 자동 셸도 PowerShell 래퍼를 쓴다", () => {
-    expect(recipeCommand("C:\\Work", { ...recipe, cwd: "web" }, undefined, true)).toBe(
-      "& { Push-Location -LiteralPath 'C:\\Work\\web'; try { npm test } finally { Pop-Location } }",
-    );
-  });
-
-  it("WSL은 Windows 호스트 경로를 /mnt 경로로 바꾼다", () => {
-    expect(recipeCommand("C:/Work", { ...recipe, cwd: "web app" }, "wsl")).toBe(
-      "( cd '/mnt/c/Work/web app' && npm test )",
-    );
-    expect(wslPath("C:\\Users\\me\\App Data\\recipes.json")).toBe(
-      "/mnt/c/Users/me/App Data/recipes.json",
-    );
-  });
+it("WSL 경로는 조사 프롬프트에서 Linux 접근 경로로 바꾼다", () => {
+  expect(wslPath("C:\\Users\\me\\App Data\\recipes.json")).toBe(
+    "/mnt/c/Users/me/App Data/recipes.json",
+  );
 });
 
 it("명령 원문과 CR을 150ms 간격으로 나눠 넣는다", async () => {
@@ -82,48 +58,45 @@ it("명령 원문과 CR을 150ms 간격으로 나눠 넣는다", async () => {
 });
 
 describe("executeRunRecipe", () => {
-  it("running PTY에는 명령을 두 번 나눠 넣는다", async () => {
-    vi.useFakeTimers();
+  it("에이전트 PTY 상태와 무관하게 전용 프로세스 시작 IPC만 호출한다", async () => {
     const state = {
-      agents: { a1: { shell: "zsh" } },
+      agents: { a1: { shell: "pwsh" } },
       sessions: { a1: { status: "running", kind: "pty" } },
-      setSessionState: vi.fn(),
     };
     mocks.getState.mockReturnValue(state);
-    const pending = executeRunRecipe("a1", "/work/p", recipe);
-    await vi.advanceTimersByTimeAsync(RUN_INJECT_SUBMIT_DELAY_MS);
-    await expect(pending).resolves.toBe("injected");
-    expect(mocks.writeInput.mock.calls).toEqual([["a1", "npm test"], ["a1", "\r"]]);
-  });
-
-  it("idle PTY는 starting으로 바꾸고 startupCommand로 다시 띄운다", async () => {
-    const state = {
-      agents: { a1: { shell: "zsh" } },
-      sessions: { a1: { status: "idle", kind: "pty" } },
-      setSessionState: vi.fn(({ status }: { status: string }) => {
-        state.sessions.a1.status = status;
-      }),
-    };
-    mocks.getState.mockImplementation(() => state);
-    mocks.guardedCreate.mockImplementation(async () => {
-      state.sessions.a1.status = "running";
+    await expect(
+      executeRunRecipe("a1", "/work/p", { ...recipe, cwd: "web" }),
+    ).resolves.toBe("started");
+    expect(mocks.start).toHaveBeenCalledWith({
+      agentId: "a1",
+      recipeId: "test",
+      label: "Test",
+      command: "npm test",
+      root: "/work/p",
+      cwd: "web",
+      shell: "pwsh",
     });
-    await expect(executeRunRecipe("a1", "/work/p", recipe)).resolves.toBe("started");
-    expect(state.setSessionState).toHaveBeenCalledWith({ agentId: "a1", status: "starting" });
-    expect(mocks.guardedCreate).toHaveBeenCalledWith("a1", { startupCommand: "npm test" });
+    expect(mocks.writeInput).not.toHaveBeenCalled();
   });
 
-  it("starting과 external 세션에는 입력을 섞지 않는다", async () => {
-    const state = {
-      agents: { a1: {} },
-      sessions: { a1: { status: "starting", kind: "pty" } },
-      setSessionState: vi.fn(),
-    };
-    mocks.getState.mockReturnValue(state);
-    await expect(executeRunRecipe("a1", "/work/p", recipe)).resolves.toBe("starting");
-    state.sessions.a1 = { status: "running", kind: "external" };
-    await expect(executeRunRecipe("a1", "/work/p", recipe)).resolves.toBe("external");
-    expect(mocks.writeInput).not.toHaveBeenCalled();
+  it("세션과 프로필이 없어도 기본 셸로 실행한다", async () => {
+    mocks.getState.mockReturnValue({ agents: {}, sessions: {} });
+    await expect(executeRunRecipe("a1", "/work/p", recipe)).resolves.toBe("started");
+    expect(mocks.start).toHaveBeenCalledWith({
+      agentId: "a1",
+      recipeId: "test",
+      label: "Test",
+      command: "npm test",
+      root: "/work/p",
+    });
+  });
+
+  it("이미 실행 중인 캐릭터에는 중복 실행 결과를 돌려준다", async () => {
+    mocks.getState.mockReturnValue({ agents: { a1: {} }, sessions: {} });
+    mocks.start.mockRejectedValue("run-recipe-already-running");
+    await expect(executeRunRecipe("a1", "/work/p", recipe)).resolves.toBe(
+      "alreadyRunning",
+    );
   });
 });
 

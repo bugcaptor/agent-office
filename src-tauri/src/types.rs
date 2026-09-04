@@ -49,6 +49,25 @@ pub struct RunRecipesReadResult {
 #[serde(rename_all = "camelCase")]
 pub struct RunRecipeProbeTarget { pub root: String, pub agent_file_path: String }
 
+/// PTY와 분리해 실행하는 레시피 프로세스의 IPC 입력. command는 셸 문자열
+/// 계약을 그대로 유지하고, cwd는 root 아래 상대 경로만 허용한다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RunRecipeStartInput {
+    pub agent_id: String, pub recipe_id: String, pub label: String, pub command: String,
+    pub root: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)] pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)] pub shell: Option<String>,
+}
+
+/// 현재 살아 있는 전용 실행 프로세스의 UI 표시용 메타데이터.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunRecipeProcess {
+    pub agent_id: String, pub recipe_id: String, pub label: String,
+    pub command: String, pub started_at: u64,
+}
+
 /// 세션 라이프사이클 상태. TS SessionState('starting'|'running'|'exited'|'disposed')와 동일.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

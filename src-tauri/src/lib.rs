@@ -704,6 +704,7 @@ pub fn run() {
             // 작업 중 잠자기 방지(#68): 웨이크락 소유자 + lease 만료 감시 태스크.
             // 렌더러가 set_keep_awake로 lease(180s)를 갱신하고, 이 태스크가 30초
             // 간격으로 tick해 렌더러가 크래시/행으로 통지를 멈추면 강제 해제한다.
+            let run_recipes = Arc::new(crate::run_recipes::RunRecipeRuntime::default());
             let wake_lock = Arc::new(crate::power::WakeLock::new());
             {
                 let wake_lock = wake_lock.clone();
@@ -764,6 +765,7 @@ pub fn run() {
                 wake_lock,
                 tts,
                 talk,
+                run_recipes,
             });
             Ok(())
         })
@@ -864,6 +866,9 @@ pub fn run() {
             run_recipes::run_recipes_user_save,
             run_recipes::run_recipes_agent_clear,
             run_recipes::run_recipes_probe_target,
+            run_recipes::run_recipe_start,
+            run_recipes::run_recipe_status,
+            run_recipes::run_recipe_stop,
             ipc::commands::load_award_portrait,
             ipc::commands::load_memo,
             ipc::commands::save_memo,
@@ -918,6 +923,7 @@ pub fn run() {
                     eprintln!("agent-office: 창 상태 저장 실패: {e}");
                 }
                 let state = app.state::<AppState>();
+                state.run_recipes.stop_all(); // 레시피가 띄운 별도 프로세스 트리 정리
                 state.manager.dispose_all(); // kill + settings cleanup(동기)
                 state.observer_server.shutdown();
                 state.control_server.shutdown(); // CLI 제어 서버 정지 + control-port 정리(#55)
