@@ -49,6 +49,11 @@ import type {
   GitFileHistoryResult,
   GitCommitFilesResult,
 } from './git';
+import type {
+  RunRecipeProbeTarget,
+  RunRecipesReadResult,
+  RunRecipeUserInput,
+} from './run';
 
 /**
  * Renderer-facing API surface (frozen). Implemented by
@@ -118,6 +123,14 @@ export interface AgentOfficeApi {
   getAppSettings(): Promise<GetAppSettingsResult>;
   /** 앱 전역 opt-in 설정 저장. */
   setAppSettings(settings: AppSettings): Promise<void>;
+  /** 프로젝트 cwd의 캐릭터 조사 결과와 손 등록 레시피를 함께 읽는다. */
+  runRecipesRead(root: string): Promise<RunRecipesReadResult>;
+  /** 앱 소유 user 파일을 전체 교체한다. */
+  runRecipesUserSave(root: string, recipes: RunRecipeUserInput[]): Promise<void>;
+  /** 캐릭터가 쓴 조사 결과 파일만 비운다. */
+  runRecipesAgentClear(root: string): Promise<void>;
+  /** 조사 파일 절대 경로를 계산하고 부모 폴더를 만든다. */
+  runRecipesProbeTarget(root: string): Promise<RunRecipeProbeTarget>;
   /** 작업 중 잠자기 방지(#68) — "일하는 캐릭터 있음(true)/없음(false)" 통지.
    * true는 lease를 갱신하므로 주기적으로 재호출한다. 설정이 꺼져 있으면 백엔드가
    * 조용히 무시한다. */

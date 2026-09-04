@@ -17,6 +17,7 @@
     "botStart": "Démarrer le mode bot",
     "botStop": "Arrêter le mode bot",
     "workdir": "Voir le dossier de travail",
+    "run": "Exécuter…",
     "vscode": "Ouvrir dans VS Code",
     "osTerminal": "Ouvrir dans le terminal système",
     "exportShell": "Sortie du shell dans l’éditeur",

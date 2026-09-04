@@ -10,6 +10,45 @@ use serde::{Deserialize, Serialize};
 pub type AgentId = String;
 pub type SessionId = String;
 
+/// 실행 레시피의 출처. 파일 소유자를 UI가 구분해 보이게 하는 wire 값이다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RunRecipeSource { Agent, User }
+
+/// 팔레트에 보내는 실행 레시피. TS `RunRecipe` 미러.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunRecipe {
+    pub id: String,
+    pub label: String,
+    pub command: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)] pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)] pub long_running: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none", default)] pub note: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)] pub created_at: Option<String>,
+    pub source: RunRecipeSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RunRecipeUserInput { pub id: String, pub label: String, pub command: String, pub created_at: String }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RunRecipesAgentState { Missing, Ready, Invalid }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunRecipesReadResult {
+    pub root: String, pub agent_file_path: String, pub agent_state: RunRecipesAgentState,
+    #[serde(skip_serializing_if = "Option::is_none")] pub agent_error: Option<String>,
+    pub agent_recipes: Vec<RunRecipe>, pub user_recipes: Vec<RunRecipe>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunRecipeProbeTarget { pub root: String, pub agent_file_path: String }
+
 /// 세션 라이프사이클 상태. TS SessionState('starting'|'running'|'exited'|'disposed')와 동일.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

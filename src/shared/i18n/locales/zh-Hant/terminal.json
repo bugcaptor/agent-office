@@ -17,6 +17,7 @@
     "botStart": "啟動機器人模式",
     "botStop": "關閉機器人模式",
     "workdir": "查看工作資料夾",
+    "run": "執行…",
     "vscode": "以 VS Code 開啟",
     "osTerminal": "以系統終端機開啟",
     "exportShell": "在編輯器中查看 shell 輸出",

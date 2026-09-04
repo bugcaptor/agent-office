@@ -343,6 +343,7 @@ describe("AppSettings (opt-in 설정 계약)", () => {
       cliEnabled: false,
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
+      runRecipesEnabled: false,
       mascotEnabled: false,
       mascotLightsMode: "off",
       mascotLightsVertical: false,

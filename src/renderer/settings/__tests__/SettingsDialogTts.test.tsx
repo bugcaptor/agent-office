@@ -77,6 +77,7 @@ function hydrate(patch: Partial<AppSettings> = {}) {
       cliEnabled: false,
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
+      runRecipesEnabled: false,
       mascotEnabled: false,
       mascotLightsMode: "off",
       mascotLightsVertical: false,

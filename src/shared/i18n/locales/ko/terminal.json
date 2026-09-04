@@ -17,6 +17,7 @@
     "botStart": "봇 모드 시작",
     "botStop": "봇 모드 끄기",
     "workdir": "작업 폴더 보기",
+    "run": "실행…",
     "vscode": "VS Code로 열기",
     "osTerminal": "OS 터미널로 열기",
     "exportShell": "셸 출력을 에디터로 보기",

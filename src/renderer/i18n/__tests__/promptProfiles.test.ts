@@ -17,6 +17,7 @@ import {
   diaryPromptProfile,
   hasMetaMarker,
   labelPromptProfile,
+  runRecipePromptProfile,
   speechPromptProfile,
 } from "../promptProfiles";
 
@@ -191,11 +192,32 @@ describe("언어 폴백", () => {
     expect(labelPromptProfile("fr")).toBe(labelPromptProfile("en"));
     expect(diaryPromptProfile("fr")).toBe(diaryPromptProfile("en"));
     expect(speechPromptProfile("fr")).toBe(speechPromptProfile("en"));
+    expect(runRecipePromptProfile("fr")).toBe(runRecipePromptProfile("en"));
   });
 
   it("지역 변종은 프리픽스로 좁힌다", () => {
     expect(labelPromptProfile("en-GB")).toBe(labelPromptProfile("en"));
     expect(labelPromptProfile("ko-KR")).toBe(labelPromptProfile("ko"));
+    expect(runRecipePromptProfile("ko-KR")).toBe(runRecipePromptProfile("ko"));
+  });
+});
+
+describe("실행 레시피 조사 프롬프트", () => {
+  it("앱이 계산한 프로젝트와 파일 절대 경로를 넣고 실행 금지를 못박는다", () => {
+    const prompt = runRecipePromptProfile("ko").formatProbePrompt(
+      "/work/project",
+      "/app/run-recipes/project.agent.json",
+    );
+    expect(prompt).toContain("/work/project");
+    expect(prompt).toContain("/app/run-recipes/project.agent.json");
+    expect(prompt).toContain("실제로 실행하지 말고");
+    expect(prompt).toContain('"version":1');
+  });
+
+  it("영어 프로필에는 한글이 없다", () => {
+    const prompt = runRecipePromptProfile("en").formatProbePrompt("/work/project", "/app/run.json");
+    expect(prompt).not.toMatch(/[가-힣]/);
+    expect(prompt).toContain("Do not execute any commands");
   });
 });
 

@@ -1,0 +1,43 @@
+{
+  "title": "Recettes d’exécution",
+  "close": "Fermer",
+  "current": { "title": "Activité en cours", "stop": "Arrêter" },
+  "section": {
+    "agent": "Trouvées par le personnage",
+    "user": "Ajoutées manuellement"
+  },
+  "source": { "agent": "Trouvé", "user": "Manuel" },
+  "recipe": {
+    "longRunning": "Longue durée",
+    "run": "Exécuter",
+    "deleteAria": "Supprimer {{label}}"
+  },
+  "state": {
+    "loading": "Chargement des recettes…",
+    "missing": "Ce projet n’a pas encore été examiné. Demandez au personnage de le faire ci-dessous.",
+    "invalid": "Le fichier de résultats est invalide. Relancez l’examen ou effacez-le.",
+    "emptyAgent": "Aucune commande utilisable dans les résultats.",
+    "emptyUser": "Aucune commande ajoutée manuellement.",
+    "error": "Impossible de traiter les recettes d’exécution."
+  },
+  "add": { "label": "Nom", "command": "Commande shell", "submit": "Ajouter" },
+  "footer": {
+    "probe": "Demander au personnage d’examiner",
+    "refresh": "Actualiser",
+    "clear": "Effacer les résultats"
+  },
+  "notice": {
+    "started": "Un nouveau terminal a été lancé avec la commande.",
+    "injected": "La commande a été envoyée au terminal du personnage.",
+    "starting": "Le terminal démarre. Réessayez dans un instant.",
+    "external": "Impossible d’envoyer une saisie à une session de terminal externe.",
+    "failed": "Aucun terminal n’est disponible pour cette commande.",
+    "probe": {
+      "injected": "Le personnage examine les commandes du projet.",
+      "starting": "Le terminal démarre. Réessayez dans un instant.",
+      "external": "Impossible d’envoyer la demande à un terminal externe.",
+      "failed": "Lancez d’abord l’interface du personnage dans son terminal.",
+      "started": "Demande d’examen envoyée."
+    }
+  }
+}

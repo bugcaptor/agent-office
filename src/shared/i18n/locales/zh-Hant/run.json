@@ -1,0 +1,40 @@
+{
+  "title": "執行配方",
+  "close": "關閉",
+  "current": { "title": "目前活動", "stop": "停止" },
+  "section": { "agent": "角色找到的指令", "user": "手動加入的指令" },
+  "source": { "agent": "找到", "user": "手動" },
+  "recipe": {
+    "longRunning": "持續執行",
+    "run": "執行",
+    "deleteAria": "刪除 {{label}}"
+  },
+  "state": {
+    "loading": "正在載入執行配方…",
+    "missing": "尚未檢查此專案。可用下方按鈕請角色進行檢查。",
+    "invalid": "調查結果檔案已損壞。請重新檢查或清除檔案。",
+    "emptyAgent": "調查結果中沒有可用指令。",
+    "emptyUser": "沒有手動加入的指令。",
+    "error": "無法處理執行配方。"
+  },
+  "add": { "label": "名稱", "command": "Shell 指令", "submit": "加入" },
+  "footer": {
+    "probe": "請角色檢查執行方法",
+    "refresh": "重新整理",
+    "clear": "清除調查結果"
+  },
+  "notice": {
+    "started": "已在新終端機中啟動指令。",
+    "injected": "已將指令傳送到角色終端機。",
+    "starting": "終端機正在啟動，請稍後再試。",
+    "external": "無法向外部終端機工作階段傳送輸入。",
+    "failed": "沒有可用來執行此指令的終端機。",
+    "probe": {
+      "injected": "已請角色檢查專案指令。",
+      "starting": "終端機正在啟動，請稍後再試。",
+      "external": "無法向外部終端機傳送調查提示。",
+      "failed": "請先在終端機中啟動角色 CLI。",
+      "started": "已傳送調查提示。"
+    }
+  }
+}

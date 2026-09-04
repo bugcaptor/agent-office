@@ -328,6 +328,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "cliEnabled",
       "keepAwakeEnabled",
       "sessionLogEnabled",
+      "runRecipesEnabled",
       "mascotEnabled",
       "mascotLightsMode",
       "mascotLightsVertical",
@@ -354,6 +355,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expect(settings.keepAwakeEnabled).toBe(false);
     // 세션 로그는 이 앱에서 몇 안 되는 기본 켜짐(opt-out) 설정이다.
     expect(settings.sessionLogEnabled).toBe(true);
+    expect(settings.runRecipesEnabled).toBe(false);
     expect(settings.mascotEnabled).toBe(false);
     expect(settings.mascotLightsMode).toBe("off");
     expect(settings.mascotLightsVertical).toBe(false);

@@ -26,6 +26,7 @@ import { useWorkdirStore } from "../workdir/workdirStore";
 import { useDiaryStore } from "../diary/diaryStore";
 import { useSessionLogStore } from "../sessionlog/sessionLogStore";
 import { useMemoStore } from "../memo/memoStore";
+import { useRunStore } from "../run/runStore";
 import { IS_MAC } from "../shared/platform";
 import { terminalRegistry } from "./TerminalRegistry";
 import { looksLikeAgentRunning } from "./botGuard";
@@ -114,6 +115,8 @@ export function AgentTabStrip() {
   const openMarkdownPalette = useMarkdownStore((s) => s.openPalette);
   // 이슈 #11: 작업 폴더 보기(파일 목록 + git 상태) 오버레이를 연다.
   const openWorkdirPalette = useWorkdirStore((s) => s.openPalette);
+  const openRunPalette = useRunStore((s) => s.openPalette);
+  const runRecipesEnabled = useAppStore((s) => s.appSettings.runRecipesEnabled);
   // 이슈 #56: 캐릭터 일기 열람/생성 오버레이를 연다.
   const openDiary = useDiaryStore((s) => s.openDiary);
   const openSessionLogs = useSessionLogStore((s) => s.open);
@@ -485,6 +488,19 @@ export function AgentTabStrip() {
                 if (cwd) openWorkdirPalette(cwd, menu.agentId);
               },
             },
+            ...(runRecipesEnabled
+              ? [
+                  {
+                    label: t("menu.run"),
+                    icon: "▶",
+                    disabled: !agents[menu.agentId]?.cwd,
+                    onSelect: () => {
+                      const cwd = agents[menu.agentId]?.cwd;
+                      if (cwd) openRunPalette(cwd, menu.agentId);
+                    },
+                  },
+                ]
+              : []),
             {
               label: t("menu.vscode"),
               icon: "💻",

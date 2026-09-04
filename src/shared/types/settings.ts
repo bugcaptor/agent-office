@@ -142,6 +142,9 @@ export interface AppSettings {
    * 나중에 회고하려면 그때 이미 켜져 있었어야 하므로 기본 true(opt-out).
    * 보존은 30일·2GB로 스스로 제한한다. */
   sessionLogEnabled: boolean;
+  /** 프로젝트별 실행·테스트·빌드 명령을 캐릭터 탭에서 조사하고 실행하는
+   * "실행…" 항목을 노출할지. 세션 stdin에 문자열을 넣으므로 기본 false. */
+  runRecipesEnabled: boolean;
   /** 데스크톱 마스코트 창(이슈 #72) — 활동 중인 캐릭터 1명을 앱 창과 별개의
    * 투명·최상단 창으로 띄운다. 화면을 상시 점유하므로 기본 false. */
   mascotEnabled: boolean;

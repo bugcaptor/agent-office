@@ -1,6 +1,6 @@
 # 실행 레시피 설계 (kbm #2rf)
 
-상태: 초안 — 구현 전. 갱신: 2026-09-04.
+상태: 구현 완료. 갱신: 2026-09-04.
 
 프로젝트마다 있는 실행 방법(`npm run dev`, `cargo test`, `make lint` …)을
 앱이 기억해 두고, 캐릭터 탭에서 두 번 클릭 안에 돌릴 수 있게 한다. 실행
@@ -179,9 +179,11 @@ en 폴백. 카탈로그 JSON에 넣지 않는 이유도 그 파일 헤더에 적
 
 ### 5.6 결과 반영
 
-팔레트를 열 때마다 두 파일을 다시 읽고, 팔레트가 열린 채로 그 캐릭터의 턴
-종료(`activity-event` stop)가 오면 한 번 더 읽는다. 파일 감시(watcher)는 두지
-않는다 — 읽기는 작은 JSON 두 개라 싸고, 감시는 플랫폼별 예외가 딸려 온다.
+팔레트를 열 때마다 두 파일을 다시 읽고, 팔레트가 열린 채로 그 캐릭터의 정산된
+턴 수(`appStore.timeTracking[agentId].turns`)가 늘면 한 번 더 읽는다. 이 값은
+`notification-new`의 `source="stop"`과 셸의 `activity-event idle`에서 늘어난다.
+파일 감시(watcher)는 두지 않는다 — 읽기는 작은 JSON 두 개라 싸고, 감시는
+플랫폼별 예외가 딸려 온다.
 
 ## 6. 실행 — 그 캐릭터의 세션에 넣는다
 
@@ -191,6 +193,8 @@ en 폴백. 카탈로그 JSON에 넣지 않는 이유도 그 파일 헤더에 적
 | --- | --- | --- |
 | `idle` / `exited` | `createSession(agentId, { …프로필 옵션, startupCommand: cmd })` | 이미 있는 경로(`CreateSessionOptions.startupCommand`, `ipc/sessionOpts.ts`). tmux 호스팅이면 `send-keys`로 pane에 들어가는 것까지 따라온다 |
 | `running` | `writeInput(cmd)` → 대기 → `writeInput("\r")` | §5.4와 같은 이유 |
+| `starting` | 실행하지 않고 잠시 뒤 다시 누르라고 알린다 | 시작 중인 입력과 섞지 않는다 |
+| 외부 논리 세션 | 실행하지 않고 입력 불가를 알린다 | 앱이 소유한 PTY가 없어 `writeInput`할 곳이 없다 |
 
 `running`일 때 셸이 프롬프트에 있든, 에이전트 CLI가 떠 있든, 다른 명령이 돌고
 있든 **구분하지 않는다.** CLI가 떠 있으면 명령 문자열이 CLI의 입력창에 들어가고
@@ -199,8 +203,10 @@ en 폴백. 카탈로그 JSON에 넣지 않는 이유도 그 파일 헤더에 적
 사람의 몫이다. 팔레트 위쪽에 지금 셸에서 도는 명령(`shell_activity`가 라벨에
 넣은 것)을 보여 주는 이유가 이것이다 — 누르기 전에 보라고.
 
-`cwd`가 있는 레시피는 `( cd '<root>/<cwd>' && <command> )`로 감싼다. `cd … &&`만
-하면 명령이 끝난 뒤 캐릭터 셸의 위치가 바뀐다. 서브셸이면 안 바뀐다.
+`cwd`가 있는 레시피는 POSIX/Git Bash/WSL에서
+`( cd '<root>/<cwd>' && <command> )`로 감싼다. PowerShell은
+`Push-Location` → `try` → `finally { Pop-Location }`으로 감싼다. 명령이 끝난 뒤
+캐릭터 셸의 위치가 바뀌지 않아야 한다.
 
 [중단]은 `writeInput("\x03")`이다. 사람이 Ctrl-C를 치는 것과 같은 경로라 따로
 구분할 것이 없다.
@@ -219,10 +225,12 @@ en 폴백. 카탈로그 JSON에 넣지 않는 이유도 그 파일 헤더에 적
   **"실행…"** 항목 하나. 설정이 꺼져 있으면 **항목 자체가 없다**(disabled가
   아니라 배열에서 빠진다 — `ContextMenu`는 빈 구분선을 스스로 정리한다). 켜져
   있어도 `cwd` 없는 프로필은 비활성(`menu.workdir`과 같은 규칙). 문구는
-  `shared/i18n/locales/{ko,en}/terminal.json`의 `menu.*`.
+  `shared/i18n/locales/{ko,en,fr,ja,zh-Hans,zh-Hant}/terminal.json`의 `menu.*`.
 - **팔레트**: 작업 폴더 팔레트와 같은 오버레이 계층(z-index 40), 독립 zustand
   스토어 `runStore`(`workdirStore`와 같은 비커플링 관례). 위에서부터:
-  1. 지금 셸에서 도는 명령 + [중단] (없으면 비움)
+  1. 현재 작업 한 줄 + [중단] (없으면 비움). 별도 셸 명령 필드가 없으므로
+     `taskLabels`의 최근 프롬프트·도구·응답을 쓴다. 셸 명령과 캐릭터 입력이
+     섞이는 기존 한계가 있어 문구도 "현재 작업"으로 둔다.
   2. 조사 결과(`*.agent.json`) — 출처 뱃지 "조사", `longRunning` 뱃지. 파일
      없음/깨짐은 이 자리에 상태 문구
   3. 손 등록(`*.user.json`) — 출처 뱃지 "직접", 행마다 [삭제]
@@ -359,5 +367,5 @@ en 폴백. 카탈로그 JSON에 넣지 않는 이유도 그 파일 헤더에 적
 | 프롬프트 프로필(ko/en) | `src/renderer/i18n/promptProfiles.ts` |
 | 스토어·실행 판정·주입 | `src/renderer/run/runStore.ts`, `run/execute.ts`(세션 상태 분기, 서브셸 감싸기, 두 번 쓰기) |
 | UI | `src/renderer/run/RunPalette.tsx`, `run/run.css`, `terminal/AgentTabStrip.tsx` 메뉴 항목(`runRecipesEnabled`로 조건부 포함) |
-| 문구 | `src/shared/i18n/locales/{ko,en}/terminal.json`(`menu.run`), `…/run.json` 신설 |
+| 문구 | `src/shared/i18n/locales/{ko,en,fr,ja,zh-Hans,zh-Hant}/terminal.json`(`menu.run`), `…/run.json` 신설 |
 | 등록 | `src-tauri/src/lib.rs` `generate_handler!`, `src/shared/ipc.ts`, `renderer/ipc/tauriApi.ts` |

@@ -1,0 +1,43 @@
+{
+  "title": "Run recipes",
+  "close": "Close",
+  "current": { "title": "Current activity", "stop": "Stop" },
+  "section": {
+    "agent": "Discovered by the character",
+    "user": "Added manually"
+  },
+  "source": { "agent": "Found", "user": "Manual" },
+  "recipe": {
+    "longRunning": "Long-running",
+    "run": "Run",
+    "deleteAria": "Delete {{label}}"
+  },
+  "state": {
+    "loading": "Loading run recipes…",
+    "missing": "This project has not been inspected yet. Ask the character to inspect it below.",
+    "invalid": "The discovery file is invalid. Inspect the project again or clear the file.",
+    "emptyAgent": "The discovery file has no usable commands.",
+    "emptyUser": "No manually added commands.",
+    "error": "Could not process the run recipes."
+  },
+  "add": { "label": "Name", "command": "Shell command", "submit": "Add" },
+  "footer": {
+    "probe": "Ask character to inspect",
+    "refresh": "Refresh",
+    "clear": "Clear discovery"
+  },
+  "notice": {
+    "started": "Started a new terminal with the command.",
+    "injected": "Sent the command to the character terminal.",
+    "starting": "The terminal is starting. Try again in a moment.",
+    "external": "Input cannot be sent to an external terminal session.",
+    "failed": "No terminal is available for this command.",
+    "probe": {
+      "injected": "Asked the character to inspect the project commands.",
+      "starting": "The terminal is starting. Try again in a moment.",
+      "external": "The inspection prompt cannot be sent to an external terminal session.",
+      "failed": "Start the character CLI in its terminal first.",
+      "started": "Sent the inspection prompt."
+    }
+  }
+}

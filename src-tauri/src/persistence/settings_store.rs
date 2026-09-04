@@ -331,6 +331,10 @@ pub struct AppSettings {
     /// 스스로 제한한다.
     #[serde(default = "default_true")]
     pub session_log_enabled: bool,
+    /// 프로젝트별 실행 레시피 메뉴를 보일지. 캐릭터 세션 stdin에 문자열을 넣는
+    /// 기능이라 기본은 꺼짐이며, 끄는 것은 저장한 레시피를 지우지 않는다.
+    #[serde(default)]
+    pub run_recipes_enabled: bool,
     /// 데스크톱 마스코트 창(이슈 #72, docs/mascot-window-design.md)을 띄울지.
     /// 활동 중인 캐릭터 1명을 앱 창과 별개의 투명·최상단 창으로 보여준다.
     /// 화면을 상시 점유하는 시스템 표면이라 opt-in — 기본 꺼짐.
@@ -453,6 +457,7 @@ impl Default for AppSettings {
             cli_enabled: false,
             keep_awake_enabled: false,
             session_log_enabled: true,
+            run_recipes_enabled: false,
             mascot_enabled: false,
             mascot_lights_mode: MascotLightsMode::Off,
             mascot_lights_vertical: false,
@@ -655,6 +660,7 @@ mod tests {
             cli_enabled: false,
             keep_awake_enabled: false,
             session_log_enabled: true,
+            run_recipes_enabled: false,
             mascot_enabled: false,
             mascot_lights_mode: MascotLightsMode::Off,
             mascot_lights_vertical: false,
@@ -862,6 +868,7 @@ mod tests {
             cli_enabled: false,
             keep_awake_enabled: false,
             session_log_enabled: true,
+            run_recipes_enabled: false,
             mascot_enabled: false,
             mascot_lights_mode: MascotLightsMode::Off,
             mascot_lights_vertical: false,

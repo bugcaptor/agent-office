@@ -1,0 +1,40 @@
+{
+  "title": "运行配方",
+  "close": "关闭",
+  "current": { "title": "当前活动", "stop": "停止" },
+  "section": { "agent": "角色发现的命令", "user": "手动添加的命令" },
+  "source": { "agent": "发现", "user": "手动" },
+  "recipe": {
+    "longRunning": "持续运行",
+    "run": "运行",
+    "deleteAria": "删除 {{label}}"
+  },
+  "state": {
+    "loading": "正在加载运行配方…",
+    "missing": "尚未检查此项目。可用下方按钮让角色进行检查。",
+    "invalid": "发现结果文件已损坏。请重新检查或清除该文件。",
+    "emptyAgent": "发现结果中没有可用命令。",
+    "emptyUser": "没有手动添加的命令。",
+    "error": "无法处理运行配方。"
+  },
+  "add": { "label": "名称", "command": "Shell 命令", "submit": "添加" },
+  "footer": {
+    "probe": "让角色检查运行方法",
+    "refresh": "刷新",
+    "clear": "清除发现结果"
+  },
+  "notice": {
+    "started": "已在新终端中启动命令。",
+    "injected": "已将命令发送到角色终端。",
+    "starting": "终端正在启动，请稍后重试。",
+    "external": "无法向外部终端会话发送输入。",
+    "failed": "没有可用于此命令的终端。",
+    "probe": {
+      "injected": "已让角色检查项目命令。",
+      "starting": "终端正在启动，请稍后重试。",
+      "external": "无法向外部终端发送检查提示。",
+      "failed": "请先在终端中启动角色 CLI。",
+      "started": "已发送检查提示。"
+    }
+  }
+}

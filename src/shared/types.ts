@@ -30,4 +30,5 @@ export * from './types/talk';
 export * from './types/tts';
 export * from './types/markdown';
 export * from './types/git';
+export * from './types/run';
 export * from './types/api';

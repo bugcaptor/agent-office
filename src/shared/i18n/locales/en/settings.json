@@ -109,6 +109,8 @@
     "keepAwakeHelp": "Keeps the computer from sleeping on its own while a character works. The display may still turn off, and closing the lid or sleeping by hand is not blocked. (macOS, Windows)",
     "sessionLogTitle": "Keep session logs",
     "sessionLogHelp": "Records what passed through the terminal (AI turns, commands, output) to a readable text file. Open it from a character tab's right-click \"View session log\" and turn it into study notes. Logs older than 30 days, or beyond 2GB total, are deleted oldest-first.",
+    "runRecipesTitle": "Project run recipes",
+    "runRecipesHelp": "Adds a Run… menu to character tabs for discovering project development, test and build commands and running them in that character's terminal. Off by default.",
     "mascotTitle": "Desktop mascot",
     "mascotHelp": "Floats the currently active character in a small always-on-top window separate from the app. Alerts show up there, and clicking opens that character's terminal.",
     "mascotLightsTitle": "Status lights",

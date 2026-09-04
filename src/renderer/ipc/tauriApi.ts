@@ -40,6 +40,7 @@ import type {
   TalkEvent,
   TurnUsageEvent,
   WorkLogItem,
+  RunRecipeUserInput,
 } from "@shared/types";
 
 /** One Channel per agentId, fanned out to however many onData callbacks are registered. */
@@ -163,6 +164,22 @@ export const tauriApi: AgentOfficeApi = {
 
   async setAppSettings(settings: AppSettings) {
     await invoke(Commands.setAppSettings, { settings });
+  },
+
+  async runRecipesRead(root) {
+    return await invoke(Commands.runRecipesRead, { root });
+  },
+
+  async runRecipesUserSave(root, recipes: RunRecipeUserInput[]) {
+    await invoke(Commands.runRecipesUserSave, { root, recipes });
+  },
+
+  async runRecipesAgentClear(root) {
+    await invoke(Commands.runRecipesAgentClear, { root });
+  },
+
+  async runRecipesProbeTarget(root) {
+    return await invoke(Commands.runRecipesProbeTarget, { root });
   },
 
   async setKeepAwake(active: boolean) {

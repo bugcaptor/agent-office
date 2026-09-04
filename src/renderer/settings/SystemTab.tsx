@@ -69,6 +69,17 @@ export function SystemTab() {
       <label className="settings-item">
         <input
           type="checkbox"
+          checked={appSettings.runRecipesEnabled}
+          onChange={(e) => updateAppSettings({ runRecipesEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>{t("system.runRecipesTitle")}</strong>
+          <small>{t("system.runRecipesHelp")}</small>
+        </span>
+      </label>
+      <label className="settings-item">
+        <input
+          type="checkbox"
           checked={appSettings.mascotEnabled}
           onChange={(e) => updateAppSettings({ mascotEnabled: e.target.checked })}
         />

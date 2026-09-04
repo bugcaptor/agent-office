@@ -17,6 +17,7 @@
     "botStart": "启动机器人模式",
     "botStop": "关闭机器人模式",
     "workdir": "查看工作文件夹",
+    "run": "运行…",
     "vscode": "用 VS Code 打开",
     "osTerminal": "用系统终端打开",
     "exportShell": "在编辑器里看 shell 输出",

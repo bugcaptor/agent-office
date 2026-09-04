@@ -36,6 +36,8 @@ mod observer;
 // pub: contract 테스트가 `agent_office_lib::persistence::settings_store::AppSettings`에
 // 닿아야 한다. 로직 변경 없음 — 가시성만 승격.
 pub mod persistence;
+/// 프로젝트 작업 폴더별 실행 레시피 파일과 IPC 명령.
+pub mod run_recipes;
 mod power;
 // git/es.exe 등 단발 서브프로세스 실행기(spawn+타임아웃+stdout 수집) 공용 구현.
 mod proc_runner;
@@ -858,6 +860,10 @@ pub fn run() {
             ipc::commands::load_awards,
             ipc::commands::finalize_award,
             ipc::commands::append_award_speech,
+            run_recipes::run_recipes_read,
+            run_recipes::run_recipes_user_save,
+            run_recipes::run_recipes_agent_clear,
+            run_recipes::run_recipes_probe_target,
             ipc::commands::load_award_portrait,
             ipc::commands::load_memo,
             ipc::commands::save_memo,
@@ -1038,6 +1044,7 @@ mod tests {
             cli_enabled: false,
             keep_awake_enabled: false,
             session_log_enabled: true,
+            run_recipes_enabled: false,
             mascot_enabled: false,
             mascot_lights_mode: Default::default(),
             mascot_lights_vertical: false,

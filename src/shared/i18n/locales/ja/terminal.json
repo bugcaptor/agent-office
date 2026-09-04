@@ -17,6 +17,7 @@
     "botStart": "ボットモード開始",
     "botStop": "ボットモード停止",
     "workdir": "作業フォルダーを表示",
+    "run": "実行…",
     "vscode": "VS Code で開く",
     "osTerminal": "OS のターミナルで開く",
     "exportShell": "シェル出力をエディターで表示",

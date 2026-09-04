@@ -93,6 +93,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   cliEnabled: false,
   keepAwakeEnabled: false,
   sessionLogEnabled: true,
+  runRecipesEnabled: false,
   mascotEnabled: false,
   mascotLightsMode: "off",
   mascotLightsVertical: false,
@@ -417,6 +418,7 @@ interface AppState {
         | "cliEnabled"
         | "keepAwakeEnabled"
         | "sessionLogEnabled"
+        | "runRecipesEnabled"
         | "mascotEnabled"
         | "mascotLightsMode"
         | "mascotLightsVertical"

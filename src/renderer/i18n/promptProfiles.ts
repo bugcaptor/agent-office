@@ -295,3 +295,25 @@ const SPEECH_PROMPT_PROFILES: Record<string, SpeechPromptProfile> = {
 export function speechPromptProfile(lang?: string): SpeechPromptProfile {
   return pickProfile(SPEECH_PROMPT_PROFILES, lang ?? i18n.language);
 }
+
+// ---------------------------------------------------------------------------
+// 프로젝트 실행 레시피 조사(run/execute.ts)
+// ---------------------------------------------------------------------------
+
+export interface RunRecipePromptProfile {
+  formatProbePrompt(root: string, agentFilePath: string, projectPath?: string): string;
+}
+
+const RUN_RECIPE_PROMPT_PROFILES: Record<string, RunRecipePromptProfile> = {
+  ko: {
+    formatProbePrompt: (root, agentFilePath, projectPath = root) => `이 프로젝트(${projectPath})의 실행·테스트·빌드 방법을 조사해서 ${agentFilePath}에 JSON으로 정리해 줘. package.json scripts(패키지 매니저는 락파일로 판단), Cargo.toml, Makefile/justfile, pyproject.toml, CI 워크플로, AGENTS.md와 README를 읽고, 사람이 적어 둔 명령을 우선해. 파일이 이미 있으면 먼저 읽고 여전히 유효한 항목은 id를 유지하고, 없어진 것은 지우고, 새 항목은 더해. 형식은 {"version":1,"root":"${root}","updatedAt":"ISO 8601","recipes":[{"id":"stable-slug","label":"표시 이름","command":"실행할 셸 명령","cwd":"선택: 프로젝트 상대 하위 폴더","longRunning":false,"note":"선택: 한 줄 근거"}]}이다. command가 없는 항목은 만들지 말고, dev 서버나 watch처럼 끝나지 않는 명령은 longRunning:true로 적어. 명령은 실제로 실행하지 말고 파일만 읽어. clean, reset, deploy, publish 같은 파괴적 명령은 넣지 마. 끝나면 몇 개를 적었는지 한 줄로만 답해.`,
+  },
+  en: {
+    formatProbePrompt: (root, agentFilePath, projectPath = root) => `Inspect the project at ${projectPath} and write its useful development, test, and build commands to ${agentFilePath} as JSON. Read package.json scripts (infer the package manager from lockfiles), Cargo.toml, Makefile/justfile, pyproject.toml, CI workflows, AGENTS.md, and README files; prefer commands explicitly documented by people. If the file already exists, read it first, keep the ids of commands that are still valid, remove obsolete entries, and add new ones. Use this shape: {"version":1,"root":"${root}","updatedAt":"ISO 8601","recipes":[{"id":"stable-slug","label":"display name","command":"shell command","cwd":"optional project-relative subdirectory","longRunning":false,"note":"optional one-line source"}]}. Omit entries without a command and mark dev servers or watchers with longRunning:true. Do not execute any commands; only inspect files. Exclude destructive commands such as clean, reset, deploy, and publish. When finished, reply with one line stating how many recipes you wrote.`,
+  },
+};
+
+/** 지금(또는 지정한) 언어의 실행 레시피 조사 프롬프트. 없는 언어는 영어 폴백. */
+export function runRecipePromptProfile(lang?: string): RunRecipePromptProfile {
+  return pickProfile(RUN_RECIPE_PROMPT_PROFILES, lang ?? i18n.language);
+}

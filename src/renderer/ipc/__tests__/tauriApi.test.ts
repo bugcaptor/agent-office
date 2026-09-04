@@ -605,6 +605,7 @@ describe("app settings commands", () => {
       cliEnabled: false,
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
+      runRecipesEnabled: false,
       mascotEnabled: false,
       mascotLightsMode: "off" as const,
       mascotLightsVertical: false,
@@ -629,6 +630,30 @@ describe("app settings commands", () => {
     await tauriApi.setAppSettings(s);
 
     expect(invoke).toHaveBeenCalledWith(Commands.setAppSettings, { settings: s });
+  });
+
+  it("실행 레시피 네 커맨드의 인자와 결과를 그대로 잇는다", async () => {
+    const readResult = {
+      root: "/work/p",
+      agentFilePath: "/data/p.agent.json",
+      agentState: "missing",
+      agentRecipes: [],
+      userRecipes: [],
+    };
+    const probeResult = { root: "/work/p", agentFilePath: "/data/p.agent.json" };
+    invoke.mockResolvedValueOnce(readResult).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(probeResult);
+    const tauriApi = await importTauriApi();
+    const recipes = [{ id: "test", label: "Test", command: "npm test", createdAt: "now" }];
+
+    await expect(tauriApi.runRecipesRead("/work/p")).resolves.toBe(readResult);
+    await tauriApi.runRecipesUserSave("/work/p", recipes);
+    await tauriApi.runRecipesAgentClear("/work/p");
+    await expect(tauriApi.runRecipesProbeTarget("/work/p")).resolves.toBe(probeResult);
+
+    expect(invoke).toHaveBeenNthCalledWith(1, Commands.runRecipesRead, { root: "/work/p" });
+    expect(invoke).toHaveBeenNthCalledWith(2, Commands.runRecipesUserSave, { root: "/work/p", recipes });
+    expect(invoke).toHaveBeenNthCalledWith(3, Commands.runRecipesAgentClear, { root: "/work/p" });
+    expect(invoke).toHaveBeenNthCalledWith(4, Commands.runRecipesProbeTarget, { root: "/work/p" });
   });
 
   it("listAvailableShells invokes list_available_shells with no args and returns the resolved list", async () => {

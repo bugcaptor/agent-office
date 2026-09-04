@@ -47,6 +47,13 @@ const loadMemo = vi.fn().mockResolvedValue({
 });
 const saveMemo = vi.fn().mockResolvedValue(undefined);
 const listMemoArchive = vi.fn().mockResolvedValue([]);
+const runRecipesRead = vi.fn().mockResolvedValue({
+  root: "/Users/me/proj",
+  agentFilePath: "/data/proj.agent.json",
+  agentState: "missing",
+  agentRecipes: [],
+  userRecipes: [],
+});
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     openInVscode: (...args: unknown[]) => openInVscode(...args),
@@ -55,6 +62,7 @@ vi.mock("../../ipc/tauriApi", () => ({
     loadMemo: (...args: unknown[]) => loadMemo(...args),
     saveMemo: (...args: unknown[]) => saveMemo(...args),
     listMemoArchive: (...args: unknown[]) => listMemoArchive(...args),
+    runRecipesRead: (...args: unknown[]) => runRecipesRead(...args),
   },
 }));
 
@@ -71,6 +79,7 @@ vi.mock("../TerminalRegistry", () => ({
 
 const { AgentTabStrip } = await import("../AgentTabStrip");
 const { useMemoStore } = await import("../../memo/memoStore");
+const { useRunStore } = await import("../../run/runStore");
 
 function mkProfile(id: string): AgentProfile {
   return {
@@ -85,13 +94,16 @@ function mkProfile(id: string): AgentProfile {
 
 const initialState = useAppStore.getState();
 const initialMemoState = useMemoStore.getState();
+const initialRunState = useRunStore.getState();
 
 beforeEach(() => {
   useAppStore.setState(initialState, true);
   useMemoStore.setState(initialMemoState, true);
+  useRunStore.setState(initialRunState, true);
   loadMemo.mockClear();
   saveMemo.mockClear();
   listMemoArchive.mockClear().mockResolvedValue([]);
+  runRecipesRead.mockClear();
   generateSpritePreview.mockClear();
   openInVscode.mockClear();
   exportTerminalOutput.mockClear();
@@ -484,6 +496,31 @@ describe("탭 툴팁(이슈 #44 T2)", () => {
 });
 
 describe("탭 우클릭 컨텍스트 메뉴", () => {
+  it("실행 레시피가 꺼져 있으면 '실행…' 항목 자체가 없다", () => {
+    const s = useAppStore.getState();
+    s.addAgent({ ...mkProfile("a1"), cwd: "/Users/me/proj" });
+    s.openTerminal("a1");
+    const { getAllByRole, queryByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    expect(queryByRole("menuitem", { name: "실행…" })).toBeNull();
+  });
+
+  it("실행 레시피가 켜져 있으면 cwd 캐릭터의 팔레트를 연다", () => {
+    const s = useAppStore.getState();
+    s.addAgent({ ...mkProfile("a1"), cwd: "/Users/me/proj" });
+    s.openTerminal("a1");
+    useAppStore.setState({
+      appSettings: { ...useAppStore.getState().appSettings, runRecipesEnabled: true },
+    });
+    const { getAllByRole, getByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    fireEvent.click(getByRole("menuitem", { name: "실행…" }));
+
+    expect(useRunStore.getState().palette).toEqual({ root: "/Users/me/proj", agentId: "a1" });
+  });
+
   it("탭을 우클릭하면 메뉴가 뜨고 '프로필 편집' 선택 시 편집 모달을 열고 메뉴는 닫힌다", () => {
     seedThreeTabs();
     const { getAllByRole, getByRole, queryByRole } = render(<AgentTabStrip />);

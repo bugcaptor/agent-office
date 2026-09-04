@@ -42,6 +42,10 @@ export const Commands = {
   generateCodexImage: "generate_codex_image",
   getAppSettings: "get_app_settings",
   setAppSettings: "set_app_settings",
+  runRecipesRead: "run_recipes_read",
+  runRecipesUserSave: "run_recipes_user_save",
+  runRecipesAgentClear: "run_recipes_agent_clear",
+  runRecipesProbeTarget: "run_recipes_probe_target",
   // 작업 중 잠자기 방지(이슈 #68) — 렌더러가 "일하는 캐릭터 있음"을 통지.
   setKeepAwake: "set_keep_awake",
   // 데스크톱 마스코트(이슈 #72, docs/mascot-window-design.md) — 창 표시 토글과,
