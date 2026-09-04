@@ -8,14 +8,13 @@ use crate::persistence::settings_store::SummaryProvider;
 // NotFound로 알릴 수 없다 — Windows 스크립트와 같은 exit 3 규약을 쓴다
 // (run_with_timeout이 code 3을 `-not-found`로 매핑).
 //
-// 모델명은 reasoning effort를 접미로 포함한다(`agy models` 출력 기준,
-// 예: gemini-3.6-flash-low) — 별도 --effort 플래그는 쓰지 않는다.
+// 모델명과 무관하게 --effort low를 넘겨 요약 비용을 제한한다.
 #[cfg(not(windows))]
 const UNIX_SCRIPT: &str = r#"command -v "${AO_PROGRAM}" >/dev/null 2>&1 || exit 3
 in=$(cat)
 exec "${AO_PROGRAM}" --print "${AO_INSTRUCTION}
 
-${in}" --model "${AO_MODEL}" --output-format text"#;
+${in}" --model "${AO_MODEL}" --effort low --output-format text"#;
 
 #[cfg(windows)]
 const WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
@@ -24,7 +23,7 @@ $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
 $c = Get-Command $env:AO_PROGRAM -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 $in = [Console]::In.ReadToEnd()
-& $c.Source --print ($env:AO_INSTRUCTION + "`n`n" + $in) --model $env:AO_MODEL --output-format text
+& $c.Source --print ($env:AO_INSTRUCTION + "`n`n" + $in) --model $env:AO_MODEL --effort low --output-format text
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
@@ -295,6 +294,8 @@ mod tests {
                 &format!("{DANGEROUS_INSTRUCTION}\n\n한글 원문") as &str,
                 "--model",
                 "gemini-3.6-flash-low",
+                "--effort",
+                "low",
                 "--output-format",
                 "text",
             ]
@@ -341,6 +342,7 @@ mod tests {
             instruction,
             Some(std::ffi::OsStr::new(DANGEROUS_INSTRUCTION))
         );
+        assert!(WINDOWS_SCRIPT.contains("--effort low"), "{WINDOWS_SCRIPT}");
     }
 
     /// 실 CLI 스모크 — `agy models`의 TSV 형식이 바뀌지 않았는지 사람이

@@ -263,6 +263,16 @@ Codex는 `CODEX_HOME`으로 데이터 루트를 통째로 옮길 수 있다. `~/
 위 표의 하드코딩 기본값을 쓴다. 해석은 `summarizer::resolve_model`(순수)이 하고,
 provider 빌더(`claude.rs` 등)는 정해진 모델 문자열을 받기만 한다.
 
+모델과 별개로, 요약 호출은 지원되는 provider의 내부 추론 강도를 항상 `low`로
+고정한다. Claude는 `--effort low`, Codex는 `model_reasoning_effort="low"`, Agy는
+`--effort low`, OpenRouter는 `reasoning: { effort: "low" }`를 쓴다. Gemini CLI는
+실행별 effort 플래그가 없고, OpenCode의 variant는 모델마다 달라 알 수 없는 값을
+넣으면 실패할 수 있으므로 둘은 이 정책에서 제외한다.
+
+OpenRouter의 라벨·일기 요청은 `max_tokens`를 2,048로 둔다. 일부 상류 모델은 low
+reasoning에도 최소 1,024 토큰을 먼저 쓰므로, 이전 1,024 한도에서는 본문 출력
+여유가 없거나 요청이 거절될 수 있다.
+
 부를 **실행 명령**도 같은 자리에서 덮어쓸 수 있다(`summaryModels`의 `command`
 칸, kbm #2nv). 비우면 provider 이름이 곧 실행 파일 이름이다(`claude`, `codex`,
 …). 값은 프로그램 하나 — PATH의 이름이거나 절대경로다. 인자를 받지 않는 것은

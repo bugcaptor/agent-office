@@ -80,15 +80,7 @@ impl SummaryPurpose {
         }
     }
 
-    pub(super) fn codex_effort(self) -> &'static str {
-        match self {
-            Self::Label | Self::Diary => "low",
-            Self::Study => "medium",
-        }
-    }
-
-    /// agy(Google Antigravity CLI) 모델명은 reasoning effort를 접미로
-    /// 포함한다(`agy models` 출력 기준) — 별도 effort 플래그가 없다.
+    /// agy(Google Antigravity CLI)의 모델명은 별도 reasoning 설정과 독립적이다.
     pub(super) fn agy_model(self) -> &'static str {
         match self {
             Self::Label | Self::Diary => "gemini-3.6-flash-low",
@@ -280,7 +272,7 @@ pub async fn summarize(
     let _ = tokio::task::spawn_blocking(crate::session::env_capture::ensure_captured).await;
     let command = match provider {
         SummaryProvider::Claude => claude::build(&program, instruction, &model),
-        SummaryProvider::Codex => codex::build(&program, instruction, purpose, &model),
+        SummaryProvider::Codex => codex::build(&program, instruction, &model),
         SummaryProvider::Agy => agy::build(&program, instruction, &model),
         SummaryProvider::Gemini => gemini::build(&program, instruction, &model),
         SummaryProvider::Opencode => opencode::build(&program, instruction, &model),

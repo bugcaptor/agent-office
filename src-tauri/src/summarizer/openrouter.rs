@@ -7,9 +7,7 @@
 //
 // tts/openrouter.rs와 같은 규칙을 따른다:
 //  - 순수 로직(build_request_body / parse_response)과 HTTP(summarize)를 분리한다.
-//  - `temperature`/`top_p` 같은 샘플링 파라미터를 보내지 않는다 — 모델이 자유
-//    입력이라 앱은 무엇이 올지 모른다. 어느 모델을 골라도 400이 나지 않는
-//    최소 형태로 고정한다.
+//  - 샘플링 파라미터는 보내지 않고, reasoning만 low로 고정한다.
 //  - 에러 문자열에 응답 body를 싣지 않는다(키가 반사될 여지를 없앤다).
 //  - 실패는 전부 호출측에서 원문 폴백으로 강등된다(기존 CLI 실패 경로와 동일).
 //
@@ -23,8 +21,9 @@ pub const BASE_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 /// 전에도 부를 수 있다 — 설정 화면이 모델 추천 목록을 채우는 데 쓴다.
 pub const MODELS_URL: &str = "https://openrouter.ai/api/v1/models";
 
-/// 라벨·일기는 한 문단짜리 출력이라 넉넉히 잡아도 이 정도면 충분하다.
-const MAX_TOKENS_LIGHT: u32 = 1_024;
+/// low reasoning도 최소 예산을 차지하므로, 라벨·일기의 본문 출력이 0이 되지
+/// 않도록 reasoning 예산보다 큰 2,048로 둔다.
+const MAX_TOKENS_LIGHT: u32 = 2_048;
 /// 학습자료는 문서 한 편(여러 절 + 코드 블록)이라 자릿수가 다르다.
 const MAX_TOKENS_HEAVY: u32 = 16_384;
 
@@ -46,6 +45,7 @@ pub fn build_request_body(
     serde_json::json!({
         "model": model,
         "max_tokens": max_tokens(purpose),
+        "reasoning": { "effort": "low" },
         "messages": [
             { "role": "system", "content": instruction },
             { "role": "user", "content": text },
@@ -202,8 +202,9 @@ mod tests {
         assert_eq!(obj["messages"][0]["content"], "한 줄로 요약하라");
         assert_eq!(obj["messages"][1]["role"], "user");
         assert_eq!(obj["messages"][1]["content"], "작업 로그 본문");
-        // 어떤 모델을 골라도 400이 나지 않도록 샘플링 파라미터는 보내지 않는다.
-        for forbidden in ["temperature", "top_p", "top_k", "thinking", "reasoning"] {
+        assert_eq!(obj["reasoning"]["effort"], "low");
+        // 샘플링 파라미터는 보내지 않는다.
+        for forbidden in ["temperature", "top_p", "top_k", "thinking"] {
             assert!(!obj.contains_key(forbidden), "{forbidden} 를 보내면 안 된다");
         }
     }
@@ -211,8 +212,8 @@ mod tests {
     // 학습자료는 문서 한 편이라 라벨·일기와 같은 예산으로는 중간에 잘린다.
     #[test]
     fn study_gets_a_much_larger_output_budget_than_label_and_diary() {
-        assert_eq!(max_tokens(SummaryPurpose::Label), MAX_TOKENS_LIGHT);
-        assert_eq!(max_tokens(SummaryPurpose::Diary), MAX_TOKENS_LIGHT);
+        assert_eq!(max_tokens(SummaryPurpose::Label), 2_048);
+        assert_eq!(max_tokens(SummaryPurpose::Diary), 2_048);
         assert!(max_tokens(SummaryPurpose::Study) > MAX_TOKENS_LIGHT * 4);
         let heavy = build_request_body(SummaryPurpose::Study, "m", "i", "t");
         assert_eq!(heavy["max_tokens"], MAX_TOKENS_HEAVY);

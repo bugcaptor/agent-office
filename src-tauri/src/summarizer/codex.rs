@@ -1,4 +1,4 @@
-use super::{ProviderCommand, SummaryPurpose};
+use super::ProviderCommand;
 use crate::persistence::settings_store::SummaryProvider;
 
 #[cfg(windows)]
@@ -17,12 +17,7 @@ $in | & $c.Source @aoArgs
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
-pub(super) fn build(
-    program: &str,
-    instruction: &str,
-    purpose: SummaryPurpose,
-    model: &str,
-) -> ProviderCommand {
+pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCommand {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut command = std::process::Command::new("powershell.exe");
@@ -31,7 +26,7 @@ pub(super) fn build(
     command.env("AO_PROGRAM", program);
     command.env("AO_INSTRUCTION", instruction);
     command.env("AO_MODEL", model);
-    command.env("AO_EFFORT", purpose.codex_effort());
+    command.env("AO_EFFORT", "low");
     ProviderCommand {
         command,
         provider: SummaryProvider::Codex,
@@ -39,13 +34,8 @@ pub(super) fn build(
 }
 
 #[cfg(not(windows))]
-pub(super) fn build(
-    program: &str,
-    instruction: &str,
-    purpose: SummaryPurpose,
-    model: &str,
-) -> ProviderCommand {
-    let config = format!("model_reasoning_effort=\"{}\"", purpose.codex_effort());
+pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCommand {
+    let config = "model_reasoning_effort=\"low\"";
     let mut command = std::process::Command::new(program);
     command.args([
         "exec",
@@ -57,7 +47,7 @@ pub(super) fn build(
         "--model",
         model,
         "--config",
-        config.as_str(),
+        config,
         "--skip-git-repo-check",
         "--color",
         "never",
@@ -264,7 +254,7 @@ mod tests {
 
     #[test]
     fn codex_command_pins_low_cost_isolated_contract() {
-        let spec = build("codex", "요약 지시", SummaryPurpose::Label, "gpt-5.4-mini");
+        let spec = build("codex", "요약 지시", "gpt-5.4-mini");
         let rendered = command_debug(&spec.command);
         let config = "model_reasoning_effort=\"low\"";
         for expected in [
@@ -294,7 +284,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn codex_command_terminates_options_before_dangerous_instruction() {
-        let spec = build("codex", DANGEROUS_INSTRUCTION, SummaryPurpose::Label, "gpt-5.4-mini");
+        let spec = build("codex", DANGEROUS_INSTRUCTION, "gpt-5.4-mini");
         let args: Vec<_> = spec
             .command
             .get_args()
@@ -353,7 +343,7 @@ mod tests {
             std::iter::once(dir.clone()).chain(std::env::split_paths(&original_path)),
         )
         .unwrap();
-        let mut spec = build("codex", DANGEROUS_INSTRUCTION, SummaryPurpose::Label, "gpt-5.4-mini");
+        let mut spec = build("codex", DANGEROUS_INSTRUCTION, "gpt-5.4-mini");
         spec.command.env("PATH", path);
         spec.command.env("AO_CAPTURE_FILE", &capture);
         let output = spec.command.output().unwrap();
@@ -409,7 +399,7 @@ exit 0
             std::iter::once(dir.clone()).chain(std::env::split_paths(&original_path)),
         )
         .unwrap();
-        let mut spec = build("codex", DANGEROUS_INSTRUCTION, SummaryPurpose::Label, "gpt-5.4-mini");
+        let mut spec = build("codex", DANGEROUS_INSTRUCTION, "gpt-5.4-mini");
         spec.command.env("PATH", path);
         spec.command.env("AO_CAPTURE_FILE", &capture);
         let output = spec.command.output().unwrap();
@@ -467,7 +457,7 @@ exit 0
             std::iter::once(dir.clone()).chain(std::env::split_paths(&original_path)),
         )
         .unwrap();
-        let mut spec = build("codex", "요약 지시", SummaryPurpose::Label, "gpt-5.4-mini");
+        let mut spec = build("codex", "요약 지시", "gpt-5.4-mini");
         spec.command.env("PATH", path);
         spec.command.env("AO_CAPTURE_FILE", &capture);
         let output = spec.command.output().unwrap();
@@ -496,7 +486,7 @@ exit 0
     #[cfg(not(windows))]
     #[test]
     fn codex_command_terminates_options_before_dangerous_instruction() {
-        let spec = build("codex", DANGEROUS_INSTRUCTION, SummaryPurpose::Label, "gpt-5.4-mini");
+        let spec = build("codex", DANGEROUS_INSTRUCTION, "gpt-5.4-mini");
         assert_eq!(spec.command.get_program(), "codex");
         let args: Vec<_> = spec
             .command

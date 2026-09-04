@@ -8,7 +8,7 @@ $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
 $c = Get-Command $env:AO_PROGRAM -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $c) { exit 3 }
 $in = [Console]::In.ReadToEnd()
-$in | & $c.Source -p $env:AO_INSTRUCTION --model $env:AO_MODEL --output-format text --max-turns 1
+$in | & $c.Source -p $env:AO_INSTRUCTION --model $env:AO_MODEL --effort low --output-format text --max-turns 1
 exit $LASTEXITCODE"#;
 
 #[cfg(windows)]
@@ -35,6 +35,8 @@ pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCo
         instruction,
         "--model",
         model,
+        "--effort",
+        "low",
         "--output-format",
         "text",
         "--max-turns",
@@ -69,6 +71,8 @@ mod tests {
         let rendered = command_debug(&spec.command);
         assert!(rendered.contains("haiku"), "{rendered}");
         assert!(rendered.contains("--output-format"), "{rendered}");
+        assert!(rendered.contains("--effort"), "{rendered}");
+        assert!(rendered.contains("low"), "{rendered}");
         assert!(rendered.contains("text"), "{rendered}");
         assert!(rendered.contains("--max-turns"), "{rendered}");
         assert!(rendered.contains("1"), "{rendered}");
@@ -110,6 +114,7 @@ mod tests {
             .find(|(k, _)| *k == "AO_INSTRUCTION")
             .and_then(|(_, v)| v);
         assert_eq!(env_val, Some(std::ffi::OsStr::new("요약 지시")));
+        assert!(WINDOWS_SCRIPT.contains("--effort low"), "{WINDOWS_SCRIPT}");
     }
 
     /// 모델은 이제 호출측(`summarizer::resolve_model`)이 정해 넘긴다 — 여기서는
@@ -157,6 +162,8 @@ mod tests {
                 "요약 지시",
                 "--model",
                 "haiku",
+                "--effort",
+                "low",
                 "--output-format",
                 "text",
                 "--max-turns",
