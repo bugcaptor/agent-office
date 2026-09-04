@@ -85,6 +85,8 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect(parsed.sessionId).toBe("s1");
     expect(parsed.tokens.input).toBe(1200);
     expect(parsed.tokens.model).toBe("claude-opus-5");
+    expect(parsed.tokens.byModel?.map((part) => part.model)).toEqual(["claude-opus-5", "gpt-5.6-sol"]);
+    expect(parsed.tokens.byModel?.[1].cacheRead).toBe(8000);
     expect(parsed.partial).toBe(false);
   });
 
@@ -186,6 +188,7 @@ describe("roundtrip: fixed JSON assignable to TS types", () => {
     expect(parsed.kind).toBe("usage");
     expect(parsed.tokens?.input).toBe(1200);
     expect(parsed.tokens?.model).toBe("claude-opus-5");
+    expect(parsed.tokens?.byModel?.[1].model).toBe("gpt-5.6-sol");
   });
 
   it("SessionEventRecord (session_state, state 필드 있음)", () => {

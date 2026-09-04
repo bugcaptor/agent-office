@@ -110,17 +110,17 @@ pub struct SessionStateEvent {
     pub external: Option<bool>,
 }
 
-/// 한 턴이 소비한 토큰 사용량. TS `SessionEventTokens`와 동일(camelCase).
+/// 한 턴이 소비한 토큰 사용량. TS `SessionModelTokens`와 동일(camelCase).
 ///
 /// 턴 종료(Stop) 시 CLI 전사/rollout에서 뽑아 실어 보내고, 시계열 레코드의
 /// `tokens` 필드로 남는다. 모든 항목이 옵션이다 — 제공자마다 주는 항목이
 /// 다르고 추출 실패 항목은 조용히 생략한다(값이 하나도 없으면 아예 싣지
 /// 않는다). `input`은 **캐시를 제외한** 순수 입력 토큰이다(Claude
-/// `input_tokens`, Codex `input_tokens - cached_input_tokens`) — 셋을 더해야
+/// `input_tokens`, Codex `input_tokens - cached_input_tokens - cache_write_input_tokens`) — 셋을 더해야
 /// 그 턴의 전체 입력이 되므로 비용 환산에서 이중 계산이 나지 않는다.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SessionEventTokens {
+pub struct SessionModelTokens {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,6 +134,37 @@ pub struct SessionEventTokens {
     pub model: Option<String>,
 }
 
+/// 표시용 전체 토큰과 비용 계산용 모델별 구성. by_model 부재는 과거 계약이다.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionEventTokens {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_read: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// 동일 구간의 모든 모델별 구성. 전체 토큰에 다시 더하지 않는다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub by_model: Option<Vec<SessionModelTokens>>,
+}
+
+impl From<&SessionEventTokens> for SessionModelTokens {
+    fn from(tokens: &SessionEventTokens) -> Self {
+        Self {
+            input: tokens.input,
+            output: tokens.output,
+            cache_read: tokens.cache_read,
+            cache_write: tokens.cache_write,
+            model: tokens.model.clone(),
+        }
+    }
+}
+
 impl SessionEventTokens {
     /// 유효한 값이 하나도 없으면(전부 None 또는 카운트가 전부 0) None으로
     /// 접는다. 호출부가 "빈 tokens 객체"를 시계열에 남기지 않게 하는 관문.
@@ -141,7 +172,11 @@ impl SessionEventTokens {
         let counted = [self.input, self.output, self.cache_read, self.cache_write]
             .into_iter()
             .flatten()
-            .any(|v| v > 0);
+            .any(|v| v > 0)
+            || self.by_model.iter().flatten().any(|part| {
+                [part.input, part.output, part.cache_read, part.cache_write]
+                    .into_iter().flatten().any(|v| v > 0)
+            });
         counted.then_some(self)
     }
 
@@ -157,12 +192,32 @@ impl SessionEventTokens {
                 _ => Some(a.unwrap_or(0).saturating_add(b.unwrap_or(0))),
             }
         }
+        let by_model = if self.by_model.is_some() || other.by_model.is_some() {
+            let mut parts = self
+                .by_model
+                .clone()
+                .filter(|parts| !parts.is_empty())
+                .unwrap_or_else(|| self.clone().non_empty()
+                    .map(|tokens| vec![SessionModelTokens::from(&tokens)]).unwrap_or_default());
+            parts.extend(
+                other
+                    .by_model
+                    .clone()
+                    .filter(|parts| !parts.is_empty())
+                    .unwrap_or_else(|| other.clone().non_empty()
+                        .map(|tokens| vec![SessionModelTokens::from(&tokens)]).unwrap_or_default()),
+            );
+            Some(parts)
+        } else {
+            None
+        };
         Self {
             input: add(self.input, other.input),
             output: add(self.output, other.output),
             cache_read: add(self.cache_read, other.cache_read),
             cache_write: add(self.cache_write, other.cache_write),
             model: self.model.or(other.model),
+            by_model,
         }
     }
 }
@@ -793,6 +848,21 @@ pub fn now_ms() -> u64 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn model_components_survive_empty_merge_and_non_empty_filter() {
+        let component = SessionModelTokens {
+            input: Some(100), model: Some("gpt-6-astra".into()), ..Default::default()
+        };
+        let tokens = SessionEventTokens {
+            by_model: Some(vec![component.clone()]), ..Default::default()
+        };
+        assert!(tokens.clone().non_empty().is_some());
+        let merged = SessionEventTokens::default().merged(tokens);
+        assert_eq!(merged.by_model, Some(vec![component]));
+        let decoded: SessionEventTokens = serde_json::from_str("{\"input\":10,\"model\":\"gpt-5\"}").unwrap();
+        assert!(decoded.by_model.is_none());
+    }
+
     // ---- Step 3: enum roundtrip snapshots (lowercase) ----
 
     #[test]
@@ -988,6 +1058,7 @@ mod tests {
                 cache_read: Some(20),
                 cache_write: Some(10),
                 model: Some("claude-opus-5".into()),
+                by_model: None,
             },
             partial: false,
         };

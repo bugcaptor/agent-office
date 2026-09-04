@@ -125,6 +125,22 @@ fn turn_usage_event_matches_fixture() {
             cache_read: Some(98000),
             cache_write: Some(2500),
             model: Some("claude-opus-5".into()),
+            by_model: Some(vec![
+                agent_office_lib::types::SessionModelTokens {
+                    input: Some(1000),
+                    output: Some(3000),
+                    cache_read: Some(90000),
+                    cache_write: Some(2500),
+                    model: Some("claude-opus-5".into()),
+                },
+                agent_office_lib::types::SessionModelTokens {
+                    input: Some(200),
+                    output: Some(400),
+                    cache_read: Some(8000),
+                    cache_write: None,
+                    model: Some("gpt-5.6-sol".into()),
+                },
+            ]),
         },
         partial: false,
     };

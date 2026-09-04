@@ -261,52 +261,34 @@ Stop 이후에도 사이드체인(`isSidechain:true`) 줄을 계속 append하고
 
 ### 9.3 추출 — Codex
 
-Codex 훅 body에는 사용량이 없다. rollout(`<CODEX_HOME>/sessions/YYYY/MM/DD/
-rollout-*.jsonl`)의 `token_count` 이벤트가 `info.total_token_usage`(**세션 누계**)를
-담고 있으므로 **턴 경계 두 지점의 누계 차이**를 쓴다(`observer/codex_usage.rs`).
+Codex 훅 body에는 사용량이 없다. `observer/codex_usage.rs`가
+`<CODEX_HOME>/sessions/YYYY/MM/DD/rollout-*.jsonl`의 `token_count`를 읽는다.
+2026-09-05(kbm #2rq)부터 모델별 증분을 보존한다.
 
-- UserPromptSubmit에서 기준 누계를 기억한다. 한 턴에 프롬프트가 여러 번 와도(작업
-  중 추가 지시) 기준을 밀지 않는다 — 그 사이에 쓴 토큰이 새기 때문.
-- Stop에서 `현재 − 기준`을 싣고 현재 값을 새 기준으로 갱신한다. 기준이 없으면(앱이
-  세션 도중에 켜짐) **그 턴은 조용히 생략**하고 기준만 심는다 — 세션 누계 전체를 한
-  턴에 몰아넣는 과대 집계보다 누락이 낫다. **단, 신선한 세션은 예외다**:
-  UserPromptSubmit 시점에 rollout을 찾았는데 꼬리에 `token_count`가 한 번도 없고,
-  그 시점에 파일 전체가 꼬리 읽기 상한(`ROLLOUT_TAIL_BYTES` = 1MB) 안에 이미 다
-  들어와 있으면(`metadata(path).len() <= ROLLOUT_TAIL_BYTES`) "누계가 진짜
-  0"임이 증명된 것으로 보고 기준 0을 심는다 — 그래야 그 세션의 첫 턴이 통째로
-  생략되지 않는다. 이 증명이 안 되는(꼬리 상한에 걸려 잘린) 파일은 기존대로
-  생략한다 — 앞쪽 어딘가에 `token_count`가 있을 수 있는데 못 봤을 뿐인지,
-  진짜 0인지 구분이 안 되기 때문이다.
-- rollout 찾기는 훅 body의 `session_id`가 파일명 꼬리(`...-<id>.jsonl`)와 같다는
-  규약을 먼저 쓰고, 없으면 `cwd`와 첫 줄 `session_meta.cwd`가 같은 최근 파일로
-  폴백한다(`session_log/agent_transcript/codex.rs`와 같은 휴리스틱). 찾은 경로는
-  세션별로 캐시한다.
-- **서브스레드 rollout도 합산한다(2026-08-29 수정)**: Codex는 서브에이전트·
-  guardian_review를 별도 스레드로 돌리고 각자의 rollout에 기록하는데,
-  `total_token_usage`가 **스레드별 누계**라 메인 rollout만 보면 그 몫이 어디에도
-  안 잡혔다(최근 10일 실측 메인 145M vs 서브 93M → **39% 누락**). 이제 Stop에서
-  `parent_thread_id`가 이 세션의 스레드 id(`session_meta.payload.id`)에 닿는
-  rollout들을 찾아(서브의 서브까지 부모 사슬을 따라간다) 파일별 기준값 델타를
-  함께 더한다(`CodexUsageTracker::subthread_delta`). 후보는 "이미 기준을 심어 둔
-  서브 + 턴 시작 이후 수정된 rollout"이고, 처음 보는 서브는 **그 스레드가 이 턴
-  안에서 시작됐을 때만**(`session_meta.timestamp` ≥ 턴 시작) 누계 전체를 이 턴
-  몫으로 싣는다 — 그보다 먼저 시작된 스레드는 메인 쪽 규칙과 같은 결로 기준만
-  심고 생략한다. 두 시각의 출처가 달라(우리 시계 vs 파일시스템/Codex 기록) 경계에서
-  엇갈리는 걸 막으려고 2초 여유를 준다. 첫 줄(`session_meta`)은 변하지 않으므로
-  경로별로 영구 캐시한다.
-- cwd 폴백(`find_by_cwd`)은 **부모 스레드가 있는 rollout을 제외**한다(메인 rollout을
-  고르는 규칙이라 그대로다 — 합산 단계에서만 위와 같이 되불러온다). 처음엔
-  `session_meta.payload.thread_source == "subagent"` 단일 비교였지만, 같은 cwd에
-  `thread_source: "guardian_review"`이면서 `parent_thread_id`를 든 rollout이
-  실측에서 확인됐다(서브 스레드인데 값이 "subagent"가 아니었다) — 지금은
-  `payload.parent_thread_id`가 null이 아니면(어떤 thread_source든) 배제한다.
-- 모델은 `turn_context.payload.model`. 꼬리에서 만나면 그 값을, 못 만나면 파일
-  앞머리(256KB)에서 읽어 캐시해 둔 첫 모델을 쓴다.
+- 세션별 잠금 아래 메인·서브 rollout 각각의 파일 위치, 직전 `total_token_usage`,
+  현재 모델을 기억한다. 새로 추가된 행을 순서대로 읽어 각 토큰 누계의 차이를
+  그 시점의 `turn_context.payload.model`에 귀속한다. 한 관측 사이에 모델이
+  여러 번 바뀌어도 마지막 모델로 전체를 환산하지 않는다.
+- 첫 기준은 UserPromptSubmit에서 잡는다. 기준 없이 도중 합류한 세션은 과거
+  누계를 소급하지 않고 기준만 심는다. 파일 전체가 1MB 이내이고 token_count가
+  없으면 신선한 세션으로 증명되어 기준 0으로 첫 턴부터 센다.
+- 부모 스레드 사슬이 메인 id에 닿는 서브 rollout도 각각의 모델·위치·누계로
+  읽는다(최대 깊이 8). 처음 발견한 오래된 서브는 기준만 심고, 관측 시작 이후
+  생긴 서브는 처음부터 합산한다. 중간 갱신마다 시작 시각을 밀지 않는다.
+- `input_tokens`에서 캐시 읽기와 쓰기를 빼 순수 입력을 만들고, 각각
+  `cacheRead`와 `cacheWrite`로 보낸다. `output_tokens`에 이미 포함된
+  `reasoning_output_tokens`는 다시 더하지 않는다.
+- 최상위 토큰 필드는 표시용 합계다. `byModel`은 같은 증분의 **모든 모델별
+  구성**이고 비용 환산은 이것만 사용한다. 대표 `model`은 표시용이다.
+- Codex PostToolUse도 5초 스로틀로 증분 사용량을 보낸다(`partial:true`). Stop은
+  아직 보내지 않은 잔여분만 보낸다. 중간 사용량 이후 잔여분이 0인 Stop도
+  한 번은 보내 턴 수를 확정하고, 같은 완료를 반복해 세지 않는다.
+- rollout 식별은 native session_id 파일명 일치 우선, 없으면 최근 같은 cwd의
+  메인 rollout으로 폴백한다. 부모가 있는 rollout은 이 폴백에서 제외한다.
 
-**미대응 한계 — rollout 생성 레이스**: 새 세션의 rollout 파일이 아직 디스크에
-안 나타난 극초반 구간에는 cwd 폴백이 옛 세션의 rollout을 잘못 고를 가능성이
-이론상 있다. `session_meta`의 timestamp를 비교해 더 새 rollout만 고르는 보조
-규칙을 검토했으나 구현하지 않았다 — 실사용에서 관측되면 그때 추가한다.
+**잔존 한계**: rollout 생성 직전 cwd 폴백이 오래된 세션을 고를 수 있다.
+도구·Stop 훅이 전혀 없는 구간은 갱신되지 않는다. 세션이 끝난 뒤 마지막으로
+flush된 토큰은 다음 관측이 없으면 회수하지 못한다(§11.4).
 
 pi는 전사/rollout 경로가 없어 항상 `tokens: None`이다.
 
@@ -315,13 +297,23 @@ pi는 전사/rollout 경로가 없어 항상 `tokens: None`이다.
 단가표는 `renderer/analytics/pricing.ts`. 집계가 이미 프런트 순수 함수라 단가도
 프런트에 두는 편이 일관적이고, 요율이 바뀌어도 표 하나만 고치면 된다.
 
-- 모델 ID를 소문자화해 **부분문자열 패턴 목록을 위에서 아래로 첫 일치**로 훑는다
-  (`fable`/`mythos`/`opus`/`sonnet`/`haiku`/`gpt-5`/`gpt-4.1`/`gemini-2.5-pro`/`gemini`).
-  날짜 접미사가 붙은 ID(`claude-opus-4-5-20250929`)도 자연히 잡힌다.
-- **미지 모델은 비용에서 제외**하고 `costUnknownTurns`로 따로 센다. 화면은 그런 행의
-  비용에 `~`를 붙여 부분 집계임을 드러낸다.
-- 숫자는 공개 API 요율 기준 **대표값**이다. 장문 할증·배치 할인·계약 단가·구독제는
-  반영하지 않으며, 표 아래 각주로 그렇게 못박는다.
+- OpenAI GPT-5·GPT-6 계열은 공식 모델 ID를 정확히 매칭한다. 공식 날짜
+  스냅샷도 명시적으로 연결하며 미지 변형을 일반 GPT-5 단가로 폴백하지 않는다.
+  Anthropic·Google 등 기존 모델 패턴은 유지한다.
+- `byModel`이 있으면 구성마다 단가를 적용한다. 없는 과거 레코드는 최상위
+  토큰과 모델로 계산한다. 구성과 최상위 토큰을 이중 합산하지 않는다.
+- `estimateCostBreakdown`은 알려진 비용 합계와 `hasUnknown`을 반환한다.
+  일부 단가가 없어도 알려진 비용은 유지하고 `~`로 부분 집계를 표시한다.
+  `costUnknownTurns`는 레거시 필드명이며 이제 중간 갱신까지 포함한 **미지
+  단가 사용량 이벤트 수**다. 툴팁도 턴 수 대신 사용량 건수로 설명한다.
+- 숫자는 공개 API의 기본 요율 기준 **추정값**이다. 장문 할증·Fast/Priority
+  할증·배치 할인·계약 단가·구독 청구액은 반영하지 않는다.
+- 가격표는 2026-09-05 공식 문서와 대조했다:
+  [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra),
+  [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol),
+  [Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra),
+  [Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
+  [GPT-5.5](https://developers.openai.com/api/docs/models/gpt-5.5).
 
 ### 9.5 표시
 
@@ -637,6 +629,9 @@ BottomBar의 사용량 게이지(`docs/usage-design.md`)를 봐야 한다.
 
 ## 11.9 세션 사용량 중간 갱신 — PostToolUse도 turn-usage를 낸다 (2026-08-31)
 
+> 아래는 최초 Claude 구현 기록이다. Codex 확장과 미지 단가·첫 턴 표시 규칙은
+> §9.3·§9.4·§11.10이 현재 정본이다.
+
 §11의 요약 바는 그동안 **Stop에서만** 갱신됐다. 턴이 길어(도구를 여러 번
 불러) 몇 분씩 이어지면, 그 사이 사용자는 지금 얼마를 쓰고 있는지 못 보다가
 Stop 순간에야 값이 한꺼번에 뛰는 것처럼 보였다. PostToolUse마다(claude
@@ -695,3 +690,20 @@ Stop 순간에야 값이 한꺼번에 뛰는 것처럼 보였다. PostToolUse마
 (`sessionCost.ts`)만 고친 이번 범위 밖의 기존 동작이다(§9.1 아래 "억제된
 Stop"이 턴 수 의미를 한 번 바꿔놓은 것과 같은 결의 사전 조건 — 실사용에서
 문제가 되면 그때 분석 패널 쪽도 partial을 보게 고친다).
+
+
+## 11.10 Codex 비용 과소 추정 수정 (2026-09-05, kbm #2rq)
+
+GPT-5.x 전체에 적용하던 옛 단가를 모델별 가격표로 교체하고 GPT-6 Astra를
+추가했다. 모델 변경과 서브스레드 비용을 `tokens.byModel`로 보존한다.
+공유 JSON 픽스처로 Rust 직렬화와 TS 소비 계약을 검증하며 옵션 추가이므로
+시계열 schemaVersion은 1을 유지한다.
+
+요약 바는 첫 턴 완료 여부 대신 토큰 또는 완료 턴 존재 여부로 표시한다.
+첫 PostToolUse부터 비용이 보이고, 알려진 비용이 0보다 크면 미지 단가 이벤트
+수가 턴 수와 같더라도 숨기지 않는다. 중간 갱신에서 누락된 미지 단가도 즉시
+표시하므로 이후 모델 변경이나 토큰 0인 최종 Stop에서 그 표시가 사라지지 않는다.
+부팅 시드와 분석 패널도 같은 모델별 계산을 사용한다.
+
+과거 기록 중 모델별 정보가 이미 버려진 사용량은 새 가격표로 재계산해도
+정확한 모델 구성을 복구할 수 없다. 새 관측부터 모델별 구성이 보존된다.

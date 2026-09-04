@@ -71,13 +71,9 @@ function usageTokenText(totals: SessionUsageTotals): string {
   return formatTokenPair(netTokens(totals), grossTokens(totals));
 }
 
-/**
- * 비용 셀 텍스트. 실린 턴 전부가 단가를 모르면(`costUnknownTurns === turns`)
- * "$0.0000"처럼 공짜로 보이는 대신 "—"로 떨군다. 일부만 모르면(0 < unknown <
- * turns) 지금처럼 `~` 접두 — 뜻은 `usageTooltip`의 `costUnknownHint`로.
- */
+/** 미지 단가만 있으면 —, 알려진 비용과 섞였으면 ~로 부분 집계를 표시한다. */
 function usageCostText(totals: SessionUsageTotals): string {
-  if (totals.costUnknownTurns === totals.turns) return "—";
+  if (totals.costUnknownTurns > 0 && totals.costUsd === 0) return "—";
   return `${totals.costUnknownTurns > 0 ? "~" : ""}${formatUsd(totals.costUsd)}`;
 }
 
@@ -111,7 +107,7 @@ export function TerminalSummaryBar() {
   const shownLine2 = live ? line2 : undefined;
 
   // 사용량: 실시간 누계(sessionUsage) + 과거 시드(sessionUsageSeed, 같은
-  // sessionId일 때만)를 합친다. turns===0(집계된 턴 없음)이면 표시하지 않는다.
+  // sessionId일 때만)를 합친다. 첫 턴 도중이어도 토큰이 있으면 표시한다.
   const usageEntry = sessionUsage[activeId];
   const seedTotals = usageEntry ? sessionUsageSeed?.bySession[usageEntry.sessionId] : undefined;
   const totals = usageEntry
@@ -119,7 +115,7 @@ export function TerminalSummaryBar() {
       ? mergeTotals(seedTotals, usageEntry.totals)
       : usageEntry.totals
     : undefined;
-  const hasUsage = sessionCostEnabled && !!totals && totals.turns > 0;
+  const hasUsage = sessionCostEnabled && !!totals && (totals.turns > 0 || grossTokens(totals) > 0);
 
   // 표시할 게 없어도(라벨·사용량 둘 다 없음) 바를 *자리만* 남긴 채 숨긴다 —
   // 예전에는 null을 반환했는데, 그러면 첫 프롬프트로 라벨이 생기는 순간 패널

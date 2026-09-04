@@ -69,8 +69,8 @@
       "turns_one": "{{count}} turn",
       "turns_other": "{{count}} turns",
       "model": "model {{model}}",
-      "costUnknownHint_one": "{{count}} turn on an unpriced model excluded",
-      "costUnknownHint_other": "{{count}} turns on unpriced models excluded",
+      "costUnknownHint_one": "Unpriced usage excluded from cost ({{count}} update)",
+      "costUnknownHint_other": "Unpriced usage excluded from cost ({{count}} updates)",
       "tokenPairHint": "In parentheses: total tokens including cache",
       "footnote": "Estimated at public API rates"
     }

@@ -363,6 +363,22 @@ describe("aggregate", () => {
 });
 
 describe("aggregate 토큰·비용", () => {
+  it("모델별 구성의 알려진 비용을 합산하고 미지 단가는 표시한다", () => {
+    const data = aggregate([
+      ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0), agentId: "a1" }),
+      ev({ kind: "usage", at: kst(2026, 6, 11, 10, 1), agentId: "a1", partial: true,
+        tokens: { input: 3000, model: "gpt-5.5", byModel: [
+          { input: 1000, model: "gpt-5.5" },
+          { input: 1000, model: "gpt-6-astra" },
+          { input: 1000, model: "unknown-model" },
+        ] },
+      }),
+    ], { a1: profile("a1", "Ada") }, KST);
+    expect(data.summary[0].tokensIn).toBe(3000);
+    expect(data.summary[0].costUsd).toBeCloseTo(0.015);
+    expect(data.summary[0].costUnknownTurns).toBe(1);
+  });
+
   it("요약에 토큰과 비용을 합산한다", () => {
     const events = [
       ev({ kind: "prompt", at: kst(2026, 6, 11, 10, 0), agentId: "a1" }),

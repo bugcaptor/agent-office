@@ -3,7 +3,14 @@
 // pricing.ts 순수 함수 검증: 패턴 매칭 우선순위(구체 패턴이 먼저), 미지/부재
 // 모델 → null, 캐시 단가가 반영된 총액, 표시 포맷 경계(자릿수·K/M 축약).
 import { describe, expect, it } from "vitest";
-import { estimateCostUsd, formatTokenPair, formatTokens, formatUsd, rateFor } from "../pricing";
+import {
+  estimateCostBreakdown,
+  estimateCostUsd,
+  formatTokenPair,
+  formatTokens,
+  formatUsd,
+  rateFor,
+} from "../pricing";
 
 describe("rateFor", () => {
   it("부분문자열로 실제 모델 ID를 잡는다", () => {
@@ -23,6 +30,48 @@ describe("rateFor", () => {
     expect(rateFor("GPT-5.4")).toEqual(rateFor("gpt-5.4"));
   });
 
+  it("OpenAI GPT 모델별 공식 단가와 날짜 스냅샷을 정확히 구분한다", () => {
+    expect(rateFor("gpt-5.5-2026-04-23")).toEqual({
+      input: 5,
+      output: 30,
+      cacheRead: 0.5,
+      cacheWrite: 5,
+    });
+    expect(rateFor("gpt-5.6")).toEqual(rateFor("gpt-5.6-sol"));
+    expect(rateFor("gpt-5.6-terra")).toEqual({
+      input: 2,
+      output: 12,
+      cacheRead: 0.2,
+      cacheWrite: 2.5,
+    });
+    expect(rateFor("gpt-5.6-luna")).toEqual({
+      input: 0.2,
+      output: 1.2,
+      cacheRead: 0.02,
+      cacheWrite: 0.25,
+    });
+    expect(rateFor("gpt-6-astra")).toEqual({
+      input: 10,
+      output: 50,
+      cacheRead: 1,
+      cacheWrite: 12.5,
+    });
+    expect(rateFor("gpt-5.4-mini-2026-03-17")?.output).toBe(4.5);
+    expect(rateFor("gpt-5.4-nano")?.input).toBe(0.2);
+    expect(rateFor("gpt-5.3-codex")?.output).toBe(14);
+    expect(rateFor("gpt-5.2-codex")?.input).toBe(1.75);
+    expect(rateFor("gpt-5.2-pro-2025-12-11")).toEqual({
+      input: 21,
+      output: 168,
+      cacheRead: 21,
+      cacheWrite: 21,
+    });
+    expect(rateFor("gpt-5.4-pro-2026-03-05")?.output).toBe(180);
+    expect(rateFor("gpt-5.1-codex-mini")?.output).toBe(2);
+    expect(rateFor("gpt-5-pro")?.output).toBe(120);
+    expect(rateFor("gpt-5.5-pro")?.input).toBe(30);
+  });
+
   it("더 구체적인 패턴이 일반 패턴보다 먼저 잡힌다", () => {
     // "gemini-2.5-pro"가 "gemini"보다 표에서 위에 있어야 한다.
     expect(rateFor("gemini-2.5-pro")?.input).toBe(1.25);
@@ -33,6 +82,12 @@ describe("rateFor", () => {
     expect(rateFor(undefined)).toBeNull();
     expect(rateFor("")).toBeNull();
     expect(rateFor("llama-3")).toBeNull();
+    expect(rateFor("gpt-5.7")).toBeNull();
+    expect(rateFor("gpt-6-astra-2026-08-01")).toBeNull();
+    expect(rateFor("gpt-5.4-experimental")).toBeNull();
+    expect(rateFor("my-gpt-5.4-wrapper")).toBeNull();
+    expect(rateFor("constructor")).toBeNull();
+    expect(rateFor("toString")).toBeNull();
   });
 });
 
@@ -62,6 +117,38 @@ describe("estimateCostUsd", () => {
 
   it("모든 토큰이 0이면 0(모름이 아니다)", () => {
     expect(estimateCostUsd({ model: "claude-opus-5" })).toBe(0);
+  });
+
+  it("모델별 내역이 있으면 최상위 합계를 더하지 않는다", () => {
+    const tokens = {
+      input: 1_000_000,
+      output: 1_000_000,
+      model: "gpt-6-astra",
+      byModel: [
+        { input: 1_000_000, model: "gpt-5.6-sol" },
+        { output: 1_000_000, model: "gpt-5.6-terra" },
+      ],
+    };
+    expect(estimateCostBreakdown(tokens)).toEqual({ costUsd: 16, hasUnknown: false });
+    expect(estimateCostUsd(tokens)).toBe(16);
+  });
+
+  it("알 수 없는 모델이 섞여도 알려진 모델 비용과 불명 상태를 모두 보존한다", () => {
+    const tokens = {
+      byModel: [
+        { input: 1_000_000, model: "gpt-5.6-sol" },
+        { output: 1_000_000, model: "gpt-5.7" },
+      ],
+    };
+    expect(estimateCostBreakdown(tokens)).toEqual({ costUsd: 4, hasUnknown: true });
+    expect(estimateCostUsd(tokens)).toBeNull();
+  });
+
+  it("0 토큰인 알려진 구성 모델은 비용 0으로 완료 처리한다", () => {
+    expect(estimateCostBreakdown({ byModel: [{ model: "gpt-6-astra" }] })).toEqual({
+      costUsd: 0,
+      hasUnknown: false,
+    });
   });
 });
 

@@ -312,6 +312,7 @@ mod tests {
             cache_read: Some(9_000),
             cache_write: Some(50),
             model: Some("claude-opus-5".into()),
+            by_model: None,
         };
         let usage_event = TurnUsageEvent {
             agent_id: "a1".into(),

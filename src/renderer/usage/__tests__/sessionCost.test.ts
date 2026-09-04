@@ -69,7 +69,7 @@ describe("addTurn", () => {
   });
 
   // 턴 중간 갱신(§11.9): PostToolUse가 낸 partial 사용량은 토큰·비용은 그대로
-  // 더하되 turns/costUnknownTurns는 올리지 않는다 — 그 턴의 최종 Stop이
+  // 더하되 turns는 올리지 않는다 — 그 턴의 최종 Stop이
   // partial:false로 다시 잡히면서 그때 턴 하나로 센다.
   it("partial=true면 토큰·비용은 더하되 turns를 올리지 않는다", () => {
     const t1 = addTurn(emptyTotals(), { input: 100, output: 50, model: "claude-opus-5" }, true);
@@ -88,11 +88,30 @@ describe("addTurn", () => {
     expect(t3.turns).toBe(1);
   });
 
-  it("partial=true에서 단가를 모르는 모델은 costUnknownTurns를 올리지 않는다", () => {
+  it("중간 갱신에서 단가를 모르더라도 누락 표시를 보존한다", () => {
     const t1 = addTurn(emptyTotals(), { input: 1000, model: "llama-3" }, true);
     expect(t1.costUsd).toBe(0);
-    expect(t1.costUnknownTurns).toBe(0);
+    expect(t1.costUnknownTurns).toBe(1);
     expect(t1.turns).toBe(0);
+    const completed = addTurn(t1, { input: 0, model: "gpt-5.5" });
+    expect(completed.costUnknownTurns).toBe(1);
+    expect(completed.turns).toBe(1);
+  });
+
+  it("서로 다른 모델의 알려진 비용을 보존하고 전체 토큰을 중복 합산하지 않는다", () => {
+    const totals = addTurn(emptyTotals(), {
+      input: 3000,
+      model: "gpt-5.5",
+      byModel: [
+        { input: 1000, model: "gpt-5.5" },
+        { input: 1000, model: "gpt-6-astra" },
+        { input: 1000, model: "unknown-model" },
+      ],
+    }, true);
+    expect(totals.input).toBe(3000);
+    expect(totals.costUsd).toBeCloseTo(0.015);
+    expect(totals.costUnknownTurns).toBe(1);
+    expect(totals.turns).toBe(0);
   });
 });
 

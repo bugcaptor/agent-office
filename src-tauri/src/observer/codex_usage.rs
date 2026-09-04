@@ -1,38 +1,19 @@
-// src-tauri/src/observer/codex_usage.rs
-//
-// Codex 턴 토큰 사용량 추출. Codex 훅 body에는 사용량이 실려 오지 않으므로
-// rollout JSONL(`<CODEX_HOME>/sessions/YYYY/MM/DD/rollout-*.jsonl`)의
-// `token_count` 이벤트를 읽는다. 그 이벤트의 `info.total_token_usage`는
-// **세션 누계**라 그대로 쓰면 턴 단위가 아니다 — 그래서 턴 시작(UserPromptSubmit)
-// 시점의 누계를 기억해 두고 Stop에서 델타를 낸다.
-//
-// 왜 델타인가: rollout에는 "이번 턴" 경계 표시가 없고(태스크 경계 이벤트는
-// 있지만 turn 단위 사용량 필드는 없다) 누계만 append되므로, 경계 두 지점의
-// 누계 차이가 가장 단순하고 견고하다. 앱이 도중에 껐다 켜져 기준이 없으면
-// 그 턴은 조용히 생략한다(과대 집계보다 누락이 낫다).
-//
-// 단, 신선한 세션(첫 턴이 시작될 때까지 `token_count`가 한 번도 안 실린
-// rollout)은 예외다 — 파일 전체를 읽었는데도 `token_count`가 없다면 그건
-// "기준을 못 구함"이 아니라 "누계가 진짜 0"이 증명된 것이므로 기준 0을 심는다.
-// 그래야 그 세션의 첫 턴이 통째로 생략되지 않는다. 이 증명은 파일이 꼬리
-// 읽기 상한(`ROLLOUT_TAIL_BYTES`) 안에 통째로 들어올 때만 성립한다 — 상한에
-// 걸려 잘린 큰 파일은 꼬리에 `token_count`가 없어도 앞쪽 어딘가에 있을 수
-// 있으므로 기존대로 생략한다.
-//
-// rollout 파일 찾기: 훅 body의 `session_id`가 rollout 파일명 꼬리
-// (`...-<session_id>.jsonl`)와 같다는 규약을 먼저 쓰고, 없으면 body의 `cwd`와
-// 첫 줄(`session_meta`)의 cwd가 같은 최근 파일로 폴백한다(agent_transcript/
-// codex.rs가 쓰는 것과 같은 휴리스틱). 못 찾으면 조용히 생략.
+// Codex rollout의 모델별 증분 사용량. UserPromptSubmit에서 첫 기준을 잡고
+// PostToolUse(5초 스로틀)와 Stop에서 새 token_count 행만 순서대로 읽는다.
+// 메인·서브 rollout마다 위치/누계/모델을 보존하며 세션별 잠금으로 중복을 막는다.
+// 도중 합류는 과거 누계를 생략한다. 파일 전체를 확인한 신선한 세션만 기준 0.
+// 비용 계산용 by_model과 표시용 전체 토큰을 함께 내보낸다.
+// 정본: docs/session-analytics-design.md §9.3·§11.10.
 
 use std::collections::HashMap;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::Value;
 
-use crate::types::SessionEventTokens;
+use crate::types::{SessionEventTokens, SessionModelTokens};
 
 use super::event::{hook_cwd, native_session_id};
 
@@ -40,10 +21,8 @@ use super::event::{hook_cwd, native_session_id};
 /// 출력이 큰 턴을 감안해 넉넉히 잡되, 이 안에서 못 찾으면 포기한다.
 const ROLLOUT_TAIL_BYTES: u64 = 1024 * 1024;
 
-/// 모델 이름(`turn_context`)을 찾을 때 읽는 파일 앞머리 바이트. `session_meta`
-/// (긴 base_instructions 포함) 바로 뒤에 첫 `turn_context`가 오므로 앞머리만
-/// 읽으면 된다. 세션 도중 `/model`로 바꾸면 첫 모델이 남지만, 비용 환산
-/// 대푯값으로는 충분하다(꼬리에서 turn_context를 만나면 그 값을 우선한다).
+/// 최초 snapshot의 context가 꼬리 밖에 있을 때만 쓰는 모델 폴백 범위.
+/// 이후 변경은 cursor가 turn_context 행을 읽어 반영한다.
 const ROLLOUT_HEAD_BYTES: u64 = 256 * 1024;
 
 /// cwd 폴백에서 "살아 있는" 파일로 볼 최대 무수정 시간.
@@ -60,6 +39,7 @@ const TIMESTAMP_SLACK: Duration = Duration::from_secs(2);
 struct Cumulative {
     input: u64,
     cached_input: u64,
+    cache_write: u64,
     output: u64,
 }
 
@@ -69,6 +49,7 @@ impl Cumulative {
         Self {
             input: self.input.saturating_sub(previous.input),
             cached_input: self.cached_input.saturating_sub(previous.cached_input),
+            cache_write: self.cache_write.saturating_sub(previous.cache_write),
             output: self.output.saturating_sub(previous.output),
         }
     }
@@ -78,39 +59,46 @@ impl Cumulative {
         Self {
             input: self.input.saturating_add(other.input),
             cached_input: self.cached_input.saturating_add(other.cached_input),
+            cache_write: self.cache_write.saturating_add(other.cache_write),
             output: self.output.saturating_add(other.output),
         }
     }
+}
 
-    /// 시계열 토큰 필드로. Codex `input_tokens`는 캐시 히트를 **포함**하므로
-    /// 빼서 순수 입력으로 만든다(SessionEventTokens 계약). 캐시 기록/읽기
-    /// 구분이 없어 cache_write는 항상 생략한다.
-    fn into_tokens(self, model: Option<String>) -> SessionEventTokens {
-        SessionEventTokens {
-            input: Some(self.input.saturating_sub(self.cached_input)),
-            output: Some(self.output),
-            cache_read: Some(self.cached_input),
-            cache_write: None,
-            model,
-        }
-    }
+/// rollout 한 줄 사이의 누계 증가분과, 그 줄 앞에 선언된 모델.
+#[derive(Debug, Clone)]
+struct ModelDelta {
+    cumulative: Cumulative,
+    model: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ThreadCursor {
+    offset: u64,
+    cumulative: Cumulative,
+    model: Option<String>,
+}
+
+#[derive(Default)]
+struct UsageState {
+    main: Option<ThreadCursor>,
+    started: Option<SystemTime>,
+    sub: HashMap<PathBuf, ThreadCursor>,
+    last_progress: Option<Instant>,
+    had_partial: bool,
+    finalized: bool,
 }
 
 /// 세션별 턴 경계 누계를 들고 있는 추출기. `CodexAdapter`가 소유한다.
 pub struct CodexUsageTracker {
     /// `<CODEX_HOME>/sessions`. 부재(환경 미해석)면 추출을 통째로 포기한다.
     sessions_root: Option<PathBuf>,
-    /// 키(세션 ID 또는 cwd) → 마지막 턴 경계의 누계.
-    baselines: Mutex<HashMap<String, Cumulative>>,
-    /// 키 → 마지막 턴 경계를 심은 시각. 서브스레드 rollout이 "이번 턴에 새로
-    /// 생긴 것"인지 판정하는 기준이다(`subthread_delta`).
-    turn_started: Mutex<HashMap<String, SystemTime>>,
+    /// 같은 native 세션의 prompt/tool/stop 훅은 파일 읽기부터 워터마크 갱신까지
+    /// 한 락으로 직렬화한다. forwarder 재시도와 Stop의 경합도 여기서 막는다.
+    states: Mutex<HashMap<String, Arc<Mutex<UsageState>>>>,
     /// 키 → (rollout 경로, 앞머리에서 읽은 모델). 매 턴 디렉터리를 다시 훑지
     /// 않기 위한 캐시. 경로가 사라지면 다음 조회에서 자연히 다시 찾는다.
     located: Mutex<HashMap<String, Located>>,
-    /// 키 → 이 세션의 서브스레드 rollout별 마지막 턴 경계 누계. 메인과 같은
-    /// 델타 규칙을 파일마다 독립적으로 적용한다.
-    sub_baselines: Mutex<HashMap<String, HashMap<PathBuf, Cumulative>>>,
     /// rollout 경로 → 첫 줄(`session_meta`)에서 읽은 스레드 신원. 첫 줄은 절대
     /// 안 바뀌므로 영구 캐시다(부모 추적에 매 Stop마다 모든 rollout의 첫 줄이
     /// 필요한데, 그때마다 다시 읽지 않기 위해). `None`은 "첫 줄이 session_meta가
@@ -146,10 +134,8 @@ impl CodexUsageTracker {
     pub fn new(sessions_root: Option<PathBuf>) -> Self {
         Self {
             sessions_root,
-            baselines: Mutex::new(HashMap::new()),
-            turn_started: Mutex::new(HashMap::new()),
+            states: Mutex::new(HashMap::new()),
             located: Mutex::new(HashMap::new()),
-            sub_baselines: Mutex::new(HashMap::new()),
             meta_cache: Mutex::new(HashMap::new()),
         }
     }
@@ -163,61 +149,135 @@ impl CodexUsageTracker {
     /// 한 턴에 프롬프트가 여러 번 제출돼도(작업 중 추가 지시) 턴을 여는 첫
     /// 프롬프트의 기준을 유지해야 그 사이에 쓴 토큰이 새지 않는다.
     pub fn mark_turn_start(&self, body: &[u8]) {
-        let Some(key) = self.key_for(body) else { return };
-        {
-            let baselines = self.baselines.lock().unwrap();
-            if baselines.contains_key(&key) {
-                return;
-            }
-        }
+        let Some(key) = self.key_for(body) else {
+            return;
+        };
         let Some(located) = self.locate(body, &key) else {
             return;
         };
-        let current = match read_tail_usage(&located.path) {
-            Some((cumulative, _)) => cumulative,
-            // 파일 전체를 읽었는데 token_count가 없다 = 누계가 진짜 0인 신선한
-            // 세션. 꼬리 상한에 걸려 잘린 파일은 이 증명이 안 되므로 기존대로
-            // 생략한다(위 헤더 주석 참고).
-            None if whole_file_scanned(&located.path) => Cumulative::default(),
+        let lock = self.state_lock(&key);
+        let mut state = lock.lock().unwrap();
+        if state.main.is_some() {
+            if state.finalized {
+                // 이전 Stop 뒤 늦게 flush된 행도 다음 usage에서 cursor로 읽어야
+                // 하므로 baseline/cursor는 그대로 둔다.
+                // 서브스레드 발견 기준은 최초 관측 시각을 유지한다. 앞선 턴에
+                // 시작했지만 늦게 파일이 완성된 서브도 처음부터 회수해야 한다.
+                state.had_partial = false;
+                state.finalized = false;
+                state.last_progress = None;
+            }
+            return;
+        }
+        let current = match read_tail_snapshot(&located.path) {
+            Some((cumulative, model, offset)) => ThreadCursor {
+                offset,
+                cumulative,
+                model: model.or_else(|| located.model.clone()),
+            },
             None => return,
         };
-        self.mark_turn_boundary(&key, current);
+        state.main = Some(current);
+        state.started = Some(SystemTime::now());
+        state.had_partial = false;
+        state.finalized = false;
+        state.last_progress = None;
     }
 
     /// 턴 경계(기준 누계 + 그 시각)를 함께 심는다. 시각은 서브스레드 rollout이
     /// "이번 턴에 새로 생긴 것"인지 판정하는 데 쓴다.
-    fn mark_turn_boundary(&self, key: &str, current: Cumulative) {
-        self.baselines.lock().unwrap().insert(key.to_string(), current);
-        self.turn_started
-            .lock()
-            .unwrap()
-            .insert(key.to_string(), SystemTime::now());
-    }
-
     /// 턴 종료(Stop) — 기준 대비 델타를 돌려주고, 현재 누계를 새 기준으로
     /// 갱신한다. 기준이 없으면(앱 재시작 등) 이번 턴은 생략하되 기준은 심어
     /// 다음 턴부터 정상 집계되게 한다.
     pub fn turn_usage(&self, body: &[u8]) -> Option<SessionEventTokens> {
+        self.usage(body, false)
+    }
+
+    /// PostToolUse용 5초 제한 증분. 스로틀을 통과한 경우에도 cursor는 실제
+    /// append를 읽을 때만 전진하므로, 늦게 flush된 서브스레드를 잃지 않는다.
+    pub fn progress_usage(&self, body: &[u8]) -> Option<SessionEventTokens> {
+        self.usage(body, true)
+    }
+
+    fn usage(&self, body: &[u8], progress: bool) -> Option<SessionEventTokens> {
         let key = self.key_for(body)?;
         let located = self.locate(body, &key)?;
-        let (current, tail_model) = read_tail_usage(&located.path)?;
-        let model = tail_model.or_else(|| located.model.clone());
+        let lock = self.state_lock(&key);
+        let mut state = lock.lock().unwrap();
+        if progress {
+            if state
+                .last_progress
+                .is_some_and(|at| at.elapsed() < Duration::from_secs(5))
+            {
+                return None;
+            }
+            state.last_progress = Some(Instant::now());
+        }
+        // attach 중 Stop: 누계를 기준으로만 심고 이 턴은 안전하게 생략한다.
+        if state.main.is_none() {
+            self.seed_main(&mut state, &located);
+            // attach의 첫 Stop은 과거 턴을 생략한 경계다. 다음 prompt가 새 turn
+            // 시작 시각을 반드시 다시 심도록 완료 상태로 둔다.
+            state.finalized = !progress;
+            return None;
+        }
+        // Stop 재시도는 이미 완료된 논리 턴을 새 turn으로 만들면 안 된다. 늦게
+        // flush된 행은 cursor를 건드리지 않고 남겨 다음 prompt/tool 관측에서만
+        // 증분으로 회수한다.
+        if !progress && state.finalized {
+            return None;
+        }
+        let mut deltas = read_thread_deltas(&located.path, state.main.as_mut().unwrap());
+        if let (Some(thread), Some(started)) = (located.thread_id.as_deref(), state.started) {
+            deltas.extend(self.subthread_deltas(&mut state, thread, started));
+        }
+        if let Some(mut tokens) = tokens_from_deltas(deltas) {
+            // 툴팁의 대표 모델은 메인 세션이며 실제 비용 귀속은 by_model을 쓴다.
+            tokens.model = state
+                .main
+                .as_ref()
+                .and_then(|cursor| cursor.model.clone())
+                .or(tokens.model);
+            if progress {
+                state.had_partial = true;
+            } else {
+                state.finalized = true;
+            }
+            return Some(tokens);
+        }
+        // PostToolUse에서 이미 보낸 부분 사용량 뒤 Stop이 오면, 0도 한 번 보내
+        // 최종 턴을 확정한다. 아무 사용량 없는 Stop은 기존처럼 생략한다.
+        if !progress && state.had_partial && !state.finalized {
+            state.finalized = true;
+            return Some(zero_tokens(
+                state.main.as_ref().and_then(|c| c.model.clone()),
+            ));
+        }
+        if !progress {
+            state.finalized = true;
+        }
+        None
+    }
 
-        let previous = self.baselines.lock().unwrap().get(&key).copied();
-        let turn_started = self.turn_started.lock().unwrap().get(&key).copied();
+    fn state_lock(&self, key: &str) -> Arc<Mutex<UsageState>> {
+        self.states
+            .lock()
+            .unwrap()
+            .entry(key.into())
+            .or_default()
+            .clone()
+    }
 
-        // 서브스레드 몫은 메인 기준이 있든 없든 훑는다 — 기준이 없어 이번 턴을
-        // 생략하는 경우에도 서브 쪽 기준을 같이 심어 둬야 다음 턴이 정확하다.
-        let sub = match (located.thread_id.as_deref(), turn_started) {
-            (Some(thread), Some(started)) => self.subthread_delta(&key, thread, started),
-            _ => Cumulative::default(),
+    fn seed_main(&self, state: &mut UsageState, located: &Located) {
+        let Some((cumulative, model, offset)) = read_tail_snapshot(&located.path) else {
+            return;
         };
-
-        self.mark_turn_boundary(&key, current);
-        // 기준이 없으면(앱이 세션 도중에 켜짐) 이번 턴은 통째로 생략한다 —
-        // 세션 누계 전체를 한 턴에 몰아넣는 과대 집계보다 누락이 낫다.
-        let main = current.delta(previous?);
-        main.plus(sub).into_tokens(model).non_empty()
+        state.main = Some(ThreadCursor {
+            offset,
+            cumulative,
+            model: model.or_else(|| located.model.clone()),
+        });
+        state.started = Some(SystemTime::now());
     }
 
     /// 이 세션을 식별하는 캐시 키. 훅 body의 native session_id 우선, 없으면 cwd.
@@ -230,9 +290,15 @@ impl CodexUsageTracker {
     /// 존재하면 그대로 쓴다.
     fn locate(&self, body: &[u8], key: &str) -> Option<Located> {
         {
-            let located = self.located.lock().unwrap();
-            if let Some(entry) = located.get(key) {
+            let mut located = self.located.lock().unwrap();
+            if let Some(entry) = located.get_mut(key) {
                 if entry.path.exists() {
+                    if entry.thread_id.is_none() {
+                        entry.thread_id = self.head_meta(&entry.path).and_then(|meta| meta.id);
+                    }
+                    if entry.model.is_none() {
+                        entry.model = read_head_model(&entry.path);
+                    }
                     return Some(entry.clone());
                 }
             }
@@ -261,31 +327,18 @@ impl CodexUsageTracker {
     /// `find_by_cwd`가 서브스레드를 배제하는 규칙(메인 rollout 식별용)은 그대로
     /// 두고, 합산 단계인 여기서만 되불러온다.
     ///
-    /// 후보는 (a) 이미 기준을 심어 둔 이 세션의 서브 + (b) 턴 시작 이후에 쓰인
-    /// rollout이다. 이번 턴 몫이라면 mtime이 턴 시작보다 뒤일 수밖에 없고, 그
-    /// 전에 끝난 서브는 이미 그때의 Stop에서 (a)에 들어와 있다.
-    fn subthread_delta(&self, key: &str, main_thread: &str, turn_started: SystemTime) -> Cumulative {
+    /// 세션 최초 관측 이후 시작된 서브는 처음부터 읽고 오래된 서브는 기준만
+    /// 심는다. 발견 뒤에는 파일별 cursor를 유지해 다음 관측에서 이어 읽는다.
+    fn subthread_deltas(
+        &self,
+        state: &mut UsageState,
+        main_thread: &str,
+        turn_started: SystemTime,
+    ) -> Vec<ModelDelta> {
         let Some(root) = self.sessions_root.as_ref() else {
-            return Cumulative::default();
+            return vec![];
         };
         let files = rollout_files(root);
-        let mut baselines = self.sub_baselines.lock().unwrap();
-        let known = baselines.entry(key.to_string()).or_default();
-
-        let mut candidates: Vec<PathBuf> = known.keys().cloned().collect();
-        for path in &files {
-            if known.contains_key(path) {
-                continue;
-            }
-            let touched = std::fs::metadata(path).and_then(|meta| meta.modified()).ok();
-            if touched.is_none_or(|at| at + TIMESTAMP_SLACK < turn_started) {
-                continue;
-            }
-            candidates.push(path.clone());
-        }
-        if candidates.is_empty() {
-            return Cumulative::default();
-        }
 
         // 부모 사슬을 따라 올라가려면 id로도 찾을 수 있어야 한다(서브의 서브).
         let mut by_id: HashMap<String, ThreadMeta> = HashMap::new();
@@ -297,32 +350,40 @@ impl CodexUsageTracker {
             }
         }
 
-        let mut total = Cumulative::default();
-        for path in candidates {
+        let mut total = vec![];
+        for path in files {
             let Some(meta) = self.head_meta(&path) else {
                 continue;
             };
             if !descends_from(&meta, main_thread, &by_id) {
                 continue;
             }
-            let Some((current, _)) = read_tail_usage(&path) else {
-                continue;
-            };
-            match known.get(&path).copied() {
-                Some(previous) => total = total.plus(current.delta(previous)),
+            match state.sub.get_mut(&path) {
+                Some(cursor) => total.extend(read_thread_deltas(&path, cursor)),
                 // 처음 보는 서브: 이 턴 안에서 시작된 스레드면 누계 전체가 이 턴
-                // 몫이다. 그보다 먼저 시작된 스레드(앱이 세션 도중에 켜진 경우
-                // 등)는 어디까지가 이 턴인지 모르므로 기준만 심고 이번 턴은
-                // 생략한다 — 메인 쪽 규칙과 같은 결(과대보다 누락).
+                // 몫이다. mtime은 늦은 flush에서 거짓말할 수 있어 시작 시각만 쓴다.
                 None if meta
                     .started_at
                     .is_some_and(|at| at + TIMESTAMP_SLACK >= turn_started) =>
                 {
-                    total = total.plus(current);
+                    let mut cursor = ThreadCursor::default();
+                    total.extend(read_thread_deltas(&path, &mut cursor));
+                    state.sub.insert(path, cursor);
                 }
-                None => {}
+                None => {
+                    // attach 이전부터 있던 서브는 기준만 심는다.
+                    if let Some((cumulative, model, offset)) = read_tail_snapshot(&path) {
+                        state.sub.insert(
+                            path.clone(),
+                            ThreadCursor {
+                                offset,
+                                cumulative,
+                                model,
+                            },
+                        );
+                    }
+                }
             }
-            known.insert(path, current);
         }
         total
     }
@@ -333,10 +394,12 @@ impl CodexUsageTracker {
             return cached.clone();
         }
         let meta = read_head_meta(path);
-        self.meta_cache
-            .lock()
-            .unwrap()
-            .insert(path.to_path_buf(), meta.clone());
+        if meta.is_some() {
+            self.meta_cache
+                .lock()
+                .unwrap()
+                .insert(path.to_path_buf(), meta.clone());
+        }
         meta
     }
 }
@@ -487,34 +550,186 @@ fn read_head_model(path: &Path) -> Option<String> {
     })
 }
 
-/// 파일 꼬리에서 마지막 `token_count` 누계와(있으면) 가장 최근 `turn_context`
-/// 모델. `token_count`를 못 찾으면 None.
-fn read_tail_usage(path: &Path) -> Option<(Cumulative, Option<String>)> {
-    let tail = read_file_tail(path, ROLLOUT_TAIL_BYTES)?;
+/// tail을 읽기 전에 길이를 고정해 그 이후 append된 바이트를 cursor가 건너뛰지
+/// 않게 한다. 파일이 자라더라도 offset은 이 스냅샷 끝까지만 전진한다.
+fn read_tail_snapshot(path: &Path) -> Option<(Cumulative, Option<String>, u64)> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let start = len.saturating_sub(ROLLOUT_TAIL_BYTES);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut bytes = Vec::new();
+    file.take(len - start).read_to_end(&mut bytes).ok()?;
+    let last_start = bytes
+        .iter()
+        .rposition(|b| *b == b'\n')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let consumed = if bytes.last() == Some(&b'\n')
+        || serde_json::from_slice::<Value>(&bytes[last_start..]).is_ok()
+    {
+        bytes.len()
+    } else {
+        last_start
+    };
+    let text = String::from_utf8_lossy(&bytes[..consumed]);
+    let latest_context = text
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter_map(|value| turn_context_model(&value))
+        .last();
+    let (cumulative, prior_model) = match parse_tail_usage(&text) {
+        Some(snapshot) => snapshot,
+        // 파일 전체를 읽었고 누계가 없으면 0부터 시작한다. incomplete EOF는
+        // consumed에 포함하지 않으므로 처음 token_count를 쓰는 중이어도 안전하다.
+        None if start == 0 => (Cumulative::default(), None),
+        None => return None,
+    };
+    Some((
+        cumulative,
+        latest_context.or(prior_model),
+        start + consumed as u64,
+    ))
+}
+
+fn parse_tail_usage(tail: &str) -> Option<(Cumulative, Option<String>)> {
     let mut model: Option<String> = None;
+    let mut cumulative = None;
     for line in tail.lines().rev() {
         // 줄당 1회만 파싱한다(꼬리가 최대 1MB라 이중 파싱은 그대로 낭비다).
         let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
             continue;
         };
+        if cumulative.is_none() {
+            cumulative = token_count_total(&value);
+            continue;
+        }
+        // 최신 token_count보다 **앞**의 context가 그 누계에 대응한다. 이전 구현은
+        // token_count를 먼저 만나 곧장 반환해 context를 보지 못했다.
         if model.is_none() {
             model = turn_context_model(&value);
         }
-        if let Some(cumulative) = token_count_total(&value) {
-            return Some((cumulative, model));
+        if model.is_some() {
+            break;
         }
     }
-    None
+    cumulative.map(|cumulative| (cumulative, model))
 }
 
-/// 파일 전체가 꼬리 읽기(`ROLLOUT_TAIL_BYTES`) 범위 안에 들어오는가. 이게
-/// 참이어야 "꼬리에 token_count가 없다"가 "누계가 진짜 0이다"의 증명이 된다
-/// (결정 B) — 그렇지 않으면 앞쪽 어딘가에 있는 token_count를 놓친 것일 수
-/// 있다.
-fn whole_file_scanned(path: &Path) -> bool {
-    std::fs::metadata(path)
-        .map(|m| m.len() <= ROLLOUT_TAIL_BYTES)
-        .unwrap_or(false)
+/// cursor 뒤에 새로 완결된 JSONL 행만 전진하며, 각 token_count 증가분을 그
+/// 시점의 turn_context 모델에 귀속한다. 모델 전환이 두 관측 사이에 여러 번
+/// 있어도 토큰 행별로 쪼개므로 최신 모델에 전부 몰리지 않는다.
+fn read_thread_deltas(path: &Path, cursor: &mut ThreadCursor) -> Vec<ModelDelta> {
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return vec![];
+    };
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    if len < cursor.offset {
+        *cursor = ThreadCursor::default();
+    }
+    if file.seek(SeekFrom::Start(cursor.offset)).is_err() {
+        return vec![];
+    }
+    let mut reader = BufReader::new(file);
+    let mut deltas = vec![];
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        let Ok(read) = reader.read_until(b'\n', &mut line) else {
+            break;
+        };
+        if read == 0 {
+            break;
+        }
+        let newline = line.last() == Some(&b'\n');
+        let Ok(value) = serde_json::from_slice::<Value>(if newline {
+            &line[..line.len() - 1]
+        } else {
+            &line
+        }) else {
+            // EOF의 잘린 행은 다음 호출에서 다시 읽는다. JSONL의 중간 깨짐은
+            // cursor를 넘겨 이후 유효 행을 살린다.
+            if !newline {
+                break;
+            }
+            cursor.offset = cursor.offset.saturating_add(read as u64);
+            continue;
+        };
+        if let Some(model) = turn_context_model(&value) {
+            cursor.model = Some(model);
+        }
+        if let Some(current) = token_count_total(&value) {
+            let delta = current.delta(cursor.cumulative);
+            cursor.cumulative = current;
+            if delta.input > 0
+                || delta.cached_input > 0
+                || delta.cache_write > 0
+                || delta.output > 0
+            {
+                deltas.push(ModelDelta {
+                    cumulative: delta,
+                    model: cursor.model.clone(),
+                });
+            }
+        }
+        cursor.offset = cursor.offset.saturating_add(read as u64);
+    }
+    deltas
+}
+
+fn tokens_from_deltas(deltas: Vec<ModelDelta>) -> Option<SessionEventTokens> {
+    if deltas.is_empty() {
+        return None;
+    }
+    let mut grouped: Vec<(Option<String>, Cumulative)> = vec![];
+    let mut total = Cumulative::default();
+    let mut representative = None;
+    for delta in deltas {
+        total = total.plus(delta.cumulative);
+        representative = delta.model.clone().or(representative);
+        if let Some((_, acc)) = grouped.iter_mut().find(|(model, _)| *model == delta.model) {
+            *acc = acc.plus(delta.cumulative);
+        } else {
+            grouped.push((delta.model, delta.cumulative));
+        }
+    }
+    let by_model = grouped
+        .into_iter()
+        .map(|(model, c)| SessionModelTokens {
+            input: Some(
+                c.input
+                    .saturating_sub(c.cached_input)
+                    .saturating_sub(c.cache_write),
+            ),
+            output: Some(c.output),
+            cache_read: Some(c.cached_input),
+            cache_write: Some(c.cache_write),
+            model,
+        })
+        .collect();
+    Some(SessionEventTokens {
+        input: Some(
+            total
+                .input
+                .saturating_sub(total.cached_input)
+                .saturating_sub(total.cache_write),
+        ),
+        output: Some(total.output),
+        cache_read: Some(total.cached_input),
+        cache_write: Some(total.cache_write),
+        model: representative,
+        by_model: Some(by_model),
+    })
+}
+
+fn zero_tokens(model: Option<String>) -> SessionEventTokens {
+    SessionEventTokens {
+        input: Some(0),
+        output: Some(0),
+        cache_read: Some(0),
+        cache_write: Some(0),
+        model,
+        by_model: Some(vec![]),
+    }
 }
 
 /// `{"type":"turn_context","payload":{"model":"gpt-5.4",...}}` → 모델 이름.
@@ -541,18 +756,9 @@ fn token_count_total(value: &Value) -> Option<Cumulative> {
     Some(Cumulative {
         input: field("input_tokens"),
         cached_input: field("cached_input_tokens"),
+        cache_write: field("cache_write_input_tokens"),
         output: field("output_tokens"),
     })
-}
-
-/// 파일 끝에서 최대 `max` 바이트. 앞머리의 잘린 줄은 파싱 실패로 자연히 스킵된다.
-fn read_file_tail(path: &Path, max: u64) -> Option<String> {
-    let mut file = std::fs::File::open(path).ok()?;
-    let len = file.metadata().ok()?.len();
-    file.seek(SeekFrom::Start(len.saturating_sub(max))).ok()?;
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf).ok()?;
-    Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
 #[cfg(test)]
@@ -620,7 +826,7 @@ mod tests {
         assert_eq!(tokens.input, Some(500));
         assert_eq!(tokens.cache_read, Some(2_000));
         assert_eq!(tokens.output, Some(300));
-        assert_eq!(tokens.cache_write, None);
+        assert_eq!(tokens.cache_write, Some(0));
         assert_eq!(tokens.model.as_deref(), Some("gpt-5.4"));
 
         let _ = std::fs::remove_dir_all(root);
@@ -647,6 +853,7 @@ mod tests {
         std::fs::write(&path, content).unwrap();
 
         // 다음 턴부터는 정상 델타.
+        tracker.mark_turn_start(&hook);
         let tokens = tracker.turn_usage(&hook).unwrap();
         assert_eq!(tokens.input, Some(500));
         assert_eq!(tokens.output, Some(50));
@@ -923,5 +1130,261 @@ mod tests {
         assert_eq!(tokens.output, Some(50));
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn switched_models_and_cache_writes_are_counted_per_snapshot() {
+        let root = scratch();
+        let path = write_rollout(
+            &root,
+            "sess-1",
+            &[
+                meta("/w"),
+                r#"{"type":"turn_context","payload":{"model":"model-a"}}"#.into(),
+                token_count(100, 20, 10),
+            ],
+        );
+        let tracker = CodexUsageTracker::new(Some(root.join("sessions")));
+        let hook = body("sess-1", "/w");
+        tracker.mark_turn_start(&hook);
+        let mut content = std::fs::read_to_string(&path).unwrap();
+        content.push('\n');
+        content.push_str(r#"{"type":"turn_context","payload":{"model":"model-a"}}"#);
+        content.push('\n');
+        content.push_str(r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":160,"cached_input_tokens":30,"cache_write_input_tokens":10,"output_tokens":20}}}}"#);
+        content.push('\n');
+        content.push_str(r#"{"type":"turn_context","payload":{"model":"model-b"}}"#);
+        content.push('\n');
+        content.push_str(r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":260,"cached_input_tokens":50,"cache_write_input_tokens":30,"output_tokens":50}}}}"#);
+        std::fs::write(&path, content).unwrap();
+        let tokens = tracker.turn_usage(&hook).unwrap();
+        assert_eq!(tokens.input, Some(100)); // raw 160 - read 30 - write 30
+        assert_eq!(tokens.cache_read, Some(30));
+        assert_eq!(tokens.cache_write, Some(30));
+        assert_eq!(tokens.output, Some(40));
+        let by_model = tokens.by_model.unwrap();
+        assert_eq!(by_model.len(), 2);
+        assert_eq!(by_model[0].model.as_deref(), Some("model-a"));
+        assert_eq!(by_model[0].input, Some(40));
+        assert_eq!(by_model[1].model.as_deref(), Some("model-b"));
+        assert_eq!(by_model[1].input, Some(60));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn partial_then_stop_emits_final_zero_once_without_duplication() {
+        let root = scratch();
+        let path = write_rollout(
+            &root,
+            "sess-1",
+            &[meta("/w"), TURN_CONTEXT.into(), token_count(10, 0, 1)],
+        );
+        let tracker = CodexUsageTracker::new(Some(root.join("sessions")));
+        let hook = body("sess-1", "/w");
+        tracker.mark_turn_start(&hook);
+        let mut content = std::fs::read_to_string(&path).unwrap();
+        content.push('\n');
+        content.push_str(&token_count(20, 0, 2));
+        std::fs::write(&path, content).unwrap();
+        assert_eq!(tracker.progress_usage(&hook).unwrap().input, Some(10));
+        assert_eq!(tracker.turn_usage(&hook).unwrap().input, Some(0));
+        assert_eq!(tracker.turn_usage(&hook), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn seed_uses_context_after_latest_token_count() {
+        let root = scratch();
+        let path = write_rollout(
+            &root,
+            "sess-1",
+            &[
+                meta("/w"),
+                r#"{"type":"turn_context","payload":{"model":"old"}}"#.into(),
+                token_count(10, 0, 1),
+                r#"{"type":"turn_context","payload":{"model":"new"}}"#.into(),
+            ],
+        );
+        let tracker = CodexUsageTracker::new(Some(root.join("sessions")));
+        let hook = body("sess-1", "/w");
+        tracker.mark_turn_start(&hook);
+        let mut content = std::fs::read_to_string(&path).unwrap();
+        content.push('\n');
+        content.push_str(&token_count(20, 0, 2));
+        std::fs::write(&path, content).unwrap();
+        let tokens = tracker.turn_usage(&hook).unwrap();
+        assert_eq!(tokens.by_model.unwrap()[0].model.as_deref(), Some("new"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn incomplete_last_json_line_is_retried_after_completion() {
+        let root = scratch();
+        let path = write_rollout(
+            &root,
+            "sess-1",
+            &[meta("/w"), TURN_CONTEXT.into(), token_count(10, 0, 1)],
+        );
+        let tracker = CodexUsageTracker::new(Some(root.join("sessions")));
+        let hook = body("sess-1", "/w");
+        tracker.mark_turn_start(&hook);
+        let mut content = std::fs::read_to_string(&path).unwrap();
+        content.push_str("\n{\"type\":\"turn_context\"");
+        std::fs::write(&path, &content).unwrap();
+        assert_eq!(tracker.progress_usage(&hook), None);
+        content.push_str(",\"payload\":{\"model\":\"gpt-5.4\"}}\n");
+        content.push_str(&token_count(20, 0, 2));
+        std::fs::write(&path, content).unwrap();
+        assert_eq!(tracker.turn_usage(&hook).unwrap().input, Some(10));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn snapshot_retries_partial_first_or_later_token_count() {
+        for has_history in [false, true] {
+            let root = scratch();
+            let mut lines = vec![meta("/w"), TURN_CONTEXT.into()];
+            if has_history {
+                lines.push(token_count(10, 0, 1));
+            }
+            let row = token_count(20, 0, 2);
+            lines.push(row[..row.len() / 2].into());
+            let path = write_rollout(&root, "sess-1", &lines);
+            let tracker = CodexUsageTracker::new(Some(root.join("sessions")));
+            let hook = body("sess-1", "/w");
+            tracker.mark_turn_start(&hook);
+            let mut content = std::fs::read_to_string(&path).unwrap();
+            content.push_str(&row[row.len() / 2..]);
+            std::fs::write(&path, content).unwrap();
+            assert_eq!(
+                tracker.turn_usage(&hook).unwrap().input,
+                Some(if has_history { 10 } else { 20 })
+            );
+            let _ = std::fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn attach_at_progress_can_finalize_after_a_partial() {
+        let root = scratch();
+        let path = write_rollout(
+            &root,
+            "sess-1",
+            &[meta("/w"), TURN_CONTEXT.into(), token_count(10, 0, 1)],
+        );
+        let tracker = CodexUsageTracker::new(Some(root.join("sessions")));
+        let hook = body("sess-1", "/w");
+        assert_eq!(tracker.progress_usage(&hook), None);
+        let mut content = std::fs::read_to_string(&path).unwrap();
+        content.push('\n');
+        content.push_str(&token_count(20, 0, 2));
+        std::fs::write(&path, content).unwrap();
+        tracker.state_lock("sess-1").lock().unwrap().last_progress = None;
+        assert_eq!(tracker.progress_usage(&hook).unwrap().input, Some(10));
+        assert_eq!(tracker.turn_usage(&hook).unwrap().input, Some(0));
+        assert_eq!(tracker.turn_usage(&hook), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn partial_main_and_child_metadata_are_retried_with_child_model() {
+        let root = scratch();
+        let main_meta = meta_line("sess-1", "/w", None, SystemTime::now());
+        let main = write_rollout(&root, "sess-1", &[main_meta[..main_meta.len() / 2].into()]);
+        let tracker = CodexUsageTracker::new(Some(root.join("sessions")));
+        let hook = body("sess-1", "/w");
+        tracker.mark_turn_start(&hook);
+        std::fs::write(
+            &main,
+            format!("{main_meta}\n{TURN_CONTEXT}\n{}", token_count(10, 0, 1)),
+        )
+        .unwrap();
+        let child_meta = meta_line("sub-1", "/w", Some("sess-1"), SystemTime::now());
+        let child = write_rollout(&root, "sub-1", &[child_meta[..child_meta.len() / 2].into()]);
+        assert_eq!(tracker.progress_usage(&hook).unwrap().input, Some(10));
+        let child_context = r#"{"type":"turn_context","payload":{"model":"gpt-6-astra"}}"#;
+        std::fs::write(
+            child,
+            format!(
+                "{child_meta}\n{child_context}\n{}",
+                token_count(100, 20, 10)
+            ),
+        )
+        .unwrap();
+        let tokens = tracker.turn_usage(&hook).unwrap();
+        assert_eq!(tokens.input, Some(80));
+        assert_eq!(
+            tokens.by_model.unwrap()[0].model.as_deref(),
+            Some("gpt-6-astra")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn overlapping_progress_and_stop_consume_tokens_once() {
+        let root = scratch();
+        let path = write_rollout(
+            &root,
+            "sess-1",
+            &[meta("/w"), TURN_CONTEXT.into(), token_count(10, 0, 1)],
+        );
+        let tracker = Arc::new(CodexUsageTracker::new(Some(root.join("sessions"))));
+        let hook = body("sess-1", "/w");
+        tracker.mark_turn_start(&hook);
+        let mut content = std::fs::read_to_string(&path).unwrap();
+        content.push('\n');
+        content.push_str(&token_count(20, 0, 2));
+        std::fs::write(path, content).unwrap();
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let workers: Vec<_> = [true, false]
+            .into_iter()
+            .map(|progress| {
+                let tracker = tracker.clone();
+                let hook = hook.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    tracker.usage(&hook, progress)
+                })
+            })
+            .collect();
+        let observed: Vec<_> = workers
+            .into_iter()
+            .filter_map(|worker| worker.join().unwrap())
+            .collect();
+        assert_eq!(
+            observed
+                .iter()
+                .map(|tokens| tokens.input.unwrap_or(0))
+                .sum::<u64>(),
+            10
+        );
+        assert_eq!(tracker.turn_usage(&hook), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn late_main_append_after_stop_is_not_lost_at_next_prompt() {
+        let root = scratch();
+        let path = write_rollout(
+            &root,
+            "sess-1",
+            &[meta("/w"), TURN_CONTEXT.into(), token_count(10, 0, 1)],
+        );
+        let tracker = CodexUsageTracker::new(Some(root.join("sessions")));
+        let hook = body("sess-1", "/w");
+        tracker.mark_turn_start(&hook);
+        let mut content = std::fs::read_to_string(&path).unwrap();
+        content.push('\n');
+        content.push_str(&token_count(20, 0, 2));
+        std::fs::write(&path, &content).unwrap();
+        assert_eq!(tracker.turn_usage(&hook).unwrap().input, Some(10));
+        content.push('\n');
+        content.push_str(&token_count(30, 0, 3));
+        std::fs::write(&path, content).unwrap();
+        assert_eq!(tracker.turn_usage(&hook), None); // duplicate Stop must leave late bytes unread
+        tracker.mark_turn_start(&hook);
+        assert_eq!(tracker.turn_usage(&hook).unwrap().input, Some(10));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

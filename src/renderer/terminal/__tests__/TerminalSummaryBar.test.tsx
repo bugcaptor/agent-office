@@ -124,6 +124,26 @@ describe("TerminalSummaryBar 사용량 스팬 (이슈 #44 2단계)", () => {
     };
   }
 
+  it("첫 턴 진행 중에도 중간 토큰과 비용을 표시한다", () => {
+    seed({ sessionCostEnabled: true });
+    useAppStore.setState({ sessionUsage: {
+      a1: { sessionId: "s1", totals: mkTotals({ input: 1000, costUsd: 0.005, turns: 0 }) },
+    } });
+    const { container } = render(<TerminalSummaryBar />);
+    expect(container.querySelector(".terminal-summary-usage")?.textContent)
+      .toBe(`${formatTokens(1000)} · ${formatUsd(0.005)}`);
+  });
+
+  it("한 턴에 알려진 모델과 미지 모델이 섞여도 알려진 비용은 숨기지 않는다", () => {
+    seed({ sessionCostEnabled: true });
+    useAppStore.setState({ sessionUsage: {
+      a1: { sessionId: "s1", totals: mkTotals({ input: 2000, costUsd: 0.005, costUnknownTurns: 1, turns: 1 }) },
+    } });
+    const { container } = render(<TerminalSummaryBar />);
+    expect(container.querySelector(".terminal-summary-usage")?.textContent)
+      .toBe(`${formatTokens(2000)} · ~${formatUsd(0.005)}`);
+  });
+
   it("설정(sessionCostEnabled)이 꺼져 있으면 사용량이 있어도 스팬을 렌더하지 않는다", () => {
     seed({ label: { goal: "버그 수정" }, sessionCostEnabled: false });
     useAppStore.setState({
@@ -195,11 +215,11 @@ describe("TerminalSummaryBar 사용량 스팬 (이슈 #44 2단계)", () => {
     const usage = container.querySelector(".terminal-summary-usage")!;
     expect(usage.textContent).toBe(`${formatTokens(100)} · ~${formatUsd(0.1)}`);
     // D-2: "~"의 뜻이 툴팁에 한 줄 더 있어야 한다(summary.usage.costUnknownHint).
-    expect(usage.getAttribute("title")).toContain("1턴");
+    expect(usage.getAttribute("title")).toContain("1건");
     expect(usage.getAttribute("title")).toContain("제외");
   });
 
-  it("D-1: 비용을 하나도 모르면(costUnknownTurns===turns) 비용 자리를 —로 떨구고 토큰은 그대로 보여준다", () => {
+  it("D-1: 비용을 하나도 모르면 비용 자리를 —로 떨구고 토큰은 그대로 보여준다", () => {
     seed({ label: { goal: "버그 수정" }, sessionCostEnabled: true });
     useAppStore.setState({
       sessionUsage: {

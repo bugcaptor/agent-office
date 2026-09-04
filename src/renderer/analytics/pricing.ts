@@ -8,11 +8,11 @@
 // 화면에도 "추정치"라고 못박아 표시한다. 요율이 바뀌면 아래 RATES 표만 고치면
 // 되고, 집계·표시 코드는 손댈 필요가 없다.
 //
-// 표 기준: 2026-06 시점 Anthropic 공식 API 요율 + OpenAI/Google 공개 요율.
+// 표 기준: 2026-09-05 시점 Anthropic 공식 API 요율 + OpenAI/Google 공개 요율.
 // Anthropic 계열의 캐시 단가는 규칙이 일정하다 —
 //   cacheRead = input × 0.1, cacheWrite(5분 TTL) = input × 1.25.
 // 그 규칙으로 계산한 값을 상수로 박아 둔다(런타임 곱셈 없이 표만 읽으면 되게).
-import type { SessionEventTokens } from "@shared/types";
+import type { SessionEventTokens, SessionModelTokens } from "@shared/types";
 
 /** 1M 토큰당 달러 단가 4종. */
 export interface ModelRate {
@@ -33,32 +33,102 @@ const RATES: ReadonlyArray<readonly [pattern: string, rate: ModelRate]> = [
   ["opus", { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }],
   ["sonnet", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
   ["haiku", { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 }],
-  ["gpt-5", { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 }],
   ["gpt-4.1", { input: 2, output: 8, cacheRead: 0.5, cacheWrite: 2 }],
   ["gemini-2.5-pro", { input: 1.25, output: 10, cacheRead: 0.31, cacheWrite: 1.25 }],
   ["gemini", { input: 0.3, output: 2.5, cacheRead: 0.075, cacheWrite: 0.3 }],
 ];
 
 /**
+ * OpenAI GPT-5 계열은 이름만 비슷해도 모델별 단가가 다르다. 따라서 일반
+ * `gpt-5` 부분문자열은 쓰지 않고, 공식 모델 ID(및 날짜 스냅샷)만 정확히
+ * 허용한다. 출처(2026-09-05):
+ * https://developers.openai.com/api/docs/models/gpt-5,
+ * https://developers.openai.com/api/docs/models/gpt-5.4,
+ * https://developers.openai.com/api/docs/models/gpt-5.5,
+ * https://developers.openai.com/api/docs/models/gpt-5.6-sol,
+ * https://developers.openai.com/api/docs/models/compare.
+ * 캐시 기록은 5.6/6 Astra 문서에서 명시한 1.25배만 적용하고, 이전 모델은
+ * 별도 단가가 공개되지 않아 입력 단가를 보수적으로 쓴다. Pro는 캐시 할인을
+ * 제공하지 않으므로 `cacheRead`도 입력 단가다.
+ */
+const OPENAI_RATES: Readonly<Record<string, ModelRate>> = {
+  "gpt-5": { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 },
+  "gpt-5-codex": { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 },
+  "gpt-5-pro": { input: 15, output: 120, cacheRead: 15, cacheWrite: 15 },
+  "gpt-5-mini": { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0.25 },
+  "gpt-5-nano": { input: 0.05, output: 0.4, cacheRead: 0.005, cacheWrite: 0.05 },
+  "gpt-5.1": { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 },
+  "gpt-5.1-codex": { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 },
+  "gpt-5.1-codex-max": { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 },
+  "gpt-5.1-codex-mini": { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0.25 },
+  "gpt-5.2": { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 1.75 },
+  "gpt-5.2-codex": { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 1.75 },
+  "gpt-5.2-pro": { input: 21, output: 168, cacheRead: 21, cacheWrite: 21 },
+  "gpt-5.3-codex": { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 1.75 },
+  "gpt-5.4": { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 2.5 },
+  "gpt-5.4-pro": { input: 30, output: 180, cacheRead: 30, cacheWrite: 30 },
+  "gpt-5.4-mini": { input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0.75 },
+  "gpt-5.4-nano": { input: 0.2, output: 1.25, cacheRead: 0.02, cacheWrite: 0.2 },
+  "gpt-5.5": { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 5 },
+  "gpt-5.5-pro": { input: 30, output: 180, cacheRead: 30, cacheWrite: 30 },
+  "gpt-5.6": { input: 4, output: 20, cacheRead: 0.4, cacheWrite: 5 },
+  "gpt-5.6-sol": { input: 4, output: 20, cacheRead: 0.4, cacheWrite: 5 },
+  "gpt-5.6-terra": { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.5 },
+  "gpt-5.6-luna": { input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0.25 },
+  "gpt-6-astra": { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
+};
+
+/** 공식 문서에 명시된 날짜 스냅샷만 위의 모델 단가에 연결한다. */
+const OPENAI_SNAPSHOT_BASES: Readonly<Record<string, keyof typeof OPENAI_RATES>> = {
+  "gpt-5-2025-08-07": "gpt-5",
+  "gpt-5-mini-2025-08-07": "gpt-5-mini",
+  "gpt-5-nano-2025-08-07": "gpt-5-nano",
+  "gpt-5-pro-2025-10-06": "gpt-5-pro",
+  "gpt-5.1-2025-11-13": "gpt-5.1",
+  "gpt-5.2-2025-12-11": "gpt-5.2",
+  "gpt-5.2-pro-2025-12-11": "gpt-5.2-pro",
+  "gpt-5.4-2026-03-05": "gpt-5.4",
+  "gpt-5.4-pro-2026-03-05": "gpt-5.4-pro",
+  "gpt-5.4-mini-2026-03-17": "gpt-5.4-mini",
+  "gpt-5.4-nano-2026-03-17": "gpt-5.4-nano",
+  "gpt-5.5-2026-04-23": "gpt-5.5",
+  "gpt-5.5-pro-2026-04-23": "gpt-5.5-pro",
+};
+
+// TS target lacks Object.hasOwn, so retain the same own-property semantics.
+function hasOwn(object: object, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function openAiRateFor(model: string): ModelRate | null {
+  const base = hasOwn(OPENAI_SNAPSHOT_BASES, model)
+    ? OPENAI_SNAPSHOT_BASES[model]
+    : model;
+  return hasOwn(OPENAI_RATES, base) ? OPENAI_RATES[base] : null;
+}
+
+/**
  * 모델 ID에 맞는 요율. 모델이 없거나 표에 없는 모델이면 `null`
- * (→ 비용 집계에서 제외하고 "단가를 모르는 턴"으로 따로 센다).
+ * (→ 비용 집계에서 제외하고 "단가를 모르는 사용량"으로 따로 센다).
  */
 export function rateFor(model: string | undefined): ModelRate | null {
   if (!model) return null;
-  const key = model.toLowerCase();
+  const key = model.toLowerCase().trim();
+  const openAiRate = openAiRateFor(key);
+  if (openAiRate) return openAiRate;
   for (const [pattern, rate] of RATES) {
     if (key.includes(pattern)) return rate;
   }
   return null;
 }
 
-/**
- * 한 턴의 토큰 사용량 → 추정 비용(USD). 토큰이 없거나 단가를 모르면 `null`
- * (0이 아니다 — "0원"과 "모름"을 구분해야 화면에서 `~` 표시를 붙일 수 있다).
- * 없는 항목은 0으로 친다.
- */
-export function estimateCostUsd(tokens: SessionEventTokens | undefined): number | null {
-  if (!tokens) return null;
+/** 비용을 일부 계산할 수 있어도, 단가를 모르는 모델이 있었는지 함께 나타낸다. */
+export interface CostBreakdown {
+  costUsd: number;
+  hasUnknown: boolean;
+}
+
+function costForSingleModel(tokens: SessionModelTokens): number | null {
   const r = rateFor(tokens.model);
   if (!r) return null;
   const cost =
@@ -67,6 +137,39 @@ export function estimateCostUsd(tokens: SessionEventTokens | undefined): number 
     (tokens.cacheRead ?? 0) * r.cacheRead +
     (tokens.cacheWrite ?? 0) * r.cacheWrite;
   return cost / 1_000_000;
+}
+
+/**
+ * 한 턴의 비용과 단가를 모르는 구성 모델 존재 여부를 함께 반환한다. 모델별
+ * 내역이 있으면 그 합계만 쓴다. 최상위 토큰은 구형 소비자용 총계이므로
+ * 이 경우 다시 더하면 이중 집계가 된다.
+ */
+export function estimateCostBreakdown(
+  tokens: SessionEventTokens | undefined,
+): CostBreakdown | null {
+  if (!tokens) return null;
+  const byModel = tokens.byModel;
+  if (byModel?.length) {
+    let costUsd = 0;
+    let hasUnknown = false;
+    for (const component of byModel) {
+      const cost = costForSingleModel(component);
+      if (cost === null) hasUnknown = true;
+      else costUsd += cost;
+    }
+    return { costUsd, hasUnknown };
+  }
+  const costUsd = costForSingleModel(tokens);
+  return costUsd === null ? { costUsd: 0, hasUnknown: true } : { costUsd, hasUnknown: false };
+}
+
+/**
+ * 한 턴의 토큰 사용량 → 완전한 추정 비용(USD). 토큰이 없거나 하나라도 단가를
+ * 모르면 `null`이다. 일부 비용이 필요하면 `estimateCostBreakdown`을 쓴다.
+ */
+export function estimateCostUsd(tokens: SessionEventTokens | undefined): number | null {
+  const breakdown = estimateCostBreakdown(tokens);
+  return !breakdown || breakdown.hasUnknown ? null : breakdown.costUsd;
 }
 
 /**

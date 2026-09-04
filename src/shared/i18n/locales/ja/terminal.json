@@ -69,8 +69,8 @@
       "turns_one": "{{count}}ターン",
       "turns_other": "{{count}}ターン",
       "model": "モデル {{model}}",
-      "costUnknownHint_one": "単価が不明なモデルの {{count}}ターンは除外",
-      "costUnknownHint_other": "単価が不明なモデルの {{count}}ターンは除外",
+      "costUnknownHint_one": "単価不明の使用量 {{count}}件の費用は除外",
+      "costUnknownHint_other": "単価不明の使用量 {{count}}件の費用は除外",
       "tokenPairHint": "括弧内はキャッシュを含む総トークン",
       "footnote": "公開 API 料金換算の推定値"
     }

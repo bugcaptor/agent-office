@@ -12,7 +12,7 @@
 // 실시간 누적·과거 시딩)의 순수 함수만 갖고, 세션 경계 판정·이중 계산 방지
 // (`at > seedAt`)는 스토어(`appStore.ts`) 몫이다.
 import type { SessionEventRecord, SessionEventTokens, SessionId } from "@shared/types";
-import { estimateCostUsd } from "../analytics/pricing";
+import { estimateCostBreakdown } from "../analytics/pricing";
 
 /** 세션 하나의 토큰·비용 누계. 전부 불변값 — 갱신은 항상 새 객체를 만든다. */
 export interface SessionUsageTotals {
@@ -22,7 +22,7 @@ export interface SessionUsageTotals {
   cacheWrite: number;
   /** 단가를 아는 턴만 누적한 추정 비용(USD). */
   costUsd: number;
-  /** 단가를 몰라 비용에서 빠진 턴 수 — 0보다 크면 표시에 `~`를 붙인다. */
+  /** 미지 단가가 포함된 사용량 이벤트 수(레거시 필드명). 양수면 `~`를 붙인다. */
   costUnknownTurns: number;
   /** 토큰이 실린 턴 수. */
   turns: number;
@@ -44,37 +44,24 @@ export function emptyTotals(): SessionUsageTotals {
 }
 
 /**
- * 턴 하나(`tokens`)를 누계에 더한 **새 객체**를 반환한다(불변 — `totals`는
- * 안 건드림). 비용을 모르는 모델(`estimateCostUsd` → `null`)은 `costUsd`에
- * 더하지 않고 `costUnknownTurns`만 올린다. `model`은 이 턴에 실려 있으면
- * 그 값으로 갱신한다(가장 최근 턴이 대표 모델).
- *
- * `partial`(기본 false): 이 사용량이 턴이 끝나기 **전**의 중간 관측인지
- * (`TurnUsageEvent.partial`, claude 어댑터의 PostToolUse 중간 갱신 —
- * docs/session-analytics-design.md §11.9). 토큰·비용은 partial이어도 그대로
- * 더한다(그만큼 실제로 썼으므로), 하지만 **`turns`는 올리지 않는다** — 한
- * 턴 안에서 도구를 여러 번 부르면 그만큼 partial 이벤트가 여러 번 오는데,
- * 매번 턴을 하나씩 잡으면 "지금까지 3번 도구를 썼다"가 "턴이 3개였다"로
- * 둔갑한다. 그 턴의 최종 Stop이 `partial:false`로 다시 잡히면서 그때
- * `turns`가 실제로 오른다. `costUnknownTurns`도 같은 이유로 partial에서는
- * 올리지 않는다 — 단가를 모르는 턴이라도 그 턴의 Stop 델타가 같은 모델로
- * 다시 잡히므로 거기서 표시된다(드물게 그 턴의 마지막 도구 이후 usage 줄이
- * 하나도 없어 Stop 델타가 비면, 그 턴은 애초에 tokens가 없어 addTurn 자체가
- * 안 불리므로 단가 미상 표시가 통째로 빠질 수 있다 — 수용된 한계).
+ * 증분 토큰을 더한다. byModel이 있으면 각 모델 단가를 적용하며 알려진 몫은
+ * 보존하고 미지 단가가 있는 사용량 이벤트를 별도로 센다. partial은 턴 수만
+ * 올리지 않는다. 중간 갱신의 미지 모델도 즉시 표시해야 최종 Stop에서 모델이
+ * 바뀌거나 잔여 토큰이 0이어도 비용 누락 표시가 사라지지 않는다.
  */
 export function addTurn(
   totals: SessionUsageTotals,
   tokens: SessionEventTokens,
   partial = false,
 ): SessionUsageTotals {
-  const cost = estimateCostUsd(tokens);
+  const cost = estimateCostBreakdown(tokens);
   return {
     input: totals.input + (tokens.input ?? 0),
     output: totals.output + (tokens.output ?? 0),
     cacheRead: totals.cacheRead + (tokens.cacheRead ?? 0),
     cacheWrite: totals.cacheWrite + (tokens.cacheWrite ?? 0),
-    costUsd: totals.costUsd + (cost ?? 0),
-    costUnknownTurns: totals.costUnknownTurns + (!partial && cost === null ? 1 : 0),
+    costUsd: totals.costUsd + (cost?.costUsd ?? 0),
+    costUnknownTurns: totals.costUnknownTurns + (cost === null || cost.hasUnknown ? 1 : 0),
     turns: totals.turns + (partial ? 0 : 1),
     model: tokens.model ?? totals.model,
   };

@@ -555,6 +555,7 @@ mod tests {
                 cache_read: Some(30),
                 cache_write: Some(40),
                 model: Some("claude-opus-5".into()),
+                by_model: None,
             },
             partial: false,
         };

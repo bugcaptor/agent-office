@@ -212,6 +212,7 @@
             cache_read: Some(20),
             cache_write: Some(10),
             model: Some("claude-opus-5".into()),
+            by_model: None,
         }
     }
 

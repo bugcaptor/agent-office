@@ -10,7 +10,7 @@
 // 결정적으로 검증한다. 기본은 시스템 로컬(`localDayCalendar`).
 import type { AgentProfile, SessionEventRecord } from "@shared/types";
 import { grayForIndex, representativeColor } from "./colors";
-import { estimateCostUsd } from "./pricing";
+import { estimateCostBreakdown } from "./pricing";
 
 const DAY_MS = 86_400_000;
 const pad2 = (n: number): string => String(n).padStart(2, "0");
@@ -331,9 +331,9 @@ export function dailySummary(
       cell.tokensOut += ev.tokens.output ?? 0;
       cell.tokensCacheRead += ev.tokens.cacheRead ?? 0;
       cell.tokensCacheWrite += ev.tokens.cacheWrite ?? 0;
-      const cost = estimateCostUsd(ev.tokens);
-      if (cost === null) cell.costUnknownTurns += 1;
-      else cell.costUsd += cost;
+      const cost = estimateCostBreakdown(ev.tokens);
+      cell.costUsd += cost?.costUsd ?? 0;
+      if (cost === null || cost.hasUnknown) cell.costUnknownTurns += 1;
     }
   }
   return daily;

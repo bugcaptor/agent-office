@@ -69,8 +69,8 @@
       "turns_one": "{{count}} tour",
       "turns_other": "{{count}} tours",
       "model": "modèle {{model}}",
-      "costUnknownHint_one": "{{count}} tour sur un modèle sans tarif exclu",
-      "costUnknownHint_other": "{{count}} tours sur des modèles sans tarif exclus",
+      "costUnknownHint_one": "Coût non calculé pour {{count}} relevé sans tarif",
+      "costUnknownHint_other": "Coût non calculé pour {{count}} relevés sans tarif",
       "tokenPairHint": "Entre parenthèses : total des tokens, cache inclus",
       "footnote": "Estimation au tarif API public"
     }

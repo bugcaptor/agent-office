@@ -164,24 +164,29 @@ export type SessionEventKind =
  * 한 턴에서 소비한 토큰 사용량. 과거 파일은 `kind="stop"` 레코드에(그것도 추출에
  * 성공한 경우에만) 실렸고, 신규 파일은 `kind="usage"` 레코드에 실린다(`kind="stop"`엔
  * 더 이상 안 실린다) — 소비자는 **kind가 아니라 tokens 유무**로 합산해야 신구
- * 파일을 모두 커버한다. Rust `SessionEventTokens`(camelCase) 미러.
+ * 파일을 모두 커버한다. Rust `SessionModelTokens`(camelCase) 미러.
  *
  * 모든 필드가 옵션이다 — 제공자/버전마다 실어 주는 항목이 다르고, 추출에
  * 실패한 항목은 조용히 생략한다. 값이 하나도 없으면 `tokens` 자체를 싣지
  * 않는다. `input`은 **캐시를 제외한** 순수 입력 토큰이다(Claude
- * `input_tokens`, Codex `input_tokens - cached_input_tokens`).
+ * `input_tokens`, Codex `input_tokens - cached_input_tokens - cache_write_input_tokens`).
  */
-export interface SessionEventTokens {
+export interface SessionModelTokens {
   /** 캐시 히트/기록을 제외한 입력 토큰. */
   input?: number;
   /** 출력 토큰(추론 토큰 포함). */
   output?: number;
   /** 캐시에서 읽은 입력 토큰(할인 단가). */
   cacheRead?: number;
-  /** 캐시에 기록한 입력 토큰(할증 단가). Codex는 구분이 없어 항상 생략. */
+  /** 캐시에 기록한 입력 토큰(할증 단가). */
   cacheWrite?: number;
   /** 그 턴의 대표 모델 ID(예: "claude-opus-5", "gpt-5.4"). 비용 환산 키. */
   model?: string;
+}
+
+export interface SessionEventTokens extends SessionModelTokens {
+  /** 동일 구간의 모델별 사용량 전체. 있으면 비용은 이 구성으로만 계산한다. */
+  byModel?: SessionModelTokens[];
 }
 
 /**

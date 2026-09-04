@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
+use super::codex_usage::CodexUsageTracker;
 use super::event::{
     agent_id, codex_stop_message, hook_cwd, prompt_text, tool_activity_text, tool_description,
 };
-use super::codex_usage::CodexUsageTracker;
 use super::hook_command::forwarder_shell_command;
 use super::{
     AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError, ObserverEvent,
@@ -128,19 +128,19 @@ impl ObserverAdapter for CodexAdapter {
             // 이슈 #43: claude와 동일하게 도구 요약을 싣되, 서브에이전트 내부 도구
             // (agent_id 있음)는 하트비트만 유지한다. codex는 transcript 꼬리가 없어
             // assistant 내레이션은 항상 None.
-            // codex는 rollout에서 턴 경계 델타로만 사용량을 뽑는다(§9.3) — 도구
-            // 이벤트 중간 갱신은 claude 어댑터 한정 기능이라 항상 tokens: None.
+            // rollout 누계를 5초마다 cursor 증분으로 읽는다. Stop은 이 뒤 남은
+            // 부분만 읽으므로 중간 표시와 최종 집계가 겹치지 않는다.
             "PostToolUse" => Some(if agent_id(raw.body).is_some() {
                 ObserverEvent::Tool {
                     text: None,
                     assistant: None,
-                    tokens: None,
+                    tokens: self.usage.progress_usage(raw.body),
                 }
             } else {
                 ObserverEvent::Tool {
                     text: tool_activity_text(raw.body),
                     assistant: None,
-                    tokens: None,
+                    tokens: self.usage.progress_usage(raw.body),
                 }
             }),
             "PermissionRequest" => Some(ObserverEvent::Attention {
@@ -448,6 +448,39 @@ mod tests {
                 tokens: None,
             }),
         );
+    }
+
+    #[test]
+    fn codex_post_tool_use_carries_incremental_rollout_tokens() {
+        use crate::observer::codex_usage::CodexUsageTracker;
+        use crate::observer::{ObserverEvent, RawObserverHook};
+        let root = scratch_dir();
+        let dir = root.join("sessions/2026/08/21");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("rollout-2026-08-21T00-00-00-sess-1.jsonl");
+        std::fs::write(&path, concat!(
+            r#"{"type":"session_meta","payload":{"id":"sess-1","cwd":"/w"}}"#, "\n",
+            r#"{"type":"turn_context","payload":{"model":"gpt-5.4"}}"#, "\n",
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1}}}}"#,
+        )).unwrap();
+        let codex = CodexAdapter::with_usage_tracker(
+            forwarder_path_with_spaces(),
+            CodexUsageTracker::new(Some(root.join("sessions"))),
+        );
+        let body = br#"{"session_id":"sess-1","cwd":"/w","tool_name":"Grep"}"#;
+        codex.map_hook(&RawObserverHook {
+            event_name: "UserPromptSubmit",
+            body,
+        });
+        let mut content = std::fs::read_to_string(&path).unwrap();
+        content.push('\n');
+        content.push_str(r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":25,"cached_input_tokens":0,"output_tokens":3}}}}"#);
+        std::fs::write(&path, content).unwrap();
+        assert!(matches!(
+            codex.map_hook(&RawObserverHook { event_name: "PostToolUse", body }),
+            Some(ObserverEvent::Tool { tokens: Some(tokens), .. }) if tokens.input == Some(15) && tokens.output == Some(2)
+        ));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
