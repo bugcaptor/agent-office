@@ -135,15 +135,13 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 61 + ty *
 
 function castleTileDraw(pal: CastlePalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
-    const stone = (tx + ty) % 2 === 0 ? pal.stoneA : pal.stoneB;
+    const stone = (Math.floor(tx / 2) + Math.floor(ty / 2)) % 2 === 0 ? pal.stoneA : pal.stoneB;
     switch (t) {
       case Tile.Floor: {
-        // 플래그스톤: 체커 두 톤 + 위/왼쪽 줄눈. 반대편 그늘까지 두르면 칸마다
-        // 사각 테두리가 생겨 바닥이 격자 무늬로 진동한다 — 한쪽 줄눈만으로도
-        // 돌판 경계는 충분히 읽힌다.
+        // 플래그스톤: 2×2 타일짜리 넓은 돌판과 드문 줄눈.
         g.rect(0, 0, s, s).fill(stone);
-        g.rect(0, 0, s, 1).fill(pal.stoneSeam);
-        g.rect(0, 0, 1, s).fill(pal.stoneSeam);
+        if ((ty * s) % 32 === 0) g.rect(0, 0, s, 1).fill(pal.stoneSeam);
+        if ((tx * s) % 32 === 0) g.rect(0, 0, 1, s).fill(pal.stoneSeam);
         // 장식은 드물게 — 촘촘하면 대전당 바닥이 아니라 폐허로 보인다.
         const k = scatter(tx, ty, 19);
         if (k === 0) {
@@ -193,6 +191,7 @@ function castleTileDraw(pal: CastlePalette): TileDrawFn {
             g.rect(5, 5, 6, 1).fill(pal.glassLead); // 가로 납선
             g.rect(5, 11, 6, 1).fill(pal.glassLead);
           }
+          g.rect(0, s - 2, s, 2).fill(pal.wallMortar); // 벽-바닥 접점의 깊이
           break;
         }
         // 측면·하단 석축: 벽돌 엇쌓기 + 드문드문 걸린 문장 휘장, 이끼.
@@ -215,14 +214,17 @@ function castleTileDraw(pal: CastlePalette): TileDrawFn {
           g.rect(2, 12, 4, 2).fill(pal.moss);
           g.rect(11, 6, 3, 2).fill(pal.moss);
         }
+        g.rect(0, s - 2, s, 2).fill(pal.wallMortar);
         break;
       }
       case Tile.Rug: {
-        // 카펫을 걷어낸 대전당 — 라운지도 그냥 돌바닥이다. 붉은 융단은 맵에서
-        // 가장 채도 높은 면이라 통로와 연회장을 통째로 붉게 물들이고 있었다.
+        // 라운지는 돌바닥을 유지하고, 바닥 장식처럼 얇은 금실만 외곽에 둔다.
         g.rect(0, 0, s, s).fill(stone);
-        g.rect(0, 0, s, 1).fill(pal.stoneSeam);
-        g.rect(0, 0, 1, s).fill(pal.stoneSeam);
+        if ((tx + ty) % 3 === 0) g.rect(5, 7, 6, 1).fill(pal.stoneStain);
+        if (map.tiles[ty - 1]?.[tx] !== Tile.Rug) g.rect(0, 0, s, 1).fill(pal.bannerTrim);
+        if (map.tiles[ty + 1]?.[tx] !== Tile.Rug) g.rect(0, s - 1, s, 1).fill(pal.bannerTrim);
+        if (map.tiles[ty]?.[tx - 1] !== Tile.Rug) g.rect(0, 0, 1, s).fill(pal.bannerTrim);
+        if (map.tiles[ty]?.[tx + 1] !== Tile.Rug) g.rect(s - 1, 0, 1, s).fill(pal.bannerTrim);
         break;
       }
       case Tile.DeskTop: {

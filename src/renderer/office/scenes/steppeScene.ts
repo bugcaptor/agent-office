@@ -133,14 +133,17 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 61 + ty *
 
 function steppeTileDraw(pal: SteppePalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
-    const grass = (tx + ty) % 2 === 0 ? pal.grassA : pal.grassB;
+    const grass = ty % 4 === 0 ? pal.grassB : pal.grassA;
     switch (t) {
       case Tile.Floor: {
         g.rect(0, 0, s, s).fill(grass);
         // 바람에 한쪽으로 눕는 풀결 — 한 갈래만. 두 갈래를 칸마다 찍으면
         // 초원 전체가 잔털로 뒤덮여 캐릭터가 파묻힌다.
-        g.rect(3, 4, 1, 3).fill(pal.grassBlade);
-        g.rect(4, 6, 1, 2).fill(pal.grassBlade);
+        // 바람결은 세계 좌표 기준의 긴 띠로 이어진다.
+        if ((tx * s + ty * 13) % 80 < 16) {
+          g.rect(0, 6, s, 1).fill(pal.grassBlade);
+          g.rect(0, 7, s - 5, 1).fill(pal.grassBlade);
+        }
         // 장식은 드물게 — 촘촘하면 초원이 아니라 화단으로 보인다.
         const k = scatter(tx, ty, 17);
         if (k === 0) {
@@ -180,26 +183,35 @@ function steppeTileDraw(pal: SteppePalette): TileDrawFn {
               g.rect(11, 4, 3, 1).fill(pal.cloud);
               g.rect(10, 7, 3, 1).fill(pal.cloudShade);
             }
-            const peak = scatter(tx, ty, 5);
-            g.rect(0, 8 + peak, s, s - 8 - peak).fill(pal.mountainFar);
-            g.rect(0, 8 + peak, s, 2).fill(pal.mountainSnow); // 만년설 능선
-            g.rect(4, 10 + peak, 3, 1).fill(pal.mountainSnow);
+            const peaks = [13, 12, 10, 7, 5, 7, 10, 12, 11, 8, 5, 4, 7, 10, 12, 9, 6, 8, 11, 13];
+            for (let x = 0; x < s; x++) {
+              const next = peaks[Math.min(tx + 1, peaks.length - 1)];
+              const ridge = Math.round(peaks[tx] + (next - peaks[tx]) * x / s);
+              g.rect(x, ridge, 1, s - ridge).fill(pal.mountainFar);
+              g.rect(x, ridge, 1, 2).fill(pal.mountainSnow);
+            }
             break;
           }
           // 둘째 줄: 산자락이 초원으로 내려앉는 구간
           g.rect(0, 0, s, s).fill(pal.mountainNear);
           g.rect(0, 0, s, 3).fill(pal.mountainFar); // 위쪽은 먼 산 색을 이어받는다
-          const roll = scatter(tx, ty, 4);
-          g.rect(0, 7 + roll, s, s - 7 - roll).fill(pal.hillDark);
-          g.rect(0, 7 + roll, s, 1).fill(pal.hillLight);
-          g.rect(3, 9 + roll, 1, 2).fill(pal.grassBlade);
-          g.rect(11, 10 + roll, 1, 2).fill(pal.grassBlade);
+          const slopes = [5, 6, 8, 10, 11, 9, 7, 6, 7, 9, 11, 10, 8, 6, 5, 7, 9, 10, 8, 6];
+          for (let x = 0; x < s; x++) {
+            const next = slopes[Math.min(tx + 1, slopes.length - 1)];
+            const foothill = Math.round(slopes[tx] + (next - slopes[tx]) * x / s);
+            g.rect(x, foothill, 1, s - foothill).fill(pal.hillDark);
+            g.rect(x, foothill, 1, 1).fill(pal.hillLight);
+          }
           break;
         }
         // 측면·하단: 완만한 언덕 능선 + 바람에 눕는 풀
         g.rect(0, 0, s, s).fill(pal.hillDark);
-        g.rect(0, 0, s, 4).fill(pal.hillLight);
-        g.rect(0, 4, s, 1).fill(pal.hillEdge);
+        for (let x = 0; x < s; x++) {
+          const worldX = tx * s + x;
+          const hillLip = 3 + Math.floor(Math.abs((worldX % 96) - 48) / 24);
+          g.rect(x, 0, 1, hillLip).fill(pal.hillLight);
+          g.rect(x, hillLip, 1, 1).fill(pal.hillEdge);
+        }
         if (scatter(tx, ty, 3) === 0) {
           g.rect(5, 6, 1, 4).fill(pal.grassBlade);
           g.rect(7, 7, 1, 3).fill(pal.grassBlade);
@@ -212,27 +224,16 @@ function steppeTileDraw(pal: SteppePalette): TileDrawFn {
         break;
       }
       case Tile.Rug: {
-        // 펠트 깔개(에스기): 크림색 바탕에 붉은/파란 기하 문양. 칸마다 두 문양을
-        // 번갈아 놓아 여러 장을 이어 깐 것처럼 보이게 한다(통짜로 칠하면 장판).
+        // 펠트 마당: 타일별 문양 대신 넓은 중앙 메달리온과 연결된 테두리.
         g.rect(0, 0, s, s).fill(pal.feltBase);
-        g.rect(0, 0, s, 1).fill(pal.feltEdge);
-        g.rect(0, s - 1, s, 1).fill(pal.feltEdge);
-        if ((tx + ty) % 2 === 0) {
-          // 울지(무한매듭) 계열 — 바깥 테를 십자로 도려내 네 귀 브래킷만 남긴다
-          g.rect(3, 3, 10, 10).fill(pal.feltRed);
+        if ((tx - 13) % 4 === 0) g.rect(6, 0, 3, s).fill(pal.feltEdge);
+        if (tx >= 15 && tx <= 16 && ty >= 9 && ty <= 10) {
+          g.rect(0, 6, s, 3).fill(pal.feltRed);
+          g.rect(6, 0, 3, s).fill(pal.feltBlue);
           g.rect(5, 5, 6, 6).fill(pal.feltBase);
-          g.rect(7, 2, 2, 12).fill(pal.feltBase);
-          g.rect(2, 7, 12, 2).fill(pal.feltBase);
-          g.rect(6, 6, 4, 4).fill(pal.feltBlue);
-          g.rect(7, 7, 2, 2).fill(pal.feltBase);
-        } else {
-          // 마름모 + 뿔(에베르) 문양 — 십자 위에 겹친 동심 사각
-          g.rect(7, 3, 2, 10).fill(pal.feltBlue);
-          g.rect(3, 7, 10, 2).fill(pal.feltBlue);
-          g.rect(5, 5, 6, 6).fill(pal.feltRed);
-          g.rect(6, 6, 4, 4).fill(pal.feltBase);
-          g.rect(7, 7, 2, 2).fill(pal.feltRed);
         }
+        if (map.tiles[ty - 1]?.[tx] !== Tile.Rug) g.rect(0, 0, s, 1).fill(pal.feltEdge);
+        if (map.tiles[ty + 1]?.[tx] !== Tile.Rug) g.rect(0, s - 1, s, 1).fill(pal.feltEdge);
         break;
       }
       case Tile.DeskTop: {

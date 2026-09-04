@@ -107,12 +107,25 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 73 + ty *
 
 function beachTileDraw(pal: BeachPalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
-    const sand = (tx + ty) % 2 === 0 ? pal.sandA : pal.sandB;
+    // 타일 체커 대신 넓은 모래 결을 쓴다. 가구가 있는 칸도 같은 바탕을 받아
+    // 해변이 잘린 격자가 아니라 한 장의 백사장으로 읽힌다.
+    const sand = ty % 5 === 0 ? pal.sandB : pal.sandA;
     switch (t) {
       case Tile.Floor: {
         g.rect(0, 0, s, s).fill(sand);
-        // 잔물결 자국(1px) — 오피스 바닥의 코너 도트 자리.
-        g.rect(2, 3, 3, 1).fill(pal.sandDot); // 칸마다 하나만
+        // 세계 좌표 기준의 완만한 바람결. 여섯 칸마다 한 번만 꺾여 반복감이 약하다.
+        const ripple = (tx * s + ty * 5) % 72;
+        if (ripple < 16) g.rect(0, 4 + (ripple % 3), s, 1).fill(pal.sandDot);
+        // 물가가 닿는 첫 바닥 칸에는 이어지는 포말을 얹는다.
+        if (ty === SEA_ROWS) {
+          // 젖은 모래와 포말 경계는 픽셀마다 완만하게 오르내린다.
+          for (let x = 0; x < s; x++) {
+            const worldX = tx * s + x;
+            const shore = 2 + Math.abs((worldX % 48) - 24) / 12;
+            g.rect(x, 0, 1, Math.floor(shore)).fill(pal.sandB);
+            if (worldX % 48 < 28) g.rect(x, Math.floor(shore), 1, 1).fill(pal.seaFoam);
+          }
+        }
         // 장식은 드물게 — 촘촘하면 모래사장이 아니라 잡동사니로 보인다.
         const k = scatter(tx, ty, 23);
         if (k === 0) {
@@ -135,22 +148,32 @@ function beachTileDraw(pal: BeachPalette): TileDrawFn {
           g.rect(0, 0, s, s).fill(nearShore ? pal.seaMid : pal.seaDeep);
           if (!nearShore) {
             g.rect(0, 0, s, 3).fill(pal.seaHorizon); // 수평선 쪽이 더 짙다
-            // 먼 바다 물결(1px 대시)
-            g.rect(scatter(tx, ty, 6) + 1, 7, 4, 1).fill(pal.seaMid);
-            g.rect(scatter(tx, ty + 1, 5) + 8, 12, 3, 1).fill(pal.seaMid);
+            // 물결선도 전역 x의 완만한 굽이로 이어진다.
+            for (let x = 0; x < s; x++) {
+              const worldX = tx * s + x;
+              const waveY = 8 + Math.floor(Math.abs((worldX % 56) - 28) / 14);
+              g.rect(x, waveY, 1, 1).fill(pal.seaMid);
+              if (worldX % 72 < 34) g.rect(x, 13 - Math.floor(Math.abs((worldX % 40) - 20) / 10), 1, 1).fill(pal.seaMid);
+            }
           } else {
             // 밀려오는 파도 거품: 아래쪽 두 줄 + 1px 물보라
-            g.rect(0, s - 5, s, 2).fill(pal.seaFoam);
-            g.rect(0, s - 3, s, 3).fill(pal.seaFoam);
-            g.rect(scatter(tx, ty, 7) + 2, s - 7, 3, 1).fill(pal.seaFoam);
-            g.rect(2, s - 6, 2, 1).fill(pal.seaMid);
+            for (let x = 0; x < s; x++) {
+              const worldX = tx * s + x;
+              const crestY = 10 + Math.floor(Math.abs((worldX % 64) - 32) / 16);
+              g.rect(x, crestY, 1, s - crestY).fill(pal.seaFoam);
+              if (worldX % 64 < 40) g.rect(x, crestY - 1, 1, 1).fill(pal.seaFoam);
+            }
           }
           break;
         }
         // 모래언덕(측면·하단): 밝은 능선 + 사초 포기
         g.rect(0, 0, s, s).fill(pal.dune);
-        g.rect(0, 0, s, 4).fill(pal.duneTop);
-        g.rect(2, 4, 3, 1).fill(pal.sandDot);
+        for (let x = 0; x < s; x++) {
+          const worldX = tx * s + x;
+          const duneLip = 3 + Math.floor(Math.abs((worldX % 96) - 48) / 24);
+          g.rect(x, 0, 1, duneLip).fill(pal.duneTop);
+          g.rect(x, duneLip, 1, 1).fill(pal.sandDot);
+        }
         if (scatter(tx, ty, 3) === 0) {
           g.rect(6, 5, 1, 5).fill(pal.duneGrass);
           g.rect(8, 6, 1, 4).fill(pal.duneGrass);
@@ -159,12 +182,11 @@ function beachTileDraw(pal: BeachPalette): TileDrawFn {
         break;
       }
       case Tile.Rug: {
-        // 비치타월: 가로 줄무늬 + 1px 술
+        // 하나의 긴 비치타월: 타일마다 되풀이하던 줄무늬 대신 넓은 세로 띠.
         g.rect(0, 0, s, s).fill(pal.towel);
-        g.rect(0, 2, s, 2).fill(pal.towelStripe);
-        g.rect(0, 8, s, 2).fill(pal.towelStripe);
-        g.rect(0, 0, s, 1).fill(pal.towelStripe);
-        g.rect(0, s - 1, s, 1).fill(pal.towelStripe);
+        if ((tx - 2) % 6 < 2) g.rect(6, 0, 4, s).fill(pal.towelStripe);
+        if (map.tiles[ty - 1]?.[tx] !== Tile.Rug) g.rect(0, 0, s, 1).fill(pal.towelStripe);
+        if (map.tiles[ty + 1]?.[tx] !== Tile.Rug) g.rect(0, s - 1, s, 1).fill(pal.towelStripe);
         break;
       }
       case Tile.DeskTop: {

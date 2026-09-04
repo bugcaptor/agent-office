@@ -376,7 +376,12 @@ export const OFFICE_MAP: OfficeMap = {
 
 위 배치는 3행 × 4쌍 = **데스크 슬롯 12개**. 에이전트가 더 많아지면 `GRID`만 확장.
 
-**풍경(scene)별 맵.** 맵은 하나가 아니라 풍경마다 한 벌씩 있다(`office`/`beach`/`valley`, `office/scenes/*`). 세 맵 모두 같은 `Tile` enum과 같은 20×14를 쓰고 — 이게 계약의 전부다 — `buildSceneMap(GRID, breakRoom)`이라는 같은 함수로 만들어진다. 그래서 `deriveDesks`·좌석 배정·행동 FSM·줄서기는 풍경을 전혀 모른다. 풍경이 정하는 것은 자기 `GRID` 문자열과 휴게 사각형뿐이고, 좌석·보스 책상(`bossDesk`)·줄 슬롯(`queueSlots`)은 거기서 유도된다. 줄 슬롯 방향은 보스 자리가 맵 오른쪽 절반이면 서쪽, 왼쪽 절반이면 동쪽으로 자동 결정된다(해변은 우측 라이프가드 타워, 계곡은 좌측 통나무 오두막). `OfficeMap`의 `breakRoom`/`bossDesk`/`queueSlots`는 옵셔널이라, 이 필드가 생기기 전부터 있던 테스트 픽스처 맵은 오피스 기본 상수로 폴백한다. 각 칸을 무슨 그림으로 그릴지는 `TileRenderer`가 아니라 풍경이 주입하는 `TileDrawFn`이 정한다 — 베이크/가구 분리/zIndex 기계는 §2.4 그대로 공용이다. 풍경 축의 UI·영속·테마 교차는 docs/subsystem-c-ui.md §6.5.
+**풍경(scene)별 맵.** 맵은 하나가 아니라 풍경마다 한 벌씩 있다(`office`/`beach`/`valley`/`spaceship`/`castle`/`steppe`/`cruise`/`factory`/`volcano`/`zombie`, `office/scenes/*`). 열 맵 모두 같은 `Tile` enum과 같은 20×14를 쓰고 — 이게 계약의 전부다 — `buildSceneMap(GRID, breakRoom)`이라는 같은 함수로 만들어진다. 그래서 `deriveDesks`·좌석 배정·행동 FSM·줄서기는 풍경을 전혀 모른다. 풍경이 정하는 것은 자기 `GRID` 문자열과 휴게 사각형뿐이고, 좌석·보스 책상(`bossDesk`)·줄 슬롯(`queueSlots`)은 거기서 유도된다. 줄 슬롯 방향은 보스 자리가 맵 오른쪽 절반이면 서쪽, 왼쪽 절반이면 동쪽으로 자동 결정된다(해변은 우측 라이프가드 타워, 계곡은 좌측 통나무 오두막). `OfficeMap`의 `breakRoom`/`bossDesk`/`queueSlots`는 옵셔널이라, 이 필드가 생기기 전부터 있던 테스트 픽스처 맵은 오피스 기본 상수로 폴백한다. 각 칸을 무슨 그림으로 그릴지는 `TileRenderer`가 아니라 풍경이 주입하는 `TileDrawFn`이 정한다 — 베이크/가구 분리/zIndex 기계는 §2.4 그대로 공용이다. 풍경 축의 UI·영속·테마 교차는 docs/subsystem-c-ui.md §6.5.
+
+**풍경 배경 저작 규칙.** Floor·Wall·Rug의 재질은 16px마다 동일한 무늬를 반복하기보다 월드 좌표(`tx·s`, `ty·s`)의 연속 위상을 쓴다. 파도·해안선·능선과 건물의 창·기둥·패널은 여러 칸에 걸친 형태로 읽히게 하고, 실제 드로우 사각형은 각 타일 안에 둔다. 바닥은 낮은 대비의 큰 면과 드문 디테일을 사용하고, 벽 접점·물가·라운지 외곽에 명암을 모아 캐릭터 영역의 가독성을 유지한다. 경계는 이웃 타일을 보고 연결하고, 재베이크할 때 무늬가 바뀌지 않도록 좌표 기반의 결정적 계산만 사용한다.
+
+이 디테일은 기존 `drawTile`과 정적 베이크 안에서 처리한다. 의미 타일 GRID, 좌석·줄서기·경로 탐색과 가구 y-sort는 별도 계약으로 유지한다. 오피스는 `theme.pixi`, 나머지는 `quietPalette → desaturatePalette → adaptPalette`를 그대로 사용하며, 새로운 재질색도 해당 팔레트에 포함한다. `scripts/render-scenes.mjs`의 10풍경×4테마 미리보기로 색과 캐릭터 가독성을 확인할 수 있다(실제 Pixi 캐시·오버레이 검증을 대체하지는 않는다).
+
 
 ### 2.3 데스크 배정 — 결정적
 

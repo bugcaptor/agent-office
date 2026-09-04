@@ -2,6 +2,17 @@
 
 프로젝트 유지보수용 스크립트 모음.
 
+## 풍경 미리보기 (render-scenes.mjs)
+
+10개 풍경 × 4개 테마의 개별 PNG와 테마별 모음 이미지를 만든다. 실제 `drawTile`의 사각형·색을 CPU 캔버스에 그리며, 좌석에 생성 캐릭터를 올려 배경 위 가독성을 확인한다. 앱의 Pixi 캐시·y-sort·실시간 오버레이까지 재현하는 도구는 아니다.
+
+```bash
+rtk node scripts/render-scenes.mjs /tmp/agent-office-scenes
+rtk node scripts/render-scenes.mjs /tmp/agent-office-scenes-before --baseline
+```
+
+`--baseline`은 풍경 모듈을 Git `HEAD`에서 읽어 커밋 전 배경과 비교한다. 작업 파일은 변경하지 않는다. 출력은 저장소 밖에 두고, 확인할 때는 개별 PNG를 정수 배율로 확대한다.
+
 ## 빌드 앤 런 (build-and-run.sh)
 
 클론 직후 한 번에 실행하는 진입 스크립트(`npm start`로도 호출). 요구사항(node 18+·cargo) 점검 → 필요 시 `npm install` → 기본은 `npm run tauri dev`. `--install`은 macOS에서 자체 서명 인증서 확인(없으면 생성 여부를 물음) 후 `npm run install:mac`으로 서명 설치·실행하고, 그 외 OS는 `npm run tauri build` 후 산출물 경로를 안내한다.

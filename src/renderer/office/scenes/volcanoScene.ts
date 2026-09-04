@@ -126,13 +126,13 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 53 + ty *
 
 function volcanoTileDraw(pal: VolcanoPalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
-    const basalt = (tx + ty) % 2 === 0 ? pal.basaltA : pal.basaltB;
+    const basalt = ty % 4 === 0 ? pal.basaltB : pal.basaltA;
     switch (t) {
       case Tile.Floor: {
         g.rect(0, 0, s, s).fill(basalt);
         // 굳은 용암의 잔금 — 칸마다 하나만. 두 갈래를 다 그으면 바닥이
         // 술렁여서 그 위를 걷는 캐릭터가 묻힌다.
-        g.rect(2, 4, 4, 1).fill(pal.basaltSeam);
+        if ((tx * s + ty * 17) % 96 < 16) g.rect(0, 5, s, 1).fill(pal.basaltSeam);
         // 장식은 드물게 — 촘촘하면 화산지대가 아니라 불꽃놀이가 된다.
         const k = scatter(tx, ty, 29);
         if (k === 0) {
@@ -163,20 +163,27 @@ function volcanoTileDraw(pal: VolcanoPalette): TileDrawFn {
           if (!nearShore) {
             g.rect(0, 0, s, 3).fill(pal.rockShade); // 호수 건너편 암흑 능선
             g.rect(0, 3, s, 1).fill(pal.lavaCrust);
-            // 먼 용암 흐름(1px 대시)
-            g.rect(scatter(tx, ty, 6) + 1, 7, 5, 1).fill(pal.lavaMid);
-            g.rect(scatter(tx, ty + 1, 5) + 8, 12, 3, 1).fill(pal.lavaHot);
-            // 표면에 떠다니는 크러스트 판
-            if (scatter(tx, ty, 3) === 0) {
-              g.rect(4, 9, 7, 3).fill(pal.lavaCrust);
-              g.rect(5, 9, 5, 1).fill(pal.lavaCrustHi);
+            // 길게 흐르는 용암 결 및 떠 있는 하나의 큰 크러스트 띠.
+            for (let x = 0; x < s; x++) {
+              const worldX = tx * s + x;
+              g.rect(x, 7 + Math.floor(Math.abs((worldX % 72) - 36) / 18), 1, 1).fill(pal.lavaMid);
+              if (worldX % 80 < 52) g.rect(x, 12 - Math.floor(Math.abs((worldX % 48) - 24) / 12), 1, 1).fill(pal.lavaHot);
+              // 6타일 폭 판이 가운데 두껍고 양 끝에서 1px씩 가늘어진다.
+              const plate = worldX - 80;
+              if (plate >= 0 && plate < 96) {
+                const edge = Math.min(plate, 95 - plate);
+                const top = 10 - Math.min(2, Math.floor(edge / 16));
+                const height = 1 + Math.min(3, Math.floor(edge / 16));
+                g.rect(x, top, 1, height).fill(pal.lavaCrust);
+                if (height > 2) g.rect(x, top, 1, 1).fill(pal.lavaCrustHi);
+              }
             }
           } else {
             // 물가: 부글거리는 기포 + 식어 굳은 가장자리(아래쪽 두 줄)
-            const b = scatter(tx, ty, 5);
-            g.rect(b + 2, 4, 3, 3).fill(pal.lavaHot);
-            g.rect(b + 3, 3, 1, 1).fill(pal.forgeCore);
-            g.rect(11, 8, 2, 2).fill(pal.lavaHot);
+            for (let x = 0; x < s; x++) {
+              const worldX = tx * s + x;
+              if (worldX % 48 < 10) g.rect(x, 5 + Math.floor(Math.abs((worldX % 24) - 12) / 8), 1, 2).fill(pal.lavaHot);
+            }
             g.rect(0, s - 5, s, 2).fill(pal.lavaCrustHi);
             g.rect(0, s - 3, s, 3).fill(pal.lavaCrust);
             g.rect(scatter(tx, ty, 7) + 2, s - 2, 3, 1).fill(pal.crack); // 굳은 틈 사이 잔열
@@ -185,9 +192,8 @@ function volcanoTileDraw(pal: VolcanoPalette): TileDrawFn {
         }
         // 화산 암벽(측면·하단): 밝은 상단 능선 + 균열 잔열 + 김
         g.rect(0, 0, s, s).fill(pal.rockWall);
-        g.rect(0, 0, s, 3).fill(pal.rockTop);
-        g.rect(2, 6, 4, 1).fill(pal.rockShade);
-        g.rect(9, 10, 4, 1).fill(pal.rockShade);
+        g.rect(0, 0, s, 2).fill(pal.rockTop);
+        for (let x = 0; x < s; x++) g.rect(x, 2 + ((tx * s + x) % 13 < 5 ? 1 : 0), 1, 1).fill(pal.rockTop);
         if (scatter(tx, ty, 4) === 0) {
           g.rect(6, 4, 1, 7).fill(pal.crack);
           g.rect(6, 6, 2, 2).fill(pal.crackHot);
@@ -198,14 +204,14 @@ function volcanoTileDraw(pal: VolcanoPalette): TileDrawFn {
         break;
       }
       case Tile.Rug: {
-        // 흑요석 판: 유리질 검정 + 판 이음매 + 비스듬한 반사 두 줄
+        // 하나로 이어진 흑요석 바닥: 타일 이음 대신 넓은 사선 반사만 남긴다.
         g.rect(0, 0, s, s).fill(pal.obsidian);
-        g.rect(0, 0, s, 1).fill(pal.obsidianEdge); // 판 이음매(위·왼쪽)
-        g.rect(0, 0, 1, s).fill(pal.obsidianEdge);
-        g.rect(2, 4, 6, 1).fill(pal.obsidianHi);
-        g.rect(3, 5, 3, 1).fill(pal.obsidianHi);
-        g.rect(9, 10, 5, 1).fill(pal.obsidianHi);
-        g.rect(11, 11, 3, 1).fill(pal.obsidianHi);
+        for (let x = 0; x < s; x++) {
+          const worldX = tx * s + x;
+          if (worldX >= 48 && worldX < 144) g.rect(x, 4 + Math.floor((worldX - 48) / 24), 1, 1).fill(pal.obsidianHi);
+        }
+        if (map.tiles[ty - 1]?.[tx] !== Tile.Rug) g.rect(0, 0, s, 1).fill(pal.obsidianEdge);
+        if (map.tiles[ty + 1]?.[tx] !== Tile.Rug) g.rect(0, s - 1, s, 1).fill(pal.obsidianEdge);
         break;
       }
       case Tile.DeskTop: {

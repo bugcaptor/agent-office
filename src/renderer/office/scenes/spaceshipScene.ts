@@ -151,19 +151,20 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 131 + ty 
 
 function spaceshipTileDraw(pal: SpaceshipPalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
-    // 데크 패널은 체커로 깐다 — 오피스 바닥과 같은 이디엄이라 패널 이음선이
-    // 칸 경계와 맞아떨어져 보인다.
-    const deck = (tx + ty) % 2 === 0 ? pal.deckA : pal.deckB;
+    // 32px 단위의 넓은 데크 패널. 타일마다 색·리벳을 반복하지 않는다.
+    const deck = (Math.floor(tx / 2) + Math.floor(ty / 2)) % 2 === 0 ? pal.deckA : pal.deckB;
     switch (t) {
       case Tile.Floor: {
         g.rect(0, 0, s, s).fill(deck);
-        // 패널 이음선(위·왼쪽 1px) + 네 귀퉁이 리벳
-        g.rect(0, 0, s, 1).fill(pal.deckSeam);
-        g.rect(0, 0, 1, s).fill(pal.deckSeam);
-        // 리벳은 대각으로 둘만 — 네 귀퉁이를 다 찍으면 칸마다 사각 점무늬가
-        // 생겨 바닥 전체가 격자로 진동한다.
-        g.rect(2, 2, 1, 1).fill(pal.deckRivet);
-        g.rect(s - 3, s - 3, 1, 1).fill(pal.deckRivet);
+        // 패널 줄눈과 리벳은 월드 32px 격자에서만 보인다.
+        if ((ty * s) % 32 === 0) g.rect(0, 0, s, 1).fill(pal.deckSeam);
+        if ((tx * s) % 32 === 0) g.rect(0, 0, 1, s).fill(pal.deckSeam);
+        if (tx % 2 === 0 && ty % 2 === 0) g.rect(2, 2, 1, 1).fill(pal.deckRivet);
+        // 큰 뷰포트 바로 아래에 반사된 창빛 띠를 얹어 브리지의 깊이를 만든다.
+        if (ty === VIEW_ROWS) {
+          g.rect(0, 0, s, 2).fill(pal.deckRivet);
+          g.rect(0, 2, s, 1).fill(pal.deckSeam);
+        }
         // 장식은 드물게 — 촘촘하면 격납고가 아니라 고물상으로 보인다.
         const k = scatter(tx, ty, 29);
         if (k === 0) {
@@ -246,16 +247,15 @@ function spaceshipTileDraw(pal: SpaceshipPalette): TileDrawFn {
           }
           break;
         }
-        // 선체 격벽: 가로 리브 + 리벳, 가끔 경고 스트라이프
+        // 선체 격벽: 월드를 가로지르는 리브·기둥과 바닥 접점 그림자.
         g.rect(0, 0, s, s).fill(pal.bulkhead);
         g.rect(0, 0, s, 2).fill(pal.bulkheadHi);
         g.rect(0, s - 2, s, 2).fill(pal.bulkheadShade);
-        g.rect(0, 5, s, 1).fill(pal.bulkheadShade);
-        g.rect(0, 12, s, 1).fill(pal.bulkheadShade);
-        g.rect(2, 3, 1, 1).fill(pal.rivet);
-        g.rect(s - 3, 3, 1, 1).fill(pal.rivet);
-        g.rect(2, 10, 1, 1).fill(pal.rivet);
-        g.rect(s - 3, 10, 1, 1).fill(pal.rivet);
+        if (tx % 4 === 0) {
+          g.rect(0, 2, 2, s - 4).fill(pal.frame);
+          g.rect(0, 2, 1, s - 4).fill(pal.frameHi);
+        }
+        if (tx % 4 === 2) g.rect(7, 6, 1, 1).fill(pal.rivet);
         if (scatter(tx, ty, 4) === 0) {
           // 경고 스트라이프: 검은 띠 위에 노란 사선 세 개(전부 칸 안쪽에서 끝난다)
           g.rect(0, 6, s, 6).fill(pal.warnDark);
@@ -268,12 +268,10 @@ function spaceshipTileDraw(pal: SpaceshipPalette): TileDrawFn {
         break;
       }
       case Tile.Rug: {
-        // 홀로그램 라운지 패드: 어두운 유리판 위에 발광 격자
+        // 홀로그램 라운지 패드: 한 장의 유리판 위를 흐르는 가는 회로.
         g.rect(0, 0, s, s).fill(pal.holoPad);
-        g.rect(0, 0, s, 1).fill(pal.holoGrid); // 칸 경계가 격자선이 된다
-        g.rect(0, 0, 1, s).fill(pal.holoGrid);
-        g.rect(0, 8, s, 1).fill(pal.holoGrid); // 칸 안쪽 반 칸 격자
-        g.rect(8, 0, 1, s).fill(pal.holoGrid);
+        if ((ty * s) % 32 === 0) g.rect(0, 8, s, 1).fill(pal.holoGrid);
+        if ((tx * s) % 32 === 16) g.rect(0, 0, 1, s).fill(pal.holoGrid);
         // 교차점 발광 — 칸마다 자리를 바꿔 패드 전체가 은은하게 깜빡이는 결
         if ((tx + ty) % 2 === 0) {
           g.rect(8, 8, 1, 1).fill(pal.holoGlow);
@@ -282,6 +280,10 @@ function spaceshipTileDraw(pal: SpaceshipPalette): TileDrawFn {
           g.rect(0, 0, 1, 1).fill(pal.holoGlow);
           g.rect(11, 12, 2, 1).fill(pal.holoGlow);
         }
+        if (map.tiles[ty - 1]?.[tx] !== Tile.Rug) g.rect(0, 0, s, 1).fill(pal.holoGlow);
+        if (map.tiles[ty + 1]?.[tx] !== Tile.Rug) g.rect(0, s - 1, s, 1).fill(pal.holoGlow);
+        if (map.tiles[ty]?.[tx - 1] !== Tile.Rug) g.rect(0, 0, 1, s).fill(pal.holoGlow);
+        if (map.tiles[ty]?.[tx + 1] !== Tile.Rug) g.rect(s - 1, 0, 1, s).fill(pal.holoGlow);
         break;
       }
       case Tile.DeskTop: {

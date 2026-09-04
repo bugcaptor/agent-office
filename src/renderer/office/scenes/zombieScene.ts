@@ -128,14 +128,15 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 59 + ty *
 
 function zombieTileDraw(pal: ZombiePalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
-    const ground = (tx + ty) % 2 === 0 ? pal.asphaltA : pal.asphaltB;
+    const ground = (Math.floor(tx / 2) + Math.floor(ty / 2)) % 2 === 0 ? pal.asphaltA : pal.asphaltB;
     switch (t) {
       case Tile.Floor: {
         g.rect(0, 0, s, s).fill(ground);
-        // 금 간 자국 — 칸마다 어긋나게 밀어 격자로 읽히지 않게 한다. 세 갈래를
-        // 다 그으면 노면이 온통 금이라 캐릭터의 윤곽과 경쟁한다: 가로 한 줄만.
-        const c = scatter(tx, ty, 4);
-        g.rect(3 + c, 5, 6, 1).fill(pal.crack);
+        // 긴 균열은 2×2 월드 블록의 일부에만 걸쳐, 작은 반복 무늬가 되지 않는다.
+        if (scatter(Math.floor(tx / 2), Math.floor(ty / 2), 5) === 0) {
+          g.rect(0, 6, s, 1).fill(pal.crack);
+          if (tx % 2 === 1) g.rect(8, 6, 1, 6).fill(pal.crack);
+        }
         // 장식은 해변·계곡과 같은 이유로 드물게 — 촘촘하면 폐허가 아니라 쓰레기장이 된다.
         const k = scatter(tx, ty, 23);
         if (k === 0) {
@@ -154,20 +155,23 @@ function zombieTileDraw(pal: ZombiePalette): TileDrawFn {
       }
       case Tile.Wall: {
         if (ty === 0) {
-          // 흐린 하늘 + 무너진 고층 실루엣 두 채. 칸마다 높이를 흔들어
-          // 스카이라인이 한 줄로 평평해지지 않게 한다.
+          // 세계 x에 고정한 두 겹의 폐건물 스카이라인. 타일마다 건물을 복제하지 않는다.
           g.rect(0, 0, s, s).fill(pal.sky);
           g.rect(0, 0, s, 4).fill(pal.skyHaze);
-          const h = scatter(tx, ty, 5);
-          g.rect(1, 5 + h, 6, s - 5 - h).fill(pal.ruinMid);
-          g.rect(1, 5 + h, 6, 1).fill(pal.ruinDark); // 부서진 옥상 라인
-          g.rect(2, 7 + h, 2, 2).fill(pal.ruinWindow);
-          g.rect(4, 10 + h, 2, 2).fill(pal.ruinWindow);
-          const h2 = scatter(tx, ty + 1, 3);
-          g.rect(9, 8 - h2, 6, s - 8 + h2).fill(pal.ruinDark);
-          g.rect(9, 8 - h2, 3, 1).fill(pal.ruinMid);
-          g.rect(10, 10 - h2, 2, 2).fill(pal.ruinWindow);
-          g.rect(13, 12 - h2, 1, 2).fill(pal.ruinWindow);
+          // 먼 건물층(낮고 흐림)
+          if ((tx >= 1 && tx <= 4) || (tx >= 7 && tx <= 11) || (tx >= 15 && tx <= 18)) {
+            g.rect(0, 10, s, 6).fill(pal.ruinMid);
+          }
+          // 앞 건물층: 폭과 옥상 높이가 제각각인 네 덩어리
+          if (tx >= 2 && tx <= 4) g.rect(0, 6, s, 10).fill(pal.ruinDark);
+          if (tx >= 6 && tx <= 8) g.rect(0, 3, s, 13).fill(pal.ruinMid);
+          if (tx >= 10 && tx <= 13) g.rect(0, 8, s, 8).fill(pal.ruinDark);
+          if (tx >= 16 && tx <= 18) g.rect(0, 5, s, 11).fill(pal.ruinMid);
+          if (tx === 2 || tx === 6 || tx === 10 || tx === 16) g.rect(0, tx === 6 ? 3 : tx === 2 ? 6 : tx === 10 ? 8 : 5, 3, 1).fill(pal.ruinWindow);
+          if (tx >= 2 && tx <= 4 && tx !== 3) g.rect(6, 10, 2, 3).fill(pal.ruinWindow);
+          if (tx >= 6 && tx <= 8 && tx !== 7) g.rect(8, 6, 2, 3).fill(pal.ruinWindow);
+          if (tx >= 10 && tx <= 13 && tx !== 12) g.rect(5, 11, 2, 2).fill(pal.ruinWindow);
+          if (tx >= 16 && tx <= 18 && tx !== 17) g.rect(9, 8, 2, 3).fill(pal.ruinWindow);
           break;
         }
         // 바리케이드. 맨 윗 행(정문 담장)만 판자를 한 단 내려 세우고 그 위로
@@ -201,6 +205,7 @@ function zombieTileDraw(pal: ZombiePalette): TileDrawFn {
           g.rect(3, 9, 10, 1).fill(pal.tireHi);
           g.rect(6, 11, 4, 3).fill(pal.plankB); // 타이어 가운데 구멍
         }
+        g.rect(0, s - 2, s, 2).fill(pal.plankSeam); // 담장 아래 그늘
         break;
       }
       case Tile.Rug: {
@@ -208,8 +213,10 @@ function zombieTileDraw(pal: ZombiePalette): TileDrawFn {
         g.rect(0, 0, s, s).fill(pal.mat);
         g.rect(0, 3, s, 2).fill(pal.matStripe);
         g.rect(0, 9, s, 2).fill(pal.matStripe);
-        g.rect(0, 0, s, 1).fill(pal.matEdge);
-        g.rect(0, s - 1, s, 1).fill(pal.matEdge);
+        if (map.tiles[ty - 1]?.[tx] !== Tile.Rug) g.rect(0, 0, s, 1).fill(pal.matEdge);
+        if (map.tiles[ty + 1]?.[tx] !== Tile.Rug) g.rect(0, s - 1, s, 1).fill(pal.matEdge);
+        if (map.tiles[ty]?.[tx - 1] !== Tile.Rug) g.rect(0, 0, 1, s).fill(pal.matEdge);
+        if (map.tiles[ty]?.[tx + 1] !== Tile.Rug) g.rect(s - 1, 0, 1, s).fill(pal.matEdge);
         if (scatter(tx, ty, 5) === 0) {
           g.rect(5, 6, 5, 4).fill(pal.matPatch);
           g.rect(5, 6, 5, 1).fill(pal.matEdge); // 기운 실밥

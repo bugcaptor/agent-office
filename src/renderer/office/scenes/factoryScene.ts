@@ -148,13 +148,13 @@ function brickBase(g: Graphics, s: number, pal: FactoryPalette, ty: number): voi
 
 function factoryTileDraw(pal: FactoryPalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
-    const concrete = (tx + ty) % 2 === 0 ? pal.concreteA : pal.concreteB;
+    const concrete = (Math.floor(tx / 2) + Math.floor(ty / 2)) % 2 === 0 ? pal.concreteA : pal.concreteB;
     switch (t) {
       case Tile.Floor: {
         g.rect(0, 0, s, s).fill(concrete);
-        // 콘크리트 슬래브 이음매 — 칸 경계와 맞아떨어져 격자 바닥으로 읽힌다.
-        g.rect(0, s - 1, s, 1).fill(pal.concreteSeam);
-        g.rect(s - 1, 0, 1, s).fill(pal.concreteSeam);
+        // 32px 슬래브 이음매만 남겨 바닥이 작은 체커로 보이지 않게 한다.
+        if ((ty * s) % 32 === 0) g.rect(0, 0, s, 1).fill(pal.concreteSeam);
+        if ((tx * s) % 32 === 0) g.rect(0, 0, 1, s).fill(pal.concreteSeam);
         // 장식은 드물게 — 촘촘하면 작업장이 아니라 폐허로 보인다.
         const k = scatter(tx, ty, 19);
         if (k === 0) {
@@ -180,30 +180,30 @@ function factoryTileDraw(pal: FactoryPalette): TileDrawFn {
       }
       case Tile.Wall: {
         if (ty === 0) {
-          // 벽 상단 채광창(하이 윈도): 벽돌에 낸 창틀 + 유리 2쪽
+          // 3~4칸 폭의 채광 베이. 창을 타일마다 복제하지 않고 기둥 사이에 잇는다.
           brickBase(g, s, pal, ty);
-          g.rect(1, 2, 14, 9).fill(pal.frame);
-          g.rect(2, 3, 12, 7).fill(pal.glass);
-          g.rect(7, 3, 2, 7).fill(pal.frame); // 중간 문설주
-          g.rect(2, 3, 5, 2).fill(pal.glassHi); // 들이치는 빛
-          g.rect(9, 3, 3, 1).fill(pal.glassHi);
-          if (scatter(tx, ty, 5) === 0) g.rect(3, 7, 3, 1).fill(pal.frame); // 금 간 유리
+          const inBay = (tx >= 2 && tx <= 5) || (tx >= 9 && tx <= 12) || (tx >= 15 && tx <= 17);
+          if (inBay) {
+            g.rect(0, 3, s, 8).fill(pal.glass);
+            g.rect(0, 3, s, 2).fill(pal.glassHi);
+            g.rect(0, 10, s, 1).fill(pal.frame);
+            if (tx === 2 || tx === 9 || tx === 15) g.rect(0, 2, 2, 10).fill(pal.frame);
+            if (tx === 5 || tx === 12 || tx === 17) g.rect(s - 2, 2, 2, 10).fill(pal.frame);
+            if (tx === 3 || tx === 10 || tx === 16) g.rect(7, 3, 2, 8).fill(pal.frame);
+          }
           break;
         }
         if (ty === 1) {
-          // 배관·덕트: 굵은 관 + 가는 관, 칸마다 플랜지/밸브를 번갈아
+          // 채광 베이 아래를 잇는 설비관. 세 개의 기둥 위치에서만 아래로 꺾인다.
           brickBase(g, s, pal, ty);
           g.rect(0, 2, s, 5).fill(pal.pipe);
           g.rect(0, 2, s, 1).fill(pal.pipeHi);
           g.rect(0, 6, s, 1).fill(pal.pipeJoint);
           g.rect(0, 11, s, 3).fill(pal.pipe);
           g.rect(0, 11, s, 1).fill(pal.pipeHi);
-          if (tx % 3 === 0) {
-            g.rect(5, 1, 3, 7).fill(pal.pipeJoint); // 플랜지 이음
-            g.rect(5, 1, 3, 1).fill(pal.pipeHi);
-          } else if (tx % 3 === 1) {
-            g.rect(10, 7, 2, 4).fill(pal.pipeJoint); // 굵은 관 → 가는 관 분기
-            g.rect(9, 8, 4, 1).fill(pal.hazardYellow); // 밸브 핸들
+          if (tx === 3 || tx === 10 || tx === 16) {
+            g.rect(7, 1, 3, 10).fill(pal.pipeJoint); // 창 중앙에서 내려오는 연결관
+            g.rect(6, 7, 5, 1).fill(pal.hazardYellow); // 밸브 핸들
           }
           break;
         }
@@ -240,14 +240,17 @@ function factoryTileDraw(pal: FactoryPalette): TileDrawFn {
           g.rect(5, 4, 6, 2).fill(pal.hazardYellow); // 감전 주의 라벨
           g.rect(10, 7, 1, 2).fill(pal.steelHi); // 걸쇠
         }
+        g.rect(0, s - 2, s, 2).fill(pal.shadow); // 벽-바닥 접점 그림자
         break;
       }
       case Tile.Rug: {
-        // 노란 빗금 안전구역: 바탕 노랑 + 검정 사선 + 구역 경계 1px
+        // 노란 빗금 안전구역: 내부 선을 지워 하나의 휴게 패드로 읽힌다.
         g.rect(0, 0, s, s).fill(pal.hazardYellow);
         hazardStripes(g, s, pal.hazardDark);
-        g.rect(0, 0, s, 1).fill(pal.hazardEdge);
-        g.rect(0, s - 1, s, 1).fill(pal.hazardEdge);
+        if (map.tiles[ty - 1]?.[tx] !== Tile.Rug) g.rect(0, 0, s, 1).fill(pal.hazardEdge);
+        if (map.tiles[ty + 1]?.[tx] !== Tile.Rug) g.rect(0, s - 1, s, 1).fill(pal.hazardEdge);
+        if (map.tiles[ty]?.[tx - 1] !== Tile.Rug) g.rect(0, 0, 1, s).fill(pal.hazardEdge);
+        if (map.tiles[ty]?.[tx + 1] !== Tile.Rug) g.rect(s - 1, 0, 1, s).fill(pal.hazardEdge);
         break;
       }
       case Tile.DeskTop: {

@@ -1,9 +1,7 @@
 // src/renderer/office/scenes/officeScene.ts
 //
-// 기본 풍경: 사무실. 씬 축이 생기기 전 `TileRenderer.drawTile`에 있던 드로잉을
-// 그대로 옮겨 온 것이라 **비주얼은 도입 이전과 100% 동일**해야 한다 —
-// 좌표·색 키·드로우 순서를 손대지 말 것(TileRenderer의 랩탑 테스트가
-// 왼쪽/오른쪽 상판의 드로우 명령 수 차이를 본다).
+// 기본 풍경: 사무실. 타일은 독립 베이크되지만, 바닥과 벽의 구조는 월드 좌표를
+// 기준으로 이어 그려 한 칸짜리 무늬의 반복으로 읽히지 않게 한다.
 //
 // 맵(GRID)은 `map/mapData.ts`에 그대로 남겨 뒀다: `OFFICE_MAP`을 비롯한
 // 파생 상수들의 소비처가 많고, 이리로 옮기면 mapData ↔ scenes 순환 참조가
@@ -55,17 +53,34 @@ export function officeTileDraw(pal: OfficeTilePalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
     switch (t) {
       case Tile.Floor: {
-        const checker = (tx + ty) % 2 === 0 ? pal.floorA : pal.floorB;
-        g.rect(0, 0, s, s).fill(checker);
-        // 1px pixel detail: corner dots
-        g.rect(1, 1, 1, 1).fill(pal.floorDot);
-        g.rect(s - 2, s - 2, 1, 1).fill(pal.floorDot);
+        // 넓은 32px 카펫 타일: 색 변화와 줄눈 모두 월드 좌표에서 결정한다.
+        const panel = (Math.floor(tx / 2) + Math.floor(ty / 2)) % 2 === 0 ? pal.floorA : pal.floorB;
+        g.rect(0, 0, s, s).fill(panel);
+        if ((ty * s) % 32 === 0) g.rect(0, 0, s, 1).fill(pal.floorDot);
+        if ((tx * s) % 32 === 0) g.rect(0, 0, 1, s).fill(pal.floorDot);
+        if ((tx + ty * 3) % 11 === 0) g.rect(6, 10, 3, 1).fill(pal.floorDot);
         break;
       }
-      case Tile.Wall:
+      case Tile.Wall: {
         g.rect(0, 0, s, s).fill(pal.wall);
-        g.rect(0, 0, s, 3).fill(pal.wallTop); // 3px top highlight
+        g.rect(0, 0, s, 3).fill(pal.wallTop); // 천장 몰딩
+        // 상단 벽에는 3칸 폭의 창 두 개를 낸다. 우수사원 사진 자리(tx12~13)는 비운다.
+        const inWindow = ty === 0 && ((tx >= 2 && tx <= 4) || (tx >= 7 && tx <= 9));
+        if (inWindow) {
+          g.rect(0, 5, s, 7).fill(pal.laptopLid);
+          g.rect(0, 5, s, 1).fill(pal.wallTop);
+          g.rect(0, 11, s, 1).fill(pal.laptopBody);
+          if (tx === 2 || tx === 7) g.rect(0, 4, 2, 9).fill(pal.laptopBody);
+          if (tx === 4 || tx === 9) g.rect(s - 2, 4, 2, 9).fill(pal.laptopBody);
+          if (tx === 3 || tx === 8) g.rect(7, 5, 2, 7).fill(pal.laptopBody);
+        }
+        // 4칸마다 이어지는 기둥과 벽-바닥 접점의 얇은 그림자.
+        if (tx % 4 === 0) g.rect(0, 3, 2, s - 5).fill(pal.wallTop);
+        g.rect(0, s - 2, s, 2).fill(pal.floorDot);
+        if (tx === 0) g.rect(s - 2, 3, 2, s - 5).fill(pal.floorDot);
+        if (tx === map.width - 1) g.rect(0, 3, 2, s - 5).fill(pal.floorDot);
         break;
+      }
       case Tile.DeskTop:
         g.rect(0, 0, s, s).fill(pal.desk);
         g.rect(0, 0, s, 4).fill(pal.deskTop); // bright top face
@@ -80,11 +95,15 @@ export function officeTileDraw(pal: OfficeTilePalette): TileDrawFn {
           g.rect(s * 0.45, s * 0.42, 2, 2).fill(pal.laptopBody); // 로고 도트
         }
         break;
-      case Tile.Rug:
+      case Tile.Rug: {
         g.rect(0, 0, s, s).fill(pal.rug);
-        g.rect(0, 0, s, 1).fill(pal.rugEdge);
-        g.rect(0, 0, 1, s).fill(pal.rugEdge);
+        // 인접 러그에는 선을 긋지 않아 라운지가 한 장의 깔개로 읽힌다.
+        if (map.tiles[ty - 1]?.[tx] !== Tile.Rug) g.rect(0, 0, s, 1).fill(pal.rugEdge);
+        if (map.tiles[ty + 1]?.[tx] !== Tile.Rug) g.rect(0, s - 1, s, 1).fill(pal.rugEdge);
+        if (map.tiles[ty]?.[tx - 1] !== Tile.Rug) g.rect(0, 0, 1, s).fill(pal.rugEdge);
+        if (map.tiles[ty]?.[tx + 1] !== Tile.Rug) g.rect(s - 1, 0, 1, s).fill(pal.rugEdge);
         break;
+      }
       case Tile.Plant: {
         // Pot (bottom half) + a few foliage clusters (top), pixel-art style.
         const potH = Math.round(s * 0.35);

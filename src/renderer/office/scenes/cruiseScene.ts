@@ -126,19 +126,20 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 53 + ty *
 function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
   /** 티크 갑판 바닥 — 가구 타일도 바닥 베이크에서 빠지므로 스스로 이걸 깐다.
    * 널빤지 이음선 위상은 tx와 무관하게 고정해 칸 경계를 넘어 결이 이어진다. */
-  const deck = (g: Parameters<TileDrawFn>[0], s: number): void => {
+  const deck = (g: Parameters<TileDrawFn>[0], s: number, tx = 0, ty = 0): void => {
     g.rect(0, 0, s, s).fill(pal.teakA);
     g.rect(5, 0, 5, s).fill(pal.teakB); // 널 하나만 톤을 살짝 달리해 결이 보이게
     g.rect(4, 0, 1, s).fill(pal.teakSeam); // 코킹(이음선)
     g.rect(10, 0, 1, s).fill(pal.teakSeam);
     g.rect(15, 0, 1, s).fill(pal.teakSeam);
-    // 버트 조인트는 뺐다 — 칸마다 위치가 달라 갑판에 잡음처럼 흩뿌려진다.
+    // 널 길이가 이어지는 방향을 행 단위로만 바꿔, 타일마다 끊기는 체크를 피한다.
+    if (ty % 3 === 0 && tx % 2 === 0) g.rect(0, 7, s, 1).fill(pal.teakSeam);
   };
 
   return (g, { t, tx, ty, s, map }) => {
     switch (t) {
       case Tile.Floor: {
-        deck(g, s);
+        deck(g, s, tx, ty);
         // 장식은 드물게 — 촘촘하면 잘 닦인 갑판이 아니라 잡동사니로 보인다.
         const k = scatter(tx, ty, 23);
         if (k === 0) {
@@ -168,15 +169,20 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
             g.rect(scatter(tx, ty, 8) + 1, 1, 5, 1).fill(pal.skyHi); // 엷은 구름
             g.rect(scatter(tx, ty + 1, 6) + 8, 3, 4, 1).fill(pal.skyHi);
             g.rect(0, 5, s, 1).fill(pal.seaHorizon);
-            g.rect(scatter(tx, ty, 6) + 2, 9, 4, 1).fill(pal.seaMid); // 먼 물결(1px 대시)
-            g.rect(scatter(tx, ty + 1, 5) + 9, 13, 3, 1).fill(pal.seaMid);
+            for (let x = 0; x < s; x++) {
+              const worldX = tx * s + x;
+              g.rect(x, 9 + Math.floor(Math.abs((worldX % 64) - 32) / 16), 1, 1).fill(pal.seaMid);
+              if (worldX % 80 < 48) g.rect(x, 13 - Math.floor(Math.abs((worldX % 40) - 20) / 10), 1, 1).fill(pal.seaMid);
+            }
             break;
           }
           // 뱃전 바로 너머의 물 + 흰 난간(선체 가장자리)
           g.rect(0, 0, s, s).fill(pal.seaMid);
           g.rect(0, 0, s, 3).fill(pal.seaDeep);
-          g.rect(scatter(tx, ty, 7) + 2, 4, 4, 1).fill(pal.seaFoam);
-          g.rect(scatter(tx, ty + 1, 6) + 7, 6, 3, 1).fill(pal.seaFoam);
+          for (let x = 0; x < s; x++) {
+            const worldX = tx * s + x;
+            if (worldX % 52 < 34) g.rect(x, 4 + Math.floor(Math.abs((worldX % 32) - 16) / 8), 1, 1).fill(pal.seaFoam);
+          }
           g.rect(0, 8, s, 2).fill(pal.railWhite); // 손잡이 가로대
           g.rect(0, 10, s, 1).fill(pal.railShadow);
           g.rect(3, 10, 1, 3).fill(pal.railWhite); // 난간 지주
@@ -189,9 +195,9 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
         // 흰 선체 벽(측면·하단): 네이비 띠 + 드문드문 현창
         g.rect(0, 0, s, s).fill(pal.hullWhite);
         g.rect(0, 0, s, 2).fill(pal.railWhite);
-        g.rect(0, 5, s, 3).fill(pal.hullStripe);
-        g.rect(0, 8, s, 1).fill(pal.hullShadow);
-        if (scatter(tx, ty, 3) === 0) {
+        g.rect(0, 5, s, 2).fill(pal.hullStripe);
+        for (let x = 0; x < s; x++) g.rect(x, 7 + ((tx * s + x) % 15 < 5 ? 1 : 0), 1, 1).fill(pal.hullShadow);
+        if ((tx + ty) % 5 === 1) {
           g.rect(5, 10, 6, 5).fill(pal.brass); // 현창 테
           g.rect(6, 11, 4, 3).fill(pal.bridgeWindow);
           g.rect(6, 11, 4, 1).fill(pal.bridgeWindowHi);
@@ -204,10 +210,12 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
         // 풀의 윤곽이 칸 단위가 아니라 하나의 웅덩이로 읽히게 한다.
         const isPool = (x: number, y: number): boolean => map.tiles[y]?.[x] === Tile.Rug;
         g.rect(0, 0, s, s).fill(pal.poolWater);
-        g.rect(scatter(tx, ty, 7) + 1, 4, 5, 1).fill(pal.poolFoam); // 물결 하이라이트
-        g.rect(scatter(tx, ty + 1, 6) + 7, 10, 4, 1).fill(pal.poolFoam);
-        g.rect(9, 6, 4, 1).fill(pal.poolDeep); // 깊은 쪽 그늘
-        g.rect(2, 12, 3, 1).fill(pal.poolDeep);
+        // 수면도 하나의 면처럼, 전역 x 위상의 긴 물결을 쓴다.
+        for (let x = 0; x < s; x++) {
+          const worldX = tx * s + x;
+          if ((worldX + ty * 7) % 64 < 48) g.rect(x, 4 + Math.floor(Math.abs((worldX % 48) - 24) / 12), 1, 1).fill(pal.poolFoam);
+          if (ty >= 7) g.rect(x, 13, 1, 2).fill(pal.poolDeep);
+        }
         if (!isPool(tx, ty - 1)) {
           g.rect(0, 0, s, 3).fill(pal.poolTile);
           g.rect(0, 3, s, 1).fill(pal.poolLine);
@@ -228,7 +236,7 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
       }
       case Tile.DeskTop: {
         const isLeft = map.tiles[ty][tx - 1] !== Tile.DeskTop;
-        deck(g, s);
+        deck(g, s, tx, ty);
         // 차양(어닝): 4px 줄무늬. 줄 위상을 tx로 이어 붙여 2칸짜리 쌍이 하나의
         // 차양으로 읽히게 한다(칸 단위로 통짜 색을 칠하면 청백 블록처럼 보인다).
         g.rect(0, 0, s, 4).fill(pal.awningB);
@@ -261,7 +269,7 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
         break;
       }
       case Tile.Plant: {
-        deck(g, s);
+        deck(g, s, tx, ty);
         // 테라코타 화분에 심은 야자. 열 기준으로 잎 방향을 번갈아 — 이 맵의
         // 화분 세 자리가 전부 같은 모습이 되지 않게(합 기준이면 뭉친다).
         g.rect(3, 10, 10, 2).fill(pal.potTerra); // 화분 테두리
@@ -285,7 +293,7 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
       case Tile.Counter: {
         // 칵테일 바: 마호가니 카운터 + 백바 선반 + 황동 풋레일.
         // 이 맵의 Counter는 세로로 쌓이므로(현측 두 칸) ty 기준으로 번갈아 꾸민다.
-        deck(g, s);
+        deck(g, s, tx, ty);
         g.rect(0, 1, s, 4).fill(pal.barWood); // 백바 선반
         g.rect(0, 4, s, 1).fill(pal.barTopHi);
         if (ty % 2 === 0) {
@@ -322,7 +330,7 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
       }
       case Tile.Table: {
         // 풀사이드 라운드 테이블: 흰 리넨을 덮은 원형 상판 + 황동 외다리.
-        deck(g, s);
+        deck(g, s, tx, ty);
         g.rect(6, 1, 4, 2).fill(pal.glass); // 상판 위 음료
         g.rect(7, 3, 2, 1).fill(pal.champagne);
         g.rect(4, 4, 8, 1).fill(pal.cloth); // 원형 실루엣(계단식 4단)
@@ -339,7 +347,7 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
         // 선장 브리지(세로 1×2): 위 칸이 레이더 마스트·파노라마 창,
         // 아래 칸이 조타륜이 보이는 선교 정면.
         const isLower = map.tiles[ty - 1]?.[tx] === Tile.BossDesk;
-        deck(g, s);
+        deck(g, s, tx, ty);
         if (!isLower) {
           g.rect(7, 0, 2, 4).fill(pal.mast); // 마스트
           g.rect(3, 1, 10, 1).fill(pal.mast); // 회전 레이더 바

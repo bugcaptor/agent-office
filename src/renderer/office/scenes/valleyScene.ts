@@ -105,11 +105,12 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 97 + ty *
 
 function valleyTileDraw(pal: ValleyPalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
-    const grass = (tx + ty) % 2 === 0 ? pal.grassA : pal.grassB;
+    const grass = ty % 4 === 0 ? pal.grassB : pal.grassA;
     switch (t) {
       case Tile.Floor: {
         g.rect(0, 0, s, s).fill(grass);
-        g.rect(2, 4, 1, 2).fill(pal.grassDot); // 풀포기 1px — 칸마다 하나만
+        // 길게 이어진 바람결은 행마다 위치를 옮겨 타일 도장처럼 보이지 않는다.
+        if ((tx * s + ty * 11) % 80 < 16) g.rect(0, 5, s, 1).fill(pal.grassDot);
         // 해변과 같은 이유로 드물게 — 풀밭이 잡동사니로 보이지 않을 만큼만.
         const k = scatter(tx, ty, 19);
         if (k === 0) {
@@ -132,23 +133,23 @@ function valleyTileDraw(pal: ValleyPalette): TileDrawFn {
         if (ty === 0) {
           // 먼 설산 능선: 하늘 → 암벽 → 눈 덮인 봉우리
           g.rect(0, 0, s, s).fill(pal.ridgeSky);
-          const peak = scatter(tx, ty, 4); // 봉우리 높이를 칸마다 흔든다
-          g.rect(0, 4 + peak, s, s - 4 - peak).fill(pal.ridgeRock);
-          g.rect(0, 4 + peak, s, 2).fill(pal.ridgeSnow);
-          g.rect(3, 6 + peak, 2, 2).fill(pal.ridgeSnow);
-          g.rect(10, 7 + peak, 3, 1).fill(pal.ridgeSnow);
+          const peaks = [10, 8, 6, 4, 6, 9, 11, 8, 5, 3, 5, 8, 10, 7, 5, 7, 10, 11, 9, 8];
+          for (let x = 0; x < s; x++) {
+            const next = peaks[Math.min(tx + 1, peaks.length - 1)];
+            const ridge = Math.round(peaks[tx] + (next - peaks[tx]) * x / s);
+            g.rect(x, ridge, 1, s - ridge).fill(pal.ridgeRock);
+            g.rect(x, ridge, 1, 2).fill(pal.ridgeSnow);
+          }
           break;
         }
         if (ty === 1) {
           // 침엽수림 실루엣: 칸마다 두 그루씩 어긋나게
           g.rect(0, 0, s, s).fill(pal.forestDark);
-          const off = scatter(tx, ty, 3);
-          g.rect(2, 3 + off, 4, 9).fill(pal.forestMid);
-          g.rect(3, 1 + off, 2, 3).fill(pal.forestMid);
-          g.rect(3, 4 + off, 2, 2).fill(pal.forestHi);
-          g.rect(9, 5 - off, 5, 9).fill(pal.forestMid);
-          g.rect(10, 3 - off, 3, 3).fill(pal.forestMid);
-          g.rect(10, 6 - off, 2, 2).fill(pal.forestHi);
+          const canopy = (tx * s) % 48;
+          g.rect(0, 9, s, 7).fill(pal.forestMid);
+          if (canopy < 24) g.rect(2, 4, 8, 6).fill(pal.forestMid);
+          if (canopy >= 16) g.rect(7, 2, 7, 8).fill(pal.forestMid);
+          g.rect(0, 12, s, 1).fill(pal.forestHi);
           break;
         }
         if (ty === map.height - 1) {
@@ -157,15 +158,17 @@ function valleyTileDraw(pal: ValleyPalette): TileDrawFn {
           g.rect(0, 0, s, 3).fill(pal.rockWall); // 물가 돌 턱
           g.rect(0, 3, s, 1).fill(pal.rockTop);
           g.rect(0, 6, s, 2).fill(pal.streamMid);
-          g.rect(scatter(tx, ty, 6) + 1, 9, 5, 1).fill(pal.streamFoam);
-          g.rect(scatter(tx, ty + 1, 5) + 7, 12, 4, 1).fill(pal.streamFoam);
+          for (let x = 0; x < s; x++) {
+            const worldX = tx * s + x;
+            if (worldX % 64 < 42) g.rect(x, 9 + Math.floor(Math.abs((worldX % 48) - 24) / 12), 1, 1).fill(pal.streamFoam);
+          }
           break;
         }
         // 측면 바위벽 + 이끼
         g.rect(0, 0, s, s).fill(pal.rockWall);
-        g.rect(0, 0, s, 3).fill(pal.rockTop);
-        g.rect(2, 6, 4, 1).fill(pal.rockTop);
-        g.rect(9, 10, 4, 1).fill(pal.rockTop);
+        g.rect(0, 0, s, 2).fill(pal.rockTop);
+        // 안쪽 능선은 얇은 톱니 경계만 남겨 벽이 가로 띠로 보이지 않게 한다.
+        for (let x = 0; x < s; x++) g.rect(x, 2 + ((tx * s + x) % 11 < 4 ? 1 : 0), 1, 1).fill(pal.rockTop);
         if (scatter(tx, ty, 3) === 0) {
           g.rect(3, 3, 3, 2).fill(pal.moss);
           g.rect(10, 4, 2, 2).fill(pal.moss);
@@ -173,13 +176,11 @@ function valleyTileDraw(pal: ValleyPalette): TileDrawFn {
         break;
       }
       case Tile.Rug: {
-        // 캠핑 돗자리: 격자 체크
+        // 한 장의 캠핑 돗자리: 격자 대신 넓은 직조 띠와 바깥 테두리.
         g.rect(0, 0, s, s).fill(pal.mat);
-        g.rect(0, 3, s, 1).fill(pal.matPlaid);
-        g.rect(0, 11, s, 1).fill(pal.matPlaid);
-        g.rect(3, 0, 1, s).fill(pal.matPlaid);
-        g.rect(11, 0, 1, s).fill(pal.matPlaid);
-        g.rect(0, 0, s, 1).fill(pal.matPlaid);
+        if ((tx - 8) % 5 === 0) g.rect(6, 0, 3, s).fill(pal.matPlaid);
+        if (map.tiles[ty - 1]?.[tx] !== Tile.Rug) g.rect(0, 0, s, 1).fill(pal.matPlaid);
+        if (map.tiles[ty + 1]?.[tx] !== Tile.Rug) g.rect(0, s - 1, s, 1).fill(pal.matPlaid);
         break;
       }
       case Tile.DeskTop: {
