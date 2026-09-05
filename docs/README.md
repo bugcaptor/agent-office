@@ -20,6 +20,7 @@
 
 | 문서 | 내용 | 상태 |
 |---|---|---|
+| [affinity-design.md](affinity-design.md) | 에이전트 호감도 — opt-in·비LLM 반응·유효 사용 기록이 있는 터미널 종료/재시작 평가 | 기획 확정 (2026-09-05, kbm #2rv) — 구현 전 |
 | [session-handoff-design.md](session-handoff-design.md) | v1 종료 시점 fd-핸드오프(현재 기본 경로) — 앱 종료 후 터미널 존속·재실행 입양 | 정본 — 구현 완료(#7). v2와 공존 |
 | [session-broker-v2-design.md](session-broker-v2-design.md) | v2 상시 브로커(스폰부터 데몬이 PTY 소유) — 크래시 생존, 프로토콜 v2 | 정본 — 구현 완료·기본 off(`AGENT_OFFICE_SESSION_BROKER=v2` opt-in), 결함 #48/#50/#49 수정 완료 |
 | [web-hosting-design.md](web-hosting-design.md) | 웹 호스팅(kbm #7m) — 브라우저로 접속해 상태 확인·터미널 조작. peer 리스너에 `/web` + WS RPC allowlist, 폰 우선 경량 클라이언트 | 정본 — Phase 1 구현 완료, 실기기 눈검증 대기 |
