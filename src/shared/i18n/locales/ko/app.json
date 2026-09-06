@@ -16,7 +16,13 @@
       "title": "터미널 재시작",
       "confirm": "재시작",
       "warning": "실행 중인 세션이 종료되고 스크롤백이 지워집니다.",
-      "body": "정말 <strong>{{name}}</strong>의 터미널을 재시작할까요?"
+      "body": "정말 <strong>{{name}}</strong>의 터미널을 재시작할까요?",
+      "bodyDifferent": "<strong>{{name}}</strong>이(가) 설정된 시작 폴더와 다른 폴더에서 작업 중입니다. 어디에서 재시작할까요?",
+      "currentFolder": "현재 폴더: {{path}}",
+      "startFolder": "시작 폴더: {{path}}",
+      "saveAndRestart": "현재 폴더를 시작 폴더로 설정",
+      "restartHere": "이번만 현재 폴더에서 재시작",
+      "restartFromStart": "설정된 시작 폴더에서 재시작"
     },
     "resume": {
       "title": "이전 세션 이어하기",

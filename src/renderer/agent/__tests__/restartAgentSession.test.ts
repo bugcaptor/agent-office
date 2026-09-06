@@ -123,6 +123,46 @@ describe("restartAgentSession 오케스트레이션", () => {
     });
   });
 
+  it("현재 폴더 override는 이번 재시작 createSession에만 프로필 cwd보다 우선한다", async () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1", { cwd: "/profile/start" }));
+
+    await restartAgentSession("a1", { cwd: "/observed/current" });
+
+    expect(createSession).toHaveBeenCalledWith("a1", {
+      agentName: "Agent a1",
+      agentRole: "eng",
+      cwd: "/observed/current",
+    });
+    expect(useAppStore.getState().agents.a1.cwd).toBe("/profile/start");
+  });
+
+  it("재시작 직후에는 이전 세션 라벨의 stale cwd를 실제 새 시작 cwd로 보정한다", async () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1", { cwd: "/profile/start" }));
+    useAppStore.setState({
+      taskLabels: { a1: { sessionId: "old", cwd: "/old/session", goal: "작업 중" } },
+    });
+
+    await restartAgentSession("a1", { cwd: "/observed/current" });
+
+    expect(useAppStore.getState().taskLabels.a1).toEqual({
+      sessionId: "old",
+      cwd: "/observed/current",
+      goal: "작업 중",
+    });
+  });
+
+  it("override 없는 재시작은 이전 세션 라벨 cwd를 프로필 시작 폴더로 보정한다", async () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1", { cwd: "/profile/start" }));
+    useAppStore.setState({ taskLabels: { a1: { sessionId: "old", cwd: "/old/session" } } });
+
+    await restartAgentSession("a1");
+
+    expect(useAppStore.getState().taskLabels.a1?.cwd).toBe("/profile/start");
+  });
+
   it("disposeSession이 실패해도 재시작은 계속 진행된다", async () => {
     disposeSession.mockRejectedValueOnce(new Error("no such session"));
     const s = useAppStore.getState();

@@ -16,7 +16,13 @@
       "title": "重新啟動終端機",
       "confirm": "重新啟動",
       "warning": "執行中的工作階段會結束，捲動紀錄也會清除。",
-      "body": "要重新啟動 <strong>{{name}}</strong> 的終端機嗎？"
+      "body": "要重新啟動 <strong>{{name}}</strong> 的終端機嗎？",
+      "bodyDifferent": "<strong>{{name}}</strong> 目前所在的資料夾與設定的啟動資料夾不同。要從哪裡重新啟動終端機？",
+      "currentFolder": "目前資料夾：{{path}}",
+      "startFolder": "啟動資料夾：{{path}}",
+      "saveAndRestart": "將目前資料夾設為啟動資料夾",
+      "restartHere": "僅這次在目前資料夾重新啟動",
+      "restartFromStart": "在設定的啟動資料夾重新啟動"
     },
     "resume": {
       "title": "接續上一個工作階段",

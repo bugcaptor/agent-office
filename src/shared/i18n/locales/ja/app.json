@@ -16,7 +16,13 @@
       "title": "ターミナルを再起動",
       "confirm": "再起動",
       "warning": "実行中のセッションが終了し、スクロールバックが消えます。",
-      "body": "<strong>{{name}}</strong> のターミナルを再起動しますか？"
+      "body": "<strong>{{name}}</strong> のターミナルを再起動しますか？",
+      "bodyDifferent": "<strong>{{name}}</strong> は設定された開始フォルダーとは別のフォルダーで作業中です。どこで再起動しますか？",
+      "currentFolder": "現在のフォルダー: {{path}}",
+      "startFolder": "開始フォルダー: {{path}}",
+      "saveAndRestart": "現在のフォルダーを開始フォルダーに設定",
+      "restartHere": "今回だけ現在のフォルダーで再起動",
+      "restartFromStart": "設定した開始フォルダーで再起動"
     },
     "resume": {
       "title": "前回のセッションを再開",

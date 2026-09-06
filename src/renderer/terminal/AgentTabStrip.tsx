@@ -504,10 +504,10 @@ export function AgentTabStrip() {
             {
               label: t("menu.vscode"),
               icon: "💻",
-              // 작업 폴더(cwd) 미설정 프로필은 비활성화 — 홈 디렉터리 폴백 없음.
-              disabled: !agents[menu.agentId]?.cwd,
+              // 현재 세션이 cd한 폴더가 있으면 프로필 시작 폴더보다 우선한다.
+              disabled: !effectiveCwd(taskLabels[menu.agentId], agents[menu.agentId]?.cwd),
               onSelect: () => {
-                const cwd = agents[menu.agentId]?.cwd;
+                const cwd = effectiveCwd(taskLabels[menu.agentId], agents[menu.agentId]?.cwd);
                 if (!cwd) return;
                 void tauriApi
                   .openInVscode(cwd)

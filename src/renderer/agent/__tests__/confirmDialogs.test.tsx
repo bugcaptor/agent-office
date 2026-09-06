@@ -317,6 +317,67 @@ describe.each(specs)("$label", (spec: Spec) => {
 
 // ---- 종류별로 진짜 다른 동작 ----
 
+describe("ConfirmRestartDialog cwd 선택", () => {
+  function openDifferentCwds(profileCwd = "/profile/start", currentCwd = "/work/current") {
+    const s = useAppStore.getState();
+    s.addAgent({ ...mkProfile("a1", "코난"), cwd: profileCwd });
+    useAppStore.setState({ taskLabels: { a1: { sessionId: "s1", cwd: currentCwd } } });
+    s.openModal({ kind: "confirm-restart", agentId: "a1" });
+  }
+
+  it("다른 현재 cwd면 세 재시작 선택지와 취소를 보여준다", () => {
+    openDifferentCwds();
+    const { container } = render(<ConfirmRestartDialog />);
+
+    expect(screen.getByText("현재 폴더: /work/current")).toBeTruthy();
+    expect(screen.getByText("시작 폴더: /profile/start")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "현재 폴더를 시작 폴더로 설정" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "이번만 현재 폴더에서 재시작" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "설정된 시작 폴더에서 재시작" })).toBeTruthy();
+    expect(container.querySelector(".confirm-restart-cwd-choice")).not.toBeNull();
+    expect(container.querySelector(".confirm-restart-cwd-actions")).not.toBeNull();
+    expect(container.querySelectorAll(".confirm-restart-cwd-path")).toHaveLength(2);
+  });
+
+  it("현재 폴더를 시작 폴더로 저장하면 프로필을 갱신하고 그 cwd로 재시작한다", () => {
+    openDifferentCwds();
+    render(<ConfirmRestartDialog />);
+
+    fireEvent.click(screen.getByRole("button", { name: "현재 폴더를 시작 폴더로 설정" }));
+
+    expect(useAppStore.getState().agents.a1.cwd).toBe("/work/current");
+    expect(restartAgentSession).toHaveBeenCalledWith("a1", { cwd: "/work/current" });
+    expect(useAppStore.getState().modal).toEqual({ kind: "none" });
+  });
+
+  it("이번만 현재 폴더를 선택하면 프로필은 보존하고 cwd override만 전달한다", () => {
+    openDifferentCwds();
+    render(<ConfirmRestartDialog />);
+
+    fireEvent.click(screen.getByRole("button", { name: "이번만 현재 폴더에서 재시작" }));
+
+    expect(useAppStore.getState().agents.a1.cwd).toBe("/profile/start");
+    expect(restartAgentSession).toHaveBeenCalledWith("a1", { cwd: "/work/current" });
+  });
+
+  it("설정 시작 폴더를 선택하면 cwd override 없이 재시작한다", () => {
+    openDifferentCwds();
+    render(<ConfirmRestartDialog />);
+
+    fireEvent.click(screen.getByRole("button", { name: "설정된 시작 폴더에서 재시작" }));
+
+    expect(restartAgentSession).toHaveBeenCalledWith("a1", undefined);
+  });
+
+  it("같은 경로의 끝 슬래시 차이는 무시하고 기존 확인만 보인다", () => {
+    openDifferentCwds("/Users/codex/dev/proj/", "/Users/codex/dev/proj");
+    render(<ConfirmRestartDialog />);
+
+    expect(screen.queryByRole("button", { name: "이번만 현재 폴더에서 재시작" })).toBeNull();
+    expect(screen.getByRole("button", { name: "재시작" })).toBeTruthy();
+  });
+});
+
 describe("ConfirmResumeDialog", () => {
   it("확인 시 캡처된 native sessionId를 함께 넘긴다", () => {
     const s = useAppStore.getState();

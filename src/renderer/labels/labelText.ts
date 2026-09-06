@@ -47,6 +47,22 @@ function normalizeCwd(cwd: string): string {
 }
 
 /**
+ * 두 cwd가 같은 폴더를 가리키는지 비교한다. 표시·프로필 양쪽 모두에서 쓰이는
+ * 경로는 사용자가 끝 슬래시를 붙일 수 있고, 프로필은 `~/…`로 저장되는 반면
+ * hook이 보고하는 실제 cwd는 절대 경로일 수 있다.
+ *
+ * `~`의 실제 홈 디렉터리는 renderer가 알 수 없으므로, 틸드 경로와 절대 경로는
+ * 같은 suffix여도 동등하다고 추측하지 않는다. 다른 사용자의 홈이나 `/tmp`를
+ * 같은 폴더로 오판해 재시작 위치 선택을 생략하는 것보다 보수적으로 묻는 편이
+ * 안전하다.
+ */
+export function cwdEquivalent(left: string, right: string): boolean {
+  const a = normalizeCwd(left);
+  const b = normalizeCwd(right);
+  return a === b;
+}
+
+/**
  * sessionCwd가 profileCwd와 같거나 그 하위인가.
  * profileCwd가 `~`/`~/...`이면 프런트는 홈 경로를 모르므로 `~` 뒤 나머지(suffix)가
  * sessionCwd 안에 경로 경계로 등장하고 그 뒤가 끝이거나 `/`인지로 판정한다

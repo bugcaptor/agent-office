@@ -7,9 +7,8 @@ import type { CreateSessionOptions } from "@shared/types";
 
 /** 프로필 스냅샷과 런타임 옵션을 createSession opts로 변환. 전부 없으면 undefined.
  *
- * `overrides.startupCommand`는 이번 1회 생성에만 프로필의 startupCommand를
- * 대체한다(Claude 세션 이어하기가 `claude --resume <id>`를 주입하는 경로).
- * 나머지 필드(cwd/shell/페르소나 등)는 프로필 그대로 유지된다. */
+ * override는 이번 1회 생성에만 프로필 값을 대체한다. `startupCommand`는
+ * Claude 세션 이어하기에, `cwd`는 현재 작업 폴더에서의 재시작에 쓰인다. */
 export function sessionOptsFor(
   a?: {
     name?: string;
@@ -20,14 +19,14 @@ export function sessionOptsFor(
     personalityPrompt?: string;
     tmuxHost?: boolean;
   },
-  overrides?: { startupCommand?: string },
+  overrides?: { startupCommand?: string; cwd?: string },
 ): CreateSessionOptions | undefined {
   const startupCommand = overrides?.startupCommand || a?.startupCommand;
-  if (!a && !startupCommand) return undefined;
+  if (!a && !startupCommand && !overrides?.cwd) return undefined;
   const o: CreateSessionOptions = {};
   if (a?.name) o.agentName = a.name;
   if (a?.role) o.agentRole = a.role;
-  if (a?.cwd) o.cwd = a.cwd;
+  if (overrides?.cwd || a?.cwd) o.cwd = overrides?.cwd || a?.cwd;
   if (a?.shell) o.shell = a.shell;
   if (startupCommand) o.startupCommand = startupCommand;
   if (a?.personalityPrompt) o.personalityPrompt = a.personalityPrompt;

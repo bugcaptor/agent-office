@@ -119,17 +119,31 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
  *   결과만 돌려주므로, 이 반영이 없으면 "starting"에 영구 고착된다.
  * - 실패/타임아웃: exited로 되돌려 이후 클릭·재시작이 재시도할 수 있게 한다.
  *
- * `overrides.startupCommand`는 이번 1회 생성에만 프로필의 startupCommand를
- * 대체한다(Claude 세션 이어하기 — resumeAgentSession). 부재면 프로필 그대로.
+ * overrides는 이번 1회 생성에만 프로필 값을 대체한다. `startupCommand`는
+ * Claude 세션 이어하기에, `cwd`는 현재 작업 폴더에서의 재시작에 쓰인다.
  */
 export async function runGuardedCreateSession(
   agentId: string,
-  overrides?: { startupCommand?: string },
+  overrides?: { startupCommand?: string; cwd?: string },
 ): Promise<void> {
-  const agent = useAppStore.getState().agents[agentId];
+  const state = useAppStore.getState();
+  const agent = state.agents[agentId];
+  const opts = sessionOptsFor(agent, overrides);
+  // 새 세션의 첫 prompt hook 전까지 이전 세션 라벨이 남을 수 있다. VS Code는
+  // 라벨 cwd를 현재 폴더로 우선하므로, 모든 공통 생성 경로(재시작·이어하기·
+  // ensureSession)에서 실제 시작 cwd로 즉시 맞춘다.
+  const previousLabel = state.taskLabels[agentId];
+  if (previousLabel) {
+    useAppStore.setState({
+      taskLabels: {
+        ...state.taskLabels,
+        [agentId]: { ...previousLabel, cwd: opts?.cwd },
+      },
+    });
+  }
   try {
     const res = await withTimeout(
-      tauriApi.createSession(agentId, sessionOptsFor(agent, overrides)),
+      tauriApi.createSession(agentId, opts),
       CREATE_SESSION_TIMEOUT_MS,
       `createSession(${agentId})`,
     );

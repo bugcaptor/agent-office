@@ -16,7 +16,13 @@
       "title": "Redémarrer le terminal",
       "confirm": "Redémarrer",
       "warning": "La session en cours s’arrête et l’historique d’affichage est effacé.",
-      "body": "Redémarrer le terminal de <strong>{{name}}</strong> ?"
+      "body": "Redémarrer le terminal de <strong>{{name}}</strong> ?",
+      "bodyDifferent": "<strong>{{name}}</strong> travaille dans un dossier différent du dossier de démarrage configuré. Où redémarrer le terminal ?",
+      "currentFolder": "Dossier actuel : {{path}}",
+      "startFolder": "Dossier de démarrage : {{path}}",
+      "saveAndRestart": "Définir le dossier actuel comme dossier de démarrage",
+      "restartHere": "Redémarrer ici cette fois",
+      "restartFromStart": "Redémarrer dans le dossier configuré"
     },
     "resume": {
       "title": "Reprendre la session précédente",

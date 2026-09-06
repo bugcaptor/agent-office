@@ -9,6 +9,12 @@ describe("sessionOptsFor", () => {
     expect(sessionOptsFor(undefined)).toBeUndefined();
   });
 
+  it("keeps a one-time cwd override even without a profile snapshot", () => {
+    expect(sessionOptsFor(undefined, { cwd: "/observed/work" })).toEqual({
+      cwd: "/observed/work",
+    });
+  });
+
   it("returns undefined when the agent has neither cwd nor shell", () => {
     expect(sessionOptsFor({})).toBeUndefined();
   });

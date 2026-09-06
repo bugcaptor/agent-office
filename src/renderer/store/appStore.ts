@@ -574,6 +574,10 @@ export const useAppStore = create<AppState>()(
         if (!agent || agent.clockedOut) return s;
         const sessions = { ...s.sessions };
         delete sessions[agentId];
+        // 퇴근으로 세션 자체가 끝났으므로 마지막 관측 cwd도 더는 "현재"가 아니다.
+        // 재출근 직후 새 prompt가 오기 전 VS Code가 옛 폴더를 열지 않게 지운다.
+        const taskLabels = { ...s.taskLabels };
+        delete taskLabels[agentId];
         // 활성 터미널이면 이웃(다음, 없으면 이전)으로 전환. 이웃도 퇴근 대상일
         // 수는 없다(퇴근하는 건 agentId 하나뿐) — recentAgentIds에서 계산.
         const recent = s.recentAgentIds.filter((id) => id !== agentId);
@@ -585,6 +589,7 @@ export const useAppStore = create<AppState>()(
         return {
           agents: { ...s.agents, [agentId]: { ...agent, clockedOut: true } },
           sessions,
+          taskLabels,
           recentAgentIds: recent,
           activeTerminalAgentId: active,
           notifications: s.notifications.filter((n) => n.agentId !== agentId),

@@ -591,6 +591,33 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
     expect(queryByRole("menu")).toBeNull();
   });
 
+  it("현재 세션 cwd가 프로필 시작 폴더와 다르면 'VS Code로 열기'는 현재 폴더를 연다", () => {
+    const s = useAppStore.getState();
+    s.addAgent({ ...mkProfile("a1"), cwd: "/Users/me/start" });
+    s.openTerminal("a1");
+    useAppStore.setState({ taskLabels: { a1: { sessionId: "s1", cwd: "/Users/me/current" } } });
+    const { getAllByRole, getByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    fireEvent.click(getByRole("menuitem", { name: "VS Code로 열기" }));
+
+    expect(openInVscode).toHaveBeenCalledWith("/Users/me/current");
+  });
+
+  it("프로필 cwd가 없어도 현재 세션 cwd가 있으면 'VS Code로 열기'가 활성화된다", () => {
+    const s = useAppStore.getState();
+    s.addAgent(mkProfile("a1"));
+    s.openTerminal("a1");
+    useAppStore.setState({ taskLabels: { a1: { sessionId: "s1", cwd: "/Users/me/current" } } });
+    const { getAllByRole, getByRole } = render(<AgentTabStrip />);
+
+    fireEvent.contextMenu(getAllByRole("tab")[0]);
+    const item = getByRole("menuitem", { name: "VS Code로 열기" });
+    expect(item).toHaveProperty("disabled", false);
+    fireEvent.click(item);
+    expect(openInVscode).toHaveBeenCalledWith("/Users/me/current");
+  });
+
   it("cwd 미설정 프로필: 'VS Code로 열기'가 비활성화되고 클릭해도 호출되지 않는다", () => {
     seedThreeTabs(); // mkProfile은 cwd 미설정
     const { getAllByRole, getByRole } = render(<AgentTabStrip />);

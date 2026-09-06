@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import { useAppStore } from "../store/appStore";
+import { cwdEquivalent } from "../labels/labelText";
 import { deleteAgent } from "./deleteAgent";
 import { restartAgentSession } from "./restartAgentSession";
 import { resumeAgentSession } from "./resumeAgentSession";
@@ -141,8 +142,74 @@ export function ConfirmRestartDialog() {
   const modal = useAppStore((s) => s.modal);
   const agentId = modal.kind === "confirm-restart" ? modal.agentId : undefined;
   const { name, running } = useConfirmTarget(agentId);
+  // hook이 관측한 현재 cwd가 있으면 프로필 시작 폴더보다 우선한다. 세션 라벨은
+  // 세션 교체 시 리셋되므로 여기서는 현재 세션의 관측값으로 쓸 수 있다.
+  const currentCwd = useAppStore((s) => (agentId ? s.taskLabels[agentId]?.cwd : undefined));
+  const startCwd = useAppStore((s) => (agentId ? s.agents[agentId]?.cwd : undefined));
+  const updateAgent = useAppStore((s) => s.updateAgent);
+  const closeModal = useAppStore((s) => s.closeModal);
 
   if (modal.kind !== "confirm-restart") return null;
+
+  const needsCwdChoice =
+    currentCwd !== undefined &&
+    startCwd !== undefined &&
+    !cwdEquivalent(currentCwd, startCwd);
+
+  if (needsCwdChoice) {
+    const restart = (cwd?: string, saveAsStart = false) => {
+      if (!agentId) return;
+      if (saveAsStart && currentCwd) updateAgent(agentId, { cwd: currentCwd });
+      void restartAgentSession(agentId, cwd ? { cwd } : undefined);
+      closeModal();
+    };
+
+    return (
+      <div
+        className="modal-backdrop"
+        onMouseDown={(e) => {
+          if (e.button === 0 && e.target === e.currentTarget) closeModal();
+        }}
+      >
+        <div className="pixel-panel confirm-restart-dialog confirm-restart-cwd-choice">
+          <h2 className="pixel-title">{t("confirm.restart.title")}</h2>
+          <p>
+            <Trans
+              t={t}
+              i18nKey="confirm.restart.bodyDifferent"
+              values={{ name, currentFolder: currentCwd, startFolder: startCwd }}
+              components={{ strong: <strong /> }}
+            />
+          </p>
+          <p className="confirm-restart-cwd-path">
+            {t("confirm.restart.currentFolder", { path: currentCwd })}
+          </p>
+          <p className="confirm-restart-cwd-path">
+            {t("confirm.restart.startFolder", { path: startCwd })}
+          </p>
+          {running && (
+            <p className="confirm-restart-warning" style={{ color: "var(--accent-warn)" }}>
+              {t("confirm.restart.warning")}
+            </p>
+          )}
+          <div className="dialog-actions confirm-restart-cwd-actions">
+            <button className="pixel-btn primary" onClick={() => restart(currentCwd, true)}>
+              {t("confirm.restart.saveAndRestart")}
+            </button>
+            <button className="pixel-btn" onClick={() => restart(currentCwd)}>
+              {t("confirm.restart.restartHere")}
+            </button>
+            <button className="pixel-btn" onClick={() => restart()}>
+              {t("confirm.restart.restartFromStart")}
+            </button>
+            <button className="pixel-btn" onClick={closeModal}>
+              {t("confirm.cancel")}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <ConfirmDialog

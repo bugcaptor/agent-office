@@ -1,6 +1,7 @@
 // src/renderer/labels/__tests__/labelText.test.ts
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  cwdEquivalent,
   deriveTaskLabelLines,
   firstLine,
   projectAnchorCwd,
@@ -29,6 +30,10 @@ describe("projectNameFromCwd", () => {
 });
 
 describe("projectAnchorCwd", () => {
+  it("프로필 루트는 모든 절대 하위 폴더의 앵커다", () => {
+    expect(projectAnchorCwd("/work", "/")).toBe("/");
+  });
+
   it("세션이 프로필 cwd 하위(워크트리)면 프로필 cwd를 유지한다", () => {
     expect(projectAnchorCwd("/a/proj/.claude/worktrees/wt-x", "/a/proj")).toBe("/a/proj");
   });
@@ -67,6 +72,25 @@ describe("projectAnchorCwd", () => {
   });
   it("대소문자는 구분한다", () => {
     expect(projectAnchorCwd("/a/Proj/sub", "/a/proj")).toBe("/a/Proj/sub");
+  });
+});
+
+describe("cwdEquivalent", () => {
+  it("트레일링 슬래시와 구분자 차이는 같은 폴더로 본다", () => {
+    expect(cwdEquivalent("/work/proj/", "/work/proj")).toBe(true);
+    expect(cwdEquivalent("C:\\work\\proj", "C:/work/proj/")).toBe(true);
+  });
+
+  it("같은 틸드 경로끼리는 끝 슬래시를 무시한다", () => {
+    expect(cwdEquivalent("~/dev/proj", "~/dev/proj/")).toBe(true);
+  });
+
+  it("실제 홈을 모르는 상태에서 틸드와 절대경로를 동등하다고 추측하지 않는다", () => {
+    expect(cwdEquivalent("~/dev/proj", "/Users/codex/dev/proj")).toBe(false);
+    expect(cwdEquivalent("~/dev/proj", "/Users/other/dev/proj")).toBe(false);
+    expect(cwdEquivalent("~/dev/proj", "/Users/codex/dev/proj2")).toBe(false);
+    expect(cwdEquivalent("~/dev/proj", "/tmp/dev/proj")).toBe(false);
+    expect(cwdEquivalent("~", "/Users/codex")).toBe(false);
   });
 });
 

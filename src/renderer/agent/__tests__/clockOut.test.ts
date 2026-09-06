@@ -65,6 +65,7 @@ describe("clockOutAgent", () => {
     const s = useAppStore.getState();
     s.addAgent(mkProfile("a1"));
     s.openTerminal("a1");
+    useAppStore.setState({ taskLabels: { a1: { sessionId: "old", cwd: "/old/work" } } });
 
     await clockOutAgent("a1");
 
@@ -73,6 +74,7 @@ describe("clockOutAgent", () => {
     expect(st.agents.a1.clockedOut).toBe(true);
     expect(st.agents.a1).toBeDefined(); // 프로필은 삭제되지 않는다
     expect(st.sessions.a1).toBeUndefined();
+    expect(st.taskLabels.a1).toBeUndefined();
     expect(st.activeTerminalAgentId).toBeNull();
     expect(destroy).toHaveBeenCalledWith("a1");
   });

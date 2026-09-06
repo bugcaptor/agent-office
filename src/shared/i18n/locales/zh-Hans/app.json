@@ -16,7 +16,13 @@
       "title": "重启终端",
       "confirm": "重启",
       "warning": "正在运行的会话会结束，滚动缓冲也会被清空。",
-      "body": "确定重启 <strong>{{name}}</strong> 的终端吗？"
+      "body": "确定重启 <strong>{{name}}</strong> 的终端吗？",
+      "bodyDifferent": "<strong>{{name}}</strong> 当前所在文件夹与配置的启动文件夹不同。要从哪里重启终端？",
+      "currentFolder": "当前文件夹：{{path}}",
+      "startFolder": "启动文件夹：{{path}}",
+      "saveAndRestart": "将当前文件夹设为启动文件夹",
+      "restartHere": "仅本次在当前文件夹重启",
+      "restartFromStart": "在配置的启动文件夹重启"
     },
     "resume": {
       "title": "继续上次会话",

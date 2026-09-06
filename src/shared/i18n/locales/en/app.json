@@ -16,7 +16,13 @@
       "title": "Restart terminal",
       "confirm": "Restart",
       "warning": "The running session ends and the scrollback is cleared.",
-      "body": "Restart <strong>{{name}}</strong>’s terminal?"
+      "body": "Restart <strong>{{name}}</strong>’s terminal?",
+      "bodyDifferent": "<strong>{{name}}</strong> is working in a folder other than the configured start folder. Where should the terminal restart?",
+      "currentFolder": "Current folder: {{path}}",
+      "startFolder": "Start folder: {{path}}",
+      "saveAndRestart": "Set current as start folder",
+      "restartHere": "Restart here this time",
+      "restartFromStart": "Restart in configured folder"
     },
     "resume": {
       "title": "Resume previous session",

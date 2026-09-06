@@ -20,7 +20,11 @@ import { terminalRegistry } from "../terminal/TerminalRegistry";
 import { runGuardedCreateSession } from "../ipc/sessionBridge";
 import { sharedDiaryFlusher } from "../diary/diaryFlusher";
 
-export async function restartAgentSession(agentId: string): Promise<void> {
+/** `cwd`는 이번 create에만 쓰는 재시작 위치이며 프로필을 바꾸지 않는다. */
+export async function restartAgentSession(
+  agentId: string,
+  overrides?: { cwd?: string },
+): Promise<void> {
   // ① 기존 PTY 종료 — 세션이 없거나 이미 죽었어도 재시작은 계속.
   try {
     await tauriApi.disposeSession(agentId);
@@ -55,5 +59,5 @@ export async function restartAgentSession(agentId: string): Promise<void> {
   //     fire-and-forget — 재시작을 블록하지 않는다.
   void sharedDiaryFlusher().flushAgent(agentId, { includeLive: false, source: "session-end" });
 
-  await runGuardedCreateSession(agentId);
+  await runGuardedCreateSession(agentId, overrides);
 }

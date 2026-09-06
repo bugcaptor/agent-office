@@ -529,6 +529,19 @@ body {
   flex: 0 0 auto;
 }
 
+/* 재시작 때 현재 cwd와 프로필 시작 cwd가 다르면 네 선택지를 한꺼번에 보인다.
+ * 경로와 버튼을 좁은 창에서도 읽을 수 있게 별도 배치한다. */
+.confirm-restart-cwd-choice .confirm-restart-cwd-path {
+  overflow-wrap: anywhere;
+}
+.confirm-restart-cwd-choice .confirm-restart-cwd-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--unit) * 2);
+  padding-top: calc(var(--unit) * 3);
+  border-top: 2px solid var(--border-dark);
+}
+
 /* 설정 폼(첫 실행/설정 다이얼로그 공유): 토글 + 설명 2단 구성 */
 .settings-form { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
 .settings-item { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
