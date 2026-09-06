@@ -25,6 +25,7 @@
 mod bot;
 mod media;
 mod misc;
+mod repository_audit;
 // 웹 원격 — 페어링 승인·클라이언트 관리·화면 스냅샷 응답.
 mod web_remote;
 // tailscale serve 대행(웹 원격 HTTPS). 상태 정본은 tailscaled다.
@@ -57,6 +58,7 @@ use crate::types::*;
 pub(crate) use bot::*;
 pub(crate) use media::*;
 pub(crate) use misc::*;
+pub(crate) use repository_audit::*;
 pub(crate) use web_remote::*;
 pub(crate) use tailscale::*;
 pub(crate) use persistence::*;

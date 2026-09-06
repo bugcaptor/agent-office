@@ -8,6 +8,7 @@
 
 /** `invoke()` command names (all commands use `rename_all = "camelCase"` args). */
 export const Commands = {
+  repositoryAuditList: "repository_audit_list",
   createSession: "create_session",
   disposeSession: "dispose_session",
   // 외부(논리) 세션 연결 해제 — 앱 밖 터미널에 붙여 둔 캐릭터를 떼어낸다.

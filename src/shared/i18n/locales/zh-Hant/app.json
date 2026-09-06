@@ -67,6 +67,7 @@
       "cancel": "取消"
     }
   },
+  "repositoryAudit": { "aria": "儲存庫檢查", "title": "儲存庫檢查", "refresh": "重新整理", "close": "關閉", "loading": "正在檢查儲存庫…", "error": "無法載入儲存庫狀態。", "empty": "工作記錄中沒有儲存庫。", "basisNote": "依據上次同步時儲存的遠端狀態，不會自動 fetch。", "noBranch": "無分支", "terminal": "開啟終端機", "terminalError": "無法開啟終端機。", "state": { "commit": "{{count}} 項待提交", "push": "{{ahead}} 項待推送", "pull": "{{behind}} 項待拉取", "diverged": "推送 {{ahead}} · 拉取 {{behind}}", "conflict": "{{count}} 個衝突", "unknown": "需要檢查", "noRemote": "無遠端儲存庫", "noUpstream": "無上游分支", "clean": "狀態正常" } },
   "shell": {
     "lightsOff": "大家都下班了"
   }

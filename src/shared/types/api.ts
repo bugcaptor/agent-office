@@ -56,6 +56,7 @@ import type {
   RunRecipesReadResult,
   RunRecipeUserInput,
 } from './run';
+import type { RepositoryAuditItem } from './repositoryAudit';
 
 /**
  * Renderer-facing API surface (frozen). Implemented by
@@ -68,6 +69,8 @@ import type {
  * `agentId`.
  */
 export interface AgentOfficeApi {
+  /** 작업 기록에서 발견한 저장소의 읽기 전용 git 점검 결과. */
+  repositoryAuditList(): Promise<RepositoryAuditItem[]>;
   createSession(agentId: string, opts?: CreateSessionOptions): Promise<CreateSessionResult>;
   disposeSession(agentId: string): Promise<void>;
   /** 외부(논리) 세션 연결 해제 — PTY가 없으므로 kill할 프로세스는 없고 훅

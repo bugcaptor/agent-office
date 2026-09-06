@@ -67,6 +67,20 @@
       "cancel": "취소"
     }
   },
+  "repositoryAudit": {
+    "aria": "저장소 점검",
+    "title": "저장소 점검",
+    "refresh": "새로고침",
+    "close": "닫기",
+    "loading": "저장소 상태를 점검하는 중…",
+    "error": "저장소 상태를 불러오지 못했습니다.",
+    "empty": "작업 기록에서 발견한 저장소가 없습니다.",
+    "basisNote": "마지막 동기화 때 저장된 원격 상태를 기준으로 하며 자동으로 fetch하지 않습니다.",
+    "noBranch": "브랜치 없음",
+    "terminal": "터미널 열기",
+    "terminalError": "터미널을 열지 못했습니다.",
+    "state": { "commit": "커밋할 변경 {{count}}개", "push": "푸시 {{ahead}}개", "pull": "풀 {{behind}}개", "diverged": "푸시 {{ahead}} · 풀 {{behind}}", "conflict": "충돌 {{count}}개", "unknown": "상태 확인 필요", "noRemote": "원격 저장소 없음", "noUpstream": "업스트림 없음", "clean": "문제 없음" }
+  },
   "shell": {
     "lightsOff": "모두 퇴근했습니다"
   }

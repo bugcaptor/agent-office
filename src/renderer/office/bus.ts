@@ -63,6 +63,8 @@ export interface OfficeBus {
   onSubagentCountChanged(cb: (agentId: string, count: number) => void): () => void;
   /** B가 보스 책상 클릭을 알림(책상 주인 지정과 별개 — 보스 자리 클릭 전용 채널). */
   emitBossDeskClicked(): void;
+  /** 공용 서버 랙 클릭 — 저장소 점검 오버레이를 연다. */
+  emitRepositoryServerClicked(): void;
   /** B가 동료 대화 말풍선을 구독. C가 talk-message 1건을 받아 발신자에겐
    * "say"(본문), 수신자에겐 "hear"(도착 표시)로 각각 1회씩 발화한다.
    * 지난 것을 replay하지 않는다 — 말풍선은 그 순간의 연출이다. */
@@ -93,6 +95,7 @@ export interface MockOfficeBus extends OfficeBus {
   triggerVacationModeChanged(on: boolean): void;
   /** Counts every `emitBossDeskClicked` call (B -> A/C direction). */
   readonly bossDeskClickCount: number;
+  readonly repositoryServerClickCount: number;
   /** Drives the C -> B direction for the current awardee from a test/manual harness. */
   triggerAwardeeChanged(awardee: OfficeAwardee | null): void;
 }
@@ -114,6 +117,7 @@ export function createMockOfficeBus(): MockOfficeBus {
   const awardeeListeners = new Set<(a: OfficeAwardee | null) => void>();
   const clickedAgentIds: string[] = [];
   let bossDeskClickCount = 0;
+  let repositoryServerClickCount = 0;
   let vacationMode = false;
   let awardee: OfficeAwardee | null = null;
   // 구독 시점 replay용 마지막 상태.
@@ -181,6 +185,7 @@ export function createMockOfficeBus(): MockOfficeBus {
     emitBossDeskClicked() {
       bossDeskClickCount += 1;
     },
+    emitRepositoryServerClicked() { repositoryServerClickCount += 1; },
     onVacationModeChanged(cb) {
       vacationModeListeners.add(cb);
       cb(vacationMode);
@@ -193,6 +198,7 @@ export function createMockOfficeBus(): MockOfficeBus {
     get bossDeskClickCount() {
       return bossDeskClickCount;
     },
+    get repositoryServerClickCount() { return repositoryServerClickCount; },
     onAwardeeChanged(cb) {
       awardeeListeners.add(cb);
       cb(awardee);

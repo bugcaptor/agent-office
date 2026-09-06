@@ -885,6 +885,7 @@ pub fn run() {
             ipc::commands::generate_study_material,
             ipc::commands::list_claude_resume_sessions,
             ipc::commands::load_usage_snapshot,
+            ipc::commands::repository_audit_list,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build tauri app")

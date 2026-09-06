@@ -67,6 +67,7 @@
       "cancel": "取消"
     }
   },
+  "repositoryAudit": { "aria": "仓库检查", "title": "仓库检查", "refresh": "刷新", "close": "关闭", "loading": "正在检查仓库…", "error": "无法加载仓库状态。", "empty": "工作记录中没有仓库。", "basisNote": "依据上次同步时保存的远程状态，不会自动 fetch。", "noBranch": "无分支", "terminal": "打开终端", "terminalError": "无法打开终端。", "state": { "commit": "{{count}} 项待提交", "push": "{{ahead}} 项待推送", "pull": "{{behind}} 项待拉取", "diverged": "推送 {{ahead}} · 拉取 {{behind}}", "conflict": "{{count}} 个冲突", "unknown": "需要检查", "noRemote": "无远程仓库", "noUpstream": "无上游分支", "clean": "状态正常" } },
   "shell": {
     "lightsOff": "大家都下班了"
   }

@@ -73,6 +73,7 @@ export class OfficeScene {
   private furnitureTiles: Container[] = [];
   private deskHits: Container[] = [];
   private bossHit?: Container;
+  private repositoryServer?: Container;
   private bossSign?: Container;
   private bossSignBoard?: Graphics;
   private bossSignLabel?: Text;
@@ -155,6 +156,7 @@ export class OfficeScene {
     this.buildMapLayers();
     this.buildDeskHitAreas();
     this.buildBossDesk();
+    this.buildRepositoryServer();
     this.buildAwardDisplays();
 
     this.applyCamera();
@@ -292,6 +294,25 @@ export class OfficeScene {
       this.vacationOn = on;
       if (this.bossSign) this.bossSign.visible = on;
     });
+  }
+
+  /** 모든 풍경의 오른쪽 위에 공용 서버 랙을 얹는다. 바닥 레이어에 있어
+   * 캐릭터/가구 클릭이 우선하며, 씬 전환 때 히트영역과 함께 다시 만든다. */
+  private buildRepositoryServer(): void {
+    const rack = new Container();
+    const x = Math.max(0, this.map.width - 2) * TILE_SIZE;
+    rack.position.set(x, 0);
+    const art = new Graphics();
+    art.rect(1, 1, TILE_SIZE * 2 - 2, TILE_SIZE * 3 - 2).fill({ color: this.theme.pixi.text, alpha: 0.85 });
+    art.rect(3, 3, TILE_SIZE * 2 - 6, TILE_SIZE * 3 - 6).fill({ color: this.render.background });
+    for (let y = 7; y < TILE_SIZE * 3 - 4; y += 9) art.rect(6, y, TILE_SIZE * 2 - 12, 2).fill({ color: 0x50d890 });
+    rack.addChild(art);
+    rack.eventMode = "static";
+    rack.cursor = "pointer";
+    rack.hitArea = new Rectangle(0, 0, TILE_SIZE * 2, TILE_SIZE * 3);
+    rack.on("pointertap", () => this.opts.bus.emitRepositoryServerClicked());
+    this.floorLayer.addChild(rack);
+    this.repositoryServer = rack;
   }
 
   /**
@@ -460,6 +481,7 @@ export class OfficeScene {
     this.repaint();
     this.buildDeskHitAreas();
     this.buildBossDesk();
+    this.buildRepositoryServer();
     this.buildAwardDisplays();
     this.applyCamera(); // 맵 크기가 달라질 수 있고, 팻말 글씨 배율도 여기서 다시 건다
     this.publishLabelAnchors(); // 순간이동한 캐릭터의 라벨을 즉시 따라오게
@@ -496,6 +518,11 @@ export class OfficeScene {
       this.floorLayer.removeChild(this.bossHit);
       this.bossHit.destroy();
       this.bossHit = undefined;
+    }
+    if (this.repositoryServer) {
+      this.floorLayer.removeChild(this.repositoryServer);
+      this.repositoryServer.destroy({ children: true });
+      this.repositoryServer = undefined;
     }
     this.offVacation?.(); // buildBossDesk가 다시 구독한다 — 중복 구독 방지
     this.offVacation = undefined;

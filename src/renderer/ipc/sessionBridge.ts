@@ -38,6 +38,7 @@ import { SubagentCountTracker } from "./subagentCounts";
 import { maybeSendOsNotification } from "./osNotify";
 import { computeAnyWorking, createKeepAwakeController } from "../power/keepAwake";
 import { isNotifySuppressed } from "../agent/summonSuppress";
+import { useRepositoryAuditStore } from "../repository-audit/repositoryAuditStore";
 
 /** OS 알림 본문 길이 상한(제목 옆 본문은 짧게). */
 const OS_NOTIFY_BODY_MAX = 120;
@@ -244,6 +245,9 @@ export const officeBus: OfficeBus = {
   },
   emitBossDeskClicked() {
     useAppStore.getState().toggleVacationMode();
+  },
+  emitRepositoryServerClicked() {
+    useRepositoryAuditStore.getState().openOverlay();
   },
   emitAgentClicked(agentId) {
     // 클릭 시 호버 카드 즉시 숨김.

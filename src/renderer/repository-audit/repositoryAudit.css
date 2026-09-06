@@ -1,0 +1,17 @@
+.repository-audit-overlay { position: fixed; inset: 0; z-index: 31; display: grid; place-items: center; background: color-mix(in srgb, #000 45%, transparent); }
+.repository-audit-dialog { width: min(820px, calc(100vw - 32px)); max-height: min(640px, calc(100vh - 32px)); padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.repository-audit-dialog header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.repository-audit-dialog h2 { margin:0; }
+.repository-audit-dialog header p { margin:4px 0 0; max-width:560px; opacity:.72; }
+.repository-audit-actions { display:flex; flex:0 0 auto; gap:8px; }
+.repository-audit-list { margin:0; padding:0; overflow:auto; list-style:none; }
+.repository-audit-row { display:grid; grid-template-columns:minmax(0, 1fr) minmax(150px, auto) auto; gap:12px; align-items:center; padding:10px 0; border-top:1px solid var(--border, #777); }
+.repository-audit-identity { min-width:0; }
+.repository-audit-row small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; opacity:.75; }
+.repository-audit-states { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; }
+.repository-audit-state { padding:2px 5px; border:1px solid currentColor; white-space:nowrap; }
+.repository-audit-state.conflict,.repository-audit-state.unknown { color:#e66; }
+.repository-audit-state.commit,.repository-audit-state.diverged,.repository-audit-state.noRemote,.repository-audit-state.noUpstream { color:#e9b44c; }
+.repository-audit-state.push,.repository-audit-state.pull { color:#64b5e8; }
+.repository-audit-terminal-error { color:#e66; opacity:1 !important; }
+.repository-audit-message { margin:24px 0; text-align:center; }

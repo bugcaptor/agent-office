@@ -256,13 +256,14 @@ describe("desk click hit areas (책상 지정 메뉴)", () => {
     state.initResolvers.forEach((resolve) => resolve());
     await initPromise;
 
-    // floorLayer(최하단 레이어)에 있는 인터랙티브 자식들 = 데스크 히트영역 + 보스 책상 히트영역.
+    // floorLayer(최하단 레이어)에 있는 인터랙티브 자식들 = 데스크 히트영역 +
+    // 보스 책상 히트영역 + 저장소 점검 서버 랙.
     // 캐릭터/가구보다 아래에 두어 캐릭터 클릭이 항상 우선한다.
     const floorLayer = (
       scene as unknown as { floorLayer: { children: Array<Record<string, unknown>> } }
     ).floorLayer;
     const hits = floorLayer.children.filter((c) => c.eventMode === "static");
-    expect(hits.length).toBe(OFFICE_MAP.desks.length + 1); // +1 for boss desk
+    expect(hits.length).toBe(OFFICE_MAP.desks.length + 2); // + boss desk + server rack
 
     // 첫 데스크의 히트영역을 찾아 탭 → (index, 화면좌표) 발행 확인.
     const d0 = OFFICE_MAP.desks[0];
@@ -276,6 +277,15 @@ describe("desk click hit areas (책상 지정 메뉴)", () => {
 
     hit.emit("pointertap", { global: { x: 33, y: 44 } });
     expect(seen).toEqual([[d0.index, 33, 44]]);
+
+    const server = hits.find(
+      (c) =>
+        (c.position as { x: number; y: number }).x === (OFFICE_MAP.width - 2) * TILE_SIZE &&
+        (c.position as { x: number; y: number }).y === 0,
+    ) as unknown as { emit(ev: string): boolean };
+    expect(server).toBeDefined();
+    server.emit("pointertap");
+    expect(bus.repositoryServerClickCount).toBe(1);
   });
 });
 
@@ -307,7 +317,7 @@ describe("setScene (풍경 교체)", () => {
     };
     const officeFloor = internals.floorTiles;
     const officeFurniture = internals.furnitureTiles;
-    expect(hitsOf(officeScene)).toHaveLength(SCENES.office.map.desks.length + 1);
+    expect(hitsOf(officeScene)).toHaveLength(SCENES.office.map.desks.length + 2);
 
     officeScene.setScene(SCENES.valley);
 
@@ -319,9 +329,9 @@ describe("setScene (풍경 교체)", () => {
     expect(internals.furnitureTiles.length).toBeGreaterThan(0);
     // 월드: 새 맵 전파(좌석 재배정 + 엔티티 리타깃은 OfficeWorld의 몫).
     expect(setMapSpy).toHaveBeenCalledWith(SCENES.valley.map);
-    // 히트영역: 개수는 새 맵의 좌석 수 + 보스 1, 위치는 새 맵의 좌석 좌표.
+    // 히트영역: 개수는 새 맵의 좌석 수 + 보스 + 서버 랙, 위치는 새 맵 좌표.
     const hits = hitsOf(officeScene);
-    expect(hits).toHaveLength(SCENES.valley.map.desks.length + 1);
+    expect(hits).toHaveLength(SCENES.valley.map.desks.length + 2);
     const bossRect = SCENES.valley.map.bossDesk!;
     const bossHit = hits.find(
       (c) =>

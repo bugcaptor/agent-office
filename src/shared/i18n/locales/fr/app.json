@@ -67,6 +67,7 @@
       "cancel": "Annuler"
     }
   },
+  "repositoryAudit": { "aria": "Audit des dépôts", "title": "Audit des dépôts", "refresh": "Actualiser", "close": "Fermer", "loading": "Vérification des dépôts…", "error": "Impossible de charger l’état des dépôts.", "empty": "Aucun dépôt trouvé dans l’historique.", "basisNote": "Utilise l’état distant enregistré lors de la dernière synchronisation, sans fetch automatique.", "noBranch": "Sans branche", "terminal": "Ouvrir le terminal", "terminalError": "Impossible d’ouvrir le terminal.", "state": { "commit": "{{count}} modifications à valider", "push": "{{ahead}} à envoyer", "pull": "{{behind}} à récupérer", "diverged": "Envoi {{ahead}} · réception {{behind}}", "conflict": "{{count}} conflits", "unknown": "À vérifier", "noRemote": "Aucun dépôt distant", "noUpstream": "Aucune branche amont", "clean": "Rien à signaler" } },
   "shell": {
     "lightsOff": "Tout le monde est parti"
   }

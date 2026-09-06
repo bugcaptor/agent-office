@@ -67,6 +67,7 @@
       "cancel": "キャンセル"
     }
   },
+  "repositoryAudit": { "aria": "リポジトリ点検", "title": "リポジトリ点検", "refresh": "更新", "close": "閉じる", "loading": "リポジトリを確認中…", "error": "リポジトリ状態を読み込めませんでした。", "empty": "作業履歴にリポジトリがありません。", "basisNote": "最後の同期時に保存されたリモート状態を使用し、自動 fetch は行いません。", "noBranch": "ブランチなし", "terminal": "ターミナルを開く", "terminalError": "ターミナルを開けませんでした。", "state": { "commit": "コミット待ち {{count}}件", "push": "プッシュ {{ahead}}件", "pull": "プル {{behind}}件", "diverged": "プッシュ {{ahead}} · プル {{behind}}", "conflict": "競合 {{count}}件", "unknown": "確認が必要", "noRemote": "リモートなし", "noUpstream": "アップストリームなし", "clean": "問題なし" } },
   "shell": {
     "lightsOff": "全員退勤しました"
   }

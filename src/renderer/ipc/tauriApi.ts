@@ -61,6 +61,9 @@ function safeInvoke<T>(cb: (payload: T) => void, payload: T): void {
 }
 
 export const tauriApi: AgentOfficeApi = {
+  async repositoryAuditList() {
+    return await invoke(Commands.repositoryAuditList);
+  },
   async createSession(agentId, opts) {
     // `autostartClaude` is a frozen backward-compat wire field, not part of
     // these frozen renderer options; omission defaults to false, and the
