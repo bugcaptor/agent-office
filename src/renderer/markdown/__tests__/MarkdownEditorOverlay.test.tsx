@@ -8,15 +8,19 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { readFile, writeFile } = vi.hoisted(() => ({
+const { readFile, writeFile, openUrl, openLocalLink } = vi.hoisted(() => ({
   readFile: vi.fn().mockResolvedValue({ content: "hello", version: "v1" }),
   writeFile: vi.fn().mockResolvedValue({ version: "v2" }),
+  openUrl: vi.fn().mockResolvedValue(undefined),
+  openLocalLink: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     markdownListFiles: vi.fn().mockResolvedValue({ files: [], truncated: false }),
     markdownReadFile: (...a: unknown[]) => readFile(...a),
     markdownWriteFile: (...a: unknown[]) => writeFile(...a),
+    markdownOpenLocalLink: (...a: unknown[]) => openLocalLink(...a),
   },
 }));
 
@@ -113,6 +117,30 @@ describe("MarkdownEditorOverlay", () => {
     fireEvent.click(screen.getByRole("button", { name: "미리보기" }));
     // marked가 헤딩을 <h1>로 변환.
     expect(document.querySelector(".md-editor-preview h1")?.textContent).toContain("제목");
+  });
+
+  it("미리보기의 외부 링크와 로컬 미디어는 기본 앱으로 연다", () => {
+    seedEditor("[웹](https://example.com) [이미지](images/photo.png)");
+    render(<MarkdownEditorOverlay />);
+    fireEvent.click(screen.getByRole("button", { name: "미리보기" }));
+    fireEvent.click(screen.getByText("웹"));
+    fireEvent.click(screen.getByText("이미지"));
+    expect(openUrl).toHaveBeenCalledWith("https://example.com");
+    expect(openLocalLink).toHaveBeenCalledWith("/root", "docs/images/photo.png");
+  });
+
+  it("미저장 문서에서 내부 링크를 따르면 저장/버리기 선택 후 이동한다", async () => {
+    seedEditor();
+    render(<MarkdownEditorOverlay />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "[다음](next.md)" } });
+    fireEvent.click(screen.getByRole("button", { name: "미리보기" }));
+    fireEvent.click(screen.getByText("다음"));
+
+    expect(screen.getByRole("button", { name: "버리고 이동" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "버리고 이동" }));
+    await vi.waitFor(() => expect(useMarkdownStore.getState().editor?.relPath).toBe("docs/next.md"));
+    useMarkdownStore.getState().goBack();
+    expect(useMarkdownStore.getState().editor?.content).toBe("hello");
   });
 
   it("충돌 플래그가 서면 충돌 해결 다이얼로그가 뜬다", () => {

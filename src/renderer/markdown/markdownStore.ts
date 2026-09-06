@@ -70,7 +70,28 @@ export interface EditorState {
   /** 편집기가 닫힐 때(어느 경로로든) 1회 호출되는 훅. 다른 서브시스템(예: 작업
    *  폴더 보기)에서 열었을 때 "닫으면 그 탐색 상태로 복귀"를 구현하는 데 쓴다. */
   onClose?: () => void;
+  /** 이전 문서들. 링크 탐색 중에는 onClose와 편집 상태까지 보존한다. */
+  history?: MarkdownHistoryEntry[];
+  /** 늦게 끝난 읽기 요청이 현재 문서를 덮어쓰지 않게 하는 세대값. */
+  loadToken?: number;
 }
+
+export interface MarkdownHistoryEntry {
+  root: string;
+  relPath: string;
+  agentId: string;
+  content: string;
+  baseline: string;
+  version: string;
+  mode: "source" | "preview";
+  loading: boolean;
+  saving: boolean;
+  loadError: string | null;
+  conflict: boolean;
+  onClose?: () => void;
+}
+
+let nextLoadToken = 0;
 
 /** 저장 결과 — 호출자(Cmd+S, Esc 저장후닫기)가 후속 동작을 정하기 위한 판별 유니온. */
 export type SaveResult =
@@ -102,6 +123,9 @@ interface MarkdownState {
   /** 파일을 읽어 편집기를 연다(성공 시 팔레트는 닫는다). `onClose`가 주어지면
    *  편집기가 닫히는 어느 경로에서든 1회 호출된다(호출자 탐색 상태 복귀용). */
   openFile(root: string, relPath: string, agentId: string, onClose?: () => void): Promise<void>;
+  /** 미리보기 링크의 Markdown 문서를 같은 편집기에서 연다. */
+  openLinkedFile(relPath: string): Promise<void>;
+  goBack(): void;
   closeEditor(): void;
   setContent(content: string): void;
   setMode(mode: "source" | "preview"): void;
@@ -181,6 +205,7 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
   },
 
   openFile: async (root, relPath, agentId, onClose) => {
+    const loadToken = ++nextLoadToken;
     // 즉시 로딩 상태의 편집기를 띄우고 팔레트는 닫는다.
     set({
       palette: null,
@@ -200,13 +225,15 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
         loadError: null,
         conflict: false,
         onClose,
+        history: [],
+        loadToken,
       },
     });
     try {
       const res = await tauriApi.markdownReadFile(root, relPath);
       set((s) => {
         // 여는 도중 다른 파일로 바뀌었으면(경합) 무시.
-        if (!s.editor || s.editor.root !== root || s.editor.relPath !== relPath) return s;
+        if (!s.editor || s.editor.loadToken !== loadToken) return s;
         return {
           editor: {
             ...s.editor,
@@ -220,10 +247,59 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
       });
     } catch (err) {
       set((s) => {
-        if (!s.editor || s.editor.root !== root || s.editor.relPath !== relPath) return s;
+        if (!s.editor || s.editor.loadToken !== loadToken) return s;
         return { editor: { ...s.editor, loading: false, loadError: toErrorMessage(err) } };
       });
     }
+  },
+
+  openLinkedFile: async (relPath) => {
+    const previous = get().editor;
+    if (!previous || previous.loading || previous.saving || previous.relPath === relPath) return;
+    const loadToken = ++nextLoadToken;
+    const { history: _history, loadToken: _loadToken, ...historyEntry } = previous;
+    const history = [...(previous.history ?? []), historyEntry];
+    set({
+      discardConfirm: false,
+      editor: {
+        root: previous.root,
+        relPath,
+        agentId: previous.agentId,
+        content: "",
+        baseline: "",
+        version: "",
+        mode: "preview",
+        loading: true,
+        saving: false,
+        loadError: null,
+        conflict: false,
+        onClose: previous.onClose,
+        history,
+        loadToken,
+      },
+    });
+    try {
+      const res = await tauriApi.markdownReadFile(previous.root, relPath);
+      set((s) => {
+        if (!s.editor || s.editor.loadToken !== loadToken) return s;
+        return { editor: { ...s.editor, content: res.content, baseline: res.content, version: res.version, loading: false } };
+      });
+    } catch (err) {
+      set((s) =>
+        !s.editor || s.editor.loadToken !== loadToken
+          ? s
+          : { editor: { ...s.editor, loading: false, loadError: toErrorMessage(err) } },
+      );
+    }
+  },
+
+  goBack: () => {
+    const editor = get().editor;
+    const history = editor?.history ?? [];
+    const previous = history[history.length - 1];
+    if (!editor || !previous) return;
+    ++nextLoadToken; // any in-flight target read is now stale.
+    set({ editor: { ...previous, history: history.slice(0, -1), loadToken: nextLoadToken }, discardConfirm: false });
   },
 
   closeEditor: () => {

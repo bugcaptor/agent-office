@@ -69,6 +69,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 # 비대칭이 생겼다(사용량 실시간 조회가 network_error로 죽는 주된 원인).
 tauri-plugin-dialog = "2" # 프로필 시작 폴더의 네이티브 폴더 선택 다이얼로그 (Rust 측에서만 호출 — capability 불필요)
 tauri-plugin-notification = "2" # 앱 백그라운드 시 OS 데스크탑 알림(이슈 #39). 프런트 @tauri-apps/plugin-notification 로 호출 — capability 필요
+tauri-plugin-opener = "2" # Markdown 미리보기의 외부 URL·로컬 미디어를 OS 기본 앱으로 연다.
 ignore = "0.4" # 마크다운 파일 스캔(markdown.rs) — .gitignore/숨김 존중하는 WalkBuilder
 # UI 언어 해석(crate::i18n)의 OS 로케일 조회. 초경량 — 트랜지티브 의존이 없다
 # (플랫폼 API 직접 호출). 번역 카탈로그는 프런트에만 있으므로 i18n crate는 쓰지 않는다.

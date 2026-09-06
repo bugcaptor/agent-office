@@ -1,8 +1,9 @@
 // src-tauri/src/markdown.rs
 //
 // 에이전트 작업 폴더 안의 마크다운 파일을 프런트가 목록·읽기·쓰기 할 수 있게
-// 하는 IPC 커맨드 3종(`markdown_list_files`/`markdown_read_file`/
-// `markdown_write_file`)의 구현부. vscode.rs/shell_export.rs와 같은 골격 --
+// 하는 IPC 커맨드(`markdown_list_files`/`markdown_read_file`/
+// `markdown_write_file`/`markdown_open_local_link`)의 구현부.
+// vscode.rs/shell_export.rs와 같은 골격 --
 // `#[tauri::command]` 얇은 래퍼가 테스트 가능한 순수 함수에 위임한다. 에러는
 // `"{code}: {상세}"`(앱 공통 관례) — 문구가 아니라 안정적인 코드를 내려보내고,
 // 사용자에게 보일 문장은 프런트 카탈로그(`common:errors.*`)가 고른다.
@@ -24,6 +25,7 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use crate::file_scan::walk_files;
+use tauri_plugin_opener::OpenerExt;
 
 /// 읽기 허용 최대 크기(2 MiB). 초과하면 에러(대용량 파일이 UI를 멈추지 않게).
 const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
@@ -81,11 +83,11 @@ fn version_token(meta: &std::fs::Metadata) -> String {
 /// 심링크 탈출) 에러. canonicalize는 대상이 실존해야 하므로, 없는 파일은
 /// 여기서 "찾을 수 없음" 취지의 에러가 된다.
 fn resolve_within_root(root: &str, rel_path: &str) -> Result<(PathBuf, PathBuf), String> {
-    let canon_root = std::fs::canonicalize(root)
-        .map_err(|e| format!("root-not-found: {root} ({e})"))?;
+    let canon_root =
+        std::fs::canonicalize(root).map_err(|e| format!("root-not-found: {root} ({e})"))?;
     let joined = canon_root.join(rel_path);
-    let canon_target = std::fs::canonicalize(&joined)
-        .map_err(|e| format!("file-not-found: {rel_path} ({e})"))?;
+    let canon_target =
+        std::fs::canonicalize(&joined).map_err(|e| format!("file-not-found: {rel_path} ({e})"))?;
     if !canon_target.starts_with(&canon_root) {
         return Err(format!("path-outside-root: {rel_path}"));
     }
@@ -120,8 +122,8 @@ pub fn list_markdown_files_with_backend(
     use crate::persistence::settings_store::FileIndexBackend;
 
     if backend == FileIndexBackend::Everything {
-        let canon_root = std::fs::canonicalize(root)
-            .map_err(|e| format!("root-not-found: {root} ({e})"))?;
+        let canon_root =
+            std::fs::canonicalize(root).map_err(|e| format!("root-not-found: {root} ({e})"))?;
         if !canon_root.is_dir() {
             return Err(format!("root-not-a-directory: {root}"));
         }
@@ -159,8 +161,7 @@ fn has_markdown_extension(path: &Path) -> bool {
 pub fn read_markdown_file(root: &str, rel_path: &str) -> Result<MarkdownReadResult, String> {
     let (_canon_root, target) = resolve_within_root(root, rel_path)?;
 
-    let meta = std::fs::metadata(&target)
-        .map_err(|e| format!("stat-failed: {rel_path} ({e})"))?;
+    let meta = std::fs::metadata(&target).map_err(|e| format!("stat-failed: {rel_path} ({e})"))?;
     if !meta.is_file() {
         return Err(format!("not-a-file: {rel_path}"));
     }
@@ -171,10 +172,8 @@ pub fn read_markdown_file(root: &str, rel_path: &str) -> Result<MarkdownReadResu
         ));
     }
 
-    let bytes = std::fs::read(&target)
-        .map_err(|e| format!("read-failed: {rel_path} ({e})"))?;
-    let content = String::from_utf8(bytes)
-        .map_err(|_| format!("not-utf8: {rel_path}"))?;
+    let bytes = std::fs::read(&target).map_err(|e| format!("read-failed: {rel_path} ({e})"))?;
+    let content = String::from_utf8(bytes).map_err(|_| format!("not-utf8: {rel_path}"))?;
     let version = version_token(&meta);
     Ok(MarkdownReadResult { content, version })
 }
@@ -193,17 +192,14 @@ pub fn write_markdown_file(
     // (기존 파일 편집 전용 계약을 자연히 만족).
     let (_canon_root, target) = resolve_within_root(root, rel_path)?;
 
-    let meta = std::fs::metadata(&target)
-        .map_err(|e| format!("stat-failed: {rel_path} ({e})"))?;
+    let meta = std::fs::metadata(&target).map_err(|e| format!("stat-failed: {rel_path} ({e})"))?;
     if !meta.is_file() {
         return Err(format!("not-a-file: {rel_path}"));
     }
     let current_version = version_token(&meta);
     if current_version != expected_version {
         // 접두사 "CONFLICT"로 프런트가 충돌을 판별한다(뒤 설명은 참고용).
-        return Err(format!(
-            "CONFLICT: {rel_path}"
-        ));
+        return Err(format!("CONFLICT: {rel_path}"));
     }
 
     // 같은 디렉터리에 임시 파일 작성 후 rename(원자 저장). 다른 디렉터리로
@@ -220,8 +216,8 @@ pub fn write_markdown_file(
     }
 
     // 저장 후 새 version을 다시 계산해 돌려준다.
-    let new_meta = std::fs::metadata(&target)
-        .map_err(|e| format!("stat-failed: {rel_path} ({e})"))?;
+    let new_meta =
+        std::fs::metadata(&target).map_err(|e| format!("stat-failed: {rel_path} ({e})"))?;
     Ok(MarkdownWriteResult {
         version: version_token(&new_meta),
     })
@@ -260,6 +256,24 @@ pub async fn markdown_write_file(
     expected_version: String,
 ) -> Result<MarkdownWriteResult, String> {
     write_markdown_file(&root, &rel_path, &content, &expected_version)
+}
+
+/// 미리보기의 비-Markdown 상대 링크를 OS 기본 프로그램으로 연다. 렌더러가
+/// 만든 절대경로를 그대로 받지 않고 root+rel_path를 다시 canonicalize하므로
+/// `..`와 심볼릭 링크로 작업 폴더 밖 파일을 열 수 없다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn markdown_open_local_link(
+    app: tauri::AppHandle,
+    root: String,
+    rel_path: String,
+) -> Result<(), String> {
+    let (_canon_root, target) = resolve_within_root(&root, &rel_path)?;
+    if !target.is_file() {
+        return Err(format!("not-a-file: {rel_path}"));
+    }
+    app.opener()
+        .open_path(target.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|e| format!("open-failed: {rel_path} ({e})"))
 }
 
 #[cfg(test)]
@@ -395,7 +409,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root_str = dir.path().to_str().unwrap();
         let err = write_markdown_file(root_str, "nope.md", "x", "0:0").unwrap_err();
-        assert!(!err.starts_with("CONFLICT"), "충돌이 아니라 부재 에러여야 한다: {err}");
+        assert!(
+            !err.starts_with("CONFLICT"),
+            "충돌이 아니라 부재 에러여야 한다: {err}"
+        );
     }
 
     /// `..`로 root 밖을 가리키는 rel_path는 거부.

@@ -98,6 +98,34 @@ describe("파일 열기/더티", () => {
     s.setContent("hello world");
     expect(isEditorDirty(useMarkdownStore.getState().editor)).toBe(true);
   });
+
+  it("Markdown 링크 이동은 이전 문서와 onClose를 보존하고 뒤로가기로 복원한다", async () => {
+    const onClose = vi.fn();
+    await useMarkdownStore.getState().openFile("/root", "docs/first.md", "agent1", onClose);
+    readFile.mockResolvedValueOnce({ content: "second", version: "v2" });
+    await useMarkdownStore.getState().openLinkedFile("docs/second.md");
+
+    expect(useMarkdownStore.getState().editor).toMatchObject({
+      relPath: "docs/second.md",
+      content: "second",
+      history: [{ relPath: "docs/first.md" }],
+    });
+    useMarkdownStore.getState().goBack();
+    expect(useMarkdownStore.getState().editor).toMatchObject({ relPath: "docs/first.md", content: "hello" });
+    useMarkdownStore.getState().closeEditor();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("늦은 링크 읽기 결과가 뒤로간 문서를 덮어쓰지 않는다", async () => {
+    await useMarkdownStore.getState().openFile("/root", "first.md", "agent1");
+    let resolveRead!: (result: { content: string; version: string }) => void;
+    readFile.mockImplementationOnce(() => new Promise((resolve) => { resolveRead = resolve; }));
+    const opening = useMarkdownStore.getState().openLinkedFile("second.md");
+    useMarkdownStore.getState().goBack();
+    resolveRead({ content: "late", version: "v2" });
+    await opening;
+    expect(useMarkdownStore.getState().editor).toMatchObject({ relPath: "first.md", content: "hello" });
+  });
 });
 
 describe("저장", () => {

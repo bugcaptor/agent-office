@@ -431,6 +431,10 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.markdownWriteFile, { root, relPath, content, expectedVersion });
   },
 
+  async markdownOpenLocalLink(root, relPath) {
+    await invoke(Commands.markdownOpenLocalLink, { root, relPath });
+  },
+
   async workdirListFiles(root, includeIgnored) {
     return await invoke(Commands.workdirListFiles, { root, includeIgnored: !!includeIgnored });
   },

@@ -1308,6 +1308,11 @@ it('ensure returns same Terminal instance across calls (keep-alive)', () => {
 - **초기 뷰 모드(#76)**: `openFile`은 `.md`류를 열 때 `mode: "preview"`(미리보기)를
   기본으로 연다("읽기" 우선). 비-md 유입 시엔 `"source"`로 폴백. 소스↔미리보기 토글은
   세션 간 기억 없이 매 오픈마다 이 기본으로 초기화.
+- **미리보기 링크 탐색**: 현재 문서를 기준으로 해석한 상대 `.md`/`.mdx`/`.markdown`
+  링크는 같은 인앱 뷰어에서 열고, 상단 뒤로 버튼으로 직전 문서 상태를 복원한다.
+  문서가 아닌 로컬 파일은 OS 기본 프로그램으로, `http(s)`·`mailto`·`tel` 같은 외부
+  URL은 OS 기본 브라우저/처리기로 연다. 링크 경로는 쿼리·fragment를 제외하고 판별하며,
+  실제 문서 읽기의 root 경계 검증은 `markdown.rs`의 canonicalize 봉쇄를 그대로 거친다.
 
 ### 10.4 커밋 로그 브라우저 (`WorkdirRepoLogPane`, #54 2단계)
 

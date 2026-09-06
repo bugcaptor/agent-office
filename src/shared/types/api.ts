@@ -328,6 +328,8 @@ export interface AgentOfficeApi {
     content: string,
     expectedVersion: string,
   ): Promise<MarkdownWriteResult>;
+  /** 작업 폴더 경계를 검증한 뒤 비-Markdown 상대 링크를 OS 기본 프로그램으로 연다. */
+  markdownOpenLocalLink(root: string, relPath: string): Promise<void>;
   /** `root` 하위의 전체 파일 목록(이슈 #11). `includeIgnored`가 false(기본)면
    * `.gitignore`를 존중하고 hidden을 스킵한다. true면 무시 규칙·hidden 스킵을
    * 모두 끄고 디스크에 있는 그대로를 담는다(`.git/` 내부만은 언제나 제외).

@@ -312,6 +312,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         // OS 데스크탑 알림(이슈 #39) — 앱이 백그라운드일 때 프런트가 발송.
         .plugin(tauri_plugin_notification::init())
+        // Markdown 미리보기의 외부 URL과 로컬 미디어는 OS 기본 앱에 위임한다.
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let handle = app.handle().clone();
             let data_dir = app.path().app_data_dir()?;
@@ -835,6 +837,7 @@ pub fn run() {
             markdown::markdown_list_files,
             markdown::markdown_read_file,
             markdown::markdown_write_file,
+            markdown::markdown_open_local_link,
             workdir::workdir_list_files,
             workdir::workdir_search_files,
             workdir::workdir_git_status,
