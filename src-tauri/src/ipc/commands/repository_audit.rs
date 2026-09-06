@@ -136,7 +136,6 @@ fn inspect_candidate(raw_path: &str, last_worked_at: u64) -> Option<RepositoryAu
     if !dir.is_dir() {
         return None;
     }
-
     let root_run = git(&dir, &["rev-parse", "--show-toplevel"]);
     if matches!(
         root_run.outcome,
@@ -145,7 +144,9 @@ fn inspect_candidate(raw_path: &str, last_worked_at: u64) -> Option<RepositoryAu
         return Some(timed_out_entry(&dir, last_worked_at));
     }
     if !matches!(root_run.outcome, ProcOutcome::Exited { success: true }) {
-        return Some(unavailable_entry(&dir.to_string_lossy(), last_worked_at));
+        // 상위 디렉터리까지 포함해 Git 최상위를 찾지 못한 실제 디렉터리는
+        // 작업 기록에 남아 있더라도 저장소가 아니므로 목록에 노출하지 않는다.
+        return None;
     }
     let root = PathBuf::from(String::from_utf8_lossy(&root_run.stdout).trim());
     let root = match fs::canonicalize(root) {
@@ -333,6 +334,23 @@ mod tests {
             vec![("/definitely/missing/agent-office-repository".into(), 42)],
         );
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn directory_without_git_metadata_is_not_listed() {
+        let root = std::env::temp_dir().join(format!(
+            "agent-office-audit-not-a-repo-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).unwrap();
+
+        let entries = audit_repositories(
+            &root.join("no-events"),
+            vec![(root.to_string_lossy().into_owned(), 42)],
+        );
+
+        assert!(entries.is_empty());
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
