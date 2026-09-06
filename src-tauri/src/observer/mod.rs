@@ -8,8 +8,9 @@ pub mod forwarder;
 pub mod hook_command;
 pub mod server;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::notification::hub::NotificationHub;
 use claude::ClaudeAdapter;
@@ -78,6 +79,10 @@ pub struct ObserverRuntime {
     adapters: Vec<Arc<dyn ObserverAdapter>>,
     claude_session_sink: Option<Arc<dyn ClaudeSessionSink>>,
     agy_session_sink: Option<Arc<dyn AgySessionSink>>,
+    /// agy 세션(ao_session_id)별 사용량 워터마크 — 대화 db `steps.idx` 기준.
+    /// `ClaudeAdapter::transcript_usage_watermark`와 같은 자리(§3.6): 세션이
+    /// 끝나도 지워지지 않는 누수가 있지만 세션당 정수 하나 규모라 무시할 만하다.
+    agy_usage_watermark: Mutex<HashMap<String, i64>>,
 }
 
 impl ObserverRuntime {
@@ -115,6 +120,7 @@ impl ObserverRuntime {
             adapters,
             claude_session_sink: None,
             agy_session_sink: None,
+            agy_usage_watermark: Mutex::new(HashMap::new()),
         }
     }
 
@@ -274,6 +280,21 @@ impl ObserverRuntime {
                 if event::agy_invocation_num_from_value(&value) != Some(0) {
                     return;
                 }
+                // 이 세션(ao_session_id)의 사용량 워터마크가 아직 없으면(첫
+                // 프롬프트) 지금 db의 max(idx)로 찍어 둔다 — 리줌·입양된
+                // 대화의 첫 Stop이 그 이전 전체 히스토리를 이번 턴 몫으로
+                // 잘못 합산하는 사고를 막는다(§3.6). 새 대화면 db가 아직
+                // 없거나 비어 있어 아무것도 안 찍히고, 그때는 agy_turn_usage의
+                // "워터마크 없으면 전체 합산"이 곧 이번 턴 전체와 같으므로 옳다.
+                if let Some(conversation_id) = event::agy_conversation_id_from_value(&value) {
+                    let mut watermarks = self.agy_usage_watermark.lock().unwrap();
+                    if !watermarks.contains_key(session_id) {
+                        let db_path = agy_conversation_db_path(&conversation_id);
+                        if let Some(max_idx) = event::agy_db_max_idx(&db_path) {
+                            watermarks.insert(session_id.to_string(), max_idx);
+                        }
+                    }
+                }
                 ObserverEvent::Prompt {
                     text: event::agy_prompt_text_from_value(&value),
                     cwd: cwd(),
@@ -282,18 +303,48 @@ impl ObserverRuntime {
             "tool" => ObserverEvent::Tool {
                 text: event::agy_tool_activity_text_from_value(&value),
                 assistant: None,
-                // agy 전사에는 토큰 수가 없다(설계 §3.6 실측) — pi/codex와 같은 None.
+                // agy 전사에는 토큰 수가 없다(설계 §3.6) — Stop에서 대화 db로
+                // 한 번에 합산한다(pi처럼 여기는 계속 None).
                 tokens: None,
             },
-            "stop" => ObserverEvent::Stop {
-                message: Some(event::agy_stop_message_from_value(&value)),
-                running: None,
-                tokens: None,
-            },
+            "stop" => {
+                let tokens = event::agy_conversation_id_from_value(&value).and_then(|conversation_id| {
+                    let db_path = agy_conversation_db_path(&conversation_id);
+                    let baseline = self.agy_usage_watermark.lock().unwrap().get(session_id).copied();
+                    let (usage, new_watermark) = event::agy_turn_usage(&db_path, baseline)?;
+                    self.agy_usage_watermark
+                        .lock()
+                        .unwrap()
+                        .insert(session_id.to_string(), new_watermark);
+                    usage.non_empty().map(|mut tokens| {
+                        tokens.model = value
+                            .get("modelName")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string);
+                        tokens
+                    })
+                });
+                ObserverEvent::Stop {
+                    message: Some(event::agy_stop_message_from_value(&value)),
+                    running: None,
+                    tokens,
+                }
+            }
             _ => return,
         };
         self.hub.ingest_observer(session_id, event);
     }
+}
+
+/// agy 대화 db 경로: `~/.gemini/antigravity-cli/conversations/<conversationId>.db`
+/// (SQLite, WAL 모드, agy가 열어둔 채 읽기 전용으로 열어야 한다 — 설계 §3.6).
+/// 홈 디렉터리는 `agy_hooks_file.rs`와 같은 `session::manager::home_dir()`을 쓴다.
+fn agy_conversation_db_path(conversation_id: &str) -> PathBuf {
+    PathBuf::from(crate::session::manager::home_dir())
+        .join(".gemini")
+        .join("antigravity-cli")
+        .join("conversations")
+        .join(format!("{conversation_id}.db"))
 }
 
 #[cfg(test)]
@@ -970,6 +1021,38 @@ mod tests {
         let notifications = recorded.notifications();
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].message, "Antigravity stopped with an error");
+    }
+
+    /// db가 없는 conversationId(테스트가 실제로 만들 리 없는 UUID)로 prompt/
+    /// stop을 보내도 죽지 않고, usage 이벤트가 나오지 않아야 한다 — 새로 배선한
+    /// 워터마크 시딩·합산 경로가 "db 없음"을 조용히 no-op으로 처리하는지 확인
+    /// (프로토콜/sqlite 세부는 event.rs 단위 테스트가 커버, 여기선 배선만 본다).
+    #[test]
+    fn ingest_agy_source_usage_wiring_is_a_noop_when_conversation_db_is_missing() {
+        let (runtime, recorded) = agy_runtime();
+        let missing_conversation_id = format!("agent-office-test-missing-{}", uuid::Uuid::new_v4());
+
+        runtime.ingest_agy_source(
+            "s1",
+            "prompt",
+            format!(r#"{{"invocationNum":0,"workspacePaths":["/w"],"conversationId":"{missing_conversation_id}"}}"#)
+                .as_bytes(),
+            None,
+        );
+        runtime.ingest_agy_source(
+            "s1",
+            "stop",
+            format!(
+                r#"{{"terminationReason":"model_stop","conversationId":"{missing_conversation_id}","modelName":"gemini-3.8-flash-medium"}}"#
+            )
+            .as_bytes(),
+            None,
+        );
+
+        assert!(recorded.usages().is_empty());
+        let notifications = recorded.notifications();
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].message, "Antigravity finished a task");
     }
 
     /// §3.5: conversationId 캡처는 map 결과와 무관하게 먼저 일어난다 —

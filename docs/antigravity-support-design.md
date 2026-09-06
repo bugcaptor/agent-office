@@ -233,13 +233,82 @@ Claude 재개 설계(`docs/claude-session-resume-design.md`)를 그대로 따르
 - 재개 명령은 `agy --conversation <id>`. `--continue` 는 "가장 최근" 이라 우리 용도가 아니다.
 - v1 은 기록까지만. 재개 UI 는 Claude 것을 provider 분기로 넓히는 후속 이슈로 뺀다.
 
-### 3.6 사용량
+### 3.6 사용량 (kbm #2se, 2026-09-07 갱신)
 
-이미 `usage/antigravity_live.rs` 가 `agy -p /usage` 로 실시간 조회를 한다. 세션 단위
-토큰 집계는 전사 파일에 토큰 수가 없어(실측) 이번에는 하지 않는다. Pi 와 같은 `tokens: None`.
-S4 실측대로 `cli_command`/`fallback_cli_command` 가 자식 `agy` 에
+이미 `usage/antigravity_live.rs` 가 `agy -p /usage` 로 한도(잔여 비율) 실시간 조회를
+한다. S4 실측대로 `cli_command`/`fallback_cli_command` 가 자식 `agy` 에
 `AGENT_OFFICE_HOOK_URL`/`AGENT_OFFICE_SESSION` 을 물려주지 않게 `env_remove` 한다 —
-안 그러면 `/usage` 조회 한 번이 가짜 턴(prompt/stop)을 만든다.
+안 그러면 `/usage` 조회 한 번이 가짜 턴(prompt/stop)을 만든다. 이건 그대로다.
+
+**턴 단위 토큰 집계는 처음엔 안 하는 것으로 남겼으나(전사 파일엔 토큰 수가 없다는
+실측), 재실측으로 뒤집혔다.** 전사(`transcriptPath`, `transcript_full.jsonl`)에는
+여전히 없지만, agy 가 대화마다 별도로 남기는 SQLite 파일에는 있다.
+
+- **원천**: `~/.gemini/antigravity-cli/conversations/<conversationId>.db`.
+  SQLite, **WAL 모드**다. 스키마는 `steps(idx integer PK, step_type integer,
+  status integer, metadata blob, …)`.
+- **오픈 순서(2단계 폴백, `observer/event.rs::agy_open_readonly`)**: 우선 순정
+  `OpenFlags::SQLITE_OPEN_READ_ONLY`로 연다 — agy 가 대화를 열어 둔 채라면
+  (`-wal`/`-shm` 사이드카가 있음) 이게 진행 중인 최신 WAL 프레임까지 읽는
+  유일한 방법이다. sqlite 는 파일 접근을 지연시켜 `open` 자체는 사이드카가
+  없어도 거의 항상 성공하고, 진짜 실패(`SQLITE_CANTOPEN`)는 첫 쿼리에서야
+  드러난다(실측) — 그래서 가벼운 확인 쿼리로 실제로 열리는지 먼저 검증한다.
+  실패하면 `file:<path>?immutable=1` URI 로 한 번 더 연다. agy 가 완전히
+  종료해 체크포인트까지 끝난(사이드카가 없는) 상태에서 순정 오픈이
+  `SQLITE_CANTOPEN` 으로 실패하는 게 실측으로 확인됐는데, 사이드카가 없다는
+  것 자체가 "놓칠 WAL 프레임이 없다"는 뜻이라 이 경로에서는 immutable 로
+  읽어도 최신 턴이 빠질 위험이 없다 — 그래서 순서를 read-only → immutable 로
+  둬서 열려 있는 대화는 WAL 프레임을 읽고, 닫힌 대화도 읽히게 했다. 두
+  시도 다 실패하면(파일 자체가 없음 등) 실패로 보고 조용히 넘어간다(§ 아래
+  "실패 시" 참고).
+- **행 판정**: `step_type = 15` 인 행이 모델 응답이다. `metadata` 컬럼이
+  protobuf 블롭이고 `.proto` 정의는 없다(공개 스키마 없음) — 크레이트 추가 없이
+  직접 만든 40줄짜리 최소 디코더(varint/length-delimited/64-bit/32-bit
+  와이어타입만)로 읽는다(`observer/event.rs::pb_parse_fields`). 최상위 필드
+  9(length-delimited)가 사용량 서브메시지이고, 그 안의 varint 필드
+  **2=input_tokens, 3=output_tokens, 5=cache_read_tokens, 9=thinking_tokens**
+  (6 은 있지만 무시)이다. 실측: `9.2=5571, 9.3=21, 9.5=8130, 9.9=19` 이며 `agy -p
+  --output-format json` 의 usage(`total_tokens=5592=5571+21`, `cache_read`는
+  별도 필드 8130)와 일치했다. 모델 스텝이라도 최상위 필드 9 자체가 없는 행(예:
+  턴 끝의 빈 응답)이 있어 그런 행은 건너뛴다.
+  - `input` = agy 가 이미 캐시를 제외하고 주는 순수 입력이므로 그대로 쓴다
+    (`ClaudeAdapter`가 `input_tokens`를 캐시 제외로 정규화하는 것과 같은
+    규약, §session-analytics-design.md §9.1).
+  - `output` = `output_tokens + thinking_tokens`.
+  - `cache_write`/`model` 은 db 쪽엔 없다 — `cache_write`는 항상 None, `model`
+    은 훅 페이로드 top-level `modelName`(Stop 이벤트에서)을 그대로 쓴다.
+- **워터마크(이중 계산 방지)**: `ClaudeAdapter::transcript_usage_watermark` 와
+  같은 자리 — `ObserverRuntime` 이 `ao_session_id → 마지막으로 합산한 steps.idx`
+  맵(`agy_usage_watermark: Mutex<HashMap<String, i64>>`)을 든다. Stop 마다
+  `idx > watermark` 인 `step_type=15` 행을 합산하고, 새 워터마크로 그 구간의
+  마지막 idx(사용량을 못 뽑은 행이어도 스캔했으면 포함, 재스캔 낭비 방지)를
+  남긴다(`observer/event.rs::agy_turn_usage`).
+  - **첫 프롬프트에서 워터마크를 미리 찍어 둔다.** `PreInvocation &&
+    invocationNum == 0`(턴 시작) 시점에, 이 `ao_session_id` 로 아직 워터마크가
+    없으면(앱 안에서 이 세션을 처음 본다) 그 순간 db 의 `max(idx)`
+    (`agy_db_max_idx`)를 워터마크로 찍는다. 그래야 **리줌·입양된 대화**(db 에
+    이미 이전 턴들의 행이 쌓여 있는 경우)의 첫 Stop 이 그 전체 히스토리를
+    이번 턴 몫으로 잘못 합산하는 사고를 막는다. 브랜드 뉴 대화는 이 시점에
+    db 가 아직 없거나 비어 있어 아무것도 안 찍히고, 그때는
+    `agy_turn_usage` 의 "워터마크 없으면 전체 합산" 이 곧 이번 턴 전체와
+    같으므로 그대로 옳다.
+  - 워터마크 맵은 Claude 쪽과 마찬가지로 세션이 끝나도 지워지지 않는 누수가
+    있지만 세션당 정수 하나 규모라 무시할 만하다.
+- **실패 시 조용히 None**: db 부재, `steps` 테이블에 새 행 없음, 2단계 오픈
+  폴백이 둘 다 실패하는 경우(파일 자체가 없는 등) 모두
+  `agy_turn_usage`/`agy_db_max_idx`가 `None`을 돌려주고, 호출부는 기존
+  워터마크를 그대로 둔 채 다음 Stop에서 재시도한다 — Claude 어댑터의 "합산
+  실패는 조용한 폴백" 원칙과 같다.
+- **의존성**: `rusqlite`를 추가했다. macOS/Linux는 시스템 `libsqlite3`(SDK에
+  항상 있다)에 링크하고, Windows만 시스템 sqlite3 개발 라이브러리가 보통 없어
+  `bundled` 피처로 정적 링크한다(`Cargo.toml`의 `[target.'cfg(windows)'.dependencies]`).
+- **프런트 단가표**: `renderer/analytics/pricing.ts`에 agy 훅 `modelName`(예:
+  `gemini-3.8-flash-medium`, `gemini-3.1-pro-preview`) 전용 요율을 추가했다.
+  `modelName`에 마이너 버전·이펙트 티어가 섞여 고정 패턴으로는 pro/flash를
+  다 못 잡으므로(패턴을 늘릴 때마다 새 마이너 버전 조합이 또 빠진다), 별도
+  함수 `geminiThreeRateFor`가 `RATES` 순회보다 먼저 "id에 `gemini-3` 포함
+  && `pro` 포함"이면 Pro 요율, 그 외 `gemini-3` 포함이면 Flash 요율로 가른다.
+  출처·확인일은 그 파일 주석 참고.
 
 ## 4. 스파이크 (구현 전 반나절, 완료 — 실측 결과를 §2/§3 본문에 반영함)
 

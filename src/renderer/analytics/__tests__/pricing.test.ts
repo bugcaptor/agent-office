@@ -78,6 +78,28 @@ describe("rateFor", () => {
     expect(rateFor("gemini-2.0-flash")?.input).toBe(0.3);
   });
 
+  it("agy 훅 modelName 꼴의 Gemini 3.x는 캐치올이 아닌 전용 요율을 쓴다", () => {
+    const flashRate = {
+      input: 0.75,
+      output: 3.75,
+      cacheRead: 0.075,
+      cacheWrite: 0.75,
+    };
+    const proRate = { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2 };
+
+    // 실측 modelName "gemini-3.8-flash-medium"(kbm #2se).
+    expect(rateFor("gemini-3.8-flash-medium")).toEqual(flashRate);
+    // 마이너 버전 없는 pro도, 마이너 버전이 낀 pro("gemini-3.1-pro-preview"
+    // 같은 꼴)도 고정 패턴이 아니라 "gemini-3" + "pro" 포함 여부로 갈라야
+    // 둘 다 잡힌다.
+    expect(rateFor("gemini-3-pro-high")).toEqual(proRate);
+    expect(rateFor("gemini-3.1-pro-preview")).toEqual(proRate);
+    expect(rateFor("gemini-3.5-pro-low")).toEqual(proRate);
+    // pro가 없는 나머지 3.x(마이너 버전 무관)는 전부 Flash 요율.
+    expect(rateFor("gemini-3.5-flash-medium")).toEqual(flashRate);
+    expect(rateFor("gemini-3-flash-high")).toEqual(flashRate);
+  });
+
   it("모델 없음/미지 모델은 null", () => {
     expect(rateFor(undefined)).toBeNull();
     expect(rateFor("")).toBeNull();

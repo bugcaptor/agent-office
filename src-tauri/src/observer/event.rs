@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use crate::types::SessionEventTokens;
 
@@ -482,6 +483,192 @@ pub(crate) fn agy_stop_message_from_value(value: &serde_json::Value) -> String {
     } else {
         "Antigravity finished a task".to_string()
     }
+}
+
+// ── agy 사용량: 최소 protobuf 디코더 ──────────────────────────────────────
+// 전사에는 토큰 수가 없지만(§3.6 옛 실측) `~/.gemini/antigravity-cli/
+// conversations/<conversationId>.db`(SQLite, agy가 열어둔 채 읽어야 함)의
+// `steps.metadata` 블롭 안에 있다(재실측, 설계 §3.6 갱신). .proto 정의가
+// 없어 schema 없는 디코더를 직접 쓴다 — varint/length-delimited/64-bit/
+// 32-bit 와이어타입만 다루면 충분하다(우리가 읽는 필드는 전부 스칼라).
+
+fn pb_read_varint(buf: &[u8], pos: &mut usize) -> Option<u64> {
+    let mut result: u64 = 0;
+    let mut shift = 0u32;
+    loop {
+        let byte = *buf.get(*pos)?;
+        *pos += 1;
+        result |= u64::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Some(result);
+        }
+        shift += 7;
+        if shift >= 64 {
+            return None; // 비정상적으로 긴 varint — 방어적으로 포기
+        }
+    }
+}
+
+/// 메시지 하나의 필드 번호별 varint 값과 length-delimited 바이트열을 모은다.
+/// 같은 필드가 반복되면 마지막 값으로 덮어쓴다(우리가 읽는 필드는 반복 없는
+/// 스칼라뿐). 64-bit/32-bit 필드는 건너뛰고, 모르는(그룹 등) wire type을
+/// 만나면 그 지점까지 파싱한 결과로 조용히 종료한다(손상 데이터 방어).
+fn pb_parse_fields(buf: &[u8]) -> (HashMap<u32, u64>, HashMap<u32, Vec<u8>>) {
+    let mut varints = HashMap::new();
+    let mut chunks = HashMap::new();
+    let mut pos = 0usize;
+    while pos < buf.len() {
+        let Some(key) = pb_read_varint(buf, &mut pos) else { break };
+        let field = (key >> 3) as u32;
+        match key & 0x7 {
+            0 => match pb_read_varint(buf, &mut pos) {
+                Some(v) => {
+                    varints.insert(field, v);
+                }
+                None => break,
+            },
+            2 => {
+                let Some(len) = pb_read_varint(buf, &mut pos) else { break };
+                let len = len as usize;
+                if pos + len > buf.len() {
+                    break;
+                }
+                chunks.insert(field, buf[pos..pos + len].to_vec());
+                pos += len;
+            }
+            1 => {
+                if pos + 8 > buf.len() {
+                    break;
+                }
+                pos += 8;
+            }
+            5 => {
+                if pos + 4 > buf.len() {
+                    break;
+                }
+                pos += 4;
+            }
+            _ => break,
+        }
+    }
+    (varints, chunks)
+}
+
+/// agy 스텝 하나(`step_type=15`, 모델 응답)의 `metadata` 블롭에서
+/// `(input, output+thinking, cache_read)`를 뽑는다. 최상위 필드 9
+/// (length-delimited)가 사용량 서브메시지이고, 그 안의 varint 필드
+/// 2=input_tokens, 3=output_tokens, 5=cache_read_tokens, 9=thinking_tokens
+/// (6은 무시) — 실측: 9.2=5571, 9.3=21, 9.5=8130, 9.9=19이며 `agy -p
+/// --output-format json`의 usage(total_tokens=5592=5571+21, 별도
+/// cache_read=8130)와 일치했다. 최상위 필드 9 자체가 없는 행(모델 스텝이라도
+/// 빈 응답 등)은 None — 호출부가 건너뛴다.
+fn agy_step_usage(metadata: &[u8]) -> Option<(u64, u64, u64)> {
+    let (_, top_chunks) = pb_parse_fields(metadata);
+    let usage_bytes = top_chunks.get(&9)?;
+    let (usage, _) = pb_parse_fields(usage_bytes);
+    let input = usage.get(&2).copied().unwrap_or(0);
+    let output = usage.get(&3).copied().unwrap_or(0);
+    let cache_read = usage.get(&5).copied().unwrap_or(0);
+    let thinking = usage.get(&9).copied().unwrap_or(0);
+    Some((input, output.saturating_add(thinking), cache_read))
+}
+
+/// agy 대화 db를 읽기 전용으로 연다. 우선 순정 `SQLITE_OPEN_READ_ONLY`로
+/// 시도한다 — agy가 대화를 열어 둔 채(WAL 사이드카 `-wal`/`-shm`가 있음)라면
+/// 이게 진행 중인 최신 WAL 프레임까지 읽는 유일한 방법이다.
+///
+/// sqlite는 파일 접근을 지연시켜(lazy) `open_with_flags` 자체는 사이드카가
+/// 없어도 거의 항상 성공하고, 진짜 실패(`SQLITE_CANTOPEN`)는 첫
+/// 쿼리(prepare)에서야 드러난다(실측) — 그래서 가벼운 확인 쿼리로 실제로
+/// 열리는지 먼저 검증한다. 실패하면 `immutable=1` URI로 한 번 더 시도한다.
+/// 사이드카가 없다는 것 자체가 "agy가 이미 대화를 닫고 체크포인트했다"는
+/// 뜻이라(실측: 실제 conversations db가 그랬다) 이 경로에서는 놓칠 WAL
+/// 프레임이 없으므로 immutable로 읽어도 최신 턴이 빠질 위험이 없다.
+///
+/// 두 시도 다 실패하면(파일 자체가 없음 등) None.
+fn agy_open_readonly(db_path: &Path) -> Option<rusqlite::Connection> {
+    if let Ok(conn) =
+        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+    {
+        if conn.query_row("SELECT 1", [], |_| Ok(())).is_ok() {
+            return Some(conn);
+        }
+    }
+    let uri = format!("file:{}?immutable=1", db_path.display());
+    rusqlite::Connection::open_with_flags(
+        &uri,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )
+    .ok()
+}
+
+/// agy 대화 db의 현재 `max(idx)`. 새로 보는 세션의 첫 프롬프트에서 워터마크를
+/// 여기로 찍어 두면(호출부 `ingest_agy_source`), 이미 대화가 쌓여 있던
+/// 리줌·입양 세션의 첫 Stop이 그 전체 히스토리를 몽땅 이번 턴 것으로
+/// 잘못 합산하는 사고를 막는다. db 부재/빈 테이블/잠김은 조용히 None.
+pub fn agy_db_max_idx(db_path: &Path) -> Option<i64> {
+    let conn = agy_open_readonly(db_path)?;
+    conn.query_row("SELECT max(idx) FROM steps", [], |row| row.get::<_, Option<i64>>(0))
+        .ok()
+        .flatten()
+}
+
+/// `idx > watermark_idx`인 `step_type=15`(모델 응답) 행의 사용량을 합산해
+/// `(합산 토큰, 새 워터마크)`를 돌려준다(설계 §3.6). `watermark_idx`가
+/// None이면 처음부터(전체) 합산한다 — 브랜드 뉴 대화는 이게 정확한 전체이고,
+/// 리줌·입양 세션의 과대 집계는 호출부가 첫 프롬프트에서 `agy_db_max_idx`로
+/// 미리 워터마크를 찍어 방지한다.
+///
+/// `input`은 agy가 이미 캐시를 제외하고 주는 순수 입력이다(실측:
+/// total_tokens=5592=input(5571)+output(21), cache_read=8130은 별도 필드).
+/// `output`은 `output_tokens + thinking_tokens`. `cache_write`/`model`은
+/// 여기서 알 수 없어 항상 None — model은 호출부가 훅 페이로드 `modelName`을
+/// 채운다.
+///
+/// db가 없거나 잠겨 있거나(agy가 쓰기 중) 새 행이 없으면 None — 호출부는
+/// 기존 워터마크를 그대로 유지한다(다음 Stop에서 재시도).
+pub fn agy_turn_usage(
+    db_path: &Path,
+    watermark_idx: Option<i64>,
+) -> Option<(SessionEventTokens, i64)> {
+    let conn = agy_open_readonly(db_path)?;
+    let baseline = watermark_idx.unwrap_or(-1);
+    let mut stmt = conn
+        .prepare("SELECT idx, metadata FROM steps WHERE step_type = 15 AND idx > ?1 ORDER BY idx")
+        .ok()?;
+    let rows: Vec<(i64, Option<Vec<u8>>)> = stmt
+        .query_map([baseline], |row| Ok((row.get(0)?, row.get(1)?)))
+        .ok()?
+        .filter_map(Result::ok)
+        .collect();
+    let last_idx = rows.last()?.0;
+
+    let mut input = 0u64;
+    let mut output = 0u64;
+    let mut cache_read = 0u64;
+    let mut saw_usage = false;
+    for (_, metadata) in &rows {
+        let Some(metadata) = metadata else { continue };
+        let Some((i, o, c)) = agy_step_usage(metadata) else {
+            continue;
+        };
+        input += i;
+        output += o;
+        cache_read += c;
+        saw_usage = true;
+    }
+
+    let tokens = if saw_usage {
+        SessionEventTokens {
+            input: Some(input),
+            output: Some(output),
+            cache_read: Some(cache_read),
+            ..Default::default()
+        }
+    } else {
+        SessionEventTokens::default()
+    };
+    Some((tokens, last_idx))
 }
 
 /// Claude 훅 body의 top-level `transcript_path`. 공백/부재/비문자열은 None.
@@ -1309,6 +1496,204 @@ mod tests {
         );
         assert_eq!(agy_stop_message(br#"{}"#), "Antigravity finished a task");
         assert_eq!(agy_stop_message(b"not json"), "Antigravity finished a task");
+    }
+
+    // ── agy 사용량(§3.6): protobuf 디코더 + sqlite 워터마크 ──────────────
+
+    /// varint 인코더(테스트 전용) — 손으로 protobuf 바이트열을 만든다.
+    fn pb_test_encode_varint(mut v: u64, out: &mut Vec<u8>) {
+        loop {
+            let byte = (v & 0x7f) as u8;
+            v >>= 7;
+            if v == 0 {
+                out.push(byte);
+                break;
+            }
+            out.push(byte | 0x80);
+        }
+    }
+
+    fn pb_test_field(field: u32, wire: u8, out: &mut Vec<u8>) {
+        pb_test_encode_varint(((field as u64) << 3) | wire as u64, out);
+    }
+
+    /// 실측(설계 §3.6)과 같은 모양의 usage 서브메시지: 2=input, 3=output,
+    /// 5=cache_read, 9=thinking. 무시해야 할 필드 6도 섞어 넣는다.
+    fn pb_test_usage_submessage(input: u64, output: u64, cache_read: u64, thinking: u64) -> Vec<u8> {
+        let mut usage = Vec::new();
+        pb_test_field(2, 0, &mut usage);
+        pb_test_encode_varint(input, &mut usage);
+        pb_test_field(3, 0, &mut usage);
+        pb_test_encode_varint(output, &mut usage);
+        pb_test_field(5, 0, &mut usage);
+        pb_test_encode_varint(cache_read, &mut usage);
+        pb_test_field(6, 0, &mut usage); // 무시해야 할 필드 — 섞여도 결과에 영향 없어야 한다
+        pb_test_encode_varint(999, &mut usage);
+        pb_test_field(9, 0, &mut usage);
+        pb_test_encode_varint(thinking, &mut usage);
+        usage
+    }
+
+    /// 최상위 필드 9(length-delimited)에 usage 서브메시지를 담은 `steps.metadata` 블롭.
+    fn pb_test_metadata(input: u64, output: u64, cache_read: u64, thinking: u64) -> Vec<u8> {
+        let usage = pb_test_usage_submessage(input, output, cache_read, thinking);
+        let mut metadata = Vec::new();
+        pb_test_field(1, 0, &mut metadata); // 무관한 다른 필드도 섞는다
+        pb_test_encode_varint(42, &mut metadata);
+        pb_test_field(9, 2, &mut metadata);
+        pb_test_encode_varint(usage.len() as u64, &mut metadata);
+        metadata.extend_from_slice(&usage);
+        metadata
+    }
+
+    #[test]
+    fn agy_step_usage_decodes_hand_built_protobuf_bytes() {
+        use super::agy_step_usage;
+        // 실측값(설계 §3.6): 9.2=5571, 9.3=21, 9.5=8130, 9.9=19.
+        let metadata = pb_test_metadata(5571, 21, 8130, 19);
+        assert_eq!(agy_step_usage(&metadata), Some((5571, 21 + 19, 8130)));
+    }
+
+    #[test]
+    fn agy_step_usage_returns_none_when_field_nine_is_absent() {
+        use super::agy_step_usage;
+        // 최상위 필드 9가 아예 없는 행(모델 스텝이라도 빈 응답 등) — 필드 1만 있음.
+        let mut metadata = Vec::new();
+        pb_test_field(1, 0, &mut metadata);
+        pb_test_encode_varint(7, &mut metadata);
+        assert_eq!(agy_step_usage(&metadata), None);
+    }
+
+    /// `steps(idx, step_type, metadata)` 최소 스키마의 임시 sqlite 파일을
+    /// 만들어 채운다. 반환하는 `TempPath`가 스코프를 벗어나면 파일이 지워지므로
+    /// 호출부가 변수에 묶어 둬야 한다.
+    fn agy_test_db(rows: &[(i64, i64, Option<Vec<u8>>)]) -> tempfile::TempPath {
+        let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB)",
+        )
+        .unwrap();
+        for (idx, step_type, metadata) in rows {
+            conn.execute(
+                "INSERT INTO steps (idx, step_type, metadata) VALUES (?1, ?2, ?3)",
+                rusqlite::params![idx, step_type, metadata],
+            )
+            .unwrap();
+        }
+        path
+    }
+
+    /// `agy_test_db`와 같은 스키마를 **WAL 모드로, 사이드카(-wal/-shm) 없이
+    /// 닫힌 상태**로 만든다 — agy가 대화를 이미 닫고 체크포인트한 실제 db와
+    /// 같은 조건(§3.6 실측: 순정 `SQLITE_OPEN_READ_ONLY`만으로는
+    /// `SQLITE_CANTOPEN`이 난다)을 재현한다. `wal_checkpoint(TRUNCATE)`는
+    /// wal 파일을 0바이트로 줄일 뿐 지우지는 않으므로, 사이드카가 아예 없는
+    /// 상태를 만들려면 체크포인트 후 파일 자체를 지워야 한다(journal_mode를
+    /// DELETE로 되돌리면 헤더의 journal_mode 자체가 바뀌어 재현하려는 조건과
+    /// 달라지므로 쓰지 않는다).
+    fn agy_test_closed_wal_db(rows: &[(i64, i64, Option<Vec<u8>>)]) -> tempfile::TempPath {
+        let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
+            conn.execute_batch(
+                "CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB)",
+            )
+            .unwrap();
+            for (idx, step_type, metadata) in rows {
+                conn.execute(
+                    "INSERT INTO steps (idx, step_type, metadata) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![idx, step_type, metadata],
+                )
+                .unwrap();
+            }
+            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);").unwrap();
+            // conn이 여기서 drop(닫힘)된다 — 사이드카 삭제는 아래에서 명시적으로 한다.
+        }
+        let _ = std::fs::remove_file(format!("{}-wal", path.display()));
+        let _ = std::fs::remove_file(format!("{}-shm", path.display()));
+        path
+    }
+
+    #[test]
+    fn agy_turn_usage_falls_back_to_immutable_uri_when_wal_sidecars_are_missing() {
+        use super::agy_turn_usage;
+        // 재현 조건 확인: 이 db는 헤더상 WAL 모드이면서 사이드카가 없다 —
+        // 순정 read-only 오픈만으로는 실패하는 조건(§3.6 실측)과 같다.
+        let db = agy_test_closed_wal_db(&[(1, 15, Some(pb_test_metadata(100, 10, 5, 0)))]);
+        assert!(!std::path::Path::new(&format!("{}-wal", db.display())).exists());
+        assert!(!std::path::Path::new(&format!("{}-shm", db.display())).exists());
+
+        let (tokens, watermark) = agy_turn_usage(std::path::Path::new(&db), None)
+            .expect("immutable URI 폴백으로 읽혀야 한다");
+        assert_eq!(tokens.input, Some(100));
+        assert_eq!(tokens.output, Some(10));
+        assert_eq!(tokens.cache_read, Some(5));
+        assert_eq!(watermark, 1);
+    }
+
+    #[test]
+    fn agy_db_max_idx_also_falls_back_to_immutable_uri() {
+        use super::agy_db_max_idx;
+        let db = agy_test_closed_wal_db(&[(1, 15, None), (9, 15, None)]);
+        assert_eq!(agy_db_max_idx(std::path::Path::new(&db)), Some(9));
+    }
+
+    #[test]
+    fn agy_turn_usage_sums_model_steps_past_the_watermark() {
+        use super::agy_turn_usage;
+        let db = agy_test_db(&[
+            (1, 15, Some(pb_test_metadata(100, 10, 5, 0))),
+            (2, 3, None), // step_type != 15 — 무시
+            (3, 15, Some(pb_test_metadata(200, 20, 0, 5))), // thinking 5 → output 25
+            (4, 15, None), // metadata 없는 모델 스텝(예: 마지막 빈 응답) — 건너뛴다
+        ]);
+        let (tokens, watermark) = agy_turn_usage(std::path::Path::new(&db), None).unwrap();
+        assert_eq!(tokens.input, Some(300));
+        assert_eq!(tokens.output, Some(10 + 25));
+        assert_eq!(tokens.cache_read, Some(5));
+        assert_eq!(watermark, 4); // 사용량 없는 idx=4도 스캔했으니 워터마크에 포함
+
+        // 워터마크 이후로 새 행이 없으면 None(재합산하지 않는다).
+        assert_eq!(agy_turn_usage(std::path::Path::new(&db), Some(4)), None);
+    }
+
+    #[test]
+    fn agy_turn_usage_only_counts_rows_after_the_watermark() {
+        use super::agy_turn_usage;
+        let db = agy_test_db(&[
+            (1, 15, Some(pb_test_metadata(100, 10, 5, 0))),
+            (2, 15, Some(pb_test_metadata(1, 1, 1, 1))),
+        ]);
+        // idx=1까지는 이미 이전 턴에서 합산했다고 가정 — 이번엔 idx=2만 잡는다.
+        let (tokens, watermark) = agy_turn_usage(std::path::Path::new(&db), Some(1)).unwrap();
+        assert_eq!(tokens.input, Some(1));
+        assert_eq!(tokens.output, Some(1 + 1));
+        assert_eq!(tokens.cache_read, Some(1));
+        assert_eq!(watermark, 2);
+    }
+
+    #[test]
+    fn agy_turn_usage_is_none_when_db_missing() {
+        use super::agy_turn_usage;
+        let missing = std::path::Path::new("/no/such/agy-conversation.db");
+        assert_eq!(agy_turn_usage(missing, None), None);
+    }
+
+    #[test]
+    fn agy_db_max_idx_reads_current_high_watermark() {
+        use super::agy_db_max_idx;
+        let db = agy_test_db(&[(1, 15, None), (7, 15, None)]);
+        assert_eq!(agy_db_max_idx(std::path::Path::new(&db)), Some(7));
+
+        let empty_db = agy_test_db(&[]);
+        assert_eq!(agy_db_max_idx(std::path::Path::new(&empty_db)), None);
+
+        assert_eq!(
+            agy_db_max_idx(std::path::Path::new("/no/such/agy-conversation.db")),
+            None,
+        );
     }
 
     #[test]

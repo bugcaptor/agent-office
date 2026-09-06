@@ -39,6 +39,29 @@ const RATES: ReadonlyArray<readonly [pattern: string, rate: ModelRate]> = [
 ];
 
 /**
+ * Gemini 3.x 요율(Antigravity CLI(agy)의 훅 modelName, kbm #2se). 표준
+ * (<=200K 컨텍스트) 요율, 출처: https://ai.google.dev/gemini-api/docs/pricing
+ * (2026-09-07 확인, 서드파티 corroboration: devtk.ai/en/models/gemini-3-1-pro,
+ * apidog.com/blog/gemini-3-8-flash-pricing). Flash는 2026-12-31까지 도입가이고
+ * 이후 $1.5/$7.5로 오를 예정 — 인상 시점엔 이 값도 갱신해야 한다.
+ */
+const GEMINI_3_PRO_RATE: ModelRate = { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2 };
+const GEMINI_3_FLASH_RATE: ModelRate = { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0.75 };
+
+/**
+ * agy 훅 modelName은 "gemini-3.8-flash-medium"처럼 마이너 버전과 이펙트
+ * 티어가 껴서(`gemini-3.1-pro-preview`도 마찬가지) 고정 패턴으로는 pro/flash를
+ * 구분할 수 없다(패턴 하나를 늘릴 때마다 마이너 버전 조합이 새로 빠진다).
+ * 그래서 "gemini-3"를 포함하는 id는 여기서 "pro" 포함 여부로 먼저 갈라 낸다
+ * — RATES 순서 규칙(구체적인 패턴이 위)의 예외로, 이 함수가 RATES보다 먼저
+ * 검사된다.
+ */
+function geminiThreeRateFor(key: string): ModelRate | null {
+  if (!key.includes("gemini-3")) return null;
+  return key.includes("pro") ? GEMINI_3_PRO_RATE : GEMINI_3_FLASH_RATE;
+}
+
+/**
  * OpenAI GPT-5 계열은 이름만 비슷해도 모델별 단가가 다르다. 따라서 일반
  * `gpt-5` 부분문자열은 쓰지 않고, 공식 모델 ID(및 날짜 스냅샷)만 정확히
  * 허용한다. 출처(2026-09-05):
@@ -116,6 +139,8 @@ export function rateFor(model: string | undefined): ModelRate | null {
   const key = model.toLowerCase().trim();
   const openAiRate = openAiRateFor(key);
   if (openAiRate) return openAiRate;
+  const geminiThreeRate = geminiThreeRateFor(key);
+  if (geminiThreeRate) return geminiThreeRate;
   for (const [pattern, rate] of RATES) {
     if (key.includes(pattern)) return rate;
   }
