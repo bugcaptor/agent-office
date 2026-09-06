@@ -29,11 +29,30 @@ fn ok_response() -> impl IntoResponse {
     )
 }
 
+/// agy() 셸 래퍼가 호출 시점의 `$PWD`를 실어 보내는 헤더(session/agy_hook.rs
+/// 참고). 쿼리 문자열이 아니라 헤더인 이유: POSIX sh에는 표준
+/// percent-encoding 도구가 없어 쿼리에 실으면 공백·비ASCII 경로가 깨진다.
+const AGY_CWD_HEADER: &str = "x-agent-office-cwd";
+
 async fn handle_hook(
     State(runtime): State<Arc<ObserverRuntime>>,
     Query(query): Query<HookQuery>,
+    headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
+    if query.agent.as_deref() == Some("agy") {
+        if let Some(source) = query.source.as_deref() {
+            // `HeaderValue::to_str()`은 ASCII 시각 문자만 허용해 비ASCII(한글 등)
+            // 경로가 통째로 None이 된다. 헤더 값은 우리가 만든 클라이언트(hook.sh)가
+            // curl -H로 그대로 실은 raw UTF-8 바이트이므로 from_utf8로 직접 읽는다.
+            let cwd_override = headers
+                .get(AGY_CWD_HEADER)
+                .and_then(|v| std::str::from_utf8(v.as_bytes()).ok())
+                .filter(|v| !v.trim().is_empty());
+            runtime.ingest_agy_source(&query.session, source, &body, cwd_override);
+        }
+        return ok_response();
+    }
     if query.agent.as_deref() == Some("pi") {
         if let Some(source) = query.source.as_deref() {
             runtime.ingest_pi_source(&query.session, source, &body);
@@ -436,6 +455,107 @@ mod tests {
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].source, NotificationSource::Stop);
         assert_eq!(notifications[0].message, "Pi finished a task");
+        state.shutdown();
+    }
+
+    /// agy(Antigravity CLI) 훅 라우팅: `agent=agy`는 `provider=`/`event=`
+    /// 계약을 타지 않는 pi와 같은 갈래를 쓴다(§2/§3.4). `workspacePaths`가
+    /// 빈 배열인 프롬프트가 `X-Agent-Office-Cwd` 헤더로 강등되는지, 반복
+    /// invocationNum(1)이 버려지는지도 함께 확인한다(§4/스파이크 실측 1).
+    #[tokio::test]
+    async fn routes_agy_turn_sequence_via_agent_query_and_cwd_header() {
+        let (runtime, events) = fixture();
+        let state = ObserverServerState::default();
+        let port = state.ensure(runtime).await.unwrap();
+        let client = reqwest::Client::new();
+
+        // 같은 턴 안의 반복 PreInvocation(invocationNum=1)은 버려진다.
+        client
+            .post(format!("http://127.0.0.1:{port}/hook?session=s1&agent=agy&source=prompt"))
+            .body(r#"{"invocationNum":1,"workspacePaths":["/w"]}"#)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+
+        // 턴 시작(invocationNum=0), workspacePaths가 비어 있어 헤더의 cwd로 강등.
+        client
+            .post(format!("http://127.0.0.1:{port}/hook?session=s1&agent=agy&source=prompt"))
+            .header("X-Agent-Office-Cwd", "/Users/me/dev/agent-office")
+            .body(r#"{"invocationNum":0,"workspacePaths":[]}"#)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+
+        client
+            .post(format!("http://127.0.0.1:{port}/hook?session=s1&agent=agy&source=tool"))
+            .body(r#"{"name":"run_terminal_cmd","command":"echo done"}"#)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+
+        client
+            .post(format!("http://127.0.0.1:{port}/hook?session=s1&agent=agy&source=stop"))
+            .body(r#"{"terminationReason":"model_stop"}"#)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+
+        let activities = events.activities();
+        // 반복 PreInvocation은 버려졌으므로 prompt(1) + tool(1) + Stop의
+        // SubCount(1)만 남는다.
+        assert_eq!(activities.len(), 3);
+        assert_eq!(activities[0].kind, ActivityKind::Prompt);
+        assert_eq!(activities[0].cwd.as_deref(), Some("/Users/me/dev/agent-office"));
+        assert_eq!(activities[1].kind, ActivityKind::Tool);
+        assert_eq!(activities[1].text.as_deref(), Some("run_terminal_cmd: echo done"));
+        assert_eq!(activities[2].kind, ActivityKind::SubCount);
+
+        let notifications = events.notifications();
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].source, NotificationSource::Stop);
+        assert_eq!(notifications[0].message, "Antigravity finished a task");
+        state.shutdown();
+    }
+
+    /// 리뷰 지적: `HeaderValue::to_str()`은 ASCII 시각 문자만 허용해 한글 등
+    /// 비ASCII 경로가 통째로 None이 됐다(`headers::HeaderValue::to_str` 계약).
+    /// 헤더 값을 raw UTF-8 바이트로 만들어(`from_bytes`, `to_str`가 거부하는
+    /// 값) 서버가 여전히 cwd로 읽는지 확인한다.
+    #[tokio::test]
+    async fn routes_agy_prompt_with_a_non_ascii_cwd_header() {
+        let (runtime, events) = fixture();
+        let state = ObserverServerState::default();
+        let port = state.ensure(runtime).await.unwrap();
+        let client = reqwest::Client::new();
+
+        let cwd = "/Users/개발자/dev/agent-office";
+        let header = axum::http::HeaderValue::from_bytes(cwd.as_bytes())
+            .expect("raw UTF-8 header bytes must be constructible");
+        // to_str()이라면 여기서 Err가 나야 회귀를 재현한 것이다.
+        assert!(header.to_str().is_err(), "non-ASCII header must fail to_str()");
+
+        client
+            .post(format!("http://127.0.0.1:{port}/hook?session=s1&agent=agy&source=prompt"))
+            .header("X-Agent-Office-Cwd", header)
+            .body(r#"{"invocationNum":0,"workspacePaths":[]}"#)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+
+        let activities = events.activities();
+        assert_eq!(activities.len(), 1);
+        assert_eq!(activities[0].kind, ActivityKind::Prompt);
+        assert_eq!(activities[0].cwd.as_deref(), Some(cwd));
         state.shutdown();
     }
 

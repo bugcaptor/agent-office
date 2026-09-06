@@ -1,3 +1,4 @@
+pub mod agy_resume_store;
 pub mod awards_store;
 pub mod claude_resume_store;
 pub mod diary_store;

@@ -340,6 +340,7 @@ impl ObserverAdapter for ClaudeAdapter {
                 // 이슈 #40: 앱이 꺼진 사이 설정 파일이 사라져도 `claude --settings
                 // <없는 파일>`로 하드 실패하지 않고 비관찰로 강등 실행하게 한다.
                 skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_SETTINGS".into()),
+                ..Default::default()
             }],
             cleanup_paths: vec![path],
         })

@@ -539,7 +539,12 @@
             .collect::<std::collections::HashSet<_>>();
         assert_eq!(
             names,
-            std::collections::HashSet::from(["claude".into(), "codex".into(), "pi".into(),])
+            std::collections::HashSet::from([
+                "claude".into(),
+                "codex".into(),
+                "pi".into(),
+                "agy".into(),
+            ])
         );
         assert_eq!(control.writes_utf8(), "codex resume --last\r");
         cleanup_observer_fixture(&control, &scratch);
@@ -715,7 +720,12 @@
                 .iter()
                 .cloned()
                 .collect::<std::collections::HashSet<_>>(),
-            std::collections::HashSet::from(["claude".into(), "codex".into(), "pi".into(),]),
+            std::collections::HashSet::from([
+                "claude".into(),
+                "codex".into(),
+                "pi".into(),
+                "agy".into(),
+            ]),
         );
         assert!(calls[2].is_empty());
         drop(calls);
@@ -2265,7 +2275,7 @@
         let rec = captured.lock();
         let rec = rec.as_ref().expect("resolver must have been called");
         assert_eq!(rec.selected.as_deref(), Some("git-bash"));
-        assert_eq!(rec.wrappers, vec!["claude", "pi"]);
+        assert_eq!(rec.wrappers, vec!["claude", "pi", "agy"]);
 
         cleanup(&ctl, &dir);
     }

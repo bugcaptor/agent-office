@@ -407,6 +407,24 @@ pub fn run() {
             {
                 eprintln!("agent-office: failed to write pi extension at boot: {error}");
             }
+            // Antigravity CLI(agy, docs/antigravity-support-design.md): pi 확장과
+            // 같은 결로 훅 스크립트를 app_data 안정 경로에 부팅마다 다시 쓴다.
+            // agy는 세션별 훅 파일을 넘길 방법이 없어(§0) 전역
+            // `~/.gemini/config/hooks.json`에 이 스크립트의 절대 경로를 박는다
+            // (다른 최상위 키는 절대 건드리지 않는다, §3.2). v1은 Windows를
+            // 빼므로(§5) unix에서만 훅 파일을 배포·병합한다.
+            #[cfg(unix)]
+            match crate::session::agy_hook::ensure_hook_script(Some(&data_dir)) {
+                Ok(hook_script) => {
+                    if let Err(error) = crate::session::agy_hooks_file::ensure_agy_hooks_merged(
+                        &crate::session::agy_hooks_file::default_hooks_file(),
+                        &hook_script,
+                    ) {
+                        eprintln!("agent-office: failed to merge agy hooks.json at boot: {error}");
+                    }
+                }
+                Err(error) => eprintln!("agent-office: failed to write agy hook script at boot: {error}"),
+            }
             // 더블-크래시 등으로 정리 못 한 설정 아티팩트가 app_data에 영구화되지
             // 않도록 부트 시 1회 백그라운드로 30일 초과분을 청소한다(살아 있는
             // 세션은 매 입양마다 재작성돼 mtime이 갱신되므로 안전).
@@ -432,6 +450,17 @@ pub fn run() {
                     registry.clone(),
                     claude_resume_store.clone(),
                 ));
+            // agy 리줌 캡처(§3.5): 기록까지만, 재개 UI는 범위 밖. claude와 같은
+            // 결(스토어 → 레코더(sink) → observer runtime)이지만 provider별로
+            // 스토어 파일을 나눈다.
+            let agy_resume_recorder = Arc::new(
+                crate::observer::agy_resume_recorder::AgyResumeRecorder::new(
+                    registry.clone(),
+                    Arc::new(crate::persistence::agy_resume_store::AgyResumeStore::new(
+                        data_dir.join("agy-resume.json"),
+                    )),
+                ),
+            );
             // 동료 대화(docs/agent-talk-design.md): 허브 + 스킬 자산 + 배달 워커.
             // 스킬(로컬 플러그인)은 토글과 무관하게 만들어 둔다 — 대화를 켠 뒤
             // 앱을 다시 띄우지 않아도 다음 세션부터 바로 붙게.
@@ -511,7 +540,8 @@ pub fn run() {
                     forwarder_executable_path(),
                     Some(talk_fragment),
                 )
-                .with_claude_session_sink(claude_resume_recorder),
+                .with_claude_session_sink(claude_resume_recorder)
+                .with_agy_session_sink(agy_resume_recorder),
             );
 
             if settings_cache.read().unwrap().observer_enabled {

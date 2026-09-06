@@ -363,10 +363,29 @@ impl SessionManager {
                         // 실측) — claude와 같은 강등 가드를 걸어, 파일이 사라지면
                         // 관찰만 포기하고 pi 실행은 보장한다(이슈 #40과 동일 취지).
                         skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_PI_EXT".into()),
+                        ..Default::default()
                     });
                 }
                 Err(error) => eprintln!("agent-office: failed to write pi extension: {error}"),
             }
+        }
+
+        // Antigravity CLI(agy, docs/antigravity-support-design.md): 전역
+        // hooks.json 병합(부팅 시 1회, lib.rs)이 관찰의 전부다 -- agy() 래퍼는
+        // prefix 인자가 없다. 유일한 역할은 §4 스파이크 실측(workspacePaths가
+        // 빈 배열로 올 수 있음)의 cwd fallback으로, 호출 한 번에만 붙는 앞자리
+        // 대입으로 `$PWD`를 `AGENT_OFFICE_AGY_CWD`에 실어 보내는 것 -- hook.sh가
+        // 이 값을 `X-Agent-Office-Cwd` **헤더**로 서버 POST에 얹는다(쿼리
+        // 문자열이 아니다 -- POSIX sh에 표준 percent-encoding이 없어 공백·
+        // 비ASCII 경로가 깨진다, observer/server.rs AGY_CWD_HEADER 참고).
+        if observer_url.is_some() {
+            plan.wrappers.push(CommandWrapperSpec {
+                command: "agy".into(),
+                prefix_args: vec![],
+                skip_if_present: vec![],
+                export_cwd_env: Some("AGENT_OFFICE_AGY_CWD".into()),
+                ..Default::default()
+            });
         }
 
         // 동료 대화 스킬(§6): 앱 소유 플러그인을 `--plugin-dir`로 이 세션에만
@@ -410,6 +429,7 @@ impl SessionManager {
                     // 플러그인 폴더가 사라졌으면 스킬만 포기하고 claude는 띄운다
                     // (없는 경로를 주면 claude가 하드 실패한다 — pi 확장과 같은 가드).
                     skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_TALK_PLUGIN".into()),
+                    ..Default::default()
                 });
             }
         }

@@ -1,3 +1,4 @@
+pub mod agy_resume_recorder;
 pub mod claude;
 pub mod claude_resume_recorder;
 pub mod codex;
@@ -54,10 +55,29 @@ pub trait ClaudeSessionSink: Send + Sync {
     );
 }
 
+/// agy 훅 body에서 뽑은 `conversationId`(리줌 ID)를 소비하는 주입점
+/// (docs/antigravity-support-design.md §3.5, 기록까지만 -- 재개 UI는 범위
+/// 밖). `ClaudeSessionSink`와 모양이 같지만 provider가 달라(스토어 파일도
+/// `agy-resume.json`으로 분리, persistence::agy_resume_store) 트레잇을
+/// 나눈다. 부재 시 `ingest_agy_source`는 캡처를 no-op으로 건너뛴다.
+pub trait AgySessionSink: Send + Sync {
+    /// ao_session_id = agent-office UUID(훅 라우팅 키), conversation_id = agy
+    /// native 대화 ID. `transcript_path`는 훅 body의 `transcriptPath`(실측:
+    /// `transcript_full.jsonl`을 가리킨다).
+    fn record(
+        &self,
+        ao_session_id: &str,
+        conversation_id: &str,
+        cwd: Option<&str>,
+        transcript_path: Option<&str>,
+    );
+}
+
 pub struct ObserverRuntime {
     hub: Arc<NotificationHub>,
     adapters: Vec<Arc<dyn ObserverAdapter>>,
     claude_session_sink: Option<Arc<dyn ClaudeSessionSink>>,
+    agy_session_sink: Option<Arc<dyn AgySessionSink>>,
 }
 
 impl ObserverRuntime {
@@ -94,6 +114,7 @@ impl ObserverRuntime {
             hub,
             adapters,
             claude_session_sink: None,
+            agy_session_sink: None,
         }
     }
 
@@ -101,6 +122,12 @@ impl ObserverRuntime {
     /// 기존 시그니처를 깨지 않으려고 선택 주입으로 뒀다).
     pub fn with_claude_session_sink(mut self, sink: Arc<dyn ClaudeSessionSink>) -> Self {
         self.claude_session_sink = Some(sink);
+        self
+    }
+
+    /// agy 리줌 캡처 sink를 배선한다(위와 같은 builder 스타일).
+    pub fn with_agy_session_sink(mut self, sink: Arc<dyn AgySessionSink>) -> Self {
+        self.agy_session_sink = Some(sink);
         self
     }
 
@@ -206,6 +233,67 @@ impl ObserverRuntime {
         };
         self.hub.ingest_observer(session_id, event);
     }
+
+    /// Antigravity CLI(agy) 훅 이벤트 처리(docs/antigravity-support-design.md
+    /// §2/§3.4). `cwd_override`는 `agy() 셸 래퍼`가 `X-Agent-Office-Cwd`
+    /// 헤더로 실어 보낸 호출 시점 `$PWD`(§4 스파이크 실측: `workspacePaths`가
+    /// 빈 배열로 올 수 있다) — body의 `workspacePaths[0]`이 없을 때만 쓴다.
+    pub fn ingest_agy_source(
+        &self,
+        session_id: &str,
+        source: &str,
+        body: &[u8],
+        cwd_override: Option<&str>,
+    ) {
+        // 리뷰 지적: 아래에서 body를 여러 헬퍼에 나눠 넘기면서도 JSON 파싱은
+        // 여기서 딱 한 번만 한다(`_from_value` 코어 함수들이 이미 파싱된
+        // `Value`를 받는다). 파싱 실패면 빈 객체로 강등 -- 각 헬퍼가
+        // 필드 부재를 그대로 None/기본값으로 처리하므로 동작은 동일하다.
+        let value: serde_json::Value =
+            serde_json::from_slice(body).unwrap_or(serde_json::Value::Null);
+        let cwd = || {
+            event::agy_workspace_cwd_from_value(&value).or_else(|| cwd_override.map(str::to_string))
+        };
+        // 모든 이벤트에 conversationId가 실려 온다 — map 결과와 무관하게 먼저
+        // 캡처한다(claude_resume_recorder와 같은 원칙, §3.5).
+        if let (Some(sink), Some(conversation_id)) =
+            (&self.agy_session_sink, event::agy_conversation_id_from_value(&value))
+        {
+            sink.record(
+                session_id,
+                &conversation_id,
+                cwd().as_deref(),
+                event::agy_transcript_path_from_value(&value).as_deref(),
+            );
+        }
+        let event = match source {
+            // 턴 시작 판정(스파이크 실측 1): invocationNum은 0부터 세고,
+            // 같은 턴 안에서 반복되는 PreInvocation은 1, 2…로 오르므로 0이
+            // 아니면 버린다.
+            "prompt" => {
+                if event::agy_invocation_num_from_value(&value) != Some(0) {
+                    return;
+                }
+                ObserverEvent::Prompt {
+                    text: event::agy_prompt_text_from_value(&value),
+                    cwd: cwd(),
+                }
+            }
+            "tool" => ObserverEvent::Tool {
+                text: event::agy_tool_activity_text_from_value(&value),
+                assistant: None,
+                // agy 전사에는 토큰 수가 없다(설계 §3.6 실측) — pi/codex와 같은 None.
+                tokens: None,
+            },
+            "stop" => ObserverEvent::Stop {
+                message: Some(event::agy_stop_message_from_value(&value)),
+                running: None,
+                tokens: None,
+            },
+            _ => return,
+        };
+        self.hub.ingest_observer(session_id, event);
+    }
 }
 
 #[cfg(test)]
@@ -217,7 +305,7 @@ mod tests {
     use crate::state::fake::RecordingEvents;
     use crate::state::{AppEvents, SessionRegistry};
     use crate::types::SessionState;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     struct FakeAdapter {
         provider: ObserverProvider,
@@ -764,5 +852,159 @@ mod tests {
 
         assert!(recorded.activities().is_empty());
         assert!(recorded.notifications().is_empty());
+    }
+
+    // ── agy(Antigravity CLI) ─────────────────────────────────────────────
+
+    struct FakeAgySink {
+        calls: Mutex<Vec<(String, String, Option<String>, Option<String>)>>,
+    }
+
+    impl Default for FakeAgySink {
+        fn default() -> Self {
+            Self { calls: Mutex::new(Vec::new()) }
+        }
+    }
+
+    impl AgySessionSink for FakeAgySink {
+        fn record(
+            &self,
+            ao_session_id: &str,
+            conversation_id: &str,
+            cwd: Option<&str>,
+            transcript_path: Option<&str>,
+        ) {
+            self.calls.lock().unwrap().push((
+                ao_session_id.to_string(),
+                conversation_id.to_string(),
+                cwd.map(str::to_string),
+                transcript_path.map(str::to_string),
+            ));
+        }
+    }
+
+    fn agy_runtime() -> (Arc<ObserverRuntime>, Arc<RecordingEvents>) {
+        let registry = Arc::new(SessionRegistry::new());
+        registry.insert("s1", "a1", SessionState::Running);
+        let recorded = Arc::new(RecordingEvents::default());
+        let hub = Arc::new(NotificationHub::new(
+            registry,
+            recorded.clone(),
+            Arc::new(SystemClock),
+            std::time::Duration::from_millis(3_000),
+        ));
+        (Arc::new(ObserverRuntime::new(hub, vec![])), recorded)
+    }
+
+    /// 스파이크 실측 1: invocationNum이 0일 때만 턴을 연다 — 같은 턴 안의
+    /// 반복 PreInvocation(1, 2…)은 버린다.
+    #[test]
+    fn ingest_agy_source_opens_a_turn_only_on_invocation_zero() {
+        let (runtime, recorded) = agy_runtime();
+
+        runtime.ingest_agy_source(
+            "s1",
+            "prompt",
+            br#"{"invocationNum":1,"workspacePaths":["/w"]}"#,
+            None,
+        );
+        assert!(recorded.activities().is_empty(), "invocationNum != 0 must be dropped");
+
+        runtime.ingest_agy_source(
+            "s1",
+            "prompt",
+            br#"{"invocationNum":0,"workspacePaths":["/w"]}"#,
+            None,
+        );
+        let activities = recorded.activities();
+        assert_eq!(activities.len(), 1);
+        assert_eq!(activities[0].kind, crate::types::ActivityKind::Prompt);
+        assert_eq!(activities[0].cwd.as_deref(), Some("/w"));
+    }
+
+    /// §4 스파이크 실측: workspacePaths가 빈 배열이면 헤더로 넘어온
+    /// cwd_override(agy() 셸 래퍼의 `$PWD`)로 강등한다.
+    #[test]
+    fn ingest_agy_source_falls_back_to_cwd_override_when_workspace_paths_is_empty() {
+        let (runtime, recorded) = agy_runtime();
+
+        runtime.ingest_agy_source(
+            "s1",
+            "prompt",
+            br#"{"invocationNum":0,"workspacePaths":[]}"#,
+            Some("/fallback/pwd"),
+        );
+
+        let activities = recorded.activities();
+        assert_eq!(activities.len(), 1);
+        assert_eq!(activities[0].cwd.as_deref(), Some("/fallback/pwd"));
+    }
+
+    #[test]
+    fn ingest_agy_source_maps_tool_and_stop() {
+        let (runtime, recorded) = agy_runtime();
+
+        runtime.ingest_agy_source("s1", "tool", br#"{"name":"run_terminal_cmd","command":"ls"}"#, None);
+        runtime.ingest_agy_source("s1", "stop", br#"{"terminationReason":"model_stop"}"#, None);
+        runtime.ingest_agy_source("s2-unknown-session", "stop", br#"{}"#, None);
+        runtime.ingest_agy_source("s1", "unknown-source", br#"{}"#, None);
+
+        let activities = recorded.activities();
+        // tool + Stop이 부수적으로 내는 SubCount 1건(pi/claude와 같은 hub 동작).
+        assert_eq!(activities.len(), 2);
+        assert_eq!(activities[0].kind, crate::types::ActivityKind::Tool);
+        assert_eq!(activities[0].text.as_deref(), Some("run_terminal_cmd: ls"));
+        assert_eq!(activities[1].kind, crate::types::ActivityKind::SubCount);
+
+        let notifications = recorded.notifications();
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].session_id, "s1");
+        assert_eq!(notifications[0].message, "Antigravity finished a task");
+    }
+
+    #[test]
+    fn ingest_agy_source_reports_error_termination_distinctly() {
+        let (runtime, recorded) = agy_runtime();
+        runtime.ingest_agy_source("s1", "stop", br#"{"terminationReason":"error"}"#, None);
+
+        let notifications = recorded.notifications();
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].message, "Antigravity stopped with an error");
+    }
+
+    /// §3.5: conversationId 캡처는 map 결과와 무관하게 먼저 일어난다 —
+    /// invocationNum 필터로 버려지는 반복 PreInvocation에서도 기록돼야 한다.
+    #[test]
+    fn ingest_agy_source_records_conversation_id_even_when_the_event_is_dropped() {
+        let registry = Arc::new(SessionRegistry::new());
+        registry.insert("s1", "a1", SessionState::Running);
+        let recorded = Arc::new(RecordingEvents::default());
+        let hub = Arc::new(NotificationHub::new(
+            registry,
+            recorded,
+            Arc::new(SystemClock),
+            std::time::Duration::from_millis(3_000),
+        ));
+        let sink = Arc::new(FakeAgySink::default());
+        let runtime = ObserverRuntime::new(hub, vec![]).with_agy_session_sink(sink.clone());
+
+        runtime.ingest_agy_source(
+            "s1",
+            "prompt",
+            br#"{"invocationNum":1,"conversationId":"conv-1","workspacePaths":["/w"],"transcriptPath":"/t.jsonl"}"#,
+            None,
+        );
+
+        let calls = sink.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0],
+            (
+                "s1".to_string(),
+                "conv-1".to_string(),
+                Some("/w".to_string()),
+                Some("/t.jsonl".to_string()),
+            ),
+        );
     }
 }

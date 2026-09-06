@@ -34,7 +34,7 @@
     "diaryTitle": "Journal du personnage",
     "diaryHelp": "Chaque personnage écrit un journal de bord dans son propre style à la fin de chaque session (le bouton « Écrire le journal » reste disponible). Cela appelle le même CLI que le résumeur ci-dessus et consomme donc le quota du compte. Consultez-le depuis le menu contextuel de l'onglet.",
     "observerTitle": "Observation des agents (alertes, chronométrage)",
-    "observerHelp": "Les alertes et le chronométrage pour Claude, Codex et Pi s'appliquent aux terminaux créés à partir de maintenant. Désactivés, l'alerte en point d'exclamation et le chronométrage des sessions ne fonctionnent pas.",
+    "observerHelp": "Les alertes et le chronométrage pour Claude, Codex, Pi et Antigravity s'appliquent aux terminaux créés à partir de maintenant. Désactivés, l'alerte en point d'exclamation et le chronométrage des sessions ne fonctionnent pas.",
     "openrouterNote": "Les résumés OpenRouter utilisent une clé API (ou la variable <code>OPENROUTER_API_KEY</code>). Sans clé, le résumé échoue et le texte brut est affiché.",
     "opencodeNote": "Les résumés opencode appellent le CLI <code>opencode</code> installé. Les ids de modèle suivent la forme<code> provider/model</code> (voir <code>opencode models</code>), et la valeur par défaut suppose l'abonnement propre à opencode (<code>opencode-go</code>).",
     "commandTitle": "Commande {{provider}}",
@@ -216,7 +216,7 @@
   },
   "firstRun": {
     "title": "Bienvenue dans Agent Office",
-    "intro": "Les intégrations Claude Code / Codex / Pi sont facultatives. Vous pouvez démarrer sans elles et les activer à tout moment depuis ⚙ dans la barre du bas.",
+    "intro": "Les intégrations Claude Code / Codex / Pi / Antigravity sont facultatives. Vous pouvez démarrer sans elles et les activer à tout moment depuis ⚙ dans la barre du bas.",
     "start": "Démarrer"
   },
   "pairing": {

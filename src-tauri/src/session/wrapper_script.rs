@@ -58,6 +58,12 @@ fn validate_wrapper(wrapper: &CommandWrapperSpec) {
             "invalid wrapper environment name"
         );
     }
+    if let Some(name) = &wrapper.export_cwd_env {
+        assert!(
+            safe_env_identifier(name),
+            "invalid wrapper environment name"
+        );
+    }
 }
 
 pub fn render_powershell(wrappers: &[CommandWrapperSpec]) -> String {
@@ -148,6 +154,17 @@ pub fn render_posix(wrappers: &[CommandWrapperSpec]) -> String {
 
         writeln!(script, "unalias '{}' 2>/dev/null || true", wrapper.command).unwrap();
         writeln!(script, "{}() {{", wrapper.command).unwrap();
+
+        // 리뷰 지적: `export`로 셸 함수 전체 스코프에 심는 대신, 호출 한 번에만
+        // 붙는 앞자리 대입(`NAME="$PWD" command ...`)으로 준다 — export는 함수가
+        // 끝난 뒤에도 값이 남아 같은 셸에서 도는 다른 명령에 새는데, 앞자리
+        // 대입은 그 명령 하나의 환경에만 적용되고 사라진다(POSIX 셸 표준 동작).
+        let cwd_prefix = wrapper
+            .export_cwd_env
+            .as_ref()
+            .map(|name| format!("{name}=\"$PWD\" "))
+            .unwrap_or_default();
+
         if !wrapper.skip_if_present.is_empty() {
             let patterns = wrapper
                 .skip_if_present
@@ -159,7 +176,7 @@ pub fn render_posix(wrappers: &[CommandWrapperSpec]) -> String {
             writeln!(script, "    case \"$_ao_arg\" in").unwrap();
             writeln!(
                 script,
-                "      {patterns}) command {} \"$@\"; return ;;",
+                "      {patterns}) {cwd_prefix}command {} \"$@\"; return ;;",
                 wrapper.command,
             )
             .unwrap();
@@ -184,14 +201,15 @@ pub fn render_posix(wrappers: &[CommandWrapperSpec]) -> String {
                     wrapper.command,
                 )
                 .unwrap();
-                writeln!(script, "    command {} \"$@\"; return", wrapper.command).unwrap();
+                writeln!(script, "    {cwd_prefix}command {} \"$@\"; return", wrapper.command)
+                    .unwrap();
                 writeln!(script, "  fi").unwrap();
             }
         }
         if prefix.is_empty() {
-            writeln!(script, "  command {} \"$@\"", wrapper.command).unwrap();
+            writeln!(script, "  {cwd_prefix}command {} \"$@\"", wrapper.command).unwrap();
         } else {
-            writeln!(script, "  command {} {prefix} \"$@\"", wrapper.command).unwrap();
+            writeln!(script, "  {cwd_prefix}command {} {prefix} \"$@\"", wrapper.command).unwrap();
         }
         writeln!(script, "}}").unwrap();
     }
@@ -324,6 +342,43 @@ mod tests {
         );
     }
 
+    /// agy(§4 스파이크 실측: workspacePaths가 빈 배열로 올 수 있음) 대비 --
+    /// export_cwd_env가 있으면 원본 명령을 부르기 전에 호출 시점 `$PWD`를
+    /// export한다.
+    #[test]
+    fn posix_renderer_sets_pwd_only_for_the_single_invocation_when_export_cwd_env_is_set() {
+        let script = render_posix(&[CommandWrapperSpec {
+            command: "agy".into(),
+            prefix_args: vec![],
+            skip_if_present: vec![],
+            export_cwd_env: Some("AGENT_OFFICE_AGY_CWD".into()),
+            ..Default::default()
+        }]);
+        assert!(script.contains("agy() {"), "{script}");
+        // export가 아니라 그 호출 한 번에만 붙는 앞자리 대입이어야 한다 --
+        // export는 함수가 끝난 뒤에도 값이 남아 같은 셸의 다른 명령에 샌다.
+        assert!(
+            script.contains("AGENT_OFFICE_AGY_CWD=\"$PWD\" command agy \"$@\""),
+            "{script}",
+        );
+        assert!(!script.contains("export"), "must not use export: {script}");
+
+        // export_cwd_env가 없는 기본 래퍼(wrappers())에는 이 대입이 없어야 한다(무회귀).
+        assert!(!render_posix(&wrappers()).contains("AGENT_OFFICE_AGY_CWD"));
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid wrapper environment name")]
+    fn posix_renderer_rejects_export_cwd_env_identifier_injection() {
+        render_posix(&[CommandWrapperSpec {
+            command: "agy".into(),
+            prefix_args: vec![],
+            skip_if_present: vec![],
+            export_cwd_env: Some("SAFE}; touch /tmp/nope; #".into()),
+            ..Default::default()
+        }]);
+    }
+
     #[test]
     #[should_panic(expected = "invalid wrapper command")]
     fn powershell_renderer_rejects_command_identifier_injection() {
@@ -357,6 +412,7 @@ mod tests {
             ],
             skip_if_present: vec!["--settings".into()],
             skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_SETTINGS".into()),
+            ..Default::default()
         }]
     }
 

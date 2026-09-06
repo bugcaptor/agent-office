@@ -1,3 +1,5 @@
+pub mod agy_hook;
+pub mod agy_hooks_file;
 pub mod attach_script;
 pub mod bash_wrapper;
 #[cfg(unix)]

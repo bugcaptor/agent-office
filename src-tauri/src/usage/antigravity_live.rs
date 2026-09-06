@@ -156,6 +156,7 @@ exit $LASTEXITCODE"#;
     let mut command = tokio::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT]);
     command.creation_flags(CREATE_NO_WINDOW);
+    remove_observer_hook_env(&mut command);
     command
 }
 
@@ -163,7 +164,18 @@ exit $LASTEXITCODE"#;
 fn cli_command() -> tokio::process::Command {
     let mut command = tokio::process::Command::new("agy");
     command.args(print_args());
+    remove_observer_hook_env(&mut command);
     command
+}
+
+/// 스파이크 실측 4: `agy -p`(print 모드)에서도 훅이 돈다 -- 이 사용량 조회는
+/// 관찰 세션 밖에서 도는 것이라 `AGENT_OFFICE_HOOK_URL`/`AGENT_OFFICE_SESSION`
+/// 이 (어떤 경로로든) 이 프로세스의 env에 실려 있어도 자식 `agy`에 물려주지
+/// 않는다 -- 그러지 않으면 `/usage` 조회가 가짜 턴(prompt/stop)을 만든다
+/// (docs/antigravity-support-design.md §4).
+fn remove_observer_hook_env(command: &mut tokio::process::Command) {
+    command.env_remove("AGENT_OFFICE_HOOK_URL");
+    command.env_remove("AGENT_OFFICE_SESSION");
 }
 
 /// PATH에서 `agy`를 못 찾았을 때의 마지막 후보. `agy install`이 기본으로
@@ -178,6 +190,7 @@ fn fallback_cli_command() -> Option<tokio::process::Command> {
     }
     let mut command = tokio::process::Command::new(path);
     command.args(print_args());
+    remove_observer_hook_env(&mut command);
     Some(command)
 }
 
@@ -531,5 +544,41 @@ mod tests {
         assert_eq!(state.last_success(), Some(usage));
         assert_eq!(state.status().outcome, AntigravityLiveOutcome::CliMissing);
         assert_eq!(state.status().last_success_ms, Some(5_000));
+    }
+
+    /// 스파이크 실측 4: `agy -p`도 훅이 돌므로, 이 사용량 조회 프로세스가
+    /// 어쩌다 `AGENT_OFFICE_HOOK_URL`/`AGENT_OFFICE_SESSION`을 물려받아도
+    /// 자식 `agy`에는 전달하지 않아야 한다 -- 안 그러면 `/usage` 조회가
+    /// 가짜 턴(prompt/stop)을 만든다.
+    #[cfg(not(windows))]
+    #[test]
+    fn cli_command_removes_the_observer_hook_env_vars() {
+        let command = cli_command();
+        let removed: Vec<_> = command
+            .as_std()
+            .get_envs()
+            .filter(|(_, v)| v.is_none())
+            .map(|(k, _)| k.to_string_lossy().into_owned())
+            .collect();
+        assert!(removed.contains(&"AGENT_OFFICE_HOOK_URL".to_string()), "{removed:?}");
+        assert!(removed.contains(&"AGENT_OFFICE_SESSION".to_string()), "{removed:?}");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn fallback_cli_command_removes_the_observer_hook_env_vars_when_present() {
+        // fallback_cli_command는 ~/.local/bin/agy가 있을 때만 Some을 준다 --
+        // 이 테스트 호스트에 그 경로가 없으면 그냥 넘어간다(구성 의존 스킵).
+        let Some(command) = fallback_cli_command() else {
+            return;
+        };
+        let removed: Vec<_> = command
+            .as_std()
+            .get_envs()
+            .filter(|(_, v)| v.is_none())
+            .map(|(k, _)| k.to_string_lossy().into_owned())
+            .collect();
+        assert!(removed.contains(&"AGENT_OFFICE_HOOK_URL".to_string()), "{removed:?}");
+        assert!(removed.contains(&"AGENT_OFFICE_SESSION".to_string()), "{removed:?}");
     }
 }

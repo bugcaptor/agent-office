@@ -85,6 +85,12 @@ pub struct CommandWrapperSpec {
     /// 파일>`로 하드 실패하는 대신 비관찰로 강등해 실행을 보장한다. prefix가
     /// 비어 있으면 의미가 없으므로 렌더러가 무시한다.
     pub skip_prefix_if_env_file_missing: Option<String>,
+    /// Some(env_name)이면, 렌더된 래퍼는 원본 명령을 실행하기 **전에** 호출
+    /// 시점의 `$PWD`를 이 이름의 env로 export한다(agy: `workspacePaths`가 빈
+    /// 배열로 올 때 서버가 쓸 cwd fallback, docs/antigravity-support-design.md
+    /// §4 스파이크 실측). POSIX 렌더러만 지원한다 — agy는 v1에서 Windows를
+    /// 빼므로 PowerShell 렌더러는 이 필드를 무시한다.
+    pub export_cwd_env: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -318,6 +324,164 @@ fn pi_tool_activity_detail(tool_name: &str, input: &serde_json::Value) -> Option
 pub fn pi_assistant_text(body: &[u8]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
     truncate_stop_message(value.get("assistant")?.as_str()?)
+}
+
+// ── Antigravity CLI(agy) ─────────────────────────────────────────────────
+// docs/antigravity-support-design.md §2/§3.4. agy 훅 body는 camelCase다
+// (`invocationNum`, `workspacePaths`, `transcriptPath`) — Claude/pi의
+// snake_case body와 다르니 헬퍼를 공유하지 않는다.
+
+// 리뷰 지적: `ingest_agy_source`가 이 헬퍼들을 한 body에 여러 번 부르면서
+// 매번 `serde_json::from_slice`를 새로 태우고 있었다. 각 헬퍼를 순수
+// `_from_value(&Value)` 코어 + `&[u8]` 파싱 래퍼로 쪼갠다 — 기존 `&[u8]`
+// 공개 API와 그걸 쓰는 테스트는 그대로 두고, 호출부(ingest_agy_source)만
+// body를 한 번 파싱해 `_from_value` 쪽을 직접 부르게 한다.
+
+/// agy 훅 body의 top-level `invocationNum`(정수, 0부터 시작 — 스파이크
+/// 실측). 턴 시작 판정(`PreInvocation && invocationNum == 0`)에 쓰인다.
+/// 부재/비정수는 None.
+pub fn agy_invocation_num(body: &[u8]) -> Option<i64> {
+    agy_invocation_num_from_value(&serde_json::from_slice(body).ok()?)
+}
+
+pub(crate) fn agy_invocation_num_from_value(value: &serde_json::Value) -> Option<i64> {
+    value.get("invocationNum")?.as_i64()
+}
+
+/// agy 훅 body의 `workspacePaths[0]`. 배열이 비어 있을 수 있다(스파이크 §4) —
+/// 그때는 None이라 호출부가 cwd_override(agy() 셸 래퍼가 실은 `$PWD`,
+/// `X-Agent-Office-Cwd` 헤더로 옴)로 넘어간다.
+pub fn agy_workspace_cwd(body: &[u8]) -> Option<String> {
+    agy_workspace_cwd_from_value(&serde_json::from_slice(body).ok()?)
+}
+
+pub(crate) fn agy_workspace_cwd_from_value(value: &serde_json::Value) -> Option<String> {
+    let first = value.get("workspacePaths")?.as_array()?.first()?.as_str()?;
+    (!first.trim().is_empty()).then(|| first.to_string())
+}
+
+/// agy 훅 body의 top-level `conversationId`(리줌 ID, §3.5). 모든 이벤트마다
+/// 실려 온다. 공백/부재/비문자열은 None.
+pub fn agy_conversation_id(body: &[u8]) -> Option<String> {
+    agy_conversation_id_from_value(&serde_json::from_slice(body).ok()?)
+}
+
+pub(crate) fn agy_conversation_id_from_value(value: &serde_json::Value) -> Option<String> {
+    let id = value.get("conversationId")?.as_str()?;
+    (!id.trim().is_empty()).then(|| id.to_string())
+}
+
+/// agy 훅 body의 top-level `transcriptPath`(실측: 실제로는
+/// `transcript_full.jsonl`을 가리킨다). 공백/부재/비문자열은 None.
+pub fn agy_transcript_path(body: &[u8]) -> Option<String> {
+    agy_transcript_path_from_value(&serde_json::from_slice(body).ok()?)
+}
+
+pub(crate) fn agy_transcript_path_from_value(value: &serde_json::Value) -> Option<String> {
+    let path = value.get("transcriptPath")?.as_str()?;
+    (!path.trim().is_empty()).then(|| path.to_string())
+}
+
+/// `<USER_REQUEST>...</USER_REQUEST>` 안쪽을 trim해 뽑는다. 태그가 없거나
+/// 안쪽이 공백뿐이면 None. 완료 메시지와 같은 길이 상한을 쓴다
+/// (`MAX_PROMPT_TEXT_CHARS`, Claude의 `prompt_text`와 동일 규약).
+fn extract_user_request(content: &str) -> Option<String> {
+    const START: &str = "<USER_REQUEST>";
+    const END: &str = "</USER_REQUEST>";
+    let start = content.find(START)? + START.len();
+    let end = start + content[start..].find(END)?;
+    let inner = content[start..end].trim();
+    (!inner.is_empty()).then(|| inner.chars().take(MAX_PROMPT_TEXT_CHARS).collect())
+}
+
+/// agy 훅 body의 `transcriptPath` 꼬리에서 마지막 `type=="USER_INPUT"` 줄의
+/// `<USER_REQUEST>` 안쪽을 턴 라벨로 뽑는다(설계 결정 D2, 스파이크 실측 S3:
+/// PreInvocation 시점에 이미 쓰여 있음을 확인했다). agy 훅 body에는 프롬프트
+/// 원문이 실려 오지 않아 유일한 경로다. 파일 부재/포맷 이상/빈 텍스트는 모두
+/// None — 호출부가 프롬프트 없이 턴만 여는 것으로 강등한다(pi에서 이미
+/// 검증된 폴백).
+pub fn agy_prompt_text(body: &[u8]) -> Option<String> {
+    agy_prompt_text_from_value(&serde_json::from_slice(body).ok()?)
+}
+
+pub(crate) fn agy_prompt_text_from_value(value: &serde_json::Value) -> Option<String> {
+    let path = agy_transcript_path_from_value(value)?;
+    let tail = read_file_tail(std::path::Path::new(&path), TRANSCRIPT_TAIL_BYTES)?;
+    let last_user_input = tail.lines().rev().find_map(|line| {
+        let value: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+        if value.get("type").and_then(|t| t.as_str()) != Some("USER_INPUT") {
+            return None;
+        }
+        value.get("content").and_then(|c| c.as_str()).map(str::to_string)
+    })?;
+    extract_user_request(&last_user_input)
+}
+
+/// tool_activity_detail/pi_tool_activity_detail과 같은 결의 "가장 의미 있는
+/// detail 한 조각" 탐색이지만, agy는 훅 가이드에 인자 필드명이 명시돼 있지
+/// 않아(설계 §1.3 "도구 인자") 정확한 스키마를 스파이크에서 확정하지
+/// 못했다. 흔한 키를 우선순위로 찾고 없으면 None(→ 도구 이름만 표시) —
+/// 실제 필드명이 다르면 이 함수만 고치면 되고 프로토콜(쿼리·body 계약)은
+/// 바뀌지 않는다.
+fn agy_tool_activity_detail(input: &serde_json::Value) -> Option<String> {
+    let obj = input.as_object()?;
+    for key in ["command", "path", "file_path", "pattern", "description", "url", "query"] {
+        if let Some(value) = obj.get(key).and_then(|v| v.as_str()) {
+            let first_line = value.lines().next().unwrap_or(value).trim();
+            if !first_line.is_empty() {
+                return Some(first_line.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// agy PostToolUse 훅 body에서 라벨용 도구 요약을 만든다(Claude의
+/// `tool_activity_text`/pi의 `pi_tool_activity_text` 대응). 도구 이름은
+/// top-level `name`(설계 §2 매핑 표), 인자는 `toolInput`/`tool_input`가
+/// 있으면 그쪽을, 없으면 body 전체에서 찾는다. `name` 부재/공백/비문자열은
+/// None.
+pub fn agy_tool_activity_text(body: &[u8]) -> Option<String> {
+    agy_tool_activity_text_from_value(&serde_json::from_slice(body).ok()?)
+}
+
+pub(crate) fn agy_tool_activity_text_from_value(value: &serde_json::Value) -> Option<String> {
+    let tool_name = value.get("name")?.as_str()?.trim();
+    if tool_name.is_empty() {
+        return None;
+    }
+    let args = value
+        .get("toolInput")
+        .or_else(|| value.get("tool_input"))
+        .unwrap_or(value);
+    let detail = agy_tool_activity_detail(args);
+    let summary = match detail {
+        Some(detail) => format!("{tool_name}: {detail}"),
+        None => tool_name.to_string(),
+    };
+    Some(truncate_tool_text(&summary))
+}
+
+/// agy Stop 훅 body에서 완료 메시지를 만든다. Stop payload에는 완료 서술
+/// 텍스트가 없고(`executionNum`/`terminationReason`/`error`/`fullyIdle`뿐,
+/// 설계 §1.3) `terminationReason`만으로 갈린다 — `"error"`면 오류로 끝났음을
+/// 알리고, 그 외(`model_stop`/`max_steps_exceeded`/파싱 실패 등)는 고정
+/// 완료 문구를 쓴다(설계 §3.4). 항상 Some을 돌려준다 — pi/Claude와 달리
+/// "메시지 없음"이 아니라 "말할 것이 고정 문구뿐"인 경우라서.
+pub fn agy_stop_message(body: &[u8]) -> String {
+    match serde_json::from_slice::<serde_json::Value>(body) {
+        Ok(value) => agy_stop_message_from_value(&value),
+        Err(_) => agy_stop_message_from_value(&serde_json::Value::Null),
+    }
+}
+
+pub(crate) fn agy_stop_message_from_value(value: &serde_json::Value) -> String {
+    let reason = value.get("terminationReason").and_then(|v| v.as_str());
+    if reason == Some("error") {
+        "Antigravity stopped with an error".to_string()
+    } else {
+        "Antigravity finished a task".to_string()
+    }
 }
 
 /// Claude 훅 body의 top-level `transcript_path`. 공백/부재/비문자열은 None.
@@ -1029,6 +1193,122 @@ mod tests {
         let out = pi_assistant_text(&body).unwrap();
         assert_eq!(out.chars().count(), MAX_STOP_MESSAGE_CHARS + 1);
         assert!(out.ends_with('…'));
+    }
+
+    // ── agy(Antigravity CLI) ─────────────────────────────────────────────
+
+    #[test]
+    fn agy_invocation_num_reads_the_zero_based_counter() {
+        use super::agy_invocation_num;
+        assert_eq!(agy_invocation_num(br#"{"invocationNum":0}"#), Some(0));
+        assert_eq!(agy_invocation_num(br#"{"invocationNum":1}"#), Some(1));
+        assert_eq!(agy_invocation_num(br#"{}"#), None);
+        assert_eq!(agy_invocation_num(b"not json"), None);
+    }
+
+    #[test]
+    fn agy_conversation_id_reads_top_level_field() {
+        use super::agy_conversation_id;
+        assert_eq!(
+            agy_conversation_id(br#"{"conversationId":"conv-1"}"#).as_deref(),
+            Some("conv-1"),
+        );
+        assert_eq!(agy_conversation_id(br#"{"conversationId":"  "}"#), None);
+        assert_eq!(agy_conversation_id(br#"{}"#), None);
+    }
+
+    #[test]
+    fn agy_workspace_cwd_reads_first_element_and_tolerates_empty_array() {
+        use super::agy_workspace_cwd;
+        assert_eq!(
+            agy_workspace_cwd(br#"{"workspacePaths":["/a","/b"]}"#).as_deref(),
+            Some("/a"),
+        );
+        assert_eq!(agy_workspace_cwd(br#"{"workspacePaths":[]}"#), None);
+        assert_eq!(agy_workspace_cwd(br#"{}"#), None);
+    }
+
+    /// 스파이크 실측 근거 그대로: transcriptPath 꼬리의 마지막 USER_INPUT 줄
+    /// content에서 `<USER_REQUEST>` 안쪽만 trim해 뽑는다.
+    #[test]
+    fn agy_prompt_text_extracts_the_last_user_request_from_transcript_tail() {
+        use super::agy_prompt_text;
+        let dir = std::env::temp_dir().join(format!(
+            "agent-office-agy-transcript-test-{}",
+            uuid::Uuid::new_v4(),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("transcript_full.jsonl");
+        let line1 = serde_json::json!({
+            "step_index": 0,
+            "source": "USER_EXPLICIT",
+            "type": "USER_INPUT",
+            "status": "DONE",
+            "created_at": "2026-09-06T00:00:00Z",
+            "content": "<USER_REQUEST>\nReply with PONG.\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nx\n</ADDITIONAL_METADATA>",
+        })
+        .to_string();
+        let line2 = serde_json::json!({
+            "step_index": 1,
+            "type": "MODEL_OUTPUT",
+            "content": "PONG",
+        })
+        .to_string();
+        std::fs::write(&path, format!("{line1}\n{line2}\n")).unwrap();
+
+        let body = serde_json::json!({ "transcriptPath": path.to_string_lossy() })
+            .to_string()
+            .into_bytes();
+        assert_eq!(agy_prompt_text(&body).as_deref(), Some("Reply with PONG."));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn agy_prompt_text_is_none_without_a_readable_transcript() {
+        use super::agy_prompt_text;
+        assert_eq!(agy_prompt_text(br#"{"transcriptPath":"/no/such/file.jsonl"}"#), None);
+        assert_eq!(agy_prompt_text(br#"{}"#), None);
+        assert_eq!(agy_prompt_text(b"not json"), None);
+    }
+
+    #[test]
+    fn agy_tool_activity_text_reads_top_level_name_and_common_argument_keys() {
+        use super::agy_tool_activity_text;
+        assert_eq!(
+            agy_tool_activity_text(br#"{"name":"run_terminal_cmd","command":"echo hi"}"#)
+                .as_deref(),
+            Some("run_terminal_cmd: echo hi"),
+        );
+        assert_eq!(
+            agy_tool_activity_text(
+                br#"{"name":"read_file","toolInput":{"path":"/a/b/c.rs"}}"#
+            )
+            .as_deref(),
+            Some("read_file: /a/b/c.rs"),
+        );
+        assert_eq!(
+            agy_tool_activity_text(br#"{"name":"unknown_tool"}"#).as_deref(),
+            Some("unknown_tool"),
+        );
+        assert_eq!(agy_tool_activity_text(br#"{"name":"  "}"#), None);
+        assert_eq!(agy_tool_activity_text(br#"{}"#), None);
+        assert_eq!(agy_tool_activity_text(b"not json"), None);
+    }
+
+    #[test]
+    fn agy_stop_message_reports_error_termination_distinctly() {
+        use super::agy_stop_message;
+        assert_eq!(
+            agy_stop_message(br#"{"terminationReason":"model_stop"}"#),
+            "Antigravity finished a task",
+        );
+        assert_eq!(
+            agy_stop_message(br#"{"terminationReason":"error"}"#),
+            "Antigravity stopped with an error",
+        );
+        assert_eq!(agy_stop_message(br#"{}"#), "Antigravity finished a task");
+        assert_eq!(agy_stop_message(b"not json"), "Antigravity finished a task");
     }
 
     #[test]

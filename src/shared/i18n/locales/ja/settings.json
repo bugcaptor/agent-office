@@ -34,7 +34,7 @@
     "diaryTitle": "キャラクターの日記",
     "diaryHelp": "オンにすると、セッションが終わるたびに各キャラクターが自分の性格を文体にして作業ログ兼日記を自動で書きます（手動の「日記を書く」ボタンもそのまま使えます）。上の要約器と同じ CLI を呼ぶのでアカウントの使用量を消費します。タブの右クリックメニューから閲覧します。",
     "observerTitle": "エージェント観察（通知・時間計測）",
-    "observerHelp": "Claude・Codex・Pi の通知と時間計測は、これから作るターミナルから適用されます。オフのときはビックリマークの通知とセッションの時間計測が動作しません。",
+    "observerHelp": "Claude・Codex・Pi・Antigravity の通知と時間計測は、これから作るターミナルから適用されます。オフのときはビックリマークの通知とセッションの時間計測が動作しません。",
     "openrouterNote": "OpenRouter の要約は API キー（または環境変数 <code>OPENROUTER_API_KEY</code>）を使います。キーがないと要約に失敗し、原文がそのまま表示されます。",
     "opencodeNote": "opencode の要約はインストール済みの <code>opencode</code> CLI を呼びます。モデル id は<code> provider/model</code> の表記で（<code>opencode models</code> で確認）、既定値は opencode 自体のサブスクリプション（<code>opencode-go</code>）を前提にしています。",
     "commandTitle": "{{provider}} 実行コマンド",
@@ -216,7 +216,7 @@
   },
   "firstRun": {
     "title": "Agent Office をはじめる",
-    "intro": "Claude Code / Codex / Pi の連携機能は任意です。今はオフのまま始めても、いつでも下部バーの ⚙ 設定からオンにできます。",
+    "intro": "Claude Code / Codex / Pi / Antigravity の連携機能は任意です。今はオフのまま始めても、いつでも下部バーの ⚙ 設定からオンにできます。",
     "start": "はじめる"
   },
   "pairing": {
