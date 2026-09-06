@@ -280,10 +280,14 @@ describe("desk click hit areas (책상 지정 메뉴)", () => {
 
     const server = hits.find(
       (c) =>
-        (c.position as { x: number; y: number }).x === (OFFICE_MAP.width - 2) * TILE_SIZE &&
-        (c.position as { x: number; y: number }).y === 0,
-    ) as unknown as { emit(ev: string): boolean };
+        (c.position as { x: number; y: number }).x === 4 &&
+        (c.position as { x: number; y: number }).y === (OFFICE_MAP.height - 1) * TILE_SIZE - 34,
+    ) as unknown as {
+      hitArea: { width: number; height: number };
+      emit(ev: string): boolean;
+    };
     expect(server).toBeDefined();
+    expect(server.hitArea).toMatchObject({ width: 22, height: 34 });
     server.emit("pointertap");
     expect(bus.repositoryServerClickCount).toBe(1);
   });

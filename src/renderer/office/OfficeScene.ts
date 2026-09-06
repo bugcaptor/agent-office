@@ -296,20 +296,35 @@ export class OfficeScene {
     });
   }
 
-  /** 모든 풍경의 오른쪽 위에 공용 서버 랙을 얹는다. 바닥 레이어에 있어
+  /** 모든 풍경의 왼쪽 아래에 공용 서버 랙을 얹는다. 바닥 레이어에 있어
    * 캐릭터/가구 클릭이 우선하며, 씬 전환 때 히트영역과 함께 다시 만든다. */
   private buildRepositoryServer(): void {
+    const width = 22;
+    const height = 34;
     const rack = new Container();
-    const x = Math.max(0, this.map.width - 2) * TILE_SIZE;
-    rack.position.set(x, 0);
+    // 하단 벽 바로 위에 세워 벽 타일을 덮지 않고도 좌하단에 붙어 보이게 한다.
+    rack.position.set(4, (this.map.height - 1) * TILE_SIZE - height);
     const art = new Graphics();
-    art.rect(1, 1, TILE_SIZE * 2 - 2, TILE_SIZE * 3 - 2).fill({ color: this.theme.pixi.text, alpha: 0.85 });
-    art.rect(3, 3, TILE_SIZE * 2 - 6, TILE_SIZE * 3 - 6).fill({ color: this.render.background });
-    for (let y = 7; y < TILE_SIZE * 3 - 4; y += 9) art.rect(6, y, TILE_SIZE * 2 - 12, 2).fill({ color: 0x50d890 });
+    // 작지만 한눈에 랙으로 읽히도록 외곽 캐비닛 안에 3개의 장비 베이,
+    // 통풍구, 상태 LED와 받침발을 픽셀 단위로 분리한다.
+    art.rect(2, 1, width - 4, height - 3).fill({ color: 0x080b12, alpha: 0.45 });
+    art.rect(1, 0, width - 3, height - 4).fill({ color: this.theme.pixi.text, alpha: 0.9 });
+    art.rect(3, 2, width - 7, height - 8).fill({ color: this.theme.pixi.laptopBody });
+    art.rect(4, 3, width - 9, 2).fill({ color: this.theme.pixi.text, alpha: 0.4 });
+    for (const y of [7, 14, 21]) {
+      art.rect(4, y, width - 9, 5).fill({ color: 0x090d16, alpha: 0.9 });
+      art.rect(6, y + 1, 6, 1).fill({ color: this.theme.pixi.text, alpha: 0.45 });
+      art.rect(width - 7, y + 1, 2, 2).fill({ color: y === 14 ? 0xf0b84f : 0x50d890 });
+    }
+    art.rect(5, 27, 2, 2).fill({ color: this.theme.pixi.text, alpha: 0.45 });
+    art.rect(9, 27, 2, 2).fill({ color: this.theme.pixi.text, alpha: 0.45 });
+    art.rect(13, 27, 2, 2).fill({ color: this.theme.pixi.text, alpha: 0.45 });
+    art.rect(3, height - 4, 5, 2).fill({ color: this.theme.pixi.text, alpha: 0.8 });
+    art.rect(width - 9, height - 4, 5, 2).fill({ color: this.theme.pixi.text, alpha: 0.8 });
     rack.addChild(art);
     rack.eventMode = "static";
     rack.cursor = "pointer";
-    rack.hitArea = new Rectangle(0, 0, TILE_SIZE * 2, TILE_SIZE * 3);
+    rack.hitArea = new Rectangle(0, 0, width, height);
     rack.on("pointertap", () => this.opts.bus.emitRepositoryServerClicked());
     this.floorLayer.addChild(rack);
     this.repositoryServer = rack;

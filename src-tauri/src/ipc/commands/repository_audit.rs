@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -69,7 +69,9 @@ fn audit_repositories(
     // 합쳐, 심볼릭 링크/하위 디렉터리 기록도 한 행으로 만든다.
     let mut deduped = BTreeMap::new();
     for (path, last_worked_at) in candidates {
-        let entry = inspect_candidate(&path, last_worked_at);
+        let Some(entry) = inspect_candidate(&path, last_worked_at) else {
+            continue;
+        };
         deduped
             .entry(entry.path.clone())
             .and_modify(|known: &mut RepositoryAuditEntry| {
@@ -122,13 +124,17 @@ fn event_cwds(root: &Path) -> BTreeMap<String, u64> {
     out
 }
 
-fn inspect_candidate(raw_path: &str, last_worked_at: u64) -> RepositoryAuditEntry {
+fn inspect_candidate(raw_path: &str, last_worked_at: u64) -> Option<RepositoryAuditEntry> {
     let fallback = PathBuf::from(raw_path);
-    let Ok(dir) = fs::canonicalize(&fallback) else {
-        return unavailable_entry(raw_path, last_worked_at);
+    let dir = match fs::canonicalize(&fallback) {
+        Ok(dir) => dir,
+        Err(error) if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {
+            return None;
+        }
+        Err(_) => return Some(unavailable_entry(raw_path, last_worked_at)),
     };
     if !dir.is_dir() {
-        return unavailable_entry(raw_path, last_worked_at);
+        return None;
     }
 
     let root_run = git(&dir, &["rev-parse", "--show-toplevel"]);
@@ -136,16 +142,20 @@ fn inspect_candidate(raw_path: &str, last_worked_at: u64) -> RepositoryAuditEntr
         root_run.outcome,
         ProcOutcome::TimedOut | ProcOutcome::Overflowed
     ) {
-        return timed_out_entry(&dir, last_worked_at);
+        return Some(timed_out_entry(&dir, last_worked_at));
     }
     if !matches!(root_run.outcome, ProcOutcome::Exited { success: true }) {
-        return unavailable_entry(&dir.to_string_lossy(), last_worked_at);
+        return Some(unavailable_entry(&dir.to_string_lossy(), last_worked_at));
     }
     let root = PathBuf::from(String::from_utf8_lossy(&root_run.stdout).trim());
-    let Ok(root) = fs::canonicalize(root) else {
-        return unavailable_entry(&dir.to_string_lossy(), last_worked_at);
+    let root = match fs::canonicalize(root) {
+        Ok(root) => root,
+        Err(error) if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {
+            return None;
+        }
+        Err(_) => return Some(unavailable_entry(&dir.to_string_lossy(), last_worked_at)),
     };
-    inspect_repo_root(&root, last_worked_at)
+    Some(inspect_repo_root(&root, last_worked_at))
 }
 
 fn inspect_repo_root(root: &Path, last_worked_at: u64) -> RepositoryAuditEntry {
@@ -317,10 +327,12 @@ mod tests {
     }
 
     #[test]
-    fn missing_candidate_is_preserved_as_unavailable() {
-        let entry = inspect_candidate("/definitely/missing/agent-office-repository", 42);
-        assert!(entry.unavailable);
-        assert_eq!(entry.last_worked_at, 42);
+    fn missing_candidate_is_not_listed() {
+        let entries = audit_repositories(
+            Path::new("/definitely/missing/agent-office-events"),
+            vec![("/definitely/missing/agent-office-repository".into(), 42)],
+        );
+        assert!(entries.is_empty());
     }
 
     #[test]
@@ -364,6 +376,7 @@ mod tests {
             vec![
                 (root.to_string_lossy().into_owned(), 10),
                 (root.join("nested").to_string_lossy().into_owned(), 20),
+                (root.join("deleted").to_string_lossy().into_owned(), 30),
             ],
         );
         assert_eq!(entries.len(), 1);
