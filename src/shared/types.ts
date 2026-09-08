@@ -19,6 +19,7 @@ export * from './types/common';
 export * from './types/session';
 export * from './types/notification';
 export * from './types/bot';
+export * from './types/automation';
 export * from './types/profile';
 export * from './types/characterBundle';
 export * from './types/diary';

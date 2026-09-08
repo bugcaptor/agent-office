@@ -10,9 +10,12 @@
 // sessionBridge의 exited 정규화가 담당하고, 그 결과 자연 종료(exit)와 동일한
 // 최종 상태가 된다: exited 배너 + 스크롤백 유지, 캐릭터는 FSM 규칙대로
 // 탕비실행, 캐릭터 클릭(ensureSession)이나 배너 "다시 띄우기"로 재소환.
+import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 
 export async function terminateAgentSession(agentId: string): Promise<void> {
+  useAppStore.getState().resetAutomationState(agentId);
+
   // ① PTY 종료 — 세션이 없거나 이미 죽었어도 계속(clockOut과 동일한 관용).
   try {
     await tauriApi.disposeSession(agentId);

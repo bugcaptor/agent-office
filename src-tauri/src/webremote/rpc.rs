@@ -196,16 +196,28 @@ pub async fn dispatch(
             if text.trim().is_empty() {
                 return Err(RpcError::bad_args("빈 문장은 보낼 수 없습니다"));
             }
-            // 봇 모드와 **같은 주입 규칙**이다: 단일 라인화 후 텍스트를 쓰고,
-            // 잠깐 쉰 뒤 CR을 따로 보낸다(TUI가 Enter를 삼키는 것을 막는다).
-            ctx.manager
-                .write_input(&agent_id, &crate::bot::runner::single_line(&text));
-            tokio::time::sleep(std::time::Duration::from_millis(
-                crate::bot::runner::INJECT_SUBMIT_DELAY_MS,
-            ))
-            .await;
-            ctx.manager.write_input(&agent_id, "\r");
-            Ok(Value::Null)
+            let sid = ctx.manager.session_id_for(&agent_id).unwrap_or_default();
+            match ctx
+                .gate
+                .submit(
+                    &agent_id,
+                    &sid,
+                    &text,
+                    crate::session::inject::InjectSource::WebRemote,
+                )
+                .await
+            {
+                crate::session::inject::SubmitOutcome::Submitted => Ok(Value::Null),
+                crate::session::inject::SubmitOutcome::Deferred(_) => Err(RpcError::bad_args(
+                    "다른 입력 작업이 진행 중이라 요청을 처리하지 못했습니다",
+                )),
+                crate::session::inject::SubmitOutcome::SessionChanged => {
+                    Err(RpcError::bad_args("세션이 변경되어 입력을 전송하지 못했습니다"))
+                }
+                crate::session::inject::SubmitOutcome::NotRunning => {
+                    Err(RpcError::bad_args("세션이 실행 중이 아닙니다"))
+                }
+            }
         }
 
         "chat.keys" => {
@@ -221,7 +233,7 @@ pub async fn dispatch(
             let bytes = super::chat::keys_to_bytes(&names)
                 .map_err(|k| RpcError::bad_args(format!("알 수 없는 키입니다: {k}")))?;
             for chunk in bytes {
-                ctx.manager.write_input(&agent_id, chunk);
+                ctx.gate.note_human(&agent_id, chunk);
             }
             Ok(Value::Null)
         }

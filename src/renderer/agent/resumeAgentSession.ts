@@ -12,7 +12,7 @@
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { terminalRegistry } from "../terminal/TerminalRegistry";
-import { runGuardedCreateSession } from "../ipc/sessionBridge";
+import { runGuardedCreateSession, reserveSessionReplacement } from "../ipc/sessionBridge";
 
 /** Claude native 세션 ID 형식(UUID류: 16진수+하이픈). 리줌 ID는 셸 stdin
  * 라인에 그대로 들어가므로 명령 구성 전 형식 검증이 안전장치다. */
@@ -39,21 +39,29 @@ export async function resumeAgentSession(agentId: string, sessionId: string): Pr
     return;
   }
 
-  // ① 기존 PTY 종료 — 세션이 없거나 이미 죽었어도 이어하기는 계속.
+  const release = reserveSessionReplacement(agentId);
+  if (!release) return;
   try {
-    await tauriApi.disposeSession(agentId);
-  } catch (err) {
-    console.warn(`resumeAgentSession: disposeSession failed for ${agentId}`, err);
+    useAppStore.getState().resetAutomationState(agentId);
+
+    // ① 기존 PTY 종료 — 세션이 없거나 이미 죽었어도 이어하기는 계속.
+    try {
+      await tauriApi.disposeSession(agentId);
+    } catch (err) {
+      console.warn(`resumeAgentSession: disposeSession failed for ${agentId}`, err);
+    }
+
+    // ② xterm 인스턴스/스크롤백 폐기 (onData 구독 해제 포함).
+    terminalRegistry.destroy(agentId);
+
+    // ③ 에폭 증가 → TerminalMount 리마운트 → attach()가 새 xterm 생성/연결.
+    useAppStore.getState().bumpTerminalEpoch(agentId);
+
+    // ④ 새 세션 시작. 상태를 먼저 starting으로 만들어 ensureSession과의 경합을
+    //    막고, 이번 1회에만 startupCommand override로 `claude --resume`을 주입한다.
+    useAppStore.getState().setSessionState({ agentId, status: "starting" });
+    await runGuardedCreateSession(agentId, { startupCommand });
+  } finally {
+    release();
   }
-
-  // ② xterm 인스턴스/스크롤백 폐기 (onData 구독 해제 포함).
-  terminalRegistry.destroy(agentId);
-
-  // ③ 에폭 증가 → TerminalMount 리마운트 → attach()가 새 xterm 생성/연결.
-  useAppStore.getState().bumpTerminalEpoch(agentId);
-
-  // ④ 새 세션 시작. 상태를 먼저 starting으로 만들어 ensureSession과의 경합을
-  //    막고, 이번 1회에만 startupCommand override로 `claude --resume`을 주입한다.
-  useAppStore.getState().setSessionState({ agentId, status: "starting" });
-  await runGuardedCreateSession(agentId, { startupCommand });
 }

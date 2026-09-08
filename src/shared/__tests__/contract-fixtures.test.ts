@@ -25,6 +25,8 @@ import type {
   AdoptedSessionInfo,
   AgentProfile,
   AppSettings,
+  AutomationAgentStatus,
+  AutomationStatus,
   AwardRecord,
   AwardsFile,
   AwardSpeech,
@@ -410,6 +412,39 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
     expect(a1.error).toBeUndefined();
   });
 
+  it("AutomationStatus / AutomationAgentStatus", () => {
+    const parsed: AutomationStatus = loadFixture("automation-status.json") as AutomationStatus;
+    expectKeys(parsed, ["agents"]);
+    const a1: AutomationAgentStatus = parsed.agents["a1"];
+    expectKeys(a1, ["running", "phase", "cli", "filePath", "startedAtMs"]);
+    // waitingStartup이 camelCase 그대로 오는지 확인 -- BotPhase(lowercase)와
+    // 달리 두 낱말짜리 변종이 있어 별도로 확인해 둘 값어치가 있다.
+    expect(a1.phase).toBe("waitingStartup");
+    expect(a1.cli).toBe("claude");
+    expect(a1.error).toBeUndefined();
+    expect(a1.runId).toBeUndefined();
+    expect(a1.deadlineMs).toBeUndefined();
+
+    // 타임아웃 선택을 기다리는 탭 -- 결정에 필요한 세 값이 다 실려 와야
+    // 렌더러가 automationDecide를 부를 수 있다.
+    const a2: AutomationAgentStatus = parsed.agents["a2"];
+    expectKeys(a2, [
+      "running",
+      "phase",
+      "cli",
+      "filePath",
+      "startedAtMs",
+      "runId",
+      "stepExecutionId",
+      "decisionId",
+      "extensionCount",
+      "markerObservedAtMs",
+    ]);
+    expect(a2.phase).toBe("timeoutDecision");
+    expect(a2.decisionId).toBe("dec-2");
+    expect(a2.deadlineMs).toBeUndefined();
+  });
+
   it("AwardsFile / AwardRecord / AwardWinner / AwardStanding / AwardSpeech", () => {
     const parsed: AwardsFile = loadFixture("awards-file.json") as AwardsFile;
     expectKeys(parsed, ["version", "awards"]);
@@ -484,6 +519,7 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "git-status-result.json",
       "git-file-history-result.json",
       "bot-status.json",
+      "automation-status.json",
       "awards-file.json",
     ]) {
       expect(() => JSON.parse(loadFixtureRaw(name))).not.toThrow();

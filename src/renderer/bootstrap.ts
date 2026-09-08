@@ -32,7 +32,10 @@ import { installMemoCleanup } from "./memo/memoCleanup";
 import { installTaskLabelSummarizer } from "./labels/summarizer";
 import { installGitBranchWatcher } from "./labels/gitBranchWatcher";
 import { installWorkLogRecorder } from "./diary/workLog";
-import { installWorkLogPersister, restoreWorkLogs } from "./diary/workLogPersister";
+import {
+  installWorkLogPersister,
+  restoreWorkLogs,
+} from "./diary/workLogPersister";
 import { installDiaryAutoWriter } from "./diary/diaryAutoWriter";
 import { installQuitGuard } from "./quitGuard";
 import { installSoundManager } from "./sound/soundManager";
@@ -40,7 +43,11 @@ import { useAwardsStore } from "./awards/awardsStore";
 import { tauriApi } from "./ipc/tauriApi";
 import { terminalRegistry } from "./terminal/TerminalRegistry";
 import type { PersistedState } from "./store/types";
-import { msUntilNextLocalMidnight, startOfLocalDay, sumWorkedSince } from "./timeline/todayTotal";
+import {
+  msUntilNextLocalMidnight,
+  startOfLocalDay,
+  sumWorkedSince,
+} from "./timeline/todayTotal";
 
 /**
  * 세션 핸드오프(docs/session-handoff-design.md §핵심 6) 입양: 데몬에 남아있던
@@ -55,7 +62,9 @@ async function adoptDetachedSessions(): Promise<void> {
     const adopted = await tauriApi.adoptDetachedSessions();
     if (adopted.length === 0) return;
     for (const info of adopted) {
-      useAppStore.getState().setSessionState({ agentId: info.agentId, status: "running" });
+      useAppStore
+        .getState()
+        .setSessionState({ agentId: info.agentId, status: "running" });
       useAppStore.getState().setSessionSize(info.agentId, info.cols, info.rows);
       // 세션 사용량(터미널 요약 바, docs/session-analytics-design.md §11.2):
       // 이 방어적 시드 루프도 session-state 이벤트와 마찬가지로 sessionId를
@@ -67,7 +76,10 @@ async function adoptDetachedSessions(): Promise<void> {
     }
     terminalRegistry.markAdopted(adopted.map((a) => a.agentId));
   } catch (err) {
-    console.warn("bootstrap: session adoption failed, continuing without prior sessions", err);
+    console.warn(
+      "bootstrap: session adoption failed, continuing without prior sessions",
+      err,
+    );
   }
 }
 
@@ -88,7 +100,35 @@ async function seedBotMode(): Promise<void> {
     const status = await tauriApi.botStatus();
     useAppStore.getState().seedBotStatus(status);
   } catch (err) {
-    console.warn("bootstrap: bot status query failed, continuing without bot mode", err);
+    console.warn(
+      "bootstrap: bot status query failed, continuing without bot mode",
+      err,
+    );
+  }
+}
+
+/**
+ * 자동화 점검(kbm) 부팅 시드. `seedBotMode`와 같은 이유 — `automation`은
+ * 비영속 런타임 상태라 앱을 재시작하면 비어 있는데, AgentTabStrip의 1초
+ * 상태 폴링은 "돌고 있는(또는 방금 끝난) 자동화가 하나라도 있을 때"만
+ * 돌기 때문에 스스로는 절대 되살아나지 못한다.
+ */
+export async function seedAutomationMode(): Promise<void> {
+  // The backend can still be registering commands while a restored renderer
+  // starts. Retry a few times; an empty store must not make a live run vanish.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const epochs = useAppStore.getState().automationEpochs;
+      const status = await tauriApi.automationStatus();
+      useAppStore.getState().seedAutomationStatus(status, epochs);
+      return;
+    } catch (err) {
+      if (attempt === 2) {
+        console.warn("bootstrap: automation status query failed", err);
+        return;
+      }
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 1_000));
+    }
   }
 }
 
@@ -106,7 +146,9 @@ function finalizeAwardsInBackground(): void {
   void (async () => {
     await useAwardsStore.getState().load();
     await useAwardsStore.getState().ensureFinalized();
-  })().catch((err) => console.warn("bootstrap: award backfill finalization failed", err));
+  })().catch((err) =>
+    console.warn("bootstrap: award backfill finalization failed", err),
+  );
 }
 
 /** 브로커 모드 주기 스냅샷 업로드 간격(ms). 크래시 생존 화면 복원의 신선도. */
@@ -167,10 +209,9 @@ function installDayRollover(): () => void {
 
   const schedule = () => {
     timer = setTimeout(() => {
-      const memorySum = Object.values(useAppStore.getState().timeTracking).reduce(
-        (a, t) => a + t.workedMs,
-        0
-      );
+      const memorySum = Object.values(
+        useAppStore.getState().timeTracking,
+      ).reduce((a, t) => a + t.workedMs, 0);
       useAppStore.getState().setTodayWorkedBase(0, memorySum);
       schedule();
     }, msUntilNextLocalMidnight(Date.now()));
@@ -214,7 +255,10 @@ export async function bootApp(): Promise<() => void> {
     // 여기서 한 번 전환된다 — 캐시도 함께 갱신돼 다음 부팅은 플래시가 없다.
     applyLanguageSetting(settings.language);
   } catch (err) {
-    console.warn("bootstrap: app settings load failed, continuing with defaults (all off)", err);
+    console.warn(
+      "bootstrap: app settings load failed, continuing with defaults (all off)",
+      err,
+    );
   }
 
   // "오늘 일한 시간" 헤드라인 베이스 — 실패해도 부팅 계속(base=0, loadState
@@ -240,6 +284,9 @@ export async function bootApp(): Promise<() => void> {
   // 백엔드에 살아남은 봇 태스크를 심어 5초 폴링을 재무장시킨다(입양 직후 —
   // 대상 탭이 스토어에 이미 있어야 배지/입력 잠금이 곧바로 맞는다).
   await seedBotMode();
+  // 자동화 점검(kbm)도 같은 이유로 부팅 시드가 필요하다 — 비영속 상태라
+  // 재시작하면 렌더러는 백엔드에 살아 있는 자동화 태스크를 모른다.
+  await seedAutomationMode();
   const offPersistence = installPersistence();
   const offPortraits = installPortraitCache();
   const offSprites = installSpriteCache();

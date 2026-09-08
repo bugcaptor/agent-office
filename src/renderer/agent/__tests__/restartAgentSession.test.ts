@@ -5,6 +5,7 @@
 // 그리고 각 단계 실패 시의 폴백 동작(deleteAgent.test.ts의 목 패턴 참고).
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
+import { ensureSession } from "../../ipc/sessionBridge";
 import type { AgentProfile } from "../../store/types";
 
 const disposeSession = vi.fn().mockResolvedValue(undefined);
@@ -239,6 +240,36 @@ describe("restartAgentSession 오케스트레이션", () => {
     // starting 상태에서 옛 세션을 대상으로(includeLive:false) 트리거된다.
     expect(flushAgent).toHaveBeenCalledWith("a1", { includeLive: false, source: "session-end" });
     expect(order).toEqual(["flush:a1:status=starting", "create:a1"]);
+  });
+
+  it("폐기 이벤트 뒤 클릭과 중복 재시작은 새 세션을 앞질러 만들지 않는다", async () => {
+    useAppStore.getState().addAgent(mkProfile("a1", { cwd: "/profile" }));
+    let finishDispose!: () => void;
+    disposeSession.mockReturnValueOnce(new Promise<void>((resolve) => { finishDispose = resolve; }));
+    const restarting = restartAgentSession("a1", { cwd: "/chosen" });
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "exited" });
+    ensureSession("a1");
+    await restartAgentSession("a1");
+    expect(createSession).not.toHaveBeenCalled();
+    expect(disposeSession).toHaveBeenCalledTimes(1);
+    finishDispose();
+    await restarting;
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(createSession).toHaveBeenCalledWith("a1", expect.objectContaining({ cwd: "/chosen" }));
+  });
+
+  it("재시작은 중단된 자동화를 지우고 이전 상태 응답의 재유입을 막는다", async () => {
+    useAppStore.getState().addAgent(mkProfile("a1"));
+    const old = { running: false, phase: "cancelled" as const, cli: "claude" as const, filePath: "", startedAtMs: 1 };
+    useAppStore.setState({ automation: { a1: old } });
+    const epochs = useAppStore.getState().automationEpochs;
+    disposeSession.mockImplementationOnce(async () => {
+      expect(useAppStore.getState().automation.a1).toBeUndefined();
+      useAppStore.getState().seedAutomationStatus({ agents: { a1: old } }, epochs);
+    });
+    await restartAgentSession("a1");
+    expect(useAppStore.getState().automation.a1).toBeUndefined();
+    expect(useAppStore.getState().automationEpochs.a1).toBe(1);
   });
 
   it("여러 번 재시작하면 에폭이 매번 증가한다", async () => {

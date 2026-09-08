@@ -120,6 +120,18 @@ impl BotRuntime {
         }
         BotStatus { agents }
     }
+
+    /// 이 탭의 봇 폴링 태스크가 살아 있는지(자동화 점검과의 상호 배제 확인용,
+    /// kbm). 등록만 돼 있고 해석 실패로 이미 멈춘(running=false) 항목은
+    /// false로 본다.
+    pub fn is_running(&self, agent_id: &str) -> bool {
+        self.tasks
+            .lock()
+            .unwrap()
+            .get(agent_id)
+            .map(|rb| rb.status.lock().unwrap().running)
+            .unwrap_or(false)
+    }
 }
 
 /// 폴링 태스크 본체: 파라미터를 한 번 해석한 뒤 주기적으로 poll_once를 돈다.

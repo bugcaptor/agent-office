@@ -109,8 +109,14 @@ class TerminalRegistry {
     const ime = createImeBridge({
       term,
       container,
-      inputBlocked: () => useAppStore.getState().isBotDriven(agentId),
-      send: (data) => tauriApi.writeInput(agentId, data),
+      inputBlocked: () => {
+        const s = useAppStore.getState();
+        return s.isBotDriven(agentId);
+      },
+      send: (data, source) =>
+        source === undefined
+          ? tauriApi.writeInput(agentId, data)
+          : tauriApi.writeInput(agentId, data, source),
     });
 
     // Copy/paste key handling (fires only while THIS terminal is focused, so it is
@@ -142,7 +148,10 @@ class TerminalRegistry {
         void navigator.clipboard
           .readText()
           .then((t) => {
-            if (t) term.paste(t);
+            if (t) {
+              ime.markProgrammaticPaste();
+              term.paste(t);
+            }
             // term.paste는 `textarea.value = ''`까지 한다(browser/Clipboard.ts).
             // keydown 시점의 리싱크는 이 시점보다 앞서므로 여기서 한 번 더 맞춘다 —
             // 안 그러면 다음 조합에서 사라진 길이만큼 DEL이 새어 나간다.
@@ -167,6 +176,7 @@ class TerminalRegistry {
     // 게 없으므로 renderedBytes 회계는 그대로 chunk.bytes를 더한다.
     const scrollbackGuard = createScrollbackGuard();
     const disposeData = tauriApi.onData(agentId, (data, bytes) => {
+      ime.observeTerminalOutput(data);
       term.write(scrollbackGuard.filter(data), () => {
         const cur = this.entries.get(agentId);
         if (cur) cur.renderedBytes += bytes;

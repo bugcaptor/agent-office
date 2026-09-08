@@ -1650,6 +1650,22 @@
     // ---- write/resize: Running guard ----
 
     #[tokio::test]
+    async fn session_bound_input_rejects_stale_identity_and_exited_session() {
+        let (mgr, events, ctl, dir) = build();
+        let created = mgr.create(req("a1", Some(false))).unwrap();
+        assert!(!mgr.write_input_for_session("a1", "old-session", "stale"));
+        assert!(ctl.writes_utf8().is_empty());
+        assert!(mgr.write_input_for_session("a1", &created.session_id, "current"));
+        assert_eq!(ctl.writes_utf8(), "current");
+        ctl.fire_exit(0);
+        wait_for(|| events.states().len() == 3).await;
+        assert!(!mgr.write_input_for_session("a1", &created.session_id, "late"));
+        assert!(!mgr.write_input_for_session("missing", &created.session_id, "missing"));
+        assert_eq!(ctl.writes_utf8(), "current");
+        cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
     async fn write_input_and_resize_apply_while_running() {
         let (mgr, _events, ctl, dir) = build();
         mgr.create(req("a1", Some(false))).unwrap();
@@ -2390,4 +2406,18 @@
         );
 
         cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
+    async fn transition_shell_capability_excludes_automatic_startup_commands() {
+        for startup in [None, Some("ssh remote"), Some("exec /bin/sh")] {
+            let (mgr, _events, ctl, dir) = build_with_shell_resolver(Arc::new(|_, _| shells::ResolvedShell {
+                program: "/bin/bash".into(), args: vec![], extra_env: vec![],
+            }));
+            let mut request = req("a1", Some(false));
+            request.startup_command = startup.map(str::to_owned);
+            mgr.create(request).unwrap();
+            assert_eq!(mgr.shell_path_for("a1"), startup.is_none().then(|| "/bin/bash".to_string()));
+            cleanup(&ctl, &dir);
+        }
     }

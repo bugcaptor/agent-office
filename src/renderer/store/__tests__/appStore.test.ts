@@ -12,16 +12,31 @@
 // needing a separate file.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BotAgentStatus, SessionEventRecord } from "@shared/types";
+import type { AutomationAgentStatus, BotAgentStatus, SessionEventRecord } from "@shared/types";
 import type { AgentProfile, NotificationEvent } from "../types";
 import { aggregateSeed, mergeTotals } from "../../usage/sessionCost";
 
-const { setAppSettingsMock, appendSessionTurnMock } = vi.hoisted(() => ({
+const {
+  setAppSettingsMock,
+  appendSessionTurnMock,
+  automationDecideMock,
+  automationClearUncommittedMock,
+  automationStatusMock,
+} = vi.hoisted(() => ({
   setAppSettingsMock: vi.fn().mockResolvedValue(undefined),
   appendSessionTurnMock: vi.fn(),
+  automationDecideMock: vi.fn().mockResolvedValue(true),
+  automationClearUncommittedMock: vi.fn().mockResolvedValue(undefined),
+  automationStatusMock: vi.fn().mockResolvedValue({ agents: {} }),
 }));
 vi.mock("../../ipc/tauriApi", () => ({
-  tauriApi: { setAppSettings: setAppSettingsMock, appendSessionTurn: appendSessionTurnMock },
+  tauriApi: {
+    setAppSettings: setAppSettingsMock,
+    appendSessionTurn: appendSessionTurnMock,
+    automationDecide: automationDecideMock,
+    automationClearUncommitted: automationClearUncommittedMock,
+    automationStatus: automationStatusMock,
+  },
 }));
 
 import { useAppStore } from "../appStore";
@@ -1046,6 +1061,185 @@ describe("botMode slice", () => {
     useAppStore.getState().applyBotStatus({ agents: { a1: st() } });
 
     expect(useAppStore.getState().botMode).toEqual({});
+  });
+});
+
+// 자동화 점검(kbm) 구동 표시. isAutomationDriven은 running으로 가른다 —
+// 끝난(done/failed) 자동화는 배지·알림용으로 남아 있을 뿐 잠그면 안 된다.
+describe("automation slice", () => {
+  const ast = (overrides: Partial<AutomationAgentStatus> = {}): AutomationAgentStatus => ({
+    running: true,
+    phase: "watching",
+    cli: "claude",
+    filePath: "/tmp/agent-office-automation.md",
+    startedAtMs: 0,
+    ...overrides,
+  });
+
+  it("running 상태는 입력이 잠긴다", () => {
+    useAppStore.setState({ automation: { a1: ast({ running: true }) } });
+
+    expect(useAppStore.getState().isAutomationDriven("a1")).toBe(true);
+  });
+
+  it("done 상태는 잠기지 않는다", () => {
+    useAppStore.setState({
+      automation: { a1: ast({ running: false, phase: "done" }) },
+    });
+
+    expect(useAppStore.getState().isAutomationDriven("a1")).toBe(false);
+  });
+
+  it("항목이 없으면 잠기지 않는다", () => {
+    expect(useAppStore.getState().isAutomationDriven("nope")).toBe(false);
+  });
+
+  it("applyAutomationStatus는 켜진 탭만 갱신하고 새 탭을 추가하지 않는다", () => {
+    useAppStore.getState().applyAutomationStatus({ agents: { a1: ast() } });
+
+    expect(useAppStore.getState().automation).toEqual({});
+  });
+
+  it("applyAutomationStatus는 값이 같으면 객체 참조를 그대로 유지한다(불필요한 리렌더 방지)", () => {
+    const initial = ast({ phase: "watching" });
+    useAppStore.setState({ automation: { a1: initial } });
+
+    // 같은 값을 가진 새 객체로 다시 적용 -- 참조는 다르지만 필드는 동일.
+    useAppStore.getState().applyAutomationStatus({ agents: { a1: ast({ phase: "watching" }) } });
+
+    expect(useAppStore.getState().automation.a1).toBe(initial);
+  });
+
+  it("applyAutomationStatus는 값이 다르면 객체를 교체한다", () => {
+    const initial = ast({ phase: "watching" });
+    useAppStore.setState({ automation: { a1: initial } });
+
+    useAppStore.getState().applyAutomationStatus({ agents: { a1: ast({ phase: "exiting" }) } });
+
+    const after = useAppStore.getState().automation.a1;
+    expect(after).not.toBe(initial);
+    expect(after.phase).toBe("exiting");
+  });
+
+  it("seedAutomationStatus는 없던 탭도 추가한다(부팅 시드)", () => {
+    useAppStore.getState().seedAutomationStatus({ agents: { a1: ast({ phase: "injecting" }) } });
+
+    expect(useAppStore.getState().automation.a1.phase).toBe("injecting");
+  });
+
+  it("decideAutomation(extend)은 watching으로 전이하고 extensionCount를 올린다", async () => {
+    useAppStore.setState({
+      automation: {
+        a1: ast({
+          phase: "timeoutDecision",
+          runId: "r1",
+          stepExecutionId: "s1",
+          decisionId: "d1",
+          extensionCount: 0,
+        }),
+      },
+    });
+
+    const res = await useAppStore.getState().decideAutomation("a1", "extend");
+    expect(res).toBe(true);
+
+    const st = useAppStore.getState().automation.a1;
+    expect(st.phase).toBe("watching");
+    expect(st.decisionId).toBeUndefined();
+    expect(st.extensionCount).toBe(1);
+    // 새 deadline 은 백엔드가 이 실행의 설정 대기시간으로 정한다 — 프런트가 짐작해
+    // 30분을 적으면 단계별 설정과 어긋난 값이 잠깐 보인다. 다음 폴링이 채운다.
+    expect(st.deadlineMs).toBeUndefined();
+  });
+
+  it("decideAutomation(stop)은 running=false 및 cancelled로 전이한다", async () => {
+    useAppStore.setState({
+      automation: {
+        a1: ast({
+          phase: "timeoutDecision",
+          runId: "r1",
+          stepExecutionId: "s1",
+          decisionId: "d1",
+        }),
+      },
+    });
+
+    const res = await useAppStore.getState().decideAutomation("a1", "stop");
+    expect(res).toBe(true);
+
+    const st = useAppStore.getState().automation.a1;
+    expect(st.running).toBe(false);
+    // 사용자 중단은 실패가 아니다 — 에러 코드를 남기지 않는다.
+    expect(st.phase).toBe("cancelled");
+    expect(st.error).toBeUndefined();
+  });
+
+  it("decideAutomation은 decisionId가 없으면 호출하지 않고 false를 반환한다", async () => {
+    useAppStore.setState({
+      automation: {
+        a1: ast({
+          phase: "watching",
+          runId: "r1",
+          stepExecutionId: "s1",
+          decisionId: undefined,
+        }),
+      },
+    });
+
+    const res = await useAppStore.getState().decideAutomation("a1", "extend");
+    expect(res).toBe(false);
+  });
+
+  it("applyAutomationStatus는 pendingReason이나 pendingSinceMs가 다르면 객체를 교체한다", () => {
+    const initial = ast({ phase: "injecting", pendingReason: undefined });
+    useAppStore.setState({ automation: { a1: initial } });
+
+    useAppStore.getState().applyAutomationStatus({
+      agents: { a1: ast({ phase: "injecting", pendingReason: "humanTyping", pendingSinceMs: 1000 }) },
+    });
+
+    const after = useAppStore.getState().automation.a1;
+    expect(after).not.toBe(initial);
+    expect(after.pendingReason).toBe("humanTyping");
+    expect(after.pendingSinceMs).toBe(1000);
+  });
+
+  it("재시작 이전의 중단 응답은 자동화 상태를 되살리지 않는다", async () => {
+    useAppStore.setState({ automation: { a1: ast() } });
+    let resolve!: (value: { agents: Record<string, AutomationAgentStatus> }) => void;
+    automationStatusMock.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    const stopping = useAppStore.getState().stopAutomation("a1");
+    await Promise.resolve();
+    useAppStore.getState().resetAutomationState("a1");
+    resolve({ agents: { a1: ast({ running: false, phase: "cancelled" }) } });
+    await stopping;
+    expect(useAppStore.getState().automation.a1).toBeUndefined();
+  });
+
+  it("재시작 이전 폴링은 새 실행과 다른 탭 상태를 덮지 않는다", () => {
+    const epochs = useAppStore.getState().automationEpochs;
+    useAppStore.getState().resetAutomationState("a1");
+    const newRun = ast({ runId: "new", phase: "launching" });
+    useAppStore.setState({ automation: { a1: newRun, a2: ast() } });
+    useAppStore.getState().applyAutomationStatus({ agents: {
+      a1: ast({ runId: "old", running: false, phase: "cancelled" }),
+      a2: ast({ phase: "settling" }),
+    } }, epochs);
+    expect(useAppStore.getState().automation.a1).toBe(newRun);
+    expect(useAppStore.getState().automation.a2.phase).toBe("settling");
+  });
+
+  it("continueAutomation은 automationClearUncommitted와 status 조회를 순서대로 부른다", async () => {
+    useAppStore.setState({ automation: { a1: ast({ phase: "injecting", pendingReason: "humanTyping" }) } });
+    automationStatusMock.mockResolvedValueOnce({
+      agents: { a1: ast({ phase: "injecting", pendingReason: undefined }) },
+    });
+
+    await useAppStore.getState().continueAutomation("a1");
+
+    expect(automationClearUncommittedMock).toHaveBeenCalledWith("a1");
+    expect(automationStatusMock).toHaveBeenCalled();
+    expect(useAppStore.getState().automation.a1.pendingReason).toBeUndefined();
   });
 });
 

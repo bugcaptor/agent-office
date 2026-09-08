@@ -22,6 +22,7 @@
 // `pub(crate) use <domain>::*;` so `crate::ipc::commands::<name>` keeps
 // resolving exactly as it did before the split -- only the file each
 // command's body lives in changed.
+mod automation;
 mod bot;
 mod media;
 mod misc;
@@ -55,6 +56,7 @@ use crate::state::AppState;
 #[cfg(test)]
 use crate::types::*;
 
+pub(crate) use automation::*;
 pub(crate) use bot::*;
 pub(crate) use media::*;
 pub(crate) use misc::*;

@@ -3,9 +3,11 @@ mod anthropic;
 mod claude;
 mod codex;
 mod gemini;
+mod kilo;
 mod model_catalog;
 mod opencode;
 mod openrouter;
+mod pi;
 
 use std::process::Stdio;
 use std::sync::OnceLock;
@@ -22,6 +24,9 @@ const TEXT_MAX_CHARS: usize = 2_000;
 const TEXT_MAX_CHARS_STUDY: usize = 120_000;
 const ERROR_MAX_CHARS: usize = 512;
 const MAX_CONCURRENT: usize = 2;
+/// 모델 카탈로그는 CLI가 비정상적으로 긴 진단 출력을 내도 UI 조회 하나가 메모리를
+/// 점유하지 않게 제한한다. 상한을 넘기면 프로세스를 종료하고 빈 목록으로 강등한다.
+pub(crate) const MODEL_CATALOG_STDOUT_MAX_BYTES: u64 = 1_048_576;
 /// 라벨 요약(인터랙티브 — 머리 위 라벨). 짧게 잡아 UX 지연을 막는다.
 const TIMEOUT_LABEL: Duration = Duration::from_secs(20);
 /// 일기 생성(#66). 백그라운드 유휴 스윕에서만 도는 배치라 종료 데드라인이
@@ -30,6 +35,65 @@ const TIMEOUT_DIARY: Duration = Duration::from_secs(120);
 /// 학습자료 생성. 사용자가 명시적으로 누르고 기다리는 배치이고, 입력이
 /// 60배 크며 출력도 문서 한 편이다.
 const TIMEOUT_STUDY: Duration = Duration::from_secs(300);
+
+/// 자동화가 실제 `agy` 실행 직전에 사용하는 모델 카탈로그. 요약 설정의
+/// 커스텀 명령과 분리한다. 자동화는 항상 `agy`를 실행하므로, 다른 명령의
+/// 목록으로 검증하면 실행 대상과 목록이 어긋난다.
+pub(crate) async fn list_automation_agy_models() -> Vec<String> {
+    agy::list_models(Duration::from_secs(10), "agy").await
+}
+
+/// 자동화 편집기가 실행 CLI와 같은 계정에서 읽어 온 모델을 추천할 때 쓴다.
+/// 이 목록은 실행 허용 목록이 아니다. 특히 Claude/Codex의 저장된 사용자 모델
+/// 별칭은 목록에 없더라도 기존대로 실행에 전달한다.
+pub(crate) async fn list_automation_cli_models(cli_profile_id: &str) -> Vec<String> {
+    match cli_profile_id {
+        "agy" => list_automation_agy_models().await,
+        "kilo" => kilo::list_models(Duration::from_secs(10), "kilo").await,
+        "pi" => pi::list_models(Duration::from_secs(10), "pi").await,
+        "codex" => codex::list_models(Duration::from_secs(10), "codex").await,
+        // Claude CLI는 단순 목록 서브커맨드가 없다. SDK control initialize의
+        // 실제 계정 모델 응답으로만 채운다(claude::list_models).
+        "claude" => claude::list_models(Duration::from_secs(30), "claude").await,
+        _ => Vec::new(),
+    }
+}
+
+/// 읽기 전용 CLI 모델 조회의 공통 실행 규약. stdin은 닫고, stderr는 버리며,
+/// 전체 실행 시간과 stdout 크기를 모두 제한한다. 실패·형식 변화는 호출자가
+/// 빈 목록으로 처리한다.
+pub(crate) async fn model_catalog_stdout(
+    command: &mut tokio::process::Command,
+    timeout: Duration,
+) -> Option<Vec<u8>> {
+    use tokio::io::AsyncReadExt;
+
+    command.current_dir(std::env::temp_dir());
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::null());
+    command.kill_on_drop(true);
+    let mut child = command.spawn().ok()?;
+
+    tokio::time::timeout(timeout, async {
+        let mut stdout = child.stdout.take()?;
+        let mut output = Vec::new();
+        stdout
+            .take(MODEL_CATALOG_STDOUT_MAX_BYTES + 1)
+            .read_to_end(&mut output)
+            .await
+            .ok()?;
+        if output.len() as u64 > MODEL_CATALOG_STDOUT_MAX_BYTES {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return None;
+        }
+        child.wait().await.ok()?.success().then_some(output)
+    })
+    .await
+    .ok()
+    .flatten()
+}
 
 /// 요약 호출의 목적. 목적별로 타임아웃·입력 상한·모델이 달라지고 나머지
 /// 파이프라인은 공유한다(#66).
@@ -140,7 +204,11 @@ pub(super) fn resolve_model(
     models: &SummaryModels,
 ) -> String {
     let o = models.for_provider(provider);
-    let picked = if purpose.is_heavy() { &o.heavy } else { &o.light };
+    let picked = if purpose.is_heavy() {
+        &o.heavy
+    } else {
+        &o.light
+    };
     let picked = picked.trim();
     if picked.is_empty() {
         default_model(provider, purpose).to_string()
@@ -580,8 +648,16 @@ exit "$AO_FAKE_EXIT"
         for (provider, label, study) in [
             (SummaryProvider::Claude, "haiku", "sonnet"),
             (SummaryProvider::Codex, "gpt-5.4-mini", "gpt-5.4"),
-            (SummaryProvider::Agy, "gemini-3.6-flash-low", "gemini-3.1-pro-low"),
-            (SummaryProvider::Gemini, "gemini-2.5-flash", "gemini-2.5-pro"),
+            (
+                SummaryProvider::Agy,
+                "gemini-3.6-flash-low",
+                "gemini-3.1-pro-low",
+            ),
+            (
+                SummaryProvider::Gemini,
+                "gemini-2.5-flash",
+                "gemini-2.5-pro",
+            ),
             (
                 SummaryProvider::Opencode,
                 "opencode-go/deepseek-v4-flash",
@@ -663,7 +739,10 @@ exit "$AO_FAKE_EXIT"
     fn command_override_wins_and_is_scoped_to_its_provider() {
         let mut models = SummaryModels::default();
         models.claude.command = "claude-t".into();
-        assert_eq!(resolve_command(SummaryProvider::Claude, &models), "claude-t");
+        assert_eq!(
+            resolve_command(SummaryProvider::Claude, &models),
+            "claude-t"
+        );
         assert_eq!(
             resolve_command(SummaryProvider::Codex, &models),
             "codex",
@@ -690,19 +769,32 @@ exit "$AO_FAKE_EXIT"
     fn cap_text_counts_unicode_scalars_not_bytes() {
         let input = "가".repeat(TEXT_MAX_CHARS + 5);
         // head+tail 보존이라 총 길이는 정확히 캡(중략 마커 포함)에 맞춘다.
-        assert_eq!(cap_text(&input, TEXT_MAX_CHARS, crate::i18n::Lang::Ko).unwrap().chars().count(), TEXT_MAX_CHARS);
+        assert_eq!(
+            cap_text(&input, TEXT_MAX_CHARS, crate::i18n::Lang::Ko)
+                .unwrap()
+                .chars()
+                .count(),
+            TEXT_MAX_CHARS
+        );
     }
 
     #[test]
     fn cap_text_passes_through_when_within_budget() {
         let input = "가".repeat(TEXT_MAX_CHARS);
-        assert_eq!(cap_text(&input, TEXT_MAX_CHARS, crate::i18n::Lang::Ko).unwrap(), input);
+        assert_eq!(
+            cap_text(&input, TEXT_MAX_CHARS, crate::i18n::Lang::Ko).unwrap(),
+            input
+        );
     }
 
     #[test]
     fn cap_text_preserves_both_head_and_tail() {
         // 앞뒤를 구분할 수 있게 머리엔 'H', 꼬리엔 'T'를 채운다.
-        let input = format!("{}{}", "H".repeat(TEXT_MAX_CHARS), "T".repeat(TEXT_MAX_CHARS));
+        let input = format!(
+            "{}{}",
+            "H".repeat(TEXT_MAX_CHARS),
+            "T".repeat(TEXT_MAX_CHARS)
+        );
         let capped = cap_text(&input, TEXT_MAX_CHARS, crate::i18n::Lang::Ko).unwrap();
         assert!(capped.starts_with('H'), "머리(첫 지시)가 유실됨");
         assert!(capped.ends_with('T'), "꼬리(최근 작업)가 유실됨");
@@ -722,7 +814,9 @@ exit "$AO_FAKE_EXIT"
         let fake = FakeCliDir::new();
         let spec = fake.provider_command("0", "");
 
-        let result = run_with_timeout(spec, "한글 원문", TIMEOUT_LABEL).await.unwrap();
+        let result = run_with_timeout(spec, "한글 원문", TIMEOUT_LABEL)
+            .await
+            .unwrap();
 
         assert_eq!(result, "Codex fake summary");
         assert_eq!(std::fs::read_to_string(&fake.stdin).unwrap(), "한글 원문");
@@ -821,5 +915,4 @@ exit "$AO_FAKE_EXIT"
             );
         }
     }
-
 }

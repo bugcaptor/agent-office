@@ -24,6 +24,8 @@ import { officeBus } from "../ipc/sessionBridge";
 import { sessionOptsFor } from "../ipc/sessionOpts";
 
 export async function clockOutAgent(agentId: string): Promise<void> {
+  useAppStore.getState().resetAutomationState(agentId);
+
   // ① PTY 종료(세션 종료 → 시간 집계 정산은 sessionBridge의 onSessionState가 처리).
   try {
     await tauriApi.disposeSession(agentId);

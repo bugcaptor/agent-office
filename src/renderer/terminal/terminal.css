@@ -106,8 +106,10 @@
   border-color: var(--border-dark);
 }
 
-/* 봇 운전 중 배지(이슈 #57) — 탭 이름 앞 작은 로봇 아이콘. */
-.agent-tab-bot {
+/* 봇 운전 중 배지(이슈 #57)·자동화 점검 배지(kbm) — 탭 이름 앞 작은 아이콘.
+   둘이 같은 배치 규칙을 쓴다. */
+.agent-tab-bot,
+.agent-tab-automation {
   flex: none;
   font-size: 11px;
   line-height: 1;
@@ -428,3 +430,109 @@
   border: 2px solid var(--accent-error);
   z-index: 2;
 }
+
+/* ---- 자동화 배너 및 타임아웃 결정 비차단 패널 (kbm #2t9) ---- */
+.automation-banner-container {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  right: 8px;
+  pointer-events: none;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+}
+
+.automation-banner {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.8rem;
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--border-dark);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  color: var(--text);
+}
+
+.automation-banner-icon {
+  flex: none;
+  font-size: 0.95rem;
+}
+
+.automation-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.automation-banner-cli {
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.automation-banner-title {
+  color: var(--text);
+}
+
+.automation-banner-remaining {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.automation-banner-extension {
+  color: var(--accent-warn);
+  font-size: 0.75rem;
+}
+
+.automation-banner-stop {
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  margin-left: 6px;
+}
+
+.automation-decision-panel {
+  position: absolute;
+  top: 38px;
+  right: 12px;
+  width: 290px;
+  pointer-events: auto;
+  z-index: 4;
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--accent-warn);
+  padding: 10px 12px;
+  font-family: "DungGeunMo", monospace;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  color: var(--text);
+}
+
+.automation-decision-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 0.88rem;
+  font-weight: bold;
+}
+
+.automation-decision-desc {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.automation-decision-marker {
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.automation-decision-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+

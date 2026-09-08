@@ -106,6 +106,7 @@ pub struct WebRemoteContext {
     /// 커스텀 초상 PNG 저장소(`media.portrait` RPC). 네이티브와 **같은
     /// 인스턴스**를 공유한다 — 디렉터리 규약이 두 곳에 복제되지 않는다.
     pub portraits: Arc<crate::persistence::png_store::PngStore>,
+    pub gate: Arc<crate::session::inject::InjectGate>,
     pub rate: pairing::PairRateLimiter,
     pair_notify: Mutex<Option<PairNotifyFn>>,
 }
@@ -125,6 +126,7 @@ pub struct WebRemoteContextDeps {
     pub observer_server: Arc<ObserverServerState>,
     pub live_usage: Arc<crate::usage::LiveUsageState>,
     pub portraits: Arc<crate::persistence::png_store::PngStore>,
+    pub gate: Arc<crate::session::inject::InjectGate>,
 }
 
 impl WebRemoteContext {
@@ -146,6 +148,7 @@ impl WebRemoteContext {
             observer_server: deps.observer_server,
             live_usage: deps.live_usage,
             portraits: deps.portraits,
+            gate: deps.gate,
             rate: pairing::PairRateLimiter::default(),
             pair_notify: Mutex::new(None),
         }
@@ -464,6 +467,10 @@ mod tests {
                 vacation_mode: None,
             })
             .unwrap();
+        let gate = Arc::new(crate::session::inject::InjectGate::new(
+            Arc::new(crate::session::inject::ManagerSink::new(manager.clone())),
+            Arc::new(crate::state::BotPromptArms::new()),
+        ));
         let ctx = Arc::new(WebRemoteContext::new(WebRemoteContextDeps {
             manager,
             registry,
@@ -480,6 +487,7 @@ mod tests {
                 dir.join("portraits"),
                 crate::persistence::png_store::MAX_PORTRAIT_BYTES,
             )),
+            gate,
         }));
         (ctx, dir)
     }

@@ -814,6 +814,305 @@ pub struct BotStatus {
     pub agents: std::collections::BTreeMap<String, BotAgentStatus>,
 }
 
+/// 자동화 점검(LLM CLI 왕복 확인)에 쓸 CLI. TS `AutomationCli` 미러.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AutomationCli {
+    #[default]
+    Claude,
+    Codex,
+    Agy,
+    Kilo,
+    Pi,
+}
+
+impl AutomationCli {
+    /// 셸에 칠 실행 명령.
+    pub fn command(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+            Self::Agy => "agy",
+            Self::Kilo => "kilo",
+            Self::Pi => "pi",
+        }
+    }
+}
+
+/// 자동화 루프의 현재 단계. TS `AutomationPhase` 미러. camelCase다 — 변종이 두
+/// 낱말이라 `BotPhase`의 lowercase를 그대로 쓰면 "waitingstartup"이 나온다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum AutomationPhase {
+    #[default]
+    Launching,
+    WaitingStartup,
+    Injecting,
+    Watching,
+    TimeoutDecision,
+    Settling,
+    WaitingHumanInput,
+    Confirming,
+    Exiting,
+    Done,
+    /// 사용자가 중단을 요청하여 태스크 종료를 기다리는 중.
+    Cancelling,
+    /// 사용자가 중단했다. 실패가 아니다 — CLI도 터미널도 그대로 둔 채 감시만 멈춘 상태.
+    Cancelled,
+    Completed,
+    Interrupted,
+    Failed,
+}
+
+/// 자동 입력 제출 보류 사유. TS `PendingReason` 미러.
+pub use crate::session::inject::PendingReason;
+
+/// 자동화 타임아웃 결정 선택지. TS `AutomationDecisionChoice` 미러.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AutomationDecisionChoice {
+    Extend,
+    Stop,
+    Continue,
+}
+
+/// 자동화가 도는 탭 한 개의 런타임 상태. TS `AutomationAgentStatus` 미러.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationAgentStatus {
+    pub running: bool,
+    pub phase: AutomationPhase,
+    pub cli: AutomationCli,
+    /// v2 전환 흐름의 현재 터미널 문맥. 없으면 v1의 기존 `cli` 표시를 사용한다.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub cli_context: Option<AutomationCliContext>,
+    /// 감시 중인 결과 파일 절대경로(진단·눈검증용).
+    pub file_path: String,
+    pub started_at_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub run_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub step_execution_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub deadline_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub decision_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub extension_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub marker_observed_at_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub pending_reason: Option<PendingReason>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub pending_since_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub definition_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub definition_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub workspace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub cycle: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub step_index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub step_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub outcome: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub completed_at_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub decision_message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub decision_reason: Option<AutomationDecisionReason>,
+    /// CLI 반환 기록을 마지막으로 확인한 시각.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub cli_return_observed_at_ms: Option<u64>,
+}
+
+/// CLI 전환 자동화가 현재 기대하는 터미널 문맥. TS `AutomationCliContext` 미러.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "camelCase", deny_unknown_fields)]
+pub enum AutomationCliContext {
+    Unknown,
+    Shell,
+    Cli {
+        cli: AutomationCli,
+        #[serde(rename = "launchStepId")]
+        launch_step_id: String,
+    },
+}
+
+impl AutomationAgentStatus {
+    pub fn empty() -> Self {
+        Self {
+            running: false,
+            phase: AutomationPhase::default(),
+            cli: AutomationCli::default(),
+            cli_context: None,
+            file_path: String::new(),
+            started_at_ms: 0,
+            run_id: None,
+            step_execution_id: None,
+            deadline_ms: None,
+            decision_id: None,
+            extension_count: None,
+            marker_observed_at_ms: None,
+            pending_reason: None,
+            pending_since_ms: None,
+            error: None,
+            definition_id: None,
+            definition_name: None,
+            session_id: None,
+            workspace: None,
+            cycle: None,
+            step_index: None,
+            step_id: None,
+            outcome: None,
+            completed_at_ms: None,
+            decision_message: None,
+            decision_reason: None,
+            cli_return_observed_at_ms: None,
+        }
+    }
+}
+
+/// `automation_status` 응답 — 자동화가 도는(또는 방금 끝난) 탭들의 스냅샷.
+/// TS `AutomationStatus` 미러.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationStatus {
+    pub agents: std::collections::BTreeMap<String, AutomationAgentStatus>,
+}
+
+/// 저장 가능한 터미널 자동화 정의. JSON import/export와 IPC의 공통 wire 형식이다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutomationDefinition {
+    pub schema_version: u32,
+    pub id: String,
+    pub revision: u32,
+    pub name: String,
+    #[serde(default)]
+    pub inputs: Vec<AutomationInput>,
+    pub steps: Vec<AutomationStep>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub repeat: Option<AutomationRepeat>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub workspace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub input_values: Option<std::collections::BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutomationInput {
+    pub key: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub default: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutomationRepeat {
+    pub max_cycles: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum AutomationStep {
+    LaunchCli {
+        id: String,
+        cli_profile_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        effort: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        startup_wait_ms: Option<u64>,
+    },
+    LlmTask {
+        id: String,
+        label: String,
+        prompt_template: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        wait_timeout_ms: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        completion_grace_ms: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_early_complete: Option<bool>,
+    },
+    Wait {
+        id: String,
+        duration_ms: u64,
+    },
+    Confirm {
+        id: String,
+        message: String,
+    },
+    ExitCli {
+        id: String,
+        command: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        return_mode: Option<AutomationCliReturnMode>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exit_wait_ms: Option<u64>,
+    },
+}
+
+/// v2 ExitCli의 반환 확인 방식. TS `AutomationCliReturnMode` 미러.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AutomationCliReturnMode {
+    Auto,
+    Manual,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AutomationDecisionReason {
+    Timeout,
+    Confirm,
+    Blocked,
+    ProtocolError,
+    HumanInput,
+    ShellReady,
+    CliExitTimeout,
+    CliExitUnconfirmed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationRunEvent {
+    pub at: u64,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub details: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationRunRecord {
+    pub run_id: String,
+    pub definition_snapshot: AutomationDefinition,
+    pub inputs: std::collections::BTreeMap<String, String>,
+    pub workspace: String,
+    pub agent_id: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub outcome: Option<String>,
+    #[serde(default)]
+    pub events: Vec<AutomationRunEvent>,
+}
+
 /// 영속 상태. version은 리터럴 1.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

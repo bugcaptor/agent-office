@@ -1,0 +1,75 @@
+{
+  "runId": "run-defined",
+  "definitionSnapshot": {
+    "schemaVersion": 1,
+    "id": "workflow-1",
+    "revision": 1,
+    "name": "작성과 검수",
+    "inputs": [
+      {
+        "key": "topic",
+        "label": "주제",
+        "default": "자동화"
+      }
+    ],
+    "steps": [
+      {
+        "kind": "launchCli",
+        "id": "launch",
+        "cliProfileId": "claude",
+        "model": "test-model",
+        "effort": "high",
+        "startupWaitMs": 10000
+      },
+      {
+        "kind": "llmTask",
+        "id": "task",
+        "label": "작성",
+        "promptTemplate": "주제: {{topic}}\n검수용 문서를 작성한다.",
+        "waitTimeoutMs": 1800000,
+        "completionGraceMs": 10000,
+        "allowEarlyComplete": true
+      },
+      {
+        "kind": "wait",
+        "id": "wait",
+        "durationMs": 1000
+      },
+      {
+        "kind": "confirm",
+        "id": "confirm",
+        "message": "다음 단계로 진행할까요?"
+      },
+      {
+        "kind": "exitCli",
+        "id": "exit",
+        "command": "/exit"
+      }
+    ],
+    "repeat": {
+      "maxCycles": 3
+    },
+    "workspace": "/workspace/automation",
+    "inputValues": {
+      "topic": "저장된 실행값"
+    }
+  },
+  "inputs": {
+    "topic": "입력 조율"
+  },
+  "workspace": "/home/agent/repo",
+  "agentId": "a4",
+  "status": "interrupted",
+  "outcome": "interrupted",
+  "events": [
+    {
+      "at": 1720000000000,
+      "kind": "started"
+    },
+    {
+      "at": 1720000001000,
+      "kind": "interrupted-after-restart",
+      "details": "No prompts were resent."
+    }
+  ]
+}

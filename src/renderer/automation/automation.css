@@ -1,0 +1,177 @@
+@import "../styles/tokens.css";
+.automation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: #0009;
+  display: flex;
+  justify-content: center;
+  padding: 6vh 3vw;
+}
+.automation-panel {
+  width: min(1040px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-panel);
+  color: var(--text);
+  border: 2px solid var(--border-dark);
+}
+.automation-panel header,
+.automation-panel footer {
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--bg-panel-hi);
+  border-bottom: 2px solid var(--border-dark);
+  flex: none;
+}
+.automation-panel header > div {
+  min-width: 0;
+}
+.automation-panel header code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.automation-panel header > button {
+  align-self: flex-start;
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+.automation-panel footer {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.automation-panel fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.automation-panel label:has(input[type="checkbox"]) {
+  flex-direction: row;
+  align-items: center;
+}
+.automation-panel h2,
+.automation-panel h3 {
+  font-family: "DungGeunMo", monospace;
+}
+.automation-columns {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.automation-columns aside {
+  border-right: 2px solid var(--border-dark);
+  padding: 10px;
+}
+.automation-columns main {
+  padding: 14px;
+  min-width: 0;
+}
+.automation-panel button,
+.automation-panel input,
+.automation-panel textarea {
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: 1px solid var(--border-dark);
+  padding: 5px;
+}
+.automation-panel button {
+  cursor: pointer;
+}
+.automation-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+.automation-panel textarea {
+  min-height: 76px;
+}
+.automation-definition-list,
+.automation-history {
+  padding: 0;
+  list-style: none;
+}
+.automation-definition-list li {
+  display: flex;
+}
+.automation-definition-list li button:first-child {
+  flex: 1;
+  text-align: left;
+}
+.automation-definition-list .selected {
+  outline: 2px solid var(--accent);
+}
+.automation-actions,
+.automation-step-add,
+.automation-row {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.automation-row input {
+  min-width: 0;
+  flex: 1;
+}
+.automation-step {
+  margin: 9px 0;
+  padding: 9px;
+  border: 1px solid var(--border-dark);
+}
+.automation-step > div {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.automation-step > div strong {
+  margin-right: auto;
+}
+.automation-step input:not([type="checkbox"]),
+.automation-step textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 6px;
+}
+.automation-step input[type="checkbox"] {
+  flex: none;
+  margin: 0;
+}
+.automation-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 8px;
+  background: var(--bg-panel-hi);
+}
+.automation-panel footer {
+  border-top: 2px solid var(--border-dark);
+  border-bottom: 0;
+}
+.automation-notice {
+  overflow-wrap: anywhere;
+  padding: 0 12px;
+  color: var(--accent-warn);
+}
+.automation-panel > .automation-notice {
+  flex: none;
+  max-height: 15vh;
+  overflow: auto;
+}
+@media (max-width: 700px) {
+  .automation-columns {
+    grid-template-columns: 1fr;
+  }
+  .automation-columns aside {
+    border-right: 0;
+    border-bottom: 2px solid var(--border-dark);
+  }
+}

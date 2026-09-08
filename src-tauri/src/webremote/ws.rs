@@ -250,7 +250,7 @@ async fn handle_client_msg(
             if !ctx.agent_allowed(client, &agent_id) {
                 return Ok(());
             }
-            ctx.manager.write_input(&agent_id, &data);
+            ctx.gate.note_human(&agent_id, &data);
             Ok(())
         }
         ClientMsg::Rpc { id, cmd, args } => {

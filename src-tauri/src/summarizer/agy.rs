@@ -116,22 +116,10 @@ pub fn parse_models_stdout(stdout: &str) -> Vec<String> {
 /// opencode::list_models와 같은 계약이다.
 pub async fn list_models(timeout: std::time::Duration, program: &str) -> Vec<String> {
     let mut command = models_command(program);
-    command.current_dir(std::env::temp_dir());
-    command.stdin(std::process::Stdio::null());
-    command.stdout(std::process::Stdio::piped());
-    command.stderr(std::process::Stdio::piped());
-    command.kill_on_drop(true);
-
-    let Ok(child) = command.spawn() else {
+    let Some(stdout) = super::model_catalog_stdout(&mut command, timeout).await else {
         return Vec::new();
     };
-    let Ok(Ok(output)) = tokio::time::timeout(timeout, child.wait_with_output()).await else {
-        return Vec::new();
-    };
-    if !output.status.success() {
-        return Vec::new();
-    }
-    parse_models_stdout(&String::from_utf8_lossy(&output.stdout))
+    parse_models_stdout(&String::from_utf8_lossy(&stdout))
 }
 
 #[cfg(test)]
@@ -190,8 +178,14 @@ mod tests {
             .and_then(|(_, v)| v)
             .map(|v| v.to_string_lossy().to_string());
         assert_eq!(env.as_deref(), Some("/opt/my tools/agy-t"));
-        assert!(UNIX_SCRIPT.contains(r#"command -v "${AO_PROGRAM}""#), "{UNIX_SCRIPT}");
-        assert!(UNIX_SCRIPT.contains(r#"exec "${AO_PROGRAM}""#), "{UNIX_SCRIPT}");
+        assert!(
+            UNIX_SCRIPT.contains(r#"command -v "${AO_PROGRAM}""#),
+            "{UNIX_SCRIPT}"
+        );
+        assert!(
+            UNIX_SCRIPT.contains(r#"exec "${AO_PROGRAM}""#),
+            "{UNIX_SCRIPT}"
+        );
     }
 
     const DANGEROUS_INSTRUCTION: &str = "--dangerously-skip-permissions";
@@ -240,7 +234,10 @@ mod tests {
         let gate = UNIX_SCRIPT.find("|| exit 3").unwrap();
         let stdin_read = UNIX_SCRIPT.find("in=$(cat)").unwrap();
         let invocation = UNIX_SCRIPT.find(r#"exec "${AO_PROGRAM}""#).unwrap();
-        assert!(gate < stdin_read && stdin_read < invocation, "{UNIX_SCRIPT}");
+        assert!(
+            gate < stdin_read && stdin_read < invocation,
+            "{UNIX_SCRIPT}"
+        );
     }
 
     /// sh 래퍼 경계가 지시문·본문·모델을 왜곡 없이 agy argv로 전달하는지,

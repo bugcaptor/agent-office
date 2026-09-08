@@ -271,6 +271,14 @@ pub struct AppState {
     pub bot_runtime: Arc<crate::bot::BotRuntime>,
     /// 봇 폴링 태스크가 쥐는 앱 상태 클론(세션 주입·프로필/상태 접근).
     pub bot_ctx: Arc<crate::bot::runner::BotContext>,
+    /// 자동화 점검(kbm)의 탭별 태스크 소유자.
+    pub automation_runtime: Arc<crate::automation::AutomationRuntime>,
+    /// 자동화 태스크가 쥐는 앱 상태 클론(세션 주입·봇 주입 표식 공유).
+    pub automation_ctx: Arc<crate::automation::AutomationContext>,
+    /// 사용자 자동화 정의와 종료된 실행 기록의 app-data 저장소.
+    pub automation_store: Arc<crate::automation::store::AutomationStore>,
+    /// 자동 입력 관문(kbm #2t9 Phase 2).
+    pub gate: Arc<crate::session::inject::InjectGate>,
     /// 작업 중 시스템 잠자기 방지(이슈 #68) 웨이크락 소유자. `set_keep_awake`
     /// 커맨드가 lease를 갱신/해제하고, lib.rs의 주기 감시 태스크가 lease 만료
     /// 시 강제 해제한다. 설정 `keep_awake_enabled`가 꺼져 있으면 무시된다.

@@ -384,6 +384,14 @@
                 profile_dir.join("claude-resume.json"),
             ));
 
+        let bot_arms = std::sync::Arc::new(crate::state::BotPromptArms::new());
+        let inject_sink =
+            std::sync::Arc::new(crate::session::inject::ManagerSink::new(manager.clone()));
+        let inject_gate = std::sync::Arc::new(crate::session::inject::InjectGate::new(
+            inject_sink.clone(),
+            bot_arms.clone(),
+        ));
+
         let control_server = Arc::new(crate::control::ControlServerState::default());
         control_server.set_app_data_dir(profile_dir.clone());
         let control_ctx = Arc::new(crate::control::ControlContext {
@@ -398,6 +406,7 @@
             talk: Arc::new(crate::talk::TalkHub::default()),
             app_data_dir: profile_dir.clone(),
             tmux_probe: crate::control::tmux::system_probe(),
+            gate: inject_gate.clone(),
         });
 
         let bot_runtime = std::sync::Arc::new(crate::bot::BotRuntime::default());
@@ -408,7 +417,15 @@
                 profile_dir.join("bot-state.json"),
             ),
             state_lock: std::sync::Arc::new(std::sync::Mutex::new(())),
-            bot_arms: std::sync::Arc::new(crate::state::BotPromptArms::new()),
+            bot_arms: bot_arms.clone(),
+            gate: inject_gate.clone(),
+        });
+        let automation_runtime =
+            std::sync::Arc::new(crate::automation::AutomationRuntime::default());
+        let automation_ctx = std::sync::Arc::new(crate::automation::AutomationContext {
+            sink: inject_sink,
+            gate: inject_gate.clone(),
+            bot_runtime: bot_runtime.clone(),
         });
         let live_usage = std::sync::Arc::new(crate::usage::LiveUsageState::new());
         // 웹 원격: 서버는 띄우지 않고 컨텍스트만 만든다 —
@@ -427,6 +444,7 @@
                 observer_server: observer_server.clone(),
                 live_usage: live_usage.clone(),
                 portraits: portrait_store.clone(),
+                gate: inject_gate.clone(),
             },
         ));
         let state = AppState {
@@ -457,6 +475,12 @@
             web_remote_ctx,
             bot_runtime,
             bot_ctx,
+            automation_runtime,
+            automation_ctx,
+            automation_store: std::sync::Arc::new(crate::automation::store::AutomationStore::new(
+                profile_dir.clone(),
+            )),
+            gate: inject_gate,
             wake_lock: std::sync::Arc::new(crate::power::WakeLock::new()),
             tts: std::sync::Arc::new(crate::tts::TtsState::new(&profile_dir)),
             talk: std::sync::Arc::new(crate::talk::TalkHub::default()),

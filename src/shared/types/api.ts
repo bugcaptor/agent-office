@@ -28,12 +28,23 @@ import type {
   ControlStatus,
 } from './settings';
 import type { BotAgentStatus, BotStatus } from './bot';
+import type {
+  AutomationAgentStatus,
+  AutomationCli,
+  AutomationRunDecisionChoice,
+  AutomationStatus,
+  AutomationDefinition,
+  AutomationRunRecord,
+} from './automation';
 import type { TalkStatus, TalkLogEntry, TalkEvent } from './talk';
 import type { TtsSpeakRequest, TtsSpeakResult, TtsStatus, TtsVoiceOption } from './tts';
 import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
 import type { MemoSheet, MemoSheetMeta } from './memo';
 import type { UsageSnapshot } from './usage';
+
+/** Origin of bytes emitted by xterm's `onData` callback. */
+export type TerminalInputSource = 'human' | 'terminalResponse';
 import type {
   MarkdownListResult,
   MarkdownReadResult,
@@ -76,8 +87,8 @@ export interface AgentOfficeApi {
   /** 외부(논리) 세션 연결 해제 — PTY가 없으므로 kill할 프로세스는 없고 훅
    * 라우팅 등록과 settings 파일만 정리된다. 붙어 있지 않았으면 false(no-op). */
   detachExternalSession(agentId: string): Promise<boolean>;
-  /** fire-and-forget */
-  writeInput(agentId: string, data: string): void;
+  /** fire-and-forget. `terminalResponse` is an xterm protocol reply, not a user edit. */
+  writeInput(agentId: string, data: string, source?: TerminalInputSource): void;
   resize(agentId: string, cols: number, rows: number): void;
   clearNotifications(agentId: string, ids?: string[]): void;
   listNotifications(agentId: string): Promise<NotificationEvent[]>;
@@ -117,6 +128,10 @@ export interface AgentOfficeApi {
    *  호출측이 정적 프리셋 폴백으로 조용히 강등한다. 기능을 켜기 전에도 부를 수
    *  있다(어떤 모델을 고를 수 있는지는 켜기 전에 보여야 한다). */
   listProviderModels(provider: ModelCatalogProvider): Promise<string[]>;
+  /** 자동화가 실제 실행할 `agy`의 현재 모델 ID 목록. 요약기 커스텀 명령과
+   * 분리해, 편집기 후보와 실행 전 검증의 CLI를 일치시킨다. */
+  automationAgyModels(): Promise<string[]>;
+  automationCliModels(cliProfileId: string): Promise<string[]>;
   /** 로컬 codex CLI 설치 여부. 미설치도 정상 응답(available:false)이다 —
    *  프로필 편집의 "Codex로 생성" 모드가 버튼 활성/설치 안내를 정하는 데 쓴다. */
   codexImageStatus(): Promise<CodexImageStatus>;
@@ -184,6 +199,32 @@ export interface AgentOfficeApi {
   botStop(agentId: string): Promise<void>;
   /** 봇 모드가 켜진 탭들의 상태 스냅샷. */
   botStatus(): Promise<BotStatus>;
+  /** 자동화 점검 시작(kbm) — 이 탭에 LLM CLI를 주입해 왕복을 확인한다.
+   * `cli` 생략 시 기본 claude. */
+  automationStart(agentId: string, cli?: AutomationCli): Promise<AutomationAgentStatus>;
+  /** 자동화 점검 중단 — 진행 중인 태스크를 내리고 정리한다. */
+  automationStop(agentId: string): Promise<void>;
+  /** 자동화가 돌고 있(었)는 탭들의 상태 스냅샷. */
+  automationStatus(): Promise<AutomationStatus>;
+  /** 자동화 타임아웃 결정(연장 / 중단)을 원자적으로 적용한다. */
+  automationDecide(
+    agentId: string,
+    runId: string,
+    stepExecutionId: string,
+    decisionId: string,
+    choice: AutomationRunDecisionChoice,
+  ): Promise<boolean>;
+  /** 사람 입력 잔여 상태를 해제하고 보류 중인 자동화가 즉시 재시도할 수 있게 한다. */
+  automationClearUncommitted(agentId: string): Promise<void>;
+  automationDefinitionsList(): Promise<AutomationDefinition[]>;
+  automationDefinitionsSave(definition: AutomationDefinition): Promise<AutomationDefinition>;
+  automationDefinitionsDelete(id: string): Promise<boolean>;
+  /** Import persists a definition only. It never starts automation. */
+  automationDefinitionsImport(json: string): Promise<AutomationDefinition>;
+  automationDefinitionsExport(id: string): Promise<string>;
+  automationRunStart(agentId: string, definitionId: string, inputs: Record<string, string>, workspace: string): Promise<AutomationAgentStatus>;
+  automationRunsList(): Promise<AutomationRunRecord[]>;
+  automationCliTransitionPreview(agentId: string, cli: string, model?: string, effort?: string): Promise<{ shellPath?: string; autoReturnSupported: boolean; unavailableReason?: string; launchCommand?: string }>;
   /** 동료 대화 상태 스냅샷(켜짐 여부·대기 메시지·열린 대화). */
   talkStatus(): Promise<TalkStatus>;
   /** 대화 감사 로그가 있는 날짜들(최신 순, "YYYY-MM-DD"). */

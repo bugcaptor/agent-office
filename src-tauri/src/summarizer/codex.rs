@@ -155,22 +155,10 @@ pub fn parse_models_stdout(stdout: &str) -> Vec<String> {
 /// 목록이다 — opencode::list_models와 같은 계약이다.
 pub async fn list_models(timeout: std::time::Duration, program: &str) -> Vec<String> {
     let mut command = models_command(program);
-    command.current_dir(std::env::temp_dir());
-    command.stdin(std::process::Stdio::null());
-    command.stdout(std::process::Stdio::piped());
-    command.stderr(std::process::Stdio::piped());
-    command.kill_on_drop(true);
-
-    let Ok(child) = command.spawn() else {
+    let Some(stdout) = super::model_catalog_stdout(&mut command, timeout).await else {
         return Vec::new();
     };
-    let Ok(Ok(output)) = tokio::time::timeout(timeout, child.wait_with_output()).await else {
-        return Vec::new();
-    };
-    if !output.status.success() {
-        return Vec::new();
-    }
-    parse_models_stdout(&String::from_utf8_lossy(&output.stdout))
+    parse_models_stdout(&String::from_utf8_lossy(&stdout))
 }
 
 #[cfg(test)]

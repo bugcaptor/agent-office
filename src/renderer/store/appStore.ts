@@ -22,9 +22,16 @@ import { initialTurnState, reduceTurn } from "../timeline/turnReducer";
 import type { AgentTurnState, TurnInput } from "../timeline/turnReducer";
 import { requestSentence } from "../labels/labelText";
 import { currentTextRules } from "../i18n/textRules";
-import { applyTerminalBg, applyTheme, loadStoredThemeId } from "../theme/applyTheme";
+import {
+  applyTerminalBg,
+  applyTheme,
+  loadStoredThemeId,
+} from "../theme/applyTheme";
 import type { ThemeId } from "../theme/themes";
-import { loadStoredSceneId, persistSceneId } from "../office/scenes/sceneStorage";
+import {
+  loadStoredSceneId,
+  persistSceneId,
+} from "../office/scenes/sceneStorage";
 import type { SceneId } from "../office/scenes/sceneTypes";
 import {
   loadStoredTerminalViewMode,
@@ -40,6 +47,9 @@ import type { XtermThemeOverride } from "../terminal/theme";
 import type {
   ActivityEvent,
   AppSettings,
+  AutomationAgentStatus,
+  AutomationRunDecisionChoice,
+  AutomationStatus,
   BotAgentStatus,
   BotStatus,
   SessionState,
@@ -64,6 +74,42 @@ function isMeaningfulGoalFallback(cand: string): boolean {
   return (
     Array.from(cand).length >= rules.goalFallbackMinChars &&
     !rules.backchannelStart.test(cand)
+  );
+}
+
+/** 자동화 상태 두 스냅샷의 값이 같은지(참조가 아니라 필드 값 비교). 폴링마다
+ * 변화 없는 탭까지 새 객체로 갈아치워 불필요한 리렌더를 유발하지 않게
+ * `applyAutomationStatus`가 이 비교로 실제로 바뀐 항목만 교체한다. */
+function automationStatusEqual(
+  a: AutomationAgentStatus,
+  b: AutomationAgentStatus,
+): boolean {
+  return (
+    a.running === b.running &&
+    a.phase === b.phase &&
+    a.cli === b.cli &&
+    a.filePath === b.filePath &&
+    a.startedAtMs === b.startedAtMs &&
+    a.runId === b.runId &&
+    a.stepExecutionId === b.stepExecutionId &&
+    a.deadlineMs === b.deadlineMs &&
+    a.decisionId === b.decisionId &&
+    a.extensionCount === b.extensionCount &&
+    a.markerObservedAtMs === b.markerObservedAtMs &&
+    a.pendingReason === b.pendingReason &&
+    a.pendingSinceMs === b.pendingSinceMs &&
+    a.error === b.error &&
+    a.definitionId === b.definitionId &&
+    a.definitionName === b.definitionName &&
+    a.sessionId === b.sessionId &&
+    a.workspace === b.workspace &&
+    a.cycle === b.cycle &&
+    a.stepIndex === b.stepIndex &&
+    a.stepId === b.stepId &&
+    a.outcome === b.outcome &&
+    a.completedAtMs === b.completedAtMs &&
+    a.decisionMessage === b.decisionMessage &&
+    a.decisionReason === b.decisionReason
   );
 }
 const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -124,7 +170,7 @@ function logSettledTurn(
   agentId: string,
   prev: AgentTurnState,
   next: AgentTurnState,
-  at: number
+  at: number,
 ): void {
   if (next.turns <= prev.turns) return;
   tauriApi.appendSessionTurn({
@@ -188,14 +234,20 @@ interface AppState {
    * (또는 처음 잡히면) `{ sessionId, totals: emptyTotals() }`로 리셋된다 —
    * `noteUsageSession`/`applyTurnUsage` 참조. 런타임 전용(비영속).
    */
-  sessionUsage: Record<string, { sessionId: string; totals: SessionUsageTotals }>;
+  sessionUsage: Record<
+    string,
+    { sessionId: string; totals: SessionUsageTotals }
+  >;
   /**
    * `useSessionUsageSeed`가 앱 수명당 1회 심는 과거 시드(`{at, bySession}`).
    * `at` 이하 시각의 사용량은 이미 시드에 들어 있으므로 `applyTurnUsage`가
    * 이중 계산을 막는 데 쓴다. null = 아직 시딩 전(또는 설정이 꺼짐). 런타임
    * 전용(비영속) — `docs/session-analytics-design.md` §11.
    */
-  sessionUsageSeed: { at: number; bySession: Record<string, SessionUsageTotals> } | null;
+  sessionUsageSeed: {
+    at: number;
+    bySession: Record<string, SessionUsageTotals>;
+  } | null;
   /**
    * `applyTurnUsage`가 **실제로 누계에 반영한 첫 턴**의 `e.at`(무시된
    * 사용량은 기록하지 않는다). `useSessionUsageSeed`가 시드 컷오프를 여기에
@@ -250,6 +302,15 @@ interface AppState {
    * "봇 운전 중" — 로컬 키 입력이 잠기고 배지가 뜬다. 런타임 전용(비영속,
    * 앱 재시작 시 꺼진 상태로 시작). */
   botMode: Record<string, BotAgentStatus>;
+  /** 자동화 점검(kbm)이 도는(또는 방금 끝난) 탭. agentId → 런타임 상태. 봇
+   * 모드와 마찬가지로 여기 있으면 로컬 키 입력이 잠긴다 — 단, `running`이
+   * false(done/failed)로 남는 동안은 배지·알림용일 뿐 잠그지 않는다.
+   * 런타임 전용(비영속, 앱 재시작 시 비어 있음). */
+  automation: Record<string, AutomationAgentStatus>;
+  /** 세션 재생성 전 비동기 응답을 무효화하는 세대. */
+  automationEpochs: Record<string, number>;
+  /** 자동화 정의 편집기. 실행 상태와 분리해 메뉴를 열어도 자동화가 시작되지 않는다. */
+  automationEditor: { agentId: string; workspace: string } | null;
   /** 웹 원격: 승인 대기 중인 페어링(코드 표시용). 런타임 전용. */
   webRemotePending: PendingPairing[];
 
@@ -273,7 +334,11 @@ interface AppState {
   // ---- session actions ----
   /** `external`은 백엔드 `SessionStateEvent.external` 그대로 — true면 외부(논리)
    * 세션의 전이라 `kind`를 `external`로, 부재/false면 `pty`로 확정한다. */
-  setSessionState(e: { agentId: string; status: SessionStatus; external?: boolean }): void;
+  setSessionState(e: {
+    agentId: string;
+    status: SessionStatus;
+    external?: boolean;
+  }): void;
   setSessionSize(agentId: string, cols: number, rows: number): void;
 
   // ---- 웹 원격 ----
@@ -297,6 +362,31 @@ interface AppState {
   seedBotStatus(status: BotStatus): void;
   /** 이 탭이 봇 운전 중인지(로컬 입력 차단 여부 판정). */
   isBotDriven(agentId: string): boolean;
+
+  // ---- 자동화 점검(kbm) ----
+  /** 이 탭의 자동화 점검을 시작한다 — 백엔드 태스크를 띄우고 로컬 입력을 잠근다. */
+  startAutomation(agentId: string): Promise<void>;
+  /** 이 탭의 자동화를 중단한다 — 백엔드 태스크를 내리고 항목을 지운다(배지 소거). */
+  stopAutomation(agentId: string): Promise<void>;
+  /** automation_status 폴링 결과를 병합한다. */
+  applyAutomationStatus(status: AutomationStatus, epochs?: Record<string, number>): void;
+  resetAutomationState(agentId: string): void;
+  /** 부팅 시 백엔드에 살아 있는 자동화 태스크를 automation에 심는다.
+   * `seedBotStatus`와 같은 이유(비영속 상태가 재시작 후 스스로 되살아나지
+   * 못하는 문제)로 없던 항목도 추가한다. */
+  seedAutomationStatus(status: AutomationStatus, epochs?: Record<string, number>): void;
+  /** 이 탭이 자동화 운전 중인지(로컬 입력 차단 여부 판정) — 끝난(done/failed)
+   * 자동화는 배지·알림용으로 남아 있으므로 running으로 잠금을 가른다. */
+  isAutomationDriven(agentId: string): boolean;
+  /** 자동화 타임아웃 결정(더 기다리기 / 중단)을 보낸다. */
+  decideAutomation(
+    agentId: string,
+    choice: AutomationRunDecisionChoice,
+  ): Promise<boolean>;
+  /** 자동화 보류 상태를 해제하고 즉시 재시도하도록 요청한다. */
+  continueAutomation(agentId: string): Promise<void>;
+  openAutomationEditor(agentId: string, workspace: string): void;
+  closeAutomationEditor(): void;
 
   // ---- window focus ----
   /** OS 창 포커스 상태 반영(이슈 #39). sessionBridge의 포커스 추적이 호출. */
@@ -372,7 +462,10 @@ interface AppState {
    * 반영하되 턴 수는 안 올린다(§11.9). */
   applyTurnUsage(e: TurnUsageEvent): void;
   /** `useSessionUsageSeed`가 부팅 후 1회 호출. 이미 시드가 있으면 no-op. */
-  setSessionUsageSeed(seed: { at: number; bySession: Record<string, SessionUsageTotals> }): void;
+  setSessionUsageSeed(seed: {
+    at: number;
+    bySession: Record<string, SessionUsageTotals>;
+  }): void;
   /**
    * "오늘" 헤드라인 베이스+기준선을 함께 세팅. 부팅 시 `(base, 0)`,
    * 로컬 자정 리셋 시 `(0, 현재 Σ메모리 workedMs)`.
@@ -380,7 +473,10 @@ interface AppState {
   setTodayWorkedBase(baseMs: number, baselineMs: number): void;
 
   // ---- overhead task label ----
-  setTaskLabelSummary(agentId: string, patch: { goal?: string; currentSummary?: string }): void;
+  setTaskLabelSummary(
+    agentId: string,
+    patch: { goal?: string; currentSummary?: string },
+  ): void;
   /** cwd→브랜치 맵을 통째로 교체한다(gitBranchWatcher의 폴링 1회분 결과).
    * 부분 병합·가지치기는 순수 함수(gitBranchWatcher.nextGitBranches)가 맡는다. */
   setGitBranches(next: Record<string, string>): void;
@@ -444,7 +540,10 @@ interface AppState {
   completeFirstRun(
     choice: Pick<
       AppSettings,
-      "summarizerEnabled" | "summaryProvider" | "diaryEnabled" | "observerEnabled"
+      | "summarizerEnabled"
+      | "summaryProvider"
+      | "diaryEnabled"
+      | "observerEnabled"
     >,
   ): void;
 }
@@ -482,6 +581,9 @@ export const useAppStore = create<AppState>()(
     settingsHydrated: false,
     usage: null,
     botMode: {},
+    automation: {},
+    automationEpochs: {},
+    automationEditor: null,
     webRemotePending: [],
 
     setWebRemotePending: (pending) => set({ webRemotePending: pending }),
@@ -505,8 +607,13 @@ export const useAppStore = create<AppState>()(
     updateAgent: (agentId, patch) =>
       set((s) =>
         s.agents[agentId]
-          ? { agents: { ...s.agents, [agentId]: { ...s.agents[agentId], ...patch } } }
-          : s
+          ? {
+              agents: {
+                ...s.agents,
+                [agentId]: { ...s.agents[agentId], ...patch },
+              },
+            }
+          : s,
       ),
 
     assignDesk: (deskIndex, agentId) =>
@@ -564,7 +671,9 @@ export const useAppStore = create<AppState>()(
           recentAgentIds: s.recentAgentIds.filter((id) => id !== agentId),
           notifications: s.notifications.filter((n) => n.agentId !== agentId),
           activeTerminalAgentId:
-            s.activeTerminalAgentId === agentId ? null : s.activeTerminalAgentId,
+            s.activeTerminalAgentId === agentId
+              ? null
+              : s.activeTerminalAgentId,
         };
       }),
 
@@ -584,7 +693,8 @@ export const useAppStore = create<AppState>()(
         let active = s.activeTerminalAgentId;
         if (active === agentId) {
           const idx = s.recentAgentIds.indexOf(agentId);
-          active = s.recentAgentIds[idx + 1] ?? s.recentAgentIds[idx - 1] ?? null;
+          active =
+            s.recentAgentIds[idx + 1] ?? s.recentAgentIds[idx - 1] ?? null;
         }
         return {
           agents: { ...s.agents, [agentId]: { ...agent, clockedOut: true } },
@@ -644,7 +754,9 @@ export const useAppStore = create<AppState>()(
       set((s) => {
         const prev = s.sessions[agentId];
         if (!prev || (prev.cols === cols && prev.rows === rows)) return s;
-        return { sessions: { ...s.sessions, [agentId]: { ...prev, cols, rows } } };
+        return {
+          sessions: { ...s.sessions, [agentId]: { ...prev, cols, rows } },
+        };
       }),
 
     startBot: async (agentId) => {
@@ -715,8 +827,214 @@ export const useAppStore = create<AppState>()(
 
     isBotDriven: (agentId) => agentId in get().botMode,
 
+    startAutomation: async (agentId) => {
+      const epoch = get().automationEpochs[agentId] ?? 0;
+      // 낙관적으로 먼저 켠 상태로 표시(입력 잠금·배지 즉시 반영), 백엔드
+      // 응답으로 실제 상태를 갱신한다. 실패해도 켠 상태는 유지하고 error만 표시.
+      set((s) => ({
+        automation: {
+          ...s.automation,
+          [agentId]: {
+            running: true,
+            phase: "launching",
+            cli: "claude",
+            filePath: "",
+            startedAtMs: Date.now(),
+          },
+        },
+      }));
+      try {
+        const status: AutomationAgentStatus =
+          await tauriApi.automationStart(agentId);
+        if ((get().automationEpochs[agentId] ?? 0) !== epoch) return;
+        set((s) => ({ automation: { ...s.automation, [agentId]: status } }));
+      } catch (err) {
+        if ((get().automationEpochs[agentId] ?? 0) !== epoch) return;
+        set((s) => ({
+          automation: {
+            ...s.automation,
+            [agentId]: {
+              running: false,
+              phase: "failed",
+              cli: "claude",
+              filePath: "",
+              startedAtMs: Date.now(),
+              // 원문 코드 그대로 담는다 — 번역은 렌더 시점에
+              // automationStatusText가 backendErrorText로 한다(백엔드는
+              // 코드를 내려보내고 번역은 프런트에서 한다는 방침, 이 필드가
+              // 이미 카탈로그 문구면 그 방침이 두 번 적용돼 깨진다).
+              error: err instanceof Error ? err.message : String(err),
+            },
+          },
+        }));
+      }
+    },
+
+    stopAutomation: async (agentId) => {
+      const epoch = get().automationEpochs[agentId] ?? 0;
+      try {
+        await tauriApi.automationStop(agentId);
+        // Keep the cancelling/cancelled snapshot in the store so status
+        // polling and the non-blocking banner can finish their lifecycle.
+        const status = await tauriApi.automationStatus();
+        if ((get().automationEpochs[agentId] ?? 0) !== epoch) return;
+        const fresh = status.agents[agentId];
+        if (fresh) {
+          set((s) => ({ automation: { ...s.automation, [agentId]: fresh } }));
+          return;
+        }
+      } catch (err) {
+        console.warn("automation: stop failed", err);
+      }
+      if ((get().automationEpochs[agentId] ?? 0) !== epoch) return;
+      set((s) => {
+        const next = { ...s.automation };
+        delete next[agentId];
+        return { automation: next };
+      });
+    },
+
+    resetAutomationState: (agentId) => set((s) => {
+      const next = { ...s.automation };
+      delete next[agentId];
+      return {
+        automation: next,
+        automationEpochs: { ...s.automationEpochs, [agentId]: (s.automationEpochs[agentId] ?? 0) + 1 },
+      };
+    }),
+
+    applyAutomationStatus: (status, epochs) =>
+      set((s) => {
+        // 자동화가 켜진(로컬 상태에 있는) 탭만 갱신한다 — 방금 끈 탭이 폴링
+        // 응답으로 되살아나지 않게. 필드가 실제로 같으면 그 id의 객체 참조를
+        // 그대로 둔다 — 매초 폴링마다 전부 새 객체로 갈아치우면 값이 안
+        // 바뀐 탭까지 리렌더된다.
+        const next = { ...s.automation };
+        let changed = false;
+        for (const id of Object.keys(next)) {
+          if (epochs && (epochs[id] ?? 0) !== (s.automationEpochs[id] ?? 0)) continue;
+          const fresh = status.agents[id];
+          if (fresh && !automationStatusEqual(next[id], fresh)) {
+            next[id] = fresh;
+            changed = true;
+          } else if (!fresh && next[id].running === false) {
+            // Backend retains finished snapshots briefly, then removes them.
+            // Once absent, remove the local terminal state too so polling can
+            // stop rather than retaining a completed tab forever.
+            delete next[id];
+            changed = true;
+          }
+        }
+        return changed ? { automation: next } : s;
+      }),
+
+    seedAutomationStatus: (status, epochs) =>
+      set((s) => {
+        const entries = Object.entries(status.agents);
+        if (entries.length === 0) return s;
+        const next = { ...s.automation };
+        for (const [id, st] of entries) {
+          if (epochs && (epochs[id] ?? 0) !== (s.automationEpochs[id] ?? 0)) continue;
+          next[id] = st;
+        }
+        return { automation: next };
+      }),
+
+    // 자동화가 도는 중이라는 표시일 뿐 **입력 잠금이 아니다** -- 계약상 사용자는
+    // 자동화가 도는 중에도 같은 터미널에 언제나 직접 입력한다. TerminalRegistry
+    // 에서 뺀 이유가 그것이고, 남은 것은 Phase 2의 자동 입력 생산자 경계에서
+    // 다시 쓸 자리다.
+    isAutomationDriven: (agentId) =>
+      get().automation[agentId]?.running === true,
+
+    decideAutomation: async (agentId, choice) => {
+      const epoch = get().automationEpochs[agentId] ?? 0;
+      const current = get().automation[agentId];
+      if (
+        !current ||
+        !current.runId ||
+        !current.stepExecutionId ||
+        !current.decisionId
+      ) {
+        return false;
+      }
+      try {
+        const ok = await tauriApi.automationDecide(
+          agentId,
+          current.runId,
+          current.stepExecutionId,
+          current.decisionId,
+          choice,
+        );
+        if (!ok || (get().automationEpochs[agentId] ?? 0) !== epoch) return false;
+        // The runner owns every post-decision phase. Fetch it before changing
+        // local state so `continue` cannot be mistaken for cancellation.
+        const fresh = await tauriApi.automationStatus();
+        if ((get().automationEpochs[agentId] ?? 0) !== epoch) return false;
+        const authoritative = fresh.agents[agentId];
+        if (authoritative) {
+          set((s) => ({
+            automation: { ...s.automation, [agentId]: authoritative },
+          }));
+          return true;
+        }
+        // 응답을 기다리는 사이 1초 폴링이 이 항목을 갱신했거나(진행된 phase,
+        // 방금 관측한 마커) 완료 처리로 아예 지웠을 수 있다. await 전에 읽어 둔
+        // `current`를 그대로 펴면 낡은 값으로 덮거나 지워진 항목을 되살려
+        // 배너가 앱 재시작 전까지 남는다 -- 그러니 여기서 최신 것과 병합한다.
+        set((s) => {
+          const live = s.automation[agentId];
+          if (!live) return s;
+          const merged: AutomationAgentStatus =
+            choice === "extend"
+              ? {
+                  ...live,
+                  phase: "watching",
+                  decisionId: undefined,
+                  extensionCount: (live.extensionCount ?? 0) + 1,
+                  // 새 deadline 은 백엔드가 이 실행의 설정 대기시간으로 정한다.
+                  // 여기서 30분을 짐작해 적으면 단계별 설정과 어긋난 값이 잠깐
+                  // 보인다. 다음 폴링(1초)이 진짜 값을 채운다.
+                  deadlineMs: undefined,
+                }
+              : choice === "stop"
+                ? {
+                    ...live,
+                    running: false,
+                    // 사용자 중단은 실패가 아니다 -- 에러 코드를 남기지 않는다.
+                    phase: "cancelled",
+                    decisionId: undefined,
+                    deadlineMs: undefined,
+                  }
+                : live;
+          return { automation: { ...s.automation, [agentId]: merged } };
+        });
+        return true;
+      } catch (err) {
+        console.warn("automation: decide failed", err);
+        return false;
+      }
+    },
+
+    continueAutomation: async (agentId) => {
+      const epochs = get().automationEpochs;
+      try {
+        await tauriApi.automationClearUncommitted(agentId);
+        const fresh = await tauriApi.automationStatus();
+        get().applyAutomationStatus(fresh, epochs);
+      } catch (err) {
+        console.warn("automation: continue failed", err);
+      }
+    },
+
+    openAutomationEditor: (agentId, workspace) =>
+      set({ automationEditor: { agentId, workspace } }),
+    closeAutomationEditor: () => set({ automationEditor: null }),
+
     setWindowFocused: (focused) =>
-      set((s) => (s.windowFocused === focused ? s : { windowFocused: focused })),
+      set((s) =>
+        s.windowFocused === focused ? s : { windowFocused: focused },
+      ),
 
     pushNotification: (e) =>
       set((s) => {
@@ -740,14 +1058,16 @@ export const useAppStore = create<AppState>()(
       }),
 
     clearNotificationsFor: (agentId) =>
-      set((s) => ({ notifications: s.notifications.filter((n) => n.agentId !== agentId) })),
+      set((s) => ({
+        notifications: s.notifications.filter((n) => n.agentId !== agentId),
+      })),
 
     clearNotificationByIds: (agentId, ids) =>
       set((s) => {
         const drop = new Set(ids);
         return {
           notifications: s.notifications.filter(
-            (n) => n.agentId !== agentId || !drop.has(n.id)
+            (n) => n.agentId !== agentId || !drop.has(n.id),
           ),
         };
       }),
@@ -757,7 +1077,10 @@ export const useAppStore = create<AppState>()(
         if (!s.agents[agentId]) return s;
         return {
           activeTerminalAgentId: agentId,
-          recentAgentIds: [agentId, ...s.recentAgentIds.filter((id) => id !== agentId)],
+          recentAgentIds: [
+            agentId,
+            ...s.recentAgentIds.filter((id) => id !== agentId),
+          ],
           notifications: s.notifications.filter((n) => n.agentId !== agentId),
         };
       }),
@@ -766,7 +1089,10 @@ export const useAppStore = create<AppState>()(
 
     bumpTerminalEpoch: (agentId) =>
       set((s) => ({
-        terminalEpochs: { ...s.terminalEpochs, [agentId]: (s.terminalEpochs[agentId] ?? 0) + 1 },
+        terminalEpochs: {
+          ...s.terminalEpochs,
+          [agentId]: (s.terminalEpochs[agentId] ?? 0) + 1,
+        },
       })),
 
     openModal: (modal) => set({ modal }),
@@ -816,7 +1142,9 @@ export const useAppStore = create<AppState>()(
       }),
 
     setSpritePreview: (agentId, dataUrl) =>
-      set((s) => ({ spritePreviews: { ...s.spritePreviews, [agentId]: dataUrl } })),
+      set((s) => ({
+        spritePreviews: { ...s.spritePreviews, [agentId]: dataUrl },
+      })),
 
     removeSpritePreview: (agentId) =>
       set((s) => {
@@ -827,7 +1155,9 @@ export const useAppStore = create<AppState>()(
       }),
 
     setMinimiPreview: (agentId, dataUrl) =>
-      set((s) => ({ minimiPreviews: { ...s.minimiPreviews, [agentId]: dataUrl } })),
+      set((s) => ({
+        minimiPreviews: { ...s.minimiPreviews, [agentId]: dataUrl },
+      })),
 
     removeMinimiPreview: (agentId) =>
       set((s) => {
@@ -866,7 +1196,8 @@ export const useAppStore = create<AppState>()(
             },
           };
         }
-        if (e.kind !== "prompt" && e.kind !== "tool" && e.kind !== "resume") return {};
+        if (e.kind !== "prompt" && e.kind !== "tool" && e.kind !== "resume")
+          return {};
         const turnKind = e.kind === "resume" ? "tool" : e.kind;
         const prevTurn = s.timeTracking[e.agentId] ?? initialTurnState();
         const nextTurn = reduceTurn(prevTurn, { kind: turnKind, at: e.at });
@@ -887,7 +1218,9 @@ export const useAppStore = create<AppState>()(
               latestPromptText: e.text,
               latestPromptAt: e.at,
               goalFallback:
-                cand && isMeaningfulGoalFallback(cand) ? cand : prev.goalFallback,
+                cand && isMeaningfulGoalFallback(cand)
+                  ? cand
+                  : prev.goalFallback,
               cwd: e.cwd ?? prev.cwd,
               currentSummary: undefined, // 새 지시 → 재요약 대상
               latestToolText: undefined, // 새 턴 → 이전 턴 실황 제거
@@ -905,7 +1238,10 @@ export const useAppStore = create<AppState>()(
               cwd: e.cwd,
             };
           }
-          return { timeTracking, taskLabels: { ...s.taskLabels, [e.agentId]: label } };
+          return {
+            timeTracking,
+            taskLabels: { ...s.taskLabels, [e.agentId]: label },
+          };
         }
 
         // ---- tool: 턴 중 실황(도구 요약/assistant 내레이션) ----
@@ -926,7 +1262,10 @@ export const useAppStore = create<AppState>()(
             patch.latestToolAt = e.at;
           }
           if (Object.keys(patch).length === 0) return { timeTracking }; // 갱신 없음
-          return { timeTracking, taskLabels: { ...s.taskLabels, [e.agentId]: { ...prev, ...patch } } };
+          return {
+            timeTracking,
+            taskLabels: { ...s.taskLabels, [e.agentId]: { ...prev, ...patch } },
+          };
         }
 
         // ---- resume: 시간 추적만, 라벨 비대상 ----
@@ -937,7 +1276,9 @@ export const useAppStore = create<AppState>()(
       set((s) => {
         const prev = s.taskLabels[agentId];
         if (!prev) return s;
-        return { taskLabels: { ...s.taskLabels, [agentId]: { ...prev, ...patch } } };
+        return {
+          taskLabels: { ...s.taskLabels, [agentId]: { ...prev, ...patch } },
+        };
       }),
 
     setGitBranches: (next) => set({ gitBranches: next }),
@@ -945,7 +1286,8 @@ export const useAppStore = create<AppState>()(
     applyNotificationTiming: (e) =>
       set((s) => {
         // stop → 턴 종료, hook/bell → 대기 시작. (source는 이 셋뿐.)
-        const kind: TurnInput["kind"] = e.source === "stop" ? "stop" : "notification";
+        const kind: TurnInput["kind"] =
+          e.source === "stop" ? "stop" : "notification";
         const prev = s.timeTracking[e.agentId] ?? initialTurnState();
         const next = reduceTurn(prev, { kind, at: e.at });
         logSettledTurn(e.agentId, prev, next, e.at);
@@ -986,7 +1328,10 @@ export const useAppStore = create<AppState>()(
         const prev = s.sessionUsage[agentId];
         if (prev && prev.sessionId === sessionId) return s; // 같은 세션 — no-op(같은 참조).
         return {
-          sessionUsage: { ...s.sessionUsage, [agentId]: { sessionId, totals: emptyTotals() } },
+          sessionUsage: {
+            ...s.sessionUsage,
+            [agentId]: { sessionId, totals: emptyTotals() },
+          },
         };
       }),
 
@@ -996,11 +1341,16 @@ export const useAppStore = create<AppState>()(
         if (s.sessionUsageSeed && e.at <= s.sessionUsageSeed.at) return s;
         const prev = s.sessionUsage[e.agentId];
         const entry =
-          prev && prev.sessionId === e.sessionId ? prev : { sessionId: e.sessionId, totals: emptyTotals() };
+          prev && prev.sessionId === e.sessionId
+            ? prev
+            : { sessionId: e.sessionId, totals: emptyTotals() };
         return {
           sessionUsage: {
             ...s.sessionUsage,
-            [e.agentId]: { sessionId: e.sessionId, totals: addTurn(entry.totals, e.tokens, e.partial) },
+            [e.agentId]: {
+              sessionId: e.sessionId,
+              totals: addTurn(entry.totals, e.tokens, e.partial),
+            },
           },
           // 실시간이 실제로 반영한 첫 턴의 시각만 기록(이미 있으면 유지) — B의
           // 시드 컷오프 기준. 여기서 무시되고 return s로 빠진 사용량 이벤트(위
@@ -1021,7 +1371,8 @@ export const useAppStore = create<AppState>()(
         const sessions: Record<string, SessionRuntime> = {};
         for (const a0 of state.agents) {
           // 레거시(archetype 부재) 프로필은 human으로 백필 — 외형 불변 보장.
-          const a = a0.archetype === undefined ? { ...a0, archetype: "human" } : a0;
+          const a =
+            a0.archetype === undefined ? { ...a0, archetype: "human" } : a0;
           agents[a.id] = a;
           sessions[a.id] = {
             agentId: a.id,
@@ -1042,18 +1393,24 @@ export const useAppStore = create<AppState>()(
     setUsage: (snapshot) => set({ usage: snapshot }),
 
     hydrateSettings: (settings, firstRun) =>
-      set({ appSettings: settings, settingsFirstRun: firstRun, settingsHydrated: true }),
+      set({
+        appSettings: settings,
+        settingsFirstRun: firstRun,
+        settingsHydrated: true,
+      }),
 
     updateAppSettings: (patch) => {
       const next = { ...get().appSettings, ...patch };
       set({ appSettings: next });
       // fire-and-forget: 저장 실패는 콘솔 경고로만(다음 부팅 때 이전 값 복원됨).
-      void tauriApi.setAppSettings(next).catch((err) => console.warn("settings: save failed", err));
+      void tauriApi
+        .setAppSettings(next)
+        .catch((err) => console.warn("settings: save failed", err));
     },
 
     completeFirstRun: (choice) => {
       get().updateAppSettings(choice);
       set({ settingsFirstRun: false });
     },
-  }))
+  })),
 );

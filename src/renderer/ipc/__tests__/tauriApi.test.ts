@@ -314,7 +314,7 @@ describe("command invocations", () => {
     const tauriApi = await importTauriApi();
     const result = tauriApi.writeInput("a1", "ls\n");
     expect(result).toBeUndefined();
-    expect(invoke).toHaveBeenCalledWith(Commands.writeInput, { agentId: "a1", data: "ls\n" });
+    expect(invoke).toHaveBeenCalledWith(Commands.writeInput, { agentId: "a1", data: "ls\n", source: "human" });
   });
 
   it("resize invokes resize_session with cols/rows", async () => {

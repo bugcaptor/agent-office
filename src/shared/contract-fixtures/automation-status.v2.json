@@ -1,0 +1,62 @@
+{
+  "agents": {
+    "ready": {
+      "running": true,
+      "phase": "timeoutDecision",
+      "cli": "agy",
+      "filePath": "",
+      "startedAtMs": 1720000000000,
+      "runId": "v2-run",
+      "sessionId": "v2-session",
+      "stepExecutionId": "exec-ready",
+      "decisionId": "decision-ready",
+      "decisionReason": "shellReady",
+      "cliContext": {
+        "state": "unknown"
+      }
+    },
+    "return": {
+      "running": true,
+      "phase": "timeoutDecision",
+      "cli": "agy",
+      "filePath": "",
+      "startedAtMs": 1720000000000,
+      "runId": "v2-run",
+      "sessionId": "v2-session",
+      "stepExecutionId": "exec-return",
+      "decisionId": "decision-return",
+      "decisionReason": "cliExitTimeout",
+      "cliContext": {
+        "state": "cli",
+        "cli": "agy",
+        "launchStepId": "launch-agy"
+      },
+      "cliReturnObservedAtMs": 1720000000010
+    },
+    "manual": {
+      "running": true,
+      "phase": "timeoutDecision",
+      "cli": "agy",
+      "filePath": "",
+      "startedAtMs": 1720000000000,
+      "runId": "v2-run",
+      "sessionId": "v2-session",
+      "stepExecutionId": "exec-manual",
+      "decisionId": "decision-manual",
+      "decisionReason": "cliExitUnconfirmed",
+      "cliContext": {
+        "state": "unknown"
+      }
+    },
+    "shell": {
+      "running": false,
+      "phase": "completed",
+      "cli": "agy",
+      "filePath": "",
+      "startedAtMs": 1720000000000,
+      "cliContext": {
+        "state": "shell"
+      }
+    }
+  }
+}

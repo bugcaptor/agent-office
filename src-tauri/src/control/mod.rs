@@ -70,6 +70,8 @@ pub struct ControlContext {
     /// `attach --tmux`가 대상 세션 존재를 확인할 때 쓰는 확인기.
     /// 프로덕션은 `tmux::system_probe()`, 테스트는 가짜를 주입한다.
     pub tmux_probe: tmux::TmuxProbe,
+    /// 자동 입력 관문(kbm #2t9 Phase 2).
+    pub gate: Arc<crate::session::inject::InjectGate>,
 }
 
 impl ControlContext {
@@ -316,6 +318,10 @@ mod tests {
         let settings_store = SettingsStore::new(dir.join("settings.json"));
         // 대화 테스트는 이 허브를 켜고 쓴다(기본은 꺼짐 = 라우트가 전부 거절).
         let talk_hub = Arc::new(crate::talk::TalkHub::default());
+        let gate = Arc::new(crate::session::inject::InjectGate::new(
+            Arc::new(crate::session::inject::ManagerSink::new(manager.clone())),
+            Arc::new(crate::state::BotPromptArms::new()),
+        ));
         let ctx = Arc::new(ControlContext {
             manager,
             observer,
@@ -328,6 +334,7 @@ mod tests {
             talk: talk_hub,
             app_data_dir: dir.clone(),
             tmux_probe,
+            gate,
         });
         let state = ControlServerState::default();
         state.set_app_data_dir(dir.clone());

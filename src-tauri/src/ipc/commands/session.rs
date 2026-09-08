@@ -12,6 +12,13 @@ use crate::session_events::types::AgentEventProfile;
 use crate::state::AppState;
 use crate::types::*;
 
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TerminalInputSource {
+    Human,
+    TerminalResponse,
+}
+
 #[derive(Debug, Default, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionOpts {
@@ -130,7 +137,10 @@ pub async fn dispose_session(
     app_state: State<'_, AppState>,
     agent_id: String,
 ) -> Result<(), String> {
+    let automation_reset = app_state.automation_runtime.reset_session(&agent_id);
     app_state.manager.dispose(&agent_id);
+    automation_reset.await;
+    app_state.automation_ctx.gate.remove_agent(&agent_id);
     Ok(())
 }
 
@@ -234,8 +244,12 @@ pub async fn write_input(
     app_state: State<'_, AppState>,
     agent_id: String,
     data: String,
+    source: Option<TerminalInputSource>,
 ) -> Result<(), String> {
-    app_state.manager.write_input(&agent_id, &data);
+    match source.unwrap_or(TerminalInputSource::Human) {
+        TerminalInputSource::Human => app_state.gate.note_human(&agent_id, &data),
+        TerminalInputSource::TerminalResponse => app_state.gate.note_terminal_response(&agent_id, &data),
+    }
     Ok(())
 }
 

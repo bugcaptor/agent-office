@@ -43,6 +43,10 @@ const { mockApi } = vi.hoisted(() => ({
     handoffSessions: vi.fn(),
     adoptDetachedSessions: vi.fn(),
     botStatus: vi.fn(),
+    automationStatus: vi.fn().mockResolvedValue({ agents: {} }),
+    automationStart: vi.fn(),
+    automationStop: vi.fn(),
+    automationDecide: vi.fn(),
     sessionBrokerMode: vi.fn(),
     uploadSessionSnapshots: vi.fn(),
     // 이 달의 우수사원(#89) 부팅 시 자동 확정(fire-and-forget) — 스텁을 둬서
@@ -84,6 +88,9 @@ vi.mock("../terminal/TerminalRegistry", () => ({
 const mockOnCloseRequested = vi.fn(() => Promise.resolve(vi.fn()));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ onCloseRequested: mockOnCloseRequested }),
+}));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(() => Promise.resolve(vi.fn())),
 }));
 
 // `installSoundManager`는 장식 기능 — node 테스트 환경엔 AudioContext가

@@ -27,6 +27,8 @@ import type {
   ActivityEvent,
   AgentOfficeApi,
   AppSettings,
+  AutomationCli,
+  AutomationRunDecisionChoice,
   AwardRecord,
   AwardSpeech,
   DiaryEntry,
@@ -82,8 +84,8 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.detachExternalSession, { agentId });
   },
 
-  writeInput(agentId, data) {
-    void invoke(Commands.writeInput, { agentId, data }); // fire-and-forget
+  writeInput(agentId, data, source = "human") {
+    void invoke(Commands.writeInput, { agentId, data, source }); // fire-and-forget
   },
 
   resize(agentId, cols, rows) {
@@ -152,6 +154,13 @@ export const tauriApi: AgentOfficeApi = {
 
   async listProviderModels(provider) {
     return await invoke(Commands.listProviderModels, { provider });
+  },
+
+  async automationCliModels(cliProfileId: string) {
+    return await invoke(Commands.automationCliModels, { cliProfileId });
+  },
+  async automationAgyModels() {
+    return await invoke(Commands.automationAgyModels);
   },
 
   async codexImageStatus() {
@@ -257,6 +266,63 @@ export const tauriApi: AgentOfficeApi = {
 
   async botStatus() {
     return await invoke(Commands.botStatus);
+  },
+
+  async automationStart(agentId: string, cli?: AutomationCli) {
+    return await invoke(Commands.automationStart, { agentId, cli });
+  },
+
+  async automationStop(agentId: string) {
+    await invoke(Commands.automationStop, { agentId });
+  },
+
+  async automationStatus() {
+    return await invoke(Commands.automationStatus);
+  },
+
+  async automationDecide(
+    agentId: string,
+    runId: string,
+    stepExecutionId: string,
+    decisionId: string,
+    choice: AutomationRunDecisionChoice,
+  ): Promise<boolean> {
+    return await invoke(Commands.automationDecide, {
+      agentId,
+      runId,
+      stepExecutionId,
+      decisionId,
+      choice,
+    });
+  },
+
+  async automationClearUncommitted(agentId: string) {
+    await invoke(Commands.automationClearUncommitted, { agentId });
+  },
+
+  async automationDefinitionsList() {
+    return await invoke(Commands.automationDefinitionsList);
+  },
+  async automationDefinitionsSave(definition) {
+    return await invoke(Commands.automationDefinitionsSave, { definition });
+  },
+  async automationDefinitionsDelete(id) {
+    return await invoke(Commands.automationDefinitionsDelete, { id });
+  },
+  async automationDefinitionsImport(json) {
+    return await invoke(Commands.automationDefinitionsImport, { json });
+  },
+  async automationDefinitionsExport(id) {
+    return await invoke(Commands.automationDefinitionsExport, { id });
+  },
+  async automationRunStart(agentId, definitionId, inputs, workspace) {
+    return await invoke(Commands.automationRunStart, { agentId, definitionId, inputs, workspace });
+  },
+  async automationRunsList() {
+    return await invoke(Commands.automationRunsList);
+  },
+  async automationCliTransitionPreview(agentId, cli, model, effort) {
+    return await invoke(Commands.automationCliTransitionPreview, { agentId, cli, model, effort });
   },
 
   async talkStatus() {

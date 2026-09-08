@@ -260,8 +260,8 @@ pub(super) async fn send(
     State(ctx): State<Arc<ControlContext>>,
     Json(p): Json<SendParams>,
 ) -> Json<serde_json::Value> {
-    // write_input과 동일 — 존재하지 않는 agentId는 무해한 no-op.
-    ctx.manager.write_input(&p.agent_id, &p.data);
+    // ctl 입력은 사람 입력으로 취급(kbm #2t9 Phase 2) — 관문 경유.
+    ctx.gate.note_human(&p.agent_id, &p.data);
     ok(serde_json::Value::Null)
 }
 

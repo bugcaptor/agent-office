@@ -30,6 +30,8 @@ pub struct BotContext {
     /// 이벤트 기록기(`RecordingAppEvents`)가 뒤따르는 prompt 하나로 소비한다 —
     /// 그 턴이 "이 달의 우수사원" 집계에서 사람 몫에서 빠진다.
     pub bot_arms: Arc<crate::state::BotPromptArms>,
+    /// 자동 입력 관문(kbm #2t9 Phase 2).
+    pub gate: Arc<crate::session::inject::InjectGate>,
 }
 
 /// 봇 잡의 해석된 실행 파라미터(폴링 태스크가 기동 시 한 번 계산).
@@ -196,12 +198,22 @@ pub fn single_line(text: &str) -> String {
 /// 쓰기 **직전에** 봇 주입 표식을 arm한다(kbm #2j8). 주입은 사람 입력과 완전히
 /// 같은 경로라 이벤트만 보고는 구분할 수 없으므로, 이 시점이 출처를 아는 유일한
 /// 지점이다. 표식은 뒤따르는 prompt 이벤트 하나가 소비한다.
-fn inject(ctx: &BotContext, agent_id: &str, text: &str) {
-    let one_line = single_line(text);
-    ctx.bot_arms.arm(agent_id, now_ms());
-    ctx.manager.write_input(agent_id, &one_line);
-    std::thread::sleep(std::time::Duration::from_millis(INJECT_SUBMIT_DELAY_MS));
-    ctx.manager.write_input(agent_id, "\r");
+/// 세션 stdin에 프롬프트를 주입하고 Enter로 제출한다(Phase 2: InjectGate로 위임).
+///
+/// **제출됐는지를 돌려준다.** 관문이 보류(Deferred)하면 프롬프트는 들어가지 않은
+/// 것이므로, 부르는 쪽은 트리거를 소비하면 안 된다 — 소비해 버리면 그 이슈 댓글은
+/// 영영 전달되지 않는다.
+fn inject(ctx: &BotContext, agent_id: &str, text: &str) -> bool {
+    let sid = ctx.manager.session_id_for(agent_id).unwrap_or_default();
+    matches!(
+        tauri::async_runtime::block_on(ctx.gate.submit(
+            agent_id,
+            &sid,
+            text,
+            crate::session::inject::InjectSource::Bot,
+        )),
+        crate::session::inject::SubmitOutcome::Submitted
+    )
 }
 
 /// 봇 시작 시 커서를 현재 최신 지점으로 프라임한다(리뷰: 과거 소급 트리거 방지).
@@ -293,11 +305,13 @@ pub fn poll_once(ctx: &BotContext, p: &BotParams, cancel: &AtomicBool) -> Result
                     break;
                 }
                 let directive = directive_for(&c.body, &p.slug);
-                inject(
+                if !inject(
                     ctx,
                     &p.agent_id,
                     &initial_prompt(&p.agent_id, &p.name, &p.repo_slug, issue_num, directive.as_deref()),
-                );
+                ) {
+                    break; // 관문 보류 → 트리거를 소비하지 않고 다음 폴링에 재시도.
+                }
                 start_job(&mut state, &p.agent_id, issue_num);
                 state.mark_processed(c.id);
                 state.advance_cursor(&c.updated_at);
@@ -316,7 +330,9 @@ pub fn poll_once(ctx: &BotContext, p: &BotParams, cancel: &AtomicBool) -> Result
                 break;
             }
             let safe = sanitize_untrusted(&c.body);
-            inject(ctx, &p.agent_id, &relay_prompt(issue_num, &c.user.login, &safe));
+            if !inject(ctx, &p.agent_id, &relay_prompt(issue_num, &c.user.login, &safe)) {
+                break; // 관문 보류 → 커서를 세운 채 다음 폴링에 재시도.
+            }
             state.mark_processed(c.id);
             state.advance_cursor(&c.updated_at);
         } else {
@@ -347,11 +363,13 @@ pub fn poll_once(ctx: &BotContext, p: &BotParams, cancel: &AtomicBool) -> Result
                 }
                 let directive = directive_for(&i.body, &p.slug)
                     .or_else(|| directive_for(&i.title, &p.slug));
-                inject(
+                if !inject(
                     ctx,
                     &p.agent_id,
                     &initial_prompt(&p.agent_id, &p.name, &p.repo_slug, i.number, directive.as_deref()),
-                );
+                ) {
+                    continue; // 관문 보류 → 마크하지 않고 다음 폴링에 재평가.
+                }
                 start_job(&mut state, &p.agent_id, i.number);
                 state.mark_issue_triggered(i.number);
             }
@@ -369,13 +387,14 @@ pub fn poll_once(ctx: &BotContext, p: &BotParams, cancel: &AtomicBool) -> Result
             {
                 let issue = job.issue;
                 let marker = command::bot_marker(&p.agent_id);
-                inject(
+                if inject(
                     ctx,
                     &p.agent_id,
                     &report_prompt(issue, &p.name, &p.repo_slug, &marker),
-                );
-                if let Some(j) = state.jobs.get_mut(&p.agent_id) {
-                    j.last_report_at_ms = Some(now_ms());
+                ) {
+                    if let Some(j) = state.jobs.get_mut(&p.agent_id) {
+                        j.last_report_at_ms = Some(now_ms());
+                    }
                 }
             }
         }

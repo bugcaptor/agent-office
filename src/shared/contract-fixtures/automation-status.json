@@ -1,0 +1,51 @@
+{
+  "agents": {
+    "a1": {
+      "running": true,
+      "phase": "waitingStartup",
+      "cli": "claude",
+      "filePath": "/home/agent/repo/.agent-office/automation-runs/run-1/step-1/result.json",
+      "startedAtMs": 1720000000000
+    },
+    "a2": {
+      "running": true,
+      "phase": "timeoutDecision",
+      "cli": "codex",
+      "filePath": "/home/agent/repo/.agent-office/automation-runs/run-2/step-2/result.json",
+      "startedAtMs": 1720000000000,
+      "runId": "run-2",
+      "stepExecutionId": "step-2",
+      "decisionId": "dec-2",
+      "extensionCount": 1,
+      "markerObservedAtMs": 1720000600000
+    },
+    "a3": {
+      "running": true,
+      "phase": "injecting",
+      "cli": "agy",
+      "filePath": "/home/agent/repo/.agent-office/automation-runs/run-3/step-3/result.json",
+      "startedAtMs": 1720000000000,
+      "pendingReason": "humanTyping",
+      "pendingSinceMs": 1720000010000
+    },
+    "a4": {
+      "running": true,
+      "phase": "confirming",
+      "cli": "claude",
+      "filePath": "/home/agent/repo/result.json",
+      "startedAtMs": 1720000000000,
+      "runId": "run-defined",
+      "stepExecutionId": "execution-4",
+      "definitionId": "workflow-1",
+      "definitionName": "작성과 검수",
+      "sessionId": "session-4",
+      "workspace": "/home/agent/repo",
+      "cycle": 2,
+      "stepIndex": 3,
+      "stepId": "confirm",
+      "decisionId": "decision-4",
+      "decisionReason": "confirm",
+      "decisionMessage": "다음 단계로 진행할까요?"
+    }
+  }
+}

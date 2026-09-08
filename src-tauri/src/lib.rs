@@ -8,6 +8,7 @@
 // 에이전트 CLI 데이터 루트(CLAUDE_CONFIG_DIR/CODEX_HOME) 결정 규칙 한 곳.
 pub mod agent_paths;
 pub mod api_keys;
+mod automation;
 mod bot;
 // codex CLI 내장 이미지 생성으로 캐릭터 초상/스프라이트 원본을 만든다(kbm #2fa).
 pub mod codex_imagegen;
@@ -596,6 +597,13 @@ pub fn run() {
                 });
             }
 
+            // 자동 입력 관문(kbm #2t9 Phase 2): 자동 입력 생산자 간 배타 및 입력 조율.
+            let inject_sink = Arc::new(crate::session::inject::ManagerSink::new(manager.clone()));
+            let inject_gate = Arc::new(crate::session::inject::InjectGate::new(
+                inject_sink.clone(),
+                bot_arms.clone(),
+            ));
+
             let store = ProfileStore::new(data_dir.join("profiles.json"));
             let portrait_store = Arc::new(PngStore::new(data_dir.join("portraits"), MAX_PORTRAIT_BYTES));
             let sprite_store = PngStore::new(data_dir.join("sprites"), MAX_SPRITE_BYTES);
@@ -635,6 +643,7 @@ pub fn run() {
                 talk: talk.clone(),
                 app_data_dir: data_dir.clone(),
                 tmux_probe: crate::control::tmux::system_probe(),
+                gate: inject_gate.clone(),
             });
             if settings_cache.read().unwrap().cli_enabled {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));
@@ -662,6 +671,7 @@ pub fn run() {
                     observer_server: observer_server.clone(),
                     live_usage: live_usage.clone(),
                     portraits: portrait_store.clone(),
+                    gate: inject_gate.clone(),
                 },
             ));
             {
@@ -731,7 +741,21 @@ pub fn run() {
                 ),
                 state_lock: Arc::new(std::sync::Mutex::new(())),
                 bot_arms: bot_arms.clone(),
+                gate: inject_gate.clone(),
             });
+
+            // 자동화 점검(kbm): 탭별 태스크 소유자 + 태스크가 쥘 상태 클론.
+            // 봇 모드와 마찬가지로 런타임 상태라 여기선 아무 태스크도 띄우지
+            // 않는다 — start는 렌더러 automation_start 커맨드가 트리거한다.
+            let automation_runtime = Arc::new(crate::automation::AutomationRuntime::default());
+            let automation_ctx = Arc::new(crate::automation::AutomationContext {
+                sink: inject_sink,
+                gate: inject_gate.clone(),
+                bot_runtime: bot_runtime.clone(),
+            });
+            let automation_store = Arc::new(crate::automation::store::AutomationStore::new(
+                data_dir.clone(),
+            ));
 
             // 작업 중 잠자기 방지(#68): 웨이크락 소유자 + lease 만료 감시 태스크.
             // 렌더러가 set_keep_awake로 lease(180s)를 갱신하고, 이 태스크가 30초
@@ -752,6 +776,7 @@ pub fn run() {
             crate::talk::spawn_worker(
                 talk.clone(),
                 manager.clone(),
+                inject_gate.clone(),
                 talk_cli.to_string_lossy().into_owned(),
                 {
                     let store = store.clone();
@@ -794,6 +819,10 @@ pub fn run() {
                 web_remote_ctx,
                 bot_runtime,
                 bot_ctx,
+                automation_runtime,
+                automation_ctx,
+                automation_store,
+                gate: inject_gate.clone(),
                 wake_lock,
                 tts,
                 talk,
@@ -860,6 +889,21 @@ pub fn run() {
                         ipc::commands::bot_start,
             ipc::commands::bot_stop,
             ipc::commands::bot_status,
+            ipc::commands::automation_start,
+            ipc::commands::automation_stop,
+            ipc::commands::automation_status,
+            ipc::commands::automation_decide,
+            ipc::commands::automation_clear_uncommitted,
+            ipc::commands::automation_definitions_list,
+            ipc::commands::automation_definitions_save,
+            ipc::commands::automation_definitions_delete,
+            ipc::commands::automation_definitions_import,
+            ipc::commands::automation_definitions_export,
+            ipc::commands::automation_runs_list,
+            ipc::commands::automation_run_start,
+            ipc::commands::automation_cli_transition_preview,
+            ipc::commands::automation_agy_models,
+            ipc::commands::automation_cli_models,
             ipc::commands::open_in_vscode,
             ipc::commands::open_in_terminal,
             ipc::commands::open_in_file_manager,
@@ -958,6 +1002,7 @@ pub fn run() {
                 }
                 let state = app.state::<AppState>();
                 state.run_recipes.stop_all(); // 레시피가 띄운 별도 프로세스 트리 정리
+                state.automation_runtime.stop_all(); // 세션 처리 전에 자동 입력 태스크 정지
                 state.manager.dispose_all(); // kill + settings cleanup(동기)
                 state.observer_server.shutdown();
                 state.control_server.shutdown(); // CLI 제어 서버 정지 + control-port 정리(#55)

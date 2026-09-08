@@ -433,6 +433,20 @@ impl TalkHub {
         ready
     }
 
+    /// 배달하지 못한 메시지를 큐 앞으로 되돌린다(순서 보존).
+    ///
+    /// 관문이 보류하면 그 틱의 배달은 없던 일이 된다. 되돌리지 않으면
+    /// `take_deliverable`이 이미 큐에서 빼 온 뒤라 메시지가 조용히 사라진다.
+    fn requeue_front(&self, msgs: Vec<TalkMessage>) {
+        if msgs.is_empty() {
+            return;
+        }
+        let mut inner = self.inner.lock().unwrap();
+        for m in msgs.into_iter().rev() {
+            inner.queue.push_front(m);
+        }
+    }
+
     /// 오피스에 "말했다"를 알린다. 배달(주입)은 나중일 수 있지만, 말풍선은
     /// 말한 순간 떠야 화면이 대화처럼 읽힌다.
     fn emit(&self, msg: &TalkMessage, to_name: &str) {
@@ -545,6 +559,7 @@ fn append_audit(dir: &std::path::Path, kind: &str, msg: &TalkMessage, note: Opti
 pub fn spawn_worker(
     hub: Arc<TalkHub>,
     manager: Arc<SessionManager>,
+    gate: Arc<crate::session::inject::InjectGate>,
     cli: String,
     role_of: Arc<dyn Fn(&str) -> Option<String> + Send + Sync>,
 ) {
@@ -555,14 +570,30 @@ pub fn spawn_worker(
             if !hub.is_enabled() {
                 continue;
             }
-            let ready = hub.take_deliverable(&manager, now_ms());
-            for msg in ready {
+            let mut ready = hub.take_deliverable(&manager, now_ms());
+            let mut delivered = 0usize;
+            for msg in &ready {
                 let text =
-                    format_delivery(&msg, role_of(&msg.from).as_deref(), &cli, hub.config().lang);
-                manager.write_input(&msg.to, &crate::bot::runner::single_line(&text));
-                tokio::time::sleep(Duration::from_millis(SUBMIT_DELAY_MS)).await;
-                manager.write_input(&msg.to, "\r");
-                hub.audit("deliver", &msg, None);
+                    format_delivery(msg, role_of(&msg.from).as_deref(), &cli, hub.config().lang);
+                let sid = manager.session_id_for(&msg.to).unwrap_or_default();
+                let outcome = gate
+                    .submit(
+                        &msg.to,
+                        &sid,
+                        &text,
+                        crate::session::inject::InjectSource::Talk,
+                    )
+                    .await;
+                if outcome != crate::session::inject::SubmitOutcome::Submitted {
+                    // 보류·세션 변경·미실행 — 넣지 못했다. 남은 것까지 통째로
+                    // 큐에 되돌리고 다음 틱에 다시 판단한다.
+                    break;
+                }
+                delivered += 1;
+                hub.audit("deliver", msg, None);
+            }
+            if delivered < ready.len() {
+                hub.requeue_front(ready.split_off(delivered));
             }
         }
     });
@@ -576,6 +607,25 @@ mod tests {
         let h = TalkHub::default();
         h.set_enabled(true);
         h
+    }
+
+    // 배달하지 못한 메시지는 큐 앞으로, 원래 순서 그대로 돌아와야 한다.
+    // 안 돌려놓으면 관문이 보류할 때마다 동료 대화가 한 통씩 사라진다.
+    #[test]
+    fn requeue_front_restores_undelivered_messages_in_order() {
+        let h = hub();
+        h.enqueue("hana", "하나", "duri", "두리", "첫째", None).unwrap();
+        h.enqueue("hana", "하나", "duri", "두리", "둘째", None).unwrap();
+
+        let taken = h.take("duri", None);
+        assert_eq!(taken.len(), 2);
+        assert!(h.take("duri", None).is_empty());
+
+        h.requeue_front(taken);
+        let again = h.take("duri", None);
+        assert_eq!(again.len(), 2);
+        assert_eq!(again[0].text, "첫째");
+        assert_eq!(again[1].text, "둘째");
     }
 
     #[test]

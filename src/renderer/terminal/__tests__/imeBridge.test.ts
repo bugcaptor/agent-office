@@ -30,6 +30,7 @@ interface Harness {
   container: HTMLDivElement;
   textarea: HTMLTextAreaElement;
   sent: string[];
+  sources: ("human" | "terminalResponse" | undefined)[];
   emitData: (data: string) => void;
   bridge: ReturnType<typeof createImeBridge>;
   clock: { t: number };
@@ -43,17 +44,21 @@ function harness(opts: { isMac: boolean; blocked?: boolean }): Harness {
 
   const { term, emitData } = fakeTerm(textarea);
   const sent: string[] = [];
+  const sources: ("human" | "terminalResponse" | undefined)[] = [];
   const clock = { t: 1000 };
   const bridge = createImeBridge({
     term,
     container,
     inputBlocked: () => opts.blocked ?? false,
-    send: (d) => sent.push(d),
+    send: (d, source) => {
+      sent.push(d);
+      sources.push(source);
+    },
     isMac: opts.isMac,
     now: () => clock.t,
   });
   bridge.bindComposition();
-  return { container, textarea, sent, emitData, bridge, clock };
+  return { container, textarea, sent, sources, emitData, bridge, clock };
 }
 
 /** 숨은 textarea의 값이 바뀌고 `input`이 뜨는 흐름(WKWebView의 한글 조합).
@@ -232,5 +237,78 @@ describe("imeBridge · Windows 이중 입력 가드", () => {
     h.clock.t += 5;
     h.emitData("번");
     expect(h.sent).toEqual(["번", "번"]);
+  });
+});
+
+describe("imeBridge · xterm 자동 제어 응답 출처", () => {
+  it("요청한 CPR 응답만 terminalResponse로 보내고 사람 입력 회계에서 뺀다", () => {
+    const h = harness({ isMac: false });
+    h.bridge.observeTerminalOutput("\x1b[6n");
+    h.emitData("\x1b[12;34R");
+    expect(h.sent).toEqual(["\x1b[12;34R"]);
+    expect(h.sources).toEqual(["terminalResponse"]);
+  });
+
+  it("미결 질의가 없는 같은 ESC 시퀀스는 사람 입력으로 보수적으로 보낸다", () => {
+    const h = harness({ isMac: false });
+    h.emitData("\x1b[12;34R");
+    expect(h.sources).toEqual([undefined]);
+  });
+
+  it("팔레트 질의의 OSC 응답을 분리한다", () => {
+    const h = harness({ isMac: false });
+    h.bridge.observeTerminalOutput("\x1b]4;0;?\x07");
+    h.emitData("\x1b]4;0;rgb:0000/1111/2222\x07");
+    expect(h.sources).toEqual(["terminalResponse"]);
+  });
+
+  it("PTY 청크 경계에서 나뉜 ESC[ 질의를 이어서 추적한다", () => {
+    const h = harness({ isMac: false });
+    h.bridge.observeTerminalOutput("\x1b");
+    h.bridge.observeTerminalOutput("[6n");
+    h.emitData("\x1b[12;34R");
+    expect(h.sources).toEqual(["terminalResponse"]);
+  });
+
+  it("private CPR, DA 0c와 DEC mode query 응답도 자동 응답으로 분리한다", () => {
+    const h = harness({ isMac: false });
+    h.bridge.observeTerminalOutput("\x1b[?6n\x1b[0c\x1b[?1004$p");
+    h.emitData("\x1b[?12;34R");
+    h.emitData("\x1b[?1;2c");
+    h.emitData("\x1b[?1004;1$y");
+    expect(h.sources).toEqual(["terminalResponse", "terminalResponse", "terminalResponse"]);
+  });
+
+  it("무매개 secondary DA 요청과 4 KiB를 넘는 출력 앞쪽 질의도 놓치지 않는다", () => {
+    const h = harness({ isMac: false });
+    h.bridge.observeTerminalOutput("\x1b[>c" + "x".repeat(5_000));
+    h.emitData("\x1b[>0;276;0c");
+    expect(h.sources).toEqual(["terminalResponse"]);
+  });
+
+  it("OSC 4의 여러 색상 질의를 각각의 응답 수만큼 추적한다", () => {
+    const h = harness({ isMac: false });
+    h.bridge.observeTerminalOutput("\x1b]4;0;?;1;?\x07");
+    h.emitData("\x1b]4;0;rgb:0000/1111/2222\x07");
+    h.emitData("\x1b]4;1;rgb:3333/4444/5555\x07");
+    expect(h.sources).toEqual(["terminalResponse", "terminalResponse"]);
+  });
+
+  it("오래된 미결 질의와 RIS 이후에는 같은 응답 모양도 사람 입력으로 둔다", () => {
+    const h = harness({ isMac: false });
+    h.bridge.observeTerminalOutput("\x1b[6n");
+    h.clock.t += 5_001;
+    h.emitData("\x1b[12;34R");
+    h.bridge.observeTerminalOutput("\x1b[6n\x1bc");
+    h.emitData("\x1b[12;34R");
+    expect(h.sources).toEqual([undefined, undefined]);
+  });
+
+  it("프로그램 방식 term.paste도 pending 응답과 닮은 텍스트를 사람 입력으로 보낸다", () => {
+    const h = harness({ isMac: false });
+    h.bridge.observeTerminalOutput("\x1b[6n");
+    h.bridge.markProgrammaticPaste();
+    h.emitData("\x1b[12;34R");
+    expect(h.sources).toEqual([undefined]);
   });
 });

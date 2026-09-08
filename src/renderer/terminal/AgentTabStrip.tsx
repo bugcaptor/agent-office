@@ -31,18 +31,22 @@ import { IS_MAC } from "../shared/platform";
 import { terminalRegistry } from "./TerminalRegistry";
 import { looksLikeAgentRunning } from "./botGuard";
 import { botStatusText } from "./botStatusText";
+import { automationStatusText } from "./automationStatusText";
+import { maybeSendOsNotification } from "../ipc/osNotify";
 import type { TerminalViewMode } from "./terminalViewMode";
-import type { ClaudeResumeEntry } from "@shared/types";
+import type { AutomationPhase, ClaudeResumeEntry } from "@shared/types";
 
 // 뷰 모드 토글 버튼(이슈 #69)의 아이콘/툴팁. title은 "누르면 가는 다음 모드"를
 // 안내한다(windowed↔filled). aria-label도 동일.
 // 모듈 최상위라 `t()`를 부를 수 없어 라벨이 아니라 **키**를 담는다 —
 // 언어를 바꾸면 렌더 시점에 다시 번역된다.
-const VIEW_MODE_BUTTON: Record<TerminalViewMode, { icon: string; labelKey: string }> = {
+const VIEW_MODE_BUTTON: Record<
+  TerminalViewMode,
+  { icon: string; labelKey: string }
+> = {
   windowed: { icon: "⤢", labelKey: "tab.viewModeFill" },
   filled: { icon: "❐", labelKey: "tab.viewModeWindowed" },
 };
-
 
 export function AgentTabStrip() {
   const { t } = useTranslation("terminal");
@@ -80,25 +84,37 @@ export function AgentTabStrip() {
                 // 월드(createCharacterAssets)와 동일한 아키타입 해석 —
                 // 누락 시 폴백 썸네일이 항상 human으로 렌더되는 버그.
                 resolveArchetype(agent.archetype, agent.seed || agent.id),
-                agent.colors
+                agent.colors,
               )
             : undefined);
         // 탭 툴팁(이슈 #44 T2): 머리 위 라벨과 같은 파생 규칙으로 2줄을 만들어
         // native title로 붙인다(폭 넉넉히). 세션이 starting/running이 아니면
         // 실황(line2)은 stale이므로 line1만. 라벨이 없으면 title 생략.
         const cwd = effectiveCwd(taskLabels[id], agent?.cwd);
-        const { line1, line2 } = deriveTaskLabelLines(taskLabels[id], agent?.cwd, {
-          goalMax: 80,
-          currentMax: 120,
-          branch: cwd ? gitBranches[cwd] : undefined,
-        });
+        const { line1, line2 } = deriveTaskLabelLines(
+          taskLabels[id],
+          agent?.cwd,
+          {
+            goalMax: 80,
+            currentMax: 120,
+            branch: cwd ? gitBranches[cwd] : undefined,
+          },
+        );
         const status = sessions[id]?.status;
         const live = status === "starting" || status === "running";
         const titleLines = [line1, live ? line2 : undefined].filter(Boolean);
         const title = titleLines.length > 0 ? titleLines.join("\n") : undefined;
         return { id, name: agent?.name ?? id, thumb, title };
       }),
-    [tabIds, agents, sessions, taskLabels, gitBranches, portraits, spritePreviews]
+    [
+      tabIds,
+      agents,
+      sessions,
+      taskLabels,
+      gitBranches,
+      portraits,
+      spritePreviews,
+    ],
   );
   const openTerminal = useAppStore((s) => s.openTerminal);
   const closeTerminal = useAppStore((s) => s.closeTerminal);
@@ -111,6 +127,11 @@ export function AgentTabStrip() {
   const startBot = useAppStore((s) => s.startBot);
   const stopBot = useAppStore((s) => s.stopBot);
   const applyBotStatus = useAppStore((s) => s.applyBotStatus);
+  // 자동화 점검(kbm): 켜진 탭 집합/상태 + 시작·중단 액션.
+  const automation = useAppStore((s) => s.automation);
+  const openAutomationEditor = useAppStore((s) => s.openAutomationEditor);
+  const stopAutomation = useAppStore((s) => s.stopAutomation);
+  const applyAutomationStatus = useAppStore((s) => s.applyAutomationStatus);
   // 이슈 #10: 활성 에이전트 cwd를 root로 마크다운 문서 팔레트를 연다.
   const openMarkdownPalette = useMarkdownStore((s) => s.openPalette);
   // 이슈 #11: 작업 폴더 보기(파일 목록 + git 상태) 오버레이를 연다.
@@ -129,14 +150,23 @@ export function AgentTabStrip() {
   const activeCwd = activeId ? agents[activeId]?.cwd : undefined;
   // 이름 없는 프로필로 오버레이(일기·메모·세션 로그)를 열 때 쓸 표시명 폴백.
   const characterFallback = t("menu.characterFallback");
-  const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{
+    agentId: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const tabViewportRef = useRef<HTMLDivElement>(null);
-  const [tabScroll, setTabScroll] = useState({ canScrollLeft: false, canScrollRight: false });
+  const [tabScroll, setTabScroll] = useState({
+    canScrollLeft: false,
+    canScrollRight: false,
+  });
   // 메뉴를 열 때 조회한 Claude 이어하기 후보(agentId → 최신 1건). 엔트리가
   // 있는 에이전트만 "이전 세션 이어하기"가 활성화된다. 열 때마다 비우고
   // 응답 도착까지는 비활성 — 이전 조회의 낡은 ID(/clear 후 등)가 잠깐이라도
   // 활성으로 노출되면 엉뚱한 대화를 이어버린다(Codex 리뷰 지적).
-  const [resumeEntries, setResumeEntries] = useState<Record<string, ClaudeResumeEntry>>({});
+  const [resumeEntries, setResumeEntries] = useState<
+    Record<string, ClaudeResumeEntry>
+  >({});
   // 조회 세대 — 메뉴를 연달아 열 때 늦게 도착한 옛 응답이 최신 상태를
   // 덮지 않게 최신 세대의 응답만 반영한다.
   const resumeFetchSeq = useRef(0);
@@ -150,13 +180,14 @@ export function AgentTabStrip() {
     const next = {
       canScrollLeft: overflow && viewport.scrollLeft > 1,
       canScrollRight:
-        overflow && viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - 1,
+        overflow &&
+        viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - 1,
     };
     setTabScroll((current) =>
       current.canScrollLeft === next.canScrollLeft &&
       current.canScrollRight === next.canScrollRight
         ? current
-        : next
+        : next,
     );
   }, []);
 
@@ -167,7 +198,9 @@ export function AgentTabStrip() {
     updateTabScroll();
     window.addEventListener("resize", updateTabScroll);
     const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateTabScroll);
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(updateTabScroll);
     observer?.observe(viewport);
     Array.from(viewport.children).forEach((tab) => observer?.observe(tab));
     return () => {
@@ -202,9 +235,11 @@ export function AgentTabStrip() {
       if (text === undefined) return;
       void tauriApi
         .exportTerminalOutput(agents[agentId]?.name ?? agentId, text)
-        .catch((err) => console.warn("AgentTabStrip: shell output export failed", err));
+        .catch((err) =>
+          console.warn("AgentTabStrip: shell output export failed", err),
+        );
     },
-    [agents]
+    [agents],
   );
 
   useEffect(() => {
@@ -285,6 +320,110 @@ export function AgentTabStrip() {
     };
   }, [hasBots, applyBotStatus]);
 
+  // 자동화 상태 폴링(kbm): 켜진(또는 방금 끝난) 자동화가 하나라도 있으면
+  // 1초마다 백엔드에서 phase를 받아 배지를 갱신한다. 이전 phase를 `id:시작시각`
+  // 키로 기억해 done/failed로 "처음" 넘어간 항목에만 OS 알림을 띄우고
+  // 정리한다 — 키에 시작시각을 넣는 이유: 같은 탭에서 연달아 즉시 실패해도
+  // (봇 충돌 등) 매 실행이 새 startedAtMs를 받으므로 알림·정리가 매번
+  // 일어난다(단순 id 키였다면 두 번째부터 "이미 본 phase"로 씹혔을 것).
+  const hasAutomation = Object.keys(automation).length > 0;
+  const prevAutomationPhases = useRef<Record<string, AutomationPhase>>({});
+  const notifiedPending = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!hasAutomation) return;
+    let alive = true;
+    const tick = () => {
+      const epochs = useAppStore.getState().automationEpochs;
+      void tauriApi
+        .automationStatus()
+        .then((st) => {
+          if (!alive) return;
+          // agents/windowFocused는 초 단위로 안 바뀌는 값이라 effect deps에
+          // 넣어 매초 이 effect를 재구독하지 않고, tick 안에서 그때그때 최신
+          // 스토어 스냅샷을 읽는다.
+          const { agents: liveAgents, windowFocused, automationEpochs } = useAppStore.getState();
+          for (const [id, fresh] of Object.entries(st.agents)) {
+            if ((epochs[id] ?? 0) !== (automationEpochs[id] ?? 0)) continue;
+            const key = `${id}:${fresh.startedAtMs}`;
+            const prevPhase = prevAutomationPhases.current[key];
+            const justFinished =
+              (fresh.phase === "done" ||
+                fresh.phase === "failed" ||
+                fresh.phase === "cancelled" ||
+                fresh.phase === "completed" ||
+                fresh.phase === "interrupted") &&
+              prevPhase !== fresh.phase;
+            // 대기 시간이 끝났을 때도 알림을 한 번 띄운다(설계 §2) — 다만 정리는
+            // 하지 않는다. 자동화는 아직 살아 있고 사용자의 선택을 기다린다.
+            const justTimedOut =
+              fresh.phase === "timeoutDecision" && prevPhase !== fresh.phase;
+            prevAutomationPhases.current[key] = fresh.phase;
+            if (justTimedOut && !windowFocused) {
+              const name = liveAgents[id]?.name ?? characterFallback;
+              void maybeSendOsNotification(
+                name,
+                automationStatusText(fresh).title,
+              );
+            }
+            // 사람 입력으로 인한 보류가 30초 이어지면 OS 알림 1회(창이 비포커스일 때만 — 설계 §4).
+            if (
+              fresh.pendingReason === "humanTyping" &&
+              fresh.pendingSinceMs != null &&
+              Date.now() - fresh.pendingSinceMs >= 30_000
+            ) {
+              if (!notifiedPending.current.has(key)) {
+                notifiedPending.current.add(key);
+                if (!windowFocused) {
+                  const name = liveAgents[id]?.name ?? characterFallback;
+                  void maybeSendOsNotification(
+                    name,
+                    t("automation.pendingHumanNotify"),
+                  );
+                }
+              }
+            } else if (!fresh.pendingReason) {
+              notifiedPending.current.delete(key);
+            }
+            if (justFinished) {
+              // OS 알림은 창이 비포커스일 때만(sessionBridge 관례) — 포커스
+              // 중엔 탭 배지로 충분하다.
+              if (!windowFocused) {
+                const name = liveAgents[id]?.name ?? characterFallback;
+                const text = automationStatusText(fresh);
+                void maybeSendOsNotification(
+                  name,
+                  text.detail ? `${text.title} · ${text.detail}` : text.title,
+                );
+              }
+            }
+          }
+          applyAutomationStatus(st, epochs);
+          // 백엔드가 유예 뒤 지운 실행의 phase 기억은 같이 버린다 -- 안 그러면
+          // 실행할 때마다 한 칸씩 쌓여 앱이 사는 내내 자란다.
+          const liveKeys = new Set(
+            Object.entries(st.agents).map(
+              ([id, a]) => `${id}:${a.startedAtMs}`,
+            ),
+          );
+          for (const key of Object.keys(prevAutomationPhases.current)) {
+            if (!liveKeys.has(key)) {
+              delete prevAutomationPhases.current[key];
+              notifiedPending.current.delete(key);
+            }
+          }
+        })
+        .catch(() => {
+          /* 폴링 실패는 무시 — 다음 주기에 재시도 */
+        });
+    };
+    const iv = window.setInterval(tick, 1000);
+    tick();
+    return () => {
+      alive = false;
+      window.clearInterval(iv);
+    };
+  }, [hasAutomation, applyAutomationStatus, stopAutomation, characterFallback]);
+
   return (
     <div className="agent-tab-strip">
       <div className="agent-tab-scroll-shell">
@@ -311,7 +450,9 @@ export function AgentTabStrip() {
               type="button"
               role="tab"
               aria-selected={tab.id === activeId}
-              className={tab.id === activeId ? "agent-tab agent-tab-active" : "agent-tab"}
+              className={
+                tab.id === activeId ? "agent-tab agent-tab-active" : "agent-tab"
+              }
               title={tab.title}
               onClick={() => openTerminal(tab.id)}
               onContextMenu={(e) => {
@@ -325,15 +466,24 @@ export function AgentTabStrip() {
                 void tauriApi
                   .listClaudeResumeSessions()
                   .then((entries) => {
-                    if (resumeFetchSeq.current === seq) setResumeEntries(entries);
+                    if (resumeFetchSeq.current === seq)
+                      setResumeEntries(entries);
                   })
                   .catch((err) =>
-                    console.warn("AgentTabStrip: resume candidate lookup failed", err)
+                    console.warn(
+                      "AgentTabStrip: resume candidate lookup failed",
+                      err,
+                    ),
                   );
               }}
             >
               {tab.thumb && (
-                <img className="agent-tab-thumb" src={tab.thumb} alt="" aria-hidden="true" />
+                <img
+                  className="agent-tab-thumb"
+                  src={tab.thumb}
+                  alt=""
+                  aria-hidden="true"
+                />
               )}
               {botMode[tab.id] &&
                 (() => {
@@ -341,10 +491,27 @@ export function AgentTabStrip() {
                   return (
                     <span
                       className="agent-tab-bot"
-                      title={bs.detail ? `${bs.title} · ${bs.detail}` : bs.title}
+                      title={
+                        bs.detail ? `${bs.title} · ${bs.detail}` : bs.title
+                      }
                       aria-hidden="true"
                     >
                       {bs.icon}
+                    </span>
+                  );
+                })()}
+              {automation[tab.id] &&
+                (() => {
+                  const as = automationStatusText(automation[tab.id]);
+                  return (
+                    <span
+                      className="agent-tab-automation"
+                      title={
+                        as.detail ? `${as.title} · ${as.detail}` : as.title
+                      }
+                      aria-hidden="true"
+                    >
+                      {as.icon}
                     </span>
                   );
                 })()}
@@ -364,7 +531,11 @@ export function AgentTabStrip() {
           </button>
         )}
       </div>
-      <div className="agent-tab-strip-actions" role="group" aria-label={t("tab.toolsAria")}>
+      <div
+        className="agent-tab-strip-actions"
+        role="group"
+        aria-label={t("tab.toolsAria")}
+      >
         <button
           type="button"
           className="agent-tab-strip-docs"
@@ -446,7 +617,7 @@ export function AgentTabStrip() {
               // PTY가 살아있을 때만 의미가 있다 — 이미 exited/idle이면 캐릭터는
               // 탕비실(또는 재소환 대기)이므로 비활성화.
               disabled: !["starting", "running"].includes(
-                sessions[menu.agentId]?.status ?? "idle"
+                sessions[menu.agentId]?.status ?? "idle",
               ),
               onSelect: () =>
                 openModal({ kind: "confirm-terminate", agentId: menu.agentId }),
@@ -454,26 +625,47 @@ export function AgentTabStrip() {
             // 봇 모드(이슈 #57): 켜면 이 탭이 Gitea 이슈의 슬래시 명령에 반응해
             // 자동 작업한다. 켜는 동안 로컬 키 입력은 잠긴다. 끌 땐 한 번 더 확인.
             {
-              label: menu.agentId in botMode ? t("menu.botStop") : t("menu.botStart"),
+              label:
+                menu.agentId in botMode
+                  ? t("menu.botStop")
+                  : t("menu.botStart"),
               icon: "🤖",
-              // 새로 켤 땐 세션이 살아 있어야 프롬프트를 주입할 수 있다. 이미 켜진
-              // 경우엔 끄기이므로 항상 활성.
+              // 새로 켤 땐 세션이 살아 있어야 하고, 이 탭에서 자동화가 돌고
+              // 있으면 막는다(같은 stdin을 두 쪽이 동시에 두드리는 것 방지).
+              // 이미 켜진 경우엔 끄기이므로 항상 활성.
               disabled:
                 !(menu.agentId in botMode) &&
-                !["starting", "running"].includes(sessions[menu.agentId]?.status ?? "idle"),
+                (!["starting", "running"].includes(
+                  sessions[menu.agentId]?.status ?? "idle",
+                ) ||
+                  automation[menu.agentId]?.running === true),
               onSelect: () => {
                 const aid = menu.agentId;
                 if (aid in botMode) {
                   if (window.confirm(t("bot.stopConfirm"))) {
                     void stopBot(aid);
                   }
-                } else if (looksLikeAgentRunning(terminalRegistry.getPlainText(aid))) {
+                } else if (
+                  looksLikeAgentRunning(terminalRegistry.getPlainText(aid))
+                ) {
                   // 에이전트(claude 등)가 프롬프트를 잡고 있어 보이면 바로 켠다.
                   void startBot(aid);
                 } else {
                   // 맨 셸일 수 있음 — 확인 다이얼로그로 넘긴다(맨 셸 가드).
                   openModal({ kind: "confirm-bot-start", agentId: aid });
                 }
+              },
+            },
+            // 자동화는 정의를 고르고 명시적으로 실행한다. 메뉴를 여는 일만으로는
+            // 어떤 터미널 입력도 넣지 않는다.
+            {
+              label: t("menu.automation"),
+              icon: "⚙️",
+              disabled: !agents[menu.agentId]?.cwd,
+              onSelect: () => {
+                const aid = menu.agentId;
+                const cwd = agents[aid]?.cwd;
+                if (cwd) openAutomationEditor(aid, cwd);
               },
             },
             { separator: true },
@@ -505,14 +697,20 @@ export function AgentTabStrip() {
               label: t("menu.vscode"),
               icon: "💻",
               // 현재 세션이 cd한 폴더가 있으면 프로필 시작 폴더보다 우선한다.
-              disabled: !effectiveCwd(taskLabels[menu.agentId], agents[menu.agentId]?.cwd),
+              disabled: !effectiveCwd(
+                taskLabels[menu.agentId],
+                agents[menu.agentId]?.cwd,
+              ),
               onSelect: () => {
-                const cwd = effectiveCwd(taskLabels[menu.agentId], agents[menu.agentId]?.cwd);
+                const cwd = effectiveCwd(
+                  taskLabels[menu.agentId],
+                  agents[menu.agentId]?.cwd,
+                );
                 if (!cwd) return;
                 void tauriApi
                   .openInVscode(cwd)
                   .catch((err) =>
-                    console.warn("AgentTabStrip: open in VS Code failed", err)
+                    console.warn("AgentTabStrip: open in VS Code failed", err),
                   );
               },
             },
@@ -527,7 +725,10 @@ export function AgentTabStrip() {
                 void tauriApi
                   .openInTerminal(cwd)
                   .catch((err) =>
-                    console.warn("AgentTabStrip: open in OS terminal failed", err)
+                    console.warn(
+                      "AgentTabStrip: open in OS terminal failed",
+                      err,
+                    ),
                   );
               },
             },
@@ -545,7 +746,10 @@ export function AgentTabStrip() {
               label: t("menu.diary"),
               icon: "📔",
               onSelect: () =>
-                openDiary(menu.agentId, agents[menu.agentId]?.name ?? characterFallback),
+                openDiary(
+                  menu.agentId,
+                  agents[menu.agentId]?.name ?? characterFallback,
+                ),
             },
             {
               // 이슈 #79: 포스트잇 메모 위젯 토글. 위젯은 늘 활성 탭의 장을
@@ -569,7 +773,7 @@ export function AgentTabStrip() {
               onSelect: () =>
                 void openMemoArchive(
                   menu.agentId,
-                  agents[menu.agentId]?.name ?? characterFallback
+                  agents[menu.agentId]?.name ?? characterFallback,
                 ),
             },
             {
@@ -580,7 +784,7 @@ export function AgentTabStrip() {
               onSelect: () =>
                 openSessionLogs(
                   menu.agentId,
-                  agents[menu.agentId]?.name ?? characterFallback
+                  agents[menu.agentId]?.name ?? characterFallback,
                 ),
             },
             { separator: true },

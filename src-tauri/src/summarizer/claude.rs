@@ -1,5 +1,112 @@
 use super::ProviderCommand;
 use crate::persistence::settings_store::SummaryProvider;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static MODEL_REQUEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+fn initialize_request_id() -> String {
+    format!(
+        "agent-office-models-{}",
+        MODEL_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
+/// Agent SDK의 Query.supportedModels()가 받는 initialize 응답에서 실제 계정의
+/// CLI 선택값(`value`)만 순서대로 꺼낸다.
+fn parse_initialize_response(line: &str, request_id: &str) -> Option<Vec<String>> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    if value.get("type")?.as_str()? != "control_response"
+        || value.pointer("/response/request_id")?.as_str()? != request_id
+    {
+        return None;
+    }
+    let response = value.get("response")?;
+    if response.get("subtype")?.as_str()? != "success" {
+        return Some(Vec::new());
+    }
+    let payload = response.get("response")?;
+    let Some(rows) = payload.get("models").and_then(|value| value.as_array()) else {
+        return Some(Vec::new());
+    };
+    let mut models = Vec::new();
+    for model in rows {
+        let Some(id) = model.get("value").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        let id = id.trim();
+        if !id.is_empty() && !models.iter().any(|known| known == id) {
+            models.push(id.to_string());
+        }
+    }
+    Some(models)
+}
+
+fn models_command(program: &str) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(program);
+    command.args([
+        // safe-mode keeps normal account authentication and model selection while
+        // disabling hooks, plugins, skills, custom commands, and MCP servers.
+        "--safe-mode",
+        // Keep an explicit empty MCP configuration as a second boundary for CLI
+        // versions where safe-mode behavior changes.
+        "--strict-mcp-config",
+        "--mcp-config",
+        r#"{"mcpServers":{}}"#,
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+    ]);
+    command.env_remove("CLAUDECODE");
+    command.env("CLAUDE_CODE_ENTRYPOINT", "sdk-ts");
+    command
+}
+
+/// Claude에는 사람용 목록 서브커맨드가 없으므로 SDK control initialize만 보낸다.
+/// 프롬프트는 보내지 않고, 응답을 받는 즉시 프로세스를 종료한다.
+pub async fn list_models(timeout: std::time::Duration, program: &str) -> Vec<String> {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
+    let mut command = models_command(program);
+    command.current_dir(std::env::temp_dir());
+    command.stdin(std::process::Stdio::piped());
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::null());
+    command.kill_on_drop(true);
+    let Ok(mut child) = command.spawn() else {
+        return Vec::new();
+    };
+    let request_id = initialize_request_id();
+    let request = serde_json::json!({
+        "type": "control_request",
+        "request_id": request_id,
+        "request": { "subtype": "initialize", "hooks": null },
+    });
+    let result = tokio::time::timeout(timeout, async {
+        let mut stdin = child.stdin.take()?;
+        stdin.write_all(request.to_string().as_bytes()).await.ok()?;
+        stdin.write_all(b"\n").await.ok()?;
+        stdin.flush().await.ok()?;
+        // stdin은 initialize 응답 전 EOF가 되지 않게 이 scope 안에서 유지한다.
+        let stdout = child.stdout.take()?;
+        // JSONL도 상한을 둔다. 비정상 출력은 EOF처럼 끝내고 Child drop이 kill한다.
+        let stdout = stdout.take(super::MODEL_CATALOG_STDOUT_MAX_BYTES + 1);
+        let mut lines = BufReader::new(stdout).lines();
+        while let Some(line) = lines.next_line().await.ok()? {
+            if let Some(models) = parse_initialize_response(&line, &request_id) {
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                return Some(models);
+            }
+        }
+        None
+    })
+    .await
+    .ok()
+    .flatten();
+    result.unwrap_or_default()
+}
 
 #[cfg(windows)]
 const WINDOWS_SCRIPT: &str = r#"$ErrorActionPreference='Stop'
@@ -51,6 +158,58 @@ pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn initialize_response_uses_only_account_model_values() {
+        let request_id = "request-7";
+        let line = r#"{"type":"control_response","response":{"request_id":"request-7","subtype":"success","response":{"models":[{"value":"default","displayName":"Default"},{"value":"sonnet"},{"value":"sonnet"},{"value":"  "}]}}}"#;
+        assert_eq!(
+            parse_initialize_response(line, request_id),
+            Some(vec!["default".into(), "sonnet".into()])
+        );
+    }
+
+    #[test]
+    fn initialize_response_ignores_other_messages_and_fails_closed() {
+        assert_eq!(
+            parse_initialize_response("{\"type\":\"system\"}", "r"),
+            None
+        );
+        let error = r#"{"type":"control_response","response":{"request_id":"r","subtype":"error","response":{}}}"#;
+        assert_eq!(parse_initialize_response(error, "r"), Some(Vec::new()));
+    }
+
+    #[test]
+    fn models_command_uses_sdk_control_mode_without_claudecode() {
+        let command = models_command("claude");
+        let args: Vec<_> = command
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(
+            args,
+            [
+                "--safe-mode",
+                "--strict-mcp-config",
+                "--mcp-config",
+                r#"{"mcpServers":{}}"#,
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--input-format",
+                "stream-json"
+            ]
+        );
+        assert!(command
+            .as_std()
+            .get_envs()
+            .any(|(key, value)| key == "CLAUDECODE" && value.is_none()));
+        assert!(command
+            .as_std()
+            .get_envs()
+            .all(|(key, _)| key != "CLAUDE_AGENT_SDK_VERSION"));
+    }
 
     fn command_debug(command: &std::process::Command) -> String {
         let mut parts = vec![command.get_program().to_string_lossy().into_owned()];

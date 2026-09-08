@@ -47,6 +47,10 @@ pub(super) struct Session {
     /// 시작 작업 디렉터리(세션 수명 동안 불변 -- `cd`는 추적하지 않는다).
     /// 핸드오프 시 Handoff 메시지의 진단/List용 메타데이터로 실어 보낸다.
     pub(super) cwd: String,
+    /// 자동화 CLI 전환이 실제로 제출할 셸 프로그램. 직접 관리하는 PTY를 만들 때만
+    /// 기록한다. 외부 attach·입양·tmux 호스팅은 반환 receipt를 증명할 수 없으므로
+    /// None으로 남겨 자동 반환 확인 capability를 광고하지 않는다.
+    shell_path: Mutex<Option<String>>,
     /// 세션 로그 기록 핸들(docs/session-log-design.md). 저장소 루트가 없거나
     /// 파일을 못 열면 None -- 로그는 부가 기능이라 세션 동작을 막지 않는다.
     pub(super) log: Option<Arc<crate::session_log::SessionLogHandle>>,
@@ -644,7 +648,7 @@ impl SessionManager {
             agent_name: profile.name,
             agent_role: profile.role,
             cwd: actual_cwd.clone(),
-            shell: actual_shell,
+            shell: actual_shell.clone(),
             at: now_ms(),
         });
 
@@ -660,6 +664,15 @@ impl SessionManager {
             hosting_warning, // initial_output: tmux 호스팅 강등 경고(있으면)
             hosted_tmux,
         );
+        // `ResolvedShell`은 이 직접 생성 경로에서만 실제로 PTY에 전달된 값이다.
+        // tmux client, 외부 attach, 재입양은 이 근거를 갖지 않으므로 auto receipt
+        // 경로를 열지 않는다.
+        if session.hosted_tmux.is_none()
+            && !req.startup_command.as_deref().is_some_and(|command| !command.trim().is_empty())
+            && !req.autostart_claude.unwrap_or(false)
+        {
+            *session.shell_path.lock() = Some(actual_shell);
+        }
         // 세션이 맵에 들어갔다 — 이후의 수명은 dispose()/on_exit()가 책임지므로
         // observer 파일 정리 가드를 해제한다.
         observer_plan_guard.armed = false;
@@ -782,6 +795,7 @@ impl SessionManager {
             kill_requested: AtomicBool::new(false),
             log: log.clone(),
             cwd,
+            shell_path: Mutex::new(None),
             size: Mutex::new(size),
             handed_off: AtomicBool::new(false),
             #[cfg(unix)]
@@ -912,6 +926,24 @@ impl SessionManager {
         }
     }
 
+    /// 자동 입력은 찾은 세션 객체에 고정한다. 확인 직후 같은 탭에 새 세션이
+    /// 생겨도 다시 agent_id로 조회해서 새 세션에 쓰는 일이 없어야 한다.
+    pub fn write_input_for_session(&self, agent_id: &str, session_id: &str, data: &str) -> bool {
+        let Some(session) = self.find(agent_id) else { return false; };
+        if session.session_id != session_id || *session.state.lock() != SessionState::Running {
+            return false;
+        }
+        session.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+        let written = match session.writer.lock().write_all(data.as_bytes()) {
+            Ok(()) => true,
+            Err(error) => {
+                eprintln!("agent-office: input write failed for {}: {error}", session.session_id);
+                false
+            }
+        };
+        written
+    }
+
     /// 세션이 마지막 활동(출력/입력) 이후 유휴로 있었던 시간(ms). 아직 활동이
     /// 없었거나 세션이 없으면 None. 봇 turn-taking이 릴레이 주입 타이밍을 잡는 데
     /// 쓴다.
@@ -933,6 +965,14 @@ impl SessionManager {
         self.find(agent_id)
             .map(|s| *s.state.lock() == SessionState::Running)
             .unwrap_or(false)
+    }
+
+    /// 직접 관리하는 현재 PTY의 실제 셸 프로그램 경로. 이 값은 사용자가 고른
+    /// 표시용 shell ID가 아니라 spawn에 전달된 `ResolvedShell::program`이다.
+    /// 반환 receipt를 안전하게 렌더할 수 없는 attach/입양/tmux 세션은 None이다.
+    pub fn shell_path_for(&self, agent_id: &str) -> Option<String> {
+        self.find(agent_id)
+            .and_then(|session| session.shell_path.lock().clone())
     }
 
     pub fn resize(&self, agent_id: &str, cols: u16, rows: u16) {
@@ -1024,6 +1064,12 @@ impl SessionManager {
     /// 따르므로(§결정 6) attach 시점과 resize 때 이 값을 실어 보낸다.
     pub fn size_of(&self, agent_id: &str) -> Option<(u16, u16)> {
         self.find(agent_id).map(|s| *s.size.lock())
+    }
+
+    /// 세션의 시작 작업 디렉터리(자동화 점검용, kbm). 외부(논리) 세션·없는
+    /// 세션은 None. `expand_tilde`가 이미 적용된 실제 경로다.
+    pub fn cwd_of(&self, agent_id: &str) -> Option<String> {
+        self.find(agent_id).map(|s| s.cwd.clone())
     }
 
     pub fn pending_notifications(&self, agent_id: &str) -> Vec<NotificationEvent> {

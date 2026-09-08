@@ -21,6 +21,8 @@ import { tauriApi } from "../ipc/tauriApi";
 import { terminalRegistry } from "../terminal/TerminalRegistry";
 
 export async function deleteAgent(agentId: string): Promise<void> {
+  useAppStore.getState().resetAutomationState(agentId);
+
   // ① 별도 실행 프로세스와 PTY를 함께 정리한다. 한쪽이 없거나 실패해도
   // 다른 쪽과 캐릭터 삭제는 계속 진행한다.
   await Promise.all([

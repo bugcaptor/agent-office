@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 2,
+  "id": "cli-switch-1",
+  "revision": 1,
+  "name": "Claude 설계 후 agy 구현",
+  "inputs": [],
+  "steps": [
+    { "kind": "launchCli", "id": "claude-launch", "cliProfileId": "claude", "startupWaitMs": 10000 },
+    { "kind": "llmTask", "id": "claude-design", "label": "설계", "promptTemplate": "설계한다." },
+    { "kind": "exitCli", "id": "claude-exit", "command": "/exit", "returnMode": "auto", "exitWaitMs": 30000 },
+    { "kind": "wait", "id": "between", "durationMs": 1000 },
+    { "kind": "launchCli", "id": "agy-launch", "cliProfileId": "agy" },
+    { "kind": "llmTask", "id": "agy-implement", "label": "구현", "promptTemplate": "구현한다." },
+    { "kind": "exitCli", "id": "agy-exit", "command": "/exit", "returnMode": "manual" }
+  ],
+  "repeat": { "maxCycles": 2 }
+}

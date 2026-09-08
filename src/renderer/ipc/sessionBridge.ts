@@ -87,6 +87,16 @@ useAwardsStore.subscribe((state) => {
 // Agents with an in-flight createSession, so a double-click (two
 // emitAgentClicked in a row) can only ever produce ONE createSession call.
 const startingInFlight = new Set<string>();
+// dispose의 종료 이벤트가 starting을 exited로 바꿔도 교체가 끝나기 전에는
+// ensureSession이 프로필 기본값으로 중간 세션을 만들 수 없다.
+const replacingSessions = new Set<string>();
+
+export function reserveSessionReplacement(agentId: string): (() => void) | undefined {
+  if (replacingSessions.has(agentId)) return undefined;
+  replacingSessions.add(agentId);
+  return () => replacingSessions.delete(agentId);
+}
+
 
 /** createSession invoke가 settle되지 않을 때의 복구 한계선. 백엔드 커맨드가
  * 패닉하면 Tauri invoke 프라미스는 영원히 settle되지 않는다(2026-07-11
@@ -175,7 +185,7 @@ export function ensureSession(agentId: string): void {
   const { sessions, setSessionState } = useAppStore.getState();
   const status = sessions[agentId]?.status;
   const needsStart = status === undefined || status === "idle" || status === "exited";
-  if (!needsStart || startingInFlight.has(agentId)) return;
+  if (!needsStart || startingInFlight.has(agentId) || replacingSessions.has(agentId)) return;
 
   startingInFlight.add(agentId);
   setSessionState({ agentId, status: "starting" });

@@ -22,7 +22,7 @@ export interface ImeBridgeDeps {
   /** 지금 이 탭이 로컬 키 입력을 받지 않는가(봇 운전 중 등). */
   inputBlocked: () => boolean;
   /** 실제로 PTY에 내보내는 경로. */
-  send: (data: string) => void;
+  send: (data: string, source?: "human" | "terminalResponse") => void;
   /** 기본값은 실행 중인 플랫폼. 테스트가 두 갈래를 모두 태우려고 연다. */
   isMac?: boolean;
   /** 기본값은 `performance.now`. 중복 판정 창(window)을 테스트에서 조종한다. */
@@ -43,6 +43,10 @@ export interface ImeBridge {
    * **직후**(예: `term.paste()`)에 호출자가 불러 준다.
    */
   resync: () => void;
+  /** PTY에서 xterm으로 향한 제어 질의를 관찰해 자동 응답의 출처를 판별한다. */
+  observeTerminalOutput: (data: string) => void;
+  /** DOM paste 이벤트를 거치지 않는 `term.paste()`도 사람 입력으로 보호한다. */
+  markProgrammaticPaste: () => void;
 }
 
 export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
@@ -64,15 +68,16 @@ export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
   let lastData = "";
   let lastDataAt = -Infinity;
 
-  const writeInput = (data: string) => {
+  const writeInput = (data: string, source: "human" | "terminalResponse" = "human") => {
     // 봇 운전 중인 탭은 로컬 키 입력을 차단한다(이슈 #57). 봇 자신의 주입은
     // 백엔드 write_input을 직접 거치므로 이 게이트를 통과하지 않는다 — 여기서
     // 막히는 건 사람이 xterm에 타이핑/붙여넣기 하는 경로뿐이다.
-    if (inputBlocked()) {
+    if (source === "human" && inputBlocked()) {
       return;
     }
     const at = now();
     const isImeDuplicate =
+      source === "human" &&
       !isMac &&
       at - compositionEndedAt < IME_COMMIT_WINDOW_MS &&
       data === lastData &&
@@ -83,7 +88,139 @@ export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
     }
     lastData = data;
     lastDataAt = at;
-    send(data);
+    if (source === "terminalResponse") send(data, source);
+    else send(data);
+  };
+
+  // xterm's onData merges keyboard input and replies that xterm itself emits
+  // (CPR, device/status attributes, palette queries and focus reports).  Only
+  // classify a *complete* reply after the PTY asked for it; an arbitrary ESC
+  // sequence, including a pasted one, remains human input.  xterm emits its
+  // replies as complete onData payloads, so never buffer incoming input here:
+  // a partial escape sequence can be a real Escape/arrow key and must pass.
+  let pendingCpr = 0;
+  let pendingStatus = 0;
+  let pendingAttributes = 0;
+  let pendingColor = 0;
+  let pendingModeQuery = 0;
+  let pendingUntil = 0;
+  let focusReporting = false;
+  let terminalOutputBuffer = "";
+  let pasteInProgress = false;
+  const PENDING_TTL_MS = 5_000;
+  const PENDING_LIMIT = 16;
+  const clearPending = () => {
+    pendingCpr = 0;
+    pendingStatus = 0;
+    pendingAttributes = 0;
+    pendingColor = 0;
+    pendingModeQuery = 0;
+    pendingUntil = 0;
+  };
+  const addPending = (kind: "cpr" | "status" | "attributes" | "color" | "mode", count = 1) => {
+    const next = Math.min(PENDING_LIMIT, count);
+    if (kind === "cpr") pendingCpr = Math.min(PENDING_LIMIT, pendingCpr + next);
+    else if (kind === "status") pendingStatus = Math.min(PENDING_LIMIT, pendingStatus + next);
+    else if (kind === "attributes") pendingAttributes = Math.min(PENDING_LIMIT, pendingAttributes + next);
+    else if (kind === "color") pendingColor = Math.min(PENDING_LIMIT, pendingColor + next);
+    else pendingModeQuery = Math.min(PENDING_LIMIT, pendingModeQuery + next);
+    pendingUntil = now() + PENDING_TTL_MS;
+  };
+  const pending = (count: number) => {
+    if (now() > pendingUntil) {
+      clearPending();
+      return false;
+    }
+    return count > 0;
+  };
+
+  const observeTerminalOutput = (data: string) => {
+    // 새 출력은 전부 먼저 파싱한다. 앞부분의 완결 질의를 잘라 버리면 xterm은
+    // 이미 답을 보내는데 tracker만 못 본 상태가 된다. 4 KiB 제한은 아래에서
+    // 미완성 제어열에만 적용한다.
+    terminalOutputBuffer += data;
+    while (terminalOutputBuffer) {
+      const esc = terminalOutputBuffer.indexOf("\x1b");
+      if (esc < 0) {
+        terminalOutputBuffer = "";
+        return;
+      }
+      if (esc > 0) terminalOutputBuffer = terminalOutputBuffer.slice(esc);
+      if (terminalOutputBuffer.startsWith("\x1b[")) {
+        let end = 2;
+        while (end < terminalOutputBuffer.length) {
+          const code = terminalOutputBuffer.charCodeAt(end);
+          if (code >= 0x40 && code <= 0x7e) break;
+          end++;
+        }
+        if (end === terminalOutputBuffer.length) {
+          if (terminalOutputBuffer.length > 4096) terminalOutputBuffer = terminalOutputBuffer.slice(-4096);
+          return;
+        }
+        const seq = terminalOutputBuffer.slice(0, end + 1);
+        terminalOutputBuffer = terminalOutputBuffer.slice(end + 1);
+        if (seq === "\x1b[6n" || seq === "\x1b[?6n") addPending("cpr");
+        else if (seq === "\x1b[5n") addPending("status");
+        else if (/^\x1b\[(?:0|>|>0)?c$/.test(seq)) addPending("attributes");
+        else if (/^\x1b\[\?\d+\$p$/.test(seq)) addPending("mode");
+        else if (seq === "\x1b[?1004h") focusReporting = true;
+        else if (seq === "\x1b[?1004l") focusReporting = false;
+        continue;
+      }
+      if (terminalOutputBuffer.startsWith("\x1b]")) {
+        const bel = terminalOutputBuffer.indexOf("\x07", 2);
+        const st = terminalOutputBuffer.indexOf("\x1b\\", 2);
+        const end = bel >= 0 && (st < 0 || bel < st) ? bel + 1 : st >= 0 ? st + 2 : -1;
+        if (end < 0) {
+          if (terminalOutputBuffer.length > 4096) terminalOutputBuffer = terminalOutputBuffer.slice(-4096);
+          return;
+        }
+        const seq = terminalOutputBuffer.slice(0, end);
+        terminalOutputBuffer = terminalOutputBuffer.slice(end);
+        const colorPairs = seq.match(/^\x1b]4;((?:\d+;\?;?)+)(?:\x07|\x1b\\)$/)?.[1]
+          .match(/\d+;\?/g)?.length ?? 0;
+        if (colorPairs) addPending("color", colorPairs);
+        else if (/^\x1b]1[012];\?(?:\x07|\x1b\\)$/.test(seq)) addPending("color");
+        continue;
+      }
+      if (terminalOutputBuffer === "\x1b") return; // next PTY chunk may complete CSI/OSC
+      if (terminalOutputBuffer.startsWith("\x1bc")) {
+        clearPending();
+        focusReporting = false;
+        terminalOutputBuffer = terminalOutputBuffer.slice(2);
+        continue;
+      }
+      terminalOutputBuffer = terminalOutputBuffer.slice(1);
+    }
+  };
+
+  const terminalResponseSource = (data: string): "human" | "terminalResponse" => {
+    if (pasteInProgress || imeComposing) return "human";
+    if (pending(pendingCpr) && /^\x1b\[\??\d+;\d+R$/.test(data)) {
+      pendingCpr--;
+      return "terminalResponse";
+    }
+    if (pending(pendingStatus) && data === "\x1b[0n") {
+      pendingStatus--;
+      return "terminalResponse";
+    }
+    if (pending(pendingAttributes) && /^\x1b\[(?:\??|>)[\d;]*c$/.test(data)) {
+      pendingAttributes--;
+      return "terminalResponse";
+    }
+    if (
+      pending(pendingColor) &&
+      /^\x1b](?:4;\d+;rgb:[\da-fA-F/]+|1[012];rgb:[\da-fA-F/]+)(?:\x07|\x1b\\)$/.test(data)
+    ) {
+      pendingColor--;
+      return "terminalResponse";
+    }
+    if (pending(pendingModeQuery) && /^\x1b\[\?\d+;\d+\$y$/.test(data)) {
+      pendingModeQuery--;
+      return "terminalResponse";
+    }
+    if (focusReporting && (data === "\x1b[I" || data === "\x1b[O")) return "terminalResponse";
+    return "human";
   };
 
   // ── (1.5) 키별 원장(ledger): xterm과 미러의 중복 발신 상쇄 ────────────
@@ -112,7 +249,7 @@ export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
       mirrorSent = ""; // 미러가 이미 보냈다 — 소비하고 버린다
       return;
     }
-    writeInput(data);
+    writeInput(data, terminalResponseSource(data));
     xtermSent = data;
   });
 
@@ -275,6 +412,16 @@ export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
       prevValue = taValue();
     });
   };
+  const onContainerPasteCapture = () => {
+    // xterm's paste handler emits onData synchronously. Mark it first so a
+    // pasted string that happens to resemble a pending protocol reply stays
+    // human input.
+    pasteInProgress = true;
+    queueMicrotask(() => {
+      pasteInProgress = false;
+    });
+  };
+  const markProgrammaticPaste = onContainerPasteCapture;
   const bindComposition = () => {
     if (compositionBound) return;
     const ta = term.textarea;
@@ -290,6 +437,7 @@ export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
     // 조상인 컨테이너의 캡처 단계에 건다 — 캡처는 대상 노드의 리스너보다
     // 항상 앞선다.
     container.addEventListener("input", onContainerInput, true);
+    container.addEventListener("paste", onContainerPasteCapture, true);
   };
 
   const onKeyEvent = (event: KeyboardEvent): boolean | null => {
@@ -320,5 +468,5 @@ export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
     return null; // 조합과 무관 — 복사·붙여넣기 판단은 호출자 몫이다
   };
 
-  return { bindComposition, onKeyEvent, resync: resyncSoon };
+  return { bindComposition, onKeyEvent, resync: resyncSoon, observeTerminalOutput, markProgrammaticPaste };
 }
