@@ -80,6 +80,7 @@ tauri-plugin-window-state = "2" # main 창 크기·위치·최대화 상태 저�
 # libsqlite3(SDK에 항상 있음)에 링크하고, Windows만 bundled로 정적 링크한다 —
 # Windows 개발 머신에 시스템 sqlite3 개발 라이브러리가 보통 없기 때문.
 rusqlite = { version = "0.31" }
+tempfile = "3" # iTerm AppleScript를 컴파일할 실행 중 임시 파일
 
 # 세션 핸드오프(unix 전용, docs/session-handoff-design.md): poll 기반 인터럽트
 # 가능 리더, sessiond와의 UDS+SCM_RIGHTS(fd 전달), TIOCSWINSZ/killpg.
@@ -103,4 +104,3 @@ tokio = { version = "1", features = [
     "time",
     "test-util",
 ] }
-tempfile = "3" # markdown.rs 단위 테스트의 격리된 임시 디렉터리

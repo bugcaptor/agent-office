@@ -114,7 +114,9 @@ echo "서명 중: $APP"
 find "$APP" -name "*.cstemp" -prune -exec rm -rf {} + 2>/dev/null || true
 # `${A[@]+"${A[@]}"}`: bash 3.2(구형 macOS 기본 셸)에서 set -u 와 빈 배열이
 # 만나면 unbound variable 로 죽는다. 그 조합을 피하는 관용구다.
-codesign --force --sign "$SIGN_ID" ${REQ_ARGS[@]+"${REQ_ARGS[@]}"} "$APP"
+# 서명되지 않은 Tauri 산출물에도 iTerm Automation entitlement를 넣는다.
+# linker의 ad-hoc 서명에는 entitlement가 없어 preserve만으로는 부족하다.
+codesign --force --sign "$SIGN_ID" --entitlements "$(dirname "$0")/../src-tauri/Entitlements.plist" ${REQ_ARGS[@]+"${REQ_ARGS[@]}"} "$APP"
 
 echo
 echo "--- 서명 확인 ---"

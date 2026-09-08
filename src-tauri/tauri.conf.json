@@ -46,6 +46,18 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "macOS": {
+      "infoPlist": "../src/shared/i18n/locales/en/Info.plist",
+      "entitlements": "Entitlements.plist",
+      "files": {
+        "Resources/en.lproj/InfoPlist.strings": "../src/shared/i18n/locales/en/InfoPlist.strings",
+        "Resources/ko.lproj/InfoPlist.strings": "../src/shared/i18n/locales/ko/InfoPlist.strings",
+        "Resources/ja.lproj/InfoPlist.strings": "../src/shared/i18n/locales/ja/InfoPlist.strings",
+        "Resources/fr.lproj/InfoPlist.strings": "../src/shared/i18n/locales/fr/InfoPlist.strings",
+        "Resources/zh-Hans.lproj/InfoPlist.strings": "../src/shared/i18n/locales/zh-Hans/InfoPlist.strings",
+        "Resources/zh-Hant.lproj/InfoPlist.strings": "../src/shared/i18n/locales/zh-Hant/InfoPlist.strings"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
