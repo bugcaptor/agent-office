@@ -11,7 +11,6 @@ describe("automation wire contract", () => {
     expect(definition.schemaVersion).toBe(1);
     expect(definition.repeat?.maxCycles).toBe(3);
     expect(definition.inputs[0].default).toBe("자동화");
-    expect(definition.workspace).toBe("/workspace/automation");
     expect(definition.inputValues).toEqual({ topic: "저장된 실행값" });
     expect(definition.steps.map(step => step.kind)).toEqual(["launchCli", "llmTask", "wait", "confirm", "exitCli"]);
     for (const step of definition.steps) {

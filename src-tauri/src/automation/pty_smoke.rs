@@ -153,7 +153,7 @@ mod unix {
                 AutomationStep::LaunchCli { id: "launch".into(), cli_profile_id: cli.into(), model: None, effort: None, startup_wait_ms: Some(startup_ms) },
                 AutomationStep::LlmTask { id: "task".into(), label: "smoke".into(), prompt_template: "This is a smoke test. Do no project work. Output a short greeting and write the required result JSON as the final action. Preserve the provided version, runId and stepExecutionId. Use status done.".into(), wait_timeout_ms: Some(120_000), completion_grace_ms: Some(30) , allow_early_complete: Some(false)},
                 AutomationStep::ExitCli { id: "exit".into(), command: if cli == "pi" { "/quit" } else { "/exit" }.into(), return_mode: None, exit_wait_ms: None },
-            ], repeat: Some(AutomationRepeat { max_cycles: cycles }), workspace: None, input_values: None,
+            ], repeat: Some(AutomationRepeat { max_cycles: cycles }), legacy_workspace: None, input_values: None,
         }
     }
 
@@ -230,7 +230,7 @@ mod unix {
             inputs: vec![],
             steps,
             repeat: Some(AutomationRepeat { max_cycles: cycles }),
-            workspace: None,
+            legacy_workspace: None,
             input_values: None,
         }
     }

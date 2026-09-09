@@ -115,6 +115,7 @@
     "editorHistory": "Exécutions récentes",
     "editorUntitled": "Sans titre",
     "editorName": "Nom",
+    "editorWorkspaceNote": "Utilise le dossier de cet onglet au moment de l'exécution.",
     "editorRepeat": "Cycles",
     "editorInputs": "Variables",
     "editorInputKey": "Clé",

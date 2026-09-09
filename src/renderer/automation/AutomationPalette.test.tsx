@@ -92,7 +92,6 @@ describe("AutomationPalette", () => {
         "agent",
         "d",
         { task: "default task" },
-        "/work",
       ),
     );
     expect(useAppStore.getState().automation.agent.running).toBe(true);
@@ -331,7 +330,7 @@ describe("AutomationPalette", () => {
     );
   });
 
-  it("persists the selected workspace and runtime input values with a definition", async () => {
+  it("persists runtime input values with a definition", async () => {
     const definition = {
       schemaVersion: 1,
       id: "d",
@@ -343,16 +342,12 @@ describe("AutomationPalette", () => {
     const saved = {
       ...definition,
       revision: 2,
-      workspace: "/work/persisted",
       inputValues: { task: "saved runtime value" },
     };
     api.automationDefinitionsList.mockResolvedValue([definition]);
     api.automationDefinitionsSave.mockResolvedValue(saved);
     const first = render(<AutomationPalette />);
     fireEvent.click(await screen.findByRole("button", { name: "Saved" }));
-    fireEvent.change(screen.getByLabelText("Show work folder"), {
-      target: { value: "/work/persisted" },
-    });
     fireEvent.change(screen.getByLabelText("Runtime value"), {
       target: { value: "saved runtime value" },
     });
@@ -360,7 +355,6 @@ describe("AutomationPalette", () => {
     await waitFor(() =>
       expect(api.automationDefinitionsSave).toHaveBeenCalledWith(
         expect.objectContaining({
-          workspace: "/work/persisted",
           inputValues: { task: "saved runtime value" },
         }),
       ),
@@ -376,9 +370,6 @@ describe("AutomationPalette", () => {
     api.automationDefinitionsList.mockResolvedValue([saved]);
     render(<AutomationPalette />);
     fireEvent.click(await screen.findByRole("button", { name: "Saved" }));
-    expect(
-      (screen.getByLabelText("Show work folder") as HTMLInputElement).value,
-    ).toBe("/work/persisted");
     const restoredValue = screen.getByLabelText(
       "Runtime value",
     ) as HTMLInputElement;
@@ -414,9 +405,7 @@ describe("AutomationPalette", () => {
       api.automationDefinitionsSave.mockRejectedValue(error);
       render(<AutomationPalette />);
       fireEvent.click(await screen.findByRole("button", { name: "Saved" }));
-      const workspace = screen.getByLabelText("Show work folder");
       const value = screen.getByLabelText("Runtime value");
-      fireEvent.change(workspace, { target: { value: "/work/unsaved" } });
       fireEvent.change(value, { target: { value: "keep this" } });
       fireEvent.click(screen.getByRole("button", { name: "Save" }));
       expect(
@@ -424,7 +413,6 @@ describe("AutomationPalette", () => {
           (text) => text.startsWith("Save failed:") && text.includes(reason),
         ),
       ).toBeTruthy();
-      expect((workspace as HTMLInputElement).value).toBe("/work/unsaved");
       expect((value as HTMLInputElement).value).toBe("keep this");
     },
   );

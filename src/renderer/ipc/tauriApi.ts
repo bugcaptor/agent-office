@@ -315,8 +315,8 @@ export const tauriApi: AgentOfficeApi = {
   async automationDefinitionsExport(id) {
     return await invoke(Commands.automationDefinitionsExport, { id });
   },
-  async automationRunStart(agentId, definitionId, inputs, workspace) {
-    return await invoke(Commands.automationRunStart, { agentId, definitionId, inputs, workspace });
+  async automationRunStart(agentId, definitionId, inputs) {
+    return await invoke(Commands.automationRunStart, { agentId, definitionId, inputs });
   },
   async automationRunsList() {
     return await invoke(Commands.automationRunsList);

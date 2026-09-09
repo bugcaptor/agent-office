@@ -222,7 +222,7 @@ export interface AgentOfficeApi {
   /** Import persists a definition only. It never starts automation. */
   automationDefinitionsImport(json: string): Promise<AutomationDefinition>;
   automationDefinitionsExport(id: string): Promise<string>;
-  automationRunStart(agentId: string, definitionId: string, inputs: Record<string, string>, workspace: string): Promise<AutomationAgentStatus>;
+  automationRunStart(agentId: string, definitionId: string, inputs: Record<string, string>): Promise<AutomationAgentStatus>;
   automationRunsList(): Promise<AutomationRunRecord[]>;
   automationCliTransitionPreview(agentId: string, cli: string, model?: string, effort?: string): Promise<{ shellPath?: string; autoReturnSupported: boolean; unavailableReason?: string; launchCommand?: string }>;
   /** 동료 대화 상태 스냅샷(켜짐 여부·대기 메시지·열린 대화). */

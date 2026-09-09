@@ -1002,8 +1002,10 @@ pub struct AutomationDefinition {
     pub steps: Vec<AutomationStep>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub repeat: Option<AutomationRepeat>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub workspace: Option<String>,
+    /// 레거시(kbm 2vb). 작업 폴더는 실행 시점에 탭에서 읽는다. 옛 파일을
+    /// 읽기 위해서만 남겨 두고, 저장할 때는 쓰지 않는다.
+    #[serde(rename = "workspace", default, skip_serializing)]
+    pub legacy_workspace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub input_values: Option<std::collections::BTreeMap<String, String>>,
 }

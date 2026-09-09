@@ -49,7 +49,7 @@ impl Harness {
             inputs: vec![],
             steps,
             repeat: None,
-            workspace: None,
+            legacy_workspace: None,
             input_values: None,
         })
     }
@@ -169,7 +169,7 @@ fn stale_expected_session_rejects_before_creating_history_or_writing() {
             startup_wait_ms: None,
         }],
         repeat: None,
-        workspace: None,
+        legacy_workspace: None,
         input_values: None,
     };
     assert_eq!(
@@ -219,7 +219,7 @@ fn v2_definition(steps: Vec<AutomationStep>) -> AutomationDefinition {
         inputs: vec![],
         steps,
         repeat: None,
-        workspace: None,
+        legacy_workspace: None,
         input_values: None,
     }
 }

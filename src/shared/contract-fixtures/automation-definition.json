@@ -47,7 +47,6 @@
   "repeat": {
     "maxCycles": 3
   },
-  "workspace": "/workspace/automation",
   "inputValues": {
     "topic": "저장된 실행값"
   }

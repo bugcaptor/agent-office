@@ -45,7 +45,7 @@ export type AutomationStep =
   | { id: string; kind: "confirm"; message: string }
   | { id: string; kind: "exitCli"; command: string; returnMode?: AutomationCliReturnMode; exitWaitMs?: number };
 /** v1 keeps the original single-CLI scheduling; v2 repeats every paired CLI segment. */
-export interface AutomationDefinition { schemaVersion: 1 | 2; id: string; revision: number; name: string; inputs: AutomationInput[]; steps: AutomationStep[]; repeat?: AutomationRepeat; workspace?: string; inputValues?: Record<string, string>; }
+export interface AutomationDefinition { schemaVersion: 1 | 2; id: string; revision: number; name: string; inputs: AutomationInput[]; steps: AutomationStep[]; repeat?: AutomationRepeat; inputValues?: Record<string, string>; }
 export interface AutomationRunEvent { at: number; kind: string; details?: string; }
 export interface AutomationRunRecord { runId: string; definitionSnapshot: AutomationDefinition; inputs: Record<string, string>; workspace: string; agentId: string; status: string; outcome?: string; events: AutomationRunEvent[]; }
 

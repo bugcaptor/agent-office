@@ -115,6 +115,7 @@
     "editorHistory": "最近の実行",
     "editorUntitled": "無題",
     "editorName": "名前",
+    "editorWorkspaceNote": "実行時にこのタブのフォルダーを使います。",
     "editorRepeat": "繰り返し",
     "editorInputs": "入力変数",
     "editorInputKey": "変数キー",

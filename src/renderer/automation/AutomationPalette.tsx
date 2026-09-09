@@ -206,7 +206,6 @@ export function AutomationPalette() {
   const [current, setCurrent] = useState<AutomationDefinition | null>(null);
   const [saved, setSaved] = useState<AutomationDefinition | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
-  const [workspace, setWorkspace] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [transitionPreviews, setTransitionPreviews] = useState<
@@ -242,7 +241,6 @@ export function AutomationPalette() {
     setNotice(null);
     setBusy(false);
     if (editor) {
-      setWorkspace(editor.workspace);
       void refresh(generation).catch(
         () =>
           generation === loadGeneration.current &&
@@ -345,7 +343,6 @@ export function AutomationPalette() {
         d.inputs.map((x) => [x.key, d.inputValues?.[x.key] ?? x.default ?? ""]),
       ),
     );
-    setWorkspace(d.workspace ?? editor?.workspace ?? "");
   };
   const update = (f: (d: AutomationDefinition) => AutomationDefinition) =>
     setCurrent((d) => d && f(d));
@@ -360,7 +357,6 @@ export function AutomationPalette() {
     !!current &&
     (!saved ||
       JSON.stringify(current) !== JSON.stringify(saved) ||
-      workspace !== (saved.workspace ?? editor?.workspace ?? "") ||
       JSON.stringify(resolvedInputs(current)) !==
         JSON.stringify(persistedInputs(saved)));
   const save = async () => {
@@ -371,7 +367,6 @@ export function AutomationPalette() {
     try {
       const result = await tauriApi.automationDefinitionsSave({
         ...current,
-        workspace,
         inputValues: resolvedInputs(current),
       });
       if (generation !== loadGeneration.current) return;
@@ -412,7 +407,6 @@ export function AutomationPalette() {
         editor.agentId,
         saved.id,
         resolvedInputs(saved),
-        workspace,
       );
       if (generation !== loadGeneration.current) return;
       seed(
@@ -469,7 +463,7 @@ export function AutomationPalette() {
   const previewValues = current
     ? {
         ...resolvedInputs(current),
-        workspace,
+        workspace: editor.workspace,
         run: "<run>",
         cycle: "1",
         previousResult: t("automation.previewPreviousResult"),
@@ -522,7 +516,7 @@ export function AutomationPalette() {
         <header>
           <div>
             <h2>{t("automation.editorTitle")}</h2>
-            <code>{workspace}</code>
+            <code>{editor.workspace}</code>
           </div>
           <button
             type="button"
@@ -543,7 +537,6 @@ export function AutomationPalette() {
                   setCurrent(blank());
                   setSaved(null);
                   setValues({});
-                  setWorkspace(editor.workspace);
                 }}
               >
                 {t("automation.editorNew")}
@@ -565,7 +558,6 @@ export function AutomationPalette() {
                         ]),
                       ),
                     );
-                    setWorkspace(editor.workspace);
                   }}
                 >
                   {x.name}
@@ -629,7 +621,6 @@ export function AutomationPalette() {
                           ]),
                         ),
                       );
-                      setWorkspace(d.workspace ?? editor.workspace);
                     }}
                   >
                     ⧉
@@ -665,8 +656,7 @@ export function AutomationPalette() {
                 update={update}
                 values={values}
                 setValues={setValues}
-                workspace={workspace}
-                setWorkspace={setWorkspace}
+                workspace={editor.workspace}
                 preview={`${preview}${repeatPreview}`}
                 busy={busy}
                 transitionUnavailable={
@@ -741,7 +731,6 @@ function Editor({
   values,
   setValues,
   workspace,
-  setWorkspace,
   preview,
   busy,
   transitionUnavailable,
@@ -754,7 +743,6 @@ function Editor({
   values: Record<string, string>;
   setValues: Dispatch<SetStateAction<Record<string, string>>>;
   workspace: string;
-  setWorkspace: (v: string) => void;
   preview: string;
   busy: boolean;
   transitionUnavailable?: string;
@@ -810,10 +798,8 @@ function Editor({
       </label>
       <label>
         {t("menu.workdir")}
-        <input
-          value={workspace}
-          onChange={(e) => setWorkspace(e.target.value)}
-        />
+        <code>{workspace}</code>
+        <small>{t("automation.editorWorkspaceNote")}</small>
       </label>
       <label>
         {t("automation.editorRepeat")}

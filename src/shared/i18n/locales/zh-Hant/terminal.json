@@ -115,6 +115,7 @@
     "editorHistory": "最近執行",
     "editorUntitled": "未命名",
     "editorName": "名稱",
+    "editorWorkspaceNote": "執行時會使用此分頁所在的資料夾。",
     "editorRepeat": "重複次數",
     "editorInputs": "輸入變數",
     "editorInputKey": "變數鍵",

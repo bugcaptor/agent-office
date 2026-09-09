@@ -115,6 +115,7 @@
     "editorHistory": "最近运行",
     "editorUntitled": "无标题",
     "editorName": "名称",
+    "editorWorkspaceNote": "运行时使用该标签页所在的文件夹。",
     "editorRepeat": "重复次数",
     "editorInputs": "输入变量",
     "editorInputKey": "变量键",

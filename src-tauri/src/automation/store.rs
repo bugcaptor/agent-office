@@ -214,7 +214,7 @@ mod tests {
                 duration_ms: 1,
             }],
             repeat: None,
-            workspace: None,
+            legacy_workspace: None,
             input_values: None,
         }
     }
@@ -250,7 +250,7 @@ mod tests {
                 },
             ],
             repeat: None,
-            workspace: None,
+            legacy_workspace: None,
             input_values: None,
         }
     }
@@ -304,25 +304,34 @@ mod tests {
         assert_eq!(records[1].run_id, "z-older");
     }
 
+    /// 옛 정의 파일에 남아 있던 `workspace`는 읽을 때는 값을 채우지만
+    /// (`legacy_workspace`), 그 정의를 한 번 다시 저장하면 파일에서 사라진다.
+    /// 작업 폴더는 이제 실행 시점에 탭에서 읽으므로 저장은 하지 않는다.
     #[test]
-    fn saved_workspace_and_input_values_survive_a_fresh_store() {
+    fn legacy_workspace_is_read_but_dropped_on_next_save() {
         let temp = tempfile::tempdir().unwrap();
-        let store = AutomationStore::new(temp.path().to_path_buf());
+        std::fs::create_dir_all(temp.path().join("automations")).unwrap();
         let mut definition = definition("persisted", 0);
-        definition.workspace = Some("/work/saved".into());
         definition.input_values = Some(BTreeMap::from([(
             "task".into(),
             "persist this value".into(),
         )]));
-        let saved = store.save(&definition).unwrap();
+        let mut raw = serde_json::to_value(&definition).unwrap();
+        raw["workspace"] = serde_json::json!("/work/saved");
+        std::fs::write(
+            temp.path().join("automations/persisted.json"),
+            serde_json::to_vec_pretty(&raw).unwrap(),
+        )
+        .unwrap();
 
-        let restored = AutomationStore::new(temp.path().to_path_buf())
+        let store = AutomationStore::new(temp.path().to_path_buf());
+        let restored = store
             .list()
             .unwrap()
             .into_iter()
-            .find(|definition| definition.id == saved.id)
-            .expect("saved definition is listed after reopening the store");
-        assert_eq!(restored.workspace.as_deref(), Some("/work/saved"));
+            .find(|definition| definition.id == "persisted")
+            .expect("legacy definition file is listed");
+        assert_eq!(restored.legacy_workspace.as_deref(), Some("/work/saved"));
         assert_eq!(
             restored
                 .input_values
@@ -330,6 +339,15 @@ mod tests {
                 .and_then(|values| values.get("task")),
             Some(&"persist this value".to_string())
         );
+
+        store.save(&restored).unwrap();
+        let resaved = AutomationStore::new(temp.path().to_path_buf())
+            .list()
+            .unwrap()
+            .into_iter()
+            .find(|definition| definition.id == "persisted")
+            .expect("resaved definition is still listed");
+        assert_eq!(resaved.legacy_workspace, None);
     }
 
     #[test]

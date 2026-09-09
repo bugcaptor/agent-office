@@ -228,7 +228,7 @@ mod tests {
                 duration_ms: 0,
             }],
             repeat: Some(AutomationRepeat { max_cycles: 0 }),
-            workspace: None,
+            legacy_workspace: None,
             input_values: None,
         };
         assert!(validate(&d).is_err());
@@ -254,7 +254,7 @@ mod tests {
                 startup_wait_ms: None,
             }],
             repeat: None,
-            workspace: None,
+            legacy_workspace: None,
             input_values: None,
         };
         assert_eq!(
@@ -403,7 +403,7 @@ mod tests {
                 },
             ],
             repeat: Some(AutomationRepeat { max_cycles: 2 }),
-            workspace: None,
+            legacy_workspace: None,
             input_values: None,
         };
         assert_eq!(
@@ -437,7 +437,7 @@ mod tests {
             inputs: vec![],
             steps,
             repeat: None,
-            workspace: None,
+            legacy_workspace: None,
             input_values: None,
         };
         assert_eq!(
@@ -494,7 +494,7 @@ mod tests {
                 exit_wait_ms: None,
             }],
             repeat: None,
-            workspace: None,
+            legacy_workspace: None,
             input_values: None,
         };
         assert_eq!(

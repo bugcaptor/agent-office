@@ -170,7 +170,6 @@ pub async fn automation_run_start(
     agent_id: String,
     definition_id: String,
     inputs: std::collections::BTreeMap<String, String>,
-    workspace: String,
     app_state: State<'_, AppState>,
 ) -> Result<AutomationAgentStatus, String> {
     let definition = app_state.automation_store.get(&definition_id)?;
@@ -183,6 +182,12 @@ pub async fn automation_run_start(
         .sink
         .session_id_for(&agent_id)
         .ok_or("automation-session-changed")?;
+    let workspace = app_state
+        .automation_ctx
+        .sink
+        .cwd_of(&agent_id)
+        .filter(|cwd| !cwd.is_empty())
+        .ok_or("automation-cwd-unknown")?;
     validate_agy_models(&definition).await?;
     if !same_running_session(
         &session_id,

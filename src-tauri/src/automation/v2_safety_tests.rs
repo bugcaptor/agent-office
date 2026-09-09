@@ -59,7 +59,7 @@ impl Harness {
                     steps,
                     inputs: vec![],
                     repeat: Some(AutomationRepeat { max_cycles: cycles }),
-                    workspace: None,
+                    legacy_workspace: None,
                     input_values: None,
                 },
                 BTreeMap::new(),

@@ -115,6 +115,7 @@
     "editorHistory": "Recent runs",
     "editorUntitled": "Untitled",
     "editorName": "Name",
+    "editorWorkspaceNote": "Uses this tab's folder at run time.",
     "editorRepeat": "Repeat cycles",
     "editorInputs": "Input variables",
     "editorInputKey": "Variable key",
