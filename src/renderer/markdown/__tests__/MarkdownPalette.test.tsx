@@ -132,3 +132,47 @@ describe("MarkdownPalette", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 });
+
+describe("MarkdownPalette 최근 문서", () => {
+  it("빈 쿼리에서 최근 본 문서를 최신순으로 맨 위에 올리고 배지를 붙인다", () => {
+    useMarkdownStore.setState({
+      recentDocs: [
+        { root: "/root", relPath: "c.md", openedAt: 2 },
+        { root: "/root", relPath: "a.md", openedAt: 1 },
+      ],
+    });
+    render(<MarkdownPalette />);
+    const options = screen.getAllByRole("option");
+    expect(options.map((o) => o.textContent?.startsWith("c.md") ?? false)).toEqual([
+      true,
+      false,
+      false,
+    ]);
+    expect(options.slice(0, 2).every((o) => o.textContent?.includes("최근"))).toBe(true);
+    expect(options[2].textContent).not.toContain("최근");
+  });
+
+  it("다른 root의 최근 문서나 사라진 파일은 끌어올리지 않는다", () => {
+    useMarkdownStore.setState({
+      recentDocs: [
+        { root: "/other", relPath: "c.md", openedAt: 3 },
+        { root: "/root", relPath: "gone.md", openedAt: 2 },
+      ],
+    });
+    render(<MarkdownPalette />);
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(3);
+    expect(options[0].textContent).toContain("a.md");
+    expect(options.some((o) => o.textContent?.includes("최근"))).toBe(false);
+  });
+
+  it("검색어가 있으면 최근 문서 가산점을 주지 않는다", () => {
+    useMarkdownStore.setState({ recentDocs: [{ root: "/root", relPath: "c.md", openedAt: 9 }] });
+    render(<MarkdownPalette />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "" } });
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "md" } });
+    const options = screen.getAllByRole("option");
+    expect(options[0].textContent).toContain("a.md");
+    expect(options.some((o) => o.textContent?.includes("최근"))).toBe(false);
+  });
+});

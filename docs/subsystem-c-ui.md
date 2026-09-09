@@ -1382,7 +1382,25 @@ it('ensure returns same Terminal instance across calls (keep-alive)', () => {
   않는다). 표시 내용은 **전체 상대경로 유지**(dirname만 노출하지 않음) + 행 전체에
   `title` 툴팁.
 
-### 10.7 핵심 설계 결정 요약
+### 10.7 마크다운 팔레트의 최근 본 문서
+
+- 검색어 없이 팔레트를 열면 **최근에 연 문서 최대 4개**가 맨 위로 올라오고 `최근`
+  배지가 붙는다. 그 아래는 기존 순서(루트 README 우선 → relPath 사전순)를 그대로 쓴다.
+  문서 보기는 대개 조금 전에 보던 파일을 다시 여는 일이라, 매번 이름을 쳐서 찾게
+  하지 않으려는 것이다. 검색어가 있으면 최근 기록에 어떤 가산점도 주지 않는다 —
+  이름을 친 사람은 퍼지 순위를 기대하기 때문.
+- 기록은 `renderer/markdown/recentDocs.ts`가 갖는다. 순수 함수(`pushRecentDoc`,
+  `recentPathsFor`)와 localStorage 읽기·쓰기만 있고 스토어·Tauri 의존이 없다
+  (`terminal/terminalViewMode.ts`와 같은 결). 키는 `agent-office.markdown.recent-docs`,
+  저장 상한 40개, 표시 4개.
+- 목록은 root를 섞어 한 배열에 최신순으로 쌓고 **보여줄 때 root로 거른다.** 저장소를
+  오가도 각자의 최근 문서가 남게 하려는 것. 같은 문서를 다시 열면 중복 없이 맨 앞으로
+  올라간다.
+- 기록 시점은 **읽기에 성공한 뒤**다(`openFile`·`openLinkedFile` 모두). 열다 실패한
+  파일이나 경합으로 밀린 요청은 남기지 않는다. 목록에서 사라진 파일은 팔레트가
+  끌어올릴 때 조용히 건너뛴다 — 지워진 파일이 계속 위에 뜨는 걸 막는다.
+
+### 10.8 핵심 설계 결정 요약
 
 | 항목 | 결정 | 이유 |
 |---|---|---|
@@ -1396,6 +1414,7 @@ it('ensure returns same Terminal instance across calls (keep-alive)', () => {
 | 로그 검색 | `--grep -i -F`(메시지, 고정 문자열) | 예측 가능·주입 안전. 작성자 검색은 후속 |
 | 미추적 표시 | `--untracked-files=all` + 5000개 상한 | 새 폴더 안 파일도 개별 diff(#70) |
 | 긴 경로 말줄임 | head-ellipsis(`direction: rtl` + LRM) | 식별에 중요한 끝을 보존(#71) |
+| 최근 본 문서 | 빈 쿼리에서만 상위 4개 승격, localStorage 영속 | 방금 보던 문서를 다시 찾게 하지 않기 |
 
 ## 11. 터미널 오버레이 뷰 모드 (이슈 #69)
 

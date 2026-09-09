@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useMarkdownStore } from "./markdownStore";
 import { emptyQueryPriority, fuzzyFilter } from "./fuzzy";
+import { recentPathsFor } from "./recentDocs";
 import { formatRelativeTime } from "../shared/relativeTime";
 
 export function MarkdownPalette() {
@@ -26,6 +27,7 @@ export function MarkdownPalette() {
   const closePalette = useMarkdownStore((s) => s.closePalette);
   const openFile = useMarkdownStore((s) => s.openFile);
   const refreshListing = useMarkdownStore((s) => s.refreshListing);
+  const recentDocs = useMarkdownStore((s) => s.recentDocs);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -35,20 +37,33 @@ export function MarkdownPalette() {
 
   // 퍼지 필터 결과(원본 참조가 안정적이므로 query/files 변화 시에만 재계산).
   //
-  // 검색어가 비어 있을 때만 대표 문서(루트 README)를 맨 위로 끌어올린다 — 팔레트를
-  // 막 열었을 때 저장소 개요부터 눈에 들어오게. 검색어가 있으면 어떤 가산점도
+  // 검색어가 비어 있을 때만 최근 본 문서(최대 4개)와 대표 문서(루트 README)를 맨
+  // 위로 끌어올린다 — 팔레트를 막 열었을 때 하던 문서와 저장소 개요부터 눈에
+  // 들어오게. 최근 문서가 README보다 앞이다. 검색어가 있으면 어떤 가산점도
   // 주지 않고 퍼지 순위를 그대로 쓴다. fuzzy.ts는 워크폴더 팔레트와 공유하므로
   // fuzzyFilter 자체는 건드리지 않고 여기서만 재정렬한다.
-  const results = useMemo(() => {
-    if (!files) return [];
+  const root = palette?.root;
+  const { results, recentCount } = useMemo(() => {
+    if (!files) return { results: [], recentCount: 0 };
     const ranked = fuzzyFilter(files, query).map((r) => r.item);
-    if (query.trim().length > 0) return ranked;
-    return [...ranked].sort(
+    if (query.trim().length > 0) return { results: ranked, recentCount: 0 };
+    const rest = [...ranked].sort(
       (a, b) =>
         emptyQueryPriority(a.relPath) - emptyQueryPriority(b.relPath) ||
         a.relPath.localeCompare(b.relPath),
     );
-  }, [files, query]);
+    // 최근 본 문서를 최신순으로 맨 위에 올린다. 목록에서 사라진 파일은 건너뛴다.
+    const byPath = new Map(rest.map((f) => [f.relPath, f]));
+    const recent = recentPathsFor(recentDocs, root ?? "")
+      .map((relPath) => byPath.get(relPath))
+      .filter((f): f is NonNullable<typeof f> => f !== undefined);
+    if (recent.length === 0) return { results: rest, recentCount: 0 };
+    const recentPaths = new Set(recent.map((f) => f.relPath));
+    return {
+      results: [...recent, ...rest.filter((f) => !recentPaths.has(f.relPath))],
+      recentCount: recent.length,
+    };
+  }, [files, query, recentDocs, root]);
 
   // 선택 인덱스는 결과 길이 안으로 클램프해 표시한다(필터가 바뀌면 store 값이
   // 잠깐 범위를 벗어날 수 있음). 열기·이동은 이 clamped 값을 기준으로 한다.
@@ -151,6 +166,9 @@ export function MarkdownPalette() {
               >
                 <span className="md-palette-item-name">{item.name}</span>
                 <span className="md-palette-item-path">{item.relPath}</span>
+                {i < recentCount && (
+                  <span className="md-palette-item-recent">{t("markdown.recentBadge")}</span>
+                )}
               </li>
             ))}
           </ul>

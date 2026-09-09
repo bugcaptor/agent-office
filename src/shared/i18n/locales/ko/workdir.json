@@ -109,6 +109,7 @@
     "searchPlaceholder": "파일 이름 또는 경로로 검색…",
     "updated": "{{time}} 기준",
     "refresh": "새로고침",
+    "recentBadge": "최근",
     "listTruncated": "파일이 많아 일부만 표시됩니다.",
     "listLoading": "목록을 불러오는 중…",
     "emptyFiles": "마크다운 파일이 없습니다.",

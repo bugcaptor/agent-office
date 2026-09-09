@@ -108,6 +108,14 @@
   color: var(--text);
   flex: none;
 }
+.md-palette-item-recent {
+  margin-left: auto;
+  flex: none;
+  font-size: 0.62rem;
+  color: var(--accent-warn);
+  border: 1px solid var(--accent-warn);
+  padding: 0 calc(var(--unit) * 1);
+}
 .md-palette-item-path {
   font-size: 0.72rem;
   color: var(--text-dim);

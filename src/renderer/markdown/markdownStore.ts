@@ -13,6 +13,7 @@ import { create } from "zustand";
 import { tauriApi } from "../ipc/tauriApi";
 import { backendErrorText, parseBackendError } from "../shared/backendError";
 import { createInFlightTracker, isStale } from "../shared/createListingCache";
+import { loadRecentDocs, persistRecentDocs, pushRecentDoc, type RecentDoc } from "./recentDocs";
 import type { MarkdownFileEntry } from "@shared/types";
 
 /** root별 파일 목록 캐시 1건. */
@@ -106,6 +107,8 @@ interface MarkdownState {
   discardConfirm: boolean;
   /** root별 목록 캐시(재오픈 즉시 표시용, 런타임 전용). */
   listing: Record<string, MarkdownListing>;
+  /** 최근 연 문서(최신순, root 구분 없이 한 배열). localStorage에 영속된다. */
+  recentDocs: RecentDoc[];
 
   // ---- 팔레트 ----
   /** 팔레트를 root로 연다(쿼리·선택 초기화) + 백그라운드 재스캔 트리거. */
@@ -118,6 +121,8 @@ interface MarkdownState {
    *  스캔한다(수동 새로고침 버튼용). 같은 root에 대해 이미 진행 중이면 중복
    *  실행하지 않는다(in-flight dedupe). */
   refreshListing(root: string, opts?: { force?: boolean }): Promise<void>;
+  /** 문서를 실제로 열어 본 사실을 최근 목록에 기록한다(영속 포함). */
+  noteRecentDoc(root: string, relPath: string): void;
 
   // ---- 편집기 ----
   /** 파일을 읽어 편집기를 연다(성공 시 팔레트는 닫는다). `onClose`가 주어지면
@@ -167,6 +172,7 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
   editor: null,
   discardConfirm: false,
   listing: {},
+  recentDocs: loadRecentDocs(),
 
   openPalette: (root, agentId) => {
     set({ palette: { root, agentId, query: "", selectedIndex: 0 } });
@@ -203,6 +209,13 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
       listingInFlight.end(root);
     }
   },
+
+  noteRecentDoc: (root, relPath) =>
+    set((s) => {
+      const recentDocs = pushRecentDoc(s.recentDocs, root, relPath);
+      persistRecentDocs(recentDocs);
+      return { recentDocs };
+    }),
 
   openFile: async (root, relPath, agentId, onClose) => {
     const loadToken = ++nextLoadToken;
@@ -245,6 +258,8 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
           },
         };
       });
+      // 열기에 성공한 문서만 최근 목록에 남긴다(읽기 실패·경합은 제외).
+      if (get().editor?.loadToken === loadToken) get().noteRecentDoc(root, relPath);
     } catch (err) {
       set((s) => {
         if (!s.editor || s.editor.loadToken !== loadToken) return s;
@@ -284,6 +299,7 @@ export const useMarkdownStore = create<MarkdownState>()((set, get) => ({
         if (!s.editor || s.editor.loadToken !== loadToken) return s;
         return { editor: { ...s.editor, content: res.content, baseline: res.content, version: res.version, loading: false } };
       });
+      if (get().editor?.loadToken === loadToken) get().noteRecentDoc(previous.root, relPath);
     } catch (err) {
       set((s) =>
         !s.editor || s.editor.loadToken !== loadToken

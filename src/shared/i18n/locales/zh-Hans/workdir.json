@@ -109,6 +109,7 @@
     "searchPlaceholder": "按文件名或路径搜索…",
     "updated": "截至 {{time}}",
     "refresh": "刷新",
+    "recentBadge": "最近",
     "listTruncated": "文件太多，只显示一部分。",
     "listLoading": "正在加载列表…",
     "emptyFiles": "没有 Markdown 文件。",

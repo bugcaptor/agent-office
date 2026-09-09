@@ -301,3 +301,26 @@ describe("TTL/캐시 재사용(이슈 #67)", () => {
     expect(useMarkdownStore.getState().listing["/root"].files).toEqual([{ relPath: "a.md", name: "a.md" }]);
   });
 });
+
+describe("최근 본 문서", () => {
+  it("openFile이 성공하면 최근 목록 맨 앞에 남는다", async () => {
+    await useMarkdownStore.getState().openFile("/root", "a.md", "agent1");
+    await useMarkdownStore.getState().openFile("/root", "b.md", "agent1");
+    expect(useMarkdownStore.getState().recentDocs.map((d) => d.relPath)).toEqual(["b.md", "a.md"]);
+  });
+
+  it("읽기에 실패한 문서는 최근 목록에 남기지 않는다", async () => {
+    readFile.mockRejectedValueOnce(new Error("NOT_FOUND: a.md"));
+    await useMarkdownStore.getState().openFile("/root", "a.md", "agent1");
+    expect(useMarkdownStore.getState().recentDocs).toEqual([]);
+  });
+
+  it("미리보기 링크로 연 문서도 최근 목록에 남는다", async () => {
+    await useMarkdownStore.getState().openFile("/root", "a.md", "agent1");
+    await useMarkdownStore.getState().openLinkedFile("docs/b.md");
+    expect(useMarkdownStore.getState().recentDocs.map((d) => d.relPath)).toEqual([
+      "docs/b.md",
+      "a.md",
+    ]);
+  });
+});

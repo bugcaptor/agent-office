@@ -109,6 +109,7 @@
     "searchPlaceholder": "ファイル名またはパスで検索…",
     "updated": "{{time}} 時点",
     "refresh": "更新",
+    "recentBadge": "最近",
     "listTruncated": "ファイルが多いため一部のみ表示します。",
     "listLoading": "一覧を読み込み中…",
     "emptyFiles": "Markdown ファイルがありません。",

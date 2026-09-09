@@ -109,6 +109,7 @@
     "searchPlaceholder": "以檔名或路徑搜尋…",
     "updated": "更新於 {{time}}",
     "refresh": "重新整理",
+    "recentBadge": "最近",
     "listTruncated": "檔案太多，只顯示一部分。",
     "listLoading": "載入清單中…",
     "emptyFiles": "沒有 Markdown 檔案。",

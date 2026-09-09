@@ -109,6 +109,7 @@
     "searchPlaceholder": "Rechercher par nom ou chemin…",
     "updated": "au {{time}}",
     "refresh": "Actualiser",
+    "recentBadge": "Récent",
     "listTruncated": "Trop de fichiers — affichage partiel.",
     "listLoading": "Chargement de la liste…",
     "emptyFiles": "Aucun fichier Markdown.",
