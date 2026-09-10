@@ -59,6 +59,12 @@ async fn handle_hook(
         }
         return ok_response();
     }
+    if query.agent.as_deref() == Some("kilo") {
+        if let Some(source) = query.source.as_deref() {
+            runtime.ingest_kilo_source(&query.session, source, &body);
+        }
+        return ok_response();
+    }
     let Some(provider) = query.provider.as_deref().and_then(ObserverProvider::parse) else {
         return ok_response();
     };
@@ -455,6 +461,94 @@ mod tests {
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].source, NotificationSource::Stop);
         assert_eq!(notifications[0].message, "Pi finished a task");
+        state.shutdown();
+    }
+
+    /// Kilo 플러그인 훅 라우팅: `agent=kilo`는 pi와 같이 `provider=`/`event=`
+    /// 계약을 타지 않는 갈래를 쓰지만, 소스 종류가 더 많다(sub-start/sub-stop/
+    /// hook까지). 스파이크 실측(2026-09-10) 페이로드로 한 턴을 재생해 각 source가
+    /// 기대한 ActivityKind/알림으로 매핑되는지 확인한다.
+    #[tokio::test]
+    async fn routes_all_six_kilo_sources_into_labelled_activities_and_notifications() {
+        let (runtime, events) = fixture();
+        let state = ObserverServerState::default();
+        let port = state.ensure(runtime).await.unwrap();
+        let client = reqwest::Client::new();
+
+        for (source, body) in [
+            (
+                "prompt",
+                r#"{"prompt":"버그 고쳐줘","cwd":"/Users/me/dev/agent-office"}"#,
+            ),
+            (
+                "tool",
+                r#"{"tool_name":"bash","tool_input":{"command":"echo done"}}"#,
+            ),
+            ("hook", r#"{"message":"Kilo needs permission: bash echo x"}"#),
+            ("sub-start", "{}"),
+            ("sub-stop", "{}"),
+            ("stop", r#"{"message":"Kilo finished a task","running":0}"#),
+        ] {
+            client
+                .post(format!(
+                    "http://127.0.0.1:{port}/hook?session=s1&source={source}&agent=kilo"
+                ))
+                .body(body)
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+        }
+
+        let activities = events.activities();
+        // prompt + tool + sub-start + sub-stop + Stop이 부수적으로 내는 SubCount.
+        assert_eq!(activities.len(), 5);
+        assert_eq!(activities[0].kind, ActivityKind::Prompt);
+        assert_eq!(activities[0].text.as_deref(), Some("버그 고쳐줘"));
+        assert_eq!(activities[0].cwd.as_deref(), Some("/Users/me/dev/agent-office"));
+        assert_eq!(activities[1].kind, ActivityKind::Tool);
+        assert_eq!(activities[1].text.as_deref(), Some("bash: echo done"));
+        assert_eq!(activities[2].kind, ActivityKind::SubStart);
+        assert_eq!(activities[3].kind, ActivityKind::SubStop);
+        assert_eq!(activities[4].kind, ActivityKind::SubCount);
+        assert_eq!(activities[4].count, Some(0));
+
+        let notifications = events.notifications();
+        // hook(권한 알림) 1건 + stop(완료) 1건.
+        assert_eq!(notifications.len(), 2);
+        assert_eq!(notifications[0].source, NotificationSource::Hook);
+        assert_eq!(notifications[0].message, "Kilo needs permission: bash echo x");
+        assert_eq!(notifications[1].source, NotificationSource::Stop);
+        assert_eq!(notifications[1].message, "Kilo finished a task");
+        state.shutdown();
+    }
+
+    /// 백그라운드 서브에이전트가 아직 도는 중(`running>0`)의 Stop은 턴 경계일 뿐
+    /// 완료가 아니다 — pi/agy와 같은 원칙(이슈 #27)을 kilo도 지켜야 한다.
+    #[tokio::test]
+    async fn routes_kilo_stop_with_running_children_suppresses_the_completion_notification() {
+        let (runtime, events) = fixture();
+        let state = ObserverServerState::default();
+        let port = state.ensure(runtime).await.unwrap();
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!(
+                "http://127.0.0.1:{port}/hook?session=s1&source=stop&agent=kilo"
+            ))
+            .body(r#"{"message":"Kilo finished a task","running":1}"#)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+
+        let activities = events.activities();
+        assert_eq!(activities.len(), 1);
+        assert_eq!(activities[0].kind, ActivityKind::SubCount);
+        assert_eq!(activities[0].count, Some(1));
+        assert!(events.notifications().is_empty(), "running>0 must not notify");
         state.shutdown();
     }
 

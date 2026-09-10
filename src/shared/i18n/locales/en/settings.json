@@ -34,7 +34,7 @@
     "diaryTitle": "Character diary",
     "diaryHelp": "Each character writes a work log / diary in their own voice at the end of every session (the manual ‘Write diary’ button still works). It calls the same CLI as the summarizer above, so it uses account quota. Read it from the tab's right-click menu.",
     "observerTitle": "Agent observation (alerts, timing)",
-    "observerHelp": "Alerts and timing for Claude, Codex, Pi and Antigravity apply to terminals created from now on. When off, the exclamation alert and session timing do not work.",
+    "observerHelp": "Alerts and timing for Claude, Codex, Pi, Kilo and Antigravity apply to terminals created from now on. When off, the exclamation alert and session timing do not work.",
     "openrouterNote": "OpenRouter summaries use an API key (or the <code>OPENROUTER_API_KEY</code> variable). Without a key the summary fails and the raw text is shown.",
     "opencodeNote": "opencode summaries call the installed <code>opencode</code> CLI. Model ids use<code> provider/model</code> form (see <code>opencode models</code>), and the default assumes opencode's own plan (<code>opencode-go</code>).",
     "commandTitle": "{{provider}} command",
@@ -216,7 +216,7 @@
   },
   "firstRun": {
     "title": "Welcome to Agent Office",
-    "intro": "The Claude Code / Codex / Pi / Antigravity integrations are optional. You can start with them off and turn them on any time from ⚙ in the bottom bar.",
+    "intro": "The Claude Code / Codex / Pi / Kilo / Antigravity integrations are optional. You can start with them off and turn them on any time from ⚙ in the bottom bar.",
     "start": "Start"
   },
   "pairing": {

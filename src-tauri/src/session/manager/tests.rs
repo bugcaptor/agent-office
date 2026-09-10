@@ -543,6 +543,8 @@
                 "claude".into(),
                 "codex".into(),
                 "pi".into(),
+                "kilo".into(),
+                "kilocode".into(),
                 "agy".into(),
             ])
         );
@@ -724,6 +726,8 @@
                 "claude".into(),
                 "codex".into(),
                 "pi".into(),
+                "kilo".into(),
+                "kilocode".into(),
                 "agy".into(),
             ]),
         );
@@ -2291,7 +2295,7 @@
         let rec = captured.lock();
         let rec = rec.as_ref().expect("resolver must have been called");
         assert_eq!(rec.selected.as_deref(), Some("git-bash"));
-        assert_eq!(rec.wrappers, vec!["claude", "pi", "agy"]);
+        assert_eq!(rec.wrappers, vec!["claude", "pi", "kilo", "kilocode", "agy"]);
 
         cleanup(&ctl, &dir);
     }
@@ -2382,6 +2386,78 @@
         assert!(
             !env.iter().any(|(k, _)| k == "AGENT_OFFICE_PI_EXT"),
             "AGENT_OFFICE_PI_EXT must NOT be injected when hooks are OFF: {env:?}"
+        );
+
+        cleanup(&ctl, &dir);
+    }
+
+    /// kilo/kilocode 둘 다 같은 배선(env 대입 + 두 강등 가드)을 받아야 한다.
+    #[tokio::test]
+    async fn kilo_wrappers_carry_set_env_from_env_and_both_degrade_guards() {
+        let captured = Arc::new(Mutex::new(None));
+        let resolver = recording_resolver(captured.clone(), vec![]);
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver(resolver);
+
+        mgr.create(req("a1", None)).unwrap();
+
+        let rec = captured.lock();
+        let rec = rec.as_ref().expect("resolver must have been called");
+        for command in ["kilo", "kilocode"] {
+            let spec = rec
+                .specs
+                .iter()
+                .find(|spec| spec.command == command)
+                .unwrap_or_else(|| panic!("{command} wrapper must be planned when hooks are ON"));
+            assert_eq!(
+                spec.set_env_from_env,
+                vec![("KILO_CONFIG".to_string(), "AGENT_OFFICE_KILO_CONFIG".to_string())],
+            );
+            assert_eq!(spec.skip_if_env_set.as_deref(), Some("KILO_CONFIG"));
+            assert_eq!(
+                spec.skip_prefix_if_env_file_missing.as_deref(),
+                Some("AGENT_OFFICE_KILO_CONFIG"),
+            );
+            assert!(spec.prefix_args.is_empty());
+        }
+        drop(rec);
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
+    async fn create_pushes_kilo_config_env_when_hooks_on() {
+        // hooks ON 세션은 AGENT_OFFICE_KILO_CONFIG를 spawn env에 실어야 한다 —
+        // kilo()/kilocode() 셸 래퍼가 이 경로를 KILO_CONFIG로 세팅하는 신호.
+        let captured = Arc::new(Mutex::new(None));
+        let resolver = recording_resolver(captured, vec![]);
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver(resolver);
+
+        mgr.create(req("a1", None)).unwrap();
+
+        let env = ctl.spawned_env();
+        let pair = env.iter().find(|(k, _)| k == "AGENT_OFFICE_KILO_CONFIG");
+        let (_, val) = pair.expect("AGENT_OFFICE_KILO_CONFIG must be injected when hooks are ON");
+        assert!(
+            val.ends_with("agent-office-kilo.json"),
+            "AGENT_OFFICE_KILO_CONFIG must point at the config file, got: {val}"
+        );
+
+        cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
+    async fn create_does_not_push_kilo_config_env_when_hooks_off() {
+        // observer OFF 세션은 AGENT_OFFICE_KILO_CONFIG가 없어야 한다.
+        let captured = Arc::new(Mutex::new(None));
+        let resolver = recording_resolver(captured, vec![]);
+        let (mgr, _events, ctl, dir) = build_with_shell_resolver_and_observation(resolver, false);
+
+        mgr.create(req("a1", None)).unwrap();
+
+        let env = ctl.spawned_env();
+        assert!(
+            !env.iter().any(|(k, _)| k == "AGENT_OFFICE_KILO_CONFIG"),
+            "AGENT_OFFICE_KILO_CONFIG must NOT be injected when hooks are OFF: {env:?}"
         );
 
         cleanup(&ctl, &dir);

@@ -65,6 +65,17 @@ mod tests {
                 skip_if_present: vec![],
                 ..Default::default()
             },
+            CommandWrapperSpec {
+                command: "kilo".into(),
+                prefix_args: vec![],
+                skip_if_present: vec![],
+                set_env_from_env: vec![(
+                    "KILO_CONFIG".into(),
+                    "AGENT_OFFICE_KILO_CONFIG".into(),
+                )],
+                skip_if_env_set: Some("KILO_CONFIG".into()),
+                ..Default::default()
+            },
         ]
     }
 
@@ -78,12 +89,17 @@ mod tests {
         assert!(bashrc.contains("claude() {"), "{bashrc}");
         assert!(bashrc.contains("codex() {"), "{bashrc}");
         assert!(bashrc.contains("pi() {"), "{bashrc}");
+        assert!(bashrc.contains("kilo() {"), "{bashrc}");
         assert!(
             bashrc.contains("command codex '-c' \"${AGENT_OFFICE_CODEX_HOOK_STOP}\" \"$@\""),
             "{bashrc}",
         );
         assert!(
             bashrc.contains("command pi '-e' \"${AGENT_OFFICE_PI_EXT}\" \"$@\""),
+            "{bashrc}",
+        );
+        assert!(
+            bashrc.contains(r#"KILO_CONFIG="${AGENT_OFFICE_KILO_CONFIG}" command kilo "$@""#),
             "{bashrc}",
         );
 

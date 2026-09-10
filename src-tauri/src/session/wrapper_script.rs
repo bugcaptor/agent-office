@@ -64,6 +64,18 @@ fn validate_wrapper(wrapper: &CommandWrapperSpec) {
             "invalid wrapper environment name"
         );
     }
+    for (target, source) in &wrapper.set_env_from_env {
+        assert!(
+            safe_env_identifier(target) && safe_env_identifier(source),
+            "invalid wrapper environment name"
+        );
+    }
+    if let Some(name) = &wrapper.skip_if_env_set {
+        assert!(
+            safe_env_identifier(name),
+            "invalid wrapper environment name"
+        );
+    }
 }
 
 pub fn render_powershell(wrappers: &[CommandWrapperSpec]) -> String {
@@ -93,6 +105,24 @@ pub fn render_powershell(wrappers: &[CommandWrapperSpec]) -> String {
         )
         .unwrap();
 
+        // kilo: 사용자가 이미 자기 KILO_CONFIG를 쓰고 있으면 관찰을 포기하고
+        // 원본 명령을 그대로 실행한다(사용자 설정을 덮어쓰지 않는다).
+        if let Some(env_name) = &wrapper.skip_if_env_set {
+            writeln!(script, "    if ($env:{env_name}) {{").unwrap();
+            writeln!(
+                script,
+                "        Write-Warning {}",
+                ps_quote(&format!(
+                    "agent-office: {env_name} already set; running {} unobserved",
+                    wrapper.command,
+                )),
+            )
+            .unwrap();
+            writeln!(script, "        & $cmd.Source @args").unwrap();
+            writeln!(script, "        return").unwrap();
+            writeln!(script, "    }}").unwrap();
+        }
+
         if !wrapper.skip_if_present.is_empty() {
             let condition = wrapper
                 .skip_if_present
@@ -112,9 +142,11 @@ pub fn render_powershell(wrappers: &[CommandWrapperSpec]) -> String {
             .map(ps_arg)
             .collect::<Vec<_>>()
             .join(" ");
-        // 이슈 #40: prefix env가 가리키는 설정 파일이 없으면 prefix를 붙이지 않고
-        // 원본 명령을 실행한다(관찰 없이 실행 보장). prefix가 비면 무의미해 건너뛴다.
-        if !prefix.is_empty() {
+        // 이슈 #40: prefix env가 가리키는 설정 파일이 없으면 prefix/set_env
+        // 대입을 붙이지 않고 원본 명령을 실행한다(관찰 없이 실행 보장). kilo는
+        // prefix가 비어 있고 set_env_from_env만 있으므로, 이 가드도 그 경우를
+        // 함께 다룬다.
+        if !prefix.is_empty() || !wrapper.set_env_from_env.is_empty() {
             if let Some(env_name) = &wrapper.skip_prefix_if_env_file_missing {
                 writeln!(
                     script,
@@ -135,10 +167,39 @@ pub fn render_powershell(wrappers: &[CommandWrapperSpec]) -> String {
                 writeln!(script, "    }}").unwrap();
             }
         }
+        // set→try/finally 복원: 그 한 호출에만 대상 env를 소스 env 값으로
+        // 세팅하고, 호출이 끝나면(성공/실패 불문) 원래 상태로 되돌린다.
+        //
+        // 리뷰 지적: `skip_if_env_set` 가드(위 블록)가 대상 env가 이미 값을
+        // 가진 경우 여기 도달하기 전에 return하므로, 이 지점에서
+        // `$_ao_prev_{target}`는 사실상 항상 `$null`이다(가드 없는 래퍼를
+        // 새로 만들면 값이 있을 수도 있으니 일반적으로 다룬다). 또한
+        // Windows PowerShell 5.1은 `$env:X = $null`을 대입해도 env가
+        // 지워지지 않고 **빈 문자열로 남는다**(PowerShell 7+의 `$env:X =
+        // $null`은 삭제와 같지만 5.1은 다르다) — 그래서 원래 값이 없었을
+        // 때는 대입이 아니라 `Remove-Item Env:X`로 명시적으로 지운다.
+        for (target, source) in &wrapper.set_env_from_env {
+            writeln!(script, "    $_ao_prev_{target} = $env:{target}").unwrap();
+            writeln!(script, "    $env:{target} = $env:{source}").unwrap();
+        }
+        if !wrapper.set_env_from_env.is_empty() {
+            writeln!(script, "    try {{").unwrap();
+        }
         if prefix.is_empty() {
             writeln!(script, "    & $cmd.Source @args").unwrap();
         } else {
             writeln!(script, "    & $cmd.Source {prefix} @args").unwrap();
+        }
+        if !wrapper.set_env_from_env.is_empty() {
+            writeln!(script, "    }} finally {{").unwrap();
+            for (target, _) in &wrapper.set_env_from_env {
+                writeln!(
+                    script,
+                    "        if ($null -eq $_ao_prev_{target}) {{ Remove-Item Env:{target} -ErrorAction Ignore }} else {{ $env:{target} = $_ao_prev_{target} }}",
+                )
+                .unwrap();
+            }
+            writeln!(script, "    }}").unwrap();
         }
         writeln!(script, "}}").unwrap();
     }
@@ -165,6 +226,20 @@ pub fn render_posix(wrappers: &[CommandWrapperSpec]) -> String {
             .map(|name| format!("{name}=\"$PWD\" "))
             .unwrap_or_default();
 
+        // kilo: 사용자가 이미 자기 KILO_CONFIG를 쓰고 있으면 관찰을 포기하고
+        // 원본 명령을 그대로 실행한다(사용자 설정을 덮어쓰지 않는다).
+        if let Some(env_name) = &wrapper.skip_if_env_set {
+            writeln!(script, "  if [ -n \"${{{env_name}:-}}\" ]; then").unwrap();
+            writeln!(
+                script,
+                "    echo 'agent-office: {env_name} already set; running {} unobserved' >&2",
+                wrapper.command,
+            )
+            .unwrap();
+            writeln!(script, "    {cwd_prefix}command {} \"$@\"; return", wrapper.command).unwrap();
+            writeln!(script, "  fi").unwrap();
+        }
+
         if !wrapper.skip_if_present.is_empty() {
             let patterns = wrapper
                 .skip_if_present
@@ -190,9 +265,19 @@ pub fn render_posix(wrappers: &[CommandWrapperSpec]) -> String {
             .map(sh_arg)
             .collect::<Vec<_>>()
             .join(" ");
-        // 이슈 #40: prefix env가 가리키는 설정 파일이 없으면 prefix를 붙이지 않고
-        // 원본 명령을 실행한다(관찰 없이 실행 보장). prefix가 비면 무의미해 건너뛴다.
-        if !prefix.is_empty() {
+        // 앞자리 env 대입(kilo: `KILO_CONFIG="${AGENT_OFFICE_KILO_CONFIG}"`).
+        // set_env_from_env가 붙는 명령 하나에만 적용되고 함수가 끝나면 사라진다
+        // (cwd_prefix와 같은 POSIX 앞자리 대입 규약).
+        let set_env_prefix: String = wrapper
+            .set_env_from_env
+            .iter()
+            .map(|(target, source)| format!("{target}=\"${{{source}}}\" "))
+            .collect();
+        // 이슈 #40: prefix env가 가리키는 설정 파일이 없으면 prefix/set_env
+        // 대입을 붙이지 않고 원본 명령을 실행한다(관찰 없이 실행 보장). kilo는
+        // prefix가 비어 있고 set_env_from_env만 있으므로, 이 가드도 그 경우를
+        // 함께 다룬다 — 둘 다 비어 있으면 의미가 없어 건너뛴다.
+        if !prefix.is_empty() || !wrapper.set_env_from_env.is_empty() {
             if let Some(env_name) = &wrapper.skip_prefix_if_env_file_missing {
                 writeln!(script, "  if [ ! -f \"${{{env_name}}}\" ]; then").unwrap();
                 writeln!(
@@ -207,9 +292,19 @@ pub fn render_posix(wrappers: &[CommandWrapperSpec]) -> String {
             }
         }
         if prefix.is_empty() {
-            writeln!(script, "  {cwd_prefix}command {} \"$@\"", wrapper.command).unwrap();
+            writeln!(
+                script,
+                "  {cwd_prefix}{set_env_prefix}command {} \"$@\"",
+                wrapper.command,
+            )
+            .unwrap();
         } else {
-            writeln!(script, "  {cwd_prefix}command {} {prefix} \"$@\"", wrapper.command).unwrap();
+            writeln!(
+                script,
+                "  {cwd_prefix}{set_env_prefix}command {} {prefix} \"$@\"",
+                wrapper.command,
+            )
+            .unwrap();
         }
         writeln!(script, "}}").unwrap();
     }
@@ -447,6 +542,92 @@ mod tests {
         assert!(
             !render_powershell(&wrappers()).contains("Test-Path -LiteralPath"),
             "guard must not appear without the option",
+        );
+    }
+
+    // ── kilo: set_env_from_env / skip_if_env_set (그 호출 한 번에만 env 대입) ──
+
+    fn kilo_wrapper() -> CommandWrapperSpec {
+        CommandWrapperSpec {
+            command: "kilo".into(),
+            prefix_args: vec![],
+            set_env_from_env: vec![("KILO_CONFIG".into(), "AGENT_OFFICE_KILO_CONFIG".into())],
+            skip_if_env_set: Some("KILO_CONFIG".into()),
+            skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_KILO_CONFIG".into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn posix_renderer_assigns_set_env_from_env_only_for_the_single_invocation() {
+        let script = render_posix(&[kilo_wrapper()]);
+        assert!(script.contains("kilo() {"), "{script}");
+        assert!(
+            script.contains(r#"KILO_CONFIG="${AGENT_OFFICE_KILO_CONFIG}" command kilo "$@""#),
+            "{script}",
+        );
+        // 강등 경로(파일 부재)에는 env 대입을 붙이지 않는다.
+        assert!(
+            script.contains("command kilo \"$@\"; return"),
+            "{script}",
+        );
+        assert!(!script.contains("export"), "must not use export: {script}");
+        // set_env_from_env가 없는 기본 래퍼에는 이 대입이 없어야 한다(무회귀).
+        assert!(!render_posix(&wrappers()).contains("KILO_CONFIG"));
+    }
+
+    #[test]
+    fn powershell_renderer_sets_env_then_restores_it_in_a_finally_block() {
+        let script = render_powershell(&[kilo_wrapper()]);
+        assert!(script.contains("function global:kilo"), "{script}");
+        assert!(
+            script.contains("$_ao_prev_KILO_CONFIG = $env:KILO_CONFIG"),
+            "{script}",
+        );
+        assert!(
+            script.contains("$env:KILO_CONFIG = $env:AGENT_OFFICE_KILO_CONFIG"),
+            "{script}",
+        );
+        assert!(script.contains("try {"), "{script}");
+        assert!(script.contains("} finally {"), "{script}");
+        // Windows PowerShell 5.1은 `$env:X = $null`을 대입해도 지워지지 않고
+        // 빈 문자열로 남는다 — 원래 값이 없었으면(=$null) Remove-Item으로
+        // 명시적으로 지우고, 있었으면 그 값으로 복원한다.
+        assert!(
+            script.contains(
+                "if ($null -eq $_ao_prev_KILO_CONFIG) { Remove-Item Env:KILO_CONFIG -ErrorAction Ignore } else { $env:KILO_CONFIG = $_ao_prev_KILO_CONFIG }"
+            ),
+            "{script}",
+        );
+    }
+
+    #[test]
+    fn posix_renderer_skips_observation_when_the_env_is_already_set() {
+        let script = render_posix(&[kilo_wrapper()]);
+        assert!(
+            script.contains("if [ -n \"${KILO_CONFIG:-}\" ]; then"),
+            "{script}",
+        );
+        assert!(script.contains("command kilo \"$@\"; return"), "{script}");
+        // 옵션 없는 기본 래퍼에는 이 분기가 없어야 한다(무회귀).
+        assert!(!render_posix(&wrappers()).contains("already set"));
+    }
+
+    #[test]
+    fn powershell_renderer_skips_observation_when_the_env_is_already_set() {
+        let script = render_powershell(&[kilo_wrapper()]);
+        assert!(script.contains("if ($env:KILO_CONFIG) {"), "{script}");
+        assert!(!render_powershell(&wrappers()).contains("already set"));
+    }
+
+    #[test]
+    fn posix_renderer_degrades_without_assigning_env_when_config_file_is_missing() {
+        // prefix가 비어 있어도(kilo는 prefix_args가 없다) set_env_from_env만으로
+        // 파일-부재 강등 분기가 렌더돼야 한다(가드 완화 회귀 방지).
+        let script = render_posix(&[kilo_wrapper()]);
+        assert!(
+            script.contains("if [ ! -f \"${AGENT_OFFICE_KILO_CONFIG}\" ]; then"),
+            "{script}",
         );
     }
 }

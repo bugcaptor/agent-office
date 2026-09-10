@@ -240,6 +240,40 @@ impl ObserverRuntime {
         self.hub.ingest_observer(session_id, event);
     }
 
+    /// Kilo Code CLI(kilo/kilocode) 플러그인 이벤트 처리(docs/kilo-support-design.md).
+    /// pi와 같은 갈래(agent 쿼리, provider/event 계약을 타지 않는다)이지만
+    /// 소스 종류가 더 많다 — 플러그인이 자식 세션 회계(sub-start/sub-stop)와
+    /// 권한 알림(hook)까지 직접 구분해 보낸다. `stop`의 `running`이 0보다
+    /// 크면 hub가 완료 알림을 억제한다(hub.rs, "백그라운드 서브에이전트가
+    /// 아직 도는 중의 Stop은 완료가 아니다" 원칙, pi/agy와 동일).
+    pub fn ingest_kilo_source(&self, session_id: &str, source: &str, body: &[u8]) {
+        let event = match source {
+            "prompt" => ObserverEvent::Prompt {
+                text: event::prompt_text(body),
+                cwd: event::hook_cwd(body),
+            },
+            "tool" => ObserverEvent::Tool {
+                text: event::kilo_tool_activity_text(body),
+                assistant: None,
+                // Kilo는 전사/rollout 경로가 없어(플러그인 이벤트만으로 관찰)
+                // 사용량을 뽑을 곳이 없다(pi 어댑터와 동일한 한계).
+                tokens: None,
+            },
+            "hook" => ObserverEvent::Attention {
+                message: event::message(body),
+            },
+            "sub-start" => ObserverEvent::SubStart,
+            "sub-stop" => ObserverEvent::SubStop,
+            "stop" => ObserverEvent::Stop {
+                message: event::message(body),
+                running: event::kilo_running_subagents(body),
+                tokens: None,
+            },
+            _ => return,
+        };
+        self.hub.ingest_observer(session_id, event);
+    }
+
     /// Antigravity CLI(agy) 훅 이벤트 처리(docs/antigravity-support-design.md
     /// §2/§3.4). `cwd_override`는 `agy() 셸 래퍼`가 `X-Agent-Office-Cwd`
     /// 헤더로 실어 보낸 호출 시점 `$PWD`(§4 스파이크 실측: `workspacePaths`가

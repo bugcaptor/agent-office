@@ -92,6 +92,17 @@ pub struct CommandWrapperSpec {
     /// §4 스파이크 실측). POSIX 렌더러만 지원한다 — agy는 v1에서 Windows를
     /// 빼므로 PowerShell 렌더러는 이 필드를 무시한다.
     pub export_cwd_env: Option<String>,
+    /// `(대상 env, 값을 가져올 env)` 목록. 렌더된 래퍼는 원본 명령을 실행하는
+    /// 그 한 호출에만 대상 env를 소스 env 값으로 세팅한다(kilo:
+    /// `KILO_CONFIG=$AGENT_OFFICE_KILO_CONFIG`, Kilo Code CLI가 플러그인
+    /// 설정을 읽는 env). POSIX는 앞자리 대입, PowerShell은 set→try/finally
+    /// 복원으로 구현한다 — 둘 다 그 호출이 끝나면 값이 원래대로 돌아온다.
+    pub set_env_from_env: Vec<(String, String)>,
+    /// Some(env_name)이면, 그 env가 셸 호출 시점에 이미 값이 있을 때 관찰을
+    /// 포기하고 원본 명령을 그대로 실행한다(경고 한 줄만 남긴다). kilo처럼
+    /// 사용자가 이미 자기 `KILO_CONFIG`를 쓰고 있으면, agent-office가 그 값을
+    /// 덮어써 사용자 설정을 깨는 대신 관찰만 건너뛴다.
+    pub skip_if_env_set: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -216,14 +227,23 @@ pub const MAX_TOOL_TEXT_CHARS: usize = 60;
 /// chars 기준 MAX_TOOL_TEXT_CHARS로 절단한다(멀티바이트 안전, `…` 부착).
 /// tool_name 부재/공백/비문자열이면 None.
 pub fn tool_activity_text(body: &[u8]) -> Option<String> {
+    tool_activity_text_with(body, tool_activity_detail)
+}
+
+/// `tool_activity_text`/`pi_tool_activity_text`/`kilo_tool_activity_text`가 공유하는
+/// 껍데기: top-level `tool_name`을 읽고, 있으면 `detail_fn`으로 어댑터별 인자
+/// 스키마에서 detail 한 조각을 뽑아 `"{tool_name}: {detail}"`(없으면 tool_name만)로
+/// 합친 뒤 MAX_TOOL_TEXT_CHARS로 절단한다. tool_name 부재/공백/비문자열이면 None.
+fn tool_activity_text_with(
+    body: &[u8],
+    detail_fn: impl Fn(&str, &serde_json::Value) -> Option<String>,
+) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
     let tool_name = value.get("tool_name")?.as_str()?.trim();
     if tool_name.is_empty() {
         return None;
     }
-    let detail = value
-        .get("tool_input")
-        .and_then(|input| tool_activity_detail(tool_name, input));
+    let detail = value.get("tool_input").and_then(|input| detail_fn(tool_name, input));
     let summary = match detail {
         Some(detail) => format!("{tool_name}: {detail}"),
         None => tool_name.to_string(),
@@ -277,19 +297,7 @@ fn truncate_tool_text(text: &str) -> String {
 /// `dist/core/tools/{bash,read,write,edit,ls,find,grep}.js` 파라미터 스키마.
 /// tool_name 부재/공백/비문자열이면 None.
 pub fn pi_tool_activity_text(body: &[u8]) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
-    let tool_name = value.get("tool_name")?.as_str()?.trim();
-    if tool_name.is_empty() {
-        return None;
-    }
-    let detail = value
-        .get("tool_input")
-        .and_then(|input| pi_tool_activity_detail(tool_name, input));
-    let summary = match detail {
-        Some(detail) => format!("{tool_name}: {detail}"),
-        None => tool_name.to_string(),
-    };
-    Some(truncate_tool_text(&summary))
+    tool_activity_text_with(body, pi_tool_activity_detail)
 }
 
 /// pi 도구 이름 기준으로 인자에서 detail 한 조각을 뽑는다. 미지 도구(확장이 등록한
@@ -325,6 +333,61 @@ fn pi_tool_activity_detail(tool_name: &str, input: &serde_json::Value) -> Option
 pub fn pi_assistant_text(body: &[u8]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
     truncate_stop_message(value.get("assistant")?.as_str()?)
+}
+
+// ── Kilo Code CLI(kilo/kilocode, OpenCode 포크) ───────────────────────────
+// 스파이크 실측(2026-09-10). 플러그인이 `tool.execute.before`의
+// `{tool: "read"|"write"|"bash"|"task"|..., }` + `output.args`를
+// `{tool_name, tool_input}`로 다시 실어 보내므로 Claude/pi와 같은 껍데기
+// (`tool_activity_text_with`)를 그대로 쓴다. 인자 키는 OpenCode 표준
+// (read/write/edit→filePath, bash→command, list→path, glob/grep→pattern,
+// webfetch→url, task→description) — glob/grep/list/webfetch는 스파이크에서
+// 직접 확인하지 못하고 OpenCode 표준으로 추정한 값이다.
+
+/// Kilo 플러그인이 `tool.execute.before`에서 실어 보낸 `{tool_name, tool_input}`을
+/// 라벨용 도구 요약으로 만든다. tool_name 부재/공백/비문자열이면 None.
+pub fn kilo_tool_activity_text(body: &[u8]) -> Option<String> {
+    tool_activity_text_with(body, kilo_tool_activity_detail)
+}
+
+/// Kilo 도구 이름 기준으로 인자에서 detail 한 조각을 뽑는다. 미지 도구는
+/// None(→ 도구 이름만 표시).
+fn kilo_tool_activity_detail(tool_name: &str, input: &serde_json::Value) -> Option<String> {
+    let is_sep = |c: char| c == '/' || c == '\\';
+    let raw = match tool_name {
+        "bash" => input
+            .get("command")?
+            .as_str()?
+            .lines()
+            .next()?
+            .trim()
+            .to_string(),
+        "read" | "write" | "edit" => {
+            let path = input.get("filePath")?.as_str()?.trim();
+            let trimmed = path.trim_end_matches(is_sep);
+            match trimmed.rsplit(is_sep).next() {
+                Some(name) if !name.is_empty() => name.to_string(),
+                _ => trimmed.to_string(),
+            }
+        }
+        // list는 pi의 ls와 달리 basename으로 자르지 않고 경로 그대로 보인다
+        // (스파이크 실측 근거가 없어 OpenCode 표준 필드명만 확정, 트림 규칙은
+        // 원문 그대로가 안전한 기본값).
+        "list" => input.get("path")?.as_str()?.trim().to_string(),
+        "glob" | "grep" => input.get("pattern")?.as_str()?.trim().to_string(),
+        "webfetch" => input.get("url")?.as_str()?.trim().to_string(),
+        "task" => input.get("description")?.as_str()?.trim().to_string(),
+        _ => return None,
+    };
+    (!raw.is_empty()).then_some(raw)
+}
+
+/// Kilo 플러그인이 `session.idle`/`session.status`에서 실어 보낸 top-level
+/// `running`(자식 세션 수) 숫자만 읽는다. 부재/비정수는 None.
+pub fn kilo_running_subagents(body: &[u8]) -> Option<u32> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let running = value.get("running")?.as_u64()?;
+    Some(running as u32)
 }
 
 // ── Antigravity CLI(agy) ─────────────────────────────────────────────────
@@ -1362,6 +1425,114 @@ mod tests {
         let out = pi_tool_activity_text(&body).unwrap();
         assert_eq!(out.chars().count(), MAX_TOOL_TEXT_CHARS + 1);
         assert!(out.ends_with('…'));
+    }
+
+    // Kilo 스파이크 실측(2026-09-10): tool.execute.before의 {tool, output.args}를
+    // 플러그인이 {tool_name, tool_input}로 다시 실어 보낸다. 인자 키는 OpenCode
+    // 표준(read/write/edit→filePath, bash→command, ...).
+    #[test]
+    fn kilo_tool_activity_text_summarizes_kilo_tool_names_and_arguments() {
+        use super::{kilo_tool_activity_text, MAX_TOOL_TEXT_CHARS};
+
+        assert_eq!(
+            kilo_tool_activity_text(
+                br#"{"tool_name":"bash","tool_input":{"command":"  echo done  \nsecond"}}"#
+            )
+            .as_deref(),
+            Some("bash: echo done"),
+        );
+        assert_eq!(
+            kilo_tool_activity_text(
+                br#"{"tool_name":"read","tool_input":{"filePath":"/a/b/spy2.ts"}}"#
+            )
+            .as_deref(),
+            Some("read: spy2.ts"),
+        );
+        assert_eq!(
+            kilo_tool_activity_text(
+                br#"{"tool_name":"write","tool_input":{"filePath":"C:\\x\\y.rs"}}"#
+            )
+            .as_deref(),
+            Some("write: y.rs"),
+        );
+        assert_eq!(
+            kilo_tool_activity_text(
+                br#"{"tool_name":"edit","tool_input":{"filePath":"src/main.rs"}}"#
+            )
+            .as_deref(),
+            Some("edit: main.rs"),
+        );
+        assert_eq!(
+            kilo_tool_activity_text(br#"{"tool_name":"list","tool_input":{"path":"/only/dir/"}}"#)
+                .as_deref(),
+            Some("list: /only/dir/"),
+        );
+        assert_eq!(
+            kilo_tool_activity_text(br#"{"tool_name":"grep","tool_input":{"pattern":"TODO"}}"#)
+                .as_deref(),
+            Some("grep: TODO"),
+        );
+        assert_eq!(
+            kilo_tool_activity_text(br#"{"tool_name":"glob","tool_input":{"pattern":"**/*.ts"}}"#)
+                .as_deref(),
+            Some("glob: **/*.ts"),
+        );
+        assert_eq!(
+            kilo_tool_activity_text(
+                br#"{"tool_name":"webfetch","tool_input":{"url":"https://example.com"}}"#
+            )
+            .as_deref(),
+            Some("webfetch: https://example.com"),
+        );
+        assert_eq!(
+            kilo_tool_activity_text(
+                r#"{"tool_name":"task","tool_input":{"description":"조사","subagent_type":"explore"}}"#
+                    .as_bytes()
+            )
+            .as_deref(),
+            Some("task: 조사"),
+        );
+        // 미지 도구 / 인자 부재 → 도구 이름만.
+        assert_eq!(
+            kilo_tool_activity_text(br#"{"tool_name":"my_tool","tool_input":{"foo":"bar"}}"#)
+                .as_deref(),
+            Some("my_tool"),
+        );
+        assert_eq!(
+            kilo_tool_activity_text(br#"{"tool_name":"bash","tool_input":{}}"#).as_deref(),
+            Some("bash"),
+        );
+        // Claude 대문자 이름은 kilo 매핑에 없다 → 이름만(교차 오염 방지).
+        assert_eq!(
+            kilo_tool_activity_text(br#"{"tool_name":"Bash","tool_input":{"command":"x"}}"#)
+                .as_deref(),
+            Some("Bash"),
+        );
+        assert_eq!(
+            kilo_tool_activity_text(br#"{"tool_input":{"command":"x"}}"#),
+            None
+        );
+        assert_eq!(kilo_tool_activity_text(br#"{"tool_name":"  "}"#), None);
+        assert_eq!(kilo_tool_activity_text(b"not json"), None);
+
+        let long_cmd = "가".repeat(200);
+        let body = serde_json::json!({ "tool_name": "bash", "tool_input": { "command": long_cmd } })
+            .to_string()
+            .into_bytes();
+        let out = kilo_tool_activity_text(&body).unwrap();
+        assert_eq!(out.chars().count(), MAX_TOOL_TEXT_CHARS + 1);
+        assert!(out.ends_with('…'));
+    }
+
+    #[test]
+    fn kilo_running_subagents_reads_the_top_level_running_field() {
+        use super::kilo_running_subagents;
+
+        assert_eq!(kilo_running_subagents(br#"{"running":3}"#), Some(3));
+        assert_eq!(kilo_running_subagents(br#"{"running":0}"#), Some(0));
+        assert_eq!(kilo_running_subagents(br#"{"message":"x"}"#), None);
+        assert_eq!(kilo_running_subagents(br#"{"running":"3"}"#), None);
+        assert_eq!(kilo_running_subagents(b"not json"), None);
     }
 
     #[test]

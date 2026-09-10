@@ -26,6 +26,7 @@ use crate::notification::hub::NotificationHub;
 use crate::observer::{CommandWrapperSpec, ObserverRuntime, ObserverSessionContext, WrapperArg};
 use crate::session::external::{ExternalDetachReason, ExternalSession};
 use crate::session::output::{spawn_output_pump, OutputSink, ReaderMsg};
+use crate::session::kilo_plugin;
 use crate::session::pi_extension;
 use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnOptions, SpawnedPty};
 use crate::session::shells;
@@ -371,6 +372,43 @@ impl SessionManager {
                     });
                 }
                 Err(error) => eprintln!("agent-office: failed to write pi extension: {error}"),
+            }
+        }
+
+        // Kilo Code CLI(kilo/kilocode, docs/kilo-support-design.md): 플러그인
+        // 설정 JSON을 `KILO_CONFIG` env로 가리킨다(전역 `~/.config/kilo/kilo.jsonc`와
+        // 병합, 스파이크 실측). 사용자가 이미 자기 `KILO_CONFIG`를 쓰고 있으면
+        // (skip_if_env_set) 덮어쓰지 않고 관찰만 포기한다 — pi의 파일-부재 강등과
+        // 같은 취지지만 여기서는 "사용자 설정과 충돌"이 강등 사유다. 두 커맨드
+        // 이름(kilo/kilocode) 모두에 같은 배선을 건다.
+        if observer_url.is_some() {
+            match kilo_plugin::ensure_plugin(self.app_data_dir.as_deref()) {
+                Ok(path) => {
+                    plan.env.push((
+                        "AGENT_OFFICE_KILO_CONFIG".into(),
+                        path.to_string_lossy().into_owned(),
+                    ));
+                    for command in ["kilo", "kilocode"] {
+                        plan.wrappers.push(CommandWrapperSpec {
+                            command: command.into(),
+                            prefix_args: vec![],
+                            skip_if_present: vec![],
+                            set_env_from_env: vec![(
+                                "KILO_CONFIG".into(),
+                                "AGENT_OFFICE_KILO_CONFIG".into(),
+                            )],
+                            skip_if_env_set: Some("KILO_CONFIG".into()),
+                            // 설정 파일이 사라졌으면(app_data 없는 구성이 OS temp를
+                            // 쓰다 청소된 경우 등) env 대입 없이 원본 명령을 실행한다
+                            // — pi의 `pi -e <없는 경로>` 하드 실패 가드와 같은 취지.
+                            skip_prefix_if_env_file_missing: Some(
+                                "AGENT_OFFICE_KILO_CONFIG".into(),
+                            ),
+                            ..Default::default()
+                        });
+                    }
+                }
+                Err(error) => eprintln!("agent-office: failed to write kilo plugin: {error}"),
             }
         }
 

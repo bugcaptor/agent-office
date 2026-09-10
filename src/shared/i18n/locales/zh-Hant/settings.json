@@ -34,7 +34,7 @@
     "diaryTitle": "角色日記",
     "diaryHelp": "開啟後，每次工作階段結束時，各角色會以自己的個性為文體，自動寫下工作紀錄兼日記（手動的「寫日記」按鈕照樣可用）。它呼叫的是與上面摘要器同一個 CLI，所以會消耗帳號用量。在分頁的右鍵選單閱讀。",
     "observerTitle": "Agent 觀察（通知・計時）",
-    "observerHelp": "Claude、Codex、Pi、Antigravity 的通知與計時只對之後新建的終端機生效。關閉時，驚嘆號通知和工作階段計時都不會運作。",
+    "observerHelp": "Claude、Codex、Pi、Kilo、Antigravity 的通知與計時只對之後新建的終端機生效。關閉時，驚嘆號通知和工作階段計時都不會運作。",
     "openrouterNote": "OpenRouter 摘要會用 API 金鑰（或環境變數 <code>OPENROUTER_API_KEY</code>）。沒有金鑰時摘要會失敗，直接顯示原文。",
     "opencodeNote": "opencode 摘要會呼叫已安裝的 <code>opencode</code> CLI。模型 id 是<code> provider/model</code> 格式（可用 <code>opencode models</code> 查詢），預設值假設你用的是 opencode 自家訂閱（<code>opencode-go</code>）。",
     "commandTitle": "{{provider}} 執行命令",
@@ -216,7 +216,7 @@
   },
   "firstRun": {
     "title": "開始使用 Agent Office",
-    "intro": "Claude Code / Codex / Pi / Antigravity 的整合功能是選用的。現在關著開始也沒關係，隨時可以從下方列的 ⚙ 設定打開。",
+    "intro": "Claude Code / Codex / Pi / Kilo / Antigravity 的整合功能是選用的。現在關著開始也沒關係，隨時可以從下方列的 ⚙ 設定打開。",
     "start": "開始"
   },
   "pairing": {

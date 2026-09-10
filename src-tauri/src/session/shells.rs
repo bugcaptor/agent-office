@@ -519,6 +519,17 @@ mod tests {
                 skip_if_present: vec![],
                 ..Default::default()
             },
+            CommandWrapperSpec {
+                command: "kilo".into(),
+                prefix_args: vec![],
+                skip_if_present: vec![],
+                set_env_from_env: vec![(
+                    "KILO_CONFIG".into(),
+                    "AGENT_OFFICE_KILO_CONFIG".into(),
+                )],
+                skip_if_env_set: Some("KILO_CONFIG".into()),
+                ..Default::default()
+            },
         ]
     }
 
@@ -584,7 +595,12 @@ mod tests {
         assert!(script.contains("global:claude"), "{script}");
         assert!(script.contains("global:codex"), "{script}");
         assert!(script.contains("global:pi"), "{script}");
+        assert!(script.contains("global:kilo"), "{script}");
         assert!(script.contains("'-e' $env:AGENT_OFFICE_PI_EXT"), "{script}");
+        assert!(
+            script.contains("$env:KILO_CONFIG = $env:AGENT_OFFICE_KILO_CONFIG"),
+            "{script}",
+        );
     }
 
     #[cfg(windows)]

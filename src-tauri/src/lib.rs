@@ -408,6 +408,15 @@ pub fn run() {
             {
                 eprintln!("agent-office: failed to write pi extension at boot: {error}");
             }
+            // Kilo Code CLI(kilo/kilocode, docs/kilo-support-design.md): pi 확장과
+            // 같은 이유로 플러그인·설정 파일도 app_data 안정 경로에 부팅마다 다시
+            // 써 둔다 — 재시작 전에 스폰돼 `AGENT_OFFICE_KILO_CONFIG`를 들고 있는
+            // 입양 세션의 경로가 계속 유효하다.
+            if let Err(error) =
+                crate::session::kilo_plugin::ensure_plugin(Some(&data_dir))
+            {
+                eprintln!("agent-office: failed to write kilo plugin at boot: {error}");
+            }
             // Antigravity CLI(agy, docs/antigravity-support-design.md): pi 확장과
             // 같은 결로 훅 스크립트를 app_data 안정 경로에 부팅마다 다시 쓴다.
             // agy는 세션별 훅 파일을 넘길 방법이 없어(§0) 전역

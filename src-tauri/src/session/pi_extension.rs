@@ -194,10 +194,25 @@ const EXTENSION_FILENAME: &str = "agent-office-pi.ts";
 /// any existing copy — content is static, so blind overwrite is fine (same
 /// pattern as `zsh_wrapper::write_shim`). Returns the extension FILE path (the
 /// value injected as env `AGENT_OFFICE_PI_EXT`), not the directory.
+///
+/// 리뷰 지적(kilo 작업 병행 수정): write는 같은 디렉터리에 임시 파일로 쓴 뒤
+/// rename으로 원자화한다(`observer/claude.rs`의 훅 설정 temp+rename과 같은
+/// 취지) — 이 파일은 부팅·세션 준비마다 blind overwrite되므로, write 도중
+/// 죽거나 다른 준비와 겹치면 절반만 쓰인 파일을 pi가 그대로 읽을 위험이 있다.
+/// 임시 파일 이름에 uuid를 섞는다 — 고정 이름을 쓰면 app_data 없는 구성에서
+/// 동시에 도는 여러 세션 준비가 같은 임시 파일을 두고 경합해, 한쪽이
+/// rename한 직후 다른 쪽이 이미 사라진 파일을 rename하려다 ENOENT로
+/// 실패하는 레이스가 생긴다(병렬 테스트에서 실제 재현).
 pub fn write_extension(base: &Path) -> io::Result<PathBuf> {
     std::fs::create_dir_all(base)?;
     let p = base.join(EXTENSION_FILENAME);
-    std::fs::write(&p, PI_EXTENSION_TS)?;
+    let tmp = p.with_file_name(format!("{EXTENSION_FILENAME}.tmp-{}", uuid::Uuid::new_v4()));
+    std::fs::write(&tmp, PI_EXTENSION_TS)
+        .and_then(|()| std::fs::rename(&tmp, &p))
+        .map_err(|error| {
+            let _ = std::fs::remove_file(&tmp);
+            error
+        })?;
     Ok(p)
 }
 

@@ -9,6 +9,7 @@ pub mod external;
 pub mod handoff_broker;
 pub mod handoff_v1;
 pub mod inject;
+pub mod kilo_plugin;
 pub mod manager;
 pub mod output;
 pub mod output_batcher;

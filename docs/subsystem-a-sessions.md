@@ -31,8 +31,9 @@ src-tauri/src/
     poll_reader.rs         # poll 기반 인터럽트 가능 reader (unix, 핸드오프 전제)
     shells.rs              # 셸 탐지·선택 + PowerShell 래퍼
     zsh_wrapper.rs / bash_wrapper.rs / wrapper_script.rs
-                           # 셸별 rc 심 + CommandWrapperSpec 기반 claude()/pi() 래퍼 렌더
+                           # 셸별 rc 심 + CommandWrapperSpec 기반 claude()/pi()/kilo() 래퍼 렌더
     pi_extension.rs        # Pi 확장 파일 배포 (docs/pi-support-design.md)
+    kilo_plugin.rs         # Kilo Code CLI 플러그인·KILO_CONFIG 배포 (docs/kilo-support-design.md)
     env_capture.rs         # 로그인 셸 env 캡처 (봇 모드 #58)
   notification/
     hub.rs (+ hub/)        # NotificationHub: dedup/큐/clear + hold(§10.4)/resume-watch(§10.2)
@@ -177,7 +178,7 @@ Rust/Tauri는 **OS 스레드 + tokio 태스크 혼합**이다. `portable-pty`의
 - **부작용 경계 트레잇**: `PtyFactory::spawn(PtySpawnOptions) -> SpawnedPty { reader, writer, control(resize/kill), waiter }`. SessionManager는 이 트레잇만 알고, 테스트는 Fake를 주입한다. 이 이음새 덕에 v2 브로커도 `BrokerPtyFactory` 교체 한 겹으로 들어갔다(broker-v2 문서).
 - `SpawnedPty`에는 핸드오프용 `reader_interrupt`/`handoff`(v1, unix)와 `broker_owned`(v2 혼합 상황 분류) 필드가 추가돼 있다 — 의미는 각 핸드오프 문서 참조.
 - slave는 spawn 직후 닫는다. `clone_killer()`로 wait 스레드가 child를 소유해도 별도 kill 가능.
-- 스폰 셸은 **로그인 인터랙티브 셸**(`$SHELL -l -i`, Windows powershell). 주입 env: `AGENT_OFFICE_SESSION`(항상), `AGENT_OFFICE_HOOK_URL`·`AGENT_OFFICE_SETTINGS`(훅 on일 때), `AGENT_OFFICE_PI_EXT`(훅 on), `TERM=xterm-256color`. 셸 rc 심(`zsh_wrapper`/`bash_wrapper`/`shells.rs`)이 `claude()`/`pi()` 래퍼를 정의해 `--settings`/`-e`를 투명 주입한다(`wrapper_script.rs`의 `CommandWrapperSpec` 렌더).
+- 스폰 셸은 **로그인 인터랙티브 셸**(`$SHELL -l -i`, Windows powershell). 주입 env: `AGENT_OFFICE_SESSION`(항상), `AGENT_OFFICE_HOOK_URL`·`AGENT_OFFICE_SETTINGS`(훅 on일 때), `AGENT_OFFICE_PI_EXT`(훅 on), `AGENT_OFFICE_KILO_CONFIG`(훅 on, docs/kilo-support-design.md), `TERM=xterm-256color`. 셸 rc 심(`zsh_wrapper`/`bash_wrapper`/`shells.rs`)이 `claude()`/`pi()`/`kilo()`/`kilocode()` 래퍼를 정의해 `--settings`/`-e`/`KILO_CONFIG` 대입을 투명 주입한다(`wrapper_script.rs`의 `CommandWrapperSpec` 렌더). kilo만 있는 특이점: 사용자가 이미 자기 `KILO_CONFIG`를 쓰고 있으면(`skip_if_env_set`) 그 값을 덮어쓰지 않고 관찰을 접는다.
 
 ### 3.2 OutputBatcher — `session/output_batcher.rs`
 
@@ -201,7 +202,7 @@ Rust/Tauri는 **OS 스레드 + tokio 태스크 혼합**이다. `portable-pty`의
 
 ### 3.5 observer 훅 파이프라인 — `observer/`
 
-- 초기 설계의 `hook_server.rs`(수신)·`hook_settings.rs`(설정 파일)는 **어댑터 구조로 일반화**됐다: `ObserverAdapter` 트레잇(claude/codex 구현) + `ObserverRuntime`(ingest → hub), Pi는 `ingest_pi_source` 직행 갈래(pi-support 문서 §0.5).
+- 초기 설계의 `hook_server.rs`(수신)·`hook_settings.rs`(설정 파일)는 **어댑터 구조로 일반화**됐다: `ObserverAdapter` 트레잇(claude/codex 구현) + `ObserverRuntime`(ingest → hub), Pi는 `ingest_pi_source`, Kilo(kilo/kilocode)는 `ingest_kilo_source` 직행 갈래(각각 pi-support 문서 §0.5, kilo-support 문서 §2).
 - 훅 커맨드는 curl 직결이 아니라 **앱 바이너리 forwarder**(`--observer-forward`) 경유 — 포트 스테일 완화(이슈 #30, handoff 문서 §5). 훅 실패는 항상 비차단(claude 흐름에 영향 0), BEL 폴백 상시.
 - Claude 설정 파일은 `<app_data>/observer/claude/`(§11에서 OS temp로부터 이동), 세션별 생성·정리. 입양 시 멱등 복구(§11).
 - 훅 서버 기동은 `serve_with_retry`로 캡슐화 — 시도마다 새 oneshot 쌍을 만들고 **성공한 시도의 shutdown sender만** AppState에 저장한다. (sender drop도 shutdown 신호로 취급되므로, 재시도 분기에서 만든 tx를 버리면 방금 띄운 서버가 즉사하는 배선 버그가 있다 — 초기 스케치에서 실제로 발견해 캡슐화로 해소한 함정.)
