@@ -255,9 +255,10 @@ impl ObserverRuntime {
             "tool" => ObserverEvent::Tool {
                 text: event::kilo_tool_activity_text(body),
                 assistant: None,
-                // Kilo는 전사/rollout 경로가 없어(플러그인 이벤트만으로 관찰)
-                // 사용량을 뽑을 곳이 없다(pi 어댑터와 동일한 한계).
-                tokens: None,
+                // Kilo는 전사/rollout 파일이 없어 플러그인이 `step-finish`
+                // 파트를 합산해 body에 실어 보낸다(kilo-support-design §7).
+                // 5초 스로틀을 통과한 도구 이벤트에만 실리고, 나머지는 None.
+                tokens: event::kilo_turn_tokens(body),
             },
             "hook" => ObserverEvent::Attention {
                 message: event::message(body),
@@ -267,7 +268,7 @@ impl ObserverRuntime {
             "stop" => ObserverEvent::Stop {
                 message: event::message(body),
                 running: event::kilo_running_subagents(body),
-                tokens: None,
+                tokens: event::kilo_turn_tokens(body),
             },
             _ => return,
         };
@@ -979,6 +980,46 @@ mod tests {
             std::time::Duration::from_millis(3_000),
         ));
         (Arc::new(ObserverRuntime::new(hub, vec![])), recorded)
+    }
+
+    /// Kilo 사용량 배선(kilo-support-design §7): 플러그인이 `tool`(partial)·
+    /// `stop` body에 실은 `tokens`가 알림과 독립된 turn_usage 채널로 나가야
+    /// 한다. tokens가 없는 body는 usage 레코드를 만들지 않는다.
+    #[test]
+    fn ingest_kilo_source_emits_turn_usage_from_tool_and_stop_bodies() {
+        let (runtime, recorded) = agy_runtime();
+
+        runtime.ingest_kilo_source("s1", "prompt", br#"{"prompt":"hi","cwd":"/w"}"#);
+        runtime.ingest_kilo_source(
+            "s1",
+            "tool",
+            br#"{"tool_name":"bash","tool_input":{"command":"ls"}}"#,
+        );
+        runtime.ingest_kilo_source(
+            "s1",
+            "tool",
+            br#"{"tool_name":"read","tool_input":{"filePath":"/w/a.rs"},"tokens":{"input":100,"output":20,"cacheRead":5,"cacheWrite":0,"model":"claude-sonnet-4-5"}}"#,
+        );
+        runtime.ingest_kilo_source(
+            "s1",
+            "stop",
+            br#"{"message":"Kilo finished a task","running":0,"tokens":{"input":40,"output":8,"model":"claude-sonnet-4-5","byModel":[{"input":40,"output":8,"model":"claude-sonnet-4-5"}]}}"#,
+        );
+
+        let usages = recorded.usages();
+        assert_eq!(usages.len(), 2, "one partial (tool) + one final (stop)");
+        assert_eq!(usages[0].session_id, "s1");
+        assert_eq!(usages[0].tokens.input, Some(100));
+        assert_eq!(usages[0].tokens.cache_read, Some(5));
+        assert!(usages[0].partial);
+        assert_eq!(usages[1].tokens.input, Some(40));
+        assert_eq!(usages[1].tokens.output, Some(8));
+        assert_eq!(usages[1].tokens.model.as_deref(), Some("claude-sonnet-4-5"));
+        assert!(!usages[1].partial);
+
+        let notifications = recorded.notifications();
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].message, "Kilo finished a task");
     }
 
     /// 스파이크 실측 1: invocationNum이 0일 때만 턴을 연다 — 같은 턴 안의

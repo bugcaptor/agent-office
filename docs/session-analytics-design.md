@@ -292,6 +292,12 @@ flush된 토큰은 다음 관측이 없으면 회수하지 못한다(§11.4).
 
 pi는 전사/rollout 경로가 없어 항상 `tokens: None`이다.
 
+Kilo도 전사 파일은 없지만 플러그인 이벤트(`message.part.updated`의
+`step-finish` 파트)에 스텝별 토큰이 실려 온다. 플러그인이 이를 합산해
+`tool`(5초 스로틀, `partial:true`)·`stop` body의 `tokens`로 보내고, 서버는
+`event::kilo_turn_tokens`로 그대로 읽어 같은 `turn_usage` 채널에 넘긴다.
+정규화 규칙과 근거는 `docs/kilo-support-design.md` §7.
+
 ### 9.4 비용 환산 (프런트)
 
 단가표는 `renderer/analytics/pricing.ts`. 집계가 이미 프런트 순수 함수라 단가도

@@ -1,6 +1,8 @@
 # Kilo Code CLI(kilo/kilocode) 작업 상태 감지 지원 — 설계 문서
 
 작성: 2026-09-10 (kilo 7.6.0, OpenCode 포크 기준 스파이크 실측)
+변경점(2026-09-11): 턴 사용량(토큰) 추정을 §7에 추가했습니다. 처음 구현에서는
+`tokens: None`으로 비워 두었던 자리입니다.
 상태: 구현 완료. 이슈는 kbm 너른바다/프로젝트관리/AgentOffice 참고.
 
 ## 0. 요약
@@ -26,6 +28,8 @@ Pi와 다른 점은 주입 방식입니다. Pi는 `-e <경로>` 인자로 확장
 - 서버의 `agent=kilo` 갈래와 이벤트 매핑(`observer/mod.rs::ingest_kilo_source`)
 - 사용자가 이미 자기 `KILO_CONFIG`를 쓰고 있으면 관찰을 접고 원본 명령을
   그대로 실행하는 안전장치
+- 턴 사용량(토큰) — 플러그인이 `step-finish` 파트를 합산해 `tool`/`stop` body의
+  `tokens`로 실어 보내고, 서버는 그걸 그대로 `turn_usage` 채널에 넘깁니다(§7)
 
 ## 1. 스파이크 실측(2026-09-10, kilo 7.6.0)
 
@@ -88,6 +92,19 @@ export const AgentOffice = async (ctx: any) => ({
   patterns: ["echo x"], metadata, always, tool: {messageID, callID} }`.
   (`permission.ask` 훅 자체는 발화하지 않습니다. 이벤트로만 받을 수 있습니다.)
 - `permission.replied` — `properties = { sessionID, requestID, reply }`.
+- `message.updated` — `properties = { sessionID, info }`. assistant 메시지면
+  `info = { id, role: "assistant", sessionID, modelID, providerID, cost,
+  tokens: {input, output, reasoning, cache: {read, write}}, time: {created,
+  completed?} }`. 한 메시지에 여러 번 옵니다(생성 시 0, 스텝 끝날 때마다,
+  완료 시). **`info.tokens`는 마지막 스텝 값으로 덮어써지고 `cost`만
+  누적됩니다**(바이너리에서 `assistantMessage.cost += step.cost;
+  assistantMessage.tokens = step.tokens` 확인). 그래서 사용량 합산에는 이
+  이벤트를 쓰지 않고 모델 ID 보충에만 씁니다(§7).
+- `message.part.updated` — `properties = { sessionID, part, time }`. 스텝이 끝날
+  때마다 `part = { id, messageID, sessionID, type: "step-finish", reason,
+  tokens: {total?, input, output, reasoning, cache: {read, write}}, cost,
+  model?: {providerID, modelID}, time }`가 옵니다. 7.6.2 실측에서는 `model`
+  필드가 비어 있었습니다. 같은 세션의 `session.idle`보다 먼저 옵니다.
 
 `session.turn.open`/`session.turn.close` 이벤트는 kilo 바이너리 안에 정의는
 돼 있지만, 스파이크 3회 모두 플러그인의 `event` 훅으로 전달되지 않았습니다.
@@ -103,11 +120,11 @@ export const AgentOffice = async (ctx: any) => ({
 | source | 언제 | body | 만드는 ObserverEvent |
 | --- | --- | --- | --- |
 | `prompt` | 루트 세션의 `chat.message` | `{prompt, cwd}` | `Prompt` |
-| `tool` | `tool.execute.before`, 자식 세션의 `chat.message`(하트비트용), `permission.replied` | `{tool_name, tool_input}` 또는 빈 객체 | `Tool` |
+| `tool` | `tool.execute.before`, 자식 세션의 `chat.message`(하트비트용), `permission.replied` | `{tool_name, tool_input, tokens?}` 또는 빈 객체 | `Tool`(`tokens`가 있으면 partial 사용량도) |
 | `hook` | `permission.asked` | `{message}` | `Attention`(권한 알림) |
 | `sub-start` | `session.created`(parentID 있음) | `{}` | `SubStart` |
 | `sub-stop` | 자식 세션의 `session.idle` | `{}` | `SubStop` |
-| `stop` | 루트 세션 ID와 일치하고 `runOpen`인 `session.idle` | `{message, running}` | `Stop` |
+| `stop` | 루트 세션 ID와 일치하고 `runOpen`인 `session.idle` | `{message, running, tokens?}` | `Stop`(`tokens`가 있으면 그 턴의 사용량도) |
 
 `permission.replied`를 `tool`로 보내는 이유는 완료 알림 억제가 아니라
 반대쪽입니다 — hub는 권한을 묻는 `hook`(Attention) 알림을 세션이 계속
@@ -248,3 +265,86 @@ idle은 `runOpen`이 이미 꺼져 있어 그냥 무시됩니다.
   확인하지 못했습니다.
 - **`tool.execute.after`.** 우리 플러그인 모듈에는 넣지 않았습니다. `title`만
   오는 페이로드라 지금 라벨 체계로는 쓸 데가 마땅치 않았습니다(§1.3).
+- **서브에이전트가 여럿 도는 턴의 사용량.** 스파이크는 task 도구 없이 한 세션
+  안의 스텝 두 개만 확인했습니다. 자식 세션의 `step-finish`도 같은 플러그인
+  `event` 훅으로 오므로 같은 맵에 쌓일 것으로 봅니다(§7).
+
+## 7. 턴 사용량(토큰) 추정
+
+처음 구현에서는 "Kilo는 전사 파일이 없으니 사용량을 뽑을 곳이 없다"고 보고
+pi처럼 `tokens: None`으로 두었습니다. 다시 보니 플러그인 이벤트 자체에
+스텝별 토큰이 실려 옵니다. 그래서 파일을 뒤지지 않고 **플러그인이 이벤트를
+합산해 body에 실어 보내는** 방식으로 채웠습니다(2026-09-11, kilo 7.6.2 실측).
+
+### 왜 메시지 단위가 아니라 스텝 단위로 세나요
+
+`message.updated`의 `info.tokens`가 있으니 그걸 쓰면 될 것 같지만, 그 값은
+**마지막 스텝의 토큰**입니다. 도구를 세 번 부른 assistant 메시지라면 스텝이
+넷인데 `info.tokens`에는 넷째 것만 남습니다(`cost`만 누적). 메시지 단위로
+세면 도구를 많이 쓸수록 과소 집계가 됩니다.
+
+반면 `message.part.updated`의 `step-finish` 파트는 스텝마다 하나씩, 고유한
+`part.id`로 옵니다. 이걸 `part.id` 키로 맵에 넣으면 같은 파트가 다시 와도
+덮어쓸 뿐 두 번 세지 않습니다.
+
+### 플러그인이 하는 일
+
+- `message.updated`(assistant) — `id → modelID`만 기억합니다(최대 512개, 넘치면
+  오래된 것부터 버림). `step-finish` 파트에 `model`이 비어 있을 때 여기서
+  모델 ID를 보충합니다.
+- `message.part.updated`(`step-finish`) — `steps` 맵에 `part.id`로 넣습니다.
+  정규화는 Claude/Codex와 같은 규칙입니다.
+  - `input`은 Kilo가 이미 캐시 읽기·쓰기를 뺀 순수 입력입니다(바이너리의
+    getUsage: `input = inputTokens - cacheRead - cacheWrite`). 그대로 씁니다.
+  - `output`은 Kilo가 reasoning을 뺀 값이라 `output + reasoning`으로 다시
+    합칩니다. Claude의 `output_tokens`, Codex의 `output_tokens`가 thinking을
+    포함하는 것과 맞추기 위해서입니다.
+  - `cache.read`/`cache.write` → `cacheRead`/`cacheWrite`.
+- `takeUsage()` — 맵에 쌓인 스텝을 모델별로 합쳐 `{input, output, cacheRead,
+  cacheWrite, model, byModel: [...]}`를 만들고 **맵을 비웁니다.** 한 번 보낸
+  스텝은 다시 세지 않는다는 뜻이라, Claude 어댑터의 워터마크 델타와 같은
+  효과를 상태 하나로 냅니다. 대표 `model`은 가장 최근 스텝의 것입니다.
+- 언제 보내나
+  - 루트 `session.idle`(= `stop`) — 그때까지의 합산을 `tokens`에 실어 보냅니다.
+    `partial:false`로 정산됩니다.
+  - `tool.execute.before` — 직전 flush로부터 5초가 지났고 쌓인 스텝이 있으면
+    `tool` body에 `tokens`를 얹습니다. hub가 `partial:true` 사용량으로 내보내
+    요약 바가 Stop을 기다리지 않고 갱신됩니다(claude/codex PostToolUse와 같은
+    채널). 첫 도구 호출 시점에는 아직 `step-finish`가 안 와서 보통 비어
+    있고, 두 번째 스텝부터 실립니다.
+  - 새 루트 프롬프트에서는 맵을 **비우지 않습니다.** `running > 0`인 stop 뒤에
+    자식 세션이 마저 쓴 토큰은 다음 flush(다음 도구 또는 다음 stop)에 얹혀
+    나갑니다 — 버리는 것보다 다음 턴에 붙는 편이 낫다는 판단입니다.
+
+### 서버가 하는 일
+
+`event::kilo_turn_tokens(body)`가 top-level `tokens`를 `SessionEventTokens`로
+그대로 역직렬화하고, 유효 카운트가 하나도 없으면 None으로 접습니다.
+`ingest_kilo_source`의 `tool`/`stop` 갈래가 이 값을 `ObserverEvent::Tool`/`Stop`의
+`tokens`에 넣으면, 그 뒤는 hub의 기존 `turn_usage` 채널이 처리합니다.
+`observer/server.rs`, hub, 프런트는 손대지 않았습니다.
+
+### 비용 환산
+
+모델 ID는 Kilo의 `modelID`를 그대로 보냅니다(`providerID`는 붙이지 않음).
+`deepseek/deepseek-v4.1-flash`처럼 프런트 단가표(`renderer/analytics/pricing.ts`)에
+없는 모델은 비용이 "미지"로 표시됩니다. Kilo가 계산한 `cost`도 파트에 실려
+오지만, 와이어 타입에 비용 필드가 없어 이번에는 싣지 않았습니다.
+필요해지면 `SessionEventTokens`에 옵션 필드를 더하는 별개 작업입니다.
+
+### 실측(2026-09-11)
+
+`kilo run "Run the bash command 'echo hi' and then reply with the single
+word done"`을 로컬 훅 로거에 붙여 돌린 결과입니다.
+
+```
+prompt  {"prompt":"...","cwd":"..."}
+tool    {"tool_name":"bash","tool_input":{"command":"echo hi",...}}
+stop    {"message":"Kilo finished a task","running":0,
+         "tokens":{"input":45298,"output":78,"cacheRead":2176,"cacheWrite":0,
+                   "model":"deepseek/deepseek-v4.1-flash",
+                   "byModel":[{...같은 값...}]}}
+```
+
+스텝 두 개(도구 호출 전 23,691 + 도구 결과 후 21,607 입력)가 합쳐진 값이고,
+둘째 스텝의 캐시 읽기 2,176이 따로 잡혔습니다.

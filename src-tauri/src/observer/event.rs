@@ -390,6 +390,19 @@ pub fn kilo_running_subagents(body: &[u8]) -> Option<u32> {
     Some(running as u32)
 }
 
+/// Kilo 플러그인이 `tool`(5초 스로틀 partial)·`stop` body에 실어 보낸 top-level
+/// `tokens`를 읽는다(docs/kilo-support-design.md §7). 플러그인이 이미
+/// `SessionEventTokens` 와이어 모양(camelCase, 순수 입력·output+reasoning·
+/// byModel)으로 정규화해 보내므로 그대로 역직렬화하고, 유효 카운트가 하나도
+/// 없으면 None으로 접는다. 부재/파손이면 None — 관찰은 계속되고 사용량만 빠진다.
+pub fn kilo_turn_tokens(body: &[u8]) -> Option<SessionEventTokens> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let tokens = value.get("tokens")?.clone();
+    serde_json::from_value::<SessionEventTokens>(tokens)
+        .ok()?
+        .non_empty()
+}
+
 // ── Antigravity CLI(agy) ─────────────────────────────────────────────────
 // docs/antigravity-support-design.md §2/§3.4. agy 훅 body는 camelCase다
 // (`invocationNum`, `workspacePaths`, `transcriptPath`) — Claude/pi의
@@ -1522,6 +1535,40 @@ mod tests {
         let out = kilo_tool_activity_text(&body).unwrap();
         assert_eq!(out.chars().count(), MAX_TOOL_TEXT_CHARS + 1);
         assert!(out.ends_with('…'));
+    }
+
+    // 스파이크 실측(2026-09-11): 플러그인이 step-finish 파트를 합산해 보내는
+    // `tokens`는 SessionEventTokens 와이어 모양 그대로다.
+    #[test]
+    fn kilo_turn_tokens_reads_the_normalized_tokens_object() {
+        use super::kilo_turn_tokens;
+        let body = br#"{"message":"Kilo finished a task","running":0,"tokens":{"input":23691,"output":3,"cacheRead":0,"cacheWrite":0,"model":"deepseek/deepseek-v4.1-flash","byModel":[{"input":23691,"output":3,"cacheRead":0,"cacheWrite":0,"model":"deepseek/deepseek-v4.1-flash"}]}}"#;
+        let tokens = kilo_turn_tokens(body).expect("tokens present");
+        assert_eq!(tokens.input, Some(23691));
+        assert_eq!(tokens.output, Some(3));
+        assert_eq!(tokens.cache_read, Some(0));
+        assert_eq!(tokens.cache_write, Some(0));
+        assert_eq!(tokens.model.as_deref(), Some("deepseek/deepseek-v4.1-flash"));
+        let by_model = tokens.by_model.expect("byModel present");
+        assert_eq!(by_model.len(), 1);
+        assert_eq!(by_model[0].input, Some(23691));
+        assert_eq!(by_model[0].model.as_deref(), Some("deepseek/deepseek-v4.1-flash"));
+
+        // tool body(partial)에도 같은 모양으로 실린다 — 다른 필드는 무시.
+        let tool = br#"{"tool_name":"bash","tool_input":{"command":"ls"},"tokens":{"input":10,"output":5}}"#;
+        let tokens = kilo_turn_tokens(tool).expect("tokens present");
+        assert_eq!(tokens.input, Some(10));
+        assert_eq!(tokens.output, Some(5));
+        assert_eq!(tokens.by_model, None);
+
+        // 부재·전부 0·파손은 None(사용량 레코드를 만들지 않는다).
+        assert_eq!(kilo_turn_tokens(br#"{"message":"x","running":0}"#), None);
+        assert_eq!(
+            kilo_turn_tokens(br#"{"tokens":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0}}"#),
+            None
+        );
+        assert_eq!(kilo_turn_tokens(br#"{"tokens":"nope"}"#), None);
+        assert_eq!(kilo_turn_tokens(b"not json"), None);
     }
 
     #[test]

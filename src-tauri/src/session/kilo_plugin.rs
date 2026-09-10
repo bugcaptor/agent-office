@@ -22,6 +22,9 @@
 //     시작, `event`(session.created/session.idle/permission.*)가 자식 세션
 //     회계·완료·권한 알림을 담당한다. **자식 세션의 idle이 부모 idle보다
 //     먼저 온다** — activeChildren을 부모 idle보다 먼저 감소시켜야 한다.
+//   - 사용량(2026-09-11 실측): `message.part.updated`의 `step-finish` 파트가
+//     스텝별 `tokens`/`cost`를 싣고 `session.idle`보다 먼저 온다. 플러그인이
+//     이를 합산해 `tool`(5초 스로틀, partial)·`stop` body의 `tokens`로 보낸다.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -103,6 +106,51 @@ export const AgentOffice = async (ctx: any) => {
   let rootSessionID: string | undefined;
   let lastError = false; // 이번 루트 턴에서 session.error를 봤는가
 
+  // 사용량 회계(docs/kilo-support-design.md §7). Kilo는 전사 파일이 없어
+  // 플러그인 이벤트가 유일한 원천이다. assistant 메시지 info의 `tokens`는
+  // **마지막 스텝 값으로 덮어써지고** cost만 누적되므로(실측), 메시지 단위가
+  // 아니라 `message.part.updated`의 `step-finish` 파트를 part.id로 중복 제거해
+  // 합산한다. 모델 ID는 step-finish 파트에 없을 수 있어 `message.updated`의
+  // assistant info(id → modelID)에서 보충한다. Kilo의 `tokens.input`은 이미
+  // 캐시 읽기/쓰기를 뺀 순수 입력이고(getUsage 실측), reasoning은 output에
+  // 포함되지 않은 별도 항목이라 output에 더한다(Claude/Codex 정규화와 동일).
+  const messageModel = new Map<string, string>();
+  const MAX_MESSAGE_MODELS = 512;
+  type StepTokens = { input: number; output: number; cacheRead: number; cacheWrite: number; model?: string };
+  const steps = new Map<string, StepTokens>();
+  let lastUsageFlushAt = 0;
+  const USAGE_FLUSH_MS = 5000; // claude/codex PostToolUse의 중간 갱신 스로틀과 동일
+  const count = (v: unknown): number =>
+    typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+  // 지금까지 쌓인 step-finish를 한 덩어리로 꺼내고 비운다(워터마크 델타와
+  // 같은 효과 — 한 번 보낸 스텝은 다시 세지 않는다). 스텝이 없으면 undefined.
+  const takeUsage = () => {
+    if (steps.size === 0) return undefined;
+    const byModel = new Map<string, StepTokens>();
+    let model: string | undefined;
+    for (const step of steps.values()) {
+      const key = step.model ?? "";
+      const acc = byModel.get(key) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, model: step.model };
+      acc.input += step.input;
+      acc.output += step.output;
+      acc.cacheRead += step.cacheRead;
+      acc.cacheWrite += step.cacheWrite;
+      byModel.set(key, acc);
+      if (step.model) model = step.model; // 대표 모델 = 가장 최근 스텝의 모델
+    }
+    steps.clear();
+    const total = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    const parts: StepTokens[] = [];
+    for (const acc of byModel.values()) {
+      total.input += acc.input;
+      total.output += acc.output;
+      total.cacheRead += acc.cacheRead;
+      total.cacheWrite += acc.cacheWrite;
+      parts.push(acc.model ? acc : { input: acc.input, output: acc.output, cacheRead: acc.cacheRead, cacheWrite: acc.cacheWrite });
+    }
+    return { ...total, ...(model ? { model } : {}), byModel: parts };
+  };
+
   return {
     event: async ({ event }: any) => {
       try {
@@ -125,7 +173,9 @@ export const AgentOffice = async (ctx: any) => {
           } else if (sid && sid === rootSessionID && runOpen) {
             runOpen = false;
             const message = lastError ? "Kilo stopped with an error" : "Kilo finished a task";
-            post("stop", { message, running: activeChildren });
+            const tokens = takeUsage();
+            lastUsageFlushAt = Date.now();
+            post("stop", { message, running: activeChildren, ...(tokens ? { tokens } : {}) });
           }
           // 그 외(같은 루트 세션의 두 번째 idle, 또는 무관한 세션의 idle)는
           // 무시한다 — runOpen이 이미 꺼져 있어 중복 stop이 나가지 않는다.
@@ -143,6 +193,28 @@ export const AgentOffice = async (ctx: any) => {
           post("hook", { message });
         } else if (type === "permission.replied") {
           post("tool", {});
+        } else if (type === "message.updated") {
+          const info = props?.info;
+          if (info?.role === "assistant" && typeof info?.id === "string" && typeof info?.modelID === "string") {
+            if (!messageModel.has(info.id) && messageModel.size >= MAX_MESSAGE_MODELS) {
+              const oldest = messageModel.keys().next().value;
+              if (oldest !== undefined) messageModel.delete(oldest);
+            }
+            messageModel.set(info.id, info.modelID);
+          }
+        } else if (type === "message.part.updated") {
+          const part = props?.part;
+          if (part?.type === "step-finish" && typeof part?.id === "string") {
+            const t = part?.tokens ?? {};
+            const model = part?.model?.modelID ?? messageModel.get(part?.messageID);
+            steps.set(part.id, {
+              input: count(t.input),
+              output: count(t.output) + count(t.reasoning),
+              cacheRead: count(t.cache?.read),
+              cacheWrite: count(t.cache?.write),
+              ...(typeof model === "string" && model ? { model } : {}),
+            });
+          }
         }
       } catch { /* 핸들러 예외가 Kilo 턴을 깨지 않도록 삼킨다 */ }
     },
@@ -174,7 +246,20 @@ export const AgentOffice = async (ctx: any) => {
 
     "tool.execute.before": async (input: any, output: any) => {
       try {
-        post("tool", { tool_name: input?.tool ?? "", tool_input: output?.args ?? {} });
+        // 턴 중간 사용량(partial): 5초 스로틀을 통과할 때만 그때까지의
+        // step-finish 합산을 도구 이벤트에 얹는다 — 요약 바가 Stop까지 안
+        // 기다리고 갱신되게(claude/codex PostToolUse와 같은 채널).
+        const now = Date.now();
+        let tokens: ReturnType<typeof takeUsage>;
+        if (steps.size > 0 && now - lastUsageFlushAt >= USAGE_FLUSH_MS) {
+          tokens = takeUsage();
+          lastUsageFlushAt = now;
+        }
+        post("tool", {
+          tool_name: input?.tool ?? "",
+          tool_input: output?.args ?? {},
+          ...(tokens ? { tokens } : {}),
+        });
       } catch { /* 관찰 실패는 삼킨다 */ }
     },
   };
@@ -431,9 +516,37 @@ mod tests {
         assert!(KILO_PLUGIN_TS.contains("post(\"sub-start\""));
         assert!(KILO_PLUGIN_TS.contains("post(\"sub-stop\""));
         assert!(
-            KILO_PLUGIN_TS.contains("post(\"stop\", { message, running: activeChildren });"),
-            "stop must report the still-running child count",
+            KILO_PLUGIN_TS.contains(
+                "post(\"stop\", { message, running: activeChildren, ...(tokens ? { tokens } : {}) });"
+            ),
+            "stop must report the still-running child count and the turn usage",
         );
+    }
+
+    /// 사용량 회계(§7): assistant info의 tokens는 마지막 스텝 값으로 덮어써지므로
+    /// step-finish 파트를 part.id로 중복 제거해 합산해야 하고, reasoning은
+    /// output에 더하며, 모델은 message.updated의 assistant info에서 보충한다.
+    /// stop과 tool(5초 스로틀) 양쪽에 실린다.
+    #[test]
+    fn plugin_source_sums_step_finish_parts_for_turn_usage() {
+        for needle in [
+            "\"message.updated\"",
+            "\"message.part.updated\"",
+            "part?.type === \"step-finish\"",
+            "steps.set(part.id",
+            "count(t.output) + count(t.reasoning)",
+            "cacheRead: count(t.cache?.read)",
+            "cacheWrite: count(t.cache?.write)",
+            "messageModel.set(info.id, info.modelID)",
+            "part?.model?.modelID ?? messageModel.get(part?.messageID)",
+            "const USAGE_FLUSH_MS = 5000",
+            "now - lastUsageFlushAt >= USAGE_FLUSH_MS",
+            "byModel: parts",
+        ] {
+            assert!(KILO_PLUGIN_TS.contains(needle), "plugin must contain `{needle}`");
+        }
+        // takeUsage는 보낸 스텝을 비워 다음 flush가 같은 스텝을 다시 세지 않는다.
+        assert!(KILO_PLUGIN_TS.contains("steps.clear();"));
     }
 
     /// 스테일 포트 재시도(pi_extension.rs와 같은 계약).
