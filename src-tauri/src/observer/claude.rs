@@ -20,6 +20,30 @@ use super::{
 /// 매 PostToolUse마다 읽지 않도록 transcript_path별로 이 간격을 둔다(이슈 #43).
 const TRANSCRIPT_PROGRESS_INTERVAL: Duration = Duration::from_secs(5);
 
+/// Claude Code Notification 훅 중 사용자의 응답이 필요한 경우만 Attention으로
+/// 취급한다. Notification에는 인증·MCP 응답·완료 등 입력 대기가 아닌 이벤트도
+/// 포함되므로, 이를 통째로 승격하면 작업 중 알림이 과도하게 쌓인다.
+const ATTENTION_NOTIFICATION_TYPES: [&str; 6] = [
+    "permission_prompt",
+    "idle_prompt",
+    "elicitation_dialog",
+    "elicitation_url_dialog",
+    "agent_needs_input",
+    "quota_auto_resume_stale",
+];
+
+const ATTENTION_NOTIFICATION_MATCHER: &str = "^(permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input|quota_auto_resume_stale)$";
+
+fn is_attention_notification(body: &[u8]) -> bool {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return false;
+    };
+    value
+        .get("notification_type")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|notification_type| ATTENTION_NOTIFICATION_TYPES.contains(&notification_type))
+}
+
 /// 전사 파일 하나에 대한 사용량 스캔 상태.
 #[derive(Default)]
 struct UsageWatermark {
@@ -65,7 +89,11 @@ pub struct ClaudeAdapter {
 
 impl ClaudeAdapter {
     pub fn new(settings_dir: PathBuf, forwarder_executable: PathBuf) -> Self {
-        Self::with_progress_interval(settings_dir, forwarder_executable, TRANSCRIPT_PROGRESS_INTERVAL)
+        Self::with_progress_interval(
+            settings_dir,
+            forwarder_executable,
+            TRANSCRIPT_PROGRESS_INTERVAL,
+        )
     }
 
     /// 테스트/튜닝용: transcript tail 읽기 스로틀 간격을 지정해 생성한다.
@@ -229,9 +257,9 @@ impl ClaudeAdapter {
             })?;
         }
         // forwarder 경로 검증 실패 시 여기서 Err를 전파한다(codex와 동일 계약).
-        let entry = |command: String| {
+        let entry = |matcher: &str, command: String| {
             serde_json::json!([{
-                "matcher": "",
+                "matcher": matcher,
                 "hooks": [{
                     "type": "command",
                     "command": command,
@@ -245,14 +273,14 @@ impl ClaudeAdapter {
         // 명령을 쓴다(위 hook_command 주석: 예전 silent 변형은 불필요).
         let mut settings = serde_json::json!({
             "hooks": {
-                "UserPromptSubmit": entry(self.hook_command("UserPromptSubmit")?),
-                "PostToolUse": entry(self.hook_command("PostToolUse")?),
-                "Notification": entry(self.hook_command("Notification")?),
-                "Stop": entry(self.hook_command("Stop")?),
-                "SubagentStart": entry(self.hook_command("SubagentStart")?),
-                "SubagentStop": entry(self.hook_command("SubagentStop")?),
-                "SessionStart": entry(self.hook_command("SessionStart")?),
-                "SessionEnd": entry(self.hook_command("SessionEnd")?),
+                "UserPromptSubmit": entry("", self.hook_command("UserPromptSubmit")?),
+                "PostToolUse": entry("", self.hook_command("PostToolUse")?),
+                "Notification": entry(ATTENTION_NOTIFICATION_MATCHER, self.hook_command("Notification")?),
+                "Stop": entry("", self.hook_command("Stop")?),
+                "SubagentStart": entry("", self.hook_command("SubagentStart")?),
+                "SubagentStop": entry("", self.hook_command("SubagentStop")?),
+                "SessionStart": entry("", self.hook_command("SessionStart")?),
+                "SessionEnd": entry("", self.hook_command("SessionEnd")?),
             },
         });
         // 동료 대화 등 추가 조각을 최상위에 얹는다(훅 키는 건드리지 않는다).
@@ -386,9 +414,11 @@ impl ObserverAdapter for ClaudeAdapter {
                 (Some(_), Some(running)) => ObserverEvent::SubCount { running },
                 _ => ObserverEvent::SubStop,
             }),
-            "Notification" => Some(ObserverEvent::Attention {
-                message: message(raw.body),
-            }),
+            "Notification" if is_attention_notification(raw.body) => {
+                Some(ObserverEvent::Attention {
+                    message: message(raw.body),
+                })
+            }
             // 이슈 #39: Claude Stop 훅 body 엔 message 필드가 없다 → transcript_path
             // (JSONL)의 마지막 assistant 텍스트를 완료 본문으로 뽑는다. 파일 부재/
             // 포맷 이상은 None 폴백 → hub 의 STOP_FALLBACK 유지. body 에 message 가
@@ -476,7 +506,15 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
         for event in ["UserPromptSubmit", "PostToolUse", "Notification", "Stop"] {
             let entry = &json["hooks"][event][0];
-            assert_eq!(entry["matcher"], "", "wrong matcher for {event}: {json}");
+            let expected_matcher = if event == "Notification" {
+                super::ATTENTION_NOTIFICATION_MATCHER
+            } else {
+                ""
+            };
+            assert_eq!(
+                entry["matcher"], expected_matcher,
+                "wrong matcher for {event}: {json}"
+            );
             assert_eq!(entry["hooks"][0]["type"], "command");
             let command = entry["hooks"][0]["command"].as_str().unwrap();
             // unix는 forwarder 명령이 평문이라 인자를 직접 검증한다. windows는
@@ -617,8 +655,21 @@ mod tests {
     }
 
     #[test]
-    fn claude_missing_messages_defer_to_hub_fallback() {
+    fn claude_attention_notifications_keep_the_hub_fallback_for_missing_messages() {
         let adapter = ClaudeAdapter::new(scratch_dir(), forwarder_exe());
+
+        for body in [
+            br#"{"notification_type":"permission_prompt"}"#.as_slice(),
+            br#"{"notification_type":"idle_prompt","message":"   "}"#.as_slice(),
+        ] {
+            assert_eq!(
+                adapter.map_hook(&RawObserverHook {
+                    event_name: "Notification",
+                    body,
+                }),
+                Some(ObserverEvent::Attention { message: None }),
+            );
+        }
 
         for body in [
             b"{}".as_slice(),
@@ -630,7 +681,7 @@ mod tests {
                     event_name: "Notification",
                     body,
                 }),
-                Some(ObserverEvent::Attention { message: None }),
+                None,
             );
             assert_eq!(
                 adapter.map_hook(&RawObserverHook {
@@ -642,6 +693,56 @@ mod tests {
                     running: None,
                     tokens: None,
                 }),
+            );
+        }
+    }
+
+    #[test]
+    fn claude_notification_only_maps_input_required_types_to_attention() {
+        let adapter = ClaudeAdapter::new(scratch_dir(), forwarder_exe());
+
+        assert_eq!(
+            super::ATTENTION_NOTIFICATION_MATCHER,
+            format!("^({})$", super::ATTENTION_NOTIFICATION_TYPES.join("|")),
+            "settings matcher must stay aligned with the backend allowlist",
+        );
+
+        for notification_type in super::ATTENTION_NOTIFICATION_TYPES {
+            let body = serde_json::json!({
+                "notification_type": notification_type,
+                "message": "Claude needs input",
+            })
+            .to_string();
+            assert_eq!(
+                adapter.map_hook(&RawObserverHook {
+                    event_name: "Notification",
+                    body: body.as_bytes(),
+                }),
+                Some(ObserverEvent::Attention {
+                    message: Some("Claude needs input".into()),
+                }),
+                "{notification_type} must remain an attention event",
+            );
+        }
+
+        for body in [
+            br#"{"notification_type":"auth_success","message":"signed in"}"#.as_slice(),
+            br#"{"notification_type":"agent_completed","message":"done"}"#.as_slice(),
+            br#"{"notification_type":"elicitation_complete","message":"submitted"}"#.as_slice(),
+            br#"{"notification_type":"elicitation_response","message":"responded"}"#.as_slice(),
+            br#"{"notification_type":"quota_auto_resume_fired","message":"resumed"}"#.as_slice(),
+            br#"{"notification_type":"quota_auto_resume_disabled","message":"disabled"}"#
+                .as_slice(),
+            br#"{"notification_type":false,"message":"wrong type"}"#.as_slice(),
+            br#"{"notification_type":null,"message":"null type"}"#.as_slice(),
+            br#"{"notification_type":"permission_prompted","message":"near miss"}"#.as_slice(),
+        ] {
+            assert_eq!(
+                adapter.map_hook(&RawObserverHook {
+                    event_name: "Notification",
+                    body,
+                }),
+                None,
             );
         }
     }
@@ -816,7 +917,7 @@ mod tests {
         assert_eq!(
             map(
                 "Notification",
-                br#"{"agent_id":"sub-1","message":"needs permission"}"#,
+                br#"{"agent_id":"sub-1","notification_type":"permission_prompt","message":"needs permission"}"#,
             ),
             Some(ObserverEvent::Attention {
                 message: Some("needs permission".into()),

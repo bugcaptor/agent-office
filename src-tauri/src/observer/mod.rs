@@ -100,9 +100,7 @@ impl ObserverRuntime {
         hub: Arc<NotificationHub>,
         settings_dir: PathBuf,
         forwarder_executable: PathBuf,
-        claude_extra_settings: Option<
-            Arc<dyn Fn() -> Option<serde_json::Value> + Send + Sync>,
-        >,
+        claude_extra_settings: Option<Arc<dyn Fn() -> Option<serde_json::Value> + Send + Sync>>,
     ) -> Self {
         let mut claude = ClaudeAdapter::new(settings_dir, forwarder_executable.clone());
         if let Some(provider) = claude_extra_settings {
@@ -110,7 +108,10 @@ impl ObserverRuntime {
         }
         Self::new(
             hub,
-            vec![Arc::new(claude), Arc::new(CodexAdapter::new(forwarder_executable))],
+            vec![
+                Arc::new(claude),
+                Arc::new(CodexAdapter::new(forwarder_executable)),
+            ],
         )
     }
 
@@ -196,9 +197,10 @@ impl ObserverRuntime {
         // session_id는 메인 세션 것이므로 리줌 기록엔 유효 — map_hook 결과와
         // 무관하게 여기서 먼저 캡처한다(docs/claude-session-resume-design.md §2).
         if provider == ObserverProvider::Claude {
-            if let (Some(sink), Some(native)) =
-                (&self.claude_session_sink, event::native_session_id(raw.body))
-            {
+            if let (Some(sink), Some(native)) = (
+                &self.claude_session_sink,
+                event::native_session_id(raw.body),
+            ) {
                 sink.record(
                     session_id,
                     &native,
@@ -297,9 +299,10 @@ impl ObserverRuntime {
         };
         // 모든 이벤트에 conversationId가 실려 온다 — map 결과와 무관하게 먼저
         // 캡처한다(claude_resume_recorder와 같은 원칙, §3.5).
-        if let (Some(sink), Some(conversation_id)) =
-            (&self.agy_session_sink, event::agy_conversation_id_from_value(&value))
-        {
+        if let (Some(sink), Some(conversation_id)) = (
+            &self.agy_session_sink,
+            event::agy_conversation_id_from_value(&value),
+        ) {
             sink.record(
                 session_id,
                 &conversation_id,
@@ -390,7 +393,7 @@ mod tests {
     use crate::observer::codex::CodexAdapter;
     use crate::state::fake::RecordingEvents;
     use crate::state::{AppEvents, SessionRegistry};
-    use crate::types::SessionState;
+    use crate::types::{ActivityKind, SessionState};
     use std::sync::{Arc, Mutex};
 
     struct FakeAdapter {
@@ -500,7 +503,7 @@ mod tests {
         assert_eq!(
             claude.map_hook(&RawObserverHook {
                 event_name: "Notification",
-                body: br#"{"message":"claude attention"}"#,
+                body: br#"{"notification_type":"permission_prompt","message":"claude attention"}"#,
             }),
             Some(ObserverEvent::Attention {
                 message: Some("claude attention".into()),
@@ -540,6 +543,67 @@ mod tests {
             }),
         );
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn informational_claude_notification_does_not_interrupt_prompt_to_tool_activity() {
+        let registry = Arc::new(SessionRegistry::new());
+        registry.insert("s1", "a1", SessionState::Running);
+        let recorded = Arc::new(RecordingEvents::default());
+        let hub = Arc::new(NotificationHub::new(
+            registry,
+            recorded.clone(),
+            Arc::new(SystemClock),
+            std::time::Duration::from_millis(3_000),
+        ));
+        let runtime = ObserverRuntime::new(
+            hub,
+            vec![Arc::new(ClaudeAdapter::new(
+                std::env::temp_dir().join(format!(
+                    "agent-office-informational-notification-test-{}",
+                    uuid::Uuid::new_v4(),
+                )),
+                std::env::current_exe().unwrap(),
+            ))],
+        );
+
+        runtime.ingest(
+            ObserverProvider::Claude,
+            "s1",
+            RawObserverHook {
+                event_name: "UserPromptSubmit",
+                body: br#"{"prompt":"continue"}"#,
+            },
+        );
+        runtime.ingest(
+            ObserverProvider::Claude,
+            "s1",
+            RawObserverHook {
+                event_name: "Notification",
+                body: br#"{"notification_type":"agent_completed","message":"background work finished"}"#,
+            },
+        );
+        runtime.ingest(
+            ObserverProvider::Claude,
+            "s1",
+            RawObserverHook {
+                event_name: "PostToolUse",
+                body: br#"{"tool_name":"Bash","tool_input":{"command":"git status"}}"#,
+            },
+        );
+
+        assert!(
+            recorded.notifications().is_empty(),
+            "informational Notification must not reach the hub"
+        );
+        assert_eq!(
+            recorded
+                .activities()
+                .iter()
+                .map(|event| event.kind)
+                .collect::<Vec<_>>(),
+            vec![ActivityKind::Prompt, ActivityKind::Tool],
+        );
     }
 
     #[test]
@@ -948,7 +1012,9 @@ mod tests {
 
     impl Default for FakeAgySink {
         fn default() -> Self {
-            Self { calls: Mutex::new(Vec::new()) }
+            Self {
+                calls: Mutex::new(Vec::new()),
+            }
         }
     }
 
@@ -1070,7 +1136,12 @@ mod tests {
     fn ingest_agy_source_maps_tool_and_stop() {
         let (runtime, recorded) = agy_runtime();
 
-        runtime.ingest_agy_source("s1", "tool", br#"{"name":"run_terminal_cmd","command":"ls"}"#, None);
+        runtime.ingest_agy_source(
+            "s1",
+            "tool",
+            br#"{"name":"run_terminal_cmd","command":"ls"}"#,
+            None,
+        );
         runtime.ingest_agy_source("s1", "stop", br#"{"terminationReason":"model_stop"}"#, None);
         runtime.ingest_agy_source("s2-unknown-session", "stop", br#"{}"#, None);
         runtime.ingest_agy_source("s1", "unknown-source", br#"{}"#, None);

@@ -17,6 +17,56 @@ use crate::types::*;
 
 const BACKLOG_CAP: usize = 256;
 
+/// BEL은 단독 제어 문자일 때만 알림이다. OSC(제목·진행 표시·링크 등)의
+/// 종결자도 같은 바이트를 쓰므로 PTY 청크 경계를 넘어 문자열 상태를 보존한다.
+/// UTF-8 출력의 연속 바이트를 C1 제어 문자로 오인하지 않도록 ESC 형식만 읽는다.
+#[derive(Default)]
+struct BellDetector {
+    state: BellState,
+}
+
+#[derive(Clone, Copy, Default)]
+enum BellState {
+    #[default]
+    Ground,
+    Escape,
+    String {
+        osc: bool,
+    },
+}
+
+impl BellDetector {
+    fn feed(&mut self, bytes: &[u8]) -> bool {
+        let mut bell = false;
+        for &byte in bytes {
+            self.state = match self.state {
+                BellState::String { osc } => match byte {
+                    0x18 | 0x1a => BellState::Ground, // CAN/SUB: 시퀀스 취소
+                    // ESC는 현재 문자열을 끝내고 새 시퀀스를 시작한다.
+                    // 다음 바이트가 '\\'이면 ST, '['이면 CSI 등으로 이어진다.
+                    0x1b => BellState::Escape,
+                    0x07 if osc => BellState::Ground,
+                    _ => BellState::String { osc },
+                },
+                state => match byte {
+                    0x07 => {
+                        bell = true;
+                        state // BEL은 ESC 시퀀스도 취소하지 않는다.
+                    }
+                    0x1b => BellState::Escape,
+                    b']' if matches!(state, BellState::Escape) => BellState::String { osc: true },
+                    b'P' | b'X' | b'^' | b'_' if matches!(state, BellState::Escape) => {
+                        // DCS/SOS/PM/APC 본문도 알림 신호로 해석하지 않는다.
+                        BellState::String { osc: false }
+                    }
+                    _ => BellState::Ground,
+                },
+            };
+        }
+        bell
+    }
+}
+
 /// 출력 tap — 렌더러 채널과 **별개로** 같은 청크를 흘려받는 구독자
 /// (피어 세션 공유 #7k, docs/peer-session-share-design.md §결정 2).
 ///
@@ -160,6 +210,7 @@ pub(super) fn spawn_output_pump(
 ) {
     tokio::spawn(async move {
         let mut batcher = OutputBatcher::new(session_id.clone(), agent_id);
+        let mut bell_detector = BellDetector::default();
         let mut deadline: Option<tokio::time::Instant> = None;
         loop {
             let timer = async {
@@ -175,7 +226,7 @@ pub(super) fn spawn_output_pump(
                 }
                 msg = rx.recv() => match msg {
                     Some(ReaderMsg::Data(bytes)) => {
-                        if bytes.contains(&0x07) {
+                        if bell_detector.feed(&bytes) {
                             hub.on_bell(&session_id); // BEL 폴백(dedup이 연속 억제)
                         }
                         // 이슈 #39: Stop 이후 출력이 계속되면 "아직 작업중"으로 복귀시키는
@@ -219,4 +270,143 @@ pub(super) fn spawn_output_pump(
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::notification::hub::fake::FakeClock;
+    use crate::state::{fake::RecordingEvents, SessionRegistry};
+    use std::time::Duration;
+
+    struct TestTap(tokio::sync::mpsc::UnboundedSender<OutputChunk>);
+
+    impl OutputTap for TestTap {
+        fn on_chunk(&self, chunk: &OutputChunk) {
+            let _ = self.0.send(chunk.clone());
+        }
+    }
+
+    #[tokio::test]
+    async fn output_pump_only_notifies_for_live_standalone_bells() {
+        for (messages, expected_bells) in [
+            (
+                vec![
+                    ReaderMsg::Data(b"\x1b".to_vec()),
+                    ReaderMsg::Data(b"]0;Claude: Bash\x07".to_vec()),
+                    ReaderMsg::Data(b"\x1b]9;4;1;50".to_vec()),
+                    ReaderMsg::Data(b"\x07tool output".to_vec()),
+                ],
+                0,
+            ),
+            (vec![ReaderMsg::Data(b"\x1b]0;Claude\x07\x07".to_vec())], 1),
+            (
+                vec![
+                    ReaderMsg::Restore(b"restored\x07\x1b]0;unfinished".to_vec()),
+                    ReaderMsg::Data(b"live output".to_vec()),
+                ],
+                0,
+            ),
+        ] {
+            let registry = Arc::new(SessionRegistry::new());
+            registry.insert("s1", "a1", SessionState::Running);
+            let events = Arc::new(RecordingEvents::default());
+            let hub = Arc::new(NotificationHub::new(
+                registry,
+                events.clone(),
+                Arc::new(FakeClock::new()),
+                Duration::from_secs(3),
+            ));
+            let sink = Arc::new(OutputSink::new());
+            let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+            sink.add_tap(Arc::new(TestTap(output_tx)));
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let mut expected_output = Vec::new();
+            for message in messages {
+                if let ReaderMsg::Data(bytes) | ReaderMsg::Restore(bytes) = &message {
+                    expected_output.extend_from_slice(bytes);
+                }
+                tx.send(message).unwrap();
+            }
+            tx.send(ReaderMsg::Eof).unwrap();
+            drop(tx);
+            spawn_output_pump("s1".into(), "a1".into(), rx, sink, hub, None);
+            let output = tokio::time::timeout(Duration::from_secs(2), async {
+                let mut output = Vec::new();
+                while let Some(chunk) = output_rx.recv().await {
+                    output.extend_from_slice(chunk.data.as_bytes());
+                }
+                output
+            })
+            .await
+            .expect("output pump must finish at EOF");
+            assert_eq!(output, expected_output, "terminal bytes remain unchanged");
+            let notifications = events.notifications();
+            assert_eq!(notifications.len(), expected_bells);
+            if expected_bells != 0 {
+                assert_eq!(notifications[0].source, NotificationSource::Bell);
+            }
+        }
+    }
+
+    #[test]
+    fn osc_updates_are_not_bells_at_any_chunk_boundary() {
+        for sequence in [
+            &b"\x1b]0;Claude: running tool\x07"[..],
+            &b"\x1b]9;4;1;50\x07"[..],
+            &b"\x1b]8;;https://example.com\x07link\x1b]8;;\x07"[..],
+            &b"\x1b]2;title\x1b\\"[..],
+        ] {
+            for split in 0..=sequence.len() {
+                let mut detector = BellDetector::default();
+                assert!(!detector.feed(&sequence[..split]), "split {split}");
+                assert!(!detector.feed(&sequence[split..]), "split {split}");
+                assert!(detector.feed(b"\x07"), "real bell after split {split}");
+            }
+            let mut detector = BellDetector::default();
+            for byte in sequence {
+                assert!(!detector.feed(&[*byte]));
+            }
+        }
+    }
+
+    #[test]
+    fn real_bells_preserve_state_for_the_rest_of_the_chunk() {
+        let mut detector = BellDetector::default();
+        assert!(detector.feed(b"\x07\x1b]0;partial"));
+        assert!(!detector.feed(b" title\x07"));
+        assert!(detector.feed(b"\x1b]0;title\x07\x07"));
+        assert!(detector.feed(b"\x1b[31mwarning\x07\x1b[0m"));
+    }
+
+    #[test]
+    fn other_control_strings_and_utf8_do_not_confuse_bell_detection() {
+        for prefix in [b'P', b'X', b'^', b'_'] {
+            let mut detector = BellDetector::default();
+            assert!(!detector.feed(&[0x1b, prefix]));
+            assert!(!detector.feed(b"payload\x07\x1b]nested\x07\x1b"));
+            assert!(!detector.feed(b"\\"));
+            assert!(detector.feed(b"\x07"));
+        }
+        for cancel in [0x18, 0x1a] {
+            let mut detector = BellDetector::default();
+            assert!(!detector.feed(b"\x1b]0;cancel"));
+            assert!(!detector.feed(&[cancel]));
+            assert!(detector.feed(b"\x07"));
+        }
+        let mut detector = BellDetector::default();
+        // 일반 문자 ŝ의 UTF-8 연속 바이트 0x9d는 OSC 시작이 아니다.
+        assert!(!detector.feed("한글ŝ".as_bytes()));
+        assert!(detector.feed(b"\x07"));
+    }
+
+    #[test]
+    fn escape_aborts_a_control_string_before_a_real_bell() {
+        for prefix in [b']', b'P', b'X', b'^', b'_'] {
+            let mut detector = BellDetector::default();
+            assert!(!detector.feed(&[0x1b, prefix]));
+            assert!(!detector.feed(b"partial\x1b"));
+            assert!(detector.feed(b"[0m\x07"));
+        }
+    }
 }

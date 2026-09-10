@@ -74,7 +74,7 @@ Rust/Tauri는 **OS 스레드 + tokio 태스크 혼합**이다. `portable-pty`의
 | 자원 | 종류 | 역할 |
 |---|---|---|
 | **reader thread** | `std::thread` (블로킹) | master PTY에서 raw 바이트를 blocking `read` → `tokio::sync::mpsc::UnboundedSender<ReaderMsg>`로 전달. EOF면 `ReaderMsg::Eof` 후 종료. unix에서는 핸드오프를 위해 poll 기반(`poll_reader.rs`, shutdown pipe로 인터럽트 가능). |
-| **output pump task** | `tokio::task` | 위 채널을 수신, `OutputBatcher` 소유. 16ms 데드라인(`sleep_until`) + 64KB 상한으로 코얼레싱, `FlushSink`(Channel)로 방출. BEL(0x07) 감지 시 `hub.on_bell`, 배치마다 `hub.on_output`(§10.2). |
+| **output pump task** | `tokio::task` | 위 채널을 수신, `OutputBatcher` 소유. 16ms 데드라인(`sleep_until`) + 64KB 상한으로 코얼레싱, `FlushSink`(Channel)로 방출. 제어 문자열 밖의 BEL(0x07) 감지 시 `hub.on_bell`, 배치마다 `hub.on_output`(§10.2). |
 | **wait thread** | `std::thread` (블로킹) | `child.wait()`(블로킹) → `ExitOutcome`. `kill_requested`로 intentional 판정, `Exited`/`Disposed` 전이 이벤트 방출. |
 | **PTY writer** | `Mutex<Box<dyn Write + Send>>` | 커맨드 스레드에서 짧게 락 잡고 stdin 주입. |
 
@@ -87,7 +87,7 @@ Rust/Tauri는 **OS 스레드 + tokio 태스크 혼합**이다. `portable-pty`의
 ```
 [PTY master] ──read(blocking)──> reader thread ──mpsc::Data(bytes)──> output pump task
                                                                         │  OutputBatcher(16ms/64KB, seq, utf8 carry)
-                                                                        ├─ 0x07 감지 → hub.on_bell() / on_output
+                                                                        ├─ 독립 BEL 감지 → hub.on_bell() / on_output
                                                                         └─ FlushSink → tauri::ipc::Channel<OutputChunk> → [webview]
 [PTY child] ──wait(blocking)──> wait thread ── AppEvents.session_state() ──emit "session-state"──> [webview]
 [claude/codex/pi 훅] ──POST /hook──> axum task ── ObserverRuntime.ingest ── hub ──emit "notification-new"/"activity-event"──> [webview]
@@ -186,6 +186,17 @@ Rust/Tauri는 **OS 스레드 + tokio 태스크 혼합**이다. `portable-pty`의
 - **UTF-8 경계 캐리**: 배치 경계에서 코드포인트가 쪼개지면 불완전 꼬리를 다음 배치로 이월(`valid_utf8_prefix`) — Rust 고유 리스크 처리.
 - `flush_final`이 EOF/dispose 시 잔여를 강제 방출.
 
+BEL 폴백은 `output.rs`의 세션별 `BellDetector`가 원시 PTY 청크를 순서대로 읽어
+판정한다. `bytes.contains(0x07)`로 판정하면 제목·진행 표시·링크를 갱신하는
+OSC의 종결자까지 사용자 대기 알림으로 바뀐다. OSC는 BEL 또는 ST(`ESC \\`)로
+끝나며, 문자열 내부의 BEL은 알림을 만들지 않는다. DCS/SOS/PM/APC 본문도
+알림으로 해석하지 않는다. ESC는 문자열을 끝내고 새 시퀀스로 전환하며,
+CAN/SUB는 취소한다. 상태는 청크 경계에서 유지한다. 현재 범위는 ESC 형식의
+제어 시퀀스이며 C1 형식은 지원하지 않는다(UTF-8 연속 바이트를 제어 문자로
+오인하지 않는다). 출력 바이트 자체는 바꾸지 않는다. 복원 스냅샷
+(`ReaderMsg::Restore`)은 실시간 알림 판정에 넣지 않는다.
+근거: [xterm 제어 시퀀스](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html).
+
 ### 3.3 SessionManager — `session/manager.rs` (+ output/handoff_v1/handoff_broker)
 
 - 상태 머신: `Starting → Running → Exited | Disposed`. 전이는 이벤트 `"session-state"`로 방출, intentional 판정은 `kill_requested: AtomicBool`.
@@ -205,6 +216,15 @@ Rust/Tauri는 **OS 스레드 + tokio 태스크 혼합**이다. `portable-pty`의
 - 초기 설계의 `hook_server.rs`(수신)·`hook_settings.rs`(설정 파일)는 **어댑터 구조로 일반화**됐다: `ObserverAdapter` 트레잇(claude/codex 구현) + `ObserverRuntime`(ingest → hub), Pi는 `ingest_pi_source`, Kilo(kilo/kilocode)는 `ingest_kilo_source` 직행 갈래(각각 pi-support 문서 §0.5, kilo-support 문서 §2).
 - 훅 커맨드는 curl 직결이 아니라 **앱 바이너리 forwarder**(`--observer-forward`) 경유 — 포트 스테일 완화(이슈 #30, handoff 문서 §5). 훅 실패는 항상 비차단(claude 흐름에 영향 0), BEL 폴백 상시.
 - Claude 설정 파일은 `<app_data>/observer/claude/`(§11에서 OS temp로부터 이동), 세션별 생성·정리. 입양 시 멱등 복구(§11).
+- Claude `Notification`은 모두 입력 대기가 아니다. 생성 설정의 matcher와
+  어댑터의 `notification_type` 검사를 함께 적용해 `permission_prompt`,
+  `idle_prompt`, `elicitation_dialog`, `elicitation_url_dialog`,
+  `agent_needs_input`, `quota_auto_resume_stale`만 `Attention`으로 보낸다.
+  인증 성공·MCP 응답/완료·배경 작업 완료·자동 재개 및 알 수 없는 타입은
+  대기 알림으로 만들지 않는다. 타입 누락·비문자열·잘못된 JSON도 무시한다.
+  허용 타입의 메시지가 없으면 기존 언어별 문구 폴백을 유지한다.
+  `PostToolUse`는 계속 `Tool` 활동이며 알림을 만들지 않는다.
+  근거: [Claude Code Notification 계약](https://code.claude.com/docs/en/hooks#notification).
 - 훅 서버 기동은 `serve_with_retry`로 캡슐화 — 시도마다 새 oneshot 쌍을 만들고 **성공한 시도의 shutdown sender만** AppState에 저장한다. (sender drop도 shutdown 신호로 취급되므로, 재시도 분기에서 만든 tx를 버리면 방금 띄운 서버가 즉사하는 배선 버그가 있다 — 초기 스케치에서 실제로 발견해 캡슐화로 해소한 함정.)
 
 ### 3.6 부트스트랩·종료 — `lib.rs`
