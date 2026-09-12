@@ -177,6 +177,7 @@
   "ide": {
     "title": "连接 IDE 会话", "description": "观察现有的 VS Code Codex 或 Claude 会话。连接后可准备回复风格步骤，请在原始 IDE 中应用并确认回复。", "availabilityNote": "候选项是最近的 IDE 记录。列出的会话可能已经结束。", "historyNote": "连接后 Agent Office 只会收到新的活动，不会重放之前的对话记录。", "observerDisabled": "请先在设置中开启 IDE 会话观察。", "provider": "提供方", "providerAll": "所有提供方", "refresh": "刷新", "loading": "正在查找 IDE 会话…", "empty": "没有找到最近的 IDE 会话。", "candidates": "IDE 会话", "agent": "角色", "updated": "更新于 {{value}}", "sessionId": "会话 {{value}}", "noAgent": "请关闭角色的应用内终端，或为此连接创建角色。", "createAgent": "为此会话创建角色", "connect": "连接", "loadFailed": "无法加载 IDE 会话。", "connectFailed": "无法连接此 IDE 会话。"
   },
+  "ideConnection": { "disabled": "请先在设置中开启 IDE 会话连接。" },
   "generate": {
     "personalityPrompt": "{{word}} 性格"
   }

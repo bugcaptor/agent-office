@@ -13,6 +13,7 @@
   },
   "bottomBar": {
     "newAgent": "＋ New Agent",
+    "connection": "🔗 接続",
     "ideSession": "🔗 IDE セッション",
     "clockIn": "🏠 出勤 ({{n}})",
     "clockAll": "全員出退勤",

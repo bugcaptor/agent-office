@@ -38,7 +38,10 @@ export function IdeSessionDialog() {
   const open = modal.kind === "ide-session";
   useEscapeToClose(open && !connecting, closeModal);
 
+  const ideConnectionEnabled = appSettings.ideConnectionEnabled;
+  const observationAvailable = ideConnectionEnabled && appSettings.observerEnabled;
   const refresh = async () => {
+    if (!useAppStore.getState().appSettings.ideConnectionEnabled || !useAppStore.getState().appSettings.observerEnabled) return;
     const generation = ++refreshGeneration.current;
     setLoading(true);
     setError("");
@@ -57,10 +60,20 @@ export function IdeSessionDialog() {
   };
 
   useEffect(() => {
-    if (open && appSettings.observerEnabled) void refresh();
+    if (open && observationAvailable) void refresh();
   // provider intentionally refreshes the list while the dialog is open.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, provider, appSettings.observerEnabled]);
+  }, [open, provider, observationAvailable]);
+
+  useEffect(() => {
+    if (observationAvailable) return;
+    // In-flight calls are made stale and their result must not re-enable UI.
+    refreshGeneration.current += 1;
+    setLoading(false);
+    setConnecting(false);
+    setItems([]);
+    setSelected(null);
+  }, [observationAvailable]);
 
   const eligibleAgents = useMemo(() => {
     if (!selected) return [];
@@ -78,7 +91,7 @@ export function IdeSessionDialog() {
   }, [agentId, eligibleAgents]);
 
   const connect = async () => {
-    if (!selected || !agentId) return;
+    if (!useAppStore.getState().appSettings.ideConnectionEnabled || !useAppStore.getState().appSettings.observerEnabled || !selected || !agentId) return;
     setConnecting(true);
     setError("");
     try {
@@ -91,6 +104,7 @@ export function IdeSessionDialog() {
         file: selected.file,
         sourceSessionId: selected.sourceSessionId,
       });
+      if (!useAppStore.getState().appSettings.ideConnectionEnabled || !useAppStore.getState().appSettings.observerEnabled) return;
       setSessionState({ agentId, status: "running", external: true });
       // This opens the connected-session panel directly. Calling ensureSession
       // here would accidentally create a new PTY for the character.
@@ -115,7 +129,7 @@ export function IdeSessionDialog() {
         <p className="ide-session-note">{t("ide.availabilityNote")}</p>
         <p className="ide-session-note">{t("ide.historyNote")}</p>
       </header>
-      {!appSettings.observerEnabled ? <div role="alert" className="ide-session-note">{t("ide.observerDisabled")}</div> : <>
+      {!ideConnectionEnabled ? <div role="alert" className="ide-session-note">{t("ideConnection.disabled")}</div> : !appSettings.observerEnabled ? <div role="alert" className="ide-session-note">{t("ide.observerDisabled")}</div> : <>
         <div className="ide-session-toolbar">
           <label>{t("ide.provider")}<select value={provider} disabled={connecting} onChange={(e) => setProvider(e.target.value as typeof provider)}>
             <option value="all">{t("ide.providerAll")}</option><option value="codex">Codex</option><option value="claude">Claude</option>
@@ -136,7 +150,7 @@ export function IdeSessionDialog() {
       </>}
       {error && <p role="alert">{error}</p>}
       <div className="dialog-actions">
-        <button type="button" className="pixel-btn primary" disabled={!appSettings.observerEnabled || !selected || !agentId || connecting} onClick={() => void connect()}>{t("ide.connect")}</button>
+        <button type="button" className="pixel-btn primary" disabled={!observationAvailable || !selected || !agentId || connecting} onClick={() => void connect()}>{t("ide.connect")}</button>
         <button type="button" className="pixel-btn" disabled={connecting} onClick={closeModal}>{t("dialog.cancel")}</button>
       </div>
     </div>

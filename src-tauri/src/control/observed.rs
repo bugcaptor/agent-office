@@ -18,6 +18,8 @@ pub(super) async fn attach(
     State(ctx): State<Arc<ControlContext>>,
     Json(p): Json<ObservedAttachParams>,
 ) -> Json<serde_json::Value> {
+    let _configuration = ctx.manager.observed_configuration.lock();
+    if let Err(error) = require_enabled(&ctx.settings.read().unwrap()) { return fail(error); }
     if p.source_session_id.trim().is_empty() {
         return fail("observed-source-invalid");
     }
@@ -69,9 +71,8 @@ pub(super) async fn event(
     State(ctx): State<Arc<ControlContext>>,
     Json(p): Json<ObservedEventParams>,
 ) -> Json<serde_json::Value> {
-    if !ctx.settings.read().unwrap().observer_enabled {
-        return fail("observed-observer-disabled");
-    }
+    let _configuration = ctx.manager.observed_configuration.lock();
+    if let Err(error) = require_enabled(&ctx.settings.read().unwrap()) { return fail(error); }
     let kind = match p.kind {
         ObservedEventKindParam::Prompt => ObservedEventKind::Prompt,
         ObservedEventKindParam::Tool => ObservedEventKind::Tool,
@@ -101,4 +102,10 @@ pub(super) async fn detach(
             .manager
             .detach_observed(&p.agent_id, &p.session_id, &p.owner_id),
     })
+}
+
+fn require_enabled(settings: &crate::persistence::settings_store::AppSettings) -> Result<(), &'static str> {
+    if !settings.ide_connection_enabled { return Err("ide-connection-disabled"); }
+    if !settings.observer_enabled { return Err("observed-observer-disabled"); }
+    Ok(())
 }

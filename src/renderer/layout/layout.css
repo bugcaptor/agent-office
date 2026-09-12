@@ -681,7 +681,7 @@ body {
 .remote-banner { position: fixed; z-index: 100; top: 0; left: 50%; transform: translateX(-50%); padding: 3px 10px; background: #24395b; color: #f5f0dc; border: 1px solid #f5c84c; font: 12px system-ui, sans-serif; pointer-events: none; }
 /* These controls issue host-only analytics, local CLI, theme, or settings actions. */
 :root[data-remote-window="true"] .settings-btn,
-:root[data-remote-window="true"] .remote-connect-btn,
+:root[data-remote-window="true"] .connection-btn,
 :root[data-remote-window="true"] .records-btn,
 :root[data-remote-window="true"] .scene-theme-btn,
 :root[data-remote-window="true"] .bottom-bar .usage-widget { display: none; }

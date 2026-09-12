@@ -23,7 +23,7 @@ function agent(overrides: Partial<AgentProfile> = {}): AgentProfile {
 
 beforeEach(() => {
   useAppStore.setState(initialState, true);
-  useAppStore.setState((state) => ({ appSettings: { ...state.appSettings, observerEnabled: true } }));
+  useAppStore.setState((state) => ({ appSettings: { ...state.appSettings, observerEnabled: true, ideConnectionEnabled: true } }));
   listIdeSessions.mockReset(); listIdeSessions.mockResolvedValue([candidate]);
   connectIdeSession.mockClear(); flushPersistence.mockClear();
 });
@@ -70,10 +70,18 @@ describe("IdeSessionDialog", () => {
   });
 
   it("shows the observer setting requirement without loading candidates", () => {
-    useAppStore.setState((state) => ({ appSettings: { ...state.appSettings, observerEnabled: false } }));
+    useAppStore.setState((state) => ({ appSettings: { ...state.appSettings, observerEnabled: false, ideConnectionEnabled: true } }));
     useAppStore.getState().openModal({ kind: "ide-session" });
     render(<IdeSessionDialog />);
     expect(screen.getByRole("alert").textContent).toContain("설정");
+    expect(listIdeSessions).not.toHaveBeenCalled();
+  });
+
+  it("shows the IDE connection setting requirement without loading candidates", () => {
+    useAppStore.setState((state) => ({ appSettings: { ...state.appSettings, ideConnectionEnabled: false, observerEnabled: true } }));
+    useAppStore.getState().openModal({ kind: "ide-session" });
+    render(<IdeSessionDialog />);
+    expect(screen.getByRole("alert").textContent).toContain("IDE 세션 연결");
     expect(listIdeSessions).not.toHaveBeenCalled();
   });
 

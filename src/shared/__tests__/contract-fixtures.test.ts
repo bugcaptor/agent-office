@@ -318,6 +318,8 @@ describe("contract fixtures: Rust serde output assignable to TS types", () => {
       "summaryModels",
       "diaryEnabled",
       "observerEnabled",
+      "ideConnectionEnabled",
+      "remoteServerConnectionEnabled",
       "typingSoundEnabled",
       "notifySoundEnabled",
       "soundVolume",

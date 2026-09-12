@@ -291,7 +291,8 @@
       "costUnknownHint_one": "Coût non calculé pour {{count}} relevé sans tarif",
       "costUnknownHint_other": "Coût non calculé pour {{count}} relevés sans tarif",
       "tokenPairHint": "Entre parenthèses : total des tokens, cache inclus",
-      "footnote": "Estimation au tarif API public"
+      "footnote": "Estimation au tarif API public",
+      "externalScope": "Seule l’utilisation enregistrée après la connexion est comptabilisée."
     }
   }
 }

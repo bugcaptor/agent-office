@@ -13,6 +13,7 @@
   },
   "bottomBar": {
     "newAgent": "＋ New Agent",
+    "connection": "🔗 Connect",
     "ideSession": "🔗 IDE session",
     "clockIn": "🏠 Clock in ({{n}})",
     "clockAll": "Clock all",

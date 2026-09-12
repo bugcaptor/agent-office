@@ -291,7 +291,8 @@
       "costUnknownHint_one": "已排除 {{count}} 筆未知定價用量的費用",
       "costUnknownHint_other": "已排除 {{count}} 筆未知定價用量的費用",
       "tokenPairHint": "括號內為含快取的總 token",
-      "footnote": "以公開 API 費率換算的估算值"
+      "footnote": "以公開 API 費率換算的估算值",
+      "externalScope": "僅統計連線後記錄的用量。"
     }
   }
 }

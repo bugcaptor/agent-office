@@ -13,6 +13,7 @@
     "tabSystem": "시스템",
     "tabControl": "제어"
   },
+  "connections": { "ideTitle": "IDE 세션 연결", "ideHelp": "이 앱이 IDE 세션을 찾아 연결하도록 허용합니다. 끄면 연결한 세션은 해제되며 원본 IDE는 그대로 유지됩니다.", "remoteTitle": "원격 서버 연결", "remoteHelp": "이 앱이 원격 서버 연결 창을 열도록 허용합니다. 끄면 현재 원격 연결은 해제되지만 저장한 서버 정보는 남습니다.", "webRemoteNote": "이 스위치는 이 앱에서 시작하는 연결을 제어합니다. 브라우저에 이 오피스를 공유하는 웹 원격 설정과는 별개입니다." },
   "keys": {
     "present": "있음",
     "presentEnv": "있음(환경변수)",

@@ -3,7 +3,7 @@
 //! This module deliberately returns metadata and activity kinds only.  It never exposes
 //! transcript text, prompts, tool arguments, or file contents to the rest of the app.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -13,6 +13,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::session::external::ObservedEventKind;
+use crate::types::{SessionEventTokens, SessionModelTokens};
 
 const MAX_LINE: usize = 2 * 1024 * 1024;
 const CHUNK: usize = 64 * 1024;
@@ -20,6 +21,9 @@ const MAX_TICK: u64 = 4 * 1024 * 1024;
 const DISCOVERY_BUDGET: usize = 2_000;
 const INSPECT_LIMIT: usize = 200;
 const RESULT_LIMIT: usize = 20;
+// Attachment scans only enough metadata to establish a conservative watermark.  It
+// never returns transcript content and a missing watermark means "skip until known".
+const USAGE_BASELINE_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -294,6 +298,48 @@ impl TranscriptTail {
         Self::open(Path::new(&candidate.file), Some(&candidate.baseline))
     }
 
+    /// Bounded, complete metadata records that existed exactly at attachment.  This
+    /// reads the same open file identity only up to `offset`, so records appended
+    /// between tail creation and watcher registration are never swallowed by a
+    /// baseline scan.
+    pub fn usage_baseline_records(&self) -> Result<Vec<Value>, String> {
+        let start = self.offset.saturating_sub(USAGE_BASELINE_BYTES);
+        let mut handle = self.handle.try_clone().map_err(|e| e.to_string())?;
+        handle
+            .seek(SeekFrom::Start(start))
+            .map_err(|e| e.to_string())?;
+        let mut bytes = vec![0; (self.offset - start) as usize];
+        handle.read_exact(&mut bytes).map_err(|e| e.to_string())?;
+        // A bounded read can begin in a giant JSONL record.  Never parse its tail.
+        let body = if start > 0 {
+            bytes
+                .iter()
+                .position(|b| *b == b'\n')
+                .map(|i| &bytes[i + 1..])
+                .unwrap_or(&[])
+        } else {
+            &bytes[..]
+        };
+        // The attachment EOF can likewise end in a record still being written.
+        let complete = body
+            .iter()
+            .rposition(|b| *b == b'\n')
+            .map(|i| &body[..=i])
+            .unwrap_or(&[]);
+        Ok(complete
+            .split(|b| *b == b'\n')
+            .filter_map(|line| {
+                (line.len() <= MAX_LINE)
+                    .then(|| serde_json::from_slice::<Value>(line).ok())
+                    .flatten()
+            })
+            .collect())
+    }
+
+    pub fn usage_baseline_is_incomplete(&self) -> bool {
+        self.offset > USAGE_BASELINE_BYTES || self.discard
+    }
+
     fn open(file: &Path, baseline: Option<&Baseline>) -> Result<Self, String> {
         let canonical = fs::canonicalize(file).map_err(|e| e.to_string())?;
         let mut handle = File::open(&canonical).map_err(|e| e.to_string())?;
@@ -369,6 +415,7 @@ pub struct EventFilter {
     provider: String,
     session_id: String,
     seen: VecDeque<String>,
+    usage: UsageTracker,
 }
 
 impl EventFilter {
@@ -377,7 +424,39 @@ impl EventFilter {
             provider: provider.into(),
             session_id: session_id.into(),
             seen: VecDeque::new(),
+            usage: UsageTracker::new(provider),
         }
+    }
+
+    pub fn with_baseline(
+        provider: &str,
+        session_id: &str,
+        records: Vec<Value>,
+        incomplete: bool,
+    ) -> Self {
+        let mut this = Self::new(provider, session_id);
+        this.usage.seed(records, incomplete);
+        this
+    }
+
+    /// Update the usage watermark for every new record.  A token snapshot is emitted
+    /// only when the matching stop is observed, so tool activity never creates cost.
+    pub fn take_with_tokens(
+        &mut self,
+        record: &Value,
+    ) -> Option<(ObservedEventKind, Option<SessionEventTokens>)> {
+        if let Some(delta) = self.usage.observe(record, &self.session_id) {
+            self.usage.pending = Some(match self.usage.pending.take() {
+                Some(total) => total.merged(delta),
+                None => delta,
+            });
+        }
+        self.take(record).map(|kind| {
+            let tokens = (kind == ObservedEventKind::Stop)
+                .then(|| self.usage.pending.take())
+                .flatten();
+            (kind, tokens)
+        })
     }
 
     pub fn take(&mut self, record: &Value) -> Option<ObservedEventKind> {
@@ -397,6 +476,278 @@ impl EventFilter {
             }
         }
         Some(kind)
+    }
+}
+
+#[derive(Default)]
+struct UsageTracker {
+    provider: String,
+    codex: Option<CodexSnapshot>,
+    codex_model: Option<String>,
+    claude: HashMap<String, ClaudeSnapshot>,
+    claude_unknown_is_baseline: bool,
+    claude_new_turn_confirmed: bool,
+    pending: Option<SessionEventTokens>,
+}
+
+#[derive(Clone, Default)]
+struct CodexSnapshot {
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write: u64,
+    model: Option<String>,
+}
+#[derive(Clone, Default)]
+struct ClaudeSnapshot {
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write: u64,
+    model: Option<String>,
+}
+
+impl UsageTracker {
+    fn new(provider: &str) -> Self {
+        Self {
+            provider: provider.into(),
+            ..Default::default()
+        }
+    }
+
+    fn seed(&mut self, records: Vec<Value>, incomplete: bool) {
+        if self.provider == "claude" && incomplete {
+            // An old streaming ID may be outside this bounded scan.  Skip its first
+            // post-attach snapshot instead of charging its entire historical reply.
+            self.claude_unknown_is_baseline = true;
+        }
+        for record in records {
+            let _ = self.observe(&record, "");
+        }
+        // Historic user rows are not an attachment-era boundary.
+        self.claude_new_turn_confirmed = false;
+    }
+
+    fn observe(&mut self, record: &Value, session_id: &str) -> Option<SessionEventTokens> {
+        match self.provider.as_str() {
+            "codex" => self.observe_codex(record),
+            "claude" => self.observe_claude(record, session_id),
+            _ => None,
+        }
+    }
+
+    fn observe_codex(&mut self, record: &Value) -> Option<SessionEventTokens> {
+        let payload = record.get("payload")?;
+        // Models are announced separately by Codex; retain the last safe identifier.
+        let announced = payload
+            .get("model")
+            .and_then(Value::as_str)
+            .filter(|m| !m.trim().is_empty())
+            .map(str::to_owned);
+        if record.get("type").and_then(Value::as_str) == Some("turn_context") {
+            if let Some(model) = announced {
+                self.codex_model = Some(model);
+            }
+            return None;
+        }
+        if payload.get("type").and_then(Value::as_str) != Some("token_count") {
+            return None;
+        }
+        let total = payload.get("info")?.get("total_token_usage")?;
+        let next = CodexSnapshot {
+            input: total
+                .get("input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            output: total
+                .get("output_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            cache_read: total
+                .get("cached_input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            cache_write: total
+                .get("cache_write_input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            model: announced
+                .or_else(|| self.codex_model.clone())
+                .or_else(|| self.codex.as_ref().and_then(|s| s.model.clone())),
+        };
+        let previous = self.codex.replace(next.clone())?;
+        // Totals falling means rotation/reset.  Seed again and never turn history into a delta.
+        if next.input < previous.input
+            || next.output < previous.output
+            || next.cache_read < previous.cache_read
+            || next.cache_write < previous.cache_write
+        {
+            return None;
+        }
+        token_delta(&next, &previous)
+    }
+
+    fn observe_claude(&mut self, record: &Value, session_id: &str) -> Option<SessionEventTokens> {
+        if record.get("type").and_then(Value::as_str) == Some("user")
+            && record
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .is_some_and(|id| session_id.is_empty() || id == session_id)
+            && !is_truthy(record.get("isSidechain"))
+            && !is_truthy(record.get("isMeta"))
+        {
+            // A new user boundary proves that later assistant IDs began after attach.
+            self.claude_new_turn_confirmed = true;
+            return None;
+        }
+        if record.get("type")?.as_str()? != "assistant"
+            || record
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .is_some_and(|id| !session_id.is_empty() && id != session_id)
+            || is_truthy(record.get("isSidechain"))
+            || is_truthy(record.get("isMeta"))
+        {
+            return None;
+        }
+        let message = record.get("message")?;
+        let id = message.get("id")?.as_str()?.to_owned();
+        let usage = message.get("usage")?;
+        let next = ClaudeSnapshot {
+            input: usage
+                .get("input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            output: usage
+                .get("output_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            cache_read: usage
+                .get("cache_read_input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            cache_write: usage
+                .get("cache_creation_input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            model: message
+                .get("model")
+                .and_then(Value::as_str)
+                .filter(|m| !m.trim().is_empty())
+                .map(str::to_owned),
+        };
+        let previous = self.claude.get(&id).cloned();
+        match previous {
+            // Repeated streaming records are snapshots: only their increase counts.
+            Some(previous)
+                if next.input >= previous.input
+                    && next.output >= previous.output
+                    && next.cache_read >= previous.cache_read
+                    && next.cache_write >= previous.cache_write =>
+            {
+                self.claude.insert(id, next.clone());
+                token_delta(&next, &previous)
+            }
+            // A reduced/replayed snapshot must never move an ID watermark backwards.
+            Some(_) => None,
+            // A new post-attach message is a complete snapshot for that message.
+            None if self.claude_unknown_is_baseline && !self.claude_new_turn_confirmed => {
+                self.claude.insert(id, next);
+                None
+            }
+            None => {
+                self.claude.insert(id, next.clone());
+                token_delta(&next, &ClaudeSnapshot::default())
+            }
+        }
+    }
+}
+
+fn token_delta(
+    next: &impl UsageSnapshot,
+    previous: &impl UsageSnapshot,
+) -> Option<SessionEventTokens> {
+    let raw_input = next.input().saturating_sub(previous.input());
+    let output = next.output().saturating_sub(previous.output());
+    let cache_read = next.cache_read().saturating_sub(previous.cache_read());
+    let cache_write = next.cache_write().saturating_sub(previous.cache_write());
+    let input = if next.input_includes_cache() {
+        raw_input
+            .saturating_sub(cache_read)
+            .saturating_sub(cache_write)
+    } else {
+        raw_input
+    };
+    let model = next.model();
+    SessionEventTokens {
+        input: Some(input),
+        output: Some(output),
+        cache_read: Some(cache_read),
+        cache_write: Some(cache_write),
+        model: model.clone(),
+        by_model: model.map(|model| {
+            vec![SessionModelTokens {
+                input: Some(input),
+                output: Some(output),
+                cache_read: Some(cache_read),
+                cache_write: Some(cache_write),
+                model: Some(model),
+            }]
+        }),
+    }
+    .non_empty()
+}
+trait UsageSnapshot {
+    fn input(&self) -> u64;
+    fn output(&self) -> u64;
+    fn cache_read(&self) -> u64;
+    fn cache_write(&self) -> u64;
+    fn model(&self) -> Option<String>;
+    fn input_includes_cache(&self) -> bool;
+}
+macro_rules! usage_snapshot {
+    ($t:ty) => {
+        impl UsageSnapshot for $t {
+            fn input(&self) -> u64 {
+                self.input
+            }
+            fn output(&self) -> u64 {
+                self.output
+            }
+            fn cache_read(&self) -> u64 {
+                self.cache_read
+            }
+            fn cache_write(&self) -> u64 {
+                self.cache_write
+            }
+            fn model(&self) -> Option<String> {
+                self.model.clone()
+            }
+            fn input_includes_cache(&self) -> bool {
+                false
+            }
+        }
+    };
+}
+usage_snapshot!(ClaudeSnapshot);
+impl UsageSnapshot for CodexSnapshot {
+    fn input(&self) -> u64 {
+        self.input
+    }
+    fn output(&self) -> u64 {
+        self.output
+    }
+    fn cache_read(&self) -> u64 {
+        self.cache_read
+    }
+    fn cache_write(&self) -> u64 {
+        self.cache_write
+    }
+    fn model(&self) -> Option<String> {
+        self.model.clone()
+    }
+    fn input_includes_cache(&self) -> bool {
+        true
     }
 }
 
@@ -555,6 +906,46 @@ mod tests {
     }
 
     #[test]
+    fn usage_baseline_is_pinned_to_tail_offset_and_ignores_partial_eof() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("usage.jsonl");
+        write(&file, "{\"n\":1}\n{\"partial\"");
+        let tail = TranscriptTail::from_now(&file).unwrap();
+        let mut out = fs::OpenOptions::new().append(true).open(&file).unwrap();
+        out.write_all(b":2}\n{\"n\":3}\n").unwrap();
+        out.flush().unwrap();
+        let records = tail.usage_baseline_records().unwrap();
+        assert_eq!(records, vec![serde_json::json!({"n": 1})]);
+    }
+
+    #[test]
+    fn partial_claude_eof_marks_baseline_incomplete_and_skips_same_id_snapshot() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("claude-partial.jsonl");
+        write(
+            &file,
+            r#"{"type":"assistant","sessionId":"s1","message":{"id":"m1""#,
+        );
+        let mut tail = TranscriptTail::from_now(&file).unwrap();
+        assert!(tail.usage_baseline_is_incomplete());
+        let mut filter = EventFilter::with_baseline(
+            "claude",
+            "s1",
+            tail.usage_baseline_records().unwrap(),
+            tail.usage_baseline_is_incomplete(),
+        );
+        let mut out = fs::OpenOptions::new().append(true).open(&file).unwrap();
+        // Finish the pre-attach partial line, then write a complete repeated snapshot.
+        writeln!(out, r#"}}"#).unwrap();
+        writeln!(out, r#"{{"type":"assistant","sessionId":"s1","message":{{"id":"m1","model":"claude-sonnet-4","usage":{{"input_tokens":50,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}},"stop_reason":"end_turn"}}}}"#).unwrap();
+        out.flush().unwrap();
+        let records = tail.read().unwrap();
+        assert_eq!(records.len(), 1, "partial pre-attach line is discarded");
+        let (_, usage) = filter.take_with_tokens(&records[0]).unwrap();
+        assert!(usage.is_none(), "same ID may contain pre-attach usage");
+    }
+
+    #[test]
     fn claude_filter_accepts_activity_and_rejects_non_user_records() {
         let mut filter = EventFilter::new("claude", "s1");
         let cases = [
@@ -608,6 +999,79 @@ mod tests {
         let record = serde_json::json!({"type":"response_item", "payload":{"type":"function_call", "call_id":"x".repeat(1_000_000)}});
         assert_eq!(filter.take(&record), Some(ObservedEventKind::Tool));
         assert!(filter.seen.front().unwrap().len() < 64);
+    }
+
+    #[test]
+    fn codex_usage_uses_attach_baseline_and_handles_repeat_reset_and_model_change() {
+        let mut filter = EventFilter::new("codex", "s");
+        let total = |input, output, model: &str| serde_json::json!({"type":"event_msg","payload":{"type":"token_count","model":model,"info":{"total_token_usage":{"input_tokens":input,"output_tokens":output,"cached_input_tokens":0,"cache_write_input_tokens":0}}}});
+        // First observed cumulative value is a boundary, not historical cost.
+        assert_eq!(filter.take_with_tokens(&total(100, 10, "gpt-5")), None);
+        assert_eq!(filter.take_with_tokens(&total(100, 10, "gpt-5")), None);
+        assert_eq!(filter.take_with_tokens(&total(130, 15, "gpt-5.1")), None);
+        let stop = serde_json::json!({"type":"event_msg","payload":{"type":"task_complete","turn_id":"t1"}});
+        let (_, usage) = filter.take_with_tokens(&stop).unwrap();
+        let usage = usage.unwrap();
+        assert_eq!(usage.input, Some(30));
+        assert_eq!(usage.model.as_deref(), Some("gpt-5.1"));
+        assert_eq!(usage.by_model.unwrap()[0].model.as_deref(), Some("gpt-5.1"));
+        // A counter reset establishes another boundary and never emits a giant delta.
+        assert_eq!(filter.take_with_tokens(&total(1, 1, "gpt-5.1")), None);
+        let stop2 = serde_json::json!({"type":"event_msg","payload":{"type":"task_complete","turn_id":"t2"}});
+        assert!(filter.take_with_tokens(&stop2).unwrap().1.is_none());
+    }
+
+    #[test]
+    fn codex_input_delta_excludes_cache_tokens_like_the_native_observer() {
+        let mut filter = EventFilter::new("codex", "s");
+        let total = |input, cached| serde_json::json!({"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":input,"output_tokens":0,"cached_input_tokens":cached,"cache_write_input_tokens":0}}}});
+        let _ = filter.take_with_tokens(&total(100, 80));
+        let _ = filter.take_with_tokens(&total(200, 160));
+        let stop = serde_json::json!({"type":"event_msg","payload":{"type":"task_complete","turn_id":"cached"}});
+        let usage = filter.take_with_tokens(&stop).unwrap().1.unwrap();
+        assert_eq!(usage.input, Some(20));
+        assert_eq!(usage.cache_read, Some(80));
+    }
+
+    #[test]
+    fn claude_usage_replaces_streaming_message_snapshots_and_counts_only_post_attach_delta() {
+        let mut filter = EventFilter::new("claude", "s1");
+        let assistant = |id: &str, input, output, stop| serde_json::json!({"type":"assistant","sessionId":"s1","message":{"id":id,"model":"claude-sonnet-4","usage":{"input_tokens":input,"output_tokens":output,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"stop_reason": if stop { "end_turn" } else { "" }}});
+        // Simulate connecting mid-response: an existing snapshot is the baseline.
+        let old = assistant("m1", 10, 2, false);
+        let _ = filter.usage.observe(&old, "s1");
+        let newer = assistant("m1", 13, 4, true);
+        let (_, usage) = filter.take_with_tokens(&newer).unwrap();
+        let usage = usage.unwrap();
+        assert_eq!(usage.input, Some(3));
+        assert_eq!(usage.output, Some(2));
+        // Same completed ID is deduplicated, so it cannot create a second turn.
+        assert!(filter.take_with_tokens(&newer).is_none());
+    }
+
+    #[test]
+    fn incomplete_claude_baseline_starts_counting_new_ids_after_a_prompt_boundary() {
+        let mut filter = EventFilter::new("claude", "s1");
+        filter.usage.claude_unknown_is_baseline = true;
+        let prompt = serde_json::json!({"type":"user","sessionId":"s1","message":{"role":"user","content":"new"}});
+        assert!(filter.take_with_tokens(&prompt).is_none());
+        let assistant = serde_json::json!({"type":"assistant","sessionId":"s1","message":{"id":"new","model":"claude-sonnet-4","usage":{"input_tokens":7,"output_tokens":3,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"stop_reason":"end_turn"}});
+        let usage = filter.take_with_tokens(&assistant).unwrap().1.unwrap();
+        assert_eq!(usage.input, Some(7));
+    }
+
+    #[test]
+    fn claude_replayed_smaller_snapshot_never_reopens_an_old_message_watermark() {
+        let mut filter = EventFilter::new("claude", "s1");
+        let assistant = |id: &str, output| serde_json::json!({"type":"assistant","sessionId":"s1","message":{"id":id,"model":"claude-sonnet-4","usage":{"input_tokens":0,"output_tokens":output,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}});
+        // m1 is already known at its largest snapshot. A replayed smaller row then
+        // the same maximum must not leak an extra delta into the next Stop.
+        let _ = filter.usage.observe(&assistant("m1", 10), "s1");
+        let _ = filter.take_with_tokens(&assistant("m1", 5));
+        let _ = filter.take_with_tokens(&assistant("m1", 10));
+        let completed = serde_json::json!({"type":"assistant","sessionId":"s1","message":{"id":"m2","model":"claude-sonnet-4","usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"stop_reason":"end_turn"}});
+        let usage = filter.take_with_tokens(&completed).unwrap().1.unwrap();
+        assert_eq!(usage.output, Some(1));
     }
 
     #[test]

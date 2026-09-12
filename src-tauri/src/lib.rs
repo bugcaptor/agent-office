@@ -1150,6 +1150,8 @@ mod tests {
             summary_models: Default::default(),
             diary_enabled: false,
             observer_enabled: true,
+            ide_connection_enabled: false,
+            remote_server_connection_enabled: false,
             typing_sound_enabled: true,
             notify_sound_enabled: true,
             sound_volume: 0.5,

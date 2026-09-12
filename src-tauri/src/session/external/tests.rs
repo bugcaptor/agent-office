@@ -427,13 +427,31 @@ async fn observed_session_forwards_minimal_events_without_a_hook_plan() {
 async fn sweep_expires_an_observed_session_when_its_lease_is_stale() {
     let f = build();
     let owner = Uuid::new_v4().to_string();
-    let attached = f.manager.attach_observed(
-        "a1", "claude", "source-stale", "/tmp/proj", &owner, Some(std::process::id()),
-        AgentEventProfile { name: "Ada".into(), role: None },
-    ).unwrap();
+    let attached = f
+        .manager
+        .attach_observed(
+            "a1",
+            "claude",
+            "source-stale",
+            "/tmp/proj",
+            &owner,
+            Some(std::process::id()),
+            AgentEventProfile {
+                name: "Ada".into(),
+                role: None,
+            },
+        )
+        .unwrap();
     let sid = attached.session_id;
-    f.manager.externals.lock().get_mut("a1").unwrap()
-        .observed.as_mut().unwrap().last_heartbeat_ms = 0;
+    f.manager
+        .externals
+        .lock()
+        .get_mut("a1")
+        .unwrap()
+        .observed
+        .as_mut()
+        .unwrap()
+        .last_heartbeat_ms = 0;
     f.manager.sweep_externals();
     assert_eq!(f.manager.session_id_for("a1"), None);
     assert_eq!(f.events.last_state().session_id, sid);
@@ -448,25 +466,45 @@ async fn observed_attach_after_dispose_preserves_state_when_old_pty_reaps() {
     let old = f.manager.find("a1").unwrap();
     f.manager.dispose("a1");
     let owner = Uuid::new_v4().to_string();
-    let attached = f.manager.attach_observed("a1", "codex", "source-1", "/tmp/example",
-        &owner, None, AgentEventProfile { name: "Example".into(), role: None }).unwrap();
+    let attached = f
+        .manager
+        .attach_observed(
+            "a1",
+            "codex",
+            "source-1",
+            "/tmp/example",
+            &owner,
+            None,
+            AgentEventProfile {
+                name: "Example".into(),
+                role: None,
+            },
+        )
+        .unwrap();
     f.control.fire_exit(0);
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     while *old.state.lock() != SessionState::Disposed {
-        assert!(std::time::Instant::now() < deadline, "old PTY waiter did not finish");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "old PTY waiter did not finish"
+        );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     // Wait for the same lifecycle section that publishes on_exit's state,
     // not an arbitrary sleep after sending the fake process exit.
     {
         let _finished = f.manager.observed_lifecycle.lock();
-        assert_eq!(f.manager.session_id_for("a1"), Some(attached.session_id.clone()));
+        assert_eq!(
+            f.manager.session_id_for("a1"),
+            Some(attached.session_id.clone())
+        );
         assert_eq!(f.events.last_state().session_id, attached.session_id);
         assert_eq!(f.events.last_state().state, SessionState::Running);
         assert_eq!(f.events.last_state().external, Some(true));
     }
     assert_eq!(f.control.kill_count(), 1);
-    f.manager.detach_observed("a1", &attached.session_id, &owner);
+    f.manager
+        .detach_observed("a1", &attached.session_id, &owner);
     f.cleanup();
 }
 
@@ -523,5 +561,29 @@ async fn sweep_leaves_externals_without_a_shell_pid_alone() {
         f.manager.session_id_for("a1").as_deref(),
         Some(sid.as_str())
     );
+    f.cleanup();
+}
+
+
+#[tokio::test]
+async fn opt_out_detaches_observed_immediately_but_preserves_shell_attachments() {
+    let f = build();
+    let shell = f.manager.attach_external("shell", None, None, None).unwrap();
+    let observed = f.manager.attach_observed(
+        "ide", "codex", "source", "/tmp", "owner", None,
+        AgentEventProfile { name: "Ada".into(), role: None }
+    ).unwrap();
+    f.manager.detach_all_observed();
+    assert!(f.manager.session_id_for("ide").is_none());
+    assert_eq!(f.manager.session_id_for("shell").as_deref(), Some(shell.session_id()));
+    assert!(f.manager.ingest_observed_event(
+        "ide", &observed.session_id, "owner", 1, ObservedEventKind::Heartbeat, None
+    ).is_err());
+    // Re-enable requires a fresh logical session, never the previous owner slot.
+    let next = f.manager.attach_observed(
+        "ide", "codex", "source", "/tmp", "owner", None,
+        AgentEventProfile { name: "Ada".into(), role: None }
+    ).unwrap();
+    assert_ne!(next.session_id, observed.session_id);
     f.cleanup();
 }

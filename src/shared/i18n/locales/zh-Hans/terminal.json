@@ -291,7 +291,8 @@
       "costUnknownHint_one": "已排除 {{count}} 条未知定价用量的费用",
       "costUnknownHint_other": "已排除 {{count}} 条未知定价用量的费用",
       "tokenPairHint": "括号内为含缓存的总 token",
-      "footnote": "按公开 API 费率折算的估值"
+      "footnote": "按公开 API 费率折算的估值",
+      "externalScope": "仅统计连接后记录的用量。"
     }
   }
 }

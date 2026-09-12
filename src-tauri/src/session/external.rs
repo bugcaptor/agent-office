@@ -435,6 +435,23 @@ impl SessionManager {
         kind: ObservedEventKind,
         tool_name: Option<&str>,
     ) -> Result<bool, String> {
+        self.ingest_observed_event_with_tokens(
+            agent_id, session_id, owner_id, sequence, kind, tool_name, None,
+        )
+    }
+
+    /// IDE transcript observers may attach measured usage to a completed turn.  The
+    /// public control protocol deliberately keeps using `ingest_observed_event`.
+    pub(crate) fn ingest_observed_event_with_tokens(
+        &self,
+        agent_id: &str,
+        session_id: &str,
+        owner_id: &str,
+        sequence: u64,
+        kind: ObservedEventKind,
+        tool_name: Option<&str>,
+        tokens: Option<SessionEventTokens>,
+    ) -> Result<bool, String> {
         if sequence == 0 {
             return Err("observed-sequence-invalid".into());
         }
@@ -469,7 +486,7 @@ impl SessionManager {
             ObservedEventKind::Stop => Some(ObserverEvent::Stop {
                 message: None,
                 running: None,
-                tokens: None,
+                tokens,
             }),
             ObservedEventKind::Attention => Some(ObserverEvent::Attention { message: None }),
             ObservedEventKind::Heartbeat => None,
@@ -480,6 +497,22 @@ impl SessionManager {
             self.hub.ingest_observer(session_id, event);
         }
         Ok(true)
+    }
+
+    /// Opt-out ends observed connections immediately; ordinary shell attachments survive.
+    /// Caller serializes configuration changes and attach; no settings guard is held.
+    pub(crate) fn detach_all_observed(&self) {
+        let _lifecycle = self.observed_lifecycle.lock();
+        let detached: Vec<_> = {
+            let mut externals = self.externals.lock();
+            let ids: Vec<_> = externals.iter()
+                .filter(|(_, external)| external.observed.is_some())
+                .map(|(id, _)| id.clone()).collect();
+            ids.into_iter().filter_map(|id| externals.remove(&id).map(|session| (id, session))).collect()
+        };
+        for (id, session) in detached {
+            self.finish_external_detach(&id, session, ExternalDetachReason::Detach);
+        }
     }
 
     /// stale detach가 새 연결을 끊지 않게 현재 sid와 owner를 함께 확인한다.

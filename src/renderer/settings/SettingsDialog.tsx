@@ -20,6 +20,7 @@ import { SystemTab } from "./SystemTab";
 import { ControlSection } from "./ControlSection";
 import { WebRemoteSection } from "./WebRemoteSection";
 import { TalkSection } from "./TalkSection";
+import { ConnectionSection } from "./ConnectionSection";
 
 type SettingsTabId = "general" | "sound" | "system" | "control";
 
@@ -85,6 +86,7 @@ function SettingsDialogBody() {
           {tab === "control" && (
             <>
               <ControlSection enabled={cliEnabled} />
+              <ConnectionSection />
               <WebRemoteSection />
               <TalkSection />
             </>

@@ -40,12 +40,14 @@ vi.mock("../../agent/summonToDesk", () => ({
 
 const talkStatus = vi.fn();
 const setAppSettings = vi.fn((_settings: unknown) => Promise.resolve());
+const remoteOpenWindow = vi.fn();
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     talkStatus: (...a: unknown[]) => talkStatus(...a),
     setAppSettings: (settings: unknown) => setAppSettings(settings),
   },
 }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => remoteOpenWindow(...args) }));
 
 function talkStatusOf(overrides: Partial<TalkStatus> = {}): TalkStatus {
   return { enabled: true, queued: 0, conversations: [], ...overrides };
@@ -72,6 +74,7 @@ beforeEach(() => {
   clockInAgent.mockClear();
   clockInAll.mockClear();
   summonAllToDesk.mockClear();
+  remoteOpenWindow.mockClear();
   talkStatus.mockReset();
   talkStatus.mockResolvedValue(talkStatusOf());
 });
@@ -83,6 +86,44 @@ describe("New Agent", () => {
     const { getByText } = render(<BottomBar />);
     fireEvent.click(getByText("＋ New Agent"));
     expect(useAppStore.getState().modal).toEqual({ kind: "profile-create" });
+  });
+});
+
+describe("연결 버튼", () => {
+  function setConnections(ideConnectionEnabled: boolean, remoteServerConnectionEnabled: boolean): void {
+    useAppStore.setState((state) => ({ appSettings: { ...state.appSettings, ideConnectionEnabled, remoteServerConnectionEnabled } }));
+  }
+
+  it("두 연결을 모두 끄면 버튼을 숨긴다", () => {
+    setConnections(false, false);
+    const { queryByRole } = render(<BottomBar />);
+    expect(queryByRole("button", { name: "🔗 연결" })).toBeNull();
+  });
+
+  it("IDE 연결만 켜면 IDE 항목만 보여 주고 선택하면 대화 상자를 연다", () => {
+    setConnections(true, false);
+    const { getByRole, queryByRole } = render(<BottomBar />);
+    fireEvent.click(getByRole("button", { name: "🔗 연결" }));
+    fireEvent.click(getByRole("menuitem", { name: "🔗 IDE 세션" }));
+    expect(useAppStore.getState().modal).toEqual({ kind: "ide-session" });
+    expect(queryByRole("menuitem", { name: /원격 서버 연결/ })).toBeNull();
+  });
+
+  it("원격 연결만 켜면 원격 항목만 보여 주고 선택하면 창 열기를 호출한다", () => {
+    setConnections(false, true);
+    const { getByRole, queryByRole } = render(<BottomBar />);
+    fireEvent.click(getByRole("button", { name: "🔗 연결" }));
+    fireEvent.click(getByRole("menuitem", { name: /원격 서버 연결/ }));
+    expect(remoteOpenWindow).toHaveBeenCalled();
+    expect(queryByRole("menuitem", { name: "🔗 IDE 세션" })).toBeNull();
+  });
+
+  it("두 연결을 켜면 하나의 메뉴에 두 항목을 표시한다", () => {
+    setConnections(true, true);
+    const { getByRole } = render(<BottomBar />);
+    fireEvent.click(getByRole("button", { name: "🔗 연결" }));
+    expect(getByRole("menuitem", { name: "🔗 IDE 세션" })).toBeTruthy();
+    expect(getByRole("menuitem", { name: /원격 서버 연결/ })).toBeTruthy();
   });
 });
 

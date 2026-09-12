@@ -554,6 +554,7 @@ mod tests {
         // 훅 ON(기본값은 OFF) — attach 핸들러가 observer 서버를 선기동하고,
         // 그래야 스크립트에 훅 env와 claude 래퍼가 실린다.
         f.ctx.settings.write().unwrap().observer_enabled = true;
+        f.ctx.settings.write().unwrap().ide_connection_enabled = true;
         f.ctx
             .store
             .save(&crate::types::PersistedState {
@@ -686,6 +687,7 @@ mod tests {
         let port = f.state.ensure(f.ctx.clone()).await.unwrap();
         let token = f.state.issue_token().unwrap();
         f.ctx.settings.write().unwrap().observer_enabled = true;
+        f.ctx.settings.write().unwrap().ide_connection_enabled = true;
         let mut agent = profile("a1", "Ada");
         agent.cwd = Some("/tmp/observed-project".into());
         f.ctx
@@ -718,6 +720,11 @@ mod tests {
                     .unwrap()
             }
         };
+        f.ctx.settings.write().unwrap().ide_connection_enabled = false;
+        let denied = attach(attach_body.clone()).await;
+        assert_eq!(denied["error"], "ide-connection-disabled");
+        assert!(f.ctx.manager.session_id_for("a1").is_none());
+        f.ctx.settings.write().unwrap().ide_connection_enabled = true;
         let first = attach(attach_body.clone()).await;
         assert_eq!(first["ok"], true);
         let sid = first["data"]["sessionId"].as_str().unwrap().to_string();
@@ -747,6 +754,11 @@ mod tests {
             f.events.activities().iter().map(|activity| activity.kind).collect::<Vec<_>>(),
             vec![crate::types::ActivityKind::Prompt],
         );
+        f.ctx.settings.write().unwrap().ide_connection_enabled = false;
+        let denied = event(serde_json::json!({ "agentId":"a1", "sessionId":sid, "ownerId":owner,
+            "sequence":2, "kind":"heartbeat" })).await;
+        assert_eq!(denied["error"], "ide-connection-disabled");
+        f.ctx.settings.write().unwrap().ide_connection_enabled = true;
         let stale = event(serde_json::json!({ "agentId":"a1", "sessionId":sid,
             "ownerId":uuid::Uuid::new_v4().to_string(), "sequence":2, "kind":"stop" }))
         .await;
@@ -824,6 +836,7 @@ mod tests {
         let _port = f.state.ensure(f.ctx.clone()).await.unwrap();
         f.state.issue_token().unwrap();
         f.ctx.settings.write().unwrap().observer_enabled = true;
+        f.ctx.settings.write().unwrap().ide_connection_enabled = true;
         let cwd = f.dir.join("project");
         std::fs::create_dir_all(&cwd).unwrap();
         let mut agent = profile("a1", "Ada");
@@ -1095,6 +1108,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stale_cli_settings_cannot_restore_connection_opt_ins() {
+        let f = build("stale-connection-settings");
+        let mut stale = f.ctx.settings.read().unwrap().clone();
+        stale.ide_connection_enabled = true;
+        stale.remote_server_connection_enabled = true;
+        stale.typing_sound_enabled = false;
+        // The user has since opted out; preserve the current values inside the write lock.
+        crate::ipc::commands::apply_settings_effects(
+            &f.ctx.manager, &f.ctx.settings_store, &f.ctx.settings, &f.ctx.hub,
+            &f.ctx.observer_server, &f.ctx.observer, &f.ctx.talk, stale, true,
+        ).await.unwrap();
+        let settings = f.ctx.settings.read().unwrap().clone();
+        assert!(!settings.ide_connection_enabled);
+        assert!(!settings.remote_server_connection_enabled);
+        assert!(!settings.typing_sound_enabled);
+        cleanup(&f);
+    }
+
+    #[tokio::test]
     async fn settings_set_rejects_cli_enabled_but_allows_others() {
         let f = build("settings");
         let port = f.state.ensure(f.ctx.clone()).await.unwrap();
@@ -1112,6 +1144,17 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(rejected["ok"], false);
+
+        for key in ["ideConnectionEnabled", "ide_connection_enabled", "remoteServerConnectionEnabled", "remote_server_connection_enabled"] {
+            let response: serde_json::Value = client
+                .post(format!("http://127.0.0.1:{port}/v1/settings/set"))
+                .header(TOKEN_HEADER, &token)
+                .json(&serde_json::json!({key: true}))
+                .send().await.unwrap().json().await.unwrap();
+            assert_eq!(response["ok"], false, "{key}");
+        }
+        assert!(!f.ctx.settings.read().unwrap().ide_connection_enabled);
+        assert!(!f.ctx.settings.read().unwrap().remote_server_connection_enabled);
 
         let ok_resp: serde_json::Value = client
             .post(format!("http://127.0.0.1:{port}/v1/settings/set"))

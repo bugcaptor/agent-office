@@ -195,6 +195,7 @@
     "loadFailed": "IDE 세션을 불러오지 못했습니다.",
     "connectFailed": "IDE 세션을 연결하지 못했습니다."
   },
+  "ideConnection": { "disabled": "세션을 연결하려면 설정에서 IDE 세션 연결을 켜세요." },
   "generate": {
     "personalityPrompt": "{{word}} 성격"
   }

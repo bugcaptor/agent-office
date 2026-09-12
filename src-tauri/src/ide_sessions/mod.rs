@@ -94,9 +94,14 @@ impl Watcher {
         provider: &str,
         source_session_id: &str,
     ) -> Result<Self, String> {
-        if !settings.read().unwrap().observer_enabled {
+        // Settings opt-out takes this guard before detaching observed sessions;
+        // retaining it through registration closes attach-versus-opt-out races.
+        let _configuration = manager.observed_configuration.lock();
+        let settings_guard = settings.read().unwrap();
+        if !settings_guard.observer_enabled || !settings_guard.ide_connection_enabled {
             return Err("observed-observer-disabled".into());
         }
+        drop(settings_guard);
         let candidate = transcripts::inspect(file, provider)?;
         if candidate.source != "vscode" {
             return Err("source-not-vscode".into());
@@ -108,6 +113,8 @@ impl Watcher {
             return Err("observed-cwd-mismatch".into());
         }
         let tail = TranscriptTail::from_candidate(&candidate)?;
+        let baseline_incomplete = tail.usage_baseline_is_incomplete();
+        let baseline_records = tail.usage_baseline_records()?;
         let owner_id = uuid::Uuid::new_v4().to_string();
         let attached = manager.attach_observed_with_focus(
             agent_id,
@@ -129,13 +136,20 @@ impl Watcher {
             owner_id,
             sequence: 0,
             tail,
-            filter: EventFilter::new(provider, source_session_id),
+            filter: EventFilter::with_baseline(
+                provider,
+                source_session_id,
+                baseline_records,
+                baseline_incomplete,
+            ),
         })
     }
 
     fn tick(&mut self) -> Result<(), String> {
         let settings = self.settings.upgrade().ok_or("ide-app-stopped")?;
-        if !settings.read().unwrap().observer_enabled {
+        if !settings.read().unwrap().observer_enabled
+            || !settings.read().unwrap().ide_connection_enabled
+        {
             return Err("observed-observer-disabled".into());
         }
         let manager = self.manager.upgrade().ok_or("ide-app-stopped")?;
@@ -151,15 +165,16 @@ impl Watcher {
             None,
         )?;
         for record in self.tail.read()? {
-            if let Some(kind) = self.filter.take(&record) {
+            if let Some((kind, tokens)) = self.filter.take_with_tokens(&record) {
                 self.sequence += 1;
-                manager.ingest_observed_event(
+                manager.ingest_observed_event_with_tokens(
                     &self.agent_id,
                     &self.session_id,
                     &self.owner_id,
                     self.sequence,
                     kind,
                     None,
+                    tokens,
                 )?;
             }
         }

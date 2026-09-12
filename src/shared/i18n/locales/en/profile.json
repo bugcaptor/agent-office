@@ -195,6 +195,7 @@
     "loadFailed": "Could not load IDE sessions.",
     "connectFailed": "Could not connect that IDE session."
   },
+  "ideConnection": { "disabled": "Turn on IDE session connection in Settings before connecting a session." },
   "generate": {
     "personalityPrompt": "{{word}} personality"
   }

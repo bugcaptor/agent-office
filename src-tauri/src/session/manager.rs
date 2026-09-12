@@ -163,6 +163,9 @@ pub struct SessionManager {
     pub(super) externals: Mutex<HashMap<AgentId, ExternalSession>>,
     /// PTY 생성과 기록 관찰 attach가 교차해 한 캐릭터에 둘 다 등록되는 경주를 막는다.
     pub(super) observed_lifecycle: Mutex<()>,
+    /// Serializes observed opt-in changes and attachments without holding settings
+    /// while waiting for lifecycle (PTY creation reads settings under lifecycle).
+    pub(crate) observed_configuration: Mutex<()>,
     /// agentId별 출력 sink — 세션 수명과 독립. subscribe 이전 pending attach와
     /// 세션 재생성 시 채널 재사용을 위해 세션이 아니라 여기에 보관한다.
     sinks: Mutex<HashMap<AgentId, Arc<OutputSink>>>,
@@ -220,6 +223,7 @@ impl SessionManager {
             sessions: Mutex::new(HashMap::new()),
             externals: Mutex::new(HashMap::new()),
             observed_lifecycle: Mutex::new(()),
+            observed_configuration: Mutex::new(()),
             sinks: Mutex::new(HashMap::new()),
             shell_resolver: Arc::new(shells::resolve_observed),
             app_data_dir: None,

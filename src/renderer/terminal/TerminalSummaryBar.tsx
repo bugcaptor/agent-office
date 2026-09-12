@@ -136,7 +136,7 @@ export function TerminalSummaryBar() {
       {line1 && shownLine2 && <span className="terminal-summary-sep"> — </span>}
       {shownLine2 && <span className="terminal-summary-line2">{shownLine2}</span>}
       {hasUsage && (
-        <span className="terminal-summary-usage" title={usageTooltip(totals!, t)}>
+        <span className="terminal-summary-usage" title={[usageTooltip(totals!, t), sessions[activeId]?.kind === "external" ? t("summary.usage.externalScope") : ""].filter(Boolean).join("\n")}>
           {`${usageTokenText(totals!)} · ${usageCostText(totals!)}`}
         </span>
       )}

@@ -13,6 +13,7 @@
     "tabSystem": "System",
     "tabControl": "Control"
   },
+  "connections": { "ideTitle": "IDE session connection", "ideHelp": "Allow this app to find and connect to IDE sessions. Turning it off disconnects connected sessions; the original IDE stays unchanged.", "remoteTitle": "Remote server connection", "remoteHelp": "Allow this app to open a remote server connection. Turning it off disconnects the current remote connection but keeps saved server details.", "webRemoteNote": "These switches control connections started by this app. They are separate from Web remote, which shares this office with a browser." },
   "keys": {
     "present": "set",
     "presentEnv": "set (env)",

@@ -291,7 +291,8 @@
       "costUnknownHint_one": "단가를 모르는 사용량 {{count}}건의 비용은 제외됨",
       "costUnknownHint_other": "단가를 모르는 사용량 {{count}}건의 비용은 제외됨",
       "tokenPairHint": "괄호 안은 캐시 포함 전체 토큰",
-      "footnote": "공개 API 요율 기준 추정치"
+      "footnote": "공개 API 요율 기준 추정치",
+      "externalScope": "연결 이후 기록된 사용량만 집계합니다."
     }
   }
 }

@@ -13,6 +13,7 @@
     "tabSystem": "系統",
     "tabControl": "控制"
   },
+  "connections": { "ideTitle": "IDE 工作階段連線", "ideHelp": "允許此應用程式尋找並連線 IDE 工作階段。關閉後會中斷已連線的工作階段，原始 IDE 不會改變。", "remoteTitle": "遠端伺服器連線", "remoteHelp": "允許此應用程式開啟遠端伺服器連線。關閉後會中斷目前的遠端連線，但已儲存的伺服器資訊會保留。", "webRemoteNote": "這些開關控制由此應用程式發起的連線，和在瀏覽器中分享此辦公室的網頁遠端設定不同。" },
   "keys": {
     "present": "已設定",
     "presentEnv": "已設定（環境變數）",

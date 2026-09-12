@@ -127,6 +127,8 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   },
   diaryEnabled: false,
   observerEnabled: false,
+  ideConnectionEnabled: false,
+  remoteServerConnectionEnabled: false,
   typingSoundEnabled: true,
   notifySoundEnabled: true,
   soundVolume: 0.5,
@@ -504,6 +506,8 @@ interface AppState {
         | "summaryModels"
         | "diaryEnabled"
         | "observerEnabled"
+        | "ideConnectionEnabled"
+        | "remoteServerConnectionEnabled"
         | "typingSoundEnabled"
         | "notifySoundEnabled"
         | "soundVolume"

@@ -13,6 +13,7 @@
   },
   "bottomBar": {
     "newAgent": "＋ Nouvel agent",
+    "connection": "🔗 Connexion",
     "ideSession": "🔗 Session IDE",
     "clockIn": "🏠 Arrivée ({{n}})",
     "clockAll": "Pointage global",

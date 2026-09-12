@@ -13,6 +13,7 @@
     "tabSystem": "Système",
     "tabControl": "Contrôle"
   },
+  "connections": { "ideTitle": "Connexion de session IDE", "ideHelp": "Autorise cette application à trouver et connecter des sessions IDE. En désactivant, les sessions connectées sont déconnectées et l’IDE d’origine reste inchangé.", "remoteTitle": "Connexion au serveur distant", "remoteHelp": "Autorise cette application à ouvrir une connexion à un serveur distant. En désactivant, la connexion distante actuelle est coupée, mais les informations du serveur restent enregistrées.", "webRemoteNote": "Ces interrupteurs contrôlent les connexions démarrées par cette application. Ils sont distincts de Web remote, qui partage ce bureau dans un navigateur." },
   "keys": {
     "present": "définie",
     "presentEnv": "définie (env)",

@@ -13,6 +13,7 @@
   },
   "bottomBar": {
     "newAgent": "＋ 新增代理",
+    "connection": "🔗 連線",
     "ideSession": "🔗 IDE 工作階段",
     "clockIn": "🏠 上班 ({{n}})",
     "clockAll": "全體上下班",

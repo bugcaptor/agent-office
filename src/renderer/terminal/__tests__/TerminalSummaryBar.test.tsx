@@ -57,6 +57,20 @@ function seed(opts: {
 }
 
 describe("TerminalSummaryBar", () => {
+  it("external IDE usage is priced and identifies the connection scope", () => {
+    seed({ sessionCostEnabled: true });
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "running", external: true });
+    useAppStore.getState().noteUsageSession("a1", "ide1");
+    useAppStore.getState().applyTurnUsage({
+      agentId: "a1", sessionId: "ide1", at: 100, partial: false,
+      tokens: { input: 1000, output: 500, model: "claude-sonnet-4-5" },
+    });
+    const { container } = render(<TerminalSummaryBar />);
+    const usage = container.querySelector(".terminal-summary-usage")!;
+    expect(usage.textContent).toContain("$");
+    expect(usage.getAttribute("title")).toContain("연결 이후");
+  });
+
   it("활성 에이전트의 라벨을 '프로젝트명 · 목표 — 실황'으로 한 줄 표시한다", () => {
     seed({ label: { goal: "버그 수정", latestAssistantText: "원인 좁히는 중" } });
     const { container } = render(<TerminalSummaryBar />);

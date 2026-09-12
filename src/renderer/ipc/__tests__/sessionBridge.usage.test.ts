@@ -76,6 +76,20 @@ describe("sessionBridge session-usage wiring", () => {
     expect(entry.totals.turns).toBe(1);
   });
 
+  it("IDE external sessions share priced usage and reset on reconnect", () => {
+    captured.state!({ agentId: "a1", sessionId: "ide1", state: "running", external: true, at: 0 });
+    captured.usage!({
+      agentId: "a1", sessionId: "ide1", at: 100,
+      tokens: { input: 100, output: 50, cacheRead: 80, model: "claude-sonnet-4-5" },
+    });
+    const state = useAppStore.getState();
+
+    expect(state.sessionUsage.a1.totals.costUsd).toBeGreaterThan(0);
+    expect(state.sessionUsage.a1.totals.costUnknownTurns).toBe(0);
+    captured.state!({ agentId: "a1", sessionId: "ide2", state: "running", external: true, at: 200 });
+    expect(useAppStore.getState().sessionUsage.a1.totals.costUsd).toBe(0);
+  });
+
   it("notification events alone (동반 turn-usage 없음) do not touch sessionUsage", () => {
     // 결정 A: 알림과 사용량은 분리된 채널이다 — notification-new만 와서는
     // sessionUsage가 전혀 바뀌지 않는다(turn-usage가 와야 바뀐다).

@@ -51,6 +51,8 @@ export function BottomBar() {
   const scene = useAppStore((s) => s.scene);
   const setScene = useAppStore((s) => s.setScene);
   const talkEnabled = useAppStore((s) => s.appSettings.talkEnabled);
+  const ideConnectionEnabled = useAppStore((s) => s.appSettings.ideConnectionEnabled);
+  const remoteServerConnectionEnabled = useAppStore((s) => s.appSettings.remoteServerConnectionEnabled);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
   const runningCount = useRunningCount();
   const pendingCount = usePendingCount();
@@ -63,6 +65,9 @@ export function BottomBar() {
   const [sceneThemeMenu, setSceneThemeMenu] = useState<{ x: number; y: number } | null>(null);
   const [clockAllMenu, setClockAllMenu] = useState<{ x: number; y: number } | null>(null);
   const [recordMenu, setRecordMenu] = useState<{ x: number; y: number } | null>(null);
+  const [connectionMenu, setConnectionMenu] = useState<{ x: number; y: number } | null>(null);
+  const isRemoteWindow = typeof document !== "undefined" && document.documentElement.dataset.remoteWindow === "true";
+  const connectionEnabled = !isRemoteWindow && (ideConnectionEnabled || remoteServerConnectionEnabled);
 
   // "📊 기록" 버튼 툴팁 — 원래 TalkWidget이 title에 담던 열린/대기 대화
   // 문구를 여기로 옮긴다(talkEnabled가 꺼져 있으면 대화 정보는 뺀다).
@@ -81,16 +86,26 @@ export function BottomBar() {
       >
         {t("bottomBar.newAgent")}
       </button>
-      <button type="button" className="pixel-btn ide-session-btn" onClick={() => openModal({ kind: "ide-session" })}>
-        {t("bottomBar.ideSession")}
-      </button>
-      <button
+      {connectionEnabled && <button
         type="button"
-        className="pixel-btn remote-connect-btn"
-        onClick={() => { void invoke(Commands.remoteOpenWindow); }}
+        className="pixel-btn connection-btn"
+        aria-haspopup="menu"
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          setConnectionMenu({ x: rect.left, y: rect.top });
+        }}
       >
-        {t("connection.title", { ns: "remote" })}
-      </button>
+        {t("bottomBar.connection")}
+      </button>}
+      {connectionMenu && <ContextMenu
+        x={connectionMenu.x}
+        y={connectionMenu.y}
+        onClose={() => setConnectionMenu(null)}
+        items={[
+          ...(ideConnectionEnabled ? [{ icon: "🔗", label: t("bottomBar.ideSession"), onSelect: () => openModal({ kind: "ide-session" }) }] : []),
+          ...(remoteServerConnectionEnabled ? [{ icon: "🖧", label: t("connection.title", { ns: "remote" }), onSelect: () => { void invoke(Commands.remoteOpenWindow); } }] : []),
+        ]}
+      />}
       <button
         type="button"
         className="pixel-btn summon-btn"

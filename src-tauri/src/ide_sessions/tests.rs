@@ -38,6 +38,7 @@ impl Fixture {
         ));
         let settings = Arc::new(RwLock::new(AppSettings {
             observer_enabled: true,
+            ide_connection_enabled: true,
             ..AppSettings::default()
         }));
         let dir = tempfile::tempdir().unwrap();
@@ -108,6 +109,7 @@ const PROMPT: &str =
     "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"new-turn\"}}\n";
 const STOP: &str =
     "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\",\"turn_id\":\"new-turn\"}}\n";
+const TOKEN_COUNT: &str = "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"model\":\"gpt-5\",\"info\":{\"total_token_usage\":{\"input_tokens\":120,\"output_tokens\":12,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0}}}}\n";
 
 #[test]
 fn selected_transcript_only_forwards_new_activity_and_disconnect_preserves_source() {
@@ -137,6 +139,24 @@ fn selected_transcript_only_forwards_new_activity_and_disconnect_preserves_sourc
     drop(watcher);
     assert_eq!(std::fs::read(&f.file).unwrap(), before);
     assert!(f.manager.session_id_for("a1").is_none());
+}
+
+#[test]
+fn completed_ide_turn_emits_one_usage_event_without_pre_attach_history() {
+    let f = Fixture::new();
+    // This historical counter becomes the attachment watermark.
+    f.append(TOKEN_COUNT);
+    let mut watcher = f.attach("a1").unwrap();
+    f.append("{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"model\":\"gpt-5\",\"info\":{\"total_token_usage\":{\"input_tokens\":145,\"output_tokens\":20,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0}}}}\n");
+    f.append(STOP);
+    watcher.tick().unwrap();
+    let usages = f.events.usages();
+    assert_eq!(usages.len(), 1);
+    assert!(!usages[0].partial);
+    assert_eq!(usages[0].tokens.input, Some(25));
+    // Re-reading the same stop is deduplicated before it can make another usage turn.
+    watcher.tick().unwrap();
+    assert_eq!(f.events.usages().len(), 1);
 }
 
 #[test]
