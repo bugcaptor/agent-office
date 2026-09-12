@@ -33,7 +33,7 @@ const { mockApi } = vi.hoisted(() => ({
 vi.mock("../../ipc/tauriApi", () => ({ tauriApi: mockApi }));
 
 import { useAppStore } from "../appStore";
-import { installPersistence } from "../persist";
+import { flushPersistence, installPersistence } from "../persist";
 import type { AgentProfile } from "../types";
 
 const initialState = useAppStore.getState();
@@ -167,5 +167,25 @@ describe("installPersistence cleanup", () => {
     vi.advanceTimersByTime(1000);
 
     expect(mockApi.saveState).not.toHaveBeenCalled();
+  });
+});
+
+describe("installPersistence / connection flush", () => {
+  it("serializes a newer explicit flush behind an in-flight older write", async () => {
+    let finishFirst!: () => void;
+    mockApi.saveState
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { finishFirst = resolve; }))
+      .mockResolvedValueOnce(undefined);
+    useAppStore.getState().addAgent(mkProfile({ name: "old" }));
+    vi.advanceTimersByTime(500);
+    useAppStore.getState().updateAgent("a1", { name: "new" });
+    const flush = flushPersistence();
+    expect(mockApi.saveState).toHaveBeenCalledTimes(1);
+    finishFirst();
+    await flush;
+    expect(mockApi.saveState).toHaveBeenCalledTimes(2);
+    expect(mockApi.saveState.mock.calls[1][0]).toEqual(expect.objectContaining({
+      agents: [expect.objectContaining({ name: "new" })],
+    }));
   });
 });

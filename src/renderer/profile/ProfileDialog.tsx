@@ -42,6 +42,7 @@ export function ProfileDialog() {
   const agentOrder = useAppStore((s) => s.agentOrder);
 
   const editing = modal.kind === "profile-edit";
+  const createContext = modal.kind === "profile-create" ? modal : undefined;
   const editingAgentId = modal.kind === "profile-edit" ? modal.agentId : undefined;
   const editingAgent = useAppStore((s) =>
     editingAgentId ? s.agents[editingAgentId] : undefined
@@ -60,7 +61,7 @@ export function ProfileDialog() {
     regenSeed,
     regenAll,
     onBrowseCwd,
-  } = useProfileDraft(editingAgentId);
+  } = useProfileDraft(editingAgentId, createContext?.initialCwd);
 
   // 외형 이미지 3종은 다루는 절차가 같아 한 훅이 종류를 인자로 받아 처리한다.
   // 결과는 AppearanceSection이 통째로 받아 자기 안에서 풀어 쓴다.
@@ -132,10 +133,11 @@ export function ProfileDialog() {
       });
     } else {
       const profile = draftToProfile(draft, agentOrder.length);
-      addAgent(profile); // status: 'starting'
+      const startSession = !createContext?.returnToIdeSession;
+      addAgent(profile, { startSession });
       // 캐릭터 등장은 profiles prop 변화 → B의 syncAgents가 처리 (정합화)
       try {
-        await tauriApi.createSession(profile.id, sessionOptsFor(profile)); // PTY 시작
+        if (startSession) await tauriApi.createSession(profile.id, sessionOptsFor(profile)); // PTY 시작
       } catch (err) {
         // The profile is already saved; mark the session exited so clicking the
         // character later retries via the bridge's ensureSession.
@@ -143,7 +145,11 @@ export function ProfileDialog() {
         console.warn(`ProfileDialog: createSession failed for ${profile.id}`, err);
       }
     }
-    closeModal();
+    if (createContext?.returnToIdeSession) {
+      useAppStore.getState().openModal({ kind: "ide-session" });
+    } else {
+      closeModal();
+    }
   };
 
   if (modal.kind !== "profile-create" && modal.kind !== "profile-edit") return null;
@@ -172,7 +178,7 @@ export function ProfileDialog() {
             {editing ? t("dialog.titleEdit") : t("dialog.titleCreate")}
           </h2>
           <p className="profile-dialog-sub">
-            {editing ? t("dialog.subEdit") : t("dialog.subCreate")}
+            {editing ? t("dialog.subEdit") : createContext?.returnToIdeSession ? t("dialog.subCreateIde") : t("dialog.subCreate")}
           </p>
         </header>
 

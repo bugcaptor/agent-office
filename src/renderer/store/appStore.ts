@@ -315,7 +315,9 @@ interface AppState {
   webRemotePending: PendingPairing[];
 
   // ---- profile actions ----
-  addAgent(profile: AgentProfile): void;
+  /** Adds a profile. Normal creation starts a terminal; connection setup can
+   * deliberately seed an idle character for an already-running IDE session. */
+  addAgent(profile: AgentProfile, options?: { startSession?: boolean }): void;
   updateAgent(agentId: string, patch: Partial<AgentProfile>): void;
   removeAgent(agentId: string): void;
   /**
@@ -588,7 +590,7 @@ export const useAppStore = create<AppState>()(
 
     setWebRemotePending: (pending) => set({ webRemotePending: pending }),
 
-    addAgent: (profile) =>
+    addAgent: (profile, options) =>
       set((s) => ({
         agents: { ...s.agents, [profile.id]: profile },
         agentOrder: [...s.agentOrder, profile.id],
@@ -596,7 +598,7 @@ export const useAppStore = create<AppState>()(
           ...s.sessions,
           [profile.id]: {
             agentId: profile.id,
-            status: "starting",
+            status: options?.startSession === false ? "idle" : "starting",
             cols: 80,
             rows: 24,
             lastActivityAt: Date.now(),

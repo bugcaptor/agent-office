@@ -94,7 +94,7 @@ libc = "0.2" # TIOCSWINSZ ioctl(winsize) — portable-pty의 unix.rs와 동일�
 # es.exe stdout ANSI(예: CP949) 디코딩 — es v1.1.0.37은 stdout을 시스템
 # ANSI 코드페이지로 출력하므로 UTF-8 lossy 디코딩 시 한글 경로가 깨진다.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Globalization"] }
+windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_Foundation", "Win32_Storage_FileSystem"] }
 # Windows 개발 머신엔 보통 시스템 sqlite3 개발 라이브러리가 없어 bundled로 정적 링크한다.
 rusqlite = { version = "0.31", features = ["bundled"] }
 

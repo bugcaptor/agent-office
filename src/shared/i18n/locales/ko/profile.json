@@ -3,6 +3,7 @@
     "titleCreate": "새 에이전트",
     "titleEdit": "에이전트 편집",
     "subCreate": "새 에이전트의 프로필을 만듭니다. 저장하면 터미널 세션이 시작됩니다.",
+    "subCreateIde": "선택한 IDE 세션용 캐릭터를 만듭니다. 저장해도 터미널은 시작하지 않습니다.",
     "subEdit": "프로필을 수정합니다. 저장하면 바로 반영됩니다.",
     "randomizeAll": "전체 랜덤",
     "save": "저장",
@@ -172,6 +173,27 @@
     "saveFailed": "저장에 실패했습니다.",
     "save": "저장",
     "cancel": "취소"
+  },
+  "ide": {
+    "title": "IDE 세션 연결",
+    "description": "VS Code에서 실행 중인 Codex 또는 Claude 세션을 골라 관찰합니다.",
+    "availabilityNote": "후보는 최근 IDE 기록입니다. 목록에 있어도 세션이 이미 끝났을 수 있습니다.",
+    "historyNote": "연결한 뒤의 새 활동만 Agent Office에 표시됩니다. 이전 대화 기록은 재생하지 않습니다.",
+    "observerDisabled": "세션을 연결하려면 설정에서 IDE 세션 관찰을 켜세요.",
+    "provider": "공급자",
+    "providerAll": "모든 공급자",
+    "refresh": "새로 고침",
+    "loading": "IDE 세션을 찾는 중…",
+    "empty": "최근 IDE 세션을 찾지 못했습니다.",
+    "candidates": "IDE 세션",
+    "agent": "캐릭터",
+    "updated": "최근 {{value}}",
+    "sessionId": "세션 {{value}}",
+    "noAgent": "캐릭터의 앱 터미널을 종료하거나 이 연결용 캐릭터를 만드세요.",
+    "createAgent": "이 세션용 캐릭터 만들기",
+    "connect": "연결",
+    "loadFailed": "IDE 세션을 불러오지 못했습니다.",
+    "connectFailed": "IDE 세션을 연결하지 못했습니다."
   },
   "generate": {
     "personalityPrompt": "{{word}} 성격"

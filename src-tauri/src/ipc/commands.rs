@@ -33,6 +33,7 @@ mod web_remote;
 mod tailscale;
 mod persistence;
 mod session;
+mod ide_sessions;
 // pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가
 // `agent_office_lib::ipc::commands::settings::GetAppSettingsResult`에 닿아야
 // 한다. 기존 `pub(crate) use settings::*;` 글롭 재수출은 그대로 두고 모듈
@@ -65,6 +66,7 @@ pub(crate) use web_remote::*;
 pub(crate) use tailscale::*;
 pub(crate) use persistence::*;
 pub(crate) use session::*;
+pub(crate) use ide_sessions::*;
 pub(crate) use settings::*;
 pub(crate) use talk::*;
 pub(crate) use tts::*;

@@ -45,6 +45,7 @@ import { TalkLogDialog } from "./talk/TalkLogDialog";
 import { UIChrome } from "./layout/UIChrome";
 import { RepositoryAuditOverlay } from "./repository-audit/RepositoryAuditOverlay";
 import { AutomationPalette } from "./automation/AutomationPalette";
+import { IdeSessionDialog } from "./ide/IdeSessionDialog";
 
 // Root component: the 4-layer z-stack.
 //
@@ -160,6 +161,7 @@ function App() {
       {themeId === "pipboy" && <div className="crt-overlay" aria-hidden="true" />}
       <div className="modal-root">
         <ProfileDialog />
+        <IdeSessionDialog />
         <ConfirmDeleteDialog />
         <ConfirmRestartDialog />
         <ConfirmResumeDialog />

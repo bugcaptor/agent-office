@@ -441,6 +441,35 @@ async fn sweep_expires_an_observed_session_when_its_lease_is_stale() {
     f.cleanup();
 }
 
+#[tokio::test]
+async fn observed_attach_after_dispose_preserves_state_when_old_pty_reaps() {
+    let f = build();
+    f.manager.create(req("a1")).unwrap();
+    let old = f.manager.find("a1").unwrap();
+    f.manager.dispose("a1");
+    let owner = Uuid::new_v4().to_string();
+    let attached = f.manager.attach_observed("a1", "codex", "source-1", "/tmp/example",
+        &owner, None, AgentEventProfile { name: "Example".into(), role: None }).unwrap();
+    f.control.fire_exit(0);
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while *old.state.lock() != SessionState::Disposed {
+        assert!(std::time::Instant::now() < deadline, "old PTY waiter did not finish");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    // Wait for the same lifecycle section that publishes on_exit's state,
+    // not an arbitrary sleep after sending the fake process exit.
+    {
+        let _finished = f.manager.observed_lifecycle.lock();
+        assert_eq!(f.manager.session_id_for("a1"), Some(attached.session_id.clone()));
+        assert_eq!(f.events.last_state().session_id, attached.session_id);
+        assert_eq!(f.events.last_state().state, SessionState::Running);
+        assert_eq!(f.events.last_state().external, Some(true));
+    }
+    assert_eq!(f.control.kill_count(), 1);
+    f.manager.detach_observed("a1", &attached.session_id, &owner);
+    f.cleanup();
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn sweep_detaches_the_external_whose_shell_is_gone() {

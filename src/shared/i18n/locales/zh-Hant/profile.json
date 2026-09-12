@@ -3,6 +3,7 @@
     "titleCreate": "新增 Agent",
     "titleEdit": "編輯 Agent",
     "subCreate": "為新的 Agent 建立設定檔。儲存後就會開始終端機工作階段。",
+    "subCreateIde": "為選擇的 IDE 工作階段建立角色。儲存不會啟動終端機。",
     "subEdit": "修改設定檔。儲存後立即生效。",
     "randomizeAll": "全部隨機",
     "save": "儲存",
@@ -172,6 +173,9 @@
     "saveFailed": "儲存失敗。",
     "save": "儲存",
     "cancel": "取消"
+  },
+  "ide": {
+    "title": "連接 IDE 工作階段", "description": "選擇 VS Code 中現有的 Codex 或 Claude 工作階段。", "availabilityNote": "候選項目是最近的 IDE 記錄。列出的工作階段可能已經結束。", "historyNote": "連接後 Agent Office 只會收到新的活動，不會重播先前的對話記錄。", "observerDisabled": "請先在設定中開啟 IDE 工作階段觀察。", "provider": "供應者", "providerAll": "所有供應者", "refresh": "重新整理", "loading": "正在尋找 IDE 工作階段…", "empty": "找不到最近的 IDE 工作階段。", "candidates": "IDE 工作階段", "agent": "角色", "updated": "更新於 {{value}}", "sessionId": "工作階段 {{value}}", "noAgent": "請關閉角色的應用程式終端機，或為此連接建立角色。", "createAgent": "為此工作階段建立角色", "connect": "連接", "loadFailed": "無法載入 IDE 工作階段。", "connectFailed": "無法連接此 IDE 工作階段。"
   },
   "generate": {
     "personalityPrompt": "{{word}} 個性"

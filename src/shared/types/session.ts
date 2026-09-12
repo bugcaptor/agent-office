@@ -316,6 +316,16 @@ export interface SessionLogPage {
   items: SessionLogItem[];
 }
 
+/** A discoverable, already-running IDE extension session. */
+export interface IdeSessionCandidate {
+  provider: 'codex' | 'claude';
+  sourceSessionId: string;
+  cwd: string;
+  file: string;
+  updatedAt: number;
+  source: 'vscode';
+}
+
 /**
  * `generate_study_material`의 결과. `dir`/`fileName`을 그대로 마크다운
  * 뷰어(`markdownReadFile`)에 넘기면 인앱 미리보기가 열린다.

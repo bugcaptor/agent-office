@@ -81,6 +81,9 @@ export function BottomBar() {
       >
         {t("bottomBar.newAgent")}
       </button>
+      <button type="button" className="pixel-btn ide-session-btn" onClick={() => openModal({ kind: "ide-session" })}>
+        {t("bottomBar.ideSession")}
+      </button>
       <button
         type="button"
         className="pixel-btn remote-connect-btn"

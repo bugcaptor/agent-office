@@ -13,6 +13,7 @@
   },
   "bottomBar": {
     "newAgent": "＋ New Agent",
+    "ideSession": "🔗 IDE セッション",
     "clockIn": "🏠 出勤 ({{n}})",
     "clockAll": "全員出退勤",
     "clockInAll": "全員出勤（ターミナル起動、{{n}}人）",

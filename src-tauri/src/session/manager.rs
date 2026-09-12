@@ -1123,6 +1123,10 @@ impl SessionManager {
     }
 
     fn on_exit(&self, sess: &Arc<Session>, outcome: ExitOutcome) {
+        // Keep the old PTY's final state event ordered with replacement by a
+        // new PTY or an IDE observation. A stale exit must not follow a new
+        // external Running event for the same character.
+        let _observed_lifecycle = self.observed_lifecycle.lock();
         // 핸드오프된 세션(§핵심 3)은 즉시 return -- kill/cleanup/상태이벤트
         // 금지. 실제로는 create()의 RealWaiter가 앱 프로세스 종료와 함께
         // 죽으므로 프로덕션에서 이 가드가 실행 도달하는 일은 드물지만(핸드오프

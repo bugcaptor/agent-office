@@ -384,6 +384,25 @@ describe("random initial values (profile-create)", () => {
   });
 });
 
+describe("IDE connection preparation", () => {
+  it("creates an idle character with the selected cwd and returns to IDE connection without starting a PTY", async () => {
+    useAppStore.getState().openModal({
+      kind: "profile-create",
+      initialCwd: "/work/from-ide",
+      returnToIdeSession: true,
+    });
+    render(<ProfileDialog />);
+    await waitFor(() => expect((screen.getByLabelText("시작 폴더") as HTMLInputElement).value).toBe("/work/from-ide"));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(useAppStore.getState().modal).toEqual({ kind: "ide-session" }));
+    const order = useAppStore.getState().agentOrder;
+    const created = order[order.length - 1]!;
+    expect(useAppStore.getState().agents[created].cwd).toBe("/work/from-ide");
+    expect(useAppStore.getState().sessions[created].status).toBe("idle");
+    expect(createSession).not.toHaveBeenCalled();
+  });
+});
+
 describe("셸 선택 (list_available_shells)", () => {
   const shells = [
     { id: "pwsh", label: "PowerShell 7", path: "C:\\pwsh.exe", hooksSupported: true },

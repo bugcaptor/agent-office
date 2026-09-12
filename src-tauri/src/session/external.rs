@@ -302,6 +302,15 @@ impl SessionManager {
             return Err("observed-source-already-attached".into());
         }
 
+        // A naturally exited PTY remains in `sessions` for terminal history.
+        // Retire that slot only once all attach checks have succeeded: otherwise
+        // session_id_for() would keep selecting its old sid over this connection.
+        // The lifecycle lock also orders this against its delayed on_exit event.
+        if let Some(retired) = self.sessions.lock().remove(agent_id) {
+            self.registry.remove(&retired.session_id);
+            self.hub.purge_session(&retired.session_id);
+        }
+
         let session_id = Uuid::new_v4().to_string();
         self.registry
             .insert(&session_id, agent_id, SessionState::Running);

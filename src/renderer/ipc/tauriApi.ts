@@ -84,6 +84,14 @@ const localTauriApi: AgentOfficeApi = {
     return await invoke(Commands.detachExternalSession, { agentId });
   },
 
+  async listIdeSessions(filter) {
+    return await invoke(Commands.listIdeSessions, filter ?? {});
+  },
+
+  async connectIdeSession(input) {
+    return await invoke(Commands.connectIdeSession, input);
+  },
+
   writeInput(agentId, data, source = "human") {
     void invoke(Commands.writeInput, { agentId, data, source }); // fire-and-forget
   },

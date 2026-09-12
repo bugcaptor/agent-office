@@ -16,6 +16,7 @@ import type {
   ClaudeResumeEntry,
   SessionLogPage,
   StudyMaterialResult,
+  IdeSessionCandidate,
 } from './session';
 import type { NotificationEvent, ActivityEvent, TurnUsageEvent } from './notification';
 import type { PersistedState, CodexImageStatus, GeneratedCodexImage } from './profile';
@@ -87,6 +88,10 @@ export interface AgentOfficeApi {
   /** 외부(논리) 세션 연결 해제 — PTY가 없으므로 kill할 프로세스는 없고 훅
    * 라우팅 등록과 settings 파일만 정리된다. 붙어 있지 않았으면 false(no-op). */
   detachExternalSession(agentId: string): Promise<boolean>;
+  /** Lists local IDE extension sessions that can be observed. Desktop only. */
+  listIdeSessions(filter?: { provider?: 'codex' | 'claude'; cwd?: string }): Promise<IdeSessionCandidate[]>;
+  /** Connects an idle character to an existing IDE extension session. */
+  connectIdeSession(input: { agentId: string; provider: 'codex' | 'claude'; file: string; sourceSessionId: string }): Promise<{ sessionId: string }>;
   /** fire-and-forget. `terminalResponse` is an xterm protocol reply, not a user edit. */
   writeInput(agentId: string, data: string, source?: TerminalInputSource): void;
   resize(agentId: string, cols: number, rows: number): void;

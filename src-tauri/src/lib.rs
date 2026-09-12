@@ -29,6 +29,7 @@ mod file_manager;
 /// control·webremote 두 HTTP 서버가 공유하는 응답 봉투와 토큰 파일 규칙.
 pub mod httpapi;
 pub mod i18n;
+mod ide_sessions;
 // pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가
 // `agent_office_lib::ipc::commands::settings::GetAppSettingsResult`에 닿아야 한다.
 // 로직 변경 없음 — 가시성만 승격.
@@ -857,6 +858,8 @@ pub fn run() {
             ipc::commands::list_available_shells,
             ipc::commands::dispose_session,
             ipc::commands::detach_external_session,
+            ipc::commands::list_ide_sessions,
+            ipc::commands::connect_ide_session,
             ipc::commands::handoff_supported,
             ipc::commands::handoff_sessions,
             ipc::commands::adopt_detached_sessions,

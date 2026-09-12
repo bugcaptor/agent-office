@@ -20,6 +20,21 @@ import { tauriApi } from "../ipc/tauriApi";
 import type { AgentProfile, PersistedState } from "./types";
 
 const DEBOUNCE_MS = 500;
+let flushPendingPersistence: (() => Promise<void>) | null = null;
+
+function currentState(): PersistedState {
+  const { agents, agentOrder, vacationMode } = useAppStore.getState();
+  return {
+    agents: agentOrder.map((id) => agents[id]).filter((a): a is AgentProfile => a != null),
+    version: 1,
+    vacationMode,
+  };
+}
+
+/** Writes the current profile snapshot now, cancelling the normal debounce. */
+export function flushPersistence(): Promise<void> {
+  return flushPendingPersistence?.() ?? tauriApi.saveState(currentState());
+}
 
 /**
  * Installs the debounced save. Call once at app boot, after `hydrate()` has
@@ -29,25 +44,50 @@ const DEBOUNCE_MS = 500;
  */
 export function installPersistence(): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let saveChain: Promise<void> = Promise.resolve();
+  let saveInFlight = false;
+  const writeCurrent = (): Promise<void> => {
+    const snapshot = currentState();
+    // A slow older debounce write must finish before the newer connection
+    // snapshot writes, otherwise it can overwrite the profile cwd the backend
+    // validates during connect_ide_session.
+    if (!saveInFlight) {
+      const result = tauriApi.saveState(snapshot);
+      saveChain = Promise.resolve(result);
+      // Test doubles may be synchronous; in that case there is nothing that
+      // can overtake a later write, so keep the legacy immediate-call timing.
+      if (!result || typeof (result as Promise<void>).then !== "function") return saveChain;
+      saveInFlight = true;
+    } else {
+      saveChain = saveChain.catch(() => {}).then(() => tauriApi.saveState(snapshot));
+    }
+    const thisWrite = saveChain;
+    const settle = () => {
+      if (saveChain === thisWrite) saveInFlight = false;
+    };
+    // Do not leave a rejected promise from `finally` unobserved; callers own
+    // the write error while this handler only releases the serialization gate.
+    void thisWrite.then(settle, settle);
+    return saveChain;
+  };
 
   const queueSave = () => {
     if (timer !== null) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
-      const { agents, agentOrder, vacationMode } = useAppStore.getState();
-      const state: PersistedState = {
-        agents: agentOrder
-          .map((id) => agents[id])
-          .filter((a): a is AgentProfile => a != null),
-        version: 1,
-        vacationMode,
-      };
-      void Promise.resolve(tauriApi.saveState(state)).catch((error) => console.warn("profile save failed", error));
+      void writeCurrent().catch((error) => console.warn("profile save failed", error));
     }, DEBOUNCE_MS);
   };
 
   const unsubscribeAgents = useAppStore.subscribe((s) => s.agents, queueSave);
   const unsubscribeVacation = useAppStore.subscribe((s) => s.vacationMode, queueSave);
+  flushPendingPersistence = async () => {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    await writeCurrent();
+  };
 
   return () => {
     unsubscribeAgents();
@@ -56,5 +96,6 @@ export function installPersistence(): () => void {
       clearTimeout(timer);
       timer = null;
     }
+    if (flushPendingPersistence) flushPendingPersistence = null;
   };
 }

@@ -58,7 +58,8 @@ export interface Notification {
 
 export type ModalState =
   | { kind: "none" }
-  | { kind: "profile-create" }
+  | { kind: "profile-create"; initialCwd?: string; returnToIdeSession?: boolean }
+  | { kind: "ide-session" }
   | { kind: "profile-edit"; agentId: string }
   | { kind: "confirm-delete"; agentId: string }
   | { kind: "confirm-restart"; agentId: string }

@@ -1,0 +1,11 @@
+.ide-session-dialog { width: min(620px, calc(100vw - 32px)); max-height: min(680px, calc(100vh - 32px)); overflow: auto; padding: 20px; }
+.ide-session-toolbar, .ide-session-agent { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
+.ide-session-toolbar label, .ide-session-agent { color: var(--text-dim); }
+.ide-session-toolbar select, .ide-session-agent select { margin-left: 8px; max-width: 410px; }
+.ide-session-list { display: grid; gap: 8px; max-height: 250px; overflow: auto; }
+.ide-session-candidate { display: grid; gap: 3px; text-align: left; font: inherit; color: var(--text); background: var(--bg-panel); border: 2px solid var(--border-dark); box-shadow: 2px 2px 0 var(--border-lite); padding: 10px; cursor: pointer; }
+.ide-session-candidate.selected, .ide-session-candidate[aria-pressed="true"] { border-color: var(--accent); background: var(--bg-panel-hi); box-shadow: 2px 2px 0 var(--accent); color: var(--text); }
+.ide-session-candidate:focus-visible { outline: 2px solid var(--accent-warn); outline-offset: 2px; }
+.ide-session-candidate:disabled { cursor: wait; opacity: 0.65; }
+.ide-session-candidate span, .ide-session-candidate small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+.ide-session-note { color: var(--text-dim); }

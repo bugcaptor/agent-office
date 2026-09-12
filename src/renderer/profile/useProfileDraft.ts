@@ -22,7 +22,7 @@ import type { AvailableShell, PaletteSlot } from "@shared/types";
 
 /** 편집 중인 캐릭터 초안과 그 파생값. 다이얼로그가 뜬 동안 사는 상태다 —
  *  저장(`onSave`)에 닿기 전까지 스토어에는 아무것도 반영되지 않는다. */
-export function useProfileDraft(editingAgentId: string | undefined) {
+export function useProfileDraft(editingAgentId: string | undefined, initialCwd?: string) {
   const [draft, setDraft] = useState<DraftProfile>(() => generateDraft());
   const [spriteUrl, setSpriteUrl] = useState<string>("");
   const [shells, setShells] = useState<AvailableShell[]>([]);
@@ -72,6 +72,12 @@ export function useProfileDraft(editingAgentId: string | undefined) {
       tmuxHost: agent.tmuxHost === true,
     });
   }, [editingAgentId]);
+
+  // IDE-connection creation starts from the selected session's work folder.
+  // This only applies to a new draft; editing must always use the saved profile.
+  useEffect(() => {
+    if (!editingAgentId && initialCwd) setDraft((current) => ({ ...current, cwd: initialCwd }));
+  }, [editingAgentId, initialCwd]);
 
   // seed 또는 archetype 변경 시 라이브 스프라이트 프리뷰 (B의 순수 함수 — 동기, 아키타입 반영)
   useEffect(() => {

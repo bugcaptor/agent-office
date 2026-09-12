@@ -3,6 +3,7 @@
     "titleCreate": "New agent",
     "titleEdit": "Edit agent",
     "subCreate": "Create a profile for a new agent. Saving starts a terminal session.",
+    "subCreateIde": "Create a character for the selected IDE session. Saving does not start a terminal.",
     "subEdit": "Edit the profile. Changes apply as soon as you save.",
     "randomizeAll": "Randomize all",
     "save": "Save",
@@ -172,6 +173,27 @@
     "saveFailed": "Saving failed.",
     "save": "Save",
     "cancel": "Cancel"
+  },
+  "ide": {
+    "title": "Connect IDE session",
+    "description": "Choose an existing VS Code Codex or Claude session to observe.",
+    "availabilityNote": "Candidates are recent IDE records. A listed session may no longer be running.",
+    "historyNote": "After connecting, Agent Office receives new activity only. Earlier conversation history is not replayed.",
+    "observerDisabled": "Turn on IDE session observation in Settings before connecting a session.",
+    "provider": "Provider",
+    "providerAll": "All providers",
+    "refresh": "Refresh",
+    "loading": "Looking for IDE sessions…",
+    "empty": "No recent IDE sessions were found.",
+    "candidates": "IDE sessions",
+    "agent": "Character",
+    "updated": "Updated {{value}}",
+    "sessionId": "Session {{value}}",
+    "noAgent": "Close a character’s app terminal, or create a character for this connection.",
+    "createAgent": "Create a character for this session",
+    "connect": "Connect",
+    "loadFailed": "Could not load IDE sessions.",
+    "connectFailed": "Could not connect that IDE session."
   },
   "generate": {
     "personalityPrompt": "{{word}} personality"
