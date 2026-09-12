@@ -6,6 +6,9 @@
 
 서버는 macOS·Linux에서 실행한다. 데스크톱 앱의 데이터와 별도 디렉터리를 지정한다.
 
+빌드부터 실행까지는 `npm run serve`(`./scripts/serve.sh --help`)가 편의 계층으로
+대신해 준다 — 아래는 그 스크립트가 내부에서 하는 수동 절차다.
+
 ```sh
 # 개발 빌드
 cargo build --manifest-path src-tauri/Cargo.toml --bin agent-office

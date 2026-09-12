@@ -23,6 +23,23 @@ rtk node scripts/render-scenes.mjs /tmp/agent-office-scenes-before --baseline
 ./scripts/build-and-run.sh --help
 ```
 
+## 원격 세션 서버 (serve.sh)
+
+헤드리스 원격 세션 서버(`agent-office serve`)를 빌드해서 띄우는 진입 스크립트(`npm run serve`로도 호출). macOS·Linux 전용이다 — 서버 자체가 durable 세션을 세션 브로커에 맡기므로 Unix 전용이고, Windows 에서 실행하면 바로 안내하고 종료한다. 기본은 release 빌드: node_modules 점검 → `npm run web:build`(웹 클라이언트 자산을 컴파일 시각에 내장하므로 cargo build 전에 끝나 있어야 한다) → `cargo build --release --bin agent-office`. `--debug`는 debug 프로파일로 빌드해 반복 실행을 빠르게 하고(이 경우 웹 자산은 런타임에 디스크에서 읽는다), `--no-build`는 빌드를 건너뛰고 기존 바이너리로 바로 실행한다(없으면 오류).
+
+```bash
+npm run serve                              # release 빌드 후 기본 주소(127.0.0.1:47373)로 실행
+./scripts/serve.sh --debug                 # debug 빌드로 실행
+./scripts/serve.sh --no-build              # 빌드 없이 기존 바이너리로 실행
+./scripts/serve.sh --bind 0.0.0.0 --port 47373
+./scripts/serve.sh --show-token            # 시작 후 토큰 값을 화면에 출력
+./scripts/serve.sh --help
+```
+
+**데이터 디렉터리(기본 `~/.agent-office-server`, `AGENT_OFFICE_SERVE_DATA_DIR`로 재정의 가능)는 데스크톱 앱의 데이터 디렉터리와 반드시 분리한다.** 프로필·세션·저널 같은 상태를 두 프로세스가 동시에 소유하면 서로 덮어쓴다.
+
+바이너리를 백그라운드로 띄운 뒤 데이터 디렉터리의 `serve-token` 파일이 생길 때까지 최대 15초 기다렸다가 접속 안내(URL·토큰 파일 경로)를 출력하고, 이후 SIGINT/SIGTERM을 자식에게 그대로 전달해 저널 flush 가 끝날 때까지 기다린 뒤 자식의 종료코드로 끝난다. 토큰 **값**은 `--show-token`을 주지 않는 한 화면에 찍지 않는다 — 이 문서에도 값은 적지 않는다. 사용법·복원 보장 범위·구현 계약은 [docs/remote-server-design.md](../docs/remote-server-design.md)가 정본이다.
+
 ## macOS 서명 (make-signing-cert.sh, sign-macos.sh)
 
 macOS TCC 권한 프롬프트(사진·미디어 라이브러리·이동식 볼륨)가 **빌드할 때마다** 다시 뜨는 것을 막는다. 배경과 원리는 [docs/macos-signing.md](../docs/macos-signing.md)가 정본이고, 여기서는 조작법만 다룬다.

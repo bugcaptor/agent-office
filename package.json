@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "bash scripts/build-and-run.sh",
+    "serve": "bash scripts/serve.sh",
     "dev": "vite",
     "build": "tsc && vite build && npm run web:build",
     "preview": "vite preview",
