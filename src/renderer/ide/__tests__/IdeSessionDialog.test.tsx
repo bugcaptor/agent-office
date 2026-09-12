@@ -28,7 +28,7 @@ beforeEach(() => {
   connectIdeSession.mockReset(); connectIdeSession.mockResolvedValue({ sessionId: "external-1" });
   flushPersistence.mockReset(); flushPersistence.mockResolvedValue(undefined);
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("IdeSessionDialog", () => {
   it("preselects the requested Codex character and discovers only its folder", async () => {
@@ -90,7 +90,7 @@ describe("IdeSessionDialog", () => {
     render(<IdeSessionDialog />);
     fireEvent.click(await screen.findByTitle("chat.json"));
     const options = (screen.getByLabelText("캐릭터") as HTMLSelectElement).options;
-    expect(Array.from(options).map((option) => option.value)).toEqual(["running", "external", "different", "unset", "off"]);
+    expect(Array.from(options).filter((option) => option.value).map((option) => option.value)).toEqual(["running", "external", "different", "unset", "off"]);
     expect(connectIdeSession).not.toHaveBeenCalled();
   });
 
@@ -101,6 +101,7 @@ describe("IdeSessionDialog", () => {
     useAppStore.getState().openModal({ kind: "ide-session" });
     render(<IdeSessionDialog />);
     fireEvent.click(await screen.findByTitle("chat.json"));
+    fireEvent.change(screen.getByLabelText("캐릭터"), { target: { value: "a1" } });
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(connectIdeSession).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "연결" }));
@@ -121,6 +122,7 @@ describe("IdeSessionDialog", () => {
     useAppStore.getState().openModal({ kind: "ide-session" });
     render(<IdeSessionDialog />);
     fireEvent.click(await screen.findByTitle("chat.json"));
+    fireEvent.change(screen.getByLabelText("캐릭터"), { target: { value: "a1" } });
     fireEvent.click(screen.getByRole("button", { name: "연결" }));
     fireEvent.click(await screen.findByRole("button", { name: "터미널 종료 후 연결" }));
     await waitFor(() => expect(connectIdeSession).toHaveBeenLastCalledWith({ agentId: "a1", provider: "codex", file: "chat.json", sourceSessionId: "source-1", replaceSessionId: "old-pty" }));
@@ -136,6 +138,7 @@ describe("IdeSessionDialog", () => {
     useAppStore.getState().openModal({ kind: "ide-session" });
     render(<IdeSessionDialog />);
     fireEvent.click(await screen.findByTitle("chat.json"));
+    fireEvent.change(screen.getByLabelText("캐릭터"), { target: { value: "a1" } });
     fireEvent.click(screen.getByRole("button", { name: "연결" }));
     const confirm = await screen.findByRole("button", { name: "기존 연결 해제 후 연결" });
     expect(screen.getByText(/원본 외부 앱은 종료하지 않습니다/)).toBeTruthy();
@@ -157,6 +160,7 @@ describe("IdeSessionDialog", () => {
     useAppStore.getState().openModal({ kind: "ide-session" });
     render(<IdeSessionDialog />);
     fireEvent.click(await screen.findByTitle("chat.json"));
+    fireEvent.change(screen.getByLabelText("캐릭터"), { target: { value: "a1" } });
     fireEvent.click(screen.getByRole("button", { name: "연결" }));
     fireEvent.click(await screen.findByRole("button", { name: "터미널 종료 후 연결" }));
     expect((await screen.findByRole("alert")).textContent).toContain(message);
@@ -214,6 +218,76 @@ describe("IdeSessionDialog", () => {
     fireEvent.change(screen.getByLabelText("공급자"), { target: { value: "claude" } });
     await waitFor(() => expect(screen.getByTitle("claude.json")).toBeTruthy());
     await act(async () => resolveAll([candidate]));
+    expect(screen.queryByTitle("chat.json")).toBeNull();
+  });
+
+  it("resets a reopened dialog to its new explicit character", async () => {
+    useAppStore.getState().addAgent(agent({ id: "a1" }), { startSession: false });
+    useAppStore.getState().addAgent(agent({ id: "a2", name: "다음" }), { startSession: false });
+    useAppStore.getState().openModal({ kind: "ide-session", initialAgentId: "a1" });
+    render(<IdeSessionDialog />);
+    await screen.findByTitle("chat.json");
+    expect((screen.getByLabelText("캐릭터") as HTMLSelectElement).value).toBe("a1");
+    act(() => useAppStore.getState().openModal({ kind: "ide-session", initialAgentId: "a2" }));
+    await waitFor(() => expect((screen.getByLabelText("캐릭터") as HTMLSelectElement).value).toBe("a2"));
+  });
+
+  it("selects a sole candidate but leaves multiple candidates unselected", async () => {
+    const second = { ...candidate, sourceSessionId: "source-2", file: "second.json" };
+    listIdeSessions.mockResolvedValueOnce([candidate, second]);
+    useAppStore.getState().openModal({ kind: "ide-session" });
+    render(<IdeSessionDialog />);
+    expect((await screen.findByTitle("chat.json")).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByTitle("second.json").getAttribute("aria-pressed")).toBe("false");
+    act(() => useAppStore.getState().closeModal());
+    act(() => useAppStore.getState().openModal({ kind: "ide-session" }));
+    await waitFor(() => expect(screen.getByTitle("chat.json").getAttribute("aria-pressed")).toBe("true"));
+  });
+
+  it("automatically chooses only the unique character in the selected session folder", async () => {
+    useAppStore.getState().addAgent(agent({ id: "other", cwd: "/elsewhere" }), { startSession: false });
+    useAppStore.getState().addAgent(agent({ id: "matching", cwd: candidate.cwd }), { startSession: false });
+    useAppStore.getState().openModal({ kind: "ide-session" });
+    render(<IdeSessionDialog />);
+    await screen.findByTitle("chat.json");
+    await waitFor(() => expect((screen.getByLabelText("캐릭터") as HTMLSelectElement).value).toBe("matching"));
+  });
+
+  it("retries an empty targeted lookup and selects its later sole candidate", async () => {
+    vi.useFakeTimers();
+    listIdeSessions.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([candidate]);
+    useAppStore.getState().addAgent(agent(), { startSession: false });
+    useAppStore.getState().openModal({ kind: "ide-session", initialAgentId: "a1", initialCwd: candidate.cwd, initialProvider: "codex" });
+    render(<IdeSessionDialog />);
+    await act(async () => {});
+    expect(screen.getByText(/나타나기를 기다리는 중/)).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(listIdeSessions).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTitle("chat.json")).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(screen.getByTitle("chat.json").getAttribute("aria-pressed")).toBe("true");
+    expect(connectIdeSession).not.toHaveBeenCalled();
+    act(() => useAppStore.getState().closeModal());
+    await act(async () => { await vi.advanceTimersByTimeAsync(9_000); });
+    expect(listIdeSessions).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
+  });
+
+  it("ignores a lookup that finishes after closing or disabling observation", async () => {
+    let resolve!: (value: IdeSessionCandidate[]) => void;
+    listIdeSessions.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    useAppStore.getState().openModal({ kind: "ide-session" });
+    render(<IdeSessionDialog />);
+    await waitFor(() => expect(resolve).toBeTypeOf("function"));
+    act(() => useAppStore.getState().closeModal());
+    await act(async () => resolve([candidate]));
+    expect(screen.queryByTitle("chat.json")).toBeNull();
+    let resolveDisabled!: (value: IdeSessionCandidate[]) => void;
+    listIdeSessions.mockImplementationOnce(() => new Promise((done) => { resolveDisabled = done; }));
+    act(() => useAppStore.getState().openModal({ kind: "ide-session" }));
+    await waitFor(() => expect(resolveDisabled).toBeTypeOf("function"));
+    act(() => useAppStore.setState((state) => ({ appSettings: { ...state.appSettings, observerEnabled: false } })));
+    await act(async () => resolveDisabled([candidate]));
     expect(screen.queryByTitle("chat.json")).toBeNull();
   });
 });

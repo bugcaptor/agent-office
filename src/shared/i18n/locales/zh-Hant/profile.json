@@ -175,6 +175,8 @@
     "cancel": "取消"
   },
   "ide": {
+    "chooseAgent": "選擇角色",
+    "waitingForSession": "正在等待 IDE 工作階段出現。每隔幾秒會再次搜尋…",
     "replacementKillFailed": "無法結束現有終端機，已中止 IDE 連接。請檢查終端機狀態後再試一次。",
     "replaceTitle": "取代現有工作階段？",
     "replaceTerminalBody": "結束 {{name}} 正在執行的終端機及其工作，再連接 IDE 工作階段。工作資料夾將改為 {{cwd}}。",

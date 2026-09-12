@@ -175,6 +175,8 @@
     "cancel": "取消"
   },
   "ide": {
+    "chooseAgent": "选择角色",
+    "waitingForSession": "正在等待 IDE 会话出现。每隔几秒会再次查找…",
     "replacementKillFailed": "无法结束现有终端，已中止 IDE 连接。请检查终端状态后重试。",
     "replaceTitle": "替换现有会话？",
     "replaceTerminalBody": "结束 {{name}} 正在运行的终端及其任务，然后连接 IDE 会话。工作文件夹将改为 {{cwd}}。",

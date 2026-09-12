@@ -34,6 +34,11 @@ export function IdeSessionDialog() {
   const [pending, setPending] = useState<PendingReplacement | null>(null);
   const connectingRef = useRef(false);
   const refreshGeneration = useRef(0);
+  const openRef = useRef(false);
+  const observationAvailableRef = useRef(false);
+  const agentChosenByUser = useRef(false);
+  const [filterChanged, setFilterChanged] = useState(false);
+  const [lookupAttempt, setLookupAttempt] = useState(0);
   const open = modal.kind === "ide-session";
   const initialAgentId = modal.kind === "ide-session" ? modal.initialAgentId : undefined;
   const initialCwd = modal.kind === "ide-session" ? modal.initialCwd : undefined;
@@ -43,39 +48,67 @@ export function IdeSessionDialog() {
 
   const ideConnectionEnabled = appSettings.ideConnectionEnabled;
   const observationAvailable = ideConnectionEnabled && appSettings.observerEnabled;
-  const refresh = async () => {
-    if (!useAppStore.getState().appSettings.ideConnectionEnabled || !useAppStore.getState().appSettings.observerEnabled) return;
+  const observationWasAvailable = useRef(observationAvailable);
+  const refresh = async (filter = provider) => {
+    if (!openRef.current || !observationAvailableRef.current) return;
     const generation = ++refreshGeneration.current;
     setLoading(true);
     setError("");
     try {
       const result = await tauriApi.listIdeSessions({
-        ...(provider === "all" ? {} : { provider }),
+        ...(filter === "all" ? {} : { provider: filter }),
         ...(initialCwd ? { cwd: initialCwd } : {}),
       });
-      if (generation !== refreshGeneration.current) return;
+      if (generation !== refreshGeneration.current || !openRef.current || !observationAvailableRef.current) return;
       setItems(result);
       setSelected((old) => result.find((entry) => old && candidateKey(entry) === candidateKey(old))
-        ?? (initialCwd ? result.find((entry) => entry.cwd === initialCwd) ?? null : null));
+        ?? (result.length === 1 ? result[0] : null));
     } catch (err) {
-      if (generation !== refreshGeneration.current) return;
+      if (generation !== refreshGeneration.current || !openRef.current || !observationAvailableRef.current) return;
       console.warn("list IDE sessions failed", err);
       setError(t("ide.loadFailed"));
     } finally {
-      if (generation === refreshGeneration.current) setLoading(false);
+      if (generation === refreshGeneration.current && openRef.current) {
+        setLoading(false);
+        setLookupAttempt((attempt) => attempt + 1);
+      }
     }
   };
 
   useEffect(() => {
-    if (open && observationAvailable) void refresh();
-  // provider intentionally refreshes the list while the dialog is open.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, provider, initialCwd, observationAvailable]);
+    openRef.current = open;
+    observationAvailableRef.current = observationAvailable;
+    return () => { openRef.current = false; };
+  }, [open, observationAvailable]);
+
+  const eligibleAgents = useMemo(() => agentOrder.map((id) => agents[id]).filter(Boolean), [agentOrder, agents]);
 
   useEffect(() => {
-    if (!open) return;
-    if (initialProvider) setProvider(initialProvider);
-  }, [open, initialProvider]);
+    // A newly opened modal is a new request: its explicit values win over all
+    // selections left by the previous dialog.
+    refreshGeneration.current += 1;
+    agentChosenByUser.current = false;
+    if (!open) {
+      setLoading(false);
+      setItems([]);
+      setSelected(null);
+      setAgentId("");
+      setPending(null);
+      return;
+    }
+    const nextProvider = initialProvider ?? "all";
+    setProvider(nextProvider);
+    setFilterChanged(false);
+    setLoading(false);
+    setError("");
+    setItems([]);
+    setSelected(null);
+    setAgentId(eligibleAgents.some((agent) => agent.id === initialAgentId) ? initialAgentId! : "");
+    setPending(null);
+    if (observationAvailable) void refresh(nextProvider);
+  // The modal object identifies one connection request, including reopening it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modal]);
 
   useEffect(() => {
     if (observationAvailable) return;
@@ -88,20 +121,37 @@ export function IdeSessionDialog() {
     setPending(null);
   }, [observationAvailable]);
 
-  const eligibleAgents = useMemo(() => agentOrder.map((id) => agents[id]).filter(Boolean), [agentOrder, agents]);
+  useEffect(() => {
+    if (observationAvailable && !observationWasAvailable.current && open) void refresh();
+    observationWasAvailable.current = observationAvailable;
+  // Re-enable observation with a fresh lookup, without duplicating the initial one.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [observationAvailable, open]);
 
   useEffect(() => {
     if (!open) setPending(null);
   }, [open]);
 
   useEffect(() => {
-    if (eligibleAgents.some((agent) => agent.id === agentId)) return;
-    setAgentId(
-      eligibleAgents.some((agent) => agent.id === initialAgentId)
-        ? initialAgentId!
-        : eligibleAgents[0]?.id ?? "",
-    );
-  }, [agentId, eligibleAgents, initialAgentId]);
+    if (initialAgentId) {
+      if (!eligibleAgents.some((agent) => agent.id === agentId)) {
+        setAgentId(eligibleAgents.some((agent) => agent.id === initialAgentId) ? initialAgentId : "");
+      }
+      return;
+    }
+    if (agentChosenByUser.current && eligibleAgents.some((agent) => agent.id === agentId)) return;
+    const matchingAgents = selected ? eligibleAgents.filter((agent) => agent.cwd === selected.cwd) : [];
+    setAgentId(matchingAgents.length === 1 ? matchingAgents[0].id : "");
+  }, [agentId, eligibleAgents, initialAgentId, selected]);
+
+  const targetedInitialLookup = Boolean(initialAgentId && initialCwd && initialProvider);
+  useEffect(() => {
+    if (!open || !observationAvailable || loading || connecting || filterChanged || !targetedInitialLookup || items.length !== 0) return;
+    const retry = window.setTimeout(() => void refresh(), 3_000);
+    return () => window.clearTimeout(retry);
+  // Only a targeted initial connection request retries its empty result.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, observationAvailable, connecting, filterChanged, targetedInitialLookup, items.length, loading, modal, lookupAttempt]);
 
   const connect = async (confirmed?: PendingReplacement) => {
     const state = useAppStore.getState();
@@ -172,7 +222,7 @@ export function IdeSessionDialog() {
       </header>
       {!ideConnectionEnabled ? <div role="alert" className="ide-session-note">{t("ideConnection.disabled")}</div> : !appSettings.observerEnabled ? <div role="alert" className="ide-session-note">{t("ide.observerDisabled")}</div> : <>
         <div className="ide-session-toolbar">
-          <label>{t("ide.provider")}<select value={provider} disabled={connecting} onChange={(e) => setProvider(e.target.value as typeof provider)}>
+          <label>{t("ide.provider")}<select value={provider} disabled={connecting} onChange={(e) => { const nextProvider = e.target.value as typeof provider; setFilterChanged(true); setProvider(nextProvider); setItems([]); setSelected(null); void refresh(nextProvider); }}>
             <option value="all">{t("ide.providerAll")}</option>
             {(["codex", "claude", "kilo"] as const).map((value) => <option key={value} value={value}>{t(`ide.providers.${value}`)}</option>)}
           </select></label>
@@ -180,21 +230,22 @@ export function IdeSessionDialog() {
         </div>
         {(provider === "kilo" || items.some((item) => item.source === "kilo-shared")) && <p className="ide-session-note">{t("ide.kiloSourceNote")}</p>}
         {loading && <p>{t("ide.loading")}</p>}
-        {!loading && items.length === 0 && <p className="ide-session-note">{t("ide.empty")}</p>}
+        {!loading && !error && items.length === 0 && <p className="ide-session-note">{targetedInitialLookup && !filterChanged ? t("ide.waitingForSession") : t("ide.empty")}</p>}
         <div className="ide-session-list" role="group" aria-label={t("ide.candidates")}>
           {items.map((item) => <button key={candidateKey(item)} type="button" aria-pressed={Boolean(selected && candidateKey(selected) === candidateKey(item))} disabled={connecting} className={`ide-session-candidate ${selected && candidateKey(selected) === candidateKey(item) ? "selected" : ""}`} onClick={() => setSelected(item)} title={item.file}>
             <strong>{t(`ide.providers.${item.provider}`)}</strong><span>{item.cwd}</span><small>{t("ide.updated", { value: new Intl.DateTimeFormat(currentLocale(), { dateStyle: "short", timeStyle: "short" }).format(item.updatedAt) })} · {t("ide.sessionId", { value: item.sourceSessionId })}</small>
           </button>)}
         </div>
         {selected && <p className="ide-session-note">{t("ide.characterFolderNote", { cwd: selected.cwd })}</p>}
-        {selected && <label className="ide-session-agent">{t("ide.agent")}<select value={agentId} disabled={connecting} onChange={(e) => setAgentId(e.target.value)}>
+        {selected && <label className="ide-session-agent">{t("ide.agent")}<select value={agentId} disabled={connecting} onChange={(e) => { agentChosenByUser.current = true; setAgentId(e.target.value); }}>
+          <option value="" disabled>{t("ide.chooseAgent")}</option>
           {eligibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.role}</option>)}
         </select></label>}
         {selected && eligibleAgents.length === 0 && <div className="ide-session-note"><p>{t("ide.noAgent")}</p><button type="button" className="pixel-btn" disabled={connecting} onClick={() => openModal({ kind: "profile-create", initialCwd: selected.cwd, returnToIdeSession: true })}>{t("ide.createAgent")}</button></div>}
       </>}
       {error && <p role="alert">{error}</p>}
       <div className="dialog-actions">
-        <button type="button" className="pixel-btn primary" disabled={!observationAvailable || !selected || !agentId || connecting} onClick={() => void connect()}>{t("ide.connect")}</button>
+        <button type="button" className="pixel-btn primary" disabled={!observationAvailable || loading || !selected || !agents[agentId] || connecting} onClick={() => void connect()}>{t("ide.connect")}</button>
         <button type="button" className="pixel-btn" disabled={connecting} onClick={closeModal}>{t("dialog.cancel")}</button>
       </div>
     </div>}

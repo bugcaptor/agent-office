@@ -175,6 +175,7 @@
     "cancel": "Cancel"
   },
   "ide": {
+    "chooseAgent": "Choose a character",
     "replacementKillFailed": "The existing terminal could not be stopped, so the IDE connection was cancelled. Check the terminal and try again.",
     "replaceTitle": "Replace the existing session?",
     "replaceTerminalBody": "End the running terminal and its work for {{name}}, then connect to the IDE session. The working folder will change to {{cwd}}.",
@@ -195,6 +196,7 @@
     "refresh": "Refresh",
     "loading": "Looking for IDE sessions…",
     "empty": "No recent IDE sessions were found.",
+    "waitingForSession": "Waiting for the IDE session to appear. Looking again every few seconds…",
     "candidates": "IDE sessions",
     "agent": "Character",
     "updated": "Updated {{value}}",

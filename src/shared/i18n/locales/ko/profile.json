@@ -175,6 +175,7 @@
     "cancel": "취소"
   },
   "ide": {
+    "chooseAgent": "캐릭터 선택",
     "replacementKillFailed": "기존 터미널을 종료하지 못해 IDE 연결을 중단했습니다. 터미널 상태를 확인한 뒤 다시 시도하세요.",
     "replaceTitle": "기존 세션을 바꾸시겠어요?",
     "replaceTerminalBody": "{{name}}의 실행 중인 터미널과 작업을 종료하고 IDE 세션에 연결합니다. 작업 폴더는 {{cwd}}로 바뀝니다.",
@@ -195,6 +196,7 @@
     "refresh": "새로 고침",
     "loading": "IDE 세션을 찾는 중…",
     "empty": "최근 IDE 세션을 찾지 못했습니다.",
+    "waitingForSession": "IDE 세션이 나타나기를 기다리는 중입니다. 몇 초마다 다시 찾습니다…",
     "candidates": "IDE 세션",
     "agent": "캐릭터",
     "updated": "최근 {{value}}",
