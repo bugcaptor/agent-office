@@ -31,6 +31,23 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("IdeSessionDialog", () => {
+  it("preselects the requested Codex character and discovers only its folder", async () => {
+    useAppStore.getState().addAgent(agent({ cwd: "/work/other" }), { startSession: false });
+    useAppStore.getState().addAgent(agent({ id: "a2", name: "두번째", cwd: "/work/demo" }), { startSession: false });
+    useAppStore.getState().openModal({
+      kind: "ide-session",
+      initialAgentId: "a2",
+      initialCwd: "/work/demo",
+      initialProvider: "codex",
+    });
+    render(<IdeSessionDialog />);
+    await waitFor(() => expect(listIdeSessions).toHaveBeenLastCalledWith({ provider: "codex", cwd: "/work/demo" }));
+    expect((await screen.findByTitle("chat.json")).getAttribute("aria-pressed")).toBe("true");
+    expect((screen.getByLabelText("캐릭터") as HTMLSelectElement).value).toBe("a2");
+    fireEvent.click(screen.getByRole("button", { name: "연결" }));
+    await waitFor(() => expect(connectIdeSession).toHaveBeenCalledWith({ agentId: "a2", provider: "codex", file: "chat.json", sourceSessionId: "source-1" }));
+  });
+
   it("filters and connects a Kilo Code VS Code session with its own provider", async () => {
     const kilo = { ...candidate, provider: "kilo" as const, source: "kilo-shared" as const, sourceSessionId: "kilo-1", file: "kilo.db" };
     listIdeSessions.mockResolvedValue([kilo]);

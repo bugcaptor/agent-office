@@ -414,8 +414,9 @@
             tmux_probe: crate::control::tmux::system_probe(),
             gate: inject_gate.clone(),
             live_usage: Arc::new(crate::usage::LiveUsageState::new()),
+            portrait_store: portrait_store.clone(),
             sprite_store: sprite_store.clone(),
-            focus_agent: Arc::new(|_| Ok(())),
+            focus_agent: Arc::new(|_, _| Ok(())),
         });
 
         let bot_runtime = std::sync::Arc::new(crate::bot::BotRuntime::default());

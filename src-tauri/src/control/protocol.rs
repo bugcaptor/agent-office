@@ -228,12 +228,27 @@ pub struct DisplayCharacter {
     pub seed: String,
     pub archetype: Option<String>,
     pub colors: Option<crate::types::ColorOverrides>,
+    pub portrait_updated_at: Option<u64>,
     pub sprite_updated_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DisplayAppearanceParams { pub agent_id: String, pub revision: String }
+pub struct DisplayAppearanceParams {
+    pub agent_id: String,
+    pub revision: String,
+    /// Omitted by pre-portrait clients, which continues to mean the sprite sheet.
+    #[serde(default)]
+    pub kind: DisplayAppearanceKind,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DisplayAppearanceKind {
+    #[default]
+    Sprite,
+    Portrait,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -247,7 +262,18 @@ pub struct DisplayAppearanceResult {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DisplayFocusParams { pub agent_id: String }
+pub struct DisplayFocusParams {
+    pub agent_id: String,
+    /// Missing keeps the legacy behavior of opening the profile editor.
+    #[serde(default)]
+    pub intent: Option<DisplayFocusIntent>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum DisplayFocusIntent {
+    ConnectCodex,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -78,10 +78,13 @@ pub struct ControlContext {
     pub gate: Arc<crate::session::inject::InjectGate>,
     /// 네이티브·웹 원격과 같은 사용량 스로틀/캐시 상태.
     pub live_usage: Arc<crate::usage::LiveUsageState>,
+    /// 커스텀 초상 저장소. 읽기 API도 앱과 같은 바이트 상한을 쓴다.
+    pub portrait_store: Arc<crate::persistence::png_store::PngStore>,
     /// 커스텀 스프라이트 저장소. 읽기 API도 앱과 같은 바이트 상한을 쓴다.
     pub sprite_store: crate::persistence::png_store::PngStore,
-    /// 창을 복원하고 렌더러에 표시 전용 선택을 알린다. 세션 생성은 하지 않는다.
-    pub focus_agent: Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>,
+    /// 창을 복원하고 렌더러에 표시 전용 선택 또는 IDE 연결 준비를 알린다.
+    /// 어느 경우도 세션을 생성하지 않는다.
+    pub focus_agent: Arc<dyn Fn(&str, Option<DisplayFocusIntent>) -> Result<(), String> + Send + Sync>,
 }
 
 impl ControlContext {
@@ -251,6 +254,7 @@ impl ControlServerState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
     use crate::notification::hub::{NotificationHub, SystemClock};
     use crate::session::pty_factory::fake::{FakeControl, FakePtyFactory};
     use crate::state::fake::RecordingEvents;
@@ -357,11 +361,15 @@ mod tests {
             tmux_probe,
             gate,
             live_usage: Arc::new(crate::usage::LiveUsageState::new()),
+            portrait_store: Arc::new(crate::persistence::png_store::PngStore::new(
+                dir.join("portraits"),
+                crate::persistence::png_store::MAX_PORTRAIT_BYTES,
+            )),
             sprite_store: crate::persistence::png_store::PngStore::new(
                 dir.join("sprites"),
                 crate::persistence::png_store::MAX_SPRITE_BYTES,
             ),
-            focus_agent: Arc::new(|_| Ok(())),
+            focus_agent: Arc::new(|_, _| Ok(())),
         });
         let state = ControlServerState::default();
         state.set_app_data_dir(dir.clone());
@@ -1420,8 +1428,10 @@ mod tests {
     #[tokio::test]
     async fn display_routes_require_auth_validate_revisions_and_never_start_a_session() {
         let f = build("display-api");
+        let mut profile = profile("a1", "Ada");
+        profile.portrait_updated_at = Some(55);
         f.ctx.store.save(&crate::types::PersistedState {
-            agents: vec![profile("a1", "Ada")], version: 1, vacation_mode: None,
+            agents: vec![profile], version: 1, vacation_mode: None,
         }).unwrap();
         let port = f.state.ensure(f.ctx.clone()).await.unwrap();
         let client = reqwest::Client::new();
@@ -1433,12 +1443,21 @@ mod tests {
         assert_eq!(unauthenticated.status(), reqwest::StatusCode::UNAUTHORIZED);
 
         let token = f.state.issue_token().unwrap();
+        let capabilities: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/display/capabilities"))
+            .header(TOKEN_HEADER, &token).json(&serde_json::json!({}))
+            .send().await.unwrap().json().await.unwrap();
+        assert!(capabilities["data"]["features"].as_array().unwrap()
+            .iter().any(|feature| feature == "portrait"));
+        assert!(capabilities["data"]["features"].as_array().unwrap()
+            .iter().any(|feature| feature == "ide-session-focus"));
         let characters: serde_json::Value = client
             .post(format!("http://127.0.0.1:{port}/v1/display/characters"))
             .header(TOKEN_HEADER, &token).json(&serde_json::json!({}))
             .send().await.unwrap().json().await.unwrap();
         assert_eq!(characters["ok"], true);
         assert_eq!(characters["data"]["characters"][0]["agentId"], "a1");
+        assert_eq!(characters["data"]["characters"][0]["portraitUpdatedAt"], 55);
         let revision = characters["data"]["characters"][0]["revision"].as_str().unwrap();
 
         let stale: serde_json::Value = client
@@ -1461,12 +1480,34 @@ mod tests {
         assert_eq!(focus["data"]["focused"], true);
         assert!(f.ctx.manager.session_id_for("a1").is_none());
 
+        let connect_codex: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/display/focus"))
+            .header(TOKEN_HEADER, &token).json(&serde_json::json!({ "agentId": "a1", "intent": "connectCodex" }))
+            .send().await.unwrap().json().await.unwrap();
+        assert_eq!(connect_codex["data"]["focused"], true);
+
         let appearance: serde_json::Value = client
             .post(format!("http://127.0.0.1:{port}/v1/display/appearance"))
             .header(TOKEN_HEADER, &token).json(&serde_json::json!({ "agentId": "a1", "revision": revision }))
             .send().await.unwrap().json().await.unwrap();
         assert_eq!(appearance["ok"], true);
         assert!(appearance["data"]["pngBase64"].is_null());
+
+        let mut portrait = vec![0; 33];
+        portrait[..8].copy_from_slice(&[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+        portrait[8..12].copy_from_slice(&13u32.to_be_bytes());
+        portrait[12..16].copy_from_slice(b"IHDR");
+        portrait[16..20].copy_from_slice(&240u32.to_be_bytes());
+        portrait[20..24].copy_from_slice(&320u32.to_be_bytes());
+        let portrait = base64::engine::general_purpose::STANDARD.encode(portrait);
+        f.ctx.portrait_store.save("a1", &portrait, &["a1".into()]).unwrap();
+        let portrait_response: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/display/appearance"))
+            .header(TOKEN_HEADER, &token)
+            .json(&serde_json::json!({ "agentId": "a1", "revision": revision, "kind": "portrait" }))
+            .send().await.unwrap().json().await.unwrap();
+        assert_eq!(portrait_response["data"]["pngBase64"], portrait);
+        assert_eq!(portrait_response["data"]["frameCount"], 1);
         cleanup(&f);
     }
 

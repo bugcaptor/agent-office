@@ -35,6 +35,9 @@ export function IdeSessionDialog() {
   const connectingRef = useRef(false);
   const refreshGeneration = useRef(0);
   const open = modal.kind === "ide-session";
+  const initialAgentId = modal.kind === "ide-session" ? modal.initialAgentId : undefined;
+  const initialCwd = modal.kind === "ide-session" ? modal.initialCwd : undefined;
+  const initialProvider = modal.kind === "ide-session" ? modal.initialProvider : undefined;
   const cancel = () => pending ? setPending(null) : closeModal();
   useEscapeToClose(open && !connecting, cancel);
 
@@ -46,10 +49,14 @@ export function IdeSessionDialog() {
     setLoading(true);
     setError("");
     try {
-      const result = await tauriApi.listIdeSessions(provider === "all" ? undefined : { provider });
+      const result = await tauriApi.listIdeSessions({
+        ...(provider === "all" ? {} : { provider }),
+        ...(initialCwd ? { cwd: initialCwd } : {}),
+      });
       if (generation !== refreshGeneration.current) return;
       setItems(result);
-      setSelected((old) => result.find((entry) => old && candidateKey(entry) === candidateKey(old)) ?? null);
+      setSelected((old) => result.find((entry) => old && candidateKey(entry) === candidateKey(old))
+        ?? (initialCwd ? result.find((entry) => entry.cwd === initialCwd) ?? null : null));
     } catch (err) {
       if (generation !== refreshGeneration.current) return;
       console.warn("list IDE sessions failed", err);
@@ -63,7 +70,12 @@ export function IdeSessionDialog() {
     if (open && observationAvailable) void refresh();
   // provider intentionally refreshes the list while the dialog is open.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, provider, observationAvailable]);
+  }, [open, provider, initialCwd, observationAvailable]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (initialProvider) setProvider(initialProvider);
+  }, [open, initialProvider]);
 
   useEffect(() => {
     if (observationAvailable) return;
@@ -83,8 +95,13 @@ export function IdeSessionDialog() {
   }, [open]);
 
   useEffect(() => {
-    if (!eligibleAgents.some((agent) => agent.id === agentId)) setAgentId(eligibleAgents[0]?.id ?? "");
-  }, [agentId, eligibleAgents]);
+    if (eligibleAgents.some((agent) => agent.id === agentId)) return;
+    setAgentId(
+      eligibleAgents.some((agent) => agent.id === initialAgentId)
+        ? initialAgentId!
+        : eligibleAgents[0]?.id ?? "",
+    );
+  }, [agentId, eligibleAgents, initialAgentId]);
 
   const connect = async (confirmed?: PendingReplacement) => {
     const state = useAppStore.getState();

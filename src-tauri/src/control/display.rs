@@ -17,11 +17,12 @@ const GENERATOR_REVISION: &str = "office-gen-0617d45";
 const PNG_MAGIC: [u8; 8] = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const MAX_SPRITE_DIMENSION: u32 = 256;
 const MIN_SPRITE_DIMENSION: u32 = 16;
+const MAX_PORTRAIT_DIMENSION: u32 = 4096;
 
 pub(super) async fn capabilities() -> Json<serde_json::Value> {
     ok(DisplayCapabilities {
         protocol_version: 1,
-        features: vec!["characters", "appearance", "usage", "focus"],
+        features: vec!["characters", "appearance", "portrait", "usage", "focus", "ide-session-focus"],
         generator_revision: GENERATOR_REVISION,
     })
 }
@@ -54,17 +55,24 @@ pub(super) async fn appearance(
     if params.revision != revision {
         return fail("appearance_revision_mismatch");
     }
-    let png_base64 = match ctx.sprite_store.load(&profile.id) {
-        Ok(Some(encoded)) if valid_sprite_png(&encoded) => Some(encoded),
-        Ok(Some(_)) | Err(_) => return fail("invalid_sprite"),
-        Ok(None) => None,
+    let (png_base64, frame_count) = match params.kind {
+        DisplayAppearanceKind::Sprite => match ctx.sprite_store.load(&profile.id) {
+            Ok(Some(encoded)) if valid_sprite_png(&encoded) => (Some(encoded), 4),
+            Ok(Some(_)) | Err(_) => return fail("invalid_sprite"),
+            Ok(None) => (None, 4),
+        },
+        DisplayAppearanceKind::Portrait => match ctx.portrait_store.load(&profile.id) {
+            Ok(Some(encoded)) if valid_portrait_png(&encoded) => (Some(encoded), 1),
+            Ok(Some(_)) | Err(_) => return fail("invalid_portrait"),
+            Ok(None) => (None, 1),
+        },
     };
     ok(DisplayAppearanceResult {
         agent_id: profile.id,
         revision,
         png_base64,
         mime_type: "image/png",
-        frame_count: 4,
+        frame_count,
     })
 }
 
@@ -90,7 +98,7 @@ pub(super) async fn focus(
     {
         return fail("unknown_agent");
     }
-    if let Err(_) = (ctx.focus_agent)(&params.agent_id) {
+    if let Err(_) = (ctx.focus_agent)(&params.agent_id, params.intent) {
         return fail("focus_unavailable");
     }
     ok(DisplayFocusResult {
@@ -109,6 +117,7 @@ fn display_character(profile: &AgentProfile) -> DisplayCharacter {
         seed: profile.seed.clone(),
         archetype: profile.archetype.clone(),
         colors: profile.colors.clone(),
+        portrait_updated_at: profile.portrait_updated_at,
         sprite_updated_at: profile.sprite_updated_at,
     }
 }
@@ -119,6 +128,7 @@ struct RevisionSource<'a> {
     seed: &'a str,
     archetype: &'a Option<String>,
     colors: &'a Option<crate::types::ColorOverrides>,
+    portrait_updated_at: Option<u64>,
     sprite_updated_at: Option<u64>,
 }
 
@@ -127,6 +137,7 @@ fn appearance_revision(profile: &AgentProfile) -> String {
         seed: &profile.seed,
         archetype: &profile.archetype,
         colors: &profile.colors,
+        portrait_updated_at: profile.portrait_updated_at,
         sprite_updated_at: profile.sprite_updated_at,
     };
     let bytes = serde_json::to_vec(&source).expect("appearance revision source is serializable");
@@ -134,23 +145,38 @@ fn appearance_revision(profile: &AgentProfile) -> String {
 }
 
 fn valid_sprite_png(encoded: &str) -> bool {
-    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded) else {
+    let Some((width, height)) = png_ihdr(encoded, crate::persistence::png_store::MAX_SPRITE_BYTES) else {
         return false;
     };
-    if bytes.len() > crate::persistence::png_store::MAX_SPRITE_BYTES
-        || bytes.len() < 24
+    (MIN_SPRITE_DIMENSION..=MAX_SPRITE_DIMENSION).contains(&height)
+        && width == height.saturating_mul(4)
+}
+
+fn valid_portrait_png(encoded: &str) -> bool {
+    let Some((width, height)) = png_ihdr(encoded, crate::persistence::png_store::MAX_PORTRAIT_BYTES) else {
+        return false;
+    };
+    (1..=MAX_PORTRAIT_DIMENSION).contains(&width)
+        && (1..=MAX_PORTRAIT_DIMENSION).contains(&height)
+}
+
+fn png_ihdr(encoded: &str, max_bytes: usize) -> Option<(u32, u32)> {
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded) else {
+        return None;
+    };
+    if bytes.len() > max_bytes
+        || bytes.len() < 33
         || bytes[..8] != PNG_MAGIC
     {
-        return false;
+        return None;
     }
     // PNG의 첫 chunk는 필수 IHDR(길이 13)이고, 폭/높이는 big-endian u32이다.
     if bytes[8..12] != [0, 0, 0, 13] || bytes[12..16] != *b"IHDR" {
-        return false;
+        return None;
     }
     let width = u32::from_be_bytes(bytes[16..20].try_into().expect("four bytes"));
     let height = u32::from_be_bytes(bytes[20..24].try_into().expect("four bytes"));
-    (MIN_SPRITE_DIMENSION..=MAX_SPRITE_DIMENSION).contains(&height)
-        && width == height.saturating_mul(4)
+    Some((width, height))
 }
 
 #[cfg(test)]
@@ -167,17 +193,35 @@ mod tests {
         let first = appearance_revision(&profile);
         profile.sprite_updated_at = Some(42);
         assert_ne!(first, appearance_revision(&profile));
+        let first = appearance_revision(&profile);
+        profile.portrait_updated_at = Some(43);
+        assert_ne!(first, appearance_revision(&profile));
     }
 
     #[test]
     fn sprite_png_requires_a_four_frame_sheet() {
-        let mut bytes = vec![0; 24];
+        let mut bytes = vec![0; 33];
         bytes[..8].copy_from_slice(&PNG_MAGIC);
         bytes[8..12].copy_from_slice(&13u32.to_be_bytes());
         bytes[12..16].copy_from_slice(b"IHDR");
         bytes[16..20].copy_from_slice(&64u32.to_be_bytes());
         bytes[20..24].copy_from_slice(&16u32.to_be_bytes());
-        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
         assert!(valid_sprite_png(&encoded));
+    }
+
+    #[test]
+    fn portrait_png_requires_nonzero_bounded_dimensions() {
+        let mut bytes = vec![0; 33];
+        bytes[..8].copy_from_slice(&PNG_MAGIC);
+        bytes[8..12].copy_from_slice(&13u32.to_be_bytes());
+        bytes[12..16].copy_from_slice(b"IHDR");
+        bytes[16..20].copy_from_slice(&240u32.to_be_bytes());
+        bytes[20..24].copy_from_slice(&320u32.to_be_bytes());
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        assert!(valid_portrait_png(&encoded));
+        bytes[20..24].copy_from_slice(&0u32.to_be_bytes());
+        let malformed = base64::engine::general_purpose::STANDARD.encode(bytes);
+        assert!(!valid_portrait_png(&malformed));
     }
 }

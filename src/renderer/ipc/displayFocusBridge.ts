@@ -7,10 +7,20 @@ import { useAppStore } from "../store/appStore";
 export function installDisplayFocusBridge(): () => void {
   let unlisten: (() => void) | null = null;
   let disposed = false;
-  void listen<{ agentId?: unknown }>(Events.displayFocusAgent, (event) => {
+  void listen<{ agentId?: unknown; intent?: unknown }>(Events.displayFocusAgent, (event) => {
     const agentId = event.payload?.agentId;
     if (typeof agentId !== "string") return;
-    if (!useAppStore.getState().agents[agentId]) return;
+    const agent = useAppStore.getState().agents[agentId];
+    if (!agent) return;
+    if (event.payload?.intent === "connectCodex") {
+      useAppStore.getState().openModal({
+        kind: "ide-session",
+        initialAgentId: agentId,
+        initialCwd: agent.cwd,
+        initialProvider: "codex",
+      });
+      return;
+    }
     useAppStore.getState().openModal({ kind: "profile-edit", agentId });
   }).then((off) => {
     if (disposed) off();

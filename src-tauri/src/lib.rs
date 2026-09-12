@@ -661,15 +661,19 @@ pub fn run() {
                 tmux_probe: crate::control::tmux::system_probe(),
                 gate: inject_gate.clone(),
                 live_usage: live_usage.clone(),
+                portrait_store: portrait_store.clone(),
                 sprite_store: sprite_store.clone(),
                 focus_agent: {
                     let handle = handle.clone();
-                    Arc::new(move |agent_id: &str| {
+                    Arc::new(move |agent_id: &str, intent| {
                         let main = handle.get_webview_window("main").ok_or("main window unavailable")?;
                         main.show().map_err(|e| e.to_string())?;
                         main.unminimize().map_err(|e| e.to_string())?;
                         main.set_focus().map_err(|e| e.to_string())?;
-                        handle.emit_to("main", "display-focus-agent", serde_json::json!({ "agentId": agent_id }))
+                        handle.emit_to("main", "display-focus-agent", serde_json::json!({
+                            "agentId": agent_id,
+                            "intent": intent,
+                        }))
                             .map_err(|e| e.to_string())
                     })
                 },
