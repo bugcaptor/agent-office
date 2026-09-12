@@ -145,8 +145,7 @@ impl PtyControl for BrokerControl {
     fn kill(&self) -> io::Result<()> {
         // Kill RPC: 데몬이 자식을 SIGKILL하고 테이블에서 제거한다("모두 종료"/
         // dispose 경로). 이미 종료돼 사라진 세션이면 Error가 오지만 무해.
-        let _ = self.client.lock().kill(&self.agent_id);
-        Ok(())
+        self.client.lock().kill(&self.agent_id)
     }
 }
 

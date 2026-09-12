@@ -175,7 +175,15 @@
     "cancel": "キャンセル"
   },
   "ide": {
-    "title": "IDE セッションを接続", "description": "VS Code の既存の Codex、Claude、Kilo Code セッションを観察します。応答スタイルの設定は Codex と Claude の接続で利用できます。", "availabilityNote": "候補は最近の IDE 記録です。表示されていても、すでに終了している場合があります。", "historyNote": "接続後は新しい活動だけが Agent Office に届きます。以前の会話履歴は再生されません。", "observerDisabled": "接続前に設定で IDE セッション観察を有効にしてください。", "provider": "プロバイダー", "kiloSourceNote": "Kilo Code は VS Code と CLI で記録を共有します。VS Code で使用中のセッション ID と作業フォルダーを確認して選択してください。", "providers": { "codex": "Codex", "claude": "Claude", "kilo": "Kilo Code (VS Code)" }, "providerAll": "すべてのプロバイダー", "refresh": "更新", "loading": "IDE セッションを検索中…", "empty": "最近の IDE セッションは見つかりません。", "candidates": "IDE セッション", "agent": "キャラクター", "updated": "更新 {{value}}", "sessionId": "セッション {{value}}", "noAgent": "キャラクターのアプリ内ターミナルを終了するか、この接続用のキャラクターを作成してください。", "createAgent": "このセッション用のキャラクターを作成", "connect": "接続", "loadFailed": "IDE セッションを読み込めません。", "connectFailed": "IDE セッションを接続できません。"
+    "replacementKillFailed": "既存のターミナルを終了できなかったため、IDE 接続を中止しました。ターミナルの状態を確認して再試行してください。",
+    "replaceTitle": "既存のセッションを置き換えますか？",
+    "replaceTerminalBody": "{{name}} の実行中のターミナルと作業を終了し、IDE セッションに接続します。作業フォルダーは {{cwd}} に変わります。",
+    "replaceExternalBody": "{{name}} の既存の外部接続を解除し、新しい IDE セッションに接続します。元の外部アプリは終了しません。作業フォルダーは {{cwd}} に変わります。",
+    "replaceTerminalConfirm": "ターミナルを終了して接続",
+    "replaceExternalConfirm": "接続を解除して接続",
+    "replacementChanged": "確認中にキャラクターのセッションが変わりました。既存のセッションは変更していません。もう一度接続して確認してください。",
+    "characterFolderNote": "接続すると作業フォルダーを {{cwd}} に設定し、退勤中のキャラクターも復帰します。",
+    "title": "IDE セッションを接続", "description": "VS Code の既存の Codex、Claude、Kilo Code セッションを観察します。応答スタイルの設定は Codex と Claude の接続で利用できます。", "availabilityNote": "候補は最近の IDE 記録です。表示されていても、すでに終了している場合があります。", "historyNote": "接続後は新しい活動だけが Agent Office に届きます。以前の会話履歴は再生されません。", "observerDisabled": "接続前に設定で IDE セッション観察を有効にしてください。", "provider": "プロバイダー", "kiloSourceNote": "Kilo Code は VS Code と CLI で記録を共有します。VS Code で使用中のセッション ID と作業フォルダーを確認して選択してください。", "providers": { "codex": "Codex", "claude": "Claude", "kilo": "Kilo Code (VS Code)" }, "providerAll": "すべてのプロバイダー", "refresh": "更新", "loading": "IDE セッションを検索中…", "empty": "最近の IDE セッションは見つかりません。", "candidates": "IDE セッション", "agent": "キャラクター", "updated": "更新 {{value}}", "sessionId": "セッション {{value}}", "noAgent": "キャラクターがいません。この接続用に作成してください。", "createAgent": "このセッション用のキャラクターを作成", "connect": "接続", "loadFailed": "IDE セッションを読み込めません。", "connectFailed": "IDE セッションを接続できません。"
   },
   "ideConnection": { "disabled": "接続前に設定で IDE セッション接続を有効にしてください。" },
   "generate": {

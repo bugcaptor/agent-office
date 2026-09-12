@@ -328,7 +328,7 @@ fn observer_disable_and_transcript_truncation_stop_observation() {
 }
 
 #[test]
-fn changed_candidate_or_wrong_workdir_does_not_attach() {
+fn changed_candidate_does_not_attach_but_candidate_cwd_is_authoritative() {
     let f = Fixture::new();
     let attach = |cwd: &str, source: &str| {
         Watcher::attach(
@@ -351,11 +351,12 @@ fn changed_candidate_or_wrong_workdir_does_not_attach() {
             .as_deref(),
         Some("ide-candidate-changed")
     );
+    let watcher = attach("", "source-1").unwrap();
     assert_eq!(
-        attach("", "source-1").err().as_deref(),
-        Some("observed-cwd-mismatch")
+        f.manager.observed_focus("a1").unwrap().target,
+        ObservedFocusTarget::VsCode { cwd: f.dir.path().to_string_lossy().into_owned() }
     );
-    assert!(f.events.session_starts().is_empty());
+    drop(watcher);
 }
 
 #[test]
@@ -418,4 +419,153 @@ async fn running_pty_is_preserved_and_exited_pty_does_not_hide_new_notifications
     watcher.tick().unwrap();
     assert_eq!(f.manager.pending_notifications("a1").len(), 1);
     assert_eq!(f.control.kill_count(), 0);
+}
+
+#[tokio::test]
+async fn confirmed_replacement_kills_only_the_observed_pty_and_stale_sid_preserves_it() {
+    let f = Fixture::new();
+    f.start_pty();
+    let original = f.manager.session_id_for("a1").unwrap();
+    let attach = |replacement: Option<&str>| {
+        Watcher::attach_replacing(
+            &f.manager, &f.settings, "a1",
+            AgentEventProfile { name: "Example".into(), role: None },
+            &f.file, "codex", "source-1", replacement, None,
+        )
+    };
+    assert_eq!(
+        attach(Some("not-the-current-session")).err().as_deref(),
+        Some("observed-replacement-changed")
+    );
+    assert_eq!(f.manager.session_id_for("a1"), Some(original.clone()));
+    assert_eq!(f.control.kill_count(), 0);
+
+    let watcher = attach(Some(&original)).unwrap();
+    assert_ne!(watcher.session_id, original);
+    assert_eq!(f.control.kill_count(), 1);
+    f.control.close_output();
+    f.control.fire_exit(0);
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    assert_eq!(f.manager.session_id_for("a1"), Some(watcher.session_id.clone()));
+}
+
+#[test]
+fn confirmed_replacement_detaches_an_external_session() {
+    let f = Fixture::new();
+    let old = match f.manager.attach_external("a1", None, None, None).unwrap() {
+        crate::session::external::ExternalAttachOutcome::New { session_id, .. } => session_id,
+        _ => unreachable!(),
+    };
+    let watcher = Watcher::attach_replacing(
+        &f.manager, &f.settings, "a1",
+        AgentEventProfile { name: "Example".into(), role: None },
+        &f.file, "codex", "source-1", Some(&old), None,
+    ).unwrap();
+    assert_ne!(watcher.session_id, old);
+    assert_eq!(f.manager.session_id_for("a1"), Some(watcher.session_id.clone()));
+}
+
+#[tokio::test]
+async fn initial_connect_returns_replacement_without_touching_the_pty() {
+    let f = Fixture::new();
+    f.start_pty();
+    let old = f.manager.session_id_for("a1").unwrap();
+    let result = connect(
+        &f.manager, &f.settings, "a1",
+        AgentEventProfile { name: "Example".into(), role: None },
+        &f.file, "codex", "source-1", None, None,
+    ).unwrap();
+    assert!(matches!(result, ConnectResult::Replacement { replacement }
+        if replacement.session_id == old && replacement.kind == "pty"));
+    assert_eq!(f.manager.session_id_for("a1"), Some(old));
+    assert_eq!(f.control.kill_count(), 0);
+}
+
+#[tokio::test]
+async fn replacement_callback_runs_only_after_validation_and_exact_sid_match() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let f = Fixture::new();
+    f.start_pty();
+    let old = f.manager.session_id_for("a1").unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let callback = |calls: Arc<AtomicUsize>| {
+        Some(Box::new(move || { calls.fetch_add(1, Ordering::SeqCst); }) as Box<dyn FnOnce() + Send>)
+    };
+    assert_eq!(
+        Watcher::attach_replacing(
+            &f.manager, &f.settings, "a1", AgentEventProfile { name: "Example".into(), role: None },
+            &f.file, "codex", "different-source", Some(&old), callback(calls.clone()),
+        ).err().as_deref(),
+        Some("ide-candidate-changed")
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        Watcher::attach_replacing(
+            &f.manager, &f.settings, "a1", AgentEventProfile { name: "Example".into(), role: None },
+            &f.file, "codex", "source-1", Some("stale"), callback(calls.clone()),
+        ).err().as_deref(),
+        Some("observed-replacement-changed")
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    let watcher = Watcher::attach_replacing(
+        &f.manager, &f.settings, "a1", AgentEventProfile { name: "Example".into(), role: None },
+        &f.file, "codex", "source-1", Some(&old), callback(calls.clone()),
+    ).unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(f.events.states().iter().rev().take(2).cloned().collect::<Vec<_>>(),
+        vec![SessionState::Running, SessionState::Disposed]);
+    drop(watcher);
+}
+
+#[tokio::test]
+async fn duplicate_source_does_not_reset_or_replace_a_pty() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let f = Fixture::new();
+    let _other = f.attach("a2").unwrap();
+    f.start_pty();
+    let old = f.manager.session_id_for("a1").unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let callback_calls = calls.clone();
+    assert_eq!(
+        Watcher::attach_replacing(
+            &f.manager, &f.settings, "a1", AgentEventProfile { name: "Example".into(), role: None },
+            &f.file, "codex", "source-1", Some(&old),
+            Some(Box::new(move || { callback_calls.fetch_add(1, Ordering::SeqCst); })),
+        ).err().as_deref(),
+        Some("observed-source-already-attached")
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(f.manager.session_id_for("a1"), Some(old));
+    assert_eq!(f.control.kill_count(), 0);
+}
+
+#[test]
+fn connect_result_serializes_session_id_as_camel_case() {
+    assert_eq!(
+        serde_json::to_value(ConnectResult::Connected { session_id: "s".into() }).unwrap(),
+        serde_json::json!({"sessionId": "s"}),
+    );
+}
+
+#[tokio::test]
+async fn failed_pty_kill_does_not_reset_automation_or_publish_replacement() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let f = Fixture::new();
+    f.start_pty();
+    let old = f.manager.session_id_for("a1").unwrap();
+    let states = f.events.states();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let callback_calls = calls.clone();
+    f.control.fail_kill(true);
+    let result = Watcher::attach_replacing(
+        &f.manager, &f.settings, "a1",
+        AgentEventProfile { name: "Example".into(), role: None },
+        &f.file, "codex", "source-1", Some(&old),
+        Some(Box::new(move || { callback_calls.fetch_add(1, Ordering::SeqCst); })),
+    );
+    assert_eq!(result.err().as_deref(), Some("observed-replacement-kill-failed"));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(f.manager.session_id_for("a1"), Some(old));
+    assert_eq!(f.events.states(), states);
+    f.control.fail_kill(false);
 }

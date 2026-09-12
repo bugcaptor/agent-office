@@ -4,13 +4,11 @@ import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { flushPersistence } from "../store/persist";
 import { useEscapeToClose } from "../shared/useEscapeToClose";
-import { cwdEquivalent } from "../labels/labelText";
 import { currentLocale } from "../i18n";
-import type { IdeSessionCandidate } from "@shared/types";
+import type { IdeSessionCandidate, IdeSessionConnectResult } from "@shared/types";
 
-function sameCwd(a: string | undefined, b: string): boolean {
-  return Boolean(a) && cwdEquivalent(a!, b);
-}
+type Replacement = Extract<IdeSessionConnectResult, { replacement: unknown }>["replacement"];
+type PendingReplacement = { agentId: string; candidate: IdeSessionCandidate; replacement: Replacement };
 
 function candidateKey(candidate: IdeSessionCandidate): string {
   return `${candidate.provider}:${candidate.sourceSessionId}:${candidate.file}`;
@@ -23,7 +21,6 @@ export function IdeSessionDialog() {
   const appSettings = useAppStore((s) => s.appSettings);
   const agents = useAppStore((s) => s.agents);
   const agentOrder = useAppStore((s) => s.agentOrder);
-  const sessions = useAppStore((s) => s.sessions);
   const openTerminal = useAppStore((s) => s.openTerminal);
   const setSessionState = useAppStore((s) => s.setSessionState);
   const openModal = useAppStore((s) => s.openModal);
@@ -34,9 +31,12 @@ export function IdeSessionDialog() {
   const [loading, setLoading] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
+  const [pending, setPending] = useState<PendingReplacement | null>(null);
+  const connectingRef = useRef(false);
   const refreshGeneration = useRef(0);
   const open = modal.kind === "ide-session";
-  useEscapeToClose(open && !connecting, closeModal);
+  const cancel = () => pending ? setPending(null) : closeModal();
+  useEscapeToClose(open && !connecting, cancel);
 
   const ideConnectionEnabled = appSettings.ideConnectionEnabled;
   const observationAvailable = ideConnectionEnabled && appSettings.observerEnabled;
@@ -73,56 +73,80 @@ export function IdeSessionDialog() {
     setConnecting(false);
     setItems([]);
     setSelected(null);
+    setPending(null);
   }, [observationAvailable]);
 
-  const eligibleAgents = useMemo(() => {
-    if (!selected) return [];
-    return agentOrder
-      .map((id) => agents[id])
-      .filter((agent) => agent && !agent.clockedOut && sameCwd(agent.cwd, selected.cwd))
-      .filter((agent) => {
-        const state = sessions[agent.id]?.status;
-        return state === "idle" || state === "exited";
-      });
-  }, [agentOrder, agents, selected, sessions]);
+  const eligibleAgents = useMemo(() => agentOrder.map((id) => agents[id]).filter(Boolean), [agentOrder, agents]);
+
+  useEffect(() => {
+    if (!open) setPending(null);
+  }, [open]);
 
   useEffect(() => {
     if (!eligibleAgents.some((agent) => agent.id === agentId)) setAgentId(eligibleAgents[0]?.id ?? "");
   }, [agentId, eligibleAgents]);
 
-  const connect = async () => {
-    if (!useAppStore.getState().appSettings.ideConnectionEnabled || !useAppStore.getState().appSettings.observerEnabled || !selected || !agentId) return;
+  const connect = async (confirmed?: PendingReplacement) => {
+    const state = useAppStore.getState();
+    const target = confirmed?.candidate ?? selected;
+    const targetId = confirmed?.agentId ?? agentId;
+    if (connectingRef.current || !state.appSettings.ideConnectionEnabled || !state.appSettings.observerEnabled || !target || !state.agents[targetId]) return;
+    connectingRef.current = true;
     setConnecting(true);
     setError("");
     try {
-      // The backend validates the saved profile cwd. Do not let the normal
-      // 500ms profile save debounce race this connection.
+      // Save profile creation/edits first. Selecting or declining replacement
+      // must never mutate the profile or dispose its terminal.
       await flushPersistence();
-      await tauriApi.connectIdeSession({
-        agentId,
-        provider: selected.provider,
-        file: selected.file,
-        sourceSessionId: selected.sourceSessionId,
+      const result = await tauriApi.connectIdeSession({
+        agentId: targetId,
+        provider: target.provider,
+        file: target.file,
+        sourceSessionId: target.sourceSessionId,
+        ...(confirmed ? { replaceSessionId: confirmed.replacement.sessionId } : {}),
       });
-      if (!useAppStore.getState().appSettings.ideConnectionEnabled || !useAppStore.getState().appSettings.observerEnabled) return;
-      setSessionState({ agentId, status: "running", external: true });
-      // This opens the connected-session panel directly. Calling ensureSession
-      // here would accidentally create a new PTY for the character.
-      openTerminal(agentId);
+      const current = useAppStore.getState();
+      if (!current.appSettings.ideConnectionEnabled || !current.appSettings.observerEnabled) return;
+      if ("replacement" in result) {
+        setPending({ agentId: targetId, candidate: target, replacement: result.replacement });
+        return;
+      }
+      setPending(null);
+      // Revive the character without clockInAgent(), which would start a PTY.
+      current.clockIn(targetId);
+      current.updateAgent(targetId, { cwd: target.cwd });
+      current.resetAutomationState(targetId);
+      setSessionState({ agentId: targetId, status: "running", external: true });
+      current.noteUsageSession(targetId, result.sessionId);
+      // Persist the connected folder before persona setup reads the profile.
+      await flushPersistence().catch((err) => console.warn("save connected IDE profile failed", err));
+      openTerminal(targetId);
       closeModal();
     } catch (err) {
       console.warn("connect IDE session failed", err);
-      setError(t("ide.connectFailed"));
+      setPending(null);
+      const reason = String(err);
+      setError(t(reason.includes("observed-replacement-changed") ? "ide.replacementChanged"
+        : /observed-replacement-(?:tmux-)?kill-failed/.test(reason) ? "ide.replacementKillFailed"
+        : "ide.connectFailed"));
     } finally {
+      connectingRef.current = false;
       setConnecting(false);
     }
   };
 
   if (!open) return null;
   return <div className="modal-backdrop" onMouseDown={(e) => {
-    if (!connecting && e.button === 0 && e.target === e.currentTarget) closeModal();
+    if (!connecting && e.button === 0 && e.target === e.currentTarget) cancel();
   }}>
-    <div className="pixel-panel ide-session-dialog" role="dialog" aria-modal="true" aria-label={t("ide.title")}>
+    {pending ? <div className="pixel-panel ide-session-dialog" role="alertdialog" aria-modal="true" aria-labelledby="ide-replace-title" aria-describedby="ide-replace-body">
+      <h2 id="ide-replace-title" className="pixel-title">{t("ide.replaceTitle")}</h2>
+      <p id="ide-replace-body">{t(pending.replacement.kind === "pty" ? "ide.replaceTerminalBody" : "ide.replaceExternalBody", { name: agents[pending.agentId]?.name, cwd: pending.candidate.cwd })}</p>
+      <div className="dialog-actions">
+        <button type="button" className="pixel-btn primary" disabled={!observationAvailable || connecting} onClick={() => void connect(pending)}>{t(pending.replacement.kind === "pty" ? "ide.replaceTerminalConfirm" : "ide.replaceExternalConfirm")}</button>
+        <button type="button" className="pixel-btn" autoFocus disabled={connecting} onClick={() => setPending(null)}>{t("dialog.cancel")}</button>
+      </div>
+    </div> : <div className="pixel-panel ide-session-dialog" role="dialog" aria-modal="true" aria-label={t("ide.title")}>
       <header className="profile-dialog-header">
         <h2 className="pixel-title">{t("ide.title")}</h2>
         <p className="profile-dialog-sub">{t("ide.description")}</p>
@@ -145,6 +169,7 @@ export function IdeSessionDialog() {
             <strong>{t(`ide.providers.${item.provider}`)}</strong><span>{item.cwd}</span><small>{t("ide.updated", { value: new Intl.DateTimeFormat(currentLocale(), { dateStyle: "short", timeStyle: "short" }).format(item.updatedAt) })} · {t("ide.sessionId", { value: item.sourceSessionId })}</small>
           </button>)}
         </div>
+        {selected && <p className="ide-session-note">{t("ide.characterFolderNote", { cwd: selected.cwd })}</p>}
         {selected && <label className="ide-session-agent">{t("ide.agent")}<select value={agentId} disabled={connecting} onChange={(e) => setAgentId(e.target.value)}>
           {eligibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.role}</option>)}
         </select></label>}
@@ -155,6 +180,6 @@ export function IdeSessionDialog() {
         <button type="button" className="pixel-btn primary" disabled={!observationAvailable || !selected || !agentId || connecting} onClick={() => void connect()}>{t("ide.connect")}</button>
         <button type="button" className="pixel-btn" disabled={connecting} onClick={closeModal}>{t("dialog.cancel")}</button>
       </div>
-    </div>
+    </div>}
   </div>;
 }

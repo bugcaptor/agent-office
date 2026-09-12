@@ -17,6 +17,7 @@ import type {
   SessionLogPage,
   StudyMaterialResult,
   IdeSessionCandidate,
+  IdeSessionConnectResult,
   IdePersonaContext,
 } from './session';
 import type { NotificationEvent, ActivityEvent, TurnUsageEvent } from './notification';
@@ -90,8 +91,8 @@ export interface AgentOfficeApi {
   detachExternalSession(agentId: string): Promise<boolean>;
   /** Lists local IDE extension sessions that can be observed. Desktop only. */
   listIdeSessions(filter?: { provider?: 'codex' | 'claude' | 'kilo'; cwd?: string }): Promise<IdeSessionCandidate[]>;
-  /** Connects an idle character to an existing IDE extension session. */
-  connectIdeSession(input: { agentId: string; provider: 'codex' | 'claude' | 'kilo'; file: string; sourceSessionId: string }): Promise<{ sessionId: string }>;
+  /** Connects a character, or requests confirmation before replacing its exact live session. */
+  connectIdeSession(input: { agentId: string; provider: 'codex' | 'claude' | 'kilo'; file: string; sourceSessionId: string; replaceSessionId?: string }): Promise<IdeSessionConnectResult>;
   /** Desktop-only preparation preview; null for unverified/non-IDE connections. */
   getIdePersona(agentId: string): Promise<IdePersonaContext | null>;
   /** Creates a Claude style choice without selecting it or sending IDE input. */

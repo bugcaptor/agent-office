@@ -349,10 +349,18 @@ pub fn ensure_hosted(
 /// 세션 종료. best-effort — 실패해도 패닉하지 않고 stderr에만 남긴다(앱
 /// 종료 경로에서 이 하나 실패로 나머지 정리가 막히면 안 된다).
 pub fn kill(runner: &TmuxRunner, name: &str) {
+    if let Err(error) = try_kill(runner, name) {
+        eprintln!("tmux kill-session '{name}' 실패: {error}");
+    }
+}
+
+/// IDE 연결처럼 기존 세션을 끊은 뒤에만 다음 단계를 진행할 수 있는 경로용.
+/// 일반 종료는 `kill`의 best-effort 성격을 계속 유지한다.
+pub fn try_kill(runner: &TmuxRunner, name: &str) -> Result<(), String> {
     match runner(&kill_session_args(name)) {
-        Ok(run) if run.ok => {}
-        Ok(run) => eprintln!("tmux kill-session '{name}' 실패: {}", run.stderr),
-        Err(e) => eprintln!("tmux kill-session '{name}' 실행 실패: {e}"),
+        Ok(run) if run.ok => Ok(()),
+        Ok(run) => Err(run.stderr),
+        Err(error) => Err(error),
     }
 }
 
@@ -649,5 +657,15 @@ mod tests {
         // `=` 접두로 정확일치를 강제하고, sh_quote가 내부 작은따옴표를 데이터로 지킨다.
         assert_eq!(cmd, "exec tmux attach-session -t '=a'\"'\"'b'");
         assert!(cmd.starts_with("exec tmux attach-session -t '="));
+    }
+
+    #[test]
+    fn try_kill_propagates_tmux_failure_for_transactional_callers() {
+        let runner: TmuxRunner = Arc::new(|_| Ok(TmuxRun {
+            ok: false,
+            stdout: String::new(),
+            stderr: "permission denied".into(),
+        }));
+        assert_eq!(try_kill(&runner, "ao-test"), Err("permission denied".into()));
     }
 }

@@ -17,6 +17,7 @@
 use std::path::PathBuf;
 
 use uuid::Uuid;
+use std::sync::atomic::Ordering;
 
 use super::manager::{cleanup_paths, PreparedPlan, SessionManager};
 use crate::observer::ObserverEvent;
@@ -153,6 +154,20 @@ impl ExternalAttachOutcome {
 }
 
 impl SessionManager {
+    pub(crate) fn observed_source_attached_elsewhere(
+        &self,
+        agent_id: &str,
+        provider: &str,
+        source_session_id: &str,
+    ) -> bool {
+        let _lifecycle = self.observed_lifecycle.lock();
+        self.externals.lock().iter().any(|(id, existing)| {
+            id != agent_id && existing.observed.as_ref().is_some_and(|observed| {
+                observed.provider == provider && observed.source_session_id == source_session_id
+            })
+        })
+    }
+
     /// 앱 밖 터미널을 캐릭터에 붙인다. 반환된 plan의 env/wrappers를 호출자가
     /// 셸 스크립트로 렌더해 그 터미널에서 eval하면, 그 셸에서 뜬 claude의 훅이
     /// 이 캐릭터의 알림으로 흐른다.
@@ -313,38 +328,113 @@ impl SessionManager {
         profile: AgentEventProfile,
         focus_target: Option<ObservedFocusTarget>,
     ) -> Result<ObservedAttachOutcome, String> {
+        self.attach_observed_with_focus_replacing(
+            agent_id, provider, source_session_id, cwd, owner_id, pid, profile,
+            focus_target, None, None,
+        )
+    }
+
+    /// Atomically replaces the session that the confirmation dialog observed.
+    /// All source checks happen before this method; this lock then makes the
+    /// sid comparison, retirement, and observed attach one ordered operation.
+    pub(crate) fn attach_observed_with_focus_replacing(
+        &self,
+        agent_id: &str,
+        provider: &str,
+        source_session_id: &str,
+        cwd: &str,
+        owner_id: &str,
+        pid: Option<u32>,
+        profile: AgentEventProfile,
+        focus_target: Option<ObservedFocusTarget>,
+        replace_session_id: Option<&str>,
+        mut before_replace: Option<Box<dyn FnOnce() + Send>>,
+    ) -> Result<ObservedAttachOutcome, String> {
         let _lifecycle = self.observed_lifecycle.lock();
-        if self
-            .find(agent_id)
-            .is_some_and(|session| session.reusable())
-        {
-            return Err("observed-pty-exists".into());
+        let mut externals = self.externals.lock();
+        let active_pty = self.find(agent_id).filter(|session| session.reusable());
+        let active_external = externals.get(agent_id);
+
+        match replace_session_id {
+            Some(expected) => {
+                let actual = active_pty.as_ref().map(|s| s.session_id.as_str())
+                    .or_else(|| active_external.map(|s| s.session_id.as_str()));
+                if actual != Some(expected) {
+                    return Err("observed-replacement-changed".into());
+                }
+            }
+            None if active_pty.is_some() => return Err("observed-pty-exists".into()),
+            None if active_external.is_some() => {
+                let existing = active_external.unwrap();
+                if let Some(observed) = &existing.observed {
+                    if observed.owner_id == owner_id
+                        && observed.provider == provider
+                        && observed.source_session_id == source_session_id
+                    {
+                        return Ok(ObservedAttachOutcome { session_id: existing.session_id.clone(), reused: true });
+                    }
+                    return Err("observed-agent-already-attached".into());
+                }
+                return Err("observed-external-exists".into());
+            }
+            None => {}
         }
 
-        let mut externals = self.externals.lock();
-        if let Some(existing) = externals.get(agent_id) {
-            if let Some(observed) = &existing.observed {
-                if observed.owner_id == owner_id
-                    && observed.provider == provider
-                    && observed.source_session_id == source_session_id
-                {
-                    return Ok(ObservedAttachOutcome {
-                        session_id: existing.session_id.clone(),
-                        reused: true,
-                    });
-                }
-                return Err("observed-agent-already-attached".into());
-            }
-            return Err("observed-external-exists".into());
-        }
         // source/provider 한 쌍은 캐릭터 하나에만 귀속된다. 이 검사는 위 락 안에
         // 있어 동시 attach도 둘 다 통과하지 못한다.
-        if externals.values().any(|existing| {
+        if externals.iter().any(|(id, existing)| {
+            id != agent_id &&
             existing.observed.as_ref().is_some_and(|observed| {
                 observed.provider == provider && observed.source_session_id == source_session_id
             })
         }) {
             return Err("observed-source-already-attached".into());
+        }
+
+        // Do not detach until every validation above has succeeded. For PTYs,
+        // a failed kill leaves both map and registry untouched.
+        if let Some(session) = active_pty {
+            if session.handed_off.load(Ordering::SeqCst) {
+                return Err("observed-replacement-changed".into());
+            }
+            if let Some(name) = &session.hosted_tmux {
+                super::tmux_host::try_kill(&self.tmux_runner, name)
+                    .map_err(|_| "observed-replacement-tmux-kill-failed")?;
+            }
+            if let Err(_) = session.control.kill() {
+                return Err("observed-replacement-kill-failed".into());
+            }
+            // The old terminal can no longer accept automation input. Stop
+            // its runtime immediately before publishing the replacement.
+            if let Some(callback) = before_replace.take() {
+                callback();
+            }
+            session.kill_requested.store(true, Ordering::SeqCst);
+            cleanup_paths(&session.cleanup_paths);
+            *session.state.lock() = SessionState::Disposed;
+            self.registry.set_state(&session.session_id, SessionState::Disposed);
+            self.emit_state(
+                &session,
+                SessionState::Disposed,
+                Some(SessionExitInfo {
+                    session_id: session.session_id.clone(),
+                    exit_code: None,
+                    signal: None,
+                    intentional: true,
+                }),
+            );
+            self.sessions.lock().remove(agent_id);
+            self.registry.remove(&session.session_id);
+            self.hub.purge_session(&session.session_id);
+        } else if replace_session_id.is_some() {
+            if let Some(callback) = before_replace.take() {
+                callback();
+            }
+            if let Some(external) = externals.remove(agent_id) {
+                drop(externals);
+                self.finish_external_detach(agent_id, external, ExternalDetachReason::Detach);
+                externals = self.externals.lock();
+            }
         }
 
         // A naturally exited PTY remains in `sessions` for terminal history.

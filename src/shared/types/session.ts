@@ -326,6 +326,11 @@ export interface IdeSessionCandidate {
   source: 'vscode' | 'kilo-shared';
 }
 
+/** Confirmation identifies the exact existing session that may be replaced. */
+export type IdeSessionConnectResult =
+  | { sessionId: string }
+  | { replacement: { sessionId: string; kind: 'pty' | 'external' } };
+
 /** Persona setup data for a character connected to an observed IDE session. */
 export interface IdePersonaStyle {
   name: string;

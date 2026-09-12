@@ -25,7 +25,8 @@ beforeEach(() => {
   useAppStore.setState(initialState, true);
   useAppStore.setState((state) => ({ appSettings: { ...state.appSettings, observerEnabled: true, ideConnectionEnabled: true } }));
   listIdeSessions.mockReset(); listIdeSessions.mockResolvedValue([candidate]);
-  connectIdeSession.mockClear(); flushPersistence.mockClear();
+  connectIdeSession.mockReset(); connectIdeSession.mockResolvedValue({ sessionId: "external-1" });
+  flushPersistence.mockReset(); flushPersistence.mockResolvedValue(undefined);
 });
 afterEach(cleanup);
 
@@ -63,15 +64,100 @@ describe("IdeSessionDialog", () => {
     expect(useAppStore.getState().activeTerminalAgentId).toBe("a1");
   });
 
-  it("excludes running and external characters, then offers connection setup", async () => {
-    useAppStore.getState().addAgent(agent({ id: "running" }));
-    useAppStore.getState().addAgent(agent({ id: "external" }));
+  it("offers running, external, different-folder, unset-folder and clocked-out characters", async () => {
+    for (const profile of [agent({ id: "running" }), agent({ id: "external" }), agent({ id: "different", cwd: "/other" }), agent({ id: "unset", cwd: undefined }), agent({ id: "off", clockedOut: true })]) {
+      useAppStore.getState().addAgent(profile);
+    }
     useAppStore.getState().setSessionState({ agentId: "external", status: "running", external: true });
     useAppStore.getState().openModal({ kind: "ide-session" });
     render(<IdeSessionDialog />);
-    await waitFor(() => expect(screen.getByTitle("chat.json")).toBeTruthy());
-    fireEvent.click(screen.getByTitle("chat.json"));
-    expect(screen.getByText("이 세션용 캐릭터 만들기")).toBeTruthy();
+    fireEvent.click(await screen.findByTitle("chat.json"));
+    const options = (screen.getByLabelText("캐릭터") as HTMLSelectElement).options;
+    expect(Array.from(options).map((option) => option.value)).toEqual(["running", "external", "different", "unset", "off"]);
+    expect(connectIdeSession).not.toHaveBeenCalled();
+  });
+
+  it("asks only at connect time and cancellation keeps the old terminal and profile", async () => {
+    connectIdeSession.mockResolvedValueOnce({ replacement: { sessionId: "old-pty", kind: "pty" } });
+    useAppStore.getState().addAgent(agent({ cwd: "/original" }));
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "running" });
+    useAppStore.getState().openModal({ kind: "ide-session" });
+    render(<IdeSessionDialog />);
+    fireEvent.click(await screen.findByTitle("chat.json"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(connectIdeSession).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "연결" }));
+    await screen.findByRole("alertdialog");
+    expect(screen.getByText(/실행 중인 터미널과 작업을 종료/)).toBeTruthy();
+    expect(useAppStore.getState().agents.a1.cwd).toBe("/original");
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(connectIdeSession).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().sessions.a1.status).toBe("running");
+    expect(useAppStore.getState().agents.a1.cwd).toBe("/original");
+    expect(useAppStore.getState().modal.kind).toBe("ide-session");
+  });
+
+  it("confirms the exact session before replacing and updates the folder after success", async () => {
+    connectIdeSession.mockResolvedValueOnce({ replacement: { sessionId: "old-pty", kind: "pty" } });
+    useAppStore.getState().addAgent(agent({ cwd: "/original" }));
+    useAppStore.getState().openModal({ kind: "ide-session" });
+    render(<IdeSessionDialog />);
+    fireEvent.click(await screen.findByTitle("chat.json"));
+    fireEvent.click(screen.getByRole("button", { name: "연결" }));
+    fireEvent.click(await screen.findByRole("button", { name: "터미널 종료 후 연결" }));
+    await waitFor(() => expect(connectIdeSession).toHaveBeenLastCalledWith({ agentId: "a1", provider: "codex", file: "chat.json", sourceSessionId: "source-1", replaceSessionId: "old-pty" }));
+    await waitFor(() => expect(useAppStore.getState().modal.kind).toBe("none"));
+    expect(useAppStore.getState().agents.a1.cwd).toBe("/work/demo");
+    expect(useAppStore.getState().sessions.a1.kind).toBe("external");
+  });
+
+  it("describes external replacement as detaching and revives an off-duty character only on success", async () => {
+    connectIdeSession.mockResolvedValueOnce({ replacement: { sessionId: "old-external", kind: "external" } });
+    useAppStore.getState().addAgent(agent({ cwd: undefined }), { startSession: false });
+    useAppStore.getState().clockOut("a1");
+    useAppStore.getState().openModal({ kind: "ide-session" });
+    render(<IdeSessionDialog />);
+    fireEvent.click(await screen.findByTitle("chat.json"));
+    fireEvent.click(screen.getByRole("button", { name: "연결" }));
+    const confirm = await screen.findByRole("button", { name: "기존 연결 해제 후 연결" });
+    expect(screen.getByText(/원본 외부 앱은 종료하지 않습니다/)).toBeTruthy();
+    expect(useAppStore.getState().agents.a1.clockedOut).toBe(true);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(useAppStore.getState().sessions.a1.kind).toBe("external"));
+    expect(useAppStore.getState().agents.a1.clockedOut).toBeUndefined();
+    expect(useAppStore.getState().agents.a1.cwd).toBe(candidate.cwd);
+  });
+
+  it.each([
+    ["observed-replacement-changed", "세션이 바뀌었습니다"],
+    ["observed-replacement-kill-failed", "터미널을 종료하지 못해"],
+    ["observed-replacement-tmux-kill-failed", "터미널을 종료하지 못해"],
+  ])("leaves the profile alone after replacement failure: %s", async (reason, message) => {
+    connectIdeSession.mockResolvedValueOnce({ replacement: { sessionId: "old", kind: "pty" } });
+    connectIdeSession.mockRejectedValueOnce(reason);
+    useAppStore.getState().addAgent(agent({ cwd: "/original" }));
+    useAppStore.getState().openModal({ kind: "ide-session" });
+    render(<IdeSessionDialog />);
+    fireEvent.click(await screen.findByTitle("chat.json"));
+    fireEvent.click(screen.getByRole("button", { name: "연결" }));
+    fireEvent.click(await screen.findByRole("button", { name: "터미널 종료 후 연결" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(message);
+    expect(useAppStore.getState().agents.a1.cwd).toBe("/original");
+    expect(screen.getByRole("button", { name: "연결" })).toBeTruthy();
+  });
+
+  it("drops pending confirmation if IDE observation is disabled", async () => {
+    connectIdeSession.mockResolvedValueOnce({ replacement: { sessionId: "old", kind: "pty" } });
+    useAppStore.getState().addAgent(agent());
+    useAppStore.getState().openModal({ kind: "ide-session" });
+    render(<IdeSessionDialog />);
+    fireEvent.click(await screen.findByTitle("chat.json"));
+    fireEvent.click(screen.getByRole("button", { name: "연결" }));
+    await screen.findByRole("alertdialog");
+    act(() => useAppStore.setState((state) => ({ appSettings: { ...state.appSettings, ideConnectionEnabled: false } })));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(connectIdeSession).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the selected candidate after a connect failure", async () => {

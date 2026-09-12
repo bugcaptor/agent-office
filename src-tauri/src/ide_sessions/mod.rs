@@ -17,9 +17,20 @@ use crate::session_events::types::AgentEventProfile;
 use transcripts::{Candidate, EventFilter, TranscriptTail};
 
 #[derive(serde::Serialize)]
+#[serde(untagged)]
+pub(crate) enum ConnectResult {
+    Connected {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+    },
+    Replacement { replacement: Replacement },
+}
+
+#[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ConnectResult {
+pub(crate) struct Replacement {
     pub session_id: String,
+    pub kind: &'static str,
 }
 
 pub(crate) fn discover(
@@ -48,21 +59,36 @@ pub(crate) fn connect(
     manager: &Arc<SessionManager>,
     settings: &Arc<RwLock<AppSettings>>,
     agent_id: &str,
-    profile_cwd: &str,
     profile: AgentEventProfile,
     file: &Path,
     provider: &str,
     source_session_id: &str,
+    replace_session_id: Option<&str>,
+    before_replace: Option<Box<dyn FnOnce() + Send>>,
 ) -> Result<ConnectResult, String> {
-    let worker = Watcher::attach(
+    // Inspect before offering replacement. A stale or duplicate source must
+    // never turn a harmless confirmation request into a session mutation.
+    Watcher::validate_candidate(file, provider, source_session_id)?;
+    if manager.observed_source_attached_elsewhere(agent_id, provider, source_session_id) {
+        return Err("observed-source-already-attached".into());
+    }
+    if replace_session_id.is_none() {
+        if let Some((session_id, kind)) = manager.observed_replacement(agent_id) {
+            return Ok(ConnectResult::Replacement {
+                replacement: Replacement { session_id, kind },
+            });
+        }
+    }
+    let worker = Watcher::attach_replacing(
         manager,
         settings,
         agent_id,
-        profile_cwd,
         profile,
         file,
         provider,
         source_session_id,
+        replace_session_id,
+        before_replace,
     )?;
     let session_id = worker.session_id.clone();
     // The worker owns its file handle and releases just its own logical session
@@ -77,7 +103,7 @@ pub(crate) fn connect(
             }
         })
         .map_err(|_| "ide-watch-start-failed".to_string())?;
-    Ok(ConnectResult { session_id })
+    Ok(ConnectResult::Connected { session_id })
 }
 
 struct Watcher {
@@ -101,11 +127,27 @@ impl Watcher {
         manager: &Arc<SessionManager>,
         settings: &Arc<RwLock<AppSettings>>,
         agent_id: &str,
-        profile_cwd: &str,
+        _profile_cwd: &str,
         profile: AgentEventProfile,
         file: &Path,
         provider: &str,
         source_session_id: &str,
+    ) -> Result<Self, String> {
+        Self::attach_replacing(
+            manager, settings, agent_id, profile, file, provider, source_session_id, None, None,
+        )
+    }
+
+    fn attach_replacing(
+        manager: &Arc<SessionManager>,
+        settings: &Arc<RwLock<AppSettings>>,
+        agent_id: &str,
+        profile: AgentEventProfile,
+        file: &Path,
+        provider: &str,
+        source_session_id: &str,
+        replace_session_id: Option<&str>,
+        before_replace: Option<Box<dyn FnOnce() + Send>>,
     ) -> Result<Self, String> {
         // Settings opt-out takes this guard before detaching observed sessions;
         // retaining it through registration closes attach-versus-opt-out races.
@@ -115,21 +157,8 @@ impl Watcher {
             return Err("observed-observer-disabled".into());
         }
         drop(settings_guard);
-        let candidate = if provider == "kilo" {
-            kilo::inspect(file, source_session_id)?
-        } else {
-            transcripts::inspect(file, provider)?
-        };
+        let candidate = Self::validate_candidate(file, provider, source_session_id)?;
         let verified_vscode = candidate.source == "vscode";
-        if !verified_vscode && !(provider == "kilo" && candidate.source == "kilo-shared") {
-            return Err("source-not-vscode".into());
-        }
-        if candidate.source_session_id != source_session_id {
-            return Err("ide-candidate-changed".into());
-        }
-        if profile_cwd.is_empty() || !same_directory(profile_cwd, &candidate.cwd) {
-            return Err("observed-cwd-mismatch".into());
-        }
         let (source, filter) = if provider == "kilo" {
             (
                 WatchSource::Kilo(kilo::Tail::from_candidate(&candidate)?),
@@ -150,7 +179,7 @@ impl Watcher {
             )
         };
         let owner_id = uuid::Uuid::new_v4().to_string();
-        let attached = manager.attach_observed_with_focus(
+        let attached = manager.attach_observed_with_focus_replacing(
             agent_id,
             provider,
             source_session_id,
@@ -161,6 +190,8 @@ impl Watcher {
             (verified_vscode || provider == "kilo").then(|| ObservedFocusTarget::VsCode {
                 cwd: candidate.cwd.clone(),
             }),
+            replace_session_id,
+            before_replace,
         )?;
         Ok(Self {
             manager: Arc::downgrade(manager),
@@ -172,6 +203,26 @@ impl Watcher {
             source,
             filter,
         })
+    }
+
+    fn validate_candidate(
+        file: &Path,
+        provider: &str,
+        source_session_id: &str,
+    ) -> Result<Candidate, String> {
+        let candidate = if provider == "kilo" {
+            kilo::inspect(file, source_session_id)?
+        } else {
+            transcripts::inspect(file, provider)?
+        };
+        let verified_vscode = candidate.source == "vscode";
+        if !verified_vscode && !(provider == "kilo" && candidate.source == "kilo-shared") {
+            return Err("source-not-vscode".into());
+        }
+        if candidate.source_session_id != source_session_id {
+            return Err("ide-candidate-changed".into());
+        }
+        Ok(candidate)
     }
 
     fn tick(&mut self) -> Result<(), String> {

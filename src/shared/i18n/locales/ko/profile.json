@@ -175,6 +175,14 @@
     "cancel": "취소"
   },
   "ide": {
+    "replacementKillFailed": "기존 터미널을 종료하지 못해 IDE 연결을 중단했습니다. 터미널 상태를 확인한 뒤 다시 시도하세요.",
+    "replaceTitle": "기존 세션을 바꾸시겠어요?",
+    "replaceTerminalBody": "{{name}}의 실행 중인 터미널과 작업을 종료하고 IDE 세션에 연결합니다. 작업 폴더는 {{cwd}}로 바뀝니다.",
+    "replaceExternalBody": "{{name}}의 기존 외부 연결을 해제하고 새 IDE 세션에 연결합니다. 원본 외부 앱은 종료하지 않습니다. 작업 폴더는 {{cwd}}로 바뀝니다.",
+    "replaceTerminalConfirm": "터미널 종료 후 연결",
+    "replaceExternalConfirm": "기존 연결 해제 후 연결",
+    "replacementChanged": "확인하는 동안 캐릭터의 세션이 바뀌었습니다. 기존 세션은 그대로 두었습니다. 다시 연결해 확인하세요.",
+    "characterFolderNote": "연결하면 캐릭터의 작업 폴더를 {{cwd}}로 설정합니다. 퇴근한 캐릭터도 복귀합니다.",
     "title": "IDE 세션 연결",
     "description": "기존 VS Code의 Codex, Claude 또는 Kilo Code 세션을 선택해 관찰합니다. 말투 설정은 Codex와 Claude 연결에서 지원합니다.",
     "availabilityNote": "후보는 최근 IDE 기록입니다. 목록에 있어도 세션이 이미 끝났을 수 있습니다.",
@@ -191,7 +199,7 @@
     "agent": "캐릭터",
     "updated": "최근 {{value}}",
     "sessionId": "세션 {{value}}",
-    "noAgent": "캐릭터의 앱 터미널을 종료하거나 이 연결용 캐릭터를 만드세요.",
+    "noAgent": "캐릭터가 없습니다. 이 연결용 캐릭터를 만드세요.",
     "createAgent": "이 세션용 캐릭터 만들기",
     "connect": "연결",
     "loadFailed": "IDE 세션을 불러오지 못했습니다.",

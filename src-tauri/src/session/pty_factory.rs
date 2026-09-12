@@ -530,6 +530,7 @@ pub mod fake {
         exit_tx: Mutex<Option<mpsc::Sender<ExitOutcome>>>,
         resizes: Mutex<Vec<(u16, u16)>>,
         kills: Mutex<u32>,
+        kill_fails: Mutex<bool>,
         env: Mutex<Vec<(String, String)>>,
         cwd: Mutex<String>,
     }
@@ -541,6 +542,9 @@ pub mod fake {
         }
         fn kill(&self) -> io::Result<()> {
             *self.kills.lock().unwrap() += 1;
+            if *self.kill_fails.lock().unwrap() {
+                return Err(io::Error::other("injected kill failure"));
+            }
             Ok(())
         }
     }
@@ -602,6 +606,10 @@ pub mod fake {
             *self.kills.lock().unwrap()
         }
 
+        pub fn fail_kill(&self, fail: bool) {
+            *self.kill_fails.lock().unwrap() = fail;
+        }
+
         /// The `PtySpawnOptions.env` the factory was spawned with (recorded
         /// by `FakePtyFactory::spawn`), for tests that assert on env
         /// plumbing (e.g. `AGENT_OFFICE_SETTINGS`).
@@ -641,6 +649,7 @@ pub mod fake {
             exit_tx: Mutex::new(Some(exit_tx)),
             resizes: Mutex::new(Vec::new()),
             kills: Mutex::new(0),
+            kill_fails: Mutex::new(false),
             env: Mutex::new(Vec::new()),
             cwd: Mutex::new(String::new()),
         });

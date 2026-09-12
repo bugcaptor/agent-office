@@ -42,9 +42,9 @@ pub(super) struct Session {
     agent_id: AgentId,
     pub(super) state: Mutex<SessionState>,
     writer: Mutex<Box<dyn Write + Send>>,
-    control: Arc<dyn PtyControl>,
+    pub(super) control: Arc<dyn PtyControl>,
     pub(super) cleanup_paths: Vec<std::path::PathBuf>,
-    kill_requested: AtomicBool,
+    pub(super) kill_requested: AtomicBool,
     /// 시작 작업 디렉터리(세션 수명 동안 불변 -- `cd`는 추적하지 않는다).
     /// 핸드오프 시 Handoff 메시지의 진단/List용 메타데이터로 실어 보낸다.
     pub(super) cwd: String,
@@ -196,7 +196,7 @@ pub struct SessionManager {
     /// tmux 자동 호스팅(kbm #2pc)의 서브프로세스 러너. 프로덕션은 `new()`가
     /// `tmux_host::system_runner()`로 채우고, 테스트는 `with_tmux_runner`로
     /// 가짜를 주입한다.
-    tmux_runner: tmux_host::TmuxRunner,
+    pub(super) tmux_runner: tmux_host::TmuxRunner,
     /// `tmux -V` 버전 확인 결과 캐시 -- 세션마다 다시 묻지 않고 최초 한 번만
     /// 본다. **전역 static이 아니라 매니저 필드다**: 전역이면 테스트끼리
     /// 캐시가 오염된다.
@@ -316,6 +316,19 @@ impl SessionManager {
                 .lock()
                 .get(agent_id)
                 .map(|ext| ext.session_id.clone())
+        })
+    }
+
+    /// Snapshot used solely to ask the user before replacing a live terminal
+    /// or external connection. The actual replacement repeats the sid check
+    /// under the same lifecycle lock.
+    pub(crate) fn observed_replacement(&self, agent_id: &str) -> Option<(SessionId, &'static str)> {
+        let _lifecycle = self.observed_lifecycle.lock();
+        if let Some(session) = self.find(agent_id).filter(|session| session.reusable()) {
+            return Some((session.session_id.clone(), "pty"));
+        }
+        self.externals.lock().get(agent_id).map(|external| {
+            (external.session_id.clone(), "external")
         })
     }
 
@@ -1206,7 +1219,7 @@ impl SessionManager {
         }
     }
 
-    fn emit_state(&self, sess: &Arc<Session>, state: SessionState, exit: Option<SessionExitInfo>) {
+    pub(super) fn emit_state(&self, sess: &Arc<Session>, state: SessionState, exit: Option<SessionExitInfo>) {
         self.events.session_state(&SessionStateEvent {
             session_id: sess.session_id.clone(),
             agent_id: sess.agent_id.clone(),

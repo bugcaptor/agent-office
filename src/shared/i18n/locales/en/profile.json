@@ -175,6 +175,14 @@
     "cancel": "Cancel"
   },
   "ide": {
+    "replacementKillFailed": "The existing terminal could not be stopped, so the IDE connection was cancelled. Check the terminal and try again.",
+    "replaceTitle": "Replace the existing session?",
+    "replaceTerminalBody": "End the running terminal and its work for {{name}}, then connect to the IDE session. The working folder will change to {{cwd}}.",
+    "replaceExternalBody": "Disconnect the existing external session for {{name}}, then connect to the new IDE session. The original external app will stay open. The working folder will change to {{cwd}}.",
+    "replaceTerminalConfirm": "End terminal and connect",
+    "replaceExternalConfirm": "Disconnect and connect",
+    "replacementChanged": "The character’s session changed while you were confirming. It was left untouched. Connect again to review the current session.",
+    "characterFolderNote": "Connecting sets the character’s working folder to {{cwd}} and brings back a clocked-out character.",
     "title": "Connect IDE session",
     "description": "Choose an existing Codex, Claude, or Kilo Code session in VS Code to observe. Response-style setup is available for Codex and Claude connections.",
     "availabilityNote": "Candidates are recent IDE records. A listed session may no longer be running.",
@@ -191,7 +199,7 @@
     "agent": "Character",
     "updated": "Updated {{value}}",
     "sessionId": "Session {{value}}",
-    "noAgent": "Close a character’s app terminal, or create a character for this connection.",
+    "noAgent": "No characters are available. Create one for this connection.",
     "createAgent": "Create a character for this session",
     "connect": "Connect",
     "loadFailed": "Could not load IDE sessions.",

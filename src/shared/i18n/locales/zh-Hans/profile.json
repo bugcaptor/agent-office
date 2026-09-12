@@ -175,7 +175,15 @@
     "cancel": "取消"
   },
   "ide": {
-    "title": "连接 IDE 会话", "description": "选择 VS Code 中现有的 Codex、Claude 或 Kilo Code 会话进行观察。回复风格设置适用于 Codex 和 Claude 连接。", "availabilityNote": "候选项是最近的 IDE 记录。列出的会话可能已经结束。", "historyNote": "连接后 Agent Office 只会收到新的活动，不会重放之前的对话记录。", "observerDisabled": "请先在设置中开启 IDE 会话观察。", "provider": "提供方", "kiloSourceNote": "Kilo Code 的 VS Code 扩展与 CLI 共享会话记录。选择前请核对 VS Code 中正在使用的会话 ID 和工作文件夹。", "providers": { "codex": "Codex", "claude": "Claude", "kilo": "Kilo Code (VS Code)" }, "providerAll": "所有提供方", "refresh": "刷新", "loading": "正在查找 IDE 会话…", "empty": "没有找到最近的 IDE 会话。", "candidates": "IDE 会话", "agent": "角色", "updated": "更新于 {{value}}", "sessionId": "会话 {{value}}", "noAgent": "请关闭角色的应用内终端，或为此连接创建角色。", "createAgent": "为此会话创建角色", "connect": "连接", "loadFailed": "无法加载 IDE 会话。", "connectFailed": "无法连接此 IDE 会话。"
+    "replacementKillFailed": "无法结束现有终端，已中止 IDE 连接。请检查终端状态后重试。",
+    "replaceTitle": "替换现有会话？",
+    "replaceTerminalBody": "结束 {{name}} 正在运行的终端及其任务，然后连接 IDE 会话。工作文件夹将改为 {{cwd}}。",
+    "replaceExternalBody": "断开 {{name}} 的现有外部连接，然后连接新的 IDE 会话。原始外部应用将保持打开。工作文件夹将改为 {{cwd}}。",
+    "replaceTerminalConfirm": "结束终端并连接",
+    "replaceExternalConfirm": "断开原连接并连接",
+    "replacementChanged": "确认期间角色的会话发生了变化，现有会话未被修改。请重新连接并确认。",
+    "characterFolderNote": "连接后角色的工作文件夹将设为 {{cwd}}，已下班的角色也会返回。",
+    "title": "连接 IDE 会话", "description": "选择 VS Code 中现有的 Codex、Claude 或 Kilo Code 会话进行观察。回复风格设置适用于 Codex 和 Claude 连接。", "availabilityNote": "候选项是最近的 IDE 记录。列出的会话可能已经结束。", "historyNote": "连接后 Agent Office 只会收到新的活动，不会重放之前的对话记录。", "observerDisabled": "请先在设置中开启 IDE 会话观察。", "provider": "提供方", "kiloSourceNote": "Kilo Code 的 VS Code 扩展与 CLI 共享会话记录。选择前请核对 VS Code 中正在使用的会话 ID 和工作文件夹。", "providers": { "codex": "Codex", "claude": "Claude", "kilo": "Kilo Code (VS Code)" }, "providerAll": "所有提供方", "refresh": "刷新", "loading": "正在查找 IDE 会话…", "empty": "没有找到最近的 IDE 会话。", "candidates": "IDE 会话", "agent": "角色", "updated": "更新于 {{value}}", "sessionId": "会话 {{value}}", "noAgent": "没有可用角色。请为此连接创建一个角色。", "createAgent": "为此会话创建角色", "connect": "连接", "loadFailed": "无法加载 IDE 会话。", "connectFailed": "无法连接此 IDE 会话。"
   },
   "ideConnection": { "disabled": "请先在设置中开启 IDE 会话连接。" },
   "generate": {

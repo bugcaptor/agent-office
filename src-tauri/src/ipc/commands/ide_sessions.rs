@@ -27,6 +27,7 @@ pub async fn connect_ide_session(
     file: String,
     provider: String,
     source_session_id: String,
+    replace_session_id: Option<String>,
 ) -> Result<ConnectResult, String> {
     require_ide(&app_state)?;
     let agent = app_state
@@ -36,26 +37,32 @@ pub async fn connect_ide_session(
         .into_iter()
         .find(|agent| agent.id == agent_id)
         .ok_or("observed-agent-not-found")?;
-    let cwd = agent
-        .cwd
-        .filter(|cwd| !cwd.is_empty())
-        .ok_or("observed-profile-cwd-missing")?;
     let profile = AgentEventProfile {
         name: agent.name,
         role: Some(agent.role).filter(|role| !role.is_empty()),
     };
     let manager = app_state.manager.clone();
     let settings = app_state.settings.clone();
+    let before_replace = replace_session_id.as_ref().map(|_| {
+        let automation_runtime = app_state.automation_runtime.clone();
+        let gate = app_state.automation_ctx.gate.clone();
+        let automation_agent_id = agent_id.clone();
+        Box::new(move || {
+            tauri::async_runtime::block_on(automation_runtime.reset_session(&automation_agent_id));
+            gate.remove_agent(&automation_agent_id);
+        }) as Box<dyn FnOnce() + Send>
+    });
     tauri::async_runtime::spawn_blocking(move || {
         ide_sessions::connect(
             &manager,
             &settings,
             &agent_id,
-            &cwd,
             profile,
             Path::new(&file),
             &provider,
             &source_session_id,
+            replace_session_id.as_deref(),
+            before_replace,
         )
     })
     .await
