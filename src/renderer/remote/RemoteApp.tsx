@@ -3,9 +3,10 @@ import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import App from "../App";
 import { bootRemoteApp } from "../remoteBootstrap";
-import { acceptRemoteSnapshot, currentRemoteState, remoteStateKey, connectRemote, createRemoteApi, disconnectRemote, loadRemoteSnapshot } from "../ipc/remoteApi";
+import { acceptRemoteSnapshot, currentRemoteState, remoteStateKey, connectRemote, createRemoteApi, disconnectRemote, loadRemoteSnapshot, loadRemoteConnection } from "../ipc/remoteApi";
 import { setTauriApiDelegate, setTauriApiFailClosed } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
+import { remoteSessionStatus } from "./sessionState";
 
 type ConnectionState = "form" | "connecting" | "connected" | "reconnecting" | "disconnected";
 
@@ -17,8 +18,25 @@ export default function RemoteApp() {
   const [error, setError] = useState<string | null>(null);
   const [hostName, setHostName] = useState<string | null>(null);
   const [opened, setOpened] = useState(false);
+  const [loadingSavedConnection, setLoadingSavedConnection] = useState(true);
+  const connectionEdited = useRef(false);
   const ready = useRef(false);
   const disposeBoot = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    void loadRemoteConnection().then((saved) => {
+      // A slow disk read must not overwrite a new address/token being typed.
+      if (disposed || connectionEdited.current || !saved) return;
+      setUrl(saved.url);
+      setToken(saved.token);
+    }).catch(() => {
+      if (!disposed) setError(t("connection.savedLoadFailed"));
+    }).finally(() => {
+      if (!disposed) setLoadingSavedConnection(false);
+    });
+    return () => { disposed = true; };
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -36,7 +54,7 @@ export default function RemoteApp() {
         const live = new Map(next.sessions.map((session) => [session.agentId, session]));
         for (const id of useAppStore.getState().agentOrder) {
           const session = live.get(id);
-          useAppStore.getState().setSessionState({ agentId: id, status: session?.state === "running" ? "running" : session?.state === "exited" ? "exited" : "idle" });
+          useAppStore.getState().setSessionState({ agentId: id, status: remoteSessionStatus(session?.state) });
           if (session) useAppStore.getState().setSessionSize(id, session.cols, session.rows);
         }
       }).catch(() => {}), 650);
@@ -78,12 +96,13 @@ export default function RemoteApp() {
 
   const connect = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (loadingSavedConnection || state === "connecting") return;
     setError(null);
     setState("connecting");
     try {
       const connection = await connectRemote(url.trim(), token);
-      // The token remains only in the native connection state. Do not put it
-      // in localStorage, URL query parameters, or a React error message.
+      // Native connection success remembers the credentials on this PC.
+      // Never put the token in localStorage, URLs, or error messages.
       const snapshot = await loadRemoteSnapshot();
       setTauriApiDelegate(createRemoteApi(snapshot));
       disposeBoot.current?.();
@@ -101,7 +120,8 @@ export default function RemoteApp() {
       disposeBoot.current = null;
       setTauriApiFailClosed();
       delete document.documentElement.dataset.remoteWindow;
-      setError(cause instanceof Error ? cause.message : t("connection.failed"));
+      const code = cause instanceof Error ? cause.message : cause;
+      setError(t(code === "remote-connection-save-failed" ? "connection.savedSaveFailed" : "connection.failed"));
       setState("form");
     }
   };
@@ -119,11 +139,11 @@ export default function RemoteApp() {
       <form className="remote-connect-card" onSubmit={connect}>
         <h1>{t("connection.title")}</h1>
         <p>{t("connection.description")}</p>
-        <label>{t("connection.address")}<input required value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t("connection.addressPlaceholder")} autoComplete="url" /></label>
-        <label>{t("connection.token")}<input required type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" /></label>
+        <label>{t("connection.address")}<input required value={url} onChange={(e) => { connectionEdited.current = true; setUrl(e.target.value); }} placeholder={t("connection.addressPlaceholder")} autoComplete="url" /></label>
+        <label>{t("connection.token")}<input required type="password" value={token} onChange={(e) => { connectionEdited.current = true; setToken(e.target.value); }} autoComplete="off" /></label>
         <p className="remote-token-help">{t("connection.tokenHelp")}</p>
         {error && <p role="alert" className="remote-error">{error}</p>}
-        <button disabled={state === "connecting"}>{state === "connecting" ? t("connection.connecting") : t("connection.connect")}</button>
+        <button disabled={loadingSavedConnection || state === "connecting"}>{state === "connecting" ? t("connection.connecting") : t("connection.connect")}</button>
       </form>
     </main>
   );

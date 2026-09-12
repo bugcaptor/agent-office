@@ -101,7 +101,13 @@ export type HostMsg =
   | { type: "error"; message: string };
 
 export type ClientMsg =
-  | { type: "attach"; agentId: string; lastOffset?: number | null }
+  | {
+      type: "attach";
+      agentId: string;
+      lastOffset?: number | null;
+      /** 마지막으로 적용한 출력의 세션. 재시작 뒤 오래된 offset을 재사용하지 않는다. */
+      lastSessionId?: string | null;
+    }
   | { type: "detach"; agentId: string }
   | { type: "input"; agentId: string; data: string }
   | { type: "rpc"; id: number; cmd: string; args?: unknown }

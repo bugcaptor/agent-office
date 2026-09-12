@@ -39,7 +39,11 @@ cargo build --manifest-path src-tauri/Cargo.toml --bin agent-office
 평문 HTTP는 SSH 터널·Tailscale 등 보호된 연결을 통해 사용한다. HTTPS의 인증서는
 OS 신뢰 저장소로 검증하며 인증서 검증을 끄는 옵션은 없다.
 
-클라이언트 창을 닫아도 서버 세션은 유지된다. 토큰은 원격 창의 localStorage나
+클라이언트 창을 닫아도 서버 세션은 유지된다. 연결에 성공하면 마지막 서버 주소와
+토큰을 클라이언트 앱 데이터 디렉터리의 `remote-connection.json`에 저장하고,
+다음에 원격 창을 열 때 자동으로 채운다. 연결 버튼을 누르면 접속하며, 다른 주소와
+토큰으로 연결에 성공하면 저장값을 교체한다. 인증 실패 시 기존 저장값은 유지한다.
+이 파일은 암호화하지 않으며 Unix 권한은 0600이다. 토큰은 원격 창의 localStorage나
 URL에 저장하지 않는다. 서버가 SIGINT/SIGTERM을 받으면 저널을 비운 뒤 sessiond에
 세션을 유지하고 종료한다. 같은 데이터 디렉터리로 다시 실행하면 세션을 입양한다.
 서버 중복 실행은 파일 잠금으로 차단하며 비정상 종료 뒤에도 잠금 파일을 지울
@@ -48,7 +52,9 @@ URL에 저장하지 않는다. 서버가 SIGINT/SIGTERM을 받으면 저널을 �
 ## 지원 범위
 
 - 같은 오피스·터미널 UI, 서버 프로필 작성·수정, 세션 시작·입력·크기 변경·종료.
-- 활동·확인 요청 알림과 기존 초상 읽기, 원격 연결 상태 표시.
+- 활동·확인 요청 알림과 원격 연결 상태 표시.
+- 캐릭터 내보내기·가져오기, 초상·스프라이트·미니미 업로드·삭제. 이미지와
+  프로필은 서버에 저장하며, 파일 선택·내보내기는 접속한 PC에서 처리한다.
 - 연결 단절 후 자동 재접속, 실행 중인 서버의 파일 저널에서 전체 또는 델타 복원.
 - 프로필 저장의 revision 검사. 다른 클라이언트가 먼저 저장한 경우 기존 서버
   상태를 덮어쓰지 않고 충돌을 반환한다. 저장하지 못한 편집은 현재 창에 남는다.
@@ -75,7 +81,8 @@ Windows 실기 검증은 하지 않았다.
 - `remote_server.rs`: Tauri 없이 Tokio runtime을 구성한다. `BrokerPtyFactory`는
   strict 모드여서 브로커 실패 시 앱 내부 PTY로 조용히 폴백하지 않는다.
 - `webremote`: 기존 인증/WS 계약을 재사용한다. `serve-owner` 토큰만
-  `office.snapshot`, `office.saveState`, `office.shells`를 호출한다. 프로필 저장은
+  `office.snapshot`, `office.saveState`, `office.shells`,
+  `office.media.load/save/delete`를 호출한다. 프로필 저장은
   revision 비교와 쓰기를 같은 mutex 안에서 실행한다.
 - `webremote/journal.rs`: 전용 writer가 출력과 resize를 JSONL에 기록하고 나서
   broadcast한다. 파일 경계가 고정된 reader가 최대 약 256KiB/128레코드 단위로

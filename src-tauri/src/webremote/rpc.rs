@@ -40,10 +40,10 @@ pub fn required_permission(cmd: &str) -> Option<ClientPermission> {
     match cmd {
         // 읽기만
         "agents.list" | "notifications.list" | "usage.snapshot" | "chat.follow" | "office.snapshot" | "office.shells"
-        | "media.portrait" => Some(ClientPermission::ReadOnly),
+        | "media.portrait" | "office.media.load" => Some(ClientPermission::ReadOnly),
         // 조작
         "session.start" | "session.dispose" | "session.resize" | "notifications.clear" | "chat.send" | "office.saveState"
-        | "chat.keys" => Some(ClientPermission::Input),
+        | "chat.keys" | "office.media.save" | "office.media.delete" => Some(ClientPermission::Input),
         _ => None,
     }
 }
@@ -78,11 +78,49 @@ pub async fn dispatch(
     }
     // Profile topology is deliberately a headless-owner capability.  Normal
     // browser pairing must not gain the ability to create arbitrary profiles.
-    if matches!(cmd, "office.snapshot" | "office.saveState" | "office.shells") && record.client_id != "serve-owner" {
+    if matches!(cmd, "office.snapshot" | "office.saveState" | "office.shells"
+        | "office.media.load" | "office.media.save" | "office.media.delete") && record.client_id != "serve-owner" {
         return Err(RpcError::forbidden("서버 소유자 토큰이 필요합니다"));
     }
 
     match cmd {
+        "office.media.load" | "office.media.save" | "office.media.delete" => {
+            use crate::persistence::png_store::{PngStore, MAX_SPRITE_BYTES, MAX_MINIMI_BYTES};
+            // Serialize media changes with profile writes so an agent cannot
+            // disappear between validation and saving its image.
+            let _guard = ctx.office_write.lock().await;
+            let agent_id = arg_str(&args, "agentId")?;
+            ensure_visible(ctx, record, &agent_id)?;
+            let kind = arg_str(&args, "kind")?;
+            let owned_store;
+            let store = match kind.as_str() {
+                "portrait" => ctx.portraits.as_ref(),
+                "sprite" => {
+                    owned_store = PngStore::new(ctx.app_data_dir.join("sprites"), MAX_SPRITE_BYTES);
+                    &owned_store
+                }
+                "minimi" => {
+                    owned_store = PngStore::new(ctx.app_data_dir.join("minimis"), MAX_MINIMI_BYTES);
+                    &owned_store
+                }
+                _ => return Err(RpcError::bad_args("unknown media kind")),
+            };
+            match cmd {
+                "office.media.load" => store.load(&agent_id)
+                    .map(|png| png.map(Value::String).unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::internal(e.to_string())),
+                "office.media.save" => {
+                    let png = arg_str(&args, "pngBase64")?;
+                    let ids = ctx.store.load().agents.into_iter().map(|p| p.id).collect::<Vec<_>>();
+                    store.save(&agent_id, &png, &ids).map_err(|e| RpcError::bad_args(e.to_string()))?;
+                    Ok(Value::Null)
+                }
+                _ => {
+                    store.delete(&agent_id).map_err(|e| RpcError::internal(e.to_string()))?;
+                    Ok(Value::Null)
+                }
+            }
+        }
         "office.shells" => serde_json::to_value(crate::session::shells::detect_shells()).map_err(|e| RpcError::internal(e.to_string())),
         "office.snapshot" => {
             let _guard = ctx.office_write.lock().await;
@@ -409,6 +447,8 @@ mod tests {
         );
         assert_eq!(required_permission("usage.snapshot"), Some(ClientPermission::ReadOnly));
         assert_eq!(required_permission("office.snapshot"), Some(ClientPermission::ReadOnly));
+        assert_eq!(required_permission("office.shells"), Some(ClientPermission::ReadOnly));
+        assert_eq!(required_permission("office.media.load"), Some(ClientPermission::ReadOnly));
         // 아바타 초상 — 읽기만(쓰기는 호스트 전용).
         assert_eq!(required_permission("media.portrait"), Some(ClientPermission::ReadOnly));
         // operator 티어
@@ -416,6 +456,8 @@ mod tests {
         assert_eq!(required_permission("session.dispose"), Some(ClientPermission::Input));
         assert_eq!(required_permission("session.resize"), Some(ClientPermission::Input));
         assert_eq!(required_permission("office.saveState"), Some(ClientPermission::Input));
+        assert_eq!(required_permission("office.media.save"), Some(ClientPermission::Input));
+        assert_eq!(required_permission("office.media.delete"), Some(ClientPermission::Input));
         assert_eq!(
             required_permission("notifications.clear"),
             Some(ClientPermission::Input)
@@ -450,6 +492,10 @@ mod tests {
             "notifications.list",
             "usage.snapshot",
             "office.snapshot",
+            "office.shells",
+            "office.media.load",
+            "office.media.save",
+            "office.media.delete",
             "media.portrait",
             "session.start",
             "session.dispose",
@@ -463,7 +509,43 @@ mod tests {
         .into_iter()
         .filter(|c| required_permission(c).is_some())
         .collect();
-        assert_eq!(opened.len(), 13, "열린 커맨드는 정확히 이 13개뿐이다");
+        assert_eq!(opened.len(), 17, "열린 커맨드는 정확히 이 17개뿐이다");
+    }
+
+    #[tokio::test]
+    async fn owner_media_roundtrips_and_keeps_pairing_permissions() {
+        let (ctx, dir) = crate::webremote::tests::build_ctx("owner-media");
+        ctx.enable_headless_server();
+        let mut owner = record(ClientPermission::Input);
+        owner.client_id = "serve-owner".into();
+        let png = base64::engine::general_purpose::STANDARD.encode([
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        ]);
+        for kind in ["portrait", "sprite", "minimi"] {
+            let args = json!({"agentId": "a1", "kind": kind, "pngBase64": png});
+            for cmd in ["office.media.load", "office.media.save", "office.media.delete"] {
+                let err = dispatch(&ctx, &record(ClientPermission::Input), 1, cmd, args.clone()).await.unwrap_err();
+                assert_eq!(err.code, "forbidden");
+            }
+            assert!(dispatch(&ctx, &owner, 1, "office.media.load", args.clone()).await.unwrap().is_null());
+            dispatch(&ctx, &owner, 1, "office.media.save", args.clone()).await.unwrap();
+            assert_eq!(dispatch(&ctx, &owner, 1, "office.media.load", args.clone()).await.unwrap(), json!(png));
+            dispatch(&ctx, &owner, 1, "office.media.delete", args.clone()).await.unwrap();
+            assert!(dispatch(&ctx, &owner, 1, "office.media.load", args).await.unwrap().is_null());
+        }
+        for id in ["ghost", "../secret"] {
+            let err = dispatch(&ctx, &owner, 1, "office.media.save", json!({"agentId": id, "kind": "sprite", "pngBase64": png})).await.unwrap_err();
+            assert_eq!(err.code, "forbidden");
+        }
+        let err = dispatch(&ctx, &owner, 1, "office.media.save", json!({"agentId": "a1", "kind": "sprite", "pngBase64": "invalid"})).await.unwrap_err();
+        assert_eq!(err.code, "badArgs");
+        let err = dispatch(&ctx, &owner, 1, "office.media.load", json!({"agentId": "a1", "kind": "../secret"})).await.unwrap_err();
+        assert_eq!(err.code, "badArgs");
+        owner.permission = ClientPermission::ReadOnly;
+        for cmd in ["office.media.save", "office.media.delete"] {
+            assert_eq!(dispatch(&ctx, &owner, 1, cmd, json!({"agentId": "a1", "kind": "portrait", "pngBase64": png})).await.unwrap_err().code, "forbidden");
+        }
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// 초상은 있으면 base64, 없으면 null이다(뷰어는 null을 절차 생성 신호로 쓴다).

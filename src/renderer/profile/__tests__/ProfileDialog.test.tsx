@@ -29,6 +29,9 @@ vi.mock("../../office/gen/characterFactory", () => ({
   generateSpritePreview: (seed: string) => generateSpritePreview(seed),
 }));
 
+const remoteWindow = vi.hoisted(() => vi.fn(() => false));
+vi.mock("../../shared/remoteWindow", () => ({ isRemoteWindow: remoteWindow }));
+
 const createSession = vi.fn().mockResolvedValue({ sessionId: "s1", state: "starting" });
 const deletePortrait = vi.fn().mockResolvedValue(undefined);
 const deleteSprite = vi.fn().mockResolvedValue(undefined);
@@ -67,6 +70,7 @@ function mkProfile(overrides: Partial<AgentProfile> = {}): AgentProfile {
 const initialState = useAppStore.getState();
 
 beforeEach(() => {
+  remoteWindow.mockReturnValue(false);
   useAppStore.setState(initialState, true);
   generateSpritePreview.mockClear();
   createSession.mockClear();
@@ -894,5 +898,20 @@ describe("이 달의 우수사원 뱃지(docs/employee-of-the-month-design.md §
     const { container } = render(<ProfileDialog />);
 
     expect(container.querySelector(".profile-award-badge")).toBeNull();
+  });
+});
+
+
+describe("headless owner profile editing", () => {
+  it("offers portable files, manual image editing, and server shell discovery", async () => {
+    remoteWindow.mockReturnValue(true);
+    useAppStore.getState().addAgent(mkProfile());
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+    const { container } = render(<ProfileDialog />);
+    expect(container.querySelectorAll(".dialog-io-group button")).toHaveLength(2);
+    expect(container.querySelector("#appearance-tab-manual")).not.toBeNull();
+    expect(container.querySelector("#appearance-tab-codex")).toBeNull();
+    expect(container.querySelectorAll(".appearance-manual-row button")).toHaveLength(6);
+    await waitFor(() => expect(listAvailableShells).toHaveBeenCalledTimes(1));
   });
 });

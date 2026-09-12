@@ -30,12 +30,10 @@ import { TerminalSection } from "./sections/TerminalSection";
 import { PortraitEditor } from "../portrait/PortraitEditor";
 import { SpriteEditor } from "../sprite/SpriteEditor";
 import type { PaletteSlot } from "@shared/types";
-import { isRemoteWindow } from "../shared/remoteWindow";
 import "../portrait/portrait.css";
 
 export function ProfileDialog() {
   const { t } = useTranslation("profile");
-  const remoteWindow = isRemoteWindow();
   const modal = useAppStore((s) => s.modal);
   const closeModal = useAppStore((s) => s.closeModal);
   const addAgent = useAppStore((s) => s.addAgent);
@@ -212,7 +210,7 @@ export function ProfileDialog() {
               {t("dialog.randomizeAll")}
             </button>
           )}
-          {!remoteWindow && editing && editingAgent && (
+          {editing && editingAgent && (
             <div className="dialog-io-group">
               <button
                 className="pixel-btn"
@@ -239,7 +237,7 @@ export function ProfileDialog() {
           </button>
         </div>
       </div>
-      {!remoteWindow && images.editorOpen && editingAgent && (
+      {images.editorOpen && editingAgent && (
         <PortraitEditor
           agentId={editingAgent.id}
           initialImage={images.generatedPortrait ?? undefined}
@@ -249,7 +247,7 @@ export function ProfileDialog() {
           }}
         />
       )}
-      {!remoteWindow && images.spriteEditorOpen && editingAgent && (
+      {images.spriteEditorOpen && editingAgent && (
         <SpriteEditor
           agentId={editingAgent.id}
           initialImage={images.generatedImage ?? undefined}
@@ -259,7 +257,7 @@ export function ProfileDialog() {
           }}
         />
       )}
-      {!remoteWindow && images.minimiEditorOpen && editingAgent && (
+      {images.minimiEditorOpen && editingAgent && (
         <SpriteEditor
           agentId={editingAgent.id}
           target="minimi"

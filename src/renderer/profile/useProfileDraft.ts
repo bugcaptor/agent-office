@@ -29,9 +29,6 @@ export function useProfileDraft(editingAgentId: string | undefined) {
 
   // 마운트 시 사용 가능한 셸 목록 조회 (Windows 외에는 빈 배열 → 셀렉터 미노출).
   useEffect(() => {
-    // The remote RPC surface has no shell discovery endpoint yet.  Do not
-    // make a rejected probe every time this always-mounted dialog renders.
-    if (isRemoteWindow()) return;
     tauriApi.listAvailableShells().then(setShells).catch(() => setShells([]));
   }, []);
 

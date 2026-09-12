@@ -4,7 +4,7 @@
     "description": "输入服务器地址和令牌以打开其办公室。",
     "address": "服务器地址",
     "token": "访问令牌",
-    "tokenHelp": "从服务器 serve-token 文件复制令牌。此窗口不会保存它。",
+    "tokenHelp": "从服务器的 serve-token 文件复制令牌。连接成功后，地址和令牌将保存在此电脑上，并在下次自动填入。",
     "connect": "连接",
     "connecting": "正在连接…",
     "connected": "已连接到 {{host}}",
@@ -12,6 +12,8 @@
     "disconnected": "连接已断开。",
     "failed": "无法连接。",
     "operationFailed": "操作失败，请检查连接或保存冲突。",
-    "addressPlaceholder": "http://127.0.0.1:47373"
+    "addressPlaceholder": "http://127.0.0.1:47373",
+    "savedLoadFailed": "无法加载已保存的连接信息。请手动输入地址和令牌。",
+    "savedSaveFailed": "无法在此电脑上保存连接信息。请检查应用数据文件夹的写入权限和可用空间。"
   }
 }

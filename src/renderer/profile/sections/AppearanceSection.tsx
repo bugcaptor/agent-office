@@ -87,7 +87,7 @@ export function AppearanceSection({
             />
           </div>
           <div className="portrait-buttons">
-            {!remoteWindow && editing && editingAgent && portraitUrl && (
+            {editing && editingAgent && portraitUrl && (
               <button className="pixel-btn" onClick={onRemovePortrait}>
                 {t("portrait.remove")}
               </button>
@@ -109,7 +109,7 @@ export function AppearanceSection({
             {spritePreviewUrl && (
               <span className="sprite-custom-badge">{t("sprite.customBadge")}</span>
             )}
-            {!remoteWindow && editing && editingAgent && spritePreviewUrl && (
+            {editing && editingAgent && spritePreviewUrl && (
               <button className="pixel-btn" onClick={onRemoveSprite}>
                 {t("sprite.removeCustom")}
               </button>
@@ -129,7 +129,7 @@ export function AppearanceSection({
             <span className="sprite-custom-badge">
               {minimiPreviewUrl ? t("minimi.customBadge") : t("minimi.emptyBadge")}
             </span>
-            {!remoteWindow && editing && editingAgent && (
+            {editing && editingAgent && (
               <div className="sprite-buttons">
                 <button className="pixel-btn" onClick={() => setMinimiEditorOpen(true)}>
                   {minimiPreviewUrl ? t("minimi.change") : t("minimi.upload")}
@@ -184,7 +184,7 @@ export function AppearanceSection({
       {/* 만드는 방법은 한 번에 하나만 — 직접 만들기와 Codex 생성을 나란히
           늘어놓으면 무엇을 눌러야 할지 알 수 없다. SettingsDialog와 같은
           tablist 관례를 작은 크기로 재사용한다. */}
-      {!remoteWindow && <div
+      <div
         className="appearance-tabs"
         role="tablist"
         aria-label={t("appearance.tablistLabel")}
@@ -194,7 +194,7 @@ export function AppearanceSection({
         {([
           { id: "manual", labelKey: "appearance.tabManual" },
           { id: "codex", labelKey: "appearance.tabCodex" },
-        ] as const).map((tab) => (
+        ] as const).filter((tab) => !remoteWindow || tab.id === "manual").map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -212,14 +212,14 @@ export function AppearanceSection({
             {t(tab.labelKey)}
           </button>
         ))}
-      </div>}
-      {!remoteWindow && <div
+      </div>
+      <div
         className="appearance-tabpanel"
         role="tabpanel"
         id={`appearance-tabpanel-${appearanceMode}`}
         aria-labelledby={`appearance-tab-${appearanceMode}`}
       >
-        {appearanceMode === "manual" ? (
+        {(remoteWindow || appearanceMode === "manual") ? (
           <>
             <p className="form-hint">{t("appearance.manualHint")}</p>
             <div className="appearance-manual-row">
@@ -273,7 +273,7 @@ export function AppearanceSection({
             onGenerate={onGenerateCodex}
           />
         )}
-      </div>}
+      </div>
       {/* 세 프롬프트 칸은 각자 자기 그림에만 덧붙는다 — 예전처럼 한 칸이
           다른 그림의 폴백이 되지 않는다(칸 사이 관계를 없애 헷갈림 제거). */}
       <div className="form-field">

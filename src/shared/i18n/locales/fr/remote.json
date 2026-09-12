@@ -4,7 +4,7 @@
     "description": "Saisissez l’adresse et le jeton du serveur.",
     "address": "Adresse du serveur",
     "token": "Jeton d’accès",
-    "tokenHelp": "Copiez le jeton du fichier du serveur. Cette fenêtre ne le conserve pas.",
+    "tokenHelp": "Copiez le jeton du fichier serve-token du serveur. Après une connexion réussie, l’adresse et le jeton sont enregistrés sur ce PC et préremplis la prochaine fois.",
     "connect": "Connexion",
     "connecting": "Connexion…",
     "connected": "Connecté à {{host}}",
@@ -12,6 +12,8 @@
     "disconnected": "Connexion perdue.",
     "failed": "Connexion impossible.",
     "operationFailed": "Échec de l’opération. Vérifiez la connexion ou un conflit de sauvegarde.",
-    "addressPlaceholder": "http://127.0.0.1:47373"
+    "addressPlaceholder": "http://127.0.0.1:47373",
+    "savedLoadFailed": "Impossible de charger la connexion enregistrée. Saisissez l’adresse et le jeton manuellement.",
+    "savedSaveFailed": "Impossible d’enregistrer la connexion sur ce PC. Vérifiez les droits d’écriture et l’espace libre du dossier de données de l’application."
   }
 }

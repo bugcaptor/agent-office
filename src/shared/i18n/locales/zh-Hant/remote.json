@@ -4,7 +4,7 @@
     "description": "輸入伺服器位址和權杖以開啟其辦公室。",
     "address": "伺服器位址",
     "token": "存取權杖",
-    "tokenHelp": "從伺服器 serve-token 檔案複製權杖。此視窗不會儲存它。",
+    "tokenHelp": "從伺服器的 serve-token 檔案複製權杖。連線成功後，位址和權杖將儲存在此電腦上，並在下次自動填入。",
     "connect": "連線",
     "connecting": "連線中…",
     "connected": "已連線至 {{host}}",
@@ -12,6 +12,8 @@
     "disconnected": "連線已中斷。",
     "failed": "無法連線。",
     "operationFailed": "操作失敗，請檢查連線或儲存衝突。",
-    "addressPlaceholder": "http://127.0.0.1:47373"
+    "addressPlaceholder": "http://127.0.0.1:47373",
+    "savedLoadFailed": "無法載入已儲存的連線資訊。請手動輸入位址和權杖。",
+    "savedSaveFailed": "無法在此電腦上儲存連線資訊。請檢查應用程式資料夾的寫入權限和可用空間。"
   }
 }

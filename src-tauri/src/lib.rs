@@ -845,6 +845,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             remote_client::remote_open_window,
             remote_client::remote_connect,
+            remote_client::remote_load_connection,
             remote_client::remote_rpc,
             remote_client::remote_subscribe,
             remote_client::remote_unsubscribe,

@@ -1,5 +1,5 @@
-// Remote desktop adapter.  It deliberately exposes only host-backed calls:
-// no local profile/settings fallback is permitted in a remote window.
+// Remote desktop adapter. Profiles, media and sessions belong to the host;
+// portable file dialogs run on the client. No local state fallback is allowed.
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Commands } from "@shared/ipc";
@@ -21,6 +21,15 @@ export interface RemoteSnapshot {
 export interface RemoteConnection {
   hostName: string;
   permission: string;
+}
+
+export interface SavedRemoteConnection {
+  url: string;
+  token: string;
+}
+
+export async function loadRemoteConnection(): Promise<SavedRemoteConnection | null> {
+  return await invoke(Commands.remoteLoadConnection);
 }
 
 export type RemoteTerminalMessage =
@@ -164,6 +173,18 @@ export function createRemoteApi(snapshot: RemoteSnapshot): AgentOfficeApi {
     appendSessionTurn: async () => {},
     async listAvailableShells() { return await rpc("office.shells"); },
     async loadPortrait(agentId) { return await rpc("media.portrait", { agentId }); },
+    async loadSprite(agentId) { return await rpc("office.media.load", { agentId, kind: "sprite" }); },
+    async loadMinimi(agentId) { return await rpc("office.media.load", { agentId, kind: "minimi" }); },
+    async savePortrait(agentId, pngBase64) { await rpc("office.media.save", { agentId, kind: "portrait", pngBase64 }); },
+    async saveSprite(agentId, pngBase64) { await rpc("office.media.save", { agentId, kind: "sprite", pngBase64 }); },
+    async saveMinimi(agentId, pngBase64) { await rpc("office.media.save", { agentId, kind: "minimi", pngBase64 }); },
+    async deletePortrait(agentId) { await rpc("office.media.delete", { agentId, kind: "portrait" }); },
+    async deleteSprite(agentId) { await rpc("office.media.delete", { agentId, kind: "sprite" }); },
+    async deleteMinimi(agentId) { await rpc("office.media.delete", { agentId, kind: "minimi" }); },
+    // File dialogs belong to the connected desktop; profile assets above
+    // belong to the host. These commands only import/export a portable file.
+    async exportCharacterFile(defaultName, content) { return await invoke(Commands.exportCharacterFile, { defaultName, content }); },
+    async importCharacterFile() { return await invoke(Commands.importCharacterFile); },
     onData(agentId, cb) {
       let sub = subs.get(agentId);
       if (!sub) {

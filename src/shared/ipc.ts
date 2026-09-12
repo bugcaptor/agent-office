@@ -9,8 +9,9 @@
 /** `invoke()` command names (all commands use `rename_all = "camelCase"` args). */
 export const Commands = {
   // 데스크톱 원격 보기. 이 명령들은 `?remote=1` 창에서만 원격 호스트로
-  // 전달되며, 토큰은 Rust 메모리에만 둔다.
+  // 전달된다. 마지막 연결 주소와 토큰은 Rust 측 로컬 파일에 저장한다.
   remoteConnect: "remote_connect",
+  remoteLoadConnection: "remote_load_connection",
   remoteRpc: "remote_rpc",
   remoteSubscribe: "remote_subscribe",
   remoteUnsubscribe: "remote_unsubscribe",

@@ -4,7 +4,7 @@
     "description": "Enter the server address and token to open its office.",
     "address": "Server address",
     "token": "Access token",
-    "tokenHelp": "Copy the serve-token from the server serve-token file. This window never saves it.",
+    "tokenHelp": "Copy the token from the server’s serve-token file. After a successful connection, the address and token are saved on this PC and filled in next time.",
     "connect": "Connect",
     "connecting": "Connecting…",
     "connected": "Connected to {{host}}",
@@ -12,6 +12,8 @@
     "disconnected": "Connection lost.",
     "failed": "Could not connect.",
     "operationFailed": "The operation failed. Check the connection or reload after a save conflict.",
-    "addressPlaceholder": "http://127.0.0.1:47373"
+    "addressPlaceholder": "http://127.0.0.1:47373",
+    "savedLoadFailed": "Could not load the saved connection. Enter the address and token manually.",
+    "savedSaveFailed": "Could not save the connection on this PC. Check write permissions and free space for the app data folder."
   }
 }

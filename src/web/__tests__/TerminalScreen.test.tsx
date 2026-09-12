@@ -94,12 +94,39 @@ describe("TerminalScreen recovery", () => {
     expect(send).not.toHaveBeenCalled();
 
     state("open");
-    expect(send).toHaveBeenLastCalledWith({ type: "attach", agentId: "a1", lastOffset: null });
+    expect(send).toHaveBeenLastCalledWith({
+      type: "attach", agentId: "a1", lastOffset: null, lastSessionId: null,
+    });
     push({ type: "output", agentId: "a1", sessionId: "s", seq: 1, offset: 0, bytes: 3, data: "one" });
 
     state("closed");
     state("open");
-    expect(send).toHaveBeenLastCalledWith({ type: "attach", agentId: "a1", lastOffset: 3 });
+    expect(send).toHaveBeenLastCalledWith({
+      type: "attach", agentId: "a1", lastOffset: 3, lastSessionId: "s",
+    });
+  });
+
+  it("keeps the session ID with the offset when reconnecting", () => {
+    const { socket, push, state, send } = fakeSocket();
+    mount(socket);
+    push({ type: "restore", agentId: "a1", snapshot: "old", baseOffset: 7, sessionId: "s1" });
+
+    state("closed");
+    state("open");
+    expect(send).toHaveBeenLastCalledWith({
+      type: "attach", agentId: "a1", lastOffset: 7, lastSessionId: "s1",
+    });
+  });
+
+  it("re-attaches instead of applying an output from a replacement session", () => {
+    const { socket, push, send } = fakeSocket();
+    mount(socket);
+    push({ type: "restore", agentId: "a1", snapshot: "old", baseOffset: 3, sessionId: "s1" });
+    push({ type: "output", agentId: "a1", sessionId: "s2", seq: 1, offset: 0, bytes: 3, data: "new" });
+
+    expect(send).toHaveBeenLastCalledWith({
+      type: "attach", agentId: "a1", lastOffset: null, lastSessionId: null,
+    });
   });
 
   it("keeps the existing screen for a snapshot:null delta restore", () => {

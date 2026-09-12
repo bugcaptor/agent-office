@@ -42,6 +42,9 @@ export function TerminalScreen({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const offsetRef = useRef<number | null>(null);
+  // 절대 offset은 세션 안에서만 의미가 있다. headless 저널은 이 값을 함께
+  // 받아야 재시작한 PTY의 출력 일부를 이전 화면의 델타로 오인하지 않는다.
+  const sessionIdRef = useRef<string | null>(null);
   const [status, setStatus] = useState<string>("연결 중…");
 
   useEffect(() => {
@@ -73,11 +76,13 @@ export function TerminalScreen({
     // 탭 진입은 전체 복원부터 시작한다. 이후 socket이 다시 열리면 이 지점부터
     // attach해, 서버 연결별 attach 상태가 사라져도 터미널 구독이 복원된다.
     offsetRef.current = null;
+    sessionIdRef.current = null;
     const attach = () => {
       socket.send({
         type: "attach",
         agentId: agent.agentId,
         lastOffset: offsetRef.current,
+        lastSessionId: sessionIdRef.current,
       });
     };
     const offState = socket.onState((state) => {
@@ -95,11 +100,29 @@ export function TerminalScreen({
           if (msg.snapshot) term.write(msg.snapshot);
         }
         offsetRef.current = msg.baseOffset;
+        sessionIdRef.current = msg.sessionId ?? null;
+        const restoredCols = msg.cols ?? 0;
+        const restoredRows = msg.rows ?? 0;
+        if (restoredCols > 0 && restoredRows > 0) {
+          term.resize(restoredCols, restoredRows);
+          term.options.fontSize = fitFontSize(mount.clientWidth, restoredCols);
+        }
         resyncPending = false;
         setStatus("");
         return;
       }
       if (msg.type === "output" && msg.agentId === agent.agentId) {
+        // 서버도 세션 교체 때 restore를 먼저 보내지만, 브로드캐스트와
+        // 재접속이 교차해 output이 먼저 오면 오래된 VT 화면을 남기지 않는다.
+        if (sessionIdRef.current !== null && sessionIdRef.current !== msg.sessionId) {
+          if (!resyncPending) {
+            resyncPending = true;
+            offsetRef.current = null;
+            sessionIdRef.current = null;
+            attach();
+          }
+          return;
+        }
         const expected = offsetRef.current;
         if (expected !== null && msg.offset !== expected) {
           // 구멍 — 이 캐릭터만 마지막 지점부터 다시 받는다.
@@ -111,6 +134,7 @@ export function TerminalScreen({
         }
         term.write(scrollbackGuard.filter(msg.data));
         offsetRef.current = msg.offset + msg.bytes;
+        sessionIdRef.current = msg.sessionId;
         return;
       }
       if (msg.type === "resized" && msg.agentId === agent.agentId) {

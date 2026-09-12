@@ -1,5 +1,6 @@
 //! Desktop-only remote relay. Credentials live only in the socket task; local
 //! AppState and remote server state never share a persistence path or event name.
+mod credentials;
 mod transport;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -69,6 +70,14 @@ pub async fn remote_connect(
     token: String,
 ) -> Result<Value, String> {
     require_remote(&window)?;
+    // Validate before replacing the existing connection.  `connect` performs the
+    // same normalization again when it opens the socket.
+    transport::socket_url(&url)?;
+    if token.trim().is_empty() {
+        return Err("remote-invalid-token".into());
+    }
+    let saved_url = url.trim().to_owned();
+    let saved_token = token.trim().to_owned();
     // Serialize simultaneous connect requests so an old task cannot replace a new one.
     let mut slot = state.connection.lock().await;
     slot.take();
@@ -77,8 +86,20 @@ pub async fn remote_connect(
         let _ = app.emit_to(WINDOW_LABEL, name, payload);
     });
     let (connection, hello) = transport::connect(url, token, events).await?;
+    // Persist only an authenticated, successfully handshaken connection.  If
+    // this fails, dropping `connection` closes the new socket and the caller can
+    // surface the failure instead of silently forgetting its credentials.
+    credentials::save(&window.app_handle(), &saved_url, &saved_token)?;
     *slot = Some(connection);
     Ok(json!({"hostName":hello["hostName"],"permission":hello["permission"]}))
+}
+
+#[tauri::command]
+pub async fn remote_load_connection(
+    window: WebviewWindow,
+) -> Result<Option<credentials::StoredConnection>, String> {
+    require_remote(&window)?;
+    credentials::load(&window.app_handle())
 }
 
 #[tauri::command]

@@ -106,3 +106,41 @@ describe("remoteApi terminal channel", () => {
     expect(calls.map(([, args]) => args.cmd)).toEqual(["office.saveState", "session.start"]);
   });
 });
+
+
+describe("remote profile files", () => {
+  beforeEach(() => { invoke.mockReset(); });
+
+  it("uses client file dialogs and host media without invoking local image storage", async () => {
+    const api = createRemoteApi(snapshot);
+    await api.exportCharacterFile("agent.character.json", "bundle");
+    await api.importCharacterFile();
+    expect(invoke).toHaveBeenCalledWith("export_character_file", { defaultName: "agent.character.json", content: "bundle" });
+    expect(invoke).toHaveBeenCalledWith("import_character_file");
+    invoke.mockClear();
+    await api.loadPortrait("a");
+    await api.loadSprite("a");
+    await api.loadMinimi("a");
+    await api.savePortrait("a", "png");
+    await api.saveSprite("a", "png");
+    await api.saveMinimi("a", "png");
+    await api.deletePortrait("a");
+    await api.deleteSprite("a");
+    await api.deleteMinimi("a");
+    const calls = invoke.mock.calls as unknown as [string, {cmd: string; args: unknown}][];
+    expect(calls.every(([command]) => command === "remote_rpc")).toBe(true);
+    expect(calls.map(([, request]) => request)).toEqual([
+      {cmd: "media.portrait", args: {agentId: "a"}},
+      ...["sprite", "minimi"].map((kind) => ({cmd: "office.media.load", args: {agentId: "a", kind}})),
+      ...["portrait", "sprite", "minimi"].map((kind) => ({cmd: "office.media.save", args: {agentId: "a", kind, pngBase64: "png"}})),
+      ...["portrait", "sprite", "minimi"].map((kind) => ({cmd: "office.media.delete", args: {agentId: "a", kind}})),
+    ]);
+  });
+
+  it("does not fall back to local media when the server rejects a request", async () => {
+    invoke.mockRejectedValueOnce(new Error("forbidden"));
+    await expect(createRemoteApi(snapshot).saveSprite("a", "png")).rejects.toThrow("forbidden");
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("remote_rpc", {cmd: "office.media.save", args: {agentId: "a", kind: "sprite", pngBase64: "png"}});
+  });
+});

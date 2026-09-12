@@ -119,6 +119,7 @@ export function useAppearanceImages(deps: {
       await spec.remove(id);
     } catch (err) {
       console.warn(`ProfileDialog: delete ${kind} failed`, err);
+      return;
     }
     spec.clearOverride(id);
     if (kind === "portrait") removePortrait(id);

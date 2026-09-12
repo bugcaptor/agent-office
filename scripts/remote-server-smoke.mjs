@@ -70,6 +70,16 @@ try {
   const profile = { id:'remote-check', name:'Remote check', role:'test', seed:'remote-check', createdAt:Date.now(), deskIndex:0, cwd:dir, archetype:'human' };
   const saved = await a.rpc('office.saveState', {state:{version:1,agents:[profile]},revision:before.revision});
   await assert.rejects(a.rpc('office.saveState', {state:{version:1,agents:[]},revision:before.revision}), /conflict/);
+  const pngBase64 = Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]).toString('base64');
+  for (const kind of ['portrait', 'sprite', 'minimi']) {
+    const args = {agentId:profile.id,kind};
+    assert.equal(await a.rpc('office.media.load', args), null);
+    await a.rpc('office.media.save', {...args,pngBase64});
+    assert.equal(await a.rpc('office.media.load', args), pngBase64);
+    await a.rpc('office.media.delete', args);
+    assert.equal(await a.rpc('office.media.load', args), null);
+  }
+  await assert.rejects(a.rpc('office.media.save', {agentId:'../secret',kind:'portrait',pngBase64}), /forbidden/);
   const session = await a.rpc('session.start',{agentId:profile.id});
   assert.ok(session.sessionId);
   a.send({type:'attach',agentId:profile.id});

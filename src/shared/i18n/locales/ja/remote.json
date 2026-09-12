@@ -4,7 +4,7 @@
     "description": "サーバーのアドレスとトークンを入力します。",
     "address": "サーバーアドレス",
     "token": "アクセストークン",
-    "tokenHelp": "サーバーの serve-token ファイルからコピーしてください。このウィンドウには保存しません。",
+    "tokenHelp": "サーバーの serve-token ファイルからトークンをコピーしてください。接続に成功すると、この PC にアドレスとトークンを保存し、次回自動入力します。",
     "connect": "接続",
     "connecting": "接続中…",
     "connected": "{{host}} に接続しました",
@@ -12,6 +12,8 @@
     "disconnected": "接続が切れました。",
     "failed": "接続できませんでした。",
     "operationFailed": "操作に失敗しました。接続または保存の競合を確認してください。",
-    "addressPlaceholder": "http://127.0.0.1:47373"
+    "addressPlaceholder": "http://127.0.0.1:47373",
+    "savedLoadFailed": "保存した接続情報を読み込めませんでした。アドレスとトークンを入力してください。",
+    "savedSaveFailed": "この PC に接続情報を保存できませんでした。アプリデータフォルダーの書き込み権限と空き容量を確認してください。"
   }
 }
