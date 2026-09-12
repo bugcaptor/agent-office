@@ -121,9 +121,9 @@ export function currentLocale(): string {
  * 하지 않는다 — 부팅 때 캐시와 설정이 일치하는 흔한 경우에 불필요한
  * `languageChanged` 방출을 막는다.
  */
-export function applyLanguageSetting(setting: string | null | undefined): void {
+export function applyLanguageSetting(setting: string | null | undefined, persist = true): void {
   const lang = resolveLanguage(setting);
-  writeCachedLanguage(lang);
+  if (persist) writeCachedLanguage(lang);
   if (i18n.language === lang) return;
   void i18n.changeLanguage(lang);
 }

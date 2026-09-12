@@ -11,6 +11,7 @@ import type { DraftProfile } from "../generate";
 import type { AvailableShell } from "@shared/types";
 import type { Dispatch, SetStateAction } from "react";
 import { IS_WINDOWS } from "../../shared/platform";
+import { isRemoteWindow } from "../../shared/remoteWindow";
 
 export function TerminalSection({
   draft,
@@ -26,6 +27,7 @@ export function TerminalSection({
   editingAgentId: string | undefined;
 }) {
   const { t } = useTranslation("profile");
+  const remoteWindow = isRemoteWindow();
   return (
     <>
     {/* ── 터미널: 시작 폴더 · 시작 명령어 · 셸 ─────────────── */}
@@ -40,9 +42,11 @@ export function TerminalSection({
               onChange={(e) => setDraft({ ...draft, cwd: e.target.value })}
               placeholder={t("terminal.cwdPlaceholder")}
             />
-            <button type="button" className="pixel-btn" onClick={onBrowseCwd}>
-              {t("terminal.browse")}
-            </button>
+            {!remoteWindow && (
+              <button type="button" className="pixel-btn" onClick={onBrowseCwd}>
+                {t("terminal.browse")}
+              </button>
+            )}
           </div>
         </label>
       </div>
@@ -75,12 +79,14 @@ export function TerminalSection({
         </label>
         <p className="form-hint">{t("terminal.keyboardSoundHint")}</p>
       </div>
-      <VoiceField
-        draft={draft}
-        agentId={editingAgentId}
-        onChange={(voiceId) => setDraft((d) => ({ ...d, voiceId }))}
-      />
-      <div className="form-field form-check">
+      {!remoteWindow && (
+        <VoiceField
+          draft={draft}
+          agentId={editingAgentId}
+          onChange={(voiceId) => setDraft((d) => ({ ...d, voiceId }))}
+        />
+      )}
+      {!remoteWindow && <div className="form-field form-check">
         <label>
           <input
             type="checkbox"
@@ -94,12 +100,12 @@ export function TerminalSection({
         <p className="form-hint">
           <Trans t={t} i18nKey="terminal.talkReceiveHint" components={{ b: <b /> }} />
         </p>
-      </div>
-      <div className="form-field">
+      </div>}
+      {!remoteWindow && <><div className="form-field">
         <span className="form-label-text">{t("bot.section")}</span>
         <p className="form-hint">{t("bot.sectionHint")}</p>
-      </div>
-      <div className="form-field">
+      </div></>}
+      {!remoteWindow && <div className="form-field">
         <label>
           <span className="form-label-text">{t("bot.slug")}</span>
           <input
@@ -112,7 +118,8 @@ export function TerminalSection({
         <p className="form-hint">
           <Trans t={t} i18nKey="bot.slugHint" components={{ code: <code /> }} />
         </p>
-      </div>
+      </div>}
+      {!remoteWindow && <>
       <div className="form-field">
         <label>
           <span className="form-label-text">{t("bot.whitelist")}</span>
@@ -136,7 +143,8 @@ export function TerminalSection({
           />
         </label>
       </div>
-      {!IS_WINDOWS && (
+      </>}
+      {!remoteWindow && !IS_WINDOWS && (
         <div className="form-field form-check">
           <label>
             <input

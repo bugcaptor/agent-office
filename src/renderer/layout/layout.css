@@ -666,3 +666,21 @@ body {
   color: var(--accent);
 }
 .combo-picker-empty { padding: 6px 8px; font-size: 0.78rem; color: var(--text-dim); }
+/* Remote connection form lives before the office is hydrated. */
+.remote-connect-shell { min-height: 100vh; display: grid; place-items: center; background: #17233b; color: #f5f0dc; font-family: system-ui, sans-serif; }
+.remote-connect-card { width: min(420px, calc(100vw - 40px)); display: grid; gap: 12px; padding: 28px; border: 3px solid #f5c84c; background: #24395b; box-shadow: 7px 7px 0 #0d1526; }
+.remote-connect-card h1, .remote-connect-card p { margin: 0; }
+.remote-connect-card label { display: grid; gap: 5px; font-weight: 700; }
+.remote-connect-card input { padding: 9px; border: 2px solid #91b5d8; background: #101b30; color: inherit; }
+.remote-connect-card button { padding: 10px; border: 0; background: #f5c84c; color: #17233b; font-weight: 800; cursor: pointer; }
+.remote-connect-card button:disabled { opacity: .6; cursor: wait; }
+.remote-token-help { color: #c9d7e8; font-size: .86rem; }
+.remote-error { color: #ffd0d0; }
+.remote-window { min-height: 100vh; }
+.remote-banner { position: fixed; z-index: 100; top: 0; left: 50%; transform: translateX(-50%); padding: 3px 10px; background: #24395b; color: #f5f0dc; border: 1px solid #f5c84c; font: 12px system-ui, sans-serif; pointer-events: none; }
+/* These controls issue host-only analytics, local CLI, theme, or settings actions. */
+:root[data-remote-window="true"] .settings-btn,
+:root[data-remote-window="true"] .remote-connect-btn,
+:root[data-remote-window="true"] .records-btn,
+:root[data-remote-window="true"] .scene-theme-btn,
+:root[data-remote-window="true"] .bottom-bar .usage-widget { display: none; }

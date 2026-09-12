@@ -161,6 +161,9 @@ pub struct RemoteAgent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteOutput {
+    /// Historical output must not generate fresh terminal replies into stdin.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub replay: bool,
     pub agent_id: String,
     pub session_id: String,
     pub seq: u64,
@@ -168,6 +171,8 @@ pub struct RemoteOutput {
     pub data: String,
     pub bytes: u64,
 }
+
+fn is_false(value: &bool) -> bool { !*value }
 
 // `rename_all`은 **variant 이름**에만 걸린다 — 필드까지 camelCase로 내보내려면
 // `rename_all_fields`가 따로 필요하다(없으면 와이어에 `agent_id`가 나가 뷰어
@@ -177,6 +182,8 @@ pub struct RemoteOutput {
 pub enum HostMsg {
     Hello {
         host_name: String,
+        #[serde(default)]
+        instance_id: String,
         app_version: String,
         proto_version: u32,
         permission: ClientPermission,
@@ -260,6 +267,8 @@ pub enum ClientMsg {
         agent_id: String,
         #[serde(default)]
         last_offset: Option<u64>,
+        #[serde(default)]
+        last_session_id: Option<String>,
     },
     Detach {
         agent_id: String,
@@ -289,6 +298,7 @@ mod tests {
         let json = serde_json::to_string(&ClientMsg::Attach {
             agent_id: "ada".into(),
             last_offset: Some(42),
+            last_session_id: None,
         })
         .unwrap();
         assert!(json.contains("\"type\":\"attach\""));

@@ -1,0 +1,17 @@
+{
+  "connection": {
+    "title": "リモートサーバーに接続",
+    "description": "サーバーのアドレスとトークンを入力します。",
+    "address": "サーバーアドレス",
+    "token": "アクセストークン",
+    "tokenHelp": "サーバーの serve-token ファイルからコピーしてください。このウィンドウには保存しません。",
+    "connect": "接続",
+    "connecting": "接続中…",
+    "connected": "{{host}} に接続しました",
+    "reconnecting": "再接続中…",
+    "disconnected": "接続が切れました。",
+    "failed": "接続できませんでした。",
+    "operationFailed": "操作に失敗しました。接続または保存の競合を確認してください。",
+    "addressPlaceholder": "http://127.0.0.1:47373"
+  }
+}

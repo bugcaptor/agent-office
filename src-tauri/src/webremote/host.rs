@@ -9,10 +9,11 @@
 // 호스트 렌더러가 xterm을 직렬화해 올려 주고(SnapshotBridge), 그 기준 오프셋은
 // **요청을 보낸 시점**의 오프셋으로 잡는다 — 직렬화~수신 사이에 흘러온 바이트가
 // 스냅샷에도 들어가고 델타로도 한 번 더 오는 중복은 감수하되(수 ms, TUI는
-// 재도색으로 흡수) 영구 유실 창은 만들지 않는다. 스냅샷을 못 받으면 링버퍼
+// 재도색으로 흡수). 렌더러 IPC 지연 시 누락 가능성도 남는다. 스냅샷을 못 받으면 링버퍼
 // 전체를 리플레이하는 폴백으로 내려간다.
 
 use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -38,6 +39,7 @@ const BROADCAST_CAP: usize = 4096;
 pub const SNAPSHOT_TIMEOUT: Duration = Duration::from_millis(2000);
 
 #[derive(Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct RingChunk {
     /// 이 청크가 시작하는 절대 스트림 오프셋.
     pub offset: u64,
@@ -188,7 +190,10 @@ impl SnapshotBridge {
         let got = tokio::time::timeout(timeout, rx).await;
         self.pending.lock().remove(&request_id);
         match got {
-            Ok(Ok(snapshot)) => Some(snapshot),
+            // An empty xterm serialization is indistinguishable from a
+            // renderer which failed before producing a snapshot.  Treating it
+            // as a base would discard the only recoverable output tail.
+            Ok(Ok(snapshot)) if !snapshot.is_empty() => Some(snapshot),
             _ => None,
         }
     }
@@ -202,6 +207,9 @@ pub struct WebRemoteHub {
     taps: Mutex<HashMap<String, u64>>,
     tx: broadcast::Sender<Arc<HostMsg>>,
     pub snapshots: SnapshotBridge,
+    /// `serve` supplies this durable stream store.  The desktop web host
+    /// remains memory-only and continues to use renderer snapshots.
+    journal: Option<super::journal::Journal>,
 }
 
 impl WebRemoteHub {
@@ -212,7 +220,15 @@ impl WebRemoteHub {
             taps: Mutex::new(HashMap::new()),
             tx,
             snapshots: SnapshotBridge::default(),
+            journal: None,
         })
+    }
+
+    pub fn new_with_journal(dir: PathBuf) -> Arc<Self> {
+        let mut hub = Self::new();
+        let journal = super::journal::Journal::new(dir, hub.tx.clone());
+        Arc::get_mut(&mut hub).expect("new hub is unique").journal = Some(journal);
+        hub
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<Arc<HostMsg>> {
@@ -272,23 +288,45 @@ impl WebRemoteHub {
     }
 
     fn on_chunk(&self, agent_id: &str, chunk: &OutputChunk) {
-        let Some(stream) = self.stream(agent_id) else {
-            return;
-        };
-        let offset = {
-            let mut s = stream.lock();
-            let offset = s.total();
-            s.push(chunk);
-            offset
-        };
-        self.broadcast(HostMsg::Output(RemoteOutput {
-            agent_id: agent_id.to_string(),
-            session_id: chunk.session_id.clone(),
-            seq: chunk.seq,
-            offset,
-            data: chunk.data.clone(),
-            bytes: chunk.bytes,
-        }));
+        let Some(stream) = self.stream(agent_id) else { return; };
+        let mut s = stream.lock();
+        let new_session = self.journal.is_some() && s.session_id.as_deref() != Some(&chunk.session_id);
+        if new_session {
+            *s = SharedStream::default();
+            if let Some(journal) = &self.journal {
+                journal.append(agent_id, 0, HostMsg::Restore {
+                    agent_id: agent_id.into(), snapshot: Some(String::new()), base_offset: 0,
+                    cols: 80, rows: 24, session_id: Some(chunk.session_id.clone()),
+                }, true);
+            }
+        }
+        let offset = s.total();
+        s.push(chunk);
+        let frame = HostMsg::Output(RemoteOutput { replay: false,
+            agent_id: agent_id.into(), session_id: chunk.session_id.clone(), seq: chunk.seq,
+            offset, data: chunk.data.clone(), bytes: chunk.bytes,
+        });
+        // Holding the stream lock orders output and resize records before they
+        // enter the writer queue. Broadcast happens after the append succeeds.
+        if let Some(journal) = &self.journal { journal.append(agent_id, offset, frame, false); }
+        else { self.broadcast(frame); }
+    }
+
+    pub fn has_journal(&self) -> bool { self.journal.is_some() }
+    pub async fn journal_snapshot(&self, agent: &str) -> Result<Option<super::journal::Snapshot>, String> {
+        match &self.journal { Some(j) => j.snapshot(agent).await, None => Ok(None) }
+    }
+    pub async fn flush_journal(&self) -> Result<(), String> {
+        match &self.journal { Some(j) => j.flush().await, None => Ok(()) }
+    }
+    pub fn resize_session(&self, manager: &SessionManager, agent: &str, cols: u16, rows: u16) {
+        let stream = self.stream(agent);
+        let guard = stream.as_ref().map(|s| s.lock());
+        let frame = HostMsg::Resized { agent_id: agent.into(), cols, rows };
+        if let Some(journal) = &self.journal {
+            journal.append(agent, guard.as_ref().map_or(0, |s| s.total()), frame, false);
+        } else { self.broadcast(frame); }
+        manager.resize(agent, cols, rows);
     }
 
     /// attach 처리: 델타면 즉시, 첫 접속이면 스냅샷을 한 번 받아 계획을 다시
@@ -299,7 +337,8 @@ impl WebRemoteHub {
         if !plan.needs_snapshot {
             return Some(plan);
         }
-        // 기준 오프셋은 **요청 직전** 값으로 잡는다(유실 창 0, 중복 최소).
+        // 요청 직전 offset은 렌더 완료 offset과 원자적으로 연결되지 않는다.
+        // GUI snapshot 경로에는 IPC 지연에 따른 중복/누락 가능성이 남는다.
         let requested_at = stream.lock().total();
         match self.snapshots.request(agent_id, SNAPSHOT_TIMEOUT).await {
             Some(snapshot) => {
@@ -554,6 +593,12 @@ mod tests {
         quiet.set_emitter(Arc::new(|_, _| {}));
         let none = quiet.request("ada", Duration::from_millis(50)).await;
         assert!(none.is_none());
+
+        let empty = SnapshotBridge::default();
+        let empty_clone = Arc::new(empty);
+        let responder = empty_clone.clone();
+        empty_clone.set_emitter(Arc::new(move |_, req| responder.submit(req, String::new())));
+        assert!(empty_clone.request("ada", Duration::from_millis(50)).await.is_none());
     }
 
     #[tokio::test]

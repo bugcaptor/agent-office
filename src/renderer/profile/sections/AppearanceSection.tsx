@@ -15,6 +15,7 @@ import type { useAppearanceImages } from "../useAppearanceImages";
 import type { DraftProfile } from "../generate";
 import type { AgentProfile, PaletteSlot } from "@shared/types";
 import type { Dispatch, SetStateAction } from "react";
+import { isRemoteWindow } from "../../shared/remoteWindow";
 
 export function AppearanceSection({
   draft,
@@ -38,6 +39,7 @@ export function AppearanceSection({
   images: ReturnType<typeof useAppearanceImages>;
 }) {
   const { t } = useTranslation("profile");
+  const remoteWindow = isRemoteWindow();
   // 이미지 3종 상태를 JSX가 읽던 이름 그대로 푼다.
   const {
     portraitUrl,
@@ -85,7 +87,7 @@ export function AppearanceSection({
             />
           </div>
           <div className="portrait-buttons">
-            {editing && editingAgent && portraitUrl && (
+            {!remoteWindow && editing && editingAgent && portraitUrl && (
               <button className="pixel-btn" onClick={onRemovePortrait}>
                 {t("portrait.remove")}
               </button>
@@ -107,7 +109,7 @@ export function AppearanceSection({
             {spritePreviewUrl && (
               <span className="sprite-custom-badge">{t("sprite.customBadge")}</span>
             )}
-            {editing && editingAgent && spritePreviewUrl && (
+            {!remoteWindow && editing && editingAgent && spritePreviewUrl && (
               <button className="pixel-btn" onClick={onRemoveSprite}>
                 {t("sprite.removeCustom")}
               </button>
@@ -127,7 +129,7 @@ export function AppearanceSection({
             <span className="sprite-custom-badge">
               {minimiPreviewUrl ? t("minimi.customBadge") : t("minimi.emptyBadge")}
             </span>
-            {editing && editingAgent && (
+            {!remoteWindow && editing && editingAgent && (
               <div className="sprite-buttons">
                 <button className="pixel-btn" onClick={() => setMinimiEditorOpen(true)}>
                   {minimiPreviewUrl ? t("minimi.change") : t("minimi.upload")}
@@ -182,7 +184,7 @@ export function AppearanceSection({
       {/* 만드는 방법은 한 번에 하나만 — 직접 만들기와 Codex 생성을 나란히
           늘어놓으면 무엇을 눌러야 할지 알 수 없다. SettingsDialog와 같은
           tablist 관례를 작은 크기로 재사용한다. */}
-      <div
+      {!remoteWindow && <div
         className="appearance-tabs"
         role="tablist"
         aria-label={t("appearance.tablistLabel")}
@@ -210,8 +212,8 @@ export function AppearanceSection({
             {t(tab.labelKey)}
           </button>
         ))}
-      </div>
-      <div
+      </div>}
+      {!remoteWindow && <div
         className="appearance-tabpanel"
         role="tabpanel"
         id={`appearance-tabpanel-${appearanceMode}`}
@@ -271,7 +273,7 @@ export function AppearanceSection({
             onGenerate={onGenerateCodex}
           />
         )}
-      </div>
+      </div>}
       {/* 세 프롬프트 칸은 각자 자기 그림에만 덧붙는다 — 예전처럼 한 칸이
           다른 그림의 폴백이 되지 않는다(칸 사이 관계를 없애 헷갈림 제거). */}
       <div className="form-field">

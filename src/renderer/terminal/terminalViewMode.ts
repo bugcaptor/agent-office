@@ -26,6 +26,9 @@ export function nextTerminalViewMode(mode: TerminalViewMode): TerminalViewMode {
 
 /** 저장된 뷰 모드를 읽는다. 없거나 알 수 없으면 windowed. localStorage 부재(node)도 안전. */
 export function loadStoredTerminalViewMode(): TerminalViewMode {
+  if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("remote") === "1") {
+    return "windowed";
+  }
   try {
     const raw = localStorage.getItem(TERMINAL_VIEW_MODE_STORAGE_KEY);
     return isTerminalViewMode(raw) ? raw : "windowed";
@@ -35,7 +38,14 @@ export function loadStoredTerminalViewMode(): TerminalViewMode {
 }
 
 /** 뷰 모드를 localStorage에 영속한다. 저장 불가 환경에서는 조용히 무시. */
+let remoteStorageDisabled = false;
+
+export function setRemoteTerminalViewModeStorage(disabled: boolean): void {
+  remoteStorageDisabled = disabled;
+}
+
 export function persistTerminalViewMode(mode: TerminalViewMode): void {
+  if (remoteStorageDisabled) return;
   try {
     localStorage.setItem(TERMINAL_VIEW_MODE_STORAGE_KEY, mode);
   } catch {

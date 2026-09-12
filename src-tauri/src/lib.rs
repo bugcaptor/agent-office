@@ -16,6 +16,8 @@ mod control;
 /// 웹 원격(docs/web-remote-design.md) — tailnet의 브라우저가 이 앱의 세션을
 /// 출력/입력만 중계받아 보고 조작한다.
 pub mod webremote;
+pub mod remote_server;
+mod remote_client;
 // Everything(es.exe) 백엔드(이슈 #67) -- markdown.rs 전용 옵트인 스캔 경로.
 mod file_index;
 // markdown.rs/workdir::list_workdir_files가 공유하는 병렬 스캔 워커.
@@ -299,6 +301,7 @@ const WINDOW_STATE_FLAGS: StateFlags = StateFlags::SIZE
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(remote_client::RemoteClientState::default())
         // main 창의 크기·위치·최대화 상태를 종료 시 저장하고 재실행 시 복원한다.
         // 마스코트 창(이슈 #72)은 자체 위치 복원 로직(src/renderer/mascot/position.ts,
         // localStorage + 모니터 유효성 검사)을 갖고 있어 플러그인이 건드리면 두
@@ -840,6 +843,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            remote_client::remote_open_window,
+            remote_client::remote_connect,
+            remote_client::remote_rpc,
+            remote_client::remote_subscribe,
+            remote_client::remote_unsubscribe,
+            remote_client::remote_input,
+            remote_client::remote_ack,
+            remote_client::remote_disconnect,
             ipc::commands::create_session,
             ipc::commands::list_available_shells,
             ipc::commands::dispose_session,
@@ -983,6 +994,12 @@ pub fn run() {
                 ..
             } = &event
             {
+                if label == remote_client::WINDOW_LABEL {
+                    let handle = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        handle.state::<remote_client::RemoteClientState>().disconnect().await;
+                    });
+                }
                 if label == "main" {
                     if let Some(mascot) = app.get_webview_window("mascot") {
                         let _ = mascot.destroy();

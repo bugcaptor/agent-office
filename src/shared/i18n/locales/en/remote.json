@@ -1,0 +1,17 @@
+{
+  "connection": {
+    "title": "Connect to remote server",
+    "description": "Enter the server address and token to open its office.",
+    "address": "Server address",
+    "token": "Access token",
+    "tokenHelp": "Copy the serve-token from the server serve-token file. This window never saves it.",
+    "connect": "Connect",
+    "connecting": "Connecting…",
+    "connected": "Connected to {{host}}",
+    "reconnecting": "Reconnecting…",
+    "disconnected": "Connection lost.",
+    "failed": "Could not connect.",
+    "operationFailed": "The operation failed. Check the connection or reload after a save conflict.",
+    "addressPlaceholder": "http://127.0.0.1:47373"
+  }
+}

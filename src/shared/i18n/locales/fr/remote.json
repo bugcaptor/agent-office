@@ -1,0 +1,17 @@
+{
+  "connection": {
+    "title": "Connexion au serveur distant",
+    "description": "Saisissez l’adresse et le jeton du serveur.",
+    "address": "Adresse du serveur",
+    "token": "Jeton d’accès",
+    "tokenHelp": "Copiez le jeton du fichier du serveur. Cette fenêtre ne le conserve pas.",
+    "connect": "Connexion",
+    "connecting": "Connexion…",
+    "connected": "Connecté à {{host}}",
+    "reconnecting": "Reconnexion…",
+    "disconnected": "Connexion perdue.",
+    "failed": "Connexion impossible.",
+    "operationFailed": "Échec de l’opération. Vérifiez la connexion ou un conflit de sauvegarde.",
+    "addressPlaceholder": "http://127.0.0.1:47373"
+  }
+}

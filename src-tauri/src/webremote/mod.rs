@@ -15,6 +15,7 @@
 /// 채팅 뷰(M2)의 전사 tail·키 매핑.
 pub mod chat;
 pub mod host;
+pub mod journal;
 pub mod pairing;
 pub mod protocol;
 /// 브라우저 클라이언트용 정적 자산 + allowlist RPC 디스패처.
@@ -31,7 +32,7 @@ mod ws;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -108,6 +109,11 @@ pub struct WebRemoteContext {
     pub portraits: Arc<crate::persistence::png_store::PngStore>,
     pub gate: Arc<crate::session::inject::InjectGate>,
     pub rate: pairing::PairRateLimiter,
+    /// `serve` is an explicitly authenticated local-server mode.  It does
+    /// not require the GUI's web-remote preference to have been enabled.
+    headless_server: AtomicBool,
+    pub instance_id: String,
+    pub office_write: tokio::sync::Mutex<()>,
     pair_notify: Mutex<Option<PairNotifyFn>>,
 }
 
@@ -150,6 +156,9 @@ impl WebRemoteContext {
             portraits: deps.portraits,
             gate: deps.gate,
             rate: pairing::PairRateLimiter::default(),
+            headless_server: AtomicBool::new(false),
+            instance_id: uuid::Uuid::new_v4().to_string(),
+            office_write: tokio::sync::Mutex::new(()),
             pair_notify: Mutex::new(None),
         }
     }
@@ -157,10 +166,20 @@ impl WebRemoteContext {
     /// 웹 호스팅이 켜져 있는가(정적 자산·웹 RPC 게이트). 매 요청 확인하므로
     /// 토글이 서버 재시작 없이 즉시 반영된다(control 토큰 파일 대조와 같은 패턴).
     pub fn web_remote_enabled(&self) -> bool {
+        if self.headless_server.load(Ordering::Relaxed) {
+            return true;
+        }
         self.settings
             .read()
             .map(|s| s.web_remote_enabled)
             .unwrap_or(false)
+    }
+
+    /// Enable the narrower CLI server policy.  Authentication is still
+    /// mandatory; this only avoids coupling a non-GUI process to a GUI
+    /// preference which it cannot ask the user to toggle.
+    pub fn enable_headless_server(&self) {
+        self.headless_server.store(true, Ordering::Relaxed);
     }
 
     /// 이 클라이언트가 그 캐릭터를 볼 수 있는가.
@@ -246,6 +265,27 @@ fn router(ctx: Arc<WebRemoteContext>) -> Router {
             remote_policy,
         ))
         .with_state(ctx)
+}
+
+/// Run a CLI-owned listener until the surrounding runtime stops.  This is
+/// deliberately separate from `WebRemoteServerState`: `serve` has no Tauri
+/// lifecycle or GUI settings toggle, and must bind exactly the address the
+/// operator supplied rather than perform the desktop tailnet address scan.
+pub async fn serve_headless_listener(
+    ctx: Arc<WebRemoteContext>,
+    bind: SocketAddr,
+) -> std::io::Result<()> {
+    let listener = tokio::net::TcpListener::bind(bind).await?;
+    serve_headless_listener_on(ctx, listener).await
+}
+
+/// Serve an already-bound CLI listener. `serve` binds before it creates its
+/// owner token, so a port collision cannot alter credentials on disk.
+pub async fn serve_headless_listener_on(
+    ctx: Arc<WebRemoteContext>,
+    listener: tokio::net::TcpListener,
+) -> std::io::Result<()> {
+    axum::serve(listener, router(ctx).into_make_service_with_connect_info::<SocketAddr>()).await
 }
 
 async fn serve(
@@ -645,6 +685,7 @@ mod tests {
                 serde_json::to_string(&ClientMsg::Attach {
                     agent_id: "a1".into(),
                     last_offset: None,
+                    last_session_id: None,
                 })
                 .unwrap(),
             ))
@@ -713,6 +754,7 @@ mod tests {
                 serde_json::to_string(&ClientMsg::Attach {
                     agent_id: "ghost".into(), // 프로필에 없는 캐릭터
                     last_offset: None,
+                    last_session_id: None,
                 })
                 .unwrap(),
             ))
@@ -1076,6 +1118,7 @@ mod tests {
                 serde_json::to_string(&ClientMsg::Attach {
                     agent_id: "a1".into(),
                     last_offset: None,
+                    last_session_id: None,
                 })
                 .unwrap(),
             ))

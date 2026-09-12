@@ -13,6 +13,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { HostMsg, RemoteAgent, ClientPermission } from "./protocol";
 import type { WebRemoteSocket } from "./ws";
 import { KeyBar } from "./KeyBar";
+import { createScrollbackGuard } from "./scrollbackGuard";
 
 interface Props {
   socket: WebRemoteSocket;
@@ -61,21 +62,40 @@ export function TerminalScreen({
     });
     term.open(mount);
     termRef.current = term;
+    const scrollbackGuard = createScrollbackGuard();
+    let resyncPending = false;
 
     const onData = term.onData((data) => {
       if (permission !== "input") return;
       socket.send({ type: "input", agentId: agent.agentId, data });
     });
 
-    // 이 캐릭터의 전체 복원을 요청한다(탭 진입 시엔 항상 처음부터).
+    // 탭 진입은 전체 복원부터 시작한다. 이후 socket이 다시 열리면 이 지점부터
+    // attach해, 서버 연결별 attach 상태가 사라져도 터미널 구독이 복원된다.
     offsetRef.current = null;
-    socket.send({ type: "attach", agentId: agent.agentId, lastOffset: null });
+    const attach = () => {
+      socket.send({
+        type: "attach",
+        agentId: agent.agentId,
+        lastOffset: offsetRef.current,
+      });
+    };
+    const offState = socket.onState((state) => {
+      if (state === "open") attach();
+    });
 
     const off = socket.onMessage((msg: HostMsg) => {
       if (msg.type === "restore" && msg.agentId === agent.agentId) {
-        term.reset();
-        if (msg.snapshot) term.write(msg.snapshot);
+        // snapshot:null은 링버퍼 델타만 보내는 재동기화다. 여기서 화면을
+        // 지우면 이미 보던 과거 출력이 사라진다. 빈 문자열은 유효한 스냅샷일
+        // 수 있으므로 null과 구별해 화면을 비운다.
+        if (msg.snapshot !== null && msg.snapshot !== undefined) {
+          term.reset();
+          scrollbackGuard.reset();
+          if (msg.snapshot) term.write(msg.snapshot);
+        }
         offsetRef.current = msg.baseOffset;
+        resyncPending = false;
         setStatus("");
         return;
       }
@@ -83,14 +103,13 @@ export function TerminalScreen({
         const expected = offsetRef.current;
         if (expected !== null && msg.offset !== expected) {
           // 구멍 — 이 캐릭터만 마지막 지점부터 다시 받는다.
-          socket.send({
-            type: "attach",
-            agentId: agent.agentId,
-            lastOffset: expected,
-          });
+          if (!resyncPending) {
+            resyncPending = true;
+            attach();
+          }
           return;
         }
-        term.write(msg.data);
+        term.write(scrollbackGuard.filter(msg.data));
         offsetRef.current = msg.offset + msg.bytes;
         return;
       }
@@ -112,6 +131,7 @@ export function TerminalScreen({
       window.removeEventListener("resize", onResize);
       window.visualViewport?.removeEventListener("resize", onResize);
       off();
+      offState();
       onData.dispose();
       socket.send({ type: "detach", agentId: agent.agentId });
       term.dispose();

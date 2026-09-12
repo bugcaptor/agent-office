@@ -1,0 +1,17 @@
+{
+  "connection": {
+    "title": "원격 서버 연결",
+    "description": "서버 주소와 토큰을 입력해 오피스에 연결합니다.",
+    "address": "서버 주소",
+    "token": "접속 토큰",
+    "tokenHelp": "서버의 serve-token 파일에서 토큰을 복사하세요. 이 창에는 저장하지 않습니다.",
+    "connect": "연결",
+    "connecting": "연결 중…",
+    "connected": "{{host}}에 연결됨",
+    "reconnecting": "다시 연결 중…",
+    "disconnected": "연결이 끊겼습니다.",
+    "failed": "연결하지 못했습니다.",
+    "operationFailed": "작업을 완료하지 못했습니다. 연결이나 저장 충돌을 확인해 주세요.",
+    "addressPlaceholder": "http://127.0.0.1:47373"
+  }
+}

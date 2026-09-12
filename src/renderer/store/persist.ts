@@ -42,7 +42,7 @@ export function installPersistence(): () => void {
         version: 1,
         vacationMode,
       };
-      void tauriApi.saveState(state);
+      void Promise.resolve(tauriApi.saveState(state)).catch((error) => console.warn("profile save failed", error));
     }, DEBOUNCE_MS);
   };
 

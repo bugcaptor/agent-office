@@ -33,6 +33,7 @@ pub struct BrokerPtyFactory {
     log_path: PathBuf,
     exe_path: PathBuf,
     fallback: Arc<dyn PtyFactory>,
+    strict: bool,
 }
 
 impl BrokerPtyFactory {
@@ -44,7 +45,16 @@ impl BrokerPtyFactory {
             log_path: client::default_log_path(app_data_dir),
             exe_path: std::env::current_exe().unwrap_or_default(),
             fallback,
+            strict: false,
         }
+    }
+
+    /// Headless serving has no safe local fallback: losing the broker would
+    /// make the advertised durable terminal disappear with this process.
+    pub fn new_strict(app_data_dir: &Path, fallback: Arc<dyn PtyFactory>) -> Self {
+        let mut factory = Self::new(app_data_dir, fallback);
+        factory.strict = true;
+        factory
     }
 
     fn try_broker_spawn(&self, o: &PtySpawnOptions) -> io::Result<SpawnedPty> {
@@ -82,6 +92,9 @@ impl BrokerPtyFactory {
         match open_broker_io(&self.socket_path, &o.agent_id) {
             Ok(io_bundle) => Ok(build_broker_spawned(control, &o.agent_id, io_bundle)),
             Err(e) => {
+                if self.strict {
+                    return Err(e);
+                }
                 let _ = control.kill(&o.agent_id);
                 Err(e)
             }

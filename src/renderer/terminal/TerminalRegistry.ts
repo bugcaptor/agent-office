@@ -24,6 +24,7 @@ import { useAppStore } from "../store/appStore";
 import { resolveXtermTheme } from "./theme";
 import { createImeBridge } from "./imeBridge";
 import { createScrollbackGuard, type ScrollbackGuard } from "./scrollbackGuard";
+import { setRemoteReplaying, acknowledgeRemoteOffset, type RemoteTerminalMessage } from "../ipc/remoteApi";
 
 interface Entry {
   term: Terminal;
@@ -42,6 +43,7 @@ interface Entry {
   // base(백엔드 attach 시점) + 이 값. 복원 스냅샷 청크는 bytes=0이라 제외된다.
   // 세션 attach 시점(엔트리 생성)부터 0에서 시작한다.
   renderedBytes: number;
+  observeOutput: (data: string) => void;
   // PTY 스트림에서 `ESC[3J`(스크롤백 지우기)를 떼어 내는 필터. pi 기본 TUI가
   // resize마다 스크롤백을 날리는 것을 막는다(scrollbackGuard.ts 헤더 참조).
   scrollbackGuard: ScrollbackGuard;
@@ -192,6 +194,7 @@ class TerminalRegistry {
       opened: false,
       bindComposition: ime.bindComposition,
       renderedBytes: 0,
+      observeOutput: ime.observeTerminalOutput,
       scrollbackGuard,
     };
     this.entries.set(agentId, e);
@@ -200,6 +203,44 @@ class TerminalRegistry {
 
   get(agentId: string): Entry | undefined {
     return this.entries.get(agentId);
+  }
+
+  /** Remote frames are called by remoteApi's one-per-agent serial queue. */
+  async applyRemoteMessage(message: RemoteTerminalMessage, generation: number): Promise<void> {
+    const entry = this.ensure(message.agentId);
+    const afterWrite = (data: string) => new Promise<void>((resolve) => {
+      entry.observeOutput(data);
+      entry.term.write(data, resolve);
+    });
+    setRemoteReplaying(message.agentId, message.type === "restore" || (message.type === "output" && message.replay === true));
+    try {
+      if (message.type === "restore") {
+        await afterWrite("");
+        entry.term.resize(message.cols, message.rows);
+        // A reconnect snapshot replaces a complete terminal screen. Reset the
+        // guard too, otherwise a partial ESC[3J from the old stream contaminates
+        // the first replay output.
+        if (message.snapshot !== null) {
+          entry.term.reset();
+          entry.scrollbackGuard.reset();
+        }
+        await afterWrite(message.snapshot ?? "");
+        acknowledgeRemoteOffset(message.agentId, message.baseOffset ?? 0, generation);
+        return;
+      }
+      if (message.type === "resized") {
+        await afterWrite("");
+        entry.term.resize(message.cols, message.rows);
+        useAppStore.getState().setSessionSize(message.agentId, message.cols, message.rows);
+        return;
+      }
+      const data = entry.scrollbackGuard.filter(message.data);
+      await afterWrite(data);
+      entry.renderedBytes += message.bytes;
+      acknowledgeRemoteOffset(message.agentId, message.offset + message.bytes, generation);
+    } finally {
+      setRemoteReplaying(message.agentId, false);
+    }
   }
 
   /**

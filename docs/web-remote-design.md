@@ -346,3 +346,7 @@ diffCommit)+diff 뷰어(렌더러의 의존성 없는 unified diff 렌더 이식
   퀵 키 시퀀스.
 - 실기기 눈검증: 폰 페어링→채팅 왕복(한글 입력 포함)·확인 요청 퀵 키·터미널
   폴백 전환·토글 즉시 차단(매 요청 `web_remote_enabled` 확인)·serve HTTPS.
+
+## 독립 서버 추가 (2026-09-12)
+
+데스크톱 원격 접속과 GUI 없는 서버는 [remote-server-design.md](remote-server-design.md)를 따른다. 기존 브라우저의 재연결 재attach, 델타 복원 화면 보존, 빈 스냅샷 실패 처리와 스크롤백 보호를 보완했다. GUI 스냅샷 요청 시점 offset과 렌더 완료 offset의 원자적 정합은 기존 경로의 잔여 한계다.

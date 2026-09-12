@@ -38,9 +38,11 @@ import { clockInAgent, clockInAll } from "../agent/clockOut";
 import { summonAllToDesk } from "../agent/summonToDesk";
 import { UsageWidget } from "../usage/UsageWidget";
 import { useTalkStatus } from "../talk/useTalkStatus";
+import { invoke } from "@tauri-apps/api/core";
+import { Commands } from "@shared/ipc";
 
 export function BottomBar() {
-  const { t } = useTranslation("common");
+  const { t } = useTranslation(["common", "remote"]);
   const openModal = useAppStore((s) => s.openModal);
   const muted = useAppStore((s) => s.muted);
   const toggleMuted = useAppStore((s) => s.toggleMuted);
@@ -78,6 +80,13 @@ export function BottomBar() {
         onClick={() => openModal({ kind: "profile-create" })}
       >
         {t("bottomBar.newAgent")}
+      </button>
+      <button
+        type="button"
+        className="pixel-btn remote-connect-btn"
+        onClick={() => { void invoke(Commands.remoteOpenWindow); }}
+      >
+        {t("connection.title", { ns: "remote" })}
       </button>
       <button
         type="button"

@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, State};
@@ -24,7 +24,9 @@ use super::auth::{authenticate, origin_allowed, subprotocol_token};
 use super::pairing::ClientRecord;
 use super::protocol::*;
 use super::rpc;
-use super::{WebRemoteContext, NEXT_CONN_ID, WS_IDLE_TIMEOUT, WS_PING_EVERY, WS_TOKEN_PROTOCOL_PREFIX};
+use super::{
+    WebRemoteContext, NEXT_CONN_ID, WS_IDLE_TIMEOUT, WS_PING_EVERY, WS_TOKEN_PROTOCOL_PREFIX,
+};
 
 pub(super) async fn ws_route(
     State(ctx): State<Arc<WebRemoteContext>>,
@@ -71,7 +73,7 @@ async fn serve_ws(socket: WebSocket, ctx: Arc<WebRemoteContext>, client: ClientR
     let mut rx = ctx.hub.subscribe();
     let conn = NEXT_CONN_ID.fetch_add(1, Ordering::Relaxed);
     // agentId → 다음에 기대하는 절대 오프셋(구멍 감지 + 재접속 기준점).
-    let mut attached: HashMap<String, u64> = HashMap::new();
+    let mut attached: HashMap<String, Attached> = HashMap::new();
     // 채팅을 구독 중인 캐릭터들(터미널 attach와 독립이다 — 채팅 뷰가 주 화면).
     let mut following: HashSet<String> = HashSet::new();
     let mut last_seen = Instant::now();
@@ -82,6 +84,7 @@ async fn serve_ws(socket: WebSocket, ctx: Arc<WebRemoteContext>, client: ClientR
         &mut sink,
         &HostMsg::Hello {
             host_name: ctx.host_name.clone(),
+            instance_id: ctx.instance_id.clone(),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
             proto_version: WEB_REMOTE_PROTO_VERSION,
             permission: client.permission,
@@ -137,16 +140,27 @@ async fn serve_ws(socket: WebSocket, ctx: Arc<WebRemoteContext>, client: ClientR
                         }
                     }
                     if let HostMsg::Output(out) = &*msg {
-                        let expected = attached.get(&out.agent_id).copied().unwrap_or(out.offset);
-                        if out.offset != expected {
+                        let previous = attached.get(&out.agent_id).cloned();
+                        if previous.as_ref().is_some_and(|p| p.session.as_deref() != Some(out.session_id.as_str())) {
+                            if restore_agent(&mut sink, &ctx, &out.agent_id, None, None, &mut attached).await.is_err() { break; }
+                            continue;
+                        }
+                        let expected_session = previous.as_ref().and_then(|p| p.session.clone());
+                        let expected = previous.map_or(out.offset, |p| p.offset);
+                        if out.offset < expected { continue; }
+                        if out.offset > expected {
                             // 구멍(느린 뷰어의 broadcast 유실 등) — 그 캐릭터만
                             // 기준점부터 다시 복원한다.
-                            if restore_agent(&mut sink, &ctx, &out.agent_id, Some(expected), &mut attached).await.is_err() {
+                            if restore_agent(&mut sink, &ctx, &out.agent_id, Some(expected), expected_session.as_deref(), &mut attached).await.is_err() {
                                 break;
                             }
                             continue;
                         }
-                        attached.insert(out.agent_id.clone(), out.offset + out.bytes);
+                        attached.insert(out.agent_id.clone(), Attached { offset: out.offset + out.bytes, session: Some(out.session_id.clone()) });
+                    }
+                    if let HostMsg::Restore { agent_id, base_offset, session_id, .. } = &*msg {
+                        if attached.get(agent_id).is_some_and(|p| p.session == *session_id) { continue; }
+                        attached.insert(agent_id.clone(), Attached { offset: *base_offset, session: session_id.clone() });
                     }
                     // 세션 상태가 바뀌면 목록 메타(state/크기)도 같이 갱신한다.
                     if matches!(&*msg, HostMsg::SessionState { .. }) {
@@ -158,11 +172,13 @@ async fn serve_ws(socket: WebSocket, ctx: Arc<WebRemoteContext>, client: ClientR
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                     // 큐를 놓쳤다 — 붙어 있는 캐릭터 전부를 마지막 지점부터 복원.
-                    let agents: Vec<(String, u64)> =
-                        attached.iter().map(|(a, o)| (a.clone(), *o)).collect();
+                    let agents: Vec<(String, u64, Option<String>)> = attached
+                        .iter()
+                        .map(|(a, o)| (a.clone(), o.offset, o.session.clone()))
+                        .collect();
                     let mut failed = false;
-                    for (agent, offset) in agents {
-                        if restore_agent(&mut sink, &ctx, &agent, Some(offset), &mut attached).await.is_err() {
+                    for (agent, offset, session) in agents {
+                        if restore_agent(&mut sink, &ctx, &agent, Some(offset), session.as_deref(), &mut attached).await.is_err() {
                             failed = true;
                             break;
                         }
@@ -197,11 +213,20 @@ fn terminal_agent(msg: &HostMsg) -> Option<&str> {
     }
 }
 
+#[derive(Clone)]
+struct Attached {
+    offset: u64,
+    session: Option<String>,
+}
+
 type WsSink = futures_util::stream::SplitSink<WebSocket, Message>;
 
 async fn send_msg(sink: &mut WsSink, msg: &HostMsg) -> Result<(), ()> {
     let text = serde_json::to_string(msg).map_err(|_| ())?;
-    sink.send(Message::Text(text)).await.map_err(|_| ())
+    tokio::time::timeout(Duration::from_secs(15), sink.send(Message::Text(text)))
+        .await
+        .map_err(|_| ())?
+        .map_err(|_| ())
 }
 
 async fn handle_client_msg(
@@ -209,7 +234,7 @@ async fn handle_client_msg(
     ctx: &Arc<WebRemoteContext>,
     client: &ClientRecord,
     conn: u64,
-    attached: &mut HashMap<String, u64>,
+    attached: &mut HashMap<String, Attached>,
     following: &mut HashSet<String>,
     msg: ClientMsg,
 ) -> Result<(), ()> {
@@ -222,6 +247,7 @@ async fn handle_client_msg(
         ClientMsg::Attach {
             agent_id,
             last_offset,
+            last_session_id,
         } => {
             if !ctx.agent_allowed(client, &agent_id) {
                 return send_msg(
@@ -235,7 +261,17 @@ async fn handle_client_msg(
             // 웹 클라이언트는 공유 토글 없이 붙으므로 tap이 아직 없을 수 있다.
             // sink는 agentId 수명이라 세션 전에 달아도 안전하고, share()는 멱등이다.
             ctx.hub.share(&ctx.manager, &agent_id);
-            restore_agent(sink, ctx, &agent_id, last_offset, attached).await
+            // The journal snapshot captures the stream boundary and session ID
+            // together.  Checking the hub before that await races a restart.
+            restore_agent(
+                sink,
+                ctx,
+                &agent_id,
+                last_offset,
+                last_session_id.as_deref(),
+                attached,
+            )
+            .await
         }
         ClientMsg::Input { agent_id, data } => {
             if !client.permission.allows_input() {
@@ -258,7 +294,11 @@ async fn handle_client_msg(
             // 연결이 끊길 때 정확히 그만큼 놓는다(중복 follow는 registry가
             // 멱등이라 여기서 더 셀 것이 없다).
             let follow_target = (cmd == "chat.follow")
-                .then(|| args.get("agentId").and_then(|v| v.as_str()).map(str::to_string))
+                .then(|| {
+                    args.get("agentId")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                })
                 .flatten();
             let result = rpc::dispatch(ctx, client, conn, &cmd, args).await;
             if result.is_ok() {
@@ -291,8 +331,75 @@ async fn restore_agent(
     ctx: &Arc<WebRemoteContext>,
     agent_id: &str,
     last_offset: Option<u64>,
-    attached: &mut HashMap<String, u64>,
+    expected_session: Option<&str>,
+    attached: &mut HashMap<String, Attached>,
 ) -> Result<(), ()> {
+    if ctx.hub.has_journal() {
+        let snapshot = ctx.hub.journal_snapshot(agent_id).await.map_err(|_| ())?;
+        let total = snapshot.as_ref().map_or(0, |s| s.total);
+        // The writer returns the file boundary and its session identity together.
+        // Keep that ID for both the opening Restore and the attached cursor: a
+        // restart while the replay is being sent must be handled by the next
+        // broadcast, never silently combined with this old journal file.
+        let session_id = snapshot.as_ref().and_then(|s| s.session_id.clone());
+        let full =
+            journal_restore_is_full(last_offset, expected_session, session_id.as_deref(), total);
+        let start = if full { 0 } else { last_offset.unwrap_or(0) };
+        let (cols, rows) = if full {
+            (80, 24)
+        } else {
+            ctx.manager.size_of(agent_id).unwrap_or((80, 24))
+        };
+        send_msg(
+            sink,
+            &HostMsg::Restore {
+                agent_id: agent_id.into(),
+                snapshot: if full { Some(String::new()) } else { None },
+                base_offset: start,
+                cols,
+                rows,
+                session_id: session_id.clone(),
+            },
+        )
+        .await?;
+        let mut next = start;
+        if let Some(snapshot) = snapshot {
+            let mut reader = snapshot.reader(start).map_err(|_| ())?;
+            loop {
+                let (returned, page) = tokio::task::spawn_blocking(move || {
+                    let page = reader.page();
+                    (reader, page)
+                })
+                .await
+                .map_err(|_| ())?;
+                reader = returned;
+                let page = page.map_err(|_| ())?;
+                if page.is_empty() {
+                    break;
+                }
+                for mut record in page {
+                    // The initial restore is represented by the frame above;
+                    // replaying it on a delta attach would erase the existing VT.
+                    if matches!(&record.frame, HostMsg::Restore { .. }) {
+                        continue;
+                    }
+                    if let HostMsg::Output(ref mut output) = record.frame {
+                        next = output.offset + output.bytes;
+                        output.replay = true;
+                    }
+                    send_msg(sink, &record.frame).await?;
+                }
+            }
+        }
+        attached.insert(
+            agent_id.into(),
+            Attached {
+                offset: next,
+                session: session_id,
+            },
+        );
+        return Ok(());
+    }
     let Some(plan) = ctx.hub.replay_for(agent_id, last_offset).await else {
         return Ok(());
     };
@@ -315,6 +422,7 @@ async fn restore_agent(
         send_msg(
             sink,
             &HostMsg::Output(RemoteOutput {
+                replay: true,
                 agent_id: agent_id.to_string(),
                 session_id: chunk.session_id,
                 seq: chunk.seq,
@@ -325,8 +433,28 @@ async fn restore_agent(
         )
         .await?;
     }
-    attached.insert(agent_id.to_string(), next);
+    attached.insert(
+        agent_id.to_string(),
+        Attached {
+            offset: next,
+            session: ctx.hub.session_id_of(agent_id),
+        },
+    );
     Ok(())
+}
+
+/// An offset is valid only for the session that produced the captured journal
+/// boundary.  Older clients do not send a session ID, so `None` deliberately
+/// preserves their offset-resume behavior.
+fn journal_restore_is_full(
+    last_offset: Option<u64>,
+    expected_session: Option<&str>,
+    captured_session: Option<&str>,
+    total: u64,
+) -> bool {
+    last_offset.is_none()
+        || last_offset.is_some_and(|last| last > total)
+        || expected_session.is_some_and(|expected| Some(expected) != captured_session)
 }
 
 #[cfg(test)]
@@ -338,6 +466,7 @@ mod tests {
     #[test]
     fn only_terminal_frames_are_gated_by_attach() {
         let out = HostMsg::Output(RemoteOutput {
+            replay: false,
             agent_id: "ada".into(),
             session_id: "s".into(),
             seq: 1,
@@ -388,5 +517,31 @@ mod tests {
             }),
             None
         );
+    }
+
+    #[test]
+    fn journal_restore_discards_offset_when_captured_session_changed() {
+        // S1's long replay is still being sent when another client restarts
+        // the agent as S2.  Reusing S1's cursor against S2 would drop its
+        // early output, so the captured S2 ID forces a full restore.
+        assert!(journal_restore_is_full(
+            Some(8192),
+            Some("s1"),
+            Some("s2"),
+            16384
+        ));
+        assert!(!journal_restore_is_full(
+            Some(8192),
+            Some("s1"),
+            Some("s1"),
+            16384
+        ));
+        // Legacy clients have no session cursor and continue to resume.
+        assert!(!journal_restore_is_full(
+            Some(8192),
+            None,
+            Some("s2"),
+            16384
+        ));
     }
 }

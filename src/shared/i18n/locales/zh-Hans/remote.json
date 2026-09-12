@@ -1,0 +1,17 @@
+{
+  "connection": {
+    "title": "连接远程服务器",
+    "description": "输入服务器地址和令牌以打开其办公室。",
+    "address": "服务器地址",
+    "token": "访问令牌",
+    "tokenHelp": "从服务器 serve-token 文件复制令牌。此窗口不会保存它。",
+    "connect": "连接",
+    "connecting": "正在连接…",
+    "connected": "已连接到 {{host}}",
+    "reconnecting": "正在重新连接…",
+    "disconnected": "连接已断开。",
+    "failed": "无法连接。",
+    "operationFailed": "操作失败，请检查连接或保存冲突。",
+    "addressPlaceholder": "http://127.0.0.1:47373"
+  }
+}

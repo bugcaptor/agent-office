@@ -1,0 +1,17 @@
+{
+  "connection": {
+    "title": "連線遠端伺服器",
+    "description": "輸入伺服器位址和權杖以開啟其辦公室。",
+    "address": "伺服器位址",
+    "token": "存取權杖",
+    "tokenHelp": "從伺服器 serve-token 檔案複製權杖。此視窗不會儲存它。",
+    "connect": "連線",
+    "connecting": "連線中…",
+    "connected": "已連線至 {{host}}",
+    "reconnecting": "正在重新連線…",
+    "disconnected": "連線已中斷。",
+    "failed": "無法連線。",
+    "operationFailed": "操作失敗，請檢查連線或儲存衝突。",
+    "addressPlaceholder": "http://127.0.0.1:47373"
+  }
+}

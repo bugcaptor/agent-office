@@ -41,6 +41,8 @@ export interface ScrollbackGuard {
   filter(chunk: string): string;
   /** 경계 대기 중인 조각을 게워 낸다(없으면 빈 문자열). */
   flush(): string;
+  /** Discards a partial sequence when replacing the whole terminal image. */
+  reset(): void;
   /** 대기 중인 조각(테스트·진단용). */
   readonly pending: string;
 }
@@ -63,6 +65,9 @@ export function createScrollbackGuard(): ScrollbackGuard {
       const held = carry;
       carry = "";
       return held;
+    },
+    reset(): void {
+      carry = "";
     },
     get pending() {
       return carry;

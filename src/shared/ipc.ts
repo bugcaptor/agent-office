@@ -8,6 +8,16 @@
 
 /** `invoke()` command names (all commands use `rename_all = "camelCase"` args). */
 export const Commands = {
+  // 데스크톱 원격 보기. 이 명령들은 `?remote=1` 창에서만 원격 호스트로
+  // 전달되며, 토큰은 Rust 메모리에만 둔다.
+  remoteConnect: "remote_connect",
+  remoteRpc: "remote_rpc",
+  remoteSubscribe: "remote_subscribe",
+  remoteUnsubscribe: "remote_unsubscribe",
+  remoteDisconnect: "remote_disconnect",
+  remoteOpenWindow: "remote_open_window",
+  remoteInput: "remote_input",
+  remoteAck: "remote_ack",
   repositoryAuditList: "repository_audit_list",
   createSession: "create_session",
   disposeSession: "dispose_session",

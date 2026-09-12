@@ -23,12 +23,13 @@ interface SnapshotRequest {
 
 /**
  * 백엔드가 요청한 화면 스냅샷에 답한다. 아직 터미널을 한 번도 연 적 없는
- * 캐릭터(=xterm 없음)면 빈 문자열을 돌려준다 — 호스트는 그걸 "스냅샷 없음"과
- * 같게 취급해 링버퍼 리플레이로 복원한다. 어떤 경우에도 **응답은 한다**:
- * 침묵하면 브라우저가 타임아웃(2초)만큼 기다리게 된다.
+ * 캐릭터(=xterm 없음)면 응답하지 않는다. 빈 문자열은 "비어 있는 유효 스냅샷"일
+ * 수 있으므로 대체 값으로 보내면 안 된다. 호스트는 스냅샷 타임아웃 뒤 링버퍼
+ * 리플레이로 복원한다.
  */
 async function answerSnapshot(req: SnapshotRequest): Promise<void> {
-  const snapshot = (await terminalRegistry.flushAndSerialize(req.agentId)) ?? "";
+  const snapshot = await terminalRegistry.flushAndSerialize(req.agentId);
+  if (snapshot === undefined) return;
   await webRemoteApi.submitSnapshot(req.requestId, snapshot);
 }
 

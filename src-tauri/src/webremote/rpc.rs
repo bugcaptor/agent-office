@@ -39,10 +39,10 @@ use crate::types::CreateSessionRequest;
 pub fn required_permission(cmd: &str) -> Option<ClientPermission> {
     match cmd {
         // 읽기만
-        "agents.list" | "notifications.list" | "usage.snapshot" | "chat.follow"
+        "agents.list" | "notifications.list" | "usage.snapshot" | "chat.follow" | "office.snapshot" | "office.shells"
         | "media.portrait" => Some(ClientPermission::ReadOnly),
         // 조작
-        "session.start" | "session.dispose" | "notifications.clear" | "chat.send"
+        "session.start" | "session.dispose" | "session.resize" | "notifications.clear" | "chat.send" | "office.saveState"
         | "chat.keys" => Some(ClientPermission::Input),
         _ => None,
     }
@@ -76,8 +76,52 @@ pub async fn dispatch(
     if needed.allows_input() && !record.permission.allows_input() {
         return Err(RpcError::forbidden("조작 권한이 필요합니다"));
     }
+    // Profile topology is deliberately a headless-owner capability.  Normal
+    // browser pairing must not gain the ability to create arbitrary profiles.
+    if matches!(cmd, "office.snapshot" | "office.saveState" | "office.shells") && record.client_id != "serve-owner" {
+        return Err(RpcError::forbidden("서버 소유자 토큰이 필요합니다"));
+    }
 
     match cmd {
+        "office.shells" => serde_json::to_value(crate::session::shells::detect_shells()).map_err(|e| RpcError::internal(e.to_string())),
+        "office.snapshot" => {
+            let _guard = ctx.office_write.lock().await;
+            let state = ctx.store.load();
+            let revision = state_revision(&state)?;
+            let sessions: Vec<_> = ctx.registry.snapshot().into_iter().map(|(session_id, agent_id, state)| {
+                {
+                    let (cols, rows) = ctx.manager.size_of(&agent_id).unwrap_or((80,24));
+                    serde_json::json!({"sessionId": session_id, "agentId": agent_id, "state": state, "cols":cols, "rows":rows})
+                }
+            }).collect();
+            let settings = ctx.settings.read().map_err(|_| RpcError::internal("settings lock poisoned"))?.clone();
+            Ok(serde_json::json!({"state": state, "settings": settings, "sessions": sessions, "revision": revision}))
+        }
+
+        "office.saveState" => {
+            let _guard = ctx.office_write.lock().await;
+            let state: crate::types::PersistedState = serde_json::from_value(args.get("state").cloned().unwrap_or(Value::Null))
+                .map_err(|_| RpcError::bad_args("state가 올바른 PersistedState가 아닙니다"))?;
+            if state.version != 1 { return Err(RpcError::bad_args("지원하지 않는 state 버전입니다")); }
+            let supplied = args.get("revision").and_then(Value::as_str).ok_or_else(|| RpcError::bad_args("revision이 필요합니다"))?;
+            let current = ctx.store.load();
+            let current_revision = state_revision(&current)?;
+            if supplied != current_revision {
+                return Err(RpcError::new("conflict", "다른 클라이언트가 상태를 변경했습니다"));
+            }
+            let ids: std::collections::HashSet<_> = state.agents.iter().map(|p| p.id.as_str()).collect();
+            if ids.len() != state.agents.len() || ids.iter().any(|id| id.is_empty() || id.len() > 128) {
+                return Err(RpcError::bad_args("invalid-agent-id"));
+            }
+            if current.agents.iter().any(|p| !ids.contains(p.id.as_str()) && ctx.manager.is_running(&p.id)) {
+                return Err(RpcError::bad_args("stop-session-before-removing-profile"));
+            }
+            ctx.store.save(&state).map_err(|e| RpcError::internal(e.to_string()))?;
+            for profile in &state.agents { ctx.hub.share(&ctx.manager, &profile.id); }
+            ctx.hub.broadcast(super::protocol::HostMsg::Agents { agents: ctx.build_agents_for(record) });
+            Ok(serde_json::json!({"revision": state_revision(&state)?}))
+        }
+
         "agents.list" => serde_json::to_value(ctx.build_agents_for(record))
             .map_err(|e| RpcError::internal(e.to_string())),
 
@@ -111,6 +155,7 @@ pub async fn dispatch(
                 .into_iter()
                 .find(|a| a.id == agent_id)
                 .ok_or_else(|| RpcError::not_found("저장된 캐릭터가 아닙니다"))?;
+            if ctx.hub.has_journal() { ctx.hub.share(&ctx.manager, &agent_id); }
             let created = crate::ipc::commands::spawn_session(
                 &ctx.manager,
                 &ctx.observer,
@@ -135,6 +180,26 @@ pub async fn dispatch(
             .await
             .map_err(RpcError::internal)?;
             serde_json::to_value(created).map_err(|e| RpcError::internal(e.to_string()))
+        }
+
+        "session.resize" => {
+            let agent_id = arg_str(&args, "agentId")?;
+            ensure_visible(ctx, record, &agent_id)?;
+            let cols = args
+                .get("cols")
+                .and_then(|v| v.as_u64())
+                .filter(|v| (1..=u16::MAX as u64).contains(v))
+                .ok_or_else(|| RpcError::bad_args("cols는 1 이상의 정수여야 합니다"))? as u16;
+            let rows = args
+                .get("rows")
+                .and_then(|v| v.as_u64())
+                .filter(|v| (1..=u16::MAX as u64).contains(v))
+                .ok_or_else(|| RpcError::bad_args("rows는 1 이상의 정수여야 합니다"))? as u16;
+            if !ctx.manager.is_running(&agent_id) {
+                return Err(RpcError::not_found("실행 중인 세션이 아닙니다"));
+            }
+            ctx.hub.resize_session(&ctx.manager, &agent_id, cols, rows);
+            Ok(Value::Null)
         }
 
         "session.dispose" => {
@@ -244,6 +309,14 @@ pub async fn dispatch(
     }
 }
 
+fn state_revision(state: &crate::types::PersistedState) -> Result<String, RpcError> {
+    use std::hash::{Hash, Hasher};
+    let bytes = serde_json::to_vec(state).map_err(|e| RpcError::internal(e.to_string()))?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    Ok(format!("{:016x}", hasher.finish()))
+}
+
 fn ensure_visible(ctx: &Arc<WebRemoteContext>, record: &ClientRecord, agent_id: &str) -> Result<(), RpcError> {
     if ctx.agent_allowed(record, agent_id) {
         Ok(())
@@ -335,11 +408,14 @@ mod tests {
             Some(ClientPermission::ReadOnly)
         );
         assert_eq!(required_permission("usage.snapshot"), Some(ClientPermission::ReadOnly));
+        assert_eq!(required_permission("office.snapshot"), Some(ClientPermission::ReadOnly));
         // 아바타 초상 — 읽기만(쓰기는 호스트 전용).
         assert_eq!(required_permission("media.portrait"), Some(ClientPermission::ReadOnly));
         // operator 티어
         assert_eq!(required_permission("session.start"), Some(ClientPermission::Input));
         assert_eq!(required_permission("session.dispose"), Some(ClientPermission::Input));
+        assert_eq!(required_permission("session.resize"), Some(ClientPermission::Input));
+        assert_eq!(required_permission("office.saveState"), Some(ClientPermission::Input));
         assert_eq!(
             required_permission("notifications.clear"),
             Some(ClientPermission::Input)
@@ -373,9 +449,12 @@ mod tests {
             "agents.list",
             "notifications.list",
             "usage.snapshot",
+            "office.snapshot",
             "media.portrait",
             "session.start",
             "session.dispose",
+            "session.resize",
+            "office.saveState",
             "notifications.clear",
             "chat.follow",
             "chat.send",
@@ -384,7 +463,7 @@ mod tests {
         .into_iter()
         .filter(|c| required_permission(c).is_some())
         .collect();
-        assert_eq!(opened.len(), 10, "열린 커맨드는 정확히 이 10개뿐이다");
+        assert_eq!(opened.len(), 13, "열린 커맨드는 정확히 이 13개뿐이다");
     }
 
     /// 초상은 있으면 base64, 없으면 null이다(뷰어는 null을 절차 생성 신호로 쓴다).
