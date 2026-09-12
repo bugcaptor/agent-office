@@ -92,9 +92,45 @@ pub fn open_dir_in_vscode(dir: &str) -> Result<(), String> {
     Err("Visual Studio Code를 찾을 수 없습니다. VS Code 설치 여부를 확인해 주세요.".to_string())
 }
 
+/// Bring the IDE back for an observed session. On macOS LaunchServices can
+/// activate the application without opening/replacing any workspace. The
+/// other platforms reuse the existing folder launcher; no --reuse-window
+/// flag is used because it could replace an unrelated window's workspace.
+pub(crate) fn focus_vscode(cwd: &str) -> Result<(), String> {
+    let Some(candidate) = focus_candidate(std::env::consts::OS) else {
+        return open_dir_in_vscode(cwd);
+    };
+    let status = Command::new(&candidate.program)
+        .args(&candidate.args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|_| "vscode-activate-failed".to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("vscode-activate-failed".into())
+    }
+}
+
+fn focus_candidate(os: &str) -> Option<LaunchCandidate> {
+    (os == "macos").then(|| LaunchCandidate::new("open", &["-a", "Visual Studio Code"]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn macos_focus_activates_the_app_without_opening_or_replacing_a_workspace() {
+        assert_eq!(
+            focus_candidate("macos"),
+            Some(LaunchCandidate::new("open", &["-a", "Visual Studio Code"]))
+        );
+        assert!(focus_candidate("windows").is_none());
+        assert!(focus_candidate("linux").is_none());
+    }
 
     #[test]
     fn macos_candidates_are_code_then_open_fallback() {

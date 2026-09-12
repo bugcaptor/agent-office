@@ -47,6 +47,20 @@ pub(super) struct ObservedConnection {
     pub(super) owner_id: String,
     pub(super) last_sequence: u64,
     pub(super) last_heartbeat_ms: u64,
+    /// Set only by a connector which has verified the source application.
+    /// Provider identity alone (Codex/Claude) does not identify its host UI.
+    pub(super) focus_target: Option<ObservedFocusTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ObservedFocusTarget {
+    VsCode { cwd: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ObservedFocus {
+    pub session_id: String,
+    pub target: ObservedFocusTarget,
 }
 
 /// Node 연결기가 등록한 이미 실행 중인 Codex/Claude 세션의 attach 결과.
@@ -266,6 +280,22 @@ impl SessionManager {
         pid: Option<u32>,
         profile: AgentEventProfile,
     ) -> Result<ObservedAttachOutcome, String> {
+        self.attach_observed_with_focus(
+            agent_id, provider, source_session_id, cwd, owner_id, pid, profile, None,
+        )
+    }
+
+    pub(crate) fn attach_observed_with_focus(
+        &self,
+        agent_id: &str,
+        provider: &str,
+        source_session_id: &str,
+        cwd: &str,
+        owner_id: &str,
+        pid: Option<u32>,
+        profile: AgentEventProfile,
+        focus_target: Option<ObservedFocusTarget>,
+    ) -> Result<ObservedAttachOutcome, String> {
         let _lifecycle = self.observed_lifecycle.lock();
         if self
             .find(agent_id)
@@ -337,12 +367,24 @@ impl SessionManager {
                     owner_id: owner_id.to_string(),
                     last_sequence: 0,
                     last_heartbeat_ms: now_ms(),
+                    focus_target,
                 }),
             },
         );
         Ok(ObservedAttachOutcome {
             session_id,
             reused: false,
+        })
+    }
+
+    /// Focus uses the live connection's original folder, not an editable
+    /// character profile. Detach removes this target with the connection.
+    pub(crate) fn observed_focus(&self, agent_id: &str) -> Option<ObservedFocus> {
+        let externals = self.externals.lock();
+        let session = externals.get(agent_id)?;
+        Some(ObservedFocus {
+            session_id: session.session_id.clone(),
+            target: session.observed.as_ref()?.focus_target.clone()?,
         })
     }
 

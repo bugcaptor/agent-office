@@ -168,8 +168,9 @@ export interface AgentOfficeApi {
   setKeepAwake(active: boolean): Promise<void>;
   /** 마스코트 창(#72) 표시/숨김. 창은 항상 존재하고 표시만 토글된다. */
   setMascotVisible(visible: boolean): Promise<void>;
-  /** 마스코트 클릭(#72) — main 창을 앞으로 올리고 해당 에이전트 터미널을
-   * 열도록 main에 요청한다. 마스코트 창에서만 호출한다. */
+  /** 마스코트 클릭(#72) — 검증된 앱 내 IDE 연결이면 원본 VS Code 창을 먼저
+   * 포커스한다. 그 밖의 세션과 포커스 실패는 main 창과 해당 터미널을 연다.
+   * 마스코트 창에서만 호출한다. */
   mascotActivate(agentId: string): Promise<void>;
   /** 마스코트 신호등(docs/mascot-lights-design.md §5.3) — 창 크기·위치를 한 번에
    * 적용한다. 인자 전부 **물리 px**(mascot 창이 dpr로 환산해 넘긴다). 창이

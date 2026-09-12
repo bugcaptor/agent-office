@@ -12,9 +12,9 @@
 //    변화가 있을 때만 emit(+ visible 변화 시 창 show/hide).
 //  - 마스코트 부팅 → main: `mascot-ready` 수신 시 현재 상태 재방출(리스너 설치
 //    전에 보낸 emit을 놓치는 부팅 레이스를 핸드셰이크로 해소).
-//  - 마스코트 클릭 → main: Rust가 main을 포커스한 뒤 `mascot-open-terminal`을
-//    emit_to하고, 여기서 officeBus.emitAgentClicked로 넘긴다(세션 보장 +
-//    터미널 열기 + 알림 클리어가 이미 그 안에 있다 — 재구현 금지).
+//  - 마스코트 클릭 → main: 검증된 앱 내 IDE 연결이면 Rust가 원본 VS Code 창을
+//    우선 포커스하고 해당 외부 세션 알림만 지운다. 그 밖의 연결과 포커스 실패는
+//    `mascot-open-terminal`으로 와서 기존 main 포커스·터미널 열기 경로를 쓴다.
 //
 // 스프라이트 활동이 끊겨도 15초는 그대로 둔다(linger): 턴 사이 짧은 유휴마다
 // 창이 사라졌다 나타나면 눈에 거슬린다. 신호등은 대시보드라 linger를 적용하지

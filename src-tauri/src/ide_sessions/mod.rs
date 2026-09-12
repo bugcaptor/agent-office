@@ -7,7 +7,7 @@ use std::sync::{Arc, RwLock, Weak};
 use std::time::Duration;
 
 use crate::persistence::settings_store::AppSettings;
-use crate::session::external::ObservedEventKind;
+use crate::session::external::{ObservedEventKind, ObservedFocusTarget};
 use crate::session::manager::SessionManager;
 use crate::session_events::types::AgentEventProfile;
 use transcripts::{Candidate, EventFilter, TranscriptTail};
@@ -107,7 +107,7 @@ impl Watcher {
         }
         let tail = TranscriptTail::from_candidate(&candidate)?;
         let owner_id = uuid::Uuid::new_v4().to_string();
-        let attached = manager.attach_observed(
+        let attached = manager.attach_observed_with_focus(
             agent_id,
             provider,
             source_session_id,
@@ -115,6 +115,9 @@ impl Watcher {
             &owner_id,
             None,
             profile,
+            Some(ObservedFocusTarget::VsCode {
+                cwd: candidate.cwd.clone(),
+            }),
         )?;
         Ok(Self {
             manager: Arc::downgrade(manager),

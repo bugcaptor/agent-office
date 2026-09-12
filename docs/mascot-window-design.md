@@ -6,8 +6,9 @@
 열린 질문을 전부 확정한 구현 지시서다. 구현자는 이 문서만 따라가면 된다.
 
 활동 중인 캐릭터 1명을 앱 창과 독립된 **투명 배경·항상 최상단 데스크톱 마스코트
-창**으로 띄운다. 알림(pending)이 생기면 마스코트가 그 자리에서 알리고, 클릭하면
-메인 창이 앞으로 오며 해당 캐릭터의 터미널 오버레이가 열린다.
+창**으로 띄운다. 알림(pending)이 생기면 마스코트가 그 자리에서 알린다. 클릭하면
+검증된 앱 내 IDE 연결은 원본 VS Code로 돌아가고, 그 밖의 세션은 메인 창과 해당
+캐릭터의 터미널 오버레이를 연다.
 
 ## 목표와 범위
 
@@ -21,7 +22,8 @@
   **Pixi 미사용** — 순수 `generateSheet` + 2D 캔버스로 충분하다(§4.2).
 - main(진실의 원천, zustand) → mascot 상태 푸시(Tauri 이벤트) + ready 핸드셰이크.
 - pending 시 느낌표 배지 + 바운스 애니메이션, 클리어 시 정지.
-- 클릭 → main 포커스 + 해당 에이전트 터미널 열기. 드래그로 위치 이동(영속).
+- 클릭 → 검증된 앱 내 IDE 연결은 원본 VS Code 포커스, 나머지는 main 포커스 +
+  해당 에이전트 터미널 열기. 드래그로 위치 이동(영속).
 - 설정 토글 `mascotEnabled`(기본 OFF, settings.json 영속).
 
 **제외(후속)**
@@ -50,11 +52,12 @@
     ├─ emit("mascot-state", state)  ──────────────►  [mascot 창]
     ├─ invoke(set_mascot_visible)   ──► [Rust] show/hide     │ listen
     ├─ listen("mascot-ready") ◄────────────────────  부팅 시 emit (replay 요청)
-    └─ listen("mascot-open-terminal") ◄─ [Rust] emit_to("main")
+    └─ listen("mascot-open-terminal") ◄─ [Rust] 일반 경로만 emit_to("main")
                                               ▲
 [mascot 창]  얇은 소비자(스토어 없음, Pixi 없음)      │
-  클릭 → invoke(mascot_activate(agentId)) ──► [Rust] main show+unminimize+set_focus
-  커스텀 시트 → invoke(load_sprite(agentId))          + emit_to("main", "mascot-open-terminal")
+  클릭 → invoke(mascot_activate(agentId)) ──► [Rust] 검증된 앱 내 IDE 연결은
+  커스텀 시트 → invoke(load_sprite(agentId))          원본 VS Code 포커스 + 알림만 지움
+                                                        그 밖은 main 포커스 + emit_to
   드래그 → window.startDragging() / onMoved → localStorage 저장
 ```
 
@@ -299,9 +302,11 @@ export interface MascotState {
 - linger: target이 null이 된 시점에 15초 타이머 — 만료 시 visible=false 재방출.
   타이머 중 target 복귀 시 취소. 설정 OFF는 **linger 없이 즉시** 숨김(keepAwake 관례).
 - 핸드셰이크: `listen("mascot-ready", …)` → 현재 상태 즉시 재emit(부팅 레이스 해소).
-- 터미널 열기: `listen("mascot-open-terminal", ({agentId}) => officeBus.emitAgentClicked(agentId))`
-  — emitAgentClicked(sessionBridge.ts:199)가 이미 ensureSession + openTerminal +
-  clearNotifications를 전부 수행하므로 재사용(중복 구현 금지).
+- 일반 경로의 터미널 열기: `listen("mascot-open-terminal", ({agentId}) =>
+  officeBus.emitAgentClicked(agentId))` — emitAgentClicked(sessionBridge.ts:199)가
+  이미 ensureSession + openTerminal + clearNotifications를 전부 수행하므로 재사용한다.
+  검증된 앱 내 IDE 연결은 이 이벤트를 내보내지 않는다. Rust가 원본 VS Code를 먼저
+  포커스하고, 성공했을 때 그 연결의 외부 세션 알림만 허브에서 지운다.
 
 ### 5.3 설정
 
@@ -320,10 +325,23 @@ export interface MascotState {
 | TS 키 | wire 이름 | 시그니처(Rust) | 동작 |
 |---|---|---|---|
 | `setMascotVisible` | `set_mascot_visible` | `(app: AppHandle, visible: bool)` | `get_webview_window("mascot")` → show()/hide(). 창 부재는 no-op Ok |
-| `mascotActivate` | `mascot_activate` | `(app: AppHandle, agent_id: String)` | main 창 `show()+unminimize()+set_focus()` 후 `emit_to("main", "mascot-open-terminal", json!({"agentId": agent_id}))` |
+| `mascotActivate` | `mascot_activate` | `(app: AppHandle, app_state: State<AppState>, agent_id: String)` | 앱에서 선택한 뒤 VS Code 출처가 검증된 IDE 연결이면 저장한 포커스 대상의 원본 VS Code를 우선 활성화하고 그 연결의 알림만 지운다. 실패하거나 일반 PTY·알 수 없는 외부 앱·CLI 연결이면 main 창 `show()+unminimize()+set_focus()` 후 `emit_to("main", "mascot-open-terminal", json!({"agentId": agent_id}))` |
 
 `set_badge_count`(misc.rs:12)의 `get_webview_window("main")` 패턴을 그대로 따른다.
 tauriApi.ts에는 `AgentOfficeApi`(shared/types/api.ts) 인터페이스에 두 메서드를 추가.
+
+### 6.1.1 외부 IDE 포커스 대상
+
+앱의 IDE 세션 선택 흐름에서 VS Code 출처를 검증해 연결한 경우에만 백엔드가 명시적
+포커스 대상을 외부 세션에 저장한다. 그 대상이 있는 `mascot_activate`는 main 창을
+먼저 열거나 `mascot-open-terminal`을 내보내지 않는다. 원본 활성화에 성공하면 그
+연결의 알림만 지우며, 다른 캐릭터나 연결의 알림에는 영향을 주지 않는다.
+
+macOS에서는 실행 중인 VS Code 앱을 활성화한다. 따라서 기존 창과 대화는 그대로
+유지하지만 특정 대화 탭을 고르지는 않는다. Windows와 Linux에서는 연결의 작업 폴더로
+기존 VS Code 실행 경로를 호출한다. 활성화 실패, 대상이 없거나 지원되지 않는
+외부 앱, 일반 PTY, CLI로 관찰한 연결은 모두 기존 main 패널 경로로 폴백한다. CLI
+연결 계약에는 원본 앱 활성화 대상이 등록되지 않으므로 VS Code라고 추정하지 않는다.
 
 ### 6.2 이벤트 (`src/shared/ipc.ts` Events에 추가 — 기존 kebab-case 관례)
 
@@ -358,9 +376,10 @@ tauriApi.ts에는 `AgentOfficeApi`(shared/types/api.ts) 인터페이스에 두 �
 4. **마스코트 렌더**: protocol 파서, sheet.ts(절차/커스텀 분기·96px 리샘플),
    idle 애니, 배지/바운스. 검증: vitest — 시트 소스 결정·리샘플 크기 계산·파서
    가드(순수 파트); 눈검증 — main과 동일 외형(같은 seed), 커스텀 시트 일치.
-5. **인터랙션**: drag.ts 판정, 클릭→`mascot_activate`→main 포커스+터미널,
-   position.ts 저장/복원·클램프. 검증: vitest — drag 임계·클램프 순수 로직;
-   눈검증 — 클릭/드래그 구분, 멀티모니터 복원.
+5. **인터랙션**: drag.ts 판정, 클릭→`mascot_activate`→검증된 앱 내 IDE 연결은
+   원본 VS Code 포커스, 그 밖은 main 포커스+터미널, position.ts 저장/복원·클램프.
+   검증: vitest — drag 임계·클램프 순수 로직; 눈검증 — 클릭/드래그 구분,
+   멀티모니터 복원.
 6. **설정 UI + 마감**: SettingsDialog 토글, 라이프사이클 총정리(종료 동반 파괴,
    linger), `docs/subsystem-c-ui.md` §1 "단일 BrowserWindow" 전제에 마스코트 예외
    각주 추가. 검증: 전체 스위트 + §9 눈검증 일괄.
@@ -386,7 +405,9 @@ tauriApi.ts에는 `AgentOfficeApi`(shared/types/api.ts) 인터페이스에 두 �
 3. 같은 seed 캐릭터가 main 오피스와 동일 외형(절차 생성·커스텀 각 1회), idle 2프레임 애니 동작.
 4. 알림 발생 → 배지+바운스 시작, 터미널 열어 클리어 → 정지·(다른 활동 없으면 15초 후 숨김).
 5. 활동 캐릭터 교체(pending 인터럽트/working sticky) 동작.
-6. 클릭 → main이 최전면 포커스 + 해당 캐릭터 터미널 오버레이 열림(백그라운드·최소화 상태에서도).
+6. 검증된 앱 내 IDE 연결의 클릭 → 원본 VS Code가 앞으로 오고 해당 연결 알림만
+   사라짐. 일반 PTY·알 수 없는 외부 앱·CLI 연결 또는 VS Code 포커스 실패 → main이
+   최전면 포커스 + 해당 캐릭터 터미널 오버레이 열림(백그라운드·최소화 상태에서도).
 7. 드래그 이동 가능, 4px 미만 움직임은 클릭으로 판정. 앱 재시작 후 위치 복원.
 8. 모니터 해제(노트북 단독) 후 재시작 → 기본 위치로 복귀(화면 밖 미아 없음).
 9. 작업 중 표시/숨김 전환이 현재 입력 포커스를 훔치지 않음.

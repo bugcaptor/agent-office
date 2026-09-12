@@ -233,6 +233,41 @@ fn changed_candidate_or_wrong_workdir_does_not_attach() {
     assert!(f.events.session_starts().is_empty());
 }
 
+#[test]
+fn verified_ide_connection_owns_its_focus_target_until_detached() {
+    let f = Fixture::new();
+    assert!(f.manager.observed_focus("a1").is_none());
+    let watcher = f.attach("a1").unwrap();
+    let focus = f.manager.observed_focus("a1").unwrap();
+    assert_eq!(focus.session_id, watcher.session_id);
+    assert_eq!(
+        focus.target,
+        ObservedFocusTarget::VsCode {
+            cwd: f.dir.path().to_string_lossy().into_owned(),
+        }
+    );
+    drop(watcher);
+    assert!(f.manager.observed_focus("a1").is_none());
+
+    // Codex/Claude alone are not host application identifiers. A generic
+    // connector must not silently gain a VS Code activation target.
+    f.manager
+        .attach_observed(
+            "a1",
+            "codex",
+            "source-1",
+            f.dir.path().to_str().unwrap(),
+            "owner",
+            None,
+            AgentEventProfile {
+                name: "Example".into(),
+                role: None,
+            },
+        )
+        .unwrap();
+    assert!(f.manager.observed_focus("a1").is_none());
+}
+
 #[tokio::test]
 async fn running_pty_is_preserved_and_exited_pty_does_not_hide_new_notifications() {
     let f = Fixture::new();

@@ -6,6 +6,7 @@
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::session::external::{ObservedFocus, ObservedFocusTarget};
 use crate::state::AppState;
 
 #[tauri::command(rename_all = "camelCase")]
@@ -85,14 +86,32 @@ pub async fn set_mascot_layout(
     Ok(())
 }
 
-/// 마스코트 클릭(이슈 #72): main 창을 앞으로 끌어올린 뒤 해당 에이전트의
-/// 터미널을 열라고 main에 알린다. 포커스/표시는 Rust가 수행하므로 마스코트
+/// 마스코트 클릭: 원본 앱이 확인된 관찰 연결은 해당 앱으로 이동한다.
+/// 그 외에는 main 창을 앞으로 끌어올리고 해당 캐릭터 패널을 연다. 마스코트
 /// 창에는 창 조작 권한을 주지 않아도 된다(권한 표면 최소화).
 ///
 /// 최소화 상태에서도 복구돼야 하므로 show + unminimize + set_focus 3연타.
 /// 이벤트는 `emit_to("main", ...)`으로 보내 마스코트 자신이 되받지 않게 한다.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn mascot_activate(app: AppHandle, agent_id: String) -> Result<(), String> {
+pub async fn mascot_activate(
+    app: AppHandle,
+    app_state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<(), String> {
+    let target = app_state.manager.observed_focus(&agent_id);
+    // Do not focus main before invoking the external app: that would briefly
+    // steal focus and open an unrelated Agent Office terminal on every click.
+    let focused = tauri::async_runtime::spawn_blocking(move || {
+        focus_observed_target(target, crate::vscode::focus_vscode)
+    })
+    .await
+    .unwrap_or(None);
+    if let Some(session_id) = focused {
+        // Clear only notifications belonging to the connection we activated;
+        // a replacement connection during launch must keep its own alerts.
+        app_state.hub.clear(&session_id, None);
+        return Ok(());
+    }
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.show();
         let _ = main.unminimize();
@@ -104,6 +123,64 @@ pub async fn mascot_activate(app: AppHandle, agent_id: String) -> Result<(), Str
         serde_json::json!({ "agentId": agent_id }),
     )
     .map_err(|e| e.to_string())
+}
+
+fn focus_observed_target(
+    focus: Option<ObservedFocus>,
+    open_vscode: impl FnOnce(&str) -> Result<(), String>,
+) -> Option<String> {
+    let focus = focus?;
+    let result = match focus.target {
+        ObservedFocusTarget::VsCode { cwd } => open_vscode(&cwd),
+    };
+    match result {
+        Ok(()) => Some(focus.session_id),
+        Err(error) => {
+            // The existing connection panel remains the recovery path, with
+            // its explicit open-in-VS-Code and disconnect controls.
+            eprintln!("agent-office: external mascot focus failed: {error}");
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod mascot_focus_tests {
+    use super::*;
+
+    fn vscode() -> ObservedFocus {
+        ObservedFocus {
+            session_id: "connected-session".into(),
+            target: ObservedFocusTarget::VsCode {
+                cwd: "/workspace/example".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn known_ide_focus_returns_its_session_for_acknowledgement() {
+        let focused = focus_observed_target(Some(vscode()), |cwd| {
+            assert_eq!(cwd, "/workspace/example");
+            Ok(())
+        });
+        assert_eq!(focused.as_deref(), Some("connected-session"));
+    }
+
+    #[test]
+    fn normal_or_unknown_external_session_does_not_launch_an_inferred_app() {
+        assert_eq!(
+            focus_observed_target(None, |_| panic!("unexpected application launch")),
+            None
+        );
+    }
+
+    #[test]
+    fn failed_external_launch_keeps_the_existing_main_panel_fallback() {
+        assert_eq!(
+            focus_observed_target(Some(vscode()), |_| Err("app-unavailable".into())),
+            None
+        );
+    }
 }
 
 /// 에이전트 작업 폴더를 Visual Studio Code로 연다. `path`는 렌더러가
