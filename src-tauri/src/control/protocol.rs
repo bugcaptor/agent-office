@@ -203,6 +203,56 @@ pub struct PingResult {
     pub running_count: usize,
 }
 
+// ── VS Code 표시 API ─────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayCapabilities {
+    pub protocol_version: u8,
+    pub features: Vec<&'static str>,
+    pub generator_revision: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayCharactersResult { pub characters: Vec<DisplayCharacter> }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayCharacter {
+    pub agent_id: String,
+    pub name: String,
+    pub role: String,
+    pub cwd: Option<String>,
+    pub revision: String,
+    pub seed: String,
+    pub archetype: Option<String>,
+    pub colors: Option<crate::types::ColorOverrides>,
+    pub sprite_updated_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayAppearanceParams { pub agent_id: String, pub revision: String }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayAppearanceResult {
+    pub agent_id: String,
+    pub revision: String,
+    pub png_base64: Option<String>,
+    pub mime_type: &'static str,
+    pub frame_count: u8,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayFocusParams { pub agent_id: String }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayFocusResult { pub agent_id: String, pub focused: bool }
+
 // ── 동료 대화(docs/agent-talk-design.md §3) ──────────────────────────
 
 /// 발신자 신원 헤더. 값은 앱이 세션 셸에 심어 둔 `AGENT_OFFICE_SESSION`이다 —

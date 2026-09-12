@@ -14,6 +14,8 @@
 // 승인(파일 생성)/취소(파일 삭제)가 서버 재시작 없이 즉시 반영된다.
 
 pub mod client;
+/// VS Code 연결 확장이 캐릭터·외형·사용량을 읽는 제한된 표시 API.
+mod display;
 mod observed;
 pub mod protocol;
 pub mod tmux;
@@ -48,6 +50,7 @@ use routes::{
     attach, clear, create, detach, dispose, list, notifications, ping, send, settings_get,
     settings_set,
 };
+use display::{appearance, capabilities, characters, focus, usage};
 use talk::{talk_end, talk_inbox, talk_reply, talk_roster, talk_send};
 use token::auth;
 
@@ -73,6 +76,12 @@ pub struct ControlContext {
     pub tmux_probe: tmux::TmuxProbe,
     /// 자동 입력 관문(kbm #2t9 Phase 2).
     pub gate: Arc<crate::session::inject::InjectGate>,
+    /// 네이티브·웹 원격과 같은 사용량 스로틀/캐시 상태.
+    pub live_usage: Arc<crate::usage::LiveUsageState>,
+    /// 커스텀 스프라이트 저장소. 읽기 API도 앱과 같은 바이트 상한을 쓴다.
+    pub sprite_store: crate::persistence::png_store::PngStore,
+    /// 창을 복원하고 렌더러에 표시 전용 선택을 알린다. 세션 생성은 하지 않는다.
+    pub focus_agent: Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>,
 }
 
 impl ControlContext {
@@ -102,6 +111,11 @@ fn router(ctx: Arc<ControlContext>) -> Router {
         .route("/v1/talk/end", post(talk_end))
         .route("/v1/settings/get", post(settings_get))
         .route("/v1/settings/set", post(settings_set))
+        .route("/v1/display/capabilities", post(capabilities))
+        .route("/v1/display/characters", post(characters))
+        .route("/v1/display/appearance", post(appearance))
+        .route("/v1/display/usage", post(usage))
+        .route("/v1/display/focus", post(focus))
         .layer(axum::middleware::from_fn_with_state(ctx.clone(), auth))
         .with_state(ctx)
 }
@@ -342,6 +356,12 @@ mod tests {
             app_data_dir: dir.clone(),
             tmux_probe,
             gate,
+            live_usage: Arc::new(crate::usage::LiveUsageState::new()),
+            sprite_store: crate::persistence::png_store::PngStore::new(
+                dir.join("sprites"),
+                crate::persistence::png_store::MAX_SPRITE_BYTES,
+            ),
+            focus_agent: Arc::new(|_| Ok(())),
         });
         let state = ControlServerState::default();
         state.set_app_data_dir(dir.clone());
@@ -1394,6 +1414,59 @@ mod tests {
             .unwrap();
         assert_eq!(resp["ok"], false);
         assert!(!f.ctx.talk.is_enabled());
+        cleanup(&f);
+    }
+
+    #[tokio::test]
+    async fn display_routes_require_auth_validate_revisions_and_never_start_a_session() {
+        let f = build("display-api");
+        f.ctx.store.save(&crate::types::PersistedState {
+            agents: vec![profile("a1", "Ada")], version: 1, vacation_mode: None,
+        }).unwrap();
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let client = reqwest::Client::new();
+
+        let unauthenticated = client
+            .post(format!("http://127.0.0.1:{port}/v1/display/characters"))
+            .json(&serde_json::json!({}))
+            .send().await.unwrap();
+        assert_eq!(unauthenticated.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        let token = f.state.issue_token().unwrap();
+        let characters: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/display/characters"))
+            .header(TOKEN_HEADER, &token).json(&serde_json::json!({}))
+            .send().await.unwrap().json().await.unwrap();
+        assert_eq!(characters["ok"], true);
+        assert_eq!(characters["data"]["characters"][0]["agentId"], "a1");
+        let revision = characters["data"]["characters"][0]["revision"].as_str().unwrap();
+
+        let stale: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/display/appearance"))
+            .header(TOKEN_HEADER, &token)
+            .json(&serde_json::json!({ "agentId": "a1", "revision": "stale" }))
+            .send().await.unwrap().json().await.unwrap();
+        assert_eq!(stale["error"], "appearance_revision_mismatch");
+
+        let unknown: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/display/focus"))
+            .header(TOKEN_HEADER, &token).json(&serde_json::json!({ "agentId": "missing" }))
+            .send().await.unwrap().json().await.unwrap();
+        assert_eq!(unknown["error"], "unknown_agent");
+
+        let focus: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/display/focus"))
+            .header(TOKEN_HEADER, &token).json(&serde_json::json!({ "agentId": "a1" }))
+            .send().await.unwrap().json().await.unwrap();
+        assert_eq!(focus["data"]["focused"], true);
+        assert!(f.ctx.manager.session_id_for("a1").is_none());
+
+        let appearance: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/display/appearance"))
+            .header(TOKEN_HEADER, &token).json(&serde_json::json!({ "agentId": "a1", "revision": revision }))
+            .send().await.unwrap().json().await.unwrap();
+        assert_eq!(appearance["ok"], true);
+        assert!(appearance["data"]["pngBase64"].is_null());
         cleanup(&f);
     }
 

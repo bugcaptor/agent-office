@@ -622,6 +622,8 @@ pub fn run() {
             let portrait_store = Arc::new(PngStore::new(data_dir.join("portraits"), MAX_PORTRAIT_BYTES));
             let sprite_store = PngStore::new(data_dir.join("sprites"), MAX_SPRITE_BYTES);
             let minimi_store = PngStore::new(data_dir.join("minimis"), MAX_MINIMI_BYTES);
+            // 모든 표시 경로가 같은 스로틀/캐시를 공유한다.
+            let live_usage = Arc::new(crate::usage::LiveUsageState::new());
             let session_time_store = crate::persistence::session_time_store::SessionTimeStore::new(
                 data_dir.join("session-times.jsonl"),
             );
@@ -658,6 +660,19 @@ pub fn run() {
                 app_data_dir: data_dir.clone(),
                 tmux_probe: crate::control::tmux::system_probe(),
                 gate: inject_gate.clone(),
+                live_usage: live_usage.clone(),
+                sprite_store: sprite_store.clone(),
+                focus_agent: {
+                    let handle = handle.clone();
+                    Arc::new(move |agent_id: &str| {
+                        let main = handle.get_webview_window("main").ok_or("main window unavailable")?;
+                        main.show().map_err(|e| e.to_string())?;
+                        main.unminimize().map_err(|e| e.to_string())?;
+                        main.set_focus().map_err(|e| e.to_string())?;
+                        handle.emit_to("main", "display-focus-agent", serde_json::json!({ "agentId": agent_id }))
+                            .map_err(|e| e.to_string())
+                    })
+                },
             });
             if settings_cache.read().unwrap().cli_enabled {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));
@@ -668,7 +683,6 @@ pub fn run() {
             // 페어링 승인 전에는 모든 요청이 401이다.
             // 사용량 스로틀 상태는 네이티브 커맨드와 웹 RPC가 공유한다
             // (폰 폴링이 중복 fetch를 일으키지 않게).
-            let live_usage = Arc::new(crate::usage::LiveUsageState::new());
             let web_remote_server = Arc::new(crate::webremote::WebRemoteServerState::default());
             let host_name = crate::webremote::local_host_name();
             let web_remote_ctx = Arc::new(crate::webremote::WebRemoteContext::new(

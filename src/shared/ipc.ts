@@ -226,6 +226,8 @@ export const Events = {
   mascotState: "mascot-state",
   mascotReady: "mascot-ready",
   mascotOpenTerminal: "mascot-open-terminal",
+  // 로컬 표시 API의 "본체에서 보기" 요청. 세션을 열지 않고 프로필만 선택한다.
+  displayFocusAgent: "display-focus-agent",
   // 웹 원격. webRemoteSnapshotRequest는 호스트 렌더러에 화면 직렬화를 요청하는
   // 신호, webRemotePairRequest는 승인 다이얼로그를 띄우는 신호다.
   webRemoteSnapshotRequest: "web-remote-snapshot-request",

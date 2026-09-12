@@ -57,6 +57,7 @@ impl std::error::Error for PngStoreError {}
 
 /// `<dir>/<agentId>.png` 파일들을 관리한다. `dir`은 주입(테스트는 tempdir).
 /// `max_bytes`는 인스턴스별 상한 주입(portraits=2MiB, sprites=256KiB).
+#[derive(Clone)]
 pub struct PngStore {
     dir: PathBuf,
     max_bytes: usize,
