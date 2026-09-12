@@ -27,7 +27,7 @@ export function IdeSessionDialog() {
   const openTerminal = useAppStore((s) => s.openTerminal);
   const setSessionState = useAppStore((s) => s.setSessionState);
   const openModal = useAppStore((s) => s.openModal);
-  const [provider, setProvider] = useState<"all" | "codex" | "claude">("all");
+  const [provider, setProvider] = useState<"all" | IdeSessionCandidate["provider"]>("all");
   const [items, setItems] = useState<IdeSessionCandidate[]>([]);
   const [selected, setSelected] = useState<IdeSessionCandidate | null>(null);
   const [agentId, setAgentId] = useState("");
@@ -132,15 +132,17 @@ export function IdeSessionDialog() {
       {!ideConnectionEnabled ? <div role="alert" className="ide-session-note">{t("ideConnection.disabled")}</div> : !appSettings.observerEnabled ? <div role="alert" className="ide-session-note">{t("ide.observerDisabled")}</div> : <>
         <div className="ide-session-toolbar">
           <label>{t("ide.provider")}<select value={provider} disabled={connecting} onChange={(e) => setProvider(e.target.value as typeof provider)}>
-            <option value="all">{t("ide.providerAll")}</option><option value="codex">Codex</option><option value="claude">Claude</option>
+            <option value="all">{t("ide.providerAll")}</option>
+            {(["codex", "claude", "kilo"] as const).map((value) => <option key={value} value={value}>{t(`ide.providers.${value}`)}</option>)}
           </select></label>
           <button type="button" className="pixel-btn" onClick={() => void refresh()} disabled={loading || connecting}>{t("ide.refresh")}</button>
         </div>
+        {(provider === "kilo" || items.some((item) => item.source === "kilo-shared")) && <p className="ide-session-note">{t("ide.kiloSourceNote")}</p>}
         {loading && <p>{t("ide.loading")}</p>}
         {!loading && items.length === 0 && <p className="ide-session-note">{t("ide.empty")}</p>}
         <div className="ide-session-list" role="group" aria-label={t("ide.candidates")}>
           {items.map((item) => <button key={candidateKey(item)} type="button" aria-pressed={Boolean(selected && candidateKey(selected) === candidateKey(item))} disabled={connecting} className={`ide-session-candidate ${selected && candidateKey(selected) === candidateKey(item) ? "selected" : ""}`} onClick={() => setSelected(item)} title={item.file}>
-            <strong>{item.provider === "codex" ? "Codex" : "Claude"}</strong><span>{item.cwd}</span><small>{t("ide.updated", { value: new Intl.DateTimeFormat(currentLocale(), { dateStyle: "short", timeStyle: "short" }).format(item.updatedAt) })} · {t("ide.sessionId", { value: item.sourceSessionId })}</small>
+            <strong>{t(`ide.providers.${item.provider}`)}</strong><span>{item.cwd}</span><small>{t("ide.updated", { value: new Intl.DateTimeFormat(currentLocale(), { dateStyle: "short", timeStyle: "short" }).format(item.updatedAt) })} · {t("ide.sessionId", { value: item.sourceSessionId })}</small>
           </button>)}
         </div>
         {selected && <label className="ide-session-agent">{t("ide.agent")}<select value={agentId} disabled={connecting} onChange={(e) => setAgentId(e.target.value)}>

@@ -14,7 +14,7 @@
   "bottomBar": {
     "newAgent": "＋ 新建智能体",
     "connection": "🔗 连接",
-    "ideSession": "🔗 IDE 会话",
+    "ideSession": "IDE 会话",
     "clockIn": "🏠 上班（{{n}}）",
     "clockAll": "全体上下班",
     "clockInAll": "全体上班（启动终端，{{n}} 名）",

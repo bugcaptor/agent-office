@@ -38,6 +38,28 @@ pub struct Candidate {
     baseline: Baseline,
 }
 
+impl Candidate {
+    pub(crate) fn kilo(
+        source_session_id: String,
+        cwd: String,
+        file: String,
+        updated_at: u64,
+    ) -> Self {
+        Self {
+            provider: "kilo".into(),
+            source_session_id,
+            cwd,
+            file,
+            updated_at,
+            source: "kilo-shared".into(),
+            baseline: Baseline {
+                identity: FileIdentity("kilo-db".into()),
+                size: 0,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Baseline {
     identity: FileIdentity,

@@ -104,7 +104,10 @@ describe("연결 버튼", () => {
     setConnections(true, false);
     const { getByRole, queryByRole } = render(<BottomBar />);
     fireEvent.click(getByRole("button", { name: "🔗 연결" }));
-    fireEvent.click(getByRole("menuitem", { name: "🔗 IDE 세션" }));
+    const ideMenuItem = getByRole("menuitem", { name: "IDE 세션" });
+    expect(ideMenuItem.querySelector(".context-menu-icon")?.textContent).toBe("🔗");
+    expect(ideMenuItem.querySelector(".context-menu-label")?.textContent).toBe("IDE 세션");
+    fireEvent.click(ideMenuItem);
     expect(useAppStore.getState().modal).toEqual({ kind: "ide-session" });
     expect(queryByRole("menuitem", { name: /원격 서버 연결/ })).toBeNull();
   });
@@ -115,14 +118,14 @@ describe("연결 버튼", () => {
     fireEvent.click(getByRole("button", { name: "🔗 연결" }));
     fireEvent.click(getByRole("menuitem", { name: /원격 서버 연결/ }));
     expect(remoteOpenWindow).toHaveBeenCalled();
-    expect(queryByRole("menuitem", { name: "🔗 IDE 세션" })).toBeNull();
+    expect(queryByRole("menuitem", { name: "IDE 세션" })).toBeNull();
   });
 
   it("두 연결을 켜면 하나의 메뉴에 두 항목을 표시한다", () => {
     setConnections(true, true);
     const { getByRole } = render(<BottomBar />);
     fireEvent.click(getByRole("button", { name: "🔗 연결" }));
-    expect(getByRole("menuitem", { name: "🔗 IDE 세션" })).toBeTruthy();
+    expect(getByRole("menuitem", { name: "IDE 세션" })).toBeTruthy();
     expect(getByRole("menuitem", { name: /원격 서버 연결/ })).toBeTruthy();
   });
 });

@@ -111,6 +111,111 @@ const STOP: &str =
     "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\",\"turn_id\":\"new-turn\"}}\n";
 const TOKEN_COUNT: &str = "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"model\":\"gpt-5\",\"info\":{\"total_token_usage\":{\"input_tokens\":120,\"output_tokens\":12,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0}}}}\n";
 
+fn kilo_db(fixture: &Fixture) -> std::path::PathBuf {
+    let path = fixture.dir.path().join("kilo.db");
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute_batch("CREATE TABLE session(id TEXT PRIMARY KEY, directory TEXT, parent_id TEXT, time_updated INTEGER, time_archived INTEGER); CREATE TABLE event(id TEXT PRIMARY KEY, aggregate_id TEXT NOT NULL, seq INTEGER NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL);").unwrap();
+    db.execute(
+        "INSERT INTO session VALUES ('k1', ?1, NULL, 1, NULL)",
+        [fixture.dir.path().to_str().unwrap()],
+    )
+    .unwrap();
+    path
+}
+
+fn kilo_event(path: &std::path::Path, id: &str, seq: i64, kind: &str, data: serde_json::Value) {
+    let db = rusqlite::Connection::open(path).unwrap();
+    db.execute(
+        "INSERT INTO event VALUES (?1, 'k1', ?2, ?3, ?4)",
+        rusqlite::params![id, seq, kind, data.to_string()],
+    )
+    .unwrap();
+}
+
+fn attach_kilo(fixture: &Fixture, agent: &str, path: &std::path::Path) -> Result<Watcher, String> {
+    Watcher::attach(
+        &fixture.manager,
+        &fixture.settings,
+        agent,
+        fixture.dir.path().to_str().unwrap(),
+        AgentEventProfile {
+            name: "Example".into(),
+            role: None,
+        },
+        path,
+        "kilo",
+        "k1",
+    )
+}
+
+#[test]
+fn selected_kilo_db_forwards_only_new_turn_usage_and_detach_stops_reading() {
+    let f = Fixture::new();
+    let path = kilo_db(&f);
+    kilo_event(
+        &path,
+        "historic",
+        1,
+        "message.updated.1",
+        serde_json::json!({"info":{"id":"old","role":"user","text":"private"}}),
+    );
+    let mut watcher = attach_kilo(&f, "a1", &path).unwrap();
+    watcher.tick().unwrap();
+    assert!(f.events.notifications().is_empty());
+    kilo_event(
+        &path,
+        "user",
+        2,
+        "message.updated.1",
+        serde_json::json!({"info":{"id":"u1","role":"user","text":"private"}}),
+    );
+    kilo_event(
+        &path,
+        "stop",
+        3,
+        "message.updated.1",
+        serde_json::json!({"info":{"id":"a1","role":"assistant","finish":"stop","time":{"completed":1},"modelID":"kilo/model","tokens":{"input":12,"output":3,"reasoning":2,"cache":{"read":1,"write":0}},"text":"private"}}),
+    );
+    watcher.tick().unwrap();
+    assert_eq!(
+        f.events
+            .activities()
+            .iter()
+            .filter(|event| event.kind == ActivityKind::Prompt)
+            .count(),
+        1
+    );
+    assert_eq!(f.events.notifications().len(), 1);
+    assert_eq!(f.events.usages()[0].tokens.input, Some(12));
+    assert_eq!(f.events.usages()[0].tokens.output, Some(5));
+    assert_eq!(
+        attach_kilo(&f, "a2", &path).err().unwrap(),
+        "observed-source-already-attached"
+    );
+    f.manager
+        .detach_external("a1", ExternalDetachReason::Detach);
+    assert!(watcher.tick().is_err());
+    drop(watcher);
+    assert!(f.manager.session_id_for("a1").is_none());
+}
+
+#[test]
+fn kilo_observer_respects_opt_out_at_attach_and_during_tick() {
+    let f = Fixture::new();
+    let path = kilo_db(&f);
+    f.settings.write().unwrap().ide_connection_enabled = false;
+    assert_eq!(
+        attach_kilo(&f, "a1", &path).err().unwrap(),
+        "observed-observer-disabled"
+    );
+    f.settings.write().unwrap().ide_connection_enabled = true;
+    let mut watcher = attach_kilo(&f, "a1", &path).unwrap();
+    f.settings.write().unwrap().observer_enabled = false;
+    assert!(watcher.tick().is_err());
+    drop(watcher);
+    assert!(f.manager.session_id_for("a1").is_none());
+}
+
 #[test]
 fn selected_transcript_only_forwards_new_activity_and_disconnect_preserves_source() {
     let f = Fixture::new();

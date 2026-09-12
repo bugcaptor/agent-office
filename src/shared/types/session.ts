@@ -316,14 +316,14 @@ export interface SessionLogPage {
   items: SessionLogItem[];
 }
 
-/** A discoverable, already-running IDE extension session. */
+/** A recent session candidate; presence does not guarantee a running IDE session. */
 export interface IdeSessionCandidate {
-  provider: 'codex' | 'claude';
+  provider: 'codex' | 'claude' | 'kilo';
   sourceSessionId: string;
   cwd: string;
   file: string;
   updatedAt: number;
-  source: 'vscode';
+  source: 'vscode' | 'kilo-shared';
 }
 
 /** Persona setup data for a character connected to an observed IDE session. */

@@ -89,9 +89,9 @@ export interface AgentOfficeApi {
    * 라우팅 등록과 settings 파일만 정리된다. 붙어 있지 않았으면 false(no-op). */
   detachExternalSession(agentId: string): Promise<boolean>;
   /** Lists local IDE extension sessions that can be observed. Desktop only. */
-  listIdeSessions(filter?: { provider?: 'codex' | 'claude'; cwd?: string }): Promise<IdeSessionCandidate[]>;
+  listIdeSessions(filter?: { provider?: 'codex' | 'claude' | 'kilo'; cwd?: string }): Promise<IdeSessionCandidate[]>;
   /** Connects an idle character to an existing IDE extension session. */
-  connectIdeSession(input: { agentId: string; provider: 'codex' | 'claude'; file: string; sourceSessionId: string }): Promise<{ sessionId: string }>;
+  connectIdeSession(input: { agentId: string; provider: 'codex' | 'claude' | 'kilo'; file: string; sourceSessionId: string }): Promise<{ sessionId: string }>;
   /** Desktop-only preparation preview; null for unverified/non-IDE connections. */
   getIdePersona(agentId: string): Promise<IdePersonaContext | null>;
   /** Creates a Claude style choice without selecting it or sending IDE input. */

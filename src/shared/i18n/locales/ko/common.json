@@ -14,7 +14,7 @@
   "bottomBar": {
     "newAgent": "＋ New Agent",
     "connection": "🔗 연결",
-    "ideSession": "🔗 IDE 세션",
+    "ideSession": "IDE 세션",
     "clockIn": "🏠 출근 ({{n}})",
     "clockAll": "전체 출퇴근",
     "clockInAll": "전체 출근 (터미널 켜기, {{n}}명)",

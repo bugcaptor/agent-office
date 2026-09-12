@@ -14,7 +14,7 @@
   "bottomBar": {
     "newAgent": "＋ New Agent",
     "connection": "🔗 Connect",
-    "ideSession": "🔗 IDE session",
+    "ideSession": "IDE session",
     "clockIn": "🏠 Clock in ({{n}})",
     "clockAll": "Clock all",
     "clockInAll": "Clock in all (start terminals, {{n}})",

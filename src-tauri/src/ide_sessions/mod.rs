@@ -1,6 +1,8 @@
 //! App-owned, read-only observation of an explicitly selected IDE transcript.
 //! Observation uses no shell, Node process, control server, or provider settings.
 //! The separate persona module prepares optional style files for manual selection.
+pub(crate) mod kilo;
+mod kilo_usage;
 pub(crate) mod persona;
 pub(crate) mod transcripts;
 
@@ -24,7 +26,7 @@ pub(crate) fn discover(
     provider: Option<&str>,
     cwd: Option<&str>,
 ) -> Result<Vec<Candidate>, String> {
-    if provider.is_some_and(|p| !matches!(p, "codex" | "claude")) {
+    if provider.is_some_and(|p| !matches!(p, "codex" | "claude" | "kilo")) {
         return Err("invalid-provider".into());
     }
     let codex = crate::agent_paths::codex_home_from_env()
@@ -33,7 +35,13 @@ pub(crate) fn discover(
     let claude = crate::agent_paths::claude_config_dir_from_env()
         .ok_or("ide-home-unavailable")?
         .join("projects");
-    Ok(transcripts::discover(provider, cwd, &codex, &claude))
+    let mut candidates = transcripts::discover(provider, cwd, &codex, &claude);
+    if provider.is_none_or(|p| p == "kilo") {
+        candidates.extend(kilo::discover(cwd));
+        candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.updated_at));
+        candidates.truncate(20);
+    }
+    Ok(candidates)
 }
 
 pub(crate) fn connect(
@@ -79,8 +87,13 @@ struct Watcher {
     session_id: String,
     owner_id: String,
     sequence: u64,
-    tail: TranscriptTail,
-    filter: EventFilter,
+    source: WatchSource,
+    filter: Option<EventFilter>,
+}
+
+enum WatchSource {
+    Transcript(TranscriptTail),
+    Kilo(kilo::Tail),
 }
 
 impl Watcher {
@@ -102,8 +115,13 @@ impl Watcher {
             return Err("observed-observer-disabled".into());
         }
         drop(settings_guard);
-        let candidate = transcripts::inspect(file, provider)?;
-        if candidate.source != "vscode" {
+        let candidate = if provider == "kilo" {
+            kilo::inspect(file, source_session_id)?
+        } else {
+            transcripts::inspect(file, provider)?
+        };
+        let verified_vscode = candidate.source == "vscode";
+        if !verified_vscode && !(provider == "kilo" && candidate.source == "kilo-shared") {
             return Err("source-not-vscode".into());
         }
         if candidate.source_session_id != source_session_id {
@@ -112,9 +130,25 @@ impl Watcher {
         if profile_cwd.is_empty() || !same_directory(profile_cwd, &candidate.cwd) {
             return Err("observed-cwd-mismatch".into());
         }
-        let tail = TranscriptTail::from_candidate(&candidate)?;
-        let baseline_incomplete = tail.usage_baseline_is_incomplete();
-        let baseline_records = tail.usage_baseline_records()?;
+        let (source, filter) = if provider == "kilo" {
+            (
+                WatchSource::Kilo(kilo::Tail::from_candidate(&candidate)?),
+                None,
+            )
+        } else {
+            let tail = TranscriptTail::from_candidate(&candidate)?;
+            let incomplete = tail.usage_baseline_is_incomplete();
+            let records = tail.usage_baseline_records()?;
+            (
+                WatchSource::Transcript(tail),
+                Some(EventFilter::with_baseline(
+                    provider,
+                    source_session_id,
+                    records,
+                    incomplete,
+                )),
+            )
+        };
         let owner_id = uuid::Uuid::new_v4().to_string();
         let attached = manager.attach_observed_with_focus(
             agent_id,
@@ -124,7 +158,7 @@ impl Watcher {
             &owner_id,
             None,
             profile,
-            Some(ObservedFocusTarget::VsCode {
+            (verified_vscode || provider == "kilo").then(|| ObservedFocusTarget::VsCode {
                 cwd: candidate.cwd.clone(),
             }),
         )?;
@@ -135,13 +169,8 @@ impl Watcher {
             session_id: attached.session_id,
             owner_id,
             sequence: 0,
-            tail,
-            filter: EventFilter::with_baseline(
-                provider,
-                source_session_id,
-                baseline_records,
-                baseline_incomplete,
-            ),
+            source,
+            filter,
         })
     }
 
@@ -164,19 +193,25 @@ impl Watcher {
             ObservedEventKind::Heartbeat,
             None,
         )?;
-        for record in self.tail.read()? {
-            if let Some((kind, tokens)) = self.filter.take_with_tokens(&record) {
-                self.sequence += 1;
-                manager.ingest_observed_event_with_tokens(
-                    &self.agent_id,
-                    &self.session_id,
-                    &self.owner_id,
-                    self.sequence,
-                    kind,
-                    None,
-                    tokens,
-                )?;
-            }
+        let events: Vec<_> = match &mut self.source {
+            WatchSource::Transcript(tail) => tail
+                .read()?
+                .iter()
+                .filter_map(|record| self.filter.as_mut()?.take_with_tokens(record))
+                .collect(),
+            WatchSource::Kilo(tail) => tail.read()?,
+        };
+        for (kind, tokens) in events {
+            self.sequence += 1;
+            manager.ingest_observed_event_with_tokens(
+                &self.agent_id,
+                &self.session_id,
+                &self.owner_id,
+                self.sequence,
+                kind,
+                None,
+                tokens,
+            )?;
         }
         Ok(())
     }

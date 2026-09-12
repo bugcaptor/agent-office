@@ -14,7 +14,7 @@
   "bottomBar": {
     "newAgent": "＋ Nouvel agent",
     "connection": "🔗 Connexion",
-    "ideSession": "🔗 Session IDE",
+    "ideSession": "Session IDE",
     "clockIn": "🏠 Arrivée ({{n}})",
     "clockAll": "Pointage global",
     "clockInAll": "Arrivée générale (démarrer les terminaux, {{n}})",

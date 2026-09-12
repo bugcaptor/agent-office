@@ -30,6 +30,23 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("IdeSessionDialog", () => {
+  it("filters and connects a Kilo Code VS Code session with its own provider", async () => {
+    const kilo = { ...candidate, provider: "kilo" as const, source: "kilo-shared" as const, sourceSessionId: "kilo-1", file: "kilo.db" };
+    listIdeSessions.mockResolvedValue([kilo]);
+    useAppStore.getState().addAgent(agent(), { startSession: false });
+    useAppStore.getState().openModal({ kind: "ide-session" });
+    render(<IdeSessionDialog />);
+    fireEvent.change(screen.getByLabelText("공급자"), { target: { value: "kilo" } });
+    await waitFor(() => expect(listIdeSessions).toHaveBeenLastCalledWith({ provider: "kilo" }));
+    const item = await screen.findByTitle("kilo.db");
+    expect(item.textContent).toContain("Kilo Code (VS Code)");
+    expect(screen.getByText(/Kilo Code는 VS Code와 CLI가 기록을 공유합니다/)).toBeTruthy();
+    fireEvent.click(item);
+    fireEvent.click(screen.getByRole("button", { name: "연결" }));
+    await waitFor(() => expect(connectIdeSession).toHaveBeenCalledWith({ agentId: "a1", provider: "kilo", file: "kilo.db", sourceSessionId: "kilo-1" }));
+    expect(useAppStore.getState().sessions.a1.kind).toBe("external");
+  });
+
   it("lists a candidate and connects only a matching idle character without a PTY", async () => {
     useAppStore.getState().addAgent(agent(), { startSession: false });
     useAppStore.getState().openModal({ kind: "ide-session" });
