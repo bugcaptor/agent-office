@@ -34,6 +34,11 @@ Node.js 18 이상과 **이 변경을 포함해 빌드한 Agent Office**가 필�
    아니다.** 현재 열린 대화인지는 VS Code에서 확인한다. 기본 목록은 기록에
    VS Code 출처가 확인된 것만 표시한다. `--all-sources`로 다른 출처도 볼 수 있다.
 
+   **`--agent`에는 `agents` 출력의 `agentId`를 넣는다.** `list` 출력의
+   `sourceSessionId`(Codex·Claude 대화 ID), 기록 파일명의 UUID, `agents` 출력의
+   `sessionId`는 캐릭터 ID가 아니다. `agents`에서 `name`과 `cwd`로 연결할
+   캐릭터를 찾고 그 항목의 `agentId`를 복사한다.
+
 5. 선택한 파일을 캐릭터에 연결한다. `FILE`과 `AGENT_ID`를 실제 값으로 바꾼다.
 
    ```sh
@@ -55,6 +60,17 @@ Node.js 18 이상과 **이 변경을 포함해 빌드한 Agent Office**가 필�
 ```sh
 npm run spike:ide -- watch --provider claude --file "FILE" --dry-run
 ```
+
+### `observed-agent-not-found`가 나올 때
+
+앱에 `--agent`로 지정한 ID의 캐릭터가 없다는 뜻이다. 연결하려는 Codex·Claude
+대화의 UUID를 넣었다면 `npm run spike:ide -- agents`에 나온 캐릭터의
+`agentId`로 바꾼다. 별도 앱 데이터 경로를 사용한다면 `agents`와 `watch`에
+같은 `--app-data PATH`를 지정한다.
+
+선택한 캐릭터에 기존 세션이 있으면 연결할 수 없다. 해당 캐릭터의 앱 터미널에서
+작업 중인 내용을 확인하고 종료하거나, 세션의 `cwd`와 같은 작업 폴더를 가진
+다른 빈 캐릭터를 준비한 뒤 다시 실행한다. 관찰할 원본 VS Code 대화는 유지한다.
 
 ## 발견 범위와 옵션
 
