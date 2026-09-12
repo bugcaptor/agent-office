@@ -389,12 +389,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
+  overflow-y: auto;
   gap: 10px;
   padding: 24px;
   text-align: center;
   font-family: "DungGeunMo", monospace;
   color: var(--text);
+  background: var(--bg-panel);
 }
 
 .terminal-external-icon {
@@ -412,6 +414,17 @@
   line-height: 1.6;
   color: var(--text-dim);
 }
+
+.ide-persona-panel { width: min(640px, 100%); flex: none; text-align: left; border-top: 1px solid var(--border); padding-top: 8px; }
+.ide-persona-toggle { width: 100%; text-align: left; background: transparent; border: 0; color: var(--accent); font: inherit; cursor: pointer; }
+.ide-persona-body { font-size: .82rem; line-height: 1.55; color: var(--text-dim); }
+.ide-persona-preview { max-height: 120px; overflow: auto; white-space: pre-wrap; padding: 7px; background: var(--bg-panel); color: var(--text); font: inherit; }
+.ide-persona-path { display: block; overflow-wrap: anywhere; margin-bottom: 8px; }
+.ide-persona-status { color: var(--accent); }
+.ide-persona-note { font-size: .72rem; line-height: 1.5; }
+.ide-persona-context { overflow-wrap: anywhere; }
+.terminal-external-panel > * { flex-shrink: 0; }
+.ide-persona-loading { font-size: .72rem; color: var(--text-dim); }
 
 /* 프로세스 종료 시 표시되는 "다시 띄우기" 배너 (터미널 위 오버레이) */
 .terminal-exited-banner {
@@ -535,4 +548,3 @@
   gap: 8px;
   justify-content: flex-end;
 }
-

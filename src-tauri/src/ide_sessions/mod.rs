@@ -1,5 +1,7 @@
 //! App-owned, read-only observation of an explicitly selected IDE transcript.
-//! No shell, Node process, control server, or provider settings are involved.
+//! Observation uses no shell, Node process, control server, or provider settings.
+//! The separate persona module prepares optional style files for manual selection.
+pub(crate) mod persona;
 pub(crate) mod transcripts;
 
 use std::path::Path;
@@ -173,7 +175,7 @@ impl Drop for Watcher {
     }
 }
 
-fn same_directory(a: &str, b: &str) -> bool {
+pub(crate) fn same_directory(a: &str, b: &str) -> bool {
     let expand = |s: &str| {
         if s == "~" || s.starts_with("~/") || s.starts_with("~\\") {
             if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))

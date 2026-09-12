@@ -26,6 +26,8 @@ export const Commands = {
   detachExternalSession: "detach_external_session",
   listIdeSessions: "list_ide_sessions",
   connectIdeSession: "connect_ide_session",
+  getIdePersona: "get_ide_persona",
+  prepareIdePersona: "prepare_ide_persona",
   writeInput: "write_input",
   resize: "resize_session",
   clearNotifications: "clear_notifications",

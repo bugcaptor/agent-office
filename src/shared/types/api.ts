@@ -17,6 +17,7 @@ import type {
   SessionLogPage,
   StudyMaterialResult,
   IdeSessionCandidate,
+  IdePersonaContext,
 } from './session';
 import type { NotificationEvent, ActivityEvent, TurnUsageEvent } from './notification';
 import type { PersistedState, CodexImageStatus, GeneratedCodexImage } from './profile';
@@ -76,9 +77,8 @@ import type { RepositoryAuditItem } from './repositoryAudit';
  * (listen) + a dedicated output `Channel` (exact command/event names are
  * in `src/shared/ipc.ts`).
  *
- * sessionId is a Rust-backend-internal concept (hook routing, settings file
- * naming) and never crosses this boundary — every method here is keyed by
- * `agentId`.
+ * Methods are keyed by agentId. Connection setup also returns an opaque
+ * sessionId so later preparation can reject requests from an older connection.
  */
 export interface AgentOfficeApi {
   /** 작업 기록에서 발견한 저장소의 읽기 전용 git 점검 결과. */
@@ -92,6 +92,10 @@ export interface AgentOfficeApi {
   listIdeSessions(filter?: { provider?: 'codex' | 'claude'; cwd?: string }): Promise<IdeSessionCandidate[]>;
   /** Connects an idle character to an existing IDE extension session. */
   connectIdeSession(input: { agentId: string; provider: 'codex' | 'claude'; file: string; sourceSessionId: string }): Promise<{ sessionId: string }>;
+  /** Desktop-only preparation preview; null for unverified/non-IDE connections. */
+  getIdePersona(agentId: string): Promise<IdePersonaContext | null>;
+  /** Creates a Claude style choice without selecting it or sending IDE input. */
+  prepareIdePersona(input: { agentId: string; sessionId: string; personalityPrompt: string }): Promise<IdePersonaContext>;
   /** fire-and-forget. `terminalResponse` is an xterm protocol reply, not a user edit. */
   writeInput(agentId: string, data: string, source?: TerminalInputSource): void;
   resize(agentId: string, cols: number, rows: number): void;

@@ -43,6 +43,8 @@ const detachExternalSession = vi.fn((..._args: unknown[]) => Promise.resolve(tru
 const openInVscode = vi.fn((..._args: unknown[]) => Promise.resolve());
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
+    getIdePersona: async () => null,
+    saveState: async () => {},
     resize: (...args: unknown[]) => resize(...args),
     detachExternalSession: (...args: unknown[]) => detachExternalSession(...args),
     openInVscode: (...args: unknown[]) => openInVscode(...args),

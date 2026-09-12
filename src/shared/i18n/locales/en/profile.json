@@ -176,7 +176,7 @@
   },
   "ide": {
     "title": "Connect IDE session",
-    "description": "Choose an existing VS Code Codex or Claude session to observe.",
+    "description": "Choose an existing VS Code Codex or Claude session to observe. You can prepare a response-style step after connecting; apply it in the original IDE and verify the reply there.",
     "availabilityNote": "Candidates are recent IDE records. A listed session may no longer be running.",
     "historyNote": "After connecting, Agent Office receives new activity only. Earlier conversation history is not replayed.",
     "observerDisabled": "Turn on IDE session observation in Settings before connecting a session.",

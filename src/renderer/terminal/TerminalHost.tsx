@@ -26,6 +26,7 @@ import { BotOverlay } from "./BotOverlay";
 import { AutomationBanner } from "./AutomationBanner";
 import { AutomationDecision } from "./AutomationDecision";
 import { isRemoteWindow } from "../shared/remoteWindow";
+import { IdePersonaPanel } from "../ide/IdePersonaPanel";
 
 const RESIZE_DEBOUNCE_MS = 120;
 
@@ -105,6 +106,7 @@ function ExternalMount({ agentId }: { agentId: string }) {
           </button>
         )}
         {openError && <div role="alert">{t("host.openWorkdirError")}</div>}
+        {!isRemoteWindow() && <IdePersonaPanel agentId={agentId} />}
         <button
           type="button"
           className="pixel-btn"

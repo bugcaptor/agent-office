@@ -860,6 +860,8 @@ pub fn run() {
             ipc::commands::detach_external_session,
             ipc::commands::list_ide_sessions,
             ipc::commands::connect_ide_session,
+            ipc::commands::get_ide_persona,
+            ipc::commands::prepare_ide_persona,
             ipc::commands::handoff_supported,
             ipc::commands::handoff_sessions,
             ipc::commands::adopt_detached_sessions,

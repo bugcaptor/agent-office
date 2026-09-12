@@ -44,6 +44,7 @@ pub(super) struct ExternalSession {
 pub(super) struct ObservedConnection {
     pub(super) provider: String,
     pub(super) source_session_id: String,
+    pub(super) cwd: String,
     pub(super) owner_id: String,
     pub(super) last_sequence: u64,
     pub(super) last_heartbeat_ms: u64,
@@ -61,6 +62,15 @@ pub(crate) enum ObservedFocusTarget {
 pub(crate) struct ObservedFocus {
     pub session_id: String,
     pub target: ObservedFocusTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ObservedPersonaConnection {
+    pub session_id: String,
+    pub provider: String,
+    pub source_session_id: String,
+    pub cwd: String,
+    pub verified_vscode: bool,
 }
 
 /// Node 연결기가 등록한 이미 실행 중인 Codex/Claude 세션의 attach 결과.
@@ -281,7 +291,14 @@ impl SessionManager {
         profile: AgentEventProfile,
     ) -> Result<ObservedAttachOutcome, String> {
         self.attach_observed_with_focus(
-            agent_id, provider, source_session_id, cwd, owner_id, pid, profile, None,
+            agent_id,
+            provider,
+            source_session_id,
+            cwd,
+            owner_id,
+            pid,
+            profile,
+            None,
         )
     }
 
@@ -318,9 +335,7 @@ impl SessionManager {
                 }
                 return Err("observed-agent-already-attached".into());
             }
-            return Err(
-                "observed-external-exists".into(),
-            );
+            return Err("observed-external-exists".into());
         }
         // source/provider 한 쌍은 캐릭터 하나에만 귀속된다. 이 검사는 위 락 안에
         // 있어 동시 attach도 둘 다 통과하지 못한다.
@@ -364,6 +379,7 @@ impl SessionManager {
                 observed: Some(ObservedConnection {
                     provider: provider.to_string(),
                     source_session_id: source_session_id.to_string(),
+                    cwd: cwd.to_string(),
                     owner_id: owner_id.to_string(),
                     last_sequence: 0,
                     last_heartbeat_ms: now_ms(),
@@ -385,6 +401,26 @@ impl SessionManager {
         Some(ObservedFocus {
             session_id: session.session_id.clone(),
             target: session.observed.as_ref()?.focus_target.clone()?,
+        })
+    }
+
+    /// Persona styles are available only to a live connector that verified VS Code.
+    pub(crate) fn observed_persona_connection(
+        &self,
+        agent_id: &str,
+    ) -> Option<ObservedPersonaConnection> {
+        let externals = self.externals.lock();
+        let external = externals.get(agent_id)?;
+        let observed = external.observed.as_ref()?;
+        Some(ObservedPersonaConnection {
+            session_id: external.session_id.clone(),
+            provider: observed.provider.clone(),
+            source_session_id: observed.source_session_id.clone(),
+            cwd: observed.cwd.clone(),
+            verified_vscode: matches!(
+                observed.focus_target,
+                Some(ObservedFocusTarget::VsCode { .. })
+            ),
         })
     }
 
@@ -453,11 +489,16 @@ impl SessionManager {
             let mut externals = self.externals.lock();
             let matches = externals.get(agent_id).is_some_and(|external| {
                 external.session_id == session_id
-                    && external.observed.as_ref().is_some_and(|observed| observed.owner_id == owner_id)
+                    && external
+                        .observed
+                        .as_ref()
+                        .is_some_and(|observed| observed.owner_id == owner_id)
             });
             matches.then(|| externals.remove(agent_id)).flatten()
         };
-        let Some(external) = detached else { return false; };
+        let Some(external) = detached else {
+            return false;
+        };
         self.finish_external_detach(agent_id, external, ExternalDetachReason::Detach);
         true
     }
@@ -484,9 +525,11 @@ impl SessionManager {
         for (agent_id, session_id) in dead {
             let detached = {
                 let mut externals = self.externals.lock();
-                (externals.get(&agent_id).is_some_and(|ext| ext.session_id == session_id))
-                    .then(|| externals.remove(&agent_id))
-                    .flatten()
+                (externals
+                    .get(&agent_id)
+                    .is_some_and(|ext| ext.session_id == session_id))
+                .then(|| externals.remove(&agent_id))
+                .flatten()
             };
             if let Some(external) = detached {
                 self.finish_external_detach(&agent_id, external, ExternalDetachReason::ShellExit);

@@ -176,7 +176,7 @@
   },
   "ide": {
     "title": "IDE 세션 연결",
-    "description": "VS Code에서 실행 중인 Codex 또는 Claude 세션을 골라 관찰합니다.",
+    "description": "기존 VS Code Codex 또는 Claude 세션을 선택해 관찰합니다. 연결 후 답변 말투 단계를 준비할 수 있으며, 원본 IDE에서 적용하고 응답을 확인하세요.",
     "availabilityNote": "후보는 최근 IDE 기록입니다. 목록에 있어도 세션이 이미 끝났을 수 있습니다.",
     "historyNote": "연결한 뒤의 새 활동만 Agent Office에 표시됩니다. 이전 대화 기록은 재생하지 않습니다.",
     "observerDisabled": "세션을 연결하려면 설정에서 IDE 세션 관찰을 켜세요.",
