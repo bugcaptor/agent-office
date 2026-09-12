@@ -83,5 +83,6 @@
     "tailscaleSpawnFailed": "tailscale の実行に失敗しました。",
     "tailscaleCliError": "tailscale コマンドが失敗しました。",
     "timeout": "時間内に応答しませんでした。"
-  }
+  },
+  "ideSpikeDescription": "既存の VS Code の Codex・Claude セッションを読み取り専用で Agent Office に接続する実験です。"
 }

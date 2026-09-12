@@ -83,5 +83,6 @@
     "tailscaleSpawnFailed": "無法執行 tailscale。",
     "tailscaleCliError": "tailscale 指令執行失敗。",
     "timeout": "在時限內沒有回應。"
-  }
+  },
+  "ideSpikeDescription": "透過唯讀觀察，將現有 VS Code 中的 Codex 和 Claude 工作階段連接到 Agent Office 的實驗。"
 }

@@ -230,8 +230,10 @@
     "errCliLaunchAckTimeout": "The shell did not confirm launch command execution. No task was sent. Check the terminal before starting a new run."
   },
   "host": {
-    "externalTitle": "Connected to an external terminal",
-    "externalDetail": "This session lives in a terminal outside the app, so there is no screen mirroring. Only alerts and the personality prompt run through this character.",
+    "externalTitle": "Connected to an external app session",
+    "externalDetail": "This character shows activity and alerts from the connected program. Check its screen and conversations in the original program.",
+    "openWorkdirInVscode": "Open work folder in VS Code",
+    "openWorkdirError": "Could not open the work folder in VS Code.",
     "detach": "Disconnect",
     "exited": "The process exited.",
     "relaunch": "Relaunch"

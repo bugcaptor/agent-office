@@ -83,5 +83,6 @@
     "tailscaleSpawnFailed": "Échec du lancement de tailscale.",
     "tailscaleCliError": "La commande tailscale a échoué.",
     "timeout": "Aucune réponse dans le délai imparti."
-  }
+  },
+  "ideSpikeDescription": "Une expérimentation reliant les sessions Codex et Claude existantes de VS Code à Agent Office par observation en lecture seule."
 }

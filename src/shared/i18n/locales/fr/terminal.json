@@ -230,8 +230,10 @@
     "errCliLaunchAckTimeout": "Le shell n’a pas confirmé l’exécution de la commande. Aucune tâche n’a été envoyée. Vérifiez le terminal avant de relancer."
   },
   "host": {
-    "externalTitle": "Connecté à un terminal externe",
-    "externalDetail": "Cette session vit dans un terminal hors de l’application, il n’y a donc pas de miroir d’écran. Seules les alertes et l’invite de personnalité passent par ce personnage.",
+    "externalTitle": "Connecté à une session d’application externe",
+    "externalDetail": "Ce personnage affiche l’activité et les alertes du programme connecté. Consultez son écran et ses conversations dans le programme d’origine.",
+    "openWorkdirInVscode": "Ouvrir le dossier de travail dans VS Code",
+    "openWorkdirError": "Impossible d’ouvrir le dossier de travail dans VS Code.",
     "detach": "Déconnecter",
     "exited": "Le processus s’est terminé.",
     "relaunch": "Relancer"

@@ -40,10 +40,12 @@ vi.mock("../TerminalRegistry", () => ({
 
 const resize = vi.fn();
 const detachExternalSession = vi.fn((..._args: unknown[]) => Promise.resolve(true));
+const openInVscode = vi.fn((..._args: unknown[]) => Promise.resolve());
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
     resize: (...args: unknown[]) => resize(...args),
     detachExternalSession: (...args: unknown[]) => detachExternalSession(...args),
+    openInVscode: (...args: unknown[]) => openInVscode(...args),
   },
 }));
 
@@ -85,6 +87,8 @@ beforeEach(() => {
   resize.mockReset();
   detachExternalSession.mockReset();
   detachExternalSession.mockResolvedValue(true);
+  openInVscode.mockReset();
+  openInVscode.mockResolvedValue(undefined);
   FakeResizeObserver.instances = [];
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
   vi.useFakeTimers();
@@ -304,7 +308,7 @@ describe("외부(논리) 세션 마운트", () => {
     expect(container.querySelector(".terminal-external-panel")).not.toBeNull();
     expect(container.querySelector(".terminal-mount-host")).toBeNull();
     expect(attach).not.toHaveBeenCalled();
-    expect(mount.textContent).toContain("외부 터미널 세션에 연결됨");
+    expect(mount.textContent).toContain("외부 프로그램 세션에 연결됨");
   });
 
   it("연결 해제 버튼이 detachExternalSession을 호출한다", async () => {
@@ -321,6 +325,41 @@ describe("외부(논리) 세션 마운트", () => {
 
     expect(detachExternalSession).toHaveBeenCalledTimes(1);
     expect(detachExternalSession).toHaveBeenCalledWith("a1");
+  });
+
+  it("프로필 작업 폴더를 VS Code에서 연다", async () => {
+    useAppStore.getState().addAgent({ ...mkProfile("a1"), cwd: "/work/observed" });
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "running", external: true });
+    useAppStore.getState().openTerminal("a1");
+
+    const { getByRole } = render(<TerminalHost />);
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "VS Code에서 작업 폴더 열기" }));
+    });
+
+    expect(openInVscode).toHaveBeenCalledWith("/work/observed");
+  });
+
+  it("프로필 작업 폴더가 없으면 VS Code 열기 버튼을 보이지 않는다", () => {
+    mkExternal("a1");
+    useAppStore.getState().openTerminal("a1");
+
+    const { queryByRole } = render(<TerminalHost />);
+    expect(queryByRole("button", { name: "VS Code에서 작업 폴더 열기" })).toBeNull();
+  });
+
+  it("VS Code 열기에 실패하면 패널에 오류를 표시한다", async () => {
+    openInVscode.mockRejectedValueOnce(new Error("VS Code unavailable"));
+    useAppStore.getState().addAgent({ ...mkProfile("a1"), cwd: "/work/observed" });
+    useAppStore.getState().setSessionState({ agentId: "a1", status: "running", external: true });
+    useAppStore.getState().openTerminal("a1");
+
+    const { getByRole } = render(<TerminalHost />);
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "VS Code에서 작업 폴더 열기" }));
+    });
+
+    expect(getByRole("alert").textContent).toBe("VS Code에서 작업 폴더를 열지 못했습니다.");
   });
 
   it("PTY 세션(external 부재)은 기존 xterm 경로 그대로다", () => {

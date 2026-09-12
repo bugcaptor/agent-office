@@ -597,7 +597,8 @@ pub fn run() {
 
             // 외부(논리) 세션 끊김 감지: attach를 요청한 셸이 사라지면 5초 안에
             // 캐릭터에서 뗀다. 셸의 EXIT trap은 사용자 trap을 덮어쓸 위험이 있어
-            // 앱 쪽 `kill(pid, 0)` 폴링으로 감지한다(비unix는 no-op).
+            // 앱 쪽 `kill(pid, 0)` 폴링으로 감지한다. 관찰 연결기의 heartbeat
+            // lease는 비unix에서도 만료시킨다.
             {
                 let manager = manager.clone();
                 tauri::async_runtime::spawn(async move {

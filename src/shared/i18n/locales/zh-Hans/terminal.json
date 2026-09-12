@@ -230,8 +230,10 @@
     "errCliLaunchAckTimeout": "未能确认 shell 已执行启动命令。未发送任务。请检查终端后重新运行。"
   },
   "host": {
-    "externalTitle": "已连接到外部终端会话",
-    "externalDetail": "这是应用之外终端里的会话，所以没有画面镜像。只有通知和性格提示词通过这个角色运行。",
+    "externalTitle": "已连接到外部应用会话",
+    "externalDetail": "此角色会显示已连接程序的活动和通知。请在原程序中查看画面和对话。",
+    "openWorkdirInVscode": "在 VS Code 中打开工作文件夹",
+    "openWorkdirError": "无法在 VS Code 中打开工作文件夹。",
     "detach": "断开连接",
     "exited": "进程已退出。",
     "relaunch": "重新启动"

@@ -14,6 +14,7 @@
 // 승인(파일 생성)/취소(파일 삭제)가 서버 재시작 없이 즉시 반영된다.
 
 pub mod client;
+mod observed;
 pub mod protocol;
 pub mod tmux;
 /// 토큰 파일과 인증 미들웨어.
@@ -87,6 +88,9 @@ fn router(ctx: Arc<ControlContext>) -> Router {
         .route("/v1/create", post(create))
         .route("/v1/attach", post(attach))
         .route("/v1/detach", post(detach))
+        .route("/v1/observed/attach", post(observed::attach))
+        .route("/v1/observed/event", post(observed::event))
+        .route("/v1/observed/detach", post(observed::detach))
         .route("/v1/send", post(send))
         .route("/v1/dispose", post(dispose))
         .route("/v1/notifications", post(notifications))
@@ -237,11 +241,14 @@ mod tests {
     use crate::session::pty_factory::fake::{FakeControl, FakePtyFactory};
     use crate::state::fake::RecordingEvents;
     use crate::state::AppEvents;
+    use std::io::Write;
+    use std::process::{Child, Command, Stdio};
     use std::time::Duration;
 
     struct Fixture {
         state: ControlServerState,
         ctx: Arc<ControlContext>,
+        events: Arc<RecordingEvents>,
         /// 가짜 PTY 핸들 — 세션 stdin에 뭐가 실렸는지(=startup_command) 본다.
         ctl: Arc<FakeControl>,
         dir: PathBuf,
@@ -341,6 +348,7 @@ mod tests {
         Fixture {
             state,
             ctx,
+            events,
             ctl,
             dir,
             _observer_dir: observer_dir,
@@ -351,6 +359,36 @@ mod tests {
         f.state.shutdown();
         let _ = std::fs::remove_dir_all(&f.dir);
         let _ = std::fs::remove_dir_all(&f._observer_dir);
+    }
+
+    /// ignored 통합 스모크가 실패해도 Node watch를 고아로 남기지 않는다.
+    struct NodeWatch(Child);
+
+    impl Drop for NodeWatch {
+        fn drop(&mut self) {
+            terminate_node(&mut self.0);
+            let _ = self.0.wait();
+        }
+    }
+
+    #[cfg(unix)]
+    fn terminate_node(child: &mut Child) {
+        unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGTERM) };
+    }
+
+    #[cfg(not(unix))]
+    fn terminate_node(child: &mut Child) {
+        let _ = child.kill();
+    }
+
+    async fn eventually(mut predicate: impl FnMut() -> bool) {
+        for _ in 0..100 {
+            if predicate() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        panic!("integration condition timed out");
     }
 
     #[test]
@@ -639,6 +677,202 @@ mod tests {
             body["error"].as_str().unwrap().contains("ctl create"),
             "{body}"
         );
+        cleanup(&f);
+    }
+
+    #[tokio::test]
+    async fn observed_connection_is_idempotent_and_rejects_stale_owners_without_touching_a_pty() {
+        let f = build("observed");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        f.ctx.settings.write().unwrap().observer_enabled = true;
+        let mut agent = profile("a1", "Ada");
+        agent.cwd = Some("/tmp/observed-project".into());
+        f.ctx
+            .store
+            .save(&crate::types::PersistedState {
+                agents: vec![agent],
+                version: 1,
+                vacation_mode: None,
+            })
+            .unwrap();
+        let client = reqwest::Client::new();
+        let owner = uuid::Uuid::new_v4().to_string();
+        let attach_body = serde_json::json!({
+            "agentId": "a1", "provider": "codex", "sourceSessionId": "source-1",
+            "cwd": "/tmp/observed-project", "ownerId": owner, "pid": std::process::id(),
+        });
+        let attach = |body: serde_json::Value| {
+            let client = client.clone();
+            let token = token.clone();
+            async move {
+                client
+                    .post(format!("http://127.0.0.1:{port}/v1/observed/attach"))
+                    .header(TOKEN_HEADER, token)
+                    .json(&body)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<serde_json::Value>()
+                    .await
+                    .unwrap()
+            }
+        };
+        let first = attach(attach_body.clone()).await;
+        assert_eq!(first["ok"], true);
+        let sid = first["data"]["sessionId"].as_str().unwrap().to_string();
+        assert_eq!(attach(attach_body).await["data"]["sessionId"], sid);
+
+        let event = |body: serde_json::Value| {
+            let client = client.clone();
+            let token = token.clone();
+            async move {
+                client
+                    .post(format!("http://127.0.0.1:{port}/v1/observed/event"))
+                    .header(TOKEN_HEADER, token)
+                    .json(&body)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<serde_json::Value>()
+                    .await
+                    .unwrap()
+            }
+        };
+        let prompt = serde_json::json!({ "agentId":"a1", "sessionId":sid, "ownerId":owner,
+            "sequence":1, "kind":"prompt" });
+        assert_eq!(event(prompt.clone()).await["data"]["accepted"], true);
+        assert_eq!(event(prompt).await["data"]["accepted"], false);
+        assert_eq!(
+            f.events.activities().iter().map(|activity| activity.kind).collect::<Vec<_>>(),
+            vec![crate::types::ActivityKind::Prompt],
+        );
+        let stale = event(serde_json::json!({ "agentId":"a1", "sessionId":sid,
+            "ownerId":uuid::Uuid::new_v4().to_string(), "sequence":2, "kind":"stop" }))
+        .await;
+        assert_eq!(stale["ok"], false);
+
+        // 관찰 연결이 있는 캐릭터에 create를 호출하면 기존 규칙대로 PTY가 생기며,
+        // 그 뒤 stale observed detach는 새 PTY를 건드리지 않는다.
+        let created: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/create"))
+            .header(TOKEN_HEADER, &token)
+            .json(&serde_json::json!({"agentId":"a1"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let pty_sid = created["data"]["sessionId"].as_str().unwrap().to_string();
+        let detached: serde_json::Value = client
+            .post(format!("http://127.0.0.1:{port}/v1/observed/detach"))
+            .header(TOKEN_HEADER, &token)
+            .json(&serde_json::json!({"agentId":"a1", "sessionId":sid,
+                "ownerId":owner}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(detached["data"]["detached"], false);
+        assert_eq!(
+            f.ctx.manager.session_id_for("a1").as_deref(),
+            Some(pty_sid.as_str())
+        );
+        let blocked = attach(serde_json::json!({
+            "agentId": "a1", "provider": "claude", "sourceSessionId": "source-2",
+            "cwd": "/tmp/observed-project", "ownerId": uuid::Uuid::new_v4().to_string(),
+            "pid": std::process::id(),
+        }))
+        .await;
+        assert_eq!(blocked["ok"], false);
+        assert_eq!(
+            f.ctx.manager.session_id_for("a1").as_deref(),
+            Some(pty_sid.as_str())
+        );
+        cleanup(&f);
+    }
+
+    #[tokio::test]
+    async fn observed_event_is_rejected_when_observer_is_off() {
+        let f = build("observed-off");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        let body: serde_json::Value = reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/v1/observed/event"))
+            .header(TOKEN_HEADER, token)
+            .json(
+                &serde_json::json!({"agentId":"a1", "sessionId":"s", "ownerId":"x",
+                "sequence":1, "kind":"heartbeat"}),
+            )
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(body["ok"], false);
+        cleanup(&f);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Node.js and the local ide-session-spike watch process"]
+    async fn node_codex_watch_forwards_new_records_without_replaying_history_then_detaches() {
+        let f = build("node-observed-smoke");
+        let _port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        f.state.issue_token().unwrap();
+        f.ctx.settings.write().unwrap().observer_enabled = true;
+        let cwd = f.dir.join("project");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let mut agent = profile("a1", "Ada");
+        agent.cwd = Some(cwd.to_string_lossy().into_owned());
+        f.ctx.store.save(&crate::types::PersistedState {
+            agents: vec![agent], version: 1, vacation_mode: None,
+        }).unwrap();
+        let transcript = f.dir.join("codex-vscode.jsonl");
+        let metadata = serde_json::json!({
+            "type": "session_meta", "payload": {
+                "id": "codex-thread-smoke", "cwd": cwd, "source": "vscode",
+                "originator": "codex_vscode", "thread_source": "user"
+            }
+        });
+        let historical_complete = serde_json::json!({
+            "type": "event_msg", "payload": { "type": "task_complete", "turn_id": "past" }
+        });
+        std::fs::write(&transcript, format!("{metadata}\n{historical_complete}\n")).unwrap();
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+        let mut watch = NodeWatch(Command::new("node")
+            .arg(root.join("scripts/ide-session-spike.mjs"))
+            .args(["watch", "--provider", "codex", "--file"])
+            .arg(&transcript)
+            .args(["--agent", "a1", "--app-data"])
+            .arg(&f.dir)
+            .current_dir(&root)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn().expect("node watch spawn"));
+        eventually(|| f.ctx.manager.session_id_for("a1").is_some()).await;
+        // fromNow baseline 뒤에만 붙인 레코드가 전달돼야 한다. 과거 complete는
+        // notification을 만들지 않았음을 먼저 확인한다.
+        assert!(f.events.notifications().is_empty());
+        let started = serde_json::json!({
+            "type": "event_msg", "payload": { "type": "task_started", "turn_id": "new" }
+        });
+        let completed = serde_json::json!({
+            "type": "event_msg", "payload": { "type": "task_complete", "turn_id": "new" }
+        });
+        let mut file = std::fs::OpenOptions::new().append(true).open(&transcript).unwrap();
+        writeln!(file, "{started}").unwrap();
+        writeln!(file, "{completed}").unwrap();
+        file.flush().unwrap();
+        eventually(|| f.events.activities().iter().any(|a| a.kind == crate::types::ActivityKind::Prompt)
+            && f.events.notifications().len() == 1).await;
+        assert_eq!(f.events.notifications()[0].agent_id, "a1");
+        terminate_node(&mut watch.0);
+        eventually(|| f.ctx.manager.session_id_for("a1").is_none()).await;
+        let _ = watch.0.wait();
         cleanup(&f);
     }
 

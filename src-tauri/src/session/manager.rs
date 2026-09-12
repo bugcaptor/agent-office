@@ -161,6 +161,8 @@ pub struct SessionManager {
     /// parking_lot(위 poisoning 주석 참조).
     /// pub(super): external.rs의 attach/detach/sweep이 직접 다룬다.
     pub(super) externals: Mutex<HashMap<AgentId, ExternalSession>>,
+    /// PTY 생성과 기록 관찰 attach가 교차해 한 캐릭터에 둘 다 등록되는 경주를 막는다.
+    pub(super) observed_lifecycle: Mutex<()>,
     /// agentId별 출력 sink — 세션 수명과 독립. subscribe 이전 pending attach와
     /// 세션 재생성 시 채널 재사용을 위해 세션이 아니라 여기에 보관한다.
     sinks: Mutex<HashMap<AgentId, Arc<OutputSink>>>,
@@ -217,6 +219,7 @@ impl SessionManager {
             hub,
             sessions: Mutex::new(HashMap::new()),
             externals: Mutex::new(HashMap::new()),
+            observed_lifecycle: Mutex::new(()),
             sinks: Mutex::new(HashMap::new()),
             shell_resolver: Arc::new(shells::resolve_observed),
             app_data_dir: None,
@@ -543,6 +546,7 @@ impl SessionManager {
         mut req: CreateSessionRequest,
         profile: AgentEventProfile,
     ) -> Result<CreateSessionResult, String> {
+        let _observed_lifecycle = self.observed_lifecycle.lock();
         // 같은 캐릭터에 외부(논리) 세션이 붙어 있었다면 먼저 끊는다 — 앱 안에
         // 진짜 PTY 세션이 뜨는 순간 그 캐릭터의 세션은 이쪽이다(1캐릭터 1세션).
         self.detach_external(&req.agent_id, ExternalDetachReason::Detach);
@@ -1036,6 +1040,7 @@ impl SessionManager {
     /// (1캐릭터 1세션 불변식상 둘이 동시에 있을 일은 없지만, 있어도 둘 다
     /// 정리되도록 early return하지 않는다).
     pub fn dispose(&self, agent_id: &str) {
+        let _observed_lifecycle = self.observed_lifecycle.lock();
         self.detach_external(agent_id, ExternalDetachReason::Detach);
         if let Some(s) = self.find(agent_id) {
             if s.handed_off.load(Ordering::SeqCst) {

@@ -83,5 +83,6 @@
     "tailscaleSpawnFailed": "无法运行 tailscale。",
     "tailscaleCliError": "tailscale 命令执行失败。",
     "timeout": "未在时限内响应。"
-  }
+  },
+  "ideSpikeDescription": "通过只读观察，将现有 VS Code 中的 Codex 和 Claude 会话连接到 Agent Office 的实验。"
 }

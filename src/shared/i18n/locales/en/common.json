@@ -83,5 +83,6 @@
     "tailscaleSpawnFailed": "Failed to run tailscale.",
     "tailscaleCliError": "The tailscale command failed.",
     "timeout": "It did not respond in time."
-  }
+  },
+  "ideSpikeDescription": "An experiment connecting existing VS Code Codex and Claude sessions to Agent Office through read-only observation."
 }

@@ -102,9 +102,16 @@ async fn attach_external_routes_hooks_to_the_agent() {
     let sid = outcome.session_id().to_string();
 
     assert_eq!(f.registry.resolve_agent(&sid).as_deref(), Some("a1"));
-    assert_eq!(f.manager.session_id_for("a1").as_deref(), Some(sid.as_str()));
+    assert_eq!(
+        f.manager.session_id_for("a1").as_deref(),
+        Some(sid.as_str())
+    );
 
-    f.ingest(&sid, "UserPromptSubmit", r#"{"prompt":"버그 고쳐줘"}"#.as_bytes());
+    f.ingest(
+        &sid,
+        "UserPromptSubmit",
+        r#"{"prompt":"버그 고쳐줘"}"#.as_bytes(),
+    );
     f.ingest(&sid, "Stop", b"{}");
 
     // Prompt 하나 + Stop이 동반하는 서브에이전트 카운트 하나. 둘 다 이 캐릭터로
@@ -213,7 +220,9 @@ async fn detach_external_stops_hook_routing_and_removes_the_settings_file() {
     let settings = outcome.plan().settings_path.clone().expect("settings 경로");
     assert!(settings.exists());
 
-    assert!(f.manager.detach_external("a1", ExternalDetachReason::Detach));
+    assert!(f
+        .manager
+        .detach_external("a1", ExternalDetachReason::Detach));
 
     assert!(!settings.exists());
     assert_eq!(f.registry.resolve_agent(&sid), None);
@@ -222,7 +231,9 @@ async fn detach_external_stops_hook_routing_and_removes_the_settings_file() {
     f.ingest(&sid, "Stop", b"{}");
     assert!(f.events.notifications().is_empty());
     // 두 번째 detach는 no-op(이벤트도 더 나오지 않는다).
-    assert!(!f.manager.detach_external("a1", ExternalDetachReason::Detach));
+    assert!(!f
+        .manager
+        .detach_external("a1", ExternalDetachReason::Detach));
 
     let states = f.events.states();
     assert_eq!(states, vec![SessionState::Running, SessionState::Disposed]);
@@ -251,7 +262,9 @@ async fn attach_binds_to_a_live_in_app_session_without_registering_an_external()
         .contains(&("AGENT_OFFICE_SESSION".into(), created.session_id.clone())));
 
     // externals에는 아무것도 안 들어갔다 → 끊을 외부 세션이 없다.
-    assert!(!f.manager.detach_external("a1", ExternalDetachReason::Detach));
+    assert!(!f
+        .manager
+        .detach_external("a1", ExternalDetachReason::Detach));
     // 상태 이벤트도 PTY 세션의 것뿐이다(외부 Running이 끼어들지 않는다).
     assert_eq!(
         f.events.states(),
@@ -338,6 +351,96 @@ async fn dispose_delegates_to_detach_for_an_external_session() {
     f.cleanup();
 }
 
+#[tokio::test]
+async fn observed_session_forwards_minimal_events_without_a_hook_plan() {
+    let f = build();
+    let owner = Uuid::new_v4().to_string();
+    let attached = f
+        .manager
+        .attach_observed(
+            "a1",
+            "codex",
+            "source-1",
+            "/tmp/proj",
+            &owner,
+            Some(std::process::id()),
+            AgentEventProfile {
+                name: "Ada".into(),
+                role: Some("backend".into()),
+            },
+        )
+        .unwrap();
+    assert!(!attached.reused);
+    let sid = attached.session_id;
+
+    assert!(f
+        .manager
+        .ingest_observed_event("a1", &sid, &owner, 1, ObservedEventKind::Prompt, None,)
+        .unwrap());
+    assert!(f
+        .manager
+        .ingest_observed_event(
+            "a1",
+            &sid,
+            &owner,
+            2,
+            ObservedEventKind::Tool,
+            Some("shell"),
+        )
+        .unwrap());
+    assert!(!f
+        .manager
+        .ingest_observed_event("a1", &sid, &owner, 2, ObservedEventKind::Stop, None,)
+        .unwrap());
+    assert!(f
+        .manager
+        .ingest_observed_event("a1", &sid, &owner, 3, ObservedEventKind::Stop, None,)
+        .unwrap());
+    assert!(f
+        .manager
+        .ingest_observed_event("a1", &sid, &owner, 4, ObservedEventKind::Heartbeat, None,)
+        .unwrap());
+
+    assert_eq!(
+        f.events
+            .activities()
+            .iter()
+            .map(|a| a.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            ActivityKind::Prompt,
+            ActivityKind::Tool,
+            ActivityKind::SubCount,
+        ]
+    );
+    assert_eq!(f.events.session_starts()[0].shell, "observed");
+    assert!(f
+        .manager
+        .ingest_observed_event("a1", &sid, "wrong", 5, ObservedEventKind::Stop, None,)
+        .is_err());
+    assert!(!f.manager.detach_observed("a1", &sid, "wrong"));
+    assert!(f.manager.detach_observed("a1", &sid, &owner));
+    f.cleanup();
+}
+
+#[tokio::test]
+async fn sweep_expires_an_observed_session_when_its_lease_is_stale() {
+    let f = build();
+    let owner = Uuid::new_v4().to_string();
+    let attached = f.manager.attach_observed(
+        "a1", "claude", "source-stale", "/tmp/proj", &owner, Some(std::process::id()),
+        AgentEventProfile { name: "Ada".into(), role: None },
+    ).unwrap();
+    let sid = attached.session_id;
+    f.manager.externals.lock().get_mut("a1").unwrap()
+        .observed.as_mut().unwrap().last_heartbeat_ms = 0;
+    f.manager.sweep_externals();
+    assert_eq!(f.manager.session_id_for("a1"), None);
+    assert_eq!(f.events.last_state().session_id, sid);
+    assert_eq!(f.events.last_state().state, SessionState::Exited);
+    f.cleanup();
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn sweep_detaches_the_external_whose_shell_is_gone() {
@@ -387,6 +490,9 @@ async fn sweep_leaves_externals_without_a_shell_pid_alone() {
 
     f.manager.sweep_externals();
 
-    assert_eq!(f.manager.session_id_for("a1").as_deref(), Some(sid.as_str()));
+    assert_eq!(
+        f.manager.session_id_for("a1").as_deref(),
+        Some(sid.as_str())
+    );
     f.cleanup();
 }

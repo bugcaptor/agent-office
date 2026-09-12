@@ -230,8 +230,10 @@
     "errCliLaunchAckTimeout": "셸이 기동 명령을 실행했는지 확인하지 못했습니다. 작업은 보내지 않았습니다. 터미널 상태를 확인한 뒤 새로 실행하세요."
   },
   "host": {
-    "externalTitle": "외부 터미널 세션에 연결됨",
-    "externalDetail": "앱 밖 터미널의 세션이라 화면 미러링은 없습니다. 알림과 성격 프롬프트만 이 캐릭터를 통해 동작합니다.",
+    "externalTitle": "외부 프로그램 세션에 연결됨",
+    "externalDetail": "이 캐릭터가 연결된 프로그램의 활동과 알림을 표시합니다. 화면과 대화는 원본 프로그램에서 확인하세요.",
+    "openWorkdirInVscode": "VS Code에서 작업 폴더 열기",
+    "openWorkdirError": "VS Code에서 작업 폴더를 열지 못했습니다.",
     "detach": "연결 해제",
     "exited": "프로세스가 종료되었습니다.",
     "relaunch": "다시 띄우기"

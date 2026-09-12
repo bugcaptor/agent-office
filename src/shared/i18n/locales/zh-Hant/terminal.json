@@ -230,8 +230,10 @@
     "errCliLaunchAckTimeout": "無法確認 shell 已執行啟動命令。未傳送工作。請檢查終端機後重新執行。"
   },
   "host": {
-    "externalTitle": "已連線到外部終端機工作階段",
-    "externalDetail": "這是程式外終端機的工作階段，因此沒有畫面鏡像。只有通知與個性提示會透過這個角色運作。",
+    "externalTitle": "已連線到外部應用程式工作階段",
+    "externalDetail": "此角色會顯示已連線程式的活動與通知。請在原始程式中查看畫面和對話。",
+    "openWorkdirInVscode": "在 VS Code 中開啟工作資料夾",
+    "openWorkdirError": "無法在 VS Code 中開啟工作資料夾。",
     "detach": "中斷連線",
     "exited": "處理程序已結束。",
     "relaunch": "重新啟動"

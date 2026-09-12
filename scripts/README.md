@@ -2,6 +2,22 @@
 
 프로젝트 유지보수용 스크립트 모음.
 
+## 기존 IDE 세션 연결 실험 (ide-session-spike.mjs)
+
+기존 VS Code Codex·Claude 확장이 쓰는 세션 JSONL을 읽고, 선택한 캐릭터에 연결
+이후의 시작·도구·완료 이벤트만 전달한다. 기존 확장 설정이나 프로세스를 바꾸지 않는다.
+
+```sh
+npm run spike:ide -- list --provider codex
+npm run spike:ide -- agents
+npm run spike:ide -- watch --provider codex --file "FILE" --agent "AGENT_ID"
+npm run spike:ide:test
+```
+
+이 변경을 포함한 개발 앱과 CLI 제어 승인이 필요하다. 후보 목록은 실행 중인
+프로세스 목록이 아니며, 앱 없이 파싱만 보려면 `watch ... --dry-run`을 쓴다.
+사용법·발견 범위·지원하지 않는 기능은 [스파이크 문서](../docs/ide-session-spike.md)를 참고한다.
+
 ## 풍경 미리보기 (render-scenes.mjs)
 
 10개 풍경 × 4개 테마의 개별 PNG와 테마별 모음 이미지를 만든다. 실제 `drawTile`의 사각형·색을 CPU 캔버스에 그리며, 좌석에 생성 캐릭터를 올려 배경 위 가독성을 확인한다. 앱의 Pixi 캐시·y-sort·실시간 오버레이까지 재현하는 도구는 아니다.

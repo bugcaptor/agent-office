@@ -35,6 +35,7 @@
 | [bot-mode-design.md](bot-mode-design.md) | 캐릭터 봇 모드 — Gitea 이슈 폴링·프롬프트 주입·PR 완료 판정 | 정본 — 구현 완료(#57/#58/#61) |
 | [cli-control-design.md](cli-control-design.md) | `agent-office ctl` 외부 CLI 제어 — 로컬 axum 서버 + 2단계 승인 | 정본 — 구현 완료(#55) |
 | [external-session-attach-design.md](external-session-attach-design.md) | 외부 터미널/tmux 세션에 캐릭터 붙이기 — PTY 없는 논리 세션·`ctl attach` eval 스크립트·tmux 클라이언트 스폰 | 정본 — 구현 완료(kbm #2by), 눈검증 대기 |
+| [ide-session-spike.md](ide-session-spike.md) | 기존 VS Code Codex·Claude 세션 기록을 읽어 캐릭터에 관찰 연결 — 새 확장 없이 시작·도구·완료 전달 | 실험 구현(kbm #2w6) |
 | [tmux-hosting-design.md](tmux-hosting-design.md) | 프로필 설정으로 tmux 세션 자동 호스팅 — 소환 시 앱이 직접 tmux 세션을 만들고 이름·gc·수명을 관리 | 정본 — 구현 완료(kbm #2pc) |
 | [run-recipes-design.md](run-recipes-design.md) | 실행 레시피 — 프로젝트(프로필 cwd)별 실행 방법을 캐릭터가 조사해 앱 데이터에 저장, 팔레트에서 그 캐릭터 세션에 주입. 설정 opt-in | 정본 (2026-09-04, kbm #2rf) — 구현 완료 |
 | [terminal-automation-design.md](terminal-automation-design.md) | 사용자 정의 터미널 입력 자동화 — v1/v2 순차 CLI 전환, 단계 정의를 저장해 평소 쓰는 터미널에 프롬프트를 대신 입력. 기동 10초·작업 대기 30분·타임아웃 시 사용자 선택, 사람 입력 허용 | 정본 (2026-09-08, kbm #2t9) — v1/v2 구현, 실제 bash/zsh 및 PTY 대역 검증 |

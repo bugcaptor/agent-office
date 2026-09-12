@@ -25,6 +25,7 @@ import { terminalRegistry } from "./TerminalRegistry";
 import { BotOverlay } from "./BotOverlay";
 import { AutomationBanner } from "./AutomationBanner";
 import { AutomationDecision } from "./AutomationDecision";
+import { isRemoteWindow } from "../shared/remoteWindow";
 
 const RESIZE_DEBOUNCE_MS = 120;
 
@@ -62,7 +63,10 @@ function TerminalMount({ agentId }: { agentId: string }) {
 function ExternalMount({ agentId }: { agentId: string }) {
   const { t } = useTranslation("terminal");
   const isActive = useAppStore((s) => s.activeTerminalAgentId === agentId);
+  const cwd = useAppStore((s) => s.agents[agentId]?.cwd);
   const [detaching, setDetaching] = useState(false);
+  const [openError, setOpenError] = useState(false);
+  const canOpenWorkdirInVscode = !isRemoteWindow() && Boolean(cwd);
 
   const detach = () => {
     setDetaching(true);
@@ -72,6 +76,15 @@ function ExternalMount({ agentId }: { agentId: string }) {
       .detachExternalSession(agentId)
       .catch((err) => console.warn(`detachExternalSession failed for ${agentId}`, err))
       .finally(() => setDetaching(false));
+  };
+
+  const openWorkdirInVscode = () => {
+    if (!cwd) return;
+    setOpenError(false);
+    void tauriApi.openInVscode(cwd).catch((err) => {
+      console.warn(`openInVscode failed for ${agentId}`, err);
+      setOpenError(true);
+    });
   };
 
   return (
@@ -86,6 +99,12 @@ function ExternalMount({ agentId }: { agentId: string }) {
         </span>
         <div className="terminal-external-title">{t("host.externalTitle")}</div>
         <div className="terminal-external-detail">{t("host.externalDetail")}</div>
+        {canOpenWorkdirInVscode && (
+          <button type="button" className="pixel-btn" onClick={openWorkdirInVscode}>
+            {t("host.openWorkdirInVscode")}
+          </button>
+        )}
+        {openError && <div role="alert">{t("host.openWorkdirError")}</div>}
         <button
           type="button"
           className="pixel-btn"
