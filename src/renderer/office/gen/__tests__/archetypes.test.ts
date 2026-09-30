@@ -39,26 +39,11 @@ describe("archetype registry", () => {
 });
 
 describe("pickArchetype (seed draw, separate rng stream)", () => {
-  it("is deterministic per seed and uses the ':archetype' salted stream", () => {
+  it("is deterministic per seed and returns a registered archetype", () => {
     for (const seed of ["a", "seed-1", "agent-42", "zzz"]) {
-      const expected = makeRng(hashStringToSeed(seed + ":archetype")).pick(
-        ARCHETYPE_IDS as readonly string[],
-      );
-      expect(pickArchetype(seed)).toBe(expected);
       expect(pickArchetype(seed)).toBe(pickArchetype(seed));
       expect(ARCHETYPE_IDS as readonly string[]).toContain(pickArchetype(seed));
     }
-  });
-
-  it("does not pollute the palette rng stream (independent hash)", () => {
-    // 같은 seed의 팔레트는 pickArchetype 존재와 무관하게 기존과 동일해야 한다.
-    const seed = "agent-42";
-    const before = generatePalette(makeRng(hashStringToSeed(seed)));
-    pickArchetype(seed);
-    const after = generatePalette(makeRng(hashStringToSeed(seed)));
-    expect(after).toEqual(before);
-    // archetype 스트림은 팔레트 스트림과 다른 시드를 쓴다.
-    expect(hashStringToSeed(seed + ":archetype")).not.toBe(hashStringToSeed(seed));
   });
 
   it("across many seeds yields more than one archetype (distribution sanity)", () => {

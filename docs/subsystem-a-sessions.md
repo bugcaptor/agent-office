@@ -102,7 +102,7 @@ Rust/Tauri는 **OS 스레드 + tokio 태스크 혼합**이다. `portable-pty`의
 - 구조체는 `#[serde(rename_all = "camelCase")]` — Rust `snake_case` → TS `camelCase`.
 - enum은 `#[serde(rename_all = "lowercase")]` — PascalCase variant → TS 소문자 문자열 값 (`SessionState = 'starting'|'running'|'exited'|'disposed'`, `NotificationSource = 'hook'|'stop'|'bell'` 등).
 - epoch ms는 `u64`(TS `number`). `Option<T>`는 `T | undefined`이며 `skip_serializing_if`로 생략.
-- **TS(`src/shared/types/`)가 정본이고 Rust는 미러** — 수동 동기화이므로 필드 추가 시 양쪽 + `shared/__tests__/contract.test.ts` 왕복 픽스처를 함께 갱신한다. (컴파일러가 어긋남을 못 잡는 구조적 부채 — 자동 안전망은 REBUILD-PLAN R-9 결정 항목.)
+- **TS(`src/shared/types/`)가 정본이고 Rust는 미러** — 필드 추가 시 양쪽 타입과 `src/shared/contract-fixtures/`를 함께 갱신한다. Rust의 `src-tauri/tests/contract_fixtures.rs`가 실제 serde 출력·입력을 픽스처와 비교한다. TS 타입과 Rust 타입의 일치는 수동으로 확인해야 한다. `JSON.parse()`의 `any` 결과에 타입을 붙이는 방식으로는 불일치를 잡을 수 없으며, `npx tsc --noEmit`도 프런트 사용처만 검사한다.
 - 뒤에 추가된 계약 필드는 `#[serde(default)]`로 additive하게만 늘린다(브로커 프로토콜과 동일 원칙).
 
 핵심 계약 타입(대표): `SessionState`/`SessionStateEvent`/`SessionExitInfo`, `NotificationSource`/`NotificationEvent`/`NotificationClearedEvent`, `ActivityKind`/`ActivityEvent`, `CreateSessionRequest`/`CreateSessionResult`, `OutputChunk{sessionId, agentId, data, frames, seq}`, `AgentProfile`(+`bot`)/`PersistedState`, `AppSettings`, `BotConfig`/`BotStatus`, `UsageSnapshot`.

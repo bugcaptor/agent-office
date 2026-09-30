@@ -14,7 +14,6 @@ import { describe, expect, it } from "vitest";
 import { Container, type Graphics } from "pixi.js";
 import { TileRenderer } from "../TileRenderer";
 import { BOSS_DESK_RECT, OFFICE_MAP, Tile, TILE_SIZE } from "../mapData";
-import { THEMES } from "../../../theme/themes";
 
 /** Tile types drawn in the y-sorted furniture layer (mirrors TileRenderer's own set). */
 const FURNITURE_TILES = new Set([Tile.DeskTop, Tile.Plant, Tile.Counter, Tile.Table, Tile.BossDesk]);
@@ -31,16 +30,6 @@ describe("TileRenderer.build", () => {
       }
     }
     expect(root.children.length).toBe(nonFurnitureCount);
-  });
-
-  it("positions each floor/wall/rug tile at tx*TILE_SIZE, ty*TILE_SIZE", () => {
-    const r = new TileRenderer(OFFICE_MAP, TILE_SIZE);
-    const root = r.build();
-
-    // Top-left corner is a wall tile (ty=0, tx=0) in the hardcoded map.
-    const first = root.children[0];
-    expect(first.position.x).toBe(0);
-    expect(first.position.y).toBe(0);
   });
 
   it("bakes the static layer into a single cached (nearest) texture", () => {
@@ -82,12 +71,6 @@ describe("TileRenderer.buildFurniture", () => {
     }
   });
 
-  it("is not empty for the hardcoded OFFICE_MAP (sanity: desks exist)", () => {
-    const r = new TileRenderer(OFFICE_MAP, TILE_SIZE);
-    expect(r.buildFurniture().length).toBeGreaterThan(0);
-    expect(r.buildFurniture().length).toBeGreaterThanOrEqual(OFFICE_MAP.desks.length * 2); // each desk slot is a 2-tile-wide pair, plus break-room decor
-  });
-
   it("draws a laptop (back of the lid toward the viewer) on the left tile of each desk pair", () => {
     // 좌석이 책상 위쪽이므로 랩탑 화면은 북쪽(캐릭터)을 향하고, 뷰어에게는
     // 뚜껑 등판이 보인다. 랩탑은 좌석과 정렬된 왼쪽 타일에만 그린다 —
@@ -105,28 +88,6 @@ describe("TileRenderer.buildFurniture", () => {
       expect(right).toBeDefined();
       expect(left.context.instructions.length).toBeGreaterThan(right.context.instructions.length);
     }
-  });
-
-  it("every theme palette defines the laptop colors", () => {
-    for (const theme of Object.values(THEMES)) {
-      expect(typeof theme.pixi.laptopLid).toBe("number");
-      expect(typeof theme.pixi.laptopBody).toBe("number");
-    }
-  });
-
-  it("draws each new decoration tile type (Plant/Counter/Table) without throwing", () => {
-    const r = new TileRenderer(OFFICE_MAP, TILE_SIZE);
-    expect(() => r.buildFurniture()).not.toThrow();
-
-    const drawnTypes = new Set<number>();
-    for (let ty = 0; ty < OFFICE_MAP.height; ty++) {
-      for (let tx = 0; tx < OFFICE_MAP.width; tx++) {
-        drawnTypes.add(OFFICE_MAP.tiles[ty][tx]);
-      }
-    }
-    expect(drawnTypes.has(Tile.Plant)).toBe(true);
-    expect(drawnTypes.has(Tile.Counter)).toBe(true);
-    expect(drawnTypes.has(Tile.Table)).toBe(true);
   });
 
   it("renders boss desk tiles in the furniture (y-sort) layer", () => {

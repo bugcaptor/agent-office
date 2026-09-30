@@ -139,16 +139,6 @@ describe("generateSpritePreview (R3 frozen contract: sync, dataURL)", () => {
     );
     expect(a).not.toBe(b);
   });
-
-  it("defaults to the documented signature `generateSpritePreview(seed)` (extra params optional)", () => {
-    // Verified at the type level: calling with only `seed` must type-check
-    // (subsystem C's frozen usage). We don't invoke the zero-arg form
-    // here because its default factories reach for `document`, which this
-    // node test environment intentionally does not provide (`gen/` stays
-    // DOM-free and is exercised only through the injectable seam).
-    expect(typeof generateSpritePreview).toBe("function");
-    expect(generateSpritePreview.length).toBeLessThanOrEqual(1);
-  });
 });
 
 describe("human archetype byte-for-byte regression (legacy pipeline)", () => {

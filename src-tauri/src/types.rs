@@ -1323,54 +1323,6 @@ mod tests {
 
     // ---- Step 3: struct roundtrip snapshots (camelCase keys) ----
 
-    #[test]
-    fn notification_event_keys_are_camel_case() {
-        let ev = NotificationEvent {
-            id: "n1".into(),
-            session_id: "s1".into(),
-            agent_id: "a1".into(),
-            source: NotificationSource::Hook,
-            message: "needs input".into(),
-            dedup_key: "hook:s1".into(),
-            at: 1_720_000_000_000,
-        };
-        let json = serde_json::to_string(&ev).unwrap();
-        assert_eq!(
-            json,
-            "{\"id\":\"n1\",\"sessionId\":\"s1\",\"agentId\":\"a1\",\"source\":\"hook\",\
-             \"message\":\"needs input\",\"dedupKey\":\"hook:s1\",\"at\":1720000000000}"
-        );
-        // NotificationEvent는 tokens를 더 이상 만지지 않는다 — 사용량은
-        // 독립 이벤트 TurnUsageEvent("turn-usage")로 방출된다(결정 A).
-        assert!(!json.contains("\"tokens\""), "{json}");
-    }
-
-    /// `TurnUsageEvent`는 wire에 camelCase 하위 필드와 함께 실린다(알림과 분리된
-    /// "turn-usage" 채널 → 렌더러 실시간 세션 요약 바).
-    #[test]
-    fn turn_usage_event_serializes_tokens_with_camel_case_subfields() {
-        let ev = TurnUsageEvent {
-            agent_id: "a1".into(),
-            session_id: "s1".into(),
-            at: 1,
-            tokens: SessionEventTokens {
-                input: Some(100),
-                output: Some(50),
-                cache_read: Some(20),
-                cache_write: Some(10),
-                model: Some("claude-opus-5".into()),
-                by_model: None,
-            },
-            partial: false,
-        };
-        let json = serde_json::to_string(&ev).unwrap();
-        assert!(json.contains("\"tokens\""), "{json}");
-        assert!(json.contains("\"cacheRead\":20"), "{json}");
-        assert!(json.contains("\"cacheWrite\":10"), "{json}");
-        assert!(json.contains("\"model\":\"claude-opus-5\""), "{json}");
-        assert!(json.contains("\"partial\":false"), "{json}");
-    }
-
     /// `partial: true`(PostToolUse 중간 갱신)도 다른 필드와 나란히 그대로
     /// 직렬화된다 — 옵션이 아니라 항상 실리는 필드다.
     #[test]
@@ -1427,48 +1379,6 @@ mod tests {
     }
 
     #[test]
-    fn session_state_event_includes_exit_when_present() {
-        let ev = SessionStateEvent {
-            session_id: "s1".into(),
-            agent_id: "a1".into(),
-            state: SessionState::Exited,
-            exit: Some(SessionExitInfo {
-                session_id: "s1".into(),
-                exit_code: Some(1),
-                signal: None,
-                intentional: false,
-            }),
-            at: 2,
-            external: None,
-        };
-        let json = serde_json::to_string(&ev).unwrap();
-        assert_eq!(
-            json,
-            "{\"sessionId\":\"s1\",\"agentId\":\"a1\",\"state\":\"exited\",\
-             \"exit\":{\"sessionId\":\"s1\",\"exitCode\":1,\"intentional\":false},\"at\":2}"
-        );
-        // signal is None -> must be omitted (Option <-> T | undefined mapping).
-        assert!(!json.contains("signal"));
-    }
-
-    #[test]
-    fn output_chunk_camel_case() {
-        let chunk = OutputChunk {
-            session_id: "s1".into(),
-            agent_id: "a1".into(),
-            data: "hello".into(),
-            frames: 3,
-            seq: 42,
-            bytes: 5,
-        };
-        let json = serde_json::to_string(&chunk).unwrap();
-        assert_eq!(
-            json,
-            "{\"sessionId\":\"s1\",\"agentId\":\"a1\",\"data\":\"hello\",\"frames\":3,\"seq\":42,\"bytes\":5}"
-        );
-    }
-
-    #[test]
     fn create_session_request_deserializes_camel_case_from_ts() {
         // Matches the wire payload a TS `CreateSessionRequest` would produce.
         let json = "{\"agentId\":\"a1\",\"cols\":80,\"rows\":24,\"cwd\":null,\"autostartClaude\":null}";
@@ -1489,18 +1399,6 @@ mod tests {
         assert_eq!(req.rows, None);
         assert_eq!(req.cwd, None);
         assert_eq!(req.autostart_claude, None);
-    }
-
-    #[test]
-    fn create_session_result_camel_case() {
-        let res = CreateSessionResult {
-            session_id: "s1".into(),
-            state: SessionState::Starting,
-        };
-        assert_eq!(
-            serde_json::to_string(&res).unwrap(),
-            "{\"sessionId\":\"s1\",\"state\":\"starting\"}"
-        );
     }
 
     #[test]

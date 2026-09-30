@@ -1,10 +1,9 @@
 // src-tauri/tests/contract_fixtures.rs
 //
-// R-9 옵션 A: Rust<->TS 타입 계약 테스트, Rust 쪽 절반.
-//
-// `src/shared/contract-fixtures/*.json`은 렌더러(TS)와 백엔드(Rust)가 함께
-// 검증하는 공유 픽스처다. 여기서는 각 픽스처가 실제 serde 출력/입력과
-// 정확히 일치하는지를 확인한다. 문자열 비교가 아니라 `serde_json::Value`
+// `src/shared/contract-fixtures/*.json`에 고정한 IPC·저장 형식을 실제
+// Rust serde 출력/입력과 비교한다. TS 미러 타입은 이 검사로 검증되지 않으며
+// 양쪽 타입의 수동 동기화와 프런트 타입 검사가 별도로 필요하다.
+// 문자열 비교가 아니라 `serde_json::Value`
 // 동등 비교를 쓴다 — 키 순서 무관, casing·null-vs-생략까지 검증된다.
 //
 // Serialize + Deserialize 둘 다 구현한 타입(AgentProfile/PersistedState,
@@ -27,7 +26,7 @@ use agent_office_lib::persistence::settings_store::{
 };
 use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
-    ActivityEvent, ActivityKind, AdoptedSessionInfo, AgentProfile, AutomationAgentStatus,
+    ActivityEvent, ActivityKind, AdoptedSessionInfo, AutomationAgentStatus,
     AutomationCli, AutomationPhase, AutomationStatus, BotAgentStatus, BotPhase, AwardsFile,
     BotStatus, CreateSessionRequest, CreateSessionResult, MemoSheet, MemoSheetMeta,
     NotificationEvent, NotificationSource, OutputChunk, PendingReason, PersistedState, SessionEventTokens,
@@ -459,17 +458,6 @@ fn persisted_state_minimal_roundtrips() {
 }
 
 #[test]
-fn persisted_state_minimal_agent_profile_has_no_cwd_or_startup_command() {
-    // skip_serializing_if 필드가 minimal 픽스처에서 실제로 부재함을 재확인
-    // (왕복 동등 비교와 별개로, "부재"가 아니라 "null"로 새는 회귀를 잡는다).
-    let parsed: PersistedState =
-        serde_json::from_str(fixture!("persisted-state.minimal.json")).unwrap();
-    let profile: &AgentProfile = &parsed.agents[0];
-    assert!(profile.cwd.is_none());
-    assert!(profile.startup_command.is_none());
-}
-
-#[test]
 fn session_event_record_started_roundtrips() {
     assert_roundtrip::<SessionEventRecord>(fixture!("session-event-record.started.json"));
 }
@@ -495,17 +483,6 @@ fn session_event_record_usage_roundtrips() {
 #[test]
 fn session_event_record_bot_prompt_origin_roundtrips() {
     assert_roundtrip::<SessionEventRecord>(fixture!("session-event-record.prompt.bot.json"));
-}
-
-#[test]
-fn session_event_record_origin_is_absent_for_human_prompts() {
-    // TS 미러가 `origin?: "bot"`이라 사람 프롬프트에는 키 자체가 없어야 한다
-    // (null이 아니라 부재 — `tokens`와 같은 계약).
-    let parsed: SessionEventRecord =
-        serde_json::from_str(fixture!("session-event-record.tool.json")).unwrap();
-    assert!(parsed.origin.is_none());
-    let json = serde_json::to_string(&parsed).unwrap();
-    assert!(!json.contains("origin"));
 }
 
 #[test]
@@ -585,16 +562,6 @@ fn memo_sheet_current_roundtrips() {
 #[test]
 fn memo_sheet_archived_roundtrips() {
     assert_roundtrip::<MemoSheet>(fixture!("memo-sheet.archived.json"));
-}
-
-#[test]
-fn memo_sheet_current_has_no_archived_key() {
-    // 현재 장 = `archived` **부재**(null이 아니다). skip_serializing_if가
-    // 빠지면 렌더러의 "현재 장 판별"이 무너지므로 부재를 직접 확인한다.
-    let parsed: MemoSheet = serde_json::from_str(fixture!("memo-sheet.current.json")).unwrap();
-    assert!(parsed.archived.is_none());
-    let value = serde_json::to_value(&parsed).unwrap();
-    assert!(value.get("archived").is_none());
 }
 
 #[test]

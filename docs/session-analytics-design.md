@@ -57,7 +57,7 @@ pub fn load_session_events(root: &Path, from_at: u64, to_at: u64) -> Vec<Session
 
 기존 5접점 계약을 따른다: `ipc/commands.rs`, `lib.rs` generate_handler, `shared/ipc.ts` Commands, `renderer/ipc/tauriApi.ts`, `shared/types.ts` AgentOfficeApi. 요청은 `fromAt`/`toAt`(epoch ms), 응답은 `SessionEventRecord[]`.
 
-`SessionEventRecord`의 TS 미러 타입을 `shared/types.ts`에 추가하고 `contract.test.ts`에 픽스처를 넣는다. serde 필드명은 수집 설계 §4와 동일(camelCase envelope + 옵션 필드 + snake_case `kind`/`state`).
+`SessionEventRecord`의 TS 미러 타입과 `src/shared/contract-fixtures/`의 픽스처를 함께 갱신하고 `src-tauri/tests/contract_fixtures.rs`에서 실제 serde 형식과 비교한다. serde 필드명은 수집 설계 §4와 동일(camelCase envelope + 옵션 필드 + snake_case `kind`/`state`).
 
 ### 4.3 렌더러 집계 `renderer/analytics/aggregate.ts` (순수 함수)
 
@@ -112,7 +112,7 @@ pub fn load_session_events(root: &Path, from_at: u64, to_at: u64) -> Vec<Session
 ## 7. 테스트 전략
 
 - **Rust reader**: 범위 내 다중 파일 스캔, 없는 파일 스킵, 손상 줄 스킵, `at` 경계 필터, 정렬. tempdir에 픽스처 파일 작성.
-- **계약**: `SessionEventRecord` TS 미러 ↔ Rust serde 왕복 픽스처(`contract.test.ts`).
+- **계약**: Rust serde 왕복 픽스처(`src-tauri/tests/contract_fixtures.rs`)와 TS 미러 타입의 수동 동기화.
 - **aggregate.ts**: prompt→stop 기본 페어링, 연속 prompt, stop 유실+exited 마감, 미마감 턴, 자정 분할, 로컬 날짜 귀속, 삭제 에이전트 이름 폴백.
 - **UI**: 다이얼로그 열림/로딩/빈/오류 상태, 기간 전환 재호출(기존 dialog 테스트 패턴).
 - **회귀**: 기존 vitest 전체(`npx vitest run --dir src`)·cargo 전체가 기준선 대비 실패 증가 없음.
@@ -710,7 +710,7 @@ Stop"이 턴 수 의미를 한 번 바꿔놓은 것과 같은 결의 사전 조�
 
 GPT-5.x 전체에 적용하던 옛 단가를 모델별 가격표로 교체하고 GPT-6 Astra를
 추가했다. 모델 변경과 서브스레드 비용을 `tokens.byModel`로 보존한다.
-공유 JSON 픽스처로 Rust 직렬화와 TS 소비 계약을 검증하며 옵션 추가이므로
+JSON 픽스처로 실제 Rust 직렬화 형식을 검증하고 TS 미러 타입은 수동 동기화한다. 옵션 추가이므로
 시계열 schemaVersion은 1을 유지한다.
 
 요약 바는 첫 턴 완료 여부 대신 토큰 또는 완료 턴 존재 여부로 표시한다.

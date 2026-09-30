@@ -404,13 +404,11 @@ vitest `setupFiles`. 테스트의 UI 언어를 정본(ko)으로 못박는다.
 
 같은 파일의 `fallback_messages_split_by_language`는 en 문구에 한글이 섞이지 않았는지도 본다.
 
-### 6.5 ko 프롬프트 동결
+### 6.5 프롬프트 프로필 검증
 
-`src/renderer/i18n/__tests__/promptProfiles.test.ts`에 이행 직전(`dbf428d` 시점)의 ko 프롬프트 **사본**이 상수로 박혀 있고, 바이트 단위로 비교한다. 딸린 숫자·마커·정규식·머리말도 함께 못 박는다(`summaryMaxChars: 40`, `metaMarkers: ["인코딩","죄송","할 수 없"]`, `linePrefixPattern` 등).
+`src/renderer/i18n/__tests__/promptProfiles.test.ts`는 프롬프트와 머리말·폴백 문구의 정합성, 수상 정보 조립, 언어 폴백, 호출 시점의 UI 언어 선택을 검증한다. 이행 당시의 문자열·상수 사본과 비교하는 테스트는 제거했다. 사본 일치는 LLM 출력 품질을 보장하지 않으므로, 프롬프트 튜닝은 실제 출력으로 평가한다.
 
-프롬프트 한 글자가 요약·일기·소감의 품질을 바꾼다. 이 테스트가 깨지면 둘 중 하나다 — 실수로 건드렸거나(되돌려라), 의도한 튜닝이거나(그 커밋에서 사본도 함께 갱신하고 커밋 메시지에 **품질 변경**임을 남겨라).
-
-같은 파일이 폴백 규칙(프로필 없는 언어 → en)도 검증한다. `textRules.test.ts`는 ko/en 판정 규칙의 오탐 사례("네트워크 설정 고쳐줘"가 맞장구가 아님 등)를 지킨다.
+`textRules.test.ts`는 정규식 문자열을 고정하는 대신 ko/en 판정 규칙의 오탐 사례("네트워크 설정 고쳐줘"가 맞장구가 아님 등)를 지킨다.
 
 ## 7. 함정
 
@@ -512,4 +510,4 @@ Rust 쪽 `truncation_marker_fits_the_frontend_prompt_budget` 테스트가 이 �
 | 뷰모델 반환 | `TextKey {key, params}` | 언어 변경 추종 + 테스트가 문구에 안 묶임. 보간값에 `TextKey` 중첩 가능 |
 | 하드코딩 방지 | TS AST 스캐너 + 빈 베이스라인 | eslint 부재. 정규식 grep은 한국어 주석 오탐으로 무용 |
 | 테스트 언어 | ko 고정 (`test-setup.ts`) | jsdom `navigator.language`는 `en-US`. ko 테스트 = ko 문구 명세 |
-| ko 프롬프트 | 바이트 단위 동결 | 이행이지 튜닝이 아님. 튜닝은 별도 작업 |
+| 프롬프트 검증 | 머리말 정합성·출력 조립·언어 선택 | 문구 사본 비교로 LLM 품질을 보장하지 않음 |

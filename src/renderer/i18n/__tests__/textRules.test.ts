@@ -7,16 +7,8 @@ import { afterAll, describe, expect, it } from "vitest";
 import { SOURCE_LANGUAGE, initI18nForTest } from "@renderer/i18n";
 import { currentTextRules, textRulesFor } from "../textRules";
 
-describe("ko 규칙 동결", () => {
+describe("ko 규칙", () => {
   const ko = textRulesFor("ko");
-
-  it("이행 전 값 그대로다", () => {
-    expect(ko.goalFallbackMinChars).toBe(6);
-    expect(ko.backchannelStart.source).toBe(
-      String.raw`^(응|네|넵|예|그래|좋아|오케이|오케|ㅇㅋ|알겠|고마|감사)(?=[\s,.!?~…]|$)`,
-    );
-    expect(ko.backchannelStart.flags).toBe("");
-  });
 
   it("맞장구를 잡고 토큰 경계로 오탐을 막는다", () => {
     expect(ko.backchannelStart.test("네")).toBe(true);

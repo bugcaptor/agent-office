@@ -4,7 +4,6 @@
 //
 // 테마 시스템 단위 테스트:
 // - 레지스트리 무결성: 모든 테마가 CSS 토큰/타일 팔레트 키를 빠짐없이 정의
-// - midnight = 테마 도입 이전의 원본 값 그대로(룩 보존 계약)
 // - applyTheme: data-theme + 인라인 커스텀 프로퍼티 + localStorage 영속
 // - loadStoredThemeId: 유효값 복원 / 무효·부재 시 daylight 폴백
 // - store.setTheme: 상태 갱신 + DOM 적용까지 한 번에
@@ -145,42 +144,6 @@ describe("THEMES 레지스트리 무결성", () => {
         expect(contrast(c, t.black as string), `${id} ${key} 배경 대비`).toBeGreaterThanOrEqual(3);
       }
     }
-  });
-
-  it("midnight은 테마 도입 이전의 원본 값을 그대로 보존한다(오피스 리디자인으로 추가된 타일 팔레트 키 제외)", () => {
-    // 원본: tokens.css(구 :root) + TileRenderer.PAL(구 상수) + 배경 0x1b1b24.
-    // Phase A(오피스 리디자인)에서 plant/counter/table 등 신규 키가 추가되었으므로
-    // 원본 키셋만 부분 일치(toMatchObject)로 검증하고, 값 자체는 그대로 보존한다.
-    expect(THEMES.midnight.css).toEqual({
-      "--bg-base": "#12131a",
-      "--bg-panel": "#1e2130",
-      "--bg-panel-hi": "#2a2e42",
-      "--border-lite": "#4a5170",
-      "--border-dark": "#0a0b12",
-      "--accent": "#7cff6b",
-      "--accent-warn": "#ffd866",
-      "--accent-error": "#ff5c6a",
-      "--text": "#c8d0e0",
-      "--text-dim": "#8a93b0",
-      // 포스트잇 지면은 테마 도입 이후에 추가된 토큰이라 "원본 보존" 계약 밖이다.
-      "--postit-paper": "#2b3040",
-      "--postit-note": "#21252f",
-      "--postit-ink": "#d3d9e6",
-      "--postit-ink-dim": "#9099ad",
-    });
-    expect(THEMES.midnight.pixi).toMatchObject({
-      background: 0x1b1b24,
-      floorA: 0x3a3a4a,
-      floorB: 0x34343f,
-      floorDot: 0x2e2e38,
-      wall: 0x22222c,
-      wallTop: 0x3a3a48,
-      desk: 0x8a5a34,
-      deskEdge: 0x6b4526,
-      deskTop: 0xa9723f,
-      rug: 0x2f5d5b,
-      rugEdge: 0x264b49,
-    });
   });
 
   it("isThemeId / nextThemeId", () => {

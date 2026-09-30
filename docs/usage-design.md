@@ -138,7 +138,7 @@ interface UsageSnapshot { claude: ProviderUsage | null; codex: ProviderUsage | n
 ## 4. 테스트
 
 - Rust: 픽스처 JSON을 tempdir에 써놓고 파싱 검증 — Claude(limits[] 우선/폴백/파손 파일→None), Codex(null 스킵, window_minutes 매핑, 최신 파일 우선, 초→ms 변환, 청크 경계에 걸친 긴 라인 이어붙이기, `MAX_TAIL_SCAN_BYTES` 상한 밖 스냅샷→None). `resolve_usage_roots` 순수 함수로 `CODEX_HOME`/`CLAUDE_CONFIG_DIR` 오버라이드 조합(미설정/한쪽만/둘 다/빈 문자열) 검증.
-- TS: 계약 왕복(`shared/__tests__/contract.test.ts` 패턴에 UsageSnapshot 픽스처 추가), 위젯/다이얼로그의 절박 윈도 선택·카운트다운 포맷 순수 함수 테스트.
+- 계약: `src/shared/contract-fixtures/usage-snapshot.json`과 Rust serde 출력을 비교한다(`src-tauri/tests/contract_fixtures.rs`). TS 미러 타입은 수동 동기화한다. 프런트는 위젯/다이얼로그의 절박 윈도 선택·카운트다운 포맷을 검증한다.
 - live fetch 테스트는 §6.4.
 
 ## 5. 트레이드오프 기록

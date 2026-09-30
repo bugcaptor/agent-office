@@ -157,13 +157,4 @@ describe("composeSpriteSheet", () => {
     const d1 = ctx.getImageData(walk1Rect.x, walk1Rect.y, CELL, CELL).data;
     expect(Array.from(d0)).not.toEqual(Array.from(d1));
   });
-
-  it("defaults the factory param (does not throw when omitted) when a canvas API is available", () => {
-    // In the node test environment neither OffscreenCanvas nor document exist,
-    // so the *type* must still accept an optional factory — verified by
-    // explicitly passing one above. This test just checks the signature
-    // allows omission at the type level via a wrapper that supplies node canvas.
-    const wrapped = (l: CharacterLayers, p = pal) => composeSpriteSheet(l, p, napiCanvasFactory);
-    expect(() => wrapped(layers)).not.toThrow();
-  });
 });

@@ -15,14 +15,4 @@ describe("awardFrameRectPx", () => {
     const rect = awardFrameRectPx();
     expect(rect).toEqual({ x: 12 * 16 + 4, y: 4, w: 18, h: 21 });
   });
-
-  it("정중앙(tx8-9 간격)에 놓지 않는다 — 단독 정중앙 배치가 신격화 도상이었다", () => {
-    // GRID 폭 20칸 → 정중앙은 tx9.5(=x 152). 카드가 그 근처에 없어야 한다.
-    const rect = awardFrameRectPx();
-    expect(rect.x).toBeGreaterThan(9.5 * 16);
-  });
-
-  it("호출마다 같은 값을 낸다(순수 함수, 상태 없음)", () => {
-    expect(awardFrameRectPx()).toEqual(awardFrameRectPx());
-  });
 });

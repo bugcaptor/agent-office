@@ -363,7 +363,7 @@ Windows는 `taskkill /T /F`로 자식까지 끝낸다. 실행 프로세스는 se
 | 손 등록 저장소(tmp+rename) | `src-tauri/src/run_recipes/user_store.rs` |
 | 커맨드 | `src-tauri/src/run_recipes/commands.rs` — 저장 커맨드 + `run_recipe_start/status/stop` |
 | 실행 프로세스 수명 | `src-tauri/src/run_recipes/runner.rs`, `state.rs`, `lib.rs` — 시작·회수·중단·앱 종료 정리 |
-| 계약 타입 | `src/shared/types/run.ts`, `src-tauri/src/types.rs` 미러, `shared/__tests__/contract.test.ts` 픽스처 |
+| 계약 타입 | `src/shared/types/run.ts`, `src-tauri/src/types.rs` 미러, `src/shared/contract-fixtures/`와 Rust serde 검사 |
 | 프롬프트 프로필(ko/en) | `src/renderer/i18n/promptProfiles.ts` |
 | 스토어·실행·조사 주입 | `src/renderer/run/runStore.ts`, `run/execute.ts`(실행 IPC, 조사 프롬프트만 두 번 쓰기) |
 | UI | `src/renderer/run/RunPalette.tsx`, `run/run.css`, `terminal/AgentTabStrip.tsx` 메뉴 항목(`runRecipesEnabled`로 조건부 포함) |

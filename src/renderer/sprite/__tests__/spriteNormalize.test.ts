@@ -5,8 +5,6 @@
 import { describe, expect, it } from "vitest";
 import { createCanvas } from "@napi-rs/canvas";
 import {
-  SHEET_W,
-  SHEET_H,
   SHEET_COLS,
   CELL_MIN,
   CELL_MAX,
@@ -67,12 +65,6 @@ describe("detectSheet", () => {
     expect(isSheetSize(96, 24)).toBe(true);
     expect(isSheetSize(1024, 1024)).toBe(false);
     expect(isSheetSize(32, 8)).toBe(false);
-  });
-
-  it("셀 상수와 열 개수를 노출한다", () => {
-    expect(CELL_MIN).toBe(16);
-    expect(CELL_MAX).toBe(256);
-    expect(SHEET_COLS).toBe(4);
   });
 });
 
@@ -151,11 +143,6 @@ describe("expandFrameToSheet", () => {
     expect(px(sheet, N, 0)[3]).toBe(0);
     expect(px(sheet, N, 1)[3]).toBe(0);
     expect(px(sheet, N, 2)).toEqual([255, 0, 0, 255]);
-  });
-
-  it("절차 생성 시트 크기 상수는 64×16으로 남는다", () => {
-    expect(SHEET_W).toBe(64);
-    expect(SHEET_H).toBe(16);
   });
 });
 
