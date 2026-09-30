@@ -5,7 +5,7 @@
 
 같은 탭·PTY에서 CLI를 유지하는 v1과, CLI 반환을 확인한 뒤 다음 CLI를 기동하는 v2를 지원한다. 자동 반환은 직접 생성한 빈 bash/zsh 세션에서 지원한다. 검증 환경과 실행 제한은 아래 [CLI 전환과 반환 확인](#cli-전환과-반환-확인)을 따른다.
 
-이 문서는 자동화의 동작 계약과 현재 구현을 함께 관리하는 정본이다. 과거의 파일별 제작 순서와 임시 진행 보고는 KBM 진행에 남긴다.
+이 문서는 자동화의 동작 계약과 현재 구현을 함께 관리하는 정본이다.
 
 ## 사용자 흐름
 
@@ -257,9 +257,9 @@ rtk cargo test --manifest-path src-tauri/Cargo.toml v2_two_cli_two_cycles_roundt
 rtk cargo test --manifest-path src-tauri/Cargo.toml v2_safety_tests
 ```
 
-인증된 실제 CLI 왕복은 선택적이다. 기존 단일 CLI는 `AGENT_OFFICE_REAL_AUTOMATION_CLI`에 claude/codex/agy/kilo/pi를 지정한 `definition_roundtrip_with_installed_cli -- --ignored`, v2 실제 핸드오프는 `v2_handoff_with_installed_claude_and_agy -- --ignored`로 실행한다. 임시 작업 폴더만 사용하고 인증을 우회하거나 전역 설정을 바꾸지 않는다. agy는 자동화 기본 기동 옵션인 `--dangerously-skip-permissions`, Kilo는 `--auto`를 사용한다. 실제 CLI 검증이 인증/신뢰/도구 승인에서 멈추면 대역 테스트 통과와 구분하여 KBM에 기록한다.
+인증된 실제 CLI 왕복은 선택적이다. 기존 단일 CLI는 `AGENT_OFFICE_REAL_AUTOMATION_CLI`에 claude/codex/agy/kilo/pi를 지정한 `definition_roundtrip_with_installed_cli -- --ignored`, v2 실제 핸드오프는 `v2_handoff_with_installed_claude_and_agy -- --ignored`로 실행한다. 임시 작업 폴더만 사용하고 인증을 우회하거나 전역 설정을 바꾸지 않는다. agy는 자동화 기본 기동 옵션인 `--dangerously-skip-permissions`, Kilo는 `--auto`를 사용한다. 실제 CLI 검증이 인증/신뢰/도구 승인에서 멈추면 검증 결과에 대역 테스트 통과와 구분하여 기록한다.
 
-지원 플랫폼의 자동 검사 외에 미검증 Windows 경로는 활성화하지 않는다. 최신 실행 결과·실 CLI 제약·커밋은 KBM 진행에 남긴다.
+지원 플랫폼의 자동 검사 외에 미검증 Windows 경로는 활성화하지 않는다.
 
 ## 범위 밖
 
