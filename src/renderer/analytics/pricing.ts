@@ -5,13 +5,11 @@
 //
 // ⚠️ 여기 숫자는 **대표값**이며 실제 청구액이 아니다. 구간별 장문(long-context)
 // 할증, 배치/프로모션 할인, 계약 단가, 구독제(정액) 사용은 반영하지 않는다.
-// 화면에도 "추정치"라고 못박아 표시한다. 요율이 바뀌면 아래 RATES 표만 고치면
+// 화면에도 "추정치"라고 못박아 표시한다. 요율이 바뀌면 아래 단가표만 고치면
 // 되고, 집계·표시 코드는 손댈 필요가 없다.
 //
-// 표 기준: 2026-09-05 시점 Anthropic 공식 API 요율 + OpenAI/Google 공개 요율.
-// Anthropic 계열의 캐시 단가는 규칙이 일정하다 —
-//   cacheRead = input × 0.1, cacheWrite(5분 TTL) = input × 1.25.
-// 그 규칙으로 계산한 값을 상수로 박아 둔다(런타임 곱셈 없이 표만 읽으면 되게).
+// OpenAI·Anthropic 표 기준: 2026-09-30 공식 API 기본 요율.
+// 캐시 할인율도 버전마다 다르므로 입력·출력·캐시 읽기·쓰기를 각각 기록한다.
 import type { SessionEventTokens, SessionModelTokens } from "@shared/types";
 
 /** 1M 토큰당 달러 단가 4종. */
@@ -28,15 +26,49 @@ export interface ModelRate {
  * 매칭은 소문자화한 모델 ID에 대한 `includes`다.
  */
 const RATES: ReadonlyArray<readonly [pattern: string, rate: ModelRate]> = [
-  ["fable", { input: 10, output: 50, cacheRead: 1.0, cacheWrite: 12.5 }],
-  ["mythos", { input: 10, output: 50, cacheRead: 1.0, cacheWrite: 12.5 }],
-  ["opus", { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 }],
-  ["sonnet", { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }],
-  ["haiku", { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 }],
   ["gpt-4.1", { input: 2, output: 8, cacheRead: 0.5, cacheWrite: 2 }],
   ["gemini-2.5-pro", { input: 1.25, output: 10, cacheRead: 0.31, cacheWrite: 1.25 }],
   ["gemini", { input: 0.3, output: 2.5, cacheRead: 0.075, cacheWrite: 0.3 }],
 ];
+
+/**
+ * Claude도 계열명만으로 가격이 정해지지 않으므로 알려진 버전만 등록한다.
+ * 출처: https://platform.claude.com/docs/en/about-claude/pricing (2026-09-30).
+ * 캐시 쓰기는 기존 계약대로 5분 TTL 대표값이며 1시간 TTL은 구분하지 않는다.
+ */
+const ANTHROPIC_RATES: Readonly<Record<string, ModelRate>> = {
+  "claude-fable-5-1": { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
+  "claude-mythos-5-1": { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
+  "claude-fable-5": { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
+  "claude-mythos-5": { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
+  "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
+  "claude-opus-5": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  "claude-opus-4-7": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  "claude-opus-4-6": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  "claude-opus-4-5": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  "claude-opus-4-1": { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+  "claude-opus-4": { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+  "claude-sonnet-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+  "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  "claude-sonnet-4-5": { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  "claude-sonnet-4": { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+  "claude-3-5-haiku": { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 },
+};
+
+function anthropicRateFor(model: string): ModelRate | null {
+  // OpenRouter의 anthropic/ 접두사, Bedrock 지역·공급자 접두사, Vertex의
+  // @날짜 및 마켓플레이스의 점 버전(4.5)을 기존 모델 ID와 연결한다.
+  const base = model
+    .replace(/^anthropic\//, "")
+    .replace(/^(?:[a-z]{2}\.)?anthropic\./, "")
+    .replace(/-v1(?::0)?$/, "")
+    .replace(/[-@]\d{8}$/, "")
+    .replace(/(\d)\.(\d)/g, "$1-$2");
+  return hasOwn(ANTHROPIC_RATES, base) ? ANTHROPIC_RATES[base] : null;
+}
 
 /**
  * Gemini 3.x 요율(Antigravity CLI(agy)의 훅 modelName, kbm #2se). 표준
@@ -62,15 +94,19 @@ function geminiThreeRateFor(key: string): ModelRate | null {
 }
 
 /**
- * OpenAI GPT-5 계열은 이름만 비슷해도 모델별 단가가 다르다. 따라서 일반
+ * OpenAI GPT-5·6 계열은 이름만 비슷해도 모델별 단가가 다르다. 따라서 일반
  * `gpt-5` 부분문자열은 쓰지 않고, 공식 모델 ID(및 날짜 스냅샷)만 정확히
- * 허용한다. 출처(2026-09-05):
+ * 허용한다. 출처(2026-09-30):
+ * https://developers.openai.com/api/docs/pricing,
+ * https://developers.openai.com/api/docs/models/gpt-6-sol,
+ * https://developers.openai.com/api/docs/models/gpt-6.1-sol,
+ * https://developers.openai.com/api/docs/models/gpt-6-luna,
  * https://developers.openai.com/api/docs/models/gpt-5,
  * https://developers.openai.com/api/docs/models/gpt-5.4,
  * https://developers.openai.com/api/docs/models/gpt-5.5,
  * https://developers.openai.com/api/docs/models/gpt-5.6-sol,
  * https://developers.openai.com/api/docs/models/compare.
- * 캐시 기록은 5.6/6 Astra 문서에서 명시한 1.25배만 적용하고, 이전 모델은
+ * 캐시 기록은 5.6/6 계열 문서에서 명시한 1.25배만 적용하고, 이전 모델은
  * 별도 단가가 공개되지 않아 입력 단가를 보수적으로 쓴다. Pro는 캐시 할인을
  * 제공하지 않으므로 `cacheRead`도 입력 단가다.
  */
@@ -99,6 +135,9 @@ const OPENAI_RATES: Readonly<Record<string, ModelRate>> = {
   "gpt-5.6-terra": { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.5 },
   "gpt-5.6-luna": { input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0.25 },
   "gpt-6-astra": { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
+  "gpt-6-sol": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+  "gpt-6.1-sol": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+  "gpt-6-luna": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
 };
 
 /** 공식 문서에 명시된 날짜 스냅샷만 위의 모델 단가에 연결한다. */
@@ -139,6 +178,8 @@ export function rateFor(model: string | undefined): ModelRate | null {
   const key = model.toLowerCase().trim();
   const openAiRate = openAiRateFor(key);
   if (openAiRate) return openAiRate;
+  const anthropicRate = anthropicRateFor(key);
+  if (anthropicRate) return anthropicRate;
   const geminiThreeRate = geminiThreeRateFor(key);
   if (geminiThreeRate) return geminiThreeRate;
   for (const [pattern, rate] of RATES) {

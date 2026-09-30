@@ -13,7 +13,7 @@ import {
 } from "../pricing";
 
 describe("rateFor", () => {
-  it("부분문자열로 실제 모델 ID를 잡는다", () => {
+  it("Claude 기존 모델과 날짜가 붙은 ID를 구분한다", () => {
     expect(rateFor("claude-opus-4-5-20250929")).toEqual({
       input: 5,
       output: 25,
@@ -22,7 +22,37 @@ describe("rateFor", () => {
     });
     expect(rateFor("claude-fable-5")?.input).toBe(10);
     expect(rateFor("claude-sonnet-4-5")?.output).toBe(15);
-    expect(rateFor("claude-3-5-haiku-20241022")?.input).toBe(1);
+    expect(rateFor("claude-3-5-haiku-20241022")).toEqual({
+      input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1,
+    });
+  });
+
+  it.each([
+    ["claude-opus-5-5", { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 }],
+    ["claude-sonnet-5-5", { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }],
+    ["claude-sonnet-5", { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }],
+    ["claude-fable-5-1", { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 }],
+    ["claude-mythos-5-1", { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 }],
+    ["claude-opus-4-1", { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 }],
+  ])("Claude %s의 버전별 단가를 적용한다", (model, rate) => {
+    expect(rateFor(model)).toEqual(rate);
+  });
+
+  it("같은 계열의 이전 버전에 새 모델 가격을 적용하지 않는다", () => {
+    expect(rateFor("claude-opus-5")?.input).toBe(5);
+    expect(rateFor("claude-opus-4-8")?.input).toBe(5);
+    expect(rateFor("claude-sonnet-4-6")?.input).toBe(3);
+    expect(rateFor("claude-fable-5")?.cacheRead).toBe(1);
+    expect(rateFor("claude-mythos-5")?.cacheRead).toBe(1);
+    expect(rateFor("claude-haiku-4-5")?.input).toBe(1);
+  });
+
+  it("공급자 접두사와 점 버전도 같은 Claude 모델로 연결한다", () => {
+    expect(rateFor("anthropic/claude-opus-5.5")).toEqual(rateFor("claude-opus-5-5"));
+    expect(rateFor("us.anthropic.claude-sonnet-5-5")).toEqual(rateFor("claude-sonnet-5-5"));
+    expect(rateFor("anthropic.claude-opus-4-6-v1:0")).toEqual(rateFor("claude-opus-4-6"));
+    expect(rateFor("anthropic.claude-sonnet-4-5-20250929-v1:0")).toEqual(rateFor("claude-sonnet-4-5"));
+    expect(rateFor("claude-haiku-4-5@20251001")).toEqual(rateFor("claude-haiku-4-5"));
   });
 
   it("대소문자를 가리지 않는다", () => {
@@ -72,6 +102,15 @@ describe("rateFor", () => {
     expect(rateFor("gpt-5.5-pro")?.input).toBe(30);
   });
 
+  it.each([
+    ["gpt-6-sol", { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }],
+    ["gpt-6.1-sol", { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 }],
+    ["gpt-6-luna", { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 }],
+  ])("Codex %s의 입력·출력·캐시 단가를 적용한다", (model, rate) => {
+    expect(rateFor(model)).toEqual(rate);
+    expect(rateFor(` ${model.toUpperCase()} `)).toEqual(rate);
+  });
+
   it("더 구체적인 패턴이 일반 패턴보다 먼저 잡힌다", () => {
     // "gemini-2.5-pro"가 "gemini"보다 표에서 위에 있어야 한다.
     expect(rateFor("gemini-2.5-pro")?.input).toBe(1.25);
@@ -108,12 +147,48 @@ describe("rateFor", () => {
     expect(rateFor("gpt-6-astra-2026-08-01")).toBeNull();
     expect(rateFor("gpt-5.4-experimental")).toBeNull();
     expect(rateFor("my-gpt-5.4-wrapper")).toBeNull();
+    expect(rateFor("gpt-6.2-sol")).toBeNull();
+    expect(rateFor("gpt-6.1-sol-experimental")).toBeNull();
+    expect(rateFor("gpt-6-sol-2026-09-01")).toBeNull();
+    expect(rateFor("claude-opus-5-6")).toBeNull();
+    expect(rateFor("claude-sonnet-6")).toBeNull();
+    expect(rateFor("claude-fable-5-10")).toBeNull();
+    expect(rateFor("claude-opus-5-5-experimental")).toBeNull();
+    expect(rateFor("my-opus-wrapper")).toBeNull();
     expect(rateFor("constructor")).toBeNull();
     expect(rateFor("toString")).toBeNull();
   });
 });
 
 describe("estimateCostUsd", () => {
+  it("신구 Codex·Claude가 섞여도 모델별 캐시 비용을 계산하고 최상위를 중복 합산하지 않는다", () => {
+    const tokens = {
+      input: 5_000_000,
+      model: "gpt-6-astra",
+      byModel: [
+        { model: "gpt-6.1-sol", input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cacheWrite: 1_000_000 },
+        { model: "gpt-6-sol", cacheRead: 1_000_000 },
+        { model: "gpt-6-luna", input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cacheWrite: 1_000_000 },
+        { model: "claude-opus-5-5", input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cacheWrite: 1_000_000 },
+        { model: "claude-sonnet-5-5", input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cacheWrite: 1_000_000 },
+        { model: "claude-fable-5-1", cacheRead: 1_000_000 },
+        { model: "claude-fable-5", cacheRead: 1_000_000 },
+      ],
+    };
+    // 14.6 + 0.2 + 0.735 + 29.2 + 14.7 + 0.25 + 1
+    expect(estimateCostUsd(tokens)).toBeCloseTo(60.685, 10);
+    expect(estimateCostBreakdown(tokens)?.hasUnknown).toBe(false);
+  });
+
+  it("새 모델과 미지 Claude 버전이 섞이면 알려진 비용만 보존한다", () => {
+    const tokens = { byModel: [
+      { model: "gpt-6.1-sol", input: 1_000_000 },
+      { model: "claude-opus-5-6", input: 1_000_000 },
+    ] };
+    expect(estimateCostBreakdown(tokens)).toEqual({ costUsd: 2, hasUnknown: true });
+    expect(estimateCostUsd(tokens)).toBeNull();
+  });
+
   it("캐시 단가까지 반영해 합산한다", () => {
     // opus: in 5 / out 25 / cacheRead 0.5 / cacheWrite 6.25 ($/Mtok)
     const usd = estimateCostUsd({

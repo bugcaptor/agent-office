@@ -305,7 +305,9 @@ Kilo도 전사 파일은 없지만 플러그인 이벤트(`message.part.updated`
 
 - OpenAI GPT-5·GPT-6 계열은 공식 모델 ID를 정확히 매칭한다. 공식 날짜
   스냅샷도 명시적으로 연결하며 미지 변형을 일반 GPT-5 단가로 폴백하지 않는다.
-  Anthropic·Google 등 기존 모델 패턴은 유지한다.
+  Claude도 알려진 버전별로 단가를 등록하며 미지 버전은 계열명으로 폴백하지
+  않는다. Claude의 공급자 접두사·점 버전·날짜 스냅샷 표기는 정규화한다.
+  Google 등 나머지 기존 모델 패턴은 유지한다.
 - `byModel`이 있으면 구성마다 단가를 적용한다. 없는 과거 레코드는 최상위
   토큰과 모델로 계산한다. 구성과 최상위 토큰을 이중 합산하지 않는다.
 - `estimateCostBreakdown`은 알려진 비용 합계와 `hasUnknown`을 반환한다.
@@ -314,7 +316,13 @@ Kilo도 전사 파일은 없지만 플러그인 이벤트(`message.part.updated`
   단가 사용량 이벤트 수**다. 툴팁도 턴 수 대신 사용량 건수로 설명한다.
 - 숫자는 공개 API의 기본 요율 기준 **추정값**이다. 장문 할증·Fast/Priority
   할증·배치 할인·계약 단가·구독 청구액은 반영하지 않는다.
-- 가격표는 2026-09-05 공식 문서와 대조했다:
+- OpenAI·Anthropic 가격표는 2026-09-30 공식 문서와 대조했다(§11.11):
+  [OpenAI 가격표](https://developers.openai.com/api/docs/pricing),
+  [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol),
+  [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
+  [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna),
+  [Claude 가격표](https://platform.claude.com/docs/en/about-claude/pricing).
+  기존 GPT-5.x 단가의 최초 대조는 2026-09-05이며 출처는 다음과 같다:
   [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra),
   [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol),
   [Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra),
@@ -713,3 +721,34 @@ GPT-5.x 전체에 적용하던 옛 단가를 모델별 가격표로 교체하고
 
 과거 기록 중 모델별 정보가 이미 버려진 사용량은 새 가격표로 재계산해도
 정확한 모델 구성을 복구할 수 없다. 새 관측부터 모델별 구성이 보존된다.
+
+## 11.11 Codex·Claude 신규 모델 단가 (2026-09-30, kbm #6gb)
+
+Codex의 GPT-6 Sol·GPT-6.1 Sol·GPT-6 Luna를 추가하고 Claude의 계열명
+부분문자열 매칭을 버전별 가격표로 교체했다. 입력·출력이 같더라도 캐시 읽기
+단가는 다르므로 별도로 기록한다. 기본 API 요율은 다음과 같다($/1M 토큰).
+
+| 모델 | 입력 | 출력 | 캐시 읽기 | 캐시 쓰기 |
+| --- | ---: | ---: | ---: | ---: |
+| GPT-6 Sol | 2 | 10 | 0.20 | 2.50 |
+| GPT-6.1 Sol | 2 | 10 | 0.10 | 2.50 |
+| GPT-6 Luna | 0.10 | 0.50 | 0.01 | 0.125 |
+| Claude Opus 5.5 | 4 | 20 | 0.20 | 5 |
+| Claude Sonnet 5·5.5 | 2 | 10 | 0.20 | 2.50 |
+| Claude Fable·Mythos 5.1 | 10 | 50 | 0.25 | 12.50 |
+
+GPT-6 Astra와 이전 GPT-5.x 단가는 유지한다. Claude Opus 5·4.5~4.8,
+Sonnet 4.x, Fable·Mythos 5는 새 버전 가격을 소급 적용하지 않는다.
+계열명 매칭으로 잘못 적용하던 Opus 4·4.1과 Haiku 3.5도 공개 단가로 교정했다.
+캐시 쓰기는 Claude의 5분 TTL 대표값이다. 1시간 TTL·장문·Fast·배치·지역
+할증·구독 청구액은 기존 정책대로 반영하지 않는다.
+
+Claude는 `anthropic/`(OpenRouter), `anthropic.` 및 지역 접두사(Bedrock),
+`@날짜`(Google Cloud), 점 버전(`5.5`)을 같은 버전의 요율로 연결한다.
+[Claude 모델 ID 형식](https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions)을
+기준으로 날짜와 Bedrock `-v1:0` 접미사를 정규화한다. 알려지지 않은 버전이나
+임의 변형에는 이전 계열 요율을 적용하지 않는다. GPT-6 계열은 공식 문서에
+날짜 스냅샷이 없으므로 현재 모델 ID만 정확히 허용한다.
+
+요약 바와 분석 패널은 같은 비용 함수를 사용하므로 이 단가표를 함께 반영한다.
+모델별 정보가 있는 저장된 이벤트도 다시 읽을 때 갱신된 단가로 계산한다.
