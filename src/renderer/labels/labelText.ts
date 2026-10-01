@@ -47,19 +47,19 @@ function normalizeCwd(cwd: string): string {
 }
 
 /**
- * 두 cwd가 같은 폴더를 가리키는지 비교한다. 표시·프로필 양쪽 모두에서 쓰이는
- * 경로는 사용자가 끝 슬래시를 붙일 수 있고, 프로필은 `~/…`로 저장되는 반면
- * hook이 보고하는 실제 cwd는 절대 경로일 수 있다.
+ * current가 start와 같은 폴더거나 그 하위 폴더인지 비교한다. 표시·프로필 양쪽
+ * 모두에서 쓰이는 경로는 사용자가 끝 슬래시를 붙일 수 있고, 프로필은 `~/…`로
+ * 저장되는 반면 hook이 보고하는 실제 cwd는 절대 경로일 수 있다.
  *
  * `~`의 실제 홈 디렉터리는 renderer가 알 수 없으므로, 틸드 경로와 절대 경로는
- * 같은 suffix여도 동등하다고 추측하지 않는다. 다른 사용자의 홈이나 `/tmp`를
- * 같은 폴더로 오판해 재시작 위치 선택을 생략하는 것보다 보수적으로 묻는 편이
- * 안전하다.
+ * 같은 suffix여도 같거나 하위라고 추측하지 않는다(`isInsideCwd`와 다른 점).
+ * 다른 사용자의 홈이나 `/tmp`를 같은 폴더로 오판해 재시작 위치 선택을 생략하는
+ * 것보다 보수적으로 묻는 편이 안전하다.
  */
-export function cwdEquivalent(left: string, right: string): boolean {
-  const a = normalizeCwd(left);
-  const b = normalizeCwd(right);
-  return a === b;
+export function cwdSameOrUnder(current: string, start: string): boolean {
+  const a = normalizeCwd(current);
+  const b = normalizeCwd(start);
+  return a === b || a.startsWith(b + "/");
 }
 
 /**

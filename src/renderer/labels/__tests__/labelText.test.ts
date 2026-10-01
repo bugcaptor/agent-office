@@ -1,7 +1,7 @@
 // src/renderer/labels/__tests__/labelText.test.ts
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  cwdEquivalent,
+  cwdSameOrUnder,
   deriveTaskLabelLines,
   firstLine,
   projectAnchorCwd,
@@ -75,22 +75,30 @@ describe("projectAnchorCwd", () => {
   });
 });
 
-describe("cwdEquivalent", () => {
+describe("cwdSameOrUnder", () => {
   it("트레일링 슬래시와 구분자 차이는 같은 폴더로 본다", () => {
-    expect(cwdEquivalent("/work/proj/", "/work/proj")).toBe(true);
-    expect(cwdEquivalent("C:\\work\\proj", "C:/work/proj/")).toBe(true);
+    expect(cwdSameOrUnder("/work/proj/", "/work/proj")).toBe(true);
+    expect(cwdSameOrUnder("C:\\work\\proj", "C:/work/proj/")).toBe(true);
   });
 
   it("같은 틸드 경로끼리는 끝 슬래시를 무시한다", () => {
-    expect(cwdEquivalent("~/dev/proj", "~/dev/proj/")).toBe(true);
+    expect(cwdSameOrUnder("~/dev/proj", "~/dev/proj/")).toBe(true);
   });
 
   it("실제 홈을 모르는 상태에서 틸드와 절대경로를 동등하다고 추측하지 않는다", () => {
-    expect(cwdEquivalent("~/dev/proj", "/Users/codex/dev/proj")).toBe(false);
-    expect(cwdEquivalent("~/dev/proj", "/Users/other/dev/proj")).toBe(false);
-    expect(cwdEquivalent("~/dev/proj", "/Users/codex/dev/proj2")).toBe(false);
-    expect(cwdEquivalent("~/dev/proj", "/tmp/dev/proj")).toBe(false);
-    expect(cwdEquivalent("~", "/Users/codex")).toBe(false);
+    expect(cwdSameOrUnder("~/dev/proj", "/Users/codex/dev/proj")).toBe(false);
+    expect(cwdSameOrUnder("~/dev/proj", "/Users/other/dev/proj")).toBe(false);
+    expect(cwdSameOrUnder("~/dev/proj", "/Users/codex/dev/proj2")).toBe(false);
+    expect(cwdSameOrUnder("~/dev/proj", "/tmp/dev/proj")).toBe(false);
+    expect(cwdSameOrUnder("~", "/Users/codex")).toBe(false);
+    expect(cwdSameOrUnder("/Users/codex/dev/proj/sub", "~/dev/proj")).toBe(false);
+  });
+
+  it("하위 폴더는 포함하되 이름만 겹치는 형제나 상위 폴더는 제외한다", () => {
+    expect(cwdSameOrUnder("/work/proj/packages/app", "/work/proj/")).toBe(true);
+    expect(cwdSameOrUnder("~/dev/proj/sub", "~/dev/proj")).toBe(true);
+    expect(cwdSameOrUnder("/work/proj2", "/work/proj")).toBe(false);
+    expect(cwdSameOrUnder("/work", "/work/proj")).toBe(false);
   });
 });
 

@@ -376,6 +376,21 @@ describe("ConfirmRestartDialog cwd 선택", () => {
     expect(screen.queryByRole("button", { name: "이번만 현재 폴더에서 재시작" })).toBeNull();
     expect(screen.getByRole("button", { name: "재시작" })).toBeTruthy();
   });
+
+  it("현재 폴더가 시작 폴더의 하위면 선택지 없이 기존 확인만 보인다", () => {
+    openDifferentCwds("/Users/codex/dev/proj", "/Users/codex/dev/proj/packages/app");
+    render(<ConfirmRestartDialog />);
+
+    expect(screen.queryByRole("button", { name: "이번만 현재 폴더에서 재시작" })).toBeNull();
+    expect(screen.getByRole("button", { name: "재시작" })).toBeTruthy();
+  });
+
+  it("이름만 겹치는 형제 폴더는 하위로 보지 않고 선택지를 보인다", () => {
+    openDifferentCwds("/Users/codex/dev/proj", "/Users/codex/dev/proj2");
+    render(<ConfirmRestartDialog />);
+
+    expect(screen.getByRole("button", { name: "이번만 현재 폴더에서 재시작" })).toBeTruthy();
+  });
 });
 
 describe("ConfirmResumeDialog", () => {

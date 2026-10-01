@@ -17,7 +17,7 @@ import type { ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import { useAppStore } from "../store/appStore";
-import { cwdEquivalent } from "../labels/labelText";
+import { cwdSameOrUnder } from "../labels/labelText";
 import { deleteAgent } from "./deleteAgent";
 import { restartAgentSession } from "./restartAgentSession";
 import { resumeAgentSession } from "./resumeAgentSession";
@@ -151,10 +151,11 @@ export function ConfirmRestartDialog() {
 
   if (modal.kind !== "confirm-restart") return null;
 
+  // 에이전트가 작업 중 시작 폴더의 하위로 들어간 경우는 제안하지 않는다.
   const needsCwdChoice =
     currentCwd !== undefined &&
     startCwd !== undefined &&
-    !cwdEquivalent(currentCwd, startCwd);
+    !cwdSameOrUnder(currentCwd, startCwd);
 
   if (needsCwdChoice) {
     const restart = (cwd?: string, saveAsStart = false) => {
