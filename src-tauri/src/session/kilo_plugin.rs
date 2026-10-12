@@ -262,6 +262,13 @@ export const AgentOffice = async (ctx: any) => {
         });
       } catch { /* 관찰 실패는 삼킨다 */ }
     },
+
+    // 사무실 공통 안내문(docs/work-inbox-design.md). 업무 패널이 켜진 세션에만
+    // env가 실린다. 시스템 프롬프트 배열 끝에 덧붙이고 기본 지침은 건드리지 않는다.
+    "experimental.chat.system.transform": async (_input: any, output: any) => {
+      const office = process.env.AGENT_OFFICE_OFFICE_PROMPT;
+      if (office && Array.isArray(output?.system)) output.system.push(office);
+    },
   };
 };
 
@@ -460,6 +467,9 @@ mod tests {
             "session.error",
             "permission.asked",
             "permission.replied",
+            // kilo 7.8.3 실측: (input {sessionID, model}, output {system: string[]})
+            "\"experimental.chat.system.transform\"",
+            "AGENT_OFFICE_OFFICE_PROMPT",
         ] {
             assert!(KILO_PLUGIN_TS.contains(needle), "plugin must reference `{needle}`");
         }

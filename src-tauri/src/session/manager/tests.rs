@@ -526,7 +526,16 @@
             env_value(&control, "AGENT_OFFICE_CODEX_WRITABLE_ROOTS").unwrap(),
             format!("sandbox_workspace_write.writable_roots=[\"/mine\",\"{}\"]", inbox.display())
         );
+        assert_eq!(env_value(&control, "AGENT_OFFICE_OFFICE_PROMPT"), Some(appended.clone()));
         let wrappers = recorded_wrappers.lock();
+        let pi = wrappers.iter().find(|w| w.command == "pi").unwrap();
+        assert_eq!(
+            pi.prefix_args,
+            vec![
+                WrapperArg::Literal("--append-system-prompt".into()),
+                WrapperArg::Env("AGENT_OFFICE_OFFICE_PROMPT".into()),
+            ]
+        );
         let codex = wrappers.iter().find(|w| w.command == "codex").unwrap();
         assert_eq!(
             codex.prefix_args,
@@ -555,6 +564,7 @@
         manager.create(req("a1", Some(false))).unwrap();
         assert_eq!(env_value(&control, "AGENT_OFFICE_PERSONA"), None);
         assert_eq!(env_value(&control, "AGENT_OFFICE_CODEX_WRITABLE_ROOTS"), None);
+        assert_eq!(env_value(&control, "AGENT_OFFICE_OFFICE_PROMPT"), None);
         // 환경변수와 shim은 패널 설정과 무관하게 유지한다.
         assert!(env_value(&control, "AGENT_OFFICE_TASK").is_some());
         assert!(recorded_wrappers.lock().is_empty());

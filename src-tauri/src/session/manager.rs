@@ -581,6 +581,22 @@ impl SessionManager {
             );
         }
 
+        // Pi·Kilo는 persona를 받지 않으므로 안내문만 따로 싣는다. Pi는 덧붙이기 플래그
+        // (pi 1.1.0 `--append-system-prompt`), Kilo는 앱 소유 플러그인의
+        // `experimental.chat.system.transform` 훅이 이 env를 읽는다(플러그인은 관찰이
+        // 켜졌을 때만 실린다). agy는 덧붙이기 채널이 없어 `AGENT_OFFICE_TASK`만 준다.
+        if let Some(office) = &office_instructions {
+            plan.env.push(("AGENT_OFFICE_OFFICE_PROMPT".into(), office.clone()));
+            merge_wrapper_args(
+                &mut plan.wrappers,
+                "pi",
+                vec![
+                    WrapperArg::Literal("--append-system-prompt".into()),
+                    WrapperArg::Env("AGENT_OFFICE_OFFICE_PROMPT".into()),
+                ],
+            );
+        }
+
         // Codex 기본 workspace-write 샌드박스는 작업 폴더 밖 쓰기를 막는다. 안내문을
         // 실은 세션에서는 수신함을 쓰기 허용 경로에 더한다.
         if let Some(inbox) = work_inbox.as_deref().filter(|_| office_enabled) {

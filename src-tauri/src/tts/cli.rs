@@ -52,6 +52,7 @@ pub const STRIPPED_ENV: &[&str] = &[
     "AGENT_OFFICE_AGENT_ID",
     "AGENT_OFFICE_WORK_INBOX",
     "AGENT_OFFICE_TASK",
+    "AGENT_OFFICE_OFFICE_PROMPT",
 ];
 
 /// non-Windows: `claude` 바이너리를 직접 spawn한다(로그인 셸을 거치지 않으므로
