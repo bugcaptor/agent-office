@@ -6,7 +6,7 @@
   "expand": "パネルを展開",
   "collapse": "パネルを折りたたむ",
   "resize": "パネル幅を調整",
-  "newWork": "新しい業務名 · Enterで追加",
+  "newWork": "新しいタスクを作成",
   "title": "タイトル",
   "body": "メモ",
   "assignee": "担当キャラクター",
@@ -19,7 +19,7 @@
     "review": "レビュー待ち",
     "done": "完了"
   },
-  "emptyWork": "業務名を入力して開始してください。",
+  "emptyWork": "新しいタスクを作成して始めましょう。",
   "loadError": "業務を読み込めませんでした。",
   "saveError": "業務を保存できませんでした。編集内容は未保存です。",
   "retry": "再試行",
@@ -101,5 +101,13 @@
     "modelInvalid": "モデル名が無効です。",
     "effortInvalid": "この CLI は指定した推論強度に未対応です。",
     "modelCatalog": "指定した agy モデルは現在の一覧にありません。"
-  }
+  },
+  "resumeNewWork": "新しいタスクの入力を続ける",
+  "add": "追加",
+  "save": "保存",
+  "collapseWork": "タスクを折りたたむ",
+  "titlePlaceholder": "タイトルは省略可能",
+  "titleHint": "タイトルを空にすると本文の冒頭をタイトルとして表示します。",
+  "unsavedChanges": "未保存の変更",
+  "saveBeforeSend": "変更を保存してから送信してください。"
 }

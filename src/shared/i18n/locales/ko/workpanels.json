@@ -6,7 +6,7 @@
   "expand": "패널 펼치기",
   "collapse": "패널 접기",
   "resize": "패널 폭 조절",
-  "newWork": "새 업무 제목 · Enter로 추가",
+  "newWork": "새 태스크 만들기",
   "title": "제목",
   "body": "본문",
   "assignee": "담당 캐릭터",
@@ -19,7 +19,7 @@
     "review": "검토 대기",
     "done": "완료"
   },
-  "emptyWork": "새 업무 제목을 입력해 시작하세요.",
+  "emptyWork": "새 태스크 만들기를 눌러 시작하세요.",
   "loadError": "업무를 불러오지 못했습니다.",
   "saveError": "업무 저장에 실패했습니다. 편집 내용은 아직 저장되지 않았습니다.",
   "retry": "다시 시도",
@@ -101,5 +101,13 @@
     "modelInvalid": "모델 이름이 올바르지 않습니다.",
     "effortInvalid": "선택한 CLI에서 지원하지 않는 노력 값입니다.",
     "modelCatalog": "선택한 agy 모델이 현재 모델 목록에 없습니다."
-  }
+  },
+  "resumeNewWork": "새 태스크 작성 계속",
+  "add": "추가",
+  "save": "저장",
+  "collapseWork": "태스크 접기",
+  "titlePlaceholder": "제목 생략 가능",
+  "titleHint": "제목을 비우면 본문 앞부분을 제목으로 표시합니다.",
+  "unsavedChanges": "저장하지 않은 변경",
+  "saveBeforeSend": "변경을 저장한 뒤 보내세요."
 }

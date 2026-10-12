@@ -49,3 +49,16 @@ describe("work items", () => {
     store.remove(id); await store.flush(); expect(save.mock.calls[save.mock.calls.length - 1]?.[0]).toEqual([]);
   });
 });
+
+
+it("빈 제목과 본문만 있는 태스크를 저장하며 둘 다 빈 편집은 거절한다", async () => {
+  const store = useWorkItemStore.getState(); await store.load();
+  expect(store.add({ title: " ", body: "\n", status: "todo" })).toBeUndefined();
+  const id = store.add({ title: " ", body: "Body", status: "review", assigneeAgentId: "a", agent: { cli: "pi" } })!;
+  await store.flush();
+  expect(save.mock.calls[0][0][0]).toMatchObject({ title: "", body: "Body", status: "review", assigneeAgentId: "a", agent: { cli: "pi" } });
+  store.edit(id, { body: " " });
+  expect(useWorkItemStore.getState().items[0].body).toBe("Body");
+  store.edit(id, { title: "Named", body: "" });
+  expect(useWorkItemStore.getState().items[0]).toMatchObject({ title: "Named", body: "" });
+});

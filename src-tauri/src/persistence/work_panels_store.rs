@@ -33,7 +33,7 @@ impl WorkPanelsStore {
         let mut ids = HashSet::new();
         if items.iter().any(|i| {
             i.id.is_empty()
-                || i.title.trim().is_empty()
+                || (i.title.trim().is_empty() && i.body.trim().is_empty())
                 || !i.order.is_finite()
                 || !ids.insert(&i.id)
         }) {
@@ -159,11 +159,23 @@ mod tests {
         let item: WorkItem = serde_json::from_value(serde_json::json!({"id":"w1","title":"Review","body":"Details","status":"in_progress","order":0,"sessionIds":["s1"],"createdAt":1,"updatedAt":2,"agent":{"cli":"pi","model":"m"}})).unwrap();
         store.save_work_items(&[item.clone()]).unwrap();
         let mut invalid = item.clone();
-        invalid.title = " ".into();
+        invalid.id = "".into();
         assert!(store.save_work_items(&[invalid]).is_err());
         assert_eq!(store.load_work_items().unwrap(), vec![item]);
         store.save_work_items(&[]).unwrap();
         assert!(store.load_work_items().unwrap().is_empty());
+        fs::remove_dir_all(store.root).unwrap();
+    }
+    #[test]
+    fn untitled_work_roundtrips_but_empty_work_preserves_existing() {
+        let store = store();
+        let item: WorkItem = serde_json::from_value(serde_json::json!({"id":"w1","title":"","body":"Body only\nDetails","status":"todo","order":0,"sessionIds":[],"createdAt":1,"updatedAt":2})).unwrap();
+        store.save_work_items(&[item.clone()]).unwrap();
+        assert_eq!(store.load_work_items().unwrap(), vec![item.clone()]);
+        let mut invalid = item.clone();
+        invalid.body = " ".into();
+        assert!(store.save_work_items(&[invalid]).is_err());
+        assert_eq!(store.load_work_items().unwrap(), vec![item]);
         fs::remove_dir_all(store.root).unwrap();
     }
     #[test]

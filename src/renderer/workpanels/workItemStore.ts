@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { nanoid } from "nanoid";
 import type { WorkItem, WorkStatus } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
+import { hasWorkContent, type WorkItemDraft } from "./workItemDraft";
 
 export const WORK_STATUS_ORDER: WorkStatus[] = ["review", "in_progress", "todo", "done"];
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -15,7 +16,7 @@ interface WorkItemState {
   error: "load" | "save" | null;
   selectedId: string | null;
   load(): Promise<void>;
-  add(title: string): string | undefined;
+  add(draft: string | WorkItemDraft): string | undefined;
   edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status">>): void;
   recordSend(id: string, result: { sessionId?: string; error?: string }): void;
   remove(id: string): void;
@@ -47,19 +48,21 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     await loading;
     loading = undefined;
   },
-  add(title) {
-    if (!get().loaded || !title.trim()) return;
+  add(input) {
+    const draft: WorkItemDraft = typeof input === "string" ? { title: input, body: "", status: "todo" } : input;
+    if (!get().loaded || !hasWorkContent(draft)) return;
     const at = Date.now();
     const id = nanoid();
-    const order = Math.max(-1, ...get().items.filter((i) => i.status === "todo").map((i) => i.order)) + 1;
-    set({ items: [...get().items, { id, title: title.trim(), body: "", status: "todo", order, sessionIds: [], createdAt: at, updatedAt: at }], dirty: true, selectedId: id });
+    const order = Math.max(-1, ...get().items.filter((i) => i.status === draft.status).map((i) => i.order)) + 1;
+    set({ items: [...get().items, { ...draft, id, title: draft.title.trim(), order, sessionIds: [], createdAt: at, updatedAt: at }], dirty: true, selectedId: id });
     changed();
     return id;
   },
   edit(id, patch) {
-    if (!get().loaded || (patch.title !== undefined && !patch.title.trim())) return;
+    if (!get().loaded) return;
     const item = get().items.find((i) => i.id === id);
-    if (!item) return;
+    if (!item || !hasWorkContent({ ...item, ...patch })) return;
+    if (patch.title !== undefined) patch = { ...patch, title: patch.title.trim() };
     const order = patch.status && patch.status !== item.status
       ? Math.max(-1, ...get().items.filter((i) => i.status === patch.status).map((i) => i.order)) + 1 : item.order;
     set({ items: get().items.map((i) => i.id === id ? { ...i, ...patch, order, updatedAt: Date.now() } : i), dirty: true });

@@ -6,7 +6,7 @@
   "expand": "展开面板",
   "collapse": "折叠面板",
   "resize": "调整面板宽度",
-  "newWork": "新工作标题 · 按 Enter 添加",
+  "newWork": "新建任务",
   "title": "标题",
   "body": "备注",
   "assignee": "负责人",
@@ -19,7 +19,7 @@
     "review": "待审核",
     "done": "完成"
   },
-  "emptyWork": "输入工作标题以开始。",
+  "emptyWork": "点击新建任务开始。",
   "loadError": "无法加载工作列表。",
   "saveError": "工作保存失败。编辑内容尚未保存。",
   "retry": "重试",
@@ -101,5 +101,13 @@
     "modelInvalid": "模型名称无效。",
     "effortInvalid": "此 CLI 不支持所选推理强度。",
     "modelCatalog": "所选 agy 模型不在当前模型列表中。"
-  }
+  },
+  "resumeNewWork": "继续编写新任务",
+  "add": "添加",
+  "save": "保存",
+  "collapseWork": "收起任务",
+  "titlePlaceholder": "标题可留空",
+  "titleHint": "标题留空时，将正文开头作为标题显示。",
+  "unsavedChanges": "未保存的更改",
+  "saveBeforeSend": "请先保存更改再发送。"
 }

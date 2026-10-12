@@ -257,10 +257,12 @@ pub fn validated_command(agent: &WorkAgent) -> Result<String, String> {
     )
 }
 fn work_prompt(title: &str, body: &str) -> Result<String, String> {
-    if title.trim().is_empty() || title.contains(['\r', '\n']) {
+    if (title.trim().is_empty() && body.trim().is_empty()) || title.contains(['\r', '\n']) {
         return Err("work-send-prompt-invalid".into());
     }
-    let prompt = if body.trim().is_empty() {
+    let prompt = if title.trim().is_empty() {
+        body.replace("\r\n", "\n")
+    } else if body.trim().is_empty() {
         title.trim().into()
     } else {
         format!("{}\n\n{}", title.trim(), body.replace("\r\n", "\n"))
@@ -325,6 +327,13 @@ mod tests {
             work_prompt(" Task ", "first\r\nsecond").unwrap(),
             "Task\n\nfirst\nsecond"
         );
+        assert_eq!(
+            work_prompt(" ", "first\r\n\r\nsecond").unwrap(),
+            "first\n\nsecond"
+        );
+        assert!(work_prompt(" ", "\n\t ").is_err());
+        assert!(work_prompt("", "\x1b[201~echo injected").is_err());
+        assert!(work_prompt("", &"a".repeat(256 * 1024 + 1)).is_err());
         for text in ["\x1b[201~echo injected", "a\rb", "\0"] {
             assert!(work_prompt("Task", text).is_err());
         }

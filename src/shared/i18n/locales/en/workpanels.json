@@ -6,7 +6,7 @@
   "expand": "Expand panel",
   "collapse": "Collapse panel",
   "resize": "Resize panel",
-  "newWork": "New work title · Enter to add",
+  "newWork": "New task",
   "title": "Title",
   "body": "Notes",
   "assignee": "Assignee",
@@ -19,7 +19,7 @@
     "review": "Review",
     "done": "Done"
   },
-  "emptyWork": "Enter a work title to get started.",
+  "emptyWork": "Choose New task to get started.",
   "loadError": "Could not load work items.",
   "saveError": "Could not save work items. Your edits are still unsaved.",
   "retry": "Retry",
@@ -101,5 +101,13 @@
     "modelInvalid": "The model name is invalid.",
     "effortInvalid": "This CLI does not support the selected effort.",
     "modelCatalog": "The requested agy model is not in its live model catalog."
-  }
+  },
+  "resumeNewWork": "Resume new task",
+  "add": "Add",
+  "save": "Save",
+  "collapseWork": "Collapse task",
+  "titlePlaceholder": "Optional title",
+  "titleHint": "Leave the title empty to use the beginning of the body.",
+  "unsavedChanges": "Unsaved changes",
+  "saveBeforeSend": "Save your changes before sending."
 }

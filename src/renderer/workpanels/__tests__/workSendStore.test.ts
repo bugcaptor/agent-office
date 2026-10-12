@@ -104,3 +104,14 @@ describe("업무 보내기", () => {
     expect(useWorkItemStore.getState().items[0].sessionIds).toEqual(["s"]);
   });
 });
+
+
+it("제목 없는 업무의 확인창은 본문 제목을 표시하고 전송은 빈 제목과 본문 전체를 유지한다", async () => {
+  const id = item(); useWorkItemStore.getState().edit(id, { title: "" });
+  api.inspectWorkSendTarget.mockResolvedValueOnce({ ...shell, restartRequired: true }).mockResolvedValueOnce(shell).mockResolvedValueOnce({ ...shell, sessionId: "new" });
+  api.sendWorkItem.mockResolvedValueOnce({ sessionId: "new", submittedAt: 100 });
+  const job = requestWorkSend(id); await confirming();
+  expect(useWorkSendStore.getState().confirmation?.title).toBe("First Second");
+  decideWorkSend(true); await job;
+  expect(api.sendWorkItem).toHaveBeenCalledWith(expect.objectContaining({ title: "", body: "First\nSecond" }));
+});

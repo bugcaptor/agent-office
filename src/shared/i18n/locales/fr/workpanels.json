@@ -6,7 +6,7 @@
   "expand": "Déplier le panneau",
   "collapse": "Replier le panneau",
   "resize": "Redimensionner le panneau",
-  "newWork": "Nouvelle tâche · Entrée pour ajouter",
+  "newWork": "Créer une tâche",
   "title": "Titre",
   "body": "Notes",
   "assignee": "Responsable",
@@ -19,7 +19,7 @@
     "review": "À vérifier",
     "done": "Terminé"
   },
-  "emptyWork": "Saisissez un titre pour commencer.",
+  "emptyWork": "Cliquez sur Créer une tâche pour commencer.",
   "loadError": "Impossible de charger les tâches.",
   "saveError": "Impossible de sauvegarder les tâches. Vos modifications ne sont pas enregistrées.",
   "retry": "Réessayer",
@@ -101,5 +101,13 @@
     "modelInvalid": "Nom du modèle invalide.",
     "effortInvalid": "Effort incompatible avec ce CLI.",
     "modelCatalog": "Le modèle agy est absent de son catalogue actuel."
-  }
+  },
+  "resumeNewWork": "Continuer la nouvelle tâche",
+  "add": "Ajouter",
+  "save": "Enregistrer",
+  "collapseWork": "Replier la tâche",
+  "titlePlaceholder": "Titre facultatif",
+  "titleHint": "Sans titre, le début du texte sert de titre.",
+  "unsavedChanges": "Modifications non enregistrées",
+  "saveBeforeSend": "Enregistrez les modifications avant l’envoi."
 }

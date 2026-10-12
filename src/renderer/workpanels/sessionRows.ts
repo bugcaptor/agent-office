@@ -2,6 +2,8 @@ import type { SessionEventRecord, SessionSummary, WorkItem } from "@shared/types
 import { aggregate, reconstructTurns, type AgentSummary, type Turn } from "../analytics/aggregate";
 import { estimateCostBreakdown } from "../analytics/pricing";
 
+import { workItemTitle } from "./workItemDraft";
+
 export interface SessionRow extends SessionSummary {
   live: boolean;
   workTitle?: string;
@@ -40,7 +42,7 @@ export function buildSessionRows(events: readonly SessionEventRecord[], summarie
     // 분석 패널의 턴·토큰·비용 집계를 그대로 재사용한다. 열린 턴은 현재 시각까지 계산.
     const current = live ? [...group, { schemaVersion: 1, runId: "live", seq: 0, kind: "session_state" as const, state: "running" as const, sessionId, agentId, at: now }] : group;
     const stats = aggregate(current, {}).summary.find((s) => s.agentId === agentId);
-    rows.push({ ...summary, live, workItemId: work?.id ?? summary.workItemId, workTitle: work?.title, stats, turns: reconstructTurns(current), usage: group.filter((e) => e.tokens).flatMap((e) => {
+    rows.push({ ...summary, live, workItemId: work?.id ?? summary.workItemId, workTitle: work ? workItemTitle(work) : undefined, stats, turns: reconstructTurns(current), usage: group.filter((e) => e.tokens).flatMap((e) => {
       const components = e.tokens!.byModel?.length ? e.tokens!.byModel : [e.tokens!];
       return components.map((tokens) => {
         const cost = estimateCostBreakdown(tokens);

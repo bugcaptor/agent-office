@@ -30,7 +30,7 @@
 
 | 필드 | 내용 |
 | --- | --- |
-| 제목 | 한 줄, 필수 |
+| 제목 | 한 줄, 선택. 비우면 본문 앞 40자(공백·줄바꿈 합침, Unicode 문자 기준)를 연한 색으로 표시 |
 | 본문 | 여러 줄 메모. 보낼 때 제목과 함께 첫 프롬프트가 된다 |
 | 담당 캐릭터 | 프로필 1명 또는 미배정. 카드에 얼굴(스프라이트/초상)과 이름 |
 | 에이전트·모델 | CLI(claude/codex/agy/kilo/pi) + 모델 + 노력(effort). 비우면 담당 캐릭터의 기본값 |
@@ -41,7 +41,10 @@
 
 - 상태별 묶음을 검토 대기 → 진행 중 → 할 일 → 완료 순으로 보여준다. 완료 묶음은 기본 접힘.
 - 묶음 안 순서는 드래그로 바꾼다.
-- 목록 위에 '새 업무' 입력줄. 제목만 치고 Enter로 만들고, 카드를 펼쳐 본문·담당·에이전트를 채운다.
+- 목록 위의 '새 태스크 만들기' 버튼으로 제목·본문·담당·에이전트·상태를 입력하는 초안을 연다. '추가'를 누를 때만 업무를 생성한다. 제목과 본문 중 하나는 있어야 한다.
+- 기존 카드를 펼치면 편집 초안을 보여주고 '저장'을 눌러야 반영한다. 필드 입력과 포커스 이동은 저장하지 않는다. '취소'는 초안을 버리고 닫으며 '태스크 접기'/Esc/다른 카드 선택은 초안을 유지한 채 접는다. 새 업무도 접었다가 '새 태스크 작성 계속'으로 돌아올 수 있다. 패널 접기는 초안을 보존하지만 업무 패널 기능을 끄거나 앱을 종료하면 임시 초안은 버린다.
+- 편집 중에는 저장한 제목·담당·상태를 카드에 계속 표시하고 미저장 표시를 추가한다. 변경을 저장하거나 취소하기 전에는 보내기를 막는다. 자동 모니터링 상태·세션 이력은 초안과 별개로 갱신하며 저장은 사용자가 편집한 필드만 반영한다.
+- 빈 제목을 그대로 저장해 본문을 수정하면 표시 제목도 함께 갱신한다. 제목 입력란의 연한 placeholder·삭제/재시작 확인·세션 기록의 연결 업무에도 같은 본문 앞부분을 사용한다.
 - 삭제는 확인을 받는다. 진행 중 업무를 지워도 터미널 세션은 건드리지 않는다.
 
 ### 에이전트 설정
@@ -73,7 +76,7 @@
 - 재시작 확인은 세션과 사람 입력 revision을 고정한다. 확인 후 키 입력/세션 교체가 있으면 폐기하지 않는다. 미제출 입력은 별도 경고로 표시한다. 재시작 위치는 관측된 현재 cwd를 우선하며 프로필 시작 폴더는 바꾸지 않는다.
 - 새 PTY의 입력 대상이 불명확해도 기동 ACK를 확인하기 전에는 첫 프롬프트를 보내지 않는다. 이미 다른 프로세스가 foreground인 것으로 확인된 새 PTY는 거절한다. ACK는 최대 10초 기다리고, 성공 시점부터 기본 10초 기동 대기를 센다.
 - `WorkSendRuntime`은 캐릭터별 동시 보내기를 거절하고, InjectGate의 전환 소유권/strict 제출로 다른 자동 생산자를 보류한다. 사람 입력은 계속 전달되며 기동/대기/본문/CR 전에 세션·세대·revision을 재검사한다. 이 경로에는 미제출 입력의 2분 강행 규칙을 적용하지 않는다.
-- 제목+빈 줄+본문을 bracketed paste로 제출해 줄바꿈·코드 블록을 보존한다. 제목은 한 줄, 본문은 LF/탭만 허용하며 터미널 제어문자는 거절한다. 전체 프롬프트 상한은 256 KiB다. 기존 `Automation` 출처/자동 프롬프트 분류를 재사용한다.
+- 제목이 있으면 제목+빈 줄+본문, 제목이 없으면 본문 전체만 bracketed paste로 제출해 줄바꿈·코드 블록을 보존한다. 제목은 한 줄, 본문은 LF/탭만 허용하며 터미널 제어문자는 거절한다. 전체 프롬프트 상한은 256 KiB다. 기존 `Automation` 출처/자동 프롬프트 분류를 재사용한다.
 - 기동 ACK가 없거나 준비 대기 중 반환 receipt가 생기면 프롬프트를 보내지 않는다. 실패한 기동·부분 제출은 자동 재전송하지 않으며 다시 보내려면 재시작 확인을 거친다. 본문 뒤 개입으로 CR을 보내지 못한 경우 카드에서 터미널 확인을 안내한다.
 - 첫 프롬프트의 CR 제출 성공 후에만 `sessionIds`·세션 요약의 `workItemId`를 연결하고 진행 중으로 바꾼다. 실패는 기존 상태/세션 이력을 보존하며 오류 코드를 저장해 현재 언어로 표시한다. 보내기 도중 삭제한 업무를 복구하지 않는다.
 
@@ -161,7 +164,7 @@
 ```ts
 interface WorkItem {
   id: string;            // nanoid
-  title: string;
+  title: string;         // 빈 문자열 허용. 표시 제목은 본문에서 생성
   body: string;
   assigneeAgentId?: string;
   agent?: { cli: "claude" | "codex" | "agy" | "kilo" | "pi"; model?: string; effort?: string };
@@ -197,7 +200,7 @@ interface SessionSummary {
 
 ### 저장과 종료 규약
 
-- 업무는 1초 디바운스로 전체 스냅샷을 저장한다. 동시 로드·저장을 직렬화하고 실패 시 미저장 표시와 재시도를 제공한다.
+- 업무의 추가/저장 확정은 즉시 전체 스냅샷을 flush하고, 상태 자동 전이·정렬 등은 1초 디바운스로 저장한다. 동시 로드·저장을 직렬화하고 실패 시 미저장 표시와 재시도를 제공한다.
 - 요약은 변경된 세션을 1초 디바운스로 직렬 append하며 저장 실패 시 재시도한다. 프롬프트는 **처음 50개**를 남겨 첫 프롬프트 폴백을 보존한다. 각 본문은 Unicode 문자 기준 300자다. 이후 프롬프트도 세션 이벤트의 턴·사용량 집계에는 계속 포함된다.
 - 정상 종료에서는 재시작 확인 대기를 취소하고 이미 시작한 보내기 결과를 기다린 뒤 업무·요약을 flush한다. 저장에 실패하면 종료를 보류해 재시도할 수 있도록 한다. OS 강제 종료에 대한 마지막 디바운스 보장은 하지 않는다.
 - 세션 폐기·핸드오프·앱 종료는 네이티브 보내기를 취소한다.
@@ -211,7 +214,7 @@ interface SessionSummary {
 - 각 패널은 머리의 접기 버튼으로 24px 띠로 접힌다. 폭과 접힘 상태는 로컬(localStorage)에 기억한다.
 - 캔버스 폭이 줄면 오피스 씬은 기존 리사이즈 경로로 다시 맞춘다. 티커 칼럼(SessionTimePanel·알림)은 우측 패널 안쪽으로 밀린다.
 - 화면 문자열은 모두 `src/shared/i18n/locales/`의 6개 지원 언어(ko·en·fr·ja·zh-Hans·zh-Hant)에 둔다. 픽셀 테마 토큰을 따른다.
-- 키보드: 새 업무 입력줄 Enter = 추가, Esc = 펼친 카드 닫기. 전역 단축키는 이번 범위가 아니다.
+- 키보드: 제목 입력란 Enter = 추가/저장, 본문 Enter = 줄바꿈, Esc = 초안을 유지하며 접기. 전역 단축키는 이번 범위가 아니다.
 
 ## 구현 위치와 IPC
 
@@ -219,7 +222,7 @@ interface SessionSummary {
 | --- | --- |
 | 영속 타입·보내기 계약 | `src/shared/types/workPanels.ts`, `src-tauri/src/types.rs` |
 | 설정·패널 배치 | `src/shared/types/settings.ts`, `src-tauri/src/persistence/settings_store.rs`, `src/renderer/settings/`, `src/renderer/layout/UIChrome.tsx` |
-| 패널 UI·폭·접힘 | `src/renderer/workpanels/WorkItemsPanel.tsx`, `SessionHistoryPanel.tsx`, `WorkPanelFrame.tsx`, `panelLayoutStore.ts`, `workPanels.css` |
+| 패널 UI·폭·접힘 | `src/renderer/workpanels/WorkItemsPanel.tsx`, `WorkEditor.tsx`, `workItemDraft.ts`, `SessionHistoryPanel.tsx`, `WorkPanelFrame.tsx`, `panelLayoutStore.ts`, `workPanels.css` |
 | 프로필 기본값·업무 오버라이드 | `src/renderer/workpanels/WorkAgentFields.tsx`, `src/renderer/profile/` |
 | 업무·요약 수집과 저장 | `src/renderer/workpanels/workItemStore.ts`, `sessionSummaryStore.ts`, `sessionRows.ts`, `src-tauri/src/persistence/work_panels_store.rs` |
 | 보내기 조정·오류 표시 | `src/renderer/workpanels/workSendStore.ts`, `sendErrorText.ts` |
@@ -245,6 +248,8 @@ IPC 계약은 `src/shared/ipc.ts`와 `src/renderer/ipc/tauriApi.ts`의 로컬 �
 구현 완료 범위는 opt-in 설정·좌우 패널·업무 편집과 영속화·세션 요약과 검색·프로필 기본 에이전트·업무 보내기·실시간 모니터링과 자동 상태 전이다.
 
 완료한 검증:
+
+- 태스크 작성 플로우 변경: 새 작성 취소·접기/재개, 편집 초안의 카드 전환·패널 접기 보존, 모든 필드의 수정 취소, 빈 제목의 저장·복원·확인창/세션 검색, 본문 전체 전송, 편집 중 자동 상태 전이 보존을 회귀 검사했다. `npx tsc --noEmit`, 프런트 전체 2,926개, 네이티브 전체 1,675개, `npm run build` 통과. Safari의 독립 로컬 프리뷰에서 기본 280px 폭의 연한 제목·본문 placeholder·추가/저장·취소·접기 한 줄 배치와 취소/재개 동작을 확인했다. 합성 데이터·IPC만 사용했다.
 
 - `npx tsc --noEmit`, `npx vitest run --dir src`, `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run build`: 타입 검사·프런트 전체 회귀·네이티브 전체 회귀·프로덕션/웹 빌드 통과. UI 문자열은 i18n 테스트로 검사한다.
 - `cargo test --manifest-path src-tauri/Cargo.toml work_send_multiline_in_real_pty_with_cli_double -- --ignored`: 실제 PTY에서 CLI 대역의 모델·effort 인자, 기본 10초 대기, Unicode·빈 줄·코드 블록 그대로 수신을 확인했다. 설치된 CLI나 LLM 계정은 사용하지 않는다.

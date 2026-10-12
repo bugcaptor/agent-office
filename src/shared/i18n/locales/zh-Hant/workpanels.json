@@ -6,7 +6,7 @@
   "expand": "展開面板",
   "collapse": "摺疊面板",
   "resize": "調整面板寬度",
-  "newWork": "新工作標題 · 按 Enter 新增",
+  "newWork": "建立新任務",
   "title": "標題",
   "body": "備註",
   "assignee": "負責角色",
@@ -19,7 +19,7 @@
     "review": "待審核",
     "done": "完成"
   },
-  "emptyWork": "輸入工作標題以開始。",
+  "emptyWork": "點選建立新任務開始。",
   "loadError": "無法載入工作清單。",
   "saveError": "工作儲存失敗。編輯內容尚未儲存。",
   "retry": "重試",
@@ -101,5 +101,13 @@
     "modelInvalid": "模型名稱無效。",
     "effortInvalid": "此 CLI 不支援所選推理強度。",
     "modelCatalog": "所選 agy 模型不在目前模型清單中。"
-  }
+  },
+  "resumeNewWork": "繼續編寫新任務",
+  "add": "新增",
+  "save": "儲存",
+  "collapseWork": "收合任務",
+  "titlePlaceholder": "標題可留空",
+  "titleHint": "標題留空時，將正文開頭作為標題顯示。",
+  "unsavedChanges": "未儲存的變更",
+  "saveBeforeSend": "請先儲存變更再傳送。"
 }

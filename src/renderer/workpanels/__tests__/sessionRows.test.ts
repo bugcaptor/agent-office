@@ -39,3 +39,13 @@ describe("session rows", () => {
     expect(panelExtent({width:280,collapsed:true})).toBe(24);
   });
 });
+
+
+it("제목 없는 연결 업무도 본문 제목으로 표시하고 검색한다", () => {
+  const now = Date.now();
+  const rows = buildSessionRows([], { s: { sessionId: "s", agentId: "a", agentName: "Ada", startedAt: now, prompts: [], workItemId: "w" } }, [
+    { id: "w", title: "", body: "본문의 작업\n상세", status: "todo", order: 0, sessionIds: ["s"], createdAt: now, updatedAt: now },
+  ], [], now);
+  expect(rows[0].workTitle).toBe("본문의 작업 상세");
+  expect(filterSessionRows(rows, { query: "본문의 작업", agentIds: [], cwds: [], fromAt: 0 })).toHaveLength(1);
+});

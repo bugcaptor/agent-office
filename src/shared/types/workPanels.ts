@@ -7,6 +7,7 @@ export interface WorkAgent {
 export type WorkStatus = "todo" | "in_progress" | "review" | "done";
 export interface WorkItem {
   id: string;
+  /** 빈 문자열이면 표시 제목은 본문 앞부분에서 만든다. */
   title: string;
   body: string;
   assigneeAgentId?: string;

@@ -6,6 +6,7 @@ import { flushPersistence } from "../store/persist";
 import { reserveSessionReplacement, runGuardedCreateSession } from "../ipc/sessionBridge";
 import { normalizeWorkAgent } from "../profile/generate";
 import { useWorkItemStore } from "./workItemStore";
+import { workItemTitle } from "./workItemDraft";
 import { reconcileWorkMonitor } from "./workMonitor";
 import { linkWorkSession } from "./sessionSummaryStore";
 
@@ -64,7 +65,7 @@ export function requestWorkSend(itemId: string): Promise<void> {
         if (decide) throw new Error("work-send-busy");
         const accepted = await new Promise<boolean>((resolve) => {
           decide = resolve;
-          useWorkSendStore.setState({ confirmation: { itemId, title: item.title, agentName: agent.name, target } });
+          useWorkSendStore.setState({ confirmation: { itemId, title: workItemTitle(item), agentName: agent.name, target } });
         });
         if (!accepted) return;
         unchanged();
