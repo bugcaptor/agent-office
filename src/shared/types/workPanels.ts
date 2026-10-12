@@ -48,3 +48,12 @@ export interface WorkSendRequest {
   body: string;
 }
 export interface WorkSendResult { sessionId: string; submittedAt: number }
+
+/** 로컬 수신함 파일. key는 파일 이름과 원본 바이트의 해시 앞 16자. */
+export interface InboxEntry {
+  fileName: string;
+  key: string;
+  title: string;
+  body: string;
+  assignee?: string;
+}

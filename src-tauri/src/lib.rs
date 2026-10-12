@@ -324,6 +324,7 @@ pub fn run() {
             let handle = app.handle().clone();
             let data_dir = app.path().app_data_dir()?;
             install_panic_logger(data_dir.clone());
+            std::fs::create_dir_all(data_dir.join("work-inbox"))?;
 
             // 로그인 셸 env 1회 캡처(#58). 봇 시작·요약기 스폰 직전에도 부르지만
             // (멱등) 부팅에서 미리 해 둬야 세션 로그의 JSONL 전사 소스와 사용량
@@ -982,6 +983,8 @@ pub fn run() {
             ipc::commands::inspect_work_send_target,
             ipc::commands::send_work_item,
             ipc::commands::load_work_items,
+            ipc::commands::scan_work_inbox,
+            ipc::commands::ack_work_inbox,
             ipc::commands::save_work_items,
             ipc::commands::load_session_summaries,
             ipc::commands::append_session_summaries,

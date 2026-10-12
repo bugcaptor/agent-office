@@ -9,6 +9,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let saving: Promise<void> | undefined;
 let loading: Promise<void> | undefined;
 let revision = 0;
+export type InboxImport = Pick<WorkItem, "id" | "title" | "body" | "assigneeAgentId">;
 interface WorkItemState {
   items: WorkItem[];
   loaded: boolean;
@@ -17,6 +18,7 @@ interface WorkItemState {
   selectedId: string | null;
   load(): Promise<void>;
   add(draft: string | WorkItemDraft): string | undefined;
+  importInbox(entries: InboxImport[]): string[];
   edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status">>): void;
   recordSend(id: string, result: { sessionId?: string; error?: string }): void;
   remove(id: string): void;
@@ -57,6 +59,23 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     set({ items: [...get().items, { ...draft, id, title: draft.title.trim(), order, sessionIds: [], createdAt: at, updatedAt: at }], dirty: true, selectedId: id });
     changed();
     return id;
+  },
+  importInbox(entries) {
+    if (!get().loaded || get().error) return [];
+    const ids = new Set(get().items.map((item) => item.id));
+    let order = Math.max(-1, ...get().items.filter((item) => item.status === "todo").map((item) => item.order)) + 1;
+    const at = Date.now();
+    const added: WorkItem[] = [];
+    const accepted: string[] = [];
+    for (const entry of entries) {
+      if (!entry.id || !hasWorkContent(entry)) continue;
+      accepted.push(entry.id);
+      if (ids.has(entry.id)) continue;
+      ids.add(entry.id);
+      added.push({ ...entry, status: "todo", order: order++, sessionIds: [], createdAt: at, updatedAt: at });
+    }
+    if (added.length) { set({ items: [...get().items, ...added], dirty: true }); changed(); }
+    return accepted;
   },
   edit(id, patch) {
     if (!get().loaded) return;

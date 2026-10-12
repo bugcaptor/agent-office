@@ -3,7 +3,7 @@
 // Domain slice: the renderer-facing AgentOfficeApi surface itself.
 // See src/shared/types.ts for the frozen-contract overview.
 
-import type { WorkItem, SessionSummary, WorkSendTarget, WorkSendRequest, WorkSendResult } from './workPanels';
+import type { InboxEntry, WorkItem, SessionSummary, WorkSendTarget, WorkSendRequest, WorkSendResult } from './workPanels';
 import type { AgentId } from './common';
 import type {
   CreateSessionOptions,
@@ -85,6 +85,8 @@ import type { RepositoryAuditItem } from './repositoryAudit';
 export interface AgentOfficeApi {
   inspectWorkSendTarget(agentId: string): Promise<WorkSendTarget>;
   sendWorkItem(request: WorkSendRequest): Promise<WorkSendResult>;
+  scanWorkInbox(): Promise<InboxEntry[]>;
+  ackWorkInbox(fileNames: string[]): Promise<void>;
   loadWorkItems(): Promise<WorkItem[]>;
   saveWorkItems(items: WorkItem[]): Promise<void>;
   loadSessionSummaries(): Promise<SessionSummary[]>;

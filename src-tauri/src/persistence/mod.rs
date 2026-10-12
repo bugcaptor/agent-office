@@ -9,3 +9,4 @@ pub mod session_time_store;
 pub mod settings_store;
 pub mod work_log_store;
 pub mod work_panels_store;
+pub mod work_inbox;

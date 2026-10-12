@@ -59,3 +59,12 @@ pub async fn send_work_item(
         )
         .await
 }
+
+#[tauri::command]
+pub fn scan_work_inbox(app_state: State<'_, AppState>) -> Result<Vec<crate::persistence::work_inbox::InboxEntry>, String> {
+    crate::persistence::work_inbox::scan(&app_state.automation_store.app_data_dir().join("work-inbox"), std::time::SystemTime::now())
+}
+#[tauri::command(rename_all = "camelCase")]
+pub fn ack_work_inbox(file_names: Vec<String>, app_state: State<'_, AppState>) -> Result<(), String> {
+    crate::persistence::work_inbox::ack(&app_state.automation_store.app_data_dir().join("work-inbox"), &file_names)
+}

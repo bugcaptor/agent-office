@@ -34,6 +34,8 @@ import { installTaskLabelSummarizer } from "./labels/summarizer";
 import { installGitBranchWatcher } from "./labels/gitBranchWatcher";
 import { installSessionSummaryRecorder } from "./workpanels/sessionSummaryStore";
 import { installWorkMonitor } from "./workpanels/workMonitor";
+import { installWorkInboxLifecycle } from "./workpanels/lifecycle";
+import { stopWorkInbox } from "./workpanels/workInbox";
 import { useWorkItemStore } from "./workpanels/workItemStore";
 import { installWorkLogRecorder } from "./diary/workLog";
 import {
@@ -279,6 +281,7 @@ export async function bootApp(): Promise<() => void> {
   await useWorkItemStore.getState().load();
   const offSessionSummaries = await installSessionSummaryRecorder();
   const offWorkMonitor = installWorkMonitor();
+  const offWorkInbox = installWorkInboxLifecycle();
   const offBridge = installSessionBridge();
   // 웹 원격 — 세션 브리지 직후. 화면 스냅샷 요청과 페어링 승인 요청을 받는다.
   const offWebRemote = installWebRemoteBridge();
@@ -333,7 +336,8 @@ export async function bootApp(): Promise<() => void> {
     offBridge();
     offSessionSummaries();
     offWorkMonitor();
-    void useWorkItemStore.getState().flush();
+    offWorkInbox();
+    void stopWorkInbox().then(() => useWorkItemStore.getState().flush());
     offWebRemote();
     offMascot();
     offDisplayFocus();

@@ -10,6 +10,8 @@
 export const Commands = {
   inspectWorkSendTarget: "inspect_work_send_target",
   sendWorkItem: "send_work_item",
+  scanWorkInbox: "scan_work_inbox",
+  ackWorkInbox: "ack_work_inbox",
   loadWorkItems: "load_work_items",
   saveWorkItems: "save_work_items",
   loadSessionSummaries: "load_session_summaries",
