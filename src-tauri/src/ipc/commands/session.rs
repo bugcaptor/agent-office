@@ -136,9 +136,20 @@ pub async fn list_available_shells() -> Result<Vec<crate::session::shells::Avail
 pub async fn dispose_session(
     app_state: State<'_, AppState>,
     agent_id: String,
+    expected_session_id: Option<String>,
+    expected_human_input_revision: Option<u64>,
 ) -> Result<(), String> {
-    let automation_reset = app_state.automation_runtime.reset_session(&agent_id);
-    app_state.manager.dispose(&agent_id);
+    let automation_reset = if let Some(expected) = expected_session_id.as_deref() {
+        let revision = expected_human_input_revision.ok_or("work-send-human-input")?;
+        app_state.gate.with_human_revision(&agent_id, revision, || app_state.manager.dispose_matching(&agent_id, Some(expected)))?;
+        app_state.work_send_runtime.stop(&agent_id);
+        app_state.automation_runtime.reset_session(&agent_id)
+    } else {
+        app_state.work_send_runtime.stop(&agent_id);
+        let reset = app_state.automation_runtime.reset_session(&agent_id);
+        app_state.manager.dispose(&agent_id);
+        reset
+    };
     automation_reset.await;
     app_state.automation_ctx.gate.remove_agent(&agent_id);
     Ok(())
@@ -203,6 +214,7 @@ pub async fn handoff_sessions(
     // §#49: agentId -> 렌더러가 실제 렌더한 raw 스트림 바이트 누적치(스냅샷 offset 계산용).
     rendered_bytes: std::collections::HashMap<String, u64>,
 ) -> Result<usize, String> {
+    app_state.work_send_runtime.stop_all();
     let manager = app_state.manager.clone();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         manager.handoff_all(&snapshots, &rendered_bytes)

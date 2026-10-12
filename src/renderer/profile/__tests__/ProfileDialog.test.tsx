@@ -32,12 +32,14 @@ vi.mock("../../office/gen/characterFactory", () => ({
 const remoteWindow = vi.hoisted(() => vi.fn(() => false));
 vi.mock("../../shared/remoteWindow", () => ({ isRemoteWindow: remoteWindow }));
 
+const automationCliModels = vi.fn().mockResolvedValue(["custom/model"]);
 const createSession = vi.fn().mockResolvedValue({ sessionId: "s1", state: "starting" });
 const deletePortrait = vi.fn().mockResolvedValue(undefined);
 const deleteSprite = vi.fn().mockResolvedValue(undefined);
 const listAvailableShells = vi.fn().mockResolvedValue([]);
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
+    automationCliModels: (...args: unknown[]) => automationCliModels(...args),
     createSession: (...args: unknown[]) => createSession(...args),
     deletePortrait: (...args: unknown[]) => deletePortrait(...args),
     deleteSprite: (...args: unknown[]) => deleteSprite(...args),
@@ -933,4 +935,21 @@ describe("headless owner profile editing", () => {
     expect(container.querySelectorAll(".appearance-manual-row button")).toHaveLength(6);
     await waitFor(() => expect(listAvailableShells).toHaveBeenCalledTimes(1));
   });
+});
+
+
+it("기본 업무 에이전트를 불러와 편집 저장하며 CLI 변경 시 모델/노력을 초기화한다", async () => {
+  useAppStore.getState().addAgent({ ...mkProfile(), defaultAgent: { cli: "codex", model: "custom/model", effort: "high" } });
+  useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+  const { getByLabelText, getByRole } = render(<ProfileDialog />);
+  expect((getByLabelText("업무 기본 에이전트") as HTMLSelectElement).value).toBe("codex");
+  expect((getByLabelText("모델") as HTMLInputElement).value).toBe("custom/model");
+  fireEvent.change(getByLabelText("업무 기본 에이전트"), { target: { value: "pi" } });
+  expect((getByLabelText("모델") as HTMLInputElement).value).toBe("");
+  expect((getByLabelText("노력") as HTMLSelectElement).value).toBe("");
+  fireEvent.change(getByLabelText("모델"), { target: { value: " new/model " } });
+  fireEvent.change(getByLabelText("노력"), { target: { value: "xhigh" } });
+  fireEvent.click(getByRole("button", { name: "저장" }));
+  expect(useAppStore.getState().agents.a1.defaultAgent).toEqual({ cli: "pi", model: "new/model", effort: "xhigh" });
+  expect(createSession).not.toHaveBeenCalled();
 });

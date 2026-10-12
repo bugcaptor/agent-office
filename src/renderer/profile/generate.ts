@@ -7,7 +7,7 @@ import { nanoid } from "nanoid";
 import { t } from "@renderer/i18n";
 import { currentWordlists } from "@renderer/i18n/wordlists";
 import type { AgentProfile } from "../store/types";
-import type { BotConfig, ColorOverrides } from "@shared/types";
+import type { BotConfig, ColorOverrides, WorkAgent } from "@shared/types";
 import { pickArchetype } from "../office/gen/archetypes";
 
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -54,6 +54,7 @@ export interface DraftProfile {
   botIdleQuietMs?: string;
   /** tmux 자동 호스팅. 켜면 셸 선택이 무의미해진다(유닉스 전용). 기본 false. */
   tmuxHost?: boolean;
+  defaultAgent?: WorkAgent;
 }
 
 /**
@@ -179,5 +180,11 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     // 기본(수신 허용)은 필드를 아예 두지 않는다 — 끈 경우만 명시적으로 남긴다.
     ...(d.talkReceive === false ? { talkReceive: false } : {}),
     ...(d.tmuxHost ? { tmuxHost: true } : {}),
+    ...(d.defaultAgent ? { defaultAgent: normalizeWorkAgent(d.defaultAgent) } : {}),
   };
+}
+
+/** 공백은 CLI 기본값으로 되돌린다. CLI 변경 시 모델/effort 초기화는 편집 UI가 맡는다. */
+export function normalizeWorkAgent(agent: WorkAgent): WorkAgent {
+  return { cli: agent.cli, ...(agent.model?.trim() ? { model: agent.model.trim() } : {}), ...(agent.effort?.trim() ? { effort: agent.effort.trim() } : {}) };
 }

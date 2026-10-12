@@ -9,6 +9,7 @@
 pub mod agent_paths;
 pub mod api_keys;
 mod automation;
+mod work_send;
 mod bot;
 // codex CLI 내장 이미지 생성으로 캐릭터 초상/스프라이트 원본을 만든다(kbm #2fa).
 pub mod codex_imagegen;
@@ -835,6 +836,7 @@ pub fn run() {
                 session_time_store,
                 diary_store,
                 work_log_store,
+                work_send_runtime: crate::work_send::WorkSendRuntime::default(),
                 work_panels_store: crate::persistence::work_panels_store::WorkPanelsStore::new(data_dir.clone()),
                 awards_store,
                 memo_store,
@@ -977,6 +979,8 @@ pub fn run() {
             ipc::commands::load_session_turns,
             ipc::commands::append_diary_entry,
             ipc::commands::load_diary,
+            ipc::commands::inspect_work_send_target,
+            ipc::commands::send_work_item,
             ipc::commands::load_work_items,
             ipc::commands::save_work_items,
             ipc::commands::load_session_summaries,
@@ -1058,6 +1062,7 @@ pub fn run() {
                 }
                 let state = app.state::<AppState>();
                 state.run_recipes.stop_all(); // 레시피가 띄운 별도 프로세스 트리 정리
+                state.work_send_runtime.stop_all();
                 state.automation_runtime.stop_all(); // 세션 처리 전에 자동 입력 태스크 정지
                 state.manager.dispose_all(); // kill + settings cleanup(동기)
                 state.observer_server.shutdown();

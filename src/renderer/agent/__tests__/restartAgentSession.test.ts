@@ -283,3 +283,13 @@ describe("restartAgentSession 오케스트레이션", () => {
     expect(destroy).toHaveBeenCalledTimes(2);
   });
 });
+
+
+it("업무 보내기의 고정 세션 폐기가 거절되면 기존 화면과 상태를 보존한다", async () => {
+  const s = useAppStore.getState(); s.addAgent(mkProfile("a1")); s.setSessionState({ agentId: "a1", status: "running" });
+  disposeSession.mockRejectedValueOnce(new Error("work-send-session-changed"));
+  await expect(restartAgentSession("a1", { expected: { sessionId: "old", humanInputRevision: 7 } })).rejects.toThrow("work-send-session-changed");
+  expect(disposeSession).toHaveBeenCalledWith("a1", { sessionId: "old", humanInputRevision: 7 });
+  expect(destroy).not.toHaveBeenCalled(); expect(createSession).not.toHaveBeenCalled();
+  expect(useAppStore.getState().sessions.a1.status).toBe("running"); expect(useAppStore.getState().terminalEpochs.a1).toBeUndefined();
+});

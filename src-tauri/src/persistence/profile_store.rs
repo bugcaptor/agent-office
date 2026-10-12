@@ -168,6 +168,7 @@ mod tests {
                 clocked_out: None,
             keyboard_sound: None,
             voice_id: None,
+            default_agent: None,
             bot: None,
             talk_receive: None,
             tmux_host: None,
@@ -410,4 +411,15 @@ mod tests {
 
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
+    #[test]
+    fn default_work_agent_roundtrips_and_legacy_profile_defaults_to_none() {
+        let file = scratch_file(); let store = ProfileStore::new(file.clone()); let mut state = sample_state();
+        assert!(state.agents[0].default_agent.is_none());
+        state.agents[0].default_agent = Some(crate::types::WorkAgent { cli: crate::types::WorkCli::Codex, model: Some("custom".into()), effort: Some("high".into()) });
+        store.save(&state).unwrap(); assert_eq!(store.load().agents[0].default_agent, state.agents[0].default_agent);
+        let mut value = serde_json::to_value(&state).unwrap(); value["agents"][0].as_object_mut().unwrap().remove("defaultAgent");
+        fs::write(&file, serde_json::to_vec(&value).unwrap()).unwrap(); assert!(store.load().agents[0].default_agent.is_none());
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
 }

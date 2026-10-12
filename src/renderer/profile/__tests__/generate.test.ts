@@ -326,3 +326,11 @@ describe("draftToProfile: 색 오버라이드", () => {
     expect(draftToProfile({ ...d, colors: {} }, 0)).not.toHaveProperty("colors");
   });
 });
+
+
+it("업무 기본 에이전트는 선택한 CLI에 빈 모델/노력 없이 저장하고 미지정은 생략한다", () => {
+  const draft = { name: "Ada", role: "dev", seed: "s", defaultAgent: { cli: "codex" as const, model: "  custom  ", effort: " high " } };
+  expect(draftToProfile(draft, 0).defaultAgent).toEqual({ cli: "codex", model: "custom", effort: "high" });
+  expect(draftToProfile({ ...draft, defaultAgent: { cli: "claude", model: "   " } }, 0).defaultAgent).toEqual({ cli: "claude" });
+  expect(draftToProfile({ ...draft, defaultAgent: undefined }, 0)).not.toHaveProperty("defaultAgent");
+});

@@ -2497,3 +2497,14 @@
             cleanup(&ctl, &dir);
         }
     }
+
+    #[tokio::test]
+    async fn dispose_matching_never_kills_a_replacement_session() {
+        let (mgr, _events, ctl, dir) = build();
+        let created = mgr.create(req("a1", Some(false))).unwrap();
+        assert_eq!(mgr.dispose_matching("a1", Some("old-session")).unwrap_err(), "work-send-session-changed");
+        assert_eq!(ctl.kill_count(), 0);
+        assert_eq!(mgr.session_id_for("a1").as_deref(), Some(created.session_id.as_str()));
+        mgr.dispose_matching("a1", Some(&created.session_id)).unwrap(); assert_eq!(ctl.kill_count(), 1);
+        ctl.fire_exit(0); cleanup(&ctl, &dir);
+    }

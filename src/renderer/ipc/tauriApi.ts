@@ -63,6 +63,8 @@ function safeInvoke<T>(cb: (payload: T) => void, payload: T): void {
 }
 
 const localTauriApi: AgentOfficeApi = {
+  async inspectWorkSendTarget(agentId) { return await invoke(Commands.inspectWorkSendTarget, { agentId }); },
+  async sendWorkItem(request) { return await invoke(Commands.sendWorkItem, { request }); },
   async loadWorkItems() { return await invoke(Commands.loadWorkItems); },
   async saveWorkItems(items) { await invoke(Commands.saveWorkItems, { items }); },
   async loadSessionSummaries() { return await invoke(Commands.loadSessionSummaries); },
@@ -80,8 +82,8 @@ const localTauriApi: AgentOfficeApi = {
     return await invoke(Commands.createSession, { agentId, opts: opts ?? null });
   },
 
-  async disposeSession(agentId) {
-    await invoke(Commands.disposeSession, { agentId });
+  async disposeSession(agentId, expected) {
+    await invoke(Commands.disposeSession, { agentId, ...(expected ? { expectedSessionId: expected.sessionId, expectedHumanInputRevision: expected.humanInputRevision } : {}) });
   },
 
   async detachExternalSession(agentId) {

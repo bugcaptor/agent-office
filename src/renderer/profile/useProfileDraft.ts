@@ -70,6 +70,7 @@ export function useProfileDraft(editingAgentId: string | undefined, initialCwd?:
       botIdleQuietMs: agent.bot?.idleQuietMs ? String(agent.bot.idleQuietMs) : "",
       talkReceive: agent.talkReceive !== false,
       tmuxHost: agent.tmuxHost === true,
+      defaultAgent: agent.defaultAgent,
     });
   }, [editingAgentId]);
 

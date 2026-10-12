@@ -29,3 +29,21 @@ export interface SessionSummary {
   prompts: { at: number; text: string; origin?: string }[];
   workItemId?: string;
 }
+
+/** 읽기 전용 보내기 사전 점검. 확인창의 응답은 이 세션/revision에만 유효하다. */
+export interface WorkSendTarget {
+  sessionId?: string;
+  humanInputRevision: number;
+  restartRequired: boolean;
+  hasUncommitted: boolean;
+}
+export interface WorkSendRequest {
+  agentId: string;
+  sessionId: string;
+  humanInputRevision: number;
+  freshSession: boolean;
+  agent: WorkAgent;
+  title: string;
+  body: string;
+}
+export interface WorkSendResult { sessionId: string; submittedAt: number }

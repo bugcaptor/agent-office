@@ -23,6 +23,7 @@
 // resolving exactly as it did before the split -- only the file each
 // command's body lives in changed.
 mod automation;
+mod work_panels;
 mod bot;
 mod media;
 mod misc;
@@ -58,6 +59,7 @@ use crate::state::AppState;
 use crate::types::*;
 
 pub(crate) use automation::*;
+pub(crate) use work_panels::*;
 pub(crate) use bot::*;
 pub(crate) use media::*;
 pub(crate) use misc::*;

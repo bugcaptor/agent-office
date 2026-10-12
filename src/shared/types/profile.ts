@@ -4,6 +4,7 @@
 // generation results. See src/shared/types.ts for the frozen-contract overview.
 
 import type { BotConfig } from './bot';
+import type { WorkAgent } from './workPanels';
 
 /**
  * 스프라이트 팔레트에서 사용자가 직접 고를 수 있는 색 슬롯. 아키타입마다
@@ -41,6 +42,8 @@ export interface AgentProfile {
   /** 새 세션이 뜰 때마다 셸 stdin에 주입할 시작 명령어. 부재/공백 = 미주입.
    * 예: "source ./init.sh", "mysetup.bat". 셸 문법은 사용자 책임. */
   startupCommand?: string;
+  /** 업무 보내기의 기본 CLI·모델·노력. 부재 = claude 기본값. */
+  defaultAgent?: WorkAgent;
   /** Claude Code 세션에 추가 시스템 프롬프트로 주입할 캐릭터 성격(멀티라인 가능). */
   personalityPrompt?: string;
   /** 초상화 추가 프롬프트(자유 텍스트). 초상 이미지 프롬프트에만 덧붙는다. */

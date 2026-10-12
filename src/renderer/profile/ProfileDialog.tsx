@@ -19,7 +19,7 @@ import { tauriApi } from "../ipc/tauriApi";
 import { sessionOptsFor } from "../ipc/sessionOpts";
 import { hexColor, pickArchetype } from "../office/gen/archetypes";
 import type { KeyColor } from "../office/gen/archetypes";
-import { buildBotConfig, draftToProfile, normalizeColors } from "./generate";
+import { buildBotConfig, normalizeWorkAgent, draftToProfile, normalizeColors } from "./generate";
 import { useProfileDraft } from "./useProfileDraft";
 import { useAppearanceImages } from "./useAppearanceImages";
 import { useCharacterIo } from "./useCharacterIo";
@@ -130,6 +130,7 @@ export function ProfileDialog() {
         // 기본(수신 허용)은 필드를 지운다 — 끈 경우만 false로 남긴다.
         talkReceive: draft.talkReceive === false ? false : undefined,
         tmuxHost: draft.tmuxHost ? true : undefined,
+        defaultAgent: draft.defaultAgent ? normalizeWorkAgent(draft.defaultAgent) : undefined,
       });
     } else {
       const profile = draftToProfile(draft, agentOrder.length);

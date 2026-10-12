@@ -8,6 +8,8 @@
 
 /** `invoke()` command names (all commands use `rename_all = "camelCase"` args). */
 export const Commands = {
+  inspectWorkSendTarget: "inspect_work_send_target",
+  sendWorkItem: "send_work_item",
   loadWorkItems: "load_work_items",
   saveWorkItems: "save_work_items",
   loadSessionSummaries: "load_session_summaries",

@@ -33,6 +33,7 @@ import { installMemoCleanup } from "./memo/memoCleanup";
 import { installTaskLabelSummarizer } from "./labels/summarizer";
 import { installGitBranchWatcher } from "./labels/gitBranchWatcher";
 import { installSessionSummaryRecorder } from "./workpanels/sessionSummaryStore";
+import { installWorkMonitor } from "./workpanels/workMonitor";
 import { useWorkItemStore } from "./workpanels/workItemStore";
 import { installWorkLogRecorder } from "./diary/workLog";
 import {
@@ -277,6 +278,7 @@ export async function bootApp(): Promise<() => void> {
 
   await useWorkItemStore.getState().load();
   const offSessionSummaries = await installSessionSummaryRecorder();
+  const offWorkMonitor = installWorkMonitor();
   const offBridge = installSessionBridge();
   // 웹 원격 — 세션 브리지 직후. 화면 스냅샷 요청과 페어링 승인 요청을 받는다.
   const offWebRemote = installWebRemoteBridge();
@@ -330,6 +332,7 @@ export async function bootApp(): Promise<() => void> {
   return () => {
     offBridge();
     offSessionSummaries();
+    offWorkMonitor();
     void useWorkItemStore.getState().flush();
     offWebRemote();
     offMascot();

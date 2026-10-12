@@ -6,7 +6,7 @@ vi.mock("../../ipc/tauriApi", () => ({ tauriApi: {
   onSessionState: (cb: (e: SessionStateEvent) => void) => { callbacks.add(cb); return () => callbacks.delete(cb); },
 } }));
 import { useAppStore } from "../../store/appStore";
-import { useSessionSummaryStore, installSessionSummaryRecorder, flushSessionSummaries } from "../sessionSummaryStore";
+import { useSessionSummaryStore, installSessionSummaryRecorder, flushSessionSummaries, linkWorkSession } from "../sessionSummaryStore";
 const initial = useAppStore.getState();
 const now = 1_800_000_000_000;
 let off: (() => void) | undefined;
@@ -19,6 +19,13 @@ beforeEach(() => {
 });
 afterEach(async () => { await flushSessionSummaries(); off?.(); off=undefined; await Promise.resolve(); vi.clearAllTimers(); vi.useRealTimers(); });
 describe("상시 세션 요약 수집", () => {
+  it("보낸 세션의 업무 연결도 자동저장하고 프롬프트/목표 갱신으로 유실하지 않는다", async () => {
+    off = await installSessionSummaryRecorder(); emit("running"); linkWorkSession("work", "a1", "s1", now + 10);
+    useAppStore.setState({ taskLabels: { a1: { sessionId: "s1", goal: "Goal", latestPromptAt: now + 20, latestPromptText: "Task" } } });
+    await flushSessionSummaries();
+    expect(append.mock.calls[0][0][0]).toMatchObject({ workItemId: "work", startedAt: now, agentName: "Before", goal: "Goal" });
+  });
+
   it("패널·일기·요약기가 꺼져 있어도 시작 스냅샷과 프롬프트를 저장한다", async () => {
     off = await installSessionSummaryRecorder(); emit("starting"); emit("running", now+1);
     useAppStore.setState({taskLabels:{a1:{sessionId:"s1",latestPromptText:"🙂".repeat(400),latestPromptAt:now+5}}});

@@ -1026,9 +1026,38 @@ impl SessionManager {
             .unwrap_or(false)
     }
 
-    /// 직접 관리하는 현재 PTY의 실제 셸 프로그램 경로. 이 값은 사용자가 고른
-    /// 표시용 shell ID가 아니라 spawn에 전달된 `ResolvedShell::program`이다.
-    /// 반환 receipt를 안전하게 렌더할 수 없는 attach/입양/tmux 세션은 None이다.
+    /// 원래 셸이 foreground인지를 확인한다. 브로커/미지원 조회는 None이며
+    /// 보내기 UI는 기존 세션에 대해 재시작 확인으로 처리한다.
+    pub fn is_shell_prompt(&self, agent_id: &str) -> Option<bool> {
+        #[cfg(unix)]
+        {
+            let session = self.find(agent_id)?;
+            session.shell_path.lock().as_ref()?;
+            let shell_pgid = session.handoff.lock().as_ref()?.pgid?;
+            let fg = session.control.foreground_sample()?.fg_pgid?;
+            if shell_pgid != fg {
+                return Some(false);
+            }
+            // `set +m`에서는 CLI도 셸과 같은 pgid를 쓸 수 있다. 같은 그룹에
+            // 자식이 남아 있으면 빈 셸로 단정하지 않는다. 조회 실패도 확인 대상으로 둔다.
+            let members = std::process::Command::new("pgrep")
+                .args(["-g", &shell_pgid.to_string()])
+                .output()
+                .ok()?;
+            if !members.status.success() {
+                return None;
+            }
+            let count = crate::session::shell_activity::count_pgrep_pids(&String::from_utf8_lossy(&members.stdout));
+            Some(count == 1)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = agent_id;
+            None
+        }
+    }
+
+    /// 직접 관리하는 PTY의 실제 셸 실행 경로. attach/입양/tmux는 None이다.
     pub fn shell_path_for(&self, agent_id: &str) -> Option<String> {
         self.find(agent_id)
             .and_then(|session| session.shell_path.lock().clone())
@@ -1057,11 +1086,19 @@ impl SessionManager {
     /// (1캐릭터 1세션 불변식상 둘이 동시에 있을 일은 없지만, 있어도 둘 다
     /// 정리되도록 early return하지 않는다).
     pub fn dispose(&self, agent_id: &str) {
+        let _ = self.dispose_matching(agent_id, None);
+    }
+
+    /// 확인받은 세션만 폐기한다. create와 같은 lifecycle 락 아래 검사/폐기를 묶는다.
+    pub fn dispose_matching(&self, agent_id: &str, expected: Option<&str>) -> Result<(), String> {
         let _observed_lifecycle = self.observed_lifecycle.lock();
+        if expected.is_some_and(|sid| self.find(agent_id).as_ref().is_none_or(|s| s.session_id != sid)) {
+            return Err("work-send-session-changed".into());
+        }
         self.detach_external(agent_id, ExternalDetachReason::Detach);
         if let Some(s) = self.find(agent_id) {
             if s.handed_off.load(Ordering::SeqCst) {
-                return;
+                return Err("work-send-session-changed".into());
             }
             // tmux 자동 호스팅 세션(kbm #2pc): kill-session을 먼저 해야 pane
             // 프로세스가 SIGHUP을 받고, 그 다음에 클라이언트 셸(앱 PTY)이
@@ -1077,6 +1114,7 @@ impl SessionManager {
             }
             cleanup_paths(&s.cleanup_paths);
         }
+        Ok(())
     }
 
     /// 앱 quit: 모든 PTY kill + settings 정리(동기, 빠름). 브로커 모드에서도

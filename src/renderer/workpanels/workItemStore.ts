@@ -17,6 +17,7 @@ interface WorkItemState {
   load(): Promise<void>;
   add(title: string): string | undefined;
   edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status">>): void;
+  recordSend(id: string, result: { sessionId?: string; error?: string }): void;
   remove(id: string): void;
   reorder(id: string, targetId: string, after?: boolean): void;
   select(id: string | null): void;
@@ -62,6 +63,14 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     const order = patch.status && patch.status !== item.status
       ? Math.max(-1, ...get().items.filter((i) => i.status === patch.status).map((i) => i.order)) + 1 : item.order;
     set({ items: get().items.map((i) => i.id === id ? { ...i, ...patch, order, updatedAt: Date.now() } : i), dirty: true });
+    changed();
+  },
+  recordSend(id, result) {
+    const item = get().items.find((i) => i.id === id);
+    if (!get().loaded || !item) return;
+    const status = result.sessionId ? "in_progress" : item.status;
+    const order = status !== item.status ? Math.max(-1, ...get().items.filter((i) => i.status === status).map((i) => i.order)) + 1 : item.order;
+    set({ items: get().items.map((i) => i.id === id ? { ...i, status, order, lastError: result.error, sessionIds: result.sessionId ? [...new Set([...i.sessionIds, result.sessionId])] : i.sessionIds, updatedAt: Date.now() } : i), dirty: true });
     changed();
   },
   remove(id) {

@@ -136,7 +136,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 export async function runGuardedCreateSession(
   agentId: string,
   overrides?: { startupCommand?: string; cwd?: string },
-): Promise<void> {
+): Promise<import("@shared/types").CreateSessionResult | undefined> {
   const state = useAppStore.getState();
   const agent = state.agents[agentId];
   const opts = sessionOptsFor(agent, overrides);
@@ -165,6 +165,7 @@ export async function runGuardedCreateSession(
         status: res.state === "disposed" ? "exited" : res.state,
       });
     }
+    return res;
   } catch (err) {
     useAppStore.getState().setSessionState({ agentId, status: "exited" });
     console.warn(`createSession failed for ${agentId}`, err);

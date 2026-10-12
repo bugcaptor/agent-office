@@ -35,3 +35,14 @@
 .session-history-detail .pixel-btn { margin: 4px 4px 0 0; }
 .work-link-tag { color: var(--accent) !important; }
 .work-delete-dialog { width: min(420px, 85vw); padding: 16px; }
+
+fieldset.work-editor { padding: 0; border: 0; min-width: 0; }
+.work-card.waiting { border-color: var(--accent-warn); }
+.work-card-monitor { margin-top: 6px; color: var(--text-dim); }
+.work-card-monitor.waiting { color: var(--accent-warn); }
+.work-agent-fields { margin: 8px 0; }
+.work-agent-fields small { color: var(--text-dim); }
+
+.work-agent-fields > label { display: flex; flex-direction: column; gap: var(--unit); margin: 6px 0; }
+.work-agent-fields input, .work-agent-fields select { width: 100%; box-sizing: border-box; min-width: 0; color: var(--text); background: var(--bg-base); border: 1px solid var(--border-dark); font: inherit; padding: 5px; }
+.work-delete-dialog { overflow-wrap: anywhere; max-height: calc(100vh - 64px); overflow-y: auto; box-sizing: border-box; }

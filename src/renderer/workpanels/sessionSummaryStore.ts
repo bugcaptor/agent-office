@@ -5,8 +5,14 @@ import { tauriApi } from "../ipc/tauriApi";
 
 export const SUMMARY_RETENTION_MS = 300 * 86_400_000;
 export const useSessionSummaryStore = create<{ summaries: Record<string, SessionSummary>; liveIds: string[]; error: boolean }>(() => ({ summaries: {}, liveIds: [], error: false }));
-let active: { flush(): Promise<void>; pending(): boolean } | undefined;
+let active: { flush(): Promise<void>; pending(): boolean; put(summary: SessionSummary): void } | undefined;
 export function hasPendingSessionSummaries(): boolean { return active?.pending() ?? false; }
+export function linkWorkSession(workItemId: string, agentId: string, sessionId: string, at: number): void {
+  const old = useSessionSummaryStore.getState().summaries[sessionId];
+  const profile = useAppStore.getState().agents[agentId];
+  const summary: SessionSummary = { ...(old ?? { sessionId, agentId, agentName: profile?.name ?? agentId, cwd: profile?.cwd, startedAt: at, prompts: [] }), workItemId };
+  active?.put(summary);
+}
 export async function flushSessionSummaries(): Promise<void> { await active?.flush(); }
 /** 설정과 무관한 상시 수집. 종료 flush와 실패 재시도 모두 같은 직렬 저장 큐를 쓴다. */
 export async function installSessionSummaryRecorder(): Promise<() => void> {
@@ -84,7 +90,7 @@ export async function installSessionSummaryRecorder(): Promise<() => void> {
   const offState = tauriApi.onSessionState(onState);
   const offStore = useAppStore.subscribe((s) => [s.taskLabels, s.sessionUsage], observe);
   observe();
-  const handle = { flush, pending: () => dirty.size > 0 || saving !== undefined };
+  const handle = { flush, put, pending: () => dirty.size > 0 || saving !== undefined };
   active = handle;
   return () => {
     // bootstrap teardown는 동기 계약. 정상 종료는 별도 flush를 기다린다.

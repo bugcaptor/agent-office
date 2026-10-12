@@ -3,7 +3,7 @@
 // Domain slice: the renderer-facing AgentOfficeApi surface itself.
 // See src/shared/types.ts for the frozen-contract overview.
 
-import type { WorkItem, SessionSummary } from './workPanels';
+import type { WorkItem, SessionSummary, WorkSendTarget, WorkSendRequest, WorkSendResult } from './workPanels';
 import type { AgentId } from './common';
 import type {
   CreateSessionOptions,
@@ -83,6 +83,8 @@ import type { RepositoryAuditItem } from './repositoryAudit';
  * sessionId so later preparation can reject requests from an older connection.
  */
 export interface AgentOfficeApi {
+  inspectWorkSendTarget(agentId: string): Promise<WorkSendTarget>;
+  sendWorkItem(request: WorkSendRequest): Promise<WorkSendResult>;
   loadWorkItems(): Promise<WorkItem[]>;
   saveWorkItems(items: WorkItem[]): Promise<void>;
   loadSessionSummaries(): Promise<SessionSummary[]>;
@@ -90,7 +92,7 @@ export interface AgentOfficeApi {
   /** 작업 기록에서 발견한 저장소의 읽기 전용 git 점검 결과. */
   repositoryAuditList(): Promise<RepositoryAuditItem[]>;
   createSession(agentId: string, opts?: CreateSessionOptions): Promise<CreateSessionResult>;
-  disposeSession(agentId: string): Promise<void>;
+  disposeSession(agentId: string, expected?: { sessionId: string; humanInputRevision: number }): Promise<void>;
   /** 외부(논리) 세션 연결 해제 — PTY가 없으므로 kill할 프로세스는 없고 훅
    * 라우팅 등록과 settings 파일만 정리된다. 붙어 있지 않았으면 false(no-op). */
   detachExternalSession(agentId: string): Promise<boolean>;

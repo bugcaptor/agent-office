@@ -705,6 +705,9 @@ pub struct AgentProfile {
     /// 예: "source ./init.sh", "mysetup.bat". 셸 문법은 사용자 책임.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub startup_command: Option<String>,
+    /// 업무 보내기의 기본 에이전트. 부재 = claude 기본값.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub default_agent: Option<WorkAgent>,
     /// Claude Code 세션에 추가 시스템 프롬프트로 주입할 캐릭터 성격(멀티라인 가능).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub personality_prompt: Option<String>,
@@ -1488,6 +1491,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         voice_id: None,
+        default_agent: None,
         bot: None,
         talk_receive: None,
         tmux_host: None,
@@ -1523,6 +1527,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         voice_id: None,
+        default_agent: None,
         bot: None,
         talk_receive: None,
         tmux_host: None,
@@ -1587,6 +1592,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         voice_id: None,
+        default_agent: None,
         bot: None,
         talk_receive: None,
         tmux_host: None,
@@ -1623,6 +1629,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         voice_id: None,
+        default_agent: None,
         bot: None,
         talk_receive: None,
         tmux_host: None,
@@ -1670,6 +1677,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         voice_id: None,
+        default_agent: None,
         bot: None,
         talk_receive: None,
         tmux_host: None,
@@ -1707,6 +1715,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         voice_id: None,
+        default_agent: None,
         bot: None,
         talk_receive: None,
         tmux_host: None,
@@ -1762,6 +1771,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         voice_id: None,
+        default_agent: None,
         bot: None,
         talk_receive: None,
         tmux_host: None,
@@ -1785,6 +1795,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         voice_id: None,
+        default_agent: None,
         bot: None,
         talk_receive: None,
         tmux_host: None,
@@ -1817,6 +1828,7 @@ mod tests {
             personality_prompt: None,
                        keyboard_sound: Some("topre-hhkb".into()),
                        voice_id: None,
+                       default_agent: None,
                        bot: None,
                        talk_receive: None,
                        tmux_host: None,
@@ -1840,6 +1852,7 @@ mod tests {
             personality_prompt: None,
                        keyboard_sound: None,
                        voice_id: None,
+                       default_agent: None,
                        bot: None,
                        talk_receive: None,
                        tmux_host: None,
@@ -1870,6 +1883,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         voice_id: None,
+        default_agent: None,
         bot: None,
         talk_receive: None,
         tmux_host: None,
@@ -1891,6 +1905,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         voice_id: None,
+        default_agent: None,
         bot: None,
         talk_receive: None,
         tmux_host: None,
@@ -1921,6 +1936,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         voice_id: None,
+        default_agent: None,
         bot: None,
         talk_receive: None,
         tmux_host: None,
@@ -1942,6 +1958,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         voice_id: None,
+        default_agent: None,
         bot: None,
         talk_receive: None,
         tmux_host: None,
@@ -2164,3 +2181,26 @@ pub struct SessionSummary {
     pub prompts: Vec<SessionSummaryPrompt>,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub work_item_id: Option<String>,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkSendTarget {
+    #[serde(skip_serializing_if = "Option::is_none")] pub session_id: Option<String>,
+    pub human_input_revision: u64,
+    pub restart_required: bool,
+    pub has_uncommitted: bool,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkSendRequest {
+    pub agent_id: String,
+    pub session_id: String,
+    pub human_input_revision: u64,
+    pub fresh_session: bool,
+    pub agent: WorkAgent,
+    pub title: String,
+    pub body: String,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkSendResult { pub session_id: String, pub submitted_at: u64 }

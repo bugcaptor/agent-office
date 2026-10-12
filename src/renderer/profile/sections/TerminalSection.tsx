@@ -6,6 +6,7 @@ import { Trans, useTranslation } from "react-i18next";
 
 import { KEYBOARD_SOUND_PACK_OPTIONS, packLabel } from "../../sound/packs";
 import { previewKeyboardSound } from "../../sound/soundManager";
+import { WorkAgentFields } from "../../workpanels/WorkAgentFields";
 import { VoiceField } from "./VoiceField";
 import type { DraftProfile } from "../generate";
 import type { AvailableShell } from "@shared/types";
@@ -61,6 +62,7 @@ export function TerminalSection({
         </label>
         <p className="form-hint">{t("terminal.startupCommandHint")}</p>
       </div>
+      {!remoteWindow && <div className="form-field"><WorkAgentFields profile value={draft.defaultAgent} onChange={(defaultAgent) => setDraft((d) => ({ ...d, defaultAgent }))} /></div>}
       <div className="form-field">
         <label>
           <span className="form-label-text">{t("terminal.keyboardSound")}</span>

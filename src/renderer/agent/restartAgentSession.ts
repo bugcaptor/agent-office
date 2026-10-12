@@ -23,21 +23,29 @@ import { sharedDiaryFlusher } from "../diary/diaryFlusher";
 /** `cwd`는 이번 create에만 쓰는 재시작 위치이며 프로필을 바꾸지 않는다. */
 export async function restartAgentSession(
   agentId: string,
-  overrides?: { cwd?: string },
-): Promise<void> {
+  overrides?: { cwd?: string; expected?: { sessionId: string; humanInputRevision: number } },
+): Promise<import("@shared/types").CreateSessionResult | undefined> {
   const release = reserveSessionReplacement(agentId);
   if (!release) return;
+  const previousStatus = useAppStore.getState().sessions[agentId]?.status ?? "idle";
   try {
-    useAppStore.getState().resetAutomationState(agentId);
+    // 고정 세션 폐기가 거절된 경우 자동화/xterm 상태도 그대로 보존한다.
+    if (!overrides?.expected) useAppStore.getState().resetAutomationState(agentId);
     // 폐기 대기 중 ensureSession이 별도 세션을 만들지 못하게 즉시 표시한다.
     useAppStore.getState().setSessionState({ agentId, status: "starting" });
 
     // ① 기존 PTY 종료 — 세션이 없거나 이미 죽었어도 재시작은 계속.
     try {
-      await tauriApi.disposeSession(agentId);
+      await tauriApi.disposeSession(agentId, overrides?.expected);
     } catch (err) {
+      if (overrides?.expected) {
+        if (useAppStore.getState().sessions[agentId]?.status === "starting") useAppStore.getState().setSessionState({ agentId, status: previousStatus });
+        throw err;
+      }
       console.warn(`restartAgentSession: disposeSession failed for ${agentId}`, err);
     }
+
+    if (overrides?.expected) useAppStore.getState().resetAutomationState(agentId);
 
     // ② xterm 인스턴스/스크롤백 폐기 (onData 구독 해제 포함).
     terminalRegistry.destroy(agentId);
@@ -66,7 +74,7 @@ export async function restartAgentSession(
     //     fire-and-forget — 재시작을 블록하지 않는다.
     void sharedDiaryFlusher().flushAgent(agentId, { includeLive: false, source: "session-end" });
 
-    await runGuardedCreateSession(agentId, overrides);
+    return await runGuardedCreateSession(agentId, overrides);
   } finally {
     release();
   }

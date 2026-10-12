@@ -122,6 +122,7 @@ pub trait InputSink: Send + Sync {
     }
     fn session_id_for(&self, agent_id: &str) -> Option<String>;
     fn is_running(&self, agent_id: &str) -> bool;
+    fn is_shell_prompt(&self, _agent_id: &str) -> Option<bool> { None }
     fn cwd_of(&self, _agent_id: &str) -> Option<String> {
         None
     }
@@ -156,6 +157,7 @@ impl InputSink for ManagerSink {
     fn is_running(&self, agent_id: &str) -> bool {
         self.manager.is_running(agent_id)
     }
+    fn is_shell_prompt(&self, agent_id: &str) -> Option<bool> { self.manager.is_shell_prompt(agent_id) }
     fn cwd_of(&self, agent_id: &str) -> Option<String> {
         self.manager.cwd_of(agent_id)
     }
@@ -453,6 +455,15 @@ impl InjectGate {
         owner: &TransitionOwnerGuard,
         request: StrictSubmitRequest<'_>,
     ) -> StrictOutcome {
+        self.submit_strict_inner(owner, request, false).await
+    }
+
+    /// CLI 프롬프트는 bracketed paste로 줄바꿈을 보존한다. 호출자가 제어문자를 검증한다.
+    pub async fn submit_strict_paste(&self, owner: &TransitionOwnerGuard, request: StrictSubmitRequest<'_>) -> StrictOutcome {
+        self.submit_strict_inner(owner, request, true).await
+    }
+
+    async fn submit_strict_inner(&self, owner: &TransitionOwnerGuard, request: StrictSubmitRequest<'_>, paste: bool) -> StrictOutcome {
         let validate = |before_cr: bool, inner: &AgentGateInner| {
             if request.cancelled.load(Ordering::Relaxed) {
                 return Some(if before_cr {
@@ -507,7 +518,7 @@ impl InjectGate {
             inner.holder = Some(request.source);
             inner.queue_human_while_held = true;
             self.arms.arm(&owner.agent_id, now_ms());
-            let single = crate::bot::runner::single_line(request.text);
+            let single = if paste { format!("\x1b[200~{}\x1b[201~", request.text) } else { crate::bot::runner::single_line(request.text) };
             if !self
                 .sink
                 .write_for_session(&owner.agent_id, &owner.session_id, &single)
@@ -692,6 +703,19 @@ impl InjectGate {
         let gate = self.get_agent_gate(agent_id);
         let count = gate.inner.lock().forced_submission_count;
         count
+    }
+
+    /// 재시작 확인의 입력 revision 검사와 폐기를 같은 사람 입력 임계구역에 둔다.
+    pub fn with_human_revision<T>(&self, agent_id: &str, expected: u64, action: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+        let gate = self.get_agent_gate(agent_id);
+        let inner = gate.inner.lock();
+        if inner.human_input_revision != expected { return Err("work-send-human-input".into()); }
+        action()
+    }
+
+    /// strict 실행은 오래된 입력도 자동으로 해제하지 않는다.
+    pub fn has_uncommitted(&self, agent_id: &str) -> bool {
+        self.get_agent_gate(agent_id).inner.lock().human_uncommitted
     }
 
     /// 배너에 띄울 보류 이유.
