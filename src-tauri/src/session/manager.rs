@@ -179,7 +179,7 @@ pub struct SessionManager {
     /// 그대로 통과해야 하므로 기본값은 None).
     /// pub(super): 핸드오프/입양 형제 모듈이 소켓/로그 경로 계산에 직접 읽는다.
     pub(super) app_data_dir: Option<std::path::PathBuf>,
-    /// `office-task` shim 경로와 shim이 실행할 앱 바이너리(docs/work-inbox-design.md).
+    /// `office-task` shim 경로와 shim이 실행할 앱 바이너리(docs/work-panels-design.md §업무 수신함).
     /// None이면 shim과 `AGENT_OFFICE_TASK`를 생략한다 -- 테스트 기본값이다.
     task_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
     /// 업무 패널 설정(`workPanelsEnabled`) 조회. 켜졌을 때만 공통 안내문과 Codex
@@ -530,7 +530,7 @@ impl SessionManager {
             }
         }
 
-        // 업무 수신함 shim(docs/work-inbox-design.md). OS temp는 청소될 수 있어 매번 쓴다.
+        // 업무 수신함 shim(docs/work-panels-design.md §업무 수신함). OS temp는 청소될 수 있어 매번 쓴다.
         let task_shim = self.task_cli.as_ref().and_then(|(shim, exe)| {
             crate::work_inbox_cli::ensure_shim(shim, exe)
                 .map_err(|error| eprintln!("agent-office: failed to write office-task shim: {error}"))
@@ -630,7 +630,7 @@ impl SessionManager {
                 dir.to_string_lossy().into_owned(),
             ));
         }
-        // 업무 수신함(docs/work-inbox-design.md): 업무 패널 설정과 무관하게 싣는다.
+        // 업무 수신함(docs/work-panels-design.md §업무 수신함): 업무 패널 설정과 무관하게 싣는다.
         // 수신함 규약은 패널이 꺼져 있어도 유효하다.
         env.push(("AGENT_OFFICE_AGENT_ID".into(), agent_id.to_string()));
         if let Some(inbox) = &work_inbox {

@@ -263,7 +263,7 @@ export const AgentOffice = async (ctx: any) => {
       } catch { /* 관찰 실패는 삼킨다 */ }
     },
 
-    // 사무실 공통 안내문(docs/work-inbox-design.md). 업무 패널이 켜진 세션에만
+    // 사무실 공통 안내문(docs/work-panels-design.md §업무 수신함). 업무 패널이 켜진 세션에만
     // env가 실린다. 시스템 프롬프트 배열 끝에 덧붙이고 기본 지침은 건드리지 않는다.
     "experimental.chat.system.transform": async (_input: any, output: any) => {
       const office = process.env.AGENT_OFFICE_OFFICE_PROMPT;

@@ -1,4 +1,4 @@
-//! `agent-office task` 오프라인 서브커맨드(docs/work-inbox-design.md §에이전트 도구).
+//! `agent-office task` 오프라인 서브커맨드(docs/work-panels-design.md §업무 수신함).
 //! GUI·tokio 없이 수신함에 파일 하나를 원자적으로 쓴다. control 서버와 토큰이
 //! 필요 없어 CLI 제어가 꺼져 있어도 동작한다.
 

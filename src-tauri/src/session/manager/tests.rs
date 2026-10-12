@@ -1132,7 +1132,7 @@
         cleanup(&ctl, &dir);
     }
 
-    // ---- Work inbox env (docs/work-inbox-design.md) ----
+    // ---- Work inbox env (docs/work-panels-design.md §업무 수신함) ----
 
     #[tokio::test]
     async fn create_env_carries_agent_id_work_inbox_and_task_shim() {

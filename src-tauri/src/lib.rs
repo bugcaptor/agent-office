@@ -181,7 +181,7 @@ where
     let mut args = args.into_iter();
     let _program = args.next();
     let mode = args.next()?.as_ref().to_os_string();
-    // `task`는 업무 수신함에 파일만 쓰는 오프라인 분기(docs/work-inbox-design.md).
+    // `task`는 업무 수신함에 파일만 쓰는 오프라인 분기(docs/work-panels-design.md §업무 수신함).
     let task = mode.as_os_str() == std::ffi::OsStr::new("task");
     if !task && mode.as_os_str() != std::ffi::OsStr::new("ctl") {
         return None;
@@ -609,7 +609,7 @@ pub fn run() {
                 // 세션 핸드오프(unix 전용, docs/session-handoff-design.md) 소켓/로그
                 // 경로와 AGENT_OFFICE_APP_DATA env 주입(§핵심 5)의 근거.
                 .with_app_data_dir(data_dir.clone())
-                // 업무 수신함 `office-task` shim(docs/work-inbox-design.md).
+                // 업무 수신함 `office-task` shim(docs/work-panels-design.md §업무 수신함).
                 .with_task_cli(forwarder_executable_path())
                 .with_work_panels_flag({
                     let settings = settings_cache.clone();

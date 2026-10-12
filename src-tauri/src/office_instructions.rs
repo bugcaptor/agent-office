@@ -1,5 +1,5 @@
 //! 모든 에이전트 세션에 덧붙이는 사무실 공통 안내문과 그 배선 조각
-//! (docs/work-inbox-design.md §공통 안내문 주입). CLI별 스킬 대신 짧은 안내문
+//! (docs/work-panels-design.md §업무 수신함). CLI별 스킬 대신 짧은 안내문
 //! 하나를 persona 뒤에 붙여 시스템 프롬프트에 **덧붙인다**.
 
 use std::path::{Path, PathBuf};

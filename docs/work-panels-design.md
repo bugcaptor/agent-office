@@ -1,10 +1,10 @@
 # 업무 패널 — 현재 구현 명세
 
-설정으로 켜는 좌우 고정 패널 — 좌측 업무 목록(배정·보내기·모니터링), 우측 세션 로그(전 캐릭터, 필터·검색)의 정본 명세다.
+설정으로 켜는 좌우 고정 패널 — 좌측 업무 목록(배정·보내기·모니터링·수신함), 우측 세션 로그(전 캐릭터, 필터·검색)의 정본 명세다.
 
-상태: 정본 (2026-10-12) — 1·2차 기능 구현 완료. 설치 Tauri 앱의 저장·복원과 인증된 CLI 5종의 실기 인수는 남아 있다. 보내기는 직접 생성한 Unix bash/zsh PTY를 지원한다.
+상태: 정본 (2026-10-13) — 1·2차 기능과 업무 수신함 구현 완료. 설치 Tauri 앱의 저장·복원과 인증된 CLI 5종의 실기 인수는 남아 있다. 보내기는 직접 생성한 Unix bash/zsh PTY를 지원한다.
 
-관련 문서: [터미널 자동화](terminal-automation-design.md)(CLI 기동·첫 프롬프트), [세션 활동 분석](session-analytics-design.md)(턴·토큰·비용 집계), [세션 로그](session-log-design.md)(전사 보기).
+관련 문서: [터미널 자동화](terminal-automation-design.md)(CLI 기동·첫 프롬프트), [세션 활동 분석](session-analytics-design.md)(턴·토큰·비용 집계), [세션 로그](session-log-design.md)(전사 보기), [동료 대화](agent-talk-design.md) §6(shim·권한 사전 승인 배선). 수신함의 구현 계획과 결정 근거는 [archive/work-inbox-design.md](archive/work-inbox-design.md)에 있다.
 
 ## 개요
 
@@ -152,6 +152,90 @@
 - 앱 종료는 PTY를 kill한 뒤 `disposed` 기록 전에 프로세스가 끝나는 경우가 많다. 종료 이벤트가 없고 진행 중도 아닌 세션이 지금보다 앞선 실행(runId)에 속하면, 그 실행이 마지막으로 남긴 이벤트 시각을 추정 종료로 쓰고 "~경(앱 종료로 추정)"으로 표시한다. 열린 턴은 기존 규칙대로 세션의 마지막 이벤트에서 마감한다.
 - 프롬프트·턴·사용량·연결 업무가 모두 없는 세션(앱을 켤 때 캐릭터마다 열리는 빈 셸 등)은 기본으로 숨긴다. 목록 아래 '빈 세션 보기 (N)'를 켜면 함께 보인다. 필터 후보(캐릭터·폴더)도 보이는 줄 기준이다.
 
+## 업무 수신함
+
+에이전트나 외부 프로그램이 업무 목록에 할 일을 남기는 입력 규약이다. 앱 데이터 폴더의 `work-inbox/`에 정해진 형식의 파일을 넣으면 `todo` 업무로 들어간다. 누가 넣었는지는 따지지 않는다.
+
+- 가져온 업무는 항상 `todo`이고 자동으로 보내지 않는다. 보내기는 사람이 누른다.
+- 발신자 인증은 하지 않는다. 같은 사용자 권한의 프로세스는 누구나 넣을 수 있고, 할 일 한 줄이 추가될 뿐 실행되지 않는다.
+- 웹 원격·데스크톱 원격·마스코트에서는 처리하지 않는다. 화면 문자열은 추가하지 않았다. 가져온 업무는 기존 카드로 보이고 저장 실패는 기존 미저장 표시·재시도를 쓴다.
+
+### 위치와 파일 형식
+
+- `<app_data>/work-inbox/`. 앱이 시작할 때 만든다. 앱이 띄운 세션에는 `AGENT_OFFICE_WORK_INBOX`로 절대 경로를 알려준다. OS별 앱 데이터 경로는 [사용 안내](guide.md#업무-수신함)에 있다.
+- 파일 하나가 업무 하나다. 확장자 `.md`, UTF-8(BOM 허용), LF/CRLF 모두 받아 LF로 바꾼다. 64 KiB까지.
+- 선택 frontmatter: 첫 줄이 정확히 `---`이면 다음 `---` 줄까지를 `key: value`로 읽는다(YAML 전체는 지원하지 않는다). `assignee`(담당 캐릭터의 프로필 id 또는 이름)만 쓰고 그 외 키는 무시한다.
+- frontmatter 다음의 첫 비어 있지 않은 줄이 제목이다. 앞의 `# `는 떼고, `#`만 있으면 빈 제목이다. 나머지가 본문이며 앞뒤 빈 줄만 다듬고 들여쓰기는 보존한다. 제목과 본문 중 하나만 있어도 된다.
+
+```markdown
+---
+assignee: 하나
+---
+# 로그인 화면 회귀 테스트 추가
+세션 만료 뒤 재로그인 흐름이 테스트에 없다.
+```
+
+담당은 가져오는 시점의 프로필로 판정한다. id가 정확히 일치하면 그 캐릭터, 아니면 이름(앞뒤 공백 무시, 대소문자 구분)이 **정확히 하나** 일치할 때만 배정한다. 없거나 여럿이면 미배정으로 받는다. 에이전트·모델은 비워 두고 보낼 때 담당의 `defaultAgent`를 따른다.
+
+### 쓰기 규약 (생산자)
+
+- 다른 이름으로 끝까지 쓴 뒤 같은 폴더 안에서 `.md`로 rename한다. 앱은 `.`으로 시작하는 파일과 `.md`가 아닌 파일, 디렉터리·심볼릭 링크를 읽지 않는다. 권장 임시 이름은 `.<최종 이름>.tmp`.
+- 파일 이름순으로 가져오므로 `20261012T091500123Z-<임의값>.md`처럼 시각을 앞에 둔다.
+
+### 처리 규약 (앱)
+
+- 업무 패널이 켜져 있고 업무 목록 로드에 성공한 동안 3초마다 확인한다. 한 주기에 최대 50개, 주기는 겹치지 않는다. 종료 확인창이 떠 있는 동안은 멈춘다.
+- 이름순으로 `todo` 묶음 끝에 추가한다. 선택·편집 초안·접힘 상태는 바꾸지 않는다.
+- 업무 id는 `inbox-` + (파일 이름과 원본 바이트의 SHA-256 앞 16자)다. 같은 id가 이미 있으면 추가하지 않고 파일만 지운다. 그래서 저장 성공과 삭제 사이에 앱이 죽어도 두 번 생기지 않는다.
+- 업무 스냅샷 저장이 성공한 뒤에만 원본을 지운다. 저장에 실패하면 파일을 남기고 다음 주기에 먼저 저장을 재시도한다.
+- UTF-8이 아니거나, 64 KiB를 넘거나, frontmatter가 닫히지 않았거나, 제목·본문이 모두 비면 `rejected/`로 옮기고 같은 이름 + `.error` 파일에 사유 코드(`invalid-utf8`·`too-large`·`unclosed-frontmatter`·`empty`) 한 줄을 남긴다. 이름이 겹치면 앞에 uuid를 붙여 이전 거부 파일을 보존한다. `rejected/`는 자동으로 비우지 않는다.
+- 패널이 꺼져 있거나 앱이 꺼져 있으면 파일은 쌓이고, 켜지면 순서대로 들어간다. 수정된 지 24시간이 지난 `.`으로 시작하는 `.tmp` 파일은 확인할 때 지운다.
+- 종료할 때는 루프를 즉시 멈추고, 진행 중인 주기를 기존 업무 flush와 함께 기다린다.
+
+### `office-task` 명령
+
+앱이 띄운 세션의 에이전트가 수신함 규약을 쓰는 도구다. OS temp의 `agent-office/bin/office-task`(Windows는 `.cmd`) shim이 앱 바이너리의 오프라인 서브커맨드 `agent-office task`를 실행한다. GUI·control 서버·토큰이 필요 없어 CLI 제어가 꺼져 있어도 동작한다. shim은 세션 준비마다 다시 쓴다.
+
+```
+office-task [--to <이름|id> | --unassigned] <제목> [본문 | -]
+```
+
+- 본문 자리의 `-`는 stdin을 읽는다. 여러 줄은 heredoc으로 넘긴다. `--` 뒤는 모두 제목·본문이다.
+- 수신함 경로는 `AGENT_OFFICE_WORK_INBOX` → `AGENT_OFFICE_APP_DATA/work-inbox` 순서로 찾고 둘 다 없으면 1로 끝난다.
+- 담당: `--to` 값, `--unassigned`면 비움, 둘 다 없으면 `AGENT_OFFICE_AGENT_ID`(세션 캐릭터의 프로필 id). 그 변수가 없으면 미배정으로 쓰고 stderr에 알린다.
+- 제목의 줄바꿈은 공백으로 합치고, 제목 줄은 항상 `# `로 써서 본문이 frontmatter·제목으로 잘못 읽히지 않게 한다. 쓰기 규약대로 임시 파일 → rename하고 최종 경로를 출력한다. 업무 목록 반영(앱·패널 켜짐)은 확인하지 않는다.
+- 제목·본문이 모두 비거나 64 KiB를 넘으면 쓰지 않고 1, 인자 오류(`--to` 값 누락·줄바꿈 포함 등)는 2로 끝난다.
+
+세션 셸에는 업무 패널 설정과 무관하게 다음 env를 싣는다(외부 터미널 attach 포함). TTS 확인 문구용 claude 자식 프로세스에서는 지운다(`tts/cli.rs`의 `STRIPPED_ENV`).
+
+| 변수 | 값 |
+| --- | --- |
+| `AGENT_OFFICE_AGENT_ID` | 세션 캐릭터의 프로필 id |
+| `AGENT_OFFICE_WORK_INBOX` | 수신함 절대 경로 |
+| `AGENT_OFFICE_TASK` | `office-task` shim 절대 경로. 안내문 채널이 없는 CLI에서 사용법을 알려줄 때 쓴다 |
+
+### 공통 안내문 주입
+
+CLI별 스킬 대신 짧은 영어 안내문(`src-tauri/src/office_instructions.rs`, shim 절대 경로를 끼워 넣음)을 시스템 프롬프트에 **덧붙인다**. 후속 작업을 발견했거나 사용자가 나중 할 일로 남기라고 할 때 쓰는 법, 기본 담당은 본인이고 넘길 때만 `--to`, 이번 턴에 끝낼 일은 남기지 않기, 다른 사람이 읽을 맥락 쓰기, 남긴 뒤 한 줄로 알리기를 담는다.
+
+- 업무 패널(`workPanelsEnabled`)이 켜졌을 때만 넣는다. 세션을 띄울 때 고정되므로 실행 중 설정 변경은 이미 떠 있는 세션에 반영되지 않는다.
+- Claude·Codex는 "persona + 빈 줄 + 안내문"(있는 것만)을 하나의 값으로 넣는다. env 이름 `AGENT_OFFICE_PERSONA`는 래퍼 호환 때문에 유지한다.
+
+| CLI | 채널 |
+| --- | --- |
+| Claude | `--append-system-prompt "$AGENT_OFFICE_PERSONA"` |
+| Codex | `-c developer_instructions="…"`(`AGENT_OFFICE_CODEX_PERSONA`). codex-cli 0.162에서 developer 메시지로 들어감을 `codex debug prompt-input`으로 확인 |
+| Pi | `--append-system-prompt "$AGENT_OFFICE_OFFICE_PROMPT"`(pi 1.1.0). persona는 싣지 않는다. 관찰 확장 파일이 사라져 prefix를 포기하는 경우 안내문도 빠진다 |
+| Kilo | 앱 소유 플러그인의 `experimental.chat.system.transform` 훅이 `AGENT_OFFICE_OFFICE_PROMPT`를 `output.system`에 덧붙인다(kilo 7.8.3 바이너리에서 훅 이름·인자 확인). 플러그인은 관찰이 켜져 있고 사용자가 `KILO_CONFIG`를 쓰지 않을 때만 실린다 |
+| agy | 덧붙이기 플래그가 없다(1.3.3). `AGENT_OFFICE_TASK` 등 env만 제공하므로 프로젝트 AGENTS.md에 사용법을 적는다 |
+
+### 권한과 샌드박스
+
+- **Claude 권한**: 세션 설정 조각의 `permissions.allow`에 켜진 기능의 shim만 넣는다 — 동료 대화가 켜지면 `Bash(<office-talk>:*)`, 업무 패널이 켜지면 `Bash(<office-task>:*)`. 관찰이 켜져 있으면 훅 설정 파일에 합치고, 꺼져 있으면 권한 조각만 담은 세션 설정 파일을 `--settings`로 물린다. 대화 플러그인(`--plugin-dir`)은 대화가 켜졌을 때만 붙는다.
+- **Codex 샌드박스**: 안내문을 실은 세션에 `-c sandbox_workspace_write.writable_roots=[…]`로 수신함을 더한다. 이 `-c`는 사용자 설정의 같은 배열을 **덮어쓰므로**(0.162 실측) `CODEX_HOME`(또는 `~/.codex`)`/config.toml` 최상위 값을 읽어 합친 배열을 넘긴다. 설정이 없거나 깨졌으면 수신함만 넣는다. 사용자 파일은 쓰지 않는다. 사용자가 `read-only` 샌드박스면 승인이 뜨고, `-p` 프로필 레이어의 값은 합치지 않는다.
+- **Claude Bash 샌드박스**를 사용자가 켰다면 수신함 쓰기에 승인이 뜰 수 있다. 받아들인다.
+- Pi·Kilo·agy의 샌드박스·승인 동작은 아래 실기 인수에서 확인한다.
+
 ## 데이터 모델과 저장
 
 업무와 세션 요약은 별도 저장소에, 기본 에이전트는 프로필의 `defaultAgent`에 저장한다. 모두 앱 데이터 폴더 아래다.
@@ -233,6 +317,10 @@ interface SessionSummary {
 | strict 입력·세션 재시작 | `src-tauri/src/session/inject.rs`, `src/renderer/agent/restartAgentSession.ts`. `InjectSource::Automation` 재사용 |
 | 모니터링·자동 상태 전이 | `src/renderer/workpanels/workMonitor.ts`, `WorkCardMonitor.tsx`. activity·notification·최종 usage 이벤트 구독 |
 | 종료 저장 | `src/renderer/workpanels/lifecycle.ts` |
+| 수신함 파서·scan·ack | `src-tauri/src/persistence/work_inbox.rs`, `src-tauri/src/ipc/commands/work_panels.rs` |
+| 수신 루프·담당 판정·가져오기 | `src/renderer/workpanels/workInbox.ts`, `workItemStore.ts`(`importInbox`), `lifecycle.ts`(`installWorkInboxLifecycle`) |
+| `office-task` 서브커맨드·shim | `src-tauri/src/work_inbox_cli.rs`, `src-tauri/src/lib.rs`(`maybe_run_cli`의 `task` 분기) |
+| 세션 env·안내문·권한·Codex 쓰기 경로 | `src-tauri/src/session/manager.rs`(`prepare_session_plan`), `src-tauri/src/office_instructions.rs`, `src-tauri/src/lib.rs`(권한 조각), `src-tauri/src/session/kilo_plugin.rs` |
 | 턴·토큰·비용·전사 보기 | `src/renderer/analytics/`, `src/renderer/usage/`, `src/renderer/sessionlog/SessionLogDialog.tsx` |
 
 IPC 계약은 `src/shared/ipc.ts`와 `src/renderer/ipc/tauriApi.ts`의 로컬 어댑터를 통해 사용한다.
@@ -243,10 +331,12 @@ IPC 계약은 `src/shared/ipc.ts`와 `src/renderer/ipc/tauriApi.ts`의 로컬 �
 | `load_session_summaries` / `append_session_summaries` | 월별 요약 복원·append |
 | `inspect_work_send_target` | 세션 id·사람 입력 revision·재시작 필요·미제출 입력을 읽기 전용으로 점검 |
 | `send_work_item` | 고정된 세션·revision에 CLI와 프롬프트 제출. 성공하면 `sessionId`·`submittedAt` 반환 |
+| `scan_work_inbox` | 수신함을 이름순 최대 50개 읽어 `InboxEntry[]`(`fileName`·`key`·`title`·`body`·`assignee?`) 반환. 거부 파일 이동과 오래된 임시 파일 정리를 함께 한다 |
+| `ack_work_inbox` | `fileNames`를 지운다. 경로 구분자·`..`·`.`으로 시작·`.md`가 아닌 이름은 무시하고, 이미 없으면 성공으로 본다 |
 
 기존 `dispose_session`의 선택적 `expectedSessionId`·`expectedHumanInputRevision`으로 확인했던 세션만 재시작한다. 업무 실행은 터미널 자동화의 결과 파일 감시와 CLI 종료 흐름을 사용하지 않는다.
 
-## 검증 상태 (2026-10-12)
+## 검증 상태 (2026-10-13)
 
 구현 완료 범위는 opt-in 설정·좌우 패널·업무 편집과 영속화·세션 요약과 검색·프로필 기본 에이전트·업무 보내기·실시간 모니터링과 자동 상태 전이다.
 
@@ -258,10 +348,16 @@ IPC 계약은 `src/shared/ipc.ts`와 `src/renderer/ipc/tauriApi.ts`의 로컬 �
 - `cargo test --manifest-path src-tauri/Cargo.toml work_send_multiline_in_real_pty_with_cli_double -- --ignored`: 실제 PTY에서 CLI 대역의 모델·effort 인자, 기본 10초 대기, Unicode·빈 줄·코드 블록 그대로 수신을 확인했다. 설치된 CLI나 LLM 계정은 사용하지 않는다.
 - Safari 로컬 프리뷰에서 합성 데이터·IPC로 기본 설정 표시, 모델 입력 배치, 질문 강조·경과·턴·비용, 재시작 확인·미제출 경고·취소를 확인했다. 설치된 원본 앱은 교체하지 않았다.
 
+- 업무 수신함(2026-10-13): 파서·scan·ack·`office-task`·세션 env·안내문 조합·권한 조각·Codex 배열 합치기·Kilo 훅 단위 테스트와 수신 루프(저장 실패 시 보류·건너뛴 파일 ack·정지 뒤 늦은 응답 폐기) 회귀를 추가했다. `npx tsc --noEmit`, 프런트 전체 2,936개, 네이티브 전체 1,653개 통과. `codex debug prompt-input`(모델 호출 없음)으로 `-c writable_roots`의 덮어쓰기 동작과 `developer_instructions` 주입을 확인했다.
+
 남은 실기 인수:
 
 - [ ] 설치 Tauri 앱에서 설정·프로필 기본 에이전트·업무 저장과 재실행 후 복원 확인.
 - [ ] 인증된 실제 Claude·Codex·agy·Kilo·Pi에서 CLI 기동, 첫 프롬프트 제출, 질문·턴 종료·후속 프롬프트의 표시와 상태 전이 확인.
+- [ ] 설치 앱에서 외부 셸로 수신함에 파일을 넣어 업무 카드가 생기고 파일이 지워지는지, 패널을 끈 상태에서 쌓인 파일이 켤 때 들어오는지 확인.
+- [ ] 인증된 Claude 세션에서 "다음 할 일로 남겨 줘"에 안내문대로 `office-task`가 권한 확인 없이 실행되고 본인 캐릭터에게 배정되는지, persona가 있는 캐릭터에서 말투가 유지되는지 확인.
+- [ ] Codex 세션에서 같은 요청이 샌드박스 승인 없이 들어오는지 확인.
+- [ ] Pi·Kilo에서 안내문 주입, agy에서 env 폴백(AGENTS.md 안내)으로 동작하는지와 각 CLI의 실행 승인 동작 확인.
 
 ## 알려진 제한
 
@@ -279,3 +375,4 @@ IPC 계약은 `src/shared/ipc.ts`와 `src/renderer/ipc/tauriApi.ts`의 로컬 �
 - 외부 이슈 트래커(Gitea·kbm) 동기화. 봇 모드와는 별개다.
 - 우측 로그 항목 편집·삭제, 내보내기.
 - 웹 원격·마스코트 창에 패널 노출.
+- 수신함으로 기존 업무를 갱신·완료 처리, 출처(`source`) 표시, 도착 알림(토스트·말풍선). 사용자가 직접 치는 `/task` 같은 CLI별 명령·스킬.

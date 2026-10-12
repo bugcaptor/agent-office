@@ -2,9 +2,9 @@
 
 에이전트나 외부 프로그램이 업무 패널에 태스크를 남기는 입력 규약(수신함 폴더)과, 모든 에이전트 세션에 그 규약을 쓰는 방법(`office-task` 명령 + 시스템 프롬프트에 덧붙이는 공통 안내문)을 제공하는 계획이다.
 
-상태: 계획 (2026-10-12) — 구현 전. 구현을 마치면 규약과 구현 위치를 [업무 패널](work-panels-design.md)에 합치고 이 문서는 `archive/`로 옮긴다.
+상태: 이력(archived, 2026-10-13) — 구현 완료. 현재 규약·구현 위치·실기 인수는 [업무 패널](../work-panels-design.md#업무-수신함)이 정본이다. 구현 중 바뀐 점: Pi는 확장 대신 `--append-system-prompt` 플래그, Kilo는 `experimental.chat.system.transform` 훅, agy는 env 폴백. Codex `-c writable_roots`가 사용자 배열을 덮어씀을 실측했고 `-p` 프로필 레이어는 합치지 않는다.
 
-관련 문서: [업무 패널](work-panels-design.md)(업무 목록·저장 규약), [동료 대화](agent-talk-design.md) §6(shim·권한 사전 승인 배선), [IDE 페르소나](ide-persona-design.md)(persona 덧붙이기 채널), [CLI 제어](cli-control-design.md)(`maybe_run_cli` 분기).
+관련 문서: [업무 패널](../work-panels-design.md)(업무 목록·저장 규약), [동료 대화](../agent-talk-design.md) §6(shim·권한 사전 승인 배선), [IDE 페르소나](../ide-persona-design.md)(persona 덧붙이기 채널), [CLI 제어](../cli-control-design.md)(`maybe_run_cli` 분기).
 
 ## 목표와 범위
 
@@ -26,7 +26,7 @@
 
 - `<app_data>/work-inbox/`. 앱이 시작할 때 만든다.
 - 앱이 띄운 세션에는 `AGENT_OFFICE_WORK_INBOX`로 절대 경로를 알려준다.
-- 외부 프로그램용으로는 사용 안내([guide.md](guide.md))에 OS별 앱 데이터 경로를 적는다.
+- 외부 프로그램용으로는 사용 안내([guide.md](../guide.md))에 OS별 앱 데이터 경로를 적는다.
 
 ### 파일 형식
 
@@ -194,7 +194,7 @@ IPC (`src-tauri/src/ipc/commands/work_panels.rs`에 추가, `lib.rs`의 handler 
 2. **`office-task`**: `agent-office task` 서브커맨드, shim 생성, 세션 환경변수 3종, TTS env 제거.
 3. **공통 안내문 (Claude·Codex)**: 안내문 상수, persona와 합치기, Claude 권한 조각 일반화, Codex `writable_roots` 합치기.
 4. **공통 안내문 (Pi·Kilo·agy)**: 채널·샌드박스를 실측하고, 되는 곳은 주입하고 안 되는 곳은 환경변수 폴백으로 둔다.
-5. **문서**: 규약·구현 위치를 [업무 패널](work-panels-design.md)에 합친다. [guide.md](guide.md)에 수신함 경로·형식과 다른 CLI용 AGENTS.md 예시를 추가하고, [docs/README.md](README.md) 인덱스를 갱신한다.
+5. **문서**: 규약·구현 위치를 [업무 패널](../work-panels-design.md)에 합친다. [guide.md](../guide.md)에 수신함 경로·형식과 다른 CLI용 AGENTS.md 예시를 추가하고, [docs/README.md](../README.md) 인덱스를 갱신한다.
 
 단계마다 `npx tsc --noEmit`, `npx vitest run --dir src`, `cargo test --manifest-path src-tauri/Cargo.toml`를 통과시키고 커밋한다.
 

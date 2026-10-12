@@ -83,6 +83,35 @@ agent-office ctl settings set typingSoundEnabled=false
 
 점검은 자동으로 `fetch`하지 않습니다. push/pull 상태는 마지막으로 로컬에 받아 둔 remote-tracking 정보 기준이므로, 원격 서버의 최신 상태가 필요하면 터미널에서 직접 `git fetch`한 뒤 다시 점검하세요. 자세한 동작 계약은 [repository-audit-design.md](repository-audit-design.md)를 참고하세요.
 
+### 업무 수신함
+
+업무 패널을 켜면 앱이 띄운 에이전트 세션에 "다음 할 일 남기기" 안내가 덧붙습니다. 에이전트에게 "이건 다음 할 일로 남겨 줘"라고 하면 업무 목록에 할 일 카드가 생깁니다(기본 담당은 그 캐릭터). 보내기는 지금처럼 직접 누릅니다.
+
+다른 프로그램(cron, 스크립트, 다른 도구)도 같은 폴더에 파일을 넣어 할 일을 남길 수 있습니다.
+
+| OS | 수신함 폴더 |
+| --- | --- |
+| macOS | `~/Library/Application Support/com.bugcaptor.agent-office/work-inbox/` |
+| Linux | `${XDG_DATA_HOME:-~/.local/share}/com.bugcaptor.agent-office/work-inbox/` |
+| Windows | `%APPDATA%\com.bugcaptor.agent-office\work-inbox\` |
+
+파일 하나가 할 일 하나입니다. UTF-8 `.md`, 64 KiB까지. 첫 줄(`# ` 생략 가능)이 제목, 나머지가 본문입니다. 담당 캐릭터는 선택 frontmatter의 `assignee`(이름 또는 id)로 정합니다. 쓰다 만 파일을 읽지 않도록 `.`으로 시작하는 임시 이름으로 쓴 뒤 `.md`로 바꾸세요.
+
+```bash
+inbox="$HOME/Library/Application Support/com.bugcaptor.agent-office/work-inbox"
+name="$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM.md"
+printf -- '---\nassignee: 하나\n---\n# 로그인 회귀 테스트 추가\n세션 만료 뒤 재로그인 흐름이 없다.\n' > "$inbox/.$name.tmp"
+mv "$inbox/.$name.tmp" "$inbox/$name"
+```
+
+업무 패널이 켜져 있으면 3초 안에 카드가 생기고 파일은 지워집니다. 형식이 틀린 파일은 `work-inbox/rejected/`로 옮겨지고 옆의 `.error` 파일에 사유가 남습니다. 자세한 규약은 [work-panels-design.md](work-panels-design.md#업무-수신함)를 보세요.
+
+안내를 덧붙일 방법이 없는 CLI(현재 agy)는 앱이 세션에 넣어 주는 `AGENT_OFFICE_TASK`(명령 경로)만 받습니다. 프로젝트 `AGENTS.md`에 한 줄 적어 두면 같은 방식으로 쓸 수 있습니다.
+
+```markdown
+- 나중에 할 후속 작업은 `"$AGENT_OFFICE_TASK" "제목" - <<'EOF'` … `EOF` 로 Agent Office 업무 목록에 남긴다(본문에 맥락을 쓴다).
+```
+
 ### 터미널 탭 우클릭 메뉴
 
 캐릭터를 클릭하면 터미널이 열리고 상단에 세션 탭이 나타납니다. **탭을 우클릭**하면 자주 쓰는 동작이 뜹니다.
