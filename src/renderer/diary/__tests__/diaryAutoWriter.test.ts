@@ -53,6 +53,7 @@ const SETTINGS_ON: AppSettings = {
   keepAwakeEnabled: false,
   sessionLogEnabled: true,
   runRecipesEnabled: false,
+  workPanelsEnabled: false,
   mascotEnabled: false,
   mascotLightsMode: "off",
   mascotLightsVertical: false,

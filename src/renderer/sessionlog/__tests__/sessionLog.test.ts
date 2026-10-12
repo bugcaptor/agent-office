@@ -128,6 +128,19 @@ describe("sessionLogStore", () => {
     expect(useSessionLogStore.getState().selected).toBeNull();
   });
 
+  it("세션 기록에서 특정 페이지로 바로 이동한 뒤 옛 첫 페이지 응답이 덮어쓰지 않는다", async () => {
+    let resolve!: (page: { total: number; items: SessionLogItem[] }) => void;
+    vi.spyOn(tauriApi, "listSessionLogs")
+      .mockImplementationOnce(() => new Promise((r) => { resolve = r; }))
+      .mockResolvedValueOnce({ total: 23, items: [item({ sessionId: "target" })] });
+    useSessionLogStore.getState().open("term-1", "루나");
+    await useSessionLogStore.getState().setPage(2);
+    resolve({ total: 23, items: [item({ sessionId: "old" })] });
+    await Promise.resolve();
+    expect(useSessionLogStore.getState().page).toBe(2);
+    expect(useSessionLogStore.getState().items[0].sessionId).toBe("target");
+  });
+
   it("다른 캐릭터로 바뀐 뒤 도착한 응답은 반영하지 않는다", async () => {
     let resolve: ((v: { total: number; items: SessionLogItem[] }) => void) | undefined;
     vi.spyOn(tauriApi, "listSessionLogs").mockReturnValue(

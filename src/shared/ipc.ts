@@ -8,6 +8,10 @@
 
 /** `invoke()` command names (all commands use `rename_all = "camelCase"` args). */
 export const Commands = {
+  loadWorkItems: "load_work_items",
+  saveWorkItems: "save_work_items",
+  loadSessionSummaries: "load_session_summaries",
+  appendSessionSummaries: "append_session_summaries",
   // 데스크톱 원격 보기. 이 명령들은 `?remote=1` 창에서만 원격 호스트로
   // 전달된다. 마지막 연결 주소와 토큰은 Rust 측 로컬 파일에 저장한다.
   remoteConnect: "remote_connect",

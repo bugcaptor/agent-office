@@ -2114,3 +2114,53 @@ mod tests {
         assert_eq!(parsed, rec);
     }
 }
+
+// 업무 패널 영속 계약 — src/shared/types/workPanels.ts 미러.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkCli { Claude, Codex, Agy, Kilo, Pi }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkAgent {
+    pub cli: WorkCli,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub effort: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkStatus { Todo, InProgress, Review, Done }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkItem {
+    pub id: String,
+    pub title: String,
+    pub body: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub assignee_agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub agent: Option<WorkAgent>,
+    pub status: WorkStatus,
+    pub order: f64,
+    pub session_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub last_error: Option<String>,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSummaryPrompt {
+    pub at: u64,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub origin: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSummary {
+    pub session_id: String,
+    pub agent_id: String,
+    pub agent_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub cwd: Option<String>,
+    pub started_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub ended_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub goal: Option<String>,
+    pub prompts: Vec<SessionSummaryPrompt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub work_item_id: Option<String>,
+}

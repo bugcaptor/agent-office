@@ -3,6 +3,7 @@
 // Domain slice: the renderer-facing AgentOfficeApi surface itself.
 // See src/shared/types.ts for the frozen-contract overview.
 
+import type { WorkItem, SessionSummary } from './workPanels';
 import type { AgentId } from './common';
 import type {
   CreateSessionOptions,
@@ -82,6 +83,10 @@ import type { RepositoryAuditItem } from './repositoryAudit';
  * sessionId so later preparation can reject requests from an older connection.
  */
 export interface AgentOfficeApi {
+  loadWorkItems(): Promise<WorkItem[]>;
+  saveWorkItems(items: WorkItem[]): Promise<void>;
+  loadSessionSummaries(): Promise<SessionSummary[]>;
+  appendSessionSummaries(items: SessionSummary[]): Promise<void>;
   /** 작업 기록에서 발견한 저장소의 읽기 전용 git 점검 결과. */
   repositoryAuditList(): Promise<RepositoryAuditItem[]>;
   createSession(agentId: string, opts?: CreateSessionOptions): Promise<CreateSessionResult>;

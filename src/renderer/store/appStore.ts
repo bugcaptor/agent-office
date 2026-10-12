@@ -142,6 +142,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   keepAwakeEnabled: false,
   sessionLogEnabled: true,
   runRecipesEnabled: false,
+  workPanelsEnabled: false,
   mascotEnabled: false,
   mascotLightsMode: "off",
   mascotLightsVertical: false,
@@ -521,6 +522,7 @@ interface AppState {
         | "keepAwakeEnabled"
         | "sessionLogEnabled"
         | "runRecipesEnabled"
+        | "workPanelsEnabled"
         | "mascotEnabled"
         | "mascotLightsMode"
         | "mascotLightsVertical"

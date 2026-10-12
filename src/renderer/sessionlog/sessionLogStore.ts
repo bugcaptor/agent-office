@@ -124,12 +124,12 @@ export const useSessionLogStore = create<SessionLogState>((set, get) => ({
     set({ loading: true });
     try {
       const result = await tauriApi.listSessionLogs(agentId, page * PAGE_SIZE, PAGE_SIZE);
-      // 그 사이 다른 캐릭터로 전환/닫힘이면 반영하지 않는다(stale 방지).
-      if (get().overlay?.agentId !== agentId) return;
+      // 그 사이 캐릭터/페이지 전환·닫힘이면 반영하지 않는다(stale 방지).
+      if (get().overlay?.agentId !== agentId || get().page !== page) return;
       set({ items: result.items, total: result.total, loading: false });
     } catch (err) {
       console.warn("session-log: failed to load the list", err);
-      if (get().overlay?.agentId !== agentId) return;
+      if (get().overlay?.agentId !== agentId || get().page !== page) return;
       set({ loading: false, notice: t("activity:sessionLog.noticeListError") });
     }
   },

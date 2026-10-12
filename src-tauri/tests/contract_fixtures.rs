@@ -362,6 +362,7 @@ fn get_app_settings_result_matches_fixture() {
             keep_awake_enabled: false,
             session_log_enabled: true,
             run_recipes_enabled: false,
+            work_panels_enabled: false,
             mascot_enabled: false,
             mascot_lights_mode: MascotLightsMode::Off,
             mascot_lights_vertical: false,

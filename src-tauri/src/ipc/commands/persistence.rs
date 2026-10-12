@@ -361,3 +361,20 @@ pub async fn load_award_portrait(
         .load_portrait(&month)
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_work_items(app_state: State<'_, AppState>) -> Result<Vec<WorkItem>, String> {
+    app_state.work_panels_store.load_work_items()
+}
+#[tauri::command(rename_all = "camelCase")]
+pub async fn save_work_items(app_state: State<'_, AppState>, items: Vec<WorkItem>) -> Result<(), String> {
+    app_state.work_panels_store.save_work_items(&items)
+}
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_session_summaries(app_state: State<'_, AppState>) -> Result<Vec<SessionSummary>, String> {
+    app_state.work_panels_store.load_summaries(chrono::Utc::now().timestamp_millis().max(0) as u64)
+}
+#[tauri::command(rename_all = "camelCase")]
+pub async fn append_session_summaries(app_state: State<'_, AppState>, items: Vec<SessionSummary>) -> Result<(), String> {
+    app_state.work_panels_store.append_summaries(&items)
+}

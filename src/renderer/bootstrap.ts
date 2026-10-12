@@ -32,6 +32,8 @@ import { installMinimiCache } from "./sprite/minimiCache";
 import { installMemoCleanup } from "./memo/memoCleanup";
 import { installTaskLabelSummarizer } from "./labels/summarizer";
 import { installGitBranchWatcher } from "./labels/gitBranchWatcher";
+import { installSessionSummaryRecorder } from "./workpanels/sessionSummaryStore";
+import { useWorkItemStore } from "./workpanels/workItemStore";
 import { installWorkLogRecorder } from "./diary/workLog";
 import {
   installWorkLogPersister,
@@ -273,6 +275,8 @@ export async function bootApp(): Promise<() => void> {
     console.warn("bootstrap: today-worked load failed, starting from 0", err);
   }
 
+  await useWorkItemStore.getState().load();
+  const offSessionSummaries = await installSessionSummaryRecorder();
   const offBridge = installSessionBridge();
   // 웹 원격 — 세션 브리지 직후. 화면 스냅샷 요청과 페어링 승인 요청을 받는다.
   const offWebRemote = installWebRemoteBridge();
@@ -325,6 +329,8 @@ export async function bootApp(): Promise<() => void> {
 
   return () => {
     offBridge();
+    offSessionSummaries();
+    void useWorkItemStore.getState().flush();
     offWebRemote();
     offMascot();
     offDisplayFocus();

@@ -9,15 +9,17 @@
 // `@tauri-apps/api/window` is mocked at the module boundary (same pattern as
 // `ipc/__tests__/tauriApi.test.ts` mocking `@tauri-apps/api/core`/`event`) so
 // this test never touches a real Tauri runtime.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let capturedHandler: ((event: { preventDefault: () => void }) => void) | undefined;
+const destroy = vi.fn().mockResolvedValue(undefined);
+const saveWorkItems = vi.fn().mockResolvedValue(undefined);
 const onCloseRequested = vi.fn((handler: (event: { preventDefault: () => void }) => void) => {
   capturedHandler = handler;
   return Promise.resolve(vi.fn());
 });
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ onCloseRequested }),
+  getCurrentWindow: () => ({ onCloseRequested, destroy }),
 }));
 
 // `installQuitGuard`가 부팅 시 캐시하는 handoff_supported() 조회 — 실제
@@ -25,9 +27,10 @@ vi.mock("@tauri-apps/api/window", () => ({
 // (다른 tauriApi 메서드는 이 파일에서 쓰지 않으므로 전체 모킹으로 충분).
 const handoffSupported = vi.fn();
 vi.mock("../ipc/tauriApi", () => ({
-  tauriApi: { handoffSupported: (...args: unknown[]) => handoffSupported(...args) },
+  tauriApi: { handoffSupported: (...args: unknown[]) => handoffSupported(...args), saveWorkItems: (...args: unknown[]) => saveWorkItems(...args) },
 }));
 
+import { useWorkItemStore } from "../workpanels/workItemStore";
 import { useAppStore } from "../store/appStore";
 import type { AgentProfile } from "../store/types";
 import { installQuitGuard, isHandoffSupported } from "../quitGuard";
@@ -49,6 +52,8 @@ function mkAgent(id: string, clockedOut?: boolean): AgentProfile {
 beforeEach(() => {
   useAppStore.setState(initialState, true);
   onCloseRequested.mockClear();
+  destroy.mockClear(); saveWorkItems.mockReset().mockResolvedValue(undefined);
+  useWorkItemStore.setState({items:[],loaded:false,dirty:false,error:null});
   capturedHandler = undefined;
   handoffSupported.mockReset().mockResolvedValue(false);
 });
@@ -59,7 +64,27 @@ function fireCloseRequested(): { prevented: boolean } {
   return result;
 }
 
+afterEach(async () => { await useWorkItemStore.getState().flush(); });
+
 describe("installQuitGuard", () => {
+  it("전원 퇴근 상태라도 업무 저장을 기다린 뒤 종료한다", async () => {
+    useWorkItemStore.setState({loaded:true});
+    useWorkItemStore.getState().add("Unsaved task");
+    installQuitGuard();
+    expect(fireCloseRequested().prevented).toBe(true);
+    expect(destroy).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(destroy).toHaveBeenCalledTimes(1));
+    expect(saveWorkItems).toHaveBeenCalledTimes(1);
+  });
+  it("종료 직전 저장 실패는 창을 파괴하지 않고 재시도할 수 있게 한다", async () => {
+    useWorkItemStore.setState({loaded:true});
+    useWorkItemStore.getState().add("Unsaved task");
+    saveWorkItems.mockRejectedValueOnce(new Error("disk"));
+    installQuitGuard();
+    expect(fireCloseRequested().prevented).toBe(true);
+    await vi.waitFor(() => expect(useAppStore.getState().modal).toEqual({kind:"confirm-quit"}));
+    expect(destroy).not.toHaveBeenCalled(); expect(useWorkItemStore.getState().dirty).toBe(true);
+  });
   it("registers a CloseRequested handler", () => {
     installQuitGuard();
     expect(onCloseRequested).toHaveBeenCalledTimes(1);

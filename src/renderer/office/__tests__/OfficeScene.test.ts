@@ -277,6 +277,9 @@ describe("desk click hit areas (책상 지정 메뉴)", () => {
 
     hit.emit("pointertap", { global: { x: 33, y: 44 } });
     expect(seen).toEqual([[d0.index, 33, 44]]);
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 280, top: 40 } as DOMRect);
+    hit.emit("pointertap", { global: { x: 33, y: 44 } });
+    expect(seen[1]).toEqual([d0.index, 313, 84]);
 
     const server = hits.find(
       (c) =>

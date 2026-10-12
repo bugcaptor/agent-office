@@ -341,6 +341,9 @@ pub struct AppSettings {
     /// 기능이라 기본은 꺼짐이며, 끄는 것은 저장한 레시피를 지우지 않는다.
     #[serde(default)]
     pub run_recipes_enabled: bool,
+    /// 좌우 업무 패널 opt-in. 수집·보존은 이 설정과 무관하다.
+    #[serde(default)]
+    pub work_panels_enabled: bool,
     /// 데스크톱 마스코트 창(이슈 #72, docs/mascot-window-design.md)을 띄울지.
     /// 활동 중인 캐릭터 1명을 앱 창과 별개의 투명·최상단 창으로 보여준다.
     /// 화면을 상시 점유하는 시스템 표면이라 opt-in — 기본 꺼짐.
@@ -466,6 +469,7 @@ impl Default for AppSettings {
             keep_awake_enabled: false,
             session_log_enabled: true,
             run_recipes_enabled: false,
+            work_panels_enabled: false,
             mascot_enabled: false,
             mascot_lights_mode: MascotLightsMode::Off,
             mascot_lights_vertical: false,
@@ -690,6 +694,7 @@ mod tests {
             keep_awake_enabled: false,
             session_log_enabled: true,
             run_recipes_enabled: false,
+            work_panels_enabled: false,
             mascot_enabled: false,
             mascot_lights_mode: MascotLightsMode::Off,
             mascot_lights_vertical: false,
@@ -900,6 +905,7 @@ mod tests {
             keep_awake_enabled: false,
             session_log_enabled: true,
             run_recipes_enabled: false,
+            work_panels_enabled: false,
             mascot_enabled: false,
             mascot_lights_mode: MascotLightsMode::Off,
             mascot_lights_vertical: false,
@@ -1266,4 +1272,17 @@ mod tests {
         assert!(!json.contains("\"soundEnabled\""), "{json}");
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
+    #[test]
+    fn work_panels_default_off_and_opt_in_survives_save() {
+        let mut legacy = serde_json::to_value(AppSettings::default()).unwrap();
+        legacy.as_object_mut().unwrap().remove("workPanelsEnabled");
+        let settings: AppSettings = serde_json::from_value(legacy).unwrap();
+        assert!(!settings.work_panels_enabled);
+        let file = scratch_file();
+        let store = SettingsStore::new(file.clone());
+        store.save(&AppSettings { work_panels_enabled: true, ..settings }).unwrap();
+        assert!(store.load().0.work_panels_enabled);
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
 }

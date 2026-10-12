@@ -10,8 +10,9 @@
 // 스토어의 Running 세션 유무 조합으로 결정된다 — `isHandoffSupported`는
 // 모듈 경계에서 목으로 대체해 기본 false(미지원 = 기존 2버튼)로 두고, 개별
 // 테스트에서만 true로 바꾼다.
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useWorkItemStore } from "../../workpanels/workItemStore";
 import { useAppStore } from "../../store/appStore";
 
 const destroy = vi.fn().mockResolvedValue(undefined);
@@ -19,9 +20,10 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ destroy: (...args: unknown[]) => destroy(...args) }),
 }));
 
+const saveWorkItems = vi.fn().mockResolvedValue(undefined);
 const handoffSessions = vi.fn().mockResolvedValue(0);
 vi.mock("../../ipc/tauriApi", () => ({
-  tauriApi: { handoffSessions: (...args: unknown[]) => handoffSessions(...args) },
+  tauriApi: { handoffSessions: (...args: unknown[]) => handoffSessions(...args), saveWorkItems: (...args: unknown[]) => saveWorkItems(...args) },
 }));
 
 const isHandoffSupportedMock = vi.fn(() => false);
@@ -53,15 +55,35 @@ function mkRunningSession(agentId: string) {
 beforeEach(() => {
   useAppStore.setState(initialState, true);
   destroy.mockClear();
+  saveWorkItems.mockReset().mockResolvedValue(undefined);
+  useWorkItemStore.setState({items:[],loaded:false,dirty:false,error:null});
   handoffSessions.mockReset().mockResolvedValue(0);
   isHandoffSupportedMock.mockReset().mockReturnValue(false);
   serializeAllMock.mockReset().mockReturnValue({});
   getRenderedBytesMock.mockReset().mockReturnValue({});
 });
 
-afterEach(() => cleanup());
+afterEach(async () => { cleanup(); await useWorkItemStore.getState().flush(); });
 
 describe("ConfirmQuitDialog", () => {
+  it("업무 저장 실패는 종료를 보류하고 재시도하면 종료한다", async () => {
+    useWorkItemStore.setState({loaded:true}); useWorkItemStore.getState().add("Unsaved task");
+    saveWorkItems.mockRejectedValueOnce(new Error("disk"));
+    useAppStore.getState().openModal({kind:"confirm-quit"}); render(<ConfirmQuitDialog />);
+    fireEvent.click(screen.getByRole("button",{name:"종료"}));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy()); expect(destroy).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button",{name:"종료"}));
+    await waitFor(() => expect(destroy).toHaveBeenCalledTimes(1));
+  });
+  it("업무 저장을 기다리는 사이 취소하면 늦은 저장 성공이 창을 닫지 않는다", async () => {
+    useWorkItemStore.setState({loaded:true}); useWorkItemStore.getState().add("Unsaved task");
+    let resolve!: () => void;
+    saveWorkItems.mockImplementationOnce(() => new Promise<void>((r) => { resolve = r; }));
+    useAppStore.getState().openModal({kind:"confirm-quit"}); render(<ConfirmQuitDialog />);
+    fireEvent.click(screen.getByRole("button",{name:"종료"})); fireEvent.click(screen.getByRole("button",{name:"취소"}));
+    await act(async () => { resolve(); await useWorkItemStore.getState().flush(); });
+    expect(destroy).not.toHaveBeenCalled(); expect(useAppStore.getState().modal).toEqual({kind:"none"});
+  });
   it("modal이 confirm-quit이 아니면 아무것도 렌더하지 않는다", () => {
     const { container } = render(<ConfirmQuitDialog />);
     expect(container.firstChild).toBeNull();

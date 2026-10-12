@@ -12,15 +12,21 @@
 // which visually overlapped both this column's ticker cards and the
 // TopBar's stats. Sharing one column makes that overlap structurally
 // impossible.
+import { isRemoteWindow } from "../shared/remoteWindow";
+import { useAppStore } from "../store/appStore";
+import { WorkItemsPanel } from "../workpanels/WorkItemsPanel";
+import { SessionHistoryPanel } from "../workpanels/SessionHistoryPanel";
 import { NotificationTicker } from "../notification/NotificationTicker";
 import { SessionTimePanel } from "../timeline/SessionTimePanel";
 import { BottomBar } from "./BottomBar";
 import { TopBar } from "./TopBar";
 
 export function UIChrome() {
+  const enabled = useAppStore((s) => s.appSettings.workPanelsEnabled) && !isRemoteWindow();
   return (
     <div className="ui-chrome">
       <TopBar />
+      {enabled && <><WorkItemsPanel /><SessionHistoryPanel /></>}
       <div className="ticker-column">
         <SessionTimePanel />
         <NotificationTicker />

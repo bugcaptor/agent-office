@@ -65,6 +65,7 @@ function hydrate(cliEnabled: boolean) {
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       runRecipesEnabled: false,
+      workPanelsEnabled: false,
       mascotEnabled: false,
       mascotLightsMode: "off",
       mascotLightsVertical: false,

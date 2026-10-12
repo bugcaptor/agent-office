@@ -482,6 +482,7 @@ mod tests {
             // 켜 두지 않으면 픽스처가 페어링 단계에서 403이다.
             web_remote_enabled: true,
             run_recipes_enabled: false,
+            work_panels_enabled: false,
             talk_enabled: false,
             talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
             talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,

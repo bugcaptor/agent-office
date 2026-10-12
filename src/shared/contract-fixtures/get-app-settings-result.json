@@ -70,7 +70,8 @@
     "webRemoteEnabled": false,
     "talkEnabled": false,
     "talkMaxTurns": 6,
-    "talkIdleQuietMs": 3000
+    "talkIdleQuietMs": 3000,
+    "workPanelsEnabled": false
   },
   "firstRun": true
 }

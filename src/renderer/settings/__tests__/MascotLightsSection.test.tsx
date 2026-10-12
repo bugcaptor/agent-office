@@ -77,6 +77,7 @@ function hydrate(
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       runRecipesEnabled: false,
+      workPanelsEnabled: false,
       mascotEnabled: true,
       mascotLightsMode: "off",
       mascotLightsVertical: false,

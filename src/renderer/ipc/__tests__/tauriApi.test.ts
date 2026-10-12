@@ -608,6 +608,7 @@ describe("app settings commands", () => {
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       runRecipesEnabled: false,
+      workPanelsEnabled: false,
       mascotEnabled: false,
       mascotLightsMode: "off" as const,
       mascotLightsVertical: false,

@@ -18,6 +18,7 @@
 // 1회 조회해 모듈 전역에 캐시하고, `ConfirmQuitDialog`가 3버튼/2버튼 분기에
 // 그 캐시를 읽는다. 조회 실패(구버전 백엔드/미지원 플랫폼 등)는 미지원으로
 // 취급 — 기존 2버튼 동작으로 안전하게 폴백.
+import { hasPendingWorkPanelWrites, flushWorkPanelWrites } from "./workpanels/lifecycle";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "./store/appStore";
 import { tauriApi } from "./ipc/tauriApi";
@@ -43,7 +44,16 @@ export function installQuitGuard(): () => void {
   const unlistenP = getCurrentWindow().onCloseRequested((event) => {
     const { agents, agentOrder, openModal } = useAppStore.getState();
     const anyOnDuty = agentOrder.some((id) => agents[id] && !agents[id].clockedOut);
-    if (!anyOnDuty) return;
+    if (!anyOnDuty) {
+      if (hasPendingWorkPanelWrites()) {
+        event.preventDefault();
+        void flushWorkPanelWrites().then((saved) => {
+          if (saved) void getCurrentWindow().destroy();
+          else openModal({ kind: "confirm-quit" });
+        });
+      }
+      return;
+    }
     event.preventDefault();
     openModal({ kind: "confirm-quit" });
   });

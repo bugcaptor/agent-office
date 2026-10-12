@@ -34,3 +34,5 @@ export * from './types/git';
 export * from './types/run';
 export * from './types/repositoryAudit';
 export * from './types/api';
+
+export * from './types/workPanels';

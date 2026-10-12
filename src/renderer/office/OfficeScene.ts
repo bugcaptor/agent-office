@@ -105,7 +105,22 @@ export class OfficeScene {
   private awardRenderScale = 1;
 
   constructor(opts: OfficeSceneOptions) {
-    this.opts = opts;
+    // hover/책상 메뉴는 fixed DOM이라 창 좌표를 받는다. 라벨 앵커는 캔버스
+    // 내부 좌표를 유지하고, 포인터 이벤트에만 축소된 캔버스의 원점을 더한다.
+    this.opts = {
+      ...opts,
+      bus: {
+        ...opts.bus,
+        emitAgentHoverChanged: (id, x, y) => {
+          const rect = opts.canvas.getBoundingClientRect();
+          opts.bus.emitAgentHoverChanged(id, x + rect.left, y + rect.top);
+        },
+        emitDeskClicked: (index, x, y) => {
+          const rect = opts.canvas.getBoundingClientRect();
+          opts.bus.emitDeskClicked(index, x + rect.left, y + rect.top);
+        },
+      },
+    };
     this.theme = opts.theme ?? THEMES.midnight;
     this.scene = opts.scene ?? SCENES.office;
     this.render = this.scene.resolve(this.theme);

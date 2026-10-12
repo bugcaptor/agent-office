@@ -23,6 +23,10 @@ export function SystemTab() {
   return (
     <div className="settings-form">
       <label className="settings-item">
+        <input type="checkbox" checked={appSettings.workPanelsEnabled} onChange={(e) => updateAppSettings({ workPanelsEnabled: e.target.checked })} />
+        <span><strong>{t("workpanels:settingsTitle")}</strong><small>{t("workpanels:settingsHelp")}</small></span>
+      </label>
+      <label className="settings-item">
         <input
           type="checkbox"
           checked={appSettings.gitStatusEnabled}

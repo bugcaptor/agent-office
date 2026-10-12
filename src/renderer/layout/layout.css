@@ -8,6 +8,7 @@
  * separate import line per stylesheet.
  */
 @import "../styles/pixel.css";
+@import "../workpanels/workPanels.css";
 @import "../notification/ticker.css";
 @import "../terminal/terminal.css";
 @import "../timeline/timeline.css";

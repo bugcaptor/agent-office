@@ -1,8 +1,10 @@
 import "./layout/layout.css";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
+import { isRemoteWindow } from "./shared/remoteWindow";
+import { usePanelLayoutStore, panelExtent } from "./workpanels/panelLayoutStore";
 import { officeBus } from "./ipc/sessionBridge";
 import { OfficeCanvas } from "./office/OfficeCanvas";
 import type { AgentProfile as OfficeAgentProfile } from "./office/types";
@@ -80,6 +82,8 @@ import { IdeSessionDialog } from "./ide/IdeSessionDialog";
 function App() {
   const { t } = useTranslation("app");
   const agents = useAgentList();
+  const workPanelsEnabled = useAppStore((s) => s.appSettings.workPanelsEnabled) && !isRemoteWindow();
+  const panelLayout = usePanelLayoutStore((s) => s.panels);
   // The store's `AgentProfile` (src/shared/types.ts) is structurally
   // richer than office/types.ts's `AgentProfile` (id/name/role/seed + an
   // index signature -- a deliberately-decoupled contract) but lacks
@@ -121,20 +125,22 @@ function App() {
   const lightsOff = useLightsOff();
 
   return (
-    <div className="app-root">
-      <OfficeCanvas
-        bus={officeBus}
-        profiles={officeProfiles}
-        resyncSignal={appearanceSignal}
-        theme={theme}
-        scene={scene}
-      />
-      {lightsOff && (
-        <div className="office-lights-off" aria-hidden="true">
-          <span className="office-lights-off-label">{t("shell.lightsOff")}</span>
-        </div>
-      )}
-      <TaskLabelLayer bus={officeBus} />
+    <div className={`app-root${workPanelsEnabled ? " work-panels-enabled" : ""}`} style={{ "--work-left": `${panelExtent(panelLayout.left)}px`, "--work-right": `${panelExtent(panelLayout.right)}px` } as CSSProperties}>
+      <div className="office-viewport">
+        <OfficeCanvas
+          bus={officeBus}
+          profiles={officeProfiles}
+          resyncSignal={appearanceSignal}
+          theme={theme}
+          scene={scene}
+        />
+        {lightsOff && (
+          <div className="office-lights-off" aria-hidden="true">
+            <span className="office-lights-off-label">{t("shell.lightsOff")}</span>
+          </div>
+        )}
+        <TaskLabelLayer bus={officeBus} />
+      </div>
       <UIChrome />
       <AgentHoverCard />
       <DeskAssignMenu />

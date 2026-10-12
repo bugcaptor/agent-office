@@ -13,6 +13,7 @@
 // 종료]로 언제든 취소할 수 있고, 데드라인(QUIT_FLUSH_DEADLINE_MS)을 넘겨도 그냥
 // 종료한다. 캔슬해도 작업 로그는 디스크에 남아 다음 실행에 이어진다. 밀린 게
 // 없으면(대부분) 예전처럼 즉시 종료한다.
+import { hasPendingWorkPanelWrites, flushWorkPanelWrites } from "../workpanels/lifecycle";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -30,6 +31,7 @@ type Phase = "confirm" | "flushing";
 
 export function ConfirmQuitDialog() {
   const { t } = useTranslation("app");
+  const [saveFailed, setSaveFailed] = useState(false);
   const modal = useAppStore((s) => s.modal);
   const closeModal = useAppStore((s) => s.closeModal);
   const hasRunningSession = useAppStore((s) =>
@@ -50,13 +52,33 @@ export function ConfirmQuitDialog() {
   const destroyWindow = () => {
     if (destroyedRef.current) return;
     destroyedRef.current = true;
-    closeModal();
-    void getCurrentWindow().destroy();
+    const finish = () => {
+      if (useAppStore.getState().modal !== modal) { destroyedRef.current = false; return; }
+      closeModal();
+      void getCurrentWindow().destroy();
+    };
+    if (hasPendingWorkPanelWrites()) {
+      void flushWorkPanelWrites().then((saved) => {
+        if (saved) finish();
+        else {
+          destroyedRef.current = false;
+          if (useAppStore.getState().modal === modal) { setPhase("confirm"); setSaveFailed(true); }
+        }
+      });
+    } else finish();
   };
 
   // 종료 확정 공통 경로: (핸드오프면) 세션 이관 → 밀린 일기 flush(있으면 잠시 대기)
   // → destroy. 밀린 게 없으면 즉시 destroy.
   const beginQuit = async (handoff: boolean) => {
+    setSaveFailed(false);
+    // 세션을 이관하기 전에 사람의 편집을 확정한다. 저장 중 취소한 모달은
+    // 재사용하지 않아 취소 직후/다음 종료 시도의 창을 늦게 파괴하지 않는다.
+    if (hasPendingWorkPanelWrites()) {
+      const saved = await flushWorkPanelWrites();
+      if (useAppStore.getState().modal !== modal) return;
+      if (!saved) { setSaveFailed(true); return; }
+    }
     if (handoff) {
       try {
         // 종료 직전 화면(스크롤백)을 실어 보낸다 — 데몬은 핸드오프 이후 출력만
@@ -124,6 +146,7 @@ export function ConfirmQuitDialog() {
     >
       <div className="pixel-panel confirm-quit-dialog">
         <h2 className="pixel-title">{t("confirm.quit.title")}</h2>
+        {saveFailed && <p role="alert">{t("workpanels:quitSaveError")}</p>}
         {showHandoffOptions ? (
           <>
             <p>{t("confirm.quit.handoffBody")}</p>
