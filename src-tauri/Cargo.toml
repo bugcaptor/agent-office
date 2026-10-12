@@ -28,6 +28,7 @@ tauri = { version = "2", features = [
 ] } # Channel/이벤트/경로 API 포함
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.9" # 사용자 Codex config.toml 읽기(업무 수신함 writable_roots 합치기)
 tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",

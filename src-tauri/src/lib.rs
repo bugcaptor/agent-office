@@ -75,6 +75,7 @@ mod vscode;
 // 가시성만 승격.
 pub mod workdir;
 mod work_inbox_cli;
+mod office_instructions;
 
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -501,30 +502,52 @@ pub fn run() {
                 eprintln!("agent-office: talk skill assets failed: {error}");
             }
             // 세션마다 부르는 두 갈래: (1) 훅 설정에 얹을 조각(관찰 ON),
-            // (2) talk 전용 설정 파일(관찰 OFF). 둘 다 대화가 꺼져 있으면 None.
-            let talk_fragment = {
+            // (2) 권한 조각 전용 설정 파일(관찰 OFF). 동료 대화(office-talk)와
+            // 업무 수신함(office-task, 업무 패널 켜짐) 중 켜진 기능의 shim만 승인한다.
+            // 둘 다 꺼져 있으면 None. task shim은 SessionManager가 세션마다 쓴다.
+            let office_shims = {
                 let settings = settings_cache.clone();
                 let data_dir = data_dir.clone();
                 let exe = talk_exe.clone();
                 Arc::new(move || {
-                    if !settings.read().unwrap().talk_enabled {
-                        return None;
+                    let (talk, work) = {
+                        let snapshot = settings.read().unwrap();
+                        (snapshot.talk_enabled, snapshot.work_panels_enabled)
+                    };
+                    let mut shims = vec![];
+                    if talk {
+                        shims.push(
+                            crate::talk::skill::ensure_assets(&data_dir, &exe)
+                                .unwrap_or_else(|_| crate::talk::skill::shim_path()),
+                        );
                     }
-                    let shim = crate::talk::skill::ensure_assets(&data_dir, &exe)
-                        .unwrap_or_else(|_| crate::talk::skill::shim_path());
-                    Some(crate::talk::skill::settings_fragment(&data_dir, &shim))
-                }) as Arc<dyn Fn() -> Option<serde_json::Value> + Send + Sync>
+                    if work {
+                        shims.push(crate::work_inbox_cli::shim_path());
+                    }
+                    shims
+                })
+            };
+            let talk_fragment = {
+                let office_shims = office_shims.clone();
+                Arc::new(move || crate::office_instructions::permissions_fragment(&office_shims()))
+                    as Arc<dyn Fn() -> Option<serde_json::Value> + Send + Sync>
             };
             let talk_wiring_provider = {
+                let office_shims = office_shims.clone();
                 let settings = settings_cache.clone();
                 let data_dir = data_dir.clone();
                 let settings_dir = observer_settings_dir.clone();
                 let exe = talk_exe.clone();
                 Arc::new(move |session_id: &str, has_settings: bool| {
-                    if !settings.read().unwrap().talk_enabled {
-                        return None;
-                    }
-                    let shim = crate::talk::skill::ensure_assets(&data_dir, &exe).ok()?;
+                    let fragment = crate::office_instructions::permissions_fragment(&office_shims())?;
+                    // 대화 플러그인은 대화가 켜졌고 자산을 쓸 수 있을 때만 물린다.
+                    let plugin_dir = settings
+                        .read()
+                        .unwrap()
+                        .talk_enabled
+                        .then(|| crate::talk::skill::ensure_assets(&data_dir, &exe).ok())
+                        .flatten()
+                        .map(|_| crate::talk::skill::plugin_dir(&data_dir));
                     // 훅 설정이 이미 있으면 권한 조각은 그쪽에 합쳐져 있다.
                     let settings_path = if has_settings {
                         None
@@ -532,18 +555,14 @@ pub fn run() {
                         crate::talk::skill::write_talk_only_settings(
                             &settings_dir,
                             session_id,
-                            &data_dir,
-                            &shim,
+                            &fragment,
                         )
                         .map_err(|error| {
                             eprintln!("agent-office: talk settings write failed: {error}");
                         })
                         .ok()
                     };
-                    Some(crate::session::manager::TalkWiring {
-                        plugin_dir: crate::talk::skill::plugin_dir(&data_dir),
-                        settings_path,
-                    })
+                    Some(crate::session::manager::TalkWiring { plugin_dir, settings_path })
                 })
                     as Arc<
                         dyn Fn(&str, bool) -> Option<crate::session::manager::TalkWiring>
@@ -592,6 +611,10 @@ pub fn run() {
                 .with_app_data_dir(data_dir.clone())
                 // 업무 수신함 `office-task` shim(docs/work-inbox-design.md).
                 .with_task_cli(forwarder_executable_path())
+                .with_work_panels_flag({
+                    let settings = settings_cache.clone();
+                    Arc::new(move || settings.read().unwrap().work_panels_enabled)
+                })
                 // 동료 대화 스킬 배선(--plugin-dir + 권한 조각).
                 .with_talk_wiring(talk_wiring_provider)
                 // v2 상시 브로커 모드(opt-in, docs/session-broker-v2-design.md).

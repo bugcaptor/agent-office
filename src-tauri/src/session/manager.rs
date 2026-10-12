@@ -129,10 +129,11 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 이 세션에 물릴 동료 대화 배선(§6). `settings_path`는 관찰이 꺼져 있어
-/// 훅 설정 파일이 없을 때만 채워진다.
+/// 이 세션에 물릴 Claude 사무실 배선. `plugin_dir`는 동료 대화(§6)가 켜졌을 때,
+/// `settings_path`(shim 권한 사전 승인)는 관찰이 꺼져 있어 훅 설정 파일이 없을 때만
+/// 채워진다. 업무 수신함 shim 승인도 같은 설정 파일에 들어간다.
 pub struct TalkWiring {
-    pub plugin_dir: std::path::PathBuf,
+    pub plugin_dir: Option<std::path::PathBuf>,
     pub settings_path: Option<std::path::PathBuf>,
 }
 
@@ -181,6 +182,11 @@ pub struct SessionManager {
     /// `office-task` shim 경로와 shim이 실행할 앱 바이너리(docs/work-inbox-design.md).
     /// None이면 shim과 `AGENT_OFFICE_TASK`를 생략한다 -- 테스트 기본값이다.
     task_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    /// 업무 패널 설정(`workPanelsEnabled`) 조회. 켜졌을 때만 공통 안내문과 Codex
+    /// 수신함 쓰기 허용을 싣는다. 세션을 띄울 때 고정된다.
+    work_panels_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
+    /// 사용자 Codex `config.toml` 본문 조회(writable_roots 합치기). 테스트는 주입한다.
+    codex_user_config: Arc<dyn Fn() -> Option<String> + Send + Sync>,
     /// v2 상시 브로커 모드(unix 전용 opt-in, docs/session-broker-v2-design.md).
     /// true면 `handoff_all`/`adopt_detached`/스냅샷 업로드가 v1 fd 핸드오프
     /// 대신 브로커 RPC 경로를 탄다. 기본 false(v1 경로 보존). 팩토리 주입은
@@ -231,6 +237,11 @@ impl SessionManager {
             shell_resolver: Arc::new(shells::resolve_observed),
             app_data_dir: None,
             task_cli: None,
+            work_panels_enabled: Arc::new(|| false),
+            codex_user_config: Arc::new(|| {
+                let path = crate::agent_paths::codex_home_from_env()?.join("config.toml");
+                std::fs::read_to_string(path).ok()
+            }),
             broker_mode: false,
             session_log_root: None,
             session_log_enabled: Arc::new(AtomicBool::new(true)),
@@ -296,6 +307,12 @@ impl SessionManager {
     /// 세션 준비마다 `office-task` shim을 이 바이너리로 (재)작성하고 경로를 env로 싣는다.
     pub fn with_task_cli(mut self, exe: std::path::PathBuf) -> Self {
         self.task_cli = Some((crate::work_inbox_cli::shim_path(), exe));
+        self
+    }
+
+    /// 업무 패널 설정 조회기를 준다(lib.rs). 기본은 꺼짐.
+    pub fn with_work_panels_flag(mut self, enabled: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
+        self.work_panels_enabled = enabled;
         self
     }
 
@@ -471,14 +488,18 @@ impl SessionManager {
             .iter()
             .any(|(key, _)| key == "AGENT_OFFICE_SETTINGS");
         if let Some(wiring) = (self.get_talk_wiring)(session_id, has_settings) {
-            plan.env.push((
-                "AGENT_OFFICE_TALK_PLUGIN".into(),
-                wiring.plugin_dir.to_string_lossy().into_owned(),
-            ));
-            let mut claude_args = vec![
-                WrapperArg::Literal("--plugin-dir".into()),
-                WrapperArg::Env("AGENT_OFFICE_TALK_PLUGIN".into()),
-            ];
+            let mut claude_args = vec![];
+            // 붙일 경로가 사라졌으면 prefix를 통째로 포기하고 claude는 띄운다.
+            let mut guard_env = None;
+            if let Some(dir) = &wiring.plugin_dir {
+                plan.env.push((
+                    "AGENT_OFFICE_TALK_PLUGIN".into(),
+                    dir.to_string_lossy().into_owned(),
+                ));
+                claude_args.push(WrapperArg::Literal("--plugin-dir".into()));
+                claude_args.push(WrapperArg::Env("AGENT_OFFICE_TALK_PLUGIN".into()));
+                guard_env = Some("AGENT_OFFICE_TALK_PLUGIN");
+            }
             if let Some(path) = &wiring.settings_path {
                 plan.env.push((
                     "AGENT_OFFICE_SETTINGS".into(),
@@ -487,29 +508,49 @@ impl SessionManager {
                 claude_args.push(WrapperArg::Literal("--settings".into()));
                 claude_args.push(WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()));
                 plan.cleanup_paths.push(path.clone());
+                guard_env.get_or_insert("AGENT_OFFICE_SETTINGS");
             }
+            // 훅 설정이 있고 대화가 꺼져 있으면(업무 패널만 켜짐) 붙일 인자가 없다.
             if let Some(claude) = plan
                 .wrappers
                 .iter_mut()
                 .find(|wrapper| wrapper.command == "claude")
             {
                 claude.prefix_args.extend(claude_args);
-            } else {
+            } else if !claude_args.is_empty() {
                 plan.wrappers.push(CommandWrapperSpec {
                     command: "claude".into(),
                     prefix_args: claude_args,
                     skip_if_present: vec![],
                     // 플러그인 폴더가 사라졌으면 스킬만 포기하고 claude는 띄운다
                     // (없는 경로를 주면 claude가 하드 실패한다 — pi 확장과 같은 가드).
-                    skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_TALK_PLUGIN".into()),
+                    skip_prefix_if_env_file_missing: guard_env.map(Into::into),
                     ..Default::default()
                 });
             }
         }
 
-        if let Some(personality_prompt) =
-            personality_prompt.filter(|prompt| !prompt.trim().is_empty())
-        {
+        // 업무 수신함 shim(docs/work-inbox-design.md). OS temp는 청소될 수 있어 매번 쓴다.
+        let task_shim = self.task_cli.as_ref().and_then(|(shim, exe)| {
+            crate::work_inbox_cli::ensure_shim(shim, exe)
+                .map_err(|error| eprintln!("agent-office: failed to write office-task shim: {error}"))
+                .ok()
+                .map(|()| shim.clone())
+        });
+        let work_inbox = self.app_data_dir.as_ref().map(|dir| dir.join("work-inbox"));
+        let office_enabled = task_shim.is_some() && (self.work_panels_enabled)();
+        let office_instructions = task_shim
+            .as_deref()
+            .filter(|_| office_enabled)
+            .map(crate::office_instructions::task_instructions);
+
+        // 덧붙일 지시문 = persona + 빈 줄 + 사무실 안내문(있는 것만). env 이름
+        // `AGENT_OFFICE_PERSONA`는 래퍼 함수 호환과 IDE 페르소나 경로 때문에 유지한다.
+        if let Some(appended) = crate::office_instructions::appended_prompt(
+            personality_prompt,
+            office_instructions.as_deref(),
+        ) {
+            let personality_prompt = appended.as_str();
             plan.env.push((
                 "AGENT_OFFICE_PERSONA".into(),
                 personality_prompt.to_string(),
@@ -540,6 +581,26 @@ impl SessionManager {
             );
         }
 
+        // Codex 기본 workspace-write 샌드박스는 작업 폴더 밖 쓰기를 막는다. 안내문을
+        // 실은 세션에서는 수신함을 쓰기 허용 경로에 더한다.
+        if let Some(inbox) = work_inbox.as_deref().filter(|_| office_enabled) {
+            plan.env.push((
+                "AGENT_OFFICE_CODEX_WRITABLE_ROOTS".into(),
+                crate::office_instructions::codex_writable_roots_config(
+                    (self.codex_user_config)().as_deref(),
+                    inbox,
+                ),
+            ));
+            merge_wrapper_args(
+                &mut plan.wrappers,
+                "codex",
+                vec![
+                    WrapperArg::Literal("-c".into()),
+                    WrapperArg::Env("AGENT_OFFICE_CODEX_WRITABLE_ROOTS".into()),
+                ],
+            );
+        }
+
         let mut env = vec![("AGENT_OFFICE_SESSION".into(), session_id.to_string())];
         if let Some(url) = observer_url {
             env.push(("AGENT_OFFICE_HOOK_URL".into(), url));
@@ -556,17 +617,14 @@ impl SessionManager {
         // 업무 수신함(docs/work-inbox-design.md): 업무 패널 설정과 무관하게 싣는다.
         // 수신함 규약은 패널이 꺼져 있어도 유효하다.
         env.push(("AGENT_OFFICE_AGENT_ID".into(), agent_id.to_string()));
-        if let Some(dir) = &self.app_data_dir {
+        if let Some(inbox) = &work_inbox {
             env.push((
                 "AGENT_OFFICE_WORK_INBOX".into(),
-                dir.join("work-inbox").to_string_lossy().into_owned(),
+                inbox.to_string_lossy().into_owned(),
             ));
         }
-        if let Some((shim, exe)) = &self.task_cli {
-            match crate::work_inbox_cli::ensure_shim(shim, exe) {
-                Ok(()) => env.push(("AGENT_OFFICE_TASK".into(), shim.to_string_lossy().into_owned())),
-                Err(error) => eprintln!("agent-office: failed to write office-task shim: {error}"),
-            }
+        if let Some(shim) = &task_shim {
+            env.push(("AGENT_OFFICE_TASK".into(), shim.to_string_lossy().into_owned()));
         }
         env.extend(plan.env.iter().cloned());
         let settings_path = env
@@ -1428,21 +1486,10 @@ fn merge_wrapper_args(
 /// 큰따옴표를 이스케이프하고 개행·탭은 `\n`·`\t`로, 나머지 제어문자는
 /// 버린다(개행이 그대로 들어가면 TOML 기본 문자열이 깨진다).
 fn codex_persona_config(prompt: &str) -> String {
-    let mut out = String::with_capacity(prompt.len() + 32);
-    out.push_str("developer_instructions=\"");
-    for ch in prompt.chars() {
-        match ch {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\r' => {}
-            '\t' => out.push_str("\\t"),
-            c if c.is_control() => {}
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
+    format!(
+        "developer_instructions={}",
+        crate::office_instructions::toml_basic_string(prompt)
+    )
 }
 
 /// tmux 자동 호스팅(kbm #2pc) 강등 경고 한 줄. `install_session`의

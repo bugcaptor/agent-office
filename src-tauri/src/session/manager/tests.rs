@@ -282,7 +282,7 @@
     fn with_talk(manager: SessionManager) -> SessionManager {
         manager.with_talk_wiring(Arc::new(|_sid: &str, has_settings: bool| {
             Some(crate::session::manager::TalkWiring {
-                plugin_dir: PathBuf::from("/plugins/agent-office"),
+                plugin_dir: Some(PathBuf::from("/plugins/agent-office")),
                 settings_path: (!has_settings).then(|| PathBuf::from("/tmp/talk.settings.json")),
             })
         }))
@@ -490,6 +490,101 @@
             "AGENT_OFFICE_CODEX_PERSONA".into(),
             r#"developer_instructions="해적처럼 말한다.""#.into()
         )));
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    /// 업무 수신함 안내문을 켠 매니저. shim은 scratch 아래에 쓰고 Codex 사용자
+    /// 설정은 주입한다.
+    fn with_office(manager: Arc<SessionManager>, scratch: &Path, panels: bool) -> Arc<SessionManager> {
+        let mut manager = Arc::try_unwrap(manager)
+            .ok()
+            .expect("유일 소유")
+            .with_app_data_dir(scratch.join("app"))
+            .with_work_panels_flag(Arc::new(move || panels));
+        manager.task_cli = Some((scratch.join("bin").join("office-task"), PathBuf::from("/opt/ao")));
+        manager.codex_user_config =
+            Arc::new(|| Some("[sandbox_workspace_write]\nwritable_roots = [\"/mine\"]\n".into()));
+        Arc::new(manager)
+    }
+
+    fn env_value(control: &FakeControl, key: &str) -> Option<String> {
+        control.spawned_env().into_iter().find(|(k, _)| k == key).map(|(_, v)| v)
+    }
+
+    #[tokio::test]
+    async fn office_instructions_alone_reach_claude_and_codex_with_inbox_writable() {
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
+        let manager = with_office(manager, &scratch, true);
+        manager.create(req("a1", Some(false))).unwrap();
+
+        let shim = scratch.join("bin").join("office-task");
+        let appended = env_value(&control, "AGENT_OFFICE_PERSONA").expect("안내문만으로도 주입");
+        assert_eq!(appended, crate::office_instructions::task_instructions(&shim));
+        assert!(env_value(&control, "AGENT_OFFICE_CODEX_PERSONA").unwrap().starts_with("developer_instructions=\"# Agent Office"));
+        let inbox = scratch.join("app").join("work-inbox");
+        assert_eq!(
+            env_value(&control, "AGENT_OFFICE_CODEX_WRITABLE_ROOTS").unwrap(),
+            format!("sandbox_workspace_write.writable_roots=[\"/mine\",\"{}\"]", inbox.display())
+        );
+        let wrappers = recorded_wrappers.lock();
+        let codex = wrappers.iter().find(|w| w.command == "codex").unwrap();
+        assert_eq!(
+            codex.prefix_args,
+            vec![
+                WrapperArg::Literal("-c".into()),
+                WrapperArg::Env("AGENT_OFFICE_CODEX_PERSONA".into()),
+                WrapperArg::Literal("-c".into()),
+                WrapperArg::Env("AGENT_OFFICE_CODEX_WRITABLE_ROOTS".into()),
+            ]
+        );
+        drop(wrappers);
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn office_instructions_follow_persona_and_vanish_when_panels_are_off() {
+        let (manager, control, _wrappers, scratch) = build_observer_manager(false, vec![]);
+        let manager = with_office(manager, &scratch, true);
+        manager.create(req_with_persona("a1", Some("해적처럼 말한다.".into()))).unwrap();
+        let appended = env_value(&control, "AGENT_OFFICE_PERSONA").unwrap();
+        assert!(appended.starts_with("해적처럼 말한다.\n\n# Agent Office task board"));
+        cleanup_observer_fixture(&control, &scratch);
+
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
+        let manager = with_office(manager, &scratch, false);
+        manager.create(req("a1", Some(false))).unwrap();
+        assert_eq!(env_value(&control, "AGENT_OFFICE_PERSONA"), None);
+        assert_eq!(env_value(&control, "AGENT_OFFICE_CODEX_WRITABLE_ROOTS"), None);
+        // 환경변수와 shim은 패널 설정과 무관하게 유지한다.
+        assert!(env_value(&control, "AGENT_OFFICE_TASK").is_some());
+        assert!(recorded_wrappers.lock().is_empty());
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn settings_only_wiring_without_talk_plugin_guards_on_the_settings_file() {
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
+        let manager = Arc::new(Arc::try_unwrap(manager).ok().expect("유일 소유").with_talk_wiring(Arc::new(
+            |_sid: &str, has_settings: bool| {
+                Some(crate::session::manager::TalkWiring {
+                    plugin_dir: None,
+                    settings_path: (!has_settings).then(|| PathBuf::from("/tmp/office.settings.json")),
+                })
+            },
+        )));
+        manager.create(req("a1", Some(false))).unwrap();
+        let wrappers = recorded_wrappers.lock();
+        assert_eq!(wrappers.len(), 1);
+        assert_eq!(
+            wrappers[0].prefix_args,
+            vec![
+                WrapperArg::Literal("--settings".into()),
+                WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+            ]
+        );
+        assert_eq!(wrappers[0].skip_prefix_if_env_file_missing.as_deref(), Some("AGENT_OFFICE_SETTINGS"));
+        drop(wrappers);
+        assert_eq!(env_value(&control, "AGENT_OFFICE_TALK_PLUGIN"), None);
         cleanup_observer_fixture(&control, &scratch);
     }
 

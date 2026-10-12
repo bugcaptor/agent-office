@@ -106,30 +106,18 @@ pub fn plugin_dir(app_data: &Path) -> PathBuf {
     plugin_root(app_data).join(PLUGIN)
 }
 
-/// 세션 전용 `--settings`에 얹을 조각 — shim 실행 사전 승인 하나뿐이다.
-/// 대화 한 번에 권한 프롬프트가 두 번 뜨면(발신 CLI + 답장 CLI) 대화가 성립하지
-/// 않는다. 스킬 frontmatter의 `allowed-tools`는 **스킬을 발동한 턴에만** 듣기
-/// 때문에, 스킬 없이 안내 문구만 받고 답장하는 수신자에게는 이 규칙이 필요하다.
-pub fn settings_fragment(_app_data: &Path, shim: &Path) -> serde_json::Value {
-    serde_json::json!({
-        "permissions": { "allow": [format!("Bash({}:*)", shim.to_string_lossy())] },
-    })
-}
-
-/// 관찰(observer)이 꺼져 있어 훅 설정 파일이 없는 세션을 위한 **talk 전용**
-/// 세션 설정 파일. 관찰이 켜져 있으면 훅 설정 파일에 같은 조각이 합쳐지므로
-/// (`ClaudeAdapter::with_extra_settings`) 이 경로는 쓰이지 않는다.
-/// 파일명이 `.settings.json`으로 끝나 기존 GC가 그대로 청소한다.
+/// 관찰(observer)이 꺼져 있어 훅 설정 파일이 없는 세션을 위한 **권한 조각 전용**
+/// 세션 설정 파일(동료 대화·업무 수신함 shim 승인). 관찰이 켜져 있으면 훅 설정
+/// 파일에 같은 조각이 합쳐지므로(`ClaudeAdapter::with_extra_settings`) 이 경로는
+/// 쓰이지 않는다. 파일명이 `.settings.json`으로 끝나 기존 GC가 그대로 청소한다.
 pub fn write_talk_only_settings(
     dir: &Path,
     session_id: &str,
-    app_data: &Path,
-    shim: &Path,
+    fragment: &serde_json::Value,
 ) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join(format!("{session_id}.settings.json"));
-    let body = serde_json::to_vec_pretty(&settings_fragment(app_data, shim))
-        .expect("talk settings fragment serializes");
+    let body = serde_json::to_vec_pretty(fragment).expect("settings fragment serializes");
     write_atomic(&path, &body)?;
     Ok(path)
 }
@@ -257,18 +245,11 @@ mod tests {
     }
 
     #[test]
-    fn fragment_preapproves_only_the_shim() {
-        let app_data = PathBuf::from("/data/app");
-        let shim = PathBuf::from("/tmp/agent-office/bin/office-talk");
-        let f = settings_fragment(&app_data, &shim);
+    fn plugin_dir_is_under_app_data() {
+        // 권한 조각은 office_instructions::permissions_fragment가 만든다. 마켓플레이스/
+        // 플러그인 선언은 --settings로 먹지 않으므로(실측) 플러그인은 플래그로만 물린다.
         assert_eq!(
-            f["permissions"]["allow"][0],
-            "Bash(/tmp/agent-office/bin/office-talk:*)"
-        );
-        // 마켓플레이스/플러그인 선언은 --settings로 먹지 않는다(실측) — 넣지 않는다.
-        assert!(f.get("enabledPlugins").is_none());
-        assert_eq!(
-            plugin_dir(&app_data),
+            plugin_dir(&PathBuf::from("/data/app")),
             PathBuf::from("/data/app/claude-plugin/agent-office")
         );
     }
