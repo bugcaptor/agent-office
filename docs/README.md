@@ -22,6 +22,7 @@
 |---|---|---|
 | [affinity-design.md](affinity-design.md) | 에이전트 호감도 — opt-in·비LLM 반응·유효 사용 기록이 있는 터미널 종료/재시작 평가 | 기획 확정 (2026-09-05, kbm #2rv) — 구현 전 |
 | [agent-talk-design.md](agent-talk-design.md) | 동료 대화(Agent Talk) — 캐릭터끼리/사용자와 대화. TalkHub·ctl talk·로컬 스킬 | 정본 — M1+M2 구현 완료, M3 미착수 |
+| [work-panels-design.md](work-panels-design.md) | 업무 패널 — opt-in 좌우 고정 패널. 좌측 업무 목록(담당 캐릭터·에이전트/모델 지정, 보내기로 CLI 기동+첫 프롬프트, 상태 모니터링), 우측 전 캐릭터 세션 로그(300일·필터·검색) | 기획 확정 (2026-10-12) — 구현 전 |
 | [antigravity-support-design.md](antigravity-support-design.md) | Antigravity CLI(agy) 작업 상태 감지 — 셸 훅 + 사용량·추정 비용 수집 | 정본 (2026-09-07) — 구현 완료 |
 | [macos-signing.md](macos-signing.md) | macOS 코드서명 — 자체 인증서 기반·인증서 관리·DMG 배포 절차 | 정본 — 운영 절차 |
 | [mascot-lights-design.md](mascot-lights-design.md) | 신호등/마스코트 조명 — 사용량·상태 표시, 라벨·얼굴·타일 모드 | 정본 — 설계 확정 + 구현 완료 |
