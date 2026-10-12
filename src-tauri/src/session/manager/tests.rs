@@ -1027,6 +1027,51 @@
         cleanup(&ctl, &dir);
     }
 
+    // ---- Work inbox env (docs/work-inbox-design.md) ----
+
+    #[tokio::test]
+    async fn create_env_carries_agent_id_work_inbox_and_task_shim() {
+        let dir = scratch_observer_dir();
+        let events = Arc::new(RecordingEvents::default());
+        let reg = registry();
+        let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
+        let (fac, ctl) = FakePtyFactory::new();
+        let shim = dir.join("bin").join("office-task");
+        let mut mgr = SessionManager::new(
+            Arc::new(fac),
+            claude_observer(hub.clone(), dir.clone()),
+            reg,
+            events as Arc<dyn AppEvents>,
+            hub,
+            Arc::new(|| None),
+        )
+        .with_app_data_dir(dir.join("app"));
+        mgr.task_cli = Some((shim.clone(), PathBuf::from("/opt/agent-office")));
+        let mgr = Arc::new(mgr);
+        mgr.create(req("a1", None)).unwrap();
+
+        let env = ctl.spawned_env();
+        let get = |key: &str| env.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+        assert_eq!(get("AGENT_OFFICE_AGENT_ID").as_deref(), Some("a1"));
+        assert_eq!(
+            get("AGENT_OFFICE_WORK_INBOX").map(PathBuf::from),
+            Some(dir.join("app").join("work-inbox"))
+        );
+        assert_eq!(get("AGENT_OFFICE_TASK").map(PathBuf::from), Some(shim.clone()));
+        assert!(std::fs::read_to_string(&shim).unwrap().contains("/opt/agent-office"));
+        cleanup(&ctl, &dir);
+    }
+
+    #[tokio::test]
+    async fn create_env_omits_inbox_paths_without_app_data_or_task_cli() {
+        let (mgr, _events, ctl, dir) = build_with_observer(false);
+        mgr.create(req("a1", None)).unwrap();
+        let env = ctl.spawned_env();
+        assert!(env.contains(&("AGENT_OFFICE_AGENT_ID".into(), "a1".into())));
+        assert!(env.iter().all(|(k, _)| k != "AGENT_OFFICE_WORK_INBOX" && k != "AGENT_OFFICE_TASK"));
+        cleanup(&ctl, &dir);
+    }
+
     // ---- Observer opt-in OFF skips wiring ----
 
     #[tokio::test]

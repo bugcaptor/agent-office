@@ -166,6 +166,9 @@ async fn attach_external_writes_the_same_hook_settings_and_persona_wiring() {
     assert!(plan
         .env
         .contains(&("AGENT_OFFICE_PERSONA".into(), "차분하게 답한다.".into())));
+    assert!(plan
+        .env
+        .contains(&("AGENT_OFFICE_AGENT_ID".into(), "a1".into())));
     // PTY 전용 env는 공용 plan에 없다.
     assert!(plan.env.iter().all(|(key, _)| key != "TERM"));
 

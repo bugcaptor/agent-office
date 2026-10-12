@@ -48,6 +48,10 @@ pub const STRIPPED_ENV: &[&str] = &[
     "AGENT_OFFICE_HOOK_URL",
     "AGENT_OFFICE_APP_DATA",
     "AGENT_OFFICE_SETTINGS",
+    // 업무 수신함 — 확인 문구용 claude가 세션 캐릭터로 태스크를 남기지 않게 한다.
+    "AGENT_OFFICE_AGENT_ID",
+    "AGENT_OFFICE_WORK_INBOX",
+    "AGENT_OFFICE_TASK",
 ];
 
 /// non-Windows: `claude` 바이너리를 직접 spawn한다(로그인 셸을 거치지 않으므로

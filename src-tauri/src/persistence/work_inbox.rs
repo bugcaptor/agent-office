@@ -53,7 +53,8 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
         if !closed { return Err(RejectReason::UnclosedFrontmatter); }
     }
     let first = lines.by_ref().find(|line| !line.trim().is_empty()).unwrap_or("").trim();
-    let title = first.strip_prefix("# ").unwrap_or(first).trim().to_string();
+    // 빈 제목은 `# `로 쓴다. trim 뒤 `#`만 남으므로 그것도 빈 제목으로 본다.
+    let title = if first == "#" { "" } else { first.strip_prefix("# ").unwrap_or(first) }.trim().to_string();
     let body = lines.collect::<Vec<_>>().join("\n");
     // 본문의 들여쓰기와 trailing spaces는 보존하고 빈 줄만 다듬는다.
     let body = body.split('\n').collect::<Vec<_>>();
@@ -133,7 +134,7 @@ mod tests {
         let p = parse("x.md", "\u{feff}---\r\nfuture: ignored\r\nassignee: 하나 \r\n---\r\n# 제목\r\n본문\r\n".as_bytes()).unwrap();
         assert_eq!(p, Parsed { title: "제목".into(), body: "본문".into(), assignee: Some("하나".into()) });
         assert_eq!(parse("x.md", b"Title").unwrap().body, "");
-        assert_eq!(parse("x.md", b"# \nBody").unwrap().body, "Body");
+        assert_eq!(parse("x.md", b"# \nBody").unwrap(), Parsed { title: "".into(), body: "Body".into(), assignee: None });
     }
     #[test]
     fn rejects_malformed_content_and_accepts_exact_size_limit() {

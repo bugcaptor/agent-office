@@ -211,7 +211,7 @@ impl SessionManager {
         // 같은 내용으로 다시 쓸 뿐이다(그래서 cleanup 책임도 그 세션에 남는다).
         if let Some(session) = self.find(agent_id) {
             if session.reusable() {
-                let plan = self.prepare_session_plan(&session.session_id, personality_prompt);
+                let plan = self.prepare_session_plan(&session.session_id, agent_id, personality_prompt);
                 return Ok(ExternalAttachOutcome::BindExisting {
                     session_id: session.session_id.clone(),
                     plan,
@@ -224,7 +224,7 @@ impl SessionManager {
         self.detach_external(agent_id, ExternalDetachReason::Detach);
 
         let session_id = Uuid::new_v4().to_string(); // uuid는 URL-safe → hook 라우팅 키로 안전
-        let plan = self.prepare_session_plan(&session_id, personality_prompt);
+        let plan = self.prepare_session_plan(&session_id, agent_id, personality_prompt);
 
         // 레지스트리 등록이 곧 "훅이 이 캐릭터로 흐른다"는 뜻이다.
         self.registry

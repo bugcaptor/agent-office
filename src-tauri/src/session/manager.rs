@@ -178,6 +178,9 @@ pub struct SessionManager {
     /// 그대로 통과해야 하므로 기본값은 None).
     /// pub(super): 핸드오프/입양 형제 모듈이 소켓/로그 경로 계산에 직접 읽는다.
     pub(super) app_data_dir: Option<std::path::PathBuf>,
+    /// `office-task` shim 경로와 shim이 실행할 앱 바이너리(docs/work-inbox-design.md).
+    /// None이면 shim과 `AGENT_OFFICE_TASK`를 생략한다 -- 테스트 기본값이다.
+    task_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
     /// v2 상시 브로커 모드(unix 전용 opt-in, docs/session-broker-v2-design.md).
     /// true면 `handoff_all`/`adopt_detached`/스냅샷 업로드가 v1 fd 핸드오프
     /// 대신 브로커 RPC 경로를 탄다. 기본 false(v1 경로 보존). 팩토리 주입은
@@ -227,6 +230,7 @@ impl SessionManager {
             sinks: Mutex::new(HashMap::new()),
             shell_resolver: Arc::new(shells::resolve_observed),
             app_data_dir: None,
+            task_cli: None,
             broker_mode: false,
             session_log_root: None,
             session_log_enabled: Arc::new(AtomicBool::new(true)),
@@ -286,6 +290,12 @@ impl SessionManager {
 
     pub fn with_app_data_dir(mut self, dir: std::path::PathBuf) -> Self {
         self.app_data_dir = Some(dir);
+        self
+    }
+
+    /// 세션 준비마다 `office-task` shim을 이 바이너리로 (재)작성하고 경로를 env로 싣는다.
+    pub fn with_task_cli(mut self, exe: std::path::PathBuf) -> Self {
+        self.task_cli = Some((crate::work_inbox_cli::shim_path(), exe));
         self
     }
 
@@ -356,6 +366,7 @@ impl SessionManager {
     pub(super) fn prepare_session_plan(
         &self,
         session_id: &str,
+        agent_id: &str,
         personality_prompt: Option<&str>,
     ) -> PreparedPlan {
         let observer_url = (self.get_observer_url)();
@@ -542,6 +553,21 @@ impl SessionManager {
                 dir.to_string_lossy().into_owned(),
             ));
         }
+        // 업무 수신함(docs/work-inbox-design.md): 업무 패널 설정과 무관하게 싣는다.
+        // 수신함 규약은 패널이 꺼져 있어도 유효하다.
+        env.push(("AGENT_OFFICE_AGENT_ID".into(), agent_id.to_string()));
+        if let Some(dir) = &self.app_data_dir {
+            env.push((
+                "AGENT_OFFICE_WORK_INBOX".into(),
+                dir.join("work-inbox").to_string_lossy().into_owned(),
+            ));
+        }
+        if let Some((shim, exe)) = &self.task_cli {
+            match crate::work_inbox_cli::ensure_shim(shim, exe) {
+                Ok(()) => env.push(("AGENT_OFFICE_TASK".into(), shim.to_string_lossy().into_owned())),
+                Err(error) => eprintln!("agent-office: failed to write office-task shim: {error}"),
+            }
+        }
         env.extend(plan.env.iter().cloned());
         let settings_path = env
             .iter()
@@ -594,7 +620,7 @@ impl SessionManager {
 
         let session_id = Uuid::new_v4().to_string(); // uuid는 URL-safe → hook 라우팅 키로 안전
         let prepared =
-            self.prepare_session_plan(&session_id, req.personality_prompt.as_deref());
+            self.prepare_session_plan(&session_id, &req.agent_id, req.personality_prompt.as_deref());
 
         // prepare_session이 파일을 만든 뒤 spawn이 Err 또는 panic으로 끝나도
         // observer 아티팩트가 남지 않게 한다. 세션 등록 성공 뒤에는 Session이

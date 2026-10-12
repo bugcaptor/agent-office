@@ -74,6 +74,7 @@ mod vscode;
 // 닿아야 한다(model.rs가 이미 `pub use model::*`로 재수출). 로직 변경 없음 —
 // 가시성만 승격.
 pub mod workdir;
+mod work_inbox_cli;
 
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -179,7 +180,9 @@ where
     let mut args = args.into_iter();
     let _program = args.next();
     let mode = args.next()?.as_ref().to_os_string();
-    if mode.as_os_str() != std::ffi::OsStr::new("ctl") {
+    // `task`는 업무 수신함에 파일만 쓰는 오프라인 분기(docs/work-inbox-design.md).
+    let task = mode.as_os_str() == std::ffi::OsStr::new("task");
+    if !task && mode.as_os_str() != std::ffi::OsStr::new("ctl") {
         return None;
     }
     // 나머지 토큰을 String으로. 비유니코드 인자는 lossy 변환(경로/텍스트가
@@ -187,7 +190,7 @@ where
     let rest: Vec<String> = args
         .map(|a| a.as_ref().to_string_lossy().into_owned())
         .collect();
-    Some(control::client::run(rest))
+    Some(if task { work_inbox_cli::run(rest) } else { control::client::run(rest) })
 }
 
 /// 훅이 forwarder로 재실행할 자기 자신의 경로. Linux AppImage에서는
@@ -587,6 +590,8 @@ pub fn run() {
                 // 세션 핸드오프(unix 전용, docs/session-handoff-design.md) 소켓/로그
                 // 경로와 AGENT_OFFICE_APP_DATA env 주입(§핵심 5)의 근거.
                 .with_app_data_dir(data_dir.clone())
+                // 업무 수신함 `office-task` shim(docs/work-inbox-design.md).
+                .with_task_cli(forwarder_executable_path())
                 // 동료 대화 스킬 배선(--plugin-dir + 권한 조각).
                 .with_talk_wiring(talk_wiring_provider)
                 // v2 상시 브로커 모드(opt-in, docs/session-broker-v2-design.md).
@@ -1254,6 +1259,7 @@ mod tests {
         assert_eq!(maybe_run_cli(["agent-office", "--sessiond", "/tmp/x.sock"]), None);
         assert_eq!(maybe_run_cli(["agent-office", "ctl", "help"]), Some(0));
         assert_eq!(maybe_run_cli(["agent-office", "ctl"]), Some(0));
+        assert_eq!(maybe_run_cli(["agent-office", "task", "--help"]), Some(0));
     }
 
     #[cfg(unix)]

@@ -194,7 +194,7 @@ allowed-tools: Bash({cli}:*)
     )
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let tmp = path.with_extension("aotmp");
     std::fs::write(&tmp, bytes)?;
     match std::fs::rename(&tmp, path) {
@@ -207,12 +207,12 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 #[cfg(unix)]
-fn set_executable(path: &Path) {
+pub(crate) fn set_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755));
 }
 #[cfg(not(unix))]
-fn set_executable(_path: &Path) {}
+pub(crate) fn set_executable(_path: &Path) {}
 
 #[cfg(test)]
 mod tests {
