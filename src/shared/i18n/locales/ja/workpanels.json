@@ -55,6 +55,8 @@
   "emptyHistory": "条件に一致するセッションはありません。",
   "live": "実行中",
   "endedUnknown": "終了時刻なし",
+  "endedApprox": "{{time}}頃（アプリ終了から推定）",
+  "showEmpty": "空のセッションを表示（{{count}}）",
   "noSummary": "要約なし",
   "elapsed": "所要 {{time}}",
   "stats": "{{turns}}ターン · {{tokens}} トークン · 約 {{cost}}",

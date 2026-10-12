@@ -55,6 +55,8 @@
   "emptyHistory": "조건에 맞는 세션이 없습니다.",
   "live": "진행 중",
   "endedUnknown": "종료 시각 없음",
+  "endedApprox": "{{time}}경 (앱 종료로 추정)",
+  "showEmpty": "빈 세션 보기 ({{count}})",
   "noSummary": "요약 없음",
   "elapsed": "소요 {{time}}",
   "stats": "{{turns}}턴 · {{tokens}} 토큰 · 약 {{cost}}",

@@ -55,6 +55,8 @@
   "emptyHistory": "没有匹配的会话。",
   "live": "进行中",
   "endedUnknown": "无结束时间",
+  "endedApprox": "约 {{time}}（按应用退出推定）",
+  "showEmpty": "显示空会话（{{count}}）",
   "noSummary": "无摘要",
   "elapsed": "耗时 {{time}}",
   "stats": "{{turns}}轮 · {{tokens}} token · 约 {{cost}}",

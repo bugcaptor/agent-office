@@ -55,6 +55,8 @@
   "emptyHistory": "No matching sessions.",
   "live": "Running",
   "endedUnknown": "End time unavailable",
+  "endedApprox": "around {{time}} (app quit, estimated)",
+  "showEmpty": "Show empty sessions ({{count}})",
   "noSummary": "No summary",
   "elapsed": "Elapsed {{time}}",
   "stats": "{{turns}} turns · {{tokens}} tokens · approx. {{cost}}",

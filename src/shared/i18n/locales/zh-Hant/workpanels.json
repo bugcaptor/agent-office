@@ -55,6 +55,8 @@
   "emptyHistory": "沒有符合條件的工作階段。",
   "live": "進行中",
   "endedUnknown": "無結束時間",
+  "endedApprox": "約 {{time}}（依應用程式結束推定）",
+  "showEmpty": "顯示空工作階段（{{count}}）",
   "noSummary": "無摘要",
   "elapsed": "耗時 {{time}}",
   "stats": "{{turns}}輪 · {{tokens}} token · 約 {{cost}}",

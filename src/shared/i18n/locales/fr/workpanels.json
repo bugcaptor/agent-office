@@ -55,6 +55,8 @@
   "emptyHistory": "Aucune session correspondante.",
   "live": "En cours",
   "endedUnknown": "Fin inconnue",
+  "endedApprox": "vers {{time}} (fermeture de l’app, estimé)",
+  "showEmpty": "Afficher les sessions vides ({{count}})",
   "noSummary": "Aucun résumé",
   "elapsed": "Durée {{time}}",
   "stats": "{{turns}} tours · {{tokens}} jetons · env. {{cost}}",

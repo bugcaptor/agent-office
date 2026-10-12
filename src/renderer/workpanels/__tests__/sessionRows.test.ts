@@ -21,7 +21,19 @@ describe("session rows", () => {
   it("중간 사용량은 턴을 늘리지 않고 모델별 비용을 이중 집계하지 않는다", () => {
     const rows = buildSessionRows([event("session_started",now-1000),event("prompt",now-900),event("usage",now-500,{partial:true,tokens:{input:1000,model:"unknown",byModel:[{input:1000,model:"claude-sonnet-4-5"}]}}),event("usage",now-100,{tokens:{input:500,model:"claude-sonnet-4-5"}}),event("stop",now)], {},[],[],now);
     expect(rows[0].stats).toMatchObject({turns:1,tokensIn:1500});
-    expect(rows[0].usage).toHaveLength(2); expect(rows[0].stats?.costUsd).toBeCloseTo(0.0045);
+    expect(rows[0].usage).toEqual([{ model: "claude-sonnet-4-5", tokens: 1500, costUsd: expect.any(Number), unknown: false }]);
+    expect(rows[0].stats?.costUsd).toBeCloseTo(0.0045);
+  });
+  it("앱 종료로 종료 이벤트가 없는 이전 실행의 세션은 그 실행의 마지막 기록 시각을 추정 종료로 쓴다", () => {
+    const rows = buildSessionRows([
+      event("session_started", now-5000), event("prompt", now-4000), event("stop", now-3500),
+      event("session_started", now-4900, { sessionId: "idle" }), event("usage", now-3000, { sessionId: "other", tokens: { input: 1 } }),
+      event("session_started", now-1000, { runId: "r2", sessionId: "s2" }),
+    ], {}, [], ["s2"], now);
+    const byId = Object.fromEntries(rows.map((r) => [r.sessionId, r]));
+    expect(byId.s1).toMatchObject({ endedAt: now-3000, endedApprox: true, empty: false, stats: { workedMs: 500 } });
+    expect(byId.idle).toMatchObject({ endedAt: now-3000, endedApprox: true, empty: true });
+    expect(byId.s2).toMatchObject({ live: true, empty: true }); expect(byId.s2.endedApprox).toBeUndefined();
   });
   it("삭제된 캐릭터와 요약이 없는 과거 세션을 표시한다", () => {
     const rows = buildSessionRows([event("session_started",now-1000,{agentName:"Deleted"})],{},[],[],now);
