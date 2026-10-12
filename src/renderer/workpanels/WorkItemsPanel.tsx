@@ -50,7 +50,7 @@ export function WorkItemsPanel() {
         const disabledReason = workSendDisabledReason(item.assigneeAgentId ? agents[item.assigneeAgentId] : undefined);
         const sending = !!busy[item.id];
         const agentBusy = item.assigneeAgentId && Object.values(busy).includes(item.assigneeAgentId);
-        return <article className={`work-card${sessionId && monitored[sessionId]?.phase === "waiting" ? " waiting" : ""}`} key={item.id} id={`work-item-${item.id}`}
+        return <article className={`work-card${sessionId && item.status !== "done" && monitored[sessionId]?.phase === "waiting" ? " waiting" : ""}`} key={item.id} id={`work-item-${item.id}`}
         onKeyDown={(e) => { if (e.key === "Escape") { select(null); e.stopPropagation(); } }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {

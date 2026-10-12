@@ -22,6 +22,8 @@ export function installWorkMonitor(): () => void {
   function observe(sessionId: string, agentId: string, phase: WorkPhase, at: number, transition: boolean) {
     const old = useWorkMonitorStore.getState().sessions[sessionId];
     if (old && old.at > at) return;
+    // 턴 종료 뒤의 질문 신호는 Claude idle_prompt(입력 대기 리마인더)다. 다음 prompt 전까지 턴 종료를 유지한다.
+    if (phase === "waiting" && (old?.phase === "review" || old?.phase === "ended")) return;
     useWorkMonitorStore.setState((s) => ({ sessions: { ...s.sessions, [sessionId]: { phase, at, agentId, transition } } }));
     if (transition) applyStatus(sessionId, phase);
   }

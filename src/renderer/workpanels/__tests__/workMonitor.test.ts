@@ -31,6 +31,13 @@ describe("연결 업무 모니터링", () => {
     notify("stop", 202, "new"); activity("prompt", 201, "new"); expect(useWorkItemStore.getState().items[0].status).toBe("review");
     activity("idle", 203, "new"); expect(useWorkMonitorStore.getState().sessions.new.phase).toBe("review");
   });
+  it("턴 종료 뒤 idle_prompt 훅 알림은 질문 대기로 바꾸지 않고 다음 prompt 뒤 질문은 다시 강조한다", () => {
+    item(); activity("prompt"); notify("stop", 102); notify("hook", 160);
+    expect(useWorkMonitorStore.getState().sessions.s.phase).toBe("review"); expect(useWorkItemStore.getState().items[0].status).toBe("review");
+    activity("prompt", 170); notify("hook", 171); expect(useWorkMonitorStore.getState().sessions.s.phase).toBe("waiting");
+    callbacks.session({ agentId: "a", sessionId: "s", at: 180, state: "exited" } as never); notify("hook", 181);
+    expect(useWorkMonitorStore.getState().sessions.s.phase).toBe("ended");
+  });
   it("부분 사용량은 턴 종료로 보지 않고 실제 Stop 사용량은 검토로 바꾼다", () => {
     item(); callbacks.usage({ agentId: "a", sessionId: "s", at: 100, partial: true } as never); expect(useWorkItemStore.getState().items[0].status).toBe("in_progress");
     callbacks.usage({ agentId: "a", sessionId: "s", at: 101, partial: false } as never); expect(useWorkItemStore.getState().items[0].status).toBe("review");

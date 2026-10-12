@@ -23,6 +23,7 @@ import { useWorkItemStore } from "../workItemStore";
 import { useSessionSummaryStore } from "../sessionSummaryStore";
 import { settleWorkSends, useWorkSendStore } from "../workSendStore";
 import { usePanelLayoutStore } from "../panelLayoutStore";
+import { useWorkMonitorStore } from "../workMonitor";
 const initial = useAppStore.getState();
 const initialWork = useWorkItemStore.getState();
 beforeEach(() => {
@@ -180,4 +181,20 @@ it("본문으로 만든 제목은 수정 저장 후 갱신되며 편집 중 자�
   fireEvent.click(screen.getByRole("button", { name: "저장" }));
   expect(screen.getByText("Updated body", { selector: "strong" }).classList.contains("work-title-derived")).toBe(true);
   expect(useWorkItemStore.getState().items[0]).toMatchObject({ title: "", body: "Updated body", status: "in_progress", sessionIds: ["session"] });
+});
+
+it("완료로 옮긴 업무는 살아 있는 세션의 질문 대기 신호가 남아도 완료로 보이고 강조하지 않는다", async () => {
+  useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true } });
+  useWorkItemStore.setState({ loaded: true });
+  const id = useWorkItemStore.getState().add("Finished")!;
+  useWorkItemStore.getState().recordSend(id, { sessionId: "live" });
+  useSessionSummaryStore.setState({ liveIds: ["live"] });
+  useWorkMonitorStore.setState({ sessions: { live: { phase: "waiting", at: 1, agentId: "a", transition: false } } });
+  render(<UIChrome />);
+  const card = document.getElementById(`work-item-${id}`)!;
+  expect(within(card).getByText("질문 대기")).toBeTruthy(); expect(card.classList.contains("waiting")).toBe(true);
+  act(() => useWorkItemStore.getState().edit(id, { status: "done" }));
+  const doneCard = document.getElementById(`work-item-${id}`)!;
+  expect(within(doneCard).queryByText("질문 대기")).toBeNull(); expect(doneCard.classList.contains("waiting")).toBe(false);
+  expect(doneCard.querySelector(".work-card-monitor")?.textContent).toContain("완료");
 });
