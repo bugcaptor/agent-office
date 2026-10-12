@@ -1,9 +1,10 @@
-# 업무 패널 설계 (opt-in 좌우 패널)
+# 업무 패널 — 현재 구현 명세
 
-설정으로 켜는 좌우 고정 패널 — 좌측 업무 목록(배정·보내기·모니터링), 우측 세션 로그(전 캐릭터, 필터·검색)의 정본 설계다.
+설정으로 켜는 좌우 고정 패널 — 좌측 업무 목록(배정·보내기·모니터링), 우측 세션 로그(전 캐릭터, 필터·검색)의 정본 명세다.
 
-상태: 기획 확정(2026-10-12 인터뷰) — 2차 구현 완료(기본 에이전트·보내기·자동 모니터링). 설치 앱/인증된 CLI 실기 인수는 잔여.
-관련 문서: `terminal-automation-design.md`(CLI 기동·첫 프롬프트), `session-analytics-design.md`(턴·토큰·비용 집계), `session-log-design.md`(전사 보기).
+상태: 정본 (2026-10-12) — 1·2차 기능 구현 완료. 설치 Tauri 앱의 저장·복원과 인증된 CLI 5종의 실기 인수는 남아 있다. 보내기는 직접 생성한 Unix bash/zsh PTY를 지원한다.
+
+관련 문서: [터미널 자동화](terminal-automation-design.md)(CLI 기동·첫 프롬프트), [세션 활동 분석](session-analytics-design.md)(턴·토큰·비용 집계), [세션 로그](session-log-design.md)(전사 보기).
 
 ## 개요
 
@@ -14,12 +15,12 @@
 
 ## 활성화 방식
 
-설정 화면의 토글 하나(`AppSettings.workPanelsEnabled`, 기본 `false`)로 켜고 끈다.
+시스템 설정의 토글 하나(`AppSettings.workPanelsEnabled`, 기본 `false`)로 켜고 끈다. 로컬 데스크톱의 오피스 화면에만 표시하며 웹 원격·데스크톱 원격 창·마스코트에는 노출하지 않는다.
 
 - 꺼져 있으면 패널을 만들지 않고 레이아웃은 지금과 같다.
 - 꺼도 업무 데이터와 세션 요약 레코드는 지우지 않는다. 다시 켜면 그대로 돌아온다.
 - 세션 요약 레코드(아래 데이터 모델)는 설정과 무관하게 항상 쌓는다. 나중에 켜도 그동안의 세션을 볼 수 있게 하기 위해서다(세션 로그의 opt-out 근거와 같음). 크기는 세션당 수 KB다.
-- 새 설정 필드는 Rust `AppSettings`와 TS 미러를 함께 고치고 `npx tsc --noEmit`으로 누락을 확인한다.
+- 설정은 Rust `AppSettings`와 TS 미러에 함께 저장한다.
 
 ## 좌측 패널: 업무 목록
 
@@ -43,29 +44,51 @@
 - 목록 위에 '새 업무' 입력줄. 제목만 치고 Enter로 만들고, 카드를 펼쳐 본문·담당·에이전트를 채운다.
 - 삭제는 확인을 받는다. 진행 중 업무를 지워도 터미널 세션은 건드리지 않는다.
 
+### 에이전트 설정
+
+- 프로필의 `defaultAgent`를 캐릭터 편집의 터미널 영역에서 저장한다. 업무의 에이전트 지정이 비어 있으면 프로필 설정 전체를 사용하며, 프로필도 비어 있으면 Claude 기본값이다. 업무에서 CLI를 명시하면 모델/effort는 그 CLI의 기본값으로 시작한다. CLI를 바꾸면 이전 모델/effort를 지운다.
+- Claude/Codex/agy/Pi 모델 후보는 기존 `automationCliModels` 조회를 재사용한다. 수동 입력·저장된 모델은 조회 실패에 보존한다. agy의 명시 모델은 실행 직전 실제 목록과 정확히 대조하고, 모델·effort 검증과 POSIX 인용은 기존 기동 코드를 재사용한다.
+
 ### 보내기
 
-카드의 '보내기' 버튼은 담당 캐릭터가 있을 때만 누를 수 있다.
+카드의 '보내기' 버튼은 담당 캐릭터가 있고 지원되는 프로필일 때 누를 수 있다. 같은 캐릭터에는 한 번에 한 업무만 보낸다.
 
 1. 담당 캐릭터의 터미널 상태를 본다.
-   - 세션이 없거나 빈 셸이면 바로 진행한다.
-   - CLI가 돌고 있거나 작업 중이면 "터미널을 재시작하고 새로 시작할까요?"를 묻는다. 취소하면 아무것도 하지 않는다.
+   - 세션이 없으면 새로 만들고, 미제출 입력이 없는 빈 셸로 확인되면 기존 세션을 사용한다.
+   - CLI가 돌거나 미제출 입력이 있거나 빈 셸임을 확인할 수 없으면 재시작 확인을 표시한다. 미제출 입력은 추가 경고로 보여준다. 취소하면 세션·입력·업무 상태를 바꾸지 않는다.
 2. 필요하면 세션을 재시작한다(기존 재시작 경로 재사용).
 3. 고른 CLI를 모델·노력 인자와 함께 기동한다.
-4. 기동 대기(기본 10초) 뒤 제목+본문을 첫 프롬프트로 제출한다.
-5. 업무 상태를 진행 중으로 바꾸고 새 세션 id를 업무에 연결한다.
+4. 기동 ACK 확인 후 기본 10초를 기다리고 제목+본문을 첫 프롬프트로 제출한다.
+5. 첫 프롬프트 제출 성공 후 업무 상태를 진행 중으로 바꾸고 사용한 세션 id를 업무에 연결한다.
 
-기동·입력 중 실패하면 상태는 할 일로 두고 카드에 오류 한 줄을 띄운다.
+기동·입력 중 실패하면 기존 상태와 연결 세션 이력을 유지하고 카드에 오류 한 줄을 띄운다. 할 일에서 보냈다면 할 일로 남는다. 실패한 보내기를 자동 재전송하지 않는다.
+
+#### 지원 대상
+
+- 앱이 직접 생성한 Unix bash/zsh PTY만 보낼 수 있다. 프로필에 시작 명령 또는 tmux 호스팅이 있거나 퇴근 중이면 보내기를 막는다. 외부 연결·입양·미지원 셸·Windows도 현재 범위에서 막는다. 봇/자동화가 실행 중이면 먼저 중단해야 한다.
+
+#### 입력과 재시작 규약
+
+- 기존 PTY는 원래 셸의 foreground pgid와 그룹 구성원이 셸 하나인지 확인하며, 미제출 입력이 없을 때 바로 보낸다. 다른 프로세스가 있거나 조회가 불가능하면 재시작을 확인한다. 브로커 PTY의 foreground 조회 불가도 기존 세션에서는 확인 대상으로 둔다.
+- 재시작 확인은 세션과 사람 입력 revision을 고정한다. 확인 후 키 입력/세션 교체가 있으면 폐기하지 않는다. 미제출 입력은 별도 경고로 표시한다. 재시작 위치는 관측된 현재 cwd를 우선하며 프로필 시작 폴더는 바꾸지 않는다.
+- 새 PTY의 입력 대상이 불명확해도 기동 ACK를 확인하기 전에는 첫 프롬프트를 보내지 않는다. 이미 다른 프로세스가 foreground인 것으로 확인된 새 PTY는 거절한다. ACK는 최대 10초 기다리고, 성공 시점부터 기본 10초 기동 대기를 센다.
+- `WorkSendRuntime`은 캐릭터별 동시 보내기를 거절하고, InjectGate의 전환 소유권/strict 제출로 다른 자동 생산자를 보류한다. 사람 입력은 계속 전달되며 기동/대기/본문/CR 전에 세션·세대·revision을 재검사한다. 이 경로에는 미제출 입력의 2분 강행 규칙을 적용하지 않는다.
+- 제목+빈 줄+본문을 bracketed paste로 제출해 줄바꿈·코드 블록을 보존한다. 제목은 한 줄, 본문은 LF/탭만 허용하며 터미널 제어문자는 거절한다. 전체 프롬프트 상한은 256 KiB다. 기존 `Automation` 출처/자동 프롬프트 분류를 재사용한다.
+- 기동 ACK가 없거나 준비 대기 중 반환 receipt가 생기면 프롬프트를 보내지 않는다. 실패한 기동·부분 제출은 자동 재전송하지 않으며 다시 보내려면 재시작 확인을 거친다. 본문 뒤 개입으로 CR을 보내지 못한 경우 카드에서 터미널 확인을 안내한다.
+- 첫 프롬프트의 CR 제출 성공 후에만 `sessionIds`·세션 요약의 `workItemId`를 연결하고 진행 중으로 바꾼다. 실패는 기존 상태/세션 이력을 보존하며 오류 코드를 저장해 현재 언어로 표시한다. 보내기 도중 삭제한 업무를 복구하지 않는다.
 
 ### 모니터링
 
 보낸 뒤 카드는 연결 세션의 실시간 상태를 보여준다.
 
-- 작업 중 / 질문 대기 / 턴 종료 + 경과 시간 + 턴 수·추정 비용.
+- 최신 연결 세션의 작업 중 / 질문 대기 / 턴 종료 / 세션 종료 + 경과 시간 + 턴 수·토큰·추정 비용.
 - 질문 대기(훅 알림)면 카드를 강조한다.
-- 카드를 클릭하면 그 캐릭터 터미널 탭을 연다.
+- 연결된 카드나 터미널 버튼을 누르면 연결 세션을 소유한 캐릭터의 터미널 탭을 연다. 업무 담당을 바꿔도 기존 연결 세션의 소유자를 따른다.
+- 모니터링은 패널 토글과 무관하게 구독한다. 비용·토큰은 기존 실시간 사용량과 복원 시드를 합치고 비용 표시 설정을 따른다. 복원 시드는 기존 3일 조회 한계를 따른다.
 
 ### 상태 전이
+
+최신 연결 세션의 Stop 알림 또는 최종 usage는 진행 중→검토 대기, 후속 prompt는 검토 대기→진행 중으로 바꾼다. 부분 usage, 셸 idle, 이전 연결 세션, 늦은 이벤트로 상태를 바꾸지 않는다.
 
 ```text
             보내기 성공                턴 종료
@@ -80,7 +103,7 @@
 
 완료는 사람이 체크할 때만 된다. 사람은 어느 상태에서나 상태를 직접 바꿀 수 있다.
 
-보내기가 실패하면 상태는 바뀌지 않는다(할 일 유지).
+보내기가 실패하면 상태는 바뀌지 않는다. 사람이 할 일 또는 완료로 바꾼 업무는 자동 상태 전이 대상에서 제외한다.
 
 ## 우측 패널: 세션 로그
 
@@ -117,15 +140,17 @@
 
 ### 보존과 과거 세션
 
-- 300일까지 보여주고, 기본 표시는 최근 7일이다. 300일을 넘은 요약 레코드는 지운다.
-- opt-in 이전 세션도 session-events에서 재구성해 보여준다. 캐릭터·시각·폴더·턴·토큰은 나오지만 요약 문구는 없을 수 있다. session-events는 현재 정리되지 않아 날짜 파일이 남아 있는 만큼 보인다.
+- 조회는 최대 300일이고 기본 표시는 최근 7일이다. 요약 월 파일의 만료 처리는 아래 저장 규약을 따른다.
+- opt-in 이전 세션도 보존된 session-events를 300일 범위에서 재구성해 보여준다. 캐릭터·시각·폴더·턴·토큰은 나오지만 요약 레코드가 없는 과거 세션은 요약 문구와 프롬프트 본문이 없을 수 있다.
 - 우측 패널은 읽기 전용이다. 로그 항목을 지우거나 고치는 기능은 없다.
+- 패널 마운트 시 필요한 이벤트 종류만 300일 범위에서 읽고 이후 5초마다 새 구간을 중복 키(`runId:seq`)로 병합한다. 상세 전사 존재 확인은 펼친 세션에서만 실행한다.
+- 이름·폴더·시작 시각은 `session_started` 스냅샷을 우선한다. 종료 시각이 없으면 현재 시각으로 대체하지 않고 부재로 표시한다.
 
 ## 데이터 모델과 저장
 
-새 저장소는 둘(업무, 세션 요약)이고 프로필에 기본 에이전트 필드를 더한다. 모두 앱 데이터 폴더 아래다.
+업무와 세션 요약은 별도 저장소에, 기본 에이전트는 프로필의 `defaultAgent`에 저장한다. 모두 앱 데이터 폴더 아래다.
 
-| 저장소 | 위치(안) | 내용 | 쓰는 쪽 |
+| 저장소 | 위치·필드 | 내용 | 쓰는 쪽 |
 | --- | --- | --- | --- |
 | 업무 | `work-items.json` | `WorkItem[]` 전체. 변경 시 디바운스 저장(메모 저장과 같은 규약) | 렌더러 → IPC |
 | 세션 요약 | `session-summaries/v1/YYYY-MM.jsonl` | 세션당 레코드. 같은 sessionId는 마지막 줄이 이긴다 | 렌더러 → IPC |
@@ -143,7 +168,7 @@ interface WorkItem {
   status: "todo" | "in_progress" | "review" | "done";
   order: number;         // 상태 묶음 안 정렬
   sessionIds: string[];  // 보낸 세션들, 최신이 마지막
-  lastError?: string;
+  lastError?: string;    // 오류 코드. 표시할 때 현재 언어로 번역
   createdAt: number;
   updatedAt: number;
 }
@@ -158,7 +183,7 @@ interface SessionSummary {
   agentName: string;     // 시작 당시 스냅샷
   cwd?: string;
   startedAt: number;
-  endedAt?: number;      // 진행 중이면 없음
+  endedAt?: number;      // 진행 중 또는 종료 시각 유실 시 없음
   goal?: string;         // 라벨 목표
   prompts: { at: number; text: string; origin?: string }[]; // 최대 50개, 각 300자
   workItemId?: string;
@@ -166,96 +191,79 @@ interface SessionSummary {
 ```
 
 - 턴 수·토큰·비용·작업 시간은 저장하지 않고 session-events에서 계산한다(분석 패널과 같은 집계 코드 재사용).
-- 요약 레코드는 렌더러가 `taskLabels` 변화를 구독해 만든다(`workLogPersister`와 같은 방식). 단 일기 설정과 무관하게 항상 쓴다.
+- 요약 레코드는 렌더러가 세션 시작·종료와 `taskLabels` 변화를 구독해 만든다. 패널·일기·요약기 설정과 무관하게 항상 수집한다.
 - 과거 세션은 session-events만으로 줄을 만들고 요약 레코드가 있으면 합친다.
-- 300일을 넘은 월 파일은 앱 시작 시 지운다.
+- 부팅 복원 시 만료 경계보다 앞선 월 파일을 지운다. 경계 월 안의 300일 초과 레코드는 읽기·표시에서 제외하고 그 월이 완전히 만료되면 파일을 제거한다.
+
+### 저장과 종료 규약
+
+- 업무는 1초 디바운스로 전체 스냅샷을 저장한다. 동시 로드·저장을 직렬화하고 실패 시 미저장 표시와 재시도를 제공한다.
+- 요약은 변경된 세션을 1초 디바운스로 직렬 append하며 저장 실패 시 재시도한다. 프롬프트는 **처음 50개**를 남겨 첫 프롬프트 폴백을 보존한다. 각 본문은 Unicode 문자 기준 300자다. 이후 프롬프트도 세션 이벤트의 턴·사용량 집계에는 계속 포함된다.
+- 정상 종료에서는 재시작 확인 대기를 취소하고 이미 시작한 보내기 결과를 기다린 뒤 업무·요약을 flush한다. 저장에 실패하면 종료를 보류해 재시도할 수 있도록 한다. OS 강제 종료에 대한 마지막 디바운스 보장은 하지 않는다.
+- 세션 폐기·핸드오프·앱 종료는 네이티브 보내기를 취소한다.
 
 ## 레이아웃과 상호작용
 
 좌우 패널은 고정 사이드바다. 켜면 오피스 캔버스가 가운데로 좁아지고, 오버레이처럼 캔버스를 가리지 않는다.
 
 - TopBar·BottomBar 사이의 높이를 쓴다. 터미널 오버레이와 다이얼로그는 지금처럼 패널 위에 뜬다.
-- 폭은 각각 기본 280px, 경계를 드래그해 220~480px로 조절한다.
+- 폭은 각각 기본 280px, 경계를 드래그하거나 경계의 좌우 방향키로 220~480px 안에서 조절한다.
 - 각 패널은 머리의 접기 버튼으로 24px 띠로 접힌다. 폭과 접힘 상태는 로컬(localStorage)에 기억한다.
 - 캔버스 폭이 줄면 오피스 씬은 기존 리사이즈 경로로 다시 맞춘다. 티커 칼럼(SessionTimePanel·알림)은 우측 패널 안쪽으로 밀린다.
-- 화면 문자열은 모두 `src/shared/i18n/locales/`(ko·en)에 둔다. 픽셀 테마 토큰을 따른다.
+- 화면 문자열은 모두 `src/shared/i18n/locales/`의 6개 지원 언어(ko·en·fr·ja·zh-Hans·zh-Hant)에 둔다. 픽셀 테마 토큰을 따른다.
 - 키보드: 새 업무 입력줄 Enter = 추가, Esc = 펼친 카드 닫기. 전역 단축키는 이번 범위가 아니다.
 
-## 구현 참고
+## 구현 위치와 IPC
 
-대부분 기존 부품을 재사용한다. 새로 만드는 것은 두 패널, 두 저장소, '보내기' 실행기다.
-
-| 필요한 것 | 재사용할 코드 |
+| 역할 | 현재 코드 |
 | --- | --- |
-| 패널 배치 | `src/renderer/layout/UIChrome.tsx`, `layout.css` (TopBar/ticker-column/BottomBar 구조) |
-| opt-in 설정 | `src/shared/types/settings.ts` `AppSettings` + Rust `persistence/settings_store.rs`, `src/renderer/settings/` |
-| CLI 기동 + 대기 + 첫 프롬프트 | 터미널 자동화 `src-tauri/src/automation/` (`cli_profile_id` claude/codex/agy/kilo/pi, 모델·effort 검증, 기동 10초 대기). 설계는 `docs/terminal-automation-design.md` |
-| 프롬프트 제출 | `src-tauri/src/session/inject.rs` InjectGate. `InjectSource`에 `WorkItem`을 추가하거나 Automation 출처 재사용 |
-| 세션 재시작 | 탭 메뉴의 기존 재시작 경로(`src/renderer/terminal/`) |
-| 실시간 상태·질문 대기 | appStore 세션 상태 + 알림(question/done), `timeline/turnReducer.ts` |
-| 턴·토큰·비용 집계 | `src/renderer/analytics/` (session-events 로드·비용 단가), `loadSessionEvents` |
-| 요약 문구 원천 | `store` `taskLabels`(goal·프롬프트), 구독 방식은 `diary/workLog.ts`·`workLogPersister.ts` |
-| 업무 자동저장 규약 | `memo/memoStore.ts` (1초 디바운스 + flush) |
-| 세션 로그 보기 | `sessionlog/SessionLogDialog.tsx` |
-| 캐릭터 얼굴 | `portrait/`, `sprite/` |
+| 영속 타입·보내기 계약 | `src/shared/types/workPanels.ts`, `src-tauri/src/types.rs` |
+| 설정·패널 배치 | `src/shared/types/settings.ts`, `src-tauri/src/persistence/settings_store.rs`, `src/renderer/settings/`, `src/renderer/layout/UIChrome.tsx` |
+| 패널 UI·폭·접힘 | `src/renderer/workpanels/WorkItemsPanel.tsx`, `SessionHistoryPanel.tsx`, `WorkPanelFrame.tsx`, `panelLayoutStore.ts`, `workPanels.css` |
+| 프로필 기본값·업무 오버라이드 | `src/renderer/workpanels/WorkAgentFields.tsx`, `src/renderer/profile/` |
+| 업무·요약 수집과 저장 | `src/renderer/workpanels/workItemStore.ts`, `sessionSummaryStore.ts`, `sessionRows.ts`, `src-tauri/src/persistence/work_panels_store.rs` |
+| 보내기 조정·오류 표시 | `src/renderer/workpanels/workSendStore.ts`, `sendErrorText.ts` |
+| 네이티브 보내기·CLI 기동 | `src-tauri/src/work_send.rs`, `src-tauri/src/ipc/commands/work_panels.rs`. 기존 `automation/`의 모델·effort 검증과 기동 receipt 재사용 |
+| strict 입력·세션 재시작 | `src-tauri/src/session/inject.rs`, `src/renderer/agent/restartAgentSession.ts`. `InjectSource::Automation` 재사용 |
+| 모니터링·자동 상태 전이 | `src/renderer/workpanels/workMonitor.ts`, `WorkCardMonitor.tsx`. activity·notification·최종 usage 이벤트 구독 |
+| 종료 저장 | `src/renderer/workpanels/lifecycle.ts` |
+| 턴·토큰·비용·전사 보기 | `src/renderer/analytics/`, `src/renderer/usage/`, `src/renderer/sessionlog/SessionLogDialog.tsx` |
 
-검증: `npx tsc --noEmit`, `npx vitest run --dir src`, `cargo test --manifest-path src-tauri/Cargo.toml`. 하드코딩 문자열은 i18n 테스트가 막는다.
+IPC 계약은 `src/shared/ipc.ts`와 `src/renderer/ipc/tauriApi.ts`의 로컬 어댑터를 통해 사용한다.
 
-## 구현 진행 (2026-10-12)
+| IPC | 동작 |
+| --- | --- |
+| `load_work_items` / `save_work_items` | 업무 전체 스냅샷 읽기·쓰기 |
+| `load_session_summaries` / `append_session_summaries` | 월별 요약 복원·append |
+| `inspect_work_send_target` | 세션 id·사람 입력 revision·재시작 필요·미제출 입력을 읽기 전용으로 점검 |
+| `send_work_item` | 고정된 세션·revision에 CLI와 프롬프트 제출. 성공하면 `sessionId`·`submittedAt` 반환 |
 
-1차 구현:
+기존 `dispose_session`의 선택적 `expectedSessionId`·`expectedHumanInputRevision`으로 확인했던 세션만 재시작한다. 업무 실행은 터미널 자동화의 결과 파일 감시와 CLI 종료 흐름을 사용하지 않는다.
 
-- [x] Rust/TS `workPanelsEnabled` 기본 OFF와 시스템 설정 토글. 웹 원격·데스크톱 원격 창·마스코트에는 패널을 노출하지 않는다.
-- [x] 좌우 패널, 캔버스 영역 축소와 기존 ResizeObserver 경로, 티커 이동. 패널 폭(220~480px)·접힘(24px) 로컬 저장, 포인터 드래그와 경계의 좌우 방향키 조절.
-- [x] 업무 제목 Enter 추가, 제목·본문·담당·상태 편집, 상태별 묶음, 그룹 내 드래그 정렬, 완료 기본 접힘, 삭제 확인, Esc 카드 닫기.
-- [x] `work-items.json` 스냅샷과 1초 디바운스 자동저장. 동시 로드·저장 직렬화, 실패 시 미저장 표시·재시도, 종료 직전 flush.
-- [x] 월별 `session-summaries/v1/YYYY-MM.jsonl`, 시작 이름·폴더·목표·프롬프트 수집. 패널/일기/요약기 토글과 무관하게 수집하며 시작/종료·taskLabels 변경을 구독한다.
-- [x] 과거 session-events와 요약 병합, 진행 중 세션 우선, 검색·캐릭터/기간/폴더 필터, 프롬프트·턴 소요·모델별 사용량 상세, 연결 업무 이동, 전사 존재 확인 후 기존 SessionLogDialog로 이동.
-- [x] 분석 패널의 턴/토큰/비용 계산 재사용. 시작 이벤트 스냅샷이 요약 복원 시점의 메타보다 우선하며 종료 시각 유실은 임의로 현재 시각을 넣지 않고 부재로 표시한다.
-- [x] 300일 조회 제한·부팅 복원 시 만료 월 파일 정리, 6개 지원 언어 카탈로그 동기화.
+## 검증 상태 (2026-10-12)
 
-현재 세부 규약:
+구현 완료 범위는 opt-in 설정·좌우 패널·업무 편집과 영속화·세션 요약과 검색·프로필 기본 에이전트·업무 보내기·실시간 모니터링과 자동 상태 전이다.
 
-- 프롬프트는 **처음 50개**를 남겨 첫 프롬프트 폴백을 보존한다. 각 본문은 Unicode 문자 기준 300자다. 이후 프롬프트는 세션 이벤트의 턴/사용량 집계에는 계속 포함된다.
-- 세션 기록 패널이 마운트되면 필요한 이벤트 종류만 300일 범위에서 읽고, 이후 5초마다 새 구간을 중복 키(`runId:seq`)로 병합한다. 상세 전사 확인은 펼친 세션에서만 실행한다.
-- 월 파일 정리는 만료 경계보다 앞선 월을 제거한다. 경계 월 안의 300일 초과 레코드는 읽기/표시에서 제외하고 해당 월이 완전히 만료되면 파일을 제거한다.
-- 저장에 실패하면 종료를 보류해 재시도할 수 있도록 한다. OS 강제 종료에 대한 마지막 디바운스 보장은 하지 않는다.
-- 1차에서는 보내기가 비활성이었으며, 2차에서 프로필 기본값·업무 오버라이드와 보내기를 연결했다.
+완료한 검증:
 
-2차 구현:
+- `npx tsc --noEmit`, `npx vitest run --dir src`, `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run build`: 타입 검사·프런트 전체 회귀·네이티브 전체 회귀·프로덕션/웹 빌드 통과. UI 문자열은 i18n 테스트로 검사한다.
+- `cargo test --manifest-path src-tauri/Cargo.toml work_send_multiline_in_real_pty_with_cli_double -- --ignored`: 실제 PTY에서 CLI 대역의 모델·effort 인자, 기본 10초 대기, Unicode·빈 줄·코드 블록 그대로 수신을 확인했다. 설치된 CLI나 LLM 계정은 사용하지 않는다.
+- Safari 로컬 프리뷰에서 합성 데이터·IPC로 기본 설정 표시, 모델 입력 배치, 질문 강조·경과·턴·비용, 재시작 확인·미제출 경고·취소를 확인했다. 설치된 원본 앱은 교체하지 않았다.
 
-- [x] 프로필 `defaultAgent` Rust/TS 미러·캐릭터 편집 UI, 업무의 CLI/모델/effort 오버라이드 UI.
-- [x] 기존 자동화의 CLI 기동과 InjectGate를 재사용하는 업무 보내기 실행기. 결과 파일 감시/CLI 종료 흐름은 업무 실행에 적용하지 않는다.
-- [x] 기존 세션 재시작 확인, 기본 10초 기동 대기, 첫 프롬프트 제출 성공 후 세션 연결·상태 변경. 중복 보내기와 세션 교체 경합 방지.
-- [x] 연결 세션의 질문/작업/턴 종료 표시와 `in_progress ↔ review` 자동 전이. 완료는 계속 수동.
-- [x] 아래 실행 정책 확정.
-- [ ] 설치 Tauri 앱의 저장·복원·인증된 CLI 5종 보내기 실기 인수. UI는 합성 데이터/IPC의 Safari 로컬 프리뷰로, 보내기는 실제 bash PTY와 CLI 대역으로 검증했다.
+남은 실기 인수:
 
-2차 실행 규약:
+- [ ] 설치 Tauri 앱에서 설정·프로필 기본 에이전트·업무 저장과 재실행 후 복원 확인.
+- [ ] 인증된 실제 Claude·Codex·agy·Kilo·Pi에서 CLI 기동, 첫 프롬프트 제출, 질문·턴 종료·후속 프롬프트의 표시와 상태 전이 확인.
 
-- 프로필의 `defaultAgent`를 캐릭터 편집의 터미널 영역에서 저장한다. 업무의 에이전트 지정이 비어 있으면 프로필 설정 전체를 사용하며, 프로필도 비어 있으면 Claude 기본값이다. 업무에서 CLI를 명시하면 모델/effort는 그 CLI의 기본값으로 시작한다. CLI를 바꾸면 이전 모델/effort를 지운다.
-- Claude/Codex/agy/Pi 모델 후보는 기존 `automationCliModels` 조회를 재사용한다. 수동 입력·저장된 모델은 조회 실패에 보존한다. agy의 명시 모델은 실행 직전 실제 목록과 정확히 대조하고, 모델·effort 검증과 POSIX 인용은 기존 기동 코드를 재사용한다.
-- 앱이 직접 생성한 Unix bash/zsh PTY만 보낼 수 있다. 프로필에 시작 명령 또는 tmux 호스팅이 있거나 퇴근 중이면 보내기를 막는다. 외부 연결·입양·미지원 셸·Windows도 현재 범위에서 막는다. 봇/자동화가 실행 중이면 먼저 중단해야 한다.
-- 기존 PTY는 원래 셸의 foreground pgid와 그룹 구성원이 셸 하나인지 확인하며, 미제출 입력이 없을 때 바로 보낸다. 다른 프로세스가 있거나 조회가 불가능하면 재시작을 확인한다. 브로커 PTY의 foreground 조회 불가도 기존 세션에서는 확인 대상으로 둔다.
-- 재시작 확인은 세션과 사람 입력 revision을 고정한다. 확인 후 키 입력/세션 교체가 있으면 폐기하지 않는다. 미제출 입력은 별도 경고로 표시한다. 재시작 위치는 관측된 현재 cwd를 우선하며 프로필 시작 폴더는 바꾸지 않는다.
-- 새 PTY의 입력 대상이 불명확해도 기동 ACK를 확인하기 전에는 첫 프롬프트를 보내지 않는다. 이미 다른 프로세스가 foreground인 것으로 확인된 새 PTY는 거절한다. ACK는 최대 10초 기다리고, 성공 시점부터 기본 10초 기동 대기를 센다. 이 시간은 CLI 인증/승인/TUI 준비를 증명하지 않는다.
-- `WorkSendRuntime`은 캐릭터별 동시 보내기를 거절하고, InjectGate의 전환 소유권/strict 제출로 다른 자동 생산자를 보류한다. 사람 입력은 계속 전달되며 기동/대기/본문/CR 전에 세션·세대·revision을 재검사한다. 이 경로에는 미제출 입력의 2분 강행 규칙을 적용하지 않는다.
-- 제목+빈 줄+본문을 bracketed paste로 제출해 줄바꿈·코드 블록을 보존한다. 제목은 한 줄, 본문은 LF/탭만 허용하며 터미널 제어문자는 거절한다. 전체 프롬프트 상한은 256 KiB다. 기존 `Automation` 출처/자동 프롬프트 분류를 재사용한다.
-- 기동 ACK가 없거나 준비 대기 중 반환 receipt가 생기면 프롬프트를 보내지 않는다. 실패한 기동·부분 제출은 자동 재전송하지 않으며 다시 보내려면 재시작 확인을 거친다. 본문 뒤 개입으로 CR을 보내지 못한 경우 카드에서 터미널 확인을 안내한다. 외부 CLI의 자연 종료와 PTY 쓰기를 완전히 원자화하는 보장은 하지 않는다.
-- 첫 프롬프트의 CR 제출 성공 후에만 `sessionIds`·세션 요약의 `workItemId`를 연결하고 진행 중으로 바꾼다. 실패는 기존 상태/세션 이력을 보존하며 오류 코드를 저장해 현재 언어로 표시한다. 보내기 도중 삭제한 업무를 복구하지 않는다.
-- 최신 연결 세션의 질문/작업/턴 종료/세션 종료를 표시한다. Stop 알림 또는 최종 usage는 진행 중→검토 대기, 후속 prompt는 검토 대기→진행 중이다. 부분 usage, 셸 idle, 이전 연결 세션, 늦은 이벤트로 상태를 바꾸지 않는다. 사람이 할 일/완료로 바꾼 업무는 자동 전이 대상에서 제외한다.
-- 모니터링은 패널 토글과 무관하게 구독한다. 비용/토큰은 기존 실시간 사용량과 복원 시드를 합치고, 비용 표시 설정을 따른다. 복원 시드의 기존 3일 조회 한계도 같다. 종료 시 확인 대기는 취소하고 진행 중인 보내기 결과를 저장한 뒤 종료한다. 세션 폐기·핸드오프·앱 종료는 네이티브 보내기를 취소한다.
+## 알려진 제한
+
+- 기동 ACK와 기본 10초 대기는 CLI 인증·승인·TUI 준비를 증명하지 않는다. 실제 CLI 준비 상태는 위 실기 인수에서 확인해야 한다.
+- 외부 CLI의 자연 종료와 PTY 쓰기를 완전히 원자화하는 보장은 하지 않는다.
 - 렌더러 reload/crash 뒤 보내기를 자동 재개·재전송하지 않는다. 이미 제출했지만 IPC 응답을 렌더러가 받기 전에 사라진 경우 업무 연결은 남지 않을 수 있으며 실제 세션 기록은 별도로 수집된다.
 
-검증 기록:
+## 범위 밖
 
-- 타입 검사, 프런트 전체 회귀, 네이티브 전체 회귀, 프로덕션/웹 빌드.
-- `cargo test --manifest-path src-tauri/Cargo.toml work_send_multiline_in_real_pty_with_cli_double -- --ignored`: 실제 PTY에서 CLI 대역의 모델/effort 인자, 기본 10초 대기, Unicode·빈 줄·코드 블록 그대로 수신을 확인했다. 설치된 CLI나 LLM 계정은 사용하지 않는다.
-- Safari 로컬 프리뷰에서 기본 설정 표시, 모델 입력 배치, 질문 강조·경과/턴/비용, 재시작 확인·미제출 경고·취소를 확인했다. 설치된 원본 앱은 교체하지 않았다.
-
-## 범위 밖 / 미결 사항
-
-이번 범위가 아닌 것:
+현재 제공하지 않는 기능:
 
 - 턴 종료만으로 자동 완료 처리. 완료는 항상 사람이 정한다.
 - 세션 종료 시 LLM 요약 생성(크레딧 소모).
@@ -263,10 +271,3 @@ interface SessionSummary {
 - 외부 이슈 트래커(Gitea·kbm) 동기화. 봇 모드와는 별개다.
 - 우측 로그 항목 편집·삭제, 내보내기.
 - 웹 원격·마스코트 창에 패널 노출.
-
-구현 중 정할 것:
-
-- [x] 미제출 입력은 추가 경고를 표시하며, 확인 후 새 사람 입력이 있으면 재시작하지 않는다.
-- [x] `startupCommand`가 있는 프로필은 이번 단계에서 보내기를 막는다. 끝났다고 시간만으로 추정하지 않는다.
-- [x] tmux 호스팅·외부 attach·입양 세션은 막고 직접 생성한 bash/zsh PTY만 지원한다.
-- [x] 퇴근 상태에서는 보내기를 막고 사람이 먼저 출근시켜야 한다.
