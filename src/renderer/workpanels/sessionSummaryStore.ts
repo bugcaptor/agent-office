@@ -60,7 +60,11 @@ export async function installSessionSummaryRecorder(): Promise<() => void> {
     const { summaries, liveIds } = useSessionSummaryStore.getState();
     const previous = summaries[e.sessionId];
     const live = e.state === "starting" || e.state === "running";
-    useSessionSummaryStore.setState({ liveIds: live ? [...new Set([...liveIds, e.sessionId])] : liveIds.filter((id) => id !== e.sessionId) });
+    // 재시작으로 교체된 세션은 백엔드가 종료 이벤트를 내지 않는다(manager.rs on_exit의 교체 가드).
+    // 같은 캐릭터의 새 세션이 뜨면 이전 세션은 그 시각에 끝난 것으로 본다.
+    const replaced = live ? liveIds.filter((id) => id !== e.sessionId && summaries[id]?.agentId === e.agentId) : [];
+    useSessionSummaryStore.setState({ liveIds: live ? [...new Set([...liveIds.filter((id) => !replaced.includes(id)), e.sessionId])] : liveIds.filter((id) => id !== e.sessionId) });
+    for (const id of replaced) if (summaries[id].endedAt === undefined) put({ ...summaries[id], endedAt: e.at });
     const base = previous ?? { sessionId: e.sessionId, agentId: e.agentId, agentName: agents[e.agentId]?.name ?? e.agentId, cwd: agents[e.agentId]?.cwd, startedAt: e.at, prompts: [] };
     // exited→disposed에서 실제 종료 시각을 덮어쓰지 않는다.
     if (!previous || (!live && previous.endedAt === undefined)) put({ ...base, ...(!live ? { endedAt: e.at } : {}) });
@@ -70,6 +74,8 @@ export async function installSessionSummaryRecorder(): Promise<() => void> {
     for (const [agentId, usage] of Object.entries(sessionUsage)) {
       if (sessions[agentId]?.status === "running" || sessions[agentId]?.status === "starting") {
         const state = useSessionSummaryStore.getState();
+        // 새 세션이 뜬 직후엔 sessionUsage가 아직 이전 세션 id를 들고 있다 — 끝난 세션을 되살리지 않는다.
+        if (state.summaries[usage.sessionId]?.endedAt !== undefined) continue;
         if (!state.liveIds.includes(usage.sessionId)) useSessionSummaryStore.setState({ liveIds: [...state.liveIds, usage.sessionId] });
       }
     }

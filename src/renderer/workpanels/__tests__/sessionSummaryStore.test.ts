@@ -58,6 +58,14 @@ describe("상시 세션 요약 수집", () => {
     expect(append.mock.calls[0][0][0].prompts).toHaveLength(50);
     expect(append.mock.calls[0][0][0].prompts[0].text).toBe("Prompt 0");
   });
+  it("종료 이벤트 없이 재시작으로 교체된 세션은 새 세션 시작 시각에 끝낸다", async () => {
+    off = await installSessionSummaryRecorder(); emit("running");
+    useAppStore.setState({ sessions: { a1: { agentId: "a1", status: "running", cols: 80, rows: 24, lastActivityAt: now } }, sessionUsage: { a1: { sessionId: "s1", totals: {} as never } } });
+    emit("starting", now + 50, "s2");
+    useAppStore.setState({ sessions: { a1: { agentId: "a1", status: "running", cols: 80, rows: 24, lastActivityAt: now + 60 } } });
+    expect(useSessionSummaryStore.getState().liveIds).toEqual(["s2"]);
+    expect(useSessionSummaryStore.getState().summaries.s1.endedAt).toBe(now + 50);
+  });
   it("쓰기 실패는 버리지 않고 자동으로 재시도한다", async () => {
     off = await installSessionSummaryRecorder(); append.mockRejectedValueOnce(new Error("disk")); emit("running");
     await flushSessionSummaries(); expect(useSessionSummaryStore.getState().error).toBe(true);
