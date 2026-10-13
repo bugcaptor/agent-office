@@ -79,7 +79,7 @@ describe("업무 패널 UI", () => {
 });
 
 
-it("모델/노력 편집만으로 입력하지 않고 재시작 확인에서 미제출 경고와 취소를 제공한다", async () => {
+it("모델/노력 편집만으로 입력하지 않고 재시작 확인에서 미제출 경고와 취소를 제공하며 보내기에 성공하면 팝업을 닫는다", async () => {
   useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true }, agents: { a: { id: "a", name: "Ada", role: "dev", seed: "s", createdAt: 1, deskIndex: 0 } }, agentOrder: ["a"] });
   useWorkItemStore.setState({ loaded: true }); const id = useWorkItemStore.getState().add("Task")!;
   useWorkItemStore.getState().edit(id, { assigneeAgentId: "a" });
@@ -89,8 +89,11 @@ it("모델/노력 편집만으로 입력하지 않고 재시작 확인에서 미
   fireEvent.change(screen.getByLabelText("노력"), { target: { value: "high" } });
   expect(api.sendWorkItem).not.toHaveBeenCalled(); expect(api.inspectWorkSendTarget).not.toHaveBeenCalled();
   expect(useWorkItemStore.getState().items[0].agent).toBeUndefined();
-  expect(screen.getByRole("button", { name: "보내기" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.queryByRole("button", { name: "보내기" })).toBeNull();
+  expect(screen.getByRole("button", { name: "저장 후 보내기" }).hasAttribute("disabled")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  expect(screen.getByRole("button", { name: "저장" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.queryByRole("button", { name: "변경 되돌리기" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "보내기" }));
   await waitFor(() => expect(screen.getByRole("alertdialog")).toBeTruthy());
   expect(screen.getByText("미제출 입력도 사라집니다.")).toBeTruthy();
@@ -99,15 +102,22 @@ it("모델/노력 편집만으로 입력하지 않고 재시작 확인에서 미
   fireEvent.click(screen.getByRole("button", { name: "취소" }));
   await waitFor(() => expect(Object.keys(useWorkSendStore.getState().busy)).toHaveLength(0));
   expect(api.sendWorkItem).not.toHaveBeenCalled(); expect(useWorkItemStore.getState().items[0].agent).toEqual({ cli: "pi", model: "custom/model", effort: "high" });
+  expect(screen.getByRole("dialog", { name: "Task" })).toBeTruthy();
+  api.inspectWorkSendTarget.mockResolvedValueOnce({ sessionId: "s", humanInputRevision: 3, restartRequired: false, hasUncommitted: false });
+  fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+  await waitFor(() => expect(api.sendWorkItem).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(useWorkItemStore.getState().items[0]).toMatchObject({ status: "in_progress", sessionIds: ["s"] });
 });
 
 
-it("새 태스크는 추가할 때까지 저장하지 않고 취소하거나 접었다가 계속 쓸 수 있다", async () => {
+it("새 태스크는 추가할 때까지 저장하지 않고 초안을 버리거나 닫았다가 계속 쓸 수 있다", async () => {
   useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true } });
   render(<UIChrome />);
   await waitFor(() => expect(useWorkItemStore.getState().loaded).toBe(true));
   fireEvent.click(screen.getByRole("button", { name: "새 태스크 만들기" }));
   expect(screen.getByRole("button", { name: "추가" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.queryByRole("button", { name: "초안 버리기" })).toBeNull();
   fireEvent.change(screen.getByLabelText("본문"), { target: { value: "새 태스크의 본문\n둘째 줄" } });
   fireEvent.blur(screen.getByLabelText("본문"));
   await act(() => useWorkItemStore.getState().flush());
@@ -117,7 +127,7 @@ it("새 태스크는 추가할 때까지 저장하지 않고 취소하거나 접
   expect(screen.queryByLabelText("본문")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "새 태스크 작성 계속" }));
   expect((screen.getByLabelText("본문") as HTMLTextAreaElement).value).toBe("새 태스크의 본문\n둘째 줄");
-  fireEvent.click(screen.getByRole("button", { name: "취소" }));
+  fireEvent.click(screen.getByRole("button", { name: "초안 버리기" }));
   expect(screen.queryByLabelText("본문")).toBeNull();
   expect(useWorkItemStore.getState().items).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "새 태스크 만들기" }));
@@ -130,7 +140,7 @@ it("새 태스크는 추가할 때까지 저장하지 않고 취소하거나 접
   await waitFor(() => expect(api.saveWorkItems).toHaveBeenCalledTimes(1));
 });
 
-it("편집 초안은 접기와 카드 전환에 보존되며 취소는 모든 필드를 되돌린다", async () => {
+it("편집 초안은 닫기와 카드 전환에 보존되며 되돌리기는 팝업을 연 채 모든 필드를 되돌린다", async () => {
   useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true }, agents: {
     a: { id: "a", name: "Ada", role: "dev", seed: "s", createdAt: 1, deskIndex: 0 },
   } });
@@ -158,8 +168,9 @@ it("편집 초안은 접기와 카드 전환에 보존되며 취소는 모든 �
   fireEvent.click(screen.getAllByRole("button", { name: "패널 접기" })[0]);
   fireEvent.click(screen.getByRole("button", { name: "패널 펼치기" }));
   expect((screen.getByLabelText("본문") as HTMLTextAreaElement).value).toBe("Draft body");
-  fireEvent.click(screen.getByRole("button", { name: "취소" }));
-  fireEvent.click(screen.getByText("Original", { selector: "strong" }));
+  fireEvent.click(screen.getByRole("button", { name: "변경 되돌리기" }));
+  expect(screen.getByRole("dialog", { name: "Original" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "변경 되돌리기" })).toBeNull();
   expect((screen.getByLabelText("제목") as HTMLInputElement).value).toBe("Original");
   expect((screen.getByLabelText("본문") as HTMLTextAreaElement).value).toBe("");
   expect((screen.getByLabelText("담당 캐릭터") as HTMLSelectElement).value).toBe("");
@@ -217,9 +228,31 @@ it("편집기에서 선행 작업을 고르면 카드에 대기 표시가 나오
   expect(useWorkItemStore.getState().items.find((i) => i.id === build)?.dependsOn).toEqual([design]);
   expect(screen.getByText("선행 작업 대기: Design")).toBeTruthy();
   expect((screen.getByRole("button", { name: "보내기" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "보내기" }).getAttribute("aria-describedby")).toBe("work-send-hint");
+  expect(screen.getByText("선행 작업을 모두 완료한 뒤 보내세요.")).toBeTruthy();
   expect(screen.getByText("후속 작업 1개가 기다림")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "“Design” 선행 작업 빼기" }));
   fireEvent.click(screen.getByRole("button", { name: "저장" }));
   expect(useWorkItemStore.getState().items.find((i) => i.id === build)?.dependsOn).toBeUndefined();
   expect(screen.queryByText("선행 작업 대기: Design")).toBeNull();
+});
+
+it("완료로 표시는 상태만 즉시 저장하고 나머지 초안은 남긴다", async () => {
+  useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true } });
+  useWorkItemStore.setState({ loaded: true });
+  const id = useWorkItemStore.getState().add("Wrap up")!; useWorkItemStore.getState().select(id);
+  render(<UIChrome />);
+  expect(screen.getByRole("button", { name: "저장" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("button", { name: "보내기" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByText("존재하는 담당 캐릭터를 선택하세요.")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("본문"), { target: { value: "Draft notes" } });
+  fireEvent.click(screen.getByRole("button", { name: "완료로 표시" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(useWorkItemStore.getState().items[0]).toMatchObject({ status: "done", body: "" });
+  fireEvent.click(screen.getByText("Wrap up", { selector: "strong" }));
+  expect((screen.getByLabelText("본문") as HTMLTextAreaElement).value).toBe("Draft notes");
+  expect((screen.getByLabelText("상태") as HTMLSelectElement).value).toBe("done");
+  expect(screen.queryByRole("button", { name: "완료로 표시" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
 });

@@ -56,13 +56,25 @@
 .work-dependencies li { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
 .work-dependencies li > span { flex: 1; min-width: 0; }
 .work-dependencies li small { display: inline; margin: 0 0 0 4px; }
-.work-dependencies li .pixel-btn { padding: 0 6px; min-width: 0; }
+.work-dependencies li .pixel-btn { flex: none; width: 28px; height: 28px; min-height: 0; padding: 0; }
 .work-dependencies p { margin: 4px 0; }
 
 .work-card.selected { border-color: var(--accent); }
 .work-detail-dialog { width: min(560px, 92vw); color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
-.work-detail-dialog h2 { margin: 0 0 8px; font-size: 15px; }
+.work-dialog-header { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.work-dialog-header h2 { flex: 1; min-width: 0; margin: 0; font-size: 15px; line-height: 28px; }
+.work-dialog-close { flex: none; width: 28px; height: 28px; padding: 0; font-size: 16px; line-height: 1; }
 .work-detail-dialog label { display: block; margin: 6px 0; }
 .work-detail-dialog input:not([type="checkbox"]), .work-detail-dialog textarea, .work-detail-dialog select { width: 100%; box-sizing: border-box; min-width: 0; color: var(--text); background: var(--bg-base); border: 1px solid var(--border-dark); font: inherit; padding: 5px; }
 .work-detail-dialog textarea { resize: vertical; min-height: 8em; }
-.work-detail-dialog .work-card-actions { justify-content: flex-end; }
+/* 팝업 버튼 줄: 위험·보조 동작은 왼쪽, 주 동작은 오른쪽 끝. 손가락·마우스 오조작을 줄이도록 높이를 키우고 떼어 둔다. */
+.work-dialog-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.work-dialog-spacer { flex: 1 0 16px; }
+.work-detail-dialog .pixel-btn, .work-delete-dialog .dialog-actions .pixel-btn { min-height: 32px; font-size: 13px; }
+.work-detail-dialog .work-dialog-close { min-height: 0; font-size: 16px; }
+.work-dialog-actions .pixel-btn.primary { min-width: 6em; }
+.work-dialog-run { margin-top: 12px; padding-top: 12px; border-top: 2px solid var(--border-dark); }
+.work-send-hint { margin: 6px 0 0; text-align: right; color: var(--accent-warn); }
+.work-delete-dialog .dialog-actions { display: flex; gap: 8px; margin-top: 12px; }
+.work-panel .pixel-btn.danger, .work-detail-dialog .pixel-btn.danger, .work-delete-dialog .pixel-btn.danger { color: var(--accent-error); }
+.work-panel .pixel-btn:disabled, .work-detail-dialog .pixel-btn:disabled, .work-delete-dialog .pixel-btn:disabled { opacity: .45; cursor: not-allowed; }

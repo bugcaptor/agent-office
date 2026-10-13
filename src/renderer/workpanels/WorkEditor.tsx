@@ -6,16 +6,18 @@ import { dependencyCandidates } from "./workDependencies";
 import { WorkAgentFields } from "./WorkAgentFields";
 import { hasWorkContent, workItemTitle, type WorkItemDraft } from "./workItemDraft";
 
-export function WorkEditor({ itemId, value, busy = false, creating = false, onChange, onSave, onCancel, onCollapse }: {
+export function WorkEditor({ itemId, value, busy = false, creating = false, dirty, onChange, onSave, onDiscard }: {
   /** 편집 중인 업무. 새 업무면 없다. 선행 작업 후보에서 자신과 순환을 뺄 때 쓴다. */
   itemId?: string;
   value: WorkItemDraft;
   busy?: boolean;
   creating?: boolean;
+  /** 저장·되돌릴 변경이 있는지. 없으면 저장을 막고 되돌리기를 감춘다. */
+  dirty: boolean;
   onChange(patch: Partial<WorkItemDraft>): void;
   onSave(): void;
-  onCancel(): void;
-  onCollapse(): void;
+  /** 초안을 버린다. 닫기는 팝업(헤더 ×·Esc)이 맡는다. */
+  onDiscard(): void;
 }) {
   const { t } = useTranslation("workpanels");
   const agents = useAppStore((s) => s.agents);
@@ -23,8 +25,8 @@ export function WorkEditor({ itemId, value, busy = false, creating = false, onCh
   const dependsOn = value.dependsOn ?? [];
   const candidates = dependencyCandidates(itemId, dependsOn, items);
   const setDependsOn = (next: string[]) => onChange({ dependsOn: next.length ? next : undefined });
-  return <form className="work-editor" onSubmit={(e) => { e.preventDefault(); if (!busy && hasWorkContent(value)) onSave(); }}
-    onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onCollapse(); } }}>
+  const canSave = !busy && dirty && hasWorkContent(value);
+  return <form className="work-editor" onSubmit={(e) => { e.preventDefault(); if (canSave) onSave(); }}>
     <fieldset disabled={busy}>
       <label>{t("title")}<input value={value.title} maxLength={500} placeholder={workItemTitle({ title: "", body: value.body }) || t("titlePlaceholder")} onChange={(e) => onChange({ title: e.target.value })} /></label>
       <p className="work-muted">{t("titleHint")}</p>
@@ -54,10 +56,11 @@ export function WorkEditor({ itemId, value, busy = false, creating = false, onCh
         </select>
       </div>
     </fieldset>
-    <div className="work-card-actions">
-      <button type="submit" className="pixel-btn" disabled={busy || !hasWorkContent(value)}>{t(creating ? "add" : "save")}</button>
-      <button type="button" className="pixel-btn" disabled={busy} onClick={onCancel}>{t("cancel")}</button>
-      <button type="button" className="pixel-btn" onClick={onCollapse}>{t("collapseWork")}</button>
+    {/* 되돌리기는 저장과 떨어진 왼쪽 끝에 두고, 변경이 없을 때도 자리를 지켜 저장 버튼이 움직이지 않게 한다. */}
+    <div className="work-dialog-actions">
+      <button type="button" className="pixel-btn" style={dirty ? undefined : { visibility: "hidden" }} disabled={busy} onClick={onDiscard}>{t(creating ? "discardDraft" : "revertChanges")}</button>
+      <span className="work-dialog-spacer" />
+      <button type="submit" className="pixel-btn primary" disabled={!canSave}>{t(creating ? "add" : "save")}</button>
     </div>
   </form>;
 }
