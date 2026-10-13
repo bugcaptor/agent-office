@@ -111,6 +111,7 @@ impl SessionLogHandle {
         std::thread::Builder::new()
             .name(format!("session-log-{agent_id}"))
             .spawn(move || {
+                let _panic_notice = PanicNotice;
                 let mut filter = TranscriptFilter::new(rows);
                 let mut last_data = SystemTime::now();
                 let mut dirty = false;
@@ -207,6 +208,20 @@ impl SessionLogHandle {
     pub fn finish(&self) {
         self.ingest_stop.store(true, Ordering::Relaxed);
         let _ = self.tx.try_send(Msg::Eof);
+    }
+}
+
+/// 기록 스레드가 패닉으로 죽으면 그 사실을 한 번 남긴다. 이후 `data()`는
+/// 끊긴 채널에 `try_send`가 실패해 조용히 버려지므로, 이게 없으면 로그가
+/// 왜 끊겼는지 알 길이 없다.
+struct PanicNotice;
+
+impl Drop for PanicNotice {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            let name = std::thread::current().name().unwrap_or("session-log").to_string();
+            eprintln!("[agent-office] {name} 스레드가 패닉으로 종료됨 -- 이후 세션 로그는 기록되지 않는다");
+        }
     }
 }
 

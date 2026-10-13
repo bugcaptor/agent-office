@@ -457,9 +457,17 @@ impl TranscriptFilter {
             // 커서부터 줄 끝까지
             0 => line.truncate(col),
             // 줄 처음부터 커서까지(공백으로)
+            // 터미널처럼 커서 칸까지(col 포함) 지운다. 빈 줄이거나 커서가 줄 끝을
+            // 넘어 있어도 그 칸까지 공백으로 채운다.
             1 => {
-                for i in 0..=col.min(line.len().saturating_sub(1)) {
-                    line[i] = ' ';
+                let end = (col + 1).min(MAX_LINE_CHARS);
+                if line.len() < end {
+                    line.resize(end, ' ');
+                }
+                line[..end].fill(' ');
+                // 넓은 글자의 앞 칸을 지웠다면 남은 뒤 칸도 지운다.
+                if line.get(end) == Some(&WIDE_TAIL) {
+                    line[end] = ' ';
                 }
             }
             _ => line.clear(),
@@ -588,6 +596,28 @@ mod tests {
     #[test]
     fn erase_line_truncates_at_cursor() {
         assert_eq!(transcribe(24, &["abcdef\r\x1b[Kxy\r\n"]), "xy");
+    }
+
+    #[test]
+    fn erase_line_to_cursor_on_empty_line_does_not_panic() {
+        // 회귀: 빈 줄에서 ESC[1K가 index out of bounds로 전사 스레드를 죽였다.
+        assert_eq!(transcribe(24, &["\x1b[1K"]), "");
+        assert_eq!(transcribe(24, &["\x1b[1Kok\r\n"]), "ok");
+    }
+
+    #[test]
+    fn erase_line_to_cursor_blanks_through_cursor_column() {
+        // 커서(col 2) 칸까지 포함해 지운다.
+        assert_eq!(transcribe(24, &["abcdef\x1b[4D\x1b[1K\r\n"]), "   def");
+        // 커서가 줄 끝을 넘어 있으면 줄 전체가 공백이 되고, 그 뒤에 쓴 글자는
+        // 제자리에 남는다.
+        assert_eq!(transcribe(24, &["ab\x1b[5C\x1b[1Kz\r\n"]), "       z");
+    }
+
+    #[test]
+    fn erase_line_to_cursor_clears_orphaned_wide_tail() {
+        // 넓은 글자의 앞 칸까지만 지워도 반쪽 글자가 남지 않는다.
+        assert_eq!(transcribe(24, &["a한b\x1b[3D\x1b[1K\r\n"]), "   b");
     }
 
     #[test]
