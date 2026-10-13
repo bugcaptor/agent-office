@@ -130,3 +130,44 @@ D와 F는 실행 중에 하위 태스크(기능별 제거, 문제별 수정)를 
 ### 7.0 착수 전 관찰
 
 - `docs/README.md`가 루트 `REBUILD-PLAN.md`를 참조하지만 파일이 없다 — docs 표류 사례(B에서 확인).
+
+### 7.A 블랙박스 사용 점검 (2026-10-13, 설치본 `/Applications/agent-office.app` 실행 중 상태)
+
+방법: 코드를 읽지 않고 실행 중인 앱에 `office-task` CLI와 업무 수신함(`<app_data>/work-inbox/*.md`, guide.md 규약)으로 입력을 넣고, `office-task --list --all`과 `<app_data>/work-items.json`으로 결과를 봤다. 테스트 업무는 제목에 `[A테스트]`를 붙였다. 아래 `$T` = `$AGENT_OFFICE_TASK`, `$I` = `$AGENT_OFFICE_WORK_INBOX`.
+
+#### 7.A.1 발견 (예상 vs 실제)
+
+| # | 관점 | 상황 · 재현 | 예상 | 실제 | 판단 |
+|---|---|---|---|---|---|
+| A1 | 실패 모드·동시성 | 앱 실행 중 `/Applications/agent-office.app/Contents/MacOS/agent-office --help` | 사용법 출력 후 종료, 또는 단일 인스턴스로 거절 | 도움말 없이 **두 번째 앱 인스턴스가 떠서** 멈춤(`session-log gc: 기간 11 개 / 용량 0 개 삭제` 출력). 이 인스턴스가 `<app_data>/observer-port`를 자기 포트(56421)로 덮어썼고, 종료 후에도 파일은 죽은 포트를 가리켰다(살아 있는 앱은 49966). `observer/{claude,kilo,pi,agy}`·`claude-plugin`·`$TMPDIR/agent-office/bin/office-talk`도 다시 썼고 세션 로그 GC를 돌렸다 | **높음**. 단일 인스턴스 보호 없음 + 알 수 없는 인자에서 GUI 기동. `observer-port` 재발견에 기대는 forwarder/pi/kilo/agy 훅이 앱 재시작 전까지 끊길 수 있다. (점검 중 `observer-port`는 49966으로 손으로 되돌렸다) |
+| A2 | 동시성·무결성 | `X=$($T "x"); $T --list` 바로 실행 | 만든 업무가 목록에 보임 | 즉시 `--list`엔 없고 약 3초 뒤 보임. 그런데 아직 반영 전인 X에 `--done X`는 성공(rc 0), `--after X`도 유효 | 비동기 반영이 CLI 출력에 드러나지 않음. 안내문의 `A=$(…); … --after "$A"` 패턴은 동작함. **낮음** |
+| A3 | 동시성·무결성 | `--after t-ghost0000`(없는 id), 수신함 `after:` 자기 자신, 수신함 순환(A after B, B after A를 같은 스캔에 투입) | 거절 또는 경고 | 모두 rc 0/거절 파일 없음. 없는 선행·자기 선행은 **조용히 버려짐**. 순환 쌍은 처리 순서에 따라 한쪽 선행만 남아(B after A) 순환은 생기지 않았지만 A의 `after`는 말없이 사라짐 | 순환은 막히나 입력 손실을 알리지 않음. **중간** |
+| A4 | 권한·책임 | `$T --to 없는사람 "t"` | 오류 또는 경고 | rc 0, `@unassigned`로 생성. 오타가 미배정으로 묻힘 | **중간** |
+| A5 | 무결성 | `$T "" "본문"` | 빈 제목 거절 | rc 0, 제목 `""`인 업무 생성 | **낮음** |
+| A6 | 권한·책임 | 선행 Q 미완 상태에서 후속 R에 `$T --done R` | 거절하거나 경고 | 완료됨. 목록에 `[done] … after: Q (blocked)`처럼 모순 표시 | **중간**. "선행 해제" 모델과 어긋남 |
+| A7 | 권한·책임 | 커널 세션에서 `$T --to 박좀비 "t"` 만든 뒤 `$T --done <그 id>` | (규칙상) 사람 지시 시에만, 최소한 담당자 확인 | 다른 캐릭터 담당 업무도 바로 완료. "사람 지시 시에만 완료"는 **안내문에만 의존**, 코드 강제 없음 | 설계 판단 필요(E에서). **중간** |
+| A8 | 동시성·무결성 | 수신함에 기존 업무 id로 `id: t-4e20c6b0` 파일 투입 / `done: t-nothere1` 파일 투입 | `rejected/`로 옮기고 `.error`에 사유 | 두 파일 모두 **흔적 없이 사라짐**(rejected 없음, 기존 업무 불변) | 형식 오류(`empty`/`invalid-utf8`/`unclosed-frontmatter`)는 rejected로 가는데 의미 오류는 버려짐. **중간** |
+| A9 | 실패 모드 | `$TMPDIR/agent-office/bin/office-task` 삭제 후 15초 관찰 | 자동 재생성(또는 다음 세션에서) | 15초 내 재생성 안 됨(복원함). 파일 mtime으로 보아 세션 생성 때 다시 씀 | macOS의 `/var/folders` 정리 시 실행 중 세션은 CLI를 잃음. **낮음** |
+| A10 | 운영성 | `<app_data>/panic.log` | 비어 있음 | 2026-10-01 `session_log::transcript::TranscriptFilter::erase_line` 인덱스 범위 밖 패닉(`transcript.rs:462`, `len 0 index 0`) 기록. 스레드 `session-log-<agentId>` | 세션 로그 스레드가 죽으면 그 세션 기록이 끊길 수 있음. E에서 확인. **중간** |
+| A11 | 상태 소유권 | (`cliEnabled` 켬) `agent-office ctl create atest-probe --name 점검A봇 --cwd <dir> --startup-command cat` — 없는 캐릭터 id | 거절, 또는 캐릭터를 만들고 목록에 보임 | rc 0, `{"sessionId":…,"state":"running"}`. 실제 PTY(`zsh → cat`)가 떴지만 `ctl list`/`--json`에 **나타나지 않음**(프로필 없음). `--name`·`--role`은 무시된 듯 | 캐릭터 없는 숨은 세션. `dispose`로만 정리 가능. **중간** |
+| A12 | 운영성 | 위 숨은 세션의 셸을 `kill -9`한 뒤 `ctl send atest-probe "x" --enter` / `ctl dispose nobody-xyz`(없는 id) / 같은 id 두 번 `dispose` | 오류 rc≠0 | 모두 `ok`, rc 0 | 실패를 성공으로 보고. 자동화가 오판한다. **중간** |
+
+#### 7.A.2 정상 동작 확인 (예상 = 실제)
+
+- 기본 흐름(CLI): 생성 → `--after` 후속 `(blocked)` → 선행 `--done` → 후속 blocked 해제.
+- 동시 생성 40건 병렬: id 40개 고유, 보드 40건 반영, `work-items.json` 유효 JSON.
+- 동시 완료: 41건 병렬 `--done` + 그중 5건 중복 `--done` 동시 → 전부 완료, 공통 선행 1개를 기다리던 후속 10건 모두 해제, 파일 손상 없음. 중복 완료는 rc 0(`… is already done` 안내).
+- `--done 없는id 있는id` 혼합 → 전체 거절(rc 1), 있는 쪽도 바뀌지 않음(원자적).
+- 인자 이스케이프: 제목 `"q" 's' $(whoami) \`id\``, 본문 줄바꿈·`$HOME` 그대로 저장(셸 해석 없음).
+- 본문 64 KiB 초과 → `office-task: task exceeds 65536 bytes`, rc 1. (제목 5,000자는 허용)
+- 앱 데이터 env 없이 실행 → `AGENT_OFFICE_WORK_INBOX and AGENT_OFFICE_APP_DATA are not set`, rc 1.
+- 수신함 형식 오류: 빈 파일 `empty`, 깨진 UTF-8 `invalid-utf8`, 닫히지 않은 frontmatter `unclosed-frontmatter`로 `rejected/`에 사유와 함께 이동.
+- 자원(3시간 36분 가동): RSS 약 158 MB, app_data 118 MB(session-events 53 MB, session-logs 45 MB), 리슨 포트는 127.0.0.1 훅 포트 하나(웹 원격·ctl 꺼짐).
+- 에이전트 강제 종료(ctl로 만든 시험 세션): 에이전트 프로세스(`cat`) `kill -9` → 셸은 살아 있고 입력 주입 계속 가능. 셸 `kill -9` 후 같은 id로 `ctl create` → 새 세션 id로 다시 뜸. `dispose` 후 앱 자식 프로세스에 잔여·좀비 없음.
+- `agent-office ctl --help`는 정상 출력(A1의 최상위 `--help`와 대비).
+- 요약기: 세션이 움직이는 동안 `opencode run …`이 30초에 2회꼴로 앱 자식으로 뜬다(비용·자원 관찰용, 판단 보류).
+
+#### 7.A.3 미수행 · 사람 확인 필요
+
+- **앱 재시작 복구 / 설정 파일 손상 복구**: 점검 세션 자체가 설치본 앱의 자식 PTY라 앱을 끄면 점검이 끊긴다. 사용자 지시로 설치본은 끄지 않았다. 별도 app_data를 쓰는 격리 인스턴스가 필요하다(A1 때문에 같은 app_data로 두 번째 인스턴스를 띄우는 것은 금지).
+- GUI 전용: 캐릭터 소환(GUI), 업무 '보내기', 가져오기 팝업(깨진/낯선 JSON — 시험 파일은 점검 세션 스크래치패드 `import-tests/`에 만들었다), A11 숨은 세션이 오피스 화면에 보였는지.
