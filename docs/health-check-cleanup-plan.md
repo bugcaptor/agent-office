@@ -10,7 +10,7 @@
 - **증거 없는 문제는 문제로 올리지 않는다.** 모든 발견에는 재현 절차나 `파일:줄`이 붙는다.
 - **제거는 사람이 결정한다.** 사용 신호(§3)는 후보를 고르는 근거일 뿐이다. 제거 목록은 사용자 승인 후에만 실행한다.
 - **제거 대상은 정밀 조사하지 않는다.** 없어질 코드를 깊게 읽는 비용을 아낀다.
-- 저장소 규칙(AGENTS.md)을 따른다: `main`에서 로컬 커밋, 푸시 금지, 화면 문자열은 i18n 카탈로그, 검증은 `npx tsc --noEmit` + `npx vitest run --dir src` + `cargo test --manifest-path src-tauri/Cargo.toml` (+ 해당 시 `vscode-ext` 테스트).
+- 저장소 규칙(AGENTS.md)을 따른다: `main`에서 로컬 커밋, 푸시 금지, 화면 문자열은 i18n 카탈로그, 검증은 `npx tsc --noEmit` + `npx vitest run --dir src` + `cargo test --manifest-path src-tauri/Cargo.toml`. (`vscode-ext` 테스트는 C40 제거로 없어짐)
 
 ## 2. 점검 관점 — 유능한 엔지니어가 볼 것
 
@@ -451,3 +451,4 @@ H 메모: D4~D6·D9·D10은 기계적 수정, D2·D3·D11·S2~S5는 사실 확�
 | 기능 | 태스크 | 결과 |
 |---|---|---|
 | C27 호감도 | t-325c7ff6 | 문서만 `archive/`로 이동(코드 0) |
+| C40 VSCode 확장 | t-013c2b3c | `vscode-ext/` 패키지·`.gitignore` 항목 삭제, 계획 문서 archive. 앱 코드 참조 0이라 코드 변경 없음. 제어 서버 `/v1/*`·`/v1/display/*`(설치된 별도 확장 companion이 씀)는 유지 |

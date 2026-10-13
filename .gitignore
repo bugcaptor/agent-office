@@ -9,7 +9,6 @@ dist-ssr
 dist-web/*
 !dist-web/.gitkeep
 src-tauri/target
-vscode-ext/out/
 
 # Local env / logs
 *.local

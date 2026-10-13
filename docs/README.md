@@ -47,7 +47,6 @@
 | [tts-confirm-line-design.md](tts-confirm-line-design.md) | 알림 대사 TTS — 질문·완료 알림 문구를 캐릭터 말투 대사로 리라이트(API/claude CLI) + ElevenLabs 합성·archetype 보이스 캐스팅/수동 지정, 소리 3분할 설정 | 정본 — 구현 완료, 눈검증 대기 |
 | [pi-support-design.md](pi-support-design.md) | Pi(pi.dev) CLI 작업 상태 감지 — Pi 확장 + 셸 래퍼 | 부분표류 — 구현 완료(#8)이나 §1 file:line 근거가 observer 리팩터로 구식. 현행 구조는 문서 §0.5 |
 | [kilo-support-design.md](kilo-support-design.md) | Kilo Code CLI(kilo/kilocode) 작업 상태 감지 — KILO_CONFIG 플러그인 주입 + 셸 래퍼 env 대입 | 정본 (2026-09-10) — 구현 완료 |
-| [vscode-character-extension-plan.md](vscode-character-extension-plan.md) | VSCode 연결형 캐릭터 로그 뷰어 확장 — 앱 연결해 세션 로그 스크롤·검색·추적 | 정본 (2026-08-18, kbm #2ce) — V1 구현 완료(눈검증 대기), V2·V3 미착수 |
 
 ## archive/ — 이력 (이슈 링크 보존용, 갱신하지 않음)
 
@@ -60,6 +59,7 @@
 | [archive/work-inbox-design.md](archive/work-inbox-design.md) | 업무 수신함 구현 계획 — 구현 완료 후 `work-panels-design.md` §업무 수신함으로 병합. 결정 근거(스킬 대신 공통 안내문, 중복 방지 id, 삭제 시점) 보존 |
 | [archive/web-hosting-design.md](archive/web-hosting-design.md) | 웹 호스팅(#7m/#7n) 완전판(Phase 1+2) — 2026-08-05 폐기, 웹 원격(#2dz)에 계승. 루트의 낡은 Phase-1 스냅샷(`web-hosting-design.md`)은 삭제됨 |
 | [archive/affinity-design.md](archive/affinity-design.md) | 에이전트 호감도(kbm #2rv) — 기획 확정 후 구현 전에 접음(2026-10-14, 점검·정리 §7.D C27). 코드 없음 |
+| [archive/vscode-character-extension-plan.md](archive/vscode-character-extension-plan.md) | VSCode 로그 뷰어 확장(kbm #2ce) — V1 `vscode-ext/` 미사용으로 패키지째 제거(2026-10-14, 점검·정리 §7.D C40) |
 
 ## 관련 (docs/ 밖)
 
