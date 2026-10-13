@@ -23,7 +23,6 @@ use uuid::Uuid;
 
 use crate::notification::hub::NotificationHub;
 use crate::observer::{CommandWrapperSpec, ObserverRuntime, ObserverSessionContext, WrapperArg};
-use crate::session::external::{ExternalDetachReason, ExternalSession};
 use crate::session::output::{spawn_output_pump, OutputSink, ReaderMsg};
 use crate::session::kilo_plugin;
 use crate::session::pi_extension;
@@ -83,21 +82,6 @@ pub(super) struct Session {
     last_activity_ms: Arc<std::sync::atomic::AtomicU64>,
 }
 
-impl Session {
-    /// create()의 세션 재사용 게이트와 동일한 판정: 살아 있고(Running/Starting)
-    /// dispose로 kill이 요청되지 않은 세션인가.
-    ///
-    /// pub(super): external.rs의 `attach_external`이 BindExisting 판정에 쓴다
-    /// (create 쪽은 반환할 `state` 값을 같은 락 안에서 함께 읽어야 해 자체
-    /// 임계구역을 그대로 둔다 — 판정 기준만 여기 문서화해 둔다).
-    pub(super) fn reusable(&self) -> bool {
-        matches!(
-            *self.state.lock(),
-            SessionState::Running | SessionState::Starting
-        ) && !self.kill_requested.load(Ordering::SeqCst)
-    }
-}
-
 /// epoch(UTC) 밀리초. 봇 turn-taking 유휴 계산용(단조성보다 벽시계 기준이면
 /// 충분 — 폴링 주기가 초 단위라 시계 점프에 민감하지 않다).
 fn now_ms() -> u64 {
@@ -133,15 +117,9 @@ pub struct SessionManager {
     pub(super) hub: Arc<NotificationHub>,
     /// pub(super): 핸드오프/입양 형제 모듈이 Running 세션 목록 조회·맵 제거에 쓴다.
     pub(super) sessions: Mutex<HashMap<AgentId, Arc<Session>>>,
-    /// 외부(논리) 세션 — 앱 밖 터미널에서 도는 claude를 캐릭터에 붙인 것.
-    /// PTY가 없어 `sessions`와는 별도 맵으로 둔다(Session의 writer/control을
-    /// Option화하는 침습을 피한다). 훅 라우팅은 `registry`에 sid를 넣는 것만으로
-    /// 기존 파이프라인이 그대로 동작한다. 이 계층의 다른 맵과 마찬가지로
-    /// parking_lot(위 poisoning 주석 참조).
-    /// pub(super): external.rs의 attach/detach/sweep이 직접 다룬다.
-    pub(super) externals: Mutex<HashMap<AgentId, ExternalSession>>,
-    /// PTY 생성과 기록 관찰 attach가 교차해 한 캐릭터에 둘 다 등록되는 경주를 막는다.
-    pub(super) observed_lifecycle: Mutex<()>,
+    /// create·dispose·on_exit를 한 줄로 세운다 — 옛 PTY의 마지막 상태 이벤트가
+    /// 같은 캐릭터의 새 세션 Running보다 뒤에 도착하지 않게 한다.
+    lifecycle: Mutex<()>,
     /// agentId별 출력 sink — 세션 수명과 독립. subscribe 이전 pending attach와
     /// 세션 재생성 시 채널 재사용을 위해 세션이 아니라 여기에 보관한다.
     sinks: Mutex<HashMap<AgentId, Arc<OutputSink>>>,
@@ -192,8 +170,7 @@ impl SessionManager {
             events,
             hub,
             sessions: Mutex::new(HashMap::new()),
-            externals: Mutex::new(HashMap::new()),
-            observed_lifecycle: Mutex::new(()),
+            lifecycle: Mutex::new(()),
             sinks: Mutex::new(HashMap::new()),
             shell_resolver: Arc::new(shells::resolve_observed),
             app_data_dir: None,
@@ -280,16 +257,9 @@ impl SessionManager {
             .clone()
     }
 
-    /// agentId의 현재 sid. in-app PTY 세션이 우선이고, 없으면 외부(논리)
-    /// 세션으로 폴백한다 — 이 한 줄로 pending_notifications/clear_notifications
-    /// 같은 sid 기반 조회가 외부 세션에도 그대로 동작한다.
+    /// agentId의 현재 sid.
     pub fn session_id_for(&self, agent_id: &str) -> Option<SessionId> {
-        self.find(agent_id).map(|s| s.session_id.clone()).or_else(|| {
-            self.externals
-                .lock()
-                .get(agent_id)
-                .map(|ext| ext.session_id.clone())
-        })
+        self.find(agent_id).map(|s| s.session_id.clone())
     }
 
     pub fn create(
@@ -596,10 +566,7 @@ impl SessionManager {
         req: CreateSessionRequest,
         profile: AgentEventProfile,
     ) -> Result<CreateSessionResult, String> {
-        let _observed_lifecycle = self.observed_lifecycle.lock();
-        // 같은 캐릭터에 외부(논리) 세션이 붙어 있었다면 먼저 끊는다 — 앱 안에
-        // 진짜 PTY 세션이 뜨는 순간 그 캐릭터의 세션은 이쪽이다(1캐릭터 1세션).
-        self.detach_external(&req.agent_id, ExternalDetachReason::Detach);
+        let _lifecycle = self.lifecycle.lock();
 
         // 살아있는 세션이 있으면 재사용, 새 PTY 안 만듦. 단, dispose()로 kill이
         // 요청된(=재시작 중인) 세션은 곧 사라질 예정이므로 재사용하지 않는다 —
@@ -1050,21 +1017,16 @@ impl SessionManager {
     /// 의도적 종료. 최종 Disposed 전이는 wait 스레드의 on_exit에서 확정.
     /// 핸드오프된 세션(§핵심 3)은 즉시 return — kill/cleanup 금지. 그
     /// 세션의 실제 수명은 이제 sessiond가 책임진다.
-    ///
-    /// 외부(논리) 세션은 kill할 PTY가 없으므로 `detach_external`로 위임한다
-    /// (1캐릭터 1세션 불변식상 둘이 동시에 있을 일은 없지만, 있어도 둘 다
-    /// 정리되도록 early return하지 않는다).
     pub fn dispose(&self, agent_id: &str) {
         let _ = self.dispose_matching(agent_id, None);
     }
 
     /// 확인받은 세션만 폐기한다. create와 같은 lifecycle 락 아래 검사/폐기를 묶는다.
     pub fn dispose_matching(&self, agent_id: &str, expected: Option<&str>) -> Result<(), String> {
-        let _observed_lifecycle = self.observed_lifecycle.lock();
+        let _lifecycle = self.lifecycle.lock();
         if expected.is_some_and(|sid| self.find(agent_id).as_ref().is_none_or(|s| s.session_id != sid)) {
             return Err("work-send-session-changed".into());
         }
-        self.detach_external(agent_id, ExternalDetachReason::Detach);
         if let Some(s) = self.find(agent_id) {
             if s.handed_off.load(Ordering::SeqCst) {
                 return Err("work-send-session-changed".into());
@@ -1086,10 +1048,7 @@ impl SessionManager {
     /// 세션은 in-process kill로. 그래서 KillAll 특수 분기 없이 v1과 동일한
     /// 루프면 폴백 세션 누수 없이 전부 정리된다.
     pub fn dispose_all(&self) {
-        let mut ids: Vec<AgentId> = self.sessions.lock().keys().cloned().collect();
-        // 외부(논리) 세션도 함께 정리한다 -- kill할 PTY는 없지만 훅 settings
-        // 파일을 남기고 앱이 죽으면 고아가 된다(dispose는 양쪽 모두 처리).
-        ids.extend(self.externals.lock().keys().cloned());
+        let ids: Vec<AgentId> = self.sessions.lock().keys().cloned().collect();
         for a in ids {
             self.dispose(&a);
         }
@@ -1123,9 +1082,8 @@ impl SessionManager {
 
     fn on_exit(&self, sess: &Arc<Session>, outcome: ExitOutcome) {
         // Keep the old PTY's final state event ordered with replacement by a
-        // new PTY or an IDE observation. A stale exit must not follow a new
-        // external Running event for the same character.
-        let _observed_lifecycle = self.observed_lifecycle.lock();
+        // new PTY: a stale exit must not follow the new Running event.
+        let _lifecycle = self.lifecycle.lock();
         // 핸드오프된 세션(§핵심 3)은 즉시 return -- kill/cleanup/상태이벤트
         // 금지. 실제로는 create()의 RealWaiter가 앱 프로세스 종료와 함께
         // 죽으므로 프로덕션에서 이 가드가 실행 도달하는 일은 드물지만(핸드오프
@@ -1215,8 +1173,6 @@ impl SessionManager {
 }
 
 /// `prepare_session_plan`의 산출물 -- 세션 하나에 필요한 observer/persona 배선.
-/// PTY 세션(`create_with_profile`)과 외부 논리 세션(`attach_external`)이 이걸
-/// 공유하므로 훅 settings 파일·persona 주입 방식이 자동으로 같아진다.
 pub struct PreparedPlan {
     /// 셸에 넣을 env. 순서는 AGENT_OFFICE_SESSION → HOOK_URL(훅 ON) →
     /// APP_DATA(설정 시) → 어댑터 plan.env. PTY 경로는 여기에 TERM과 셸
@@ -1226,8 +1182,7 @@ pub struct PreparedPlan {
     pub wrappers: Vec<CommandWrapperSpec>,
     /// 세션 종료 시 지울 observer 아티팩트(claude 훅 settings 파일 등).
     pub cleanup_paths: Vec<std::path::PathBuf>,
-    /// `AGENT_OFFICE_SETTINGS` 값(훅 OFF면 None). autostart 주입 줄과
-    /// (M2의) 외부 attach 스크립트가 쓴다.
+    /// `AGENT_OFFICE_SETTINGS` 값(훅 OFF면 None). autostart 주입 줄이 쓴다.
     pub settings_path: Option<std::path::PathBuf>,
 }
 
@@ -1249,9 +1204,7 @@ impl SessionManager {
     }
 }
 
-/// pub(super): external.rs의 `detach_external`이 외부 세션의 훅 아티팩트를
-/// 같은 방식으로 지운다.
-pub(super) fn cleanup_paths(paths: &[std::path::PathBuf]) {
+fn cleanup_paths(paths: &[std::path::PathBuf]) {
     for path in paths {
         if let Err(error) = std::fs::remove_file(path) {
             if error.kind() != std::io::ErrorKind::NotFound {

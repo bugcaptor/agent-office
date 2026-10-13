@@ -399,7 +399,6 @@
             settings_store: settings_store.clone(),
             talk: Arc::new(crate::talk::TalkHub::default()),
             app_data_dir: profile_dir.clone(),
-            tmux_probe: crate::control::tmux::system_probe(),
             gate: inject_gate.clone(),
             live_usage: Arc::new(crate::usage::LiveUsageState::new()),
             portrait_store: portrait_store.clone(),

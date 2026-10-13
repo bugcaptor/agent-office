@@ -148,20 +148,6 @@ fn infer_value(s: &str) -> Value {
     }
 }
 
-/// attach 대상 셸의 PID. `eval "$(agent-office ctl attach X)"`에서 ctl의 부모
-/// 프로세스가 곧 그 셸이다(앱은 이 PID의 생존을 5초마다 확인해 정리한다).
-/// unix 외에는 확인 수단을 이식하지 않아 None — 그 경우 명시적 detach만 남는다.
-fn parent_pid() -> Option<u32> {
-    #[cfg(unix)]
-    {
-        Some(std::os::unix::process::parent_id())
-    }
-    #[cfg(not(unix))]
-    {
-        None
-    }
-}
-
 /// 서브커맨드 → (라우트, 본문 JSON). 순수 함수(테스트 용이).
 fn build_request(p: &Parsed) -> Result<(&'static str, Value), String> {
     let pos = &p.positionals;
@@ -196,44 +182,6 @@ fn build_request(p: &Parsed) -> Result<(&'static str, Value), String> {
                 }
             }
             Ok(("/v1/create", Value::Object(o)))
-        }
-        "attach" => {
-            // `attach --agent X` 형태도 받는다(문서의 eval 예시가 이 형태다).
-            let agent = pos
-                .get(1)
-                .cloned()
-                .or_else(|| p.kv.get("agent").cloned())
-                .ok_or("attach: agentId가 필요합니다")?;
-            let mut o = Map::new();
-            o.insert("agentId".into(), Value::String(agent));
-            // command substitution 안에서 ctl의 부모 = attach 대상 셸이다.
-            if let Some(pid) = parent_pid() {
-                o.insert("pid".into(), json!(pid));
-            }
-            // 타임라인 표시용 작업 폴더 — 명시 --cwd > 현재 디렉터리.
-            let cwd = p.kv.get("cwd").cloned().or_else(|| {
-                std::env::current_dir()
-                    .ok()
-                    .map(|d| d.to_string_lossy().into_owned())
-            });
-            if let Some(cwd) = cwd {
-                o.insert("cwd".into(), Value::String(cwd));
-            }
-            // `--tmux <세션이름>`: 이 셸이 아니라 **그 tmux 세션**에 붙인다
-            // (앱이 자기 PTY로 tmux 클라이언트를 연다). 이때 응답 script는
-            // 코멘트뿐이라 eval해도 이 셸은 그대로다.
-            if let Some(target) = p.kv.get("tmux") {
-                o.insert("tmux".into(), Value::String(target.clone()));
-            }
-            Ok(("/v1/attach", Value::Object(o)))
-        }
-        "detach" => {
-            let agent = pos
-                .get(1)
-                .cloned()
-                .or_else(|| p.kv.get("agent").cloned())
-                .ok_or("detach: agentId가 필요합니다")?;
-            Ok(("/v1/detach", json!({ "agentId": agent })))
         }
         "send" => {
             let agent = agent(1, "send")?;
@@ -351,9 +299,6 @@ agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
   list                            프로필과 실행 중 세션 상태를 나열한다
   create <agentId> [--cwd P] [--shell S] [--startup-command C]
                      [--name N] [--role R] [--cols N] [--rows N]
-  attach <agentId> [--cwd P]      이 터미널을 캐릭터에 붙인다(아래 eval 필요)
-         [--tmux <세션이름>]      대신 그 tmux 세션에 붙는다(앱 탭이 미러)
-  detach <agentId>                외부 터미널 연결을 끊는다
   send <agentId> <text> [--enter] 세션 stdin에 text를 주입(--enter=개행 추가)
   dispose <agentId>               세션을 종료한다
   notifications <agentId>         대기 중 알림을 나열한다
@@ -371,16 +316,6 @@ agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
   --json                          응답 data를 JSON으로 출력(기계 파싱용)
   --app-data <경로>               app_data 위치 지정(자동발견 대체)
   --port <포트> / --token <토큰>  포트/토큰 직접 지정
-
-외부 터미널 attach(zsh/bash 전용, fish 미지원):
-  eval \"$(agent-office ctl attach 캐릭터ID)\"
-  attach는 성공 시 셸 스크립트만 stdout으로 내보낸다(실패하면 아무것도 내보내지
-  않으므로 eval이 안전하다). 이 셸이 종료되면 앱이 5초 안에 연결을 정리한다.
-
-tmux 세션 attach(출력 미러링·입력 주입까지 되는 풀 기능):
-  agent-office ctl attach 캐릭터ID --tmux 세션이름
-  앱이 그 tmux 세션에 클라이언트로 붙어 앱 탭이 미러가 된다. 각 pane의 훅·성격은
-  그 pane 안에서 eval \"$(agent-office ctl attach 캐릭터ID)\"로 따로 붙인다.
 ";
 
 /// `ctl` 진입점 — `ctl` 이후의 인자 토큰을 받아 종료 코드를 돌려준다.
@@ -592,8 +527,7 @@ fn print_success(parsed: &Parsed, data: &Value) {
     print!("{}", render_success(parsed, data));
 }
 
-/// 성공 응답의 stdout 표현을 그대로 만든다(개행 포함). attach는 셸이 eval할
-/// 스크립트라 **한 글자도 덧붙이지 않고** 내보내야 하므로, 출력을 문자열로
+/// 성공 응답의 stdout 표현을 그대로 만든다(개행 포함). 출력을 문자열로
 /// 조립해 한 번에 쓴다(사람용 안내는 전부 stderr에 남는다).
 fn render_success(parsed: &Parsed, data: &Value) -> String {
     use std::fmt::Write as _;
@@ -637,8 +571,6 @@ fn render_success(parsed: &Parsed, data: &Value) -> String {
                 data["state"].as_str().unwrap_or("?")
             );
         }
-        // eval 대상 — 스크립트 원문만 나간다.
-        "attach" => out.push_str(data["script"].as_str().unwrap_or_default()),
         "notifications" => match data.as_array() {
             Some(rows) if !rows.is_empty() => {
                 for r in rows {
@@ -833,78 +765,6 @@ mod tests {
         assert!(build_request(&parse(&args(&["send", "a1"])).unwrap()).is_err());
         assert!(build_request(&parse(&args(&["dispose"])).unwrap()).is_err());
         assert!(build_request(&parse(&args(&["bogus"])).unwrap()).is_err());
-    }
-
-    #[test]
-    fn build_attach_collects_pid_and_cwd_automatically() {
-        let (path, body) = build_request(&parse(&args(&["attach", "a1"])).unwrap()).unwrap();
-        assert_eq!(path, "/v1/attach");
-        assert_eq!(body["agentId"], "a1");
-        assert_eq!(
-            body["cwd"],
-            json!(std::env::current_dir()
-                .unwrap()
-                .to_string_lossy()
-                .into_owned())
-        );
-        #[cfg(unix)]
-        assert_eq!(body["pid"], json!(std::os::unix::process::parent_id()));
-        #[cfg(not(unix))]
-        assert!(body.get("pid").is_none());
-
-        // --cwd는 자동 수집을 덮어쓴다. agentId는 --agent 형태로도 받는다.
-        let (_, explicit) =
-            build_request(&parse(&args(&["attach", "--agent", "a2", "--cwd", "/tmp/x"])).unwrap())
-                .unwrap();
-        assert_eq!(explicit["agentId"], "a2");
-        assert_eq!(explicit["cwd"], "/tmp/x");
-
-        assert!(build_request(&parse(&args(&["attach"])).unwrap()).is_err());
-    }
-
-    #[test]
-    fn build_attach_forwards_the_tmux_target_only_when_given() {
-        let (_, plain) = build_request(&parse(&args(&["attach", "a1"])).unwrap()).unwrap();
-        assert!(plain.get("tmux").is_none());
-
-        let (path, body) =
-            build_request(&parse(&args(&["attach", "a1", "--tmux", "work"])).unwrap()).unwrap();
-        assert_eq!(path, "/v1/attach");
-        assert_eq!(body["agentId"], "a1");
-        assert_eq!(body["tmux"], "work");
-
-        // `--tmux=이름` 형태도 같은 필드로 들어간다.
-        let (_, eq) =
-            build_request(&parse(&args(&["attach", "--agent", "a2", "--tmux=my sess"])).unwrap())
-                .unwrap();
-        assert_eq!(eq["tmux"], "my sess");
-    }
-
-    #[test]
-    fn build_detach_requires_an_agent() {
-        let (path, body) = build_request(&parse(&args(&["detach", "a1"])).unwrap()).unwrap();
-        assert_eq!(path, "/v1/detach");
-        assert_eq!(body, json!({ "agentId": "a1" }));
-        assert!(build_request(&parse(&args(&["detach"])).unwrap()).is_err());
-    }
-
-    #[test]
-    fn attach_success_output_is_the_raw_script_only() {
-        let parsed = parse(&args(&["attach", "a1"])).unwrap();
-        let data = json!({
-            "sessionId": "sid-1",
-            "mode": "new",
-            "script": "export AGENT_OFFICE_SESSION='sid-1'\nclaude() {\n  command claude \"$@\"\n}\n",
-        });
-        // eval에 그대로 먹일 수 있어야 한다 — 접두/접미 한 글자도 붙지 않는다.
-        assert_eq!(
-            render_success(&parsed, &data),
-            data["script"].as_str().unwrap()
-        );
-
-        // --json이면 사람/기계용 JSON(이 경우 eval 대상이 아니다).
-        let json_parsed = parse(&args(&["attach", "a1", "--json"])).unwrap();
-        assert!(render_success(&json_parsed, &data).contains("\"sessionId\""));
     }
 
     #[test]

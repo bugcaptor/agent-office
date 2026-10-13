@@ -30,7 +30,6 @@ function profileError(agent: AgentProfile | undefined): string | undefined {
   if (useAppStore.getState().sessions[agent.id]?.status === "starting") return "work-send-busy";
   if (agent.clockedOut) return "work-send-clocked-out";
   if (agent.startupCommand?.trim()) return "work-send-profile-unsupported";
-  if (useAppStore.getState().sessions[agent.id]?.kind === "external") return "work-send-shell-unsupported";
   return undefined;
 }
 export function workSendDisabledReason(agent: AgentProfile | undefined): string | undefined { return profileError(agent); }

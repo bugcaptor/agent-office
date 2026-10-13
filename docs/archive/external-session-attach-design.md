@@ -1,6 +1,6 @@
 # 외부 터미널 세션 attach — 캐릭터를 앱 밖 터미널/tmux에 붙이기
 
-상태: 정본 — 구현 완료(kbm #2by). 갱신: 2026-08-16.
+상태: 이력(archived, 2026-10-14) — 구현 완료(kbm #2by) 후 개발일(09-12) 외 사용 흔적이 없어 제거(점검·정리 계획 §7.D C33). `ctl attach`/`detach`·`--tmux`·`session/{external,attach_script}.rs`·`control/tmux.rs`·외부 세션 안내 패널이 함께 사라졌다.
 
 2026-09-12 추가: 이미 실행 중인 IDE 세션의 기록을 읽는 관찰 연결은
 [별도 스파이크](archive/ide-session-spike.md)(제거됨)로 구현했다. 아래 셸 attach와 달리

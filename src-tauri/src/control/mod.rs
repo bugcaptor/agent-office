@@ -17,7 +17,6 @@ pub mod client;
 /// VS Code 연결 확장이 캐릭터·외형·사용량을 읽는 제한된 표시 API.
 mod display;
 pub mod protocol;
-pub mod tmux;
 /// 토큰 파일과 인증 미들웨어.
 mod token;
 /// 세션·알림·설정 핸들러.
@@ -45,10 +44,7 @@ use protocol::*;
 
 // 라우터가 이름으로 엮는 핸들러들 — 정의는 도메인별 파일에 있다.
 pub use token::{issue_token_at, read_token_at, revoke_token_at};
-use routes::{
-    attach, clear, create, detach, dispose, list, notifications, ping, send, settings_get,
-    settings_set,
-};
+use routes::{clear, create, dispose, list, notifications, ping, send, settings_get, settings_set};
 use display::{appearance, capabilities, characters, focus, usage};
 use talk::{talk_end, talk_inbox, talk_reply, talk_roster, talk_send};
 use token::auth;
@@ -70,9 +66,6 @@ pub struct ControlContext {
     pub talk: Arc<crate::talk::TalkHub>,
     /// 토큰 파일(`control-token`)을 대조할 위치. 서버의 app_data_dir과 동일.
     pub app_data_dir: PathBuf,
-    /// `attach --tmux`가 대상 세션 존재를 확인할 때 쓰는 확인기.
-    /// 프로덕션은 `tmux::system_probe()`, 테스트는 가짜를 주입한다.
-    pub tmux_probe: tmux::TmuxProbe,
     /// 자동 입력 관문(kbm #2t9 Phase 2).
     pub gate: Arc<crate::session::inject::InjectGate>,
     /// 네이티브 커맨드와 같은 사용량 스로틀/캐시 상태.
@@ -96,8 +89,6 @@ fn router(ctx: Arc<ControlContext>) -> Router {
         .route("/v1/ping", post(ping))
         .route("/v1/list", post(list))
         .route("/v1/create", post(create))
-        .route("/v1/attach", post(attach))
-        .route("/v1/detach", post(detach))
         .route("/v1/send", post(send))
         .route("/v1/dispose", post(dispose))
         .route("/v1/notifications", post(notifications))
@@ -272,30 +263,17 @@ mod tests {
         ))
     }
 
-    /// tmux를 쓰지 않는 테스트용 기본 확인기 — 실수로 tmux 경로를 타면
-    /// 조용히 통과하지 말고 눈에 띄게 실패하라고 Unavailable을 낸다.
     fn build(tag: &str) -> Fixture {
-        build_with_tmux(
-            tag,
-            Arc::new(|_| tmux::TmuxStatus::Unavailable("테스트 확인기".into())),
-        )
+        build_inner(tag, false)
     }
 
     /// 세션 둘 이상을 띄우는 테스트(동료 대화)용 — 매 spawn마다 새 FakeControl을
     /// 주는 팩토리를 쓴다. 나머지 배선은 `build`와 같다.
     fn build_multi(tag: &str) -> Fixture {
-        build_inner(
-            tag,
-            Arc::new(|_| tmux::TmuxStatus::Unavailable("테스트 확인기".into())),
-            true,
-        )
+        build_inner(tag, true)
     }
 
-    fn build_with_tmux(tag: &str, tmux_probe: tmux::TmuxProbe) -> Fixture {
-        build_inner(tag, tmux_probe, false)
-    }
-
-    fn build_inner(tag: &str, tmux_probe: tmux::TmuxProbe, multi: bool) -> Fixture {
+    fn build_inner(tag: &str, multi: bool) -> Fixture {
         let events: Arc<RecordingEvents> = Arc::new(RecordingEvents::default());
         let events_dyn: Arc<dyn AppEvents> = events.clone();
         let registry = Arc::new(SessionRegistry::new());
@@ -350,7 +328,6 @@ mod tests {
             settings_store,
             talk: talk_hub,
             app_data_dir: dir.clone(),
-            tmux_probe,
             gate,
             live_usage: Arc::new(crate::usage::LiveUsageState::new()),
             portrait_store: Arc::new(crate::persistence::png_store::PngStore::new(
@@ -535,320 +512,6 @@ mod tests {
         cleanup(&f);
     }
 
-    #[tokio::test]
-    async fn attach_returns_an_evaluable_script_and_detach_reissues_a_session() {
-        let f = build("attach");
-        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
-        let token = f.state.issue_token().unwrap();
-        // 훅 ON(기본값은 OFF) — attach 핸들러가 observer 서버를 선기동하고,
-        // 그래야 스크립트에 훅 env와 claude 래퍼가 실린다.
-        f.ctx.settings.write().unwrap().observer_enabled = true;
-        f.ctx
-            .store
-            .save(&crate::types::PersistedState {
-                agents: vec![profile("a1", "Ada")],
-                version: 1,
-                vacation_mode: None,
-            })
-            .unwrap();
-        let client = reqwest::Client::new();
-        let attach = |body: serde_json::Value| {
-            let client = client.clone();
-            let token = token.clone();
-            async move {
-                client
-                    .post(format!("http://127.0.0.1:{port}/v1/attach"))
-                    .header(TOKEN_HEADER, &token)
-                    .json(&body)
-                    .send()
-                    .await
-                    .unwrap()
-                    .json::<serde_json::Value>()
-                    .await
-                    .unwrap()
-            }
-        };
-
-        let first = attach(serde_json::json!({ "agentId": "a1", "cwd": "/tmp/proj" })).await;
-        assert_eq!(first["ok"], true);
-        assert_eq!(first["data"]["mode"], "new");
-        let sid = first["data"]["sessionId"].as_str().unwrap().to_string();
-        let script = first["data"]["script"].as_str().unwrap();
-        assert!(
-            script.contains(&format!("export AGENT_OFFICE_SESSION='{sid}'")),
-            "{script}",
-        );
-        assert!(script.contains("claude() {"), "{script}");
-
-        // 붙어 있는 동안 다시 attach하면 새 sid를 재발급한다(외부 세션 교체).
-        let again = attach(serde_json::json!({ "agentId": "a1" })).await;
-        assert_eq!(again["data"]["mode"], "new");
-        assert_ne!(again["data"]["sessionId"].as_str().unwrap(), sid);
-        let second_sid = again["data"]["sessionId"].as_str().unwrap().to_string();
-
-        // detach는 실제로 끊었는지 알려주고, 두 번째는 no-op이다.
-        let detach = |body: serde_json::Value| {
-            let client = client.clone();
-            let token = token.clone();
-            async move {
-                client
-                    .post(format!("http://127.0.0.1:{port}/v1/detach"))
-                    .header(TOKEN_HEADER, &token)
-                    .json(&body)
-                    .send()
-                    .await
-                    .unwrap()
-                    .json::<serde_json::Value>()
-                    .await
-                    .unwrap()
-            }
-        };
-        let detached = detach(serde_json::json!({ "agentId": "a1" })).await;
-        assert_eq!(detached["ok"], true);
-        assert_eq!(detached["data"]["detached"], true);
-        assert_eq!(
-            detach(serde_json::json!({ "agentId": "a1" })).await["data"]["detached"],
-            false
-        );
-
-        // detach 후 재attach는 또 다른 sid를 발급한다.
-        let third = attach(serde_json::json!({ "agentId": "a1" })).await;
-        assert_eq!(third["data"]["mode"], "new");
-        assert_ne!(third["data"]["sessionId"].as_str().unwrap(), second_sid);
-
-        // 앱 안 PTY 세션이 살아 있으면 그 sid에 합류한다(1캐릭터 1세션).
-        let created: serde_json::Value = client
-            .post(format!("http://127.0.0.1:{port}/v1/create"))
-            .header(TOKEN_HEADER, &token)
-            .json(&serde_json::json!({ "agentId": "a1" }))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let pty_sid = created["data"]["sessionId"].as_str().unwrap().to_string();
-        let bound = attach(serde_json::json!({ "agentId": "a1" })).await;
-        assert_eq!(bound["data"]["mode"], "bind");
-        assert_eq!(bound["data"]["sessionId"].as_str().unwrap(), pty_sid);
-
-        cleanup(&f);
-    }
-
-    #[tokio::test]
-    async fn attach_rejects_an_unknown_agent_and_requires_the_token() {
-        let f = build("attach-unknown");
-        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
-        let client = reqwest::Client::new();
-
-        // 미승인(토큰 없음) → 401.
-        let unauthorized = client
-            .post(format!("http://127.0.0.1:{port}/v1/attach"))
-            .json(&serde_json::json!({ "agentId": "nope" }))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(unauthorized.status(), reqwest::StatusCode::UNAUTHORIZED);
-
-        let token = f.state.issue_token().unwrap();
-        let body: serde_json::Value = client
-            .post(format!("http://127.0.0.1:{port}/v1/attach"))
-            .header(TOKEN_HEADER, &token)
-            .json(&serde_json::json!({ "agentId": "nope" }))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(body["ok"], false);
-        assert!(
-            body["error"].as_str().unwrap().contains("ctl create"),
-            "{body}"
-        );
-        cleanup(&f);
-    }
-
-    /// tmux 모드는 논리 세션이 아니라 **일반 PTY 세션**을 띄운다 — 그래서
-    /// 검증할 것은 (1) 응답 mode/script, (2) 그 세션 stdin에 실린 시작 명령이다.
-    #[tokio::test]
-    async fn attach_with_tmux_spawns_a_client_session_and_returns_a_comment_only_script() {
-        let asked: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let seen = asked.clone();
-        let f = build_with_tmux(
-            "tmux-ok",
-            Arc::new(move |target: &str| {
-                seen.lock().unwrap().push(target.to_string());
-                tmux::TmuxStatus::Present
-            }),
-        );
-        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
-        let token = f.state.issue_token().unwrap();
-        let mut agent = profile("a1", "Ada");
-        agent.personality_prompt = Some("짧게 답한다".into());
-        f.ctx
-            .store
-            .save(&crate::types::PersistedState {
-                agents: vec![agent],
-                version: 1,
-                vacation_mode: None,
-            })
-            .unwrap();
-
-        let body: serde_json::Value = reqwest::Client::new()
-            .post(format!("http://127.0.0.1:{port}/v1/attach"))
-            .header(TOKEN_HEADER, &token)
-            .json(&serde_json::json!({ "agentId": "a1", "tmux": "  work  ", "pid": 4242 }))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(body["ok"], true, "{body}");
-        assert_eq!(body["data"]["mode"], "tmux");
-        // 확인기에는 다듬은 이름이 간다.
-        assert_eq!(asked.lock().unwrap().as_slice(), ["work".to_string()]);
-
-        // eval해도 무해해야 한다 — 전부 코멘트 줄이고, pane 안내가 들어 있다.
-        let script = body["data"]["script"].as_str().unwrap();
-        assert!(script.lines().all(|l| l.starts_with('#')), "{script}");
-        assert!(script.contains("tmux 세션 'work'"), "{script}");
-        assert!(script.contains("ctl attach a1"), "{script}");
-
-        // 세션 stdin에 tmux 클라이언트 기동 명령이 실렸다(기존 PTY 파이프라인 재사용).
-        let writes = f.ctl.writes_utf8();
-        assert!(
-            writes.contains("exec tmux attach-session -t 'work'"),
-            "{writes}"
-        );
-        // 프로필 성격도 함께 실린다(create 경로 공유).
-        assert!(
-            f.ctl
-                .spawned_env()
-                .iter()
-                .any(|(k, v)| k == "AGENT_OFFICE_PERSONA" && v == "짧게 답한다"),
-            "{:?}",
-            f.ctl.spawned_env()
-        );
-
-        // 이미 세션이 떠 있으면 create가 그것을 재사용해 tmux 클라이언트가 뜨지
-        // 않는다 — 성공으로 위장하지 않고 거절한다.
-        let again: serde_json::Value = reqwest::Client::new()
-            .post(format!("http://127.0.0.1:{port}/v1/attach"))
-            .header(TOKEN_HEADER, &token)
-            .json(&serde_json::json!({ "agentId": "a1", "tmux": "work" }))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(again["ok"], false, "{again}");
-        assert!(
-            again["error"].as_str().unwrap().contains("ctl dispose"),
-            "{again}"
-        );
-        cleanup(&f);
-    }
-
-    #[tokio::test]
-    async fn attach_with_tmux_rejects_a_bad_target_or_a_missing_tmux_session() {
-        let calls: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
-        let counted = calls.clone();
-        let f = build_with_tmux(
-            "tmux-missing",
-            Arc::new(move |_| {
-                *counted.lock().unwrap() += 1;
-                tmux::TmuxStatus::Missing
-            }),
-        );
-        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
-        let token = f.state.issue_token().unwrap();
-        f.ctx
-            .store
-            .save(&crate::types::PersistedState {
-                agents: vec![profile("a1", "Ada")],
-                version: 1,
-                vacation_mode: None,
-            })
-            .unwrap();
-        let client = reqwest::Client::new();
-        let attach = |body: serde_json::Value| {
-            let client = client.clone();
-            let token = token.clone();
-            async move {
-                client
-                    .post(format!("http://127.0.0.1:{port}/v1/attach"))
-                    .header(TOKEN_HEADER, &token)
-                    .json(&body)
-                    .send()
-                    .await
-                    .unwrap()
-                    .json::<serde_json::Value>()
-                    .await
-                    .unwrap()
-            }
-        };
-
-        // 개행이 섞인 대상은 tmux를 돌려보기도 전에 거절한다.
-        let bad = attach(serde_json::json!({ "agentId": "a1", "tmux": "work\nrm -rf /" })).await;
-        assert_eq!(bad["ok"], false);
-        assert!(bad["error"].as_str().unwrap().contains("제어문자"), "{bad}");
-        let empty = attach(serde_json::json!({ "agentId": "a1", "tmux": "  " })).await;
-        assert_eq!(empty["ok"], false);
-        assert_eq!(*calls.lock().unwrap(), 0);
-
-        // tmux는 돌았지만 그런 세션이 없다.
-        let missing = attach(serde_json::json!({ "agentId": "a1", "tmux": "nope" })).await;
-        assert_eq!(missing["ok"], false);
-        assert!(
-            missing["error"]
-                .as_str()
-                .unwrap()
-                .contains("찾을 수 없습니다"),
-            "{missing}"
-        );
-        assert_eq!(*calls.lock().unwrap(), 1);
-        cleanup(&f);
-
-        // tmux 자체가 없다.
-        let f = build_with_tmux(
-            "tmux-absent",
-            Arc::new(|_| tmux::TmuxStatus::Unavailable("No such file or directory".into())),
-        );
-        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
-        let token = f.state.issue_token().unwrap();
-        f.ctx
-            .store
-            .save(&crate::types::PersistedState {
-                agents: vec![profile("a1", "Ada")],
-                version: 1,
-                vacation_mode: None,
-            })
-            .unwrap();
-        let absent: serde_json::Value = client
-            .post(format!("http://127.0.0.1:{port}/v1/attach"))
-            .header(TOKEN_HEADER, &token)
-            .json(&serde_json::json!({ "agentId": "a1", "tmux": "work" }))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(absent["ok"], false);
-        assert!(
-            absent["error"]
-                .as_str()
-                .unwrap()
-                .contains("tmux를 실행할 수 없습니다"),
-            "{absent}"
-        );
-        cleanup(&f);
-    }
-
-    /// CLI로 띄운 세션도 프로필 성격을 받아야 한다(예전엔 무조건 None이었다).
     #[tokio::test]
     async fn create_passes_the_profile_personality_prompt() {
         let f = build("create-persona");

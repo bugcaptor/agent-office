@@ -230,11 +230,6 @@
     "errCliLaunchAckTimeout": "The shell did not confirm launch command execution. No task was sent. Check the terminal before starting a new run."
   },
   "host": {
-    "externalTitle": "Connected to an external app session",
-    "externalDetail": "This character shows activity and alerts from the connected program. Check its screen and conversations in the original program.",
-    "openWorkdirInVscode": "Open work folder in VS Code",
-    "openWorkdirError": "Could not open the work folder in VS Code.",
-    "detach": "Disconnect",
     "exited": "The process exited.",
     "relaunch": "Relaunch"
   },
@@ -258,8 +253,7 @@
       "costUnknownHint_one": "Unpriced usage excluded from cost ({{count}} update)",
       "costUnknownHint_other": "Unpriced usage excluded from cost ({{count}} updates)",
       "tokenPairHint": "In parentheses: total tokens including cache",
-      "footnote": "Estimated at public API rates",
-      "externalScope": "Includes only usage recorded after connecting."
+      "footnote": "Estimated at public API rates"
     }
   }
 }

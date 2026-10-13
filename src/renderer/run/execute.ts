@@ -27,7 +27,7 @@ export async function injectAndSubmit(
 export type RunExecutionResult =
   "started" | "alreadyRunning" | "failed";
 export type ProbeExecutionResult =
-  "injected" | "starting" | "external" | "failed";
+  "injected" | "starting" | "failed";
 
 /** 레시피를 캐릭터 PTY와 무관한 백엔드 소유 프로세스로 시작한다. */
 export async function executeRunRecipe(
@@ -64,7 +64,6 @@ export async function probeRunRecipes(
 ): Promise<ProbeExecutionResult> {
   const session = useAppStore.getState().sessions[agentId];
   const profile = useAppStore.getState().agents[agentId];
-  if (session?.kind === "external") return "external";
   if (session?.status === "starting") return "starting";
   if (session?.status !== "running") return "failed";
   const target = await tauriApi.runRecipesProbeTarget(root);

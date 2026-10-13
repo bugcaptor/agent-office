@@ -20,7 +20,7 @@
 //   refocus/re-scroll on plain resize).
 // - The `ResizeObserver` is disconnected when the mount stops being active
 //   or unmounts (no leaks).
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
 import type { AgentProfile } from "../../store/types";
@@ -286,103 +286,5 @@ describe("ResizeObserver: active-only, 120ms debounce, refit (not activate)", ()
 
     expect(ro.disconnect).toHaveBeenCalledTimes(1);
     expect(refit).not.toHaveBeenCalled(); // timer must have been cleared, not left to fire post-unmount
-  });
-});
-
-describe("외부(논리) 세션 마운트", () => {
-  function mkExternal(id: string) {
-    useAppStore.getState().addAgent(mkProfile(id));
-    useAppStore.getState().setSessionState({ agentId: id, status: "running", external: true });
-  }
-
-  it("kind=external + running이면 xterm을 붙이지 않고 안내 패널을 그린다", () => {
-    mkExternal("a1");
-    useAppStore.getState().openTerminal("a1");
-
-    const { container } = render(<TerminalHost />);
-
-    const mount = container.querySelector('[data-agent-id="a1"]') as HTMLElement;
-    expect(mount.style.display).toBe("block");
-    expect(container.querySelector(".terminal-external-panel")).not.toBeNull();
-    expect(container.querySelector(".terminal-mount-host")).toBeNull();
-    expect(attach).not.toHaveBeenCalled();
-    expect(mount.textContent).toContain("외부 프로그램 세션에 연결됨");
-  });
-
-  it("연결 해제 버튼이 detachExternalSession을 호출한다", async () => {
-    mkExternal("a1");
-    useAppStore.getState().openTerminal("a1");
-
-    const { container } = render(<TerminalHost />);
-    const btn = container.querySelector(".terminal-external-panel button") as HTMLButtonElement;
-    expect(btn.textContent).toBe("연결 해제");
-
-    await act(async () => {
-      fireEvent.click(btn);
-    });
-
-    expect(detachExternalSession).toHaveBeenCalledTimes(1);
-    expect(detachExternalSession).toHaveBeenCalledWith("a1");
-  });
-
-  it("프로필 작업 폴더를 VS Code에서 연다", async () => {
-    useAppStore.getState().addAgent({ ...mkProfile("a1"), cwd: "/work/observed" });
-    useAppStore.getState().setSessionState({ agentId: "a1", status: "running", external: true });
-    useAppStore.getState().openTerminal("a1");
-
-    const { getByRole } = render(<TerminalHost />);
-    await act(async () => {
-      fireEvent.click(getByRole("button", { name: "VS Code에서 작업 폴더 열기" }));
-    });
-
-    expect(openInVscode).toHaveBeenCalledWith("/work/observed");
-  });
-
-  it("프로필 작업 폴더가 없으면 VS Code 열기 버튼을 보이지 않는다", () => {
-    mkExternal("a1");
-    useAppStore.getState().openTerminal("a1");
-
-    const { queryByRole } = render(<TerminalHost />);
-    expect(queryByRole("button", { name: "VS Code에서 작업 폴더 열기" })).toBeNull();
-  });
-
-  it("VS Code 열기에 실패하면 패널에 오류를 표시한다", async () => {
-    openInVscode.mockRejectedValueOnce(new Error("VS Code unavailable"));
-    useAppStore.getState().addAgent({ ...mkProfile("a1"), cwd: "/work/observed" });
-    useAppStore.getState().setSessionState({ agentId: "a1", status: "running", external: true });
-    useAppStore.getState().openTerminal("a1");
-
-    const { getByRole } = render(<TerminalHost />);
-    await act(async () => {
-      fireEvent.click(getByRole("button", { name: "VS Code에서 작업 폴더 열기" }));
-    });
-
-    expect(getByRole("alert").textContent).toBe("VS Code에서 작업 폴더를 열지 못했습니다.");
-  });
-
-  it("PTY 세션(external 부재)은 기존 xterm 경로 그대로다", () => {
-    useAppStore.getState().addAgent(mkProfile("a1"));
-    useAppStore.getState().setSessionState({ agentId: "a1", status: "running" });
-    useAppStore.getState().openTerminal("a1");
-
-    const { container } = render(<TerminalHost />);
-
-    expect(container.querySelector(".terminal-external-panel")).toBeNull();
-    expect(attach).toHaveBeenCalledWith("a1", expect.any(HTMLElement));
-  });
-
-  it("연결이 끊기면(exited) 다시 기존 마운트로 돌아온다", () => {
-    mkExternal("a1");
-    useAppStore.getState().openTerminal("a1");
-
-    const { container } = render(<TerminalHost />);
-    expect(container.querySelector(".terminal-external-panel")).not.toBeNull();
-
-    act(() =>
-      useAppStore.getState().setSessionState({ agentId: "a1", status: "exited", external: true })
-    );
-
-    expect(container.querySelector(".terminal-external-panel")).toBeNull();
-    expect(attach).toHaveBeenCalledWith("a1", expect.any(HTMLElement));
   });
 });

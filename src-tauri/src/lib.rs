@@ -583,21 +583,6 @@ pub fn run() {
                 .with_agent_session_lookup(claude_resume_store.clone()),
             );
 
-            // 외부(논리) 세션 끊김 감지: attach를 요청한 셸이 사라지면 5초 안에
-            // 캐릭터에서 뗀다. 셸의 EXIT trap은 사용자 trap을 덮어쓸 위험이 있어
-            // 앱 쪽 `kill(pid, 0)` 폴링으로 감지한다. 관찰 연결기의 heartbeat
-            // lease는 비unix에서도 만료시킨다.
-            {
-                let manager = manager.clone();
-                tauri::async_runtime::spawn(async move {
-                    let mut ticker = tokio::time::interval(Duration::from_secs(5));
-                    loop {
-                        ticker.tick().await;
-                        manager.sweep_externals();
-                    }
-                });
-            }
-
             // 자동 입력 관문(kbm #2t9 Phase 2): 자동 입력 생산자 간 배타 및 입력 조율.
             let inject_sink = Arc::new(crate::session::inject::ManagerSink::new(manager.clone()));
             let inject_gate = Arc::new(crate::session::inject::InjectGate::new(
@@ -645,7 +630,6 @@ pub fn run() {
                 settings_store: settings_store.clone(),
                 talk: talk.clone(),
                 app_data_dir: data_dir.clone(),
-                tmux_probe: crate::control::tmux::system_probe(),
                 gate: inject_gate.clone(),
                 live_usage: live_usage.clone(),
                 portrait_store: portrait_store.clone(),
@@ -773,7 +757,6 @@ pub fn run() {
             ipc::commands::create_session,
             ipc::commands::list_available_shells,
             ipc::commands::dispose_session,
-            ipc::commands::detach_external_session,
             ipc::commands::handoff_supported,
             ipc::commands::handoff_sessions,
             ipc::commands::adopt_detached_sessions,

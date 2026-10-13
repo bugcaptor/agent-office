@@ -230,11 +230,6 @@
     "errCliLaunchAckTimeout": "未能确认 shell 已执行启动命令。未发送任务。请检查终端后重新运行。"
   },
   "host": {
-    "externalTitle": "已连接到外部应用会话",
-    "externalDetail": "此角色会显示已连接程序的活动和通知。请在原程序中查看画面和对话。",
-    "openWorkdirInVscode": "在 VS Code 中打开工作文件夹",
-    "openWorkdirError": "无法在 VS Code 中打开工作文件夹。",
-    "detach": "断开连接",
     "exited": "进程已退出。",
     "relaunch": "重新启动"
   },
@@ -258,8 +253,7 @@
       "costUnknownHint_one": "已排除 {{count}} 条未知定价用量的费用",
       "costUnknownHint_other": "已排除 {{count}} 条未知定价用量的费用",
       "tokenPairHint": "括号内为含缓存的总 token",
-      "footnote": "按公开 API 费率折算的估值",
-      "externalScope": "仅统计连接后记录的用量。"
+      "footnote": "按公开 API 费率折算的估值"
     }
   }
 }

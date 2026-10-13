@@ -1,9 +1,7 @@
 pub mod agy_hook;
 pub mod agy_hooks_file;
-pub mod attach_script;
 pub mod bash_wrapper;
 pub mod env_capture;
-pub mod external;
 pub mod handoff_v1;
 pub mod inject;
 pub mod kilo_plugin;

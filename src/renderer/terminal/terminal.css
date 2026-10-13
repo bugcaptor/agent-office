@@ -381,51 +381,6 @@
   flex: none;
 }
 
-/* 외부(논리) 세션 안내 패널 — PTY가 없어 xterm 대신 이걸 그린다.
-   터미널 영역 전체를 차지하고 가운데 정렬한다. */
-.terminal-external-panel {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: safe center;
-  overflow-y: auto;
-  gap: 10px;
-  padding: 24px;
-  text-align: center;
-  font-family: "DungGeunMo", monospace;
-  color: var(--text);
-  background: var(--bg-panel);
-}
-
-.terminal-external-icon {
-  font-size: 2rem;
-  line-height: 1;
-}
-
-.terminal-external-title {
-  font-size: 0.95rem;
-}
-
-.terminal-external-detail {
-  max-width: 420px;
-  font-size: 0.78rem;
-  line-height: 1.6;
-  color: var(--text-dim);
-}
-
-.ide-persona-panel { width: min(640px, 100%); flex: none; text-align: left; border-top: 1px solid var(--border); padding-top: 8px; }
-.ide-persona-toggle { width: 100%; text-align: left; background: transparent; border: 0; color: var(--accent); font: inherit; cursor: pointer; }
-.ide-persona-body { font-size: .82rem; line-height: 1.55; color: var(--text-dim); }
-.ide-persona-preview { max-height: 120px; overflow: auto; white-space: pre-wrap; padding: 7px; background: var(--bg-panel); color: var(--text); font: inherit; }
-.ide-persona-path { display: block; overflow-wrap: anywhere; margin-bottom: 8px; }
-.ide-persona-status { color: var(--accent); }
-.ide-persona-note { font-size: .72rem; line-height: 1.5; }
-.ide-persona-context { overflow-wrap: anywhere; }
-.terminal-external-panel > * { flex-shrink: 0; }
-.ide-persona-loading { font-size: .72rem; color: var(--text-dim); }
-
 /* 프로세스 종료 시 표시되는 "다시 띄우기" 배너 (터미널 위 오버레이) */
 .terminal-exited-banner {
   position: absolute;

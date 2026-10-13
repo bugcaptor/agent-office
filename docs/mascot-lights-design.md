@@ -42,7 +42,7 @@
   순서. 일이 없는 에이전트는 칸 자체가 사라진다(사용자 확정, 결정 2).
 - 프로젝트 모드: 설정에 저장된 폴더 목록(순서 유지), 폴더당 1칸, 소속 세션들의
   상태를 YELLOW > GREEN > OFF로 접는다. 외부 attach 세션
-  (docs/external-session-attach-design.md)도 스토어에 같은 슬라이스로 흐르므로
+  (docs/archive/external-session-attach-design.md, 제거됨)도 스토어에 같은 슬라이스로 흐르므로
   자동 포함.
 - 칸 클릭 → 대표 에이전트의 터미널 열기(기존 `mascot_activate` 재사용).
   호버 툴팁(title) = 대상 이름.

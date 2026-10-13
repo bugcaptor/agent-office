@@ -35,7 +35,6 @@
     "probe": {
       "injected": "Asked the character to inspect the project commands.",
       "starting": "The terminal is starting. Try again in a moment.",
-      "external": "The inspection prompt cannot be sent to an external terminal session.",
       "failed": "Start the character CLI in its terminal first.",
       "started": "Sent the inspection prompt."
     }
