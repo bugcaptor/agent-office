@@ -465,7 +465,7 @@ mod tests {
         assert_eq!(created["ok"], true);
         assert_eq!(created["data"]["state"], "running");
 
-        // send는 no-op 성공(FakePtyFactory라 실 stdin은 검증 안 함).
+        // 실행 중 세션이라 send 성공 — 관문을 거쳐 PTY stdin에 실린다.
         let sent: serde_json::Value = client
             .post(format!("http://127.0.0.1:{port}/v1/send"))
             .header(TOKEN_HEADER, &token)
@@ -493,6 +493,69 @@ mod tests {
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["agentId"], "a1");
         assert_eq!(arr[0]["state"], "running");
+        cleanup(&f);
+    }
+
+    async fn post(port: u16, token: &str, path: &str, body: serde_json::Value) -> serde_json::Value {
+        reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/v1/{path}"))
+            .header(TOKEN_HEADER, token)
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap()
+    }
+
+    /// 수정 F7(A11·A12): create/send/dispose가 실패를 ok로 보고하지 않는다.
+    #[tokio::test]
+    async fn create_send_dispose_report_missing_targets_as_failures() {
+        let f = build("f7");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        f.ctx
+            .store
+            .save(&crate::types::PersistedState {
+                agents: vec![profile("a1", "Ada")],
+                version: 1,
+                vacation_mode: None,
+            })
+            .unwrap();
+
+        // 프로필 없는 id는 PTY를 띄우지 않고 거절한다(숨은 세션 방지).
+        let hidden = post(port, &token, "create", serde_json::json!({ "agentId": "ghost" })).await;
+        assert_eq!(hidden["ok"], false, "{hidden}");
+        assert_eq!(hidden["error"], "unknown_agent");
+        assert!(f.ctx.manager.session_id_for("ghost").is_none());
+
+        // 세션이 없으면 send·dispose 모두 not-found.
+        let sent = post(port, &token, "send", serde_json::json!({ "agentId": "a1", "data": "x" })).await;
+        assert_eq!(sent["error"], "not-found", "{sent}");
+        let disposed = post(port, &token, "dispose", serde_json::json!({ "agentId": "nobody" })).await;
+        assert_eq!(disposed["error"], "not-found", "{disposed}");
+
+        // 셸이 죽은(Exited) 세션에 send는 not-running이고 stdin에 아무것도 안 간다.
+        let created = post(port, &token, "create", serde_json::json!({ "agentId": "a1" })).await;
+        assert_eq!(created["ok"], true, "{created}");
+        f.ctl.fire_exit_signal(9);
+        for _ in 0..200 {
+            if !f.ctx.manager.is_running("a1") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let before = f.ctl.writes_raw().len();
+        let sent = post(port, &token, "send", serde_json::json!({ "agentId": "a1", "data": "x" })).await;
+        assert_eq!(sent["error"], "not-running", "{sent}");
+        assert_eq!(f.ctl.writes_raw().len(), before);
+
+        // 끝난 세션도 치울 수는 있고, 같은 id를 두 번 dispose하면 두 번째는 not-found.
+        let first = post(port, &token, "dispose", serde_json::json!({ "agentId": "a1" })).await;
+        assert_eq!(first["ok"], true, "{first}");
+        let second = post(port, &token, "dispose", serde_json::json!({ "agentId": "a1" })).await;
+        assert_eq!(second["error"], "not-found", "{second}");
         cleanup(&f);
     }
 

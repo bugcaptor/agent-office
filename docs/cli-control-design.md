@@ -80,6 +80,7 @@
   `X-Agent-Office-Token: <token>`, JSON 본문(카멜케이스).
 - 응답: `{ "ok": true, "data": … }` 또는 `{ "ok": false, "error": "…" }`.
 - 토큰 불일치/누락: HTTP 401 + `{ "ok": false, "error": "unauthorized…" }`.
+- 대상 오류(`ctl`은 rc≠0): `create`는 profiles.json에 없는 agentId면 `unknown_agent`(숨은 세션을 띄우지 않는다), `send`는 세션이 없으면 `not-found`·끝났으면 `not-running`, `dispose`는 세션이 없거나 이미 폐기 중이면 `not-found`, sessiond로 넘긴 세션이면 `handed-off`.
 
 | 라우트 | 본문 | 대응 command |
 | --- | --- | --- |

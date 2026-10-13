@@ -980,14 +980,26 @@ impl SessionManager {
             if s.handed_off.load(Ordering::SeqCst) {
                 return Err("work-send-session-changed".into());
             }
-            s.kill_requested.store(true, Ordering::SeqCst);
-            if let Err(error) = s.control.kill() {
-                // 이미 죽은 자식이면 흔한 실패다 -- 그래도 남겨 둬야 "kill했는데
-                // 계속 살아 있다"를 사후에 구분할 수 있다.
-                eprintln!("agent-office: kill failed for {}: {error}", s.session_id);
-            }
-            cleanup_paths(&s.cleanup_paths);
+            kill_session(&s);
         }
+        Ok(())
+    }
+
+    /// ctl `dispose`용(수정 F7): 폐기할 세션이 없으면 조용히 넘기지 않고 알린다.
+    /// 이미 폐기 요청된 세션(on_exit 전이라 맵에 남은 것)도 없는 것으로 본다 —
+    /// 같은 id를 두 번 dispose하면 두 번째는 `not-found`.
+    pub fn dispose_existing(&self, agent_id: &str) -> Result<(), String> {
+        let _lifecycle = self.lifecycle.lock();
+        let Some(s) = self
+            .find(agent_id)
+            .filter(|s| !s.kill_requested.load(Ordering::SeqCst))
+        else {
+            return Err("not-found".into());
+        };
+        if s.handed_off.load(Ordering::SeqCst) {
+            return Err("handed-off".into());
+        }
+        kill_session(&s);
         Ok(())
     }
 
@@ -1151,6 +1163,18 @@ impl SessionManager {
         self.shell_resolver = resolver;
         self
     }
+}
+
+/// 폐기 본문: kill 요청 표시 → 자식 kill → observer 파일 정리. 호출자가
+/// lifecycle 락과 핸드오프 검사를 맡는다.
+fn kill_session(s: &Session) {
+    s.kill_requested.store(true, Ordering::SeqCst);
+    if let Err(error) = s.control.kill() {
+        // 이미 죽은 자식이면 흔한 실패다 -- 그래도 남겨 둬야 "kill했는데
+        // 계속 살아 있다"를 사후에 구분할 수 있다.
+        eprintln!("agent-office: kill failed for {}: {error}", s.session_id);
+    }
+    cleanup_paths(&s.cleanup_paths);
 }
 
 fn cleanup_paths(paths: &[std::path::PathBuf]) {

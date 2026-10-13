@@ -62,14 +62,27 @@ pub(super) async fn create(
 ) -> Json<serde_json::Value> {
     // 스폰 본문은 `ipc::commands::spawn_session` 하나뿐이다 — 여기서 복제하던
     // observer ensure + catch_unwind + create_with_profile를 그쪽으로 합쳤다.
+    //
+    // profiles.json에 없는 agentId는 거절한다(수정 F7). 렌더러는 프로필 없는
+    // 세션을 그리지 않고 `list`도 프로필 기준이라, 띄우면 dispose로만 치울 수
+    // 있는 숨은 세션이 된다. 오류 코드는 display 라우트와 같은 `unknown_agent`.
+    let Some(agent) = ctx
+        .store
+        .load()
+        .agents
+        .into_iter()
+        .find(|a| a.id == p.agent_id)
+    else {
+        return fail("unknown_agent");
+    };
     let profile = AgentEventProfile {
-        name: p.name.clone().unwrap_or_else(|| p.agent_id.clone()),
-        role: p.role.clone(),
+        name: p.name.clone().unwrap_or_else(|| agent.name.clone()),
+        role: p.role.clone().or_else(|| Some(agent.role.clone())),
     };
     // 성격 프롬프트는 디스크 프로필에서 읽는다 — 렌더러 create_session이 늘
     // 함께 보내는 값이라, CLI로 띄운 세션만 성격 없이 뜨면 안 된다(M3에서 고친
-    // 결함: 예전엔 무조건 None이었다). 프로필이 없으면 기존대로 None.
-    let personality_prompt = profile_personality_prompt(&ctx, &p.agent_id);
+    // 결함: 예전엔 무조건 None이었다).
+    let personality_prompt = agent.personality_prompt;
     match crate::ipc::commands::spawn_session(
         &ctx.manager,
         &ctx.observer,
@@ -94,20 +107,19 @@ pub(super) async fn create(
     }
 }
 
-/// 디스크 프로필의 성격 프롬프트(없으면 None). `create`가 쓴다.
-fn profile_personality_prompt(ctx: &ControlContext, agent_id: &str) -> Option<String> {
-    ctx.store
-        .load()
-        .agents
-        .into_iter()
-        .find(|a| a.id == agent_id)
-        .and_then(|a| a.personality_prompt)
-}
-
 pub(super) async fn send(
     State(ctx): State<Arc<ControlContext>>,
     Json(p): Json<SendParams>,
 ) -> Json<serde_json::Value> {
+    // 받을 세션이 없거나 끝났으면 실패로 알린다(수정 F7) — 관문은 없는 세션
+    // 쓰기를 조용히 버리므로 여기서 걸러야 자동화가 오판하지 않는다.
+    if !ctx.manager.is_running(&p.agent_id) {
+        return fail(if ctx.manager.session_id_for(&p.agent_id).is_some() {
+            "not-running"
+        } else {
+            "not-found"
+        });
+    }
     // ctl 입력은 사람 입력으로 취급(kbm #2t9 Phase 2) — 관문 경유.
     ctx.gate.note_human(&p.agent_id, &p.data);
     ok(serde_json::Value::Null)
@@ -117,8 +129,11 @@ pub(super) async fn dispose(
     State(ctx): State<Arc<ControlContext>>,
     Json(p): Json<AgentParams>,
 ) -> Json<serde_json::Value> {
-    ctx.manager.dispose(&p.agent_id);
-    ok(serde_json::Value::Null)
+    // 없는 id·이미 폐기 중인 세션은 `not-found`(수정 F7).
+    match ctx.manager.dispose_existing(&p.agent_id) {
+        Ok(()) => ok(serde_json::Value::Null),
+        Err(e) => fail(e),
+    }
 }
 
 pub(super) async fn notifications(
