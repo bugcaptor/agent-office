@@ -177,7 +177,6 @@ fn report_prompt(issue: u64, name: &str, repo_slug: &str, marker: &str) -> Strin
 
 /// 텍스트 주입 후 Enter(CR)를 보내기까지의 대기(ms). 텍스트와 CR이 한 이벤트로
 /// 뭉쳐 claude TUI가 Enter를 삼키는 것을 막고, 입력이 렌더될 틈을 준다.
-/// 웹 채팅 입력칸(webremote)도 같은 규칙을 쓴다.
 pub const INJECT_SUBMIT_DELAY_MS: u64 = 150;
 
 /// 임베디드 개행을 공백으로 바꾼다(주입 방어 1 — 아래 `inject` 설명 참고).

@@ -28,7 +28,6 @@
 | [mascot-window-design.md](mascot-window-design.md) | 마스코트 창 — 투명 픽셀 창·씬·상태 표식 | 정본 — 설계 확정 + 구현 완료 |
 | [session-handoff-design.md](session-handoff-design.md) | v1 종료 시점 fd-핸드오프(현재 기본 경로) — 앱 종료 후 터미널 존속·재실행 입양 | 정본 — 구현 완료(#7). v2와 공존 |
 | [session-broker-v2-design.md](session-broker-v2-design.md) | v2 상시 브로커(스폰부터 데몬이 PTY 소유) — 크래시 생존, 프로토콜 v2 | 정본 — 구현 완료·기본 off(`AGENT_OFFICE_SESSION_BROKER=v2` opt-in), 결함 #48/#50/#49 수정 완료 |
-| [web-remote-design.md](web-remote-design.md) | 웹 원격(kbm #2dz) — tailnet 브라우저(폰 포함)로 앱 보고 제어. 채팅 우선 하이브리드: 전사 tail 채팅 뷰 주 화면·터미널 미러 폴백. 선행은 archive/web-hosting(폐기) | 정본 — M1~M3 구현 완료, M4 미착수 |
 | [session-analytics-design.md](session-analytics-design.md) | 세션 활동 분석 패널 — 시계열 재구성·일별 스택 차트 | 정본 — 구현 완료 |
 | [session-log-design.md](session-log-design.md) | 터미널 전사 상시 기록(30일·2GB) + 세션 로그 보기 + 회고·학습자료 생성 | 정본 — 구현 완료, 눈검증 대기 |
 | [usage-design.md](usage-design.md) | 구독 사용량(rate limit) 표시 — 캐시 미러(#22) + Claude 실시간 조회(#33) 통합본 | 정본 — 구현 완료 |
@@ -55,12 +54,13 @@
 | [archive/session-event-timeseries-design.md](archive/session-event-timeseries-design.md) | 수집 계층 구현 완료 후 코드가 정본이 됨(본문 자인). 소비자는 session-analytics 문서 |
 | [archive/usage-limits-design.md](archive/usage-limits-design.md) | `usage-design.md`로 병합됨 (이슈 #22 링크 보존) |
 | [archive/claude-usage-live-fetch-design.md](archive/claude-usage-live-fetch-design.md) | `usage-design.md` §6으로 병합됨 (이슈 #33 링크 보존) |
-| [archive/peer-session-share-design.md](archive/peer-session-share-design.md) | 앱↔앱 세션 공유(kbm #7k) — 웹 호스팅(#7m)에 흡수돼 완료·폐기. **호스트 인프라(출력 tap·링버퍼·오프셋 회계·페어링·이벤트 미러)는 그대로 계승**됐고 그 설계 근거가 여기 있다. 앱↔앱 뷰어(`peer/viewer.rs`)만 동결 |
+| [archive/peer-session-share-design.md](archive/peer-session-share-design.md) | 앱↔앱 세션 공유(kbm #7k) — 웹 호스팅(#7m)에 흡수돼 완료·폐기. 호스트 인프라(출력 tap·페어링·이벤트 미러)는 웹 원격이 계승했다가 웹 원격 제거(2026-10-14)와 함께 사라졌다 |
 | [archive/work-inbox-design.md](archive/work-inbox-design.md) | 업무 수신함 구현 계획 — 구현 완료 후 `work-panels-design.md` §업무 수신함으로 병합. 결정 근거(스킬 대신 공통 안내문, 중복 방지 id, 삭제 시점) 보존 |
-| [archive/web-hosting-design.md](archive/web-hosting-design.md) | 웹 호스팅(#7m/#7n) 완전판(Phase 1+2) — 2026-08-05 폐기, 웹 원격(#2dz)에 계승. 루트의 낡은 Phase-1 스냅샷(`web-hosting-design.md`)은 삭제됨 |
+| [archive/web-hosting-design.md](archive/web-hosting-design.md) | 웹 호스팅(#7m/#7n) 완전판(Phase 1+2) — 2026-08-05 폐기, 웹 원격(#2dz, 이것도 2026-10-14 제거)에 계승. 루트의 낡은 Phase-1 스냅샷(`web-hosting-design.md`)은 삭제됨 |
 | [archive/affinity-design.md](archive/affinity-design.md) | 에이전트 호감도(kbm #2rv) — 기획 확정 후 구현 전에 접음(2026-10-14, 점검·정리 §7.D C27). 코드 없음 |
 | [archive/vscode-character-extension-plan.md](archive/vscode-character-extension-plan.md) | VSCode 로그 뷰어 확장(kbm #2ce) — V1 `vscode-ext/` 미사용으로 패키지째 제거(2026-10-14, 점검·정리 §7.D C40) |
 | [archive/remote-server-design.md](archive/remote-server-design.md) | 독립 세션 서버 `serve`·데스크톱 원격 연결(kbm #2w4) — 미사용으로 제거(2026-10-14, 점검·정리 §7.D C36) |
+| [archive/web-remote-design.md](archive/web-remote-design.md) | 웹 원격(kbm #2dz) — tailnet 브라우저 보기·제어. M1~M3 구현 후 미사용으로 제거(2026-10-14, 점검·정리 §7.D C35) |
 
 ## 관련 (docs/ 밖)
 

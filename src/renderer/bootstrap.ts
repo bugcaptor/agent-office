@@ -21,7 +21,6 @@
 import { useAppStore } from "./store/appStore";
 import { applyLanguageSetting } from "./i18n";
 import { installSessionBridge } from "./ipc/sessionBridge";
-import { installWebRemoteBridge } from "./ipc/webRemoteBridge";
 import { installMascotBridge } from "./ipc/mascotBridge";
 import { installDisplayFocusBridge } from "./ipc/displayFocusBridge";
 import { installWindowFocusTracking } from "./ipc/windowFocus";
@@ -283,8 +282,6 @@ export async function bootApp(): Promise<() => void> {
   const offWorkMonitor = installWorkMonitor();
   const offWorkInbox = installWorkInboxLifecycle();
   const offBridge = installSessionBridge();
-  // 웹 원격 — 세션 브리지 직후. 화면 스냅샷 요청과 페어링 승인 요청을 받는다.
-  const offWebRemote = installWebRemoteBridge();
   // 데스크톱 마스코트(이슈 #72) — 세션 브리지 직후. officeBus(=emitAgentClicked)를
   // 쓰므로 그 뒤여야 하고, 설정 hydrate 이후라 mascotEnabled를 곧바로 읽는다.
   const offMascot = installMascotBridge();
@@ -338,7 +335,6 @@ export async function bootApp(): Promise<() => void> {
     offWorkMonitor();
     offWorkInbox();
     void stopWorkInbox().then(() => useWorkItemStore.getState().flush());
-    offWebRemote();
     offMascot();
     offDisplayFocus();
     offFocus();

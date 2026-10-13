@@ -18,7 +18,6 @@ import { GeneralTab } from "./GeneralTab";
 import { SoundTab } from "./SoundTab";
 import { SystemTab } from "./SystemTab";
 import { ControlSection } from "./ControlSection";
-import { WebRemoteSection } from "./WebRemoteSection";
 import { TalkSection } from "./TalkSection";
 import { ConnectionSection } from "./ConnectionSection";
 
@@ -87,7 +86,6 @@ function SettingsDialogBody() {
             <>
               <ControlSection enabled={cliEnabled} />
               <ConnectionSection />
-              <WebRemoteSection />
               <TalkSection />
             </>
           )}

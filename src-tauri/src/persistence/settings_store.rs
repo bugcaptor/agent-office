@@ -400,18 +400,6 @@ pub struct AppSettings {
     /// 대사 리라이트 공급자. 기본 `auto`(API 키 → env → claude CLI → 생략).
     #[serde(default)]
     pub tts_rewrite_provider: TtsRewriteProvider,
-    /// 어떤 원격 주소를 받아 줄지. 기본 `tailnet`(Tailscale 대역 + 루프백).
-    #[serde(default)]
-    pub web_remote_bind: WebRemoteBind,
-    /// 수신 포트. 수동 `host:port` 입력이 곧 디스커버리라 고정값이 기본이고,
-    /// 점유 시에는 +1씩 스캔한 실제 포트를 설정 UI에 표시한다.
-    #[serde(default = "default_web_remote_port")]
-    pub web_remote_port: u16,
-    /// 웹 원격(docs/web-remote-design.md) — 브라우저로 접속해 상태 확인·터미널
-    /// 조작을 하게 한다. 켜져 있을 때만 리스너가 뜨고 정적 자산·웹 RPC가
-    /// 응답한다. 페어링 승인은 여전히 필요하다. 네트워크 표면이라 기본 꺼짐.
-    #[serde(default)]
-    pub web_remote_enabled: bool,
     /// 동료 대화(docs/agent-talk-design.md) — 캐릭터끼리 앱을 거쳐 메시지를
     /// 주고받게 한다. 남의 세션 stdin에 글자를 밀어 넣는 기능이라 opt-in이고,
     /// 끄는 순간 대기 중인 메시지까지 버려지는 킬 스위치이기도 하다. 기본 꺼짐.
@@ -435,10 +423,6 @@ fn default_talk_max_turns() -> u32 {
 
 fn default_talk_idle_quiet_ms() -> u64 {
     crate::talk::DEFAULT_IDLE_QUIET_MS
-}
-
-fn default_web_remote_port() -> u16 {
-    crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT
 }
 
 impl Default for AppSettings {
@@ -478,38 +462,9 @@ impl Default for AppSettings {
             tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
             tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),
             tts_rewrite_provider: TtsRewriteProvider::Auto,
-            web_remote_bind: WebRemoteBind::Tailnet,
-            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
-            web_remote_enabled: false,
             talk_enabled: false,
             talk_max_turns: default_talk_max_turns(),
             talk_idle_quiet_ms: default_talk_idle_quiet_ms(),
-        }
-    }
-}
-
-/// 웹 원격 서버가 받아 줄 원격 주소 범위. 인터페이스 열거 크레이트를
-/// 새로 들이지 않고 **원격 주소 허용목록**으로 정책을 강제한다 — tailnet 밖
-/// 클라이언트는 페어링조차 시작하지 못하므로 "기본 구성에서 평문이 LAN에
-/// 흐르지 않는다"는 성질은 그대로다.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum WebRemoteBind {
-    /// Tailscale 대역(100.64.0.0/10, fd7a:115c:a1e0::/48) + 루프백만. 기본값.
-    #[default]
-    Tailnet,
-    /// 아무 주소나(순수 LAN 사용 — 평문 전송 경고 동반).
-    All,
-    /// 루프백만(사실상 비활성 — 같은 머신 테스트용).
-    Loopback,
-}
-
-impl WebRemoteBind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Tailnet => "tailnet",
-            Self::All => "all",
-            Self::Loopback => "loopback",
         }
     }
 }
@@ -698,9 +653,6 @@ mod tests {
             tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
             tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),
             tts_rewrite_provider: TtsRewriteProvider::Auto,
-            web_remote_bind: Default::default(),
-            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
-            web_remote_enabled: false,
             talk_enabled: false,
             talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
             talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,
@@ -908,9 +860,6 @@ mod tests {
             tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
             tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),
             tts_rewrite_provider: TtsRewriteProvider::Auto,
-            web_remote_bind: Default::default(),
-            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
-            web_remote_enabled: false,
             talk_enabled: false,
             talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
             talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,

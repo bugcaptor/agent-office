@@ -49,12 +49,6 @@ export type BackendErrorCode =
   | "empty_message"
   | "no_voice"
   | "key-save-failed"
-  // tailscale serve(ipc/commands/tailscale.rs)
-  | "web-remote-down"
-  | "tailscale-cli-not-found"
-  | "serve-port-conflict"
-  | "tailscale-spawn-failed"
-  | "tailscale-cli-error"
   // 요약기·CLI 공통
   | "timeout";
 
@@ -79,11 +73,6 @@ export const BACKEND_ERROR_KEY: Record<BackendErrorCode, string> = {
   empty_message: "common:errors.ttsEmptyMessage",
   no_voice: "common:errors.ttsNoVoice",
   "key-save-failed": "common:errors.keySaveFailed",
-  "web-remote-down": "common:errors.webRemoteDown",
-  "tailscale-cli-not-found": "common:errors.tailscaleCliNotFound",
-  "serve-port-conflict": "common:errors.tailscaleServeConflict",
-  "tailscale-spawn-failed": "common:errors.tailscaleSpawnFailed",
-  "tailscale-cli-error": "common:errors.tailscaleCliError",
   timeout: "common:errors.timeout",
 };
 

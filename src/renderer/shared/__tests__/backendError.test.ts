@@ -49,7 +49,7 @@ describe("parseBackendError", () => {
 describe("backendErrorText — 코드가 문구가 된다", () => {
   it("매핑에 있는 코드는 카탈로그 문구(ko)", () => {
     expect(backendErrorText("missing_elevenlabs_key")).toBe(t("common:errors.ttsKeyMissing"));
-    expect(backendErrorText("web-remote-down")).toBe(t("common:errors.webRemoteDown"));
+    expect(backendErrorText("timeout")).toBe(t("common:errors.timeout"));
   });
 
   it("상세는 번역하지 않고 괄호로 붙는다", () => {
@@ -83,10 +83,10 @@ describe("backendErrorText — 코드가 문구가 된다", () => {
 
 describe("backendErrorText — 언어를 따라간다", () => {
   it("en으로 바꾸면 영어 문구가 나온다", async () => {
-    const ko = backendErrorText("tailscale-cli-not-found");
+    const ko = backendErrorText("timeout");
     await initI18nForTest("en");
-    const en = backendErrorText("tailscale-cli-not-found");
-    expect(en).toBe("Could not find the Tailscale CLI.");
+    const en = backendErrorText("timeout");
+    expect(en).toBe("It did not respond in time.");
     expect(en).not.toBe(ko);
     // 상세는 언어와 무관하게 원문 그대로.
     expect(backendErrorText("read-failed: a.md (os error 2)")).toBe(

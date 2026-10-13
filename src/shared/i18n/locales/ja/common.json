@@ -79,11 +79,6 @@
     "ttsKeyMissing": "ElevenLabs の API キーが設定されていません。",
     "ttsEmptyMessage": "読み上げる文がありません。",
     "ttsNoVoice": "利用できるボイスがありません。",
-    "webRemoteDown": "Web リモートサーバーがまだ起動していません — 先に Web リモートをオンにしてください。",
-    "tailscaleCliNotFound": "Tailscale CLI が見つかりませんでした。",
-    "tailscaleServeConflict": "その HTTPS ポートは別のサービスが使用中です — 先にそのマッピングを整理してください。",
-    "tailscaleSpawnFailed": "tailscale の実行に失敗しました。",
-    "tailscaleCliError": "tailscale コマンドが失敗しました。",
     "timeout": "時間内に応答しませんでした。"
   },
   "ideSpikeDescription": "既存の VS Code の Codex・Claude セッションを読み取り専用で Agent Office に接続する実験です。"

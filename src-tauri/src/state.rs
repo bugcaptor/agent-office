@@ -35,11 +35,9 @@ pub trait AppEvents: Send + Sync {
     /// no-op으로 둬 이 이벤트를 안 쓰는 구현체(테스트 더블 등)가 강제로
     /// 구현하지 않아도 되게 한다. **주의**: 이 기본 no-op은 "안 써도 되는"
     /// 구현체용이다. 다른 `AppEvents`를 감싸거나 미러링하는 데코레이터
-    /// (`RecordingAppEvents`, `CompositeEvents` 등)는 **반드시** 안쪽/각 갈래로
-    /// forward해야 한다 — 그렇지 않으면 이 이벤트가 배선 중간에서 조용히
-    /// 사라진다(실제로 한 번 그렇게 유실됐었다, 필수 2 참고). `WebRemoteEvents`가
-    /// 이 이벤트를 안 받는 것은 예외적으로 **의도된** 동작이다(웹 원격은 토큰을
-    /// 표시하지 않는다) — 새 데코레이터를 추가할 때 이 두 경우를 헷갈리지 말 것.
+    /// (`RecordingAppEvents` 등)는 **반드시** 안쪽으로 forward해야 한다 —
+    /// 그렇지 않으면 이 이벤트가 배선 중간에서 조용히 사라진다(실제로 한 번
+    /// 그렇게 유실됐었다, 필수 2 참고).
     fn turn_usage(&self, _ev: &crate::types::TurnUsageEvent) {}
 }
 
@@ -68,52 +66,6 @@ impl AppEvents for TauriEvents {
     }
     fn turn_usage(&self, ev: &crate::types::TurnUsageEvent) {
         let _ = self.app.emit("turn-usage", ev);
-    }
-}
-
-/// 두 방출 경계를 하나로 세운다(웹 원격 — 앱 이벤트 미러).
-/// `AppEvents`가 이미 **모든 앱 이벤트의 단일 관문**이라, 여기 한 겹만 끼우면
-/// 공유 중인 캐릭터의 상태·알림·활동이 그대로 뷰어로 미러된다 — 방출 지점마다
-/// 훅을 추가할 필요가 없다. `primary`(=TauriEvents)가 먼저다.
-pub struct CompositeEvents {
-    pub primary: Arc<dyn AppEvents>,
-    pub secondary: Arc<dyn AppEvents>,
-}
-
-impl CompositeEvents {
-    pub fn new(primary: Arc<dyn AppEvents>, secondary: Arc<dyn AppEvents>) -> Self {
-        Self { primary, secondary }
-    }
-}
-
-impl AppEvents for CompositeEvents {
-    fn session_started(&self, ev: &SessionStartedEvent) {
-        self.primary.session_started(ev);
-        self.secondary.session_started(ev);
-    }
-    fn session_state(&self, ev: &SessionStateEvent) {
-        self.primary.session_state(ev);
-        self.secondary.session_state(ev);
-    }
-    fn notification_new(&self, ev: &NotificationEvent) {
-        self.primary.notification_new(ev);
-        self.secondary.notification_new(ev);
-    }
-    fn talk_message(&self, ev: &crate::types::TalkEvent) {
-        self.primary.talk_message(ev);
-        self.secondary.talk_message(ev);
-    }
-    fn notification_cleared(&self, agent_id: &str, ids: &[String]) {
-        self.primary.notification_cleared(agent_id, ids);
-        self.secondary.notification_cleared(agent_id, ids);
-    }
-    fn activity_event(&self, ev: &ActivityEvent) {
-        self.primary.activity_event(ev);
-        self.secondary.activity_event(ev);
-    }
-    fn turn_usage(&self, ev: &crate::types::TurnUsageEvent) {
-        self.primary.turn_usage(ev);
-        self.secondary.turn_usage(ev);
     }
 }
 
@@ -204,8 +156,7 @@ pub struct AppState {
     pub observer: Arc<ObserverRuntime>,
     pub observer_server: Arc<ObserverServerState>,
     pub store: ProfileStore,
-    /// 초상 PNG 저장소. 웹 원격(`media.portrait` RPC)도 같은 인스턴스를 읽으므로
-    /// Arc다 — 디렉터리 규약이 두 곳에 복제되지 않는다.
+    /// 초상 PNG 저장소. control 서버도 같은 인스턴스를 읽으므로 Arc다.
     pub portrait_store: Arc<crate::persistence::png_store::PngStore>,
     pub sprite_store: crate::persistence::png_store::PngStore,
     /// 서브에이전트 미니미 전용 PNG 저장소(`minimis/<agentId>.png`). 단일 N×N
@@ -256,8 +207,7 @@ pub struct AppState {
     /// Claude 사용량 실시간 조회(이슈 #33)의 메모리 상태. `load_usage_snapshot`
     /// 커맨드가 스로틀 판단·직전 성공 스냅샷을 여기 보관해, 렌더러 60초 폴링에
     /// 얹혀 리셋 경계 후 빠르게 실제 값을 갱신한다(docs/claude-usage-live-fetch-design.md).
-    /// `Arc`인 이유: 웹 RPC(`usage.snapshot`)가 같은 스로틀 상태를 공유해야
-    /// 폰 폴링이 중복 fetch를 일으키지 않는다(웹 호스팅 #7m).
+    /// `Arc`인 이유: control 서버(`ctl`·표시 API)가 같은 스로틀 상태를 공유한다.
     pub live_usage: Arc<crate::usage::LiveUsageState>,
     /// CLI 제어(#55, docs/cli-control-design.md)의 로컬 control 서버 상태.
     /// cli_enabled ON일 때만 기동되고 포트/토큰 파일을 관리한다.
@@ -265,10 +215,6 @@ pub struct AppState {
     /// control 핸들러가 쥐는 앱 상태 클론들. `set_app_settings`가 cli_enabled
     /// ON 전환 시 `control_server.ensure(control_ctx)`에 넘긴다.
     pub control_ctx: Arc<crate::control::ControlContext>,
-    /// 웹 원격의 수신 서버 상태. `web_remote_enabled`가 켜져 있을 때만 뜬다.
-    pub web_remote_server: Arc<crate::webremote::WebRemoteServerState>,
-    /// 웹 원격 핸들러가 쥐는 앱 상태 클론 + 허브. 설정 토글 시 `ensure`에 넘긴다.
-    pub web_remote_ctx: Arc<crate::webremote::WebRemoteContext>,
     /// 캐릭터 봇 모드(#57, docs/bot-mode-design.md)의 탭별 폴링 태스크 소유자.
     pub bot_runtime: Arc<crate::bot::BotRuntime>,
     /// 봇 폴링 태스크가 쥐는 앱 상태 클론(세션 주입·프로필/상태 접근).
@@ -404,7 +350,7 @@ pub mod fake {
 #[cfg(test)]
 mod tests {
     use super::fake::RecordingEvents;
-    use super::{AppEvents, CompositeEvents, SessionRegistry};
+    use super::{AppEvents, SessionRegistry};
     use crate::types::*;
 
     fn state_event(session_id: &str, agent_id: &str, state: SessionState) -> SessionStateEvent {
@@ -541,44 +487,6 @@ mod tests {
         let events: std::sync::Arc<dyn AppEvents> = recorder.clone();
         events.session_state(&state_event("s1", "a1", SessionState::Running));
         assert_eq!(recorder.states(), vec![SessionState::Running]);
-    }
-
-    // ---- CompositeEvents ----
-
-    /// 필수 2 회귀 테스트: `CompositeEvents::turn_usage`가 primary·secondary
-    /// 양쪽에 도달하는지. lib.rs의 최상위 배선(hub → CompositeEvents(primary=
-    /// RecordingAppEvents(→TauriEvents), secondary=WebRemoteEvents))에서 이
-    /// 전달이 빠지면 이벤트가 조용히 한쪽에서 사라진다.
-    #[test]
-    fn composite_events_forwards_turn_usage_to_both_primary_and_secondary() {
-        let primary = std::sync::Arc::new(RecordingEvents::default());
-        let secondary = std::sync::Arc::new(RecordingEvents::default());
-        let composite = CompositeEvents::new(primary.clone(), secondary.clone());
-
-        let usage = TurnUsageEvent {
-            agent_id: "a1".into(),
-            session_id: "s1".into(),
-            at: 1_783_728_000_000,
-            tokens: SessionEventTokens {
-                input: Some(10),
-                output: Some(20),
-                cache_read: Some(30),
-                cache_write: Some(40),
-                model: Some("claude-opus-5".into()),
-                by_model: None,
-            },
-            partial: false,
-        };
-        composite.turn_usage(&usage);
-
-        let primary_usages = primary.usages();
-        let secondary_usages = secondary.usages();
-        assert_eq!(primary_usages.len(), 1);
-        assert_eq!(secondary_usages.len(), 1);
-        assert_eq!(primary_usages[0].agent_id, "a1");
-        assert_eq!(secondary_usages[0].agent_id, "a1");
-        assert_eq!(primary_usages[0].tokens, usage.tokens);
-        assert_eq!(secondary_usages[0].tokens, usage.tokens);
     }
 
     // ---- SessionRegistry ----

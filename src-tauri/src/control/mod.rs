@@ -76,7 +76,7 @@ pub struct ControlContext {
     pub tmux_probe: tmux::TmuxProbe,
     /// 자동 입력 관문(kbm #2t9 Phase 2).
     pub gate: Arc<crate::session::inject::InjectGate>,
-    /// 네이티브·웹 원격과 같은 사용량 스로틀/캐시 상태.
+    /// 네이티브 커맨드와 같은 사용량 스로틀/캐시 상태.
     pub live_usage: Arc<crate::usage::LiveUsageState>,
     /// 커스텀 초상 저장소. 읽기 API도 앱과 같은 바이트 상한을 쓴다.
     pub portrait_store: Arc<crate::persistence::png_store::PngStore>,

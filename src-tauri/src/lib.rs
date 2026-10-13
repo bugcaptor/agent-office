@@ -14,9 +14,6 @@ mod bot;
 // codex CLI 내장 이미지 생성으로 캐릭터 초상/스프라이트 원본을 만든다(kbm #2fa).
 pub mod codex_imagegen;
 mod control;
-/// 웹 원격(docs/web-remote-design.md) — tailnet의 브라우저가 이 앱의 세션을
-/// 출력/입력만 중계받아 보고 조작한다.
-pub mod webremote;
 // Everything(es.exe) 백엔드(이슈 #67) -- markdown.rs 전용 옵트인 스캔 경로.
 mod file_index;
 // markdown.rs/workdir::list_workdir_files가 공유하는 병렬 스캔 워커.
@@ -25,7 +22,7 @@ mod file_scan;
 mod file_manager;
 // UI 언어 해석(AppSettings.language → Lang). AI 프롬프트를 만드는 모듈들이
 // 공유한다 — 번역 카탈로그는 프런트에만 있다.
-/// control·webremote 두 HTTP 서버가 공유하는 응답 봉투와 토큰 파일 규칙.
+/// control 서버의 응답 봉투와 토큰 파일 규칙.
 pub mod httpapi;
 pub mod i18n;
 mod ide_sessions;
@@ -352,15 +349,7 @@ pub fn run() {
                     bot_arms.clone(),
                 ),
             );
-            // 웹 원격: 허브를 이벤트 배선보다 먼저 만들어, 붙어 있는
-            // 캐릭터의 앱 이벤트가 `AppEvents` 단일 관문에서 그대로 미러되게 한다.
-            let web_remote_hub = crate::webremote::host::WebRemoteHub::new();
-            let web_remote_events: Arc<dyn AppEvents> =
-                Arc::new(crate::webremote::host::WebRemoteEvents::new(web_remote_hub.clone()));
-            let events: Arc<dyn AppEvents> = Arc::new(crate::state::CompositeEvents::new(
-                recording_events,
-                web_remote_events,
-            ));
+            let events: Arc<dyn AppEvents> = recording_events;
             let registry = Arc::new(SessionRegistry::new());
             let hub = Arc::new(NotificationHub::new(
                 registry.clone(),
@@ -709,85 +698,6 @@ pub fn run() {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));
             }
 
-            // 웹 원격(docs/web-remote-design.md) — 별도 리스너/Router.
-            // control 서버와 같은 2단계 옵트인이라 web_hosting_enabled가 켜져 있어도
-            // 페어링 승인 전에는 모든 요청이 401이다.
-            // 사용량 스로틀 상태는 네이티브 커맨드와 웹 RPC가 공유한다
-            // (폰 폴링이 중복 fetch를 일으키지 않게).
-            let web_remote_server = Arc::new(crate::webremote::WebRemoteServerState::default());
-            let host_name = crate::webremote::local_host_name();
-            let web_remote_ctx = Arc::new(crate::webremote::WebRemoteContext::new(
-                crate::webremote::WebRemoteContextDeps {
-                    manager: manager.clone(),
-                    registry: registry.clone(),
-                    store: store.clone(),
-                    settings: settings_cache.clone(),
-                    hub: web_remote_hub.clone(),
-                    app_data_dir: data_dir.clone(),
-                    host_name,
-                    hub_notify: hub.clone(),
-                    observer: observer.clone(),
-                    observer_server: observer_server.clone(),
-                    live_usage: live_usage.clone(),
-                    portraits: portrait_store.clone(),
-                    gate: inject_gate.clone(),
-                },
-            ));
-            {
-                // 채팅 뷰(M2)의 전사 소스 — 세션 로그와 **같은 파서·같은 위치
-                // 탐색**을 쓰되 tailer는 별개다(읽기 전용이라 간섭이 없다).
-                let lookup = claude_resume_store.clone();
-                web_remote_ctx
-                    .chat
-                    .set_source_factory(Arc::new(move |_agent_id: &str, _cwd: &str| {
-                        let mut sources: Vec<
-                            Box<dyn crate::session_log::agent_transcript::TranscriptSource>,
-                        > = Vec::new();
-                        sources.extend(crate::session_log::agent_transcript::claude::source(
-                            lookup.clone(),
-                        ));
-                        sources.extend(crate::session_log::agent_transcript::codex::source());
-                        sources
-                    }));
-            }
-            {
-                // 브라우저가 처음 붙을 때 호스트 렌더러에 화면 직렬화를 요청하는 다리.
-                let handle = handle.clone();
-                web_remote_hub.snapshots.set_emitter(Arc::new(move |agent_id, request_id| {
-                    let _ = handle.emit(
-                        "web-remote-snapshot-request",
-                        serde_json::json!({ "agentId": agent_id, "requestId": request_id }),
-                    );
-                }));
-            }
-            {
-                // 페어링 요청이 오면 승인 다이얼로그를 띄운다.
-                let handle = handle.clone();
-                web_remote_ctx.set_pair_notify(Arc::new(move |pending| {
-                    let _ = handle.emit(
-                        "web-remote-pair-request",
-                        serde_json::json!({
-                            "pairingId": pending.pairing_id,
-                            "code": pending.code,
-                            "clientName": pending.client_name,
-                            // 코드 수명 — 승인 다이얼로그가 자동 소멸에 쓴다.
-                            "expiresInMs": pending.remaining_ms(),
-                        }),
-                    );
-                }));
-            }
-            {
-                let (needs_server, port) = {
-                    let s = settings_cache.read().unwrap();
-                    (s.web_remote_enabled, s.web_remote_port)
-                };
-                if needs_server {
-                    let _ = tauri::async_runtime::block_on(
-                        web_remote_server.ensure(web_remote_ctx.clone(), port),
-                    );
-                }
-            }
-
             // 캐릭터 봇 모드(#57): 탭별 폴링 태스크 소유자 + 태스크가 쥘 상태 클론.
             // 봇 모드 자체는 런타임 상태(탭에서 켜야 시작)라 여기선 아무 태스크도
             // 띄우지 않는다 — start는 렌더러 bot_start 커맨드가 트리거한다.
@@ -876,8 +786,6 @@ pub fn run() {
                 live_usage: live_usage.clone(),
                 control_server,
                 control_ctx,
-                web_remote_server,
-                web_remote_ctx,
                 bot_runtime,
                 bot_ctx,
                 automation_runtime,
@@ -940,17 +848,6 @@ pub fn run() {
             ipc::commands::control_status,
             ipc::commands::control_approve,
             ipc::commands::control_revoke,
-            // 웹 원격 — 호스트 역할
-            ipc::commands::web_remote_status,
-            ipc::commands::web_remote_pair_approve,
-            ipc::commands::web_remote_pair_reject,
-            ipc::commands::web_remote_revoke,
-            ipc::commands::web_remote_set_permission,
-            ipc::commands::web_remote_submit_snapshot,
-            // tailscale serve 대행 — 웹 원격 HTTPS(포트 47443)
-            ipc::commands::tailscale_serve_status,
-            ipc::commands::tailscale_serve_enable,
-            ipc::commands::tailscale_serve_disable,
                         ipc::commands::bot_start,
             ipc::commands::bot_stop,
             ipc::commands::bot_status,
@@ -1082,7 +979,6 @@ pub fn run() {
                 state.manager.dispose_all(); // kill + settings cleanup(동기)
                 state.observer_server.shutdown();
                 state.control_server.shutdown(); // CLI 제어 서버 정지 + control-port 정리(#55)
-                state.web_remote_server.shutdown(); // 웹 원격 수신 서버 정지
                 state.bot_runtime.stop_all(); // 봇 폴링 태스크 정지(#57)
                 state.wake_lock.deactivate(); // 잠자기 방지 해제(#68) — OS가 자동 회수도 하지만 이중 안전장치.
                 // wait 스레드가 Disposed 확정 후 OS가 자식 reap. 프로세스 종료는 정상 진행.
@@ -1220,9 +1116,6 @@ mod tests {
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
-            web_remote_bind: Default::default(),
-            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
-            web_remote_enabled: false,
             talk_enabled: false,
             talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
             talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,

@@ -57,7 +57,6 @@ import type {
 } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { backendErrorText } from "../shared/backendError";
-import type { PendingPairing } from "../ipc/webRemoteApi";
 import { addTurn, emptyTotals } from "../usage/sessionCost";
 import type { SessionUsageTotals } from "../usage/sessionCost";
 
@@ -154,9 +153,6 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   ttsRewriteModelAnthropic: "claude-haiku-4-5",
   ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
   ttsRewriteProvider: "auto",
-  webRemoteBind: "tailnet",
-  webRemotePort: 47800,
-  webRemoteEnabled: false,
   talkEnabled: false,
   talkMaxTurns: 6,
   talkIdleQuietMs: 3000,
@@ -313,8 +309,6 @@ interface AppState {
   automationEpochs: Record<string, number>;
   /** 자동화 정의 편집기. 실행 상태와 분리해 메뉴를 열어도 자동화가 시작되지 않는다. */
   automationEditor: { agentId: string; workspace: string } | null;
-  /** 웹 원격: 승인 대기 중인 페어링(코드 표시용). 런타임 전용. */
-  webRemotePending: PendingPairing[];
 
   // ---- profile actions ----
   /** Adds a profile. Normal creation starts a terminal; connection setup can
@@ -344,10 +338,6 @@ interface AppState {
     external?: boolean;
   }): void;
   setSessionSize(agentId: string, cols: number, rows: number): void;
-
-  // ---- 웹 원격 ----
-  /** 승인 대기 페어링 목록 갱신. */
-  setWebRemotePending(pending: PendingPairing[]): void;
 
   // ---- bot mode (이슈 #57) ----
   /** 이 탭의 봇 모드를 켠다 — 백엔드 폴링 태스크를 띄우고 로컬 입력을 잠근다.
@@ -529,9 +519,6 @@ interface AppState {
         | "mascotLightsLabel"
         | "usageFloatEnabled"
         | "sessionCostEnabled"
-        | "webRemoteBind"
-        | "webRemotePort"
-        | "webRemoteEnabled"
         | "ttsEnabled"
         | "ttsRewriteModelAnthropic"
         | "ttsRewriteModelOpenrouter"
@@ -590,9 +577,7 @@ export const useAppStore = create<AppState>()(
     automation: {},
     automationEpochs: {},
     automationEditor: null,
-    webRemotePending: [],
 
-    setWebRemotePending: (pending) => set({ webRemotePending: pending }),
 
     addAgent: (profile, options) =>
       set((s) => ({

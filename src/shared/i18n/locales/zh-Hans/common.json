@@ -79,11 +79,6 @@
     "ttsKeyMissing": "未设置 ElevenLabs API 密钥。",
     "ttsEmptyMessage": "没有要朗读的内容。",
     "ttsNoVoice": "没有可用的语音。",
-    "webRemoteDown": "网页远程服务器还没启动 — 请先开启网页远程。",
-    "tailscaleCliNotFound": "未找到 Tailscale CLI。",
-    "tailscaleServeConflict": "该 HTTPS 端口已被其他服务占用 — 请先清理那个映射。",
-    "tailscaleSpawnFailed": "无法运行 tailscale。",
-    "tailscaleCliError": "tailscale 命令执行失败。",
     "timeout": "未在时限内响应。"
   },
   "ideSpikeDescription": "通过只读观察，将现有 VS Code 中的 Codex 和 Claude 会话连接到 Agent Office 的实验。"

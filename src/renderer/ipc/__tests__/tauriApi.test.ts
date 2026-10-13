@@ -621,8 +621,6 @@ describe("app settings commands", () => {
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini" as const,
       ttsRewriteProvider: "auto" as const,
       webRemoteBind: "tailnet" as const,
-      webRemotePort: 47800,
-      webRemoteEnabled: false,
       talkEnabled: false,
       talkMaxTurns: 6,
       talkIdleQuietMs: 3000,

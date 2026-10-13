@@ -77,9 +77,6 @@ function hydrate(cliEnabled: boolean) {
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
-      webRemoteBind: "tailnet",
-      webRemotePort: 47800,
-      webRemoteEnabled: false,
       talkEnabled: false,
       talkMaxTurns: 6,
       talkIdleQuietMs: 3000,
@@ -124,7 +121,6 @@ describe("SettingsDialog · CLI 제어", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: /IDE 세션 연결/ }));
     expect(useAppStore.getState().appSettings.ideConnectionEnabled).toBe(true);
-    expect(screen.getByText(/웹 원격 설정과는 별개/)).toBeTruthy();
   });
 
   it("활성화+미승인이면 승인 버튼을 보이고 클릭 시 controlApprove를 호출한다", async () => {

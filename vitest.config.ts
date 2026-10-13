@@ -20,8 +20,6 @@ export default defineConfig({
     alias: {
       "@renderer": fileURLToPath(new URL("./src/renderer", import.meta.url)),
       "@shared": fileURLToPath(new URL("./src/shared", import.meta.url)),
-      // 웹 클라이언트(vite.web.config.ts와 동기).
-      "@web": fileURLToPath(new URL("./src/web", import.meta.url)),
     },
   },
   test: {

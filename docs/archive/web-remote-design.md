@@ -1,7 +1,9 @@
 # tailnet 웹 원격 뷰/제어 설계 — 채팅 우선 하이브리드
 
 작성: 2026-08-21 (Fable 검토·계획). 개정 1: 채팅 우선(사용자 결정 — "화면 그대로
-미러링이 아니라 채팅형으로"). 상태: **구현 진행 중** (kbm #2dz).
+미러링이 아니라 채팅형으로"). 상태: 이력(archived, 2026-10-14) — M1~M3 구현(kbm #2dz) 후
+마지막 사용 흔적이 08-22에서 멈춰 제거(점검·정리 계획 §7.D C35). `webremote/`·`src/web`·`dist-web`·
+tailscale serve 대행·`webRemote*` 설정·페어링 승인 창·출력 tap이 함께 사라졌다.
 브랜치: `feature/web-remote` (워크트리 `.claude/worktrees/web-remote`).
 선행: `docs/archive/web-hosting-design.md`(#7m/#7n — 2026-08-05 폐기, 아카이브
 복원본) · `docs/cli-control-design.md`(#55) · `docs/session-log-design.md`(전사

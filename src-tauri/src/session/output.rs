@@ -67,22 +67,6 @@ impl BellDetector {
     }
 }
 
-/// 출력 tap — 렌더러 채널과 **별개로** 같은 청크를 흘려받는 구독자
-/// (피어 세션 공유 #7k, docs/peer-session-share-design.md §결정 2).
-///
-/// `emit`이 이미 유일한 방출 지점이라 여기 한 겹만 얹으면 팬아웃이 끝난다.
-/// `Vec`으로 보관하므로 뷰어가 여럿 붙어도 그대로 성립한다. 구현체는
-/// **블로킹하면 안 된다** — emit은 출력 펌프 태스크에서 호출된다(피어 tap은
-/// broadcast 채널에 던지고 즉시 반환한다).
-pub trait OutputTap: Send + Sync {
-    fn on_chunk(&self, chunk: &OutputChunk);
-}
-
-struct TapEntry {
-    id: u64,
-    tap: Arc<dyn OutputTap>,
-}
-
 pub(super) enum ReaderMsg {
     Data(Vec<u8>),
     /// adopt 복원 스냅샷(화면 이미지). 스트림 바이트로 계수하지 않는다(§#49 함정 2):
@@ -96,46 +80,13 @@ pub(super) enum ReaderMsg {
 pub struct OutputSink {
     channel: Mutex<Option<Channel<OutputChunk>>>,
     backlog: Mutex<std::collections::VecDeque<OutputChunk>>,
-    /// 렌더러 채널과 별개의 부가 구독자들(피어 세션 공유). backlog 의미론은
-    /// **primary 전용**이다 — tap은 뷰어가 붙기 전 출력을 여기서 받지 않고,
-    /// peer 쪽 링버퍼가 그 역할을 한다(목적이 다르다).
-    taps: Mutex<Vec<TapEntry>>,
-    next_tap_id: std::sync::atomic::AtomicU64,
 }
 impl OutputSink {
-    /// pub: 웹 원격 tap이
-    /// sink를 직접 만들어 쓴다 — 렌더러 파이프라인을 그대로 재사용하는 핵심.
     pub fn new() -> Self {
         Self {
             channel: Mutex::new(None),
             backlog: Mutex::new(Default::default()),
-            taps: Mutex::new(Vec::new()),
-            next_tap_id: std::sync::atomic::AtomicU64::new(1),
         }
-    }
-
-    /// tap을 등록하고 제거용 id를 반환한다.
-    pub fn add_tap(&self, tap: Arc<dyn OutputTap>) -> u64 {
-        let id = self
-            .next_tap_id
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.taps.lock().push(TapEntry { id, tap });
-        id
-    }
-
-    /// 등록된 tap을 제거한다. 없는 id는 무해한 no-op.
-    pub fn remove_tap(&self, id: u64) {
-        self.taps.lock().retain(|e| e.id != id);
-    }
-
-    pub fn tap_count(&self) -> usize {
-        self.taps.lock().len()
-    }
-
-    /// 외부(피어 뷰어)에서 만든 청크를 이 sink로 흘린다 — 원격 세션의 출력을
-    /// 렌더러 채널/백로그에 그대로 태우는 진입점.
-    pub fn push_chunk(&self, chunk: OutputChunk) {
-        self.emit(chunk);
     }
 
     pub fn attach(&self, ch: Channel<OutputChunk>) {
@@ -167,20 +118,6 @@ impl OutputSink {
 }
 impl FlushSink for OutputSink {
     fn emit(&self, chunk: OutputChunk) {
-        // tap 팬아웃은 primary와 독립이다 — 렌더러가 붙었든(채널) 안 붙었든
-        // (백로그) 공유 중인 세션의 출력은 언제나 tap으로 흐른다. 락은 겹치지
-        // 않게 잡는다(tap 콜백을 primary 락 아래에서 부르지 않는다).
-        {
-            let taps = self.taps.lock();
-            if !taps.is_empty() {
-                let subscribers: Vec<Arc<dyn OutputTap>> =
-                    taps.iter().map(|e| e.tap.clone()).collect();
-                drop(taps);
-                for tap in subscribers {
-                    tap.on_chunk(&chunk);
-                }
-            }
-        }
         let c = self.channel.lock();
         if let Some(ch) = c.as_ref() {
             let _ = ch.send(chunk); // Channel 전송 실패(웹뷰 소멸)는 무시
@@ -279,14 +216,6 @@ mod tests {
     use crate::state::{fake::RecordingEvents, SessionRegistry};
     use std::time::Duration;
 
-    struct TestTap(tokio::sync::mpsc::UnboundedSender<OutputChunk>);
-
-    impl OutputTap for TestTap {
-        fn on_chunk(&self, chunk: &OutputChunk) {
-            let _ = self.0.send(chunk.clone());
-        }
-    }
-
     #[tokio::test]
     async fn output_pump_only_notifies_for_live_standalone_bells() {
         for (messages, expected_bells) in [
@@ -318,8 +247,6 @@ mod tests {
                 Duration::from_secs(3),
             ));
             let sink = Arc::new(OutputSink::new());
-            let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
-            sink.add_tap(Arc::new(TestTap(output_tx)));
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             let mut expected_output = Vec::new();
             for message in messages {
@@ -330,16 +257,17 @@ mod tests {
             }
             tx.send(ReaderMsg::Eof).unwrap();
             drop(tx);
-            spawn_output_pump("s1".into(), "a1".into(), rx, sink, hub, None);
-            let output = tokio::time::timeout(Duration::from_secs(2), async {
-                let mut output = Vec::new();
-                while let Some(chunk) = output_rx.recv().await {
-                    output.extend_from_slice(chunk.data.as_bytes());
+            spawn_output_pump("s1".into(), "a1".into(), rx, sink.clone(), hub, None);
+            // 펌프 태스크가 EOF에서 끝나며 자기 sink 클론을 놓을 때까지 기다린다.
+            // 렌더러 채널이 없으므로 방출된 청크는 백로그에 쌓인다.
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while Arc::strong_count(&sink) > 1 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
                 }
-                output
             })
             .await
             .expect("output pump must finish at EOF");
+            let output = sink.backlog_snapshot();
             assert_eq!(output, expected_output, "terminal bytes remain unchanged");
             let notifications = events.notifications();
             assert_eq!(notifications.len(), expected_bells);

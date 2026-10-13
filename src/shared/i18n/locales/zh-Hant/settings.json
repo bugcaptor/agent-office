@@ -13,7 +13,7 @@
     "tabSystem": "系統",
     "tabControl": "控制"
   },
-  "connections": { "ideTitle": "IDE 工作階段連線", "ideHelp": "允許此應用程式尋找並連線 IDE 工作階段。關閉後會中斷已連線的工作階段，原始 IDE 不會改變。", "webRemoteNote": "這些開關控制由此應用程式發起的連線，和在瀏覽器中分享此辦公室的網頁遠端設定不同。" },
+  "connections": { "ideTitle": "IDE 工作階段連線", "ideHelp": "允許此應用程式尋找並連線 IDE 工作階段。關閉後會中斷已連線的工作階段，原始 IDE 不會改變。" },
   "keys": {
     "present": "已設定",
     "presentEnv": "已設定（環境變數）",
@@ -169,40 +169,6 @@
     "usageIntro": "在工作階段的終端機裡可以直接使用：",
     "appDataNote": "外部指令碼使用 app_data 自動探索："
   },
-  "webRemote": {
-    "copy": "複製",
-    "copied": "已複製",
-    "title": "網頁遠端（用瀏覽器連線工作）",
-    "help": "用手機或另一台電腦的<b>瀏覽器</b>連進來，查看狀態並操作終端機。工作階段<b>仍在這台電腦上執行</b>，只中繼輸出與輸入。就算開啟，也要<b>核准配對</b>才連得上，而且瀏覽器只會開放<b>固定的指令</b>（不開放變更設定與操作機器人）。這是網路面，所以預設關閉。",
-    "bindTitle": "允許的網路",
-    "bindHelp": "只允許 Tailscale 網路時，加密交給 tailnet（WireGuard）負責。允許所有網路則會在同一個 LAN 上以明文傳輸。",
-    "bindTailnet": "只限 Tailscale 網路（建議）",
-    "bindAll": "所有網路（注意明文傳輸）",
-    "bindLoopback": "只限這台電腦（等於停用）",
-    "statusLabel": "狀態：",
-    "listening": "接聽中（名稱：{{name}}）",
-    "stopped": "已停止",
-    "loading": "查詢中…",
-    "tailnetMissing": "<b>沒有偵測到 Tailscale</b> — 只開在 <code>127.0.0.1</code>，因此只有這台電腦連得上。請啟動 Tailscale 後重開程式，或改變允許的網路。",
-    "urlIntro": "請在瀏覽器連到這個網址",
-    "hostPlaceholder": "這台電腦的位址",
-    "copyUrlAria": "複製連線網址",
-    "pairHint": "在瀏覽器按下<b>連線要求</b>後，這個程式會跳出<b>6 位數代碼和核准視窗</b>。把那組代碼輸入瀏覽器即可（設定視窗關著也會跳出來）。",
-    "notRunning": "伺服器還沒起來 — 請稍後再打開這個畫面。",
-    "serveNoCli": "找不到 Tailscale 命令列工具 — 請直接用上面的 http 網址連線，不走 HTTPS（tailnet 本身就會加密）。在 Tailscale 程式執行<b> Install CLI</b> 就能在這裡開啟。",
-    "serveOnIntro": "HTTPS 已開啟。請連到這個網址",
-    "copyHttpsAria": "複製 HTTPS 網址",
-    "serveOnNote": "這個對應是<b>由 Tailscale 記住</b>的 — 關掉程式、重開電腦都還在（程式關著只是連不上）。第一次連線可能要花幾秒發憑證。",
-    "serveOff": "關閉 HTTPS",
-    "serveOn": "開啟 HTTPS",
-    "serveOffIntro": "在 Tailscale 註冊 HTTPS 代理（連接埠 {{port}}），就能用<code> https://</code> 網址連線。瀏覽器不會警告，Cookie 也會帶 <code>Secure</code>。",
-    "serveConflict": "連接埠 {{port}} 已經被別的地方用了（{{upstream}}）。程式不會覆蓋別人的設定 — 如果不需要那個對應，請用下面的指令自己清掉。",
-    "copyCleanupAria": "複製清理指令",
-    "clients": "已核准的瀏覽器",
-    "permInput": "允許輸入",
-    "permReadOnly": "唯讀",
-    "revoke": "取消核准"
-  },
   "talk": {
     "title": "同事對話（角色之間互相搭話）",
     "help": "開啟後，角色可以<b>把訊息送進其他角色的工作階段</b>。只有使用者在工作階段<b>明確發動</b> <code>/agent-office:talk</code> 技能時才會開始對話，關掉這個開關則會<b>連等待中的訊息一起立刻丟棄</b>。這是往別人的工作階段塞字的功能，所以預設關閉。",
@@ -219,16 +185,6 @@
     "title": "開始使用 Agent Office",
     "intro": "Claude Code / Codex / Pi / Kilo / Antigravity 的整合功能是選用的。現在關著開始也沒關係，隨時可以從下方列的 ⚙ 設定打開。",
     "start": "開始"
-  },
-  "pairing": {
-    "title": "連線要求",
-    "request": "<b>{{name}}</b>（網頁瀏覽器）想要連到這間辦公室。",
-    "enterCode": "請在瀏覽器畫面輸入這組代碼：",
-    "warn": "不認得的要求請拒絕。核准後，對方就能看到你角色的終端機，並使用固定的指令。",
-    "more": "還有 {{n}} 件等待中的要求",
-    "approveInput": "核准（允許輸入）",
-    "approveReadOnly": "核准（唯讀）",
-    "reject": "拒絕"
   },
   "modelPicker": {
     "listAria": "{{label}} 清單",

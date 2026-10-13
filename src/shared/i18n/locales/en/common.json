@@ -79,11 +79,6 @@
     "ttsKeyMissing": "No ElevenLabs API key is configured.",
     "ttsEmptyMessage": "There is nothing to speak.",
     "ttsNoVoice": "No voice is available.",
-    "webRemoteDown": "The web remote server is not up yet — turn on web remote first.",
-    "tailscaleCliNotFound": "Could not find the Tailscale CLI.",
-    "tailscaleServeConflict": "Another service already uses that HTTPS port — clear that mapping first.",
-    "tailscaleSpawnFailed": "Failed to run tailscale.",
-    "tailscaleCliError": "The tailscale command failed.",
     "timeout": "It did not respond in time."
   },
   "ideSpikeDescription": "An experiment connecting existing VS Code Codex and Claude sessions to Agent Office through read-only observation."

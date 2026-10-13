@@ -13,7 +13,7 @@
     "tabSystem": "System",
     "tabControl": "Control"
   },
-  "connections": { "ideTitle": "IDE session connection", "ideHelp": "Allow this app to find and connect to IDE sessions. Turning it off disconnects connected sessions; the original IDE stays unchanged.", "webRemoteNote": "These switches control connections started by this app. They are separate from Web remote, which shares this office with a browser." },
+  "connections": { "ideTitle": "IDE session connection", "ideHelp": "Allow this app to find and connect to IDE sessions. Turning it off disconnects connected sessions; the original IDE stays unchanged." },
   "keys": {
     "present": "set",
     "presentEnv": "set (env)",
@@ -169,40 +169,6 @@
     "usageIntro": "Inside a session terminal you can use it right away:",
     "appDataNote": "External scripts use app_data autodiscovery:"
   },
-  "webRemote": {
-    "copy": "Copy",
-    "copied": "Copied",
-    "title": "Web remote (work from a browser)",
-    "help": "Connect from a <b>browser</b> on your phone or another computer to watch status and drive the terminal. Sessions <b>keep running on this computer</b>; only output and input are relayed. Even when on, a device must be <b>paired and approved</b>, and the browser gets <b>a fixed command set</b> (no settings changes, no bot control). It is a network surface, so it is off by default.",
-    "bindTitle": "Allowed network",
-    "bindHelp": "Allowing only the Tailscale network lets tailnet (WireGuard) handle encryption. Allowing all networks means plain text on the same LAN.",
-    "bindTailnet": "Tailscale only (recommended)",
-    "bindAll": "All networks (plain text)",
-    "bindLoopback": "This computer only (off)",
-    "statusLabel": "Status:",
-    "listening": "listening (name: {{name}})",
-    "stopped": "stopped",
-    "loading": "checking…",
-    "tailnetMissing": "<b>Tailscale was not detected</b> — the server is bound to <code>127.0.0.1</code> only, so just this computer can reach it. Start Tailscale and restart the app, or change the allowed network.",
-    "urlIntro": "Open this address in a browser",
-    "hostPlaceholder": "this computer",
-    "copyUrlAria": "Copy address",
-    "pairHint": "Pressing <b>Connect</b> in the browser pops a <b>6-digit code and an approval window</b> in this app. Type that code into the browser (it shows up even with settings closed).",
-    "notRunning": "The server is not up yet — reopen this screen in a moment.",
-    "serveNoCli": "The Tailscale command line tool was not found — connect over the http address above without HTTPS (tailnet encrypts it anyway). Run<b> Install CLI</b> in the Tailscale app to enable it here.",
-    "serveOnIntro": "HTTPS is open. Use this address",
-    "copyHttpsAria": "Copy HTTPS address",
-    "serveOnNote": "<b>Tailscale remembers</b> this mapping — it survives quitting the app and rebooting (with the app closed, only the connection fails). The first connect can take a few seconds for the certificate.",
-    "serveOff": "Disable HTTPS",
-    "serveOn": "Enable HTTPS",
-    "serveOffIntro": "Register an HTTPS proxy (port {{port}}) with Tailscale to connect over a<code> https://</code> address. No browser warning, and cookies are issued as <code>Secure</code>.",
-    "serveConflict": "Port {{port}} is already used by something else ({{upstream}}). The app never overwrites someone else's setup — if you do not need that mapping, clear it yourself with the command below.",
-    "copyCleanupAria": "Copy cleanup command",
-    "clients": "Approved browsers",
-    "permInput": "Input allowed",
-    "permReadOnly": "Read-only",
-    "revoke": "Revoke"
-  },
   "talk": {
     "title": "Peer talk (characters talking to each other)",
     "help": "Lets a character <b>send a message into another character's session</b>. A conversation starts only when you <b>explicitly invoke</b> the <code>/agent-office:talk</code> skill in a session, and turning this switch off <b>drops even undelivered messages</b>. It types into someone else's session, so it is off by default.",
@@ -219,16 +185,6 @@
     "title": "Welcome to Agent Office",
     "intro": "The Claude Code / Codex / Pi / Kilo / Antigravity integrations are optional. You can start with them off and turn them on any time from ⚙ in the bottom bar.",
     "start": "Start"
-  },
-  "pairing": {
-    "title": "Connection request",
-    "request": "<b>{{name}}</b> (web browser) wants to connect to this office.",
-    "enterCode": "Type this code into the browser:",
-    "warn": "Reject it if you do not recognize the request. Approving lets it watch your characters' terminals and run a fixed set of commands.",
-    "more": "{{n}} more waiting",
-    "approveInput": "Approve (input)",
-    "approveReadOnly": "Approve (read-only)",
-    "reject": "Reject"
   },
   "modelPicker": {
     "listAria": "{{label}} list",

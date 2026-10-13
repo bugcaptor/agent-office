@@ -21,7 +21,6 @@ import {
 import { ConfirmQuitDialog } from "./agent/ConfirmQuitDialog";
 import { SettingsDialog } from "./settings/SettingsDialog";
 import { FirstRunDialog } from "./settings/FirstRunDialog";
-import { PairingRequestDialog } from "./settings/PairingRequestDialog";
 import { AnalyticsDialog } from "./analytics/AnalyticsDialog";
 import { UsageDialog } from "./usage/UsageDialog";
 import { AboutDialog } from "./about/AboutDialog";
@@ -176,9 +175,6 @@ function App() {
         <ConfirmQuitDialog />
         <SettingsDialog />
         <FirstRunDialog />
-        {/* 페어링 승인(#7k/#7m). 설정을 열지 않아도 코드가 보여야 하므로
-            여기 모달 층에 상시 마운트하고 webRemotePending으로 self-gate한다. */}
-        <PairingRequestDialog />
         <AnalyticsDialog />
         {/* 동료 대화 감사 로그(docs/agent-talk-design.md §7). 하단바 "대화 N"
             메뉴에서 열리고, modal.kind로 self-gate한다. */}

@@ -114,9 +114,6 @@
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
-            web_remote_bind: Default::default(),
-            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
-            web_remote_enabled: false,
             talk_enabled: false,
             talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
             talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,
@@ -191,9 +188,6 @@
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
-            web_remote_bind: Default::default(),
-            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
-            web_remote_enabled: false,
             talk_enabled: false,
             talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
             talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,
@@ -258,9 +252,6 @@
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
-            web_remote_bind: Default::default(),
-            web_remote_port: crate::webremote::protocol::DEFAULT_WEB_REMOTE_PORT,
-            web_remote_enabled: false,
             talk_enabled: false,
             talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
             talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,
@@ -438,25 +429,6 @@
             bot_runtime: bot_runtime.clone(),
         });
         let live_usage = std::sync::Arc::new(crate::usage::LiveUsageState::new());
-        // 웹 원격: 서버는 띄우지 않고 컨텍스트만 만든다 —
-        let web_remote_hub = crate::webremote::host::WebRemoteHub::new();
-        let web_remote_ctx = std::sync::Arc::new(crate::webremote::WebRemoteContext::new(
-            crate::webremote::WebRemoteContextDeps {
-                manager: manager.clone(),
-                registry: registry.clone(),
-                store: store.clone(),
-                settings: settings.clone(),
-                hub: web_remote_hub,
-                app_data_dir: profile_dir.clone(),
-                host_name: "테스트호스트".into(),
-                hub_notify: hub.clone(),
-                observer: observer.clone(),
-                observer_server: observer_server.clone(),
-                live_usage: live_usage.clone(),
-                portraits: portrait_store.clone(),
-                gate: inject_gate.clone(),
-            },
-        ));
         let state = AppState {
             manager,
             hub,
@@ -483,8 +455,6 @@
             live_usage: live_usage.clone(),
             control_server,
             control_ctx,
-            web_remote_server: std::sync::Arc::new(crate::webremote::WebRemoteServerState::default()),
-            web_remote_ctx,
             bot_runtime,
             bot_ctx,
             automation_runtime,

@@ -13,7 +13,7 @@
     "tabSystem": "Système",
     "tabControl": "Contrôle"
   },
-  "connections": { "ideTitle": "Connexion de session IDE", "ideHelp": "Autorise cette application à trouver et connecter des sessions IDE. En désactivant, les sessions connectées sont déconnectées et l’IDE d’origine reste inchangé.", "webRemoteNote": "Ces interrupteurs contrôlent les connexions démarrées par cette application. Ils sont distincts de Web remote, qui partage ce bureau dans un navigateur." },
+  "connections": { "ideTitle": "Connexion de session IDE", "ideHelp": "Autorise cette application à trouver et connecter des sessions IDE. En désactivant, les sessions connectées sont déconnectées et l’IDE d’origine reste inchangé." },
   "keys": {
     "present": "définie",
     "presentEnv": "définie (env)",
@@ -169,40 +169,6 @@
     "usageIntro": "Dans un terminal de session, vous pouvez l'utiliser tout de suite :",
     "appDataNote": "Les scripts externes utilisent la découverte automatique app_data :"
   },
-  "webRemote": {
-    "copy": "Copier",
-    "copied": "Copié",
-    "title": "Accès web à distance (travailler depuis un navigateur)",
-    "help": "Connectez-vous depuis un <b>navigateur</b> sur votre téléphone ou un autre ordinateur pour suivre l'état et piloter le terminal. Les sessions <b>continuent de tourner sur cet ordinateur</b> ; seules la sortie et la saisie sont relayées. Même activé, un appareil doit être <b>appairé et approuvé</b>, et le navigateur n'obtient qu'<b>un jeu de commandes fixe</b> (pas de changement de paramètres, pas de contrôle des bots). C'est une surface réseau, donc désactivé par défaut.",
-    "bindTitle": "Réseau autorisé",
-    "bindHelp": "N'autoriser que le réseau Tailscale laisse le tailnet (WireGuard) assurer le chiffrement. Autoriser tous les réseaux fait circuler du texte en clair sur le même LAN.",
-    "bindTailnet": "Tailscale uniquement (recommandé)",
-    "bindAll": "Tous les réseaux (texte en clair)",
-    "bindLoopback": "Cet ordinateur uniquement (désactivé)",
-    "statusLabel": "État :",
-    "listening": "à l'écoute (nom : {{name}})",
-    "stopped": "arrêté",
-    "loading": "vérification…",
-    "tailnetMissing": "<b>Tailscale n'a pas été détecté</b> — le serveur est lié à <code>127.0.0.1</code> uniquement, seul cet ordinateur peut donc l'atteindre. Démarrez Tailscale et relancez l'app, ou changez le réseau autorisé.",
-    "urlIntro": "Ouvrez cette adresse dans un navigateur",
-    "hostPlaceholder": "cet ordinateur",
-    "copyUrlAria": "Copier l'adresse",
-    "pairHint": "Appuyer sur <b>Connecter</b> dans le navigateur fait apparaître dans cette app <b>un code à 6 chiffres et une fenêtre d'approbation</b>. Saisissez ce code dans le navigateur (il apparaît même si les paramètres sont fermés).",
-    "notRunning": "Le serveur n'est pas encore démarré — rouvrez cet écran dans un instant.",
-    "serveNoCli": "L'outil en ligne de commande Tailscale est introuvable — connectez-vous par l'adresse http ci-dessus sans HTTPS (le tailnet chiffre de toute façon). Lancez<b> Install CLI</b> dans l'app Tailscale pour l'activer ici.",
-    "serveOnIntro": "HTTPS est ouvert. Utilisez cette adresse",
-    "copyHttpsAria": "Copier l'adresse HTTPS",
-    "serveOnNote": "<b>Tailscale mémorise</b> ce mappage — il survit à la fermeture de l'app et au redémarrage (app fermée, seule la connexion échoue). La première connexion peut prendre quelques secondes, le temps du certificat.",
-    "serveOff": "Désactiver HTTPS",
-    "serveOn": "Activer HTTPS",
-    "serveOffIntro": "Enregistrez un proxy HTTPS (port {{port}}) auprès de Tailscale pour vous connecter par une adresse<code> https://</code>. Aucun avertissement du navigateur, et les cookies sont émis en <code>Secure</code>.",
-    "serveConflict": "Le port {{port}} est déjà utilisé par autre chose ({{upstream}}). L'app n'écrase jamais la configuration de quelqu'un d'autre — si ce mappage ne vous sert pas, supprimez-le vous-même avec la commande ci-dessous.",
-    "copyCleanupAria": "Copier la commande de nettoyage",
-    "clients": "Navigateurs approuvés",
-    "permInput": "Saisie autorisée",
-    "permReadOnly": "Lecture seule",
-    "revoke": "Révoquer"
-  },
   "talk": {
     "title": "Discussion entre collègues (personnages qui se parlent)",
     "help": "Permet à un personnage d'<b>envoyer un message dans la session d'un autre personnage</b>. Une conversation ne démarre que si vous <b>invoquez explicitement</b> la compétence <code>/agent-office:talk</code> dans une session, et désactiver cet interrupteur <b>jette même les messages non remis</b>. Cela écrit dans la session de quelqu'un d'autre, donc c'est désactivé par défaut.",
@@ -219,16 +185,6 @@
     "title": "Bienvenue dans Agent Office",
     "intro": "Les intégrations Claude Code / Codex / Pi / Kilo / Antigravity sont facultatives. Vous pouvez démarrer sans elles et les activer à tout moment depuis ⚙ dans la barre du bas.",
     "start": "Démarrer"
-  },
-  "pairing": {
-    "title": "Demande de connexion",
-    "request": "<b>{{name}}</b> (navigateur web) veut se connecter à ce bureau.",
-    "enterCode": "Saisissez ce code dans le navigateur :",
-    "warn": "Refusez si vous ne reconnaissez pas la demande. Approuver lui permet de voir les terminaux de vos personnages et d'exécuter un jeu de commandes fixe.",
-    "more": "encore {{n}} en attente",
-    "approveInput": "Approuver (saisie)",
-    "approveReadOnly": "Approuver (lecture seule)",
-    "reject": "Refuser"
   },
   "modelPicker": {
     "listAria": "Liste {{label}}",

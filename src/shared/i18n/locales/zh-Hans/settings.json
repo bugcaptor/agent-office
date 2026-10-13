@@ -13,7 +13,7 @@
     "tabSystem": "系统",
     "tabControl": "控制"
   },
-  "connections": { "ideTitle": "IDE 会话连接", "ideHelp": "允许此应用查找并连接 IDE 会话。关闭后会断开已连接的会话，原始 IDE 不会改变。", "webRemoteNote": "这些开关控制由此应用发起的连接，与在浏览器中共享此办公室的 Web 远程设置不同。" },
+  "connections": { "ideTitle": "IDE 会话连接", "ideHelp": "允许此应用查找并连接 IDE 会话。关闭后会断开已连接的会话，原始 IDE 不会改变。" },
   "keys": {
     "present": "已设置",
     "presentEnv": "已设置（环境变量）",
@@ -169,40 +169,6 @@
     "usageIntro": "在会话终端中可以直接使用：",
     "appDataNote": "外部脚本使用 app_data 自动发现："
   },
-  "webRemote": {
-    "copy": "复制",
-    "copied": "已复制",
-    "title": "网页远程（用浏览器连接并操作）",
-    "help": "用手机或其他电脑的<b>浏览器</b>连接，查看状态并操作终端。会话<b>仍在本机运行</b>，只中转输出与输入。即使开启，也必须<b>批准配对</b>后才能连接，且浏览器只开放<b>固定的命令集</b>（不开放更改设置和操控机器人）。这是网络暴露面，因此默认关闭。",
-    "bindTitle": "允许的网络",
-    "bindHelp": "只允许 Tailscale 网络时，由 tailnet（WireGuard）负责加密。允许所有网络则会在同一局域网内以明文传输。",
-    "bindTailnet": "仅 Tailscale 网络（推荐）",
-    "bindAll": "所有网络（注意明文传输）",
-    "bindLoopback": "仅本机（等同停用）",
-    "statusLabel": "状态：",
-    "listening": "监听中（名称：{{name}}）",
-    "stopped": "已停止",
-    "loading": "查询中…",
-    "tailnetMissing": "<b>未检测到 Tailscale</b> —— 已仅在 <code>127.0.0.1</code> 上开放，只有本机可以连接。请启动 Tailscale 并重启应用，或更改允许的网络。",
-    "urlIntro": "请在浏览器中访问此地址",
-    "hostPlaceholder": "本机地址",
-    "copyUrlAria": "复制访问地址",
-    "pairHint": "在浏览器中按下<b>连接请求</b>后，本应用会弹出<b>6 位数字码和批准窗口</b>。把该数字码输入浏览器即可（即使关着设置窗口也会弹出）。",
-    "notRunning": "服务器尚未启动 —— 请稍后重新打开此界面。",
-    "serveNoCli": "未找到 Tailscale 命令行工具 —— 请不用 HTTPS，直接访问上面的 http 地址（tailnet 本身已加密）。在 Tailscale 应用中执行<b> Install CLI</b> 后即可在此开启。",
-    "serveOnIntro": "已通过 HTTPS 开放。请访问此地址",
-    "copyHttpsAria": "复制 HTTPS 地址",
-    "serveOnNote": "此映射<b>由 Tailscale 记住</b> —— 关闭应用、重启电脑后依然保留（应用关闭时只是连不上）。首次连接因签发证书可能需要几秒。",
-    "serveOff": "关闭 HTTPS",
-    "serveOn": "开启 HTTPS",
-    "serveOffIntro": "在 Tailscale 中注册 HTTPS 代理（端口 {{port}}），即可用<code> https://</code> 地址访问。浏览器不再警告，Cookie 也会以 <code>Secure</code> 签发。",
-    "serveConflict": "端口 {{port}} 已被其他程序占用（{{upstream}}）。本应用不会覆盖他人的配置 —— 若不需要该映射，请用下面的命令自行清除。",
-    "copyCleanupAria": "复制清理命令",
-    "clients": "已批准的浏览器",
-    "permInput": "允许输入",
-    "permReadOnly": "只读",
-    "revoke": "撤销批准"
-  },
   "talk": {
     "title": "同事对话（角色之间搭话）",
     "help": "开启后角色可以<b>向其他角色的会话发送消息</b>。只有当用户在会话中<b>明确发动</b> <code>/agent-office:talk</code> 技能时对话才会开始，而关闭此开关会<b>连待发送的消息一并立即丢弃</b>。这是往他人会话里塞入文字的功能，因此默认关闭。",
@@ -219,16 +185,6 @@
     "title": "开始使用 Agent Office",
     "intro": "Claude Code / Codex / Pi / Kilo / Antigravity 的联动功能是可选的。现在关着开始也没关系，随时可以在底栏的 ⚙ 设置中开启。",
     "start": "开始使用"
-  },
-  "pairing": {
-    "title": "连接请求",
-    "request": "<b>{{name}}</b>（网页浏览器）想要连接到这间办公室。",
-    "enterCode": "请在浏览器界面输入此代码：",
-    "warn": "若是陌生的请求请拒绝。批准后，对方就能查看你角色的终端并使用固定的命令。",
-    "more": "还有 {{n}} 个待处理请求",
-    "approveInput": "批准（允许输入）",
-    "approveReadOnly": "批准（只读）",
-    "reject": "拒绝"
   },
   "modelPicker": {
     "listAria": "{{label}} 列表",

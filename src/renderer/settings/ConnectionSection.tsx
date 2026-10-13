@@ -1,7 +1,5 @@
-// Optional entry points that connect this app to software outside Agent Office.
-// They deliberately live apart from WebRemoteSection: that switch publishes
-// this office to a browser, while these switches allow this desktop app to
-// initiate connections.
+// Optional entry points that let this desktop app initiate connections to
+// software outside Agent Office.
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 
@@ -22,8 +20,5 @@ export function ConnectionSection() {
         <small>{t("connections.ideHelp")}</small>
       </span>
     </label>
-    <p className="settings-item" style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>
-      {t("connections.webRemoteNote")}
-    </p>
   </div>;
 }

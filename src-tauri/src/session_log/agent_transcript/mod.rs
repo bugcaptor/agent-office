@@ -50,11 +50,10 @@ pub const BACKFILL_MAX_ITEMS: usize = 100;
 
 // ── 구조화된 채팅 항목 ────────────────────────────────────────────────
 //
-// 세션 로그(문자열)와 웹 채팅 뷰(버블)가 **같은 파싱 결과**를 쓴다:
 // `TranscriptSource::parse`가 JSONL 한 줄을 이 항목들로 바꾸고,
 // `format_items`가 그것을 로그 줄로 되돌린다. 포맷 결합(claude/codex JSONL
-// 스키마)이 한 곳에만 남는다는 것이 이 분리의 목적이다
-// (docs/web-remote-design.md §5 M2).
+// 스키마)이 한 곳에만 남는다는 것이 이 분리의 목적이다(예전에는 웹 원격
+// 채팅 뷰도 같은 항목을 썼다 — docs/archive/web-remote-design.md §5 M2).
 
 /// 항목의 화자.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
