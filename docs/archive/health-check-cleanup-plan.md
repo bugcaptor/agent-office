@@ -530,7 +530,7 @@ E·H로 넘기는 것:
 | F7 | E10 ctl `create`·`send`·`dispose`의 무검사 `ok` | A11·A12 | 중간 | 낮음 | A에서 재현. `cliEnabled` 켠 자동화에서만 | t-0aa50d52 |
 | F8 | E12 shim을 새 세션 생성 때만 씀 | A9 | 낮음 | 낮음 | A9에서 15초 미재생성 확인 | t-d44c66c8 |
 | F9 | E14 수신함 제어문자 미처리 → `--list`가 ESC 시퀀스 출력 | — | 낮음 | 낮음 | 코드 경로 결정적. 손으로 쓴 수신함 파일만 경로 | t-26c43642 |
-| F10 | G 제거 후 잔여 앱 데이터(`talks/`·`claude-plugin/`·`office-talk` shim) | — | 낮음 | — | 2026-10-14 존재 확인, 읽는 코드 0. 삭제는 사용자 승인 필요 | t-bc20fa6a |
+| F10 | G 제거 후 잔여 앱 데이터(`talks/`·`claude-plugin/`·`office-talk` shim) | — | 낮음 | — | 2026-10-14 존재 확인, 읽는 코드 0. 사용자 승인으로 기동 시 자동 정리(`legacy_cleanup.rs`) | t-bc20fa6a |
 
 이미 있는 태스크로 덮이는 것: G의 UI 공백(Anthropic API 키 입력칸) → t-52df472c. `store/persist.ts:51-53` 낡은 주석 → H(t-ea542576) 입력(§7.E.3).
 

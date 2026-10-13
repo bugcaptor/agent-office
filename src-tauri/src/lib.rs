@@ -64,6 +64,7 @@ mod vscode;
 // 가시성만 승격.
 pub mod workdir;
 mod work_inbox_cli;
+mod legacy_cleanup;
 mod office_instructions;
 
 use std::sync::{Arc, RwLock};
@@ -405,6 +406,9 @@ pub fn run() {
             std::thread::spawn(|| {
                 shell_export::gc_old_exports(std::time::Duration::from_secs(7 * 24 * 3600))
             });
+            // 제거된 기능의 잔여물(동료 대화 로그·스킬 플러그인·shim)을 부팅마다 지운다.
+            // 옛 설치본이 다시 만든 것도 다음 기동에 사라진다(§7.F F10).
+            legacy_cleanup::spawn(data_dir.clone());
             // `office-task` shim은 세션 준비 때만 쓰므로, 떠 있는 세션이 OS temp 청소로
             // 경로를 잃지 않게 5초마다 확인해 되살린다(없거나 내용이 다를 때만 쓴다).
             work_inbox_cli::spawn_shim_keeper(

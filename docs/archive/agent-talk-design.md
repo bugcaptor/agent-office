@@ -1,6 +1,6 @@
 # 동료 대화(Agent Talk) 설계
 
-상태: 이력(archived, 2026-10-14) — M1+M2 구현 후 대화 기록이 08-22 하루뿐이라 제거(점검·정리 계획 §7.D C26). `talk/`·`ctl talk`·`/v1/talk/*`·로컬 스킬(`claude-plugin/`)·오피스 말풍선·대화 로그·`talk*` 설정이 사라졌다. §6의 shim·권한 사전 승인 배선은 업무 수신함(`office-task`)이 `office_instructions.rs`로 이어받았다.
+상태: 이력(archived, 2026-10-14) — M1+M2 구현 후 대화 기록이 08-22 하루뿐이라 제거(점검·정리 계획 §7.D C26). `talk/`·`ctl talk`·`/v1/talk/*`·로컬 스킬(`claude-plugin/`)·오피스 말풍선·대화 로그·`talk*` 설정이 사라졌다. §6의 shim·권한 사전 승인 배선은 업무 수신함(`office-task`)이 `office_instructions.rs`로 이어받았다. 옛 설치본이 남긴 `<app_data>/talks/`·`<app_data>/claude-plugin/`·`<temp>/agent-office/bin/office-talk[.cmd]`는 앱이 기동할 때마다 지운다(`legacy_cleanup.rs`, §7.F F10).
 
 오피스의 캐릭터(에이전트)끼리 서로 말을 걸 수 있게 한다. **평상시에는 완전히 꺼져
 있고**, 사용자가 세션에서 스킬(`/agent-office:talk`)을 명시적으로 발동했을 때만
