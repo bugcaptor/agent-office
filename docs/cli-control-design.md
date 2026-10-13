@@ -185,7 +185,7 @@ eval "$(agent-office ctl attach 캐릭터ID)"
   쓴다 — 접두 매칭으로 `ao-agent-office-2134`가 `ao-agent-office-213456`을 잘못 잡는
   사고를 막기 위해서다. 두 매칭 방식이 공존하는 건 대상 이름을 누가
   짓느냐가 다르기 때문이지 결함이 아니다. 상세는
-  `docs/tmux-hosting-design.md`.
+  `docs/archive/tmux-hosting-design.md`(제거됨).
 
 ## 발견 순서와 오버라이드
 

@@ -14,11 +14,10 @@ fn validate_target(app_state: &AppState, agent_id: &str) -> Result<(), String> {
     if profile.clocked_out == Some(true) {
         return Err("work-send-clocked-out".into());
     }
-    if profile.tmux_host == Some(true)
-        || profile
-            .startup_command
-            .as_ref()
-            .is_some_and(|c| !c.trim().is_empty())
+    if profile
+        .startup_command
+        .as_ref()
+        .is_some_and(|c| !c.trim().is_empty())
     {
         return Err("work-send-profile-unsupported".into());
     }

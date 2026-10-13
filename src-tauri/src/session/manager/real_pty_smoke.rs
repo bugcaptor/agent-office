@@ -180,7 +180,6 @@ return
                 startup_command: None,
                 personality_prompt: None,
                 autostart_claude: Some(false),
-                tmux_host: None,
             })
             .expect("real PTY spawn should succeed");
         assert_eq!(created.state, SessionState::Running);
@@ -325,7 +324,6 @@ return
                 startup_command: None,
                 personality_prompt: None,
                 autostart_claude: Some(false),
-                tmux_host: None,
             })
             .expect("real PTY spawn should succeed");
         assert_eq!(created.state, SessionState::Running);
@@ -343,7 +341,6 @@ return
             startup_command: None,
             personality_prompt: None,
             autostart_claude: Some(false),
-            tmux_host: None,
         })
         .expect("real PTY spawn should succeed for a2");
         mgr1.write_input("a2", "echo backlog-marker-24680\n");
@@ -515,7 +512,6 @@ return
             startup_command: Some("echo mash-marker".into()),
             personality_prompt: None,
             autostart_claude: Some(false),
-            tmux_host: None,
         };
         let create_with_watchdog = |manager: Arc<SessionManager>, label: String| async move {
             let handle = tokio::task::spawn_blocking(move || manager.create(request()));
@@ -674,7 +670,6 @@ return
                 startup_command: None,
                 personality_prompt: None,
                 autostart_claude: Some(false),
-                tmux_host: None,
             })
             .unwrap();
 
@@ -1003,7 +998,6 @@ return
             startup_command: None,
             personality_prompt: None,
             autostart_claude: Some(false),
-            tmux_host: None,
         })
         .expect("create real session");
         // 출력을 계속 빨아들여 셸이 막히지 않게 한다.

@@ -1537,7 +1537,6 @@ mod tests {
             default_agent: None,
             bot: None,
             talk_receive: None,
-            tmux_host: None,
         }
     }
 }

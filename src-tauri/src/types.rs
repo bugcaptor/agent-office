@@ -579,10 +579,6 @@ pub struct CreateSessionRequest {
     /// 제공한 command wrapper specs를 PowerShell 함수, Git Bash `--rcfile`,
     /// 또는 zsh ZDOTDIR shim으로 렌더링한다.
     pub autostart_claude: Option<bool>,
-    /// tmux 자동 호스팅 여부. Some(true)면 이 세션을 tmux 세션으로 띄우고 앱
-    /// PTY는 거기 attach만 한다(유닉스 전용). None/Some(false) = 기존처럼
-    /// 직접 셸을 띄운다.
-    pub tmux_host: Option<bool>,
 }
 
 /// createSession 응답.
@@ -734,11 +730,6 @@ pub struct AgentProfile {
     /// TS `talkReceive?: boolean` 미러.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub talk_receive: Option<bool>,
-    /// 이 캐릭터의 세션을 tmux로 자동 호스팅할지. Some(true) = 새 세션을 tmux
-    /// 세션으로 띄우고 앱 PTY는 거기 attach만 한다(유닉스 전용). 부재/false =
-    /// 기존처럼 직접 셸을 띄운다. TS `tmuxHost?: boolean` 미러.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub tmux_host: Option<bool>,
 }
 
 /// 캐릭터 봇 모드 설정(이슈 #57, docs/bot-mode-design.md). 전부 선택값이며,
@@ -1494,7 +1485,6 @@ mod tests {
         default_agent: None,
         bot: None,
         talk_receive: None,
-        tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"cwd\":\"/tmp/proj\""));
@@ -1530,7 +1520,6 @@ mod tests {
         default_agent: None,
         bot: None,
         talk_receive: None,
-        tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("cwd"));
@@ -1595,7 +1584,6 @@ mod tests {
         default_agent: None,
         bot: None,
         talk_receive: None,
-        tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"portraitRequest\":\"short black hair, glasses\""));
@@ -1632,7 +1620,6 @@ mod tests {
         default_agent: None,
         bot: None,
         talk_receive: None,
-        tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("portraitRequest"));
@@ -1680,7 +1667,6 @@ mod tests {
         default_agent: None,
         bot: None,
         talk_receive: None,
-        tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"spriteRequest\":\"red cloak wizard\""));
@@ -1718,7 +1704,6 @@ mod tests {
         default_agent: None,
         bot: None,
         talk_receive: None,
-        tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("spriteRequest"));
@@ -1774,7 +1759,6 @@ mod tests {
         default_agent: None,
         bot: None,
         talk_receive: None,
-        tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"archetype\":\"orc\""));
@@ -1798,7 +1782,6 @@ mod tests {
         default_agent: None,
         bot: None,
         talk_receive: None,
-        tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("archetype"));
@@ -1831,7 +1814,6 @@ mod tests {
                        default_agent: None,
                        bot: None,
                        talk_receive: None,
-                       tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"keyboardSound\":\"topre-hhkb\""));
@@ -1855,7 +1837,6 @@ mod tests {
                        default_agent: None,
                        bot: None,
                        talk_receive: None,
-                       tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("keyboardSound"));
@@ -1886,7 +1867,6 @@ mod tests {
         default_agent: None,
         bot: None,
         talk_receive: None,
-        tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"shell\":\"git-bash\""));
@@ -1908,7 +1888,6 @@ mod tests {
         default_agent: None,
         bot: None,
         talk_receive: None,
-        tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("shell"));
@@ -1939,7 +1918,6 @@ mod tests {
         default_agent: None,
         bot: None,
         talk_receive: None,
-        tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"clockedOut\":true"));
@@ -1961,7 +1939,6 @@ mod tests {
         default_agent: None,
         bot: None,
         talk_receive: None,
-        tmux_host: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("clockedOut"));

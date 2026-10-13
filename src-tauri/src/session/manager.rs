@@ -16,7 +16,6 @@ use std::sync::Arc;
 // 못 뜨는 벽돌 상태. parking_lot은 패닉한 스레드가 락을 풀고 지나가므로
 // 오염이 전파되지 않는다. (session_layer_survives_a_panicking_output_channel
 // 회귀 테스트 참조.)
-use chrono::Timelike;
 use parking_lot::Mutex;
 
 use tauri::ipc::Channel;
@@ -30,7 +29,6 @@ use crate::session::kilo_plugin;
 use crate::session::pi_extension;
 use crate::session::pty_factory::{ExitOutcome, PtyControl, PtyFactory, PtySpawnOptions, SpawnedPty};
 use crate::session::shells;
-use crate::session::tmux_host;
 use crate::session_events::types::{AgentEventProfile, SessionStartedEvent};
 use crate::state::{AppEvents, SessionRegistry};
 use crate::types::*;
@@ -83,11 +81,6 @@ pub(super) struct Session {
     /// 다음 지시를 주입한다(이슈 #57, docs/bot-mode-design.md). 0이면 아직 활동
     /// 없음. reader 스레드와 write_input이 갱신한다.
     last_activity_ms: Arc<std::sync::atomic::AtomicU64>,
-    /// tmux 자동 호스팅(kbm #2pc)으로 뜬 세션이면 그 tmux 세션 이름. **플래그가
-    /// 아니라 이름 자체다** — dispose()가 kill-session에 이름을 넘겨야 한다.
-    /// "호스팅인가"는 `is_some()`으로 판정한다. 강등되었거나 애초에 요청되지
-    /// 않은 세션은 항상 None.
-    pub(super) hosted_tmux: Option<String>,
 }
 
 impl Session {
@@ -182,14 +175,6 @@ pub struct SessionManager {
     /// 세션 로그가 Claude 자체 JSONL 전사를 찾아 붙는 데 쓴다. None이면 PTY
     /// 전사만 남는다 -- 테스트 기본값이다.
     agent_session_lookup: Option<Arc<dyn crate::session_log::agent_transcript::AgentSessionLookup>>,
-    /// tmux 자동 호스팅(kbm #2pc)의 서브프로세스 러너. 프로덕션은 `new()`가
-    /// `tmux_host::system_runner()`로 채우고, 테스트는 `with_tmux_runner`로
-    /// 가짜를 주입한다.
-    pub(super) tmux_runner: tmux_host::TmuxRunner,
-    /// `tmux -V` 버전 확인 결과 캐시 -- 세션마다 다시 묻지 않고 최초 한 번만
-    /// 본다. **전역 static이 아니라 매니저 필드다**: 전역이면 테스트끼리
-    /// 캐시가 오염된다.
-    tmux_capability: std::sync::OnceLock<Result<(u32, u32), String>>,
 }
 
 impl SessionManager {
@@ -225,8 +210,6 @@ impl SessionManager {
             session_log_root: None,
             session_log_enabled: Arc::new(AtomicBool::new(true)),
             agent_session_lookup: None,
-            tmux_runner: tmux_host::system_runner(),
-            tmux_capability: std::sync::OnceLock::new(),
         }
     }
 
@@ -627,7 +610,7 @@ impl SessionManager {
     /// 1 에이전트 1 세션 불변식. self: &Arc<Self>로 wait 스레드에 소유 이전.
     pub fn create_with_profile(
         self: &Arc<Self>,
-        mut req: CreateSessionRequest,
+        req: CreateSessionRequest,
         profile: AgentEventProfile,
     ) -> Result<CreateSessionResult, String> {
         let _observed_lifecycle = self.observed_lifecycle.lock();
@@ -698,56 +681,6 @@ impl SessionManager {
         let actual_shell = resolved.program.clone();
         let actual_cwd = cwd.clone();
 
-        // tmux 자동 호스팅(kbm #2pc): 켜져 있고 이 플랫폼이 지원하면, 앱 PTY로
-        // 셸을 직접 띄우는 대신 tmux 세션을 새로 만들고 앱 PTY는 거기 attach만
-        // 한다. 실패는 절대 세션 생성 자체를 막지 않는다 -- `hosted_tmux`를
-        // None으로 둔 채 평소 경로로 흘려보내고, 대신 initial_output에 강등
-        // 경고 한 줄을 실어 보낸다(observer 강등 관례와 같다).
-        let mut hosted_tmux: Option<String> = None;
-        let mut hosting_warning: Option<Vec<u8>> = None;
-        if req.tmux_host == Some(true) {
-            if cfg!(windows) {
-                hosting_warning = Some(tmux_downgrade_notice(
-                    "tmux 자동 호스팅은 Windows에서 지원하지 않아 일반 세션으로 시작합니다.",
-                ));
-            } else {
-                let capability = self.tmux_capability.get_or_init(|| {
-                    tmux_host::probe_version(&self.tmux_runner).map_err(|e| format!("{e:?}"))
-                });
-                match capability {
-                    Ok(version) => {
-                        let version = *version;
-                        let now = chrono::Local::now();
-                        let spec = tmux_host::HostSpec {
-                            agent_id: &req.agent_id,
-                            sid: &session_id,
-                            cwd: &actual_cwd,
-                            hms: (now.hour(), now.minute(), now.second()),
-                            env: &tmux_host::pane_env(&env),
-                            startup_command: req.startup_command.as_deref(),
-                        };
-                        match tmux_host::ensure_hosted(&self.tmux_runner, version, spec) {
-                            Ok(name) => {
-                                // pane용 원본 시작 명령어는 이미 send-keys로 나갔다 --
-                                // 이 자리엔 앱 PTY(=tmux 클라이언트)가 붙을 attach
-                                // 명령을 대신 넣는다.
-                                req.startup_command = Some(tmux_host::attach_command_exact(&name));
-                                hosted_tmux = Some(name);
-                            }
-                            Err(err) => {
-                                hosting_warning = Some(tmux_downgrade_notice(&tmux_host_error_message(&err)));
-                            }
-                        }
-                    }
-                    Err(reason) => {
-                        hosting_warning = Some(tmux_downgrade_notice(&format!(
-                            "tmux를 사용할 수 없어 일반 세션으로 시작합니다: {reason}"
-                        )));
-                    }
-                }
-            }
-        }
-
         let spawned = match self.factory.spawn(PtySpawnOptions {
             shell: resolved.program,
             args: resolved.args,
@@ -780,14 +713,12 @@ impl SessionManager {
             size,
             spawned,
             None, // eof_stop_gate: create() 경로는 RealWaiter가 독립적으로 exit 판정
-            hosting_warning, // initial_output: tmux 호스팅 강등 경고(있으면)
-            hosted_tmux,
+            None, // initial_output: 입양 전용
         );
         // `ResolvedShell`은 이 직접 생성 경로에서만 실제로 PTY에 전달된 값이다.
-        // tmux client, 외부 attach, 재입양은 이 근거를 갖지 않으므로 auto receipt
-        // 경로를 열지 않는다.
-        if session.hosted_tmux.is_none()
-            && !req.startup_command.as_deref().is_some_and(|command| !command.trim().is_empty())
+        // 외부 attach, 재입양은 이 근거를 갖지 않으므로 auto receipt 경로를 열지
+        // 않는다.
+        if !req.startup_command.as_deref().is_some_and(|command| !command.trim().is_empty())
             && !req.autostart_claude.unwrap_or(false)
         {
             *session.shell_path.lock() = Some(actual_shell);
@@ -844,14 +775,9 @@ impl SessionManager {
     /// `adopt_detached` 둘 다 이 메서드로 수렴한다 -- 상태 머신·sink 재사용
     /// 로직은 완전히 동일하게 유지된다.
     ///
-    /// `initial_output`: 데몬이 보관해 둔 미전달 출력(입양 전용) 또는 tmux
-    /// 호스팅 강등 경고(kbm #2pc, create 전용). reader 스레드가 시작되기
-    /// *전에* pump 채널로 먼저 흘려보내 순서를 보장한다(§핵심 4: "pump mpsc에
-    /// 첫 ReaderMsg::Data로 주입").
-    ///
-    /// `hosted_tmux`: 이 세션이 tmux 자동 호스팅으로 떴으면 그 tmux 세션
-    /// 이름(create 전용, 입양 경로는 항상 None -- 재입양된 세션의 tmux
-    /// 소유권 복원은 이 마일스톤 범위 밖이다).
+    /// `initial_output`: 데몬이 보관해 둔 미전달 출력(입양 전용). reader
+    /// 스레드가 시작되기 *전에* pump 채널로 먼저 흘려보내 순서를 보장한다
+    /// (§핵심 4: "pump mpsc에 첫 ReaderMsg::Data로 주입").
     ///
     /// pub(super): handoff_v1.rs의 adopt_one이
     /// 입양 재배선에 재사용한다.
@@ -866,7 +792,6 @@ impl SessionManager {
         spawned: SpawnedPty,
         eof_stop_gate: Option<Arc<AtomicBool>>,
         initial_output: Option<Vec<u8>>,
-        hosted_tmux: Option<String>,
     ) -> (Arc<Session>, bool) {
         // 세션 수명과 독립인 agentId sink 재사용: 이미 붙은 채널/백로그를
         // 그대로 이어받아 재생성/재입양 시 재구독이 필요 없다.
@@ -921,7 +846,6 @@ impl SessionManager {
             handoff: Mutex::new(spawned.handoff),
             eof_stop_gate,
             last_activity_ms: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            hosted_tmux,
         });
 
         self.sessions.lock().insert(agent_id.clone(), session.clone());
@@ -1162,12 +1086,6 @@ impl SessionManager {
             if s.handed_off.load(Ordering::SeqCst) {
                 return Err("work-send-session-changed".into());
             }
-            // tmux 자동 호스팅 세션(kbm #2pc): kill-session을 먼저 해야 pane
-            // 프로세스가 SIGHUP을 받고, 그 다음에 클라이언트 셸(앱 PTY)이
-            // 죽는다. 순서를 바꾸면 클라이언트만 죽고 tmux 세션이 고아로 남는다.
-            if let Some(name) = &s.hosted_tmux {
-                tmux_host::kill(&self.tmux_runner, name);
-            }
             s.kill_requested.store(true, Ordering::SeqCst);
             if let Err(error) = s.control.kill() {
                 // 이미 죽은 자식이면 흔한 실패다 -- 그래도 남겨 둬야 "kill했는데
@@ -1346,15 +1264,6 @@ impl SessionManager {
         self.shell_resolver = resolver;
         self
     }
-
-    /// Test-only hook to override `tmux_runner` (normally always
-    /// `tmux_host::system_runner()`) so tmux 자동 호스팅(kbm #2pc) 테스트가
-    /// 실제 tmux 설치 여부와 무관하게 돈다. Must be called before wrapping in
-    /// `Arc::new` (consumes `self` by value).
-    fn with_tmux_runner(mut self, runner: tmux_host::TmuxRunner) -> Self {
-        self.tmux_runner = runner;
-        self
-    }
 }
 
 /// pub(super): external.rs의 `detach_external`이 외부 세션의 훅 아티팩트를
@@ -1451,29 +1360,3 @@ fn codex_persona_config(prompt: &str) -> String {
     )
 }
 
-/// tmux 자동 호스팅(kbm #2pc) 강등 경고 한 줄. `install_session`의
-/// `initial_output`으로 흘려보내 리더 스레드보다 먼저 터미널 맨 윗줄에
-/// 뜨게 한다(observer 강등 관례와 같다) -- 별도 IPC 계약이나 배너 UI 없이
-/// 값싸게 알린다.
-fn tmux_downgrade_notice(message: &str) -> Vec<u8> {
-    format!("\x1b[1;33m[agent-office] {message}\x1b[0m\r\n").into_bytes()
-}
-
-/// `tmux_host::HostError` → 강등 사유별 한국어 문구. 실제 tmux 버전은
-/// `TooOld`가 이미 들고 있으므로 여기서 다시 확인하지 않는다.
-fn tmux_host_error_message(err: &tmux_host::HostError) -> String {
-    match err {
-        tmux_host::HostError::Unsupported => {
-            "tmux 자동 호스팅은 이 플랫폼에서 지원하지 않아 일반 세션으로 시작합니다.".to_string()
-        }
-        tmux_host::HostError::Missing(reason) => {
-            format!("tmux를 찾을 수 없어 일반 세션으로 시작합니다: {reason}")
-        }
-        tmux_host::HostError::TooOld((major, minor)) => format!(
-            "tmux 버전이 {major}.{minor}로 낮아(3.2 이상 필요) 일반 세션으로 시작합니다."
-        ),
-        tmux_host::HostError::Failed(reason) => {
-            format!("tmux 세션 생성에 실패해 일반 세션으로 시작합니다: {reason}")
-        }
-    }
-}

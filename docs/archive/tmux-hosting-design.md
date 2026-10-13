@@ -1,6 +1,6 @@
 # tmux 세션 자동 호스팅 설계 (kbm #2pc)
 
-상태: 정본 — 구현 완료(kbm #2pc). 갱신: 2026-08-30.
+상태: 이력(archived, 2026-10-14) — 구현 완료(kbm #2pc) 후 설정한 프로필이 0명이라 제거(점검·정리 계획 §7.D C34). `session/tmux_host.rs`·프로필 `tmuxHost`·세션 요청 `tmuxHost`가 사라졌고, 레시피 파일 이름에 쓰이던 `dir_slug`만 `run_recipes/paths.rs`로 옮겼다.
 
 프로필에 "tmux 호스팅"을 켜두면, 그 캐릭터의 세션을 띄울 때 앱이 직접 tmux
 세션을 새로 만들고 앱 PTY는 거기 붙기만 한다. 지금까지는 밖에서 tmux를 손수

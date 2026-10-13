@@ -90,7 +90,6 @@ fn req(agent_id: &str) -> CreateSessionRequest {
         startup_command: None,
         personality_prompt: None,
         autostart_claude: Some(false),
-        tmux_host: None,
     }
 }
 

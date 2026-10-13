@@ -23,13 +23,13 @@ export async function settleWorkSends(): Promise<void> {
   await Promise.all([...active.values()].map((job) => job.promise));
 }
 function snapshot(item: WorkItem, agent: AgentProfile): string {
-  return JSON.stringify([item.title, item.body, item.assigneeAgentId, item.agent, agent.id, agent.cwd, agent.shell, agent.defaultAgent, agent.startupCommand, agent.tmuxHost, agent.clockedOut, agent.personalityPrompt]);
+  return JSON.stringify([item.title, item.body, item.assigneeAgentId, item.agent, agent.id, agent.cwd, agent.shell, agent.defaultAgent, agent.startupCommand, agent.clockedOut, agent.personalityPrompt]);
 }
 function profileError(agent: AgentProfile | undefined): string | undefined {
   if (!agent) return "work-send-agent-missing";
   if (useAppStore.getState().sessions[agent.id]?.status === "starting") return "work-send-busy";
   if (agent.clockedOut) return "work-send-clocked-out";
-  if (agent.tmuxHost || agent.startupCommand?.trim()) return "work-send-profile-unsupported";
+  if (agent.startupCommand?.trim()) return "work-send-profile-unsupported";
   if (useAppStore.getState().sessions[agent.id]?.kind === "external") return "work-send-shell-unsupported";
   return undefined;
 }

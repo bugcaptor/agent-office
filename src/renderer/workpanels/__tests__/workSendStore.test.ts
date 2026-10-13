@@ -91,7 +91,7 @@ describe("업무 보내기", () => {
   it("프로필이나 저장이 바뀌면 입력 전에 중단하고 퇴근/시작 명령은 차단한다", async () => {
     const id = item(); api.saveWorkItems.mockRejectedValueOnce(new Error("disk")); await requestWorkSend(id);
     expect(api.inspectWorkSendTarget).not.toHaveBeenCalled(); expect(api.sendWorkItem).not.toHaveBeenCalled();
-    for (const patch of [{ clockedOut: true }, { startupCommand: "claude" }, { tmuxHost: true }]) {
+    for (const patch of [{ clockedOut: true }, { startupCommand: "claude" }]) {
       useAppStore.setState({ agents: { a: { ...profile, ...patch } } }); await requestWorkSend(id);
     }
     expect(api.sendWorkItem).not.toHaveBeenCalled();

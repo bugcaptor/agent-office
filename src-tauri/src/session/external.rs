@@ -397,10 +397,6 @@ impl SessionManager {
             if session.handed_off.load(Ordering::SeqCst) {
                 return Err("observed-replacement-changed".into());
             }
-            if let Some(name) = &session.hosted_tmux {
-                super::tmux_host::try_kill(&self.tmux_runner, name)
-                    .map_err(|_| "observed-replacement-tmux-kill-failed")?;
-            }
             if let Err(_) = session.control.kill() {
                 return Err("observed-replacement-kill-failed".into());
             }
