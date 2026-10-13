@@ -82,5 +82,8 @@
 .work-transfer-section h3 { margin: 0 0 6px; font-size: 13px; }
 .work-transfer-statuses { border: 1px solid var(--border-dark); margin: 0; padding: 4px 8px; display: flex; flex-wrap: wrap; gap: 0 12px; }
 .work-detail-dialog .work-transfer-statuses label { display: inline-flex; align-items: center; gap: 4px; }
+.work-transfer-statuses + .work-transfer-statuses { margin-top: 6px; }
+.work-transfer-replace { border: 1px solid var(--border-dark); margin: 6px 0 0; padding: 4px 8px; display: grid; gap: 6px; }
+.work-detail-dialog .work-transfer-replace label { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 8px; margin: 0; }
 .work-transfer-section p { margin: 6px 0 0; }
 .work-transfer-note { margin: 12px 0 0; }

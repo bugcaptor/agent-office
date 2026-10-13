@@ -96,7 +96,8 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     const orders = new Map(WORK_STATUS_ORDER.map((status) => [status, Math.max(-1, ...get().items.filter((i) => i.status === status).map((i) => i.order)) + 1]));
     const at = Date.now();
     // 세션·오류는 원래 카드의 실행 기록이라 복사본에 잇지 않는다.
-    const added: WorkItem[] = entries.map(({ sourceId, ...entry }) => {
+    // 담당 이름은 파일의 참고 값이라 저장하지 않는다.
+    const added: WorkItem[] = entries.map(({ sourceId, assigneeName: _name, ...entry }) => {
       const mapped = sourceId ? ids.get(sourceId) : undefined;
       const id = mapped && !used.has(mapped) ? mapped : nanoid();
       used.add(id);

@@ -10,7 +10,7 @@ describe("work items", () => {
     const store = useWorkItemStore.getState(); await store.load();
     const existing = store.add("Existing")!;
     const added = store.importFile([
-      { sourceId: existing, title: "Copy", body: "", status: "todo", createdAt: 1 },
+      { sourceId: existing, title: "Copy", body: "", status: "todo", createdAt: 1, assigneeAgentId: "a1", assigneeName: "Ada" },
       { sourceId: "b", title: "B", body: "", status: "done", dependsOn: [existing, "missing"], createdAt: 2 },
       { title: "Tail", body: "", status: "todo", dependsOn: ["b"], createdAt: 2 },
       { sourceId: "c", title: "Cycle", body: "", status: "todo", dependsOn: ["c2"], createdAt: 3 },
@@ -21,7 +21,8 @@ describe("work items", () => {
     const by = (title: string) => items.find((i) => i.title === title)!;
     expect(new Set(items.map((i) => i.id)).size).toBe(6);
     expect(by("Copy").id).not.toBe(existing);
-    expect(by("Copy")).toMatchObject({ order: 1, sessionIds: [], createdAt: 1 });
+    expect(by("Copy")).toMatchObject({ order: 1, sessionIds: [], createdAt: 1, assigneeAgentId: "a1" });
+    expect(by("Copy")).not.toHaveProperty("assigneeName");
     expect(by("Tail")).toMatchObject({ dependsOn: [by("B").id], order: 2 });
     // 파일 안 id가 지금 목록과 겹쳐도 파일 안 업무를 가리키고, 없는 id는 버린다.
     expect(by("B")).toMatchObject({ status: "done", order: 0, dependsOn: [by("Copy").id] });

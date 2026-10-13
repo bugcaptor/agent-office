@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("../../ipc/tauriApi", () => ({ tauriApi: {} }));
 import type { WorkItem } from "@shared/types";
-import { parseWorkItemsFile, serializeWorkItems, workItemsFileName } from "../workItemFile";
+import { assigneeKey, guessAssignee, missingAssignees, MISSING_ASSIGNEE, parseWorkItemsFile, remapAssignees, serializeWorkItems, workItemsFileName, type ImportedWorkItem } from "../workItemFile";
 
 const item = (patch: Partial<WorkItem>): WorkItem => ({ id: "a", title: "A", body: "", status: "todo", order: 0, sessionIds: [], createdAt: 0, updatedAt: 0, ...patch });
 const items = [
@@ -40,6 +40,27 @@ describe("work items file", () => {
     expect(parseWorkItemsFile('{"title":"x"}')).toEqual({ ok: false, error: "format" });
     expect(parseWorkItemsFile('{"version":2,"items":[{"title":"x"}]}')).toEqual({ ok: false, error: "version" });
     expect(parseWorkItemsFile('{"items":[{"title":""}]}')).toEqual({ ok: false, error: "empty" });
+  });
+  it("담당 이름을 함께 내보내고 다시 읽는다", () => {
+    const { json } = serializeWorkItems(items, ["todo"], 0, { a1: "Ada" });
+    const file = JSON.parse(json);
+    expect(file.items.map((i: { assigneeName?: string }) => i.assigneeName)).toEqual([undefined, "Ada"]);
+    const parsed = parseWorkItemsFile(json);
+    expect(parsed.ok && parsed.items.map((i) => i.assigneeName)).toEqual([undefined, "Ada"]);
+  });
+  it("담당 키는 미배정·있는 캐릭터·없는 캐릭터 묶음으로 나눈다", () => {
+    const known = { a1: {} };
+    expect([undefined, "a1", "gone"].map((assigneeAgentId) => assigneeKey({ assigneeAgentId }, known))).toEqual(["", "a1", MISSING_ASSIGNEE]);
+  });
+  it("없는 캐릭터를 모아 같은 이름이 하나면 기본 대체로 고르고 한꺼번에 바꾼다", () => {
+    const imported = (assigneeAgentId?: string, assigneeName?: string): ImportedWorkItem => ({ title: "x", body: "", status: "todo", createdAt: 0, assigneeAgentId, assigneeName });
+    const list = [imported("x1"), imported("here"), imported("x1", "Ada"), imported("x2", "Bob"), imported()];
+    const missing = missingAssignees(list, { here: {} });
+    expect(missing).toEqual([{ id: "x1", name: "Ada", count: 2 }, { id: "x2", name: "Bob", count: 1 }]);
+    const agents = [{ id: "ada", name: " Ada " }, { id: "bob1", name: "Bob" }, { id: "bob2", name: "Bob" }];
+    expect(missing.map((m) => guessAssignee(m, agents))).toEqual(["ada", ""]);
+    expect(guessAssignee({ id: "x3", count: 1 }, agents)).toBe("");
+    expect(remapAssignees(list, { x1: "ada", x2: "" }).map((i) => i.assigneeAgentId)).toEqual(["ada", "here", "ada", undefined, undefined]);
   });
   it("기본 파일 이름에 날짜를 넣는다", () => {
     expect(workItemsFileName(new Date(2026, 0, 5))).toBe("agent-office-work-items-20260105.json");

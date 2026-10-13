@@ -12,6 +12,8 @@ interface ExportedWorkItem {
   title: string;
   status: WorkStatus;
   assigneeAgentId?: string;
+  /** 내보낸 때의 담당 캐릭터 이름. 다른 컴퓨터에서 없는 캐릭터를 바꿀 때 보여주는 참고 값이다. */
+  assigneeName?: string;
   agent?: WorkAgent;
   dependsOn?: string[];
   body: string[];
@@ -23,14 +25,22 @@ interface ExportedWorkItem {
 }
 
 /** 가져올 때 쓰는 필드. id는 새로 만들고 파일 안 선행 작업 참조를 다시 잇는 데만 쓴다. */
-export type ImportedWorkItem = Pick<WorkItem, "title" | "body" | "status" | "assigneeAgentId" | "agent" | "dependsOn" | "createdAt"> & { sourceId?: string };
+export type ImportedWorkItem = Pick<WorkItem, "title" | "body" | "status" | "assigneeAgentId" | "agent" | "dependsOn" | "createdAt"> & { sourceId?: string; assigneeName?: string };
 export type WorkItemsFileError = "invalid" | "format" | "version" | "empty";
 export type WorkItemsFileParse = { ok: true; items: ImportedWorkItem[]; skipped: number } | { ok: false; error: WorkItemsFileError };
 
 const CLIS: readonly WorkAgent["cli"][] = ["claude", "codex", "agy", "kilo", "pi"];
 
-/** 고른 상태의 업무만 상태 그룹 순서·그룹 안 순서대로 쓴다. 들여쓰기는 항목별로 지우거나 고치기 쉽게 둔다. */
-export function serializeWorkItems(items: WorkItem[], statuses: readonly WorkStatus[], now = Date.now()): { json: string; count: number } {
+/** 내보내기 담당 선택의 키. 미배정은 "", 지금 없는 캐릭터는 모두 MISSING_ASSIGNEE 하나로 묶는다. */
+export const MISSING_ASSIGNEE = "?";
+export function assigneeKey(item: Pick<WorkItem, "assigneeAgentId">, known: Readonly<Record<string, unknown>>): string {
+  if (!item.assigneeAgentId) return "";
+  return known[item.assigneeAgentId] ? item.assigneeAgentId : MISSING_ASSIGNEE;
+}
+
+/** 고른 상태의 업무만 상태 그룹 순서·그룹 안 순서대로 쓴다. 들여쓰기는 항목별로 지우거나 고치기 쉽게 둔다.
+ * `names`(캐릭터 id → 이름)에 있는 담당은 이름도 함께 쓴다. */
+export function serializeWorkItems(items: WorkItem[], statuses: readonly WorkStatus[], now = Date.now(), names: Readonly<Record<string, string>> = {}): { json: string; count: number } {
   const picked = WORK_STATUS_ORDER.filter((status) => statuses.includes(status))
     .flatMap((status) => items.filter((item) => item.status === status).sort((a, b) => a.order - b.order));
   const exported: ExportedWorkItem[] = picked.map((item) => ({
@@ -38,6 +48,7 @@ export function serializeWorkItems(items: WorkItem[], statuses: readonly WorkSta
     title: item.title,
     status: item.status,
     assigneeAgentId: item.assigneeAgentId,
+    assigneeName: item.assigneeAgentId ? names[item.assigneeAgentId] : undefined,
     agent: item.agent,
     dependsOn: item.dependsOn,
     body: item.body.split(/\r?\n/u),
@@ -89,6 +100,7 @@ function parseItem(raw: unknown): ImportedWorkItem | undefined {
     body,
     status,
     assigneeAgentId: text(value.assigneeAgentId)?.trim() || undefined,
+    assigneeName: text(value.assigneeName)?.trim() || undefined,
     agent: parseAgent(value.agent),
     dependsOn: dependsOn?.length ? dependsOn : undefined,
     createdAt: parseTime(value.createdAt) ?? Date.now(),
@@ -111,4 +123,32 @@ export function parseWorkItemsFile(source: string): WorkItemsFileParse {
   const items = entries.flatMap((entry) => parseItem(entry) ?? []);
   if (!items.length) return { ok: false, error: "empty" };
   return { ok: true, items, skipped: entries.length - items.length };
+}
+
+/** 가져올 업무의 담당 중 지금 없는 캐릭터. 파일 순서대로, 이름은 처음 보이는 값을 쓴다. */
+export interface MissingAssignee { id: string; name?: string; count: number }
+export function missingAssignees(items: readonly ImportedWorkItem[], known: Readonly<Record<string, unknown>>): MissingAssignee[] {
+  const missing = new Map<string, MissingAssignee>();
+  for (const { assigneeAgentId: id, assigneeName: name } of items) {
+    if (!id || known[id]) continue;
+    const entry = missing.get(id) ?? { id, count: 0 };
+    entry.name ??= name;
+    entry.count += 1;
+    missing.set(id, entry);
+  }
+  return [...missing.values()];
+}
+
+/** 없는 캐릭터의 기본 대체: 이름이 같은 캐릭터가 하나뿐이면 그 캐릭터, 아니면 미배정(""). */
+export function guessAssignee(missing: MissingAssignee, agents: readonly { id: string; name: string }[]): string {
+  const name = missing.name?.trim();
+  const same = name ? agents.filter((agent) => agent.name.trim() === name) : [];
+  return same.length === 1 ? same[0].id : "";
+}
+
+/** 담당 id를 한꺼번에 바꾼다. 대체가 ""면 미배정으로 둔다. 표에 없는 담당은 그대로 둔다. */
+export function remapAssignees(items: readonly ImportedWorkItem[], replace: Readonly<Record<string, string>>): ImportedWorkItem[] {
+  return items.map((item) => item.assigneeAgentId && item.assigneeAgentId in replace
+    ? { ...item, assigneeAgentId: replace[item.assigneeAgentId] || undefined }
+    : item);
 }

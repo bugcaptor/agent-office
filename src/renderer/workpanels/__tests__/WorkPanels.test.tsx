@@ -296,3 +296,41 @@ it("내보내기·가져오기 팝업은 고른 상태만 내보내고 취소·�
   fireEvent.keyDown(dialog, { key: "Escape" });
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+it("내보내기는 담당 캐릭터를 골라 이름과 함께 쓰고, 가져오기는 없는 캐릭터의 업무를 고른 캐릭터로 한꺼번에 바꾼다", async () => {
+  const profile = (id: string, name: string) => ({ id, name, role: "dev", seed: id, createdAt: 1, deskIndex: 0 });
+  useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true }, agents: { a: profile("a", "Ada"), b: profile("b", "Bob") }, agentOrder: ["a", "b"] });
+  useWorkItemStore.setState({ loaded: true });
+  const store = useWorkItemStore.getState();
+  for (const [title, assigneeAgentId] of [["Ada 1", "a"], ["Ada 2", "a"], ["Bob 1", "b"], ["Free", undefined], ["Ghost", "gone"]] as const) {
+    store.add({ title, body: "", status: "todo", assigneeAgentId });
+  }
+  store.select(null);
+  render(<UIChrome />);
+  fireEvent.click(screen.getByRole("button", { name: "내보내기·가져오기" }));
+  const dialog = screen.getByRole("dialog");
+  const assignees = within(dialog).getByRole("group", { name: "내보낼 담당 캐릭터" });
+  expect(within(assignees).getAllByRole("checkbox").map((c) => c.parentElement!.textContent)).toEqual(["미배정 (1)", "Ada (2)", "Bob (1)", "삭제된 캐릭터 (1)"]);
+  fireEvent.click(within(assignees).getByLabelText("Bob (1)"));
+  fireEvent.click(within(assignees).getByLabelText("미배정 (1)"));
+  fireEvent.click(within(assignees).getByLabelText("삭제된 캐릭터 (1)"));
+  api.exportWorkItemsFile.mockResolvedValueOnce("/tmp/ada.json");
+  fireEvent.click(within(dialog).getByRole("button", { name: "파일로 내보내기 (2개)" }));
+  await within(dialog).findByText("업무 2개를 내보냈습니다: /tmp/ada.json");
+  const exported = JSON.parse(api.exportWorkItemsFile.mock.lastCall![2]).items;
+  expect(exported.map((i: { title: string; assigneeName?: string }) => [i.title, i.assigneeName])).toEqual([["Ada 1", "Ada"], ["Ada 2", "Ada"]]);
+
+  // 다른 컴퓨터: 같은 이름의 캐릭터가 있으면 기본으로 그 캐릭터, 이름이 없으면 미배정.
+  act(() => useAppStore.setState({ agents: { c: profile("c", "Cat"), d: profile("d", "Ada") }, agentOrder: ["c", "d"] }));
+  const file = { items: [...exported, { title: "Other", assigneeAgentId: "zz" }, { title: "Mine", assigneeAgentId: "c" }] };
+  api.importWorkItemsFile.mockResolvedValueOnce(JSON.stringify(file));
+  fireEvent.click(within(dialog).getByRole("button", { name: "파일 고르기…" }));
+  const replace = await within(dialog).findByRole("group", { name: "찾을 수 없는 캐릭터" });
+  const ada = within(replace).getByLabelText("Ada (업무 2개) →") as HTMLSelectElement;
+  const other = within(replace).getByLabelText("zz (업무 1개) →") as HTMLSelectElement;
+  expect([ada.value, other.value]).toEqual(["d", ""]);
+  fireEvent.change(ada, { target: { value: "c" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "추가" }));
+  const added = useWorkItemStore.getState().items.slice(-4).map((i) => [i.title, i.assigneeAgentId]);
+  expect(added).toEqual([["Ada 1", "c"], ["Ada 2", "c"], ["Other", undefined], ["Mine", "c"]]);
+});
