@@ -1,7 +1,7 @@
 /* src/renderer/awards/awards.css
  *
  * "이 달의 우수사원"(AwardsDialog) 전용 스타일. 전역 modal-backdrop/
- * pixel-panel/pixel-btn/pixel-title 위에 얹는다. analytics.css/talk.css와
+ * pixel-panel/pixel-btn/pixel-title 위에 얹는다. analytics.css와
  * 같은 관례로 styles/tokens.css 토큰만 참조한다(하드코딩 색 금지). 픽셀
  * 오피스 앱이므로 트로피 연출은 과하지 않게 — 액자 + 작은 🏆 배지 정도로 절제.
  */

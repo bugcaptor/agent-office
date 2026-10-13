@@ -181,17 +181,6 @@
     "durMinutes": "{{minutes}}m",
     "durHours": "{{hours}}h"
   },
-  "talk": {
-    "title": "💬 Peer talk log",
-    "dialogAria": "Peer talk log",
-    "close": "Close",
-    "loading": "Loading…",
-    "loadError": "Could not load the talk log.",
-    "empty": "No talks recorded.",
-    "kindSend": "said",
-    "kindDeliver": "delivered",
-    "kindExpire": "delivery failed (expired)"
-  },
   "sessionLog": {
     "title": "📜 {{name}}'s session logs",
     "dialogAria": "{{name}}'s session logs",

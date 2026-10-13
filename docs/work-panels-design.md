@@ -4,7 +4,7 @@
 
 상태: 정본 (2026-10-13) — 1·2차 기능과 업무 수신함, 선행 작업·상세 팝업 구현 완료. 설치 Tauri 앱의 저장·복원과 인증된 CLI 5종의 실기 인수는 남아 있다. 보내기는 직접 생성한 Unix bash/zsh와 Windows PowerShell·Git Bash PTY를 지원한다.
 
-관련 문서: [터미널 자동화](archive/terminal-automation-design.md)(제거됨 — CLI 기동 receipt의 출처), [세션 활동 분석](session-analytics-design.md)(턴·토큰·비용 집계), [세션 로그](session-log-design.md)(전사 보기), [동료 대화](agent-talk-design.md) §6(shim·권한 사전 승인 배선). 수신함의 구현 계획과 결정 근거는 [archive/work-inbox-design.md](archive/work-inbox-design.md)에 있다.
+관련 문서: [터미널 자동화](archive/terminal-automation-design.md)(제거됨 — CLI 기동 receipt의 출처), [세션 활동 분석](session-analytics-design.md)(턴·토큰·비용 집계), [세션 로그](session-log-design.md)(전사 보기), [동료 대화](archive/agent-talk-design.md) §6(shim·권한 사전 승인 배선의 출처, 기능은 제거됨 — 배선은 `office_instructions.rs`). 수신함의 구현 계획과 결정 근거는 [archive/work-inbox-design.md](archive/work-inbox-design.md)에 있다.
 
 ## 개요
 
@@ -293,7 +293,7 @@ CLI별 스킬 대신 짧은 영어 안내문(`src-tauri/src/office_instructions.
 
 ### 권한과 샌드박스
 
-- **Claude 권한**: 세션 설정 조각의 `permissions.allow`에 켜진 기능의 shim만 넣는다 — 동료 대화가 켜지면 `Bash(<office-talk>:*)`, 업무 패널이 켜지면 `Bash(<office-task>:*)`. 관찰이 켜져 있으면 훅 설정 파일에 합치고, 꺼져 있으면 권한 조각만 담은 세션 설정 파일을 `--settings`로 물린다. 대화 플러그인(`--plugin-dir`)은 대화가 켜졌을 때만 붙는다.
+- **Claude 권한**: 세션 설정 조각의 `permissions.allow`에 켜진 기능의 shim만 넣는다 — 업무 패널이 켜지면 `Bash(<office-task>:*)`. 관찰이 켜져 있으면 훅 설정 파일에 합치고, 꺼져 있으면 권한 조각만 담은 세션 설정 파일을 `--settings`로 물린다. 대화 플러그인(`--plugin-dir`)은 대화가 켜졌을 때만 붙는다.
 - **Codex 샌드박스**: 안내문을 실은 세션에 `-c sandbox_workspace_write.writable_roots=[…]`로 수신함을 더한다. 이 `-c`는 사용자 설정의 같은 배열을 **덮어쓰므로**(0.162 실측) `CODEX_HOME`(또는 `~/.codex`)`/config.toml` 최상위 값을 읽어 합친 배열을 넘긴다. 설정이 없거나 깨졌으면 수신함만 넣는다. 사용자 파일은 쓰지 않는다. 사용자가 `read-only` 샌드박스면 승인이 뜨고, `-p` 프로필 레이어의 값은 합치지 않는다.
 - **Claude Bash 샌드박스**를 사용자가 켰다면 수신함 쓰기에 승인이 뜰 수 있다. 받아들인다.
 - Pi·Kilo·agy의 샌드박스·승인 동작은 아래 실기 인수에서 확인한다.

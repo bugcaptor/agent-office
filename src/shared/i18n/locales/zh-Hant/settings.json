@@ -168,18 +168,6 @@
     "usageIntro": "在工作階段的終端機裡可以直接使用：",
     "appDataNote": "外部指令碼使用 app_data 自動探索："
   },
-  "talk": {
-    "title": "同事對話（角色之間互相搭話）",
-    "help": "開啟後，角色可以<b>把訊息送進其他角色的工作階段</b>。只有使用者在工作階段<b>明確發動</b> <code>/agent-office:talk</code> 技能時才會開始對話，關掉這個開關則會<b>連等待中的訊息一起立刻丟棄</b>。這是往別人的工作階段塞字的功能，所以預設關閉。",
-    "maxTurnsTitle": "對話往返上限",
-    "maxTurnsHelp": "一次對話最多能來回幾則訊息。到達上限就結束對話（避免兩人無限往返的安全機制）。",
-    "idleQuietTitle": "注入閒置等待（ms）",
-    "idleQuietHelp": "收訊的角色要安靜這麼久，訊息才會送進終端機。對方正在工作時會先擱著，所以搭話後不會立刻送到。",
-    "controlWarn": "⚠ 同事對話是透過 <b>CLI 控制</b>運作的。請把上面的「CLI 控制」打開並完成<b>核准</b> — 現在是{{reason}}，角色之間就算搭話也全部會失敗。",
-    "reasonDisabled": "關閉狀態",
-    "reasonUnapproved": "未核准狀態",
-    "skillNote": "對話在工作階段裡用 <code>/agent-office:talk</code> 發動 — 技能由程式自動安裝，不需要另外安裝。"
-  },
   "firstRun": {
     "title": "開始使用 Agent Office",
     "intro": "Claude Code / Codex / Pi / Kilo / Antigravity 的整合功能是選用的。現在關著開始也沒關係，隨時可以從下方列的 ⚙ 設定打開。",

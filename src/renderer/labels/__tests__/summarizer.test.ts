@@ -102,9 +102,6 @@ beforeEach(() => {
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
-      talkEnabled: false,
-      talkMaxTurns: 6,
-      talkIdleQuietMs: 3000,
     },
     false
   );
@@ -199,9 +196,6 @@ describe("installTaskLabelSummarizer", () => {
           ttsRewriteModelAnthropic: "claude-haiku-4-5",
           ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
           ttsRewriteProvider: "auto",
-          talkEnabled: false,
-          talkMaxTurns: 6,
-          talkIdleQuietMs: 3000,
         },
         false,
       );
@@ -491,9 +485,6 @@ describe("installTaskLabelSummarizer", () => {
         ttsRewriteModelAnthropic: "claude-haiku-4-5",
         ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
         ttsRewriteProvider: "auto",
-        talkEnabled: false,
-        talkMaxTurns: 6,
-        talkIdleQuietMs: 3000,
       },
       false
     );

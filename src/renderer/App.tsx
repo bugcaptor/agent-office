@@ -40,7 +40,6 @@ import { RunPalette } from "./run/RunPalette";
 import { DiaryDialog } from "./diary/DiaryDialog";
 import { SessionLogDialog } from "./sessionlog/SessionLogDialog";
 import { MemoArchiveDialog } from "./memo/MemoArchiveDialog";
-import { TalkLogDialog } from "./talk/TalkLogDialog";
 import { UIChrome } from "./layout/UIChrome";
 import { RepositoryAuditOverlay } from "./repository-audit/RepositoryAuditOverlay";
 
@@ -170,9 +169,6 @@ function App() {
         <SettingsDialog />
         <FirstRunDialog />
         <AnalyticsDialog />
-        {/* 동료 대화 감사 로그(docs/agent-talk-design.md §7). 하단바 "대화 N"
-            메뉴에서 열리고, modal.kind로 self-gate한다. */}
-        <TalkLogDialog />
         <UsageDialog />
         <AboutDialog />
         {/* 이 달의 우수사원(docs/employee-of-the-month-design.md §6). 하단바

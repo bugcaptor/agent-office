@@ -168,18 +168,6 @@
     "usageIntro": "Dans un terminal de session, vous pouvez l'utiliser tout de suite :",
     "appDataNote": "Les scripts externes utilisent la découverte automatique app_data :"
   },
-  "talk": {
-    "title": "Discussion entre collègues (personnages qui se parlent)",
-    "help": "Permet à un personnage d'<b>envoyer un message dans la session d'un autre personnage</b>. Une conversation ne démarre que si vous <b>invoquez explicitement</b> la compétence <code>/agent-office:talk</code> dans une session, et désactiver cet interrupteur <b>jette même les messages non remis</b>. Cela écrit dans la session de quelqu'un d'autre, donc c'est désactivé par défaut.",
-    "maxTurnsTitle": "Limite d'échanges",
-    "maxTurnsHelp": "Nombre de messages qu'une conversation peut échanger. L'atteindre met fin à la discussion (garde-fou contre deux personnages qui se répondent indéfiniment).",
-    "idleQuietTitle": "Attente d'inactivité avant injection (ms)",
-    "idleQuietHelp": "Le personnage destinataire doit rester silencieux aussi longtemps avant qu'un message soit tapé dans son terminal. Pendant qu'il travaille, le message est retenu : il n'arrive donc pas à l'instant où il est envoyé.",
-    "controlWarn": "⚠ La discussion entre collègues passe par le <b>contrôle CLI</b>. Activez « Contrôle CLI » ci-dessus et <b>approuvez</b>-le — pour l'instant il est {{reason}}, donc toute tentative de discussion échouera.",
-    "reasonDisabled": "désactivé",
-    "reasonUnapproved": "non approuvé",
-    "skillNote": "Lancez une discussion dans une session avec <code>/agent-office:talk</code> — l'app installe la compétence pour vous, il n'y a rien à configurer."
-  },
   "firstRun": {
     "title": "Bienvenue dans Agent Office",
     "intro": "Les intégrations Claude Code / Codex / Pi / Kilo / Antigravity sont facultatives. Vous pouvez démarrer sans elles et les activer à tout moment depuis ⚙ dans la barre du bas.",

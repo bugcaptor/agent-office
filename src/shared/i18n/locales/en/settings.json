@@ -168,18 +168,6 @@
     "usageIntro": "Inside a session terminal you can use it right away:",
     "appDataNote": "External scripts use app_data autodiscovery:"
   },
-  "talk": {
-    "title": "Peer talk (characters talking to each other)",
-    "help": "Lets a character <b>send a message into another character's session</b>. A conversation starts only when you <b>explicitly invoke</b> the <code>/agent-office:talk</code> skill in a session, and turning this switch off <b>drops even undelivered messages</b>. It types into someone else's session, so it is off by default.",
-    "maxTurnsTitle": "Turn limit",
-    "maxTurnsHelp": "How many messages one conversation may exchange. Reaching it ends the talk (a guard against two characters going back and forth forever).",
-    "idleQuietTitle": "Injection idle wait (ms)",
-    "idleQuietHelp": "The receiving character must be quiet this long before a message is typed into their terminal. While they work it is held back, so a message does not land the instant it is sent.",
-    "controlWarn": "⚠ Peer talk runs through <b>CLI control</b>. Turn on “CLI control” above and <b>approve</b> it — right now it is {{reason}}, so every attempt to talk will fail.",
-    "reasonDisabled": "off",
-    "reasonUnapproved": "not approved",
-    "skillNote": "Start a talk inside a session with <code>/agent-office:talk</code> — the app installs the skill for you, so there is nothing to set up."
-  },
   "firstRun": {
     "title": "Welcome to Agent Office",
     "intro": "The Claude Code / Codex / Pi / Kilo / Antigravity integrations are optional. You can start with them off and turn them on any time from ⚙ in the bottom bar.",

@@ -719,9 +719,6 @@ describe("app settings slice", () => {
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
-      talkEnabled: false,
-      talkMaxTurns: 6,
-      talkIdleQuietMs: 3000,
     });
     expect(s.settingsFirstRun).toBe(false);
   });
@@ -769,9 +766,6 @@ describe("app settings slice", () => {
         ttsRewriteModelAnthropic: "claude-haiku-4-5",
         ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
         ttsRewriteProvider: "auto",
-        talkEnabled: false,
-        talkMaxTurns: 6,
-        talkIdleQuietMs: 3000,
       },
       true
     );
@@ -817,9 +811,6 @@ describe("app settings slice", () => {
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
-      talkEnabled: false,
-      talkMaxTurns: 6,
-      talkIdleQuietMs: 3000,
     });
     expect(s.settingsFirstRun).toBe(true);
     // A 리뷰 수정: hydrateSettings가 실제로 불렸음을 settingsHydrated로 표시
@@ -882,9 +873,6 @@ describe("app settings slice", () => {
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
-      talkEnabled: false,
-      talkMaxTurns: 6,
-      talkIdleQuietMs: 3000,
     });
   });
 
@@ -931,9 +919,6 @@ describe("app settings slice", () => {
         ttsRewriteModelAnthropic: "claude-haiku-4-5",
         ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
         ttsRewriteProvider: "auto",
-        talkEnabled: false,
-        talkMaxTurns: 6,
-        talkIdleQuietMs: 3000,
       },
       true
     );
@@ -986,9 +971,6 @@ describe("app settings slice", () => {
       ttsRewriteModelAnthropic: "claude-haiku-4-5",
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
       ttsRewriteProvider: "auto",
-      talkEnabled: false,
-      talkMaxTurns: 6,
-      talkIdleQuietMs: 3000,
     });
   });
 

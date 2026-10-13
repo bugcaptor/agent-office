@@ -181,17 +181,6 @@
     "durMinutes": "{{minutes}} 分钟",
     "durHours": "{{hours}} 小时"
   },
-  "talk": {
-    "title": "💬 同事对话记录",
-    "dialogAria": "同事对话记录",
-    "close": "关闭",
-    "loading": "加载中…",
-    "loadError": "无法加载对话记录。",
-    "empty": "没有对话记录。",
-    "kindSend": "说出",
-    "kindDeliver": "已送达",
-    "kindExpire": "送达失败（已过期）"
-  },
   "sessionLog": {
     "title": "📜 {{name}} 的会话日志",
     "dialogAria": "{{name}} 的会话日志",

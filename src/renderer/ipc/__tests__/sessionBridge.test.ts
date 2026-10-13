@@ -24,7 +24,6 @@ import type {
   NotificationClearedEvent,
   NotificationEvent,
   SessionStateEvent,
-  TalkEvent,
 } from "@shared/types";
 
 const { mockApi, capture } = vi.hoisted(() => {
@@ -34,7 +33,6 @@ const { mockApi, capture } = vi.hoisted(() => {
     onNotificationCleared?: (e: NotificationClearedEvent) => void;
     onActivity?: (e: unknown) => void;
     onTurnUsage?: (e: unknown) => void;
-    onTalkMessage?: (e: TalkEvent) => void;
   } = {};
   const mockApi = {
     createSession: vi.fn(),
@@ -65,10 +63,6 @@ const { mockApi, capture } = vi.hoisted(() => {
     }),
     onTurnUsage: vi.fn((cb: (e: unknown) => void) => {
       capture.onTurnUsage = cb;
-      return vi.fn();
-    }),
-    onTalkMessage: vi.fn((cb: (e: TalkEvent) => void) => {
-      capture.onTalkMessage = cb;
       return vi.fn();
     }),
     appendSessionTurn: vi.fn(),
@@ -152,7 +146,6 @@ beforeEach(() => {
   capture.onNotificationCleared = undefined;
   capture.onActivity = undefined;
   capture.onTurnUsage = undefined;
-  capture.onTalkMessage = undefined;
   resetNotifySuppression();
   cleanup = installSessionBridge();
 });
@@ -714,48 +707,3 @@ describe("installSessionBridge cleanup", () => {
   });
 });
 
-describe("talk-message -> officeBus.onTalkBubble 릴레이", () => {
-  const mkTalkEvent = (overrides: Partial<TalkEvent> = {}): TalkEvent => ({
-    convId: "c1",
-    from: "a1",
-    fromName: "하나",
-    to: "a2",
-    toName: "두리",
-    text: "이거 어떻게 생각해?",
-    at: Date.now(),
-    ...overrides,
-  });
-
-  it("발신자에겐 본문(say), 수신자에겐 짧은 도착 표시(hear)를 한 번씩 준다", () => {
-    const seen: Array<[string, string, string]> = [];
-    const off = officeBus.onTalkBubble((id, text, tone) => seen.push([id, text, tone]));
-
-    capture.onTalkMessage!(mkTalkEvent());
-
-    expect(seen).toEqual([
-      ["a1", "이거 어떻게 생각해?", "say"],
-      ["a2", "하나 →", "hear"],
-    ]);
-    off();
-  });
-
-  it("자기 자신에게 보낸 메시지는 도착 표시를 겹쳐 띄우지 않는다", () => {
-    const seen: string[] = [];
-    const off = officeBus.onTalkBubble((_id, _text, tone) => seen.push(tone));
-
-    capture.onTalkMessage!(mkTalkEvent({ to: "a1", toName: "하나" }));
-
-    expect(seen).toEqual(["say"]);
-    off();
-  });
-
-  it("구독 해제 후에는 더 이상 받지 않는다(replay도 없다)", () => {
-    const seen: string[] = [];
-    const off = officeBus.onTalkBubble((id) => seen.push(id));
-    off();
-
-    capture.onTalkMessage!(mkTalkEvent());
-
-    expect(seen).toEqual([]);
-  });
-});

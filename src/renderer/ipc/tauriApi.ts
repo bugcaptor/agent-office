@@ -37,7 +37,6 @@ import type {
   SessionEventKind,
   SessionStateEvent,
   SessionTurnRecord,
-  TalkEvent,
   TurnUsageEvent,
   WorkLogItem,
   RunRecipeUserInput,
@@ -253,18 +252,6 @@ export const tauriApi: AgentOfficeApi = {
 
   async controlRevoke() {
     await invoke(Commands.controlRevoke);
-  },
-
-  async talkStatus() {
-    return await invoke(Commands.talkStatus);
-  },
-
-  async listTalkLogDates() {
-    return await invoke(Commands.listTalkLogDates);
-  },
-
-  async readTalkLog(date, limit) {
-    return await invoke(Commands.readTalkLog, { date, limit });
   },
 
   async listAvailableShells() {
@@ -537,9 +524,6 @@ export const tauriApi: AgentOfficeApi = {
     return wrapListen<TurnUsageEvent>(Events.turnUsage, cb);
   },
 
-  onTalkMessage(cb) {
-    return wrapListen<TalkEvent>(Events.talkMessage, cb);
-  },
 };
 
 

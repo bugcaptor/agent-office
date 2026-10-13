@@ -20,7 +20,6 @@
 
 | 문서 | 내용 | 상태 |
 |---|---|---|
-| [agent-talk-design.md](agent-talk-design.md) | 동료 대화(Agent Talk) — 캐릭터끼리/사용자와 대화. TalkHub·ctl talk·로컬 스킬 | 정본 — M1+M2 구현 완료, M3 미착수 |
 | [work-panels-design.md](work-panels-design.md) | 업무 패널 — opt-in 좌우 고정 패널. 좌측 업무 목록(담당 캐릭터·에이전트/모델 지정, 보내기로 CLI 기동+첫 프롬프트, 상태 모니터링), 우측 전 캐릭터 세션 로그(300일·필터·검색). 업무 수신함(`work-inbox/` 파일 규약, `office-task` 명령, CLI 시스템 프롬프트 공통 안내문) 포함 | 정본 (2026-10-13) — 1·2차·수신함 구현 완료, 설치 앱·인증된 CLI 실기 인수 잔여 |
 | [antigravity-support-design.md](antigravity-support-design.md) | Antigravity CLI(agy) 작업 상태 감지 — 셸 훅 + 사용량·추정 비용 수집 | 정본 (2026-09-07) — 구현 완료 |
 | [macos-signing.md](macos-signing.md) | macOS 코드서명 — 자체 인증서 기반·인증서 관리·DMG 배포 절차 | 정본 — 운영 절차 |
@@ -62,6 +61,7 @@
 | [archive/external-session-attach-design.md](archive/external-session-attach-design.md) | 외부 터미널/tmux 세션 붙이기(kbm #2by) — `ctl attach`. 미사용으로 제거(2026-10-14, 점검·정리 §7.D C33) |
 | [archive/bot-mode-design.md](archive/bot-mode-design.md) | 캐릭터 봇 모드(#57/#58/#61) — Gitea 이슈 폴링. 미사용으로 제거(2026-10-14, 점검·정리 §7.D C30) |
 | [archive/terminal-automation-design.md](archive/terminal-automation-design.md) | 터미널 입력 자동화 v1/v2(kbm #2t9) — 미사용으로 제거(2026-10-14, 점검·정리 §7.D C29). 기동 receipt는 업무 보내기로 이전 |
+| [archive/agent-talk-design.md](archive/agent-talk-design.md) | 동료 대화(Agent Talk) — M1+M2 구현 후 미사용으로 제거(2026-10-14, 점검·정리 §7.D C26). shim 권한 배선은 업무 수신함이 이어받음 |
 
 ## 관련 (docs/ 밖)
 

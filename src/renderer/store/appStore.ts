@@ -111,9 +111,6 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   ttsRewriteModelAnthropic: "claude-haiku-4-5",
   ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
   ttsRewriteProvider: "auto",
-  talkEnabled: false,
-  talkMaxTurns: 6,
-  talkIdleQuietMs: 3000,
 };
 
 /**
@@ -418,9 +415,6 @@ interface AppState {
         | "ttsRewriteModelAnthropic"
         | "ttsRewriteModelOpenrouter"
         | "ttsRewriteProvider"
-        | "talkEnabled"
-        | "talkMaxTurns"
-        | "talkIdleQuietMs"
       >
     >,
   ): void;

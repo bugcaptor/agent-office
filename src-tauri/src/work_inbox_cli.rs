@@ -253,8 +253,8 @@ pub fn ensure_shim(path: &Path, exe: &Path) -> std::io::Result<()> {
     } else {
         format!("#!/bin/sh\n# agent-office가 생성. 편집 금지.\nexec \"{exe}\" task \"$@\"\n")
     };
-    crate::talk::skill::write_atomic(path, body.as_bytes())?;
-    crate::talk::skill::set_executable(path);
+    crate::office_instructions::write_atomic(path, body.as_bytes())?;
+    crate::office_instructions::set_executable(path);
     Ok(())
 }
 

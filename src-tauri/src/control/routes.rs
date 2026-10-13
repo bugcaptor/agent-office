@@ -156,11 +156,6 @@ pub(super) async fn settings_set(
     if obj.contains_key("cliEnabled") || obj.contains_key("cli_enabled") {
         return fail("cliEnabled는 앱 설정에서만 변경할 수 있습니다");
     }
-    // talkEnabled도 같은 이유로 막는다 — 대화 스위치를 에이전트가 스스로 켤 수
-    // 있으면 "사용자가 켰을 때만 대화한다"는 계약이 무너진다(권한 상승).
-    if obj.contains_key("talkEnabled") || obj.contains_key("talk_enabled") {
-        return fail("talkEnabled는 앱 설정에서만 변경할 수 있습니다");
-    }
     let current = ctx.settings.read().unwrap().clone();
     let mut merged = match serde_json::to_value(current) {
         Ok(v) => v,
@@ -181,7 +176,6 @@ pub(super) async fn settings_set(
         &ctx.hub,
         &ctx.observer_server,
         &ctx.observer,
-        &ctx.talk,
         new.clone(),
     )
     .await

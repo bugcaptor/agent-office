@@ -88,8 +88,6 @@
     "keyboardSound": "키보드 소리",
     "keyboardSoundDefault": "기본",
     "keyboardSoundHint": "이 에이전트가 타이핑할 때 나는 소리입니다. 고르면 미리 들려줍니다.",
-    "talkReceive": "동료 메시지 받기",
-    "talkReceiveHint": "끄면 다른 캐릭터가 이 캐릭터에게 말을 걸 수 없습니다. (설정 → 제어의 <b>동료 대화</b>가 켜져 있을 때만 의미가 있습니다.)",
     "shell": "셸",
     "shellAuto": "자동 (기본)",
     "shellNoHooks": "{{label}} (시간 추적 미지원)"

@@ -168,18 +168,6 @@
     "usageIntro": "在会话终端中可以直接使用：",
     "appDataNote": "外部脚本使用 app_data 自动发现："
   },
-  "talk": {
-    "title": "同事对话（角色之间搭话）",
-    "help": "开启后角色可以<b>向其他角色的会话发送消息</b>。只有当用户在会话中<b>明确发动</b> <code>/agent-office:talk</code> 技能时对话才会开始，而关闭此开关会<b>连待发送的消息一并立即丢弃</b>。这是往他人会话里塞入文字的功能，因此默认关闭。",
-    "maxTurnsTitle": "对话往返上限",
-    "maxTurnsHelp": "一次对话中可以往来的消息数。达到上限即结束对话（防止两者无限来回的安全措施）。",
-    "idleQuietTitle": "注入空闲等待（ms）",
-    "idleQuietHelp": "接收方角色安静这么久之后，消息才会被送入终端。对方正在工作时会推迟到空闲为止，因此搭话不会立刻送达。",
-    "controlWarn": "⚠ 同事对话要经由 <b>CLI 控制</b> 才能工作。请开启上面的“CLI 控制”并完成<b>批准</b> —— 现在它{{reason}}，角色之间的搭话会全部失败。",
-    "reasonDisabled": "已关闭",
-    "reasonUnapproved": "未获批准",
-    "skillNote": "对话在会话中用 <code>/agent-office:talk</code> 发动 —— 技能由应用自动安装，无需另行安装。"
-  },
   "firstRun": {
     "title": "开始使用 Agent Office",
     "intro": "Claude Code / Codex / Pi / Kilo / Antigravity 的联动功能是可选的。现在关着开始也没关系，随时可以在底栏的 ⚙ 设置中开启。",

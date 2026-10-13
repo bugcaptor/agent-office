@@ -88,8 +88,6 @@
     "keyboardSound": "Keyboard sound",
     "keyboardSoundDefault": "Default",
     "keyboardSoundHint": "The sound this agent makes while typing. Picking one plays a preview.",
-    "talkReceive": "Receive messages from coworkers",
-    "talkReceiveHint": "Turn this off and no other character can talk to this one. (It only matters while <b>Coworker chat</b> is on under Settings → Control.)",
     "shell": "Shell",
     "shellAuto": "Auto (default)",
     "shellNoHooks": "{{label}} (no time tracking)"

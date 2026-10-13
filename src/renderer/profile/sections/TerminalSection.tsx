@@ -2,7 +2,7 @@
 //
 // 터미널 — 시작 폴더·시작 명령어·셸, 그리고 이 캐릭터의 소리(키보드 사운드 팩,
 // TTS 목소리). 앱 바깥 환경에 닿는 값만 모여 있다.
-import { Trans, useTranslation } from "react-i18next";
+import { useTranslation } from "react-i18next";
 
 import { KEYBOARD_SOUND_PACK_OPTIONS, packLabel } from "../../sound/packs";
 import { previewKeyboardSound } from "../../sound/soundManager";
@@ -81,21 +81,6 @@ export function TerminalSection({
         agentId={editingAgentId}
         onChange={(voiceId) => setDraft((d) => ({ ...d, voiceId }))}
       />
-      <div className="form-field form-check">
-        <label>
-          <input
-            type="checkbox"
-            checked={draft.talkReceive !== false}
-            onChange={(e) => setDraft({ ...draft, talkReceive: e.target.checked })}
-          />
-          <span className="form-label-text">{t("terminal.talkReceive")}</span>
-        </label>
-        {/* 문장 한가운데 <b>가 끼어 있어 키를 쪼개면 어순이 다른 언어에서
-            말이 안 된다 — Trans로 태그째 번역한다. */}
-        <p className="form-hint">
-          <Trans t={t} i18nKey="terminal.talkReceiveHint" components={{ b: <b /> }} />
-        </p>
-      </div>
       {shells.length > 0 && (
         <div className="form-field">
           <label>

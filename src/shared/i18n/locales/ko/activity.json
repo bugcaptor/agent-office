@@ -181,17 +181,6 @@
     "durMinutes": "{{minutes}}분",
     "durHours": "{{hours}}시간"
   },
-  "talk": {
-    "title": "💬 동료 대화 로그",
-    "dialogAria": "동료 대화 로그",
-    "close": "닫기",
-    "loading": "불러오는 중…",
-    "loadError": "대화 로그를 불러오지 못했습니다.",
-    "empty": "기록된 대화가 없습니다.",
-    "kindSend": "말함",
-    "kindDeliver": "전달됨",
-    "kindExpire": "전달 실패(만료)"
-  },
   "sessionLog": {
     "title": "📜 {{name}}의 세션 로그",
     "dialogAria": "{{name}}의 세션 로그",

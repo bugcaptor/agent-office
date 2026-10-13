@@ -620,9 +620,6 @@ describe("app settings commands", () => {
       ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini" as const,
       ttsRewriteProvider: "auto" as const,
       webRemoteBind: "tailnet" as const,
-      talkEnabled: false,
-      talkMaxTurns: 6,
-      talkIdleQuietMs: 3000,
     };
     const tauriApi = await importTauriApi();
 

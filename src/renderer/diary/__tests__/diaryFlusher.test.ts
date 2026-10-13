@@ -62,9 +62,6 @@ const SETTINGS_ON: AppSettings = {
   ttsRewriteModelAnthropic: "claude-haiku-4-5",
   ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
   ttsRewriteProvider: "auto",
-  talkEnabled: false,
-  talkMaxTurns: 6,
-  talkIdleQuietMs: 3000,
 };
 
 const NOW = 1_000_000_000_000;

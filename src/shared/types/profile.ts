@@ -73,9 +73,6 @@ export interface AgentProfile {
   /** 대사 TTS에 쓸 ElevenLabs voice_id 수동 지정. 부재/빈 값 = archetype 기반
    * 자동 캐스팅. 계정 목록에 없는 id면 백엔드가 자동 배정으로 강등한다. */
   voiceId?: string;
-  /** 동료 대화(docs/agent-talk-design.md) 수신 허용. 부재/true = 받는다,
-   * false = 이 캐릭터에게는 말을 걸 수 없다(roster에서 reachable=false). */
-  talkReceive?: boolean;
 }
 
 /**

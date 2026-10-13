@@ -94,6 +94,42 @@ pub fn codex_writable_roots_config(user_config: Option<&str>, inbox: &Path) -> S
     format!("sandbox_workspace_write.writable_roots=[{}]", roots.join(","))
 }
 
+/// 관찰(observer)이 꺼져 있어 훅 설정 파일이 없는 세션을 위한 **권한 조각 전용**
+/// 세션 설정 파일(업무 수신함 shim 승인). 관찰이 켜져 있으면 훅 설정 파일에 같은
+/// 조각이 합쳐지므로(`ClaudeAdapter::with_extra_settings`) 이 경로는 쓰이지 않는다.
+/// 파일명이 `.settings.json`으로 끝나 기존 GC가 그대로 청소한다.
+pub fn write_permissions_only_settings(
+    dir: &Path,
+    session_id: &str,
+    fragment: &serde_json::Value,
+) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join(format!("{session_id}.settings.json"));
+    let body = serde_json::to_vec_pretty(fragment).expect("settings fragment serializes");
+    write_atomic(&path, &body)?;
+    Ok(path)
+}
+
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension("aotmp");
+    std::fs::write(&tmp, bytes)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+#[cfg(unix)]
+pub(crate) fn set_executable(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755));
+}
+#[cfg(not(unix))]
+pub(crate) fn set_executable(_path: &Path) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,13 +156,11 @@ mod tests {
     #[test]
     fn permissions_fragment_lists_each_enabled_shim() {
         assert_eq!(permissions_fragment(&[]), None);
-        let talk = PathBuf::from("/tmp/agent-office/bin/office-talk");
         let task = PathBuf::from("/tmp/agent-office/bin/office-task");
-        let f = permissions_fragment(&[talk.clone()]).unwrap();
-        assert_eq!(f["permissions"]["allow"], serde_json::json!(["Bash(/tmp/agent-office/bin/office-talk:*)"]));
+        let other = PathBuf::from("/tmp/agent-office/bin/office-other");
         let f = permissions_fragment(&[task.clone()]).unwrap();
         assert_eq!(f["permissions"]["allow"], serde_json::json!(["Bash(/tmp/agent-office/bin/office-task:*)"]));
-        let f = permissions_fragment(&[talk, task]).unwrap();
+        let f = permissions_fragment(&[task, other]).unwrap();
         assert_eq!(f["permissions"]["allow"].as_array().unwrap().len(), 2);
     }
 

@@ -75,10 +75,6 @@ pub(super) struct Session {
     /// 자체는 크로스플랫폼이라 cfg 분기가 필요 없다(항상 컴파일되고, 비unix는
     /// 그냥 항상 None으로 남는다).
     pub(super) eof_stop_gate: Option<Arc<AtomicBool>>,
-    /// 마지막 PTY 활동(출력 수신 또는 stdin 주입) 시각(epoch ms). 동료 대화가
-    /// 상대가 조용해졌을 때만 메시지를 주입하는 유휴 판정에 쓴다. 0이면 아직
-    /// 활동 없음. reader 스레드와 write_input이 갱신한다.
-    last_activity_ms: Arc<std::sync::atomic::AtomicU64>,
 }
 
 /// epoch(UTC) 밀리초. 봇 turn-taking 유휴 계산용(단조성보다 벽시계 기준이면
@@ -90,24 +86,15 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 이 세션에 물릴 Claude 사무실 배선. `plugin_dir`는 동료 대화(§6)가 켜졌을 때,
-/// `settings_path`(shim 권한 사전 승인)는 관찰이 꺼져 있어 훅 설정 파일이 없을 때만
-/// 채워진다. 업무 수신함 shim 승인도 같은 설정 파일에 들어간다.
-pub struct TalkWiring {
-    pub plugin_dir: Option<std::path::PathBuf>,
-    pub settings_path: Option<std::path::PathBuf>,
-}
-
 pub struct SessionManager {
     factory: Arc<dyn PtyFactory>,
     /// pub(super): handoff_v1.rs의 adopt_one이
     /// `restore_session_artifacts`를 직접 호출한다.
     pub(super) observer: Arc<ObserverRuntime>,
     get_observer_url: Arc<dyn Fn() -> Option<String> + Send + Sync>,
-    /// 동료 대화 스킬 배선(docs/agent-talk-design.md §6). `(sid, 이미 훅 설정
-    /// 파일이 있는지)`를 주면 이 세션에 물릴 플러그인 폴더와(필요하면) talk 전용
-    /// 설정 파일 경로를 돌려준다. 대화가 꺼져 있으면 None.
-    get_talk_wiring: Arc<dyn Fn(&str, bool) -> Option<TalkWiring> + Send + Sync>,
+    /// 관찰이 꺼진 세션에 물릴 사무실 shim 권한 전용 설정 파일. sid를 주면 그
+    /// 파일 경로를 돌려준다. 승인할 shim이 없으면 None.
+    get_office_settings: Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>,
     /// pub(super): 핸드오프/입양 형제 모듈이 세션 제거 시 레지스트리도 함께 정리한다.
     pub(super) registry: Arc<SessionRegistry>,
     /// pub(super): external.rs가 외부(논리) 세션의 started/state 이벤트를 낸다.
@@ -164,7 +151,7 @@ impl SessionManager {
             factory,
             observer,
             get_observer_url,
-            get_talk_wiring: Arc::new(|_, _| None),
+            get_office_settings: Arc::new(|_| None),
             registry,
             events,
             hub,
@@ -209,18 +196,18 @@ impl SessionManager {
         self
     }
 
-    /// 앱 데이터 디렉터리를 지정한다(세션 핸드오프 소켓/로그 경로,
-    /// `AGENT_OFFICE_APP_DATA` env의 근거). `lib.rs`의 프로덕션 부트스트랩만
-    /// 호출 — 테스트는 기본 None으로 이 기능을 건드리지 않는다.
-    /// 동료 대화 스킬 배선 주입(lib.rs). 기본은 no-op이라 테스트는 신경 쓰지 않는다.
-    pub fn with_talk_wiring(
+    /// 사무실 shim 권한 설정 주입(lib.rs). 기본은 no-op이라 테스트는 신경 쓰지 않는다.
+    pub fn with_office_settings(
         mut self,
-        provider: Arc<dyn Fn(&str, bool) -> Option<TalkWiring> + Send + Sync>,
+        provider: Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>,
     ) -> Self {
-        self.get_talk_wiring = provider;
+        self.get_office_settings = provider;
         self
     }
 
+    /// 앱 데이터 디렉터리를 지정한다(세션 핸드오프 소켓/로그 경로,
+    /// `AGENT_OFFICE_APP_DATA` env의 근거). `lib.rs`의 프로덕션 부트스트랩만
+    /// 호출 — 테스트는 기본 None으로 이 기능을 건드리지 않는다.
     pub fn with_app_data_dir(mut self, dir: std::path::PathBuf) -> Self {
         self.app_data_dir = Some(dir);
         self
@@ -380,55 +367,42 @@ impl SessionManager {
             });
         }
 
-        // 동료 대화 스킬(§6): 앱 소유 플러그인을 `--plugin-dir`로 이 세션에만
-        // 물린다(사용자 `~/.claude`는 건드리지 않는다). 관찰이 꺼져 있으면 훅
-        // 설정 파일 자체가 없으므로 권한 사전 승인만 담은 talk 전용 설정 파일을
-        // 따로 만들어 `--settings`로 물린다(켜져 있으면 어댑터가 같은 조각을
-        // 훅 설정에 합쳐 놓았다).
+        // 사무실 shim(office-task) 권한 사전 승인: 관찰이 꺼져 있으면 훅 설정
+        // 파일 자체가 없으므로 권한 조각만 담은 설정 파일을 따로 만들어
+        // `--settings`로 물린다(켜져 있으면 어댑터가 같은 조각을 훅 설정에 합쳐
+        // 놓았다).
         let has_settings = plan
             .env
             .iter()
             .any(|(key, _)| key == "AGENT_OFFICE_SETTINGS");
-        if let Some(wiring) = (self.get_talk_wiring)(session_id, has_settings) {
-            let mut claude_args = vec![];
-            // 붙일 경로가 사라졌으면 prefix를 통째로 포기하고 claude는 띄운다.
-            let mut guard_env = None;
-            if let Some(dir) = &wiring.plugin_dir {
-                plan.env.push((
-                    "AGENT_OFFICE_TALK_PLUGIN".into(),
-                    dir.to_string_lossy().into_owned(),
-                ));
-                claude_args.push(WrapperArg::Literal("--plugin-dir".into()));
-                claude_args.push(WrapperArg::Env("AGENT_OFFICE_TALK_PLUGIN".into()));
-                guard_env = Some("AGENT_OFFICE_TALK_PLUGIN");
-            }
-            if let Some(path) = &wiring.settings_path {
+        if !has_settings {
+            if let Some(path) = (self.get_office_settings)(session_id) {
                 plan.env.push((
                     "AGENT_OFFICE_SETTINGS".into(),
                     path.to_string_lossy().into_owned(),
                 ));
-                claude_args.push(WrapperArg::Literal("--settings".into()));
-                claude_args.push(WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()));
-                plan.cleanup_paths.push(path.clone());
-                guard_env.get_or_insert("AGENT_OFFICE_SETTINGS");
-            }
-            // 훅 설정이 있고 대화가 꺼져 있으면(업무 패널만 켜짐) 붙일 인자가 없다.
-            if let Some(claude) = plan
-                .wrappers
-                .iter_mut()
-                .find(|wrapper| wrapper.command == "claude")
-            {
-                claude.prefix_args.extend(claude_args);
-            } else if !claude_args.is_empty() {
-                plan.wrappers.push(CommandWrapperSpec {
-                    command: "claude".into(),
-                    prefix_args: claude_args,
-                    skip_if_present: vec![],
-                    // 플러그인 폴더가 사라졌으면 스킬만 포기하고 claude는 띄운다
-                    // (없는 경로를 주면 claude가 하드 실패한다 — pi 확장과 같은 가드).
-                    skip_prefix_if_env_file_missing: guard_env.map(Into::into),
-                    ..Default::default()
-                });
+                let claude_args = vec![
+                    WrapperArg::Literal("--settings".into()),
+                    WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+                ];
+                plan.cleanup_paths.push(path);
+                if let Some(claude) = plan
+                    .wrappers
+                    .iter_mut()
+                    .find(|wrapper| wrapper.command == "claude")
+                {
+                    claude.prefix_args.extend(claude_args);
+                } else {
+                    plan.wrappers.push(CommandWrapperSpec {
+                        command: "claude".into(),
+                        prefix_args: claude_args,
+                        skip_if_present: vec![],
+                        // 설정 파일이 사라졌으면 인자만 포기하고 claude는 띄운다
+                        // (없는 경로를 주면 claude가 하드 실패한다).
+                        skip_prefix_if_env_file_missing: Some("AGENT_OFFICE_SETTINGS".into()),
+                        ..Default::default()
+                    });
+                }
             }
         }
 
@@ -794,7 +768,6 @@ impl SessionManager {
             #[cfg(unix)]
             handoff: Mutex::new(spawned.handoff),
             eof_stop_gate,
-            last_activity_ms: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         });
 
         self.sessions.lock().insert(agent_id.clone(), session.clone());
@@ -814,15 +787,12 @@ impl SessionManager {
             let _ = tx.send(ReaderMsg::Restore(bytes));
         }
         let mut reader = spawned.reader;
-        let reader_activity = session.last_activity_ms.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        // 봇 turn-taking 유휴 판정용 활동 시각 갱신(출력 수신).
-                        reader_activity.store(now_ms(), Ordering::Relaxed);
                         if tx.send(ReaderMsg::Data(buf[..n].to_vec())).is_err() {
                             break;
                         }
@@ -896,9 +866,6 @@ impl SessionManager {
     pub fn write_input(&self, agent_id: &str, data: &str) {
         if let Some(s) = self.find(agent_id) {
             if *s.state.lock() == SessionState::Running {
-                // stdin 주입도 활동으로 기록 — 봇이 방금 넣은 프롬프트 직후
-                // 곧바로 다음 지시를 밀어넣지 않게(turn-taking 유휴 리셋).
-                s.last_activity_ms.store(now_ms(), Ordering::Relaxed);
                 // 실패해도 IPC 계약상 돌려줄 곳이 없다(반환값 없음). 그래도
                 // 조용히 삼키면 "키를 눌렀는데 아무 일도 없다"가 되므로 최소한
                 // 로그는 남긴다 -- 세션이 방금 죽었거나 PTY가 닫힌 경우다.
@@ -919,7 +886,6 @@ impl SessionManager {
         if session.session_id != session_id || *session.state.lock() != SessionState::Running {
             return false;
         }
-        session.last_activity_ms.store(now_ms(), Ordering::Relaxed);
         let written = match session.writer.lock().write_all(data.as_bytes()) {
             Ok(()) => true,
             Err(error) => {
@@ -928,17 +894,6 @@ impl SessionManager {
             }
         };
         written
-    }
-
-    /// 세션이 마지막 활동(출력/입력) 이후 유휴로 있었던 시간(ms). 아직 활동이
-    /// 없었거나 세션이 없으면 None.
-    pub fn idle_ms(&self, agent_id: &str) -> Option<u64> {
-        let s = self.find(agent_id)?;
-        let last = s.last_activity_ms.load(Ordering::Relaxed);
-        if last == 0 {
-            return None;
-        }
-        Some(now_ms().saturating_sub(last))
     }
 
     /// 세션이 살아서 입력을 받을 수 있는 상태(Running)인지.

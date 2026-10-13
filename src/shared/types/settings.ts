@@ -186,14 +186,6 @@ export interface AppSettings {
   ttsRewriteModelOpenrouter: string;
   /** 대사 리라이트 공급자. 기본 "auto"(API 키 → env → claude CLI → 생략). */
   ttsRewriteProvider: TtsRewriteProvider;
-  /** 동료 대화(docs/agent-talk-design.md) — 캐릭터끼리 앱을 거쳐 메시지를
-   * 주고받게 한다. 남의 세션에 글자를 밀어 넣는 기능이라 기본 false이고,
-   * 끄면 대기 중 메시지까지 버려지는 킬 스위치다. */
-  talkEnabled: boolean;
-  /** 한 대화의 왕복 상한(무한 핑퐁 방지). 기본 6. */
-  talkMaxTurns: number;
-  /** 수신자가 이만큼 조용해야 메시지를 주입한다. 기본 3000ms. */
-  talkIdleQuietMs: number;
 }
 
 /** `get_app_settings` 응답. firstRun = settings.json 부재(첫 실행). */

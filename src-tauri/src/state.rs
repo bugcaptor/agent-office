@@ -28,11 +28,8 @@ pub trait AppEvents: Send + Sync {
     fn notification_new(&self, ev: &NotificationEvent);
     fn notification_cleared(&self, agent_id: &str, ids: &[String]);
     fn activity_event(&self, ev: &ActivityEvent);
-    /// 동료 대화 한 마디(기본 no-op — 미러/테스트 구현은 무시해도 된다).
-    fn talk_message(&self, _ev: &crate::types::TalkEvent) {}
     /// 한 턴의 토큰 사용량(기본 no-op). 알림과 분리된 채널이라 `notification_new`
-    /// 억제 여부와 무관하게 방출된다 — `talk_message` 선례와 동일하게 기본
-    /// no-op으로 둬 이 이벤트를 안 쓰는 구현체(테스트 더블 등)가 강제로
+    /// 억제 여부와 무관하게 방출된다 — 기본 no-op으로 둬 이 이벤트를 안 쓰는 구현체(테스트 더블 등)가 강제로
     /// 구현하지 않아도 되게 한다. **주의**: 이 기본 no-op은 "안 써도 되는"
     /// 구현체용이다. 다른 `AppEvents`를 감싸거나 미러링하는 데코레이터
     /// (`RecordingAppEvents` 등)는 **반드시** 안쪽으로 forward해야 한다 —
@@ -60,9 +57,6 @@ impl AppEvents for TauriEvents {
     }
     fn activity_event(&self, ev: &ActivityEvent) {
         let _ = self.app.emit("activity-event", ev);
-    }
-    fn talk_message(&self, ev: &crate::types::TalkEvent) {
-        let _ = self.app.emit("talk-message", ev);
     }
     fn turn_usage(&self, ev: &crate::types::TurnUsageEvent) {
         let _ = self.app.emit("turn-usage", ev);
@@ -228,10 +222,6 @@ pub struct AppState {
     /// `tts_rewrite_model`)은 `settings`에 있고 **키는 여기에만** 있다
     /// (설정은 렌더러로 통째로 왕복하므로).
     pub tts: Arc<crate::tts::TtsState>,
-    /// 동료 대화(docs/agent-talk-design.md)의 메시지 큐·대화 상태. control
-    /// 핸들러와 배달 워커가 같은 Arc를 쥐고, `set_app_settings`가 토글·상한을
-    /// 즉시 반영한다(끄면 대기 중 메시지까지 버려지는 킬 스위치).
-    pub talk: Arc<crate::talk::TalkHub>,
     /// 레시피 실행은 에이전트 PTY와 격리된 전용 프로세스다.
     pub run_recipes: Arc<crate::run_recipes::RunRecipeRuntime>,
 }

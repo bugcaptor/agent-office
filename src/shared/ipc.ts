@@ -77,10 +77,6 @@ export const Commands = {
   controlRevoke: "control_revoke",
   // 업무 기본 에이전트 모델 칸의 추천 목록.
   workAgentModels: "work_agent_models",
-  // 동료 대화(docs/agent-talk-design.md) — 상태 스냅샷·감사 로그 열람.
-  talkStatus: "talk_status",
-  listTalkLogDates: "list_talk_log_dates",
-  readTalkLog: "read_talk_log",
   listAvailableShells: "list_available_shells",
   openInVscode: "open_in_vscode",
   openInTerminal: "open_in_terminal",
@@ -189,9 +185,6 @@ export const Events = {
   mascotOpenTerminal: "mascot-open-terminal",
   // 로컬 표시 API의 "본체에서 보기" 요청. 세션을 열지 않고 프로필만 선택한다.
   displayFocusAgent: "display-focus-agent",
-  // 동료 대화(docs/agent-talk-design.md §7). 누가 말한 *순간* 발화한다 —
-  // 실제 배달(주입)은 상대가 한가해질 때까지 늦춰질 수 있다.
-  talkMessage: "talk-message",
   // 한 턴의 토큰 사용량. notificationNew와 분리된 채널이라, 백그라운드
   // 서브에이전트가 남아 완료 알림이 억제된 Stop에서도 이 이벤트만은 온다
   // (docs/session-analytics-design.md §9.1).

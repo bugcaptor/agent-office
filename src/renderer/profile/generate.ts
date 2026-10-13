@@ -38,10 +38,6 @@ export interface DraftProfile {
   keyboardSound?: string;
   /** 대사 TTS 보이스 id(선택). 빈 문자열 = 종족 기반 자동 캐스팅. */
   voiceId?: string;
-  /** 동료 대화 수신 허용(docs/agent-talk-design.md). 기본 true — false일 때만
-   * 프로필에 `talkReceive: false`로 남고, 그러면 아무도 이 캐릭터에게 말을
-   * 걸 수 없다. */
-  talkReceive?: boolean;
   defaultAgent?: WorkAgent;
 }
 
@@ -87,7 +83,6 @@ export function generateDraft(): DraftProfile {
     colors: {},
     keyboardSound: "",
     voiceId: "",
-    talkReceive: true,
   };
 }
 
@@ -135,8 +130,6 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(minimiRequest ? { minimiRequest } : {}),
     ...(keyboardSound ? { keyboardSound } : {}),
     ...(voiceId ? { voiceId } : {}),
-    // 기본(수신 허용)은 필드를 아예 두지 않는다 — 끈 경우만 명시적으로 남긴다.
-    ...(d.talkReceive === false ? { talkReceive: false } : {}),
     ...(d.defaultAgent ? { defaultAgent: normalizeWorkAgent(d.defaultAgent) } : {}),
   };
 }

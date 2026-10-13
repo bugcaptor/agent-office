@@ -181,17 +181,6 @@
     "durMinutes": "{{minutes}}分",
     "durHours": "{{hours}}時間"
   },
-  "talk": {
-    "title": "💬 同僚との会話ログ",
-    "dialogAria": "同僚との会話ログ",
-    "close": "閉じる",
-    "loading": "読み込み中…",
-    "loadError": "会話ログを読み込めませんでした。",
-    "empty": "記録された会話はありません。",
-    "kindSend": "発言",
-    "kindDeliver": "伝達済み",
-    "kindExpire": "伝達失敗（期限切れ）"
-  },
   "sessionLog": {
     "title": "📜 {{name}}のセッションログ",
     "dialogAria": "{{name}}のセッションログ",

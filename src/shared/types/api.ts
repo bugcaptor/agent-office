@@ -28,7 +28,6 @@ import type {
   AppSettings,
   ControlStatus,
 } from './settings';
-import type { TalkStatus, TalkLogEntry, TalkEvent } from './talk';
 import type { TtsSpeakRequest, TtsSpeakResult, TtsStatus, TtsVoiceOption } from './tts';
 import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
@@ -188,12 +187,6 @@ export interface AgentOfficeApi {
   controlApprove(): Promise<void>;
   /** CLI 제어 승인 취소(토큰 폐기). 이후 모든 CLI 요청 401. */
   controlRevoke(): Promise<void>;
-  /** 동료 대화 상태 스냅샷(켜짐 여부·대기 메시지·열린 대화). */
-  talkStatus(): Promise<TalkStatus>;
-  /** 대화 감사 로그가 있는 날짜들(최신 순, "YYYY-MM-DD"). */
-  listTalkLogDates(): Promise<string[]>;
-  /** 하루치 대화 감사 로그(최근 limit건, 기본 500). */
-  readTalkLog(date: string, limit?: number): Promise<TalkLogEntry[]>;
   /** 사용 가능한 셸 목록. Windows 외 플랫폼은 빈 배열. */
   listAvailableShells(): Promise<AvailableShell[]>;
   /** 디렉터리를 Visual Studio Code로 연다. VS Code 미설치/경로 부재 시 reject. */
@@ -236,9 +229,6 @@ export interface AgentOfficeApi {
   /** turn-usage(한 턴의 토큰 사용량) 구독. notification-new와 독립된 채널이라
    * 서브에이전트로 억제된 Stop에서도 온다. Returns an unsubscribe function. */
   onTurnUsage(cb: (e: TurnUsageEvent) => void): () => void;
-  /** talk-message(동료 대화) 구독 — 누가 말한 순간 온다(배달 완료가 아니다).
-   * Returns an unsubscribe function. */
-  onTalkMessage(cb: (e: TalkEvent) => void): () => void;
   /** 완료된 턴 1건을 로컬 시계열 로그에 append (fire-and-forget). */
   appendSessionTurn(record: SessionTurnRecord): void;
   /** 누적된 세션 턴 기록 전체를 읽는다(통계용). 손상된 줄은 건너뛴다. */

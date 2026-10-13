@@ -25,7 +25,6 @@ export * from './types/awards';
 export * from './types/memo';
 export * from './types/usage';
 export * from './types/settings';
-export * from './types/talk';
 export * from './types/tts';
 export * from './types/markdown';
 export * from './types/git';

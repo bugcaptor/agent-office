@@ -181,17 +181,6 @@
     "durMinutes": "{{minutes}} min",
     "durHours": "{{hours}} h"
   },
-  "talk": {
-    "title": "💬 Journal des échanges",
-    "dialogAria": "Journal des échanges",
-    "close": "Fermer",
-    "loading": "Chargement…",
-    "loadError": "Impossible de charger le journal des échanges.",
-    "empty": "Aucun échange enregistré.",
-    "kindSend": "a dit",
-    "kindDeliver": "remis",
-    "kindExpire": "échec de remise (expiré)"
-  },
   "sessionLog": {
     "title": "📜 Journaux de session de {{name}}",
     "dialogAria": "Journaux de session de {{name}}",

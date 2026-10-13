@@ -305,22 +305,6 @@ pub enum ActivityKind {
     Idle,
 }
 
-/// 동료 대화 한 마디(docs/agent-talk-design.md). 발신 즉시 렌더러로 직행해
-/// 오피스 말풍선과 대화 로그를 띄운다 — 실제 배달(수신자 PTY 주입)은 수신자가
-/// 한가해질 때까지 늦춰지므로, 이 이벤트는 "말했다"이지 "전달됐다"가 아니다.
-/// TS `TalkEvent`와 1:1.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TalkEvent {
-    pub conv_id: String,
-    pub from: AgentId,
-    pub from_name: String,
-    pub to: AgentId,
-    pub to_name: String,
-    pub text: String,
-    pub at: u64,
-}
-
 /// 세션 시간 추적용 활동 이벤트. NotificationHub의 dedup/큐를 우회해
 /// "activity-event"로 렌더러 직행. TS ActivityEvent와 1:1.
 /// at은 백엔드 now_ms() epoch ms — 렌더러 정산의 유일한 시계.
@@ -720,11 +704,6 @@ pub struct AgentProfile {
     /// id면 조용히 자동 배정으로 강등된다. TS `voiceId?: string` 미러.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub voice_id: Option<String>,
-    /// 동료 대화(docs/agent-talk-design.md) 수신 허용. 부재/true = 받는다,
-    /// false = 이 캐릭터에게는 말을 걸 수 없다(roster에서 reachable=false).
-    /// TS `talkReceive?: boolean` 미러.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub talk_receive: Option<bool>,
 }
 
 /// 영속 상태. version은 리터럴 1.
@@ -1101,7 +1080,6 @@ mod tests {
         keyboard_sound: None,
         voice_id: None,
         default_agent: None,
-        talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"cwd\":\"/tmp/proj\""));
@@ -1135,7 +1113,6 @@ mod tests {
         keyboard_sound: None,
         voice_id: None,
         default_agent: None,
-        talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("cwd"));
@@ -1198,7 +1175,6 @@ mod tests {
         keyboard_sound: None,
         voice_id: None,
         default_agent: None,
-        talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"portraitRequest\":\"short black hair, glasses\""));
@@ -1233,7 +1209,6 @@ mod tests {
         keyboard_sound: None,
         voice_id: None,
         default_agent: None,
-        talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("portraitRequest"));
@@ -1279,7 +1254,6 @@ mod tests {
         keyboard_sound: None,
         voice_id: None,
         default_agent: None,
-        talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"spriteRequest\":\"red cloak wizard\""));
@@ -1315,7 +1289,6 @@ mod tests {
         keyboard_sound: None,
         voice_id: None,
         default_agent: None,
-        talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("spriteRequest"));
@@ -1369,7 +1342,6 @@ mod tests {
         keyboard_sound: None,
         voice_id: None,
         default_agent: None,
-        talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"archetype\":\"orc\""));
@@ -1391,7 +1363,6 @@ mod tests {
         keyboard_sound: None,
         voice_id: None,
         default_agent: None,
-        talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("archetype"));
@@ -1422,7 +1393,6 @@ mod tests {
                        keyboard_sound: Some("topre-hhkb".into()),
                        voice_id: None,
                        default_agent: None,
-                       talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"keyboardSound\":\"topre-hhkb\""));
@@ -1444,7 +1414,6 @@ mod tests {
                        keyboard_sound: None,
                        voice_id: None,
                        default_agent: None,
-                       talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("keyboardSound"));
@@ -1473,7 +1442,6 @@ mod tests {
         keyboard_sound: None,
         voice_id: None,
         default_agent: None,
-        talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"shell\":\"git-bash\""));
@@ -1493,7 +1461,6 @@ mod tests {
         keyboard_sound: None,
         voice_id: None,
         default_agent: None,
-        talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("shell"));
@@ -1522,7 +1489,6 @@ mod tests {
         keyboard_sound: None,
         voice_id: None,
         default_agent: None,
-        talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"clockedOut\":true"));
@@ -1542,7 +1508,6 @@ mod tests {
         keyboard_sound: None,
         voice_id: None,
         default_agent: None,
-        talk_receive: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(!json.contains("clockedOut"));

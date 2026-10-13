@@ -181,17 +181,6 @@
     "durMinutes": "{{minutes}} 分",
     "durHours": "{{hours}} 小時"
   },
-  "talk": {
-    "title": "💬 同事對話紀錄",
-    "dialogAria": "同事對話紀錄",
-    "close": "關閉",
-    "loading": "載入中…",
-    "loadError": "無法載入對話紀錄。",
-    "empty": "沒有對話紀錄。",
-    "kindSend": "說了",
-    "kindDeliver": "已送達",
-    "kindExpire": "傳送失敗（已過期）"
-  },
   "sessionLog": {
     "title": "📜 {{name}} 的工作階段紀錄",
     "dialogAria": "{{name}} 的工作階段紀錄",

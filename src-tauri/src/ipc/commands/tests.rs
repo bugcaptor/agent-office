@@ -113,9 +113,6 @@
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
-            talk_enabled: false,
-            talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
-            talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,
         };
 
         // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
@@ -186,9 +183,6 @@
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
-            talk_enabled: false,
-            talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
-            talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
         // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.
@@ -249,9 +243,6 @@
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
-            talk_enabled: false,
-            talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
-            talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,
         };
 
         assert!(set_app_settings_inner(&state, settings.clone()).await.is_ok());
@@ -397,7 +388,6 @@
             store: store.clone(),
             settings: settings.clone(),
             settings_store: settings_store.clone(),
-            talk: Arc::new(crate::talk::TalkHub::default()),
             app_data_dir: profile_dir.clone(),
             gate: inject_gate.clone(),
             live_usage: Arc::new(crate::usage::LiveUsageState::new()),
@@ -437,7 +427,6 @@
             gate: inject_gate,
             wake_lock: std::sync::Arc::new(crate::power::WakeLock::new()),
             tts: std::sync::Arc::new(crate::tts::TtsState::new(&profile_dir)),
-            talk: std::sync::Arc::new(crate::talk::TalkHub::default()),
             run_recipes: std::sync::Arc::new(crate::run_recipes::RunRecipeRuntime::default()),
         };
         (state, ctl, observer_dir, profile_dir)
@@ -730,7 +719,6 @@
                 keyboard_sound: None,
                 voice_id: None,
                 default_agent: None,
-                talk_receive: None,
             }],
             version: 1,
             vacation_mode: None,
@@ -786,7 +774,6 @@
                 keyboard_sound: None,
                 voice_id: None,
                 default_agent: None,
-                talk_receive: None,
             }],
             version: 1,
             vacation_mode: None,
@@ -861,7 +848,6 @@
                 keyboard_sound: None,
                 voice_id: None,
                 default_agent: None,
-                talk_receive: None,
             }],
             version: 1,
             vacation_mode: None,
@@ -919,7 +905,6 @@
                 keyboard_sound: None,
                 voice_id: None,
                 default_agent: None,
-                talk_receive: None,
             }],
             version: 1,
             vacation_mode: None,

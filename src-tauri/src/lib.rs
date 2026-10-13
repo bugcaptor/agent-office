@@ -49,8 +49,6 @@ mod shell_export;
 mod sessiond;
 mod state;
 mod summarizer;
-/// 동료 대화(docs/agent-talk-design.md) — 캐릭터끼리 앱을 거쳐 주고받는 메시지.
-pub mod talk;
 mod terminal;
 // 확인 요청 대사 TTS(리라이트+ElevenLabs 합성). 키는 웹뷰에 노출하지 않는다.
 // pub: 커맨드 시그니처(`tts_speak`)가 이 모듈의 와이어 타입을 쓴다.
@@ -439,94 +437,39 @@ pub fn run() {
                     )),
                 ),
             );
-            // 동료 대화(docs/agent-talk-design.md): 허브 + 스킬 자산 + 배달 워커.
-            // 스킬(로컬 플러그인)은 토글과 무관하게 만들어 둔다 — 대화를 켠 뒤
-            // 앱을 다시 띄우지 않아도 다음 세션부터 바로 붙게.
-            let talk = Arc::new(crate::talk::TalkHub::default());
-            talk.set_log_dir(data_dir.join("talks"));
-            talk.set_events(events.clone());
-            {
-                let snapshot = settings_cache.read().unwrap();
-                talk.set_config(crate::talk::TalkConfig {
-                    max_turns: snapshot.talk_max_turns.max(1),
-                    idle_quiet_ms: snapshot.talk_idle_quiet_ms,
-                    lang: crate::i18n::ui_lang(&snapshot),
-                });
-                talk.set_enabled(snapshot.talk_enabled);
-            }
-            let talk_exe = forwarder_executable_path();
-            let talk_cli = crate::talk::skill::shim_path();
-            if let Err(error) = crate::talk::skill::ensure_assets(&data_dir, &talk_exe) {
-                eprintln!("agent-office: talk skill assets failed: {error}");
-            }
-            // 세션마다 부르는 두 갈래: (1) 훅 설정에 얹을 조각(관찰 ON),
-            // (2) 권한 조각 전용 설정 파일(관찰 OFF). 동료 대화(office-talk)와
-            // 업무 수신함(office-task, 업무 패널 켜짐) 중 켜진 기능의 shim만 승인한다.
-            // 둘 다 꺼져 있으면 None. task shim은 SessionManager가 세션마다 쓴다.
+            // 업무 수신함 shim(office-task) 권한 사전 승인. 업무 패널이 켜졌을 때만
+            // 승인하고, 꺼져 있으면 None. 관찰이 켜진 세션은 훅 설정에 조각을
+            // 합치고(office_fragment), 꺼진 세션은 권한 전용 설정 파일을 따로 쓴다.
             let office_shims = {
                 let settings = settings_cache.clone();
-                let data_dir = data_dir.clone();
-                let exe = talk_exe.clone();
                 Arc::new(move || {
-                    let (talk, work) = {
-                        let snapshot = settings.read().unwrap();
-                        (snapshot.talk_enabled, snapshot.work_panels_enabled)
-                    };
-                    let mut shims = vec![];
-                    if talk {
-                        shims.push(
-                            crate::talk::skill::ensure_assets(&data_dir, &exe)
-                                .unwrap_or_else(|_| crate::talk::skill::shim_path()),
-                        );
+                    if settings.read().unwrap().work_panels_enabled {
+                        vec![crate::work_inbox_cli::shim_path()]
+                    } else {
+                        vec![]
                     }
-                    if work {
-                        shims.push(crate::work_inbox_cli::shim_path());
-                    }
-                    shims
                 })
             };
-            let talk_fragment = {
+            let office_fragment = {
                 let office_shims = office_shims.clone();
                 Arc::new(move || crate::office_instructions::permissions_fragment(&office_shims()))
                     as Arc<dyn Fn() -> Option<serde_json::Value> + Send + Sync>
             };
-            let talk_wiring_provider = {
+            let office_settings_provider = {
                 let office_shims = office_shims.clone();
-                let settings = settings_cache.clone();
-                let data_dir = data_dir.clone();
                 let settings_dir = observer_settings_dir.clone();
-                let exe = talk_exe.clone();
-                Arc::new(move |session_id: &str, has_settings: bool| {
+                Arc::new(move |session_id: &str| {
                     let fragment = crate::office_instructions::permissions_fragment(&office_shims())?;
-                    // 대화 플러그인은 대화가 켜졌고 자산을 쓸 수 있을 때만 물린다.
-                    let plugin_dir = settings
-                        .read()
-                        .unwrap()
-                        .talk_enabled
-                        .then(|| crate::talk::skill::ensure_assets(&data_dir, &exe).ok())
-                        .flatten()
-                        .map(|_| crate::talk::skill::plugin_dir(&data_dir));
-                    // 훅 설정이 이미 있으면 권한 조각은 그쪽에 합쳐져 있다.
-                    let settings_path = if has_settings {
-                        None
-                    } else {
-                        crate::talk::skill::write_talk_only_settings(
-                            &settings_dir,
-                            session_id,
-                            &fragment,
-                        )
-                        .map_err(|error| {
-                            eprintln!("agent-office: talk settings write failed: {error}");
-                        })
-                        .ok()
-                    };
-                    Some(crate::session::manager::TalkWiring { plugin_dir, settings_path })
-                })
-                    as Arc<
-                        dyn Fn(&str, bool) -> Option<crate::session::manager::TalkWiring>
-                            + Send
-                            + Sync,
-                    >
+                    crate::office_instructions::write_permissions_only_settings(
+                        &settings_dir,
+                        session_id,
+                        &fragment,
+                    )
+                    .map_err(|error| {
+                        eprintln!("agent-office: office settings write failed: {error}");
+                    })
+                    .ok()
+                }) as Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>
             };
 
             let observer = Arc::new(
@@ -534,7 +477,7 @@ pub fn run() {
                     hub.clone(),
                     observer_settings_dir.clone(),
                     forwarder_executable_path(),
-                    Some(talk_fragment),
+                    Some(office_fragment),
                 )
                 .with_claude_session_sink(claude_resume_recorder)
                 .with_agy_session_sink(agy_resume_recorder),
@@ -572,8 +515,8 @@ pub fn run() {
                     let settings = settings_cache.clone();
                     Arc::new(move || settings.read().unwrap().work_panels_enabled)
                 })
-                // 동료 대화 스킬 배선(--plugin-dir + 권한 조각).
-                .with_talk_wiring(talk_wiring_provider)
+                // 업무 수신함 shim 권한 전용 설정(관찰 OFF 세션).
+                .with_office_settings(office_settings_provider)
                 // 터미널 전사 상시 기록(30일·2GB 자율 보존).
                 .with_session_log(session_log_root.clone(), session_log_enabled.clone())
                 // 대체 화면(Claude Code)에서 도는 대화는 PTY로 안 보인다 --
@@ -626,7 +569,6 @@ pub fn run() {
                 store: store.clone(),
                 settings: settings_cache.clone(),
                 settings_store: settings_store.clone(),
-                talk: talk.clone(),
                 app_data_dir: data_dir.clone(),
                 gate: inject_gate.clone(),
                 live_usage: live_usage.clone(),
@@ -665,25 +607,6 @@ pub fn run() {
                 });
             }
 
-            // 배달 워커: 수신자가 한가해지면 큐의 메시지를 PTY에 주입한다.
-            crate::talk::spawn_worker(
-                talk.clone(),
-                manager.clone(),
-                inject_gate.clone(),
-                talk_cli.to_string_lossy().into_owned(),
-                {
-                    let store = store.clone();
-                    Arc::new(move |agent_id: &str| {
-                        store
-                            .load()
-                            .agents
-                            .into_iter()
-                            .find(|a| a.id == agent_id)
-                            .map(|a| a.role)
-                    })
-                },
-            );
-
             app.manage(AppState {
                 manager,
                 hub,
@@ -714,7 +637,6 @@ pub fn run() {
                 gate: inject_gate.clone(),
                 wake_lock,
                 tts,
-                talk,
                 run_recipes,
             });
             Ok(())
@@ -801,9 +723,6 @@ pub fn run() {
             ipc::commands::append_session_summaries,
             ipc::commands::save_work_log,
             ipc::commands::load_work_logs,
-            ipc::commands::talk_status,
-            ipc::commands::list_talk_log_dates,
-            ipc::commands::read_talk_log,
             ipc::commands::load_awards,
             ipc::commands::finalize_award,
             ipc::commands::append_award_speech,
@@ -1009,9 +928,6 @@ mod tests {
             tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
             tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
             tts_rewrite_provider: Default::default(),
-            talk_enabled: false,
-            talk_max_turns: crate::talk::DEFAULT_MAX_TURNS,
-            talk_idle_quiet_ms: crate::talk::DEFAULT_IDLE_QUIET_MS,
         }));
         let registry = Arc::new(SessionRegistry::new());
         let events: Arc<dyn AppEvents> = Arc::new(crate::state::fake::RecordingEvents::default());
