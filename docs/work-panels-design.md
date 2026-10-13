@@ -2,7 +2,7 @@
 
 설정으로 켜는 좌우 고정 패널 — 좌측 업무 목록(배정·선행 작업·보내기·모니터링·수신함), 우측 세션 로그(전 캐릭터, 필터·검색)의 정본 명세다.
 
-상태: 정본 (2026-10-13) — 1·2차 기능과 업무 수신함, 선행 작업·상세 팝업 구현 완료. 설치 Tauri 앱의 저장·복원과 인증된 CLI 5종의 실기 인수는 남아 있다. 보내기는 직접 생성한 Unix bash/zsh와 Windows PowerShell·Git Bash PTY를 지원한다.
+상태: 정본 (2026-10-14) — 1·2차 기능과 업무 수신함, 선행 작업·상세 팝업 구현 완료. 설치 Tauri 앱의 저장·복원과 인증된 CLI 5종의 실기 인수는 남아 있다. 보내기는 직접 생성한 Unix bash/zsh와 Windows PowerShell·Git Bash PTY를 지원한다.
 
 관련 문서: [터미널 자동화](archive/terminal-automation-design.md)(제거됨 — CLI 기동 receipt의 출처), [세션 활동 분석](session-analytics-design.md)(턴·토큰·비용 집계), [세션 로그](session-log-design.md)(전사 보기), [동료 대화](archive/agent-talk-design.md) §6(shim·권한 사전 승인 배선의 출처, 기능은 제거됨 — 배선은 `office_instructions.rs`). 수신함의 구현 계획과 결정 근거는 [archive/work-inbox-design.md](archive/work-inbox-design.md)에 있다.
 
@@ -15,7 +15,7 @@
 
 ## 활성화 방식
 
-시스템 설정의 토글 하나(`AppSettings.workPanelsEnabled`, 기본 `false`)로 켜고 끈다. 로컬 데스크톱의 오피스 화면에만 표시하며 웹 원격·데스크톱 원격 창·마스코트에는 노출하지 않는다.
+시스템 설정의 토글 하나(`AppSettings.workPanelsEnabled`, 기본 `false`)로 켜고 끈다. 로컬 데스크톱의 오피스 화면에만 표시하며 마스코트에는 노출하지 않는다.
 
 - 꺼져 있으면 패널을 만들지 않고 레이아웃은 지금과 같다.
 - 꺼도 업무 데이터와 세션 요약 레코드는 지우지 않는다. 다시 켜면 그대로 돌아온다.
@@ -80,13 +80,13 @@
 
 #### 지원 대상
 
-- 앱이 직접 생성한 Unix bash/zsh PTY와 Windows PowerShell(5.1·7)·Git Bash PTY만 보낼 수 있다. 프로필에 시작 명령 또는 tmux 호스팅이 있거나 퇴근 중이면 보내기를 막는다. 외부 연결·입양·WSL·미지원 셸은 막는다. 봇/자동화가 실행 중이면 먼저 중단해야 한다.
+- 앱이 직접 생성한 Unix bash/zsh PTY와 Windows PowerShell(5.1·7)·Git Bash PTY만 보낼 수 있다. 프로필에 시작 명령이 있거나 퇴근 중이면 보내기를 막는다. 입양·WSL·미지원 셸은 막는다. tmux 호스팅·외부 연결·봇/터미널 자동화는 제거됨(2026-10-14, [health-check-cleanup-plan.md](health-check-cleanup-plan.md) §7.G).
 - 셸 판정은 세션의 실제 셸 실행 파일 이름으로 한다(`LaunchShell::for_shell_path`, `work_send/cli_transition.rs`).
 - 기동 문장은 셸별로 만든다. bash/zsh는 `. '<launch.sh>'`, Git Bash는 같은 POSIX 스크립트에 `C:/…` 경로를 쓴다. PowerShell은 BOM 없는 UTF-8로 ACK·반환 기록을 쓰는 `launch.ps1`을 `& ([scriptblock]::Create([System.IO.File]::ReadAllText('…')))`로 실행한다. 실행 정책은 스크립트 파일에만 적용되므로 정책과 무관하고, 자식 스코프라 변수가 새지 않으며 현재 위치는 Push/Pop-Location으로 되돌린다. CLI 인자는 PowerShell 작은따옴표로 인용하고, PowerShell 5.1이 네이티브 인자의 큰따옴표를 지우므로 codex effort는 `-c 'model_reasoning_effort=high'`로 넘긴다(codex는 TOML로 못 읽는 값을 문자열로 받는다).
 
 #### 입력과 재시작 규약
 
-- 기존 PTY는 원래 셸의 foreground pgid와 그룹 구성원이 셸 하나인지 확인하며, 미제출 입력이 없을 때 바로 보낸다. 다른 프로세스가 있거나 조회가 불가능하면 재시작을 확인한다. 브로커 PTY의 foreground 조회 불가도 기존 세션에서는 확인 대상으로 둔다. Windows ConPTY에는 foreground 그룹이 없으므로 셸 프로세스에 살아 있는 자손이 없을 때만 빈 셸로 본다(Git Bash는 `bin\bash.exe` 런처가 띄운 내부 `bash.exe` 하나만 허용, `session/win_process.rs`).
+- 기존 PTY는 원래 셸의 foreground pgid와 그룹 구성원이 셸 하나인지 확인하며, 미제출 입력이 없을 때 바로 보낸다. 다른 프로세스가 있거나 조회가 불가능하면 재시작을 확인한다. Windows ConPTY에는 foreground 그룹이 없으므로 셸 프로세스에 살아 있는 자손이 없을 때만 빈 셸로 본다(Git Bash는 `bin\bash.exe` 런처가 띄운 내부 `bash.exe` 하나만 허용, `session/win_process.rs`).
 - 재시작 확인은 세션과 사람 입력 revision을 고정한다. 확인 후 키 입력/세션 교체가 있으면 폐기하지 않는다. 미제출 입력은 별도 경고로 표시한다. 재시작 위치는 관측된 현재 cwd를 우선하며 프로필 시작 폴더는 바꾸지 않는다.
 - 새 PTY의 입력 대상이 불명확해도 기동 ACK를 확인하기 전에는 첫 프롬프트를 보내지 않는다. 이미 다른 프로세스가 foreground인 것으로 확인된 새 PTY는 거절한다. ACK는 최대 10초 기다리고, 성공 시점부터 기본 10초 기동 대기를 센다.
 - `WorkSendRuntime`은 캐릭터별 동시 보내기를 거절하고, InjectGate의 전환 소유권/strict 제출로 다른 자동 생산자를 보류한다. 사람 입력은 계속 전달되며 기동/대기/본문/CR 전에 세션·세대·revision을 재검사한다. 이 경로에는 미제출 입력의 2분 강행 규칙을 적용하지 않는다.
@@ -184,7 +184,7 @@
 
 항목을 클릭하면 패널 안에서 펼쳐진다.
 
-- 프롬프트 목록(시각 + 앞부분, 봇·자동 입력은 출처 표시)
+- 프롬프트 목록(시각 + 앞부분, 기계 입력은 출처 표시)
 - 턴별 소요와 모델별 토큰·비용(이벤트별이 아니라 모델별 합계 한 줄씩)
 - 연결 업무(있으면) — 클릭하면 좌측 카드로 스크롤
 - '세션 로그 보기' 링크 — 전사가 남아 있을 때만(30일 보존), 기존 SessionLogDialog를 연다
@@ -212,7 +212,7 @@
 
 - 가져온 업무는 항상 `todo`이고 자동으로 보내지 않는다. 보내기는 사람이 누른다.
 - 발신자 인증은 하지 않는다. 같은 사용자 권한의 프로세스는 누구나 넣을 수 있고, 할 일 한 줄이 추가될 뿐 실행되지 않는다.
-- 웹 원격·데스크톱 원격·마스코트에서는 처리하지 않는다. 화면 문자열은 추가하지 않았다. 가져온 업무는 기존 카드로 보이고 저장 실패는 기존 미저장 표시·재시도를 쓴다.
+- 마스코트에서는 처리하지 않는다. 화면 문자열은 추가하지 않았다. 가져온 업무는 기존 카드로 보이고 저장 실패는 기존 미저장 표시·재시도를 쓴다.
 
 ### 위치와 파일 형식
 
@@ -268,7 +268,7 @@ office-task --done <id>...
 - `--list`는 앱 데이터 폴더(`AGENT_OFFICE_APP_DATA`, 없으면 수신함의 부모)의 `work-items.json`을 읽어 완료가 아닌 업무를 검토 대기 → 진행 중 → 할 일, 묶음 안 순서대로 한 줄씩 출력한다: `id  [status]  @담당 이름  제목  after: id들 (blocked)`. 담당 이름은 `profiles.json`에서 찾고, 제목이 비면 본문 앞 40자를 쓴다. `--all`이면 완료도 포함한다. 앱이 아직 가져가지 않은 수신함 파일은 개수만 알린다. 디바운스 저장 전의 최신 편집은 보이지 않을 수 있다.
 - `--done`은 id(여러 개·쉼표 구분 가능)를 `work-items.json`과 수신함의 미처리 파일 `id`에서 찾는다. 하나라도 없으면 아무것도 쓰지 않고 1(`no such task`)로 끝난다. 이미 완료된 것은 stderr에 알리고 뺀다. 남은 id로 `done:` frontmatter만 있는 완료 요청 파일을 쓰고 완료 요청한 id를 한 줄씩 출력한다. 남은 게 없으면 쓰지 않고 0이다. 형식이 틀린 id·값 없음은 2다.
 
-세션 셸에는 업무 패널 설정과 무관하게 다음 env를 싣는다(외부 터미널 attach 포함). TTS 확인 문구용 claude 자식 프로세스에서는 지운다(`tts/cli.rs`의 `STRIPPED_ENV`).
+세션 셸에는 업무 패널 설정과 무관하게 다음 env를 싣는다(`session/manager.rs`의 `prepare_session_plan`).
 
 | 변수 | 값 |
 | --- | --- |
@@ -378,7 +378,7 @@ interface SessionSummary {
 | 업무·요약 수집과 저장 | `src/renderer/workpanels/workItemStore.ts`, `sessionSummaryStore.ts`, `sessionRows.ts`, `src-tauri/src/persistence/work_panels_store.rs` |
 | 보내기 조정·오류 표시 | `src/renderer/workpanels/workSendStore.ts`, `sendErrorText.ts` |
 | 네이티브 보내기·CLI 기동 | `src-tauri/src/work_send.rs`, `src-tauri/src/work_send/{cli_transition,launch}.rs`(기동 receipt·모델/effort 검증·기동 문장, 예전 `automation/`에서 이전), `src-tauri/src/ipc/commands/work_panels.rs` |
-| strict 입력·세션 재시작 | `src-tauri/src/session/inject.rs`, `src/renderer/agent/restartAgentSession.ts`. `InjectSource::Automation` 재사용 |
+| strict 입력·세션 재시작 | `src-tauri/src/session/inject.rs`, `src/renderer/agent/restartAgentSession.ts`. `InjectSource::WorkSend` 사용 |
 | Windows 빈 셸 판정 | `src-tauri/src/session/win_process.rs`(Toolhelp 스냅숏), `pty_factory.rs`(`PtyControl::process_id`), `manager.rs`(`is_shell_prompt`) |
 | 모니터링·자동 상태 전이 | `src/renderer/workpanels/workMonitor.ts`, `WorkCardMonitor.tsx`. activity·notification·최종 usage 이벤트 구독 |
 | 종료 저장 | `src/renderer/workpanels/lifecycle.ts` |
@@ -448,7 +448,7 @@ IPC 계약은 `src/shared/ipc.ts`와 `src/renderer/ipc/tauriApi.ts`의 로컬 �
 - 턴 종료만으로 자동 완료 처리. 완료는 사람이 정한다(직접 바꾸거나 에이전트에게 지시).
 - 세션 종료 시 LLM 요약 생성(크레딧 소모).
 - 선행 작업이 끝나면 후속 업무를 자동으로 보내는 큐, 하위 업무(계층), 마감일.
-- 외부 이슈 트래커(Gitea·kbm) 동기화. 봇 모드와는 별개다.
+- 외부 이슈 트래커(Gitea·kbm) 동기화.
 - 우측 로그 항목 편집·삭제, 내보내기.
-- 웹 원격·마스코트 창에 패널 노출.
+- 마스코트 창에 패널 노출.
 - 수신함으로 기존 업무의 완료 외 갱신(제목·본문·담당·상태 변경), 출처(`source`) 표시, 도착 알림(토스트·말풍선). 사용자가 직접 치는 `/task` 같은 CLI별 명령·스킬.

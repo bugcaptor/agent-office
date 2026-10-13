@@ -1,6 +1,6 @@
 # 이 달의 우수사원 (Employee of the Month) 설계
 
-상태: 정본 — 2026-08-24 신설(kbm #2hx). 2026-08-25 선정 규칙 v2로 개정(kbm #2j8, §2·§8).
+상태: 정본 (2026-10-14) — 구현 완료. 선정·저장·소감·시상 UI·씬 배선 확인(`src/renderer/awards/awardsStore.ts`의 `ensureFinalized`, `src/renderer/bootstrap.ts`의 `finalizeAwardsInBackground`, `src/renderer/ipc/tauriApi.ts`의 `loadAwards`·`finalizeAward`). 2026-08-24 신설(kbm #2hx). 2026-08-25 선정 규칙 v2로 개정(kbm #2j8, §2·§8).
 
 한 달에 한 번 우수사원을 뽑아 시상 화면에 초상·통계·순위표를 보여주고, 캐릭터가 자기 성격과 지난달 일기를 바탕으로 수상 소감을 말하게 한다. 수상 내역과 소감은 영구 기록되어 나중에 열람할 수 있다.
 
@@ -37,13 +37,13 @@
 
 "생성일 기준 제외"는 별도로 두지 않는다 — 최소 활동 임계값이 같은 효과를 내면서 규칙이 하나 줄어든다.
 
-**왜 v1이 틀렸나 (kbm #2j8).** v1은 `isBotProfile(profile)`로 **봇 시간의 출처를 보지 않고 프로필만 보고** 캐릭터를 통째로 후보에서 뺐다. 그래서 봇 기능을 한 번이라도 붙여준 캐릭터는 그 뒤로 사람이 아무리 일을 시켜도 영구 출전정지가 됐다 — 실제 데이터에서 7명 중 4명이 제외되고, 압도적 1위(59.4h, 2위의 2.5배)가 빠진 채 18.5h짜리가 선두가 되어 있었다. 봇은 **별도 세션을 띄우지 않는다**: `bot/runner.rs::inject()`가 `write_input`으로 이미 떠 있는 터미널에 프롬프트를 밀어넣으므로 세션도 agentId도 사람이 쓸 때와 같다. 구분선은 **턴 단위**에만 있고, 마침 `workedMs`가 턴 합산이라 결이 맞는다. 그래서 v2는 프로필을 아예 보지 않고 턴의 출처만 본다.
+**왜 v1이 틀렸나 (kbm #2j8).** v1은 `isBotProfile(profile)`로 **봇 시간의 출처를 보지 않고 프로필만 보고** 캐릭터를 통째로 후보에서 뺐다. 그래서 봇 기능을 한 번이라도 붙여준 캐릭터는 그 뒤로 사람이 아무리 일을 시켜도 영구 출전정지가 됐다 — 실제 데이터에서 7명 중 4명이 제외되고, 압도적 1위(59.4h, 2위의 2.5배)가 빠진 채 18.5h짜리가 선두가 되어 있었다. 기계 입력은 **별도 세션을 띄우지 않는다**: 업무 보내기의 `session/inject.rs` `InjectGate::submit_strict`가 `write_input`으로 이미 떠 있는 터미널에 프롬프트를 밀어넣으므로 세션도 agentId도 사람이 쓸 때와 같다. 구분선은 **턴 단위**에만 있고, 마침 `workedMs`가 턴 합산이라 결이 맞는다. 그래서 v2는 프로필을 아예 보지 않고 턴의 출처만 본다.
 
-**출처는 어떻게 남기나.** `inject()`가 `write_input` **직전에** 그 agent를 arm하고(`state.rs`의 `BotPromptArms`, agentId → armed_at), `RecordingAppEvents`가 그 agent의 **다음 prompt 이벤트 하나**로 표식을 소비해 `SessionEventRecord.origin = "bot"`을 세운다. 표식은 한 번 쓰면 사라지므로 뒤이은 사람 프롬프트는 오염되지 않고, **TTL 120초**를 넘기면 만료된다(주입 직후 세션이 죽어 프롬프트가 끝내 안 올 때 표식이 남아 다음 사람 프롬프트를 봇으로 만드는 것을 막는다). `origin`은 옵션 필드이고 봇일 때만 나가므로 `schemaVersion`은 1을 유지한다(`tokens` 선례). **출처가 없던 과거 이벤트는 전부 사람 몫으로 집계되는 것이 의도된 동작이다.**
+**출처는 어떻게 남기나.** `InjectGate::submit_strict`가 입력 **직전에** 그 agent를 arm하고(`state.rs`의 `BotPromptArms`, agentId → armed_at), `RecordingAppEvents`가 그 agent의 **다음 prompt 이벤트 하나**로 표식을 소비해 `SessionEventRecord.origin = "bot"`을 세운다. 표식은 한 번 쓰면 사라지므로 뒤이은 사람 프롬프트는 오염되지 않고, **TTL 120초**를 넘기면 만료된다(주입 직후 세션이 죽어 프롬프트가 끝내 안 올 때 표식이 남아 다음 사람 프롬프트를 봇으로 만드는 것을 막는다). `origin`은 옵션 필드이고 봇일 때만 나가므로 `schemaVersion`은 1을 유지한다(`tokens` 선례). **출처가 없던 과거 이벤트는 전부 사람 몫으로 집계되는 것이 의도된 동작이다.**
 
 **집계에서 총계는 건드리지 않는다.** `AgentDailyStat`·`AgentSummary`의 `workedMs`/`turns`는 봇 몫을 포함한 **총계 그대로**이고, 봇 몫을 `botWorkedMs`/`botTurns`로 **분리 누적**한다 — 분석 패널이 보여주는 "그 자리에서 실제로 돌아간 시간"은 바뀌면 안 되기 때문이다. 다만 날짜 집합은 뺄셈으로 복원할 수 없어(한 날에 사람·봇이 섞인다) `humanActiveDays`를 따로 센다. 이 판정에서 **도구 이벤트는 뺀다** — 도구는 출처를 나눌 수 없어서, 봇만 돌린 날이 도구 때문에 사람 활동일로 새면 표식이 무의미해진다.
 
-**시상 레코드의 수치도 사람 몫이다.** `AwardStanding`과 `AwardWinner.stats`의 `workedMs`/`turns`/`activeDays`는 순위를 매긴 바로 그 값(사람 몫)을 스냅샷한다 — 같은 화면의 순위표 1행과 수상자 배지 숫자가 어긋나면 사용자가 납득할 수 없다. `toolEvents`·토큰·비용은 출처를 나눌 수 없어 총계 그대로다. 순위표 행에는 빠진 몫을 `botWorkedMs?`(0이면 생략)로 남겨, 그런 사원이 하나라도 있으면 UI가 작업시간 열 제목에 "(봇 제외)"를 붙인다. v1 레코드는 총계였다 — `rulesVersion`으로 구분한다. **이미 확정된 레코드는 재계산하지 않는다**(write-once).
+**시상 레코드의 수치도 사람 몫이다.** `AwardStanding`과 `AwardWinner.stats`의 `workedMs`/`turns`/`activeDays`는 순위를 매긴 바로 그 값(사람 몫)을 스냅샷한다 — 같은 화면의 순위표 1행과 수상자 배지 숫자가 어긋나면 사용자가 납득할 수 없다. `toolEvents`·토큰·비용은 출처를 나눌 수 없어 총계 그대로다. 순위표 행에는 빠진 몫을 `botWorkedMs?`(0이면 생략)로 남겨, 그런 사원이 하나라도 있으면 UI가 작업시간 열 제목에 "(자동 입력 제외)"를 붙인다. v1 레코드는 총계였다 — `rulesVersion`으로 구분한다. **이미 확정된 레코드는 재계산하지 않는다**(write-once).
 
 **경계**: 자격자 1명 → 그대로 수상. 자격자 0명(전원 임계 미달 포함) → `winner: null` 레코드를 **기록한다**. 기록해 두어야 매 부팅마다 그 달을 재계산하지 않는다.
 
@@ -110,7 +110,7 @@ load_award_portrait(month)                           -> string | null  // base64
 
 `SummaryPurpose::Diary`를 재사용한다. 소감은 일기와 규모가 같다(입력 수천 자, 출력 한 문단, 120초 타임아웃·경량 모델로 충분). 새 variant는 provider별 모델 함수 여러 곳과 설정 오버라이드까지 건드리면서 얻는 차이가 없다.
 
-**프롬프트 조립** (`src/renderer/awards/speechGenerator.ts`, `diaryGenerator.ts:73-124` 선례)
+**프롬프트 조립** (`src/renderer/awards/speechGenerator.ts`, `diaryGenerator.ts` 선례)
 
 - 시스템: 이 달의 우수사원으로 선정된 캐릭터로서 1인칭 수상 소감을 2~4문장으로. 캐릭터 말투 유지, 통계 수치를 하나쯤 자연스럽게 언급 가능. 메타 발언·마크다운 금지.
 - 유저 텍스트: `[성격]` / `[수상 정보]`(월·작업시간·턴·활동일·통산 수상 횟수) / `[지난달 일기]`.
@@ -137,7 +137,7 @@ load_award_portrait(month)                           -> string | null  // base64
 | 수상자 프로필 삭제됨 | 생성 버튼 비활성(`profile-missing`). 기존 소감은 표시 |
 | 중복 클릭 | 월 단위 인플라이트 가드 |
 
-**TTS**: 수상자는 `voiceId`를 갖고 `src-tauri/src/tts/`에 합성 경로가 이미 있어 "음성으로 듣기" 버튼을 낮은 비용으로 붙일 수 있다. **v1 범위에서는 제외**한다(요구사항의 "듣기"는 텍스트 표시로 충족). 후속 과제.
+TTS는 제거됨(2026-10-14, [archive/tts-confirm-line-design.md](archive/tts-confirm-line-design.md)). 수상 소감은 텍스트로 표시한다.
 
 ## 6. UI
 
@@ -203,7 +203,7 @@ load_award_portrait(month)                           -> string | null  // base64
 
 ## 8. 테스트
 
-**vitest** — `selection.test.ts`: 결정성(같은 입력 → 같은 결과, 입력 unmutated), 4단계 동점 전부(사람 몫 기준), 임계 미달 → `winner: null`, deleted 제외, `clockedOut` 포함됨, **봇 시간만 있는 캐릭터는 사람 몫 임계 미달로 빠짐**, **봇 시간이 섞인 캐릭터는 캐릭터째 빠지지 않고 사람 몫으로 겨룸**(총계 1위와 사람 몫 1위가 뒤집히는 경우 포함), 사람 활동일 임계, `origin`이 없던 옛 집계(bot* = 0)는 전부 사람 몫, `fixedOffsetCalendar`로 월 경계·연말연시. `aggregate.test.ts`: 턴이 자기를 연 prompt의 `origin`을 물려받고 뒤이은 prompt가 덮어쓰지 않음, 봇 몫이 총계에서 빠지지 않고 `bot*`로 따로 쌓임, 자정을 걸친 봇 턴의 날짜 분할, 봇만 돌린 날은 도구 이벤트가 있어도 사람 활동일이 아님, `origin` 없는 과거 이벤트의 하위호환. `AwardsDialog.test.tsx`: 봇 시간이 0이 아닌 행이 있을 때만 작업시간 열에 "(봇 제외)". `speechGenerator.test.ts`: 월 필터, 균등 샘플링, 예산 역산(편수·편당)·문장 경계 절단, 프롬프트 총량이 백엔드 상한 아래로 유지됨, 출력 클램프(`clampSpeech`), 일기 없음 경로, 실패 사유 매핑. `AwardFrameOverlay.test.ts`: 폴라로이드 형태(아래 턱 > 위 여백), 별, 압정 비회전 + 카드 회전축, 사진 contain. `awardsStore.test.ts`: 기존 레코드 skip, 누락 월만 확정, 12개월 캡, 진행 중인 달 미확정, 인플라이트 중복 가드.
+**vitest** — `selection.test.ts`: 결정성(같은 입력 → 같은 결과, 입력 unmutated), 4단계 동점 전부(사람 몫 기준), 임계 미달 → `winner: null`, deleted 제외, `clockedOut` 포함됨, **봇 시간만 있는 캐릭터는 사람 몫 임계 미달로 빠짐**, **봇 시간이 섞인 캐릭터는 캐릭터째 빠지지 않고 사람 몫으로 겨룸**(총계 1위와 사람 몫 1위가 뒤집히는 경우 포함), 사람 활동일 임계, `origin`이 없던 옛 집계(bot* = 0)는 전부 사람 몫, `fixedOffsetCalendar`로 월 경계·연말연시. `aggregate.test.ts`: 턴이 자기를 연 prompt의 `origin`을 물려받고 뒤이은 prompt가 덮어쓰지 않음, 봇 몫이 총계에서 빠지지 않고 `bot*`로 따로 쌓임, 자정을 걸친 봇 턴의 날짜 분할, 봇만 돌린 날은 도구 이벤트가 있어도 사람 활동일이 아님, `origin` 없는 과거 이벤트의 하위호환. `AwardsDialog.test.tsx`: 봇 시간이 0이 아닌 행이 있을 때만 작업시간 열에 "(자동 입력 제외)". `speechGenerator.test.ts`: 월 필터, 균등 샘플링, 예산 역산(편수·편당)·문장 경계 절단, 프롬프트 총량이 백엔드 상한 아래로 유지됨, 출력 클램프(`clampSpeech`), 일기 없음 경로, 실패 사유 매핑. `AwardFrameOverlay.test.ts`: 폴라로이드 형태(아래 턱 > 위 여백), 별, 압정 비회전 + 카드 회전축, 사진 contain. `awardsStore.test.ts`: 기존 레코드 skip, 누락 월만 확정, 12개월 캡, 진행 중인 달 미확정, 인플라이트 중복 가드.
 
 **cargo** — `awards_store`: 라운드트립, temp+rename 원자성, `month` 키 검증 거부, 미래 `version` 로드 거부 + 파일 보존, upsert-if-absent, speech append, 초상 원본 없을 때 `hasPortrait:false`, 복사 성공 시 `load_portrait`가 Some. `AwardStanding`은 봇 몫이 없으면 `botWorkedMs` 키 자체를 생략(v1 레코드와 같은 모양). `recording_events`: arm 후 **첫 프롬프트 하나만** 봇이고 두 번째는 사람, TTL(120초) 만료 시 arm 무시, TTL 경계값은 봇, 다른 agentId로 새지 않음, prompt가 아닌 이벤트는 표식을 소비하지 않음, 사람 프롬프트는 `origin` 키 자체가 안 나가고 봇은 `"origin":"bot"`.
 
@@ -211,6 +211,5 @@ load_award_portrait(month)                           -> string | null  // base64
 
 ## 9. 열어둔 것
 
-- TTS 음성 소감 — v1 제외, 후속.
 - 최소 활동 임계(3일·30분)는 사용 패턴에 따라 조정 여지가 있다. 값은 `SelectionOptions`로 주입 가능하게 열어 두었다.
 - 새 수상 확정 시 기존 Notification 경로로 알림을 띄우는 것은 선택 사항으로 남겨둔다.

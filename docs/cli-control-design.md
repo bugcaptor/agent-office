@@ -1,6 +1,6 @@
 # CLI 제어 설계 (이슈 #55)
 
-상태: 정본 — 구현 완료(이슈 #55 닫음, 2026-07-20 확인). 구현: `src-tauri/src/control/{mod,protocol,client}.rs`. 리팩터 후 렌더러 커맨드는 `ipc/commands/settings.rs`(`control_status`/`control_approve`/`control_revoke`)에 있다. 이후 외부 터미널 attach(`/v1/attach`·`/v1/detach`)가 추가됐다(§외부 터미널 attach).
+상태: 정본 (2026-10-14) — 구현 완료(이슈 #55 닫음, 2026-07-20 확인). 구현: `src-tauri/src/control/{mod,protocol,client}.rs`. 리팩터 후 렌더러 커맨드는 `ipc/commands/settings.rs`(`control_status`/`control_approve`/`control_revoke`)에 있다. 외부 붙이기는 제거됨(2026-10-14, [archive/external-session-attach-design.md](archive/external-session-attach-design.md)).
 
 실행 중인 Agent Office 인스턴스를 다른 AI/스크립트가 프로그래밍 방식으로
 조종하기 위한 로컬 제어 인터페이스. `--observer-forward`/`--sessiond`와 동일한
@@ -132,6 +132,6 @@
 - `src-tauri/src/control/client.rs` — `ctl` 파서·발견·요청·출력.
 - `src-tauri/src/lib.rs` — `maybe_run_cli` 분기, setup에서 opt-in 기동, 종료
   훅 정리, 렌더러 커맨드 등록.
-- `src-tauri/src/ipc/commands.rs` — `control_status`/`control_approve`/
+- `src-tauri/src/ipc/commands/settings.rs` — `control_status`/`control_approve`/
   `control_revoke` 렌더러 커맨드, `apply_settings_effects`(GUI/CLI 공유).
 - 렌더러 `settings/SettingsDialog.tsx` — CLI 제어 토글 + 2단계 승인 UI.

@@ -1,6 +1,6 @@
 # 서브시스템 C 상세 설계 — Renderer UI / 상태관리 / TerminalHost
 
-상태: 정본 — 2026-07-20 현행화. 이슈별 증분(§10 등)으로 갱신되어 온 문서라 본문 대부분이 유효하다. 구현 태스크 분해(구 §8)만 제거했고, 절 번호는 외부 참조 보존을 위해 유지(§8 결번). 초기 절의 개별 파일 경로가 코드와 어긋나면 코드가 정본 — 현재 폴더 지도는 §0.5.
+상태: 부분표류 (2026-10-14) — 제거된 모듈·이동 경로를 현행화. 초기 코드 스케치는 부분표류로 남긴다. 이슈별 증분(§10 등)으로 갱신되어 온 문서라 본문 대부분이 유효하다. 구현 태스크 분해(구 §8)만 제거했고, 절 번호는 외부 참조 보존을 위해 유지(§8 결번). 초기 절의 개별 파일 경로가 코드와 어긋나면 코드가 정본 — 현재 폴더 지도는 §0.5.
 
 > 설계: Opus 하위 설계 / 주요 판단: Fable. 계약 정합화 결과는 마스터 플랜(이력)의 "계약 정합화" 절이 우선했다.
 > **정합화 반영 사항**:
@@ -37,16 +37,16 @@ interface AgentOfficeApi {
 
 ---
 
-## 0.5 현재 파일 레이아웃 (2026-07-20)
+## 0.5 현재 파일 레이아웃 (2026-10-14)
 
-`src/renderer/`는 24개 기능 폴더로 모듈화돼 있다(구조 건강 — REBUILD-PLAN §2.5 진단).
-계약 타입은 `src/shared/types/{common,session,notification,bot,profile,diary,memo,usage,settings,markdown,git,api}.ts` 분할 배럴(`shared/types.ts`는 재수출), 커맨드명은 `src/shared/ipc.ts`.
+`src/renderer/`는 기능별 폴더로 모듈화돼 있다.
+계약 타입은 `src/shared/types/{common,session,notification,profile,diary,memo,usage,settings,markdown,git,api}.ts` 분할 배럴(`shared/types.ts`는 재수출), 커맨드명은 `src/shared/ipc.ts`.
 
 | 폴더 | 담당 (정본 절/문서) |
 |---|---|
 | `ipc/` | `tauriApi.ts` 어댑터·`sessionBridge`·windowFocus·osNotify (A §2) |
 | `store/` | zustand `appStore`·selectors·persist (§2) |
-| `terminal/` | TerminalRegistry/Host/Overlay·AgentTabStrip·BotOverlay·botGuard (§3, 봇은 bot-mode 문서) |
+| `terminal/` | TerminalRegistry/Host/Overlay·AgentTabStrip (§3) |
 | `office/` | PixiJS 씬 — 서브시스템 B 문서 |
 | `layout/` | TopBar/BottomBar/UIChrome (§1) |
 | `notification/` | 알림 티커 (§5) |
@@ -681,7 +681,7 @@ function TerminalMount({ agentId }: { agentId: string }) {
 
 ### 4.1 랜덤 생성기 — Korean-friendly 워드 리스트
 
-`src/renderer/profile/wordlists.ts`
+`src/renderer/i18n/wordlists.ts`
 
 ```ts
 // 이름: 픽셀 캐릭터에 어울리는 한국어 별명
@@ -711,7 +711,7 @@ export const PERSONALITY_WORDS: string[] = [
 
 ```ts
 import { nanoid } from 'nanoid';
-import { NAME_WORDS, ROLE_WORDS, PERSONALITY_WORDS } from './wordlists';
+import { NAME_WORDS, ROLE_WORDS, PERSONALITY_WORDS } from '../i18n/wordlists';
 import type { AgentProfile } from '../store/types';
 
 const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
@@ -1067,17 +1067,17 @@ export function NotificationTicker() {
 - **DungGeunMo(둥근모꼴)** — 완성형 한글 전 영역 커버, 픽셀 감성, 무료(공개 폰트, 배포 허용). UI 텍스트용.
 - **Galmuri11** — SIL OFL 1.1(임베드/재배포 자유, 폰트 자체 판매 금지). 등폭 정렬이 안정적인 픽셀 폰트.
 - **터미널 셀은 일반 모노스페이스 전용** — xterm 셀 안에는 픽셀 폰트를 쓰지 않는다(`"SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace`, `fontSize: 13`, `lineHeight: 1.2`). 픽셀 감성은 UI 크롬 전용이고, 터미널 화면은 코드/로그 가독성이 우선이라 실제 구현에서 Galmuri11 대신 표준 모노스페이스로 확정했다(터미널=Galmuri11 우선이라던 초기안은 폐기).
-- **두 폰트 파일을 `src/renderer/assets/fonts/`에 번들하고 `@font-face`로 로드**(CDN 금지, Electron 오프라인 보장).
+- **두 폰트 파일을 `src/renderer/styles/fonts/`에 번들하고 `@font-face`로 로드**(CDN 금지, Tauri 오프라인 보장).
 
 ```css
 @font-face {
   font-family: 'DungGeunMo';
-  src: url('./assets/fonts/DungGeunMo.woff2') format('woff2');
+  src: url('./fonts/DungGeunMo.woff2') format('woff2');
   font-display: block;
 }
 @font-face {
   font-family: 'Galmuri11';
-  src: url('./assets/fonts/Galmuri11.woff2') format('woff2');
+  src: url('./fonts/Galmuri11.woff2') format('woff2');
   font-display: block;
 }
 ```
@@ -1169,7 +1169,7 @@ export function NotificationTicker() {
 
 ## 7. vitest / 테스트 시임 (구체적 5개)
 
-`src/renderer/store/appStore.test.ts`, `notification/dedupe.test.ts`, `terminal/TerminalRegistry.test.ts`
+`src/renderer/store/__tests__/appStore.test.ts`, `notification/__tests__/dedupe.test.ts`, `terminal/__tests__/TerminalRegistry.test.ts`
 
 **T1. addAgent가 세션을 starting으로 시드한다**
 ```ts
@@ -1573,7 +1573,7 @@ archived: 2026-07-31T09:00:00+09:00   (넘긴 장에만)
 
 텍스트 선택 복사 + "전체 복사" 버튼(`navigator.clipboard`) 둘뿐이다. 프롬프트
 주입/전송은 **의도적으로 만들지 않았다** — 메모는 사람의 작업 기억이고, 자동 주입은
-봇 모드(#57)가 다루는 별개 문제다.
+이 메모 기능의 범위 밖이다. 봇 모드(#57)는 제거됨(2026-10-14, [archive/bot-mode-design.md](archive/bot-mode-design.md)).
 
 ### 13.5 배치와 격리
 

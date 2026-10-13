@@ -1,6 +1,6 @@
 # 실행 레시피 설계 (kbm #2rf)
 
-상태: 구현 완료. 갱신: 2026-09-04.
+상태: 정본 (2026-10-14) — 구현 완료. 갱신: 2026-09-04.
 
 프로젝트마다 있는 실행 방법(`npm run dev`, `cargo test`, `make lint` …)을
 앱이 기억해 두고, 캐릭터 탭에서 두 번 클릭 안에 돌릴 수 있게 한다. 실행
@@ -162,8 +162,8 @@ en 폴백. 카탈로그 JSON에 넣지 않는 이유도 그 파일 헤더에 적
 
 ### 5.4 주입 방식
 
-봇과 같은 경로다(`bot/runner.rs::inject`). 여러 줄을 한 줄로 접어
-`writeInput(텍스트)` → `INJECT_SUBMIT_DELAY_MS` 대기 → `writeInput("\r")`. 두
+`src/renderer/run/execute.ts`의 `injectAndSubmit`이 여러 줄을 한 줄로 접어
+`writeInput(텍스트)` → `RUN_INJECT_SUBMIT_DELAY_MS`(150ms) 대기 → `writeInput("\r")`. 두
 번에 나누는 이유는 한 번에 보내면 Enter가 입력 이벤트에 섞여 무시되기
 때문이고, 줄 끝이 CR인 이유는 PowerShell이 CR에서만 제출하기 때문이다
 (`manager.rs`의 startup_command 주석).
@@ -172,9 +172,7 @@ en 폴백. 카탈로그 JSON에 넣지 않는 이유도 그 파일 헤더에 적
 
 **가드는 없다.** 프롬프트는 그대로 셸에 들어가고, 셸은 첫 낱말을 명령으로
 해석해 실행에 실패한다(`zsh: command not found: 이`). 사람이 CLI를 먼저 띄우고
-다시 누른다. 봇 시작에는 맨 셸 가드(`botGuard.ts::looksLikeAgentRunning`)가
-있지만 여기서는 쓰지 않는다 — 봇은 사람이 안 보는 동안 도는 것이고, 이 버튼은
-사람이 화면을 보며 누르는 것이다.
+다시 누른다. 이 버튼은 사람이 화면을 보며 누르는 것이므로 에이전트 CLI 판정 가드는 두지 않는다.
 
 ### 5.6 결과 반영
 
@@ -266,9 +264,7 @@ Windows는 `taskkill /T /F`로 자식까지 끝낸다. 실행 프로세스는 se
 
 ### 플래그 하나를 더하면 닿는 곳 — 전부 같이 고친다
 
-`talkEnabled`가 지나간 자리를 그대로 따라간다. **`npx tsc --noEmit`이 누락을
-잡는 유일한 장치**다(AGENTS.md — vitest는 리터럴끼리 `toEqual`이라 양쪽에서
-같이 빠져도 통과한다).
+**`npx tsc --noEmit`으로 공유 타입 사용처의 누락을 확인한다**([guide.md 개발자 절](guide.md#개발자용-명령)). vitest의 리터럴 비교는 양쪽에서 같이 빠지면 통과할 수 있다.
 
 | 자리 | 할 일 |
 | --- | --- |
@@ -277,9 +273,9 @@ Windows는 `taskkill /T /F`로 자식까지 끝낸다. 실행 프로세스는 se
 | `src-tauri/src/lib.rs`, `ipc/commands/tests.rs`, `tests/contract_fixtures.rs`의 리터럴 구조체 | 필드 추가(컴파일러가 잡는다) |
 | `src/shared/contract-fixtures/get-app-settings-result.json` | `"runRecipesEnabled": false` — TS↔Rust 왕복 픽스처 |
 | `src/renderer/store/appStore.ts` | 초기값 `false` + `updateAppSettings`의 키 유니언에 추가 |
-| `src/renderer/settings/SystemTab.tsx` | `keepAwakeEnabled`·`sessionLogEnabled` 옆에 같은 모양의 체크박스 한 칸. 제어 탭이 아니라 시스템 탭인 이유: 승인·토큰·네트워크가 없는 단순 토글이라 제어 탭의 세 섹션(CLI 제어·웹 원격·동료 대화)과 성격이 다르다 |
+| `src/renderer/settings/SystemTab.tsx` | `keepAwakeEnabled`·`sessionLogEnabled` 옆에 같은 모양의 체크박스 한 칸. 제어 탭이 아니라 시스템 탭인 이유: 승인·토큰·네트워크가 없는 단순 토글이라 CLI 제어의 승인·토큰 설정과 성격이 다르다 |
 | `src/shared/i18n/locales/{ko,en}/settings.json` | `system.runRecipesTitle` / `system.runRecipesHelp` |
-| `src-tauri/src/control/routes.rs` `settings_set` | **막지 않는다.** `cliEnabled`·`talkEnabled`를 거절하는 이유는 에이전트가 자기 권한을 넓힐 수 있어서인데, 이 플래그는 켜도 사람이 메뉴를 눌러야 무언가가 일어난다. 거절 목록에 넣지 않는 것이 결정이다 |
+| `src-tauri/src/control/routes.rs` `settings_set` | **막지 않는다.** `cliEnabled`를 거절하는 이유는 에이전트가 자기 권한을 넓힐 수 있어서인데, 이 플래그는 켜도 사람이 메뉴를 눌러야 무언가가 일어난다. 거절 목록에 넣지 않는 것이 결정이다 |
 
 ## 10. 비범위
 
@@ -292,7 +288,7 @@ Windows는 `taskkill /T /F`로 자식까지 끝낸다. 실행 프로세스는 se
 - 맨 셸에서 `claude -p`/`codex exec` 원샷 조사.
 - 인자·환경변수 편집 폼, 실행 결과 판정·알림, 실행 이력 통계.
 - 세션 시작 시 자동 실행(그건 `startupCommand`가 한다).
-- 웹 원격·`ctl` 노출, 레시피 내보내기/가져오기, 파일 감시.
+- `ctl` 노출, 레시피 내보내기/가져오기, 파일 감시.
 - 설정 토글에 2단계 승인 붙이기.
 
 ## 11. 기각한 대안들
@@ -314,13 +310,11 @@ Windows는 `taskkill /T /F`로 자식까지 끝낸다. 실행 프로세스는 se
   (1) control 서버는 `cli_enabled`일 때만 뜨고 `auth` 미들웨어가 **모든**
   라우트에 걸려 있어(`control/mod.rs::router`, `control/token.rs::auth`) 사용자가
   CLI 제어를 켜고 승인해야 한다 — 기본 OFF인 보안 표면을 레시피 하나 때문에
-  열라는 요구다. (2) 바이너리가 PATH에 없어(macOS는 앱 번들 안) talk처럼 OS
-  temp에 shim을 만들고 절대 경로를 박아야 한다(`talk/skill.rs`). (3) 권한 사전
-  승인과 스킬 주입은 claude에만 배선돼 있고(`manager.rs`의 `--plugin-dir`,
-  `docs/agent-talk-design.md §6`) codex·pi·gemini는 매번 승인이다. 파일 하나
-  쓰는 일에 이 셋을 다 들일 이유가 없다. 파일 방식이 흔들리면 그때 검증을
-  앱으로 옮기는 길은 남아 있고, 필요한 발견·인증·shim은 전부 talk가 만들어 둔
-  것을 쓴다.
+  열라는 요구다. (2) 바이너리가 PATH에 없을 수 있어 shim 경로 발견이 필요하다.
+  (3) CLI별 안내문·권한·샌드박스 배선까지 유지해야 한다. 현재 업무 수신함의
+  선례는 `src-tauri/src/office_instructions.rs`의 `task_instructions`·`appended_prompt`와
+  `src-tauri/src/work_inbox_cli.rs`의 `ensure_shim`에 있다. 레시피 조사 결과는
+  앱 데이터 파일에 기록하므로 이 control 경로를 별도로 만들지 않는다.
 - **별도 실행 PTY와 로그 패널**:
   `SessionManager.sessions`가 `agentId` 키, `SessionRegistry`가 sid→agentId,
   `TerminalRegistry`가 에이전트당 xterm 하나 — **1캐릭터 1세션**이 세 층에 걸린

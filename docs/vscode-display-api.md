@@ -1,6 +1,6 @@
 # VS Code 표시 API 계약
 
-상태: v1 구현. 이 문서는 Agent Office 본체와 VS Code 연결 확장 사이의 정본 계약이다.
+상태: 정본 (2026-10-14). 이 문서는 본체에 남은 표시 API의 정본 계약이다. `vscode-ext/` 로그 뷰어 패키지는 제거됨(2026-10-14, [archive/vscode-character-extension-plan.md](archive/vscode-character-extension-plan.md)); 이 API는 설치된 별도 companion 확장과의 호환을 위해 유지한다. 구현은 `src-tauri/src/control/display.rs`의 `capabilities`·`characters`·`appearance`·`usage`·`focus`다.
 
 ## 연결
 

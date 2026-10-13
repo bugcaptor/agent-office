@@ -1,7 +1,7 @@
 # 세션 활동 분석 패널 — 설계 스펙
 
-- 날짜: 2026-07-17 (상태 갱신: 2026-08-21 — §9 토큰·비용 확장 추가)
-- 상태: 정본 — 구현 완료. 구현: `session_events/reader.rs`(Rust), `renderer/analytics/`(집계·UI), 커맨드 `load_session_events`(`ipc/commands/persistence.rs`). 토큰·비용은 `observer/event.rs`·`observer/codex_usage.rs`(추출), `renderer/analytics/pricing.ts`(단가).
+- 날짜: 2026-07-17 (상태 갱신: 2026-10-14 — 제거 기능 참조 정리)
+- 상태: 정본 (2026-10-14) — 구현 완료. 구현: `session_events/reader.rs`(Rust), `renderer/analytics/`(집계·UI), 커맨드 `load_session_events`(`ipc/commands/persistence.rs`). 토큰·비용은 `observer/event.rs`·`observer/codex_usage.rs`(추출), `renderer/analytics/pricing.ts`(단가).
 - 선행: `docs/archive/session-event-timeseries-design.md` (수집 계층, archived — 코드가 정본). 그 설계의 비목표였던 "분석 UI"를 이번 범위로 승격한다.
 - usage(한도) 표시와는 별개 기능 — 그쪽은 `docs/usage-design.md` 참조(상호 링크만, 데이터 소스가 다름).
 
@@ -339,7 +339,9 @@ Kilo도 전사 파일은 없지만 플러그인 이벤트(`message.part.updated`
 귀속**한다 — 마감 시점에 한꺼번에 확정되는 값이라 시간 비례로 나눌 근거가 없다.
 `range` 게이트는 도구 이벤트와 똑같이 적용한다(창 밖 stop의 토큰은 제외).
 
-## 10. 확장 — 프롬프트 출처(봇 주입) 분리 (2026-08-25)
+## 10. 확장 — 프롬프트 출처(기계 입력) 분리
+
+봇 모드는 제거됨(2026-10-14, [archive/bot-mode-design.md](archive/bot-mode-design.md)). 저장 형식 `origin: "bot"`·`BotPromptArms`·`botWorkedMs` 명칭은 하위 호환을 위해 유지하며 현재 업무 보내기가 이 표식을 사용한다.
 
 "이 달의 우수사원"이 사람 몫만 세려면 턴 하나하나가 사람에게서 온 것인지 봇에게서
 온 것인지 알아야 한다. 결정과 근거의 정본은 `docs/employee-of-the-month-design.md`
@@ -350,9 +352,9 @@ Kilo도 전사 파일은 없지만 플러그인 이벤트(`message.part.updated`
 과거 파일과 한 디렉터리에 섞여도 그대로 읽힌다. `kind="prompt"` 레코드에만, 그것도
 봇이 주입했을 때만 실린다(사람 프롬프트는 키 자체가 없다).
 
-봇은 별도 세션을 띄우지 않고 이미 떠 있는 터미널에 `write_input`으로 프롬프트를
+현재 업무 보내기의 기계 입력은 별도 세션을 띄우지 않고 기존 터미널에 프롬프트를
 밀어넣으므로 세션·agentId로는 구분할 수 없다. 그래서 배선은 알림 경로가 아니라
-**주입 지점에서 시작하는 표식**이다: `bot/runner.rs::inject()`가 쓰기 직전에
+**주입 지점에서 시작하는 표식**이다: `src-tauri/src/session/inject.rs`의 `InjectGate::submit_strict`가 쓰기 직전에
 `state.rs`의 `BotPromptArms`에 그 agent를 arm → `RecordingAppEvents`가 그 agent의
 다음 prompt 이벤트 **하나**로 소비. 표식은 소비되면 사라지고 **TTL 120초**로
 만료된다(주입 직후 세션이 죽어 프롬프트가 끝내 안 올 때, 남은 표식이 다음 사람

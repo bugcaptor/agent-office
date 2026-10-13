@@ -1,16 +1,14 @@
 # Antigravity CLI(agy) 작업 상태 감지 지원 — 설계 문서
 
 작성: 2026-09-06 (agy 1.1.27 실측 기준)
-상태: 구현 완료. 이슈는 kbm 너른바다/프로젝트관리/AgentOffice 참고.
+상태: 정본 (2026-10-14) — 구현 완료, CLI 눈검증 잔여(§6). 이슈는 kbm 너른바다/프로젝트관리/AgentOffice 참고.
 
 > 구현 중 스파이크 실측으로 아래 본문과 달라진 점(§2/§3에 반영 완료):
 > `invocationNum`은 1이 아니라 **0부터** 세고, 턴 시작은 `PreInvocation &&
 > invocationNum == 0`이다. 전사 파일은 `~/.gemini/antigravity-cli/brain/...`가
 > 아니라 페이로드의 `transcriptPath`를 그대로 열면 되고(실제 파일명은
 > `transcript_full.jsonl`), PreInvocation 시점에 이미 그 턴의 사용자 입력이
-> 쓰여 있다(S3 확정 — PostToolUse로 미룰 필요 없음). `agy -p`(print 모드)에서도
-> 훅이 돌아 `usage/antigravity_live.rs`가 `agy`를 부를 때
-> `AGENT_OFFICE_HOOK_URL`/`AGENT_OFFICE_SESSION`을 env_remove한다. cwd는
+> 쓰여 있다(S3 확정 — PostToolUse로 미룰 필요 없음). cwd는
 > `workspacePaths`가 빈 배열로 올 수 있어 `agy()` 셸 래퍼가 호출 시점의 `$PWD`를
 > 실어 보내는 폴백이 필요했는데, 쿼리 문자열이 아니라 **헤더**
 > (`X-Agent-Office-Cwd`)로 넘긴다 — POSIX sh에는 표준 percent-encoding 도구가
@@ -37,7 +35,7 @@ env 를 보고 스스로 빠진다.
 
 ## 1. agy 훅 체계 실측 (1.1.27)
 
-바이너리에 들어 있는 훅 가이드(`docs/hooks.md`)와 `agy changelog` 를 읽어 확인했다.
+agy 바이너리에 들어 있는 외부 훅 가이드(`docs/hooks.md`, 이 저장소 파일 아님)와 `agy changelog` 를 읽어 확인했다.
 
 ### 1.1 파일 위치와 병합 규칙
 
@@ -233,15 +231,9 @@ Claude 재개 설계(`docs/claude-session-resume-design.md`)를 그대로 따르
 - 재개 명령은 `agy --conversation <id>`. `--continue` 는 "가장 최근" 이라 우리 용도가 아니다.
 - v1 은 기록까지만. 재개 UI 는 Claude 것을 provider 분기로 넓히는 후속 이슈로 뺀다.
 
-### 3.6 사용량 (kbm #2se, 2026-09-07 갱신)
+### 3.6 턴 단위 토큰 집계 (kbm #2se)
 
-> 2026-10-14: 구독 한도 실시간 조회(`usage/antigravity_live.rs`)는 점검·정리 §7.D C43으로
-> 제거됐다. 아래 첫 문단은 이력이고, 턴 단위 토큰 집계(SQLite)는 그대로다.
-
-이미 `usage/antigravity_live.rs` 가 `agy -p /usage` 로 한도(잔여 비율) 실시간 조회를
-한다. S4 실측대로 `cli_command`/`fallback_cli_command` 가 자식 `agy` 에
-`AGENT_OFFICE_HOOK_URL`/`AGENT_OFFICE_SESSION` 을 물려주지 않게 `env_remove` 한다 —
-안 그러면 `/usage` 조회 한 번이 가짜 턴(prompt/stop)을 만든다. 이건 그대로다.
+구독 한도 실시간 조회는 제거됨(2026-10-14, 점검·정리 §7.D C43). 이력은 [archive/usage-design-provider-history.md](archive/usage-design-provider-history.md) §11에 보존한다. 아래 SQLite 턴 집계는 유지한다.
 
 **턴 단위 토큰 집계는 처음엔 안 하는 것으로 남겼으나(전사 파일엔 토큰 수가 없다는
 실측), 재실측으로 뒤집혔다.** 전사(`transcriptPath`, `transcript_full.jsonl`)에는
@@ -325,9 +317,7 @@ Claude 재개 설계(`docs/claude-session-resume-design.md`)를 그대로 따르
   **실측: 그렇다.** PostToolUse 로 미룰 필요 없이 PreInvocation 즉시 읽어도 된다.
   전사 파일 경로도 페이로드의 `transcriptPath` 를 그대로 쓰면 되고(실측 파일명은
   `transcript_full.jsonl`), 파일이 크면 뒤 64KB 만 읽는다.
-- **S4** `agy -p` 프린트 모드에서도 훅이 도는지. **실측: 돈다.** `usage/antigravity_live.rs`
-  가 `agy` 를 Command 로 부를 때 `AGENT_OFFICE_HOOK_URL`/`AGENT_OFFICE_SESSION` 을
-  env_remove 하도록 고쳤다(§3.6).
+- **S4** print 모드 사용량 조회의 훅 env 격리 실측은 제거 기능 이력이다(2026-10-14, [archive/usage-design-provider-history.md](archive/usage-design-provider-history.md) §11).
 - **추가 실측(원 설계에 없던 것)**: `workspacePaths` 가 빈 배열로 올 수 있다 — 셸 래퍼
   `agy()` 가 `AGENT_OFFICE_AGY_CWD="$PWD"` 를 export 하고 hook.sh 가 이를
   `X-Agent-Office-Cwd` 헤더로 서버에 얹는 cwd 폴백을 추가했다(§3.2/§3.3).
@@ -343,12 +333,11 @@ Claude 재개 설계(`docs/claude-session-resume-design.md`)를 그대로 따르
 ## 6. 검증
 
 - 네이티브(`session/agy_hooks_file.rs`, `session/agy_hook.rs`, `observer/event.rs`,
-  `observer/mod.rs`, `observer/server.rs`, `session/wrapper_script.rs`,
-  `usage/antigravity_live.rs`): hooks.json 병합이 다른 키(`orca-status`)를
+  `observer/mod.rs`, `observer/server.rs`, `session/wrapper_script.rs`): hooks.json 병합이 다른 키(`orca-status`)를
   보존하는 테스트, 깨진 JSON·비객체 최상위를 건드리지 않는 테스트,
   `ingest_agy_source` 매핑 테스트(턴 시작 invocationNum==0 필터, cwd 폴백, tool/stop
   매핑, conversationId 캡처), 전사 꼬리에서 USER_REQUEST 추출 테스트, `agy()` 래퍼의
-  `$PWD` export 순서 테스트, agy 자식 프로세스의 훅 env 제거 테스트. 완료.
+  `$PWD` 대입 순서 테스트. 완료.
 - 눈검증(미실시 — 실제 agy 설치·워크스페이스 필요): 앱에서 agy 세션을 열어
   프롬프트 → 캐릭터 working, 도구 사용 중 하트비트, 완료 → idle 과 라벨 갱신.
   앱 밖 터미널에서 agy 를 띄워 훅이 조용히 빠지는지.

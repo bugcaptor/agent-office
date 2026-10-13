@@ -1,14 +1,13 @@
 # 데스크톱 마스코트 창 설계 (이슈 #72)
 
-상태: 정본 — 설계 확정 + 구현 완료(2026-07-23). 실제 구현에서 갈라진 부분은
+상태: 정본 (2026-10-14) — H에서 화면 재확인하지 않음.  설계 확정 + 구현 완료(2026-07-23). 실제 구현에서 갈라진 부분은
 부록 B에 적었다(그쪽이 코드의 진실).
 초안: 이슈 #72의 fable-planner 기획 코멘트. 본 문서가 초안의 사실오류를 바로잡고
 열린 질문을 전부 확정한 구현 지시서다. 구현자는 이 문서만 따라가면 된다.
 
 활동 중인 캐릭터 1명을 앱 창과 독립된 **투명 배경·항상 최상단 데스크톱 마스코트
 창**으로 띄운다. 알림(pending)이 생기면 마스코트가 그 자리에서 알린다. 클릭하면
-검증된 앱 내 IDE 연결은 원본 VS Code로 돌아가고, 그 밖의 세션은 메인 창과 해당
-캐릭터의 터미널 오버레이를 연다.
+메인 창과 해당 캐릭터의 터미널 오버레이를 연다.
 
 ## 목표와 범위
 
@@ -22,7 +21,7 @@
   **Pixi 미사용** — 순수 `generateSheet` + 2D 캔버스로 충분하다(§4.2).
 - main(진실의 원천, zustand) → mascot 상태 푸시(Tauri 이벤트) + ready 핸드셰이크.
 - pending 시 느낌표 배지 + 바운스 애니메이션, 클리어 시 정지.
-- 클릭 → 검증된 앱 내 IDE 연결은 원본 VS Code 포커스, 나머지는 main 포커스 +
+- 클릭 → main 포커스 +
   해당 에이전트 터미널 열기. 드래그로 위치 이동(영속).
 - 설정 토글 `mascotEnabled`(기본 OFF, settings.json 영속).
 
@@ -36,11 +35,11 @@
 
 | # | 질문 | 결정 | 근거 |
 |---|------|------|------|
-| 1 | "활동 중" 정의·우선순위 | **활동 = pending 알림 보유 ∪ 턴 phase="working"** (clockedOut 제외). 우선순위: ① pending 최신(`notifications[0]`이 newest-first) ② working 중 `turnStartedAt` 최신. 단 **sticky**: 현재 표시 중인 캐릭터가 여전히 활동 중이면 working끼리는 교체하지 않고, pending 후보만 즉시 인터럽트한다 | pending 소스는 `pendingAgentIds`(selectors.ts:44, 단일 소스), working은 `timeTracking[].phase`(turnReducer.ts:9 `"idle"\|"working"\|"waiting"`). waiting(질문 대기)은 알림이 이미 pending으로 표면화되고, 알림을 지운 waiting은 "사용자가 인지한 상태"라 제외. keepAwake의 `computeAnyWorking`도 waiting을 제외하는 동일 판단(power/keepAwake.ts) |
+| 1 | "활동 중" 정의·우선순위 | **활동 = pending 알림 보유 ∪ 턴 phase="working"** (clockedOut 제외). 우선순위: ① pending 최신(`notifications[0]`이 newest-first) ② working 중 `turnStartedAt` 최신. 단 **sticky**: 현재 표시 중인 캐릭터가 여전히 활동 중이면 working끼리는 교체하지 않고, pending 후보만 즉시 인터럽트한다 | pending 소스는 `pendingAgentIds`(`src/renderer/store/selectors.ts`의 `pendingAgentIds`·`pickMascotTarget`, 단일 소스), working은 `timeTracking[].phase`(`src/renderer/timeline/turnReducer.ts`의 `reduceTurn` `"idle"\|"working"\|"waiting"`). waiting(질문 대기)은 알림이 이미 pending으로 표면화되고, 알림을 지운 waiting은 "사용자가 인지한 상태"라 제외. keepAwake의 `computeAnyWorking`도 waiting을 제외하는 동일 판단(power/keepAwake.ts) |
 | 2 | 다중 마스코트 | **1명만.** 페이로드/프로토콜은 단일 대상 고정(배열 아님) | 초안 가정 유지. 다중은 창 N개·좌표 관리 폭증 — 수요 확인 후 별도 이슈 |
 | 3 | 대상 OS | **macOS 1차(눈검증 대상), Windows 2차(빌드·컴파일 보장, 검증은 추후), Linux best-effort.** 구현은 OS 분기 없이 Tauri 공통 API만 사용 | 코드베이스에 `cfg(windows/target_os)` 분기 153개 — Windows는 실지원 대상. 그러나 개발·검증 환경이 macOS이고, 투명 창은 macOS만 특수 요건(§4.1 macOSPrivateApi + Cargo feature)이 있다. Windows WebView2는 transparent+alwaysOnTop+skipTaskbar를 표준 지원하므로 분기 없는 구현이 그대로 동작할 가능성이 높다 |
 | 4 | 활동 캐릭터 없을 때 | **숨김.** 단 활동 종료 후 `MASCOT_HIDE_LINGER_MS = 15_000` 유지 후 숨긴다(턴 사이 깜빡임 방지). 대기(졸기) 스프라이트 없음 | 이슈 제목 자체가 "활동중인 캐릭터를 표시". 유휴 시에도 최상단 투명 창이 화면을 점유하면 방해. linger는 keepAwake의 release-delay(60s)와 같은 flap 방지 관례를 축소 적용 |
-| 5 | 기본 on/off·위치 | **기본 OFF**(설정 다이얼로그에서 켬). 위치는 **자유 이동(스냅 없음)** + `localStorage("agent-office.mascot.pos")` 영속. 기본 위치 = 주 모니터 우하단(우 24px·하 80px 마진). 복원 좌표가 어느 모니터에도 안 들어가면 기본 위치로 클램프 | 시스템 표면을 건드리는 기능(cliEnabled, keepAwakeEnabled)은 기본 OFF가 이 앱의 관례(settings_store.rs). 위치 같은 UI 전용 선호는 theme/terminalViewMode처럼 localStorage 영속이 관례("PersistedState 아님", appStore.ts:104,117) |
+| 5 | 기본 on/off·위치 | **기본 OFF**(설정 다이얼로그에서 켬). 위치는 **자유 이동(스냅 없음)** + `localStorage("agent-office.mascot.pos")` 영속. 기본 위치 = 주 모니터 우하단(우 24px·하 80px 마진). 복원 좌표가 어느 모니터에도 안 들어가면 기본 위치로 클램프 | 시스템 표면을 건드리는 기능(cliEnabled, keepAwakeEnabled)은 기본 OFF가 이 앱의 관례(settings_store.rs). 위치 같은 UI 전용 선호는 theme/terminalViewMode처럼 localStorage 영속이 관례("PersistedState 아님", appStore.ts (`useAppStore`)) |
 
 ## 1. 아키텍처 개요
 
@@ -52,12 +51,12 @@
     ├─ emit("mascot-state", state)  ──────────────►  [mascot 창]
     ├─ invoke(set_mascot_visible)   ──► [Rust] show/hide     │ listen
     ├─ listen("mascot-ready") ◄────────────────────  부팅 시 emit (replay 요청)
-    └─ listen("mascot-open-terminal") ◄─ [Rust] 일반 경로만 emit_to("main")
+    └─ listen("mascot-open-terminal") ◄─ [Rust] emit_to("main")
                                               ▲
 [mascot 창]  얇은 소비자(스토어 없음, Pixi 없음)      │
-  클릭 → invoke(mascot_activate(agentId)) ──► [Rust] 검증된 앱 내 IDE 연결은
-  커스텀 시트 → invoke(load_sprite(agentId))          원본 VS Code 포커스 + 알림만 지움
-                                                        그 밖은 main 포커스 + emit_to
+  클릭 → invoke(mascot_activate(agentId)) ──► [Rust] main 창
+  커스텀 시트 → invoke(load_sprite(agentId))          show + unminimize + set_focus
+                                                        emit_to("main", "mascot-open-terminal")
   드래그 → window.startDragging() / onMoved → localStorage 저장
 ```
 
@@ -134,7 +133,7 @@ RunEvent::WindowEvent { label, event: tauri::WindowEvent::Destroyed, .. }
 }
 ```
 
-기존 `RunEvent::ExitRequested` 정리 로직(dispose_all 등, lib.rs:531)은 그대로 —
+기존 `RunEvent::ExitRequested` 정리 로직(dispose_all 등, lib.rs (`run`))은 그대로 —
 mascot destroy 후 자연히 도달한다. mascot 창 자체는 closable하지 않게 두고
 (decorations 없음 + 사용자 close 경로 없음), 사용자가 끄는 길은 설정 토글뿐이다.
 
@@ -206,14 +205,14 @@ build: {
 
 초안은 `createCharacterAssets`/`generateSpritePreview` 재사용을 제안했으나:
 
-- `createCharacterAssets`(characterFactory.ts:147)는 **Pixi Texture를 만든다** —
+- `createCharacterAssets`(`src/renderer/office/gen/characterFactory.ts`의 `createCharacterAssets`·`generateSpritePreview`)는 **Pixi Texture를 만든다** —
   두 번째 창에 Pixi 렌더러+unsafe-eval 셰이더 셋업을 끌고 들어온다.
-- `generateSpritePreview`(:199)는 idle0 **정지 1프레임 dataURL**이라 애니가 없다.
+- `generateSpritePreview`(`src/renderer/office/gen/characterFactory.ts`)는 idle0 **정지 1프레임 dataURL**이라 애니가 없다.
 
 마스코트는 순수 경로만 쓴다:
 
 - **절차 생성**: `generateSheet(seed, defaultCanvasFactory, resolveArchetype(archetype, seed))`
-  (characterFactory.ts:56 — "순수 시트 생성", DOM 캔버스만 사용, Pixi 무관).
+  (`src/renderer/office/gen/sheetGen.ts` — 순수 시트 생성, Pixi 무관).
   4N×N 시트 캔버스에서 idle0/idle1 셀을 `drawImage`로 슬라이스.
 - **커스텀 시트**: `tauriApi.loadSprite(agentId)`(base64 PNG) → `spriteCache.ts`의
   `decodeSheet`와 동일한 디코드(코드 재사용을 위해 decode 함수를 export하거나
@@ -225,7 +224,7 @@ build: {
   `areaDownscalePremul`(office/gen/spriteResample, 순수)로 프레임별 프리필터 후
   nearest로 찍는다. N ≤ 96·dpr이면 nearest 업스케일.
 - **idle 애니**: idle0↔idle1 토글, 주기 `ANIM_IDLE_MS = 480ms`
-  (CharacterEntity.ts:40과 동일 값 — 오피스와 호흡 일치). `requestAnimationFrame`
+  (CharacterEntity.ts (`CharacterEntity`)과 동일 값 — 오피스와 호흡 일치). `requestAnimationFrame`
   루프 1개, 숨김(visible=false) 상태에서는 루프 정지.
 
 ### 4.3 알림(pending) 표현 — 확정 수치
@@ -303,10 +302,9 @@ export interface MascotState {
   타이머 중 target 복귀 시 취소. 설정 OFF는 **linger 없이 즉시** 숨김(keepAwake 관례).
 - 핸드셰이크: `listen("mascot-ready", …)` → 현재 상태 즉시 재emit(부팅 레이스 해소).
 - 일반 경로의 터미널 열기: `listen("mascot-open-terminal", ({agentId}) =>
-  officeBus.emitAgentClicked(agentId))` — emitAgentClicked(sessionBridge.ts:199)가
+  officeBus.emitAgentClicked(agentId))` — emitAgentClicked(sessionBridge.ts (`installSessionBridge`))가
   이미 ensureSession + openTerminal + clearNotifications를 전부 수행하므로 재사용한다.
-  검증된 앱 내 IDE 연결은 이 이벤트를 내보내지 않는다. Rust가 원본 VS Code를 먼저
-  포커스하고, 성공했을 때 그 연결의 외부 세션 알림만 허브에서 지운다.
+  IDE 원본 앱 포커스 갈래는 제거됨(2026-10-14, [archive/ide-session-spike.md](archive/ide-session-spike.md)).
 
 ### 5.3 설정
 
@@ -325,23 +323,14 @@ export interface MascotState {
 | TS 키 | wire 이름 | 시그니처(Rust) | 동작 |
 |---|---|---|---|
 | `setMascotVisible` | `set_mascot_visible` | `(app: AppHandle, visible: bool)` | `get_webview_window("mascot")` → show()/hide(). 창 부재는 no-op Ok |
-| `mascotActivate` | `mascot_activate` | `(app: AppHandle, app_state: State<AppState>, agent_id: String)` | 앱에서 선택한 뒤 VS Code 출처가 검증된 IDE 연결이면 저장한 포커스 대상의 원본 VS Code를 우선 활성화하고 그 연결의 알림만 지운다. 실패하거나 일반 PTY·알 수 없는 외부 앱·CLI 연결이면 main 창 `show()+unminimize()+set_focus()` 후 `emit_to("main", "mascot-open-terminal", json!({"agentId": agent_id}))` |
+| `mascotActivate` | `mascot_activate` | `(app: AppHandle, agent_id: String)` | main 창 `show()+unminimize()+set_focus()` 후 `emit_to("main", "mascot-open-terminal", json!({"agentId": agent_id}))` |
 
-`set_badge_count`(misc.rs:12)의 `get_webview_window("main")` 패턴을 그대로 따른다.
+`set_badge_count`(misc.rs (`mascot_activate / set_badge_count`))의 `get_webview_window("main")` 패턴을 그대로 따른다.
 tauriApi.ts에는 `AgentOfficeApi`(shared/types/api.ts) 인터페이스에 두 메서드를 추가.
 
-### 6.1.1 외부 IDE 포커스 대상
+### 6.1.1 제거된 IDE 포커스 경로
 
-앱의 IDE 세션 선택 흐름에서 VS Code 출처를 검증해 연결한 경우에만 백엔드가 명시적
-포커스 대상을 외부 세션에 저장한다. 그 대상이 있는 `mascot_activate`는 main 창을
-먼저 열거나 `mascot-open-terminal`을 내보내지 않는다. 원본 활성화에 성공하면 그
-연결의 알림만 지우며, 다른 캐릭터나 연결의 알림에는 영향을 주지 않는다.
-
-macOS에서는 실행 중인 VS Code 앱을 활성화한다. 따라서 기존 창과 대화는 그대로
-유지하지만 특정 대화 탭을 고르지는 않는다. Windows와 Linux에서는 연결의 작업 폴더로
-기존 VS Code 실행 경로를 호출한다. 활성화 실패, 대상이 없거나 지원되지 않는
-외부 앱, 일반 PTY, CLI로 관찰한 연결은 모두 기존 main 패널 경로로 폴백한다. CLI
-연결 계약에는 원본 앱 활성화 대상이 등록되지 않으므로 VS Code라고 추정하지 않는다.
+제거됨(2026-10-14, [archive/ide-session-spike.md](archive/ide-session-spike.md)·[archive/ide-persona-design.md](archive/ide-persona-design.md)). 현재 `src-tauri/src/ipc/commands/misc.rs`의 `mascot_activate`는 main 창을 복원·포커스하고 `mascot-open-terminal`을 보낸다.
 
 ### 6.2 이벤트 (`src/shared/ipc.ts` Events에 추가 — 기존 kebab-case 관례)
 
@@ -376,8 +365,7 @@ macOS에서는 실행 중인 VS Code 앱을 활성화한다. 따라서 기존 �
 4. **마스코트 렌더**: protocol 파서, sheet.ts(절차/커스텀 분기·96px 리샘플),
    idle 애니, 배지/바운스. 검증: vitest — 시트 소스 결정·리샘플 크기 계산·파서
    가드(순수 파트); 눈검증 — main과 동일 외형(같은 seed), 커스텀 시트 일치.
-5. **인터랙션**: drag.ts 판정, 클릭→`mascot_activate`→검증된 앱 내 IDE 연결은
-   원본 VS Code 포커스, 그 밖은 main 포커스+터미널, position.ts 저장/복원·클램프.
+5. **인터랙션**: drag.ts 판정, 클릭→`mascot_activate`→main 포커스+터미널, position.ts 저장/복원·클램프.
    검증: vitest — drag 임계·클램프 순수 로직; 눈검증 — 클릭/드래그 구분,
    멀티모니터 복원.
 6. **설정 UI + 마감**: SettingsDialog 토글, 라이프사이클 총정리(종료 동반 파괴,
@@ -405,9 +393,7 @@ macOS에서는 실행 중인 VS Code 앱을 활성화한다. 따라서 기존 �
 3. 같은 seed 캐릭터가 main 오피스와 동일 외형(절차 생성·커스텀 각 1회), idle 2프레임 애니 동작.
 4. 알림 발생 → 배지+바운스 시작, 터미널 열어 클리어 → 정지·(다른 활동 없으면 15초 후 숨김).
 5. 활동 캐릭터 교체(pending 인터럽트/working sticky) 동작.
-6. 검증된 앱 내 IDE 연결의 클릭 → 원본 VS Code가 앞으로 오고 해당 연결 알림만
-   사라짐. 일반 PTY·알 수 없는 외부 앱·CLI 연결 또는 VS Code 포커스 실패 → main이
-   최전면 포커스 + 해당 캐릭터 터미널 오버레이 열림(백그라운드·최소화 상태에서도).
+6. 클릭 → main이 최전면 포커스 + 해당 캐릭터 터미널 오버레이 열림(백그라운드·최소화 상태에서도).
 7. 드래그 이동 가능, 4px 미만 움직임은 클릭으로 판정. 앱 재시작 후 위치 복원.
 8. 모니터 해제(노트북 단독) 후 재시작 → 기본 위치로 복귀(화면 밖 미아 없음).
 9. 작업 중 표시/숨김 전환이 현재 입력 포커스를 훔치지 않음.
@@ -415,16 +401,16 @@ macOS에서는 실행 중인 VS Code 앱을 활성화한다. 따라서 기존 �
 
 ## 부록 A — 초안(fable-planner 코멘트) 대비 바로잡은 사실
 
-1. **캐릭터 팩토리 경로/행번호**: `src/renderer/gen/characterFactory.ts:931,952`가 아니라
-   `src/renderer/office/gen/characterFactory.ts`(총 222행). `createCharacterAssets`=147행,
-   `generateSpritePreview`=199행. 그리고 둘 다 마스코트에 **부적합**(전자는 Pixi 의존,
-   후자는 정지 1프레임) — 순수 `generateSheet`(56행)+2D 캔버스로 확정(§4.2).
-2. **CSP/unsafe-eval**: `main.tsx:5`의 `import "pixi.js/unsafe-eval"`은 CSP에
+1. **캐릭터 팩토리 근거**: `src/renderer/office/gen/characterFactory.ts`의
+   `createCharacterAssets`는 Pixi 의존, `generateSpritePreview`는 정지 1프레임이라
+   마스코트에 부적합하다. 현재 순수 생성은 `src/renderer/office/gen/sheetGen.ts`의
+   `generateSheet`, 소비자는 `src/renderer/mascot/sheet.ts`의 `loadMascotFrames`다.
+2. **CSP/unsafe-eval**: `main.tsx` (`bootstrap`)의 `import "pixi.js/unsafe-eval"`은 CSP에
    unsafe-eval을 넣는 게 아니라 Pixi의 eval-free 셰이더 파서 주입이다. 마스코트는
    Pixi 미사용이므로 "동일 처리 필요"라는 초안 전제 자체가 소멸.
 3. **macOSPrivateApi**: conf 설정 외에 Cargo feature `macos-private-api`가 필수(초안 누락).
-   현 Cargo.toml은 `tauri = { version = "2", features = [] }`.
-4. **invoke_handler 위치**: lib.rs:463(초안 480). misc.rs:12(set_badge_count)는 정확.
+   현재 `src-tauri/Cargo.toml`은 `macos-private-api` feature를 켠다.
+4. **invoke_handler 근거**: `src-tauri/src/lib.rs`의 `run`, 커맨드 본문은 `src-tauri/src/ipc/commands/misc.rs`의 `set_badge_count`·`mascot_activate`.
 5. **mascot capability 권한**: `allow-set-focus`/`show`/`hide`/`close`는 불필요 —
    해당 동작은 전부 Rust 커맨드로 이관(§3). 앱 자체 커맨드는 ACL 비대상이라
    mascot에서 invoke 가능.
@@ -487,15 +473,15 @@ macOS에서는 실행 중인 VS Code 앱을 활성화한다. 따라서 기존 �
    `focus:false`만으로는 부족했다. 그 값은 **창 생성 시점의 초기 포커스**만
    막고, 이후 `set_mascot_visible(true)` → `WebviewWindow::show()`는 tao의
    `set_visible(true)`가 `makeKeyAndOrderFront:`를 호출한다
-   (tao 0.35.3 `platform_impl/macos/window.rs:668-673`). 즉 에이전트가 작업을
+   (tao 0.35.3 `platform_impl/macos/window.rs`). 즉 에이전트가 작업을
    시작해 마스코트가 뜰 때마다 앱 창 밖(터미널 등)의 입력 포커스를 가져갔고,
    마스코트를 클릭·드래그할 때도 마찬가지였다.
    `focusable:false`(`tauri-utils` `WindowConfig::focusable`)를 켜면 tao의
    `TaoWindow` 클래스가 `canBecomeKeyWindow`/`canBecomeMainWindow`를 NO로
-   덮으므로(같은 파일 `is_focusable`, 408-433) `makeKeyAndOrderFront:`도 key로
+   덮으므로(같은 외부 tao 파일의 `is_focusable`) `makeKeyAndOrderFront:`도 key로
    만들지 못하고 그냥 앞으로만 올린다. Windows에서는 `WS_EX_NOACTIVATE`에 해당.
    기존 상호작용은 그대로다 — 드래그는 `startDragging` → tao `drag_window`가
-   `performWindowDragWithEvent:`라 key 창을 요구하지 않고(931-), 클릭 히트는
+   `performWindowDragWithEvent:`라 key 창을 요구하지 않고, 클릭 히트는
    `acceptFirstMouse:true`가 비활성 창에서도 첫 클릭을 뷰로 전달한다.
    마스코트에는 키보드 입력이 없으므로 포커스 불가로 잃는 기능이 없다.
    클릭 시 main 창을 앞으로 올리는 것은 `mascot_activate`가 명시적으로 하므로

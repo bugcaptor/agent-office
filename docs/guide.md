@@ -1,5 +1,7 @@
 # Agent Office 사용 안내
 
+상태: 정본 (2026-10-14)
+
 설치와 첫 실행은 [README](../README.md)에 있습니다. 이 문서는 그 다음 — 어떤 기능이 있고, 무엇을 켜면 무엇이 늘어나고, 개발자로서 어떻게 빌드·테스트하는지를 다룹니다.
 
 - [주요 기능](#주요-기능)
@@ -139,9 +141,25 @@ macOS에서 iTerm을 선택하면 처음 사용할 때 자동화 권한을 요�
 
 ## 개발자용 명령
 
+### 저장소 작업 규칙 — 정본
+
+- 장기 유지할 설계·명세는 `docs/`에 둔다. 이슈는 작업 과정, 위키는 포털로 사용한다.
+- 기본적으로 `main`에서 직접 작업하고 로컬 커밋한다. 별도 브랜치·워크트리·PR은 요청이 있을 때만 사용한다. 커밋 금지 등 개별 작업 지시가 있으면 그 지시를 우선한다.
+- 임의로 푸시하지 않는다.
+- 커밋 메시지는 한국어 한 줄로 간명하게 쓴다. AI를 공동저자로 넣지 않는다.
+- 화면 문자열은 하드코딩하지 않고 `src/shared/i18n/locales/`에 넣는다. 설계는 [i18n-design.md](i18n-design.md), 검사는 `noHardcodedHangul.test.ts`가 담당한다.
+- 검증은 `npx tsc --noEmit`, `npx vitest run --dir src`, `cargo test --manifest-path src-tauri/Cargo.toml`이다. vitest만으로는 공유 타입 사용처의 누락을 잡지 못하므로 타입 검사를 함께 한다.
+- `AGENTS.md`·`CLAUDE.md`는 git 추적 제외인 로컬 안내 파일이다. 클론에서 읽어야 할 일반 규칙은 이 절에 둔다.
+
+### 빌드 캐시 청소
+
+`npm run tauri`의 `pretauri` 훅이 `scripts/sweep-target.mjs`를 실행한다. macOS·Windows 빌드 스크립트도 sweep을 먼저 수행한다. Cargo 산출물은 자동으로 지워지지 않아 `src-tauri/target/`이 커질 수 있다.
+
+별도로 정리하려면 `npm run sweep`, 이번 실행만 건너뛰려면 `AGENT_OFFICE_SKIP_SWEEP=1`을 사용한다. `AGENT_OFFICE_SWEEP_DAYS`는 잔존물 기준 일수(기본 3)다. `cargo install cargo-sweep`으로 설치하면 `deps/`까지 정리한다.
+
 ### 요구사항
 
-- Node 18+
+- Node 20.19+ 또는 22.12+ (현재 Vite 7의 `engines.node` 기준)
 - Rust 툴체인 ([rustup.rs](https://rustup.rs))
 - Tauri v2 기반 — macOS/Windows/Linux 지원. Linux는 시스템 패키지가 추가로 필요합니다([Tauri 사전 준비](https://v2.tauri.app/start/prerequisites/)).
 
@@ -195,15 +213,12 @@ APPLE_SIGNING_IDENTITY="Agent Office Local Signing" npm run tauri build
 ```bash
 npx vitest run --dir src                                # 프런트
 cargo test --manifest-path src-tauri/Cargo.toml         # 네이티브
-npm run typecheck
+npx tsc --noEmit                                       # 타입 검사
 ```
 
 테스트는 실패 처리, 상태 전이, 저장·IPC 형식, 동시성, 경계값처럼 실제 회귀를 잡는 동작을 검증합니다. 직접 만든 리터럴을 다시 확인하거나 구현의 상수·문구를 그대로 복사한 검사는 두지 않습니다. 같은 회귀를 이미 잡는 검사가 있으면 중복 검사를 줄입니다. 번역 키·보간 누락, 픽셀 데이터 규격, 색상 대비처럼 정적 데이터라도 사용자 동작에 영향을 주는 검사는 유지합니다.
 
 `src/shared/contract-fixtures/`는 Rust의 실제 serde 출력·입력과 비교합니다. `JSON.parse()` 결과에 TS 타입을 붙이는 것만으로는 타입 불일치를 검증할 수 없습니다. TS·Rust 미러 타입은 함께 검토하고, 프런트 사용처의 누락은 `npm run typecheck`로 확인합니다.
-
-### 선택 환경변수
-
 
 ### 폰트 참고
 

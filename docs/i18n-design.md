@@ -1,8 +1,8 @@
 # UI 다국어(i18n) 설계 — 한국어 / 영어 / 일본어 / 중국어(간체·번체) / 프랑스어
 
-상태: 정본 — 구현 완료 (2026-08-25). 이행은 커밋 6개로 나뉘어 있다: `44b0f56`(인프라·언어 설정) → `aa18f5e`(설정·프로필 화면) → `c4284c3`(터미널·작업 폴더·마크다운) → `dbf428d`(남은 UI + 뷰모델 `TextKey`) → `57d04d3`(AI 프롬프트·언어 규칙 프로필) → `d6b735a`(백엔드 프롬프트 언어 + 에러 코드화). 이후 2026-08-26에 ja·zh-Hans·zh-Hant·fr **UI 카탈로그만** 추가했다 — 프롬프트·판정 규칙·낱말·Rust `Lang`은 설계대로 en 폴백이다(§5).
+상태: 정본 (2026-10-14) — 구현 완료 (2026-08-25). 이행은 커밋 6개로 나뉘어 있다: `44b0f56`(인프라·언어 설정) → `aa18f5e`(설정·프로필 화면) → `c4284c3`(터미널·작업 폴더·마크다운) → `dbf428d`(남은 UI + 뷰모델 `TextKey`) → `57d04d3`(AI 프롬프트·언어 규칙 프로필) → `d6b735a`(백엔드 프롬프트 언어 + 에러 코드화). 이후 2026-08-26에 ja·zh-Hans·zh-Hant·fr **UI 카탈로그만** 추가했다 — 프롬프트·판정 규칙·낱말·Rust `Lang`은 설계대로 en 폴백이다(§5).
 
-구현 파일: 카탈로그 `src/shared/i18n/catalog.ts` + `src/shared/i18n/locales/{ko,en,ja,zh-Hans,zh-Hant,fr}/*.json`(9 네임스페이스 × 6 언어 = 54개). 런타임 글루 `src/renderer/i18n/index.ts`. 언어별 코드 자산 `src/renderer/i18n/{promptProfiles,textRules,wordlists}.ts`. 뷰모델 장치 `src/renderer/shared/textKey.ts`, 에러 매핑 `src/renderer/shared/backendError.ts`. 백엔드 `src-tauri/src/i18n.rs`. 설정 필드는 `AppSettings.language`(`src/shared/types/settings.ts` ↔ `src-tauri/src/persistence/settings_store.rs`).
+구현 파일: 카탈로그 `src/shared/i18n/catalog.ts` + `src/shared/i18n/locales/{ko,en,ja,zh-Hans,zh-Hant,fr}/*.json`(11 네임스페이스 × 6 언어 = 66개). 런타임 글루 `src/renderer/i18n/index.ts`. 언어별 코드 자산 `src/renderer/i18n/{promptProfiles,textRules,wordlists}.ts`. 뷰모델 장치 `src/renderer/shared/textKey.ts`, 에러 매핑 `src/renderer/shared/backendError.ts`. 백엔드 `src-tauri/src/i18n.rs`. 설정 필드는 `AppSettings.language`(`src/shared/types/settings.ts` ↔ `src-tauri/src/persistence/settings_store.rs`).
 
 이 앱은 한국어 전용으로 만들어졌다. 이 문서는 그 전제를 **한국어를 정본으로 둔 채** 걷어낸 방법과, 걷다가 밟은 함정을 남긴다.
 
@@ -54,7 +54,7 @@ src/shared/i18n/locales/<언어>/<네임스페이스>.json
 
 `eager: true`인 이유는 §2.6(동기 초기화)이다. 리소스가 정적 import라 로딩 상태가 없으므로 `react.useSuspense: false`로 둘 수 있다.
 
-**renderer가 아니라 shared에 둔 이유**: 웹 리모트(`src/web`)는 별도 번들이라 `@renderer/*`를 import할 수 없다. 지금은 범위 밖이지만(§8), 나중에 다국어화할 때 자기 글루(i18next 인스턴스)만 만들면 **같은 JSON을 그대로 재사용**할 수 있게 남겨 둔 자리다. shared에는 renderer 의존이 없어야 하므로 `catalog.ts`에는 i18next import조차 없다 — 순수한 리소스 조립기다.
+**renderer가 아니라 shared에 둔 이유**: 카탈로그·언어 매칭은 UI 런타임에 의존하지 않는 공통 데이터다. 웹 원격은 제거됨(2026-10-14, [archive/web-remote-design.md](archive/web-remote-design.md)). shared에는 renderer 의존이 없어야 하므로 `catalog.ts`에는 i18next import조차 없다 — 순수한 리소스 조립기다.
 
 ### 2.3 `AppSettings.language`는 유니언이 아니라 자유 문자열
 
@@ -91,9 +91,7 @@ language: string;   // "system" | "ko" | "en" | …
 
 언어를 타는 Rust 문자열은 손에 꼽는다.
 
-- TTS 리라이트 프롬프트 (`tts/rewrite.rs`, `tts/openrouter.rs`)
 - 학습자료 시스템 프롬프트 (`session_log/study.rs`의 `study_system_prompt`)
-- 동료 대화 주입 템플릿 (`talk/mod.rs`)
 - 요약기 중략 마커 (`summarizer/mod.rs`의 `truncation_marker`)
 - 훅 알림 기본 문구 (`notification/hub.rs`의 `attention_fallback`/`stop_fallback`)
 
@@ -103,12 +101,12 @@ language: string;   // "system" | "ko" | "en" | …
 
 ```
 "path-outside-root"
-"tailscale-cli-error: exit status 1"
+"study-failed: exit status 1"
 ```
 
-이건 새 규약이 아니라 **기존 `"{code}: {detail}"` 관례를 일반화한 것**이다. TTS는 이미 `TtsError::code()`로 `tts_disabled`·`no_voice` 같은 코드를 내고 있었고, 요약기 테스트도 코드 문자열을 쓰고 있었다. `d6b735a`는 markdown·session_log·tailscale·media·persistence 커맨드의 남은 한국어 문구를 같은 모양으로 바꾼 것이다. 프런트 매핑은 `src/renderer/shared/backendError.ts`(§3.5).
+이것은 **기존 `"{code}: {detail}"` 관례를 일반화한 것**이다. 요약기·마크다운·세션 로그 등은 코드와 진단 세부정보를 내려보내고 화면용 번역은 프런트가 담당한다. 프런트 매핑은 `src/renderer/shared/backendError.ts`(§3.5).
 
-이 방침의 대가 하나: 백엔드가 UI 언어를 알아야 하는 지점(프롬프트)에서는 설정을 읽어야 한다. `lib.rs`가 부팅·설정 저장 시 `hub.set_lang(i18n::ui_lang(&settings))`로 밀어 넣고, TTS는 `RewriteConfig::from_settings`가 한 번 해석해 들고 다닌다.
+이 방침의 대가 하나: 백엔드가 UI 언어를 알아야 하는 지점(프롬프트)에서는 설정을 읽어야 한다. `lib.rs`가 부팅·설정 저장 시 `hub.set_lang(i18n::ui_lang(&settings))`로 밀어 넣는다.
 
 ### 2.6 첫 페인트 플래시 방지 — localStorage 캐시로 **동기** 초기화
 
@@ -150,21 +148,23 @@ language: string;   // "system" | "ko" | "en" | …
 
 `src/renderer/i18n/` 아래 셋(프롬프트·규칙·낱말)은 **한글 스캐너의 제외 경로**다(§6). 여기 한글 리터럴이 있는 게 정상인 유일한 곳이다.
 
-### 3.2 네임스페이스 9개
+### 3.2 네임스페이스 11개
 
 `defaultNS: "common"`. 나머지는 `ns:키` 로 지정한다.
 
 | 네임스페이스 | 담당 | 상위 키 |
 |---|---|---|
 | `common` | 앱 셸 공통 + 백엔드 에러 문구 | `_meta`, `time`, `topBar`, `bottomBar`, `ticker`, `notification`, `errors` |
-| `app` | 정보 다이얼로그·확인 대화상자·셸 출력 | `about`, `confirm`, `shell` |
-| `settings` | 설정 다이얼로그 전체(첫 실행·페어링·모델 픽커 포함) | `language`, `dialog`, `keys`, `general`, `sound`, `tts`, `system`, `control`, `webRemote`, `talk`, `firstRun`, `pairing`, `modelPicker` |
-| `profile` | 캐릭터 프로필 편집(초상·스프라이트·미니미·번들 입출력) | `dialog`, `identity`, `appearance`, `keyColor`, `portrait`, `sprite`, `minimi`, `terminal`, `bot`, `voice`, `io`, `codex`, `archetype`, `color`, `editor`, `generate` |
+| `app` | 정보·확인·저장소 점검·셸 출력 | `about`, `confirm`, `repositoryAudit`, `shell` |
+| `settings` | 설정 다이얼로그(첫 실행·모델 픽커 포함) | `language`, `dialog`, `keys`, `general`, `sound`, `system`, `control`, `firstRun`, `modelPicker` |
+| `profile` | 캐릭터 프로필 편집 | `dialog`, `identity`, `appearance`, `keyColor`, `portrait`, `sprite`, `minimi`, `terminal`, `io`, `codex`, `archetype`, `color`, `editor`, `generate` |
 | `office` | PixiJS 씬이 쓰는 이름들 — 풍경·테마·종족·키 컬러·사운드팩·팻말·책상 | `scene`, `theme`, `archetype`, `keyColor`, `soundPack`, `sign`, `desk` |
-| `terminal` | 탭 스트립·우클릭 메뉴·봇 오버레이·호스트·팔레트 | `tab`, `menu`, `bot`, `host`, `palette` |
+| `terminal` | 탭 스트립·우클릭 메뉴·호스트·팔레트 | `tab`, `menu`, `host`, `palette`, `summary` |
 | `workdir` | 작업 폴더 팔레트·상세·diff·커밋 로그·git 상태·마크다운 뷰어 | `palette`, `detail`, `diff`, `repoLog`, `status`, `markdown` |
-| `activity` | 사용량·타임라인·활동 분석·동료 대화 로그·세션 로그 | `usage`, `timeline`, `analytics`, `talk`, `sessionLog` |
+| `activity` | 사용량·타임라인·활동 분석·세션 로그 | `usage`, `timeline`, `analytics`, `sessionLog` |
 | `journal` | 일기·수상(이 달의 우수사원)·포스트잇 메모 | `diary`, `awards`, `memo` |
+| `workpanels` | 업무 패널·수신함·보내기·가져오기 | 업무·이력·선행·전송 문구 |
+| `run` | 실행 레시피 팔레트 | 조사·실행·프로세스 상태 문구 |
 
 `office`가 별도인 이유는 **씬 쪽 소비자가 React 밖**이라서다. `themes.ts`·`packs.ts`·씬 레지스트리가 모듈 최상위 상수에 `labelKey`만 담고(§4), 그 키가 전부 이 네임스페이스에 모인다.
 
@@ -304,14 +304,13 @@ i18next에도 `$t()` 중첩이 있지만 역할이 다르다: `$t()`는 카탈�
 | 일기 알림 | 제목은 번역, 본문은 원문 | `diaryAutoWriter`가 `t("journal:diary.title", {name})` + `previewBody(entry.body)` |
 | 수상 소감 | 원문 보존 | 같은 이유. 언어를 바꿨다고 지난달 소감을 다시 뽑지 않는다 |
 | 포스트잇 메모 | 원문 보존 | 사용자가 쓴 글이다 |
-| 동료 대화 로그 본문 | 원문 보존. `kindLabel`(로그 종류)만 번역 | 대화 내용은 콘텐츠, 종류는 UI |
 | 태스크 라벨(요약) | 원문 보존, 다음 요약부터 새 언어 | 모델이 생성한 값이고 스토어에 있다 |
 
 즉 **"UI가 말하는 것"과 "앱이 보관하는 것"의 경계**다. UI가 말하는 것은 전부 키로, 앱이 보관하는 것은 전부 원문으로.
 
 ### 4.5 순수 모듈이 `t`를 얻는 두 가지 방식
 
-- **`t`를 인자로 주입** — 그 함수의 결과가 곧 화면 문구이고, 호출자가 React 컴포넌트인 경우. 컴포넌트의 `useTranslation()`이 준 `t`를 넘겨야 **언어 변경 시 리렌더가 걸린다**. 예: `talkLogView.kindLabel(kind, t)`, `renderText(text, t)`.
+- **`t`를 인자로 주입** — 그 함수의 결과가 곧 화면 문구이고, 호출자가 React 컴포넌트인 경우. 컴포넌트의 `useTranslation()`이 준 `t`를 넘겨야 **언어 변경 시 리렌더가 걸린다**. 예: `renderText(text, t)`.
 - **모듈 `t`를 호출 시점에 사용** — 호출자가 React 밖이거나(스토어·Pixi·부팅 경로) 결과가 곧바로 쓰이고 버려지는 경우. 예: `backendErrorText`, `formatRelativeTime`, `themeLabel`, `OfficeScene`의 팻말.
 
 어느 쪽이든 금지는 하나다: **모듈 로드 시점에 부르지 않는다.**
@@ -344,7 +343,7 @@ i18next에도 `$t()` 중첩이 있지만 역할이 다르다: `$t()`는 카탈�
 | `promptProfiles.ts` 프로필 | 요약·일기·소감이 **영어로** 생성된다 |
 | `textRules.ts` 규칙 | 영어 판정 규칙으로 목표 추출이 돈다(프랑스어 요청 문장을 잘 못 잡는다) |
 | `wordlists.ts` 낱말 | 랜덤 프로필 초안이 영어 이름/역할로 나온다 |
-| `src-tauri/src/i18n.rs`의 `Lang` variant | 백엔드 프롬프트(TTS 리라이트·학습자료·중략 마커·훅 알림 기본 문구)가 영어로 돈다 |
+| `src-tauri/src/i18n.rs`의 `Lang` variant | 백엔드 프롬프트(학습자료·중략 마커·훅 알림 기본 문구)가 영어로 돈다 |
 
 ja·zh-Hans·zh-Hant·fr가 지금 정확히 이 상태다(2026-08-26): **UI는 그 언어, 요약·일기·소감은 영어.**
 
@@ -483,9 +482,9 @@ Rust 쪽 `truncation_marker_fits_the_frontend_prompt_budget` 테스트가 이 �
 | 표면 | 상태 | 비고 |
 |---|---|---|
 | 마스코트 창 언어 실시간 전파 | 미구현 | §7.6 |
-| 에이전트(CLI)에게 나가는 메시지 — `src-tauri/src/control/client.rs`, `talk/skill.rs`, `bot/**` | **의도적 제외** | 사용자 화면이 아니라 **모델·CLI가 읽는 문자열**이다. UI 언어와 무관하게 안정적이어야 하고, 바꾸면 스킬·봇 프롬프트의 동작이 바뀐다 |
+| 에이전트(CLI)에게 나가는 메시지 — `src-tauri/src/control/client.rs`, `src-tauri/src/office_instructions.rs` | **의도적 제외** | 사용자 화면이 아니라 **모델·CLI가 읽는 문자열**이다. UI 언어와 무관하게 안정적이어야 하고, 바꾸면 CLI 안내문의 동작이 바뀐다 |
 
-마지막 항목이 중요하다. `control/client.rs`·`talk/skill.rs`에 한국어가 100줄 넘게 남아 있는 것은 이행 누락이 아니라 **경계**다. 이 문자열들의 독자는 사용자가 아니라 에이전트다.
+`office_instructions.rs`의 업무 안내문은 모델이 읽는 입력이다. TTS·동료 대화·봇 프롬프트 모듈은 제거됐으며 그 이력은 [health-check-cleanup-plan.md](health-check-cleanup-plan.md) §7.G에 있다.
 
 ## 9. 핵심 설계 결정 요약
 
@@ -493,7 +492,7 @@ Rust 쪽 `truncation_marker_fits_the_frontend_prompt_budget` 테스트가 이 �
 |---|---|---|
 | 라이브러리 | i18next + react-i18next | React 밖(Pixi·zustand·순수 모듈)에서도 `t()`가 필요 |
 | 인스턴스 | `createInstance()` (전역 싱글턴 아님) | 테스트가 언어 상태를 서로 밟지 않게 |
-| 카탈로그 위치 | `src/shared/i18n/locales/` | 웹 리모트 재사용 여지 |
+| 카탈로그 위치 | `src/shared/i18n/locales/` | UI 런타임과 독립된 공통 데이터 |
 | 로딩 | `import.meta.glob` eager | 동기 init 가능 → 첫 페인트 플래시 없음, Suspense 불필요 |
 | 언어 목록 | glob에서 도출 | 언어 추가 = 폴더 추가 |
 | `AppSettings.language` | 자유 문자열 | 언어를 늘려도 TS·Rust 타입 계약이 안 바뀜 |

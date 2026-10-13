@@ -1,6 +1,6 @@
 # 프로젝트 점검·기능 정리 계획
 
-- 상태: 진행 중 (2026-10-14) — A·B·C·D·E·F 기록, G 완료(§7.G, 14건), F 수정 태스크 10건(§7.F)
+- 상태: 진행 중 (2026-10-14) — A~H 기록, G 제거 14건·H 문서 정리 완료, I 마무리 잔여. F 수정 태스크 10건(§7.F)
 - 목적: 프로젝트의 문제점을 찾아 줄을 세우고, 잘 쓰지 않게 된 기능을 골라 제거해 유지 비용을 줄인다.
 - 실행 단위: agent office 업무 보드 태스크(§6). 각 태스크 본문이 이 문서의 절을 가리킨다.
 
@@ -10,7 +10,7 @@
 - **증거 없는 문제는 문제로 올리지 않는다.** 모든 발견에는 재현 절차나 `파일:줄`이 붙는다.
 - **제거는 사람이 결정한다.** 사용 신호(§3)는 후보를 고르는 근거일 뿐이다. 제거 목록은 사용자 승인 후에만 실행한다.
 - **제거 대상은 정밀 조사하지 않는다.** 없어질 코드를 깊게 읽는 비용을 아낀다.
-- 저장소 규칙(AGENTS.md)을 따른다: `main`에서 로컬 커밋, 푸시 금지, 화면 문자열은 i18n 카탈로그, 검증은 `npx tsc --noEmit` + `npx vitest run --dir src` + `cargo test --manifest-path src-tauri/Cargo.toml`. (`vscode-ext` 테스트는 C40 제거로 없어짐)
+- 저장소 규칙([guide.md 개발자 절](guide.md#개발자용-명령))을 따른다: `main`에서 로컬 커밋, 푸시 금지, 화면 문자열은 i18n 카탈로그, 검증은 `npx tsc --noEmit` + `npx vitest run --dir src` + `cargo test --manifest-path src-tauri/Cargo.toml`. (`vscode-ext` 테스트는 C40 제거로 없어짐)
 
 ## 2. 점검 관점 — 유능한 엔지니어가 볼 것
 
@@ -39,10 +39,11 @@
 
 ### 3.2 문서상 1차 후보 (판정 아님, 조사 출발점)
 
+착수 당시 후보이며 현재 판정은 §7.D·제거 결과는 §7.G를 따른다. 앱↔앱 뷰어는 코드가 없고 잔여 파일도 처리됐으므로 후보에서 뺐다(C38).
+
 | 영역 | 근거 |
 |---|---|
 | 세션 v1 핸드오프 vs v2 브로커 | 두 경로 공존, v2는 기본 off |
-| ~~앱↔앱 뷰어(`peer/viewer.rs`)~~ | 코드 이미 없음, 잔여 파일 삭제(§7.D) |
 | IDE 세션 관찰(spike) | 실험 구현 |
 | 봇 모드(Gitea 폴링) | 특정 인프라 의존 |
 | 터미널 입력 자동화, 실행 레시피 | opt-in 부가 기능 |
@@ -548,3 +549,73 @@ E·H로 넘기는 것:
 - **E8 카드 출처(신뢰 경계)** — 사용자 결정(2026-10-14): 현행 유지. 보내기는 수동뿐이고 사람이 '보내기'를 누르는 것이 관문이다. 출처 필드·보내기 확인은 넣지 않는다.
 - **A2** 비동기 반영: 안내문의 `A=$(…); --after "$A"` 패턴이 동작하므로 조치 없음.
 - **A5** 빈 제목: 본문만으로 업무가 성립하는 설계(§7.A.1).
+
+### 7.H 낡은 문서 정리 (2026-10-14)
+
+범위: 활성 `docs/*.md` 전부, 루트 `README.md`, git 추적 제외인 `AGENTS.md` 프로젝트 지침. 입력은 §7.B.6 D1~D11·S1~S8 및 §7.D·§7.G. 원문 §7.0~§7.F와 §6 태스크 표는 당시 기록으로 보존했다. 아래 판정 날짜는 코드·git 이력 대조일이며 새 화면 검증일이 아니다. 코드 동작·의존성 변경·커밋·푸시는 하지 않았다.
+
+#### 문서별 판정·처리
+
+'부분표류 → 정본'은 확인 가능한 표류를 고친 결과다. 혼합 문서의 초기 코드 스케치까지 전면 재작성하지 않은 B·C는 부분표류로 유지한다.
+
+| 파일 | 판정 | 처리 결과 |
+|---|---|---|
+| `README.md` | 정본 | 설치·스크립트·guide 링크 대조(사용자용 문서라 상태줄은 넣지 않음) |
+| `docs/README.md` | 부분표류 → 정본 | 2026-10-14 갱신, 문서별 상태 동기화, 없는 REBUILD-PLAN 참조 제거, 개발 규칙 guide 연결, 표시 API·새 archive 2행 추가 |
+| `docs/guide.md` | 부분표류 → 정본 | 추적되는 개발자 절을 규칙 정본으로 지정. main·로컬 커밋·푸시 금지·한국어 한 줄·AI 공동저자 금지·i18n·검증 3명령·sweep 이관. Vite 7의 Node 요구사항으로 수정, 빈 환경변수 절 정리 |
+| `AGENTS.md` (로컬) | 부분표류 → 정본 안내 | 추적 제외 유지, 일반 규칙은 guide 개발자 절로 연결. 맨 위 OS 터미널 실기 메모 보존 |
+| `docs/subsystem-a-sessions.md` | 부분표류 → 정본 | 제거된 bot/v2 모듈·타입·IPC 및 입양 설명 정리. v1 `AdoptOk`·`AdoptedSession`·`generate_codex_image`·관찰 URL 근거 현행화. 전체 재작성 안 함 |
+| `docs/subsystem-b-office.md` | 부분표류 | 상태를 명확히 표기하고 캐릭터·좌석·FSM 테스트 경로 수정. §1~§4 초기 코드 스케치는 그대로 남음 |
+| `docs/subsystem-c-ui.md` | 부분표류 | bot 폴더·타입 참조 정리, wordlists·fonts·테스트 경로 수정, Tauri 표기로 교정. 초기 UI/API 코드 스케치는 전면 재작성하지 않음 |
+| `docs/work-panels-design.md` | 부분표류 → 정본 | 제거된 원격·tmux·봇 제한·TTS env 서술 정리, 주입 출처 `InjectSource::WorkSend`로 교정. 기존 설치 앱·인증 CLI 인수 잔여 유지 |
+| `docs/antigravity-support-design.md` | 부분표류 → 정본 | 실시간 한도 조회를 제거 이력 링크로 축약. SQLite 턴 토큰·훅·재개 기록 유지. 외부 agy 가이드와 저장소 경로 구분, CLI 눈검증 미실시 유지 |
+| `docs/kilo-support-design.md` | 정본 | 날짜 갱신. Windows·도구 인자·자식 세션 사용량 실측 미확인 유지 |
+| `docs/pi-support-design.md` | 부분표류 → 정본 | 원문을 git mv로 snapshot archive에 보존하고 현재 이벤트·확장·observer·공용 래퍼·실패 계약을 파일+심볼로 재정리(이슈 #8 보존) |
+| `docs/archive/pi-support-design-snapshot.md` | 이력 | 초기 설계·file:line·버전별 실측·검증 기록 보존. 본문 갱신 안 함 |
+| `docs/usage-design.md` | 부분표류 → 정본 | 원문을 git mv로 archive에 보존. 활성본의 §11·§12를 agy/Gemini 제거 링크로 축약, Claude·Codex 계약·§13 플로팅 표시 유지, 외부 orca 파일 근거 구분 |
+| `docs/archive/usage-design-provider-history.md` | 이력 | 통합본의 제거된 provider 결정 근거(#22/#33, kbm #2h8/#2j4) 보존. 본문 갱신 안 함 |
+| `docs/macos-signing.md` | 정본 | 머리 상태·날짜 추가. 현존 빌드·서명 npm 스크립트와 파일 대조 |
+| `docs/mascot-lights-design.md` | 부분표류 → 정본 | 행번호를 파일+심볼로 전환, 픽스처 경로 수정. 외부 attach 제거 반영, 완료된 bridge 배선을 현재형으로 교정. 화면 확인 목록 유지 |
+| `docs/mascot-window-design.md` | 부분표류 → 정본 | 행번호를 파일+심볼로 전환, `sheetGen.ts::generateSheet` 근거·Cargo feature 교정. 제거된 IDE 포커스 갈래를 main 창 복원·터미널 이벤트 계약으로 변경 |
+| `docs/session-handoff-design.md` | 부분표류 → 정본 | 날짜 갱신, 행번호를 심볼로 전환, 세션 IPC 파일 명시. v1 유일 경로·v2 archive 확인 |
+| `docs/session-analytics-design.md` | 부분표류 → 정본 | 제거된 bot 주입 경로를 `InjectGate::submit_strict`로 교정. 저장 호환 `origin:"bot"`·`bot*` 집계 유지 |
+| `docs/session-log-design.md` | 부분표류 → 정본 | 머리에 '구현 완료, 화면 확인 잔여' 추가. v2 서술을 v1 sessiond/직접 PTY 입양으로 교정, 스모크 example 존재 확인 |
+| `docs/cli-control-design.md` | 부분표류 → 정본 | 낡은 attach 절 참조와 설정 커맨드 파일 수정. 제거 이력 연결, 현존 명령 확인 |
+| `docs/run-recipes-design.md` | 부분표류 → 정본 | botGuard·talkEnabled·talk/skill·웹 원격 근거 정리. 현존 `injectAndSubmit`·office_instructions·shim으로 교정, guide 검증 규칙 연결 |
+| `docs/employee-of-the-month-design.md` | 부분표류 → 정본 | 구현 완료 판정: 선정·awardsStore·IPC·bootstrap·AwardsDialog·AwardFrameOverlay 배선 및 git log 확인. TTS 후속 서술 제거, 자동 입력 차감 표기·현재 주입 심볼 교정 |
+| `docs/i18n-design.md` | 부분표류 → 정본 | 제거된 TTS/talk/봇/웹 원격 표면 정리. 현재 11 네임스페이스·66 카탈로그와 키 목록 반영, 상태 날짜 갱신 |
+| `docs/claude-session-resume-design.md` | 정본 | 날짜 갱신, recorder/store·IPC·렌더러 이어하기 존재 확인 |
+| `docs/repository-audit-design.md` | 정본 | 날짜 갱신, OS 터미널 새 탭 실기 잔여 명시 |
+| `docs/vscode-display-api.md` | 부분표류 → 정본 | D10 누락 인덱스 추가. 제거된 로그 뷰어와 남은 companion 호환 `/v1/display/*` 계약 구분 |
+| `docs/health-check-cleanup-plan.md` | 진행 중 | D2 후보 제거, 작업 규칙 guide 연결, H 결과 추가. §6·기존 §7 기록 보존, I 잔여 |
+| G에서 옮긴 제거 기능 문서 13개 | 이력(기존 archive) | affinity·vscode-character-extension·remote-server·web-remote·session-broker-v2·tmux-hosting·ide-session-spike·ide-persona·external-session-attach·bot-mode·terminal-automation·agent-talk·tts-confirm-line의 이동/인덱스 존재 확인. 본문 갱신 안 함 |
+
+IDE 기능의 spike/persona는 두 문서로 보존돼 있다. `vscode-ext/` 문서·패키지는 C40으로 이미 없어 활성 갱신 대상이 없다. `vscode-display-api.md`는 본체 control 서버의 현존 계약이라 archive 대상이 아니다.
+
+#### 입력 D·S 처리와 참조 검사
+
+- D1: 없는 `REBUILD-PLAN.md`를 인덱스에서 제거. §4.1 예시·§7 당시 기록은 보존.
+- D2: `peer/`·`peer/viewer.rs` 및 웹 원격 후신 모듈이 없음을 확인. §3.2에서 후보 삭제. archive peer 행은 이미 '웹 원격까지 제거됨'이어서 유지.
+- D3: `tokio-tungstenite`는 G-C35에서 이미 제거됨. Cargo.toml의 dependency/feature/주석·Cargo.lock의 tungstenite·Rust 사용처 모두 0건이라 고칠 주석이나 남은 불필요 의존성이 없다. 별도로 Cargo.toml의 reqwest 주석에서 제거된 TTS 사용처를 현존 HTTP 사용처로 교정(주석만).
+- D4~D6: `profile/wordlists.ts` → `i18n/wordlists.ts`, `assets/fonts/` → `styles/fonts/`, appStore·dedupe·TerminalRegistry 및 오피스 캐릭터/좌석/FSM 테스트 → 실제 `__tests__/` 경로.
+- D7~D8: Pi 원문은 이력 보존 후 심볼 기반 정본 신설. mascot 2개는 로컬 소스 행번호를 심볼로 교정. 외부 tao의 버전별 근거는 외부 소스임을 구분.
+- D9~D10: remote-server·ide-persona는 이미 archive 표에 있고 해당 파일 존재 확인. 표시 API는 활성 파일이므로 인덱스에 추가.
+- D11: 사용자 결정대로 AGENTS 추적 제외 유지, 작업 규칙 정본을 guide로 옮김. 로컬 메모는 변경하지 않음.
+- S1~S4·S7: 계획은 I까지 진행 중. 웹 원격·affinity·v2는 이미 이력. 우수사원은 코드·git log 기준 구현 완료. archive의 과거 머리 표기는 갱신하지 않음.
+- S5: 활성 세션 로그의 화면 확인 잔여 유지. 외부 붙이기·TTS·VSCode V1 눈검증은 제거 기능 이력이므로 새 인수 태스크로 만들지 않음.
+- S6: subsystem A/C의 제거 모듈·이동 경로만 중심으로 수정, 전면 재작성 안 함. S8: 활성 문서 머리 상태줄 통일; G archive 문서는 그대로.
+- 마크다운 로컬 링크·백틱 경로·소스 예시 경로를 `git ls-files`와 대조(새 활성 Pi/usage 파일은 작업 트리 존재도 확인). npm 스크립트는 `package.json`, IPC/설정은 현존 함수·`src/shared/ipc.ts`·AppSettings에 대조했다. 앱 데이터·빌드 산출물·외부 CLI 자료·경로 예시·과거 이름은 문맥으로 제외했다.
+
+#### 남긴 잔여 — 태스크 후보(새 보드 태스크는 만들지 않음)
+
+- **세션 로그 화면 확인**: 실제 Claude/Codex TUI와 일반 셸 출력의 전사 필터·대체 화면 마커, 세션 선택/편집기/학습자료 표시를 사람이 확인한다. 빈 줄 전사 패닉은 기존 F3(t-e31286a3) 별도 수정 태스크라 H에서는 고치지 않았다.
+- **업무 패널 설치 앱·인증 CLI 인수**: `work-panels-design.md`의 '남은 실기 인수' 전부. 저장·재실행 복원, 5종 실제 CLI 첫/후속 프롬프트, Windows 셸, 내보내기/가져오기, 수신함·선행/완료·권한/샌드박스를 확인한다.
+- **마스코트·신호등 화면 재확인**: 마스코트의 기존 Windows 완료 기록은 보존하되 H에서 재실행하지 않았다. 제거된 IDE 갈래 없이 클릭→main/터미널, 투명·포커스·배율/멀티모니터, lights 동적 크기·앵커·waiting·overflow를 현행 앱에서 확인한다.
+- **agy·Kilo CLI 실측 보강**: agy §6의 working→idle·앱 밖 no-op, Kilo §6의 Windows 플러그인·도구 인자 키·다중 자식 턴 사용량은 미확인. Pi는 새 외부 버전 실기를 하지 않았고 과거 완료 기록을 새 검증으로 바꾸지 않았다.
+- **외부 OS 터미널 새 탭 인수**: iTerm 실제 탭 수·cwd·기존 세션 보존, 창 없음·권한 거부·앱 미설치 및 Windows 실기는 로컬 메모대로 잔여다. 과거 CUA 거부 제한을 우회하지 않으며 설치 앱·외부 탭은 조작하지 않았다.
+- **제거 기능의 소스 주석 정리**: `src/renderer/store/persist.ts`의 `hydrate` 주변 `connect_ide_session` 언급, `src-tauri/src/state.rs`의 `BotPromptArms`, `session_events/{recording_events,types}.rs`의 삭제된 bot runner 근거가 남는다. Cargo.toml 외 소스 수정 금지로 변경하지 않았다. `InjectSource::Talk` variant도 남지만 기능 재존재의 근거로 취급하지 않았다.
+- **혼합 서브시스템 문서 후속 현행화**: B §1~§4 및 C 초기 스케치의 모든 구현 세부는 미확인. 유효한 원칙·증분 명세가 섞여 있어 파일 전체 이력화는 하지 않고 부분표류로 표시했다. 별도 작업에서 초기 스케치만 이력으로 분리하거나 심볼 중심으로 재작성한다.
+
+의존성 제거 후보는 이 단계에서 추가하지 않았다. D3의 의존성은 이미 G에서 없어졌으며, 다른 의존성의 필요성은 이번 문서 정리의 판정 대상이 아니다. 앱 데이터 잔여 삭제·Anthropic 키 UI 공백 등은 기존 F/G 태스크로 남긴다.
+
+검증(문서 정리): 활성 문서 25개·로컬 마크다운 링크 97개·소스 경로 318개 대조, 끊긴 링크/앵커 0건, `git diff --check` 통과. §6·기존 §7·기존 archive·이동 원문 바이트 보존, Cargo TOML 파싱 결과 동일, AGENTS 추적 제외를 확인했다. 앱 실기·프런트/네이티브 전체 테스트는 이 문서 작업에서 실행하지 않았다.

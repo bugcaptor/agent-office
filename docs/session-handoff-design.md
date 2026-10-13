@@ -1,7 +1,7 @@
 # 세션 핸드오프 설계 — 앱 종료 후 터미널 존속 + 재실행 시 이어받기
 
-작성: 2026-07-17 (Fable). 상태 갱신: 2026-07-20.
-상태: 정본 — **v1 구현 완료, 유일한 세션 존속 경로**(이슈 #7 닫힘). 한때 공존하던
+작성: 2026-07-17 (Fable). 상태 갱신: 2026-10-14.
+상태: 정본 (2026-10-14) — **v1 구현 완료, 유일한 세션 존속 경로**(이슈 #7 닫힘). 한때 공존하던
 v2 상시 브로커(`docs/archive/session-broker-v2-design.md`)는 2026-10-14에 제거됐다
 (점검·정리 계획 §7.D C37).
 
@@ -24,7 +24,7 @@ poll reader는 `session/poll_reader.rs`, 데몬은 `sessiond/{daemon,client,prot
 ## 왜 이 방식인가 (결정)
 
 - 현재 구조: portable-pty로 앱 프로세스가 PTY 마스터를 직접 소유, `ExitRequested`에서
-  `dispose_all()`로 전부 SIGKILL (`lib.rs:237`, `manager.rs:442`).
+  `dispose_all()`로 전부 SIGKILL (`lib.rs` (`run`), `manager.rs` (`SessionManager`)).
 - 자식 프로세스 자체는 앱이 죽어도 살 수 있다(reparent). 죽는 이유는 마스터 fd가 닫히며
   SIGHUP을 받기 때문. 따라서 **마스터 fd를 다른 프로세스가 이어 쥐면 세션은 산다**.
 - fd는 유닉스 도메인 소켓의 SCM_RIGHTS로 프로세스 간 전달 가능. tmux/screen 같은 외부
@@ -47,7 +47,7 @@ poll reader는 `session/poll_reader.rs`, 데몬은 `sessiond/{daemon,client,prot
 
 - 소켓: `app_data_dir()/sessiond.sock` (0700 디렉토리, 같은 uid만).
 - 데몬 바이너리: 별도 빌드 없이 **앱 실행 파일 자신**을 `--sessiond <socket_path>`
-  인자로 스폰 (기존 `maybe_run_observer_forwarder` 분기와 같은 패턴, `main.rs:5`).
+  인자로 스폰 (기존 `maybe_run_observer_forwarder` 분기와 같은 패턴, `main.rs`).
   `pre_exec`에서 `setsid()`로 세션 분리(앱/터미널 시그널 미전파), stdio는
   `app_data_dir()/sessiond.log`로 리다이렉트.
 
@@ -73,7 +73,7 @@ poll reader는 `session/poll_reader.rs`, 데몬은 `sessiond/{daemon,client,prot
 같은 마스터를 두 프로세스가 동시에 read하면 바이트가 쪼개져 유실된다. 순서 강제:
 
 - **핸드오프**: 앱 쪽 reader 스레드를 *먼저* 확정적으로 종료시킨 뒤 fd를 보낸다.
-  현재 reader는 블로킹 `read()`(`manager.rs:331-345`)라 인터럽트 불가 →
+  현재 reader는 블로킹 `read()`(`manager.rs` (`SessionManager`))라 인터럽트 불가 →
   **unix에서 poll 기반으로 교체**: `PortablePtyFactory`가 reader를
   `poll([master_fd_dup, shutdown_pipe_read])` 루프로 만들고, `SpawnedPty`에
   `reader_interrupt: Option<ReaderInterrupt>` (shutdown pipe write end) 추가.
@@ -115,7 +115,7 @@ Running 세션 각각에 대해:
      (자식이 아니라 waitpid 불가 — 마스터 EOF를 종료 신호로 쓴다)
 3. **create_with_profile의 spawn 이후 배선부(세션 등록, reader/pump/wait 3스레드,
    Running CAS)를 `install_session(...)`으로 추출**해 create/adopt가 공유한다.
-   상태 머신·sink 재사용 로직(`manager.rs:305-378`)은 그대로.
+   상태 머신·sink 재사용 로직(`manager.rs` (`SessionManager`))은 그대로.
 4. session_id는 핸드오프 때 것을 재사용. autostart/startup_command 주입은 하지 않는다.
 5. 데몬이 버퍼링한 출력(base64)은 pump mpsc에 첫 `ReaderMsg::Data`로 주입 —
    프론트가 아직 구독 전이면 기존 sink 백로그(BACKLOG_CAP 256)가 보관한다.
@@ -123,7 +123,7 @@ Running 세션 각각에 대해:
 
 ### 5. observer 훅 포트 스테일 문제
 
-세션 env의 `AGENT_OFFICE_HOOK_URL`은 스폰 시점 포트(`server.rs:71`, 임시 포트)를
+세션 env의 `AGENT_OFFICE_HOOK_URL`은 스폰 시점 포트(`server.rs` (`serve`), 임시 포트)를
 담는다 → 재시작 후 입양된 세션의 훅이 죽은 포트를 때린다. 완화:
 - 서버 기동 시 `app_data_dir()/observer-port` 파일에 현재 포트 기록.
 - forwarder(`observer/forwarder.rs`)가 env URL로 POST 실패(연결 거부) 시 포트 파일을
@@ -150,7 +150,7 @@ Running 세션 각각에 대해:
   입양 세션의 터미널이 처음 attach될 때 **redraw nudge**: `fit()` → `resize(cols, rows-1)`
   → `fit()` (TUI가 SIGWINCH 2회로 완전 재도색; 일반 셸엔 무해).
 
-## 커맨드 (ipc/commands.rs)
+## 커맨드 (`src-tauri/src/ipc/commands/session.rs`)
 
 - `handoff_supported() -> bool` — cfg(unix)에서 true.
 - `handoff_sessions() -> usize` — 넘긴 세션 수.

@@ -1,6 +1,6 @@
 # 서브시스템 B 상세 설계 — 오피스 씬 & 절차적 픽셀 캐릭터
 
-상태: 정본(부분표류 주의) — 2026-07-20 현행화는 상태줄·§0 파일 레이아웃·구현 작업 분해(구 §6) 제거까지. §1~§4의 코드 블록은 구현 전 스케치라 세부가 코드와 다를 수 있다(특히 커스텀 스프라이트 #47 이후 `gen/`에 `archetypes`/`spriteResample`/`spriteOverrides` 추가, `entities/`에 `MiniAgentsOverlay`/`ThinkingOverlay` 추가) — **어긋나면 코드가 정본**. 결정성 원칙(§5)과 "핵심 결정 요약"은 유효.
+상태: 부분표류 (2026-10-14) — 2026-07-20 현행화는 상태줄·§0 파일 레이아웃·구현 작업 분해(구 §6) 제거까지. §1~§4의 코드 블록은 구현 전 스케치라 세부가 코드와 다를 수 있다(특히 커스텀 스프라이트 #47 이후 `gen/`에 `archetypes`/`spriteResample`/`spriteOverrides` 추가, `entities/`에 `MiniAgentsOverlay`/`ThinkingOverlay` 추가) — **어긋나면 코드가 정본**. 결정성 원칙(§5)과 "핵심 결정 요약"은 유효.
 
 > 설계: Opus 하위 설계 / 주요 판단: Fable. 계약 정합화 결과는 마스터 플랜(이력)의 "계약 정합화" 절이 우선했다.
 > **정합화 반영 사항**: C가 요청한 `generateSpritePreview(seed)`는 씬 메서드가 아니라 `gen/characterFactory.ts`의 순수 함수로 노출한다(§3.5 끝 참조). `SessionState` 타입은 `src/shared/types.ts`의 것을 재사용한다.
@@ -1324,7 +1324,7 @@ export interface AgentProfile {
 핵심: `gen/`은 순수. `defaultCanvasFactory`를 테스트에서 **@napi-rs/canvas 기반 팩토리**로 주입. `getImageData` 기반 픽셀 비교로 검증.
 
 ```ts
-// src/renderer/office/__tests__/characterFactory.test.ts
+// src/renderer/office/gen/__tests__/characterFactory.test.ts
 import { describe, it, expect } from 'vitest';
 import { generateSheet, selectLayers } from '../gen/characterFactory';
 import { contrastRatio } from '../gen/palette';
@@ -1370,7 +1370,7 @@ describe('character generator determinism', () => {
 ```
 
 ```ts
-// src/renderer/office/__tests__/deskAssignment.test.ts
+// src/renderer/office/map/__tests__/deskAssignment.test.ts
 import { describe, it, expect } from 'vitest';
 import { assignDesks } from '../map/deskAssignment';
 import { OFFICE_MAP } from '../map/mapData';
@@ -1392,7 +1392,7 @@ describe('desk assignment', () => {
 ```
 
 ```ts
-// src/renderer/office/__tests__/behaviorFsm.test.ts
+// src/renderer/office/entities/__tests__/behaviorFsm.test.ts
 import { describe, it, expect } from 'vitest';
 import { stepBehavior } from '../entities/behaviorFsm';
 

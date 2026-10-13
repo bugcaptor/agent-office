@@ -1,6 +1,6 @@
 # 서브시스템 A 상세 설계 (Rust / Tauri v2) — 세션 · 알림 · 영속화
 
-상태: 정본 — 2026-07-20 현행화(리팩터 R-1~R-7 반영). 구현 전 산출물(코드 스켈레톤 구 §3·§4, Cargo.toml 사본 구 §7, 태스크 분해 구 §8)은 제거했다 — **구현은 코드가 정본**이고, 이 문서는 현재 구조·계약·결정과 그 근거를 서술한다. 절 번호 §9(요약 결정)·§10(완료 알림)·§11(설정 복구)은 외부(이슈) 참조 보존을 위해 유지.
+상태: 정본 (2026-10-14) — 2026-10-14 현행화(§7.G 제거 모듈·경로 반영). 구현 전 산출물(코드 스켈레톤 구 §3·§4, Cargo.toml 사본 구 §7, 태스크 분해 구 §8)은 제거했다 — **구현은 코드가 정본**이고, 이 문서는 현재 구조·계약·결정과 그 근거를 서술한다. 절 번호 §9(요약 결정)·§10(완료 알림)·§11(설정 복구)은 외부(이슈) 참조 보존을 위해 유지.
 
 > 설계: Opus 하위 설계 / 주요 판단: Fable. 원본 Electron 설계는 이력으로만 존재(상태 머신·dedup·배칭·훅 메커니즘의 논리를 1:1 이식). `src/shared/types/`(배럴 `types.ts`)가 TS 단일 소스이고, Rust `types.rs`는 serde로 미러링한다.
 
@@ -8,33 +8,30 @@
 
 ## 0. 파일 레이아웃 & 동시성 모델
 
-### 0.1 `src-tauri/` 모듈 레이아웃 (2026-07-20 현재)
+### 0.1 `src-tauri/` 모듈 레이아웃 (2026-10-14 현재)
 
 ```
 src-tauri/src/
   main.rs                  # 얇은 진입점: --sessiond / --observer-forward / ctl 인자 분기 → run()
   lib.rs                   # run(): Builder + setup + invoke_handler + RunEvent.
-                           #   make_pty_factory가 AGENT_OFFICE_SESSION_BROKER=v2 opt-in 판정
   state.rs                 # AppState, AppEvents 트레잇, TauriEvents, SessionRegistry
   types.rs                 # serde 계약 타입 (src/shared/types/ 미러, §1)
   session/
     manager.rs             # SessionManager 코어: 생성(create_with_profile)·설치(install_session)·
-                           #   입출력·리사이즈·dispose·exit 처리 (~790줄)
+                           #   입출력·리사이즈·dispose·exit 처리
     manager/tests.rs       # 인라인 테스트 분리(R-1)
     manager/real_pty_smoke.rs
     output.rs              # OutputSink(백로그·Channel attach/detach)·spawn_output_pump·snapshot_offset
     output_batcher.rs      # 16ms/64KB 배칭 + UTF-8 경계 캐리 (§3.2)
     handoff_v1.rs          # v1 fd 핸드오프/입양: handoff_all/handoff_one/adopt_detached/adopt_one
-    handoff_broker.rs      # v2 브로커 갈래: handoff_all_broker/adopt_detached_broker 등
     pty_factory.rs         # PtyFactory 트레잇 + PortablePtyFactory (+ 테스트 Fake)
-    broker_pty.rs          # BrokerPtyFactory (v2 상시 브로커, unix)
     poll_reader.rs         # poll 기반 인터럽트 가능 reader (unix, 핸드오프 전제)
     shells.rs              # 셸 탐지·선택 + PowerShell 래퍼
     zsh_wrapper.rs / bash_wrapper.rs / wrapper_script.rs
                            # 셸별 rc 심 + CommandWrapperSpec 기반 claude()/pi()/kilo() 래퍼 렌더
     pi_extension.rs        # Pi 확장 파일 배포 (docs/pi-support-design.md)
     kilo_plugin.rs         # Kilo Code CLI 플러그인·KILO_CONFIG 배포 (docs/kilo-support-design.md)
-    env_capture.rs         # 로그인 셸 env 캡처 (봇 모드 #58)
+    env_capture.rs         # 로그인 셸 env 캡처(외부 CLI 실행용)
   notification/
     hub.rs (+ hub/)        # NotificationHub: dedup/큐/clear + hold(§10.4)/resume-watch(§10.2)
   observer/                # 훅 파이프라인 (구 notification/hook_server·hook_settings의 후신)
@@ -45,25 +42,26 @@ src-tauri/src/
     forwarder.rs           # --observer-forward 훅 중계 (포트 스테일 완화, 이슈 #30)
     hook_command.rs        # 훅 커맨드 문자열 빌더
     claude_resume_recorder.rs  # native 세션 ID 캡처 (docs/claude-session-resume-design.md)
-  sessiond/                # 세션 존속 데몬 (unix). v1 테이블 + v2 브로커 겸용
-    daemon.rs (+ daemon/)  # handle_connection → 오피코드별 핸들러 13개로 분해(R-5)
+  sessiond/                # 세션 존속 데몬 (unix). 종료 시점 fd 핸드오프 v1
+    daemon.rs (+ daemon/)  # handle_connection → v1 메시지별 핸들러
     client.rs / protocol.rs
   session_events/          # 분석용 시계열 store/reader (archive/session-event-timeseries + analytics 문서)
   persistence/             # profile/settings/diary/work_log/session_time/claude_resume/png 스토어
   ipc/
     commands.rs            # 얇은 허브 — 도메인 서브모듈 pub(crate) 재수출만
-    commands/{session,persistence,media,settings,bot,usage,misc}.rs  # 커맨드 본문(R-2)
+    commands/{session,persistence,media,settings,usage,misc,api_keys,work_panels,repository_audit}.rs  # 커맨드 본문(R-2)
     commands/tests.rs
   workdir/                 # git 러너·파서·diff·리스팅·커맨드 (R-3, subsystem-c §10이 소비)
     {git_runner,status,diff,listing,model,commands,mod}.rs
-  bot/                     # 봇 모드 (docs/bot-mode-design.md)
+  work_send/               # 업무 보내기의 CLI 기동·receipt·입력 전환
+  office_instructions.rs   # office-task 안내문·권한 배선
   control/                 # CLI 제어 서버·클라이언트 (docs/cli-control-design.md)
   usage/                   # 구독 사용량 (docs/usage-design.md)
   codex_imagegen/ summarizer/  # 이미지 생성(codex CLI)·요약 외부 API 클라이언트
   markdown.rs shell_export.rs terminal.rs vscode.rs api_keys.rs  # 단일 파일 유틸
 ```
 
-프런트 계약 쪽은 `src/shared/types/{common,session,notification,bot,profile,diary,usage,settings,markdown,git,api}.ts`로 도메인 분할된 배럴(`shared/types.ts`는 재수출만, R-6)이고, IPC 커맨드명 상수는 `src/shared/ipc.ts`, 어댑터는 `src/renderer/ipc/tauriApi.ts`다.
+프런트 계약 쪽은 `src/shared/types/{common,session,notification,profile,diary,usage,settings,markdown,git,api}.ts`로 도메인 분할된 배럴(`shared/types.ts`는 재수출만, R-6)이고, IPC 커맨드명 상수는 `src/shared/ipc.ts`, 어댑터는 `src/renderer/ipc/tauriApi.ts`다.
 
 ### 0.2 동시성 모델
 
@@ -97,20 +95,20 @@ Rust/Tauri는 **OS 스레드 + tokio 태스크 혼합**이다. `portable-pty`의
 
 ## 1. Rust 계약 타입 — `types.rs` ↔ `src/shared/types/`
 
-타입 정의 자체는 코드가 정본(`src-tauri/src/types.rs` 1,179줄, workdir 계열은 `workdir/model.rs`). 여기엔 **양쪽이 어긋나면 안 되는 매핑 규칙**만 적는다.
+타입 정의 자체는 코드가 정본(`src-tauri/src/types.rs`,  workdir 계열은 `workdir/model.rs`). 여기엔 **양쪽이 어긋나면 안 되는 매핑 규칙**만 적는다.
 
 - 구조체는 `#[serde(rename_all = "camelCase")]` — Rust `snake_case` → TS `camelCase`.
 - enum은 `#[serde(rename_all = "lowercase")]` — PascalCase variant → TS 소문자 문자열 값 (`SessionState = 'starting'|'running'|'exited'|'disposed'`, `NotificationSource = 'hook'|'stop'|'bell'` 등).
 - epoch ms는 `u64`(TS `number`). `Option<T>`는 `T | undefined`이며 `skip_serializing_if`로 생략.
 - **TS(`src/shared/types/`)가 정본이고 Rust는 미러** — 필드 추가 시 양쪽 타입과 `src/shared/contract-fixtures/`를 함께 갱신한다. Rust의 `src-tauri/tests/contract_fixtures.rs`가 실제 serde 출력·입력을 픽스처와 비교한다. TS 타입과 Rust 타입의 일치는 수동으로 확인해야 한다. `JSON.parse()`의 `any` 결과에 타입을 붙이는 방식으로는 불일치를 잡을 수 없으며, `npx tsc --noEmit`도 프런트 사용처만 검사한다.
-- 뒤에 추가된 계약 필드는 `#[serde(default)]`로 additive하게만 늘린다(브로커 프로토콜과 동일 원칙).
+- 뒤에 추가된 계약 필드는 `#[serde(default)]`로 additive하게만 늘린다(sessiond 핸드오프 프로토콜과 동일 원칙).
 
-핵심 계약 타입(대표): `SessionState`/`SessionStateEvent`/`SessionExitInfo`, `NotificationSource`/`NotificationEvent`/`NotificationClearedEvent`, `ActivityKind`/`ActivityEvent`, `CreateSessionRequest`/`CreateSessionResult`, `OutputChunk{sessionId, agentId, data, frames, seq}`, `AgentProfile`(+`bot`)/`PersistedState`, `AppSettings`, `BotConfig`/`BotStatus`, `UsageSnapshot`.
+핵심 계약 타입(대표): `SessionState`/`SessionStateEvent`/`SessionExitInfo`, `NotificationSource`/`NotificationEvent`/`NotificationClearedEvent`, `ActivityKind`/`ActivityEvent`, `CreateSessionRequest`/`CreateSessionResult`, `OutputChunk{sessionId, agentId, data, frames, seq}`, `AgentProfile`/`PersistedState`, `AppSettings`, `UsageSnapshot`.
 
 - `NotificationEvent.id`는 **NotificationHub가 uuid로 발급**(렌더러 재발급 금지 — clear 동기화 때문).
-- `SessionExitInfo.signal`은 항상 None(portable-pty가 크로스플랫폼 ExitStatus에서 시그널을 분리 노출하지 않음). 단 브로커 세션은 데몬이 waitpid하므로 exit code가 살아난다(broker-v2 문서).
+- `SessionExitInfo.signal`은 항상 None(portable-pty가 크로스플랫폼 ExitStatus에서 시그널을 분리 노출하지 않음). 입양 세션은 자식이 아니므로 EOF로 종료를 관찰한다.
 - `listNotifications`는 **배열**(`NotificationEvent[]`)을 반환한다 — 스냅샷 래퍼 타입은 IPC 표면에 없다.
-- sessionId는 **런타임 전용**(SessionManager/SessionRegistry 메모리) — 디스크에 저장하지 않는다.
+- 프로필의 `PersistedState`에는 sessionId를 저장하지 않는다. 실행 중 SessionManager/SessionRegistry가 소유하며, 분석·세션 로그와 핸드오프 메타에는 해당 실행의 sessionId가 남는다.
 
 ---
 
@@ -133,17 +131,16 @@ Rust/Tauri는 **OS 스레드 + tokio 태스크 혼합**이다. `portable-pty`의
 | `setBadgeCount` | `"set_badge_count"` | `{ count }` | `void` |
 | `onData` (내부) | `"subscribe_output"` / `"unsubscribe_output"` | `{ agentId, channel }` / `{ agentId }` | `void` |
 
-### 2.2 전체 커맨드 표면 (도메인 파일별, 2026-07-20 현재 총 54개)
+### 2.2 대표 커맨드 표면 (도메인 파일별, 2026-10-14)
 
 이름은 코드가 정본 — `lib.rs`의 `generate_handler!`와 `src/shared/ipc.ts`가 접점.
 
 | 파일 | 커맨드 |
 |---|---|
-| `ipc/commands/session.rs` | 2.1의 세션·알림 8개(`create_session`~`clear_notifications`, `subscribe_output`/`unsubscribe_output` 포함) + `list_available_shells`, `handoff_supported`, `session_broker_mode`, `upload_session_snapshots`, `handoff_sessions`, `adopt_detached_sessions` |
+| `ipc/commands/session.rs` | 2.1의 세션·알림 8개(`create_session`~`clear_notifications`, `subscribe_output`/`unsubscribe_output` 포함) + `list_available_shells`, `handoff_supported`, `handoff_sessions`, `adopt_detached_sessions` |
 | `ipc/commands/persistence.rs` | `load_state`, `save_state`, `append_session_turn`, `load_session_turns`, `append_diary_entry`, `load_diary`, `save_work_log`, `load_work_logs`, `load_session_events`, `list_claude_resume_sessions` |
-| `ipc/commands/media.rs` | `save_portrait`, `load_portrait`, `delete_portrait`, `save_sprite`, `load_sprite`, `delete_sprite`, `summarize_text`, `generate_sprite_image` |
+| `ipc/commands/media.rs` | `save_portrait`, `load_portrait`, `delete_portrait`, `save_sprite`, `load_sprite`, `delete_sprite`, `summarize_text`, `generate_codex_image` |
 | `ipc/commands/settings.rs` | `get_app_settings`, `set_app_settings`, `control_status`, `control_approve`, `control_revoke` (+ GUI/CLI 공유 `apply_settings_effects`) |
-| `ipc/commands/bot.rs` | `bot_start`, `bot_stop`, `bot_status` |
 | `ipc/commands/usage.rs` | `load_usage_snapshot` (+ 순수 함수 `resolve_usage_roots`) |
 | `ipc/commands/misc.rs` | `set_badge_count`, `open_in_vscode`, `open_in_terminal`, `export_terminal_output`, `pick_directory` |
 | `workdir/commands.rs` | `workdir_list_files`, `workdir_git_status`, `workdir_diff_file`, `workdir_file_history`, `workdir_diff_commit`, `workdir_commit_files`, `workdir_repo_log`, `workdir_difftool` |
@@ -175,8 +172,8 @@ Rust/Tauri는 **OS 스레드 + tokio 태스크 혼합**이다. `portable-pty`의
 
 ### 3.1 PtyFactory — `session/pty_factory.rs`
 
-- **부작용 경계 트레잇**: `PtyFactory::spawn(PtySpawnOptions) -> SpawnedPty { reader, writer, control(resize/kill), waiter }`. SessionManager는 이 트레잇만 알고, 테스트는 Fake를 주입한다. 이 이음새 덕에 v2 브로커도 `BrokerPtyFactory` 교체 한 겹으로 들어갔다(broker-v2 문서).
-- `SpawnedPty`에는 핸드오프용 `reader_interrupt`/`handoff`(v1, unix)와 `broker_owned`(v2 혼합 상황 분류) 필드가 추가돼 있다 — 의미는 각 핸드오프 문서 참조.
+- **부작용 경계 트레잇**: `PtyFactory::spawn(PtySpawnOptions) -> SpawnedPty { reader, writer, control(resize/kill), waiter }`. SessionManager는 이 트레잇만 알고, 테스트는 Fake를 주입한다.
+- `SpawnedPty`에는 핸드오프용 `reader_interrupt`/`handoff`(v1, unix) 필드가 있다 — 의미는 session-handoff 문서 참조.
 - slave는 spawn 직후 닫는다. `clone_killer()`로 wait 스레드가 child를 소유해도 별도 kill 가능.
 - 스폰 셸은 **로그인 인터랙티브 셸**(`$SHELL -l -i`, Windows powershell). 주입 env: `AGENT_OFFICE_SESSION`(항상), `AGENT_OFFICE_HOOK_URL`·`AGENT_OFFICE_SETTINGS`(훅 on일 때), `AGENT_OFFICE_PI_EXT`(훅 on), `AGENT_OFFICE_KILO_CONFIG`(훅 on, docs/kilo-support-design.md), `TERM=xterm-256color`. 셸 rc 심(`zsh_wrapper`/`bash_wrapper`/`shells.rs`)이 `claude()`/`pi()`/`kilo()`/`kilocode()` 래퍼를 정의해 `--settings`/`-e`/`KILO_CONFIG` 대입을 투명 주입한다(`wrapper_script.rs`의 `CommandWrapperSpec` 렌더). kilo만 있는 특이점: 사용자가 이미 자기 `KILO_CONFIG`를 쓰고 있으면(`skip_if_env_set`) 그 값을 덮어쓰지 않고 관찰을 접는다.
 
@@ -197,12 +194,12 @@ CAN/SUB는 취소한다. 상태는 청크 경계에서 유지한다. 현재 범�
 (`ReaderMsg::Restore`)은 실시간 알림 판정에 넣지 않는다.
 근거: [xterm 제어 시퀀스](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html).
 
-### 3.3 SessionManager — `session/manager.rs` (+ output/handoff_v1/handoff_broker)
+### 3.3 SessionManager — `session/manager.rs` (+ output/handoff_v1)
 
 - 상태 머신: `Starting → Running → Exited | Disposed`. 전이는 이벤트 `"session-state"`로 방출, intentional 판정은 `kill_requested: AtomicBool`.
 - **1 에이전트 = 1 세션 불변식**: `create`가 기존 Starting/Running 세션을 재사용(E9).
-- **`install_session` 추출**: spawn 이후 배선(세션 등록, reader/pump/wait 3스레드, Running CAS)을 create와 입양(adopt)이 공유한다 — 핸드오프 v1 때 만든 구조가 v2에서도 그대로 재사용됨.
-- 핸드오프/입양 분기는 `broker_mode` + 세션별 `broker_owned`로 가르고, 갈래 본문은 `handoff_v1.rs`/`handoff_broker.rs`로 파일 격리(R-4) — v1 제거(R-8) 시 파일 삭제로 끝나게.
+- **`install_session` 추출**: spawn 이후 배선(세션 등록, reader/pump/wait 3스레드, Running CAS)을 create와 입양(adopt)이 공유한다.
+- 핸드오프/입양 본문은 `handoff_v1.rs`에 있다. v2 브로커는 제거됨(2026-10-14, [archive/session-broker-v2-design.md](archive/session-broker-v2-design.md)).
 - `handed_off` 세션은 `on_exit`/`dispose`/`dispose_all`에서 스킵(kill·cleanup·상태이벤트 금지).
 
 ### 3.4 NotificationHub — `notification/hub.rs`
@@ -213,7 +210,7 @@ CAN/SUB는 취소한다. 상태는 청크 경계에서 유지한다. 현재 범�
 
 ### 3.5 observer 훅 파이프라인 — `observer/`
 
-- 초기 설계의 `hook_server.rs`(수신)·`hook_settings.rs`(설정 파일)는 **어댑터 구조로 일반화**됐다: `ObserverAdapter` 트레잇(claude/codex 구현) + `ObserverRuntime`(ingest → hub), Pi는 `ingest_pi_source`, Kilo(kilo/kilocode)는 `ingest_kilo_source` 직행 갈래(각각 pi-support 문서 §0.5, kilo-support 문서 §2).
+- 초기 설계의 `hook_server.rs`(수신)·`hook_settings.rs`(설정 파일)는 **어댑터 구조로 일반화**됐다: `ObserverAdapter` 트레잇(claude/codex 구현) + `ObserverRuntime`(ingest → hub), Pi는 `ingest_pi_source`, Kilo(kilo/kilocode)는 `ingest_kilo_source` 직행 갈래(각각 pi-support 문서 §구조와 구현 근거, kilo-support 문서 §2).
 - 훅 커맨드는 curl 직결이 아니라 **앱 바이너리 forwarder**(`--observer-forward`) 경유 — 포트 스테일 완화(이슈 #30, handoff 문서 §5). 훅 실패는 항상 비차단(claude 흐름에 영향 0), BEL 폴백 상시.
 - Claude 설정 파일은 `<app_data>/observer/claude/`(§11에서 OS temp로부터 이동), 세션별 생성·정리. 입양 시 멱등 복구(§11).
 - Claude `Notification`은 모두 입력 대기가 아니다. 생성 설정의 matcher와
@@ -241,7 +238,7 @@ CAN/SUB는 취소한다. 상태는 청크 경계에서 유지한다. 현재 범�
 | **E1** | 세션 프로세스 예기치 않은 종료 | wait 스레드 `waiter.wait()` 반환 → `kill_requested=false` → `on_exit`가 `SessionState::Exited` 전이 이벤트(`session-state`) 방출. 레코드는 sessions/registry에 **유지**(재기동/진단). `hub.purge_session`으로 미해결 알림 정리. |
 | **E2** | claude만 종료, 쉘 생존 | PTY 자체는 살아있어 `read`/`wait` 미종료 → 상태 전이 없음(`Running` 유지). Stop hook이 이미 알림 발생시켰을 수 있음. 사용자는 프롬프트에서 재실행(래퍼가 설정 파일 부재 시 §11 가드로 강등 실행). |
 | **E3** | 앱 quit | `RunEvent::ExitRequested`에서 `manager.dispose_all()`(각 세션 `kill_requested=true` + `control.kill()` + settings cleanup) + 훅 서버 graceful shutdown. 각 세션은 wait 스레드에서 `Disposed` 확정. handed_off 세션은 스킵. |
-| **E4** | hook 서버 포트 충돌 | `TcpListener::bind(("127.0.0.1", 0))` → OS가 빈 포트 할당(정적 충돌 없음). 바인딩 실패 시 `serve_with_retry`가 1회 재시도(§3.5의 sender 함정 참조). 실제 포트는 `get_hook_port` 클로저로 create 시점에 읽어 env/설정에 주입. |
+| **E4** | hook 서버 포트 충돌 | `TcpListener::bind(("127.0.0.1", 0))` → OS가 빈 포트 할당(정적 충돌 없음). 바인딩 실패 시 `serve_with_retry`가 1회 재시도(§3.5의 sender 함정 참조). 실제 포트는 `ObserverServerState::current_url`을 읽는 클로저로 create 시점에 읽어 env/설정에 주입. |
 | **E5** | 동일 세션 다중 알림/dedup | 큐는 `Mutex<HashMap<SessionId, Vec<..>>>`로 순서 유지. `last_seen`에서 동일 `dedupKey`가 3s 내 재도착하면 억제(윈도우 슬라이드). 서로 다른 메시지는 별도 항목. Hook 소스의 기록 시점 예외는 §10.4. |
 | **E6** | PTY 대량 출력 백프레셔 | reader thread → mpsc → output pump의 `OutputBatcher`가 16ms 데드라인 + 64KB 상한 코얼레싱. `seq` 단조 증가로 순서 검증. `flush_final`이 EOF/dispose 시 잔여 강제 방출. UTF-8 경계 캐리로 코드포인트 분할 방지. |
 | **E7** | hook 전송 실패/서버 다운 | forwarder/curl은 짧은 타임아웃 + 실패 무시(항상 exit 0) → claude 흐름 비차단. 알림만 누락, BEL 폴백이 부분 방어. forwarder는 포트 파일 재시도(handoff 문서 §5). |
@@ -283,7 +280,7 @@ CAN/SUB는 취소한다. 상태는 청크 경계에서 유지한다. 현재 범�
 - **백프레셔**: 16ms/64KB 코얼레싱 + `seq`, **UTF-8 경계 캐리**(Rust 고유), exit/dispose 시 `flush_final`.
 - **테스트**: 모든 부작용(pty/http/fs/event/clock)을 트레잇 뒤로. 인라인 테스트는 서브모듈 파일로 분리(R-1).
 - **영속화**: `PersistedState`(agents+version) → app data dir JSON, sessionId는 런타임 전용 미저장. **quit**: `RunEvent::ExitRequested`에서 PTY kill + settings cleanup + axum graceful shutdown(핸드오프 시 스킵).
-- **세션 존속**: v1 fd-핸드오프(기본) + v2 상시 브로커(opt-in) 공존 — 각각 `docs/session-handoff-design.md`/`docs/session-broker-v2-design.md`가 정본.
+- **세션 존속**: v1 fd 핸드오프만 남는다 — [session-handoff-design.md](session-handoff-design.md)가 정본.
 
 ---
 
@@ -372,7 +369,7 @@ Hook 소스 알림을 `hold_duration`(설정 `attentionHoldMs`, 기본 5초) 만
 
 ## 11. 이어받은 셸에서 Claude 설정 파일 복구 (이슈 #40)
 
-**증상**: 세션 이어하기(핸드오프/브로커 입양)로 앱을 재시작한 뒤, 터미널에서 수동으로
+**증상**: 세션 이어하기(핸드오프 입양)로 앱을 재시작한 뒤, 터미널에서 수동으로
 `claude`를 나갔다가 같은 셸에서 다시 `claude`를 치면 `--settings`가 가리키는 임시 설정
 파일을 못 찾아 실패.
 
@@ -392,12 +389,10 @@ temp 청소·강제 삭제를 되돌릴 수단이 없어 그 셸의 `claude` 재
   (낡은 forwarder 경로도 함께 갱신). `ObserverRuntime::restore_session_artifacts(session_id,
   cleanup_paths)`가 순회·계측 로그. 내용은 세션 무관(sessionId·포트 미포함)이라 같은 함수를
   스폰/복구가 공유. 쓰기는 temp+rename 원자적.
-- **입양 시점 호출** — v1 `adopt_one`(`session/handoff_v1.rs`)은 `adopted.cleanup_paths`로,
-  v2 브로커 `adopt_one_broker`(`session/handoff_broker.rs`)는 `AttachOk`에 additive로 실린
-  `cleanup_paths`로 복구를 호출.
+- **입양 시점 호출** — `adopt_one`(`session/handoff_v1.rs`)이 `adopted.cleanup_paths`로 복구를 호출.
   `cleanup_paths`가 비면(observer OFF 세션·codex-only) no-op이라 자연히 건너뛴다.
-- **프로토콜 additive** — `sessiond/protocol.rs`의 `AttachOk`에 `#[serde(default)] cleanup_paths`
-  추가(데몬이 삭제 소유권 유지, 복구용 경로만 앱에 반환). `client.rs`의 `AttachedMeta`에도
+- **프로토콜 additive** — `sessiond/protocol.rs`의 `AdoptOk`에 `#[serde(default)] cleanup_paths`
+  추가(데몬이 삭제 소유권 유지, 복구용 경로만 앱에 반환). `client.rs`의 `AdoptedSession`에도
   동반. **삭제 소유권 계약은 불변** — 삭제는 여전히 ObserverPlanGuard(스폰 실패)·dispose·
   on_exit(둘 다 handed_off 스킵)·데몬 자식종료/Kill 5곳만.
 - **래퍼 파일-부재 가드** — `CommandWrapperSpec.skip_prefix_if_env_file_missing: Option<String>`
@@ -445,8 +440,7 @@ keepAwake·세션 시간 전부 유휴).
 두 값 모두 portable-pty가 이미 노출한다 — `MasterPty::process_group_leader()`
 (=`tcgetpgrp`)와 `get_termios()`(=`tcgetattr`). 우리 쪽 unsafe도, 추가 dup fd도
 없다. `PtyControl::foreground_sample() -> Option<ForegroundSample>`로 감싸고,
-`None`은 **기능 미지원**을 뜻한다(Windows·Fake·브로커 데몬 소유 세션 = 마스터
-fd가 앱에 없음). `RealControl`과 `AdoptedControl`(입양 세션)만 `Some`.
+`None`은 **기능 미지원**을 뜻한다(Windows·Fake = 지원 샘플 없음). `RealControl`과 `AdoptedControl`(입양 세션)만 `Some`.
 
 ### 12.2 디바운스
 
@@ -485,6 +479,6 @@ Start로 넘어간다(`reduceTurn`의 prompt가 닫고 다시 연다).
 
 ### 12.4 범위 밖
 
-- 브로커 데몬 소유 세션·Windows·외부(논리) 세션은 감시 대상이 아니다(마스터 fd
-  부재). 감시가 없으면 기존 동작 그대로다.
+- Windows·Fake는 감시 대상이 아니다. 앱 종료 후 sessiond가 보관하는 동안에도
+  감시는 없다. 입양 후 `AdoptedControl`로 감시를 재개한다.
 - 대화형 TUI 안에서 도는 작업(예: `claude` 내부 도구 실행)은 여전히 훅 담당.

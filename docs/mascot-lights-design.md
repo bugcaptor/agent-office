@@ -1,6 +1,6 @@
 # 마스코트 신호등(status lights strip) 설계
 
-상태: 정본 — 2026-08-28 설계 확정(결정 1·2·6은 사용자가 직접 택했다). 구현 완료(리뷰 반영 포함).
+상태: 정본 (2026-10-14) — 화면 재확인 잔여(§12). 2026-08-28 설계 확정(결정 1·2·6은 사용자가 직접 택했다). 구현 완료(리뷰 반영 포함).
 **2026-08-28 개정: 칸 표시 이름 선택 설정(`mascotLightsLabel`) 추가**
 (§6·§7) — 칸 아래 이름을 자동(현행)/에이전트 이름/프로젝트 이름/작업명 중
 고를 수 있다. 값이 그 칸에서 비면(예: cwd 없는 에이전트에 `project`) 자동으로
@@ -41,9 +41,7 @@
 - 에이전트 모드: **상태가 OFF가 아닌 에이전트만**(working ∪ attention), `agentOrder`
   순서. 일이 없는 에이전트는 칸 자체가 사라진다(사용자 확정, 결정 2).
 - 프로젝트 모드: 설정에 저장된 폴더 목록(순서 유지), 폴더당 1칸, 소속 세션들의
-  상태를 YELLOW > GREEN > OFF로 접는다. 외부 attach 세션
-  (docs/archive/external-session-attach-design.md, 제거됨)도 스토어에 같은 슬라이스로 흐르므로
-  자동 포함.
+  상태를 YELLOW > GREEN > OFF로 접는다. 외부 붙이기는 제거됨(2026-10-14, [archive/external-session-attach-design.md](archive/external-session-attach-design.md)).
 - 칸 클릭 → 대표 에이전트의 터미널 열기(기존 `mascot_activate` 재사용).
   호버 툴팁(title) = 대상 이름.
 - 신호등이 켜져 있으면 마스코트 창은 활동이 없어도 **계속 떠 있는다**(OFF도
@@ -54,25 +52,23 @@
 
 **제외(후속)**
 
-- 앱에 세션이 전혀 없는(attach도 안 된) 저장소의 실제 상태 감지 — v1은 항상
-  OFF(§2 결정 3). 후속 후보: `agent-office ctl` 훅만 등록하는 "watch-only
-  attach" 또는 저장소 폴링.
+- 앱에 세션이 전혀 없는 저장소의 실제 상태 감지 — 항상 OFF(§2 결정 3).
 - 마스코트 없이 신호등만 켜는 모드(§2 결정 6 — 문은 열어 둔다).
 - 칸별 커스텀(색·별칭·순서 드래그), 프로젝트 자동 발견(git root 스캔),
-  메인 창 내 미니 신호등, 웹 원격 노출.
+  메인 창 내 미니 신호등.
 - 진행률/경과시간 등 상태 3종을 넘는 표현.
 
 ## 2. 확정 결정
 
 | # | 질문 | 결정 | 근거 |
 |---|------|------|------|
-| 1 | GREEN/YELLOW/OFF를 무엇에 매핑하나 | **YELLOW = pending 알림 보유(`pendingAgentIds`, selectors.ts:44) ∪ `phase==="waiting"`(turnReducer.ts:9). GREEN = `phase==="working"`. 나머지 OFF. 우선순위 YELLOW > GREEN**(waiting 중에도 백그라운드 tool이 돌 수 있으나 사용자 응답 대기가 더 급한 정보) | **사용자 확정(2026-08-28).** 마스코트 pick(selectors.ts:74 `pickMascotTarget`)은 waiting을 제외하지만 그 근거("알림을 지운 waiting은 사용자가 인지한 상태")는 **알림 표면**용이다. 대시보드에서는 "터미널을 열어 알림은 지웠지만 아직 답을 안 한" 에이전트가 노란불로 남아야 진실이다. waiting은 prompt(답함)/tool(재개)/stop에서 풀리므로(turnReducer.ts:101-121) 노란불도 정확히 그때 꺼진다 |
-| 2 | 에이전트 모드에서 어떤 에이전트가 칸을 받나 | **상태가 OFF가 아닌 에이전트만** — `state !== "off"`(working ∪ attention)인 근무 중 에이전트, `agentOrder` 순서. 일이 없으면 칸이 사라지고 뒤 칸이 앞으로 밀려온다 | **사용자 확정(2026-08-28).** 요구 원문 "현재 작업중인 에이전트"를 액면대로 따른다. 대가는 턴 경계마다 칸 수·자리가 바뀌고 창이 리사이즈된다는 것 — 플래핑은 레이아웃 적용 디바운스로 흡수한다(§5.3). OFF 상태 표현은 프로젝트 모드(등록했지만 세션 없는 저장소)에서 의미를 갖는다. clockedOut 제외는 마스코트·오피스 캔버스와 같은 판단(selectors.ts:18) |
-| 3 | 프로젝트 모드: 저장소당 1칸의 소속 판정과 집계, 세션 없는 repo | **소속 = 에이전트 실효 cwd(`effectiveCwd`, labelText.ts:37 — `taskLabels[id].cwd ?? profile.cwd`)가 프로젝트 폴더와 같거나 그 하위**(labelText.ts:55 `isInsideCwd` 재사용 — `~` 접두 처리 포함, export 필요). 집계 = 소속 에이전트들 상태의 max(YELLOW>GREEN>OFF). **세션이 없는(소속 에이전트가 없는) repo는 항상 OFF** | git root 해석(`rev-parse --show-toplevel`)은 백엔드에 없다(workdir/status.rs는 abbrev-ref만). 경로 포함 판정이면 저장소 내부 워크트리(.claude/worktrees/ 하위)도 자동 포함되고, 라벨 표면·gitBranchWatcher(gitBranchWatcher.ts:41)와 같은 cwd 규약을 쓴다. 외부 attach 세션은 SessionRegistry를 거쳐 notifications/timeTracking에 그대로 흐르므로 추가 작업 없이 포함. attach조차 안 된 repo의 상태를 아는 채널은 현재 없다 — v1은 OFF로 정직하게 표시(추측이 아니라 조사로 확인) |
-| 4 | 설정을 어디에 저장하나 | **셋 다 Rust `AppSettings`(settings_store.rs, settings.json): `mascot_lights_mode`(enum, 기본 `off`), `mascot_lights_vertical`(bool, 기본 false), `mascot_lights_projects`(Vec<String>, 기본 빈 목록)** | mascot-window-design.md 결정 #5의 관례: SettingsDialog가 편집하는 opt-in은 settings.json(`mascotEnabled` 선례, settings.ts:127), 위치 같은 순수 UI 취향만 localStorage. 프로젝트 목록은 잃으면 아까운 사용자 데이터라 localStorage 부적합. 방향(vertical)은 UI 취향에 가깝지만 셋을 한 다이얼로그·한 저장소에 모으는 단순함이 낫다 |
+| 1 | GREEN/YELLOW/OFF를 무엇에 매핑하나 | **YELLOW = pending 알림 보유(`pendingAgentIds`, `src/renderer/store/selectors.ts`의 `pendingAgentIds`·`pickMascotTarget`) ∪ `phase==="waiting"`(`src/renderer/timeline/turnReducer.ts`의 `reduceTurn`). GREEN = `phase==="working"`. 나머지 OFF. 우선순위 YELLOW > GREEN**(waiting 중에도 백그라운드 tool이 돌 수 있으나 사용자 응답 대기가 더 급한 정보) | **사용자 확정(2026-08-28).** 마스코트 pick(`src/renderer/store/selectors.ts`의 `pendingAgentIds`·`pickMascotTarget` `pickMascotTarget`)은 waiting을 제외하지만 그 근거("알림을 지운 waiting은 사용자가 인지한 상태")는 **알림 표면**용이다. 대시보드에서는 "터미널을 열어 알림은 지웠지만 아직 답을 안 한" 에이전트가 노란불로 남아야 진실이다. waiting은 prompt(답함)/tool(재개)/stop에서 풀리므로(`src/renderer/timeline/turnReducer.ts`의 `reduceTurn`) 노란불도 정확히 그때 꺼진다 |
+| 2 | 에이전트 모드에서 어떤 에이전트가 칸을 받나 | **상태가 OFF가 아닌 에이전트만** — `state !== "off"`(working ∪ attention)인 근무 중 에이전트, `agentOrder` 순서. 일이 없으면 칸이 사라지고 뒤 칸이 앞으로 밀려온다 | **사용자 확정(2026-08-28).** 요구 원문 "현재 작업중인 에이전트"를 액면대로 따른다. 대가는 턴 경계마다 칸 수·자리가 바뀌고 창이 리사이즈된다는 것 — 플래핑은 레이아웃 적용 디바운스로 흡수한다(§5.3). OFF 상태 표현은 프로젝트 모드(등록했지만 세션 없는 저장소)에서 의미를 갖는다. clockedOut 제외는 마스코트·오피스 캔버스와 같은 판단(`src/renderer/store/selectors.ts`의 `pendingAgentIds`·`pickMascotTarget`) |
+| 3 | 프로젝트 모드: 저장소당 1칸의 소속 판정과 집계, 세션 없는 repo | **소속 = 에이전트 실효 cwd(`effectiveCwd`, `src/renderer/labels/labelText.ts`의 `effectiveCwd`·`isInsideCwd` — `taskLabels[id].cwd ?? profile.cwd`)가 프로젝트 폴더와 같거나 그 하위**(`src/renderer/labels/labelText.ts`의 `effectiveCwd`·`isInsideCwd` `isInsideCwd` 재사용 — `~` 접두 처리 포함, export 필요). 집계 = 소속 에이전트들 상태의 max(YELLOW>GREEN>OFF). **세션이 없는(소속 에이전트가 없는) repo는 항상 OFF** | 신호등 소속 판정은 git root 조회 대신 경로 포함 관계를 쓴다. 경로 포함 판정이면 저장소 내부 워크트리(.claude/worktrees/ 하위)도 자동 포함되고, 라벨 표면·gitBranchWatcher(gitBranchWatcher.ts (`installGitBranchWatcher`))와 같은 cwd 규약을 쓴다. 앱에 세션이 없는 repo의 에이전트 상태를 아는 채널은 현재 없다 — v1은 OFF로 정직하게 표시(추측이 아니라 조사로 확인) |
+| 4 | 설정을 어디에 저장하나 | **셋 다 Rust `AppSettings`(settings_store.rs, settings.json): `mascot_lights_mode`(enum, 기본 `off`), `mascot_lights_vertical`(bool, 기본 false), `mascot_lights_projects`(Vec<String>, 기본 빈 목록)** | mascot-window-design.md 결정 #5의 관례: SettingsDialog가 편집하는 opt-in은 settings.json(`mascotEnabled` 선례, settings.ts (`AppSettings`)), 위치 같은 순수 UI 취향만 localStorage. 프로젝트 목록은 잃으면 아까운 사용자 데이터라 localStorage 부적합. 방향(vertical)은 UI 취향에 가깝지만 셋을 한 다이얼로그·한 저장소에 모으는 단순함이 낫다 |
 | 5 | 창 크기: 고정 확보 vs 동적 리사이즈, 앵커 | **동적 리사이즈.** 목표 크기는 순수 함수(§5)로 계산, **하단중앙 앵커**(창의 bottom-center 화면좌표 보존)로 위치 보정, 리사이즈+이동은 Rust 커맨드 `set_mascot_layout` 한 번으로 원자 수행. 위치 영속은 top-left가 아니라 **앵커 좌표**로 저장 방식 변경(§5.3) | 최대 칸수만큼 투명 영역을 미리 확보하면 그 영역이 데스크톱 클릭을 삼킨다(Tauri는 픽셀 단위 히트테스트가 없다 — 현 창이 작아서만 용인된 문제). 하단중앙 앵커는 현 CSS가 스프라이트를 하단 정렬(mascot.css `.mascot-root` align-items:flex-end)하는 것과 일치하고, 스프라이트가 linger 후 접힐 때 strip이 제자리에 남는다. Rust 경유는 capability 추가(`allow-set-size` 등)를 피하고 Windows의 non-resizable 리사이즈 제약(§10)을 한 곳에서 완화한다 |
 | 6 | 마스코트 OFF일 때 신호등만? 활동 없을 때 가시성은? | **사용자 확정(2026-08-28): `mascotEnabled`가 상위 게이트 — 마스코트 OFF면 신호등도 없다.** 창 가시성 규칙 확장: `visible = mascotEnabled && (스프라이트 대상 있음 ∨ linger 중 ∨ lights.length > 0)`. 즉 신호등 모드가 켜져 있고 칸이 1개 이상이면 활동이 없어도 창이 뜬다 | 신호등은 OFF 상태도 정보이므로 상시 표시가 존재 이유다. 독립 게이트는 창 라이프사이클·설정 UI를 복잡하게 하므로 v1 제외 — 단 이 결정은 설정 enum 하나로 나중에 뒤집을 수 있어(mode≠off가 창을 켜게) 되돌리기 싸다. 닫히는 문 아님 |
-| 7 | 칸 클릭 동작 | **대표 에이전트를 `mascot_activate`(misc.rs:55)로 활성화**(main 포커스+터미널 열기+알림 클리어 — 기존 경로 재사용). 대표 선정: ① 그 칸에서 pending 최신 ② waiting 중 `waitingSince` 최신 ③ working 중 `turnStartedAt` 최신 ④ (프로젝트 모드) 소속 에이전트 중 agentOrder 첫째. 소속이 없으면 `clickAgentId=null` → 클릭 no-op | 에이전트 모드는 자명(칸=에이전트). 프로젝트 모드는 "그 프로젝트에서 지금 봐야 할 세션"이 클릭 의도다 — 마스코트 pick과 같은 급성도 순서를 프로젝트 범위로 좁혀 적용 |
+| 7 | 칸 클릭 동작 | **대표 에이전트를 `mascot_activate`(misc.rs (`mascot_activate / set_badge_count`))로 활성화**(main 포커스+터미널 열기+알림 클리어 — 기존 경로 재사용). 대표 선정: ① 그 칸에서 pending 최신 ② waiting 중 `waitingSince` 최신 ③ working 중 `turnStartedAt` 최신 ④ (프로젝트 모드) 소속 에이전트 중 agentOrder 첫째. 소속이 없으면 `clickAgentId=null` → 클릭 no-op | 에이전트 모드는 자명(칸=에이전트). 프로젝트 모드는 "그 프로젝트에서 지금 봐야 할 세션"이 클릭 의도다 — 마스코트 pick과 같은 급성도 순서를 프로젝트 범위로 좁혀 적용 |
 | 8 | 넘칠 때 | **최대 8칸(MAX_LIGHTS). 초과 시 앞 7칸 + `+k` 오버플로 칩 1칸**(칩 클릭 no-op). 접기는 mascot 쪽 순수 함수 — main은 항상 전체 목록을 보낸다 | 개정 전에는 18px 원 12칸(폭 294px)이었다. 칸이 [얼굴+이름] 타일(54px)이 되면서 12칸은 폭 726px로 데스크톱 위젯 한도를 넘는다 — 8칸 가로 = 486px로 맞췄다. 렌더 관심사(몇 개까지 그릴지)는 렌더 쪽에 두면 프로토콜이 단순하다 |
 | 9 | i18n | **마스코트 창 안에는 번역 문자열을 넣지 않는다.** 툴팁 = 이름(에이전트명/폴더 basename), 오버플로 칩 = `+숫자` — 전부 비번역 텍스트. 설정 다이얼로그 문자열만 locale 6종에 추가(§7) | MascotApp.tsx 상단 주석이 명시한 한계: 마스코트 창은 언어 변경이 실시간 전파되지 않는다. 상태 단어("작업중")를 툴팁에 넣는 순간 그 한계에 걸린다 — 넣지 않으면 문제 자체가 없다. 하드코딩 문자열 테스트도 자연 통과 |
 | 10 | 렌더 기술 | **DOM + CSS(+인라인 SVG 화살표).** 캔버스 미사용 | 형태 3종·개수 ≤12·애니는 CSS keyframes로 충분. 배지(.mascot-badge)가 이미 같은 방식이고, 캔버스는 스프라이트 전용으로 남긴다 |
@@ -113,7 +109,7 @@ export function computeMascotLights(input: {
 - 에이전트별 원자 상태: `attention` if `agentId ∈ pendingAgentIds(notifications)`
   ∨ `phase==="waiting"`; else `working` if `phase==="working"`; else `off`.
 - 프로젝트 소속: `isInsideCwd(effectiveCwd(taskLabels[id], agents[id].cwd), project)`
-  — `labelText.ts`의 `isInsideCwd`(현재 private, 55행)를 **export로 승격**해
+  — `labelText.ts`의 export된 `isInsideCwd`를
   재사용(경로 정규화 `\`→`/`·트레일링 제거·`~` 접두 규칙까지 동일).
 - **에이전트 모드 필터**: 원자 상태가 `off`인 에이전트는 결과에서 제외한다
   (결정 2). 프로젝트 모드에는 이 필터를 적용하지 않는다 — 등록된 폴더는
@@ -128,7 +124,7 @@ export function computeMascotLights(input: {
 
 ## 4. 프로토콜 확장 (`src/renderer/mascot/protocol.ts`)
 
-`MascotState`(protocol.ts:26)에 additive 필드 2개. renderer↔renderer 이벤트라
+`MascotState`(protocol.ts (`MascotState / parseMascotState / sameMascotState`))에 additive 필드 2개. renderer↔renderer 이벤트라
 frozen contract/fixture 무관 — 파서가 가드한다.
 
 ```ts
@@ -141,9 +137,9 @@ export interface MascotState {
 }
 ```
 
-- `parseMascotState`(protocol.ts:83): `lights` 부재/비배열 → `[]`(하위호환),
+- `parseMascotState`(protocol.ts (`MascotState / parseMascotState / sameMascotState`)): `lights` 부재/비배열 → `[]`(하위호환),
   각 항목은 모양 검증 실패 시 개별 드롭. `state` 값이 3종 밖이면 `"off"`로 강등.
-- `sameMascotState`(protocol.ts:100): lights 배열을 항목별 필드 비교로 확장
+- `sameMascotState`(protocol.ts (`MascotState / parseMascotState / sameMascotState`)): lights 배열을 항목별 필드 비교로 확장
   (dedupe가 생명 — 매 스토어 변경마다 emit 폭주 방지).
 - `HIDDEN_MASCOT_STATE`: `lights: [], lightsVertical: false` 추가.
 
@@ -167,24 +163,16 @@ export interface MascotState {
 ### mascotBridge 변경 (`src/renderer/ipc/mascotBridge.ts`)
 
 - 구독 슬라이스 추가: `taskLabels`, `appSettings`(mascotLightsMode/Vertical/
-  Projects — 기존 4개 구독(166-168행)에 2개 추가).
-- `buildState`(116행): `computeMascotLights` 호출 결과를 상태에 합치고,
+  Projects — `installMascotBridge`의 스토어 구독).
+- `buildState`(`src/renderer/ipc/mascotBridge.ts`): `computeMascotLights` 호출 결과를 상태에 합치고,
   가시성 규칙을 결정 6으로 교체:
   `visible = mascotEnabled && (pick ≠ null ∨ linger 중 ∨ lights.length > 0)`.
-- linger(133-144행)는 **스프라이트 필드에만** 적용 — lights는 라이브 상태 그대로
+- linger(`src/renderer/ipc/mascotBridge.ts`의 `buildState`)는 **스프라이트 필드에만** 적용 — lights는 라이브 상태 그대로
   둔다(신호등은 대시보드라 여운이 오히려 거짓 정보).
 - 스프라이트 대상이 없고 lights만 있을 때: `agentId:null` + lights 채워서 emit
   (마스코트 쪽이 스프라이트 영역을 접는다, §5.2).
 
-**주의 — 현 `buildState`의 조기 반환을 반드시 해체해야 한다.** 지금 코드는
-`pick.agentId === null`이면 함수 전체가 `HIDDEN_MASCOT_STATE`를 반환하고, linger
-만료 콜백도 `publish(HIDDEN_MASCOT_STATE)`를 직접 부른다. 이대로면 lights가
-있어도 창이 꺼진다. 두 곳을 함께 고친다:
-
-- linger 만료 콜백 → `spriteLingerDone = true; publish(buildState())`
-  (스프라이트 linger 소진 여부를 별도 플래그로 들고, 가시성은 buildState가 다시 판단).
-- linger 진입 가드 `last.visible && last.agentId !== null` → **`last.agentId !== null`만**.
-  lights 때문에 `visible=true`이면서 `agentId=null`인 상태가 새로 생기기 때문이다.
+`src/renderer/ipc/mascotBridge.ts`의 `installMascotBridge` 안 `buildState`는 스프라이트와 lights를 별도로 구성한다. linger 만료는 `spriteLingerDone`을 세우고 `buildState`로 가시성을 다시 판단한다. 따라서 스프라이트 대상이 없더라도 lights가 있으면 창을 유지한다. 이 배선은 구현 완료다.
 
 통과 조건: **lights가 빈 배열일 때 기존 linger 동작이 완전히 불변**이어야 한다
 (기존 `mascotBridge.test.ts`가 그대로 green).
@@ -331,16 +319,16 @@ MASCOT_WINDOW_H = 96 + 6 = 102 // 창의 스프라이트 몫
 
 | 키(TS / Rust) | 타입 | 기본 | UI |
 |---|---|---|---|
-| `mascotLightsMode` / `mascot_lights_mode` | `"off"\|"agents"\|"projects"` (Rust enum, serde lowercase — `ExternalTerminal` 선례) | `"off"` | 마스코트 토글(SettingsDialog.tsx:567) 아래 라디오/셀렉트. `mascotEnabled=false`면 비활성화 |
+| `mascotLightsMode` / `mascot_lights_mode` | `"off"\|"agents"\|"projects"` (Rust enum, serde lowercase — `ExternalTerminal` 선례) | `"off"` | 마스코트 토글(SettingsDialog.tsx (`SettingsDialog`)) 아래 라디오/셀렉트. `mascotEnabled=false`면 비활성화 |
 | `mascotLightsVertical` / `mascot_lights_vertical` | bool | false | 체크박스 "세로로 표시" |
-| `mascotLightsProjects` / `mascot_lights_projects` | string[] / `Vec<String>` | `[]` | 폴더 목록 편집기: 추가(`tauriApi.pickDirectory` — ProfileDialog.tsx:255 선례), 제거. 순서 = 표시 순서. projects 모드일 때만 노출 |
+| `mascotLightsProjects` / `mascot_lights_projects` | string[] / `Vec<String>` | `[]` | 폴더 목록 편집기: 추가(`tauriApi.pickDirectory` — ProfileDialog.tsx (`ProfileDialog`) 선례), 제거. 순서 = 표시 순서. projects 모드일 때만 노출 |
 | `mascotLightsFace` / `mascot_lights_face` | `"sprite"\|"portrait"` (Rust enum, serde lowercase — `MascotLightsMode` 선례) | `"sprite"` | 셀렉트 "칸에 띄울 얼굴". `portrait`을 골라도 초상 없는 캐릭터는 스프라이트로 폴백(§6 개정) |
 | `mascotLightsLabel` / `mascot_lights_label` | `"auto"\|"agent"\|"project"\|"task"\|"projecttask"` (Rust enum, serde lowercase) | `"auto"` | 셀렉트 "칸에 표시할 이름". 값이 그 칸에서 비면 `auto`로 폴백. `task`는 칸 폭을 96px로 넓히고 가로 배열 최대 칸 수를 5로 줄인다(§6 개정). `projecttask`는 칸을 두 줄(첫 줄=프로젝트명, 둘째 줄=작업명)로 그리며 폭(96px)과 높이(60px, `LIGHT_TILE_H_TALL`)를 함께 넓힌다 — 작업명이 없는 칸은 둘째 줄이 비지만 타일 높이는 그대로다 |
 
 Rust `AppSettings`(settings_store.rs)에 `#[serde(default)]` 5필드 추가 —
 mascot_enabled와 같은 요령. 갱신 대상: `Default` impl, settings_store
 테스트의 구조체 리터럴, `contract_fixtures.rs`, `get-app-settings-result.json`
-픽스처, TS `AppSettings`(settings.ts:127 아래), appStore `DEFAULT_APP_SETTINGS`
+픽스처, TS `AppSettings`(settings.ts (`AppSettings`) 아래), appStore `DEFAULT_APP_SETTINGS`
 와 `updateAppSettings` Pick 유니온.
 
 i18n — `src/shared/i18n/locales/{en,fr,ja,ko,zh-Hans,zh-Hant}/settings.json`의
@@ -386,7 +374,7 @@ system.mascotLightsLabelProjectTask "프로젝트 + 작업"
 | `src/renderer/ipc/mascotBridge.ts` (+tests) | 수정 | 구독 확장·가시성 규칙·lights 합성(§4) |
 | `src/shared/ipc.ts`, `src/shared/types/api.ts`, `src/renderer/ipc/tauriApi.ts` | 수정 | `setMascotLayout`/`set_mascot_layout` 등재 |
 | `src-tauri/src/ipc/commands/misc.rs`, `src-tauri/src/lib.rs` | 수정 | `set_mascot_layout` 커맨드(+핸들러 등록) |
-| `src-tauri/src/persistence/settings_store.rs`, `contract_fixtures.rs`, `fixtures/get-app-settings-result.json` | 수정 | 설정 3필드 + 픽스처(§7) |
+| `src-tauri/src/persistence/settings_store.rs`, `contract_fixtures.rs`, `src/shared/contract-fixtures/get-app-settings-result.json` | 수정 | 설정 3필드 + 픽스처(§7) |
 | `src/shared/types/settings.ts`, `src/renderer/store/appStore.ts` | 수정 | TS 미러 + 기본값 + Pick 유니온 |
 | `src/renderer/settings/SettingsDialog.tsx` | 수정 | 모드·방향·프로젝트 목록 UI(§7) |
 | `src/shared/i18n/locales/*/settings.json` ×6 | 수정 | §7 키 |
@@ -419,7 +407,7 @@ system.mascotLightsLabelProjectTask "프로젝트 + 작업"
 | 리사이즈↔위치영속 상호작용으로 창이 미끄러짐 | §5.3 앵커 저장으로 원천 차단. `setPosition`이 유발하는 `onMoved`도 앵커 재계산이라 멱등 |
 | 상태 변화마다 리사이즈가 발생해 깜빡임/성능 저하 | **결정 2(작업중만 표시) 때문에 에이전트 모드에서는 실제로 자주 변한다.** 리사이즈 트리거를 (칸 수, 방향, 스프라이트 유무) 파생값 변화로 한정하고 300ms 디바운스(§5.3). 눈검증 항목 1에서 여러 에이전트가 동시에 턴을 오갈 때 창이 떨리지 않는지 확인 — 떨리면 축소만 지연시키는 2차 완화(빈 칸을 몇 초 유지) 검토 |
 | lights 배열이 dedupe를 뚫고 emit 폭주(taskLabels는 턴 중 초 단위 갱신) | `computeMascotLights` 출력이 실질 동일하면 `sameMascotState`가 걸러낸다 — 항목별 비교 테스트 필수 |
-| 프로젝트 경로 대소문자/심링크 불일치로 소속 누락 | `isInsideCwd`는 대소문자 보존 비교(labelText.ts:44 주석) — macOS 대소문자 무시 FS에서 오탐 가능. v1은 pickDirectory 절대경로 사용을 전제로 수용, 문서화 |
+| 프로젝트 경로 대소문자/심링크 불일치로 소속 누락 | `isInsideCwd`는 대소문자 보존 비교(`src/renderer/labels/labelText.ts`의 `effectiveCwd`·`isInsideCwd` 주석) — macOS 대소문자 무시 FS에서 오탐 가능. v1은 pickDirectory 절대경로 사용을 전제로 수용, 문서화 |
 | 세션 없는 repo가 늘 OFF인 것을 사용자가 "고장"으로 오해 | 설정 help 문구에 명시("이 앱에 연결된 세션이 있는 폴더만 불이 들어옵니다") |
 | strip 영역이 데스크톱 클릭을 삼킴 | 창을 내용에 밀착 리사이즈(결정 5). 남는 틈은 소면적 수용 — 기존 창의 동일 트레이드오프 |
 | 배지 기준 이동(CSS 개편)으로 기존 배지 위치 회귀 | 눈검증 항목에 배지 재확인 포함(이슈 #74 z-index 회귀 포함) |
@@ -442,7 +430,7 @@ system.mascotLightsLabelProjectTask "프로젝트 + 작업"
 2. 알림을 지웠지만 답하지 않은 세션(waiting)이 YELLOW로 남는다 — 마스코트
    스프라이트는 기존대로 그 캐릭터를 강조하지 않는다(의도된 차이).
 3. projects 모드: 두 에이전트가 같은 repo에서 작업 시 1칸으로 집계, 상태 max.
-   목록에만 있고 세션 없는 repo는 OFF. 외부 attach 세션이 소속 repo 칸에 반영.
+   목록에만 있고 세션 없는 repo는 OFF.
 4. 칸 클릭→대표 에이전트 터미널. OFF·소속 없는 칸 클릭은 무반응. 호버 툴팁.
 5. 가로↔세로 전환·칸 수 변화·스프라이트 등장/linger 소멸 시 **strip이 화면에서
    움직이지 않는다**(하단중앙 앵커). 드래그 후 재시작 시 같은 자리 복원.
@@ -465,7 +453,7 @@ system.mascotLightsLabelProjectTask "프로젝트 + 작업"
 3. **백엔드(Rust) 집계 + git 폴링으로 무세션 repo 상태 감지**: 진실 원천이
    렌더러 스토어에 있는 현 구조를 거스르고, "git 상태"와 "에이전트 작업 상태"는
    다른 것이라 폴링으로도 GREEN/YELLOW를 알 수 없다. 무세션 repo 감지는
-   watch-only attach(외부 attach 설계의 확장)로 푸는 것이 맞다 — 후속.
+   별도 상태 수집 계약이 필요하다. 외부 붙이기는 제거됐으므로 현행 구현의 대안으로 취급하지 않는다.
 4. **YELLOW를 pending으로만 한정(마스코트 pick과 동일)**: 알림을 지운 순간
    노란불이 꺼져 "답 대기 중" 정보가 사라진다. 대시보드 목적에 반해 기각(결정 1).
 5. **에이전트 모드에서 근무 중 전원에게 칸 부여(idle은 OFF 칸)**: 칸 수가 고정돼
