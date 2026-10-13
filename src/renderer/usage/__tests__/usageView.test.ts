@@ -11,7 +11,6 @@ import { afterAll, describe, expect, it } from "vitest";
 import { SOURCE_LANGUAGE, initI18nForTest, t as translate } from "@renderer/i18n";
 import { renderText } from "@renderer/shared/textKey";
 import type {
-  AntigravityLiveStatus,
   GeminiLiveStatus,
   ClaudeLiveStatus,
   CodexLiveStatus,
@@ -23,7 +22,6 @@ import {
   DEAD_THRESHOLD_MS,
   STALE_THRESHOLD_MS,
   badgeWindows,
-  describeAntigravityLiveStatus,
   describeCodexLiveStatus,
   describeGeminiLiveStatus,
   describeLiveStatus,
@@ -86,12 +84,6 @@ function codexLiveStatus(partial: Partial<CodexLiveStatus> = {}): CodexLiveStatu
   return { outcome: "ok", detail: null, lastAttemptMs: null, lastSuccessMs: null, ...partial };
 }
 
-function antigravityLiveStatus(
-  partial: Partial<AntigravityLiveStatus> = {},
-): AntigravityLiveStatus {
-  return { outcome: "ok", detail: null, lastAttemptMs: null, lastSuccessMs: null, ...partial };
-}
-
 function geminiLiveStatus(partial: Partial<GeminiLiveStatus> = {}): GeminiLiveStatus {
   return { outcome: "ok", detail: null, lastAttemptMs: null, lastSuccessMs: null, ...partial };
 }
@@ -101,19 +93,15 @@ function snap(
   codex: ProviderUsage | null,
   claudeLive: ClaudeLiveStatus = live(),
   codexLive: CodexLiveStatus = codexLiveStatus(),
-  antigravity: ProviderUsage | null = null,
-  antigravityLive: AntigravityLiveStatus = antigravityLiveStatus(),
   gemini: ProviderUsage | null = null,
   geminiLive: GeminiLiveStatus = geminiLiveStatus(),
 ): UsageSnapshot {
   return {
     claude,
     codex,
-    antigravity,
     gemini,
     claudeLive,
     codexLive,
-    antigravityLive,
     geminiLive,
   };
 }
@@ -636,18 +624,17 @@ describe("visibleUsageProviders", () => {
   });
 
   it("고정 순서를 유지한다", () => {
-    const s = snap(fresh(), fresh(), live(), codexLiveStatus(), fresh(), antigravityLiveStatus(), fresh());
+    const s = snap(fresh(), fresh(), live(), codexLiveStatus(), fresh());
     expect(visibleUsageProviders(s, now)).toEqual([
       "claude",
       "codex",
-      "antigravity",
       "gemini",
     ]);
   });
 
   it("낡거나 값 없는 provider만 빠진다", () => {
     const stale = { ...fresh(), fetchedAtMs: now - DEAD_THRESHOLD_MS - 1 };
-    const s = snap(stale, fresh(), live(), codexLiveStatus(), null, antigravityLiveStatus());
+    const s = snap(stale, fresh(), live(), codexLiveStatus(), null);
     expect(visibleUsageProviders(s, now)).toEqual(["codex"]);
   });
 
@@ -655,7 +642,6 @@ describe("visibleUsageProviders", () => {
     expect(visibleUsageProviders(null, now)).toEqual([
       "claude",
       "codex",
-      "antigravity",
       "gemini",
     ]);
   });
@@ -686,34 +672,6 @@ describe("describeGeminiLiveStatus", () => {
 
   it("진단이 없으면 아무것도 그리지 않는다", () => {
     expect(describeGeminiLiveStatus(null)).toBeNull();
-  });
-});
-
-describe("describeAntigravityLiveStatus", () => {
-  it("성공은 ok 단계", () => {
-    expect(describeAntigravityLiveStatus(antigravityLiveStatus())!.level).toBe("ok");
-  });
-
-  it("agy 부재는 error 단계 + 전용 키", () => {
-    const note = describeAntigravityLiveStatus(
-      antigravityLiveStatus({ outcome: "cli_missing" }),
-    )!;
-    expect(note.level).toBe("error");
-    expect(note.text).toEqual({ key: "usage.antigravityLive.cliMissing" });
-  });
-
-  it("명령 실패는 detail을 실어 나른다", () => {
-    const note = describeAntigravityLiveStatus(
-      antigravityLiveStatus({ outcome: "command_failed", detail: "not logged in" }),
-    )!;
-    expect(note.text).toEqual({
-      key: "usage.antigravityLive.commandFailed",
-      params: { detail: "not logged in" },
-    });
-  });
-
-  it("진단이 없으면 아무것도 그리지 않는다", () => {
-    expect(describeAntigravityLiveStatus(null)).toBeNull();
   });
 });
 

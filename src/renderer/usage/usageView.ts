@@ -12,7 +12,6 @@
 
 import type { TextKey } from "@renderer/shared/textKey";
 import type {
-  AntigravityLiveStatus,
   ClaudeLiveStatus,
   CodexLiveStatus,
   FetchTransport,
@@ -23,7 +22,7 @@ import type {
 } from "@shared/types";
 
 /** 사용량을 표시하는 provider와 그 고정 순서. */
-export const USAGE_PROVIDERS = ["claude", "codex", "antigravity", "gemini"] as const;
+export const USAGE_PROVIDERS = ["claude", "codex", "gemini"] as const;
 
 export type UsageProvider = (typeof USAGE_PROVIDERS)[number];
 
@@ -31,7 +30,6 @@ export type UsageProvider = (typeof USAGE_PROVIDERS)[number];
 export type AnyLiveStatus =
   | ClaudeLiveStatus
   | CodexLiveStatus
-  | AntigravityLiveStatus
   | GeminiLiveStatus;
 
 /** 신선도가 이보다 오래되면(ms) stale로 보고 흐리게 표시한다. */
@@ -61,7 +59,6 @@ export function usageLevel(usedPercent: number): UsageLevel {
 export const PROVIDER_SHORT: Record<UsageProvider, string> = {
   claude: "CL",
   codex: "CX",
-  antigravity: "AG",
   gemini: "GM",
 };
 
@@ -84,8 +81,6 @@ export function providerLive(
       return snapshot.claudeLive;
     case "codex":
       return snapshot.codexLive;
-    case "antigravity":
-      return snapshot.antigravityLive;
     case "gemini":
       return snapshot.geminiLive;
   }
@@ -441,83 +436,12 @@ export function describeCodexLiveStatus(
   }
 }
 
-// ── Antigravity 실시간 조회 진단 표시 ────────────────────────────────
-//
-// Codex와 같은 결(자격증명을 앱이 만지지 않고 CLI에 물어본다)이되, 결정적
-// 차이가 하나 있다: **강등할 로컬 파일 캐시가 없다.** 그래서 실패 문구의
-// 꼬리말이 "표시값은 로컬 캐시…"가 아니라 "표시값이 없거나 직전 조회 값"이다
-// (`usage.antigravityLive.noCacheNote`).
-
-/**
- * Antigravity 실시간 조회 상태 → 표시 문구 키. `null`(구버전 백엔드 응답 등
- * 필드 부재)이면 아무것도 표시하지 않는다.
- */
-export function describeAntigravityLiveStatus(
-  status: AntigravityLiveStatus | null | undefined,
-): LiveStatusNote | null {
-  if (!status) return null;
-  switch (status.outcome) {
-    case "ok":
-      return {
-        level: "ok",
-        text: { key: "usage.antigravityLive.ok" },
-        short: { key: "usage.live.okDirectShort" },
-      };
-    case "never_attempted":
-      return {
-        level: "warn",
-        text: { key: "usage.antigravityLive.neverAttempted" },
-        short: { key: "usage.live.waitingShort" },
-      };
-    case "cli_missing":
-      return {
-        level: "error",
-        text: { key: "usage.antigravityLive.cliMissing" },
-        short: { key: "usage.antigravityLive.cliMissingShort" },
-      };
-    case "cli_failed":
-      return {
-        level: "error",
-        text: {
-          key: "usage.antigravityLive.cliFailed",
-          params: { detail: status.detail ?? { key: "usage.codexLive.detailUnknownCause" } },
-        },
-        short: { key: "usage.antigravityLive.cliFailedShort" },
-      };
-    case "timeout":
-      return {
-        level: "warn",
-        text: { key: "usage.antigravityLive.timeout" },
-        short: { key: "usage.codexLive.timeoutShort" },
-      };
-    case "command_failed":
-      return {
-        level: "error",
-        text: {
-          key: "usage.antigravityLive.commandFailed",
-          params: { detail: status.detail ?? { key: "usage.live.detailUnknown" } },
-        },
-        short: { key: "usage.antigravityLive.commandFailedShort" },
-      };
-    case "unexpected_response":
-      return {
-        level: "warn",
-        text: {
-          key: "usage.antigravityLive.unexpected",
-          params: { detail: status.detail ?? { key: "usage.live.detailUnknown" } },
-        },
-        short: { key: "usage.codexLive.unexpectedShort" },
-      };
-  }
-}
-
 // ── Gemini 실시간 조회 진단 표시 ─────────────────────────────────────
 //
 // Claude와 같은 HTTP 어휘(우리가 직접 조회하는 경로라서)에 이 API만의 두
 // 갈래가 더 있다. `ineligible`은 **오류가 아니다** — 계정에 Code Assist
 // 라이선스가 없다는 사실 진술이고, 개인 무료 티어가 Antigravity로 이관된 뒤의
-// 기본 상태다. 그래서 error가 아니라 warn 단계로 두고 "Antigravity를 보라"고
-// 안내한다. `project_required`는 반대로 env 한 줄이면 풀린다.
+// 기본 상태다. 그래서 error가 아니라 warn 단계로 둔다. `project_required`는 반대로 env 한 줄이면 풀린다.
 
 /**
  * Gemini 실시간 조회 상태 → 표시 문구 키. `null`(구버전 백엔드 응답 등 필드
@@ -614,7 +538,7 @@ export function describeGeminiLiveStatus(
 
 /**
  * provider 하나의 실시간 조회 진단을 해석한다. provider마다 조회 경로가 달라
- * (Claude=HTTPS 직접 조회, Codex=codex CLI RPC, Antigravity=agy print 모드)
+ * (Claude·Gemini=HTTPS 직접 조회, Codex=codex CLI RPC)
  * 해석 함수도 각자 것이며, 이 갈래를 화면 컴포넌트마다 되풀이하지 않도록
  * 한 곳에 모아 둔다.
  */
@@ -628,8 +552,6 @@ export function describeProviderLive(
       return describeLiveStatus(snapshot.claudeLive);
     case "codex":
       return describeCodexLiveStatus(snapshot.codexLive);
-    case "antigravity":
-      return describeAntigravityLiveStatus(snapshot.antigravityLive);
     case "gemini":
       return describeGeminiLiveStatus(snapshot.geminiLive);
   }
@@ -691,13 +613,11 @@ export function mergeUsageSnapshot(
   return {
     claude: fresherProvider(prev?.claude ?? null, next.claude),
     codex: fresherProvider(prev?.codex ?? null, next.codex),
-    antigravity: fresherProvider(prev?.antigravity ?? null, next.antigravity),
     gemini: fresherProvider(prev?.gemini ?? null, next.gemini),
     // 진단은 병합하지 않고 항상 최신 응답을 쓴다 — 값(누적)과 달리 "지금
     // 상태"라서 이전 것을 살려두면 이미 복구된 실패가 남는다.
     claudeLive: next.claudeLive ?? prev?.claudeLive,
     codexLive: next.codexLive ?? prev?.codexLive,
-    antigravityLive: next.antigravityLive ?? prev?.antigravityLive,
     geminiLive: next.geminiLive ?? prev?.geminiLive,
   };
 }

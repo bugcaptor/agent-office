@@ -73,19 +73,6 @@
       "unexpectedShort": "即時查詢失敗（回應格式）",
       "detailUnknownCause": "原因不明"
     },
-    "antigravityLive": {
-      "noCacheNote": "Antigravity 不會在本機留下用量，查詢失敗時只會留著上次的數值，或整個消失",
-      "ok": "程式正直接向 agy CLI 詢問用量（最多每 15 分鐘一次）",
-      "neverAttempted": "尚未嘗試即時查詢 — $t(activity:usage.antigravityLive.noCacheNote)",
-      "cliMissing": "即時查詢失敗：找不到 agy 執行檔（請檢查 Antigravity CLI 是否安裝、PATH 是否正確）。$t(activity:usage.antigravityLive.noCacheNote)",
-      "cliMissingShort": "即時查詢失敗（找不到 agy）",
-      "cliFailed": "即時查詢失敗：agy 沒有結果就結束了（{{detail}}）。$t(activity:usage.antigravityLive.noCacheNote)",
-      "cliFailedShort": "即時查詢失敗（agy 結束）",
-      "timeout": "即時查詢失敗：agy 未在時限內回應。$t(activity:usage.antigravityLive.noCacheNote)",
-      "commandFailed": "即時查詢失敗：agy 回傳錯誤（{{detail}}） — 可能需要登入（執行 agy 後登入）。$t(activity:usage.antigravityLive.noCacheNote)",
-      "commandFailedShort": "即時查詢失敗（agy 錯誤）",
-      "unexpected": "即時查詢失敗：agy /usage 的回應格式變了（{{detail}}）。$t(activity:usage.antigravityLive.noCacheNote)"
-    },
     "geminiLive": {
       "noCacheNote": "Gemini CLI 不會在本機留下用量，查詢失敗時只會留著上次的數值，或整個消失",
       "ok": "程式正直接向 Code Assist 查詢用量（最多每 15 分鐘一次）",
@@ -118,7 +105,6 @@
       "empty": {
         "claude": "沒有用量資料。在 Claude Code 開啟一次 /usage 就會建立本機快取。",
         "codex": "沒有用量資料。執行 codex login 讓程式直接查詢，或執行一次 Codex CLI 建立本機紀錄。",
-        "antigravity": "沒有用量資料。安裝 Antigravity CLI（agy）並登入，程式就會直接查詢。",
         "gemini": "沒有用量資料。用有 Gemini Code Assist 授權的帳號登入 gemini，程式就會直接查詢。"
       },
       "allHidden": "沒有可顯示的用量。超過一天沒能從任何 CLI 取得用量。"

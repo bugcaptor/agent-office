@@ -1,12 +1,12 @@
-# 구독 사용량(usage) 표시 설계 — 캐시 미러 + 실시간 조회(Claude·Codex·Antigravity·Gemini)
+# 구독 사용량(usage) 표시 설계 — 캐시 미러 + 실시간 조회(Claude·Codex·Gemini)
 
-상태: 정본 — 구현 완료 (v1 캐시 미러 = 이슈 #22, Claude live fetch = 이슈 #33/PR #34, 실패 사유 표시 = §7, Codex live fetch = §9 / kbm #2h8, 하루 넘게 실패한 provider 숨김 = §10 · Antigravity provider = §11 · Gemini provider = §12 / kbm #2j4, 2026-08-25). 병합: 2026-07-20 (`usage-limits-design.md` + `claude-usage-live-fetch-design.md` 통합, 원본은 `docs/archive/`).
+상태: 정본 — 구현 완료 (v1 캐시 미러 = 이슈 #22, Claude live fetch = 이슈 #33/PR #34, 실패 사유 표시 = §7, Codex live fetch = §9 / kbm #2h8, 하루 넘게 실패한 provider 숨김 = §10 · Antigravity provider = §11(2026-10-14 제거) · Gemini provider = §12 / kbm #2j4, 2026-08-25). 병합: 2026-07-20 (`usage-limits-design.md` + `claude-usage-live-fetch-design.md` 통합, 원본은 `docs/archive/`).
 
-구현 파일: 백엔드 `src-tauri/src/usage/{mod,claude,codex,claude_live,claude_live_fallback,codex_live,antigravity_live,gemini_live}.rs`, 커맨드 `load_usage_snapshot`·`resolve_usage_roots`는 `ipc/commands/usage.rs`. 프런트 `src/renderer/usage/{UsageWidget,UsageDialog}.tsx`·`usageView.ts`. 와이어 타입은 `src/shared/types/usage.ts`(배럴 `shared/types.ts` 경유).
+구현 파일: 백엔드 `src-tauri/src/usage/{mod,claude,codex,claude_live,claude_live_fallback,codex_live,gemini_live}.rs`, 커맨드 `load_usage_snapshot`·`resolve_usage_roots`는 `ipc/commands/usage.rs`. 프런트 `src/renderer/usage/{UsageWidget,UsageDialog}.tsx`·`usageView.ts`. 와이어 타입은 `src/shared/types/usage.ts`(배럴 `shared/types.ts` 경유).
 
 세션 활동 분석(작업시간 시계열)은 별개 기능 — `docs/session-analytics-design.md` 참조.
 
-Claude Code·Codex CLI·Antigravity·Gemini CLI 구독 정액제의 시간별(5시간 세션)·주간 한도 사용률과 리셋까지 남은 시간을 앱에 표시한다. 하루 넘게 값을 못 가져온 provider는 표시하지 않는다(§10).
+Claude Code·Codex CLI·Gemini CLI 구독 정액제의 시간별(5시간 세션)·주간 한도 사용률과 리셋까지 남은 시간을 앱에 표시한다. 하루 넘게 값을 못 가져온 provider는 표시하지 않는다(§10).
 
 ## 1. 목표 / 비목표
 
@@ -91,7 +91,6 @@ Claude Code·Codex CLI·Antigravity·Gemini CLI 구독 정액제의 시간별(5�
 - `codex.rs` — `<codex_root>/sessions` 스캔. 동일하게 루트 주입.
 - `claude_live.rs` — Claude OAuth usage 능동 조회(§6).
 - `codex_live.rs` — codex app-server RPC 조회(§9).
-- `antigravity_live.rs` — `agy -p /usage` print 모드 조회(§11). 파일 캐시가 없어 이 경로가 유일한 소스다.
 - `gemini_live.rs` — Code Assist `retrieveUserQuota` 직접 조회(§12). 라이선스 있는 계정 전용이고, 역시 파일 캐시가 없다.
 - IPC 커맨드 `load_usage_snapshot` (인자 없음) → `UsageSnapshot`. 실패한 소스는 해당 provider가 `null`일 뿐 커맨드는 성공한다. 루트 경로는 기본 홈 디렉터리 하위(`~/.codex`, `~/.claude.json`)이되, CLI가 실제로 존중하는 표준 환경변수 오버라이드를 지원한다: Codex는 `CODEX_HOME`(설정 시 `<CODEX_HOME>/sessions`), Claude는 `CLAUDE_CONFIG_DIR`(설정 시 `<CLAUDE_CONFIG_DIR>/.claude.json` — `claude.rs::load`의 파일명 결합 로직은 그대로, 루트만 바뀐다). 빈 문자열 env는 미설정으로 취급. 전역 `std::env::var` 접근과 분리한 순수 함수 `resolve_usage_roots(home, codex_home_env, claude_config_env) -> (PathBuf, PathBuf)`(`ipc/commands/usage.rs`)로 테스트한다(전역 env를 건드리지 않고 조합 검증).
 
@@ -552,7 +551,9 @@ BottomBar 폭만 먹는다), 모달은 안내 한 줄(`usage.dialog.allHidden`)�
 - TSX(모달): 시도 후 무데이터 provider가 안내 문구째 사라짐, 25시간 낡은 값이
   흐리게가 아니라 아예 안 그려짐, 전부 빠지면 안내 한 줄만.
 
-## 11. Antigravity provider (kbm #2j4, 2026-08-25)
+## 11. Antigravity provider (kbm #2j4, 2026-08-25) — 제거됨
+
+> **2026-10-14 제거(점검·정리 §7.D C43).** 사용량 계측에서 agy를 뺐다(`antigravity_live.rs`·스냅샷 `antigravity`/`antigravityLive` 필드·UI 갈래 삭제). agy CLI 연결(훅·이어하기·요약 provider)은 그대로다. 아래는 이력이다.
 
 ### 11.1 왜 gemini CLI가 아니라 Antigravity인가
 

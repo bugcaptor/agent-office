@@ -73,19 +73,6 @@
       "unexpectedShort": "リアルタイム取得に失敗（レスポンス形式）",
       "detailUnknownCause": "原因不明"
     },
-    "antigravityLive": {
-      "noCacheNote": "Antigravity は使用量をローカルに残さないため、取得に失敗すると直前の取得値が残るか、表示自体が消えます",
-      "ok": "アプリが agy CLI に使用量を直接問い合わせています（最大15分間隔）",
-      "neverAttempted": "リアルタイム取得はまだ試していません — $t(activity:usage.antigravityLive.noCacheNote)",
-      "cliMissing": "リアルタイム取得に失敗しました：agy の実行ファイルが見つかりません（Antigravity CLI のインストールと PATH を確認してください）。$t(activity:usage.antigravityLive.noCacheNote)",
-      "cliMissingShort": "リアルタイム取得に失敗（agy なし）",
-      "cliFailed": "リアルタイム取得に失敗しました：agy が結果なしで終了しました（{{detail}}）。$t(activity:usage.antigravityLive.noCacheNote)",
-      "cliFailedShort": "リアルタイム取得に失敗（agy 終了）",
-      "timeout": "リアルタイム取得に失敗しました：agy の応答が時間内に返りませんでした。$t(activity:usage.antigravityLive.noCacheNote)",
-      "commandFailed": "リアルタイム取得に失敗しました：agy がエラーを返しました（{{detail}}） — ログイン（agy を実行してログイン）が必要な場合があります。$t(activity:usage.antigravityLive.noCacheNote)",
-      "commandFailedShort": "リアルタイム取得に失敗（agy エラー）",
-      "unexpected": "リアルタイム取得に失敗しました：agy /usage のレスポンス形式が変わりました（{{detail}}）。$t(activity:usage.antigravityLive.noCacheNote)"
-    },
     "geminiLive": {
       "noCacheNote": "Gemini CLI は使用量をローカルに残さないため、取得に失敗すると直前の取得値が残るか、表示自体が消えます",
       "ok": "アプリが Code Assist に使用量を直接照会しています（最大15分間隔）",
@@ -118,7 +105,6 @@
       "empty": {
         "claude": "使用量データがありません。Claude Code で /usage を一度開くとローカルキャッシュが作られます。",
         "codex": "使用量データがありません。codex login のあとアプリが直接取得するか、Codex CLI を一度実行するとローカル記録が作られます。",
-        "antigravity": "使用量データがありません。Antigravity CLI（agy）をインストールしてログインすると、アプリが直接取得します。",
         "gemini": "使用量データがありません。Gemini Code Assist のライセンスがあるアカウントで gemini にログインすると、アプリが直接取得します。"
       },
       "allHidden": "表示できる使用量がありません。どの CLI からも1日以上使用量を取得できていません。"

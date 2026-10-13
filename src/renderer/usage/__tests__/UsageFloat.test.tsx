@@ -47,13 +47,6 @@ function snapshot(): UsageSnapshot {
       lastAttemptMs: null,
       lastSuccessMs: null,
     },
-    antigravity: null,
-    antigravityLive: {
-      outcome: "never_attempted",
-      detail: null,
-      lastAttemptMs: null,
-      lastSuccessMs: null,
-    },
     gemini: null,
     geminiLive: {
       outcome: "never_attempted",

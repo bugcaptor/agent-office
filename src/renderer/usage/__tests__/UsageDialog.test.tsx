@@ -51,13 +51,6 @@ function snapshot(): UsageSnapshot {
       lastAttemptMs: null,
       lastSuccessMs: null,
     },
-    antigravity: null,
-    antigravityLive: {
-      outcome: "never_attempted",
-      detail: null,
-      lastAttemptMs: null,
-      lastSuccessMs: null,
-    },
     gemini: null,
     geminiLive: {
       outcome: "never_attempted",
@@ -151,7 +144,7 @@ describe("UsageDialog", () => {
 
     expect(container.textContent).not.toContain("Claude Code");
     expect(container.querySelector(".usage-window-pct")).toBeNull();
-    // 셋 다 빠지면 안내 한 줄만 남는다(codex·antigravity는 never_attempted라
+    // 셋 다 빠지면 안내 한 줄만 남는다(codex는 never_attempted라
     // 값이 없어도 남지만 여기서는 "데이터 없음" 문구를 그린다).
     expect(screen.getByText("구독 사용량")).toBeTruthy();
   });
@@ -167,7 +160,6 @@ describe("UsageDialog", () => {
       usage: {
         claude: null,
         codex: null,
-        antigravity: null,
         claudeLive: {
           outcome: "no_credentials",
           tokenSource: null,
@@ -178,7 +170,6 @@ describe("UsageDialog", () => {
         },
         gemini: null,
         codexLive: gone,
-        antigravityLive: gone,
         geminiLive: { ...gone, outcome: "ineligible" } as const,
       },
     });

@@ -31,8 +31,7 @@ use agent_office_lib::types::{
     SessionExitInfo, SessionState, SessionStateEvent, TurnUsageEvent,
 };
 use agent_office_lib::usage::{
-    AntigravityLiveOutcome, AntigravityLiveStatus, ClaudeLiveStatus, CodexLiveOutcome,
-    CodexLiveStatus, FetchTransport, GeminiLiveOutcome, GeminiLiveStatus, LiveFetchOutcome,
+    ClaudeLiveStatus, CodexLiveOutcome, CodexLiveStatus, FetchTransport, GeminiLiveOutcome, GeminiLiveStatus, LiveFetchOutcome,
     Provider, ProviderUsage, TokenSource, UsageSnapshot, UsageWindow, UsageWindowKind,
 };
 use agent_office_lib::workdir::{GitCommitEntry, GitFileHistoryResult, GitFileStatus, GitStatusResult};
@@ -248,33 +247,6 @@ fn usage_snapshot_matches_fixture() {
                 },
             ],
         }),
-        // Antigravity는 파일 캐시가 없어 실시간 조회 성공분만 실린다. 모든
-        // 버킷이 모델 그룹(Gemini / Claude·GPT) 소속이라 창 종류는 항상
-        // 모델별 갈래이고, `remaining_fraction`의 여집합이 used_percent다.
-        antigravity: Some(ProviderUsage {
-            provider: Provider::Antigravity,
-            fetched_at_ms: 1784287300000,
-            // 응답에 티어 이름이 오지 않는다.
-            plan_label: None,
-            windows: vec![
-                UsageWindow {
-                    kind: UsageWindowKind::WeeklyModel,
-                    label: Some("Gemini Models".into()),
-                    used_percent: 89.35,
-                    resets_at_ms: Some(1784620227000),
-                    window_minutes: Some(10080),
-                    is_active: None,
-                },
-                UsageWindow {
-                    kind: UsageWindowKind::WeeklyModel,
-                    label: Some("Claude and GPT models".into()),
-                    used_percent: 0.0,
-                    resets_at_ms: Some(1784904561000),
-                    window_minutes: Some(10080),
-                    is_active: None,
-                },
-            ],
-        }),
         // Gemini도 파일 캐시가 없다. 버킷이 창 길이를 주지 않아 종류는
         // `Unknown`이고 뜻은 라벨(모델 ID)이 진다 — "며칠 창"을 지어내지 않는다.
         gemini: Some(ProviderUsage {
@@ -311,15 +283,6 @@ fn usage_snapshot_matches_fixture() {
             detail: Some("not logged in".into()),
             last_attempt_ms: Some(1784281400000),
             last_success_ms: None,
-        },
-        // Antigravity 진단은 Codex와 같은 네 필드다(자격증명을 앱이 만지지
-        // 않으므로 via/tokenSource가 없다). 성공 갈래를 굳혀 둔다 — 실패는
-        // 이 provider를 스냅샷에서 통째로 비게 만들어 모양이 덜 보인다.
-        antigravity_live: AntigravityLiveStatus {
-            outcome: AntigravityLiveOutcome::Ok,
-            detail: None,
-            last_attempt_ms: Some(1784287300000),
-            last_success_ms: Some(1784287300000),
         },
         // Gemini 진단도 같은 네 필드. 값이 실려 있는 스냅샷이므로 성공 갈래다
         // — 파일 캐시가 없어 `ineligible`과 값이 공존할 수 없기 때문이다.

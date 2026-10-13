@@ -9,7 +9,6 @@
 // 단위 정규화는 전부 여기서: resets_at → epoch ms(Claude ISO8601 파싱,
 // Codex 유닉스 초→ms), 신선도(fetchedAtMs)도 epoch ms.
 
-mod antigravity_live;
 mod claude;
 mod claude_live;
 mod claude_live_fallback;
@@ -21,7 +20,6 @@ use std::path::Path;
 
 use serde::Serialize;
 
-pub use antigravity_live::{AntigravityLiveOutcome, AntigravityLiveStatus};
 pub use claude_live::LiveUsageState;
 pub use codex_live::{CodexLiveOutcome, CodexLiveStatus};
 pub use gemini_live::{GeminiLiveOutcome, GeminiLiveStatus};
@@ -110,16 +108,13 @@ pub enum UsageWindowKind {
     Unknown,
 }
 
-/// CLI provider. TS `"claude" | "codex" | "antigravity" | "gemini"` 미러
+/// CLI provider. TS `"claude" | "codex" | "gemini"` 미러
 /// (serde lowercase).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
     Claude,
     Codex,
-    /// Antigravity(`agy` CLI). 파일 캐시 미러가 없어 실시간 조회에만 의존한다
-    /// — antigravity_live.rs 헤더 주석 참고.
-    Antigravity,
     /// Gemini CLI(Code Assist 라이선스 보유 계정). 역시 파일 캐시가 없고,
     /// 라이선스가 없는 계정에서는 값이 없는 것이 정상이다 — gemini_live.rs.
     Gemini,
@@ -164,11 +159,9 @@ pub struct ProviderUsage {
 pub struct UsageSnapshot {
     pub claude: Option<ProviderUsage>,
     pub codex: Option<ProviderUsage>,
-    /// Antigravity 사용량. **파일 캐시 미러가 없다** — 실시간 조회가 한 번도
-    /// 성공하지 않았으면 항상 None이다(Claude·Codex와 다른 점).
-    pub antigravity: Option<ProviderUsage>,
-    /// Gemini CLI 사용량. Antigravity와 같은 성질(파일 캐시 없음)이고, 게다가
-    /// Code Assist 라이선스가 없는 계정에서는 영영 None이다(정상).
+    /// Gemini CLI 사용량. **파일 캐시 미러가 없다** — 실시간 조회가 한 번도
+    /// 성공하지 않았으면 항상 None이고, Code Assist 라이선스가 없는 계정에서는
+    /// 영영 None이다(정상).
     pub gemini: Option<ProviderUsage>,
     /// Claude 실시간 조회 진단(항상 존재). 파일 캐시만 읽는 동기 경로에서는
     /// `NeverAttempted`가 그대로 나간다.
@@ -176,10 +169,8 @@ pub struct UsageSnapshot {
     /// Codex 실시간 조회 진단(항상 존재). 같은 규칙 — 동기 경로에서는
     /// `NeverAttempted`.
     pub codex_live: CodexLiveStatus,
-    /// Antigravity 실시간 조회 진단(항상 존재). 이쪽은 강등할 파일 캐시가
-    /// 없어서 진단이 곧 "왜 안 보이는지"의 유일한 설명이다.
-    pub antigravity_live: AntigravityLiveStatus,
-    /// Gemini 실시간 조회 진단(항상 존재). 같은 이유로 유일한 설명이다.
+    /// Gemini 실시간 조회 진단(항상 존재). 강등할 파일 캐시가 없어서 진단이
+    /// 곧 "왜 안 보이는지"의 유일한 설명이다.
     pub gemini_live: GeminiLiveStatus,
 }
 
@@ -190,13 +181,11 @@ pub fn load_usage_snapshot(claude_root: &Path, codex_root: &Path) -> UsageSnapsh
     UsageSnapshot {
         claude: claude::load(claude_root),
         codex: codex::load(codex_root),
-        // Antigravity·Gemini는 읽을 파일 캐시가 없다 — 동기 경로에서는 항상
-        // 비어 있고 값은 아래 실시간 경로에서만 채워진다.
-        antigravity: None,
+        // Gemini는 읽을 파일 캐시가 없다 — 동기 경로에서는 항상 비어 있고
+        // 값은 아래 실시간 경로에서만 채워진다.
         gemini: None,
         claude_live: ClaudeLiveStatus::default(),
         codex_live: CodexLiveStatus::default(),
-        antigravity_live: AntigravityLiveStatus::default(),
         gemini_live: GeminiLiveStatus::default(),
     }
 }
@@ -238,7 +227,6 @@ pub async fn load_usage_snapshot_with_live(
     tokio::join!(
         refresh_claude_live(live, claude_config_dir, now_ms),
         refresh_codex_live(&live.codex, now_ms),
-        refresh_antigravity_live(&live.antigravity, now_ms),
         refresh_gemini_live(&live.gemini, &gemini_env, now_ms),
     );
 
@@ -246,13 +234,8 @@ pub async fn load_usage_snapshot_with_live(
     snapshot.claude_live = live.status();
     snapshot.codex = merge_provider(snapshot.codex.take(), live.codex.last_success());
     snapshot.codex_live = live.codex.status();
-    // 파일 쪽이 항상 None이라 merge는 형식적이지만, 세 provider가 같은 규칙을
+    // 파일 쪽이 항상 None이라 merge는 형식적이지만, 모든 provider가 같은 규칙을
     // 쓰는 편이 나중에 캐시 소스가 생겼을 때 손댈 곳이 줄어든다.
-    snapshot.antigravity = merge_provider(
-        snapshot.antigravity.take(),
-        live.antigravity.last_success(),
-    );
-    snapshot.antigravity_live = live.antigravity.status();
     snapshot.gemini = merge_provider(snapshot.gemini.take(), live.gemini.last_success());
     snapshot.gemini_live = live.gemini.status();
     snapshot
@@ -296,20 +279,8 @@ async fn refresh_codex_live(live: &codex_live::CodexLiveState, now_ms: i64) {
     }
 }
 
-/// Antigravity 실시간 조회 1회분. 실패하면 직전 성공 값이 그대로 쓰이고,
-/// 그마저 없으면 이 provider는 스냅샷에서 None이다 — 강등할 파일 캐시가 없다.
-async fn refresh_antigravity_live(live: &antigravity_live::AntigravityLiveState, now_ms: i64) {
-    if !live.begin_attempt_if_due(now_ms) {
-        return;
-    }
-    match antigravity_live::fetch_live(now_ms).await {
-        Ok(usage) => live.record_success(usage),
-        Err(failure) => live.record_failure(failure),
-    }
-}
-
-/// Gemini 실시간 조회 1회분. Antigravity와 같은 성질(파일 캐시 없음)이라
-/// 실패하면 직전 성공 값만 남고, 라이선스가 없는 계정에서는 영영 값이 없다.
+/// Gemini 실시간 조회 1회분. 파일 캐시가 없어 실패하면 직전 성공 값만
+/// 남고, 라이선스가 없는 계정에서는 영영 값이 없다.
 async fn refresh_gemini_live(
     live: &gemini_live::GeminiLiveState,
     env: &gemini_live::GeminiEnv,

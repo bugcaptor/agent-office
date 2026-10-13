@@ -73,19 +73,6 @@
       "unexpectedShort": "Échec du relevé (format de réponse)",
       "detailUnknownCause": "cause inconnue"
     },
-    "antigravityLive": {
-      "noCacheNote": "Antigravity ne garde aucune copie locale de l'utilisation : en cas d'échec, la dernière valeur relevée reste affichée — ou plus rien du tout",
-      "ok": "Interrogation directe du CLI agy (au plus toutes les 15 minutes)",
-      "neverAttempted": "Relevé en direct pas encore tenté — $t(activity:usage.antigravityLive.noCacheNote)",
-      "cliMissing": "Échec du relevé : exécutable agy introuvable (vérifiez l'installation du CLI Antigravity et le PATH). $t(activity:usage.antigravityLive.noCacheNote)",
-      "cliMissingShort": "échec du relevé (agy introuvable)",
-      "cliFailed": "Échec du relevé : agy s'est arrêté sans résultat ({{detail}}). $t(activity:usage.antigravityLive.noCacheNote)",
-      "cliFailedShort": "échec du relevé (agy arrêté)",
-      "timeout": "Échec du relevé : agy n'a pas répondu à temps. $t(activity:usage.antigravityLive.noCacheNote)",
-      "commandFailed": "Échec du relevé : agy a renvoyé une erreur ({{detail}}) — une connexion est peut-être nécessaire (lancez agy et connectez-vous). $t(activity:usage.antigravityLive.noCacheNote)",
-      "commandFailedShort": "échec du relevé (erreur agy)",
-      "unexpected": "Échec du relevé : le format de la réponse agy /usage a changé ({{detail}}). $t(activity:usage.antigravityLive.noCacheNote)"
-    },
     "geminiLive": {
       "noCacheNote": "Le CLI Gemini ne garde aucune copie locale de l'utilisation : en cas d'échec, la dernière valeur relevée reste affichée — ou plus rien du tout",
       "ok": "Interrogation directe de Code Assist (au plus toutes les 15 minutes)",
@@ -118,7 +105,6 @@
       "empty": {
         "claude": "Aucune donnée d'utilisation. Ouvrez /usage une fois dans Claude Code pour créer le cache local.",
         "codex": "Aucune donnée d'utilisation. Lancez codex login pour que l'app la relève, ou exécutez Codex CLI une fois pour créer les enregistrements locaux.",
-        "antigravity": "Aucune donnée d'utilisation. Installez le CLI Antigravity (agy) et connectez-vous : l'app la relèvera directement.",
         "gemini": "Aucune donnée d'utilisation. Connectez-vous à gemini avec un compte disposant d'une licence Gemini Code Assist et l'app la relèvera directement."
       },
       "allHidden": "Aucune utilisation à afficher — rien n'a pu être relevé depuis plus d'un jour, quel que soit le CLI."

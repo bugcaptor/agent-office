@@ -73,19 +73,6 @@
       "unexpectedShort": "实时获取失败（响应格式）",
       "detailUnknownCause": "原因不明"
     },
-    "antigravityLive": {
-      "noCacheNote": "Antigravity 不在本地保存用量，因此获取失败时只会留下上次取到的数值，或干脆不显示",
-      "ok": "应用正在直接向 agy CLI 查询用量（最快每 15 分钟一次）",
-      "neverAttempted": "尚未尝试实时获取 —— $t(activity:usage.antigravityLive.noCacheNote)",
-      "cliMissing": "实时获取失败：未找到 agy 可执行文件（请检查 Antigravity CLI 是否安装及 PATH）。$t(activity:usage.antigravityLive.noCacheNote)",
-      "cliMissingShort": "实时获取失败（无 agy）",
-      "cliFailed": "实时获取失败：agy 未返回结果就退出了（{{detail}}）。$t(activity:usage.antigravityLive.noCacheNote)",
-      "cliFailedShort": "实时获取失败（agy 退出）",
-      "timeout": "实时获取失败：agy 未在时限内响应。$t(activity:usage.antigravityLive.noCacheNote)",
-      "commandFailed": "实时获取失败：agy 返回了错误（{{detail}}）—— 可能需要登录（运行 agy 后登录）。$t(activity:usage.antigravityLive.noCacheNote)",
-      "commandFailedShort": "实时获取失败（agy 错误）",
-      "unexpected": "实时获取失败：agy /usage 的响应格式已变更（{{detail}}）。$t(activity:usage.antigravityLive.noCacheNote)"
-    },
     "geminiLive": {
       "noCacheNote": "Gemini CLI 不在本地保存用量，因此获取失败时只会留下上次取到的数值，或干脆不显示",
       "ok": "应用正在直接向 Code Assist 查询用量（最快每 15 分钟一次）",
@@ -118,7 +105,6 @@
       "empty": {
         "claude": "暂无用量数据。在 Claude Code 中打开一次 /usage 即可生成本地缓存。",
         "codex": "暂无用量数据。执行 codex login 后应用可直接获取，或运行一次 Codex CLI 生成本地记录。",
-        "antigravity": "暂无用量数据。安装 Antigravity CLI（agy）并登录后，应用会直接获取。",
         "gemini": "暂无用量数据。用带有 Gemini Code Assist 授权的账号登录 gemini 后，应用会直接获取。"
       },
       "allHidden": "没有可显示的用量。超过一天未能从任何 CLI 取到用量。"

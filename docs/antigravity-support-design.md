@@ -235,6 +235,9 @@ Claude 재개 설계(`docs/claude-session-resume-design.md`)를 그대로 따르
 
 ### 3.6 사용량 (kbm #2se, 2026-09-07 갱신)
 
+> 2026-10-14: 구독 한도 실시간 조회(`usage/antigravity_live.rs`)는 점검·정리 §7.D C43으로
+> 제거됐다. 아래 첫 문단은 이력이고, 턴 단위 토큰 집계(SQLite)는 그대로다.
+
 이미 `usage/antigravity_live.rs` 가 `agy -p /usage` 로 한도(잔여 비율) 실시간 조회를
 한다. S4 실측대로 `cli_command`/`fallback_cli_command` 가 자식 `agy` 에
 `AGENT_OFFICE_HOOK_URL`/`AGENT_OFFICE_SESSION` 을 물려주지 않게 `env_remove` 한다 —

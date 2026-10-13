@@ -294,9 +294,7 @@ pub struct LiveUsageState {
     /// 상태"로 네이티브 커맨드와 웹 RPC가 공유하고 있고, Codex도 같은 폴링에
     /// 얹히기 때문이다. 세 provider의 상태는 서로 독립이다.
     pub(super) codex: super::codex_live::CodexLiveState,
-    /// Antigravity 실시간 조회 상태. Codex와 같은 이유로 같은 그릇에 담았다.
-    pub(super) antigravity: super::antigravity_live::AntigravityLiveState,
-    /// Gemini 실시간 조회 상태. 같은 이유.
+    /// Gemini 실시간 조회 상태. Codex와 같은 이유로 같은 그릇에 담았다.
     pub(super) gemini: super::gemini_live::GeminiLiveState,
 }
 
@@ -346,16 +344,15 @@ impl LiveUsageState {
     /// **모든** provider의 시도 시각을 선점해 이번 폴링에서 아무도 실제 조회를
     /// 하지 않게 만든다. 위임 테스트 전용 장치다.
     ///
-    /// 왜 필요한가: provider마다 스로틀 상태가 따로라(claude/codex/antigravity/
-    /// gemini) Claude 것만 선점하면 나머지 셋은 그대로 돌아 나간다 — 개발
-    /// 머신에서 `codex app-server`·`agy -p /usage` 자식 프로세스를 띄우고
+    /// 왜 필요한가: provider마다 스로틀 상태가 따로라(claude/codex/gemini)
+    /// Claude 것만 선점하면 나머지 둘은 그대로 돌아 나간다 — 개발
+    /// 머신에서 `codex app-server` 자식 프로세스를 띄우고
     /// Code Assist API와 Keychain에까지 닿는다(실측: 테스트 프로세스가 10초
     /// 가까이 늘어지며 같은 바이너리의 타이밍 민감한 테스트를 깨뜨렸다).
     /// "토큰이 없으니 자연 강등되겠지"는 개발 머신에서 성립하지 않는다.
     pub(crate) fn preempt_all_attempts(&self, now_ms: i64) {
         self.begin_attempt_if_due(now_ms);
         self.codex.begin_attempt_if_due(now_ms);
-        self.antigravity.begin_attempt_if_due(now_ms);
         self.gemini.begin_attempt_if_due(now_ms);
     }
 
