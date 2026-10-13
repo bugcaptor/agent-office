@@ -88,7 +88,7 @@
     "agentMissing": "Select an existing character.",
     "clockedOut": "Clock this character in before sending.",
     "unsupportedProfile": "Work sending requires a profile without startup commands or tmux hosting.",
-    "unsupportedShell": "Use a directly created bash/zsh terminal. External or adopted sessions are unsupported.",
+    "unsupportedShell": "Use a directly created bash/zsh terminal, or PowerShell/Git Bash on Windows. WSL, external, and adopted sessions are unsupported.",
     "producerRunning": "Stop bot mode or automation first.",
     "humanInput": "Terminal input changed. Check the terminal before trying again.",
     "sessionChanged": "The terminal session changed. Nothing will be sent to its replacement.",

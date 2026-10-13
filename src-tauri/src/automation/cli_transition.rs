@@ -15,8 +15,55 @@ const RECEIPT_DIR: &str = "automation-cli-returns";
 const RECEIPT_FILE: &str = "return.json";
 const STARTED_FILE: &str = "started.json";
 const SCRIPT_FILE: &str = "launch.sh";
+const PS_SCRIPT_FILE: &str = "launch.ps1";
 const MAX_RECEIPT_BYTES: u64 = 4 * 1024;
 const MAX_SUBMISSION_BYTES: usize = 512;
+
+/// 앱이 직접 띄운 세션 셸 중 기동 스크립트를 렌더링할 수 있는 종류.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaunchShell {
+    /// Unix bash/zsh.
+    Posix,
+    /// Windows Git Bash. POSIX 스크립트에 `C:/…` 경로를 쓴다.
+    GitBash,
+    /// Windows PowerShell 5.1 / PowerShell 7.
+    PowerShell,
+}
+
+/// CLI 명령 문자열의 인용 문법.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandSyntax {
+    Posix,
+    PowerShell,
+}
+
+impl LaunchShell {
+    pub fn syntax(self) -> CommandSyntax {
+        match self {
+            LaunchShell::Posix | LaunchShell::GitBash => CommandSyntax::Posix,
+            LaunchShell::PowerShell => CommandSyntax::PowerShell,
+        }
+    }
+
+    /// 실제 세션 셸 경로로 판정한다. WSL·cmd·미식별 셸은 None이다.
+    pub fn for_shell_path(shell_path: &str) -> Option<Self> {
+        let path = Path::new(shell_path);
+        let basename = path.file_name()?.to_str()?;
+        if cfg!(unix) {
+            return (path.is_absolute() && matches!(basename, "bash" | "zsh"))
+                .then_some(LaunchShell::Posix);
+        }
+        if cfg!(windows) {
+            // PowerShell은 SystemRoot가 없을 때 `powershell.exe` 이름만으로 뜬다.
+            return match basename.to_ascii_lowercase().as_str() {
+                "bash.exe" if path.is_absolute() => Some(LaunchShell::GitBash),
+                "powershell.exe" | "pwsh.exe" => Some(LaunchShell::PowerShell),
+                _ => None,
+            };
+        }
+        None
+    }
+}
 
 /// UI 미리보기와 실행 전 검증이 공유하는, 실제 세션 셸 기반 capability다.
 /// Windows/attach/tmux/미식별 셸은 추측으로 auto를 켜지 않는다.
@@ -109,12 +156,8 @@ impl CliTransition {
                 unavailable_reason: Some("automation-cli-return-shell-unverified".into()),
             };
         };
-        let basename = Path::new(shell_path)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default();
-        let posix_supported =
-            cfg!(unix) && Path::new(shell_path).is_absolute() && matches!(basename, "bash" | "zsh");
+        // 자동화 v2는 Unix bash/zsh만 검증했다. Windows 셸은 업무 보내기만 쓴다.
+        let posix_supported = LaunchShell::for_shell_path(shell_path) == Some(LaunchShell::Posix);
         CliTransitionCapability {
             shell_path: Some(shell_path.to_string()),
             auto_return_supported: posix_supported,
@@ -127,6 +170,27 @@ impl CliTransition {
     /// 호출자는 먼저 `capability_for_shell_path`로 현재 세션의 지원 여부를 확인한다.
     pub fn prepare_posix_launch(
         &self,
+        session_id: &str,
+        run_id: &str,
+        launch_step_id: &str,
+        step_execution_id: &str,
+        cli_command: &str,
+    ) -> Result<PreparedLaunch, String> {
+        self.prepare_launch(
+            LaunchShell::Posix,
+            session_id,
+            run_id,
+            launch_step_id,
+            step_execution_id,
+            cli_command,
+        )
+    }
+
+    /// `shell` 문법의 동기 호출 + atomic receipt writer를 만든다.
+    /// `cli_command`는 같은 셸의 `CommandSyntax`로 인용돼 있어야 한다.
+    pub fn prepare_launch(
+        &self,
+        shell: LaunchShell,
         session_id: &str,
         run_id: &str,
         launch_step_id: &str,
@@ -152,7 +216,10 @@ impl CliTransition {
         let launch_dir = canonical_owned_directory(&run_dir.join(&launch_id), Some(&run_dir))?;
         let receipt_path = launch_dir.join(RECEIPT_FILE);
         let started_path = launch_dir.join(STARTED_FILE);
-        let script_path = launch_dir.join(SCRIPT_FILE);
+        let script_path = launch_dir.join(match shell {
+            LaunchShell::PowerShell => PS_SCRIPT_FILE,
+            LaunchShell::Posix | LaunchShell::GitBash => SCRIPT_FILE,
+        });
         let nonce = Uuid::new_v4().to_string();
 
         let receipt_prefix = serde_json::json!({
@@ -171,28 +238,40 @@ impl CliTransition {
             .strip_suffix('}')
             .expect("json object ends with brace");
         let receipt_prefix = format!("{receipt_prefix},\"exitCode\":");
-        let temporary_path = launch_dir.join(format!(".return-{nonce}.tmp"));
-        let started_tmp = launch_dir.join(format!(".started-{nonce}.tmp"));
-        let temp_q = shell_quote(&temporary_path.to_string_lossy());
-        let started_tmp_q = shell_quote(&started_tmp.to_string_lossy());
-        let started_q = shell_quote(&started_path.to_string_lossy());
-        let receipt_q = shell_quote(&receipt_path.to_string_lossy());
-        let prefix_q = shell_quote(&receipt_prefix);
-
         let started_json = serde_json::json!({
             "version": 1, "sessionId": session_id, "runId": run_id,
             "launchId": launch_id, "launchStepId": launch_step_id,
             "stepExecutionId": step_execution_id, "nonce": nonce,
         })
         .to_string();
-        let started_json_q = shell_quote(&started_json);
-        // Sourcing must be short enough for canonical-mode PTYs. The subshell
-        // inherits shell functions (claude/agy wrappers) but isolates cd/env/temp vars.
-        let script = format!(
-            "( __ao_started_tmp={started_tmp_q}; printf '%s\\n' {started_json_q} > \"$__ao_started_tmp\" && mv -f -- \"$__ao_started_tmp\" {started_q}; __ao_started_rc=$?; if [ \"$__ao_started_rc\" -ne 0 ]; then printf '%s\\n' 'agent-office: automation launch ACK write failed' >&2; exit 1; fi; {cli_command}; __ao_cli_rc=$?; __ao_receipt_tmp={temp_q}; printf '%s%s%s\\n' {prefix_q} \"$__ao_cli_rc\" '}}' > \"$__ao_receipt_tmp\" && mv -f -- \"$__ao_receipt_tmp\" {receipt_q}; __ao_receipt_rc=$?; if [ \"$__ao_receipt_rc\" -ne 0 ]; then printf '%s\\n' 'agent-office: automation return receipt write failed' >&2; fi )\n"
-        );
+        let paths = ScriptPaths {
+            started_tmp: launch_dir.join(format!(".started-{nonce}.tmp")),
+            started: started_path.clone(),
+            receipt_tmp: launch_dir.join(format!(".return-{nonce}.tmp")),
+            receipt: receipt_path.clone(),
+        };
+        let (script, rendered_command) = match shell {
+            LaunchShell::Posix | LaunchShell::GitBash => {
+                let path = |p: &Path| shell_quote(&script_path_text(p, shell));
+                (
+                    posix_script(&paths, path, &started_json, &receipt_prefix, cli_command),
+                    format!(". {}", path(&script_path)),
+                )
+            }
+            LaunchShell::PowerShell => {
+                let path = |p: &Path| ps_quote(&script_path_text(p, shell));
+                // 실행 정책은 스크립트 파일에만 적용된다. 문자열로 만든 scriptblock을
+                // `&`로 부르면 정책과 무관하고, 자식 스코프라 변수·cd가 새지 않는다.
+                (
+                    powershell_script(&paths, path, &started_json, &receipt_prefix, cli_command),
+                    format!(
+                        "& ([scriptblock]::Create([System.IO.File]::ReadAllText({})))",
+                        path(&script_path)
+                    ),
+                )
+            }
+        };
         write_atomic_script(&script_path, &script)?;
-        let rendered_command = format!(". {}", shell_quote(&script_path.to_string_lossy()));
         if rendered_command.as_bytes().len() + 1 > MAX_SUBMISSION_BYTES {
             return Err("automation-cli-launch-source-too-long".into());
         }
@@ -352,6 +431,91 @@ fn valid_identifier(value: &str) -> bool {
 
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+/// PowerShell 작은따옴표 문자열. 안쪽 `'`만 두 번 쓴다.
+pub(crate) fn ps_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+struct ScriptPaths {
+    started_tmp: PathBuf,
+    started: PathBuf,
+    receipt_tmp: PathBuf,
+    receipt: PathBuf,
+}
+
+/// 셸에 넘길 경로 문자열. Windows의 canonical `\\?\` 접두사는 셸 도구가
+/// 다루지 못하므로 떼고, Git Bash에는 `C:/…` 형식으로 넘긴다.
+fn script_path_text(path: &Path, shell: LaunchShell) -> String {
+    let text = path.to_string_lossy();
+    let text = match shell {
+        LaunchShell::Posix => return text.into_owned(),
+        LaunchShell::GitBash | LaunchShell::PowerShell => strip_verbatim_prefix(&text),
+    };
+    match shell {
+        LaunchShell::GitBash => text.replace('\\', "/"),
+        _ => text,
+    }
+}
+
+fn strip_verbatim_prefix(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{rest}");
+    }
+    path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
+}
+
+fn posix_script(
+    paths: &ScriptPaths,
+    path: impl Fn(&Path) -> String,
+    started_json: &str,
+    receipt_prefix: &str,
+    cli_command: &str,
+) -> String {
+    let started_tmp_q = path(&paths.started_tmp);
+    let started_q = path(&paths.started);
+    let temp_q = path(&paths.receipt_tmp);
+    let receipt_q = path(&paths.receipt);
+    let started_json_q = shell_quote(started_json);
+    let prefix_q = shell_quote(receipt_prefix);
+    // Sourcing must be short enough for canonical-mode PTYs. The subshell
+    // inherits shell functions (claude/agy wrappers) but isolates cd/env/temp vars.
+    format!(
+        "( __ao_started_tmp={started_tmp_q}; printf '%s\\n' {started_json_q} > \"$__ao_started_tmp\" && mv -f -- \"$__ao_started_tmp\" {started_q}; __ao_started_rc=$?; if [ \"$__ao_started_rc\" -ne 0 ]; then printf '%s\\n' 'agent-office: automation launch ACK write failed' >&2; exit 1; fi; {cli_command}; __ao_cli_rc=$?; __ao_receipt_tmp={temp_q}; printf '%s%s%s\\n' {prefix_q} \"$__ao_cli_rc\" '}}' > \"$__ao_receipt_tmp\" && mv -f -- \"$__ao_receipt_tmp\" {receipt_q}; __ao_receipt_rc=$?; if [ \"$__ao_receipt_rc\" -ne 0 ]; then printf '%s\\n' 'agent-office: automation return receipt write failed' >&2; fi )\n"
+    )
+}
+
+/// PowerShell 5.1의 `Set-Content -Encoding UTF8`은 BOM을 붙여 serde가 거절하므로
+/// BOM 없는 UTF8Encoding으로 쓴다. 래퍼 함수(claude 등)는 전역이라 그대로 보인다.
+/// scriptblock 스코프는 현재 위치를 격리하지 않으므로 Push/Pop-Location으로 감싼다.
+fn powershell_script(
+    paths: &ScriptPaths,
+    path: impl Fn(&Path) -> String,
+    started_json: &str,
+    receipt_prefix: &str,
+    cli_command: &str,
+) -> String {
+    let started_tmp_q = path(&paths.started_tmp);
+    let started_q = path(&paths.started);
+    let temp_q = path(&paths.receipt_tmp);
+    let receipt_q = path(&paths.receipt);
+    let started_json_q = ps_quote(started_json);
+    let prefix_q = ps_quote(receipt_prefix);
+    format!(
+        "$__ao_enc = New-Object System.Text.UTF8Encoding $false\n\
+try {{ [System.IO.File]::WriteAllText({started_tmp_q}, {started_json_q} + \"`n\", $__ao_enc); Move-Item -LiteralPath {started_tmp_q} -Destination {started_q} -Force -ErrorAction Stop }} catch {{ [Console]::Error.WriteLine('agent-office: automation launch ACK write failed'); return }}\n\
+$global:LASTEXITCODE = 0\n\
+Push-Location\n\
+try {{\n\
+{cli_command}\n\
+$__ao_ok = $?\n\
+$__ao_rc = $global:LASTEXITCODE\n\
+}} finally {{ Pop-Location }}\n\
+if ($null -eq $__ao_rc) {{ $__ao_rc = 0 }}\n\
+if (-not $__ao_ok -and $__ao_rc -eq 0) {{ $__ao_rc = 1 }}\n\
+try {{ [System.IO.File]::WriteAllText({temp_q}, {prefix_q} + $__ao_rc + '}}' + \"`n\", $__ao_enc); Move-Item -LiteralPath {temp_q} -Destination {receipt_q} -Force -ErrorAction Stop }} catch {{ [Console]::Error.WriteLine('agent-office: automation return receipt write failed') }}\n"
+    )
 }
 
 /// 새 디렉터리도 기존 디렉터리도 symbolic link가 아니고 기준 루트 밖으로 나가지
@@ -609,5 +773,153 @@ mod tests {
             );
             assert_eq!(adapter.poll_receipt(&second), ReceiptRead::Pending);
         }
+    }
+
+    #[test]
+    fn launch_shell_kind_follows_platform_and_executable_name() {
+        let expect = |path: &str, unix: Option<LaunchShell>, windows: Option<LaunchShell>| {
+            let expected = if cfg!(windows) { windows } else { unix };
+            assert_eq!(LaunchShell::for_shell_path(path), expected, "{path}");
+        };
+        expect("/bin/zsh", Some(LaunchShell::Posix), None);
+        expect("bash", None, None);
+        expect(r"C:\Program Files\Git\bin\bash.exe", None, Some(LaunchShell::GitBash));
+        expect(r"C:\Program Files\PowerShell\7\PWSH.EXE", None, Some(LaunchShell::PowerShell));
+        expect("powershell.exe", None, Some(LaunchShell::PowerShell));
+        expect(r"C:\Windows\System32\wsl.exe", None, None);
+        // 자동화 v2 capability는 Windows 셸을 켜지 않는다.
+        assert!(
+            !CliTransition::capability_for_shell_path(Some(r"C:\Program Files\Git\bin\bash.exe"))
+                .auto_return_supported
+        );
+        assert_eq!(LaunchShell::GitBash.syntax(), CommandSyntax::Posix);
+        assert_eq!(LaunchShell::PowerShell.syntax(), CommandSyntax::PowerShell);
+    }
+
+    #[test]
+    fn windows_script_paths_drop_the_verbatim_prefix() {
+        let path = Path::new(r"\\?\C:\Users\앱 데이터\launch.sh");
+        assert_eq!(script_path_text(path, LaunchShell::GitBash), "C:/Users/앱 데이터/launch.sh");
+        assert_eq!(
+            script_path_text(path, LaunchShell::PowerShell),
+            r"C:\Users\앱 데이터\launch.sh"
+        );
+        assert_eq!(
+            script_path_text(Path::new(r"\\?\UNC\host\share\x"), LaunchShell::PowerShell),
+            r"\\host\share\x"
+        );
+        assert_eq!(ps_quote("it's"), "'it''s'");
+    }
+
+    #[cfg(windows)]
+    fn windows_adapter() -> (tempfile::TempDir, CliTransition) {
+        let dir = tempfile::tempdir().unwrap();
+        let app_data = dir.path().join("앱 데이터 it's");
+        fs::create_dir_all(&app_data).unwrap();
+        (dir, CliTransition::new(app_data))
+    }
+
+    #[cfg(windows)]
+    fn powershell_programs() -> Vec<String> {
+        let mut programs = vec![];
+        if let Ok(root) = std::env::var("SystemRoot") {
+            programs.push(format!(r"{root}\System32\WindowsPowerShell\v1.0\powershell.exe"));
+        }
+        if let Ok(pf) = std::env::var("ProgramFiles") {
+            programs.push(format!(r"{pf}\PowerShell\7\pwsh.exe"));
+        }
+        programs.into_iter().filter(|p| Path::new(p).is_file()).collect()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_launch_runs_wrapper_functions_in_a_child_scope_and_writes_receipts() {
+        for program in powershell_programs() {
+            let (dir, adapter) = windows_adapter();
+            let output = dir.path().join("인자 ' output.txt");
+            let command = format!(
+                "ao_fake_cli --model {} -c {}",
+                ps_quote("한글 ' $model"),
+                ps_quote("model_reasoning_effort=high")
+            );
+            let launch = adapter
+                .prepare_launch(LaunchShell::PowerShell, "s", "r", "l", "e", &command)
+                .unwrap();
+            assert!(launch.command().as_bytes().len() + 1 <= MAX_SUBMISSION_BYTES);
+            assert!(launch.command().starts_with("& ([scriptblock]::Create("));
+            let script = format!(
+                "$before = (Get-Location).Path; function ao_fake_cli {{ [System.IO.File]::WriteAllText({}, ($args -join '|')); Set-Location \\; cmd /c exit 3 }}; {}; if ((Get-Location).Path -ne $before -or $null -ne $__ao_rc) {{ exit 9 }}",
+                ps_quote(&output.to_string_lossy()),
+                launch.command()
+            );
+            let status = Command::new(&program)
+                .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                .status()
+                .unwrap();
+            assert!(status.success(), "{program}: {status}");
+            assert_eq!(
+                fs::read_to_string(&output).unwrap(),
+                "--model|한글 ' $model|-c|model_reasoning_effort=high"
+            );
+            assert_eq!(adapter.poll_started(&launch), StartedRead::Started, "{program}");
+            assert_eq!(
+                adapter.poll_receipt(&launch),
+                ReceiptRead::Returned { exit_code: 3 },
+                "{program}"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_missing_cli_reports_a_failed_return() {
+        for program in powershell_programs() {
+            let (_dir, adapter) = windows_adapter();
+            let launch = adapter
+                .prepare_launch(LaunchShell::PowerShell, "s", "r", "l", "e", "ao_missing_cli_xyz")
+                .unwrap();
+            Command::new(&program)
+                .args(["-NoProfile", "-NonInteractive", "-Command", launch.command()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert_eq!(
+                adapter.poll_receipt(&launch),
+                ReceiptRead::Returned { exit_code: 1 },
+                "{program}"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn git_bash_launch_uses_forward_slash_windows_paths() {
+        let Some(bash) = std::env::var("ProgramFiles")
+            .ok()
+            .map(|pf| format!(r"{pf}\Git\bin\bash.exe"))
+            .filter(|p| Path::new(p).is_file())
+        else {
+            return;
+        };
+        let (_dir, adapter) = windows_adapter();
+        let launch = adapter
+            .prepare_launch(LaunchShell::GitBash, "s", "r", "l", "e", "ao_fake_cli 'a b'")
+            .unwrap();
+        assert!(
+            launch.command().starts_with(". '")
+                && launch.command().contains(":/")
+                && !launch.command().contains(":\\")
+                && !launch.command().contains("?"),
+            "{}",
+            launch.command()
+        );
+        let status = Command::new(&bash)
+            .args(["--norc", "--noprofile", "-c"])
+            .arg(format!("ao_fake_cli() {{ [ \"$1\" = 'a b' ] && return 4; }}; {}", launch.command()))
+            .status()
+            .unwrap();
+        assert!(status.success(), "{status}");
+        assert_eq!(adapter.poll_started(&launch), StartedRead::Started);
+        assert_eq!(adapter.poll_receipt(&launch), ReceiptRead::Returned { exit_code: 4 });
     }
 }

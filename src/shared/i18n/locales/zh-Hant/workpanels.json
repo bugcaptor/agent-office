@@ -88,7 +88,7 @@
     "agentMissing": "請選擇現有角色。",
     "clockedOut": "請先讓角色上班。",
     "unsupportedProfile": "請關閉啟動命令和 tmux 託管。",
-    "unsupportedShell": "請使用直接建立的 bash/zsh 終端。不支援外部或恢復的工作階段。",
+    "unsupportedShell": "請使用直接建立的 bash/zsh 終端，或 Windows 上的 PowerShell/Git Bash。不支援 WSL、外部或恢復的工作階段。",
     "producerRunning": "請先停止機器人或自動化。",
     "humanInput": "終端輸入已變更。請檢查終端。",
     "sessionChanged": "終端工作階段已變更。不會傳送到替換工作階段。",

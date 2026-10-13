@@ -1126,7 +1126,7 @@ impl SessionManager {
             .unwrap_or(false)
     }
 
-    /// 원래 셸이 foreground인지를 확인한다. 브로커/미지원 조회는 None이며
+    /// 원래 셸이 foreground인지를 확인한다(Windows는 셸의 자손 프로세스 유무). 브로커/미지원 조회는 None이며
     /// 보내기 UI는 기존 세션에 대해 재시작 확인으로 처리한다.
     pub fn is_shell_prompt(&self, agent_id: &str) -> Option<bool> {
         #[cfg(unix)]
@@ -1150,7 +1150,15 @@ impl SessionManager {
             let count = crate::session::shell_activity::count_pgrep_pids(&String::from_utf8_lossy(&members.stdout));
             Some(count == 1)
         }
-        #[cfg(not(unix))]
+        // ConPTY엔 foreground 그룹이 없다. 셸 프로세스에 자손이 없을 때만 빈 셸이다.
+        #[cfg(windows)]
+        {
+            let session = self.find(agent_id)?;
+            let shell_path = session.shell_path.lock().clone()?;
+            let pid = session.control.process_id()?;
+            crate::session::win_process::shell_is_idle(pid, &shell_path)
+        }
+        #[cfg(not(any(unix, windows)))]
         {
             let _ = agent_id;
             None

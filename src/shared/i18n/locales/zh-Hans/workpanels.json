@@ -88,7 +88,7 @@
     "agentMissing": "请选择现有角色。",
     "clockedOut": "请先让角色上班。",
     "unsupportedProfile": "请关闭启动命令和 tmux 托管。",
-    "unsupportedShell": "请使用直接创建的 bash/zsh 终端。不支持外部或恢复的会话。",
+    "unsupportedShell": "请使用直接创建的 bash/zsh 终端，或 Windows 上的 PowerShell/Git Bash。不支持 WSL、外部或恢复的会话。",
     "producerRunning": "请先停止机器人或自动化。",
     "humanInput": "终端输入已更改。请检查终端。",
     "sessionChanged": "终端会话已更改。不会发送到替换会话。",

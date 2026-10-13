@@ -1,3 +1,4 @@
+use crate::automation::cli_transition::CommandSyntax;
 use crate::automation::marker::{self, AutomationResultStatus, ResultRead};
 use crate::automation::runner::{cancel_status, fail, now_ms, DecisionCommand};
 use crate::automation::{store::AutomationStore, AutomationContext};
@@ -140,7 +141,21 @@ pub(crate) fn launch_command(
     model: Option<&str>,
     effort: Option<&str>,
 ) -> Result<String, String> {
+    launch_command_for(cli, model, effort, CommandSyntax::Posix)
+}
+
+/// `syntax` 셸에서 그대로 실행할 CLI 호출 문장. 인자 인용만 셸별로 다르다.
+pub(crate) fn launch_command_for(
+    cli: &str,
+    model: Option<&str>,
+    effort: Option<&str>,
+    syntax: CommandSyntax,
+) -> Result<String, String> {
     crate::automation::definition::validate_launch_effort(cli, effort)?;
+    let shell_quote = |value: &str| match syntax {
+        CommandSyntax::Posix => shell_quote(value),
+        CommandSyntax::PowerShell => crate::automation::cli_transition::ps_quote(value),
+    };
     let mut command = match cli {
         "claude" => "claude".to_string(),
         "codex" => "codex".to_string(),
@@ -171,9 +186,12 @@ pub(crate) fn launch_command(
             }
             if let Some(effort) = effort {
                 command.push_str(" -c ");
-                command.push_str(&shell_quote(&format!(
-                    "model_reasoning_effort=\"{effort}\""
-                )));
+                // PowerShell 5.1은 네이티브 인자 안의 큰따옴표를 지운다. codex는 TOML로
+                // 못 읽는 값을 문자열로 받으므로 PowerShell에서는 따옴표 없이 넘긴다.
+                command.push_str(&shell_quote(&match syntax {
+                    CommandSyntax::Posix => format!("model_reasoning_effort=\"{effort}\""),
+                    CommandSyntax::PowerShell => format!("model_reasoning_effort={effort}"),
+                }));
             }
         }
         "agy" => {
@@ -1468,5 +1486,23 @@ mod tests {
             Err("automation-agy-effort-invalid".into())
         );
         assert!(launch_command("claude", None, Some("unsafe")).is_err());
+    }
+
+    #[test]
+    fn powershell_launch_commands_use_powershell_quoting() {
+        let ps = |cli, model, effort| launch_command_for(cli, model, effort, CommandSyntax::PowerShell);
+        assert_eq!(
+            ps("claude", Some("it's"), Some("high")).unwrap(),
+            "claude --model 'it''s' --effort 'high'"
+        );
+        assert_eq!(
+            ps("codex", Some("gpt-5"), Some("xhigh")).unwrap(),
+            "codex --model 'gpt-5' -c 'model_reasoning_effort=xhigh'"
+        );
+        assert_eq!(
+            ps("pi", Some("openai/gpt-5"), Some("xhigh")).unwrap(),
+            "pi --approve --model 'openai/gpt-5' --thinking 'xhigh'"
+        );
+        assert!(ps("claude", None, Some("unsafe")).is_err());
     }
 }

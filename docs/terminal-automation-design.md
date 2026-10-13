@@ -144,7 +144,7 @@ allowEarlyComplete가 켜진 작업의 complete는 현재 구간의 대응 ExitC
 
 첫 기동 전 비차단 shellReady 선택으로 사용자가 원래 로컬 셸이며 입력줄이 비어 있음을 확인한다. 확인 자체는 터미널에 입력하지 않는다. 읽기 전용 명령 미리보기와 실행 검증은 실제 세션에 기록한 셸 경로를 사용한다.
 
-직접 생성한 Unix bash/zsh의 동기 호출·POSIX 인용·원자 receipt 경로를 지원한다. 임의 startup command/autostart가 있었거나 tmux 호스팅·외부 attach·입양 세션은 원래 셸이 현재 입력 대상임을 증명하지 못하므로 v2를 거절한다. PowerShell/pwsh/Git Bash/WSL/미식별 셸도 현재 렌더링 미지원 오류로 거절한다. manual은 지원하는 직접 bash/zsh 세션에서 반환 확인을 수동화하는 옵션이며, 다른 셸의 명령 인용을 해결하지 않는다. 미검증 플랫폼에 auto를 광고하지 않는다.
+직접 생성한 Unix bash/zsh의 동기 호출·POSIX 인용·원자 receipt 경로를 지원한다. 임의 startup command/autostart가 있었거나 tmux 호스팅·외부 attach·입양 세션은 원래 셸이 현재 입력 대상임을 증명하지 못하므로 v2를 거절한다. PowerShell/pwsh/Git Bash/WSL/미식별 셸도 현재 렌더링 미지원 오류로 거절한다. `CliTransition`의 PowerShell·Git Bash 기동 렌더러(`prepare_launch`)는 업무 보내기만 쓰며 v2 capability(`capability_for_shell_path`)는 Unix bash/zsh 그대로다. manual은 지원하는 직접 bash/zsh 세션에서 반환 확인을 수동화하는 옵션이며, 다른 셸의 명령 인용을 해결하지 않는다. 미검증 플랫폼에 auto를 광고하지 않는다.
 
 ### 실행별 반환 기록
 

@@ -88,7 +88,7 @@
     "agentMissing": "Sélectionnez un personnage existant.",
     "clockedOut": "Faites revenir ce personnage au bureau.",
     "unsupportedProfile": "Désactivez la commande de démarrage et tmux.",
-    "unsupportedShell": "Utilisez un terminal bash/zsh créé directement. Les sessions externes ou reprises sont incompatibles.",
+    "unsupportedShell": "Utilisez un terminal bash/zsh créé directement, ou PowerShell/Git Bash sous Windows. WSL et les sessions externes ou reprises sont incompatibles.",
     "producerRunning": "Arrêtez le bot ou l’automatisation.",
     "humanInput": "La saisie a changé. Vérifiez le terminal.",
     "sessionChanged": "La session a changé. Aucun envoi à la nouvelle session.",

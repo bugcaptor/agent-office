@@ -2,7 +2,7 @@
 
 설정으로 켜는 좌우 고정 패널 — 좌측 업무 목록(배정·보내기·모니터링·수신함), 우측 세션 로그(전 캐릭터, 필터·검색)의 정본 명세다.
 
-상태: 정본 (2026-10-13) — 1·2차 기능과 업무 수신함 구현 완료. 설치 Tauri 앱의 저장·복원과 인증된 CLI 5종의 실기 인수는 남아 있다. 보내기는 직접 생성한 Unix bash/zsh PTY를 지원한다.
+상태: 정본 (2026-10-13) — 1·2차 기능과 업무 수신함 구현 완료. 설치 Tauri 앱의 저장·복원과 인증된 CLI 5종의 실기 인수는 남아 있다. 보내기는 직접 생성한 Unix bash/zsh와 Windows PowerShell·Git Bash PTY를 지원한다.
 
 관련 문서: [터미널 자동화](terminal-automation-design.md)(CLI 기동·첫 프롬프트), [세션 활동 분석](session-analytics-design.md)(턴·토큰·비용 집계), [세션 로그](session-log-design.md)(전사 보기), [동료 대화](agent-talk-design.md) §6(shim·권한 사전 승인 배선). 수신함의 구현 계획과 결정 근거는 [archive/work-inbox-design.md](archive/work-inbox-design.md)에 있다.
 
@@ -68,11 +68,13 @@
 
 #### 지원 대상
 
-- 앱이 직접 생성한 Unix bash/zsh PTY만 보낼 수 있다. 프로필에 시작 명령 또는 tmux 호스팅이 있거나 퇴근 중이면 보내기를 막는다. 외부 연결·입양·미지원 셸·Windows도 현재 범위에서 막는다. 봇/자동화가 실행 중이면 먼저 중단해야 한다.
+- 앱이 직접 생성한 Unix bash/zsh PTY와 Windows PowerShell(5.1·7)·Git Bash PTY만 보낼 수 있다. 프로필에 시작 명령 또는 tmux 호스팅이 있거나 퇴근 중이면 보내기를 막는다. 외부 연결·입양·WSL·미지원 셸은 막는다. 봇/자동화가 실행 중이면 먼저 중단해야 한다.
+- 셸 판정은 세션의 실제 셸 실행 파일 이름으로 한다(`LaunchShell::for_shell_path`, `automation/cli_transition.rs`). 터미널 자동화 v2의 capability는 바꾸지 않아 Windows 셸에서는 여전히 거절한다.
+- 기동 문장은 셸별로 만든다. bash/zsh는 `. '<launch.sh>'`, Git Bash는 같은 POSIX 스크립트에 `C:/…` 경로를 쓴다. PowerShell은 BOM 없는 UTF-8로 ACK·반환 기록을 쓰는 `launch.ps1`을 `& ([scriptblock]::Create([System.IO.File]::ReadAllText('…')))`로 실행한다. 실행 정책은 스크립트 파일에만 적용되므로 정책과 무관하고, 자식 스코프라 변수가 새지 않으며 현재 위치는 Push/Pop-Location으로 되돌린다. CLI 인자는 PowerShell 작은따옴표로 인용하고, PowerShell 5.1이 네이티브 인자의 큰따옴표를 지우므로 codex effort는 `-c 'model_reasoning_effort=high'`로 넘긴다(codex는 TOML로 못 읽는 값을 문자열로 받는다).
 
 #### 입력과 재시작 규약
 
-- 기존 PTY는 원래 셸의 foreground pgid와 그룹 구성원이 셸 하나인지 확인하며, 미제출 입력이 없을 때 바로 보낸다. 다른 프로세스가 있거나 조회가 불가능하면 재시작을 확인한다. 브로커 PTY의 foreground 조회 불가도 기존 세션에서는 확인 대상으로 둔다.
+- 기존 PTY는 원래 셸의 foreground pgid와 그룹 구성원이 셸 하나인지 확인하며, 미제출 입력이 없을 때 바로 보낸다. 다른 프로세스가 있거나 조회가 불가능하면 재시작을 확인한다. 브로커 PTY의 foreground 조회 불가도 기존 세션에서는 확인 대상으로 둔다. Windows ConPTY에는 foreground 그룹이 없으므로 셸 프로세스에 살아 있는 자손이 없을 때만 빈 셸로 본다(Git Bash는 `bin\bash.exe` 런처가 띄운 내부 `bash.exe` 하나만 허용, `session/win_process.rs`).
 - 재시작 확인은 세션과 사람 입력 revision을 고정한다. 확인 후 키 입력/세션 교체가 있으면 폐기하지 않는다. 미제출 입력은 별도 경고로 표시한다. 재시작 위치는 관측된 현재 cwd를 우선하며 프로필 시작 폴더는 바꾸지 않는다.
 - 새 PTY의 입력 대상이 불명확해도 기동 ACK를 확인하기 전에는 첫 프롬프트를 보내지 않는다. 이미 다른 프로세스가 foreground인 것으로 확인된 새 PTY는 거절한다. ACK는 최대 10초 기다리고, 성공 시점부터 기본 10초 기동 대기를 센다.
 - `WorkSendRuntime`은 캐릭터별 동시 보내기를 거절하고, InjectGate의 전환 소유권/strict 제출로 다른 자동 생산자를 보류한다. 사람 입력은 계속 전달되며 기동/대기/본문/CR 전에 세션·세대·revision을 재검사한다. 이 경로에는 미제출 입력의 2분 강행 규칙을 적용하지 않는다.
@@ -315,6 +317,7 @@ interface SessionSummary {
 | 보내기 조정·오류 표시 | `src/renderer/workpanels/workSendStore.ts`, `sendErrorText.ts` |
 | 네이티브 보내기·CLI 기동 | `src-tauri/src/work_send.rs`, `src-tauri/src/ipc/commands/work_panels.rs`. 기존 `automation/`의 모델·effort 검증과 기동 receipt 재사용 |
 | strict 입력·세션 재시작 | `src-tauri/src/session/inject.rs`, `src/renderer/agent/restartAgentSession.ts`. `InjectSource::Automation` 재사용 |
+| Windows 빈 셸 판정 | `src-tauri/src/session/win_process.rs`(Toolhelp 스냅숏), `pty_factory.rs`(`PtyControl::process_id`), `manager.rs`(`is_shell_prompt`) |
 | 모니터링·자동 상태 전이 | `src/renderer/workpanels/workMonitor.ts`, `WorkCardMonitor.tsx`. activity·notification·최종 usage 이벤트 구독 |
 | 종료 저장 | `src/renderer/workpanels/lifecycle.ts` |
 | 수신함 파서·scan·ack | `src-tauri/src/persistence/work_inbox.rs`, `src-tauri/src/ipc/commands/work_panels.rs` |
@@ -349,10 +352,12 @@ IPC 계약은 `src/shared/ipc.ts`와 `src/renderer/ipc/tauriApi.ts`의 로컬 �
 - Safari 로컬 프리뷰에서 합성 데이터·IPC로 기본 설정 표시, 모델 입력 배치, 질문 강조·경과·턴·비용, 재시작 확인·미제출 경고·취소를 확인했다. 설치된 원본 앱은 교체하지 않았다.
 
 - 업무 수신함(2026-10-13): 파서·scan·ack·`office-task`·세션 env·안내문 조합·권한 조각·Codex 배열 합치기·Kilo 훅 단위 테스트와 수신 루프(저장 실패 시 보류·건너뛴 파일 ack·정지 뒤 늦은 응답 폐기) 회귀를 추가했다. `npx tsc --noEmit`, 프런트 전체 2,936개, 네이티브 전체 1,653개 통과. `codex debug prompt-input`(모델 호출 없음)으로 `-c writable_roots`의 덮어쓰기 동작과 `developer_instructions` 주입을 확인했다.
+- Windows 보내기(2026-10-13): Windows 11에서 셸 종류 판정·PowerShell 인용·경로 접두사 정리 단위 테스트, PowerShell 5.1·7과 Git Bash가 생성된 기동 스크립트를 실행해 ACK·반환 기록(BOM 없음, 종료 코드, 미존재 명령은 1)을 남기는지, 실제 PowerShell로 실행하는 기존 보내기 회귀(`work_send` 전체)를 확인했다. `cargo test --manifest-path src-tauri/Cargo.toml work_send_multiline_in_real_conpty_with_cli_double -- --ignored`: 실제 ConPTY에서 세 셸 모두 빈 셸 판정 → 작은따옴표 포함 모델 인자 기동 → ACK → 10초 대기 → 한글·이모지·탭·빈 줄·코드 블록 본문이 bracketed paste 한 번으로 그대로 도착함을 node 대역(raw 모드, bracketed paste 켬)으로 확인했다. 설치된 CLI나 LLM 계정은 사용하지 않는다.
 
 남은 실기 인수:
 
 - [ ] 설치 Tauri 앱에서 설정·프로필 기본 에이전트·업무 저장과 재실행 후 복원 확인.
+- [ ] 설치 Tauri 앱의 Windows PowerShell·pwsh·Git Bash 세션에서 인증된 Claude·Codex로 보내기(새 세션·기존 빈 셸·CLI 실행 중 재시작 확인) 확인. 관찰 래퍼(`-EncodedCommand`)와 사용자 프로필이 있는 새 PowerShell이 10초 ACK 안에 기동 문장을 읽는지 확인.
 - [ ] 인증된 실제 Claude·Codex·agy·Kilo·Pi에서 CLI 기동, 첫 프롬프트 제출, 질문·턴 종료·후속 프롬프트의 표시와 상태 전이 확인.
 - [ ] 설치 앱에서 외부 셸로 수신함에 파일을 넣어 업무 카드가 생기고 파일이 지워지는지, 패널을 끈 상태에서 쌓인 파일이 켤 때 들어오는지 확인.
 - [ ] 인증된 Claude 세션에서 "다음 할 일로 남겨 줘"에 안내문대로 `office-task`가 권한 확인 없이 실행되고 본인 캐릭터에게 배정되는지, persona가 있는 캐릭터에서 말투가 유지되는지 확인.

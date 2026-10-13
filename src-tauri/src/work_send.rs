@@ -1,6 +1,8 @@
 //! 업무 보내기: CLI 기동/ACK/10초 대기/첫 프롬프트만 수행한다.
 //! 결과 파일 감시·CLI 종료는 없다. 세션과 사람 revision을 모든 입력 전에 고정한다.
-use crate::automation::cli_transition::{CliTransition, ReceiptRead, StartedRead};
+use crate::automation::cli_transition::{
+    CliTransition, CommandSyntax, LaunchShell, ReceiptRead, StartedRead,
+};
 use crate::session::inject::{
     InjectGate, InjectSource, InputSink, StrictOutcome, StrictSubmitRequest,
 };
@@ -88,7 +90,8 @@ impl WorkSendRuntime {
         request: WorkSendRequest,
         startup: Duration,
     ) -> Result<WorkSendResult, String> {
-        let command = validated_command(&request.agent)?;
+        // 셸과 무관한 모델·effort 검증을 먼저 끝낸다. 인용은 셸을 확인한 뒤 다시 만든다.
+        validated_command(&request.agent, CommandSyntax::Posix)?;
         let prompt = work_prompt(&request.title, &request.body)?;
         let cancel = Arc::new(AtomicBool::new(false));
         {
@@ -126,7 +129,8 @@ impl WorkSendRuntime {
         if request.fresh_session && request.human_input_revision != 0 {
             return Err("work-send-human-input".into());
         }
-        require_supported_shell(sink.as_ref(), &request.agent_id)?;
+        let shell = require_supported_shell(sink.as_ref(), &request.agent_id)?;
+        let command = validated_command(&request.agent, shell.syntax())?;
         if self.attempted.lock().unwrap().contains(&request.session_id) {
             return Err("work-send-restart-required".into());
         }
@@ -158,7 +162,8 @@ impl WorkSendRuntime {
         check()?;
         let transition = CliTransition::new(root);
         let run_id = uuid::Uuid::new_v4().to_string();
-        let launch = transition.prepare_posix_launch(
+        let launch = transition.prepare_launch(
+            shell,
             &request.session_id,
             &run_id,
             "work",
@@ -228,14 +233,14 @@ impl WorkSendRuntime {
         })
     }
 }
-fn require_supported_shell(sink: &dyn InputSink, agent_id: &str) -> Result<(), String> {
-    let shell = sink.shell_path_for(agent_id);
-    if !CliTransition::capability_for_shell_path(shell.as_deref()).auto_return_supported {
-        return Err("work-send-shell-unsupported".into());
-    }
-    Ok(())
+/// 업무 보내기는 Unix bash/zsh와 Windows Git Bash·PowerShell을 지원한다.
+fn require_supported_shell(sink: &dyn InputSink, agent_id: &str) -> Result<LaunchShell, String> {
+    sink.shell_path_for(agent_id)
+        .as_deref()
+        .and_then(LaunchShell::for_shell_path)
+        .ok_or_else(|| "work-send-shell-unsupported".into())
 }
-pub fn validated_command(agent: &WorkAgent) -> Result<String, String> {
+pub fn validated_command(agent: &WorkAgent, syntax: CommandSyntax) -> Result<String, String> {
     if agent
         .model
         .as_ref()
@@ -250,10 +255,11 @@ pub fn validated_command(agent: &WorkAgent) -> Result<String, String> {
         WorkCli::Kilo => "kilo",
         WorkCli::Pi => "pi",
     };
-    crate::automation::definition_runner::launch_command(
+    crate::automation::definition_runner::launch_command_for(
         cli,
         agent.model.as_deref(),
         agent.effort.as_deref(),
+        syntax,
     )
 }
 fn work_prompt(title: &str, body: &str) -> Result<String, String> {
@@ -318,9 +324,13 @@ mod tests {
         let sink = Arc::new(RecordingSink::default());
         sink.set_session("a", "s");
         sink.set_running("a", true);
-        sink.set_shell_path("a", "/bin/bash");
+        sink.set_shell_path("a", SUPPORTED_SHELL);
         sink
     }
+    #[cfg(unix)]
+    const SUPPORTED_SHELL: &str = "/bin/bash";
+    #[cfg(windows)]
+    const SUPPORTED_SHELL: &str = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe";
     #[test]
     fn validation_preserves_multiline_and_rejects_terminal_control_sequences() {
         assert_eq!(
@@ -341,12 +351,32 @@ mod tests {
         assert!(work_prompt("Task", &"a".repeat(256 * 1024)).is_err());
         let mut agent = request().agent;
         agent.model = Some("x\nshutdown".into());
-        assert!(validated_command(&agent).is_err());
+        assert!(validated_command(&agent, CommandSyntax::Posix).is_err());
         agent.model = Some("$(touch injected)'".into());
         assert_eq!(
-            validated_command(&agent).unwrap(),
+            validated_command(&agent, CommandSyntax::Posix).unwrap(),
             "claude --model '$(touch injected)'\\'''"
         );
+        assert_eq!(
+            validated_command(&agent, CommandSyntax::PowerShell).unwrap(),
+            "claude --model '$(touch injected)'''"
+        );
+    }
+    #[test]
+    fn windows_shells_are_supported_but_wsl_and_cmd_are_not() {
+        let sink = recording();
+        for (path, expected) in [
+            (r"C:\Program Files\Git\bin\bash.exe", Some(LaunchShell::GitBash)),
+            (r"C:\Program Files\PowerShell\7\pwsh.exe", Some(LaunchShell::PowerShell)),
+            ("powershell.exe", Some(LaunchShell::PowerShell)),
+            ("wsl.exe", None),
+            (r"C:\Windows\System32\cmd.exe", None),
+            ("bash.exe", None),
+        ] {
+            sink.set_shell_path("a", path);
+            let actual = require_supported_shell(sink.as_ref(), "a").ok();
+            assert_eq!(actual, if cfg!(windows) { expected } else { None }, "{path}");
+        }
     }
     #[test]
     fn unknown_foreground_or_unsubmitted_input_requires_restart() {
@@ -422,7 +452,6 @@ mod tests {
     }
     // Execute only the generated launch script in a real shell with a CLI function double.
     // This verifies ACK/return receipts without launching an installed/authenticated CLI.
-    #[cfg(unix)]
     struct ExecutingSink {
         recorded: Arc<RecordingSink>,
         launch: Mutex<Option<String>>,
@@ -430,7 +459,6 @@ mod tests {
         exit_immediately: bool,
         known_busy: bool,
     }
-    #[cfg(unix)]
     impl ExecutingSink {
         fn new(exit_immediately: bool) -> Arc<Self> {
             Arc::new(Self {
@@ -442,7 +470,6 @@ mod tests {
             })
         }
     }
-    #[cfg(unix)]
     impl Drop for ExecutingSink {
         fn drop(&mut self) {
             for child in self.children.get_mut().unwrap() {
@@ -450,23 +477,35 @@ mod tests {
             }
         }
     }
-    #[cfg(unix)]
     impl InputSink for ExecutingSink {
         fn write(&self, agent: &str, data: &str) {
             self.recorded.write(agent, data);
-            if data.starts_with(". '") {
+            if data.starts_with(". '") || data.starts_with("& ([scriptblock]") {
                 *self.launch.lock().unwrap() = Some(data.into());
             }
             if data == "\r" {
                 if let Some(command) = self.launch.lock().unwrap().take() {
-                    let body = if self.exit_immediately {
-                        "return 127"
-                    } else {
-                        "sleep 1"
+                    #[cfg(unix)]
+                    let mut process = {
+                        let body = if self.exit_immediately { "return 127" } else { "sleep 1" };
+                        let mut process = std::process::Command::new("/bin/bash");
+                        process.arg("-c").arg(format!("claude() {{ {body}; }}; {command}"));
+                        process
                     };
-                    let child = std::process::Command::new("/bin/bash")
-                        .arg("-c")
-                        .arg(format!("claude() {{ {body}; }}; {command}"))
+                    #[cfg(windows)]
+                    let mut process = {
+                        let body = if self.exit_immediately {
+                            "cmd /c exit 127"
+                        } else {
+                            "Start-Sleep -Seconds 1"
+                        };
+                        let mut process = std::process::Command::new(SUPPORTED_SHELL);
+                        process
+                            .args(["-NoProfile", "-NonInteractive", "-Command"])
+                            .arg(format!("function claude {{ {body} }}; {command}"));
+                        process
+                    };
+                    let child = process
                         .stdin(std::process::Stdio::null())
                         .stdout(std::process::Stdio::null())
                         .stderr(std::process::Stdio::null())
@@ -489,7 +528,6 @@ mod tests {
             self.known_busy.then_some(false)
         }
     }
-    #[cfg(unix)]
     #[tokio::test]
     async fn fresh_session_cannot_override_a_known_busy_terminal() {
         let root = tempfile::tempdir().unwrap();
@@ -506,7 +544,6 @@ mod tests {
         );
         assert!(sink.recorded.recorded_writes().is_empty());
     }
-    #[cfg(unix)]
     async fn wait_for_launch(sink: &ExecutingSink) {
         for _ in 0..100 {
             if sink.recorded.recorded_writes().len() >= 2 {
@@ -516,7 +553,6 @@ mod tests {
         }
         panic!("launch not submitted");
     }
-    #[cfg(unix)]
     #[tokio::test]
     async fn confirmed_launch_submits_multiline_prompt_once_and_keeps_cli_running() {
         let root = tempfile::tempdir().unwrap();
@@ -541,7 +577,6 @@ mod tests {
         assert!(!writes.iter().any(|(_, data, _)| data == "/exit"));
         assert!(runtime.inspect(&gate, "a").unwrap().restart_required);
     }
-    #[cfg(unix)]
     #[tokio::test]
     async fn cli_return_before_readiness_never_sends_a_prompt_to_shell() {
         let root = tempfile::tempdir().unwrap();
@@ -554,7 +589,8 @@ mod tests {
                     &gate,
                     root.path().into(),
                     request(),
-                    Duration::from_millis(200)
+                    // PowerShell 기동·cmd 반환 시간을 넉넉히 둔다. receipt를 보면 바로 끝난다.
+                    Duration::from_secs(5)
                 )
                 .await
                 .unwrap_err(),
@@ -562,7 +598,6 @@ mod tests {
         );
         assert_eq!(sink.recorded.recorded_writes().len(), 2);
     }
-    #[cfg(unix)]
     #[tokio::test]
     async fn duplicate_send_is_rejected_and_other_producers_wait_until_cancelled() {
         let root = tempfile::tempdir().unwrap();
@@ -594,7 +629,6 @@ mod tests {
         assert_eq!(result.unwrap_err(), "work-send-cancelled");
         assert_eq!(sink.recorded.recorded_writes().len(), 2);
     }
-    #[cfg(unix)]
     #[tokio::test]
     async fn input_or_session_change_during_readiness_prevents_first_prompt() {
         for swap_session in [false, true] {
@@ -639,3 +673,6 @@ mod tests {
 
 #[cfg(all(test, unix))]
 mod pty_smoke;
+
+#[cfg(all(test, windows))]
+mod pty_smoke_windows;

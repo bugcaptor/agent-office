@@ -88,7 +88,7 @@
     "agentMissing": "担当キャラクターを選択してください。",
     "clockedOut": "出勤させてから送信してください。",
     "unsupportedProfile": "開始コマンドと tmux を無効にしたプロファイルが必要です。",
-    "unsupportedShell": "直接作成した bash/zsh ターミナルを使用してください。外部・復元セッションは未対応です。",
+    "unsupportedShell": "直接作成した bash/zsh ターミナル、または Windows では PowerShell/Git Bash を使用してください。WSL・外部・復元セッションは未対応です。",
     "producerRunning": "ボットや自動化を停止してください。",
     "humanInput": "入力が変わりました。ターミナルを確認してください。",
     "sessionChanged": "セッションが変わりました。新しいセッションには送信しません。",

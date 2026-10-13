@@ -114,6 +114,11 @@ pub trait PtyControl: Send + Sync {
     fn foreground_sample(&self) -> Option<ForegroundSample> {
         None
     }
+
+    /// 직접 spawn한 셸 프로세스의 pid. Windows에서 빈 셸 판정에 쓴다. 기본 구현은 미지원.
+    fn process_id(&self) -> Option<u32> {
+        None
+    }
 }
 
 pub trait PtyWaiter: Send {
@@ -158,6 +163,7 @@ pub struct PortablePtyFactory;
 struct RealControl {
     master: Mutex<Box<dyn MasterPty + Send>>,
     killer: Mutex<Box<dyn portable_pty::ChildKiller + Send + Sync>>,
+    pid: Option<u32>,
 }
 impl PtyControl for RealControl {
     fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {
@@ -168,6 +174,9 @@ impl PtyControl for RealControl {
     }
     fn kill(&self) -> io::Result<()> {
         self.killer.lock().kill()
+    }
+    fn process_id(&self) -> Option<u32> {
+        self.pid
     }
 
     /// portable-pty가 이미 노출하는 `process_group_leader()`(= `tcgetpgrp`)와
@@ -255,9 +264,11 @@ impl PtyFactory for PortablePtyFactory {
 
         let writer = pair.master.take_writer().map_err(to_io)?;
         let killer = child.clone_killer(); // wait 스레드가 child를 소유해도 별도로 kill 가능
+        let pid = child.process_id();
         let control = Arc::new(RealControl {
             master: Mutex::new(pair.master),
             killer: Mutex::new(killer),
+            pid,
         });
         let waiter = Box::new(RealWaiter { child });
         Ok(SpawnedPty {
