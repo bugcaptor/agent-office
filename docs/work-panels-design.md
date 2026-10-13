@@ -80,7 +80,7 @@
 
 #### 지원 대상
 
-- 앱이 직접 생성한 Unix bash/zsh PTY와 Windows PowerShell(5.1·7)·Git Bash PTY만 보낼 수 있다. 프로필에 시작 명령이 있거나 퇴근 중이면 보내기를 막는다. 입양·WSL·미지원 셸은 막는다. tmux 호스팅·외부 연결·봇/터미널 자동화는 제거됨(2026-10-14, [health-check-cleanup-plan.md](health-check-cleanup-plan.md) §7.G).
+- 앱이 직접 생성한 Unix bash/zsh PTY와 Windows PowerShell(5.1·7)·Git Bash PTY만 보낼 수 있다. 프로필에 시작 명령이 있거나 퇴근 중이면 보내기를 막는다. 입양·WSL·미지원 셸은 막는다. tmux 호스팅·외부 연결·봇/터미널 자동화는 제거됨(2026-10-14, [archive/health-check-cleanup-plan.md](archive/health-check-cleanup-plan.md) §7.G).
 - 셸 판정은 세션의 실제 셸 실행 파일 이름으로 한다(`LaunchShell::for_shell_path`, `work_send/cli_transition.rs`).
 - 기동 문장은 셸별로 만든다. bash/zsh는 `. '<launch.sh>'`, Git Bash는 같은 POSIX 스크립트에 `C:/…` 경로를 쓴다. PowerShell은 BOM 없는 UTF-8로 ACK·반환 기록을 쓰는 `launch.ps1`을 `& ([scriptblock]::Create([System.IO.File]::ReadAllText('…')))`로 실행한다. 실행 정책은 스크립트 파일에만 적용되므로 정책과 무관하고, 자식 스코프라 변수가 새지 않으며 현재 위치는 Push/Pop-Location으로 되돌린다. CLI 인자는 PowerShell 작은따옴표로 인용하고, PowerShell 5.1이 네이티브 인자의 큰따옴표를 지우므로 codex effort는 `-c 'model_reasoning_effort=high'`로 넘긴다(codex는 TOML로 못 읽는 값을 문자열로 받는다).
 

@@ -33,7 +33,6 @@
 | [usage-design.md](usage-design.md) | 구독 사용량(rate limit) 표시 — Claude·Codex 캐시/실시간 조회(#22/#33, kbm #2h8) | 정본 (2026-10-14) — Claude·Codex 구현 완료 |
 | [cli-control-design.md](cli-control-design.md) | `agent-office ctl` 외부 CLI 제어 — 로컬 axum 서버 + 2단계 승인 | 정본 (2026-10-14) — 구현 완료(#55) |
 | [run-recipes-design.md](run-recipes-design.md) | 실행 레시피 — 프로젝트(프로필 cwd)별 실행 방법을 캐릭터가 조사해 앱 데이터에 저장, 조사 프롬프트는 캐릭터 세션에 주입하고 실행은 별도 프로세스. 설정 opt-in | 정본 (2026-10-14, kbm #2rf) — 구현 완료 |
-| [health-check-cleanup-plan.md](health-check-cleanup-plan.md) | 프로젝트 점검·기능 정리 계획 — 점검 관점, 기능 사용 신호와 제거 기준, 낡은 문서 정리(Codex), 업무 보드 태스크 A~I와 의존 관계 | 진행 중 (2026-10-14) — A~H 기록, I 잔여 |
 | [repository-audit-design.md](repository-audit-design.md) | 저장소 일괄 점검 — 오피스 서버 오브젝트에서 작업 기록·프로필 cwd의 Git 상태를 조치 우선순위로 확인하고 외부 터미널 열기 | 정본 (2026-10-14) — 구현 완료, OS 터미널 실기 잔여 |
 | [employee-of-the-month-design.md](employee-of-the-month-design.md) | 이 달의 우수사원 — 월간 결정적 선정·수상 기록 영속화·LLM 수상 소감·시상 화면·씬 연출 | 정본 (2026-10-14, kbm #2hx) — 구현 완료 |
 | [i18n-design.md](i18n-design.md) | UI 다국어(6개 언어, 프롬프트 ko/en) — i18next 카탈로그·언어별 프롬프트 프로필·입력 판정 규칙·하드코딩 한글 금지 장치 | 정본 (2026-10-14) — 구현 완료 |
@@ -46,6 +45,7 @@
 
 | 문서 | 사유 |
 |---|---|
+| [archive/health-check-cleanup-plan.md](archive/health-check-cleanup-plan.md) | 프로젝트 점검·기능 정리 계획 A~I — 완료된 계획(2026-10-14). 블랙박스 점검·기능 사용 신호·제거 판정(§7.D)·제거 14건(§7.G)·위험 발견과 수정 태스크(§7.E·§7.F)·문서 정리(§7.H)·최종 검증(§7.I)의 결정 근거 보존. 후속은 보드 태스크 |
 | [archive/pi-support-design-snapshot.md](archive/pi-support-design-snapshot.md) | 초기 Pi 설계·구버전 이벤트/행번호 근거·버전별 실측 스냅샷(이슈 #8). 현행 계약은 `pi-support-design.md`로 재정리(2026-10-14) |
 | [archive/usage-design-provider-history.md](archive/usage-design-provider-history.md) | 제거된 agy·Gemini 실시간 계측 서술을 포함한 통합본(#22/#33, kbm #2h8/#2j4). 제거된 provider 결정 근거 보존, 현행은 Claude·Codex만(2026-10-14) |
 | [archive/session-event-timeseries-design.md](archive/session-event-timeseries-design.md) | 수집 계층 구현 완료 후 코드가 정본이 됨(본문 자인). 소비자는 session-analytics 문서 |

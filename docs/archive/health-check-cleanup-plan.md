@@ -1,6 +1,6 @@
 # 프로젝트 점검·기능 정리 계획
 
-- 상태: 진행 중 (2026-10-14) — A~H 기록, G 제거 14건·H 문서 정리 완료, I 마무리 잔여. F 수정 태스크 10건(§7.F)
+- 상태: 이력(archived, 2026-10-14) — A~I 완료. G 제거 14건·H 문서 정리·I 전체 검증(§7.I) 끝. 후속은 보드의 F 수정 10건(§7.F)·H 잔여 7건·I 잔여 1건(§7.I)
 - 목적: 프로젝트의 문제점을 찾아 줄을 세우고, 잘 쓰지 않게 된 기능을 골라 제거해 유지 비용을 줄인다.
 - 실행 단위: agent office 업무 보드 태스크(§6). 각 태스크 본문이 이 문서의 절을 가리킨다.
 
@@ -10,7 +10,7 @@
 - **증거 없는 문제는 문제로 올리지 않는다.** 모든 발견에는 재현 절차나 `파일:줄`이 붙는다.
 - **제거는 사람이 결정한다.** 사용 신호(§3)는 후보를 고르는 근거일 뿐이다. 제거 목록은 사용자 승인 후에만 실행한다.
 - **제거 대상은 정밀 조사하지 않는다.** 없어질 코드를 깊게 읽는 비용을 아낀다.
-- 저장소 규칙([guide.md 개발자 절](guide.md#개발자용-명령))을 따른다: `main`에서 로컬 커밋, 푸시 금지, 화면 문자열은 i18n 카탈로그, 검증은 `npx tsc --noEmit` + `npx vitest run --dir src` + `cargo test --manifest-path src-tauri/Cargo.toml`. (`vscode-ext` 테스트는 C40 제거로 없어짐)
+- 저장소 규칙([guide.md 개발자 절](../guide.md#개발자용-명령))을 따른다: `main`에서 로컬 커밋, 푸시 금지, 화면 문자열은 i18n 카탈로그, 검증은 `npx tsc --noEmit` + `npx vitest run --dir src` + `cargo test --manifest-path src-tauri/Cargo.toml`. (`vscode-ext` 테스트는 C40 제거로 없어짐)
 
 ## 2. 점검 관점 — 유능한 엔지니어가 볼 것
 
@@ -110,19 +110,19 @@ B ─────────────────► H
 
 ## 6. 업무 보드 태스크
 
-| 단계 | 태스크 id | 선행 |
-|---|---|---|
-| A. 블랙박스 사용 점검 | t-cfb46523 | — |
-| B. 구조 조감과 문서 표류 목록 | t-ff214f52 | — |
-| C. 기능 목록과 사용 신호 수집 | t-81076be1 | — |
-| D. 제거 대상 확정 (사용자 승인) | t-b3381017 | C |
-| E. 위험 영역 정밀 조사 | t-0a5da455 | A, B, D |
-| F. 발견 분류와 수정 태스크화 | t-b40ba5de | E |
-| G. 확정 기능 제거 실행 | t-fb1d64e4 | D |
-| H. 낡은 문서 정리 (Codex `gpt-6.1-sol` high) | t-ea542576 | B, G |
-| I. 마무리 | t-893439bd | F, H |
+| 단계 | 태스크 id | 선행 | 결과 (2026-10-14) |
+|---|---|---|---|
+| A. 블랙박스 사용 점검 | t-cfb46523 | — | 완료 — §7.A |
+| B. 구조 조감과 문서 표류 목록 | t-ff214f52 | — | 완료 — §7.B |
+| C. 기능 목록과 사용 신호 수집 | t-81076be1 | — | 완료 — §7.C |
+| D. 제거 대상 확정 (사용자 승인) | t-b3381017 | C | 완료 — §7.D |
+| E. 위험 영역 정밀 조사 | t-0a5da455 | A, B, D | 완료 — §7.E |
+| F. 발견 분류와 수정 태스크화 | t-b40ba5de | E | 완료 — §7.F, 수정 태스크 10건은 열림 |
+| G. 확정 기능 제거 실행 | t-fb1d64e4 | D | 완료 — §7.G, 하위 14건 커밋 |
+| H. 낡은 문서 정리 (Codex `gpt-6.1-sol` high) | t-ea542576 | B, G | 완료 — §7.H |
+| I. 마무리 | t-893439bd | F, H | 완료 — §7.I, 이 문서 archive 이동 |
 
-D와 F는 실행 중에 하위 태스크(기능별 제거, 문제별 수정)를 더 만든다. D가 만든 기능별 제거 태스크는 §7.D.2, F가 만든 수정 태스크는 §7.F.1.
+D와 F는 실행 중에 하위 태스크(기능별 제거, 문제별 수정)를 더 만든다. D가 만든 기능별 제거 태스크는 §7.D.2, F가 만든 수정 태스크는 §7.F.1. H의 잔여 후보는 H 커밋 뒤 보드 태스크 7건이 됐다(§7.I). I(t-893439bd)의 보드 완료 처리는 사람이 한다.
 
 ## 7. 기록
 
@@ -619,3 +619,33 @@ IDE 기능의 spike/persona는 두 문서로 보존돼 있다. `vscode-ext/` 문
 의존성 제거 후보는 이 단계에서 추가하지 않았다. D3의 의존성은 이미 G에서 없어졌으며, 다른 의존성의 필요성은 이번 문서 정리의 판정 대상이 아니다. 앱 데이터 잔여 삭제·Anthropic 키 UI 공백 등은 기존 F/G 태스크로 남긴다.
 
 검증(문서 정리): 활성 문서 25개·로컬 마크다운 링크 97개·소스 경로 318개 대조, 끊긴 링크/앵커 0건, `git diff --check` 통과. §6·기존 §7·기존 archive·이동 원문 바이트 보존, Cargo TOML 파싱 결과 동일, AGENTS 추적 제외를 확인했다. 앱 실기·프런트/네이티브 전체 테스트는 이 문서 작업에서 실행하지 않았다.
+
+### 7.I 마무리 (2026-10-14, `main` `e29ed77` 기준)
+
+#### 전체 검증
+
+| 명령 | 결과 |
+|---|---|
+| `npx tsc --noEmit` | 통과, 오류 0 |
+| `npx vitest run --dir src` | 통과 — 파일 181, 테스트 2612 |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | 통과 — lib 1183(무시 19), main 0, `contract_fixtures` 24, `observer_forwarder` 10, doc-test 0. 실패 0 |
+| `vscode-ext` 테스트 | 대상 없음 — 패키지가 C40(§7.G)에서 삭제됨 |
+
+cargo 경고는 lib 22·lib test 18(중복 7)이다. 경고가 난 파일 대부분(`session/shells.rs`·`observer/event.rs`·`file_index/es_runner.rs` 등)은 계획 착수(`f9fd39a`) 뒤 바뀌지 않았고, 정리 중에 손댄 파일의 경고 줄(`summarizer/mod.rs`의 `mut`, `real_pty_smoke.rs`의 import, `session/manager/tests.rs`의 `drop(&_)`)도 blame상 07~09월 것이다. 정리로 새로 생긴 것은 `usage/claude_live.rs`의 `LiveUsageState::preempt_all_attempts` 하나다 — 유일한 호출이던 `ipc/commands/tests.rs`의 provider 위임 테스트가 C46에서 빠졌다. 후속 태스크로 남겼다. 앱 실기는 하지 않았다.
+
+#### 이 문서의 이력 전환
+
+- `docs/health-check-cleanup-plan.md` → `docs/archive/health-check-cleanup-plan.md`(git mv). `docs/README.md`는 활성 표에서 빼고 archive 표에 사유를 적었다.
+- 이 문서를 가리키던 링크(`i18n-design.md`·`work-panels-design.md`)와 `settings_store.rs`의 주석 경로를 archive 경로로 고쳤다. archive 문서들의 "점검·정리 계획 §7.D" 표기는 링크가 아니라 그대로 둔다.
+- 본문 §1~§7.H는 당시 기록으로 보존했다. 바꾼 곳은 머리 상태줄, §1의 guide 링크 경로, §6의 결과 열뿐이다.
+
+#### 남은 후속 (보드, 모두 @커널)
+
+| 출처 | 태스크 |
+|---|---|
+| §7.F.1 수정 | F1 t-1d8060e2, F2 t-76e98679, F3 t-e31286a3, F4 t-fccd3691, F5 t-1aa08df2(F2 뒤), F6 t-28e8db6c, F7 t-0aa50d52, F8 t-d44c66c8, F9 t-26c43642, F10 t-bc20fa6a |
+| §7.G UI 공백 | Anthropic API 키 입력칸 t-52df472c |
+| §7.H 잔여 | 세션 로그 화면 확인 t-894565cd(F3 뒤), 업무 패널 실기 인수 t-82fe9ffc, 마스코트·신호등 t-70af6c0f, agy·Kilo·Pi 실측 t-010fcc6d, 제거 기능 소스 주석 t-0d568d12, 서브시스템 B·C 스케치 t-bcbfdc01, OS 터미널 새 탭 t-9362eb22 |
+| §7.I | `preempt_all_attempts` 죽은 코드 경고 t-aa4ce0d0 |
+
+태스크 없이 남긴 것: §7.F.2 미확인 4건(E7 Windows shim 인자, E9 Linux 공유 `/tmp`, E13 sessiond 소켓, 요약기 `opencode run` 빈도)은 실기 조건이 생기면 다시 본다. §7.D 보류 C28 실행 레시피는 다음 점검에서 사용 흔적을 다시 본다.

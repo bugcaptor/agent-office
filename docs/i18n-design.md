@@ -484,7 +484,7 @@ Rust 쪽 `truncation_marker_fits_the_frontend_prompt_budget` 테스트가 이 �
 | 마스코트 창 언어 실시간 전파 | 미구현 | §7.6 |
 | 에이전트(CLI)에게 나가는 메시지 — `src-tauri/src/control/client.rs`, `src-tauri/src/office_instructions.rs` | **의도적 제외** | 사용자 화면이 아니라 **모델·CLI가 읽는 문자열**이다. UI 언어와 무관하게 안정적이어야 하고, 바꾸면 CLI 안내문의 동작이 바뀐다 |
 
-`office_instructions.rs`의 업무 안내문은 모델이 읽는 입력이다. TTS·동료 대화·봇 프롬프트 모듈은 제거됐으며 그 이력은 [health-check-cleanup-plan.md](health-check-cleanup-plan.md) §7.G에 있다.
+`office_instructions.rs`의 업무 안내문은 모델이 읽는 입력이다. TTS·동료 대화·봇 프롬프트 모듈은 제거됐으며 그 이력은 [archive/health-check-cleanup-plan.md](archive/health-check-cleanup-plan.md) §7.G에 있다.
 
 ## 9. 핵심 설계 결정 요약
 

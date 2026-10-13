@@ -455,7 +455,7 @@ mod tests {
             .join("settings.json")
     }
 
-    /// 점검·정리(docs/health-check-cleanup-plan.md §7.G)로 없어진 기능의 설정
+    /// 점검·정리(docs/archive/health-check-cleanup-plan.md §7.G)로 없어진 기능의 설정
     /// 키가 남아 있는 옛 settings.json도 그대로 읽히고, 다음 저장에서 사라진다.
     #[test]
     fn settings_with_removed_feature_keys_still_load_and_drop_them_on_save() {
