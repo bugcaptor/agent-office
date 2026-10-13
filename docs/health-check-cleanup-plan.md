@@ -1,6 +1,6 @@
 # 프로젝트 점검·기능 정리 계획
 
-- 상태: 진행 중 (2026-10-13) — A·B 기록(§7)
+- 상태: 진행 중 (2026-10-13) — A·B·C 기록(§7)
 - 목적: 프로젝트의 문제점을 찾아 줄을 세우고, 잘 쓰지 않게 된 기능을 골라 제거해 유지 비용을 줄인다.
 - 실행 단위: agent office 업무 보드 태스크(§6). 각 태스크 본문이 이 문서의 절을 가리킨다.
 
@@ -302,3 +302,111 @@ D와 F는 실행 중에 하위 태스크(기능별 제거, 문제별 수정)를 
 | S8 | 머리에 상태줄 없음 | `agent-talk`, `antigravity-support`, `kilo-support`, `pi-support`, `mascot-lights`, `macos-signing`, `session-log`, `subsystem-c-ui`, `tts-confirm-line` | 상태는 README에만 있어 문서만 열면 알 수 없다. 표기 방식 통일 여부 결정 |
 
 H 메모: D4~D6·D9·D10은 기계적 수정, D2·D3·D11·S2~S5는 사실 확인이나 결정이 필요하다. D2는 C(§3.2 후보 목록)에도 반영해야 한다.
+
+### 7.C 기능 목록과 사용 신호 (2026-10-13, `main` `f1135c9` 기준, 판정 없음)
+
+방법: 진입점은 설정 필드(`AppSettings`)·하단 바·`main.rs` 실행 모드(`serve`·`--observer-forward`·`--sessiond`·`ctl`·`task`)·`ctl` 하위 명령·`vscode-ext`·CLI별 훅/플러그인 모듈에서 모았다. 신호 2는 설치본 app_data(`~/Library/Application Support/com.bugcaptor.agent-office`, 이하 `<ad>`)의 설정 현재값·파일 mtime·`session-events/v1`(2026-07-11~)과 각 CLI의 자체 기록에서 셌다. 신호 3은 기능 경로에 대한 `git log`(전체/최근 30일)와 기능 이름이 들어간 커밋 중 마지막 것(= 마지막 고유 변경)이다. 경로 전체 기준 "마지막 커밋"은 업무 패널·수신함 작업(10-12~13)이 여러 기능을 한꺼번에 건드려 대부분 최근으로 보이므로 쓰지 않았다. 신호 5의 줄 수는 본체+테스트, "외부 참조"는 기능 경로 밖 비테스트 코드 파일 중 기능 식별자 정규식에 걸린 파일 수(근사, 기능 소유 저장소·IPC 파일도 포함됨)다. 집계 스크립트는 1회성이라 남기지 않았다.
+
+한계: GUI 열람만 하는 기능(분석·타임라인·저장소 점검·문서 팔레트·셸 내보내기·캐릭터 번들)은 저장 흔적이 없어 신호 2가 비어 있다 → D의 사용자 응답이 유일한 근거다. Windows 설치본의 app_data는 이 기기에서 볼 수 없다.
+
+#### 7.C.1 기능별 신호
+
+열: ② 실사용 흔적 · ③ 변경 이력(최초 → 마지막 고유 변경, 커밋 수/30일) · ④ 문서 상태 · ⑤ 결합 비용(본체+테스트 줄, 외부 참조 파일, 주요 결합점). 설정 칸은 `기본값 → 현재값`.
+
+**핵심 흐름**
+
+| # | 기능 | 진입점 | 설정 | ② 흔적 | ③ 이력 | ④ 문서 | ⑤ 결합 |
+|---|---|---|---|---|---|---|---|
+| C1 | 업무 패널·수신함·`office-task`·업무 보내기·내보내기/가져오기 | 좌측 패널, `task` 모드, `work-inbox/` | `workPanelsEnabled` off → **on** | `work-items.json` 99건, 10-13 갱신. `session-summaries/v1/2026-10.jsonl` 94 KB | 10-12 → 10-13, 16/16 | 정본, 실기 인수 잔여 | 2,662+2,104. `automation/cli_transition.rs`(기동 receipt, `<ad>/automation-cli-returns/` 10월 11건)와 봇 주입 표지 `BotPromptArms`를 빌려 씀 |
+| C2 | 관찰 서버·Claude/Codex 훅(알림·상태) | `observerEnabled`, `--observer-forward` | off → **on** | `observer/claude/*.settings.json` 114개, 10-13 | 07-12 → 09-11 | subsystem-a 정본(07-20 현행화) | 핵심. `observer/event.rs` 1,100줄이 CLI별 분기를 모두 품음(C33~C38) |
+| C3 | Claude 세션 이어하기 | 자동(`--resume`) | — | `claude-resume.json` 10-13 | 07-17 → 07-19, 3 | 정본 | 86+129 |
+| C4 | 알림·알림음 | 자동, 소리 탭 | `notifySoundEnabled` on → on | `session-events` notification 1,979건 | 07-09 → 09-05, 22 | 정본 | 260+2,188 |
+| C5 | 세션 v1 핸드오프(종료 시 sessiond로 넘김) | 앱 종료/재실행 | — (기본 경로) | `sessiond.sock` 10-13 18:24. `sessiond.log` 0바이트(07-17) | 07-20 → 08-30(tmux 연동), 2 | 정본, v2와 공존 | 603+0(전용 테스트 없음, `real_pty_smoke` ignore). `sessiond/daemon.rs`를 v2와 공유 |
+
+**기록·보기**
+
+| # | 기능 | 진입점 | 설정 | ② 흔적 | ③ 이력 | ④ 문서 | ⑤ 결합 |
+|---|---|---|---|---|---|---|---|
+| C6 | 세션 로그(전사 30일·2GB) + 보기·회고 | 탭 메뉴, 세션 로그 대화상자 | `sessionLogEnabled` on → on | `session-logs/v1` 552파일 46 MB, 10-13 | 07-25 → 08-29, 12/1 | 정본, **눈검증 대기** | 3,036+1,719, 외부 29. `session_log::transcript` 패닉 이력(A10) |
+| C7 | 머리 위 라벨 요약기 | 자동 | `summarizerEnabled` off → **on**(`opencode`) | 요약기 `opencode run`이 30초에 2회꼴로 뜸(§7.A.2) | 07-09 → 09-04, 60/2 | subsystem-c | 2,255+3,489, 외부 27. provider 9종(claude·codex·agy·gemini·opencode·openrouter·pi·kilo·anthropic) 각각 모듈 |
+| C8 | 캐릭터 일기·작업 기록 | 일기 대화상자, 자동 작성 | `diaryEnabled` off → **on** | `diaries/` 7파일 10-13, `worklogs/` 10-13 | 07-19 → 07-25 고유, 35/1 | (전용 문서 없음, #56·#65) | 1,696+1,813, 외부 37 |
+| C9 | 포스트잇 메모 | 탭 메뉴 | — | `memos/` 7명, 10-12 | 07-30 → 08-22, 5/0 | (전용 문서 없음) | 930+952 |
+| C10 | 세션 시간 타임라인·실작업 시간 | 상단 패널 | — | `session-times.jsonl` 700 KB, 10-13(기록은 항상 쌓임, 열람 흔적 없음) | 07-09 → 08-25, 9/0 | (subsystem-c) | 642+598, 외부 10 |
+| C11 | 세션 활동 분석(일별 차트·추정 비용) | 하단 바 "분석" | — | 원천 `session-events` 53 MB 10-13. 열람 흔적 없음 | 07-17 → 09-30(단가 갱신), 12/1 | 정본 | 1,392+1,098. 모델 단가표 수동 갱신 필요 |
+| C12 | 구독 사용량 표시(위젯·플로트·세션 비용) | 하단 바, 플로트 | `usageFloatEnabled`·`sessionCostEnabled` on → on | 표시 전용, 저장 없음 | 07-17 → 09-07(agy 추가), 31/0 | 정본 | 6,186+3,989(최대 기능). provider 4종(claude·codex·antigravity·gemini) 각자 비공식 경로 |
+| C13 | 작업 폴더 브라우저·커밋 로그·git 상태 | 탭 메뉴, 팔레트 | `gitStatusEnabled` on → on | 표시 전용 | 07-19 → 09-09, 14/0 | subsystem-c §10(부분표류 D4~D6) | 4,789+1,753 |
+| C14 | Everything(es.exe) 파일 색인 백엔드 | 설정 | `fileIndexBackend` walker → walker | macOS에선 쓸 수 없음(Windows 전용). Windows 흔적 확인 불가 | 07-21 → 07-21(버그 수정), 7/0 | (이슈 #67) | 509+324, 외부 18(`markdown.rs`·workdir 목록 분기) |
+| C15 | 문서(마크다운) 팔레트·뷰어 | 팔레트 | — | 열람 흔적 없음 | 07-18 → 09-09, 11/0 | — | 1,812+1,107 |
+| C16 | 터미널 버퍼 외부 에디터로 내보내기 | 탭 메뉴 | `externalEditor` system | 흔적 없음 | 07-18 → 07-18, 1 | (#42) | 203+157, 외부 8 |
+| C17 | 저장소 일괄 점검 | 오피스 서버 오브젝트 | — | 흔적 없음(저장 없음) | 09-06 → 09-06, 3/0 | 정본 | 478+147, 외부 8 |
+
+**캐릭터·연출**
+
+| # | 기능 | 진입점 | 설정 | ② 흔적 | ③ 이력 | ④ 문서 | ⑤ 결합 |
+|---|---|---|---|---|---|---|---|
+| C18 | 초상·스프라이트·미니미 편집 + codex 이미지 생성 | 프로필 편집 | — | `portraits/`·`sprites/`·`minimis/` 7명 모두 08-22 이후 갱신 없음 | 07-09 → 08-28, 15/0 | subsystem-b | 1,740+875. codex CLI `image_gen` 의존 |
+| C19 | 캐릭터 번들 내보내기/가져오기 | 프로필 메뉴 | — | 흔적 없음 | 07-24 → 08-25(i18n) | (#77) | 소형(번들 타입+참조 파일 합 482줄) |
+| C20 | 씬 테마 9종 | 하단 바 | — | 현재값은 렌더러 저장(미확인) | 07-09 → 08-28, 11/1 | subsystem-b | 518+251 |
+| C21 | 마스코트 창 + 신호등 조명 | 설정 | `mascotEnabled` off → **on**, `mascotLightsMode` off → **agents** | 설정 켜짐(창 상시) | 07-23 → 09-12, 19/0 | 정본 ×2(file:line 표류 D8) | 2,012+793, 외부 20. Cargo `macos-private-api` feature가 이것 때문에 켜짐 |
+| C22 | 이 달의 우수사원 | 하단 바 "시상", 씬 연출 | — (항상) | `awards.json` 14개월분, 10-01에 2026-09 선정. 초상 스냅샷 2026-09.png = 08.png(같은 크기) | 08-24 → 08-26, 6/0 | 문서 "정본", README "구현 중"(S3) | 1,606+1,423, 외부 24(`OfficeScene.ts` 112회, `awards_store.rs`). 봇 주입 시간 차감 규칙으로 봇과 결합 |
+| C23 | 알림 대사 TTS(리라이트+ElevenLabs) | 소리·음성 탭 | `ttsEnabled` off → off | `tts-cache/` 85파일 13 MB, 마지막 **08-02**. `tts-keys.json` 09-04. `ELEVENLABS_API_KEY` 미설정 | 07-30 → 08-21 고유, 9/2(타 기능 덕) | 정본, **눈검증 대기** | 2,155+1,336, 외부 33(`settings_store.rs` 80회) |
+| C24 | 키보드 타건음 | 소리 탭, 프로필 | `typingSoundEnabled` on → **off** | 프로필 6명이 `keyboardSound` 지정했으나 전역 off | 07-11 → 08-21, 13/0 | — | 981+1,258(sound 전체) |
+| C25 | 휴가 모드·출퇴근·책상 배정 | 보스 책상, 하단 바 | `vacationMode` false | `profiles.json` 7명 중 6명 `assignedDeskIndex` | 휴가 07-17, 책상 07-09 → 08-25 | subsystem-b/c | 소형 |
+| C26 | 동료 대화(Agent Talk) | 하단 바 대화 로그, `ctl talk` | `talkEnabled` off → off | `talks/2026-08-22.jsonl` 1개(2 KB)뿐 | 08-22 → 08-24, 9/2(타 기능 덕) | 정본, M3 미착수 | 1,322+614, 외부 43(`lib.rs` 53회, `BottomBar`, `ctl`) |
+| C27 | 에이전트 호감도 | — | — | 코드 0 | 기획 09-05 | 기획 확정·구현 전(S4) | 없음 |
+
+**opt-in 부가·자동화**
+
+| # | 기능 | 진입점 | 설정 | ② 흔적 | ③ 이력 | ④ 문서 | ⑤ 결합 |
+|---|---|---|---|---|---|---|---|
+| C28 | 실행 레시피 | 팔레트 | `runRecipesEnabled` off → **on** | `run-recipes/` 4개, 마지막 **09-05** | 09-04 → 09-04, 2/0 | 정본 | 1,509+636, 외부 14 |
+| C29 | 터미널 입력 자동화(v1/v2) | 자동화 팔레트 | — | `automations/` 정의 3개(09-09), `automation-runs/` 19건 **09-08~09-09**뿐. `session_started` shell=automation 2건(09-07) | 09-08 → 09-09 고유, 3/1 | 정본 | 4,116+4,829(테스트 최다 축), 외부 35(`appStore` 94회, `AgentTabStrip`). **`cli_transition.rs`는 C1이 씀** — 걷어낼 때 분리 필요 |
+| C30 | 봇 모드(Gitea 이슈 폴링) | 프로필 `bot` | — (프로필별) | 4명에 `bot.slug` 설정, `GITEA_TOKEN` 설정됨. 그러나 `bot-state.json` 커서 **07-19** 이후 갱신 없음 | 07-19 → 08-26, 10/0 | 정본 | 1,369+296, 외부 44(`inject.rs`, `recording_events` `origin:"bot"`, `work_send`, awards). "기계 주입 프롬프트" 표지를 C1·C29·웹 원격이 같이 씀 |
+| C31 | 작업 중 잠자기 방지 | 시스템 탭 | `keepAwakeEnabled` off → **on** | 설정 켜짐 | 07-21 → 07-21, 1 | (#68) | 387+181, 외부 11 |
+
+**원격·제어**
+
+| # | 기능 | 진입점 | 설정 | ② 흔적 | ③ 이력 | ④ 문서 | ⑤ 결합 |
+|---|---|---|---|---|---|---|---|
+| C32 | `ctl` CLI 제어(로컬 axum + 승인) | `agent-office ctl` | `cliEnabled` off → **on** | `control-token` 07-19, `control-port` 10-13. 점검 A에서 켬(그 전 상태 불명) | 07-19 → 08-22 고유, 23/1 | 정본 | 2,241+1,569. `vscode-ext`(C40)와 `ide`(C39)가 이 서버를 씀 |
+| C33 | 외부 터미널/tmux 세션 붙이기 | `ctl attach`/`detach` | — | `session_started` shell=observed 8건, 마지막 **09-12**(개발일) | 08-16 → 09-12(IDE 관찰 쪽 변경), 11/1 | 정본, **눈검증 대기** | 819+766, 외부 46. `session/external.rs`를 C39와 공유 |
+| C34 | tmux 자동 호스팅 | 프로필 `tmuxHost` | 프로필별 | 7명 중 **0명** 설정 | 08-30 → 08-30, 3/0 | 정본 | 366+306, 외부 32(`manager.rs` 74회, control routes) |
+| C35 | 웹 원격(tailnet 브라우저) | 설정 웹 원격 탭, `dist-web` | `webRemoteEnabled` off → off | `web-remote-tokens.json` **08-22** | 08-05 → 09-12(serve 연동), 27/2 | 정본 M1~M3, M4 미착수(S2) | 5,614+3,364(+`src/web` 3,412), 외부 23. **C36의 `serve`가 웹 원격 컨텍스트 위에 섬** |
+| C36 | 독립 세션 서버 `serve` + 데스크톱 원격 연결 | `agent-office serve`, 하단 바 "연결" | `remoteServerConnectionEnabled` off → off | `remote-connection.json` **09-12**(개발일) | 09-12 → 09-12, 4/0 | `remote-server-design.md`(README 인덱스 밖, D9) | 1,717+394, 외부 15. 렌더러에 `RemoteApp`·`setTauriApiDelegate` 대체 경로 |
+| C37 | 세션 v2 상시 브로커 | env `AGENT_OFFICE_SESSION_BROKER=v2` | 기본 off | 셸 env·launchctl·실행 중 앱 env 모두 **미설정** | 07-17 → 09-12, 15/0 | 정본, 기본 off(S7) | 2,200+1,703, 외부 16. `sessiond` 데몬을 C5와 공유 → 걷어내면 "축소" 형태 |
+
+**IDE·VSCode**
+
+| # | 기능 | 진입점 | 설정 | ② 흔적 | ③ 이력 | ④ 문서 | ⑤ 결합 |
+|---|---|---|---|---|---|---|---|
+| C38 | (점검 B D2 보정) 앱↔앱 뷰어 `peer/viewer.rs` | — | — | 코드 없음. **`<ad>/peer-tokens.json`(08-05)만 남음 — 읽는 코드 0건** | 폐기 | archive | 없음. §3.2 후보 목록에서 빼야 함 |
+| C39 | IDE 세션 관찰 + IDE 말투(persona) | 하단 바 "IDE 세션" | `ideConnectionEnabled` off → off | shell=observed 마지막 09-12(개발일) | 09-12 → 09-12(하루에 9커밋), 9/0 | **실험 구현**(스파이크) | 2,760+2,181(+`scripts/ide-session-spike/`, `npm run spike:ide*`), 외부 38(`external.rs` 79회) |
+| C40 | VSCode 확장 `agent-office-logs` V1 | `vscode-ext/` 별도 패키지 | — | **미설치**. 설치된 것은 다른 확장 `bugcaptor.agent-office-companion-0.1.0`(09-12, 이 저장소 이력에 없음) | 08-18 → 08-18, **1커밋** | V1 눈검증 대기, V2·V3 미착수 | 1,574+598, 앱 코드 참조 0(제어 서버 API만 사용). vitest 1.6 별도 의존 |
+
+**CLI별 어댑터** (app 내 실사용 기준은 `session-events`의 `usage.tokens.model`, CLI 자체 기록은 보조)
+
+| # | CLI | 앱 쪽 구현 | ② 흔적 | ③ 이력 | ④ 문서 | ⑤ 결합 |
+|---|---|---|---|---|---|---|
+| C41 | Claude | 훅 settings 주입, 플러그인, 사용량 실시간·폴백, 요약 provider | claude-opus-5-5 10월 7,523건 | 상시 | 정본 | 핵심 |
+| C42 | Codex | 훅, rollout 사용량, 요약 provider, 이미지 생성 | gpt-6.1-sol 10월 3,032건 | 상시 | 정본 | 핵심 |
+| C43 | Antigravity(`agy`) | 셸 훅·hooks 파일, 이어하기, 실시간 사용량(`agy` print 모드 실행), 요약 provider | 앱 내 gemini 모델 마지막 **09-15**, `agy-resume.json` 09-15. agy 자체 기록 마지막 대화 10-07(앱 밖일 수 있음) | 07-30 → 09-07, 8/0 | 정본 | 869+783 + `observer/event.rs` agy 분기 148회(외부 44, 최다) |
+| C44 | Pi | 확장 주입·셸 래퍼, 자동화 모델/thinking, 요약 provider | `~/.pi/agent/sessions` 10월 22개(10-13 agent-office 포함). 앱 세션에서 쓴 것인지 구분 못 함 | 07-12 → 09-10, 5/0 | **부분표류**(D7) | 245+131 + 외부 24 |
+| C45 | Kilo | `KILO_CONFIG` 플러그인 주입, 래퍼, IDE 사용량, 요약 provider | `kilo.db` 세션 25개, 마지막 **10-01**(deepseek 이벤트 10-01과 일치). 09-10~11 다수는 개발 스파이크 디렉터리 | 09-10 → 10-13(안내문), 5/2 | 정본 | 853+540, 외부 30(`event.rs` 54회) |
+| C46 | Gemini CLI | 실시간 사용량(`gemini_live.rs` 800줄, 비공식 엔드포인트), 요약 provider | gemini CLI 자체 기록 마지막 **2026-04-19**. 파일 머리 주석: 개인 무료 티어는 08월 Antigravity 이관 뒤 `Ineligible`로 값이 안 나오는 것이 정상 | 07-30 → 08-30, 5/0 | usage-design §12 | 943+466, 외부 30(`usageView`·`pricing`) |
+| C47 | 요약 provider opencode·openrouter | 요약기 하위 | opencode 현재 사용 중, `OPENROUTER_API_KEY` 설정됨 | 08-21 → 09-04 | — | 각 160~190줄 |
+
+#### 7.C.2 D 입력 — 흔적 기준 정렬 (판정 아님)
+
+- **앱 데이터에 최근(10월) 흔적**: C1~C10, C12, C21(설정), C22(자동 선정), C31(설정), C32(점검 A가 켬), C41·C42, C45(10-01).
+- **마지막 흔적이 개발·도입 직후에서 멈춤**: C23 TTS(08-02), C26 동료 대화(08-22 하루), C28 실행 레시피(09-05), C29 터미널 자동화(09-09), C30 봇 모드(07-19), C33 외부 붙이기·C39 IDE 관찰·C36 원격 연결(모두 09-12 개발일), C35 웹 원격(08-22), C43 agy(앱 내 09-15).
+- **흔적 0**: C34 tmux 호스팅(설정한 프로필 0), C37 v2 브로커(opt-in env 없음), C40 VSCode 확장(미설치), C46 Gemini(로컬 CLI 04-19 이후 미사용), C27 호감도(코드 없음), C38 peer 잔여 파일.
+- **저장 흔적이 원래 없음 → 사용자 응답 필요**: C11, C13~C17, C19, C20, C25, C44(앱 밖 사용과 구분 불가).
+- **결합 비용이 큰 축(외부 참조 30+ 또는 본체 4,000+)**: C29 자동화(C1이 일부 모듈을 씀), C30 봇(주입 표지 공유), C35 웹 원격(C36이 의존), C26 동료 대화, C39 IDE 관찰(C33과 `external.rs` 공유), C43 agy(`event.rs` 분기 최다), C12 사용량(provider별 비공식 경로).
+
+#### 7.C.3 부수 관찰 (E 입력)
+
+- `<ad>/peer-tokens.json`은 읽는 코드가 없는 고아 파일이다(C38).
+- 점검 A 시험 잔여: `<ad>/worklogs/atest-probe*.json`, `<ad>/session-logs/v1/atest-probe*/`가 남아 있다(§7.A.3 정리 범위 밖).
+- `~/.gemini/antigravity-cli/log/`에 print 모드(프롬프트 6자) 실행 로그가 하루 60~150개, 누적 2,134개·52 MB 쌓여 있다. 앱의 agy 실시간 사용량 조회(`usage/antigravity_live.rs`, 실행당 `agy` 기동)로 보이나 호출 주기는 확인하지 않았다(성능·자원 관점).
+- `diaryEnabled`·`summarizerEnabled`는 크레딧을 쓰는 opt-in인데 둘 다 켜져 있다 — 요약기 비용은 §7.A.2의 `opencode run` 빈도와 함께 E에서 본다.
+- `automation-cli-returns/`는 이름과 달리 10월 항목이 업무 보내기(C1)의 기동 receipt다. 자동화(C29)를 정리할 때 디렉터리 이름·모듈 위치를 같이 정해야 한다.
