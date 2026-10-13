@@ -102,14 +102,25 @@
     "promptInvalid": "제목이나 본문에 지원하지 않는 제어문자가 있거나 256 KiB를 넘습니다.",
     "modelInvalid": "모델 이름이 올바르지 않습니다.",
     "effortInvalid": "선택한 CLI에서 지원하지 않는 노력 값입니다.",
-    "modelCatalog": "선택한 agy 모델이 현재 모델 목록에 없습니다."
+    "modelCatalog": "선택한 agy 모델이 현재 모델 목록에 없습니다.",
+    "blocked": "선행 작업을 모두 완료한 뒤 보내세요."
   },
   "resumeNewWork": "새 태스크 작성 계속",
   "add": "추가",
   "save": "저장",
-  "collapseWork": "태스크 접기",
+  "collapseWork": "닫기",
   "titlePlaceholder": "제목 생략 가능",
   "titleHint": "제목을 비우면 본문 앞부분을 제목으로 표시합니다.",
   "unsavedChanges": "저장하지 않은 변경",
-  "saveBeforeSend": "변경을 저장한 뒤 보내세요."
+  "saveBeforeSend": "변경을 저장한 뒤 보내세요.",
+  "dependsOn": "선행 작업",
+  "missingWork": "삭제된 업무",
+  "removeDependency": "“{{title}}” 선행 작업 빼기",
+  "noDependencies": "선행 작업 없음",
+  "addDependency": "선행 작업 추가…",
+  "noDependencyCandidates": "추가할 수 있는 업무 없음",
+  "blockedBy": "선행 작업 대기: {{titles}}",
+  "dependents_one": "후속 작업 {{count}}개가 기다림",
+  "dependents_other": "후속 작업 {{count}}개가 기다림",
+  "newWorkTitle": "새 태스크"
 }

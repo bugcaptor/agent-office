@@ -62,3 +62,12 @@ it("빈 제목과 본문만 있는 태스크를 저장하며 둘 다 빈 편집�
   store.edit(id, { title: "Named", body: "" });
   expect(useWorkItemStore.getState().items[0]).toMatchObject({ title: "Named", body: "" });
 });
+it("선행 작업을 다듬어 저장하고 지운 업무는 후속 업무의 선행 조건에서 뺀다", async () => {
+  const store = useWorkItemStore.getState(); await store.load();
+  const a = store.add("A")!; const b = store.add({ title: "B", body: "", status: "todo", dependsOn: [a, a, "gone"] })!;
+  expect(useWorkItemStore.getState().items.find((i) => i.id === b)?.dependsOn).toEqual([a]);
+  store.edit(a, { dependsOn: [b] });
+  expect(useWorkItemStore.getState().items.find((i) => i.id === a)?.dependsOn).toBeUndefined();
+  store.remove(a);
+  expect(useWorkItemStore.getState().items.find((i) => i.id === b)?.dependsOn).toBeUndefined();
+});

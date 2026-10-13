@@ -49,3 +49,20 @@
 
 .work-title-derived, .work-editor input::placeholder { color: var(--text-dim); font-weight: normal; }
 .work-editor input::placeholder { opacity: 1; }
+
+.work-card small.work-blocked { color: var(--accent-warn); }
+.work-dependencies { margin: 6px 0; }
+.work-dependencies ul { list-style: none; padding: 0; margin: 4px 0; }
+.work-dependencies li { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
+.work-dependencies li > span { flex: 1; min-width: 0; }
+.work-dependencies li small { display: inline; margin: 0 0 0 4px; }
+.work-dependencies li .pixel-btn { padding: 0 6px; min-width: 0; }
+.work-dependencies p { margin: 4px 0; }
+
+.work-card.selected { border-color: var(--accent); }
+.work-detail-dialog { width: min(560px, 92vw); color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
+.work-detail-dialog h2 { margin: 0 0 8px; font-size: 15px; }
+.work-detail-dialog label { display: block; margin: 6px 0; }
+.work-detail-dialog input:not([type="checkbox"]), .work-detail-dialog textarea, .work-detail-dialog select { width: 100%; box-sizing: border-box; min-width: 0; color: var(--text); background: var(--bg-base); border: 1px solid var(--border-dark); font: inherit; padding: 5px; }
+.work-detail-dialog textarea { resize: vertical; min-height: 8em; }
+.work-detail-dialog .work-card-actions { justify-content: flex-end; }

@@ -102,14 +102,25 @@
     "promptInvalid": "Caractères de contrôle incompatibles ou texte de plus de 256 Kio.",
     "modelInvalid": "Nom du modèle invalide.",
     "effortInvalid": "Effort incompatible avec ce CLI.",
-    "modelCatalog": "Le modèle agy est absent de son catalogue actuel."
+    "modelCatalog": "Le modèle agy est absent de son catalogue actuel.",
+    "blocked": "Terminez tous les prérequis avant l’envoi."
   },
   "resumeNewWork": "Continuer la nouvelle tâche",
   "add": "Ajouter",
   "save": "Enregistrer",
-  "collapseWork": "Replier la tâche",
+  "collapseWork": "Fermer",
   "titlePlaceholder": "Titre facultatif",
   "titleHint": "Sans titre, le début du texte sert de titre.",
   "unsavedChanges": "Modifications non enregistrées",
-  "saveBeforeSend": "Enregistrez les modifications avant l’envoi."
+  "saveBeforeSend": "Enregistrez les modifications avant l’envoi.",
+  "dependsOn": "Prérequis",
+  "missingWork": "Tâche supprimée",
+  "removeDependency": "Retirer le prérequis « {{title}} »",
+  "noDependencies": "Aucun prérequis",
+  "addDependency": "Ajouter un prérequis…",
+  "noDependencyCandidates": "Aucune tâche à ajouter",
+  "blockedBy": "En attente de : {{titles}}",
+  "dependents_one": "{{count}} tâche attend celle-ci",
+  "dependents_other": "{{count}} tâches attendent celle-ci",
+  "newWorkTitle": "Nouvelle tâche"
 }

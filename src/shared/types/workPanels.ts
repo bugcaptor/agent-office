@@ -16,6 +16,8 @@ export interface WorkItem {
   order: number;
   sessionIds: string[];
   lastError?: string;
+  /** 선행 업무 id. 모두 완료돼야 보낼 수 있다. 비면 생략한다. */
+  dependsOn?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -56,4 +58,8 @@ export interface InboxEntry {
   title: string;
   body: string;
   assignee?: string;
+  /** 생산자가 정한 업무 id(`office-task`가 출력). 없으면 `inbox-<key>`. */
+  id?: string;
+  /** 선행 업무 id. */
+  after?: string[];
 }

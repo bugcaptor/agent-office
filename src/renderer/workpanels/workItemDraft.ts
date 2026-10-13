@@ -1,6 +1,6 @@
 import type { WorkItem } from "@shared/types";
 
-export type WorkItemDraft = Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status">;
+export type WorkItemDraft = Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status" | "dependsOn">;
 export const EMPTY_WORK_DRAFT: WorkItemDraft = { title: "", body: "", status: "todo" };
 
 export function hasWorkContent(item: Pick<WorkItem, "title" | "body">): boolean {

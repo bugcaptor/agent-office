@@ -31,6 +31,16 @@ beforeEach(() => {
 });
 afterEach(async () => { await settleWorkSends(); await useWorkItemStore.getState().flush(); });
 describe("업무 보내기", () => {
+  it("선행 작업이 끝나지 않으면 점검·입력 없이 오류만 남기고 완료되면 보낸다", async () => {
+    const first = item("First"); const second = item("Second");
+    useWorkItemStore.getState().edit(second, { dependsOn: [first] });
+    await requestWorkSend(second);
+    expect(api.inspectWorkSendTarget).not.toHaveBeenCalled();
+    expect(useWorkItemStore.getState().items.find((i) => i.id === second)).toMatchObject({ status: "todo", lastError: "work-send-blocked" });
+    useWorkItemStore.getState().edit(first, { status: "done" });
+    await requestWorkSend(second);
+    expect(api.sendWorkItem).toHaveBeenCalledTimes(1);
+  });
   it("기본 에이전트/모델을 사용하고 제출 성공 후에만 업무와 세션을 연결한다", async () => {
     const id = item(); const result = deferred<{ sessionId: string; submittedAt: number }>(); api.sendWorkItem.mockReturnValueOnce(result.promise);
     const job = requestWorkSend(id); await vi.waitFor(() => expect(api.sendWorkItem).toHaveBeenCalledTimes(1));

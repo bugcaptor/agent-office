@@ -56,6 +56,20 @@ describe("importInbox", () => {
 });
 
 describe("receive loop", () => {
+  it("생산자 id를 그대로 쓰고 같은 주기나 기존 업무를 선행 작업으로 잇는다", async () => {
+    const existing = useWorkItemStore.getState().add("Existing")!;
+    api.scanWorkInbox.mockResolvedValueOnce([
+      entry("1.md", "Step 1", { id: "t-1", after: [existing] }),
+      entry("2.md", "Step 2", { id: "t-2", after: ["t-1", "t-missing"] }),
+      entry("3.md", "Legacy"),
+    ]);
+    startWorkInbox(); await vi.advanceTimersByTimeAsync(3000);
+    expect(api.ackWorkInbox).toHaveBeenCalledWith(["1.md", "2.md", "3.md"]);
+    const items = useWorkItemStore.getState().items;
+    expect(items.find((i) => i.id === "t-1")?.dependsOn).toEqual([existing]);
+    expect(items.find((i) => i.id === "t-2")?.dependsOn).toEqual(["t-1"]);
+    expect(items.find((i) => i.title === "Legacy")?.id).toBe(`inbox-${entry("3.md", "").key}`);
+  });
   it("저장 뒤 건너뛴 파일까지 ack하고 담당을 판정한다", async () => {
     useWorkItemStore.getState().importInbox([{ id: `inbox-${entry("old.md", "").key}`, title: "Old", body: "" }]);
     api.scanWorkInbox.mockResolvedValueOnce([entry("new.md", "New", { assignee: "하나" }), entry("old.md", "Old"), entry("dup.md", "Dup", { assignee: "둘" })]);

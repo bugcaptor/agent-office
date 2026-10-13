@@ -3,13 +3,14 @@ import { nanoid } from "nanoid";
 import type { WorkItem, WorkStatus } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { hasWorkContent, type WorkItemDraft } from "./workItemDraft";
+import { normalizeDependsOn } from "./workDependencies";
 
 export const WORK_STATUS_ORDER: WorkStatus[] = ["review", "in_progress", "todo", "done"];
 let timer: ReturnType<typeof setTimeout> | undefined;
 let saving: Promise<void> | undefined;
 let loading: Promise<void> | undefined;
 let revision = 0;
-export type InboxImport = Pick<WorkItem, "id" | "title" | "body" | "assigneeAgentId">;
+export type InboxImport = Pick<WorkItem, "id" | "title" | "body" | "assigneeAgentId" | "dependsOn">;
 interface WorkItemState {
   items: WorkItem[];
   loaded: boolean;
@@ -19,7 +20,7 @@ interface WorkItemState {
   load(): Promise<void>;
   add(draft: string | WorkItemDraft): string | undefined;
   importInbox(entries: InboxImport[]): string[];
-  edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status">>): void;
+  edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status" | "dependsOn">>): void;
   recordSend(id: string, result: { sessionId?: string; error?: string }): void;
   remove(id: string): void;
   reorder(id: string, targetId: string, after?: boolean): void;
@@ -56,7 +57,8 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     const at = Date.now();
     const id = nanoid();
     const order = Math.max(-1, ...get().items.filter((i) => i.status === draft.status).map((i) => i.order)) + 1;
-    set({ items: [...get().items, { ...draft, id, title: draft.title.trim(), order, sessionIds: [], createdAt: at, updatedAt: at }], dirty: true, selectedId: id });
+    const dependsOn = normalizeDependsOn(id, draft.dependsOn, get().items);
+    set({ items: [...get().items, { ...draft, id, title: draft.title.trim(), dependsOn, order, sessionIds: [], createdAt: at, updatedAt: at }], dirty: true, selectedId: id });
     changed();
     return id;
   },
@@ -74,7 +76,10 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
       ids.add(entry.id);
       added.push({ ...entry, status: "todo", order: order++, sessionIds: [], createdAt: at, updatedAt: at });
     }
-    if (added.length) { set({ items: [...get().items, ...added], dirty: true }); changed(); }
+    // 같은 주기에 함께 들어온 업무끼리도 이을 수 있도록 모두 넣은 목록으로 다듬는다.
+    const all = [...get().items, ...added];
+    for (const item of added) item.dependsOn = normalizeDependsOn(item.id, item.dependsOn, all);
+    if (added.length) { set({ items: all, dirty: true }); changed(); }
     return accepted;
   },
   edit(id, patch) {
@@ -82,6 +87,7 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     const item = get().items.find((i) => i.id === id);
     if (!item || !hasWorkContent({ ...item, ...patch })) return;
     if (patch.title !== undefined) patch = { ...patch, title: patch.title.trim() };
+    if ("dependsOn" in patch) patch = { ...patch, dependsOn: normalizeDependsOn(id, patch.dependsOn, get().items) };
     const order = patch.status && patch.status !== item.status
       ? Math.max(-1, ...get().items.filter((i) => i.status === patch.status).map((i) => i.order)) + 1 : item.order;
     set({ items: get().items.map((i) => i.id === id ? { ...i, ...patch, order, updatedAt: Date.now() } : i), dirty: true });
@@ -97,7 +103,13 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
   },
   remove(id) {
     if (!get().loaded) return;
-    set({ items: get().items.filter((i) => i.id !== id), dirty: true, selectedId: get().selectedId === id ? null : get().selectedId });
+    // 지운 업무를 기다리던 후속 업무는 그 선행 조건만 풀린다.
+    const items = get().items.filter((i) => i.id !== id).map((i) => {
+      if (!i.dependsOn?.includes(id)) return i;
+      const dependsOn = i.dependsOn.filter((d) => d !== id);
+      return { ...i, dependsOn: dependsOn.length ? dependsOn : undefined };
+    });
+    set({ items, dirty: true, selectedId: get().selectedId === id ? null : get().selectedId });
     changed();
   },
   reorder(id, beforeId, after = false) {

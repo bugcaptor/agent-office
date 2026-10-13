@@ -2158,6 +2158,8 @@ pub struct WorkItem {
     pub order: f64,
     pub session_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub last_error: Option<String>,
+    /// 선행 업무 id. 모두 완료돼야 이 업무를 보낼 수 있다.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub depends_on: Vec<String>,
     pub created_at: u64,
     pub updated_at: u64,
 }

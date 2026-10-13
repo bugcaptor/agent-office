@@ -11,6 +11,10 @@ pub struct Parsed {
     pub title: String,
     pub body: String,
     pub assignee: Option<String>,
+    /// 생산자가 정한 업무 id. 형식이 틀리면 버리고 해시 key로 만든다.
+    pub id: Option<String>,
+    /// 선행 업무 id. 앱이 가져올 때 목록에 있는 것만 남긴다.
+    pub after: Vec<String>,
 }
 #[derive(Debug, PartialEq)]
 pub enum RejectReason { InvalidUtf8, TooLarge, UnclosedFrontmatter, Empty }
@@ -31,6 +35,23 @@ pub struct InboxEntry {
     pub body: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assignee: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub after: Vec<String>,
+}
+
+/// 수신함으로 지정할 수 있는 업무 id. 앱이 만든 id(nanoid)도 이 형식이다.
+pub fn valid_task_id(id: &str) -> bool {
+    (1..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+/// `after:` 값은 쉼표나 공백으로 나눈다. 형식이 틀린 id는 버리고 중복은 합친다.
+pub fn parse_after(value: &str) -> Vec<String> {
+    let mut ids: Vec<String> = vec![];
+    for id in value.split(|c: char| c == ',' || c.is_whitespace()).filter(|id| valid_task_id(id)) {
+        if !ids.iter().any(|known| known == id) { ids.push(id.to_string()); }
+    }
+    ids
 }
 
 pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
@@ -39,14 +60,19 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text).replace("\r\n", "\n");
     let mut lines = text.split('\n').peekable();
     let mut assignee = None;
+    let mut id = None;
+    let mut after = vec![];
     if lines.peek() == Some(&"---") {
         lines.next();
         let mut closed = false;
         for line in lines.by_ref() {
             if line == "---" { closed = true; break; }
             if let Some((key, value)) = line.split_once(':') {
-                if key.trim() == "assignee" {
-                    assignee = Some(value.trim().to_string()).filter(|v| !v.is_empty());
+                match key.trim() {
+                    "assignee" => assignee = Some(value.trim().to_string()).filter(|v| !v.is_empty()),
+                    "id" => id = Some(value.trim().to_string()).filter(|v| valid_task_id(v)),
+                    "after" => after = parse_after(value),
+                    _ => {}
                 }
             }
         }
@@ -62,7 +88,8 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
     let end = body.iter().rposition(|s| !s.trim().is_empty()).map_or(start, |i| i + 1);
     let body = body[start..end].join("\n");
     if title.is_empty() && body.trim().is_empty() { return Err(RejectReason::Empty); }
-    Ok(Parsed { title, body, assignee })
+    after.retain(|prerequisite| Some(prerequisite) != id.as_ref());
+    Ok(Parsed { title, body, assignee, id, after })
 }
 fn accepted_name(name: &str) -> bool {
     !name.starts_with('.') && name.ends_with(".md") && !name.contains(['/', '\\']) && !name.contains("..")
@@ -108,7 +135,7 @@ pub fn scan(root: &Path, now: SystemTime) -> Result<Vec<InboxEntry>, String> {
                 let mut hash = Sha256::new();
                 hash.update(name.as_bytes()); hash.update([0]); hash.update(&bytes);
                 let key = format!("{:x}", hash.finalize())[..16].to_string();
-                entries.push(InboxEntry { file_name: name, key, title: parsed.title, body: parsed.body, assignee: parsed.assignee });
+                entries.push(InboxEntry { file_name: name, key, title: parsed.title, body: parsed.body, assignee: parsed.assignee, id: parsed.id, after: parsed.after });
             }
             Err(reason) => reject(root, &name, reason).map_err(|e| e.to_string())?,
         }
@@ -130,11 +157,20 @@ mod tests {
     use super::*;
     #[test]
     fn parses_plain_frontmatter_bom_crlf_and_preserves_body_indentation() {
-        assert_eq!(parse("x.md", b"\n# Title\n\n  code  \n\n").unwrap(), Parsed { title: "Title".into(), body: "  code  ".into(), assignee: None });
+        assert_eq!(parse("x.md", b"\n# Title\n\n  code  \n\n").unwrap(), Parsed { title: "Title".into(), body: "  code  ".into(), assignee: None, id: None, after: vec![] });
         let p = parse("x.md", "\u{feff}---\r\nfuture: ignored\r\nassignee: 하나 \r\n---\r\n# 제목\r\n본문\r\n".as_bytes()).unwrap();
-        assert_eq!(p, Parsed { title: "제목".into(), body: "본문".into(), assignee: Some("하나".into()) });
+        assert_eq!(p, Parsed { title: "제목".into(), body: "본문".into(), assignee: Some("하나".into()), id: None, after: vec![] });
         assert_eq!(parse("x.md", b"Title").unwrap().body, "");
-        assert_eq!(parse("x.md", b"# \nBody").unwrap(), Parsed { title: "".into(), body: "Body".into(), assignee: None });
+        assert_eq!(parse("x.md", b"# \nBody").unwrap(), Parsed { title: "".into(), body: "Body".into(), assignee: None, id: None, after: vec![] });
+    }
+    #[test]
+    fn parses_task_id_and_prerequisites() {
+        let p = parse("x.md", b"---\nid: t-ab12\nafter: t-1, t-2 t-1,bad/id,t-ab12\n---\n# Step\n").unwrap();
+        assert_eq!((p.id.as_deref(), p.after), (Some("t-ab12"), vec!["t-1".to_string(), "t-2".to_string()]));
+        let p = parse("x.md", b"---\nid: not valid\nafter:\n---\n# Step\n").unwrap();
+        assert_eq!((p.id, p.after), (None, vec![]));
+        assert!(valid_task_id("vLdkeylcT4Nb9W4IQVT4g") && valid_task_id("inbox-0123abcd"));
+        assert!(!valid_task_id("") && !valid_task_id(&"a".repeat(65)) && !valid_task_id("a.b"));
     }
     #[test]
     fn rejects_malformed_content_and_accepts_exact_size_limit() {

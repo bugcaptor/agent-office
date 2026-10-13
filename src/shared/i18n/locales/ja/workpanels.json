@@ -102,14 +102,25 @@
     "promptInvalid": "未対応の制御文字があるか 256 KiB を超えています。",
     "modelInvalid": "モデル名が無効です。",
     "effortInvalid": "この CLI は指定した推論強度に未対応です。",
-    "modelCatalog": "指定した agy モデルは現在の一覧にありません。"
+    "modelCatalog": "指定した agy モデルは現在の一覧にありません。",
+    "blocked": "先行タスクをすべて完了してから送信してください。"
   },
   "resumeNewWork": "新しいタスクの入力を続ける",
   "add": "追加",
   "save": "保存",
-  "collapseWork": "タスクを折りたたむ",
+  "collapseWork": "閉じる",
   "titlePlaceholder": "タイトルは省略可能",
   "titleHint": "タイトルを空にすると本文の冒頭をタイトルとして表示します。",
   "unsavedChanges": "未保存の変更",
-  "saveBeforeSend": "変更を保存してから送信してください。"
+  "saveBeforeSend": "変更を保存してから送信してください。",
+  "dependsOn": "先行タスク",
+  "missingWork": "削除されたタスク",
+  "removeDependency": "先行タスク「{{title}}」を外す",
+  "noDependencies": "先行タスクなし",
+  "addDependency": "先行タスクを追加…",
+  "noDependencyCandidates": "追加できるタスクがありません",
+  "blockedBy": "先行タスク待ち: {{titles}}",
+  "dependents_one": "後続タスク {{count}} 件が待機中",
+  "dependents_other": "後続タスク {{count}} 件が待機中",
+  "newWorkTitle": "新しいタスク"
 }

@@ -1,8 +1,8 @@
 # 업무 패널 — 현재 구현 명세
 
-설정으로 켜는 좌우 고정 패널 — 좌측 업무 목록(배정·보내기·모니터링·수신함), 우측 세션 로그(전 캐릭터, 필터·검색)의 정본 명세다.
+설정으로 켜는 좌우 고정 패널 — 좌측 업무 목록(배정·선행 작업·보내기·모니터링·수신함), 우측 세션 로그(전 캐릭터, 필터·검색)의 정본 명세다.
 
-상태: 정본 (2026-10-13) — 1·2차 기능과 업무 수신함 구현 완료. 설치 Tauri 앱의 저장·복원과 인증된 CLI 5종의 실기 인수는 남아 있다. 보내기는 직접 생성한 Unix bash/zsh와 Windows PowerShell·Git Bash PTY를 지원한다.
+상태: 정본 (2026-10-13) — 1·2차 기능과 업무 수신함, 선행 작업·상세 팝업 구현 완료. 설치 Tauri 앱의 저장·복원과 인증된 CLI 5종의 실기 인수는 남아 있다. 보내기는 직접 생성한 Unix bash/zsh와 Windows PowerShell·Git Bash PTY를 지원한다.
 
 관련 문서: [터미널 자동화](terminal-automation-design.md)(CLI 기동·첫 프롬프트), [세션 활동 분석](session-analytics-design.md)(턴·토큰·비용 집계), [세션 로그](session-log-design.md)(전사 보기), [동료 대화](agent-talk-design.md) §6(shim·권한 사전 승인 배선). 수신함의 구현 계획과 결정 근거는 [archive/work-inbox-design.md](archive/work-inbox-design.md)에 있다.
 
@@ -36,16 +36,27 @@
 | 에이전트·모델 | CLI(claude/codex/agy/kilo/pi) + 모델 + 노력(effort). 비우면 담당 캐릭터의 기본값 |
 | 상태 | 할 일 / 진행 중 / 검토 대기 / 완료 |
 | 연결 세션 | 이 업무로 보낸 세션 id 목록(다시 보내면 늘어남) |
+| 선행 작업 | 먼저 완료돼야 하는 업무 목록. 아래 [선행 작업](#선행-작업) |
 
 ### 목록 구성
 
 - 상태별 묶음을 검토 대기 → 진행 중 → 할 일 → 완료 순으로 보여준다. 완료 묶음은 기본 접힘.
 - 묶음 안 순서는 드래그로 바꾼다.
-- 목록 위의 '새 태스크 만들기' 버튼으로 제목·본문·담당·에이전트·상태를 입력하는 초안을 연다. '추가'를 누를 때만 업무를 생성한다. 제목과 본문 중 하나는 있어야 한다.
-- 기존 카드를 펼치면 편집 초안을 보여주고 '저장'을 눌러야 반영한다. 필드 입력과 포커스 이동은 저장하지 않는다. '취소'는 초안을 버리고 닫으며 '태스크 접기'/Esc/다른 카드 선택은 초안을 유지한 채 접는다. 새 업무도 접었다가 '새 태스크 작성 계속'으로 돌아올 수 있다. 패널 접기는 초안을 보존하지만 업무 패널 기능을 끄거나 앱을 종료하면 임시 초안은 버린다.
+- 카드는 제목·담당·미저장 표시·선행 작업 대기·후속 작업 수·모니터링만 보여준다. 상세 보기와 편집은 화면 가운데 팝업(모달)에서 한다. 패널 폭과 상관없이 입력란을 넓게 쓰기 위해서다.
+- 목록 위의 '새 태스크 만들기' 버튼으로 제목·본문·담당·에이전트·상태·선행 작업을 입력하는 초안 팝업을 연다. '추가'를 누를 때만 업무를 생성하고 팝업을 닫는다. 제목과 본문 중 하나는 있어야 한다.
+- 기존 카드를 누르면 상세 팝업에 편집 초안·모니터링·보내기·터미널·삭제를 보여주고 '저장'을 눌러야 반영한다. 필드 입력과 포커스 이동은 저장하지 않는다. '취소'는 초안을 버리고 닫으며 '닫기'/Esc/배경 클릭은 초안을 유지한 채 닫는다. 새 업무도 닫았다가 '새 태스크 작성 계속'으로 돌아올 수 있다. 재시작·삭제 확인창이 뜨는 동안 상세 팝업은 잠시 내려간다. 패널 접기는 초안을 보존하지만 업무 패널 기능을 끄거나 앱을 종료하면 임시 초안은 버린다.
 - 편집 중에는 저장한 제목·담당·상태를 카드에 계속 표시하고 미저장 표시를 추가한다. 변경을 저장하거나 취소하기 전에는 보내기를 막는다. 자동 모니터링 상태·세션 이력은 초안과 별개로 갱신하며 저장은 사용자가 편집한 필드만 반영한다.
 - 빈 제목을 그대로 저장해 본문을 수정하면 표시 제목도 함께 갱신한다. 제목 입력란의 연한 placeholder·삭제/재시작 확인·세션 기록의 연결 업무에도 같은 본문 앞부분을 사용한다.
 - 삭제는 확인을 받는다. 진행 중 업무를 지워도 터미널 세션은 건드리지 않는다.
+
+### 선행 작업
+
+업무는 다른 업무를 선행 작업으로 가질 수 있다(`dependsOn`). 큰 일을 순서 있는 단계로 나눌 때 쓴다.
+
+- 편집 팝업의 '선행 작업'에서 고르거나 뺀다. 후보는 자신·이미 고른 업무·완료된 업무·순환을 만드는 업무(이 업무를 직간접으로 기다리는 업무)를 뺀 나머지다.
+- 선행 작업 중 완료되지 않은 것이 있으면 카드에 '선행 작업 대기: 제목들'을 경고색으로 표시하고 보내기를 막는다(`work-send-blocked`). 막지 않으려면 선행 작업을 빼거나 완료로 바꾼다. 자동으로 이어서 보내지는 않는다.
+- 이 업무를 기다리는 업무가 있으면 '후속 작업 N개가 기다림'을 표시한다.
+- 저장할 때 목록에 없는 id·자기 자신·중복·순환을 걸러낸다. 선행 업무를 지우면 후속 업무에서 그 조건만 빠진다.
 
 ### 에이전트 설정
 
@@ -89,7 +100,7 @@
 - 최신 연결 세션의 작업 중 / 질문 대기 / 턴 종료 / 세션 종료 + 경과 시간 + 턴 수·토큰·추정 비용.
 - 질문 대기(훅 알림)면 카드를 강조한다. 단 턴 종료·세션 종료 뒤의 훅 알림(Claude `idle_prompt` 입력 대기 리마인더)은 질문으로 보지 않고 다음 prompt까지 턴 종료를 유지한다.
 - 완료 업무는 세션 신호와 무관하게 "완료"로 표시하고 강조하지 않는다. 세션이 살아 있으면 경과 시간을 숨기고, 끝난 세션이면 확정된 경과 시간을 보인다.
-- 연결된 카드나 터미널 버튼을 누르면 연결 세션을 소유한 캐릭터의 터미널 탭을 연다. 업무 담당을 바꿔도 기존 연결 세션의 소유자를 따른다.
+- 상세 팝업의 터미널 버튼을 누르면 팝업을 닫고(초안 유지) 연결 세션을 소유한 캐릭터의 터미널 탭을 연다. 카드 클릭은 상세 팝업만 연다. 업무 담당을 바꿔도 기존 연결 세션의 소유자를 따른다.
 - 모니터링은 패널 토글과 무관하게 구독한다. 비용·토큰은 기존 실시간 사용량과 복원 시드를 합치고 비용 표시 설정을 따른다. 복원 시드는 기존 3일 조회 한계를 따른다.
 
 ### 상태 전이
@@ -166,7 +177,7 @@
 
 - `<app_data>/work-inbox/`. 앱이 시작할 때 만든다. 앱이 띄운 세션에는 `AGENT_OFFICE_WORK_INBOX`로 절대 경로를 알려준다. OS별 앱 데이터 경로는 [사용 안내](guide.md#업무-수신함)에 있다.
 - 파일 하나가 업무 하나다. 확장자 `.md`, UTF-8(BOM 허용), LF/CRLF 모두 받아 LF로 바꾼다. 64 KiB까지.
-- 선택 frontmatter: 첫 줄이 정확히 `---`이면 다음 `---` 줄까지를 `key: value`로 읽는다(YAML 전체는 지원하지 않는다). `assignee`(담당 캐릭터의 프로필 id 또는 이름)만 쓰고 그 외 키는 무시한다.
+- 선택 frontmatter: 첫 줄이 정확히 `---`이면 다음 `---` 줄까지를 `key: value`로 읽는다(YAML 전체는 지원하지 않는다). `assignee`(담당 캐릭터의 프로필 id 또는 이름), `id`(업무 id, `[A-Za-z0-9_-]` 1~64자. 형식이 틀리면 무시), `after`(선행 업무 id를 쉼표·공백으로 구분. 형식이 틀린 id는 버림)만 쓰고 그 외 키는 무시한다.
 - frontmatter 다음의 첫 비어 있지 않은 줄이 제목이다. 앞의 `# `는 떼고, `#`만 있으면 빈 제목이다. 나머지가 본문이며 앞뒤 빈 줄만 다듬고 들여쓰기는 보존한다. 제목과 본문 중 하나만 있어도 된다.
 
 ```markdown
@@ -188,7 +199,8 @@ assignee: 하나
 
 - 업무 패널이 켜져 있고 업무 목록 로드에 성공한 동안 3초마다 확인한다. 한 주기에 최대 50개, 주기는 겹치지 않는다. 종료 확인창이 떠 있는 동안은 멈춘다.
 - 이름순으로 `todo` 묶음 끝에 추가한다. 선택·편집 초안·접힘 상태는 바꾸지 않는다.
-- 업무 id는 `inbox-` + (파일 이름과 원본 바이트의 SHA-256 앞 16자)다. 같은 id가 이미 있으면 추가하지 않고 파일만 지운다. 그래서 저장 성공과 삭제 사이에 앱이 죽어도 두 번 생기지 않는다.
+- `after`는 기존 업무나 같은 주기에 함께 들어온 업무만 남기고 나머지는 버린다. 생산자는 선행 업무 파일을 먼저(이름순 앞에) 써야 한다. `office-task`는 시각을 이름 앞에 두므로 차례로 부르면 된다.
+- 업무 id는 frontmatter `id`가 있으면 그 값, 없으면 `inbox-` + (파일 이름과 원본 바이트의 SHA-256 앞 16자)다. 같은 id가 이미 있으면 추가하지 않고 파일만 지운다. 그래서 저장 성공과 삭제 사이에 앱이 죽어도 두 번 생기지 않는다.
 - 업무 스냅샷 저장이 성공한 뒤에만 원본을 지운다. 저장에 실패하면 파일을 남기고 다음 주기에 먼저 저장을 재시도한다.
 - UTF-8이 아니거나, 64 KiB를 넘거나, frontmatter가 닫히지 않았거나, 제목·본문이 모두 비면 `rejected/`로 옮기고 같은 이름 + `.error` 파일에 사유 코드(`invalid-utf8`·`too-large`·`unclosed-frontmatter`·`empty`) 한 줄을 남긴다. 이름이 겹치면 앞에 uuid를 붙여 이전 거부 파일을 보존한다. `rejected/`는 자동으로 비우지 않는다.
 - 패널이 꺼져 있거나 앱이 꺼져 있으면 파일은 쌓이고, 켜지면 순서대로 들어간다. 수정된 지 24시간이 지난 `.`으로 시작하는 `.tmp` 파일은 확인할 때 지운다.
@@ -199,14 +211,18 @@ assignee: 하나
 앱이 띄운 세션의 에이전트가 수신함 규약을 쓰는 도구다. OS temp의 `agent-office/bin/office-task`(Windows는 `.cmd`) shim이 앱 바이너리의 오프라인 서브커맨드 `agent-office task`를 실행한다. GUI·control 서버·토큰이 필요 없어 CLI 제어가 꺼져 있어도 동작한다. shim은 세션 준비마다 다시 쓴다.
 
 ```
-office-task [--to <이름|id> | --unassigned] <제목> [본문 | -]
+office-task [--to <이름|id> | --unassigned] [--after <id>]... <제목> [본문 | -]
+office-task --list [--all]
 ```
 
 - 본문 자리의 `-`는 stdin을 읽는다. 여러 줄은 heredoc으로 넘긴다. `--` 뒤는 모두 제목·본문이다.
 - 수신함 경로는 `AGENT_OFFICE_WORK_INBOX` → `AGENT_OFFICE_APP_DATA/work-inbox` 순서로 찾고 둘 다 없으면 1로 끝난다.
 - 담당: `--to` 값, `--unassigned`면 비움, 둘 다 없으면 `AGENT_OFFICE_AGENT_ID`(세션 캐릭터의 프로필 id). 그 변수가 없으면 미배정으로 쓰고 stderr에 알린다.
-- 제목의 줄바꿈은 공백으로 합치고, 제목 줄은 항상 `# `로 써서 본문이 frontmatter·제목으로 잘못 읽히지 않게 한다. 쓰기 규약대로 임시 파일 → rename하고 최종 경로를 출력한다. 업무 목록 반영(앱·패널 켜짐)은 확인하지 않는다.
-- 제목·본문이 모두 비거나 64 KiB를 넘으면 쓰지 않고 1, 인자 오류(`--to` 값 누락·줄바꿈 포함 등)는 2로 끝난다.
+- 업무 id를 `t-` + 임의 8자로 정해 frontmatter `id`에 쓰고 stdout에 **id만** 출력한다. 셸에서 `A=$(office-task …)`로 받아 다음 업무의 `--after "$A"`에 넘겨 순서 있는 단계를 만든다.
+- `--after`는 여러 번 쓸 수 있고 값 하나에 쉼표로 여러 id를 넣어도 된다. 형식이 틀린 id가 있으면 쓰지 않고 2로 끝난다. 존재 여부는 확인하지 않는다(아직 수신함에 있는 업무일 수 있다).
+- 제목의 줄바꿈은 공백으로 합치고, 제목 줄은 항상 `# `로 써서 본문이 frontmatter·제목으로 잘못 읽히지 않게 한다. 쓰기 규약대로 임시 파일 → rename한다. 업무 목록 반영(앱·패널 켜짐)은 확인하지 않는다.
+- 제목·본문이 모두 비거나 64 KiB를 넘으면 쓰지 않고 1, 인자 오류(`--to`·`--after` 값 누락·형식 오류·줄바꿈 포함 등)는 2로 끝난다.
+- `--list`는 앱 데이터 폴더(`AGENT_OFFICE_APP_DATA`, 없으면 수신함의 부모)의 `work-items.json`을 읽어 완료가 아닌 업무를 검토 대기 → 진행 중 → 할 일, 묶음 안 순서대로 한 줄씩 출력한다: `id  [status]  @담당 이름  제목  after: id들 (blocked)`. 담당 이름은 `profiles.json`에서 찾고, 제목이 비면 본문 앞 40자를 쓴다. `--all`이면 완료도 포함한다. 앱이 아직 가져가지 않은 수신함 파일은 개수만 알린다. 디바운스 저장 전의 최신 편집은 보이지 않을 수 있다.
 
 세션 셸에는 업무 패널 설정과 무관하게 다음 env를 싣는다(외부 터미널 attach 포함). TTS 확인 문구용 claude 자식 프로세스에서는 지운다(`tts/cli.rs`의 `STRIPPED_ENV`).
 
@@ -218,7 +234,7 @@ office-task [--to <이름|id> | --unassigned] <제목> [본문 | -]
 
 ### 공통 안내문 주입
 
-CLI별 스킬 대신 짧은 영어 안내문(`src-tauri/src/office_instructions.rs`, shim 절대 경로를 끼워 넣음)을 시스템 프롬프트에 **덧붙인다**. 후속 작업을 발견했거나 사용자가 나중 할 일로 남기라고 할 때 쓰는 법, 기본 담당은 본인이고 넘길 때만 `--to`, 이번 턴에 끝낼 일은 남기지 않기, 다른 사람이 읽을 맥락 쓰기, 남긴 뒤 한 줄로 알리기를 담는다.
+CLI별 스킬 대신 짧은 영어 안내문(`src-tauri/src/office_instructions.rs`, shim 절대 경로를 끼워 넣음)을 시스템 프롬프트에 **덧붙인다**. 후속 작업을 발견했거나 사용자가 나중 할 일로 남기라고 할 때 쓰는 법, 기본 담당은 본인이고 넘길 때만 `--to`, 이번 턴에 끝낼 일은 남기지 않기, 다른 사람이 읽을 맥락 쓰기, 출력된 id와 `--after`로 의존성을 걸어 계획을 단계별로 구조화하는 법, `--list`로 기존 업무를 보고 잇는 법, 남긴 뒤 한 줄로 알리기를 담는다.
 
 - 업무 패널(`workPanelsEnabled`)이 켜졌을 때만 넣는다. 세션을 띄울 때 고정되므로 실행 중 설정 변경은 이미 떠 있는 세션에 반영되지 않는다.
 - Claude·Codex는 "persona + 빈 줄 + 안내문"(있는 것만)을 하나의 값으로 넣는다. env 이름 `AGENT_OFFICE_PERSONA`는 래퍼 호환 때문에 유지한다.
@@ -261,6 +277,7 @@ interface WorkItem {
   order: number;         // 상태 묶음 안 정렬
   sessionIds: string[];  // 보낸 세션들, 최신이 마지막
   lastError?: string;    // 오류 코드. 표시할 때 현재 언어로 번역
+  dependsOn?: string[];  // 선행 업무 id. 비면 생략
   createdAt: number;
   updatedAt: number;
 }
@@ -303,7 +320,7 @@ interface SessionSummary {
 - 각 패널은 머리의 접기 버튼으로 24px 띠로 접힌다. 폭과 접힘 상태는 로컬(localStorage)에 기억한다.
 - 캔버스 폭이 줄면 오피스 씬은 기존 리사이즈 경로로 다시 맞춘다. 티커 칼럼(SessionTimePanel·알림)은 우측 패널 안쪽으로 밀린다.
 - 화면 문자열은 모두 `src/shared/i18n/locales/`의 6개 지원 언어(ko·en·fr·ja·zh-Hans·zh-Hant)에 둔다. 픽셀 테마 토큰을 따른다.
-- 키보드: 제목 입력란 Enter = 추가/저장, 본문 Enter = 줄바꿈, Esc = 초안을 유지하며 접기. 전역 단축키는 이번 범위가 아니다.
+- 키보드: 제목 입력란 Enter = 추가/저장, 본문 Enter = 줄바꿈, Esc = 초안을 유지하며 팝업 닫기. 전역 단축키는 이번 범위가 아니다.
 
 ## 구현 위치와 IPC
 
@@ -311,8 +328,9 @@ interface SessionSummary {
 | --- | --- |
 | 영속 타입·보내기 계약 | `src/shared/types/workPanels.ts`, `src-tauri/src/types.rs` |
 | 설정·패널 배치 | `src/shared/types/settings.ts`, `src-tauri/src/persistence/settings_store.rs`, `src/renderer/settings/`, `src/renderer/layout/UIChrome.tsx` |
-| 패널 UI·폭·접힘 | `src/renderer/workpanels/WorkItemsPanel.tsx`, `WorkEditor.tsx`, `workItemDraft.ts`, `SessionHistoryPanel.tsx`, `WorkPanelFrame.tsx`, `panelLayoutStore.ts`, `workPanels.css` |
+| 패널 UI·폭·접힘·상세 팝업 | `src/renderer/workpanels/WorkItemsPanel.tsx`(`WorkDialog`), `WorkEditor.tsx`, `workItemDraft.ts`, `SessionHistoryPanel.tsx`, `WorkPanelFrame.tsx`, `panelLayoutStore.ts`, `workPanels.css` |
 | 프로필 기본값·업무 오버라이드 | `src/renderer/workpanels/WorkAgentFields.tsx`, `src/renderer/profile/` |
+| 선행 작업 정리·후보·대기 판정 | `src/renderer/workpanels/workDependencies.ts` |
 | 업무·요약 수집과 저장 | `src/renderer/workpanels/workItemStore.ts`, `sessionSummaryStore.ts`, `sessionRows.ts`, `src-tauri/src/persistence/work_panels_store.rs` |
 | 보내기 조정·오류 표시 | `src/renderer/workpanels/workSendStore.ts`, `sendErrorText.ts` |
 | 네이티브 보내기·CLI 기동 | `src-tauri/src/work_send.rs`, `src-tauri/src/ipc/commands/work_panels.rs`. 기존 `automation/`의 모델·effort 검증과 기동 receipt 재사용 |
@@ -352,6 +370,7 @@ IPC 계약은 `src/shared/ipc.ts`와 `src/renderer/ipc/tauriApi.ts`의 로컬 �
 - Safari 로컬 프리뷰에서 합성 데이터·IPC로 기본 설정 표시, 모델 입력 배치, 질문 강조·경과·턴·비용, 재시작 확인·미제출 경고·취소를 확인했다. 설치된 원본 앱은 교체하지 않았다.
 
 - 업무 수신함(2026-10-13): 파서·scan·ack·`office-task`·세션 env·안내문 조합·권한 조각·Codex 배열 합치기·Kilo 훅 단위 테스트와 수신 루프(저장 실패 시 보류·건너뛴 파일 ack·정지 뒤 늦은 응답 폐기) 회귀를 추가했다. `npx tsc --noEmit`, 프런트 전체 2,936개, 네이티브 전체 1,653개 통과. `codex debug prompt-input`(모델 호출 없음)으로 `-c writable_roots`의 덮어쓰기 동작과 `developer_instructions` 주입을 확인했다.
+- 선행 작업·상세 팝업(2026-10-13): 선행 작업 정리(없는 id·자기 자신·중복·순환)·대기 판정·후보, 저장·삭제·수신함 연결, 보내기 차단, 팝업 편집·선행 작업 선택 UI 회귀와 `office-task --after`·`--list`·수신함 `id`/`after` 파싱 단위 테스트를 추가했다. `npx tsc --noEmit`, 프런트 전체 2,944개, 네이티브 전체 1,660개, `npm run build` 통과. Chrome의 독립 로컬 프리뷰(합성 데이터·IPC)에서 상세 팝업 배치, 선행 작업 표시·순환 후보 제외, 막힌 보내기를 확인했다.
 - Windows 보내기(2026-10-13): Windows 11에서 셸 종류 판정·PowerShell 인용·경로 접두사 정리 단위 테스트, PowerShell 5.1·7과 Git Bash가 생성된 기동 스크립트를 실행해 ACK·반환 기록(BOM 없음, 종료 코드, 미존재 명령은 1)을 남기는지, 실제 PowerShell로 실행하는 기존 보내기 회귀(`work_send` 전체)를 확인했다. `cargo test --manifest-path src-tauri/Cargo.toml work_send_multiline_in_real_conpty_with_cli_double -- --ignored`: 실제 ConPTY에서 세 셸 모두 빈 셸 판정 → 작은따옴표 포함 모델 인자 기동 → ACK → 10초 대기 → 한글·이모지·탭·빈 줄·코드 블록 본문이 bracketed paste 한 번으로 그대로 도착함을 node 대역(raw 모드, bracketed paste 켬)으로 확인했다. 설치된 CLI나 LLM 계정은 사용하지 않는다.
 
 남은 실기 인수:
@@ -376,7 +395,7 @@ IPC 계약은 `src/shared/ipc.ts`와 `src/renderer/ipc/tauriApi.ts`의 로컬 �
 
 - 턴 종료만으로 자동 완료 처리. 완료는 항상 사람이 정한다.
 - 세션 종료 시 LLM 요약 생성(크레딧 소모).
-- 업무 여러 개를 순서대로 자동 배출하는 큐, 하위 업무, 마감일.
+- 선행 작업이 끝나면 후속 업무를 자동으로 보내는 큐, 하위 업무(계층), 마감일.
 - 외부 이슈 트래커(Gitea·kbm) 동기화. 봇 모드와는 별개다.
 - 우측 로그 항목 편집·삭제, 내보내기.
 - 웹 원격·마스코트 창에 패널 노출.

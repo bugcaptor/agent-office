@@ -87,6 +87,8 @@ agent-office ctl settings set typingSoundEnabled=false
 
 업무 패널을 켜면 앱이 띄운 에이전트 세션에 "다음 할 일 남기기" 안내가 덧붙습니다. 에이전트에게 "이건 다음 할 일로 남겨 줘"라고 하면 업무 목록에 할 일 카드가 생깁니다(기본 담당은 그 캐릭터). 보내기는 지금처럼 직접 누릅니다.
 
+"이 작업을 단계별 태스크로 나눠 줘"처럼 부탁하면 에이전트가 선행 작업을 걸어 순서 있는 태스크로 남깁니다. 카드를 눌러 여는 팝업의 **선행 작업**에서 직접 걸거나 뺄 수도 있습니다. 선행 작업이 모두 완료되기 전에는 카드에 대기 표시가 나오고 보내기가 막힙니다.
+
 다른 프로그램(cron, 스크립트, 다른 도구)도 같은 폴더에 파일을 넣어 할 일을 남길 수 있습니다.
 
 | OS | 수신함 폴더 |
@@ -95,7 +97,7 @@ agent-office ctl settings set typingSoundEnabled=false
 | Linux | `${XDG_DATA_HOME:-~/.local/share}/com.bugcaptor.agent-office/work-inbox/` |
 | Windows | `%APPDATA%\com.bugcaptor.agent-office\work-inbox\` |
 
-파일 하나가 할 일 하나입니다. UTF-8 `.md`, 64 KiB까지. 첫 줄(`# ` 생략 가능)이 제목, 나머지가 본문입니다. 담당 캐릭터는 선택 frontmatter의 `assignee`(이름 또는 id)로 정합니다. 쓰다 만 파일을 읽지 않도록 `.`으로 시작하는 임시 이름으로 쓴 뒤 `.md`로 바꾸세요.
+파일 하나가 할 일 하나입니다. UTF-8 `.md`, 64 KiB까지. 첫 줄(`# ` 생략 가능)이 제목, 나머지가 본문입니다. 담당 캐릭터는 선택 frontmatter의 `assignee`(이름 또는 id)로, 업무 id는 `id`로, 선행 작업은 `after`(쉼표로 구분한 업무 id)로 정합니다. 쓰다 만 파일을 읽지 않도록 `.`으로 시작하는 임시 이름으로 쓴 뒤 `.md`로 바꾸세요.
 
 ```bash
 inbox="$HOME/Library/Application Support/com.bugcaptor.agent-office/work-inbox"

@@ -102,14 +102,25 @@
     "promptInvalid": "包含不支援的控制字元或超過 256 KiB。",
     "modelInvalid": "模型名稱無效。",
     "effortInvalid": "此 CLI 不支援所選推理強度。",
-    "modelCatalog": "所選 agy 模型不在目前模型清單中。"
+    "modelCatalog": "所選 agy 模型不在目前模型清單中。",
+    "blocked": "請先完成所有前置任務再傳送。"
   },
   "resumeNewWork": "繼續編寫新任務",
   "add": "新增",
   "save": "儲存",
-  "collapseWork": "收合任務",
+  "collapseWork": "關閉",
   "titlePlaceholder": "標題可留空",
   "titleHint": "標題留空時，將正文開頭作為標題顯示。",
   "unsavedChanges": "未儲存的變更",
-  "saveBeforeSend": "請先儲存變更再傳送。"
+  "saveBeforeSend": "請先儲存變更再傳送。",
+  "dependsOn": "前置任務",
+  "missingWork": "已刪除的任務",
+  "removeDependency": "移除前置任務「{{title}}」",
+  "noDependencies": "無前置任務",
+  "addDependency": "新增前置任務…",
+  "noDependencyCandidates": "沒有可新增的任務",
+  "blockedBy": "等待前置任務：{{titles}}",
+  "dependents_one": "{{count}} 個後續任務在等待",
+  "dependents_other": "{{count}} 個後續任務在等待",
+  "newWorkTitle": "新任務"
 }

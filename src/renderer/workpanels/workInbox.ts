@@ -1,4 +1,4 @@
-import type { AgentProfile } from "@shared/types";
+import type { AgentProfile, InboxEntry } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
 import { useWorkItemStore } from "./workItemStore";
@@ -10,6 +10,9 @@ export function resolveAssignee(raw: string | undefined, profiles: Pick<AgentPro
   const matches = profiles.filter((profile) => profile.name.trim() === raw.trim());
   return matches.length === 1 ? matches[0].id : undefined;
 }
+
+/** `office-task`가 정해 출력한 id를 그대로 쓴다. 그래야 `--after`로 이을 수 있다. */
+export function inboxItemId(entry: Pick<InboxEntry, "id" | "key">): string { return entry.id ?? `inbox-${entry.key}`; }
 
 let timer: ReturnType<typeof setInterval> | undefined;
 let inFlight: Promise<void> | undefined;
@@ -25,13 +28,13 @@ async function receive(epoch: number): Promise<void> {
     if (useWorkItemStore.getState().error === "save") await useWorkItemStore.getState().flush();
     const profiles = Object.values(useAppStore.getState().agents);
     const accepted = new Set(useWorkItemStore.getState().importInbox(entries.map((entry) => ({
-      id: `inbox-${entry.key}`, title: entry.title, body: entry.body,
-      assigneeAgentId: resolveAssignee(entry.assignee, profiles),
+      id: inboxItemId(entry), title: entry.title, body: entry.body,
+      assigneeAgentId: resolveAssignee(entry.assignee, profiles), dependsOn: entry.after,
     }))));
     await useWorkItemStore.getState().flush();
     const state = useWorkItemStore.getState();
     if (!state.loaded || state.dirty || state.error) return;
-    const names = entries.filter((entry) => accepted.has(`inbox-${entry.key}`)).map((entry) => entry.fileName);
+    const names = entries.filter((entry) => accepted.has(inboxItemId(entry))).map((entry) => entry.fileName);
     if (names.length) await tauriApi.ackWorkInbox(names);
   } catch (error) { console.warn("work-inbox: receive failed", error); }
 }

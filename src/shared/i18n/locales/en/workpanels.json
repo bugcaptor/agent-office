@@ -102,14 +102,25 @@
     "promptInvalid": "The title or body contains unsupported control characters or exceeds 256 KiB.",
     "modelInvalid": "The model name is invalid.",
     "effortInvalid": "This CLI does not support the selected effort.",
-    "modelCatalog": "The requested agy model is not in its live model catalog."
+    "modelCatalog": "The requested agy model is not in its live model catalog.",
+    "blocked": "Finish all prerequisites before sending."
   },
   "resumeNewWork": "Resume new task",
   "add": "Add",
   "save": "Save",
-  "collapseWork": "Collapse task",
+  "collapseWork": "Close",
   "titlePlaceholder": "Optional title",
   "titleHint": "Leave the title empty to use the beginning of the body.",
   "unsavedChanges": "Unsaved changes",
-  "saveBeforeSend": "Save your changes before sending."
+  "saveBeforeSend": "Save your changes before sending.",
+  "dependsOn": "Prerequisites",
+  "missingWork": "Deleted task",
+  "removeDependency": "Remove prerequisite “{{title}}”",
+  "noDependencies": "No prerequisites",
+  "addDependency": "Add prerequisite…",
+  "noDependencyCandidates": "No tasks to add",
+  "blockedBy": "Waiting on: {{titles}}",
+  "dependents_one": "{{count}} task waiting on this",
+  "dependents_other": "{{count}} tasks waiting on this",
+  "newWorkTitle": "New task"
 }
