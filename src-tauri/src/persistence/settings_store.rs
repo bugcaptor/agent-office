@@ -2,9 +2,14 @@
 //
 // 앱 전역 설정(`settings.json`, Tauri app data dir) 영속화. 파일 부재 =
 // 첫 실행(first_run=true) — 렌더러가 첫 실행 동의 다이얼로그를 띄우는
-// 신호다. 파손/버전 불일치는 기본값(Claude 기능 OFF, 사운드 ON)으로 폴백하되 first_run은
-// false(파일이 존재했다는 것 자체가 온보딩 완료의 증거 — 유저를 온보딩으로
-// 다시 괴롭히지 않는다). 쓰기는 ProfileStore와 같은 temp+rename 원자 쓰기.
+// 신호다. 파일이 있는데 못 읽으면 first_run은 false(파일이 존재했다는 것 자체가
+// 온보딩 완료의 증거 — 유저를 온보딩으로 다시 괴롭히지 않는다).
+//
+// 손상 처리(수정 F5): 다음 설정 변경이 기본값으로 원본을 덮으므로, 못 읽은
+// 파일은 `settings.json.corrupt-<시각>`으로 보존하고 로그를 남긴다. JSON
+// 객체이고 버전이 1이면 필드 단위로 살린다 — 타입이 틀린 최상위 필드만
+// 기본값이 된다(`parse_settings`). JSON이 아니거나 버전이 다르면 전부 기본값.
+// 쓰기는 ProfileStore와 같은 fsync+rename 원자 쓰기(`durable::write_atomic`).
 //
 // 사운드 설정은 한 덩어리(`soundEnabled`)에서 타건음/알림음으로 쪼개졌다(한때
 // 셋째 갈래였던 알림 대사 TTS는 점검·정리 §7.D C23으로 제거). 파일에 새 키가
@@ -14,6 +19,8 @@
 
 use std::fs;
 use std::path::PathBuf;
+
+use super::durable::{self, CorruptBackup};
 
 fn default_true() -> bool {
     true
@@ -391,52 +398,101 @@ pub fn migrate_sound_keys(value: &mut serde_json::Value) {
     }
 }
 
+/// settings.json 바이트를 해석한다(순수). 문제가 있었으면 사유를 함께 돌려준다 —
+/// 사유가 Some이면 호출자는 원본을 백업하고 로그를 남긴다.
+///
+/// 전체 파싱이 실패하면 필드 단위로 구조한다: 버전만 든 객체에서 시작해 파일의
+/// 최상위 키를 하나씩 얹어 보고, 얹었을 때 파싱이 깨지는 키만 버린다(그 필드는
+/// serde 기본값). 기본값 객체가 아니라 빈 객체에서 시작하는 이유는 별칭
+/// (`claudeCliEnabled` 등)이 정식 키와 겹쳐 duplicate field가 나지 않게 하려는 것.
+/// 중첩 객체(`summaryModels`)는 통째로 한 필드로 다룬다.
+fn parse_settings(bytes: &[u8]) -> (AppSettings, Option<String>) {
+    let mut value = match serde_json::from_slice::<serde_json::Value>(bytes) {
+        Ok(v) => v,
+        Err(e) => return (AppSettings::default(), Some(format!("JSON 해석 실패: {e}"))),
+    };
+    migrate_sound_keys(&mut value);
+    let Some(obj) = value.as_object() else {
+        return (AppSettings::default(), Some("최상위가 JSON 객체가 아님".into()));
+    };
+    match obj.get("version").and_then(|v| v.as_u64()) {
+        Some(1) => {}
+        Some(v) => return (AppSettings::default(), Some(format!("지원하지 않는 버전 {v}"))),
+        None => return (AppSettings::default(), Some("version 필드가 없거나 숫자가 아님".into())),
+    }
+    if let Ok(settings) = serde_json::from_value::<AppSettings>(value.clone()) {
+        return (settings, None);
+    }
+
+    let parses = |m: &serde_json::Map<String, serde_json::Value>| {
+        serde_json::from_value::<AppSettings>(serde_json::Value::Object(m.clone())).ok()
+    };
+    let mut kept = serde_json::Map::new();
+    kept.insert("version".into(), 1.into());
+    let mut dropped = Vec::new();
+    for (key, v) in obj.iter().filter(|(k, _)| *k != "version") {
+        let mut candidate = kept.clone();
+        candidate.insert(key.clone(), v.clone());
+        if parses(&candidate).is_some() {
+            kept = candidate;
+        } else {
+            dropped.push(key.clone());
+        }
+    }
+    let mut settings = parses(&kept).unwrap_or_default();
+    // 모르는 provider(새 버전 앱이 쓴 값 등)를 Claude 기본값으로 바꿔 놓고
+    // 요약·일기를 켠 채 두면 사용자가 고르지 않은 provider의 크레딧을 쓴다.
+    if dropped.iter().any(|k| k == "summaryProvider") {
+        settings.summarizer_enabled = false;
+        settings.diary_enabled = false;
+    }
+    let reason = format!("값이 맞지 않는 필드를 기본값으로 대체: {}", dropped.join(", "));
+    (settings, Some(reason))
+}
+
 #[derive(Clone)]
 pub struct SettingsStore {
     file: PathBuf,
+    /// 이번 프로세스에서 만든 손상 원본 백업(클론끼리 공유).
+    backup: CorruptBackup,
 }
 
 impl SettingsStore {
     pub fn new(file: PathBuf) -> Self {
-        Self { file }
+        Self { file, backup: CorruptBackup::default() }
     }
 
     /// (설정, first_run). first_run은 "파일이 아예 없다"일 때만 true.
     ///
     /// 구조체로 바로 파싱하지 않고 `Value`를 한 번 거치는 이유는 레거시 키
-    /// 접기(`migrate_sound_keys`) 때문이다 —
+    /// 접기(`migrate_sound_keys`)와 필드 단위 구조(`parse_settings`) 때문이다 —
     /// serde의 필드 기본값은 **다른 필드 값을 볼 수 없으므로** 파생 매크로만으로는
     /// 표현할 수 없다.
     pub fn load(&self) -> (AppSettings, bool) {
-        match fs::read(&self.file) {
-            Ok(bytes) => {
-                let parsed = serde_json::from_slice::<serde_json::Value>(&bytes).map(|mut v| {
-                    migrate_sound_keys(&mut v);
-                    v
-                });
-                match parsed.and_then(serde_json::from_value::<AppSettings>) {
-                    Ok(s) if s.version == 1 => (s, false),
-                    _ => (AppSettings::default(), false),
-                }
+        let bytes = match fs::read(&self.file) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return (AppSettings::default(), true)
             }
-            Err(_) => (AppSettings::default(), true),
+            Err(e) => {
+                eprintln!("agent-office: settings.json을 읽을 수 없어 기본값을 씁니다: {e}");
+                return (AppSettings::default(), false);
+            }
+        };
+        let (settings, problem) = parse_settings(&bytes);
+        if let Some(reason) = problem {
+            let backup = match self.backup.backup(&self.file) {
+                Some(path) => format!(" (원본 보존: {})", path.display()),
+                None => String::new(),
+            };
+            eprintln!("agent-office: settings.json 손상 — {reason}{backup}");
         }
+        (settings, false)
     }
 
     pub fn save(&self, settings: &AppSettings) -> std::io::Result<()> {
-        if let Some(parent) = self.file.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let bytes = serde_json::to_vec_pretty(settings)?;
-        let tmp = self
-            .file
-            .with_file_name(format!("settings.json.tmp-{}", uuid::Uuid::new_v4()));
-        fs::write(&tmp, &bytes)?;
-        if let Err(e) = fs::rename(&tmp, &self.file) {
-            let _ = fs::remove_file(&tmp);
-            return Err(e);
-        }
-        Ok(())
+        durable::write_atomic(&self.file, &bytes)
     }
 }
 
@@ -539,33 +595,118 @@ mod tests {
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
-    #[test]
-    fn load_corrupt_file_returns_defaults_and_first_run_false() {
-        // 파손 파일은 기본값(전부 OFF)으로 안전 폴백하되, 온보딩을 다시
-        // 띄우지 않는다(first_run=false) — 파일이 존재했다는 사실 자체가
-        // 온보딩 완료의 증거.
+    fn corrupt_backups(file: &PathBuf) -> Vec<PathBuf> {
+        fs::read_dir(file.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| {
+                p.file_name().unwrap().to_str().unwrap().starts_with("settings.json.corrupt-")
+            })
+            .collect()
+    }
+
+    /// 손상 파일을 써 두고 로드한다. 원본 바이트가 백업에 그대로 보존되는지까지 본다.
+    fn load_raw(bytes: &[u8]) -> (PathBuf, AppSettings, bool, Vec<PathBuf>) {
         let file = scratch_file();
         fs::create_dir_all(file.parent().unwrap()).unwrap();
-        fs::write(&file, b"not json").unwrap();
-        let store = SettingsStore::new(file.clone());
-        let (s, first_run) = store.load();
+        fs::write(&file, bytes).unwrap();
+        let (s, first_run) = SettingsStore::new(file.clone()).load();
+        let backups = corrupt_backups(&file);
+        for backup in &backups {
+            assert_eq!(fs::read(backup).unwrap(), bytes, "backup holds the original bytes");
+        }
+        (file, s, first_run, backups)
+    }
+
+    #[test]
+    fn load_corrupt_file_returns_defaults_backs_up_and_first_run_false() {
+        // 파손 파일은 기본값(전부 OFF)으로 안전 폴백하되, 온보딩을 다시
+        // 띄우지 않는다(first_run=false) — 파일이 존재했다는 사실 자체가
+        // 온보딩 완료의 증거. 다음 저장이 덮기 전에 원본을 보존한다(수정 F5).
+        let (file, s, first_run, backups) = load_raw(b"not json");
         assert_eq!(s, AppSettings::default());
         assert!(!first_run);
+        assert_eq!(backups.len(), 1);
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn truncated_file_is_backed_up_before_the_next_save_overwrites_it() {
+        let mut edited = AppSettings::default();
+        edited.observer_enabled = true;
+        let full = serde_json::to_vec_pretty(&edited).unwrap();
+        let truncated = &full[..full.len() / 2];
+        let (file, s, _, backups) = load_raw(truncated);
+        assert_eq!(s, AppSettings::default());
+        assert_eq!(backups.len(), 1);
+
+        SettingsStore::new(file.clone()).save(&s).unwrap();
+        assert_eq!(fs::read(&backups[0]).unwrap(), truncated, "backup survives the save");
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn wrong_type_field_falls_back_alone_and_the_rest_survive() {
+        let (file, s, first_run, backups) = load_raw(
+            br#"{"version":1,"summarizerEnabled":true,"observerEnabled":true,
+                "soundVolume":"loud","attentionHoldMs":-1,"cliEnabled":true,
+                "mascotLightsProjects":["/a","/b"],"language":"ko"}"#,
+        );
+        assert!(!first_run);
+        assert!(s.summarizer_enabled);
+        assert!(s.observer_enabled);
+        assert!(s.cli_enabled);
+        assert_eq!(s.mascot_lights_projects, vec!["/a".to_string(), "/b".to_string()]);
+        assert_eq!(s.language, "ko");
+        assert_eq!(s.sound_volume, AppSettings::default().sound_volume);
+        assert_eq!(s.attention_hold_ms, AppSettings::default().attention_hold_ms);
+        assert_eq!(backups.len(), 1, "a partially broken file is backed up too");
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn wrong_type_nested_object_falls_back_as_a_whole() {
+        let (file, s, _, _) = load_raw(
+            br#"{"version":1,"diaryEnabled":true,"summaryModels":{"claude":{"light":5}}}"#,
+        );
+        assert!(s.diary_enabled);
+        assert_eq!(s.summary_models, SummaryModels::default());
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn salvage_keeps_legacy_alias_keys() {
+        let (file, s, _, _) = load_raw(
+            br#"{"version":1,"claudeCliEnabled":true,"claudeHooksEnabled":true,"soundVolume":[]}"#,
+        );
+        assert!(s.summarizer_enabled);
+        assert!(s.observer_enabled);
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn valid_file_is_not_backed_up_and_backup_is_made_once_per_process() {
+        let file = scratch_file();
+        let store = SettingsStore::new(file.clone());
+        store.save(&AppSettings::default()).unwrap();
+        store.load();
+        assert!(corrupt_backups(&file).is_empty());
+
+        fs::write(&file, b"{broken").unwrap();
+        store.load();
+        store.clone().load();
+        assert_eq!(corrupt_backups(&file).len(), 1);
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
     #[test]
     fn load_unknown_version_returns_defaults_and_first_run_false() {
-        let file = scratch_file();
-        fs::create_dir_all(file.parent().unwrap()).unwrap();
-        fs::write(
-            &file,
+        let (file, s, first_run, backups) = load_raw(
             br#"{"version":2,"claudeCliEnabled":true,"claudeHooksEnabled":true}"#,
-        )
-        .unwrap();
-        let store = SettingsStore::new(file.clone());
-        let (s, _) = store.load();
+        );
         assert_eq!(s, AppSettings::default());
+        assert!(!first_run);
+        assert_eq!(backups.len(), 1);
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
@@ -755,15 +896,18 @@ mod tests {
             SummaryProvider::Claude
         );
 
+        // 모르는 provider는 그 필드만 기본값이 되지만, 고르지 않은 provider로
+        // 크레딧을 쓰지 않도록 요약·일기는 꺼진다. 나머지 필드는 살아남는다.
         fs::write(
             &file,
-            br#"{"version":1,"summarizerEnabled":true,"summaryProvider":"unknown","observerEnabled":true}"#,
+            br#"{"version":1,"summarizerEnabled":true,"diaryEnabled":true,"summaryProvider":"unknown","observerEnabled":true}"#,
         )
         .unwrap();
-        assert_eq!(
-            SettingsStore::new(file.clone()).load().0,
-            AppSettings::default()
-        );
+        let loaded = SettingsStore::new(file.clone()).load().0;
+        assert_eq!(loaded.summary_provider, SummaryProvider::Claude);
+        assert!(!loaded.summarizer_enabled);
+        assert!(!loaded.diary_enabled);
+        assert!(loaded.observer_enabled);
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 

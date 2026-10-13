@@ -16,8 +16,8 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
+use super::durable::{self, CorruptBackup};
 use crate::types::PersistedState;
 
 /// 이 빌드가 읽고 쓰는 profiles.json 스키마 버전.
@@ -99,14 +99,13 @@ fn migrate_loaded(mut state: PersistedState) -> PersistedState {
 #[derive(Clone)]
 pub struct ProfileStore {
     file: PathBuf,
-    /// 이번 프로세스에서 만든 손상 원본 백업. 클론(AppState·control)끼리
-    /// 공유해 로드할 때마다 백업이 쌓이지 않게 한다.
-    backup: Arc<Mutex<Option<PathBuf>>>,
+    /// 이번 프로세스에서 만든 손상 원본 백업(클론끼리 공유).
+    backup: CorruptBackup,
 }
 
 impl ProfileStore {
     pub fn new(file: PathBuf) -> Self {
-        Self { file, backup: Arc::new(Mutex::new(None)) }
+        Self { file, backup: CorruptBackup::default() }
     }
 
     /// 디스크 파일을 읽어 해석만 한다(부작용 없음). 파일이 없으면 Ok(None).
@@ -131,7 +130,7 @@ impl ProfileStore {
             Ok(Some(state)) => Ok(migrate_loaded(state)),
             Ok(None) => Ok(PersistedState::empty()),
             Err(reason) => {
-                let backup = self.backup_corrupt();
+                let backup = self.backup.backup(&self.file);
                 let err = ProfileLoadError { reason, backup };
                 eprintln!("agent-office: {err}");
                 Err(err)
@@ -145,40 +144,11 @@ impl ProfileStore {
         self.try_load().unwrap_or_else(|_| PersistedState::empty())
     }
 
-    /// 손상 원본을 `<name>.corrupt-<시각>`으로 복사한다(원본은 그대로 둔다).
-    /// 프로세스당 한 번 — 이미 만든 백업이 남아 있으면 그 경로를 돌려준다.
-    fn backup_corrupt(&self) -> Option<PathBuf> {
-        let mut made = self.backup.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(path) = made.as_ref().filter(|p| p.exists()) {
-            return Some(path.clone());
-        }
-        let name = self.file_name();
-        let stamp = chrono::Local::now().format("%Y%m%dT%H%M%S");
-        let path = self.file.with_file_name(format!("{name}.corrupt-{stamp}"));
-        match fs::copy(&self.file, &path) {
-            Ok(_) => {
-                *made = Some(path.clone());
-                Some(path)
-            }
-            Err(e) => {
-                eprintln!("agent-office: profiles.json 백업 실패: {e}");
-                None
-            }
-        }
-    }
-
-    fn file_name(&self) -> &str {
-        self.file
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("profiles.json")
-    }
-
     /// Serializes `state` as pretty JSON, creating the parent directory first
     /// if it does not exist yet. The write is atomic: the bytes go to a
-    /// temp file in the *same* directory, then `rename` swaps it into place, so
-    /// a crash mid-write can never leave a truncated `profiles.json` — a reader
-    /// sees either the old file or the fully-written new one.
+    /// temp file in the *same* directory, is fsynced, then `rename` swaps it
+    /// into place, so a crash or power loss mid-write can never leave a
+    /// truncated or empty `profiles.json` (수정 F5).
     ///
     /// 디스크의 파일이 읽히지 않는 동안에는 쓰지 않는다 — 렌더러가 빈 상태로
     /// 부팅했더라도 손상 원본을 덮어쓰지 못하게 하는 마지막 방어선이다.
@@ -188,27 +158,8 @@ impl ProfileStore {
                 "profiles.json을 읽을 수 없어 저장하지 않았습니다: {reason}"
             )));
         }
-        if let Some(parent) = self.file.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let bytes = serde_json::to_vec_pretty(state)?;
-        let tmp = self.tmp_path();
-        fs::write(&tmp, &bytes)?;
-        // rename within the same dir is atomic on the platforms we target.
-        if let Err(e) = fs::rename(&tmp, &self.file) {
-            let _ = fs::remove_file(&tmp); // don't leak the temp on failure
-            return Err(e);
-        }
-        Ok(())
-    }
-
-    /// A unique sibling temp path in the same directory as `self.file` (same
-    /// dir is required for `rename` to be atomic rather than a cross-device
-    /// copy). uuid keeps concurrent saves from clobbering each other's temp.
-    fn tmp_path(&self) -> PathBuf {
-        let name = self.file_name();
-        self.file
-            .with_file_name(format!("{name}.tmp-{}", uuid::Uuid::new_v4()))
+        durable::write_atomic(&self.file, &bytes)
     }
 }
 
