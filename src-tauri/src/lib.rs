@@ -405,6 +405,13 @@ pub fn run() {
             std::thread::spawn(|| {
                 shell_export::gc_old_exports(std::time::Duration::from_secs(7 * 24 * 3600))
             });
+            // `office-task` shim은 세션 준비 때만 쓰므로, 떠 있는 세션이 OS temp 청소로
+            // 경로를 잃지 않게 5초마다 확인해 되살린다(없거나 내용이 다를 때만 쓴다).
+            work_inbox_cli::spawn_shim_keeper(
+                work_inbox_cli::shim_path(),
+                forwarder_executable_path(),
+                Duration::from_secs(5),
+            );
             // AppState가 갖는 캐시와 동일한 Arc를 observer URL getter 생성 전에
             // 만든다 -- 아래 getter가 이 Arc를 clone해 쥐고 있어야
             // set_app_settings의 실행 중 설정 변경(특히 ON→OFF)이 새 세션의

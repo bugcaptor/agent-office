@@ -252,7 +252,7 @@ assignee: 하나
 
 ### `office-task` 명령
 
-앱이 띄운 세션의 에이전트가 수신함 규약을 쓰는 도구다. OS temp의 `agent-office/bin/office-task`(Windows는 `.cmd`) shim이 앱 바이너리의 오프라인 서브커맨드 `agent-office task`를 실행한다. GUI·control 서버·토큰이 필요 없어 CLI 제어가 꺼져 있어도 동작한다. shim은 세션 준비마다 다시 쓴다.
+앱이 띄운 세션의 에이전트가 수신함 규약을 쓰는 도구다. OS temp의 `agent-office/bin/office-task`(Windows는 `.cmd`) shim이 앱 바이너리의 오프라인 서브커맨드 `agent-office task`를 실행한다. GUI·control 서버·토큰이 필요 없어 CLI 제어가 꺼져 있어도 동작한다. shim은 세션 준비마다 다시 쓰고, 앱이 떠 있는 동안 5초마다 확인해 없거나 내용이 다르면 되살린다(OS temp 청소로 떠 있는 세션이 경로를 잃지 않게).
 
 ```
 office-task [--to <이름|id> | --unassigned] [--after <id>]... <제목> [본문 | -]
