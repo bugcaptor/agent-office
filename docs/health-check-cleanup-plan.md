@@ -1,6 +1,6 @@
 # 프로젝트 점검·기능 정리 계획
 
-- 상태: 진행 중 (2026-10-14) — A·B·C·D 기록, G 실행 중(§7)
+- 상태: 진행 중 (2026-10-14) — A·B·C·D 기록, G 완료(§7.G, 14건)
 - 목적: 프로젝트의 문제점을 찾아 줄을 세우고, 잘 쓰지 않게 된 기능을 골라 제거해 유지 비용을 줄인다.
 - 실행 단위: agent office 업무 보드 태스크(§6). 각 태스크 본문이 이 문서의 절을 가리킨다.
 
@@ -438,9 +438,6 @@ H 메모: D4~D6·D9·D10은 기계적 수정, D2·D3·D11·S2~S5는 사실 확�
 | C30 봇 | t-b7948eb9 | — | 주입 표지(`BotPromptArms`)는 C1이 쓰므로 남기고, 우수사원의 봇 시간 차감 규칙 정리 |
 | C29 자동화 | t-5521dd4b | C30 | `cli_transition.rs`·`automation-cli-returns/`는 C1 쪽으로 옮겨 남김 |
 | C26 동료 대화 | t-3c623ead | — | |
-| C23 TTS | t-be4fc2c6 | `src-tauri/src/tts/`(리라이트·ElevenLabs 합성·보이스 캐스팅·CLI 리라이트)·IPC `tts_*`·`tts*` 설정 4개와 마이그레이션·`AgentProfile.voiceId`·렌더러 발화 큐(`voiceQueue`)·`playVoice`·설정 `TtsSection`·프로필 `VoiceField`·백엔드 오류 코드 4개·i18n `settings.tts`/`profile.voice` 삭제. 요약기(Anthropic·OpenRouter)가 같이 쓰던 키 저장소는 `key_store.rs`(`ApiKeyStore`)로 떼어 IPC `api_key_status`/`set_api_keys`로 남김 — 파일 이름 `tts-keys.json`은 저장된 키 호환을 위해 유지하고 옛 `elevenlabs` 칸은 다음 저장에서 사라진다. 설정 탭 이름 "소리·음성"→"소리". Anthropic 키 입력 UI는 TTS 섹션에만 있었으므로 함께 사라졌다(저장값·`ANTHROPIC_API_KEY` env는 계속 쓰임) |
-| C43 agy 사용량 | t-4992ad62 | `usage/antigravity_live.rs`(`agy -p /usage` print 모드 조회)·`Provider::Antigravity`·스냅샷 `antigravity`/`antigravityLive` 필드와 계약 픽스처·렌더러 `describeAntigravityLiveStatus`/AG 뱃지/다이얼로그 갈래·i18n `usage.antigravityLive`·`usage.dialog.empty.antigravity` 삭제. 폴링마다(최대 15분 간격) 띄우던 `agy` print 모드 프로세스가 없어져 그 로그 누적도 멈춘다(요약 provider를 agy로 둔 경우의 요약 호출은 남음). agy 훅·이어하기·턴 토큰 집계·요약 provider·감지는 유지 |
-| C46 Gemini 사용량 | t-c2d60217 | `usage/gemini_live.rs`(Code Assist `retrieveUserQuota` 직접 조회·Keychain/파일 자격증명 읽기·토큰 갱신)·`Provider::Gemini`·스냅샷 `gemini`/`geminiLive` 필드와 계약 픽스처·`load_usage_snapshot_with_live`의 `home` 인자·렌더러 `describeGeminiLiveStatus`/GM 뱃지/다이얼로그 갈래·i18n `usage.geminiLive`·`usage.dialog.empty.gemini` 삭제. C12 사용량은 Claude·Codex만 남는다. 라벨만 있는 `unknown` 창 표기와 Gemini 요율표(agy 추정 비용이 씀)는 일반 기능이라 유지. Gemini 요약 provider·감지는 유지 |
 | C23 TTS | t-be4fc2c6 | — | |
 | C40 VSCode 확장 | t-013c2b3c | — | AGENTS.md·§1의 vscode-ext 검증 안내도 갱신 |
 | C27 호감도 | t-325c7ff6 | — | 문서만 |
@@ -464,3 +461,13 @@ H 메모: D4~D6·D9·D10은 기계적 수정, D2·D3·D11·S2~S5는 사실 확�
 | C30 봇 모드 | t-b7948eb9 | `src-tauri/src/bot/`·IPC `bot_*`·`AgentProfile.bot`/`BotConfig`·`BotStatus`류와 계약 픽스처·자동화/업무 보내기의 봇 상호 배제 분기·`GITEA_*` env 캡처·렌더러 봇 메뉴/오버레이/배지/입력 잠금(`isBotDriven`·`imeBridge.inputBlocked`)·맨 셸 가드 확인창·프로필 봇 입력칸·i18n 삭제. 주입 헬퍼 `single_line`/`INJECT_SUBMIT_DELAY_MS`는 `session/inject.rs`로 옮김. 기계 주입 표식(`BotPromptArms`·`origin:"bot"`)은 업무 보내기·자동화·동료 대화가 계속 다는 것이라 유지(값 이름은 저장 기록 호환). 우수사원의 차감 규칙도 그 표식 기준이라 유지하고, 열 제목만 "봇 제외"→"자동 입력 제외"로 바꿈 |
 | C29 터미널 자동화 | t-5521dd4b | `src-tauri/src/automation/`(정의·러너·저장소·마커)·IPC `automation_*` 15개·`Automation*` 타입과 계약 픽스처/테스트·렌더러 자동화 팔레트·배너·타임아웃 결정창·탭 배지/폴링·스토어 슬라이스·부팅 시드·i18n 삭제. 업무 보내기(C1)가 쓰던 `cli_transition.rs`와 기동 문장 생성(`launch_command_for`·effort 검증)은 `work_send/{cli_transition,launch}.rs`로 옮기고, 모델 목록 IPC는 `work_agent_models`로 바꿈. 기동 receipt 디렉터리 `automation-cli-returns/`는 일회성 파일이라 이름을 그대로 둠(에러 코드 `automation-*`도 렌더러 카탈로그와 맞물려 유지). 주입 출처는 `InjectSource::{Talk, WorkSend}`만 남김. C30이 남긴 봇 CSS도 정리 |
 | C26 동료 대화 | t-3c623ead | `src-tauri/src/talk/`·`control/talk.rs`·`/v1/talk/*`·`ctl talk`(+세션 신원 헤더·롱폴링)·IPC `talk_*`·`TalkEvent`/`talk-message`·`talk*` 설정 3개·`AgentProfile.talkReceive`·세션 유휴 추적(`idle_ms`)·렌더러 대화 로그/설정/하단 바 대화 항목/프로필 수신 체크·오피스 말풍선(`TextBubbleOverlay`) 삭제. `office-task` shim이 함께 쓰던 권한 전용 설정 파일·원자 쓰기 헬퍼는 `office_instructions.rs`로, 세션 배선은 `SessionManager::with_office_settings`로 옮김. 기존 앱 데이터의 `talks/`·`claude-plugin/`과 OS temp의 `office-talk` shim은 읽는 코드가 없는 잔여물로 남는다(E 입력) |
+| C23 TTS | t-be4fc2c6 | `src-tauri/src/tts/`(리라이트·ElevenLabs 합성·보이스 캐스팅·CLI 리라이트)·IPC `tts_*`·`tts*` 설정 4개와 마이그레이션·`AgentProfile.voiceId`·렌더러 발화 큐(`voiceQueue`)·`playVoice`·설정 `TtsSection`·프로필 `VoiceField`·백엔드 오류 코드 4개·i18n `settings.tts`/`profile.voice` 삭제. 요약기(Anthropic·OpenRouter)가 같이 쓰던 키 저장소는 `key_store.rs`(`ApiKeyStore`)로 떼어 IPC `api_key_status`/`set_api_keys`로 남김 — 파일 이름 `tts-keys.json`은 저장된 키 호환을 위해 유지하고 옛 `elevenlabs` 칸은 다음 저장에서 사라진다. 설정 탭 이름 "소리·음성"→"소리". Anthropic 키 입력 UI는 TTS 섹션에만 있었으므로 함께 사라졌다(저장값·`ANTHROPIC_API_KEY` env는 계속 쓰임) |
+| C43 agy 사용량 | t-4992ad62 | `usage/antigravity_live.rs`(`agy -p /usage` print 모드 조회)·`Provider::Antigravity`·스냅샷 `antigravity`/`antigravityLive` 필드와 계약 픽스처·렌더러 `describeAntigravityLiveStatus`/AG 뱃지/다이얼로그 갈래·i18n `usage.antigravityLive`·`usage.dialog.empty.antigravity` 삭제. 폴링마다(최대 15분 간격) 띄우던 `agy` print 모드 프로세스가 없어져 그 로그 누적도 멈춘다(요약 provider를 agy로 둔 경우의 요약 호출은 남음). agy 훅·이어하기·턴 토큰 집계·요약 provider·감지는 유지 |
+| C46 Gemini 사용량 | t-c2d60217 | `usage/gemini_live.rs`(Code Assist `retrieveUserQuota` 직접 조회·Keychain/파일 자격증명 읽기·토큰 갱신)·`Provider::Gemini`·스냅샷 `gemini`/`geminiLive` 필드와 계약 픽스처·`load_usage_snapshot_with_live`의 `home` 인자·렌더러 `describeGeminiLiveStatus`/GM 뱃지/다이얼로그 갈래·i18n `usage.geminiLive`·`usage.dialog.empty.gemini` 삭제. C12 사용량은 Claude·Codex만 남는다. 라벨만 있는 `unknown` 창 표기와 Gemini 요율표(agy 추정 비용이 씀)는 일반 기능이라 유지. Gemini 요약 provider·감지는 유지 |
+
+**G 마무리(2026-10-14).** 14건 모두 로컬 커밋(푸시 안 함). 매 커밋마다 `npx tsc --noEmit`·`npx vitest run --dir src`·`cargo test` 통과, `cargo check --tests` 새 경고 없음.
+
+E·H로 넘기는 것:
+- **앱 데이터 잔여물(읽는 코드 없음)**: `talks/`, `claude-plugin/`, OS temp의 `office-talk` shim, peer 파일(C38). `tts-keys.json`은 요약기 키 저장소로 계속 쓰이므로 잔여물이 아니다. `automation-cli-returns/`는 업무 보내기가 이름 그대로 쓴다.
+- **UI 공백**: Anthropic API 키 입력칸이 TTS 섹션에만 있었다. 저장된 키와 `ANTHROPIC_API_KEY` env는 계속 쓰이지만(요약기·Claude 모델 목록), 앱 안에서 새로 넣거나 지울 곳이 없다. 필요하면 요약 탭에 OpenRouter처럼 칸을 두는 후속 작업.
+- **문서**: `subsystem-*`·`usage-design`·`antigravity-support-design` 등 정본에 남은 제거 기능 서술은 H에서 정리.
