@@ -406,7 +406,7 @@ H 메모: D4~D6·D9·D10은 기계적 수정, D2·D3·D11·S2~S5는 사실 확�
 #### 7.C.3 부수 관찰 (E 입력)
 
 - `<ad>/peer-tokens.json`은 읽는 코드가 없는 고아 파일이다(C38).
-- 점검 A 시험 잔여: `<ad>/worklogs/atest-probe*.json`, `<ad>/session-logs/v1/atest-probe*/`가 남아 있다(§7.A.3 정리 범위 밖).
+- 점검 A 시험 잔여: `<ad>/worklogs/atest-probe*.json`, `<ad>/session-logs/v1/atest-probe*/`가 남아 있었다(§7.A.3 정리 범위 밖) → 사용자 승인으로 삭제함(2026-10-13).
 - `~/.gemini/antigravity-cli/log/`에 print 모드(프롬프트 6자) 실행 로그가 하루 60~150개, 누적 2,134개·52 MB 쌓여 있다. 앱의 agy 실시간 사용량 조회(`usage/antigravity_live.rs`, 실행당 `agy` 기동)로 보이나 호출 주기는 확인하지 않았다(성능·자원 관점).
 - `diaryEnabled`·`summarizerEnabled`는 크레딧을 쓰는 opt-in인데 둘 다 켜져 있다 — 요약기 비용은 §7.A.2의 `opencode run` 빈도와 함께 E에서 본다.
 - `automation-cli-returns/`는 이름과 달리 10월 항목이 업무 보내기(C1)의 기동 receipt다. 자동화(C29)를 정리할 때 디렉터리 이름·모듈 위치를 같이 정해야 한다.
