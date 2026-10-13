@@ -1,6 +1,6 @@
 # 사용자 정의 터미널 입력 자동화
 
-상태: **v1 단일 CLI 및 v2 순차 CLI 전환 구현** (2026-09-08).
+상태: 이력(archived, 2026-10-14) — v1 단일 CLI 및 v2 순차 CLI 전환 구현(2026-09-08) 후 실행 기록이 09-08~09에서 멈춰 제거(점검·정리 계획 §7.D C29). 업무 보내기가 빌려 쓰던 CLI 기동 receipt(`cli_transition.rs`, 디렉터리 `automation-cli-returns/`)와 기동 문장 생성은 `src-tauri/src/work_send/`로 옮겨 남겼다.
 이슈: KBM [#2t9](https://zgpdlx.tailc90d0d.ts.net:8444/t/2t9).
 
 같은 탭·PTY에서 CLI를 유지하는 v1과, CLI 반환을 확인한 뒤 다음 CLI를 기동하는 v2를 지원한다. 자동 반환은 직접 생성한 빈 bash/zsh 세션에서 지원한다. 검증 환경과 실행 제한은 아래 [CLI 전환과 반환 확인](#cli-전환과-반환-확인)을 따른다.

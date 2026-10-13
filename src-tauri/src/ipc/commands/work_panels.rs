@@ -21,16 +21,15 @@ fn validate_target(app_state: &AppState, agent_id: &str) -> Result<(), String> {
     {
         return Err("work-send-profile-unsupported".into());
     }
-    if app_state
-        .automation_runtime
-        .status()
-        .agents
-        .get(agent_id)
-        .is_some_and(|a| a.running)
-    {
-        return Err("work-send-producer-running".into());
-    }
     Ok(())
+}
+
+/// 업무 기본 에이전트의 모델 칸에 띄울 추천 목록. 그 CLI가 현재 로그인한
+/// 계정에서 읽어 온다. 실행 허용 목록이 아니다 — 목록에 없는 사용자 별칭도
+/// 그대로 실행에 넘긴다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn work_agent_models(cli: String) -> Result<Vec<String>, String> {
+    Ok(crate::summarizer::list_cli_models(&cli).await)
 }
 #[tauri::command(rename_all = "camelCase")]
 pub async fn inspect_work_send_target(
@@ -52,7 +51,7 @@ pub async fn send_work_item(
         .work_send_runtime
         .send(
             &app_state.gate,
-            app_state.automation_store.app_data_dir().to_path_buf(),
+            app_state.app_data_dir.clone(),
             request,
         )
         .await
@@ -60,11 +59,11 @@ pub async fn send_work_item(
 
 #[tauri::command]
 pub fn scan_work_inbox(app_state: State<'_, AppState>) -> Result<Vec<crate::persistence::work_inbox::InboxEntry>, String> {
-    crate::persistence::work_inbox::scan(&app_state.automation_store.app_data_dir().join("work-inbox"), std::time::SystemTime::now())
+    crate::persistence::work_inbox::scan(&app_state.app_data_dir.join("work-inbox"), std::time::SystemTime::now())
 }
 #[tauri::command(rename_all = "camelCase")]
 pub fn ack_work_inbox(file_names: Vec<String>, app_state: State<'_, AppState>) -> Result<(), String> {
-    crate::persistence::work_inbox::ack(&app_state.automation_store.app_data_dir().join("work-inbox"), &file_names)
+    crate::persistence::work_inbox::ack(&app_state.app_data_dir.join("work-inbox"), &file_names)
 }
 
 /// 업무 목록 내보내기. 직렬화는 렌더러가 하고, 여기서는 고른 위치에 쓰기만 한다.

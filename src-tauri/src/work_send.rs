@@ -1,8 +1,9 @@
 //! 업무 보내기: CLI 기동/ACK/10초 대기/첫 프롬프트만 수행한다.
 //! 결과 파일 감시·CLI 종료는 없다. 세션과 사람 revision을 모든 입력 전에 고정한다.
-use crate::automation::cli_transition::{
-    CliTransition, CommandSyntax, LaunchShell, ReceiptRead, StartedRead,
-};
+pub(crate) mod cli_transition;
+mod launch;
+
+use cli_transition::{CliTransition, CommandSyntax, LaunchShell, ReceiptRead, StartedRead};
 use crate::session::inject::{
     InjectGate, InjectSource, InputSink, StrictOutcome, StrictSubmitRequest,
 };
@@ -150,7 +151,7 @@ impl WorkSendRuntime {
         // agy는 실제 설치 CLI의 정확한 모델 ID만 허용한다(기존 자동화와 동일).
         if let WorkCli::Agy = request.agent.cli {
             if let Some(model) = &request.agent.model {
-                let models = crate::summarizer::list_automation_agy_models().await;
+                let models = crate::summarizer::list_agy_models().await;
                 if models.is_empty() {
                     return Err("automation-agy-model-catalog-unavailable".into());
                 }
@@ -180,7 +181,7 @@ impl WorkSendRuntime {
                 &owner,
                 StrictSubmitRequest {
                     text: launch.command(),
-                    source: InjectSource::Automation,
+                    source: InjectSource::WorkSend,
                     expected_generation: generation,
                     expected_human_input_revision: request.human_input_revision,
                     cancelled: &cancel,
@@ -219,7 +220,7 @@ impl WorkSendRuntime {
                 &owner,
                 StrictSubmitRequest {
                     text: &prompt,
-                    source: InjectSource::Automation,
+                    source: InjectSource::WorkSend,
                     expected_generation: generation,
                     expected_human_input_revision: request.human_input_revision,
                     cancelled: &cancel,
@@ -255,7 +256,7 @@ pub fn validated_command(agent: &WorkAgent, syntax: CommandSyntax) -> Result<Str
         WorkCli::Kilo => "kilo",
         WorkCli::Pi => "pi",
     };
-    crate::automation::definition_runner::launch_command_for(
+    launch::launch_command_for(
         cli,
         agent.model.as_deref(),
         agent.effort.as_deref(),
@@ -620,7 +621,7 @@ mod tests {
                 "work-send-busy"
             );
             assert_eq!(
-                gate.submit("a", "s", "bot", InjectSource::Bot).await,
+                gate.submit("a", "s", "talk", InjectSource::Talk).await,
                 SubmitOutcome::Deferred(PendingReason::AnotherProducer)
             );
             runtime.stop("a");

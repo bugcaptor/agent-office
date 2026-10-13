@@ -8,9 +8,11 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use uuid::Uuid;
 
+// 터미널 입력 자동화(제거됨)가 처음 만든 디렉터리 이름을 그대로 쓴다 — 기동
+// receipt는 그 실행 동안만 쓰는 일회성 파일이라 옮길 이유가 없다.
 const RECEIPT_DIR: &str = "automation-cli-returns";
 const RECEIPT_FILE: &str = "return.json";
 const STARTED_FILE: &str = "started.json";
@@ -63,16 +65,6 @@ impl LaunchShell {
         }
         None
     }
-}
-
-/// UI 미리보기와 실행 전 검증이 공유하는, 실제 세션 셸 기반 capability다.
-/// Windows/attach/tmux/미식별 셸은 추측으로 auto를 켜지 않는다.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CliTransitionCapability {
-    pub shell_path: Option<String>,
-    pub auto_return_supported: bool,
-    pub unavailable_reason: Option<String>,
 }
 
 /// 한 번의 LaunchCli 제출에만 유효한 receipt 정보.
@@ -148,26 +140,8 @@ impl CliTransition {
         Self { app_data_dir }
     }
 
-    pub fn capability_for_shell_path(shell_path: Option<&str>) -> CliTransitionCapability {
-        let Some(shell_path) = shell_path else {
-            return CliTransitionCapability {
-                shell_path: None,
-                auto_return_supported: false,
-                unavailable_reason: Some("automation-cli-return-shell-unverified".into()),
-            };
-        };
-        // 자동화 v2는 Unix bash/zsh만 검증했다. Windows 셸은 업무 보내기만 쓴다.
-        let posix_supported = LaunchShell::for_shell_path(shell_path) == Some(LaunchShell::Posix);
-        CliTransitionCapability {
-            shell_path: Some(shell_path.to_string()),
-            auto_return_supported: posix_supported,
-            unavailable_reason: (!posix_supported)
-                .then_some("automation-cli-return-shell-unsupported".into()),
-        }
-    }
-
-    /// 앱 소유 디렉터리를 준비하고 POSIX 동기 호출 + atomic receipt writer를 만든다.
-    /// 호출자는 먼저 `capability_for_shell_path`로 현재 세션의 지원 여부를 확인한다.
+    /// 테스트용: POSIX 셸의 동기 호출 + atomic receipt writer를 만든다.
+    #[cfg(test)]
     pub fn prepare_posix_launch(
         &self,
         session_id: &str,
@@ -568,20 +542,6 @@ mod tests {
     }
 
     #[test]
-    fn capability_only_enables_direct_posix_bash_or_zsh() {
-        assert_eq!(
-            CliTransition::capability_for_shell_path(Some("/bin/bash")).auto_return_supported,
-            cfg!(unix)
-        );
-        assert_eq!(
-            CliTransition::capability_for_shell_path(Some("/bin/zsh")).auto_return_supported,
-            cfg!(unix)
-        );
-        assert!(!CliTransition::capability_for_shell_path(Some("/bin/sh")).auto_return_supported);
-        assert!(!CliTransition::capability_for_shell_path(None).auto_return_supported);
-    }
-
-    #[test]
     fn rejects_invalid_identifiers_and_receipt_symlink() {
         let (_dir, adapter) = adapter();
         assert!(adapter
@@ -787,11 +747,6 @@ mod tests {
         expect(r"C:\Program Files\PowerShell\7\PWSH.EXE", None, Some(LaunchShell::PowerShell));
         expect("powershell.exe", None, Some(LaunchShell::PowerShell));
         expect(r"C:\Windows\System32\wsl.exe", None, None);
-        // 자동화 v2 capability는 Windows 셸을 켜지 않는다.
-        assert!(
-            !CliTransition::capability_for_shell_path(Some(r"C:\Program Files\Git\bin\bash.exe"))
-                .auto_return_supported
-        );
         assert_eq!(LaunchShell::GitBash.syntax(), CommandSyntax::Posix);
         assert_eq!(LaunchShell::PowerShell.syntax(), CommandSyntax::PowerShell);
     }

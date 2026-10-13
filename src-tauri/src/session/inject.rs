@@ -3,7 +3,7 @@
 // 사용자 정의 터미널 입력 자동화 관문 (kbm #2t9 Phase 2).
 //
 // 역할:
-// - 자동 입력 생산자(Talk, Automation, 업무 보내기) 간 상호 배타 보장.
+// - 자동 입력 생산자(동료 대화, 업무 보내기) 간 상호 배타 보장.
 // - 본문 -> 150ms -> CR 직렬화 구간 동안 들어오는 사람 입력을 버리지 않고 큐잉 후 전달.
 // - 미제출(uncommitted) 사람 입력이 있을 때 자동 제출 보류(최대 2분).
 // - 사람이 직접 입력·제출한 횟수(human_input_epoch) 추적으로 마커 뒤 예약 제출 무효화 지원.
@@ -45,9 +45,8 @@ pub fn now_ms() -> u64 {
 /// 자동 입력의 출처.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InjectSource {
-    Bot,
     Talk,
-    Automation,
+    WorkSend,
 }
 
 /// 제출을 미룬 이유 (배너 문구로 노출).
@@ -178,6 +177,7 @@ impl InputSink for ManagerSink {
 }
 
 /// 테스트용 기록 싱크.
+#[cfg(test)]
 #[derive(Default)]
 pub struct RecordingSink {
     pub writes: Mutex<Vec<(String, String, u64)>>,
@@ -187,6 +187,7 @@ pub struct RecordingSink {
     pub shell_paths: Mutex<HashMap<String, String>>,
 }
 
+#[cfg(test)]
 impl RecordingSink {
     pub fn set_session(&self, agent_id: &str, session_id: &str) {
         self.sessions
@@ -196,12 +197,6 @@ impl RecordingSink {
 
     pub fn set_running(&self, agent_id: &str, running: bool) {
         self.running.lock().insert(agent_id.to_string(), running);
-    }
-
-    pub fn set_cwd(&self, agent_id: &str, cwd: &str) {
-        self.cwds
-            .lock()
-            .insert(agent_id.to_string(), cwd.to_string());
     }
 
     pub fn set_shell_path(&self, agent_id: &str, shell_path: &str) {
@@ -215,6 +210,7 @@ impl RecordingSink {
     }
 }
 
+#[cfg(test)]
 impl InputSink for RecordingSink {
     fn write(&self, agent_id: &str, data: &str) {
         self.writes
@@ -445,7 +441,7 @@ impl InjectGate {
         if inner.generation != expected_generation {
             return Err(TransitionAcquireOutcome::GenerationChanged);
         }
-        inner.holder = Some(InjectSource::Automation);
+        inner.holder = Some(InjectSource::WorkSend);
         // 전환을 기다리는 동안 사람 입력은 직접 전달한다.
         inner.queue_human_while_held = false;
         drop(inner);
@@ -832,7 +828,7 @@ mod tests {
         let submit_gate = gate.clone();
         let handle = tokio::spawn(async move {
             submit_gate
-                .submit("a1", "s1", "prompt", InjectSource::Automation)
+                .submit("a1", "s1", "prompt", InjectSource::WorkSend)
                 .await
         });
         tokio::time::timeout(Duration::from_secs(2), async {
@@ -864,7 +860,7 @@ mod tests {
         assert_eq!(gate.human_input_epoch("a1"), 1);
         assert_eq!(gate.pending_reason("a1"), Some(PendingReason::HumanTyping));
         assert_eq!(
-            gate.submit("a1", "s1", "auto", InjectSource::Automation)
+            gate.submit("a1", "s1", "auto", InjectSource::WorkSend)
                 .await,
             SubmitOutcome::Deferred(PendingReason::HumanTyping)
         );
@@ -889,13 +885,13 @@ mod tests {
 
         let h1 = tokio::spawn(async move {
             gate1
-                .submit("a1", "s1", "cmd1", InjectSource::Automation)
+                .submit("a1", "s1", "cmd1", InjectSource::WorkSend)
                 .await
         });
         let h2 = tokio::spawn(async move {
             // 아주 미세한 지연으로 h1이 먼저 lock을 쥐도록 유도
             tokio::time::sleep(Duration::from_millis(5)).await;
-            gate2.submit("a1", "s1", "cmd2", InjectSource::Bot).await
+            gate2.submit("a1", "s1", "cmd2", InjectSource::Talk).await
         });
 
         let r1 = h1.await.unwrap();
@@ -919,7 +915,7 @@ mod tests {
         let gate = InjectGate::new(sink.clone(), arms);
 
         let res = gate
-            .submit("a1", "new-session", "echo hi", InjectSource::Automation)
+            .submit("a1", "new-session", "echo hi", InjectSource::WorkSend)
             .await;
         assert_eq!(res, SubmitOutcome::SessionChanged);
         assert!(sink.recorded_writes().is_empty());
@@ -934,7 +930,7 @@ mod tests {
         let gate = InjectGate::new(sink.clone(), arms);
 
         let res = gate
-            .submit("a1", "s1", "echo hi", InjectSource::Automation)
+            .submit("a1", "s1", "echo hi", InjectSource::WorkSend)
             .await;
         assert_eq!(res, SubmitOutcome::NotRunning);
         assert!(sink.recorded_writes().is_empty());
@@ -955,7 +951,7 @@ mod tests {
 
         // submit 시도 -> Deferred(HumanTyping)
         let res = gate
-            .submit("a1", "s1", "auto-cmd", InjectSource::Automation)
+            .submit("a1", "s1", "auto-cmd", InjectSource::WorkSend)
             .await;
         assert_eq!(res, SubmitOutcome::Deferred(PendingReason::HumanTyping));
         // 자동 입력 쓰기 0회 (사람 입력 1회만 존재)
@@ -966,7 +962,7 @@ mod tests {
         // 사용자가 배너에서 "계속"을 누름 (clear_uncommitted)
         gate.clear_uncommitted("a1");
         let res2 = gate
-            .submit("a1", "s1", "auto-cmd", InjectSource::Automation)
+            .submit("a1", "s1", "auto-cmd", InjectSource::WorkSend)
             .await;
         assert_eq!(res2, SubmitOutcome::Submitted);
         let writes2 = sink.recorded_writes();
@@ -976,7 +972,7 @@ mod tests {
         gate.note_human("a1", "typing...");
         tokio::time::sleep(Duration::from_millis(60)).await;
         let res3 = gate
-            .submit("a1", "s1", "next-cmd", InjectSource::Automation)
+            .submit("a1", "s1", "next-cmd", InjectSource::WorkSend)
             .await;
         assert_eq!(res3, SubmitOutcome::Submitted);
     }
@@ -992,7 +988,7 @@ mod tests {
         let gate_clone = gate.clone();
         let handle = tokio::spawn(async move {
             gate_clone
-                .submit("a1", "s1", "long-prompt", InjectSource::Automation)
+                .submit("a1", "s1", "long-prompt", InjectSource::WorkSend)
                 .await
         });
 
@@ -1024,7 +1020,7 @@ mod tests {
         let gate_clone = gate.clone();
         let handle = tokio::spawn(async move {
             gate_clone
-                .submit("a1", "s1", "long-prompt", InjectSource::Automation)
+                .submit("a1", "s1", "long-prompt", InjectSource::WorkSend)
                 .await
         });
 
@@ -1044,7 +1040,7 @@ mod tests {
         gate.note_human("a1", "\r");
         assert_eq!(sink.recorded_writes().len(), 3);
         let res = gate
-            .submit("a1", "s1", "next", InjectSource::Automation)
+            .submit("a1", "s1", "next", InjectSource::WorkSend)
             .await;
         assert_eq!(res, SubmitOutcome::Submitted);
     }
@@ -1064,13 +1060,13 @@ mod tests {
         assert_eq!(sink.recorded_writes()[0].1, "human\r");
         assert_eq!(gate.human_input_revision("a1"), 1);
         assert_eq!(
-            gate.submit("a1", "s1", "bot", InjectSource::Bot).await,
+            gate.submit("a1", "s1", "talk", InjectSource::Talk).await,
             SubmitOutcome::Deferred(PendingReason::AnotherProducer)
         );
 
         drop(owner);
         assert_eq!(
-            gate.submit("a1", "s1", "bot", InjectSource::Bot).await,
+            gate.submit("a1", "s1", "talk", InjectSource::Talk).await,
             SubmitOutcome::Submitted,
         );
     }
@@ -1094,7 +1090,7 @@ mod tests {
                 &owner,
                 StrictSubmitRequest {
                     text: "launch",
-                    source: InjectSource::Automation,
+                    source: InjectSource::WorkSend,
                     expected_generation: generation,
                     expected_human_input_revision: gate.human_input_revision("a1"),
                     cancelled: &cancelled,
@@ -1128,7 +1124,7 @@ mod tests {
                     &owner,
                     StrictSubmitRequest {
                         text: "launch",
-                        source: InjectSource::Automation,
+                        source: InjectSource::WorkSend,
                         expected_generation: generation,
                         expected_human_input_revision: 0,
                         cancelled: &submit_cancelled,
@@ -1222,7 +1218,7 @@ mod tests {
                 &owner,
                 StrictSubmitRequest {
                     text: "old launch",
-                    source: InjectSource::Automation,
+                    source: InjectSource::WorkSend,
                     expected_generation: generation,
                     expected_human_input_revision: 0,
                     cancelled: &cancelled,

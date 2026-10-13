@@ -29,8 +29,6 @@ export async function restartAgentSession(
   if (!release) return;
   const previousStatus = useAppStore.getState().sessions[agentId]?.status ?? "idle";
   try {
-    // 고정 세션 폐기가 거절된 경우 자동화/xterm 상태도 그대로 보존한다.
-    if (!overrides?.expected) useAppStore.getState().resetAutomationState(agentId);
     // 폐기 대기 중 ensureSession이 별도 세션을 만들지 못하게 즉시 표시한다.
     useAppStore.getState().setSessionState({ agentId, status: "starting" });
 
@@ -44,8 +42,6 @@ export async function restartAgentSession(
       }
       console.warn(`restartAgentSession: disposeSession failed for ${agentId}`, err);
     }
-
-    if (overrides?.expected) useAppStore.getState().resetAutomationState(agentId);
 
     // ② xterm 인스턴스/스크롤백 폐기 (onData 구독 해제 포함).
     terminalRegistry.destroy(agentId);

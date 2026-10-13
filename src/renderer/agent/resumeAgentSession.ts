@@ -42,8 +42,7 @@ export async function resumeAgentSession(agentId: string, sessionId: string): Pr
   const release = reserveSessionReplacement(agentId);
   if (!release) return;
   try {
-    useAppStore.getState().resetAutomationState(agentId);
-
+  
     // ① 기존 PTY 종료 — 세션이 없거나 이미 죽었어도 이어하기는 계속.
     try {
       await tauriApi.disposeSession(agentId);

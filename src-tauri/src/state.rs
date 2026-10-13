@@ -215,12 +215,8 @@ pub struct AppState {
     /// control 핸들러가 쥐는 앱 상태 클론들. `set_app_settings`가 cli_enabled
     /// ON 전환 시 `control_server.ensure(control_ctx)`에 넘긴다.
     pub control_ctx: Arc<crate::control::ControlContext>,
-    /// 자동화 점검(kbm)의 탭별 태스크 소유자.
-    pub automation_runtime: Arc<crate::automation::AutomationRuntime>,
-    /// 자동화 태스크가 쥐는 앱 상태 클론(세션 주입·봇 주입 표식 공유).
-    pub automation_ctx: Arc<crate::automation::AutomationContext>,
-    /// 사용자 자동화 정의와 종료된 실행 기록의 app-data 저장소.
-    pub automation_store: Arc<crate::automation::store::AutomationStore>,
+    /// 앱 데이터 디렉터리. 업무 보내기의 CLI 기동 receipt 위치를 정한다.
+    pub app_data_dir: std::path::PathBuf,
     /// 자동 입력 관문(kbm #2t9 Phase 2).
     pub gate: Arc<crate::session::inject::InjectGate>,
     /// 작업 중 시스템 잠자기 방지(이슈 #68) 웨이크락 소유자. `set_keep_awake`

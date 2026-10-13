@@ -4,7 +4,7 @@
 
 상태: 정본 (2026-10-13) — 1·2차 기능과 업무 수신함, 선행 작업·상세 팝업 구현 완료. 설치 Tauri 앱의 저장·복원과 인증된 CLI 5종의 실기 인수는 남아 있다. 보내기는 직접 생성한 Unix bash/zsh와 Windows PowerShell·Git Bash PTY를 지원한다.
 
-관련 문서: [터미널 자동화](terminal-automation-design.md)(CLI 기동·첫 프롬프트), [세션 활동 분석](session-analytics-design.md)(턴·토큰·비용 집계), [세션 로그](session-log-design.md)(전사 보기), [동료 대화](agent-talk-design.md) §6(shim·권한 사전 승인 배선). 수신함의 구현 계획과 결정 근거는 [archive/work-inbox-design.md](archive/work-inbox-design.md)에 있다.
+관련 문서: [터미널 자동화](archive/terminal-automation-design.md)(제거됨 — CLI 기동 receipt의 출처), [세션 활동 분석](session-analytics-design.md)(턴·토큰·비용 집계), [세션 로그](session-log-design.md)(전사 보기), [동료 대화](agent-talk-design.md) §6(shim·권한 사전 승인 배선). 수신함의 구현 계획과 결정 근거는 [archive/work-inbox-design.md](archive/work-inbox-design.md)에 있다.
 
 ## 개요
 
@@ -62,7 +62,7 @@
 ### 에이전트 설정
 
 - 프로필의 `defaultAgent`를 캐릭터 편집의 터미널 영역에서 저장한다. 업무의 에이전트 지정이 비어 있으면 프로필 설정 전체를 사용하며, 프로필도 비어 있으면 Claude 기본값이다. 업무에서 CLI를 명시하면 모델/effort는 그 CLI의 기본값으로 시작한다. CLI를 바꾸면 이전 모델/effort를 지운다.
-- Claude/Codex/agy/Pi 모델 후보는 기존 `automationCliModels` 조회를 재사용한다. 수동 입력·저장된 모델은 조회 실패에 보존한다. agy의 명시 모델은 실행 직전 실제 목록과 정확히 대조하고, 모델·effort 검증과 POSIX 인용은 기존 기동 코드를 재사용한다.
+- Claude/Codex/agy/Pi 모델 후보는 `workAgentModels`(`work_agent_models`) 조회를 쓴다. 수동 입력·저장된 모델은 조회 실패에 보존한다. agy의 명시 모델은 실행 직전 실제 목록과 정확히 대조하고, 모델·effort 검증과 POSIX 인용은 기존 기동 코드를 재사용한다.
 
 ### 보내기
 
@@ -81,7 +81,7 @@
 #### 지원 대상
 
 - 앱이 직접 생성한 Unix bash/zsh PTY와 Windows PowerShell(5.1·7)·Git Bash PTY만 보낼 수 있다. 프로필에 시작 명령 또는 tmux 호스팅이 있거나 퇴근 중이면 보내기를 막는다. 외부 연결·입양·WSL·미지원 셸은 막는다. 봇/자동화가 실행 중이면 먼저 중단해야 한다.
-- 셸 판정은 세션의 실제 셸 실행 파일 이름으로 한다(`LaunchShell::for_shell_path`, `automation/cli_transition.rs`). 터미널 자동화 v2의 capability는 바꾸지 않아 Windows 셸에서는 여전히 거절한다.
+- 셸 판정은 세션의 실제 셸 실행 파일 이름으로 한다(`LaunchShell::for_shell_path`, `work_send/cli_transition.rs`).
 - 기동 문장은 셸별로 만든다. bash/zsh는 `. '<launch.sh>'`, Git Bash는 같은 POSIX 스크립트에 `C:/…` 경로를 쓴다. PowerShell은 BOM 없는 UTF-8로 ACK·반환 기록을 쓰는 `launch.ps1`을 `& ([scriptblock]::Create([System.IO.File]::ReadAllText('…')))`로 실행한다. 실행 정책은 스크립트 파일에만 적용되므로 정책과 무관하고, 자식 스코프라 변수가 새지 않으며 현재 위치는 Push/Pop-Location으로 되돌린다. CLI 인자는 PowerShell 작은따옴표로 인용하고, PowerShell 5.1이 네이티브 인자의 큰따옴표를 지우므로 codex effort는 `-c 'model_reasoning_effort=high'`로 넘긴다(codex는 TOML로 못 읽는 값을 문자열로 받는다).
 
 #### 입력과 재시작 규약
@@ -377,7 +377,7 @@ interface SessionSummary {
 | 선행 작업 정리·후보·대기 판정 | `src/renderer/workpanels/workDependencies.ts` |
 | 업무·요약 수집과 저장 | `src/renderer/workpanels/workItemStore.ts`, `sessionSummaryStore.ts`, `sessionRows.ts`, `src-tauri/src/persistence/work_panels_store.rs` |
 | 보내기 조정·오류 표시 | `src/renderer/workpanels/workSendStore.ts`, `sendErrorText.ts` |
-| 네이티브 보내기·CLI 기동 | `src-tauri/src/work_send.rs`, `src-tauri/src/ipc/commands/work_panels.rs`. 기존 `automation/`의 모델·effort 검증과 기동 receipt 재사용 |
+| 네이티브 보내기·CLI 기동 | `src-tauri/src/work_send.rs`, `src-tauri/src/work_send/{cli_transition,launch}.rs`(기동 receipt·모델/effort 검증·기동 문장, 예전 `automation/`에서 이전), `src-tauri/src/ipc/commands/work_panels.rs` |
 | strict 입력·세션 재시작 | `src-tauri/src/session/inject.rs`, `src/renderer/agent/restartAgentSession.ts`. `InjectSource::Automation` 재사용 |
 | Windows 빈 셸 판정 | `src-tauri/src/session/win_process.rs`(Toolhelp 스냅숏), `pty_factory.rs`(`PtyControl::process_id`), `manager.rs`(`is_shell_prompt`) |
 | 모니터링·자동 상태 전이 | `src/renderer/workpanels/workMonitor.ts`, `WorkCardMonitor.tsx`. activity·notification·최종 usage 이벤트 구독 |

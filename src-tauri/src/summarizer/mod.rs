@@ -36,19 +36,19 @@ const TIMEOUT_DIARY: Duration = Duration::from_secs(120);
 /// 60배 크며 출력도 문서 한 편이다.
 const TIMEOUT_STUDY: Duration = Duration::from_secs(300);
 
-/// 자동화가 실제 `agy` 실행 직전에 사용하는 모델 카탈로그. 요약 설정의
-/// 커스텀 명령과 분리한다. 자동화는 항상 `agy`를 실행하므로, 다른 명령의
+/// 업무 보내기가 실제 `agy` 실행 직전에 사용하는 모델 카탈로그. 요약 설정의
+/// 커스텀 명령과 분리한다. 업무 보내기는 항상 `agy`를 실행하므로, 다른 명령의
 /// 목록으로 검증하면 실행 대상과 목록이 어긋난다.
-pub(crate) async fn list_automation_agy_models() -> Vec<String> {
+pub(crate) async fn list_agy_models() -> Vec<String> {
     agy::list_models(Duration::from_secs(10), "agy").await
 }
 
-/// 자동화 편집기가 실행 CLI와 같은 계정에서 읽어 온 모델을 추천할 때 쓴다.
-/// 이 목록은 실행 허용 목록이 아니다. 특히 Claude/Codex의 저장된 사용자 모델
-/// 별칭은 목록에 없더라도 기존대로 실행에 전달한다.
-pub(crate) async fn list_automation_cli_models(cli_profile_id: &str) -> Vec<String> {
-    match cli_profile_id {
-        "agy" => list_automation_agy_models().await,
+/// 업무 에이전트 편집 칸이 실행 CLI와 같은 계정에서 읽어 온 모델을 추천할 때
+/// 쓴다. 이 목록은 실행 허용 목록이 아니다. 특히 Claude/Codex의 저장된 사용자
+/// 모델 별칭은 목록에 없더라도 기존대로 실행에 전달한다.
+pub(crate) async fn list_cli_models(cli: &str) -> Vec<String> {
+    match cli {
+        "agy" => list_agy_models().await,
         "kilo" => kilo::list_models(Duration::from_secs(10), "kilo").await,
         "pi" => pi::list_models(Duration::from_secs(10), "pi").await,
         "codex" => codex::list_models(Duration::from_secs(10), "codex").await,

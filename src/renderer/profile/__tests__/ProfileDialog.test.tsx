@@ -30,14 +30,14 @@ vi.mock("../../office/gen/characterFactory", () => ({
 }));
 
 
-const automationCliModels = vi.fn().mockResolvedValue(["custom/model"]);
+const workAgentModels = vi.fn().mockResolvedValue(["custom/model"]);
 const createSession = vi.fn().mockResolvedValue({ sessionId: "s1", state: "starting" });
 const deletePortrait = vi.fn().mockResolvedValue(undefined);
 const deleteSprite = vi.fn().mockResolvedValue(undefined);
 const listAvailableShells = vi.fn().mockResolvedValue([]);
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
-    automationCliModels: (...args: unknown[]) => automationCliModels(...args),
+    workAgentModels: (...args: unknown[]) => workAgentModels(...args),
     createSession: (...args: unknown[]) => createSession(...args),
     deletePortrait: (...args: unknown[]) => deletePortrait(...args),
     deleteSprite: (...args: unknown[]) => deleteSprite(...args),

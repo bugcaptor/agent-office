@@ -47,9 +47,6 @@ import type { XtermThemeOverride } from "../terminal/theme";
 import type {
   ActivityEvent,
   AppSettings,
-  AutomationAgentStatus,
-  AutomationRunDecisionChoice,
-  AutomationStatus,
   SessionState,
   UsageSnapshot,
 } from "@shared/types";
@@ -73,41 +70,6 @@ function isMeaningfulGoalFallback(cand: string): boolean {
   );
 }
 
-/** 자동화 상태 두 스냅샷의 값이 같은지(참조가 아니라 필드 값 비교). 폴링마다
- * 변화 없는 탭까지 새 객체로 갈아치워 불필요한 리렌더를 유발하지 않게
- * `applyAutomationStatus`가 이 비교로 실제로 바뀐 항목만 교체한다. */
-function automationStatusEqual(
-  a: AutomationAgentStatus,
-  b: AutomationAgentStatus,
-): boolean {
-  return (
-    a.running === b.running &&
-    a.phase === b.phase &&
-    a.cli === b.cli &&
-    a.filePath === b.filePath &&
-    a.startedAtMs === b.startedAtMs &&
-    a.runId === b.runId &&
-    a.stepExecutionId === b.stepExecutionId &&
-    a.deadlineMs === b.deadlineMs &&
-    a.decisionId === b.decisionId &&
-    a.extensionCount === b.extensionCount &&
-    a.markerObservedAtMs === b.markerObservedAtMs &&
-    a.pendingReason === b.pendingReason &&
-    a.pendingSinceMs === b.pendingSinceMs &&
-    a.error === b.error &&
-    a.definitionId === b.definitionId &&
-    a.definitionName === b.definitionName &&
-    a.sessionId === b.sessionId &&
-    a.workspace === b.workspace &&
-    a.cycle === b.cycle &&
-    a.stepIndex === b.stepIndex &&
-    a.stepId === b.stepId &&
-    a.outcome === b.outcome &&
-    a.completedAtMs === b.completedAtMs &&
-    a.decisionMessage === b.decisionMessage &&
-    a.decisionReason === b.decisionReason
-  );
-}
 const DEFAULT_APP_SETTINGS: AppSettings = {
   version: 1,
   language: "system",
@@ -292,15 +254,6 @@ interface AppState {
   /** 구독 사용량 스냅샷. null = 아직 로드 전. UsageWidget이 60초 폴링으로 채운다.
    * 런타임 전용(비영속). */
   usage: UsageSnapshot | null;
-  /** 자동화 점검(kbm)이 도는(또는 방금 끝난) 탭. agentId → 런타임 상태. 봇
-   * 모드와 마찬가지로 여기 있으면 로컬 키 입력이 잠긴다 — 단, `running`이
-   * false(done/failed)로 남는 동안은 배지·알림용일 뿐 잠그지 않는다.
-   * 런타임 전용(비영속, 앱 재시작 시 비어 있음). */
-  automation: Record<string, AutomationAgentStatus>;
-  /** 세션 재생성 전 비동기 응답을 무효화하는 세대. */
-  automationEpochs: Record<string, number>;
-  /** 자동화 정의 편집기. 실행 상태와 분리해 메뉴를 열어도 자동화가 시작되지 않는다. */
-  automationEditor: { agentId: string; workspace: string } | null;
 
   // ---- profile actions ----
   /** Adds a profile. Normal creation starts a terminal; connection setup can
@@ -324,31 +277,6 @@ interface AppState {
   // ---- session actions ----
   setSessionState(e: { agentId: string; status: SessionStatus }): void;
   setSessionSize(agentId: string, cols: number, rows: number): void;
-
-  // ---- 자동화 점검(kbm) ----
-  /** 이 탭의 자동화 점검을 시작한다 — 백엔드 태스크를 띄우고 로컬 입력을 잠근다. */
-  startAutomation(agentId: string): Promise<void>;
-  /** 이 탭의 자동화를 중단한다 — 백엔드 태스크를 내리고 항목을 지운다(배지 소거). */
-  stopAutomation(agentId: string): Promise<void>;
-  /** automation_status 폴링 결과를 병합한다. */
-  applyAutomationStatus(status: AutomationStatus, epochs?: Record<string, number>): void;
-  resetAutomationState(agentId: string): void;
-  /** 부팅 시 백엔드에 살아 있는 자동화 태스크를 automation에 심는다.
-   * 비영속 상태가 재시작 후 스스로 되살아나지 못하는 문제 때문에 없던
-   * 항목도 추가한다. */
-  seedAutomationStatus(status: AutomationStatus, epochs?: Record<string, number>): void;
-  /** 이 탭이 자동화 운전 중인지(로컬 입력 차단 여부 판정) — 끝난(done/failed)
-   * 자동화는 배지·알림용으로 남아 있으므로 running으로 잠금을 가른다. */
-  isAutomationDriven(agentId: string): boolean;
-  /** 자동화 타임아웃 결정(더 기다리기 / 중단)을 보낸다. */
-  decideAutomation(
-    agentId: string,
-    choice: AutomationRunDecisionChoice,
-  ): Promise<boolean>;
-  /** 자동화 보류 상태를 해제하고 즉시 재시도하도록 요청한다. */
-  continueAutomation(agentId: string): Promise<void>;
-  openAutomationEditor(agentId: string, workspace: string): void;
-  closeAutomationEditor(): void;
 
   // ---- window focus ----
   /** OS 창 포커스 상태 반영(이슈 #39). sessionBridge의 포커스 추적이 호출. */
@@ -540,9 +468,6 @@ export const useAppStore = create<AppState>()(
     settingsFirstRun: false,
     settingsHydrated: false,
     usage: null,
-    automation: {},
-    automationEpochs: {},
-    automationEditor: null,
 
 
     addAgent: (profile, options) =>
@@ -711,210 +636,6 @@ export const useAppStore = create<AppState>()(
           sessions: { ...s.sessions, [agentId]: { ...prev, cols, rows } },
         };
       }),
-
-    startAutomation: async (agentId) => {
-      const epoch = get().automationEpochs[agentId] ?? 0;
-      // 낙관적으로 먼저 켠 상태로 표시(입력 잠금·배지 즉시 반영), 백엔드
-      // 응답으로 실제 상태를 갱신한다. 실패해도 켠 상태는 유지하고 error만 표시.
-      set((s) => ({
-        automation: {
-          ...s.automation,
-          [agentId]: {
-            running: true,
-            phase: "launching",
-            cli: "claude",
-            filePath: "",
-            startedAtMs: Date.now(),
-          },
-        },
-      }));
-      try {
-        const status: AutomationAgentStatus =
-          await tauriApi.automationStart(agentId);
-        if ((get().automationEpochs[agentId] ?? 0) !== epoch) return;
-        set((s) => ({ automation: { ...s.automation, [agentId]: status } }));
-      } catch (err) {
-        if ((get().automationEpochs[agentId] ?? 0) !== epoch) return;
-        set((s) => ({
-          automation: {
-            ...s.automation,
-            [agentId]: {
-              running: false,
-              phase: "failed",
-              cli: "claude",
-              filePath: "",
-              startedAtMs: Date.now(),
-              // 원문 코드 그대로 담는다 — 번역은 렌더 시점에
-              // automationStatusText가 backendErrorText로 한다(백엔드는
-              // 코드를 내려보내고 번역은 프런트에서 한다는 방침, 이 필드가
-              // 이미 카탈로그 문구면 그 방침이 두 번 적용돼 깨진다).
-              error: err instanceof Error ? err.message : String(err),
-            },
-          },
-        }));
-      }
-    },
-
-    stopAutomation: async (agentId) => {
-      const epoch = get().automationEpochs[agentId] ?? 0;
-      try {
-        await tauriApi.automationStop(agentId);
-        // Keep the cancelling/cancelled snapshot in the store so status
-        // polling and the non-blocking banner can finish their lifecycle.
-        const status = await tauriApi.automationStatus();
-        if ((get().automationEpochs[agentId] ?? 0) !== epoch) return;
-        const fresh = status.agents[agentId];
-        if (fresh) {
-          set((s) => ({ automation: { ...s.automation, [agentId]: fresh } }));
-          return;
-        }
-      } catch (err) {
-        console.warn("automation: stop failed", err);
-      }
-      if ((get().automationEpochs[agentId] ?? 0) !== epoch) return;
-      set((s) => {
-        const next = { ...s.automation };
-        delete next[agentId];
-        return { automation: next };
-      });
-    },
-
-    resetAutomationState: (agentId) => set((s) => {
-      const next = { ...s.automation };
-      delete next[agentId];
-      return {
-        automation: next,
-        automationEpochs: { ...s.automationEpochs, [agentId]: (s.automationEpochs[agentId] ?? 0) + 1 },
-      };
-    }),
-
-    applyAutomationStatus: (status, epochs) =>
-      set((s) => {
-        // 자동화가 켜진(로컬 상태에 있는) 탭만 갱신한다 — 방금 끈 탭이 폴링
-        // 응답으로 되살아나지 않게. 필드가 실제로 같으면 그 id의 객체 참조를
-        // 그대로 둔다 — 매초 폴링마다 전부 새 객체로 갈아치우면 값이 안
-        // 바뀐 탭까지 리렌더된다.
-        const next = { ...s.automation };
-        let changed = false;
-        for (const id of Object.keys(next)) {
-          if (epochs && (epochs[id] ?? 0) !== (s.automationEpochs[id] ?? 0)) continue;
-          const fresh = status.agents[id];
-          if (fresh && !automationStatusEqual(next[id], fresh)) {
-            next[id] = fresh;
-            changed = true;
-          } else if (!fresh && next[id].running === false) {
-            // Backend retains finished snapshots briefly, then removes them.
-            // Once absent, remove the local terminal state too so polling can
-            // stop rather than retaining a completed tab forever.
-            delete next[id];
-            changed = true;
-          }
-        }
-        return changed ? { automation: next } : s;
-      }),
-
-    seedAutomationStatus: (status, epochs) =>
-      set((s) => {
-        const entries = Object.entries(status.agents);
-        if (entries.length === 0) return s;
-        const next = { ...s.automation };
-        for (const [id, st] of entries) {
-          if (epochs && (epochs[id] ?? 0) !== (s.automationEpochs[id] ?? 0)) continue;
-          next[id] = st;
-        }
-        return { automation: next };
-      }),
-
-    // 자동화가 도는 중이라는 표시일 뿐 **입력 잠금이 아니다** -- 계약상 사용자는
-    // 자동화가 도는 중에도 같은 터미널에 언제나 직접 입력한다. TerminalRegistry
-    // 에서 뺀 이유가 그것이고, 남은 것은 Phase 2의 자동 입력 생산자 경계에서
-    // 다시 쓸 자리다.
-    isAutomationDriven: (agentId) =>
-      get().automation[agentId]?.running === true,
-
-    decideAutomation: async (agentId, choice) => {
-      const epoch = get().automationEpochs[agentId] ?? 0;
-      const current = get().automation[agentId];
-      if (
-        !current ||
-        !current.runId ||
-        !current.stepExecutionId ||
-        !current.decisionId
-      ) {
-        return false;
-      }
-      try {
-        const ok = await tauriApi.automationDecide(
-          agentId,
-          current.runId,
-          current.stepExecutionId,
-          current.decisionId,
-          choice,
-        );
-        if (!ok || (get().automationEpochs[agentId] ?? 0) !== epoch) return false;
-        // The runner owns every post-decision phase. Fetch it before changing
-        // local state so `continue` cannot be mistaken for cancellation.
-        const fresh = await tauriApi.automationStatus();
-        if ((get().automationEpochs[agentId] ?? 0) !== epoch) return false;
-        const authoritative = fresh.agents[agentId];
-        if (authoritative) {
-          set((s) => ({
-            automation: { ...s.automation, [agentId]: authoritative },
-          }));
-          return true;
-        }
-        // 응답을 기다리는 사이 1초 폴링이 이 항목을 갱신했거나(진행된 phase,
-        // 방금 관측한 마커) 완료 처리로 아예 지웠을 수 있다. await 전에 읽어 둔
-        // `current`를 그대로 펴면 낡은 값으로 덮거나 지워진 항목을 되살려
-        // 배너가 앱 재시작 전까지 남는다 -- 그러니 여기서 최신 것과 병합한다.
-        set((s) => {
-          const live = s.automation[agentId];
-          if (!live) return s;
-          const merged: AutomationAgentStatus =
-            choice === "extend"
-              ? {
-                  ...live,
-                  phase: "watching",
-                  decisionId: undefined,
-                  extensionCount: (live.extensionCount ?? 0) + 1,
-                  // 새 deadline 은 백엔드가 이 실행의 설정 대기시간으로 정한다.
-                  // 여기서 30분을 짐작해 적으면 단계별 설정과 어긋난 값이 잠깐
-                  // 보인다. 다음 폴링(1초)이 진짜 값을 채운다.
-                  deadlineMs: undefined,
-                }
-              : choice === "stop"
-                ? {
-                    ...live,
-                    running: false,
-                    // 사용자 중단은 실패가 아니다 -- 에러 코드를 남기지 않는다.
-                    phase: "cancelled",
-                    decisionId: undefined,
-                    deadlineMs: undefined,
-                  }
-                : live;
-          return { automation: { ...s.automation, [agentId]: merged } };
-        });
-        return true;
-      } catch (err) {
-        console.warn("automation: decide failed", err);
-        return false;
-      }
-    },
-
-    continueAutomation: async (agentId) => {
-      const epochs = get().automationEpochs;
-      try {
-        await tauriApi.automationClearUncommitted(agentId);
-        const fresh = await tauriApi.automationStatus();
-        get().applyAutomationStatus(fresh, epochs);
-      } catch (err) {
-        console.warn("automation: continue failed", err);
-      }
-    },
-
-    openAutomationEditor: (agentId, workspace) =>
-      set({ automationEditor: { agentId, workspace } }),
-    closeAutomationEditor: () => set({ automationEditor: null }),
 
     setWindowFocused: (focused) =>
       set((s) =>

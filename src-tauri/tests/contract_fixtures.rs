@@ -7,7 +7,7 @@
 // 동등 비교를 쓴다 — 키 순서 무관, casing·null-vs-생략까지 검증된다.
 //
 // Serialize + Deserialize 둘 다 구현한 타입(AgentProfile/PersistedState,
-// SessionEventRecord, AutomationStatus류, AppSettings)은 완전 왕복
+// SessionEventRecord, AppSettings)은 완전 왕복
 // (from_str::<T> -> to_value -> 픽스처와 비교)을 한다.
 //
 // 이벤트/응답 타입 다수는 backend->renderer 단방향이라 `Serialize`만
@@ -25,10 +25,9 @@ use agent_office_lib::persistence::settings_store::{
 };
 use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
-    ActivityEvent, ActivityKind, AdoptedSessionInfo, AutomationAgentStatus,
-    AutomationCli, AutomationPhase, AutomationStatus, AwardsFile,
+    ActivityEvent, ActivityKind, AdoptedSessionInfo, AwardsFile,
     CreateSessionRequest, CreateSessionResult, MemoSheet, MemoSheetMeta,
-    NotificationEvent, NotificationSource, OutputChunk, PendingReason, PersistedState, SessionEventTokens,
+    NotificationEvent, NotificationSource, OutputChunk, PersistedState, SessionEventTokens,
     SessionExitInfo, SessionState, SessionStateEvent, TurnUsageEvent,
 };
 use agent_office_lib::usage::{
@@ -478,55 +477,6 @@ fn session_event_record_usage_roundtrips() {
 #[test]
 fn session_event_record_bot_prompt_origin_roundtrips() {
     assert_roundtrip::<SessionEventRecord>(fixture!("session-event-record.prompt.bot.json"));
-}
-
-#[test]
-fn automation_status_roundtrips() {
-    assert_roundtrip::<AutomationStatus>(fixture!("automation-status.json"));
-}
-
-#[test]
-fn automation_status_agent_fields_match_fixture() {
-    // `waitingStartup`이 camelCase로 정확히 직렬화되는지가 핵심 -- lowercase
-    // 관례를 썼다면 "waitingstartup"이 나왔을 것이다.
-    let parsed: AutomationStatus =
-        serde_json::from_str(fixture!("automation-status.json")).unwrap();
-    let a1: &AutomationAgentStatus = parsed.agents.get("a1").expect("a1 present");
-    assert!(a1.running);
-    assert_eq!(a1.phase, AutomationPhase::WaitingStartup);
-    assert_eq!(a1.cli, AutomationCli::Claude);
-    assert_eq!(
-        a1.file_path,
-        "/home/agent/repo/.agent-office/automation-runs/run-1/step-1/result.json"
-    );
-    assert_eq!(a1.started_at_ms, 1720000000000);
-    assert!(a1.error.is_none());
-    // 대기 중인 탭에는 실행 식별자도 deadline도 없다 -- 전부 옵셔널이라야
-    // 스냅샷이 단계 진입 전에도 그대로 오간다.
-    assert!(a1.run_id.is_none());
-    assert!(a1.decision_id.is_none());
-    assert!(a1.deadline_ms.is_none());
-
-    // 타임아웃 선택을 기다리는 탭: 결정에 필요한 세 값(runId·stepExecutionId·
-    // decisionId)이 다 실려 와야 렌더러가 `automation_decide`를 부를 수 있다.
-    let a2: &AutomationAgentStatus = parsed.agents.get("a2").expect("a2 present");
-    assert_eq!(a2.phase, AutomationPhase::TimeoutDecision);
-    assert_eq!(a2.cli, AutomationCli::Codex);
-    assert_eq!(a2.run_id.as_deref(), Some("run-2"));
-    assert_eq!(a2.step_execution_id.as_deref(), Some("step-2"));
-    assert_eq!(a2.decision_id.as_deref(), Some("dec-2"));
-    assert_eq!(a2.extension_count, Some(1));
-    assert_eq!(a2.marker_observed_at_ms, Some(1720000600000));
-    // 선택을 기다리는 동안에는 남은 시간이 없다.
-    assert!(a2.deadline_ms.is_none());
-
-    // Phase 2: 보류 상태(pendingReason, pendingSinceMs) 확인
-    let a3: &AutomationAgentStatus = parsed.agents.get("a3").expect("a3 present");
-    assert!(a3.running);
-    assert_eq!(a3.phase, AutomationPhase::Injecting);
-    assert_eq!(a3.cli, AutomationCli::Agy);
-    assert_eq!(a3.pending_reason, Some(PendingReason::HumanTyping));
-    assert_eq!(a3.pending_since_ms, Some(1720000010000));
 }
 
 #[test]

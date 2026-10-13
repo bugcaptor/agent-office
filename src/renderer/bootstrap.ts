@@ -89,31 +89,6 @@ async function adoptDetachedSessions(): Promise<void> {
 }
 
 /**
- * 자동화 점검(kbm) 부팅 시드. `automation`은
- * 비영속 런타임 상태라 앱을 재시작하면 비어 있는데, AgentTabStrip의 1초
- * 상태 폴링은 "돌고 있는(또는 방금 끝난) 자동화가 하나라도 있을 때"만
- * 돌기 때문에 스스로는 절대 되살아나지 못한다.
- */
-export async function seedAutomationMode(): Promise<void> {
-  // The backend can still be registering commands while a restored renderer
-  // starts. Retry a few times; an empty store must not make a live run vanish.
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const epochs = useAppStore.getState().automationEpochs;
-      const status = await tauriApi.automationStatus();
-      useAppStore.getState().seedAutomationStatus(status, epochs);
-      return;
-    } catch (err) {
-      if (attempt === 2) {
-        console.warn("bootstrap: automation status query failed", err);
-        return;
-      }
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 1_000));
-    }
-  }
-}
-
-/**
  * 이 달의 우수사원(docs/employee-of-the-month-design.md §3) 부팅 시 자동 확정:
  * 시상 기록을 읽고, 완료됐지만 아직 레코드가 없는 달을 소급 확정한다(최대
  * 12개월). `adoptDetachedSessions`와 달리 **await하지 않는다** —
@@ -220,11 +195,6 @@ export async function bootApp(): Promise<() => void> {
   // 창 포커스 추적(이슈 #39) — 브리지 직후. 비포커스면 알림 억제 해제 + OS 알림.
   const offFocus = installWindowFocusTracking();
   await adoptDetachedSessions();
-  // 백엔드에 살아남은 봇 태스크를 심어 5초 폴링을 재무장시킨다(입양 직후 —
-  // 대상 탭이 스토어에 이미 있어야 배지/입력 잠금이 곧바로 맞는다).
-  // 자동화 점검(kbm)도 같은 이유로 부팅 시드가 필요하다 — 비영속 상태라
-  // 재시작하면 렌더러는 백엔드에 살아 있는 자동화 태스크를 모른다.
-  await seedAutomationMode();
   const offPersistence = installPersistence();
   const offPortraits = installPortraitCache();
   const offSprites = installSpriteCache();

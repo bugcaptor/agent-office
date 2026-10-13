@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { api } = vi.hoisted(() => ({ api: {
   loadWorkItems: vi.fn().mockResolvedValue([]), saveWorkItems: vi.fn().mockResolvedValue(undefined),
   loadSessionEvents: vi.fn().mockResolvedValue([]), listSessionLogs: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-  automationCliModels: vi.fn().mockResolvedValue(["custom/model"]), saveState: vi.fn().mockResolvedValue(undefined),
+  workAgentModels: vi.fn().mockResolvedValue(["custom/model"]), saveState: vi.fn().mockResolvedValue(undefined),
   inspectWorkSendTarget: vi.fn().mockResolvedValue({ sessionId: "s", humanInputRevision: 3, restartRequired: true, hasUncommitted: true }),
   sendWorkItem: vi.fn().mockResolvedValue({ sessionId: "s", submittedAt: 100 }),
   setAppSettings: vi.fn().mockResolvedValue(undefined),

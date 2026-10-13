@@ -29,10 +29,8 @@ import { useMemoStore } from "../memo/memoStore";
 import { useRunStore } from "../run/runStore";
 import { IS_MAC } from "../shared/platform";
 import { terminalRegistry } from "./TerminalRegistry";
-import { automationStatusText } from "./automationStatusText";
-import { maybeSendOsNotification } from "../ipc/osNotify";
 import type { TerminalViewMode } from "./terminalViewMode";
-import type { AutomationPhase, ClaudeResumeEntry } from "@shared/types";
+import type { ClaudeResumeEntry } from "@shared/types";
 
 // 뷰 모드 토글 버튼(이슈 #69)의 아이콘/툴팁. title은 "누르면 가는 다음 모드"를
 // 안내한다(windowed↔filled). aria-label도 동일.
@@ -122,10 +120,6 @@ export function AgentTabStrip() {
   const cycleTerminalViewMode = useAppStore((s) => s.cycleTerminalViewMode);
   // 봇 모드(이슈 #57): 켜진 탭 집합/상태 + 시작·중단 액션.
   // 자동화 점검(kbm): 켜진 탭 집합/상태 + 시작·중단 액션.
-  const automation = useAppStore((s) => s.automation);
-  const openAutomationEditor = useAppStore((s) => s.openAutomationEditor);
-  const stopAutomation = useAppStore((s) => s.stopAutomation);
-  const applyAutomationStatus = useAppStore((s) => s.applyAutomationStatus);
   // 이슈 #10: 활성 에이전트 cwd를 root로 마크다운 문서 팔레트를 연다.
   const openMarkdownPalette = useMarkdownStore((s) => s.openPalette);
   // 이슈 #11: 작업 폴더 보기(파일 목록 + git 상태) 오버레이를 연다.
@@ -290,110 +284,6 @@ export function AgentTabStrip() {
     cycleTerminalViewMode,
   ]);
 
-  // 자동화 상태 폴링(kbm): 켜진(또는 방금 끝난) 자동화가 하나라도 있으면
-  // 1초마다 백엔드에서 phase를 받아 배지를 갱신한다. 이전 phase를 `id:시작시각`
-  // 키로 기억해 done/failed로 "처음" 넘어간 항목에만 OS 알림을 띄우고
-  // 정리한다 — 키에 시작시각을 넣는 이유: 같은 탭에서 연달아 즉시 실패해도
-  // (봇 충돌 등) 매 실행이 새 startedAtMs를 받으므로 알림·정리가 매번
-  // 일어난다(단순 id 키였다면 두 번째부터 "이미 본 phase"로 씹혔을 것).
-  const hasAutomation = Object.keys(automation).length > 0;
-  const prevAutomationPhases = useRef<Record<string, AutomationPhase>>({});
-  const notifiedPending = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!hasAutomation) return;
-    let alive = true;
-    const tick = () => {
-      const epochs = useAppStore.getState().automationEpochs;
-      void tauriApi
-        .automationStatus()
-        .then((st) => {
-          if (!alive) return;
-          // agents/windowFocused는 초 단위로 안 바뀌는 값이라 effect deps에
-          // 넣어 매초 이 effect를 재구독하지 않고, tick 안에서 그때그때 최신
-          // 스토어 스냅샷을 읽는다.
-          const { agents: liveAgents, windowFocused, automationEpochs } = useAppStore.getState();
-          for (const [id, fresh] of Object.entries(st.agents)) {
-            if ((epochs[id] ?? 0) !== (automationEpochs[id] ?? 0)) continue;
-            const key = `${id}:${fresh.startedAtMs}`;
-            const prevPhase = prevAutomationPhases.current[key];
-            const justFinished =
-              (fresh.phase === "done" ||
-                fresh.phase === "failed" ||
-                fresh.phase === "cancelled" ||
-                fresh.phase === "completed" ||
-                fresh.phase === "interrupted") &&
-              prevPhase !== fresh.phase;
-            // 대기 시간이 끝났을 때도 알림을 한 번 띄운다(설계 §2) — 다만 정리는
-            // 하지 않는다. 자동화는 아직 살아 있고 사용자의 선택을 기다린다.
-            const justTimedOut =
-              fresh.phase === "timeoutDecision" && prevPhase !== fresh.phase;
-            prevAutomationPhases.current[key] = fresh.phase;
-            if (justTimedOut && !windowFocused) {
-              const name = liveAgents[id]?.name ?? characterFallback;
-              void maybeSendOsNotification(
-                name,
-                automationStatusText(fresh).title,
-              );
-            }
-            // 사람 입력으로 인한 보류가 30초 이어지면 OS 알림 1회(창이 비포커스일 때만 — 설계 §4).
-            if (
-              fresh.pendingReason === "humanTyping" &&
-              fresh.pendingSinceMs != null &&
-              Date.now() - fresh.pendingSinceMs >= 30_000
-            ) {
-              if (!notifiedPending.current.has(key)) {
-                notifiedPending.current.add(key);
-                if (!windowFocused) {
-                  const name = liveAgents[id]?.name ?? characterFallback;
-                  void maybeSendOsNotification(
-                    name,
-                    t("automation.pendingHumanNotify"),
-                  );
-                }
-              }
-            } else if (!fresh.pendingReason) {
-              notifiedPending.current.delete(key);
-            }
-            if (justFinished) {
-              // OS 알림은 창이 비포커스일 때만(sessionBridge 관례) — 포커스
-              // 중엔 탭 배지로 충분하다.
-              if (!windowFocused) {
-                const name = liveAgents[id]?.name ?? characterFallback;
-                const text = automationStatusText(fresh);
-                void maybeSendOsNotification(
-                  name,
-                  text.detail ? `${text.title} · ${text.detail}` : text.title,
-                );
-              }
-            }
-          }
-          applyAutomationStatus(st, epochs);
-          // 백엔드가 유예 뒤 지운 실행의 phase 기억은 같이 버린다 -- 안 그러면
-          // 실행할 때마다 한 칸씩 쌓여 앱이 사는 내내 자란다.
-          const liveKeys = new Set(
-            Object.entries(st.agents).map(
-              ([id, a]) => `${id}:${a.startedAtMs}`,
-            ),
-          );
-          for (const key of Object.keys(prevAutomationPhases.current)) {
-            if (!liveKeys.has(key)) {
-              delete prevAutomationPhases.current[key];
-              notifiedPending.current.delete(key);
-            }
-          }
-        })
-        .catch(() => {
-          /* 폴링 실패는 무시 — 다음 주기에 재시도 */
-        });
-    };
-    const iv = window.setInterval(tick, 1000);
-    tick();
-    return () => {
-      alive = false;
-      window.clearInterval(iv);
-    };
-  }, [hasAutomation, applyAutomationStatus, stopAutomation, characterFallback]);
-
   return (
     <div className="agent-tab-strip">
       <div className="agent-tab-scroll-shell">
@@ -455,21 +345,6 @@ export function AgentTabStrip() {
                   aria-hidden="true"
                 />
               )}
-              {automation[tab.id] &&
-                (() => {
-                  const as = automationStatusText(automation[tab.id]);
-                  return (
-                    <span
-                      className="agent-tab-automation"
-                      title={
-                        as.detail ? `${as.title} · ${as.detail}` : as.title
-                      }
-                      aria-hidden="true"
-                    >
-                      {as.icon}
-                    </span>
-                  );
-                })()}
               {tab.name}
             </button>
           ))}
@@ -576,18 +451,6 @@ export function AgentTabStrip() {
               ),
               onSelect: () =>
                 openModal({ kind: "confirm-terminate", agentId: menu.agentId }),
-            },
-            // 자동화는 정의를 고르고 명시적으로 실행한다. 메뉴를 여는 일만으로는
-            // 어떤 터미널 입력도 넣지 않는다.
-            {
-              label: t("menu.automation"),
-              icon: "⚙️",
-              disabled: !agents[menu.agentId]?.cwd,
-              onSelect: () => {
-                const aid = menu.agentId;
-                const cwd = agents[aid]?.cwd;
-                if (cwd) openAutomationEditor(aid, cwd);
-              },
             },
             { separator: true as const },
             // ── 열기/보기: 작업 폴더·외부 도구·출력 ──

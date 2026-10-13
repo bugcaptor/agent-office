@@ -406,12 +406,6 @@
             focus_agent: Arc::new(|_| Ok(())),
         });
 
-        let automation_runtime =
-            std::sync::Arc::new(crate::automation::AutomationRuntime::default());
-        let automation_ctx = std::sync::Arc::new(crate::automation::AutomationContext {
-            sink: inject_sink,
-            gate: inject_gate.clone(),
-        });
         let live_usage = std::sync::Arc::new(crate::usage::LiveUsageState::new());
         let state = AppState {
             manager,
@@ -439,11 +433,7 @@
             live_usage: live_usage.clone(),
             control_server,
             control_ctx,
-            automation_runtime,
-            automation_ctx,
-            automation_store: std::sync::Arc::new(crate::automation::store::AutomationStore::new(
-                profile_dir.clone(),
-            )),
+            app_data_dir: profile_dir.clone(),
             gate: inject_gate,
             wake_lock: std::sync::Arc::new(crate::power::WakeLock::new()),
             tts: std::sync::Arc::new(crate::tts::TtsState::new(&profile_dir)),

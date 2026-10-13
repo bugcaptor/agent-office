@@ -43,7 +43,6 @@ import { MemoArchiveDialog } from "./memo/MemoArchiveDialog";
 import { TalkLogDialog } from "./talk/TalkLogDialog";
 import { UIChrome } from "./layout/UIChrome";
 import { RepositoryAuditOverlay } from "./repository-audit/RepositoryAuditOverlay";
-import { AutomationPalette } from "./automation/AutomationPalette";
 
 // Root component: the 4-layer z-stack.
 //
@@ -149,7 +148,6 @@ function App() {
       {/* 작업 폴더 보기(이슈 #11). markdown 오버레이와 같은 층위·관례로 상시 마운트. */}
       <WorkdirPalette />
       <RunPalette />
-      <AutomationPalette />
       <RepositoryAuditOverlay />
       {/* 캐릭터 일기(이슈 #56). 같은 층위·관례로 상시 마운트, store로 self-gate. */}
       <DiaryDialog />

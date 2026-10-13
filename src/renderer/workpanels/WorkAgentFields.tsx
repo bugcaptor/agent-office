@@ -23,7 +23,7 @@ export function WorkAgentFields({ value, onChange, profile = false, inherited }:
     setModels([]);
     if (!cli || cli === "kilo") { setCatalog("ready"); return; }
     setCatalog("loading");
-    void tauriApi.automationCliModels(cli).then((list) => {
+    void tauriApi.workAgentModels(cli).then((list) => {
       if (alive) { setModels(list); setCatalog(list.length ? "ready" : "failed"); }
     }, () => { if (alive) setCatalog("failed"); });
     return () => { alive = false; };

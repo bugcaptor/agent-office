@@ -135,19 +135,15 @@ pub async fn dispose_session(
     expected_session_id: Option<String>,
     expected_human_input_revision: Option<u64>,
 ) -> Result<(), String> {
-    let automation_reset = if let Some(expected) = expected_session_id.as_deref() {
+    if let Some(expected) = expected_session_id.as_deref() {
         let revision = expected_human_input_revision.ok_or("work-send-human-input")?;
         app_state.gate.with_human_revision(&agent_id, revision, || app_state.manager.dispose_matching(&agent_id, Some(expected)))?;
         app_state.work_send_runtime.stop(&agent_id);
-        app_state.automation_runtime.reset_session(&agent_id)
     } else {
         app_state.work_send_runtime.stop(&agent_id);
-        let reset = app_state.automation_runtime.reset_session(&agent_id);
         app_state.manager.dispose(&agent_id);
-        reset
-    };
-    automation_reset.await;
-    app_state.automation_ctx.gate.remove_agent(&agent_id);
+    }
+    app_state.gate.remove_agent(&agent_id);
     Ok(())
 }
 
