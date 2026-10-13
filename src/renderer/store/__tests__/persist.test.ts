@@ -34,6 +34,7 @@ vi.mock("../../ipc/tauriApi", () => ({ tauriApi: mockApi }));
 
 import { useAppStore } from "../appStore";
 import { flushPersistence, installPersistence } from "../persist";
+import { useProfileLoadStore } from "../profileLoadState";
 import type { AgentProfile } from "../types";
 
 const initialState = useAppStore.getState();
@@ -68,6 +69,7 @@ let cleanup: () => void;
 beforeEach(() => {
   vi.useFakeTimers();
   useAppStore.setState(initialState, true);
+  useProfileLoadStore.setState({ error: null, retrying: false });
   Object.values(mockApi).forEach((fn) => fn.mockClear());
   cleanup = installPersistence();
 });
@@ -123,6 +125,25 @@ describe("installPersistence / vacationMode", () => {
     expect(mockApi.saveState).toHaveBeenCalledWith(
       expect.objectContaining({ vacationMode: true })
     );
+  });
+});
+
+describe("installPersistence / profiles read-only (수정 F2)", () => {
+  it("never saves while profiles.json could not be loaded, and resumes after recovery", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    useProfileLoadStore.setState({ error: "profiles.json을 읽을 수 없습니다" });
+
+    useAppStore.getState().addAgent(mkProfile({ id: "a1" }));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(mockApi.saveState).not.toHaveBeenCalled();
+    await expect(flushPersistence()).rejects.toThrow("profiles-read-only");
+    expect(mockApi.saveState).not.toHaveBeenCalled();
+
+    useProfileLoadStore.setState({ error: null });
+    useAppStore.getState().updateAgent("a1", { name: "Recovered" });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(mockApi.saveState).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 });
 

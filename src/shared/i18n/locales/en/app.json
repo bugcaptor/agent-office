@@ -61,6 +61,11 @@
     }
   },
   "repositoryAudit": { "aria": "Repository audit", "title": "Repository audit", "refresh": "Refresh", "close": "Close", "loading": "Checking repositories…", "error": "Could not load repository status.", "empty": "No repositories found in work history.", "basisNote": "Uses remote state saved at the last sync and does not fetch automatically.", "noBranch": "No branch", "terminal": "Open terminal", "terminalError": "Could not open the terminal.", "state": { "commit": "{{count}} changes to commit", "push": "{{ahead}} to push", "pull": "{{behind}} to pull", "diverged": "Push {{ahead}} · pull {{behind}}", "conflict": "{{count}} conflicts", "unknown": "Needs checking", "noRemote": "No remote", "noUpstream": "No upstream", "clean": "All clear" } },
+  "profileLoad": {
+    "body": "Couldn't read character profiles (profiles.json). Changes won't be saved until it loads, so the original isn't overwritten.",
+    "retry": "Retry",
+    "retrying": "Retrying…"
+  },
   "shell": {
     "lightsOff": "Everyone has clocked out"
   }

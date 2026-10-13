@@ -99,6 +99,7 @@ vi.mock("../sound/soundManager", () => ({ installSoundManager: () => () => {} })
 
 import { useAppStore } from "../store/appStore";
 import { bootApp } from "../bootstrap";
+import { retryProfileLoad, useProfileLoadStore } from "../store/profileLoad";
 
 const initialState = useAppStore.getState();
 
@@ -137,6 +138,7 @@ let teardown: () => void;
 beforeEach(() => {
   vi.useFakeTimers();
   useAppStore.setState(initialState, true);
+  useProfileLoadStore.setState({ error: null, retrying: false });
   Object.values(mockApi).forEach((fn) => fn.mockClear());
   mockApi.loadState.mockResolvedValue(mkPersisted());
   mockApi.getAppSettings.mockResolvedValue({
@@ -328,7 +330,7 @@ describe("bootApp", () => {
     expect(mockApi.saveState).toHaveBeenCalledTimes(1);
   });
 
-  it("continues booting with empty state when loadState rejects (no half-boot)", async () => {
+  it("continues booting read-only with empty state when loadState rejects (no half-boot, no overwrite)", async () => {
     mockApi.loadState.mockRejectedValue(new Error("backend not ready"));
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -341,7 +343,7 @@ describe("bootApp", () => {
     expect(st.agentOrder).toEqual([]);
     expect(st.agents).toEqual({});
     expect(warn).toHaveBeenCalledWith(
-      "bootApp: loadState failed, continuing with empty state",
+      "bootApp: loadState failed, continuing with empty read-only state",
       expect.any(Error)
     );
 
@@ -358,7 +360,19 @@ describe("bootApp", () => {
     expect(useAppStore.getState().notifications).toHaveLength(1);
     expect(mockApi.setBadgeCount).toHaveBeenCalledWith(1);
 
-    // Persistence still installed: the addAgent above debounces a save.
+    // 수정 F2: 읽지 못한 profiles.json을 빈 목록으로 덮어쓰지 않는다 —
+    // 저장과 세션 입양(Kill 위험)을 모두 건너뛰고 오류를 남긴다.
+    expect(useProfileLoadStore.getState().error).toContain("backend not ready");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(mockApi.saveState).not.toHaveBeenCalled();
+    expect(mockApi.adoptDetachedSessions).not.toHaveBeenCalled();
+
+    // 재시도 성공: 실제 프로필로 hydrate하고, 저장·입양이 다시 열린다.
+    mockApi.loadState.mockResolvedValue(mkPersisted());
+    expect(await retryProfileLoad()).toBe(true);
+    expect(useProfileLoadStore.getState().error).toBeNull();
+    expect(useAppStore.getState().agentOrder).toContain("a1");
+    expect(mockApi.adoptDetachedSessions).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(500);
     expect(mockApi.saveState).toHaveBeenCalledTimes(1);
 

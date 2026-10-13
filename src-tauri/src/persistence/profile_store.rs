@@ -2,8 +2,13 @@
 //
 // JSON persistence for agent profiles (`profiles.json` in the Tauri app
 // data dir). Completion criteria: load/save round-trips through a temp
-// dir, a version-mismatched or corrupt file falls back to an empty state
-// rather than erroring.
+// dir; a missing file is an empty first-run state.
+//
+// 손상·버전 불일치 파일은 빈 상태로 취급하지 않는다(수정 F2): 빈 목록이
+// 다음 저장에 원본을 덮어 캐릭터가 전부 사라지고, 세션 입양이 빈 known 집합을
+// 믿고 살아 있는 세션을 Kill하기 때문이다. `try_load`는 Err를 돌려주며 원본을
+// `profiles.json.corrupt-<시각>`로 한 번 복사해 두고, `save`는 디스크의 파일이
+// 읽히지 않는 동안 쓰기를 거부한다(awards_store와 같은 정책).
 //
 // `sessionId` is runtime-only (SessionManager/SessionRegistry memory)
 // and is never part of `PersistedState`, so there is nothing to strip here
@@ -11,8 +16,33 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use crate::types::PersistedState;
+
+/// 이 빌드가 읽고 쓰는 profiles.json 스키마 버전.
+const PROFILE_SCHEMA_VERSION: u32 = 1;
+
+/// profiles.json이 있는데 읽을 수 없음. 빈 상태로 대체하지 않는다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileLoadError {
+    /// 읽기·파싱·버전 실패 사유.
+    pub reason: String,
+    /// 원본을 복사해 둔 경로. 복사마저 실패하면 None.
+    pub backup: Option<PathBuf>,
+}
+
+impl std::fmt::Display for ProfileLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "profiles.json을 읽을 수 없습니다: {}", self.reason)?;
+        if let Some(backup) = &self.backup {
+            write!(f, " (원본 보존: {})", backup.display())?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for ProfileLoadError {}
 
 /// 레거시 메모를 성격 프롬프트에 합친다(순수). TS `mergeLegacyNote`의 거울 —
 /// 둘 중 하나만 있으면 그것, 둘 다면 줄바꿈으로 잇는다. 성격 프롬프트가 이미
@@ -69,25 +99,79 @@ fn migrate_loaded(mut state: PersistedState) -> PersistedState {
 #[derive(Clone)]
 pub struct ProfileStore {
     file: PathBuf,
+    /// 이번 프로세스에서 만든 손상 원본 백업. 클론(AppState·control)끼리
+    /// 공유해 로드할 때마다 백업이 쌓이지 않게 한다.
+    backup: Arc<Mutex<Option<PathBuf>>>,
 }
 
 impl ProfileStore {
     pub fn new(file: PathBuf) -> Self {
-        Self { file }
+        Self { file, backup: Arc::new(Mutex::new(None)) }
     }
 
-    /// Reads and parses the profiles file. Falls back to
-    /// `PersistedState::empty()` (version 1, no agents) whenever the file is
-    /// missing, unreadable, not valid JSON, or has a `version` other than 1
-    /// -- this is the migration-hook seam.
-    pub fn load(&self) -> PersistedState {
-        match fs::read(&self.file) {
-            Ok(bytes) => match serde_json::from_slice::<PersistedState>(&bytes) {
-                Ok(s) if s.version == 1 => migrate_loaded(s),
-                _ => PersistedState::empty(),
-            },
-            Err(_) => PersistedState::empty(),
+    /// 디스크 파일을 읽어 해석만 한다(부작용 없음). 파일이 없으면 Ok(None).
+    fn read_disk(&self) -> Result<Option<PersistedState>, String> {
+        let bytes = match fs::read(&self.file) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.to_string()),
+        };
+        let state: PersistedState =
+            serde_json::from_slice(&bytes).map_err(|e| format!("JSON 해석 실패: {e}"))?;
+        if state.version != PROFILE_SCHEMA_VERSION {
+            return Err(format!("지원하지 않는 버전 {}", state.version));
         }
+        Ok(Some(state))
+    }
+
+    /// 프로필 파일을 읽는다. 파일이 없으면(첫 실행) 빈 상태. 있는데 읽을 수
+    /// 없으면 원본을 백업하고 Err — 호출자는 이를 빈 목록으로 믿으면 안 된다.
+    pub fn try_load(&self) -> Result<PersistedState, ProfileLoadError> {
+        match self.read_disk() {
+            Ok(Some(state)) => Ok(migrate_loaded(state)),
+            Ok(None) => Ok(PersistedState::empty()),
+            Err(reason) => {
+                let backup = self.backup_corrupt();
+                let err = ProfileLoadError { reason, backup };
+                eprintln!("agent-office: {err}");
+                Err(err)
+            }
+        }
+    }
+
+    /// 표시·조회 전용 읽기. 실패하면 빈 상태를 돌려준다 — 이 결과로 저장하거나
+    /// 세션을 정리하는 경로는 반드시 `try_load`를 쓴다.
+    pub fn load(&self) -> PersistedState {
+        self.try_load().unwrap_or_else(|_| PersistedState::empty())
+    }
+
+    /// 손상 원본을 `<name>.corrupt-<시각>`으로 복사한다(원본은 그대로 둔다).
+    /// 프로세스당 한 번 — 이미 만든 백업이 남아 있으면 그 경로를 돌려준다.
+    fn backup_corrupt(&self) -> Option<PathBuf> {
+        let mut made = self.backup.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(path) = made.as_ref().filter(|p| p.exists()) {
+            return Some(path.clone());
+        }
+        let name = self.file_name();
+        let stamp = chrono::Local::now().format("%Y%m%dT%H%M%S");
+        let path = self.file.with_file_name(format!("{name}.corrupt-{stamp}"));
+        match fs::copy(&self.file, &path) {
+            Ok(_) => {
+                *made = Some(path.clone());
+                Some(path)
+            }
+            Err(e) => {
+                eprintln!("agent-office: profiles.json 백업 실패: {e}");
+                None
+            }
+        }
+    }
+
+    fn file_name(&self) -> &str {
+        self.file
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("profiles.json")
     }
 
     /// Serializes `state` as pretty JSON, creating the parent directory first
@@ -95,7 +179,15 @@ impl ProfileStore {
     /// temp file in the *same* directory, then `rename` swaps it into place, so
     /// a crash mid-write can never leave a truncated `profiles.json` — a reader
     /// sees either the old file or the fully-written new one.
+    ///
+    /// 디스크의 파일이 읽히지 않는 동안에는 쓰지 않는다 — 렌더러가 빈 상태로
+    /// 부팅했더라도 손상 원본을 덮어쓰지 못하게 하는 마지막 방어선이다.
     pub fn save(&self, state: &PersistedState) -> std::io::Result<()> {
+        if let Err(reason) = self.read_disk() {
+            return Err(std::io::Error::other(format!(
+                "profiles.json을 읽을 수 없어 저장하지 않았습니다: {reason}"
+            )));
+        }
         if let Some(parent) = self.file.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -114,11 +206,7 @@ impl ProfileStore {
     /// dir is required for `rename` to be atomic rather than a cross-device
     /// copy). uuid keeps concurrent saves from clobbering each other's temp.
     fn tmp_path(&self) -> PathBuf {
-        let name = self
-            .file
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("profiles.json");
+        let name = self.file_name();
         self.file
             .with_file_name(format!("{name}.tmp-{}", uuid::Uuid::new_v4()))
     }
@@ -215,52 +303,82 @@ mod tests {
         let _ = fs::remove_dir_all(&parent);
     }
 
-    #[test]
-    fn load_returns_empty_when_version_is_not_one() {
+    /// 손상 파일을 써 두고 그 store를 돌려준다.
+    fn store_with_raw(bytes: &[u8]) -> (PathBuf, ProfileStore) {
         let file = scratch_file();
         fs::create_dir_all(file.parent().unwrap()).unwrap();
-        fs::write(&file, r#"{"agents":[],"version":2}"#).unwrap();
+        fs::write(&file, bytes).unwrap();
+        (file.clone(), ProfileStore::new(file))
+    }
 
-        let store = ProfileStore::new(file.clone());
-        let state = store.load();
+    fn corrupt_backups(file: &PathBuf) -> Vec<PathBuf> {
+        fs::read_dir(file.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.file_name().unwrap().to_str().unwrap().starts_with("profiles.json.corrupt-"))
+            .collect()
+    }
 
-        assert_eq!(state.version, 1);
-        assert!(state.agents.is_empty());
+    /// 손상 파일 회귀(수정 F2): Err + 원본 백업 + 저장 거부 + 원본 무손상.
+    fn assert_corrupt_is_preserved(bytes: &[u8]) {
+        let (file, store) = store_with_raw(bytes);
+
+        let err = store.try_load().expect_err("corrupt file must not load as empty");
+        let backup = err.backup.clone().expect("original is backed up");
+        assert_eq!(fs::read(&backup).unwrap(), bytes, "backup holds the original bytes");
+        // 표시 전용 load()는 여전히 빈 상태로 폴백한다.
+        assert!(store.load().agents.is_empty());
+
+        let save = store.save(&PersistedState::empty());
+        assert!(save.is_err(), "save must refuse to overwrite an unreadable file");
+        assert_eq!(fs::read(&file).unwrap(), bytes, "original left untouched");
+
+        // 여러 번 로드해도(클론 포함) 백업은 하나뿐이다.
+        let _ = store.clone().try_load();
+        assert_eq!(corrupt_backups(&file), vec![backup]);
 
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
     #[test]
-    fn load_returns_empty_when_file_is_not_json() {
-        let file = scratch_file();
-        fs::create_dir_all(file.parent().unwrap()).unwrap();
-        fs::write(&file, b"not json at all").unwrap();
-
-        let store = ProfileStore::new(file.clone());
-        let state = store.load();
-
-        assert_eq!(state.version, 1);
-        assert!(state.agents.is_empty());
-
-        let _ = fs::remove_dir_all(file.parent().unwrap());
+    fn unsupported_version_is_an_error_not_an_empty_state() {
+        assert_corrupt_is_preserved(br#"{"agents":[{"id":"p1"}],"version":2}"#);
     }
 
     #[test]
-    fn load_returns_empty_when_json_is_truncated() {
+    fn non_json_file_is_an_error_not_an_empty_state() {
+        assert_corrupt_is_preserved(b"not json at all");
+    }
+
+    #[test]
+    fn truncated_json_is_an_error_not_an_empty_state() {
         // Simulates a partial write (e.g. crash mid-write): valid JSON
         // prefix but cut off before it closes, so it fails to parse.
-        let file = scratch_file();
-        fs::create_dir_all(file.parent().unwrap()).unwrap();
         let full = serde_json::to_vec_pretty(&sample_state()).unwrap();
-        let truncated = &full[..full.len() / 2];
-        fs::write(&file, truncated).unwrap();
+        assert_corrupt_is_preserved(&full[..full.len() / 2]);
+    }
 
+    #[test]
+    fn missing_file_loads_empty_and_save_creates_it() {
+        let file = scratch_file();
         let store = ProfileStore::new(file.clone());
-        let state = store.load();
+        assert_eq!(store.try_load().unwrap().agents.len(), 0);
+        store.save(&sample_state()).expect("first-run save succeeds");
+        assert_eq!(store.try_load().unwrap().agents.len(), 1);
+        assert!(corrupt_backups(&file).is_empty());
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
 
-        assert_eq!(state.version, 1);
-        assert!(state.agents.is_empty());
+    #[test]
+    fn save_resumes_once_the_file_is_readable_again() {
+        let (file, store) = store_with_raw(b"{broken");
+        assert!(store.try_load().is_err());
+        assert!(store.save(&sample_state()).is_err());
 
+        // 사용자가 원본을 고쳤거나 지웠다 → 저장이 다시 열린다.
+        fs::remove_file(&file).unwrap();
+        store.save(&sample_state()).expect("save works after the file is gone");
+        assert_eq!(store.try_load().unwrap().agents[0].id, "p1");
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 

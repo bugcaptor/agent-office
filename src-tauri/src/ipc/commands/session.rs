@@ -180,21 +180,29 @@ pub async fn handoff_sessions(
     })
 }
 
+/// 입양의 known 집합. 프로필 파일을 읽지 못하면 None — 그 집합은 신뢰할 수
+/// 없으므로(빈 집합이면 넘겨 둔 세션이 전부 Kill된다) 입양 자체를 건너뛴다.
+pub(crate) fn adoption_known_agent_ids(
+    store: &crate::persistence::profile_store::ProfileStore,
+) -> Option<std::collections::HashSet<String>> {
+    let state = store.try_load().ok()?;
+    Some(state.agents.into_iter().map(|a| a.id).collect())
+}
+
 /// 부트스트랩 시 1회 호출: sessiond에 남아 있는 세션들을 되찾는다(§핵심 4).
 /// 영속 프로필에 없는 agentId는 데몬에 Kill 지시되고 반환되지 않는다.
+/// 프로필 파일을 읽지 못하면 아무것도 입양·Kill하지 않는다 — 세션은 데몬에
+/// 남아 파일이 복구된 뒤의 입양을 기다린다.
 /// 비unix에서는 `SessionManager::adopt_detached`가 항상 빈 벡터를 반환한다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn adopt_detached_sessions(
     app_state: State<'_, AppState>,
 ) -> Result<Vec<AdoptedSessionInfo>, String> {
     let manager = app_state.manager.clone();
-    let known_agent_ids: std::collections::HashSet<String> = app_state
-        .store
-        .load()
-        .agents
-        .into_iter()
-        .map(|a| a.id)
-        .collect();
+    let Some(known_agent_ids) = adoption_known_agent_ids(&app_state.store) else {
+        eprintln!("agent-office: profiles unreadable, skipping session adoption (no kills)");
+        return Ok(Vec::new());
+    };
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         manager.adopt_detached(&known_agent_ids)
     }));

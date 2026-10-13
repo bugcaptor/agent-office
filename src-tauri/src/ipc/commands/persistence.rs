@@ -10,9 +10,11 @@ use tauri::State;
 use crate::state::AppState;
 use crate::types::*;
 
+/// 파일이 있는데 읽을 수 없으면 Err — 렌더러는 이를 빈 목록으로 믿지 말고
+/// 읽기 전용으로 머물러야 한다(수정 F2). 원본은 `profiles.json.corrupt-*`로 보존된다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn load_state(app_state: State<'_, AppState>) -> Result<PersistedState, String> {
-    Ok(app_state.store.load())
+    app_state.store.try_load().map_err(|e| e.to_string())
 }
 
 /// 주의: Tauri `State` 파라미터는 `app_state`, JS 페이로드 `{ state }`는

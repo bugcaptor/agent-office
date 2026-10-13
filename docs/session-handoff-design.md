@@ -106,6 +106,8 @@ Running 세션 각각에 대해:
 `SessionManager::adopt_detached()`(시작 시 1회):
 1. 소켓 없으면 no-op. Hello/List → 영속 프로필에 있는 agent_id는 Adopt,
    **없는 agent_id는 Kill**(삭제된 에이전트의 고아 claude 방지). exited 항목은 스킵.
+   `profiles.json`이 있는데 읽히지 않으면 known 집합을 믿을 수 없으므로 입양·Kill을
+   모두 건너뛴다 — 세션은 데몬에 남고, 렌더러의 프로필 재시도가 성공하면 그때 입양한다.
 2. 받은 fd로 `SpawnedPty` 동형 번들 구성:
    - reader: poll 기반(위와 동일 구현 재사용) + EOF 시 완료 채널 발화
    - writer: fd dup의 `File`

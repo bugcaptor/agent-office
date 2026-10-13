@@ -18,6 +18,7 @@ import { SessionHistoryPanel } from "../workpanels/SessionHistoryPanel";
 import { NotificationTicker } from "../notification/NotificationTicker";
 import { SessionTimePanel } from "../timeline/SessionTimePanel";
 import { BottomBar } from "./BottomBar";
+import { ProfileLoadBanner } from "./ProfileLoadBanner";
 import { TopBar } from "./TopBar";
 
 export function UIChrome() {
@@ -25,6 +26,7 @@ export function UIChrome() {
   return (
     <div className="ui-chrome">
       <TopBar />
+      <ProfileLoadBanner />
       {enabled && <><WorkItemsPanel /><SessionHistoryPanel /></>}
       <div className="ticker-column">
         <SessionTimePanel />

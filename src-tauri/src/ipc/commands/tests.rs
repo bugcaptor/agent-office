@@ -678,6 +678,34 @@
     }
 
     #[tokio::test]
+    async fn load_state_reports_corrupt_profiles_instead_of_empty_state() {
+        let (state, ctl, dir, profile_dir) = build("load-state-corrupt");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        std::fs::write(profile_dir.join("profiles.json"), b"{broken").unwrap();
+        // Mirrors `load_state`'s body: `store.try_load().map_err(|e| e.to_string())`.
+        let result: Result<PersistedState, String> =
+            state.store.try_load().map_err(|e| e.to_string());
+        let msg = result.expect_err("corrupt profiles must surface as an error");
+        assert!(msg.contains("profiles.json.corrupt-"), "backup path in message: {msg}");
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    #[tokio::test]
+    async fn adoption_skips_kills_when_profiles_are_unreadable() {
+        let (state, ctl, dir, profile_dir) = build("adopt-corrupt");
+        // 첫 실행(파일 없음): 빈 known 집합 — 정상 입양 경로.
+        assert_eq!(
+            super::session::adoption_known_agent_ids(&state.store),
+            Some(std::collections::HashSet::new())
+        );
+        // 손상 파일: known 집합을 믿을 수 없으므로 None(입양·Kill 건너뜀).
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        std::fs::write(profile_dir.join("profiles.json"), b"not json").unwrap();
+        assert_eq!(super::session::adoption_known_agent_ids(&state.store), None);
+        cleanup(&ctl, &dir, &profile_dir);
+    }
+
+    #[tokio::test]
     async fn save_state_delegates_to_store_save_and_maps_io_error_to_string() {
         let (state, ctl, dir, profile_dir) = build("save-state");
         let persisted = PersistedState {

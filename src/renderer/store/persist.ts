@@ -17,6 +17,7 @@
 // touching both within the window still collapses into a single saveState call.
 import { useAppStore } from "./appStore";
 import { tauriApi } from "../ipc/tauriApi";
+import { profilesReadOnly } from "./profileLoadState";
 import type { AgentProfile, PersistedState } from "./types";
 
 const DEBOUNCE_MS = 500;
@@ -31,8 +32,17 @@ function currentState(): PersistedState {
   };
 }
 
+/**
+ * 프로필을 읽지 못한 상태(profileLoad)에서는 쓰지 않는다 — 스토어의 빈 목록이
+ * 디스크의 원본을 덮어 캐릭터가 전부 사라지는 것을 막는다(수정 F2).
+ */
+function readOnlyError(): Error {
+  return new Error("profiles-read-only");
+}
+
 /** Writes the current profile snapshot now, cancelling the normal debounce. */
 export function flushPersistence(): Promise<void> {
+  if (!flushPendingPersistence && profilesReadOnly()) return Promise.reject(readOnlyError());
   return flushPendingPersistence?.() ?? tauriApi.saveState(currentState());
 }
 
@@ -47,6 +57,7 @@ export function installPersistence(): () => void {
   let saveChain: Promise<void> = Promise.resolve();
   let saveInFlight = false;
   const writeCurrent = (): Promise<void> => {
+    if (profilesReadOnly()) return Promise.reject(readOnlyError());
     const snapshot = currentState();
     // A slow older debounce write must finish before the newer connection
     // snapshot writes, otherwise it can overwrite the profile cwd the backend

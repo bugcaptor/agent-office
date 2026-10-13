@@ -46,47 +46,13 @@ import { installQuitGuard } from "./quitGuard";
 import { installSoundManager } from "./sound/soundManager";
 import { useAwardsStore } from "./awards/awardsStore";
 import { tauriApi } from "./ipc/tauriApi";
-import { terminalRegistry } from "./terminal/TerminalRegistry";
-import type { PersistedState } from "./store/types";
+import { adoptDetachedSessions } from "./ipc/sessionAdoption";
+import { loadProfiles } from "./store/profileLoad";
 import {
   msUntilNextLocalMidnight,
   startOfLocalDay,
   sumWorkedSince,
 } from "./timeline/todayTotal";
-
-/**
- * 세션 핸드오프(docs/session-handoff-design.md §핵심 6) 입양: 데몬에 남아있던
- * 세션들을 Running으로 스토어에 시드하고, 그 터미널이 처음 activate될 때
- * redraw nudge(TerminalRegistry.markAdopted)를 태우도록 표시한다. 미지원
- * 플랫폼/데몬 없음은 빈 배열 응답이라 자연히 no-op. 실패해도 부팅은 계속
- * (loadState/getAppSettings와 동일한 폴백 패턴) — 최악의 경우 이전 세션을
- * 못 되찾을 뿐, 새 세션 시작 자체는 영향받지 않는다.
- */
-async function adoptDetachedSessions(): Promise<void> {
-  try {
-    const adopted = await tauriApi.adoptDetachedSessions();
-    if (adopted.length === 0) return;
-    for (const info of adopted) {
-      useAppStore
-        .getState()
-        .setSessionState({ agentId: info.agentId, status: "running" });
-      useAppStore.getState().setSessionSize(info.agentId, info.cols, info.rows);
-      // 세션 사용량(터미널 요약 바, docs/session-analytics-design.md §11.2):
-      // 이 방어적 시드 루프도 session-state 이벤트와 마찬가지로 sessionId를
-      // 잡아둬야 한다 — 이벤트가 유실/지연되면 sessionUsage[agentId]가
-      // undefined로 남아 시드에 누계가 있어도 사용량 스팬이 아예 안 뜬다.
-      // 같은 sessionId면 noteUsageSession이 no-op이라 정상 도착 경로와 안
-      // 충돌한다.
-      useAppStore.getState().noteUsageSession(info.agentId, info.sessionId);
-    }
-    terminalRegistry.markAdopted(adopted.map((a) => a.agentId));
-  } catch (err) {
-    console.warn(
-      "bootstrap: session adoption failed, continuing without prior sessions",
-      err,
-    );
-  }
-}
 
 /**
  * 이 달의 우수사원(docs/employee-of-the-month-design.md §3) 부팅 시 자동 확정:
@@ -139,21 +105,18 @@ function installDayRollover(): () => void {
  * the running app never calls this, the bridge/persistence live for the
  * app's lifetime).
  *
- * `loadState` failing (backend not ready / IPC error) must NOT abort the
- * boot: `main.tsx` fires this as `void bootApp()`, so a throw here would
- * silently skip the bridge + persistence installs — the shell would paint
- * but notifications/badge/saving would be dead (half-boot). Instead, fall
- * back to an empty `PersistedState` and continue unconditionally.
+ * `loadState` failing (backend not ready / IPC error / corrupt profiles.json)
+ * must NOT abort the boot: `main.tsx` fires this as `void bootApp()`, so a
+ * throw here would silently skip the bridge + persistence installs — the
+ * shell would paint but notifications/badge would be dead (half-boot).
+ * `loadProfiles` falls back to an empty state and continues, but marks the
+ * profiles read-only so persistence never overwrites the unread file with
+ * that empty list (수정 F2).
  */
 export async function bootApp(): Promise<() => void> {
-  let state: PersistedState;
-  try {
-    state = await tauriApi.loadState();
-  } catch (err) {
-    console.warn("bootApp: loadState failed, continuing with empty state", err);
-    state = { agents: [], version: 1 };
-  }
-  useAppStore.getState().hydrate(state);
+  // false면 프로필을 못 읽은 읽기 전용 상태 — 입양은 재시도 성공 뒤로 미룬다
+  // (빈 목록 기준으로 입양하면 남은 세션의 주인을 알 수 없다).
+  const profilesLoaded = await loadProfiles();
 
   // 앱 설정 로드 — 실패해도 부팅은 계속(전부 OFF 기본값 유지, 첫 실행
   // 다이얼로그는 안 띄움: 백엔드 불통 상태에서 온보딩을 저장할 수 없다).
@@ -194,7 +157,7 @@ export async function bootApp(): Promise<() => void> {
   const offDisplayFocus = installDisplayFocusBridge();
   // 창 포커스 추적(이슈 #39) — 브리지 직후. 비포커스면 알림 억제 해제 + OS 알림.
   const offFocus = installWindowFocusTracking();
-  await adoptDetachedSessions();
+  if (profilesLoaded) await adoptDetachedSessions();
   const offPersistence = installPersistence();
   const offPortraits = installPortraitCache();
   const offSprites = installSpriteCache();

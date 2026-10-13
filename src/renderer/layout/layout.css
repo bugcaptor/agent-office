@@ -78,6 +78,40 @@ body {
   pointer-events: none;
 }
 
+/* profiles.json 로드 실패 경고(수정 F2) — TopBar 바로 아래, 클릭 가능. */
+.profile-load-banner {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, calc(100% - 32px));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  font-family: "DungGeunMo", monospace;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--accent-error);
+  pointer-events: auto;
+  z-index: 1;
+}
+.profile-load-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.profile-load-banner-text p {
+  margin: 0;
+}
+.profile-load-banner-text p + p {
+  margin-top: 4px;
+}
+.profile-load-banner-detail {
+  opacity: 0.8;
+  overflow-wrap: anywhere;
+}
+
 .top-bar,
 .bottom-bar {
   pointer-events: auto;
