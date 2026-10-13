@@ -810,144 +810,35 @@ describe("app settings slice", () => {
     expect(useAppStore.getState().settingsHydrated).toBe(false);
   });
 
-  it("updateAppSettings가 스토어를 갱신하고 백엔드에 저장한다", () => {
-    useAppStore.getState().updateAppSettings({ summaryProvider: "codex",
- summaryModels: {
-   claude: { light: "", heavy: "", command: "" },
-   codex: { light: "", heavy: "", command: "" },
-   agy: { light: "", heavy: "", command: "" },
-   gemini: { light: "", heavy: "", command: "" },
-   opencode: { light: "", heavy: "", command: "" },
-   openrouter: { light: "", heavy: "", command: "" },
- }, observerEnabled: true });
+  it("updateAppSettings가 스토어를 갱신하고 바꾼 키만 백엔드에 보낸다", () => {
+    const summaryModels = {
+      claude: { light: "", heavy: "", command: "" },
+      codex: { light: "", heavy: "", command: "" },
+      agy: { light: "", heavy: "", command: "" },
+      gemini: { light: "", heavy: "", command: "" },
+      opencode: { light: "", heavy: "", command: "" },
+      openrouter: { light: "", heavy: "", command: "" },
+    };
+    useAppStore
+      .getState()
+      .updateAppSettings({ summaryProvider: "codex", summaryModels, observerEnabled: true });
+    const s = useAppStore.getState().appSettings;
+    expect(s.summaryProvider).toBe("codex");
+    expect(s.observerEnabled).toBe(true);
+    expect(s.gitStatusEnabled).toBe(true);
+    // 수정 F6: 렌더러 사본 전체가 아니라 패치만 — 백엔드가 병합한다.
     expect(setAppSettingsMock).toHaveBeenCalledWith({
-      version: 1,
-      language: "system",
-      summarizerEnabled: false,
       summaryProvider: "codex",
-      summaryModels: {
-        claude: { light: "", heavy: "", command: "" },
-        codex: { light: "", heavy: "", command: "" },
-        agy: { light: "", heavy: "", command: "" },
-        gemini: { light: "", heavy: "", command: "" },
-        opencode: { light: "", heavy: "", command: "" },
-        openrouter: { light: "", heavy: "", command: "" },
-      },
-      diaryEnabled: false,
+      summaryModels,
       observerEnabled: true,
-      typingSoundEnabled: true,
-      notifySoundEnabled: true,
-      soundVolume: 0.5,
-      externalTerminal: "terminal",
-      externalEditor: "system",
-      attentionHoldMs: 5000,
-      gitStatusEnabled: true,
-      workdirShowIgnored: false,
-      fileIndexBackend: "walker",
-      cliEnabled: false,
-      keepAwakeEnabled: false,
-      sessionLogEnabled: true,
-      runRecipesEnabled: false,
-      workPanelsEnabled: false,
-      mascotEnabled: false,
-      mascotLightsMode: "off",
-      mascotLightsVertical: false,
-      mascotLightsProjects: [],
-      mascotLightsFace: "sprite",
-      mascotLightsLabel: "auto",
-      usageFloatEnabled: true,
-      sessionCostEnabled: true,
     });
   });
 
-  it("completeFirstRun이 선택을 저장하고 firstRun을 끈다", () => {
-    useAppStore.getState().hydrateSettings(
-      {
-        version: 1,
-        language: "system",
-        summarizerEnabled: false,
-        summaryProvider: "claude",
-        summaryModels: {
-          claude: { light: "", heavy: "", command: "" },
-          codex: { light: "", heavy: "", command: "" },
-          agy: { light: "", heavy: "", command: "" },
-          gemini: { light: "", heavy: "", command: "" },
-          opencode: { light: "", heavy: "", command: "" },
-          openrouter: { light: "", heavy: "", command: "" },
-        },
-        diaryEnabled: false,
-        observerEnabled: false,
-        typingSoundEnabled: true,
-        notifySoundEnabled: true,
-        soundVolume: 0.5,
-        externalTerminal: "terminal",
-        externalEditor: "system",
-        attentionHoldMs: 5000,
-        gitStatusEnabled: true,
-        workdirShowIgnored: false,
-        fileIndexBackend: "walker",
-        cliEnabled: false,
-        keepAwakeEnabled: false,
-        sessionLogEnabled: true,
-        runRecipesEnabled: false,
-        workPanelsEnabled: false,
-        mascotEnabled: false,
-        mascotLightsMode: "off",
-        mascotLightsVertical: false,
-        mascotLightsProjects: [],
-        mascotLightsFace: "sprite",
-        mascotLightsLabel: "auto",
-        usageFloatEnabled: true,
-        sessionCostEnabled: true,
-      },
-      true
-    );
-    useAppStore.getState().completeFirstRun({
-      summarizerEnabled: true,
-      summaryProvider: "codex",
-      diaryEnabled: false,
-      observerEnabled: true,
-    });
-    const s = useAppStore.getState();
-    expect(s.settingsFirstRun).toBe(false);
-    expect(s.appSettings).toEqual({
-      version: 1,
-      language: "system",
-      summarizerEnabled: true,
-      summaryProvider: "codex",
-      summaryModels: {
-        claude: { light: "", heavy: "", command: "" },
-        codex: { light: "", heavy: "", command: "" },
-        agy: { light: "", heavy: "", command: "" },
-        gemini: { light: "", heavy: "", command: "" },
-        opencode: { light: "", heavy: "", command: "" },
-        openrouter: { light: "", heavy: "", command: "" },
-      },
-      diaryEnabled: false,
-      observerEnabled: true,
-      typingSoundEnabled: true,
-      notifySoundEnabled: true,
-      soundVolume: 0.5,
-      externalTerminal: "terminal",
-      externalEditor: "system",
-      attentionHoldMs: 5000,
-      gitStatusEnabled: true,
-      workdirShowIgnored: false,
-      fileIndexBackend: "walker",
-      cliEnabled: false,
-      keepAwakeEnabled: false,
-      sessionLogEnabled: true,
-      runRecipesEnabled: false,
-      workPanelsEnabled: false,
-      mascotEnabled: false,
-      mascotLightsMode: "off",
-      mascotLightsVertical: false,
-      mascotLightsProjects: [],
-      mascotLightsFace: "sprite",
-      mascotLightsLabel: "auto",
-      usageFloatEnabled: true,
-      sessionCostEnabled: true,
-    });
+  it("receiveAppSettings는 백엔드 설정으로 사본을 통째로 교체한다", () => {
+    const next = { ...useAppStore.getState().appSettings, gitStatusEnabled: false };
+    useAppStore.getState().receiveAppSettings(next);
+    expect(useAppStore.getState().appSettings).toEqual(next);
+    expect(setAppSettingsMock).not.toHaveBeenCalled();
   });
 
   it("사운드 설정 기본값은 켜짐/0.5다", () => {
@@ -961,9 +852,10 @@ describe("app settings slice", () => {
     const s = useAppStore.getState();
     expect(s.appSettings.typingSoundEnabled).toBe(false);
     expect(s.appSettings.soundVolume).toBe(0.2);
-    expect(setAppSettingsMock).toHaveBeenCalledWith(
-      expect.objectContaining({ typingSoundEnabled: false, soundVolume: 0.2 })
-    );
+    expect(setAppSettingsMock).toHaveBeenCalledWith({
+      typingSoundEnabled: false,
+      soundVolume: 0.2,
+    });
   });
 });
 

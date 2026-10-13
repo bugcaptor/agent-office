@@ -137,8 +137,9 @@ export interface AgentOfficeApi {
   generateCodexImage(prompt: string): Promise<GeneratedCodexImage>;
   /** 앱 전역 opt-in 설정 로드. 인자 없음. */
   getAppSettings(): Promise<GetAppSettingsResult>;
-  /** 앱 전역 opt-in 설정 저장. */
-  setAppSettings(settings: AppSettings): Promise<void>;
+  /** 앱 전역 opt-in 설정 저장. 바꾼 키만 보내면 백엔드가 현재 값에 병합한다
+   *  (렌더러 사본 전체로 CLI 변경을 덮지 않게, 수정 F6). */
+  setAppSettings(patch: Partial<AppSettings>): Promise<void>;
   /** 프로젝트 cwd의 캐릭터 조사 결과와 손 등록 레시피를 함께 읽는다. */
   runRecipesRead(root: string): Promise<RunRecipesReadResult>;
   /** 앱 소유 user 파일을 전체 교체한다. */
@@ -218,6 +219,8 @@ export interface AgentOfficeApi {
   /** turn-usage(한 턴의 토큰 사용량) 구독. notification-new와 독립된 채널이라
    * 서브에이전트로 억제된 Stop에서도 온다. Returns an unsubscribe function. */
   onTurnUsage(cb: (e: TurnUsageEvent) => void): () => void;
+  /** app-settings-changed(백엔드가 저장한 새 설정 전체) 구독. Returns an unsubscribe function. */
+  onAppSettingsChanged(cb: (settings: AppSettings) => void): () => void;
   /** 완료된 턴 1건을 로컬 시계열 로그에 append (fire-and-forget). */
   appendSessionTurn(record: SessionTurnRecord): void;
   /** 누적된 세션 턴 기록 전체를 읽는다(통계용). 손상된 줄은 건너뛴다. */

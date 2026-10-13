@@ -374,6 +374,8 @@ interface AppState {
   // ---- app settings ----
   /** 부트 시 백엔드 getAppSettings 결과 반영. */
   hydrateSettings(settings: AppSettings, firstRun: boolean): void;
+  /** 백엔드가 저장한 설정 전체(app-settings-changed)로 사본을 교체한다. */
+  receiveAppSettings(settings: AppSettings): void;
   /** 스토어 갱신 + 백엔드 저장(fire-and-forget). */
   updateAppSettings(
     patch: Partial<
@@ -991,12 +993,15 @@ export const useAppStore = create<AppState>()(
         settingsHydrated: true,
       }),
 
+    receiveAppSettings: (settings) => set({ appSettings: settings }),
+
     updateAppSettings: (patch) => {
-      const next = { ...get().appSettings, ...patch };
-      set({ appSettings: next });
-      // fire-and-forget: 저장 실패는 콘솔 경고로만(다음 부팅 때 이전 값 복원됨).
+      set({ appSettings: { ...get().appSettings, ...patch } });
+      // 바꾼 키만 보낸다 — 백엔드가 현재 값에 병합하므로 CLI가 바꾼 다른 키를
+      // 렌더러 사본으로 되돌리지 않는다(수정 F6). fire-and-forget: 저장 실패는
+      // 콘솔 경고로만(다음 부팅 때 이전 값 복원됨).
       void tauriApi
-        .setAppSettings(next)
+        .setAppSettings(patch)
         .catch((err) => console.warn("settings: save failed", err));
     },
 

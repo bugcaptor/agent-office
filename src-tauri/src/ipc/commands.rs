@@ -17,7 +17,7 @@
 // This file is a parent hub only: the actual command bodies live in
 // domain submodules below, split out for readability. Every submodule item
 // referenced elsewhere in the crate (Tauri's `generate_handler!` in
-// `lib.rs`, `control::settings_set`'s call to `apply_settings_effects`,
+// `lib.rs`, `control::settings_set`'s call to `apply_settings_patch`,
 // and this module's own `tests` submodule) is re-exported here with
 // `pub(crate) use <domain>::*;` so `crate::ipc::commands::<name>` keeps
 // resolving exactly as it did before the split -- only the file each

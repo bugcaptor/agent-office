@@ -40,6 +40,7 @@ const { mockApi } = vi.hoisted(() => ({
     onNotificationCleared: vi.fn(() => vi.fn()),
     onActivity: vi.fn(() => vi.fn()),
     onTurnUsage: vi.fn(() => vi.fn()),
+    onAppSettingsChanged: vi.fn(() => vi.fn()),
     onTalkMessage: vi.fn(() => vi.fn()),
     appendSessionTurn: vi.fn(),
     loadSessionTurns: vi.fn(),

@@ -8,7 +8,6 @@ use std::sync::Arc;
 use axum::extract::{Json, State};
 
 use crate::httpapi::{fail, ok, session_state_str};
-use crate::persistence::settings_store::AppSettings;
 use crate::session_events::types::AgentEventProfile;
 use crate::types::{CreateSessionRequest, SessionState};
 
@@ -156,31 +155,19 @@ pub(super) async fn settings_set(
     if obj.contains_key("cliEnabled") || obj.contains_key("cli_enabled") {
         return fail("cliEnabled는 앱 설정에서만 변경할 수 있습니다");
     }
-    let current = ctx.settings.read().unwrap().clone();
-    let mut merged = match serde_json::to_value(current) {
-        Ok(v) => v,
-        Err(e) => return fail(e.to_string()),
-    };
-    if let Some(map) = merged.as_object_mut() {
-        for (k, v) in obj {
-            map.insert(k.clone(), v.clone());
-        }
-    }
-    let new: AppSettings = match serde_json::from_value(merged) {
-        Ok(s) => s,
-        Err(e) => return fail(format!("설정 파싱 실패: {e}")),
-    };
-    match crate::ipc::commands::apply_settings_effects(
+    // 병합·저장은 apply_settings_patch가 설정 write 가드 안에서 한다(수정 F6).
+    match crate::ipc::commands::apply_settings_patch(
         &ctx.settings_store,
         &ctx.settings,
         &ctx.hub,
         &ctx.observer_server,
         &ctx.observer,
-        new.clone(),
+        ctx.settings_changed.as_ref(),
+        obj,
     )
     .await
     {
-        Ok(()) => ok(ctx.settings.read().unwrap().clone()),
+        Ok(settings) => ok(settings),
         Err(e) => fail(e),
     }
 }

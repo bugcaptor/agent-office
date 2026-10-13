@@ -72,6 +72,9 @@ pub struct ControlContext {
     pub sprite_store: crate::persistence::png_store::PngStore,
     /// 창을 복원하고 렌더러에 표시 전용 선택을 알린다. 세션을 생성하지 않는다.
     pub focus_agent: Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>,
+    /// 설정이 저장될 때마다(GUI·CLI 공통) 새 설정 전체를 렌더러에 알린다(수정 F6).
+    /// 설정 write 가드 안에서 불리므로 블로킹·재진입하지 않아야 한다.
+    pub settings_changed: Arc<dyn Fn(&AppSettings) + Send + Sync>,
 }
 
 impl ControlContext {
@@ -245,6 +248,8 @@ mod tests {
         ctl: Arc<FakeControl>,
         dir: PathBuf,
         _observer_dir: PathBuf,
+        /// `settings_changed` 통지로 받은 설정들(저장 순서).
+        changed: Arc<std::sync::Mutex<Vec<AppSettings>>>,
     }
 
     fn scratch(tag: &str) -> PathBuf {
@@ -291,6 +296,7 @@ mod tests {
             Arc::new(crate::session::inject::ManagerSink::new(manager.clone())),
             Arc::new(crate::state::BotPromptArms::new()),
         ));
+        let changed = Arc::new(std::sync::Mutex::new(Vec::new()));
         let ctx = Arc::new(ControlContext {
             manager,
             observer,
@@ -312,6 +318,10 @@ mod tests {
                 crate::persistence::png_store::MAX_SPRITE_BYTES,
             ),
             focus_agent: Arc::new(|_| Ok(())),
+            settings_changed: {
+                let changed = changed.clone();
+                Arc::new(move |s: &AppSettings| changed.lock().unwrap().push(s.clone()))
+            },
         });
         let state = ControlServerState::default();
         state.set_app_data_dir(dir.clone());
@@ -321,6 +331,7 @@ mod tests {
             ctl,
             dir,
             _observer_dir: observer_dir,
+            changed,
         }
     }
 
@@ -559,6 +570,75 @@ mod tests {
         // 3분할 이후 `soundEnabled`는 와이어에 없다 — 병합 패치로 들어와도
         // 무시된다(로드 시점 마이그레이션만 옛 키를 인정한다).
         assert!(f.ctx.settings.read().unwrap().notify_sound_enabled);
+        cleanup(&f);
+    }
+
+    /// 수정 F6: CLI 변경이 렌더러에 통지되고, 뒤이은 GUI 패치 저장이 그 값을
+    /// 되돌리지 않는다.
+    #[tokio::test]
+    async fn settings_set_notifies_renderer_and_survives_gui_patch() {
+        let f = build("settings-sync");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        assert!(f.ctx.settings.read().unwrap().git_status_enabled);
+
+        let resp: serde_json::Value = reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/v1/settings/set"))
+            .header(TOKEN_HEADER, &token)
+            .json(&serde_json::json!({ "gitStatusEnabled": false }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(resp["ok"], true);
+        {
+            let changed = f.changed.lock().unwrap();
+            assert_eq!(changed.len(), 1);
+            assert!(!changed[0].git_status_enabled);
+        }
+
+        // GUI는 바꾼 키만 보낸다 — 백엔드가 현재 값에 병합한다.
+        let gui_patch = serde_json::json!({ "typingSoundEnabled": false });
+        let saved = crate::ipc::commands::apply_settings_patch(
+            &f.ctx.settings_store,
+            &f.ctx.settings,
+            &f.ctx.hub,
+            &f.ctx.observer_server,
+            &f.ctx.observer,
+            f.ctx.settings_changed.as_ref(),
+            gui_patch.as_object().unwrap(),
+        )
+        .await
+        .unwrap();
+        assert!(!saved.git_status_enabled);
+        assert!(!saved.typing_sound_enabled);
+        assert_eq!(f.ctx.settings_store.load().0, saved);
+        assert_eq!(f.changed.lock().unwrap().last(), Some(&saved));
+        cleanup(&f);
+    }
+
+    #[tokio::test]
+    async fn settings_set_rejects_wrong_types_without_saving_or_notifying() {
+        let f = build("settings-bad-type");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        let before = f.ctx.settings.read().unwrap().clone();
+
+        let resp: serde_json::Value = reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/v1/settings/set"))
+            .header(TOKEN_HEADER, &token)
+            .json(&serde_json::json!({ "gitStatusEnabled": "nope" }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(resp["ok"], false);
+        assert_eq!(*f.ctx.settings.read().unwrap(), before);
+        assert!(f.changed.lock().unwrap().is_empty());
         cleanup(&f);
     }
 

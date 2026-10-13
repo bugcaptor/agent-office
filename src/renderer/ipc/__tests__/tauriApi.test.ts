@@ -577,50 +577,13 @@ describe("app settings commands", () => {
     expect(r.firstRun).toBe(true);
   });
 
-  it("setAppSettings는 set_app_settings에 { settings }를 전달한다", async () => {
-    const s = {
-      version: 1,
-      language: "system",
-      summarizerEnabled: true,
-      summaryProvider: "codex" as const,
-      summaryModels: {
-        claude: { light: "", heavy: "", command: "" },
-        codex: { light: "", heavy: "", command: "" },
-        agy: { light: "", heavy: "", command: "" },
-        gemini: { light: "", heavy: "", command: "" },
-        opencode: { light: "", heavy: "", command: "" },
-        openrouter: { light: "", heavy: "", command: "" },
-      },
-      diaryEnabled: false,
-      observerEnabled: false,
-      typingSoundEnabled: true,
-      notifySoundEnabled: true,
-      soundVolume: 0.5,
-      externalTerminal: "terminal" as const,
-      externalEditor: "system" as const,
-      attentionHoldMs: 5000,
-      gitStatusEnabled: true,
-      workdirShowIgnored: false,
-      fileIndexBackend: "walker" as const,
-      cliEnabled: false,
-      keepAwakeEnabled: false,
-      sessionLogEnabled: true,
-      runRecipesEnabled: false,
-      workPanelsEnabled: false,
-      mascotEnabled: false,
-      mascotLightsMode: "off" as const,
-      mascotLightsVertical: false,
-      mascotLightsProjects: [],
-      mascotLightsFace: "sprite" as const,
-      mascotLightsLabel: "auto" as const,
-      usageFloatEnabled: true,
-      sessionCostEnabled: true,
-    };
+  it("setAppSettings는 set_app_settings에 { patch }를 전달한다", async () => {
+    const patch = { gitStatusEnabled: false, soundVolume: 0.2 };
     const tauriApi = await importTauriApi();
 
-    await tauriApi.setAppSettings(s);
+    await tauriApi.setAppSettings(patch);
 
-    expect(invoke).toHaveBeenCalledWith(Commands.setAppSettings, { settings: s });
+    expect(invoke).toHaveBeenCalledWith(Commands.setAppSettings, { patch });
   });
 
   it("실행 레시피 저장과 프로세스 커맨드의 인자와 결과를 그대로 잇는다", async () => {

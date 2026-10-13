@@ -233,7 +233,9 @@
             session_cost_enabled: true,
         };
 
-        assert!(set_app_settings_inner(&state, settings.clone()).await.is_ok());
+        assert!(set_app_settings_inner(&state, serde_json::to_value(&settings).unwrap())
+            .await
+            .is_ok());
         assert_eq!(*state.settings.read().unwrap(), settings);
         assert_eq!(state.settings_store.load().0, settings);
         assert!(!state
@@ -382,6 +384,7 @@
             portrait_store: portrait_store.clone(),
             sprite_store: sprite_store.clone(),
             focus_agent: Arc::new(|_| Ok(())),
+            settings_changed: Arc::new(|_| {}),
         });
 
         let live_usage = std::sync::Arc::new(crate::usage::LiveUsageState::new());

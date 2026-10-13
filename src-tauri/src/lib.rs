@@ -643,6 +643,12 @@ pub fn run() {
                             .map_err(|e| e.to_string())
                     })
                 },
+                settings_changed: {
+                    let handle = handle.clone();
+                    Arc::new(move |settings: &crate::persistence::settings_store::AppSettings| {
+                        let _ = handle.emit_to("main", "app-settings-changed", settings);
+                    })
+                },
             });
             if settings_cache.read().unwrap().cli_enabled {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));

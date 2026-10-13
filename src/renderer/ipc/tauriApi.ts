@@ -175,8 +175,8 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.getAppSettings);
   },
 
-  async setAppSettings(settings: AppSettings) {
-    await invoke(Commands.setAppSettings, { settings });
+  async setAppSettings(patch: Partial<AppSettings>) {
+    await invoke(Commands.setAppSettings, { patch });
   },
 
   async runRecipesRead(root) {
@@ -515,6 +515,10 @@ export const tauriApi: AgentOfficeApi = {
 
   onTurnUsage(cb) {
     return wrapListen<TurnUsageEvent>(Events.turnUsage, cb);
+  },
+
+  onAppSettingsChanged(cb) {
+    return wrapListen<AppSettings>(Events.appSettingsChanged, cb);
   },
 
 };

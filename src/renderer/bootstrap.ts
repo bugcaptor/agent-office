@@ -23,6 +23,7 @@ import { applyLanguageSetting } from "./i18n";
 import { installSessionBridge } from "./ipc/sessionBridge";
 import { installMascotBridge } from "./ipc/mascotBridge";
 import { installDisplayFocusBridge } from "./ipc/displayFocusBridge";
+import { installSettingsSync } from "./ipc/settingsSyncBridge";
 import { installWindowFocusTracking } from "./ipc/windowFocus";
 import { installPersistence } from "./store/persist";
 import { installPortraitCache } from "./portrait/portraitCache";
@@ -121,6 +122,8 @@ export async function bootApp(): Promise<() => void> {
   // 앱 설정 로드 — 실패해도 부팅은 계속(전부 OFF 기본값 유지, 첫 실행
   // 다이얼로그는 안 띄움: 백엔드 불통 상태에서 온보딩을 저장할 수 없다).
   // installTaskLabelSummarizer보다 먼저 — summarizer가 이 설정을 읽는다.
+  // 변경 구독은 로드보다 먼저 건다 — 로드와 구독 사이의 CLI 변경을 놓치지 않게.
+  const offSettingsSync = installSettingsSync();
   try {
     const { settings, firstRun } = await tauriApi.getAppSettings();
     useAppStore.getState().hydrateSettings(settings, firstRun);
@@ -192,6 +195,7 @@ export async function bootApp(): Promise<() => void> {
   finalizeAwardsInBackground();
 
   return () => {
+    offSettingsSync();
     offBridge();
     offSessionSummaries();
     offWorkMonitor();

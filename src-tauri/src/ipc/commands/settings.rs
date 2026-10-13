@@ -1,10 +1,10 @@
 // src-tauri/src/ipc/commands/settings.rs
 //
 // App settings read/write plus CLI control (#55) 2-step approval commands.
-// `apply_settings_effects` is shared with the CLI control handler
+// `apply_settings_patch` is shared with the CLI control handler
 // (`control::settings_set`) so it stays `pub(crate)` and is called at its
 // full crate path from `control/mod.rs` -- keep it re-exported at
-// `crate::ipc::commands::apply_settings_effects` via the parent module's
+// `crate::ipc::commands::apply_settings_patch` via the parent module's
 // `pub use settings::*;`.
 
 use tauri::State;
@@ -47,7 +47,9 @@ pub async fn get_app_settings(
     })
 }
 
-/// 저장 + 캐시 갱신. Observer OFF→ON이면 서버를 지연 기동한다(이미 떠 있으면
+/// 렌더러가 바꾼 키만 담은 패치를 받아 백엔드 현재 값에 병합·저장한다(수정
+/// F6) — 렌더러 사본 전체를 저장하면 CLI(`ctl settings set`)가 바꾼 값을
+/// 되돌릴 수 있다. Observer OFF→ON이면 서버를 지연 기동한다(이미 떠 있으면
 /// 재사용). ON→OFF는 서버 프로세스 자체를 내리지 않는다 — 이미 떠 있는
 /// 세션들의 훅 POST는 계속 수신된다. 다만 캐시가 OFF로 갱신된 뒤로는
 /// lib.rs의 observer URL getter가 (서버가 살아있어도) None을 돌려주므로, 이
@@ -56,22 +58,27 @@ pub async fn get_app_settings(
 #[tauri::command(rename_all = "camelCase")]
 pub async fn set_app_settings(
     app_state: State<'_, AppState>,
-    settings: AppSettings,
+    patch: serde_json::Value,
 ) -> Result<(), String> {
-    set_app_settings_inner(&app_state, settings).await
+    set_app_settings_inner(&app_state, patch).await
 }
 
 pub(crate) async fn set_app_settings_inner(
     app_state: &AppState,
-    settings: AppSettings,
+    patch: serde_json::Value,
 ) -> Result<(), String> {
-    apply_settings_effects(
+    let Some(patch) = patch.as_object() else {
+        return Err("설정 패치는 JSON 객체여야 합니다".into());
+    };
+    let ctx = &app_state.control_ctx;
+    let settings = apply_settings_patch(
         &app_state.settings_store,
         &app_state.settings,
         &app_state.hub,
         &app_state.observer_server,
         &app_state.observer,
-        settings.clone(),
+        ctx.settings_changed.as_ref(),
+        patch,
     )
     .await?;
     app_state
@@ -127,28 +134,48 @@ pub async fn set_keep_awake(
     Ok(())
 }
 
-/// 설정 저장의 공통 부수효과 — 디스크 저장 + 캐시 갱신 + 홀드 시간 반영 +
-/// observer 서버 지연 기동. Tauri 커맨드(`set_app_settings_inner`)와 CLI 제어
-/// 핸들러(`control::settings_set`)가 공유한다. first_run 플래그와 control 서버
-/// lifecycle은 호출자별로 달라 여기서 다루지 않는다.
-pub(crate) async fn apply_settings_effects(
+/// 현재 설정에 camelCase 키 패치를 덮어 새 설정을 만든다. 모르는 키는
+/// 역직렬화에서 무시되고, 타입이 틀린 값은 오류다.
+pub(crate) fn merge_settings_patch(
+    current: &AppSettings,
+    patch: &serde_json::Map<String, serde_json::Value>,
+) -> Result<AppSettings, String> {
+    let mut merged = serde_json::to_value(current).map_err(|e| e.to_string())?;
+    if let Some(map) = merged.as_object_mut() {
+        for (k, v) in patch {
+            map.insert(k.clone(), v.clone());
+        }
+    }
+    serde_json::from_value(merged).map_err(|e| format!("설정 파싱 실패: {e}"))
+}
+
+/// 설정 저장의 공통 경로 — 패치 병합 + 디스크 저장 + 캐시 갱신 + 변경 통지 +
+/// 홀드 시간 반영 + observer 서버 지연 기동. Tauri 커맨드
+/// (`set_app_settings_inner`)와 CLI 제어 핸들러(`control::settings_set`)가
+/// 공유한다. first_run 플래그와 control 서버 lifecycle은 호출자별로 달라
+/// 여기서 다루지 않는다. 저장된 새 설정을 돌려준다.
+pub(crate) async fn apply_settings_patch(
     settings_store: &crate::persistence::settings_store::SettingsStore,
     settings_cache: &std::sync::RwLock<AppSettings>,
     hub: &crate::notification::hub::NotificationHub,
     observer_server: &crate::observer::server::ObserverServerState,
     observer: &std::sync::Arc<crate::observer::ObserverRuntime>,
-    settings: AppSettings,
-) -> Result<(), String> {
-    // write 가드를 먼저 잡고 쥔 채 저장(동기, await 없음) 후 캐시를 갱신한다 --
-    // 그래야 두 호출이 겹쳐도 "디스크에 쓴 값"과 "캐시에 남는 값"이 서로 다른
-    // 호출 것이 되는 경합이 없다. 가드는 .await 지점 전에 스코프를 벗어난다
-    // (no-lock-across-await 계약 유지).
-    {
+    notify: &(dyn Fn(&AppSettings) + Send + Sync),
+    patch: &serde_json::Map<String, serde_json::Value>,
+) -> Result<AppSettings, String> {
+    // write 가드 하나 안에서 읽기·병합·저장·캐시 갱신·통지를 끝낸다(수정 F6) --
+    // GUI 저장과 CLI 저장이 겹쳐도 한쪽 병합이 다른 쪽 결과를 못 보고 덮어쓰는
+    // 일이 없고, 통지도 저장 순서대로 나가 렌더러가 마지막 값에 수렴한다.
+    // 가드는 .await 지점 전에 스코프를 벗어난다(no-lock-across-await 계약 유지).
+    let settings = {
         let mut guard = settings_cache.write().unwrap();
+        let settings = merge_settings_patch(&guard, patch)?;
         settings_store.save(&settings).map_err(|e| e.to_string())?;
         // AppSettings는 Copy가 아니다 — 아래에서 계속 읽으므로 복제해 넣는다.
         *guard = settings.clone();
-    }
+        notify(&settings);
+        settings
+    };
     // 이슈 #41: 질문 알림 홀드 시간 변경을 즉시 hub 에 반영한다.
     hub.set_hold_duration(std::time::Duration::from_millis(settings.attention_hold_ms));
     // 기본 알림 문구(문구 없는 훅의 폴백)도 UI 언어를 따라간다.
@@ -156,7 +183,7 @@ pub(crate) async fn apply_settings_effects(
     if settings.observer_enabled {
         let _ = observer_server.ensure(observer.clone()).await;
     }
-    Ok(())
+    Ok(settings)
 }
 
 /// CLI 제어(#55) 상태를 렌더러 설정 UI에 보고한다. 서버 기동 여부·승인 여부·

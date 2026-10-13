@@ -184,6 +184,9 @@ export const Events = {
   mascotOpenTerminal: "mascot-open-terminal",
   // 로컬 표시 API의 "본체에서 보기" 요청. 세션을 열지 않고 프로필만 선택한다.
   displayFocusAgent: "display-focus-agent",
+  // 백엔드가 설정을 저장할 때마다(GUI·CLI 공통) 새 설정 전체를 main에 알린다.
+  // `ctl settings set`이 바꾼 값을 렌더러 사본에 반영한다(수정 F6).
+  appSettingsChanged: "app-settings-changed",
   // 한 턴의 토큰 사용량. notificationNew와 분리된 채널이라, 백그라운드
   // 서브에이전트가 남아 완료 알림이 억제된 Stop에서도 이 이벤트만은 온다
   // (docs/session-analytics-design.md §9.1).

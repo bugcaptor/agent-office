@@ -140,7 +140,7 @@ Rust/Tauri는 **OS 스레드 + tokio 태스크 혼합**이다. `portable-pty`의
 | `ipc/commands/session.rs` | 2.1의 세션·알림 8개(`create_session`~`clear_notifications`, `subscribe_output`/`unsubscribe_output` 포함) + `list_available_shells`, `handoff_supported`, `handoff_sessions`, `adopt_detached_sessions` |
 | `ipc/commands/persistence.rs` | `load_state`, `save_state`, `append_session_turn`, `load_session_turns`, `append_diary_entry`, `load_diary`, `save_work_log`, `load_work_logs`, `load_session_events`, `list_claude_resume_sessions` |
 | `ipc/commands/media.rs` | `save_portrait`, `load_portrait`, `delete_portrait`, `save_sprite`, `load_sprite`, `delete_sprite`, `summarize_text`, `generate_codex_image` |
-| `ipc/commands/settings.rs` | `get_app_settings`, `set_app_settings`, `control_status`, `control_approve`, `control_revoke` (+ GUI/CLI 공유 `apply_settings_effects`) |
+| `ipc/commands/settings.rs` | `get_app_settings`, `set_app_settings`, `control_status`, `control_approve`, `control_revoke` (+ GUI/CLI 공유 `apply_settings_patch`: 패치 병합·저장을 설정 락 안에서 하고 `app-settings-changed`로 렌더러에 통지) |
 | `ipc/commands/usage.rs` | `load_usage_snapshot` (+ 순수 함수 `resolve_usage_roots`) |
 | `ipc/commands/misc.rs` | `set_badge_count`, `open_in_vscode`, `open_in_terminal`, `export_terminal_output`, `pick_directory` |
 | `workdir/commands.rs` | `workdir_list_files`, `workdir_git_status`, `workdir_diff_file`, `workdir_file_history`, `workdir_diff_commit`, `workdir_commit_files`, `workdir_repo_log`, `workdir_difftool` |
