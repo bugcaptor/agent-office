@@ -69,10 +69,6 @@
     "logReadFailed": "Could not read the session log.",
     "studySaveFailed": "Could not save the study material.",
     "keySaveFailed": "Could not save the API key.",
-    "ttsDisabled": "TTS is turned off in settings.",
-    "ttsKeyMissing": "No ElevenLabs API key is configured.",
-    "ttsEmptyMessage": "There is nothing to speak.",
-    "ttsNoVoice": "No voice is available.",
     "timeout": "It did not respond in time."
   }
 }

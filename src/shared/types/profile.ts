@@ -70,9 +70,6 @@ export interface AgentProfile {
   clockedOut?: boolean;
   /** 키보드 사운드 팩 id (sound/packs.ts). 부재/무효 = 기본 팩. */
   keyboardSound?: string;
-  /** 대사 TTS에 쓸 ElevenLabs voice_id 수동 지정. 부재/빈 값 = archetype 기반
-   * 자동 캐스팅. 계정 목록에 없는 id면 백엔드가 자동 배정으로 강등한다. */
-  voiceId?: string;
 }
 
 /**

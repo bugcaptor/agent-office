@@ -715,10 +715,6 @@ describe("app settings slice", () => {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
-      ttsEnabled: false,
-      ttsRewriteModelAnthropic: "claude-haiku-4-5",
-      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-      ttsRewriteProvider: "auto",
     });
     expect(s.settingsFirstRun).toBe(false);
   });
@@ -762,10 +758,6 @@ describe("app settings slice", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
-        ttsEnabled: false,
-        ttsRewriteModelAnthropic: "claude-haiku-4-5",
-        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-        ttsRewriteProvider: "auto",
       },
       true
     );
@@ -807,10 +799,6 @@ describe("app settings slice", () => {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
-      ttsEnabled: false,
-      ttsRewriteModelAnthropic: "claude-haiku-4-5",
-      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-      ttsRewriteProvider: "auto",
     });
     expect(s.settingsFirstRun).toBe(true);
     // A 리뷰 수정: hydrateSettings가 실제로 불렸음을 settingsHydrated로 표시
@@ -869,10 +857,6 @@ describe("app settings slice", () => {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
-      ttsEnabled: false,
-      ttsRewriteModelAnthropic: "claude-haiku-4-5",
-      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-      ttsRewriteProvider: "auto",
     });
   });
 
@@ -915,10 +899,6 @@ describe("app settings slice", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
-        ttsEnabled: false,
-        ttsRewriteModelAnthropic: "claude-haiku-4-5",
-        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-        ttsRewriteProvider: "auto",
       },
       true
     );
@@ -967,10 +947,6 @@ describe("app settings slice", () => {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
-      ttsEnabled: false,
-      ttsRewriteModelAnthropic: "claude-haiku-4-5",
-      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-      ttsRewriteProvider: "auto",
     });
   });
 

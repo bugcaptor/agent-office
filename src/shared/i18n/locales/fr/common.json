@@ -69,10 +69,6 @@
     "logReadFailed": "Impossible de lire le journal de session.",
     "studySaveFailed": "Impossible d’enregistrer le support d’apprentissage.",
     "keySaveFailed": "Impossible d’enregistrer la clé API.",
-    "ttsDisabled": "La TTS est désactivée dans les paramètres.",
-    "ttsKeyMissing": "Aucune clé API ElevenLabs n’est configurée.",
-    "ttsEmptyMessage": "Il n’y a rien à énoncer.",
-    "ttsNoVoice": "Aucune voix disponible.",
     "timeout": "Aucune réponse dans le délai imparti."
   }
 }

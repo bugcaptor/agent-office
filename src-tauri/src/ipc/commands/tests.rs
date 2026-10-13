@@ -109,10 +109,6 @@
             mascot_lights_label: Default::default(),
             usage_float_enabled: true,
             session_cost_enabled: true,
-            tts_enabled: false,
-            tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
-            tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
-            tts_rewrite_provider: Default::default(),
         };
 
         // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
@@ -179,10 +175,6 @@
             mascot_lights_label: Default::default(),
             usage_float_enabled: true,
             session_cost_enabled: true,
-            tts_enabled: false,
-            tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
-            tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
-            tts_rewrite_provider: Default::default(),
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
         // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.
@@ -239,10 +231,6 @@
             mascot_lights_label: Default::default(),
             usage_float_enabled: true,
             session_cost_enabled: true,
-            tts_enabled: false,
-            tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
-            tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
-            tts_rewrite_provider: Default::default(),
         };
 
         assert!(set_app_settings_inner(&state, settings.clone()).await.is_ok());
@@ -426,7 +414,7 @@
             app_data_dir: profile_dir.clone(),
             gate: inject_gate,
             wake_lock: std::sync::Arc::new(crate::power::WakeLock::new()),
-            tts: std::sync::Arc::new(crate::tts::TtsState::new(&profile_dir)),
+            key_store: std::sync::Arc::new(crate::key_store::ApiKeyStore::in_app_data(&profile_dir)),
             run_recipes: std::sync::Arc::new(crate::run_recipes::RunRecipeRuntime::default()),
         };
         (state, ctl, observer_dir, profile_dir)
@@ -717,7 +705,6 @@
                 personality_prompt: None,
                 clocked_out: None,
                 keyboard_sound: None,
-                voice_id: None,
                 default_agent: None,
             }],
             version: 1,
@@ -772,7 +759,6 @@
                 personality_prompt: None,
                 clocked_out: None,
                 keyboard_sound: None,
-                voice_id: None,
                 default_agent: None,
             }],
             version: 1,
@@ -846,7 +832,6 @@
                 personality_prompt: None,
                 clocked_out: None,
                 keyboard_sound: None,
-                voice_id: None,
                 default_agent: None,
             }],
             version: 1,
@@ -903,7 +888,6 @@
                 personality_prompt: None,
                 clocked_out: None,
                 keyboard_sound: None,
-                voice_id: None,
                 default_agent: None,
             }],
             version: 1,

@@ -50,9 +50,8 @@ mod sessiond;
 mod state;
 mod summarizer;
 mod terminal;
-// 확인 요청 대사 TTS(리라이트+ElevenLabs 합성). 키는 웹뷰에 노출하지 않는다.
-// pub: 커맨드 시그니처(`tts_speak`)가 이 모듈의 와이어 타입을 쓴다.
-pub mod tts;
+// 요약기용 외부 API 키(Anthropic·OpenRouter) 0600 저장소.
+pub mod key_store;
 // pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가 이 모듈의 wire
 // 타입(SessionStateEvent 등)에 닿아야 한다. 로직 변경 없음 — 가시성만 승격.
 pub mod types;
@@ -551,8 +550,8 @@ pub fn run() {
             // 포스트잇 메모(#79): 캐릭터별 하위 폴더(`memos/<agentId>/`)를 갖는다.
             let memo_store =
                 crate::persistence::memo_store::MemoStore::new(data_dir.join("memos"));
-            // 확인 요청 대사 TTS: 키 파일(0600)과 mp3 캐시는 app_data 하위에 둔다.
-            let tts = Arc::new(crate::tts::TtsState::new(&data_dir));
+            // 요약기용 API 키 파일(0600)은 app_data 하위에 둔다.
+            let key_store = Arc::new(crate::key_store::ApiKeyStore::in_app_data(&data_dir));
 
             // CLI 제어(#55): control 서버 상태 + 핸들러가 쥘 앱 상태 클론. 필요한
             // Arc/스토어만 복제해 ControlContext에 담는다(AppState는 Tauri가
@@ -636,7 +635,7 @@ pub fn run() {
                 app_data_dir: data_dir.clone(),
                 gate: inject_gate.clone(),
                 wake_lock,
-                tts,
+                key_store,
                 run_recipes,
             });
             Ok(())
@@ -676,10 +675,8 @@ pub fn run() {
             ipc::commands::set_mascot_visible,
             ipc::commands::mascot_activate,
             ipc::commands::set_mascot_layout,
-            ipc::commands::tts_speak,
-            ipc::commands::tts_list_voices,
-            ipc::commands::tts_key_status,
-            ipc::commands::tts_set_keys,
+            ipc::commands::api_key_status,
+            ipc::commands::set_api_keys,
             ipc::commands::control_status,
             ipc::commands::control_approve,
             ipc::commands::control_revoke,
@@ -924,10 +921,6 @@ mod tests {
             mascot_lights_label: Default::default(),
             usage_float_enabled: true,
             session_cost_enabled: true,
-            tts_enabled: false,
-            tts_rewrite_model_anthropic: "claude-haiku-4-5".to_string(),
-            tts_rewrite_model_openrouter: "openai/gpt-5.4-mini".to_string(),
-            tts_rewrite_provider: Default::default(),
         }));
         let registry = Arc::new(SessionRegistry::new());
         let events: Arc<dyn AppEvents> = Arc::new(crate::state::fake::RecordingEvents::default());

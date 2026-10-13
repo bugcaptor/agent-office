@@ -71,10 +71,6 @@ describe("SettingsDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
-        ttsEnabled: false,
-        ttsRewriteModelAnthropic: "claude-haiku-4-5",
-        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-        ttsRewriteProvider: "auto",
       },
       false,
     );
@@ -123,10 +119,6 @@ describe("SettingsDialog", () => {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
-      ttsEnabled: false,
-      ttsRewriteModelAnthropic: "claude-haiku-4-5",
-      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-      ttsRewriteProvider: "auto",
     });
   });
 
@@ -169,10 +161,6 @@ describe("SettingsDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
-        ttsEnabled: false,
-        ttsRewriteModelAnthropic: "claude-haiku-4-5",
-        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-        ttsRewriteProvider: "auto",
       },
       false,
     );
@@ -227,10 +215,6 @@ describe("SettingsDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
-        ttsEnabled: false,
-        ttsRewriteModelAnthropic: "claude-haiku-4-5",
-        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-        ttsRewriteProvider: "auto",
       },
       false,
     );
@@ -282,10 +266,6 @@ describe("SettingsDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
-        ttsEnabled: false,
-        ttsRewriteModelAnthropic: "claude-haiku-4-5",
-        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-        ttsRewriteProvider: "auto",
       },
       false,
     );
@@ -337,10 +317,6 @@ describe("SettingsDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
-        ttsEnabled: false,
-        ttsRewriteModelAnthropic: "claude-haiku-4-5",
-        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-        ttsRewriteProvider: "auto",
       },
       false,
     );
@@ -374,11 +350,11 @@ describe("SettingsDialog", () => {
     expect(useAppStore.getState().xtermTheme).toBe("auto");
   });
 
-  // 사운드 3분할: 타건음/알림음이 서로 독립된 토글이어야 한다(TTS는 별도 섹션).
+  // 사운드 3분할: 타건음/알림음이 서로 독립된 토글이어야 한다.
   it("타건음·알림음 토글이 각각 독립적으로 반영된다", () => {
     useAppStore.getState().openModal({ kind: "settings" });
     render(<SettingsDialog />);
-    openTab("소리·음성");
+    openTab("소리");
 
     fireEvent.click(screen.getByLabelText(/타건음/));
     expect(useAppStore.getState().appSettings.typingSoundEnabled).toBe(false);
@@ -398,7 +374,7 @@ describe("SettingsDialog", () => {
     const tabName = (t: HTMLElement) => t.textContent;
     expect(screen.getAllByRole("tab").map(tabName)).toEqual([
       "일반",
-      "소리·음성",
+      "소리",
       "시스템",
       "제어",
     ]);
@@ -409,13 +385,12 @@ describe("SettingsDialog", () => {
     expect(screen.queryByLabelText(/데스크톱 마스코트/)).toBeNull();
     expect(screen.queryByLabelText(/CLI 제어/)).toBeNull();
 
-    openTab("소리·음성");
-    expect(screen.getByRole("tab", { name: "소리·음성" }).getAttribute("aria-selected")).toBe(
+    openTab("소리");
+    expect(screen.getByRole("tab", { name: "소리" }).getAttribute("aria-selected")).toBe(
       "true",
     );
     expect(screen.getByRole("tab", { name: "일반" }).getAttribute("aria-selected")).toBe("false");
     expect(screen.getByLabelText(/타건음/)).toBeTruthy();
-    expect(screen.getByLabelText(/알림 대사 읽어주기/)).toBeTruthy();
     // 일반 탭 항목(관찰)은 사라진다.
     expect(screen.queryByLabelText(/에이전트 관찰/)).toBeNull();
 

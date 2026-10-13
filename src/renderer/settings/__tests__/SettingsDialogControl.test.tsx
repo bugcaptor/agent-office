@@ -72,10 +72,6 @@ function hydrate(cliEnabled: boolean) {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
-      ttsEnabled: false,
-      ttsRewriteModelAnthropic: "claude-haiku-4-5",
-      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-      ttsRewriteProvider: "auto",
     },
     false,
   );

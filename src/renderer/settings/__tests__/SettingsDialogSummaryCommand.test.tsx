@@ -10,18 +10,18 @@
 //    고쳐 놓고 그게 실제로 도는지 확인할 자리는 어느 provider에나 필요하다.
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppSettings, TtsStatus } from "@shared/types";
+import type { AppSettings, ApiKeyStatus } from "@shared/types";
 
-const ttsKeyStatus = vi.fn<() => Promise<TtsStatus>>();
-const ttsSetKeys = vi.fn<(e?: string, a?: string, o?: string) => Promise<TtsStatus>>();
+const apiKeyStatus = vi.fn<() => Promise<ApiKeyStatus>>();
+const setApiKeys = vi.fn<(a?: string, o?: string) => Promise<ApiKeyStatus>>();
 const summarizeText = vi.fn<(...args: unknown[]) => Promise<string>>();
 const listProviderModels = vi.fn<(p: string) => Promise<string[]>>();
 const setAppSettings = vi.fn<(s: unknown) => Promise<void>>(() => Promise.resolve());
 
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
-    ttsKeyStatus: () => ttsKeyStatus(),
-    ttsSetKeys: (e?: string, a?: string, o?: string) => ttsSetKeys(e, a, o),
+    apiKeyStatus: () => apiKeyStatus(),
+    setApiKeys: (a?: string, o?: string) => setApiKeys(a, o),
     summarizeText: (...args: unknown[]) => summarizeText(...args),
     listProviderModels: (p: string) => listProviderModels(p),
     setAppSettings: (s: unknown) => setAppSettings(s),
@@ -34,15 +34,11 @@ import { resetModelCatalogCache } from "../modelCatalog";
 
 const initialState = useAppStore.getState();
 
-const STATUS: TtsStatus = {
-  elevenlabsSet: false,
+const STATUS: ApiKeyStatus = {
   anthropicSet: false,
-  elevenlabsFromEnv: false,
   anthropicFromEnv: false,
   openrouterSet: false,
   openrouterFromEnv: false,
-  claudeCliAvailable: true,
-  effectiveRewriteVia: "claude-cli",
 };
 
 function hydrate(patch: Partial<AppSettings> = {}) {
@@ -55,8 +51,8 @@ function hydrate(patch: Partial<AppSettings> = {}) {
 beforeEach(() => {
   useAppStore.setState(initialState, true);
   resetModelCatalogCache();
-  ttsKeyStatus.mockReset().mockResolvedValue(STATUS);
-  ttsSetKeys.mockReset().mockResolvedValue(STATUS);
+  apiKeyStatus.mockReset().mockResolvedValue(STATUS);
+  setApiKeys.mockReset().mockResolvedValue(STATUS);
   summarizeText.mockReset().mockResolvedValue("한 문장 요약입니다.");
   listProviderModels.mockReset().mockResolvedValue([]);
   setAppSettings.mockClear();

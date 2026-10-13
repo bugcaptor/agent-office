@@ -69,10 +69,6 @@
     "logReadFailed": "無法讀取工作階段記錄。",
     "studySaveFailed": "無法儲存學習資料。",
     "keySaveFailed": "無法儲存 API 金鑰。",
-    "ttsDisabled": "TTS 設定已關閉。",
-    "ttsKeyMissing": "尚未設定 ElevenLabs API 金鑰。",
-    "ttsEmptyMessage": "沒有可朗讀的內容。",
-    "ttsNoVoice": "沒有可用的語音。",
     "timeout": "在時限內沒有回應。"
   }
 }

@@ -10,7 +10,7 @@ import { tauriApi } from "../ipc/tauriApi";
 import { backendErrorText } from "../shared/backendError";
 import { ModelPicker } from "./ModelPicker";
 import { keyStateLabel } from "./keyStatus";
-import type { SummaryProvider, TtsStatus } from "@shared/types";
+import type { ApiKeyStatus, SummaryProvider } from "@shared/types";
 
 /** 요약기 provider별 기본 모델(비우면 이 값이 쓰인다) — 백엔드
  * `summarizer::SummaryPurpose`의 하드코딩 값과 같아야 한다. 안내 문구
@@ -66,7 +66,7 @@ export function SummaryModelSection() {
   const current = summaryModels[provider];
   const defaults = SUMMARY_DEFAULT_MODELS[provider];
   // OpenRouter만 CLI가 아니라 HTTP라 API 키가 따로 필요하다 — 키 입력과 연결
-  // 테스트는 아래 OpenrouterSummaryTools가 맡는다(저장소는 소리·음성 탭과 공유).
+  // 테스트는 아래 OpenrouterSummaryTools가 맡는다(키는 공용 API 키 저장소).
   const isOpenrouter = provider === "openrouter";
   // opencode는 한 CLI가 여러 벤더를 묶는다 — 모델 id가 `provider/model`이고
   // 기본값은 opencode 자체 구독(opencode-go)을 가정한다. 다른 벤더를 쓰려면
@@ -244,22 +244,20 @@ function SummaryTestTools({ provider }: { provider: SummaryProvider }) {
 /**
  * OpenRouter 요약을 위한 키 입력.
  *
- * 키는 **소리·음성 탭과 같은 0600 저장소**를 그대로 쓴다(`ttsSetKeys`의 셋째
- * 칸). 요약 전용 키를 따로 두면 같은 키를 두 번 넣게 되고 어느 쪽이 실제로
- * 쓰이는지 알 수 없게 된다 — 백엔드도 키를 하나만 읽는다.
+ * 키는 0600 키 저장소(`key_store.rs`)에 둔다 — 렌더러에는 존재 여부만 온다.
  *
  * 응답 테스트는 여기가 아니라 `SummaryTestTools`가 맡는다(모든 provider 공통).
  */
 function OpenrouterKeyTools() {
   const { t } = useTranslation("settings");
-  const [status, setStatus] = useState<TtsStatus | null>(null);
+  const [status, setStatus] = useState<ApiKeyStatus | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await tauriApi.ttsKeyStatus());
+      setStatus(await tauriApi.apiKeyStatus());
     } catch {
       setStatus(null);
     }
@@ -273,8 +271,8 @@ function OpenrouterKeyTools() {
     setBusy(true);
     setNote(null);
     try {
-      // 앞 두 칸은 undefined — 여기서는 OpenRouter 키만 건드린다.
-      setStatus(await tauriApi.ttsSetKeys(undefined, undefined, apiKey));
+      // Anthropic 칸은 undefined — 여기서는 OpenRouter 키만 건드린다.
+      setStatus(await tauriApi.setApiKeys(undefined, apiKey));
       setApiKey("");
       setNote(t("keys.savedNote"));
     } catch (err) {
@@ -290,7 +288,7 @@ function OpenrouterKeyTools() {
     setBusy(true);
     setNote(null);
     try {
-      setStatus(await tauriApi.ttsSetKeys(undefined, undefined, ""));
+      setStatus(await tauriApi.setApiKeys(undefined, ""));
       setNote(t("keys.deletedNote"));
     } catch (err) {
       setNote(t("keys.deleteFailed", { error: backendErrorText(err) }));

@@ -1,8 +1,6 @@
 // src-tauri/src/summarizer/anthropic.rs
 //
-// 설정 화면의 Anthropic 모델 카탈로그(`GET /v1/models`) 조회. tts/rewrite.rs가
-// 쓰는 `POST /v1/messages`와 인증 방식(x-api-key + anthropic-version)은
-// 같지만 용도가 다르므로(요약기 provider 카탈로그) 별도 파일로 둔다.
+// 설정 화면의 Anthropic 모델 카탈로그(`GET /v1/models`) 조회.
 // openrouter.rs의 `parse_models_response`/`list_models`와 같은 모양(순수
 // parse + 얇은 HTTP 래퍼)을 따른다.
 //
@@ -10,7 +8,7 @@
 // 아니다) — 키가 없을 때 아예 부르지 않는 판단은 호출측(model_catalog)이
 // 진다. 여기서는 "호출됐다면 유효한 키가 왔다"고 가정한다.
 //
-// 키 값은 로그·에러 문자열에 절대 싣지 않는다(tts/keys.rs와 같은 규칙).
+// 키 값은 로그·에러 문자열에 절대 싣지 않는다(key_store.rs와 같은 규칙).
 
 pub const MODELS_URL: &str = "https://api.anthropic.com/v1/models?limit=1000";
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";

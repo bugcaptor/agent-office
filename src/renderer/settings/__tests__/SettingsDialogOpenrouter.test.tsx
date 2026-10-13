@@ -3,27 +3,26 @@
 // src/renderer/settings/__tests__/SettingsDialogOpenrouter.test.tsx
 //
 // 요약기 provider가 OpenRouter일 때만 뜨는 보조 UI(kbm #2e4):
-//  - API 키를 그 자리에서 넣고 저장한다 — 단, 저장소는 TTS와 **하나**여야
-//    한다(`ttsSetKeys`의 셋째 칸). 요약 전용 키가 따로 생기면 같은 키를 두 번
-//    넣게 되고 어느 쪽이 쓰이는지 알 수 없어진다.
+//  - API 키를 그 자리에서 넣고 저장한다 — 저장소는 공용 API 키 저장소
+//    (`setApiKeys`의 둘째 칸)다.
 //  - "요약 테스트"는 전용 커맨드가 아니라 실제 `summarizeText` 경로를 탄다 —
 //    여기서 성공하면 실제 라벨 요약도 성공한다는 뜻이어야 하기 때문이다.
 //  - 모델 추천 목록은 정적 프리셋 + 실시간 카탈로그의 합집합이고, 조회는
 //    provider당 세션 1회다(kbm #2fc부터는 목록을 **펼칠 때** 조회한다).
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppSettings, TtsStatus } from "@shared/types";
+import type { AppSettings, ApiKeyStatus } from "@shared/types";
 
-const ttsKeyStatus = vi.fn<() => Promise<TtsStatus>>();
-const ttsSetKeys = vi.fn<(e?: string, a?: string, o?: string) => Promise<TtsStatus>>();
+const apiKeyStatus = vi.fn<() => Promise<ApiKeyStatus>>();
+const setApiKeys = vi.fn<(a?: string, o?: string) => Promise<ApiKeyStatus>>();
 const summarizeText = vi.fn<(...args: unknown[]) => Promise<string>>();
 const listProviderModels = vi.fn<(p: string) => Promise<string[]>>();
 const setAppSettings = vi.fn<(s: unknown) => Promise<void>>(() => Promise.resolve());
 
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
-    ttsKeyStatus: () => ttsKeyStatus(),
-    ttsSetKeys: (e?: string, a?: string, o?: string) => ttsSetKeys(e, a, o),
+    apiKeyStatus: () => apiKeyStatus(),
+    setApiKeys: (a?: string, o?: string) => setApiKeys(a, o),
     summarizeText: (...args: unknown[]) => summarizeText(...args),
     listProviderModels: (p: string) => listProviderModels(p),
     setAppSettings: (s: unknown) => setAppSettings(s),
@@ -36,15 +35,11 @@ import { MODEL_PRESETS, resetModelCatalogCache } from "../modelCatalog";
 
 const initialState = useAppStore.getState();
 
-const STATUS: TtsStatus = {
-  elevenlabsSet: false,
+const STATUS: ApiKeyStatus = {
   anthropicSet: false,
-  elevenlabsFromEnv: false,
   anthropicFromEnv: false,
   openrouterSet: false,
   openrouterFromEnv: false,
-  claudeCliAvailable: true,
-  effectiveRewriteVia: "claude-cli",
 };
 
 function hydrate(patch: Partial<AppSettings> = {}) {
@@ -70,8 +65,8 @@ function pickerOptions(): string[] {
 beforeEach(() => {
   useAppStore.setState(initialState, true);
   resetModelCatalogCache();
-  ttsKeyStatus.mockReset().mockResolvedValue(STATUS);
-  ttsSetKeys.mockReset().mockResolvedValue({ ...STATUS, openrouterSet: true });
+  apiKeyStatus.mockReset().mockResolvedValue(STATUS);
+  setApiKeys.mockReset().mockResolvedValue({ ...STATUS, openrouterSet: true });
   summarizeText.mockReset().mockResolvedValue("한 문장 요약입니다.");
   listProviderModels.mockReset().mockResolvedValue([]);
   setAppSettings.mockClear();
@@ -89,10 +84,10 @@ describe("SettingsDialog · OpenRouter 요약 설정", () => {
     expect(screen.queryByPlaceholderText("sk-or-…")).toBeNull();
     // 목록을 펼치기 전에는 어떤 provider든 조회하지 않는다.
     expect(listProviderModels).not.toHaveBeenCalled();
-    expect(ttsKeyStatus).not.toHaveBeenCalled();
+    expect(apiKeyStatus).not.toHaveBeenCalled();
   });
 
-  it("키 상태를 마스킹된 문장으로 보여주고, 저장은 TTS와 같은 저장소를 쓴다", async () => {
+  it("키 상태를 마스킹된 문장으로 보여주고, 저장은 공용 API 키 저장소를 쓴다", async () => {
     hydrate({ summaryProvider: "openrouter" });
     render(<SettingsDialog />);
     await screen.findByText(/OpenRouter 키 없음/);
@@ -105,8 +100,8 @@ describe("SettingsDialog · OpenRouter 요약 설정", () => {
 
     fireEvent.change(input, { target: { value: "sk-or-abc" } });
     fireEvent.click(save);
-    // 앞 두 칸(ElevenLabs/Anthropic)은 건드리지 않는다.
-    await waitFor(() => expect(ttsSetKeys).toHaveBeenCalledWith(undefined, undefined, "sk-or-abc"));
+    // 앞 칸(Anthropic)은 건드리지 않는다.
+    await waitFor(() => expect(setApiKeys).toHaveBeenCalledWith(undefined, "sk-or-abc"));
     // 저장 후 입력은 비고, 상태는 "있음"으로 갱신된다.
     await waitFor(() => expect(input.value).toBe(""));
     await screen.findByText(/OpenRouter 키 있음/);
@@ -114,22 +109,22 @@ describe("SettingsDialog · OpenRouter 요약 설정", () => {
   });
 
   // kbm #2e6: 빈 입력 저장은 undefined(=보존)로만 가므로 삭제 전용 버튼이
-  // 필요하다. 요약 탭도 TTS와 같은 저장소를 쓰므로 같은 조건을 따른다.
+  // 필요하다.
   it("저장된 키에만 삭제 버튼이 뜨고, 누르면 OpenRouter 칸만 빈 문자열로 보낸다", async () => {
     hydrate({ summaryProvider: "openrouter" });
-    ttsKeyStatus.mockResolvedValue({ ...STATUS, openrouterSet: true, openrouterFromEnv: false });
-    ttsSetKeys.mockResolvedValue({ ...STATUS, openrouterSet: false });
+    apiKeyStatus.mockResolvedValue({ ...STATUS, openrouterSet: true, openrouterFromEnv: false });
+    setApiKeys.mockResolvedValue({ ...STATUS, openrouterSet: false });
     render(<SettingsDialog />);
     await screen.findByText(/OpenRouter 키 있음/);
 
     fireEvent.click(screen.getByText("키 삭제"));
-    await waitFor(() => expect(ttsSetKeys).toHaveBeenCalledWith(undefined, undefined, ""));
+    await waitFor(() => expect(setApiKeys).toHaveBeenCalledWith(undefined, ""));
     await screen.findByText("키를 삭제했습니다.");
   });
 
   it("환경변수 출처인 키는 삭제 버튼이 뜨지 않는다", async () => {
     hydrate({ summaryProvider: "openrouter" });
-    ttsKeyStatus.mockResolvedValue({ ...STATUS, openrouterSet: true, openrouterFromEnv: true });
+    apiKeyStatus.mockResolvedValue({ ...STATUS, openrouterSet: true, openrouterFromEnv: true });
     render(<SettingsDialog />);
     await screen.findByText(/OpenRouter 키 있음\(환경변수\)/);
 

@@ -27,8 +27,8 @@ afterAll(async () => {
 describe("parseBackendError", () => {
   it("코드만 있는 에러는 detail이 빈 문자열이다", () => {
     expect(parseBackendError("empty-log")).toEqual({ code: "empty-log", detail: "" });
-    expect(parseBackendError("missing_elevenlabs_key")).toEqual({
-      code: "missing_elevenlabs_key",
+    expect(parseBackendError("key-save-failed")).toEqual({
+      code: "key-save-failed",
       detail: "",
     });
   });
@@ -48,7 +48,7 @@ describe("parseBackendError", () => {
 
 describe("backendErrorText — 코드가 문구가 된다", () => {
   it("매핑에 있는 코드는 카탈로그 문구(ko)", () => {
-    expect(backendErrorText("missing_elevenlabs_key")).toBe(t("common:errors.ttsKeyMissing"));
+    expect(backendErrorText("key-save-failed")).toBe(t("common:errors.keySaveFailed"));
     expect(backendErrorText("timeout")).toBe(t("common:errors.timeout"));
   });
 

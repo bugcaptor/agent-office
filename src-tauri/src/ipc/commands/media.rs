@@ -153,7 +153,7 @@ pub async fn summarize_text(
     let openrouter_key = if provider
         == crate::persistence::settings_store::SummaryProvider::Openrouter
     {
-        app_state.tts.keys.openrouter_key()
+        app_state.key_store.openrouter_key()
     } else {
         None
     };
@@ -169,11 +169,11 @@ pub async fn summarize_text(
     .await
 }
 
-/// 설정 화면의 provider별 모델 카탈로그 조회(요약·TTS 공용). 옛
+/// 설정 화면의 provider별 모델 카탈로그 조회. 옛
 /// `openrouter_list_models`를 일곱 개 provider로 일반화한 것 — `claude`/
 /// `anthropic`만 저장된 Anthropic 키를 읽으므로 그때만 `app_state`를 만진다.
-/// `summarizer_enabled`로 게이트하지 **않는다**(`tts_list_voices`와 같은
-/// 판단: 기능을 켜기 전에도 어떤 모델을 고를 수 있는지 보여주는 편이 낫다).
+/// `summarizer_enabled`로 게이트하지 **않는다**(기능을 켜기 전에도 어떤
+/// 모델을 고를 수 있는지 보여주는 편이 낫다).
 ///
 /// 알 수 없는 provider·라이브 소스가 없는 provider·키 없음·조회 실패는 전부
 /// 빈 목록이다(오류가 아니다) — 렌더러는 이를 정적 프리셋 폴백으로 조용히
@@ -187,7 +187,7 @@ pub async fn list_provider_models(
     // 하나 아끼자고 model_catalog에 키 스토어 자체를 넘기는 결합을 만들지
     // 않는다 — 값으로 떠서 넘기면 이 커맨드는 계속 AppState 비의존인 다른
     // 커맨드들과 같은 얇은 위임 모양을 유지한다.
-    let anthropic_key = app_state.tts.keys.anthropic_key();
+    let anthropic_key = app_state.key_store.anthropic_key();
     // 요약을 실제로 실행할 명령과 같은 것을 목록 조회에도 쓴다 — 커스텀 명령을
     // 넣어 둔 사용자에게 기본 바이너리의 목록을 보여 주면 목록과 실행이 어긋난다.
     // 설정 가드는 .await 이전에 값으로 떠서 놓는다(no-lock-across-await 계약).

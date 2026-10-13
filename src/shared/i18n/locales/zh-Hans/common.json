@@ -69,10 +69,6 @@
     "logReadFailed": "无法读取会话日志。",
     "studySaveFailed": "无法保存学习资料。",
     "keySaveFailed": "无法保存 API 密钥。",
-    "ttsDisabled": "设置里的 TTS 已关闭。",
-    "ttsKeyMissing": "未设置 ElevenLabs API 密钥。",
-    "ttsEmptyMessage": "没有要朗读的内容。",
-    "ttsNoVoice": "没有可用的语音。",
     "timeout": "未在时限内响应。"
   }
 }

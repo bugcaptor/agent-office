@@ -615,11 +615,6 @@ describe("app settings commands", () => {
       mascotLightsLabel: "auto" as const,
       usageFloatEnabled: true,
       sessionCostEnabled: true,
-      ttsEnabled: false,
-      ttsRewriteModelAnthropic: "claude-haiku-4-5" as const,
-      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini" as const,
-      ttsRewriteProvider: "auto" as const,
-      webRemoteBind: "tailnet" as const,
     };
     const tauriApi = await importTauriApi();
 

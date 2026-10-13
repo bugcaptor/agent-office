@@ -1,13 +1,12 @@
 // src/renderer/profile/sections/TerminalSection.tsx
 //
-// 터미널 — 시작 폴더·시작 명령어·셸, 그리고 이 캐릭터의 소리(키보드 사운드 팩,
-// TTS 목소리). 앱 바깥 환경에 닿는 값만 모여 있다.
+// 터미널 — 시작 폴더·시작 명령어·셸, 그리고 이 캐릭터의 소리(키보드 사운드 팩).
+// 앱 바깥 환경에 닿는 값만 모여 있다.
 import { useTranslation } from "react-i18next";
 
 import { KEYBOARD_SOUND_PACK_OPTIONS, packLabel } from "../../sound/packs";
 import { previewKeyboardSound } from "../../sound/soundManager";
 import { WorkAgentFields } from "../../workpanels/WorkAgentFields";
-import { VoiceField } from "./VoiceField";
 import type { DraftProfile } from "../generate";
 import type { AvailableShell } from "@shared/types";
 import type { Dispatch, SetStateAction } from "react";
@@ -76,11 +75,6 @@ export function TerminalSection({
         </label>
         <p className="form-hint">{t("terminal.keyboardSoundHint")}</p>
       </div>
-      <VoiceField
-        draft={draft}
-        agentId={editingAgentId}
-        onChange={(voiceId) => setDraft((d) => ({ ...d, voiceId }))}
-      />
       {shells.length > 0 && (
         <div className="form-field">
           <label>

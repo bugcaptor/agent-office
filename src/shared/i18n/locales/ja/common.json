@@ -69,10 +69,6 @@
     "logReadFailed": "セッションログを読み込めませんでした。",
     "studySaveFailed": "学習資料を保存できませんでした。",
     "keySaveFailed": "API キーを保存できませんでした。",
-    "ttsDisabled": "設定で TTS がオフになっています。",
-    "ttsKeyMissing": "ElevenLabs の API キーが設定されていません。",
-    "ttsEmptyMessage": "読み上げる文がありません。",
-    "ttsNoVoice": "利用できるボイスがありません。",
     "timeout": "時間内に応答しませんでした。"
   }
 }

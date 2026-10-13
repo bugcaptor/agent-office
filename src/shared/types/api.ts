@@ -28,7 +28,7 @@ import type {
   AppSettings,
   ControlStatus,
 } from './settings';
-import type { TtsSpeakRequest, TtsSpeakResult, TtsStatus, TtsVoiceOption } from './tts';
+import type { ApiKeyStatus } from './apiKeys';
 import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
 import type { MemoSheet, MemoSheetMeta } from './memo';
@@ -157,30 +157,17 @@ export interface AgentOfficeApi {
   setKeepAwake(active: boolean): Promise<void>;
   /** 마스코트 창(#72) 표시/숨김. 창은 항상 존재하고 표시만 토글된다. */
   setMascotVisible(visible: boolean): Promise<void>;
-  /** 마스코트 클릭(#72) — 검증된 앱 내 IDE 연결이면 원본 VS Code 창을 먼저
-   * 포커스한다. 그 밖의 세션과 포커스 실패는 main 창과 해당 터미널을 연다.
-   * 마스코트 창에서만 호출한다. */
+  /** 마스코트 클릭(#72) — main 창과 해당 터미널을 연다. 마스코트 창에서만
+   * 호출한다. */
   mascotActivate(agentId: string): Promise<void>;
   /** 마스코트 신호등(docs/mascot-lights-design.md §5.3) — 창 크기·위치를 한 번에
    * 적용한다. 인자 전부 **물리 px**(mascot 창이 dpr로 환산해 넘긴다). 창이
    * 없으면 조용히 no-op. */
   setMascotLayout(width: number, height: number, x: number, y: number): Promise<void>;
-  /** 알림 대사 TTS — 문구를 캐릭터 말투 대사로 리라이트한 뒤 합성해
-   * mp3 바이트(base64)를 돌려준다. 설정 `ttsEnabled`가 꺼져 있으면 백엔드가
-   * "tts_disabled:"로 reject한다(백엔드가 최종 게이트 — 외부 API 비용 경로).
-   * 실패 메시지는 앱 공통의 `"{code}: {상세}"` 형태다. */
-  ttsSpeak(request: TtsSpeakRequest): Promise<TtsSpeakResult>;
-  /** 고를 수 있는 보이스 목록(프로필 다이얼로그 드롭다운용). ElevenLabs 키가
-   * 없으면 "missing_elevenlabs_key:"로 reject한다. 키 값은 오지 않는다. */
-  ttsListVoices(): Promise<TtsVoiceOption[]>;
-  /** TTS 키/경로 상태(존재 여부 bool만 — 키 값은 절대 오지 않는다). */
-  ttsKeyStatus(): Promise<TtsStatus>;
-  /** TTS 키 저장. undefined 필드는 기존 값 유지, "" 는 삭제. */
-  ttsSetKeys(
-    elevenlabs?: string,
-    anthropic?: string,
-    openrouter?: string,
-  ): Promise<TtsStatus>;
+  /** 요약기용 API 키 상태(존재 여부 bool만 — 키 값은 절대 오지 않는다). */
+  apiKeyStatus(): Promise<ApiKeyStatus>;
+  /** 요약기용 API 키 저장. undefined 필드는 기존 값 유지, "" 는 삭제. */
+  setApiKeys(anthropic?: string, openrouter?: string): Promise<ApiKeyStatus>;
   /** CLI 제어(#55) 상태 조회 — 서버 기동·승인 여부·포트·app_data 경로. */
   controlStatus(): Promise<ControlStatus>;
   /** CLI 제어를 승인(토큰 발급). 2단계 옵트인의 2단계. */

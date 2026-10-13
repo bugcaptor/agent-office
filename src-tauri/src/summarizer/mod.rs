@@ -171,8 +171,7 @@ impl SummaryPurpose {
         }
     }
 
-    /// OpenRouter 모델 id는 `<벤더>/<모델>` 표기다. TTS 리라이트의
-    /// OpenRouter 기본과 같은 계열을 쓴다.
+    /// OpenRouter 모델 id는 `<벤더>/<모델>` 표기다.
     pub(super) fn openrouter_model(self) -> &'static str {
         match self {
             Self::Label | Self::Diary => "openai/gpt-5.4-mini",

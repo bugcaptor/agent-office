@@ -62,7 +62,6 @@ export function useProfileDraft(editingAgentId: string | undefined, initialCwd?:
       archetype: agent.archetype ?? "auto",
       colors: agent.colors ?? {},
       keyboardSound: agent.keyboardSound ?? "",
-      voiceId: agent.voiceId ?? "",
       defaultAgent: agent.defaultAgent,
     });
   }, [editingAgentId]);

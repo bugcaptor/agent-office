@@ -33,9 +33,8 @@ mod session;
 // 한다. 기존 `pub(crate) use settings::*;` 글롭 재수출은 그대로 두고 모듈
 // 자체만 승격 — 로직 변경 없음.
 pub mod settings;
-// 확인 요청 대사 TTS(리라이트+합성). 외부 API 두 곳을 호출하는 유일한 도메인.
-mod tts;
-// 동료 대화 — 상태 스냅샷·감사 로그 열람.
+// 요약기용 API 키 저장소(존재 여부만 렌더러로).
+mod api_keys;
 mod usage;
 
 // Re-imported here (in addition to each domain file's own scoped `use`s)
@@ -57,7 +56,7 @@ pub(crate) use repository_audit::*;
 pub(crate) use persistence::*;
 pub(crate) use session::*;
 pub(crate) use settings::*;
-pub(crate) use tts::*;
+pub(crate) use api_keys::*;
 pub(crate) use usage::*;
 
 #[cfg(test)]

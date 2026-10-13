@@ -43,11 +43,7 @@ export type BackendErrorCode =
   | "log-read-failed"
   | "study-dir-failed"
   | "study-write-failed"
-  // TTS(tts/mod.rs TtsError::code, ipc/commands/tts.rs)
-  | "tts_disabled"
-  | "missing_elevenlabs_key"
-  | "empty_message"
-  | "no_voice"
+  // API 키 저장(ipc/commands/api_keys.rs)
   | "key-save-failed"
   // 요약기·CLI 공통
   | "timeout";
@@ -68,10 +64,6 @@ export const BACKEND_ERROR_KEY: Record<BackendErrorCode, string> = {
   "log-read-failed": "common:errors.logReadFailed",
   "study-dir-failed": "common:errors.studySaveFailed",
   "study-write-failed": "common:errors.studySaveFailed",
-  tts_disabled: "common:errors.ttsDisabled",
-  missing_elevenlabs_key: "common:errors.ttsKeyMissing",
-  empty_message: "common:errors.ttsEmptyMessage",
-  no_voice: "common:errors.ttsNoVoice",
   "key-save-failed": "common:errors.keySaveFailed",
   timeout: "common:errors.timeout",
 };

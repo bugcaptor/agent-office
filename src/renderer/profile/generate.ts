@@ -36,8 +36,6 @@ export interface DraftProfile {
   colors?: ColorOverrides;
   /** 키보드 사운드 팩 id(선택). 빈 문자열 = 기본 팩. */
   keyboardSound?: string;
-  /** 대사 TTS 보이스 id(선택). 빈 문자열 = 종족 기반 자동 캐스팅. */
-  voiceId?: string;
   defaultAgent?: WorkAgent;
 }
 
@@ -82,7 +80,6 @@ export function generateDraft(): DraftProfile {
     archetype: "auto",
     colors: {},
     keyboardSound: "",
-    voiceId: "",
   };
 }
 
@@ -107,7 +104,6 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
   const spriteRequest = (d.spriteRequest ?? "").trim();
   const minimiRequest = (d.minimiRequest ?? "").trim();
   const keyboardSound = (d.keyboardSound ?? "").trim();
-  const voiceId = (d.voiceId ?? "").trim();
   // 목록에 없는 자유 입력(커스텀 종족)도 그대로 살린다 — 공백만 다듬는다.
   const typed = (d.archetype ?? "").trim();
   const archetype = typed && typed !== "auto" ? typed : pickArchetype(d.seed);
@@ -129,7 +125,6 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(spriteRequest ? { spriteRequest } : {}),
     ...(minimiRequest ? { minimiRequest } : {}),
     ...(keyboardSound ? { keyboardSound } : {}),
-    ...(voiceId ? { voiceId } : {}),
     ...(d.defaultAgent ? { defaultAgent: normalizeWorkAgent(d.defaultAgent) } : {}),
   };
 }

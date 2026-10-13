@@ -438,6 +438,7 @@ H 메모: D4~D6·D9·D10은 기계적 수정, D2·D3·D11·S2~S5는 사실 확�
 | C30 봇 | t-b7948eb9 | — | 주입 표지(`BotPromptArms`)는 C1이 쓰므로 남기고, 우수사원의 봇 시간 차감 규칙 정리 |
 | C29 자동화 | t-5521dd4b | C30 | `cli_transition.rs`·`automation-cli-returns/`는 C1 쪽으로 옮겨 남김 |
 | C26 동료 대화 | t-3c623ead | — | |
+| C23 TTS | t-be4fc2c6 | `src-tauri/src/tts/`(리라이트·ElevenLabs 합성·보이스 캐스팅·CLI 리라이트)·IPC `tts_*`·`tts*` 설정 4개와 마이그레이션·`AgentProfile.voiceId`·렌더러 발화 큐(`voiceQueue`)·`playVoice`·설정 `TtsSection`·프로필 `VoiceField`·백엔드 오류 코드 4개·i18n `settings.tts`/`profile.voice` 삭제. 요약기(Anthropic·OpenRouter)가 같이 쓰던 키 저장소는 `key_store.rs`(`ApiKeyStore`)로 떼어 IPC `api_key_status`/`set_api_keys`로 남김 — 파일 이름 `tts-keys.json`은 저장된 키 호환을 위해 유지하고 옛 `elevenlabs` 칸은 다음 저장에서 사라진다. 설정 탭 이름 "소리·음성"→"소리". Anthropic 키 입력 UI는 TTS 섹션에만 있었으므로 함께 사라졌다(저장값·`ANTHROPIC_API_KEY` env는 계속 쓰임) |
 | C23 TTS | t-be4fc2c6 | — | |
 | C40 VSCode 확장 | t-013c2b3c | — | AGENTS.md·§1의 vscode-ext 검증 안내도 갱신 |
 | C27 호감도 | t-325c7ff6 | — | 문서만 |

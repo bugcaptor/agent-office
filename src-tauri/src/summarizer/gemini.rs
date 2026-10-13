@@ -62,7 +62,7 @@ pub(super) fn build(program: &str, instruction: &str, model: &str) -> ProviderCo
 // 조용히 빈 목록이고, 호출측은 정적 프리셋으로 강등한다. 즉 이 라이브 조회는
 // `GEMINI_API_KEY`(또는 `GOOGLE_API_KEY`)를 이미 쓰는 사용자에게만 켜진다.
 //
-// 키 값은 로그·에러 문자열에 절대 싣지 않는다(tts/keys.rs와 같은 규칙) —
+// 키 값은 로그·에러 문자열에 절대 싣지 않는다(key_store.rs와 같은 규칙) —
 // 그래서 URL 쿼리가 아니라 `x-goog-api-key` 헤더로 보낸다.
 
 /// 카탈로그 조회에 쓰는 환경변수 이름(우선순위 순). Google 도구들이 둘 다

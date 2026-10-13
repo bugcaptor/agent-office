@@ -14,7 +14,7 @@
     "role": "Role",
     "awardBadge": "🏆 {{n}} awards in total",
     "personality": "Personality prompt",
-    "personalityHint": "Describe who this character is. It is appended to Claude Code's system prompt and also feeds the portrait prompt and the character's speech style. Multiple lines are kept as written.",
+    "personalityHint": "Describe who this character is. It is appended to Claude Code's system prompt and also feeds the portrait prompt and the tone of diaries and award speeches. Multiple lines are kept as written.",
     "archetype": "Archetype",
     "archetypeHint": "Sets the sprite's body type and outfit family. With “Auto (seed)” the seed decides. Typing a species that is not on the list (a dragon, say) carries straight into the portrait and pixel-art prompts, while the dot character is drawn with a human body."
   },
@@ -91,20 +91,6 @@
     "shell": "Shell",
     "shellAuto": "Auto (default)",
     "shellNoHooks": "{{label}} (no time tracking)"
-  },
-  "voice": {
-    "label": "Voice (TTS)",
-    "auto": "Auto (cast by species)",
-    "missingOption": "{{id}} (not in the list)",
-    "preview": "Preview",
-    "hintDisabled": "Turn on ‘Read notification lines aloud (TTS)’ in Settings to choose a voice.",
-    "hintEnabled": "Leave it empty and a voice is chosen automatically from the character's species and seed.",
-    "mutedNote": " Mute is on, so real notifications are not spoken (previews still are).",
-    "keyMissing": "Save an ElevenLabs API key in Settings to choose a voice.",
-    "listFailed": "Could not load the voice list: {{error}}",
-    "spoken": "Spoken: {{line}}",
-    "spokenNone": "Nothing could be spoken.",
-    "previewFailed": "Preview failed: {{error}}"
   },
   "io": {
     "export": "Export",

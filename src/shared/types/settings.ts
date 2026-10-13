@@ -53,7 +53,6 @@ export type MascotLightsFace = "sprite" | "portrait";
  * 칸을 두 줄로 그린다 — 첫 줄 프로젝트명, 둘째 줄 작업명(타일도 세로로 커진다). */
 export type MascotLightsLabel = "auto" | "agent" | "project" | "task" | "projecttask";
 
-import type { TtsRewriteProvider } from './tts';
 
 /**
  * 요약기 provider 하나의 모델 오버라이드 — Rust `SummaryModelOverride` 미러.
@@ -176,16 +175,6 @@ export interface AppSettings {
    * 없어 기본 true(opt-out). 표시되는 숫자는 추정치일 뿐 구독제 실제
    * 청구액이 아니다. */
   sessionCostEnabled: boolean;
-  /** 알림 대사 TTS(질문·완료 알림을 캐릭터 목소리로 발화). 외부 유료 API 두 곳을
-   * 호출하므로 opt-in — 기본 false. API 키는 이 구조체에 없다(백엔드 0600 파일). */
-  ttsEnabled: boolean;
-  /** 대사 리라이트에 쓸 Anthropic 모델 id(자유 입력). Anthropic API 경로와
-   * claude CLI 경로가 함께 쓴다. 기본 "claude-haiku-4-5". */
-  ttsRewriteModelAnthropic: string;
-  /** OpenRouter 경로의 모델 id(`<vendor>/<model>`). 기본 "openai/gpt-5.4-mini". */
-  ttsRewriteModelOpenrouter: string;
-  /** 대사 리라이트 공급자. 기본 "auto"(API 키 → env → claude CLI → 생략). */
-  ttsRewriteProvider: TtsRewriteProvider;
 }
 
 /** `get_app_settings` 응답. firstRun = settings.json 부재(첫 실행). */

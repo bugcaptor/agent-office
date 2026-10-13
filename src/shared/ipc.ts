@@ -65,12 +65,9 @@ export const Commands = {
   // 마스코트 신호등(docs/mascot-lights-design.md §5.3) — 창 크기·위치를
   // (물리 px) 한 번에 적용. mascot 창의 동적 리사이즈 전용.
   setMascotLayout: "set_mascot_layout",
-  // 알림 대사 TTS — 질문/완료 알림 문구를 캐릭터 대사로 리라이트 + 합성(백엔드
-  // 전담: API 키는 웹뷰로 나오지 않고 오디오 바이트만 온다).
-  ttsSpeak: "tts_speak",
-  ttsListVoices: "tts_list_voices",
-  ttsKeyStatus: "tts_key_status",
-  ttsSetKeys: "tts_set_keys",
+  // 요약기용 API 키(Anthropic·OpenRouter) — 존재 여부만 렌더러로.
+  apiKeyStatus: "api_key_status",
+  setApiKeys: "set_api_keys",
   // CLI 제어(이슈 #55, docs/cli-control-design.md) — 2단계 승인 상태 조회/승인/취소.
   controlStatus: "control_status",
   controlApprove: "control_approve",

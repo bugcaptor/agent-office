@@ -470,7 +470,7 @@ body {
   font-size: 0.8rem;
 }
 
-/* ── 설정 다이얼로그: 탭 4개(일반/소리·음성/시스템/제어) ──
+/* ── 설정 다이얼로그: 탭 4개(일반/소리/시스템/제어) ──
    탭마다 내용 길이가 크게 달라, 패널 높이에 맡기면 전환할 때마다 모달이
    출렁인다. 그래서 다이얼로그 높이를 못 박고(짧은 화면에서는 뷰포트에
    맞춰 줄어든다) 스크롤은 탭 패널 안에서만 일어나게 한다. 공통 기본값
@@ -549,7 +549,7 @@ body {
 .settings-item small { display: block; opacity: 0.75; margin-top: 2px; }
 /* 볼륨 슬라이더 줄: 체크박스 줄과 달리 값 폭 채우기 + 세로 중앙 정렬 */
 .settings-item input[type="range"] { flex: 1; align-self: center; }
-/* 모델 id 입력(요약기 경량/고급, TTS 리라이트 모델): 남는 폭을 채워
+/* 모델 id 입력(요약기 경량/고급): 남는 폭을 채워
    OpenRouter처럼 긴 모델 id(예: anthropic/claude-sonnet-4.5)가 잘리지 않게 */
 .settings-item input[type="text"] { flex: 1; min-width: 0; }
 /* 폼 안의 안내 문단(입력이 아니라 설명만 있는 줄) */

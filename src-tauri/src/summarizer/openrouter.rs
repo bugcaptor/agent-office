@@ -5,7 +5,7 @@
 // 부른다 — CLI를 깔지 않은 사용자도 요약을 쓸 수 있고, 한 키로 여러 벤더 모델을
 // 고를 수 있는 것이 이 경로의 존재 이유다.
 //
-// tts/openrouter.rs와 같은 규칙을 따른다:
+// 규칙:
 //  - 순수 로직(build_request_body / parse_response)과 HTTP(summarize)를 분리한다.
 //  - 샘플링 파라미터는 보내지 않고, reasoning만 low로 고정한다.
 //  - 에러 문자열에 응답 body를 싣지 않는다(키가 반사될 여지를 없앤다).

@@ -59,10 +59,6 @@ describe("FirstRunDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
-        ttsEnabled: false,
-        ttsRewriteModelAnthropic: "claude-haiku-4-5",
-        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-        ttsRewriteProvider: "auto",
       },
       false,
     );
@@ -109,10 +105,6 @@ describe("FirstRunDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
-        ttsEnabled: false,
-        ttsRewriteModelAnthropic: "claude-haiku-4-5",
-        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-        ttsRewriteProvider: "auto",
       },
       true,
     );
@@ -159,10 +151,6 @@ describe("FirstRunDialog", () => {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
-      ttsEnabled: false,
-      ttsRewriteModelAnthropic: "claude-haiku-4-5",
-      ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-      ttsRewriteProvider: "auto",
     });
   });
 
@@ -205,10 +193,6 @@ describe("FirstRunDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
-        ttsEnabled: false,
-        ttsRewriteModelAnthropic: "claude-haiku-4-5",
-        ttsRewriteModelOpenrouter: "openai/gpt-5.4-mini",
-        ttsRewriteProvider: "auto",
       },
       true,
     );

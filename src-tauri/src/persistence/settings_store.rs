@@ -6,14 +6,11 @@
 // false(파일이 존재했다는 것 자체가 온보딩 완료의 증거 — 유저를 온보딩으로
 // 다시 괴롭히지 않는다). 쓰기는 ProfileStore와 같은 temp+rename 원자 쓰기.
 //
-// 사운드 설정은 한 덩어리(`soundEnabled`)에서 세 갈래(타건음/알림음/TTS)로
-// 쪼개졌다. 파일에 새 키가 없으면 옛 `soundEnabled` 값으로 둘 다 초기화한다
-// (`migrate_sound_keys`) — 버전 올림 없이 로드 시점에 한 번 접어 넣는 방식이라
-// 옛 앱으로 되돌아가도 파일이 깨지지 않는다.
-//
-// TTS 리라이트 모델도 같은 방식으로 접었다: 옛 `ttsRewriteModel`(Anthropic
-// 모델 3종 enum)이 공급자별 자유 문자열 둘(`ttsRewriteModelAnthropic` /
-// `ttsRewriteModelOpenrouter`)로 갈렸다 — `migrate_tts_rewrite_model`.
+// 사운드 설정은 한 덩어리(`soundEnabled`)에서 타건음/알림음으로 쪼개졌다(한때
+// 셋째 갈래였던 알림 대사 TTS는 점검·정리 §7.D C23으로 제거). 파일에 새 키가
+// 없으면 옛 `soundEnabled` 값으로 둘 다 초기화한다(`migrate_sound_keys`) — 버전
+// 올림 없이 로드 시점에 한 번 접어 넣는 방식이라 옛 앱으로 되돌아가도 파일이
+// 깨지지 않는다. 옛 `tts*` 키들은 serde가 무시하고 다음 저장에서 사라진다.
 
 use std::fs;
 use std::path::PathBuf;
@@ -27,26 +24,13 @@ fn default_sound_volume() -> f32 {
 fn default_attention_hold_ms() -> u64 {
     5000
 }
-/// 짧은 한 줄 리라이트라 Anthropic 기본은 가장 빠르고 싼 Haiku. 설정 필드의
-/// serde 기본값이자, 사용자가 입력을 **비웠을 때**의 폴백이다
-/// (`tts::RewriteConfig::from_settings` — 빈 모델 id를 그대로 실으면 API가 400).
-pub const DEFAULT_TTS_REWRITE_MODEL_ANTHROPIC: &str = "claude-haiku-4-5";
-/// OpenRouter 기본. 모델 id 표기는 OpenRouter 규약(`<vendor>/<model>`)을 따른다.
-pub const DEFAULT_TTS_REWRITE_MODEL_OPENROUTER: &str = "openai/gpt-5.4-mini";
-
-fn default_tts_rewrite_model_anthropic() -> String {
-    DEFAULT_TTS_REWRITE_MODEL_ANTHROPIC.to_string()
-}
-fn default_tts_rewrite_model_openrouter() -> String {
-    DEFAULT_TTS_REWRITE_MODEL_OPENROUTER.to_string()
-}
 
 /// 요약(라벨·일기·학습자료)에 사용할 제공자. 기존 설정과의 호환을 위해
 /// 기본은 Claude.
 ///
 /// 앞의 다섯은 로컬 CLI를 서브프로세스로 부르고, `Openrouter`만 HTTP(OpenAI 호환
 /// chat/completions) 경로다 — CLI 설치 없이 한 키로 여러 벤더 모델을 쓰려는
-/// 사용자를 위한 갈래이고, 키는 TTS와 같은 0600 키 스토어를 공유한다.
+/// 사용자를 위한 갈래이고, 키는 0600 키 스토어(`key_store`)에 둔다.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SummaryProvider {
@@ -145,45 +129,9 @@ pub enum FileIndexBackend {
     Everything,
 }
 
-/// 대사 리라이트를 누가 수행할지. 기본 `Auto` — 사용 가능한 경로를
-/// 저렴/빠른 순으로 자동 선택한다(`tts::resolve_rewrite_route` 참고).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum TtsRewriteProvider {
-    /// 저장 API 키 → ANTHROPIC_API_KEY env → claude CLI → 리라이트 생략.
-    #[default]
-    #[serde(rename = "auto")]
-    Auto,
-    /// Anthropic Messages API만. 키가 없으면 리라이트를 건너뛴다.
-    #[serde(rename = "api")]
-    Api,
-    /// OpenRouter(OpenAI 호환 chat/completions)만. **명시 선택 시에만** 쓰인다 —
-    /// `Auto` 체인은 기존 순서를 유지한다(키를 넣어 뒀다고 조용히 과금 경로가
-    /// 바뀌면 안 된다).
-    #[serde(rename = "openrouter")]
-    OpenRouter,
-    /// `claude -p` 헤드리스 서브프로세스만. 구독 사용량을 소모한다.
-    #[serde(rename = "claude-cli")]
-    ClaudeCli,
-    /// 리라이트 없음 — 원문 문구를 그대로 읽는다(합성만 사용).
-    #[serde(rename = "none")]
-    None,
-}
-
-impl TtsRewriteProvider {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Api => "api",
-            Self::OpenRouter => "openrouter",
-            Self::ClaudeCli => "claude-cli",
-            Self::None => "none",
-        }
-    }
-}
-
 /// 요약기 provider 하나의 모델 오버라이드. **빈 문자열 = 오버라이드 없음**
 /// (`summarizer::SummaryPurpose`의 하드코딩 기본값을 그대로 쓴다) — Option 대신
-/// 빈 문자열을 쓰는 이유는 tts 키 스토어와 같다: 렌더러에서 "지우기"가
+/// 빈 문자열을 쓰는 이유는 키 스토어와 같다: 렌더러에서 "지우기"가
 /// 빈 입력으로 자연스럽게 표현된다.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -277,7 +225,7 @@ pub struct AppSettings {
     #[serde(default, alias = "claudeHooksEnabled")]
     pub observer_enabled: bool,
     /// 키보드 타건음(캐릭터가 출력을 뿜을 때 나는 타이핑 소리).
-    /// 레거시 `soundEnabled` 하나가 담당하던 것을 셋(타건/알림/TTS)으로 쪼갠
+    /// 레거시 `soundEnabled` 하나가 담당하던 것을 타건/알림으로 쪼갠
     /// 결과다 — 마이그레이션은 `migrate_sound_keys` 참고.
     #[serde(default = "default_true")]
     pub typing_sound_enabled: bool,
@@ -377,26 +325,6 @@ pub struct AppSettings {
     /// 구독제 실제 청구액이 아니다.
     #[serde(default = "default_true")]
     pub session_cost_enabled: bool,
-    /// 확인 요청 대사 TTS — 질문(Hook) 알림 문구를 캐릭터 말투 대사로 리라이트한 뒤
-    /// ElevenLabs로 합성해 캐릭터 목소리로 재생한다. 외부 API 두 곳을 호출해
-    /// 유료 크레딧을 소모하므로 opt-in — 기본 꺼짐. API 키는 이 구조체가 아니라
-    /// `tts::keys::TtsKeyStore`(0600 별도 파일)에 있다 — 설정은 렌더러로 통째로
-    /// 왕복하므로 키를 여기 두면 웹뷰에 노출된다.
-    #[serde(default)]
-    pub tts_enabled: bool,
-    /// 대사 리라이트에 쓸 Anthropic 모델 id. 기본 `claude-haiku-4-5`.
-    /// API 경로에서는 Messages API의 `model`, claude CLI 경로에서는
-    /// `claude -p --model`의 값으로 같이 쓰인다. 자유 입력이라 오타는
-    /// 호출 실패 → 원문 발화로 강등된다(장식 기능의 강등 규칙).
-    #[serde(default = "default_tts_rewrite_model_anthropic")]
-    pub tts_rewrite_model_anthropic: String,
-    /// OpenRouter 경로에서 쓸 모델 id(`<vendor>/<model>`). 기본
-    /// `openai/gpt-5.4-mini`.
-    #[serde(default = "default_tts_rewrite_model_openrouter")]
-    pub tts_rewrite_model_openrouter: String,
-    /// 대사 리라이트 공급자. 기본 `auto`(API 키 → env → claude CLI → 생략).
-    #[serde(default)]
-    pub tts_rewrite_provider: TtsRewriteProvider,
 }
 
 fn default_language() -> String {
@@ -435,10 +363,6 @@ impl Default for AppSettings {
             mascot_lights_label: MascotLightsLabel::Auto,
             usage_float_enabled: true,
             session_cost_enabled: true,
-            tts_enabled: false,
-            tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
-            tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),
-            tts_rewrite_provider: TtsRewriteProvider::Auto,
         }
     }
 }
@@ -467,36 +391,6 @@ pub fn migrate_sound_keys(value: &mut serde_json::Value) {
     }
 }
 
-/// 레거시 TTS 리라이트 모델 키 접기. 옛 `ttsRewriteModel`(Anthropic 모델 3종
-/// enum, 값이 곧 모델 id)이 공급자별 자유 문자열 둘로 갈렸다.
-///
-/// 규칙은 `migrate_sound_keys`와 같다: **새 키가 없을 때만** 옛 값을 옮긴다.
-/// 옛 값은 언제나 Anthropic 모델 id였으므로 `ttsRewriteModelAnthropic`에만
-/// 실린다(OpenRouter 쪽은 손대지 않는다 — 그 경로는 이 마이그레이션 이전에
-/// 존재하지도 않았다). `ttsRewriteModel`은 AppSettings에 더 이상 없으므로
-/// serde가 무시하고, 다음 저장에서 파일에서 사라진다.
-///
-/// 순수 — JSON 값만 만진다.
-pub fn migrate_tts_rewrite_model(value: &mut serde_json::Value) {
-    let Some(obj) = value.as_object_mut() else {
-        return;
-    };
-    let Some(legacy) = obj
-        .get("ttsRewriteModel")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-    else {
-        return;
-    };
-    if legacy.trim().is_empty() || obj.contains_key("ttsRewriteModelAnthropic") {
-        return;
-    }
-    obj.insert(
-        "ttsRewriteModelAnthropic".to_string(),
-        serde_json::Value::String(legacy),
-    );
-}
-
 #[derive(Clone)]
 pub struct SettingsStore {
     file: PathBuf,
@@ -510,7 +404,7 @@ impl SettingsStore {
     /// (설정, first_run). first_run은 "파일이 아예 없다"일 때만 true.
     ///
     /// 구조체로 바로 파싱하지 않고 `Value`를 한 번 거치는 이유는 레거시 키
-    /// 접기(`migrate_sound_keys`, `migrate_tts_rewrite_model`) 때문이다 —
+    /// 접기(`migrate_sound_keys`) 때문이다 —
     /// serde의 필드 기본값은 **다른 필드 값을 볼 수 없으므로** 파생 매크로만으로는
     /// 표현할 수 없다.
     pub fn load(&self) -> (AppSettings, bool) {
@@ -518,7 +412,6 @@ impl SettingsStore {
             Ok(bytes) => {
                 let parsed = serde_json::from_slice::<serde_json::Value>(&bytes).map(|mut v| {
                     migrate_sound_keys(&mut v);
-                    migrate_tts_rewrite_model(&mut v);
                     v
                 });
                 match parsed.and_then(serde_json::from_value::<AppSettings>) {
@@ -574,13 +467,21 @@ mod tests {
             ("webRemoteEnabled", serde_json::json!(true)),
             ("webRemoteBind", serde_json::json!("all")),
             ("webRemotePort", serde_json::json!(47800)),
+            ("talkEnabled", serde_json::json!(true)),
+            ("talkMaxTurns", serde_json::json!(6)),
+            ("ttsEnabled", serde_json::json!(true)),
+            ("ttsRewriteProvider", serde_json::json!("claude-cli")),
+            ("ttsRewriteModel", serde_json::json!("claude-sonnet-5")),
         ] {
             obj.insert(key.into(), v);
         }
         let legacy: AppSettings = serde_json::from_value(value).unwrap();
         assert_eq!(legacy, AppSettings::default());
         let saved = serde_json::to_value(&legacy).unwrap();
-        for key in ["ideConnectionEnabled", "remoteServerConnectionEnabled", "webRemoteEnabled", "webRemoteBind", "webRemotePort"] {
+        for key in [
+            "ideConnectionEnabled", "remoteServerConnectionEnabled", "webRemoteEnabled", "webRemoteBind",
+            "webRemotePort", "talkEnabled", "talkMaxTurns", "ttsEnabled", "ttsRewriteProvider", "ttsRewriteModel",
+        ] {
             assert!(saved.get(key).is_none(), "{key} must not be written back");
         }
     }
@@ -630,10 +531,6 @@ mod tests {
             mascot_lights_label: MascotLightsLabel::Auto,
             usage_float_enabled: true,
             session_cost_enabled: true,
-            tts_enabled: false,
-            tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
-            tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),
-            tts_rewrite_provider: TtsRewriteProvider::Auto,
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -833,10 +730,6 @@ mod tests {
             mascot_lights_label: MascotLightsLabel::Auto,
             usage_float_enabled: true,
             session_cost_enabled: true,
-            tts_enabled: false,
-            tts_rewrite_model_anthropic: default_tts_rewrite_model_anthropic(),
-            tts_rewrite_model_openrouter: default_tts_rewrite_model_openrouter(),
-            tts_rewrite_provider: TtsRewriteProvider::Auto,
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();
@@ -909,59 +802,6 @@ mod tests {
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
-    // TTS(확인 요청 대사)는 외부 유료 API를 부르므로 기본 꺼짐이어야 하고,
-    // 리라이트 모델은 와이어에 모델 id 문자열 그대로 실려야 한다(렌더러
-    // 입력값과 Messages API `model`이 같은 문자열을 공유한다).
-    #[test]
-    fn tts_defaults_off_and_model_serializes_as_model_id() {
-        let s = AppSettings::default();
-        assert!(!s.tts_enabled);
-        assert_eq!(s.tts_rewrite_model_anthropic, "claude-haiku-4-5");
-        assert_eq!(s.tts_rewrite_model_openrouter, "openai/gpt-5.4-mini");
-        let json = serde_json::to_string(&s).unwrap();
-        assert!(json.contains("\"ttsEnabled\":false"), "{json}");
-        assert!(
-            json.contains("\"ttsRewriteModelAnthropic\":\"claude-haiku-4-5\""),
-            "{json}"
-        );
-        assert!(
-            json.contains("\"ttsRewriteModelOpenrouter\":\"openai/gpt-5.4-mini\""),
-            "{json}"
-        );
-        assert_eq!(s.tts_rewrite_provider, TtsRewriteProvider::Auto);
-        assert!(json.contains("\"ttsRewriteProvider\":\"auto\""), "{json}");
-        for p in [
-            TtsRewriteProvider::Auto,
-            TtsRewriteProvider::Api,
-            TtsRewriteProvider::OpenRouter,
-            TtsRewriteProvider::ClaudeCli,
-            TtsRewriteProvider::None,
-        ] {
-            assert_eq!(
-                serde_json::to_value(p).unwrap(),
-                serde_json::Value::String(p.as_str().to_string())
-            );
-        }
-    }
-
-    // 하위 호환: TTS 키가 없는 기존 settings.json도 기본값(꺼짐/Haiku)으로 로드된다.
-    #[test]
-    fn load_settings_without_tts_fields_falls_back_to_defaults() {
-        let file = scratch_file();
-        fs::create_dir_all(file.parent().unwrap()).unwrap();
-        fs::write(&file, br#"{"version":1,"soundEnabled":true}"#).unwrap();
-        let (s, _) = SettingsStore::new(file.clone()).load();
-        assert!(!s.tts_enabled);
-        assert_eq!(s.tts_rewrite_model_anthropic, "claude-haiku-4-5");
-        assert_eq!(s.tts_rewrite_model_openrouter, "openai/gpt-5.4-mini");
-        assert_eq!(s.tts_rewrite_provider, TtsRewriteProvider::Auto);
-        let _ = fs::remove_dir_all(file.parent().unwrap());
-    }
-
-    // ── UI 언어 ────────────────────────────────────────────────────────
-    //
-    // 언어 키가 없던 시절의 설정 파일은 `"system"`(OS 로케일 따름)이 되어야
-    // 한다 — 기존 사용자가 업데이트했다고 갑자기 영어로 뜨면 안 된다.
     #[test]
     fn load_settings_without_language_defaults_to_system() {
         let file = scratch_file();
@@ -989,64 +829,6 @@ mod tests {
     //
     // 옛 설정에서 Sonnet을 골라 뒀던 사용자가 업데이트했다고 Haiku로 되돌아가면
     // 안 된다 — 옛 값은 언제나 Anthropic 모델 id였으므로 그쪽으로만 옮긴다.
-    #[test]
-    fn legacy_tts_rewrite_model_moves_to_the_anthropic_field() {
-        let file = scratch_file();
-        fs::create_dir_all(file.parent().unwrap()).unwrap();
-        fs::write(
-            &file,
-            br#"{"version":1,"ttsRewriteModel":"claude-sonnet-5"}"#,
-        )
-        .unwrap();
-        let (s, _) = SettingsStore::new(file.clone()).load();
-        assert_eq!(s.tts_rewrite_model_anthropic, "claude-sonnet-5");
-        assert_eq!(
-            s.tts_rewrite_model_openrouter, "openai/gpt-5.4-mini",
-            "OpenRouter 쪽은 옛 값의 영향을 받지 않는다"
-        );
-        let _ = fs::remove_dir_all(file.parent().unwrap());
-    }
-
-    #[test]
-    fn new_tts_model_field_wins_over_the_legacy_key() {
-        let mut v: serde_json::Value = serde_json::from_str(
-            r#"{"version":1,"ttsRewriteModel":"claude-sonnet-5","ttsRewriteModelAnthropic":"claude-opus-5"}"#,
-        )
-        .unwrap();
-        migrate_tts_rewrite_model(&mut v);
-        assert_eq!(v["ttsRewriteModelAnthropic"], serde_json::json!("claude-opus-5"));
-    }
-
-    #[test]
-    fn tts_model_migration_is_noop_without_or_with_blank_legacy_key() {
-        let mut none: serde_json::Value = serde_json::from_str(r#"{"version":1}"#).unwrap();
-        migrate_tts_rewrite_model(&mut none);
-        assert_eq!(none, serde_json::json!({"version":1}), "serde 기본값에 맡긴다");
-
-        let mut blank: serde_json::Value =
-            serde_json::from_str(r#"{"version":1,"ttsRewriteModel":"  "}"#).unwrap();
-        migrate_tts_rewrite_model(&mut blank);
-        assert!(
-            blank.get("ttsRewriteModelAnthropic").is_none(),
-            "빈 모델 id를 옮기면 API가 400을 낸다"
-        );
-    }
-
-    // 저장하면 옛 키는 사라지고 새 키 둘만 남는다(사운드 키와 같은 관례).
-    #[test]
-    fn save_drops_the_legacy_tts_model_key() {
-        let file = scratch_file();
-        fs::create_dir_all(file.parent().unwrap()).unwrap();
-        fs::write(&file, br#"{"version":1,"ttsRewriteModel":"claude-opus-5"}"#).unwrap();
-        let store = SettingsStore::new(file.clone());
-        let (s, _) = store.load();
-        store.save(&s).unwrap();
-        let json = fs::read_to_string(&file).unwrap();
-        assert!(!json.contains("\"ttsRewriteModel\":"), "{json}");
-        assert!(json.contains("\"ttsRewriteModelAnthropic\""), "{json}");
-        let _ = fs::remove_dir_all(file.parent().unwrap());
-    }
-
     // ── 요약기 모델 오버라이드 ────────────────────────────────────────
     #[test]
     fn summary_models_default_to_empty_overrides_and_round_trip() {

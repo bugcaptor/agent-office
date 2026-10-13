@@ -36,7 +36,6 @@
 | [employee-of-the-month-design.md](employee-of-the-month-design.md) | 이 달의 우수사원 — 월간 결정적 선정·수상 기록 영속화·LLM 수상 소감·시상 화면·씬 연출 | 정본 (2026-08-24 신설, kbm #2hx) — 구현 중 |
 | [i18n-design.md](i18n-design.md) | UI 다국어(한국어/영어) — i18next 카탈로그·언어별 프롬프트 프로필·입력 판정 규칙·하드코딩 한글 금지 장치 | 정본 (2026-08-25 신설) — 구현 완료 |
 | [claude-session-resume-design.md](claude-session-resume-design.md) | Claude native 세션 ID 캡처·`--resume` 이어하기 | 정본 — 구현 완료(#20) |
-| [tts-confirm-line-design.md](tts-confirm-line-design.md) | 알림 대사 TTS — 질문·완료 알림 문구를 캐릭터 말투 대사로 리라이트(API/claude CLI) + ElevenLabs 합성·archetype 보이스 캐스팅/수동 지정, 소리 3분할 설정 | 정본 — 구현 완료, 눈검증 대기 |
 | [pi-support-design.md](pi-support-design.md) | Pi(pi.dev) CLI 작업 상태 감지 — Pi 확장 + 셸 래퍼 | 부분표류 — 구현 완료(#8)이나 §1 file:line 근거가 observer 리팩터로 구식. 현행 구조는 문서 §0.5 |
 | [kilo-support-design.md](kilo-support-design.md) | Kilo Code CLI(kilo/kilocode) 작업 상태 감지 — KILO_CONFIG 플러그인 주입 + 셸 래퍼 env 대입 | 정본 (2026-09-10) — 구현 완료 |
 
@@ -62,6 +61,7 @@
 | [archive/bot-mode-design.md](archive/bot-mode-design.md) | 캐릭터 봇 모드(#57/#58/#61) — Gitea 이슈 폴링. 미사용으로 제거(2026-10-14, 점검·정리 §7.D C30) |
 | [archive/terminal-automation-design.md](archive/terminal-automation-design.md) | 터미널 입력 자동화 v1/v2(kbm #2t9) — 미사용으로 제거(2026-10-14, 점검·정리 §7.D C29). 기동 receipt는 업무 보내기로 이전 |
 | [archive/agent-talk-design.md](archive/agent-talk-design.md) | 동료 대화(Agent Talk) — M1+M2 구현 후 미사용으로 제거(2026-10-14, 점검·정리 §7.D C26). shim 권한 배선은 업무 수신함이 이어받음 |
+| [archive/tts-confirm-line-design.md](archive/tts-confirm-line-design.md) | 알림 대사 TTS — 리라이트 + ElevenLabs 합성. 미사용으로 제거(2026-10-14, 점검·정리 §7.D C23). 키 저장소(`tts-keys.json`)는 요약기 API 키 저장소로 남음 |
 
 ## 관련 (docs/ 밖)
 

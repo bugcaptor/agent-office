@@ -14,7 +14,7 @@
     "role": "職務",
     "awardBadge": "🏆 累計獲獎 {{n}} 次",
     "personality": "個性提示",
-    "personalityHint": "寫下這個角色是什麼樣的存在。它會附加在 Claude Code 的系統提示後面，也會一併反映到肖像提示和台詞語氣上。可以直接寫成多行。",
+    "personalityHint": "寫下這個角色是什麼樣的存在。它會附加在 Claude Code 的系統提示後面，也會一併反映到肖像提示以及日記、得獎感言的語氣上。可以直接寫成多行。",
     "archetype": "原型",
     "archetypeHint": "決定 Sprite 的體型與服裝系列。選「自動（種子）」時由種子決定。填入清單裡沒有的種族（例如龍），會原樣反映到肖像和像素圖提示，點陣角色則以人類體型繪製。"
   },
@@ -91,20 +91,6 @@
     "shell": "Shell",
     "shellAuto": "自動（預設）",
     "shellNoHooks": "{{label}}（不支援時間追蹤）"
-  },
-  "voice": {
-    "label": "聲音（TTS）",
-    "auto": "自動（依種族指派）",
-    "missingOption": "{{id}}（不在清單中）",
-    "preview": "試聽",
-    "hintDisabled": "在設定開啟「通知台詞朗讀（TTS）」就能挑選聲音。",
-    "hintEnabled": "留空時會依角色種族和種子自動決定。",
-    "mutedNote": " 靜音模式開著，實際通知不會唸出來（試聽仍聽得到）。",
-    "keyMissing": "在設定儲存 ElevenLabs API 金鑰就能挑選聲音。",
-    "listFailed": "無法載入聲音清單：{{error}}",
-    "spoken": "已唸出：{{line}}",
-    "spokenNone": "無法唸出。",
-    "previewFailed": "試聽失敗：{{error}}"
   },
   "io": {
     "export": "匯出",

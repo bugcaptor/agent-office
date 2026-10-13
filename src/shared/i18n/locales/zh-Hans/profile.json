@@ -14,7 +14,7 @@
     "role": "职位",
     "awardBadge": "🏆 累计获奖 {{n}} 次",
     "personality": "性格提示词",
-    "personalityHint": "描述这个角色是什么样的存在。它会附加到 Claude Code 的系统提示词中，也会体现在肖像提示词和台词口吻上。可以直接写多行。",
+    "personalityHint": "描述这个角色是什么样的存在。它会附加到 Claude Code 的系统提示词中，也会体现在肖像提示词以及日记、获奖感言的口吻上。可以直接写多行。",
     "archetype": "原型",
     "archetypeHint": "决定精灵图的体型与服饰系列。选“自动（种子）”时由种子决定。填写列表之外的种族（例如龙）会原样带入肖像与像素画提示词，而点阵角色仍以人类体型绘制。"
   },
@@ -91,20 +91,6 @@
     "shell": "Shell",
     "shellAuto": "自动（默认）",
     "shellNoHooks": "{{label}}（不支持计时）"
-  },
-  "voice": {
-    "label": "声音（TTS）",
-    "auto": "自动（按种族分配）",
-    "missingOption": "{{id}}（不在列表中）",
-    "preview": "试听",
-    "hintDisabled": "在设置中打开‘朗读通知台词（TTS）’后即可挑选声音。",
-    "hintEnabled": "留空则按角色种族和种子自动决定。",
-    "mutedNote": " 静音模式已开启，实际通知不会朗读（试听仍可听到）。",
-    "keyMissing": "在设置中保存 ElevenLabs API 密钥后即可挑选声音。",
-    "listFailed": "无法加载声音列表：{{error}}",
-    "spoken": "朗读：{{line}}",
-    "spokenNone": "没有可朗读的内容。",
-    "previewFailed": "试听失败：{{error}}"
   },
   "io": {
     "export": "导出",

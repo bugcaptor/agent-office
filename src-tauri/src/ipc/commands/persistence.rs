@@ -266,7 +266,7 @@ pub async fn generate_study_material(
     let openrouter_key = if provider
         == crate::persistence::settings_store::SummaryProvider::Openrouter
     {
-        app_state.tts.keys.openrouter_key()
+        app_state.key_store.openrouter_key()
     } else {
         None
     };

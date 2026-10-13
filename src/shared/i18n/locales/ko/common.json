@@ -69,10 +69,6 @@
     "logReadFailed": "세션 로그를 읽지 못했습니다.",
     "studySaveFailed": "학습자료를 저장하지 못했습니다.",
     "keySaveFailed": "API 키를 저장하지 못했습니다.",
-    "ttsDisabled": "TTS 설정이 꺼져 있습니다.",
-    "ttsKeyMissing": "ElevenLabs API 키가 설정되지 않았습니다.",
-    "ttsEmptyMessage": "발화할 문구가 없습니다.",
-    "ttsNoVoice": "사용할 수 있는 보이스가 없습니다.",
     "timeout": "시간 안에 응답하지 않았습니다."
   }
 }

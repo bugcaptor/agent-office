@@ -103,7 +103,6 @@ export function ProfileDialog() {
       const trimmedSpriteRequest = (draft.spriteRequest ?? "").trim();
       const trimmedMinimiRequest = (draft.minimiRequest ?? "").trim();
       const trimmedKeyboardSound = (draft.keyboardSound ?? "").trim();
-      const trimmedVoiceId = (draft.voiceId ?? "").trim();
       // 목록에 없는 자유 입력도 그대로 저장한다(공백만 다듬는다) — 스프라이트는
       // human으로 폴백하고 그림 프롬프트에는 적은 문구가 들어간다.
       const trimmedArchetype = (draft.archetype ?? "").trim();
@@ -125,7 +124,6 @@ export function ProfileDialog() {
         spriteRequest: trimmedSpriteRequest || undefined,
         minimiRequest: trimmedMinimiRequest || undefined,
         keyboardSound: trimmedKeyboardSound || undefined,
-        voiceId: trimmedVoiceId || undefined,
         defaultAgent: draft.defaultAgent ? normalizeWorkAgent(draft.defaultAgent) : undefined,
       });
     } else {

@@ -699,11 +699,6 @@ pub struct AgentProfile {
     /// TS `keyboardSound?: string` 미러.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub keyboard_sound: Option<String>,
-    /// 대사 TTS에 쓸 ElevenLabs voice_id를 수동 지정한 값. 없음/빈 값 =
-    /// archetype 기반 자동 캐스팅(`tts::voice::assign_voice`). 계정에서 사라진
-    /// id면 조용히 자동 배정으로 강등된다. TS `voiceId?: string` 미러.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub voice_id: Option<String>,
 }
 
 /// 영속 상태. version은 리터럴 1.
@@ -1078,7 +1073,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
-        voice_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1111,7 +1105,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
-        voice_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1173,7 +1166,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
-        voice_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1207,7 +1199,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
-        voice_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1252,7 +1243,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
-        voice_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1287,7 +1277,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
-        voice_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1340,7 +1329,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
-        voice_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1361,7 +1349,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
-        voice_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1391,7 +1378,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
                        keyboard_sound: Some("topre-hhkb".into()),
-                       voice_id: None,
                        default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1412,7 +1398,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
                        keyboard_sound: None,
-                       voice_id: None,
                        default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1440,7 +1425,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
-        voice_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1459,7 +1443,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
-        voice_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1487,7 +1470,6 @@ mod tests {
             clocked_out: Some(true),
             personality_prompt: None,
         keyboard_sound: None,
-        voice_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1506,7 +1488,6 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
-        voice_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();

@@ -14,7 +14,7 @@
     "role": "역할",
     "awardBadge": "🏆 통산 {{n}}회 수상",
     "personality": "성격 프롬프트",
-    "personalityHint": "캐릭터가 어떤 존재인지 적습니다. Claude Code의 시스템 프롬프트에 덧붙고, 초상 프롬프트·대사 말투에도 함께 반영됩니다. 여러 줄을 그대로 쓸 수 있습니다.",
+    "personalityHint": "캐릭터가 어떤 존재인지 적습니다. Claude Code의 시스템 프롬프트에 덧붙고, 초상 프롬프트와 일기·수상 소감 말투에도 함께 반영됩니다. 여러 줄을 그대로 쓸 수 있습니다.",
     "archetype": "아키타입",
     "archetypeHint": "스프라이트의 체형·의상 계열을 정합니다. “자동(시드)”이면 시드에 따라 선택됩니다. 목록에 없는 종족(예: 드래곤)을 적어 넣으면 초상·픽셀아트 프롬프트에 그대로 반영되고, 도트 캐릭터는 인간 체형으로 그려집니다."
   },
@@ -91,20 +91,6 @@
     "shell": "셸",
     "shellAuto": "자동 (기본)",
     "shellNoHooks": "{{label}} (시간 추적 미지원)"
-  },
-  "voice": {
-    "label": "목소리 (TTS)",
-    "auto": "자동 (종족에 맞춰 배정)",
-    "missingOption": "{{id}} (목록에 없음)",
-    "preview": "미리듣기",
-    "hintDisabled": "설정에서 ‘알림 대사 읽어주기(TTS)’를 켜면 목소리를 고를 수 있습니다.",
-    "hintEnabled": "비워두면 캐릭터 종족과 시드에 맞춰 자동으로 정해집니다.",
-    "mutedNote": " 무음 모드가 켜져 있어 실제 알림은 발화되지 않습니다(미리듣기는 들립니다).",
-    "keyMissing": "설정에서 ElevenLabs API 키를 저장하면 목소리를 고를 수 있습니다.",
-    "listFailed": "목소리 목록을 불러오지 못했습니다: {{error}}",
-    "spoken": "발화: {{line}}",
-    "spokenNone": "발화할 수 없었습니다.",
-    "previewFailed": "미리듣기 실패: {{error}}"
   },
   "io": {
     "export": "내보내기",

@@ -1,11 +1,10 @@
 // src/renderer/settings/SoundTab.tsx
 //
-// 설정 다이얼로그 "소리·음성" 탭 — 효과음/볼륨/알림 지연과 TTS 섹션.
+// 설정 다이얼로그 "소리" 탭 — 효과음/볼륨/알림 지연.
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
-import { TtsSection } from "./TtsSection";
 
-/** 소리·음성 — 효과음/볼륨/알림 지연 + 대사 읽어주기(TTS). */
+/** 소리 — 효과음/볼륨/알림 지연. */
 export function SoundTab() {
   const { t } = useTranslation("settings");
   const appSettings = useAppStore((s) => s.appSettings);
@@ -48,8 +47,7 @@ export function SoundTab() {
             value={Math.round(appSettings.soundVolume * 100)}
             disabled={
               !appSettings.typingSoundEnabled &&
-              !appSettings.notifySoundEnabled &&
-              !appSettings.ttsEnabled
+              !appSettings.notifySoundEnabled
             }
             onChange={(e) => updateAppSettings({ soundVolume: Number(e.target.value) / 100 })}
           />
@@ -71,7 +69,6 @@ export function SoundTab() {
           />
         </label>
       </div>
-      <TtsSection />
     </>
   );
 }

@@ -167,7 +167,6 @@ mod tests {
                 personality_prompt: None,
                 clocked_out: None,
             keyboard_sound: None,
-            voice_id: None,
             default_agent: None,
             }],
             version: 1,
