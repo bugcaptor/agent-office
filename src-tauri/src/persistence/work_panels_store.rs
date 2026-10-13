@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::{self, OpenOptions},
     io::{BufRead, BufReader, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Mutex,
 };
 
@@ -42,22 +42,31 @@ impl WorkPanelsStore {
         let bytes = serde_json::to_vec(items).map_err(|e| e.to_string())?;
         let _guard = self.lock.lock().map_err(|e| e.to_string())?;
         fs::create_dir_all(&self.root).map_err(|e| e.to_string())?;
-        let tmp = self.root.join("work-items.json.tmp");
+        // tmp 이름은 저장마다 고유하게 — 락은 프로세스 안 Mutex뿐이라, 고정 이름이면
+        // 같은 app_data를 쓰는 다른 프로세스와 tmp를 서로 덮어쓴다(§7.F E1).
+        let tmp = self
+            .root
+            .join(format!("work-items.json.tmp-{}", uuid::Uuid::new_v4()));
+        let result = Self::write_and_replace(&tmp, &bytes, &self.root.join("work-items.json"));
+        if result.is_err() {
+            let _ = fs::remove_file(&tmp);
+        }
+        result.map_err(|e| e.to_string())
+    }
+    fn write_and_replace(tmp: &Path, bytes: &[u8], dest: &Path) -> std::io::Result<()> {
         let mut file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
+            .create_new(true)
             .write(true)
-            .open(&tmp)
-            .map_err(|e| e.to_string())?;
-        file.write_all(&bytes)
-            .and_then(|_| file.sync_all())
-            .map_err(|e| e.to_string())?;
+            .open(tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
         // Windows rename은 기존 목적지를 교체하지 못한다. 기존 스토어와 같은 규약.
         #[cfg(windows)]
-        if self.root.join("work-items.json").exists() {
-            fs::remove_file(self.root.join("work-items.json")).map_err(|e| e.to_string())?;
+        if dest.exists() {
+            fs::remove_file(dest)?;
         }
-        fs::rename(tmp, self.root.join("work-items.json")).map_err(|e| e.to_string())
+        fs::rename(tmp, dest)
     }
     fn summaries_dir(&self) -> PathBuf {
         self.root.join("session-summaries/v1")
@@ -165,6 +174,12 @@ mod tests {
         assert_eq!(store.load_work_items().unwrap(), vec![item]);
         store.save_work_items(&[]).unwrap();
         assert!(store.load_work_items().unwrap().is_empty());
+        // 저장이 끝나면 tmp가 남지 않는다.
+        let names: Vec<_> = fs::read_dir(&store.root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names, vec!["work-items.json".to_string()]);
         fs::remove_dir_all(store.root).unwrap();
     }
     #[test]

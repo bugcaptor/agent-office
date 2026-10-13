@@ -231,38 +231,57 @@ async fn built_binary_claude_forwarder_relays_provider_and_event_query() {
 
 // forwarder 인자 문법: `--observer-forward codex` 또는
 // `--observer-forward claude [event]`. 여기서는 forwarder를 실제로 기동하지 않는
-// None 분기(문법 위반)만 확인한다 — Some 분기는 세션 env에 의존해 stdin을 읽으므로
-// built-binary 테스트로 검증한다.
+// 분기만 확인한다 — Some(forwarder 실행) 분기는 세션 env에 의존해 stdin을 읽으므로
+// built-binary 테스트로 검증한다. 문법 위반은 GUI로 떨어지지 않고 사용법 오류(64)로
+// 끝난다(점검 §7.F E1).
 #[test]
 fn forwarder_mode_rejects_ill_formed_argument_vectors() {
     use agent_office_lib::maybe_run_observer_forwarder;
 
     assert_eq!(maybe_run_observer_forwarder(["agent-office"]), None);
-    assert_eq!(
-        maybe_run_observer_forwarder(["agent-office", "--observer-forward"]),
-        None,
-    );
-    // 알 수 없는 provider는 None.
-    assert_eq!(
-        maybe_run_observer_forwarder(["agent-office", "--observer-forward", "bogus"]),
-        None,
-    );
-    // codex는 이벤트 인자를 받지 않는다.
-    assert_eq!(
-        maybe_run_observer_forwarder(["agent-office", "--observer-forward", "codex", "extra",]),
-        None,
-    );
-    // claude는 이벤트가 최대 1개다 — 2개 이상이면 None.
-    assert_eq!(
-        maybe_run_observer_forwarder([
-            "agent-office",
-            "--observer-forward",
-            "claude",
-            "Stop",
-            "extra",
-        ]),
-        None,
-    );
+    for args in [
+        &["agent-office", "--observer-forward"][..],
+        // 알 수 없는 provider.
+        &["agent-office", "--observer-forward", "bogus"],
+        // codex는 이벤트 인자를 받지 않는다.
+        &["agent-office", "--observer-forward", "codex", "extra"],
+        // claude는 이벤트가 최대 1개다.
+        &["agent-office", "--observer-forward", "claude", "Stop", "extra"],
+    ] {
+        assert_eq!(maybe_run_observer_forwarder(args), Some(64), "{args:?}");
+    }
+}
+
+/// 설치본이 떠 있는 동안 `agent-office --help`가 두 번째 GUI를 띄우던 사고(§7.F
+/// E1)의 회귀 방지: 모드 분기에 걸리지 않는 인자는 GUI 없이 사용법을 찍고 64로
+/// 끝난다. 회귀하면 GUI가 떠 버리므로 제한 시간 뒤 죽이고 실패시킨다.
+#[test]
+fn built_binary_unknown_args_print_usage_without_gui() {
+    for args in [&["--help"][..], &["--observer-forward", "bogus"], &["bogus"]] {
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_agent-office"))
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() > deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("{args:?}: GUI로 떨어져 종료되지 않음");
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(output.status.code(), Some(64), "{args:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("usage: agent-office"),
+            "{args:?}: stderr={:?}",
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

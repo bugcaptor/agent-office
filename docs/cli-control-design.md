@@ -118,9 +118,12 @@
 
 ## 다중 인스턴스
 
-앱은 단일 인스턴스가 아니다. `control-port`는 last-writer 승 —
-"마지막에 뜬 GUI 인스턴스를 제어"로 문서화한다(`ctl`을 몇 개 동시에 돌리든
-무관). 인스턴스 선택은 후속 과제.
+같은 identifier(=같은 app_data)의 GUI는 하나만 뜬다
+(`tauri-plugin-single-instance`). 두 번째 실행은 기존 main 창을 앞으로 가져오고
+바로 끝나므로 `control-port`를 덮어쓰지 않는다. 모드 분기(`ctl`·`task`·
+`--observer-forward`·`--sessiond`)에 맞지 않는 인자는 GUI 없이 사용법을 찍고
+64로 끝난다. dev 빌드도 identifier가 같아, 설치본이 떠 있으면 `npm run tauri dev`
+는 설치본 창만 띄우고 끝난다.
 
 ## 구현 맵
 

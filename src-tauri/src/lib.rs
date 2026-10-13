@@ -84,6 +84,26 @@ use crate::session::manager::SessionManager;
 use crate::session::pty_factory::PortablePtyFactory;
 use crate::state::*;
 
+/// 잘못된 사용법 종료 코드 — `ctl`(control/client.rs)과 같은 값.
+const EXIT_USAGE: i32 = 64;
+
+/// 모드 분기에 맞지 않는 인자를 받았을 때 stderr에 찍는 사용법. GUI를 띄우지
+/// 않고 이 문구와 함께 [`EXIT_USAGE`]로 끝낸다 — 설치본이 떠 있는 동안
+/// `agent-office --help` 같은 호출이 두 번째 사무실을 띄우던 사고(점검 §7.F E1)를
+/// 막는다.
+const USAGE: &str = "\
+usage: agent-office                 GUI 실행(인자 없음)
+       agent-office ctl <command>   실행 중인 앱 제어(`agent-office ctl help`)
+       agent-office task …          업무 수신함에 업무 추가(`agent-office task --help`)
+";
+
+fn usage_error(reason: &str) -> i32 {
+    eprintln!("agent-office: {reason}\n{USAGE}");
+    EXIT_USAGE
+}
+
+/// `--observer-forward <provider> [event]` 분기. 모드가 아니면 `None`, 모드인데
+/// 인자가 어긋나면 GUI로 떨어지지 않고 사용법 오류로 끝낸다.
 pub fn maybe_run_observer_forwarder<I, S>(args: I) -> Option<i32>
 where
     I: IntoIterator<Item = S>,
@@ -95,12 +115,14 @@ where
     if mode.as_os_str() != std::ffi::OsStr::new("--observer-forward") {
         return None;
     }
-    let provider = args.next()?.as_ref().to_os_string();
+    let invalid = || Some(usage_error("--observer-forward 인자가 올바르지 않습니다"));
+    let Some(provider) = args.next().map(|arg| arg.as_ref().to_os_string()) else {
+        return invalid();
+    };
     // event는 claude만 동반한다(예: `--observer-forward claude Stop`).
     let event = args.next().map(|arg| arg.as_ref().to_os_string());
-    // 잉여 인자가 있으면 알 수 없는 호출로 보고 forwarder를 타지 않는다.
     if args.next().is_some() {
-        return None;
+        return invalid();
     }
     match provider.to_str() {
         // codex는 이벤트명을 body의 hook_event_name에서 얻으므로 인자로 받지 않는다.
@@ -108,24 +130,24 @@ where
             Some(observer::forwarder::run_forwarder("codex", None))
         }
         Some("claude") => {
-            // 이벤트가 있으면 유효한 유니코드여야 한다(비유니코드/파싱 실패는 무시).
+            // 이벤트가 있으면 유효한 유니코드여야 한다.
             let event = match &event {
                 Some(event) => match event.to_str() {
                     Some(event) => Some(event),
-                    None => return None,
+                    None => return invalid(),
                 },
                 None => None,
             };
             Some(observer::forwarder::run_forwarder("claude", event))
         }
-        _ => None,
+        _ => invalid(),
     }
 }
 
 /// `--sessiond <socket_path>` 분기(unix 전용, docs/session-handoff-design.md
 /// §아키텍처) -- 앱이 종료 시 세션을 넘길 데몬으로 자기 자신을 재실행할 때의
 /// 진입점. `maybe_run_observer_forwarder`와 같은 패턴: 인자를 보고 데몬
-/// 모드가 아니면 `None`을 돌려줘 `main.rs`가 평범한 `run()`으로 진행하게 한다.
+/// 모드가 아니면 `None`을 돌려줘 `main.rs`가 다음 분기로 넘어가게 한다.
 #[cfg(unix)]
 pub fn maybe_run_sessiond<I, S>(args: I) -> Option<i32>
 where
@@ -138,10 +160,10 @@ where
     if mode.as_os_str() != std::ffi::OsStr::new("--sessiond") {
         return None;
     }
-    let socket_path = args.next()?.as_ref().to_os_string();
-    if args.next().is_some() {
-        return None;
-    }
+    let socket_path = args.next().map(|arg| arg.as_ref().to_os_string());
+    let (Some(socket_path), None) = (socket_path, args.next()) else {
+        return Some(usage_error("--sessiond 인자가 올바르지 않습니다"));
+    };
     Some(sessiond::daemon::run_daemon(std::path::PathBuf::from(
         socket_path,
     )))
@@ -159,9 +181,9 @@ where
 
 /// `ctl <명령> …` 분기(이슈 #55, docs/cli-control-design.md) — 실행 중인 앱의
 /// control 서버에 요청 1건을 보내는 단명 클라이언트. `maybe_run_observer_forwarder`
-/// 와 같은 패턴: 첫 인자가 `ctl`이 아니면 `None`을 돌려줘 `main.rs`가 평범한
-/// `run()`(GUI)으로 진행하게 한다. GUI 런타임에 도달하지 않으므로 두 번째
-/// 사무실/서버가 뜨지 않는다.
+/// 와 같은 패턴: 첫 인자가 `ctl`/`task`가 아니면 `None`을 돌려줘 `main.rs`가 다음
+/// 분기로 넘어가게 한다. GUI 런타임에 도달하지 않으므로 두 번째 사무실/서버가
+/// 뜨지 않는다.
 pub fn maybe_run_cli<I, S>(args: I) -> Option<i32>
 where
     I: IntoIterator<Item = S>,
@@ -181,6 +203,30 @@ where
         .map(|a| a.as_ref().to_string_lossy().into_owned())
         .collect();
     Some(if task { work_inbox_cli::run(rest) } else { control::client::run(rest) })
+}
+
+/// 모드 분기(forwarder·sessiond·ctl·task)가 모두 지나친 뒤의 마지막 관문.
+/// GUI는 인자 없이만 뜬다 — 남은 인자가 있으면 사용법을 찍고 [`EXIT_USAGE`]로
+/// 끝낸다. 예외: 구형 macOS Finder가 붙이던 `-psn_…` 프로세스 일련번호 인자.
+pub fn reject_unknown_args<I, S>(args: I) -> Option<i32>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    let rest: Vec<String> = args
+        .into_iter()
+        .skip(1)
+        .map(|a| a.as_ref().to_string_lossy().into_owned())
+        .filter(|a| !a.starts_with("-psn_"))
+        .collect();
+    match rest.first().map(String::as_str) {
+        None => None,
+        Some("--help" | "-h" | "help") => {
+            eprint!("{USAGE}");
+            Some(EXIT_USAGE)
+        }
+        Some(_) => Some(usage_error(&format!("알 수 없는 인자: {}", rest.join(" ")))),
+    }
 }
 
 /// 훅이 forwarder로 재실행할 자기 자신의 경로. Linux AppImage에서는
@@ -271,6 +317,17 @@ const WINDOW_STATE_FLAGS: StateFlags = StateFlags::SIZE
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 같은 identifier(=같은 app_data)로 두 번째 GUI가 뜨면 기존 인스턴스의 main
+        // 창을 앞으로 가져오고 새 프로세스는 바로 끝낸다. 다른 플러그인·setup보다
+        // 먼저 등록해야 두 번째 인스턴스가 observer-port 등 공유 파일을 건드리기
+        // 전에 빠진다(점검 §7.F E1).
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         // main 창의 크기·위치·최대화 상태를 종료 시 저장하고 재실행 시 복원한다.
         // 마스코트 창(이슈 #72)은 자체 위치 복원 로직(src/renderer/mascot/position.ts,
         // localStorage + 모니터 유효성 검사)을 갖고 있어 플러그인이 건드리면 두
@@ -853,40 +910,44 @@ mod tests {
     }
 
     // forwarder를 실제로 기동하는 Some 분기(codex, claude[+event])는 세션 env에
-    // 의존하므로 여기서는 "forwarder 모드 아님"을 정확히 판별하는 None 분기만 본다.
+    // 의존하므로 여기서는 "forwarder 모드 아님"(None)과 "모드인데 인자가 어긋남"
+    // (사용법 오류)만 본다. 후자가 None이면 main.rs가 GUI로 떨어진다(§7.F E1).
     #[test]
     fn maybe_run_observer_forwarder_rejects_non_forwarder_invocations() {
-        // --observer-forward가 아니거나 provider가 없으면 None.
         assert_eq!(maybe_run_observer_forwarder(["agent-office"]), None);
-        assert_eq!(
-            maybe_run_observer_forwarder(["agent-office", "--observer-forward"]),
-            None,
-        );
         assert_eq!(
             maybe_run_observer_forwarder(["agent-office", "--sessiond", "codex"]),
             None,
         );
-        // 알 수 없는 provider는 None.
-        assert_eq!(
-            maybe_run_observer_forwarder(["agent-office", "--observer-forward", "unknown"]),
-            None,
-        );
-        // codex는 이벤트 인자를 받지 않는다(잉여 인자 → None).
-        assert_eq!(
-            maybe_run_observer_forwarder(["agent-office", "--observer-forward", "codex", "Stop"]),
-            None,
-        );
-        // claude라도 이벤트가 2개 이상이면 None.
-        assert_eq!(
-            maybe_run_observer_forwarder([
-                "agent-office",
-                "--observer-forward",
-                "claude",
-                "Stop",
-                "extra",
-            ]),
-            None,
-        );
+    }
+
+    #[test]
+    fn maybe_run_observer_forwarder_malformed_invocations_exit_with_usage() {
+        // provider 없음, 알 수 없는 provider, codex+이벤트, claude+이벤트 2개.
+        for args in [
+            &["agent-office", "--observer-forward"][..],
+            &["agent-office", "--observer-forward", "unknown"],
+            &["agent-office", "--observer-forward", "codex", "Stop"],
+            &["agent-office", "--observer-forward", "claude", "Stop", "extra"],
+        ] {
+            assert_eq!(maybe_run_observer_forwarder(args), Some(EXIT_USAGE), "{args:?}");
+        }
+    }
+
+    // GUI는 인자 없이만 뜬다. 모드 분기가 지나친 나머지 인자는 전부 사용법 오류.
+    #[test]
+    fn reject_unknown_args_lets_only_bare_launch_reach_gui() {
+        assert_eq!(reject_unknown_args(["agent-office"]), None);
+        assert_eq!(reject_unknown_args(["agent-office", "-psn_0_12345"]), None);
+        for args in [
+            &["agent-office", "--help"][..],
+            &["agent-office", "-h"],
+            &["agent-office", "help"],
+            &["agent-office", "--version"],
+            &["agent-office", "foo", "bar"],
+        ] {
+            assert_eq!(reject_unknown_args(args), Some(EXIT_USAGE), "{args:?}");
+        }
     }
 
     #[tokio::test]
@@ -950,7 +1011,7 @@ mod tests {
     // maybe_run_sessiond의 실제 데몬 기동(Some 분기)은 daemon.rs/client.rs가
     // run_daemon(_inner)를 직접 구동해 검증한다 -- 여기서는 인자 파싱이
     // "데몬 모드 아님"을 정확히 판별하는지(None 분기)만 확인한다.
-    // maybe_run_cli: 첫 인자가 `ctl`이 아니면 None(=GUI로 진행). `ctl help`는
+    // maybe_run_cli: 첫 인자가 `ctl`이 아니면 None(=다음 분기로). `ctl help`는
     // 네트워크·파일 접근 없이 usage를 찍고 Some(0)을 돌려주는 안전한 분기라
     // 여기서 라우팅만 확인한다(실 요청 경로는 client.rs 단위 테스트가 담당).
     #[test]
@@ -968,15 +1029,17 @@ mod tests {
     fn maybe_run_sessiond_returns_none_for_non_daemon_invocations() {
         assert_eq!(maybe_run_sessiond(["agent-office"]), None);
         assert_eq!(maybe_run_sessiond(["agent-office", "--observer-forward"]), None);
-        assert_eq!(maybe_run_sessiond(["agent-office", "--sessiond"]), None);
+    }
+
+    // unix: 데몬 모드인데 인자가 어긋나면 GUI로 떨어지지 않고 사용법 오류.
+    // (non-unix는 데몬 모드가 없어 None → reject_unknown_args가 막는다.)
+    #[cfg(unix)]
+    #[test]
+    fn maybe_run_sessiond_malformed_invocations_exit_with_usage() {
+        assert_eq!(maybe_run_sessiond(["agent-office", "--sessiond"]), Some(EXIT_USAGE));
         assert_eq!(
-            maybe_run_sessiond([
-                "agent-office",
-                "--sessiond",
-                "/tmp/x.sock",
-                "extra",
-            ]),
-            None
+            maybe_run_sessiond(["agent-office", "--sessiond", "/tmp/x.sock", "extra"]),
+            Some(EXIT_USAGE),
         );
     }
 }
