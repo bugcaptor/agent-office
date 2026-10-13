@@ -37,11 +37,6 @@ interface Entry {
   container: HTMLDivElement; // the actual DOM node TerminalMount attaches
   opened: boolean; // has term.open() been called?
   bindComposition: () => void;
-  // §#49: 이 터미널이 실제로 렌더(소비)한 raw 스트림 바이트 누적치. xterm write
-  // 콜백(렌더 완료 시점)에서 chunk.bytes를 더한다. 스냅샷 offset =
-  // base(백엔드 attach 시점) + 이 값. 복원 스냅샷 청크는 bytes=0이라 제외된다.
-  // 세션 attach 시점(엔트리 생성)부터 0에서 시작한다.
-  renderedBytes: number;
   observeOutput: (data: string) => void;
   // PTY 스트림에서 `ESC[3J`(스크롤백 지우기)를 떼어 내는 필터. pi 기본 TUI가
   // resize마다 스크롤백을 날리는 것을 막는다(scrollbackGuard.ts 헤더 참조).
@@ -167,21 +162,13 @@ class TerminalRegistry {
 
     // PTY output -> screen (bypasses the store, writes directly — a
     // high-frequency stream that would otherwise cause a render storm).
-    // §#49: raw 스트림 바이트를 write 콜백(실제 렌더 완료 시점)에서 누적해
-    // 스냅샷 offset 회계에 쓴다. flushAndSerializeAll이 write("", cb)로 큐를
-    // 비운 직후 읽으면 렌더 완료분이 정확히 반영된다. bytes=0 복원 청크는
-    // 자연히 제외된다.
     // `ESC[3J`(스크롤백 지우기)만 떼어 낸다 — pi 기본 TUI가 resize마다 앱
     // 터미널 히스토리를 통째로 지우는 것을 막는 유일한 앱 측 수단이다
-    // (scrollbackGuard.ts 헤더에 근거와 대가). 붙들린 경계 조각은 렌더되는
-    // 게 없으므로 renderedBytes 회계는 그대로 chunk.bytes를 더한다.
+    // (scrollbackGuard.ts 헤더에 근거와 대가).
     const scrollbackGuard = createScrollbackGuard();
-    const disposeData = tauriApi.onData(agentId, (data, bytes) => {
+    const disposeData = tauriApi.onData(agentId, (data) => {
       ime.observeTerminalOutput(data);
-      term.write(scrollbackGuard.filter(data), () => {
-        const cur = this.entries.get(agentId);
-        if (cur) cur.renderedBytes += bytes;
-      });
+      term.write(scrollbackGuard.filter(data));
     });
 
     e = {
@@ -192,7 +179,6 @@ class TerminalRegistry {
       container,
       opened: false,
       bindComposition: ime.bindComposition,
-      renderedBytes: 0,
       observeOutput: ime.observeTerminalOutput,
       scrollbackGuard,
     };
@@ -243,18 +229,6 @@ class TerminalRegistry {
         /* 이 터미널만 스킵 -- 나머지 스냅샷은 정상 전달 */
       }
     }
-    return out;
-  }
-
-  /**
-   * §#49: agentId -> 렌더러가 실제 렌더(소비)한 raw 스트림 바이트 누적치.
-   * `flushAndSerializeAll()`과 같은 시점에 읽어(그게 write("", cb)로 큐를 비운
-   * 직후라 렌더 완료분이 정확히 반영됨) 스냅샷 업로드/핸드오프에 offset으로
-   * 동봉한다. 백엔드가 base(attach 오프셋)에 이 값을 더해 최종 offset을 만든다.
-   */
-  getRenderedBytes(): Record<string, number> {
-    const out: Record<string, number> = {};
-    for (const [agentId, e] of this.entries) out[agentId] = e.renderedBytes;
     return out;
   }
 

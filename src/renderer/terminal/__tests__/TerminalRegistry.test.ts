@@ -335,12 +335,7 @@ describe("data wiring direction", () => {
     ];
     backendCb("hello from pty", 13);
 
-    // §#49: write now takes a completion callback so the renderer can count the
-    // rendered raw bytes for snapshot offset accounting.
-    expect(writeMock).toHaveBeenCalledWith(
-      "hello from pty",
-      expect.any(Function),
-    );
+    expect(writeMock).toHaveBeenCalledWith("hello from pty");
   });
 
   it("user keystrokes (term.onData) call tauriApi.writeInput(agentId, data)", async () => {
@@ -574,19 +569,6 @@ describe("scrollback guard (ESC[3J filtering)", () => {
     expect(writeMock.mock.calls[0]?.[0]).toBe("\x1b[2J\x1b[Hredrawn");
   });
 
-  it("still counts the full raw byte size of a chunk it filtered", async () => {
-    const terminalRegistry = await importRegistry();
-    terminalRegistry.ensure("a1");
-    const [, cb] = onData.mock.calls[0] as [
-      string,
-      (d: string, bytes: number) => void,
-    ];
-
-    cb("\x1b[3Jab", 6);
-
-    expect(terminalRegistry.getRenderedBytes()).toEqual({ a1: 6 });
-  });
-
   it("strips a sequence split across two chunks and keeps each terminal independent", async () => {
     const terminalRegistry = await importRegistry();
     terminalRegistry.ensure("a1");
@@ -623,75 +605,6 @@ describe("scrollback guard (ESC[3J filtering)", () => {
     await terminalRegistry.flushAndSerializeAll();
 
     expect(writeMock.mock.calls[0]?.[0]).toBe("\x1b[3");
-  });
-});
-
-describe("renderedBytes accumulation (§#49)", () => {
-  it("accumulates each chunk's raw byte count on write, keyed by agentId", async () => {
-    const terminalRegistry = await importRegistry();
-    terminalRegistry.ensure("a1");
-    const [, cb] = onData.mock.calls[0] as [
-      string,
-      (d: string, bytes: number) => void,
-    ];
-
-    cb("ab", 2);
-    cb("cde", 3);
-
-    expect(terminalRegistry.getRenderedBytes()).toEqual({ a1: 5 });
-  });
-
-  it("does not count bytes=0 restore-snapshot chunks", async () => {
-    const terminalRegistry = await importRegistry();
-    terminalRegistry.ensure("a1");
-    const [, cb] = onData.mock.calls[0] as [
-      string,
-      (d: string, bytes: number) => void,
-    ];
-
-    cb("RESTORED-SCREEN-IMAGE", 0); // 복원 청크: base가 이미 이 지점을 가리키므로 제외
-    cb("live", 4);
-
-    expect(terminalRegistry.getRenderedBytes()).toEqual({ a1: 4 });
-  });
-
-  it("keeps agents independent and each new entry starts fresh at 0", async () => {
-    const terminalRegistry = await importRegistry();
-    terminalRegistry.ensure("a1");
-    terminalRegistry.ensure("a2");
-    const cbA1 = (
-      onData.mock.calls[0] as [string, (d: string, b: number) => void]
-    )[1];
-    const cbA2 = (
-      onData.mock.calls[1] as [string, (d: string, b: number) => void]
-    )[1];
-
-    cbA1("xxx", 3);
-    cbA2("yy", 2);
-
-    expect(terminalRegistry.getRenderedBytes()).toEqual({ a1: 3, a2: 2 });
-  });
-
-  it("counts only after the write completion callback runs (render completion, not enqueue)", async () => {
-    const terminalRegistry = await importRegistry();
-    terminalRegistry.ensure("a1");
-    const [, cb] = onData.mock.calls[0] as [
-      string,
-      (d: string, b: number) => void,
-    ];
-
-    // Hold the completion callback: bytes must not count until the write queue
-    // drains (that's the whole point of accounting on the write callback).
-    const pending: Array<() => void> = [];
-    writeMock.mockImplementationOnce((_d?: string, done?: () => void) => {
-      if (done) pending.push(done);
-    });
-
-    cb("later", 5);
-    expect(terminalRegistry.getRenderedBytes()).toEqual({ a1: 0 });
-
-    pending.forEach((f) => f());
-    expect(terminalRegistry.getRenderedBytes()).toEqual({ a1: 5 });
   });
 });
 

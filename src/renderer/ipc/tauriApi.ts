@@ -493,23 +493,12 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.handoffSupported);
   },
 
-  async handoffSessions(snapshots: Record<string, string>, renderedBytes: Record<string, number>) {
-    return await invoke(Commands.handoffSessions, { snapshots, renderedBytes });
+  async handoffSessions(snapshots: Record<string, string>) {
+    return await invoke(Commands.handoffSessions, { snapshots });
   },
 
   async adoptDetachedSessions() {
     return await invoke(Commands.adoptDetachedSessions);
-  },
-
-  async sessionBrokerMode() {
-    return await invoke(Commands.sessionBrokerMode);
-  },
-
-  async uploadSessionSnapshots(
-    snapshots: Record<string, string>,
-    renderedBytes: Record<string, number>
-  ) {
-    await invoke(Commands.uploadSessionSnapshots, { snapshots, renderedBytes });
   },
 
   async listClaudeResumeSessions() {

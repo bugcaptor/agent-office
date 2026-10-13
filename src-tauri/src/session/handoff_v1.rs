@@ -1,10 +1,7 @@
 // src-tauri/src/session/handoff_v1.rs
 //
 // 세션 핸드오프 v1 경로(설계 문서 §핵심 3, 4): 앱이 종료할 때 마스터 fd
-// 자체를 sessiond에 넘겨 세션을 살려 둔다. 브로커 모드(v2, handoff_broker.rs)가
-// 아닐 때 항상 이 경로를 타고, 브로커 모드에서도 데몬 접속 실패로 factory가
-// in-process 폴백 스폰한 세션은 이 경로로 넘긴다(handoff_all_broker의
-// 폴백 분기 참조).
+// 자체를 sessiond에 넘겨 세션을 살려 둔다.
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -23,11 +20,7 @@ impl SessionManager {
     pub fn handoff_all(
         &self,
         snapshots: &std::collections::HashMap<String, String>,
-        rendered_bytes: &std::collections::HashMap<String, u64>,
     ) -> usize {
-        if self.broker_mode() {
-            return self.handoff_all_broker(snapshots, rendered_bytes);
-        }
 
         // tmux 자동 호스팅 세션(kbm #2pc): 이 세션의 존속은 sessiond가 아니라
         // tmux가 맡는다. `handed_off`를 "이 세션의 수명을 다른 주체가
@@ -95,7 +88,6 @@ impl SessionManager {
     pub fn handoff_all(
         &self,
         _snapshots: &std::collections::HashMap<String, String>,
-        _rendered_bytes: &std::collections::HashMap<String, u64>,
     ) -> usize {
         0
     }
@@ -109,9 +101,6 @@ impl SessionManager {
     /// 직렬화 대상이 없었던 경우 등) sink의 backlog를 폴백으로 쓴다 --
     /// 실증에서 발견된 빈틈 수정: 그래야 아직 한 번도 열지 않은 터미널도
     /// 재입양 후 종료 전 출력이 최소한 backlog 분량만큼은 보존된다.
-    ///
-    /// pub(super): handoff_broker.rs의 handoff_all_broker가 폴백(in-process)
-    /// 세션 분기에서 재사용한다(v1 경로 그대로).
     #[cfg(unix)]
     pub(super) fn handoff_one(
         &self,
@@ -196,9 +185,6 @@ impl SessionManager {
         self: &Arc<Self>,
         known_agent_ids: &std::collections::HashSet<String>,
     ) -> Vec<AdoptedSessionInfo> {
-        if self.broker_mode() {
-            return self.adopt_detached_broker(known_agent_ids);
-        }
         let Some(app_data_dir) = &self.app_data_dir else {
             return Vec::new();
         };
@@ -244,9 +230,6 @@ impl SessionManager {
     /// 있다(이번 연결에서 이미 Adopt를 보낸 뒤 실패했다면 데몬 쪽에선 이미
     /// 테이블에서 빠진 상태이므로 fd 자체는 유실 -- assemble_adopted 실패는
     /// 극히 드문 경로라 이 트레이드오프를 받아들인다).
-    ///
-    /// pub(super): handoff_broker.rs의 adopt_detached_broker가 v1
-    /// 핸드오프/폴백 세션 분기에서 재사용한다.
     #[cfg(unix)]
     pub(super) fn adopt_one(
         self: &Arc<Self>,

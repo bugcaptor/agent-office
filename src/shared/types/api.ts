@@ -359,26 +359,10 @@ export interface AgentOfficeApi {
   /** 종료 시 살아있는 세션들을 `sessiond` 데몬으로 넘긴다. `snapshots`는
    * agentId -> 직렬화된 터미널 화면(스크롤백 포함, xterm SerializeAddon
    * 출력) -- 데몬이 핸드오프 이전 화면을 보관할 방법이 이것뿐이므로 실어
-   * 보낸다. `renderedBytes`(agentId -> 렌더러가 실제 렌더한 raw 스트림 바이트
-   * 누적치)로 스냅샷 offset(=base+누적치)을 확정해 재입양 시 유실을 없앤다(§#49).
-   * 넘긴 세션 수를 반환. */
-  handoffSessions(
-    snapshots: Record<string, string>,
-    renderedBytes: Record<string, number>
-  ): Promise<number>;
+   * 보낸다. 넘긴 세션 수를 반환. */
+  handoffSessions(snapshots: Record<string, string>): Promise<number>;
   /** 부팅 시 1회 — 데몬에 남아있던 세션을 되찾는다. 미지원/데몬 없음이면 빈 배열. */
   adoptDetachedSessions(): Promise<AdoptedSessionInfo[]>;
-  /** v2 상시 브로커 모드(docs/session-broker-v2-design.md)가 켜져 있는지.
-   * true일 때만 렌더러가 주기 스냅샷 업로드를 활성화한다. 미지원/기본은 false. */
-  sessionBrokerMode(): Promise<boolean>;
-  /** 브로커 모드 주기 스냅샷 업로드 — agentId -> 직렬화된 xterm 화면. 데몬이
-   * 세션별 최신 것만 보관해 앱 크래시 후 화면 복원에 대비한다. 브로커 모드가
-   * 아니거나 데몬에 못 닿으면 백엔드에서 no-op. `renderedBytes`(agentId ->
-   * 렌더러가 실제 렌더한 raw 스트림 바이트 누적치)로 스냅샷 offset을 확정한다(§#49). */
-  uploadSessionSnapshots(
-    snapshots: Record<string, string>,
-    renderedBytes: Record<string, number>
-  ): Promise<void>;
   /** Claude 세션 이어하기 후보 목록(agentId → 최신 1건). 메뉴를 열 때 조회한다.
    * 캡처된 적 없는 에이전트는 키가 없다(빈 객체 가능). */
   listClaudeResumeSessions(): Promise<Record<AgentId, ClaudeResumeEntry>>;

@@ -82,10 +82,9 @@ export function ConfirmQuitDialog() {
     if (handoff) {
       try {
         // 종료 직전 화면(스크롤백)을 실어 보낸다 — 데몬은 핸드오프 이후 출력만
-        // 보관하므로. 직렬화 전에 xterm write 큐를 flush(§P1)하고, 렌더 완료된 raw
-        // 바이트 누적치를 함께 실어 스냅샷 offset을 확정한다(§#49).
+        // 보관하므로. 직렬화 전에 xterm write 큐를 flush(§P1)한다.
         const snapshots = await terminalRegistry.flushAndSerializeAll();
-        await tauriApi.handoffSessions(snapshots, terminalRegistry.getRenderedBytes());
+        await tauriApi.handoffSessions(snapshots);
       } catch (err) {
         console.warn("confirm-quit: session handoff failed, quitting without keeping terminals", err);
       }

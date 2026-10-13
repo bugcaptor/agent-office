@@ -1476,10 +1476,7 @@
 
         // app_data_dir 미설정(테스트 기본값) -- sessiond가 없어도 tmux 호스팅
         // 세션은 보존돼야 한다.
-        let handed = mgr.handoff_all(
-            &std::collections::HashMap::new(),
-            &std::collections::HashMap::new(),
-        );
+        let handed = mgr.handoff_all(&std::collections::HashMap::new());
         assert_eq!(
             handed, 1,
             "a hosted session must be preserved even without app_data_dir/sessiond"
@@ -1498,10 +1495,7 @@
         let (mgr, _events, ctl, dir) = build_with_tmux_runner(tmux_runner);
 
         mgr.create(req_with_tmux_host("a1", Some(true))).unwrap();
-        let handed = mgr.handoff_all(
-            &std::collections::HashMap::new(),
-            &std::collections::HashMap::new(),
-        );
+        let handed = mgr.handoff_all(&std::collections::HashMap::new());
         assert_eq!(handed, 1);
 
         mgr.dispose_all();

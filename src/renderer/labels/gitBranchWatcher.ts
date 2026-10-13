@@ -10,8 +10,8 @@
 // 조회 자체도 `.git/HEAD` 한 번 읽기(백엔드 타임아웃 2초)라 부담이 없다.
 //
 // 갱신 로직은 전부 순수 함수(liveAgentCwds/nextGitBranches)로 빼고, 여기서는
-// 타이머·구독·in-flight 가드만 맡는다. `setInterval`은 전역(bootstrap.ts의
-// installSnapshotUploader와 동일 컨벤션) — `window` 없는 Node 테스트에서도 안전.
+// 타이머·구독·in-flight 가드만 맡는다. `setInterval`은 전역(persist.ts와 동일
+// 컨벤션) — `window` 없는 Node 테스트에서도 안전.
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { effectiveCwd } from "./labelText";

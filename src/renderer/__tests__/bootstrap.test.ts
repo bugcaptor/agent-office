@@ -51,8 +51,6 @@ const { mockApi } = vi.hoisted(() => ({
     automationStart: vi.fn(),
     automationStop: vi.fn(),
     automationDecide: vi.fn(),
-    sessionBrokerMode: vi.fn(),
-    uploadSessionSnapshots: vi.fn(),
     // 이 달의 우수사원(#89) 부팅 시 자동 확정(fire-and-forget) — 스텁을 둬서
     // 실패 경고로 테스트 출력이 지저분해지지 않게 한다.
     loadAwards: vi.fn(),
@@ -71,7 +69,6 @@ vi.mock("../ipc/tauriApi", () => ({ tauriApi: mockApi }));
 // `markAdopted`를 호출하는지만 배선으로 검증한다.
 const markAdopted = vi.fn();
 const serializeAll = vi.fn(() => ({}) as Record<string, string>);
-const getRenderedBytes = vi.fn(() => ({}) as Record<string, number>);
 vi.mock("../terminal/TerminalRegistry", () => ({
   terminalRegistry: {
     markAdopted: (...args: unknown[]) => markAdopted(...args),
@@ -80,7 +77,6 @@ vi.mock("../terminal/TerminalRegistry", () => ({
     // serializeAll 스텁을 Promise로 감싸 돌려준다.
     flushAndSerializeAll: () => Promise.resolve(serializeAll()),
     // §#49: 업로더는 스냅샷과 함께 렌더러 누적 바이트를 실어 보낸다.
-    getRenderedBytes: () => getRenderedBytes(),
   },
 }));
 
@@ -103,7 +99,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 vi.mock("../sound/soundManager", () => ({ installSoundManager: () => () => {} }));
 
 import { useAppStore } from "../store/appStore";
-import { bootApp, SNAPSHOT_UPLOAD_INTERVAL_MS } from "../bootstrap";
+import { bootApp } from "../bootstrap";
 
 const initialState = useAppStore.getState();
 
@@ -172,8 +168,6 @@ beforeEach(() => {
   mockApi.handoffSessions.mockResolvedValue(0);
   mockApi.adoptDetachedSessions.mockResolvedValue([]);
   mockApi.botStatus.mockResolvedValue({ agents: {} });
-  mockApi.sessionBrokerMode.mockResolvedValue(false);
-  mockApi.uploadSessionSnapshots.mockResolvedValue(undefined);
   mockApi.loadAwards.mockResolvedValue({ version: 1, awards: [] });
   mockApi.finalizeAward.mockResolvedValue({ version: 1, awards: [] });
   mockApi.loadSessionEvents.mockResolvedValue([]);
@@ -500,63 +494,5 @@ describe("bot mode seeding (bootApp)", () => {
     expect(useAppStore.getState().notifications).toHaveLength(1);
 
     warn.mockRestore();
-  });
-});
-
-describe("session-broker snapshot uploader (bootApp)", () => {
-  it("브로커 모드가 아니면 주기 스냅샷 업로드 타이머를 켜지 않는다", async () => {
-    mockApi.sessionBrokerMode.mockResolvedValue(false);
-
-    teardown = await bootApp();
-    await vi.advanceTimersByTimeAsync(60_000);
-
-    expect(serializeAll).not.toHaveBeenCalled();
-    expect(mockApi.uploadSessionSnapshots).not.toHaveBeenCalled();
-  });
-
-  it("브로커 모드면 30초마다 직렬화 화면을 업로드한다", async () => {
-    mockApi.sessionBrokerMode.mockResolvedValue(true);
-    serializeAll.mockReturnValue({ a1: "SCREEN-A1", a2: "SCREEN-A2" });
-    getRenderedBytes.mockReturnValue({ a1: 11, a2: 22 });
-
-    teardown = await bootApp();
-    // 인터벌 첫 발화(30s).
-    await vi.advanceTimersByTimeAsync(SNAPSHOT_UPLOAD_INTERVAL_MS);
-
-    expect(mockApi.uploadSessionSnapshots).toHaveBeenCalledWith(
-      {
-        a1: "SCREEN-A1",
-        a2: "SCREEN-A2",
-      },
-      { a1: 11, a2: 22 }
-    );
-
-    // 두 번째 주기에도 다시 발화.
-    await vi.advanceTimersByTimeAsync(SNAPSHOT_UPLOAD_INTERVAL_MS);
-    expect(mockApi.uploadSessionSnapshots).toHaveBeenCalledTimes(2);
-  });
-
-  it("브로커 모드라도 직렬화 결과가 비면 업로드하지 않는다", async () => {
-    mockApi.sessionBrokerMode.mockResolvedValue(true);
-    serializeAll.mockReturnValue({});
-
-    teardown = await bootApp();
-    await vi.advanceTimersByTimeAsync(SNAPSHOT_UPLOAD_INTERVAL_MS);
-
-    expect(mockApi.uploadSessionSnapshots).not.toHaveBeenCalled();
-  });
-
-  it("teardown이 스냅샷 타이머를 멈춘다", async () => {
-    mockApi.sessionBrokerMode.mockResolvedValue(true);
-    serializeAll.mockReturnValue({ a1: "SCREEN" });
-
-    teardown = await bootApp();
-    await vi.advanceTimersByTimeAsync(SNAPSHOT_UPLOAD_INTERVAL_MS);
-    expect(mockApi.uploadSessionSnapshots).toHaveBeenCalledTimes(1);
-
-    teardown();
-    teardown = () => {}; // afterEach 중복 호출 방지
-    await vi.advanceTimersByTimeAsync(SNAPSHOT_UPLOAD_INTERVAL_MS * 3);
-    expect(mockApi.uploadSessionSnapshots).toHaveBeenCalledTimes(1);
   });
 });

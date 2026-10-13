@@ -26,8 +26,7 @@
 | [macos-signing.md](macos-signing.md) | macOS 코드서명 — 자체 인증서 기반·인증서 관리·DMG 배포 절차 | 정본 — 운영 절차 |
 | [mascot-lights-design.md](mascot-lights-design.md) | 신호등/마스코트 조명 — 사용량·상태 표시, 라벨·얼굴·타일 모드 | 정본 — 설계 확정 + 구현 완료 |
 | [mascot-window-design.md](mascot-window-design.md) | 마스코트 창 — 투명 픽셀 창·씬·상태 표식 | 정본 — 설계 확정 + 구현 완료 |
-| [session-handoff-design.md](session-handoff-design.md) | v1 종료 시점 fd-핸드오프(현재 기본 경로) — 앱 종료 후 터미널 존속·재실행 입양 | 정본 — 구현 완료(#7). v2와 공존 |
-| [session-broker-v2-design.md](session-broker-v2-design.md) | v2 상시 브로커(스폰부터 데몬이 PTY 소유) — 크래시 생존, 프로토콜 v2 | 정본 — 구현 완료·기본 off(`AGENT_OFFICE_SESSION_BROKER=v2` opt-in), 결함 #48/#50/#49 수정 완료 |
+| [session-handoff-design.md](session-handoff-design.md) | v1 종료 시점 fd-핸드오프(현재 기본 경로) — 앱 종료 후 터미널 존속·재실행 입양 | 정본 — 구현 완료(#7). 유일한 세션 존속 경로(v2 브로커 제거) |
 | [session-analytics-design.md](session-analytics-design.md) | 세션 활동 분석 패널 — 시계열 재구성·일별 스택 차트 | 정본 — 구현 완료 |
 | [session-log-design.md](session-log-design.md) | 터미널 전사 상시 기록(30일·2GB) + 세션 로그 보기 + 회고·학습자료 생성 | 정본 — 구현 완료, 눈검증 대기 |
 | [usage-design.md](usage-design.md) | 구독 사용량(rate limit) 표시 — 캐시 미러(#22) + Claude 실시간 조회(#33) 통합본 | 정본 — 구현 완료 |
@@ -61,6 +60,7 @@
 | [archive/vscode-character-extension-plan.md](archive/vscode-character-extension-plan.md) | VSCode 로그 뷰어 확장(kbm #2ce) — V1 `vscode-ext/` 미사용으로 패키지째 제거(2026-10-14, 점검·정리 §7.D C40) |
 | [archive/remote-server-design.md](archive/remote-server-design.md) | 독립 세션 서버 `serve`·데스크톱 원격 연결(kbm #2w4) — 미사용으로 제거(2026-10-14, 점검·정리 §7.D C36) |
 | [archive/web-remote-design.md](archive/web-remote-design.md) | 웹 원격(kbm #2dz) — tailnet 브라우저 보기·제어. M1~M3 구현 후 미사용으로 제거(2026-10-14, 점검·정리 §7.D C35) |
+| [archive/session-broker-v2-design.md](archive/session-broker-v2-design.md) | v2 상시 브로커 — 기본 off opt-in으로 머물다 제거(2026-10-14, 점검·정리 §7.D C37). v1 fd 핸드오프만 남음 |
 
 ## 관련 (docs/ 밖)
 

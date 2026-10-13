@@ -30,8 +30,6 @@ describe("Commands / Events name constants", () => {
     expect(Commands.handoffSupported).toBe("handoff_supported");
     expect(Commands.handoffSessions).toBe("handoff_sessions");
     expect(Commands.adoptDetachedSessions).toBe("adopt_detached_sessions");
-    expect(Commands.sessionBrokerMode).toBe("session_broker_mode");
-    expect(Commands.uploadSessionSnapshots).toBe("upload_session_snapshots");
     expect(Commands.loadSessionEvents).toBe("load_session_events");
     expect(Commands.loadUsageSnapshot).toBe("load_usage_snapshot");
     // 세션 로그(docs/session-log-design.md §6)

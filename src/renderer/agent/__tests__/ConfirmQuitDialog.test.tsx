@@ -32,7 +32,6 @@ vi.mock("../../quitGuard", () => ({
 }));
 
 const serializeAllMock = vi.fn(() => ({}) as Record<string, string>);
-const getRenderedBytesMock = vi.fn(() => ({}) as Record<string, number>);
 vi.mock("../../terminal/TerminalRegistry", () => ({
   // 다이얼로그는 flush 후 직렬화하는 async 경로(§P1)를 쓴다 — 목은 동일 스텁을
   // Promise로 감싼다.
@@ -40,7 +39,6 @@ vi.mock("../../terminal/TerminalRegistry", () => ({
     serializeAll: () => serializeAllMock(),
     flushAndSerializeAll: () => Promise.resolve(serializeAllMock()),
     // §#49: 핸드오프는 스냅샷과 함께 렌더러 누적 바이트를 실어 보낸다.
-    getRenderedBytes: () => getRenderedBytesMock(),
   },
 }));
 
@@ -60,7 +58,6 @@ beforeEach(() => {
   handoffSessions.mockReset().mockResolvedValue(0);
   isHandoffSupportedMock.mockReset().mockReturnValue(false);
   serializeAllMock.mockReset().mockReturnValue({});
-  getRenderedBytesMock.mockReset().mockReturnValue({});
 });
 
 afterEach(async () => { cleanup(); await useWorkItemStore.getState().flush(); });
@@ -193,7 +190,6 @@ describe("3버튼 분기 (핸드오프 지원 + Running 세션)", () => {
   it("'터미널 유지하고 종료' 클릭 시 serializeAll() 결과를 실어 handoffSessions()를 기다린 뒤 destroy()를 호출한다", async () => {
     isHandoffSupportedMock.mockReturnValue(true);
     serializeAllMock.mockReturnValue({ a1: "SCREEN-BEFORE-QUIT" });
-    getRenderedBytesMock.mockReturnValue({ a1: 42 });
     let resolveHandoff!: (n: number) => void;
     handoffSessions.mockReturnValue(new Promise<number>((resolve) => (resolveHandoff = resolve)));
     useAppStore.setState({
@@ -212,7 +208,7 @@ describe("3버튼 분기 (핸드오프 지원 + Running 세션)", () => {
     await Promise.resolve();
 
     expect(handoffSessions).toHaveBeenCalledTimes(1);
-    expect(handoffSessions).toHaveBeenCalledWith({ a1: "SCREEN-BEFORE-QUIT" }, { a1: 42 });
+    expect(handoffSessions).toHaveBeenCalledWith({ a1: "SCREEN-BEFORE-QUIT" });
     expect(destroy).not.toHaveBeenCalled(); // handoffSessions()가 아직 settle 전
 
     resolveHandoff(2);

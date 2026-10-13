@@ -257,31 +257,6 @@ fn session_event_root(data_dir: &std::path::Path) -> std::path::PathBuf {
     data_dir.join("session-events").join("v1")
 }
 
-/// 세션 브로커 v2(docs/session-broker-v2-design.md)의 PtyFactory 주입 결정.
-/// `AGENT_OFFICE_SESSION_BROKER=v2` + unix일 때만 `BrokerPtyFactory`(데몬이
-/// 스폰부터 PTY 소유)를 쓰고, 아니면 기존 `PortablePtyFactory`(프로세스 내
-/// 직접 스폰). 반환값 `.1`은 broker 모드 여부 -- SessionManager의 앱 쪽 의미
-/// 분기(handoff/adopt/스냅샷 업로드)에 그대로 넘긴다. 기본 off라 v1 경로가
-/// 손대지 않은 채 보존된다.
-fn make_pty_factory(
-    data_dir: &std::path::Path,
-) -> (Arc<dyn crate::session::pty_factory::PtyFactory>, bool) {
-    let opt_in = std::env::var("AGENT_OFFICE_SESSION_BROKER")
-        .map(|v| v == "v2")
-        .unwrap_or(false);
-    #[cfg(unix)]
-    if opt_in {
-        let fallback: Arc<dyn crate::session::pty_factory::PtyFactory> =
-            Arc::new(PortablePtyFactory);
-        return (
-            Arc::new(crate::session::broker_pty::BrokerPtyFactory::new(data_dir, fallback)),
-            true,
-        );
-    }
-    let _ = (data_dir, opt_in);
-    (Arc::new(PortablePtyFactory), false)
-}
-
 /// 창 상태 저장/복원 대상 플래그. **SIZE | POSITION | MAXIMIZED만** 쓴다:
 ///
 /// - `VISIBLE`: main은 tauri.conf.json에서 항상 `visible: true`라 복원할 사용자
@@ -582,10 +557,9 @@ pub fn run() {
             ));
             crate::session_log::spawn_gc(session_log_root.clone());
 
-            let (pty_factory, broker_mode) = make_pty_factory(&data_dir);
             let manager = Arc::new(
                 SessionManager::new(
-                    pty_factory,
+                    Arc::new(PortablePtyFactory),
                     observer.clone(),
                     registry.clone(),
                     events.clone(),
@@ -603,8 +577,6 @@ pub fn run() {
                 })
                 // 동료 대화 스킬 배선(--plugin-dir + 권한 조각).
                 .with_talk_wiring(talk_wiring_provider)
-                // v2 상시 브로커 모드(opt-in, docs/session-broker-v2-design.md).
-                .with_broker_mode(broker_mode)
                 // 터미널 전사 상시 기록(30일·2GB 자율 보존).
                 .with_session_log(session_log_root.clone(), session_log_enabled.clone())
                 // 대체 화면(Claude Code)에서 도는 대화는 PTY로 안 보인다 --
@@ -811,8 +783,6 @@ pub fn run() {
             ipc::commands::handoff_supported,
             ipc::commands::handoff_sessions,
             ipc::commands::adopt_detached_sessions,
-            ipc::commands::session_broker_mode,
-            ipc::commands::upload_session_snapshots,
             ipc::commands::write_input,
             ipc::commands::resize_session,
             ipc::commands::subscribe_output,

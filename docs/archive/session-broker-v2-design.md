@@ -1,9 +1,10 @@
 # 세션 브로커 v2 계획 — 상시 브로커(스폰부터 데몬이 PTY 소유)
 
 작성: 2026-07-17 (Fable). 상태 갱신: 2026-07-20.
-상태: 정본 — **구현 완료·기본 off(opt-in)**. PR #46 머지 + 후속 결함 3건(#48 io락
-블로킹→writer 스레드, #50 입양 하이재킹→결정적 close+attached skip, #49 스냅샷
-offset→렌더러 ack) 수정 완료. v1 제거/기본 on 승격은 별도 결정 항목(REBUILD-PLAN R-8).
+상태: 이력(archived, 2026-10-14) — 구현 완료·기본 off(opt-in)로 머물다가 opt-in 흔적이 없어
+제거(점검·정리 계획 §7.D C37). v1 fd 핸드오프만 남고, sessiond 프로토콜은 1로 돌아갔다(데몬이
+Hello를 `min`으로 협상하므로 이전 빌드의 데몬과도 v1으로 통한다). 당시 상태: PR #46 머지 + 후속
+결함 3건(#48·#50·#49) 수정 완료.
 전제: v1(feat/session-handoff, PR #6) = 종료 시점 핸드오프. v2는 그 역전.
 활성화: `AGENT_OFFICE_SESSION_BROKER=v2` + unix일 때만 `BrokerPtyFactory` 주입.
 기본 off라 v1 경로(PortablePtyFactory + 종료 시 fd 핸드오프)는 그대로 보존된다.

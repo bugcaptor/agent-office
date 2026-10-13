@@ -420,9 +420,6 @@ mod tests {
                 rows: 24,
                 cwd: std::env::var("HOME").unwrap_or_else(|_| "/".to_string()),
                 env: vec![("TERM".into(), "xterm-256color".into())],
-                agent_id: "smoke".into(),
-                session_id: "smoke".into(),
-                cleanup_paths: vec![],
             })
             .expect("spawn real pty");
         let shell_pgid = spawned.handoff.as_ref().and_then(|h| h.pgid);
@@ -484,9 +481,6 @@ mod tests {
                 rows: 24,
                 cwd: std::env::var("HOME").unwrap_or_else(|_| "/".to_string()),
                 env: vec![("TERM".into(), "xterm-256color".into())],
-                agent_id: "smoke".into(),
-                session_id: "smoke".into(),
-                cleanup_paths: vec![],
             })
             .expect("spawn real pty");
         let shell_pgid = spawned.handoff.as_ref().and_then(|h| h.pgid);

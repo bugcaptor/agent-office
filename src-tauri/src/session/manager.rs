@@ -35,7 +35,7 @@ use crate::session_events::types::{AgentEventProfile, SessionStartedEvent};
 use crate::state::{AppEvents, SessionRegistry};
 use crate::types::*;
 
-/// pub(super): handoff_v1.rs/handoff_broker.rs(세션 핸드오프 형제 모듈)가
+/// pub(super): handoff_v1.rs(세션 핸드오프 형제 모듈)가
 /// 필드에 직접 접근한다 -- 최소 가시성으로 `session` 모듈 트리 전체에만 연다.
 pub(super) struct Session {
     pub(super) session_id: SessionId,
@@ -78,21 +78,6 @@ pub(super) struct Session {
     /// 자체는 크로스플랫폼이라 cfg 분기가 필요 없다(항상 컴파일되고, 비unix는
     /// 그냥 항상 None으로 남는다).
     pub(super) eof_stop_gate: Option<Arc<AtomicBool>>,
-    /// v2 브로커 데몬이 이 세션을 소유하는가(SpawnedPty에서 전파). 브로커 모드
-    /// 매니저라도 팩토리 폴백으로 생긴 in-process 세션은 false다 — handoff_all이
-    /// 이 플래그로 "스냅샷 업로드+detach"(true)와 "v1 fd 핸드오프"(false)를 가른다.
-    pub(super) broker_owned: bool,
-    /// 브로커 data 연결의 누적 수신 오프셋 카운터(§P1). 스냅샷 업로드 시 현재
-    /// 값을 offset으로 동봉해 데몬 수신 시점 ring.total()과의 간극(유실 창)을
-    /// 없앤다. 브로커 세션만 Some.
-    pub(super) broker_stream_offset: Option<Arc<std::sync::atomic::AtomicU64>>,
-    /// detach 시 data 소켓을 결정적으로 닫는 핸들(§#50 선결). broker_owned 세션의
-    /// detach에서 shutdown하면 앱 reader 스레드가 EOF로 종료되고 데몬 conn이 정리돼
-    /// List `attached`가 false로 돌아간다 — adopt가 라이브 원격 소유 세션을
-    /// 가로채지 않게 하는 근거(현재 인스턴스가 살아 붙어 있으면 attached=true 유지).
-    /// 브로커 세션만 Some(unix).
-    #[cfg(unix)]
-    pub(super) broker_data_shutdown: Mutex<Option<crate::session::broker_pty::BrokerDataShutdown>>,
     /// 마지막 PTY 활동(출력 수신 또는 stdin 주입) 시각(epoch ms). 봇 모드의
     /// turn-taking 유휴 판정에 쓴다 — 봇은 이 값이 일정 시간 이상 정체됐을 때만
     /// 다음 지시를 주입한다(이슈 #57, docs/bot-mode-design.md). 0이면 아직 활동
@@ -139,7 +124,7 @@ pub struct TalkWiring {
 
 pub struct SessionManager {
     factory: Arc<dyn PtyFactory>,
-    /// pub(super): handoff_v1.rs의 adopt_one/handoff_broker.rs의 adopt_one_broker가
+    /// pub(super): handoff_v1.rs의 adopt_one이
     /// `restore_session_artifacts`를 직접 호출한다.
     pub(super) observer: Arc<ObserverRuntime>,
     get_observer_url: Arc<dyn Fn() -> Option<String> + Send + Sync>,
@@ -187,11 +172,6 @@ pub struct SessionManager {
     work_panels_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
     /// 사용자 Codex `config.toml` 본문 조회(writable_roots 합치기). 테스트는 주입한다.
     codex_user_config: Arc<dyn Fn() -> Option<String> + Send + Sync>,
-    /// v2 상시 브로커 모드(unix 전용 opt-in, docs/session-broker-v2-design.md).
-    /// true면 `handoff_all`/`adopt_detached`/스냅샷 업로드가 v1 fd 핸드오프
-    /// 대신 브로커 RPC 경로를 탄다. 기본 false(v1 경로 보존). 팩토리 주입은
-    /// `lib.rs`가 별도로 하고, 이 플래그는 앱 쪽 의미 분기에만 관여한다.
-    broker_mode: bool,
     /// 세션 로그 저장소 루트(`<app_data>/session-logs/v1`). None이면 기록하지
     /// 않는다 -- 테스트 기본값이다.
     session_log_root: Option<std::path::PathBuf>,
@@ -242,7 +222,6 @@ impl SessionManager {
                 let path = crate::agent_paths::codex_home_from_env()?.join("config.toml");
                 std::fs::read_to_string(path).ok()
             }),
-            broker_mode: false,
             session_log_root: None,
             session_log_enabled: Arc::new(AtomicBool::new(true)),
             agent_session_lookup: None,
@@ -275,18 +254,6 @@ impl SessionManager {
         self
     }
 
-    /// v2 상시 브로커 모드를 켠다(unix opt-in). `lib.rs`가 플래그+unix일 때만
-    /// 호출하고, 같은 조건에서 팩토리도 `BrokerPtyFactory`로 주입한다.
-    pub fn with_broker_mode(mut self, on: bool) -> Self {
-        self.broker_mode = on;
-        self
-    }
-
-    /// 렌더러가 주기 스냅샷 업로드/모달 분기를 켤지 판단하는 데 쓰는 조회.
-    pub fn broker_mode(&self) -> bool {
-        self.broker_mode
-    }
-
     /// 앱 데이터 디렉터리를 지정한다(세션 핸드오프 소켓/로그 경로,
     /// `AGENT_OFFICE_APP_DATA` env의 근거). `lib.rs`의 프로덕션 부트스트랩만
     /// 호출 — 테스트는 기본 None으로 이 기능을 건드리지 않는다.
@@ -316,7 +283,7 @@ impl SessionManager {
         self
     }
 
-    /// pub(super): handoff_v1.rs/handoff_broker.rs가 세션 조회에 직접 쓴다.
+    /// pub(super): handoff_v1.rs가 세션 조회에 직접 쓴다.
     pub(super) fn find(&self, agent_id: &str) -> Option<Arc<Session>> {
         self.sessions.lock().get(agent_id).cloned()
     }
@@ -788,13 +755,6 @@ impl SessionManager {
             rows: req.rows.unwrap_or(24),
             cwd,
             env,
-            agent_id: req.agent_id.clone(),
-            session_id: session_id.clone(),
-            // 브로커 모드 데몬이 크래시-생존 정리에 쓸 경로(비브로커 팩토리는 무시).
-            cleanup_paths: plan_cleanup_paths
-                .iter()
-                .map(|p| p.to_string_lossy().into_owned())
-                .collect(),
         }) {
             Ok(s) => s,
             // spawn 실패: observer_plan_guard가 설정 파일을 정리한다.
@@ -893,7 +853,7 @@ impl SessionManager {
     /// 이름(create 전용, 입양 경로는 항상 None -- 재입양된 세션의 tmux
     /// 소유권 복원은 이 마일스톤 범위 밖이다).
     ///
-    /// pub(super): handoff_v1.rs의 adopt_one/handoff_broker.rs의 adopt_one_broker가
+    /// pub(super): handoff_v1.rs의 adopt_one이
     /// 입양 재배선에 재사용한다.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn install_session(
@@ -911,8 +871,6 @@ impl SessionManager {
         // 세션 수명과 독립인 agentId sink 재사용: 이미 붙은 채널/백로그를
         // 그대로 이어받아 재생성/재입양 시 재구독이 필요 없다.
         let output = self.sink_for(&agent_id);
-        let broker_owned = spawned.broker_owned;
-        let broker_stream_offset = spawned.broker_stream_offset.clone();
         // 셸 작업중 감시(kbm #2f9)에 필요한 두 조각을 Session이 소유하기 전에
         // 떠 둔다. control은 Arc라 복제해도 같은 마스터를 가리킨다.
         #[cfg(unix)]
@@ -962,10 +920,6 @@ impl SessionManager {
             #[cfg(unix)]
             handoff: Mutex::new(spawned.handoff),
             eof_stop_gate,
-            broker_owned,
-            broker_stream_offset,
-            #[cfg(unix)]
-            broker_data_shutdown: Mutex::new(spawned.broker_data_shutdown),
             last_activity_ms: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             hosted_tmux,
         });
