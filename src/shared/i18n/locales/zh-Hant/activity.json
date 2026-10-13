@@ -73,23 +73,6 @@
       "unexpectedShort": "即時查詢失敗（回應格式）",
       "detailUnknownCause": "原因不明"
     },
-    "geminiLive": {
-      "noCacheNote": "Gemini CLI 不會在本機留下用量，查詢失敗時只會留著上次的數值，或整個消失",
-      "ok": "程式正直接向 Code Assist 查詢用量（最多每 15 分鐘一次）",
-      "neverAttempted": "尚未嘗試即時查詢 — $t(activity:usage.geminiLive.noCacheNote)",
-      "noCredentials": "即時查詢失敗：無法讀取 gemini CLI 的憑證 — 尚未登入，或憑證放在加密檔案儲存區（目前不支援）。$t(activity:usage.geminiLive.noCacheNote)",
-      "refreshFailed": "即時查詢失敗：權杖更新被拒（{{detail}}） — 可能需要重新登入 gemini。$t(activity:usage.geminiLive.noCacheNote)",
-      "refreshFailedShort": "即時查詢失敗（權杖更新）",
-      "unauthorized": "即時查詢失敗：權杖被拒（{{detail}}） — 可能需要重新登入 gemini。$t(activity:usage.geminiLive.noCacheNote)",
-      "ineligible": "這個帳號沒有 Gemini Code Assist 授權，沒有可顯示的額度（{{detail}}）。個人免費方案已移到 Antigravity，請改看那邊的用量。",
-      "ineligibleShort": "沒有 Code Assist 授權",
-      "detailNoLicense": "沒有授權",
-      "projectRequired": "即時查詢失敗：無法決定要查詢的專案 — 請設定 `GOOGLE_CLOUD_PROJECT` 環境變數（企業帳號需要）。$t(activity:usage.geminiLive.noCacheNote)",
-      "projectRequiredShort": "需要 GOOGLE_CLOUD_PROJECT",
-      "httpError": "即時查詢失敗：伺服器錯誤（{{detail}}）。$t(activity:usage.geminiLive.noCacheNote)",
-      "networkError": "即時查詢失敗：網路 {{detail}}。$t(activity:usage.geminiLive.noCacheNote)",
-      "unexpected": "即時查詢失敗：Code Assist 的回應格式變了（{{detail}}）。$t(activity:usage.geminiLive.noCacheNote)"
-    },
     "attempts": {
       "lastAttempt": "上次嘗試 {{ago}}",
       "lastSuccess": "上次成功 {{ago}}",
@@ -104,8 +87,7 @@
       "close": "關閉",
       "empty": {
         "claude": "沒有用量資料。在 Claude Code 開啟一次 /usage 就會建立本機快取。",
-        "codex": "沒有用量資料。執行 codex login 讓程式直接查詢，或執行一次 Codex CLI 建立本機紀錄。",
-        "gemini": "沒有用量資料。用有 Gemini Code Assist 授權的帳號登入 gemini，程式就會直接查詢。"
+        "codex": "沒有用量資料。執行 codex login 讓程式直接查詢，或執行一次 Codex CLI 建立本機紀錄。"
       },
       "allHidden": "沒有可顯示的用量。超過一天沒能從任何 CLI 取得用量。"
     },

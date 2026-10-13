@@ -73,23 +73,6 @@
       "unexpectedShort": "实时获取失败（响应格式）",
       "detailUnknownCause": "原因不明"
     },
-    "geminiLive": {
-      "noCacheNote": "Gemini CLI 不在本地保存用量，因此获取失败时只会留下上次取到的数值，或干脆不显示",
-      "ok": "应用正在直接向 Code Assist 查询用量（最快每 15 分钟一次）",
-      "neverAttempted": "尚未尝试实时获取 —— $t(activity:usage.geminiLive.noCacheNote)",
-      "noCredentials": "实时获取失败：无法读取 gemini CLI 凭据 —— 你尚未登录，或凭据存放在加密文件存储中（暂不支持）。$t(activity:usage.geminiLive.noCacheNote)",
-      "refreshFailed": "实时获取失败：令牌刷新被拒绝（{{detail}}）—— 可能需要重新登录 gemini。$t(activity:usage.geminiLive.noCacheNote)",
-      "refreshFailedShort": "实时获取失败（令牌刷新）",
-      "unauthorized": "实时获取失败：令牌被拒绝（{{detail}}）—— 可能需要重新登录 gemini。$t(activity:usage.geminiLive.noCacheNote)",
-      "ineligible": "此账号没有 Gemini Code Assist 授权，因此没有可显示的额度（{{detail}}）。个人免费层已迁至 Antigravity，请改看那边的用量。",
-      "ineligibleShort": "无 Code Assist 授权",
-      "detailNoLicense": "无授权",
-      "projectRequired": "实时获取失败：无法确定要查询的项目 —— 请设置 `GOOGLE_CLOUD_PROJECT` 环境变量（企业账号需要）。$t(activity:usage.geminiLive.noCacheNote)",
-      "projectRequiredShort": "需要 GOOGLE_CLOUD_PROJECT",
-      "httpError": "实时获取失败：服务器错误（{{detail}}）。$t(activity:usage.geminiLive.noCacheNote)",
-      "networkError": "实时获取失败：网络{{detail}}。$t(activity:usage.geminiLive.noCacheNote)",
-      "unexpected": "实时获取失败：Code Assist 的响应格式已变更（{{detail}}）。$t(activity:usage.geminiLive.noCacheNote)"
-    },
     "attempts": {
       "lastAttempt": "上次尝试 {{ago}}",
       "lastSuccess": "上次成功 {{ago}}",
@@ -104,8 +87,7 @@
       "close": "关闭",
       "empty": {
         "claude": "暂无用量数据。在 Claude Code 中打开一次 /usage 即可生成本地缓存。",
-        "codex": "暂无用量数据。执行 codex login 后应用可直接获取，或运行一次 Codex CLI 生成本地记录。",
-        "gemini": "暂无用量数据。用带有 Gemini Code Assist 授权的账号登录 gemini 后，应用会直接获取。"
+        "codex": "暂无用量数据。执行 codex login 后应用可直接获取，或运行一次 Codex CLI 生成本地记录。"
       },
       "allHidden": "没有可显示的用量。超过一天未能从任何 CLI 取到用量。"
     },

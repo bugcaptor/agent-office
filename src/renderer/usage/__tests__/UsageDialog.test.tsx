@@ -51,13 +51,6 @@ function snapshot(): UsageSnapshot {
       lastAttemptMs: null,
       lastSuccessMs: null,
     },
-    gemini: null,
-    geminiLive: {
-      outcome: "never_attempted",
-      detail: null,
-      lastAttemptMs: null,
-      lastSuccessMs: null,
-    },
   };
 }
 
@@ -168,9 +161,7 @@ describe("UsageDialog", () => {
           lastSuccessMs: null,
           via: null,
         },
-        gemini: null,
         codexLive: gone,
-        geminiLive: { ...gone, outcome: "ineligible" } as const,
       },
     });
     useAppStore.getState().openModal({ kind: "usage" });

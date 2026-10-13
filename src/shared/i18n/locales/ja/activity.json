@@ -73,23 +73,6 @@
       "unexpectedShort": "リアルタイム取得に失敗（レスポンス形式）",
       "detailUnknownCause": "原因不明"
     },
-    "geminiLive": {
-      "noCacheNote": "Gemini CLI は使用量をローカルに残さないため、取得に失敗すると直前の取得値が残るか、表示自体が消えます",
-      "ok": "アプリが Code Assist に使用量を直接照会しています（最大15分間隔）",
-      "neverAttempted": "リアルタイム取得はまだ試していません — $t(activity:usage.geminiLive.noCacheNote)",
-      "noCredentials": "リアルタイム取得に失敗しました：gemini CLI の認証情報を読み取れませんでした — ログインしていないか、暗号化ファイルストアを使っています（現在は未対応）。$t(activity:usage.geminiLive.noCacheNote)",
-      "refreshFailed": "リアルタイム取得に失敗しました：トークンの更新が拒否されました（{{detail}}） — gemini への再ログインが必要な場合があります。$t(activity:usage.geminiLive.noCacheNote)",
-      "refreshFailedShort": "リアルタイム取得に失敗（トークン更新）",
-      "unauthorized": "リアルタイム取得に失敗しました：トークンが拒否されました（{{detail}}） — gemini への再ログインが必要な場合があります。$t(activity:usage.geminiLive.noCacheNote)",
-      "ineligible": "このアカウントには Gemini Code Assist のライセンスがないため、表示できる上限がありません（{{detail}}）。個人向け無料ティアは Antigravity に移行したので、そちらの使用量をご覧ください。",
-      "ineligibleShort": "Code Assist ライセンスなし",
-      "detailNoLicense": "ライセンスなし",
-      "projectRequired": "リアルタイム取得に失敗しました：照会するプロジェクトを決められませんでした — `GOOGLE_CLOUD_PROJECT` 環境変数を設定してください（法人アカウントで必要）。$t(activity:usage.geminiLive.noCacheNote)",
-      "projectRequiredShort": "GOOGLE_CLOUD_PROJECT が必要",
-      "httpError": "リアルタイム取得に失敗しました：サーバーエラー（{{detail}}）。$t(activity:usage.geminiLive.noCacheNote)",
-      "networkError": "リアルタイム取得に失敗しました：ネットワーク{{detail}}。$t(activity:usage.geminiLive.noCacheNote)",
-      "unexpected": "リアルタイム取得に失敗しました：Code Assist のレスポンス形式が変わりました（{{detail}}）。$t(activity:usage.geminiLive.noCacheNote)"
-    },
     "attempts": {
       "lastAttempt": "最終試行 {{ago}}",
       "lastSuccess": "最終成功 {{ago}}",
@@ -104,8 +87,7 @@
       "close": "閉じる",
       "empty": {
         "claude": "使用量データがありません。Claude Code で /usage を一度開くとローカルキャッシュが作られます。",
-        "codex": "使用量データがありません。codex login のあとアプリが直接取得するか、Codex CLI を一度実行するとローカル記録が作られます。",
-        "gemini": "使用量データがありません。Gemini Code Assist のライセンスがあるアカウントで gemini にログインすると、アプリが直接取得します。"
+        "codex": "使用量データがありません。codex login のあとアプリが直接取得するか、Codex CLI を一度実行するとローカル記録が作られます。"
       },
       "allHidden": "表示できる使用量がありません。どの CLI からも1日以上使用量を取得できていません。"
     },

@@ -73,23 +73,6 @@
       "unexpectedShort": "Échec du relevé (format de réponse)",
       "detailUnknownCause": "cause inconnue"
     },
-    "geminiLive": {
-      "noCacheNote": "Le CLI Gemini ne garde aucune copie locale de l'utilisation : en cas d'échec, la dernière valeur relevée reste affichée — ou plus rien du tout",
-      "ok": "Interrogation directe de Code Assist (au plus toutes les 15 minutes)",
-      "neverAttempted": "Relevé en direct pas encore tenté — $t(activity:usage.geminiLive.noCacheNote)",
-      "noCredentials": "Échec du relevé : impossible de lire les identifiants du CLI gemini — vous n'êtes pas connecté, ou ils sont dans le stockage de fichiers chiffré (pas encore pris en charge). $t(activity:usage.geminiLive.noCacheNote)",
-      "refreshFailed": "Échec du relevé : le renouvellement du jeton a été refusé ({{detail}}) — vous devrez peut-être vous reconnecter à gemini. $t(activity:usage.geminiLive.noCacheNote)",
-      "refreshFailedShort": "échec du relevé (renouvellement du jeton)",
-      "unauthorized": "Échec du relevé : le jeton a été refusé ({{detail}}) — vous devrez peut-être vous reconnecter à gemini. $t(activity:usage.geminiLive.noCacheNote)",
-      "ineligible": "Ce compte n'a pas de licence Gemini Code Assist, il n'y a donc aucune limite à afficher ({{detail}}). L'offre gratuite individuelle est passée à Antigravity — consultez plutôt son utilisation.",
-      "ineligibleShort": "aucune licence Code Assist",
-      "detailNoLicense": "aucune licence",
-      "projectRequired": "Échec du relevé : aucun projet à interroger — définissez la variable d'environnement `GOOGLE_CLOUD_PROJECT` (requise pour les comptes d'entreprise). $t(activity:usage.geminiLive.noCacheNote)",
-      "projectRequiredShort": "GOOGLE_CLOUD_PROJECT requis",
-      "httpError": "Échec du relevé : erreur serveur ({{detail}}). $t(activity:usage.geminiLive.noCacheNote)",
-      "networkError": "Échec du relevé : réseau {{detail}}. $t(activity:usage.geminiLive.noCacheNote)",
-      "unexpected": "Échec du relevé : le format de la réponse de Code Assist a changé ({{detail}}). $t(activity:usage.geminiLive.noCacheNote)"
-    },
     "attempts": {
       "lastAttempt": "dernière tentative {{ago}}",
       "lastSuccess": "dernier succès {{ago}}",
@@ -104,8 +87,7 @@
       "close": "Fermer",
       "empty": {
         "claude": "Aucune donnée d'utilisation. Ouvrez /usage une fois dans Claude Code pour créer le cache local.",
-        "codex": "Aucune donnée d'utilisation. Lancez codex login pour que l'app la relève, ou exécutez Codex CLI une fois pour créer les enregistrements locaux.",
-        "gemini": "Aucune donnée d'utilisation. Connectez-vous à gemini avec un compte disposant d'une licence Gemini Code Assist et l'app la relèvera directement."
+        "codex": "Aucune donnée d'utilisation. Lancez codex login pour que l'app la relève, ou exécutez Codex CLI une fois pour créer les enregistrements locaux."
       },
       "allHidden": "Aucune utilisation à afficher — rien n'a pu être relevé depuis plus d'un jour, quel que soit le CLI."
     },

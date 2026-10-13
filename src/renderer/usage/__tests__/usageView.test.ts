@@ -11,7 +11,6 @@ import { afterAll, describe, expect, it } from "vitest";
 import { SOURCE_LANGUAGE, initI18nForTest, t as translate } from "@renderer/i18n";
 import { renderText } from "@renderer/shared/textKey";
 import type {
-  GeminiLiveStatus,
   ClaudeLiveStatus,
   CodexLiveStatus,
   ProviderUsage,
@@ -23,7 +22,6 @@ import {
   STALE_THRESHOLD_MS,
   badgeWindows,
   describeCodexLiveStatus,
-  describeGeminiLiveStatus,
   describeLiveStatus,
   isProviderGone,
   visibleUsageProviders,
@@ -84,25 +82,17 @@ function codexLiveStatus(partial: Partial<CodexLiveStatus> = {}): CodexLiveStatu
   return { outcome: "ok", detail: null, lastAttemptMs: null, lastSuccessMs: null, ...partial };
 }
 
-function geminiLiveStatus(partial: Partial<GeminiLiveStatus> = {}): GeminiLiveStatus {
-  return { outcome: "ok", detail: null, lastAttemptMs: null, lastSuccessMs: null, ...partial };
-}
-
 function snap(
   claude: ProviderUsage | null,
   codex: ProviderUsage | null,
   claudeLive: ClaudeLiveStatus = live(),
   codexLive: CodexLiveStatus = codexLiveStatus(),
-  gemini: ProviderUsage | null = null,
-  geminiLive: GeminiLiveStatus = geminiLiveStatus(),
 ): UsageSnapshot {
   return {
     claude,
     codex,
-    gemini,
     claudeLive,
     codexLive,
-    geminiLive,
   };
 }
 
@@ -624,54 +614,18 @@ describe("visibleUsageProviders", () => {
   });
 
   it("고정 순서를 유지한다", () => {
-    const s = snap(fresh(), fresh(), live(), codexLiveStatus(), fresh());
-    expect(visibleUsageProviders(s, now)).toEqual([
-      "claude",
-      "codex",
-      "gemini",
-    ]);
+    const s = snap(fresh(), fresh(), live(), codexLiveStatus());
+    expect(visibleUsageProviders(s, now)).toEqual(["claude", "codex"]);
   });
 
   it("낡거나 값 없는 provider만 빠진다", () => {
     const stale = { ...fresh(), fetchedAtMs: now - DEAD_THRESHOLD_MS - 1 };
-    const s = snap(stale, fresh(), live(), codexLiveStatus(), null);
+    const s = snap(stale, fresh(), live(), codexLiveStatus());
     expect(visibleUsageProviders(s, now)).toEqual(["codex"]);
   });
 
   it("스냅샷이 아직 없으면 전부 남긴다(첫 폴링 전)", () => {
-    expect(visibleUsageProviders(null, now)).toEqual([
-      "claude",
-      "codex",
-      "gemini",
-    ]);
-  });
-});
-
-describe("describeGeminiLiveStatus", () => {
-  it("성공은 ok 단계", () => {
-    expect(describeGeminiLiveStatus(geminiLiveStatus())!.level).toBe("ok");
-  });
-
-  it("라이선스 없음은 오류가 아니라 warn 단계다", () => {
-    // 재로그인해도 안 풀리는, "여기 볼 것이 없다"는 사실 진술이다.
-    const note = describeGeminiLiveStatus(
-      geminiLiveStatus({ outcome: "ineligible", detail: "no longer supported" }),
-    )!;
-    expect(note.level).toBe("warn");
-    expect(note.text).toEqual({
-      key: "usage.geminiLive.ineligible",
-      params: { detail: "no longer supported" },
-    });
-  });
-
-  it("프로젝트 설정 누락은 env 한 줄로 풀리는 error 단계다", () => {
-    const note = describeGeminiLiveStatus(geminiLiveStatus({ outcome: "project_required" }))!;
-    expect(note.level).toBe("error");
-    expect(note.text).toEqual({ key: "usage.geminiLive.projectRequired" });
-  });
-
-  it("진단이 없으면 아무것도 그리지 않는다", () => {
-    expect(describeGeminiLiveStatus(null)).toBeNull();
+    expect(visibleUsageProviders(null, now)).toEqual(["claude", "codex"]);
   });
 });
 
