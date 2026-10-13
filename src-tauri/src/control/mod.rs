@@ -16,7 +16,6 @@
 pub mod client;
 /// VS Code 연결 확장이 캐릭터·외형·사용량을 읽는 제한된 표시 API.
 mod display;
-mod observed;
 pub mod protocol;
 pub mod tmux;
 /// 토큰 파일과 인증 미들웨어.
@@ -82,9 +81,8 @@ pub struct ControlContext {
     pub portrait_store: Arc<crate::persistence::png_store::PngStore>,
     /// 커스텀 스프라이트 저장소. 읽기 API도 앱과 같은 바이트 상한을 쓴다.
     pub sprite_store: crate::persistence::png_store::PngStore,
-    /// 창을 복원하고 렌더러에 표시 전용 선택 또는 IDE 연결 준비를 알린다.
-    /// 어느 경우도 세션을 생성하지 않는다.
-    pub focus_agent: Arc<dyn Fn(&str, Option<DisplayFocusIntent>) -> Result<(), String> + Send + Sync>,
+    /// 창을 복원하고 렌더러에 표시 전용 선택을 알린다. 세션을 생성하지 않는다.
+    pub focus_agent: Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>,
 }
 
 impl ControlContext {
@@ -100,9 +98,6 @@ fn router(ctx: Arc<ControlContext>) -> Router {
         .route("/v1/create", post(create))
         .route("/v1/attach", post(attach))
         .route("/v1/detach", post(detach))
-        .route("/v1/observed/attach", post(observed::attach))
-        .route("/v1/observed/event", post(observed::event))
-        .route("/v1/observed/detach", post(observed::detach))
         .route("/v1/send", post(send))
         .route("/v1/dispose", post(dispose))
         .route("/v1/notifications", post(notifications))
@@ -259,14 +254,11 @@ mod tests {
     use crate::session::pty_factory::fake::{FakeControl, FakePtyFactory};
     use crate::state::fake::RecordingEvents;
     use crate::state::AppEvents;
-    use std::io::Write;
-    use std::process::{Child, Command, Stdio};
     use std::time::Duration;
 
     struct Fixture {
         state: ControlServerState,
         ctx: Arc<ControlContext>,
-        events: Arc<RecordingEvents>,
         /// 가짜 PTY 핸들 — 세션 stdin에 뭐가 실렸는지(=startup_command) 본다.
         ctl: Arc<FakeControl>,
         dir: PathBuf,
@@ -369,14 +361,13 @@ mod tests {
                 dir.join("sprites"),
                 crate::persistence::png_store::MAX_SPRITE_BYTES,
             ),
-            focus_agent: Arc::new(|_, _| Ok(())),
+            focus_agent: Arc::new(|_| Ok(())),
         });
         let state = ControlServerState::default();
         state.set_app_data_dir(dir.clone());
         Fixture {
             state,
             ctx,
-            events,
             ctl,
             dir,
             _observer_dir: observer_dir,
@@ -387,36 +378,6 @@ mod tests {
         f.state.shutdown();
         let _ = std::fs::remove_dir_all(&f.dir);
         let _ = std::fs::remove_dir_all(&f._observer_dir);
-    }
-
-    /// ignored 통합 스모크가 실패해도 Node watch를 고아로 남기지 않는다.
-    struct NodeWatch(Child);
-
-    impl Drop for NodeWatch {
-        fn drop(&mut self) {
-            terminate_node(&mut self.0);
-            let _ = self.0.wait();
-        }
-    }
-
-    #[cfg(unix)]
-    fn terminate_node(child: &mut Child) {
-        unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGTERM) };
-    }
-
-    #[cfg(not(unix))]
-    fn terminate_node(child: &mut Child) {
-        let _ = child.kill();
-    }
-
-    async fn eventually(mut predicate: impl FnMut() -> bool) {
-        for _ in 0..100 {
-            if predicate() {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        panic!("integration condition timed out");
     }
 
     #[test]
@@ -582,7 +543,6 @@ mod tests {
         // 훅 ON(기본값은 OFF) — attach 핸들러가 observer 서버를 선기동하고,
         // 그래야 스크립트에 훅 env와 claude 래퍼가 실린다.
         f.ctx.settings.write().unwrap().observer_enabled = true;
-        f.ctx.settings.write().unwrap().ide_connection_enabled = true;
         f.ctx
             .store
             .save(&crate::types::PersistedState {
@@ -706,214 +666,6 @@ mod tests {
             body["error"].as_str().unwrap().contains("ctl create"),
             "{body}"
         );
-        cleanup(&f);
-    }
-
-    #[tokio::test]
-    async fn observed_connection_is_idempotent_and_rejects_stale_owners_without_touching_a_pty() {
-        let f = build("observed");
-        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
-        let token = f.state.issue_token().unwrap();
-        f.ctx.settings.write().unwrap().observer_enabled = true;
-        f.ctx.settings.write().unwrap().ide_connection_enabled = true;
-        let mut agent = profile("a1", "Ada");
-        agent.cwd = Some("/tmp/observed-project".into());
-        f.ctx
-            .store
-            .save(&crate::types::PersistedState {
-                agents: vec![agent],
-                version: 1,
-                vacation_mode: None,
-            })
-            .unwrap();
-        let client = reqwest::Client::new();
-        let owner = uuid::Uuid::new_v4().to_string();
-        let attach_body = serde_json::json!({
-            "agentId": "a1", "provider": "codex", "sourceSessionId": "source-1",
-            "cwd": "/tmp/observed-project", "ownerId": owner, "pid": std::process::id(),
-        });
-        let attach = |body: serde_json::Value| {
-            let client = client.clone();
-            let token = token.clone();
-            async move {
-                client
-                    .post(format!("http://127.0.0.1:{port}/v1/observed/attach"))
-                    .header(TOKEN_HEADER, token)
-                    .json(&body)
-                    .send()
-                    .await
-                    .unwrap()
-                    .json::<serde_json::Value>()
-                    .await
-                    .unwrap()
-            }
-        };
-        f.ctx.settings.write().unwrap().ide_connection_enabled = false;
-        let denied = attach(attach_body.clone()).await;
-        assert_eq!(denied["error"], "ide-connection-disabled");
-        assert!(f.ctx.manager.session_id_for("a1").is_none());
-        f.ctx.settings.write().unwrap().ide_connection_enabled = true;
-        let first = attach(attach_body.clone()).await;
-        assert_eq!(first["ok"], true);
-        let sid = first["data"]["sessionId"].as_str().unwrap().to_string();
-        assert_eq!(attach(attach_body).await["data"]["sessionId"], sid);
-
-        let event = |body: serde_json::Value| {
-            let client = client.clone();
-            let token = token.clone();
-            async move {
-                client
-                    .post(format!("http://127.0.0.1:{port}/v1/observed/event"))
-                    .header(TOKEN_HEADER, token)
-                    .json(&body)
-                    .send()
-                    .await
-                    .unwrap()
-                    .json::<serde_json::Value>()
-                    .await
-                    .unwrap()
-            }
-        };
-        let prompt = serde_json::json!({ "agentId":"a1", "sessionId":sid, "ownerId":owner,
-            "sequence":1, "kind":"prompt" });
-        assert_eq!(event(prompt.clone()).await["data"]["accepted"], true);
-        assert_eq!(event(prompt).await["data"]["accepted"], false);
-        assert_eq!(
-            f.events.activities().iter().map(|activity| activity.kind).collect::<Vec<_>>(),
-            vec![crate::types::ActivityKind::Prompt],
-        );
-        f.ctx.settings.write().unwrap().ide_connection_enabled = false;
-        let denied = event(serde_json::json!({ "agentId":"a1", "sessionId":sid, "ownerId":owner,
-            "sequence":2, "kind":"heartbeat" })).await;
-        assert_eq!(denied["error"], "ide-connection-disabled");
-        f.ctx.settings.write().unwrap().ide_connection_enabled = true;
-        let stale = event(serde_json::json!({ "agentId":"a1", "sessionId":sid,
-            "ownerId":uuid::Uuid::new_v4().to_string(), "sequence":2, "kind":"stop" }))
-        .await;
-        assert_eq!(stale["ok"], false);
-
-        // 관찰 연결이 있는 캐릭터에 create를 호출하면 기존 규칙대로 PTY가 생기며,
-        // 그 뒤 stale observed detach는 새 PTY를 건드리지 않는다.
-        let created: serde_json::Value = client
-            .post(format!("http://127.0.0.1:{port}/v1/create"))
-            .header(TOKEN_HEADER, &token)
-            .json(&serde_json::json!({"agentId":"a1"}))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let pty_sid = created["data"]["sessionId"].as_str().unwrap().to_string();
-        let detached: serde_json::Value = client
-            .post(format!("http://127.0.0.1:{port}/v1/observed/detach"))
-            .header(TOKEN_HEADER, &token)
-            .json(&serde_json::json!({"agentId":"a1", "sessionId":sid,
-                "ownerId":owner}))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(detached["data"]["detached"], false);
-        assert_eq!(
-            f.ctx.manager.session_id_for("a1").as_deref(),
-            Some(pty_sid.as_str())
-        );
-        let blocked = attach(serde_json::json!({
-            "agentId": "a1", "provider": "claude", "sourceSessionId": "source-2",
-            "cwd": "/tmp/observed-project", "ownerId": uuid::Uuid::new_v4().to_string(),
-            "pid": std::process::id(),
-        }))
-        .await;
-        assert_eq!(blocked["ok"], false);
-        assert_eq!(
-            f.ctx.manager.session_id_for("a1").as_deref(),
-            Some(pty_sid.as_str())
-        );
-        cleanup(&f);
-    }
-
-    #[tokio::test]
-    async fn observed_event_is_rejected_when_observer_is_off() {
-        let f = build("observed-off");
-        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
-        let token = f.state.issue_token().unwrap();
-        let body: serde_json::Value = reqwest::Client::new()
-            .post(format!("http://127.0.0.1:{port}/v1/observed/event"))
-            .header(TOKEN_HEADER, token)
-            .json(
-                &serde_json::json!({"agentId":"a1", "sessionId":"s", "ownerId":"x",
-                "sequence":1, "kind":"heartbeat"}),
-            )
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        assert_eq!(body["ok"], false);
-        cleanup(&f);
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Node.js and the local ide-session-spike watch process"]
-    async fn node_codex_watch_forwards_new_records_without_replaying_history_then_detaches() {
-        let f = build("node-observed-smoke");
-        let _port = f.state.ensure(f.ctx.clone()).await.unwrap();
-        f.state.issue_token().unwrap();
-        f.ctx.settings.write().unwrap().observer_enabled = true;
-        f.ctx.settings.write().unwrap().ide_connection_enabled = true;
-        let cwd = f.dir.join("project");
-        std::fs::create_dir_all(&cwd).unwrap();
-        let mut agent = profile("a1", "Ada");
-        agent.cwd = Some(cwd.to_string_lossy().into_owned());
-        f.ctx.store.save(&crate::types::PersistedState {
-            agents: vec![agent], version: 1, vacation_mode: None,
-        }).unwrap();
-        let transcript = f.dir.join("codex-vscode.jsonl");
-        let metadata = serde_json::json!({
-            "type": "session_meta", "payload": {
-                "id": "codex-thread-smoke", "cwd": cwd, "source": "vscode",
-                "originator": "codex_vscode", "thread_source": "user"
-            }
-        });
-        let historical_complete = serde_json::json!({
-            "type": "event_msg", "payload": { "type": "task_complete", "turn_id": "past" }
-        });
-        std::fs::write(&transcript, format!("{metadata}\n{historical_complete}\n")).unwrap();
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
-        let mut watch = NodeWatch(Command::new("node")
-            .arg(root.join("scripts/ide-session-spike.mjs"))
-            .args(["watch", "--provider", "codex", "--file"])
-            .arg(&transcript)
-            .args(["--agent", "a1", "--app-data"])
-            .arg(&f.dir)
-            .current_dir(&root)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn().expect("node watch spawn"));
-        eventually(|| f.ctx.manager.session_id_for("a1").is_some()).await;
-        // fromNow baseline 뒤에만 붙인 레코드가 전달돼야 한다. 과거 complete는
-        // notification을 만들지 않았음을 먼저 확인한다.
-        assert!(f.events.notifications().is_empty());
-        let started = serde_json::json!({
-            "type": "event_msg", "payload": { "type": "task_started", "turn_id": "new" }
-        });
-        let completed = serde_json::json!({
-            "type": "event_msg", "payload": { "type": "task_complete", "turn_id": "new" }
-        });
-        let mut file = std::fs::OpenOptions::new().append(true).open(&transcript).unwrap();
-        writeln!(file, "{started}").unwrap();
-        writeln!(file, "{completed}").unwrap();
-        file.flush().unwrap();
-        eventually(|| f.events.activities().iter().any(|a| a.kind == crate::types::ActivityKind::Prompt)
-            && f.events.notifications().len() == 1).await;
-        assert_eq!(f.events.notifications()[0].agent_id, "a1");
-        terminate_node(&mut watch.0);
-        eventually(|| f.ctx.manager.session_id_for("a1").is_none()).await;
-        let _ = watch.0.wait();
         cleanup(&f);
     }
 
@@ -1136,23 +888,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stale_cli_settings_cannot_restore_connection_opt_ins() {
-        let f = build("stale-connection-settings");
-        let mut stale = f.ctx.settings.read().unwrap().clone();
-        stale.ide_connection_enabled = true;
-        stale.typing_sound_enabled = false;
-        // The user has since opted out; preserve the current values inside the write lock.
-        crate::ipc::commands::apply_settings_effects(
-            &f.ctx.manager, &f.ctx.settings_store, &f.ctx.settings, &f.ctx.hub,
-            &f.ctx.observer_server, &f.ctx.observer, &f.ctx.talk, stale, true,
-        ).await.unwrap();
-        let settings = f.ctx.settings.read().unwrap().clone();
-        assert!(!settings.ide_connection_enabled);
-        assert!(!settings.typing_sound_enabled);
-        cleanup(&f);
-    }
-
-    #[tokio::test]
     async fn settings_set_rejects_cli_enabled_but_allows_others() {
         let f = build("settings");
         let port = f.state.ensure(f.ctx.clone()).await.unwrap();
@@ -1171,15 +906,6 @@ mod tests {
             .unwrap();
         assert_eq!(rejected["ok"], false);
 
-        for key in ["ideConnectionEnabled", "ide_connection_enabled"] {
-            let response: serde_json::Value = client
-                .post(format!("http://127.0.0.1:{port}/v1/settings/set"))
-                .header(TOKEN_HEADER, &token)
-                .json(&serde_json::json!({key: true}))
-                .send().await.unwrap().json().await.unwrap();
-            assert_eq!(response["ok"], false, "{key}");
-        }
-        assert!(!f.ctx.settings.read().unwrap().ide_connection_enabled);
 
         let ok_resp: serde_json::Value = client
             .post(format!("http://127.0.0.1:{port}/v1/settings/set"))
@@ -1446,7 +1172,7 @@ mod tests {
             .send().await.unwrap().json().await.unwrap();
         assert!(capabilities["data"]["features"].as_array().unwrap()
             .iter().any(|feature| feature == "portrait"));
-        assert!(capabilities["data"]["features"].as_array().unwrap()
+        assert!(!capabilities["data"]["features"].as_array().unwrap()
             .iter().any(|feature| feature == "ide-session-focus"));
         let characters: serde_json::Value = client
             .post(format!("http://127.0.0.1:{port}/v1/display/characters"))
@@ -1477,6 +1203,8 @@ mod tests {
         assert_eq!(focus["data"]["focused"], true);
         assert!(f.ctx.manager.session_id_for("a1").is_none());
 
+        // IDE 연결 대화상자는 제거됐다. 예전 확장이 보내는 intent는 무시하고
+        // 프로필 선택으로만 처리한다(와이어 호환).
         let connect_codex: serde_json::Value = client
             .post(format!("http://127.0.0.1:{port}/v1/display/focus"))
             .header(TOKEN_HEADER, &token).json(&serde_json::json!({ "agentId": "a1", "intent": "connectCodex" }))

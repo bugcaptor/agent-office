@@ -49,7 +49,6 @@ export function BottomBar() {
   const scene = useAppStore((s) => s.scene);
   const setScene = useAppStore((s) => s.setScene);
   const talkEnabled = useAppStore((s) => s.appSettings.talkEnabled);
-  const ideConnectionEnabled = useAppStore((s) => s.appSettings.ideConnectionEnabled);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
   const runningCount = useRunningCount();
   const pendingCount = usePendingCount();
@@ -62,8 +61,6 @@ export function BottomBar() {
   const [sceneThemeMenu, setSceneThemeMenu] = useState<{ x: number; y: number } | null>(null);
   const [clockAllMenu, setClockAllMenu] = useState<{ x: number; y: number } | null>(null);
   const [recordMenu, setRecordMenu] = useState<{ x: number; y: number } | null>(null);
-  const [connectionMenu, setConnectionMenu] = useState<{ x: number; y: number } | null>(null);
-  const connectionEnabled = ideConnectionEnabled;
 
   // "📊 기록" 버튼 툴팁 — 원래 TalkWidget이 title에 담던 열린/대기 대화
   // 문구를 여기로 옮긴다(talkEnabled가 꺼져 있으면 대화 정보는 뺀다).
@@ -82,25 +79,6 @@ export function BottomBar() {
       >
         {t("bottomBar.newAgent")}
       </button>
-      {connectionEnabled && <button
-        type="button"
-        className="pixel-btn connection-btn"
-        aria-haspopup="menu"
-        onClick={(event) => {
-          const rect = event.currentTarget.getBoundingClientRect();
-          setConnectionMenu({ x: rect.left, y: rect.top });
-        }}
-      >
-        {t("bottomBar.connection")}
-      </button>}
-      {connectionMenu && <ContextMenu
-        x={connectionMenu.x}
-        y={connectionMenu.y}
-        onClose={() => setConnectionMenu(null)}
-        items={[
-          ...(ideConnectionEnabled ? [{ icon: "🔗", label: t("bottomBar.ideSession"), onSelect: () => openModal({ kind: "ide-session" }) }] : []),
-        ]}
-      />}
       <button
         type="button"
         className="pixel-btn summon-btn"

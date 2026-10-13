@@ -17,9 +17,6 @@ import type {
   ClaudeResumeEntry,
   SessionLogPage,
   StudyMaterialResult,
-  IdeSessionCandidate,
-  IdeSessionConnectResult,
-  IdePersonaContext,
 } from './session';
 import type { NotificationEvent, ActivityEvent, TurnUsageEvent } from './notification';
 import type { PersistedState, CodexImageStatus, GeneratedCodexImage } from './profile';
@@ -98,14 +95,6 @@ export interface AgentOfficeApi {
   /** 외부(논리) 세션 연결 해제 — PTY가 없으므로 kill할 프로세스는 없고 훅
    * 라우팅 등록과 settings 파일만 정리된다. 붙어 있지 않았으면 false(no-op). */
   detachExternalSession(agentId: string): Promise<boolean>;
-  /** Lists local IDE extension sessions that can be observed. Desktop only. */
-  listIdeSessions(filter?: { provider?: 'codex' | 'claude' | 'kilo'; cwd?: string }): Promise<IdeSessionCandidate[]>;
-  /** Connects a character, or requests confirmation before replacing its exact live session. */
-  connectIdeSession(input: { agentId: string; provider: 'codex' | 'claude' | 'kilo'; file: string; sourceSessionId: string; replaceSessionId?: string }): Promise<IdeSessionConnectResult>;
-  /** Desktop-only preparation preview; null for unverified/non-IDE connections. */
-  getIdePersona(agentId: string): Promise<IdePersonaContext | null>;
-  /** Creates a Claude style choice without selecting it or sending IDE input. */
-  prepareIdePersona(input: { agentId: string; sessionId: string; personalityPrompt: string }): Promise<IdePersonaContext>;
   /** fire-and-forget. `terminalResponse` is an xterm protocol reply, not a user edit. */
   writeInput(agentId: string, data: string, source?: TerminalInputSource): void;
   resize(agentId: string, cols: number, rows: number): void;

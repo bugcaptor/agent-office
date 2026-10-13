@@ -276,9 +276,6 @@ pub struct AppSettings {
     pub diary_enabled: bool,
     #[serde(default, alias = "claudeHooksEnabled")]
     pub observer_enabled: bool,
-    /// 외부 IDE 연결은 설정에서 명시적으로 허용한다.
-    #[serde(default)]
-    pub ide_connection_enabled: bool,
     /// 키보드 타건음(캐릭터가 출력을 뿜을 때 나는 타이핑 소리).
     /// 레거시 `soundEnabled` 하나가 담당하던 것을 셋(타건/알림/TTS)으로 쪼갠
     /// 결과다 — 마이그레이션은 `migrate_sound_keys` 참고.
@@ -435,7 +432,6 @@ impl Default for AppSettings {
             summary_models: SummaryModels::default(),
             diary_enabled: false,
             observer_enabled: false,
-            ide_connection_enabled: false,
             typing_sound_enabled: true,
             notify_sound_enabled: true,
             sound_volume: 0.5,
@@ -588,19 +584,27 @@ mod tests {
             .join("settings.json")
     }
 
+    /// 점검·정리(docs/health-check-cleanup-plan.md §7.G)로 없어진 기능의 설정
+    /// 키가 남아 있는 옛 settings.json도 그대로 읽히고, 다음 저장에서 사라진다.
     #[test]
-    fn connection_opt_ins_default_off_and_round_trip() {
+    fn settings_with_removed_feature_keys_still_load_and_drop_them_on_save() {
         let mut value = serde_json::to_value(AppSettings::default()).unwrap();
-        value.as_object_mut().unwrap().remove("ideConnectionEnabled");
+        let obj = value.as_object_mut().unwrap();
+        for (key, v) in [
+            ("ideConnectionEnabled", serde_json::json!(true)),
+            ("remoteServerConnectionEnabled", serde_json::json!(true)),
+            ("webRemoteEnabled", serde_json::json!(true)),
+            ("webRemoteBind", serde_json::json!("all")),
+            ("webRemotePort", serde_json::json!(47800)),
+        ] {
+            obj.insert(key.into(), v);
+        }
         let legacy: AppSettings = serde_json::from_value(value).unwrap();
-        assert!(!legacy.ide_connection_enabled);
-        let enabled = AppSettings {
-            ide_connection_enabled: true,
-            ..legacy
-        };
-        let saved = serde_json::to_value(&enabled).unwrap();
-        assert_eq!(saved["ideConnectionEnabled"], true);
-        assert_eq!(serde_json::from_value::<AppSettings>(saved).unwrap(), enabled);
+        assert_eq!(legacy, AppSettings::default());
+        let saved = serde_json::to_value(&legacy).unwrap();
+        for key in ["ideConnectionEnabled", "remoteServerConnectionEnabled", "webRemoteEnabled", "webRemoteBind", "webRemotePort"] {
+            assert!(saved.get(key).is_none(), "{key} must not be written back");
+        }
     }
 
     #[test]
@@ -626,7 +630,6 @@ mod tests {
             summary_models: SummaryModels::default(),
             diary_enabled: false,
             observer_enabled: true,
-            ide_connection_enabled: false,
             typing_sound_enabled: true,
             notify_sound_enabled: true,
             sound_volume: 0.5,
@@ -833,7 +836,6 @@ mod tests {
             summary_models: SummaryModels::default(),
             diary_enabled: false,
             observer_enabled: true,
-            ide_connection_enabled: false,
             typing_sound_enabled: true,
             notify_sound_enabled: true,
             sound_volume: 0.5,

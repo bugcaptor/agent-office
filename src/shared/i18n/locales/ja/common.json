@@ -13,8 +13,6 @@
   },
   "bottomBar": {
     "newAgent": "＋ New Agent",
-    "connection": "🔗 接続",
-    "ideSession": "IDE セッション",
     "clockIn": "🏠 出勤 ({{n}})",
     "clockAll": "全員出退勤",
     "clockInAll": "全員出勤（ターミナル起動、{{n}}人）",
@@ -80,6 +78,5 @@
     "ttsEmptyMessage": "読み上げる文がありません。",
     "ttsNoVoice": "利用できるボイスがありません。",
     "timeout": "時間内に応答しませんでした。"
-  },
-  "ideSpikeDescription": "既存の VS Code の Codex・Claude セッションを読み取り専用で Agent Office に接続する実験です。"
+  }
 }

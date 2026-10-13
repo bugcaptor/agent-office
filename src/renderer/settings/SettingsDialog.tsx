@@ -19,7 +19,6 @@ import { SoundTab } from "./SoundTab";
 import { SystemTab } from "./SystemTab";
 import { ControlSection } from "./ControlSection";
 import { TalkSection } from "./TalkSection";
-import { ConnectionSection } from "./ConnectionSection";
 
 type SettingsTabId = "general" | "sound" | "system" | "control";
 
@@ -85,7 +84,6 @@ function SettingsDialogBody() {
           {tab === "control" && (
             <>
               <ControlSection enabled={cliEnabled} />
-              <ConnectionSection />
               <TalkSection />
             </>
           )}

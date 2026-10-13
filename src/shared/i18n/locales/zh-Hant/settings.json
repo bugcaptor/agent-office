@@ -13,7 +13,6 @@
     "tabSystem": "系統",
     "tabControl": "控制"
   },
-  "connections": { "ideTitle": "IDE 工作階段連線", "ideHelp": "允許此應用程式尋找並連線 IDE 工作階段。關閉後會中斷已連線的工作階段，原始 IDE 不會改變。" },
   "keys": {
     "present": "已設定",
     "presentEnv": "已設定（環境變數）",

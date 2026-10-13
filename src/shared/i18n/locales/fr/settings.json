@@ -13,7 +13,6 @@
     "tabSystem": "Système",
     "tabControl": "Contrôle"
   },
-  "connections": { "ideTitle": "Connexion de session IDE", "ideHelp": "Autorise cette application à trouver et connecter des sessions IDE. En désactivant, les sessions connectées sont déconnectées et l’IDE d’origine reste inchangé." },
   "keys": {
     "present": "définie",
     "presentEnv": "définie (env)",

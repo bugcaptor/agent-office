@@ -22,7 +22,7 @@ const MAX_PORTRAIT_DIMENSION: u32 = 4096;
 pub(super) async fn capabilities() -> Json<serde_json::Value> {
     ok(DisplayCapabilities {
         protocol_version: 1,
-        features: vec!["characters", "appearance", "portrait", "usage", "focus", "ide-session-focus"],
+        features: vec!["characters", "appearance", "portrait", "usage", "focus"],
         generator_revision: GENERATOR_REVISION,
     })
 }
@@ -98,7 +98,7 @@ pub(super) async fn focus(
     {
         return fail("unknown_agent");
     }
-    if let Err(_) = (ctx.focus_agent)(&params.agent_id, params.intent) {
+    if let Err(_) = (ctx.focus_agent)(&params.agent_id) {
         return fail("focus_unavailable");
     }
     ok(DisplayFocusResult {

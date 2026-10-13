@@ -13,7 +13,6 @@
     "tabSystem": "システム",
     "tabControl": "制御"
   },
-  "connections": { "ideTitle": "IDE セッション接続", "ideHelp": "このアプリによる IDE セッションの検索と接続を許可します。オフにすると接続済みのセッションは切断され、元の IDE は変わりません。" },
   "keys": {
     "present": "あり",
     "presentEnv": "あり（環境変数）",

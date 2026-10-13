@@ -13,8 +13,6 @@
   },
   "bottomBar": {
     "newAgent": "＋ Nouvel agent",
-    "connection": "🔗 Connexion",
-    "ideSession": "Session IDE",
     "clockIn": "🏠 Arrivée ({{n}})",
     "clockAll": "Pointage global",
     "clockInAll": "Arrivée générale (démarrer les terminaux, {{n}})",
@@ -80,6 +78,5 @@
     "ttsEmptyMessage": "Il n’y a rien à énoncer.",
     "ttsNoVoice": "Aucune voix disponible.",
     "timeout": "Aucune réponse dans le délai imparti."
-  },
-  "ideSpikeDescription": "Une expérimentation reliant les sessions Codex et Claude existantes de VS Code à Agent Office par observation en lecture seule."
+  }
 }

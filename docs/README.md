@@ -33,7 +33,6 @@
 | [bot-mode-design.md](bot-mode-design.md) | 캐릭터 봇 모드 — Gitea 이슈 폴링·프롬프트 주입·PR 완료 판정 | 정본 — 구현 완료(#57/#58/#61) |
 | [cli-control-design.md](cli-control-design.md) | `agent-office ctl` 외부 CLI 제어 — 로컬 axum 서버 + 2단계 승인 | 정본 — 구현 완료(#55) |
 | [external-session-attach-design.md](external-session-attach-design.md) | 외부 터미널/tmux 세션에 캐릭터 붙이기 — PTY 없는 논리 세션·`ctl attach` eval 스크립트·tmux 클라이언트 스폰 | 정본 — 구현 완료(kbm #2by), 눈검증 대기 |
-| [ide-session-spike.md](ide-session-spike.md) | 기존 VS Code Codex·Claude 세션 기록을 읽어 캐릭터에 관찰 연결 — 새 확장 없이 시작·도구·완료 전달 | 실험 구현(kbm #2w6) |
 | [run-recipes-design.md](run-recipes-design.md) | 실행 레시피 — 프로젝트(프로필 cwd)별 실행 방법을 캐릭터가 조사해 앱 데이터에 저장, 팔레트에서 그 캐릭터 세션에 주입. 설정 opt-in | 정본 (2026-09-04, kbm #2rf) — 구현 완료 |
 | [terminal-automation-design.md](terminal-automation-design.md) | 사용자 정의 터미널 입력 자동화 — v1/v2 순차 CLI 전환, 단계 정의를 저장해 평소 쓰는 터미널에 프롬프트를 대신 입력. 기동 10초·작업 대기 30분·타임아웃 시 사용자 선택, 사람 입력 허용 | 정본 (2026-09-08, kbm #2t9) — v1/v2 구현, 실제 bash/zsh 및 PTY 대역 검증 |
 | [health-check-cleanup-plan.md](health-check-cleanup-plan.md) | 프로젝트 점검·기능 정리 계획 — 점검 관점, 기능 사용 신호와 제거 기준, 낡은 문서 정리(Codex), 업무 보드 태스크 A~I와 의존 관계 | 진행 중 (2026-10-13) — A·B·C 기록 |
@@ -61,6 +60,8 @@
 | [archive/web-remote-design.md](archive/web-remote-design.md) | 웹 원격(kbm #2dz) — tailnet 브라우저 보기·제어. M1~M3 구현 후 미사용으로 제거(2026-10-14, 점검·정리 §7.D C35) |
 | [archive/session-broker-v2-design.md](archive/session-broker-v2-design.md) | v2 상시 브로커 — 기본 off opt-in으로 머물다 제거(2026-10-14, 점검·정리 §7.D C37). v1 fd 핸드오프만 남음 |
 | [archive/tmux-hosting-design.md](archive/tmux-hosting-design.md) | tmux 자동 호스팅(kbm #2pc) — 설정 프로필 0명으로 제거(2026-10-14, 점검·정리 §7.D C34) |
+| [archive/ide-session-spike.md](archive/ide-session-spike.md) | IDE 세션 관찰 연결(kbm #2w6) — 실험 구현 후 미사용으로 제거(2026-10-14, 점검·정리 §7.D C39) |
+| [archive/ide-persona-design.md](archive/ide-persona-design.md) | 원본 IDE 에이전트 말투(kbm #2w7) — IDE 관찰 연결과 함께 제거(2026-10-14) |
 
 ## 관련 (docs/ 밖)
 

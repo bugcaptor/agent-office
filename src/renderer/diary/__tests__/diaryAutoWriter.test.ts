@@ -38,7 +38,6 @@ const SETTINGS_ON: AppSettings = {
   },
   diaryEnabled: true,
   observerEnabled: false,
-  ideConnectionEnabled: false,
   typingSoundEnabled: true,
   notifySoundEnabled: true,
   soundVolume: 0.5,

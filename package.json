@@ -24,9 +24,7 @@
     "bump": "node scripts/bump-version.mjs",
     "bump:patch": "node scripts/bump-version.mjs patch",
     "bump:minor": "node scripts/bump-version.mjs minor",
-    "bump:major": "node scripts/bump-version.mjs major",
-    "spike:ide": "node scripts/ide-session-spike.mjs",
-    "spike:ide:test": "node --test scripts/ide-session-spike/*.test.mjs"
+    "bump:major": "node scripts/bump-version.mjs major"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

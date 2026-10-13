@@ -133,11 +133,10 @@ export function ProfileDialog() {
       });
     } else {
       const profile = draftToProfile(draft, agentOrder.length);
-      const startSession = !createContext?.returnToIdeSession;
-      addAgent(profile, { startSession });
+      addAgent(profile, { startSession: true });
       // 캐릭터 등장은 profiles prop 변화 → B의 syncAgents가 처리 (정합화)
       try {
-        if (startSession) await tauriApi.createSession(profile.id, sessionOptsFor(profile)); // PTY 시작
+        await tauriApi.createSession(profile.id, sessionOptsFor(profile)); // PTY 시작
       } catch (err) {
         // The profile is already saved; mark the session exited so clicking the
         // character later retries via the bridge's ensureSession.
@@ -145,11 +144,7 @@ export function ProfileDialog() {
         console.warn(`ProfileDialog: createSession failed for ${profile.id}`, err);
       }
     }
-    if (createContext?.returnToIdeSession) {
-      useAppStore.getState().openModal({ kind: "ide-session" });
-    } else {
-      closeModal();
-    }
+    closeModal();
   };
 
   if (modal.kind !== "profile-create" && modal.kind !== "profile-edit") return null;
@@ -178,7 +173,7 @@ export function ProfileDialog() {
             {editing ? t("dialog.titleEdit") : t("dialog.titleCreate")}
           </h2>
           <p className="profile-dialog-sub">
-            {editing ? t("dialog.subEdit") : createContext?.returnToIdeSession ? t("dialog.subCreateIde") : t("dialog.subCreate")}
+            {editing ? t("dialog.subEdit") : t("dialog.subCreate")}
           </p>
         </header>
 

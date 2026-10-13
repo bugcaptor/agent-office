@@ -13,8 +13,6 @@
   },
   "bottomBar": {
     "newAgent": "＋ New Agent",
-    "connection": "🔗 Connect",
-    "ideSession": "IDE session",
     "clockIn": "🏠 Clock in ({{n}})",
     "clockAll": "Clock all",
     "clockInAll": "Clock in all (start terminals, {{n}})",
@@ -80,6 +78,5 @@
     "ttsEmptyMessage": "There is nothing to speak.",
     "ttsNoVoice": "No voice is available.",
     "timeout": "It did not respond in time."
-  },
-  "ideSpikeDescription": "An experiment connecting existing VS Code Codex and Claude sessions to Agent Office through read-only observation."
+  }
 }

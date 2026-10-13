@@ -1,6 +1,6 @@
 # 기존 IDE 세션 관찰 연결 스파이크
 
-상태: 스파이크와 앱 내 연결 흐름 구현. KBM #2w6, #2w7. 2026-09-12.
+상태: 이력(archived, 2026-10-14) — 스파이크와 앱 내 연결 흐름 구현(KBM #2w6, #2w7, 2026-09-12) 후 개발일 외 사용 흔적이 없어 제거(점검·정리 계획 §7.D C39). `ide_sessions/`·IDE 연결 대화상자·`/v1/observed/*`·`ideConnectionEnabled`·`scripts/ide-session-spike*`가 함께 사라졌다.
 
 연결 캐릭터의 말투를 원본 IDE에서 사용하는 흐름은
 [IDE 말투 설정](ide-persona-design.md)에 정리했다. Claude 스타일 생성과 수동 선택,

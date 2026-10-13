@@ -50,7 +50,6 @@ function hydrate(cliEnabled: boolean) {
       },
       diaryEnabled: false,
       observerEnabled: false,
-      ideConnectionEnabled: false,
       typingSoundEnabled: true,
       notifySoundEnabled: true,
       soundVolume: 0.5,
@@ -111,16 +110,6 @@ describe("SettingsDialog · CLI 제어", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: /CLI 제어/ }));
     expect(useAppStore.getState().appSettings.cliEnabled).toBe(true);
-  });
-
-  it("IDE 연결은 제어 탭에서 opt-in 한다", () => {
-    controlStatus.mockResolvedValue({ enabled: false, running: false, approved: false, port: null, appDataDir: "/data" });
-    hydrate(false);
-    render(<SettingsDialog />);
-    openTab("제어");
-
-    fireEvent.click(screen.getByRole("checkbox", { name: /IDE 세션 연결/ }));
-    expect(useAppStore.getState().appSettings.ideConnectionEnabled).toBe(true);
   });
 
   it("활성화+미승인이면 승인 버튼을 보이고 클릭 시 controlApprove를 호출한다", async () => {

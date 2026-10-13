@@ -13,7 +13,6 @@
     "tabSystem": "System",
     "tabControl": "Control"
   },
-  "connections": { "ideTitle": "IDE session connection", "ideHelp": "Allow this app to find and connect to IDE sessions. Turning it off disconnects connected sessions; the original IDE stays unchanged." },
   "keys": {
     "present": "set",
     "presentEnv": "set (env)",

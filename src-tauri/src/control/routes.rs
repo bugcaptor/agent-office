@@ -311,9 +311,6 @@ pub(super) async fn settings_set(
     if obj.contains_key("talkEnabled") || obj.contains_key("talk_enabled") {
         return fail("talkEnabled는 앱 설정에서만 변경할 수 있습니다");
     }
-    if ["ideConnectionEnabled", "ide_connection_enabled"].iter().any(|key| obj.contains_key(*key)) {
-        return fail("connection-opt-in-requires-settings");
-    }
     let current = ctx.settings.read().unwrap().clone();
     let mut merged = match serde_json::to_value(current) {
         Ok(v) => v,
@@ -329,7 +326,6 @@ pub(super) async fn settings_set(
         Err(e) => return fail(format!("설정 파싱 실패: {e}")),
     };
     match crate::ipc::commands::apply_settings_effects(
-        &ctx.manager,
         &ctx.settings_store,
         &ctx.settings,
         &ctx.hub,
@@ -337,7 +333,6 @@ pub(super) async fn settings_set(
         &ctx.observer,
         &ctx.talk,
         new.clone(),
-        true,
     )
     .await
     {

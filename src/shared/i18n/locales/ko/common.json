@@ -13,8 +13,6 @@
   },
   "bottomBar": {
     "newAgent": "＋ New Agent",
-    "connection": "🔗 연결",
-    "ideSession": "IDE 세션",
     "clockIn": "🏠 출근 ({{n}})",
     "clockAll": "전체 출퇴근",
     "clockInAll": "전체 출근 (터미널 켜기, {{n}}명)",
@@ -80,6 +78,5 @@
     "ttsEmptyMessage": "발화할 문구가 없습니다.",
     "ttsNoVoice": "사용할 수 있는 보이스가 없습니다.",
     "timeout": "시간 안에 응답하지 않았습니다."
-  },
-  "ideSpikeDescription": "기존 VS Code의 Codex·Claude 세션을 읽기 전용으로 Agent Office에 연결하는 실험입니다."
+  }
 }

@@ -13,8 +13,6 @@
   },
   "bottomBar": {
     "newAgent": "＋ 新增代理",
-    "connection": "🔗 連線",
-    "ideSession": "IDE 工作階段",
     "clockIn": "🏠 上班 ({{n}})",
     "clockAll": "全體上下班",
     "clockInAll": "全體上班（啟動終端機，{{n}} 人）",
@@ -80,6 +78,5 @@
     "ttsEmptyMessage": "沒有可朗讀的內容。",
     "ttsNoVoice": "沒有可用的語音。",
     "timeout": "在時限內沒有回應。"
-  },
-  "ideSpikeDescription": "透過唯讀觀察，將現有 VS Code 中的 Codex 和 Claude 工作階段連接到 Agent Office 的實驗。"
+  }
 }

@@ -90,76 +90,6 @@ pub struct DetachResult {
     pub detached: bool,
 }
 
-/// 이미 실행 중인 Codex/Claude 기록을 읽는 로컬 Node 연결기 전용 API.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ObservedAttachParams {
-    pub agent_id: String,
-    pub provider: ObservedProvider,
-    pub source_session_id: String,
-    pub cwd: String,
-    pub owner_id: String,
-    pub pid: u32,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ObservedProvider {
-    Codex,
-    Claude,
-}
-
-impl ObservedProvider {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Codex => "codex",
-            Self::Claude => "claude",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ObservedAttachResult {
-    pub session_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ObservedEventParams {
-    pub agent_id: String,
-    pub session_id: String,
-    pub owner_id: String,
-    pub sequence: u64,
-    pub kind: ObservedEventKindParam,
-    #[serde(default)]
-    pub tool_name: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ObservedEventKindParam {
-    Prompt,
-    Tool,
-    Stop,
-    Attention,
-    Heartbeat,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ObservedEventResult {
-    pub accepted: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ObservedDetachParams {
-    pub agent_id: String,
-    pub session_id: String,
-    pub owner_id: String,
-}
-
 /// `send` 파라미터 — `data`는 세션 stdin에 그대로 주입된다(개행 포함 여부는
 /// 클라이언트가 `--enter`로 결정).
 #[derive(Debug, Clone, Deserialize)]
@@ -264,15 +194,8 @@ pub struct DisplayAppearanceResult {
 #[serde(rename_all = "camelCase")]
 pub struct DisplayFocusParams {
     pub agent_id: String,
-    /// Missing keeps the legacy behavior of opening the profile editor.
-    #[serde(default)]
-    pub intent: Option<DisplayFocusIntent>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum DisplayFocusIntent {
-    ConnectCodex,
+    // 예전 `intent`(`"connectCodex"`, IDE 연결 대화상자)는 제거됐다. 그 필드를
+    // 보내는 확장도 그대로 받아 들이도록 모르는 키는 serde가 무시한다.
 }
 
 #[derive(Debug, Clone, Serialize)]

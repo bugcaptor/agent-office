@@ -66,7 +66,6 @@ pub(crate) async fn set_app_settings_inner(
     settings: AppSettings,
 ) -> Result<(), String> {
     apply_settings_effects(
-        &app_state.manager,
         &app_state.settings_store,
         &app_state.settings,
         &app_state.hub,
@@ -74,7 +73,6 @@ pub(crate) async fn set_app_settings_inner(
         &app_state.observer,
         &app_state.talk,
         settings.clone(),
-        false,
     )
     .await?;
     app_state
@@ -135,37 +133,23 @@ pub async fn set_keep_awake(
 /// 핸들러(`control::settings_set`)가 공유한다. first_run 플래그와 control 서버
 /// lifecycle은 호출자별로 달라 여기서 다루지 않는다.
 pub(crate) async fn apply_settings_effects(
-    manager: &crate::session::manager::SessionManager,
     settings_store: &crate::persistence::settings_store::SettingsStore,
     settings_cache: &std::sync::RwLock<AppSettings>,
     hub: &crate::notification::hub::NotificationHub,
     observer_server: &crate::observer::server::ObserverServerState,
     observer: &std::sync::Arc<crate::observer::ObserverRuntime>,
     talk: &std::sync::Arc<crate::talk::TalkHub>,
-    mut settings: AppSettings,
-    preserve_connection_opt_ins: bool,
+    settings: AppSettings,
 ) -> Result<(), String> {
     // write 가드를 먼저 잡고 쥔 채 저장(동기, await 없음) 후 캐시를 갱신한다 --
     // 그래야 두 호출이 겹쳐도 "디스크에 쓴 값"과 "캐시에 남는 값"이 서로 다른
     // 호출 것이 되는 경합이 없다. 가드는 .await 지점 전에 스코프를 벗어난다
     // (no-lock-across-await 계약 유지).
     {
-        let _configuration = manager.observed_configuration.lock();
-        {
-            let mut guard = settings_cache.write().unwrap();
-            if preserve_connection_opt_ins {
-                // A CLI patch may carry a stale full snapshot; it cannot restore opt-ins.
-                settings.ide_connection_enabled = guard.ide_connection_enabled;
-            }
-            settings_store.save(&settings).map_err(|e| e.to_string())?;
-            // AppSettings는 Copy가 아니다 — 아래에서 계속 읽으므로 복제해 넣는다.
-            *guard = settings.clone();
-        }
-        // Never hold settings while taking lifecycle: PTY startup reads settings
-        // with lifecycle held. Configuration lock orders attach and OFF -> ON.
-        if !settings.ide_connection_enabled || !settings.observer_enabled {
-            manager.detach_all_observed();
-        }
+        let mut guard = settings_cache.write().unwrap();
+        settings_store.save(&settings).map_err(|e| e.to_string())?;
+        // AppSettings는 Copy가 아니다 — 아래에서 계속 읽으므로 복제해 넣는다.
+        *guard = settings.clone();
     }
     // 이슈 #41: 질문 알림 홀드 시간 변경을 즉시 hub 에 반영한다.
     hub.set_hold_duration(std::time::Duration::from_millis(settings.attention_hold_ms));

@@ -86,29 +86,6 @@ describe("New Agent", () => {
   });
 });
 
-describe("연결 버튼", () => {
-  function setConnections(ideConnectionEnabled: boolean): void {
-    useAppStore.setState((state) => ({ appSettings: { ...state.appSettings, ideConnectionEnabled } }));
-  }
-
-  it("IDE 연결을 끄면 버튼을 숨긴다", () => {
-    setConnections(false);
-    const { queryByRole } = render(<BottomBar />);
-    expect(queryByRole("button", { name: "🔗 연결" })).toBeNull();
-  });
-
-  it("IDE 연결을 켜면 IDE 항목을 보여 주고 선택하면 대화 상자를 연다", () => {
-    setConnections(true);
-    const { getByRole } = render(<BottomBar />);
-    fireEvent.click(getByRole("button", { name: "🔗 연결" }));
-    const ideMenuItem = getByRole("menuitem", { name: "IDE 세션" });
-    expect(ideMenuItem.querySelector(".context-menu-icon")?.textContent).toBe("🔗");
-    expect(ideMenuItem.querySelector(".context-menu-label")?.textContent).toBe("IDE 세션");
-    fireEvent.click(ideMenuItem);
-    expect(useAppStore.getState().modal).toEqual({ kind: "ide-session" });
-  });
-});
-
 describe("출근 버튼(🏠)", () => {
   it("퇴근한 에이전트가 없으면 카운트 0, 비활성", () => {
     const { getByRole } = render(<BottomBar />);

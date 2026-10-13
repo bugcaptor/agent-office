@@ -13,7 +13,6 @@
     "tabSystem": "系统",
     "tabControl": "控制"
   },
-  "connections": { "ideTitle": "IDE 会话连接", "ideHelp": "允许此应用查找并连接 IDE 会话。关闭后会断开已连接的会话，原始 IDE 不会改变。" },
   "keys": {
     "present": "已设置",
     "presentEnv": "已设置（环境变量）",

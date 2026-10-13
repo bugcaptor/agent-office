@@ -25,7 +25,6 @@ mod file_manager;
 /// control 서버의 응답 봉투와 토큰 파일 규칙.
 pub mod httpapi;
 pub mod i18n;
-mod ide_sessions;
 // pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가
 // `agent_office_lib::ipc::commands::settings::GetAppSettingsResult`에 닿아야 한다.
 // 로직 변경 없음 — 가시성만 승격.
@@ -653,14 +652,13 @@ pub fn run() {
                 sprite_store: sprite_store.clone(),
                 focus_agent: {
                     let handle = handle.clone();
-                    Arc::new(move |agent_id: &str, intent| {
+                    Arc::new(move |agent_id: &str| {
                         let main = handle.get_webview_window("main").ok_or("main window unavailable")?;
                         main.show().map_err(|e| e.to_string())?;
                         main.unminimize().map_err(|e| e.to_string())?;
                         main.set_focus().map_err(|e| e.to_string())?;
                         handle.emit_to("main", "display-focus-agent", serde_json::json!({
                             "agentId": agent_id,
-                            "intent": intent,
                         }))
                             .map_err(|e| e.to_string())
                     })
@@ -776,10 +774,6 @@ pub fn run() {
             ipc::commands::list_available_shells,
             ipc::commands::dispose_session,
             ipc::commands::detach_external_session,
-            ipc::commands::list_ide_sessions,
-            ipc::commands::connect_ide_session,
-            ipc::commands::get_ide_persona,
-            ipc::commands::prepare_ide_persona,
             ipc::commands::handoff_supported,
             ipc::commands::handoff_sessions,
             ipc::commands::adopt_detached_sessions,
@@ -1059,7 +1053,6 @@ mod tests {
             summary_models: Default::default(),
             diary_enabled: false,
             observer_enabled: true,
-            ide_connection_enabled: false,
             typing_sound_enabled: true,
             notify_sound_enabled: true,
             sound_volume: 0.5,

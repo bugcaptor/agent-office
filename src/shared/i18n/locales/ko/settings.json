@@ -13,7 +13,6 @@
     "tabSystem": "시스템",
     "tabControl": "제어"
   },
-  "connections": { "ideTitle": "IDE 세션 연결", "ideHelp": "이 앱이 IDE 세션을 찾아 연결하도록 허용합니다. 끄면 연결한 세션은 해제되며 원본 IDE는 그대로 유지됩니다." },
   "keys": {
     "present": "있음",
     "presentEnv": "있음(환경변수)",

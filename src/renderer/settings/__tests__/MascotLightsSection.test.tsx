@@ -62,7 +62,6 @@ function hydrate(
       },
       diaryEnabled: false,
       observerEnabled: false,
-      ideConnectionEnabled: false,
       typingSoundEnabled: true,
       notifySoundEnabled: true,
       soundVolume: 0.5,

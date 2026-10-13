@@ -87,7 +87,6 @@
             summary_models: Default::default(),
             diary_enabled: false,
             observer_enabled: false,
-            ide_connection_enabled: false,
             typing_sound_enabled: true,
             notify_sound_enabled: true,
             sound_volume: 0.5,
@@ -161,7 +160,6 @@
             summary_models: Default::default(),
             diary_enabled: false,
             observer_enabled: false,
-            ide_connection_enabled: false,
             typing_sound_enabled: true,
             notify_sound_enabled: true,
             sound_volume: 0.5,
@@ -225,7 +223,6 @@
             summary_models: Default::default(),
             diary_enabled: false,
             observer_enabled: true,
-            ide_connection_enabled: false,
             typing_sound_enabled: true,
             notify_sound_enabled: true,
             sound_volume: 0.5,
@@ -407,7 +404,7 @@
             live_usage: Arc::new(crate::usage::LiveUsageState::new()),
             portrait_store: portrait_store.clone(),
             sprite_store: sprite_store.clone(),
-            focus_agent: Arc::new(|_, _| Ok(())),
+            focus_agent: Arc::new(|_| Ok(())),
         });
 
         let bot_runtime = std::sync::Arc::new(crate::bot::BotRuntime::default());

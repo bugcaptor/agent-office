@@ -42,11 +42,9 @@ describe("installDisplayFocusBridge", () => {
     expect(useAppStore.getState().modal).toEqual({ kind: "profile-edit", agentId: "a1" });
   });
 
-  it("opens a Codex IDE connection dialog prefilled from the requested agent", () => {
+  it("treats the removed connectCodex intent as a plain profile request", () => {
     useAppStore.getState().addAgent(agent(), { startSession: false });
     emit({ agentId: "a1", intent: "connectCodex" });
-    expect(useAppStore.getState().modal).toEqual({
-      kind: "ide-session", initialAgentId: "a1", initialCwd: "/work/demo", initialProvider: "codex",
-    });
+    expect(useAppStore.getState().modal).toEqual({ kind: "profile-edit", agentId: "a1" });
   });
 });

@@ -583,10 +583,6 @@ pub mod fake {
             *self.kills.lock().unwrap()
         }
 
-        pub fn fail_kill(&self, fail: bool) {
-            *self.kill_fails.lock().unwrap() = fail;
-        }
-
         /// The `PtySpawnOptions.env` the factory was spawned with (recorded
         /// by `FakePtyFactory::spawn`), for tests that assert on env
         /// plumbing (e.g. `AGENT_OFFICE_SETTINGS`).
