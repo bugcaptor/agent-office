@@ -6,6 +6,35 @@ const initial = useWorkItemStore.getState();
 beforeEach(() => { vi.useFakeTimers(); load.mockReset().mockResolvedValue([]); save.mockReset().mockResolvedValue(undefined); useWorkItemStore.setState(initial, true); });
 afterEach(async () => { await useWorkItemStore.getState().flush(); vi.useRealTimers(); });
 describe("work items", () => {
+  it("파일 가져오기는 항상 새 id로 추가하고 파일 안 선행 작업을 새 id로 다시 잇는다", async () => {
+    const store = useWorkItemStore.getState(); await store.load();
+    const existing = store.add("Existing")!;
+    const added = store.importFile([
+      { sourceId: existing, title: "Copy", body: "", status: "todo", createdAt: 1 },
+      { sourceId: "b", title: "B", body: "", status: "done", dependsOn: [existing, "missing"], createdAt: 2 },
+      { title: "Tail", body: "", status: "todo", dependsOn: ["b"], createdAt: 2 },
+      { sourceId: "c", title: "Cycle", body: "", status: "todo", dependsOn: ["c2"], createdAt: 3 },
+      { sourceId: "c2", title: "Cycle 2", body: "", status: "todo", dependsOn: ["c"], createdAt: 4 },
+    ]);
+    expect(added).toBe(5);
+    const { items } = useWorkItemStore.getState();
+    const by = (title: string) => items.find((i) => i.title === title)!;
+    expect(new Set(items.map((i) => i.id)).size).toBe(6);
+    expect(by("Copy").id).not.toBe(existing);
+    expect(by("Copy")).toMatchObject({ order: 1, sessionIds: [], createdAt: 1 });
+    expect(by("Tail")).toMatchObject({ dependsOn: [by("B").id], order: 2 });
+    // 파일 안 id가 지금 목록과 겹쳐도 파일 안 업무를 가리키고, 없는 id는 버린다.
+    expect(by("B")).toMatchObject({ status: "done", order: 0, dependsOn: [by("Copy").id] });
+    expect([by("Cycle").dependsOn, by("Cycle 2").dependsOn]).toEqual([undefined, [by("Cycle").id]]);
+    expect(by("Existing").dependsOn).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+  it("로드 실패 상태에서는 파일을 가져오지 않는다", async () => {
+    load.mockRejectedValueOnce(new Error("disk"));
+    await useWorkItemStore.getState().load();
+    expect(useWorkItemStore.getState().importFile([{ title: "x", body: "", status: "todo", createdAt: 0 }])).toBe(0);
+  });
   it("로드 실패 시 빈 목록을 저장하지 않고 재시도한다", async () => {
     load.mockRejectedValueOnce(new Error("disk"));
     await useWorkItemStore.getState().load();

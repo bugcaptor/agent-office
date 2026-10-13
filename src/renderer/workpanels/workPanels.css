@@ -78,3 +78,9 @@
 .work-delete-dialog .dialog-actions { display: flex; gap: 8px; margin-top: 12px; }
 .work-panel .pixel-btn.danger, .work-detail-dialog .pixel-btn.danger, .work-delete-dialog .pixel-btn.danger { color: var(--accent-error); }
 .work-panel .pixel-btn:disabled, .work-detail-dialog .pixel-btn:disabled, .work-delete-dialog .pixel-btn:disabled { opacity: .45; cursor: not-allowed; }
+.work-panel-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.work-transfer-section h3 { margin: 0 0 6px; font-size: 13px; }
+.work-transfer-statuses { border: 1px solid var(--border-dark); margin: 0; padding: 4px 8px; display: flex; flex-wrap: wrap; gap: 0 12px; }
+.work-detail-dialog .work-transfer-statuses label { display: inline-flex; align-items: center; gap: 4px; }
+.work-transfer-section p { margin: 6px 0 0; }
+.work-transfer-note { margin: 12px 0 0; }

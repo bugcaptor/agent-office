@@ -125,5 +125,37 @@
   "blockedBy": "Waiting on: {{titles}}",
   "dependents_one": "{{count}} task waiting on this",
   "dependents_other": "{{count}} tasks waiting on this",
-  "newWorkTitle": "New task"
+  "newWorkTitle": "New task",
+  "transfer": {
+    "open": "Export / Import",
+    "title": "Export / import tasks",
+    "fileFilter": "Agent Office tasks",
+    "exportHeading": "Export",
+    "statusesLegend": "Statuses to export",
+    "statusOption": "{{status}} ({{count}})",
+    "exportHint": "Saves a JSON file. You can delete or edit entries in a text editor and import it again.",
+    "export_one": "Export to file ({{count}} task)",
+    "export_other": "Export to file ({{count}} tasks)",
+    "exported_one": "Exported {{count}} task: {{path}}",
+    "exported_other": "Exported {{count}} tasks: {{path}}",
+    "exportFailed": "Could not export tasks.",
+    "importHeading": "Import",
+    "importHint": "Tasks in the file are added as new tasks. Existing tasks are not changed, and sent-session history is not carried over.",
+    "pick": "Choose file…",
+    "importPreview_one": "{{count}} task will be added.",
+    "importPreview_other": "{{count}} tasks will be added.",
+    "importSkipped_one": "{{count}} empty or malformed entry will be skipped.",
+    "importSkipped_other": "{{count}} empty or malformed entries will be skipped.",
+    "importConfirm": "Add",
+    "imported_one": "Added {{count}} task.",
+    "imported_other": "Added {{count}} tasks.",
+    "importFailed": "Could not read the file.",
+    "importBlocked": "Resolve the task load or save error before importing.",
+    "errors": {
+      "invalid": "The file is not valid JSON.",
+      "format": "This is not an Agent Office task file.",
+      "version": "This file was made by a newer version of the app.",
+      "empty": "There are no tasks to import."
+    }
+  }
 }

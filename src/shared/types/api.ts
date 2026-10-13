@@ -276,6 +276,11 @@ export interface AgentOfficeApi {
    * 확장자가 `.json`이면 `json`을, 아니면 `markdown`을 쓴다(둘 다 미리 만들어
    * 넘긴다). 저장한 절대 경로, 취소 시 null. */
   exportDiaryFile(defaultName: string, markdown: string, json: string): Promise<string | null>;
+  /** 업무 목록 내보내기 — 저장 다이얼로그로 UTF-8 JSON을 쓴다. `filterName`은
+   * 다이얼로그 형식 이름. 저장한 절대 경로, 취소 시 null. */
+  exportWorkItemsFile(defaultName: string, filterName: string, content: string): Promise<string | null>;
+  /** 업무 목록 가져오기 — 열기 다이얼로그로 고른 파일 텍스트. 취소 시 null. */
+  importWorkItemsFile(filterName: string): Promise<string | null>;
   /** Returns an unsubscribe function. `bytes` is the raw stream byte count of
    * this batch (§#49); the renderer accumulates it on write to derive snapshot
    * offsets. Restore snapshots deliver `bytes === 0`. */

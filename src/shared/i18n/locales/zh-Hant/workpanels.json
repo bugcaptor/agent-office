@@ -125,5 +125,37 @@
   "blockedBy": "等待前置任務：{{titles}}",
   "dependents_one": "{{count}} 個後續任務在等待",
   "dependents_other": "{{count}} 個後續任務在等待",
-  "newWorkTitle": "新任務"
+  "newWorkTitle": "新任務",
+  "transfer": {
+    "open": "匯出 / 匯入",
+    "title": "匯出 / 匯入任務",
+    "fileFilter": "Agent Office 任務",
+    "exportHeading": "匯出",
+    "statusesLegend": "要匯出的狀態",
+    "statusOption": "{{status}} ({{count}})",
+    "exportHint": "儲存為 JSON 檔案。可以在編輯器中逐項刪除或修改後再次匯入。",
+    "export_one": "匯出到檔案（{{count}} 個）",
+    "export_other": "匯出到檔案（{{count}} 個）",
+    "exported_one": "已匯出 {{count}} 個任務：{{path}}",
+    "exported_other": "已匯出 {{count}} 個任務：{{path}}",
+    "exportFailed": "無法匯出任務。",
+    "importHeading": "匯入",
+    "importHint": "檔案中的任務將作為新任務新增。現有任務不會改變，也不會沿用已傳送工作階段的記錄。",
+    "pick": "選擇檔案…",
+    "importPreview_one": "將新增 {{count}} 個任務。",
+    "importPreview_other": "將新增 {{count}} 個任務。",
+    "importSkipped_one": "將略過 {{count}} 個內容為空或格式不正確的項目。",
+    "importSkipped_other": "將略過 {{count}} 個內容為空或格式不正確的項目。",
+    "importConfirm": "新增",
+    "imported_one": "已新增 {{count}} 個任務。",
+    "imported_other": "已新增 {{count}} 個任務。",
+    "importFailed": "無法讀取檔案。",
+    "importBlocked": "請先解決任務載入或儲存錯誤，再進行匯入。",
+    "errors": {
+      "invalid": "檔案不是有效的 JSON。",
+      "format": "這不是 Agent Office 任務檔案。",
+      "version": "此檔案由較新版本的應用程式建立。",
+      "empty": "沒有可匯入的任務。"
+    }
+  }
 }

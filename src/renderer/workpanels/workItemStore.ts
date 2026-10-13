@@ -4,6 +4,7 @@ import type { WorkItem, WorkStatus } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { hasWorkContent, type WorkItemDraft } from "./workItemDraft";
 import { normalizeDependsOn } from "./workDependencies";
+import type { ImportedWorkItem } from "./workItemFile";
 
 export const WORK_STATUS_ORDER: WorkStatus[] = ["review", "in_progress", "todo", "done"];
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -20,6 +21,8 @@ interface WorkItemState {
   load(): Promise<void>;
   add(draft: string | WorkItemDraft): string | undefined;
   importInbox(entries: InboxImport[]): string[];
+  /** 내보낸 파일 가져오기. 항상 새 id로 추가하고 추가한 수를 돌려준다. */
+  importFile(entries: ImportedWorkItem[]): number;
   /** 수신함 완료 요청. 반영할 수 있는 상태면 true(없는 id·이미 완료는 건너뛴다). */
   completeFromInbox(ids: string[]): boolean;
   edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status" | "dependsOn">>): void;
@@ -83,6 +86,29 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     for (const item of added) item.dependsOn = normalizeDependsOn(item.id, item.dependsOn, all);
     if (added.length) { set({ items: all, dirty: true }); changed(); }
     return accepted;
+  },
+  importFile(entries) {
+    if (!get().loaded || get().error || !entries.length) return 0;
+    // 파일 안 선행 작업은 새 id로 다시 잇는다. 파일 밖 id는 지금 목록에 있으면 그대로 둔다.
+    const ids = new Map<string, string>();
+    for (const entry of entries) if (entry.sourceId && !ids.has(entry.sourceId)) ids.set(entry.sourceId, nanoid());
+    const used = new Set<string>();
+    const orders = new Map(WORK_STATUS_ORDER.map((status) => [status, Math.max(-1, ...get().items.filter((i) => i.status === status).map((i) => i.order)) + 1]));
+    const at = Date.now();
+    // 세션·오류는 원래 카드의 실행 기록이라 복사본에 잇지 않는다.
+    const added: WorkItem[] = entries.map(({ sourceId, ...entry }) => {
+      const mapped = sourceId ? ids.get(sourceId) : undefined;
+      const id = mapped && !used.has(mapped) ? mapped : nanoid();
+      used.add(id);
+      const order = orders.get(entry.status)!;
+      orders.set(entry.status, order + 1);
+      return { ...entry, id, dependsOn: entry.dependsOn?.map((d) => ids.get(d) ?? d), order, sessionIds: [], updatedAt: at };
+    });
+    const all = [...get().items, ...added];
+    for (const item of added) item.dependsOn = normalizeDependsOn(item.id, item.dependsOn, all);
+    set({ items: all, dirty: true });
+    changed();
+    return added.length;
   },
   completeFromInbox(ids) {
     if (!get().loaded || get().error) return false;

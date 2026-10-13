@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { WorkItem } from "@shared/types";
@@ -14,24 +14,8 @@ import { requestWorkSend, decideWorkSend, useWorkSendStore, workSendDisabledReas
 import { sendErrorText } from "./sendErrorText";
 import { AgentFace } from "./AgentFace";
 import { dependentCount, pendingPrerequisites } from "./workDependencies";
-
-/** 상세·편집 팝업. 헤더 ×, Esc, 배경 클릭은 초안을 유지한 채 닫는다. */
-function WorkDialog({ title, onClose, children }: { title: string; onClose(): void; children: ReactNode }) {
-  const { t } = useTranslation("workpanels");
-  const ref = useRef<HTMLElement>(null);
-  // 헤더의 ×가 아니라 첫 입력란에 포커스를 둔다.
-  useEffect(() => { ref.current?.querySelector<HTMLElement>("input, textarea, select")?.focus(); }, []);
-  return createPortal(<div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
-    <section ref={ref} className="pixel-panel work-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="work-detail-title">
-      <header className="work-dialog-header">
-        <h2 id="work-detail-title">{title}</h2>
-        <button type="button" className="pixel-btn work-dialog-close" aria-label={t("collapseWork")} title={t("collapseWork")} onClick={onClose}>×</button>
-      </header>
-      {children}
-    </section>
-  </div>, document.body);
-}
+import { WorkDialog } from "./WorkDialog";
+import { WorkTransferDialog } from "./WorkTransferDialog";
 
 export function WorkItemsPanel() {
   const { t } = useTranslation("workpanels");
@@ -48,6 +32,7 @@ export function WorkItemsPanel() {
   const [edits, setEdits] = useState<Record<string, Partial<WorkItemDraft>>>({});
   const clearEdit = (id: string) => setEdits((current) => { const next = { ...current }; delete next[id]; return next; });
   const [deleting, setDeleting] = useState<WorkItem | null>(null);
+  const [transferring, setTransferring] = useState(false);
   useEffect(() => { if (!loaded && !error) void load(); }, [loaded, error, load]);
   useEffect(() => () => { decideWorkSend(false); void useWorkItemStore.getState().flush(); }, []);
   const cardState = (item: WorkItem) => {
@@ -109,7 +94,10 @@ export function WorkItemsPanel() {
     </WorkDialog>;
   };
   return <><WorkPanelFrame side="left" title={t("workTitle")}>
-    <button className="pixel-btn" disabled={!loaded} aria-expanded={creating} onClick={() => { setDraft((current) => current ?? { ...EMPTY_WORK_DRAFT }); setCreating(!creating); select(null); }}>{t(draft && !creating ? "resumeNewWork" : "newWork")}</button>
+    <div className="work-panel-actions">
+      <button className="pixel-btn" disabled={!loaded} aria-expanded={creating} onClick={() => { setDraft((current) => current ?? { ...EMPTY_WORK_DRAFT }); setCreating(!creating); setTransferring(false); select(null); }}>{t(draft && !creating ? "resumeNewWork" : "newWork")}</button>
+      <button className="pixel-btn" disabled={!loaded} aria-haspopup="dialog" aria-expanded={transferring} onClick={() => { setTransferring(true); setCreating(false); select(null); }}>{t("transfer.open")}</button>
+    </div>
     {error && <div role="alert">{t(error === "load" ? "loadError" : "saveError")} <button className="pixel-btn" onClick={() => void (error === "load" ? load() : useWorkItemStore.getState().flush())}>{t("retry")}</button></div>}
     {!items.length && loaded && <p className="work-muted">{t("emptyWork")}</p>}
     {WORK_STATUS_ORDER.map((status) => <details className="work-group" key={status} open={status !== "done" || items.some((item) => item.status === status && item.id === selectedId)}>
@@ -124,7 +112,7 @@ export function WorkItemsPanel() {
           const rect = e.currentTarget.getBoundingClientRect();
           reorder(e.dataTransfer.getData("application/x-agent-office-work"), item.id, e.clientY > rect.top + rect.height / 2);
         }}>
-        <button className="work-card-heading" draggable onDragStart={(e) => e.dataTransfer.setData("application/x-agent-office-work", item.id)} aria-haspopup="dialog" aria-expanded={selectedId === item.id} onClick={() => { select(item.id); setCreating(false); }}>
+        <button className="work-card-heading" draggable onDragStart={(e) => e.dataTransfer.setData("application/x-agent-office-work", item.id)} aria-haspopup="dialog" aria-expanded={selectedId === item.id} onClick={() => { select(item.id); setCreating(false); setTransferring(false); }}>
           {item.assigneeAgentId && <AgentFace agentId={item.assigneeAgentId} />}
           <span><strong className={!item.title.trim() ? "work-title-derived" : undefined}>{workItemTitle(item)}</strong>{dirty && <small>{t("unsavedChanges")}</small>}<small>{item.assigneeAgentId ? agents[item.assigneeAgentId]?.name ?? t("missingAgent") : t("unassigned")}</small>
             {waitingOn.length > 0 && <small className="work-blocked">{t("blockedBy", { titles: waitingOn.map(workItemTitle).join(", ") })}</small>}
@@ -139,6 +127,7 @@ export function WorkItemsPanel() {
         onSave={() => { if (add(draft)) { setDraft(null); setCreating(false); select(null); void useWorkItemStore.getState().flush(); } }}
         onDiscard={() => { setDraft(null); setCreating(false); }} />
     </WorkDialog>}
+    {transferring && <WorkTransferDialog onClose={() => setTransferring(false)} />}
     {!deleting && !confirmation && detail()}
     {confirmation && createPortal(<div className="modal-backdrop" onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); decideWorkSend(false); } }}>
       <section className="pixel-panel work-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="work-send-title" aria-describedby="work-send-body">

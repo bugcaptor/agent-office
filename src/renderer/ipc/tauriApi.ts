@@ -397,6 +397,14 @@ const localTauriApi: AgentOfficeApi = {
     return await invoke(Commands.exportDiaryFile, { defaultName, markdown, json });
   },
 
+  async exportWorkItemsFile(defaultName, filterName, content) {
+    return await invoke(Commands.exportWorkItemsFile, { defaultName, filterName, content });
+  },
+
+  async importWorkItemsFile(filterName) {
+    return await invoke(Commands.importWorkItemsFile, { filterName });
+  },
+
   appendSessionTurn(record: SessionTurnRecord) {
     void invoke(Commands.appendSessionTurn, { record }); // fire-and-forget
   },

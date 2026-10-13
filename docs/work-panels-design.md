@@ -123,6 +123,45 @@
 
 보내기가 실패하면 상태는 바뀌지 않는다. 사람이 할 일 또는 완료로 바꾼 업무는 자동 상태 전이 대상에서 제외한다.
 
+### 내보내기와 가져오기
+
+목록 위 '새 태스크 만들기' 옆의 '내보내기·가져오기' 버튼이 팝업을 연다. 업무 목록을 불러온 뒤에만 누를 수 있다.
+
+- 내보내기는 상태(검토 대기·진행 중·할 일·완료)를 체크해 고른 업무만 네이티브 저장 대화상자로 고른 위치에 쓴다. 처음에는 모두 체크되어 있고, 고른 업무가 없으면 버튼을 막는다. 기준은 메모리의 저장된 업무 목록이며 팝업에서 편집 중인 미저장 초안은 넣지 않는다. 수신함(`work-inbox/`) 파일은 대상이 아니다.
+- 가져오기는 열기 대화상자로 파일을 고르고, 추가할 수와 건너뛸 수를 보여준 뒤 '추가'를 눌러야 반영한다. 항상 새 id로 추가하고 기존 업무는 바꾸지 않는다. 업무 불러오기·저장 오류가 있으면 막는다.
+- 대화상자 취소는 안내 없이 그대로 둔다. 저장 성공은 수와 경로, 실패·형식 오류는 경고로 팝업 안에 보여준다.
+
+파일은 사람이 편집기에서 항목별로 지우거나 고칠 수 있게 2칸 들여쓴 UTF-8 JSON이다. 기본 이름은 `agent-office-work-items-YYYYMMDD.json`.
+
+```json
+{
+  "format": "agent-office-work-items",
+  "version": 1,
+  "exportedAt": "2026-10-13T00:00:00.000Z",
+  "items": [
+    {
+      "id": "…",
+      "title": "제목",
+      "status": "todo",
+      "assigneeAgentId": "…",
+      "agent": { "cli": "codex", "model": "…", "effort": "high" },
+      "dependsOn": ["…"],
+      "body": ["본문 첫 줄", "둘째 줄"],
+      "order": 0,
+      "sessionIds": [],
+      "lastError": "…",
+      "createdAt": "2026-10-01T00:00:00.000Z",
+      "updatedAt": "2026-10-02T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+- 내보내기는 `WorkItem` 저장 필드 전부를 쓴다. 본문은 줄 배열, 시각은 ISO 문자열이다. 항목은 상태 묶음 순서·묶음 안 순서대로 놓는다. 값이 없는 선택 필드는 생략한다.
+- 가져오기는 손으로 고친 파일을 너그럽게 받는다. 본문은 줄 배열·문자열 모두, 시각은 ISO·밀리초 숫자 모두 받는다. 모르는 상태는 할 일, 모르는 CLI의 `agent`는 버린다. 제목과 본문이 모두 빈 항목이나 객체가 아닌 항목은 건너뛰고 수를 센다. 앱 데이터의 `work-items.json`(배열)도 그대로 받는다. `format`이 다르거나 `version`이 더 크거나 JSON이 아니거나 남는 업무가 없으면 오류로 알린다.
+- 가져온 업무의 제목·본문·상태·담당·에이전트·`createdAt`은 파일 값을 쓴다. `order`는 파일의 배열 순서대로 각 상태 묶음 끝에 다시 매기고 `updatedAt`은 가져온 시각이다. `sessionIds`·`lastError`는 원래 카드의 실행 기록이라 잇지 않는다.
+- `dependsOn`은 파일 안 다른 항목의 `id`를 가리키면 그 항목의 새 id로 다시 잇는다. 파일 밖 id는 현재 목록에 있으면 그대로, 없으면 버린다. 자기 참조·중복·순환은 선행 작업 규칙대로 뺀다.
+
 ## 우측 패널: 세션 로그
 
 한 줄 = 터미널 세션 하나(시작~종료)다. 모든 캐릭터의 세션을 최신순으로 보여주고, 진행 중인 세션은 맨 위에 실시간으로 갱신한다.
@@ -332,7 +371,7 @@ interface SessionSummary {
 | --- | --- |
 | 영속 타입·보내기 계약 | `src/shared/types/workPanels.ts`, `src-tauri/src/types.rs` |
 | 설정·패널 배치 | `src/shared/types/settings.ts`, `src-tauri/src/persistence/settings_store.rs`, `src/renderer/settings/`, `src/renderer/layout/UIChrome.tsx` |
-| 패널 UI·폭·접힘·상세 팝업 | `src/renderer/workpanels/WorkItemsPanel.tsx`(`WorkDialog`), `WorkEditor.tsx`, `workItemDraft.ts`, `SessionHistoryPanel.tsx`, `WorkPanelFrame.tsx`, `panelLayoutStore.ts`, `workPanels.css` |
+| 패널 UI·폭·접힘·상세 팝업 | `src/renderer/workpanels/WorkItemsPanel.tsx`, `WorkDialog.tsx`, `WorkEditor.tsx`, `workItemDraft.ts`, `SessionHistoryPanel.tsx`, `WorkPanelFrame.tsx`, `panelLayoutStore.ts`, `workPanels.css` |
 | 프로필 기본값·업무 오버라이드 | `src/renderer/workpanels/WorkAgentFields.tsx`, `src/renderer/profile/` |
 | 선행 작업 정리·후보·대기 판정 | `src/renderer/workpanels/workDependencies.ts` |
 | 업무·요약 수집과 저장 | `src/renderer/workpanels/workItemStore.ts`, `sessionSummaryStore.ts`, `sessionRows.ts`, `src-tauri/src/persistence/work_panels_store.rs` |
@@ -343,6 +382,7 @@ interface SessionSummary {
 | 모니터링·자동 상태 전이 | `src/renderer/workpanels/workMonitor.ts`, `WorkCardMonitor.tsx`. activity·notification·최종 usage 이벤트 구독 |
 | 종료 저장 | `src/renderer/workpanels/lifecycle.ts` |
 | 수신함 파서·scan·ack | `src-tauri/src/persistence/work_inbox.rs`, `src-tauri/src/ipc/commands/work_panels.rs` |
+| 내보내기·가져오기 팝업·파일 형식 | `src/renderer/workpanels/WorkTransferDialog.tsx`, `workItemFile.ts`, `workItemStore.ts`(`importFile`), `src-tauri/src/ipc/commands/work_panels.rs`, `misc.rs`(`save_text_with_dialog`·`open_text_with_dialog`) |
 | 수신 루프·담당 판정·가져오기 | `src/renderer/workpanels/workInbox.ts`, `workItemStore.ts`(`importInbox`), `lifecycle.ts`(`installWorkInboxLifecycle`) |
 | `office-task` 서브커맨드·shim | `src-tauri/src/work_inbox_cli.rs`, `src-tauri/src/lib.rs`(`maybe_run_cli`의 `task` 분기) |
 | 세션 env·안내문·권한·Codex 쓰기 경로 | `src-tauri/src/session/manager.rs`(`prepare_session_plan`), `src-tauri/src/office_instructions.rs`, `src-tauri/src/lib.rs`(권한 조각), `src-tauri/src/session/kilo_plugin.rs` |
@@ -357,6 +397,8 @@ IPC 계약은 `src/shared/ipc.ts`와 `src/renderer/ipc/tauriApi.ts`의 로컬 �
 | `inspect_work_send_target` | 세션 id·사람 입력 revision·재시작 필요·미제출 입력을 읽기 전용으로 점검 |
 | `send_work_item` | 고정된 세션·revision에 CLI와 프롬프트 제출. 성공하면 `sessionId`·`submittedAt` 반환 |
 | `scan_work_inbox` | 수신함을 이름순 최대 50개 읽어 `InboxEntry[]`(`fileName`·`key`·`title`·`body`·`assignee?`) 반환. 거부 파일 이동과 오래된 임시 파일 정리를 함께 한다 |
+| `export_work_items_file` | `defaultName`·`filterName`(현재 언어의 형식 이름)·`content`를 받아 저장 대화상자로 고른 경로에 쓴다. 저장한 경로, 취소 시 `null` |
+| `import_work_items_file` | 열기 대화상자로 고른 JSON 파일의 텍스트, 취소 시 `null`. 파싱·검증은 렌더러가 한다 |
 | `ack_work_inbox` | `fileNames`를 지운다. 경로 구분자·`..`·`.`으로 시작·`.md`가 아닌 이름은 무시하고, 이미 없으면 성공으로 본다 |
 
 기존 `dispose_session`의 선택적 `expectedSessionId`·`expectedHumanInputRevision`으로 확인했던 세션만 재시작한다. 업무 실행은 터미널 자동화의 결과 파일 감시와 CLI 종료 흐름을 사용하지 않는다.
@@ -377,12 +419,14 @@ IPC 계약은 `src/shared/ipc.ts`와 `src/renderer/ipc/tauriApi.ts`의 로컬 �
 - 에이전트 완료 처리(2026-10-13): 수신함 `done` 파싱, `office-task --done`(없는 id 거절·이미 완료 건너뜀·수신함 미처리 업무 허용), 같은 주기 추가 후 완료 적용·저장 실패 시 재수신 회귀를 추가했다. `npx tsc --noEmit`, 프런트 전체 2,945개, 네이티브 전체 1,662개 통과.
 - 선행 작업·상세 팝업(2026-10-13): 선행 작업 정리(없는 id·자기 자신·중복·순환)·대기 판정·후보, 저장·삭제·수신함 연결, 보내기 차단, 팝업 편집·선행 작업 선택 UI 회귀와 `office-task --after`·`--list`·수신함 `id`/`after` 파싱 단위 테스트를 추가했다. `npx tsc --noEmit`, 프런트 전체 2,944개, 네이티브 전체 1,660개, `npm run build` 통과. Chrome의 독립 로컬 프리뷰(합성 데이터·IPC)에서 상세 팝업 배치, 선행 작업 표시·순환 후보 제외, 막힌 보내기를 확인했다.
 - Windows 보내기(2026-10-13): Windows 11에서 셸 종류 판정·PowerShell 인용·경로 접두사 정리 단위 테스트, PowerShell 5.1·7과 Git Bash가 생성된 기동 스크립트를 실행해 ACK·반환 기록(BOM 없음, 종료 코드, 미존재 명령은 1)을 남기는지, 실제 PowerShell로 실행하는 기존 보내기 회귀(`work_send` 전체)를 확인했다. `cargo test --manifest-path src-tauri/Cargo.toml work_send_multiline_in_real_conpty_with_cli_double -- --ignored`: 실제 ConPTY에서 세 셸 모두 빈 셸 판정 → 작은따옴표 포함 모델 인자 기동 → ACK → 10초 대기 → 한글·이모지·탭·빈 줄·코드 블록 본문이 bracketed paste 한 번으로 그대로 도착함을 node 대역(raw 모드, bracketed paste 켬)으로 확인했다. 설치된 CLI나 LLM 계정은 사용하지 않는다.
+- 내보내기·가져오기(2026-10-13): 상태 선택 직렬화·왕복 보존·손으로 고친 파일 허용·형식 오류, 새 id 추가와 선행 작업 재연결·순환 제거·로드 실패 차단, 팝업의 상태 선택·취소·실패·성공 안내와 확인 후 추가 회귀를 추가했다. `npx tsc --noEmit`, 프런트 전체 2,954개, 네이티브 전체 1,662개 통과. 네이티브 대화상자는 테스트에서 대역으로 바꿨다.
 
 남은 실기 인수:
 
 - [ ] 설치 Tauri 앱에서 설정·프로필 기본 에이전트·업무 저장과 재실행 후 복원 확인.
 - [ ] 설치 Tauri 앱의 Windows PowerShell·pwsh·Git Bash 세션에서 인증된 Claude·Codex로 보내기(새 세션·기존 빈 셸·CLI 실행 중 재시작 확인) 확인. 관찰 래퍼(`-EncodedCommand`)와 사용자 프로필이 있는 새 PowerShell이 10초 ACK 안에 기동 문장을 읽는지 확인.
 - [ ] 인증된 실제 Claude·Codex·agy·Kilo·Pi에서 CLI 기동, 첫 프롬프트 제출, 질문·턴 종료·후속 프롬프트의 표시와 상태 전이 확인.
+- [ ] 설치 앱(macOS·Windows)에서 내보내기 저장 대화상자의 형식 이름·기본 파일명·취소, 내보낸 파일을 편집기로 고친 뒤 가져오기 확인.
 - [ ] 설치 앱에서 외부 셸로 수신함에 파일을 넣어 업무 카드가 생기고 파일이 지워지는지, 패널을 끈 상태에서 쌓인 파일이 켤 때 들어오는지 확인.
 - [ ] 인증된 Claude 세션에서 "이 작업을 단계별 태스크로 나눠 줘"에 `--after`로 이어진 태스크가 생기고, "그 태스크 완료해 줘"에 `--done`이 실행돼 후속 태스크의 대기가 풀리는지, 지시 없이 스스로 완료하지 않는지 확인.
 - [ ] 인증된 Claude 세션에서 "다음 할 일로 남겨 줘"에 안내문대로 `office-task`가 권한 확인 없이 실행되고 본인 캐릭터에게 배정되는지, persona가 있는 캐릭터에서 말투가 유지되는지 확인.

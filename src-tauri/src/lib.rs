@@ -1013,6 +1013,8 @@ pub fn run() {
             ipc::commands::load_work_items,
             ipc::commands::scan_work_inbox,
             ipc::commands::ack_work_inbox,
+            ipc::commands::export_work_items_file,
+            ipc::commands::import_work_items_file,
             ipc::commands::save_work_items,
             ipc::commands::load_session_summaries,
             ipc::commands::append_session_summaries,

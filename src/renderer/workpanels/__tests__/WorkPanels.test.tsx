@@ -8,6 +8,7 @@ const { api } = vi.hoisted(() => ({ api: {
   inspectWorkSendTarget: vi.fn().mockResolvedValue({ sessionId: "s", humanInputRevision: 3, restartRequired: true, hasUncommitted: true }),
   sendWorkItem: vi.fn().mockResolvedValue({ sessionId: "s", submittedAt: 100 }),
   setAppSettings: vi.fn().mockResolvedValue(undefined),
+  exportWorkItemsFile: vi.fn(), importWorkItemsFile: vi.fn(),
 } }));
 vi.mock("../../ipc/tauriApi", () => ({ tauriApi: api }));
 vi.mock("../../terminal/TerminalRegistry", () => ({ terminalRegistry: { destroy: vi.fn() } }));
@@ -254,5 +255,44 @@ it("완료로 표시는 상태만 즉시 저장하고 나머지 초안은 남긴
   expect((screen.getByLabelText("상태") as HTMLSelectElement).value).toBe("done");
   expect(screen.queryByRole("button", { name: "완료로 표시" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("내보내기·가져오기 팝업은 고른 상태만 내보내고 취소·실패를 알리며 가져올 업무를 확인 후 새로 추가한다", async () => {
+  useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true } });
+  useWorkItemStore.setState({ loaded: true });
+  const store = useWorkItemStore.getState();
+  store.add("Open task"); const done = store.add("Closed task")!; store.edit(done, { status: "done" }); store.select(null);
+  render(<UIChrome />);
+  fireEvent.click(screen.getByRole("button", { name: "내보내기·가져오기" }));
+  const dialog = screen.getByRole("dialog");
+  fireEvent.click(within(dialog).getByLabelText("완료 (1)"));
+  api.exportWorkItemsFile.mockResolvedValueOnce(null);
+  fireEvent.click(within(dialog).getByRole("button", { name: "파일로 내보내기 (1개)" }));
+  await waitFor(() => expect(api.exportWorkItemsFile).toHaveBeenCalledTimes(1));
+  const [name, filter, json] = api.exportWorkItemsFile.mock.calls[0];
+  expect(name).toMatch(/^agent-office-work-items-\d{8}\.json$/);
+  expect(filter).toBe("Agent Office 업무");
+  expect(JSON.parse(json).items.map((i: { title: string }) => i.title)).toEqual(["Open task"]);
+  expect(within(dialog).queryByRole("status")).toBeNull();
+  api.exportWorkItemsFile.mockRejectedValueOnce(new Error("disk"));
+  fireEvent.click(within(dialog).getByRole("button", { name: "파일로 내보내기 (1개)" }));
+  expect((await within(dialog).findByRole("alert")).textContent).toBe("업무를 내보내지 못했습니다.");
+  api.exportWorkItemsFile.mockResolvedValueOnce("/tmp/tasks.json");
+  fireEvent.click(within(dialog).getByRole("button", { name: "파일로 내보내기 (1개)" }));
+  expect((await within(dialog).findByRole("status")).textContent).toBe("업무 1개를 내보냈습니다: /tmp/tasks.json");
+
+  api.importWorkItemsFile.mockResolvedValueOnce("not json");
+  fireEvent.click(within(dialog).getByRole("button", { name: "파일 고르기…" }));
+  expect((await within(dialog).findByRole("alert")).textContent).toBe("JSON 형식이 올바르지 않습니다.");
+  api.importWorkItemsFile.mockResolvedValueOnce(json.replace('"Open task"', '"Edited task"').replace('"items": [', '"items": [{"title":""},'));
+  fireEvent.click(within(dialog).getByRole("button", { name: "파일 고르기…" }));
+  await within(dialog).findByText("업무 1개를 새로 추가합니다. 내용이 없거나 형식이 맞지 않는 항목 1개는 건너뜁니다.");
+  expect(useWorkItemStore.getState().items).toHaveLength(2);
+  fireEvent.click(within(dialog).getByRole("button", { name: "추가" }));
+  expect(within(dialog).getByRole("status").textContent).toBe("업무 1개를 추가했습니다.");
+  expect(useWorkItemStore.getState().items.map((i) => i.title)).toEqual(["Open task", "Closed task", "Edited task"]);
+  expect(screen.getByText("Edited task", { selector: "strong" })).toBeTruthy();
+  fireEvent.keyDown(dialog, { key: "Escape" });
   expect(screen.queryByRole("dialog")).toBeNull();
 });

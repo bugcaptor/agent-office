@@ -125,5 +125,37 @@
   "blockedBy": "等待前置任务：{{titles}}",
   "dependents_one": "{{count}} 个后续任务在等待",
   "dependents_other": "{{count}} 个后续任务在等待",
-  "newWorkTitle": "新任务"
+  "newWorkTitle": "新任务",
+  "transfer": {
+    "open": "导出 / 导入",
+    "title": "导出 / 导入任务",
+    "fileFilter": "Agent Office 任务",
+    "exportHeading": "导出",
+    "statusesLegend": "要导出的状态",
+    "statusOption": "{{status}} ({{count}})",
+    "exportHint": "保存为 JSON 文件。可以在编辑器中逐项删除或修改后再次导入。",
+    "export_one": "导出到文件（{{count}} 个）",
+    "export_other": "导出到文件（{{count}} 个）",
+    "exported_one": "已导出 {{count}} 个任务：{{path}}",
+    "exported_other": "已导出 {{count}} 个任务：{{path}}",
+    "exportFailed": "无法导出任务。",
+    "importHeading": "导入",
+    "importHint": "文件中的任务将作为新任务添加。现有任务不会改变，也不会沿用已发送会话的记录。",
+    "pick": "选择文件…",
+    "importPreview_one": "将新增 {{count}} 个任务。",
+    "importPreview_other": "将新增 {{count}} 个任务。",
+    "importSkipped_one": "将跳过 {{count}} 个内容为空或格式不正确的条目。",
+    "importSkipped_other": "将跳过 {{count}} 个内容为空或格式不正确的条目。",
+    "importConfirm": "添加",
+    "imported_one": "已添加 {{count}} 个任务。",
+    "imported_other": "已添加 {{count}} 个任务。",
+    "importFailed": "无法读取文件。",
+    "importBlocked": "请先解决任务加载或保存错误，再进行导入。",
+    "errors": {
+      "invalid": "文件不是有效的 JSON。",
+      "format": "这不是 Agent Office 任务文件。",
+      "version": "此文件由更新版本的应用创建。",
+      "empty": "没有可导入的任务。"
+    }
+  }
 }

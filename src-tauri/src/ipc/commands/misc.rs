@@ -288,12 +288,22 @@ pub async fn pick_directory(
 
 /// 캐릭터 번들(이슈 #77) 내보내기: 네이티브 저장 다이얼로그를 띄워 사용자가 고른
 /// 경로에 UTF-8 텍스트(자기완결형 JSON)를 쓴다. 저장한 절대 경로, 취소 시 None.
-/// `default_name`은 다이얼로그 초기 파일명. 콜백→oneshot 브리지는 `pick_directory`와
-/// 동일한 이유(블로킹 API가 런타임 스레드를 점유)로 쓴다.
+/// `default_name`은 다이얼로그 초기 파일명.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn export_character_file(
     app: tauri::AppHandle,
     default_name: String,
+    content: String,
+) -> Result<Option<String>, String> {
+    save_text_with_dialog(&app, default_name, "Agent Office 캐릭터", content).await
+}
+
+/// 저장 다이얼로그(JSON 필터)로 고른 경로에 UTF-8 텍스트를 쓴다. 저장한 절대 경로,
+/// 취소 시 None. 콜백 → oneshot 브리지는 `pick_directory`와 같은 이유로 쓴다.
+pub(crate) async fn save_text_with_dialog(
+    app: &tauri::AppHandle,
+    default_name: String,
+    filter_name: &str,
     content: String,
 ) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
@@ -302,7 +312,7 @@ pub async fn export_character_file(
     app.dialog()
         .file()
         .set_file_name(default_name)
-        .add_filter("Agent Office 캐릭터", &["json"])
+        .add_filter(filter_name, &["json"])
         .save_file(move |path| {
             let _ = tx.send(path);
         });
@@ -319,16 +329,17 @@ pub async fn export_character_file(
     }
 }
 
-/// 캐릭터 번들(이슈 #77) 가져오기: 네이티브 열기 다이얼로그로 파일 하나를 고르게
-/// 하고 UTF-8 텍스트로 읽어 그대로 돌려준다(파싱/검증은 프런트가 수행). 취소 시 None.
-#[tauri::command(rename_all = "camelCase")]
-pub async fn import_character_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+/// 열기 다이얼로그(JSON 필터)로 고른 파일 하나를 UTF-8 텍스트로 읽는다. 취소 시 None.
+pub(crate) async fn open_text_with_dialog(
+    app: &tauri::AppHandle,
+    filter_name: &str,
+) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
 
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
         .file()
-        .add_filter("Agent Office 캐릭터", &["json"])
+        .add_filter(filter_name, &["json"])
         .pick_file(move |path| {
             let _ = tx.send(path);
         });
@@ -339,10 +350,16 @@ pub async fn import_character_file(app: tauri::AppHandle) -> Result<Option<Strin
         None => Ok(None),
         Some(fp) => {
             let path = fp.into_path().map_err(|e| e.to_string())?;
-            let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-            Ok(Some(text))
+            std::fs::read_to_string(&path).map(Some).map_err(|e| e.to_string())
         }
     }
+}
+
+/// 캐릭터 번들(이슈 #77) 가져오기: 네이티브 열기 다이얼로그로 파일 하나를 고르게
+/// 하고 UTF-8 텍스트로 읽어 그대로 돌려준다(파싱/검증은 프런트가 수행). 취소 시 None.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn import_character_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    open_text_with_dialog(&app, "Agent Office 캐릭터").await
 }
 
 /// 저장 다이얼로그에서 고른 경로의 확장자로 쓸 본문을 고른다(이슈 #65).

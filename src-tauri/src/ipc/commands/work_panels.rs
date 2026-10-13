@@ -68,3 +68,23 @@ pub fn scan_work_inbox(app_state: State<'_, AppState>) -> Result<Vec<crate::pers
 pub fn ack_work_inbox(file_names: Vec<String>, app_state: State<'_, AppState>) -> Result<(), String> {
     crate::persistence::work_inbox::ack(&app_state.automation_store.app_data_dir().join("work-inbox"), &file_names)
 }
+
+/// 업무 목록 내보내기. 직렬화는 렌더러가 하고, 여기서는 고른 위치에 쓰기만 한다.
+/// `filter_name`은 다이얼로그 형식 이름(현재 언어). 저장한 경로, 취소 시 None.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn export_work_items_file(
+    app: tauri::AppHandle,
+    default_name: String,
+    filter_name: String,
+    content: String,
+) -> Result<Option<String>, String> {
+    super::save_text_with_dialog(&app, default_name, &filter_name, content).await
+}
+/// 업무 목록 가져오기. 고른 파일의 텍스트만 돌려주고 파싱·검증은 렌더러가 한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn import_work_items_file(
+    app: tauri::AppHandle,
+    filter_name: String,
+) -> Result<Option<String>, String> {
+    super::open_text_with_dialog(&app, &filter_name).await
+}

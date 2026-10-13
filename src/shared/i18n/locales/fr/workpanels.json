@@ -125,5 +125,37 @@
   "blockedBy": "En attente de : {{titles}}",
   "dependents_one": "{{count}} tâche attend celle-ci",
   "dependents_other": "{{count}} tâches attendent celle-ci",
-  "newWorkTitle": "Nouvelle tâche"
+  "newWorkTitle": "Nouvelle tâche",
+  "transfer": {
+    "open": "Exporter / Importer",
+    "title": "Exporter / importer les tâches",
+    "fileFilter": "Tâches Agent Office",
+    "exportHeading": "Exporter",
+    "statusesLegend": "États à exporter",
+    "statusOption": "{{status}} ({{count}})",
+    "exportHint": "Enregistre un fichier JSON. Vous pouvez supprimer ou modifier des entrées dans un éditeur puis le réimporter.",
+    "export_one": "Exporter vers un fichier ({{count}} tâche)",
+    "export_other": "Exporter vers un fichier ({{count}} tâches)",
+    "exported_one": "{{count}} tâche exportée : {{path}}",
+    "exported_other": "{{count}} tâches exportées : {{path}}",
+    "exportFailed": "Impossible d’exporter les tâches.",
+    "importHeading": "Importer",
+    "importHint": "Les tâches du fichier sont ajoutées comme nouvelles tâches. Les tâches existantes ne changent pas et l’historique des sessions envoyées n’est pas repris.",
+    "pick": "Choisir un fichier…",
+    "importPreview_one": "{{count}} tâche sera ajoutée.",
+    "importPreview_other": "{{count}} tâches seront ajoutées.",
+    "importSkipped_one": "{{count}} entrée vide ou mal formée sera ignorée.",
+    "importSkipped_other": "{{count}} entrées vides ou mal formées seront ignorées.",
+    "importConfirm": "Ajouter",
+    "imported_one": "{{count}} tâche ajoutée.",
+    "imported_other": "{{count}} tâches ajoutées.",
+    "importFailed": "Impossible de lire le fichier.",
+    "importBlocked": "Résolvez l’erreur de chargement ou d’enregistrement des tâches avant d’importer.",
+    "errors": {
+      "invalid": "Le fichier n’est pas un JSON valide.",
+      "format": "Ce n’est pas un fichier de tâches Agent Office.",
+      "version": "Ce fichier a été créé par une version plus récente de l’application.",
+      "empty": "Aucune tâche à importer."
+    }
+  }
 }

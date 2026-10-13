@@ -125,5 +125,37 @@
   "blockedBy": "先行タスク待ち: {{titles}}",
   "dependents_one": "後続タスク {{count}} 件が待機中",
   "dependents_other": "後続タスク {{count}} 件が待機中",
-  "newWorkTitle": "新しいタスク"
+  "newWorkTitle": "新しいタスク",
+  "transfer": {
+    "open": "エクスポート・インポート",
+    "title": "タスクのエクスポート・インポート",
+    "fileFilter": "Agent Office タスク",
+    "exportHeading": "エクスポート",
+    "statusesLegend": "エクスポートする状態",
+    "statusOption": "{{status}} ({{count}})",
+    "exportHint": "JSON ファイルとして保存します。エディタで項目ごとに削除・編集してから再びインポートできます。",
+    "export_one": "ファイルにエクスポート ({{count}} 件)",
+    "export_other": "ファイルにエクスポート ({{count}} 件)",
+    "exported_one": "タスク {{count}} 件をエクスポートしました: {{path}}",
+    "exported_other": "タスク {{count}} 件をエクスポートしました: {{path}}",
+    "exportFailed": "タスクをエクスポートできませんでした。",
+    "importHeading": "インポート",
+    "importHint": "ファイルのタスクを新しいタスクとして追加します。既存のタスクは変わらず、送信したセッションの履歴は引き継ぎません。",
+    "pick": "ファイルを選択…",
+    "importPreview_one": "タスク {{count}} 件を新しく追加します。",
+    "importPreview_other": "タスク {{count}} 件を新しく追加します。",
+    "importSkipped_one": "内容が空か形式が正しくない項目 {{count}} 件はスキップします。",
+    "importSkipped_other": "内容が空か形式が正しくない項目 {{count}} 件はスキップします。",
+    "importConfirm": "追加",
+    "imported_one": "タスク {{count}} 件を追加しました。",
+    "imported_other": "タスク {{count}} 件を追加しました。",
+    "importFailed": "ファイルを読み込めませんでした。",
+    "importBlocked": "タスクの読み込み・保存エラーを解決してからインポートしてください。",
+    "errors": {
+      "invalid": "JSON の形式が正しくありません。",
+      "format": "Agent Office のタスクファイルではありません。",
+      "version": "このアプリより新しいバージョンで作られたファイルです。",
+      "empty": "インポートするタスクがありません。"
+    }
+  }
 }
