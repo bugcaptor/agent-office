@@ -69,7 +69,7 @@
     "colRank": "#",
     "colName": "Name",
     "colWorked": "Worked",
-    "colWorkedNoBot": "Worked (excl. bot)",
+    "colWorkedNoBot": "Worked (excl. automated input)",
     "colTurns": "Turns",
     "colActiveDays": "Days",
     "speechTitle": "Acceptance speech",

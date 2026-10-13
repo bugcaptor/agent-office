@@ -94,18 +94,6 @@
     "shellAuto": "Auto (par défaut)",
     "shellNoHooks": "{{label}} (sans suivi du temps)"
   },
-  "bot": {
-    "section": "Paramètres du mode bot",
-    "sectionHint": "Clic droit sur l'onglet de terminal → « Démarrer le mode bot » : ce personnage réagit alors aux commandes slash publiées sur les tickets Gitea de son dépôt et les traite automatiquement. Les réglages ci-dessous sont conservés pour le bot.",
-    "slug": "Alias slash du bot",
-    "slugPlaceholder": "ex. nova (facultatif ; dérivé du nom si vide)",
-    "slugHint": "Appelez ce personnage depuis un ticket avec <code>/alias</code>. Laissez vide pour le dériver du nom (espaces retirés, en minuscules).",
-    "whitelist": "Liste blanche du bot",
-    "whitelistPlaceholder": "Comptes Gitea autorisés en plus, séparés par des virgules (facultatif)",
-    "whitelistHint": "Comptes autorisés à déclencher des commandes. Le compte tea connecté est toujours inclus.",
-    "poll": "Intervalle d'interrogation du bot (s)",
-    "pollPlaceholder": "60 par défaut, minimum 30"
-  },
   "voice": {
     "label": "Voix (TTS)",
     "auto": "Auto (attribuée par espèce)",

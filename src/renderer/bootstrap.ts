@@ -89,31 +89,7 @@ async function adoptDetachedSessions(): Promise<void> {
 }
 
 /**
- * 봇 모드(이슈 #57) 부팅 시드. `botMode`는 비영속 런타임 상태라 앱을 재시작하면
- * 비어 있는데, AgentTabStrip의 5초 상태 폴링은 "켜진 봇이 하나라도 있을 때"만
- * 돌기 때문에 스스로는 절대 되살아나지 못한다 — 백엔드에 봇 태스크가 멀쩡히
- * 살아 있어도 렌더러는 영영 모르고, 그 탭의 입력 잠금(TerminalRegistry의
- * isBotDriven)도 풀린 채로 남는다. 부팅에서 딱 한 번 `bot_status`를 물어
- * 스토어에 심어주면 hasBots>0이 되어 기존 폴링이 스스로 재무장한다.
- *
- * 실패해도 부팅은 계속(loadState/adoptDetachedSessions와 동일한 폴백 패턴) —
- * 최악의 경우 봇 배지·입력 잠금이 안 뜰 뿐이다. 타이머를 걸지 않는 1회성
- * await라 teardown 대상이 없다.
- */
-async function seedBotMode(): Promise<void> {
-  try {
-    const status = await tauriApi.botStatus();
-    useAppStore.getState().seedBotStatus(status);
-  } catch (err) {
-    console.warn(
-      "bootstrap: bot status query failed, continuing without bot mode",
-      err,
-    );
-  }
-}
-
-/**
- * 자동화 점검(kbm) 부팅 시드. `seedBotMode`와 같은 이유 — `automation`은
+ * 자동화 점검(kbm) 부팅 시드. `automation`은
  * 비영속 런타임 상태라 앱을 재시작하면 비어 있는데, AgentTabStrip의 1초
  * 상태 폴링은 "돌고 있는(또는 방금 끝난) 자동화가 하나라도 있을 때"만
  * 돌기 때문에 스스로는 절대 되살아나지 못한다.
@@ -140,7 +116,7 @@ export async function seedAutomationMode(): Promise<void> {
 /**
  * 이 달의 우수사원(docs/employee-of-the-month-design.md §3) 부팅 시 자동 확정:
  * 시상 기록을 읽고, 완료됐지만 아직 레코드가 없는 달을 소급 확정한다(최대
- * 12개월). `adoptDetachedSessions`/`seedBotMode`와 달리 **await하지 않는다** —
+ * 12개월). `adoptDetachedSessions`와 달리 **await하지 않는다** —
  * 최대 12번의 순차 IPC 왕복이 필요해 부팅 시퀀스 전체(요약기·git 브랜치 워처·
  * 일기·quitGuard 등 이후 단계)를 지연시킬 수 있고, 화면에 당장 필요한 데이터도
  * 아니다(다이얼로그를 열 때 한 번 더 보정되므로 이 호출이 끝나기 전에 사용자가
@@ -246,7 +222,6 @@ export async function bootApp(): Promise<() => void> {
   await adoptDetachedSessions();
   // 백엔드에 살아남은 봇 태스크를 심어 5초 폴링을 재무장시킨다(입양 직후 —
   // 대상 탭이 스토어에 이미 있어야 배지/입력 잠금이 곧바로 맞는다).
-  await seedBotMode();
   // 자동화 점검(kbm)도 같은 이유로 부팅 시드가 필요하다 — 비영속 상태라
   // 재시작하면 렌더러는 백엔드에 살아 있는 자동화 태스크를 모른다.
   await seedAutomationMode();

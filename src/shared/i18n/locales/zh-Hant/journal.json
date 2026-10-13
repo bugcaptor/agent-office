@@ -69,7 +69,7 @@
     "colRank": "#",
     "colName": "名稱",
     "colWorked": "工作時間",
-    "colWorkedNoBot": "工作時間（不含機器人）",
+    "colWorkedNoBot": "工作時間（不含自動輸入）",
     "colTurns": "回合",
     "colActiveDays": "天數",
     "speechTitle": "得獎感言",

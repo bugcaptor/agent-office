@@ -23,7 +23,6 @@ const resumeAgentSession = vi.fn().mockResolvedValue(undefined);
 const terminateAgentSession = vi.fn().mockResolvedValue(undefined);
 const clockOutAgent = vi.fn().mockResolvedValue(undefined);
 const clockOutAll = vi.fn().mockResolvedValue(undefined);
-const startBot = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../deleteAgent", () => ({
   deleteAgent: (...args: unknown[]) => deleteAgent(...args),
@@ -47,7 +46,6 @@ const {
   ConfirmRestartDialog,
   ConfirmResumeDialog,
   ConfirmTerminateDialog,
-  ConfirmBotStartDialog,
   ConfirmClockOutDialog,
 } = await import("../confirmDialogs");
 
@@ -70,13 +68,10 @@ const allActions = [
   terminateAgentSession,
   clockOutAgent,
   clockOutAll,
-  startBot,
 ];
 
 beforeEach(() => {
   useAppStore.setState(initialState, true);
-  // 봇 시작만 오케스트레이터가 아니라 스토어 액션 — 같은 방식으로 스파이한다.
-  useAppStore.setState({ startBot: (agentId: string) => startBot(agentId) });
   allActions.forEach((fn) => fn.mockClear());
 });
 
@@ -156,19 +151,6 @@ const specs: Spec[] = [
     args: ["a1"],
     warning: /실행 중인 세션이 종료됩니다/,
     alwaysWarns: false,
-    showsName: true,
-  },
-  {
-    label: "ConfirmBotStartDialog",
-    Comp: ConfirmBotStartDialog,
-    slug: "bot-start",
-    modal: { kind: "confirm-bot-start", agentId: "a1" },
-    otherModal: { kind: "confirm-terminate", agentId: "a1" },
-    confirmLabel: "그래도 켜기",
-    action: startBot,
-    args: ["a1"],
-    warning: /맨 셸에서 봇을 켜면/,
-    alwaysWarns: true,
     showsName: true,
   },
   {
@@ -416,19 +398,6 @@ describe("ConfirmTerminateDialog", () => {
     render(<ConfirmTerminateDialog />);
 
     expect(screen.getByText(/탕비실에서 대기/)).toBeTruthy();
-  });
-});
-
-describe("ConfirmBotStartDialog", () => {
-  it("맨 셸 경고와 함께 '그래도 켤까요?'를 묻는다", () => {
-    const s = useAppStore.getState();
-    s.addAgent(mkProfile("a1", "코난"));
-    s.openModal({ kind: "confirm-bot-start", agentId: "a1" });
-
-    render(<ConfirmBotStartDialog />);
-
-    expect(screen.getByText(/실행 중인지 확인할 수 없습니다/)).toBeTruthy();
-    expect(screen.getByText("그래도 봇 모드를 켤까요?")).toBeTruthy();
   });
 });
 

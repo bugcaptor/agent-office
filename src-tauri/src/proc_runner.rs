@@ -1,7 +1,7 @@
 // src-tauri/src/proc_runner.rs
 //
 // 짧게 살다 죽는 서브프로세스 1회 실행기(공용). workdir/git_runner.rs(git),
-// bot/gitea.rs(git, slug 감지), file_index/es_runner.rs(es.exe)가 각자 복제해
+// 예전 bot/gitea.rs(봇 모드와 함께 제거), file_index/es_runner.rs(es.exe)가 각자 복제해
 // 갖고 있던 동일 골격 -- spawn -> stdout을 별도 스레드로 읽어 파이프 교착 방지
 // -> `try_wait` 폴 루프 + 데드라인 초과 시 kill -> 리더 스레드 회수 -- 을 한
 // 곳으로 모았다.

@@ -69,7 +69,7 @@
     "colRank": "#",
     "colName": "名字",
     "colWorked": "工作时间",
-    "colWorkedNoBot": "工作时间（不含机器人）",
+    "colWorkedNoBot": "工作时间（不含自动输入）",
     "colTurns": "轮次",
     "colActiveDays": "天数",
     "speechTitle": "获奖感言",

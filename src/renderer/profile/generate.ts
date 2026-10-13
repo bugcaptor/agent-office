@@ -7,7 +7,7 @@ import { nanoid } from "nanoid";
 import { t } from "@renderer/i18n";
 import { currentWordlists } from "@renderer/i18n/wordlists";
 import type { AgentProfile } from "../store/types";
-import type { BotConfig, ColorOverrides, WorkAgent } from "@shared/types";
+import type { ColorOverrides, WorkAgent } from "@shared/types";
 import { pickArchetype } from "../office/gen/archetypes";
 
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -38,20 +38,10 @@ export interface DraftProfile {
   keyboardSound?: string;
   /** 대사 TTS 보이스 id(선택). 빈 문자열 = 종족 기반 자동 캐스팅. */
   voiceId?: string;
-  /** 봇 슬래시 slug 별칭(이슈 #57). 빈 문자열 = 이름에서 자동 파생. */
-  botSlug?: string;
-  /** 봇 화이트리스트(추가 허용 Gitea 계정). 콤마/줄바꿈 구분 입력. tea 로그인
-   * 계정 본인은 항상 암묵 포함. */
-  botWhitelist?: string;
-  /** 봇 폴링 주기(초) 입력. 빈 문자열 = 기본 60. 하한 30. */
-  botPollIntervalSec?: string;
   /** 동료 대화 수신 허용(docs/agent-talk-design.md). 기본 true — false일 때만
    * 프로필에 `talkReceive: false`로 남고, 그러면 아무도 이 캐릭터에게 말을
    * 걸 수 없다. */
   talkReceive?: boolean;
-  /** 봇 turn-taking 유휴 임계(ms). UI에 노출하지 않지만 편집 저장 시 유실되지
-   * 않도록 draft에 실어 라운드트립한다(리뷰 M2). 빈 문자열 = 기본 3000. */
-  botIdleQuietMs?: string;
   defaultAgent?: WorkAgent;
 }
 
@@ -97,34 +87,7 @@ export function generateDraft(): DraftProfile {
     colors: {},
     keyboardSound: "",
     voiceId: "",
-    botSlug: "",
-    botWhitelist: "",
-    botPollIntervalSec: "",
-    botIdleQuietMs: "",
     talkReceive: true,
-  };
-}
-
-/** 봇 설정 입력을 `BotConfig`로 조립한다. 아무 값도 없으면 undefined(봇 미설정).
- * whitelist는 콤마/줄바꿈으로 나눠 트림·빈값 제거, 폴링 주기는 하한 30을 적용. */
-export function buildBotConfig(d: DraftProfile): BotConfig | undefined {
-  const slug = (d.botSlug ?? "").trim();
-  const whitelist = (d.botWhitelist ?? "")
-    .split(/[\n,]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const pollRaw = (d.botPollIntervalSec ?? "").trim();
-  const poll = pollRaw ? Number.parseInt(pollRaw, 10) : NaN;
-  const hasPoll = Number.isFinite(poll) && poll > 0;
-  const idleRaw = (d.botIdleQuietMs ?? "").trim();
-  const idle = idleRaw ? Number.parseInt(idleRaw, 10) : NaN;
-  const hasIdle = Number.isFinite(idle) && idle > 0;
-  if (!slug && whitelist.length === 0 && !hasPoll && !hasIdle) return undefined;
-  return {
-    ...(slug ? { slug } : {}),
-    whitelist,
-    ...(hasPoll ? { pollIntervalSec: Math.max(30, poll) } : {}),
-    ...(hasIdle ? { idleQuietMs: idle } : {}),
   };
 }
 
@@ -153,7 +116,6 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
   // 목록에 없는 자유 입력(커스텀 종족)도 그대로 살린다 — 공백만 다듬는다.
   const typed = (d.archetype ?? "").trim();
   const archetype = typed && typed !== "auto" ? typed : pickArchetype(d.seed);
-  const bot = buildBotConfig(d);
   const colors = normalizeColors(d.colors);
   return {
     id: nanoid(),
@@ -173,7 +135,6 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(minimiRequest ? { minimiRequest } : {}),
     ...(keyboardSound ? { keyboardSound } : {}),
     ...(voiceId ? { voiceId } : {}),
-    ...(bot ? { bot } : {}),
     // 기본(수신 허용)은 필드를 아예 두지 않는다 — 끈 경우만 명시적으로 남긴다.
     ...(d.talkReceive === false ? { talkReceive: false } : {}),
     ...(d.defaultAgent ? { defaultAgent: normalizeWorkAgent(d.defaultAgent) } : {}),

@@ -38,8 +38,6 @@ describe("portableFromDraft", () => {
       cwd: "/home/x/dev",
       shell: "pwsh",
       startupCommand: "source ./init.sh",
-      botSlug: "nova",
-      botWhitelist: "a, b",
     });
     const p = portableFromDraft(d);
     expect(p).toEqual({
@@ -83,7 +81,6 @@ describe("applyBundleToDraft", () => {
       cwd: "/keep/me",
       shell: "git-bash",
       startupCommand: "keep.sh",
-      botSlug: "keepbot",
     });
     const next = applyBundleToDraft(cur, {
       name: "New",
@@ -103,7 +100,6 @@ describe("applyBundleToDraft", () => {
     expect(next.cwd).toBe("/keep/me");
     expect(next.shell).toBe("git-bash");
     expect(next.startupCommand).toBe("keep.sh");
-    expect(next.botSlug).toBe("keepbot");
   });
 
   it("옛 번들의 note/appearance는 성격 프롬프트와 두 추가 프롬프트로 흡수된다", () => {

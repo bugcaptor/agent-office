@@ -42,7 +42,6 @@ describe("AutomationPalette", () => {
       automationEditor: { agentId: "agent", workspace: "/work" },
       automation: {},
       automationEpochs: {},
-      botMode: {},
       sessions: { agent: { status: "running" } },
     } as never);
   });

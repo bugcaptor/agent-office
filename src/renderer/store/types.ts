@@ -60,7 +60,6 @@ export type ModalState =
   | { kind: "confirm-restart"; agentId: string }
   | { kind: "confirm-resume"; agentId: string; sessionId: string }
   | { kind: "confirm-terminate"; agentId: string }
-  | { kind: "confirm-bot-start"; agentId: string }
   | { kind: "confirm-clock-out"; agentId: string }
   | { kind: "confirm-clock-out-all" }
   | { kind: "confirm-quit" }

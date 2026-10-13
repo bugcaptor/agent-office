@@ -69,7 +69,7 @@
     "colRank": "#",
     "colName": "Nom",
     "colWorked": "Travail",
-    "colWorkedNoBot": "Travail (hors bot)",
+    "colWorkedNoBot": "Travail (hors saisie automatique)",
     "colTurns": "Tours",
     "colActiveDays": "Jours",
     "speechTitle": "Discours de remerciement",

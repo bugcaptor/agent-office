@@ -21,13 +21,12 @@ fn validate_target(app_state: &AppState, agent_id: &str) -> Result<(), String> {
     {
         return Err("work-send-profile-unsupported".into());
     }
-    if app_state.bot_runtime.is_running(agent_id)
-        || app_state
-            .automation_runtime
-            .status()
-            .agents
-            .get(agent_id)
-            .is_some_and(|a| a.running)
+    if app_state
+        .automation_runtime
+        .status()
+        .agents
+        .get(agent_id)
+        .is_some_and(|a| a.running)
     {
         return Err("work-send-producer-running".into());
     }

@@ -260,18 +260,6 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.controlRevoke);
   },
 
-  async botStart(agentId: string) {
-    return await invoke(Commands.botStart, { agentId });
-  },
-
-  async botStop(agentId: string) {
-    await invoke(Commands.botStop, { agentId });
-  },
-
-  async botStatus() {
-    return await invoke(Commands.botStatus);
-  },
-
   async automationStart(agentId: string, cli?: AutomationCli) {
     return await invoke(Commands.automationStart, { agentId, cli });
   },

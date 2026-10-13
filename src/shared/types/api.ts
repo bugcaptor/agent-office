@@ -28,7 +28,6 @@ import type {
   AppSettings,
   ControlStatus,
 } from './settings';
-import type { BotAgentStatus, BotStatus } from './bot';
 import type {
   AutomationAgentStatus,
   AutomationCli,
@@ -198,13 +197,6 @@ export interface AgentOfficeApi {
   controlApprove(): Promise<void>;
   /** CLI 제어 승인 취소(토큰 폐기). 이후 모든 CLI 요청 401. */
   controlRevoke(): Promise<void>;
-  /** 봇 모드 시작(이슈 #57) — 이 탭의 폴링 태스크를 띄우고 로컬 입력을 봇에
-   * 넘긴다. tea 미로그인/저장소 미감지 시 error가 채워진 상태를 반환. */
-  botStart(agentId: string): Promise<BotAgentStatus>;
-  /** 봇 모드 중단 — 폴링 태스크를 내리고 로컬 조작으로 복귀. */
-  botStop(agentId: string): Promise<void>;
-  /** 봇 모드가 켜진 탭들의 상태 스냅샷. */
-  botStatus(): Promise<BotStatus>;
   /** 자동화 점검 시작(kbm) — 이 탭에 LLM CLI를 주입해 왕복을 확인한다.
    * `cli` 생략 시 기본 claude. */
   automationStart(agentId: string, cli?: AutomationCli): Promise<AutomationAgentStatus>;

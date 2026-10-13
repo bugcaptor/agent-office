@@ -36,13 +36,6 @@
       "warning": "執行中的工作階段會結束。角色會在茶水間待命，點一下角色就會開始新的工作階段。",
       "body": "要關閉 <strong>{{name}}</strong> 的終端機嗎？"
     },
-    "botStart": {
-      "title": "啟動機器人模式",
-      "confirm": "仍要開啟",
-      "warning": "在純 shell 上開啟機器人，機器人送出的工作指示會被當成 shell 指令而出錯。建議先在終端機啟動 claude 再開啟。",
-      "body": "無法確認 <strong>{{name}}</strong> 的終端機是否正在執行代理（claude 等）。",
-      "footer": "仍要開啟機器人模式嗎？"
-    },
     "clockOut": {
       "title": "下班",
       "titleAll": "全體下班",

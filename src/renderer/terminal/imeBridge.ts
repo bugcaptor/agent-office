@@ -19,8 +19,6 @@ export interface ImeBridgeDeps {
   term: Terminal;
   /** xterm이 붙는 컨테이너. `input`을 **캡처** 단계에서 가로채는 데 쓴다. */
   container: HTMLElement;
-  /** 지금 이 탭이 로컬 키 입력을 받지 않는가(봇 운전 중 등). */
-  inputBlocked: () => boolean;
   /** 실제로 PTY에 내보내는 경로. */
   send: (data: string, source?: "human" | "terminalResponse") => void;
   /** 기본값은 실행 중인 플랫폼. 테스트가 두 갈래를 모두 태우려고 연다. */
@@ -50,7 +48,7 @@ export interface ImeBridge {
 }
 
 export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
-  const { term, container, inputBlocked, send } = deps;
+  const { term, container, send } = deps;
   const isMac = deps.isMac ?? IS_MAC;
   const now = deps.now ?? (() => performance.now());
 
@@ -69,12 +67,6 @@ export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
   let lastDataAt = -Infinity;
 
   const writeInput = (data: string, source: "human" | "terminalResponse" = "human") => {
-    // 봇 운전 중인 탭은 로컬 키 입력을 차단한다(이슈 #57). 봇 자신의 주입은
-    // 백엔드 write_input을 직접 거치므로 이 게이트를 통과하지 않는다 — 여기서
-    // 막히는 건 사람이 xterm에 타이핑/붙여넣기 하는 경로뿐이다.
-    if (source === "human" && inputBlocked()) {
-      return;
-    }
     const at = now();
     const isImeDuplicate =
       source === "human" &&

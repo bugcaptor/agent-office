@@ -3,7 +3,7 @@
 // 사용자 정의 터미널 입력 자동화 관문 (kbm #2t9 Phase 2).
 //
 // 역할:
-// - 자동 입력 생산자(Bot, Talk, Automation) 간 상호 배타 보장.
+// - 자동 입력 생산자(Talk, Automation, 업무 보내기) 간 상호 배타 보장.
 // - 본문 -> 150ms -> CR 직렬화 구간 동안 들어오는 사람 입력을 버리지 않고 큐잉 후 전달.
 // - 미제출(uncommitted) 사람 입력이 있을 때 자동 제출 보류(최대 2분).
 // - 사람이 직접 입력·제출한 횟수(human_input_epoch) 추적으로 마커 뒤 예약 제출 무효화 지원.
@@ -21,6 +21,18 @@ use crate::state::BotPromptArms;
 
 /// 미제출 사람 입력 보류 상한 (기본 2분 = 120,000ms).
 pub const DEFAULT_HUMAN_HOLD_MAX_MS: u64 = 120_000;
+
+/// 텍스트 주입 후 Enter(CR)를 보내기까지의 대기(ms). 텍스트와 CR이 한 이벤트로
+/// 뭉쳐 claude TUI가 Enter를 삼키는 것을 막고, 입력이 렌더될 틈을 준다.
+pub const INJECT_SUBMIT_DELAY_MS: u64 = 150;
+
+/// 임베디드 개행을 공백으로 바꾼다. 개행을 그대로 쓰면 claude 등 TUI가 각
+/// 개행을 조기 제출로 처리해 프롬프트 앞부분이 유실된다(실사용 관측).
+pub fn single_line(text: &str) -> String {
+    text.chars()
+        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+        .collect()
+}
 
 /// 현재 시각(epoch ms).
 pub fn now_ms() -> u64 {
@@ -517,7 +529,7 @@ impl InjectGate {
             inner.holder = Some(request.source);
             inner.queue_human_while_held = true;
             self.arms.arm(&owner.agent_id, now_ms());
-            let single = if paste { format!("\x1b[200~{}\x1b[201~", request.text) } else { crate::bot::runner::single_line(request.text) };
+            let single = if paste { format!("\x1b[200~{}\x1b[201~", request.text) } else { single_line(request.text) };
             if !self
                 .sink
                 .write_for_session(&owner.agent_id, &owner.session_id, &single)
@@ -526,7 +538,7 @@ impl InjectGate {
             }
         }
         tokio::time::sleep(Duration::from_millis(
-            crate::bot::runner::INJECT_SUBMIT_DELAY_MS,
+            INJECT_SUBMIT_DELAY_MS,
         ))
         .await;
         {
@@ -612,12 +624,12 @@ impl InjectGate {
         self.arms.arm(agent_id, now_ms());
 
         // 6. 본문 -> 150ms -> CR 쓰기
-        let single = crate::bot::runner::single_line(text);
+        let single = single_line(text);
         if !self.sink.write_for_session(agent_id, session_id, &single) {
             return SubmitOutcome::SessionChanged;
         }
         tokio::time::sleep(Duration::from_millis(
-            crate::bot::runner::INJECT_SUBMIT_DELAY_MS,
+            INJECT_SUBMIT_DELAY_MS,
         ))
         .await;
         // 150ms 사이 세션이 교체되면 새 셸에 Enter를 보내지 않는다.

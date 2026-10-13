@@ -36,13 +36,6 @@
       "warning": "The running session ends. The character waits in the break room, and clicking them starts a new session.",
       "body": "Close <strong>{{name}}</strong>’s terminal?"
     },
-    "botStart": {
-      "title": "Start bot mode",
-      "confirm": "Turn on anyway",
-      "warning": "On a bare shell the bot’s instructions are typed in as shell commands and error out. Start claude in the terminal first, then turn the bot on.",
-      "body": "Cannot tell whether an agent (claude and such) is running in <strong>{{name}}</strong>’s terminal.",
-      "footer": "Turn bot mode on anyway?"
-    },
     "clockOut": {
       "title": "Clock out",
       "titleAll": "Clock out all",

@@ -142,7 +142,6 @@ mod unix {
         Arc::new(AutomationContext {
             sink,
             gate,
-            bot_runtime: Arc::new(crate::bot::BotRuntime::default()),
         })
     }
 

@@ -5,7 +5,7 @@
 // 이미지 저장·표시 같은 부수효과는 호출부(ProfileDialog)가 tauriApi/스토어로
 // 수행하고, 여기서는 값 변환만 담당한다(vitest로 직접 검증).
 //
-// "로컬 환경에 관련된 것"(cwd·shell·startupCommand·bot 설정)은 내보내지
+// "로컬 환경에 관련된 것"(cwd·shell·startupCommand)은 내보내지
 // 않고, 가져올 때도 건드리지 않는다(현재 draft 값 유지) — 캐릭터 정체성·외형만 이식한다.
 
 import {
@@ -40,7 +40,7 @@ export function portableFromDraft(d: DraftProfile): PortableProfile {
 }
 
 /** 가져온 프로필을 현재 draft에 병합한다. 이식 필드는 덮어쓰고, 로컬 환경
- *  필드(cwd/shell/startupCommand/bot*)는 현재 draft 값을 그대로 유지한다.
+ *  필드(cwd/shell/startupCommand)는 현재 draft 값을 그대로 유지한다.
  *  빈 이름/시드는 폴백해 편집기 무결성을 지킨다. */
 export function applyBundleToDraft(d: DraftProfile, p: PortableProfile): DraftProfile {
   return {

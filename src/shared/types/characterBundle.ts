@@ -2,7 +2,7 @@
 //
 // 캐릭터 내보내기/가져오기 번들(이슈 #77). 캐릭터 하나를 자기완결형 파일 한 개로
 // 옮길 수 있게, 이식 가능한 프로필 필드 + 초상/스프라이트 PNG(base64 임베드)를
-// 담는다. "로컬 환경에 관련된 것"(cwd·shell·startupCommand·bot 설정)은 담지
+// 담는다. "로컬 환경에 관련된 것"(cwd·shell·startupCommand)은 담지
 // 않는다 — 캐릭터 정체성과 외형만 이식한다.
 //
 // 파싱/검증은 순수 함수 `parseCharacterBundle`로 분리해 renderer/back-end 어디에도
@@ -28,7 +28,7 @@ export const MAX_MINIMI_BYTES = 1024 * 1024;
  * `AgentProfile`에서 이식 가능한(=캐릭터 정체성·외형) 필드만 추린 부분집합.
  * 제외: id/createdAt/deskIndex/assignedDeskIndex/clockedOut/portraitUpdatedAt/
  * spriteUpdatedAt/minimiUpdatedAt(가져오기 시 이미지 유무로 재설정), 그리고 로컬 환경 종속값
- * cwd/shell/startupCommand/bot(사용자 결정: 캐릭터만 내보낸다).
+ * cwd/shell/startupCommand(사용자 결정: 캐릭터만 내보낸다).
  */
 export interface PortableProfile {
   name: string;

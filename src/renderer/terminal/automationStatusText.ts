@@ -1,7 +1,7 @@
 // src/renderer/terminal/automationStatusText.ts
 //
 // 자동화 점검(kbm) 런타임 상태(AutomationAgentStatus) → 사람이 읽는 문구.
-// `botStatusText.ts`와 같은 모양 — 탭 배지 툴팁이 이 문구를 쓴다.
+// 탭 배지 툴팁이 이 문구를 쓴다.
 //
 // React 밖에서도 불릴 수 있는 순수 모듈이라 훅이 아니라 모듈 `t`를 쓴다 —
 // 다만 **호출 시점**에만 부른다(모듈 최상위에서 부르면 언어를 바꿔도
@@ -29,7 +29,6 @@ const AUTOMATION_ERROR_KEYS: Record<string, string> = {
   "automation-result-version-unsupported":
     "terminal:automation.errResultVersion",
   "automation-session-lost": "terminal:automation.errSessionLost",
-  "automation-bot-running": "terminal:automation.errBotRunning",
   "automation-session-changed": "terminal:automation.errSessionChanged",
   "automation-transition-partial-submission":
     "terminal:automation.errTransitionPartialSubmission",

@@ -75,10 +75,9 @@ pub(super) struct Session {
     /// 자체는 크로스플랫폼이라 cfg 분기가 필요 없다(항상 컴파일되고, 비unix는
     /// 그냥 항상 None으로 남는다).
     pub(super) eof_stop_gate: Option<Arc<AtomicBool>>,
-    /// 마지막 PTY 활동(출력 수신 또는 stdin 주입) 시각(epoch ms). 봇 모드의
-    /// turn-taking 유휴 판정에 쓴다 — 봇은 이 값이 일정 시간 이상 정체됐을 때만
-    /// 다음 지시를 주입한다(이슈 #57, docs/bot-mode-design.md). 0이면 아직 활동
-    /// 없음. reader 스레드와 write_input이 갱신한다.
+    /// 마지막 PTY 활동(출력 수신 또는 stdin 주입) 시각(epoch ms). 동료 대화가
+    /// 상대가 조용해졌을 때만 메시지를 주입하는 유휴 판정에 쓴다. 0이면 아직
+    /// 활동 없음. reader 스레드와 write_input이 갱신한다.
     last_activity_ms: Arc<std::sync::atomic::AtomicU64>,
 }
 
@@ -932,8 +931,7 @@ impl SessionManager {
     }
 
     /// 세션이 마지막 활동(출력/입력) 이후 유휴로 있었던 시간(ms). 아직 활동이
-    /// 없었거나 세션이 없으면 None. 봇 turn-taking이 릴레이 주입 타이밍을 잡는 데
-    /// 쓴다.
+    /// 없었거나 세션이 없으면 None.
     pub fn idle_ms(&self, agent_id: &str) -> Option<u64> {
         let s = self.find(agent_id)?;
         let last = s.last_activity_ms.load(Ordering::Relaxed);
@@ -943,11 +941,7 @@ impl SessionManager {
         Some(now_ms().saturating_sub(last))
     }
 
-    /// 세션이 살아서 입력을 받을 수 있는 상태(Running)인지. 봇이 잡을 이어갈 수
-    /// 있는지 판단한다.
-    ///
-    /// 외부(논리) 세션은 의도적으로 false다 — PTY가 없어 `write_input`이 닿지
-    /// 않으므로, 봇 모드가 외부 세션에 스스로 붙지 않는 게 올바른 게이트다.
+    /// 세션이 살아서 입력을 받을 수 있는 상태(Running)인지.
     pub fn is_running(&self, agent_id: &str) -> bool {
         self.find(agent_id)
             .map(|s| *s.state.lock() == SessionState::Running)

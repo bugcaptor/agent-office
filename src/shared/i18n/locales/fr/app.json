@@ -36,13 +36,6 @@
       "warning": "La session en cours s’arrête. Le personnage attend en salle de pause ; cliquez dessus pour démarrer une nouvelle session.",
       "body": "Fermer le terminal de <strong>{{name}}</strong> ?"
     },
-    "botStart": {
-      "title": "Démarrer le mode bot",
-      "confirm": "Activer quand même",
-      "warning": "Dans un shell nu, les consignes du bot sont saisies comme des commandes shell et provoquent des erreurs. Lancez d’abord claude dans le terminal, puis activez le bot.",
-      "body": "Impossible de savoir si un agent (claude ou autre) tourne dans le terminal de <strong>{{name}}</strong>.",
-      "footer": "Activer quand même le mode bot ?"
-    },
     "clockOut": {
       "title": "Fin de service",
       "titleAll": "Fin de service générale",

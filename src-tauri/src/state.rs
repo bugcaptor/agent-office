@@ -215,10 +215,6 @@ pub struct AppState {
     /// control 핸들러가 쥐는 앱 상태 클론들. `set_app_settings`가 cli_enabled
     /// ON 전환 시 `control_server.ensure(control_ctx)`에 넘긴다.
     pub control_ctx: Arc<crate::control::ControlContext>,
-    /// 캐릭터 봇 모드(#57, docs/bot-mode-design.md)의 탭별 폴링 태스크 소유자.
-    pub bot_runtime: Arc<crate::bot::BotRuntime>,
-    /// 봇 폴링 태스크가 쥐는 앱 상태 클론(세션 주입·프로필/상태 접근).
-    pub bot_ctx: Arc<crate::bot::runner::BotContext>,
     /// 자동화 점검(kbm)의 탭별 태스크 소유자.
     pub automation_runtime: Arc<crate::automation::AutomationRuntime>,
     /// 자동화 태스크가 쥐는 앱 상태 클론(세션 주입·봇 주입 표식 공유).

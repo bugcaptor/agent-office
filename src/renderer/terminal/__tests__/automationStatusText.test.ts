@@ -1,4 +1,4 @@
-// 자동화 점검(kbm) 상태 문구 단위 테스트. botStatus.test.ts를 본떴다.
+// 자동화 점검(kbm) 상태 문구 단위 테스트.
 import { describe, expect, it } from "vitest";
 import { automationStatusText } from "../automationStatusText";
 import type { AutomationAgentStatus } from "@shared/types";

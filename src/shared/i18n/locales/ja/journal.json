@@ -69,7 +69,7 @@
     "colRank": "#",
     "colName": "名前",
     "colWorked": "作業時間",
-    "colWorkedNoBot": "作業時間（ボット除く）",
+    "colWorkedNoBot": "作業時間（自動入力除く）",
     "colTurns": "ターン",
     "colActiveDays": "日数",
     "speechTitle": "受賞スピーチ",

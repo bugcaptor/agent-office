@@ -1303,20 +1303,6 @@ describe("macOS WebKit 한글 조합 미러링", () => {
 
     expect(sentChunks()).toEqual(["ㄴ"]); // DEL 없음 — 진짜 프롬프트를 지우지 않는다
   });
-
-  it("봇 운전 중이면 조합 갱신도 나가지 않는다", async () => {
-    const terminalRegistry = await importRegistry();
-    const { useAppStore } = await import("../../store/appStore");
-    useAppStore.setState({ botMode: { a1: { agentId: "a1" } as never } });
-    const host = document.createElement("div");
-    terminalRegistry.attach("a1", host);
-    const fake = terminalRegistry.get("a1")!.term as unknown as FakeTerminal;
-
-    fake.emitTextInput("insertText", "ㅎ", "ㅎ");
-    fake.emitTextInput("insertReplacementText", "하", "하");
-
-    expect(writeInput).not.toHaveBeenCalled();
-  });
 });
 
 describe("theme + font options", () => {

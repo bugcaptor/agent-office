@@ -406,23 +406,11 @@
             focus_agent: Arc::new(|_| Ok(())),
         });
 
-        let bot_runtime = std::sync::Arc::new(crate::bot::BotRuntime::default());
-        let bot_ctx = std::sync::Arc::new(crate::bot::runner::BotContext {
-            manager: manager.clone(),
-            store: store.clone(),
-            state_store: crate::bot::state_store::BotStateStore::new(
-                profile_dir.join("bot-state.json"),
-            ),
-            state_lock: std::sync::Arc::new(std::sync::Mutex::new(())),
-            bot_arms: bot_arms.clone(),
-            gate: inject_gate.clone(),
-        });
         let automation_runtime =
             std::sync::Arc::new(crate::automation::AutomationRuntime::default());
         let automation_ctx = std::sync::Arc::new(crate::automation::AutomationContext {
             sink: inject_sink,
             gate: inject_gate.clone(),
-            bot_runtime: bot_runtime.clone(),
         });
         let live_usage = std::sync::Arc::new(crate::usage::LiveUsageState::new());
         let state = AppState {
@@ -451,8 +439,6 @@
             live_usage: live_usage.clone(),
             control_server,
             control_ctx,
-            bot_runtime,
-            bot_ctx,
             automation_runtime,
             automation_ctx,
             automation_store: std::sync::Arc::new(crate::automation::store::AutomationStore::new(
@@ -754,7 +740,6 @@
                 keyboard_sound: None,
                 voice_id: None,
                 default_agent: None,
-                bot: None,
                 talk_receive: None,
             }],
             version: 1,
@@ -811,7 +796,6 @@
                 keyboard_sound: None,
                 voice_id: None,
                 default_agent: None,
-                bot: None,
                 talk_receive: None,
             }],
             version: 1,
@@ -887,7 +871,6 @@
                 keyboard_sound: None,
                 voice_id: None,
                 default_agent: None,
-                bot: None,
                 talk_receive: None,
             }],
             version: 1,
@@ -946,7 +929,6 @@
                 keyboard_sound: None,
                 voice_id: None,
                 default_agent: None,
-                bot: None,
                 talk_receive: None,
             }],
             version: 1,

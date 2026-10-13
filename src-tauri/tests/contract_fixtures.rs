@@ -7,7 +7,7 @@
 // 동등 비교를 쓴다 — 키 순서 무관, casing·null-vs-생략까지 검증된다.
 //
 // Serialize + Deserialize 둘 다 구현한 타입(AgentProfile/PersistedState,
-// SessionEventRecord, BotStatus류, AppSettings)은 완전 왕복
+// SessionEventRecord, AutomationStatus류, AppSettings)은 완전 왕복
 // (from_str::<T> -> to_value -> 픽스처와 비교)을 한다.
 //
 // 이벤트/응답 타입 다수는 backend->renderer 단방향이라 `Serialize`만
@@ -26,8 +26,8 @@ use agent_office_lib::persistence::settings_store::{
 use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
     ActivityEvent, ActivityKind, AdoptedSessionInfo, AutomationAgentStatus,
-    AutomationCli, AutomationPhase, AutomationStatus, BotAgentStatus, BotPhase, AwardsFile,
-    BotStatus, CreateSessionRequest, CreateSessionResult, MemoSheet, MemoSheetMeta,
+    AutomationCli, AutomationPhase, AutomationStatus, AwardsFile,
+    CreateSessionRequest, CreateSessionResult, MemoSheet, MemoSheetMeta,
     NotificationEvent, NotificationSource, OutputChunk, PendingReason, PersistedState, SessionEventTokens,
     SessionExitInfo, SessionState, SessionStateEvent, TurnUsageEvent,
 };
@@ -481,34 +481,14 @@ fn session_event_record_bot_prompt_origin_roundtrips() {
 }
 
 #[test]
-fn bot_status_roundtrips() {
-    assert_roundtrip::<BotStatus>(fixture!("bot-status.json"));
-}
-
-#[test]
-fn bot_status_agent_fields_match_fixture() {
-    // BTreeMap 순서/필드값을 직접도 확인 -- to_value 비교가 구조를 보장하지만
-    // 의미 있는 값(phase enum casing 등)도 사람이 읽을 수 있게 재확인.
-    let parsed: BotStatus = serde_json::from_str(fixture!("bot-status.json")).unwrap();
-    let a1: &BotAgentStatus = parsed.agents.get("a1").expect("a1 present");
-    assert!(a1.running);
-    assert_eq!(a1.phase, BotPhase::Working);
-    assert_eq!(a1.issue, Some(42));
-    assert_eq!(a1.slug.as_deref(), Some("nova"));
-    assert_eq!(a1.poll_interval_sec, 60);
-    assert_eq!(a1.last_poll_at_ms, Some(1720000000000));
-    assert!(a1.error.is_none());
-}
-
-#[test]
 fn automation_status_roundtrips() {
     assert_roundtrip::<AutomationStatus>(fixture!("automation-status.json"));
 }
 
 #[test]
 fn automation_status_agent_fields_match_fixture() {
-    // `waitingStartup`이 camelCase로 정확히 직렬화되는지가 핵심 -- BotPhase의
-    // lowercase 관례를 그대로 썼다면 "waitingstartup"이 나왔을 것이다.
+    // `waitingStartup`이 camelCase로 정확히 직렬화되는지가 핵심 -- lowercase
+    // 관례를 썼다면 "waitingstartup"이 나왔을 것이다.
     let parsed: AutomationStatus =
         serde_json::from_str(fixture!("automation-status.json")).unwrap();
     let a1: &AutomationAgentStatus = parsed.agents.get("a1").expect("a1 present");

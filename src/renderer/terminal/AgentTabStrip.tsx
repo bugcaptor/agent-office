@@ -29,8 +29,6 @@ import { useMemoStore } from "../memo/memoStore";
 import { useRunStore } from "../run/runStore";
 import { IS_MAC } from "../shared/platform";
 import { terminalRegistry } from "./TerminalRegistry";
-import { looksLikeAgentRunning } from "./botGuard";
-import { botStatusText } from "./botStatusText";
 import { automationStatusText } from "./automationStatusText";
 import { maybeSendOsNotification } from "../ipc/osNotify";
 import type { TerminalViewMode } from "./terminalViewMode";
@@ -123,10 +121,6 @@ export function AgentTabStrip() {
   const viewMode = useAppStore((s) => s.terminalViewMode);
   const cycleTerminalViewMode = useAppStore((s) => s.cycleTerminalViewMode);
   // 봇 모드(이슈 #57): 켜진 탭 집합/상태 + 시작·중단 액션.
-  const botMode = useAppStore((s) => s.botMode);
-  const startBot = useAppStore((s) => s.startBot);
-  const stopBot = useAppStore((s) => s.stopBot);
-  const applyBotStatus = useAppStore((s) => s.applyBotStatus);
   // 자동화 점검(kbm): 켜진 탭 집합/상태 + 시작·중단 액션.
   const automation = useAppStore((s) => s.automation);
   const openAutomationEditor = useAppStore((s) => s.openAutomationEditor);
@@ -296,30 +290,6 @@ export function AgentTabStrip() {
     cycleTerminalViewMode,
   ]);
 
-  // 봇 상태 폴링(이슈 #57): 켜진 봇이 하나라도 있으면 5초마다 백엔드에서
-  // 이슈 번호·오류를 받아 배지를 갱신한다. 없으면 폴링하지 않는다.
-  const hasBots = Object.keys(botMode).length > 0;
-  useEffect(() => {
-    if (!hasBots) return;
-    let alive = true;
-    const tick = () => {
-      void tauriApi
-        .botStatus()
-        .then((st) => {
-          if (alive) applyBotStatus(st);
-        })
-        .catch(() => {
-          /* 폴링 실패는 무시 — 다음 주기에 재시도 */
-        });
-    };
-    const iv = window.setInterval(tick, 5000);
-    tick();
-    return () => {
-      alive = false;
-      window.clearInterval(iv);
-    };
-  }, [hasBots, applyBotStatus]);
-
   // 자동화 상태 폴링(kbm): 켜진(또는 방금 끝난) 자동화가 하나라도 있으면
   // 1초마다 백엔드에서 phase를 받아 배지를 갱신한다. 이전 phase를 `id:시작시각`
   // 키로 기억해 done/failed로 "처음" 넘어간 항목에만 OS 알림을 띄우고
@@ -485,21 +455,6 @@ export function AgentTabStrip() {
                   aria-hidden="true"
                 />
               )}
-              {botMode[tab.id] &&
-                (() => {
-                  const bs = botStatusText(botMode[tab.id]);
-                  return (
-                    <span
-                      className="agent-tab-bot"
-                      title={
-                        bs.detail ? `${bs.title} · ${bs.detail}` : bs.title
-                      }
-                      aria-hidden="true"
-                    >
-                      {bs.icon}
-                    </span>
-                  );
-                })()}
               {automation[tab.id] &&
                 (() => {
                   const as = automationStatusText(automation[tab.id]);
@@ -621,40 +576,6 @@ export function AgentTabStrip() {
               ),
               onSelect: () =>
                 openModal({ kind: "confirm-terminate", agentId: menu.agentId }),
-            },
-            // 봇 모드(이슈 #57): 켜면 이 탭이 Gitea 이슈의 슬래시 명령에 반응해
-            // 자동 작업한다. 켜는 동안 로컬 키 입력은 잠긴다. 끌 땐 한 번 더 확인.
-            {
-              label:
-                menu.agentId in botMode
-                  ? t("menu.botStop")
-                  : t("menu.botStart"),
-              icon: "🤖",
-              // 새로 켤 땐 세션이 살아 있어야 하고, 이 탭에서 자동화가 돌고
-              // 있으면 막는다(같은 stdin을 두 쪽이 동시에 두드리는 것 방지).
-              // 이미 켜진 경우엔 끄기이므로 항상 활성.
-              disabled:
-                !(menu.agentId in botMode) &&
-                (!["starting", "running"].includes(
-                  sessions[menu.agentId]?.status ?? "idle",
-                ) ||
-                  automation[menu.agentId]?.running === true),
-              onSelect: () => {
-                const aid = menu.agentId;
-                if (aid in botMode) {
-                  if (window.confirm(t("bot.stopConfirm"))) {
-                    void stopBot(aid);
-                  }
-                } else if (
-                  looksLikeAgentRunning(terminalRegistry.getPlainText(aid))
-                ) {
-                  // 에이전트(claude 등)가 프롬프트를 잡고 있어 보이면 바로 켠다.
-                  void startBot(aid);
-                } else {
-                  // 맨 셸일 수 있음 — 확인 다이얼로그로 넘긴다(맨 셸 가드).
-                  openModal({ kind: "confirm-bot-start", agentId: aid });
-                }
-              },
             },
             // 자동화는 정의를 고르고 명시적으로 실행한다. 메뉴를 여는 일만으로는
             // 어떤 터미널 입력도 넣지 않는다.

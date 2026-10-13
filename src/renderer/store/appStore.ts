@@ -50,13 +50,10 @@ import type {
   AutomationAgentStatus,
   AutomationRunDecisionChoice,
   AutomationStatus,
-  BotAgentStatus,
-  BotStatus,
   SessionState,
   UsageSnapshot,
 } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
-import { backendErrorText } from "../shared/backendError";
 import { addTurn, emptyTotals } from "../usage/sessionCost";
 import type { SessionUsageTotals } from "../usage/sessionCost";
 
@@ -295,10 +292,6 @@ interface AppState {
   /** 구독 사용량 스냅샷. null = 아직 로드 전. UsageWidget이 60초 폴링으로 채운다.
    * 런타임 전용(비영속). */
   usage: UsageSnapshot | null;
-  /** 봇 모드가 켜진 탭(이슈 #57). agentId → 런타임 상태. 여기 있으면 그 탭은
-   * "봇 운전 중" — 로컬 키 입력이 잠기고 배지가 뜬다. 런타임 전용(비영속,
-   * 앱 재시작 시 꺼진 상태로 시작). */
-  botMode: Record<string, BotAgentStatus>;
   /** 자동화 점검(kbm)이 도는(또는 방금 끝난) 탭. agentId → 런타임 상태. 봇
    * 모드와 마찬가지로 여기 있으면 로컬 키 입력이 잠긴다 — 단, `running`이
    * false(done/failed)로 남는 동안은 배지·알림용일 뿐 잠그지 않는다.
@@ -332,24 +325,6 @@ interface AppState {
   setSessionState(e: { agentId: string; status: SessionStatus }): void;
   setSessionSize(agentId: string, cols: number, rows: number): void;
 
-  // ---- bot mode (이슈 #57) ----
-  /** 이 탭의 봇 모드를 켠다 — 백엔드 폴링 태스크를 띄우고 로컬 입력을 잠근다.
-   * 실패해도 상태(error)를 저장해 배지가 원인을 보여준다. */
-  startBot(agentId: string): Promise<void>;
-  /** 이 탭의 봇 모드를 끈다 — 백엔드 태스크를 내리고 로컬 조작으로 복귀. */
-  stopBot(agentId: string): Promise<void>;
-  /** bot_status 폴링 결과를 병합한다(이슈 번호·오류 갱신). */
-  applyBotStatus(status: BotStatus): void;
-  /**
-   * 부팅 시 백엔드에 살아 있는 봇 태스크를 botMode에 심는다. `applyBotStatus`와
-   * 달리 **없던 항목도 추가**한다 — 앱을 재시작하면 botMode(비영속)가 비어 있어
-   * 5초 폴링(hasBots>0 게이트)이 아예 안 돌고, 그 결과 백엔드가 계속 운전 중인
-   * 탭인데도 입력 잠금(isBotDriven)이 풀린 채로 남는 버그를 막는 시드다.
-   */
-  seedBotStatus(status: BotStatus): void;
-  /** 이 탭이 봇 운전 중인지(로컬 입력 차단 여부 판정). */
-  isBotDriven(agentId: string): boolean;
-
   // ---- 자동화 점검(kbm) ----
   /** 이 탭의 자동화 점검을 시작한다 — 백엔드 태스크를 띄우고 로컬 입력을 잠근다. */
   startAutomation(agentId: string): Promise<void>;
@@ -359,8 +334,8 @@ interface AppState {
   applyAutomationStatus(status: AutomationStatus, epochs?: Record<string, number>): void;
   resetAutomationState(agentId: string): void;
   /** 부팅 시 백엔드에 살아 있는 자동화 태스크를 automation에 심는다.
-   * `seedBotStatus`와 같은 이유(비영속 상태가 재시작 후 스스로 되살아나지
-   * 못하는 문제)로 없던 항목도 추가한다. */
+   * 비영속 상태가 재시작 후 스스로 되살아나지 못하는 문제 때문에 없던
+   * 항목도 추가한다. */
   seedAutomationStatus(status: AutomationStatus, epochs?: Record<string, number>): void;
   /** 이 탭이 자동화 운전 중인지(로컬 입력 차단 여부 판정) — 끝난(done/failed)
    * 자동화는 배지·알림용으로 남아 있으므로 running으로 잠금을 가른다. */
@@ -565,7 +540,6 @@ export const useAppStore = create<AppState>()(
     settingsFirstRun: false,
     settingsHydrated: false,
     usage: null,
-    botMode: {},
     automation: {},
     automationEpochs: {},
     automationEditor: null,
@@ -737,74 +711,6 @@ export const useAppStore = create<AppState>()(
           sessions: { ...s.sessions, [agentId]: { ...prev, cols, rows } },
         };
       }),
-
-    startBot: async (agentId) => {
-      // 낙관적으로 먼저 켠 상태로 표시(입력 잠금·배지 즉시 반영), 백엔드 응답으로
-      // 실제 상태(이슈/오류)를 갱신한다. 실패해도 켠 상태는 유지하고 error만 표시.
-      set((s) => ({
-        botMode: {
-          ...s.botMode,
-          [agentId]: { running: true, phase: "starting", pollIntervalSec: 60 },
-        },
-      }));
-      try {
-        const status: BotAgentStatus = await tauriApi.botStart(agentId);
-        set((s) => ({ botMode: { ...s.botMode, [agentId]: status } }));
-      } catch (err) {
-        set((s) => ({
-          botMode: {
-            ...s.botMode,
-            [agentId]: {
-              running: false,
-              phase: "error",
-              pollIntervalSec: 60,
-              // 백엔드가 코드를 내면 카탈로그 문구로, 아니면 원문 그대로.
-              error: backendErrorText(err),
-            },
-          },
-        }));
-      }
-    },
-
-    stopBot: async (agentId) => {
-      try {
-        await tauriApi.botStop(agentId);
-      } catch (err) {
-        console.warn("bot: stop failed", err);
-      }
-      set((s) => {
-        const next = { ...s.botMode };
-        delete next[agentId];
-        return { botMode: next };
-      });
-    },
-
-    applyBotStatus: (status) =>
-      set((s) => {
-        // 봇 모드가 켜진(로컬 상태에 있는) 탭만 갱신한다 — 방금 끈 탭이 폴링
-        // 응답으로 되살아나지 않게.
-        const next = { ...s.botMode };
-        let changed = false;
-        for (const id of Object.keys(next)) {
-          const fresh = status.agents[id];
-          if (fresh) {
-            next[id] = fresh;
-            changed = true;
-          }
-        }
-        return changed ? { botMode: next } : s;
-      }),
-
-    seedBotStatus: (status) =>
-      set((s) => {
-        const entries = Object.entries(status.agents);
-        if (entries.length === 0) return s;
-        const next = { ...s.botMode };
-        for (const [id, st] of entries) next[id] = st;
-        return { botMode: next };
-      }),
-
-    isBotDriven: (agentId) => agentId in get().botMode,
 
     startAutomation: async (agentId) => {
       const epoch = get().automationEpochs[agentId] ?? 0;

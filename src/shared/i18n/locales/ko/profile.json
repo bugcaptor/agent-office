@@ -94,18 +94,6 @@
     "shellAuto": "자동 (기본)",
     "shellNoHooks": "{{label}} (시간 추적 미지원)"
   },
-  "bot": {
-    "section": "봇 모드 설정",
-    "sectionHint": "터미널 탭 우클릭 → “봇 모드 시작”으로 켜면, 이 캐릭터가 담당 저장소의 Gitea 이슈에 달린 슬래시 명령에 반응해 자동으로 작업합니다. 아래는 봇의 지속 설정입니다.",
-    "slug": "봇 슬래시 별칭",
-    "slugPlaceholder": "예: nova (선택, 비우면 이름에서 자동 파생)",
-    "slugHint": "이슈에서 <code>/별칭</code> 으로 이 캐릭터를 호출합니다. 비우면 이름에서 파생합니다(공백 제거·소문자).",
-    "whitelist": "봇 화이트리스트",
-    "whitelistPlaceholder": "추가 허용 Gitea 계정, 콤마 구분 (선택)",
-    "whitelistHint": "명령을 발동할 수 있는 계정. tea 로그인 계정 본인은 항상 포함됩니다.",
-    "poll": "봇 폴링 주기(초)",
-    "pollPlaceholder": "기본 60, 하한 30"
-  },
   "voice": {
     "label": "목소리 (TTS)",
     "auto": "자동 (종족에 맞춰 배정)",

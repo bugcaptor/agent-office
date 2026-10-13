@@ -108,7 +108,9 @@ export function shiftMonth(monthKey: string, delta: number): string {
  * 틀렸다 — 봇 시간의 **출처를 보지 않고 프로필만 봤기** 때문에, 봇 기능을 한 번
  * 붙여준 캐릭터가 그 뒤로 사람이 아무리 일을 시켜도 영구 출전정지가 됐다.
  * 실제 구분선은 턴 단위에 있고(봇은 사람과 같은 세션에 프롬프트를 밀어넣는다),
- * 집계가 그 몫을 `botWorkedMs`로 분리해 주므로 빼서 보면 된다.
+ * 집계가 그 몫을 `botWorkedMs`로 분리해 주므로 빼서 보면 된다. 봇 모드는
+ * 2026-10-14 제거됐고, 지금 이 몫은 앱이 기계로 주입한 프롬프트(업무 보내기·
+ * 자동화·동료 대화)로 연 턴이다 — 이름은 저장 기록 호환 때문에 그대로 둔다.
  */
 export function humanWorkedMs(s: AgentSummary): number {
   return Math.max(0, s.workedMs - s.botWorkedMs);

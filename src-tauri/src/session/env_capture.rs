@@ -1,24 +1,22 @@
 // src-tauri/src/session/env_capture.rs
 //
-// 봇 모드(#58) 시작 시 로그인 셸 환경을 1회 캡처해 프로세스 env에 병합한다.
+// 앱 기동 시 로그인 셸 환경을 1회 캡처해 프로세스 env에 병합한다.
 //
 // 왜 필요한가: GUI(Finder/launchd)로 띄운 번들 앱은 로그인 셸 프로파일
-// (`.zshrc`/`.zprofile`)을 거치지 않아, 사용자가 `export`한 `GITEA_TOKEN`·
-// `GITEA_BASE_URL`이 프로세스에 **비어 있고** `PATH`도 최소값
-// (`/usr/bin:/bin:…`)이다. 이 때문에 봇의 app-side REST 폴링이 토큰을 못 얻어
-// 실패했다(이슈 #58). 에이전트 PTY는 `-l -i` 로그인 셸(shells.rs:406)이라
-// 프로파일을 소싱해 이 문제를 겪지 않으므로, 여기서 **같은 로그인 셸로 지정
-// 키만** 캡처해 프로세스 env에 심으면 폴링(app)과 쓰기(agent PTY 상속) 양쪽이
-// 동일한 자격/로케일을 본다.
+// (`.zshrc`/`.zprofile`)을 거치지 않아, 사용자가 `export`한 값이 프로세스에
+// **비어 있고** `PATH`도 최소값(`/usr/bin:/bin:…`)이다. 에이전트 PTY는 `-l -i`
+// 로그인 셸(shells.rs)이라 프로파일을 소싱해 이 문제를 겪지 않으므로, 여기서
+// **같은 로그인 셸로 지정 키만** 캡처해 프로세스 env에 심으면 앱이 직접 띄우는
+// 자식(요약기·이미지 생성 CLI)과 에이전트 PTY가 같은 PATH/로케일을 본다.
 //
-// 안전장치: 지정 키만 캡처(민감 env 최소화), 타임아웃+실패 시 no-op 폴백(봇
-// 시작을 블로킹하지 않음), 캡처값은 로그에 싣지 않는다.
+// 안전장치: 지정 키만 캡처(민감 env 최소화), 타임아웃+실패 시 no-op 폴백(기동을
+// 블로킹하지 않음), 캡처값은 로그에 싣지 않는다.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// 캡처 대상 키(지정 키만). 토큰/베이스 URL, PATH·로케일, 그리고 에이전트 CLI
-/// 데이터 루트 오버라이드에 한정한다.
+/// 캡처 대상 키(지정 키만). PATH·로케일, 그리고 에이전트 CLI 데이터 루트
+/// 오버라이드에 한정한다.
 ///
 /// `CLAUDE_CONFIG_DIR`/`CODEX_HOME`을 넣는 이유: 이 값을 `.zshrc`에서 export한
 /// 사용자의 경우 GUI로 띄운 앱은 그 값을 못 봐서 (1) 세션 로그가 `~/.claude`
@@ -26,8 +24,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// (2) 요약기·학습자료가 스폰하는 `claude -p`도 엉뚱한 설정 디렉터리(=미로그인)를
 /// 보게 된다. 캡처해 심어 두면 `agent_paths`와 자식 프로세스가 함께 바로잡힌다.
 const CAPTURE_KEYS: &[&str] = &[
-    "GITEA_TOKEN",
-    "GITEA_BASE_URL",
     "PATH",
     "LANG",
     "LC_ALL",
@@ -226,10 +222,10 @@ mod tests {
 
     #[test]
     fn script_has_marker_and_all_keys() {
-        let s = build_capture_script(&["GITEA_TOKEN", "PATH"]);
+        let s = build_capture_script(&["CODEX_HOME", "PATH"]);
         assert!(s.contains(START_MARKER));
-        assert!(s.contains("GITEA_TOKEN=%s"));
-        assert!(s.contains("\"${GITEA_TOKEN}\""));
+        assert!(s.contains("CODEX_HOME=%s"));
+        assert!(s.contains("\"${CODEX_HOME}\""));
         assert!(s.contains("PATH=%s"));
     }
 
@@ -237,11 +233,11 @@ mod tests {
     fn parse_skips_noise_before_marker() {
         // rc가 앞에 배너를 찍어도 마커 이후만 파싱한다.
         let raw = format!(
-            "welcome banner\nlast login blah{marker}\u{1e}GITEA_TOKEN=abc\u{1e}PATH=/opt/homebrew/bin\u{1e}",
+            "welcome banner\nlast login blah{marker}\u{1e}LANG=ko_KR.UTF-8\u{1e}PATH=/opt/homebrew/bin\u{1e}",
             marker = START_MARKER
         );
         let m = parse_captured(raw.as_bytes(), CAPTURE_KEYS);
-        assert_eq!(m.get("GITEA_TOKEN"), Some(&"abc".to_string()));
+        assert_eq!(m.get("LANG"), Some(&"ko_KR.UTF-8".to_string()));
         assert_eq!(m.get("PATH"), Some(&"/opt/homebrew/bin".to_string()));
     }
 
@@ -259,24 +255,24 @@ mod tests {
 
     #[test]
     fn parse_returns_empty_without_marker() {
-        let m = parse_captured(b"GITEA_TOKEN=abc\x1e", CAPTURE_KEYS);
+        let m = parse_captured(b"LANG=C\x1e", CAPTURE_KEYS);
         assert!(m.is_empty());
     }
 
     #[test]
     fn parse_keeps_empty_values_and_ignores_unknown_keys() {
-        let raw = format!("{START_MARKER}\u{1e}GITEA_TOKEN=\u{1e}FOO=bar\u{1e}");
+        let raw = format!("{START_MARKER}\u{1e}LC_ALL=\u{1e}FOO=bar\u{1e}");
         let m = parse_captured(raw.as_bytes(), CAPTURE_KEYS);
-        assert_eq!(m.get("GITEA_TOKEN"), Some(&String::new())); // 빈 값도 파싱은 됨(병합에서 걸러짐)
+        assert_eq!(m.get("LC_ALL"), Some(&String::new())); // 빈 값도 파싱은 됨(병합에서 걸러짐)
         assert!(!m.contains_key("FOO")); // 지정 외 키는 무시
     }
 
     #[test]
     fn parse_handles_value_with_equals() {
         // 값 안에 '='가 있어도 첫 '='만 기준으로 자른다.
-        let raw = format!("{START_MARKER}\u{1e}GITEA_BASE_URL=http://h/?a=b\u{1e}");
+        let raw = format!("{START_MARKER}\u{1e}CODEX_HOME=/data/a=b\u{1e}");
         let m = parse_captured(raw.as_bytes(), CAPTURE_KEYS);
-        assert_eq!(m.get("GITEA_BASE_URL"), Some(&"http://h/?a=b".to_string()));
+        assert_eq!(m.get("CODEX_HOME"), Some(&"/data/a=b".to_string()));
     }
 
     #[test]

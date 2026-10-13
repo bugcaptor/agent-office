@@ -301,44 +301,6 @@ export function ConfirmTerminateDialog() {
 }
 
 /**
- * 맨 셸 가드 확인(이슈 #57 후속). 봇 모드를 켤 때 터미널에 에이전트(claude 등)가
- * 떠 있는지 확신할 수 없으면(botGuard.looksLikeAgentRunning=false) 이 다이얼로그로
- * 경고한다 — 맨 셸에서 켜면 봇 지시문이 셸 명령으로 잘못 실행돼 에러가 나기
- * 때문이다. 확인하면 그래도 봇을 켠다(경고는 running과 무관하게 항상 표시).
- */
-export function ConfirmBotStartDialog() {
-  const { t } = useTranslation("app");
-  const modal = useAppStore((s) => s.modal);
-  const startBot = useAppStore((s) => s.startBot);
-  const agentId = modal.kind === "confirm-bot-start" ? modal.agentId : undefined;
-  const { name } = useConfirmTarget(agentId);
-
-  if (modal.kind !== "confirm-bot-start") return null;
-
-  return (
-    <ConfirmDialog
-      slug="bot-start"
-      title={t("confirm.botStart.title")}
-      confirmLabel={t("confirm.botStart.confirm")}
-      onConfirm={() => {
-        if (agentId) void startBot(agentId);
-      }}
-      warning={t("confirm.botStart.warning")}
-      footer={<p>{t("confirm.botStart.footer")}</p>}
-    >
-      <p>
-        <Trans
-          t={t}
-          i18nKey="confirm.botStart.body"
-          values={{ name }}
-          components={{ strong: <strong /> }}
-        />
-      </p>
-    </ConfirmDialog>
-  );
-}
-
-/**
  * 퇴근 확인. 개별 퇴근(confirm-clock-out)과 전체 퇴근(confirm-clock-out-all)
  * 두 종류를 한 컴포넌트가 함께 처리한다. 개별은 대상 이름을 보여주고 그 세션이
  * 실행 중일 때만 경고를, 전체는 근무 중 인원 수를 보여주고 여러 세션이 한꺼번에

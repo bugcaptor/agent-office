@@ -15,7 +15,6 @@ import {
   ConfirmRestartDialog,
   ConfirmResumeDialog,
   ConfirmTerminateDialog,
-  ConfirmBotStartDialog,
   ConfirmClockOutDialog,
 } from "./agent/confirmDialogs";
 import { ConfirmQuitDialog } from "./agent/ConfirmQuitDialog";
@@ -168,7 +167,6 @@ function App() {
         <ConfirmRestartDialog />
         <ConfirmResumeDialog />
         <ConfirmTerminateDialog />
-        <ConfirmBotStartDialog />
         <ConfirmClockOutDialog />
         <ConfirmQuitDialog />
         <SettingsDialog />

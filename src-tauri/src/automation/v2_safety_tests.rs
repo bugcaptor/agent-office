@@ -28,7 +28,6 @@ impl Harness {
         let ctx = Arc::new(AutomationContext {
             sink: sink.clone(),
             gate,
-            bot_runtime: Arc::new(crate::bot::BotRuntime::default()),
         });
         let store = Arc::new(AutomationStore::new(root.path().join("앱 데이터")));
         Self {

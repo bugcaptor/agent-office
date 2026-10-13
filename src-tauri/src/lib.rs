@@ -10,7 +10,6 @@ pub mod agent_paths;
 pub mod api_keys;
 mod automation;
 mod work_send;
-mod bot;
 // codex CLI 내장 이미지 생성으로 캐릭터 초상/스프라이트 원본을 만든다(kbm #2fa).
 pub mod codex_imagegen;
 mod control;
@@ -652,29 +651,13 @@ pub fn run() {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));
             }
 
-            // 캐릭터 봇 모드(#57): 탭별 폴링 태스크 소유자 + 태스크가 쥘 상태 클론.
-            // 봇 모드 자체는 런타임 상태(탭에서 켜야 시작)라 여기선 아무 태스크도
-            // 띄우지 않는다 — start는 렌더러 bot_start 커맨드가 트리거한다.
-            let bot_runtime = Arc::new(crate::bot::BotRuntime::default());
-            let bot_ctx = Arc::new(crate::bot::runner::BotContext {
-                manager: manager.clone(),
-                store: store.clone(),
-                state_store: crate::bot::state_store::BotStateStore::new(
-                    data_dir.join("bot-state.json"),
-                ),
-                state_lock: Arc::new(std::sync::Mutex::new(())),
-                bot_arms: bot_arms.clone(),
-                gate: inject_gate.clone(),
-            });
-
             // 자동화 점검(kbm): 탭별 태스크 소유자 + 태스크가 쥘 상태 클론.
-            // 봇 모드와 마찬가지로 런타임 상태라 여기선 아무 태스크도 띄우지
-            // 않는다 — start는 렌더러 automation_start 커맨드가 트리거한다.
+            // 런타임 상태라 여기선 아무 태스크도 띄우지 않는다 — start는 렌더러
+            // automation_start 커맨드가 트리거한다.
             let automation_runtime = Arc::new(crate::automation::AutomationRuntime::default());
             let automation_ctx = Arc::new(crate::automation::AutomationContext {
                 sink: inject_sink,
                 gate: inject_gate.clone(),
-                bot_runtime: bot_runtime.clone(),
             });
             let automation_store = Arc::new(crate::automation::store::AutomationStore::new(
                 data_dir.clone(),
@@ -740,8 +723,6 @@ pub fn run() {
                 live_usage: live_usage.clone(),
                 control_server,
                 control_ctx,
-                bot_runtime,
-                bot_ctx,
                 automation_runtime,
                 automation_ctx,
                 automation_store,
@@ -795,9 +776,6 @@ pub fn run() {
             ipc::commands::control_status,
             ipc::commands::control_approve,
             ipc::commands::control_revoke,
-                        ipc::commands::bot_start,
-            ipc::commands::bot_stop,
-            ipc::commands::bot_status,
             ipc::commands::automation_start,
             ipc::commands::automation_stop,
             ipc::commands::automation_status,
@@ -926,7 +904,6 @@ pub fn run() {
                 state.manager.dispose_all(); // kill + settings cleanup(동기)
                 state.observer_server.shutdown();
                 state.control_server.shutdown(); // CLI 제어 서버 정지 + control-port 정리(#55)
-                state.bot_runtime.stop_all(); // 봇 폴링 태스크 정지(#57)
                 state.wake_lock.deactivate(); // 잠자기 방지 해제(#68) — OS가 자동 회수도 하지만 이중 안전장치.
                 // wait 스레드가 Disposed 확정 후 OS가 자식 reap. 프로세스 종료는 정상 진행.
             }

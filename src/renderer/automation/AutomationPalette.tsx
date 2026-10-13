@@ -198,7 +198,6 @@ export function AutomationPalette() {
   const seed = useAppStore((s) => s.seedAutomationStatus);
   const sessions = useAppStore((s) => s.sessions);
   const automation = useAppStore((s) => s.automation);
-  const bot = useAppStore((s) => s.botMode);
   const file = useRef<HTMLInputElement>(null);
   const inFlight = useRef(false);
   const [defs, setDefs] = useState<AutomationDefinition[]>([]);
@@ -389,7 +388,6 @@ export function AutomationPalette() {
     }
     if (
       automation[editor.agentId]?.running ||
-      bot[editor.agentId] ||
       !["starting", "running"].includes(
         sessions[editor.agentId]?.status ?? "idle",
       )

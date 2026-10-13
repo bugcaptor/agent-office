@@ -63,10 +63,6 @@ export function useProfileDraft(editingAgentId: string | undefined, initialCwd?:
       colors: agent.colors ?? {},
       keyboardSound: agent.keyboardSound ?? "",
       voiceId: agent.voiceId ?? "",
-      botSlug: agent.bot?.slug ?? "",
-      botWhitelist: (agent.bot?.whitelist ?? []).join(", "),
-      botPollIntervalSec: agent.bot?.pollIntervalSec ? String(agent.bot.pollIntervalSec) : "",
-      botIdleQuietMs: agent.bot?.idleQuietMs ? String(agent.bot.idleQuietMs) : "",
       talkReceive: agent.talkReceive !== false,
       defaultAgent: agent.defaultAgent,
     });

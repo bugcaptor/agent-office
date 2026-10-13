@@ -3,7 +3,6 @@
 // Domain slice: persisted character profile / app state and sprite
 // generation results. See src/shared/types.ts for the frozen-contract overview.
 
-import type { BotConfig } from './bot';
 import type { WorkAgent } from './workPanels';
 
 /**
@@ -74,9 +73,6 @@ export interface AgentProfile {
   /** 대사 TTS에 쓸 ElevenLabs voice_id 수동 지정. 부재/빈 값 = archetype 기반
    * 자동 캐스팅. 계정 목록에 없는 id면 백엔드가 자동 배정으로 강등한다. */
   voiceId?: string;
-  /** 봇 모드 설정(이슈 #57). 부재 = 기본값. 봇 ON/OFF 자체는 런타임 상태이고
-   * 여기엔 지속 설정(slug 별칭·화이트리스트·폴링 주기)만 담는다. Rust `bot` 미러. */
-  bot?: BotConfig;
   /** 동료 대화(docs/agent-talk-design.md) 수신 허용. 부재/true = 받는다,
    * false = 이 캐릭터에게는 말을 걸 수 없다(roster에서 reachable=false). */
   talkReceive?: boolean;

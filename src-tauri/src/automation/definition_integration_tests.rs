@@ -29,7 +29,6 @@ impl Harness {
                 Arc::new(BotPromptArms::new()),
             )),
             sink: sink.clone(),
-            bot_runtime: Arc::new(crate::bot::BotRuntime::default()),
         });
         let store = Arc::new(AutomationStore::new(root.path().join("data")));
         Self {
@@ -729,7 +728,6 @@ async fn forced_human_fragment_submission_is_recorded() {
             50,
         )),
         sink: h.sink.clone(),
-        bot_runtime: h.context.bot_runtime.clone(),
     });
     h.context.gate.note_human("a", "unfinished");
     h.start(vec![task(2000, false)]).unwrap();

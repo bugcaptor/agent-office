@@ -41,8 +41,6 @@ use crate::types::{
 pub struct AutomationContext {
     pub sink: Arc<dyn InputSink>,
     pub gate: Arc<InjectGate>,
-    /// 봇 모드와의 상호 배제 확인용.
-    pub bot_runtime: Arc<crate::bot::BotRuntime>,
 }
 
 /// 끝난(running=false) 항목을 맵에서 청소하기까지의 유예.
@@ -176,9 +174,6 @@ impl AutomationRuntime {
             })
             .unwrap_or_default();
         if definition.steps.iter().any(|s| matches!(s, crate::types::AutomationStep::LaunchCli { cli_profile_id, .. } if !matches!(cli_profile_id.as_str(), "claude" | "codex" | "agy" | "kilo" | "pi"))) { return Err("automation-cli-profile-unsupported".into()); }
-        if ctx.bot_runtime.is_running(&agent_id) {
-            return Err("automation-bot-running".into());
-        }
         let mut tasks = self.tasks.lock().unwrap();
         if tasks
             .get(&agent_id)
@@ -296,25 +291,6 @@ impl AutomationRuntime {
             if let Some(tx) = ra.shutdown.take() {
                 let _ = tx.send(());
             }
-        }
-        if ctx.bot_runtime.is_running(&agent_id) {
-            return AutomationAgentStatus {
-                running: false,
-                phase: AutomationPhase::Failed,
-                cli,
-                file_path: String::new(),
-                started_at_ms: now_ms(),
-                run_id: None,
-                step_execution_id: None,
-                deadline_ms: None,
-                decision_id: None,
-                extension_count: None,
-                marker_observed_at_ms: None,
-                pending_reason: None,
-                pending_since_ms: None,
-                error: Some("automation-bot-running".to_string()),
-                ..AutomationAgentStatus::empty()
-            };
         }
         let status = Arc::new(Mutex::new(AutomationAgentStatus {
             running: true,

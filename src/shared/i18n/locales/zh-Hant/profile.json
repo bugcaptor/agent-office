@@ -94,18 +94,6 @@
     "shellAuto": "自動（預設）",
     "shellNoHooks": "{{label}}（不支援時間追蹤）"
   },
-  "bot": {
-    "section": "機器人模式設定",
-    "sectionHint": "在終端機分頁右鍵 →「開始機器人模式」開啟後，這個角色會對負責儲存庫的 Gitea 議題上的斜線指令做出反應，自動處理工作。下面是機器人的持續設定。",
-    "slug": "機器人斜線別名",
-    "slugPlaceholder": "例：nova（選填，留空會從名稱自動衍生）",
-    "slugHint": "在議題裡用 <code>/別名</code> 呼叫這個角色。留空時會從名稱衍生（去掉空白、轉小寫）。",
-    "whitelist": "機器人白名單",
-    "whitelistPlaceholder": "額外允許的 Gitea 帳號，以逗號分隔（選填）",
-    "whitelistHint": "可以發動指令的帳號。tea 登入帳號本人一定包含在內。",
-    "poll": "機器人輪詢週期（秒）",
-    "pollPlaceholder": "預設 60，下限 30"
-  },
   "voice": {
     "label": "聲音（TTS）",
     "auto": "自動（依種族指派）",

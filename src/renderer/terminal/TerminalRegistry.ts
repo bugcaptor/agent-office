@@ -101,14 +101,9 @@ class TerminalRegistry {
     container.className = "terminal-mount-inner";
 
     // 키 입력 → PTY 배선 일체(플랫폼별 IME 병 포함)는 imeBridge가 맡는다.
-    // 여기 남는 것은 "봇이 몰고 있으면 사람 입력을 막는다"는 앱 규칙뿐이다.
     const ime = createImeBridge({
       term,
       container,
-      inputBlocked: () => {
-        const s = useAppStore.getState();
-        return s.isBotDriven(agentId);
-      },
       send: (data, source) =>
         source === undefined
           ? tauriApi.writeInput(agentId, data)

@@ -94,18 +94,6 @@
     "shellAuto": "Auto (default)",
     "shellNoHooks": "{{label}} (no time tracking)"
   },
-  "bot": {
-    "section": "Bot mode settings",
-    "sectionHint": "Right-click the terminal tab → “Start bot mode” and this character reacts to slash commands posted on its repository's Gitea issues, working on them automatically. The settings below persist for the bot.",
-    "slug": "Bot slash alias",
-    "slugPlaceholder": "e.g. nova (optional; derived from the name when empty)",
-    "slugHint": "Call this character from an issue with <code>/alias</code>. Leave it empty to derive one from the name (spaces removed, lowercased).",
-    "whitelist": "Bot whitelist",
-    "whitelistPlaceholder": "Extra allowed Gitea accounts, comma separated (optional)",
-    "whitelistHint": "Accounts allowed to trigger commands. The logged-in tea account is always included.",
-    "poll": "Bot poll interval (sec)",
-    "pollPlaceholder": "Default 60, minimum 30"
-  },
   "voice": {
     "label": "Voice (TTS)",
     "auto": "Auto (cast by species)",

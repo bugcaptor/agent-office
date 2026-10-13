@@ -75,10 +75,6 @@ export const Commands = {
   controlStatus: "control_status",
   controlApprove: "control_approve",
   controlRevoke: "control_revoke",
-  // 캐릭터 봇 모드(이슈 #57, docs/bot-mode-design.md) — 탭 단위 시작/중단/상태.
-  botStart: "bot_start",
-  botStop: "bot_stop",
-  botStatus: "bot_status",
   // 자동화 점검(kbm) — 탭 단위 LLM CLI 왕복 확인의 시작/중단/상태/타임아웃 결정.
   automationStart: "automation_start",
   automationStop: "automation_stop",

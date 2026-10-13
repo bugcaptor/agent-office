@@ -94,18 +94,6 @@
     "shellAuto": "自动（默认）",
     "shellNoHooks": "{{label}}（不支持计时）"
   },
-  "bot": {
-    "section": "机器人模式设置",
-    "sectionHint": "在终端标签页右键 →“启动机器人模式”开启后，此角色会响应所属仓库 Gitea 议题中的斜杠命令并自动作业。以下是机器人的持久设置。",
-    "slug": "机器人斜杠别名",
-    "slugPlaceholder": "例如：nova（可选，留空则从名字自动推导）",
-    "slugHint": "在议题中用 <code>/别名</code> 呼叫此角色。留空则从名字推导（去空格·转小写）。",
-    "whitelist": "机器人白名单",
-    "whitelistPlaceholder": "额外允许的 Gitea 账号，用逗号分隔（可选）",
-    "whitelistHint": "可以触发命令的账号。tea 登录账号本人始终包含在内。",
-    "poll": "机器人轮询间隔（秒）",
-    "pollPlaceholder": "默认 60，下限 30"
-  },
   "voice": {
     "label": "声音（TTS）",
     "auto": "自动（按种族分配）",

@@ -36,7 +36,7 @@ interface Harness {
   clock: { t: number };
 }
 
-function harness(opts: { isMac: boolean; blocked?: boolean }): Harness {
+function harness(opts: { isMac: boolean }): Harness {
   const container = document.createElement("div");
   const textarea = document.createElement("textarea");
   container.appendChild(textarea);
@@ -49,7 +49,6 @@ function harness(opts: { isMac: boolean; blocked?: boolean }): Harness {
   const bridge = createImeBridge({
     term,
     container,
-    inputBlocked: () => opts.blocked ?? false,
     send: (d, source) => {
       sent.push(d);
       sources.push(source);
@@ -147,12 +146,6 @@ describe("imeBridge · macOS 미러(우리가 유일한 writer)", () => {
   it("맥이 아니면 미러가 아예 손을 대지 않는다", () => {
     const h = harness({ isMac: false });
     expect(typeInto(h, "a").stopped).toBe(false);
-    expect(h.sent).toEqual([]);
-  });
-
-  it("봇이 몰고 있는 탭은 사람 입력을 PTY로 보내지 않는다", () => {
-    const h = harness({ isMac: true, blocked: true });
-    typeInto(h, "ㄱ");
     expect(h.sent).toEqual([]);
   });
 });

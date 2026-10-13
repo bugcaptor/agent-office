@@ -96,49 +96,6 @@ export function TerminalSection({
           <Trans t={t} i18nKey="terminal.talkReceiveHint" components={{ b: <b /> }} />
         </p>
       </div>
-      <div className="form-field">
-        <span className="form-label-text">{t("bot.section")}</span>
-        <p className="form-hint">{t("bot.sectionHint")}</p>
-      </div>
-      <div className="form-field">
-        <label>
-          <span className="form-label-text">{t("bot.slug")}</span>
-          <input
-            value={draft.botSlug ?? ""}
-            onChange={(e) => setDraft({ ...draft, botSlug: e.target.value })}
-            placeholder={t("bot.slugPlaceholder")}
-          />
-        </label>
-        {/* <code>가 문장 중간이라 talkReceiveHint와 같은 이유로 Trans. */}
-        <p className="form-hint">
-          <Trans t={t} i18nKey="bot.slugHint" components={{ code: <code /> }} />
-        </p>
-      </div>
-      <>
-      <div className="form-field">
-        <label>
-          <span className="form-label-text">{t("bot.whitelist")}</span>
-          <input
-            value={draft.botWhitelist ?? ""}
-            onChange={(e) => setDraft({ ...draft, botWhitelist: e.target.value })}
-            placeholder={t("bot.whitelistPlaceholder")}
-          />
-        </label>
-        <p className="form-hint">{t("bot.whitelistHint")}</p>
-      </div>
-      <div className="form-field">
-        <label>
-          <span className="form-label-text">{t("bot.poll")}</span>
-          <input
-            type="number"
-            min={30}
-            value={draft.botPollIntervalSec ?? ""}
-            onChange={(e) => setDraft({ ...draft, botPollIntervalSec: e.target.value })}
-            placeholder={t("bot.pollPlaceholder")}
-          />
-        </label>
-      </div>
-      </>
       {shells.length > 0 && (
         <div className="form-field">
           <label>

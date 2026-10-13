@@ -8,7 +8,7 @@
 //   · 수신자가 롱폴링 중이면(ask/inbox 대기) 그 HTTP 응답으로 건네준다.
 //     대기 중인 세션의 PTY에 주입하면 자기가 실행한 CLI 위로 글자가 쏟아진다.
 //   · 대기자가 없으면 배달 워커가 수신자가 **유휴**해질 때까지 기다렸다
-//     PTY에 주입한다(bot::runner와 같은 한 줄화 + 지연 CR 레시피).
+//     PTY에 주입한다(session::inject와 같은 한 줄화 + 지연 CR 레시피).
 //   · TTL(기본 10분)을 넘기면 만료시키고 발신자에게 사유를 돌려준다.
 
 pub mod skill;
@@ -34,12 +34,12 @@ pub const TTL_MS: u64 = 10 * 60 * 1000;
 pub const RATE_PER_MIN: usize = 6;
 /// 캐릭터당 동시에 열어 둘 수 있는 대화 수.
 pub const MAX_CONCURRENT: usize = 2;
-/// 한 메시지의 최대 길이(주입 폭주 방지). bot::runner의 지시문 상한과 같은 취지.
+/// 한 메시지의 최대 길이(주입 폭주 방지).
 pub const MAX_TEXT_LEN: usize = 1200;
 /// 배달 워커 틱.
 pub const TICK: Duration = Duration::from_millis(300);
-/// 주입 후 CR까지의 지연(bot::runner::INJECT_SUBMIT_DELAY_MS와 같은 이유).
-pub const SUBMIT_DELAY_MS: u64 = crate::bot::runner::INJECT_SUBMIT_DELAY_MS;
+/// 주입 후 CR까지의 지연(session::inject::INJECT_SUBMIT_DELAY_MS와 같은 이유).
+pub const SUBMIT_DELAY_MS: u64 = crate::session::inject::INJECT_SUBMIT_DELAY_MS;
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
@@ -481,7 +481,7 @@ fn drop_expired(convs: &mut HashMap<String, Conversation>, msg: &TalkMessage) {
 }
 
 /// 신뢰불가 텍스트 소독 + 길이 상한. 제어문자(ESC/BEL/CR)를 걷어내 터미널
-/// 이스케이프 주입과 조기 제출을 막는다(bot::runner와 같은 규칙).
+/// 이스케이프 주입과 조기 제출을 막는다(session::inject와 같은 규칙).
 pub fn sanitize(text: &str) -> String {
     let cleaned: String = text
         .chars()

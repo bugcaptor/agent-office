@@ -24,7 +24,6 @@
 // command's body lives in changed.
 mod automation;
 mod work_panels;
-mod bot;
 mod media;
 mod misc;
 mod repository_audit;
@@ -55,7 +54,6 @@ use crate::types::*;
 
 pub(crate) use automation::*;
 pub(crate) use work_panels::*;
-pub(crate) use bot::*;
 pub(crate) use media::*;
 pub(crate) use misc::*;
 pub(crate) use repository_audit::*;

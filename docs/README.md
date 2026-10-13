@@ -6,7 +6,7 @@
 
 | 문서 | 내용 | 상태 |
 |---|---|---|
-| [guide.md](guide.md) | 사용 안내 — 주요 기능, Claude/Codex 연동, 봇 모드, CLI 조종, 사용 팁, 개발자용 명령(빌드·서명·테스트) | 정본 (2026-08-21 신설, README에서 이관) |
+| [guide.md](guide.md) | 사용 안내 — 주요 기능, Claude/Codex 연동, CLI 조종, 사용 팁, 개발자용 명령(빌드·서명·테스트) | 정본 (2026-08-21 신설, README에서 이관) |
 
 ## 서브시스템 정본 (3)
 
@@ -30,7 +30,6 @@
 | [session-analytics-design.md](session-analytics-design.md) | 세션 활동 분석 패널 — 시계열 재구성·일별 스택 차트 | 정본 — 구현 완료 |
 | [session-log-design.md](session-log-design.md) | 터미널 전사 상시 기록(30일·2GB) + 세션 로그 보기 + 회고·학습자료 생성 | 정본 — 구현 완료, 눈검증 대기 |
 | [usage-design.md](usage-design.md) | 구독 사용량(rate limit) 표시 — 캐시 미러(#22) + Claude 실시간 조회(#33) 통합본 | 정본 — 구현 완료 |
-| [bot-mode-design.md](bot-mode-design.md) | 캐릭터 봇 모드 — Gitea 이슈 폴링·프롬프트 주입·PR 완료 판정 | 정본 — 구현 완료(#57/#58/#61) |
 | [cli-control-design.md](cli-control-design.md) | `agent-office ctl` 외부 CLI 제어 — 로컬 axum 서버 + 2단계 승인 | 정본 — 구현 완료(#55) |
 | [run-recipes-design.md](run-recipes-design.md) | 실행 레시피 — 프로젝트(프로필 cwd)별 실행 방법을 캐릭터가 조사해 앱 데이터에 저장, 팔레트에서 그 캐릭터 세션에 주입. 설정 opt-in | 정본 (2026-09-04, kbm #2rf) — 구현 완료 |
 | [terminal-automation-design.md](terminal-automation-design.md) | 사용자 정의 터미널 입력 자동화 — v1/v2 순차 CLI 전환, 단계 정의를 저장해 평소 쓰는 터미널에 프롬프트를 대신 입력. 기동 10초·작업 대기 30분·타임아웃 시 사용자 선택, 사람 입력 허용 | 정본 (2026-09-08, kbm #2t9) — v1/v2 구현, 실제 bash/zsh 및 PTY 대역 검증 |
@@ -62,6 +61,7 @@
 | [archive/ide-session-spike.md](archive/ide-session-spike.md) | IDE 세션 관찰 연결(kbm #2w6) — 실험 구현 후 미사용으로 제거(2026-10-14, 점검·정리 §7.D C39) |
 | [archive/ide-persona-design.md](archive/ide-persona-design.md) | 원본 IDE 에이전트 말투(kbm #2w7) — IDE 관찰 연결과 함께 제거(2026-10-14) |
 | [archive/external-session-attach-design.md](archive/external-session-attach-design.md) | 외부 터미널/tmux 세션 붙이기(kbm #2by) — `ctl attach`. 미사용으로 제거(2026-10-14, 점검·정리 §7.D C33) |
+| [archive/bot-mode-design.md](archive/bot-mode-design.md) | 캐릭터 봇 모드(#57/#58/#61) — Gitea 이슈 폴링. 미사용으로 제거(2026-10-14, 점검·정리 §7.D C30) |
 
 ## 관련 (docs/ 밖)
 
