@@ -95,7 +95,7 @@ printf -- '---\nassignee: 하나\n---\n# 로그인 회귀 테스트 추가\n세�
 mv "$inbox/.$name.tmp" "$inbox/$name"
 ```
 
-업무 패널이 켜져 있으면 3초 안에 카드가 생기고 파일은 지워집니다. 형식이 틀린 파일은 `work-inbox/rejected/`로 옮겨지고 옆의 `.error` 파일에 사유가 남습니다. 자세한 규약은 [work-panels-design.md](work-panels-design.md#업무-수신함)를 보세요.
+업무 패널이 켜져 있으면 3초 안에 카드가 생기고 파일은 지워집니다. 형식이 틀렸거나 반영할 수 없는 파일(이미 있는 업무 id에 다른 내용, 없는 업무 완료)은 `work-inbox/rejected/`로 옮겨지고 옆의 `.error` 파일에 사유가 남습니다. 모르는 담당이나 없는 선행 작업은 빼고 카드를 만든 뒤 `work-inbox/warnings.log`에 한 줄 남깁니다. 자세한 규약은 [work-panels-design.md](work-panels-design.md#업무-수신함)를 보세요.
 
 안내를 덧붙일 방법이 없는 CLI(현재 agy)는 앱이 세션에 넣어 주는 `AGENT_OFFICE_TASK`(명령 경로)만 받습니다. 프로젝트 `AGENTS.md`에 한 줄 적어 두면 같은 방식으로 쓸 수 있습니다.
 

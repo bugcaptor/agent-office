@@ -1,4 +1,4 @@
-import type { AgentProfile, InboxEntry } from "@shared/types";
+import type { AgentProfile, InboxEntry, InboxRejection, InboxWarning } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
 import { useWorkItemStore } from "./workItemStore";
@@ -10,6 +10,14 @@ export function resolveAssignee(raw: string | undefined, profiles: Pick<AgentPro
   const matches = profiles.filter((profile) => profile.name.trim() === raw.trim());
   return matches.length === 1 ? matches[0].id : undefined;
 }
+
+/** 담당 값이 있는데 배정하지 못한 이유. 미배정으로 받되 경고를 남긴다. */
+export function assigneeIssue(raw: string | undefined, profiles: Pick<AgentProfile, "id" | "name">[]): "unknown-assignee" | "ambiguous-assignee" | undefined {
+  if (!raw?.trim() || resolveAssignee(raw, profiles)) return;
+  return profiles.some((profile) => profile.name.trim() === raw.trim()) ? "ambiguous-assignee" : "unknown-assignee";
+}
+
+const DROPPED_CODE = { self: "self-prerequisite", unknown: "unknown-prerequisite", cycle: "cyclic-prerequisite" } as const;
 
 /** `office-task`가 정해 출력한 id를 그대로 쓴다. 그래야 `--after`로 이을 수 있다. */
 export function inboxItemId(entry: Pick<InboxEntry, "id" | "key">): string { return entry.id ?? `inbox-${entry.key}`; }
@@ -30,16 +38,39 @@ async function receive(epoch: number): Promise<void> {
     // 완료 요청은 같은 주기의 추가를 먼저 반영한 뒤 적용해 방금 남긴 업무도 완료할 수 있다.
     const completions = entries.filter((entry) => entry.done?.length);
     const additions = entries.filter((entry) => !entry.done?.length);
-    const accepted = new Set(useWorkItemStore.getState().importInbox(additions.map((entry) => ({
+    const imported = useWorkItemStore.getState().importInbox(additions.map((entry) => ({
       id: inboxItemId(entry), title: entry.title, body: entry.body,
       assigneeAgentId: resolveAssignee(entry.assignee, profiles), dependsOn: entry.after,
-    }))));
-    const completed = completions.length > 0 && useWorkItemStore.getState().completeFromInbox(completions.flatMap((entry) => entry.done!));
+    })));
+    const completed = completions.length ? useWorkItemStore.getState().completeFromInbox(completions.map((entry) => entry.done!)) : [];
     await useWorkItemStore.getState().flush();
     const state = useWorkItemStore.getState();
     if (!state.loaded || state.dirty || state.error) return;
-    const names = entries.filter((entry) => entry.done?.length ? completed : accepted.has(inboxItemId(entry))).map((entry) => entry.fileName);
-    if (names.length) await tauriApi.ackWorkInbox(names);
+    // 의미 오류는 버리지 않는다: 반영할 수 없는 파일은 rejected/로, 고쳐 받은 업무는 경고 기록으로.
+    const ack: string[] = [];
+    const rejections: InboxRejection[] = [];
+    const warnings: InboxWarning[] = [];
+    additions.forEach((entry, n) => {
+      const result = imported[n];
+      const taskId = inboxItemId(entry);
+      if (!result || result.kind === "skipped") return;
+      if (result.kind === "duplicate") { rejections.push({ fileName: entry.fileName, reason: "duplicate-id", detail: taskId }); return; }
+      ack.push(entry.fileName);
+      if (result.kind !== "added") return;
+      const issue = assigneeIssue(entry.assignee, profiles);
+      if (issue) warnings.push({ fileName: entry.fileName, taskId, code: issue, detail: entry.assignee!.trim() });
+      for (const dropped of result.dropped) warnings.push({ fileName: entry.fileName, taskId, code: DROPPED_CODE[dropped.reason], detail: dropped.id });
+    });
+    completions.forEach((entry, n) => {
+      const result = completed[n];
+      if (!result) return;
+      if (result.unknown.length) rejections.push({ fileName: entry.fileName, reason: "unknown-task", detail: result.unknown.join(", ") });
+      else ack.push(entry.fileName);
+    });
+    // 경고 기록 실패로 업무를 다시 받지는 않는다(다시 받으면 replayed라 경고도 사라진다).
+    if (warnings.length) await tauriApi.warnWorkInbox(warnings).catch((error) => console.warn("work-inbox: warning log failed", error));
+    if (ack.length) await tauriApi.ackWorkInbox(ack);
+    if (rejections.length) await tauriApi.rejectWorkInbox(rejections);
   } catch (error) { console.warn("work-inbox: receive failed", error); }
 }
 export function startWorkInbox(): void {

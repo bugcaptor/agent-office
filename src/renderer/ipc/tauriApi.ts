@@ -64,6 +64,8 @@ export const tauriApi: AgentOfficeApi = {
   async sendWorkItem(request) { return await invoke(Commands.sendWorkItem, { request }); },
   async scanWorkInbox() { return await invoke(Commands.scanWorkInbox); },
   async ackWorkInbox(fileNames) { await invoke(Commands.ackWorkInbox, { fileNames }); },
+  async rejectWorkInbox(rejections) { await invoke(Commands.rejectWorkInbox, { rejections }); },
+  async warnWorkInbox(warnings) { await invoke(Commands.warnWorkInbox, { warnings }); },
   async loadWorkItems() { return await invoke(Commands.loadWorkItems); },
   async saveWorkItems(items) { await invoke(Commands.saveWorkItems, { items }); },
   async loadSessionSummaries() { return await invoke(Commands.loadSessionSummaries); },

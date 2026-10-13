@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WorkItem } from "@shared/types";
-import { dependencyCandidates, dependentCount, normalizeDependsOn, pendingPrerequisites } from "../workDependencies";
+import { dependencyCandidates, dependentCount, explainDependsOn, normalizeDependsOn, pendingPrerequisites } from "../workDependencies";
 
 const work = (id: string, status: WorkItem["status"] = "todo", dependsOn?: string[]): WorkItem =>
   ({ id, title: id, body: "", status, order: 0, sessionIds: [], dependsOn, createdAt: 1, updatedAt: 1 });
@@ -13,6 +13,12 @@ describe("work dependencies", () => {
     expect(normalizeDependsOn("d", ["c", "a"], items)).toEqual(["c", "a"]);
     expect(normalizeDependsOn(undefined, ["c"], items)).toEqual(["c"]);
     expect(normalizeDependsOn("d", [], items)).toBeUndefined();
+  });
+  it("뺀 선행 작업의 사유를 알려주고 중복은 조용히 합친다", () => {
+    expect(explainDependsOn("a", ["c", "d", "d", "a", "gone", "gone"], items)).toEqual({
+      kept: ["d"], dropped: [{ id: "c", reason: "cycle" }, { id: "a", reason: "self" }, { id: "gone", reason: "unknown" }],
+    });
+    expect(explainDependsOn("d", undefined, items)).toEqual({ kept: undefined, dropped: [] });
   });
   it("완료되지 않은 선행 작업만 막고 지워진 업무는 무시한다", () => {
     expect(pendingPrerequisites(items[1], items)).toEqual([]);

@@ -17,16 +17,26 @@ function reaches(from: string, target: string, items: Linked[]): boolean {
   return false;
 }
 
-/** 목록에 있는 id만, 자기 자신·중복·순환을 빼고 남긴다. 비면 undefined. */
-export function normalizeDependsOn(id: string | undefined, dependsOn: readonly string[] | undefined, items: Linked[]): string[] | undefined {
+export type DroppedDependency = { id: string; reason: "self" | "unknown" | "cycle" };
+
+/** `normalizeDependsOn`과 같지만 뺀 선행 작업과 사유도 돌려준다. 중복은 조용히 합친다. */
+export function explainDependsOn(id: string | undefined, dependsOn: readonly string[] | undefined, items: Linked[]): { kept?: string[]; dropped: DroppedDependency[] } {
   const known = new Set(items.map((item) => item.id));
   const kept: string[] = [];
+  const dropped: DroppedDependency[] = [];
   for (const prerequisite of dependsOn ?? []) {
-    if (prerequisite === id || !known.has(prerequisite) || kept.includes(prerequisite)) continue;
-    if (id && reaches(prerequisite, id, items)) continue;
-    kept.push(prerequisite);
+    if (kept.includes(prerequisite) || dropped.some((d) => d.id === prerequisite)) continue;
+    if (prerequisite === id) dropped.push({ id: prerequisite, reason: "self" });
+    else if (!known.has(prerequisite)) dropped.push({ id: prerequisite, reason: "unknown" });
+    else if (id && reaches(prerequisite, id, items)) dropped.push({ id: prerequisite, reason: "cycle" });
+    else kept.push(prerequisite);
   }
-  return kept.length ? kept : undefined;
+  return { kept: kept.length ? kept : undefined, dropped };
+}
+
+/** 목록에 있는 id만, 자기 자신·중복·순환을 빼고 남긴다. 비면 undefined. */
+export function normalizeDependsOn(id: string | undefined, dependsOn: readonly string[] | undefined, items: Linked[]): string[] | undefined {
+  return explainDependsOn(id, dependsOn, items).kept;
 }
 
 /** 아직 완료되지 않은 선행 작업. 지워진 업무는 막지 않는다. */

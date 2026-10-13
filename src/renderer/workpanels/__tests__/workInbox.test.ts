@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentProfile, InboxEntry } from "@shared/types";
 const { api } = vi.hoisted(() => ({
-  api: { loadWorkItems: vi.fn(), saveWorkItems: vi.fn(), scanWorkInbox: vi.fn(), ackWorkInbox: vi.fn() },
+  api: { loadWorkItems: vi.fn(), saveWorkItems: vi.fn(), scanWorkInbox: vi.fn(), ackWorkInbox: vi.fn(), rejectWorkInbox: vi.fn(), warnWorkInbox: vi.fn() },
 }));
 vi.mock("../../ipc/tauriApi", () => ({ tauriApi: api }));
 import { useAppStore } from "../../store/appStore";
 import { useWorkItemStore } from "../workItemStore";
-import { resolveAssignee, startWorkInbox, stopWorkInbox, hasPendingWorkInbox } from "../workInbox";
+import { assigneeIssue, resolveAssignee, startWorkInbox, stopWorkInbox, hasPendingWorkInbox } from "../workInbox";
 const initialApp = useAppStore.getState(); const initialWork = useWorkItemStore.getState();
 const profile = (id: string, name: string): AgentProfile => ({ id, name, role: "dev", seed: id, createdAt: 1, deskIndex: 0 });
 const entry = (fileName: string, title: string, extra: Partial<InboxEntry> = {}): InboxEntry => ({ fileName, key: fileName.padEnd(16, "0"), title, body: "", ...extra });
@@ -15,6 +15,7 @@ beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks();
   api.loadWorkItems.mockResolvedValue([]); api.saveWorkItems.mockResolvedValue(undefined);
   api.scanWorkInbox.mockResolvedValue([]); api.ackWorkInbox.mockResolvedValue(undefined);
+  api.rejectWorkInbox.mockResolvedValue(undefined); api.warnWorkInbox.mockResolvedValue(undefined);
   useAppStore.setState(initialApp, true); useAppStore.setState({ agents: { a: profile("a", "하나"), b: profile("b", "둘"), c: profile("c", "둘") } });
   useWorkItemStore.setState({ ...initialWork, loaded: true }, true);
 });
@@ -31,24 +32,50 @@ describe("resolveAssignee", () => {
     expect(resolveAssignee(undefined, profiles)).toBeUndefined();
     expect(resolveAssignee("", profiles)).toBeUndefined();
   });
+  it("배정하지 못한 담당 값의 이유를 알려준다", () => {
+    expect(assigneeIssue("a", profiles)).toBeUndefined();
+    expect(assigneeIssue(undefined, profiles)).toBeUndefined();
+    expect(assigneeIssue(" ", profiles)).toBeUndefined();
+    expect(assigneeIssue(" 둘", profiles)).toBe("ambiguous-assignee");
+    expect(assigneeIssue("없음", profiles)).toBe("unknown-assignee");
+  });
 });
 
 describe("importInbox", () => {
-  it("todo 끝에 추가하고 중복 id는 건너뛰되 반영 목록에 넣으며 선택은 그대로 둔다", () => {
+  it("todo 끝에 추가하고 같은 내용의 재수신과 다른 내용의 id 충돌을 구분하며 선택은 그대로 둔다", () => {
     const store = useWorkItemStore.getState();
     const done = store.add({ title: "Done", body: "", status: "done" })!; const todo = store.add("Todo")!;
     store.select(done);
-    expect(store.importInbox([{ id: "inbox-1", title: "One", body: "" }, { id: "inbox-2", title: "", body: "Two" }, { id: "inbox-3", title: " ", body: "" }])).toEqual(["inbox-1", "inbox-2"]);
-    expect(store.importInbox([{ id: "inbox-1", title: "Again", body: "" }])).toEqual(["inbox-1"]);
+    expect(store.importInbox([{ id: "inbox-1", title: "One", body: "" }, { id: "inbox-2", title: "", body: "Two" }, { id: "inbox-3", title: " ", body: "" }]))
+      .toEqual([{ kind: "added", dropped: [] }, { kind: "added", dropped: [] }, { kind: "skipped" }]);
+    expect(store.importInbox([{ id: "inbox-1", title: "One", body: "" }, { id: "inbox-1", title: "Again", body: "" }, { id: "inbox-4", title: "Four", body: "" }, { id: "inbox-4", title: "Other", body: "" }]))
+      .toEqual([{ kind: "replayed" }, { kind: "duplicate" }, { kind: "added", dropped: [] }, { kind: "duplicate" }]);
     const state = useWorkItemStore.getState();
     expect(state.selectedId).toBe(done); expect(state.dirty).toBe(true);
     const todos = state.items.filter((i) => i.status === "todo").sort((a, b) => a.order - b.order);
-    expect(todos.map((i) => i.id)).toEqual([todo, "inbox-1", "inbox-2"]);
+    expect(todos.map((i) => i.id)).toEqual([todo, "inbox-1", "inbox-2", "inbox-4"]);
     expect(state.items.find((i) => i.id === "inbox-1")?.title).toBe("One");
+    expect(state.items.find((i) => i.id === "inbox-4")?.title).toBe("Four");
+  });
+  it("버린 선행 작업을 사유와 함께 돌려준다", () => {
+    const store = useWorkItemStore.getState();
+    const base = store.add("Base")!;
+    // A·B가 서로를 기다리면 먼저 처리한 A 쪽 선행이 순환으로 빠진다.
+    expect(store.importInbox([
+      { id: "t-a", title: "A", body: "", dependsOn: ["t-b", base] },
+      { id: "t-b", title: "B", body: "", dependsOn: ["t-a", "t-b", "t-ghost"] },
+    ])).toEqual([
+      { kind: "added", dropped: [{ id: "t-b", reason: "cycle" }] },
+      { kind: "added", dropped: [{ id: "t-b", reason: "self" }, { id: "t-ghost", reason: "unknown" }] },
+    ]);
+    const items = useWorkItemStore.getState().items;
+    expect(items.find((i) => i.id === "t-a")?.dependsOn).toEqual([base]);
+    expect(items.find((i) => i.id === "t-b")?.dependsOn).toEqual(["t-a"]);
   });
   it("로드 전이나 오류 중에는 아무것도 하지 않는다", () => {
     useWorkItemStore.setState({ loaded: false });
     expect(useWorkItemStore.getState().importInbox([{ id: "inbox-1", title: "One", body: "" }])).toEqual([]);
+    expect(useWorkItemStore.getState().completeFromInbox([["inbox-1"]])).toEqual([]);
     useWorkItemStore.setState({ loaded: true, error: "save" });
     expect(useWorkItemStore.getState().importInbox([{ id: "inbox-1", title: "One", body: "" }])).toEqual([]);
     expect(useWorkItemStore.getState().items).toEqual([]);
@@ -61,11 +88,12 @@ describe("receive loop", () => {
     useWorkItemStore.getState().importInbox([{ id: "t-build", title: "Build", body: "", dependsOn: [design] }]);
     await useWorkItemStore.getState().flush();
     api.saveWorkItems.mockRejectedValueOnce(new Error("disk"));
-    api.scanWorkInbox.mockResolvedValue([entry("1.md", "Fresh", { id: "t-fresh" }), entry("2.md", "", { done: [design, "t-fresh", "t-missing"] })]);
+    api.scanWorkInbox.mockResolvedValue([entry("1.md", "Fresh", { id: "t-fresh" }), entry("2.md", "", { done: [design, "t-fresh"] })]);
     startWorkInbox(); await vi.advanceTimersByTimeAsync(3000);
     expect(api.ackWorkInbox).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(3000);
     expect(api.ackWorkInbox).toHaveBeenCalledWith(["1.md", "2.md"]);
+    expect(api.rejectWorkInbox).not.toHaveBeenCalled();
     const items = useWorkItemStore.getState().items;
     expect(items.find((i) => i.id === design)?.status).toBe("done");
     expect(items.find((i) => i.id === "t-fresh")?.status).toBe("done");
@@ -81,6 +109,7 @@ describe("receive loop", () => {
     ]);
     startWorkInbox(); await vi.advanceTimersByTimeAsync(3000);
     expect(api.ackWorkInbox).toHaveBeenCalledWith(["1.md", "2.md", "3.md"]);
+    expect(api.warnWorkInbox).toHaveBeenCalledWith([{ fileName: "2.md", taskId: "t-2", code: "unknown-prerequisite", detail: "t-missing" }]);
     const items = useWorkItemStore.getState().items;
     expect(items.find((i) => i.id === "t-1")?.dependsOn).toEqual([existing]);
     expect(items.find((i) => i.id === "t-2")?.dependsOn).toEqual(["t-1"]);
@@ -92,9 +121,38 @@ describe("receive loop", () => {
     startWorkInbox(); await vi.advanceTimersByTimeAsync(3000);
     expect(api.saveWorkItems).toHaveBeenCalled();
     expect(api.ackWorkInbox).toHaveBeenCalledWith(["new.md", "old.md", "dup.md"]);
+    // 재수신(old.md)은 경고를 다시 남기지 않는다.
+    expect(api.warnWorkInbox).toHaveBeenCalledWith([{ fileName: "dup.md", taskId: `inbox-${entry("dup.md", "").key}`, code: "ambiguous-assignee", detail: "둘" }]);
     const items = useWorkItemStore.getState().items;
     expect(items.find((i) => i.title === "New")?.assigneeAgentId).toBe("a");
     expect(items.find((i) => i.title === "Dup")?.assigneeAgentId).toBeUndefined();
+  });
+  it("id 충돌과 없는 업무 완료 요청은 반영하지 않고 rejected로 보낸다", async () => {
+    const keep = useWorkItemStore.getState().add("Keep")!;
+    useWorkItemStore.getState().importInbox([{ id: "t-old", title: "Old", body: "" }]);
+    api.scanWorkInbox.mockResolvedValueOnce([
+      entry("1.md", "Different", { id: "t-old" }),
+      entry("2.md", "Nobody", { id: "t-new", assignee: "없는사람" }),
+      entry("3.md", "", { done: [keep, "t-nothere1"] }),
+      entry("4.md", "", { done: ["t-new"] }),
+    ]);
+    startWorkInbox(); await vi.advanceTimersByTimeAsync(3000);
+    expect(api.ackWorkInbox).toHaveBeenCalledWith(["2.md", "4.md"]);
+    expect(api.rejectWorkInbox).toHaveBeenCalledWith([
+      { fileName: "1.md", reason: "duplicate-id", detail: "t-old" },
+      { fileName: "3.md", reason: "unknown-task", detail: "t-nothere1" },
+    ]);
+    expect(api.warnWorkInbox).toHaveBeenCalledWith([{ fileName: "2.md", taskId: "t-new", code: "unknown-assignee", detail: "없는사람" }]);
+    const items = useWorkItemStore.getState().items;
+    expect(items.find((i) => i.id === "t-old")?.title).toBe("Old");
+    expect(items.find((i) => i.id === keep)?.status).toBe("todo");
+    expect(items.find((i) => i.id === "t-new")).toMatchObject({ status: "done", assigneeAgentId: undefined });
+  });
+  it("경고 기록에 실패해도 업무 파일은 ack한다", async () => {
+    api.warnWorkInbox.mockRejectedValueOnce(new Error("disk"));
+    api.scanWorkInbox.mockResolvedValueOnce([entry("a.md", "A", { after: ["t-ghost"] })]);
+    startWorkInbox(); await vi.advanceTimersByTimeAsync(3000);
+    expect(api.ackWorkInbox).toHaveBeenCalledWith(["a.md"]);
   });
   it("저장 실패 시 ack하지 않고 다음 주기에 다시 저장한 뒤 ack한다", async () => {
     api.scanWorkInbox.mockResolvedValue([entry("a.md", "A")]);

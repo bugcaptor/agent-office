@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import type { WorkItem, WorkStatus } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { hasWorkContent, type WorkItemDraft } from "./workItemDraft";
-import { normalizeDependsOn } from "./workDependencies";
+import { explainDependsOn, normalizeDependsOn, type DroppedDependency } from "./workDependencies";
 import type { ImportedWorkItem } from "./workItemFile";
 
 export const WORK_STATUS_ORDER: WorkStatus[] = ["review", "in_progress", "todo", "done"];
@@ -12,6 +12,14 @@ let saving: Promise<void> | undefined;
 let loading: Promise<void> | undefined;
 let revision = 0;
 export type InboxImport = Pick<WorkItem, "id" | "title" | "body" | "assigneeAgentId" | "dependsOn">;
+/**
+ * 수신함 업무 하나의 처리 결과.
+ * - added: 새로 넣음. `dropped`는 버린 선행 작업.
+ * - replayed: 같은 id·제목·본문이 이미 있음(저장 뒤 ack 전에 죽은 재수신). 파일만 지운다.
+ * - duplicate: 같은 id에 내용이 다름. 넣지 않고 거부한다.
+ * - skipped: 제목·본문이 비어 건너뜀.
+ */
+export type InboxImportResult = { kind: "added"; dropped: DroppedDependency[] } | { kind: "replayed" | "duplicate" | "skipped" };
 interface WorkItemState {
   items: WorkItem[];
   loaded: boolean;
@@ -20,11 +28,15 @@ interface WorkItemState {
   selectedId: string | null;
   load(): Promise<void>;
   add(draft: string | WorkItemDraft): string | undefined;
-  importInbox(entries: InboxImport[]): string[];
+  /** 입력 순서대로 결과를 돌려준다. 로드 전·오류 중에는 빈 배열. */
+  importInbox(entries: InboxImport[]): InboxImportResult[];
   /** 내보낸 파일 가져오기. 항상 새 id로 추가하고 추가한 수를 돌려준다. */
   importFile(entries: ImportedWorkItem[]): number;
-  /** 수신함 완료 요청. 반영할 수 있는 상태면 true(없는 id·이미 완료는 건너뛴다). */
-  completeFromInbox(ids: string[]): boolean;
+  /**
+   * 수신함 완료 요청들. 요청마다 목록에 없는 id를 돌려주고, 하나라도 없으면 그 요청은
+   * 반영하지 않는다(이미 완료는 건너뛴다). 로드 전·오류 중에는 빈 배열.
+   */
+  completeFromInbox(requests: string[][]): { unknown: string[] }[];
   edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status" | "dependsOn">>): void;
   recordSend(id: string, result: { sessionId?: string; error?: string }): void;
   remove(id: string): void;
@@ -69,23 +81,31 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
   },
   importInbox(entries) {
     if (!get().loaded || get().error) return [];
-    const ids = new Set(get().items.map((item) => item.id));
+    const byId = new Map(get().items.map((item) => [item.id, item]));
     let order = Math.max(-1, ...get().items.filter((item) => item.status === "todo").map((item) => item.order)) + 1;
     const at = Date.now();
     const added: WorkItem[] = [];
-    const accepted: string[] = [];
-    for (const entry of entries) {
-      if (!entry.id || !hasWorkContent(entry)) continue;
-      accepted.push(entry.id);
-      if (ids.has(entry.id)) continue;
-      ids.add(entry.id);
-      added.push({ ...entry, status: "todo", order: order++, sessionIds: [], createdAt: at, updatedAt: at });
-    }
+    const results = entries.map((entry): InboxImportResult => {
+      if (!entry.id || !hasWorkContent(entry)) return { kind: "skipped" };
+      const existing = byId.get(entry.id);
+      if (existing) return { kind: existing.title === entry.title && existing.body === entry.body ? "replayed" : "duplicate" };
+      const item: WorkItem = { ...entry, status: "todo", order: order++, sessionIds: [], createdAt: at, updatedAt: at };
+      byId.set(item.id, item);
+      added.push(item);
+      return { kind: "added", dropped: [] };
+    });
     // 같은 주기에 함께 들어온 업무끼리도 이을 수 있도록 모두 넣은 목록으로 다듬는다.
     const all = [...get().items, ...added];
-    for (const item of added) item.dependsOn = normalizeDependsOn(item.id, item.dependsOn, all);
+    entries.forEach((entry, n) => {
+      const result = results[n];
+      const item = result.kind === "added" ? byId.get(entry.id) : undefined;
+      if (!item || result.kind !== "added") return;
+      const { kept, dropped } = explainDependsOn(item.id, item.dependsOn, all);
+      item.dependsOn = kept;
+      result.dropped = dropped;
+    });
     if (added.length) { set({ items: all, dirty: true }); changed(); }
-    return accepted;
+    return results;
   },
   importFile(entries) {
     if (!get().loaded || get().error || !entries.length) return 0;
@@ -111,11 +131,17 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     changed();
     return added.length;
   },
-  completeFromInbox(ids) {
-    if (!get().loaded || get().error) return false;
+  completeFromInbox(requests) {
+    if (!get().loaded || get().error) return [];
     let order = Math.max(-1, ...get().items.filter((i) => i.status === "done").map((i) => i.order)) + 1;
     const at = Date.now();
-    const targets = new Set(ids);
+    const known = new Set(get().items.map((item) => item.id));
+    const targets = new Set<string>();
+    const results = requests.map((ids) => {
+      const unknown = ids.filter((id) => !known.has(id));
+      if (!unknown.length) for (const id of ids) targets.add(id);
+      return { unknown };
+    });
     let changedAny = false;
     const items = get().items.map((item) => {
       if (!targets.has(item.id) || item.status === "done") return item;
@@ -123,7 +149,7 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
       return { ...item, status: "done" as const, order: order++, updatedAt: at };
     });
     if (changedAny) { set({ items, dirty: true }); changed(); }
-    return true;
+    return results;
   },
   edit(id, patch) {
     if (!get().loaded) return;

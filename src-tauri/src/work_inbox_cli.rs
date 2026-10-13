@@ -98,6 +98,7 @@ pub fn run_with(
     };
     let body = body.replace("\r\n", "\n");
     if title.is_empty() && body.trim().is_empty() { return fail(err, "title and body are both empty"); }
+    let explicit = matches!(assignee, Assignee::To(_));
     let assignee = match assignee {
         Assignee::To(value) if value.contains(['\n', '\r']) => return usage_error(err, "--to must be a single line"),
         Assignee::To(value) => Some(value.trim().to_string()).filter(|v| !v.is_empty()),
@@ -108,6 +109,7 @@ pub fn run_with(
             id
         }
     };
+    warn_unknown_references(env, assignee.as_deref().filter(|_| explicit), &after, err);
     let random = uuid::Uuid::new_v4().simple().to_string();
     let id = format!("t-{}", &random[..8]);
     let content = render(&id, &title, body.trim_matches('\n'), assignee.as_deref(), &after);
@@ -129,6 +131,44 @@ fn render(id: &str, title: &str, body: &str, assignee: Option<&str>, after: &[St
     text.push_str(&format!("---\n# {title}\n"));
     if !body.is_empty() { text.push_str(body); text.push('\n'); }
     text
+}
+
+/// `profiles.json`의 (id, 이름). 없거나 읽을 수 없으면 None.
+fn load_profiles(dir: &Path) -> Option<Vec<(String, String)>> {
+    let state: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("profiles.json")).ok()?).ok()?;
+    Some(state.get("agents")?.as_array()?.iter()
+        .filter_map(|agent| Some((agent.get("id")?.as_str()?.to_string(), agent.get("name")?.as_str()?.to_string())))
+        .collect())
+}
+
+/// 앱이 아직 가져가지 않은 수신함 파일의 업무 id.
+fn pending_ids(inbox: &Path) -> Vec<String> {
+    std::fs::read_dir(inbox).map(|entries| entries.flatten()
+        .filter(|entry| entry.file_name().to_str().is_some_and(|name| !name.starts_with('.') && name.ends_with(".md")))
+        .filter_map(|entry| crate::persistence::work_inbox::parse("", &std::fs::read(entry.path()).ok()?).ok()?.id)
+        .collect()).unwrap_or_default()
+}
+
+/// 앱은 모르는 담당을 미배정으로, 없는 선행을 빼고 받는다. 에이전트가 바로 고칠 수 있게
+/// 쓰기 전에 stderr로 알린다. 업무는 그대로 쓴다(rc 0). 앱 데이터를 읽지 못하면 확인하지 않는다.
+fn warn_unknown_references(env: &TaskEnv, to: Option<&str>, after: &[String], err: &mut dyn Write) {
+    let Some(dir) = env.data_dir() else { return };
+    if let (Some(to), Some(profiles)) = (to, load_profiles(&dir)) {
+        let by_name = profiles.iter().filter(|(_, name)| name.trim() == to).count();
+        if !profiles.iter().any(|(id, _)| id == to) && by_name != 1 {
+            let why = if by_name == 0 { "no character has this name or id" } else { "several characters share this name; use the id" };
+            let _ = writeln!(err, "office-task: warning: --to {to:?}: {why}; the task will be unassigned");
+        }
+    }
+    if after.is_empty() { return; }
+    let Ok(items) = load_items(&dir) else { return };
+    let pending = env.inbox().map(|inbox| pending_ids(&inbox)).unwrap_or_default();
+    let unknown: Vec<&str> = after.iter().map(String::as_str)
+        .filter(|id| !items.iter().any(|item| item.get("id").and_then(|v| v.as_str()) == Some(id)) && !pending.iter().any(|p| p == id))
+        .collect();
+    if !unknown.is_empty() {
+        let _ = writeln!(err, "office-task: warning: --after {}: no such task (see office-task --list); the app will drop it", unknown.join(", "));
+    }
 }
 
 fn load_items(dir: &Path) -> Result<Vec<serde_json::Value>, String> {
@@ -156,10 +196,7 @@ fn done(ids: &[String], env: &TaskEnv, out: &mut dyn Write, err: &mut dyn Write,
     let status = |id: &str| items.iter().find(|item| item.get("id").and_then(|v| v.as_str()) == Some(id))
         .map(|item| item.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string());
     // 방금 남겨 아직 앱이 가져가지 않은 업무도 완료할 수 있다. 앱은 같은 주기에서 추가를 먼저 반영한다.
-    let pending: Vec<String> = std::fs::read_dir(&inbox).map(|entries| entries.flatten()
-        .filter(|entry| entry.file_name().to_str().is_some_and(|name| !name.starts_with('.') && name.ends_with(".md")))
-        .filter_map(|entry| crate::persistence::work_inbox::parse("", &std::fs::read(entry.path()).ok()?).ok()?.id)
-        .collect()).unwrap_or_default();
+    let pending = pending_ids(&inbox);
     let unknown: Vec<&str> = requested.iter().map(String::as_str).filter(|id| status(id).is_none() && !pending.iter().any(|p| p == id)).collect();
     if !unknown.is_empty() { return fail(err, &format!("no such task: {} (see office-task --list)", unknown.join(", "))); }
     let (already, targets): (Vec<String>, Vec<String>) = requested.into_iter().partition(|id| status(id).as_deref() == Some("done"));
@@ -179,12 +216,7 @@ const LIST_STATUS_ORDER: [&str; 4] = ["review", "in_progress", "todo", "done"];
 fn list(env: &TaskEnv, all: bool, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     let Some(dir) = env.data_dir() else { return fail(err, "AGENT_OFFICE_WORK_INBOX and AGENT_OFFICE_APP_DATA are not set"); };
     let items = match load_items(&dir) { Ok(items) => items, Err(e) => return fail(err, &e) };
-    let names: std::collections::HashMap<String, String> = std::fs::read(dir.join("profiles.json")).ok()
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        .and_then(|state| state.get("agents")?.as_array().cloned())
-        .unwrap_or_default().iter()
-        .filter_map(|agent| Some((agent.get("id")?.as_str()?.to_string(), agent.get("name")?.as_str()?.to_string())))
-        .collect();
+    let names: std::collections::HashMap<String, String> = load_profiles(&dir).unwrap_or_default().into_iter().collect();
     let field = |item: &serde_json::Value, key: &str| item.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string();
     let status_of: std::collections::HashMap<String, String> = items.iter().map(|item| (field(item, "id"), field(item, "status"))).collect();
     let mut shown: Vec<&serde_json::Value> = items.iter().filter(|item| all || field(item, "status") != "done").collect();
@@ -390,6 +422,27 @@ mod tests {
         assert_eq!(call(&["--list", "x"], &env, "").0, 2);
         let empty = tempfile::tempdir().unwrap();
         assert_eq!(call(&["--list"], &TaskEnv { work_inbox: None, app_data: Some(empty.path().into()), agent_id: None }, "").1, "(no tasks)\n");
+    }
+
+    #[test]
+    fn warns_about_unknown_assignee_and_prerequisites_but_still_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("profiles.json"), r#"{"agents":[{"id":"p1","name":"하나"},{"id":"p2","name":"둘"},{"id":"p3","name":"둘"}]}"#).unwrap();
+        std::fs::write(dir.path().join("work-items.json"), r#"[{"id":"w1","title":"A","body":"","status":"todo","order":0}]"#).unwrap();
+        let env = TaskEnv { work_inbox: Some(dir.path().join("work-inbox")), app_data: None, agent_id: Some("p1".into()) };
+        let (_, pending, _) = call(&["Pending"], &env, "");
+        // 아는 담당(id·유일한 이름)과 보드·수신함에 있는 선행은 조용하다. 기본 담당은 확인하지 않는다.
+        for args in [vec!["--to", "p2", "x"], vec!["--to", " 하나 ", "x"], vec!["--after", &format!("w1,{}", pending.trim()), "x"], vec!["x"]] {
+            let (code, _, err) = call(&args, &env, "");
+            assert_eq!((code, err.as_str()), (0, ""), "{args:?}");
+        }
+        let (code, out, err) = call(&["--to", "없는사람", "x"], &env, "");
+        assert!(code == 0 && out.starts_with("t-") && err.contains("--to \"없는사람\": no character") && err.contains("unassigned"), "{err}");
+        let (code, _, err) = call(&["--to", "둘", "x"], &env, "");
+        assert!(code == 0 && err.contains("several characters"), "{err}");
+        let (code, _, err) = call(&["--after", "w1", "--after", "t-ghost0000", "x"], &env, "");
+        assert!(code == 0 && err.contains("--after t-ghost0000: no such task") && !err.contains("w1"), "{err}");
+        assert_eq!(std::fs::read_dir(dir.path().join("work-inbox")).unwrap().count(), 8);
     }
 
     #[test]

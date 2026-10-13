@@ -65,6 +65,14 @@ pub fn scan_work_inbox(app_state: State<'_, AppState>) -> Result<Vec<crate::pers
 pub fn ack_work_inbox(file_names: Vec<String>, app_state: State<'_, AppState>) -> Result<(), String> {
     crate::persistence::work_inbox::ack(&app_state.app_data_dir.join("work-inbox"), &file_names)
 }
+#[tauri::command]
+pub fn reject_work_inbox(rejections: Vec<crate::persistence::work_inbox::Rejection>, app_state: State<'_, AppState>) -> Result<(), String> {
+    crate::persistence::work_inbox::reject_files(&app_state.app_data_dir.join("work-inbox"), &rejections)
+}
+#[tauri::command]
+pub fn warn_work_inbox(warnings: Vec<crate::persistence::work_inbox::Warning>, app_state: State<'_, AppState>) -> Result<(), String> {
+    crate::persistence::work_inbox::append_warnings(&app_state.app_data_dir.join("work-inbox"), &warnings, chrono::Utc::now())
+}
 
 /// 업무 목록 내보내기. 직렬화는 렌더러가 하고, 여기서는 고른 위치에 쓰기만 한다.
 /// `filter_name`은 다이얼로그 형식 이름(현재 언어). 저장한 경로, 취소 시 None.

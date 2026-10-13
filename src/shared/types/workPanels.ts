@@ -52,6 +52,15 @@ export interface WorkSendRequest {
 export interface WorkSendResult { sessionId: string; submittedAt: number }
 
 /** 로컬 수신함 파일. key는 파일 이름과 원본 바이트의 해시 앞 16자. */
+/** 수신함 파일을 `rejected/`로 옮길 의미 오류. `reason`은 `.error` 첫 줄의 사유 코드. */
+export interface InboxRejection { fileName: string; reason: "duplicate-id" | "unknown-task"; detail?: string }
+/** 업무는 만들었지만 입력 일부를 버리거나 바꾼 경우. `work-inbox/warnings.log`에 한 줄로 남는다. */
+export interface InboxWarning {
+  fileName: string;
+  taskId: string;
+  code: "unknown-assignee" | "ambiguous-assignee" | "unknown-prerequisite" | "self-prerequisite" | "cyclic-prerequisite";
+  detail: string;
+}
 export interface InboxEntry {
   fileName: string;
   key: string;

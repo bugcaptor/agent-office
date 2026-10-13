@@ -12,6 +12,8 @@ export const Commands = {
   sendWorkItem: "send_work_item",
   scanWorkInbox: "scan_work_inbox",
   ackWorkInbox: "ack_work_inbox",
+  rejectWorkInbox: "reject_work_inbox",
+  warnWorkInbox: "warn_work_inbox",
   loadWorkItems: "load_work_items",
   saveWorkItems: "save_work_items",
   loadSessionSummaries: "load_session_summaries",
