@@ -1,8 +1,8 @@
 // src/renderer/settings/SummarySection.tsx
 //
 // 일반 탭의 요약기 설정 — provider별 실행 명령·경량/고급 모델 오버라이드,
-// 어느 provider에서든 눌러 볼 수 있는 응답 테스트, 그리고 OpenRouter를
-// 골랐을 때만 필요한 API 키 입력.
+// 어느 provider에서든 눌러 볼 수 있는 응답 테스트, 그리고 OpenRouter(요약용)·
+// Claude(모델 목록용)를 골랐을 때만 뜨는 API 키 입력.
 import { useCallback, useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
@@ -65,9 +65,13 @@ export function SummaryModelSection() {
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
   const current = summaryModels[provider];
   const defaults = SUMMARY_DEFAULT_MODELS[provider];
-  // OpenRouter만 CLI가 아니라 HTTP라 API 키가 따로 필요하다 — 키 입력과 연결
-  // 테스트는 아래 OpenrouterSummaryTools가 맡는다(키는 공용 API 키 저장소).
+  // OpenRouter만 CLI가 아니라 HTTP라 API 키가 따로 필요하다 — 키 입력은 아래
+  // ApiKeyTools가 맡는다(키는 공용 API 키 저장소).
   const isOpenrouter = provider === "openrouter";
+  // Claude 요약은 CLI라 키가 없어도 돌지만, 모델 고르기의 실시간 목록
+  // (Anthropic `/v1/models`)은 Anthropic API 키(또는 `ANTHROPIC_API_KEY`)가
+  // 있어야 뜬다 — 그 키를 넣고 지우는 자리는 여기뿐이다.
+  const isClaude = provider === "claude";
   // opencode는 한 CLI가 여러 벤더를 묶는다 — 모델 id가 `provider/model`이고
   // 기본값은 opencode 자체 구독(opencode-go)을 가정한다. 다른 벤더를 쓰려면
   // 여기에 `opencode models`가 찍어 주는 id를 그대로 넣는다.
@@ -166,7 +170,8 @@ export function SummaryModelSection() {
           onChange={(v) => setField("heavy", v)}
         />
       </div>
-      {isOpenrouter && <OpenrouterKeyTools />}
+      {isOpenrouter && <ApiKeyTools slot="openrouter" />}
+      {isClaude && <ApiKeyTools slot="anthropic" />}
       <SummaryTestTools provider={provider} />
     </div>
   );
@@ -241,19 +246,51 @@ function SummaryTestTools({ provider }: { provider: SummaryProvider }) {
   );
 }
 
+/** 키 저장소의 두 칸 — `ApiKeyTools`가 어느 칸을 다루는지. */
+type ApiKeySlot = "anthropic" | "openrouter";
+
+/** 칸별 문구 키·placeholder. 상태 필드는 `ApiKeyStatus`의 `<slot>Set`/`<slot>FromEnv`다. */
+const API_KEY_SLOT: Record<
+  ApiKeySlot,
+  { state: string; title: string; help: string; placeholder: string }
+> = {
+  anthropic: {
+    state: "general.anthropicKeyState",
+    title: "general.anthropicKeyTitle",
+    help: "general.anthropicKeyHelp",
+    placeholder: "sk-ant-…",
+  },
+  openrouter: {
+    state: "general.openrouterKeyState",
+    title: "general.openrouterKeyTitle",
+    help: "general.openrouterKeyHelp",
+    placeholder: "sk-or-…",
+  },
+};
+
 /**
- * OpenRouter 요약을 위한 키 입력.
+ * 요약 탭의 API 키 입력 — OpenRouter 요약용 키, 또는 Claude 모델 카탈로그
+ * (Anthropic `/v1/models`)용 Anthropic 키.
  *
  * 키는 0600 키 저장소(`key_store.rs`)에 둔다 — 렌더러에는 존재 여부만 온다.
+ * `setApiKeys(anthropic, openrouter)`에서 고른 칸만 채우고 다른 칸은
+ * undefined(=보존)로 보낸다.
  *
  * 응답 테스트는 여기가 아니라 `SummaryTestTools`가 맡는다(모든 provider 공통).
  */
-function OpenrouterKeyTools() {
+function ApiKeyTools({ slot }: { slot: ApiKeySlot }) {
   const { t } = useTranslation("settings");
   const [status, setStatus] = useState<ApiKeyStatus | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const labels = API_KEY_SLOT[slot];
+  const isSet = slot === "anthropic" ? status?.anthropicSet : status?.openrouterSet;
+  const fromEnv = slot === "anthropic" ? status?.anthropicFromEnv : status?.openrouterFromEnv;
+  const send = (value: string) =>
+    slot === "anthropic"
+      ? tauriApi.setApiKeys(value, undefined)
+      : tauriApi.setApiKeys(undefined, value);
 
   const refresh = useCallback(async () => {
     try {
@@ -271,8 +308,7 @@ function OpenrouterKeyTools() {
     setBusy(true);
     setNote(null);
     try {
-      // Anthropic 칸은 undefined — 여기서는 OpenRouter 키만 건드린다.
-      setStatus(await tauriApi.setApiKeys(undefined, apiKey));
+      setStatus(await send(apiKey));
       setApiKey("");
       setNote(t("keys.savedNote"));
     } catch (err) {
@@ -288,7 +324,7 @@ function OpenrouterKeyTools() {
     setBusy(true);
     setNote(null);
     try {
-      setStatus(await tauriApi.setApiKeys(undefined, ""));
+      setStatus(await send(""));
       setNote(t("keys.deletedNote"));
     } catch (err) {
       setNote(t("keys.deleteFailed", { error: backendErrorText(err) }));
@@ -301,23 +337,21 @@ function OpenrouterKeyTools() {
     <div className="settings-item" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
       <div style={{ fontSize: 12, opacity: 0.85 }}>
         {status
-          ? t("general.openrouterKeyState", {
-              state: keyStateLabel(t, status.openrouterSet, status.openrouterFromEnv),
-            })
+          ? t(labels.state, { state: keyStateLabel(t, !!isSet, !!fromEnv) })
           : t("keys.statusLoading")}
       </div>
 
       <label className="settings-item">
         <span>
-          <strong>{t("general.openrouterKeyTitle")}</strong>
+          <strong>{t(labels.title)}</strong>
           <small>
-            <Trans t={t} i18nKey="general.openrouterKeyHelp" components={{ b: <b /> }} />
+            <Trans t={t} i18nKey={labels.help} components={{ b: <b />, code: <code /> }} />
           </small>
         </span>
         <input
           type="password"
           autoComplete="off"
-          placeholder={status?.openrouterSet ? t("keys.savedPlaceholder") : "sk-or-…"}
+          placeholder={isSet ? t("keys.savedPlaceholder") : labels.placeholder}
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
         />
@@ -327,7 +361,7 @@ function OpenrouterKeyTools() {
         <button className="pixel-btn" disabled={busy || apiKey === ""} onClick={saveKey}>
           {t("keys.save")}
         </button>
-        {status?.openrouterSet && !status.openrouterFromEnv && (
+        {isSet && !fromEnv && (
           <button className="pixel-btn" disabled={busy} onClick={deleteKey}>
             {t("keys.delete")}
           </button>

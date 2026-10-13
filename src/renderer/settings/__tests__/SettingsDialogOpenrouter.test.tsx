@@ -76,7 +76,9 @@ afterEach(() => cleanup());
 
 describe("SettingsDialog · OpenRouter 요약 설정", () => {
   it("다른 요약기에서는 키 입력이 없고 카탈로그도 조회하지 않는다", () => {
-    hydrate({ summaryProvider: "claude" });
+    // claude는 Anthropic 키 칸이 따로 뜬다(SettingsDialogAnthropic.test) — 키
+    // 칸이 전혀 없는 provider로 확인한다.
+    hydrate({ summaryProvider: "codex" });
     render(<SettingsDialog />);
 
     // 테스트 버튼은 provider를 가리지 않는다 — 키 입력만 OpenRouter 전용이다.
