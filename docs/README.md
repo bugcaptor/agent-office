@@ -40,7 +40,7 @@
 | [tmux-hosting-design.md](tmux-hosting-design.md) | 프로필 설정으로 tmux 세션 자동 호스팅 — 소환 시 앱이 직접 tmux 세션을 만들고 이름·gc·수명을 관리 | 정본 — 구현 완료(kbm #2pc) |
 | [run-recipes-design.md](run-recipes-design.md) | 실행 레시피 — 프로젝트(프로필 cwd)별 실행 방법을 캐릭터가 조사해 앱 데이터에 저장, 팔레트에서 그 캐릭터 세션에 주입. 설정 opt-in | 정본 (2026-09-04, kbm #2rf) — 구현 완료 |
 | [terminal-automation-design.md](terminal-automation-design.md) | 사용자 정의 터미널 입력 자동화 — v1/v2 순차 CLI 전환, 단계 정의를 저장해 평소 쓰는 터미널에 프롬프트를 대신 입력. 기동 10초·작업 대기 30분·타임아웃 시 사용자 선택, 사람 입력 허용 | 정본 (2026-09-08, kbm #2t9) — v1/v2 구현, 실제 bash/zsh 및 PTY 대역 검증 |
-| [health-check-cleanup-plan.md](health-check-cleanup-plan.md) | 프로젝트 점검·기능 정리 계획 — 점검 관점, 기능 사용 신호와 제거 기준, 낡은 문서 정리(Codex), 업무 보드 태스크 A~I와 의존 관계 | 계획 (2026-10-13) — 착수 전 |
+| [health-check-cleanup-plan.md](health-check-cleanup-plan.md) | 프로젝트 점검·기능 정리 계획 — 점검 관점, 기능 사용 신호와 제거 기준, 낡은 문서 정리(Codex), 업무 보드 태스크 A~I와 의존 관계 | 진행 중 (2026-10-13) — A·B 기록 |
 | [repository-audit-design.md](repository-audit-design.md) | 저장소 일괄 점검 — 오피스 서버 오브젝트에서 작업 기록·프로필 cwd의 Git 상태를 조치 우선순위로 확인하고 외부 터미널 열기 | 정본 (2026-09-06) — 구현 완료 |
 | [employee-of-the-month-design.md](employee-of-the-month-design.md) | 이 달의 우수사원 — 월간 결정적 선정·수상 기록 영속화·LLM 수상 소감·시상 화면·씬 연출 | 정본 (2026-08-24 신설, kbm #2hx) — 구현 중 |
 | [i18n-design.md](i18n-design.md) | UI 다국어(한국어/영어) — i18next 카탈로그·언어별 프롬프트 프로필·입력 판정 규칙·하드코딩 한글 금지 장치 | 정본 (2026-08-25 신설) — 구현 완료 |

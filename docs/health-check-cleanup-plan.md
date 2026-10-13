@@ -1,6 +1,6 @@
 # 프로젝트 점검·기능 정리 계획
 
-- 상태: 계획 (2026-10-13) — 착수 전
+- 상태: 진행 중 (2026-10-13) — A·B 기록(§7)
 - 목적: 프로젝트의 문제점을 찾아 줄을 세우고, 잘 쓰지 않게 된 기능을 골라 제거해 유지 비용을 줄인다.
 - 실행 단위: agent office 업무 보드 태스크(§6). 각 태스크 본문이 이 문서의 절을 가리킨다.
 
@@ -172,3 +172,133 @@ D와 F는 실행 중에 하위 태스크(기능별 제거, 문제별 수정)를 
 - **앱 재시작 복구 / 설정 파일 손상 복구**: 점검 세션 자체가 설치본 앱의 자식 PTY라 앱을 끄면 점검이 끊긴다. 사용자 지시로 설치본은 끄지 않았다. 별도 app_data를 쓰는 격리 인스턴스가 필요하다(A1 때문에 같은 app_data로 두 번째 인스턴스를 띄우는 것은 금지).
 - **GUI 전용 항목은 사용자 판단으로 생략**: 캐릭터 소환(GUI), 업무 '보내기', 가져오기 팝업(깨진/낯선 JSON), A11 숨은 세션의 화면 표시.
 - **시험 데이터 정리에서 드러난 점(상태 소유권, E 입력)**: 외부에서 업무를 지울 길이 없다(`office-task`·수신함·`ctl` 모두 삭제 없음, UI는 한 건씩 확인 대화상자). 업무 목록의 원본은 렌더러 메모리이고 `work-items.json`은 부팅 때 한 번만 읽은 뒤 통째로 덮어쓰므로, 앱이 켜진 동안 파일을 고치면 다음 저장에 되살아난다. 그래서 시험 업무 66건은 `--done`으로 닫아 두고, 앱을 끈 상태에서 파일에서 지우는 스크립트로 정리했다.
+
+### 7.B 구조 조감 (2026-10-13, `main` `cc8fbc3` 기준, 정독 없음)
+
+방법: `git ls-files`·`wc -l`·`git log --name-only`·정규식 집계만 썼다. 줄 수는 추적 파일 기준, Rust는 인라인 `#[cfg(test)] mod tests {` 앞까지를 본체로 셌다. 저장소 이력은 2026-07-09부터 455커밋이다.
+
+#### 7.B.1 디렉터리 지도
+
+| 영역 | 파일 | 줄 | 비고 |
+|---|---:|---:|---|
+| `src/renderer/` | 594 | 95,152 (테스트 포함) | 39개 하위 폴더. 큰 순: `office` 14,965 · `terminal` 8,177 · `settings` 5,311 · `store` 5,266 · `ipc` 5,009 · `profile` 4,775 · `workdir` 4,229 · `diary` 3,427 · `usage` 3,298 · `awards` 2,908 · `mascot` 2,795 · `agent` 2,729 · `workpanels` 2,596 |
+| `src/shared/` | 135 | 3,229 (+ i18n JSON 82개, 계약 fixture 29개) | 프런트·백엔드 공유 타입(`types/`, 배럴 `types.ts`)과 i18n 카탈로그 |
+| `src/web/` | 21 | 3,412 | 웹 원격 클라이언트(`vite.web.config.ts` → `dist-web/`) |
+| `src-tauri/src/` | 201 | 약 95,400 (인라인 테스트 포함) | 모듈 큰 순: `session` 16,797 · `observer` 8,285 · `automation` 7,745 · `webremote` 5,535 · `usage` 5,206 · `persistence` 4,955 · `ipc` 4,822 · `session_log` 4,016 · `control` 3,913 · `sessiond` 3,622 · `summarizer` 3,513 · `tts` 3,366 · `ide_sessions` 3,362 · `workdir` 2,030 · `notification` 1,918 · `bot` 1,616. 최상위 단일 파일 8,840줄(`types.rs` 2,208 · `lib.rs` 1,306 · `work_send.rs` 678 · `state.rs` 659) |
+| `src-tauri/tests/` | 3 | — | IPC 계약 fixture 대조(`contract_fixtures.rs`) 등 |
+| `vscode-ext/` | 19 | — | 별도 패키지 v0.1.0, 소스 7 + 테스트 4 |
+| `scripts/` | 19 | — | 빌드·서명·청소 + `ide-session-spike/`(실험) |
+| `docs/` | 43 | — | 활성 36 + `archive/` 6 + 인덱스 |
+
+업무 기능의 위치(E 입력): 수신함 파싱 `src-tauri/src/persistence/work_inbox.rs`, CLI `src-tauri/src/work_inbox_cli.rs`, 저장 `persistence/work_panels_store.rs`, 보내기 `work_send.rs`, 업무 목록 원본은 렌더러 `src/renderer/workpanels/`(§7.A.3의 소유 구조와 일치).
+
+#### 7.B.2 파일 크기 상위 20 (본체 줄, 테스트 파일·인라인 테스트 제외)
+
+| # | 파일 | 본체 | 전체 |
+|---:|---|---:|---:|
+| 1 | `src-tauri/src/session/manager.rs` | 1,544 | 1,544 (테스트는 `manager/tests.rs` 2,660 · `real_pty_smoke.rs` 1,686 별도) |
+| 2 | `src-tauri/src/automation/definition_runner.rs` | 1,445 | 1,508 |
+| 3 | `src/renderer/store/appStore.ts` | 1,424 | 1,424 |
+| 4 | `src/renderer/automation/AutomationPalette.tsx` | 1,232 | 1,232 |
+| 5 | `src-tauri/src/types.rs` | 1,151 | 2,208 |
+| 6 | `src-tauri/src/lib.rs` | 1,111 | 1,306 |
+| 7 | `src-tauri/src/observer/event.rs` | 1,100 | 2,241 |
+| 8 | `src-tauri/src/sessiond/daemon.rs` | 1,063 | 1,063 (+`mod tests;` 별도) |
+| 9 | `src-tauri/src/ide_sessions/transcripts.rs` | 855 | 1,193 |
+| 10 | `src/renderer/terminal/AgentTabStrip.tsx` | 824 | 824 |
+| 11 | `src-tauri/src/usage/gemini_live.rs` | 800 | 1,114 |
+| 12 | `src-tauri/src/session/inject.rs` | 795 | 1,225 |
+| 13 | `src-tauri/src/session/pty_factory.rs` | 787 | 1,120 |
+| 14 | `src-tauri/src/observer/codex_usage.rs` | 764 | 1,390 |
+| 15 | `src-tauri/src/session/external.rs` | 740 | 740 |
+| 16 | `src/renderer/office/OfficeScene.ts` | 733 | 733 |
+| 17 | `src-tauri/src/control/client.rs` | 732 | 931 |
+| 18 | `src/renderer/usage/usageView.ts` | 703 | 703 |
+| 19 | `src/renderer/ipc/tauriApi.ts` | 703 | 703 |
+| 20 | `src/renderer/mascot/MascotApp.tsx` | 688 | 688 |
+
+전체 줄로만 보면 `observer/event.rs`·`types.rs`·`control/mod.rs`(1,546, 본체 253)가 위에 오지만 절반 이상이 인라인 테스트다. 바이트 기준 최대는 아이콘·폰트(`icon.icns` 711 KB, `Galmuri11.woff2` 505 KB)로 코드 문제 아님.
+
+#### 7.B.3 변경 빈도 상위 20 (전체 이력 커밋 수, 현존 파일)
+
+| # | 파일 | 커밋 | 최근 90일 |
+|---:|---|---:|---:|
+| 1 | `src-tauri/src/lib.rs` | 105 | 92 |
+| 2 | `src-tauri/Cargo.toml` | 67 | 47 |
+| 3 | `src/renderer/store/appStore.ts` | 63 | 55 |
+| 4 | `src/renderer/ipc/tauriApi.ts` | 63 | 57 |
+| 5 | `src-tauri/Cargo.lock` | 62 | 42 |
+| 6 | `src/shared/ipc.ts` | 60 | 55 |
+| 7 | `src-tauri/src/session/manager.rs` | 57 | 44 |
+| 8 | `package.json` | 55 | — |
+| 9 | `src/shared/types.ts` | 52 | 39 |
+| 10 | `src-tauri/src/types.rs` | 51 | 40 |
+| 11 | `src-tauri/src/ipc/commands.rs` | 49 | — |
+| 12 | `src/renderer/__tests__/bootstrap.test.ts` | 48 | 43 |
+| 13 | `src-tauri/tauri.conf.json` | 48 | — |
+| 14 | `src/shared/__tests__/contract.test.ts` | 47 | 43 |
+| 15 | `src/renderer/store/__tests__/appStore.test.ts` | 46 | 40 |
+| 16 | `src/renderer/ipc/__tests__/tauriApi.test.ts` | 46 | 42 |
+| 17 | `package-lock.json` | 45 | — |
+| 18 | `src-tauri/src/ipc/commands/tests.rs` | 42 | 42 |
+| 19 | `src/renderer/labels/__tests__/summarizer.test.ts` | 41 | — |
+| 20 | `src/shared/types/api.ts` | 40 | 40 |
+
+읽기: 기능 하나를 더할 때마다 IPC 배선 사슬(`lib.rs` 커맨드 등록 → `ipc/commands*` → `types.rs` ↔ `shared/types*` → `shared/ipc.ts` → `tauriApi.ts` → `appStore.ts` + 각 계약·부트스트랩 테스트)을 통째로 건드린다. 크기 상위와 빈도 상위가 겹치는 `lib.rs`·`appStore.ts`·`session/manager.rs`·`types.rs`가 결합 지점이다(E·유지보수성 관점 후보, C의 "결합 비용" 신호 입력).
+
+#### 7.B.4 테스트 분포
+
+| 영역 | 테스트 | 비고 |
+|---|---|---|
+| `src/renderer` | 202파일 · 약 2,765건 | 두꺼운 곳: `office` 452 · `terminal` 271 · `store` 183 |
+| `src/shared` | 3파일 · 14건 | 계약 테스트(`contract.test.ts`)가 Rust `tests/contract_fixtures.rs`와 fixture 29개를 공유 |
+| `src/web` | 5파일 · 48건 | |
+| `src-tauri` | `#[test]`/`#[tokio::test]` 1,795건, `#[ignore]` 38건 | 모듈 큰 순: `session` 281 · `persistence` 147 · `observer` 140 · `usage` 122 · `automation` 101 · `summarizer` 99 · `tts` 97 · 최상위 파일 183. `#[ignore]`는 실 PTY 스모크(`real_pty_smoke.rs` 9, `automation/pty_smoke.rs` 4, `work_send/pty_smoke*.rs`)와 실제 CLI·네트워크 의존(`usage/*_live`, `summarizer/*`) — 평소 `cargo test`에서 돌지 않는다 |
+| `vscode-ext` | 4파일 · 43건 | 별도 `npm test` |
+
+얇은 곳(크기 대비): `src/renderer/automation` 2,005줄에 18건(`AutomationPalette.tsx` 1,232줄), `src-tauri/src/work_send*` 1,034줄에 일반 테스트 소수 + ignore 스모크, `mascot` 2,795줄에 1파일(63건), `workdir` 4,229줄에 2파일(64건). 업무 보내기(`work_send`)는 핵심 흐름인데 실 PTY 스모크가 ignore라 자동 검증 공백이다(E 후보).
+
+#### 7.B.5 의존성
+
+| 패키지 | 런타임 | 개발 |
+|---|---|---|
+| 루트 `package.json` (0.7.1) | `@tauri-apps/api` 2 · `plugin-notification` · `plugin-opener` · `@xterm/xterm` 5.5 + `addon-fit` · `addon-serialize` · `pixi.js` 8 · `react`/`react-dom` 18 · `zustand` 5 · `i18next` 25 + `react-i18next` 16 · `marked` 18 · `dompurify` 3 · `nanoid` 5 | `vite` 7 · `vitest` 2 · `typescript` 5.8 · `jsdom` 25 · `@testing-library/react` 16 · `@napi-rs/canvas` · `@tauri-apps/cli` 2 · 타입 |
+| `src-tauri/Cargo.toml` (0.7.1) | `tauri` 2(`macos-private-api`) + 플러그인 dialog·notification·opener·window-state · `tokio` · `axum` 0.7(ws) · `tokio-tungstenite` 0.24(rustls) · `reqwest` 0.12(blocking, rustls) · `portable-pty` 0.8 · `parking_lot` · `rusqlite` 0.31 · `rust-embed` · `ignore` · `serde`/`serde_json`/`toml` · `chrono` · `uuid` · `sha1_smol`/`sha2`/`base64`/`flate2` · `sys-locale` · `tempfile`, unix `nix` 0.25·`libc`, windows `windows-sys` 0.61 | `tokio`(test-util) |
+| `vscode-ext/package.json` (0.1.0) | 없음 | `typescript` 5.4 · `vitest` **1.6**(루트는 2.x) · `@types/node` 20(루트 26) |
+
+`npm run` 스크립트 25개 중 `spike:ide`·`spike:ide:test`는 실험 스파이크(§3.2 후보) 전용.
+
+#### 7.B.6 docs·코드 표류 목록 (H 입력)
+
+자동 검사: 활성 docs·루트 `README.md`·`vscode-ext/README.md`의 링크와 백틱 경로를 추적 파일과 대조했고, 앱 데이터 파일명·과거 이름 언급 같은 오탐은 손으로 걸렀다. 재현 스크립트는 남기지 않았다(정규식 1회성).
+
+**끊긴 참조**
+
+| # | 위치 | 참조 | 실제 |
+|---|---|---|---|
+| D1 | `docs/README.md` §관련, 이 문서 §4.1·§7.0 | `REBUILD-PLAN.md` | 파일 없음(§7.0 확인) |
+| D2 | `docs/README.md` archive 표 peer 행, 이 문서 §3.2 | "앱↔앱 뷰어(`peer/viewer.rs`)만 동결" | `src-tauri/src/peer/` 자체가 없다. 웹 원격 부활 때 viewer를 걷어내고 `peer/`→`webremote/`로 개명(`web-remote-design.md` §4·M1). §3.2 후보에서 빼야 한다 |
+| D3 | `src-tauri/Cargo.toml` `tokio-tungstenite` 주석 | "피어 세션 공유 뷰어 쪽 WS 클라이언트, TLS feature를 켜지 않아 `ws://` 전용, axum과 tungstenite 0.21 공유" | 실제 feature는 `rustls-tls-native-roots`, 사용처는 `remote_client/transport.rs`·`webremote/mod.rs`, lock의 tungstenite는 0.24 하나. 주석 3가지가 모두 낡음(코드 주석 표류) |
+| D4 | `subsystem-c-ui.md:684` | `src/renderer/profile/wordlists.ts` | `src/renderer/i18n/wordlists.ts`(`aa18f5e`에서 이동) |
+| D5 | `subsystem-c-ui.md:1070` | `src/renderer/assets/fonts/`, "Electron 오프라인 보장" | 폰트는 `src/renderer/styles/fonts/`, 런타임은 Tauri |
+| D6 | `subsystem-c-ui.md:1172` | `src/renderer/store/appStore.test.ts`, `notification/dedupe.test.ts`, `terminal/TerminalRegistry.test.ts` | 모두 `__tests__/` 아래로 이동 |
+| D7 | `pi-support-design.md` | `file:line` 56개 중 15개는 없는 파일, 1개는 줄 수 초과 | README가 이미 "부분표류"로 표기. 심볼 기준 전환 대상 |
+| D8 | `mascot-window-design.md`(14개 중 2개 없는 파일), `mascot-lights-design.md`(17개 중 1개 줄 수 초과) | `file:line` | 같은 처리 |
+| D9 | `docs/README.md` §관련(docs/ 밖) | `remote-server-design.md` | docs/ 안 문서인데 "docs/ 밖" 절에 링크 없는 형태로 붙어 있음 |
+| D10 | `docs/README.md` 인덱스 | — | `ide-persona-design.md`, `vscode-display-api.md`가 인덱스에 없음 |
+| D11 | `docs/README.md` §관련, `docs/guide.md:113` | `AGENTS.md`를 "작업 규칙 정본"으로 지칭 | `AGENTS.md`·`CLAUDE.md`는 `.gitignore`(38·39행)로 추적 제외. 클론에는 정본이 없다. §4.1이 H 대상에 넣은 "AGENTS.md 프로젝트 지침"은 저장소 밖 파일이다 — 추적할지 결정 필요 |
+
+**낡은 상태 표기**
+
+| # | 문서 | 표기 | 사실 |
+|---|---|---|---|
+| S1 | 이 문서 머리·`docs/README.md` 행 | "계획 — 착수 전" | A·B 기록됨 → "진행 중"으로 고침(이 커밋) |
+| S2 | `web-remote-design.md` 머리 | "구현 진행 중" | README는 "M1~M3 구현 완료, M4 미착수". 두 표기 불일치 |
+| S3 | `docs/README.md` 우수사원 행 | "구현 중" | 문서 머리는 "정본", `src/renderer/awards/`(10파일) 마지막 변경 2026-08-26. 완료 여부 확인 후 갱신 |
+| S4 | `affinity-design.md` | "기획 확정 — 구현 전"(2026-09-05) | 코드에 `affinity` 흔적 0건. 표기는 사실이나 5주째 미착수 → C의 판정(보류/이력) 대상 |
+| S5 | 눈검증 대기 4건 | `session-log-design`, `external-session-attach-design`, `tts-confirm-line-design`, `vscode-character-extension-plan`(V1) | 각각 2026-08~09 이후 상태 변화 없음. 확인하거나 잔여를 태스크로 |
+| S6 | `subsystem-a-sessions.md`·`subsystem-c-ui.md` 머리 | "2026-07-20 현행화" | 이후 세션 브로커·작업 패널·웹 원격·업무 수신함 등이 들어왔고 변경 빈도 상위 파일이 이 두 영역이다. 표기 날짜 이후 표류 가능성 높음(D4~D6이 일부 증거) |
+| S7 | `session-handoff-design.md`·`session-broker-v2-design.md` | 상태 갱신 2026-07-20 | v2 기본 off 그대로. §3.2 후보 판정(C·D) 후 처리 |
+| S8 | 머리에 상태줄 없음 | `agent-talk`, `antigravity-support`, `kilo-support`, `pi-support`, `mascot-lights`, `macos-signing`, `session-log`, `subsystem-c-ui`, `tts-confirm-line` | 상태는 README에만 있어 문서만 열면 알 수 없다. 표기 방식 통일 여부 결정 |
+
+H 메모: D4~D6·D9·D10은 기계적 수정, D2·D3·D11·S2~S5는 사실 확인이나 결정이 필요하다. D2는 C(§3.2 후보 목록)에도 반영해야 한다.
