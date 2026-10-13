@@ -33,7 +33,6 @@ import { looksLikeAgentRunning } from "./botGuard";
 import { botStatusText } from "./botStatusText";
 import { automationStatusText } from "./automationStatusText";
 import { maybeSendOsNotification } from "../ipc/osNotify";
-import { isRemoteWindow } from "../shared/remoteWindow";
 import type { TerminalViewMode } from "./terminalViewMode";
 import type { AutomationPhase, ClaudeResumeEntry } from "@shared/types";
 
@@ -51,7 +50,6 @@ const VIEW_MODE_BUTTON: Record<
 
 export function AgentTabStrip() {
   const { t } = useTranslation("terminal");
-  const remoteWindow = isRemoteWindow();
   const isOpen = useAppStore((s) => s.activeTerminalAgentId !== null);
   const activeId = useAppStore((s) => s.activeTerminalAgentId);
   // `recentAgentIds` (string[]) is used directly rather than mapped to
@@ -269,7 +267,7 @@ export function AgentTabStrip() {
       }
 
       // Cmd/Ctrl+Shift+E: 현재 활성 터미널의 셸 출력을 에디터로 내보내기.
-      if (!remoteWindow && e.shiftKey && e.key.toLowerCase() === "e") {
+      if (e.shiftKey && e.key.toLowerCase() === "e") {
         if (activeId === null) return;
         e.preventDefault();
         exportShellOutput(activeId);
@@ -296,14 +294,13 @@ export function AgentTabStrip() {
     closeTerminal,
     exportShellOutput,
     cycleTerminalViewMode,
-    remoteWindow,
   ]);
 
   // 봇 상태 폴링(이슈 #57): 켜진 봇이 하나라도 있으면 5초마다 백엔드에서
   // 이슈 번호·오류를 받아 배지를 갱신한다. 없으면 폴링하지 않는다.
   const hasBots = Object.keys(botMode).length > 0;
   useEffect(() => {
-    if (remoteWindow || !hasBots) return;
+    if (!hasBots) return;
     let alive = true;
     const tick = () => {
       void tauriApi
@@ -321,7 +318,7 @@ export function AgentTabStrip() {
       alive = false;
       window.clearInterval(iv);
     };
-  }, [remoteWindow, hasBots, applyBotStatus]);
+  }, [hasBots, applyBotStatus]);
 
   // 자동화 상태 폴링(kbm): 켜진(또는 방금 끝난) 자동화가 하나라도 있으면
   // 1초마다 백엔드에서 phase를 받아 배지를 갱신한다. 이전 phase를 `id:시작시각`
@@ -333,7 +330,7 @@ export function AgentTabStrip() {
   const prevAutomationPhases = useRef<Record<string, AutomationPhase>>({});
   const notifiedPending = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (remoteWindow || !hasAutomation) return;
+    if (!hasAutomation) return;
     let alive = true;
     const tick = () => {
       const epochs = useAppStore.getState().automationEpochs;
@@ -425,7 +422,7 @@ export function AgentTabStrip() {
       alive = false;
       window.clearInterval(iv);
     };
-  }, [remoteWindow, hasAutomation, applyAutomationStatus, stopAutomation, characterFallback]);
+  }, [hasAutomation, applyAutomationStatus, stopAutomation, characterFallback]);
 
   return (
     <div className="agent-tab-strip">
@@ -461,7 +458,6 @@ export function AgentTabStrip() {
               onContextMenu={(e) => {
                 e.preventDefault();
                 setMenu({ agentId: tab.id, x: e.clientX, y: e.clientY });
-                if (remoteWindow) return;
                 // 메뉴가 열리는 동안 이어하기 후보를 조회한다. 응답이 오면
                 // 리렌더되어 해당 항목의 활성 여부가 갱신된다(약간의 지연 허용).
                 // 조회 전엔 항상 비운다 — 실패하면 비활성인 채로 남는다.
@@ -489,7 +485,7 @@ export function AgentTabStrip() {
                   aria-hidden="true"
                 />
               )}
-              {!remoteWindow && botMode[tab.id] &&
+              {botMode[tab.id] &&
                 (() => {
                   const bs = botStatusText(botMode[tab.id]);
                   return (
@@ -504,7 +500,7 @@ export function AgentTabStrip() {
                     </span>
                   );
                 })()}
-              {!remoteWindow && automation[tab.id] &&
+              {automation[tab.id] &&
                 (() => {
                   const as = automationStatusText(automation[tab.id]);
                   return (
@@ -540,7 +536,7 @@ export function AgentTabStrip() {
         role="group"
         aria-label={t("tab.toolsAria")}
       >
-        {!remoteWindow && <button
+        <button
           type="button"
           className="agent-tab-strip-docs"
           // 활성 에이전트 cwd를 root로 마크다운 문서 팔레트 오픈. cwd 없으면 비활성.
@@ -551,7 +547,7 @@ export function AgentTabStrip() {
           }}
         >
           {t("tab.docs")}
-        </button>}
+        </button>
         <button
           type="button"
           className={
@@ -600,7 +596,7 @@ export function AgentTabStrip() {
               onSelect: () =>
                 openModal({ kind: "confirm-restart", agentId: menu.agentId }),
             },
-            ...(!remoteWindow ? [{
+            {
               label: t("menu.resume"),
               icon: "⏮️",
               // 캡처된 Claude native 세션이 있을 때만 활성 — 없으면 비활성.
@@ -614,7 +610,7 @@ export function AgentTabStrip() {
                   sessionId: entry.sessionId,
                 });
               },
-            }] : []),
+            },
             {
               label: t("menu.terminate"),
               icon: "⏹️",
@@ -626,7 +622,6 @@ export function AgentTabStrip() {
               onSelect: () =>
                 openModal({ kind: "confirm-terminate", agentId: menu.agentId }),
             },
-            ...(!remoteWindow ? [
             // 봇 모드(이슈 #57): 켜면 이 탭이 Gitea 이슈의 슬래시 명령에 반응해
             // 자동 작업한다. 켜는 동안 로컬 키 입력은 잠긴다. 끌 땐 한 번 더 확인.
             {
@@ -792,7 +787,6 @@ export function AgentTabStrip() {
                   agents[menu.agentId]?.name ?? characterFallback,
                 ),
             },
-            ] : []),
             { separator: true as const },
             // ── 프로필/생명주기 ──
             {

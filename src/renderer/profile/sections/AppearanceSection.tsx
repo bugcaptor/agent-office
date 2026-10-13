@@ -15,7 +15,6 @@ import type { useAppearanceImages } from "../useAppearanceImages";
 import type { DraftProfile } from "../generate";
 import type { AgentProfile, PaletteSlot } from "@shared/types";
 import type { Dispatch, SetStateAction } from "react";
-import { isRemoteWindow } from "../../shared/remoteWindow";
 
 export function AppearanceSection({
   draft,
@@ -39,7 +38,6 @@ export function AppearanceSection({
   images: ReturnType<typeof useAppearanceImages>;
 }) {
   const { t } = useTranslation("profile");
-  const remoteWindow = isRemoteWindow();
   // 이미지 3종 상태를 JSX가 읽던 이름 그대로 푼다.
   const {
     portraitUrl,
@@ -194,7 +192,7 @@ export function AppearanceSection({
         {([
           { id: "manual", labelKey: "appearance.tabManual" },
           { id: "codex", labelKey: "appearance.tabCodex" },
-        ] as const).filter((tab) => !remoteWindow || tab.id === "manual").map((tab) => (
+        ] as const).map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -219,7 +217,7 @@ export function AppearanceSection({
         id={`appearance-tabpanel-${appearanceMode}`}
         aria-labelledby={`appearance-tab-${appearanceMode}`}
       >
-        {(remoteWindow || appearanceMode === "manual") ? (
+        {appearanceMode === "manual" ? (
           <>
             <p className="form-hint">{t("appearance.manualHint")}</p>
             <div className="appearance-manual-row">

@@ -37,11 +37,6 @@ beforeEach(() => {
 });
 afterEach(async () => { window.history.replaceState({}, "", "/"); cleanup(); await settleWorkSends(); await useWorkItemStore.getState().flush(); });
 describe("업무 패널 UI", () => {
-  it("데스크톱 원격 창에서는 호스트 설정이 켜져 있어도 로컬 업무 패널을 만들지 않는다", () => {
-    window.history.replaceState({}, "", "/?remote=1");
-    useAppStore.setState({appSettings:{...initial.appSettings,workPanelsEnabled:true}});
-    render(<UIChrome />); expect(screen.queryByRole("complementary")).toBeNull(); expect(api.loadSessionEvents).not.toHaveBeenCalled();
-  });
   it("기본 OFF에서는 패널도 이벤트 조회도 만들지 않는다", () => {
     render(<UIChrome />); expect(screen.queryByRole("complementary")).toBeNull(); expect(api.loadSessionEvents).not.toHaveBeenCalled();
   });

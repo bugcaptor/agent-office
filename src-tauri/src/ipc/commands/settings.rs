@@ -7,7 +7,7 @@
 // `crate::ipc::commands::apply_settings_effects` via the parent module's
 // `pub use settings::*;`.
 
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 
 use crate::persistence::settings_store::AppSettings;
 use crate::state::AppState;
@@ -55,22 +55,10 @@ pub async fn get_app_settings(
 /// 주입되지 않는다 -- "변경은 새 세션부터 적용" 정책의 실제 동작.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn set_app_settings(
-    app: AppHandle,
-    remote: State<'_, crate::remote_client::RemoteClientState>,
     app_state: State<'_, AppState>,
     settings: AppSettings,
 ) -> Result<(), String> {
-    // Order each OFF lifecycle before a later ON can be persisted.
-    let _update = remote.settings_update.lock().await;
-    set_app_settings_inner(&app_state, settings).await?;
-    let remote_enabled = app_state.settings.read().unwrap().remote_server_connection_enabled;
-    if !remote_enabled {
-        remote.disconnect().await;
-        if let Some(window) = app.get_webview_window(crate::remote_client::WINDOW_LABEL) {
-            window.destroy().map_err(|error| error.to_string())?;
-        }
-    }
-    Ok(())
+    set_app_settings_inner(&app_state, settings).await
 }
 
 pub(crate) async fn set_app_settings_inner(
@@ -195,7 +183,6 @@ pub(crate) async fn apply_settings_effects(
             if preserve_connection_opt_ins {
                 // A CLI patch may carry a stale full snapshot; it cannot restore opt-ins.
                 settings.ide_connection_enabled = guard.ide_connection_enabled;
-                settings.remote_server_connection_enabled = guard.remote_server_connection_enabled;
             }
             settings_store.save(&settings).map_err(|e| e.to_string())?;
             // AppSettings는 Copy가 아니다 — 아래에서 계속 읽으므로 복제해 넣는다.

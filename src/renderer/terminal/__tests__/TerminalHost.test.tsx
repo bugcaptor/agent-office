@@ -24,7 +24,6 @@ import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../store/appStore";
 import type { AgentProfile } from "../../store/types";
-import { remoteSessionStatus } from "../../remote/sessionState";
 
 const attach = vi.fn();
 const activate = vi.fn();
@@ -128,7 +127,7 @@ describe("TerminalHost mount set", () => {
     expect(attach).not.toHaveBeenCalled();
   });
 
-  it("keeps a newly-starting remote session mounted while the delayed snapshot refreshes", () => {
+  it("mounts a session as soon as it is starting", () => {
     useAppStore.getState().hydrate({
       agents: [{ ...mkProfile("a1") }],
       version: 1,
@@ -136,13 +135,10 @@ describe("TerminalHost mount set", () => {
     const { container } = render(<TerminalHost />);
     expect(container.querySelectorAll("[data-agent-id]")).toHaveLength(0);
 
-    // RemoteApp applies this value after its debounced `agents` snapshot.
-    // If it became idle, this mount (and its remote output subscription)
-    // would disappear before the PTY reached `running`.
     act(() => {
       useAppStore.getState().setSessionState({
         agentId: "a1",
-        status: remoteSessionStatus("starting"),
+        status: "starting",
       });
     });
 

@@ -109,8 +109,6 @@ export interface AppSettings {
   observerEnabled: boolean;
   /** 외부 IDE 관찰 연결. 기본 꺼짐. */
   ideConnectionEnabled: boolean;
-  /** 다른 Agent Office 서버로 연결. 기본 꺼짐. */
-  remoteServerConnectionEnabled: boolean;
   /** 키보드 타건음(캐릭터가 출력을 뿜을 때). 기본 켜짐.
    * 레거시 `soundEnabled` 하나가 담당하던 것을 셋으로 쪼갠 결과 —
    * 새 키가 없는 설정 파일은 백엔드가 옛 값으로 초기화한다. */

@@ -60,10 +60,9 @@
 | [archive/web-hosting-design.md](archive/web-hosting-design.md) | 웹 호스팅(#7m/#7n) 완전판(Phase 1+2) — 2026-08-05 폐기, 웹 원격(#2dz)에 계승. 루트의 낡은 Phase-1 스냅샷(`web-hosting-design.md`)은 삭제됨 |
 | [archive/affinity-design.md](archive/affinity-design.md) | 에이전트 호감도(kbm #2rv) — 기획 확정 후 구현 전에 접음(2026-10-14, 점검·정리 §7.D C27). 코드 없음 |
 | [archive/vscode-character-extension-plan.md](archive/vscode-character-extension-plan.md) | VSCode 로그 뷰어 확장(kbm #2ce) — V1 `vscode-ext/` 미사용으로 패키지째 제거(2026-10-14, 점검·정리 §7.D C40) |
+| [archive/remote-server-design.md](archive/remote-server-design.md) | 독립 세션 서버 `serve`·데스크톱 원격 연결(kbm #2w4) — 미사용으로 제거(2026-10-14, 점검·정리 §7.D C36) |
 
 ## 관련 (docs/ 밖)
 
 - `AGENTS.md` — 작업 규칙 정본 (루트)
 - `REBUILD-PLAN.md` — 2026-07-20 기술부채 상환 계획(리팩터 R-1~R-9, 문서 정리 계획 §4). 실행 완료 후 이력화 예정
-
-- [독립 세션 서버와 데스크톱 원격 연결](remote-server-design.md) — 서버 실행, 원격 접속, 출력 복원과 지원 범위.

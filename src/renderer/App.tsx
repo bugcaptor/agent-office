@@ -3,7 +3,6 @@ import "./layout/layout.css";
 import { useEffect, useMemo, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
-import { isRemoteWindow } from "./shared/remoteWindow";
 import { usePanelLayoutStore, panelExtent } from "./workpanels/panelLayoutStore";
 import { officeBus } from "./ipc/sessionBridge";
 import { OfficeCanvas } from "./office/OfficeCanvas";
@@ -82,7 +81,7 @@ import { IdeSessionDialog } from "./ide/IdeSessionDialog";
 function App() {
   const { t } = useTranslation("app");
   const agents = useAgentList();
-  const workPanelsEnabled = useAppStore((s) => s.appSettings.workPanelsEnabled) && !isRemoteWindow();
+  const workPanelsEnabled = useAppStore((s) => s.appSettings.workPanelsEnabled);
   const panelLayout = usePanelLayoutStore((s) => s.panels);
   // The store's `AgentProfile` (src/shared/types.ts) is structurally
   // richer than office/types.ts's `AgentProfile` (id/name/role/seed + an

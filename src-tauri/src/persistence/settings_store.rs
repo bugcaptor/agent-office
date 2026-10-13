@@ -279,9 +279,6 @@ pub struct AppSettings {
     /// 외부 IDE 연결은 설정에서 명시적으로 허용한다.
     #[serde(default)]
     pub ide_connection_enabled: bool,
-    /// 다른 Agent Office 서버로 나가는 연결. 웹 원격 호스팅과 별개다.
-    #[serde(default)]
-    pub remote_server_connection_enabled: bool,
     /// 키보드 타건음(캐릭터가 출력을 뿜을 때 나는 타이핑 소리).
     /// 레거시 `soundEnabled` 하나가 담당하던 것을 셋(타건/알림/TTS)으로 쪼갠
     /// 결과다 — 마이그레이션은 `migrate_sound_keys` 참고.
@@ -455,7 +452,6 @@ impl Default for AppSettings {
             diary_enabled: false,
             observer_enabled: false,
             ide_connection_enabled: false,
-            remote_server_connection_enabled: false,
             typing_sound_enabled: true,
             notify_sound_enabled: true,
             sound_volume: 0.5,
@@ -641,18 +637,14 @@ mod tests {
     fn connection_opt_ins_default_off_and_round_trip() {
         let mut value = serde_json::to_value(AppSettings::default()).unwrap();
         value.as_object_mut().unwrap().remove("ideConnectionEnabled");
-        value.as_object_mut().unwrap().remove("remoteServerConnectionEnabled");
         let legacy: AppSettings = serde_json::from_value(value).unwrap();
         assert!(!legacy.ide_connection_enabled);
-        assert!(!legacy.remote_server_connection_enabled);
         let enabled = AppSettings {
             ide_connection_enabled: true,
-            remote_server_connection_enabled: true,
             ..legacy
         };
         let saved = serde_json::to_value(&enabled).unwrap();
         assert_eq!(saved["ideConnectionEnabled"], true);
-        assert_eq!(saved["remoteServerConnectionEnabled"], true);
         assert_eq!(serde_json::from_value::<AppSettings>(saved).unwrap(), enabled);
     }
 
@@ -680,7 +672,6 @@ mod tests {
             diary_enabled: false,
             observer_enabled: true,
             ide_connection_enabled: false,
-            remote_server_connection_enabled: false,
             typing_sound_enabled: true,
             notify_sound_enabled: true,
             sound_volume: 0.5,
@@ -891,7 +882,6 @@ mod tests {
             diary_enabled: false,
             observer_enabled: true,
             ide_connection_enabled: false,
-            remote_server_connection_enabled: false,
             typing_sound_enabled: true,
             notify_sound_enabled: true,
             sound_volume: 0.5,

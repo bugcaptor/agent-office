@@ -1,6 +1,6 @@
 # 독립 세션 서버와 데스크톱 원격 연결
 
-상태: 구현. KBM [2w4](https://zgpdlx.tailc90d0d.ts.net:8444/t/2w4).
+상태: 이력(archived, 2026-10-14) — 구현(KBM [2w4](https://zgpdlx.tailc90d0d.ts.net:8444/t/2w4)) 후 개발일(09-12) 외 사용 흔적이 없어 제거(점검·정리 계획 §7.D C36). `serve` 실행 모드·`remote_client`·원격 창·`remoteServerConnectionEnabled` 설정·`scripts/serve.sh`가 함께 사라졌다.
 
 ## 사용
 

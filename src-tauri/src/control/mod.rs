@@ -1140,7 +1140,6 @@ mod tests {
         let f = build("stale-connection-settings");
         let mut stale = f.ctx.settings.read().unwrap().clone();
         stale.ide_connection_enabled = true;
-        stale.remote_server_connection_enabled = true;
         stale.typing_sound_enabled = false;
         // The user has since opted out; preserve the current values inside the write lock.
         crate::ipc::commands::apply_settings_effects(
@@ -1149,7 +1148,6 @@ mod tests {
         ).await.unwrap();
         let settings = f.ctx.settings.read().unwrap().clone();
         assert!(!settings.ide_connection_enabled);
-        assert!(!settings.remote_server_connection_enabled);
         assert!(!settings.typing_sound_enabled);
         cleanup(&f);
     }
@@ -1173,7 +1171,7 @@ mod tests {
             .unwrap();
         assert_eq!(rejected["ok"], false);
 
-        for key in ["ideConnectionEnabled", "ide_connection_enabled", "remoteServerConnectionEnabled", "remote_server_connection_enabled"] {
+        for key in ["ideConnectionEnabled", "ide_connection_enabled"] {
             let response: serde_json::Value = client
                 .post(format!("http://127.0.0.1:{port}/v1/settings/set"))
                 .header(TOKEN_HEADER, &token)
@@ -1182,7 +1180,6 @@ mod tests {
             assert_eq!(response["ok"], false, "{key}");
         }
         assert!(!f.ctx.settings.read().unwrap().ide_connection_enabled);
-        assert!(!f.ctx.settings.read().unwrap().remote_server_connection_enabled);
 
         let ok_resp: serde_json::Value = client
             .post(format!("http://127.0.0.1:{port}/v1/settings/set"))

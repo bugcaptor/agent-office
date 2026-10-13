@@ -9,7 +9,6 @@ import { nanoid } from "nanoid";
 
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
-import { isRemoteWindow } from "../shared/remoteWindow";
 import { generateSpritePreview } from "../office/gen/characterFactory";
 import {
   archetypeOrAuto,
@@ -116,7 +115,6 @@ export function useProfileDraft(editingAgentId: string | undefined, initialCwd?:
   // 시작 폴더를 네이티브 폴더 선택 다이얼로그로 지정 — 텍스트 입력과 병행.
   // 현재 입력값이 실존 폴더면 그 위치에서 다이얼로그를 연다.
   const onBrowseCwd = async () => {
-    if (isRemoteWindow()) return;
     try {
       const picked = await tauriApi.pickDirectory(draft.cwd?.trim() || undefined);
       if (picked) setDraft((d) => ({ ...d, cwd: picked }));

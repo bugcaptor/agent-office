@@ -3,8 +3,7 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": [
-    "main",
-    "remote-office"
+    "main"
   ],
   "permissions": [
     "core:default",

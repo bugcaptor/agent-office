@@ -312,7 +312,7 @@ pub(super) async fn settings_set(
     if obj.contains_key("talkEnabled") || obj.contains_key("talk_enabled") {
         return fail("talkEnabled는 앱 설정에서만 변경할 수 있습니다");
     }
-    if ["ideConnectionEnabled", "ide_connection_enabled", "remoteServerConnectionEnabled", "remote_server_connection_enabled"].iter().any(|key| obj.contains_key(*key)) {
+    if ["ideConnectionEnabled", "ide_connection_enabled"].iter().any(|key| obj.contains_key(*key)) {
         return fail("connection-opt-in-requires-settings");
     }
     let current = ctx.settings.read().unwrap().clone();

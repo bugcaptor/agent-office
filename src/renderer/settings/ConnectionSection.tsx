@@ -22,17 +22,6 @@ export function ConnectionSection() {
         <small>{t("connections.ideHelp")}</small>
       </span>
     </label>
-    <label className="settings-item">
-      <input
-        type="checkbox"
-        checked={settings.remoteServerConnectionEnabled}
-        onChange={(event) => updateAppSettings({ remoteServerConnectionEnabled: event.target.checked })}
-      />
-      <span>
-        <strong>{t("connections.remoteTitle")}</strong>
-        <small>{t("connections.remoteHelp")}</small>
-      </span>
-    </label>
     <p className="settings-item" style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>
       {t("connections.webRemoteNote")}
     </p>

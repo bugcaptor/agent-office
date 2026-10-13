@@ -594,7 +594,6 @@ describe("app settings commands", () => {
       diaryEnabled: false,
       observerEnabled: false,
       ideConnectionEnabled: false,
-      remoteServerConnectionEnabled: false,
       typingSoundEnabled: true,
       notifySoundEnabled: true,
       soundVolume: 0.5,

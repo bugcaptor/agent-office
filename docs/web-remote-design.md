@@ -349,4 +349,4 @@ diffCommit)+diff 뷰어(렌더러의 의존성 없는 unified diff 렌더 이식
 
 ## 독립 서버 추가 (2026-09-12)
 
-데스크톱 원격 접속과 GUI 없는 서버는 [remote-server-design.md](remote-server-design.md)를 따른다. 기존 브라우저의 재연결 재attach, 델타 복원 화면 보존, 빈 스냅샷 실패 처리와 스크롤백 보호를 보완했다. GUI 스냅샷 요청 시점 offset과 렌더 완료 offset의 원자적 정합은 기존 경로의 잔여 한계다.
+데스크톱 원격 접속과 GUI 없는 서버(제거됨)는 [archive/remote-server-design.md](archive/remote-server-design.md)를 따랐다. 기존 브라우저의 재연결 재attach, 델타 복원 화면 보존, 빈 스냅샷 실패 처리와 스크롤백 보호를 보완했다. GUI 스냅샷 요청 시점 offset과 렌더 완료 offset의 원자적 정합은 기존 경로의 잔여 한계다.

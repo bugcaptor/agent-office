@@ -49,14 +49,6 @@ impl BrokerPtyFactory {
         }
     }
 
-    /// Headless serving has no safe local fallback: losing the broker would
-    /// make the advertised durable terminal disappear with this process.
-    pub fn new_strict(app_data_dir: &Path, fallback: Arc<dyn PtyFactory>) -> Self {
-        let mut factory = Self::new(app_data_dir, fallback);
-        factory.strict = true;
-        factory
-    }
-
     fn try_broker_spawn(&self, o: &PtySpawnOptions) -> io::Result<SpawnedPty> {
         // control 연결(없으면 데몬 스폰) -- 이후 resize/kill이 이걸 재사용한다.
         let control = client::connect_or_spawn(&self.socket_path, &self.exe_path, &self.log_path)?;

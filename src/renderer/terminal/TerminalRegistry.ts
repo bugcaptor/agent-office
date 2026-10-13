@@ -24,7 +24,6 @@ import { useAppStore } from "../store/appStore";
 import { resolveXtermTheme } from "./theme";
 import { createImeBridge } from "./imeBridge";
 import { createScrollbackGuard, type ScrollbackGuard } from "./scrollbackGuard";
-import { setRemoteReplaying, acknowledgeRemoteOffset, type RemoteTerminalMessage } from "../ipc/remoteApi";
 
 interface Entry {
   term: Terminal;
@@ -203,44 +202,6 @@ class TerminalRegistry {
 
   get(agentId: string): Entry | undefined {
     return this.entries.get(agentId);
-  }
-
-  /** Remote frames are called by remoteApi's one-per-agent serial queue. */
-  async applyRemoteMessage(message: RemoteTerminalMessage, generation: number): Promise<void> {
-    const entry = this.ensure(message.agentId);
-    const afterWrite = (data: string) => new Promise<void>((resolve) => {
-      entry.observeOutput(data);
-      entry.term.write(data, resolve);
-    });
-    setRemoteReplaying(message.agentId, message.type === "restore" || (message.type === "output" && message.replay === true));
-    try {
-      if (message.type === "restore") {
-        await afterWrite("");
-        entry.term.resize(message.cols, message.rows);
-        // A reconnect snapshot replaces a complete terminal screen. Reset the
-        // guard too, otherwise a partial ESC[3J from the old stream contaminates
-        // the first replay output.
-        if (message.snapshot !== null) {
-          entry.term.reset();
-          entry.scrollbackGuard.reset();
-        }
-        await afterWrite(message.snapshot ?? "");
-        acknowledgeRemoteOffset(message.agentId, message.baseOffset ?? 0, generation);
-        return;
-      }
-      if (message.type === "resized") {
-        await afterWrite("");
-        entry.term.resize(message.cols, message.rows);
-        useAppStore.getState().setSessionSize(message.agentId, message.cols, message.rows);
-        return;
-      }
-      const data = entry.scrollbackGuard.filter(message.data);
-      await afterWrite(data);
-      entry.renderedBytes += message.bytes;
-      acknowledgeRemoteOffset(message.agentId, message.offset + message.bytes, generation);
-    } finally {
-      setRemoteReplaying(message.agentId, false);
-    }
   }
 
   /**

@@ -25,7 +25,6 @@ import { terminalRegistry } from "./TerminalRegistry";
 import { BotOverlay } from "./BotOverlay";
 import { AutomationBanner } from "./AutomationBanner";
 import { AutomationDecision } from "./AutomationDecision";
-import { isRemoteWindow } from "../shared/remoteWindow";
 import { IdePersonaPanel } from "../ide/IdePersonaPanel";
 
 const RESIZE_DEBOUNCE_MS = 120;
@@ -67,7 +66,7 @@ function ExternalMount({ agentId }: { agentId: string }) {
   const cwd = useAppStore((s) => s.agents[agentId]?.cwd);
   const [detaching, setDetaching] = useState(false);
   const [openError, setOpenError] = useState(false);
-  const canOpenWorkdirInVscode = !isRemoteWindow() && Boolean(cwd);
+  const canOpenWorkdirInVscode = Boolean(cwd);
 
   const detach = () => {
     setDetaching(true);
@@ -106,7 +105,7 @@ function ExternalMount({ agentId }: { agentId: string }) {
           </button>
         )}
         {openError && <div role="alert">{t("host.openWorkdirError")}</div>}
-        {!isRemoteWindow() && <IdePersonaPanel agentId={agentId} />}
+        <IdePersonaPanel agentId={agentId} />
         <button
           type="button"
           className="pixel-btn"

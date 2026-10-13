@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { tauriApi } from "../ipc/tauriApi";
 import { flushPersistence } from "../store/persist";
 import { useAppStore } from "../store/appStore";
-import { isRemoteWindow } from "../shared/remoteWindow";
 import type { IdePersonaContext } from "@shared/types";
 
 type SetupState = "idle" | "ready" | "confirmed";
@@ -20,7 +19,7 @@ function errorKey(error: unknown): string {
 export function IdePersonaPanel({ agentId }: { agentId: string }) {
   const agent = useAppStore((s) => s.agents[agentId]);
   const sessionId = useAppStore((s) => s.sessionUsage[agentId]?.sessionId);
-  if (isRemoteWindow() || !agent) return null;
+  if (!agent) return null;
   const prompt = agent.personalityPrompt ?? "";
   return <PersonaSetup key={JSON.stringify([agentId, sessionId, agent.name, agent.cwd, prompt])}
     agentId={agentId} prompt={prompt} />;

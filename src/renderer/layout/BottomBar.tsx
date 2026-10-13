@@ -38,11 +38,9 @@ import { clockInAgent, clockInAll } from "../agent/clockOut";
 import { summonAllToDesk } from "../agent/summonToDesk";
 import { UsageWidget } from "../usage/UsageWidget";
 import { useTalkStatus } from "../talk/useTalkStatus";
-import { invoke } from "@tauri-apps/api/core";
-import { Commands } from "@shared/ipc";
 
 export function BottomBar() {
-  const { t } = useTranslation(["common", "remote"]);
+  const { t } = useTranslation("common");
   const openModal = useAppStore((s) => s.openModal);
   const muted = useAppStore((s) => s.muted);
   const toggleMuted = useAppStore((s) => s.toggleMuted);
@@ -52,7 +50,6 @@ export function BottomBar() {
   const setScene = useAppStore((s) => s.setScene);
   const talkEnabled = useAppStore((s) => s.appSettings.talkEnabled);
   const ideConnectionEnabled = useAppStore((s) => s.appSettings.ideConnectionEnabled);
-  const remoteServerConnectionEnabled = useAppStore((s) => s.appSettings.remoteServerConnectionEnabled);
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
   const runningCount = useRunningCount();
   const pendingCount = usePendingCount();
@@ -66,8 +63,7 @@ export function BottomBar() {
   const [clockAllMenu, setClockAllMenu] = useState<{ x: number; y: number } | null>(null);
   const [recordMenu, setRecordMenu] = useState<{ x: number; y: number } | null>(null);
   const [connectionMenu, setConnectionMenu] = useState<{ x: number; y: number } | null>(null);
-  const isRemoteWindow = typeof document !== "undefined" && document.documentElement.dataset.remoteWindow === "true";
-  const connectionEnabled = !isRemoteWindow && (ideConnectionEnabled || remoteServerConnectionEnabled);
+  const connectionEnabled = ideConnectionEnabled;
 
   // "📊 기록" 버튼 툴팁 — 원래 TalkWidget이 title에 담던 열린/대기 대화
   // 문구를 여기로 옮긴다(talkEnabled가 꺼져 있으면 대화 정보는 뺀다).
@@ -103,7 +99,6 @@ export function BottomBar() {
         onClose={() => setConnectionMenu(null)}
         items={[
           ...(ideConnectionEnabled ? [{ icon: "🔗", label: t("bottomBar.ideSession"), onSelect: () => openModal({ kind: "ide-session" }) }] : []),
-          ...(remoteServerConnectionEnabled ? [{ icon: "🖧", label: t("connection.title", { ns: "remote" }), onSelect: () => { void invoke(Commands.remoteOpenWindow); } }] : []),
         ]}
       />}
       <button

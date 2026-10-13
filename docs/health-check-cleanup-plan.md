@@ -452,3 +452,4 @@ H 메모: D4~D6·D9·D10은 기계적 수정, D2·D3·D11·S2~S5는 사실 확�
 |---|---|---|
 | C27 호감도 | t-325c7ff6 | 문서만 `archive/`로 이동(코드 0) |
 | C40 VSCode 확장 | t-013c2b3c | `vscode-ext/` 패키지·`.gitignore` 항목 삭제, 계획 문서 archive. 앱 코드 참조 0이라 코드 변경 없음. 제어 서버 `/v1/*`·`/v1/display/*`(설치된 별도 확장 companion이 씀)는 유지 |
+| C36 `serve`·원격 연결 | t-63eb83fd | `remote_server.rs`(serve 모드)·`remote_client/`(원격 창 IPC 9개)·`remoteServerConnectionEnabled` 설정·렌더러 원격 창(`RemoteApp`·`remoteApi`·`isRemoteWindow` 분기·`tauriApi` delegate)·i18n `remote` 네임스페이스·`scripts/serve.sh`·스모크 스크립트 삭제. C37보다 먼저 했다(`serve`가 v2 브로커 `new_strict`를 씀). serve 전용 웹 원격 내부(headless·journal·`office.*` RPC)는 C35에서 모듈째 제거 |

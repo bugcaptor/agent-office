@@ -62,7 +62,7 @@ function safeInvoke<T>(cb: (payload: T) => void, payload: T): void {
   }
 }
 
-const localTauriApi: AgentOfficeApi = {
+export const tauriApi: AgentOfficeApi = {
   async inspectWorkSendTarget(agentId) { return await invoke(Commands.inspectWorkSendTarget, { agentId }); },
   async sendWorkItem(request) { return await invoke(Commands.sendWorkItem, { request }); },
   async scanWorkInbox() { return await invoke(Commands.scanWorkInbox); },
@@ -647,40 +647,6 @@ const localTauriApi: AgentOfficeApi = {
   },
 };
 
-// 기존 화면은 모두 이 안정된 facade를 import한다. 원격 창은 연결 뒤 이
-// delegate만 바꾸므로, 오래 살아 있는 TerminalRegistry와 각 다이얼로그가
-// 로컬 IPC를 캡처한 채 남는 일이 없다.
-let activeApi: AgentOfficeApi = localTauriApi;
-
-// Keep enumerable own methods so Vitest (and embedders) can spy on the public
-// facade. A Proxy with an empty target looks fine in production but makes
-// `vi.spyOn(tauriApi, "listSessionLogs")` fail before the getter is reached.
-export const tauriApi: AgentOfficeApi = Object.fromEntries(
-  Object.keys(localTauriApi).map((key) => [
-    key,
-    (...args: unknown[]) => {
-      const fn = activeApi[key as keyof AgentOfficeApi] as (...inner: unknown[]) => unknown;
-      return fn.apply(activeApi, args);
-    },
-  ]),
-) as unknown as AgentOfficeApi;
-
-export function setTauriApiDelegate(api: AgentOfficeApi): void {
-  activeApi = api;
-}
-
-export function resetTauriApiDelegate(): void {
-  activeApi = localTauriApi;
-}
-
-/** Remote windows must never fall back to this computer after disconnect. */
-export function setTauriApiFailClosed(): void {
-  activeApi = new Proxy({} as AgentOfficeApi, {
-    get(_target, key) {
-      return () => Promise.reject(new Error(`remote-disconnected: ${String(key)}`));
-    },
-  });
-}
 
 // `listen()` resolves asynchronously with an `UnlistenFn`, but the frozen API
 // contract wants a synchronous unsubscribe. If the caller unsubscribes before

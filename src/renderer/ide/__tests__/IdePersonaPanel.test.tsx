@@ -8,11 +8,9 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn<(...args: unknown[]) => Promise<IdePersonaContext>>(),
   save: vi.fn().mockResolvedValue(undefined),
   clipboard: vi.fn().mockResolvedValue(undefined),
-  remote: false,
 }));
 vi.mock("../../ipc/tauriApi", () => ({ tauriApi: { getIdePersona: mocks.get, prepareIdePersona: mocks.prepare } }));
 vi.mock("../../store/persist", () => ({ flushPersistence: () => mocks.save() }));
-vi.mock("../../shared/remoteWindow", () => ({ isRemoteWindow: () => mocks.remote }));
 import { useAppStore } from "../../store/appStore";
 import { IdePersonaPanel } from "../IdePersonaPanel";
 import { i18n } from "../../i18n";
@@ -31,7 +29,7 @@ beforeEach(() => {
     style: { name: "Agent Office voice", path: "/config/output-styles/voice.md", content: "---\nkeep-coding-instructions: true\n---\n" + prompt, exists: false } };
   mocks.get.mockReset(); mocks.get.mockImplementation(async () => structuredClone(context));
   mocks.prepare.mockReset(); mocks.prepare.mockImplementation(async () => { context.style!.exists = true; return structuredClone(context); });
-  mocks.save.mockClear(); mocks.clipboard.mockReset(); mocks.clipboard.mockResolvedValue(undefined); mocks.remote = false;
+  mocks.save.mockClear(); mocks.clipboard.mockReset(); mocks.clipboard.mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { value: { writeText: mocks.clipboard }, configurable: true });
 });
 afterEach(cleanup);
@@ -165,13 +163,10 @@ describe("IdePersonaPanel", () => {
     expect(screen.getByText(label("detachNote"))).toBeTruthy();
   });
 
-  it("hides unsupported external connections and does not query on remote windows", async () => {
+  it("hides unsupported external connections", async () => {
     mocks.get.mockResolvedValueOnce(null);
-    const view = render(<IdePersonaPanel agentId="a1" />);
+    render(<IdePersonaPanel agentId="a1" />);
     await waitFor(() => expect(screen.queryByText(label("loading"))).toBeNull());
     expect(screen.queryByRole("region")).toBeNull();
-    view.unmount(); mocks.get.mockClear(); mocks.save.mockClear(); mocks.remote = true;
-    render(<IdePersonaPanel agentId="a1" />);
-    expect(mocks.get).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
   });
 });

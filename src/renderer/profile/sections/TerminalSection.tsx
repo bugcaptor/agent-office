@@ -12,7 +12,6 @@ import type { DraftProfile } from "../generate";
 import type { AvailableShell } from "@shared/types";
 import type { Dispatch, SetStateAction } from "react";
 import { IS_WINDOWS } from "../../shared/platform";
-import { isRemoteWindow } from "../../shared/remoteWindow";
 
 export function TerminalSection({
   draft,
@@ -28,7 +27,6 @@ export function TerminalSection({
   editingAgentId: string | undefined;
 }) {
   const { t } = useTranslation("profile");
-  const remoteWindow = isRemoteWindow();
   return (
     <>
     {/* ── 터미널: 시작 폴더 · 시작 명령어 · 셸 ─────────────── */}
@@ -43,11 +41,9 @@ export function TerminalSection({
               onChange={(e) => setDraft({ ...draft, cwd: e.target.value })}
               placeholder={t("terminal.cwdPlaceholder")}
             />
-            {!remoteWindow && (
-              <button type="button" className="pixel-btn" onClick={onBrowseCwd}>
-                {t("terminal.browse")}
-              </button>
-            )}
+            <button type="button" className="pixel-btn" onClick={onBrowseCwd}>
+              {t("terminal.browse")}
+            </button>
           </div>
         </label>
       </div>
@@ -62,7 +58,7 @@ export function TerminalSection({
         </label>
         <p className="form-hint">{t("terminal.startupCommandHint")}</p>
       </div>
-      {!remoteWindow && <div className="form-field"><WorkAgentFields profile value={draft.defaultAgent} onChange={(defaultAgent) => setDraft((d) => ({ ...d, defaultAgent }))} /></div>}
+      <div className="form-field"><WorkAgentFields profile value={draft.defaultAgent} onChange={(defaultAgent) => setDraft((d) => ({ ...d, defaultAgent }))} /></div>
       <div className="form-field">
         <label>
           <span className="form-label-text">{t("terminal.keyboardSound")}</span>
@@ -81,14 +77,12 @@ export function TerminalSection({
         </label>
         <p className="form-hint">{t("terminal.keyboardSoundHint")}</p>
       </div>
-      {!remoteWindow && (
-        <VoiceField
-          draft={draft}
-          agentId={editingAgentId}
-          onChange={(voiceId) => setDraft((d) => ({ ...d, voiceId }))}
-        />
-      )}
-      {!remoteWindow && <div className="form-field form-check">
+      <VoiceField
+        draft={draft}
+        agentId={editingAgentId}
+        onChange={(voiceId) => setDraft((d) => ({ ...d, voiceId }))}
+      />
+      <div className="form-field form-check">
         <label>
           <input
             type="checkbox"
@@ -102,12 +96,12 @@ export function TerminalSection({
         <p className="form-hint">
           <Trans t={t} i18nKey="terminal.talkReceiveHint" components={{ b: <b /> }} />
         </p>
-      </div>}
-      {!remoteWindow && <><div className="form-field">
+      </div>
+      <div className="form-field">
         <span className="form-label-text">{t("bot.section")}</span>
         <p className="form-hint">{t("bot.sectionHint")}</p>
-      </div></>}
-      {!remoteWindow && <div className="form-field">
+      </div>
+      <div className="form-field">
         <label>
           <span className="form-label-text">{t("bot.slug")}</span>
           <input
@@ -120,8 +114,8 @@ export function TerminalSection({
         <p className="form-hint">
           <Trans t={t} i18nKey="bot.slugHint" components={{ code: <code /> }} />
         </p>
-      </div>}
-      {!remoteWindow && <>
+      </div>
+      <>
       <div className="form-field">
         <label>
           <span className="form-label-text">{t("bot.whitelist")}</span>
@@ -145,8 +139,8 @@ export function TerminalSection({
           />
         </label>
       </div>
-      </>}
-      {!remoteWindow && !IS_WINDOWS && (
+      </>
+      {!IS_WINDOWS && (
         <div className="form-field form-check">
           <label>
             <input
