@@ -56,6 +56,22 @@ describe("importInbox", () => {
 });
 
 describe("receive loop", () => {
+  it("완료 요청은 같은 주기의 추가 뒤에 적용해 후속 업무의 대기를 풀고 저장 실패 시 다시 받는다", async () => {
+    const design = useWorkItemStore.getState().add("Design")!;
+    useWorkItemStore.getState().importInbox([{ id: "t-build", title: "Build", body: "", dependsOn: [design] }]);
+    await useWorkItemStore.getState().flush();
+    api.saveWorkItems.mockRejectedValueOnce(new Error("disk"));
+    api.scanWorkInbox.mockResolvedValue([entry("1.md", "Fresh", { id: "t-fresh" }), entry("2.md", "", { done: [design, "t-fresh", "t-missing"] })]);
+    startWorkInbox(); await vi.advanceTimersByTimeAsync(3000);
+    expect(api.ackWorkInbox).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(api.ackWorkInbox).toHaveBeenCalledWith(["1.md", "2.md"]);
+    const items = useWorkItemStore.getState().items;
+    expect(items.find((i) => i.id === design)?.status).toBe("done");
+    expect(items.find((i) => i.id === "t-fresh")?.status).toBe("done");
+    expect(items.filter((i) => i.title === "Fresh")).toHaveLength(1);
+    expect(items.find((i) => i.id === "t-build")?.status).toBe("todo");
+  });
   it("생산자 id를 그대로 쓰고 같은 주기나 기존 업무를 선행 작업으로 잇는다", async () => {
     const existing = useWorkItemStore.getState().add("Existing")!;
     api.scanWorkInbox.mockResolvedValueOnce([

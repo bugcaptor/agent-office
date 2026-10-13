@@ -27,14 +27,18 @@ async function receive(epoch: number): Promise<void> {
     // 지난 저장 실패가 남아 있으면 먼저 재시도해 오류를 풀고 같은 주기에 가져온다.
     if (useWorkItemStore.getState().error === "save") await useWorkItemStore.getState().flush();
     const profiles = Object.values(useAppStore.getState().agents);
-    const accepted = new Set(useWorkItemStore.getState().importInbox(entries.map((entry) => ({
+    // 완료 요청은 같은 주기의 추가를 먼저 반영한 뒤 적용해 방금 남긴 업무도 완료할 수 있다.
+    const completions = entries.filter((entry) => entry.done?.length);
+    const additions = entries.filter((entry) => !entry.done?.length);
+    const accepted = new Set(useWorkItemStore.getState().importInbox(additions.map((entry) => ({
       id: inboxItemId(entry), title: entry.title, body: entry.body,
       assigneeAgentId: resolveAssignee(entry.assignee, profiles), dependsOn: entry.after,
     }))));
+    const completed = completions.length > 0 && useWorkItemStore.getState().completeFromInbox(completions.flatMap((entry) => entry.done!));
     await useWorkItemStore.getState().flush();
     const state = useWorkItemStore.getState();
     if (!state.loaded || state.dirty || state.error) return;
-    const names = entries.filter((entry) => accepted.has(inboxItemId(entry))).map((entry) => entry.fileName);
+    const names = entries.filter((entry) => entry.done?.length ? completed : accepted.has(inboxItemId(entry))).map((entry) => entry.fileName);
     if (names.length) await tauriApi.ackWorkInbox(names);
   } catch (error) { console.warn("work-inbox: receive failed", error); }
 }

@@ -20,6 +20,8 @@ interface WorkItemState {
   load(): Promise<void>;
   add(draft: string | WorkItemDraft): string | undefined;
   importInbox(entries: InboxImport[]): string[];
+  /** 수신함 완료 요청. 반영할 수 있는 상태면 true(없는 id·이미 완료는 건너뛴다). */
+  completeFromInbox(ids: string[]): boolean;
   edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status" | "dependsOn">>): void;
   recordSend(id: string, result: { sessionId?: string; error?: string }): void;
   remove(id: string): void;
@@ -81,6 +83,20 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     for (const item of added) item.dependsOn = normalizeDependsOn(item.id, item.dependsOn, all);
     if (added.length) { set({ items: all, dirty: true }); changed(); }
     return accepted;
+  },
+  completeFromInbox(ids) {
+    if (!get().loaded || get().error) return false;
+    let order = Math.max(-1, ...get().items.filter((i) => i.status === "done").map((i) => i.order)) + 1;
+    const at = Date.now();
+    const targets = new Set(ids);
+    let changedAny = false;
+    const items = get().items.map((item) => {
+      if (!targets.has(item.id) || item.status === "done") return item;
+      changedAny = true;
+      return { ...item, status: "done" as const, order: order++, updatedAt: at };
+    });
+    if (changedAny) { set({ items, dirty: true }); changed(); }
+    return true;
   },
   edit(id, patch) {
     if (!get().loaded) return;

@@ -89,6 +89,8 @@ agent-office ctl settings set typingSoundEnabled=false
 
 "이 작업을 단계별 태스크로 나눠 줘"처럼 부탁하면 에이전트가 선행 작업을 걸어 순서 있는 태스크로 남깁니다. 카드를 눌러 여는 팝업의 **선행 작업**에서 직접 걸거나 뺄 수도 있습니다. 선행 작업이 모두 완료되기 전에는 카드에 대기 표시가 나오고 보내기가 막힙니다.
 
+에이전트에게 "그 태스크 완료 처리해 줘"라고 하면 에이전트가 태스크를 완료로 옮깁니다. 에이전트는 이렇게 지시받았을 때만 완료하고, 스스로 끝났다고 판단해 완료하지는 않습니다. 완료되면 그 태스크를 기다리던 후속 태스크의 대기가 풀립니다.
+
 다른 프로그램(cron, 스크립트, 다른 도구)도 같은 폴더에 파일을 넣어 할 일을 남길 수 있습니다.
 
 | OS | 수신함 폴더 |
@@ -97,7 +99,7 @@ agent-office ctl settings set typingSoundEnabled=false
 | Linux | `${XDG_DATA_HOME:-~/.local/share}/com.bugcaptor.agent-office/work-inbox/` |
 | Windows | `%APPDATA%\com.bugcaptor.agent-office\work-inbox\` |
 
-파일 하나가 할 일 하나입니다. UTF-8 `.md`, 64 KiB까지. 첫 줄(`# ` 생략 가능)이 제목, 나머지가 본문입니다. 담당 캐릭터는 선택 frontmatter의 `assignee`(이름 또는 id)로, 업무 id는 `id`로, 선행 작업은 `after`(쉼표로 구분한 업무 id)로 정합니다. 쓰다 만 파일을 읽지 않도록 `.`으로 시작하는 임시 이름으로 쓴 뒤 `.md`로 바꾸세요.
+파일 하나가 할 일 하나입니다. UTF-8 `.md`, 64 KiB까지. 첫 줄(`# ` 생략 가능)이 제목, 나머지가 본문입니다. 담당 캐릭터는 선택 frontmatter의 `assignee`(이름 또는 id)로, 업무 id는 `id`로, 선행 작업은 `after`(쉼표로 구분한 업무 id)로 정합니다. `done: <업무 id>`만 담은 파일은 그 업무를 완료로 바꿉니다. 쓰다 만 파일을 읽지 않도록 `.`으로 시작하는 임시 이름으로 쓴 뒤 `.md`로 바꾸세요.
 
 ```bash
 inbox="$HOME/Library/Application Support/com.bugcaptor.agent-office/work-inbox"

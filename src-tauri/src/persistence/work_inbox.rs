@@ -15,6 +15,8 @@ pub struct Parsed {
     pub id: Option<String>,
     /// 선행 업무 id. 앱이 가져올 때 목록에 있는 것만 남긴다.
     pub after: Vec<String>,
+    /// 완료 요청. 비어 있지 않으면 새 업무가 아니라 이 id들을 완료로 바꾸는 파일이다.
+    pub done: Vec<String>,
 }
 #[derive(Debug, PartialEq)]
 pub enum RejectReason { InvalidUtf8, TooLarge, UnclosedFrontmatter, Empty }
@@ -39,6 +41,8 @@ pub struct InboxEntry {
     pub id: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub after: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub done: Vec<String>,
 }
 
 /// 수신함으로 지정할 수 있는 업무 id. 앱이 만든 id(nanoid)도 이 형식이다.
@@ -62,6 +66,7 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
     let mut assignee = None;
     let mut id = None;
     let mut after = vec![];
+    let mut done = vec![];
     if lines.peek() == Some(&"---") {
         lines.next();
         let mut closed = false;
@@ -72,6 +77,7 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
                     "assignee" => assignee = Some(value.trim().to_string()).filter(|v| !v.is_empty()),
                     "id" => id = Some(value.trim().to_string()).filter(|v| valid_task_id(v)),
                     "after" => after = parse_after(value),
+                    "done" => done = parse_after(value),
                     _ => {}
                 }
             }
@@ -87,9 +93,9 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
     let start = body.iter().position(|s| !s.trim().is_empty()).unwrap_or(body.len());
     let end = body.iter().rposition(|s| !s.trim().is_empty()).map_or(start, |i| i + 1);
     let body = body[start..end].join("\n");
-    if title.is_empty() && body.trim().is_empty() { return Err(RejectReason::Empty); }
+    if done.is_empty() && title.is_empty() && body.trim().is_empty() { return Err(RejectReason::Empty); }
     after.retain(|prerequisite| Some(prerequisite) != id.as_ref());
-    Ok(Parsed { title, body, assignee, id, after })
+    Ok(Parsed { title, body, assignee, id, after, done })
 }
 fn accepted_name(name: &str) -> bool {
     !name.starts_with('.') && name.ends_with(".md") && !name.contains(['/', '\\']) && !name.contains("..")
@@ -135,7 +141,7 @@ pub fn scan(root: &Path, now: SystemTime) -> Result<Vec<InboxEntry>, String> {
                 let mut hash = Sha256::new();
                 hash.update(name.as_bytes()); hash.update([0]); hash.update(&bytes);
                 let key = format!("{:x}", hash.finalize())[..16].to_string();
-                entries.push(InboxEntry { file_name: name, key, title: parsed.title, body: parsed.body, assignee: parsed.assignee, id: parsed.id, after: parsed.after });
+                entries.push(InboxEntry { file_name: name, key, title: parsed.title, body: parsed.body, assignee: parsed.assignee, id: parsed.id, after: parsed.after, done: parsed.done });
             }
             Err(reason) => reject(root, &name, reason).map_err(|e| e.to_string())?,
         }
@@ -157,11 +163,11 @@ mod tests {
     use super::*;
     #[test]
     fn parses_plain_frontmatter_bom_crlf_and_preserves_body_indentation() {
-        assert_eq!(parse("x.md", b"\n# Title\n\n  code  \n\n").unwrap(), Parsed { title: "Title".into(), body: "  code  ".into(), assignee: None, id: None, after: vec![] });
+        assert_eq!(parse("x.md", b"\n# Title\n\n  code  \n\n").unwrap(), Parsed { title: "Title".into(), body: "  code  ".into(), assignee: None, id: None, after: vec![], done: vec![] });
         let p = parse("x.md", "\u{feff}---\r\nfuture: ignored\r\nassignee: 하나 \r\n---\r\n# 제목\r\n본문\r\n".as_bytes()).unwrap();
-        assert_eq!(p, Parsed { title: "제목".into(), body: "본문".into(), assignee: Some("하나".into()), id: None, after: vec![] });
+        assert_eq!(p, Parsed { title: "제목".into(), body: "본문".into(), assignee: Some("하나".into()), id: None, after: vec![], done: vec![] });
         assert_eq!(parse("x.md", b"Title").unwrap().body, "");
-        assert_eq!(parse("x.md", b"# \nBody").unwrap(), Parsed { title: "".into(), body: "Body".into(), assignee: None, id: None, after: vec![] });
+        assert_eq!(parse("x.md", b"# \nBody").unwrap(), Parsed { title: "".into(), body: "Body".into(), assignee: None, id: None, after: vec![], done: vec![] });
     }
     #[test]
     fn parses_task_id_and_prerequisites() {
@@ -171,6 +177,12 @@ mod tests {
         assert_eq!((p.id, p.after), (None, vec![]));
         assert!(valid_task_id("vLdkeylcT4Nb9W4IQVT4g") && valid_task_id("inbox-0123abcd"));
         assert!(!valid_task_id("") && !valid_task_id(&"a".repeat(65)) && !valid_task_id("a.b"));
+    }
+    #[test]
+    fn parses_completion_requests_without_title() {
+        let p = parse("x.md", b"---\ndone: t-1, t-2\n---\n").unwrap();
+        assert_eq!((p.done, p.title.as_str()), (vec!["t-1".to_string(), "t-2".to_string()], ""));
+        assert_eq!(parse("x.md", b"---\ndone: a.b\n---\n"), Err(RejectReason::Empty));
     }
     #[test]
     fn rejects_malformed_content_and_accepts_exact_size_limit() {

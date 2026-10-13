@@ -6,7 +6,7 @@ use crate::persistence::work_inbox::{parse_after, valid_task_id, MAX_BYTES};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after <id>]... <title> [body | -]\n       office-task --list [--all]\nPrints the new task id. Pass it to --after to make a later task wait for this one.\n";
+const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after <id>]... <title> [body | -]\n       office-task --list [--all]\n       office-task --done <id>...\nPrints the new task id. Pass it to --after to make a later task wait for this one.\n";
 
 /// 실행 환경. 테스트가 프로세스 env를 건드리지 않도록 값으로 받는다.
 #[derive(Default)]
@@ -54,6 +54,9 @@ pub fn run_with(
             [all] if all == "--all" => list(env, true, out, err),
             _ => usage_error(err, "--list takes only --all"),
         };
+    }
+    if matches!(args.first().map(String::as_str), Some("--done")) {
+        return done(&args[1..], env, out, err, now);
     }
     let mut assignee = Assignee::Default;
     let mut after: Vec<String> = vec![];
@@ -128,16 +131,54 @@ fn render(id: &str, title: &str, body: &str, assignee: Option<&str>, after: &[St
     text
 }
 
+fn load_items(dir: &Path) -> Result<Vec<serde_json::Value>, String> {
+    match std::fs::read(dir.join("work-items.json")) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("failed to read work-items.json: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(vec![]),
+        Err(e) => Err(format!("failed to read work-items.json: {e}")),
+    }
+}
+
+/// 완료 요청 파일을 쓴다. 보드나 수신함에 없는 id면 아무것도 쓰지 않고 1로 끝나
+/// 에이전트가 잘못된 id를 바로 알 수 있게 한다. 이미 완료된 업무는 건너뛴다.
+fn done(ids: &[String], env: &TaskEnv, out: &mut dyn Write, err: &mut dyn Write, now: chrono::DateTime<chrono::Utc>) -> i32 {
+    if ids.is_empty() { return usage_error(err, "--done requires a task id"); }
+    let mut requested: Vec<String> = vec![];
+    for value in ids {
+        let parsed = parse_after(value);
+        if parsed.is_empty() || value.split(|c: char| c == ',' || c.is_whitespace()).any(|id| !id.is_empty() && !valid_task_id(id)) {
+            return usage_error(err, &format!("invalid task id for --done: {value:?}"));
+        }
+        for id in parsed { if !requested.contains(&id) { requested.push(id); } }
+    }
+    let (Some(dir), Some(inbox)) = (env.data_dir(), env.inbox()) else { return fail(err, "AGENT_OFFICE_WORK_INBOX and AGENT_OFFICE_APP_DATA are not set"); };
+    let items = match load_items(&dir) { Ok(items) => items, Err(e) => return fail(err, &e) };
+    let status = |id: &str| items.iter().find(|item| item.get("id").and_then(|v| v.as_str()) == Some(id))
+        .map(|item| item.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string());
+    // 방금 남겨 아직 앱이 가져가지 않은 업무도 완료할 수 있다. 앱은 같은 주기에서 추가를 먼저 반영한다.
+    let pending: Vec<String> = std::fs::read_dir(&inbox).map(|entries| entries.flatten()
+        .filter(|entry| entry.file_name().to_str().is_some_and(|name| !name.starts_with('.') && name.ends_with(".md")))
+        .filter_map(|entry| crate::persistence::work_inbox::parse("", &std::fs::read(entry.path()).ok()?).ok()?.id)
+        .collect()).unwrap_or_default();
+    let unknown: Vec<&str> = requested.iter().map(String::as_str).filter(|id| status(id).is_none() && !pending.iter().any(|p| p == id)).collect();
+    if !unknown.is_empty() { return fail(err, &format!("no such task: {} (see office-task --list)", unknown.join(", "))); }
+    let (already, targets): (Vec<String>, Vec<String>) = requested.into_iter().partition(|id| status(id).as_deref() == Some("done"));
+    for id in &already { let _ = writeln!(err, "office-task: {id} is already done"); }
+    if targets.is_empty() { return 0; }
+    let random = uuid::Uuid::new_v4().simple().to_string();
+    let name = format!("{}-{}.md", now.format("%Y%m%dT%H%M%S%3fZ"), &random[..8]);
+    match write(&inbox, &name, format!("---\ndone: {}\n---\n", targets.join(", ")).as_bytes()) {
+        Ok(_) => { for id in &targets { let _ = writeln!(out, "{id}"); } 0 }
+        Err(e) => fail(err, &format!("failed to write {}: {e}", inbox.display())),
+    }
+}
+
 const LIST_STATUS_ORDER: [&str; 4] = ["review", "in_progress", "todo", "done"];
 
 /// 저장된 업무 목록을 한 줄씩 보여준다. 앱이 아직 가져가지 않은 수신함 파일은 개수만 알린다.
 fn list(env: &TaskEnv, all: bool, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     let Some(dir) = env.data_dir() else { return fail(err, "AGENT_OFFICE_WORK_INBOX and AGENT_OFFICE_APP_DATA are not set"); };
-    let items: Vec<serde_json::Value> = match std::fs::read(dir.join("work-items.json")) {
-        Ok(bytes) => match serde_json::from_slice(&bytes) { Ok(items) => items, Err(e) => return fail(err, &format!("failed to read work-items.json: {e}")) },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => vec![],
-        Err(e) => return fail(err, &format!("failed to read work-items.json: {e}")),
-    };
+    let items = match load_items(&dir) { Ok(items) => items, Err(e) => return fail(err, &e) };
     let names: std::collections::HashMap<String, String> = std::fs::read(dir.join("profiles.json")).ok()
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
         .and_then(|state| state.get("agents")?.as_array().cloned())
@@ -349,5 +390,35 @@ mod tests {
         assert_eq!(call(&["--list", "x"], &env, "").0, 2);
         let empty = tempfile::tempdir().unwrap();
         assert_eq!(call(&["--list"], &TaskEnv { work_inbox: None, app_data: Some(empty.path().into()), agent_id: None }, "").1, "(no tasks)\n");
+    }
+
+    #[test]
+    fn done_writes_a_completion_request_only_for_known_open_tasks() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("work-items.json"), r#"[
+            {"id":"w1","title":"A","body":"","status":"in_progress","order":0},
+            {"id":"w0","title":"Old","body":"","status":"done","order":0}
+        ]"#).unwrap();
+        let env = TaskEnv { work_inbox: Some(dir.path().join("work-inbox")), app_data: None, agent_id: Some("a".into()) };
+        let (code, _, err) = call(&["--done", "w1", "nope"], &env, "");
+        assert_eq!(code, 1);
+        assert!(err.contains("no such task: nope"));
+        assert!(!dir.path().join("work-inbox").exists());
+        let (code, out, err) = call(&["--done", "w1,w0"], &env, "");
+        assert_eq!((code, out.as_str()), (0, "w1\n"));
+        assert!(err.contains("w0 is already done"));
+        // 수신함에만 있는 업무도 완료할 수 있다.
+        let (_, pending, _) = call(&["Fresh"], &env, "");
+        assert_eq!(call(&["--done", pending.trim()], &env, "").0, 0);
+        let entries = scan(&dir.path().join("work-inbox"), std::time::SystemTime::now()).unwrap();
+        // 테스트 시각이 고정이라 파일 이름순이 임의값 순서다.
+        let mut requests: Vec<_> = entries.iter().filter(|e| !e.done.is_empty()).map(|e| e.done.clone()).collect();
+        requests.sort();
+        let mut expected = vec![vec!["w1".to_string()], vec![pending.trim().to_string()]];
+        expected.sort();
+        assert_eq!(requests, expected);
+        assert_eq!(call(&["--done", "w0"], &env, "").0, 0);
+        assert_eq!(call(&["--done"], &env, "").0, 2);
+        assert_eq!(call(&["--done", "bad id!"], &env, "").0, 2);
     }
 }

@@ -62,4 +62,6 @@ export interface InboxEntry {
   id?: string;
   /** 선행 업무 id. */
   after?: string[];
+  /** 완료 요청 파일이면 완료로 바꿀 업무 id. 이때 제목·본문은 쓰지 않는다. */
+  done?: string[];
 }
