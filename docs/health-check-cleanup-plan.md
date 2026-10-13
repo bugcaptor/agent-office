@@ -1,6 +1,6 @@
 # 프로젝트 점검·기능 정리 계획
 
-- 상태: 진행 중 (2026-10-14) — A·B·C·D 기록, G 완료(§7.G, 14건)
+- 상태: 진행 중 (2026-10-14) — A·B·C·D·E 기록, G 완료(§7.G, 14건)
 - 목적: 프로젝트의 문제점을 찾아 줄을 세우고, 잘 쓰지 않게 된 기능을 골라 제거해 유지 비용을 줄인다.
 - 실행 단위: agent office 업무 보드 태스크(§6). 각 태스크 본문이 이 문서의 절을 가리킨다.
 
@@ -471,3 +471,43 @@ E·H로 넘기는 것:
 - **앱 데이터 잔여물(읽는 코드 없음)**: `talks/`, `claude-plugin/`, OS temp의 `office-talk` shim, peer 파일(C38). `tts-keys.json`은 요약기 키 저장소로 계속 쓰이므로 잔여물이 아니다. `automation-cli-returns/`는 업무 보내기가 이름 그대로 쓴다.
 - **UI 공백**: Anthropic API 키 입력칸이 TTS 섹션에만 있었다. 저장된 키와 `ANTHROPIC_API_KEY` env는 계속 쓰이지만(요약기·Claude 모델 목록), 앱 안에서 새로 넣거나 지울 곳이 없다. 필요하면 요약 탭에 OpenRouter처럼 칸을 두는 후속 작업.
 - **문서**: `subsystem-*`·`usage-design`·`antigravity-support-design` 등 정본에 남은 제거 기능 서술은 H에서 정리.
+
+### 7.E 위험 영역 정밀 조사 (2026-10-14, `main` `96e60cb` 기준)
+
+범위: §4(E) 우선순위대로 동시성·영속성 → 신뢰 경계 → 프로세스 수명주기. G에서 제거된 기능(봇 모드·웹 원격·v2 브로커·외부 붙이기 등)은 뺐다. 고치지 않았다. "재현"은 실제로 돌려 본 것, 나머지는 `파일:줄` 코드 증거다. 재현용 임시 테스트 2개는 돌린 뒤 되돌렸다(작업 트리 변경 없음). 심각도는 잠정치이고 F에서 발생 가능성과 함께 다시 매긴다.
+
+#### 7.E.1 발견
+
+| # | 관점 | 발견 | 증거 | 잠정 심각도 |
+|---|---|---|---|---|
+| E1 | 동시성·영속성 (A1 근본 원인) | **단일 인스턴스 보호가 없고, 모드 분기에 걸리지 않는 인자는 모두 GUI 기동으로 떨어진다.** 두 인스턴스는 각자 렌더러 메모리에 업무 목록을 들고 `work-items.json`을 통째로 덮어써 서로의 변경을 지운다(lost update). 같은 수신함을 둘 다 스캔해 먼저 ack한 쪽만 업무를 갖는다. `observer-port`·`control-port`도 나중 인스턴스 값으로 덮인다. 고정 임시 이름 `work-items.json.tmp`라 두 프로세스가 동시에 저장하면 섞인 바이트가 rename될 수 있다 | `lib.rs:272` `run()`에 single-instance 없음(Cargo에도 플러그인 없음). `lib.rs:101-104`·`121`(`--observer-forward` 잉여 인자·모르는 provider → `None` → `main.rs:14` GUI), `lib.rs:871-876` 테스트가 이 낙하를 고정. 저장: `workItemStore.ts:175-178`(전체 배열), `work_panels_store.rs:45`(고정 tmp, 락은 프로세스 안 `Mutex`뿐) | **높음** |
+| E2 | 영속성 | **`profiles.json`이 깨지면 빈 상태로 조용히 읽고, 다음 저장이 빈 목록으로 덮어 캐릭터 전부를 잃는다.** 같은 부팅에서 `adopt_detached_sessions`가 그 빈 목록을 "알려진 캐릭터"로 써서 sessiond에 넘겨 둔 세션을 **전부 Kill**한다. 업무 목록은 로드 실패 시 읽기 전용 + 재시도 버튼이 있는데(`WorkItemsPanel.tsx:101`) 프로필에는 그 보호가 없다. 백업·로그도 남기지 않는다 | `profile_store.rs:83-91`(파싱 실패·버전 불일치 → `PersistedState::empty()`), `ipc/commands/session.rs:191-199`(`store.load().agents`로 known 집합), `handoff_v1.rs:183-185`(known에 없으면 `client.kill`) | **높음** |
+| E3 | 영속성 | `settings.json`이 깨지거나 **필드 하나라도 타입이 틀리면** 전체를 기본값(모두 off)으로 읽고 로그 없이 진행한다. 다음 설정 변경이 기본값으로 덮어 원본을 잃는다. 저장은 `fs::write` 뒤 rename이라 fsync가 없어 전원 차단 시 빈 파일이 될 수 있다(프로필 저장도 같음). 설치본 `settings.json`은 HEAD 코드로 정상 로드됨을 확인(임시 테스트, G 제거 후 하위 호환 OK) | `settings_store.rs:410-424`, 저장 `settings_store.rs:426-440`, `profile_store.rs:98-111` | 중간 |
+| E4 | 상태 소유권 | `ctl settings set`은 백엔드 캐시만 바꾸고 렌더러에 알리지 않는다. 렌더러는 자기 사본 전체를 저장하므로, GUI에서 아무 설정이나 하나 바꾸면 ctl로 바꾼 값이 되돌아간다. 렌더러 화면도 갱신되지 않는다. `settings_set` 자체도 읽기-병합-쓰기 사이에 락이 없어 GUI 저장과 겹치면 한쪽이 진다 | `routes.rs:159-185`(이벤트 emit 없음, 백엔드 전체에 `settings-changed` 류 이벤트 0건), `appStore.ts:994-1001`(`{...get().appSettings, ...patch}` 전체 전송). 재현 절차(미실행, 설치본 상태를 바꾸므로): `ctl settings set gitStatusEnabled=false` → GUI에서 다른 토글 → `ctl settings get`에서 `gitStatusEnabled: true` | 중간 |
+| E5 | 무결성 (A8 근본 원인) | 수신함의 의미 오류가 조용히 사라진다. ① 이미 있는 id로 들어온 업무는 `accepted`에 넣고 건너뛰어 ack(삭제)된다 — 내용이 다른 새 업무가 흔적 없이 버려진다. ② 완료 요청은 없는 id든 아니든 `completeFromInbox`가 늘 `true`라 ack된다. ③ 없는 선행·자기 선행·순환 선행은 `normalizeDependsOn`이 말없이 뺀다(A3). `rejected/`는 형식 오류에만 쓰인다 | `workItemStore.ts:79-80`, `workItemStore.ts:114-126`(`return true`), `workInbox.ts:41`, `workDependencies.ts:25-26`, 형식 거부만 `work_inbox.rs:139-146` | 중간 |
+| E6 | 운영성 (A10 근본 원인) | 세션 로그 전사기가 빈 줄에서 `ESC[1K`(줄 처음~커서 지우기)를 받으면 패닉한다. 스레드가 죽으면 그 세션의 나머지 기록은 `try_send` 실패로 **조용히** 버려지고(드롭 카운터만 증가), 메모리에 있던 미확정 줄도 잃는다. 화면 표시 없음 | **재현**: 임시 테스트 `transcribe(24, &["\x1b[1K"])` → `transcript.rs:462:25 index out of bounds: the len is 0 but the index is 0`(panic.log와 같은 줄). 원인 `transcript.rs:461`의 `0..=col.min(len.saturating_sub(1))`이 len 0에서 `0..=0`. 기록 중단 `session_log/mod.rs:195-197` | 중간 |
+| E7 | 신뢰 경계·CLI 이스케이프 | **Windows `office-task.cmd` shim이 `%*`로 인자를 cmd.exe에 넘긴다.** 이 shim은 Claude 권한 규칙 `Bash(<shim>:*)`로 사전 승인되므로, 제목 인자에 cmd 메타문자(`&`·`|`, PowerShell의 `\"` 이스케이프와 cmd의 따옴표 해석 불일치)를 넣으면 권한 확인 없이 임의 명령이 돌 수 있다(BatBadBut 계열, CVE-2024-24576과 같은 부류). `%VAR%`도 cmd /c 단계에서 펼쳐져 제목이 바뀔 수 있다. Windows 실기 재현은 못 함 | `work_inbox_cli.rs:251-252`(`"{exe}" task %*`), 사전 승인 `office_instructions.rs:44-53`·`lib.rs:441-447`. POSIX shim(`exec "$exe" task "$@"`)은 안전 — §7.A.2에서 macOS 이스케이프 확인 | 중간~높음 (Windows 한정) |
+| E8 | 신뢰 경계 | **업무 카드에 출처가 없다.** 사람이 쓴 카드, 아무 에이전트가 `office-task --to <다른 캐릭터>`로 남긴 카드, 수신함에 아무 프로세스가 떨군 파일, 가져온 JSON이 저장 후 구분되지 않는다. 카드 본문은 그대로 대상 에이전트의 프롬프트가 되고, 업무 보내기의 기동 문장은 agy·kilo·pi를 **자동 승인 모드**로 띄운다. 그래서 프롬프트 인젝션을 당한 에이전트 하나가 다른 캐릭터 앞으로 지시문을 심고, 사람이 본문을 다 읽지 않고 '보내기'를 누르면 무승인 실행으로 이어진다. 보내기는 수동뿐이라(자동 전송 경로 없음) 사람이 마지막 관문이다 | `types.rs:1678-1692`(`WorkItem`에 생성자·출처 필드 없음), `workInbox.ts:33-36`, `workItemFile.ts:89-108`, `launch.rs:49-55`(`agy --dangerously-skip-permissions`·`kilo --auto`·`pi --approve`). 기동 문장·프롬프트 자체의 이스케이프는 안전: 모델 제어문자 거절 `work_send.rs:245-250`, effort 화이트리스트 `launch.rs:12-31`, 프롬프트 제어문자(붙여넣기 종료열 `ESC[201~` 포함) 거절 `work_send.rs:277-282` | 중간 |
+| E9 | 신뢰 경계 (Linux 다중 사용자) | Linux에서 `std::env::temp_dir()`은 공유 `/tmp`다. ① shim이 `/tmp/agent-office/bin/office-task`에 쓰이는데 다른 사용자가 디렉터리를 먼저 만들면 shim을 바꿔치기할 수 있고, 그 shim은 Claude 권한 사전 승인 대상이다. 임시 이름 `office-task.aotmp`가 고정이라 심볼릭 링크를 따라 `fs::write`가 남의 파일을 덮을 수도 있다. ② sessiond 소켓이 길이 폴백으로 `/tmp/ao-<sha1>.sock`(경로에서 결정적)이 되면, 데몬이 없을 때 다른 사용자가 그 경로에 먼저 listen하면 앱이 종료 때 **PTY 마스터 fd를 SCM_RIGHTS로 넘겨** 세션을 가로챌 수 있다(클라이언트가 피어 uid를 확인하지 않음). macOS는 사용자별 `$TMPDIR`(0700)이라 해당 없음 | `work_inbox_cli.rs:242-245`, `office_instructions.rs:113-115`, `sessiond/client.rs:24-33`·`238-249`, `daemon.rs:397-405` | 낮음 (조건부 높은 영향) |
+| E10 | 운영성 (A11·A12 근본 원인) | ctl `create`는 프로필에 없는 agentId로도 세션을 띄운다(렌더러는 프로필 없는 세션을 그리지 않아 숨은 세션이 됨). `send`는 세션 존재·실행 여부를 보지 않고 관문에 넘긴 뒤 무조건 `ok`, `dispose`도 없는 id에 `ok` | `routes.rs:60-96`(프로필 검사 없음), `routes.rs:108-115`, `routes.rs:117-123` + `manager.rs:974-991` | 중간 |
+| E11 | 권한·책임 (A6·A7) | "사람 지시 시에만 완료"는 안내문(`office_instructions.rs:27`)뿐이다. `--done`은 담당자·선행 완료·호출 세션을 보지 않는다. 호출자 신원은 env `AGENT_OFFICE_AGENT_ID`뿐이라 위조 가능해 "사람 지시"는 원리적으로 코드로 강제할 수 없다. 강제할 수 있는 것은 담당자 일치·선행 미완 경고 정도 → **설계 판단**(F에서 사용자 결정) | `work_inbox_cli.rs:144-174`, `workItemStore.ts:114-126` | 중간 |
+| E12 | 실패 모드 (A9) | shim은 **새 세션을 만들 때만** 다시 쓴다. OS temp가 청소되면 이미 떠 있는 세션은 시스템 프롬프트·권한 규칙에 박힌 경로를 잃고, 다른 세션이 생길 때까지 `office-task`가 `no such file`로 실패한다 | `manager.rs:409-414` | 낮음 |
+| E13 | 프로세스 수명주기 | sessiond 데몬은 시작 때 소켓 파일을 무조건 지운다. 살아 있는 데몬(넘겨받은 세션 보유)이 있는데 연결이 일시 실패해 `connect_or_spawn`이 새 데몬을 띄우면, 옛 데몬은 소켓을 잃고 아무도 붙을 수 없어 셸들을 쥔 채 영원히 남는다(테이블이 비어야 종료) | `daemon.rs:397`, `client.rs:238-249` | 낮음 |
+| E14 | 신뢰 경계 | 수신함 제목·본문의 제어문자를 거르지 않아 `office-task --list`가 ESC 시퀀스를 그대로 터미널에 찍는다(OSC 52 클립보드 쓰기, 글자 숨기기 등). 손으로 쓴 수신함 파일이 경로다. 업무 보내기 단계에서는 거절되므로 카드가 "보낼 수 없음" 상태로 남는다 | `work_inbox.rs:87-95`(제어문자 처리 없음), `work_inbox_cli.rs:194-208` | 낮음 |
+
+#### 7.E.2 확인했으나 문제 아님 (예상 = 실제)
+
+- **ctl 서버 인증**: 127.0.0.1 바인드, 커스텀 헤더 토큰을 매 요청 파일과 상수시간 비교(`control/token.rs:54-73`). 커스텀 헤더라 브라우저 CSRF는 CORS preflight에서 막히고, 토큰이라 DNS rebinding도 막힌다. `cliEnabled`는 ctl로 못 바꾼다(`routes.rs:154-158`). 다만 토큰은 같은 사용자의 모든 프로세스(세션 env의 `AGENT_OFFICE_APP_DATA`로 위치를 아는 에이전트 포함)가 읽을 수 있어, 승인 뒤에는 에이전트 하나가 `ctl send`로 다른 캐릭터의 셸에 입력을 넣을 수 있다 — 같은 사용자 신뢰 범위 안의 설계 사항이라 기록만 한다. 토큰 파일은 생성 후 chmod라 아주 짧게 umask 권한이 보인다(`token.rs:38-39`, app_data 자체가 사용자 전용이라 영향 없음).
+- **관찰 훅 서버**: `/hook`에 인증이 없지만 라우팅 키가 UUID v4 세션 id(`manager.rs:568`)라 추측할 수 없다.
+- **업무 보내기의 셸·붙여넣기 이스케이프**: E8 증거 칸의 세 검사로 막혀 있고 테스트가 있다(`work_send.rs:336-363`).
+- **수신함 쓰기 규약**: CLI는 `.<이름>.tmp`에 쓰고 fsync 후 rename(`work_inbox_cli.rs:218-230`), 스캔은 숨김 tmp를 건너뛰고 24시간 지난 것만 지운다. 심볼릭 링크·디렉터리·경로 탈출 이름을 거른다(`work_inbox.rs:100-102`·`120`). ack는 저장 성공 뒤에만 해서 앱이 죽어도 업무를 잃지 않는다(`workInbox.ts:38-42`).
+- **업무 목록 로드 실패**: 빈 목록으로 덮지 않고 읽기 전용 + 재시도(`workItemStore.ts:50-54`, `WorkItemsPanel.tsx:101`) — E2·E3이 따라야 할 기준.
+- **G 제거 후 설정 하위 호환**: 설치본 `settings.json`(제거된 `tts*`·`talk*`·`webRemote*`·`ideConnectionEnabled` 등 포함)이 HEAD에서 그대로 로드됨(임시 테스트, `version 1`, `workPanelsEnabled`·`observerEnabled` 유지).
+- **sessiond 소켓 권한**: bind 직후 0600(`daemon.rs:401-405`). 설치본 소켓은 `<app_data>/sessiond.sock`(경로 83바이트라 `/tmp` 폴백 안 탐).
+
+#### 7.E.3 F로 넘기는 것
+
+- 수정 태스크 후보(우선순위 잠정): E1 단일 인스턴스 + 인자 낙하 차단 → E2 프로필 로드 실패 보호(입양 Kill 연쇄 포함) → E7 Windows shim → E6 전사기 패닉 → E5 수신함 의미 오류 rejected → E3 설정 손상 보존·fsync → E4 설정 변경 이벤트 → E10 ctl 결과 보고 → E8 카드 출처 표시 → E9·E12·E13·E14.
+- 사용자 결정 필요: E11(완료 권한을 어디까지 코드로 강제할지), E8(출처 표시만 할지, 에이전트가 남긴 카드는 보내기 전에 확인을 받을지).
+- 기록하지 않은 범위: Windows 실기(E7), Linux 다중 사용자 실기(E9), 앱 재시작·kill -9 복구 실기(§7.A.3과 같은 이유로 격리 인스턴스 필요 — E1 때문에 같은 app_data로는 금지).
+- H 입력(문서·주석 표류): `store/persist.ts:51-53` 주석이 제거된 `connect_ide_session`을 언급.
