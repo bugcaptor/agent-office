@@ -2,7 +2,7 @@
 //! GUI·tokio 없이 수신함에 파일 하나를 원자적으로 쓰거나(`--list`) 저장된 업무 목록을
 //! 읽는다. control 서버와 토큰이 필요 없어 CLI 제어가 꺼져 있어도 동작한다.
 
-use crate::persistence::work_inbox::{parse_after, valid_task_id, MAX_BYTES};
+use crate::persistence::work_inbox::{forbidden_control, parse_after, valid_task_id, MAX_BYTES};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
@@ -98,6 +98,10 @@ pub fn run_with(
     };
     let body = body.replace("\r\n", "\n");
     if title.is_empty() && body.trim().is_empty() { return fail(err, "title and body are both empty"); }
+    // 앱 수신함이 거절할 파일을 쓰지 않는다.
+    if let Some(c) = forbidden_control(&title).or_else(|| forbidden_control(&body)) {
+        return fail(err, &format!("title or body contains control character U+{:04X}; only tab and newline are allowed", c as u32));
+    }
     let explicit = matches!(assignee, Assignee::To(_));
     let assignee = match assignee {
         Assignee::To(value) if value.contains(['\n', '\r']) => return usage_error(err, "--to must be a single line"),
@@ -237,13 +241,22 @@ fn list(env: &TaskEnv, all: bool, out: &mut dyn Write, err: &mut dyn Write) -> i
             let waiting = after.iter().any(|id| status_of.get(id).is_some_and(|status| status != "done"));
             line.push_str(&format!("  after: {}{}", after.join(", "), if waiting { " (blocked)" } else { "" }));
         }
-        let _ = writeln!(out, "{line}");
+        let _ = writeln!(out, "{}", escape_controls(&line));
     }
     if shown.is_empty() { let _ = writeln!(out, "(no tasks)"); }
     let pending = env.inbox().and_then(|inbox| std::fs::read_dir(inbox).ok()).map_or(0, |entries| entries.flatten()
         .filter(|entry| entry.file_name().to_str().is_some_and(|name| !name.starts_with('.') && name.ends_with(".md"))).count());
     if pending > 0 { let _ = writeln!(out, "({pending} new task(s) in the inbox are not on the board yet)"); }
     0
+}
+
+/// 저장된 값의 제어문자가 터미널에 해석되지 않게(ESC 시퀀스, OSC 52 등) `\x1b`처럼 적는다.
+fn escape_controls(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for c in text.chars() {
+        if c.is_control() { escaped.push_str(&format!("\\x{:02x}", c as u32)); } else { escaped.push(c); }
+    }
+    escaped
 }
 
 /// 쓰기 규약: 같은 폴더의 `.<최종 이름>.tmp`에 끝까지 쓰고 rename한다.
@@ -386,6 +399,9 @@ mod tests {
         let env = env(dir.path(), Some("a"));
         assert_eq!(call(&[" ", "\n"], &env, "").0, 1);
         assert_eq!(call(&["Big", "-"], &env, &"a".repeat(MAX_BYTES)).0, 1);
+        let (code, _, err) = call(&["Esc\u{1b}[8m"], &env, "");
+        assert!(code == 1 && err.contains("U+001B"), "{err}");
+        assert_eq!(call(&["Body", "-"], &env, "line\rover").0, 1);
         assert_eq!(call(&["--to", "a\nb", "Task"], &env, "").0, 2);
         assert_eq!(call(&["--to"], &env, "").0, 2);
         assert_eq!(call(&[], &env, "").0, 2);
@@ -441,6 +457,10 @@ mod tests {
         assert!(call(&["--list", "--all"], &env, "").1.contains("w0  [done]"));
         assert_eq!(call(&["--list", "x"], &env, "").0, 2);
         let empty = tempfile::tempdir().unwrap();
+        std::fs::write(empty.path().join("work-items.json"), r#"[{"id":"w1","title":"a\u001b]52;c;aGk=\u0007b\tc\u009b","body":"","status":"todo","order":0}]"#).unwrap();
+        let env = TaskEnv { work_inbox: None, app_data: Some(empty.path().into()), agent_id: None };
+        assert_eq!(call(&["--list"], &env, "").1, "w1  [todo]  @unassigned  a\\x1b]52;c;aGk=\\x07b\\x09c\\x9b\n");
+        std::fs::remove_file(empty.path().join("work-items.json")).unwrap();
         assert_eq!(call(&["--list"], &TaskEnv { work_inbox: None, app_data: Some(empty.path().into()), agent_id: None }, "").1, "(no tasks)\n");
     }
 

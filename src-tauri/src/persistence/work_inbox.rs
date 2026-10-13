@@ -24,14 +24,23 @@ pub struct Parsed {
     pub done: Vec<String>,
 }
 #[derive(Debug, PartialEq)]
-pub enum RejectReason { InvalidUtf8, TooLarge, UnclosedFrontmatter, Empty }
+pub enum RejectReason { InvalidUtf8, TooLarge, UnclosedFrontmatter, Empty, ControlChar(char) }
 impl RejectReason {
     pub fn code(&self) -> &'static str {
         match self {
             Self::InvalidUtf8 => "invalid-utf8", Self::TooLarge => "too-large",
             Self::UnclosedFrontmatter => "unclosed-frontmatter", Self::Empty => "empty",
+            Self::ControlChar(_) => "control-char",
         }
     }
+    /// `.error` 둘째 줄. 제어문자 거부는 첫 문자를 `U+001B`처럼 적는다.
+    pub fn detail(&self) -> Option<String> {
+        match self { Self::ControlChar(c) => Some(format!("U+{:04X}", *c as u32)), _ => None }
+    }
+}
+/// 업무 제목·본문에 둘 수 없는 문자. 업무 보내기(`work_send`)와 같은 기준으로 탭·줄바꿈만 허용한다.
+pub fn forbidden_control(text: &str) -> Option<char> {
+    text.chars().find(|c| c.is_control() && !matches!(c, '\n' | '\t'))
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,6 +108,10 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
     let end = body.iter().rposition(|s| !s.trim().is_empty()).map_or(start, |i| i + 1);
     let body = body[start..end].join("\n");
     if done.is_empty() && title.is_empty() && body.trim().is_empty() { return Err(RejectReason::Empty); }
+    // ESC 등이 남으면 `office-task --list`·터미널에서 해석되고 업무 보내기도 거절하므로 받지 않는다.
+    // 완료 요청은 제목·본문을 쓰지 않으므로 보지 않는다.
+    let control = if done.is_empty() { forbidden_control(&title).or_else(|| forbidden_control(&body)) } else { None };
+    if let Some(c) = control { return Err(RejectReason::ControlChar(c)); }
     Ok(Parsed { title, body, assignee, id, after, done })
 }
 fn accepted_name(name: &str) -> bool {
@@ -174,7 +187,7 @@ pub fn scan(root: &Path, now: SystemTime) -> Result<Vec<InboxEntry>, String> {
                 let key = format!("{:x}", hash.finalize())[..16].to_string();
                 entries.push(InboxEntry { file_name: name, key, title: parsed.title, body: parsed.body, assignee: parsed.assignee, id: parsed.id, after: parsed.after, done: parsed.done });
             }
-            Err(reason) => reject(root, &name, reason.code(), None).map_err(|e| e.to_string())?,
+            Err(reason) => reject(root, &name, reason.code(), reason.detail().as_deref()).map_err(|e| e.to_string())?,
         }
     }
     Ok(entries)
@@ -245,6 +258,18 @@ mod tests {
         assert_eq!(parse("x.md", &[255]), Err(RejectReason::InvalidUtf8));
         assert_eq!(parse("x.md", &vec![b'a'; MAX_BYTES + 1]), Err(RejectReason::TooLarge));
         assert!(parse("x.md", &vec![b'a'; MAX_BYTES]).is_ok());
+    }
+    #[test]
+    fn rejects_control_characters_except_tab_and_newline() {
+        assert_eq!(parse("x.md", b"# a\x1b]52;c;aGk=\x07"), Err(RejectReason::ControlChar('\u{1b}')));
+        assert_eq!(parse("x.md", b"# a\nline\rover"), Err(RejectReason::ControlChar('\r')));
+        assert_eq!(parse("x.md", "# a\n\u{9b}31m".as_bytes()), Err(RejectReason::ControlChar('\u{9b}')));
+        assert_eq!(parse("x.md", b"# a\tb\r\n\tindented\r\n").unwrap().body, "\tindented");
+        assert!(parse("x.md", b"---\ndone: t-1\n---\n\x1b").is_ok());
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("esc.md"), "# \x1b[8mhidden").unwrap();
+        assert!(scan(root.path(), SystemTime::now()).unwrap().is_empty());
+        assert_eq!(fs::read_to_string(root.path().join("rejected/esc.md.error")).unwrap(), "control-char\nU+001B\n");
     }
     #[test]
     fn scans_sorted_limited_and_deterministic_then_acks_safe_names() {
