@@ -53,7 +53,7 @@ export interface WorkSendResult { sessionId: string; submittedAt: number }
 
 /** 로컬 수신함 파일. key는 파일 이름과 원본 바이트의 해시 앞 16자. */
 /** 수신함 파일을 `rejected/`로 옮길 의미 오류. `reason`은 `.error` 첫 줄의 사유 코드. */
-export interface InboxRejection { fileName: string; reason: "duplicate-id" | "unknown-task"; detail?: string }
+export interface InboxRejection { fileName: string; reason: "duplicate-id" | "unknown-task" | "empty-task"; detail?: string }
 /** 업무는 만들었지만 입력 일부를 버리거나 바꾼 경우. `work-inbox/warnings.log`에 한 줄로 남는다. */
 export interface InboxWarning {
   fileName: string;
@@ -73,4 +73,21 @@ export interface InboxEntry {
   after?: string[];
   /** 완료 요청 파일이면 완료로 바꿀 업무 id. 이때 제목·본문은 쓰지 않는다. */
   done?: string[];
+  /** 삭제 요청 파일이면 지울 업무 id. */
+  delete?: string[];
+  /** 수정 요청 파일이면 고칠 업무와 바꿀 필드. */
+  edit?: InboxEdit;
+}
+/** 기존 업무 하나의 수정 요청. 있는 필드만 바꾼다. */
+export interface InboxEdit {
+  id: string;
+  title?: string;
+  body?: string;
+  /** 담당 캐릭터의 프로필 id 또는 이름. 빈 문자열이면 미배정. */
+  assignee?: string;
+  /** 선행 업무 전체를 이 목록으로 바꾼다. 비면 모두 뺀다. */
+  after?: string[];
+  addAfter?: string[];
+  removeAfter?: string[];
+  status?: WorkStatus;
 }

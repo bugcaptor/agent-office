@@ -2,11 +2,21 @@
 //! GUI·tokio 없이 수신함에 파일 하나를 원자적으로 쓰거나(`--list`) 저장된 업무 목록을
 //! 읽는다. control 서버와 토큰이 필요 없어 CLI 제어가 꺼져 있어도 동작한다.
 
-use crate::persistence::work_inbox::{forbidden_control, parse_after, valid_task_id, MAX_BYTES};
+use crate::persistence::work_inbox::{forbidden_control, parse_after, valid_task_id, MAX_BYTES, STATUSES};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after <id>]... <title> [body | -]\n       office-task --list [--all]\n       office-task --done <id>...\nPrints the new task id. Pass it to --after to make a later task wait for this one.\n";
+const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after <id>]... <title> [body | -]
+       office-task --list [--all]
+       office-task --show <id>
+       office-task --edit <id> [--title <title>] [--body <body | ->] [--to <name|id> | --unassigned]
+                   [--status todo|in_progress|review|done]
+                   [--after <id>... | --no-after | --add-after <id>... --remove-after <id>...]
+       office-task --done <id>...
+       office-task --delete <id>...
+Prints the new task id. Pass it to --after to make a later task wait for this one.
+--edit --after replaces all prerequisites; --add-after/--remove-after change them one by one.
+";
 
 /// 실행 환경. 테스트가 프로세스 env를 건드리지 않도록 값으로 받는다.
 #[derive(Default)]
@@ -55,8 +65,15 @@ pub fn run_with(
             _ => usage_error(err, "--list takes only --all"),
         };
     }
-    if matches!(args.first().map(String::as_str), Some("--done")) {
-        return done(&args[1..], env, out, err, now);
+    match args.first().map(String::as_str) {
+        Some("--done") => return done(&args[1..], env, out, err, now),
+        Some("--delete") => return delete(&args[1..], env, out, err, now),
+        Some("--edit") => return edit(&args[1..], env, stdin, out, err, now),
+        Some("--show") => return match &args[1..] {
+            [id] => show(id, env, out, err),
+            _ => usage_error(err, "--show takes one task id"),
+        },
+        _ => {}
     }
     let mut assignee = Assignee::Default;
     let mut after: Vec<String> = vec![];
@@ -70,33 +87,17 @@ pub fn run_with(
                 None => return usage_error(err, "--to requires a value"),
             },
             "--unassigned" if positional.is_empty() => assignee = Assignee::Unassigned,
-            "--after" if positional.is_empty() => match iter.next() {
-                Some(value) => {
-                    let ids = parse_after(value);
-                    // 형식이 틀린 id를 조용히 버리면 의존성이 빠진 채 들어가므로 거절한다.
-                    if ids.is_empty() || value.split(|c: char| c == ',' || c.is_whitespace()).any(|id| !id.is_empty() && !valid_task_id(id)) {
-                        return usage_error(err, &format!("invalid task id for --after: {value:?}"));
-                    }
-                    for id in ids { if !after.contains(&id) { after.push(id); } }
-                }
-                None => return usage_error(err, "--after requires a task id"),
-            },
+            "--after" if positional.is_empty() => if let Err(code) = push_ids(&mut after, iter.next(), "--after", err) { return code; },
             "--" if positional.is_empty() => positional.extend(iter.by_ref().cloned()),
             _ => positional.push(arg.clone()),
         }
     }
     if positional.is_empty() || positional.len() > 2 { return usage_error(err, "expected <title> [body | -]"); }
     let title = positional[0].split_whitespace().collect::<Vec<_>>().join(" ");
-    let body = match positional.get(1).map(String::as_str) {
-        Some("-") => {
-            let mut bytes = vec![];
-            if let Err(e) = stdin.take((MAX_BYTES + 1) as u64).read_to_end(&mut bytes) { return fail(err, &format!("failed to read stdin: {e}")); }
-            match String::from_utf8(bytes) { Ok(text) => text, Err(_) => return fail(err, "stdin is not UTF-8") }
-        }
-        Some(body) => body.to_string(),
+    let body = match positional.get(1) {
+        Some(value) => match read_body(value, stdin, err) { Ok(body) => body, Err(code) => return code },
         None => String::new(),
     };
-    let body = body.replace("\r\n", "\n");
     if title.is_empty() && body.trim().is_empty() { return fail(err, "title and body are both empty"); }
     // 앱 수신함이 거절할 파일을 쓰지 않는다.
     if let Some(c) = forbidden_control(&title).or_else(|| forbidden_control(&body)) {
@@ -125,6 +126,28 @@ pub fn run_with(
         Ok(_) => { let _ = writeln!(out, "{id}"); 0 }
         Err(e) => fail(err, &format!("failed to write {}: {e}", inbox.display())),
     }
+}
+
+/// `--after` 같은 id 목록 인자 하나를 `ids`에 더한다(쉼표·공백 구분, 중복 합침).
+/// 형식이 틀린 id를 조용히 버리면 의존성이 빠진 채 들어가므로 거절한다.
+fn push_ids(ids: &mut Vec<String>, value: Option<&String>, flag: &str, err: &mut dyn Write) -> Result<(), i32> {
+    let Some(value) = value else { return Err(usage_error(err, &format!("{flag} requires a task id"))) };
+    let parsed = parse_after(value);
+    if parsed.is_empty() || value.split(|c: char| c == ',' || c.is_whitespace()).any(|id| !id.is_empty() && !valid_task_id(id)) {
+        return Err(usage_error(err, &format!("invalid task id for {flag}: {value:?}")));
+    }
+    for id in parsed { if !ids.contains(&id) { ids.push(id); } }
+    Ok(())
+}
+
+/// 본문 인자. `-`이면 stdin을 읽는다. CRLF는 LF로 바꾼다.
+fn read_body(value: &str, stdin: &mut dyn Read, err: &mut dyn Write) -> Result<String, i32> {
+    let body = if value == "-" {
+        let mut bytes = vec![];
+        if let Err(e) = stdin.take((MAX_BYTES + 1) as u64).read_to_end(&mut bytes) { return Err(fail(err, &format!("failed to read stdin: {e}"))); }
+        String::from_utf8(bytes).map_err(|_| fail(err, "stdin is not UTF-8"))?
+    } else { value.to_string() };
+    Ok(body.replace("\r\n", "\n"))
 }
 
 /// 제목 줄은 항상 `# `로 시작해 본문이나 빈 제목이 frontmatter·제목으로 잘못 읽히지 않는다.
@@ -183,35 +206,190 @@ fn load_items(dir: &Path) -> Result<Vec<serde_json::Value>, String> {
     }
 }
 
-/// 완료 요청 파일을 쓴다. 보드나 수신함에 없는 id면 아무것도 쓰지 않고 1로 끝나
-/// 에이전트가 잘못된 id를 바로 알 수 있게 한다. 이미 완료된 업무는 건너뛴다.
-fn done(ids: &[String], env: &TaskEnv, out: &mut dyn Write, err: &mut dyn Write, now: chrono::DateTime<chrono::Utc>) -> i32 {
-    if ids.is_empty() { return usage_error(err, "--done requires a task id"); }
-    let mut requested: Vec<String> = vec![];
-    for value in ids {
-        let parsed = parse_after(value);
-        if parsed.is_empty() || value.split(|c: char| c == ',' || c.is_whitespace()).any(|id| !id.is_empty() && !valid_task_id(id)) {
-            return usage_error(err, &format!("invalid task id for --done: {value:?}"));
-        }
-        for id in parsed { if !requested.contains(&id) { requested.push(id); } }
+/// 저장된 업무 목록과 앱이 아직 가져가지 않은 수신함 업무 id. 대상 id를 확인할 때 쓴다.
+struct Board { inbox: PathBuf, items: Vec<serde_json::Value>, pending: Vec<String> }
+impl Board {
+    fn load(env: &TaskEnv, err: &mut dyn Write) -> Result<Self, i32> {
+        let (Some(dir), Some(inbox)) = (env.data_dir(), env.inbox()) else { return Err(fail(err, "AGENT_OFFICE_WORK_INBOX and AGENT_OFFICE_APP_DATA are not set")); };
+        let items = load_items(&dir).map_err(|e| fail(err, &e))?;
+        let pending = pending_ids(&inbox);
+        Ok(Self { inbox, items, pending })
     }
-    let (Some(dir), Some(inbox)) = (env.data_dir(), env.inbox()) else { return fail(err, "AGENT_OFFICE_WORK_INBOX and AGENT_OFFICE_APP_DATA are not set"); };
-    let items = match load_items(&dir) { Ok(items) => items, Err(e) => return fail(err, &e) };
-    let status = |id: &str| items.iter().find(|item| item.get("id").and_then(|v| v.as_str()) == Some(id))
-        .map(|item| item.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string());
-    // 방금 남겨 아직 앱이 가져가지 않은 업무도 완료할 수 있다. 앱은 같은 주기에서 추가를 먼저 반영한다.
-    let pending = pending_ids(&inbox);
-    let unknown: Vec<&str> = requested.iter().map(String::as_str).filter(|id| status(id).is_none() && !pending.iter().any(|p| p == id)).collect();
-    if !unknown.is_empty() { return fail(err, &format!("no such task: {} (see office-task --list)", unknown.join(", "))); }
-    let (already, targets): (Vec<String>, Vec<String>) = requested.into_iter().partition(|id| status(id).as_deref() == Some("done"));
-    for id in &already { let _ = writeln!(err, "office-task: {id} is already done"); }
-    if targets.is_empty() { return 0; }
+    fn item(&self, id: &str) -> Option<&serde_json::Value> {
+        self.items.iter().find(|item| item.get("id").and_then(|v| v.as_str()) == Some(id))
+    }
+    fn status(&self, id: &str) -> Option<String> {
+        self.item(id).map(|item| item.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string())
+    }
+    /// 보드에도 수신함에도 없는 id. 방금 남겨 아직 앱이 가져가지 않은 업무도 대상으로 삼을 수 있다.
+    /// 앱은 같은 주기에서 추가를 먼저 반영한다.
+    fn unknown<'a>(&self, ids: &'a [String]) -> Vec<&'a str> {
+        ids.iter().map(String::as_str).filter(|id| self.item(id).is_none() && !self.pending.iter().any(|p| p == id)).collect()
+    }
+    /// 이 업무를 선행으로 기다리는 보드의 업무 id.
+    fn dependents(&self, id: &str) -> Vec<String> {
+        self.items.iter()
+            .filter(|item| item.get("dependsOn").and_then(|v| v.as_array()).is_some_and(|ids| ids.iter().any(|d| d.as_str() == Some(id))))
+            .filter_map(|item| item.get("id").and_then(|v| v.as_str()).map(String::from))
+            .collect()
+    }
+}
+
+/// 요청 파일 하나를 수신함에 쓴다. 이름은 시각 순이라 앞서 쓴 요청이 먼저 적용된다.
+fn write_request(board: &Board, content: &str, now: chrono::DateTime<chrono::Utc>, err: &mut dyn Write) -> Result<(), i32> {
+    if content.len() > MAX_BYTES { return Err(fail(err, &format!("request exceeds {MAX_BYTES} bytes"))); }
     let random = uuid::Uuid::new_v4().simple().to_string();
     let name = format!("{}-{}.md", now.format("%Y%m%dT%H%M%S%3fZ"), &random[..8]);
-    match write(&inbox, &name, format!("---\ndone: {}\n---\n", targets.join(", ")).as_bytes()) {
-        Ok(_) => { for id in &targets { let _ = writeln!(out, "{id}"); } 0 }
-        Err(e) => fail(err, &format!("failed to write {}: {e}", inbox.display())),
+    write(&board.inbox, &name, content.as_bytes()).map(|_| ()).map_err(|e| fail(err, &format!("failed to write {}: {e}", board.inbox.display())))
+}
+
+fn target_ids(args: &[String], flag: &str, err: &mut dyn Write) -> Result<Vec<String>, i32> {
+    if args.is_empty() { return Err(usage_error(err, &format!("{flag} requires a task id"))); }
+    let mut ids = vec![];
+    for value in args { push_ids(&mut ids, Some(value), flag, err)?; }
+    Ok(ids)
+}
+
+/// 완료 요청 파일을 쓴다. 보드나 수신함에 없는 id면 아무것도 쓰지 않고 1로 끝나
+/// 에이전트가 잘못된 id를 바로 알 수 있게 한다. 이미 완료된 업무는 건너뛴다.
+fn done(args: &[String], env: &TaskEnv, out: &mut dyn Write, err: &mut dyn Write, now: chrono::DateTime<chrono::Utc>) -> i32 {
+    let requested = match target_ids(args, "--done", err) { Ok(ids) => ids, Err(code) => return code };
+    let board = match Board::load(env, err) { Ok(board) => board, Err(code) => return code };
+    let unknown = board.unknown(&requested);
+    if !unknown.is_empty() { return fail(err, &format!("no such task: {} (see office-task --list)", unknown.join(", "))); }
+    let (already, targets): (Vec<String>, Vec<String>) = requested.into_iter().partition(|id| board.status(id).as_deref() == Some("done"));
+    for id in &already { let _ = writeln!(err, "office-task: {id} is already done"); }
+    if targets.is_empty() { return 0; }
+    match write_request(&board, &format!("---\ndone: {}\n---\n", targets.join(", ")), now, err) {
+        Ok(()) => { for id in &targets { let _ = writeln!(out, "{id}"); } 0 }
+        Err(code) => code,
     }
+}
+
+/// 삭제 요청 파일을 쓴다. 없는 id가 하나라도 있으면 아무것도 쓰지 않고 1이다.
+/// 지운 업무를 기다리던 후속 업무는 그 선행만 풀리므로 stderr로 알린다.
+fn delete(args: &[String], env: &TaskEnv, out: &mut dyn Write, err: &mut dyn Write, now: chrono::DateTime<chrono::Utc>) -> i32 {
+    let targets = match target_ids(args, "--delete", err) { Ok(ids) => ids, Err(code) => return code };
+    let board = match Board::load(env, err) { Ok(board) => board, Err(code) => return code };
+    let unknown = board.unknown(&targets);
+    if !unknown.is_empty() { return fail(err, &format!("no such task: {} (see office-task --list)", unknown.join(", "))); }
+    if let Err(code) = write_request(&board, &format!("---\ndelete: {}\n---\n", targets.join(", ")), now, err) { return code; }
+    for id in &targets {
+        let waiting: Vec<String> = board.dependents(id).into_iter().filter(|d| !targets.contains(d)).collect();
+        if !waiting.is_empty() { let _ = writeln!(err, "office-task: {} no longer wait(s) on {id}", waiting.join(", ")); }
+        let _ = writeln!(out, "{id}");
+    }
+    0
+}
+
+/// 수정 요청 파일을 쓴다. 준 필드만 바꾼다. 대상이 없으면 1, 인자 오류는 2다.
+fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Write, err: &mut dyn Write, now: chrono::DateTime<chrono::Utc>) -> i32 {
+    let Some((id, args)) = args.split_first() else { return usage_error(err, "--edit requires a task id") };
+    if !valid_task_id(id) { return usage_error(err, &format!("invalid task id for --edit: {id:?}")); }
+    let mut title: Option<String> = None;
+    let mut body: Option<String> = None;
+    let mut assignee: Option<Option<String>> = None;
+    let mut status: Option<String> = None;
+    let (mut after, mut no_after) = (vec![], false);
+    let (mut add, mut remove) = (vec![], vec![]);
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        let result = match arg.as_str() {
+            "--title" => match iter.next() {
+                Some(value) => { title = Some(value.split_whitespace().collect::<Vec<_>>().join(" ")); Ok(()) }
+                None => Err(usage_error(err, "--title requires a value")),
+            },
+            "--body" => match iter.next() {
+                Some(value) => read_body(value, stdin, err).map(|text| body = Some(text.trim_matches('\n').to_string())),
+                None => Err(usage_error(err, "--body requires a value or -")),
+            },
+            "--to" => match iter.next() {
+                Some(value) if value.contains(['\n', '\r']) => Err(usage_error(err, "--to must be a single line")),
+                Some(value) if value.trim().is_empty() => Err(usage_error(err, "--to requires a value; use --unassigned to clear")),
+                Some(value) => { assignee = Some(Some(value.trim().to_string())); Ok(()) }
+                None => Err(usage_error(err, "--to requires a value")),
+            },
+            "--unassigned" => { assignee = Some(None); Ok(()) }
+            "--status" => match iter.next() {
+                Some(value) if STATUSES.contains(&value.as_str()) => { status = Some(value.clone()); Ok(()) }
+                Some(value) => Err(usage_error(err, &format!("invalid --status {value:?}; use one of {}", STATUSES.join(", ")))),
+                None => Err(usage_error(err, "--status requires a value")),
+            },
+            "--after" => push_ids(&mut after, iter.next(), "--after", err),
+            "--no-after" => { no_after = true; Ok(()) }
+            "--add-after" => push_ids(&mut add, iter.next(), "--add-after", err),
+            "--remove-after" => push_ids(&mut remove, iter.next(), "--remove-after", err),
+            other => Err(usage_error(err, &format!("unknown argument for --edit: {other:?}"))),
+        };
+        if let Err(code) = result { return code; }
+    }
+    if no_after && !after.is_empty() { return usage_error(err, "--no-after cannot be combined with --after"); }
+    // 선행 전체 교체(`after`)와 하나씩 더하고 빼기는 섞지 않는다.
+    let after = (no_after || !after.is_empty()).then_some(after);
+    if after.is_some() && !(add.is_empty() && remove.is_empty()) {
+        return usage_error(err, "--after/--no-after replace all prerequisites; do not combine them with --add-after/--remove-after");
+    }
+    if title.is_none() && body.is_none() && assignee.is_none() && status.is_none() && after.is_none() && add.is_empty() && remove.is_empty() {
+        return usage_error(err, "--edit needs at least one change");
+    }
+    if let Some(c) = title.as_deref().and_then(forbidden_control).or_else(|| body.as_deref().and_then(forbidden_control)) {
+        return fail(err, &format!("title or body contains control character U+{:04X}; only tab and newline are allowed", c as u32));
+    }
+    let board = match Board::load(env, err) { Ok(board) => board, Err(code) => return code };
+    if !board.unknown(std::slice::from_ref(id)).is_empty() { return fail(err, &format!("no such task: {id} (see office-task --list)")); }
+    if let Some(item) = board.item(id) {
+        let field = |key: &str| item.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let next_title = title.clone().unwrap_or_else(|| field("title"));
+        let next_body = body.clone().unwrap_or_else(|| field("body"));
+        if next_title.trim().is_empty() && next_body.trim().is_empty() { return fail(err, "the task would have no title and no body"); }
+    }
+    let linked: Vec<String> = after.iter().flatten().chain(&add).cloned().collect();
+    if linked.contains(id) { return usage_error(err, &format!("{id} cannot wait on itself")); }
+    warn_unknown_references(env, assignee.as_ref().and_then(|a| a.as_deref()), &linked, err);
+    let mut text = format!("---\nedit: {id}\n");
+    if let Some(title) = &title { text.push_str(&format!("title: {title}\n")); }
+    if let Some(assignee) = &assignee { text.push_str(&format!("assignee: {}\n", assignee.as_deref().unwrap_or(""))); }
+    if let Some(status) = &status { text.push_str(&format!("status: {status}\n")); }
+    if let Some(after) = &after { text.push_str(&format!("after: {}\n", after.join(", "))); }
+    if !add.is_empty() { text.push_str(&format!("add-after: {}\n", add.join(", "))); }
+    if !remove.is_empty() { text.push_str(&format!("remove-after: {}\n", remove.join(", "))); }
+    if body.is_some() { text.push_str("body: replace\n"); }
+    text.push_str("---\n");
+    if let Some(body) = body.as_deref().filter(|b| !b.is_empty()) { text.push_str(body); text.push('\n'); }
+    match write_request(&board, &text, now, err) {
+        Ok(()) => { let _ = writeln!(out, "{id}"); 0 }
+        Err(code) => code,
+    }
+}
+
+/// 업무 하나를 본문까지 모두 보여 준다. 수신함에만 있는 업무는 앱이 가져간 뒤에 볼 수 있다.
+fn show(id: &str, env: &TaskEnv, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    let board = match Board::load(env, err) { Ok(board) => board, Err(code) => return code };
+    let Some(item) = board.item(id) else {
+        if board.pending.iter().any(|p| p == id) { return fail(err, &format!("{id} is in the inbox and not on the board yet; try again in a few seconds")); }
+        return fail(err, &format!("no such task: {id} (see office-task --list)"));
+    };
+    let dir = env.data_dir().unwrap_or_default();
+    let names: std::collections::HashMap<String, String> = load_profiles(&dir).unwrap_or_default().into_iter().collect();
+    let field = |key: &str| item.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let assignee = match field("assigneeAgentId") {
+        id if id.is_empty() => "unassigned".to_string(),
+        id => match names.get(&id) { Some(name) => format!("{name} ({id})"), None => format!("{id} (no such character)") },
+    };
+    let mut lines = vec![format!("id: {id}"), format!("status: {}", field("status")), format!("assignee: {assignee}"), format!("title: {}", field("title"))];
+    let after: Vec<String> = item.get("dependsOn").and_then(|v| v.as_array()).map(|ids| ids.iter().filter_map(|id| id.as_str())
+        .map(|d| format!("{d} [{}]", board.status(d).unwrap_or_else(|| "deleted".into()))).collect()).unwrap_or_default();
+    if !after.is_empty() { lines.push(format!("after: {}", after.join(", "))); }
+    let dependents = board.dependents(id);
+    if !dependents.is_empty() { lines.push(format!("waited on by: {}", dependents.join(", "))); }
+    for line in lines { let _ = writeln!(out, "{}", escape_controls(&line)); }
+    let body = field("body");
+    if !body.is_empty() {
+        // 본문의 줄바꿈·탭은 그대로 두고 나머지 제어문자만 이스케이프한다.
+        let body: String = body.split('\n').map(|line| line.split('\t').map(escape_controls).collect::<Vec<_>>().join("\t")).collect::<Vec<_>>().join("\n");
+        let _ = writeln!(out, "\n{body}");
+    }
+    0
 }
 
 const LIST_STATUS_ORDER: [&str; 4] = ["review", "in_progress", "todo", "done"];
@@ -246,7 +424,7 @@ fn list(env: &TaskEnv, all: bool, out: &mut dyn Write, err: &mut dyn Write) -> i
     if shown.is_empty() { let _ = writeln!(out, "(no tasks)"); }
     let pending = env.inbox().and_then(|inbox| std::fs::read_dir(inbox).ok()).map_or(0, |entries| entries.flatten()
         .filter(|entry| entry.file_name().to_str().is_some_and(|name| !name.starts_with('.') && name.ends_with(".md"))).count());
-    if pending > 0 { let _ = writeln!(out, "({pending} new task(s) in the inbox are not on the board yet)"); }
+    if pending > 0 { let _ = writeln!(out, "({pending} inbox request(s) are not applied to the board yet)"); }
     0
 }
 
@@ -453,7 +631,7 @@ mod tests {
         assert_eq!(call(&["Pending"], &env, "").0, 0);
         let (code, out, _) = call(&["--list"], &env, "");
         assert_eq!(code, 0);
-        assert_eq!(out, "w3  [review]  @unassigned  Ship  after: w0\nw1  [todo]  @하나  Design\nw2  [todo]  @unassigned  Build the thing  after: w1 (blocked)\n(1 new task(s) in the inbox are not on the board yet)\n");
+        assert_eq!(out, "w3  [review]  @unassigned  Ship  after: w0\nw1  [todo]  @하나  Design\nw2  [todo]  @unassigned  Build the thing  after: w1 (blocked)\n(1 inbox request(s) are not applied to the board yet)\n");
         assert!(call(&["--list", "--all"], &env, "").1.contains("w0  [done]"));
         assert_eq!(call(&["--list", "x"], &env, "").0, 2);
         let empty = tempfile::tempdir().unwrap();
@@ -513,6 +691,91 @@ mod tests {
         assert_eq!(call(&["--done", "w0"], &env, "").0, 0);
         assert_eq!(call(&["--done"], &env, "").0, 2);
         assert_eq!(call(&["--done", "bad id!"], &env, "").0, 2);
+    }
+
+    fn board(items: &str) -> (tempfile::TempDir, TaskEnv) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("profiles.json"), r#"{"agents":[{"id":"a1","name":"하나"}]}"#).unwrap();
+        std::fs::write(dir.path().join("work-items.json"), items).unwrap();
+        let env = TaskEnv { work_inbox: Some(dir.path().join("work-inbox")), app_data: None, agent_id: Some("a1".into()) };
+        (dir, env)
+    }
+    fn requests(dir: &Path) -> Vec<Parsed> {
+        written(&dir.join("work-inbox")).into_iter().map(|(_, parsed)| parsed).collect()
+    }
+
+    #[test]
+    fn delete_writes_a_request_only_for_known_tasks_and_names_dependents() {
+        let (dir, env) = board(r#"[
+            {"id":"w1","title":"A","body":"","status":"todo","order":0},
+            {"id":"w2","title":"B","body":"","status":"todo","order":1,"dependsOn":["w1"]}
+        ]"#);
+        let (code, _, err) = call(&["--delete", "w1", "nope"], &env, "");
+        assert!(code == 1 && err.contains("no such task: nope"), "{err}");
+        assert!(!dir.path().join("work-inbox").exists());
+        let (code, out, err) = call(&["--delete", "w1"], &env, "");
+        assert_eq!((code, out.as_str()), (0, "w1\n"));
+        assert!(err.contains("w2 no longer wait(s) on w1"), "{err}");
+        // 함께 지우는 후속 업무는 알리지 않는다.
+        let (_, _, err) = call(&["--delete", "w1,w2"], &env, "");
+        assert_eq!(err, "");
+        let deletes: Vec<_> = requests(dir.path()).into_iter().map(|p| p.delete).collect();
+        assert!(deletes.contains(&vec!["w1".to_string()]) && deletes.contains(&vec!["w1".to_string(), "w2".to_string()]));
+        assert_eq!(call(&["--delete"], &env, "").0, 2);
+    }
+
+    #[test]
+    fn edit_writes_only_the_given_fields() {
+        let (dir, env) = board(r#"[
+            {"id":"w1","title":"A","body":"old","status":"todo","order":0,"dependsOn":["w0"]},
+            {"id":"w0","title":"Z","body":"","status":"todo","order":1},
+            {"id":"w3","title":"","body":"only body","status":"todo","order":2}
+        ]"#);
+        let (code, out, err) = call(&["--edit", "w1", "--title", " New   title ", "--to", "하나", "--status", "review", "--add-after", "w3", "--remove-after", "w0", "--body", "-"], &env, "# heading\r\n  kept\n");
+        assert_eq!((code, out.as_str(), err.as_str()), (0, "w1\n", ""));
+        let edit = requests(dir.path()).remove(0).edit.unwrap();
+        assert_eq!(edit, crate::persistence::work_inbox::Edit {
+            id: "w1".into(), title: Some("New title".into()), body: Some("# heading\n  kept".into()), assignee: Some("하나".into()),
+            after: None, add_after: vec!["w3".into()], remove_after: vec!["w0".into()], status: Some("review".into()),
+        });
+        std::fs::remove_dir_all(dir.path().join("work-inbox")).unwrap();
+        assert_eq!(call(&["--edit", "w1", "--unassigned", "--no-after"], &env, "").0, 0);
+        let edit = requests(dir.path()).remove(0).edit.unwrap();
+        assert_eq!((edit.assignee.as_deref(), edit.after, edit.title, edit.body), (Some(""), Some(vec![]), None, None));
+        std::fs::remove_dir_all(dir.path().join("work-inbox")).unwrap();
+        // 잘못된 요청은 아무것도 쓰지 않는다.
+        for (args, code) in [
+            (vec!["--edit", "w1"], 2), (vec!["--edit"], 2), (vec!["--edit", "w1", "--status", "later"], 2),
+            (vec!["--edit", "w1", "--after", "w0", "--no-after"], 2), (vec!["--edit", "w1", "--after", "w0", "--add-after", "w3"], 2),
+            (vec!["--edit", "w1", "--after", "w1"], 2), (vec!["--edit", "w1", "--bogus"], 2), (vec!["--edit", "w1", "--to", " "], 2),
+            (vec!["--edit", "nope", "--title", "x"], 1), (vec!["--edit", "w3", "--body", ""], 1), (vec!["--edit", "w1", "--title", "a\u{1b}b"], 1),
+        ] {
+            assert_eq!(call(&args, &env, "").0, code, "{args:?}");
+        }
+        assert!(!dir.path().join("work-inbox").exists());
+        // 모르는 담당·선행은 알리되 쓴다. 수신함에만 있는 업무도 고칠 수 있다.
+        let (_, pending, _) = call(&["Fresh"], &env, "");
+        let (code, _, err) = call(&["--edit", pending.trim(), "--to", "없는사람", "--add-after", "t-ghost"], &env, "");
+        assert!(code == 0 && err.contains("no character") && err.contains("t-ghost"), "{err}");
+    }
+
+    #[test]
+    fn show_prints_the_whole_task_with_links() {
+        let (_dir, env) = board(r#"[
+            {"id":"w1","title":"A","body":"line 1\n\tline 2\u001b[8m","status":"todo","order":0,"assigneeAgentId":"a1","dependsOn":["w0","gone"]},
+            {"id":"w0","title":"Z","body":"","status":"done","order":0},
+            {"id":"w2","title":"B","body":"","status":"todo","order":1,"dependsOn":["w1"]}
+        ]"#);
+        let (code, out, _) = call(&["--show", "w1"], &env, "");
+        assert_eq!(code, 0);
+        assert_eq!(out, "id: w1\nstatus: todo\nassignee: 하나 (a1)\ntitle: A\nafter: w0 [done], gone [deleted]\nwaited on by: w2\n\nline 1\n\tline 2\\x1b[8m\n");
+        assert_eq!(call(&["--show", "w0"], &env, "").1, "id: w0\nstatus: done\nassignee: unassigned\ntitle: Z\nwaited on by: w1\n");
+        assert_eq!(call(&["--show", "nope"], &env, "").0, 1);
+        let (_, pending, _) = call(&["Fresh"], &env, "");
+        let (code, _, err) = call(&["--show", pending.trim()], &env, "");
+        assert!(code == 1 && err.contains("not on the board yet"), "{err}");
+        assert_eq!(call(&["--show"], &env, "").0, 2);
+        assert_eq!(call(&["--show", "w1", "w2"], &env, "").0, 2);
     }
 
     #[test]

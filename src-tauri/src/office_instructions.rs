@@ -23,8 +23,11 @@ EOF
 - The task is assigned to you by default. Put `--to <colleague name>` before the title only to hand it to someone else.
 - Write the body so someone without this conversation can act on it.
 - The command prints the new task id. Tasks can depend on others: `--after <id>` (repeatable) makes a task wait until those prerequisites are done. When the user asks to plan or split work, structure it as ordered steps: capture each id, e.g. `A=$({cli} "Step 1" - <<'EOF' … EOF)`, then `{cli} --after "$A" "Step 2" …`.
-- `{cli} --list` shows open tasks on the board with their ids, status, assignee and prerequisites; use it to link a new task to an existing one.
+- `{cli} --list` shows open tasks on the board with their ids, status, assignee and prerequisites (`--all` includes done ones); `{cli} --show <id>` prints one task in full, including its body and which tasks wait on it. Use them to find ids before linking or changing tasks.
+- When the user asks to change a task, run `{cli} --edit <id>` with only what changes: `--title <text>`, `--body -` (new body from stdin, like above), `--to <colleague name>` or `--unassigned`, `--status todo|in_progress|review|done`, and for prerequisites `--add-after <id>` / `--remove-after <id>` (repeatable), or `--after <id>` (repeatable) to replace them all, or `--no-after` to clear them. Rearranging a plan's order means editing prerequisites.
 - When the user tells you to mark a task as done (or confirms it is finished), run `{cli} --done <id>`. Completing a task unblocks the tasks that wait on it. Only do this on the user's instruction, never on your own judgment that the work is finished.
+- When the user tells you to delete a task, run `{cli} --delete <id>` (several ids allowed). Tasks that waited on it lose that prerequisite. Only delete on the user's instruction.
+- Changes are applied by the app within a few seconds, in the order you run them; you can target a task you just created.
 - After leaving tasks, tell the user in one line."#
     )
 }
@@ -142,6 +145,9 @@ mod tests {
         assert!(text.contains("--after"));
         assert!(text.contains("/tmp/agent-office/bin/office-task --list"));
         assert!(text.contains("/tmp/agent-office/bin/office-task --done <id>"));
+        assert!(text.contains("/tmp/agent-office/bin/office-task --edit <id>"));
+        assert!(text.contains("/tmp/agent-office/bin/office-task --delete <id>"));
+        assert!(text.contains("/tmp/agent-office/bin/office-task --show <id>"));
     }
 
     #[test]

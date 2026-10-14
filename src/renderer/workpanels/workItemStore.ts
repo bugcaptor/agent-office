@@ -20,6 +20,16 @@ export type InboxImport = Pick<WorkItem, "id" | "title" | "body" | "assigneeAgen
  * - skipped: 제목·본문이 비어 건너뜀.
  */
 export type InboxImportResult = { kind: "added"; dropped: DroppedDependency[] } | { kind: "replayed" | "duplicate" | "skipped" };
+/** 수신함의 기존 업무 변경 요청. 수정의 `assigneeAgentId: null`은 미배정이다. */
+export type InboxRequest =
+  | { kind: "done"; ids: string[] }
+  | { kind: "delete"; ids: string[] }
+  | { kind: "edit"; id: string; patch: Partial<Pick<WorkItem, "title" | "body" | "status">> & { assigneeAgentId?: string | null; dependsOn?: string[]; addDependsOn?: string[]; removeDependsOn?: string[] } };
+/**
+ * 변경 요청 하나의 결과. `unknown`이 있거나 `empty`면 반영하지 않았다.
+ * `dropped`는 수정에서 요청했지만 버린 선행 작업이다.
+ */
+export interface InboxRequestResult { unknown: string[]; empty?: boolean; dropped: DroppedDependency[] }
 interface WorkItemState {
   items: WorkItem[];
   loaded: boolean;
@@ -33,10 +43,11 @@ interface WorkItemState {
   /** 내보낸 파일 가져오기. 항상 새 id로 추가하고 추가한 수를 돌려준다. */
   importFile(entries: ImportedWorkItem[]): number;
   /**
-   * 수신함 완료 요청들. 요청마다 목록에 없는 id를 돌려주고, 하나라도 없으면 그 요청은
-   * 반영하지 않는다(이미 완료는 건너뛴다). 로드 전·오류 중에는 빈 배열.
+   * 수신함 완료·삭제·수정 요청들을 차례로 적용한다. 요청마다 목록에 없는 id를 돌려주고,
+   * 하나라도 없거나 수정 결과가 빈 업무면 그 요청은 반영하지 않는다(이미 완료는 건너뛴다).
+   * 로드 전·오류 중에는 빈 배열.
    */
-  completeFromInbox(requests: string[][]): { unknown: string[] }[];
+  applyInbox(requests: InboxRequest[]): InboxRequestResult[];
   edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status" | "dependsOn">>): void;
   recordSend(id: string, result: { sessionId?: string; error?: string }): void;
   remove(id: string): void;
@@ -131,24 +142,54 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     changed();
     return added.length;
   },
-  completeFromInbox(requests) {
+  applyInbox(requests) {
     if (!get().loaded || get().error) return [];
-    let order = Math.max(-1, ...get().items.filter((i) => i.status === "done").map((i) => i.order)) + 1;
+    let items = get().items;
+    let selectedId = get().selectedId;
     const at = Date.now();
-    const known = new Set(get().items.map((item) => item.id));
-    const targets = new Set<string>();
-    const results = requests.map((ids) => {
-      const unknown = ids.filter((id) => !known.has(id));
-      if (!unknown.length) for (const id of ids) targets.add(id);
-      return { unknown };
+    const nextOrder = (status: WorkStatus) => Math.max(-1, ...items.filter((i) => i.status === status).map((i) => i.order)) + 1;
+    const results = requests.map((request): InboxRequestResult => {
+      const known = new Set(items.map((item) => item.id));
+      const unknown = (request.kind === "edit" ? [request.id] : request.ids).filter((id) => !known.has(id));
+      if (unknown.length) return { unknown, dropped: [] };
+      if (request.kind === "done") {
+        let order = nextOrder("done");
+        if (items.some((item) => request.ids.includes(item.id) && item.status !== "done")) {
+          items = items.map((item) => !request.ids.includes(item.id) || item.status === "done" ? item : { ...item, status: "done" as const, order: order++, updatedAt: at });
+        }
+        return { unknown, dropped: [] };
+      }
+      if (request.kind === "delete") {
+        // 지운 업무를 기다리던 후속 업무는 그 선행 조건만 풀린다.
+        items = items.filter((item) => !request.ids.includes(item.id)).map((item) => {
+          if (!item.dependsOn?.some((d) => request.ids.includes(d))) return item;
+          const dependsOn = item.dependsOn.filter((d) => !request.ids.includes(d));
+          return { ...item, dependsOn: dependsOn.length ? dependsOn : undefined, updatedAt: at };
+        });
+        if (selectedId && request.ids.includes(selectedId)) selectedId = null;
+        return { unknown, dropped: [] };
+      }
+      const { patch } = request;
+      const item = items.find((i) => i.id === request.id)!;
+      const next: WorkItem = { ...item, updatedAt: at };
+      if (patch.title !== undefined) next.title = patch.title.trim();
+      if (patch.body !== undefined) next.body = patch.body;
+      if (patch.assigneeAgentId !== undefined) next.assigneeAgentId = patch.assigneeAgentId ?? undefined;
+      if (patch.status && patch.status !== item.status) { next.status = patch.status; next.order = nextOrder(patch.status); }
+      if (!hasWorkContent(next)) return { unknown, empty: true, dropped: [] };
+      let dropped: DroppedDependency[] = [];
+      if (patch.dependsOn || patch.addDependsOn?.length || patch.removeDependsOn?.length) {
+        const base = (patch.dependsOn ?? item.dependsOn ?? []).filter((d) => !patch.removeDependsOn?.includes(d));
+        const explained = explainDependsOn(item.id, [...base, ...patch.addDependsOn ?? []], items);
+        next.dependsOn = explained.kept;
+        // 이미 걸려 있던 선행이 아니라 이번에 요청한 것만 알린다.
+        const requested = new Set([...patch.dependsOn ?? [], ...patch.addDependsOn ?? []]);
+        dropped = explained.dropped.filter((d) => requested.has(d.id));
+      }
+      items = items.map((i) => i.id === item.id ? next : i);
+      return { unknown, dropped };
     });
-    let changedAny = false;
-    const items = get().items.map((item) => {
-      if (!targets.has(item.id) || item.status === "done") return item;
-      changedAny = true;
-      return { ...item, status: "done" as const, order: order++, updatedAt: at };
-    });
-    if (changedAny) { set({ items, dirty: true }); changed(); }
+    if (items !== get().items) { set({ items, selectedId, dirty: true }); changed(); }
     return results;
   },
   edit(id, patch) {

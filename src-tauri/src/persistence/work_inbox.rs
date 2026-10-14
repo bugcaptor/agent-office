@@ -22,7 +22,41 @@ pub struct Parsed {
     pub after: Vec<String>,
     /// 완료 요청. 비어 있지 않으면 새 업무가 아니라 이 id들을 완료로 바꾸는 파일이다.
     pub done: Vec<String>,
+    /// 삭제 요청. 비어 있지 않으면 이 id들을 지우는 파일이다.
+    pub delete: Vec<String>,
+    /// 수정 요청. 있으면 새 업무가 아니라 기존 업무 하나를 고치는 파일이다.
+    pub edit: Option<Edit>,
 }
+/// 기존 업무 하나의 수정 요청. 각 필드는 키가 있을 때만 바꾼다.
+#[derive(Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Edit {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    /// 빈 문자열이면 미배정으로 바꾼다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignee: Option<String>,
+    /// 선행 업무 전체를 이 목록으로 바꾼다. 비어 있으면 모두 뺀다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub add_after: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub remove_after: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+impl Edit {
+    fn is_empty(&self) -> bool {
+        self.title.is_none() && self.body.is_none() && self.assignee.is_none() && self.after.is_none()
+            && self.add_after.is_empty() && self.remove_after.is_empty() && self.status.is_none()
+    }
+}
+/// 업무 상태 값. `office-task --edit --status`와 수신함 `status` 키가 받는 값이다.
+pub const STATUSES: [&str; 4] = ["todo", "in_progress", "review", "done"];
 #[derive(Debug, PartialEq)]
 pub enum RejectReason { InvalidUtf8, TooLarge, UnclosedFrontmatter, Empty, ControlChar(char) }
 impl RejectReason {
@@ -57,6 +91,10 @@ pub struct InboxEntry {
     pub after: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub done: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub delete: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edit: Option<Edit>,
 }
 
 /// 수신함으로 지정할 수 있는 업무 id. 앱이 만든 id(nanoid)도 이 형식이다.
@@ -81,6 +119,11 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
     let mut id = None;
     let mut after = vec![];
     let mut done = vec![];
+    let mut delete = vec![];
+    // 수정 요청은 키가 있는지가 뜻을 가지므로(빈 `assignee:`는 미배정) 값을 따로 모은다.
+    let mut edit_target: Option<String> = None;
+    let mut edit = Edit::default();
+    let mut replace_body = false;
     if lines.peek() == Some(&"---") {
         lines.next();
         let mut closed = false;
@@ -88,31 +131,56 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
             if line == "---" { closed = true; break; }
             if let Some((key, value)) = line.split_once(':') {
                 match key.trim() {
-                    "assignee" => assignee = Some(value.trim().to_string()).filter(|v| !v.is_empty()),
+                    "assignee" => {
+                        assignee = Some(value.trim().to_string()).filter(|v| !v.is_empty());
+                        edit.assignee = Some(value.trim().to_string());
+                    }
                     "id" => id = Some(value.trim().to_string()).filter(|v| valid_task_id(v)),
-                    "after" => after = parse_after(value),
+                    "after" => { after = parse_after(value); edit.after = Some(after.clone()); }
                     "done" => done = parse_after(value),
+                    "delete" => delete = parse_after(value),
+                    "edit" => edit_target = Some(value.trim().to_string()).filter(|v| valid_task_id(v)),
+                    "title" => edit.title = Some(value.trim().to_string()),
+                    "add-after" => edit.add_after = parse_after(value),
+                    "remove-after" => edit.remove_after = parse_after(value),
+                    "status" => edit.status = Some(value.trim().to_string()).filter(|v| STATUSES.contains(&v.as_str())),
+                    "body" => replace_body = true,
                     _ => {}
                 }
             }
         }
         if !closed { return Err(RejectReason::UnclosedFrontmatter); }
     }
+    let rest: Vec<&str> = lines.collect();
+    let mut lines = rest.iter().copied();
     let first = lines.by_ref().find(|line| !line.trim().is_empty()).unwrap_or("").trim();
     // 빈 제목은 `# `로 쓴다. trim 뒤 `#`만 남으므로 그것도 빈 제목으로 본다.
     let title = if first == "#" { "" } else { first.strip_prefix("# ").unwrap_or(first) }.trim().to_string();
-    let body = lines.collect::<Vec<_>>().join("\n");
-    // 본문의 들여쓰기와 trailing spaces는 보존하고 빈 줄만 다듬는다.
-    let body = body.split('\n').collect::<Vec<_>>();
-    let start = body.iter().position(|s| !s.trim().is_empty()).unwrap_or(body.len());
-    let end = body.iter().rposition(|s| !s.trim().is_empty()).map_or(start, |i| i + 1);
-    let body = body[start..end].join("\n");
-    if done.is_empty() && title.is_empty() && body.trim().is_empty() { return Err(RejectReason::Empty); }
+    let body = trim_blank_lines(&lines.collect::<Vec<_>>());
+    // 한 파일은 요청 하나다: 완료 → 삭제 → 수정 → 새 업무 순으로 먼저 있는 것으로 읽는다.
+    if !done.is_empty() || !delete.is_empty() {
+        if !done.is_empty() { delete.clear(); }
+        return Ok(Parsed { title: String::new(), body: String::new(), assignee: None, id: None, after: vec![], done, delete, edit: None });
+    }
+    if let Some(id) = edit_target {
+        edit.id = id;
+        // 수정 요청의 본문은 `body` 키가 있을 때만 frontmatter 뒤 전체(제목 줄 규칙 없이)다.
+        if replace_body { edit.body = Some(trim_blank_lines(&rest)); }
+        if edit.is_empty() { return Err(RejectReason::Empty); }
+        let text = [edit.title.as_deref(), edit.body.as_deref(), edit.assignee.as_deref()];
+        if let Some(c) = text.into_iter().flatten().find_map(forbidden_control) { return Err(RejectReason::ControlChar(c)); }
+        return Ok(Parsed { title: String::new(), body: String::new(), assignee: None, id: None, after: vec![], done, delete, edit: Some(edit) });
+    }
+    if title.is_empty() && body.trim().is_empty() { return Err(RejectReason::Empty); }
     // ESC 등이 남으면 `office-task --list`·터미널에서 해석되고 업무 보내기도 거절하므로 받지 않는다.
-    // 완료 요청은 제목·본문을 쓰지 않으므로 보지 않는다.
-    let control = if done.is_empty() { forbidden_control(&title).or_else(|| forbidden_control(&body)) } else { None };
-    if let Some(c) = control { return Err(RejectReason::ControlChar(c)); }
-    Ok(Parsed { title, body, assignee, id, after, done })
+    if let Some(c) = forbidden_control(&title).or_else(|| forbidden_control(&body)) { return Err(RejectReason::ControlChar(c)); }
+    Ok(Parsed { title, body, assignee, id, after, done, delete, edit: None })
+}
+/// 본문의 들여쓰기와 trailing spaces는 보존하고 앞뒤 빈 줄만 다듬는다.
+fn trim_blank_lines(lines: &[&str]) -> String {
+    let start = lines.iter().position(|s| !s.trim().is_empty()).unwrap_or(lines.len());
+    let end = lines.iter().rposition(|s| !s.trim().is_empty()).map_or(start, |i| i + 1);
+    lines[start..end].join("\n")
 }
 fn accepted_name(name: &str) -> bool {
     !name.starts_with('.') && name.ends_with(".md") && !name.contains(['/', '\\']) && !name.contains("..")
@@ -185,7 +253,7 @@ pub fn scan(root: &Path, now: SystemTime) -> Result<Vec<InboxEntry>, String> {
                 let mut hash = Sha256::new();
                 hash.update(name.as_bytes()); hash.update([0]); hash.update(&bytes);
                 let key = format!("{:x}", hash.finalize())[..16].to_string();
-                entries.push(InboxEntry { file_name: name, key, title: parsed.title, body: parsed.body, assignee: parsed.assignee, id: parsed.id, after: parsed.after, done: parsed.done });
+                entries.push(InboxEntry { file_name: name, key, title: parsed.title, body: parsed.body, assignee: parsed.assignee, id: parsed.id, after: parsed.after, done: parsed.done, delete: parsed.delete, edit: parsed.edit });
             }
             Err(reason) => reject(root, &name, reason.code(), reason.detail().as_deref()).map_err(|e| e.to_string())?,
         }
@@ -229,11 +297,11 @@ mod tests {
     use super::*;
     #[test]
     fn parses_plain_frontmatter_bom_crlf_and_preserves_body_indentation() {
-        assert_eq!(parse("x.md", b"\n# Title\n\n  code  \n\n").unwrap(), Parsed { title: "Title".into(), body: "  code  ".into(), assignee: None, id: None, after: vec![], done: vec![] });
+        assert_eq!(parse("x.md", b"\n# Title\n\n  code  \n\n").unwrap(), Parsed { title: "Title".into(), body: "  code  ".into(), assignee: None, id: None, after: vec![], done: vec![], delete: vec![], edit: None });
         let p = parse("x.md", "\u{feff}---\r\nfuture: ignored\r\nassignee: 하나 \r\n---\r\n# 제목\r\n본문\r\n".as_bytes()).unwrap();
-        assert_eq!(p, Parsed { title: "제목".into(), body: "본문".into(), assignee: Some("하나".into()), id: None, after: vec![], done: vec![] });
+        assert_eq!(p, Parsed { title: "제목".into(), body: "본문".into(), assignee: Some("하나".into()), id: None, after: vec![], done: vec![], delete: vec![], edit: None });
         assert_eq!(parse("x.md", b"Title").unwrap().body, "");
-        assert_eq!(parse("x.md", b"# \nBody").unwrap(), Parsed { title: "".into(), body: "Body".into(), assignee: None, id: None, after: vec![], done: vec![] });
+        assert_eq!(parse("x.md", b"# \nBody").unwrap(), Parsed { title: "".into(), body: "Body".into(), assignee: None, id: None, after: vec![], done: vec![], delete: vec![], edit: None });
     }
     #[test]
     fn parses_task_id_and_prerequisites() {
@@ -250,6 +318,25 @@ mod tests {
         let p = parse("x.md", b"---\ndone: t-1, t-2\n---\n").unwrap();
         assert_eq!((p.done, p.title.as_str()), (vec!["t-1".to_string(), "t-2".to_string()], ""));
         assert_eq!(parse("x.md", b"---\ndone: a.b\n---\n"), Err(RejectReason::Empty));
+    }
+    #[test]
+    fn parses_delete_and_edit_requests() {
+        let p = parse("x.md", b"---\ndelete: t-1 t-2\n---\n").unwrap();
+        assert_eq!((p.delete, p.edit), (vec!["t-1".to_string(), "t-2".to_string()], None));
+        // 키가 있는 필드만 바꾼다. 빈 assignee·after는 비우라는 뜻이다.
+        let p = parse("x.md", b"---\nedit: t-1\ntitle:  New: title \nassignee:\nafter:\nadd-after: t-3\nremove-after: t-4,t-5\nstatus: review\nbody: replace\n---\n\n# not a title\n  kept\n\n").unwrap();
+        assert_eq!(p.edit, Some(Edit {
+            id: "t-1".into(), title: Some("New: title".into()), body: Some("# not a title\n  kept".into()), assignee: Some("".into()),
+            after: Some(vec![]), add_after: vec!["t-3".into()], remove_after: vec!["t-4".into(), "t-5".into()], status: Some("review".into()),
+        }));
+        let p = parse("x.md", b"---\nedit: t-1\nbody: replace\n---\n").unwrap();
+        assert_eq!(p.edit.unwrap().body.as_deref(), Some(""));
+        // 본문 키가 없으면 frontmatter 뒤는 무시한다.
+        assert_eq!(parse("x.md", b"---\nedit: t-1\nstatus: done\n---\nignored").unwrap().edit.unwrap().body, None);
+        assert_eq!(parse("x.md", b"---\nedit: t-1\nstatus: bogus\n---\n"), Err(RejectReason::Empty));
+        assert_eq!(parse("x.md", b"---\nedit: t-1\ntitle: a\x1bb\n---\n"), Err(RejectReason::ControlChar('\u{1b}')));
+        // 형식이 틀린 대상이면 수정 요청이 아니라 일반 업무로 읽는다.
+        assert_eq!(parse("x.md", b"---\nedit: bad id\n---\n# Task").unwrap().title, "Task");
     }
     #[test]
     fn rejects_malformed_content_and_accepts_exact_size_limit() {
