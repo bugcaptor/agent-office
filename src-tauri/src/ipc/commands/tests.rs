@@ -1156,7 +1156,7 @@
         let live = crate::usage::LiveUsageState::new();
         let now = 1_784_281_391_475;
         // 스로틀 선점: 직전에 시도한 것으로 기록해 5분 하한에 걸리게 한다.
-        // **네 provider 전부** 선점해야 한다 — 스로틀 상태가 provider마다
+        // **모든 provider(Claude·Codex)를** 선점해야 한다 — 스로틀 상태가 provider마다
         // 따로라 하나만 막으면 나머지가 그대로 밖으로 나간다.
         live.preempt_all_attempts(now - 1);
         // 두 번 호출해도(폴링 흉내) 패닉/에러 없이 스냅샷을 돌려준다.

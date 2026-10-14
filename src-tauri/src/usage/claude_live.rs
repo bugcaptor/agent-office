@@ -347,6 +347,7 @@ impl LiveUsageState {
     /// app-server` 자식 프로세스를 띄운다(실측: 테스트 프로세스가 10초
     /// 가까이 늘어지며 같은 바이너리의 타이밍 민감한 테스트를 깨뜨렸다).
     /// "토큰이 없으니 자연 강등되겠지"는 개발 머신에서 성립하지 않는다.
+    #[cfg(test)]
     pub(crate) fn preempt_all_attempts(&self, now_ms: i64) {
         self.begin_attempt_if_due(now_ms);
         self.codex.begin_attempt_if_due(now_ms);

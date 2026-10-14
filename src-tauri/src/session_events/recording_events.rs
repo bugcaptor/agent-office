@@ -12,7 +12,7 @@ use super::types::{PromptOrigin, SessionEventDraft, SessionEventKind, SessionSta
 pub struct RecordingAppEvents {
     inner: Arc<dyn AppEvents>,
     store: Arc<SessionEventStore>,
-    /// 봇 주입 표식(`bot/runner.rs::inject`가 arm). prompt 이벤트가 소비한다.
+    /// 봇 주입 표식(`InjectGate`가 자동 입력 직전에 arm). prompt 이벤트가 소비한다.
     bot_arms: Arc<BotPromptArms>,
 }
 

@@ -351,7 +351,7 @@ pub fn run() {
             install_panic_logger(data_dir.clone());
             std::fs::create_dir_all(data_dir.join("work-inbox"))?;
 
-            // 로그인 셸 env 1회 캡처(#58). 봇 시작·요약기 스폰 직전에도 부르지만
+            // 로그인 셸 env 1회 캡처(#58). 요약기·이미지 생성 스폰 직전에도 부르지만
             // (멱등) 부팅에서 미리 해 둬야 세션 로그의 JSONL 전사 소스와 사용량
             // 조회가 `CLAUDE_CONFIG_DIR`/`CODEX_HOME` 오버라이드를 본다. 로그인
             // 셸을 돌리는 블로킹 호출이라 부팅을 막지 않게 백그라운드로 뺀다.
@@ -366,7 +366,7 @@ pub fn run() {
             let tauri_events: Arc<dyn AppEvents> = Arc::new(TauriEvents {
                 app: handle.clone(),
             });
-            // 봇 주입 표식(kbm #2j8): 기록기와 봇 러너가 같은 Arc를 쥐어야
+            // 봇 주입 표식(kbm #2j8): 기록기와 자동 입력 관문이 같은 Arc를 쥐어야
             // "주입 직전 arm → 다음 prompt가 소비"가 성립한다.
             let bot_arms = Arc::new(crate::state::BotPromptArms::new());
             let recording_events: Arc<dyn AppEvents> = Arc::new(

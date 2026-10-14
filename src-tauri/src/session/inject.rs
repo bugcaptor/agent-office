@@ -3,7 +3,7 @@
 // 사용자 정의 터미널 입력 자동화 관문 (kbm #2t9 Phase 2).
 //
 // 역할:
-// - 자동 입력 생산자(동료 대화, 업무 보내기) 간 상호 배타 보장.
+// - 자동 입력 생산자(업무 보내기 등) 간 상호 배타 보장.
 // - 본문 -> 150ms -> CR 직렬화 구간 동안 들어오는 사람 입력을 버리지 않고 큐잉 후 전달.
 // - 미제출(uncommitted) 사람 입력이 있을 때 자동 제출 보류(최대 2분).
 // - 사람이 직접 입력·제출한 횟수(human_input_epoch) 추적으로 마커 뒤 예약 제출 무효화 지원.
@@ -45,7 +45,6 @@ pub fn now_ms() -> u64 {
 /// 자동 입력의 출처.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InjectSource {
-    Talk,
     WorkSend,
 }
 
@@ -891,7 +890,7 @@ mod tests {
         let h2 = tokio::spawn(async move {
             // 아주 미세한 지연으로 h1이 먼저 lock을 쥐도록 유도
             tokio::time::sleep(Duration::from_millis(5)).await;
-            gate2.submit("a1", "s1", "cmd2", InjectSource::Talk).await
+            gate2.submit("a1", "s1", "cmd2", InjectSource::WorkSend).await
         });
 
         let r1 = h1.await.unwrap();
@@ -1060,13 +1059,13 @@ mod tests {
         assert_eq!(sink.recorded_writes()[0].1, "human\r");
         assert_eq!(gate.human_input_revision("a1"), 1);
         assert_eq!(
-            gate.submit("a1", "s1", "talk", InjectSource::Talk).await,
+            gate.submit("a1", "s1", "other", InjectSource::WorkSend).await,
             SubmitOutcome::Deferred(PendingReason::AnotherProducer)
         );
 
         drop(owner);
         assert_eq!(
-            gate.submit("a1", "s1", "talk", InjectSource::Talk).await,
+            gate.submit("a1", "s1", "other", InjectSource::WorkSend).await,
             SubmitOutcome::Submitted,
         );
     }

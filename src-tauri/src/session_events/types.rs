@@ -23,9 +23,9 @@ pub enum SessionEventKind {
 /// 프롬프트를 누가 넣었는지. 사람이 직접 친 프롬프트는 표식이 없다(필드 자체가
 /// 생략된다) — 봇 주입만 명시적으로 남긴다.
 ///
-/// 봇은 별도 세션을 띄우지 않는다. `bot/runner.rs::inject`가 이미 떠 있는
-/// 터미널에 `write_input`으로 프롬프트를 밀어넣으므로 세션도 agentId도 사람이
-/// 쓸 때와 같다. 구분선은 **턴 단위**에만 있어서, 턴을 여는 prompt 이벤트에
+/// 자동 입력은 별도 세션을 띄우지 않는다. `InjectGate`(업무 보내기)가 이미 떠
+/// 있는 터미널에 프롬프트를 밀어넣으므로 세션도 agentId도 사람이 쓸 때와 같다.
+/// 저장 호환 때문에 이름은 계속 `bot`이다. 구분선은 **턴 단위**에만 있어서, 턴을 여는 prompt 이벤트에
 /// 출처를 실어 둔다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

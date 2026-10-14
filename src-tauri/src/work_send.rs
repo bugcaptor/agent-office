@@ -621,7 +621,7 @@ mod tests {
                 "work-send-busy"
             );
             assert_eq!(
-                gate.submit("a", "s", "talk", InjectSource::Talk).await,
+                gate.submit("a", "s", "other", InjectSource::WorkSend).await,
                 SubmitOutcome::Deferred(PendingReason::AnotherProducer)
             );
             runtime.stop("a");

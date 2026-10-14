@@ -59,9 +59,9 @@ export function installPersistence(): () => void {
   const writeCurrent = (): Promise<void> => {
     if (profilesReadOnly()) return Promise.reject(readOnlyError());
     const snapshot = currentState();
-    // A slow older debounce write must finish before the newer connection
-    // snapshot writes, otherwise it can overwrite the profile cwd the backend
-    // validates during connect_ide_session.
+    // A slow older debounce write must finish before the newer snapshot
+    // writes, otherwise the older snapshot can land last and overwrite newer
+    // profile fields (e.g. a just-changed cwd).
     if (!saveInFlight) {
       const result = tauriApi.saveState(snapshot);
       saveChain = Promise.resolve(result);

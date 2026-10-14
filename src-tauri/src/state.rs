@@ -107,12 +107,13 @@ impl SessionRegistry {
 /// 덮으면서, 사람이 다시 앉기 전에 확실히 만료된다.
 pub const BOT_PROMPT_ARM_TTL_MS: u64 = 120_000;
 
-/// 봇 주입 표식(agentId → armed_at epoch ms). `bot/runner.rs::inject`가
-/// `write_input` 직전에 arm하고, `RecordingAppEvents`가 그 agent의 다음 prompt
-/// 이벤트 하나로 **소비**한다.
+/// 봇 주입 표식(agentId → armed_at epoch ms). 자동 입력 관문
+/// (`session/inject.rs`의 `InjectGate::submit`/`submit_strict`, 지금은 업무
+/// 보내기)이 본문을 쓰기 직전에 arm하고, `RecordingAppEvents`가 그 agent의 다음
+/// prompt 이벤트 하나로 **소비**한다.
 ///
-/// 왜 세션이 아니라 이런 표식인가: 봇은 별도 세션을 띄우지 않고 이미 떠 있는
-/// 터미널에 프롬프트를 밀어넣는다. 세션도 agentId도 사람이 쓸 때와 같아서
+/// 왜 세션이 아니라 이런 표식인가: 자동 입력은 별도 세션을 띄우지 않고 이미 떠
+/// 있는 터미널에 프롬프트를 밀어넣는다. 세션도 agentId도 사람이 쓸 때와 같아서
 /// 세션 단위로는 구분할 수 없고, 유일한 구분선이 턴 단위다(kbm #2j8).
 #[derive(Default)]
 pub struct BotPromptArms {
