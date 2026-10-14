@@ -149,6 +149,7 @@ macOS에서 iTerm을 선택하면 처음 사용할 때 자동화 권한을 요�
 - 커밋 메시지는 한국어 한 줄로 간명하게 쓴다. AI를 공동저자로 넣지 않는다.
 - 화면 문자열은 하드코딩하지 않고 `src/shared/i18n/locales/`에 넣는다. 설계는 [i18n-design.md](i18n-design.md), 검사는 `noHardcodedHangul.test.ts`가 담당한다.
 - 검증은 `npx tsc --noEmit`, `npx vitest run --dir src`, `cargo test --manifest-path src-tauri/Cargo.toml`이다. vitest만으로는 공유 타입 사용처의 누락을 잡지 못하므로 타입 검사를 함께 한다.
+- UI 변경을 화면으로 확인할 때는 브라우저 확장이나 computer use 대신 `npm run gui:shot`(헤드리스 Chrome + 가짜 백엔드)을 먼저 쓴다. 클릭·입력 재현은 `--script`로 한다. 설계는 [gui-harness-design.md](gui-harness-design.md)에 있다.
 - `AGENTS.md`·`CLAUDE.md`는 git 추적 제외인 로컬 안내 파일이다. 클론에서 읽어야 할 일반 규칙은 이 절에 둔다.
 
 ### 빌드 캐시 청소
