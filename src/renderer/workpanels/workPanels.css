@@ -87,3 +87,13 @@
 .work-detail-dialog .work-transfer-replace label { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 8px; margin: 0; }
 .work-transfer-section p { margin: 6px 0 0; }
 .work-transfer-note { margin: 12px 0 0; }
+
+/* 업무 목록 캐릭터 묶음: 머리에 얼굴·이름, 안에 상태 묶음. */
+.work-agent-group > summary { display: flex; align-items: center; gap: 6px; font-weight: bold; }
+.work-agent-group > summary::-webkit-details-marker { display: none; }
+.work-agent-group > summary::before { content: "▸"; flex: none; width: 1em; }
+.work-agent-group[open] > summary::before { content: "▾"; }
+.work-agent-group > summary > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.work-agent-group > summary .work-agent-face { height: 24px; width: 24px; }
+.work-status-group { margin: 2px 0 6px 1em; }
+.work-status-group > summary { cursor: pointer; padding: 2px 0; color: var(--text-dim); }

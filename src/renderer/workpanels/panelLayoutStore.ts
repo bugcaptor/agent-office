@@ -19,3 +19,19 @@ export const usePanelLayoutStore = create<{ panels: Record<PanelSide, PanelLayou
   },
 }));
 export function panelExtent(panel: PanelLayout): number { return panel.collapsed ? 24 : panel.width; }
+
+/** 업무 목록의 캐릭터 묶음 중 접어 둔 것. 키는 `assigneeKey`(미배정 "", 삭제된 캐릭터 묶음 포함). */
+const GROUPS_KEY = "agent-office.work-groups.v1";
+function loadCollapsedGroups(): string[] {
+  try { const value: unknown = JSON.parse(localStorage.getItem(GROUPS_KEY) ?? "[]"); return Array.isArray(value) ? value.filter((key): key is string => typeof key === "string") : []; }
+  catch { return []; }
+}
+export const useWorkGroupStore = create<{ collapsed: string[]; setCollapsed(key: string, collapsed: boolean): void }>((set, get) => ({
+  collapsed: loadCollapsedGroups(),
+  setCollapsed(key, collapsed) {
+    if (get().collapsed.includes(key) === collapsed) return;
+    const next = collapsed ? [...get().collapsed, key] : get().collapsed.filter((k) => k !== key);
+    set({ collapsed: next });
+    try { localStorage.setItem(GROUPS_KEY, JSON.stringify(next)); } catch { /* 기억 불가 환경에서도 접기 가능 */ }
+  },
+}));

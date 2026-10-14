@@ -44,8 +44,8 @@ function SessionDetails({ row }: { row: SessionRow }) {
       useWorkItemStore.getState().select(row.workItemId!);
       requestAnimationFrame(() => {
         const card = document.getElementById(`work-item-${row.workItemId}`);
-        const group = card?.closest("details");
-        if (group) group.open = true;
+        // 캐릭터 묶음과 그 안의 상태 묶음을 모두 편다.
+        for (let group = card?.closest("details"); group; group = group.parentElement?.closest("details")) group.open = true;
         card?.scrollIntoView({ block: "nearest" });
       });
     }}>{row.workTitle}</button>}

@@ -16,16 +16,21 @@ import { AgentFace } from "./AgentFace";
 import { dependentCount, pendingPrerequisites } from "./workDependencies";
 import { WorkDialog } from "./WorkDialog";
 import { WorkTransferDialog } from "./WorkTransferDialog";
+import { assigneeKey, MISSING_ASSIGNEE } from "./workItemFile";
+import { useWorkGroupStore } from "./panelLayoutStore";
 
 export function WorkItemsPanel() {
   const { t } = useTranslation("workpanels");
   const { items, loaded, error, selectedId, add, edit, remove, select, reorder, load } = useWorkItemStore();
   const agents = useAppStore((s) => s.agents);
+  const agentOrder = useAppStore((s) => s.agentOrder);
   const openTerminal = useAppStore((s) => s.openTerminal);
   const busy = useWorkSendStore((s) => s.busy);
   const confirmation = useWorkSendStore((s) => s.confirmation);
   const summaries = useSessionSummaryStore((s) => s.summaries);
   const monitored = useWorkMonitorStore((s) => s.sessions);
+  const collapsedGroups = useWorkGroupStore((s) => s.collapsed);
+  const setGroupCollapsed = useWorkGroupStore((s) => s.setCollapsed);
   const [draft, setDraft] = useState<WorkItemDraft | null>(null);
   const [creating, setCreating] = useState(false);
   // 닫기/다른 카드 선택은 초안을 보존한다. 저장과 취소에서만 지운다.
@@ -93,6 +98,31 @@ export function WorkItemsPanel() {
       {blockedReason && <p id="work-send-hint" className="work-send-hint">{sendErrorText(blockedReason)}</p>}
     </WorkDialog>;
   };
+  const card = (item: WorkItem) => {
+    const { sessionId, dirty, waitingOn } = cardState(item);
+    const dependents = dependentCount(item.id, items);
+    // 담당은 캐릭터 묶음 머리에 있으므로 카드에는 얼굴·이름을 다시 쓰지 않는다.
+    return <article className={`work-card${sessionId && item.status !== "done" && monitored[sessionId]?.phase === "waiting" ? " waiting" : ""}${selectedId === item.id ? " selected" : ""}`} key={item.id} id={`work-item-${item.id}`}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const rect = e.currentTarget.getBoundingClientRect();
+        reorder(e.dataTransfer.getData("application/x-agent-office-work"), item.id, e.clientY > rect.top + rect.height / 2);
+      }}>
+      <button className="work-card-heading" draggable onDragStart={(e) => e.dataTransfer.setData("application/x-agent-office-work", item.id)} aria-haspopup="dialog" aria-expanded={selectedId === item.id} onClick={() => { select(item.id); setCreating(false); setTransferring(false); }}>
+        <span><strong className={!item.title.trim() ? "work-title-derived" : undefined}>{workItemTitle(item)}</strong>{dirty && <small>{t("unsavedChanges")}</small>}
+          {waitingOn.length > 0 && <small className="work-blocked">{t("blockedBy", { titles: waitingOn.map(workItemTitle).join(", ") })}</small>}
+          {dependents > 0 && item.status !== "done" && <small>{t("dependents", { count: dependents })}</small>}</span>
+      </button>
+      {sessionId && <WorkCardMonitor sessionId={sessionId} assignee={item.assigneeAgentId} status={item.status} />}
+    </article>;
+  };
+  // 캐릭터(오피스 순서) → 미배정 → 삭제된 캐릭터 순. 업무가 없는 묶음은 보이지 않는다.
+  // agentOrder에 없는 캐릭터도 업무가 사라지지 않게 뒤에 붙인다.
+  const groups = [...new Set([...agentOrder.filter((id) => agents[id]), ...Object.keys(agents)]), "", MISSING_ASSIGNEE].map((key) => ({
+    key, name: key === "" ? t("unassigned") : key === MISSING_ASSIGNEE ? t("missingAgent") : agents[key].name,
+    items: items.filter((item) => assigneeKey(item, agents) === key),
+  })).filter((group) => group.items.length > 0);
   return <><WorkPanelFrame side="left" title={t("workTitle")}>
     <div className="work-panel-actions">
       <button className="pixel-btn" disabled={!loaded} aria-expanded={creating} onClick={() => { setDraft((current) => current ?? { ...EMPTY_WORK_DRAFT }); setCreating(!creating); setTransferring(false); select(null); }}>{t(draft && !creating ? "resumeNewWork" : "newWork")}</button>
@@ -100,26 +130,13 @@ export function WorkItemsPanel() {
     </div>
     {error && <div role="alert">{t(error === "load" ? "loadError" : "saveError")} <button className="pixel-btn" onClick={() => void (error === "load" ? load() : useWorkItemStore.getState().flush())}>{t("retry")}</button></div>}
     {!items.length && loaded && <p className="work-muted">{t("emptyWork")}</p>}
-    {WORK_STATUS_ORDER.map((status) => <details className="work-group" key={status} open={status !== "done" || items.some((item) => item.status === status && item.id === selectedId)}>
-      <summary>{t(`status.${status}`)} ({items.filter((i) => i.status === status).length})</summary>
-      {items.filter((i) => i.status === status).sort((a, b) => a.order - b.order).map((item) => {
-        const { sessionId, dirty, waitingOn } = cardState(item);
-        const dependents = dependentCount(item.id, items);
-        return <article className={`work-card${sessionId && item.status !== "done" && monitored[sessionId]?.phase === "waiting" ? " waiting" : ""}${selectedId === item.id ? " selected" : ""}`} key={item.id} id={`work-item-${item.id}`}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault();
-          const rect = e.currentTarget.getBoundingClientRect();
-          reorder(e.dataTransfer.getData("application/x-agent-office-work"), item.id, e.clientY > rect.top + rect.height / 2);
-        }}>
-        <button className="work-card-heading" draggable onDragStart={(e) => e.dataTransfer.setData("application/x-agent-office-work", item.id)} aria-haspopup="dialog" aria-expanded={selectedId === item.id} onClick={() => { select(item.id); setCreating(false); setTransferring(false); }}>
-          {item.assigneeAgentId && <AgentFace agentId={item.assigneeAgentId} />}
-          <span><strong className={!item.title.trim() ? "work-title-derived" : undefined}>{workItemTitle(item)}</strong>{dirty && <small>{t("unsavedChanges")}</small>}<small>{item.assigneeAgentId ? agents[item.assigneeAgentId]?.name ?? t("missingAgent") : t("unassigned")}</small>
-            {waitingOn.length > 0 && <small className="work-blocked">{t("blockedBy", { titles: waitingOn.map(workItemTitle).join(", ") })}</small>}
-            {dependents > 0 && item.status !== "done" && <small>{t("dependents", { count: dependents })}</small>}</span>
-        </button>
-        {sessionId && <WorkCardMonitor sessionId={sessionId} assignee={item.assigneeAgentId} status={item.status} />}
-      </article>; })}
+    {groups.map(({ key, name, items: owned }) => <details className="work-group work-agent-group" key={key} open={!collapsedGroups.includes(key)}
+      onToggle={(e) => setGroupCollapsed(key, !e.currentTarget.open)}>
+      <summary>{key && key !== MISSING_ASSIGNEE && <AgentFace agentId={key} />}<span>{name} ({owned.length})</span></summary>
+      {WORK_STATUS_ORDER.filter((status) => owned.some((i) => i.status === status)).map((status) => <details className="work-status-group" key={status} open={status !== "done" || owned.some((item) => item.status === status && item.id === selectedId)}>
+        <summary>{t(`status.${status}`)} ({owned.filter((i) => i.status === status).length})</summary>
+        {owned.filter((i) => i.status === status).sort((a, b) => a.order - b.order).map(card)}
+      </details>)}
     </details>)}
   </WorkPanelFrame>
     {creating && draft && <WorkDialog title={t("newWorkTitle")} onClose={() => setCreating(false)}>
