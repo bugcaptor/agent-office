@@ -7,6 +7,7 @@
 .repository-audit-list { margin:0; padding:0; overflow:auto; list-style:none; }
 .repository-audit-row { display:grid; grid-template-columns:minmax(0, 1fr) minmax(150px, auto) auto; gap:12px; align-items:center; padding:10px 0; border-top:1px solid var(--border, #777); }
 .repository-audit-identity { min-width:0; }
+.repository-audit-row-actions { display:flex; gap:6px; }
 .repository-audit-row small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; opacity:.75; }
 .repository-audit-states { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; }
 .repository-audit-state { padding:2px 5px; border:1px solid currentColor; white-space:nowrap; }

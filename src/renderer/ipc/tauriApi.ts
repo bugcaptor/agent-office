@@ -73,6 +73,9 @@ export const tauriApi: AgentOfficeApi = {
   async repositoryAuditList() {
     return await invoke(Commands.repositoryAuditList);
   },
+  async repositoryAuditPush(path) {
+    return await invoke(Commands.repositoryAuditPush, { path });
+  },
   async createSession(agentId, opts) {
     // `autostartClaude` is a frozen backward-compat wire field, not part of
     // these frozen renderer options; omission defaults to false, and the

@@ -15,6 +15,7 @@ import type {
   AppSettings,
   MemoSheet,
   NotificationEvent,
+  RepositoryAuditItem,
   SessionState,
   SessionStateEvent,
 } from "@shared/types";
@@ -28,6 +29,15 @@ const scenario = loadScenario(String(harness.scenario), params.get("lang") ?? "k
 let settings: AppSettings = scenario.settings.settings;
 let state = scenario.state;
 let workItems = scenario.workItems;
+const auditRepo = (name: string, extra: Partial<RepositoryAuditItem>): RepositoryAuditItem => ({
+  path: `/work/${name}`, name, lastWorkedAt: 0, branch: "main", upstream: "origin/main", hasRemote: true,
+  ahead: 0, behind: 0, changedCount: 0, conflictCount: 0, timedOut: false, unavailable: false, ...extra,
+});
+let auditRepos = [
+  auditRepo("agent-office", { ahead: 3, changedCount: 2 }),
+  auditRepo("diverged", { ahead: 1, behind: 2 }),
+  auditRepo("tidy", {}),
+];
 
 const outputSubs = new Map<string, Set<(data: string, bytes: number) => void>>();
 // 백엔드처럼 세션 출력 백로그를 쥐고 있다가 새 구독에 재생한다.
@@ -108,7 +118,13 @@ const impl: Partial<AgentOfficeApi> = {
   async loadWorkLogs() { return {}; },
   async saveWorkLog() {},
   async scanWorkInbox() { return []; },
-  async repositoryAuditList() { return []; },
+  async repositoryAuditList() { return auditRepos; },
+  async repositoryAuditPush(path) {
+    // 푸시 버튼 흐름을 화면에서 확인할 수 있게 잠깐 기다렸다가 성공시킨다.
+    await new Promise((r) => setTimeout(r, 400));
+    auditRepos = auditRepos.map((r) => (r.path === path ? { ...r, ahead: 0 } : r));
+    return auditRepos.find((r) => r.path === path)!;
+  },
   async listClaudeResumeSessions() { return {}; },
   async setKeepAwake() {},
   async setMascotVisible() {},

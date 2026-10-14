@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { auditStates } from "../RepositoryAuditOverlay";
+import { auditStates, canPush } from "../RepositoryAuditOverlay";
 import type { RepositoryAuditItem } from "@shared/types";
 
 const base: RepositoryAuditItem = { path: "/repo", name: "repo", lastWorkedAt: 0, branch: "main", upstream: "origin/main", hasRemote: true, ahead: 0, behind: 0, changedCount: 0, conflictCount: 0, timedOut: false, unavailable: false };
@@ -19,5 +19,12 @@ describe("repository audit status", () => {
   it("does not describe missing remote configuration as clean", () => {
     expect(auditStates({ ...base, hasRemote: false, upstream: null })).toEqual(["noRemote"]);
     expect(auditStates({ ...base, upstream: null })).toEqual(["noUpstream"]);
+  });
+  it("offers push only when commits can fast-forward the upstream", () => {
+    expect(canPush({ ...base, ahead: 2 })).toBe(true);
+    expect(canPush({ ...base, ahead: 2, changedCount: 1 })).toBe(true);
+    expect(canPush({ ...base, ahead: 1, behind: 1 })).toBe(false);
+    expect(canPush({ ...base, ahead: 1, timedOut: true })).toBe(false);
+    expect(canPush(base)).toBe(false);
   });
 });

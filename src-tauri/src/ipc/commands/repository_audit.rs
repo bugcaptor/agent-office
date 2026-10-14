@@ -1,5 +1,6 @@
 // 작업 기록에서 발견한 저장소를 한 번에 점검한다. 이 경로는 의도적으로 fetch를
 // 하지 않는다. 화면은 로컬 remote-tracking ref 기준의 "지금 조치할 일"만 보여준다.
+// 네트워크에 닿는 유일한 동작은 사용자가 행에서 직접 누르는 push다.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -15,6 +16,8 @@ use crate::session_events::types::SessionEventRecord;
 use crate::state::AppState;
 
 const GIT_TIMEOUT: Duration = Duration::from_secs(10);
+/// push는 네트워크와 원격 훅을 거치므로 상태 조회보다 넉넉히 기다린다.
+const PUSH_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,6 +51,55 @@ pub async fn repository_audit_list(
     tauri::async_runtime::spawn_blocking(move || Ok(audit_repositories(&event_root, profile_cwds)))
         .await
         .map_err(|e| format!("저장소 점검을 실행하지 못했습니다: {e}"))?
+}
+
+/// 점검 화면의 "푸시" 버튼. 사용자의 push 설정(push.default 등)을 그대로 따르는
+/// 평범한 `git push`를 실행하고, 성공하면 그 저장소만 다시 점검해 돌려준다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn repository_audit_push(path: String) -> Result<RepositoryAuditEntry, String> {
+    tauri::async_runtime::spawn_blocking(move || push_repository(Path::new(&path)))
+        .await
+        .map_err(|e| format!("푸시를 실행하지 못했습니다: {e}"))?
+}
+
+fn push_repository(path: &Path) -> Result<RepositoryAuditEntry, String> {
+    // 렌더러가 넘긴 경로가 점검 결과의 저장소 최상위인지 다시 확인한다. 임의
+    // 하위 디렉터리나 저장소가 아닌 곳에서 push가 돌지 않게 한다.
+    let root = fs::canonicalize(path).map_err(|_| "저장소를 찾지 못했습니다".to_string())?;
+    let top = git(&root, &["rev-parse", "--show-toplevel"]);
+    let is_root = matches!(top.outcome, ProcOutcome::Exited { success: true })
+        && fs::canonicalize(String::from_utf8_lossy(&top.stdout).trim()).ok().as_deref()
+            == Some(root.as_path());
+    if !is_root {
+        return Err("저장소 최상위 경로가 아닙니다".into());
+    }
+    // stdin이 닫힌 GUI 자식이라 자격 증명 프롬프트는 응답을 받을 수 없다.
+    // 기다리다 시간 초과로 끝나지 않도록 터미널 프롬프트를 끄고 바로 실패시킨다.
+    let run = proc_runner::run(ProcSpec {
+        program: "git",
+        args: &["push", "--porcelain"],
+        cwd: Some(&root),
+        envs: &[("GIT_TERMINAL_PROMPT", "0")],
+        timeout: PUSH_TIMEOUT,
+        max_stdout_bytes: Some(64 * 1024),
+        cancel: None,
+    });
+    match run.outcome {
+        ProcOutcome::Exited { success: true } => Ok(inspect_repo_root(&root, 0)),
+        ProcOutcome::TimedOut => Err("푸시 시간이 초과되었습니다".into()),
+        _ => Err(push_failure_detail(&run.stdout)),
+    }
+}
+
+/// `--porcelain` 출력에서 거부된 ref 줄(`!`)만 진단용으로 남긴다. 인증 실패처럼
+/// stderr에만 이유가 남는 경우는 빈 문자열이 되고, 화면은 일반 실패 문구만 보인다.
+fn push_failure_detail(stdout: &[u8]) -> String {
+    String::from_utf8_lossy(stdout)
+        .lines()
+        .filter(|line| line.starts_with('!'))
+        .map(|line| line.split('\t').skip(1).collect::<Vec<_>>().join(" "))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn audit_repositories(
@@ -325,6 +377,55 @@ mod tests {
             values.iter().map(audit_priority).collect::<Vec<_>>(),
             vec![0, 1, 2]
         );
+    }
+
+    #[test]
+    fn push_failure_detail_keeps_only_rejected_refs() {
+        let out = b"To example.com:repo.git\n!\trefs/heads/main:refs/heads/main\t[rejected] (fetch first)\n=\trefs/heads/dev:refs/heads/dev\t[up to date]\nDone\n";
+        assert_eq!(
+            push_failure_detail(out),
+            "refs/heads/main:refs/heads/main [rejected] (fetch first)"
+        );
+    }
+
+    #[test]
+    fn push_sends_commits_to_upstream_and_returns_fresh_status() {
+        let base =
+            std::env::temp_dir().join(format!("agent-office-audit-push-{}", uuid::Uuid::new_v4()));
+        let remote = base.join("remote.git");
+        let work = base.join("work");
+        fs::create_dir_all(&base).unwrap();
+        let run = |cwd: &Path, args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .args(args)
+                .current_dir(cwd)
+                .output()
+                .unwrap()
+                .status
+                .success();
+            assert!(ok, "git {args:?}");
+        };
+        run(&base, &["init", "-q", "--bare", "remote.git"]);
+        run(&base, &["clone", "-q", "remote.git", "work"]);
+        let commit = |msg: &str| {
+            run(
+                &work,
+                &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", msg],
+            )
+        };
+        commit("first");
+        run(&work, &["push", "-q", "-u", "origin", "HEAD"]);
+        commit("second");
+        let root = fs::canonicalize(&work).unwrap();
+        assert_eq!(inspect_repo_root(&root, 0).ahead, 1);
+
+        let after = push_repository(&root).unwrap();
+        assert_eq!((after.ahead, after.behind), (0, 0));
+        assert!(after.upstream.is_some());
+        // 저장소 최상위가 아닌 하위 경로는 거부한다.
+        fs::create_dir_all(work.join("nested")).unwrap();
+        assert!(push_repository(&work.join("nested")).is_err());
+        let _ = fs::remove_dir_all(base);
     }
 
     #[test]

@@ -72,6 +72,10 @@
     "noBranch": "브랜치 없음",
     "terminal": "터미널 열기",
     "terminalError": "터미널을 열지 못했습니다.",
+    "push": "푸시",
+    "pushTitle": "{{upstream}}에 커밋 {{count}}개 푸시",
+    "pushing": "푸시 중…",
+    "pushError": "푸시하지 못했습니다.",
     "state": { "commit": "커밋할 변경 {{count}}개", "push": "푸시 {{ahead}}개", "pull": "풀 {{behind}}개", "diverged": "푸시 {{ahead}} · 풀 {{behind}}", "conflict": "충돌 {{count}}개", "unknown": "상태 확인 필요", "noRemote": "원격 저장소 없음", "noUpstream": "업스트림 없음", "clean": "문제 없음" }
   },
   "profileLoad": {

@@ -82,6 +82,8 @@ export interface AgentOfficeApi {
   appendSessionSummaries(items: SessionSummary[]): Promise<void>;
   /** 작업 기록에서 발견한 저장소의 읽기 전용 git 점검 결과. */
   repositoryAuditList(): Promise<RepositoryAuditItem[]>;
+  /** 점검 화면에서 사용자가 누른 `git push`. 성공하면 그 저장소를 다시 점검한 결과. */
+  repositoryAuditPush(path: string): Promise<RepositoryAuditItem>;
   createSession(agentId: string, opts?: CreateSessionOptions): Promise<CreateSessionResult>;
   disposeSession(agentId: string, expected?: { sessionId: string; humanInputRevision: number }): Promise<void>;
   /** fire-and-forget. `terminalResponse` is an xterm protocol reply, not a user edit. */

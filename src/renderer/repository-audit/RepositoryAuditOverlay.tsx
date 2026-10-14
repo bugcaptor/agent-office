@@ -32,6 +32,12 @@ export function auditStates(item: RepositoryAuditItem): AuditState[] {
   return states.length > 0 ? states : ["clean"];
 }
 
+/** 미푸시 커밋만 있고 받아올 것이 없을 때만 바로 push할 수 있다. 분기된 저장소는
+ * push가 거부되므로 버튼을 두지 않고 터미널에서 통합하게 한다. */
+export function canPush(item: RepositoryAuditItem): boolean {
+  return auditStates(item).includes("push") && item.upstream !== null;
+}
+
 export function RepositoryAuditOverlay() {
   const { t } = useTranslation("app");
   const open = useRepositoryAuditStore((s) => s.open);
@@ -40,6 +46,9 @@ export function RepositoryAuditOverlay() {
   const error = useRepositoryAuditStore((s) => s.error);
   const close = useRepositoryAuditStore((s) => s.close);
   const refresh = useRepositoryAuditStore((s) => s.refresh);
+  const pushing = useRepositoryAuditStore((s) => s.pushing);
+  const pushErrors = useRepositoryAuditStore((s) => s.pushErrors);
+  const push = useRepositoryAuditStore((s) => s.push);
   const [terminalErrorPath, setTerminalErrorPath] = useState<string | null>(null);
   useEscapeToClose(open, close);
   if (!open) return null;
@@ -86,6 +95,11 @@ export function RepositoryAuditOverlay() {
                       {t("repositoryAudit.terminalError")}
                     </small>
                   )}
+                  {item.path in pushErrors && (
+                    <small className="repository-audit-terminal-error" title={pushErrors[item.path] || undefined}>
+                      {t("repositoryAudit.pushError")}
+                    </small>
+                  )}
                 </div>
                 <div className="repository-audit-states">
                   {auditStates(item).map((state) => (
@@ -98,15 +112,27 @@ export function RepositoryAuditOverlay() {
                     </span>
                   ))}
                 </div>
-                <button
-                  className="pixel-btn"
-                  onClick={() => {
-                    setTerminalErrorPath(null);
-                    void tauriApi.openInTerminal(item.path).catch(() => setTerminalErrorPath(item.path));
-                  }}
-                >
-                  {t("repositoryAudit.terminal")}
-                </button>
+                <div className="repository-audit-row-actions">
+                  {canPush(item) && (
+                    <button
+                      className="pixel-btn"
+                      disabled={!!pushing[item.path]}
+                      title={t("repositoryAudit.pushTitle", { count: item.ahead, upstream: item.upstream })}
+                      onClick={() => void push(item.path)}
+                    >
+                      {pushing[item.path] ? t("repositoryAudit.pushing") : t("repositoryAudit.push")}
+                    </button>
+                  )}
+                  <button
+                    className="pixel-btn"
+                    onClick={() => {
+                      setTerminalErrorPath(null);
+                      void tauriApi.openInTerminal(item.path).catch(() => setTerminalErrorPath(item.path));
+                    }}
+                  >
+                    {t("repositoryAudit.terminal")}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

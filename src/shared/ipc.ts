@@ -19,6 +19,7 @@ export const Commands = {
   loadSessionSummaries: "load_session_summaries",
   appendSessionSummaries: "append_session_summaries",
   repositoryAuditList: "repository_audit_list",
+  repositoryAuditPush: "repository_audit_push",
   createSession: "create_session",
   disposeSession: "dispose_session",
   writeInput: "write_input",
