@@ -117,12 +117,17 @@ export function WorkItemsPanel() {
       {sessionId && <WorkCardMonitor sessionId={sessionId} assignee={item.assigneeAgentId} status={item.status} />}
     </article>;
   };
-  // 캐릭터(오피스 순서) → 미배정 → 삭제된 캐릭터 순. 업무가 없는 묶음은 보이지 않는다.
-  // agentOrder에 없는 캐릭터도 업무가 사라지지 않게 뒤에 붙인다.
+  // 캐릭터(오피스 순서) → 미배정 → 삭제된 캐릭터 순. 캐릭터 묶음은 업무가 없어도 '＋'로 바로 만들 수 있게 보이고,
+  // 미배정·삭제된 캐릭터 묶음은 업무가 있을 때만 보인다. agentOrder에 없는 캐릭터도 업무가 사라지지 않게 뒤에 붙인다.
   const groups = [...new Set([...agentOrder.filter((id) => agents[id]), ...Object.keys(agents)]), "", MISSING_ASSIGNEE].map((key) => ({
     key, name: key === "" ? t("unassigned") : key === MISSING_ASSIGNEE ? t("missingAgent") : agents[key].name,
     items: items.filter((item) => assigneeKey(item, agents) === key),
-  })).filter((group) => group.items.length > 0);
+  })).filter((group) => group.items.length > 0 || agents[group.key]);
+  // 캐릭터를 지정하면 쓰던 초안은 살린 채 담당만 그 캐릭터로 바꾼다.
+  const startNew = (assigneeAgentId: string) => {
+    setDraft((current) => ({ ...(current ?? EMPTY_WORK_DRAFT), assigneeAgentId }));
+    setCreating(true); setTransferring(false); select(null);
+  };
   return <><WorkPanelFrame side="left" title={t("workTitle")}>
     <div className="work-panel-actions">
       <button className="pixel-btn" disabled={!loaded} aria-expanded={creating} onClick={() => { setDraft((current) => current ?? { ...EMPTY_WORK_DRAFT }); setCreating(!creating); setTransferring(false); select(null); }}>{t(draft && !creating ? "resumeNewWork" : "newWork")}</button>
@@ -130,9 +135,12 @@ export function WorkItemsPanel() {
     </div>
     {error && <div role="alert">{t(error === "load" ? "loadError" : "saveError")} <button className="pixel-btn" onClick={() => void (error === "load" ? load() : useWorkItemStore.getState().flush())}>{t("retry")}</button></div>}
     {!items.length && loaded && <p className="work-muted">{t("emptyWork")}</p>}
-    {groups.map(({ key, name, items: owned }) => <details className="work-group work-agent-group" key={key} open={!collapsedGroups.includes(key)}
+    {groups.map(({ key, name, items: owned }) => <details className={`work-group work-agent-group${owned.length ? "" : " empty"}`} key={key} open={!collapsedGroups.includes(key)}
       onToggle={(e) => setGroupCollapsed(key, !e.currentTarget.open)}>
-      <summary>{key && key !== MISSING_ASSIGNEE && <AgentFace agentId={key} />}<span>{name} ({owned.length})</span></summary>
+      <summary>{agents[key] && <AgentFace agentId={key} />}<span>{name} ({owned.length})</span>
+        {/* summary 안의 버튼이라 기본 동작(묶음 접기·펴기)을 막는다. */}
+        {agents[key] && <button type="button" className="pixel-btn work-group-add" disabled={!loaded} aria-label={t("newWorkFor", { name })} title={t("newWorkFor", { name })}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); startNew(key); }}>＋</button>}</summary>
       {WORK_STATUS_ORDER.filter((status) => owned.some((i) => i.status === status)).map((status) => <details className="work-status-group" key={status} open={status !== "done" || owned.some((item) => item.status === status && item.id === selectedId)}>
         <summary>{t(`status.${status}`)} ({owned.filter((i) => i.status === status).length})</summary>
         {owned.filter((i) => i.status === status).sort((a, b) => a.order - b.order).map(card)}

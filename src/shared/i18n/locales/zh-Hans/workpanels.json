@@ -7,6 +7,7 @@
   "collapse": "折叠面板",
   "resize": "调整面板宽度",
   "newWork": "新建任务",
+  "newWorkFor": "为{{name}}新建任务",
   "title": "标题",
   "body": "备注",
   "assignee": "负责人",

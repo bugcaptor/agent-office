@@ -7,6 +7,7 @@
   "collapse": "Collapse panel",
   "resize": "Resize panel",
   "newWork": "New task",
+  "newWorkFor": "New task for {{name}}",
   "title": "Title",
   "body": "Notes",
   "assignee": "Assignee",

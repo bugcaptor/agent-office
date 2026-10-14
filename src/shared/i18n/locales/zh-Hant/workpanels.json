@@ -7,6 +7,7 @@
   "collapse": "摺疊面板",
   "resize": "調整面板寬度",
   "newWork": "建立新任務",
+  "newWorkFor": "為{{name}}建立新任務",
   "title": "標題",
   "body": "備註",
   "assignee": "負責角色",

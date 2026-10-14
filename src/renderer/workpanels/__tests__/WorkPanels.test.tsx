@@ -344,7 +344,7 @@ it("업무를 캐릭터별로 묶고 묶음 접힘을 기억한다", async () =>
   store.select(null);
   render(<UIChrome />);
   const groups = [...document.querySelectorAll(".work-agent-group")] as HTMLDetailsElement[];
-  expect(groups.map((g) => g.querySelector("summary")!.textContent)).toEqual(["Bob (1)", "Ada (2)", "미배정 (1)", "삭제된 캐릭터 (1)"]);
+  expect(groups.map((g) => g.querySelector("summary > span")!.textContent)).toEqual(["Bob (1)", "Ada (2)", "미배정 (1)", "삭제된 캐릭터 (1)"]);
   const ada = groups[1];
   expect([...ada.querySelectorAll(".work-status-group > summary")].map((s) => s.textContent)).toEqual(["할 일 (1)", "완료 (1)"]);
   expect((ada.querySelector(".work-status-group:last-child") as HTMLDetailsElement).open).toBe(false);
@@ -355,4 +355,31 @@ it("업무를 캐릭터별로 묶고 묶음 접힘을 기억한다", async () =>
   expect(reopened.open).toBe(false);
   reopened.open = true; fireEvent(reopened, new Event("toggle"));
   expect(useWorkGroupStore.getState().collapsed).toEqual([]);
+});
+
+it("캐릭터 묶음의 ＋는 업무가 없는 캐릭터에도 보이며 그 캐릭터를 담당으로 채운 새 태스크를 연다", async () => {
+  const profile = (id: string, name: string) => ({ id, name, role: "dev", seed: id, createdAt: 1, deskIndex: 0 });
+  useWorkGroupStore.setState({ collapsed: ["b"] });
+  useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true }, agents: { a: profile("a", "Ada"), b: profile("b", "Bob") }, agentOrder: ["a", "b"] });
+  useWorkItemStore.setState({ loaded: true });
+  useWorkItemStore.getState().add({ title: "Ada todo", body: "", status: "todo", assigneeAgentId: "a" });
+  useWorkItemStore.getState().select(null);
+  render(<UIChrome />);
+  const groups = [...document.querySelectorAll(".work-agent-group")] as HTMLDetailsElement[];
+  expect(groups.map((g) => g.querySelector("summary > span")!.textContent)).toEqual(["Ada (1)", "Bob (0)"]);
+  expect(groups[1].classList.contains("empty")).toBe(true);
+  expect(screen.queryByRole("button", { name: /미배정/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Bob에게 새 태스크" }));
+  // ＋는 묶음을 접거나 펴지 않는다.
+  expect(groups[1].open).toBe(false);
+  const dialog = screen.getByRole("dialog", { name: "새 태스크" });
+  expect((within(dialog).getByLabelText("담당 캐릭터") as HTMLSelectElement).value).toBe("b");
+  fireEvent.change(within(dialog).getByLabelText("본문"), { target: { value: "keep me" } });
+  fireEvent.keyDown(within(dialog).getByLabelText("본문"), { key: "Escape" });
+  // 쓰던 초안은 살리고 담당만 바꾼다.
+  fireEvent.click(screen.getByRole("button", { name: "Ada에게 새 태스크" }));
+  expect((screen.getByLabelText("담당 캐릭터") as HTMLSelectElement).value).toBe("a");
+  expect((screen.getByLabelText("본문") as HTMLTextAreaElement).value).toBe("keep me");
+  fireEvent.submit(screen.getByLabelText("본문").closest("form")!);
+  expect(useWorkItemStore.getState().items.find((i) => i.body === "keep me")?.assigneeAgentId).toBe("a");
 });

@@ -95,5 +95,8 @@
 .work-agent-group[open] > summary::before { content: "▾"; }
 .work-agent-group > summary > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .work-agent-group > summary .work-agent-face { height: 24px; width: 24px; }
+/* 업무가 없는 캐릭터 묶음은 펼칠 것이 없으므로 화살표 자리만 둔다. */
+.work-agent-group.empty > summary::before { visibility: hidden; }
+.work-agent-group > summary .work-group-add { flex: none; padding: 0 6px; line-height: 1.4; font-weight: normal; }
 .work-status-group { margin: 2px 0 6px 1em; }
 .work-status-group > summary { cursor: pointer; padding: 2px 0; color: var(--text-dim); }
