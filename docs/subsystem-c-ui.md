@@ -77,7 +77,7 @@
 
 ### 1.2 터미널 패널: 중앙 오버레이
 
-`terminal/TerminalOverlay.tsx::TerminalOverlay` — 기본(windowed) 72%×72% 중앙 패널, 배경 딤. 드로어 대신 오버레이를 쓰는 이유: 에이전트 간 빠른 문맥 전환, 넓은 고정 폭으로 PTY resize 빈도 감소, 게임 팝업 메타포. 확대(filled) 모드는 §11.
+`terminal/TerminalOverlay.tsx::TerminalOverlay` — 기본(windowed) 90%×90% 중앙 패널, 배경 딤. 드로어 대신 오버레이를 쓰는 이유: 에이전트 간 빠른 문맥 전환, 넓은 고정 폭으로 PTY resize 빈도 감소, 게임 팝업 메타포. 확대(filled) 모드는 §11.
 
 - **닫힘은 루트 `display:none`이지 조건부 렌더가 아니다.** `AgentTabStrip`/`TerminalHost`와 그 아래 xterm 인스턴스는 오버레이가 닫혀도 살아 있어야 한다(keep-alive, §3).
 - 닫기 경로 3개: 헤더 X, `Cmd/Ctrl+W`, 패널 밖 backdrop mousedown. **Esc는 닫기에 쓰지 않는다** — vim 등 TUI가 실제 Escape를 받아야 한다.
@@ -423,7 +423,7 @@ xterm은 jsdom에서 캔버스 측정이 제한되므로 `@xterm/xterm`을 `vi.m
 
 | 항목 | 결정 | 이유 |
 |---|---|---|
-| 터미널 패널 | 중앙 오버레이 72% + 탭스트립(확대 모드 §11) | 문맥 전환 집중 UX, 리사이즈 최소화, 게임 팝업 메타포 |
+| 터미널 패널 | 중앙 오버레이 90% + 탭스트립(확대 모드 §11) | 문맥 전환 집중 UX, 리사이즈 최소화, 게임 팝업 메타포 |
 | keep-alive | `TerminalRegistry` 싱글턴 + `display:none` 토글, 닫힘도 `display:none` | React 리마운트와 무관하게 xterm 인스턴스·스크롤백 보존 |
 | 고빈도 스트림 | `onData`는 스토어 우회, 레지스트리가 직접 `term.write` | 리렌더 폭주 방지 |
 | 상태관리 | zustand + `subscribeWithSelector` | IPC 콜백(React 밖)에서 setState, 세밀 구독 |
@@ -597,7 +597,7 @@ xterm은 jsdom에서 캔버스 측정이 제한되므로 `@xterm/xterm`을 `vi.m
 로 확정(초기 기획의 OS 전체화면 3-스테이트에서 축소 — OS 전체화면 상태 동기화
 복잡성을 걷어내고 인앱 CSS만으로 처리).
 
-- **windowed**: 화면 중앙 `72%×72%` 오버레이(기존 동작, 배경 딤 유지).
+- **windowed**: 화면 중앙 `90%×90%` 오버레이(기존 동작, 배경 딤 유지).
 - **filled**: 오버레이가 앱 창 전체를 덮음 — 배경 딤 제거, 탭 스트립·요약 바는 유지.
 
 ### 11.1 상태/영속

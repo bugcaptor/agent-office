@@ -4,7 +4,7 @@
 // 순서, localStorage 영속. 스토어/Tauri 의존이 없어 appStore가 안전하게
 // import할 수 있다.
 //
-// - windowed: 화면 중앙 72%×72% 오버레이(기존 동작, 배경 딤 유지).
+// - windowed: 화면 중앙 90%×90% 오버레이(기존 동작, 배경 딤 유지).
 // - filled:   오버레이가 앱 창 전체를 덮음(인앱, 배경 딤 제거).
 
 export type TerminalViewMode = "windowed" | "filled";

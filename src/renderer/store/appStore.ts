@@ -142,7 +142,7 @@ interface AppState {
   notifications: Notification[];
   /** null = terminal overlay closed. */
   activeTerminalAgentId: string | null;
-  /** 터미널 오버레이 뷰 모드(이슈 #69). windowed=중앙 72%, filled=앱 창 꽉 채움.
+  /** 터미널 오버레이 뷰 모드(이슈 #69). windowed=중앙 90%, filled=앱 창 꽉 채움.
    * localStorage로 영속 — PersistedState 아님. */
   terminalViewMode: TerminalViewMode;
   /** Tauri 창(웹뷰)이 OS 포커스를 가졌는지. 기본 true. sessionBridge의
