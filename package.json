@@ -21,6 +21,7 @@
     "install:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-and-run.ps1 --install",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
+    "gui:shot": "node scripts/gui-shot.mjs",
     "bump": "node scripts/bump-version.mjs",
     "bump:patch": "node scripts/bump-version.mjs patch",
     "bump:minor": "node scripts/bump-version.mjs minor",
@@ -52,6 +53,7 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.6.0",
     "jsdom": "^25.0.1",
+    "playwright-core": "^1.64.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
     "vitest": "^2.1.8"
