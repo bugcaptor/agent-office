@@ -345,7 +345,8 @@ it("업무를 캐릭터별로 묶고 묶음 접힘을 기억한다", async () =>
   render(<UIChrome />);
   const groups = [...document.querySelectorAll(".work-agent-group")] as HTMLDetailsElement[];
   const heads = (list: Element[]) => list.map((g) => `${g.querySelector(".work-group-name > strong")!.textContent} ${g.querySelector(".work-group-count")!.textContent}`);
-  expect(heads(groups)).toEqual(["Bob 1", "Ada 2", "미배정 1", "삭제된 캐릭터 1"]);
+  // 머리의 개수는 완료를 뺀 남은 업무 수다.
+  expect(heads(groups)).toEqual(["Bob 1", "Ada 1", "미배정 1", "삭제된 캐릭터 1"]);
   const ada = groups[1];
   // 완료가 아닌 업무는 상태 칩을 단 카드로 바로 보이고, 완료만 접힌 묶음에 들어간다.
   expect([...ada.querySelectorAll(":scope > .work-card .work-status-chip")].map((s) => s.textContent)).toEqual(["할 일"]);

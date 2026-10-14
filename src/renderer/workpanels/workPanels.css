@@ -101,7 +101,7 @@
 .work-group-project::before { content: "📁 "; }
 .work-group-project.none { font-style: italic; }
 .work-group-count { flex: none; min-width: 1.6em; padding: 0 4px; text-align: center; color: var(--text-dim); border: 1px solid var(--border-dark); border-radius: 8px; line-height: 1.4; }
-.work-agent-group.empty .work-group-count { opacity: .5; }
+.work-group-count.zero { opacity: .5; }
 /* 업무가 없는 캐릭터 묶음은 펼칠 것이 없으므로 화살표 자리만 둔다. */
 .work-agent-group.empty > summary::before { visibility: hidden; }
 .work-agent-group > summary .work-group-add { flex: none; padding: 0 6px; line-height: 1.4; font-weight: normal; }

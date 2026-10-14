@@ -152,7 +152,8 @@ export function WorkItemsPanel() {
         <summary>{agents[key] && <AgentFace agentId={key} />}
           <span className="work-group-name"><strong>{name}</strong>
             {project && <small className={`work-group-project${project.name ? "" : " none"}`} title={project.cwd}>{project.name ?? t("homeFolder")}</small>}</span>
-          <span className="work-group-count" aria-label={t("workCount", { count: owned.length })}>{owned.length}</span>
+          {/* 완료는 아래 접힌 묶음에 따로 세므로 머리에는 남은 업무만 센다. */}
+          <span className={`work-group-count${open.length ? "" : " zero"}`} aria-label={t("workCount", { count: open.length })}>{open.length}</span>
           {/* summary 안의 버튼이라 기본 동작(묶음 접기·펴기)을 막는다. */}
           {agents[key] && <button type="button" className="pixel-btn work-group-add" disabled={!loaded} aria-label={t("newWorkFor", { name })} title={t("newWorkFor", { name })}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); startNew(key); }}>＋</button>}</summary>
