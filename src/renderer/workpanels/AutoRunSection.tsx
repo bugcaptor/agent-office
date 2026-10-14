@@ -8,7 +8,7 @@ import { sendErrorText } from "./sendErrorText";
 import { endAutoRun, MAX_FOLLOW_UPS, pauseAutoRun, planItems, resumeAutoRun, startAutoRun, startBlockedReason } from "./autoRun";
 
 /** 시작 차단·일시정지 상세 코드를 화면 문장으로. 자동 진행 코드가 아니면 보내기 오류 문구를 쓴다. */
-function codeText(t: (key: string, options?: Record<string, unknown>) => string, code: string): string {
+export function codeText(t: (key: string, options?: Record<string, unknown>) => string, code: string): string {
   if (code.startsWith("auto-run-") && !code.startsWith("auto-run-judge")) return t(`autoRun.blocked.${code}`);
   if (code.startsWith("work-send-") || code.startsWith("automation-")) return sendErrorText(code);
   return code;

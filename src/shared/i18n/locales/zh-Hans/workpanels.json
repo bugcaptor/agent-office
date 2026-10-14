@@ -130,6 +130,10 @@
   "blockedBy": "等待前置任务：{{titles}}",
   "dependents_one": "{{count}} 个后续任务在等待",
   "dependents_other": "{{count}} 个后续任务在等待",
+  "plan": {
+    "chip": "计划",
+    "toggle": "展开或收起计划任务"
+  },
   "newWorkTitle": "新任务",
   "transfer": {
     "open": "导出 / 导入",

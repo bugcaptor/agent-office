@@ -129,3 +129,12 @@
 .work-card small.work-auto-chip { color: var(--accent); }
 .work-card small.work-auto-chip.paused { color: var(--accent-warn); }
 .work-card small.work-auto-chip.finished { color: var(--text-dim); }
+/* 플랜 루트(선행 작업 사슬의 맨 끝): 막힌 업무가 아니라 묶음 머리로 보이게 대기 줄 대신 진행도를 두고, 플랜 업무를 아래에 들인다. */
+.work-agent-group > .work-plan { margin-left: 1em; }
+.work-plan-head { display: flex; align-items: flex-start; gap: 4px; }
+.work-plan-toggle { flex: none; padding: 0 2px; color: inherit; background: transparent; border: 0; font: inherit; cursor: pointer; }
+.work-plan-toggle:disabled { opacity: .4; cursor: default; }
+.work-plan-start { flex: none; padding: 0 6px; line-height: 1.4; }
+.work-plan-root .work-status-chip.work-plan-chip { color: var(--accent); }
+.work-plan-members { margin-left: 1.2em; padding-left: 6px; border-left: 1px dashed var(--border-dark); }
+.work-plan-members > .work-card { margin: 4px 0; }

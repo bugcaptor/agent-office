@@ -208,7 +208,7 @@ it("완료로 옮긴 업무는 살아 있는 세션의 질문 대기 신호가 �
   expect(doneCard.querySelector(".work-card-monitor")?.textContent).toContain("완료");
 });
 
-it("편집기에서 선행 작업을 고르면 카드에 대기 표시가 나오고 보내기를 막는다", async () => {
+it("편집기에서 선행 작업을 고르면 플랜으로 묶고 보내기를 막는다", async () => {
   useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true }, agents: {
     a: { id: "a", name: "Ada", role: "dev", seed: "s", createdAt: 1, deskIndex: 0 },
   } });
@@ -222,15 +222,38 @@ it("편집기에서 선행 작업을 고르면 카드에 대기 표시가 나오
   fireEvent.change(add, { target: { value: design } });
   fireEvent.click(screen.getByRole("button", { name: "저장" }));
   expect(useWorkItemStore.getState().items.find((i) => i.id === build)?.dependsOn).toEqual([design]);
-  expect(screen.getByText("선행 작업 대기: Design")).toBeTruthy();
+  // Build는 선행 사슬의 맨 끝(루트)이라 대기 줄 대신 플랜 머리로 보이고, 미배정 Design이 그 아래로 들어간다.
+  const buildCard = document.getElementById(`work-item-${build}`)!;
+  expect(within(buildCard).getByText("플랜")).toBeTruthy();
+  expect(within(buildCard).queryByText("선행 작업 대기: Design")).toBeNull();
+  const designCard = document.getElementById(`work-item-${design}`)!;
+  expect(designCard.parentElement?.classList.contains("work-plan-members")).toBe(true);
+  expect(within(designCard).getByText("미배정")).toBeTruthy();
   expect((screen.getByRole("button", { name: "보내기" }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByRole("button", { name: "보내기" }).getAttribute("aria-describedby")).toBe("work-send-hint");
   expect(screen.getByText("선행 작업을 모두 완료한 뒤 보내세요.")).toBeTruthy();
-  expect(screen.getByText("후속 작업 1개가 기다림")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "“Design” 선행 작업 빼기" }));
   fireEvent.click(screen.getByRole("button", { name: "저장" }));
   expect(useWorkItemStore.getState().items.find((i) => i.id === build)?.dependsOn).toBeUndefined();
-  expect(screen.queryByText("선행 작업 대기: Design")).toBeNull();
+  expect(document.querySelector(".work-plan")).toBeNull();
+});
+
+it("플랜 안에서도 아직 못 하는 업무만 대기 줄을 보이고, 접으면 플랜 업무를 숨긴다", async () => {
+  useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true }, agents: {
+    a: { id: "a", name: "Ada", role: "dev", seed: "s", createdAt: 1, deskIndex: 0 },
+  } });
+  useWorkItemStore.setState({ loaded: true });
+  const store = useWorkItemStore.getState();
+  const first = store.add("First")!; const second = store.add("Second")!; const root = store.add("Root")!;
+  store.edit(second, { dependsOn: [first] });
+  store.edit(root, { assigneeAgentId: "a", dependsOn: [first, second] });
+  render(<UIChrome />);
+  expect(within(document.getElementById(`work-item-${first}`)!).queryByText(/선행 작업 대기/)).toBeNull();
+  expect(within(document.getElementById(`work-item-${second}`)!).getByText("선행 작업 대기: First")).toBeTruthy();
+  expect(screen.queryByText(/후속 작업 \d+개가 기다림/)).toBeNull();
+  expect(within(document.getElementById(`work-item-${root}`)!).getByText("0/2 완료")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "플랜 태스크 펼치기·접기" }));
+  expect(document.getElementById(`work-item-${first}`)).toBeNull();
 });
 
 it("완료로 표시는 상태만 즉시 저장하고 나머지 초안은 남긴다", async () => {

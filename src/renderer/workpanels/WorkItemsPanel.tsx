@@ -16,7 +16,9 @@ import { AgentFace } from "./AgentFace";
 import { dependentCount, pendingPrerequisites } from "./workDependencies";
 import { WorkDialog } from "./WorkDialog";
 import { WorkTransferDialog } from "./WorkTransferDialog";
-import { AutoRunSection } from "./AutoRunSection";
+import { AutoRunSection, codeText } from "./AutoRunSection";
+import { endAutoRun, planItems, startAutoRun, startBlockedReason } from "./autoRun";
+import { planLayout } from "./workPlans";
 import { assigneeKey, MISSING_ASSIGNEE } from "./workItemFile";
 import { useWorkGroupStore } from "./panelLayoutStore";
 import { projectAnchorCwd, projectNameFromCwd } from "../labels/labelText";
@@ -28,6 +30,7 @@ export function WorkItemsPanel() {
   const agentOrder = useAppStore((s) => s.agentOrder);
   const openTerminal = useAppStore((s) => s.openTerminal);
   const taskLabels = useAppStore((s) => s.taskLabels);
+  const observerEnabled = useAppStore((s) => s.appSettings.observerEnabled);
   const busy = useWorkSendStore((s) => s.busy);
   const confirmation = useWorkSendStore((s) => s.confirmation);
   const summaries = useSessionSummaryStore((s) => s.summaries);
@@ -102,31 +105,61 @@ export function WorkItemsPanel() {
       {blockedReason && <p id="work-send-hint" className="work-send-hint">{sendErrorText(blockedReason)}</p>}
     </WorkDialog>;
   };
-  const card = (item: WorkItem) => {
+  // plan: 플랜 루트 카드(대기 줄 대신 진행도·접기·시작). member: 플랜 아래에 들인 카드(순서는 들여쓰기가 보여 주므로 후속 수는 뺀다).
+  const card = (item: WorkItem, role?: { plan?: { done: number; total: number; expanded: boolean; toggle?: () => void }; member?: { unassigned: boolean } }) => {
     const { sessionId, dirty, waitingOn } = cardState(item);
     const dependents = dependentCount(item.id, items);
+    const plan = role?.plan;
+    const run = item.autoRun;
+    const startable = plan && (!run || run.state === "finished");
+    const blocked = startable ? startBlockedReason(item, items, agents, observerEnabled) : undefined;
+    const heading = <button className="work-card-heading" draggable onDragStart={(e) => e.dataTransfer.setData("application/x-agent-office-work", item.id)} aria-haspopup="dialog" aria-expanded={selectedId === item.id} onClick={() => { select(item.id); setCreating(false); setTransferring(false); }}>
+      <span>{plan && <span className="work-status-chip work-plan-chip">{t("plan.chip")}</span>}
+        {(!plan || item.status !== "todo") && <span className="work-status-chip">{t(`status.${item.status}`)}</span>}
+        <strong className={!item.title.trim() ? "work-title-derived" : undefined}>{workItemTitle(item)}</strong>{dirty && <small>{t("unsavedChanges")}</small>}
+        {run && <small className={`work-auto-chip ${run.state}`}>{t(`autoRun.chip.${run.state}`)}</small>}
+        {plan && <small className="work-plan-progress">{t("autoRun.progress", { done: plan.done, total: plan.total })}</small>}
+        {role?.member?.unassigned && <small>{t("unassigned")}</small>}
+        {!plan && waitingOn.length > 0 && <small className="work-blocked">{t("blockedBy", { titles: waitingOn.map(workItemTitle).join(", ") })}</small>}
+        {!plan && !role?.member && dependents > 0 && item.status !== "done" && <small>{t("dependents", { count: dependents })}</small>}</span>
+    </button>;
     // 담당은 캐릭터 묶음 머리에 있으므로 카드에는 얼굴·이름을 다시 쓰지 않는다.
-    return <article className={`work-card status-${item.status}${sessionId && item.status !== "done" && monitored[sessionId]?.phase === "waiting" ? " waiting" : ""}${selectedId === item.id ? " selected" : ""}`} key={item.id} id={`work-item-${item.id}`}
+    return <article className={`work-card status-${item.status}${plan ? " work-plan-root" : ""}${sessionId && item.status !== "done" && monitored[sessionId]?.phase === "waiting" ? " waiting" : ""}${selectedId === item.id ? " selected" : ""}`} key={item.id} id={`work-item-${item.id}`}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
         const rect = e.currentTarget.getBoundingClientRect();
         reorder(e.dataTransfer.getData("application/x-agent-office-work"), item.id, e.clientY > rect.top + rect.height / 2);
       }}>
-      <button className="work-card-heading" draggable onDragStart={(e) => e.dataTransfer.setData("application/x-agent-office-work", item.id)} aria-haspopup="dialog" aria-expanded={selectedId === item.id} onClick={() => { select(item.id); setCreating(false); setTransferring(false); }}>
-        <span><span className="work-status-chip">{t(`status.${item.status}`)}</span><strong className={!item.title.trim() ? "work-title-derived" : undefined}>{workItemTitle(item)}</strong>{dirty && <small>{t("unsavedChanges")}</small>}
-          {item.autoRun && <small className={`work-auto-chip ${item.autoRun.state}`}>{t(`autoRun.chip.${item.autoRun.state}`)}</small>}
-          {waitingOn.length > 0 && <small className="work-blocked">{t("blockedBy", { titles: waitingOn.map(workItemTitle).join(", ") })}</small>}
-          {dependents > 0 && item.status !== "done" && <small>{t("dependents", { count: dependents })}</small>}</span>
-      </button>
+      {plan ? <div className="work-plan-head">
+        <button type="button" className="work-plan-toggle" disabled={!plan.toggle} aria-expanded={plan.expanded} aria-label={t("plan.toggle")} title={t("plan.toggle")} onClick={plan.toggle}>{plan.expanded ? "▾" : "▸"}</button>
+        {heading}
+        {startable && <button type="button" className="pixel-btn work-plan-start" disabled={!!blocked} aria-label={t("autoRun.start")} title={blocked ? codeText(t, blocked) : t("autoRun.start")}
+          onClick={() => { if (run) endAutoRun(item.id); startAutoRun(item.id); }}>▶</button>}
+      </div> : heading}
       {sessionId && <WorkCardMonitor sessionId={sessionId} assignee={item.assigneeAgentId} status={item.status} />}
     </article>;
+  };
+  const plans = planLayout(items, (item) => assigneeKey(item, agents));
+  // 플랜 루트와 그 아래 들인 업무. 접힘은 캐릭터 묶음과 같은 저장소에 `plan:<id>`로 둔다.
+  const planBlock = (root: WorkItem, groupKey: string) => {
+    const members = plans.members.get(root.id) ?? [];
+    const all = planItems(root, items);
+    const key = `plan:${root.id}`;
+    const expanded = !collapsedGroups.includes(key) || members.some((item) => item.id === selectedId);
+    return <div className="work-plan" key={root.id}>
+      {card(root, { plan: { done: all.filter((item) => item.status === "done").length, total: all.length, expanded, toggle: members.length ? () => setGroupCollapsed(key, expanded) : undefined } })}
+      {expanded && members.length > 0 && <div className="work-plan-members">
+        {members.map((item) => card(item, { member: { unassigned: assigneeKey(item, agents) !== groupKey } }))}
+      </div>}
+    </div>;
   };
   // 캐릭터(오피스 순서) → 미배정 → 삭제된 캐릭터 순. 캐릭터 묶음은 업무가 없어도 '＋'로 바로 만들 수 있게 보이고,
   // 미배정·삭제된 캐릭터 묶음은 업무가 있을 때만 보인다. agentOrder에 없는 캐릭터도 업무가 사라지지 않게 뒤에 붙인다.
   const groups = [...new Set([...agentOrder.filter((id) => agents[id]), ...Object.keys(agents)]), "", MISSING_ASSIGNEE].map((key) => ({
     key, name: key === "" ? t("unassigned") : key === MISSING_ASSIGNEE ? t("missingAgent") : agents[key].name,
-    items: items.filter((item) => assigneeKey(item, agents) === key),
+    // 플랜 루트 아래로 옮긴 업무는 제 묶음에서 뺀다.
+    items: items.filter((item) => assigneeKey(item, agents) === key && !plans.claimed.has(item.id)),
   })).filter((group) => group.items.length > 0 || agents[group.key]);
   // 프로젝트는 머리 위 라벨과 같은 규칙: 세션 cwd가 프로필 cwd 밖으로 나갔을 때만 세션 쪽 폴더 이름.
   const projectOf = (agentId: string) => {
@@ -150,20 +183,21 @@ export function WorkItemsPanel() {
       // 상태는 소제목 대신 카드의 칩·색 띠로 보여 주고, 완료만 맨 아래에 접어 둔다.
       const open = WORK_STATUS_ORDER.filter((status) => status !== "done").flatMap((status) => owned.filter((i) => i.status === status).sort((a, b) => a.order - b.order));
       const done = owned.filter((i) => i.status === "done").sort((a, b) => a.order - b.order);
+      const remaining = open.length + open.reduce((sum, item) => sum + (plans.members.get(item.id)?.filter((member) => member.status !== "done").length ?? 0), 0);
       return <details className={`work-group work-agent-group${owned.length ? "" : " empty"}`} key={key} open={!collapsedGroups.includes(key)}
         onToggle={(e) => setGroupCollapsed(key, !e.currentTarget.open)}>
         <summary>{agents[key] && <AgentFace agentId={key} />}
           <span className="work-group-name"><strong>{name}</strong>
             {project && <small className={`work-group-project${project.name ? "" : " none"}`} title={project.cwd}>{project.name ?? t("homeFolder")}</small>}</span>
           {/* 완료는 아래 접힌 묶음에 따로 세므로 머리에는 남은 업무만 센다. */}
-          <span className={`work-group-count${open.length ? "" : " zero"}`} aria-label={t("workCount", { count: open.length })}>{open.length}</span>
+          <span className={`work-group-count${remaining ? "" : " zero"}`} aria-label={t("workCount", { count: remaining })}>{remaining}</span>
           {/* summary 안의 버튼이라 기본 동작(묶음 접기·펴기)을 막는다. */}
           {agents[key] && <button type="button" className="pixel-btn work-group-add" disabled={!loaded} aria-label={t("newWorkFor", { name })} title={t("newWorkFor", { name })}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); startNew(key); }}>＋</button>}</summary>
-        {open.map(card)}
+        {open.map((item) => plans.members.has(item.id) ? planBlock(item, key) : card(item))}
         {done.length > 0 && <details className="work-done-group" open={done.some((item) => item.id === selectedId)}>
           <summary>{t("status.done")} ({done.length})</summary>
-          {done.map(card)}
+          {done.map((item) => card(item))}
         </details>}
       </details>;
     })}

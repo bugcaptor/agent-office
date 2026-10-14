@@ -130,6 +130,10 @@
   "blockedBy": "선행 작업 대기: {{titles}}",
   "dependents_one": "후속 작업 {{count}}개가 기다림",
   "dependents_other": "후속 작업 {{count}}개가 기다림",
+  "plan": {
+    "chip": "플랜",
+    "toggle": "플랜 태스크 펼치기·접기"
+  },
   "newWorkTitle": "새 태스크",
   "transfer": {
     "open": "내보내기·가져오기",

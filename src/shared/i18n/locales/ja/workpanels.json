@@ -130,6 +130,10 @@
   "blockedBy": "先行タスク待ち: {{titles}}",
   "dependents_one": "後続タスク {{count}} 件が待機中",
   "dependents_other": "後続タスク {{count}} 件が待機中",
+  "plan": {
+    "chip": "プラン",
+    "toggle": "プランのタスクを開く・閉じる"
+  },
   "newWorkTitle": "新しいタスク",
   "transfer": {
     "open": "エクスポート・インポート",

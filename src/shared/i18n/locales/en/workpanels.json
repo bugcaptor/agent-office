@@ -130,6 +130,10 @@
   "blockedBy": "Waiting on: {{titles}}",
   "dependents_one": "{{count}} task waiting on this",
   "dependents_other": "{{count}} tasks waiting on this",
+  "plan": {
+    "chip": "Plan",
+    "toggle": "Show or hide plan tasks"
+  },
   "newWorkTitle": "New task",
   "transfer": {
     "open": "Export / Import",

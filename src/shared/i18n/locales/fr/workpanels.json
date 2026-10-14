@@ -130,6 +130,10 @@
   "blockedBy": "En attente de : {{titles}}",
   "dependents_one": "{{count}} tâche attend celle-ci",
   "dependents_other": "{{count}} tâches attendent celle-ci",
+  "plan": {
+    "chip": "Plan",
+    "toggle": "Afficher ou masquer les tâches du plan"
+  },
   "newWorkTitle": "Nouvelle tâche",
   "transfer": {
     "open": "Exporter / Importer",
