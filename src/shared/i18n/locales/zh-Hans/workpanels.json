@@ -107,7 +107,8 @@
     "modelInvalid": "模型名称无效。",
     "effortInvalid": "此 CLI 不支持所选推理强度。",
     "modelCatalog": "所选 agy 模型不在当前模型列表中。",
-    "blocked": "请先完成所有前置任务再发送。"
+    "blocked": "请先完成所有前置任务再发送。",
+    "autoRunActive": "该角色正在自动推进中。请先暂停再发送。"
   },
   "resumeNewWork": "继续编写新任务",
   "add": "添加",
@@ -166,6 +167,64 @@
       "format": "这不是 Agent Office 任务文件。",
       "version": "此文件由更新版本的应用创建。",
       "empty": "没有可导入的任务。"
+    }
+  },
+  "autoRun": {
+    "title": "自动推进",
+    "chip": {
+      "running": "自动推进中",
+      "paused": "自动推进已暂停",
+      "finished": "自动推进已完成"
+    },
+    "idle": "在{{name}}的终端中依次推进剩余的 {{count}} 个前置任务。每个任务开启新会话，每轮结束后由评审(claude -p)决定下一步。",
+    "progress": "已完成 {{done}}/{{total}}",
+    "cost": "评审费用约 {{cost}}",
+    "running": "进行中：{{title}}",
+    "followUps": "追加指令 {{count}}/{{max}}",
+    "preparing": "正在准备下一个任务…",
+    "finished": "计划中的任务已全部完成。根任务已移至待审核。",
+    "start": "开始自动推进",
+    "pause": "暂停",
+    "resume": "继续",
+    "end": "结束",
+    "clear": "清除记录",
+    "endHint": "结束和清除记录只会删除推进状态和记录，任务状态保持不变。",
+    "log": "推进记录 ({{count}})",
+    "logKinds": {
+      "start": "开始",
+      "send": "已发送：{{title}}",
+      "next": "完成：{{title}}",
+      "followup": "追加指令：{{title}}",
+      "pause": "暂停",
+      "resume": "继续",
+      "finish": "全部完成",
+      "human-done": "手动完成：{{title}}"
+    },
+    "reasons": {
+      "human-input": "终端里有未提交的输入，因此没有插入。",
+      "session-ended": "当前任务的会话已结束。",
+      "send-failed": "无法发送任务或追加指令。",
+      "judge-failed": "调用评审失败。点击继续可重试。",
+      "followup-limit": "已达到追加指令上限({{max}} 次)。评审原本要发送的指令：",
+      "judge-stop": "评审请求人工确认。",
+      "task-busy": "有已就绪的任务正在进行或待审核。请将其完成或改回待办后再继续。",
+      "task-changed": "当前任务发生了变化(被删除、改回待办或更换负责人)。",
+      "app-restarted": "应用已重启，因此暂停。",
+      "user": "已暂停。"
+    },
+    "blocked": {
+      "auto-run-root-done": "无法从已完成的任务开始。",
+      "auto-run-no-assignee": "请选择负责角色。该角色将负责推进。",
+      "auto-run-no-plan": "没有剩余的前置任务。",
+      "auto-run-observer-off": "请在设置中开启代理观察。需要通过钩子得知每轮何时结束。",
+      "auto-run-foreign-task": "有前置任务分配给了其他角色。请将其分配给推进角色或改为未分配。",
+      "auto-run-runner-busy": "该角色还有另一个未结束的自动推进。请先结束它。"
+    },
+    "worker": {
+      "intro": "[自动推进] 此任务是计划“{{plan}}”的第 {{index}}/{{total}} 个。它在新会话中开始，请参考以下上下文。",
+      "memo": "计划备注：",
+      "notes": "前面任务的交接备注：",
+      "report": "只做这个任务。完成后，请在最后的回复中简要总结你的改动和验证方式。如果需要人来决定，请说明并停下。"
     }
   }
 }

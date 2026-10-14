@@ -9,6 +9,7 @@
 pub mod agent_paths;
 pub mod api_keys;
 mod work_send;
+mod auto_run;
 // codex CLI 내장 이미지 생성으로 캐릭터 초상/스프라이트 원본을 만든다(kbm #2fa).
 pub mod codex_imagegen;
 mod control;
@@ -784,6 +785,9 @@ pub fn run() {
             ipc::commands::load_diary,
             ipc::commands::inspect_work_send_target,
             ipc::commands::send_work_item,
+            ipc::commands::send_work_follow_up,
+            ipc::commands::work_last_reply,
+            ipc::commands::auto_run_judge,
             ipc::commands::load_work_items,
             ipc::commands::scan_work_inbox,
             ipc::commands::ack_work_inbox,

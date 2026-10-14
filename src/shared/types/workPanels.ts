@@ -18,8 +18,38 @@ export interface WorkItem {
   lastError?: string;
   /** 선행 업무 id. 모두 완료돼야 보낼 수 있다. 비면 생략한다. */
   dependsOn?: string[];
+  /** 자동 진행 상태. 이 업무를 루트로 시작했을 때만 있다(docs/auto-run-design.md). */
+  autoRun?: AutoRun;
   createdAt: number;
   updatedAt: number;
+}
+export type AutoRunState = "running" | "paused" | "finished";
+export type AutoRunPauseReason =
+  | "human-input" | "session-ended" | "send-failed" | "judge-failed" | "followup-limit"
+  | "judge-stop" | "task-busy" | "task-changed" | "app-restarted" | "user";
+export type AutoRunLogKind = "start" | "send" | "next" | "followup" | "pause" | "resume" | "finish" | "human-done";
+export interface AutoRunLogEntry { at: number; kind: AutoRunLogKind; taskId?: string; text?: string }
+/** 루트 업무 하나의 자동 진행. 렌더러가 소유하고 네이티브는 보존만 한다. */
+export interface AutoRun {
+  state: AutoRunState;
+  /** 판단자 claude 세션 uuid. 첫 호출은 --session-id, 이후는 --resume. */
+  judgeSessionId: string;
+  judgeStarted: boolean;
+  /** 판단자에게 마지막으로 보낸 루트 본문의 해시. 바뀌었을 때만 다시 보낸다. */
+  judgedBodyHash?: string;
+  /** 지금 진행 중인 태스크. */
+  currentId?: string;
+  /** 현재 태스크에 넣은 후속 지시 수. */
+  followUps: number;
+  /** 현재 태스크에 마지막으로 프롬프트를 넣은 시각. 그 전에 끝난 턴의 늦은 신호는 판단하지 않는다. */
+  sentAt?: number;
+  pauseReason?: AutoRunPauseReason;
+  /** 판단자 메시지나 오류 코드. */
+  pauseDetail?: string;
+  /** 판단자 누적 비용(USD). */
+  costUsd: number;
+  log: AutoRunLogEntry[];
+  startedAt: number;
 }
 export interface SessionSummary {
   sessionId: string;
@@ -50,6 +80,10 @@ export interface WorkSendRequest {
   body: string;
 }
 export interface WorkSendResult { sessionId: string; submittedAt: number }
+/** 실행 중인 CLI에 넣는 후속 프롬프트. */
+export interface WorkFollowUpRequest { agentId: string; sessionId: string; text: string }
+export interface AutoRunJudgeRequest { sessionId: string; resume: boolean; prompt: string; model?: string }
+export interface AutoRunJudgeResult { decision: "next" | "followup" | "stop"; message: string; note: string; costUsd?: number }
 
 /** 로컬 수신함 파일. key는 파일 이름과 원본 바이트의 해시 앞 16자. */
 /** 수신함 파일을 `rejected/`로 옮길 의미 오류. `reason`은 `.error` 첫 줄의 사유 코드. */

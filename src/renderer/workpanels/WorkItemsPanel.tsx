@@ -16,6 +16,7 @@ import { AgentFace } from "./AgentFace";
 import { dependentCount, pendingPrerequisites } from "./workDependencies";
 import { WorkDialog } from "./WorkDialog";
 import { WorkTransferDialog } from "./WorkTransferDialog";
+import { AutoRunSection } from "./AutoRunSection";
 import { assigneeKey, MISSING_ASSIGNEE } from "./workItemFile";
 import { useWorkGroupStore } from "./panelLayoutStore";
 import { projectAnchorCwd, projectNameFromCwd } from "../labels/labelText";
@@ -87,6 +88,7 @@ export function WorkItemsPanel() {
         onChange={(change) => setEdits((current) => ({ ...current, [item.id]: { ...current[item.id], ...change } }))}
         onSave={save} onDiscard={() => clearEdit(item.id)} />
       {item.lastError && <p role="alert">{sendErrorText(item.lastError)}</p>}
+      <AutoRunSection root={item} />
       {/* 실행 줄: 위험한 삭제는 왼쪽 끝에 떼어 두고 주 동작인 보내기를 오른쪽 끝에 둔다. */}
       <div className="work-dialog-actions work-dialog-run">
         <button className="pixel-btn danger" disabled={sending} onClick={() => setDeleting(item)}>{t("delete")}</button>
@@ -113,6 +115,7 @@ export function WorkItemsPanel() {
       }}>
       <button className="work-card-heading" draggable onDragStart={(e) => e.dataTransfer.setData("application/x-agent-office-work", item.id)} aria-haspopup="dialog" aria-expanded={selectedId === item.id} onClick={() => { select(item.id); setCreating(false); setTransferring(false); }}>
         <span><span className="work-status-chip">{t(`status.${item.status}`)}</span><strong className={!item.title.trim() ? "work-title-derived" : undefined}>{workItemTitle(item)}</strong>{dirty && <small>{t("unsavedChanges")}</small>}
+          {item.autoRun && <small className={`work-auto-chip ${item.autoRun.state}`}>{t(`autoRun.chip.${item.autoRun.state}`)}</small>}
           {waitingOn.length > 0 && <small className="work-blocked">{t("blockedBy", { titles: waitingOn.map(workItemTitle).join(", ") })}</small>}
           {dependents > 0 && item.status !== "done" && <small>{t("dependents", { count: dependents })}</small>}</span>
       </button>

@@ -116,3 +116,16 @@
 .status-in_progress .work-status-chip { color: var(--accent); }
 .work-done-group .work-status-chip { display: none; }
 .work-done-group > summary { cursor: pointer; padding: 2px 0; color: var(--text-dim); }
+
+/* 자동 진행(docs/auto-run-design.md) */
+.work-auto-run { margin-top: 12px; padding-top: 8px; border-top: 1px dashed var(--text-dim); }
+.work-auto-run h3 { margin: 0 0 6px; font-size: inherit; }
+.work-auto-run p { margin: 4px 0; }
+.work-auto-run-paused { color: var(--accent-warn); }
+.work-auto-run-text { display: block; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.work-auto-run-log ol { margin: 6px 0 0; padding-left: 1.5em; max-height: 220px; overflow-y: auto; }
+.work-auto-run-log li { margin-bottom: 4px; }
+.work-auto-run-log time { color: var(--text-dim); }
+.work-card small.work-auto-chip { color: var(--accent); }
+.work-card small.work-auto-chip.paused { color: var(--accent-warn); }
+.work-card small.work-auto-chip.finished { color: var(--text-dim); }

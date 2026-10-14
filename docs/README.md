@@ -23,6 +23,7 @@
 | 문서 | 내용 | 상태 |
 |---|---|---|
 | [work-panels-design.md](work-panels-design.md) | 업무 패널 — opt-in 좌우 고정 패널. 좌측 업무 목록(담당 캐릭터·에이전트/모델 지정, 보내기로 CLI 기동+첫 프롬프트, 상태 모니터링), 우측 전 캐릭터 세션 로그(300일·필터·검색). 업무 수신함(`work-inbox/` 파일 규약, `office-task` 명령, CLI 시스템 프롬프트 공통 안내문) 포함 | 정본 (2026-10-14) — 구현 완료, 설치 앱·인증된 CLI 실기 인수 잔여 |
+| [auto-run-design.md](auto-run-design.md) | 자동 진행 — 루트 태스크의 선행 작업을 진행자 한 명이 태스크마다 새 세션으로 차례로 진행하고, 턴이 끝나면 판단자(`claude -p` 이어지는 세션)가 next·followup·stop을 정한다 | 정본 (2026-10-15) — 구현 완료, 설치 앱 실기 잔여 |
 | [antigravity-support-design.md](antigravity-support-design.md) | Antigravity CLI(agy) 작업 상태 감지 — 셸 훅 + SQLite 턴 토큰·추정 비용 수집(실시간 한도 조회 제거) | 정본 (2026-10-14) — 구현 완료, CLI 눈검증 잔여 |
 | [gui-harness-design.md](gui-harness-design.md) | 헤드리스 GUI 하네스 — 렌더러를 헤드리스 Chrome과 타입 검사된 가짜 백엔드로 띄워 스크린샷·스크립트 재현(`npm run gui:shot`). 대안(tauri-driver·앱 내장 WebDriver) 검토와 한계 | 정본 (2026-10-14) — 구현 완료 |
 | [macos-signing.md](macos-signing.md) | macOS 코드서명 — 자체 인증서 기반·인증서 관리·DMG 배포 절차 | 정본 (2026-10-14) — 운영 절차 |

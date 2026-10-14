@@ -1,6 +1,6 @@
 use crate::{
     state::AppState,
-    types::{WorkSendRequest, WorkSendResult, WorkSendTarget},
+    types::{AutoRunJudgeRequest, AutoRunJudgeResult, WorkFollowUpRequest, WorkSendRequest, WorkSendResult, WorkSendTarget},
 };
 use tauri::State;
 
@@ -55,6 +55,57 @@ pub async fn send_work_item(
             request,
         )
         .await
+}
+
+/// 자동 진행의 후속 지시(docs/auto-run-design.md). 실행 중인 CLI에 프롬프트 하나를 넣는다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn send_work_follow_up(
+    request: WorkFollowUpRequest,
+    app_state: State<'_, AppState>,
+) -> Result<WorkSendResult, String> {
+    validate_target(&app_state, &request.agent_id)?;
+    app_state.work_send_runtime.follow_up(&app_state.gate, request).await
+}
+/// 그 캐릭터 세션의 마지막 에이전트 응답. Claude는 훅이 알려 준 전사, Codex는 cwd의 최신 rollout.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn work_last_reply(
+    agent_id: String,
+    cli: String,
+    cwd: String,
+    app_state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let lookup: std::sync::Arc<dyn crate::session_log::agent_transcript::AgentSessionLookup> =
+        app_state.claude_resume_store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        use crate::session_log::agent_transcript::{claude, codex};
+        let mut source = match cli.as_str() {
+            "claude" => claude::source(lookup),
+            "codex" => codex::source(),
+            _ => None,
+        }?;
+        crate::auto_run::last_reply(source.as_mut(), &agent_id, &cwd)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+/// 자동 진행 판단자 호출 1회. 실행 파일은 요약 설정의 Claude 명령을 따른다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn auto_run_judge(
+    request: AutoRunJudgeRequest,
+    app_state: State<'_, AppState>,
+) -> Result<AutoRunJudgeResult, String> {
+    let program = {
+        let guard = app_state.settings.read().unwrap();
+        let picked = guard
+            .summary_models
+            .for_provider(crate::persistence::settings_store::SummaryProvider::Claude)
+            .command
+            .trim()
+            .to_string();
+        if picked.is_empty() { "claude".to_string() } else { picked }
+    };
+    let dir = crate::auto_run::judge_dir(&app_state.app_data_dir);
+    crate::auto_run::judge(&program, &dir, request).await
 }
 
 #[tauri::command]

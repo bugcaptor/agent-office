@@ -62,6 +62,9 @@ function safeInvoke<T>(cb: (payload: T) => void, payload: T): void {
 export const tauriApi: AgentOfficeApi = {
   async inspectWorkSendTarget(agentId) { return await invoke(Commands.inspectWorkSendTarget, { agentId }); },
   async sendWorkItem(request) { return await invoke(Commands.sendWorkItem, { request }); },
+  async sendWorkFollowUp(request) { return await invoke(Commands.sendWorkFollowUp, { request }); },
+  async workLastReply(agentId, cli, cwd) { return await invoke(Commands.workLastReply, { agentId, cli, cwd }); },
+  async autoRunJudge(request) { return await invoke(Commands.autoRunJudge, { request }); },
   async scanWorkInbox() { return await invoke(Commands.scanWorkInbox); },
   async ackWorkInbox(fileNames) { await invoke(Commands.ackWorkInbox, { fileNames }); },
   async rejectWorkInbox(rejections) { await invoke(Commands.rejectWorkInbox, { rejections }); },

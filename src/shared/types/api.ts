@@ -3,7 +3,7 @@
 // Domain slice: the renderer-facing AgentOfficeApi surface itself.
 // See src/shared/types.ts for the frozen-contract overview.
 
-import type { InboxEntry, InboxRejection, InboxWarning, WorkItem, SessionSummary, WorkSendTarget, WorkSendRequest, WorkSendResult } from './workPanels';
+import type { InboxEntry, InboxRejection, InboxWarning, WorkItem, SessionSummary, WorkSendTarget, WorkSendRequest, WorkSendResult, WorkFollowUpRequest, AutoRunJudgeRequest, AutoRunJudgeResult } from './workPanels';
 import type { AgentId } from './common';
 import type {
   CreateSessionOptions,
@@ -72,6 +72,10 @@ import type { RepositoryAuditItem } from './repositoryAudit';
 export interface AgentOfficeApi {
   inspectWorkSendTarget(agentId: string): Promise<WorkSendTarget>;
   sendWorkItem(request: WorkSendRequest): Promise<WorkSendResult>;
+  sendWorkFollowUp(request: WorkFollowUpRequest): Promise<WorkSendResult>;
+  /** 그 캐릭터 세션의 마지막 에이전트 응답(claude·codex 전사). 못 찾으면 null. */
+  workLastReply(agentId: string, cli: string, cwd: string): Promise<string | null>;
+  autoRunJudge(request: AutoRunJudgeRequest): Promise<AutoRunJudgeResult>;
   scanWorkInbox(): Promise<InboxEntry[]>;
   ackWorkInbox(fileNames: string[]): Promise<void>;
   rejectWorkInbox(rejections: InboxRejection[]): Promise<void>;

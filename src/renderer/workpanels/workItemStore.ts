@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { nanoid } from "nanoid";
-import type { WorkItem, WorkStatus } from "@shared/types";
+import type { AutoRun, WorkItem, WorkStatus } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { hasWorkContent, type WorkItemDraft } from "./workItemDraft";
 import { explainDependsOn, normalizeDependsOn, type DroppedDependency } from "./workDependencies";
@@ -50,6 +50,8 @@ interface WorkItemState {
   applyInbox(requests: InboxRequest[]): InboxRequestResult[];
   edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status" | "dependsOn">>): void;
   recordSend(id: string, result: { sessionId?: string; error?: string }): void;
+  /** 루트 업무의 자동 진행 상태를 바꾸거나(undefined면) 지운다. */
+  setAutoRun(id: string, autoRun: AutoRun | undefined): void;
   remove(id: string): void;
   reorder(id: string, targetId: string, after?: boolean): void;
   select(id: string | null): void;
@@ -68,8 +70,16 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     if (loading) return loading;
     loading = (async () => {
       try {
-        const items = await tauriApi.loadWorkItems();
-        set({ items, loaded: true, error: null });
+        const loadedItems = await tauriApi.loadWorkItems();
+        // 앱을 다시 켜면 돌던 자동 진행은 일시정지로 복원한다. 자동 재개는 하지 않는다.
+        let restored = false;
+        const items = loadedItems.map((item) => {
+          if (item.autoRun?.state !== "running") return item;
+          restored = true;
+          return { ...item, autoRun: { ...item.autoRun, state: "paused" as const, pauseReason: "app-restarted" as const, pauseDetail: undefined } };
+        });
+        set({ items, loaded: true, error: null, dirty: restored || get().dirty });
+        if (restored) changed();
       } catch (err) {
         console.warn("work-items: load failed", err);
         // 로드 실패를 빈 목록으로 간주해 덮어쓰지 않는다. 편집은 재시도 성공 후에만.
@@ -209,6 +219,15 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     const status = result.sessionId ? "in_progress" : item.status;
     const order = status !== item.status ? Math.max(-1, ...get().items.filter((i) => i.status === status).map((i) => i.order)) + 1 : item.order;
     set({ items: get().items.map((i) => i.id === id ? { ...i, status, order, lastError: result.error, sessionIds: result.sessionId ? [...new Set([...i.sessionIds, result.sessionId])] : i.sessionIds, updatedAt: Date.now() } : i), dirty: true });
+    changed();
+  },
+  setAutoRun(id, autoRun) {
+    if (!get().loaded || !get().items.some((i) => i.id === id)) return;
+    set({ items: get().items.map((i) => {
+      if (i.id !== id) return i;
+      const { autoRun: _old, ...rest } = i;
+      return autoRun ? { ...rest, autoRun } : rest;
+    }), dirty: true });
     changed();
   },
   remove(id) {

@@ -34,6 +34,7 @@ import { installTaskLabelSummarizer } from "./labels/summarizer";
 import { installGitBranchWatcher } from "./labels/gitBranchWatcher";
 import { installSessionSummaryRecorder } from "./workpanels/sessionSummaryStore";
 import { installWorkMonitor } from "./workpanels/workMonitor";
+import { installAutoRun } from "./workpanels/autoRun";
 import { installWorkInboxLifecycle } from "./workpanels/lifecycle";
 import { stopWorkInbox } from "./workpanels/workInbox";
 import { useWorkItemStore } from "./workpanels/workItemStore";
@@ -152,6 +153,8 @@ export async function bootApp(): Promise<() => void> {
   await useWorkItemStore.getState().load();
   const offSessionSummaries = await installSessionSummaryRecorder();
   const offWorkMonitor = installWorkMonitor();
+  // 자동 진행은 업무 상태 전이(모니터)를 신호로 쓰므로 그 뒤에 건다.
+  const offAutoRun = installAutoRun();
   const offWorkInbox = installWorkInboxLifecycle();
   const offBridge = installSessionBridge();
   // 데스크톱 마스코트(이슈 #72) — 세션 브리지 직후. officeBus(=emitAgentClicked)를
@@ -199,6 +202,7 @@ export async function bootApp(): Promise<() => void> {
     offBridge();
     offSessionSummaries();
     offWorkMonitor();
+    offAutoRun();
     offWorkInbox();
     void stopWorkInbox().then(() => useWorkItemStore.getState().flush());
     offMascot();

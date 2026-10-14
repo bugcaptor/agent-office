@@ -107,7 +107,8 @@
     "modelInvalid": "The model name is invalid.",
     "effortInvalid": "This CLI does not support the selected effort.",
     "modelCatalog": "The requested agy model is not in its live model catalog.",
-    "blocked": "Finish all prerequisites before sending."
+    "blocked": "Finish all prerequisites before sending.",
+    "autoRunActive": "This character is running an auto run. Pause it before sending."
   },
   "resumeNewWork": "Resume new task",
   "add": "Add",
@@ -166,6 +167,64 @@
       "format": "This is not an Agent Office task file.",
       "version": "This file was made by a newer version of the app.",
       "empty": "There are no tasks to import."
+    }
+  },
+  "autoRun": {
+    "title": "Auto run",
+    "chip": {
+      "running": "Auto running",
+      "paused": "Auto run paused",
+      "finished": "Auto run finished"
+    },
+    "idle": "Runs the {{count}} remaining prerequisites one by one in {{name}}'s terminal. Each task gets a fresh session, and when a turn ends a judge (claude -p) decides what happens next.",
+    "progress": "{{done}}/{{total}} done",
+    "cost": "judge cost about {{cost}}",
+    "running": "Working on: {{title}}",
+    "followUps": "follow-ups {{count}}/{{max}}",
+    "preparing": "Preparing the next task…",
+    "finished": "All tasks in the plan are done. The root task moved to Review.",
+    "start": "Start auto run",
+    "pause": "Pause",
+    "resume": "Resume",
+    "end": "End",
+    "clear": "Clear record",
+    "endHint": "End and Clear record only remove the run state and its record. Task statuses stay as they are.",
+    "log": "Run record ({{count}})",
+    "logKinds": {
+      "start": "Started",
+      "send": "Sent: {{title}}",
+      "next": "Done: {{title}}",
+      "followup": "Follow-up: {{title}}",
+      "pause": "Paused",
+      "resume": "Resumed",
+      "finish": "All done",
+      "human-done": "Marked done by you: {{title}}"
+    },
+    "reasons": {
+      "human-input": "The terminal has unsubmitted input, so the run did not type over it.",
+      "session-ended": "The session of the current task ended.",
+      "send-failed": "Could not send the task or the follow-up.",
+      "judge-failed": "The judge call failed. Resume to try again.",
+      "followup-limit": "Reached the follow-up limit ({{max}}). The judge wanted to send:",
+      "judge-stop": "The judge asked for a human.",
+      "task-busy": "A ready task is already in progress or in review. Mark it done or move it back to To do, then resume.",
+      "task-changed": "The current task changed (deleted, moved back to To do, or reassigned).",
+      "app-restarted": "Paused because the app restarted.",
+      "user": "Paused."
+    },
+    "blocked": {
+      "auto-run-root-done": "You can't start from a finished task.",
+      "auto-run-no-assignee": "Pick an assignee. That character runs the tasks.",
+      "auto-run-no-plan": "No prerequisites are left.",
+      "auto-run-observer-off": "Turn on Agent observation in Settings. The run needs hooks to know when a turn ends.",
+      "auto-run-foreign-task": "A prerequisite is assigned to another character. Assign it to this character or leave it unassigned.",
+      "auto-run-runner-busy": "This character has another auto run that is not finished. End it first."
+    },
+    "worker": {
+      "intro": "[Auto run] This task is {{index}}/{{total}} of the plan \"{{plan}}\". It starts in a fresh session, so use the context below.",
+      "memo": "Plan notes:",
+      "notes": "Hand-off notes from earlier tasks:",
+      "report": "Do only this task. When you finish, end your last reply with a short summary of what you changed and how you verified it. If a human needs to decide something, say so and stop."
     }
   }
 }

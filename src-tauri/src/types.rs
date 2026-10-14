@@ -1687,6 +1687,8 @@ pub struct WorkItem {
     #[serde(default, skip_serializing_if = "Option::is_none")] pub last_error: Option<String>,
     /// 선행 업무 id. 모두 완료돼야 이 업무를 보낼 수 있다.
     #[serde(default, skip_serializing_if = "Vec::is_empty")] pub depends_on: Vec<String>,
+    /// 자동 진행 상태(docs/auto-run-design.md). 렌더러가 소유하고 네이티브는 보존만 한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub auto_run: Option<serde_json::Value>,
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -1733,3 +1735,31 @@ pub struct WorkSendRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkSendResult { pub session_id: String, pub submitted_at: u64 }
+/// 실행 중인 CLI에 넣는 후속 프롬프트 하나(docs/auto-run-design.md).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkFollowUpRequest {
+    pub agent_id: String,
+    pub session_id: String,
+    pub text: String,
+}
+/// 자동 진행 판단자 호출 1회. `resume`이 거짓이면 `session_id`로 새 세션을 만든다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutoRunJudgeRequest {
+    pub session_id: String,
+    pub resume: bool,
+    pub prompt: String,
+    #[serde(default)] pub model: Option<String>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AutoRunDecision { Next, Followup, Stop }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoRunJudgeResult {
+    pub decision: AutoRunDecision,
+    pub message: String,
+    pub note: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub cost_usd: Option<f64>,
+}

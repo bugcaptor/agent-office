@@ -7,7 +7,7 @@ use cli_transition::{CliTransition, CommandSyntax, LaunchShell, ReceiptRead, Sta
 use crate::session::inject::{
     InjectGate, InjectSource, InputSink, StrictOutcome, StrictSubmitRequest,
 };
-use crate::types::{WorkAgent, WorkCli, WorkSendRequest, WorkSendResult, WorkSendTarget};
+use crate::types::{WorkAgent, WorkCli, WorkFollowUpRequest, WorkSendRequest, WorkSendResult, WorkSendTarget};
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -83,6 +83,65 @@ impl WorkSendRuntime {
     ) -> Result<WorkSendResult, String> {
         self.send_with_wait(gate, root, request, Duration::from_secs(10))
             .await
+    }
+    /// 자동 진행의 후속 지시: 이미 돌고 있는 CLI에 프롬프트 하나를 넣는다
+    /// (docs/auto-run-design.md). 기동은 하지 않고, 보내기와 같은 캐릭터별
+    /// 상호배제·전환 소유권·사람 입력 검사를 거친다.
+    pub async fn follow_up(
+        &self,
+        gate: &InjectGate,
+        request: WorkFollowUpRequest,
+    ) -> Result<WorkSendResult, String> {
+        let prompt = work_prompt("", &request.text)?;
+        let cancel = Arc::new(AtomicBool::new(false));
+        {
+            let mut active = self.active.lock().unwrap();
+            if active.contains_key(&request.agent_id) {
+                return Err("work-send-busy".into());
+            }
+            active.insert(request.agent_id.clone(), cancel.clone());
+        }
+        let _guard = SendGuard {
+            runtime: self,
+            agent_id: request.agent_id.clone(),
+            cancel: cancel.clone(),
+        };
+        let sink = gate.sink();
+        if !sink.is_running(&request.agent_id)
+            || sink.session_id_for(&request.agent_id).as_deref() != Some(&request.session_id)
+        {
+            return Err("work-send-session-changed".into());
+        }
+        // 셸 프롬프트로 돌아왔다면 CLI가 끝난 것이다. 셸에 프롬프트를 실행시키지 않는다.
+        if sink.is_shell_prompt(&request.agent_id) == Some(true) {
+            return Err("work-send-cli-returned".into());
+        }
+        if gate.has_uncommitted(&request.agent_id) {
+            return Err("work-send-human-input".into());
+        }
+        let generation = gate.generation(&request.agent_id);
+        let revision = gate.human_input_revision(&request.agent_id);
+        let owner = gate
+            .try_acquire_transition_owner(&request.agent_id, &request.session_id, generation)
+            .map_err(|_| "work-send-busy".to_string())?;
+        let submitted_at = crate::types::now_ms();
+        strict_result(
+            gate.submit_strict_paste(
+                &owner,
+                StrictSubmitRequest {
+                    text: &prompt,
+                    source: InjectSource::WorkSend,
+                    expected_generation: generation,
+                    expected_human_input_revision: revision,
+                    cancelled: &cancel,
+                },
+            )
+            .await,
+        )?;
+        Ok(WorkSendResult {
+            session_id: request.session_id,
+            submitted_at,
+        })
     }
     async fn send_with_wait(
         &self,
@@ -669,6 +728,47 @@ mod tests {
                 0
             );
         }
+    }
+    fn follow_up_request(text: &str) -> WorkFollowUpRequest {
+        WorkFollowUpRequest { agent_id: "a".into(), session_id: "s".into(), text: text.into() }
+    }
+    #[tokio::test]
+    async fn follow_up_pastes_one_prompt_into_the_running_cli() {
+        let sink = recording();
+        let gate = InjectGate::new(sink.clone(), Arc::new(BotPromptArms::default()));
+        let runtime = WorkSendRuntime::default();
+        let result = runtime
+            .follow_up(&gate, follow_up_request("Run the tests\n\nthen report"))
+            .await
+            .unwrap();
+        assert_eq!(result.session_id, "s");
+        let writes: Vec<_> = sink.recorded_writes().into_iter().map(|(_, text, _)| text).collect();
+        assert_eq!(writes, ["\x1b[200~Run the tests\n\nthen report\x1b[201~", "\r"]);
+        // 끝난 뒤에는 상호배제가 풀려 다음 지시를 받을 수 있다.
+        assert!(runtime.follow_up(&gate, follow_up_request("again")).await.is_ok());
+    }
+    #[tokio::test]
+    async fn follow_up_never_types_over_human_input_or_into_a_replaced_session() {
+        let sink = recording();
+        let gate = InjectGate::new(sink.clone(), Arc::new(BotPromptArms::default()));
+        let runtime = WorkSendRuntime::default();
+        sink.set_session("a", "other");
+        assert_eq!(
+            runtime.follow_up(&gate, follow_up_request("go")).await.unwrap_err(),
+            "work-send-session-changed"
+        );
+        sink.set_session("a", "s");
+        gate.note_human("a", "half typed");
+        assert_eq!(
+            runtime.follow_up(&gate, follow_up_request("go")).await.unwrap_err(),
+            "work-send-human-input"
+        );
+        assert_eq!(
+            runtime.follow_up(&gate, follow_up_request("bad \x1b[31m")).await.unwrap_err(),
+            "work-send-prompt-invalid"
+        );
+        // 사람 입력은 그대로 전달되지만 자동 프롬프트는 한 글자도 쓰지 않는다.
+        assert!(sink.recorded_writes().iter().all(|(_, text, _)| text == "half typed"));
     }
 }
 

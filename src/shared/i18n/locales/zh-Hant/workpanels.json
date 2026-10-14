@@ -107,7 +107,8 @@
     "modelInvalid": "模型名稱無效。",
     "effortInvalid": "此 CLI 不支援所選推理強度。",
     "modelCatalog": "所選 agy 模型不在目前模型清單中。",
-    "blocked": "請先完成所有前置任務再傳送。"
+    "blocked": "請先完成所有前置任務再傳送。",
+    "autoRunActive": "此角色正在自動推進中。請先暫停再傳送。"
   },
   "resumeNewWork": "繼續編寫新任務",
   "add": "新增",
@@ -166,6 +167,64 @@
       "format": "這不是 Agent Office 任務檔案。",
       "version": "此檔案由較新版本的應用程式建立。",
       "empty": "沒有可匯入的任務。"
+    }
+  },
+  "autoRun": {
+    "title": "自動推進",
+    "chip": {
+      "running": "自動推進中",
+      "paused": "自動推進已暫停",
+      "finished": "自動推進已完成"
+    },
+    "idle": "在{{name}}的終端機中依序推進剩餘的 {{count}} 個前置任務。每個任務開啟新工作階段，每輪結束後由評審(claude -p)決定下一步。",
+    "progress": "已完成 {{done}}/{{total}}",
+    "cost": "評審費用約 {{cost}}",
+    "running": "進行中：{{title}}",
+    "followUps": "追加指令 {{count}}/{{max}}",
+    "preparing": "正在準備下一個任務…",
+    "finished": "計畫中的任務已全部完成。根任務已移至待審核。",
+    "start": "開始自動推進",
+    "pause": "暫停",
+    "resume": "繼續",
+    "end": "結束",
+    "clear": "清除紀錄",
+    "endHint": "結束和清除紀錄只會刪除推進狀態和紀錄，任務狀態維持不變。",
+    "log": "推進紀錄 ({{count}})",
+    "logKinds": {
+      "start": "開始",
+      "send": "已傳送：{{title}}",
+      "next": "完成：{{title}}",
+      "followup": "追加指令：{{title}}",
+      "pause": "暫停",
+      "resume": "繼續",
+      "finish": "全部完成",
+      "human-done": "手動完成：{{title}}"
+    },
+    "reasons": {
+      "human-input": "終端機裡有尚未送出的輸入，因此沒有插入。",
+      "session-ended": "目前任務的工作階段已結束。",
+      "send-failed": "無法傳送任務或追加指令。",
+      "judge-failed": "呼叫評審失敗。按繼續可重試。",
+      "followup-limit": "已達追加指令上限({{max}} 次)。評審原本要傳送的指令：",
+      "judge-stop": "評審請求人工確認。",
+      "task-busy": "有已就緒的任務正在進行或待審核。請將其完成或改回待辦後再繼續。",
+      "task-changed": "目前任務已變更(被刪除、改回待辦或更換負責人)。",
+      "app-restarted": "應用程式已重新啟動，因此暫停。",
+      "user": "已暫停。"
+    },
+    "blocked": {
+      "auto-run-root-done": "無法從已完成的任務開始。",
+      "auto-run-no-assignee": "請選擇負責角色。該角色將負責推進。",
+      "auto-run-no-plan": "沒有剩餘的前置任務。",
+      "auto-run-observer-off": "請在設定中開啟代理觀察。需要透過掛鉤得知每輪何時結束。",
+      "auto-run-foreign-task": "有前置任務指派給其他角色。請將其指派給推進角色或改為未指派。",
+      "auto-run-runner-busy": "此角色還有另一個尚未結束的自動推進。請先結束它。"
+    },
+    "worker": {
+      "intro": "[自動推進] 此任務是計畫「{{plan}}」的第 {{index}}/{{total}} 個。它在新的工作階段中開始，請參考以下脈絡。",
+      "memo": "計畫備註：",
+      "notes": "前面任務的交接備註：",
+      "report": "只做這個任務。完成後，請在最後的回覆中簡短總結你的修改和驗證方式。如果需要由人決定，請說明並停下。"
     }
   }
 }

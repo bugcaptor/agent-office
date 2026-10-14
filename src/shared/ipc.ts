@@ -10,6 +10,9 @@
 export const Commands = {
   inspectWorkSendTarget: "inspect_work_send_target",
   sendWorkItem: "send_work_item",
+  sendWorkFollowUp: "send_work_follow_up",
+  workLastReply: "work_last_reply",
+  autoRunJudge: "auto_run_judge",
   scanWorkInbox: "scan_work_inbox",
   ackWorkInbox: "ack_work_inbox",
   rejectWorkInbox: "reject_work_inbox",

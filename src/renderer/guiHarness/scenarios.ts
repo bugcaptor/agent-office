@@ -88,6 +88,17 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
         work("w5", "DB migration", "todo", "p2", 4),
         work("w6", "Old chore", "done", "p2", 5),
         work("w7", "", "todo", undefined, 6, { body: "Unassigned note: things to sort out next sprint" }),
+        // 자동 진행 루트: w4 ← w5를 Bo가 진행하다 판단자가 멈춘 상태.
+        work("w8", "Ship search", "todo", "p2", 7, { dependsOn: ["w4"], body: "Keep the old index until the new one is verified.", autoRun: {
+          state: "paused", judgeSessionId: "00000000-0000-4000-8000-000000000000", judgeStarted: true, currentId: "w5", followUps: 1,
+          pauseReason: "judge-stop", pauseDetail: "The migration drops a column that production still reads. Confirm before continuing.", costUsd: 0.042, startedAt: 1720000000000,
+          log: [
+            { at: 1720000000000, kind: "start" },
+            { at: 1720000060000, kind: "send", taskId: "w5" },
+            { at: 1720000900000, kind: "followup", taskId: "w5", text: "Run the migration against a copy of the schema and report the result." },
+            { at: 1720001500000, kind: "pause", text: "judge-stop" },
+          ],
+        } }),
       ],
     };
   },

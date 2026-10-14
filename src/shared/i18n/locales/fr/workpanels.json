@@ -107,7 +107,8 @@
     "modelInvalid": "Nom du modèle invalide.",
     "effortInvalid": "Effort incompatible avec ce CLI.",
     "modelCatalog": "Le modèle agy est absent de son catalogue actuel.",
-    "blocked": "Terminez tous les prérequis avant l’envoi."
+    "blocked": "Terminez tous les prérequis avant l’envoi.",
+    "autoRunActive": "Ce personnage exécute une exécution automatique. Mettez-la en pause avant d'envoyer."
   },
   "resumeNewWork": "Continuer la nouvelle tâche",
   "add": "Ajouter",
@@ -166,6 +167,64 @@
       "format": "Ce n’est pas un fichier de tâches Agent Office.",
       "version": "Ce fichier a été créé par une version plus récente de l’application.",
       "empty": "Aucune tâche à importer."
+    }
+  },
+  "autoRun": {
+    "title": "Exécution automatique",
+    "chip": {
+      "running": "Exécution auto",
+      "paused": "Exécution auto en pause",
+      "finished": "Exécution auto terminée"
+    },
+    "idle": "Exécute une à une les {{count}} tâches préalables restantes dans le terminal de {{name}}. Chaque tâche démarre une nouvelle session et, à la fin de chaque tour, un juge (claude -p) décide de la suite.",
+    "progress": "{{done}}/{{total}} terminées",
+    "cost": "coût du juge environ {{cost}}",
+    "running": "En cours : {{title}}",
+    "followUps": "relances {{count}}/{{max}}",
+    "preparing": "Préparation de la tâche suivante…",
+    "finished": "Toutes les tâches du plan sont terminées. La tâche racine est passée en revue.",
+    "start": "Lancer l'exécution auto",
+    "pause": "Pause",
+    "resume": "Reprendre",
+    "end": "Terminer",
+    "clear": "Effacer l'historique",
+    "endHint": "Terminer et Effacer l'historique suppriment seulement l'état et l'historique de l'exécution. Les statuts des tâches ne changent pas.",
+    "log": "Historique ({{count}})",
+    "logKinds": {
+      "start": "Démarrée",
+      "send": "Envoyée : {{title}}",
+      "next": "Terminée : {{title}}",
+      "followup": "Relance : {{title}}",
+      "pause": "En pause",
+      "resume": "Reprise",
+      "finish": "Tout est terminé",
+      "human-done": "Terminée par vous : {{title}}"
+    },
+    "reasons": {
+      "human-input": "Le terminal contient une saisie non envoyée ; l'exécution n'a pas écrit par-dessus.",
+      "session-ended": "La session de la tâche en cours s'est terminée.",
+      "send-failed": "Impossible d'envoyer la tâche ou la relance.",
+      "judge-failed": "L'appel au juge a échoué. Reprenez pour réessayer.",
+      "followup-limit": "Limite de relances atteinte ({{max}}). Le juge voulait envoyer :",
+      "judge-stop": "Le juge demande l'intervention d'une personne.",
+      "task-busy": "Une tâche prête est déjà en cours ou en revue. Terminez-la ou remettez-la à faire, puis reprenez.",
+      "task-changed": "La tâche en cours a changé (supprimée, remise à faire ou réassignée).",
+      "app-restarted": "En pause car l'application a redémarré.",
+      "user": "En pause."
+    },
+    "blocked": {
+      "auto-run-root-done": "Impossible de démarrer depuis une tâche terminée.",
+      "auto-run-no-assignee": "Choisissez un personnage responsable. C'est lui qui exécute les tâches.",
+      "auto-run-no-plan": "Il ne reste aucune tâche préalable.",
+      "auto-run-observer-off": "Activez l'observation des agents dans les paramètres. L'exécution a besoin des hooks pour savoir quand un tour se termine.",
+      "auto-run-foreign-task": "Une tâche préalable est assignée à un autre personnage. Assignez-la à ce personnage ou laissez-la non assignée.",
+      "auto-run-runner-busy": "Ce personnage a une autre exécution automatique non terminée. Terminez-la d'abord."
+    },
+    "worker": {
+      "intro": "[Exécution auto] Cette tâche est la {{index}}/{{total}} du plan « {{plan}} ». Elle démarre dans une nouvelle session ; servez-vous du contexte ci-dessous.",
+      "memo": "Notes du plan :",
+      "notes": "Notes de passation des tâches précédentes :",
+      "report": "Ne faites que cette tâche. À la fin, terminez votre dernière réponse par un court résumé de ce que vous avez changé et de la façon dont vous l'avez vérifié. Si une personne doit décider, dites-le et arrêtez-vous."
     }
   }
 }
