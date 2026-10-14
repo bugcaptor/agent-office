@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { formatDuration } from "../timeline/format";
-import { formatUsd } from "../analytics/pricing";
+import { formatTokens, formatUsd } from "../analytics/pricing";
 import { useSessionUsageSeed } from "../usage/useSessionUsageSeed";
 import { mergeTotals } from "../usage/sessionCost";
 import { useSessionSummaryStore } from "./sessionSummaryStore";
@@ -32,6 +32,6 @@ export function WorkCardMonitor({ sessionId, assignee, status }: { sessionId: st
   return <div className={`work-card-monitor${!done && phase === "waiting" ? " waiting" : ""}`}>
     <span>{t(label)}</span>
     {summary && ((live && !done) || summary.endedAt !== undefined) && <small>{t("elapsed", { time: formatDuration(Math.max(0, (summary.endedAt ?? now) - summary.startedAt)) })}</small>}
-    {totals && <small title={t("costHint")}>{t("stats", { turns: totals.turns, tokens: totals.input + totals.output + totals.cacheRead + totals.cacheWrite, cost: costEnabled ? totals.costUnknownTurns > 0 && totals.costUsd === 0 ? "—" : `${totals.costUnknownTurns > 0 ? "*" : ""}${formatUsd(totals.costUsd)}` : "—" })}</small>}
+    {totals && <small title={t("costHint")}>{t("stats", { turns: totals.turns, tokens: formatTokens(totals.input + totals.output + totals.cacheRead + totals.cacheWrite), cost: costEnabled ? totals.costUnknownTurns > 0 && totals.costUsd === 0 ? "—" : `${totals.costUnknownTurns > 0 ? "*" : ""}${formatUsd(totals.costUsd)}` : "—" })}</small>}
   </div>;
 }
