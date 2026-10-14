@@ -13,6 +13,9 @@
   "assignee": "담당 캐릭터",
   "unassigned": "미배정",
   "missingAgent": "삭제된 캐릭터",
+  "homeFolder": "홈 폴더",
+  "workCount_one": "업무 {{count}}개",
+  "workCount_other": "업무 {{count}}개",
   "statusLabel": "상태",
   "status": {
     "todo": "할 일",

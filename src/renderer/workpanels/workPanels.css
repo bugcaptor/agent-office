@@ -88,15 +88,31 @@
 .work-transfer-section p { margin: 6px 0 0; }
 .work-transfer-note { margin: 12px 0 0; }
 
-/* 업무 목록 캐릭터 묶음: 머리에 얼굴·이름, 안에 상태 묶음. */
-.work-agent-group > summary { display: flex; align-items: center; gap: 6px; font-weight: bold; }
+/* 업무 목록 캐릭터 묶음: 머리에 얼굴·이름·프로젝트, 안에 상태 칩을 단 카드와 접힌 완료 묶음. */
+.work-panel-actions .work-new-btn { flex: 1; }
+.work-agent-group > summary { display: flex; align-items: center; gap: 6px; }
 .work-agent-group > summary::-webkit-details-marker { display: none; }
 .work-agent-group > summary::before { content: "▸"; flex: none; width: 1em; }
 .work-agent-group[open] > summary::before { content: "▾"; }
-.work-agent-group > summary > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
-.work-agent-group > summary .work-agent-face { height: 24px; width: 24px; }
+.work-agent-group > summary .work-agent-face { height: 28px; width: 28px; }
+.work-group-name { min-width: 0; flex: 1; display: flex; flex-direction: column; line-height: 1.3; }
+.work-group-name > strong { overflow-wrap: anywhere; }
+.work-group-project { color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.work-group-project::before { content: "📁 "; }
+.work-group-project.none { font-style: italic; }
+.work-group-count { flex: none; min-width: 1.6em; padding: 0 4px; text-align: center; color: var(--text-dim); border: 1px solid var(--border-dark); border-radius: 8px; line-height: 1.4; }
+.work-agent-group.empty .work-group-count { opacity: .5; }
 /* 업무가 없는 캐릭터 묶음은 펼칠 것이 없으므로 화살표 자리만 둔다. */
 .work-agent-group.empty > summary::before { visibility: hidden; }
 .work-agent-group > summary .work-group-add { flex: none; padding: 0 6px; line-height: 1.4; font-weight: normal; }
-.work-status-group { margin: 2px 0 6px 1em; }
-.work-status-group > summary { cursor: pointer; padding: 2px 0; color: var(--text-dim); }
+.work-agent-group > .work-card, .work-done-group { margin-left: 1em; }
+/* 상태는 카드 왼쪽 띠와 칩 색으로: 검토 대기=사람 차례(경고색), 진행 중=강조색, 할 일=중립, 완료=흐림. */
+.work-card { border-left-width: 4px; }
+.work-card.status-review { border-left-color: var(--accent-warn); }
+.work-card.status-in_progress { border-left-color: var(--accent); }
+.work-card.status-done { border-left-color: var(--text-dim); }
+.work-status-chip { display: inline-block; margin-right: 6px; padding: 0 4px; font-size: 11px; line-height: 1.4; border: 1px solid currentColor; color: var(--text-dim); vertical-align: 1px; }
+.status-review .work-status-chip { color: var(--accent-warn); }
+.status-in_progress .work-status-chip { color: var(--accent); }
+.work-done-group .work-status-chip { display: none; }
+.work-done-group > summary { cursor: pointer; padding: 2px 0; color: var(--text-dim); }

@@ -27,6 +27,7 @@ const params = new URLSearchParams(location.search);
 const scenario = loadScenario(String(harness.scenario), params.get("lang") ?? "ko");
 let settings: AppSettings = scenario.settings.settings;
 let state = scenario.state;
+let workItems = scenario.workItems;
 
 const outputSubs = new Map<string, Set<(data: string, bytes: number) => void>>();
 // 백엔드처럼 세션 출력 백로그를 쥐고 있다가 새 구독에 재생한다.
@@ -100,8 +101,8 @@ const impl: Partial<AgentOfficeApi> = {
   async loadAwardPortrait() { return null; },
   async loadSessionTurns() { return []; },
   async loadSessionEvents() { return []; },
-  async loadWorkItems() { return []; },
-  async saveWorkItems() {},
+  async loadWorkItems() { return workItems; },
+  async saveWorkItems(next) { workItems = next; },
   async loadSessionSummaries() { return []; },
   async appendSessionSummaries() {},
   async loadWorkLogs() { return {}; },

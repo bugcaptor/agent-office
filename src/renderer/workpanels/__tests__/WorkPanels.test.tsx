@@ -344,10 +344,14 @@ it("업무를 캐릭터별로 묶고 묶음 접힘을 기억한다", async () =>
   store.select(null);
   render(<UIChrome />);
   const groups = [...document.querySelectorAll(".work-agent-group")] as HTMLDetailsElement[];
-  expect(groups.map((g) => g.querySelector("summary > span")!.textContent)).toEqual(["Bob (1)", "Ada (2)", "미배정 (1)", "삭제된 캐릭터 (1)"]);
+  const heads = (list: Element[]) => list.map((g) => `${g.querySelector(".work-group-name > strong")!.textContent} ${g.querySelector(".work-group-count")!.textContent}`);
+  expect(heads(groups)).toEqual(["Bob 1", "Ada 2", "미배정 1", "삭제된 캐릭터 1"]);
   const ada = groups[1];
-  expect([...ada.querySelectorAll(".work-status-group > summary")].map((s) => s.textContent)).toEqual(["할 일 (1)", "완료 (1)"]);
-  expect((ada.querySelector(".work-status-group:last-child") as HTMLDetailsElement).open).toBe(false);
+  // 완료가 아닌 업무는 상태 칩을 단 카드로 바로 보이고, 완료만 접힌 묶음에 들어간다.
+  expect([...ada.querySelectorAll(":scope > .work-card .work-status-chip")].map((s) => s.textContent)).toEqual(["할 일"]);
+  const done = ada.querySelector(".work-done-group") as HTMLDetailsElement;
+  expect(done.querySelector("summary")!.textContent).toBe("완료 (1)");
+  expect(done.open).toBe(false);
   ada.open = false; fireEvent(ada, new Event("toggle"));
   expect(useWorkGroupStore.getState().collapsed).toEqual(["a"]);
   cleanup(); render(<UIChrome />);
@@ -366,7 +370,7 @@ it("캐릭터 묶음의 ＋는 업무가 없는 캐릭터에도 보이며 그 �
   useWorkItemStore.getState().select(null);
   render(<UIChrome />);
   const groups = [...document.querySelectorAll(".work-agent-group")] as HTMLDetailsElement[];
-  expect(groups.map((g) => g.querySelector("summary > span")!.textContent)).toEqual(["Ada (1)", "Bob (0)"]);
+  expect(groups.map((g) => g.querySelector(".work-group-count")!.textContent)).toEqual(["1", "0"]);
   expect(groups[1].classList.contains("empty")).toBe(true);
   expect(screen.queryByRole("button", { name: /미배정/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Bob에게 새 태스크" }));
@@ -382,4 +386,29 @@ it("캐릭터 묶음의 ＋는 업무가 없는 캐릭터에도 보이며 그 �
   expect((screen.getByLabelText("본문") as HTMLTextAreaElement).value).toBe("keep me");
   fireEvent.submit(screen.getByLabelText("본문").closest("form")!);
   expect(useWorkItemStore.getState().items.find((i) => i.body === "keep me")?.assigneeAgentId).toBe("a");
+});
+
+it("캐릭터 묶음 머리에 담당 프로젝트를 보이고 상태 칩을 검토 대기 → 진행 중 → 할 일 순으로 단다", async () => {
+  const profile = (id: string, name: string, cwd?: string) => ({ id, name, role: "dev", seed: id, createdAt: 1, deskIndex: 0, cwd });
+  useWorkGroupStore.setState({ collapsed: [] });
+  useAppStore.setState({
+    appSettings: { ...initial.appSettings, workPanelsEnabled: true },
+    agents: { a: profile("a", "Ada", "/dev/agent-office"), b: profile("b", "Bob", "/dev/kbm"), c: profile("c", "Cy") },
+    agentOrder: ["a", "b", "c"],
+    // 프로필 폴더 안(워크트리)이면 프로필 이름을 지키고, 밖으로 나가면 세션 폴더를 따른다.
+    taskLabels: { a: { sessionId: "s1", cwd: "/dev/agent-office/.claude/worktrees/x" }, b: { sessionId: "s2", cwd: "/dev/other" } },
+  });
+  useWorkItemStore.setState({ loaded: true });
+  const store = useWorkItemStore.getState();
+  store.add({ title: "T", body: "", status: "todo", assigneeAgentId: "a" });
+  store.add({ title: "P", body: "", status: "in_progress", assigneeAgentId: "a" });
+  store.add({ title: "R", body: "", status: "review", assigneeAgentId: "a" });
+  store.select(null);
+  render(<UIChrome />);
+  const projects = [...document.querySelectorAll(".work-group-project")];
+  expect(projects.map((p) => p.textContent)).toEqual(["agent-office", "other", "홈 폴더"]);
+  expect(projects[0].getAttribute("title")).toBe("/dev/agent-office");
+  const ada = document.querySelector(".work-agent-group")!;
+  expect([...ada.querySelectorAll(".work-card")].map((c) => c.className.match(/status-(\w+)/)![1])).toEqual(["review", "in_progress", "todo"]);
+  expect(screen.getByLabelText("업무 3개").textContent).toBe("3");
 });

@@ -13,6 +13,9 @@
   "assignee": "担当キャラクター",
   "unassigned": "未割り当て",
   "missingAgent": "削除されたキャラクター",
+  "homeFolder": "ホームフォルダー",
+  "workCount_one": "タスク {{count}} 件",
+  "workCount_other": "タスク {{count}} 件",
   "statusLabel": "状態",
   "status": {
     "todo": "未着手",

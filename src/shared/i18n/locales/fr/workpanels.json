@@ -13,6 +13,9 @@
   "assignee": "Responsable",
   "unassigned": "Non attribué",
   "missingAgent": "Personnage supprimé",
+  "homeFolder": "Dossier personnel",
+  "workCount_one": "{{count}} tâche",
+  "workCount_other": "{{count}} tâches",
   "statusLabel": "État",
   "status": {
     "todo": "À faire",

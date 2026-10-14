@@ -18,6 +18,7 @@ import { WorkDialog } from "./WorkDialog";
 import { WorkTransferDialog } from "./WorkTransferDialog";
 import { assigneeKey, MISSING_ASSIGNEE } from "./workItemFile";
 import { useWorkGroupStore } from "./panelLayoutStore";
+import { projectAnchorCwd, projectNameFromCwd } from "../labels/labelText";
 
 export function WorkItemsPanel() {
   const { t } = useTranslation("workpanels");
@@ -25,6 +26,7 @@ export function WorkItemsPanel() {
   const agents = useAppStore((s) => s.agents);
   const agentOrder = useAppStore((s) => s.agentOrder);
   const openTerminal = useAppStore((s) => s.openTerminal);
+  const taskLabels = useAppStore((s) => s.taskLabels);
   const busy = useWorkSendStore((s) => s.busy);
   const confirmation = useWorkSendStore((s) => s.confirmation);
   const summaries = useSessionSummaryStore((s) => s.summaries);
@@ -102,7 +104,7 @@ export function WorkItemsPanel() {
     const { sessionId, dirty, waitingOn } = cardState(item);
     const dependents = dependentCount(item.id, items);
     // 담당은 캐릭터 묶음 머리에 있으므로 카드에는 얼굴·이름을 다시 쓰지 않는다.
-    return <article className={`work-card${sessionId && item.status !== "done" && monitored[sessionId]?.phase === "waiting" ? " waiting" : ""}${selectedId === item.id ? " selected" : ""}`} key={item.id} id={`work-item-${item.id}`}
+    return <article className={`work-card status-${item.status}${sessionId && item.status !== "done" && monitored[sessionId]?.phase === "waiting" ? " waiting" : ""}${selectedId === item.id ? " selected" : ""}`} key={item.id} id={`work-item-${item.id}`}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
@@ -110,7 +112,7 @@ export function WorkItemsPanel() {
         reorder(e.dataTransfer.getData("application/x-agent-office-work"), item.id, e.clientY > rect.top + rect.height / 2);
       }}>
       <button className="work-card-heading" draggable onDragStart={(e) => e.dataTransfer.setData("application/x-agent-office-work", item.id)} aria-haspopup="dialog" aria-expanded={selectedId === item.id} onClick={() => { select(item.id); setCreating(false); setTransferring(false); }}>
-        <span><strong className={!item.title.trim() ? "work-title-derived" : undefined}>{workItemTitle(item)}</strong>{dirty && <small>{t("unsavedChanges")}</small>}
+        <span><span className="work-status-chip">{t(`status.${item.status}`)}</span><strong className={!item.title.trim() ? "work-title-derived" : undefined}>{workItemTitle(item)}</strong>{dirty && <small>{t("unsavedChanges")}</small>}
           {waitingOn.length > 0 && <small className="work-blocked">{t("blockedBy", { titles: waitingOn.map(workItemTitle).join(", ") })}</small>}
           {dependents > 0 && item.status !== "done" && <small>{t("dependents", { count: dependents })}</small>}</span>
       </button>
@@ -123,6 +125,11 @@ export function WorkItemsPanel() {
     key, name: key === "" ? t("unassigned") : key === MISSING_ASSIGNEE ? t("missingAgent") : agents[key].name,
     items: items.filter((item) => assigneeKey(item, agents) === key),
   })).filter((group) => group.items.length > 0 || agents[group.key]);
+  // 프로젝트는 머리 위 라벨과 같은 규칙: 세션 cwd가 프로필 cwd 밖으로 나갔을 때만 세션 쪽 폴더 이름.
+  const projectOf = (agentId: string) => {
+    const cwd = projectAnchorCwd(taskLabels[agentId]?.cwd, agents[agentId]?.cwd);
+    return { cwd, name: projectNameFromCwd(cwd) };
+  };
   // 캐릭터를 지정하면 쓰던 초안은 살린 채 담당만 그 캐릭터로 바꾼다.
   const startNew = (assigneeAgentId: string) => {
     setDraft((current) => ({ ...(current ?? EMPTY_WORK_DRAFT), assigneeAgentId }));
@@ -130,22 +137,32 @@ export function WorkItemsPanel() {
   };
   return <><WorkPanelFrame side="left" title={t("workTitle")}>
     <div className="work-panel-actions">
-      <button className="pixel-btn" disabled={!loaded} aria-expanded={creating} onClick={() => { setDraft((current) => current ?? { ...EMPTY_WORK_DRAFT }); setCreating(!creating); setTransferring(false); select(null); }}>{t(draft && !creating ? "resumeNewWork" : "newWork")}</button>
-      <button className="pixel-btn" disabled={!loaded} aria-haspopup="dialog" aria-expanded={transferring} onClick={() => { setTransferring(true); setCreating(false); select(null); }}>{t("transfer.open")}</button>
+      <button className="pixel-btn work-new-btn" disabled={!loaded} aria-expanded={creating} onClick={() => { setDraft((current) => current ?? { ...EMPTY_WORK_DRAFT }); setCreating(!creating); setTransferring(false); select(null); }}>{t(draft && !creating ? "resumeNewWork" : "newWork")}</button>
+      <button className="pixel-btn" disabled={!loaded} aria-haspopup="dialog" aria-expanded={transferring} aria-label={t("transfer.open")} title={t("transfer.open")} onClick={() => { setTransferring(true); setCreating(false); select(null); }}>⇅</button>
     </div>
     {error && <div role="alert">{t(error === "load" ? "loadError" : "saveError")} <button className="pixel-btn" onClick={() => void (error === "load" ? load() : useWorkItemStore.getState().flush())}>{t("retry")}</button></div>}
     {!items.length && loaded && <p className="work-muted">{t("emptyWork")}</p>}
-    {groups.map(({ key, name, items: owned }) => <details className={`work-group work-agent-group${owned.length ? "" : " empty"}`} key={key} open={!collapsedGroups.includes(key)}
-      onToggle={(e) => setGroupCollapsed(key, !e.currentTarget.open)}>
-      <summary>{agents[key] && <AgentFace agentId={key} />}<span>{name} ({owned.length})</span>
-        {/* summary 안의 버튼이라 기본 동작(묶음 접기·펴기)을 막는다. */}
-        {agents[key] && <button type="button" className="pixel-btn work-group-add" disabled={!loaded} aria-label={t("newWorkFor", { name })} title={t("newWorkFor", { name })}
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); startNew(key); }}>＋</button>}</summary>
-      {WORK_STATUS_ORDER.filter((status) => owned.some((i) => i.status === status)).map((status) => <details className="work-status-group" key={status} open={status !== "done" || owned.some((item) => item.status === status && item.id === selectedId)}>
-        <summary>{t(`status.${status}`)} ({owned.filter((i) => i.status === status).length})</summary>
-        {owned.filter((i) => i.status === status).sort((a, b) => a.order - b.order).map(card)}
-      </details>)}
-    </details>)}
+    {groups.map(({ key, name, items: owned }) => {
+      const project = agents[key] ? projectOf(key) : undefined;
+      // 상태는 소제목 대신 카드의 칩·색 띠로 보여 주고, 완료만 맨 아래에 접어 둔다.
+      const open = WORK_STATUS_ORDER.filter((status) => status !== "done").flatMap((status) => owned.filter((i) => i.status === status).sort((a, b) => a.order - b.order));
+      const done = owned.filter((i) => i.status === "done").sort((a, b) => a.order - b.order);
+      return <details className={`work-group work-agent-group${owned.length ? "" : " empty"}`} key={key} open={!collapsedGroups.includes(key)}
+        onToggle={(e) => setGroupCollapsed(key, !e.currentTarget.open)}>
+        <summary>{agents[key] && <AgentFace agentId={key} />}
+          <span className="work-group-name"><strong>{name}</strong>
+            {project && <small className={`work-group-project${project.name ? "" : " none"}`} title={project.cwd}>{project.name ?? t("homeFolder")}</small>}</span>
+          <span className="work-group-count" aria-label={t("workCount", { count: owned.length })}>{owned.length}</span>
+          {/* summary 안의 버튼이라 기본 동작(묶음 접기·펴기)을 막는다. */}
+          {agents[key] && <button type="button" className="pixel-btn work-group-add" disabled={!loaded} aria-label={t("newWorkFor", { name })} title={t("newWorkFor", { name })}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); startNew(key); }}>＋</button>}</summary>
+        {open.map(card)}
+        {done.length > 0 && <details className="work-done-group" open={done.some((item) => item.id === selectedId)}>
+          <summary>{t("status.done")} ({done.length})</summary>
+          {done.map(card)}
+        </details>}
+      </details>;
+    })}
   </WorkPanelFrame>
     {creating && draft && <WorkDialog title={t("newWorkTitle")} onClose={() => setCreating(false)}>
       <WorkEditor creating value={draft} dirty={hasWorkDraftChanges(EMPTY_WORK_DRAFT, draft)} onChange={(patch) => setDraft({ ...draft, ...patch })}

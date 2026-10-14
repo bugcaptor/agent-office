@@ -13,6 +13,9 @@
   "assignee": "Assignee",
   "unassigned": "Unassigned",
   "missingAgent": "Deleted character",
+  "homeFolder": "Home folder",
+  "workCount_one": "{{count}} task",
+  "workCount_other": "{{count}} tasks",
   "statusLabel": "Status",
   "status": {
     "todo": "To do",

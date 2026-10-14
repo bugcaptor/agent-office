@@ -12,6 +12,7 @@ import type {
   NotificationEvent,
   PersistedState,
   UsageSnapshot,
+  WorkItem,
 } from "@shared/types";
 import settingsFixture from "@shared/contract-fixtures/get-app-settings-result.json";
 import awardsFixture from "@shared/contract-fixtures/awards-file.json";
@@ -28,6 +29,8 @@ export interface Scenario {
   output: Record<string, string>;
   /** 부팅 직후 도착시킬 알림. */
   notifications: NotificationEvent[];
+  /** 업무 패널의 저장된 업무 목록. */
+  workItems: WorkItem[];
 }
 
 const profile = (id: string, name: string, seed: string, deskIndex: number): AgentProfile => ({
@@ -60,10 +63,34 @@ function base(lang: string): Scenario {
     adopted: [],
     output: {},
     notifications: [],
+    workItems: [],
   };
 }
 
+const work = (id: string, title: string, status: WorkItem["status"], assigneeAgentId: string | undefined, order: number, extra: Partial<WorkItem> = {}): WorkItem => ({
+  id, title, body: `${title} body`, status, assigneeAgentId, order, sessionIds: [], createdAt: 1720000000000 + order, updatedAt: 1720000000000 + order, ...extra,
+});
+
 const SCENARIOS: Record<string, (lang: string) => Scenario> = {
+  /** 업무 패널을 켜고 캐릭터마다 다른 프로젝트 폴더와 업무를 둔 사무실. */
+  workpanels: (lang) => {
+    const b = base(lang);
+    const cwds = ["/Users/me/dev/agent-office", "/Users/me/dev/kbm-server", undefined];
+    return {
+      ...b,
+      state: { ...b.state, agents: AGENTS.map((a, i) => ({ ...a, cwd: cwds[i] })) },
+      settings: { ...b.settings, settings: { ...b.settings.settings, workPanelsEnabled: true } },
+      workItems: [
+        work("w1", "Show project in work panel", "in_progress", "p1", 0),
+        work("w2", "Tidy session log filters", "todo", "p1", 1),
+        work("w3", "Add GUI harness scenario", "review", "p1", 2),
+        work("w4", "Rebuild search index", "todo", "p2", 3, { dependsOn: ["w5"] }),
+        work("w5", "DB migration", "todo", "p2", 4),
+        work("w6", "Old chore", "done", "p2", 5),
+        work("w7", "", "todo", undefined, 6, { body: "Unassigned note: things to sort out next sprint" }),
+      ],
+    };
+  },
   /** 첫 실행: 캐릭터 없음, 온보딩 다이얼로그. */
   fresh: (lang) => ({ ...base(lang), state: { version: 1, agents: [] }, settings: settings(true, lang) }),
   /** 온보딩을 마친 사무실, 세션 없음. */

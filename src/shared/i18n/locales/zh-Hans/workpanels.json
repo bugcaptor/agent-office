@@ -13,6 +13,9 @@
   "assignee": "负责人",
   "unassigned": "未分配",
   "missingAgent": "已删除的角色",
+  "homeFolder": "主文件夹",
+  "workCount_one": "{{count}} 个任务",
+  "workCount_other": "{{count}} 个任务",
   "statusLabel": "状态",
   "status": {
     "todo": "待办",

@@ -13,6 +13,9 @@
   "assignee": "負責角色",
   "unassigned": "未指派",
   "missingAgent": "已刪除的角色",
+  "homeFolder": "主資料夾",
+  "workCount_one": "{{count}} 個任務",
+  "workCount_other": "{{count}} 個任務",
   "statusLabel": "狀態",
   "status": {
     "todo": "待辦",
