@@ -96,9 +96,6 @@ function TerminalMount({ agentId }: { agentId: string }) {
       data-agent-id={agentId}
     >
       <div ref={hostRef} className="terminal-mount-host" />
-      {/* 봇 운전 중이면 터미널을 덮는 클릭 블로커 + 상태 배너(이슈 #57). 봇 모드가
-          꺼진 탭에선 self-gate로 null 렌더 — 아무 것도 덮지 않는다. */}
-      {/* 자동화 운전 중 상단 배너 및 비차단 타임아웃 결정 패널 (kbm #2t9) */}
       {isExited && (
         <div className="terminal-exited-banner" role="alert">
           <span>{t("host.exited")}</span>

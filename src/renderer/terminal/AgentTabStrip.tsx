@@ -118,8 +118,6 @@ export function AgentTabStrip() {
   // 뷰 모드(이슈 #69): 토글 버튼 + 꽉 채우기 단축키용.
   const viewMode = useAppStore((s) => s.terminalViewMode);
   const cycleTerminalViewMode = useAppStore((s) => s.cycleTerminalViewMode);
-  // 봇 모드(이슈 #57): 켜진 탭 집합/상태 + 시작·중단 액션.
-  // 자동화 점검(kbm): 켜진 탭 집합/상태 + 시작·중단 액션.
   // 이슈 #10: 활성 에이전트 cwd를 root로 마크다운 문서 팔레트를 연다.
   const openMarkdownPalette = useMarkdownStore((s) => s.openPalette);
   // 이슈 #11: 작업 폴더 보기(파일 목록 + git 상태) 오버레이를 연다.
