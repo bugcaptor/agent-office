@@ -15,8 +15,8 @@
 | 문서 | 내용 | 상태 |
 |---|---|---|
 | [subsystem-a-sessions.md](subsystem-a-sessions.md) | Rust 백엔드 — 세션·알림·영속화. 파일 레이아웃, 동시성 모델, IPC 커맨드·이벤트 계약, 엣지 케이스, 알림 고도화(#39/#41), 설정 복구(#40) | 정본 (2026-10-14) — 제거 모듈·핸드오프 계약 현행화 |
-| [subsystem-b-office.md](subsystem-b-office.md) | 오피스 씬 & 절차적 픽셀 캐릭터 (PixiJS). 결정성 원칙·씬 구조·캐릭터 생성기 | 부분표류 (2026-10-14) — §1~§4 초기 코드 스케치, 구현은 코드 기준 |
-| [subsystem-c-ui.md](subsystem-c-ui.md) | 렌더러 UI·상태관리·TerminalHost + 작업 폴더/커밋 로그 브라우저(§10) | 부분표류 (2026-10-14) — 제거 모듈·이동 경로 정리, 초기 코드 스케치 잔여 |
+| [subsystem-b-office.md](subsystem-b-office.md) | 오피스 씬 & 절차적 픽셀 캐릭터 (PixiJS). 씬 생명주기·OfficeBus·풍경 맵·좌석 배정·아키타입 생성기·행동 FSM·미니미 | 정본 (2026-10-14) — 파일+심볼로 재작성, 초기 스케치는 archive |
+| [subsystem-c-ui.md](subsystem-c-ui.md) | 렌더러 UI·상태관리·TerminalHost·테마/풍경 + 작업 폴더/커밋 로그 브라우저(§10)·뷰 모드·일기 내보내기·포스트잇·i18n 요약 | 정본 (2026-10-14) — 초기 절을 파일+심볼로 재작성, 초기 스케치는 archive |
 
 ## 활성 design 문서
 
@@ -46,6 +46,8 @@
 | 문서 | 사유 |
 |---|---|
 | [archive/health-check-cleanup-plan.md](archive/health-check-cleanup-plan.md) | 프로젝트 점검·기능 정리 계획 A~I — 완료된 계획(2026-10-14). 블랙박스 점검·기능 사용 신호·제거 판정(§7.D)·제거 14건(§7.G)·위험 발견과 수정 태스크(§7.E·§7.F)·문서 정리(§7.H)·최종 검증(§7.I)의 결정 근거 보존. 후속은 보드 태스크 |
+| [archive/subsystem-b-office-sketch.md](archive/subsystem-b-office-sketch.md) | 서브시스템 B 구현 전 코드 스케치(PixiJS 씬·맵·생성기·FSM 코드 블록). 현행은 `subsystem-b-office.md`가 파일+심볼로 재정리(2026-10-14) |
+| [archive/subsystem-c-ui-sketch.md](archive/subsystem-c-ui-sketch.md) | 서브시스템 C 구현 전 UI/스토어/터미널 코드 스케치와 당시 증분 명세 원문. 현행은 `subsystem-c-ui.md`가 파일+심볼로 재정리(2026-10-14) |
 | [archive/pi-support-design-snapshot.md](archive/pi-support-design-snapshot.md) | 초기 Pi 설계·구버전 이벤트/행번호 근거·버전별 실측 스냅샷(이슈 #8). 현행 계약은 `pi-support-design.md`로 재정리(2026-10-14) |
 | [archive/usage-design-provider-history.md](archive/usage-design-provider-history.md) | 제거된 agy·Gemini 실시간 계측 서술을 포함한 통합본(#22/#33, kbm #2h8/#2j4). 제거된 provider 결정 근거 보존, 현행은 Claude·Codex만(2026-10-14) |
 | [archive/session-event-timeseries-design.md](archive/session-event-timeseries-design.md) | 수집 계층 구현 완료 후 코드가 정본이 됨(본문 자인). 소비자는 session-analytics 문서 |

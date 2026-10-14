@@ -137,7 +137,7 @@ language: string;   // "system" | "ko" | "en" | …
 | 파일 | 역할 |
 |---|---|
 | `src/shared/i18n/catalog.ts` | glob 로더. `resources`·`SUPPORTED_LANGUAGES`·`SOURCE_LANGUAGE`·`FALLBACK_LANGUAGE`·`languageLabel`·`matchLanguage`. renderer 비의존(순수 조립기) |
-| `src/shared/i18n/locales/{ko,en}/*.json` | 카탈로그 본체. 9 네임스페이스 |
+| `src/shared/i18n/locales/{ko,en,ja,zh-Hans,zh-Hant,fr}/*.json` | 카탈로그 본체. 11 네임스페이스(§3.2) |
 | `src/renderer/i18n/index.ts` | i18next 인스턴스 + 동기 init. `t`·`i18n`·`currentLocale`·`resolveLanguage`·`applyLanguageSetting`·`availableLanguages`·`LANGUAGE_SYSTEM`·`initI18nForTest` |
 | `src/renderer/i18n/promptProfiles.ts` | AI 프롬프트 + 딸린 상수 묶음(언어별) |
 | `src/renderer/i18n/textRules.ts` | 사용자 입력 판정 규칙(언어별) |
