@@ -27,7 +27,7 @@ export type AutoRunState = "running" | "paused" | "finished";
 export type AutoRunPauseReason =
   | "human-input" | "session-ended" | "send-failed" | "judge-failed" | "followup-limit"
   | "judge-stop" | "task-busy" | "task-changed" | "app-restarted" | "user";
-export type AutoRunLogKind = "start" | "send" | "next" | "followup" | "pause" | "resume" | "finish" | "human-done";
+export type AutoRunLogKind = "start" | "send" | "next" | "followup" | "pause" | "resume" | "finish" | "human-done" | "root-done";
 export interface AutoRunLogEntry { at: number; kind: AutoRunLogKind; taskId?: string; text?: string }
 /** 루트 업무 하나의 자동 진행. 렌더러가 소유하고 네이티브는 보존만 한다. */
 export interface AutoRun {

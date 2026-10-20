@@ -187,7 +187,9 @@
     "followUps": "후속 지시 {{count}}/{{max}}",
     "preparing": "다음 태스크를 준비하는 중…",
     "finished": "플랜의 태스크를 모두 마쳤습니다. 루트 태스크를 검토 대기로 옮겼습니다.",
+    "finishedByRoot": "루트 태스크가 완료되어 자동 진행을 마쳤습니다.",
     "start": "자동 진행 시작",
+    "openBusy": "그 플랜 열기",
     "pause": "일시정지",
     "resume": "계속",
     "end": "끝내기",
@@ -202,7 +204,8 @@
       "pause": "멈춤",
       "resume": "계속",
       "finish": "모두 마침",
-      "human-done": "사람이 완료: {{title}}"
+      "human-done": "사람이 완료: {{title}}",
+      "root-done": "루트 완료"
     },
     "reasons": {
       "human-input": "터미널에 제출하지 않은 입력이 있어 끼어들지 않았습니다.",
@@ -222,7 +225,7 @@
       "auto-run-no-plan": "남은 선행 작업이 없습니다.",
       "auto-run-observer-off": "설정에서 에이전트 관찰을 켜세요. 턴 종료를 훅으로 알아야 합니다.",
       "auto-run-foreign-task": "다른 캐릭터에게 배정된 선행 작업이 있습니다. 진행자에게 배정하거나 미배정으로 바꾸세요.",
-      "auto-run-runner-busy": "이 캐릭터에게 끝나지 않은 다른 자동 진행이 있습니다. 그쪽을 끝낸 뒤 시작하세요."
+      "auto-run-runner-busy": "이 캐릭터에게 끝나지 않은 다른 자동 진행 \"{{title}}\"이 있습니다. 그쪽을 끝낸 뒤 시작하세요."
     },
     "worker": {
       "intro": "[자동 진행] 이 태스크는 \"{{plan}}\" 플랜의 {{index}}/{{total}}번째입니다. 새 세션에서 시작하므로 아래 맥락을 참고하세요.",

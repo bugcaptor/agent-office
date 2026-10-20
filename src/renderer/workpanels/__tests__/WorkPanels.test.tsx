@@ -436,3 +436,25 @@ it("캐릭터 묶음 머리에 담당 프로젝트를 보이고 상태 칩을 �
   expect([...ada.querySelectorAll(".work-card")].map((c) => c.className.match(/status-(\w+)/)![1])).toEqual(["review", "in_progress", "todo"]);
   expect(screen.getByLabelText("업무 3개").textContent).toBe("3");
 });
+
+it("진행자를 붙잡은 다른 자동 진행은 이름과 열기로 보이고, 완료 묶음에 있으면 접지 않는다", async () => {
+  useWorkGroupStore.setState({ collapsed: [] });
+  useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true, observerEnabled: true }, agents: { a: { id: "a", name: "Ada", role: "dev", seed: "s", createdAt: 1, deskIndex: 0 } }, agentOrder: ["a"] });
+  useWorkItemStore.setState({ loaded: true });
+  const store = useWorkItemStore.getState();
+  const step = store.add({ title: "Step", body: "", status: "todo", assigneeAgentId: "a" })!;
+  const held = store.add({ title: "Held plan", body: "", status: "todo", assigneeAgentId: "a", dependsOn: [step] })!;
+  const next = store.add({ title: "Next plan", body: "", status: "todo", assigneeAgentId: "a", dependsOn: [step] })!;
+  const run = { state: "paused" as const, judgeSessionId: "x", judgeStarted: true, followUps: 0, pauseReason: "app-restarted" as const, costUsd: 0, log: [], startedAt: 1 };
+  store.setAutoRun(held, run);
+  store.select(next);
+  render(<UIChrome />);
+  const dialog = screen.getByRole("dialog", { name: "Next plan" });
+  expect(within(dialog).getByText(/"Held plan"/)).toBeTruthy();
+  expect(document.querySelector(`#work-item-${next} .work-plan-start`)!.getAttribute("title")).toContain("Held plan");
+  fireEvent.click(within(dialog).getByRole("button", { name: "그 플랜 열기" }));
+  expect(useWorkItemStore.getState().selectedId).toBe(held);
+  // 규칙 이전에 저장된 데이터처럼 완료 루트에 끝나지 않은 실행이 남아 있으면 완료 묶음을 펼친다.
+  act(() => { useWorkItemStore.getState().select(null); useWorkItemStore.setState({ items: useWorkItemStore.getState().items.map((i) => i.id === held ? { ...i, status: "done" } : i) }); });
+  expect((document.querySelector(".work-done-group") as HTMLDetailsElement).open).toBe(true);
+});

@@ -58,6 +58,17 @@ interface WorkItemState {
   flush(): Promise<void>;
 }
 export function hasPendingWorkItems(): boolean { return useWorkItemStore.getState().dirty || saving !== undefined; }
+/**
+ * 루트를 완료로 바꾸면 그 자동 진행도 끝난다(docs/auto-run-design.md). 완료 묶음에 접힌 채
+ * 진행자를 붙잡아 다른 플랜의 시작을 막지 않게 한다. 바뀔 것이 없으면 같은 객체를 돌려준다.
+ */
+function closeRunOfDone(item: WorkItem, at: number): WorkItem {
+  const run = item.autoRun;
+  if (item.status !== "done" || !run || run.state === "finished") return item;
+  // 기록 상한은 autoRun.ts의 MAX_LOG와 같다.
+  const log = [...run.log, { at, kind: "root-done" as const }].slice(-200);
+  return { ...item, autoRun: { ...run, state: "finished", currentId: undefined, followUps: 0, sentAt: undefined, pauseReason: undefined, pauseDetail: undefined, log } };
+}
 function changed() {
   revision++;
   clearTimeout(timer);
@@ -72,8 +83,12 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
       try {
         const loadedItems = await tauriApi.loadWorkItems();
         // 앱을 다시 켜면 돌던 자동 진행은 일시정지로 복원한다. 자동 재개는 하지 않는다.
+        // 루트가 이미 완료인데 끝나지 않은 실행(이전 버전에서 남은 것)은 끝낸다.
         let restored = false;
+        const at = Date.now();
         const items = loadedItems.map((item) => {
+          const closed = closeRunOfDone(item, at);
+          if (closed !== item) { restored = true; return closed; }
           if (item.autoRun?.state !== "running") return item;
           restored = true;
           return { ...item, autoRun: { ...item.autoRun, state: "paused" as const, pauseReason: "app-restarted" as const, pauseDetail: undefined } };
@@ -165,7 +180,7 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
       if (request.kind === "done") {
         let order = nextOrder("done");
         if (items.some((item) => request.ids.includes(item.id) && item.status !== "done")) {
-          items = items.map((item) => !request.ids.includes(item.id) || item.status === "done" ? item : { ...item, status: "done" as const, order: order++, updatedAt: at });
+          items = items.map((item) => !request.ids.includes(item.id) || item.status === "done" ? item : closeRunOfDone({ ...item, status: "done" as const, order: order++, updatedAt: at }, at));
         }
         return { unknown, dropped: [] };
       }
@@ -196,7 +211,7 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
         const requested = new Set([...patch.dependsOn ?? [], ...patch.addDependsOn ?? []]);
         dropped = explained.dropped.filter((d) => requested.has(d.id));
       }
-      items = items.map((i) => i.id === item.id ? next : i);
+      items = items.map((i) => i.id === item.id ? closeRunOfDone(next, at) : i);
       return { unknown, dropped };
     });
     if (items !== get().items) { set({ items, selectedId, dirty: true }); changed(); }
@@ -210,7 +225,8 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     if ("dependsOn" in patch) patch = { ...patch, dependsOn: normalizeDependsOn(id, patch.dependsOn, get().items) };
     const order = patch.status && patch.status !== item.status
       ? Math.max(-1, ...get().items.filter((i) => i.status === patch.status).map((i) => i.order)) + 1 : item.order;
-    set({ items: get().items.map((i) => i.id === id ? { ...i, ...patch, order, updatedAt: Date.now() } : i), dirty: true });
+    const at = Date.now();
+    set({ items: get().items.map((i) => i.id === id ? closeRunOfDone({ ...i, ...patch, order, updatedAt: at }, at) : i), dirty: true });
     changed();
   },
   recordSend(id, result) {

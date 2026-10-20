@@ -5,11 +5,11 @@ import { formatUsd } from "../analytics/pricing";
 import { useWorkItemStore } from "./workItemStore";
 import { workItemTitle } from "./workItemDraft";
 import { sendErrorText } from "./sendErrorText";
-import { endAutoRun, MAX_FOLLOW_UPS, pauseAutoRun, planItems, resumeAutoRun, startAutoRun, startBlockedReason } from "./autoRun";
+import { busyRunRoot, endAutoRun, MAX_FOLLOW_UPS, pauseAutoRun, planItems, resumeAutoRun, startAutoRun, startBlockedReason } from "./autoRun";
 
 /** 시작 차단·일시정지 상세 코드를 화면 문장으로. 자동 진행 코드가 아니면 보내기 오류 문구를 쓴다. */
-export function codeText(t: (key: string, options?: Record<string, unknown>) => string, code: string): string {
-  if (code.startsWith("auto-run-") && !code.startsWith("auto-run-judge")) return t(`autoRun.blocked.${code}`);
+export function codeText(t: (key: string, options?: Record<string, unknown>) => string, code: string, options?: Record<string, unknown>): string {
+  if (code.startsWith("auto-run-") && !code.startsWith("auto-run-judge")) return t(`autoRun.blocked.${code}`, options);
   if (code.startsWith("work-send-") || code.startsWith("automation-")) return sendErrorText(code);
   return code;
 }
@@ -32,10 +32,17 @@ function LogLine({ entry, titles }: { entry: AutoRunLogEntry; titles: Map<string
   return <li><time>{time}</time> <strong>{head}</strong>{text && <span className="work-auto-run-text">{text}</span>}</li>;
 }
 
+/** 시작 차단 문구. 진행자가 다른 실행에 붙잡혀 있으면 그 플랜 이름을 넣는다. */
+export function blockedText(t: (key: string, options?: Record<string, unknown>) => string, code: string, root: WorkItem, items: WorkItem[]): string {
+  const busy = code === "auto-run-runner-busy" ? busyRunRoot(root, items) : undefined;
+  return codeText(t, code, { title: busy ? workItemTitle(busy) : "" });
+}
+
 /** 루트 업무 상세 팝업의 자동 진행 영역(docs/auto-run-design.md). 선행 작업이 있거나 실행 기록이 있을 때만 보인다. */
 export function AutoRunSection({ root }: { root: WorkItem }) {
   const { t } = useTranslation("workpanels");
   const items = useWorkItemStore((s) => s.items);
+  const select = useWorkItemStore((s) => s.select);
   const agents = useAppStore((s) => s.agents);
   const observerEnabled = useAppStore((s) => s.appSettings.observerEnabled);
   const costEnabled = useAppStore((s) => s.appSettings.sessionCostEnabled);
@@ -48,6 +55,7 @@ export function AutoRunSection({ root }: { root: WorkItem }) {
   const blocked = run && run.state !== "finished" ? undefined : startBlockedReason(root, items, agents, observerEnabled);
   const current = run?.currentId ? items.find((item) => item.id === run.currentId) : undefined;
   const paused = run?.state === "paused" ? pauseText(t, run) : undefined;
+  const busyRoot = blocked === "auto-run-runner-busy" ? busyRunRoot(root, items) : undefined;
   return <section className="work-auto-run" aria-labelledby={`auto-run-${root.id}`}>
     <h3 id={`auto-run-${root.id}`}>{t("autoRun.title")}</h3>
     {!run && <p className="work-muted">{t("autoRun.idle", { count: plan.length - done, name: runner ?? t("unassigned") })}</p>}
@@ -55,7 +63,7 @@ export function AutoRunSection({ root }: { root: WorkItem }) {
       ? <>{t("autoRun.running", { title: workItemTitle(current) })} <small>{t("autoRun.followUps", { count: run.followUps, max: MAX_FOLLOW_UPS })}</small></>
       : t("autoRun.preparing")}</p>}
     {paused && <div role="status" className="work-auto-run-paused"><p>{paused.reason}</p>{paused.detail && <p className="work-auto-run-text">{paused.detail}</p>}</div>}
-    {run?.state === "finished" && <p>{t("autoRun.finished")}</p>}
+    {run?.state === "finished" && <p>{t(run.log[run.log.length - 1]?.kind === "root-done" ? "autoRun.finishedByRoot" : "autoRun.finished")}</p>}
     <p className="work-muted">{t("autoRun.progress", { done, total: plan.length })}
       {run && costEnabled && run.costUsd > 0 && <> · {t("autoRun.cost", { cost: formatUsd(run.costUsd) })}</>}</p>
     <div className="work-dialog-actions">
@@ -66,7 +74,8 @@ export function AutoRunSection({ root }: { root: WorkItem }) {
       {(!run || run.state === "finished") && <button className="pixel-btn primary" disabled={!!blocked} aria-describedby={blocked ? `auto-run-hint-${root.id}` : undefined}
         onClick={() => { if (run) endAutoRun(root.id); startAutoRun(root.id); }}>{t("autoRun.start")}</button>}
     </div>
-    {blocked && <p id={`auto-run-hint-${root.id}`} className="work-send-hint">{codeText(t, blocked)}</p>}
+    {blocked && <p id={`auto-run-hint-${root.id}`} className="work-send-hint">{blockedText(t, blocked, root, items)}
+      {busyRoot && <> <button type="button" className="pixel-btn" onClick={() => select(busyRoot.id)}>{t("autoRun.openBusy")}</button></>}</p>}
     {run && run.state !== "running" && <p className="work-muted">{t("autoRun.endHint")}</p>}
     {run && run.log.length > 0 && <details className="work-auto-run-log">
       <summary>{t("autoRun.log", { count: run.log.length })}</summary>

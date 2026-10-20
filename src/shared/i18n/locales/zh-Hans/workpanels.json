@@ -187,7 +187,9 @@
     "followUps": "追加指令 {{count}}/{{max}}",
     "preparing": "正在准备下一个任务…",
     "finished": "计划中的任务已全部完成。根任务已移至待审核。",
+    "finishedByRoot": "根任务已标记为完成，自动推进已结束。",
     "start": "开始自动推进",
+    "openBusy": "打开该计划",
     "pause": "暂停",
     "resume": "继续",
     "end": "结束",
@@ -202,7 +204,8 @@
       "pause": "暂停",
       "resume": "继续",
       "finish": "全部完成",
-      "human-done": "手动完成：{{title}}"
+      "human-done": "手动完成：{{title}}",
+      "root-done": "根任务完成"
     },
     "reasons": {
       "human-input": "终端里有未提交的输入，因此没有插入。",
@@ -222,7 +225,7 @@
       "auto-run-no-plan": "没有剩余的前置任务。",
       "auto-run-observer-off": "请在设置中开启代理观察。需要通过钩子得知每轮何时结束。",
       "auto-run-foreign-task": "有前置任务分配给了其他角色。请将其分配给推进角色或改为未分配。",
-      "auto-run-runner-busy": "该角色还有另一个未结束的自动推进。请先结束它。"
+      "auto-run-runner-busy": "该角色还有另一个未结束的自动推进「{{title}}」。请先结束它。"
     },
     "worker": {
       "intro": "[自动推进] 此任务是计划“{{plan}}”的第 {{index}}/{{total}} 个。它在新会话中开始，请参考以下上下文。",

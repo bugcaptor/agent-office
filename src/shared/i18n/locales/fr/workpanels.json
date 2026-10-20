@@ -187,7 +187,9 @@
     "followUps": "relances {{count}}/{{max}}",
     "preparing": "Préparation de la tâche suivante…",
     "finished": "Toutes les tâches du plan sont terminées. La tâche racine est passée en revue.",
+    "finishedByRoot": "La tâche racine a été marquée terminée, l'exécution automatique s'est donc arrêtée.",
     "start": "Lancer l'exécution auto",
+    "openBusy": "Ouvrir ce plan",
     "pause": "Pause",
     "resume": "Reprendre",
     "end": "Terminer",
@@ -202,7 +204,8 @@
       "pause": "En pause",
       "resume": "Reprise",
       "finish": "Tout est terminé",
-      "human-done": "Terminée par vous : {{title}}"
+      "human-done": "Terminée par vous : {{title}}",
+      "root-done": "Racine marquée terminée"
     },
     "reasons": {
       "human-input": "Le terminal contient une saisie non envoyée ; l'exécution n'a pas écrit par-dessus.",
@@ -222,7 +225,7 @@
       "auto-run-no-plan": "Il ne reste aucune tâche préalable.",
       "auto-run-observer-off": "Activez l'observation des agents dans les paramètres. L'exécution a besoin des hooks pour savoir quand un tour se termine.",
       "auto-run-foreign-task": "Une tâche préalable est assignée à un autre personnage. Assignez-la à ce personnage ou laissez-la non assignée.",
-      "auto-run-runner-busy": "Ce personnage a une autre exécution automatique non terminée. Terminez-la d'abord."
+      "auto-run-runner-busy": "Ce personnage a une autre exécution automatique non terminée : « {{title}} ». Terminez-la d'abord."
     },
     "worker": {
       "intro": "[Exécution auto] Cette tâche est la {{index}}/{{total}} du plan « {{plan}} ». Elle démarre dans une nouvelle session ; servez-vous du contexte ci-dessous.",

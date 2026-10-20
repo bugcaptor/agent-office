@@ -16,7 +16,7 @@ import { AgentFace } from "./AgentFace";
 import { dependentCount, pendingPrerequisites } from "./workDependencies";
 import { WorkDialog } from "./WorkDialog";
 import { WorkTransferDialog } from "./WorkTransferDialog";
-import { AutoRunSection, codeText } from "./AutoRunSection";
+import { AutoRunSection, blockedText } from "./AutoRunSection";
 import { endAutoRun, planItems, startAutoRun, startBlockedReason } from "./autoRun";
 import { planLayout } from "./workPlans";
 import { assigneeKey, MISSING_ASSIGNEE } from "./workItemFile";
@@ -134,7 +134,7 @@ export function WorkItemsPanel() {
       {plan ? <div className="work-plan-head">
         <button type="button" className="work-plan-toggle" disabled={!plan.toggle} aria-expanded={plan.expanded} aria-label={t("plan.toggle")} title={t("plan.toggle")} onClick={plan.toggle}>{plan.expanded ? "▾" : "▸"}</button>
         {heading}
-        {startable && <button type="button" className="pixel-btn work-plan-start" disabled={!!blocked} aria-label={t("autoRun.start")} title={blocked ? codeText(t, blocked) : t("autoRun.start")}
+        {startable && <button type="button" className="pixel-btn work-plan-start" disabled={!!blocked} aria-label={t("autoRun.start")} title={blocked ? blockedText(t, blocked, item, items) : t("autoRun.start")}
           onClick={() => { if (run) endAutoRun(item.id); startAutoRun(item.id); }}>▶</button>}
       </div> : heading}
       {sessionId && <WorkCardMonitor sessionId={sessionId} assignee={item.assigneeAgentId} status={item.status} />}
@@ -195,7 +195,8 @@ export function WorkItemsPanel() {
           {agents[key] && <button type="button" className="pixel-btn work-group-add" disabled={!loaded} aria-label={t("newWorkFor", { name })} title={t("newWorkFor", { name })}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); startNew(key); }}>＋</button>}</summary>
         {open.map((item) => plans.members.has(item.id) ? planBlock(item, key) : card(item))}
-        {done.length > 0 && <details className="work-done-group" open={done.some((item) => item.id === selectedId)}>
+        {/* 끝나지 않은 자동 진행을 쥔 완료 업무가 있으면 접어 두지 않는다. 진행자를 붙잡고 있어서다. */}
+        {done.length > 0 && <details className="work-done-group" open={done.some((item) => item.id === selectedId || (item.autoRun && item.autoRun.state !== "finished"))}>
           <summary>{t("status.done")} ({done.length})</summary>
           {done.map((item) => card(item))}
         </details>}

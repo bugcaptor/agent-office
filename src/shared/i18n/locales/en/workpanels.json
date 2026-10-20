@@ -187,7 +187,9 @@
     "followUps": "follow-ups {{count}}/{{max}}",
     "preparing": "Preparing the next task…",
     "finished": "All tasks in the plan are done. The root task moved to Review.",
+    "finishedByRoot": "The root task was marked done, so the auto run ended.",
     "start": "Start auto run",
+    "openBusy": "Open that plan",
     "pause": "Pause",
     "resume": "Resume",
     "end": "End",
@@ -202,7 +204,8 @@
       "pause": "Paused",
       "resume": "Resumed",
       "finish": "All done",
-      "human-done": "Marked done by you: {{title}}"
+      "human-done": "Marked done by you: {{title}}",
+      "root-done": "Root marked done"
     },
     "reasons": {
       "human-input": "The terminal has unsubmitted input, so the run did not type over it.",
@@ -222,7 +225,7 @@
       "auto-run-no-plan": "No prerequisites are left.",
       "auto-run-observer-off": "Turn on Agent observation in Settings. The run needs hooks to know when a turn ends.",
       "auto-run-foreign-task": "A prerequisite is assigned to another character. Assign it to this character or leave it unassigned.",
-      "auto-run-runner-busy": "This character has another auto run that is not finished. End it first."
+      "auto-run-runner-busy": "This character has another auto run that is not finished: \"{{title}}\". End it first."
     },
     "worker": {
       "intro": "[Auto run] This task is {{index}}/{{total}} of the plan \"{{plan}}\". It starts in a fresh session, so use the context below.",

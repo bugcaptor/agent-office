@@ -16,7 +16,7 @@ import { useAppStore } from "../../store/appStore";
 import { useWorkItemStore } from "../workItemStore";
 import { requestWorkSend, settleWorkSends, useWorkSendStore } from "../workSendStore";
 import { useWorkMonitorStore } from "../workMonitor";
-import { installAutoRun, isAutoRunStepping, judgePrompt, pauseAutoRun, planItems, resumeAutoRun, startAutoRun, startBlockedReason } from "../autoRun";
+import { busyRunRoot, installAutoRun, isAutoRunStepping, judgePrompt, pauseAutoRun, planItems, resumeAutoRun, startAutoRun, startBlockedReason } from "../autoRun";
 
 const initialApp = useAppStore.getState(); const initialWork = useWorkItemStore.getState();
 const profile: AgentProfile = { id: "a", name: "Ada", role: "dev", seed: "s", createdAt: 1, deskIndex: 0, cwd: "/work" };
@@ -76,6 +76,7 @@ describe("자동 진행 계획", () => {
     const other = task("Other plan", { assigneeAgentId: "a", dependsOn: [a] });
     useWorkItemStore.getState().setAutoRun(other, { state: "paused", judgeSessionId: "x", judgeStarted: false, followUps: 0, costUsd: 0, log: [], startedAt: 1 });
     expect(startBlockedReason(get(root), items(), agents, true)).toBe("auto-run-runner-busy");
+    expect(busyRunRoot(get(root), items())?.id).toBe(other);
     useWorkItemStore.getState().setAutoRun(other, undefined);
     useWorkItemStore.getState().edit(a, { assigneeAgentId: "b" });
     expect(startBlockedReason(get(root), items(), agents, true)).toBe("auto-run-foreign-task");
@@ -209,6 +210,45 @@ describe("자동 진행 루프", () => {
   });
 });
 
+describe("루트 완료", () => {
+  const paused = { state: "paused" as const, judgeSessionId: "x", judgeStarted: true, followUps: 0, pauseReason: "user" as const, costUsd: 0, log: [], startedAt: 1 };
+  it("멈춘 실행의 루트를 완료로 바꾸면 실행도 끝나 같은 진행자의 다른 플랜을 막지 않는다", () => {
+    const { a, root } = plan();
+    const other = task("Other plan", { assigneeAgentId: "a", dependsOn: [a] });
+    useWorkItemStore.getState().setAutoRun(root, paused);
+    const items = () => useWorkItemStore.getState().items;
+    const agents = useAppStore.getState().agents;
+    expect(startBlockedReason(get(other), items(), agents, true)).toBe("auto-run-runner-busy");
+    useWorkItemStore.getState().edit(root, { status: "done" });
+    expect(get(root).autoRun).toMatchObject({ state: "finished", pauseReason: undefined });
+    expect(get(root).autoRun?.log.slice(-1)[0]?.kind).toBe("root-done");
+    expect(startBlockedReason(get(other), items(), agents, true)).toBeUndefined();
+  });
+  it("수신함 완료·수정 요청으로 루트가 완료돼도 실행을 끝낸다", () => {
+    const { root } = plan();
+    useWorkItemStore.getState().setAutoRun(root, paused);
+    useWorkItemStore.getState().applyInbox([{ kind: "done", ids: [root] }]);
+    expect(get(root).autoRun?.state).toBe("finished");
+    const { root: second } = plan();
+    useWorkItemStore.getState().setAutoRun(second, paused);
+    useWorkItemStore.getState().applyInbox([{ kind: "edit", id: second, patch: { status: "done" } }]);
+    expect(get(second).autoRun?.state).toBe("finished");
+  });
+  it("실행 중에 루트를 완료로 바꾸면 다음 태스크를 보내지 않는다", async () => {
+    const { a, root } = plan();
+    api.autoRunJudge.mockResolvedValue(judged("next", "", "ok"));
+    startAutoRun(root);
+    await vi.waitFor(() => expect(api.sendWorkItem).toHaveBeenCalledTimes(1));
+    await settled(root);
+    useWorkItemStore.getState().edit(root, { status: "done" });
+    turnEnded(a);
+    await settled(root);
+    expect(api.autoRunJudge).not.toHaveBeenCalled();
+    expect(api.sendWorkItem).toHaveBeenCalledTimes(1);
+    expect(get(root).autoRun?.state).toBe("finished");
+  });
+});
+
 describe("자동 진행 복원", () => {
   it("앱을 다시 켜면 돌던 자동 진행은 일시정지로 불러온다", async () => {
     const run = { state: "running" as const, judgeSessionId: "x", judgeStarted: true, followUps: 0, costUsd: 0, log: [], startedAt: 1 };
@@ -216,6 +256,15 @@ describe("자동 진행 복원", () => {
     useWorkItemStore.setState({ ...initialWork }, true);
     await useWorkItemStore.getState().load();
     expect(get("r").autoRun).toMatchObject({ state: "paused", pauseReason: "app-restarted" });
+    expect(useWorkItemStore.getState().dirty).toBe(true);
+  });
+  it("루트가 이미 완료인데 끝나지 않은 실행은 불러올 때 끝낸다", async () => {
+    const run = { state: "running" as const, judgeSessionId: "x", judgeStarted: true, followUps: 0, costUsd: 0, log: [], startedAt: 1 };
+    api.loadWorkItems.mockResolvedValue([{ id: "r", title: "Root", body: "", status: "done", order: 0, sessionIds: [], createdAt: 1, updatedAt: 1, autoRun: run }]);
+    useWorkItemStore.setState({ ...initialWork }, true);
+    await useWorkItemStore.getState().load();
+    expect(get("r").autoRun).toMatchObject({ state: "finished" });
+    expect(get("r").autoRun?.log.slice(-1)[0]?.kind).toBe("root-done");
     expect(useWorkItemStore.getState().dirty).toBe(true);
   });
 });

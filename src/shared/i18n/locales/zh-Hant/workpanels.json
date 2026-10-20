@@ -187,7 +187,9 @@
     "followUps": "追加指令 {{count}}/{{max}}",
     "preparing": "正在準備下一個任務…",
     "finished": "計畫中的任務已全部完成。根任務已移至待審核。",
+    "finishedByRoot": "根任務已標記為完成，自動推進已結束。",
     "start": "開始自動推進",
+    "openBusy": "開啟該計畫",
     "pause": "暫停",
     "resume": "繼續",
     "end": "結束",
@@ -202,7 +204,8 @@
       "pause": "暫停",
       "resume": "繼續",
       "finish": "全部完成",
-      "human-done": "手動完成：{{title}}"
+      "human-done": "手動完成：{{title}}",
+      "root-done": "根任務完成"
     },
     "reasons": {
       "human-input": "終端機裡有尚未送出的輸入，因此沒有插入。",
@@ -222,7 +225,7 @@
       "auto-run-no-plan": "沒有剩餘的前置任務。",
       "auto-run-observer-off": "請在設定中開啟代理觀察。需要透過掛鉤得知每輪何時結束。",
       "auto-run-foreign-task": "有前置任務指派給其他角色。請將其指派給推進角色或改為未指派。",
-      "auto-run-runner-busy": "此角色還有另一個尚未結束的自動推進。請先結束它。"
+      "auto-run-runner-busy": "此角色還有另一個尚未結束的自動推進「{{title}}」。請先結束它。"
     },
     "worker": {
       "intro": "[自動推進] 此任務是計畫「{{plan}}」的第 {{index}}/{{total}} 個。它在新的工作階段中開始，請參考以下脈絡。",

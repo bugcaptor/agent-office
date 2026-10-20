@@ -45,6 +45,11 @@ export function planItems(root: WorkItem, items: WorkItem[]): WorkItem[] {
   return ordered;
 }
 
+/** 진행자를 붙잡고 있는 다른 루트(끝나지 않은 자동 진행). 시작 차단 문구에서 이름과 열기로 보여 준다. */
+export function busyRunRoot(root: WorkItem, items: WorkItem[]): WorkItem | undefined {
+  return items.find((item) => item.id !== root.id && item.autoRun && item.autoRun.state !== "finished" && item.assigneeAgentId === root.assigneeAgentId);
+}
+
 /** 시작을 막는 이유. 없으면 undefined. 코드는 `sendErrorText`·`autoRun.blocked.*`로 표시한다. */
 export function startBlockedReason(root: WorkItem, items: WorkItem[], agents: Readonly<Record<string, AgentProfile>>, observerEnabled: boolean): string | undefined {
   if (root.status === "done") return "auto-run-root-done";
@@ -52,7 +57,7 @@ export function startBlockedReason(root: WorkItem, items: WorkItem[], agents: Re
   const open = planItems(root, items).filter((item) => item.status !== "done");
   if (!open.length) return "auto-run-no-plan";
   // 진행자 한 명은 끝나지 않은 실행을 하나만 가진다. 멈춘 실행의 현재 태스크와 섞이지 않게 한다.
-  if (items.some((item) => item.id !== root.id && item.autoRun && item.autoRun.state !== "finished" && item.assigneeAgentId === root.assigneeAgentId)) return "auto-run-runner-busy";
+  if (busyRunRoot(root, items)) return "auto-run-runner-busy";
   const profile = workSendDisabledReason(agents[root.assigneeAgentId]);
   if (profile) return profile;
   if (!observerEnabled) return "auto-run-observer-off";
