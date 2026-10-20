@@ -3,7 +3,7 @@
 //! 루프와 상태는 렌더러가 쥔다.
 
 use crate::session_log::agent_transcript::{ItemKind, ItemRole, TranscriptItem, TranscriptSource};
-use crate::types::{AutoRunJudgeRequest, AutoRunJudgeResult};
+use crate::types::{AutoRunDecision, AutoRunJudgeRequest, AutoRunJudgeResult};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -108,8 +108,8 @@ pub fn judge_args(request: &AutoRunJudgeRequest) -> Result<Vec<String>, String> 
     Ok(args)
 }
 
-/// `--output-format json` 결과 한 덩어리 → 결정. 구조화 출력이 없으면 `result`
-/// 본문을 JSON으로 다시 읽어 본다.
+/// `--output-format json` 결과 한 덩어리 → 결정. 구조화 출력이 없거나 틀렸으면 `result`
+/// 본문에서 결정 JSON을 관대하게 찾아 본다(`decision_from_text`).
 pub fn parse_judge_output(stdout: &str) -> Result<AutoRunJudgeResult, String> {
     let value: serde_json::Value =
         serde_json::from_str(stdout.trim()).map_err(|_| "auto-run-judge-output".to_string())?;
@@ -117,19 +117,46 @@ pub fn parse_judge_output(stdout: &str) -> Result<AutoRunJudgeResult, String> {
         let detail = value.get("result").and_then(|v| v.as_str()).unwrap_or_default();
         return Err(format!("auto-run-judge-error:{}", bounded(detail)));
     }
-    let decision = value
+    let mut result = value
         .get("structured_output")
-        .filter(|v| v.is_object())
-        .cloned()
-        .or_else(|| {
-            let text = value.get("result")?.as_str()?;
-            serde_json::from_str::<serde_json::Value>(text.trim()).ok()
-        })
+        .and_then(decision_from_value)
+        .or_else(|| decision_from_text(value.get("result")?.as_str()?))
         .ok_or_else(|| "auto-run-judge-output".to_string())?;
-    let mut result: AutoRunJudgeResult =
-        serde_json::from_value(decision).map_err(|_| "auto-run-judge-output".to_string())?;
-    result.cost_usd = value.get("total_cost_usd").and_then(|v| v.as_f64());
+    result.cost_usd = output_cost(&value);
     Ok(result)
+}
+
+fn output_cost(value: &serde_json::Value) -> Option<f64> {
+    value.get("total_cost_usd").and_then(|v| v.as_f64())
+}
+
+/// 결정 객체 하나를 읽는다. 대소문자·공백이 섞인 결정 이름은 받아 주고, 지시가 빈
+/// `followup`은 쓸 수 없으니 읽지 못한 것으로 친다.
+fn decision_from_value(value: &serde_json::Value) -> Option<AutoRunJudgeResult> {
+    let mut value = value.clone();
+    let decision = value.get_mut("decision")?;
+    *decision = serde_json::Value::String(decision.as_str()?.trim().to_lowercase());
+    let result: AutoRunJudgeResult = serde_json::from_value(value).ok()?;
+    if result.decision == AutoRunDecision::Followup && result.message.trim().is_empty() {
+        return None;
+    }
+    Some(result)
+}
+
+/// 본문 전체, 코드펜스 안, 첫 `{`부터 마지막 `}`까지 순서로 결정 JSON을 찾는다.
+pub fn decision_from_text(text: &str) -> Option<AutoRunJudgeResult> {
+    let text = text.trim();
+    let fenced = text
+        .split_once("```")
+        .map(|(_, rest)| rest.trim_start_matches("json"))
+        .and_then(|rest| rest.split_once("```"))
+        .map(|(inner, _)| inner);
+    let braced = text.find('{').zip(text.rfind('}')).filter(|(a, b)| a < b).map(|(a, b)| &text[a..=b]);
+    [Some(text), fenced, braced]
+        .into_iter()
+        .flatten()
+        .filter_map(|candidate| serde_json::from_str::<serde_json::Value>(candidate.trim()).ok())
+        .find_map(|value| decision_from_value(&value))
 }
 
 fn bounded(text: &str) -> String {
@@ -142,12 +169,12 @@ fn bounded(text: &str) -> String {
 }
 
 /// 판단자 호출 1회. `program`은 claude 실행 파일(설정의 요약 명령 오버라이드를 따른다).
+/// 답을 결정으로 읽지 못하면 같은 세션에 결정만 다시 달라고 한 번 더 묻는다.
 pub async fn judge(
     program: &str,
     dir: &Path,
     request: AutoRunJudgeRequest,
 ) -> Result<AutoRunJudgeResult, String> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let args = judge_args(&request)?;
     if request.prompt.trim().is_empty() {
         return Err("auto-run-judge-prompt-empty".into());
@@ -155,9 +182,40 @@ pub async fn judge(
     std::fs::create_dir_all(dir).map_err(|e| format!("auto-run-judge-dir:{}", bounded(&e.to_string())))?;
     // 번들 앱의 최소 PATH로는 claude를 못 찾는다(요약기와 같은 이유).
     let _ = tokio::task::spawn_blocking(crate::session::env_capture::ensure_captured).await;
+    let stdout = run_judge(program, dir, &args, request.prompt.clone()).await??;
+    let first_error = match parse_judge_output(&stdout) {
+        Ok(result) => return Ok(result),
+        Err(error) => error,
+    };
+    if first_error != "auto-run-judge-output" {
+        return Err(first_error);
+    }
+    // 첫 호출이었어도 세션은 이미 생겼다. 이어서 묻는다.
+    let first_cost = serde_json::from_str::<serde_json::Value>(stdout.trim()).ok().as_ref().and_then(output_cost);
+    let retry = judge_args(&AutoRunJudgeRequest { resume: true, prompt: String::new(), ..request })?;
+    let stdout = run_judge(program, dir, &retry, JUDGE_REPAIR_PROMPT.to_string()).await??;
+    let mut result = parse_judge_output(&stdout)?;
+    if let Some(cost) = first_cost {
+        result.cost_usd = Some(result.cost_usd.unwrap_or(0.0) + cost);
+    }
+    Ok(result)
+}
+
+/// 결정을 읽지 못했을 때 같은 판단자 세션에 보내는 재요청.
+pub const JUDGE_REPAIR_PROMPT: &str = "Your last answer could not be read as a decision. Answer the same turn again with only the JSON object {\"decision\": \"next\" | \"followup\" | \"stop\", \"message\": string, \"note\": string}. A \"followup\" needs a non-empty \"message\".";
+
+/// claude를 한 번 돌린다. 바깥 `Err`는 실행 자체의 실패, 안쪽은 `is_error`·종료 코드 실패다.
+/// 정상 종료면 stdout을 돌려준다.
+async fn run_judge(
+    program: &str,
+    dir: &Path,
+    args: &[String],
+    prompt: String,
+) -> Result<Result<String, String>, String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let mut command = tokio::process::Command::new(program);
     command
-        .args(&args)
+        .args(args)
         .current_dir(dir)
         .env_remove("CLAUDECODE")
         .stdin(Stdio::piped())
@@ -175,7 +233,7 @@ pub async fn judge(
             format!("auto-run-judge-spawn:{}", bounded(&error.to_string()))
         }
     })?;
-    let prompt = request.prompt.into_bytes();
+    let prompt = prompt.into_bytes();
     let run = async move {
         let mut stdin = child.stdin.take().expect("stdin was piped");
         stdin.write_all(&prompt).await.map_err(|e| format!("auto-run-judge-io:{}", bounded(&e.to_string())))?;
@@ -192,24 +250,24 @@ pub async fn judge(
     let (status, stdout, stderr) = tokio::time::timeout(JUDGE_TIMEOUT, run)
         .await
         .map_err(|_| "auto-run-judge-timeout".to_string())??;
-    let stdout = String::from_utf8_lossy(&stdout);
+    let stdout = String::from_utf8_lossy(&stdout).into_owned();
+    if status.success() {
+        return Ok(Ok(stdout));
+    }
     // 실패해도 JSON 결과(is_error)가 있으면 그쪽 사유가 더 정확하다.
-    match parse_judge_output(&stdout) {
-        Ok(result) if status.success() => Ok(result),
-        Err(error) if error.starts_with("auto-run-judge-error:") => Err(error),
-        _ if !status.success() => Err(format!(
+    Ok(Err(match parse_judge_output(&stdout) {
+        Err(error) if error.starts_with("auto-run-judge-error:") => error,
+        _ => format!(
             "auto-run-judge-exit:{} {}",
             status.code().map_or("?".into(), |c| c.to_string()),
             bounded(&String::from_utf8_lossy(&stderr))
-        )),
-        other => other,
-    }
+        ),
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::AutoRunDecision;
 
     fn text(role: ItemRole, body: &str) -> TranscriptItem {
         TranscriptItem::speech(role, body)
@@ -331,5 +389,64 @@ mod tests {
         assert_eq!(parse_judge_output("not json").unwrap_err(), "auto-run-judge-output");
         let wrong = r#"{"is_error":false,"structured_output":{"decision":"maybe","message":"","note":""}}"#;
         assert_eq!(parse_judge_output(wrong).unwrap_err(), "auto-run-judge-output");
+    }
+
+    #[test]
+    fn decision_text_is_found_in_fences_and_prose() {
+        let fenced = "Here you go:\n```json\n{\"decision\":\"Next\",\"message\":\"\",\"note\":\"n\"}\n```";
+        assert_eq!(decision_from_text(fenced).unwrap().decision, AutoRunDecision::Next);
+        let prose = "I think {\"decision\": \" stop \", \"message\": \"ask the human\", \"note\": \"\"} is right.";
+        assert_eq!(decision_from_text(prose).unwrap().message, "ask the human");
+        // 지시가 빈 followup은 쓸 수 없다.
+        assert!(decision_from_text(r#"{"decision":"followup","message":" ","note":""}"#).is_none());
+        assert!(decision_from_text("next").is_none());
+        // 구조화 출력이 틀렸어도 본문이 맞으면 읽는다.
+        let both = r#"{"is_error":false,"structured_output":{"decision":"maybe"},"result":"{\"decision\":\"next\",\"message\":\"\",\"note\":\"\"}"}"#;
+        assert_eq!(parse_judge_output(both).unwrap().decision, AutoRunDecision::Next);
+    }
+
+    /// 가짜 claude: 첫 호출은 결정 없이 답하고, 이어지는 재요청에 결정을 준다.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unreadable_answer_is_asked_again_in_the_same_session() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("claude");
+        std::fs::write(
+            &fake,
+            r#"#!/bin/sh
+cat > "prompt-$#-$(ls | wc -l | tr -d ' ')"
+echo "$@" >> args.log
+case "$*" in
+  *--resume*) echo '{"is_error":false,"result":"","structured_output":{"decision":"followup","message":"Run the tests","note":""},"total_cost_usd":0.25}' ;;
+  *) echo '{"is_error":false,"result":"Looks fine to me.","total_cost_usd":0.5}' ;;
+esac
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let work = dir.path().join("judge");
+        let result = judge(fake.to_str().unwrap(), &work, request(false, None)).await.unwrap();
+        assert_eq!(result.decision, AutoRunDecision::Followup);
+        assert_eq!(result.cost_usd, Some(0.75));
+        let log = std::fs::read_to_string(work.join("args.log")).unwrap();
+        let calls: Vec<&str> = log.lines().collect();
+        assert_eq!(calls.len(), 2);
+        assert!(calls[0].contains("--session-id 3a21bfb6"));
+        assert!(calls[1].contains("--resume 3a21bfb6"));
+        let prompts: Vec<String> = std::fs::read_dir(&work)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().starts_with("prompt-"))
+            .map(|e| std::fs::read_to_string(e.path()).unwrap())
+            .collect();
+        assert!(prompts.iter().any(|p| p == JUDGE_REPAIR_PROMPT));
+
+        // 재요청도 읽지 못하면 그대로 실패한다.
+        let stubborn = dir.path().join("stubborn");
+        std::fs::write(&stubborn, "#!/bin/sh\ncat >/dev/null\necho '{\"is_error\":false,\"result\":\"hmm\"}'\n").unwrap();
+        std::fs::set_permissions(&stubborn, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let error = judge(stubborn.to_str().unwrap(), &work, request(false, None)).await.unwrap_err();
+        assert_eq!(error, "auto-run-judge-output");
     }
 }
