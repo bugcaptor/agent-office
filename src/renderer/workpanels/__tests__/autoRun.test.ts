@@ -3,7 +3,7 @@ import type { AgentProfile, AutoRunJudgeResult, WorkItem, WorkSendTarget } from 
 const { api, restart, create, reserve, flushProfile } = vi.hoisted(() => ({
   api: {
     loadWorkItems: vi.fn(), saveWorkItems: vi.fn(), inspectWorkSendTarget: vi.fn(), sendWorkItem: vi.fn(),
-    sendWorkFollowUp: vi.fn(), workLastReply: vi.fn(), autoRunJudge: vi.fn(),
+    sendWorkFollowUp: vi.fn(), workLastReply: vi.fn(), autoRunReport: vi.fn(), autoRunJudge: vi.fn(),
   },
   restart: vi.fn(), create: vi.fn(), reserve: vi.fn(), flushProfile: vi.fn(),
 }));
@@ -47,6 +47,7 @@ beforeEach(() => {
   api.loadWorkItems.mockResolvedValue([]); api.saveWorkItems.mockResolvedValue(undefined);
   api.inspectWorkSendTarget.mockResolvedValue(shell); api.sendWorkItem.mockResolvedValue({ sessionId: "s", submittedAt: 100 });
   api.workLastReply.mockResolvedValue("Done. Tests pass.");
+  api.autoRunReport.mockResolvedValue(null);
   api.sendWorkFollowUp.mockResolvedValue({ sessionId: "s", submittedAt: Date.now() });
   restart.mockResolvedValue({ sessionId: "s", state: "running" }); reserve.mockReturnValue(vi.fn()); flushProfile.mockResolvedValue(undefined);
   useAppStore.setState(initialApp, true);
@@ -85,12 +86,14 @@ describe("자동 진행 계획", () => {
   });
   it("판단자 첫 호출에만 규칙과 플랜을 넣고, 메모가 바뀌면 새 메모를 덧붙인다", () => {
     const { a, root } = plan();
-    const base = { root: get(root), plan: planItems(get(root), useWorkItemStore.getState().items), task: get(a), followUps: 0, reply: "ok" };
+    const base = { root: get(root), plan: planItems(get(root), useWorkItemStore.getState().items), task: get(a), followUps: 0, reply: "ok", report: null };
     const first = judgePrompt({ ...base, first: true, memoChanged: true });
     expect(first).toContain("Use Postgres."); expect(first).toContain("1. Schema"); expect(first).toContain("Schema body");
     const later = judgePrompt({ ...base, followUps: 1, first: false, memoChanged: false });
     expect(later).not.toContain("Use Postgres."); expect(later).not.toContain("Schema body"); expect(later).toContain("ok");
     expect(judgePrompt({ ...base, first: false, memoChanged: true })).toContain("Use Postgres.");
+    expect(later).toContain("Worker's report: (none written this turn)");
+    expect(judgePrompt({ ...base, report: "status: done\nverified: npm test", first: false, memoChanged: false })).toContain("Worker's report:\n<<<\nstatus: done\nverified: npm test\n>>>");
   });
 });
 
@@ -114,6 +117,9 @@ describe("자동 진행 루프", () => {
     await settled(root);
     expect(api.autoRunJudge.mock.calls[0][0]).toMatchObject({ resume: false });
     expect(api.workLastReply).toHaveBeenCalledWith("a", "claude", "/work");
+    // 보고는 이번 턴을 보낸 뒤에 쓰인 것만 읽고, 작업자 프롬프트는 그 태스크 id로 보고를 요청한다.
+    expect(api.autoRunReport).toHaveBeenCalledWith(a, expect.any(Number));
+    expect(api.sendWorkItem.mock.calls[0][0].body).toContain(`--report ${a}`);
     expect(get(a).status).toBe("done");
     // 다음 태스크는 앞 태스크의 인계 메모를 받는다.
     expect(api.sendWorkItem.mock.calls[1][0].body).toContain("Tables live in db/schema.sql");

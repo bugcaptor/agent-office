@@ -85,17 +85,17 @@ export function workerContext(root: WorkItem, plan: WorkItem[], task: WorkItem, 
   ];
   if (root.body.trim()) parts.push(`${t("workpanels:autoRun.worker.memo")}\n${clip(root.body.trim(), MAX_MEMO_CHARS)}`);
   if (notes.length) parts.push(`${t("workpanels:autoRun.worker.notes")}\n${notes.join("\n")}`);
-  parts.push(t("workpanels:autoRun.worker.report"));
+  parts.push(t("workpanels:autoRun.worker.report", { id: task.id }));
   return parts.join("\n\n");
 }
 
-const JUDGE_RULES = `You supervise an automatic task run in Agent Office. A coding agent (the worker) runs the tasks of a plan one at a time in a terminal. Every task starts in a fresh worker session. After each worker turn you get the worker's final reply and decide what happens next. You have no tools: judge only from what you are given.
+const JUDGE_RULES = `You supervise an automatic task run in Agent Office. A coding agent (the worker) runs the tasks of a plan one at a time in a terminal. Nobody watches the worker: between tasks you stand in for the human. Every task starts in a fresh worker session. After each worker turn you get the worker's report, if it wrote one this turn (made with office-task --report; fields status, changed, verified, decisions, needs_human), and its final reply. You have no tools: judge only from what you are given.
 
 Decisions:
-- "next": the current task is done well enough. It is marked done and the next task starts in a fresh session. Put in "note" what later tasks must know (decisions, names of files or APIs, caveats); it is handed to them. Leave "message" empty.
-- "followup": the worker should keep going in the same session. Put the exact instruction for the worker in "message". Use it for unfinished work, missing or failed verification, or to answer a question the worker asked. You can send at most ${MAX_FOLLOW_UPS} follow-ups per task.
-- "stop": a human must step in (unclear requirements, a risky or destructive step, repeated failure, a choice you should not make alone). Put the reason for the human in "message".
-Prefer "followup" over "stop" when the worker can fix it alone. Do not accept a task whose reply shows no evidence that it was done. Write "message" and "note" in the language the tasks are written in.`;
+- "next": the current task is done well enough. Accept it when the report or the reply says what changed and how it was verified (commands run and their results). For work with nothing to run (docs, notes, design), a clear account of what changed is enough. It is marked done and the next task starts in a fresh session. Put in "note" what later tasks must know (decisions, names of files or APIs, caveats); it is handed to them. Leave "message" empty.
+- "followup": the worker should keep going in the same session. Put the exact instruction for the worker in "message". Use it for unfinished work, missing or failed verification, a missing report (ask for it), a question that the plan notes, the task description or the hand-off notes answer, and a reversible choice the worker left open: pick the option that fits the plan best and tell the worker to go ahead and record it under decisions. You can send at most ${MAX_FOLLOW_UPS} follow-ups per task.
+- "stop": only when a human really must act: the next step is irreversible or leaves the machine (push, deploy, publish, delete data, spend money, use credentials) and neither the plan notes nor the task allows it; the requirements contradict each other and the plan notes do not settle it; the same failure repeats after follow-ups; or the worker needs something only a human has (access, secrets, an outside decision). In "message", ask the human one concrete question, with the options if there are any, and say briefly where the task stands.
+Not reasons to stop: offers of optional extra work ("If you want, I can…"; ignore them), asking whether to continue, asking to confirm a reversible choice, or doubts the worker can check by itself. A report with status "blocked" is the worker's claim: stop only if its needs_human meets the rules above, and otherwise answer it with "followup". Prefer "followup" over "stop" when the worker can fix it alone. Do not accept a task when neither the report nor the reply shows that it was done. Write "message" and "note" in the language the tasks are written in.`;
 
 export interface JudgeTurn {
   root: WorkItem;
@@ -103,6 +103,8 @@ export interface JudgeTurn {
   task: WorkItem;
   followUps: number;
   reply: string | null;
+  /** 이번 턴에 작업자가 `office-task --report`로 남긴 보고. */
+  report: string | null;
   /** 판단자 세션의 첫 호출인가. */
   first: boolean;
   /** 루트 본문이 지난 판단 뒤 바뀌었는가(첫 호출이면 무시). */
@@ -124,6 +126,7 @@ export function judgePrompt(turn: JudgeTurn): string {
   const index = plan.findIndex((item) => item.id === task.id) + 1;
   parts.push(`Task ${index}/${plan.length}: "${workItemTitle(task)}" — the worker's turn ended. Follow-ups sent for this task so far: ${turn.followUps}/${MAX_FOLLOW_UPS}.`);
   if (turn.followUps === 0 && task.body.trim()) parts.push(`Task description:\n<<<\n${task.body.trim()}\n>>>`);
+  parts.push(turn.report?.trim() ? `Worker's report:\n<<<\n${turn.report.trim()}\n>>>` : "Worker's report: (none written this turn)");
   parts.push(`Worker's final reply:\n<<<\n${turn.reply?.trim() || "(the reply could not be read)"}\n>>>`);
   parts.push("Decide.");
   return parts.join("\n\n");
@@ -270,9 +273,11 @@ async function judge(rootId: string, current: WorkItem): Promise<void> {
   const cli = normalizeWorkAgent(current.agent ?? profile?.defaultAgent ?? { cli: "claude" }).cli;
   const cwd = (session ? useSessionSummaryStore.getState().summaries[session]?.cwd : undefined) ?? state.taskLabels[runner]?.cwd ?? profile?.cwd ?? "";
   const reply = await tauriApi.workLastReply(runner, cli, cwd).catch((error: unknown) => { console.warn("auto-run: reply read failed", error); return null; });
+  // 이번 턴을 보낸 뒤에 쓰인 보고만 읽는다. 지난 턴의 보고가 새 턴의 증거로 쓰이지 않게 한다.
+  const report = await tauriApi.autoRunReport(current.id, run.sentAt ?? 0).catch((error: unknown) => { console.warn("auto-run: report read failed", error); return null; });
   const plan = planItems(root, items());
   const memoHash = hash(root.body.trim());
-  const prompt = judgePrompt({ root, plan, task: current, followUps: run.followUps, reply, first: !run.judgeStarted, memoChanged: run.judgedBodyHash !== memoHash });
+  const prompt = judgePrompt({ root, plan, task: current, followUps: run.followUps, reply, report, first: !run.judgeStarted, memoChanged: run.judgedBodyHash !== memoHash });
   const model = root.agent?.cli === "claude" ? root.agent.model : undefined;
   let result: AutoRunJudgeResult;
   try {

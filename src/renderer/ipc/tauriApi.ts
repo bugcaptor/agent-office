@@ -64,6 +64,7 @@ export const tauriApi: AgentOfficeApi = {
   async sendWorkItem(request) { return await invoke(Commands.sendWorkItem, { request }); },
   async sendWorkFollowUp(request) { return await invoke(Commands.sendWorkFollowUp, { request }); },
   async workLastReply(agentId, cli, cwd) { return await invoke(Commands.workLastReply, { agentId, cli, cwd }); },
+  async autoRunReport(taskId, since) { return await invoke(Commands.autoRunReport, { taskId, since }); },
   async autoRunJudge(request) { return await invoke(Commands.autoRunJudge, { request }); },
   async scanWorkInbox() { return await invoke(Commands.scanWorkInbox); },
   async ackWorkInbox(fileNames) { await invoke(Commands.ackWorkInbox, { fileNames }); },

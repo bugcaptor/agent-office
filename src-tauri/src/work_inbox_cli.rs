@@ -14,8 +14,10 @@ const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after
                    [--after <id>... | --no-after | --add-after <id>... --remove-after <id>...]
        office-task --done <id>...
        office-task --delete <id>...
+       office-task --report <id> [text | -]
 Prints the new task id. Pass it to --after to make a later task wait for this one.
 --edit --after replaces all prerequisites; --add-after/--remove-after change them one by one.
+--report leaves the auto-run report for a task; writing it again replaces it.
 ";
 
 /// 실행 환경. 테스트가 프로세스 env를 건드리지 않도록 값으로 받는다.
@@ -69,6 +71,7 @@ pub fn run_with(
         Some("--done") => return done(&args[1..], env, out, err, now),
         Some("--delete") => return delete(&args[1..], env, out, err, now),
         Some("--edit") => return edit(&args[1..], env, stdin, out, err, now),
+        Some("--report") => return report(&args[1..], env, stdin, err),
         Some("--show") => return match &args[1..] {
             [id] => show(id, env, out, err),
             _ => usage_error(err, "--show takes one task id"),
@@ -241,6 +244,30 @@ fn write_request(board: &Board, content: &str, now: chrono::DateTime<chrono::Utc
     let random = uuid::Uuid::new_v4().simple().to_string();
     let name = format!("{}-{}.md", now.format("%Y%m%dT%H%M%S%3fZ"), &random[..8]);
     write(&board.inbox, &name, content.as_bytes()).map(|_| ()).map_err(|e| fail(err, &format!("failed to write {}: {e}", board.inbox.display())))
+}
+
+/// 자동 진행 보고(docs/auto-run-design.md §보고). 수신함 요청이 아니라 `reports/<id>.md`
+/// 하나를 덮어쓴다. 판단자가 그 턴에 쓰인 것만 읽는다.
+fn report(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, err: &mut dyn Write) -> i32 {
+    let (id, text) = match args {
+        [id] => (id, "-"),
+        [id, text] => (id, text.as_str()),
+        _ => return usage_error(err, "--report takes a task id and [text | -]"),
+    };
+    if !valid_task_id(id) { return usage_error(err, &format!("invalid task id for --report: {id:?}")); }
+    let body = match read_body(text, stdin, err) { Ok(body) => body, Err(code) => return code };
+    let body = body.trim_matches('\n');
+    if body.trim().is_empty() { return fail(err, "the report is empty"); }
+    if body.len() > MAX_BYTES { return fail(err, &format!("report exceeds {MAX_BYTES} bytes")); }
+    if let Some(c) = forbidden_control(body) {
+        return fail(err, &format!("report contains control character U+{:04X}; only tab and newline are allowed", c as u32));
+    }
+    let Some(inbox) = env.inbox() else { return fail(err, "AGENT_OFFICE_WORK_INBOX and AGENT_OFFICE_APP_DATA are not set"); };
+    let dir = crate::auto_run::reports_dir(&inbox);
+    match write(&dir, &format!("{id}.md"), format!("{body}\n").as_bytes()) {
+        Ok(_) => 0,
+        Err(e) => fail(err, &format!("failed to write {}: {e}", dir.display())),
+    }
 }
 
 fn target_ids(args: &[String], flag: &str, err: &mut dyn Write) -> Result<Vec<String>, i32> {
@@ -520,6 +547,22 @@ mod tests {
         let mut files: Vec<_> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
         files.sort();
         files.into_iter().map(|name| { let bytes = std::fs::read(dir.join(&name)).unwrap(); let parsed = parse(&name, &bytes).unwrap(); (name, parsed) }).collect()
+    }
+
+    #[test]
+    fn report_overwrites_one_file_per_task_outside_the_request_queue() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = env(dir.path(), Some("a"));
+        assert_eq!(call(&["--report", "t-1", "-"], &env, "status: done\r\nchanged: x\n\n"), (0, String::new(), String::new()));
+        assert_eq!(call(&["--report", "t-1", "status: blocked"], &env, "").0, 0);
+        let report = crate::auto_run::reports_dir(dir.path()).join("t-1.md");
+        assert_eq!(std::fs::read_to_string(&report).unwrap(), "status: blocked\n");
+        // 수신함 scan은 하위 폴더를 건너뛰므로 보고가 요청으로 읽히지 않는다.
+        assert!(scan(dir.path(), std::time::SystemTime::now()).unwrap().is_empty());
+        assert_eq!(call(&["--report", "t-1"], &env, "  \n").0, 1);
+        assert_eq!(call(&["--report", "../x", "hi"], &env, "").0, 2);
+        assert_eq!(call(&["--report"], &env, "").0, 2);
+        assert_eq!(call(&["--report", "t-1", "bad\u{7}"], &env, "").0, 1);
     }
 
     #[test]

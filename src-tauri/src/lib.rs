@@ -787,6 +787,7 @@ pub fn run() {
             ipc::commands::send_work_item,
             ipc::commands::send_work_follow_up,
             ipc::commands::work_last_reply,
+            ipc::commands::auto_run_report,
             ipc::commands::auto_run_judge,
             ipc::commands::load_work_items,
             ipc::commands::scan_work_inbox,

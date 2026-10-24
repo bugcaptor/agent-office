@@ -12,6 +12,7 @@ export const Commands = {
   sendWorkItem: "send_work_item",
   sendWorkFollowUp: "send_work_follow_up",
   workLastReply: "work_last_reply",
+  autoRunReport: "auto_run_report",
   autoRunJudge: "auto_run_judge",
   scanWorkInbox: "scan_work_inbox",
   ackWorkInbox: "ack_work_inbox",

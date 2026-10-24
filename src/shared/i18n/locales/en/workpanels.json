@@ -231,7 +231,7 @@
       "intro": "[Auto run] This task is {{index}}/{{total}} of the plan \"{{plan}}\". It starts in a fresh session, so use the context below.",
       "memo": "Plan notes:",
       "notes": "Hand-off notes from earlier tasks:",
-      "report": "Do only this task. When you finish, end your last reply with a short summary of what you changed and how you verified it. If a human needs to decide something, say so and stop."
+      "report": "Do only this task. Nobody is watching: when your turn ends, a judge reads your report and decides the next step.\n- Make reversible choices (names, structure, small scope calls) yourself, following the plan notes and the task, and list them under decisions. Do not stop to ask about them.\n- Do things that are hard to undo or leave the machine (push, deploy, deleting data, publishing) only when the plan notes or the task say so. If one is needed and not allowed, write status: blocked and stop.\n- Before your turn ends, leave a report with the office-task command from the Agent Office task board instructions (without them, the path in the AGENT_OFFICE_TASK environment variable). Writing it again replaces it.\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: what you changed\nverified: checks you ran and their results\ndecisions: choices you made yourself\nneeds_human: (only when blocked) the one thing a human must decide, with the options\nEOF\n\nPut the same points briefly in your last reply, and do not end with offers or questions such as \"Want me to…?\""
     }
   }
 }

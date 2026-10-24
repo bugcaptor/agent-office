@@ -28,7 +28,8 @@ EOF
 - When the user tells you to mark a task as done (or confirms it is finished), run `{cli} --done <id>`. Completing a task unblocks the tasks that wait on it. Only do this on the user's instruction, never on your own judgment that the work is finished.
 - When the user tells you to delete a task, run `{cli} --delete <id>` (several ids allowed). Tasks that waited on it lose that prerequisite. Only delete on the user's instruction.
 - Changes are applied by the app within a few seconds, in the order you run them; you can target a task you just created.
-- After leaving tasks, tell the user in one line."#
+- After leaving tasks, tell the user in one line.
+- When an Agent Office auto-run prompt asks for a report, write it before your turn ends with `{cli} --report <task id> - <<'EOF'` … `EOF`, in the format the prompt gives. Writing it again replaces it."#
     )
 }
 

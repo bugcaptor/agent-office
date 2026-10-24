@@ -75,6 +75,8 @@ export interface AgentOfficeApi {
   sendWorkFollowUp(request: WorkFollowUpRequest): Promise<WorkSendResult>;
   /** 그 캐릭터 세션의 마지막 에이전트 응답(claude·codex 전사). 못 찾으면 null. */
   workLastReply(agentId: string, cli: string, cwd: string): Promise<string | null>;
+  /** 작업자가 `office-task --report`로 남긴 그 태스크의 보고. `since`(epoch ms) 전에 쓰였거나 없으면 null. */
+  autoRunReport(taskId: string, since: number): Promise<string | null>;
   autoRunJudge(request: AutoRunJudgeRequest): Promise<AutoRunJudgeResult>;
   scanWorkInbox(): Promise<InboxEntry[]>;
   ackWorkInbox(fileNames: string[]): Promise<void>;

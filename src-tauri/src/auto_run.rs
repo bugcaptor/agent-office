@@ -16,6 +16,59 @@ pub const MAX_REPLY_CHARS: usize = 32_000;
 const JUDGE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const JUDGE_STDOUT_MAX: usize = 4 * 1024 * 1024;
 
+/// 판단자에게 넘기는 보고 상한(문자). 넘으면 뒤쪽을 자른다 — 형식상 상태가 맨 앞이다.
+pub const MAX_REPORT_CHARS: usize = 16_000;
+/// 이보다 오래된 보고는 읽을 때 지운다. 끝난 실행의 보고가 쌓이지 않게 한다.
+const REPORT_KEEP: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+
+/// 작업자가 `office-task --report`로 남기는 보고가 사는 폴더. 수신함 아래에 두어
+/// Codex 쓰기 허용 경로와 Claude 사전 승인 명령을 그대로 쓴다. 수신함 scan은 파일만 본다.
+pub fn reports_dir(inbox: &Path) -> PathBuf {
+    inbox.join("reports")
+}
+
+/// 그 태스크의 보고. `since_ms`(이번 턴을 보낸 시각, epoch ms)보다 먼저 쓰인 것은 지난
+/// 턴의 보고이므로 읽지 않는다.
+pub fn read_report(inbox: &Path, task_id: &str, since_ms: u64, now: std::time::SystemTime) -> Option<String> {
+    let dir = reports_dir(inbox);
+    prune_reports(&dir, now);
+    if !crate::persistence::work_inbox::valid_task_id(task_id) {
+        return None;
+    }
+    let path = dir.join(format!("{task_id}.md"));
+    let modified = std::fs::symlink_metadata(&path).ok().filter(|m| m.is_file())?.modified().ok()?;
+    let written_ms = modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis();
+    if written_ms < u128::from(since_ms) {
+        return None;
+    }
+    let text = std::fs::read_to_string(&path).ok()?;
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    Some(if text.chars().count() > MAX_REPORT_CHARS {
+        format!("{}…", text.chars().take(MAX_REPORT_CHARS).collect::<String>())
+    } else {
+        text.to_string()
+    })
+}
+
+fn prune_reports(dir: &Path, now: std::time::SystemTime) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let old = entry
+            .metadata()
+            .ok()
+            .filter(|m| m.is_file())
+            .and_then(|m| m.modified().ok())
+            .and_then(|at| now.duration_since(at).ok())
+            .is_some_and(|age| age > REPORT_KEEP);
+        if old {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 /// 판단자의 출력 스키마. 결정 셋 중 하나와 지시·인계 메모.
 pub const JUDGE_SCHEMA: &str = r#"{"type":"object","properties":{"decision":{"type":"string","enum":["next","followup","stop"]},"message":{"type":"string"},"note":{"type":"string"}},"required":["decision","message","note"],"additionalProperties":false}"#;
 
@@ -271,6 +324,32 @@ mod tests {
 
     fn text(role: ItemRole, body: &str) -> TranscriptItem {
         TranscriptItem::speech(role, body)
+    }
+
+    #[test]
+    fn report_is_read_only_when_written_this_turn_and_old_ones_are_pruned() {
+        use std::time::{Duration, SystemTime, UNIX_EPOCH};
+        let inbox = tempfile::tempdir().unwrap();
+        let dir = reports_dir(inbox.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        let at = |path: &Path, time: SystemTime| std::fs::File::options().write(true).open(path).unwrap().set_modified(time).unwrap();
+        let now = SystemTime::now();
+        let since = (now - Duration::from_secs(60)).duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+        std::fs::write(dir.join("t-1.md"), "  status: done\n").unwrap();
+        at(&dir.join("t-1.md"), now);
+        assert_eq!(read_report(inbox.path(), "t-1", since, now).as_deref(), Some("status: done"));
+        // 이번 턴을 보내기 전에 쓰인 보고는 지난 턴의 것이다.
+        at(&dir.join("t-1.md"), now - Duration::from_secs(120));
+        assert_eq!(read_report(inbox.path(), "t-1", since, now), None);
+        assert_eq!(read_report(inbox.path(), "../t-1", 0, now), None);
+        assert_eq!(read_report(inbox.path(), "t-missing", 0, now), None);
+        std::fs::write(dir.join("t-long.md"), "가".repeat(MAX_REPORT_CHARS + 5)).unwrap();
+        assert_eq!(read_report(inbox.path(), "t-long", 0, now).unwrap().chars().count(), MAX_REPORT_CHARS + 1);
+        std::fs::write(dir.join("t-old.md"), "old").unwrap();
+        at(&dir.join("t-old.md"), now - REPORT_KEEP - Duration::from_secs(1));
+        read_report(inbox.path(), "t-1", 0, now);
+        assert!(!dir.join("t-old.md").exists());
+        assert!(dir.join("t-1.md").exists());
     }
 
     #[test]

@@ -231,7 +231,7 @@
       "intro": "[Exécution auto] Cette tâche est la {{index}}/{{total}} du plan « {{plan}} ». Elle démarre dans une nouvelle session ; servez-vous du contexte ci-dessous.",
       "memo": "Notes du plan :",
       "notes": "Notes de passation des tâches précédentes :",
-      "report": "Ne faites que cette tâche. À la fin, terminez votre dernière réponse par un court résumé de ce que vous avez changé et de la façon dont vous l'avez vérifié. Si une personne doit décider, dites-le et arrêtez-vous."
+      "report": "Ne faites que cette tâche. Personne ne surveille : à la fin de votre tour, un juge lit votre rapport et décide de la suite.\n- Faites vous-même les choix réversibles (noms, structure, petites décisions de périmètre) selon les notes du plan et la tâche, et listez-les sous decisions. Ne vous arrêtez pas pour les demander.\n- Ne faites ce qui est difficile à annuler ou sort de la machine (push, déploiement, suppression de données, publication) que si les notes du plan ou la tâche le demandent. Si c'est nécessaire sans être permis, écrivez status: blocked et arrêtez-vous.\n- Avant la fin de votre tour, laissez un rapport avec la commande office-task des instructions du tableau de tâches Agent Office (à défaut, le chemin de la variable d'environnement AGENT_OFFICE_TASK). Le réécrire le remplace.\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: ce que vous avez changé\nverified: vérifications lancées et leurs résultats\ndecisions: choix faits par vous-même\nneeds_human: (seulement si blocked) la seule chose qu'une personne doit décider, avec les options\nEOF\n\nReprenez brièvement les mêmes points dans votre dernière réponse et ne terminez pas par une offre ou une question comme « Voulez-vous que… ? »"
     }
   }
 }

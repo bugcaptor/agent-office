@@ -294,6 +294,7 @@ office-task --edit <id> [--title <제목>] [--body <본문 | ->] [--to <이름|i
             [--after <id>... | --no-after | --add-after <id>... --remove-after <id>...]
 office-task --done <id>...
 office-task --delete <id>...
+office-task --report <id> [본문 | -]
 ```
 
 - 본문 자리의 `-`는 stdin을 읽는다. 여러 줄은 heredoc으로 넘긴다. `--` 뒤는 모두 제목·본문이다.
@@ -307,6 +308,7 @@ office-task --delete <id>...
 - `--list`는 앱 데이터 폴더(`AGENT_OFFICE_APP_DATA`, 없으면 수신함의 부모)의 `work-items.json`을 읽어 완료가 아닌 업무를 검토 대기 → 진행 중 → 할 일, 묶음 안 순서대로 한 줄씩 출력한다: `id  [status]  @담당 이름  제목  after: id들 (blocked)`. 담당 이름은 `profiles.json`에서 찾고, 제목이 비면 본문 앞 40자를 쓴다. `--all`이면 완료도 포함한다. 저장된 값의 제어문자는 터미널에 해석되지 않게 `\x1b`처럼 이스케이프해 찍는다. 앱이 아직 반영하지 않은 수신함 파일(새 업무·변경 요청)은 개수만 알린다. 디바운스 저장 전의 최신 편집은 보이지 않을 수 있다.
 - `--done`은 id(여러 개·쉼표 구분 가능)를 `work-items.json`과 수신함의 미처리 파일 `id`에서 찾는다. 하나라도 없으면 아무것도 쓰지 않고 1(`no such task`)로 끝난다. 이미 완료된 것은 stderr에 알리고 뺀다. 남은 id로 `done:` frontmatter만 있는 완료 요청 파일을 쓰고 완료 요청한 id를 한 줄씩 출력한다. 남은 게 없으면 쓰지 않고 0이다. 형식이 틀린 id·값 없음은 2다.
 - `--delete`는 `--done`과 같이 id를 확인하고 `delete:` 요청 파일을 쓴 뒤 id를 한 줄씩 출력한다. 함께 지우지 않는 후속 업무가 그 업무를 기다리고 있었으면 stderr에 `<후속 id> no longer wait(s) on <id>`를 알린다.
+- `--report`는 자동 진행 보고([auto-run-design.md](auto-run-design.md) §작업자 보고)다. 수신함 요청이 아니라 `work-inbox/reports/<id>.md` 하나를 덮어쓰고 아무것도 출력하지 않는다. 본문을 주지 않으면 stdin을 읽는다. 비었거나 제어문자가 있거나 64 KiB를 넘으면 1, id 형식 오류·인자 오류는 2다. 업무가 있는지는 확인하지 않는다. 수신함 scan은 파일만 보므로 하위 폴더가 요청으로 읽히지 않는다.
 - `--edit`는 준 필드만 담은 `edit:` 요청 파일을 쓰고 id를 출력한다. 대상은 보드나 수신함 미처리 파일에 있어야 한다(없으면 1). 보드에 있는 업무의 제목·본문이 모두 비게 되면 1, 바꿀 것이 없거나 `--status` 값이 틀리거나, `--after`와 `--no-after`를 함께 쓰거나, 교체(`--after`·`--no-after`)와 하나씩 변경(`--add-after`·`--remove-after`)을 섞거나, 자기 자신을 선행으로 걸면 2다. `--to`·선행 id 확인과 경고는 새 업무와 같다.
 - `--show`는 업무 하나의 id·상태·담당(이름과 id)·제목·선행(각 상태, 지워졌으면 `deleted`)·이 업무를 기다리는 업무(`waited on by`)와 본문 전체를 출력한다. 본문의 줄바꿈·탭은 그대로, 다른 제어문자는 이스케이프한다. 수신함에만 있는 업무는 앱이 가져간 뒤 다시 보라고 1로 끝난다.
 
