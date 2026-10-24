@@ -32,6 +32,7 @@ export default defineConfig({
     setupFiles: ["./src/test-setup.ts"],
     // Scaffold has no tests yet — treat that as a pass instead of a failure.
     passWithNoTests: true,
-    exclude: [...configDefaults.exclude, ".claude/**", ".superpowers/**"],
+    // 에이전트 도구 폴더(worktree 포함)엔 오래된 사본 테스트가 있으니 수집하지 않는다.
+    exclude: [...configDefaults.exclude, ".claude/**", ".superpowers/**", ".kilo/**", ".omo/**"],
   },
 });
