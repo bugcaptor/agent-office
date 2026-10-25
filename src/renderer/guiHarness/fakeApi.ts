@@ -44,6 +44,10 @@ const outputSubs = new Map<string, Set<(data: string, bytes: number) => void>>()
 const backlog = new Map(Object.entries(scenario.output));
 const sessions = new Map(scenario.adopted.map((s) => [s.agentId, s.sessionId]));
 let sessionSeq = 100;
+// Markdown 편집기(문서 뷰어 버튼 확인용). 어떤 경로든 같은 예시 문서를 돌려준다.
+const markdownSample = "# Doc viewer\n\n- [x] GFM table\n- [ ] Mermaid\n\n```mermaid\ngraph LR; A-->B\n```\n";
+/** `docViewOpen`이 받은 `root/relPath`(스크립트가 읽어 확인한다). */
+const docViewOpened: string[] = [];
 
 const byteLength = (data: string) => new TextEncoder().encode(data).length;
 
@@ -129,6 +133,10 @@ const impl: Partial<AgentOfficeApi> = {
   async setKeepAwake() {},
   async setMascotVisible() {},
   async workdirGitBranch() { return { isRepo: false, branch: null }; },
+  async markdownListFiles() { return { files: [{ relPath: "docs/plan.md", name: "plan.md" }], truncated: false }; },
+  async markdownReadFile() { return { content: markdownSample, version: "v1" }; },
+  async markdownWriteFile() { return { version: "v2" }; },
+  async docViewOpen(root, relPath) { docViewOpened.push(`${root}/${relPath}`); },
 
   // ── 캐릭터 그림 ── (없으면 시드로 절차 생성)
   async loadPortrait() { return null; },
@@ -215,4 +223,7 @@ Object.assign(harness, {
   notify,
   /** 스크립트에서 스토어를 직접 조작할 때(예: `openTerminal`). */
   store: async () => (await import("../store/appStore")).useAppStore,
+  /** Markdown 편집기 스토어(예: `openFile`). */
+  markdownStore: async () => (await import("../markdown/markdownStore")).useMarkdownStore,
+  docViewOpened,
 });

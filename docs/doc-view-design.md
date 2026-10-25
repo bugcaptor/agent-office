@@ -1,6 +1,6 @@
 # 문서 뷰어(`office-md`) 설계
 
-상태: 구현 중 (2026-10-25) — §구성 1 변환기(`doc_view.rs`)·§구성 2 CLI(`doc_view_cli.rs`, `--no-open`·종료 코드, 요청 파일 → 2초 대기 → 직접 열기 폴백)·§구성 3 앱 요청 감시(`doc_view::spawn_request_watcher`, 부팅 때 `gc`와 함께)·§구성 4 배선(shim·PATH·`AGENT_OFFICE_MD`·안내문·권한) 완료. 미리보기 버튼(§구성 5)과 설치 앱 실기가 남았다. CDN 고정 버전: highlight.js 11.12.0, mermaid 11.17.2. 구현을 마치면 이 문서를 "현재 구조" 매뉴얼로 고쳐 정본으로 올린다(계획 시제·미정 표기 제거, 실제 파일·심볼로 갱신).
+상태: 구현 중 (2026-10-25) — §구성 1 변환기(`doc_view.rs`)·§구성 2 CLI(`doc_view_cli.rs`, `--no-open`·종료 코드, 요청 파일 → 2초 대기 → 직접 열기 폴백)·§구성 3 앱 요청 감시(`doc_view::spawn_request_watcher`, 부팅 때 `gc`와 함께)·§구성 4 배선(shim·PATH·`AGENT_OFFICE_MD`·안내문·권한)·§구성 5 미리보기 버튼(`doc_view_open`, `gui:shot` 확인) 완료. 설치 앱 실기가 남았다. CDN 고정 버전: highlight.js 11.12.0, mermaid 11.17.2. 구현을 마치면 이 문서를 "현재 구조" 매뉴얼로 고쳐 정본으로 올린다(계획 시제·미정 표기 제거, 실제 파일·심볼로 갱신).
 
 작업 중 만든 Markdown 문서를 HTML로 바꿔 OS 기본 브라우저로 연다. Agent Office를 설치하면 사람은 앱 Markdown 미리보기의 버튼이나 세션 터미널의 `office-md`로 바로 쓰고, 에이전트는 시스템 프롬프트 안내문으로 이 명령을 알아 "문서 보여 줘"라는 요청에 최신 문서를 띄운다.
 
@@ -79,14 +79,14 @@ office-md --no-open docs/a.md   # 변환만 하고 HTML 경로를 출력(스크�
 
 ### 5. 앱 Markdown 미리보기 버튼
 
-- IPC 커맨드 `doc_view_open(path)`(`src-tauri/src/ipc/commands/`): 디스크의 파일을 변환해 캐시에 쓰고 opener로 바로 연다(앱 안이므로 요청 폴더를 거치지 않는다).
-- `MarkdownEditorOverlay.tsx` 상단 바에 **브라우저로 열기** 버튼. 저장 안 된 변경이 있으면 버튼 툴팁으로 "저장된 내용으로 엽니다"를 알린다(편집 중 버퍼를 넘기지 않는다 — 결과가 파일과 어긋나지 않게).
-- 문자열은 i18n 6개 언어 카탈로그에 넣는다. 가짜 백엔드(`gui:shot`)에 IPC 스텁을 더한다.
+- IPC 커맨드 `doc_view_open(root, relPath)`(`src-tauri/src/ipc/commands/doc_view.rs`): 다른 Markdown 커맨드처럼 `markdown::resolve_within_root`로 작업 폴더 경계를 검증하고 `.md`·`.markdown`만 받는다. 변환·캐시 쓰기는 CLI와 같은 `doc_view::render_to_cache`이고, 결과를 `tauri-plugin-opener`로 바로 연다(앱 안이므로 요청 폴더를 거치지 않는다). 오류 접두사: `path-outside-root`·`file-not-found`·`not-a-markdown-file`·`open-failed`.
+- `MarkdownEditorOverlay.tsx` 상단 바(소스·미리보기 탭 뒤)에 **브라우저로 열기** 버튼(`markdown.openInBrowser`). 툴팁은 평소 `markdown.openInBrowserHint`("기본 브라우저에서 HTML로 엽니다"), 저장 안 된 변경이 있으면 `markdown.openInBrowserSaved`("저장된 내용으로 엽니다…")다. 편집 중 버퍼를 넘기지 않는다 — 결과가 파일과 어긋나지 않게. 실패는 다른 링크 열기처럼 콘솔 경고만 남긴다.
+- 문자열은 6개 언어 `workdir.json`에 있다. 가짜 백엔드(`guiHarness/fakeApi.ts`)에 `markdownListFiles`·`markdownReadFile`·`markdownWriteFile`·`docViewOpen` 스텁과 `__guiHarness.markdownStore`·`docViewOpened`가 있고, `scripts/gui-steps/doc-view.mjs`가 편집기를 열어 버튼·툴팁·호출 경로를 찍는다(`npm run gui:shot -- --scenario office --script scripts/gui-steps/doc-view.mjs`).
 
 ## 테스트·확인
 
 - Rust 단위: 변환(표·체크리스트·각주·mermaid 블록·제목 id), 원문 HTML 거르기, 상대 링크·이미지 재작성, `cache_path` 안정성, `latest_markdown`(gitignore 존중), CLI 종료 코드·출력, 요청 감시의 경로 검증, shim 본문·안내문·권한 조각·writable_roots.
-- vitest: 버튼이 `doc_view_open`을 현재 파일 경로로 부르는지.
+- vitest: 버튼이 `doc_view_open`을 현재 파일 경로로 부르는지, 더티일 때 툴팁(`MarkdownEditorOverlay.test.tsx`). Rust: `ipc::commands::doc_view` 테스트가 캐시 경로와 경계·확장자 거부를 본다.
 - 화면: `npm run gui:shot`으로 버튼 확인. 실기: 설치 앱에서 Claude·Codex 세션에 "방금 문서 브라우저로 보여 줘" → 기본 브라우저가 열리는지, 다크 모드·Mermaid·오프라인 표시.
 
 ## 범위 밖

@@ -92,18 +92,13 @@ pub fn run_with(
         Ok(path) => path,
         Err(e) => return fail(err, &format!("failed to resolve {}: {e}", source.display())),
     };
-    let markdown = match std::fs::read(&source) {
-        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-        Err(e) => return fail(err, &format!("failed to read {}: {e}", source.display())),
-    };
     let Some(data_dir) = env.app_data.as_deref() else {
         return fail(err, "AGENT_OFFICE_APP_DATA is not set and the app data folder is unknown");
     };
-    let html_path = doc_view::cache_path(data_dir, &source);
-    let html = doc_view::render_document(&source, &markdown);
-    if let Err(e) = crate::persistence::durable::write_atomic(&html_path, html.as_bytes()) {
-        return fail(err, &format!("failed to write {}: {e}", html_path.display()));
-    }
+    let html_path = match doc_view::render_to_cache(data_dir, &source) {
+        Ok(path) => path,
+        Err(e) => return fail(err, &e),
+    };
     // 열기에 실패해도 경로는 남겨 에이전트가 사용자에게 알려 줄 수 있게 한다.
     let _ = writeln!(out, "{}", html_path.display());
     if no_open {

@@ -36,6 +36,8 @@ pub mod settings;
 // 요약기용 API 키 저장소(존재 여부만 렌더러로).
 mod api_keys;
 mod usage;
+// 문서 뷰어의 미리보기 버튼(docs/doc-view-design.md §구성 5).
+mod doc_view;
 
 // Re-imported here (in addition to each domain file's own scoped `use`s)
 // purely so `commands/tests.rs`'s `use super::*;` keeps resolving the bare
@@ -58,6 +60,7 @@ pub(crate) use session::*;
 pub(crate) use settings::*;
 pub(crate) use api_keys::*;
 pub(crate) use usage::*;
+pub(crate) use doc_view::*;
 
 #[cfg(test)]
 mod tests;

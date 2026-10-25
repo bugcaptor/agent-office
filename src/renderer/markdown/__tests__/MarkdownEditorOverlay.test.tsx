@@ -8,11 +8,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { readFile, writeFile, openUrl, openLocalLink } = vi.hoisted(() => ({
+const { readFile, writeFile, openUrl, openLocalLink, docViewOpen } = vi.hoisted(() => ({
   readFile: vi.fn().mockResolvedValue({ content: "hello", version: "v1" }),
   writeFile: vi.fn().mockResolvedValue({ version: "v2" }),
   openUrl: vi.fn().mockResolvedValue(undefined),
   openLocalLink: vi.fn().mockResolvedValue(undefined),
+  docViewOpen: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
 vi.mock("../../ipc/tauriApi", () => ({
@@ -21,6 +22,7 @@ vi.mock("../../ipc/tauriApi", () => ({
     markdownReadFile: (...a: unknown[]) => readFile(...a),
     markdownWriteFile: (...a: unknown[]) => writeFile(...a),
     markdownOpenLocalLink: (...a: unknown[]) => openLocalLink(...a),
+    docViewOpen: (...a: unknown[]) => docViewOpen(...a),
   },
 }));
 
@@ -52,6 +54,7 @@ function seedEditor(content = "hello") {
 beforeEach(() => {
   useMarkdownStore.setState(initialState, true);
   writeFile.mockClear();
+  docViewOpen.mockClear();
 });
 afterEach(() => cleanup());
 
@@ -141,6 +144,24 @@ describe("MarkdownEditorOverlay", () => {
     await vi.waitFor(() => expect(useMarkdownStore.getState().editor?.relPath).toBe("docs/next.md"));
     useMarkdownStore.getState().goBack();
     expect(useMarkdownStore.getState().editor?.content).toBe("hello");
+  });
+
+  it("브라우저로 열기는 현재 파일 경로로 doc_view_open을 부른다", () => {
+    seedEditor("hello");
+    render(<MarkdownEditorOverlay />);
+    const button = screen.getByRole("button", { name: "브라우저로 열기" });
+    expect(button.getAttribute("title")).toBe("기본 브라우저에서 HTML로 엽니다");
+    fireEvent.click(button);
+    expect(docViewOpen).toHaveBeenCalledWith("/root", "docs/x.md");
+  });
+
+  it("더티면 브라우저로 열기 툴팁이 저장된 내용으로 연다고 알린다", () => {
+    seedEditor("edited");
+    render(<MarkdownEditorOverlay />);
+    const button = screen.getByRole("button", { name: "브라우저로 열기" });
+    expect(button.getAttribute("title")).toMatch(/^저장된 내용으로 엽니다/);
+    fireEvent.click(button);
+    expect(docViewOpen).toHaveBeenCalledWith("/root", "docs/x.md");
   });
 
   it("충돌 플래그가 서면 충돌 해결 다이얼로그가 뜬다", () => {

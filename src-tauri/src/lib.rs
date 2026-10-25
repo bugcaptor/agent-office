@@ -797,6 +797,7 @@ pub fn run() {
             markdown::markdown_read_file,
             markdown::markdown_write_file,
             markdown::markdown_open_local_link,
+            ipc::commands::doc_view_open,
             workdir::workdir_list_files,
             workdir::workdir_search_files,
             workdir::workdir_git_status,

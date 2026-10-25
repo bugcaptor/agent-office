@@ -82,7 +82,7 @@ fn version_token(meta: &std::fs::Metadata) -> String {
 /// canonical target)을 돌려준다. target이 root 하위가 아니면(절대경로·`..`·
 /// 심링크 탈출) 에러. canonicalize는 대상이 실존해야 하므로, 없는 파일은
 /// 여기서 "찾을 수 없음" 취지의 에러가 된다.
-fn resolve_within_root(root: &str, rel_path: &str) -> Result<(PathBuf, PathBuf), String> {
+pub(crate) fn resolve_within_root(root: &str, rel_path: &str) -> Result<(PathBuf, PathBuf), String> {
     let canon_root =
         std::fs::canonicalize(root).map_err(|e| format!("root-not-found: {root} ({e})"))?;
     let joined = canon_root.join(rel_path);

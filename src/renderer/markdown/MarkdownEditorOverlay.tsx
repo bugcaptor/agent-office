@@ -3,6 +3,7 @@
 // 마크다운 편집기 오버레이(이슈 #10). 상단 바(relPath·더티 ●·소스/미리보기 토글·
 // 닫기), 본문은 소스 모드=모노스페이스 textarea, 미리보기 모드=marked+DOMPurify
 // 렌더(raw HTML sanitize, 내부 Markdown 링크 탐색, 외부 URL·로컬 파일 OS 위임).
+// 브라우저로 열기 버튼은 저장된 파일을 문서 뷰어 HTML로 바꿔 기본 브라우저로 연다.
 // Cmd/Ctrl+S 저장, Cmd/Ctrl+P 팔레트 재오픈, Esc 닫기(더티면 확인 다이얼로그).
 // 저장 충돌(CONFLICT)은 다시 불러오기/덮어쓰기/취소 다이얼로그로 해결한다.
 //
@@ -126,6 +127,13 @@ export function MarkdownEditorOverlay() {
     }
   };
 
+  // 문서 뷰어: 편집 중 버퍼가 아니라 디스크의 파일을 변환한다(더티면 툴팁으로 알림).
+  const openInBrowser = () => {
+    void tauriApi
+      .docViewOpen(editor.root, editor.relPath)
+      .catch((err) => console.warn("markdown: open in browser failed", err));
+  };
+
   // 더티 가드 다이얼로그에서 저장한 뒤 닫기 또는 요청한 문서로 이동한다.
   const saveThenContinue = async () => {
     const res = await save();
@@ -229,6 +237,14 @@ export function MarkdownEditorOverlay() {
               onClick={() => setMode("preview")}
             >
               {t("markdown.tabPreview")}
+            </button>
+            <button
+              type="button"
+              className="md-tab"
+              title={t(dirty ? "markdown.openInBrowserSaved" : "markdown.openInBrowserHint")}
+              onClick={openInBrowser}
+            >
+              {t("markdown.openInBrowser")}
             </button>
             <button
               type="button"

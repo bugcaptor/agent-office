@@ -142,6 +142,8 @@ export const Commands = {
   markdownReadFile: "markdown_read_file",
   markdownWriteFile: "markdown_write_file",
   markdownOpenLocalLink: "markdown_open_local_link",
+  // 문서 뷰어(docs/doc-view-design.md §구성 5): 저장된 파일을 HTML로 바꿔 기본 브라우저로 연다.
+  docViewOpen: "doc_view_open",
   // 작업 폴더 보기(이슈 #11) — 에이전트 cwd를 root로 전체 파일 목록과, 파일별
   // git 상태(porcelain v2)를 돌려준다. git 조회의 1차 탈출구는 사용자 취소
   // (`opId` + workdirGitCancel)이고, 타임아웃(status 120s/조회 300s)은 매달린

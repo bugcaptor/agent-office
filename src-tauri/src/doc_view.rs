@@ -267,6 +267,18 @@ pub fn cache_path(data_dir: &Path, source: &Path) -> PathBuf {
     data_dir.join(CACHE_DIR).join(format!("{}-{stem}.html", &hash[..12]))
 }
 
+/// 디스크의 `source`(정규화된 절대 경로)를 읽어 변환하고 `cache_path`에 쓴 뒤 그 경로를
+/// 돌려준다. `agent-office md`와 미리보기 버튼(`doc_view_open`, §구성 5)이 함께 쓴다.
+pub fn render_to_cache(data_dir: &Path, source: &Path) -> Result<PathBuf, String> {
+    let markdown = std::fs::read(source)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .map_err(|e| format!("failed to read {}: {e}", source.display()))?;
+    let html_path = cache_path(data_dir, source);
+    crate::persistence::durable::write_atomic(&html_path, render_document(source, &markdown).as_bytes())
+        .map_err(|e| format!("failed to write {}: {e}", html_path.display()))?;
+    Ok(html_path)
+}
+
 pub fn has_markdown_extension(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())

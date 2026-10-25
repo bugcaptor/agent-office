@@ -316,6 +316,9 @@ export interface AgentOfficeApi {
   ): Promise<MarkdownWriteResult>;
   /** 작업 폴더 경계를 검증한 뒤 비-Markdown 상대 링크를 OS 기본 프로그램으로 연다. */
   markdownOpenLocalLink(root: string, relPath: string): Promise<void>;
+  /** 작업 폴더 경계를 검증한 뒤 디스크의 Markdown 파일을 HTML로 바꿔 기본 브라우저로 연다
+   * (문서 뷰어). 편집 중 버퍼가 아니라 저장된 내용을 쓴다. */
+  docViewOpen(root: string, relPath: string): Promise<void>;
   /** `root` 하위의 전체 파일 목록(이슈 #11). `includeIgnored`가 false(기본)면
    * `.gitignore`를 존중하고 hidden을 스킵한다. true면 무시 규칙·hidden 스킵을
    * 모두 끄고 디스크에 있는 그대로를 담는다(`.git/` 내부만은 언제나 제외).
