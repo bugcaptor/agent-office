@@ -1,6 +1,6 @@
 # 문서 뷰어(`office-md`) 설계
 
-상태: 구현 중 (2026-10-25) — §구성 1 변환기(`doc_view.rs`)·§구성 2 CLI(`doc_view_cli.rs`, `--no-open`·종료 코드) 완료. CLI 열기는 아직 OS 기본 브라우저를 직접 부르는 폴백만 있고, 요청 파일·앱 감시(§구성 2 열기·§구성 3)부터 남았다. CDN 고정 버전: highlight.js 11.12.0, mermaid 11.17.2. 구현을 마치면 이 문서를 "현재 구조" 매뉴얼로 고쳐 정본으로 올린다(계획 시제·미정 표기 제거, 실제 파일·심볼로 갱신).
+상태: 구현 중 (2026-10-25) — §구성 1 변환기(`doc_view.rs`)·§구성 2 CLI(`doc_view_cli.rs`, `--no-open`·종료 코드, 요청 파일 → 2초 대기 → 직접 열기 폴백)·§구성 3 앱 요청 감시(`doc_view::spawn_request_watcher`, 부팅 때 `gc`와 함께) 완료. 배선(§구성 4)·미리보기 버튼(§구성 5)부터 남았다. CDN 고정 버전: highlight.js 11.12.0, mermaid 11.17.2. 구현을 마치면 이 문서를 "현재 구조" 매뉴얼로 고쳐 정본으로 올린다(계획 시제·미정 표기 제거, 실제 파일·심볼로 갱신).
 
 작업 중 만든 Markdown 문서를 HTML로 바꿔 OS 기본 브라우저로 연다. Agent Office를 설치하면 사람은 앱 Markdown 미리보기의 버튼이나 세션 터미널의 `office-md`로 바로 쓰고, 에이전트는 시스템 프롬프트 안내문으로 이 명령을 알아 "문서 보여 줘"라는 요청에 최신 문서를 띄운다.
 
@@ -57,11 +57,15 @@ office-md --no-open docs/a.md   # 변환만 하고 HTML 경로를 출력(스크�
   1. `doc-view/open/`에 요청 파일(`<시각>-<난수>.json`, `{ "html": "<절대 경로>" }`)을 임시 이름으로 쓰고 이름을 바꾼다(`write_atomic`).
   2. 앱이 살아 있으면(아래 감시가 2초 안에 요청을 지운다) 끝.
   3. 2초 안에 안 지워지면 요청을 지우고 직접 연다(macOS `open`, Windows `cmd /c start ""`, Linux `xdg-open`). 이것도 실패하면 HTML 경로와 함께 1로 끝내 에이전트가 사용자에게 경로를 알려 주게 한다.
+  - 요청 파일을 **지우는 데 성공한 쪽이 연다**(앱·CLI 같은 규칙). 2초 경계에서 앱과 CLI가 겹쳐도 한쪽만 연다. 요청을 쓸 수 없으면(폴더 권한 등) 기다리지 않고 바로 직접 연다.
+  - 심볼: `doc_view::write_open_request`(이름 `<유닉스 밀리초>-<uuid 앞 8자>.json`), `doc_view_cli::open_via_app`.
 
 ### 3. 앱 쪽 열기 — 요청 감시
 
 - 앱 부팅 때 `doc-view/open/`을 1초 간격으로 보는 스레드를 띄운다(업무 수신함 감시와 별개 — 업무 패널이 꺼져 있어도 동작해야 한다).
 - 요청의 `html`이 `doc-view/` 안의 실재 파일일 때만 `tauri-plugin-opener`로 기본 브라우저에 연다. 그 밖의 경로는 무시하고 지운다(임의 파일·URL 실행 방지).
+  - 검증(`doc_view::resolve_open_request`): 절대 경로, 정규화(`canonicalize`) 결과의 부모가 정규화한 `doc-view/` 자체(하위 폴더·`..`·심볼릭 링크로 빠지는 경로 거부), 확장자 `.html`, 실재 파일. URL·상대 경로·깨진 JSON은 거부.
+  - 한 번의 훑기(`doc_view::take_open_requests`)는 `*.json`만 집는다 — `write_atomic`의 임시 파일(`….json.tmp-<uuid>`)은 건너뛰고, 남으면 부팅 `gc`가 60초 뒤 지운다.
 
 ### 4. 배선 — shim·PATH·안내문·권한
 

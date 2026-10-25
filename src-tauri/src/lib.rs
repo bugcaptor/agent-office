@@ -364,6 +364,22 @@ pub fn run() {
                     .name("doc-view-gc".into())
                     .spawn(move || doc_view::gc(&data_dir));
             }
+            // `office-md`가 남긴 열기 요청을 1초마다 받아 기본 브라우저로 연다. CLI가
+            // 샌드박스 안이라 직접 못 여는 경우를 앱이 대신한다(업무 패널 설정과 무관).
+            {
+                let handle = handle.clone();
+                doc_view::spawn_request_watcher(
+                    data_dir.clone(),
+                    Duration::from_secs(1),
+                    move |html| {
+                        use tauri_plugin_opener::OpenerExt;
+                        handle
+                            .opener()
+                            .open_path(html.to_string_lossy().into_owned(), None::<&str>)
+                            .map_err(|e| e.to_string())
+                    },
+                );
+            }
 
             // 로그인 셸 env 1회 캡처(#58). 요약기·이미지 생성 스폰 직전에도 부르지만
             // (멱등) 부팅에서 미리 해 둬야 세션 로그의 JSONL 전사 소스와 사용량

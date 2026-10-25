@@ -317,6 +317,74 @@ fn gc_at(data_dir: &Path, now: SystemTime) -> usize {
         + remove_older(&cache.join(REQUEST_DIR), now, REQUEST_TTL, |_| true)
 }
 
+/// 열기 요청 폴더 `doc-view/open/`.
+pub fn request_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join(CACHE_DIR).join(REQUEST_DIR)
+}
+
+/// CLI가 앱에 "이 HTML을 열어 달라"는 요청 `open/<유닉스 밀리초>-<난수 8자>.json`
+/// (`{ "html": "<절대 경로>" }`)을 원자적으로 쓰고 그 경로를 돌려준다. 쓰는 중의 임시
+/// 파일은 `.json`으로 끝나지 않아 감시가 집지 않는다.
+pub fn write_open_request(data_dir: &Path, html: &Path) -> std::io::Result<PathBuf> {
+    let millis = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis();
+    let nonce = uuid::Uuid::new_v4().simple().to_string();
+    let path = request_dir(data_dir).join(format!("{millis}-{}.json", &nonce[..8]));
+    let body = serde_json::json!({ "html": html.to_string_lossy() }).to_string();
+    crate::persistence::durable::write_atomic(&path, body.as_bytes())?;
+    Ok(path)
+}
+
+/// 요청 본문이 가리키는 HTML. `doc-view/` 바로 아래 실재하는 `.html` 파일일 때만
+/// 정규화한 경로를 돌려준다. 그 밖(폴더 밖·`..`·심볼릭 링크로 빠지는 경로, URL, 다른
+/// 확장자, 깨진 JSON)은 None — 앱이 임의 파일·URL을 열지 않게 한다.
+pub fn resolve_open_request(data_dir: &Path, body: &[u8]) -> Option<PathBuf> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let html = Path::new(value.get("html")?.as_str()?);
+    if !html.is_absolute() {
+        return None;
+    }
+    let target = std::fs::canonicalize(html).ok()?;
+    let cache = std::fs::canonicalize(data_dir.join(CACHE_DIR)).ok()?;
+    let is_html = target.extension().is_some_and(|e| e.eq_ignore_ascii_case("html"));
+    (target.parent() == Some(cache.as_path()) && is_html && target.is_file()).then_some(target)
+}
+
+/// 앱 쪽 한 번의 훑기: `open/`의 `*.json` 요청을 읽어 지우고, 지우기에 성공한 것 중 유효한
+/// HTML만 돌려준다. 지우기 성공을 "내가 맡았다"로 삼아 CLI 폴백과 둘 다 여는 일을 막는다.
+pub fn take_open_requests(data_dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(request_dir(data_dir)) else { return vec![] };
+    let mut names: Vec<_> = entries
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".json"))
+        .map(|e| e.path())
+        .collect();
+    names.sort();
+    names
+        .into_iter()
+        .filter_map(|path| {
+            let body = std::fs::read(&path).ok();
+            std::fs::remove_file(&path).ok()?;
+            resolve_open_request(data_dir, &body?)
+        })
+        .collect()
+}
+
+/// 앱 부팅 때 띄우는 요청 감시 스레드(§구성 3). 업무 패널 설정과 무관하게 돈다.
+pub fn spawn_request_watcher(
+    data_dir: PathBuf,
+    interval: Duration,
+    open: impl Fn(&Path) -> Result<(), String> + Send + 'static,
+) {
+    let _ = std::thread::Builder::new().name("doc-view-open".into()).spawn(move || loop {
+        for html in take_open_requests(&data_dir) {
+            if let Err(error) = open(&html) {
+                eprintln!("agent-office: failed to open {}: {error}", html.display());
+            }
+        }
+        std::thread::sleep(interval);
+    });
+}
+
 fn remove_older(dir: &Path, now: SystemTime, ttl: Duration, matches: impl Fn(&str) -> bool) -> usize {
     let Ok(entries) = std::fs::read_dir(dir) else { return 0 };
     let mut removed = 0;
@@ -517,5 +585,71 @@ mod tests {
         assert!(!cache.join("open/stale.json").exists());
         assert!(cache.join("open/pending.json").exists());
         assert_eq!(gc(&dir.path().join("missing")), 0);
+    }
+
+    fn request(html: &str) -> Vec<u8> {
+        serde_json::json!({ "html": html }).to_string().into_bytes()
+    }
+
+    #[test]
+    fn open_request_accepts_only_existing_html_directly_in_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path();
+        let cache = data.join(CACHE_DIR);
+        let good = cache.join("abc-plan.html");
+        touch(&good, Duration::ZERO);
+        touch(&cache.join("notes.txt"), Duration::ZERO);
+        touch(&request_dir(data).join("nested.html"), Duration::ZERO);
+        touch(&data.join("outside.html"), Duration::ZERO);
+        let canonical = fs::canonicalize(&good).unwrap();
+        assert_eq!(resolve_open_request(data, &request(&good.to_string_lossy())), Some(canonical.clone()));
+        let dotted = cache.join("../doc-view/abc-plan.html");
+        assert_eq!(resolve_open_request(data, &request(&dotted.to_string_lossy())), Some(canonical));
+        let rejected = [
+            request(&data.join("outside.html").to_string_lossy()),
+            request(&cache.join("../outside.html").to_string_lossy()),
+            request(&cache.join("notes.txt").to_string_lossy()),
+            request(&request_dir(data).join("nested.html").to_string_lossy()),
+            request(&cache.join("missing.html").to_string_lossy()),
+            request("abc-plan.html"),
+            request("https://example.com/a.html"),
+            request(&format!("file://{}", good.display())),
+            br#"{"html": 1}"#.to_vec(),
+            b"{broken".to_vec(),
+        ];
+        for body in rejected {
+            assert_eq!(resolve_open_request(data, &body), None, "{}", String::from_utf8_lossy(&body));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_request_rejects_symlink_escaping_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join(CACHE_DIR);
+        touch(&dir.path().join("secret.html"), Duration::ZERO);
+        fs::create_dir_all(&cache).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("secret.html"), cache.join("link.html")).unwrap();
+        assert_eq!(resolve_open_request(dir.path(), &request(&cache.join("link.html").to_string_lossy())), None);
+    }
+
+    #[test]
+    fn take_open_requests_consumes_json_and_skips_temp_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path();
+        let html = data.join(CACHE_DIR).join("abc-plan.html");
+        touch(&html, Duration::ZERO);
+        let first = write_open_request(data, &html).unwrap();
+        let name = first.file_name().unwrap().to_string_lossy().into_owned();
+        let (millis, nonce) = name.strip_suffix(".json").unwrap().split_once('-').unwrap();
+        assert!(millis.parse::<u128>().is_ok() && nonce.len() == 8, "{name}");
+        fs::write(request_dir(data).join("0-bad.json"), request("https://example.com")).unwrap();
+        fs::write(request_dir(data).join("x.json.tmp-123"), request(&html.to_string_lossy())).unwrap();
+        assert_eq!(take_open_requests(data), vec![fs::canonicalize(&html).unwrap()]);
+        let left: Vec<String> =
+            fs::read_dir(request_dir(data)).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        assert_eq!(left, vec!["x.json.tmp-123".to_string()], "invalid requests are removed too");
+        assert!(take_open_requests(data).is_empty());
+        assert!(take_open_requests(&data.join("missing")).is_empty());
     }
 }

@@ -1,10 +1,12 @@
 //! `agent-office md` 오프라인 서브커맨드(docs/doc-view-design.md §구성 2). GUI·tokio 없이
 //! Markdown 하나를 HTML로 바꿔 앱 캐시 `doc-view/`에 쓰고 경로를 찍은 뒤 기본 브라우저로
-//! 연다. 종료 코드: 0 성공, 1 파일·변환·열기 실패, 2 사용법 오류.
+//! 연다. 열기는 먼저 `doc-view/open/`에 요청을 써서 샌드박스 밖의 앱에 맡기고, 앱이
+//! 2초 안에 가져가지 않으면 직접 연다. 종료 코드: 0 성공, 1 파일·변환·열기 실패, 2 사용법 오류.
 
 use crate::doc_view;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 const USAGE: &str = "usage: office-md [--no-open] <file.md>
        office-md [--no-open] --latest [dir]
@@ -15,6 +17,9 @@ Converts a Markdown file to HTML and opens it in the default browser.
 
 const EXIT_FAIL: i32 = 1;
 const EXIT_USAGE: i32 = 2;
+/// 앱 감시는 1초 간격이라 2초면 한 번은 훑는다.
+const APP_WAIT: Duration = Duration::from_secs(2);
+const APP_POLL: Duration = Duration::from_millis(100);
 
 /// 실행 환경. 테스트가 프로세스 env·현재 폴더를 건드리지 않도록 값으로 받는다.
 pub struct MdEnv {
@@ -32,7 +37,8 @@ impl MdEnv {
 }
 
 pub fn run(args: Vec<String>) -> i32 {
-    run_with(&args, &MdEnv::from_process(), &mut std::io::stdout(), &mut std::io::stderr(), &mut open_in_browser)
+    let mut open = |data_dir: &Path, html: &Path| open_via_app(data_dir, html, APP_WAIT, APP_POLL, &mut open_in_browser);
+    run_with(&args, &MdEnv::from_process(), &mut std::io::stdout(), &mut std::io::stderr(), &mut open)
 }
 
 pub fn run_with(
@@ -40,7 +46,7 @@ pub fn run_with(
     env: &MdEnv,
     out: &mut dyn Write,
     err: &mut dyn Write,
-    open: &mut dyn FnMut(&Path) -> Result<(), String>,
+    open: &mut dyn FnMut(&Path, &Path) -> Result<(), String>,
 ) -> i32 {
     let mut no_open = false;
     let mut latest = false;
@@ -103,14 +109,37 @@ pub fn run_with(
     if no_open {
         return 0;
     }
-    match open(&html_path) {
+    match open(data_dir, &html_path) {
         Ok(()) => 0,
         Err(e) => fail(err, &format!("failed to open the browser: {e}")),
     }
 }
 
-/// OS 기본 브라우저로 직접 연다. 앱에 맡기는 요청 경로(§구성 2·3)는 다음 단계에서
-/// 이 앞에 붙고, 이 함수는 앱이 없을 때의 폴백으로 남는다.
+/// 앱에 열기를 맡긴다(§구성 2). 요청을 쓰고 `wait` 동안 앱이 지우기를 기다린다. 그 뒤에도
+/// 남아 있으면 요청을 지우고 `direct`로 직접 연다. 지우기 성공을 "내가 맡았다"로 삼으므로
+/// (앱도 같은 규칙) 둘이 함께 여는 일은 없다. 요청을 쓸 수 없으면 바로 직접 연다.
+fn open_via_app(
+    data_dir: &Path,
+    html: &Path,
+    wait: Duration,
+    poll: Duration,
+    direct: &mut dyn FnMut(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    let Ok(request) = doc_view::write_open_request(data_dir, html) else { return direct(html) };
+    let deadline = Instant::now() + wait;
+    while Instant::now() < deadline {
+        if !request.exists() {
+            return Ok(());
+        }
+        std::thread::sleep(poll);
+    }
+    match std::fs::remove_file(&request) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        _ => direct(html),
+    }
+}
+
+/// OS 기본 브라우저로 직접 연다 — 앱이 떠 있지 않을 때의 폴백.
 fn open_in_browser(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let mut command = std::process::Command::new("open");
@@ -155,7 +184,7 @@ mod tests {
         let env = MdEnv { app_data: app_data.map(Path::to_path_buf), cwd: cwd.to_path_buf() };
         let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
         let (mut out, mut err, mut opened) = (vec![], vec![], vec![]);
-        let code = run_with(&args, &env, &mut out, &mut err, &mut |path: &Path| {
+        let code = run_with(&args, &env, &mut out, &mut err, &mut |_data: &Path, path: &Path| {
             opened.push(path.to_path_buf());
             open_result.clone()
         });
@@ -243,5 +272,72 @@ mod tests {
         fs::write(work.path().join("-dash.md"), "x").unwrap();
         let dashed = run_in(work.path(), Some(data.path()), &["--no-open", "--", "-dash.md"], Ok(()));
         assert_eq!(dashed.code, 0, "{}", dashed.err);
+    }
+
+    fn cached_html(data: &Path) -> PathBuf {
+        let html = data.join(doc_view::CACHE_DIR).join("abc-plan.html");
+        fs::create_dir_all(html.parent().unwrap()).unwrap();
+        fs::write(&html, "<html>").unwrap();
+        html
+    }
+
+    fn requests(data: &Path) -> Vec<PathBuf> {
+        fs::read_dir(doc_view::request_dir(data)).map(|d| d.map(|e| e.unwrap().path()).collect()).unwrap_or_default()
+    }
+
+    #[test]
+    fn app_takes_request_so_cli_does_not_open_directly() {
+        let data = tempfile::tempdir().unwrap();
+        let html = cached_html(data.path());
+        let app_data = data.path().to_path_buf();
+        let app = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                let taken = doc_view::take_open_requests(&app_data);
+                if !taken.is_empty() || Instant::now() > deadline {
+                    return taken;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        });
+        let mut direct = vec![];
+        let result = open_via_app(data.path(), &html, Duration::from_secs(5), Duration::from_millis(10), &mut |p: &Path| {
+            direct.push(p.to_path_buf());
+            Ok(())
+        });
+        assert_eq!(result, Ok(()));
+        assert!(direct.is_empty(), "the app opened it");
+        assert_eq!(app.join().unwrap(), vec![fs::canonicalize(&html).unwrap()]);
+        assert!(requests(data.path()).is_empty());
+    }
+
+    #[test]
+    fn without_app_cli_removes_request_and_opens_directly() {
+        let data = tempfile::tempdir().unwrap();
+        let html = cached_html(data.path());
+        for outcome in [Ok(()), Err("no browser".to_string())] {
+            let mut direct = vec![];
+            let result = open_via_app(data.path(), &html, Duration::from_millis(50), Duration::from_millis(10), &mut |p: &Path| {
+                direct.push(p.to_path_buf());
+                outcome.clone()
+            });
+            assert_eq!(result, outcome);
+            assert_eq!(direct, vec![html.clone()]);
+            assert!(requests(data.path()).is_empty(), "the request is withdrawn");
+        }
+    }
+
+    #[test]
+    fn unwritable_request_folder_falls_back_to_direct_open() {
+        let data = tempfile::tempdir().unwrap();
+        let html = cached_html(data.path());
+        // 요청 폴더 자리에 파일이 있으면 요청을 쓸 수 없다.
+        fs::write(doc_view::request_dir(data.path()), "x").unwrap();
+        let mut direct = 0;
+        let result = open_via_app(data.path(), &html, Duration::from_secs(5), Duration::from_millis(10), &mut |_: &Path| {
+            direct += 1;
+            Ok(())
+        });
+        assert_eq!((result, direct), (Ok(()), 1));
     }
 }
