@@ -33,9 +33,29 @@ EOF
     )
 }
 
-/// persona와 안내문 중 있는 것만 빈 줄로 잇는다. 둘 다 없으면 None.
-pub fn appended_prompt(persona: Option<&str>, office: Option<&str>) -> Option<String> {
-    let parts: Vec<&str> = [persona, office]
+/// 모든 세션에 덧붙이는 `office-md` 사용 안내(docs/doc-view-design.md §구성 4). 업무 패널
+/// 설정과 무관하다. 사용자가 요청할 때만 띄우게 한다.
+pub fn doc_view_instructions(shim: &Path) -> String {
+    let cli = shim.display();
+    format!(
+        r#"# Agent Office document viewer
+This session runs inside Agent Office. It can render a Markdown file as HTML and open it in the user's default browser:
+
+```sh
+{cli} <file.md>
+{cli} --latest [folder]
+```
+
+- Only run it when the user asks to see a document in the browser or as HTML. Never open documents on your own.
+- If the user names no file, open the Markdown document you created or edited most recently in this conversation. If there is none, run `{cli} --latest` (the most recently modified `.md` under the current folder).
+- After it opens, tell the user in one line which document you opened.
+- The command prints the generated HTML path. If it fails (non-zero exit), tell the user that HTML path, or the error if there is no path, so they can open it themselves."#
+    )
+}
+
+/// persona와 안내문들 중 있는 것만 빈 줄로 잇는다. 모두 없으면 None.
+pub fn appended_prompt(persona: Option<&str>, office: Option<&str>, doc_view: Option<&str>) -> Option<String> {
+    let parts: Vec<&str> = [persona, office, doc_view]
         .into_iter()
         .flatten()
         .map(str::trim)
@@ -77,9 +97,9 @@ pub fn toml_basic_string(text: &str) -> String {
 
 /// Codex `-c` 인자 하나: `sandbox_workspace_write.writable_roots=[…]`.
 /// 이 `-c`는 사용자 설정의 같은 배열을 **덮어쓰므로**(codex-cli 0.162 실측) 사용자
-/// `config.toml`의 최상위 값을 읽어 수신함을 덧붙인 배열을 만든다. 설정이 없거나
-/// 깨졌으면 수신함만 넣는다. 사용자 설정 파일에는 쓰지 않는다.
-pub fn codex_writable_roots_config(user_config: Option<&str>, inbox: &Path) -> String {
+/// `config.toml`의 최상위 값을 읽어 `extra`(업무 수신함·문서 뷰어 캐시)를 덧붙인 배열을
+/// 만든다. 설정이 없거나 깨졌으면 `extra`만 넣는다. 사용자 설정 파일에는 쓰지 않는다.
+pub fn codex_writable_roots_config(user_config: Option<&str>, extra: &[&Path]) -> String {
     let mut roots: Vec<String> = user_config
         .and_then(|text| text.parse::<toml::Table>().ok())
         .and_then(|table| {
@@ -90,9 +110,11 @@ pub fn codex_writable_roots_config(user_config: Option<&str>, inbox: &Path) -> S
                 .map(|roots| roots.iter().filter_map(|v| v.as_str().map(String::from)).collect())
         })
         .unwrap_or_default();
-    let inbox = inbox.to_string_lossy().into_owned();
-    if !roots.contains(&inbox) {
-        roots.push(inbox);
+    for root in extra {
+        let root = root.to_string_lossy().into_owned();
+        if !roots.contains(&root) {
+            roots.push(root);
+        }
     }
     let roots: Vec<String> = roots.iter().map(|root| toml_basic_string(root)).collect();
     format!("sandbox_workspace_write.writable_roots=[{}]", roots.join(","))
@@ -152,31 +174,48 @@ mod tests {
     }
 
     #[test]
+    fn doc_view_instructions_embed_the_shim_and_open_only_on_request() {
+        let text = doc_view_instructions(Path::new("/tmp/agent-office/bin/office-md"));
+        assert!(text.contains("/tmp/agent-office/bin/office-md <file.md>"));
+        assert!(text.contains("`/tmp/agent-office/bin/office-md --latest`"));
+        assert!(text.contains("Never open documents on your own."));
+        assert!(text.contains("in this conversation"));
+        assert!(text.contains("HTML path"));
+    }
+
+    #[test]
     fn appended_prompt_joins_only_present_parts() {
-        assert_eq!(appended_prompt(None, None), None);
-        assert_eq!(appended_prompt(Some(" \n "), None), None);
-        assert_eq!(appended_prompt(Some("persona"), None).as_deref(), Some("persona"));
-        assert_eq!(appended_prompt(None, Some("office")).as_deref(), Some("office"));
-        assert_eq!(appended_prompt(Some("persona\n"), Some("office")).as_deref(), Some("persona\n\noffice"));
+        assert_eq!(appended_prompt(None, None, None), None);
+        assert_eq!(appended_prompt(Some(" \n "), None, None), None);
+        assert_eq!(appended_prompt(Some("persona"), None, None).as_deref(), Some("persona"));
+        assert_eq!(appended_prompt(None, Some("office"), None).as_deref(), Some("office"));
+        assert_eq!(appended_prompt(Some("persona\n"), Some("office"), None).as_deref(), Some("persona\n\noffice"));
+        assert_eq!(appended_prompt(Some("persona"), None, Some("docs")).as_deref(), Some("persona\n\ndocs"));
+        assert_eq!(appended_prompt(Some("p"), Some("o"), Some("d")).as_deref(), Some("p\n\no\n\nd"));
     }
 
     #[test]
     fn permissions_fragment_lists_each_enabled_shim() {
         assert_eq!(permissions_fragment(&[]), None);
         let task = PathBuf::from("/tmp/agent-office/bin/office-task");
-        let other = PathBuf::from("/tmp/agent-office/bin/office-other");
+        let md = PathBuf::from("/tmp/agent-office/bin/office-md");
         let f = permissions_fragment(&[task.clone()]).unwrap();
         assert_eq!(f["permissions"]["allow"], serde_json::json!(["Bash(/tmp/agent-office/bin/office-task:*)"]));
-        let f = permissions_fragment(&[task, other]).unwrap();
-        assert_eq!(f["permissions"]["allow"].as_array().unwrap().len(), 2);
+        let f = permissions_fragment(&[task, md]).unwrap();
+        assert_eq!(f["permissions"]["allow"][1], "Bash(/tmp/agent-office/bin/office-md:*)");
     }
 
     #[test]
     fn writable_roots_merge_user_roots_and_tolerate_broken_config() {
-        let inbox = Path::new("/data/Agent Office/work-inbox");
+        let inbox: &[&Path] = &[Path::new("/data/Agent Office/work-inbox")];
         assert_eq!(
             codex_writable_roots_config(None, inbox),
             r#"sandbox_workspace_write.writable_roots=["/data/Agent Office/work-inbox"]"#
+        );
+        let both: &[&Path] = &[Path::new("/data/work-inbox"), Path::new("/data/doc-view")];
+        assert_eq!(
+            codex_writable_roots_config(Some("[sandbox_workspace_write]\nwritable_roots = [\"/data/doc-view\"]\n"), both),
+            r#"sandbox_workspace_write.writable_roots=["/data/doc-view","/data/work-inbox"]"#
         );
         let user = "sandbox_mode = \"workspace-write\"\n[sandbox_workspace_write]\nwritable_roots = [\"/a\", \"/b \\\"q\\\"\"]\n";
         let merged = codex_writable_roots_config(Some(user), inbox);

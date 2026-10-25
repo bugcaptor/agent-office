@@ -383,7 +383,7 @@
         cleanup_observer_fixture(&control, &scratch);
     }
 
-    /// 업무 수신함 안내문을 켠 매니저. shim은 scratch 아래에 쓰고 Codex 사용자
+    /// 업무 수신함·문서 뷰어 안내문을 켠 매니저. shim은 scratch 아래에 쓰고 Codex 사용자
     /// 설정은 주입한다.
     fn with_office(manager: Arc<SessionManager>, scratch: &Path, panels: bool) -> Arc<SessionManager> {
         let mut manager = Arc::try_unwrap(manager)
@@ -392,6 +392,7 @@
             .with_app_data_dir(scratch.join("app"))
             .with_work_panels_flag(Arc::new(move || panels));
         manager.task_cli = Some((scratch.join("bin").join("office-task"), PathBuf::from("/opt/ao")));
+        manager.md_cli = Some((scratch.join("bin").join("office-md"), PathBuf::from("/opt/ao")));
         manager.codex_user_config =
             Arc::new(|| Some("[sandbox_workspace_write]\nwritable_roots = [\"/mine\"]\n".into()));
         Arc::new(manager)
@@ -408,13 +409,26 @@
         manager.create(req("a1", Some(false))).unwrap();
 
         let shim = scratch.join("bin").join("office-task");
+        let md = scratch.join("bin").join("office-md");
         let appended = env_value(&control, "AGENT_OFFICE_PERSONA").expect("안내문만으로도 주입");
-        assert_eq!(appended, crate::office_instructions::task_instructions(&shim));
+        assert_eq!(
+            appended,
+            format!(
+                "{}\n\n{}",
+                crate::office_instructions::task_instructions(&shim),
+                crate::office_instructions::doc_view_instructions(&md)
+            )
+        );
         assert!(env_value(&control, "AGENT_OFFICE_CODEX_PERSONA").unwrap().starts_with("developer_instructions=\"# Agent Office"));
         let inbox = scratch.join("app").join("work-inbox");
+        let cache = scratch.join("app").join("doc-view");
         assert_eq!(
             env_value(&control, "AGENT_OFFICE_CODEX_WRITABLE_ROOTS").unwrap(),
-            format!("sandbox_workspace_write.writable_roots=[\"/mine\",\"{}\"]", inbox.display())
+            format!(
+                "sandbox_workspace_write.writable_roots=[\"/mine\",\"{}\",\"{}\"]",
+                inbox.display(),
+                cache.display()
+            )
         );
         assert_eq!(env_value(&control, "AGENT_OFFICE_OFFICE_PROMPT"), Some(appended.clone()));
         let wrappers = recorded_wrappers.lock();
@@ -449,15 +463,58 @@
         assert!(appended.starts_with("해적처럼 말한다.\n\n# Agent Office task board"));
         cleanup_observer_fixture(&control, &scratch);
 
-        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
+        // 업무 패널이 꺼지면 업무 안내문·수신함 쓰기 허용만 빠지고 문서 뷰어는 남는다.
+        let (manager, control, _wrappers, scratch) = build_observer_manager(false, vec![]);
         let manager = with_office(manager, &scratch, false);
         manager.create(req("a1", Some(false))).unwrap();
+        let doc_view = crate::office_instructions::doc_view_instructions(&scratch.join("bin").join("office-md"));
+        assert_eq!(env_value(&control, "AGENT_OFFICE_PERSONA"), Some(doc_view.clone()));
+        assert_eq!(env_value(&control, "AGENT_OFFICE_OFFICE_PROMPT"), Some(doc_view));
+        assert_eq!(
+            env_value(&control, "AGENT_OFFICE_CODEX_WRITABLE_ROOTS").unwrap(),
+            format!(
+                "sandbox_workspace_write.writable_roots=[\"/mine\",\"{}\"]",
+                scratch.join("app").join("doc-view").display()
+            )
+        );
+        // 환경변수와 shim은 패널 설정과 무관하게 유지한다.
+        assert!(env_value(&control, "AGENT_OFFICE_TASK").is_some());
+        cleanup_observer_fixture(&control, &scratch);
+
+        // 사무실 CLI가 하나도 없으면 아무것도 덧붙이지 않는다.
+        let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
+        let mut manager = Arc::try_unwrap(manager).ok().expect("유일 소유").with_app_data_dir(scratch.join("app"));
+        manager.task_cli = Some((scratch.join("bin").join("office-task"), PathBuf::from("/opt/ao")));
+        Arc::new(manager).create(req("a1", Some(false))).unwrap();
         assert_eq!(env_value(&control, "AGENT_OFFICE_PERSONA"), None);
         assert_eq!(env_value(&control, "AGENT_OFFICE_CODEX_WRITABLE_ROOTS"), None);
         assert_eq!(env_value(&control, "AGENT_OFFICE_OFFICE_PROMPT"), None);
-        // 환경변수와 shim은 패널 설정과 무관하게 유지한다.
-        assert!(env_value(&control, "AGENT_OFFICE_TASK").is_some());
         assert!(recorded_wrappers.lock().is_empty());
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[test]
+    fn prepend_path_moves_the_shim_folder_to_the_front_once() {
+        let dir = Path::new("/tmp/ao/bin");
+        let current = std::env::join_paths(["/usr/bin", "/tmp/ao/bin", "/bin"]).unwrap();
+        let joined = super::prepend_path(dir, Some(current)).unwrap();
+        let entries: Vec<PathBuf> = std::env::split_paths(&joined).collect();
+        assert_eq!(entries, [PathBuf::from("/tmp/ao/bin"), "/usr/bin".into(), "/bin".into()]);
+        assert_eq!(super::prepend_path(dir, None).as_deref(), Some("/tmp/ao/bin"));
+    }
+
+    #[tokio::test]
+    async fn doc_view_shim_lands_on_path_with_absolute_env() {
+        let (manager, control, _wrappers, scratch) = build_observer_manager(false, vec![]);
+        let manager = with_office(manager, &scratch, false);
+        manager.create(req("a1", Some(false))).unwrap();
+        let md = scratch.join("bin").join("office-md");
+        assert_eq!(env_value(&control, "AGENT_OFFICE_MD").map(PathBuf::from), Some(md.clone()));
+        assert!(std::fs::read_to_string(&md).unwrap().contains("\"/opt/ao\" md "));
+        let path = env_value(&control, "PATH").expect("shim 폴더를 PATH에 싣는다");
+        let entries: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        assert_eq!(entries.first(), Some(&scratch.join("bin")));
+        assert_eq!(entries.iter().filter(|e| **e == scratch.join("bin")).count(), 1);
         cleanup_observer_fixture(&control, &scratch);
     }
 
@@ -1061,7 +1118,9 @@
         mgr.create(req("a1", None)).unwrap();
         let env = ctl.spawned_env();
         assert!(env.contains(&("AGENT_OFFICE_AGENT_ID".into(), "a1".into())));
-        assert!(env.iter().all(|(k, _)| k != "AGENT_OFFICE_WORK_INBOX" && k != "AGENT_OFFICE_TASK"));
+        assert!(env.iter().all(|(k, _)| {
+            !matches!(k.as_str(), "AGENT_OFFICE_WORK_INBOX" | "AGENT_OFFICE_TASK" | "AGENT_OFFICE_MD" | "PATH")
+        }));
         cleanup(&ctl, &dir);
     }
 

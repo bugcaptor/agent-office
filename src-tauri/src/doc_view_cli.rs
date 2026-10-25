@@ -158,6 +158,11 @@ fn open_in_browser(path: &Path) -> Result<(), String> {
     }
 }
 
+/// `office-md` shim 경로(`office-task` 옆, docs/doc-view-design.md §구성 4).
+pub fn shim_path() -> PathBuf {
+    crate::work_inbox_cli::office_shim_path("office-md")
+}
+
 fn fail(err: &mut dyn Write, reason: &str) -> i32 {
     let _ = writeln!(err, "office-md: {reason}");
     EXIT_FAIL

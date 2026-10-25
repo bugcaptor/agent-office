@@ -317,9 +317,14 @@ fn gc_at(data_dir: &Path, now: SystemTime) -> usize {
         + remove_older(&cache.join(REQUEST_DIR), now, REQUEST_TTL, |_| true)
 }
 
+/// 캐시 폴더 `doc-view/`. Codex 세션의 쓰기 허용 경로이기도 하다(§구성 4).
+pub fn cache_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join(CACHE_DIR)
+}
+
 /// 열기 요청 폴더 `doc-view/open/`.
 pub fn request_dir(data_dir: &Path) -> PathBuf {
-    data_dir.join(CACHE_DIR).join(REQUEST_DIR)
+    cache_dir(data_dir).join(REQUEST_DIR)
 }
 
 /// CLI가 앱에 "이 HTML을 열어 달라"는 요청 `open/<유닉스 밀리초>-<난수 8자>.json`

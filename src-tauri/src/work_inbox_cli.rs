@@ -488,41 +488,53 @@ fn fail(err: &mut dyn Write, message: &str) -> i32 {
     1
 }
 
-/// `office-task` shim 경로. 동료 대화 shim 옆, 공백 없는 OS temp에 둔다(권한 규칙에 박힌다).
-pub fn shim_path() -> PathBuf {
-    let name = if cfg!(windows) { "office-task.cmd" } else { "office-task" };
-    std::env::temp_dir().join("agent-office").join("bin").join(name)
+/// 사무실 shim 폴더. 공백 없는 OS temp에 둔다(권한 규칙·안내문에 경로가 박힌다).
+pub fn shim_dir() -> PathBuf {
+    std::env::temp_dir().join("agent-office").join("bin")
 }
 
-fn shim_body(exe: &Path) -> String {
+/// `shim_dir()` 아래 `name` shim 경로(Windows는 `.cmd`를 붙인다).
+pub fn office_shim_path(name: &str) -> PathBuf {
+    let name = if cfg!(windows) { format!("{name}.cmd") } else { name.to_string() };
+    shim_dir().join(name)
+}
+
+/// `office-task` shim 경로.
+pub fn shim_path() -> PathBuf {
+    office_shim_path("office-task")
+}
+
+fn shim_body(exe: &Path, subcommand: &str) -> String {
     let exe = exe.display();
     if cfg!(windows) {
-        format!("@echo off\r\n\"{exe}\" task %*\r\n")
+        format!("@echo off\r\n\"{exe}\" {subcommand} %*\r\n")
     } else {
-        format!("#!/bin/sh\n# agent-office가 생성. 편집 금지.\nexec \"{exe}\" task \"$@\"\n")
+        format!("#!/bin/sh\n# agent-office가 생성. 편집 금지.\nexec \"{exe}\" {subcommand} \"$@\"\n")
     }
 }
 
-/// shim을 `path`에 (재)작성한다. OS temp는 청소될 수 있어 세션 준비마다 부른다.
-pub fn ensure_shim(path: &Path, exe: &Path) -> std::io::Result<()> {
+/// `exe <subcommand> …`를 실행하는 shim을 `path`에 (재)작성한다. OS temp는 청소될 수 있어 세션 준비마다 부른다.
+pub fn ensure_shim(path: &Path, exe: &Path, subcommand: &str) -> std::io::Result<()> {
     if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
-    crate::office_instructions::write_atomic(path, shim_body(exe).as_bytes())?;
+    crate::office_instructions::write_atomic(path, shim_body(exe, subcommand).as_bytes())?;
     crate::office_instructions::set_executable(path);
     Ok(())
 }
 
 /// shim이 없거나 내용이 다를 때만 다시 쓴다. 다시 썼으면 true.
 /// 이미 떠 있는 세션은 env·안내문에 박힌 경로를 계속 쓰므로, 앱이 주기적으로 불러 OS temp 청소에서 되살린다.
-pub fn refresh_shim(path: &Path, exe: &Path) -> std::io::Result<bool> {
-    if std::fs::read(path).is_ok_and(|bytes| bytes == shim_body(exe).as_bytes()) { return Ok(false); }
-    ensure_shim(path, exe).map(|()| true)
+pub fn refresh_shim(path: &Path, exe: &Path, subcommand: &str) -> std::io::Result<bool> {
+    if std::fs::read(path).is_ok_and(|bytes| bytes == shim_body(exe, subcommand).as_bytes()) { return Ok(false); }
+    ensure_shim(path, exe, subcommand).map(|()| true)
 }
 
-/// `interval`마다 [`refresh_shim`]을 부르는 백그라운드 스레드를 띄운다(앱 수명 동안).
-pub fn spawn_shim_keeper(path: PathBuf, exe: PathBuf, interval: std::time::Duration) {
-    let _ = std::thread::Builder::new().name("office-task-shim".into()).spawn(move || loop {
-        if let Err(error) = refresh_shim(&path, &exe) {
-            eprintln!("agent-office: failed to refresh office-task shim: {error}");
+/// `interval`마다 `shims`(경로, 서브커맨드) 각각에 [`refresh_shim`]을 부르는 백그라운드 스레드를 띄운다(앱 수명 동안).
+pub fn spawn_shim_keeper(shims: Vec<(PathBuf, &'static str)>, exe: PathBuf, interval: std::time::Duration) {
+    let _ = std::thread::Builder::new().name("office-shims".into()).spawn(move || loop {
+        for (path, subcommand) in &shims {
+            if let Err(error) = refresh_shim(path, &exe, subcommand) {
+                eprintln!("agent-office: failed to refresh {} shim: {error}", path.display());
+            }
         }
         std::thread::sleep(interval);
     });
@@ -826,27 +838,31 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let shim = dir.path().join("bin").join("office-task");
         let exe = Path::new("/opt/agent-office");
-        assert!(refresh_shim(&shim, exe).unwrap());
-        assert!(!refresh_shim(&shim, exe).unwrap());
+        assert!(refresh_shim(&shim, exe, "task").unwrap());
+        assert!(!refresh_shim(&shim, exe, "task").unwrap());
         std::fs::remove_dir_all(dir.path().join("bin")).unwrap();
-        assert!(refresh_shim(&shim, exe).unwrap());
-        assert_eq!(std::fs::read_to_string(&shim).unwrap(), shim_body(exe));
-        assert!(refresh_shim(&shim, Path::new("/opt/other")).unwrap());
+        assert!(refresh_shim(&shim, exe, "task").unwrap());
+        assert_eq!(std::fs::read_to_string(&shim).unwrap(), shim_body(exe, "task"));
+        assert!(refresh_shim(&shim, Path::new("/opt/other"), "task").unwrap());
         assert!(std::fs::read_to_string(&shim).unwrap().contains("/opt/other"));
+        assert!(refresh_shim(&shim, Path::new("/opt/other"), "md").unwrap());
+        assert!(std::fs::read_to_string(&shim).unwrap().contains("\" md "));
     }
 
     #[test]
-    fn shim_keeper_restores_deleted_shim() {
+    fn shim_keeper_restores_every_deleted_shim() {
         let dir = tempfile::tempdir().unwrap();
-        let shim = dir.path().join("bin").join("office-task");
-        spawn_shim_keeper(shim.clone(), "/opt/agent-office".into(), std::time::Duration::from_millis(20));
+        let task = dir.path().join("bin").join("office-task");
+        let md = dir.path().join("bin").join("office-md");
+        spawn_shim_keeper(vec![(task.clone(), "task"), (md.clone(), "md")], "/opt/agent-office".into(), std::time::Duration::from_millis(20));
         let wait = || {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-            while !shim.exists() { assert!(std::time::Instant::now() < deadline, "shim not restored"); std::thread::sleep(std::time::Duration::from_millis(10)); }
+            while !(task.exists() && md.exists()) { assert!(std::time::Instant::now() < deadline, "shim not restored"); std::thread::sleep(std::time::Duration::from_millis(10)); }
         };
         wait();
         std::fs::remove_dir_all(dir.path().join("bin")).unwrap();
         wait();
-        assert!(std::fs::read_to_string(&shim).unwrap().contains("/opt/agent-office"));
+        assert!(std::fs::read_to_string(&task).unwrap().contains("\"/opt/agent-office\" task "));
+        assert!(std::fs::read_to_string(&md).unwrap().contains("\"/opt/agent-office\" md "));
     }
 }

@@ -357,6 +357,8 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             install_panic_logger(data_dir.clone());
             std::fs::create_dir_all(data_dir.join("work-inbox"))?;
+            // Codex 세션의 쓰기 허용 경로로 넘기므로 미리 만들어 둔다(docs/doc-view-design.md §구성 4).
+            std::fs::create_dir_all(doc_view::request_dir(&data_dir))?;
             // 문서 뷰어 캐시(docs/doc-view-design.md): 7일 지난 HTML·처리 못 한 열기 요청.
             {
                 let data_dir = data_dir.clone();
@@ -439,10 +441,10 @@ pub fn run() {
             // 제거된 기능의 잔여물(동료 대화 로그·스킬 플러그인·shim)을 부팅마다 지운다.
             // 옛 설치본이 다시 만든 것도 다음 기동에 사라진다(§7.F F10).
             legacy_cleanup::spawn(data_dir.clone());
-            // `office-task` shim은 세션 준비 때만 쓰므로, 떠 있는 세션이 OS temp 청소로
-            // 경로를 잃지 않게 5초마다 확인해 되살린다(없거나 내용이 다를 때만 쓴다).
+            // `office-task`·`office-md` shim은 세션 준비 때만 쓰므로, 떠 있는 세션이 OS temp
+            // 청소로 경로를 잃지 않게 5초마다 확인해 되살린다(없거나 내용이 다를 때만 쓴다).
             work_inbox_cli::spawn_shim_keeper(
-                work_inbox_cli::shim_path(),
+                vec![(work_inbox_cli::shim_path(), "task"), (doc_view_cli::shim_path(), "md")],
                 forwarder_executable_path(),
                 Duration::from_secs(5),
             );
@@ -534,17 +536,18 @@ pub fn run() {
                     )),
                 ),
             );
-            // 업무 수신함 shim(office-task) 권한 사전 승인. 업무 패널이 켜졌을 때만
-            // 승인하고, 꺼져 있으면 None. 관찰이 켜진 세션은 훅 설정에 조각을
-            // 합치고(office_fragment), 꺼진 세션은 권한 전용 설정 파일을 따로 쓴다.
+            // 사무실 shim 권한 사전 승인. 업무 수신함(office-task)은 업무 패널이 켜졌을
+            // 때만, 문서 뷰어(office-md)는 항상 승인한다. 관찰이 켜진 세션은 훅 설정에
+            // 조각을 합치고(office_fragment), 꺼진 세션은 권한 전용 설정 파일을 따로 쓴다.
             let office_shims = {
                 let settings = settings_cache.clone();
                 Arc::new(move || {
+                    let mut shims = vec![];
                     if settings.read().unwrap().work_panels_enabled {
-                        vec![crate::work_inbox_cli::shim_path()]
-                    } else {
-                        vec![]
+                        shims.push(crate::work_inbox_cli::shim_path());
                     }
+                    shims.push(crate::doc_view_cli::shim_path());
+                    shims
                 })
             };
             let office_fragment = {
@@ -606,13 +609,14 @@ pub fn run() {
                 // 세션 핸드오프(unix 전용, docs/session-handoff-design.md) 소켓/로그
                 // 경로와 AGENT_OFFICE_APP_DATA env 주입(§핵심 5)의 근거.
                 .with_app_data_dir(data_dir.clone())
-                // 업무 수신함 `office-task` shim(docs/work-panels-design.md §업무 수신함).
-                .with_task_cli(forwarder_executable_path())
+                // 업무 수신함 `office-task`(docs/work-panels-design.md §업무 수신함)와 문서 뷰어
+                // `office-md`(docs/doc-view-design.md §구성 4) shim.
+                .with_office_cli(forwarder_executable_path())
                 .with_work_panels_flag({
                     let settings = settings_cache.clone();
                     Arc::new(move || settings.read().unwrap().work_panels_enabled)
                 })
-                // 업무 수신함 shim 권한 전용 설정(관찰 OFF 세션).
+                // 사무실 shim 권한 전용 설정(관찰 OFF 세션).
                 .with_office_settings(office_settings_provider)
                 // 터미널 전사 상시 기록(30일·2GB 자율 보존).
                 .with_session_log(session_log_root.clone(), session_log_enabled.clone())

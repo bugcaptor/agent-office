@@ -121,6 +121,9 @@ pub struct SessionManager {
     /// `office-task` shim 경로와 shim이 실행할 앱 바이너리(docs/work-panels-design.md §업무 수신함).
     /// None이면 shim과 `AGENT_OFFICE_TASK`를 생략한다 -- 테스트 기본값이다.
     task_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    /// `office-md` shim 경로와 실행할 앱 바이너리(docs/doc-view-design.md §구성 4).
+    /// None이면 shim·PATH·`AGENT_OFFICE_MD`·문서 뷰어 안내문을 생략한다 -- 테스트 기본값이다.
+    md_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
     /// 업무 패널 설정(`workPanelsEnabled`) 조회. 켜졌을 때만 공통 안내문과 Codex
     /// 수신함 쓰기 허용을 싣는다. 세션을 띄울 때 고정된다.
     work_panels_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
@@ -161,6 +164,7 @@ impl SessionManager {
             shell_resolver: Arc::new(shells::resolve_observed),
             app_data_dir: None,
             task_cli: None,
+            md_cli: None,
             work_panels_enabled: Arc::new(|| false),
             codex_user_config: Arc::new(|| {
                 let path = crate::agent_paths::codex_home_from_env()?.join("config.toml");
@@ -213,9 +217,10 @@ impl SessionManager {
         self
     }
 
-    /// 세션 준비마다 `office-task` shim을 이 바이너리로 (재)작성하고 경로를 env로 싣는다.
-    pub fn with_task_cli(mut self, exe: std::path::PathBuf) -> Self {
-        self.task_cli = Some((crate::work_inbox_cli::shim_path(), exe));
+    /// 세션 준비마다 `office-task`·`office-md` shim을 이 바이너리로 (재)작성하고 경로를 env로 싣는다.
+    pub fn with_office_cli(mut self, exe: std::path::PathBuf) -> Self {
+        self.task_cli = Some((crate::work_inbox_cli::shim_path(), exe.clone()));
+        self.md_cli = Some((crate::doc_view_cli::shim_path(), exe));
         self
     }
 
@@ -407,24 +412,33 @@ impl SessionManager {
         }
 
         // 업무 수신함 shim(docs/work-panels-design.md §업무 수신함). OS temp는 청소될 수 있어 매번 쓴다.
-        let task_shim = self.task_cli.as_ref().and_then(|(shim, exe)| {
-            crate::work_inbox_cli::ensure_shim(shim, exe)
-                .map_err(|error| eprintln!("agent-office: failed to write office-task shim: {error}"))
-                .ok()
-                .map(|()| shim.clone())
-        });
+        // 문서 뷰어 shim(docs/doc-view-design.md §구성 4)도 같은 방식으로 쓴다.
+        let ensure = |cli: &Option<(std::path::PathBuf, std::path::PathBuf)>, subcommand: &str| {
+            cli.as_ref().and_then(|(shim, exe)| {
+                crate::work_inbox_cli::ensure_shim(shim, exe, subcommand)
+                    .map_err(|error| eprintln!("agent-office: failed to write {} shim: {error}", shim.display()))
+                    .ok()
+                    .map(|()| shim.clone())
+            })
+        };
+        let task_shim = ensure(&self.task_cli, "task");
+        let md_shim = ensure(&self.md_cli, "md");
         let work_inbox = self.app_data_dir.as_ref().map(|dir| dir.join("work-inbox"));
+        let doc_view_cache = self.app_data_dir.as_ref().map(|dir| crate::doc_view::cache_dir(dir));
         let office_enabled = task_shim.is_some() && (self.work_panels_enabled)();
         let office_instructions = task_shim
             .as_deref()
             .filter(|_| office_enabled)
             .map(crate::office_instructions::task_instructions);
+        // 문서 뷰어 안내문은 업무 패널 설정과 무관하게 항상 싣는다.
+        let doc_view_instructions = md_shim.as_deref().map(crate::office_instructions::doc_view_instructions);
 
-        // 덧붙일 지시문 = persona + 빈 줄 + 사무실 안내문(있는 것만). env 이름
+        // 덧붙일 지시문 = persona + 사무실 안내문 + 문서 뷰어 안내문(있는 것만, 빈 줄로). env 이름
         // `AGENT_OFFICE_PERSONA`는 래퍼 함수 호환과 IDE 페르소나 경로 때문에 유지한다.
         if let Some(appended) = crate::office_instructions::appended_prompt(
             personality_prompt,
             office_instructions.as_deref(),
+            doc_view_instructions.as_deref(),
         ) {
             let personality_prompt = appended.as_str();
             plan.env.push((
@@ -460,9 +474,13 @@ impl SessionManager {
         // Pi·Kilo는 persona를 받지 않으므로 안내문만 따로 싣는다. Pi는 덧붙이기 플래그
         // (pi 1.1.0 `--append-system-prompt`), Kilo는 앱 소유 플러그인의
         // `experimental.chat.system.transform` 훅이 이 env를 읽는다(플러그인은 관찰이
-        // 켜졌을 때만 실린다). agy는 덧붙이기 채널이 없어 `AGENT_OFFICE_TASK`만 준다.
-        if let Some(office) = &office_instructions {
-            plan.env.push(("AGENT_OFFICE_OFFICE_PROMPT".into(), office.clone()));
+        // 켜졌을 때만 실린다). agy는 덧붙이기 채널이 없어 `AGENT_OFFICE_TASK`·`AGENT_OFFICE_MD`만 준다.
+        if let Some(office) = crate::office_instructions::appended_prompt(
+            None,
+            office_instructions.as_deref(),
+            doc_view_instructions.as_deref(),
+        ) {
+            plan.env.push(("AGENT_OFFICE_OFFICE_PROMPT".into(), office));
             merge_wrapper_args(
                 &mut plan.wrappers,
                 "pi",
@@ -474,13 +492,21 @@ impl SessionManager {
         }
 
         // Codex 기본 workspace-write 샌드박스는 작업 폴더 밖 쓰기를 막는다. 안내문을
-        // 실은 세션에서는 수신함을 쓰기 허용 경로에 더한다.
-        if let Some(inbox) = work_inbox.as_deref().filter(|_| office_enabled) {
+        // 실은 세션에서는 수신함을, 문서 뷰어를 실은 세션에서는 캐시(HTML·열기 요청)를
+        // 쓰기 허용 경로에 더한다.
+        let writable_roots: Vec<&std::path::Path> = [
+            work_inbox.as_deref().filter(|_| office_enabled),
+            doc_view_cache.as_deref().filter(|_| md_shim.is_some()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        if !writable_roots.is_empty() {
             plan.env.push((
                 "AGENT_OFFICE_CODEX_WRITABLE_ROOTS".into(),
                 crate::office_instructions::codex_writable_roots_config(
                     (self.codex_user_config)().as_deref(),
-                    inbox,
+                    &writable_roots,
                 ),
             ));
             merge_wrapper_args(
@@ -517,6 +543,14 @@ impl SessionManager {
         }
         if let Some(shim) = &task_shim {
             env.push(("AGENT_OFFICE_TASK".into(), shim.to_string_lossy().into_owned()));
+        }
+        // 문서 뷰어(docs/doc-view-design.md §구성 4): 사람이 터미널에서 `office-md`로 쓰게
+        // shim 폴더를 PATH 앞에 붙인다. 셸 rc가 PATH를 덮어쓸 수 있으므로 절대 경로도 싣는다.
+        if let Some(shim) = &md_shim {
+            env.push(("AGENT_OFFICE_MD".into(), shim.to_string_lossy().into_owned()));
+            if let Some(path) = shim.parent().and_then(|dir| prepend_path(dir, std::env::var_os("PATH"))) {
+                env.push(("PATH".into(), path));
+            }
         }
         env.extend(plan.env.iter().cloned());
         let settings_path = env
@@ -1131,6 +1165,14 @@ impl SessionManager {
             external: None,
         });
     }
+}
+
+/// `dir`을 맨 앞에 둔 PATH 값. 이미 들어 있으면 빼고 앞에 다시 둔다. 합칠 수 없는 항목
+/// (구분자를 품은 경로)이면 None -- PATH를 건드리지 않는다.
+fn prepend_path(dir: &std::path::Path, current: Option<std::ffi::OsString>) -> Option<String> {
+    let rest = current.iter().flat_map(std::env::split_paths).filter(|entry| entry != dir);
+    let joined = std::env::join_paths(std::iter::once(dir.to_path_buf()).chain(rest)).ok()?;
+    Some(joined.to_string_lossy().into_owned())
 }
 
 /// `prepare_session_plan`의 산출물 -- 세션 하나에 필요한 observer/persona 배선.

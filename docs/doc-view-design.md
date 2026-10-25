@@ -1,6 +1,6 @@
 # 문서 뷰어(`office-md`) 설계
 
-상태: 구현 중 (2026-10-25) — §구성 1 변환기(`doc_view.rs`)·§구성 2 CLI(`doc_view_cli.rs`, `--no-open`·종료 코드, 요청 파일 → 2초 대기 → 직접 열기 폴백)·§구성 3 앱 요청 감시(`doc_view::spawn_request_watcher`, 부팅 때 `gc`와 함께) 완료. 배선(§구성 4)·미리보기 버튼(§구성 5)부터 남았다. CDN 고정 버전: highlight.js 11.12.0, mermaid 11.17.2. 구현을 마치면 이 문서를 "현재 구조" 매뉴얼로 고쳐 정본으로 올린다(계획 시제·미정 표기 제거, 실제 파일·심볼로 갱신).
+상태: 구현 중 (2026-10-25) — §구성 1 변환기(`doc_view.rs`)·§구성 2 CLI(`doc_view_cli.rs`, `--no-open`·종료 코드, 요청 파일 → 2초 대기 → 직접 열기 폴백)·§구성 3 앱 요청 감시(`doc_view::spawn_request_watcher`, 부팅 때 `gc`와 함께)·§구성 4 배선(shim·PATH·`AGENT_OFFICE_MD`·안내문·권한) 완료. 미리보기 버튼(§구성 5)과 설치 앱 실기가 남았다. CDN 고정 버전: highlight.js 11.12.0, mermaid 11.17.2. 구현을 마치면 이 문서를 "현재 구조" 매뉴얼로 고쳐 정본으로 올린다(계획 시제·미정 표기 제거, 실제 파일·심볼로 갱신).
 
 작업 중 만든 Markdown 문서를 HTML로 바꿔 OS 기본 브라우저로 연다. Agent Office를 설치하면 사람은 앱 Markdown 미리보기의 버튼이나 세션 터미널의 `office-md`로 바로 쓰고, 에이전트는 시스템 프롬프트 안내문으로 이 명령을 알아 "문서 보여 줘"라는 요청에 최신 문서를 띄운다.
 
@@ -69,12 +69,13 @@ office-md --no-open docs/a.md   # 변환만 하고 HTML 경로를 출력(스크�
 
 ### 4. 배선 — shim·PATH·안내문·권한
 
-- **shim**: `work_inbox_cli::shim_path()` 옆 `…/agent-office/bin/office-md`(Windows `office-md.cmd`), 본문은 `exec "<exe>" md "$@"`. 세션 준비마다 `ensure_shim`, 앱 수명 동안 keeper 스레드가 되살린다(`spawn_shim_keeper`를 shim 목록용으로 일반화).
-- **PATH**: 앱이 띄운 세션의 env에서 PATH 앞에 shim 폴더를 붙인다. 사용자 셸 rc가 PATH를 덮어쓸 수 있으므로 절대 경로 env `AGENT_OFFICE_MD`도 함께 넣는다(agy처럼 안내문을 못 받는 CLI는 이 env만 받는다).
-- **안내문**: `office_instructions.rs`에 `doc_view_instructions(shim)`을 더해 `appended_prompt`에 셋째 조각으로 붙인다. 업무 패널 설정과 무관하게 항상 붙인다. 내용(영문, 모델용):
-  - 사용자가 문서를 브라우저로/HTML로 보여 달라고 하면 `<shim> <path>`, 경로를 안 주면 이번 대화에서 만들거나 고친 문서, 그것도 없으면 `<shim> --latest`.
-  - 요청받지 않으면 띄우지 않는다. 띄운 뒤 한 줄로 알린다. 실패하면 출력된 HTML 경로를 알린다.
-- **권한**: Claude는 `permissions_fragment`에 `office-md` shim을 더해 `Bash(<shim>:*)`를 사전 승인한다. Codex는 `codex_writable_roots_config`에 `doc-view/`를 더한다(캐시·요청 쓰기).
+- **shim**: `doc_view_cli::shim_path()` = `work_inbox_cli::office_shim_path("office-md")` — `office-task` 옆 `<OS temp>/agent-office/bin/office-md`(Windows `office-md.cmd`), 본문은 `exec "<exe>" md "$@"`. shim 헬퍼(`ensure_shim`·`refresh_shim`)는 서브커맨드를 인자로 받는다. 세션 준비마다 `ensure_shim(…, "md")`, 앱 수명 동안 `spawn_shim_keeper(vec![(office-task, "task"), (office-md, "md")], …)` 스레드("office-shims")가 5초마다 되살린다. `SessionManager::with_office_cli(exe)`가 두 shim을 함께 켠다(필드 `task_cli`·`md_cli`).
+- **PATH**: 앱이 띄운 세션 env에 `PATH=<shim 폴더>:<앱 프로세스 PATH>`를 싣는다(`manager::prepend_path` — 이미 있으면 빼고 맨 앞에 한 번). shim 폴더가 같아 `office-task`도 PATH에 오른다. 사용자 셸 rc가 PATH를 덮어쓸 수 있으므로 절대 경로 env `AGENT_OFFICE_MD`도 함께 넣는다(agy처럼 안내문을 못 받는 CLI는 이 env만 받는다).
+- **안내문**: `office_instructions::doc_view_instructions(shim)`. `appended_prompt(persona, office, doc_view)`의 셋째 조각으로 붙고, 업무 패널 설정과 무관하게 `md_cli`가 있으면 항상 붙는다. Pi·Kilo용 `AGENT_OFFICE_OFFICE_PROMPT`도 업무 안내문 + 문서 뷰어 안내문이다. 내용(영문, 모델용):
+  - 사용자가 문서를 브라우저로/HTML로 보여 달라고 할 때만 띄운다. 스스로 띄우지 않는다.
+  - 경로를 안 주면 이번 대화에서 만들거나 고친 문서, 그것도 없으면 `<shim> --latest`.
+  - 띄운 뒤 한 줄로 알린다. 실패(0 아닌 종료)하면 출력된 HTML 경로(없으면 오류)를 알린다.
+- **권한**: Claude는 `lib.rs`의 `office_shims`가 `office-md` shim을 항상 더해 `permissions_fragment`로 `Bash(<shim>:*)`를 사전 승인한다(`office-task`는 업무 패널이 켜졌을 때만). Codex는 `codex_writable_roots_config(user, &[roots])`에 `doc-view/`(`doc_view::cache_dir`)를 더한다 — 수신함은 업무 패널이 켜졌을 때만. 앱 부팅 때 `doc-view/open/`을 미리 만든다(없는 쓰기 허용 경로를 넘기지 않게).
 
 ### 5. 앱 Markdown 미리보기 버튼
 
