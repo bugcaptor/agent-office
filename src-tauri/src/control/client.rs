@@ -93,7 +93,7 @@ fn resolve_app_data(flag: Option<&str>, env: Option<&str>) -> Option<PathBuf> {
 
 /// Tauri v2 `app_data_dir(identifier)`을 런타임 없이 재현한다. 세션 내부에서는
 /// `AGENT_OFFICE_APP_DATA`가 있어 이 경로가 필요 없고, 외부 스크립트용 폴백이다.
-fn default_app_data() -> Option<PathBuf> {
+pub(crate) fn default_app_data() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         let home = std::env::var_os("HOME")?;

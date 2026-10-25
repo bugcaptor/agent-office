@@ -65,6 +65,8 @@ mod vscode;
 // 가시성만 승격.
 pub mod workdir;
 mod work_inbox_cli;
+mod doc_view;
+mod doc_view_cli;
 mod legacy_cleanup;
 mod office_instructions;
 
@@ -97,6 +99,7 @@ const USAGE: &str = "\
 usage: agent-office                 GUI 실행(인자 없음)
        agent-office ctl <command>   실행 중인 앱 제어(`agent-office ctl help`)
        agent-office task …          업무 수신함에 업무 추가(`agent-office task --help`)
+       agent-office md …            Markdown을 HTML로 바꿔 브라우저로 열기(`agent-office md --help`)
 ";
 
 fn usage_error(reason: &str) -> i32 {
@@ -183,7 +186,7 @@ where
 
 /// `ctl <명령> …` 분기(이슈 #55, docs/cli-control-design.md) — 실행 중인 앱의
 /// control 서버에 요청 1건을 보내는 단명 클라이언트. `maybe_run_observer_forwarder`
-/// 와 같은 패턴: 첫 인자가 `ctl`/`task`가 아니면 `None`을 돌려줘 `main.rs`가 다음
+/// 와 같은 패턴: 첫 인자가 `ctl`/`task`/`md`가 아니면 `None`을 돌려줘 `main.rs`가 다음
 /// 분기로 넘어가게 한다. GUI 런타임에 도달하지 않으므로 두 번째 사무실/서버가
 /// 뜨지 않는다.
 pub fn maybe_run_cli<I, S>(args: I) -> Option<i32>
@@ -194,20 +197,23 @@ where
     let mut args = args.into_iter();
     let _program = args.next();
     let mode = args.next()?.as_ref().to_os_string();
-    // `task`는 업무 수신함에 파일만 쓰는 오프라인 분기(docs/work-panels-design.md §업무 수신함).
-    let task = mode.as_os_str() == std::ffi::OsStr::new("task");
-    if !task && mode.as_os_str() != std::ffi::OsStr::new("ctl") {
-        return None;
-    }
+    // `task`는 업무 수신함에 파일만 쓰는 오프라인 분기(docs/work-panels-design.md §업무 수신함),
+    // `md`는 Markdown을 앱 캐시의 HTML로 바꾸는 오프라인 분기(docs/doc-view-design.md).
+    let run: fn(Vec<String>) -> i32 = match mode.to_str() {
+        Some("task") => work_inbox_cli::run,
+        Some("md") => doc_view_cli::run,
+        Some("ctl") => control::client::run,
+        _ => return None,
+    };
     // 나머지 토큰을 String으로. 비유니코드 인자는 lossy 변환(경로/텍스트가
     // 대부분이라 실무상 무해 — 필요하면 --app-data 등으로 명시 지정).
     let rest: Vec<String> = args
         .map(|a| a.as_ref().to_string_lossy().into_owned())
         .collect();
-    Some(if task { work_inbox_cli::run(rest) } else { control::client::run(rest) })
+    Some(run(rest))
 }
 
-/// 모드 분기(forwarder·sessiond·ctl·task)가 모두 지나친 뒤의 마지막 관문.
+/// 모드 분기(forwarder·sessiond·ctl·task·md)가 모두 지나친 뒤의 마지막 관문.
 /// GUI는 인자 없이만 뜬다 — 남은 인자가 있으면 사용법을 찍고 [`EXIT_USAGE`]로
 /// 끝낸다. 예외: 구형 macOS Finder가 붙이던 `-psn_…` 프로세스 일련번호 인자.
 pub fn reject_unknown_args<I, S>(args: I) -> Option<i32>
@@ -351,6 +357,13 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             install_panic_logger(data_dir.clone());
             std::fs::create_dir_all(data_dir.join("work-inbox"))?;
+            // 문서 뷰어 캐시(docs/doc-view-design.md): 7일 지난 HTML·처리 못 한 열기 요청.
+            {
+                let data_dir = data_dir.clone();
+                let _ = std::thread::Builder::new()
+                    .name("doc-view-gc".into())
+                    .spawn(move || doc_view::gc(&data_dir));
+            }
 
             // 로그인 셸 env 1회 캡처(#58). 요약기·이미지 생성 스폰 직전에도 부르지만
             // (멱등) 부팅에서 미리 해 둬야 세션 로그의 JSONL 전사 소스와 사용량
