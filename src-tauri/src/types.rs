@@ -563,6 +563,18 @@ pub struct CreateSessionRequest {
     /// 제공한 command wrapper specs를 PowerShell 함수, Git Bash `--rcfile`,
     /// 또는 zsh ZDOTDIR shim으로 렌더링한다.
     pub autostart_claude: Option<bool>,
+    /// 태스크 대화 세션(docs/task-chat-design.md §세션). agentId가 `task-chat-` 접두사여야
+    /// 한다. 관찰 훅·`AGENT_OFFICE_AGENT_ID`·persona·셸 작업중 감시를 빼고 대화용 권한 설정을 붙인다.
+    #[serde(default)]
+    pub task_chat: bool,
+}
+
+/// 태스크 대화 세션의 agentId 접두사. 프로필 id(nanoid 21자)와 겹치지 않는다.
+pub const TASK_CHAT_PREFIX: &str = "task-chat-";
+
+/// 태스크 대화 세션의 agentId인가.
+pub fn is_task_chat_id(agent_id: &str) -> bool {
+    agent_id.starts_with(TASK_CHAT_PREFIX)
 }
 
 /// createSession 응답.
@@ -985,6 +997,17 @@ mod tests {
         assert_eq!(req.rows, None);
         assert_eq!(req.cwd, None);
         assert_eq!(req.autostart_claude, None);
+        assert!(!req.task_chat);
+    }
+
+    #[test]
+    fn create_session_request_reads_task_chat_and_the_prefix_marks_chat_ids() {
+        let req: CreateSessionRequest =
+            serde_json::from_str("{\"agentId\":\"task-chat-abc\",\"taskChat\":true}").unwrap();
+        assert!(req.task_chat);
+        assert!(is_task_chat_id(&req.agent_id));
+        assert!(!is_task_chat_id("V1StGXR8_Z5jdHi6B-myT"));
+        assert!(!is_task_chat_id("task-chat"));
     }
 
     #[test]

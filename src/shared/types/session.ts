@@ -66,7 +66,14 @@ export interface CreateSessionOptions {
   agentName?: string;
   /** Historical profile role copied into session_started analytics only. */
   agentRole?: string;
+  /** 태스크 대화 세션(docs/task-chat-design.md §세션). agentId가 `task-chat-` 접두사여야 한다.
+   * 관찰 훅·`AGENT_OFFICE_AGENT_ID`·persona·셸 작업중 감시를 빼고 대화용 권한 설정을 붙인다.
+   * 부재 = false. */
+  taskChat?: boolean;
 }
+
+/** 태스크 대화 세션의 agentId 접두사. Rust `TASK_CHAT_PREFIX`와 같다. */
+export const TASK_CHAT_PREFIX = "task-chat-";
 
 /**
  * Wire payload for the `create_session` command (camelCase args).

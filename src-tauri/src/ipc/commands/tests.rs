@@ -435,6 +435,7 @@
             startup_command: None,
             personality_prompt: None,
             autostart_claude: None,
+            task_chat: false,
         }
     }
 
@@ -457,6 +458,7 @@
             personality_prompt: None,
             agent_name: Some("Compiler".into()),
             agent_role: Some("Platform".into()),
+            task_chat: false,
         };
         assert_eq!(
             event_profile("a1", &opts),
@@ -474,6 +476,13 @@
         );
     }
 
+    #[test]
+    fn create_session_opts_read_task_chat_from_camel_case() {
+        let opts: SessionOpts = serde_json::from_str("{\"taskChat\":true}").unwrap();
+        assert!(opts.task_chat);
+        assert!(!serde_json::from_str::<SessionOpts>("{}").unwrap().task_chat);
+    }
+
     #[tokio::test]
     async fn create_session_delegates_to_manager_create_with_opts_and_default_autostart() {
         let (state, ctl, dir, profile_dir) = build("create");
@@ -489,6 +498,7 @@
                 startup_command: None,
                 personality_prompt: None,
                 autostart_claude: None, // command body always passes None -> manager defaults to false
+                task_chat: false,
             })
             .unwrap();
 
@@ -513,6 +523,7 @@
             personality_prompt: None,
             agent_name: None,
             agent_role: None,
+            task_chat: false,
         };
         // create_session 본문과 동일한 매핑.
         let request = CreateSessionRequest {
@@ -524,6 +535,7 @@
             startup_command: opts.startup_command.clone(),
             personality_prompt: opts.personality_prompt.clone(),
             autostart_claude: None,
+            task_chat: false,
         };
         assert_eq!(request.shell, Some("git-bash".to_string()));
     }
@@ -541,6 +553,7 @@
             personality_prompt: None,
             agent_name: None,
             agent_role: None,
+            task_chat: false,
         };
         let request = CreateSessionRequest {
             agent_id: "a1".into(),
@@ -551,6 +564,7 @@
             startup_command: opts.startup_command.clone(),
             personality_prompt: opts.personality_prompt.clone(),
             autostart_claude: None,
+            task_chat: false,
         };
         assert_eq!(
             request.startup_command,

@@ -572,6 +572,30 @@ pub fn run() {
                 }) as Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>
             };
 
+            // 태스크 대화 세션(docs/task-chat-design.md §권한): 훅 없이 shim 실행과 세션 로그·
+            // 작업자 보고 읽기만 사전 승인한 설정 파일. 쓰기 도구는 승인하지 않는다.
+            let task_chat_settings_provider = {
+                let office_shims = office_shims.clone();
+                let settings_dir = observer_settings_dir.clone();
+                let read_dirs = vec![
+                    crate::session_log::store::root_for(&data_dir),
+                    crate::auto_run::reports_dir(&data_dir.join("work-inbox")),
+                ];
+                Arc::new(move |session_id: &str| {
+                    let fragment =
+                        crate::office_instructions::task_chat_permissions_fragment(&office_shims(), &read_dirs)?;
+                    crate::office_instructions::write_permissions_only_settings(
+                        &settings_dir,
+                        session_id,
+                        &fragment,
+                    )
+                    .map_err(|error| {
+                        eprintln!("agent-office: task chat settings write failed: {error}");
+                    })
+                    .ok()
+                }) as Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>
+            };
+
             let observer = Arc::new(
                 ObserverRuntime::production_with(
                     hub.clone(),
@@ -618,6 +642,8 @@ pub fn run() {
                 })
                 // 사무실 shim 권한 전용 설정(관찰 OFF 세션).
                 .with_office_settings(office_settings_provider)
+                // 태스크 대화 세션의 훅 없는 권한 설정.
+                .with_task_chat_settings(task_chat_settings_provider)
                 // 터미널 전사 상시 기록(30일·2GB 자율 보존).
                 .with_session_log(session_log_root.clone(), session_log_enabled.clone())
                 // 대체 화면(Claude Code)에서 도는 대화는 PTY로 안 보인다 --

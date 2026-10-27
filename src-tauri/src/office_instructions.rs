@@ -76,6 +76,30 @@ pub fn permissions_fragment(shims: &[PathBuf]) -> Option<serde_json::Value> {
     Some(serde_json::json!({ "permissions": { "allow": allow } }))
 }
 
+/// 태스크 대화 세션(docs/task-chat-design.md §권한)의 `--settings` 조각. 훅은 없고 shim 실행과
+/// `read_dirs`(세션 로그·작업자 보고 폴더) 아래 읽기만 사전 승인한다. 쓰기 도구는 넣지 않는다.
+pub fn task_chat_permissions_fragment(shims: &[PathBuf], read_dirs: &[PathBuf]) -> Option<serde_json::Value> {
+    let allow: Vec<String> = shims
+        .iter()
+        .map(|shim| format!("Bash({}:*)", shim.to_string_lossy()))
+        .chain(read_dirs.iter().map(|dir| format!("Read({}/**)", claude_absolute_path(dir))))
+        .collect();
+    (!allow.is_empty()).then(|| serde_json::json!({ "permissions": { "allow": allow } }))
+}
+
+/// Claude 권한 규칙의 절대 경로 표기. 규칙의 `/x`는 설정 파일 기준 상대 경로라 절대 경로는
+/// `//x`로 쓴다. Windows 경로는 Claude가 POSIX 꼴(`C:\a` → `/c/a`)로 바꿔 맞추므로 그 꼴로 쓴다.
+pub fn claude_absolute_path(path: &Path) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    let text = text.trim_end_matches('/');
+    let bytes = text.as_bytes();
+    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        return format!("//{drive}/{}", text[2..].trim_start_matches('/'));
+    }
+    format!("/{}", text)
+}
+
 /// TOML 기본 문자열(큰따옴표) 하나로 감싼다. 제어 문자는 버리고 줄바꿈·탭은 이스케이프한다.
 pub fn toml_basic_string(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
@@ -159,6 +183,32 @@ pub(crate) fn set_executable(_path: &Path) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn task_chat_fragment_allows_shims_and_reads_without_writes() {
+        let fragment = task_chat_permissions_fragment(
+            &[PathBuf::from("/tmp/ao/bin/office-task")],
+            &[PathBuf::from("/data/session-logs/v1"), PathBuf::from("/data/work-inbox/reports/")],
+        )
+        .unwrap();
+        assert_eq!(
+            fragment,
+            serde_json::json!({ "permissions": { "allow": [
+                "Bash(/tmp/ao/bin/office-task:*)",
+                "Read(//data/session-logs/v1/**)",
+                "Read(//data/work-inbox/reports/**)",
+            ] } })
+        );
+        assert!(fragment.get("hooks").is_none());
+        assert_eq!(task_chat_permissions_fragment(&[], &[]), None);
+    }
+
+    #[test]
+    fn claude_absolute_path_uses_double_slash_and_posix_drive_form() {
+        assert_eq!(claude_absolute_path(Path::new("/Users/me/Library/App Support/x")), "//Users/me/Library/App Support/x");
+        assert_eq!(claude_absolute_path(Path::new("C:\\Users\\me\\AppData\\x")), "//c/Users/me/AppData/x");
+        assert_eq!(claude_absolute_path(Path::new("D:/data/")), "//d/data");
+    }
 
     #[test]
     fn instructions_embed_the_absolute_shim_path() {

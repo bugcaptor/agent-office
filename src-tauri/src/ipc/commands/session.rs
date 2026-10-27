@@ -29,6 +29,9 @@ pub struct SessionOpts {
     pub personality_prompt: Option<String>,
     pub agent_name: Option<String>,
     pub agent_role: Option<String>,
+    /// 태스크 대화 세션(docs/task-chat-design.md §세션). 기본 false.
+    #[serde(default)]
+    pub task_chat: bool,
 }
 
 pub(crate) fn event_profile(agent_id: &str, opts: &SessionOpts) -> AgentEventProfile {
@@ -71,6 +74,7 @@ pub(crate) async fn create_session_inner(
             startup_command: o.startup_command,
             personality_prompt: o.personality_prompt,
             autostart_claude: None, // 항상 기본 false (SessionManager::create의 unwrap_or(false))
+            task_chat: o.task_chat,
         },
         profile,
     )

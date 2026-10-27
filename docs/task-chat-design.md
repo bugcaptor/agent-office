@@ -50,7 +50,7 @@
 
 ### 식별자
 
-- agentId 자리에 `task-chat-<taskId>`를 쓴다. 태스크 id는 nanoid(`[A-Za-z0-9_-]`)라 세션 로그 경로 검증(`diary_store.rs` 규약)을 통과한다. 이 접두사는 프로필 id와 겹치지 않음을 프로필 생성 쪽에서 보장한다(프로필 id 형식 확인 필요).
+- agentId 자리에 `task-chat-<taskId>`를 쓴다. 태스크 id는 nanoid(`[A-Za-z0-9_-]`)라 세션 로그 경로 검증(`diary_store.rs` 규약)을 통과한다. 프로필 id는 `nanoid()`(21자)라 이 접두사와 겹치지 않는다(아래 '열린 질문'). 프로필 생성 쪽에 따로 막는 장치는 두지 않고, 네이티브가 `taskChat` 옵션과 접두사가 어긋난 요청을 `task-chat-id-mismatch`로 거절한다. 그래서 핸드오프 제외·셸 작업중 감시 끄기는 접두사(`is_task_chat_id`)만 보고 정한다.
 - 태스크 하나에 대화 세션 하나. 동시에 살아 있는 대화 세션은 4개까지로 한다(PTY·스레드 수 보호). 넘으면 가장 오래 안 본 대화를 닫으라고 안내한다.
 
 ### 관찰을 끈다
@@ -60,13 +60,14 @@
 - **관찰 훅 주입을 하지 않는다.** 셸 래퍼가 `claude`에 붙이는 `--settings $AGENT_OFFICE_SETTINGS`(훅)와 Codex·Pi·Kilo 훅 배선을 대화 세션에서는 빼고, 대신 훅 없이 권한 조각만 담은 대화용 설정 파일을 붙인다(아래 '권한'). 훅 이벤트가 없으므로 턴 시간·알림·세션 요약·분석·일기·마스코트 어디에도 들어가지 않는다. 셸 작업중 감지(`shell_activity`)도 끈다.
 - **`AGENT_OFFICE_AGENT_ID`를 넣지 않는다.** `office-task`로 만든 업무가 가짜 담당으로 들어가지 않게 미배정으로 둔다. shim(`office-task`, `office-md`)과 PATH는 그대로 두어 `office-task --show`를 쓸 수 있게 한다.
 - **페르소나 프롬프트를 넣지 않는다.** 사무실 공통 안내문(`office-task`·`office-md` 사용법)은 넣는다.
+- 구현됨(`prepare_session_plan`의 `task_chat`): 관찰 URL을 없는 것으로 보고 준비하므로 Claude·Codex 훅, Pi 확장(`-e`), Kilo 플러그인, agy 래퍼, `AGENT_OFFICE_HOOK_URL`이 모두 빠진다(URL이 없으면 forwarder가 아무것도 보내지 않으므로 전역 agy 훅도 조용하다). `AGENT_OFFICE_SESSION`·`AGENT_OFFICE_APP_DATA`·`AGENT_OFFICE_WORK_INBOX`·`AGENT_OFFICE_TASK`·`AGENT_OFFICE_MD`·PATH는 그대로다. 공통 안내문은 Claude(`--append-system-prompt`)·Codex(`developer_instructions`)·Pi(`--append-system-prompt`)에 그대로 실린다.
 - 세션 로그(PTY 전사)는 남긴다. `session-logs/v1/task-chat-<taskId>/`에 쌓여 30일 규칙으로 지워진다. 세션 로그 보기의 캐릭터 목록에는 나오지 않는다.
 
 렌더러도 방어한다. `task-chat-` 접두사의 세션 이벤트는 캐릭터 중심 스토어(턴 시간·알림·요약 수집·사용량)에서 무시한다. 훅이 꺼져 있어도 세션 상태 이벤트(`session-state`)는 오기 때문이다.
 
 ### 앱 종료와 재실행
 
-대화 세션은 핸드오프하지 않는다. 앱을 끄면 `handoff_all`에서 `task-chat-` 세션을 빼고 버린다. 대화는 일회성이고, 입양 경로(`adoptDetachedSessions`)가 캐릭터 없는 세션을 받을 준비가 없기 때문이다. 종료 확인창에 살아 있는 대화 수를 함께 알린다.
+대화 세션은 핸드오프하지 않는다. 앱을 끄면 `handoff_all`에서 `task-chat-` 세션을 빼고 버린다(구현됨: 넘기기 전에 `dispose`, Windows의 no-op 경로도 같다). 대화는 일회성이고, 입양 경로(`adoptDetachedSessions`)가 캐릭터 없는 세션을 받을 준비가 없기 때문이다. 종료 확인창에 살아 있는 대화 수를 함께 알린다.
 
 ### 기동
 
@@ -91,8 +92,9 @@
 
 ### 권한
 
-- Claude: 대화용 설정 조각에 세션 로그 폴더와 `work-inbox/reports/` 읽기(`Read(<경로>/**)`), shim 명령 사전 승인을 넣는다. 그래서 6번 경로를 권한 창 없이 읽는다. 쓰기 도구는 사전 승인하지 않는다(물으면 사람이 정한다).
-- Codex: 기본 샌드박스가 읽기는 어디든 허용하므로 따로 하지 않는다. `writable_roots`에 아무것도 더하지 않는다.
+- Claude: 대화용 설정 조각에 세션 로그 폴더와 `work-inbox/reports/` 읽기, shim 명령 사전 승인을 넣는다. 그래서 6번 경로를 권한 창 없이 읽는다. 쓰기 도구는 사전 승인하지 않는다(물으면 사람이 정한다). 훅은 없다.
+  - 구현됨: `office_instructions::task_chat_permissions_fragment`가 `{"permissions":{"allow":["Bash(<shim>:*)", "Read(//<세션 로그 루트>/**)", "Read(//<work-inbox>/reports/**)"]}}`를 만들고, `lib.rs`의 공급자가 `observer/claude/<sid>.settings.json`(기존 GC 대상)에 쓴다. Claude 권한 규칙에서 `/x`는 설정 파일 기준 상대 경로라 절대 경로는 `//x`로, Windows 경로는 `//c/Users/...` 꼴로 쓴다(`claude_absolute_path`). shim 목록은 사무실 권한 조각과 같다(`office-task`는 업무 패널이 켜졌을 때만).
+- Codex: 기본 샌드박스가 읽기는 어디든 허용하므로 따로 하지 않는다. `writable_roots`에 아무것도 더하지 않는다(수신함·문서 뷰어 캐시도 넣지 않는다 — Codex 대화에서 `office-task` 쓰기나 `office-md`를 쓰려면 샌드박스 승인을 거친다).
 
 ## 구현 위치 (계획)
 
@@ -121,8 +123,8 @@
 - 대화 내용을 태스크나 자동 진행 기록에 되돌려 붙이기. 사람이 정한 것을 반영하려면 루트 본문(플랜 메모)을 고치거나 태스크를 수정한다.
 - 대화 세션의 앱 재시작 뒤 이어받기.
 
-## 열린 질문 (구현 전 확인)
+## 열린 질문 (2026-10-27 코드로 확인)
 
-- 프로필 id 형식이 `task-chat-` 접두사와 겹칠 수 있는지.
-- 셸 래퍼가 `AGENT_OFFICE_SETTINGS` 없이도 정상 동작하는지(대화용 설정 파일로 바꿔 끼우는 방식이 나은지).
-- Windows PowerShell·Git Bash에서 대화용 설정 조각과 shim이 같은 방식으로 붙는지.
+- **프로필 id 형식이 `task-chat-` 접두사와 겹칠 수 있는지** — 사실상 겹치지 않는다. 프로필 id는 `src/renderer/profile/generate.ts`의 `nanoid()`(21자, `[A-Za-z0-9_-]`)이고, 21자 nanoid가 10자 접두사 `task-chat-`로 시작할 확률은 64⁻¹⁰(약 10⁻¹⁸)이다. 다만 `profile_store.rs`는 id 형식을 검사하지 않아 손으로 고친 `profiles.json`이나 ctl `create`는 아무 id나 쓸 수 있다. 그래서 프로필 생성 쪽 장치 대신 네이티브가 옵션과 접두사가 어긋나면 세션 생성을 거절한다(위 '식별자').
+- **셸 래퍼가 `AGENT_OFFICE_SETTINGS` 없이도 정상 동작하는지** — 그렇다. 래퍼는 고정 스크립트가 아니라 세션마다 `PreparedPlan.wrappers`(`CommandWrapperSpec`)에서 렌더되고, `claude --settings $AGENT_OFFICE_SETTINGS`는 그 목록에 그 항목이 있을 때만 생긴다. 관찰이 꺼진 세션이 이미 쓰는 경로(권한 전용 설정 파일을 `AGENT_OFFICE_SETTINGS`에 싣고, 파일이 사라지면 인자만 빼는 `skip_prefix_if_env_file_missing` 가드)가 있으므로, 대화 세션은 그 파일만 **대화용 설정 파일로 바꿔 끼운다**. 승인할 shim이 없어 파일을 못 만들면 claude 래퍼가 아예 없어 원본 `claude`가 뜬다.
+- **Windows PowerShell·Git Bash에서 같은 방식으로 붙는지** — 같다. `shells::resolve_observed`가 PowerShell/pwsh(`-EncodedCommand` 함수, `Test-Path` 가드), Git Bash(`--rcfile`), zsh(ZDOTDIR) 모두 같은 래퍼 목록을 렌더한다(`wrapper_script.rs`의 `render_powershell`/`render_posix`). shim 경로와 PATH는 셸과 무관한 env다. WSL은 지금도 래퍼를 지원하지 않는다(보내기와 같은 판정으로 막는다). Windows에서 다른 점은 Claude 권한 규칙의 경로 꼴(`//c/...`)뿐이라 `claude_absolute_path`가 맞춘다. Windows 실기 확인은 아직 안 했다.

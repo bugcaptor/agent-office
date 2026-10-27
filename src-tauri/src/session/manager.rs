@@ -95,6 +95,9 @@ pub struct SessionManager {
     /// 관찰이 꺼진 세션에 물릴 사무실 shim 권한 전용 설정 파일. sid를 주면 그
     /// 파일 경로를 돌려준다. 승인할 shim이 없으면 None.
     get_office_settings: Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>,
+    /// 태스크 대화 세션(docs/task-chat-design.md §권한)에 물릴 훅 없는 설정 파일. sid를 주면
+    /// shim 실행·세션 로그·작업자 보고 읽기만 사전 승인한 파일 경로를 돌려준다.
+    get_task_chat_settings: Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>,
     /// pub(super): 핸드오프/입양 형제 모듈이 세션 제거 시 레지스트리도 함께 정리한다.
     pub(super) registry: Arc<SessionRegistry>,
     /// pub(super): external.rs가 외부(논리) 세션의 started/state 이벤트를 낸다.
@@ -155,6 +158,7 @@ impl SessionManager {
             observer,
             get_observer_url,
             get_office_settings: Arc::new(|_| None),
+            get_task_chat_settings: Arc::new(|_| None),
             registry,
             events,
             hub,
@@ -206,6 +210,15 @@ impl SessionManager {
         provider: Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>,
     ) -> Self {
         self.get_office_settings = provider;
+        self
+    }
+
+    /// 태스크 대화 세션 설정 주입(lib.rs). 기본은 no-op이라 테스트는 신경 쓰지 않는다.
+    pub fn with_task_chat_settings(
+        mut self,
+        provider: Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>,
+    ) -> Self {
+        self.get_task_chat_settings = provider;
         self
     }
 
@@ -273,14 +286,19 @@ impl SessionManager {
     /// temp+rename 멱등 기록이라 같은 sid로 다시 불러도 안전하다). 어댑터
     /// 준비 실패는 로그만 남고 비관찰로 강등된다(ObserverRuntime 계약).
     ///
-    /// pub(super): external.rs의 `attach_external`이 재사용한다.
+    /// `task_chat`(docs/task-chat-design.md §관찰을 끈다): 관찰 훅·Pi/Kilo/agy 배선·
+    /// `AGENT_OFFICE_HOOK_URL`·`AGENT_OFFICE_AGENT_ID`·persona를 빼고, 사무실 권한 설정 대신
+    /// 대화용 설정을 붙인다. shim·PATH·공통 안내문은 그대로다.
     pub(super) fn prepare_session_plan(
         &self,
         session_id: &str,
         agent_id: &str,
         personality_prompt: Option<&str>,
+        task_chat: bool,
     ) -> PreparedPlan {
-        let observer_url = (self.get_observer_url)();
+        // 대화 세션은 관찰이 꺼진 세션처럼 준비한다 -- 훅 URL이 없으면 forwarder도 아무것도 보내지 않는다.
+        let observer_url = if task_chat { None } else { (self.get_observer_url)() };
+        let personality_prompt = personality_prompt.filter(|_| !task_chat);
         let mut plan = observer_url
             .as_deref()
             .map(|url| {
@@ -381,7 +399,8 @@ impl SessionManager {
             .iter()
             .any(|(key, _)| key == "AGENT_OFFICE_SETTINGS");
         if !has_settings {
-            if let Some(path) = (self.get_office_settings)(session_id) {
+            let settings = if task_chat { &self.get_task_chat_settings } else { &self.get_office_settings };
+            if let Some(path) = settings(session_id) {
                 plan.env.push((
                     "AGENT_OFFICE_SETTINGS".into(),
                     path.to_string_lossy().into_owned(),
@@ -494,12 +513,14 @@ impl SessionManager {
         // Codex 기본 workspace-write 샌드박스는 작업 폴더 밖 쓰기를 막는다. 안내문을
         // 실은 세션에서는 수신함을, 문서 뷰어를 실은 세션에서는 캐시(HTML·열기 요청)를
         // 쓰기 허용 경로에 더한다.
+        // 대화 세션은 질의응답용이라 아무것도 더하지 않는다(docs/task-chat-design.md §권한).
         let writable_roots: Vec<&std::path::Path> = [
             work_inbox.as_deref().filter(|_| office_enabled),
             doc_view_cache.as_deref().filter(|_| md_shim.is_some()),
         ]
         .into_iter()
         .flatten()
+        .filter(|_| !task_chat)
         .collect();
         if !writable_roots.is_empty() {
             plan.env.push((
@@ -533,8 +554,11 @@ impl SessionManager {
             ));
         }
         // 업무 수신함(docs/work-panels-design.md §업무 수신함): 업무 패널 설정과 무관하게 싣는다.
-        // 수신함 규약은 패널이 꺼져 있어도 유효하다.
-        env.push(("AGENT_OFFICE_AGENT_ID".into(), agent_id.to_string()));
+        // 수신함 규약은 패널이 꺼져 있어도 유효하다. 대화 세션은 `office-task`로 만든 업무가
+        // 가짜 담당으로 들어가지 않게 agentId를 싣지 않는다(미배정).
+        if !task_chat {
+            env.push(("AGENT_OFFICE_AGENT_ID".into(), agent_id.to_string()));
+        }
         if let Some(inbox) = &work_inbox {
             env.push((
                 "AGENT_OFFICE_WORK_INBOX".into(),
@@ -573,6 +597,11 @@ impl SessionManager {
         req: CreateSessionRequest,
         profile: AgentEventProfile,
     ) -> Result<CreateSessionResult, String> {
+        // 대화 세션 표시는 옵션과 agentId 접두사가 늘 함께 간다 -- 핸드오프 제외·셸 작업중
+        // 감시 끄기는 접두사만 보고 정한다.
+        if req.task_chat != is_task_chat_id(&req.agent_id) {
+            return Err("task-chat-id-mismatch".into());
+        }
         let _lifecycle = self.lifecycle.lock();
 
         // 살아있는 세션이 있으면 재사용, 새 PTY 안 만듦. 단, dispose()로 kill이
@@ -601,7 +630,12 @@ impl SessionManager {
 
         let session_id = Uuid::new_v4().to_string(); // uuid는 URL-safe → hook 라우팅 키로 안전
         let prepared =
-            self.prepare_session_plan(&session_id, &req.agent_id, req.personality_prompt.as_deref());
+            self.prepare_session_plan(
+                &session_id,
+                &req.agent_id,
+                req.personality_prompt.as_deref(),
+                req.task_chat,
+            );
 
         // prepare_session이 파일을 만든 뒤 spawn이 Err 또는 panic으로 끝나도
         // observer 아티팩트가 남지 않게 한다. 세션 등록 성공 뒤에는 Session이
@@ -858,9 +892,10 @@ impl SessionManager {
 
         // 4) 셸 작업중 감시 스레드(kbm #2f9, unix + 앱이 마스터 fd를 쥔 세션 한정).
         // 포그라운드 프로세스 그룹을 못 보는 컨트롤(브로커 데몬 소유·Fake)에서는
-        // 아예 띄우지 않는다 -- 감시가 없으면 기존 동작 그대로다.
+        // 아예 띄우지 않는다 -- 감시가 없으면 기존 동작 그대로다. 태스크 대화 세션도
+        // 캐릭터 상태에 섞이지 않게 띄우지 않는다(docs/task-chat-design.md §관찰을 끈다).
         #[cfg(unix)]
-        if watch_control.foreground_sample().is_some() {
+        if !is_task_chat_id(&agent_id) && watch_control.foreground_sample().is_some() {
             let weak = Arc::downgrade(&session);
             crate::session::shell_activity::spawn_watcher(
                 session_id.clone(),

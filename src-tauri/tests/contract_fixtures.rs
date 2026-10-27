@@ -368,6 +368,7 @@ fn create_session_request_deserializes_from_fixture() {
     assert_eq!(value.startup_command.as_deref(), Some("echo hi"));
     assert_eq!(value.personality_prompt.as_deref(), Some("친절하게 대답해"));
     assert_eq!(value.autostart_claude, Some(false));
+    assert!(!value.task_chat);
 }
 
 // ---------------------------------------------------------------------

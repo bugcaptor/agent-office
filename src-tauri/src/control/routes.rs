@@ -97,6 +97,7 @@ pub(super) async fn create(
             startup_command: p.startup_command,
             personality_prompt,
             autostart_claude: None,
+            task_chat: false,
         },
         profile,
     )

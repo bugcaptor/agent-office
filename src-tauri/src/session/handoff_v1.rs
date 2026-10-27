@@ -16,18 +16,22 @@ impl SessionManager {
     /// 후 종료 전 화면(예: ls 결과)이 사라진다(실증에서 발견된 빈틈).
     /// 반환값은 성공 개수 -- 프론트는 이 수와 무관하게 종료를 진행한다.
     /// `app_data_dir`이 없으면(테스트 등) 0.
+    ///
+    /// 태스크 대화 세션(`task-chat-` 접두사)은 넘기지 않고 버린다(docs/task-chat-design.md
+    /// §앱 종료와 재실행) -- 대화는 일회성이고 입양 경로가 캐릭터 없는 세션을 받지 않는다.
     #[cfg(unix)]
     pub fn handoff_all(
         &self,
         snapshots: &std::collections::HashMap<String, String>,
     ) -> usize {
+        self.discard_task_chats();
         let Some(app_data_dir) = self.app_data_dir.clone() else {
             return 0;
         };
         let ids: Vec<AgentId> = {
             let map = self.sessions.lock();
             map.iter()
-                .filter(|(_, s)| *s.state.lock() == SessionState::Running)
+                .filter(|(a, s)| !is_task_chat_id(a) && *s.state.lock() == SessionState::Running)
                 .map(|(a, _)| a.clone())
                 .collect()
         };
@@ -63,7 +67,17 @@ impl SessionManager {
         &self,
         _snapshots: &std::collections::HashMap<String, String>,
     ) -> usize {
+        self.discard_task_chats();
         0
+    }
+
+    /// 살아 있는 태스크 대화 세션을 모두 버린다(핸드오프 직전).
+    fn discard_task_chats(&self) {
+        let ids: Vec<AgentId> =
+            self.sessions.lock().keys().filter(|a| is_task_chat_id(a)).cloned().collect();
+        for agent_id in ids {
+            self.dispose(&agent_id);
+        }
     }
 
     /// 세션 하나를 넘긴다. 설계 문서 §핵심 3의 순서 그대로: 리더 인터럽트 →

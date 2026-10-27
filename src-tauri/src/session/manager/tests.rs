@@ -51,6 +51,7 @@
             startup_command: None,
             personality_prompt: None,
             autostart_claude: autostart,
+            task_chat: false,
         }
     }
 
@@ -64,6 +65,7 @@
             startup_command: None,
             personality_prompt: None,
             autostart_claude: Some(false),
+            task_chat: false,
         }
     }
 
@@ -77,6 +79,7 @@
             startup_command: None,
             personality_prompt: None,
             autostart_claude: Some(false),
+            task_chat: false,
         }
     }
 
@@ -91,6 +94,7 @@
             personality_prompt: None,
             // autostart OFF: startup_command 주입만 단독 검증(두 주입이 겹치지 않게).
             autostart_claude: Some(false),
+            task_chat: false,
         }
     }
 
@@ -107,6 +111,7 @@
             startup_command: None,
             personality_prompt,
             autostart_claude: Some(false),
+            task_chat: false,
         }
     }
 
@@ -540,6 +545,122 @@
             env_value(&control, "AGENT_OFFICE_SETTINGS").as_deref(),
             Some("/tmp/office.settings.json")
         );
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    fn task_chat_req(agent_id: &str, personality_prompt: Option<String>) -> CreateSessionRequest {
+        CreateSessionRequest {
+            task_chat: true,
+            ..req_with_persona(agent_id, personality_prompt)
+        }
+    }
+
+    /// 관찰을 켠 매니저(Claude·Codex 어댑터)에 사무실 shim과 두 설정 공급자를 단다.
+    fn task_chat_manager() -> (Arc<SessionManager>, Arc<FakeControl>, Arc<Mutex<Vec<CommandWrapperSpec>>>, PathBuf) {
+        let (manager, control, wrappers, scratch) = build_observer_manager(
+            true,
+            vec![
+                plan_adapter(ObserverProvider::Claude, "claude"),
+                plan_adapter(ObserverProvider::Codex, "codex"),
+            ],
+        );
+        let manager = with_office(manager, &scratch, true);
+        let manager = Arc::try_unwrap(manager)
+            .ok()
+            .expect("유일 소유")
+            .with_office_settings(Arc::new(|_sid: &str| Some(PathBuf::from("/tmp/office.settings.json"))))
+            .with_task_chat_settings(Arc::new(|_sid: &str| Some(PathBuf::from("/tmp/chat.settings.json"))));
+        (Arc::new(manager), control, wrappers, scratch)
+    }
+
+    #[tokio::test]
+    async fn task_chat_session_drops_hooks_agent_id_and_persona_but_keeps_shims() {
+        let (manager, control, recorded_wrappers, scratch) = task_chat_manager();
+        manager.create(task_chat_req("task-chat-t1", Some("해적처럼 말한다.".into()))).unwrap();
+
+        let env = control.spawned_env();
+        let keys: Vec<&str> = env.iter().map(|(key, _)| key.as_str()).collect();
+        for absent in [
+            "AGENT_OFFICE_HOOK_URL",
+            "AGENT_OFFICE_AGENT_ID",
+            "AGENT_OFFICE_CODEX_HOOK_STOP",
+            "AGENT_OFFICE_PI_EXT",
+            "AGENT_OFFICE_KILO_CONFIG",
+            "AGENT_OFFICE_CODEX_WRITABLE_ROOTS",
+        ] {
+            assert!(!keys.contains(&absent), "{absent} must be absent: {keys:?}");
+        }
+        assert_eq!(env_value(&control, "AGENT_OFFICE_SETTINGS").as_deref(), Some("/tmp/chat.settings.json"));
+        // persona 없이 공통 안내문만 싣는다.
+        let shim = scratch.join("bin").join("office-task");
+        let md = scratch.join("bin").join("office-md");
+        let office = format!(
+            "{}\n\n{}",
+            crate::office_instructions::task_instructions(&shim),
+            crate::office_instructions::doc_view_instructions(&md)
+        );
+        assert_eq!(env_value(&control, "AGENT_OFFICE_PERSONA"), Some(office.clone()));
+        assert_eq!(env_value(&control, "AGENT_OFFICE_OFFICE_PROMPT"), Some(office));
+        assert_eq!(env_value(&control, "AGENT_OFFICE_TASK").map(PathBuf::from), Some(shim));
+        assert_eq!(env_value(&control, "AGENT_OFFICE_MD").map(PathBuf::from), Some(md));
+        assert!(env_value(&control, "PATH").is_some());
+        assert!(env_value(&control, "AGENT_OFFICE_WORK_INBOX").is_some());
+
+        let wrappers = recorded_wrappers.lock();
+        let commands: Vec<&str> = wrappers.iter().map(|w| w.command.as_str()).collect();
+        assert_eq!(commands, ["claude", "codex", "pi"], "Kilo·agy 배선 없음");
+        assert_eq!(
+            wrappers[0].prefix_args,
+            vec![
+                WrapperArg::Literal("--settings".into()),
+                WrapperArg::Env("AGENT_OFFICE_SETTINGS".into()),
+                WrapperArg::Literal("--append-system-prompt".into()),
+                WrapperArg::Env("AGENT_OFFICE_PERSONA".into()),
+            ]
+        );
+        assert_eq!(wrappers[0].skip_prefix_if_env_file_missing.as_deref(), Some("AGENT_OFFICE_SETTINGS"));
+        assert_eq!(
+            wrappers[1].prefix_args,
+            vec![
+                WrapperArg::Literal("-c".into()),
+                WrapperArg::Env("AGENT_OFFICE_CODEX_PERSONA".into()),
+            ]
+        );
+        assert_eq!(
+            wrappers[2].prefix_args,
+            vec![
+                WrapperArg::Literal("--append-system-prompt".into()),
+                WrapperArg::Env("AGENT_OFFICE_OFFICE_PROMPT".into()),
+            ],
+            "Pi 확장(-e) 없이 안내문만"
+        );
+        drop(wrappers);
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn ordinary_session_on_the_same_manager_keeps_hooks_and_agent_id() {
+        let (manager, control, recorded_wrappers, scratch) = task_chat_manager();
+        manager.create(req_with_persona("a1", Some("해적처럼 말한다.".into()))).unwrap();
+        assert!(env_value(&control, "AGENT_OFFICE_HOOK_URL").is_some());
+        assert_eq!(env_value(&control, "AGENT_OFFICE_AGENT_ID").as_deref(), Some("a1"));
+        assert!(env_value(&control, "AGENT_OFFICE_CODEX_HOOK_STOP").is_some());
+        assert!(env_value(&control, "AGENT_OFFICE_CODEX_WRITABLE_ROOTS").is_some());
+        assert!(env_value(&control, "AGENT_OFFICE_PERSONA").unwrap().starts_with("해적처럼 말한다."));
+        assert_ne!(env_value(&control, "AGENT_OFFICE_SETTINGS").as_deref(), Some("/tmp/chat.settings.json"));
+        assert!(recorded_wrappers.lock().iter().any(|w| w.command == "kilo"));
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn task_chat_flag_and_id_prefix_must_agree() {
+        let (manager, control, _wrappers, scratch) = task_chat_manager();
+        assert_eq!(manager.create(task_chat_req("a1", None)).unwrap_err(), "task-chat-id-mismatch");
+        assert_eq!(
+            manager.create(req_with_persona("task-chat-t1", None)).unwrap_err(),
+            "task-chat-id-mismatch"
+        );
+        assert!(control.spawned_env().is_empty(), "PTY를 띄우지 않는다");
         cleanup_observer_fixture(&control, &scratch);
     }
 
@@ -1463,6 +1584,39 @@
         assert!(mgr.find("a1").is_some());
 
         ctl.close_output();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn handoff_all_discards_task_chats_and_leaves_characters() {
+        let events = Arc::new(RecordingEvents::default());
+        let reg = registry();
+        let hub = hub_for(reg.clone(), events.clone() as Arc<dyn AppEvents>);
+        let dir = scratch_observer_dir();
+        let factory = Arc::new(MultiFakePtyFactory::new());
+        let mgr = Arc::new(SessionManager::new(
+            factory.clone(),
+            claude_observer(hub.clone(), dir.clone()),
+            reg,
+            events.clone() as Arc<dyn AppEvents>,
+            hub,
+            Arc::new(|| None),
+        ));
+        mgr.create(req("a1", Some(false))).unwrap();
+        mgr.create(CreateSessionRequest { task_chat: true, ..req("task-chat-t1", Some(false)) }).unwrap();
+        let controls = factory.controls();
+
+        // app_data_dir이 없어 캐릭터 세션은 넘기지 못하지만(0), 대화 세션은 그래도 버린다.
+        assert_eq!(mgr.handoff_all(&std::collections::HashMap::new()), 0);
+        assert_eq!(controls[0].kill_count(), 0, "캐릭터 세션은 건드리지 않는다");
+        assert_eq!(controls[1].kill_count(), 1, "대화 세션은 버린다");
+        controls[1].fire_exit(0);
+        wait_for(|| mgr.find("task-chat-t1").is_none()).await;
+        assert!(mgr.find("a1").is_some());
+
+        for control in &controls {
+            control.close_output();
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
