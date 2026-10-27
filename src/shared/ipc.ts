@@ -11,6 +11,7 @@ export const Commands = {
   inspectWorkSendTarget: "inspect_work_send_target",
   sendWorkItem: "send_work_item",
   sendWorkFollowUp: "send_work_follow_up",
+  openTaskChat: "open_task_chat",
   workLastReply: "work_last_reply",
   autoRunReport: "auto_run_report",
   autoRunJudge: "auto_run_judge",

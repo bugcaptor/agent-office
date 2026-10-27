@@ -28,7 +28,8 @@ use agent_office_lib::types::{
     ActivityEvent, ActivityKind, AdoptedSessionInfo, AwardsFile,
     CreateSessionRequest, CreateSessionResult, MemoSheet, MemoSheetMeta,
     NotificationEvent, NotificationSource, OutputChunk, PersistedState, SessionEventTokens,
-    SessionExitInfo, SessionState, SessionStateEvent, TurnUsageEvent,
+    SessionExitInfo, SessionState, SessionStateEvent, TaskChatRequest, TaskChatResult, TurnUsageEvent,
+    WorkCli, WorkStatus,
 };
 use agent_office_lib::usage::{
     ClaudeLiveStatus, CodexLiveOutcome, CodexLiveStatus, FetchTransport, LiveFetchOutcome,
@@ -369,6 +370,37 @@ fn create_session_request_deserializes_from_fixture() {
     assert_eq!(value.personality_prompt.as_deref(), Some("친절하게 대답해"));
     assert_eq!(value.autostart_claude, Some(false));
     assert!(!value.task_chat);
+}
+
+#[test]
+fn open_task_chat_request_deserializes_from_fixture() {
+    let fixture_json = fixture!("open-task-chat-request.json");
+    let value: TaskChatRequest = serde_json::from_str(fixture_json)
+        .unwrap_or_else(|e| panic!("deserialize failed: {e}\nfixture:\n{fixture_json}"));
+    assert_eq!(value.task_id, "t-5b198451");
+    assert_eq!(value.cwd.as_deref(), Some("/tmp/proj"));
+    assert_eq!(value.agent.cli, WorkCli::Codex);
+    assert_eq!(value.agent.effort.as_deref(), Some("high"));
+    assert_eq!((value.shell.as_deref(), value.cols, value.rows), (Some("pwsh"), Some(120), Some(32)));
+    let task = &value.context.task;
+    assert_eq!(task.status, WorkStatus::InProgress);
+    assert_eq!(task.assignee.as_deref(), Some("하나"));
+    assert_eq!(task.depends_on[0].status, WorkStatus::Done);
+    assert_eq!(task.dependents[0].id, "t-c");
+    assert_eq!(task.sessions[0].agent_id, "V1StGXR8_Z5jdHi6B-myT");
+    assert_eq!(task.sessions[0].sent_at, Some(1_798_000_000_000));
+    let plan = value.context.plan.as_ref().unwrap();
+    assert_eq!(plan.state.as_deref(), Some("paused"));
+    assert_eq!(plan.pause_reason.as_deref(), Some("judge-stop"));
+    assert_eq!(plan.log[1].text.as_deref(), Some("테스트를 돌려"));
+    assert_eq!(plan.log[0].text, None);
+    assert_eq!(plan.handoff_notes[0].text, "JSON을 쓴다");
+}
+
+#[test]
+fn open_task_chat_result_serializes_to_fixture() {
+    let value = TaskChatResult { agent_id: "task-chat-t-5b198451".into(), session_id: "0f0e0d0c-0000".into() };
+    assert_value_eq(fixture!("open-task-chat-result.json"), serde_json::to_value(&value).unwrap());
 }
 
 // ---------------------------------------------------------------------

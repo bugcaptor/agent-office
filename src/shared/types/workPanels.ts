@@ -82,6 +82,47 @@ export interface WorkSendRequest {
 export interface WorkSendResult { sessionId: string; submittedAt: number }
 /** 실행 중인 CLI에 넣는 후속 프롬프트. */
 export interface WorkFollowUpRequest { agentId: string; sessionId: string; text: string }
+/** 태스크 대화 열기(docs/task-chat-design.md §기동). 네이티브가 보고·세션 로그 경로·Git 기록을 붙여 맥락 묶음을 만든다. */
+export interface TaskChatRequest {
+  taskId: string;
+  /** 작업 폴더. 없으면 세션 기본(홈)이고 Git 기록은 찾지 않는다. */
+  cwd?: string;
+  agent: WorkAgent;
+  /** 담당 프로필의 셸 선택 id(Windows 전용). */
+  shell?: string;
+  cols?: number;
+  rows?: number;
+  context: TaskChatContext;
+}
+export interface TaskChatContext {
+  task: {
+    /** 표시 제목(`workItemTitle`). */
+    title: string;
+    status: WorkStatus;
+    /** 담당 캐릭터 이름. */
+    assignee?: string;
+    body: string;
+    dependsOn?: TaskChatLink[];
+    dependents?: TaskChatLink[];
+    /** 업무 sessionIds를 보낸 순서대로. sentAt은 그 세션에 보낸 시각(epoch ms). */
+    sessions?: { sessionId: string; agentId: string; sentAt?: number }[];
+  };
+  /** 이 태스크가 속한 자동 진행의 루트. */
+  plan?: {
+    id: string;
+    title: string;
+    body: string;
+    state?: AutoRunState;
+    pauseReason?: AutoRunPauseReason;
+    pauseDetail?: string;
+    /** 루트 autoRun.log에서 이 태스크의 항목만, 시간순. */
+    log?: { at: number; kind: AutoRunLogKind; text?: string }[];
+    /** 앞 태스크가 남긴 인계 메모 중 이 태스크에 넘어온 것. */
+    handoffNotes?: { taskId: string; title: string; text: string }[];
+  };
+}
+export interface TaskChatLink { id: string; title: string; status: WorkStatus }
+export interface TaskChatResult { agentId: string; sessionId: string }
 export interface AutoRunJudgeRequest { sessionId: string; resume: boolean; prompt: string; model?: string }
 export interface AutoRunJudgeResult { decision: "next" | "followup" | "stop"; message: string; note: string; costUsd?: number }
 

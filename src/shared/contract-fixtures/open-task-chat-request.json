@@ -1,0 +1,29 @@
+{
+  "taskId": "t-5b198451",
+  "cwd": "/tmp/proj",
+  "agent": { "cli": "codex", "model": "gpt-5.4", "effort": "high" },
+  "shell": "pwsh",
+  "cols": 120,
+  "rows": 32,
+  "context": {
+    "task": {
+      "title": "맥락 묶음",
+      "status": "in_progress",
+      "assignee": "하나",
+      "body": "본문",
+      "dependsOn": [{ "id": "t-a", "title": "앞 태스크", "status": "done" }],
+      "dependents": [{ "id": "t-c", "title": "뒤 태스크", "status": "todo" }],
+      "sessions": [{ "sessionId": "0f0e0d0c-0000", "agentId": "V1StGXR8_Z5jdHi6B-myT", "sentAt": 1798000000000 }]
+    },
+    "plan": {
+      "id": "t-root",
+      "title": "플랜",
+      "body": "플랜 메모",
+      "state": "paused",
+      "pauseReason": "judge-stop",
+      "pauseDetail": "어느 쪽으로 할까요?",
+      "log": [{ "at": 1798000000000, "kind": "send" }, { "at": 1798000001000, "kind": "followup", "text": "테스트를 돌려" }],
+      "handoffNotes": [{ "taskId": "t-a", "title": "앞 태스크", "text": "JSON을 쓴다" }]
+    }
+  }
+}

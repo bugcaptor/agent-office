@@ -1766,6 +1766,89 @@ pub struct WorkFollowUpRequest {
     pub session_id: String,
     pub text: String,
 }
+/// 태스크 대화 열기(docs/task-chat-design.md §기동). 렌더러가 태스크·루트 스냅샷을 넘기고
+/// 네이티브가 보고·세션 로그 경로·Git 기록을 붙여 첫 프롬프트를 만든다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TaskChatRequest {
+    pub task_id: String,
+    /// 렌더러가 고른 작업 폴더. 없으면 세션 기본(홈)이고 Git 기록은 찾지 않는다.
+    #[serde(default)] pub cwd: Option<String>,
+    pub agent: WorkAgent,
+    /// 담당 프로필의 셸 선택 id(Windows 전용, `CreateSessionRequest.shell`과 같다).
+    #[serde(default)] pub shell: Option<String>,
+    #[serde(default)] pub cols: Option<u16>,
+    #[serde(default)] pub rows: Option<u16>,
+    pub context: TaskChatContext,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TaskChatContext {
+    pub task: TaskChatTask,
+    /// 이 태스크가 속한 자동 진행의 루트. 플랜 밖이면 없다.
+    #[serde(default)] pub plan: Option<TaskChatPlan>,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TaskChatTask {
+    /// 표시 제목(빈 제목이면 렌더러가 본문 앞부분으로 만든 것).
+    pub title: String,
+    pub status: WorkStatus,
+    /// 담당 캐릭터 이름. 미배정이면 없다.
+    #[serde(default)] pub assignee: Option<String>,
+    pub body: String,
+    #[serde(default)] pub depends_on: Vec<TaskChatLink>,
+    #[serde(default)] pub dependents: Vec<TaskChatLink>,
+    /// 업무 `sessionIds`를 보낸 순서대로. 세션 로그 경로를 찾는 데 쓴다.
+    #[serde(default)] pub sessions: Vec<TaskChatSession>,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TaskChatLink {
+    pub id: String,
+    pub title: String,
+    pub status: WorkStatus,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TaskChatSession {
+    pub session_id: String,
+    pub agent_id: String,
+    /// 이 세션에 태스크를 보낸 시각(epoch ms). 가장 이른 값 이후의 커밋을 찾는다.
+    #[serde(default)] pub sent_at: Option<u64>,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TaskChatPlan {
+    pub id: String,
+    pub title: String,
+    pub body: String,
+    /// `AutoRun.state`("running" | "paused" | "finished"). 자동 진행을 시작한 적이 없으면 없다.
+    #[serde(default)] pub state: Option<String>,
+    #[serde(default)] pub pause_reason: Option<String>,
+    #[serde(default)] pub pause_detail: Option<String>,
+    /// 루트 `autoRun.log`에서 이 태스크의 항목만, 시간순.
+    #[serde(default)] pub log: Vec<TaskChatLogEntry>,
+    /// 앞 태스크가 남긴 인계 메모 중 이 태스크에 넘어온 것.
+    #[serde(default)] pub handoff_notes: Vec<TaskChatNote>,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TaskChatLogEntry {
+    pub at: u64,
+    pub kind: String,
+    #[serde(default)] pub text: Option<String>,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TaskChatNote {
+    pub task_id: String,
+    pub title: String,
+    pub text: String,
+}
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskChatResult { pub agent_id: String, pub session_id: String }
 /// 자동 진행 판단자 호출 1회. `resume`이 거짓이면 `session_id`로 새 세션을 만든다.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

@@ -179,6 +179,16 @@ fn find_existing(dir: &Path, sid8: &str) -> Option<PathBuf> {
         })
 }
 
+/// 그 세션의 로그 파일과 헤더의 시작 시각(epoch ms). 태스크 대화 맥락이 경로만 알린다.
+pub fn find_session_log(root: &Path, agent_id: &str, session_id: &str) -> Option<(PathBuf, Option<u64>)> {
+    if !valid_agent_id(agent_id) {
+        return None;
+    }
+    let path = find_existing(&root.join(agent_id), &short_session_id(session_id))?;
+    let started = read_header(&path).started_at;
+    Some((path, started))
+}
+
 /// sessionId(UUID)의 앞 8자. 파일명이 길어지지 않게 줄이되 한 캐릭터
 /// 디렉터리 안에서 충돌하지 않을 만큼은 남긴다.
 pub fn short_session_id(session_id: &str) -> String {

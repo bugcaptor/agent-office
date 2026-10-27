@@ -34,6 +34,8 @@ describe("Commands / Events name constants", () => {
     expect(Commands.loadUsageSnapshot).toBe("load_usage_snapshot");
     // 세션 로그(docs/session-log-design.md §6)
     expect(Commands.listSessionLogs).toBe("list_session_logs");
+    // 태스크 대화(docs/task-chat-design.md §기동)
+    expect(Commands.openTaskChat).toBe("open_task_chat");
     expect(Commands.openSessionLog).toBe("open_session_log");
     expect(Commands.generateStudyMaterial).toBe("generate_study_material");
 

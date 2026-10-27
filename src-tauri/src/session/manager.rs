@@ -965,6 +965,19 @@ impl SessionManager {
         written
     }
 
+    /// 살아 있는(폐기 요청 전) 태스크 대화 세션 수. 동시 대화 상한 검사에 쓴다.
+    pub fn live_task_chat_count(&self) -> usize {
+        self.sessions
+            .lock()
+            .iter()
+            .filter(|(a, s)| {
+                is_task_chat_id(a)
+                    && matches!(*s.state.lock(), SessionState::Running | SessionState::Starting)
+                    && !s.kill_requested.load(Ordering::SeqCst)
+            })
+            .count()
+    }
+
     /// 세션이 살아서 입력을 받을 수 있는 상태(Running)인지.
     pub fn is_running(&self, agent_id: &str) -> bool {
         self.find(agent_id)

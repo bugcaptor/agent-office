@@ -75,6 +75,7 @@
 - CLI·모델·노력: 태스크의 에이전트 지정 → 담당 프로필 `defaultAgent` → Claude 기본값. 보내기와 같은 해석이다.
 - 기존 보내기 네이티브 경로(`WorkSendRuntime`: 새 PTY의 기동 ACK 확인 → 기동 대기 → bracketed paste + CR)를 대화 세션 id로 그대로 쓴다. 렌더러는 성공해도 업무의 `sessionIds`·상태를 바꾸지 않는다. 새 IPC `open_task_chat({taskId, cwd, agent, prompt})`가 세션 생성과 첫 프롬프트 제출을 한 번에 하고 `{agentId, sessionId}`를 돌려준다.
 - 자동 진행의 진행자 차단(`work-send-auto-run`)은 진행자 agentId 기준이라 대화 세션에는 걸리지 않는다.
+- 구현됨(`task_chat::open`, IPC `open_task_chat({request})`): 요청은 `TaskChatRequest{taskId, cwd?, agent, shell?, cols?, rows?, context}`이고 `context`가 렌더러 스냅샷(아래 맥락 묶음의 2~4번 재료와 `sessions[{sessionId, agentId, sentAt}]`)이다. 모르는 칸은 거절한다(`deny_unknown_fields`). 검증 실패는 `task-chat-invalid-task`·`task-chat-invalid-cwd`(상대 경로)·`work-send-model-invalid`. 같은 태스크의 열기가 겹치면 `task-chat-busy`, 그 대화 세션이 이미 돌고 있으면 `task-chat-running`, 살아 있는 대화가 4개면 `task-chat-limit`로 거절한다(렌더러가 먼저 막고 네이티브는 방어선). 세션은 `taskChat: true`·persona 없이 만들고, 기동 ACK·첫 프롬프트 중 하나라도 실패하면 **만든 세션을 버리고** 오류를 돌려준다(렌더러에는 아직 탭이 없다). 렌더러는 결과를 받은 뒤에 탭을 연다.
 
 ## 첫 프롬프트 — 맥락 묶음
 
@@ -89,6 +90,10 @@
 7. **최근 커밋**: 작업 폴더가 Git 저장소면 태스크를 처음 보낸 시각 이후의 `git log --oneline` 최대 30줄.
 
 모으는 일은 네이티브가 한다(`task_chat.rs`의 `build_context`). 렌더러가 태스크·루트 스냅샷을 넘기고, 네이티브가 보고 파일·세션 로그 경로·Git 기록을 붙인다. 프롬프트 문구는 ko/en 두 벌이다(i18n 규약).
+
+- 구현됨: 칸마다 `## 제목` 줄로 시작하고, 넘치면 7번부터 앞으로 칸 끝을 잘라 `…(길어서 잘림)`을 단다(칸 제목은 남긴다, 1번 역할은 자르지 않는다). 붙여넣기에 실을 수 없는 제어 문자는 빼고 `\r\n`은 `\n`으로 바꾼다. 문구는 설정 UI 언어(`i18n::ui_lang`)로 고르고 한국어 외에는 영어다.
+- 5번은 `auto_run::read_report(…, since 0)`라 판단자와 같은 16,000자 상한이 걸린다. 6번은 `session_log::store::find_session_log`로 찾고 시작 시각은 로그 헤더(없으면 `sentAt`)다. 파일이 없으면 `로그 파일 없음 <agentId>: <sessionId>`로 적는다.
+- 7번은 `sentAt` 중 가장 이른 값 이후(`git log --oneline -n 30 --since=@<초>`)다. 작업 폴더가 없거나, 보낸 적이 없거나, Git 저장소가 아니면(`rev-parse --is-inside-work-tree` 실패) 그렇다고 한 줄 적는다. git은 5초 시간 제한.
 
 ### 권한
 

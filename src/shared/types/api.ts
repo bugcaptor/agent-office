@@ -3,7 +3,7 @@
 // Domain slice: the renderer-facing AgentOfficeApi surface itself.
 // See src/shared/types.ts for the frozen-contract overview.
 
-import type { InboxEntry, InboxRejection, InboxWarning, WorkItem, SessionSummary, WorkSendTarget, WorkSendRequest, WorkSendResult, WorkFollowUpRequest, AutoRunJudgeRequest, AutoRunJudgeResult } from './workPanels';
+import type { InboxEntry, InboxRejection, InboxWarning, WorkItem, SessionSummary, WorkSendTarget, WorkSendRequest, WorkSendResult, WorkFollowUpRequest, AutoRunJudgeRequest, AutoRunJudgeResult, TaskChatRequest, TaskChatResult } from './workPanels';
 import type { AgentId } from './common';
 import type {
   CreateSessionOptions,
@@ -73,6 +73,8 @@ export interface AgentOfficeApi {
   inspectWorkSendTarget(agentId: string): Promise<WorkSendTarget>;
   sendWorkItem(request: WorkSendRequest): Promise<WorkSendResult>;
   sendWorkFollowUp(request: WorkFollowUpRequest): Promise<WorkSendResult>;
+  /** 태스크 대화 세션(`task-chat-<taskId>`)을 만들고 맥락 묶음을 첫 프롬프트로 넣는다. 업무 상태는 바꾸지 않는다. */
+  openTaskChat(request: TaskChatRequest): Promise<TaskChatResult>;
   /** 그 캐릭터 세션의 마지막 에이전트 응답(claude·codex 전사). 못 찾으면 null. */
   workLastReply(agentId: string, cli: string, cwd: string): Promise<string | null>;
   /** 작업자가 `office-task --report`로 남긴 그 태스크의 보고. `since`(epoch ms) 전에 쓰였거나 없으면 null. */
