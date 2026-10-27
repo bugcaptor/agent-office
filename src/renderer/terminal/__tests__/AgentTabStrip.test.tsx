@@ -74,12 +74,15 @@ vi.mock("../TerminalRegistry", () => ({
   terminalRegistry: {
     has: (...args: unknown[]) => terminalRegistryHas(...args),
     getPlainText: (...args: unknown[]) => terminalRegistryGetPlainText(...args),
+    destroy: vi.fn(),
   },
 }));
 
 const { AgentTabStrip } = await import("../AgentTabStrip");
 const { useMemoStore } = await import("../../memo/memoStore");
 const { useRunStore } = await import("../../run/runStore");
+const { useTaskChatStore } = await import("../../workpanels/taskChatStore");
+const { useWorkItemStore } = await import("../../workpanels/workItemStore");
 
 function mkProfile(id: string): AgentProfile {
   return {
@@ -100,6 +103,8 @@ beforeEach(() => {
   useAppStore.setState(initialState, true);
   useMemoStore.setState(initialMemoState, true);
   useRunStore.setState(initialRunState, true);
+  useTaskChatStore.setState({ chats: {}, order: [], opening: {} });
+  useWorkItemStore.setState({ items: [] });
   loadMemo.mockClear();
   saveMemo.mockClear();
   listMemoArchive.mockClear().mockResolvedValue([]);
@@ -833,5 +838,65 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
       agentId: "a1",
     });
     expect(queryByRole("menu")).toBeNull();
+  });
+});
+
+describe("태스크 대화 탭(docs/task-chat-design.md)", () => {
+  function seedChat(status: "running" | "exited" = "running") {
+    seedThreeTabs();
+    useWorkItemStore.setState({
+      items: [{ id: "t1", title: "Fix parser", body: "", status: "in_progress", order: 0, sessionIds: [], createdAt: 0, updatedAt: 0 }],
+    });
+    useTaskChatStore.setState({
+      chats: { "task-chat-t1": { agentId: "task-chat-t1", taskId: "t1", title: "Old title", cwd: "/repo", sessionId: "c1", status, openedAt: 0, viewedAt: 0 } },
+      order: ["task-chat-t1"],
+    });
+  }
+
+  it("캐릭터 탭 뒤에 말풍선·태스크 표시 제목으로 그리고, 툴팁에 ID와 폴더를 보인다", () => {
+    seedChat();
+    const { getAllByRole, container } = render(<AgentTabStrip />);
+    expect(getAllByRole("tab").map((t) => t.textContent)).toEqual(["Agent a1", "Agent a2", "Agent a3", "💬Fix parser"]);
+    const tab = container.querySelector(".agent-tab-chat")!;
+    expect(tab.getAttribute("title")).toContain("t1");
+    expect(tab.getAttribute("title")).toContain("/repo");
+    // 캐릭터 탭 순서(TopBar 대상 등)에는 들어가지 않는다.
+    fireEvent.click(getAllByRole("tab")[3]);
+    expect(useAppStore.getState().activeTerminalAgentId).toBe("task-chat-t1");
+    expect(useAppStore.getState().recentAgentIds).toEqual(["a1", "a2", "a3"]);
+  });
+
+  it("대화 탭이 활성이면 포스트잇 버튼을 숨기고 문서 버튼은 대화 폴더로 연다", () => {
+    seedChat();
+    useAppStore.getState().openTerminal("task-chat-t1");
+    const { container, getByText } = render(<AgentTabStrip />);
+    expect(container.querySelector(".agent-tab-strip-memo")).toBeNull();
+    expect((getByText("문서") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("CLI가 살아 있으면 ×가 확인창을 띄우고, 우클릭 메뉴에는 캐릭터 전용 항목이 없다", () => {
+    seedChat();
+    const { getByLabelText, container, queryByText } = render(<AgentTabStrip />);
+    fireEvent.click(getByLabelText("대화 끝내기"));
+    expect(useAppStore.getState().modal).toEqual({ kind: "confirm-close-task-chat", agentId: "task-chat-t1" });
+    fireEvent.contextMenu(container.querySelector(".agent-tab-chat")!);
+    expect(queryByText("퇴근")).toBeNull();
+    expect(queryByText("일기 보기")).toBeNull();
+    expect(queryByText("셸 출력을 에디터로 보기")).not.toBeNull();
+  });
+
+  it("끝난 대화는 확인 없이 닫는다", () => {
+    seedChat("exited");
+    const { getByLabelText } = render(<AgentTabStrip />);
+    fireEvent.click(getByLabelText("대화 끝내기"));
+    expect(useAppStore.getState().modal).toEqual({ kind: "none" });
+    expect(useTaskChatStore.getState().order).toEqual([]);
+  });
+
+  it("Cmd+숫자는 캐릭터 탭 다음 번호로 대화 탭에 간다", () => {
+    seedChat();
+    render(<AgentTabStrip />);
+    fireEvent.keyDown(window, { key: "4", metaKey: true });
+    expect(useAppStore.getState().activeTerminalAgentId).toBe("task-chat-t1");
   });
 });

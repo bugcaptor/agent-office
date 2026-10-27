@@ -236,5 +236,22 @@
       "notes": "앞 태스크의 인계 메모:",
       "report": "이 태스크만 하세요. 지켜보는 사람은 없습니다. 턴이 끝나면 판단자가 보고를 읽고 다음 단계를 정합니다.\n- 되돌릴 수 있는 선택(이름, 구조, 작은 범위 판단)은 플랜 메모와 태스크에 맞춰 직접 정하고 보고의 decisions에 적으세요. 이런 일로 묻고 멈추지 마세요.\n- 푸시·배포·데이터 삭제·외부 게시처럼 되돌리기 어렵거나 밖으로 나가는 일은 플랜 메모나 태스크가 시킨 경우에만 하세요. 꼭 필요한데 허락이 없으면 status를 blocked로 쓰고 멈추세요.\n- 턴을 끝내기 전에 Agent Office 작업 보드 안내의 office-task 명령(안내가 없으면 환경 변수 AGENT_OFFICE_TASK의 경로)으로 보고를 남기세요. 다시 쓰면 바뀝니다.\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: 바꾼 것\nverified: 실행한 확인 명령과 결과\ndecisions: 스스로 정한 것\nneeds_human: (blocked일 때만) 사람이 정할 것 하나와 선택지\nEOF\n\n마지막 답변에도 같은 내용을 짧게 쓰고, \"원하시면 ~할까요?\" 같은 제안이나 질문으로 끝내지 마세요."
     }
+  },
+  "taskChat": {
+    "errors": {
+      "busy": "이 태스크의 대화를 여는 중입니다.",
+      "running": "이 태스크의 대화가 이미 열려 있습니다.",
+      "limit": "대화는 동시에 {{max}}개까지 열 수 있습니다. 다른 대화를 닫고 다시 여세요.",
+      "limitStale": "대화는 동시에 {{max}}개까지 열 수 있습니다. 가장 오래 안 본 \"{{title}}\" 대화를 닫고 다시 여세요.",
+      "invalidTask": "태스크를 찾지 못했습니다.",
+      "invalidCwd": "작업 폴더가 절대 경로가 아닙니다."
+    },
+    "close": {
+      "title": "대화 끝내기",
+      "body": "\"{{title}}\" 대화를 끝냅니다. 터미널의 CLI도 함께 종료됩니다.",
+      "confirm": "끝내기"
+    },
+    "quitNotice_one": "열린 태스크 대화 {{count}}개도 함께 끝납니다.",
+    "quitNotice_other": "열린 태스크 대화 {{count}}개도 함께 끝납니다."
   }
 }

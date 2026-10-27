@@ -18,6 +18,7 @@ import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { ensureSession } from "../ipc/sessionBridge";
 import { terminalRegistry } from "./TerminalRegistry";
+import { useTaskChatStore } from "../workpanels/taskChatStore";
 
 const RESIZE_DEBOUNCE_MS = 120;
 
@@ -27,6 +28,8 @@ export function TerminalHost() {
     useShallow((s) => s.agentOrder.filter((id) => s.sessions[id]?.status !== "idle"))
   );
   const epochs = useAppStore(useShallow((s) => s.terminalEpochs));
+  // 태스크 대화 탭(docs/task-chat-design.md). 캐릭터 뒤에 같은 방식으로 붙는다.
+  const chatIds = useTaskChatStore(useShallow((s) => s.order));
 
   return (
     <div className="terminal-host">
@@ -36,15 +39,20 @@ export function TerminalHost() {
         // (registry.destroy로 폐기된) 새 xterm을 다시 만든다.
         <TerminalMount key={`${id}#${epochs[id] ?? 0}`} agentId={id} />
       ))}
+      {chatIds.map((id) => (
+        <TerminalMount key={id} agentId={id} chat />
+      ))}
     </div>
   );
 }
 
-function TerminalMount({ agentId }: { agentId: string }) {
+function TerminalMount({ agentId, chat = false }: { agentId: string; chat?: boolean }) {
   const { t } = useTranslation("terminal");
   const hostRef = useRef<HTMLDivElement>(null);
   const isActive = useAppStore((s) => s.activeTerminalAgentId === agentId);
-  const isExited = useAppStore((s) => s.sessions[agentId]?.status === "exited");
+  const appExited = useAppStore((s) => s.sessions[agentId]?.status === "exited");
+  const chatExited = useTaskChatStore((s) => s.chats[agentId]?.status === "exited");
+  const isExited = chat ? chatExited : appExited;
   const setSessionSize = useAppStore((s) => s.setSessionSize);
 
   // First mount only: attach the (keep-alive) registry container. Never
@@ -98,10 +106,13 @@ function TerminalMount({ agentId }: { agentId: string }) {
       <div ref={hostRef} className="terminal-mount-host" />
       {isExited && (
         <div className="terminal-exited-banner" role="alert">
-          <span>{t("host.exited")}</span>
-          <button type="button" className="pixel-btn primary" onClick={relaunch}>
-            {t("host.relaunch")}
-          </button>
+          {/* 대화는 다시 띄우지 않는다 — 탭을 닫고 태스크에서 새로 연다(맥락 묶음이 새로 만들어진다). */}
+          <span>{chat ? t("host.chatEnded") : t("host.exited")}</span>
+          {!chat && (
+            <button type="button" className="pixel-btn primary" onClick={relaunch}>
+              {t("host.relaunch")}
+            </button>
+          )}
         </div>
       )}
     </div>

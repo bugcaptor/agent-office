@@ -8,7 +8,10 @@
     "memoOpen": "Open notes",
     "memoClose": "Close notes",
     "viewModeFill": "Fill app window",
-    "viewModeWindowed": "Back to windowed"
+    "viewModeWindowed": "Back to windowed",
+    "chatTooltip": "Task {{id}}\nWorking folder: {{cwd}}",
+    "chatHome": "Home folder",
+    "chatClose": "End chat"
   },
   "menu": {
     "restart": "Restart terminal",
@@ -29,7 +32,8 @@
   },
   "host": {
     "exited": "The process exited.",
-    "relaunch": "Relaunch"
+    "relaunch": "Relaunch",
+    "chatEnded": "The chat has ended. Close the tab and open it again from the task."
   },
   "palette": {
     "latte": "Catppuccin Latte",

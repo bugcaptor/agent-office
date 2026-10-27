@@ -44,6 +44,15 @@ describe("연결 업무 모니터링", () => {
     callbacks.session({ agentId: "a", sessionId: "s", at: 102, state: "exited" } as never); expect(useWorkMonitorStore.getState().sessions.s.phase).toBe("ended");
     expect(useWorkItemStore.getState().items[0].status).toBe("review");
   });
+  it("태스크 대화 세션의 신호는 같은 sessionId여도 업무 상태에 넣지 않는다", () => {
+    item(); activity("prompt");
+    callbacks.notification({ agentId: "task-chat-t1", sessionId: "s", source: "stop", at: 300 } as never);
+    callbacks.usage({ agentId: "task-chat-t1", sessionId: "s", at: 301, partial: false } as never);
+    callbacks.session({ agentId: "task-chat-t1", sessionId: "c", at: 302, state: "exited" } as never);
+    expect(useWorkItemStore.getState().items[0].status).toBe("in_progress");
+    expect(useWorkMonitorStore.getState().sessions.s.phase).toBe("working");
+    expect(useWorkMonitorStore.getState().sessions.c).toBeUndefined();
+  });
   it("IPC 완료 전에 온 Stop도 연결 후 반영하지만 예전 시작 신호는 무시한다", () => {
     notify("stop", 110); item(); reconcileWorkMonitor("s", 100); expect(useWorkItemStore.getState().items[0].status).toBe("review");
     useWorkItemStore.getState().edit(useWorkItemStore.getState().items[0].id, { status: "in_progress" }); reconcileWorkMonitor("s", 120); expect(useWorkItemStore.getState().items[0].status).toBe("in_progress");

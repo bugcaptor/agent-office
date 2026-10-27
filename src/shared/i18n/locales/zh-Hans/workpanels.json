@@ -236,5 +236,22 @@
       "notes": "前面任务的交接备注：",
       "report": "只做这个任务。没有人在看：回合结束后，评审会读你的报告并决定下一步。\n- 可撤销的选择(命名、结构、小范围判断)请按计划备注和任务自行决定，并写在报告的 decisions 里。不要为此提问并停下。\n- 推送、部署、删除数据、对外发布等难以撤销或离开本机的操作，只在计划备注或任务要求时才做。如果必须做却没有许可，请把 status 写成 blocked 并停下。\n- 结束回合前，用 Agent Office 任务板说明中的 office-task 命令(没有说明时用环境变量 AGENT_OFFICE_TASK 的路径)留下报告。重写会覆盖。\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: 改了什么\nverified: 运行的检查命令和结果\ndecisions: 自己做的决定\nneeds_human: (仅 blocked 时)需要人来决定的一件事和选项\nEOF\n\n最后的回复里也简要写同样的内容，不要以“需要的话我可以……吗？”这类提议或提问结尾。"
     }
+  },
+  "taskChat": {
+    "errors": {
+      "busy": "正在打开此任务的对话。",
+      "running": "此任务的对话已打开。",
+      "limit": "最多可同时打开 {{max}} 个对话。请先关闭其他对话再试。",
+      "limitStale": "最多可同时打开 {{max}} 个对话。请先关闭最久未查看的“{{title}}”再试。",
+      "invalidTask": "找不到任务。",
+      "invalidCwd": "工作文件夹不是绝对路径。"
+    },
+    "close": {
+      "title": "结束对话",
+      "body": "结束“{{title}}”对话？其终端中的 CLI 也会一并退出。",
+      "confirm": "结束"
+    },
+    "quitNotice_one": "打开的 {{count}} 个任务对话也会一并结束。",
+    "quitNotice_other": "打开的 {{count}} 个任务对话也会一并结束。"
   }
 }

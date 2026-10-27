@@ -34,6 +34,7 @@ import { installTaskLabelSummarizer } from "./labels/summarizer";
 import { installGitBranchWatcher } from "./labels/gitBranchWatcher";
 import { installSessionSummaryRecorder } from "./workpanels/sessionSummaryStore";
 import { installWorkMonitor } from "./workpanels/workMonitor";
+import { installTaskChatTracking } from "./workpanels/taskChatStore";
 import { installAutoRun } from "./workpanels/autoRun";
 import { installWorkInboxLifecycle } from "./workpanels/lifecycle";
 import { stopWorkInbox } from "./workpanels/workInbox";
@@ -153,6 +154,8 @@ export async function bootApp(): Promise<() => void> {
   await useWorkItemStore.getState().load();
   const offSessionSummaries = await installSessionSummaryRecorder();
   const offWorkMonitor = installWorkMonitor();
+  // 태스크 대화 탭의 세션 상태. 캐릭터 중심 스토어(브리지·모니터·요약)는 이 세션을 무시한다.
+  const offTaskChats = installTaskChatTracking();
   // 자동 진행은 업무 상태 전이(모니터)를 신호로 쓰므로 그 뒤에 건다.
   const offAutoRun = installAutoRun();
   const offWorkInbox = installWorkInboxLifecycle();
@@ -202,6 +205,7 @@ export async function bootApp(): Promise<() => void> {
     offBridge();
     offSessionSummaries();
     offWorkMonitor();
+    offTaskChats();
     offAutoRun();
     offWorkInbox();
     void stopWorkInbox().then(() => useWorkItemStore.getState().flush());

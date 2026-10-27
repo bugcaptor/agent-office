@@ -8,7 +8,10 @@
     "memoOpen": "付箋を開く",
     "memoClose": "付箋を閉じる",
     "viewModeFill": "アプリ全体に表示",
-    "viewModeWindowed": "ウィンドウ表示に戻す"
+    "viewModeWindowed": "ウィンドウ表示に戻す",
+    "chatTooltip": "タスク {{id}}\n作業フォルダ: {{cwd}}",
+    "chatHome": "ホームフォルダ",
+    "chatClose": "チャットを終了"
   },
   "menu": {
     "restart": "ターミナルを再起動",
@@ -29,7 +32,8 @@
   },
   "host": {
     "exited": "プロセスが終了しました。",
-    "relaunch": "もう一度起動"
+    "relaunch": "もう一度起動",
+    "chatEnded": "チャットは終了しました。タブを閉じて、タスクからもう一度開けます。"
   },
   "palette": {
     "latte": "Catppuccin Latte",

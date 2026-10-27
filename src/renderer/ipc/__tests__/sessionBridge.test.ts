@@ -707,3 +707,27 @@ describe("installSessionBridge cleanup", () => {
   });
 });
 
+
+describe("installSessionBridge / 태스크 대화 세션(docs/task-chat-design.md)", () => {
+  it("task-chat- 세션의 상태·알림·사용량·활동은 캐릭터 중심 스토어와 오피스 씬에 넣지 않는다", () => {
+    const before = useAppStore.getState();
+    const stateListener = vi.fn();
+    const off = officeBus.onSessionStateChanged(stateListener);
+    const chat = "task-chat-t1";
+    capture.onSessionState?.({ agentId: chat, sessionId: "c1", state: "running", at: Date.now() });
+    capture.onNotification?.(mkNotifEvent({ agentId: chat, sessionId: "c1", source: "stop" }));
+    capture.onTurnUsage?.({ agentId: chat, sessionId: "c1", at: Date.now(), partial: false, tokens: { input: 100, output: 50, model: "claude-opus-5" } });
+    capture.onActivity?.({ agentId: chat, sessionId: "c1", kind: "prompt", at: Date.now(), text: "hi" });
+    capture.onSessionState?.({ agentId: chat, sessionId: "c1", state: "exited", at: Date.now() });
+    off();
+    const after = useAppStore.getState();
+    expect(stateListener).not.toHaveBeenCalled();
+    expect(after.notifications).toEqual([]);
+    expect(after.sessions).toBe(before.sessions);
+    expect(after.timeTracking).toBe(before.timeTracking);
+    expect(after.sessionUsage).toBe(before.sessionUsage);
+    expect(after.taskLabels).toBe(before.taskLabels);
+    expect(mockApi.setBadgeCount).not.toHaveBeenCalled();
+    expect(maybeSendOsNotification).not.toHaveBeenCalled();
+  });
+});

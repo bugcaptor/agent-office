@@ -51,6 +51,7 @@ vi.mock("../../ipc/tauriApi", () => ({
 }));
 
 const { TerminalHost } = await import("../TerminalHost");
+const { useTaskChatStore } = await import("../../workpanels/taskChatStore");
 
 class FakeResizeObserver {
   static instances: FakeResizeObserver[] = [];
@@ -82,6 +83,7 @@ const initialState = useAppStore.getState();
 
 beforeEach(() => {
   useAppStore.setState(initialState, true);
+  useTaskChatStore.setState({ chats: {}, order: [], opening: {} });
   attach.mockReset();
   activate.mockReset();
   refit.mockReset();
@@ -286,5 +288,30 @@ describe("ResizeObserver: active-only, 120ms debounce, refit (not activate)", ()
 
     expect(ro.disconnect).toHaveBeenCalledTimes(1);
     expect(refit).not.toHaveBeenCalled(); // timer must have been cleared, not left to fire post-unmount
+  });
+});
+
+describe("태스크 대화 마운트(docs/task-chat-design.md)", () => {
+  function seedChat(status: "running" | "exited") {
+    useTaskChatStore.setState({
+      chats: { "task-chat-t1": { agentId: "task-chat-t1", taskId: "t1", title: "T", sessionId: "c1", status, openedAt: 0, viewedAt: 0 } },
+      order: ["task-chat-t1"],
+    });
+  }
+  it("대화 탭도 keep-alive 마운트로 붙고 활성이면 크기를 맞춘다", () => {
+    seedChat("running");
+    useAppStore.getState().openTerminal("task-chat-t1");
+    const { container } = render(<TerminalHost />);
+    const mount = container.querySelector('[data-agent-id="task-chat-t1"]') as HTMLElement;
+    expect(mount.style.display).toBe("block");
+    expect(attach).toHaveBeenCalledWith("task-chat-t1", expect.any(HTMLElement));
+    expect(activate).toHaveBeenCalledWith("task-chat-t1", expect.any(Function));
+  });
+  it("끝난 대화는 다시 띄우기 버튼 없이 안내만 보인다", () => {
+    seedChat("exited");
+    const { container } = render(<TerminalHost />);
+    const banner = container.querySelector('[data-agent-id="task-chat-t1"] .terminal-exited-banner')!;
+    expect(banner.textContent).toContain("대화가 끝났습니다");
+    expect(banner.querySelector("button")).toBeNull();
   });
 });

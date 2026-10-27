@@ -63,6 +63,8 @@ export type ModalState =
   | { kind: "confirm-clock-out"; agentId: string }
   | { kind: "confirm-clock-out-all" }
   | { kind: "confirm-quit" }
+  /** 태스크 대화 탭 닫기(CLI가 살아 있을 때). agentId는 `task-chat-…`. */
+  | { kind: "confirm-close-task-chat"; agentId: string }
   | { kind: "settings" }
   | { kind: "analytics" }
   | { kind: "usage" }

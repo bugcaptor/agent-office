@@ -21,6 +21,7 @@ import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { isHandoffSupported } from "../quitGuard";
 import { terminalRegistry } from "../terminal/TerminalRegistry";
+import { useTaskChatStore } from "../workpanels/taskChatStore";
 import {
   pendingDiaryAgents,
   runQuitDiaryFlush,
@@ -36,6 +37,16 @@ export function ConfirmQuitDialog() {
   const closeModal = useAppStore((s) => s.closeModal);
   const hasRunningSession = useAppStore((s) =>
     s.agentOrder.some((id) => s.sessions[id]?.status === "running")
+  );
+  const anyOnDuty = useAppStore((s) =>
+    s.agentOrder.some((id) => s.agents[id] && !s.agents[id].clockedOut)
+  );
+  // 태스크 대화는 핸드오프하지 않고 종료와 함께 끝난다(docs/task-chat-design.md §앱 종료와 재실행).
+  const liveChats = useTaskChatStore((s) =>
+    s.order.filter((id) => ["starting", "running"].includes(s.chats[id]?.status ?? "")).length
+  );
+  const chatNotice = liveChats > 0 && (
+    <p className="confirm-quit-task-chats">{t("workpanels:taskChat.quitNotice", { count: liveChats })}</p>
   );
 
   const [phase, setPhase] = useState<Phase>("confirm");
@@ -149,6 +160,7 @@ export function ConfirmQuitDialog() {
         {showHandoffOptions ? (
           <>
             <p>{t("confirm.quit.handoffBody")}</p>
+            {chatNotice}
             <div className="dialog-actions">
               <button className="pixel-btn primary" onClick={() => void beginQuit(true)}>
                 {t("confirm.quit.keepTerminals")}
@@ -163,7 +175,9 @@ export function ConfirmQuitDialog() {
           </>
         ) : (
           <>
-            <p>{t("confirm.quit.body")}</p>
+            {/* 근무 중인 캐릭터 없이 대화만 남았으면 캐릭터 문구는 빼고 대화 안내만 보인다. */}
+            {(anyOnDuty || liveChats === 0) && <p>{t("confirm.quit.body")}</p>}
+            {chatNotice}
             <div className="dialog-actions">
               <button className="pixel-btn primary" onClick={() => void beginQuit(false)}>
                 {t("confirm.quit.confirm")}

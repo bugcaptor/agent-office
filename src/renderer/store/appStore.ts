@@ -7,6 +7,7 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { notificationType } from "./types";
+import { isTaskChatId } from "@shared/types";
 import type {
   AgentProfile,
   AgentTaskLabel,
@@ -290,7 +291,8 @@ interface AppState {
   clearNotificationByIds(agentId: string, ids: string[]): void;
 
   // ---- terminal overlay ----
-  /** Sets active + bumps recent + clears that agent's notifications. */
+  /** Sets active + bumps recent + clears that agent's notifications.
+   * 태스크 대화 id(`task-chat-…`)도 받는다 — 그때는 활성만 바꾼다. */
   openTerminal(agentId: string): void;
   /** Closes the overlay only; the underlying session keeps running. */
   closeTerminal(): void;
@@ -668,6 +670,11 @@ export const useAppStore = create<AppState>()(
 
     openTerminal: (agentId) =>
       set((s) => {
+        // 태스크 대화 탭(docs/task-chat-design.md)은 캐릭터가 아니다 — 활성만 바꾸고
+        // 캐릭터 탭 순서(recentAgentIds)에는 넣지 않는다. 탭 목록은 taskChatStore가 쥔다.
+        if (isTaskChatId(agentId)) {
+          return s.activeTerminalAgentId === agentId ? s : { activeTerminalAgentId: agentId };
+        }
         if (!s.agents[agentId]) return s;
         return {
           activeTerminalAgentId: agentId,

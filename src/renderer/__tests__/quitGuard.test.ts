@@ -30,7 +30,11 @@ vi.mock("../ipc/tauriApi", () => ({
   tauriApi: { handoffSupported: (...args: unknown[]) => handoffSupported(...args), saveWorkItems: (...args: unknown[]) => saveWorkItems(...args) },
 }));
 
+// taskChatStore가 끌어오는 xterm은 node 환경에서 로드되지 않는다.
+vi.mock("../terminal/TerminalRegistry", () => ({ terminalRegistry: {} }));
+
 import { useWorkItemStore } from "../workpanels/workItemStore";
+import { useTaskChatStore } from "../workpanels/taskChatStore";
 import { useAppStore } from "../store/appStore";
 import type { AgentProfile } from "../store/types";
 import { installQuitGuard, isHandoffSupported } from "../quitGuard";
@@ -56,6 +60,7 @@ beforeEach(() => {
   useWorkItemStore.setState({items:[],loaded:false,dirty:false,error:null});
   capturedHandler = undefined;
   handoffSupported.mockReset().mockResolvedValue(false);
+  useTaskChatStore.setState({ chats: {}, order: [], opening: {} });
 });
 
 function fireCloseRequested(): { prevented: boolean } {
@@ -110,6 +115,21 @@ describe("installQuitGuard", () => {
 
     expect(prevented).toBe(false);
     expect(useAppStore.getState().modal).toEqual({ kind: "none" });
+  });
+
+  it("전원 퇴근이어도 살아 있는 태스크 대화가 있으면 확인창으로 알린다", () => {
+    useAppStore.setState({ agents: { a1: mkAgent("a1", true) }, agentOrder: ["a1"] });
+    useTaskChatStore.setState({
+      chats: { "task-chat-t1": { agentId: "task-chat-t1", taskId: "t1", title: "T", sessionId: "c1", status: "running", openedAt: 0, viewedAt: 0 } },
+      order: ["task-chat-t1"],
+    });
+    installQuitGuard();
+    expect(fireCloseRequested().prevented).toBe(true);
+    expect(useAppStore.getState().modal).toEqual({ kind: "confirm-quit" });
+    // 끝난 대화만 남았으면 묻지 않는다.
+    useTaskChatStore.setState((s) => ({ chats: { "task-chat-t1": { ...s.chats["task-chat-t1"], status: "exited" } } }));
+    useAppStore.setState({ modal: { kind: "none" } });
+    expect(fireCloseRequested().prevented).toBe(false);
   });
 
   it("blocks the close and opens confirm-quit when some agent is still on duty", () => {

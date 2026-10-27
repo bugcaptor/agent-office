@@ -19,6 +19,15 @@ beforeEach(() => {
 });
 afterEach(async () => { await flushSessionSummaries(); off?.(); off=undefined; await Promise.resolve(); vi.clearAllTimers(); vi.useRealTimers(); });
 describe("상시 세션 요약 수집", () => {
+  it("태스크 대화 세션은 요약·살아 있는 세션 목록에 넣지 않는다", async () => {
+    off = await installSessionSummaryRecorder();
+    callbacks.forEach((cb) => cb({ state: "running", at: now, sessionId: "c1", agentId: "task-chat-t1" }));
+    callbacks.forEach((cb) => cb({ state: "exited", at: now + 1, sessionId: "c1", agentId: "task-chat-t1" }));
+    await flushSessionSummaries();
+    expect(useSessionSummaryStore.getState().summaries).toEqual({});
+    expect(useSessionSummaryStore.getState().liveIds).toEqual([]);
+    expect(append).not.toHaveBeenCalled();
+  });
   it("보낸 세션의 업무 연결도 자동저장하고 프롬프트/목표 갱신으로 유실하지 않는다", async () => {
     off = await installSessionSummaryRecorder(); emit("running"); linkWorkSession("work", "a1", "s1", now + 10);
     useAppStore.setState({ taskLabels: { a1: { sessionId: "s1", goal: "Goal", latestPromptAt: now + 20, latestPromptText: "Task" } } });

@@ -236,5 +236,22 @@
       "notes": "Hand-off notes from earlier tasks:",
       "report": "Do only this task. Nobody is watching: when your turn ends, a judge reads your report and decides the next step.\n- Make reversible choices (names, structure, small scope calls) yourself, following the plan notes and the task, and list them under decisions. Do not stop to ask about them.\n- Do things that are hard to undo or leave the machine (push, deploy, deleting data, publishing) only when the plan notes or the task say so. If one is needed and not allowed, write status: blocked and stop.\n- Before your turn ends, leave a report with the office-task command from the Agent Office task board instructions (without them, the path in the AGENT_OFFICE_TASK environment variable). Writing it again replaces it.\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: what you changed\nverified: checks you ran and their results\ndecisions: choices you made yourself\nneeds_human: (only when blocked) the one thing a human must decide, with the options\nEOF\n\nPut the same points briefly in your last reply, and do not end with offers or questions such as \"Want me to…?\""
     }
+  },
+  "taskChat": {
+    "errors": {
+      "busy": "The chat for this task is opening.",
+      "running": "The chat for this task is already open.",
+      "limit": "Up to {{max}} chats can be open at once. Close another chat and try again.",
+      "limitStale": "Up to {{max}} chats can be open at once. Close \"{{title}}\", the one you haven't looked at for the longest, and try again.",
+      "invalidTask": "Task not found.",
+      "invalidCwd": "The working folder is not an absolute path."
+    },
+    "close": {
+      "title": "End chat",
+      "body": "End the \"{{title}}\" chat? The CLI in its terminal stops too.",
+      "confirm": "End"
+    },
+    "quitNotice_one": "{{count}} open task chat will end too.",
+    "quitNotice_other": "{{count}} open task chats will end too."
   }
 }

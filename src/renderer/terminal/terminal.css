@@ -106,6 +106,50 @@
   border-color: var(--border-dark);
 }
 
+/* 태스크 대화 탭(docs/task-chat-design.md): 캐릭터 탭 뒤에 간격을 두고 묶는다.
+ * 탭 자체는 div이고 안에 열기 버튼과 닫기(×) 버튼을 둔다(버튼 중첩 금지). */
+.agent-tab-chat {
+  gap: 0;
+  padding: 0 2px 0 0;
+  cursor: default;
+}
+.agent-tab:not(.agent-tab-chat) + .agent-tab-chat {
+  margin-left: 10px;
+}
+.agent-tab-chat-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 2px 4px 2px 8px;
+  cursor: pointer;
+}
+.agent-tab-chat-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.agent-tab-chat-name {
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-tab-chat-close {
+  font: inherit;
+  line-height: 1;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.agent-tab-chat-close:hover {
+  color: #0a0b12;
+  background: var(--accent);
+}
+
 /* 문서 버튼(이슈 #10): 고정 액션 그룹의 첫 버튼. */
 .agent-tab-strip-docs {
   flex: none;

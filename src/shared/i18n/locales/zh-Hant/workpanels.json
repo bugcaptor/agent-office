@@ -236,5 +236,22 @@
       "notes": "前面任務的交接備註：",
       "report": "只做這個任務。沒有人在看：回合結束後，評審會讀你的報告並決定下一步。\n- 可復原的選擇(命名、結構、小範圍判斷)請依計畫備註和任務自行決定，並寫在報告的 decisions 裡。不要為此提問並停下。\n- 推送、部署、刪除資料、對外發布等難以復原或離開本機的操作，只在計畫備註或任務要求時才做。如果必須做卻沒有許可，請把 status 寫成 blocked 並停下。\n- 結束回合前，用 Agent Office 任務看板說明中的 office-task 命令(沒有說明時用環境變數 AGENT_OFFICE_TASK 的路徑)留下報告。重寫會覆蓋。\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: 改了什麼\nverified: 執行的檢查命令和結果\ndecisions: 自己做的決定\nneeds_human: (僅 blocked 時)需要由人決定的一件事和選項\nEOF\n\n最後的回覆裡也簡短寫同樣的內容，不要以「需要的話我可以……嗎？」這類提議或提問結尾。"
     }
+  },
+  "taskChat": {
+    "errors": {
+      "busy": "正在開啟此任務的對話。",
+      "running": "此任務的對話已開啟。",
+      "limit": "最多可同時開啟 {{max}} 個對話。請先關閉其他對話再試。",
+      "limitStale": "最多可同時開啟 {{max}} 個對話。請先關閉最久未查看的「{{title}}」再試。",
+      "invalidTask": "找不到任務。",
+      "invalidCwd": "工作資料夾不是絕對路徑。"
+    },
+    "close": {
+      "title": "結束對話",
+      "body": "結束「{{title}}」對話？其終端機中的 CLI 也會一併結束。",
+      "confirm": "結束"
+    },
+    "quitNotice_one": "開啟中的 {{count}} 個任務對話也會一併結束。",
+    "quitNotice_other": "開啟中的 {{count}} 個任務對話也會一併結束。"
   }
 }

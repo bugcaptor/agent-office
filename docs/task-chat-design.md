@@ -45,6 +45,8 @@
 - 캐릭터 전용 메뉴(퇴근·이어하기·VS Code·작업 폴더·일기·메모·실행 레시피)는 대화 탭에서 숨긴다. 출력 내보내기·뷰 모드는 그대로 쓴다.
 - 대화 탭에는 닫기(×)가 있다. CLI가 돌고 있으면 "대화를 끝낸다"는 확인 뒤 세션을 버린다. 캐릭터 탭과 달리 닫으면 세션도 끝난다.
 - 오피스 씬에는 아무것도 그리지 않는다(캐릭터·미니미·머리 위 라벨 없음).
+- 구현됨(`taskChatStore.ts`, `AgentTabStrip.tsx`, `TerminalHost.tsx`): 탭 목록·세션 상태는 `useTaskChatStore`(`chats`·`order`·`opening`)만 쥐고 `appStore.sessions`·`recentAgentIds`에는 넣지 않는다. `appStore.openTerminal`은 `task-chat-` id를 받으면 활성만 바꾼다(TopBar 대상·캐릭터 탭 순서가 그대로다). 탭 이름은 태스크의 지금 표시 제목(지워졌으면 연 시점 제목), 툴팁은 `태스크 <id>\n작업 폴더: <cwd|홈 폴더>`. 우클릭 메뉴는 출력 내보내기와 대화 끝내기뿐이고, 활성 탭이 대화면 포스트잇 버튼과 위젯을 숨기며 문서 버튼은 대화의 작업 폴더로 연다. Cmd/Ctrl+숫자는 캐릭터 탭 다음 번호로 대화 탭에 간다. 닫기 확인은 `confirm-close-task-chat` 모달(세션이 `starting`·`running`일 때만 — 셸 안 CLI가 끝났는지는 관찰을 껐으므로 따로 보지 않는다), 확인하면 `disposeSession` 뒤 이웃 대화 탭 → 최근 캐릭터 탭 → 오버레이 닫기 순으로 옮긴다. 끝난 대화의 터미널에는 '다시 띄우기' 없이 안내만 보인다(다시 열면 맥락 묶음을 새로 만들어야 하므로 태스크에서 연다).
+- 구현됨(열기 `openTaskChat(taskId)`): 이미 살아 있으면 그 탭으로 간다. 아니면 렌더러 상한(`MAX_TASK_CHATS = 4`, `starting`·`running`만 센다)·여는 중을 먼저 막고 오류 코드를 돌려준다(`taskChatErrorText`가 문구로 바꾸고, 상한이면 가장 오래 안 본 대화 제목을 넣는다 — 본 시각은 활성 탭이 바뀔 때 갱신). 첫 크기는 지금 보이는 터미널 크기를 빌린다. IPC 전에 `terminalRegistry.ensure`로 출력을 구독해 첫 화면을 놓치지 않고, 실패하면 그 터미널을 버린다. 끝난 대화를 다시 열면 이전 화면을 버리고 새로 시작한다. 태스크 5는 `taskChatBlockedReason`·`openTaskChat`·`taskChatErrorText`를 쓰면 된다.
 
 ## 세션
 
@@ -65,9 +67,13 @@
 
 렌더러도 방어한다. `task-chat-` 접두사의 세션 이벤트는 캐릭터 중심 스토어(턴 시간·알림·요약 수집·사용량)에서 무시한다. 훅이 꺼져 있어도 세션 상태 이벤트(`session-state`)는 오기 때문이다.
 
+- 구현됨: `isTaskChatId`(`src/shared/types/session.ts`)로 `sessionBridge`의 상태·알림·알림 지움·사용량·활동 다섯 갈래(오피스 씬 릴레이·배지·OS 알림 포함), `workMonitor`의 `observe`, `sessionSummaryStore`의 세션 상태 수집이 처음부터 버린다. 대화 세션 상태는 `installTaskChatTracking`(부팅 시 설치)이 따로 받아 `taskChatStore`에 반영한다(`disposed`는 `exited`로 흡수, 다른 sessionId의 늦은 이벤트는 무시).
+
 ### 앱 종료와 재실행
 
 대화 세션은 핸드오프하지 않는다. 앱을 끄면 `handoff_all`에서 `task-chat-` 세션을 빼고 버린다(구현됨: 넘기기 전에 `dispose`, Windows의 no-op 경로도 같다). 대화는 일회성이고, 입양 경로(`adoptDetachedSessions`)가 캐릭터 없는 세션을 받을 준비가 없기 때문이다. 종료 확인창에 살아 있는 대화 수를 함께 알린다.
+
+- 구현됨: `ConfirmQuitDialog`가 살아 있는 대화 수를 한 줄로 알린다. 근무 중인 캐릭터가 없어도 살아 있는 대화가 있으면 `quitGuard`가 확인창을 띄우고, 그때는 캐릭터 문구 없이 대화 안내만 보인다.
 
 ### 기동
 

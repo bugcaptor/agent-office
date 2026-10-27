@@ -5,6 +5,9 @@
 // Clicking a tab keeps the overlay mounted and only switches
 // `activeTerminalAgentId` (no remount, handled by TerminalHost).
 //
+// 태스크 대화 탭(docs/task-chat-design.md)은 캐릭터 탭 뒤에 따로 묶는다(taskChatStore.order).
+// 말풍선 아이콘·태스크 표시 제목·닫기(×)가 있고, 캐릭터 전용 메뉴는 없다.
+//
 // Keyboard routing, active only while a terminal is open:
 // - Cmd/Ctrl+1..9      -> jump to that tab index.
 // - Cmd/Ctrl+W         -> close the overlay (`closeTerminal`).
@@ -29,6 +32,8 @@ import { useMemoStore } from "../memo/memoStore";
 import { useRunStore } from "../run/runStore";
 import { IS_MAC } from "../shared/platform";
 import { terminalRegistry } from "./TerminalRegistry";
+import { requestCloseTaskChat, taskChatTitle, useTaskChatStore } from "../workpanels/taskChatStore";
+import { useWorkItemStore } from "../workpanels/workItemStore";
 import type { TerminalViewMode } from "./terminalViewMode";
 import type { ClaudeResumeEntry } from "@shared/types";
 
@@ -112,6 +117,27 @@ export function AgentTabStrip() {
       spritePreviews,
     ],
   );
+  // 태스크 대화 탭. 제목은 태스크의 지금 표시 제목을 따라가므로 업무 목록도 구독한다.
+  const chatIds = useTaskChatStore(useShallow((s) => s.order));
+  const chats = useTaskChatStore((s) => s.chats);
+  const workItems = useWorkItemStore((s) => s.items);
+  const chatTabs = useMemo(
+    () =>
+      chatIds
+        .map((id) => chats[id])
+        .filter(Boolean)
+        .map((chat) => ({
+          id: chat.agentId,
+          name: taskChatTitle(chat),
+          title: t("tab.chatTooltip", {
+            id: chat.taskId,
+            cwd: chat.cwd ?? t("tab.chatHome"),
+          }),
+        })),
+    // workItems: taskChatTitle이 읽는 업무 목록이 바뀌면 다시 계산한다.
+    [chatIds, chats, workItems, t],
+  );
+  const activeChat = activeId ? chats[activeId] : undefined;
   const openTerminal = useAppStore((s) => s.openTerminal);
   const closeTerminal = useAppStore((s) => s.closeTerminal);
   const openModal = useAppStore((s) => s.openModal);
@@ -132,11 +158,21 @@ export function AgentTabStrip() {
   const setMemoVisible = useMemoStore((s) => s.setVisible);
   const toggleMemo = useMemoStore((s) => s.toggleVisible);
   const openMemoArchive = useMemoStore((s) => s.openArchive);
-  // 활성 에이전트의 cwd(문서 버튼 활성 조건). 없으면 버튼 비활성.
-  const activeCwd = activeId ? agents[activeId]?.cwd : undefined;
+  // 활성 에이전트의 cwd(문서 버튼 활성 조건). 없으면 버튼 비활성. 대화 탭은 대화의 작업 폴더.
+  const activeCwd = activeChat
+    ? activeChat.cwd
+    : activeId
+      ? agents[activeId]?.cwd
+      : undefined;
   // 이름 없는 프로필로 오버레이(일기·메모·세션 로그)를 열 때 쓸 표시명 폴백.
   const characterFallback = t("menu.characterFallback");
   const [menu, setMenu] = useState<{
+    agentId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  // 대화 탭의 우클릭 메뉴(출력 내보내기·대화 끝내기만).
+  const [chatMenu, setChatMenu] = useState<{
     agentId: string;
     x: number;
     y: number;
@@ -193,7 +229,7 @@ export function AgentTabStrip() {
       window.removeEventListener("resize", updateTabScroll);
       observer?.disconnect();
     };
-  }, [tabIds, updateTabScroll]);
+  }, [tabIds, chatIds, updateTabScroll]);
 
   // 탭 선택 시 LRU 순서상 활성 탭이 맨 앞으로 이동한다. 이전 스크롤 위치를
   // 그대로 두면 새 활성 탭이 왼쪽 바깥에 남으므로 시작점도 함께 복구한다.
@@ -219,13 +255,17 @@ export function AgentTabStrip() {
     (agentId: string) => {
       const text = terminalRegistry.getPlainText(agentId);
       if (text === undefined) return;
+      const chat = chats[agentId];
       void tauriApi
-        .exportTerminalOutput(agents[agentId]?.name ?? agentId, text)
+        .exportTerminalOutput(
+          chat ? taskChatTitle(chat) : (agents[agentId]?.name ?? agentId),
+          text,
+        )
         .catch((err) =>
           console.warn("AgentTabStrip: shell output export failed", err),
         );
     },
-    [agents],
+    [agents, chats],
   );
 
   useEffect(() => {
@@ -261,7 +301,8 @@ export function AgentTabStrip() {
       }
 
       if (/^[1-9]$/.test(e.key)) {
-        const tab = tabs[Number(e.key) - 1];
+        // 번호는 캐릭터 탭 다음에 대화 탭으로 이어진다.
+        const tab = [...tabs, ...chatTabs][Number(e.key) - 1];
         if (tab) {
           e.preventDefault();
           openTerminal(tab.id);
@@ -275,6 +316,7 @@ export function AgentTabStrip() {
   }, [
     isOpen,
     tabs,
+    chatTabs,
     activeId,
     openTerminal,
     closeTerminal,
@@ -346,6 +388,43 @@ export function AgentTabStrip() {
               {tab.name}
             </button>
           ))}
+          {chatTabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={
+                tab.id === activeId
+                  ? "agent-tab agent-tab-chat agent-tab-active"
+                  : "agent-tab agent-tab-chat"
+              }
+              title={tab.title}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setChatMenu({ agentId: tab.id, x: e.clientX, y: e.clientY });
+              }}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab.id === activeId}
+                className="agent-tab-chat-open"
+                onClick={() => openTerminal(tab.id)}
+              >
+                <span className="agent-tab-chat-icon" aria-hidden="true">
+                  💬
+                </span>
+                <span className="agent-tab-chat-name">{tab.name}</span>
+              </button>
+              <button
+                type="button"
+                className="agent-tab-chat-close"
+                aria-label={t("tab.chatClose")}
+                title={t("tab.chatClose")}
+                onClick={() => requestCloseTaskChat(tab.id)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
         </div>
         {tabScroll.canScrollRight && (
           <button
@@ -376,6 +455,8 @@ export function AgentTabStrip() {
         >
           {t("tab.docs")}
         </button>
+        {/* 포스트잇은 캐릭터의 메모라 대화 탭에서는 숨긴다. */}
+        {!activeChat && (
         <button
           type="button"
           className={
@@ -392,6 +473,7 @@ export function AgentTabStrip() {
         >
           🗒
         </button>
+        )}
         <button
           type="button"
           className={`agent-tab-strip-viewmode mode-${viewMode}`}
@@ -411,6 +493,27 @@ export function AgentTabStrip() {
           ×
         </button>
       </div>
+      {chatMenu && (
+        <ContextMenu
+          x={chatMenu.x}
+          y={chatMenu.y}
+          onClose={() => setChatMenu(null)}
+          items={[
+            {
+              label: t("menu.exportShell"),
+              icon: "📄",
+              disabled: !terminalRegistry.has(chatMenu.agentId),
+              onSelect: () => exportShellOutput(chatMenu.agentId),
+            },
+            { separator: true as const },
+            {
+              label: t("tab.chatClose"),
+              icon: "⏹️",
+              onSelect: () => requestCloseTaskChat(chatMenu.agentId),
+            },
+          ]}
+        />
+      )}
       {menu && (
         <ContextMenu
           x={menu.x}

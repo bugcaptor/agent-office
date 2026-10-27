@@ -8,7 +8,10 @@
     "memoOpen": "Ouvrir les notes",
     "memoClose": "Fermer les notes",
     "viewModeFill": "Remplir la fenêtre",
-    "viewModeWindowed": "Retour en fenêtre"
+    "viewModeWindowed": "Retour en fenêtre",
+    "chatTooltip": "Tâche {{id}}\nDossier de travail : {{cwd}}",
+    "chatHome": "Dossier personnel",
+    "chatClose": "Terminer la discussion"
   },
   "menu": {
     "restart": "Redémarrer le terminal",
@@ -29,7 +32,8 @@
   },
   "host": {
     "exited": "Le processus s’est terminé.",
-    "relaunch": "Relancer"
+    "relaunch": "Relancer",
+    "chatEnded": "La discussion est terminée. Fermez l’onglet et rouvrez-la depuis la tâche."
   },
   "palette": {
     "latte": "Catppuccin Latte",

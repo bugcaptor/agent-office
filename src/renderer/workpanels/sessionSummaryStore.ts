@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { SessionSummary, SessionStateEvent } from "@shared/types";
+import { isTaskChatId, type SessionSummary, type SessionStateEvent } from "@shared/types";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 
@@ -56,6 +56,8 @@ export async function installSessionSummaryRecorder(): Promise<() => void> {
     if (dirty.size && !useSessionSummaryStore.getState().error) await flush();
   }
   function onState(e: SessionStateEvent) {
+    // 태스크 대화 세션은 세션 요약(지난 세션 목록·작업 폴더 해석)에 넣지 않는다.
+    if (isTaskChatId(e.agentId)) return;
     const { agents } = useAppStore.getState();
     const { summaries, liveIds } = useSessionSummaryStore.getState();
     const previous = summaries[e.sessionId];

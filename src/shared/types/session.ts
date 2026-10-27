@@ -74,6 +74,8 @@ export interface CreateSessionOptions {
 
 /** 태스크 대화 세션의 agentId 접두사. Rust `TASK_CHAT_PREFIX`와 같다. */
 export const TASK_CHAT_PREFIX = "task-chat-";
+/** 태스크 대화 세션인가. 캐릭터 중심 스토어는 이런 세션의 이벤트를 무시한다. */
+export function isTaskChatId(agentId: string): boolean { return agentId.startsWith(TASK_CHAT_PREFIX); }
 
 /**
  * Wire payload for the `create_session` command (camelCase args).

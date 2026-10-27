@@ -8,7 +8,10 @@
     "memoOpen": "開啟便利貼",
     "memoClose": "關閉便利貼",
     "viewModeFill": "填滿程式視窗",
-    "viewModeWindowed": "回到視窗模式"
+    "viewModeWindowed": "回到視窗模式",
+    "chatTooltip": "任務 {{id}}\n工作資料夾：{{cwd}}",
+    "chatHome": "主資料夾",
+    "chatClose": "結束對話"
   },
   "menu": {
     "restart": "重新啟動終端機",
@@ -29,7 +32,8 @@
   },
   "host": {
     "exited": "處理程序已結束。",
-    "relaunch": "重新啟動"
+    "relaunch": "重新啟動",
+    "chatEnded": "對話已結束。關閉此分頁後可從任務重新開啟。"
   },
   "palette": {
     "latte": "Catppuccin Latte",

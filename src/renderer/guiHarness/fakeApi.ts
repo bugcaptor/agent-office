@@ -18,6 +18,7 @@ import type {
   RepositoryAuditItem,
   SessionState,
   SessionStateEvent,
+  TaskChatRequest,
 } from "@shared/types";
 import memoFixture from "@shared/contract-fixtures/memo-sheet.current.json";
 import { emitTauriEvent } from "./tauriStub";
@@ -48,6 +49,8 @@ let sessionSeq = 100;
 const markdownSample = "# Doc viewer\n\n- [x] GFM table\n- [ ] Mermaid\n\n```mermaid\ngraph LR; A-->B\n```\n";
 /** `docViewOpen`이 받은 `root/relPath`(스크립트가 읽어 확인한다). */
 const docViewOpened: string[] = [];
+/** `openTaskChat`이 받은 요청(스크립트가 읽어 확인한다). */
+const taskChatRequests: TaskChatRequest[] = [];
 
 const byteLength = (data: string) => new TextEncoder().encode(data).length;
 
@@ -159,6 +162,16 @@ const impl: Partial<AgentOfficeApi> = {
     }, 0);
     return { sessionId, state: "starting" };
   },
+  // 태스크 대화(docs/task-chat-design.md): 세션을 띄우고 첫 프롬프트를 넣은 것처럼 맥락 요약을 찍는다.
+  async openTaskChat(request) {
+    const agentId = `task-chat-${request.taskId}`;
+    const sessionId = `s${sessionSeq++}`;
+    sessions.set(agentId, sessionId);
+    taskChatRequests.push(request);
+    emitSessionState(agentId, "running");
+    pushOutput(agentId, `\x1b[1;36m> ${request.context.task.title}\x1b[0m\r\n${request.cwd ?? "~"} · ${request.agent.cli}\r\n`);
+    return { agentId, sessionId };
+  },
   async disposeSession(agentId) {
     emitSessionState(agentId, "exited");
     sessions.delete(agentId);
@@ -226,4 +239,7 @@ Object.assign(harness, {
   /** Markdown 편집기 스토어(예: `openFile`). */
   markdownStore: async () => (await import("../markdown/markdownStore")).useMarkdownStore,
   docViewOpened,
+  /** 태스크 대화 스토어(예: `openTaskChat`). */
+  taskChatStore: async () => await import("../workpanels/taskChatStore"),
+  taskChatRequests,
 });

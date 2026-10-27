@@ -8,7 +8,10 @@
     "memoOpen": "打开便签",
     "memoClose": "关闭便签",
     "viewModeFill": "填满应用窗口",
-    "viewModeWindowed": "回到窗口模式"
+    "viewModeWindowed": "回到窗口模式",
+    "chatTooltip": "任务 {{id}}\n工作文件夹：{{cwd}}",
+    "chatHome": "主文件夹",
+    "chatClose": "结束对话"
   },
   "menu": {
     "restart": "重启终端",
@@ -29,7 +32,8 @@
   },
   "host": {
     "exited": "进程已退出。",
-    "relaunch": "重新启动"
+    "relaunch": "重新启动",
+    "chatEnded": "对话已结束。关闭此标签后可从任务中重新打开。"
   },
   "palette": {
     "latte": "Catppuccin Latte",

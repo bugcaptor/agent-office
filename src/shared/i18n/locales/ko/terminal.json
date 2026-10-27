@@ -8,7 +8,10 @@
     "memoOpen": "포스트잇 열기",
     "memoClose": "포스트잇 닫기",
     "viewModeFill": "앱에 꽉 채우기",
-    "viewModeWindowed": "창 모드로 복귀"
+    "viewModeWindowed": "창 모드로 복귀",
+    "chatTooltip": "태스크 {{id}}\n작업 폴더: {{cwd}}",
+    "chatHome": "홈 폴더",
+    "chatClose": "대화 끝내기"
   },
   "menu": {
     "restart": "터미널 재시작",
@@ -29,7 +32,8 @@
   },
   "host": {
     "exited": "프로세스가 종료되었습니다.",
-    "relaunch": "다시 띄우기"
+    "relaunch": "다시 띄우기",
+    "chatEnded": "대화가 끝났습니다. 탭을 닫고 태스크에서 다시 열 수 있습니다."
   },
   "palette": {
     "latte": "카푸치노 라떼",

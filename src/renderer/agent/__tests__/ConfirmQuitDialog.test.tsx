@@ -43,6 +43,7 @@ vi.mock("../../terminal/TerminalRegistry", () => ({
 }));
 
 const { ConfirmQuitDialog } = await import("../ConfirmQuitDialog");
+const { useTaskChatStore } = await import("../../workpanels/taskChatStore");
 
 const initialState = useAppStore.getState();
 
@@ -58,6 +59,7 @@ beforeEach(() => {
   handoffSessions.mockReset().mockResolvedValue(0);
   isHandoffSupportedMock.mockReset().mockReturnValue(false);
   serializeAllMock.mockReset().mockReturnValue({});
+  useTaskChatStore.setState({ chats: {}, order: [], opening: {} });
 });
 
 afterEach(async () => { cleanup(); await useWorkItemStore.getState().flush(); });
@@ -106,6 +108,18 @@ describe("ConfirmQuitDialog", () => {
         "아직 퇴근하지 않은 에이전트가 있습니다. 지금 종료하면 실행 중인 세션이 모두 중단됩니다."
       )
     ).toBeTruthy();
+  });
+
+  it("살아 있는 태스크 대화 수를 알리고, 근무 중인 캐릭터가 없으면 캐릭터 문구는 뺀다", () => {
+    const chat = (id: string, status: "running" | "exited") => ({ agentId: id, taskId: id, title: id, sessionId: id, status, openedAt: 0, viewedAt: 0 });
+    useTaskChatStore.setState({
+      chats: { "task-chat-a": chat("task-chat-a", "running"), "task-chat-b": chat("task-chat-b", "running"), "task-chat-c": chat("task-chat-c", "exited") },
+      order: ["task-chat-a", "task-chat-b", "task-chat-c"],
+    });
+    useAppStore.getState().openModal({ kind: "confirm-quit" });
+    render(<ConfirmQuitDialog />);
+    expect(screen.getByText("열린 태스크 대화 2개도 함께 끝납니다.")).toBeTruthy();
+    expect(screen.queryByText(/아직 퇴근하지 않은 에이전트가 있습니다/)).toBeNull();
   });
 
   it("종료 확인 시 모달을 닫고 destroy()를 호출한다", () => {
