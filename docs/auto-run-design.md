@@ -4,7 +4,7 @@
 
 업무 패널에서 루트 태스크 하나를 고르면, 그 태스크가 기다리는 선행 작업들을 한 캐릭터가 차례로 진행한다. 태스크마다 CLI 세션을 새로 시작하고, 턴이 끝날 때마다 별도의 판단자(`claude -p` 세션)에게 다음 할 일을 묻는다. 사람이 하나씩 보내고 결과를 확인하던 일을 앱이 대신 돌리되, 판단만 LLM에 맡긴다.
 
-관련 문서: [work-panels-design.md](work-panels-design.md)(업무·보내기·모니터링·상태 전이), [session-log-design.md](session-log-design.md)(에이전트 전사).
+관련 문서: [work-panels-design.md](work-panels-design.md)(업무·보내기·모니터링·상태 전이), [session-log-design.md](session-log-design.md)(에이전트 전사), [task-chat-design.md](task-chat-design.md)(자동 진행 중 현재 태스크에 대해 묻는 대화 탭 — 진행자·판단자와 따로 돈다).
 
 ## 왜 이 구조인가
 

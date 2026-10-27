@@ -1082,6 +1082,115 @@ return
         mgr.dispose("shellwatch");
     }
 
+    /// 태스크 대화 세션 종단 확인(docs/task-chat-design.md §관찰을 끈다): 관찰이 켜진
+    /// 매니저에서도 대화 세션의 진짜 로그인 셸에는 `AGENT_OFFICE_AGENT_ID`·
+    /// `AGENT_OFFICE_HOOK_URL`이 없고, `claude` 래퍼는 훅 설정 대신 대화용 설정 파일을
+    /// 붙이며, 포그라운드 명령이 셸 작업중 신호를 내지 않는다.
+    #[cfg(unix)]
+    #[tokio::test]
+    #[ignore = "real PTY; run explicitly"]
+    async fn real_shell_task_chat_session_runs_unobserved() {
+        // 세션 env는 부모 프로세스 env 위에 덧쓰기만 한다. 이 테스트를 Agent Office 터미널
+        // 안에서 돌리면 부모 세션의 값이 그대로 상속되므로 먼저 지운다(앱을 Finder·Dock으로
+        // 띄우면 이 값들이 없다).
+        for key in ["AGENT_OFFICE_AGENT_ID", "AGENT_OFFICE_HOOK_URL"] {
+            std::env::remove_var(key);
+        }
+        let events = Arc::new(RecordingEvents::default());
+        let registry = Arc::new(SessionRegistry::new());
+        let hub = Arc::new(NotificationHub::new(
+            registry.clone(),
+            events.clone() as Arc<dyn AppEvents>,
+            Arc::new(SystemClock),
+            Duration::from_millis(3000),
+        ));
+        let root = scratch_dir("task-chat");
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let fake = bin.join("claude");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\nprintf 'FAKE-ARGS[%s]\\n' \"$*\"\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = --settings ]; then printf 'FAKE-SETTINGS[%s]\\n' \"$(cat \"$2\")\"; fi\n  shift\ndone\n",
+        )
+        .unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let settings_dir = root.join("settings");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        let observer = Arc::new(ObserverRuntime::new(
+            hub.clone(),
+            vec![Arc::new(ClaudeAdapter::new(
+                root.join("observer"),
+                std::env::current_exe().unwrap(),
+            ))],
+        ));
+        let mgr = Arc::new(
+            SessionManager::new(
+                Arc::new(PortablePtyFactory),
+                observer,
+                registry,
+                events.clone() as Arc<dyn AppEvents>,
+                hub,
+                Arc::new(|| Some("http://127.0.0.1:45999/hook".into())),
+            )
+            .with_task_chat_settings(Arc::new(move |sid| {
+                let path = settings_dir.join(format!("{sid}.settings.json"));
+                std::fs::write(&path, r#"{"permissions":{"allow":["Read(//chat-marker/**)"]}}"#).ok()?;
+                Some(path)
+            })),
+        );
+
+        let agent_id = "task-chat-smokeTask1";
+        mgr.create(CreateSessionRequest {
+            agent_id: agent_id.into(),
+            cols: Some(200),
+            rows: Some(24),
+            cwd: Some(root.to_string_lossy().into_owned()),
+            shell: None,
+            startup_command: None,
+            personality_prompt: Some("persona-must-not-load".into()),
+            autostart_claude: Some(false),
+            task_chat: true,
+        })
+        .expect("create real task chat session");
+        let output = attach_string_collector(&mgr, agent_id);
+        tokio::time::sleep(Duration::from_millis(1_500)).await; // 프롬프트 대기
+
+        mgr.write_input(
+            agent_id,
+            "echo \"ENV-AID[${AGENT_OFFICE_AGENT_ID-unset}] ENV-HOOK[${AGENT_OFFICE_HOOK_URL-unset}] ENV-SES[${AGENT_OFFICE_SESSION:+set}]\"\r",
+        );
+        mgr.write_input(agent_id, &format!("export PATH='{}':\"$PATH\"; claude hello\r", bin.display()));
+        wait_for_timeout(
+            || output.lock().contains("FAKE-SETTINGS[{"),
+            Duration::from_secs(8),
+            "claude 래퍼가 대화용 설정 파일을 붙이지 않았다",
+        )
+        .await;
+        let text = output.lock().clone();
+        assert!(text.contains("ENV-AID[unset] ENV-HOOK[unset] ENV-SES[set]"), "{text}");
+        assert!(text.contains("FAKE-SETTINGS[{\"permissions\":{\"allow\":[\"Read(//chat-marker/**)\"]}}]"), "{text}");
+        assert!(!text.contains("persona-must-not-load"), "{text}");
+
+        // 셸 작업중 감시가 꺼져 있으므로 긴 명령도 activity를 만들지 않는다.
+        mgr.write_input(agent_id, "sleep 3; echo SLEPT-$((40+2))\r");
+        wait_for_timeout(
+            || output.lock().contains("SLEPT-42"),
+            Duration::from_secs(8),
+            "sleep 명령이 끝나지 않았다",
+        )
+        .await;
+        tokio::time::sleep(Duration::from_millis(1_000)).await;
+        assert!(events.activities().is_empty(), "대화 세션 activity: {:?}", events.activities());
+        assert_eq!(mgr.live_task_chat_count(), 1);
+
+        mgr.dispose(agent_id);
+        assert_eq!(mgr.live_task_chat_count(), 0);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     /// 출력을 문자열로 모으는 최소 수집기(위 스모크들의 `attach_collector`와
     /// 같은 배선 — 이 테스트만 쓰는 사본이라 이름을 분리해 둔다).
     fn attach_string_collector(
