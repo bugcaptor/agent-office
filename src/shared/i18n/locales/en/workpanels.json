@@ -238,6 +238,11 @@
     }
   },
   "taskChat": {
+    "open": "Chat",
+    "opening": "Opening…",
+    "openCurrent": "Chat about current task",
+    "openTooltip": "Open a chat tab about this task, without a character.",
+    "savedOnly": "The chat uses the saved task. Unsaved changes are not included.",
     "errors": {
       "busy": "The chat for this task is opening.",
       "running": "The chat for this task is already open.",

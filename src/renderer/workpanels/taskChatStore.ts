@@ -58,6 +58,11 @@ export function taskChatBlockedReason(taskId: string): string | undefined {
   if (opening[taskId]) return "task-chat-busy";
   if (isLive(chats[taskChatId(taskId)]?.status)) return undefined;
   if (liveTaskChatCount() >= MAX_TASK_CHATS) return "task-chat-limit";
+  // 보내기와 같은 판정(work_send::require_supported_shell). 렌더러가 아는 건 프로필 셸 id뿐이라 WSL만 미리 막고,
+  // 기본 셸(예: fish)은 네이티브가 같은 코드로 거절한다.
+  const item = useWorkItemStore.getState().items.find((i) => i.id === taskId);
+  const profile = item?.assigneeAgentId ? useAppStore.getState().agents[item.assigneeAgentId] : undefined;
+  if (profile?.shell === "wsl") return "work-send-shell-unsupported";
   return undefined;
 }
 

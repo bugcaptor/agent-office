@@ -238,6 +238,11 @@
     }
   },
   "taskChat": {
+    "open": "Discuter",
+    "opening": "Ouverture…",
+    "openCurrent": "Discuter de la tâche en cours",
+    "openTooltip": "Ouvre un onglet de discussion sur cette tâche, sans personnage.",
+    "savedOnly": "La discussion utilise la tâche enregistrée. Les modifications non enregistrées ne sont pas incluses.",
     "errors": {
       "busy": "La discussion de cette tâche est en cours d’ouverture.",
       "running": "La discussion de cette tâche est déjà ouverte.",

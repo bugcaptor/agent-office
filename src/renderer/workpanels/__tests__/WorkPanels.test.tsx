@@ -9,9 +9,10 @@ const { api } = vi.hoisted(() => ({ api: {
   sendWorkItem: vi.fn().mockResolvedValue({ sessionId: "s", submittedAt: 100 }),
   setAppSettings: vi.fn().mockResolvedValue(undefined),
   exportWorkItemsFile: vi.fn(), importWorkItemsFile: vi.fn(),
+  openTaskChat: vi.fn(),
 } }));
 vi.mock("../../ipc/tauriApi", () => ({ tauriApi: api }));
-vi.mock("../../terminal/TerminalRegistry", () => ({ terminalRegistry: { destroy: vi.fn() } }));
+vi.mock("../../terminal/TerminalRegistry", () => ({ terminalRegistry: { destroy: vi.fn(), ensure: vi.fn(), get: vi.fn() } }));
 vi.mock("../AgentFace", () => ({ AgentFace: () => null }));
 vi.mock("../../layout/TopBar", () => ({ TopBar: () => null }));
 vi.mock("../../layout/BottomBar", () => ({ BottomBar: () => null }));
@@ -25,6 +26,7 @@ import { useSessionSummaryStore } from "../sessionSummaryStore";
 import { settleWorkSends, useWorkSendStore } from "../workSendStore";
 import { usePanelLayoutStore, useWorkGroupStore } from "../panelLayoutStore";
 import { useWorkMonitorStore } from "../workMonitor";
+import { useTaskChatStore } from "../taskChatStore";
 const initial = useAppStore.getState();
 const initialWork = useWorkItemStore.getState();
 beforeEach(() => {
@@ -488,4 +490,77 @@ it("기존 업무 팝업 머리에 ID와 복사 버튼을 두고 성공·실패�
     vi.useRealTimers();
     delete (navigator as { clipboard?: unknown }).clipboard;
   }
+});
+
+describe("태스크 대화 버튼", () => {
+  beforeEach(() => {
+    useTaskChatStore.setState({ chats: {}, order: [], opening: {} });
+    api.openTaskChat.mockReset();
+    api.openTaskChat.mockImplementation(async (r: { taskId: string }) => ({ agentId: `task-chat-${r.taskId}`, sessionId: `sid-${r.taskId}` }));
+    useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true }, agents: { a: { id: "a", name: "Ada", role: "dev", seed: "s", createdAt: 1, deskIndex: 0 } }, agentOrder: ["a"] });
+    useWorkItemStore.setState({ loaded: true });
+  });
+  it("실행 줄의 터미널 왼쪽에 두고, 미저장 변경이면 저장된 내용 기준 툴팁을 단 채 저장된 태스크로 열고 팝업만 닫는다", async () => {
+    const store = useWorkItemStore.getState();
+    const id = store.add({ title: "Chat me", body: "saved", status: "done", assigneeAgentId: "a" })!;
+    store.select(id);
+    render(<UIChrome />);
+    const dialog = screen.getByRole("dialog", { name: "Chat me" });
+    const row = dialog.querySelector(".work-dialog-run")!;
+    const labels = [...row.querySelectorAll("button")].map((b) => b.textContent);
+    expect(labels.indexOf("대화")).toBeGreaterThan(-1);
+    expect(labels.indexOf("대화")).toBe(labels.indexOf("터미널") - 1);
+    const chat = within(dialog).getByRole("button", { name: "대화" });
+    expect(chat.getAttribute("title")).toContain("캐릭터 없는");
+    fireEvent.change(within(dialog).getByLabelText("본문"), { target: { value: "unsaved" } });
+    expect(chat.getAttribute("title")).toContain("저장된 내용");
+    await act(async () => { fireEvent.click(chat); });
+    expect(api.openTaskChat).toHaveBeenCalledTimes(1);
+    expect(api.openTaskChat.mock.calls[0][0]).toMatchObject({ taskId: id, context: { task: { body: "saved" } } });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useTaskChatStore.getState().order).toEqual([`task-chat-${id}`]);
+    expect(useAppStore.getState().activeTerminalAgentId).toBe(`task-chat-${id}`);
+    // 초안은 그대로 남는다.
+    act(() => useWorkItemStore.getState().select(id));
+    expect((within(screen.getByRole("dialog", { name: "Chat me" })).getByLabelText("본문") as HTMLTextAreaElement).value).toBe("unsaved");
+  });
+  it("막힘 사유(미지원 셸·상한)는 버튼 아래 문구로 보이고, 열기 실패는 팝업을 열어 둔 채 오류를 보인다", async () => {
+    const store = useWorkItemStore.getState();
+    const id = store.add({ title: "Blocked", body: "", status: "todo", assigneeAgentId: "a" })!;
+    act(() => useAppStore.setState((s) => ({ agents: { a: { ...s.agents.a, shell: "wsl" } } })));
+    store.select(id);
+    render(<UIChrome />);
+    const dialog = screen.getByRole("dialog", { name: "Blocked" });
+    const chat = within(dialog).getByRole("button", { name: "대화" }) as HTMLButtonElement;
+    expect(chat.disabled).toBe(true);
+    expect(document.getElementById(chat.getAttribute("aria-describedby")!)!.textContent).toContain("WSL");
+    act(() => useAppStore.setState((s) => ({ agents: { a: { ...s.agents.a, shell: undefined } } })));
+    const live = Object.fromEntries(["x1", "x2", "x3", "x4"].map((t, n) => [`task-chat-${t}`, { agentId: `task-chat-${t}`, taskId: t, title: `Old ${t}`, sessionId: t, status: "running" as const, openedAt: n, viewedAt: n }]));
+    act(() => useTaskChatStore.setState({ chats: live, order: Object.keys(live) }));
+    expect(chat.disabled).toBe(true);
+    expect(document.getElementById(chat.getAttribute("aria-describedby")!)!.textContent).toContain("Old x1");
+    act(() => useTaskChatStore.setState({ chats: {}, order: [] }));
+    expect(chat.disabled).toBe(false);
+    expect(chat.getAttribute("aria-describedby")).toBeNull();
+    api.openTaskChat.mockRejectedValueOnce(new Error("work-send-shell-unsupported"));
+    await act(async () => { fireEvent.click(chat); });
+    expect(screen.getByRole("dialog", { name: "Blocked" })).toBeTruthy();
+    expect(document.getElementById("work-chat-hint")!.textContent).toContain("WSL");
+    expect(useTaskChatStore.getState().order).toEqual([]);
+  });
+  it("자동 진행 영역은 현재 태스크가 있을 때만 '현재 태스크에 대해 대화'를 두고 그 태스크로 연다", async () => {
+    const store = useWorkItemStore.getState();
+    const step = store.add({ title: "Step", body: "", status: "in_progress", assigneeAgentId: "a" })!;
+    const root = store.add({ title: "Plan", body: "", status: "todo", assigneeAgentId: "a", dependsOn: [step] })!;
+    const run = { state: "paused" as const, judgeSessionId: "x", judgeStarted: true, followUps: 0, pauseReason: "judge-stop" as const, costUsd: 0, log: [], startedAt: 1 };
+    store.setAutoRun(root, run);
+    store.select(root);
+    render(<UIChrome />);
+    const dialog = screen.getByRole("dialog", { name: "Plan" });
+    expect(within(dialog).queryByRole("button", { name: "현재 태스크에 대해 대화" })).toBeNull();
+    act(() => useWorkItemStore.getState().setAutoRun(root, { ...run, currentId: step }));
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "현재 태스크에 대해 대화" })); });
+    expect(api.openTaskChat.mock.calls[0][0]).toMatchObject({ taskId: step });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });

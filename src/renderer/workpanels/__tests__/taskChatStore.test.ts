@@ -101,6 +101,18 @@ describe("태스크 대화 열기", () => {
     expect(useAppStore.getState().activeTerminalAgentId).toBeNull();
   });
 
+  it("담당 프로필 셸이 WSL이면 보내기와 같은 코드로 막고, 이미 살아 있는 대화는 막지 않는다", async () => {
+    useWorkItemStore.setState({ items: [task("t1", { assigneeAgentId: "a1" }), task("t2")] });
+    await openTaskChat("t1");
+    useAppStore.setState((s) => ({ agents: { a1: { ...s.agents.a1, shell: "wsl" } } }));
+    expect(taskChatBlockedReason("t1")).toBeUndefined();
+    // 상태 이벤트를 쓰면 모듈의 마지막 상태가 다음 테스트로 새므로 스토어만 바꾼다.
+    useTaskChatStore.setState((s) => ({ chats: { "task-chat-t1": { ...s.chats["task-chat-t1"], status: "exited" } } }));
+    expect(taskChatBlockedReason("t1")).toBe("work-send-shell-unsupported");
+    expect(await openTaskChat("t1")).toBe("work-send-shell-unsupported");
+    expect(taskChatBlockedReason("t2")).toBeUndefined();
+  });
+
   it(`살아 있는 대화가 ${MAX_TASK_CHATS}개면 막고 가장 오래 안 본 대화를 안내한다. 끝난 대화는 세지 않는다`, async () => {
     useWorkItemStore.setState({ items: ["t1", "t2", "t3", "t4", "t5"].map((id) => task(id)) });
     for (const id of ["t1", "t2", "t3", "t4"]) { vi.advanceTimersByTime(1000); await openTaskChat(id); }

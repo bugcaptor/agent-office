@@ -5,6 +5,7 @@ import { formatUsd } from "../analytics/pricing";
 import { useWorkItemStore } from "./workItemStore";
 import { workItemTitle } from "./workItemDraft";
 import { sendErrorText } from "./sendErrorText";
+import { TaskChatButton, useTaskChatButton } from "./TaskChatButton";
 import { busyRunRoot, endAutoRun, MAX_FOLLOW_UPS, pauseAutoRun, planItems, resumeAutoRun, startAutoRun, startBlockedReason } from "./autoRun";
 
 /** 시작 차단·일시정지 상세 코드를 화면 문장으로. 자동 진행 코드가 아니면 보내기 오류 문구를 쓴다. */
@@ -47,6 +48,8 @@ export function AutoRunSection({ root }: { root: WorkItem }) {
   const observerEnabled = useAppStore((s) => s.appSettings.observerEnabled);
   const costEnabled = useAppStore((s) => s.appSettings.sessionCostEnabled);
   const run = root.autoRun;
+  // 일시정지 사유를 읽고 바로 묻는 흐름. 대화가 열리면 루트 팝업을 닫는다.
+  const chat = useTaskChatButton(run?.currentId, () => { if (useWorkItemStore.getState().selectedId === root.id) select(null); });
   const plan = planItems(root, items);
   if (!run && !plan.length) return null;
   const titles = new Map(items.map((item) => [item.id, workItemTitle(item)]));
@@ -69,11 +72,13 @@ export function AutoRunSection({ root }: { root: WorkItem }) {
     <div className="work-dialog-actions">
       {run && run.state !== "running" && <button className="pixel-btn" onClick={() => endAutoRun(root.id)}>{t(run.state === "finished" ? "autoRun.clear" : "autoRun.end")}</button>}
       <span className="work-dialog-spacer" />
+      {current && <TaskChatButton chat={chat} label={t("taskChat.openCurrent")} hintId={`auto-run-chat-hint-${root.id}`} />}
       {run?.state === "running" && <button className="pixel-btn" onClick={() => pauseAutoRun(root.id)}>{t("autoRun.pause")}</button>}
       {run?.state === "paused" && <button className="pixel-btn primary" onClick={() => resumeAutoRun(root.id)}>{t("autoRun.resume")}</button>}
       {(!run || run.state === "finished") && <button className="pixel-btn primary" disabled={!!blocked} aria-describedby={blocked ? `auto-run-hint-${root.id}` : undefined}
         onClick={() => { if (run) endAutoRun(root.id); startAutoRun(root.id); }}>{t("autoRun.start")}</button>}
     </div>
+    {current && chat.hint && <p id={`auto-run-chat-hint-${root.id}`} className="work-send-hint">{chat.hint}</p>}
     {blocked && <p id={`auto-run-hint-${root.id}`} className="work-send-hint">{blockedText(t, blocked, root, items)}
       {busyRoot && <> <button type="button" className="pixel-btn" onClick={() => select(busyRoot.id)}>{t("autoRun.openBusy")}</button></>}</p>}
     {run && run.state !== "running" && <p className="work-muted">{t("autoRun.endHint")}</p>}

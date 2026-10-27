@@ -15,6 +15,7 @@ import { sendErrorText } from "./sendErrorText";
 import { AgentFace } from "./AgentFace";
 import { dependentCount, pendingPrerequisites } from "./workDependencies";
 import { WorkDialog } from "./WorkDialog";
+import { TaskChatButton, useTaskChatButton } from "./TaskChatButton";
 import { WorkTransferDialog } from "./WorkTransferDialog";
 import { AutoRunSection, blockedText } from "./AutoRunSection";
 import { endAutoRun, planItems, startAutoRun, startBlockedReason } from "./autoRun";
@@ -44,6 +45,9 @@ export function WorkItemsPanel() {
   const clearEdit = (id: string) => setEdits((current) => { const next = { ...current }; delete next[id]; return next; });
   const [deleting, setDeleting] = useState<WorkItem | null>(null);
   const [transferring, setTransferring] = useState(false);
+  // 대화가 열리면 그 태스크 팝업을 닫는다(초안은 edits에 남는다).
+  const closeIfOpen = (id: string) => { if (useWorkItemStore.getState().selectedId === id) select(null); };
+  const chat = useTaskChatButton(selectedId ?? undefined, closeIfOpen);
   useEffect(() => { if (!loaded && !error) void load(); }, [loaded, error, load]);
   useEffect(() => () => { decideWorkSend(false); void useWorkItemStore.getState().flush(); }, []);
   const cardState = (item: WorkItem) => {
@@ -97,11 +101,13 @@ export function WorkItemsPanel() {
         <button className="pixel-btn danger" disabled={sending} onClick={() => setDeleting(item)}>{t("delete")}</button>
         <span className="work-dialog-spacer" />
         {item.status !== "done" && <button className="pixel-btn" disabled={sending} onClick={markDone}>{t("markDone")}</button>}
-        {/* 터미널은 팝업 뒤에 열리므로 초안을 둔 채 팝업을 닫는다. */}
+        {/* 대화는 저장된 태스크로 맥락을 만든다. 터미널은 팝업 뒤에 열리므로 둘 다 초안을 둔 채 팝업을 닫는다. */}
+        <TaskChatButton chat={chat} label={t("taskChat.open")} title={dirty ? t("taskChat.savedOnly") : undefined} hintId="work-chat-hint" />
         {terminalAgent && agents[terminalAgent] && <button className="pixel-btn" onClick={() => { select(null); openTerminal(terminalAgent); }}>{t("terminal")}</button>}
         <button className="pixel-btn primary work-send-btn" disabled={sending || !!blockedReason || !hasWorkContent(value)} aria-describedby={blockedReason ? "work-send-hint" : undefined}
           onClick={() => void send()}>{t(sending ? "sending" : dirty ? "saveAndSend" : "send")}</button>
       </div>
+      {chat.hint && <p id="work-chat-hint" className="work-send-hint">{chat.hint}</p>}
       {blockedReason && <p id="work-send-hint" className="work-send-hint">{sendErrorText(blockedReason)}</p>}
     </WorkDialog>;
   };
