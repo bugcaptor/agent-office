@@ -1,4 +1,4 @@
-// 태스크 대화 탭(docs/task-chat-design.md). 탭 동작만 보려고 스토어로 직접 연다(버튼은 task-chat-buttons.mjs).
+// 태스크 대화 탭. 탭 동작만 보려고 스토어로 직접 연다(버튼은 task-chat-buttons.mjs).
 //   npm run gui:shot -- --scenario workpanels --script scripts/gui-steps/task-chat.mjs
 export default async ({ page, shot }) => {
   const open = (taskId) => page.evaluate(async (id) => (await (await window.__guiHarness.taskChatStore()).openTaskChat(id)) ?? "ok", taskId);

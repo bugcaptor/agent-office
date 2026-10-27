@@ -51,7 +51,7 @@ pub async fn set_mascot_visible(app: AppHandle, visible: bool) -> Result<(), Str
     Ok(())
 }
 
-/// 마스코트 신호등(docs/mascot-lights-design.md §5.3) — 창 크기(칸 수·방향·
+/// 마스코트 신호등 — 창 크기(칸 수·방향·
 /// 스프라이트 유무에 따라 계산된 값)와 하단중앙 앵커로 환산된 위치를 한 번에
 /// 적용한다. `width`/`height`/`x`/`y`는 전부 **물리 px**(렌더러가 dpr로 환산해
 /// 넘긴다). 창이 없으면 조용히 no-op.
@@ -60,7 +60,7 @@ pub async fn set_mascot_visible(app: AppHandle, visible: bool) -> Result<(), Str
 /// 순으로 감싸는 이유: tauri.conf.json에서 마스코트 창은 `resizable:false`로
 /// 만들어지는데(사용자가 테두리를 끌어 늘리지 못하게), Windows에서는
 /// non-resizable 창에 대해 **프로그램이 거는** `set_size` 호출도 무시되는
-/// 사례가 보고돼 있다(§10). 매 호출마다 잠깐 resizable을 켰다 다시 끄면
+/// 사례가 보고돼 있다. 매 호출마다 잠깐 resizable을 켰다 다시 끄면
 /// 사용자 조작 여지는 그대로 막으면서 프로그램 리사이즈만 허용할 수 있다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn set_mascot_layout(

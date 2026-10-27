@@ -21,13 +21,13 @@ pub struct SpawnedPty {
     pub writer: Box<dyn Write + Send>,
     pub control: Arc<dyn PtyControl>, // resize + kill (여러 스레드 공유)
     pub waiter: Box<dyn PtyWaiter>,   // 블로킹 wait, 소유 이전
-    /// 세션 핸드오프(§핵심 1) — 리더 스레드를 확정적으로 멈추는 스위치.
+    /// 세션 핸드오프 — 리더 스레드를 확정적으로 멈추는 스위치.
     /// unix에서만 Some. Fake/Windows는 None(핸드오프 자체가 unix 전용 기능).
     #[cfg(unix)]
     pub reader_interrupt: Option<crate::session::poll_reader::ReaderInterrupt>,
     #[cfg(not(unix))]
     pub reader_interrupt: Option<()>,
-    /// 세션 핸드오프(§핵심 2) — sessiond에 넘길 마스터 fd(dup 소유)/pid/pgid.
+    /// 세션 핸드오프 — sessiond에 넘길 마스터 fd(dup 소유)/pid/pgid.
     /// unix에서만 Some.
     #[cfg(unix)]
     pub handoff: Option<HandoffInfo>,
@@ -215,7 +215,7 @@ impl PtyFactory for PortablePtyFactory {
             Option<HandoffInfo>,
         ) = {
             // try_clone_reader() 대신 as_raw_fd()를 poll 기반 리더로 직접 읽는다
-            // (§핵심 1) — 핸드오프 시 이 스레드를 확정적으로 멈춰야 커널 tty
+            // — 핸드오프 시 이 스레드를 확정적으로 멈춰야 커널 tty
             // 버퍼에 남은 바이트를 데몬이 무손실로 이어받는다.
             let raw_fd = pair
                 .master
@@ -258,7 +258,7 @@ fn to_io(e: impl std::fmt::Display) -> io::Error {
     io::Error::other(e.to_string())
 }
 
-// ── 입양된(adopted) 세션 구성요소 (unix 전용, §핵심 4) ──────────────────
+// ── 입양된(adopted) 세션 구성요소 (unix 전용) ──────────────────
 //
 // sessiond가 되돌려준 fd로 `SpawnedPty`와 동형인 번들을 재조립한다. 자식을
 // 직접 spawn한 게 아니라 waitpid가 불가능하므로 `RealWaiter`(child.wait())
@@ -292,7 +292,7 @@ impl PtyControl for AdoptedControl {
     fn kill(&self) -> io::Result<()> {
         use nix::sys::signal::{kill, killpg, Signal};
         use nix::unistd::Pid;
-        // pgid 없으면 pid로 폴백(설계 문서 §핵심 4).
+        // pgid 없으면 pid로 폴백.
         if let Some(pgid) = self.pgid {
             let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
         } else if let Some(pid) = self.pid {
@@ -638,8 +638,8 @@ pub mod fake {
         let reader = Box::new(PipeReader { rx: output_rx, buf: Vec::new(), pos: 0, eof: false });
         let writer = Box::new(RecordingWriter { buf: control.writes.clone() });
         let waiter = Box::new(FakeWaiter { rx: exit_rx });
-        // 핸드오프는 unix 전용 실제 PTY 기능 -- 페이크는 항상 None(설계 문서
-        // "Fake/Windows는 None").
+        // 핸드오프는 unix 전용 실제 PTY 기능 -- 페이크는 항상 None
+        // (Windows도 None).
         SpawnedPty {
             reader,
             writer,
@@ -945,12 +945,12 @@ mod tests {
         std::fs::remove_file(output_path).unwrap();
     }
 
-    /// 설계 문서 §테스트: "poll reader: 실제 openpty + /bin/cat으로 인터럽트 시
+    /// "poll reader: 실제 openpty + /bin/cat으로 인터럽트 시
     /// 무손실 검증" — cat 대신 `yes | head -c`로 두 개의 독립된 청크(사이에
     /// idle 구간)를 생성해, 첫 청크 도착 후 앱 쪽 poll 리더를 인터럽트하고
     /// 나머지를 핸드오프 fd로 직접(데몬처럼) 이어 읽는다. 두 구간을 이어붙인
     /// 결과가 기대 바이트열과 정확히 같아야 한다 — 유실도 중복도 없어야
-    /// "이중 리더 금지"(§핵심 1) 계약이 성립한다.
+    /// "이중 리더 금지" 계약이 성립한다.
     #[cfg(unix)]
     #[test]
     fn handoff_interrupt_then_raw_fd_continuation_loses_no_bytes() {

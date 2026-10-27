@@ -270,7 +270,7 @@ export const officeBus: OfficeBus = {
  */
 export function installSessionBridge(): () => void {
   // 태스크 대화 세션(task-chat-…)은 캐릭터가 아니다. 상태는 taskChatStore가 따로 받고,
-  // 여기서는 턴 시간·알림·사용량·라벨·오피스 씬 어디에도 넣지 않는다(docs/task-chat-design.md).
+  // 여기서는 턴 시간·알림·사용량·라벨·오피스 씬 어디에도 넣지 않는다.
   const offState = tauriApi.onSessionState((e) => {
     if (isTaskChatId(e.agentId)) return;
     // 스토어에는 disposed를 exited로 흡수한다(runGuardedCreateSession과 동일).
@@ -285,7 +285,7 @@ export function installSessionBridge(): () => void {
     // 시간 추적: 세션 종료(exited/disposed) 시 열린 턴 강제 정산(백엔드 e.at 사용).
     useAppStore.getState().applySessionTiming(e.agentId, e.state, e.at);
     // 세션 사용량(터미널 요약 바): sessionId를 잡아둬야 stop이 아직 안 온
-    // 세션에도 시드를 붙일 수 있다(docs/session-analytics-design.md §11).
+    // 세션에도 시드를 붙일 수 있다.
     useAppStore.getState().noteUsageSession(e.agentId, e.sessionId);
     stateCbs.forEach((cb) => cb(e.agentId, e.state));
     if (e.state === "exited" || e.state === "disposed") subagentCounts.reset(e.agentId);
@@ -326,7 +326,7 @@ export function installSessionBridge(): () => void {
   });
 
   // 세션 사용량(터미널 요약 바): 알림과 분리된 채널이라 서브에이전트로 억제된
-  // Stop에서도 온다(docs/session-analytics-design.md §9.1).
+  // Stop에서도 온다.
   const offUsage = tauriApi.onTurnUsage((e) => {
     if (isTaskChatId(e.agentId)) return;
     useAppStore.getState().applyTurnUsage(e);

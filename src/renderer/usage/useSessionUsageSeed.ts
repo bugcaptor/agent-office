@@ -1,7 +1,7 @@
 // src/renderer/usage/useSessionUsageSeed.ts
 //
-// 터미널 요약 바 사용량 표시용 과거 시드 로더(docs/session-analytics-design.md
-// §11). 방금 재시작한 앱에서 계속 진행 중이던 세션의 누계가 0으로 보이지
+// 터미널 요약 바 사용량 표시용 과거 시드 로더.
+// 방금 재시작한 앱에서 계속 진행 중이던 세션의 누계가 0으로 보이지
 // 않도록, 부팅 뒤 한 번 최근 `SEED_WINDOW_MS` 구간의 세션 이벤트를 읽어
 // `aggregateSeed`로 세션별 누계를 스토어에 심는다. 그 뒤로는 실시간 사용량
 // (`applyTurnUsage`)이 `at > seed.at`인 턴만 더해 이중 계산을 막는다.
@@ -11,7 +11,7 @@
 // `attempted`로 앱 수명당 정확히 1회만 시도한다(성공/실패 무관 — 실패해도
 // 재시도하지 않는다. 시드 없이 실시간 누계만 보여도 기능은 동작한다).
 //
-// 하이드레이션 게이트(§11.5): `appStore`의 `appSettings`는 스토어 생성
+// 하이드레이션 게이트: `appStore`의 `appSettings`는 스토어 생성
 // 시점에는 `DEFAULT_APP_SETTINGS`(sessionCostEnabled=true) 플레이스홀더다.
 // `bootApp`이 `getAppSettings` IPC 왕복을 마친 뒤에야 `hydrateSettings`로
 // 실제 값을 심고 `settingsHydrated`를 true로 세운다. 이 훅은 그 전에는(즉
@@ -51,11 +51,11 @@ export function useSessionUsageSeed(): void {
       // 너무 늦게 잡혀 그 알림이 시드에도 다시 잡히는 이중 계산이 생긴다.
       //
       // 컷오프는 "훅이 도는 시각"이 아니라 "실시간이 실제로 처음 센 턴의
-      // 시각"에 묶는다(§11.3, B 리뷰 수정). 실시간이 먼저 턴을 반영하면
+      // 시각"에 묶는다(B 리뷰 수정). 실시간이 먼저 턴을 반영하면
       // firstAt이 그 시각으로 잡혀 있고, 시드는 그 직전(firstAt - 1)까지만
       // 긁으므로 실시간과 겹치는 구간이 구조적으로 없다. 아직 실시간이 한
       // 턴도 못 봤으면(firstAt === null) 지금(Date.now())까지 긁는다 — 그
-      // 뒤에 오는 실시간 알림은 이 시각보다 뒤에 온다(§11.3 원래 경계와 동일).
+      // 뒤에 오는 실시간 알림은 이 시각보다 뒤에 온다.
       const firstAt = useAppStore.getState().sessionUsageFirstAt;
       const cut = firstAt !== null ? firstAt - 1 : Date.now();
       // "stop"·"usage" 둘 다 읽는다 — 과거 파일은 tokens가 stop에, 신규

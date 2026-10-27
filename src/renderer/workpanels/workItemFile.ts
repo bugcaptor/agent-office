@@ -2,7 +2,7 @@ import type { WorkAgent, WorkItem, WorkStatus } from "@shared/types";
 import { WORK_STATUS_ORDER } from "./workItemStore";
 import { hasWorkContent } from "./workItemDraft";
 
-/** 내보내기 파일 계약. docs/work-panels-design.md "내보내기와 가져오기". */
+/** 내보내기 파일 계약. */
 export const WORK_ITEMS_FILE_FORMAT = "agent-office-work-items";
 export const WORK_ITEMS_FILE_VERSION = 1;
 

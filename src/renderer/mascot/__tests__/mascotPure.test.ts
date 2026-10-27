@@ -291,7 +291,7 @@ describe("protocol", () => {
     expect(sameMascotState(a, b)).toBe(false);
   });
 
-  it("sameMascotState는 lights 항목의 sublabel 차이도 감지한다(§7 개정)", () => {
+  it("sameMascotState는 lights 항목의 sublabel 차이도 감지한다", () => {
     const a = state({
       lights: [
         { id: "a1", label: "proj", sublabel: null, tooltip: "proj", state: "working", clickAgentId: "a1", avatar: null },
@@ -379,8 +379,8 @@ describe("layout", () => {
     });
   });
 
-  // §7 개정 — wide(작업명 라벨) 칸일 때의 폭/최대 칸 수.
-  describe("wide(작업명 라벨, §7 개정)", () => {
+  // wide(작업명 라벨) 칸일 때의 폭/최대 칸 수.
+  describe("wide(작업명 라벨)", () => {
     it("가로 모드: wide 타일(96px)로 strip 길이를 계산한다", () => {
       expect(computeMascotLayout({ lightCount: 4, vertical: false, hasSprite: true, wide: true, tall: false })).toEqual({
         width: 12 + 96 * 4 + 6 * 3,
@@ -420,7 +420,7 @@ describe("layout", () => {
 
   // 신규 — tall(프로젝트+작업 두 줄 라벨, `mascotLightsLabel==="projecttask"`)
   // 칸일 때의 높이/두께. wide와 마찬가지로 폭 상한(maxLightsFor)은 건드리지
-  // 않는다(설계에서 손대지 않기로 확정).
+  // 않는다(손대지 않기로 확정).
   describe("tall(프로젝트+작업 두 줄 라벨)", () => {
     it("가로 모드: tall 타일(60px)이 strip 두께(높이 방향)가 된다", () => {
       // 두께 = tileH(tall) + 여백12 = 60+12 = 72(기본 60보다 12 크다).
@@ -760,7 +760,7 @@ describe("position", () => {
     expect(readSavedAnchor(storage, size)).toBeNull();
   });
 
-  it("구형 {x,y} 저장값은 assumedSize로 앵커 환산해 오차 없이 같은 자리로 복원한다(§0.4)", () => {
+  it("구형 {x,y} 저장값은 assumedSize로 앵커 환산해 오차 없이 같은 자리로 복원한다", () => {
     const store = new Map<string, string>();
     store.set(MASCOT_POS_KEY, JSON.stringify({ x: 1700, y: 900 }));
     const storage = { getItem: (k: string) => store.get(k) ?? null };

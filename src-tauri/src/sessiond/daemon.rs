@@ -8,7 +8,7 @@
 //
 // 테이블 로직(SessionEntry/handle_connection)은 실 `UnixListener`
 // accept 루프와 분리돼 있다 -- 테스트는 `socketpair`로 서버 쪽 fd 하나를
-// `handle_connection`에 직접 물려 구동한다(§테스트).
+// `handle_connection`에 직접 물려 구동한다.
 
 use std::collections::{HashMap, VecDeque};
 use std::io;
@@ -24,7 +24,7 @@ use nix::unistd::Pid;
 
 use super::protocol::{self, Message, SessionInfo};
 
-/// 데몬이 세션당 보관하는 미전달 출력 상한(§프로토콜). base64 팽창은 전송
+/// 데몬이 세션당 보관하는 미전달 출력 상한. base64 팽창은 전송
 /// 시점(AdoptOk)에만 계산 — 보관은 원본 바이트로.
 const RING_CAPACITY: usize = 512 * 1024;
 
@@ -87,8 +87,8 @@ struct SessionEntry {
 }
 
 impl SessionEntry {
-    /// 리더를 확정적으로 멈춘다(§핵심 1의 데몬 측 절반: "데몬이 reader
-    /// 스레드를 정지시킨 뒤 fd를 반환한다"). `master_fd`는 그대로 열려 있다
+    /// 리더를 확정적으로 멈춘다(핸드오프의 데몬 측 절반: reader
+    /// 스레드를 정지시킨 뒤 fd를 반환한다). `master_fd`는 그대로 열려 있다
     /// -- 닫기는 호출자 책임(Adopt는 전송 후, Kill은 즉시).
     fn stop_reader(&mut self) {
         self.stopping.store(true, Ordering::SeqCst);
@@ -186,8 +186,8 @@ fn handle_handoff(
         return;
     };
     // 디코딩 실패(손상된 base64 등)는 스냅샷 없음으로 취급한다 -- fd는 이미
-    // 받았으므로 핸드오프 자체를 거부하지 않는다(설계 문서: "핸드오프 실패
-    // 시에도 세션 표시가 깨지면 안 된다"와 같은 원칙).
+    // 받았으므로 핸드오프 자체를 거부하지 않는다(핸드오프 실패
+    // 시에도 세션 표시가 깨지면 안 된다는 원칙).
     let snapshot = {
         use base64::Engine;
         base64::engine::general_purpose::STANDARD.decode(&snapshot_b64).unwrap_or_default()
@@ -249,7 +249,7 @@ fn handle_list(fd: RawFd, table: &Table) {
     let _ = protocol::write_frame(fd, &Message::ListOk { sessions }, None);
 }
 
-/// `Adopt`(v1): 리더를 확정적으로 멈춘 뒤(§핵심 1) fd를 응답에 실어 돌려준다.
+/// `Adopt`(v1): 리더를 확정적으로 멈춘 뒤 fd를 응답에 실어 돌려준다.
 fn handle_adopt(fd: RawFd, table: &Table, agent_id: String) {
     let entry = table.lock().unwrap().remove(&agent_id);
     match entry {
@@ -261,7 +261,7 @@ fn handle_adopt(fd: RawFd, table: &Table, agent_id: String) {
             );
         }
         Some(mut entry) => {
-            // 리더를 먼저 확정적으로 멈춘 뒤(§핵심 1) fd를 보낸다.
+            // 리더를 먼저 확정적으로 멈춘 뒤 fd를 보낸다.
             entry.stop_reader();
             let buffer_b64 = {
                 use base64::Engine;
@@ -429,7 +429,7 @@ pub(crate) fn run_daemon_inner(
         std::thread::spawn(move || {
             handle_connection(stream.as_raw_fd(), &table, &ever);
             drop(stream);
-            // 연결이 끊길 때마다 테이블이 비어 있으면 종료(§프로토콜 "데몬 수명").
+            // 연결이 끊길 때마다 테이블이 비어 있으면 종료.
             if table.lock().unwrap().is_empty() {
                 hook();
             }

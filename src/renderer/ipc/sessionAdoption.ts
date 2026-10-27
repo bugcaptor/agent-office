@@ -8,7 +8,7 @@ import { terminalRegistry } from "../terminal/TerminalRegistry";
 import { tauriApi } from "./tauriApi";
 
 /**
- * 세션 핸드오프(docs/session-handoff-design.md §핵심 6) 입양: 데몬에 남아있던
+ * 세션 핸드오프 입양: 데몬에 남아있던
  * 세션들을 Running으로 스토어에 시드하고, 그 터미널이 처음 activate될 때
  * redraw nudge(TerminalRegistry.markAdopted)를 태우도록 표시한다. 미지원
  * 플랫폼/데몬 없음은 빈 배열 응답이라 자연히 no-op. 실패해도 부팅은 계속
@@ -24,7 +24,7 @@ export async function adoptDetachedSessions(): Promise<void> {
         .getState()
         .setSessionState({ agentId: info.agentId, status: "running" });
       useAppStore.getState().setSessionSize(info.agentId, info.cols, info.rows);
-      // 세션 사용량(터미널 요약 바, docs/session-analytics-design.md §11.2):
+      // 세션 사용량(터미널 요약 바):
       // 이 방어적 시드 루프도 session-state 이벤트와 마찬가지로 sessionId를
       // 잡아둬야 한다 — 이벤트가 유실/지연되면 sessionUsage[agentId]가
       // undefined로 남아 시드에 누계가 있어도 사용량 스팬이 아예 안 뜬다.

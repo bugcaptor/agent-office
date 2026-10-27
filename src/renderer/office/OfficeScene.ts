@@ -85,7 +85,7 @@ export class OfficeScene {
   private offLanguage?: () => void;
   /** 휴가 모드 최신값 — 씬 재구축 후 팻말 표시 상태를 되살리기 위해 보관. */
   private vacationOn = false;
-  // "이 달의 우수사원" 오피스 연출(docs/employee-of-the-month-design.md §7).
+  // "이 달의 우수사원" 오피스 연출.
   private trophyOverlay?: TrophyOverlay;
   private awardFrame?: AwardFrameOverlay;
   private offAwardee?: () => void;

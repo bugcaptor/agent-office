@@ -95,7 +95,7 @@ impl AppEvents for RecordingAppEvents {
     /// 더 이상 tokens를 만지지 않으므로 stop 레코드엔 안 실린다 — 소비자는
     /// kind가 아니라 tokens 유무로 합산해야 신구 파일을 모두 커버한다.
     ///
-    /// `partial`도 그대로 싣는다(§11.9) — hub가 PostToolUse 중간 갱신에는
+    /// `partial`도 그대로 싣는다 — hub가 PostToolUse 중간 갱신에는
     /// `true`를, Stop에는 `false`를 실어 보낸다. 이걸 안 남기면 재부팅 후
     /// `aggregateSeed`가 과거 기록만 보고 "이 usage 레코드가 턴을 하나 닫은
     /// 것인지, 아직 진행 중인 턴의 중간 스냅샷인지"를 구분 못 해 턴 수가
@@ -345,7 +345,7 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
-    /// 턴 중간 갱신(§11.9): PostToolUse가 낸 `partial: true` usage 이벤트도
+    /// 턴 중간 갱신: PostToolUse가 낸 `partial: true` usage 이벤트도
     /// kind=Usage 레코드에 그 값 그대로 남는다 — 재부팅 시드가 이 레코드를
     /// "이미 끝난 턴"으로 잘못 세면 안 되기 때문에 partial 자체가 파일에
     /// 남아야 한다.

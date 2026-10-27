@@ -1,7 +1,7 @@
 // src/renderer/mascot/layout.ts
 //
 // 신호등 strip을 붙였을 때 마스코트 창이 가져야 할 크기와, 칸이 넘칠 때
-// 어떻게 접을지를 계산하는 순수 함수(docs/mascot-lights-design.md §5.1).
+// 어떻게 접을지를 계산하는 순수 함수.
 // 렌더 관심사(몇 칸까지 그릴지)는 여기 mascot 쪽에 두고, main 렌더러(store/
 // mascotLights.ts)는 항상 전체 목록을 보낸다 — 프로토콜을 단순하게 유지한다.
 //

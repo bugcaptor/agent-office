@@ -233,7 +233,7 @@ async fn built_binary_claude_forwarder_relays_provider_and_event_query() {
 // `--observer-forward claude [event]`. 여기서는 forwarder를 실제로 기동하지 않는
 // 분기만 확인한다 — Some(forwarder 실행) 분기는 세션 env에 의존해 stdin을 읽으므로
 // built-binary 테스트로 검증한다. 문법 위반은 GUI로 떨어지지 않고 사용법 오류(64)로
-// 끝난다(점검 §7.F E1).
+// 끝난다.
 #[test]
 fn forwarder_mode_rejects_ill_formed_argument_vectors() {
     use agent_office_lib::maybe_run_observer_forwarder;
@@ -252,8 +252,8 @@ fn forwarder_mode_rejects_ill_formed_argument_vectors() {
     }
 }
 
-/// 설치본이 떠 있는 동안 `agent-office --help`가 두 번째 GUI를 띄우던 사고(§7.F
-/// E1)의 회귀 방지: 모드 분기에 걸리지 않는 인자는 GUI 없이 사용법을 찍고 64로
+/// 설치본이 떠 있는 동안 `agent-office --help`가 두 번째 GUI를 띄우던 사고의
+/// 회귀 방지: 모드 분기에 걸리지 않는 인자는 GUI 없이 사용법을 찍고 64로
 /// 끝난다. 회귀하면 GUI가 떠 버리므로 제한 시간 뒤 죽이고 실패시킨다.
 #[test]
 fn built_binary_unknown_args_print_usage_without_gui() {
@@ -422,7 +422,7 @@ async fn built_binary_forwarder_does_not_follow_loopback_redirect() {
     redirected.assert_no_request().await;
 }
 
-/// docs/session-handoff-design.md §핵심 5: 재시작 후 입양된 세션은
+/// 재시작 후 입양된 세션은
 /// AGENT_OFFICE_HOOK_URL이 스폰 시점의(죽은) 포트를 가리킨다. 실 빌드 바이너리를
 /// 죽은 포트로 1차 시도시키고, `AGENT_OFFICE_APP_DATA/observer-port`에 진짜
 /// observer 서버의 현재 포트를 심어 두면 forwarder가 1회 재시도해 결국 캡처

@@ -151,7 +151,7 @@ function App() {
       <RepositoryAuditOverlay />
       {/* 캐릭터 일기(이슈 #56). 같은 층위·관례로 상시 마운트, store로 self-gate. */}
       <DiaryDialog />
-      {/* 세션 로그 보기(docs/session-log-design.md). 같은 층위·관례로 상시 마운트. */}
+      {/* 세션 로그 보기. 같은 층위·관례로 상시 마운트. */}
       <SessionLogDialog />
       {/* 포스트잇 메모 아카이브(이슈 #79). 위젯 자체는 터미널 오버레이 패널 안에
           있고, 아카이브 열람만 이 층에 뜬다(터미널을 덮어야 하므로). */}
@@ -173,7 +173,7 @@ function App() {
         <AnalyticsDialog />
         <UsageDialog />
         <AboutDialog />
-        {/* 이 달의 우수사원(docs/employee-of-the-month-design.md §6). 하단바
+        {/* 이 달의 우수사원. 하단바
             트로피 버튼에서 열리고, modal.kind로 self-gate한다. */}
         <AwardsDialog />
       </div>

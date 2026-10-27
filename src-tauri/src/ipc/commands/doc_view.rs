@@ -1,6 +1,6 @@
 // src-tauri/src/ipc/commands/doc_view.rs
 //
-// Markdown 미리보기의 "브라우저로 열기" 버튼(docs/doc-view-design.md §구성 5).
+// Markdown 미리보기의 "브라우저로 열기" 버튼.
 // 디스크의 파일을 `agent-office md`와 같은 변환기로 캐시에 쓰고 바로 opener로
 // 연다 — 앱 안이므로 요청 폴더(`doc-view/open/`)를 거치지 않는다. 편집 중 버퍼는
 // 받지 않는다(결과가 파일과 어긋나지 않게).

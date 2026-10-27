@@ -1,11 +1,10 @@
 // src-tauri/src/session/agy_hooks_file.rs
 //
-// 전역 `~/.gemini/config/hooks.json` 병합 기록기(docs/antigravity-support-
-// design.md §3.2). Antigravity CLI(agy)는 세션별로 훅 파일을 넘길 방법이
-// 없어(pi의 `-e <파일>`, claude의 `--settings <파일>`과 달리) 사용자 전역
+// 전역 `~/.gemini/config/hooks.json` 병합 기록기. Antigravity CLI(agy)는
+// 세션별로 훅 파일을 넘길 방법이 없어(pi의 `-e <파일>`, claude의 `--settings <파일>`과 달리) 사용자 전역
 // 훅 파일에 우리 항목 하나(`"agent-office"` 키)를 심는다.
 //
-// 최상위 키가 훅 "묶음" 이름이고(agy 훅 체계 §1.1) 같은 이벤트에 여러 묶음이
+// 최상위 키가 훅 "묶음" 이름이고 같은 이벤트에 여러 묶음이
 // 있으면 순서대로 모두 실행되므로, 우리 키만 갈아 끼우면 다른 도구(예:
 // `orca-status`)가 심어 둔 항목은 그대로 살아남는다. **파싱에 실패하면
 // (다른 도구가 깨진 JSON을 남겼거나 사용자가 수동 편집 중) 파일에 전혀
@@ -137,7 +136,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 
-    /// 설계 §3.2 핵심 계약: 다른 도구(orca)가 심어 둔 최상위 키는 병합 뒤에도
+    /// 다른 도구(orca)가 심어 둔 최상위 키는 병합 뒤에도
     /// 값이 그대로 살아남아야 한다(재직렬화 + 원자 쓰기라 포맷·키 순서는
     /// 바뀔 수 있지만 값은 보존된다).
     #[test]
@@ -179,7 +178,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 
-    /// 설계 §3.2 핵심 계약: 파싱 실패(깨진 JSON)면 파일을 전혀 건드리지 않는다.
+    /// 파싱 실패(깨진 JSON)면 파일을 전혀 건드리지 않는다.
     #[test]
     fn corrupted_json_is_left_completely_untouched() {
         let file = scratch_file();

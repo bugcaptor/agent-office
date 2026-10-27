@@ -1,6 +1,6 @@
 // src/renderer/office/awardee.ts
 //
-// "이 달의 우수사원"(docs/employee-of-the-month-design.md §7) 오피스 씬 연출을
+// "이 달의 우수사원" 오피스 씬 연출을
 // 뒷받침하는 순수 로직. Pixi/DOM 의존 없음 — gen/ 디렉터리 관례를 따라 씬
 // 코드에서 분리해 node 환경에서 바로 테스트한다.
 //

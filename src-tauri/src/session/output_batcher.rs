@@ -111,14 +111,14 @@ impl OutputBatcher {
             return;
         }
         self.buf.drain(..consumed);
-        // §#49: raw 스트림 바이트 회계엔 UTF-8 문자열 길이(data.len())가 아니라
+        // #49: raw 스트림 바이트 회계엔 UTF-8 문자열 길이(data.len())가 아니라
         // buf에서 실제로 drain한 raw 바이트 수(consumed)를 실어야 한다 — 잘못된
         // 바이트가 U+FFFD(3바이트)로 치환되면 둘이 어긋나고, 데몬 ring은 raw PTY
         // 바이트를 세므로 raw만 offset과 정합한다.
         self.emit(out, consumed, sink);
     }
 
-    /// 스트림 바이트로 계수하지 않는 청크를 방출한다(§#49 함정 2): adopt 복원
+    /// 스트림 바이트로 계수하지 않는 청크를 방출한다(#49 함정 2): adopt 복원
     /// 스냅샷(화면 이미지)은 실제 스트림 바이트가 아니라 base가 이미 그 지점을
     /// 가리키므로, `bytes = 0`으로 실어 렌더러 누적에 안 잡히게 한다. seq 단조성은
     /// 이 경로도 batcher가 관리해 자연히 보존된다.
@@ -400,7 +400,7 @@ mod tests {
         assert_eq!(sink.len(), 100);
     }
 
-    // ---- §#49: raw 스트림 바이트 회계(bytes 필드) ----
+    // ---- #49: raw 스트림 바이트 회계(bytes 필드) ----
 
     #[test]
     fn flush_reports_raw_consumed_bytes_not_utf8_len() {
@@ -458,7 +458,7 @@ mod tests {
 
     #[test]
     fn emit_uncounted_carries_zero_bytes() {
-        // 복원 스냅샷 주입 경로(§#49 C-3): bytes=0으로 방출해 offset 누적 제외.
+        // 복원 스냅샷 주입 경로(#49 C-3): bytes=0으로 방출해 offset 누적 제외.
         let sink = RecordingSink::default();
         let mut b = batcher();
         b.emit_uncounted("복원화면".to_string(), &sink);

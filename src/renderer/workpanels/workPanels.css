@@ -123,7 +123,7 @@
 .work-done-group .work-status-chip { display: none; }
 .work-done-group > summary { cursor: pointer; padding: 2px 0; color: var(--text-dim); }
 
-/* 자동 진행(docs/auto-run-design.md) */
+/* 자동 진행 */
 .work-auto-run { margin-top: 12px; padding-top: 8px; border-top: 1px dashed var(--text-dim); }
 .work-auto-run h3 { margin: 0 0 6px; font-size: inherit; }
 .work-auto-run p { margin: 4px 0; }

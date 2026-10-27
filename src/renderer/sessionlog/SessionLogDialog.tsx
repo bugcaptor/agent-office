@@ -1,6 +1,6 @@
 // src/renderer/sessionlog/SessionLogDialog.tsx
 //
-// 세션 로그 보기 오버레이(docs/session-log-design.md §7). DiaryDialog와 같은
+// 세션 로그 보기 오버레이. DiaryDialog와 같은
 // self-gate 관례 — 항상 마운트되고 오버레이 타깃이 없으면 null 렌더.
 //
 // 목록은 10개씩 페이징하고, 한 개를 고르면 그때 동작 영역(편집기로 열기 /

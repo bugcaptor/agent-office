@@ -6,8 +6,7 @@
 // never double-counted against the freshly-read file. Live-updates via a
 // memoized buildAgentStatsRows over the timeTracking/agents store slices, and
 // re-runs when the day rolls over (todayWorkedBaseMs OR memoryWorkedBaselineMs
-// flips — either one changing at midnight triggers re-aggregation). See
-// docs/superpowers/specs/2026-07-11-per-agent-stats-design.md.
+// flips — either one changing at midnight triggers re-aggregation).
 import { useEffect, useMemo, useState } from "react";
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";

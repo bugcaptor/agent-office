@@ -158,7 +158,7 @@ where
 pub struct ObserverServerState {
     start_gate: tokio::sync::Mutex<()>,
     lifecycle: Mutex<ServerLifecycle>,
-    /// §핵심 5(docs/session-handoff-design.md): 세션 env의 AGENT_OFFICE_HOOK_URL은
+    /// 세션 env의 AGENT_OFFICE_HOOK_URL은
     /// 스폰 시점 포트를 담는데, 재시작 후 입양된 세션은 옛 포트를 가리킨다.
     /// `<app_data_dir>/observer-port`에 현재 포트를 기록해 forwarder가 1회
     /// 재시도할 근거를 남긴다. `Default`(테스트 다수가 이 경로로 만든다)로는
@@ -553,9 +553,9 @@ mod tests {
     }
 
     /// agy(Antigravity CLI) 훅 라우팅: `agent=agy`는 `provider=`/`event=`
-    /// 계약을 타지 않는 pi와 같은 갈래를 쓴다(§2/§3.4). `workspacePaths`가
+    /// 계약을 타지 않는 pi와 같은 갈래를 쓴다. `workspacePaths`가
     /// 빈 배열인 프롬프트가 `X-Agent-Office-Cwd` 헤더로 강등되는지, 반복
-    /// invocationNum(1)이 버려지는지도 함께 확인한다(§4/스파이크 실측 1).
+    /// invocationNum(1)이 버려지는지도 함께 확인한다(스파이크 실측 1).
     #[tokio::test]
     async fn routes_agy_turn_sequence_via_agent_query_and_cwd_header() {
         let (runtime, events) = fixture();
@@ -919,7 +919,7 @@ mod tests {
         assert_eq!(current_url, None);
     }
 
-    // ---- §핵심 5: observer-port 파일(docs/session-handoff-design.md) ----
+    // ---- observer-port 파일 ----
 
     #[tokio::test]
     async fn ensure_writes_the_observer_port_file_when_app_data_dir_is_set() {

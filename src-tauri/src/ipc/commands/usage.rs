@@ -2,8 +2,7 @@
 //
 // Subscription usage (rate limit) snapshot command plus its pure root-path
 // resolvers (kept separate from the `std::env::var` reads so unit tests can
-// exercise the path logic without touching real process env,
-// docs/usage-limits-design.md §2).
+// exercise the path logic without touching real process env).
 
 use tauri::State;
 
@@ -11,7 +10,7 @@ use crate::state::AppState;
 
 /// 사용량 소스 루트 결정의 순수 계산부. 전역 `std::env::var` 접근과
 /// 분리해 두어야 단위 테스트에서 프로세스 전역 env에 손대지 않고 조합을
-/// 검증할 수 있다(docs/usage-limits-design.md §2). 실제 CLI가 존중하는
+/// 검증할 수 있다. 실제 CLI가 존중하는
 /// 표준 오버라이드를 그대로 따른다: Codex는 `CODEX_HOME`(설정되면
 /// `<CODEX_HOME>/sessions`를 읽음), Claude는 `CLAUDE_CONFIG_DIR`(설정되면
 /// `<CLAUDE_CONFIG_DIR>/.claude.json`을 읽음 -- claude.rs::load의 파일명
@@ -30,9 +29,8 @@ pub(crate) fn resolve_usage_roots(
     (codex_root, claude_root)
 }
 
-/// Claude 자격증명(.credentials.json)·스코프 Keychain의 기준 디렉터리
-/// (docs/claude-usage-live-fetch-design.md §2.2). `.claude.json`을 읽는
-/// `claude_root`와 다르다: CLAUDE_CONFIG_DIR가 설정되면 그 경로, 미설정이면
+/// Claude 자격증명(.credentials.json)·스코프 Keychain의 기준 디렉터리.
+/// `.claude.json`을 읽는 `claude_root`와 다르다: CLAUDE_CONFIG_DIR가 설정되면 그 경로, 미설정이면
 /// `~/.claude`(claude_root=홈과 구분됨). 빈 문자열 env는 미설정 취급.
 pub(crate) fn resolve_claude_config_dir(
     home: &std::path::Path,
@@ -41,8 +39,8 @@ pub(crate) fn resolve_claude_config_dir(
     crate::agent_paths::claude_config_dir(home, claude_config_env)
 }
 
-/// 구독 사용량(rate limit) 스냅샷을 읽는다(인자 없음,
-/// docs/usage-limits-design.md). Claude(`.claude.json`)와 Codex
+/// 구독 사용량(rate limit) 스냅샷을 읽는다(인자 없음).
+/// Claude(`.claude.json`)와 Codex
 /// (`sessions/`)를 각각 독립 파싱하므로 한쪽 소스가 실패해도 커맨드는
 /// 성공하고 실패한 provider만 `null`이 된다. 상태를 건드리지 않는 순수 읽기라
 /// AppState가 필요 없다 -- 루트 경로만 `resolve_usage_roots`로 유도해 usage

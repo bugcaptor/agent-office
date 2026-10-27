@@ -1,8 +1,8 @@
 // src/renderer/ipc/mascotBridge.ts
 //
-// 데스크톱 마스코트 창(이슈 #72, docs/mascot-window-design.md)의 main 창 측
+// 데스크톱 마스코트 창(이슈 #72)의 main 창 측
 // 배선. 스토어(진실의 원천)를 구독해 "지금 보여줄 캐릭터 1명"(스프라이트)과
-// "신호등 칸 목록"(docs/mascot-lights-design.md)을 계산하고, 그 스냅샷을
+// "신호등 칸 목록"을 계산하고, 그 스냅샷을
 // `mascot-state` 이벤트로 마스코트 창에 밀어 넣는다. 마스코트는 순수 소비자라
 // 스토어를 두 번 hydrate하지 않는다(상태 표류 원천 차단).
 //
@@ -225,7 +225,7 @@ export function installMascotBridge(io: MascotBridgeIo = defaultIo()): () => voi
       lightsFace: s.appSettings.mascotLightsFace,
       // 마스코트 창은 설정 의미를 모르고 렌더 관심사(칸 폭)만 받는다 —
       // task 라벨은 60자 절단 텍스트가 들어가 54px 타일에서 심하게 잘리므로
-      // wide(96px) 타일로 넓힌다(§7 개정). projecttask도 작업명이 둘째 줄에
+      // wide(96px) 타일로 넓힌다. projecttask도 작업명이 둘째 줄에
       // 실리므로 같은 이유로 wide가 필요하다.
       lightsWide:
         s.appSettings.mascotLightsLabel === "task" ||

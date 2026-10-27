@@ -841,7 +841,7 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
   });
 });
 
-describe("태스크 대화 탭(docs/task-chat-design.md)", () => {
+describe("태스크 대화 탭", () => {
   function seedChat(status: "running" | "exited" = "running") {
     seedThreeTabs();
     useWorkItemStore.setState({

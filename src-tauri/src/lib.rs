@@ -94,7 +94,7 @@ const EXIT_USAGE: i32 = 64;
 
 /// 모드 분기에 맞지 않는 인자를 받았을 때 stderr에 찍는 사용법. GUI를 띄우지
 /// 않고 이 문구와 함께 [`EXIT_USAGE`]로 끝낸다 — 설치본이 떠 있는 동안
-/// `agent-office --help` 같은 호출이 두 번째 사무실을 띄우던 사고(점검 §7.F E1)를
+/// `agent-office --help` 같은 호출이 두 번째 사무실을 띄우던 사고를
 /// 막는다.
 const USAGE: &str = "\
 usage: agent-office                 GUI 실행(인자 없음)
@@ -150,8 +150,8 @@ where
     }
 }
 
-/// `--sessiond <socket_path>` 분기(unix 전용, docs/session-handoff-design.md
-/// §아키텍처) -- 앱이 종료 시 세션을 넘길 데몬으로 자기 자신을 재실행할 때의
+/// `--sessiond <socket_path>` 분기(unix 전용) -- 앱이 종료 시 세션을 넘길
+/// 데몬으로 자기 자신을 재실행할 때의
 /// 진입점. `maybe_run_observer_forwarder`와 같은 패턴: 인자를 보고 데몬
 /// 모드가 아니면 `None`을 돌려줘 `main.rs`가 다음 분기로 넘어가게 한다.
 #[cfg(unix)]
@@ -185,7 +185,7 @@ where
     None
 }
 
-/// `ctl <명령> …` 분기(이슈 #55, docs/cli-control-design.md) — 실행 중인 앱의
+/// `ctl <명령> …` 분기(이슈 #55) — 실행 중인 앱의
 /// control 서버에 요청 1건을 보내는 단명 클라이언트. `maybe_run_observer_forwarder`
 /// 와 같은 패턴: 첫 인자가 `ctl`/`task`/`md`가 아니면 `None`을 돌려줘 `main.rs`가 다음
 /// 분기로 넘어가게 한다. GUI 런타임에 도달하지 않으므로 두 번째 사무실/서버가
@@ -198,8 +198,8 @@ where
     let mut args = args.into_iter();
     let _program = args.next();
     let mode = args.next()?.as_ref().to_os_string();
-    // `task`는 업무 수신함에 파일만 쓰는 오프라인 분기(docs/work-panels-design.md §업무 수신함),
-    // `md`는 Markdown을 앱 캐시의 HTML로 바꾸는 오프라인 분기(docs/doc-view-design.md).
+    // `task`는 업무 수신함에 파일만 쓰는 오프라인 분기,
+    // `md`는 Markdown을 앱 캐시의 HTML로 바꾸는 오프라인 분기.
     let run: fn(Vec<String>) -> i32 = match mode.to_str() {
         Some("task") => work_inbox_cli::run,
         Some("md") => doc_view_cli::run,
@@ -241,7 +241,7 @@ where
 /// 훅이 forwarder로 재실행할 자기 자신의 경로. Linux AppImage에서는
 /// `current_exe()`가 실행마다 바뀌는 `/tmp/.mount_*` 마운트 안을 가리켜, 세션
 /// 핸드오프 후 앱을 재시작하면 훅 설정에 박힌 forwarder 경로 자체가 스테일해진다
-/// (포트 스테일과 같은 §핵심 5 시나리오, PR #32 리뷰 지적). AppImage 런타임이
+/// (포트 스테일과 같은 시나리오, PR #32 리뷰 지적). AppImage 런타임이
 /// 주는 `$APPIMAGE`(원본 .AppImage의 안정 경로)를 우선한다 — AppImage는 인자를
 /// 내부 바이너리로 그대로 전달하므로 `--observer-forward` 분기가 동일하게 동작한다.
 fn forwarder_executable_path() -> std::path::PathBuf {
@@ -329,7 +329,7 @@ pub fn run() {
         // 같은 identifier(=같은 app_data)로 두 번째 GUI가 뜨면 기존 인스턴스의 main
         // 창을 앞으로 가져오고 새 프로세스는 바로 끝낸다. 다른 플러그인·setup보다
         // 먼저 등록해야 두 번째 인스턴스가 observer-port 등 공유 파일을 건드리기
-        // 전에 빠진다(점검 §7.F E1).
+        // 전에 빠진다.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
@@ -358,9 +358,9 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             install_panic_logger(data_dir.clone());
             std::fs::create_dir_all(data_dir.join("work-inbox"))?;
-            // Codex 세션의 쓰기 허용 경로로 넘기므로 미리 만들어 둔다(docs/doc-view-design.md §구성 4).
+            // Codex 세션의 쓰기 허용 경로로 넘기므로 미리 만들어 둔다.
             std::fs::create_dir_all(doc_view::request_dir(&data_dir))?;
-            // 문서 뷰어 캐시(docs/doc-view-design.md): 7일 지난 HTML·처리 못 한 열기 요청.
+            // 문서 뷰어 캐시: 7일 지난 HTML·처리 못 한 열기 요청.
             {
                 let data_dir = data_dir.clone();
                 let _ = std::thread::Builder::new()
@@ -440,7 +440,7 @@ pub fn run() {
                 shell_export::gc_old_exports(std::time::Duration::from_secs(7 * 24 * 3600))
             });
             // 제거된 기능의 잔여물(동료 대화 로그·스킬 플러그인·shim)을 부팅마다 지운다.
-            // 옛 설치본이 다시 만든 것도 다음 기동에 사라진다(§7.F F10).
+            // 옛 설치본이 다시 만든 것도 다음 기동에 사라진다.
             legacy_cleanup::spawn(data_dir.clone());
             // `office-task`·`office-md` shim은 세션 준비 때만 쓰므로, 떠 있는 세션이 OS temp
             // 청소로 경로를 잃지 않게 5초마다 확인해 되살린다(없거나 내용이 다를 때만 쓴다).
@@ -456,7 +456,7 @@ pub fn run() {
             let settings_cache = Arc::new(std::sync::RwLock::new(settings));
 
             let observer_server = Arc::new(ObserverServerState::default());
-            // §핵심 5: 세션 재시작(입양) 후 훅이 스폰 시점의 죽은 포트를 치는
+            // 세션 재시작(입양) 후 훅이 스폰 시점의 죽은 포트를 치는
             // 문제 완화 -- forwarder가 읽는 <app_data_dir>/observer-port의 근거.
             observer_server.set_app_data_dir(data_dir.clone());
             // 이슈 #40: Claude 훅 설정 파일을 OS temp가 아니라 app_data의 안정
@@ -474,7 +474,7 @@ pub fn run() {
             {
                 eprintln!("agent-office: failed to write pi extension at boot: {error}");
             }
-            // Kilo Code CLI(kilo/kilocode, docs/kilo-support-design.md): pi 확장과
+            // Kilo Code CLI(kilo/kilocode): pi 확장과
             // 같은 이유로 플러그인·설정 파일도 app_data 안정 경로에 부팅마다 다시
             // 써 둔다 — 재시작 전에 스폰돼 `AGENT_OFFICE_KILO_CONFIG`를 들고 있는
             // 입양 세션의 경로가 계속 유효하다.
@@ -483,12 +483,12 @@ pub fn run() {
             {
                 eprintln!("agent-office: failed to write kilo plugin at boot: {error}");
             }
-            // Antigravity CLI(agy, docs/antigravity-support-design.md): pi 확장과
+            // Antigravity CLI(agy): pi 확장과
             // 같은 결로 훅 스크립트를 app_data 안정 경로에 부팅마다 다시 쓴다.
-            // agy는 세션별 훅 파일을 넘길 방법이 없어(§0) 전역
+            // agy는 세션별 훅 파일을 넘길 방법이 없어 전역
             // `~/.gemini/config/hooks.json`에 이 스크립트의 절대 경로를 박는다
-            // (다른 최상위 키는 절대 건드리지 않는다, §3.2). v1은 Windows를
-            // 빼므로(§5) unix에서만 훅 파일을 배포·병합한다.
+            // (다른 최상위 키는 절대 건드리지 않는다). v1은 Windows를
+            // 빼므로 unix에서만 훅 파일을 배포·병합한다.
             #[cfg(unix)]
             match crate::session::agy_hook::ensure_hook_script(Some(&data_dir)) {
                 Ok(hook_script) => {
@@ -513,7 +513,7 @@ pub fn run() {
                     );
                 });
             }
-            // Claude 리줌 캡처(docs/claude-session-resume-design.md): 스토어 →
+            // Claude 리줌 캡처: 스토어 →
             // 레코더(sink) → observer runtime 순으로 배선. sink는 builder로 주입해
             // production() 시그니처를 건드리지 않는다.
             let claude_resume_store = Arc::new(
@@ -526,7 +526,7 @@ pub fn run() {
                     registry.clone(),
                     claude_resume_store.clone(),
                 ));
-            // agy 리줌 캡처(§3.5): 기록까지만, 재개 UI는 범위 밖. claude와 같은
+            // agy 리줌 캡처: 기록까지만, 재개 UI는 범위 밖. claude와 같은
             // 결(스토어 → 레코더(sink) → observer runtime)이지만 provider별로
             // 스토어 파일을 나눈다.
             let agy_resume_recorder = Arc::new(
@@ -573,7 +573,7 @@ pub fn run() {
                 }) as Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>
             };
 
-            // 태스크 대화 세션(docs/task-chat-design.md §권한): 훅 없이 shim 실행과 세션 로그·
+            // 태스크 대화 세션: 훅 없이 shim 실행과 세션 로그·
             // 작업자 보고 읽기만 사전 승인한 설정 파일. 쓰기 도구는 승인하지 않는다.
             let task_chat_settings_provider = {
                 let office_shims = office_shims.clone();
@@ -614,7 +614,7 @@ pub fn run() {
             let get_observer_url =
                 make_observer_url_getter(settings_cache.clone(), observer_server.clone());
 
-            // 세션 로그(docs/session-log-design.md): 저장소 루트 + 설정 토글을
+            // 세션 로그: 저장소 루트 + 설정 토글을
             // 미러하는 원자 플래그. 플래그는 set_app_settings가 갱신한다.
             let session_log_root = crate::session_log::store::root_for(&data_dir);
             let session_log_enabled = Arc::new(std::sync::atomic::AtomicBool::new(
@@ -631,11 +631,11 @@ pub fn run() {
                     hub.clone(),
                     get_observer_url,
                 )
-                // 세션 핸드오프(unix 전용, docs/session-handoff-design.md) 소켓/로그
-                // 경로와 AGENT_OFFICE_APP_DATA env 주입(§핵심 5)의 근거.
+                // 세션 핸드오프(unix 전용) 소켓/로그
+                // 경로와 AGENT_OFFICE_APP_DATA env 주입의 근거.
                 .with_app_data_dir(data_dir.clone())
-                // 업무 수신함 `office-task`(docs/work-panels-design.md §업무 수신함)와 문서 뷰어
-                // `office-md`(docs/doc-view-design.md §구성 4) shim.
+                // 업무 수신함 `office-task`와 문서 뷰어
+                // `office-md` shim.
                 .with_office_cli(forwarder_executable_path())
                 .with_work_panels_flag({
                     let settings = settings_cache.clone();
@@ -998,7 +998,7 @@ mod tests {
 
     // forwarder를 실제로 기동하는 Some 분기(codex, claude[+event])는 세션 env에
     // 의존하므로 여기서는 "forwarder 모드 아님"(None)과 "모드인데 인자가 어긋남"
-    // (사용법 오류)만 본다. 후자가 None이면 main.rs가 GUI로 떨어진다(§7.F E1).
+    // (사용법 오류)만 본다. 후자가 None이면 main.rs가 GUI로 떨어진다.
     #[test]
     fn maybe_run_observer_forwarder_rejects_non_forwarder_invocations() {
         assert_eq!(maybe_run_observer_forwarder(["agent-office"]), None);

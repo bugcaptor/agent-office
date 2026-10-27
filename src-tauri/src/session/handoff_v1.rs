@@ -1,6 +1,6 @@
 // src-tauri/src/session/handoff_v1.rs
 //
-// 세션 핸드오프 v1 경로(설계 문서 §핵심 3, 4): 앱이 종료할 때 마스터 fd
+// 세션 핸드오프 v1 경로: 앱이 종료할 때 마스터 fd
 // 자체를 sessiond에 넘겨 세션을 살려 둔다.
 
 use std::sync::atomic::Ordering;
@@ -10,15 +10,15 @@ use super::manager::SessionManager;
 use crate::types::*;
 
 impl SessionManager {
-    /// 앱 quit(§핵심 3): Running 세션들을 sessiond로 넘긴다. `snapshots`는
+    /// 앱 quit: Running 세션들을 sessiond로 넘긴다. `snapshots`는
     /// agentId -> 프론트가 종료 직전 직렬화한 xterm 화면(스크롤백 포함) --
     /// 데몬은 핸드오프 *이후* 출력만 링버퍼에 담으므로, 이게 없으면 재입양
     /// 후 종료 전 화면(예: ls 결과)이 사라진다(실증에서 발견된 빈틈).
     /// 반환값은 성공 개수 -- 프론트는 이 수와 무관하게 종료를 진행한다.
     /// `app_data_dir`이 없으면(테스트 등) 0.
     ///
-    /// 태스크 대화 세션(`task-chat-` 접두사)은 넘기지 않고 버린다(docs/task-chat-design.md
-    /// §앱 종료와 재실행) -- 대화는 일회성이고 입양 경로가 캐릭터 없는 세션을 받지 않는다.
+    /// 태스크 대화 세션(`task-chat-` 접두사)은 넘기지 않고 버린다
+    /// -- 대화는 일회성이고 입양 경로가 캐릭터 없는 세션을 받지 않는다.
     #[cfg(unix)]
     pub fn handoff_all(
         &self,
@@ -80,10 +80,10 @@ impl SessionManager {
         }
     }
 
-    /// 세션 하나를 넘긴다. 설계 문서 §핵심 3의 순서 그대로: 리더 인터럽트 →
+    /// 세션 하나를 넘긴다. 순서: 리더 인터럽트 →
     /// handed_off set → 전송. 실패해도 세션은 그대로 둔다(맵에 남고
     /// handed_off=true) -- 앱은 어차피 곧 종료되므로 마스터 fd가 닫히며
-    /// SIGHUP으로 자연 정리된다(설계 문서 "왜 이 방식인가" 참조).
+    /// SIGHUP으로 자연 정리된다.
     ///
     /// `snapshot`이 비어 있으면(프론트가 이 터미널을 한 번도 구독하지 않아
     /// 직렬화 대상이 없었던 경우 등) sink의 backlog를 폴백으로 쓴다 --
@@ -163,7 +163,7 @@ impl SessionManager {
         }
     }
 
-    /// 부트스트랩(§핵심 4): sessiond에 남아 있는 세션들을 되찾는다.
+    /// 부트스트랩: sessiond에 남아 있는 세션들을 되찾는다.
     /// `known_agent_ids`는 영속 프로필의 agentId 집합 -- 여기 없는 항목은
     /// Kill 지시(삭제된 에이전트의 고아 claude 방지), exited 항목은 스킵.
     /// 소켓이 없거나 연결 실패면 빈 벡터(데몬을 새로 스폰하지 않는다 --

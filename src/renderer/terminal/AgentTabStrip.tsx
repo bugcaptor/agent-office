@@ -5,7 +5,7 @@
 // Clicking a tab keeps the overlay mounted and only switches
 // `activeTerminalAgentId` (no remount, handled by TerminalHost).
 //
-// 태스크 대화 탭(docs/task-chat-design.md)은 캐릭터 탭 뒤에 따로 묶는다(taskChatStore.order).
+// 태스크 대화 탭은 캐릭터 탭 뒤에 따로 묶는다(taskChatStore.order).
 // 말풍선 아이콘·태스크 표시 제목·닫기(×)가 있고, 캐릭터 전용 메뉴는 없다.
 //
 // Keyboard routing, active only while a terminal is open:
@@ -662,7 +662,7 @@ export function AgentTabStrip() {
                 ),
             },
             {
-              // docs/session-log-design.md: 상시 기록된 터미널 전사 목록.
+              // 세션 로그: 상시 기록된 터미널 전사 목록.
               // 하나를 고르면 편집기로 열거나 학습자료로 정리할 수 있다.
               label: t("menu.sessionLogs"),
               icon: "📜",

@@ -1,7 +1,7 @@
 // src-tauri/src/session/agy_hook.rs
 //
 // Antigravity CLI(agy) 훅 셸 스크립트 정적 배포.
-// docs/antigravity-support-design.md §3.1 그대로 구현하되, 스파이크 실측으로
+// 최초 설계대로 구현하되, 스파이크 실측으로
 // 확정된 사실 셋을 반영한다:
 //
 //   1. `invocationNum`은 0부터 센다(턴 시작 = PreInvocation && invocationNum
@@ -22,7 +22,7 @@
 //      시점 포트를 그대로 들고 있다. curl이 "연결 실패"(exit 7)로 끝나면
 //      `AGENT_OFFICE_APP_DATA/observer-port`를 읽어(정수 검증 후) 그 포트로
 //      1회만 재시도한다. `AGENT_OFFICE_APP_DATA`는 session/manager.rs가
-//      세션 env에 항상 심어 두므로(관찰 여부와 무관, §핵심 5) 래퍼가 따로
+//      세션 env에 항상 심어 두므로(관찰 여부와 무관) 래퍼가 따로
 //      넘길 필요는 없다 — hook.sh는 agy의 자식으로서 이 env를 그대로
 //      물려받는다.
 //
@@ -43,7 +43,7 @@ const AGY_HOOK_SH: &str = r#"#!/bin/sh
 # agent-office-agy-hook.sh — agent-office가 생성. 편집 금지(부팅 시 덮어씀).
 # Antigravity CLI(agy) 훅 이벤트를 agent-office 로컬 훅 서버로 전달한다.
 #
-# 실측(docs/antigravity-support-design.md §1.4): PreToolUse의 decision은
+# 실측: PreToolUse의 decision은
 # 실행을 게이트하고 Stop의 decision=="continue"는 루프를 멈추지 못하게
 # 만든다 — 그래서 관찰 대상 세 이벤트(PreInvocation/PostToolUse/Stop) 모두
 # 무해한 `{}`를 stdin을 읽기도 전에 먼저 찍는다.
@@ -255,7 +255,7 @@ mod tests {
 
     /// 리뷰 지적 회귀 방지(실제 실행): 스테일 포트(연결 실패, curl exit 7)를
     /// 흉내 낸 가짜 `curl`을 PATH에 놓고 실제 `sh`로 hook.sh를 돌려, 새 포트로
-    /// 정확히 1회 재시도하는지 끝까지 검증한다. Windows는 v1 제외(§5)라 unix
+    /// 정확히 1회 재시도하는지 끝까지 검증한다. Windows는 v1 제외라 unix
     /// 전용.
     #[cfg(unix)]
     #[test]
@@ -273,8 +273,8 @@ mod tests {
         std::fs::create_dir_all(&bin_dir).unwrap();
         std::fs::create_dir_all(&app_data).unwrap();
 
-        // 스폰 시점 포트(9)는 죽어 있고, 현재 포트(23456)만 기록돼 있다 -- §핵심 5와
-        // 같은 시나리오.
+        // 스폰 시점 포트(9)는 죽어 있고, 현재 포트(23456)만 기록돼 있다 -- 재시작
+        // 입양과 같은 시나리오.
         std::fs::write(app_data.join("observer-port"), "23456").unwrap();
 
         let log = scratch.join("curl-calls.log");

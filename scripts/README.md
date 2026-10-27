@@ -15,7 +15,7 @@ rtk node scripts/render-scenes.mjs /tmp/agent-office-scenes-before --baseline
 
 ## 헤드리스 GUI 확인 (gui-shot.mjs)
 
-Tauri 빌드 없이 렌더러를 헤드리스 Chrome과 가짜 백엔드로 띄워 스크린샷을 남긴다. `--script`로 클릭·입력을 재현한다(예: `gui-steps/terminal.mjs`). 구조와 한계는 [docs/gui-harness-design.md](../docs/gui-harness-design.md)가 정본이다.
+Tauri 빌드 없이 렌더러를 헤드리스 Chrome과 가짜 백엔드로 띄워 스크린샷을 남긴다. `--script`로 클릭·입력을 재현한다(예: `gui-steps/terminal.mjs`). 가짜 백엔드와 시나리오는 `src/renderer/guiHarness/`에 있다.
 
 ```bash
 npm run gui:shot -- --scenario fresh,office,working --out /tmp/shots

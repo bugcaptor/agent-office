@@ -35,7 +35,7 @@ const state = vi.hoisted(() => ({
 }));
 
 // OfficeScene이 수상자 초상을 직접 불러오므로(office/**에서 유일하게 tauriApi를
-// 직접 호출 — 설계 §7 "소비할 데이터"), 이 모듈만 목킹한다. 기본은 초상 없음.
+// 직접 호출), 이 모듈만 목킹한다. 기본은 초상 없음.
 const tauri = vi.hoisted(() => ({
   loadAwardPortrait: vi.fn(async () => null as string | null),
 }));
@@ -494,7 +494,7 @@ describe("label anchor publishing (overhead-task-label)", () => {
   });
 });
 
-describe("award trophy + frame (이 달의 우수사원, docs/employee-of-the-month-design.md §7)", () => {
+describe("award trophy + frame (이 달의 우수사원)", () => {
   type Internals = {
     trophyOverlay?: { root: { visible: boolean; x: number; y: number; zIndex: number } };
     awardFrame?: { root: { visible: boolean } };

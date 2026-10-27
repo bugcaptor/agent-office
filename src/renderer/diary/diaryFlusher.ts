@@ -14,7 +14,7 @@
 //   "일기 쓰기" 버튼(writeNow, flusher를 안 탐)의 몫이다.
 // - 마지막 활동이 3일보다 오래된 과거는 자동 생성하지 않는다(소급 금지).
 // - 작업량이 극히 적은 세션(항목 < MIN_ITEMS)은 건너뛴다.
-// - 부팅 복원된 세션은 이미 일기가 있으면 재생성하지 않는다(중복 방지, §1-4).
+// - 부팅 복원된 세션은 이미 일기가 있으면 재생성하지 않는다(중복 방지).
 import { useAppStore } from "../store/appStore";
 import { tauriApi } from "../ipc/tauriApi";
 import { generateDiary } from "./diaryGenerator";

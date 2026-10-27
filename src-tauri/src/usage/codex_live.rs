@@ -1,6 +1,6 @@
 // src-tauri/src/usage/codex_live.rs
 //
-// Codex 사용량 실시간 조회(kbm #2h8, docs/usage-design.md §8).
+// Codex 사용량 실시간 조회(kbm #2h8).
 // v1(codex.rs)은 rollout jsonl에 남은 `rate_limits` 스냅샷이라 **CLI가 실제로
 // 돌 때만** 갱신된다 — Claude의 `.claude.json` 캐시 미러와 같은 문제(며칠씩
 // 멈춘 숫자)를 가진다. 이 모듈은 codex CLI 자신에게 물어 지금 값을 받아온다.

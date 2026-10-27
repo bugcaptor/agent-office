@@ -1080,7 +1080,7 @@
     // ---- resolve_usage_roots ----
     //
     // 전역 `std::env::var` 없이 순수 계산만 검증(load_usage_snapshot 본문과
-    // 동일 로직). docs/usage-limits-design.md §2 CODEX_HOME/CLAUDE_CONFIG_DIR
+    // 동일 로직). CODEX_HOME/CLAUDE_CONFIG_DIR
     // 오버라이드 계약.
 
     #[test]
@@ -1128,8 +1128,7 @@
 
     // ---- resolve_claude_config_dir ----
     //
-    // 자격증명 디렉터리는 claude_root와 달리 미설정 시 ~/.claude로 내려간다
-    // (docs/claude-usage-live-fetch-design.md §2.2).
+    // 자격증명 디렉터리는 claude_root와 달리 미설정 시 ~/.claude로 내려간다.
 
     #[test]
     fn resolve_claude_config_dir_defaults_to_dot_claude_under_home() {

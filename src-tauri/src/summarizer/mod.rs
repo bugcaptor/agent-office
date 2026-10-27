@@ -20,7 +20,7 @@ use crate::persistence::settings_store::{SummaryModels, SummaryProvider};
 
 const TEXT_MAX_CHARS: usize = 2_000;
 /// 학습자료(세션 로그 전사)는 세션 한 편을 통째로 넣어야 의미가 있다 —
-/// 라벨·일기와 달리 상한이 훨씬 크다(docs/session-log-design.md §5.1).
+/// 라벨·일기와 달리 상한이 훨씬 크다.
 const TEXT_MAX_CHARS_STUDY: usize = 120_000;
 const ERROR_MAX_CHARS: usize = 512;
 const MAX_CONCURRENT: usize = 2;

@@ -3,7 +3,6 @@
 // Pure helpers backing the per-agent "누적 통계" view in SessionTimePanel.
 // No React/zustand/IPC dependency — records/time/store slices are passed in
 // so these stay deterministically testable (sibling of todayTotal.ts).
-// See docs/superpowers/specs/2026-07-11-per-agent-stats-design.md.
 import type { SessionTurnRecord } from "@shared/types";
 
 /** 에이전트 1명의 디스크 집계: 누적/오늘 worked(대기 제외). */

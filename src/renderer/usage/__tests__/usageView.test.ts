@@ -1,6 +1,6 @@
 // src/renderer/usage/__tests__/usageView.test.ts
 //
-// 사용량 표시 순수 함수 테스트(docs/usage-limits-design.md §4): 절박 윈도
+// 사용량 표시 순수 함수 테스트: 절박 윈도
 // 선택, 임계 색상, 카운트다운·신선도 포맷, stale 판정.
 //
 // i18n 이후 이 모듈은 **문장이 아니라 번역 키 설명자**를 돌려주므로, 순수

@@ -1,4 +1,4 @@
-// 태스크 대화 탭 닫기 확인(docs/task-chat-design.md §대화 탭). 캐릭터 탭과 달리 닫으면 세션도 끝난다.
+// 태스크 대화 탭 닫기 확인. 캐릭터 탭과 달리 닫으면 세션도 끝난다.
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { ConfirmDialog } from "../agent/confirmDialogs";

@@ -1,4 +1,4 @@
-// 태스크 대화(docs/task-chat-design.md). 캐릭터 없는 앱 안 터미널로 태스크 하나를 주제로 묻고 답한다.
+// 태스크 대화. 캐릭터 없는 앱 안 터미널로 태스크 하나를 주제로 묻고 답한다.
 // 세션 id는 `task-chat-<taskId>`이고, 탭·상태는 여기만 쥔다(appStore.sessions·recentAgentIds에 넣지 않는다).
 import { create } from "zustand";
 import { TASK_CHAT_PREFIX, isTaskChatId } from "@shared/types";

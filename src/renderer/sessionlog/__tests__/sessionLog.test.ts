@@ -1,4 +1,4 @@
-// 세션 로그 보기(docs/session-log-design.md §7)의 표시 포맷과 스토어 동작.
+// 세션 로그 보기의 표시 포맷과 스토어 동작.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SOURCE_LANGUAGE, initI18nForTest, t as translate } from "@renderer/i18n";
 import { renderText } from "@renderer/shared/textKey";

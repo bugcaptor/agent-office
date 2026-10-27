@@ -1,4 +1,4 @@
-/** 업무 패널의 영속 계약. docs/work-panels-design.md, Rust types.rs 미러. */
+/** 업무 패널의 영속 계약. Rust types.rs 미러. */
 export interface WorkAgent {
   cli: "claude" | "codex" | "agy" | "kilo" | "pi";
   model?: string;
@@ -18,7 +18,7 @@ export interface WorkItem {
   lastError?: string;
   /** 선행 업무 id. 모두 완료돼야 보낼 수 있다. 비면 생략한다. */
   dependsOn?: string[];
-  /** 자동 진행 상태. 이 업무를 루트로 시작했을 때만 있다(docs/auto-run-design.md). */
+  /** 자동 진행 상태. 이 업무를 루트로 시작했을 때만 있다. */
   autoRun?: AutoRun;
   createdAt: number;
   updatedAt: number;
@@ -82,7 +82,7 @@ export interface WorkSendRequest {
 export interface WorkSendResult { sessionId: string; submittedAt: number }
 /** 실행 중인 CLI에 넣는 후속 프롬프트. */
 export interface WorkFollowUpRequest { agentId: string; sessionId: string; text: string }
-/** 태스크 대화 열기(docs/task-chat-design.md §기동). 네이티브가 보고·세션 로그 경로·Git 기록을 붙여 맥락 묶음을 만든다. */
+/** 태스크 대화 열기. 네이티브가 보고·세션 로그 경로·Git 기록을 붙여 맥락 묶음을 만든다. */
 export interface TaskChatRequest {
   taskId: string;
   /** 작업 폴더. 없으면 세션 기본(홈)이고 Git 기록은 찾지 않는다. */

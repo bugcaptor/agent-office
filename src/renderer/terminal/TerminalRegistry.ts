@@ -28,7 +28,7 @@ import { createScrollbackGuard, type ScrollbackGuard } from "./scrollbackGuard";
 interface Entry {
   term: Terminal;
   fit: FitAddon;
-  // 세션 핸드오프(docs/session-handoff-design.md 빈틈 수정): 종료 시점의
+  // 세션 핸드오프(빈틈 수정): 종료 시점의
   // 화면(스크롤백 포함)을 직렬화해 데몬에 실어 보내는 데 쓴다 — 데몬은
   // 핸드오프 *이후* 출력만 보관하므로, 그 이전 화면은 이 스냅샷이 아니면
   // 재입양 후 사라진다.
@@ -49,7 +49,7 @@ const REDRAW_NUDGE_DELAY_MS = 50;
 class TerminalRegistry {
   private entries = new Map<string, Entry>();
   // 입양(adopt_detached_sessions)된 세션 — 다음 activate()에서 1회
-  // redraw nudge(§핵심 6)를 태우고 스스로 제거한다.
+  // redraw nudge를 태우고 스스로 제거한다.
   private pendingNudge = new Set<string>();
   // 현재 유효한 xterm 팔레트. App의 테마 효과가 setTheme()으로 밀어 넣고,
   // 그 전에 만들어지는 터미널은 스토어의 현재 선택에서 지연 해석한다
@@ -205,7 +205,7 @@ class TerminalRegistry {
   }
 
   /**
-   * 세션 브로커 v2(§P1): 직렬화 *전에* 각 터미널의 xterm write 큐를 flush해,
+   * 세션 브로커 v2: 직렬화 *전에* 각 터미널의 xterm write 큐를 flush해,
    * 이미 도착했지만 아직 파싱/렌더 안 된 바이트까지 스냅샷에 반영한다 —
    * `term.write("", cb)`의 콜백은 큐가 비워진 뒤에 불린다. 이렇게 하면 스냅샷이
    * "앱이 실제로 여기까지 받았다"는 지점과 최대한 정합하고, 브로커가 그 오프셋

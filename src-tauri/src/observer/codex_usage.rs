@@ -3,7 +3,6 @@
 // 메인·서브 rollout마다 위치/누계/모델을 보존하며 세션별 잠금으로 중복을 막는다.
 // 도중 합류는 과거 누계를 생략한다. 파일 전체를 확인한 신선한 세션만 기준 0.
 // 비용 계산용 by_model과 표시용 전체 토큰을 함께 내보낸다.
-// 정본: docs/session-analytics-design.md §9.3·§11.10.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};

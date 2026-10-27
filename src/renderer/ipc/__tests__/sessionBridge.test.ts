@@ -548,7 +548,7 @@ describe("officeBus.onVacationModeChanged / emitBossDeskClicked (vacation mode)"
   });
 });
 
-describe("officeBus.onAwardeeChanged (이 달의 우수사원, docs/employee-of-the-month-design.md §7)", () => {
+describe("officeBus.onAwardeeChanged (이 달의 우수사원)", () => {
   it("구독 즉시 현재값(기본 null)을 replay한다", () => {
     const seen: unknown[] = [];
     const off = officeBus.onAwardeeChanged((a) => seen.push(a));
@@ -708,7 +708,7 @@ describe("installSessionBridge cleanup", () => {
 });
 
 
-describe("installSessionBridge / 태스크 대화 세션(docs/task-chat-design.md)", () => {
+describe("installSessionBridge / 태스크 대화 세션", () => {
   it("task-chat- 세션의 상태·알림·사용량·활동은 캐릭터 중심 스토어와 오피스 씬에 넣지 않는다", () => {
     const before = useAppStore.getState();
     const stateListener = vi.fn();

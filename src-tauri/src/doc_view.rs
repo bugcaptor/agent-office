@@ -1,4 +1,4 @@
-//! 문서 뷰어 변환기(docs/doc-view-design.md §구성 1). Markdown 파일 하나를 브라우저로
+//! 문서 뷰어 변환기. Markdown 파일 하나를 브라우저로
 //! 바로 열 수 있는 완성된 HTML 문서로 바꾼다. `agent-office md`(doc_view_cli.rs)와 앱
 //! 미리보기 버튼이 같은 경로를 써서 결과가 하나로 맞는다.
 //!
@@ -15,7 +15,7 @@ use std::time::{Duration, SystemTime};
 
 /// 앱 데이터 아래 캐시 폴더. 작업 트리에는 파일을 만들지 않는다.
 pub const CACHE_DIR: &str = "doc-view";
-/// `doc-view/` 아래 열기 요청 폴더(§구성 2). 앱이 감시해 요청 파일을 지운다.
+/// `doc-view/` 아래 열기 요청 폴더. 앱이 감시해 요청 파일을 지운다.
 pub const REQUEST_DIR: &str = "open";
 /// `--latest`와 CLI가 받는 확장자(소문자, 점 없이).
 pub const MARKDOWN_EXTENSIONS: [&str; 2] = ["md", "markdown"];
@@ -268,7 +268,7 @@ pub fn cache_path(data_dir: &Path, source: &Path) -> PathBuf {
 }
 
 /// 디스크의 `source`(정규화된 절대 경로)를 읽어 변환하고 `cache_path`에 쓴 뒤 그 경로를
-/// 돌려준다. `agent-office md`와 미리보기 버튼(`doc_view_open`, §구성 5)이 함께 쓴다.
+/// 돌려준다. `agent-office md`와 미리보기 버튼(`doc_view_open`)이 함께 쓴다.
 pub fn render_to_cache(data_dir: &Path, source: &Path) -> Result<PathBuf, String> {
     let markdown = std::fs::read(source)
         .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
@@ -329,7 +329,7 @@ fn gc_at(data_dir: &Path, now: SystemTime) -> usize {
         + remove_older(&cache.join(REQUEST_DIR), now, REQUEST_TTL, |_| true)
 }
 
-/// 캐시 폴더 `doc-view/`. Codex 세션의 쓰기 허용 경로이기도 하다(§구성 4).
+/// 캐시 폴더 `doc-view/`. Codex 세션의 쓰기 허용 경로이기도 하다.
 pub fn cache_dir(data_dir: &Path) -> PathBuf {
     data_dir.join(CACHE_DIR)
 }
@@ -386,7 +386,7 @@ pub fn take_open_requests(data_dir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-/// 앱 부팅 때 띄우는 요청 감시 스레드(§구성 3). 업무 패널 설정과 무관하게 돈다.
+/// 앱 부팅 때 띄우는 요청 감시 스레드. 업무 패널 설정과 무관하게 돈다.
 pub fn spawn_request_watcher(
     data_dir: PathBuf,
     interval: Duration,

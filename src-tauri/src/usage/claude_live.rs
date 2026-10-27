@@ -1,13 +1,13 @@
 // src-tauri/src/usage/claude_live.rs
 //
-// Claude 사용량 실시간 조회(이슈 #33, docs/claude-usage-live-fetch-design.md).
+// Claude 사용량 실시간 조회(이슈 #33).
 // v1(claude.rs)은 `.claude.json`의 캐시 미러라 CLI가 재fetch할 때까지 리셋
 // 경계 후에도 낡은 값이 남는다. 이 모듈은 Claude Code CLI가 내부적으로 쓰는
 // 사용량 엔드포인트를 앱이 직접 호출해 리셋 후 ≤1분 내 실제 값을 얻는다.
 // 실패(토큰 없음/401/네트워크/파싱 실패)는 전부 조용히 None → 조립 단계에서
 // 파일 캐시 미러로 자연 폴백한다.
 //
-// 토큰은 로그·에러 문자열에 절대 넣지 않는다(설계 §2.2). 파싱·스로틀 판단은
+// 토큰은 로그·에러 문자열에 절대 넣지 않는다. 파싱·스로틀 판단은
 // 전부 순수 함수라 네트워크 목 없이 테스트한다(HTTP 호출부만 얇게 유지).
 
 use std::path::Path;
@@ -23,7 +23,7 @@ use super::{
 };
 
 /// Claude Code CLI가 내부적으로 치는 사용량 엔드포인트(비공식). UA·beta
-/// 헤더를 CLI와 맞추는 것이 계약의 일부다(설계 §2.1).
+/// 헤더를 CLI와 맞추는 것이 계약의 일부다.
 /// pub(super): 외부 프로세스 폴백(claude_live_fallback)이 **같은** 엔드포인트·
 /// 헤더로 조회해야 응답 모양이 같고 파서를 공유할 수 있다.
 pub(super) const USAGE_ENDPOINT: &str = "https://api.anthropic.com/api/oauth/usage";
@@ -44,9 +44,9 @@ const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const KEYCHAIN_LEGACY_SERVICE: &str = "Claude Code-credentials";
 
 /// 시도 간 하한(성공/실패 공통 — 실패 백오프와 60초 폴링 중복 fetch 차단을
-/// 겸한다). 설계 §3.1.
+/// 겸한다).
 const MIN_ATTEMPT_GAP_MS: i64 = 5 * 60 * 1000;
-/// 성공 후 정기 리프레시 간격. 설계 §3.1.
+/// 성공 후 정기 리프레시 간격.
 const REFRESH_INTERVAL_MS: i64 = 15 * 60 * 1000;
 /// 외부 프로세스 폴백(claude_live_fallback)의 시도 간 하한. 1차 경로보다
 /// 훨씬 길게 잡는다: 폴백은 자식 프로세스를 띄우는 무거운 경로이고, `claude`
@@ -68,7 +68,7 @@ pub(super) fn parse_access_token(json: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// 설계 §2.2 우선순위로 액세스 토큰을 읽는다: (macOS) 스코프 Keychain →
+/// 우선순위대로 액세스 토큰을 읽는다: (macOS) 스코프 Keychain →
 /// 레거시 Keychain → `<config_dir>/.credentials.json`. 어느 경로든 실패는
 /// None(토큰은 반환값 안에서만 존재하며 로그·에러에 남기지 않는다).
 ///
@@ -76,7 +76,7 @@ pub(super) fn parse_access_token(json: &str) -> Option<String> {
 /// 스코프 Keychain 서비스명은 이 경로 문자열의 sha256 앞 8자로 만든다 —
 /// 미설정 케이스에선 그 항목이 존재하지 않아 조용히 레거시로 강등된다.
 /// 반환값에는 토큰을 실제로 읽어낸 출처가 함께 온다 — 진단 표시가 "Keychain이
-/// 막혀 파일로 폴백했다"를 구분해 말할 수 있어야 하기 때문이다(§7).
+/// 막혀 파일로 폴백했다"를 구분해 말할 수 있어야 하기 때문이다.
 pub async fn read_access_token(config_dir: &Path) -> Option<(String, TokenSource)> {
     #[cfg(target_os = "macos")]
     {
@@ -99,7 +99,7 @@ pub async fn read_access_token(config_dir: &Path) -> Option<(String, TokenSource
 }
 
 /// 스코프 Keychain 서비스명: `Claude Code-credentials-<sha256(dir) hex 앞 8자>`.
-/// 설계 §2.2. 순수 함수(테스트 가능).
+/// 순수 함수(테스트 가능).
 #[cfg(target_os = "macos")]
 fn scoped_keychain_service(config_dir: &str) -> String {
     format!(
@@ -121,7 +121,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// `security find-generic-password -s <service> -a $USER -w`로 Keychain 값을
-/// 읽는다(설계 §2.2). 항목 부재·권한 거부는 비영 종료 → None. 표준출력의
+/// 읽는다. 항목 부재·권한 거부는 비영 종료 → None. 표준출력의
 /// 값(JSON)만 돌려주고 stderr는 무시한다(토큰 노출 방지).
 ///
 /// 비동기 + KEYCHAIN_TIMEOUT 상한: 잠긴 Keychain·방치된 권한 다이얼로그로
@@ -158,7 +158,7 @@ async fn read_keychain(service: &str) -> Option<String> {
 /// 사용량 응답 본문 → 윈도 배열. 루트가 `cachedUsageUtilization.utilization`과
 /// 같은 모양(`limits[]`/`five_hour`/`seven_day`)이라, claude.rs의 기존 파서를
 /// 그대로 재사용한다(limits[] 우선, 없으면 five_hour/seven_day 폴백). 계약이
-/// 바뀌어 어느 쪽도 안 맞으면 None → 파일 캐시 폴백. 설계 §2.1.
+/// 바뀌어 어느 쪽도 안 맞으면 None → 파일 캐시 폴백.
 pub(super) fn parse_live_response(root: &Value) -> Option<Vec<UsageWindow>> {
     parse_limits(root).or_else(|| parse_fallback(root))
 }
@@ -166,7 +166,7 @@ pub(super) fn parse_live_response(root: &Value) -> Option<Vec<UsageWindow>> {
 // ── HTTP 호출(얇게) ──────────────────────────────────────────────────────
 
 /// 실시간 조회 실패 하나. 표시용 사유(outcome)와 사람이 읽을 보조 문자열을
-/// 함께 나른다. **토큰·자격증명은 어디에도 넣지 않는다**(설계 §2.2) — detail은
+/// 함께 나른다. **토큰·자격증명은 어디에도 넣지 않는다** — detail은
 /// HTTP 상태코드나 "시간 초과" 같은 고정 어휘만 담는다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct LiveFailure {
@@ -187,8 +187,8 @@ impl LiveFailure {
 
 /// 토큰으로 사용량 엔드포인트를 GET 해 윈도 배열을 얻는다. 타임아웃 10초.
 /// 실패는 전부 Err(→ 파일 캐시 폴백)이되, **사유를 분류해서** 돌려준다 —
-/// 조용한 폴백이 "값이 왜 안 움직이는지 알 수 없음"이 되지 않도록(§7).
-/// 로컬 만료 판정은 여전히 하지 않는다 — 서버 401이 유일한 판정자(설계 §2.2).
+/// 조용한 폴백이 "값이 왜 안 움직이는지 알 수 없음"이 되지 않도록.
+/// 로컬 만료 판정은 여전히 하지 않는다 — 서버 401이 유일한 판정자.
 pub(super) async fn fetch_live(token: &str) -> Result<Vec<UsageWindow>, LiveFailure> {
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
@@ -246,7 +246,7 @@ pub(super) fn http_failure(status: u16) -> LiveFailure {
 
 // ── 스로틀 상태 + 판단 ───────────────────────────────────────────────────
 
-/// 순수 스로틀 판단(설계 §3.1). 락 밖에서도 검증 가능하도록 상태를 인자로
+/// 순수 스로틀 판단. 락 밖에서도 검증 가능하도록 상태를 인자로
 /// 받는다. 순서가 중요하다:
 /// 1. 마지막 시도 후 5분 하한 미만이면 무조건 안 함(실패 백오프·중복 차단).
 /// 2. 성공 스냅샷이 없으면 fetch(최초, 혹은 이전 시도가 모두 실패한 뒤).
@@ -430,7 +430,7 @@ impl LiveUsageState {
 
 /// fetch 성공 윈도로 Claude ProviderUsage를 만든다. `fetched_at_ms`는 조회
 /// 시각(now)이고 `plan_label`은 응답에 없어 여기선 None — 조립 단계에서 파일
-/// 캐시의 값을 접목한다(설계 §3.2).
+/// 캐시의 값을 접목한다.
 pub(super) fn live_provider_usage(windows: Vec<UsageWindow>, now_ms: i64) -> ProviderUsage {
     ProviderUsage {
         provider: Provider::Claude,
@@ -649,7 +649,7 @@ mod tests {
         assert_eq!(state.cli_disabled_reason().as_deref(), Some("토큰 12 소모"));
     }
 
-    // ── 진단 상태(§7) ──
+    // ── 진단 상태 ──
 
     #[test]
     fn status_starts_as_never_attempted() {

@@ -4,7 +4,7 @@
 // 않은(on-duty) 에이전트가 있을 때 이 모달을 연다. CSS는 ProfileDialog와 동일한
 // 전역 클래스(modal-backdrop / pixel-panel / pixel-btn / dialog-actions)를 재사용.
 //
-// 세션 핸드오프(docs/session-handoff-design.md §핵심 6): 핸드오프 지원 && 실행 중
+// 세션 핸드오프: 핸드오프 지원 && 실행 중
 // 세션이 있으면 3버튼[터미널 유지하고 종료 / 모두 종료하고 종료 / 취소], 아니면
 // 2버튼[종료 / 취소]. "유지"는 `handoffSessions()`가 실패해도 종료는 진행한다.
 //
@@ -41,7 +41,7 @@ export function ConfirmQuitDialog() {
   const anyOnDuty = useAppStore((s) =>
     s.agentOrder.some((id) => s.agents[id] && !s.agents[id].clockedOut)
   );
-  // 태스크 대화는 핸드오프하지 않고 종료와 함께 끝난다(docs/task-chat-design.md §앱 종료와 재실행).
+  // 태스크 대화는 핸드오프하지 않고 종료와 함께 끝난다.
   const liveChats = useTaskChatStore((s) =>
     s.order.filter((id) => ["starting", "running"].includes(s.chats[id]?.status ?? "")).length
   );
@@ -93,7 +93,7 @@ export function ConfirmQuitDialog() {
     if (handoff) {
       try {
         // 종료 직전 화면(스크롤백)을 실어 보낸다 — 데몬은 핸드오프 이후 출력만
-        // 보관하므로. 직렬화 전에 xterm write 큐를 flush(§P1)한다.
+        // 보관하므로. 직렬화 전에 xterm write 큐를 flush한다.
         const snapshots = await terminalRegistry.flushAndSerializeAll();
         await tauriApi.handoffSessions(snapshots);
       } catch (err) {

@@ -66,17 +66,17 @@ export const Commands = {
   runRecipeStop: "run_recipe_stop",
   // 작업 중 잠자기 방지(이슈 #68) — 렌더러가 "일하는 캐릭터 있음"을 통지.
   setKeepAwake: "set_keep_awake",
-  // 데스크톱 마스코트(이슈 #72, docs/mascot-window-design.md) — 창 표시 토글과,
+  // 데스크톱 마스코트(이슈 #72) — 창 표시 토글과,
   // 마스코트 클릭 시 main 포커스 + 터미널 열기 요청.
   setMascotVisible: "set_mascot_visible",
   mascotActivate: "mascot_activate",
-  // 마스코트 신호등(docs/mascot-lights-design.md §5.3) — 창 크기·위치를
+  // 마스코트 신호등 — 창 크기·위치를
   // (물리 px) 한 번에 적용. mascot 창의 동적 리사이즈 전용.
   setMascotLayout: "set_mascot_layout",
   // 요약기용 API 키(Anthropic·OpenRouter) — 존재 여부만 렌더러로.
   apiKeyStatus: "api_key_status",
   setApiKeys: "set_api_keys",
-  // CLI 제어(이슈 #55, docs/cli-control-design.md) — 2단계 승인 상태 조회/승인/취소.
+  // CLI 제어(이슈 #55) — 2단계 승인 상태 조회/승인/취소.
   controlStatus: "control_status",
   controlApprove: "control_approve",
   controlRevoke: "control_revoke",
@@ -119,22 +119,22 @@ export const Commands = {
   readMemoSheet: "read_memo_sheet",
   deleteMemos: "delete_memos",
   loadSessionEvents: "load_session_events",
-  // 세션 로그(docs/session-log-design.md) — 상시 기록된 터미널 전사 목록/열기와,
+  // 세션 로그 — 상시 기록된 터미널 전사 목록/열기와,
   // 그중 하나로 만드는 회고·학습자료(수동 트리거).
   listSessionLogs: "list_session_logs",
   openSessionLog: "open_session_log",
   generateStudyMaterial: "generate_study_material",
-  // 세션 핸드오프(docs/session-handoff-design.md) — unix 전용, 종료 시 PTY를
+  // 세션 핸드오프 — unix 전용, 종료 시 PTY를
   // sessiond 데몬으로 넘기고 재시작 시 되찾는다.
   handoffSupported: "handoff_supported",
   handoffSessions: "handoff_sessions",
   adoptDetachedSessions: "adopt_detached_sessions",
-  // 세션 브로커 v2(docs/session-broker-v2-design.md) — 상시 브로커 모드 여부
+  // 세션 브로커 v2 — 상시 브로커 모드 여부
   // 조회와, 브로커 모드에서 크래시 생존 화면 복원을 위한 주기 스냅샷 업로드.
-  // Claude 세션 이어하기(docs/claude-session-resume-design.md) — 캡처된
+  // Claude 세션 이어하기 — 캡처된
   // native 세션 ID를 agentId별로 돌려준다.
   listClaudeResumeSessions: "list_claude_resume_sessions",
-  // 구독 사용량(rate limit) 스냅샷(docs/usage-limits-design.md) — 홈 디렉터리의
+  // 구독 사용량(rate limit) 스냅샷 — 홈 디렉터리의
   // Claude/Codex 로컬 캐시를 읽어 정규화한 원시 스냅샷.
   loadUsageSnapshot: "load_usage_snapshot",
   // 마크다운 문서 탐색·편집(이슈 #10) — 에이전트 cwd를 root로 하위 .md 목록/읽기/쓰기.
@@ -143,7 +143,7 @@ export const Commands = {
   markdownReadFile: "markdown_read_file",
   markdownWriteFile: "markdown_write_file",
   markdownOpenLocalLink: "markdown_open_local_link",
-  // 문서 뷰어(docs/doc-view-design.md §구성 5): 저장된 파일을 HTML로 바꿔 기본 브라우저로 연다.
+  // 문서 뷰어: 저장된 파일을 HTML로 바꿔 기본 브라우저로 연다.
   docViewOpen: "doc_view_open",
   // 작업 폴더 보기(이슈 #11) — 에이전트 cwd를 root로 전체 파일 목록과, 파일별
   // git 상태(porcelain v2)를 돌려준다. git 조회의 1차 탈출구는 사용자 취소
@@ -196,7 +196,6 @@ export const Events = {
   // `ctl settings set`이 바꾼 값을 렌더러 사본에 반영한다(수정 F6).
   appSettingsChanged: "app-settings-changed",
   // 한 턴의 토큰 사용량. notificationNew와 분리된 채널이라, 백그라운드
-  // 서브에이전트가 남아 완료 알림이 억제된 Stop에서도 이 이벤트만은 온다
-  // (docs/session-analytics-design.md §9.1).
+  // 서브에이전트가 남아 완료 알림이 억제된 Stop에서도 이 이벤트만은 온다.
   turnUsage: "turn-usage",
 } as const;

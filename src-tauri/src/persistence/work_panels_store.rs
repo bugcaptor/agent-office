@@ -43,7 +43,7 @@ impl WorkPanelsStore {
         let _guard = self.lock.lock().map_err(|e| e.to_string())?;
         fs::create_dir_all(&self.root).map_err(|e| e.to_string())?;
         // tmp 이름은 저장마다 고유하게 — 락은 프로세스 안 Mutex뿐이라, 고정 이름이면
-        // 같은 app_data를 쓰는 다른 프로세스와 tmp를 서로 덮어쓴다(§7.F E1).
+        // 같은 app_data를 쓰는 다른 프로세스와 tmp를 서로 덮어쓴다.
         let tmp = self
             .root
             .join(format!("work-items.json.tmp-{}", uuid::Uuid::new_v4()));

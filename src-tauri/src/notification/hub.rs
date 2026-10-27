@@ -3,9 +3,9 @@
 // NotificationHub + Clock. 턴 토큰 사용량(`AppEvents::turn_usage`)은 알림
 // 경로(dedup/hold/running==0 게이트)와 **분리**돼 있다 — `ingest_observer`의
 // Stop 팔에서 알림 게이트보다 먼저 방출하므로, 게이트가 알림을 억제해도
-// 사용량은 유실되지 않는다(docs/session-analytics-design.md §9.1).
+// 사용량은 유실되지 않는다.
 //
-// `ingest_observer`의 Tool 팔도 같은 `emit_turn_usage`를 탄다(§11.9) — 턴이
+// `ingest_observer`의 Tool 팔도 같은 `emit_turn_usage`를 탄다 — 턴이
 // 끝나기 전에도(claude 어댑터의 PostToolUse 스로틀 통과 시) `partial: true`로
 // 중간 사용량을 낸다. Stop의 `partial: false`와 구분해야 소비자(렌더러
 // `addTurn`)가 턴 수를 이중으로 세지 않는다.
@@ -245,7 +245,7 @@ impl NotificationHub {
                 // Stop까지 안 기다리고 도구마다 갱신되게 하려는 것이다.
                 // `partial: true`로 표시해 소비자가 이 턴이 아직 안 끝났음을
                 // 알게 한다(이 턴의 최종 Stop이 다시 partial:false로 정산한다
-                // — 워터마크 델타라 이중 계산이 없다는 근거는 §11.9 참고).
+                // — 워터마크 델타라 이중 계산이 없다).
                 if let Some(tokens) = tokens.clone() {
                     self.emit_turn_usage(session_id, tokens, true);
                 }
@@ -275,7 +275,7 @@ impl NotificationHub {
                 // 게이트가 알림을 억제해도, 그 턴이 쓴 토큰만은 유실되지 않는다
                 // (이 게이트 때문에 그 턴의 running==0 Stop이 다시는 오지 않는다:
                 // 서브 완료 후 claude가 task-notification을 새 프롬프트로 주입해
-                // 새 턴을 열어버린다 — docs/session-analytics-design.md §9.1).
+                // 새 턴을 열어버린다).
                 if let Some(tokens) = tokens.clone() {
                     self.emit_turn_usage(session_id, tokens, false);
                 }

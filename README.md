@@ -85,8 +85,7 @@ DMG를 열어 `agent-office.app`을 **응용 프로그램** 폴더로 끌어다 
 
 - [docs/guide.md](docs/guide.md) — **사용 안내**. 주요 기능, Claude/Codex 연동, 사용 팁, 빌드·테스트·환경변수
 - [docs/macos-signing.md](docs/macos-signing.md) — macOS 코드 서명과 권한 프롬프트가 반복되는 이유
-- [docs/cli-control-design.md](docs/cli-control-design.md) — `agent-office ctl`로 앱을 외부에서 조종하기
-- [docs/README.md](docs/README.md) — 전체 문서 인덱스
+- [docs/README.md](docs/README.md) — 코드 지도
 
 ## 라이선스
 

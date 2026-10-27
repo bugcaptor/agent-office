@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { openTaskChat, taskChatBlockedReason, taskChatErrorText, useTaskChatStore } from "./taskChatStore";
 
 /**
- * 태스크 대화 열기(docs/task-chat-design.md §대화 열기). 막힘 사유·열기 오류는 `hint`로 돌려주고 버튼 아래 문구로 보인다.
+ * 태스크 대화 열기. 막힘 사유·열기 오류는 `hint`로 돌려주고 버튼 아래 문구로 보인다.
  * 열리면 `onOpened`(팝업 닫기)를 부른다. 기다리는 사이 다른 팝업으로 옮겼을 수 있으므로 연 태스크 id를 넘긴다. 실패하면 팝업을 열어 두어 오류를 볼 수 있게 한다.
  */
 export function useTaskChatButton(taskId: string | undefined, onOpened: (taskId: string) => void) {

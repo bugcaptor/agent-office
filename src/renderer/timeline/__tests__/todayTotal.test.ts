@@ -1,8 +1,7 @@
 // src/renderer/timeline/__tests__/todayTotal.test.ts
 //
 // Pure-function tests for the "오늘 일한 시간" headline helpers. No
-// React/store/IPC involved — see todayTotal.ts and the design doc
-// docs/superpowers/specs/2026-07-11-today-worked-total-design.md.
+// React/store/IPC involved — see todayTotal.ts.
 import { describe, expect, it } from "vitest";
 import { msUntilNextLocalMidnight, startOfLocalDay, sumWorkedSince } from "../todayTotal";
 import type { SessionTurnRecord } from "@shared/types";

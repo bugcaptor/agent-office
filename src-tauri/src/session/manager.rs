@@ -49,14 +49,14 @@ pub(super) struct Session {
     /// 기록한다. 외부 attach·입양·tmux 호스팅은 반환 receipt를 증명할 수 없으므로
     /// None으로 남겨 자동 반환 확인 capability를 광고하지 않는다.
     shell_path: Mutex<Option<String>>,
-    /// 세션 로그 기록 핸들(docs/session-log-design.md). 저장소 루트가 없거나
+    /// 세션 로그 기록 핸들. 저장소 루트가 없거나
     /// 파일을 못 열면 None -- 로그는 부가 기능이라 세션 동작을 막지 않는다.
     pub(super) log: Option<Arc<crate::session_log::SessionLogHandle>>,
     /// 현재 알려진 터미널 크기. resize()가 갱신 -- 핸드오프 시 Handoff
     /// 메시지에 실어 데몬에 보내고, 입양 응답의 AdoptedSessionInfo로
     /// 프론트에 되돌려줘 터미널 크기를 맞추는 데 쓴다.
     pub(super) size: Mutex<(u16, u16)>, // (cols, rows)
-    /// 세션 핸드오프(§핵심 3, 4). true면 on_exit/dispose가 즉시 return —
+    /// 세션 핸드오프. true면 on_exit/dispose가 즉시 return —
     /// 이 세션의 실제 수명은 sessiond가 넘겨받았다(또는 넘겨받는 중이다).
     /// 필드 자체는 크로스플랫폼으로 둬 cfg 분기를 최소화한다(Windows/Fake는
     /// 항상 false로 남는 no-op).
@@ -69,7 +69,7 @@ pub(super) struct Session {
     pub(super) reader_interrupt: Mutex<Option<crate::session::poll_reader::ReaderInterrupt>>,
     #[cfg(unix)]
     pub(super) handoff: Mutex<Option<crate::session::pty_factory::HandoffInfo>>,
-    /// 입양된 세션 한정(§핵심 4의 AdoptedReader 정지 게이트) -- 재핸드오프
+    /// 입양된 세션 한정(AdoptedReader 정지 게이트) -- 재핸드오프
     /// 인터럽트 직전 true로 세팅해야 EofWaiter가 오발화하지 않는다.
     /// create() 경로(RealWaiter가 독립적으로 exit 판정)는 항상 None. 타입
     /// 자체는 크로스플랫폼이라 cfg 분기가 필요 없다(항상 컴파일되고, 비unix는
@@ -95,7 +95,7 @@ pub struct SessionManager {
     /// 관찰이 꺼진 세션에 물릴 사무실 shim 권한 전용 설정 파일. sid를 주면 그
     /// 파일 경로를 돌려준다. 승인할 shim이 없으면 None.
     get_office_settings: Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>,
-    /// 태스크 대화 세션(docs/task-chat-design.md §권한)에 물릴 훅 없는 설정 파일. sid를 주면
+    /// 태스크 대화 세션에 물릴 훅 없는 설정 파일. sid를 주면
     /// shim 실행·세션 로그·작업자 보고 읽기만 사전 승인한 파일 경로를 돌려준다.
     get_task_chat_settings: Arc<dyn Fn(&str) -> Option<std::path::PathBuf> + Send + Sync>,
     /// pub(super): 핸드오프/입양 형제 모듈이 세션 제거 시 레지스트리도 함께 정리한다.
@@ -114,17 +114,17 @@ pub struct SessionManager {
     sinks: Mutex<HashMap<AgentId, Arc<OutputSink>>>,
     shell_resolver:
         Arc<dyn Fn(Option<&str>, &[CommandWrapperSpec]) -> shells::ResolvedShell + Send + Sync>,
-    /// 세션 핸드오프(unix 전용)와 `AGENT_OFFICE_APP_DATA` env 주입(§핵심 5)에
+    /// 세션 핸드오프(unix 전용)와 `AGENT_OFFICE_APP_DATA` env 주입에
     /// 쓰는 앱 데이터 디렉터리. 프로덕션은 `lib.rs`가 `with_app_data_dir`로
     /// 채운다 — 미설정(None)이면 `handoff_all`/`adopt_detached`는 no-op(0/빈
     /// 벡터)이고 env 주입도 생략된다(기존 테스트가 앱 데이터 경로 없이도
     /// 그대로 통과해야 하므로 기본값은 None).
     /// pub(super): 핸드오프/입양 형제 모듈이 소켓/로그 경로 계산에 직접 읽는다.
     pub(super) app_data_dir: Option<std::path::PathBuf>,
-    /// `office-task` shim 경로와 shim이 실행할 앱 바이너리(docs/work-panels-design.md §업무 수신함).
+    /// `office-task` shim 경로와 shim이 실행할 앱 바이너리.
     /// None이면 shim과 `AGENT_OFFICE_TASK`를 생략한다 -- 테스트 기본값이다.
     task_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
-    /// `office-md` shim 경로와 실행할 앱 바이너리(docs/doc-view-design.md §구성 4).
+    /// `office-md` shim 경로와 실행할 앱 바이너리.
     /// None이면 shim·PATH·`AGENT_OFFICE_MD`·문서 뷰어 안내문을 생략한다 -- 테스트 기본값이다.
     md_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
     /// 업무 패널 설정(`workPanelsEnabled`) 조회. 켜졌을 때만 공통 안내문과 Codex
@@ -180,7 +180,7 @@ impl SessionManager {
         }
     }
 
-    /// 세션 로그 기록을 켠다(docs/session-log-design.md). `lib.rs`가 앱 데이터
+    /// 세션 로그 기록을 켠다. `lib.rs`가 앱 데이터
     /// 디렉터리를 알게 된 시점에 호출한다. `enabled`는 설정 토글과 공유하는
     /// 원자 플래그 -- 세션이 도는 중에 꺼도 즉시 반영된다.
     pub fn with_session_log(
@@ -193,8 +193,8 @@ impl SessionManager {
         self
     }
 
-    /// 세션 로그가 Claude 자체 JSONL 전사를 찾아 붙일 수 있게 조회기를 준다
-    /// (docs/session-log-design.md §3.4). 없으면 대체 화면 안의 대화는 로그에
+    /// 세션 로그가 Claude 자체 JSONL 전사를 찾아 붙일 수 있게 조회기를 준다.
+    /// 없으면 대체 화면 안의 대화는 로그에
     /// 남지 않는다.
     pub fn with_agent_session_lookup(
         mut self,
@@ -286,7 +286,7 @@ impl SessionManager {
     /// temp+rename 멱등 기록이라 같은 sid로 다시 불러도 안전하다). 어댑터
     /// 준비 실패는 로그만 남고 비관찰로 강등된다(ObserverRuntime 계약).
     ///
-    /// `task_chat`(docs/task-chat-design.md §관찰을 끈다): 관찰 훅·Pi/Kilo/agy 배선·
+    /// `task_chat`: 관찰 훅·Pi/Kilo/agy 배선·
     /// `AGENT_OFFICE_HOOK_URL`·`AGENT_OFFICE_AGENT_ID`·persona를 빼고, 사무실 권한 설정 대신
     /// 대화용 설정을 붙인다. shim·PATH·공통 안내문은 그대로다.
     pub(super) fn prepare_session_plan(
@@ -335,7 +335,7 @@ impl SessionManager {
             }
         }
 
-        // Kilo Code CLI(kilo/kilocode, docs/kilo-support-design.md): 플러그인
+        // Kilo Code CLI(kilo/kilocode): 플러그인
         // 설정 JSON을 `KILO_CONFIG` env로 가리킨다(전역 `~/.config/kilo/kilo.jsonc`와
         // 병합, 스파이크 실측). 사용자가 이미 자기 `KILO_CONFIG`를 쓰고 있으면
         // (skip_if_env_set) 덮어쓰지 않고 관찰만 포기한다 — pi의 파일-부재 강등과
@@ -372,9 +372,9 @@ impl SessionManager {
             }
         }
 
-        // Antigravity CLI(agy, docs/antigravity-support-design.md): 전역
+        // Antigravity CLI(agy): 전역
         // hooks.json 병합(부팅 시 1회, lib.rs)이 관찰의 전부다 -- agy() 래퍼는
-        // prefix 인자가 없다. 유일한 역할은 §4 스파이크 실측(workspacePaths가
+        // prefix 인자가 없다. 유일한 역할은 스파이크 실측(workspacePaths가
         // 빈 배열로 올 수 있음)의 cwd fallback으로, 호출 한 번에만 붙는 앞자리
         // 대입으로 `$PWD`를 `AGENT_OFFICE_AGY_CWD`에 실어 보내는 것 -- hook.sh가
         // 이 값을 `X-Agent-Office-Cwd` **헤더**로 서버 POST에 얹는다(쿼리
@@ -430,8 +430,8 @@ impl SessionManager {
             }
         }
 
-        // 업무 수신함 shim(docs/work-panels-design.md §업무 수신함). OS temp는 청소될 수 있어 매번 쓴다.
-        // 문서 뷰어 shim(docs/doc-view-design.md §구성 4)도 같은 방식으로 쓴다.
+        // 업무 수신함 shim. OS temp는 청소될 수 있어 매번 쓴다.
+        // 문서 뷰어 shim도 같은 방식으로 쓴다.
         let ensure = |cli: &Option<(std::path::PathBuf, std::path::PathBuf)>, subcommand: &str| {
             cli.as_ref().and_then(|(shim, exe)| {
                 crate::work_inbox_cli::ensure_shim(shim, exe, subcommand)
@@ -513,7 +513,7 @@ impl SessionManager {
         // Codex 기본 workspace-write 샌드박스는 작업 폴더 밖 쓰기를 막는다. 안내문을
         // 실은 세션에서는 수신함을, 문서 뷰어를 실은 세션에서는 캐시(HTML·열기 요청)를
         // 쓰기 허용 경로에 더한다.
-        // 대화 세션은 질의응답용이라 아무것도 더하지 않는다(docs/task-chat-design.md §권한).
+        // 대화 세션은 질의응답용이라 아무것도 더하지 않는다.
         let writable_roots: Vec<&std::path::Path> = [
             work_inbox.as_deref().filter(|_| office_enabled),
             doc_view_cache.as_deref().filter(|_| md_shim.is_some()),
@@ -544,7 +544,7 @@ impl SessionManager {
         if let Some(url) = observer_url {
             env.push(("AGENT_OFFICE_HOOK_URL".into(), url));
         }
-        // §핵심 5: 재시작 후 입양된 세션의 훅이 스폰 시점의(죽은) 포트를
+        // 재시작 후 입양된 세션의 훅이 스폰 시점의(죽은) 포트를
         // 때리는 문제 완화 -- forwarder가 이 경로의 observer-port 파일을
         // 읽어 재시도할 수 있게 셸 env에 앱 데이터 디렉터리를 실어 둔다.
         if let Some(dir) = &self.app_data_dir {
@@ -553,7 +553,7 @@ impl SessionManager {
                 dir.to_string_lossy().into_owned(),
             ));
         }
-        // 업무 수신함(docs/work-panels-design.md §업무 수신함): 업무 패널 설정과 무관하게 싣는다.
+        // 업무 수신함: 업무 패널 설정과 무관하게 싣는다.
         // 수신함 규약은 패널이 꺼져 있어도 유효하다. 대화 세션은 `office-task`로 만든 업무가
         // 가짜 담당으로 들어가지 않게 agentId를 싣지 않는다(미배정).
         if !task_chat {
@@ -568,7 +568,7 @@ impl SessionManager {
         if let Some(shim) = &task_shim {
             env.push(("AGENT_OFFICE_TASK".into(), shim.to_string_lossy().into_owned()));
         }
-        // 문서 뷰어(docs/doc-view-design.md §구성 4): 사람이 터미널에서 `office-md`로 쓰게
+        // 문서 뷰어: 사람이 터미널에서 `office-md`로 쓰게
         // shim 폴더를 PATH 앞에 붙인다. 셸 rc가 PATH를 덮어쓸 수 있으므로 절대 경로도 싣는다.
         if let Some(shim) = &md_shim {
             env.push(("AGENT_OFFICE_MD".into(), shim.to_string_lossy().into_owned()));
@@ -761,14 +761,13 @@ impl SessionManager {
     }
 
     /// spawn 이후 배선부 -- 세션 등록, sink 이어받기, reader/pump/wait 3스레드
-    /// 기동, Running CAS(§핵심 4: "create_with_profile의 spawn 이후 배선부를
-    /// install_session으로 추출해 create/adopt가 공유"). `create_with_profile`과
+    /// 기동, Running CAS. create/adopt가
+    /// 공유한다. `create_with_profile`과
     /// `adopt_detached` 둘 다 이 메서드로 수렴한다 -- 상태 머신·sink 재사용
     /// 로직은 완전히 동일하게 유지된다.
     ///
     /// `initial_output`: 데몬이 보관해 둔 미전달 출력(입양 전용). reader
     /// 스레드가 시작되기 *전에* pump 채널로 먼저 흘려보내 순서를 보장한다
-    /// (§핵심 4: "pump mpsc에 첫 ReaderMsg::Data로 주입").
     ///
     /// pub(super): handoff_v1.rs의 adopt_one이
     /// 입양 재배선에 재사용한다.
@@ -796,7 +795,7 @@ impl SessionManager {
         // 입양된 세션에서 오판하지 않도록 아는 값을 우선한다.
         #[cfg(unix)]
         let watch_shell_pgid = spawned.handoff.as_ref().and_then(|h| h.pgid);
-        // 세션 로그 기록 시작(§3.1). 같은 sessionId의 파일이 이미 있으면
+        // 세션 로그 기록 시작. 같은 sessionId의 파일이 이미 있으면
         // 이어 쓴다 -- 앱 재시작 후 입양된 세션이 한 파일로 이어진다.
         //
         // 설정이 꺼져 있으면 핸들 자체를 만들지 않는다: 껐는데도 헤더(작업 폴더
@@ -849,7 +848,7 @@ impl SessionManager {
             // 리더 스레드보다 먼저 보내야 한다 -- unbounded 채널은 send() 호출
             // 순서를 그대로 보존하므로, 아래 스레드 스폰보다 앞서 이 send가
             // happens-before로 확정되면 순서가 깨지지 않는다.
-            // §#49: 복원 스냅샷은 스트림 바이트가 아니므로 Restore로 보내 offset
+            // #49: 복원 스냅샷은 스트림 바이트가 아니므로 Restore로 보내 offset
             // 회계에서 제외한다(bytes=0 청크로 방출됨). Data로 보내면 offset이
             // 스냅샷 길이만큼 부풀어 그만큼 유실된다(이 버그의 재발).
             let _ = tx.send(ReaderMsg::Restore(bytes));
@@ -893,7 +892,7 @@ impl SessionManager {
         // 4) 셸 작업중 감시 스레드(kbm #2f9, unix + 앱이 마스터 fd를 쥔 세션 한정).
         // 포그라운드 프로세스 그룹을 못 보는 컨트롤(브로커 데몬 소유·Fake)에서는
         // 아예 띄우지 않는다 -- 감시가 없으면 기존 동작 그대로다. 태스크 대화 세션도
-        // 캐릭터 상태에 섞이지 않게 띄우지 않는다(docs/task-chat-design.md §관찰을 끈다).
+        // 캐릭터 상태에 섞이지 않게 띄우지 않는다.
         #[cfg(unix)]
         if !is_task_chat_id(&agent_id) && watch_control.foreground_sample().is_some() {
             let weak = Arc::downgrade(&session);
@@ -1037,7 +1036,7 @@ impl SessionManager {
                     eprintln!("agent-office: resize failed for {}: {error}", s.session_id);
                 }
                 *s.size.lock() = (cols, rows);
-                // 전사 필터의 라이브 영역은 화면 높이에서 나온다(§3.3).
+                // 전사 필터의 라이브 영역은 화면 높이에서 나온다.
                 if let Some(log) = s.log.as_ref() {
                     log.resize(rows);
                 }
@@ -1046,7 +1045,7 @@ impl SessionManager {
     }
 
     /// 의도적 종료. 최종 Disposed 전이는 wait 스레드의 on_exit에서 확정.
-    /// 핸드오프된 세션(§핵심 3)은 즉시 return — kill/cleanup 금지. 그
+    /// 핸드오프된 세션은 즉시 return — kill/cleanup 금지. 그
     /// 세션의 실제 수명은 이제 sessiond가 책임진다.
     pub fn dispose(&self, agent_id: &str) {
         let _ = self.dispose_matching(agent_id, None);
@@ -1127,7 +1126,7 @@ impl SessionManager {
         // Keep the old PTY's final state event ordered with replacement by a
         // new PTY: a stale exit must not follow the new Running event.
         let _lifecycle = self.lifecycle.lock();
-        // 핸드오프된 세션(§핵심 3)은 즉시 return -- kill/cleanup/상태이벤트
+        // 핸드오프된 세션은 즉시 return -- kill/cleanup/상태이벤트
         // 금지. 실제로는 create()의 RealWaiter가 앱 프로세스 종료와 함께
         // 죽으므로 프로덕션에서 이 가드가 실행 도달하는 일은 드물지만(핸드오프
         // 직후 앱이 곧장 종료), dispose()와 대칭을 이루는 안전망이다.

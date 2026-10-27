@@ -4,7 +4,7 @@
  * 테마 배경색이 들어오는 순간 투명 창이 불투명한 사각형이 된다.
  */
 
-/* 신호등(docs/mascot-lights-design.md) strip이 붙으면서 세로 컬럼 배치로
+/* 신호등 strip이 붙으면서 세로 컬럼 배치로
    바뀌었다: [스프라이트 래퍼] 위, [strip] 아래. 창은 매번 컨텐츠 크기에
    정확히 맞춰 리사이즈되므로(layout.ts computeMascotLayout,
    MascotApp.tsx applyLayout — C9) 위→아래로 쌓기만 하면 하단중앙 앵커와
@@ -97,10 +97,10 @@
   }
 }
 
-/* ── 신호등 strip(docs/mascot-lights-design.md §6) ─────────────────────
+/* ── 신호등 strip ─────────────────────
    치수는 protocol.ts의 LIGHT_TILE_W(54)/LIGHT_TILE_H(48)/LIGHT_AVATAR_PX(28)/
    LIGHT_GAP(6)/LIGHT_STRIP_PAD(6)와 맞춘다. 배경은 완전 투명 — 칸 사이 틈이
-   데스크톱 클릭을 삼키지만 면적이 작아 수용한다(설계 §10). 색은 테마 토큰을
+   데스크톱 클릭을 삼키지만 면적이 작아 수용한다. 색은 테마 토큰을
    쓰지 않는다(파일 헤더 원칙 — 이 창은 전역 스타일을 로드하지 않는다). */
 .mascot-lights {
   flex: 0 0 auto;
@@ -249,7 +249,7 @@
 
 /* clickAgentId===null인 칸(소속 없음/클릭 no-op) — 손가락 커서를 보이면
    눌러도 반응이 없어 사용자를 헷갈리게 한다(리뷰 E3). off 상태라도 대표가
-   있으면(§3 대표 선정 ④) 여전히 클릭 가능하므로, 이 클래스는 색상 상태가
+   있으면 여전히 클릭 가능하므로, 이 클래스는 색상 상태가
    아니라 clickAgentId 유무로만 붙는다. */
 .mascot-light-noclick {
   cursor: default;

@@ -1,7 +1,7 @@
 // src-tauri/src/usage/claude.rs
 //
 // Claude Code 사용량: `<claude_root>/.claude.json`의 `cachedUsageUtilization`
-// 파싱(docs/usage-limits-design.md §2). 파일이 크고(100KB+) CLI가 세션 중
+// 파싱. 파일이 크고(100KB+) CLI가 세션 중
 // 자주 rewrite하므로, 파싱 실패/키 부재는 모두 조용히 None을 돌려 프런트
 // 폴링이 다음 기회에 재시도하게 한다(이전 값은 프런트가 유지).
 //
@@ -52,7 +52,7 @@ fn parse_usage(root: &Value) -> Option<ProviderUsage> {
 /// 항목이 하나도 없으면) None을 돌려 폴백을 유도한다.
 ///
 /// pub(super): claude_live의 실시간 응답도 루트가 같은 모양이라 이 파서를
-/// 그대로 재사용한다(docs/claude-usage-live-fetch-design.md §2.1).
+/// 그대로 재사용한다.
 pub(super) fn parse_limits(util: &Value) -> Option<Vec<UsageWindow>> {
     let arr = util.get("limits")?.as_array()?;
     let mut out = Vec::new();

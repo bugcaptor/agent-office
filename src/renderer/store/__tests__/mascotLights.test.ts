@@ -1,4 +1,4 @@
-// computeMascotLights(docs/mascot-lights-design.md §3) — 신호등 칸 집계.
+// computeMascotLights — 신호등 칸 집계.
 import { describe, expect, it } from "vitest";
 import { computeMascotLights, type ComputeMascotLightsInput } from "../mascotLights";
 import type { TurnPhase } from "../../timeline/turnReducer";
@@ -390,7 +390,7 @@ describe("computeMascotLights", () => {
         });
       });
 
-      it("칸의 얼굴(avatar)은 대표 에이전트의 portraitUpdatedAt도 나른다(§6 개정)", () => {
+      it("칸의 얼굴(avatar)은 대표 에이전트의 portraitUpdatedAt도 나른다", () => {
         const lights = computeMascotLights(
           base({
             mode: "projects",
@@ -472,8 +472,8 @@ describe("computeMascotLights", () => {
     expect(lights.map((l) => l.id)).toEqual(["a"]);
   });
 
-  // §7 개정 — mascotLightsLabel(칸에 표시할 텍스트) 선택과 tooltip 조립.
-  describe("labelMode(§7 개정)", () => {
+  // mascotLightsLabel(칸에 표시할 텍스트) 선택과 tooltip 조립.
+  describe("labelMode", () => {
     const fullAgent = {
       name: "철수",
       cwd: "/dev/proj-a",
@@ -572,7 +572,7 @@ describe("computeMascotLights", () => {
         expect(lights[0].tooltip).toBe("철수 · proj-a · 테스트 작성");
       });
 
-      // 신규 — projecttask(§7 확장): label=프로젝트명, sublabel=작업명.
+      // 신규 — projecttask: label=프로젝트명, sublabel=작업명.
       it("projecttask는 label에 프로젝트명, sublabel에 작업명을 싣는다", () => {
         const lights = computeMascotLights(
           base({
@@ -736,7 +736,7 @@ describe("computeMascotLights", () => {
         expect(lights[0].tooltip).toBe("proj");
       });
 
-      // 신규 — projecttask(§7 확장): label=폴더 basename, sublabel=대표의 작업명.
+      // 신규 — projecttask: label=폴더 basename, sublabel=대표의 작업명.
       it("projecttask는 label에 폴더명, sublabel에 대표 에이전트의 작업명을 싣는다", () => {
         const lights = computeMascotLights(
           base({

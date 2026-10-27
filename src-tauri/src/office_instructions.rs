@@ -1,5 +1,5 @@
-//! 모든 에이전트 세션에 덧붙이는 사무실 공통 안내문과 그 배선 조각
-//! (docs/work-panels-design.md §업무 수신함). CLI별 스킬 대신 짧은 안내문
+//! 모든 에이전트 세션에 덧붙이는 사무실 공통 안내문과 그 배선 조각.
+//! CLI별 스킬 대신 짧은 안내문
 //! 하나를 persona 뒤에 붙여 시스템 프롬프트에 **덧붙인다**.
 
 use std::path::{Path, PathBuf};
@@ -33,7 +33,7 @@ EOF
     )
 }
 
-/// 모든 세션에 덧붙이는 `office-md` 사용 안내(docs/doc-view-design.md §구성 4). 업무 패널
+/// 모든 세션에 덧붙이는 `office-md` 사용 안내. 업무 패널
 /// 설정과 무관하다. 사용자가 요청할 때만 띄우게 한다.
 pub fn doc_view_instructions(shim: &Path) -> String {
     let cli = shim.display();
@@ -76,7 +76,7 @@ pub fn permissions_fragment(shims: &[PathBuf]) -> Option<serde_json::Value> {
     Some(serde_json::json!({ "permissions": { "allow": allow } }))
 }
 
-/// 태스크 대화 세션(docs/task-chat-design.md §권한)의 `--settings` 조각. 훅은 없고 shim 실행과
+/// 태스크 대화 세션의 `--settings` 조각. 훅은 없고 shim 실행과
 /// `read_dirs`(세션 로그·작업자 보고 폴더) 아래 읽기만 사전 승인한다. 쓰기 도구는 넣지 않는다.
 pub fn task_chat_permissions_fragment(shims: &[PathBuf], read_dirs: &[PathBuf]) -> Option<serde_json::Value> {
     let allow: Vec<String> = shims

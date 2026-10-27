@@ -40,7 +40,7 @@ export type ExternalEditorApp = "system" | "vscode";
 /** 파일 목록 스캔 백엔드 — Rust `FileIndexBackend` 미러. 기본 walker. */
 export type FileIndexBackend = "walker" | "everything";
 
-/** 마스코트 신호등(docs/mascot-lights-design.md) 대상 선택 모드 —
+/** 마스코트 신호등 대상 선택 모드 —
  * Rust `MascotLightsMode` 미러. 기본 off. */
 export type MascotLightsMode = "off" | "agents" | "projects";
 
@@ -137,7 +137,7 @@ export interface AppSettings {
   /** 캐릭터가 작업 중일 때 시스템 유휴 잠자기를 막을지(이슈 #68). 디스플레이
    * 잠자기는 막지 않는다(화면은 꺼져도 에이전트는 계속 돈다). 기본 false. */
   keepAwakeEnabled: boolean;
-  /** 터미널 세션 로그를 파일로 상시 기록할지(docs/session-log-design.md).
+  /** 터미널 세션 로그를 파일로 상시 기록할지.
    * 나중에 회고하려면 그때 이미 켜져 있었어야 하므로 기본 true(opt-out).
    * 보존은 30일·2GB로 스스로 제한한다. */
   sessionLogEnabled: boolean;
@@ -166,7 +166,7 @@ export interface AppSettings {
    * 에이전트에 `project`)은 렌더러가 `auto`로 폴백한다. 기본 "auto". */
   mascotLightsLabel: MascotLightsLabel;
   /** 터미널 오버레이 filled 모드(이슈 #69)에서 패널 우측 아래에 반투명 LLM
-   * 사용량 플로트(`UsageFloat`, docs/usage-design.md §13)를 띄울지. 꺼도
+   * 사용량 플로트(`UsageFloat`)를 띄울지. 꺼도
    * 하단바(BottomBar)의 사용량 뱃지는 그대로 보인다. 기존 동작 유지가
    * 기본이라 true(opt-out). */
   usageFloatEnabled: boolean;

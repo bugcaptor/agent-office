@@ -18,7 +18,7 @@ fn powershell_encoded_command(script: &str) -> String {
 /// 훅 URL을 명령에 박아 넣지 않는 것이 핵심이다: 앱 바이너리 forwarder를 경유하면
 /// forwarder가 실행 시점에 세션 env의 `AGENT_OFFICE_HOOK_URL`을 읽고, 연결이
 /// 거부되면 `AGENT_OFFICE_APP_DATA/observer-port` 파일로 1회 재시도한다
-/// (docs/session-handoff-design.md §핵심 5, 이슈 #30). URL을 명령에 박으면
+/// (이슈 #30). URL을 명령에 박으면
 /// 재시작 후 입양된 세션이 죽은(스폰 시점) 포트를 계속 때린다.
 ///
 /// codex는 `["codex"]`, claude는 `["claude", "<EventName>"]`로 위임한다.

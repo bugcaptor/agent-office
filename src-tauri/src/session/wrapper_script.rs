@@ -437,7 +437,7 @@ mod tests {
         );
     }
 
-    /// agy(§4 스파이크 실측: workspacePaths가 빈 배열로 올 수 있음) 대비 --
+    /// agy(스파이크 실측: workspacePaths가 빈 배열로 올 수 있음) 대비 --
     /// export_cwd_env가 있으면 원본 명령을 부르기 전에 호출 시점 `$PWD`를
     /// export한다.
     #[test]

@@ -1,6 +1,6 @@
 // src-tauri/src/session_log/study.rs
 //
-// 세션 로그 한 개 -> 회고·학습용 Markdown. docs/session-log-design.md §5 가 정본.
+// 세션 로그 한 개 -> 회고·학습용 Markdown.
 //
 // 요약기 파이프라인(summarizer/)을 `SummaryPurpose::Study`로 재사용한다.
 // 일기와 같은 구조이고 상한·타임아웃·모델만 다르다. 자동 생성은 없다 --

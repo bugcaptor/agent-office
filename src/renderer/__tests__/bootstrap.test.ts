@@ -73,10 +73,10 @@ vi.mock("../terminal/TerminalRegistry", () => ({
   terminalRegistry: {
     markAdopted: (...args: unknown[]) => markAdopted(...args),
     serializeAll: () => serializeAll(),
-    // 30초 업로더는 flush 후 직렬화하는 async 경로를 쓴다(§P1) — 목은 동일한
+    // 30초 업로더는 flush 후 직렬화하는 async 경로를 쓴다 — 목은 동일한
     // serializeAll 스텁을 Promise로 감싸 돌려준다.
     flushAndSerializeAll: () => Promise.resolve(serializeAll()),
-    // §#49: 업로더는 스냅샷과 함께 렌더러 누적 바이트를 실어 보낸다.
+    // #49: 업로더는 스냅샷과 함께 렌더러 누적 바이트를 실어 보낸다.
   },
 }));
 
@@ -395,7 +395,7 @@ describe("session-handoff adoption (bootApp)", () => {
     expect(session.rows).toBe(40);
     expect(markAdopted).toHaveBeenCalledWith(["a1"]);
 
-    // 세션 사용량(§11.2·11 리뷰 C): 입양 폴백도 noteUsageSession을 불러
+    // 세션 사용량(리뷰 C): 입양 폴백도 noteUsageSession을 불러
     // session-state 이벤트가 유실/지연돼도 사용량 스팬이 죽지 않는다.
     expect(useAppStore.getState().sessionUsage.a1?.sessionId).toBe("s-old");
   });

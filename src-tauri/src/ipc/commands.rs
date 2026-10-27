@@ -36,7 +36,7 @@ pub mod settings;
 // 요약기용 API 키 저장소(존재 여부만 렌더러로).
 mod api_keys;
 mod usage;
-// 문서 뷰어의 미리보기 버튼(docs/doc-view-design.md §구성 5).
+// 문서 뷰어의 미리보기 버튼.
 mod doc_view;
 
 // Re-imported here (in addition to each domain file's own scoped `use`s)

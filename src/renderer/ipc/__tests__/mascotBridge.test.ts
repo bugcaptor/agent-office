@@ -465,7 +465,7 @@ describe("installMascotBridge · 신호등(lights)", () => {
         tooltip: "테스터 · proj",
         state: "working",
         clickAgentId: "a1",
-        // 칸의 얼굴 = 대표 에이전트의 스프라이트 좌표(§6 개정).
+        // 칸의 얼굴 = 대표 에이전트의 스프라이트 좌표.
         avatar: {
           agentId: "a1",
           seed: "seed-a1",

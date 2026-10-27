@@ -3,8 +3,7 @@
 //
 // Hook tests for useAgentStats: baseline-snapshot-then-reload ordering, error
 // + retry, day-rollover reload, and no-load-while-closed. Only tauriApi is
-// mocked (bootstrap.test convention). See
-// docs/superpowers/specs/2026-07-11-per-agent-stats-design.md.
+// mocked (bootstrap.test convention).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { SessionTurnRecord } from "@shared/types";

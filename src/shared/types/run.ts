@@ -1,4 +1,4 @@
-// Project run recipes (docs/run-recipes-design.md). Rust serde mirrors live in
+// Project run recipes. Rust serde mirrors live in
 // src-tauri/src/types.rs.
 
 export type RunRecipeSource = "agent" | "user";

@@ -838,7 +838,7 @@ describe("modal kind 가드 (Task A2 회귀)", () => {
   });
 });
 
-describe("이 달의 우수사원 뱃지(docs/employee-of-the-month-design.md §6)", () => {
+describe("이 달의 우수사원 뱃지", () => {
   const initialAwardsState = useAwardsStore.getState();
 
   afterEach(() => {

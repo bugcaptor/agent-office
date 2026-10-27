@@ -39,7 +39,7 @@ export function blockedText(t: (key: string, options?: Record<string, unknown>) 
   return codeText(t, code, { title: busy ? workItemTitle(busy) : "" });
 }
 
-/** 루트 업무 상세 팝업의 자동 진행 영역(docs/auto-run-design.md). 선행 작업이 있거나 실행 기록이 있을 때만 보인다. */
+/** 루트 업무 상세 팝업의 자동 진행 영역. 선행 작업이 있거나 실행 기록이 있을 때만 보인다. */
 export function AutoRunSection({ root }: { root: WorkItem }) {
   const { t } = useTranslation("workpanels");
   const items = useWorkItemStore((s) => s.items);

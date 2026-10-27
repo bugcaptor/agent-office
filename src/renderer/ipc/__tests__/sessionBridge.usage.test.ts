@@ -1,6 +1,6 @@
 // src/renderer/ipc/__tests__/sessionBridge.usage.test.ts
 //
-// 세션 사용량(터미널 요약 바, docs/session-analytics-design.md §11) 배선
+// 세션 사용량(터미널 요약 바) 배선
 // 검증: onSessionState→noteUsageSession, onTurnUsage→applyTurnUsage.
 // turn-usage는 notification-new와 분리된 채널이다(결정 A) — 알림이 억제돼도
 // 사용량 배선은 별도로 동작해야 하므로, 알림(notif) 콜백과 사용량(usage)

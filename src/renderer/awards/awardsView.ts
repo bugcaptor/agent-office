@@ -11,7 +11,7 @@ import { t } from "@renderer/i18n";
 import type { AwardWinner } from "@shared/types";
 
 /** 작업시간을 "43시간 0분" 식으로. AnalyticsDialog의 `formatDuration`(반올림 소수)과
- * 달리 시상 화면은 사람이 읽는 시:분 단위를 요구한다(설계 §6). */
+ * 달리 시상 화면은 사람이 읽는 시:분 단위를 요구한다. */
 export function formatWorkedHm(ms: number): string {
   const totalMinutes = Math.max(0, Math.round(ms / 60_000));
   const hours = Math.floor(totalMinutes / 60);

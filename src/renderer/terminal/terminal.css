@@ -106,7 +106,7 @@
   border-color: var(--border-dark);
 }
 
-/* 태스크 대화 탭(docs/task-chat-design.md): 캐릭터 탭 뒤에 간격을 두고 묶는다.
+/* 태스크 대화 탭: 캐릭터 탭 뒤에 간격을 두고 묶는다.
  * 탭 자체는 div이고 안에 열기 버튼과 닫기(×) 버튼을 둔다(버튼 중첩 금지). */
 .agent-tab-chat {
   gap: 0;
@@ -290,7 +290,7 @@
   color: var(--text-dim);
 }
 
-/* 현재 세션 토큰·비용(이슈 #44 2단계, docs/session-analytics-design.md §11).
+/* 현재 세션 토큰·비용(이슈 #44 2단계).
  * margin-left:auto가 우측 정렬을 만든다 — line1/line2가 짧아도 항상 오른쪽 끝. */
 .terminal-summary-usage {
   margin-left: auto;

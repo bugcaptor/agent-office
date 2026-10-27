@@ -3,8 +3,6 @@
 // Domain slice: 이 달의 우수사원(Employee of the Month) 시상 기록.
 // See src/shared/types.ts for the frozen-contract overview.
 //
-// 설계: docs/employee-of-the-month-design.md
-//
 // 저장은 `<app_data>/awards/awards.json` 단일 문서(temp+rename 원자적 쓰기)이고,
 // 수상자 초상은 확정 시점 스냅샷으로 `<app_data>/awards/portraits/<YYYY-MM>.png`에
 // 복사된다. 캐릭터가 삭제되거나 이름·초상이 바뀌어도 과거 시상 화면이 온전해야

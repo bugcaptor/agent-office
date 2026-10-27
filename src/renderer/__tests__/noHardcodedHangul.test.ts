@@ -15,7 +15,7 @@
 //   - 화면에 나가는 문구      → `src/shared/i18n/locales/ko/*.json` (+ en)
 //   - AI에게 보내는 프롬프트  → `src/renderer/i18n/promptProfiles.ts`
 //   - 사용자 입력 판정 규칙   → `src/renderer/i18n/textRules.ts`
-// 셋 다 스캐너 제외 경로이거나 카탈로그다. 자세한 것은 `docs/i18n-design.md`.
+// 셋 다 스캐너 제외 경로이거나 카탈로그다.
 //
 // 베이스라인 갱신(이행 중에만 쓰던 것): `UPDATE_HANGUL_BASELINE=1 npx vitest run --dir src`
 import { readFileSync, writeFileSync } from "node:fs";

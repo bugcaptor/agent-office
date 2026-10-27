@@ -18,7 +18,7 @@ export interface LabelAnchor {
 }
 
 /**
- * "이 달의 우수사원"(docs/employee-of-the-month-design.md §7) 확정 수상자를
+ * "이 달의 우수사원" 확정 수상자를
  * 씬에 전달하는 최소 정보. 스냅샷 전체가 아니라 씬이 그리는 데 필요한 값만 —
  * 실제 초상 픽셀은 별도로 `tauriApi.loadAwardPortrait(month)`가 담당한다.
  */

@@ -44,7 +44,7 @@ export function PostItWidget() {
   const openArchive = useMemoStore((s) => s.openArchive);
 
   // 활성 탭이 바뀌면 그 캐릭터의 장으로 갈아탄다(이전 캐릭터 편집은 store가 flush).
-  // 태스크 대화 탭은 캐릭터가 아니라 메모 장이 없다(docs/task-chat-design.md).
+  // 태스크 대화 탭은 캐릭터가 아니라 메모 장이 없다.
   const open = visible && activeId !== null && !isTaskChatId(activeId);
   useEffect(() => {
     if (!open || activeId === null) return;

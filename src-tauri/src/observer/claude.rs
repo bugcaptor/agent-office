@@ -235,7 +235,7 @@ impl ClaudeAdapter {
     ///
     /// 예전에는 curl로 훅 URL을 명령에 박아 넣었는데, 그러면 재시작 후 sessiond로
     /// 입양된 세션이 죽은(스폰 시점) 포트를 계속 때리고 `|| true`로 조용히 실패했다
-    /// (docs/session-handoff-design.md §핵심 5, 이슈 #30). forwarder는 실행 시점에
+    /// (이슈 #30). forwarder는 실행 시점에
     /// 세션 env의 `AGENT_OFFICE_HOOK_URL`을 읽고, 연결이 거부되면
     /// `AGENT_OFFICE_APP_DATA/observer-port` 파일의 최신 포트로 1회 재시도한다.
     ///
@@ -268,8 +268,8 @@ impl ClaudeAdapter {
         };
         // SessionStart/SessionEnd는 map_hook에서 이벤트로 매핑되지 않지만(허브
         // 무영향), ingest의 리줌 ID 캡처가 body를 본다 — 프롬프트 한 번 없이
-        // 시작·종료한 세션도 리줌 ID를 남기기 위한 등록(리뷰 지적 반영,
-        // docs/claude-session-resume-design.md §2). 8개 이벤트 모두 forwarder
+        // 시작·종료한 세션도 리줌 ID를 남기기 위한 등록(리뷰 지적 반영).
+        // 8개 이벤트 모두 forwarder
         // 명령을 쓴다(위 hook_command 주석: 예전 silent 변형은 불필요).
         let mut settings = serde_json::json!({
             "hooks": {

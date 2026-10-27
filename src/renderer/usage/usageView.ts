@@ -1,9 +1,9 @@
 // src/renderer/usage/usageView.ts
 //
 // 구독 사용량(rate limit) 표시용 순수 함수 모음. 백엔드는 정규화된 원시
-// 스냅샷만 주고(docs/usage-design.md §3), "가장 절박한 윈도 선택",
+// 스냅샷만 주고, "가장 절박한 윈도 선택",
 // 임계 색상, 카운트다운·신선도 포맷 같은 해석·표시는 여기서 한다. React·스토어
-// 의존 없음 — 단위 테스트 대상(설계 §4).
+// 의존 없음 — 단위 테스트 대상.
 //
 // i18n: 표시 함수들은 **완성된 문장이 아니라 번역 키 설명자(TextKey)**를
 // 돌려준다. 문장을 여기서 만들어 버리면 언어를 바꿔도 안 바뀌고, 순수 함수
@@ -236,7 +236,7 @@ export function isStale(fetchedAtMs: number, now: number): boolean {
   return now - fetchedAtMs > STALE_THRESHOLD_MS;
 }
 
-// ── Claude 실시간 조회 진단 표시(설계 §7) ─────────────────────────────
+// ── Claude 실시간 조회 진단 표시 ─────────────────────────────
 //
 // 왜 필요한가: 실시간 조회가 실패하면 화면 숫자는 `~/.claude.json` 캐시
 // 미러로 조용히 강등되는데, 그 캐시는 Claude Code에서 `/usage`를 열 때만

@@ -1,6 +1,6 @@
 // src-tauri/src/session_log/mod.rs
 //
-// 세션 로그(상시 터미널 전사) 서브시스템. docs/session-log-design.md 가 정본.
+// 세션 로그(상시 터미널 전사) 서브시스템.
 //
 //   PTY reader → ReaderMsg::Data → output pump ─┬→ 배칭 → Channel → xterm
 //                                               └→ SessionLogHandle (여기)
@@ -12,7 +12,7 @@
 //
 // 두 번째 경로가 필요한 이유: Claude Code·Codex는 대체 화면에서 돌아 PTY
 // 전사에 대화가 남지 않는다. 대신 두 CLI가 스스로 남기는 JSONL 전사를 tail 해
-// 같은 파일에 끼워 넣는다(agent_transcript/, docs/session-log-design.md §3.4).
+// 같은 파일에 끼워 넣는다(agent_transcript/).
 //
 // 왜 전용 스레드인가: 파일 쓰기는 블로킹이다. output pump는 모든 세션 출력이
 // 지나는 async 태스크라 여기서 디스크를 기다리면 터미널 전체가 끊긴다
@@ -37,7 +37,7 @@ use store::SessionLogWriter;
 use transcript::TranscriptFilter;
 
 /// 출력이 이만큼 멎으면 라이브 영역에서 화면 한 장만 남기고 확정한다.
-/// (조용한 세션의 마지막 대화가 파일에 닿게 하는 경로 -- §3.6)
+/// (조용한 세션의 마지막 대화가 파일에 닿게 하는 경로)
 const IDLE_FLUSH: Duration = Duration::from_secs(3);
 /// 스레드 루프의 대기 단위. 유휴 판정 해상도를 정한다.
 const TICK: Duration = Duration::from_millis(500);

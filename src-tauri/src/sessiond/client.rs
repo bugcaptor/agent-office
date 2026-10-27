@@ -234,7 +234,7 @@ fn spawn_daemon(exe_path: &Path, socket_path: &Path, log_path: &Path) -> io::Res
 static DAEMON_SPAWN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// 데몬에 연결을 시도하고, 없으면 스폰 후 ~2초 백오프로 재시도한다
-/// (설계 문서 §핵심 3).
+///.
 pub fn connect_or_spawn(socket_path: &Path, exe_path: &Path, log_path: &Path) -> io::Result<Client> {
     if let Ok(client) = Client::connect(socket_path) {
         return Ok(client);

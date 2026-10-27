@@ -1,6 +1,6 @@
 // src-tauri/src/session_log/store.rs
 //
-// 세션 로그 파일 저장소. docs/session-log-design.md §4 가 정본.
+// 세션 로그 파일 저장소.
 //
 //   <app_data>/session-logs/v1/<agentId>/<YYYYMMDD-HHMMSS>-<sid8>.log
 //   <app_data>/session-logs/v1/study/<agentId>-<YYYYMMDD-HHMMSS>.md

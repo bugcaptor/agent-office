@@ -1,4 +1,4 @@
-// 상세·루트 팝업의 대화 버튼(docs/task-chat-design.md §대화 열기)과 열린 뒤 탭 줄의 대화 탭.
+// 상세·루트 팝업의 대화 버튼과 열린 뒤 탭 줄의 대화 탭.
 //   npm run gui:shot -- --scenario workpanels --script scripts/gui-steps/task-chat-buttons.mjs
 export default async ({ page, shot }) => {
   const dialog = page.getByRole("dialog");

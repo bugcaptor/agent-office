@@ -1,4 +1,4 @@
-// 자동 진행 루프(docs/auto-run-design.md). 루트 업무가 기다리는 선행 작업을 진행자 한 명이
+// 자동 진행 루프. 루트 업무가 기다리는 선행 작업을 진행자 한 명이
 // 차례로 진행한다. 태스크마다 새 세션으로 보내고, 턴이 끝나면 판단자(claude -p 이어지는
 // 세션)에게 next·followup·stop 중 하나를 받아 적용한다. 루프와 상태는 여기만 쥔다.
 import type { AgentProfile, AutoRun, AutoRunJudgeResult, AutoRunLogEntry, AutoRunPauseReason, WorkItem } from "@shared/types";

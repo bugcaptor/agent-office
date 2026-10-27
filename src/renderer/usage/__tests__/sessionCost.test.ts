@@ -68,7 +68,7 @@ describe("addTurn", () => {
     expect(t3.model).toBe("claude-opus-5");
   });
 
-  // 턴 중간 갱신(§11.9): PostToolUse가 낸 partial 사용량은 토큰·비용은 그대로
+  // 턴 중간 갱신: PostToolUse가 낸 partial 사용량은 토큰·비용은 그대로
   // 더하되 turns는 올리지 않는다 — 그 턴의 최종 Stop이
   // partial:false로 다시 잡히면서 그때 턴 하나로 센다.
   it("partial=true면 토큰·비용은 더하되 turns를 올리지 않는다", () => {
@@ -173,7 +173,7 @@ describe("aggregateSeed", () => {
     expect(aggregateSeed([], 1000)).toEqual({});
   });
 
-  // §11.9: partial:true인 usage 레코드(PostToolUse 중간 갱신)는 토큰은
+  // partial:true인 usage 레코드(PostToolUse 중간 갱신)는 토큰은
   // 더하되 turns는 안 올린다. partial 필드가 없는 과거 레코드는 false로
   // 취급해 turns를 올린다(하위호환).
   it("partial:true 레코드는 토큰만 더하고 turns는 안 올린다", () => {

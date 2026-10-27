@@ -60,7 +60,7 @@ export const TILE_PALETTE_KEYS = [
   "tableTop",
   "laptopLid",
   "laptopBody",
-  // "이 달의 우수사원" 오피스 연출(docs/employee-of-the-month-design.md §7).
+  // "이 달의 우수사원" 오피스 연출.
   "trophyCup", // 책상 위 트로피 컵/손잡이
   "trophyCupShine", // 트로피 광택 하이라이트
   "trophyBase", // 트로피 받침/기둥

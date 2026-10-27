@@ -1,6 +1,6 @@
 // src-tauri/src/usage/mod.rs
 //
-// 구독 사용량(rate limit) 스냅샷 조립. 설계: docs/usage-limits-design.md.
+// 구독 사용량(rate limit) 스냅샷 조립.
 // 기존 session-analytics 관례를 따라 백엔드는 정규화된 원시 스냅샷만 반환하고
 // 집계·해석·표시는 프런트가 한다. 두 소스(claude/codex)는 서로 독립적으로
 // 파싱되며, 실패한 소스는 해당 provider가 None일 뿐 조립 자체는 항상 성공한다
@@ -25,7 +25,7 @@ pub use codex_live::{CodexLiveOutcome, CodexLiveStatus};
 /// Claude 실시간 조회의 마지막 시도 결과. TS `LiveFetchOutcome` 미러
 /// (serde snake_case). 왜 표시값이 낡았는지를 UI가 사용자에게 설명하기 위한
 /// 진단값이다 — 실패해도 스냅샷은 파일 캐시로 정상 반환되므로 이 값은
-/// "표시 실패"가 아니라 "신선도의 이유"를 뜻한다(docs/usage-design.md §7).
+/// "표시 실패"가 아니라 "신선도의 이유"를 뜻한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum LiveFetchOutcome {
@@ -80,7 +80,7 @@ pub struct ClaudeLiveStatus {
     /// 마지막 시도에서 토큰을 읽어낸 출처. 토큰을 못 읽었으면 null.
     pub token_source: Option<TokenSource>,
     /// 사람이 읽을 진단 보조(예: "HTTP 500", "시간 초과"). **토큰·자격증명
-    /// 문자열은 절대 넣지 않는다**(설계 §6.2).
+    /// 문자열은 절대 넣지 않는다**.
     pub detail: Option<String>,
     /// 마지막 시도 시각(epoch ms). 스로틀에 막혀 건너뛴 폴링은 시도가 아니다.
     pub last_attempt_ms: Option<i64>,
@@ -174,8 +174,7 @@ pub fn load_usage_snapshot(claude_root: &Path, codex_root: &Path) -> UsageSnapsh
     }
 }
 
-/// 실시간 조회를 얹은 조립(이슈 #33, docs/claude-usage-live-fetch-design.md
-/// §3.2 · Codex는 kbm #2h8, docs/usage-design.md §8). 커맨드가 이것에
+/// 실시간 조회를 얹은 조립(Claude는 이슈 #33, Codex는 kbm #2h8). 커맨드가 이것에
 /// 위임한다. 동기 `load_usage_snapshot`(파일 캐시 미러)은 그대로 두고 그
 /// 결과의 claude·codex 필드를 각각 실시간 값으로 보강한다. 두 provider의
 /// 조회는 서로 독립이라 동시에 돌리고(join), 한쪽 실패가 다른 쪽을 막지
@@ -183,13 +182,13 @@ pub fn load_usage_snapshot(claude_root: &Path, codex_root: &Path) -> UsageSnapsh
 ///
 /// 흐름:
 /// 1. 파일 캐시 스냅샷을 먼저 읽는다(항상 성공, 실패 소스는 None).
-/// 2. 스로틀(§3.1)을 통과하면 토큰을 읽어 실시간 fetch를 시도한다. Mutex는
+/// 2. 스로틀을 통과하면 토큰을 읽어 실시간 fetch를 시도한다. Mutex는
 ///    판단·기록의 짧은 임계구역에서만 잡고 fetch await는 락 밖에서 한다.
 /// 3. claude 필드를 파일 캐시와 메모리 live 중 더 신선한 쪽으로 확정하되,
 ///    plan_label은 응답에 없으므로 파일 캐시 값을 접목한다.
 /// 4. 시도 결과(성공/실패 사유)를 `claude_live`에 실어 보낸다 — 실패는 여전히
-///    조용한 폴백이지만 "왜 값이 안 움직이는지"는 UI가 말할 수 있어야 한다
-///    (docs/usage-design.md §7). 스로틀에 막혀 이번 폴링이 시도조차 안 했으면
+///    조용한 폴백이지만 "왜 값이 안 움직이는지"는 UI가 말할 수 있어야 한다.
+///    스로틀에 막혀 이번 폴링이 시도조차 안 했으면
 ///    직전 시도의 결과가 그대로 유지돼 나간다.
 ///
 /// `claude_config_dir`은 자격증명(.credentials.json)·스코프 Keychain의 기준
@@ -338,7 +337,7 @@ fn detail_or(failure: &claude_live::LiveFailure) -> String {
 /// fresherProvider와 같은 규칙 — Claude Code가 방금 캐시를 갱신했다면 그쪽이
 /// 이길 수 있다). 동률·live 우선(이 기능의 취지). live가 이기면 plan_label을
 /// 파일 캐시에서 접목한다(Claude live 응답엔 plan_label이 없고, Codex는
-/// 있지만 없을 때를 대비해 같은 규칙을 쓴다). 설계 §3.2. 두 provider가
+/// 있지만 없을 때를 대비해 같은 규칙을 쓴다). 두 provider가
 /// 같은 규칙을 쓰므로 이름은 provider 중립이다.
 fn merge_provider(
     file: Option<ProviderUsage>,

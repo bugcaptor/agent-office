@@ -1,6 +1,6 @@
 // src/renderer/guiHarness/fakeApi.ts
 //
-// 헤드리스 GUI 하네스의 가짜 백엔드(docs/gui-harness-design.md). 하네스 서버의
+// 헤드리스 GUI 하네스의 가짜 백엔드. 하네스 서버의
 // Vite 플러그인이 `ipc/tauriApi.ts` import를 이 모듈로 바꿔 끼우므로 같은 이름
 // `tauriApi`를 내보낸다. 구현한 메서드는 `AgentOfficeApi` 시그니처로 타입 검사를
 // 받고, 구현하지 않은 메서드는 reject하면서 `log.unfaked`에 남긴다 — 화면이
@@ -162,7 +162,7 @@ const impl: Partial<AgentOfficeApi> = {
     }, 0);
     return { sessionId, state: "starting" };
   },
-  // 태스크 대화(docs/task-chat-design.md): 세션을 띄우고 첫 프롬프트를 넣은 것처럼 맥락 요약을 찍는다.
+  // 태스크 대화: 세션을 띄우고 첫 프롬프트를 넣은 것처럼 맥락 요약을 찍는다.
   async openTaskChat(request) {
     const agentId = `task-chat-${request.taskId}`;
     const sessionId = `s${sessionSeq++}`;

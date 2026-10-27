@@ -172,7 +172,7 @@ body {
 
 /* 기본 창 폭 800px(tauri.conf.json)에서 버튼들이 줄바꿈되지 않게 고정폭
  * 유지: 이 규칙이 없으면 flexbox 기본 shrink가 버튼 텍스트를 여러 줄로
- * 접어 바 전체가 깨진다(usage-limits-design.md §3 BottomBar 참고). 폭이
+ * 접어 바 전체가 깨진다. 폭이
  * 줄어들 때 흡수하는 쪽은 `.bottom-bar-status`(말줄임)와
  * `.usage-widget`(usage.css 미디어 쿼리)뿐이다.
  */
@@ -330,7 +330,7 @@ body {
   font-size: 0.78rem;
 }
 
-/* "이 달의 우수사원" 통산 수상 뱃지(docs/employee-of-the-month-design.md §6).
+/* "이 달의 우수사원" 통산 수상 뱃지.
    이름/역할 필드 바로 아래 — 0회면 컴포넌트가 렌더 자체를 안 한다. */
 .profile-award-badge {
   margin: calc(var(--unit) * -1) 0 0;

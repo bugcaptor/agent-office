@@ -1,4 +1,4 @@
-//! `agent-office task` 오프라인 서브커맨드(docs/work-panels-design.md §업무 수신함).
+//! `agent-office task` 오프라인 서브커맨드.
 //! GUI·tokio 없이 수신함에 파일 하나를 원자적으로 쓰거나(`--list`) 저장된 업무 목록을
 //! 읽는다. control 서버와 토큰이 필요 없어 CLI 제어가 꺼져 있어도 동작한다.
 
@@ -246,7 +246,7 @@ fn write_request(board: &Board, content: &str, now: chrono::DateTime<chrono::Utc
     write(&board.inbox, &name, content.as_bytes()).map(|_| ()).map_err(|e| fail(err, &format!("failed to write {}: {e}", board.inbox.display())))
 }
 
-/// 자동 진행 보고(docs/auto-run-design.md §보고). 수신함 요청이 아니라 `reports/<id>.md`
+/// 자동 진행 보고. 수신함 요청이 아니라 `reports/<id>.md`
 /// 하나를 덮어쓴다. 판단자가 그 턴에 쓰인 것만 읽는다.
 fn report(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, err: &mut dyn Write) -> i32 {
     let (id, text) = match args {

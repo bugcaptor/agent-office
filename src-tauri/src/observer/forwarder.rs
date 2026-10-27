@@ -44,7 +44,7 @@ pub fn run_forwarder(provider: &str, event: Option<&str>) -> i32 {
     let primary: Result<reqwest::Response, reqwest::Error> =
         runtime.block_on(post(&client, parsed_url.clone(), &session, provider, event, &body));
 
-    // §핵심 5(docs/session-handoff-design.md): 세션 env의 AGENT_OFFICE_HOOK_URL은
+    // 세션 env의 AGENT_OFFICE_HOOK_URL은
     // 스폰 시점 포트를 담는다 -- 재시작 후 입양된 세션은 죽은 포트를 친다.
     // 연결 자체가 안 됐을 때만(호스트가 살아있는데 4xx/5xx인 경우는 재시도
     // 대상이 아니다) 최신 포트 파일을 읽어 1회 재시도한다. 이 재시도가

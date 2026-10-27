@@ -58,7 +58,7 @@ agent-office ctl dispose reviewer
 agent-office ctl settings set typingSoundEnabled=false
 ```
 
-설계·위협모델·전체 명령은 [cli-control-design.md](cli-control-design.md)를 참고하세요.
+전체 명령은 `agent-office ctl help`로 봅니다.
 
 ## 사용 팁
 
@@ -68,7 +68,7 @@ agent-office ctl settings set typingSoundEnabled=false
 
 목록은 충돌·분기(diverged)·커밋·push·pull처럼 **조치할 것이 있는 저장소**, 조회 불가나 upstream 미설정처럼 **확인이 필요한 저장소**, **clean 저장소** 순입니다. 같은 그룹에서는 최근 작업한 저장소가 먼저 나옵니다. 행의 **OS 터미널로 열기**를 누르면 그 저장소의 최상위 폴더에서 외부 터미널이 열립니다. 새 탭 지원 범위는 아래 [외부 OS 터미널 열기](#외부-os-터미널-열기)와 같습니다.
 
-점검은 자동으로 `fetch`하지 않습니다. push/pull 상태는 마지막으로 로컬에 받아 둔 remote-tracking 정보 기준이므로, 원격 서버의 최신 상태가 필요하면 터미널에서 직접 `git fetch`한 뒤 다시 점검하세요. 자세한 동작 계약은 [repository-audit-design.md](repository-audit-design.md)를 참고하세요.
+점검은 자동으로 `fetch`하지 않습니다. push/pull 상태는 마지막으로 로컬에 받아 둔 remote-tracking 정보 기준이므로, 원격 서버의 최신 상태가 필요하면 터미널에서 직접 `git fetch`한 뒤 다시 점검하세요.
 
 ### 업무 수신함
 
@@ -92,11 +92,9 @@ agent-office ctl settings set typingSoundEnabled=false
 - 루트를 완료로 바꾸면 자동 진행도 끝납니다. 한 캐릭터는 끝나지 않은 자동 진행을 하나만 가지므로, 다른 플랜이 막히면 시작 버튼 옆 안내에 붙잡고 있는 플랜 이름과 **그 플랜 열기**가 보입니다.
 - **에이전트 관찰**이 켜져 있어야 하고, 판단자는 로컬 `claude` CLI 계정의 사용량을 씁니다. 루트의 업무 에이전트가 Claude면 그 모델로 판단합니다.
 
-설계는 [auto-run-design.md](auto-run-design.md)를 보세요.
-
 #### 태스크 대화·ID 복사
 
-카드를 눌러 연 팝업 머리의 ID 옆 ⧉ 버튼은 태스크 ID만 클립보드에 복사합니다. 에이전트에게 "태스크 `<ID>`를 봐 줘"처럼 가리킬 때 씁니다. 태스크가 어떤 상태인지 묻고 싶으면 팝업 아래쪽 **대화**(자동 진행 중이면 루트 팝업의 **현재 태스크에 대해 대화**)를 누르세요. 그 태스크의 본문·플랜·진행 기록·작업자 보고를 첫 프롬프트로 받은 새 CLI 세션이 터미널에 말풍선 탭으로 열립니다. 캐릭터와 상관없는 세션이라 자동 진행과 업무 상태를 건드리지 않고, 탭을 닫으면 세션도 끝납니다(동시에 4개까지). 설계는 [task-chat-design.md](task-chat-design.md)를 보세요.
+카드를 눌러 연 팝업 머리의 ID 옆 ⧉ 버튼은 태스크 ID만 클립보드에 복사합니다. 에이전트에게 "태스크 `<ID>`를 봐 줘"처럼 가리킬 때 씁니다. 태스크가 어떤 상태인지 묻고 싶으면 팝업 아래쪽 **대화**(자동 진행 중이면 루트 팝업의 **현재 태스크에 대해 대화**)를 누르세요. 그 태스크의 본문·플랜·진행 기록·작업자 보고를 첫 프롬프트로 받은 새 CLI 세션이 터미널에 말풍선 탭으로 열립니다. 캐릭터와 상관없는 세션이라 자동 진행과 업무 상태를 건드리지 않고, 탭을 닫으면 세션도 끝납니다(동시에 4개까지).
 
 #### 다른 프로그램에서 할 일 남기기
 
@@ -117,7 +115,7 @@ printf -- '---\nassignee: 하나\n---\n# 로그인 회귀 테스트 추가\n세�
 mv "$inbox/.$name.tmp" "$inbox/$name"
 ```
 
-업무 패널이 켜져 있으면 3초 안에 카드가 생기고 파일은 지워집니다. 형식이 틀렸거나 반영할 수 없는 파일(이미 있는 업무 id에 다른 내용, 없는 업무 완료)은 `work-inbox/rejected/`로 옮겨지고 옆의 `.error` 파일에 사유가 남습니다. 모르는 담당이나 없는 선행 작업은 빼고 카드를 만든 뒤 `work-inbox/warnings.log`에 한 줄 남깁니다. 자세한 규약은 [work-panels-design.md](work-panels-design.md#업무-수신함)를 보세요.
+업무 패널이 켜져 있으면 3초 안에 카드가 생기고 파일은 지워집니다. 형식이 틀렸거나 반영할 수 없는 파일(이미 있는 업무 id에 다른 내용, 없는 업무 완료)은 `work-inbox/rejected/`로 옮겨지고 옆의 `.error` 파일에 사유가 남습니다. 모르는 담당이나 없는 선행 작업은 빼고 카드를 만든 뒤 `work-inbox/warnings.log`에 한 줄 남깁니다.
 
 안내를 덧붙일 방법이 없는 CLI(현재 agy)는 앱이 세션에 넣어 주는 `AGENT_OFFICE_TASK`(명령 경로)만 받습니다. 프로젝트 `AGENTS.md`에 한 줄 적어 두면 같은 방식으로 쓸 수 있습니다.
 
@@ -165,13 +163,13 @@ macOS에서 iTerm을 선택하면 처음 사용할 때 자동화 권한을 요�
 
 ### 저장소 작업 규칙 — 정본
 
-- 장기 유지할 설계·명세는 `docs/`에 둔다. 이슈는 작업 과정, 위키는 포털로 사용한다.
+- 코드에서 알 수 있는 설계·명세 문서는 만들지 않는다. `docs/`에는 사용 안내, 운영 절차처럼 코드로 알 수 없는 것과 코드 길잡이([README.md](README.md))만 둔다. 작업 과정은 이슈에 남긴다.
 - 기본적으로 `main`에서 직접 작업하고 로컬 커밋한다. 별도 브랜치·워크트리·PR은 요청이 있을 때만 사용한다. 커밋 금지 등 개별 작업 지시가 있으면 그 지시를 우선한다.
 - 임의로 푸시하지 않는다.
 - 커밋 메시지는 한국어 한 줄로 간명하게 쓴다. AI를 공동저자로 넣지 않는다.
-- 화면 문자열은 하드코딩하지 않고 `src/shared/i18n/locales/`에 넣는다. 설계는 [i18n-design.md](i18n-design.md), 검사는 `noHardcodedHangul.test.ts`가 담당한다.
+- 화면 문자열은 하드코딩하지 않고 `src/shared/i18n/locales/`에 넣는다. 검사는 `noHardcodedHangul.test.ts`가 담당한다.
 - 검증은 `npx tsc --noEmit`, `npx vitest run --dir src`, `cargo test --manifest-path src-tauri/Cargo.toml`이다. vitest만으로는 공유 타입 사용처의 누락을 잡지 못하므로 타입 검사를 함께 한다.
-- UI 변경을 화면으로 확인할 때는 브라우저 확장이나 computer use 대신 `npm run gui:shot`(헤드리스 Chrome + 가짜 백엔드)을 먼저 쓴다. 클릭·입력 재현은 `--script`로 한다. 설계는 [gui-harness-design.md](gui-harness-design.md)에 있다.
+- UI 변경을 화면으로 확인할 때는 브라우저 확장이나 computer use 대신 `npm run gui:shot`(헤드리스 Chrome + 가짜 백엔드)을 먼저 쓴다. 클릭·입력 재현은 `--script`로 한다. 사용법은 `scripts/gui-shot.mjs` 머리 주석에 있다.
 - `AGENTS.md`·`CLAUDE.md`는 git 추적 제외인 로컬 안내 파일이다. 클론에서 읽어야 할 일반 규칙은 이 절에 둔다.
 
 ### 빌드 캐시 청소
@@ -241,7 +239,7 @@ npx tsc --noEmit                                       # 타입 검사
 
 테스트는 실패 처리, 상태 전이, 저장·IPC 형식, 동시성, 경계값처럼 실제 회귀를 잡는 동작을 검증합니다. 직접 만든 리터럴을 다시 확인하거나 구현의 상수·문구를 그대로 복사한 검사는 두지 않습니다. 같은 회귀를 이미 잡는 검사가 있으면 중복 검사를 줄입니다. 번역 키·보간 누락, 픽셀 데이터 규격, 색상 대비처럼 정적 데이터라도 사용자 동작에 영향을 주는 검사는 유지합니다.
 
-화면 확인은 `npm run gui:shot`으로 합니다. Tauri 빌드 없이 렌더러를 헤드리스 Chrome과 가짜 백엔드로 띄워 스크린샷을 남기고, `--script`로 클릭과 입력을 재현합니다. 사용법과 한계는 [gui-harness-design.md](gui-harness-design.md)에 있습니다.
+화면 확인은 `npm run gui:shot`으로 합니다. Tauri 빌드 없이 렌더러를 헤드리스 Chrome과 가짜 백엔드로 띄워 스크린샷을 남기고, `--script`로 클릭과 입력을 재현합니다. 사용법은 `scripts/gui-shot.mjs` 머리 주석에 있습니다. 가짜 백엔드라 Rust 동작과 실제 웹뷰(WKWebView·WebView2) 차이는 확인하지 못합니다.
 
 `src/shared/contract-fixtures/`는 Rust의 실제 serde 출력·입력과 비교합니다. `JSON.parse()` 결과에 TS 타입을 붙이는 것만으로는 타입 불일치를 검증할 수 없습니다. TS·Rust 미러 타입은 함께 검토하고, 프런트 사용처의 누락은 `npm run typecheck`로 확인합니다.
 

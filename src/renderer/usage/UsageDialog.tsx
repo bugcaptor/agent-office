@@ -8,7 +8,7 @@
 // 흐리게가 아니라 provider 블록 자체가 사라진다(kbm #2j4,
 // usageView.isProviderGone) — 뱃지와 같은 판정을 쓴다. 셋 다 사라지면 안내
 // 문구 한 줄만 남는다.
-// 설계: docs/usage-design.md §3. 폴링·스토어 갱신은 UsageWidget 소관.
+// 폴링·스토어 갱신은 UsageWidget 소관.
 //
 // 문구는 usageView가 키(TextKey)로만 돌려주므로 여기서 `renderText`로 푼다.
 import { useEffect, useState, type ReactNode } from "react";

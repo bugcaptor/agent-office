@@ -2,7 +2,7 @@
 //
 // 마스코트 창(이슈 #72)의 유일한 컴포넌트. main 창이 밀어주는 상태를 받아
 // 캐릭터 한 명을 그리고, 클릭/드래그만 처리하는 얇은 소비자다. 스토어도
-// Pixi도 없다(설계 §1, §4.2).
+// Pixi도 없다.
 //
 // 부팅 레이스: main은 상태가 바뀔 때만 emit하므로, 이 창이 리스너를 걸기 전에
 // 지나간 상태는 영영 못 받는다. 리스너 설치가 끝난 직후 `mascot-ready`를 쏴서
@@ -58,7 +58,7 @@ import "./mascot.css";
 const SAVE_DEBOUNCE_MS = 500;
 /** 신호등 레이아웃 변화 → 창 리사이즈 적용 디바운스(ms). 에이전트 모드는
  *  턴 경계마다 칸 수가 바뀌므로(결정 2), 연속 변화 중 리사이즈가 폭주하지
- *  않게 마지막 값만 적용한다(docs/mascot-lights-design.md §5.3). */
+ *  않게 마지막 값만 적용한다. */
 const LAYOUT_DEBOUNCE_MS = 300;
 
 const toRect = (m: Monitor): MonitorRect => ({
@@ -274,7 +274,7 @@ export default function MascotApp() {
   const stateRef = useRef(state);
   stateRef.current = state;
   // 레이아웃 적용 effect는 파생 키(아래 layoutKey)에만 반응시키고 dpr 변화만
-  // 으로는 재실행하지 않는다(§C9 — 트리거는 칸 수·방향·스프라이트 유무뿐).
+  // 으로는 재실행하지 않는다(트리거는 칸 수·방향·스프라이트 유무뿐).
   // 그래도 실제 호출 시점의 최신 dpr은 필요하므로 ref로 들고 있는다.
   const dprRef = useRef(dpr);
   dprRef.current = dpr;
@@ -512,7 +512,7 @@ export default function MascotApp() {
     }, LAYOUT_DEBOUNCE_MS);
     return () => clearTimeout(timer);
     // layoutKey가 위 다섯 값을 그대로 인코딩한다 — dpr은 dprRef로 최신값을
-    // 읽으므로 dpr 변화 자체는 재실행 트리거가 아니다(의도된 것, §C9).
+    // 읽으므로 dpr 변화 자체는 재실행 트리거가 아니다(의도된 것).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutKey]);
 
@@ -593,7 +593,7 @@ export default function MascotApp() {
   // ---- strip 드래그(D2): 스프라이트가 없어 strip만 뜬 창은 캔버스가 아예
   // 없어 잡을 곳이 없었다 — 창을 한 번 잘못된 자리에 두면 영구히 못 옮긴다.
   // 캔버스와 같은 detector 배선을 strip 컨테이너에도 붙이되, 램프(자식) 위
-  // 포인터다운은 무시한다 — `onLightClick`이 그쪽을 전담하고(design §6, 램프
+  // 포인터다운은 무시한다 — `onLightClick`이 그쪽을 전담하고(램프
   // 위 드래그 시작은 v1 비지원), `data-tauri-drag-region`은 클릭을 통째로
   // 삼켜 램프 클릭이 죽으므로 쓰지 않는다(drag.ts 헤더 참고).
   const stripDetector = useRef(createDragDetector()).current;

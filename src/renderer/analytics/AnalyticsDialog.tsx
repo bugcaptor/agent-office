@@ -4,7 +4,7 @@
 // 렌더한다(SettingsDialog와 동일한 셀프 게이팅). 열릴 때와 기간(7/14/30일)
 // 변경 시 loadSessionEvents를 1회 호출하고, 렌더러 순수 함수(aggregate.ts)로
 // 집계해 일별 스택 막대 + 캐릭터 요약 표를 보여준다.
-// 설계: docs/session-analytics-design.md §4.4. 실시간 갱신은 비목표 —
+// 실시간 갱신은 비목표 —
 // 열려 있는 동안 새 이벤트를 반영하지 않는다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";

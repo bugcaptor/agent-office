@@ -6,8 +6,7 @@
 // `startOfLocalDay`/`msUntilNextLocalMidnight` to read local calendar
 // fields; callers supply the epoch ms.
 //
-// See docs/superpowers/specs/2026-07-11-today-worked-total-design.md for the
-// `base + (Σ메모리 workedMs − baseline)` model these functions feed.
+// These functions feed the `base + (Σ메모리 workedMs − baseline)` model.
 import type { SessionTurnRecord } from "@shared/types";
 
 /** `records` 중 `endedAt >= sinceMs`(경계 포함)인 것들의 `workedMs` 합. */

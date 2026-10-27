@@ -173,7 +173,7 @@ export interface AgentOfficeApi {
   /** 마스코트 클릭(#72) — main 창과 해당 터미널을 연다. 마스코트 창에서만
    * 호출한다. */
   mascotActivate(agentId: string): Promise<void>;
-  /** 마스코트 신호등(docs/mascot-lights-design.md §5.3) — 창 크기·위치를 한 번에
+  /** 마스코트 신호등 — 창 크기·위치를 한 번에
    * 적용한다. 인자 전부 **물리 px**(mascot 창이 dpr로 환산해 넘긴다). 창이
    * 없으면 조용히 no-op. */
   setMascotLayout(width: number, height: number, x: number, y: number): Promise<void>;
@@ -218,7 +218,7 @@ export interface AgentOfficeApi {
   /** 업무 목록 가져오기 — 열기 다이얼로그로 고른 파일 텍스트. 취소 시 null. */
   importWorkItemsFile(filterName: string): Promise<string | null>;
   /** Returns an unsubscribe function. `bytes` is the raw stream byte count of
-   * this batch (§#49); the renderer accumulates it on write to derive snapshot
+   * this batch (#49); the renderer accumulates it on write to derive snapshot
    * offsets. Restore snapshots deliver `bytes === 0`. */
   onData(agentId: string, cb: (data: string, bytes: number) => void): () => void;
   onSessionState(cb: (e: SessionStateEvent) => void): () => void;
@@ -274,7 +274,7 @@ export interface AgentOfficeApi {
   /** 세션 이벤트 시계열에서 `fromAt..=toAt`(epoch ms) 범위를 읽는다(분석 패널용,
    * 터미널 요약 바 사용량 시드용). 없는 파일·손상 줄은 건너뛰며 항상 성공한다.
    * `(at, runId, seq)` 정렬. `kinds`를 넘기면 그 kind만 받는다(백엔드가 파싱
-   * 직후 버림 — docs/session-analytics-design.md §11) — 생략하면(옵션) 현행
+   * 직후 버림) — 생략하면(옵션) 현행
    * 그대로 전체를 받는다(분석 패널은 이 인자를 안 쓴다). */
   loadSessionEvents(
     fromAt: number,

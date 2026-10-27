@@ -1,5 +1,5 @@
 //! 업무 보내기가 터미널에 입력하는 CLI 기동 문장. 예전 터미널 입력 자동화
-//! (`automation/`, 점검·정리 §7.D C29로 제거)의 launchCli 단계와 같은 규칙을
+//! (`automation/`, 점검·정리로 제거)의 launchCli 단계와 같은 규칙을
 //! 그대로 옮겨 왔다 — 에러 코드 문자열(`automation-*`)도 렌더러 카탈로그와
 //! 맞물려 있어 바꾸지 않는다.
 use super::cli_transition::{ps_quote, CommandSyntax};

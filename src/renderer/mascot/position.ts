@@ -12,8 +12,8 @@
 // 곳에 뜬다. 복원 좌표가 현재 모니터 중 하나에 (여유를 두고) 걸칠 때만 쓰고,
 // 아니면 주 모니터 기본 위치로 되돌린다.
 //
-// 저장 포맷은 창의 top-left가 아니라 **하단중앙 앵커**다
-// (docs/mascot-lights-design.md §5.3). 신호등 strip이 붙으면서 창 크기가
+// 저장 포맷은 창의 top-left가 아니라 **하단중앙 앵커**다.
+// 신호등 strip이 붙으면서 창 크기가
 // 상태에 따라 동적으로 바뀌므로(C9), top-left를 그대로 저장하면 "그때의
 // 레이아웃"에 종속된 값이 되어 크기가 바뀔 때마다 마스코트가 미끄러진다.
 // 앵커(창의 bottom-center)는 창 크기와 무관해 리사이즈에도 자리가 고정된다.
@@ -156,7 +156,7 @@ export function resolveAnchoredPosition(
  * localStorage에서 저장 앵커 읽기. 없거나 깨졌으면 null. 구버전이 저장한
  * top-left `{x,y}` 포맷을 만나면 `assumedSize`(호출 시점의 `outerSize()`)로
  * 앵커를 환산해 마이그레이션한다 — 마운트 직후라 창이 아직 기본 크기이므로
- * 이 환산은 오차 없이 같은 자리를 복원한다(docs/mascot-lights-design.md §5.3).
+ * 이 환산은 오차 없이 같은 자리를 복원한다.
  */
 export function readSavedAnchor(
   storage: Pick<Storage, "getItem"> | null,

@@ -178,10 +178,10 @@ pub async fn delete_memos(
 
 /// 세션 이벤트 시계열에서 `from_at..=to_at`(epoch ms) 범위를 읽는다(분석 패널용,
 /// 터미널 요약 바 사용량 시드용). 읽기 전용 — 수집 측 `SessionEventStore`는
-/// 건드리지 않는다(docs/session-analytics-design.md §4.2). reader가 없는
+/// 건드리지 않는다. reader가 없는
 /// 파일·손상 줄을 건너뛰므로 반환은 항상 성공한다.
 ///
-/// `kinds`가 `Some`이면 그 kind만 남기고 나머지는 파싱 직후 버린다(§11) —
+/// `kinds`가 `Some`이면 그 kind만 남기고 나머지는 파싱 직후 버린다 —
 /// 예를 들어 사용량 시드는 `["stop"]`만 필요한데 3일치 JSONL 전량(대부분
 /// tool/notification/prompt)을 렌더러로 넘기는 낭비를 막는다. `None`(생략)이면
 /// 현행 그대로 전체를 돌려준다 — 분석 패널은 인자를 안 넘겨 기존 동작 유지.
@@ -201,7 +201,7 @@ pub async fn load_session_events(
 }
 
 /// 한 캐릭터의 세션 로그 파일 목록 한 페이지(최신순).
-/// docs/session-log-design.md §6. 어떤 실패도 빈 페이지로 흡수한다 — 열람
+/// 어떤 실패도 빈 페이지로 흡수한다 — 열람
 /// 경로가 에러로 막히지 않게.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn list_session_logs(
@@ -241,7 +241,6 @@ pub async fn open_session_log(
 
 /// 세션 로그 하나로 회고·학습자료(Markdown)를 만든다(수동 트리거 전용).
 /// 요약기 옵트인이 꺼져 있으면 CLI를 부르지 않고 거절한다(일기와 동일 정책).
-/// docs/session-log-design.md §5.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn generate_study_material(
     app_state: State<'_, AppState>,
@@ -290,8 +289,8 @@ pub async fn generate_study_material(
 }
 
 /// 에이전트별 최신 Claude native 세션(리줌) 스냅샷 전체를 읽는다(이어하기
-/// 메뉴용). 렌더러는 메뉴를 열 때만 조회하므로 이벤트 푸시가 필요 없다
-/// (docs/claude-session-resume-design.md §5). 반환은 항상 성공.
+/// 메뉴용). 렌더러는 메뉴를 열 때만 조회하므로 이벤트 푸시가 필요 없다.
+/// 반환은 항상 성공.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn list_claude_resume_sessions(
     app_state: State<'_, AppState>,

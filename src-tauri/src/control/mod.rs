@@ -1,6 +1,6 @@
 // src-tauri/src/control/mod.rs
 //
-// 로컬 CLI 제어 서버(이슈 #55, docs/cli-control-design.md). 실행 중인 GUI 앱
+// 로컬 CLI 제어 서버(이슈 #55). 실행 중인 GUI 앱
 // 프로세스 안에서 `127.0.0.1`에 임의 포트로 axum HTTP 서버를 띄워, 같은
 // 머신의 `agent-office ctl …` 클라이언트(control/client.rs)나 스크립트가
 // 세션을 프로그래밍 방식으로 조종하게 한다. `observer/server.rs`의

@@ -1,4 +1,4 @@
-//! `agent-office md` 오프라인 서브커맨드(docs/doc-view-design.md §구성 2). GUI·tokio 없이
+//! `agent-office md` 오프라인 서브커맨드. GUI·tokio 없이
 //! Markdown 하나를 HTML로 바꿔 앱 캐시 `doc-view/`에 쓰고 경로를 찍은 뒤 기본 브라우저로
 //! 연다. 열기는 먼저 `doc-view/open/`에 요청을 써서 샌드박스 밖의 앱에 맡기고, 앱이
 //! 2초 안에 가져가지 않으면 직접 연다. 종료 코드: 0 성공, 1 파일·변환·열기 실패, 2 사용법 오류.
@@ -110,7 +110,7 @@ pub fn run_with(
     }
 }
 
-/// 앱에 열기를 맡긴다(§구성 2). 요청을 쓰고 `wait` 동안 앱이 지우기를 기다린다. 그 뒤에도
+/// 앱에 열기를 맡긴다. 요청을 쓰고 `wait` 동안 앱이 지우기를 기다린다. 그 뒤에도
 /// 남아 있으면 요청을 지우고 `direct`로 직접 연다. 지우기 성공을 "내가 맡았다"로 삼으므로
 /// (앱도 같은 규칙) 둘이 함께 여는 일은 없다. 요청을 쓸 수 없으면 바로 직접 연다.
 fn open_via_app(
@@ -153,7 +153,7 @@ fn open_in_browser(path: &Path) -> Result<(), String> {
     }
 }
 
-/// `office-md` shim 경로(`office-task` 옆, docs/doc-view-design.md §구성 4).
+/// `office-md` shim 경로(`office-task` 옆).
 pub fn shim_path() -> PathBuf {
     crate::work_inbox_cli::office_shim_path("office-md")
 }

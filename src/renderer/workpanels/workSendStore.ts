@@ -25,7 +25,7 @@ export async function settleWorkSends(): Promise<void> {
 function snapshot(item: WorkItem, agent: AgentProfile): string {
   return JSON.stringify([item.title, item.body, item.assigneeAgentId, item.agent, agent.id, agent.cwd, agent.shell, agent.defaultAgent, agent.startupCommand, agent.clockedOut, agent.personalityPrompt]);
 }
-/** 자동 진행이 이 캐릭터를 진행자로 쓰는 중인가(docs/auto-run-design.md). */
+/** 자동 진행이 이 캐릭터를 진행자로 쓰는 중인가. */
 export function autoRunRunner(agentId: string): WorkItem | undefined {
   return useWorkItemStore.getState().items.find((i) => i.autoRun?.state === "running" && i.assigneeAgentId === agentId);
 }

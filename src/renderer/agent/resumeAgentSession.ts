@@ -3,7 +3,6 @@
 // Claude 세션 이어하기 오케스트레이터. restartAgentSession의 변형으로,
 // 기존 세션을 dispose/폐기한 뒤 이번 1회 생성에만 startupCommand를
 // `claude --resume <sessionId>`로 override해 이전 대화를 이어서 시작한다.
-// 설계: docs/claude-session-resume-design.md §4.
 //
 // 재시작과 순서는 동일하다: disposeSession → registry.destroy →
 // bumpTerminalEpoch → setSessionState(starting) → createSession(override).

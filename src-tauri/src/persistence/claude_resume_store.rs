@@ -1,7 +1,7 @@
 // src-tauri/src/persistence/claude_resume_store.rs
 //
 // Claude native 세션 ID(리줌 ID) 영속화(`claude-resume.json`, Tauri app data dir).
-// 에이전트당 최신 1건만 보관(docs/claude-session-resume-design.md §3).
+// 에이전트당 최신 1건만 보관.
 // profile_store와 같은 tmp→rename 원자 쓰기 — 크래시 중 write가 끼어들어도
 // 리더는 옛 파일 또는 완전히 써진 새 파일만 본다. 로드 파손은 빈 상태로
 // fail-open(리줌 편의 기능이라 못 읽어도 앱은 정상 동작해야 한다).

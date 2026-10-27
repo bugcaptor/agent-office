@@ -66,7 +66,7 @@ export interface CreateSessionOptions {
   agentName?: string;
   /** Historical profile role copied into session_started analytics only. */
   agentRole?: string;
-  /** 태스크 대화 세션(docs/task-chat-design.md §세션). agentId가 `task-chat-` 접두사여야 한다.
+  /** 태스크 대화 세션. agentId가 `task-chat-` 접두사여야 한다.
    * 관찰 훅·`AGENT_OFFICE_AGENT_ID`·persona·셸 작업중 감시를 빼고 대화용 권한 설정을 붙인다.
    * 부재 = false. */
   taskChat?: boolean;
@@ -122,7 +122,7 @@ export interface OutputChunk {
   /** Monotonically increasing per-session sequence number. */
   seq: number;
   /**
-   * Raw stream bytes this batch carried (§#49 offset accounting). May differ
+   * Raw stream bytes this batch carried (#49 offset accounting). May differ
    * from `data.length`: the renderer accumulates this on write to derive the
    * snapshot offset. Adopt restore snapshots carry `bytes === 0` so they are
    * excluded from that accounting.
@@ -151,7 +151,7 @@ export interface SessionTurnRecord {
 
 /**
  * 세션 이벤트 시계열 레코드의 종류. Rust `SessionEventKind`(serde snake_case)
- * 미러. 수집 설계 docs/session-event-timeseries-design.md §4.1 참조.
+ * 미러.
  */
 export type SessionEventKind =
   | "session_started"
@@ -200,7 +200,7 @@ export interface SessionEventTokens extends SessionModelTokens {
  *
  * 옵션 필드는 `kind`에 따라만 존재한다: `agentName`/`agentRole`/`cwd`/`shell`은
  * `session_started`에서만, `state`는 `session_state`에서만. 나머지 종류는
- * envelope만 갖는다(선행 설계 §4.1).
+ * envelope만 갖는다.
  */
 export interface SessionEventRecord {
   /** 정수 스키마 버전. v1에서는 항상 1. */
@@ -244,7 +244,7 @@ export interface SessionEventRecord {
   origin?: "bot";
   /**
    * kind="usage"일 때 이 사용량이 턴 중간 관측(true, PostToolUse)인지 턴이
-   * 끝난 것(false, Stop)인지(§11.9). 이 필드가 생기기 전의 과거 레코드는
+   * 끝난 것(false, Stop)인지. 이 필드가 생기기 전의 과거 레코드는
    * 전부 Stop 유래였으므로 **없으면 `false`로 취급해야 한다** — 그렇지
    * 않으면 재부팅 집계에서 과거 파일의 턴 수가 유실되거나 부풀 수 있다.
    */
@@ -254,7 +254,7 @@ export interface SessionEventRecord {
 /**
  * Claude 세션 이어하기(resume) 엔트리 — 에이전트당 최신 1건. observer가 훅
  * body의 native `session_id`(그리고 `cwd`)를 캡처해 저장한 값으로,
- * `claude --resume <sessionId>` 재개에 쓴다. 설계: docs/claude-session-resume-design.md.
+ * `claude --resume <sessionId>` 재개에 쓴다.
  * Rust `ClaudeResumeEntry`(camelCase) 미러.
  */
 export interface ClaudeResumeEntry {
@@ -287,7 +287,6 @@ export interface AvailableShell {
 /**
  * `adopt_detached_sessions` 응답 엔트리 — 재시작 시 `sessiond` 데몬에서
  * 되찾은 세션 1건. Mirrors Rust `AdoptedSessionInfo` (camelCase).
- * 세션 핸드오프 설계: docs/session-handoff-design.md §커맨드.
  */
 export interface AdoptedSessionInfo {
   agentId: AgentId;
@@ -298,7 +297,7 @@ export interface AdoptedSessionInfo {
 
 /**
  * 세션 로그 파일 하나의 요약 정보. Mirrors Rust `SessionLogItem` (camelCase).
- * 설계: docs/session-log-design.md §6. 본문은 담지 않는다 — 파일이 수십 MB일 수
+ * 본문은 담지 않는다 — 파일이 수십 MB일 수
  * 있어 목록에는 메타데이터만 싣는다.
  */
 export interface SessionLogItem {

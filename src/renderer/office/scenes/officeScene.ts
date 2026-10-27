@@ -11,7 +11,7 @@ import { OFFICE_MAP, Tile, TILE_SIZE } from "../map/mapData";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 /**
- * "이 달의 우수사원" 벽 사진 위치(docs/employee-of-the-month-design.md §7).
+ * "이 달의 우수사원" 벽 사진 위치.
  *
  * 첫 설계는 왼쪽 측벽 세로 1×2칸(tx0·ty2~3)에 타일 드로잉으로 구웠으나, 오피스
  * 벽은 한 겹(16px)뿐이라 내부 콘텐츠가 8×22px밖에 안 남아 "문짝"으로 보였다.

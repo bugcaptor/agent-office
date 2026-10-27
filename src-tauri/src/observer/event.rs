@@ -88,8 +88,7 @@ pub struct CommandWrapperSpec {
     pub skip_prefix_if_env_file_missing: Option<String>,
     /// Some(env_name)이면, 렌더된 래퍼는 원본 명령을 실행하기 **전에** 호출
     /// 시점의 `$PWD`를 이 이름의 env로 export한다(agy: `workspacePaths`가 빈
-    /// 배열로 올 때 서버가 쓸 cwd fallback, docs/antigravity-support-design.md
-    /// §4 스파이크 실측). POSIX 렌더러만 지원한다 — agy는 v1에서 Windows를
+    /// 배열로 올 때 서버가 쓸 cwd fallback, 스파이크 실측). POSIX 렌더러만 지원한다 — agy는 v1에서 Windows를
     /// 빼므로 PowerShell 렌더러는 이 필드를 무시한다.
     pub export_cwd_env: Option<String>,
     /// `(대상 env, 값을 가져올 env)` 목록. 렌더된 래퍼는 원본 명령을 실행하는
@@ -178,7 +177,7 @@ pub fn agent_id(body: &[u8]) -> Option<String> {
 }
 
 /// Claude 훅 body의 top-level `session_id`(= native 리줌 ID). 모든 이벤트마다
-/// 실려 오므로 종료 전에도 캡처할 수 있다(docs/claude-session-resume-design.md §2).
+/// 실려 오므로 종료 전에도 캡처할 수 있다.
 /// 공백/빈 값은 None.
 pub fn native_session_id(body: &[u8]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
@@ -391,7 +390,7 @@ pub fn kilo_running_subagents(body: &[u8]) -> Option<u32> {
 }
 
 /// Kilo 플러그인이 `tool`(5초 스로틀 partial)·`stop` body에 실어 보낸 top-level
-/// `tokens`를 읽는다(docs/kilo-support-design.md §7). 플러그인이 이미
+/// `tokens`를 읽는다. 플러그인이 이미
 /// `SessionEventTokens` 와이어 모양(camelCase, 순수 입력·output+reasoning·
 /// byModel)으로 정규화해 보내므로 그대로 역직렬화하고, 유효 카운트가 하나도
 /// 없으면 None으로 접는다. 부재/파손이면 None — 관찰은 계속되고 사용량만 빠진다.
@@ -404,7 +403,7 @@ pub fn kilo_turn_tokens(body: &[u8]) -> Option<SessionEventTokens> {
 }
 
 // ── Antigravity CLI(agy) ─────────────────────────────────────────────────
-// docs/antigravity-support-design.md §2/§3.4. agy 훅 body는 camelCase다
+// agy 훅 body는 camelCase다
 // (`invocationNum`, `workspacePaths`, `transcriptPath`) — Claude/pi의
 // snake_case body와 다르니 헬퍼를 공유하지 않는다.
 
@@ -425,7 +424,7 @@ pub(crate) fn agy_invocation_num_from_value(value: &serde_json::Value) -> Option
     value.get("invocationNum")?.as_i64()
 }
 
-/// agy 훅 body의 `workspacePaths[0]`. 배열이 비어 있을 수 있다(스파이크 §4) —
+/// agy 훅 body의 `workspacePaths[0]`. 배열이 비어 있을 수 있다 —
 /// 그때는 None이라 호출부가 cwd_override(agy() 셸 래퍼가 실은 `$PWD`,
 /// `X-Agent-Office-Cwd` 헤더로 옴)로 넘어간다.
 pub fn agy_workspace_cwd(body: &[u8]) -> Option<String> {
@@ -437,7 +436,7 @@ pub(crate) fn agy_workspace_cwd_from_value(value: &serde_json::Value) -> Option<
     (!first.trim().is_empty()).then(|| first.to_string())
 }
 
-/// agy 훅 body의 top-level `conversationId`(리줌 ID, §3.5). 모든 이벤트마다
+/// agy 훅 body의 top-level `conversationId`(리줌 ID). 모든 이벤트마다
 /// 실려 온다. 공백/부재/비문자열은 None.
 pub fn agy_conversation_id(body: &[u8]) -> Option<String> {
     agy_conversation_id_from_value(&serde_json::from_slice(body).ok()?)
@@ -496,7 +495,7 @@ pub(crate) fn agy_prompt_text_from_value(value: &serde_json::Value) -> Option<St
 
 /// tool_activity_detail/pi_tool_activity_detail과 같은 결의 "가장 의미 있는
 /// detail 한 조각" 탐색이지만, agy는 훅 가이드에 인자 필드명이 명시돼 있지
-/// 않아(설계 §1.3 "도구 인자") 정확한 스키마를 스파이크에서 확정하지
+/// 않아 정확한 스키마를 스파이크에서 확정하지
 /// 못했다. 흔한 키를 우선순위로 찾고 없으면 None(→ 도구 이름만 표시) —
 /// 실제 필드명이 다르면 이 함수만 고치면 되고 프로토콜(쿼리·body 계약)은
 /// 바뀌지 않는다.
@@ -515,7 +514,7 @@ fn agy_tool_activity_detail(input: &serde_json::Value) -> Option<String> {
 
 /// agy PostToolUse 훅 body에서 라벨용 도구 요약을 만든다(Claude의
 /// `tool_activity_text`/pi의 `pi_tool_activity_text` 대응). 도구 이름은
-/// top-level `name`(설계 §2 매핑 표), 인자는 `toolInput`/`tool_input`가
+/// top-level `name`, 인자는 `toolInput`/`tool_input`가
 /// 있으면 그쪽을, 없으면 body 전체에서 찾는다. `name` 부재/공백/비문자열은
 /// None.
 pub fn agy_tool_activity_text(body: &[u8]) -> Option<String> {
@@ -540,10 +539,10 @@ pub(crate) fn agy_tool_activity_text_from_value(value: &serde_json::Value) -> Op
 }
 
 /// agy Stop 훅 body에서 완료 메시지를 만든다. Stop payload에는 완료 서술
-/// 텍스트가 없고(`executionNum`/`terminationReason`/`error`/`fullyIdle`뿐,
-/// 설계 §1.3) `terminationReason`만으로 갈린다 — `"error"`면 오류로 끝났음을
+/// 텍스트가 없고(`executionNum`/`terminationReason`/`error`/`fullyIdle`뿐)
+/// `terminationReason`만으로 갈린다 — `"error"`면 오류로 끝났음을
 /// 알리고, 그 외(`model_stop`/`max_steps_exceeded`/파싱 실패 등)는 고정
-/// 완료 문구를 쓴다(설계 §3.4). 항상 Some을 돌려준다 — pi/Claude와 달리
+/// 완료 문구를 쓴다. 항상 Some을 돌려준다 — pi/Claude와 달리
 /// "메시지 없음"이 아니라 "말할 것이 고정 문구뿐"인 경우라서.
 pub fn agy_stop_message(body: &[u8]) -> String {
     match serde_json::from_slice::<serde_json::Value>(body) {
@@ -562,9 +561,9 @@ pub(crate) fn agy_stop_message_from_value(value: &serde_json::Value) -> String {
 }
 
 // ── agy 사용량: 최소 protobuf 디코더 ──────────────────────────────────────
-// 전사에는 토큰 수가 없지만(§3.6 옛 실측) `~/.gemini/antigravity-cli/
+// 전사에는 토큰 수가 없지만 `~/.gemini/antigravity-cli/
 // conversations/<conversationId>.db`(SQLite, agy가 열어둔 채 읽어야 함)의
-// `steps.metadata` 블롭 안에 있다(재실측, 설계 §3.6 갱신). .proto 정의가
+// `steps.metadata` 블롭 안에 있다(재실측). .proto 정의가
 // 없어 schema 없는 디코더를 직접 쓴다 — varint/length-delimited/64-bit/
 // 32-bit 와이어타입만 다루면 충분하다(우리가 읽는 필드는 전부 스칼라).
 
@@ -690,7 +689,7 @@ pub fn agy_db_max_idx(db_path: &Path) -> Option<i64> {
 }
 
 /// `idx > watermark_idx`인 `step_type=15`(모델 응답) 행의 사용량을 합산해
-/// `(합산 토큰, 새 워터마크)`를 돌려준다(설계 §3.6). `watermark_idx`가
+/// `(합산 토큰, 새 워터마크)`를 돌려준다. `watermark_idx`가
 /// None이면 처음부터(전체) 합산한다 — 브랜드 뉴 대화는 이게 정확한 전체이고,
 /// 리줌·입양 세션의 과대 집계는 호출부가 첫 프롬프트에서 `agy_db_max_idx`로
 /// 미리 워터마크를 찍어 방지한다.
@@ -1716,7 +1715,7 @@ mod tests {
         assert_eq!(agy_stop_message(b"not json"), "Antigravity finished a task");
     }
 
-    // ── agy 사용량(§3.6): protobuf 디코더 + sqlite 워터마크 ──────────────
+    // ── agy 사용량: protobuf 디코더 + sqlite 워터마크 ──────────────
 
     /// varint 인코더(테스트 전용) — 손으로 protobuf 바이트열을 만든다.
     fn pb_test_encode_varint(mut v: u64, out: &mut Vec<u8>) {
@@ -1735,7 +1734,7 @@ mod tests {
         pb_test_encode_varint(((field as u64) << 3) | wire as u64, out);
     }
 
-    /// 실측(설계 §3.6)과 같은 모양의 usage 서브메시지: 2=input, 3=output,
+    /// 실측과 같은 모양의 usage 서브메시지: 2=input, 3=output,
     /// 5=cache_read, 9=thinking. 무시해야 할 필드 6도 섞어 넣는다.
     fn pb_test_usage_submessage(input: u64, output: u64, cache_read: u64, thinking: u64) -> Vec<u8> {
         let mut usage = Vec::new();
@@ -1767,7 +1766,7 @@ mod tests {
     #[test]
     fn agy_step_usage_decodes_hand_built_protobuf_bytes() {
         use super::agy_step_usage;
-        // 실측값(설계 §3.6): 9.2=5571, 9.3=21, 9.5=8130, 9.9=19.
+        // 실측값: 9.2=5571, 9.3=21, 9.5=8130, 9.9=19.
         let metadata = pb_test_metadata(5571, 21, 8130, 19);
         assert_eq!(agy_step_usage(&metadata), Some((5571, 21 + 19, 8130)));
     }
@@ -1804,7 +1803,7 @@ mod tests {
 
     /// `agy_test_db`와 같은 스키마를 **WAL 모드로, 사이드카(-wal/-shm) 없이
     /// 닫힌 상태**로 만든다 — agy가 대화를 이미 닫고 체크포인트한 실제 db와
-    /// 같은 조건(§3.6 실측: 순정 `SQLITE_OPEN_READ_ONLY`만으로는
+    /// 같은 조건(실측: 순정 `SQLITE_OPEN_READ_ONLY`만으로는
     /// `SQLITE_CANTOPEN`이 난다)을 재현한다. `wal_checkpoint(TRUNCATE)`는
     /// wal 파일을 0바이트로 줄일 뿐 지우지는 않으므로, 사이드카가 아예 없는
     /// 상태를 만들려면 체크포인트 후 파일 자체를 지워야 한다(journal_mode를
@@ -1838,7 +1837,7 @@ mod tests {
     fn agy_turn_usage_falls_back_to_immutable_uri_when_wal_sidecars_are_missing() {
         use super::agy_turn_usage;
         // 재현 조건 확인: 이 db는 헤더상 WAL 모드이면서 사이드카가 없다 —
-        // 순정 read-only 오픈만으로는 실패하는 조건(§3.6 실측)과 같다.
+        // 순정 read-only 오픈만으로는 실패하는 조건과 같다.
         let db = agy_test_closed_wal_db(&[(1, 15, Some(pb_test_metadata(100, 10, 5, 0)))]);
         assert!(!std::path::Path::new(&format!("{}-wal", db.display())).exists());
         assert!(!std::path::Path::new(&format!("{}-shm", db.display())).exists());

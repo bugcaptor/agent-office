@@ -1,8 +1,8 @@
 // src/renderer/store/mascotLights.ts
 //
-// 마스코트 신호등(docs/mascot-lights-design.md) 순수 집계. 마스코트는 "지금
+// 마스코트 신호등 순수 집계. 마스코트는 "지금
 // 알릴 1명"을 표면화하는 이벤트 표면이지만, 신호등은 여러 대상의 현재 상태를
-// 상시 노출하는 상태 대시보드다 — 그래서 waiting 취급(§2 결정 1)과 대상 선정
+// 상시 노출하는 상태 대시보드다 — 그래서 waiting 취급과 대상 선정
 // (결정 2)이 `pickMascotTarget`(selectors.ts)과 일부 다르다. 그 다름은 전부
 // 의도된 것이다.
 //
@@ -27,7 +27,7 @@ const TASK_LABEL_MAX_CHARS = 60;
 
 export interface ComputeMascotLightsInput {
   mode: "off" | "agents" | "projects";
-  /** 칸에 표시할 텍스트 선택(§7 개정). 고른 값이 그 칸에서 비어 있으면 auto로
+  /** 칸에 표시할 텍스트 선택. 고른 값이 그 칸에서 비어 있으면 auto로
    *  폴백한다(빈 칸 방지). */
   labelMode: MascotLightsLabel;
   /** 프로젝트 모드에서 칸을 받을 폴더 목록. 표시 순서 = 이 배열 순서. */
@@ -40,12 +40,12 @@ export interface ComputeMascotLightsInput {
         name?: string;
         cwd?: string;
         clockedOut?: boolean;
-        /** 칸에 띄울 얼굴을 다시 만드는 데 필요한 스프라이트 좌표(§6). */
+        /** 칸에 띄울 얼굴을 다시 만드는 데 필요한 스프라이트 좌표. */
         seed?: string;
         archetype?: string;
         colors?: ColorOverrides;
         spriteUpdatedAt?: number;
-        /** 초상 존재 표시 + 캐시 무효화 키(§6 개정 — 칸 얼굴 스프라이트/초상 선택). */
+        /** 초상 존재 표시 + 캐시 무효화 키(칸 얼굴 스프라이트/초상 선택). */
         portraitUpdatedAt?: number;
       }
     | undefined
@@ -60,7 +60,7 @@ export interface ComputeMascotLightsInput {
 }
 
 /**
- * 에이전트 하나의 원자 상태(§3). `attention`이 `working`보다 우선한다 —
+ * 에이전트 하나의 원자 상태. `attention`이 `working`보다 우선한다 —
  * waiting 중에도 백그라운드 tool이 돌 수 있으나, 사용자 응답 대기가 더 급한
  * 정보라는 사용자 확정(결정 1).
  */
@@ -205,7 +205,7 @@ function agentTaskNameOf(
 }
 
 /**
- * agents 모드 칸 하나의 표시 텍스트(§7 개정) — `label`은 `labelMode`로 고른
+ * agents 모드 칸 하나의 표시 텍스트 — `label`은 `labelMode`로 고른
  * 값, 비어 있으면(cwd/작업 없음) `auto`(에이전트 이름)로 폴백한다. `tooltip`은
  * labelMode와 무관하게 [이름, 프로젝트명, 작업명] 중 있는 것만 이어 붙인다.
  * `projecttask`는 둘째 줄용 `sublabel`(작업명)을 함께 채운다 — 없으면 null(칸
@@ -236,7 +236,7 @@ function agentLightText(
 }
 
 /**
- * projects 모드 칸 하나의 표시 텍스트(§7 개정) — `label`은 `labelMode`로 고른
+ * projects 모드 칸 하나의 표시 텍스트 — `label`은 `labelMode`로 고른
  * 값, 비어 있으면(대표 없음 등) `auto`(폴더 basename)로 폴백한다. `tooltip`
  * 순서는 agentLightText와 동일하게 [대표 이름, 프로젝트명, 작업명]. `projecttask`는
  * 둘째 줄용 `sublabel`(대표 에이전트 작업명)을 함께 채운다 — 없으면 null.
@@ -268,7 +268,7 @@ function projectLightText(
 }
 
 /**
- * 신호등 칸 목록 집계(§3). `mode==="off"`이거나 결과가 0칸이면 빈 배열 —
+ * 신호등 칸 목록 집계. `mode==="off"`이거나 결과가 0칸이면 빈 배열 —
  * mascotBridge는 이 배열이 비어 있으면 strip 자체가 없는 것으로 취급한다.
  *
  * - agents 모드: 원자 상태가 `off`가 아닌 근무 중 에이전트만, `agentOrder`
@@ -331,7 +331,7 @@ export function computeMascotLights(input: ComputeMascotLightsInput): MascotLigh
       state: aggregateState(members, input.timeTracking, pending),
       clickAgentId: representative,
       // 얼굴은 클릭 대상과 같은 에이전트다 — "이 칸을 누르면 누가 나오나"를
-      // 그림으로 미리 보여 준다(설계 §6 개정).
+      // 그림으로 미리 보여 준다.
       avatar: avatarOf(representative, input.agents),
     };
   });

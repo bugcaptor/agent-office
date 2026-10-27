@@ -185,11 +185,10 @@ pub struct AppState {
     /// 세션 이벤트 시계열 루트(`<app-data>/session-events/v1`). 수집 측
     /// `SessionEventStore`가 쓰는 것과 같은 경로 — 분석 커맨드
     /// (`load_session_events`)가 reader로 읽기만 하려고 경로를 따로 보관한다
-    /// (스토어는 쓰기 전용 원칙 유지, docs/session-analytics-design.md §4.1).
+    /// (스토어는 쓰기 전용 원칙 유지).
     pub session_event_root: std::path::PathBuf,
     /// 세션 로그 저장소 루트(`<app-data>/session-logs/v1`). 목록·열기·학습자료
-    /// 커맨드가 여기서만 파일을 찾는다 — 경로 탈출 검증의 기준점이기도 하다
-    /// (docs/session-log-design.md §6).
+    /// 커맨드가 여기서만 파일을 찾는다 — 경로 탈출 검증의 기준점이기도 하다.
     pub session_log_root: std::path::PathBuf,
     /// 설정 `session_log_enabled`의 런타임 미러. SessionManager와 공유하는
     /// 같은 Arc라 `set_app_settings`가 여기만 갱신해도 기록 중인 세션에 즉시
@@ -201,10 +200,10 @@ pub struct AppState {
     pub settings_first_run: AtomicBool,
     /// Claude 사용량 실시간 조회(이슈 #33)의 메모리 상태. `load_usage_snapshot`
     /// 커맨드가 스로틀 판단·직전 성공 스냅샷을 여기 보관해, 렌더러 60초 폴링에
-    /// 얹혀 리셋 경계 후 빠르게 실제 값을 갱신한다(docs/claude-usage-live-fetch-design.md).
+    /// 얹혀 리셋 경계 후 빠르게 실제 값을 갱신한다.
     /// `Arc`인 이유: control 서버(`ctl`·표시 API)가 같은 스로틀 상태를 공유한다.
     pub live_usage: Arc<crate::usage::LiveUsageState>,
-    /// CLI 제어(#55, docs/cli-control-design.md)의 로컬 control 서버 상태.
+    /// CLI 제어(#55)의 로컬 control 서버 상태.
     /// cli_enabled ON일 때만 기동되고 포트/토큰 파일을 관리한다.
     pub control_server: Arc<crate::control::ControlServerState>,
     /// control 핸들러가 쥐는 앱 상태 클론들. `set_app_settings`가 cli_enabled

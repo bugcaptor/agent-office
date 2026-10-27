@@ -28,7 +28,7 @@ export function TerminalHost() {
     useShallow((s) => s.agentOrder.filter((id) => s.sessions[id]?.status !== "idle"))
   );
   const epochs = useAppStore(useShallow((s) => s.terminalEpochs));
-  // 태스크 대화 탭(docs/task-chat-design.md). 캐릭터 뒤에 같은 방식으로 붙는다.
+  // 태스크 대화 탭. 캐릭터 뒤에 같은 방식으로 붙는다.
   const chatIds = useTaskChatStore(useShallow((s) => s.order));
 
   return (

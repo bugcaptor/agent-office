@@ -6,8 +6,8 @@
 // 같은 파생 규칙으로 한 줄 표시한다. 세션이 starting/running이 아니면 실황
 // (line2)은 stale이므로 억제하고 line1만 흐리게. 라벨이 없으면 미표시.
 //
-// 이슈 #44 2단계: 오른쪽 끝 사용량(토큰·비용) 스팬(docs/session-analytics-design.md
-// §11). useSessionUsageSeed가 매 렌더 호출되므로 tauriApi.loadSessionEvents를
+// 이슈 #44 2단계: 오른쪽 끝 사용량(토큰·비용) 스팬.
+// useSessionUsageSeed가 매 렌더 호출되므로 tauriApi.loadSessionEvents를
 // 목업해 실제 invoke를 타지 않게 한다 — 아래 사용량 테스트는 시드 자체를
 // setSessionUsageSeed로 직접 심어 검증하므로 훅의 fetch 결과에는 의존하지 않는다.
 import { cleanup, render } from "@testing-library/react";

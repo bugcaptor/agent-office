@@ -2,7 +2,7 @@
 //
 // src/renderer/settings/__tests__/MascotLightsSection.test.tsx
 //
-// 마스코트 신호등(docs/mascot-lights-design.md) 설정 UI — 모드 선택·세로 배열
+// 마스코트 신호등 설정 UI — 모드 선택·세로 배열
 // 체크박스가 저장 payload에 실리는지, 마스코트가 꺼져 있으면 세 컨트롤 모두
 // 비활성인지, 프로젝트 모드에서만 폴더 목록 편집기가 보이고 추가(중복 무시)/
 // 제거가 스토어에 반영되는지 확인한다. `SettingsDialogTalk.test.tsx`와 같은

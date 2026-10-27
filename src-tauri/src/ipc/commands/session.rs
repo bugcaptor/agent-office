@@ -29,7 +29,7 @@ pub struct SessionOpts {
     pub personality_prompt: Option<String>,
     pub agent_name: Option<String>,
     pub agent_role: Option<String>,
-    /// 태스크 대화 세션(docs/task-chat-design.md §세션). 기본 false.
+    /// 태스크 대화 세션. 기본 false.
     #[serde(default)]
     pub task_chat: bool,
 }
@@ -151,7 +151,7 @@ pub async fn dispose_session(
     Ok(())
 }
 
-/// 세션 핸드오프 기능 지원 여부(docs/session-handoff-design.md). unix
+/// 세션 핸드오프 기능 지원 여부. unix
 /// 전용 -- Windows는 항상 false(모달은 기존 2버튼 유지).
 #[tauri::command(rename_all = "camelCase")]
 pub async fn handoff_supported() -> Result<bool, String> {
@@ -160,7 +160,7 @@ pub async fn handoff_supported() -> Result<bool, String> {
 
 /// 앱 종료 확인 모달에서 "터미널 유지하고 종료" 선택 시 호출. Running
 /// 세션들을 sessiond로 넘기고 넘긴 개수를 반환한다 -- 프론트는 이 수와
-/// 무관하게 창을 닫고 종료를 진행한다(§핵심 3). 비unix에서는
+/// 무관하게 창을 닫고 종료를 진행한다. 비unix에서는
 /// `SessionManager::handoff_all`이 항상 0을 반환하는 no-op이다.
 ///
 /// `snapshots`(agentId -> 직렬화된 xterm 화면)는 실증에서 발견된 빈틈 수정:
@@ -193,7 +193,7 @@ pub(crate) fn adoption_known_agent_ids(
     Some(state.agents.into_iter().map(|a| a.id).collect())
 }
 
-/// 부트스트랩 시 1회 호출: sessiond에 남아 있는 세션들을 되찾는다(§핵심 4).
+/// 부트스트랩 시 1회 호출: sessiond에 남아 있는 세션들을 되찾는다.
 /// 영속 프로필에 없는 agentId는 데몬에 Kill 지시되고 반환되지 않는다.
 /// 프로필 파일을 읽지 못하면 아무것도 입양·Kill하지 않는다 — 세션은 데몬에
 /// 남아 파일이 복구된 뒤의 입양을 기다린다.

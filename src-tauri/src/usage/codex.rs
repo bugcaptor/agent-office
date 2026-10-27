@@ -1,8 +1,7 @@
 // src-tauri/src/usage/codex.rs
 //
 // Codex CLI 사용량: `<codex_root>/sessions/YYYY/MM/DD/rollout-*.jsonl`의
-// `token_count` 이벤트에 append된 `rate_limits` 스냅샷을 읽는다
-// (docs/usage-limits-design.md §2).
+// `token_count` 이벤트에 append된 `rate_limits` 스냅샷을 읽는다.
 //
 // 스캔 전략: `sessions/YYYY/MM/DD` 아래 **모든** 날짜 디렉터리에서 rollout
 // 파일을 모아 파일 mtime 내림차순으로(날짜 디렉터리 경계 없이 전역) 정렬한

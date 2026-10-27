@@ -12,7 +12,7 @@
 // 쓰기는 ProfileStore와 같은 fsync+rename 원자 쓰기(`durable::write_atomic`).
 //
 // 사운드 설정은 한 덩어리(`soundEnabled`)에서 타건음/알림음으로 쪼개졌다(한때
-// 셋째 갈래였던 알림 대사 TTS는 점검·정리 §7.D C23으로 제거). 파일에 새 키가
+// 셋째 갈래였던 알림 대사 TTS는 점검·정리로 제거). 파일에 새 키가
 // 없으면 옛 `soundEnabled` 값으로 둘 다 초기화한다(`migrate_sound_keys`) — 버전
 // 올림 없이 로드 시점에 한 번 접어 넣는 방식이라 옛 앱으로 되돌아가도 파일이
 // 깨지지 않는다. 옛 `tts*` 키들은 serde가 무시하고 다음 저장에서 사라진다.
@@ -76,7 +76,7 @@ pub enum ExternalTerminal {
     Iterm,
 }
 
-/// 마스코트 신호등(docs/mascot-lights-design.md) 대상 선택 모드. 기본은 꺼짐 —
+/// 마스코트 신호등 대상 선택 모드. 기본은 꺼짐 —
 /// `mascot_enabled`가 상위 게이트이고 이 값이 `off`가 아니어야 strip이 뜬다.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -267,7 +267,7 @@ pub struct AppSettings {
     /// 폴백한다.
     #[serde(default)]
     pub file_index_backend: FileIndexBackend,
-    /// 로컬 CLI 제어 서버(이슈 #55, docs/cli-control-design.md)를 띄울지.
+    /// 로컬 CLI 제어 서버(이슈 #55)를 띄울지.
     /// 켜면 `127.0.0.1`에 임의 포트로 control 서버가 뜨고 `control-port`가
     /// 기록된다. 하지만 실제 명령 수행은 앱에서 **명시적 승인**(control-token
     /// 발급)이 있어야 한다 — 2단계 옵트인. 보안 표면이므로 기본 꺼짐.
@@ -280,7 +280,7 @@ pub struct AppSettings {
     /// `#[serde(default)]`라 기존 설정 파일에 키가 없으면 false. 기본 꺼짐.
     #[serde(default)]
     pub keep_awake_enabled: bool,
-    /// 터미널 세션 로그를 파일로 상시 기록할지(docs/session-log-design.md).
+    /// 터미널 세션 로그를 파일로 상시 기록할지.
     /// 나중에 회고하려면 "그때 이미 켜져 있었어야" 하므로 기본 켜짐 —
     /// 이 앱에서 기본값이 켜짐인 몇 안 되는 opt-out 기능이다. 보존은 30일·2GB로
     /// 스스로 제한한다.
@@ -293,12 +293,12 @@ pub struct AppSettings {
     /// 좌우 업무 패널 opt-in. 수집·보존은 이 설정과 무관하다.
     #[serde(default)]
     pub work_panels_enabled: bool,
-    /// 데스크톱 마스코트 창(이슈 #72, docs/mascot-window-design.md)을 띄울지.
+    /// 데스크톱 마스코트 창(이슈 #72)을 띄울지.
     /// 활동 중인 캐릭터 1명을 앱 창과 별개의 투명·최상단 창으로 보여준다.
     /// 화면을 상시 점유하는 시스템 표면이라 opt-in — 기본 꺼짐.
     #[serde(default)]
     pub mascot_enabled: bool,
-    /// 마스코트 신호등(docs/mascot-lights-design.md) 대상 선택 모드. `mascot_enabled`가
+    /// 마스코트 신호등 대상 선택 모드. `mascot_enabled`가
     /// 상위 게이트이고, 이 값이 `off`가 아니면 활동이 없어도 신호등 때문에
     /// 마스코트 창이 떠 있을 수 있다. `#[serde(default)]`라 기존 설정 파일에
     /// 키가 없으면 `off`.
@@ -320,7 +320,7 @@ pub struct AppSettings {
     #[serde(default)]
     pub mascot_lights_label: MascotLightsLabel,
     /// 터미널 오버레이 filled 모드(이슈 #69)에서 패널 우측 아래에 반투명 LLM
-    /// 사용량 플로트(`UsageFloat`, docs/usage-design.md §13)를 띄울지. 꺼도
+    /// 사용량 플로트(`UsageFloat`)를 띄울지. 꺼도
     /// 하단바 사용량 뱃지는 그대로 보인다. 기존 설정 파일에 키가 없으면
     /// 기존 동작을 유지해야 하므로 `#[serde(default)]`(bool 기본 false)가
     /// 아니라 `default_true`를 쓴다.
@@ -511,7 +511,7 @@ mod tests {
             .join("settings.json")
     }
 
-    /// 점검·정리(docs/archive/health-check-cleanup-plan.md §7.G)로 없어진 기능의 설정
+    /// 점검·정리로 없어진 기능의 설정
     /// 키가 남아 있는 옛 settings.json도 그대로 읽히고, 다음 저장에서 사라진다.
     #[test]
     fn settings_with_removed_feature_keys_still_load_and_drop_them_on_save() {
@@ -911,7 +911,7 @@ mod tests {
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
-    // 신호등 칸 라벨(§7) — 새 값 `projecttask`가 다른 값들과 같은 lowercase
+    // 신호등 칸 라벨 — 새 값 `projecttask`가 다른 값들과 같은 lowercase
     // 규약으로 직렬화되고, 설정 파일 왕복도 그대로 통과하는지 확인한다.
     #[test]
     fn mascot_lights_label_project_task_serializes_lowercase_and_round_trips() {

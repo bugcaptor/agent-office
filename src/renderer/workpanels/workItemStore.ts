@@ -59,7 +59,7 @@ interface WorkItemState {
 }
 export function hasPendingWorkItems(): boolean { return useWorkItemStore.getState().dirty || saving !== undefined; }
 /**
- * 루트를 완료로 바꾸면 그 자동 진행도 끝난다(docs/auto-run-design.md). 완료 묶음에 접힌 채
+ * 루트를 완료로 바꾸면 그 자동 진행도 끝난다. 완료 묶음에 접힌 채
  * 진행자를 붙잡아 다른 플랜의 시작을 막지 않게 한다. 바뀔 것이 없으면 같은 객체를 돌려준다.
  */
 function closeRunOfDone(item: WorkItem, at: number): WorkItem {

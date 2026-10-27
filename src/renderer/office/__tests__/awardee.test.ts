@@ -1,7 +1,7 @@
 // src/renderer/office/__tests__/awardee.test.ts
 //
-// Pure-logic tests for "이 달의 우수사원" 오피스 씬 연출(docs/employee-of-the-month-design.md
-// §7) — no Pixi/DOM dependency, per gen/ 관례.
+// Pure-logic tests for "이 달의 우수사원" 오피스 씬 연출
+// — no Pixi/DOM dependency, per gen/ 관례.
 
 import { describe, expect, it } from "vitest";
 import type { AwardRecord } from "@shared/types";

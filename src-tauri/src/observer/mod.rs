@@ -57,7 +57,7 @@ pub trait ClaudeSessionSink: Send + Sync {
 }
 
 /// agy 훅 body에서 뽑은 `conversationId`(리줌 ID)를 소비하는 주입점
-/// (docs/antigravity-support-design.md §3.5, 기록까지만 -- 재개 UI는 범위
+/// (기록까지만 -- 재개 UI는 범위
 /// 밖). `ClaudeSessionSink`와 모양이 같지만 provider가 달라(스토어 파일도
 /// `agy-resume.json`으로 분리, persistence::agy_resume_store) 트레잇을
 /// 나눈다. 부재 시 `ingest_agy_source`는 캡처를 no-op으로 건너뛴다.
@@ -80,7 +80,7 @@ pub struct ObserverRuntime {
     claude_session_sink: Option<Arc<dyn ClaudeSessionSink>>,
     agy_session_sink: Option<Arc<dyn AgySessionSink>>,
     /// agy 세션(ao_session_id)별 사용량 워터마크 — 대화 db `steps.idx` 기준.
-    /// `ClaudeAdapter::transcript_usage_watermark`와 같은 자리(§3.6): 세션이
+    /// `ClaudeAdapter::transcript_usage_watermark`와 같은 자리: 세션이
     /// 끝나도 지워지지 않는 누수가 있지만 세션당 정수 하나 규모라 무시할 만하다.
     agy_usage_watermark: Mutex<HashMap<String, i64>>,
 }
@@ -195,7 +195,7 @@ impl ObserverRuntime {
         // Claude 훅 body에는 모든 이벤트마다 native session_id가 실려 온다.
         // map_hook이 None으로 걸러내는 서브에이전트 훅(agent_id 있는 Stop 등)이라도
         // session_id는 메인 세션 것이므로 리줌 기록엔 유효 — map_hook 결과와
-        // 무관하게 여기서 먼저 캡처한다(docs/claude-session-resume-design.md §2).
+        // 무관하게 여기서 먼저 캡처한다.
         if provider == ObserverProvider::Claude {
             if let (Some(sink), Some(native)) = (
                 &self.claude_session_sink,
@@ -242,7 +242,7 @@ impl ObserverRuntime {
         self.hub.ingest_observer(session_id, event);
     }
 
-    /// Kilo Code CLI(kilo/kilocode) 플러그인 이벤트 처리(docs/kilo-support-design.md).
+    /// Kilo Code CLI(kilo/kilocode) 플러그인 이벤트 처리.
     /// pi와 같은 갈래(agent 쿼리, provider/event 계약을 타지 않는다)이지만
     /// 소스 종류가 더 많다 — 플러그인이 자식 세션 회계(sub-start/sub-stop)와
     /// 권한 알림(hook)까지 직접 구분해 보낸다. `stop`의 `running`이 0보다
@@ -258,7 +258,7 @@ impl ObserverRuntime {
                 text: event::kilo_tool_activity_text(body),
                 assistant: None,
                 // Kilo는 전사/rollout 파일이 없어 플러그인이 `step-finish`
-                // 파트를 합산해 body에 실어 보낸다(kilo-support-design §7).
+                // 파트를 합산해 body에 실어 보낸다.
                 // 5초 스로틀을 통과한 도구 이벤트에만 실리고, 나머지는 None.
                 tokens: event::kilo_turn_tokens(body),
             },
@@ -277,9 +277,9 @@ impl ObserverRuntime {
         self.hub.ingest_observer(session_id, event);
     }
 
-    /// Antigravity CLI(agy) 훅 이벤트 처리(docs/antigravity-support-design.md
-    /// §2/§3.4). `cwd_override`는 `agy() 셸 래퍼`가 `X-Agent-Office-Cwd`
-    /// 헤더로 실어 보낸 호출 시점 `$PWD`(§4 스파이크 실측: `workspacePaths`가
+    /// Antigravity CLI(agy) 훅 이벤트 처리.
+    /// `cwd_override`는 `agy() 셸 래퍼`가 `X-Agent-Office-Cwd`
+    /// 헤더로 실어 보낸 호출 시점 `$PWD`(스파이크 실측: `workspacePaths`가
     /// 빈 배열로 올 수 있다) — body의 `workspacePaths[0]`이 없을 때만 쓴다.
     pub fn ingest_agy_source(
         &self,
@@ -298,7 +298,7 @@ impl ObserverRuntime {
             event::agy_workspace_cwd_from_value(&value).or_else(|| cwd_override.map(str::to_string))
         };
         // 모든 이벤트에 conversationId가 실려 온다 — map 결과와 무관하게 먼저
-        // 캡처한다(claude_resume_recorder와 같은 원칙, §3.5).
+        // 캡처한다(claude_resume_recorder와 같은 원칙).
         if let (Some(sink), Some(conversation_id)) = (
             &self.agy_session_sink,
             event::agy_conversation_id_from_value(&value),
@@ -321,7 +321,7 @@ impl ObserverRuntime {
                 // 이 세션(ao_session_id)의 사용량 워터마크가 아직 없으면(첫
                 // 프롬프트) 지금 db의 max(idx)로 찍어 둔다 — 리줌·입양된
                 // 대화의 첫 Stop이 그 이전 전체 히스토리를 이번 턴 몫으로
-                // 잘못 합산하는 사고를 막는다(§3.6). 새 대화면 db가 아직
+                // 잘못 합산하는 사고를 막는다. 새 대화면 db가 아직
                 // 없거나 비어 있어 아무것도 안 찍히고, 그때는 agy_turn_usage의
                 // "워터마크 없으면 전체 합산"이 곧 이번 턴 전체와 같으므로 옳다.
                 if let Some(conversation_id) = event::agy_conversation_id_from_value(&value) {
@@ -341,7 +341,7 @@ impl ObserverRuntime {
             "tool" => ObserverEvent::Tool {
                 text: event::agy_tool_activity_text_from_value(&value),
                 assistant: None,
-                // agy 전사에는 토큰 수가 없다(설계 §3.6) — Stop에서 대화 db로
+                // agy 전사에는 토큰 수가 없다 — Stop에서 대화 db로
                 // 한 번에 합산한다(pi처럼 여기는 계속 None).
                 tokens: None,
             },
@@ -375,7 +375,7 @@ impl ObserverRuntime {
 }
 
 /// agy 대화 db 경로: `~/.gemini/antigravity-cli/conversations/<conversationId>.db`
-/// (SQLite, WAL 모드, agy가 열어둔 채 읽기 전용으로 열어야 한다 — 설계 §3.6).
+/// (SQLite, WAL 모드, agy가 열어둔 채 읽기 전용으로 열어야 한다).
 /// 홈 디렉터리는 `agy_hooks_file.rs`와 같은 `session::manager::home_dir()`을 쓴다.
 fn agy_conversation_db_path(conversation_id: &str) -> PathBuf {
     PathBuf::from(crate::session::manager::home_dir())
@@ -1048,7 +1048,7 @@ mod tests {
         (Arc::new(ObserverRuntime::new(hub, vec![])), recorded)
     }
 
-    /// Kilo 사용량 배선(kilo-support-design §7): 플러그인이 `tool`(partial)·
+    /// Kilo 사용량 배선: 플러그인이 `tool`(partial)·
     /// `stop` body에 실은 `tokens`가 알림과 독립된 turn_usage 채널로 나가야
     /// 한다. tokens가 없는 body는 usage 레코드를 만들지 않는다.
     #[test]
@@ -1114,7 +1114,7 @@ mod tests {
         assert_eq!(activities[0].cwd.as_deref(), Some("/w"));
     }
 
-    /// §4 스파이크 실측: workspacePaths가 빈 배열이면 헤더로 넘어온
+    /// 스파이크 실측: workspacePaths가 빈 배열이면 헤더로 넘어온
     /// cwd_override(agy() 셸 래퍼의 `$PWD`)로 강등한다.
     #[test]
     fn ingest_agy_source_falls_back_to_cwd_override_when_workspace_paths_is_empty() {
@@ -1201,7 +1201,7 @@ mod tests {
         assert_eq!(notifications[0].message, "Antigravity finished a task");
     }
 
-    /// §3.5: conversationId 캡처는 map 결과와 무관하게 먼저 일어난다 —
+    /// conversationId 캡처는 map 결과와 무관하게 먼저 일어난다 —
     /// invocationNum 필터로 버려지는 반복 PreInvocation에서도 기록돼야 한다.
     #[test]
     fn ingest_agy_source_records_conversation_id_even_when_the_event_is_dropped() {

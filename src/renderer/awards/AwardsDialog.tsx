@@ -1,6 +1,6 @@
 // src/renderer/awards/AwardsDialog.tsx
 //
-// "이 달의 우수사원" 시상 화면(docs/employee-of-the-month-design.md §6).
+// "이 달의 우수사원" 시상 화면.
 // TalkLogDialog와 같은 관례: ModalState(`kind: "awards"`)로 self-gate,
 // useEscapeToClose로 Esc 닫기, modal-backdrop 클릭으로 닫기.
 //
@@ -62,7 +62,7 @@ export function AwardsDialog() {
   const months = awards.map((a) => a.month); // month 오름차순(스토어 계약)
   const latestMonth = months.length > 0 ? months[months.length - 1] : null;
 
-  // 열릴 때: 보정 확정(§3, 내부에서 필요하면 load()도 부른다) + 최신 확정
+  // 열릴 때: 보정 확정(내부에서 필요하면 load()도 부른다) + 최신 확정
   // 월로 리셋. `loaded`를 의존성에 넣지 않는다 — 열려 있는 동안 로드가
   // 끝나 `loaded`가 바뀌어도 이 효과를 다시 돌릴 이유가 없다(ensureFinalized
   // 자체가 멱등: `finalizing` 가드로 중복 실행을 막는다).

@@ -1,4 +1,4 @@
-// Task detail popup header: task ID and copy button (docs/task-chat-design.md §UI > ID 복사).
+// Task detail popup header: task ID and copy button.
 //   npm run gui:shot -- --scenario workpanels --script scripts/gui-steps/work-id-copy.mjs
 export default async ({ page, shot }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);

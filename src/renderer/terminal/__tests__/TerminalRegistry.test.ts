@@ -26,7 +26,7 @@ const openMock = vi.fn();
 const disposeMock = vi.fn();
 const focusMock = vi.fn();
 // xterm.write(data, cb?)의 cb는 write 큐가 비워지면 호출된다 — flushAndSerializeAll이
-// 이 콜백을 기다리므로 목도 콜백을 즉시 불러 준다(§P1).
+// 이 콜백을 기다리므로 목도 콜백을 즉시 불러 준다.
 const writeMock = vi.fn((_data?: string, cb?: () => void) => cb?.());
 const loadAddonMock = vi.fn();
 const fitMock = vi.fn();
@@ -208,7 +208,7 @@ beforeEach(() => {
   openMock.mockReset();
   disposeMock.mockReset();
   focusMock.mockReset();
-  // 콜백 호출 구현을 유지해야 flushAndSerializeAll(§P1)의 write("", cb)가 resolve된다.
+  // 콜백 호출 구현을 유지해야 flushAndSerializeAll의 write("", cb)가 resolve된다.
   writeMock
     .mockReset()
     .mockImplementation((_data?: string, cb?: () => void) => cb?.());
@@ -509,7 +509,7 @@ describe("serializeAll (session handoff snapshot)", () => {
   });
 });
 
-describe("flushAndSerializeAll (broker v2 §P1)", () => {
+describe("flushAndSerializeAll", () => {
   it("flushes each terminal's write queue before serializing, keyed by agentId", async () => {
     const terminalRegistry = await importRegistry();
     const host = document.createElement("div");

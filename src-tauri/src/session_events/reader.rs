@@ -1,9 +1,9 @@
 // src-tauri/src/session_events/reader.rs
 //
 // 세션 이벤트 시계열(`<app-data>/session-events/v1/YYYY-MM-DD.jsonl`)의 읽기
-// 경로. `SessionEventStore`는 쓰기 전용 원칙을 유지하므로(선행 설계 §5.1)
-// 읽기는 이 독립 함수로 분리한다. 분석 패널(docs/session-analytics-design.md
-// §4.1)이 기간을 넘겨 원시 레코드를 받아가고, 집계는 렌더러가 한다.
+// 경로. `SessionEventStore`는 쓰기 전용 원칙을 유지하므로
+// 읽기는 이 독립 함수로 분리한다. 분석 패널이
+// 기간을 넘겨 원시 레코드를 받아가고, 집계는 렌더러가 한다.
 
 use std::fs;
 use std::path::Path;
@@ -18,7 +18,7 @@ use super::types::{SessionEventKind, SessionEventRecord};
 ///   `to_at`의 UTC 날짜까지 `YYYY-MM-DD.jsonl`을 순서대로 연다. 이 스캔
 ///   범위가 `at` 필터 범위를 완전히 덮는다.
 /// - 없는 파일·열기 실패(I/O 오류)는 해당 파일만 건너뛴다.
-/// - 빈 줄·파싱 불가 줄은 조용히 건너뛴다(부분 기록 내구성, 선행 설계 §7).
+/// - 빈 줄·파싱 불가 줄은 조용히 건너뛴다(부분 기록 내구성).
 /// - `from_at <= at <= to_at`(양끝 포함)로 거른 뒤 `(at, runId, seq)`로 정렬.
 /// - `kinds`가 `Some`이면 그 목록에 든 `kind`만 남긴다(파싱 직후 버려 나머지는
 ///   메모리에도, wire에도 안 올린다). `None`이면 현행 그대로 전부 돌려준다 —

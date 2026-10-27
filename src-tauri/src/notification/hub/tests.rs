@@ -282,7 +282,7 @@
         assert!(!usages[0].partial, "Stop의 turn-usage는 partial이 아니어야 한다");
     }
 
-    /// 턴 중간 갱신(§11.9): PostToolUse가 tokens를 실으면(claude 어댑터의 5초
+    /// 턴 중간 갱신: PostToolUse가 tokens를 실으면(claude 어댑터의 5초
     /// 스로틀 통과 시) hub가 Stop과 같은 독립 채널로 즉시 turn-usage를 내되
     /// `partial: true`로 표시한다 — 알림 파이프라인은 이 값을 전혀 건드리지
     /// 않는다(Tool은 애초에 알림을 안 낸다).

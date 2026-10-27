@@ -1,7 +1,6 @@
 // src/renderer/sessionlog/sessionLogStore.ts
 //
 // 세션 로그 보기 오버레이 전용 zustand 스토어(diaryStore와 같은 관례).
-// 설계: docs/session-log-design.md §7.
 //
 // 목록은 10개씩 페이징한다 -- 한 캐릭터가 한 달치를 쌓으면 수백 개가 되므로
 // 전부 들고 오지 않는다. 항목을 고르면 그때 동작(편집기로 열기 / 학습자료

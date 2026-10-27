@@ -1,6 +1,6 @@
 // src-tauri/src/control/protocol.rs
 //
-// CLI 제어(#55, docs/cli-control-design.md)의 와이어 계약. 앱 안의 로컬
+// CLI 제어(#55)의 와이어 계약. 앱 안의 로컬
 // control 서버(`control/mod.rs`)와 얇은 `ctl` 클라이언트(`control/client.rs`)가
 // 공유한다. 전송은 `POST http://127.0.0.1:<port>/v1/<command>` + 헤더
 // `X-Agent-Office-Token: <token>` + JSON 본문. 응답 봉투는 항상

@@ -477,7 +477,7 @@ export const tauriApi: AgentOfficeApi = {
       const channel = new Channel<OutputChunk>();
       const created: OutputSub = { channel, cbs: new Set() };
       channel.onmessage = (chunk) => {
-        // §#49: pass the raw stream byte count alongside the text so the
+        // #49: pass the raw stream byte count alongside the text so the
         // renderer can accumulate it on write to derive snapshot offsets.
         for (const f of created.cbs) {
           try {

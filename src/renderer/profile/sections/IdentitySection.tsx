@@ -22,8 +22,8 @@ export function IdentitySection({
   editingAgent: AgentProfile | undefined;
 }) {
   const { t } = useTranslation("profile");
-  // "이 달의 우수사원" 통산 수상 횟수 뱃지(docs/employee-of-the-month-design.md
-  // §6) — 스토어에서 count만 읽는 소규모 표시. 0회면 뱃지를 그리지 않는다.
+  // "이 달의 우수사원" 통산 수상 횟수 뱃지
+  // — 스토어에서 count만 읽는 소규모 표시. 0회면 뱃지를 그리지 않는다.
   const awardCountFor = useAwardsStore((s) => s.awardCountFor);
   return (
     <>

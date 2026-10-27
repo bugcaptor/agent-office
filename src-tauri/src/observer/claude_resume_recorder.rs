@@ -2,7 +2,7 @@
 //
 // 프로덕션 `ClaudeSessionSink` 구현. observer ingest가 Claude 훅 body에서
 // 뽑아 넘긴 native 세션 ID를, SessionRegistry로 ao_session_id → agent_id
-// 해석해 ClaudeResumeStore에 기록한다(docs/claude-session-resume-design.md §2).
+// 해석해 ClaudeResumeStore에 기록한다.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

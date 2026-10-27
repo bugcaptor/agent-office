@@ -1,6 +1,6 @@
 // src-tauri/src/control/client.rs
 //
-// `agent-office ctl …` 서브커맨드(이슈 #55, docs/cli-control-design.md). 같은
+// `agent-office ctl …` 서브커맨드(이슈 #55). 같은
 // 바이너리를 인자 분기로 실행하되 GUI(`run()`)에 도달하지 않는 단명 클라이언트
 // — `observer-forward`/`sessiond`와 동일한 검증된 패턴이다(lib.rs). 실행 중인
 // GUI 앱의 control 서버에 붙어 요청 1건을 보내고 stdout에 출력한 뒤 종료한다.
@@ -20,7 +20,7 @@ use super::read_token_at;
 
 const IDENTIFIER: &str = "com.bugcaptor.agent-office";
 
-// 종료 코드 계약(docs/cli-control-design.md §종료 코드).
+// 종료 코드 계약.
 const EXIT_OK: i32 = 0;
 const EXIT_CMD_ERROR: i32 = 1; // 서버가 ok:false로 거절
 const EXIT_CONNECT: i32 = 2; // 연결 실패(서버 없음/네트워크)

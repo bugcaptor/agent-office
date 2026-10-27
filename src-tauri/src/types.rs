@@ -258,13 +258,13 @@ pub struct NotificationEvent {
 /// 한 턴의 토큰 사용량. 알림과 **독립된** 이벤트 "turn-usage". 억제된 Stop
 /// (백그라운드 서브에이전트가 남아 `NotificationHub`가 알림을 삼킨 경우)에서도
 /// 이 이벤트만은 반드시 나간다 -- 알림 방출에 업혀 있던 예전 계측은 그 턴의
-/// 토큰이 영구 유실되는 원인이었다(docs/session-analytics-design.md §9.1).
+/// 토큰이 영구 유실되는 원인이었다.
 /// `tokens`가 Option이 아닌 이유: 값이 있을 때만 방출한다는 계약을 타입으로
 /// 못박는다 -- 호출부가 빈 사용량으로 이벤트를 만들 일이 아예 없다.
 ///
 /// `partial`: 이 사용량이 턴이 끝나기 **전**의 중간 관측인지(true, claude
 /// 어댑터의 PostToolUse 스로틀 통과 시) 턴이 실제로 끝난 시점의 것인지(false,
-/// Stop)를 구분한다(§9.9/§11.9). 워터마크 델타 추출이라 이중 계산은 없지만
+/// Stop)를 구분한다. 워터마크 델타 추출이라 이중 계산은 없지만
 /// (같은 구간을 두 번 세지 않는다), "턴이 몇 번 있었는지" 세는 소비자
 /// (`sessionCost.addTurn`)는 partial인 방출로 턴 수를 올리면 안 된다 — 한
 /// 턴 안에서 도구를 여러 번 부르면 그만큼 partial 이벤트가 여러 번 나가기
@@ -346,7 +346,7 @@ pub struct SessionTurnRecord {
     pub waited_ms: u64,
 }
 
-/// 세션 로그 파일 하나의 요약 정보(docs/session-log-design.md §6).
+/// 세션 로그 파일 하나의 요약 정보.
 /// 목록 UI가 쓰는 메타데이터 -- 본문은 담지 않는다(파일이 수십 MB일 수 있다).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -563,7 +563,7 @@ pub struct CreateSessionRequest {
     /// 제공한 command wrapper specs를 PowerShell 함수, Git Bash `--rcfile`,
     /// 또는 zsh ZDOTDIR shim으로 렌더링한다.
     pub autostart_claude: Option<bool>,
-    /// 태스크 대화 세션(docs/task-chat-design.md §세션). agentId가 `task-chat-` 접두사여야
+    /// 태스크 대화 세션. agentId가 `task-chat-` 접두사여야
     /// 한다. 관찰 훅·`AGENT_OFFICE_AGENT_ID`·persona·셸 작업중 감시를 빼고 대화용 권한 설정을 붙인다.
     #[serde(default)]
     pub task_chat: bool,
@@ -585,10 +585,10 @@ pub struct CreateSessionResult {
     pub state: SessionState,
 }
 
-/// 세션 핸드오프(docs/session-handoff-design.md): 부트스트랩 시
+/// 세션 핸드오프: 부트스트랩 시
 /// `adopt_detached_sessions` 커맨드가 되찾은 세션 하나. 프론트는 이 목록으로
 /// 상태를 Running 시드하고, 터미널을 재부착할 때 rows/cols로 redraw nudge를
-/// 수행한다(§프론트).
+/// 수행한다.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdoptedSessionInfo {
@@ -607,7 +607,7 @@ pub struct OutputChunk {
     pub data: String,      // UTF-8. OutputBatcher가 이어붙인 결과(경계 캐리 처리됨)
     pub frames: u32,       // 담은 원본 read 이벤트 수(진단용)
     pub seq: u64,          // 세션별 단조 증가
-    pub bytes: u64, // 이 청크가 담은 원본(raw) 스트림 바이트 수(§#49 offset 회계). data의 UTF-8 길이와 다를 수 있음.
+    pub bytes: u64, // 이 청크가 담은 원본(raw) 스트림 바이트 수(#49 offset 회계). data의 UTF-8 길이와 다를 수 있음.
 }
 
 /// 알림 클리어됨 브로드캐스트. 이벤트 "notification-cleared".
@@ -1710,7 +1710,7 @@ pub struct WorkItem {
     #[serde(default, skip_serializing_if = "Option::is_none")] pub last_error: Option<String>,
     /// 선행 업무 id. 모두 완료돼야 이 업무를 보낼 수 있다.
     #[serde(default, skip_serializing_if = "Vec::is_empty")] pub depends_on: Vec<String>,
-    /// 자동 진행 상태(docs/auto-run-design.md). 렌더러가 소유하고 네이티브는 보존만 한다.
+    /// 자동 진행 상태. 렌더러가 소유하고 네이티브는 보존만 한다.
     #[serde(default, skip_serializing_if = "Option::is_none")] pub auto_run: Option<serde_json::Value>,
     pub created_at: u64,
     pub updated_at: u64,
@@ -1758,7 +1758,7 @@ pub struct WorkSendRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkSendResult { pub session_id: String, pub submitted_at: u64 }
-/// 실행 중인 CLI에 넣는 후속 프롬프트 하나(docs/auto-run-design.md).
+/// 실행 중인 CLI에 넣는 후속 프롬프트 하나.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WorkFollowUpRequest {
@@ -1766,7 +1766,7 @@ pub struct WorkFollowUpRequest {
     pub session_id: String,
     pub text: String,
 }
-/// 태스크 대화 열기(docs/task-chat-design.md §기동). 렌더러가 태스크·루트 스냅샷을 넘기고
+/// 태스크 대화 열기. 렌더러가 태스크·루트 스냅샷을 넘기고
 /// 네이티브가 보고·세션 로그 경로·Git 기록을 붙여 첫 프롬프트를 만든다.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

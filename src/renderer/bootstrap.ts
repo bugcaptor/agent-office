@@ -58,7 +58,7 @@ import {
 } from "./timeline/todayTotal";
 
 /**
- * 이 달의 우수사원(docs/employee-of-the-month-design.md §3) 부팅 시 자동 확정:
+ * 이 달의 우수사원 부팅 시 자동 확정:
  * 시상 기록을 읽고, 완료됐지만 아직 레코드가 없는 달을 소급 확정한다(최대
  * 12개월). `adoptDetachedSessions`와 달리 **await하지 않는다** —
  * 최대 12번의 순차 IPC 왕복이 필요해 부팅 시퀀스 전체(요약기·git 브랜치 워처·
@@ -78,8 +78,7 @@ function finalizeAwardsInBackground(): void {
 
 /**
  * "오늘 일한 시간" 헤드라인의 로컬 자정 리셋 타이머. 발화 시 베이스를 0으로,
- * 기준선을 그 시점의 Σ메모리 workedMs로 세팅(파일 재읽기 없음 — 계산 모델은
- * docs/superpowers/specs/2026-07-11-today-worked-total-design.md 참고)한 뒤
+ * 기준선을 그 시점의 Σ메모리 workedMs로 세팅(파일 재읽기 없음)한 뒤
  * 다음 자정으로 재예약한다. `window.setTimeout`이 아니라 전역 `setTimeout`을
  * 쓴다 — persist.ts의 디바운스 타이머와 동일 컨벤션이며, `window`가 없는
  * Node 테스트 환경(bootstrap.test.ts)에서도 안전하다.
@@ -142,7 +141,7 @@ export async function bootApp(): Promise<() => void> {
 
   // "오늘 일한 시간" 헤드라인 베이스 — 실패해도 부팅 계속(base=0, loadState
   // 실패 패턴과 동일). 부팅 스냅샷은 이후 재읽기 안 함(계산 모델은
-  // todayTotal.ts/설계 문서 참고) — 이번 실행 정산분은 메모리로만 누적된다.
+  // todayTotal.ts 참고) — 이번 실행 정산분은 메모리로만 누적된다.
   try {
     const records = await tauriApi.loadSessionTurns();
     const base = sumWorkedSince(records, startOfLocalDay(Date.now()));

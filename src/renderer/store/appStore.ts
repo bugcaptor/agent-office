@@ -192,7 +192,7 @@ interface AppState {
    * `useSessionUsageSeed`가 앱 수명당 1회 심는 과거 시드(`{at, bySession}`).
    * `at` 이하 시각의 사용량은 이미 시드에 들어 있으므로 `applyTurnUsage`가
    * 이중 계산을 막는 데 쓴다. null = 아직 시딩 전(또는 설정이 꺼짐). 런타임
-   * 전용(비영속) — `docs/session-analytics-design.md` §11.
+   * 전용(비영속).
    */
   sessionUsageSeed: {
     at: number;
@@ -203,7 +203,7 @@ interface AppState {
    * 사용량은 기록하지 않는다). `useSessionUsageSeed`가 시드 컷오프를 여기에
    * 묶는다(`firstAt - 1`) — "훅이 언제 돌았나"가 아니라 "실시간이 언제부터
    * 세었나"에 묶어야, 시드가 늦게 심겨도(설정을 뒤늦게 켠 경우 등) 실시간과
-   * 겹치는 구간이 구조적으로 없다(§11.3). null = 아직 실시간이 한 턴도 안
+   * 겹치는 구간이 구조적으로 없다. null = 아직 실시간이 한 턴도 안
    * 반영함. 런타임 전용(비영속).
    */
   sessionUsageFirstAt: number | null;
@@ -241,7 +241,7 @@ interface AppState {
    * 끝났는지). 스토어 생성 시점의 `appSettings`는 `DEFAULT_APP_SETTINGS`
    * 플레이스홀더라 그것만으로는 "진짜 설정이 왔는지" 구분이 안 된다 —
    * `useSessionUsageSeed`가 이 값이 true가 될 때까지 시딩을 미루는 게이트로
-   * 쓴다(§11.5). `AppSettings`의 필드가 아니다(영속 대상 아님, 계약 밖).
+   * 쓴다. `AppSettings`의 필드가 아니다(영속 대상 아님, 계약 밖).
    * 런타임 전용, 초기값 false.
    */
   settingsHydrated: boolean;
@@ -336,7 +336,7 @@ interface AppState {
   applyNotificationTiming(e: NotificationEvent): void;
   applySessionTiming(agentId: string, state: SessionState, at: number): void;
 
-  // ---- session usage (터미널 요약 바 토큰·비용, docs/session-analytics-design.md §11) ----
+  // ---- session usage (터미널 요약 바 토큰·비용) ----
   /** 이 에이전트가 지금 이 `sessionId`를 쓰고 있음을 알린다. 엔트리가
    * 없거나 세션이 바뀌었으면 누계를 0으로 새로 깐다(같으면 no-op). */
   noteUsageSession(agentId: string, sessionId: string): void;
@@ -344,7 +344,7 @@ interface AppState {
    * 억제된 Stop에서도 온다). 시드가 이미 깔려 있고 `e.at <= sessionUsageSeed.at`
    * 이면 그 턴은 시드에 이미 들어 있으므로 무시한다(이중 계산 방지). `e.partial`은
    * 그대로 `addTurn`에 넘긴다 — PostToolUse 중간 갱신(partial:true)은 토큰·비용은
-   * 반영하되 턴 수는 안 올린다(§11.9). */
+   * 반영하되 턴 수는 안 올린다. */
   applyTurnUsage(e: TurnUsageEvent): void;
   /** `useSessionUsageSeed`가 부팅 후 1회 호출. 이미 시드가 있으면 no-op. */
   setSessionUsageSeed(seed: {
@@ -670,7 +670,7 @@ export const useAppStore = create<AppState>()(
 
     openTerminal: (agentId) =>
       set((s) => {
-        // 태스크 대화 탭(docs/task-chat-design.md)은 캐릭터가 아니다 — 활성만 바꾸고
+        // 태스크 대화 탭은 캐릭터가 아니다 — 활성만 바꾸고
         // 캐릭터 탭 순서(recentAgentIds)에는 넣지 않는다. 탭 목록은 taskChatStore가 쥔다.
         if (isTaskChatId(agentId)) {
           return s.activeTerminalAgentId === agentId ? s : { activeTerminalAgentId: agentId };

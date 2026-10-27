@@ -1,12 +1,12 @@
 // src-tauri/src/persistence/agy_resume_store.rs
 //
 // Antigravity CLI(agy) native `conversationId` 영속화(`agy-resume.json`,
-// Tauri app data dir). docs/antigravity-support-design.md §3.5: "모든 이벤트에
+// Tauri app data dir). 설계 당시 원칙: "모든 이벤트에
 // conversationId가 실려 온다. ClaudeSessionSink::record와 같은 sink에 provider를
 // 넣어 기록한다. 스토어 파일은 provider별로 나눈다." -- claude_resume_store.rs와
 // 같은 구조(에이전트당 최신 1건, tmp→rename 원자 쓰기, 로드 파손은 빈 상태로
 // fail-open)를 그대로 따르되 provider별 파일을 분리한다. v1은 기록까지만 -- 재개
-// 명령(`agy --conversation <id>`) UI는 범위 밖(§3.5).
+// 명령(`agy --conversation <id>`) UI는 범위 밖.
 
 use std::collections::HashMap;
 use std::path::PathBuf;

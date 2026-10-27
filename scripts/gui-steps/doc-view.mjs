@@ -1,4 +1,4 @@
-// Markdown editor "open in browser" button (docs/doc-view-design.md §5).
+// Markdown editor "open in browser" button.
 //   npm run gui:shot -- --scenario office --script scripts/gui-steps/doc-view.mjs
 export default async ({ page, shot }) => {
   await page.evaluate(async () => {

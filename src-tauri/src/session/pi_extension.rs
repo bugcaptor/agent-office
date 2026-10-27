@@ -9,7 +9,7 @@
 // 주입하면, 확장이 Pi 라이프사이클 이벤트를 기존 `/hook` 엔드포인트로 POST한다
 // (다운스트림 hook_server/hub/turnReducer 무수정 재사용).
 //
-// 매핑(pi v0.84.2 실측 재확정 — 최초 설계는 docs/pi-support-design.md §9, v0.80.3):
+// 매핑(pi v0.84.2 실측 재확정 — 최초 설계는 v0.80.3 기준):
 //   before_agent_start  → source=prompt {"prompt": ..., "cwd": ...}
 //   tool_execution_start→ source=tool   {"tool_name": ..., "tool_input": {...}}
 //   message_end(assistant, 5s 스로틀)
@@ -355,7 +355,7 @@ mod tests {
         assert!(PI_EXTENSION_TS.contains("AGENT_OFFICE_SESSION"));
         // -e 중복 지정 방어
         assert!(PI_EXTENSION_TS.contains("__AGENT_OFFICE_PI_HOOKED__"));
-        // 후일 CLI 구분용 선제 태깅 (§5)
+        // 후일 CLI 구분용 선제 태깅
         assert!(PI_EXTENSION_TS.contains("&agent=pi"));
         // jiti default-export 팩토리 계약 (loader.js가 함수 여부만 확인)
         assert!(PI_EXTENSION_TS.contains("export default function"));

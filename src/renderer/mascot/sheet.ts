@@ -27,7 +27,7 @@ export interface MascotFrames {
 /**
  * 디코드 캔버스 크기 — `spriteCache.sheetCanvasDims`와 같은 규약이다. 그 함수를
  * import하지 않는 이유는 spriteCache가 zustand 스토어를 끌고 오기 때문(마스코트
- * 창은 스토어를 두 번째로 만들지 않는다는 원칙, 설계 §1).
+ * 창은 스토어를 두 번째로 만들지 않는다는 원칙).
  */
 export function mascotSheetDims(w: number, h: number): { w: number; h: number } {
   const det = detectSheet(w, h);

@@ -57,7 +57,7 @@ pub async fn send_work_item(
         .await
 }
 
-/// 자동 진행의 후속 지시(docs/auto-run-design.md). 실행 중인 CLI에 프롬프트 하나를 넣는다.
+/// 자동 진행의 후속 지시. 실행 중인 CLI에 프롬프트 하나를 넣는다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn send_work_follow_up(
     request: WorkFollowUpRequest,
@@ -150,7 +150,7 @@ pub async fn import_work_items_file(
     super::open_text_with_dialog(&app, &filter_name).await
 }
 
-/// 태스크 대화 열기(docs/task-chat-design.md §기동). `task-chat-<taskId>` 세션을 만들고 맥락 묶음을
+/// 태스크 대화 열기. `task-chat-<taskId>` 세션을 만들고 맥락 묶음을
 /// 첫 프롬프트로 넣는다. 캐릭터 프로필 검사(`validate_target`)는 하지 않는다 — 대화 세션은 캐릭터가 없다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn open_task_chat(

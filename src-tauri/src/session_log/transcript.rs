@@ -1,7 +1,6 @@
 // src-tauri/src/session_log/transcript.rs
 //
 // 원시 PTY 바이트 스트림 -> "읽을 수 있는 전사(transcript)" 필터.
-// docs/session-log-design.md §3 이 정본.
 //
 // 왜 단순 strip-ANSI가 아닌가: Claude Code(Ink)·Codex 같은 TUI는 커서를 위로
 // 올리고 지운 뒤 같은 자리를 다시 그린다. 이스케이프만 제거하면 스피너 프레임
@@ -20,7 +19,7 @@ use std::collections::VecDeque;
 /// PTY 전사로 기록하지 않지만 "여기서 전체 화면 앱을 썼다"는 사실은 남긴다.
 ///
 /// Claude Code·Codex도 대체 화면을 쓴다 -- 그 대화는 이 경로가 아니라
-/// agent_transcript(각 CLI가 남기는 JSONL 전사)가 채운다(§3.4).
+/// agent_transcript(각 CLI가 남기는 JSONL 전사)가 채운다.
 pub const ALT_ENTER_MARKER: &str = "[전체 화면 앱 시작]";
 pub const ALT_EXIT_MARKER: &str = "[전체 화면 앱 종료]";
 

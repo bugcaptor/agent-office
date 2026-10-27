@@ -19,8 +19,7 @@ use std::os::unix::io::RawFd;
 use nix::sys::socket::{recvmsg, sendmsg, ControlMessage, ControlMessageOwned, MsgFlags};
 use serde::{Deserialize, Serialize};
 
-// 프로토콜 버전 1: 종료 시점 fd 핸드오프(Handoff/Adopt). 예전 v2(상시 브로커,
-// docs/archive/session-broker-v2-design.md)는 제거됐다. 데몬은 Hello를
+// 프로토콜 버전 1: 종료 시점 fd 핸드오프(Handoff/Adopt). 예전 v2(상시 브로커)는 제거됐다. 데몬은 Hello를
 // `min(요청, PROTO_VERSION)`으로 수락하므로, 업데이트 직후 아직 떠 있는 옛
 // 데몬(proto 2)과도 v1 메시지로 그대로 통한다.
 pub const PROTO_VERSION: u32 = 1;

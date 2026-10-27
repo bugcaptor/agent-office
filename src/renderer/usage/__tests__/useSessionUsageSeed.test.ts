@@ -2,8 +2,7 @@
 //
 // src/renderer/usage/__tests__/useSessionUsageSeed.test.ts
 //
-// useSessionUsageSeed 배선 검증(docs/session-analytics-design.md §11.3·11.5,
-// 코드 리뷰 A/B/E 수정). 모듈 스코프 `attempted` 플래그가 앱 수명당 1회를
+// useSessionUsageSeed 배선 검증(코드 리뷰 A/B/E 수정). 모듈 스코프 `attempted` 플래그가 앱 수명당 1회를
 // 강제하므로, 테스트마다 `vi.resetModules()`로 훅과 스토어를 둘 다 새로
 // import해 격리한다(둘이 같은 `useAppStore` 인스턴스를 봐야 하므로 훅과
 // 스토어를 항상 같은 `load()` 호출에서 함께 가져온다).

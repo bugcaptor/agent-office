@@ -1,7 +1,7 @@
 // src/renderer/timeline/__tests__/agentStats.test.ts
 //
 // Pure-function tests for the per-agent stats helpers. No React/store/IPC —
-// see agentStats.ts and docs/superpowers/specs/2026-07-11-per-agent-stats-design.md.
+// see agentStats.ts.
 import { describe, expect, it } from "vitest";
 import { aggregateByAgent, buildAgentStatsRows } from "../agentStats";
 import { sumWorkedSince } from "../todayTotal";

@@ -1,6 +1,6 @@
 // src/renderer/guiHarness/tauriStub.ts
 //
-// 헤드리스 GUI 하네스(docs/gui-harness-design.md)의 첫 모듈. `scripts/gui-shot.mjs`
+// 헤드리스 GUI 하네스의 첫 모듈. `scripts/gui-shot.mjs`
 // 가 index.html·mascot.html 맨 앞에 이 파일을 끼워 넣어, 앱 모듈이 평가되기 전에
 // `window.__TAURI_INTERNALS__`를 심는다. 앱의 명령 호출은 Vite 플러그인이
 // `ipc/tauriApi.ts`를 `fakeApi.ts`로 바꿔 받으므로 여기 오지 않는다. 여기는

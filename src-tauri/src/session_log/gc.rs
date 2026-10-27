@@ -1,6 +1,6 @@
 // src-tauri/src/session_log/gc.rs
 //
-// 세션 로그 보존 정리. docs/session-log-design.md §4.2 가 정본.
+// 세션 로그 보존 정리.
 //
 //   1) 기간: mtime이 30일보다 오래된 파일 삭제.
 //   2) 용량: 남은 총합이 2GB를 넘으면 오래된 것부터 그 아래로 내려갈 때까지 삭제.

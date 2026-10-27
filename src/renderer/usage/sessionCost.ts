@@ -95,7 +95,7 @@ export function mergeTotals(a: SessionUsageTotals, b: SessionUsageTotals): Sessi
  * stop 레코드는 애초에 tokens가 없으므로, 전환기에도 같은 턴이 usage와
  * stop 양쪽에 실려 두 번 잡히는 일은 구조적으로 없다.
  *
- * `r.partial`도 `addTurn`에 그대로 넘긴다(§11.9) — 이 필드가 생기기 전의
+ * `r.partial`도 `addTurn`에 그대로 넘긴다 — 이 필드가 생기기 전의
  * 과거 레코드는 `undefined`이고, 전부 Stop 유래(=턴이 끝난 것)이므로
  * `?? false`로 강등한다. 그렇지 않고 partial 유무를 무시하면 재부팅 시드가
  * PostToolUse 중간 갱신 레코드까지 턴으로 세어 `turns`가 실제보다 부푼다.

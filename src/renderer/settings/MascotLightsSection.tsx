@@ -1,10 +1,10 @@
 // src/renderer/settings/MascotLightsSection.tsx
 //
-// 마스코트 신호등(docs/mascot-lights-design.md) 설정 UI. 모드(끄기/에이전트별/
+// 마스코트 신호등 설정 UI. 모드(끄기/에이전트별/
 // 프로젝트별) 선택, 세로 배열 체크박스, 프로젝트 모드일 때만 보이는 폴더 목록
 // 편집기(추가/제거)로 구성된다.
 //
-// `mascotEnabled`가 신호등의 상위 게이트다(설계 §2 결정 6) — 마스코트 자체가
+// `mascotEnabled`가 신호등의 상위 게이트다 — 마스코트 자체가
 // 꺼져 있으면 셋 다 비활성화한다(값은 유지, 조작만 막는다).
 
 import { useTranslation } from "react-i18next";

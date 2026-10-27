@@ -5,7 +5,7 @@
 
 /**
  * 구독 사용량(rate limit) 한도 윈도 종류. Rust `UsageWindowKind`
- * (serde snake_case) 미러. 설계: docs/usage-limits-design.md §3.
+ * (serde snake_case) 미러.
  * `unknown`은 미래 확장 대비 폴백(예: 매핑 안 된 codex window_minutes).
  */
 export type UsageWindowKind =
@@ -63,7 +63,7 @@ export interface ProviderUsage {
 
 /**
  * Claude 실시간 조회(`GET /api/oauth/usage`)의 마지막 시도 결과. Rust
- * `LiveFetchOutcome`(serde snake_case) 미러. 설계: docs/usage-design.md §7.
+ * `LiveFetchOutcome`(serde snake_case) 미러.
  *
  * 이 값이 `ok`가 아니면 화면의 Claude 숫자는 `~/.claude.json`의 로컬 캐시
  * 미러이고, 그 캐시는 **Claude Code에서 `/usage`를 열 때만** 갱신된다

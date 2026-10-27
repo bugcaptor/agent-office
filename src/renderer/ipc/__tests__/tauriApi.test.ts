@@ -81,7 +81,7 @@ describe("onData fanout", () => {
     const channel = capturedChannel("a1");
     channel.onmessage(makeChunk({ data: "hi", bytes: 2 }));
 
-    // §#49: callbacks receive (data, bytes) so the renderer can accumulate the
+    // #49: callbacks receive (data, bytes) so the renderer can accumulate the
     // raw stream byte count for snapshot offset accounting.
     expect(cb1).toHaveBeenCalledWith("hi", 2);
     expect(cb2).toHaveBeenCalledWith("hi", 2);

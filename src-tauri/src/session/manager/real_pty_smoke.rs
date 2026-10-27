@@ -244,7 +244,7 @@ return
     }
 
     /// 실 PTY + 실 sessiond 프로세스로 handoff_all -> adopt_detached 왕복
-    /// 전체를 검증한다(docs/session-handoff-design.md §핵심 3, 4). 데몬을
+    /// 전체를 검증한다. 데몬을
     /// `client::connect_or_spawn`의 스폰 경로에 맡기지 않고 미리 띄워 둔다
     /// -- `cargo test` 바이너리는 `--sessiond` 분기가 없는 별개의 실행
     /// 파일이라 `spawn_daemon`(현재 실행 파일 재실행)을 여기서 구동할 수
@@ -1082,7 +1082,7 @@ return
         mgr.dispose("shellwatch");
     }
 
-    /// 태스크 대화 세션 종단 확인(docs/task-chat-design.md §관찰을 끈다): 관찰이 켜진
+    /// 태스크 대화 세션 종단 확인: 관찰이 켜진
     /// 매니저에서도 대화 세션의 진짜 로그인 셸에는 `AGENT_OFFICE_AGENT_ID`·
     /// `AGENT_OFFICE_HOOK_URL`이 없고, `claude` 래퍼는 훅 설정 대신 대화용 설정 파일을
     /// 붙이며, 포그라운드 명령이 셸 작업중 신호를 내지 않는다.

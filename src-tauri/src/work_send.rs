@@ -84,8 +84,8 @@ impl WorkSendRuntime {
         self.send_with_wait(gate, root, request, Duration::from_secs(10))
             .await
     }
-    /// 자동 진행의 후속 지시: 이미 돌고 있는 CLI에 프롬프트 하나를 넣는다
-    /// (docs/auto-run-design.md). 기동은 하지 않고, 보내기와 같은 캐릭터별
+    /// 자동 진행의 후속 지시: 이미 돌고 있는 CLI에 프롬프트 하나를 넣는다.
+    /// 기동은 하지 않고, 보내기와 같은 캐릭터별
     /// 상호배제·전환 소유권·사람 입력 검사를 거친다.
     pub async fn follow_up(
         &self,

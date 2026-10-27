@@ -2,7 +2,7 @@
 //
 // 분석 차트의 에이전트별 색. 살아있는 프로필은 스프라이트 팔레트의 대표색
 // (셔츠 base — 캐릭터의 주된 옷 색)을 쓰고, 삭제된 에이전트는 중립 회색
-// 계열을 순환 배정한다(docs/session-analytics-design.md §4.3).
+// 계열을 순환 배정한다.
 //
 // 색 파생은 office 스프라이트 파이프라인과 동일한 결정적 순수 경로
 // (seed → PRNG → archetype.generatePalette)를 재사용한다. gen/ 모듈은

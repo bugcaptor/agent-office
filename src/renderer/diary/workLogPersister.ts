@@ -26,7 +26,7 @@ export const RESTORE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000; // 14일
  * 부팅 복원으로 버퍼에 채워진 `${agentId}:${sessionId}` 키 집합. diaryFlusher가
  * 이 세션들만 "이미 일기가 있는지" 중복 검사한다 — "appendDiaryEntry는 됐는데 로그
  * clear 스냅샷은 디스크에 못 간 채 크래시"한 창에서 같은 세션이 두 번 일기화되는
- * 걸 막는다(§1-4). 런타임에 새로 생긴 세션은 메모리 상태가 정본이라 불필요.
+ * 걸 막는다. 런타임에 새로 생긴 세션은 메모리 상태가 정본이라 불필요.
  * flusher가 처리(생성/스킵)하면 키를 지운다.
  */
 export const restoredSessionKeys = new Set<string>();

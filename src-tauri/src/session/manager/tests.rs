@@ -1198,7 +1198,7 @@
         cleanup(&ctl, &dir);
     }
 
-    // ---- Work inbox env (docs/work-panels-design.md §업무 수신함) ----
+    // ---- Work inbox env ----
 
     #[tokio::test]
     async fn create_env_carries_agent_id_work_inbox_and_task_shim() {
@@ -1537,13 +1537,13 @@
         cleanup(&ctl, &dir);
     }
 
-    // ---- 세션 핸드오프(docs/session-handoff-design.md) 회귀: handed_off ----
+    // ---- 세션 핸드오프 회귀: handed_off ----
     //
     // 실제 UDS/sessiond 왕복은 sessiond::protocol/daemon/client 유닛 테스트가
     // 커버한다. 여기서는 핸드오프가 "성공했다고 치고" 세션에 handed_off를
     // 직접 세팅해(Fake에는 handoff/reader_interrupt가 애초에 없으므로
     // handoff_one 자체는 구동할 수 없다 -- private 필드에 직접 접근하는 이
-    // 시뮬레이션이 설계 문서가 말하는 "Fake에 handoff 시뮬레이션 훅") 그
+    // 시뮬레이션이 Fake의 handoff 시뮬레이션 훅이다) 그
     // 이후 dispose_all/on_exit이 정말로 손을 떼는지만 검증한다.
 
     #[tokio::test]

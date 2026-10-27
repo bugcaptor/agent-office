@@ -85,6 +85,6 @@ export async function runQuitDiaryFlush(
     });
   }
 
-  // 성공적으로 비워진 버퍼를 반영(중복 방지 happy path). 실패해도 §1-4 dedupe가 커버.
+  // 성공적으로 비워진 버퍼를 반영(중복 방지 happy path). 실패해도 부팅 복원 dedupe가 커버.
   if (persister) await persister.flushNow().catch(() => {});
 }

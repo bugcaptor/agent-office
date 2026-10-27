@@ -1,6 +1,6 @@
 // src/renderer/mascot/protocol.ts
 //
-// 데스크톱 마스코트 창(이슈 #72, docs/mascot-window-design.md)의 창 간 계약.
+// 데스크톱 마스코트 창(이슈 #72)의 창 간 계약.
 //
 // main 창(zustand = 진실의 원천)이 `mascot-state` 이벤트로 이 페이로드를
 // 브로드캐스트하고, mascot 창은 순수 소비자로 받아 그린다. Rust serde를 거치지
@@ -62,11 +62,11 @@ export function maxLightsFor(wide: boolean, vertical: boolean): number {
   return wide && !vertical ? MAX_LIGHTS_WIDE : MAX_LIGHTS;
 }
 
-/** 신호등 램프 하나의 상태(docs/mascot-lights-design.md §3). */
+/** 신호등 램프 하나의 상태. */
 export type MascotLightState = "off" | "working" | "attention";
 
 /**
- * 램프 칸에 얼굴을 띄울 에이전트의 스프라이트 좌표(설계 §6 개정). 에이전트
+ * 램프 칸에 얼굴을 띄울 에이전트의 스프라이트 좌표. 에이전트
  * 모드는 그 에이전트 자신, 프로젝트 모드는 대표 에이전트(clickAgentId)다.
  * 픽셀이 아니라 재생성 좌표만 나른다 — `MascotState`의 스프라이트 필드와 같은
  * 규약이라 마스코트 창이 결정적으로 같은 얼굴을 다시 만든다.

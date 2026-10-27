@@ -22,7 +22,7 @@
 // 무관하게 항상 전체 창 정보를 포함한다.
 //
 // 폴링: 마운트 시 1회 + 60초 간격으로 loadUsageSnapshot을 invoke해 스토어에
-// 저장한다(설계 docs/usage-design.md §3). 파일 읽기가 저비용이라
+// 저장한다. 파일 읽기가 저비용이라
 // 백엔드 타이머/파일 워처 없이 단순 폴링으로 충분. 응답의 provider별 null은
 // mergeUsageSnapshot으로 이전 값 위에 덮어써(일시 파싱 실패가 유효 값을
 // 지우지 않게) 저장한다.
@@ -61,7 +61,7 @@ function ProviderBadge({
   const { t } = useTranslation("activity");
   const short = PROVIDER_SHORT[provider];
   const windows = badgeWindows(usage);
-  // 폭이 빠듯한 BottomBar(설계 §BottomBar 800px)라 글자를 늘리지 않는다 —
+  // 폭이 빠듯한 BottomBar라 글자를 늘리지 않는다 —
   // 사유는 툴팁과 상세 모달에, 여기서는 색 힌트만 준다.
   const degraded = note && note.level !== "ok" ? ` usage-badge-${note.level}` : "";
   const noteSuffix =
@@ -93,7 +93,7 @@ function ProviderBadge({
   return (
     <span className={`usage-badge${degraded}`} title={title}>
       {/* usage-badge-label은 BottomBar가 좁을 때 usage.css 미디어 쿼리로
-          숨겨진다 — 좁은 폭에서는 퍼센트 숫자만 남긴다(레이아웃 §BottomBar 800px). */}
+          숨겨진다 — 좁은 폭에서는 퍼센트 숫자만 남긴다. */}
       <span className="usage-badge-label">{short}</span>{" "}
       {windows.map((w, i) => (
         <span key={i} className={i > 0 ? `usage-badge-extra usage-level-${usageLevel(w.usedPercent)}` : undefined}>

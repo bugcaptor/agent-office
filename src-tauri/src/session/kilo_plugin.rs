@@ -16,7 +16,6 @@
 //     붙는다(session/wrapper_script.rs `set_env_from_env`).
 //   - 사용자가 이미 자기 `KILO_CONFIG`를 쓰고 있으면(`skip_if_env_set`) 관찰을
 //     포기하고 원본 명령을 그대로 실행한다 — 덮어쓰면 사용자 설정이 깨진다.
-//   - 이벤트 페이로드는 docs/kilo-support-design.md의 매핑 표를 따른다.
 //     핵심만 다시 적으면: `chat.message`가 프롬프트/도구 하트비트 겸용(자식
 //     세션이면 하트비트, 아니면 프롬프트), `tool.execute.before`가 도구
 //     시작, `event`(session.created/session.idle/permission.*)가 자식 세션
@@ -106,7 +105,7 @@ export const AgentOffice = async (ctx: any) => {
   let rootSessionID: string | undefined;
   let lastError = false; // 이번 루트 턴에서 session.error를 봤는가
 
-  // 사용량 회계(docs/kilo-support-design.md §7). Kilo는 전사 파일이 없어
+  // 사용량 회계. Kilo는 전사 파일이 없어
   // 플러그인 이벤트가 유일한 원천이다. assistant 메시지 info의 `tokens`는
   // **마지막 스텝 값으로 덮어써지고** cost만 누적되므로(실측), 메시지 단위가
   // 아니라 `message.part.updated`의 `step-finish` 파트를 part.id로 중복 제거해
@@ -263,7 +262,7 @@ export const AgentOffice = async (ctx: any) => {
       } catch { /* 관찰 실패는 삼킨다 */ }
     },
 
-    // 사무실 공통 안내문(docs/work-panels-design.md §업무 수신함). 업무 패널이 켜진 세션에만
+    // 사무실 공통 안내문. 업무 패널이 켜진 세션에만
     // env가 실린다. 시스템 프롬프트 배열 끝에 덧붙이고 기본 지침은 건드리지 않는다.
     "experimental.chat.system.transform": async (_input: any, output: any) => {
       const office = process.env.AGENT_OFFICE_OFFICE_PROMPT;
@@ -533,7 +532,7 @@ mod tests {
         );
     }
 
-    /// 사용량 회계(§7): assistant info의 tokens는 마지막 스텝 값으로 덮어써지므로
+    /// 사용량 회계: assistant info의 tokens는 마지막 스텝 값으로 덮어써지므로
     /// step-finish 파트를 part.id로 중복 제거해 합산해야 하고, reasoning은
     /// output에 더하며, 모델은 message.updated의 assistant info에서 보충한다.
     /// stop과 tool(5초 스로틀) 양쪽에 실린다.

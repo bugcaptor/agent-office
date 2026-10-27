@@ -10,7 +10,7 @@
 // useShallow 함정 주의: 스토어 구독은 원본 참조 그대로 가져오고(새 객체
 // 리터럴 금지) 파생은 렌더에서 한다(AgentTabStrip 헤더 주석 참조).
 //
-// 오른쪽 끝의 사용량 스팬(토큰·비용, docs/session-analytics-design.md §11)은
+// 오른쪽 끝의 사용량 스팬(토큰·비용)은
 // 라벨과 별개 데이터라 라벨 유무와 무관하게 뜬다 — 라벨 없이 사용량만 있어도
 // 바는 숨지 않는다(자리 유지 불변식은 "라벨도 사용량도 둘 다 없을 때"만).
 import { useTranslation } from "react-i18next";

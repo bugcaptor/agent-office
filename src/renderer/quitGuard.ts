@@ -13,7 +13,7 @@
 // is present but not `clockedOut`. An empty office (no agents) or one where
 // everyone has clocked out closes without a prompt — "다 퇴근했으면 그냥 닫는다".
 //
-// 세션 핸드오프(docs/session-handoff-design.md §핵심 6): `handoff_supported()`는
+// 세션 핸드오프: `handoff_supported()`는
 // 백엔드 왕복이라 매 종료 시점마다 물어보면 늦다 — 부팅 시(이 모듈이 설치될 때)
 // 1회 조회해 모듈 전역에 캐시하고, `ConfirmQuitDialog`가 3버튼/2버튼 분기에
 // 그 캐시를 읽는다. 조회 실패(구버전 백엔드/미지원 플랫폼 등)는 미지원으로

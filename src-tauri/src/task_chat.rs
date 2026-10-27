@@ -1,4 +1,4 @@
-//! 태스크 대화(docs/task-chat-design.md): 태스크 하나를 주제로 한 캐릭터 없는 대화 세션을 열고
+//! 태스크 대화: 태스크 하나를 주제로 한 캐릭터 없는 대화 세션을 열고
 //! 첫 프롬프트(맥락 묶음)를 넣는다. 맥락은 렌더러가 넘긴 태스크·루트 스냅샷에 네이티브가
 //! 작업자 보고·세션 로그 경로·Git 기록을 붙여 만든다. 대화 세션은 업무 상태를 건드리지 않는다.
 
@@ -20,7 +20,7 @@ pub const MAX_TASK_CHATS: usize = 4;
 const MAX_COMMITS: &str = "30";
 const GIT_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// 맥락 묶음의 고정 문구. 칸 순서는 설계 문서 §첫 프롬프트의 1~7번이다.
+/// 맥락 묶음의 고정 문구. 칸 순서는 `build_context`가 정한다.
 struct Text {
     role: &'static str,
     task: &'static str,

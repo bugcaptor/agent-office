@@ -1,5 +1,4 @@
 // Headless GUI harness: renderer + fake backend in headless Chrome, no Tauri build.
-// Design and limits: docs/gui-harness-design.md
 //
 //   npm run gui:shot -- [--scenario office[,working,...]] [--out DIR] [--size 1280x800]
 //                       [--lang ko] [--script steps.mjs] [--serve]

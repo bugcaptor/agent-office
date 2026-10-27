@@ -291,7 +291,7 @@ describe("ResizeObserver: active-only, 120ms debounce, refit (not activate)", ()
   });
 });
 
-describe("태스크 대화 마운트(docs/task-chat-design.md)", () => {
+describe("태스크 대화 마운트", () => {
   function seedChat(status: "running" | "exited") {
     useTaskChatStore.setState({
       chats: { "task-chat-t1": { agentId: "task-chat-t1", taskId: "t1", title: "T", sessionId: "c1", status, openedAt: 0, viewedAt: 0 } },
