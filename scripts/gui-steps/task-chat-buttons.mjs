@@ -30,6 +30,14 @@ export default async ({ page, shot }) => {
   console.log(`  tabs: ${JSON.stringify(await page.locator(".agent-tab").allTextContents())}`);
   await shot("two-chat-tabs");
   await closeOverlay();
+  // 대화를 열어 팝업이 닫혀도 미저장 초안은 남는다: 같은 카드를 다시 열어 본문을 본다.
+  console.log(`  card unsaved chip: ${await page.locator(".work-card", { hasText: "Tidy session log filters" }).getByText(/저장하지 않은 변경|Unsaved/).count()}`);
+  await page.getByText("Tidy session log filters").first().click();
+  await page.waitForTimeout(200);
+  console.log(`  draft after reopen: ${JSON.stringify(await dialog.getByLabel(/본문|Body/).inputValue())}`);
+  await shot("draft-kept");
+  await dialog.getByRole("button", { name: /닫기|Close/ }).click();
+  await page.waitForTimeout(200);
   // 상한: 살아 있는 대화 4개에서 다섯 번째 태스크는 버튼을 막고 문구를 보인다.
   await page.evaluate(async () => { const s = await window.__guiHarness.taskChatStore(); await s.openTaskChat("w1"); await s.openTaskChat("w3"); });
   await closeOverlay();

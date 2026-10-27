@@ -520,9 +520,27 @@ describe("태스크 대화 버튼", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(useTaskChatStore.getState().order).toEqual([`task-chat-${id}`]);
     expect(useAppStore.getState().activeTerminalAgentId).toBe(`task-chat-${id}`);
-    // 초안은 그대로 남는다.
-    act(() => useWorkItemStore.getState().select(id));
-    expect((within(screen.getByRole("dialog", { name: "Chat me" })).getByLabelText("본문") as HTMLTextAreaElement).value).toBe("unsaved");
+  });
+  it("미저장 초안이 있는 팝업에서 대화를 열어 팝업이 닫혀도, 같은 카드를 다시 열면 초안이 그대로 남아 있다", async () => {
+    const id = useWorkItemStore.getState().add({ title: "Draft me", body: "saved body", status: "todo", assigneeAgentId: "a" })!;
+    useWorkItemStore.getState().select(null);
+    render(<UIChrome />);
+    fireEvent.click(screen.getByText("Draft me"));
+    let dialog = screen.getByRole("dialog", { name: "Draft me" });
+    fireEvent.change(within(dialog).getByLabelText("제목"), { target: { value: "Draft title" } });
+    fireEvent.change(within(dialog).getByLabelText("본문"), { target: { value: "draft body" } });
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "대화" })); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // 대화는 저장본으로 열고, 저장된 업무는 바뀌지 않으며 카드에 미저장 표시가 남는다.
+    expect(api.openTaskChat.mock.calls[0][0]).toMatchObject({ taskId: id, context: { task: { title: "Draft me", body: "saved body" } } });
+    expect(useWorkItemStore.getState().items.find((i) => i.id === id)).toMatchObject({ title: "Draft me", body: "saved body" });
+    const card = screen.getByText("Draft me").closest(".work-card") as HTMLElement;
+    expect(within(card).getByText("저장하지 않은 변경")).toBeTruthy();
+    fireEvent.click(screen.getByText("Draft me"));
+    dialog = screen.getByRole("dialog", { name: "Draft me" });
+    expect((within(dialog).getByLabelText("제목") as HTMLInputElement).value).toBe("Draft title");
+    expect((within(dialog).getByLabelText("본문") as HTMLTextAreaElement).value).toBe("draft body");
+    expect(within(dialog).getByRole("button", { name: "변경 되돌리기" })).toBeTruthy();
   });
   it("막힘 사유(미지원 셸·상한)는 버튼 아래 문구로 보이고, 열기 실패는 팝업을 열어 둔 채 오류를 보인다", async () => {
     const store = useWorkItemStore.getState();
