@@ -30,6 +30,7 @@
 - 누르면 `navigator.clipboard.writeText(id)`로 ID만 복사하고, 버튼 툴팁·아이콘이 1.5초 동안 '복사됨'으로 바뀐다. 실패하면 '복사 못 함'을 같은 자리에 보인다(`memoStore`의 클립보드 가드와 같은 방식).
 - ID 글자도 선택해서 복사할 수 있게 둔다(`user-select: text`).
 - 자동 진행 기록(`AutoRunSection.tsx`)에서 태스크 제목을 누르면 그 태스크 팝업이 열리므로, 기록에 ID를 따로 보이지는 않는다.
+- 구현됨: `WorkDialog`의 `id` 속성(`WorkItemsPanel`이 기존 업무에만 넘긴다). 화면 확인은 `npm run gui:shot -- --scenario workpanels --script scripts/gui-steps/work-id-copy.mjs`.
 
 ### 대화 열기
 

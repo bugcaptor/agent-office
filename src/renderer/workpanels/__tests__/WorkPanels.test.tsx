@@ -458,3 +458,34 @@ it("진행자를 붙잡은 다른 자동 진행은 이름과 열기로 보이고
   act(() => { useWorkItemStore.getState().select(null); useWorkItemStore.setState({ items: useWorkItemStore.getState().items.map((i) => i.id === held ? { ...i, status: "done" } : i) }); });
   expect((document.querySelector(".work-done-group") as HTMLDetailsElement).open).toBe(true);
 });
+
+it("기존 업무 팝업 머리에 ID와 복사 버튼을 두고 성공·실패를 1.5초 보이며 새 초안에는 두지 않는다", async () => {
+  useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true } });
+  useWorkItemStore.setState({ loaded: true });
+  const id = useWorkItemStore.getState().add("Copy me")!;
+  useWorkItemStore.getState().select(id);
+  const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("denied"));
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    render(<UIChrome />);
+    const dialog = screen.getByRole("dialog", { name: "Copy me" });
+    expect(within(dialog).getByText(id, { selector: "code" })).toBeTruthy();
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "태스크 ID 복사" })); });
+    expect(writeText).toHaveBeenCalledWith(id);
+    expect(within(dialog).getByRole("button", { name: "복사됨" })).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(1500); });
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "태스크 ID 복사" })); });
+    expect(within(dialog).getByRole("button", { name: "복사 못 함" })).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(1500); });
+    expect(within(dialog).getByRole("button", { name: "태스크 ID 복사" })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+    fireEvent.click(screen.getByRole("button", { name: "새 태스크 만들기" }));
+    const draft = screen.getByRole("dialog", { name: "새 태스크" });
+    expect(within(draft).queryByRole("button", { name: "태스크 ID 복사" })).toBeNull();
+    expect(draft.querySelector(".work-dialog-id")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+    delete (navigator as { clipboard?: unknown }).clipboard;
+  }
+});

@@ -64,6 +64,12 @@
 .work-dialog-header { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
 .work-dialog-header h2 { flex: 1; min-width: 0; margin: 0; font-size: 15px; line-height: 28px; }
 .work-dialog-close { flex: none; width: 28px; height: 28px; padding: 0; font-size: 16px; line-height: 1; }
+/* 기존 업무의 ID: 수동 대화에서 태스크를 가리킬 때 쓰도록 연하게 보이고 글자도 선택할 수 있게 둔다. */
+.work-dialog-id { flex: none; display: flex; align-items: center; gap: 4px; height: 28px; max-width: 40%; }
+.work-dialog-id code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: var(--text-dim); user-select: text; -webkit-user-select: text; }
+.work-detail-dialog .work-dialog-copy { flex: none; width: 28px; height: 28px; min-height: 0; padding: 0; font-size: 13px; line-height: 1; }
+.work-dialog-copy.copied { color: var(--accent); }
+.work-dialog-copy.failed { color: var(--accent-error); }
 .work-detail-dialog label { display: block; margin: 6px 0; }
 .work-detail-dialog input:not([type="checkbox"]), .work-detail-dialog textarea, .work-detail-dialog select { width: 100%; box-sizing: border-box; min-width: 0; color: var(--text); background: var(--bg-base); border: 1px solid var(--border-dark); font: inherit; padding: 5px; }
 .work-detail-dialog textarea { resize: vertical; min-height: 8em; }

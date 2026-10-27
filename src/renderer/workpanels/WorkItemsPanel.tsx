@@ -85,7 +85,7 @@ export function WorkItemsPanel() {
       setEdits((current) => { const { status: _status, ...rest } = current[item.id] ?? {}; return { ...current, [item.id]: rest }; });
       void useWorkItemStore.getState().flush(); select(null);
     };
-    return <WorkDialog key={item.id} title={workItemTitle(item)} onClose={() => select(null)}>
+    return <WorkDialog key={item.id} title={workItemTitle(item)} id={item.id} onClose={() => select(null)}>
       {sessionId && <WorkCardMonitor sessionId={sessionId} assignee={item.assigneeAgentId} status={item.status} />}
       <WorkEditor itemId={item.id} value={value} busy={sending} dirty={dirty}
         onChange={(change) => setEdits((current) => ({ ...current, [item.id]: { ...current[item.id], ...change } }))}
