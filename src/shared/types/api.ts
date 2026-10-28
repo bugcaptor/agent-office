@@ -179,8 +179,8 @@ export interface AgentOfficeApi {
   setMascotLayout(width: number, height: number, x: number, y: number): Promise<void>;
   /** 요약기용 API 키 상태(존재 여부 bool만 — 키 값은 절대 오지 않는다). */
   apiKeyStatus(): Promise<ApiKeyStatus>;
-  /** 요약기용 API 키 저장. undefined 필드는 기존 값 유지, "" 는 삭제. */
-  setApiKeys(anthropic?: string, openrouter?: string): Promise<ApiKeyStatus>;
+  /** API 키 저장. undefined 필드는 기존 값 유지, "" 는 삭제. */
+  setApiKeys(anthropic?: string, openrouter?: string, opencode?: string): Promise<ApiKeyStatus>;
   /** CLI 제어(#55) 상태 조회 — 서버 기동·승인 여부·포트·app_data 경로. */
   controlStatus(): Promise<ControlStatus>;
   /** CLI 제어를 승인(토큰 발급). 2단계 옵트인의 2단계. */
@@ -302,9 +302,9 @@ export interface AgentOfficeApi {
    * 캡처된 적 없는 에이전트는 키가 없다(빈 객체 가능). */
   listClaudeResumeSessions(): Promise<Record<AgentId, ClaudeResumeEntry>>;
   /** 구독 사용량(rate limit) 스냅샷을 홈 디렉터리 로컬 캐시에서 읽는다.
-   * 파싱 실패한 provider는 null이며 호출 자체는 항상 성공한다. OpenRouter 키가
-   * 설정돼 있으면 그 키의 사용액도 싣는다(5분 스로틀, `forceOpenrouter`면 즉시 조회). */
-  loadUsageSnapshot(opts?: { forceOpenrouter?: boolean }): Promise<UsageSnapshot>;
+   * 파싱 실패한 provider는 null이며 호출 자체는 항상 성공한다. OpenRouter·OpenCode
+   * 키가 설정돼 있으면 그 키로 사용량도 싣는다(5분 스로틀, `forceApiKeys`면 즉시 조회). */
+  loadUsageSnapshot(opts?: { forceApiKeys?: boolean }): Promise<UsageSnapshot>;
   /** `root` 하위의 마크다운(.md) 파일 목록(이슈 #10). 상한 초과 시 `truncated=true`. */
   markdownListFiles(root: string): Promise<MarkdownListResult>;
   /** `root` 기준 `relPath` 파일 내용과 버전을 읽는다. 부재/범위 밖이면 reject. */

@@ -54,6 +54,8 @@ import type {
 import { tauriApi } from "../ipc/tauriApi";
 import { addTurn, emptyTotals } from "../usage/sessionCost";
 import type { SessionUsageTotals } from "../usage/sessionCost";
+import { mergeUsageSnapshot, recordUsageActivity, type UsageActivity } from "../usage/usageView";
+import { loadUsageActivity, saveUsageActivity } from "../usage/usageActivity";
 
 const MAX_EXCERPT = 80;
 /** 도구 요약 라벨 갱신 최소 간격(ms). 도구가 빠르게 연달아 와도 라벨이 튀지 않게 스로틀. */
@@ -248,6 +250,8 @@ interface AppState {
   /** 구독 사용량 스냅샷. null = 아직 로드 전. UsageWidget이 60초 폴링으로 채운다.
    * 런타임 전용(비영속). */
   usage: UsageSnapshot | null;
+  /** 뱃지별 마지막 사용 관찰 시각(하단 뱃지 2개 고르기용). localStorage에 영속. */
+  usageActivity: UsageActivity;
 
   // ---- profile actions ----
   /** Adds a profile. Normal creation starts a terminal; connection setup can
@@ -372,6 +376,9 @@ interface AppState {
   // ---- usage ----
   /** 폴링으로 받은 사용량 스냅샷 반영. */
   setUsage(snapshot: UsageSnapshot): void;
+  /** 새로 받은 스냅샷을 이전 값과 병합해 반영하고, 값이 오른 provider의
+   * 사용 시각을 기록한다(mergeUsageSnapshot + recordUsageActivity). */
+  applyUsageSnapshot(snapshot: UsageSnapshot): void;
 
   // ---- app settings ----
   /** 부트 시 백엔드 getAppSettings 결과 반영. */
@@ -458,6 +465,7 @@ export const useAppStore = create<AppState>()(
     settingsFirstRun: false,
     settingsHydrated: false,
     usage: null,
+    usageActivity: loadUsageActivity(),
 
 
     addAgent: (profile, options) =>
@@ -992,6 +1000,14 @@ export const useAppStore = create<AppState>()(
       }),
 
     setUsage: (snapshot) => set({ usage: snapshot }),
+
+    applyUsageSnapshot: (snapshot) => {
+      const { usage: prev, usageActivity } = get();
+      const usage = mergeUsageSnapshot(prev, snapshot);
+      const activity = recordUsageActivity(prev, usage, usageActivity, Date.now());
+      if (activity !== usageActivity) saveUsageActivity(activity);
+      set({ usage, usageActivity: activity });
+    },
 
     hydrateSettings: (settings, firstRun) =>
       set({

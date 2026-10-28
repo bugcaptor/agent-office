@@ -246,8 +246,8 @@ function SummaryTestTools({ provider }: { provider: SummaryProvider }) {
   );
 }
 
-/** 키 저장소의 두 칸 — `ApiKeyTools`가 어느 칸을 다루는지. */
-type ApiKeySlot = "anthropic" | "openrouter";
+/** 키 저장소의 칸 — `ApiKeyTools`가 어느 칸을 다루는지. */
+type ApiKeySlot = "anthropic" | "openrouter" | "opencode";
 
 /** 칸별 문구 키·placeholder. 상태 필드는 `ApiKeyStatus`의 `<slot>Set`/`<slot>FromEnv`다. */
 const API_KEY_SLOT: Record<
@@ -266,31 +266,39 @@ const API_KEY_SLOT: Record<
     help: "general.openrouterKeyHelp",
     placeholder: "sk-or-…",
   },
+  opencode: {
+    state: "system.opencodeKeyState",
+    title: "system.opencodeKeyTitle",
+    help: "system.opencodeKeyHelp",
+    placeholder: "sk-…",
+  },
 };
 
 /**
- * 요약 탭의 API 키 입력 — OpenRouter 요약용 키, 또는 Claude 모델 카탈로그
- * (Anthropic `/v1/models`)용 Anthropic 키.
+ * API 키 입력 — 요약 탭의 OpenRouter 요약용 키·Claude 모델 카탈로그
+ * (Anthropic `/v1/models`)용 Anthropic 키, 시스템 탭의 OpenCode Go 사용량용 키.
  *
  * 키는 0600 키 저장소(`key_store.rs`)에 둔다 — 렌더러에는 존재 여부만 온다.
- * `setApiKeys(anthropic, openrouter)`에서 고른 칸만 채우고 다른 칸은
+ * `setApiKeys(anthropic, openrouter, opencode)`에서 고른 칸만 채우고 다른 칸은
  * undefined(=보존)로 보낸다.
  *
  * 응답 테스트는 여기가 아니라 `SummaryTestTools`가 맡는다(모든 provider 공통).
  */
-function ApiKeyTools({ slot }: { slot: ApiKeySlot }) {
+export function ApiKeyTools({ slot }: { slot: ApiKeySlot }) {
   const { t } = useTranslation("settings");
   const [status, setStatus] = useState<ApiKeyStatus | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const labels = API_KEY_SLOT[slot];
-  const isSet = slot === "anthropic" ? status?.anthropicSet : status?.openrouterSet;
-  const fromEnv = slot === "anthropic" ? status?.anthropicFromEnv : status?.openrouterFromEnv;
+  const isSet = status?.[`${slot}Set`];
+  const fromEnv = status?.[`${slot}FromEnv`];
   const send = (value: string) =>
     slot === "anthropic"
       ? tauriApi.setApiKeys(value, undefined)
-      : tauriApi.setApiKeys(undefined, value);
+      : slot === "openrouter"
+        ? tauriApi.setApiKeys(undefined, value)
+        : tauriApi.setApiKeys(undefined, undefined, value);
 
   const refresh = useCallback(async () => {
     try {

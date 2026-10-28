@@ -1174,12 +1174,13 @@
         // 따로라 하나만 막으면 나머지가 그대로 밖으로 나간다.
         live.preempt_all_attempts(now - 1);
         // 두 번 호출해도(폴링 흉내) 패닉/에러 없이 스냅샷을 돌려준다.
-        // OpenRouter 키는 넘기지 않는다(None → 네트워크 없이 NoKey).
-        let _snap = load_usage_snapshot_body(&live, None, false, now).await;
-        let snap2 = load_usage_snapshot_body(&live, None, true, now + 60_000).await;
+        // API 키는 넘기지 않는다(None → 네트워크 없이 NoKey).
+        let keys = crate::usage::ApiKeyRequest::default();
+        let _snap = load_usage_snapshot_body(&live, keys, now).await;
+        let forced = crate::usage::ApiKeyRequest { force: true, ..keys };
+        let snap2 = load_usage_snapshot_body(&live, forced, now + 60_000).await;
         assert!(snap2.openrouter.is_none());
-        assert_eq!(
-            snap2.openrouter_live.outcome,
-            crate::usage::OpenRouterLiveOutcome::NoKey
-        );
+        assert!(snap2.opencode.is_none());
+        assert_eq!(snap2.openrouter_live.outcome, crate::usage::ApiKeyLiveOutcome::NoKey);
+        assert_eq!(snap2.opencode_live.outcome, crate::usage::ApiKeyLiveOutcome::NoKey);
     }

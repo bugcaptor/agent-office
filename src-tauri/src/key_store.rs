@@ -1,6 +1,7 @@
 // src-tauri/src/key_store.rs
 //
-// 요약기가 쓰는 외부 API 키 두 개(Anthropic, OpenRouter)의 보관소.
+// 외부 API 키 보관소: 요약기가 쓰는 Anthropic·OpenRouter 키와, 사용량 표시에만
+// 쓰는 OpenCode 키.
 //
 // 왜 `AppSettings`가 아니라 별도 파일인가: `get_app_settings`는 설정 구조체를
 // **통째로** 렌더러(웹뷰)에 돌려준다. 키를 설정에 넣으면 그 순간부터 웹뷰
@@ -25,6 +26,8 @@ use std::path::PathBuf;
 pub const ANTHROPIC_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
 /// OpenRouter 키의 env 폴백. 같은 규칙.
 pub const OPENROUTER_API_KEY_ENV: &str = "OPENROUTER_API_KEY";
+/// OpenCode 키의 env 폴백. 같은 규칙.
+pub const OPENCODE_API_KEY_ENV: &str = "OPENCODE_API_KEY";
 
 const FILE_NAME: &str = "tts-keys.json";
 
@@ -37,6 +40,8 @@ struct StoredKeys {
     anthropic: String,
     #[serde(default)]
     openrouter: String,
+    #[serde(default)]
+    opencode: String,
 }
 
 /// 렌더러에 내려가는 마스킹된 상태 — 키 값은 절대 포함하지 않는다.
@@ -51,6 +56,10 @@ pub struct ApiKeyStatus {
     pub openrouter_set: bool,
     /// OpenRouter 키가 저장값이 아니라 env 폴백인지(UI 안내용).
     pub openrouter_from_env: bool,
+    /// OpenCode 키를 (저장값이든 env든) 쓸 수 있는지.
+    pub opencode_set: bool,
+    /// OpenCode 키가 저장값이 아니라 env 폴백인지(UI 안내용).
+    pub opencode_from_env: bool,
 }
 
 /// 공백뿐이면 None으로 정규화한다.
@@ -104,15 +113,22 @@ impl ApiKeyStore {
         Self::resolve(&self.load().openrouter, OPENROUTER_API_KEY_ENV).0
     }
 
+    pub fn opencode_key(&self) -> Option<String> {
+        Self::resolve(&self.load().opencode, OPENCODE_API_KEY_ENV).0
+    }
+
     pub fn status(&self) -> ApiKeyStatus {
         let stored = self.load();
         let (an, an_env) = Self::resolve(&stored.anthropic, ANTHROPIC_API_KEY_ENV);
         let (or, or_env) = Self::resolve(&stored.openrouter, OPENROUTER_API_KEY_ENV);
+        let (oc, oc_env) = Self::resolve(&stored.opencode, OPENCODE_API_KEY_ENV);
         ApiKeyStatus {
             anthropic_set: an.is_some(),
             anthropic_from_env: an_env,
             openrouter_set: or.is_some(),
             openrouter_from_env: or_env,
+            opencode_set: oc.is_some(),
+            opencode_from_env: oc_env,
         }
     }
 
@@ -122,6 +138,7 @@ impl ApiKeyStore {
         &self,
         anthropic: Option<String>,
         openrouter: Option<String>,
+        opencode: Option<String>,
     ) -> std::io::Result<ApiKeyStatus> {
         let mut stored = self.load();
         if let Some(v) = anthropic {
@@ -129,6 +146,9 @@ impl ApiKeyStore {
         }
         if let Some(v) = openrouter {
             stored.openrouter = v.trim().to_string();
+        }
+        if let Some(v) = opencode {
+            stored.opencode = v.trim().to_string();
         }
         self.save(&stored)?;
         Ok(self.status())
@@ -188,13 +208,18 @@ mod tests {
         let file = scratch();
         let store = ApiKeyStore::new(file.clone());
         let st = store
-            .set(Some("sk-ant-xyz".into()), Some("  sk-or-1  ".into()))
+            .set(
+                Some("sk-ant-xyz".into()),
+                Some("  sk-or-1  ".into()),
+                Some(" oc-1 ".into()),
+            )
             .unwrap();
-        assert!(st.anthropic_set && st.openrouter_set);
-        assert!(!st.anthropic_from_env && !st.openrouter_from_env);
+        assert!(st.anthropic_set && st.openrouter_set && st.opencode_set);
+        assert!(!st.anthropic_from_env && !st.openrouter_from_env && !st.opencode_from_env);
         // 트림돼서 저장된다.
         assert_eq!(store.anthropic_key().as_deref(), Some("sk-ant-xyz"));
         assert_eq!(store.openrouter_key().as_deref(), Some("sk-or-1"));
+        assert_eq!(store.opencode_key().as_deref(), Some("oc-1"));
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
@@ -202,14 +227,15 @@ mod tests {
     fn none_field_keeps_previous_value() {
         let file = scratch();
         let store = ApiKeyStore::new(file.clone());
-        store.set(Some("an-1".into()), Some("or-1".into())).unwrap();
-        store.set(Some("an-2".into()), None).unwrap();
+        store.set(Some("an-1".into()), Some("or-1".into()), Some("oc-1".into())).unwrap();
+        store.set(Some("an-2".into()), None, None).unwrap();
         assert_eq!(store.anthropic_key().as_deref(), Some("an-2"));
         assert_eq!(
             store.openrouter_key().as_deref(),
             Some("or-1"),
             "None 필드는 손대지 않는다"
         );
+        assert_eq!(store.opencode_key().as_deref(), Some("oc-1"));
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
@@ -217,8 +243,8 @@ mod tests {
     fn empty_string_clears_stored_key() {
         let file = scratch();
         let store = ApiKeyStore::new(file.clone());
-        store.set(None, Some("or-1".into())).unwrap();
-        store.set(None, Some("".into())).unwrap();
+        store.set(None, Some("or-1".into()), None).unwrap();
+        store.set(None, Some("".into()), None).unwrap();
         // env 폴백이 있을 수 있으니 저장값 자체만 검사한다.
         assert_eq!(store.load().openrouter, "");
         let _ = fs::remove_dir_all(file.parent().unwrap());
@@ -234,7 +260,7 @@ mod tests {
         let store = ApiKeyStore::new(file.clone());
         assert_eq!(store.anthropic_key().as_deref(), Some("an-1"));
         assert_eq!(store.openrouter_key().as_deref(), Some("or-1"));
-        store.set(None, None).unwrap();
+        store.set(None, None, None).unwrap();
         let saved = fs::read_to_string(&file).unwrap();
         assert!(!saved.contains("elevenlabs"), "{saved}");
         let _ = fs::remove_dir_all(file.parent().unwrap());
@@ -254,7 +280,7 @@ mod tests {
     fn save_leaves_no_temp_file() {
         let file = scratch();
         let store = ApiKeyStore::new(file.clone());
-        store.set(Some("an".into()), None).unwrap();
+        store.set(Some("an".into()), None, None).unwrap();
         let names: Vec<String> = fs::read_dir(file.parent().unwrap())
             .unwrap()
             .map(|e| e.unwrap().file_name().into_string().unwrap())
@@ -269,7 +295,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let file = scratch();
         let store = ApiKeyStore::new(file.clone());
-        store.set(Some("an".into()), None).unwrap();
+        store.set(Some("an".into()), None, None).unwrap();
         let mode = fs::metadata(&file).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "키 파일은 소유자만 읽을 수 있어야 한다");
         let _ = fs::remove_dir_all(file.parent().unwrap());

@@ -1,6 +1,6 @@
 // src-tauri/src/ipc/commands/api_keys.rs
 //
-// 요약기용 외부 API 키(Anthropic·OpenRouter) 저장소 커맨드. 키 값은 어떤
+// 외부 API 키(Anthropic·OpenRouter·OpenCode) 저장소 커맨드. 키 값은 어떤
 // 커맨드도 렌더러로 돌려주지 않는다 — 존재 여부 bool만 내려준다.
 
 use tauri::State;
@@ -21,9 +21,10 @@ pub async fn set_api_keys(
     app_state: State<'_, AppState>,
     anthropic: Option<String>,
     openrouter: Option<String>,
+    opencode: Option<String>,
 ) -> Result<ApiKeyStatus, String> {
     app_state
         .key_store
-        .set(anthropic, openrouter)
+        .set(anthropic, openrouter, opencode)
         .map_err(|e| format!("key-save-failed: {e}"))
 }

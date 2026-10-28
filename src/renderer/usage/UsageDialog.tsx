@@ -9,8 +9,9 @@
 // usageView.isProviderGone) — 뱃지와 같은 판정을 쓴다. 셋 다 사라지면 안내
 // 문구 한 줄만 남는다.
 // 폴링·스토어 갱신은 UsageWidget 소관. 예외로 모달이 열릴 때 한 번
-// `forceOpenrouter`로 조회해 OpenRouter 사용액을 5분 스로틀과 무관하게 바로
-// 갱신한다(키가 없으면 백엔드가 아무 요청도 하지 않는다).
+// `forceApiKeys`로 조회해 API 키 provider(OpenRouter·OpenCode)를 5분 스로틀과
+// 무관하게 바로 갱신한다(키가 없으면 백엔드가 아무 요청도 하지 않는다).
+// 하단 뱃지는 최근에 쓴 2개뿐이라, 전부는 이 모달에서 본다.
 //
 // OpenRouter는 한도 사용률이 아니라 키 사용액(USD)이라 블록 모양이 다르다:
 // 오늘·이번 주·이번 달·누적 금액 줄 + 키에 한도가 있으면 한도 바와 리셋
@@ -26,7 +27,7 @@ import { useAppStore } from "../store/appStore";
 import {
   OPENROUTER_SHORT,
   PROVIDER_SHORT,
-  describeOpenRouterLiveStatus,
+  describeApiKeyLiveStatus,
   describeProviderLive,
   formatCountdown,
   formatFreshness,
@@ -34,7 +35,6 @@ import {
   formatUsd,
   isOpenRouterGone,
   isStale,
-  mergeUsageSnapshot,
   openRouterLimitLabel,
   openRouterLimitPercent,
   providerLive,
@@ -50,6 +50,7 @@ import {
 const PROVIDER_NAME: Record<UsageProvider, string> = {
   claude: "Claude Code",
   codex: "Codex CLI",
+  opencode: "OpenCode Go",
 };
 
 /** 표시용 1초 tick(로컬 시계). 모달이 열려 있을 때만 돈다. */
@@ -206,7 +207,7 @@ export function UsageDialog() {
   const modal = useAppStore((s) => s.modal);
   const closeModal = useAppStore((s) => s.closeModal);
   const usage = useAppStore((s) => s.usage);
-  const setUsage = useAppStore((s) => s.setUsage);
+  const applyUsageSnapshot = useAppStore((s) => s.applyUsageSnapshot);
 
   const open = modal.kind === "usage";
   const now = useOneSecondTick(open);
@@ -215,15 +216,15 @@ export function UsageDialog() {
     if (!open) return;
     let cancelled = false;
     tauriApi
-      .loadUsageSnapshot({ forceOpenrouter: true })
+      .loadUsageSnapshot({ forceApiKeys: true })
       .then((snap) => {
-        if (!cancelled) setUsage(mergeUsageSnapshot(useAppStore.getState().usage, snap));
+        if (!cancelled) applyUsageSnapshot(snap);
       })
       .catch((err) => console.warn("usage: failed to refresh snapshot", err));
     return () => {
       cancelled = true;
     };
-  }, [open, setUsage]);
+  }, [open, applyUsageSnapshot]);
 
   if (!open) return null;
 
@@ -295,7 +296,7 @@ export function UsageDialog() {
             <ProviderBlock
               note={renderLiveNote(
                 usage?.openrouterLive,
-                describeOpenRouterLiveStatus(usage?.openrouterLive),
+                describeApiKeyLiveStatus(usage?.openrouterLive, "OpenRouter"),
               )}
             >
               {usage?.openrouter ? (

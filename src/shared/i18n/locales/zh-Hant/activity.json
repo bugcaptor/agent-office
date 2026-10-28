@@ -9,7 +9,8 @@
       "weeklyModelGeneric": "每週（依模型）",
       "minutes": "{{minutes}} 分鐘區間",
       "other": "其他",
-      "labelled": "{{label}}"
+      "labelled": "{{label}}",
+      "monthly": "每月"
     },
     "countdown": {
       "pending": "等待重設",
@@ -80,7 +81,7 @@
       "noSuccess": "從未成功"
     },
     "dialog": {
-      "title": "訂閱用量",
+      "title": "用量",
       "activeTag": "目前生效",
       "barAria": "{{label}} 使用率",
       "staleSuffix": " · 過時",
@@ -88,13 +89,14 @@
       "empty": {
         "claude": "沒有用量資料。在 Claude Code 開啟一次 /usage 就會建立本機快取。",
         "codex": "沒有用量資料。執行 codex login 讓程式直接查詢，或執行一次 Codex CLI 建立本機紀錄。",
-        "openrouter": "尚未取得 OpenRouter 花費。"
+        "openrouter": "尚未取得 OpenRouter 花費。",
+        "opencode": "尚未取得 OpenCode Go 用量。"
       },
-      "allHidden": "沒有可顯示的用量。超過一天沒能從任何 CLI 取得用量。"
+      "allHidden": "沒有可顯示的用量。超過一天沒能從任何來源取得用量。"
     },
     "widget": {
-      "aria": "訂閱用量",
-      "tooltip": "查看訂閱用量明細",
+      "aria": "用量",
+      "tooltip": "查看用量明細",
       "empty": "{{short}}：沒有資料{{suffix}}",
       "title": "{{short}}：{{windows}}{{suffix}}",
       "windowPct": "{{label}} {{pct}}%",
@@ -115,13 +117,13 @@
       },
       "freeTier": "免費方案"
     },
-    "openrouterLive": {
-      "ok": "應用程式正直接從 OpenRouter 取得此金鑰的花費(每 5 分鐘;開啟此視窗會立即更新)",
-      "neverAttempted": "尚未取得 OpenRouter 花費",
-      "unauthorized": "OpenRouter 取得失敗:金鑰被拒絕({{detail}})— 請檢查設定中的 OpenRouter API 金鑰。顯示的是上次取得的值",
-      "httpError": "OpenRouter 取得失敗:伺服器錯誤({{detail}})。顯示的是上次取得的值",
-      "networkError": "OpenRouter 取得失敗:網路{{detail}}。顯示的是上次取得的值",
-      "unexpected": "OpenRouter 取得失敗:回應格式已變更({{detail}})。顯示的是上次取得的值"
+    "keyLive": {
+      "ok": "應用程式正直接從 {{name}} 取得用量(每 5 分鐘;開啟此視窗會立即更新)",
+      "neverAttempted": "尚未取得 {{name}} 用量",
+      "unauthorized": "{{name}} 取得失敗:金鑰被拒絕({{detail}})— 請檢查設定中的 {{name}} API 金鑰。顯示的是上次取得的值",
+      "httpError": "{{name}} 取得失敗:伺服器錯誤({{detail}})。顯示的是上次取得的值",
+      "networkError": "{{name}} 取得失敗:網路{{detail}}。顯示的是上次取得的值",
+      "unexpected": "{{name}} 取得失敗:回應格式已變更({{detail}})。顯示的是上次取得的值"
     }
   },
   "timeline": {

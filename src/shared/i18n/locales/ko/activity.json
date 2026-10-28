@@ -9,7 +9,8 @@
       "weeklyModelGeneric": "주간 (모델별)",
       "minutes": "{{minutes}}분 창",
       "other": "기타",
-      "labelled": "{{label}}"
+      "labelled": "{{label}}",
+      "monthly": "월간"
     },
     "countdown": {
       "pending": "리셋 대기 중",
@@ -80,7 +81,7 @@
       "noSuccess": "성공 이력 없음"
     },
     "dialog": {
-      "title": "구독 사용량",
+      "title": "사용량",
       "activeTag": "지금 적용 중",
       "barAria": "{{label}} 사용률",
       "staleSuffix": " · 오래됨",
@@ -88,13 +89,14 @@
       "empty": {
         "claude": "사용량 데이터가 없습니다. Claude Code에서 /usage를 한 번 열면 로컬 캐시가 생깁니다.",
         "codex": "사용량 데이터가 없습니다. codex login 후 앱이 직접 조회하거나, Codex CLI를 한 번 실행하면 로컬 기록이 생깁니다.",
-        "openrouter": "아직 OpenRouter 사용액을 받아오지 못했습니다."
+        "openrouter": "아직 OpenRouter 사용액을 받아오지 못했습니다.",
+        "opencode": "아직 OpenCode Go 사용량을 받아오지 못했습니다."
       },
-      "allHidden": "표시할 사용량이 없습니다. 어떤 CLI에서도 하루 넘게 사용량을 가져오지 못했습니다."
+      "allHidden": "표시할 사용량이 없습니다. 어디에서도 하루 넘게 사용량을 가져오지 못했습니다."
     },
     "widget": {
-      "aria": "구독 사용량",
-      "tooltip": "구독 사용량 상세 보기",
+      "aria": "사용량",
+      "tooltip": "사용량 상세 보기",
       "empty": "{{short}}: 데이터 없음{{suffix}}",
       "title": "{{short}}: {{windows}}{{suffix}}",
       "windowPct": "{{label}} {{pct}}%",
@@ -115,13 +117,13 @@
       },
       "freeTier": "무료 등급"
     },
-    "openrouterLive": {
-      "ok": "앱이 OpenRouter에서 이 키의 사용액을 직접 조회 중 (5분 간격, 이 창을 열면 바로 갱신)",
-      "neverAttempted": "OpenRouter 사용액을 아직 조회하지 않음",
-      "unauthorized": "OpenRouter 조회 실패: 키가 거부됐습니다({{detail}}) — 설정의 OpenRouter API 키를 확인하세요. 표시값은 마지막으로 받아온 값입니다",
-      "httpError": "OpenRouter 조회 실패: 서버 오류({{detail}}). 표시값은 마지막으로 받아온 값입니다",
-      "networkError": "OpenRouter 조회 실패: 네트워크 {{detail}}. 표시값은 마지막으로 받아온 값입니다",
-      "unexpected": "OpenRouter 조회 실패: 응답 형태가 바뀌었습니다({{detail}}). 표시값은 마지막으로 받아온 값입니다"
+    "keyLive": {
+      "ok": "앱이 {{name}}에서 사용량을 직접 조회 중 (5분 간격, 이 창을 열면 바로 갱신)",
+      "neverAttempted": "{{name}} 사용량을 아직 조회하지 않음",
+      "unauthorized": "{{name}} 조회 실패: 키가 거부됐습니다({{detail}}) — 설정의 {{name}} API 키를 확인하세요. 표시값은 마지막으로 받아온 값입니다",
+      "httpError": "{{name}} 조회 실패: 서버 오류({{detail}}). 표시값은 마지막으로 받아온 값입니다",
+      "networkError": "{{name}} 조회 실패: 네트워크 {{detail}}. 표시값은 마지막으로 받아온 값입니다",
+      "unexpected": "{{name}} 조회 실패: 응답 형태가 바뀌었습니다({{detail}}). 표시값은 마지막으로 받아온 값입니다"
     }
   },
   "timeline": {

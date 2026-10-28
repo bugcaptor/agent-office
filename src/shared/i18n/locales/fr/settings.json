@@ -120,7 +120,10 @@
     "terminalThemeHelp": "Fixe uniquement les couleurs du terminal sur une palette distincte. Avec la valeur par défaut (suivre le thème), le terminal change avec le thème de l'app.",
     "terminalThemeAuto": "Suivre le thème",
     "terminalThemeAppGroup": "Palettes du thème de l'app",
-    "terminalThemeOwnGroup": "Palettes du terminal"
+    "terminalThemeOwnGroup": "Palettes du terminal",
+    "opencodeKeyState": "Clé OpenCode {{state}}",
+    "opencodeKeyTitle": "Clé API OpenCode (affichage de l'utilisation)",
+    "opencodeKeyHelp": "Affiche l'utilisation 5 h, hebdomadaire et mensuelle de l'abonnement OpenCode Go dans le badge d'utilisation et le détail (ou la variable d'environnement <code>OPENCODE_API_KEY</code>). Une fois enregistrée, elle reste dans l'app et n'est plus jamais affichée."
   },
   "control": {
     "title": "Contrôle CLI (externe)",

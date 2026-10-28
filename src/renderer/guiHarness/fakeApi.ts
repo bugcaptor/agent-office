@@ -227,7 +227,14 @@ const impl: Partial<AgentOfficeApi> = {
   async archiveMemoSheet() { return memo(); },
   async deleteMemos() {},
   async apiKeyStatus() {
-    return { anthropicSet: false, anthropicFromEnv: false, openrouterSet: false, openrouterFromEnv: false };
+    return {
+      anthropicSet: false,
+      anthropicFromEnv: false,
+      openrouterSet: false,
+      openrouterFromEnv: false,
+      opencodeSet: false,
+      opencodeFromEnv: false,
+    };
   },
   async controlStatus() {
     return { enabled: false, running: false, approved: false, port: null, appDataDir: "/tmp/gui-harness" };

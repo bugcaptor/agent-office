@@ -59,6 +59,35 @@
     "lastAttemptMs": 1784281400000,
     "lastSuccessMs": null
   },
+  "opencode": {
+    "provider": "opencode",
+    "fetchedAtMs": 1784281300000,
+    "planLabel": "Go",
+    "windows": [
+      {
+        "kind": "session",
+        "label": null,
+        "usedPercent": 12.0,
+        "resetsAtMs": 1784290000000,
+        "windowMinutes": 300,
+        "isActive": null
+      },
+      {
+        "kind": "monthly",
+        "label": null,
+        "usedPercent": 3.0,
+        "resetsAtMs": 1785000000000,
+        "windowMinutes": null,
+        "isActive": null
+      }
+    ]
+  },
+  "opencodeLive": {
+    "outcome": "ok",
+    "detail": null,
+    "lastAttemptMs": 1784281300000,
+    "lastSuccessMs": 1784281300000
+  },
   "openrouter": {
     "fetchedAtMs": 1784281000000,
     "label": "sk-or-v1-abc...1cc",

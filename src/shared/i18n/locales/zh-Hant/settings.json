@@ -120,7 +120,10 @@
     "terminalThemeHelp": "只把終端機視窗的顏色固定成另一組色盤。維持預設值（跟隨主題）時，換程式主題終端機也會跟著換。",
     "terminalThemeAuto": "跟隨主題（預設）",
     "terminalThemeAppGroup": "程式主題色盤",
-    "terminalThemeOwnGroup": "終端機專用色盤"
+    "terminalThemeOwnGroup": "終端機專用色盤",
+    "opencodeKeyState": "OpenCode 金鑰{{state}}",
+    "opencodeKeyTitle": "OpenCode API 金鑰(用量顯示)",
+    "opencodeKeyHelp": "在底部用量徽章和明細中顯示 OpenCode Go 訂閱的 5 小時、每週、每月用量(或設定環境變數 <code>OPENCODE_API_KEY</code>)。儲存後只留在程式裡,不會再顯示出來。"
   },
   "control": {
     "title": "CLI 控制（外部操控）",

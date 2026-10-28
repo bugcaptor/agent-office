@@ -13,7 +13,8 @@
 // 표현은 BottomBar 뱃지를 그대로 따른다: provider별 `CL 12%·61%`를 **한 줄에**
 // 나란히 붙인다(예전에는 provider마다 줄을 나누고 창 이름까지 적어 판때기가
 // 커져 터미널을 그만큼 가렸다). 창 이름을 포함한 전문은 title 툴팁과 상세
-// 모달에 그대로 남아 있어 정보 손실이 아니라 표시 축약이다.
+// 모달에 그대로 남아 있어 정보 손실이 아니라 표시 축약이다. 어느 뱃지를
+// 그릴지도 BottomBar와 같다 — 최근에 쓴 2개(usageView.pickBadges).
 import { useTranslation } from "react-i18next";
 import { renderText } from "../shared/textKey";
 import { useAppStore } from "../store/appStore";
@@ -21,12 +22,11 @@ import type { ProviderUsage } from "@shared/types";
 import {
   PROVIDER_SHORT,
   badgeWindows,
-  describeOpenRouterLiveStatus,
+  describeApiKeyLiveStatus,
   describeProviderLive,
-  isOpenRouterGone,
+  pickBadges,
   providerUsage,
   usageLevel,
-  visibleUsageProviders,
   windowLabel,
   type LiveStatusNote,
   type UsageProvider,
@@ -100,6 +100,7 @@ export function UsageFloat() {
   const viewMode = useAppStore((s) => s.terminalViewMode);
   const isTerminalOpen = useAppStore((s) => s.activeTerminalAgentId !== null);
   const usage = useAppStore((s) => s.usage);
+  const activity = useAppStore((s) => s.usageActivity);
   const openModal = useAppStore((s) => s.openModal);
 
   // 설정으로 끄면(기본 켜짐) filled 모드에서도 뜨지 않는다 — 하단바 뱃지는
@@ -108,10 +109,8 @@ export function UsageFloat() {
 
   // 숨김 판정은 렌더 시각 기준(UsageWidget과 동일 근거 — 60초 폴링 해상도로
   // 24시간 임계값을 재는 데 충분해 별도 tick을 두지 않는다).
-  const now = Date.now();
-  const visible = visibleUsageProviders(usage, now);
-  const showOpenRouter = !isOpenRouterGone(usage, now);
-  if (visible.length === 0 && !showOpenRouter) return null;
+  const badges = pickBadges(usage, activity, Date.now());
+  if (badges.length === 0) return null;
 
   return (
     <button
@@ -121,20 +120,22 @@ export function UsageFloat() {
       title={t("usage.widget.tooltip")}
       onClick={() => openModal({ kind: "usage" })}
     >
-      {visible.map((p) => (
-        <FloatBadge
-          key={p}
-          provider={p}
-          usage={providerUsage(usage, p)}
-          note={describeProviderLive(usage, p)}
-        />
-      ))}
-      {showOpenRouter && (
-        <OpenRouterBadge
-          className="usage-float-badge"
-          usage={usage?.openrouter ?? null}
-          note={describeOpenRouterLiveStatus(usage?.openrouterLive)}
-        />
+      {badges.map((id) =>
+        id === "openrouter" ? (
+          <OpenRouterBadge
+            key={id}
+            className="usage-float-badge"
+            usage={usage?.openrouter ?? null}
+            note={describeApiKeyLiveStatus(usage?.openrouterLive, "OpenRouter")}
+          />
+        ) : (
+          <FloatBadge
+            key={id}
+            provider={id}
+            usage={providerUsage(usage, id)}
+            note={describeProviderLive(usage, id)}
+          />
+        ),
       )}
     </button>
   );

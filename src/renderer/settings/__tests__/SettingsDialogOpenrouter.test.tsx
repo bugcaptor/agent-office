@@ -40,6 +40,8 @@ const STATUS: ApiKeyStatus = {
   anthropicFromEnv: false,
   openrouterSet: false,
   openrouterFromEnv: false,
+  opencodeSet: false,
+  opencodeFromEnv: false,
 };
 
 function hydrate(patch: Partial<AppSettings> = {}) {

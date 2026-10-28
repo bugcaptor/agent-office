@@ -235,11 +235,12 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.apiKeyStatus);
   },
 
-  async setApiKeys(anthropic?: string, openrouter?: string) {
+  async setApiKeys(anthropic?: string, openrouter?: string, opencode?: string) {
     return await invoke(Commands.setApiKeys, {
       // Rust는 Option<String> — 미전달(undefined)은 "기존 값 유지"다.
       anthropic: anthropic ?? null,
       openrouter: openrouter ?? null,
+      opencode: opencode ?? null,
     });
   },
 
@@ -401,7 +402,7 @@ export const tauriApi: AgentOfficeApi = {
 
   async loadUsageSnapshot(opts) {
     return await invoke(Commands.loadUsageSnapshot, {
-      forceOpenrouter: opts?.forceOpenrouter ?? false,
+      forceApiKeys: opts?.forceApiKeys ?? false,
     });
   },
 

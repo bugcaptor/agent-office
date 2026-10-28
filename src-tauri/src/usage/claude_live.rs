@@ -294,8 +294,9 @@ pub struct LiveUsageState {
     /// 상태"이고, Codex도 같은 폴링에 얹히기 때문이다. 두 provider의 상태는
     /// 서로 독립이다.
     pub(super) codex: super::codex_live::CodexLiveState,
-    /// OpenRouter 키 사용액 조회 상태. 같은 이유로 같은 그릇에 담는다.
-    pub(super) openrouter: super::openrouter::OpenRouterLiveState,
+    /// API 키로 조회하는 provider들의 상태. 같은 이유로 같은 그릇에 담는다.
+    pub(super) openrouter: super::api_key_live::ApiKeyLiveState<super::OpenRouterUsage>,
+    pub(super) opencode: super::api_key_live::ApiKeyLiveState<super::ProviderUsage>,
 }
 
 #[derive(Default)]

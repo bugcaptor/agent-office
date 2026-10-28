@@ -18,6 +18,8 @@ export type UsageWindowKind =
    */
   | "session_model"
   | "weekly_model"
+  /** 월간 창(OpenCode Go). */
+  | "monthly"
   | "unknown";
 
 /**
@@ -47,7 +49,7 @@ export interface UsageWindow {
  * `windows`는 가변 배열 — UI가 "5시간+주간 둘 다 있음"을 하드코딩하지 않는다.
  */
 export interface ProviderUsage {
-  provider: "claude" | "codex";
+  provider: "claude" | "codex" | "opencode";
   /**
    * 신선도 기준 시각(epoch ms). 출처마다 갱신 조건이 다르다: 앱의 실시간
    * 조회가 성공하면 그 조회 시각이고, 실패하면 로컬 캐시(Claude는
@@ -181,20 +183,23 @@ export interface OpenRouterUsage {
   isFreeTier: boolean;
 }
 
-/** OpenRouter 조회의 마지막 시도 결과. Rust `OpenRouterLiveOutcome` 미러. */
-export type OpenRouterLiveOutcome =
+/**
+ * API 키로 조회하는 provider(OpenRouter·OpenCode)의 마지막 시도 결과. Rust
+ * `ApiKeyLiveOutcome` 미러.
+ */
+export type ApiKeyLiveOutcome =
   | "never_attempted"
   | "ok"
-  /** 키가 저장돼 있지 않고 `OPENROUTER_API_KEY`도 없음. */
+  /** 키가 저장돼 있지 않고 env 폴백(`OPENROUTER_API_KEY`·`OPENCODE_API_KEY`)도 없음. */
   | "no_key"
   | "unauthorized"
   | "http_error"
   | "network_error"
   | "unexpected_response";
 
-/** OpenRouter 조회 진단. Rust `OpenRouterLiveStatus` 미러. 항상 존재한다. */
-export interface OpenRouterLiveStatus {
-  outcome: OpenRouterLiveOutcome;
+/** API 키 조회 진단. Rust `ApiKeyLiveStatus` 미러. 항상 존재한다. */
+export interface ApiKeyLiveStatus {
+  outcome: ApiKeyLiveOutcome;
   detail: string | null;
   lastAttemptMs: number | null;
   lastSuccessMs: number | null;
@@ -209,7 +214,10 @@ export interface UsageSnapshot {
   codex: ProviderUsage | null;
   claudeLive: ClaudeLiveStatus;
   codexLive: CodexLiveStatus;
+  /** OpenCode Go 구독 사용량(앱 설정의 키로 조회). 키가 없거나 아직 못 받아왔으면 null. */
+  opencode: ProviderUsage | null;
+  opencodeLive: ApiKeyLiveStatus;
   /** OpenRouter 키 사용액. 키가 없거나 아직 못 받아왔으면 null. */
   openrouter: OpenRouterUsage | null;
-  openrouterLive: OpenRouterLiveStatus;
+  openrouterLive: ApiKeyLiveStatus;
 }

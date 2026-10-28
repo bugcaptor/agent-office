@@ -33,7 +33,7 @@ use agent_office_lib::types::{
 };
 use agent_office_lib::usage::{
     ClaudeLiveStatus, CodexLiveOutcome, CodexLiveStatus, FetchTransport, LiveFetchOutcome,
-    OpenRouterLiveOutcome, OpenRouterLiveStatus, OpenRouterUsage,
+    ApiKeyLiveOutcome, ApiKeyLiveStatus, OpenRouterUsage,
     Provider, ProviderUsage, TokenSource, UsageSnapshot, UsageWindow, UsageWindowKind,
 };
 use agent_office_lib::workdir::{GitCommitEntry, GitFileHistoryResult, GitFileStatus, GitStatusResult};
@@ -271,6 +271,37 @@ fn usage_snapshot_matches_fixture() {
             last_attempt_ms: Some(1784281400000),
             last_success_ms: None,
         },
+        // OpenCode Go는 앱 설정의 키로 조회하는 구독이다 — 모양은 Claude/Codex와
+        // 같은 윈도 배열이고, 월간 창이 따로 있다.
+        opencode: Some(ProviderUsage {
+            provider: Provider::Opencode,
+            fetched_at_ms: 1784281300000,
+            plan_label: Some("Go".into()),
+            windows: vec![
+                UsageWindow {
+                    kind: UsageWindowKind::Session,
+                    label: None,
+                    used_percent: 12.0,
+                    resets_at_ms: Some(1784290000000),
+                    window_minutes: Some(300),
+                    is_active: None,
+                },
+                UsageWindow {
+                    kind: UsageWindowKind::Monthly,
+                    label: None,
+                    used_percent: 3.0,
+                    resets_at_ms: Some(1785000000000),
+                    window_minutes: None,
+                    is_active: None,
+                },
+            ],
+        }),
+        opencode_live: ApiKeyLiveStatus {
+            outcome: ApiKeyLiveOutcome::Ok,
+            detail: None,
+            last_attempt_ms: Some(1784281300000),
+            last_success_ms: Some(1784281300000),
+        },
         // OpenRouter는 금액(USD)이다. 한도를 건 키라 limit·리셋 시각이 있고,
         // 지금은 서버 오류지만 직전 성공 값이 그대로 실려 나간다.
         openrouter: Some(OpenRouterUsage {
@@ -286,8 +317,8 @@ fn usage_snapshot_matches_fixture() {
             limit_resets_at_ms: Some(1784592000000),
             is_free_tier: false,
         }),
-        openrouter_live: OpenRouterLiveStatus {
-            outcome: OpenRouterLiveOutcome::HttpError,
+        openrouter_live: ApiKeyLiveStatus {
+            outcome: ApiKeyLiveOutcome::HttpError,
             detail: Some("HTTP 502".into()),
             last_attempt_ms: Some(1784281400000),
             last_success_ms: Some(1784281000000),

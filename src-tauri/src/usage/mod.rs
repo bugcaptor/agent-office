@@ -9,11 +9,13 @@
 // 단위 정규화는 전부 여기서: resets_at → epoch ms(Claude ISO8601 파싱,
 // Codex 유닉스 초→ms), 신선도(fetchedAtMs)도 epoch ms.
 
+mod api_key_live;
 mod claude;
 mod claude_live;
 mod claude_live_fallback;
 mod codex;
 mod codex_live;
+mod opencode;
 mod openrouter;
 
 use std::path::Path;
@@ -22,7 +24,8 @@ use serde::Serialize;
 
 pub use claude_live::LiveUsageState;
 pub use codex_live::{CodexLiveOutcome, CodexLiveStatus};
-pub use openrouter::{OpenRouterLiveOutcome, OpenRouterLiveStatus, OpenRouterUsage};
+pub use api_key_live::{ApiKeyLiveOutcome, ApiKeyLiveStatus};
+pub use openrouter::OpenRouterUsage;
 
 /// Claude 실시간 조회의 마지막 시도 결과. TS `LiveFetchOutcome` 미러
 /// (serde snake_case). 왜 표시값이 낡았는지를 UI가 사용자에게 설명하기 위한
@@ -105,16 +108,20 @@ pub enum UsageWindowKind {
     /// 않는다 — 라벨(모델 표시명)은 `UsageWindow::label`에 있다.
     SessionModel,
     WeeklyModel,
+    /// 월간 창(OpenCode Go).
+    Monthly,
     Unknown,
 }
 
-/// CLI provider. TS `"claude" | "codex"` 미러
+/// 구독 provider. TS `"claude" | "codex" | "opencode"` 미러
 /// (serde lowercase).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
     Claude,
     Codex,
+    /// OpenCode Go 구독(앱 설정의 OpenCode API 키로 조회).
+    Opencode,
 }
 
 /// 한도 윈도 1개. TS `UsageWindow` 미러(camelCase). nullable 필드는
@@ -162,10 +169,23 @@ pub struct UsageSnapshot {
     /// Codex 실시간 조회 진단(항상 존재). 같은 규칙 — 동기 경로에서는
     /// `NeverAttempted`.
     pub codex_live: CodexLiveStatus,
+    /// OpenCode Go 구독 사용량. 키가 없거나 아직 한 번도 못 받아왔으면 null.
+    pub opencode: Option<ProviderUsage>,
+    /// OpenCode 조회 진단(항상 존재). 키가 없으면 `NoKey`.
+    pub opencode_live: ApiKeyLiveStatus,
     /// OpenRouter 키 사용액. 키가 없거나 아직 한 번도 못 받아왔으면 null.
     pub openrouter: Option<OpenRouterUsage>,
     /// OpenRouter 조회 진단(항상 존재). 키가 없으면 `NoKey`.
-    pub openrouter_live: OpenRouterLiveStatus,
+    pub openrouter_live: ApiKeyLiveStatus,
+}
+
+/// 키 저장소에서 방금 읽은 API 키들과, 상세 창을 열 때의 즉시 조회 요청.
+/// 키가 None이면 그 provider의 상태를 비운다.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ApiKeyRequest<'a> {
+    pub openrouter: Option<&'a str>,
+    pub opencode: Option<&'a str>,
+    pub force: bool,
 }
 
 /// `claude_root`(홈, `.claude.json`이 이 아래)와 `codex_root`(`~/.codex`,
@@ -177,8 +197,10 @@ pub fn load_usage_snapshot(claude_root: &Path, codex_root: &Path) -> UsageSnapsh
         codex: codex::load(codex_root),
         claude_live: ClaudeLiveStatus::default(),
         codex_live: CodexLiveStatus::default(),
+        opencode: None,
+        opencode_live: ApiKeyLiveStatus::default(),
         openrouter: None,
-        openrouter_live: OpenRouterLiveStatus::default(),
+        openrouter_live: ApiKeyLiveStatus::default(),
     }
 }
 
@@ -203,15 +225,13 @@ pub fn load_usage_snapshot(claude_root: &Path, codex_root: &Path) -> UsageSnapsh
 /// 디렉터리로, `.claude.json`을 읽는 `claude_root`와 다를 수 있다
 /// (CLAUDE_CONFIG_DIR 미설정 시 claude_root=홈, config_dir=~/.claude).
 ///
-/// `openrouter_key`는 키 저장소에서 방금 읽은 값(없으면 None — 상태를 비운다),
-/// `force_openrouter`는 상세 창을 열 때의 즉시 조회 요청이다.
+/// API 키로 조회하는 provider(OpenRouter·OpenCode)는 `keys`의 키로 돈다.
 pub async fn load_usage_snapshot_with_live(
     live: &LiveUsageState,
     claude_root: &Path,
     claude_config_dir: &Path,
     codex_root: &Path,
-    openrouter_key: Option<&str>,
-    force_openrouter: bool,
+    keys: ApiKeyRequest<'_>,
     now_ms: i64,
 ) -> UsageSnapshot {
     let mut snapshot = load_usage_snapshot(claude_root, codex_root);
@@ -221,13 +241,20 @@ pub async fn load_usage_snapshot_with_live(
     tokio::join!(
         refresh_claude_live(live, claude_config_dir, now_ms),
         refresh_codex_live(&live.codex, now_ms),
-        refresh_openrouter(&live.openrouter, openrouter_key, force_openrouter, now_ms),
+        api_key_live::refresh(&live.openrouter, keys.openrouter, keys.force, now_ms, |key| {
+            openrouter::fetch(key, now_ms)
+        }),
+        api_key_live::refresh(&live.opencode, keys.opencode, keys.force, now_ms, |key| {
+            opencode::fetch(key, now_ms)
+        }),
     );
 
     snapshot.claude = merge_provider(snapshot.claude.take(), live.last_success());
     snapshot.claude_live = live.status();
     snapshot.codex = merge_provider(snapshot.codex.take(), live.codex.last_success());
     snapshot.codex_live = live.codex.status();
+    snapshot.opencode = live.opencode.last_success();
+    snapshot.opencode_live = live.opencode.status();
     snapshot.openrouter = live.openrouter.last_success();
     snapshot.openrouter_live = live.openrouter.status();
     snapshot
@@ -266,27 +293,6 @@ async fn refresh_codex_live(live: &codex_live::CodexLiveState, now_ms: i64) {
         return;
     }
     match codex_live::fetch_live(now_ms).await {
-        Ok(usage) => live.record_success(usage),
-        Err(failure) => live.record_failure(failure),
-    }
-}
-
-/// OpenRouter 키 사용액 조회 1회분(스로틀·키 변경 판단은 상태가 한다).
-async fn refresh_openrouter(
-    live: &openrouter::OpenRouterLiveState,
-    key: Option<&str>,
-    force: bool,
-    now_ms: i64,
-) {
-    if !live.begin_attempt_if_due(key, force, now_ms) {
-        return;
-    }
-    let Some(key) = key else { return };
-    let result = openrouter::fetch(key, now_ms).await;
-    if !live.same_key(key) {
-        return;
-    }
-    match result {
         Ok(usage) => live.record_success(usage),
         Err(failure) => live.record_failure(failure),
     }

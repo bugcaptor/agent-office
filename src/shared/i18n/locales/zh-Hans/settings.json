@@ -120,7 +120,10 @@
     "terminalThemeHelp": "只把终端窗口的颜色固定为单独的配色。保持默认（跟随主题）时，切换应用主题终端也会跟着变。",
     "terminalThemeAuto": "跟随主题（默认）",
     "terminalThemeAppGroup": "应用主题配色",
-    "terminalThemeOwnGroup": "终端专用配色"
+    "terminalThemeOwnGroup": "终端专用配色",
+    "opencodeKeyState": "OpenCode 密钥{{state}}",
+    "opencodeKeyTitle": "OpenCode API 密钥(用量显示)",
+    "opencodeKeyHelp": "在底部用量徽章和详情中显示 OpenCode Go 订阅的 5 小时、每周、每月用量(或设置环境变量 <code>OPENCODE_API_KEY</code>)。保存后仅留在应用内,不会再显示。"
   },
   "control": {
     "title": "CLI 控制（外部操控）",

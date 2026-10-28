@@ -9,7 +9,8 @@
       "weeklyModelGeneric": "每周（分模型）",
       "minutes": "{{minutes}} 分钟窗口",
       "other": "其他",
-      "labelled": "{{label}}"
+      "labelled": "{{label}}",
+      "monthly": "每月"
     },
     "countdown": {
       "pending": "等待重置",
@@ -80,7 +81,7 @@
       "noSuccess": "从未成功"
     },
     "dialog": {
-      "title": "订阅用量",
+      "title": "用量",
       "activeTag": "当前生效",
       "barAria": "{{label}} 使用率",
       "staleSuffix": " · 已过期",
@@ -88,13 +89,14 @@
       "empty": {
         "claude": "暂无用量数据。在 Claude Code 中打开一次 /usage 即可生成本地缓存。",
         "codex": "暂无用量数据。执行 codex login 后应用可直接获取，或运行一次 Codex CLI 生成本地记录。",
-        "openrouter": "尚未获取到 OpenRouter 花费。"
+        "openrouter": "尚未获取到 OpenRouter 花费。",
+        "opencode": "尚未获取到 OpenCode Go 用量。"
       },
-      "allHidden": "没有可显示的用量。超过一天未能从任何 CLI 取到用量。"
+      "allHidden": "没有可显示的用量。超过一天未能从任何来源取到用量。"
     },
     "widget": {
-      "aria": "订阅用量",
-      "tooltip": "查看订阅用量详情",
+      "aria": "用量",
+      "tooltip": "查看用量详情",
       "empty": "{{short}}：无数据{{suffix}}",
       "title": "{{short}}：{{windows}}{{suffix}}",
       "windowPct": "{{label}} {{pct}}%",
@@ -115,13 +117,13 @@
       },
       "freeTier": "免费层级"
     },
-    "openrouterLive": {
-      "ok": "应用正直接从 OpenRouter 获取此密钥的花费(每 5 分钟;打开此窗口会立即刷新)",
-      "neverAttempted": "尚未获取 OpenRouter 花费",
-      "unauthorized": "OpenRouter 获取失败:密钥被拒绝({{detail}})— 请检查设置中的 OpenRouter API 密钥。显示的是上次获取的值",
-      "httpError": "OpenRouter 获取失败:服务器错误({{detail}})。显示的是上次获取的值",
-      "networkError": "OpenRouter 获取失败:网络{{detail}}。显示的是上次获取的值",
-      "unexpected": "OpenRouter 获取失败:响应格式已变化({{detail}})。显示的是上次获取的值"
+    "keyLive": {
+      "ok": "应用正直接从 {{name}} 获取用量(每 5 分钟;打开此窗口会立即刷新)",
+      "neverAttempted": "尚未获取 {{name}} 用量",
+      "unauthorized": "{{name}} 获取失败:密钥被拒绝({{detail}})— 请检查设置中的 {{name}} API 密钥。显示的是上次获取的值",
+      "httpError": "{{name}} 获取失败:服务器错误({{detail}})。显示的是上次获取的值",
+      "networkError": "{{name}} 获取失败:网络{{detail}}。显示的是上次获取的值",
+      "unexpected": "{{name}} 获取失败:响应格式已变化({{detail}})。显示的是上次获取的值"
     }
   },
   "timeline": {

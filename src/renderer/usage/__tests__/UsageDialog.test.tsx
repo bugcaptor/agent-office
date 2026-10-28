@@ -12,7 +12,7 @@ import type { UsageSnapshot } from "@shared/types";
 import { useAppStore } from "../../store/appStore";
 import { UsageDialog } from "../UsageDialog";
 
-// 모달은 열릴 때 OpenRouter 즉시 조회를 한 번 건다. 지금 스토어 값을 그대로
+// 모달은 열릴 때 API 키 provider 즉시 조회를 한 번 건다. 지금 스토어 값을 그대로
 // 돌려줘 화면을 바꾸지 않게 하고, 호출 인자만 본다.
 const { loadUsageSnapshot } = vi.hoisted(() => ({ loadUsageSnapshot: vi.fn() }));
 vi.mock("../../ipc/tauriApi", () => ({ tauriApi: { loadUsageSnapshot } }));
@@ -56,6 +56,8 @@ function snapshot(): UsageSnapshot {
       lastAttemptMs: null,
       lastSuccessMs: null,
     },
+    opencode: null,
+    opencodeLive: { outcome: "no_key", detail: null, lastAttemptMs: null, lastSuccessMs: null },
     openrouter: null,
     openrouterLive: { outcome: "no_key", detail: null, lastAttemptMs: null, lastSuccessMs: null },
   };
@@ -84,7 +86,7 @@ describe("UsageDialog", () => {
     useAppStore.getState().openModal({ kind: "usage" });
     const { container } = render(<UsageDialog />);
 
-    expect(screen.getByText("구독 사용량")).toBeTruthy();
+    expect(screen.getByText("사용량")).toBeTruthy();
     expect(container.querySelector(".usage-window-label")?.textContent).toBe("5시간지금 적용 중");
     expect(container.querySelector(".usage-window-pct")?.textContent).toBe("61%");
     expect(container.querySelector(".usage-countdown")?.textContent).toBe("3시간 12분 후 리셋");
@@ -148,7 +150,7 @@ describe("UsageDialog", () => {
     expect(container.querySelector(".usage-window-pct")).toBeNull();
     // 셋 다 빠지면 안내 한 줄만 남는다(codex는 never_attempted라
     // 값이 없어도 남지만 여기서는 "데이터 없음" 문구를 그린다).
-    expect(screen.getByText("구독 사용량")).toBeTruthy();
+    expect(screen.getByText("사용량")).toBeTruthy();
   });
 
   it("모든 provider가 빠지면 안내 문구 한 줄만 남는다", () => {
@@ -171,6 +173,8 @@ describe("UsageDialog", () => {
           via: null,
         },
         codexLive: gone,
+        opencode: null,
+        opencodeLive: { outcome: "no_key", detail: null, lastAttemptMs: null, lastSuccessMs: null },
         openrouter: null,
         openrouterLive: { outcome: "no_key", detail: null, lastAttemptMs: null, lastSuccessMs: null },
       },
@@ -182,13 +186,14 @@ describe("UsageDialog", () => {
     expect(container.querySelector(".usage-provider")).toBeNull();
   });
 
-  it("열릴 때 OpenRouter를 스로틀 없이 한 번 조회하고, 키가 없으면 OpenRouter 칸이 없다", () => {
+  it("열릴 때 API 키 provider를 스로틀 없이 한 번 조회하고, 키가 없으면 그 칸이 없다", () => {
     useAppStore.setState({ usage: snapshot() });
     useAppStore.getState().openModal({ kind: "usage" });
     const { container } = render(<UsageDialog />);
     expect(loadUsageSnapshot).toHaveBeenCalledTimes(1);
-    expect(loadUsageSnapshot).toHaveBeenCalledWith({ forceOpenrouter: true });
+    expect(loadUsageSnapshot).toHaveBeenCalledWith({ forceApiKeys: true });
     expect(container.textContent).not.toContain("OpenRouter");
+    expect(container.textContent).not.toContain("OpenCode");
   });
 
   it("OpenRouter 키 사용액: 기간별 금액·키 한도·리셋·진단을 그린다", () => {

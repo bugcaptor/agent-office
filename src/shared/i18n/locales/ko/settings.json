@@ -120,7 +120,10 @@
     "terminalThemeHelp": "터미널 창 색만 별도 팔레트로 고정합니다. 기본값(테마 따름)이면 앱 테마를 바꿀 때 터미널도 함께 바뀝니다.",
     "terminalThemeAuto": "테마 따름 (기본)",
     "terminalThemeAppGroup": "앱 테마 팔레트",
-    "terminalThemeOwnGroup": "터미널 전용 팔레트"
+    "terminalThemeOwnGroup": "터미널 전용 팔레트",
+    "opencodeKeyState": "OpenCode 키 {{state}}",
+    "opencodeKeyTitle": "OpenCode API 키 (사용량 표시)",
+    "opencodeKeyHelp": "OpenCode Go 구독의 5시간·주간·월간 사용률을 하단 사용량 뱃지와 상세 창에 표시합니다(또는 환경변수 <code>OPENCODE_API_KEY</code>). 저장하면 앱에만 보관되고 화면에 다시 표시되지 않습니다."
   },
   "control": {
     "title": "CLI 제어 (외부 조종)",

@@ -47,6 +47,8 @@ function snapshot(): UsageSnapshot {
       lastAttemptMs: null,
       lastSuccessMs: null,
     },
+    opencode: null,
+    opencodeLive: { outcome: "no_key", detail: null, lastAttemptMs: null, lastSuccessMs: null },
     openrouter: null,
     openrouterLive: { outcome: "no_key", detail: null, lastAttemptMs: null, lastSuccessMs: null },
   };
@@ -96,7 +98,7 @@ describe("UsageFloat", () => {
     });
     render(<UsageFloat />);
     const badge = screen.getByText("$0.29").closest(".usage-badge-or")!;
-    expect(badge.className).toContain("usage-level-warn"); // 17/20 = 85%
+    expect(screen.getByText("$0.29").className).toContain("usage-level-warn"); // 17/20 = 85%
     expect(badge.getAttribute("title")).toBe(
       "OR: 오늘 $0.29 · 이번 주 $1.50 · 이번 달 $3.00 · 키 한도(주) 85%",
     );

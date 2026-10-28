@@ -5,6 +5,7 @@
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { MascotLightsSection } from "./MascotLightsSection";
+import { ApiKeyTools } from "./SummarySection";
 import { THEMES, THEME_ORDER } from "../theme/themes";
 import { XTERM_PALETTES, XTERM_PALETTE_ORDER } from "../terminal/palettes";
 import type { XtermThemeOverride } from "../terminal/theme";
@@ -104,6 +105,9 @@ export function SystemTab() {
           <small>{t("system.usageFloatHelp")}</small>
         </span>
       </label>
+      {/* OpenCode Go 구독 사용량을 하단 사용량 뱃지·상세 창에 싣는 키. 요약기와
+          무관하므로 요약 탭이 아니라 사용량 표시 설정 옆에 둔다. */}
+      <ApiKeyTools slot="opencode" />
       <label className="settings-item">
         <input
           type="checkbox"

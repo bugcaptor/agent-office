@@ -100,20 +100,6 @@
   }
 }
 
-/* OpenRouter 금액 뱃지(`OR $0.29`)도 같은 폭 사정으로 좁은 폭(<960px)에서는
- * 숨긴다. 예외는 두 가지 — 키 한도 대비 warn/danger(≥70%)일 때와, OR이
- * 위젯의 유일한 뱃지일 때(숨기면 빈 버튼만 남는다). 플로팅 패널은 폭
- * 제약이 없어 .usage-widget 안으로만 범위를 좁힌다. */
-@media (max-width: 959.98px) {
-  .usage-widget .usage-badge-or:not(:only-child) {
-    display: none;
-  }
-  .usage-widget .usage-badge-or.usage-level-warn,
-  .usage-widget .usage-badge-or.usage-level-danger {
-    display: inline-flex;
-  }
-}
-
 .usage-badge-empty {
   color: var(--text-dim);
   opacity: 0.65;

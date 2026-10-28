@@ -120,7 +120,10 @@
     "terminalThemeHelp": "ターミナルウィンドウの色だけを別のパレットに固定します。既定値（テーマに従う）ならアプリのテーマを変えるとターミナルも一緒に変わります。",
     "terminalThemeAuto": "テーマに従う（既定）",
     "terminalThemeAppGroup": "アプリテーマのパレット",
-    "terminalThemeOwnGroup": "ターミナル専用パレット"
+    "terminalThemeOwnGroup": "ターミナル専用パレット",
+    "opencodeKeyState": "OpenCode キー {{state}}",
+    "opencodeKeyTitle": "OpenCode API キー(使用量表示)",
+    "opencodeKeyHelp": "OpenCode Go サブスクリプションの5時間・週間・月間の使用率を下部の使用量バッジと詳細に表示します(または環境変数 <code>OPENCODE_API_KEY</code>)。保存するとアプリ内にだけ保管され、画面に再表示されることはありません。"
   },
   "control": {
     "title": "CLI 制御（外部から操作）",

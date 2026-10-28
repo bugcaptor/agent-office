@@ -77,10 +77,16 @@ pub(super) async fn appearance(
 }
 
 pub(super) async fn usage(State(ctx): State<Arc<ControlContext>>) -> Json<serde_json::Value> {
+    let openrouter = ctx.key_store.openrouter_key();
+    let opencode = ctx.key_store.opencode_key();
+    let keys = crate::usage::ApiKeyRequest {
+        openrouter: openrouter.as_deref(),
+        opencode: opencode.as_deref(),
+        force: false,
+    };
     let snapshot = crate::ipc::commands::load_usage_snapshot_body(
         &ctx.live_usage,
-        ctx.key_store.openrouter_key().as_deref(),
-        false,
+        keys,
         chrono::Utc::now().timestamp_millis(),
     )
     .await;

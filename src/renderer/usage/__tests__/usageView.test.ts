@@ -11,9 +11,9 @@ import { afterAll, describe, expect, it } from "vitest";
 import { SOURCE_LANGUAGE, initI18nForTest, t as translate } from "@renderer/i18n";
 import { renderText } from "@renderer/shared/textKey";
 import type {
+  ApiKeyLiveStatus,
   ClaudeLiveStatus,
   CodexLiveStatus,
-  OpenRouterLiveStatus,
   OpenRouterUsage,
   ProviderUsage,
   UsageSnapshot,
@@ -25,8 +25,12 @@ import {
   badgeWindows,
   describeCodexLiveStatus,
   describeLiveStatus,
-  describeOpenRouterLiveStatus,
+  describeApiKeyLiveStatus,
+  describeProviderLive,
+  estimatedActivity,
   formatUsd,
+  pickBadges,
+  recordUsageActivity,
   isOpenRouterGone,
   isProviderGone,
   openRouterLimitLabel,
@@ -100,12 +104,14 @@ function snap(
     codex,
     claudeLive,
     codexLive,
+    opencode: null,
+    opencodeLive: orLive({ outcome: "no_key" }),
     openrouter: null,
     openrouterLive: orLive({ outcome: "no_key" }),
   };
 }
 
-function orLive(partial: Partial<OpenRouterLiveStatus> = {}): OpenRouterLiveStatus {
+function orLive(partial: Partial<ApiKeyLiveStatus> = {}): ApiKeyLiveStatus {
   return { outcome: "ok", detail: null, lastAttemptMs: null, lastSuccessMs: null, ...partial };
 }
 
@@ -714,16 +720,21 @@ describe("OpenRouter", () => {
   });
 
   it("진단: 키 없음은 null, 실패는 사유별 키", () => {
-    expect(describeOpenRouterLiveStatus(orLive({ outcome: "no_key" }))).toBeNull();
-    expect(describeOpenRouterLiveStatus(undefined)).toBeNull();
-    expect(describeOpenRouterLiveStatus(orLive())!.level).toBe("ok");
-    const denied = describeOpenRouterLiveStatus(orLive({ outcome: "unauthorized", detail: "HTTP 401" }))!;
+    expect(describeApiKeyLiveStatus(orLive({ outcome: "no_key" }), "OpenRouter")).toBeNull();
+    expect(describeApiKeyLiveStatus(undefined, "OpenRouter")).toBeNull();
+    expect(describeApiKeyLiveStatus(orLive(), "OpenRouter")!.level).toBe("ok");
+    const denied = describeApiKeyLiveStatus(
+      orLive({ outcome: "unauthorized", detail: "HTTP 401" }),
+      "OpenRouter",
+    )!;
     expect(denied.level).toBe("error");
     expect(denied.text).toEqual({
-      key: "usage.openrouterLive.unauthorized",
-      params: { detail: "HTTP 401" },
+      key: "usage.keyLive.unauthorized",
+      params: { name: "OpenRouter", detail: "HTTP 401" },
     });
-    expect(describeOpenRouterLiveStatus(orLive({ outcome: "network_error" }))!.level).toBe("warn");
+    expect(
+      describeApiKeyLiveStatus(orLive({ outcome: "network_error" }), "OpenRouter")!.level,
+    ).toBe("warn");
   });
 
   it("병합: 응답의 null(키 없음·키 바뀜)은 그대로 따르고, 필드가 없는 구버전 응답만 이전 값을 둔다", () => {
@@ -739,11 +750,110 @@ describe("OpenRouter", () => {
 
   it("카탈로그 렌더(ko 정본)", () => {
     expect(render(openRouterLimitLabel(orUsage({ limitReset: "monthly" })))).toBe("키 한도(월)");
-    const note = describeOpenRouterLiveStatus(orLive({ outcome: "http_error", detail: "HTTP 502" }))!;
+    const note = describeApiKeyLiveStatus(
+      orLive({ outcome: "http_error", detail: "HTTP 502" }),
+      "OpenRouter",
+    )!;
     expect(render(note.text)).toBe(
       "OpenRouter 조회 실패: 서버 오류(HTTP 502). 표시값은 마지막으로 받아온 값입니다",
     );
     expect(render(note.short)).toBe("실시간 조회 실패(HTTP 502)");
+  });
+});
+
+describe("OpenCode Go", () => {
+  const now = 1_784_000_000_000;
+  const oc = (fetchedAtMs = now): ProviderUsage => ({
+    ...provider([win({ kind: "session", usedPercent: 12 }), win({ kind: "monthly", usedPercent: 3 })], "opencode"),
+    fetchedAtMs,
+  });
+
+  it("키 provider는 진단이 없으면(첫 폴링 전) 숨기고, 키가 없어도 숨긴다", () => {
+    expect(visibleUsageProviders(null, now)).toEqual(["claude", "codex"]);
+    expect(visibleUsageProviders(snap(null, null), now)).toEqual([]);
+    const fetched = { ...snap(null, null), opencode: oc(), opencodeLive: orLive() };
+    expect(visibleUsageProviders(fetched, now)).toEqual(["opencode"]);
+  });
+
+  it("월간 창 라벨과 진단 문구(서비스 이름 보간)", () => {
+    expect(render(windowLabel(win({ kind: "monthly" })))).toBe("월간");
+    const s = { ...snap(null, null), opencodeLive: orLive({ outcome: "unauthorized", detail: "HTTP 401" }) };
+    expect(render(describeProviderLive(s, "opencode")!.text)).toBe(
+      "OpenCode 조회 실패: 키가 거부됐습니다(HTTP 401) — 설정의 OpenCode API 키를 확인하세요. 표시값은 마지막으로 받아온 값입니다",
+    );
+  });
+
+  it("병합은 OpenRouter와 같다: null은 따르고 필드 부재만 이전 값 유지", () => {
+    const prev = { ...snap(null, null), opencode: oc() };
+    expect(mergeUsageSnapshot(prev, snap(null, null)).opencode).toBeNull();
+    const legacy = { ...snap(null, null) } as Partial<UsageSnapshot>;
+    delete legacy.opencode;
+    expect(mergeUsageSnapshot(prev, legacy as UsageSnapshot).opencode).toEqual(prev.opencode);
+  });
+});
+
+describe("하단 뱃지 고르기", () => {
+  const now = 1_784_000_000_000;
+  const H = 60 * 60 * 1000;
+  // 5시간 창에 사용이 있고 resetsAt이 정해져 있으면 "창 시작 = 리셋 5시간 전"이 추정 하한.
+  const used = (name: ProviderUsage["provider"], resetInH: number): ProviderUsage => ({
+    ...provider([win({ kind: "session", usedPercent: 10, resetsAtMs: now + resetInH * H })], name),
+    fetchedAtMs: now,
+  });
+  const all = (): UsageSnapshot => ({
+    ...snap(used("claude", 4), used("codex", 1)),
+    opencode: used("opencode", 2),
+    opencodeLive: orLive(),
+    openrouter: orUsage({ fetchedAtMs: now, usageDaily: 0.5, usageTotal: 3 }),
+    openrouterLive: orLive(),
+  });
+
+  it("후보가 넷이어도 최근 사용 2개만, 고정 순서로", () => {
+    // 추정 하한: claude 1시간 전, opencode 3시간 전, codex 4시간 전, OR UTC 자정.
+    expect(pickBadges(all(), {}, now)).toEqual(["claude", "opencode"]);
+  });
+
+  it("관찰된 사용 시각이 추정보다 늦으면 그것을 따른다", () => {
+    expect(pickBadges(all(), { openrouter: now - 60_000, codex: now - 120_000 }, now)).toEqual([
+      "codex",
+      "openrouter",
+    ]);
+  });
+
+  it("근거가 없으면 고정 순서, 화면에서 빠진 provider는 후보가 아니다", () => {
+    const none = snap(provider([win({ usedPercent: 0 })]), provider([], "codex"));
+    none.claude!.fetchedAtMs = now;
+    none.codex!.fetchedAtMs = now;
+    expect(pickBadges(none, {}, now)).toEqual(["claude", "codex"]);
+    expect(pickBadges(snap(null, null), { claude: now }, now)).toEqual([]);
+  });
+
+  it("추정 하한: 사용이 없는 창·리셋 시각 없는 창은 근거가 아니다", () => {
+    const s = snap(
+      { ...provider([win({ usedPercent: 0, resetsAtMs: now + H }), win({ kind: "weekly", usedPercent: 5, resetsAtMs: now + 24 * H })]), fetchedAtMs: now },
+      { ...provider([win({ usedPercent: 50, resetsAtMs: null })], "codex"), fetchedAtMs: now },
+    );
+    expect(estimatedActivity(s, "claude")).toBe(now + 24 * H - 7 * 24 * H);
+    expect(estimatedActivity(s, "codex")).toBeNull();
+    expect(estimatedActivity({ ...s, openrouter: orUsage({ usageDaily: 0 }) }, "openrouter")).toBeNull();
+  });
+
+  it("관찰: 값이 오른 provider에만 now를 기록하고, 안 바뀌면 같은 객체", () => {
+    const prev = all();
+    const next = all();
+    const activity = { claude: 1 };
+    expect(recordUsageActivity(prev, next, activity, now)).toBe(activity);
+    next.codex = used("codex", 1);
+    next.codex.windows[0].usedPercent = 20;
+    next.openrouter = orUsage({ fetchedAtMs: now, usageDaily: 0.6, usageTotal: 3.1 });
+    // 리셋으로 내려간 값은 사용이 아니다.
+    next.opencode!.windows[0].usedPercent = 0;
+    expect(recordUsageActivity(prev, next, activity, now)).toEqual({
+      claude: 1,
+      codex: now,
+      openrouter: now,
+    });
+    expect(recordUsageActivity(null, next, activity, now)).toBe(activity);
   });
 });
 

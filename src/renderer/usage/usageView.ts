@@ -12,23 +12,30 @@
 
 import type { TextKey } from "@renderer/shared/textKey";
 import type {
+  ApiKeyLiveStatus,
   ClaudeLiveStatus,
   CodexLiveStatus,
   FetchTransport,
-  OpenRouterLiveStatus,
   OpenRouterUsage,
   ProviderUsage,
   UsageSnapshot,
   UsageWindow,
 } from "@shared/types";
 
-/** 사용량을 표시하는 provider와 그 고정 순서. */
-export const USAGE_PROVIDERS = ["claude", "codex"] as const;
+/** 한도 사용률(윈도 배열)을 표시하는 provider와 그 고정 순서. */
+export const USAGE_PROVIDERS = ["claude", "codex", "opencode"] as const;
 
 export type UsageProvider = (typeof USAGE_PROVIDERS)[number];
 
 /** provider별 실시간 조회 진단의 합집합. 공통 필드만 읽는 자리에서 쓴다. */
-export type AnyLiveStatus = ClaudeLiveStatus | CodexLiveStatus | OpenRouterLiveStatus;
+export type AnyLiveStatus = ClaudeLiveStatus | CodexLiveStatus | ApiKeyLiveStatus;
+
+/**
+ * 앱 설정의 API 키로 조회하는 provider. 키가 없는 사용자가 대부분이라, 진단이
+ * 아직 없을 때(첫 폴링 전·구버전 응답) 기본을 숨김으로 둔다 — `OC —`가 잠깐
+ * 비치지 않게.
+ */
+const KEYED_PROVIDERS: ReadonlySet<UsageProvider> = new Set(["opencode"]);
 
 /** 신선도가 이보다 오래되면(ms) stale로 보고 흐리게 표시한다. */
 export const STALE_THRESHOLD_MS = 30 * 60 * 1000;
@@ -57,6 +64,7 @@ export function usageLevel(usedPercent: number): UsageLevel {
 export const PROVIDER_SHORT: Record<UsageProvider, string> = {
   claude: "CL",
   codex: "CX",
+  opencode: "OC",
 };
 
 /** 스냅샷에서 provider의 값을 꺼낸다(스냅샷이 없으면 null). */
@@ -78,6 +86,8 @@ export function providerLive(
       return snapshot.claudeLive;
     case "codex":
       return snapshot.codexLive;
+    case "opencode":
+      return snapshot.opencodeLive;
   }
 }
 
@@ -106,9 +116,11 @@ export function visibleUsageProviders(
   snapshot: UsageSnapshot | null | undefined,
   now: number,
 ): UsageProvider[] {
-  return USAGE_PROVIDERS.filter(
-    (p) => !isProviderGone(providerUsage(snapshot, p), providerLive(snapshot, p), now),
-  );
+  return USAGE_PROVIDERS.filter((p) => {
+    const live = providerLive(snapshot, p);
+    if (KEYED_PROVIDERS.has(p) && !live && !providerUsage(snapshot, p)) return false;
+    return !isProviderGone(providerUsage(snapshot, p), live, now);
+  });
 }
 
 /**
@@ -168,6 +180,8 @@ export function windowLabel(w: UsageWindow): TextKey {
       return w.label
         ? { key: "usage.window.weeklyModel", params: { label: w.label } }
         : { key: "usage.window.weeklyModelGeneric" };
+    case "monthly":
+      return { key: "usage.window.monthly" };
     case "unknown":
       // 라벨이 있으면 그것이 유일한 뜻이다(창 길이 없이 모델 이름만
       // 오는 버킷) — "기타"로 뭉개면 어느 모델 얘기인지 알 수 없다.
@@ -447,6 +461,8 @@ export function describeProviderLive(
       return describeLiveStatus(snapshot.claudeLive);
     case "codex":
       return describeCodexLiveStatus(snapshot.codexLive);
+    case "opencode":
+      return describeApiKeyLiveStatus(snapshot.opencodeLive, "OpenCode");
   }
 }
 
@@ -502,11 +518,13 @@ export function isOpenRouterGone(
 }
 
 /**
- * OpenRouter 조회 상태 → 표시 문구 키. 키가 없으면(`no_key`) 표시할 게 없어
- * null — 그때는 OpenRouter 칸 자체가 빠진다.
+ * API 키 조회 상태 → 표시 문구 키. 키가 없으면(`no_key`) 표시할 게 없어
+ * null — 그때는 그 provider 칸 자체가 빠진다. `name`은 문구에 들어갈
+ * 서비스 이름(OpenRouter·OpenCode).
  */
-export function describeOpenRouterLiveStatus(
-  status: OpenRouterLiveStatus | null | undefined,
+export function describeApiKeyLiveStatus(
+  status: ApiKeyLiveStatus | null | undefined,
+  name: string,
 ): LiveStatusNote | null {
   if (!status) return null;
   switch (status.outcome) {
@@ -515,21 +533,21 @@ export function describeOpenRouterLiveStatus(
     case "ok":
       return {
         level: "ok",
-        text: { key: "usage.openrouterLive.ok" },
+        text: { key: "usage.keyLive.ok", params: { name } },
         short: { key: "usage.live.okDirectShort" },
       };
     case "never_attempted":
       return {
         level: "warn",
-        text: { key: "usage.openrouterLive.neverAttempted" },
+        text: { key: "usage.keyLive.neverAttempted", params: { name } },
         short: { key: "usage.live.waitingShort" },
       };
     case "unauthorized":
       return {
         level: "error",
         text: {
-          key: "usage.openrouterLive.unauthorized",
-          params: { detail: status.detail ?? "HTTP 401" },
+          key: "usage.keyLive.unauthorized",
+          params: { name, detail: status.detail ?? "HTTP 401" },
         },
         short: { key: "usage.live.unauthorizedShort" },
       };
@@ -537,8 +555,8 @@ export function describeOpenRouterLiveStatus(
       return {
         level: "error",
         text: {
-          key: "usage.openrouterLive.httpError",
-          params: { detail: status.detail ?? { key: "usage.live.detailHttpError" } },
+          key: "usage.keyLive.httpError",
+          params: { name, detail: status.detail ?? { key: "usage.live.detailHttpError" } },
         },
         short: {
           key: "usage.live.httpErrorShort",
@@ -549,8 +567,8 @@ export function describeOpenRouterLiveStatus(
       return {
         level: "warn",
         text: {
-          key: "usage.openrouterLive.networkError",
-          params: { detail: status.detail ?? { key: "usage.live.detailError" } },
+          key: "usage.keyLive.networkError",
+          params: { name, detail: status.detail ?? { key: "usage.live.detailError" } },
         },
         short: { key: "usage.live.networkErrorShort" },
       };
@@ -558,12 +576,131 @@ export function describeOpenRouterLiveStatus(
       return {
         level: "warn",
         text: {
-          key: "usage.openrouterLive.unexpected",
-          params: { detail: status.detail ?? { key: "usage.live.detailUnknown" } },
+          key: "usage.keyLive.unexpected",
+          params: { name, detail: status.detail ?? { key: "usage.live.detailUnknown" } },
         },
         short: { key: "usage.live.unexpectedShort" },
       };
   }
+}
+
+// ── 하단 뱃지 고르기 ────────────────────────────────────────────────
+//
+// 뱃지 후보는 provider 넷(CL·CX·OC·OR)인데 BottomBar는 800px 기본 폭에서
+// 여유가 거의 없다. 그래서 **최근에 쓴 것 2개만** 뱃지로 보이고, 전부는
+// 상세 창에서 본다.
+//
+// "최근에 썼다"의 근거는 둘이다.
+// 1. 관찰: 폴링 사이에 값이 올랐으면(사용률 합·누적 금액) 그 시각에 쓴 것이다.
+//    렌더러가 기록하고(recordUsageActivity) 앱 재시작 너머로 보존한다.
+// 2. 추정: 관찰 기록이 없거나 더 오래됐으면, 지금 열린 창에 사용이 있다는
+//    사실로 "적어도 그 창이 시작된 뒤에 썼다"를 하한으로 잡는다(5시간 창이면
+//    리셋 5시간 전, OpenRouter 오늘 사용액이 있으면 UTC 자정).
+// 둘 중 늦은 쪽이 그 provider의 최근 사용 시각이다. 표시 순서는 고정 순서를
+// 따른다 — 사용할 때마다 뱃지 자리가 뒤바뀌면 눈으로 찾기 어렵다.
+
+/** 하단 뱃지 하나의 자리: 구독 provider 또는 OpenRouter. 고정 표시 순서. */
+export const BADGE_IDS = [...USAGE_PROVIDERS, "openrouter"] as const;
+export type BadgeId = (typeof BADGE_IDS)[number];
+
+/** 하단 바에 보이는 뱃지 수. */
+export const MAX_BADGES = 2;
+
+/** 뱃지별로 마지막으로 사용이 관찰된 시각(epoch ms). */
+export type UsageActivity = Partial<Record<BadgeId, number>>;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** 창 종류의 길이(분). 응답에 길이가 없을 때(Claude) 종류로 정한다. */
+function windowLengthMinutes(w: UsageWindow): number | null {
+  if (w.windowMinutes !== null) return w.windowMinutes;
+  switch (w.kind) {
+    case "session":
+    case "session_model":
+      return 5 * 60;
+    case "weekly":
+    case "weekly_model":
+      return 7 * 24 * 60;
+    default:
+      return null;
+  }
+}
+
+/** 사용이 오르면 함께 오르는 값. 값이 없으면 null. */
+function usageSignature(snapshot: UsageSnapshot | null | undefined, id: BadgeId): number | null {
+  if (!snapshot) return null;
+  if (id === "openrouter") return snapshot.openrouter?.usageTotal ?? null;
+  const usage = providerUsage(snapshot, id);
+  return usage ? usage.windows.reduce((sum, w) => sum + w.usedPercent, 0) : null;
+}
+
+/**
+ * 이전·다음 스냅샷을 비교해 값이 오른 뱃지에 `now`를 기록한다. 바뀐 게
+ * 없으면 같은 객체를 돌려준다(스토어 갱신·저장을 건너뛸 수 있게).
+ */
+export function recordUsageActivity(
+  prev: UsageSnapshot | null,
+  next: UsageSnapshot,
+  activity: UsageActivity,
+  now: number,
+): UsageActivity {
+  let out = activity;
+  for (const id of BADGE_IDS) {
+    const before = usageSignature(prev, id);
+    const after = usageSignature(next, id);
+    if (before !== null && after !== null && after > before + 1e-9) {
+      out = { ...out, [id]: now };
+    }
+  }
+  return out;
+}
+
+/** 지금 값만 보고 추정한 최근 사용 시각의 하한. 근거가 없으면 null. */
+export function estimatedActivity(
+  snapshot: UsageSnapshot | null | undefined,
+  id: BadgeId,
+): number | null {
+  if (!snapshot) return null;
+  if (id === "openrouter") {
+    const u = snapshot.openrouter;
+    if (!u || !(u.usageDaily !== null && u.usageDaily > 0)) return null;
+    return Math.floor(u.fetchedAtMs / DAY_MS) * DAY_MS;
+  }
+  const usage = providerUsage(snapshot, id);
+  if (!usage) return null;
+  let best: number | null = null;
+  for (const w of usage.windows) {
+    const minutes = windowLengthMinutes(w);
+    if (w.usedPercent <= 0 || w.resetsAtMs === null || minutes === null) continue;
+    const start = w.resetsAtMs - minutes * 60_000;
+    if (best === null || start > best) best = start;
+  }
+  return best;
+}
+
+/**
+ * 하단 바에 그릴 뱃지(최대 `max`개, 고정 순서). 화면에서 빠진 provider
+ * (visibleUsageProviders·isOpenRouterGone)는 후보가 아니다. 최근 사용 시각이
+ * 늦은 순으로 고르고, 동률(둘 다 근거 없음 포함)은 고정 순서가 앞선 쪽이다.
+ */
+export function pickBadges(
+  snapshot: UsageSnapshot | null | undefined,
+  activity: UsageActivity,
+  now: number,
+  max: number = MAX_BADGES,
+): BadgeId[] {
+  const candidates: BadgeId[] = [
+    ...visibleUsageProviders(snapshot, now),
+    ...(isOpenRouterGone(snapshot, now) ? [] : (["openrouter"] as const)),
+  ];
+  const score = (id: BadgeId) =>
+    Math.max(activity[id] ?? -Infinity, estimatedActivity(snapshot, id) ?? -Infinity);
+  const chosen = new Set(
+    [...candidates]
+      .sort((a, b) => score(b) - score(a) || BADGE_IDS.indexOf(a) - BADGE_IDS.indexOf(b))
+      .slice(0, max),
+  );
+  return candidates.filter((id) => chosen.has(id));
 }
 
 /**
@@ -626,9 +763,11 @@ export function mergeUsageSnapshot(
     // 상태"라서 이전 것을 살려두면 이미 복구된 실패가 남는다.
     claudeLive: next.claudeLive ?? prev?.claudeLive,
     codexLive: next.codexLive ?? prev?.codexLive,
-    // OpenRouter는 파일 캐시가 없고 백엔드가 마지막 성공 값을 메모리에 쥐고
-    // 있다 — 응답의 null은 "일시 실패"가 아니라 "키 없음·키 바뀜"이라 그대로
-    // 따른다. 필드 자체가 없는(구버전) 응답일 때만 이전 값을 둔다.
+    // API 키 provider는 파일 캐시가 없고 백엔드가 마지막 성공 값을 메모리에
+    // 쥐고 있다 — 응답의 null은 "일시 실패"가 아니라 "키 없음·키 바뀜"이라
+    // 그대로 따른다. 필드 자체가 없는(구버전) 응답일 때만 이전 값을 둔다.
+    opencode: next.opencode !== undefined ? next.opencode : (prev?.opencode ?? null),
+    opencodeLive: next.opencodeLive ?? prev?.opencodeLive,
     openrouter: next.openrouter !== undefined ? next.openrouter : (prev?.openrouter ?? null),
     openrouterLive: next.openrouterLive ?? prev?.openrouterLive,
   };

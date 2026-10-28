@@ -9,7 +9,8 @@
       "weeklyModelGeneric": "週間（モデル別）",
       "minutes": "{{minutes}}分ウィンドウ",
       "other": "その他",
-      "labelled": "{{label}}"
+      "labelled": "{{label}}",
+      "monthly": "月間"
     },
     "countdown": {
       "pending": "リセット待ち",
@@ -88,7 +89,8 @@
       "empty": {
         "claude": "使用量データがありません。Claude Code で /usage を一度開くとローカルキャッシュが作られます。",
         "codex": "使用量データがありません。codex login のあとアプリが直接取得するか、Codex CLI を一度実行するとローカル記録が作られます。",
-        "openrouter": "OpenRouter の利用額をまだ取得できていません。"
+        "openrouter": "OpenRouter の利用額をまだ取得できていません。",
+        "opencode": "OpenCode Go の使用量をまだ取得できていません。"
       },
       "allHidden": "表示できる使用量がありません。どの CLI からも1日以上使用量を取得できていません。"
     },
@@ -115,13 +117,13 @@
       },
       "freeTier": "無料枠"
     },
-    "openrouterLive": {
-      "ok": "アプリが OpenRouter からこのキーの利用額を直接取得中(5分間隔、このウィンドウを開くとすぐ更新)",
-      "neverAttempted": "OpenRouter の利用額はまだ取得していません",
-      "unauthorized": "OpenRouter の取得に失敗: キーが拒否されました({{detail}})— 設定の OpenRouter API キーを確認してください。表示値は最後に取得した値です",
-      "httpError": "OpenRouter の取得に失敗: サーバーエラー({{detail}})。表示値は最後に取得した値です",
-      "networkError": "OpenRouter の取得に失敗: ネットワーク {{detail}}。表示値は最後に取得した値です",
-      "unexpected": "OpenRouter の取得に失敗: 応答の形式が変わりました({{detail}})。表示値は最後に取得した値です"
+    "keyLive": {
+      "ok": "アプリが {{name}} から使用量を直接取得中(5分間隔、このウィンドウを開くとすぐ更新)",
+      "neverAttempted": "{{name}} の使用量はまだ取得していません",
+      "unauthorized": "{{name}} の取得に失敗: キーが拒否されました({{detail}})— 設定の {{name}} API キーを確認してください。表示値は最後に取得した値です",
+      "httpError": "{{name}} の取得に失敗: サーバーエラー({{detail}})。表示値は最後に取得した値です",
+      "networkError": "{{name}} の取得に失敗: ネットワーク {{detail}}。表示値は最後に取得した値です",
+      "unexpected": "{{name}} の取得に失敗: 応答の形式が変わりました({{detail}})。表示値は最後に取得した値です"
     }
   },
   "timeline": {

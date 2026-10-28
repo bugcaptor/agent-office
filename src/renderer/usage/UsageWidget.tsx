@@ -6,7 +6,10 @@
 // 보이게). Codex의 Spark 같은 모델별 특수 한도는 대표값에서 제외한다.
 // 퍼센트마다 자기 usedPercent 기준 색(임계 70/90, tokens.css 토큰),
 // 데이터 없으면 dim `—`. 클릭하면 상세 모달을 연다. OpenRouter 키가 설정돼
-// 있으면 그 뒤에 오늘 사용액 뱃지(`OR $0.29`, OpenRouterBadge)가 붙는다.
+// 있으면 오늘 사용액 뱃지(`OR $0.29`, OpenRouterBadge)도 후보가 된다.
+//
+// 후보(CL·CX·OC·OR) 중 **최근에 쓴 2개만** 그린다(usageView.pickBadges).
+// 나머지는 상세 모달에서 본다.
 //
 // 하루 넘게 갱신되지 못한 provider(또는 시도했는데 값이 하나도 없는
 // provider)는 흐리게가 아니라 **뱃지에서 통째로 빠진다**(kbm #2j4,
@@ -26,7 +29,8 @@
 // 저장한다. 파일 읽기가 저비용이라
 // 백엔드 타이머/파일 워처 없이 단순 폴링으로 충분. 응답의 provider별 null은
 // mergeUsageSnapshot으로 이전 값 위에 덮어써(일시 파싱 실패가 유효 값을
-// 지우지 않게) 저장한다.
+// 지우지 않게) 저장하고, 값이 오른 provider의 사용 시각을 기록한다
+// (스토어 applyUsageSnapshot).
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { renderText } from "../shared/textKey";
@@ -36,13 +40,11 @@ import type { ProviderUsage } from "@shared/types";
 import {
   PROVIDER_SHORT,
   badgeWindows,
-  describeOpenRouterLiveStatus,
+  describeApiKeyLiveStatus,
   describeProviderLive,
-  isOpenRouterGone,
-  mergeUsageSnapshot,
+  pickBadges,
   providerUsage,
   usageLevel,
-  visibleUsageProviders,
   windowLabel,
   type LiveStatusNote,
   type UsageProvider,
@@ -114,7 +116,8 @@ function ProviderBadge({
 export function UsageWidget() {
   const { t } = useTranslation("activity");
   const usage = useAppStore((s) => s.usage);
-  const setUsage = useAppStore((s) => s.setUsage);
+  const activity = useAppStore((s) => s.usageActivity);
+  const applyUsageSnapshot = useAppStore((s) => s.applyUsageSnapshot);
   const openModal = useAppStore((s) => s.openModal);
 
   useEffect(() => {
@@ -128,7 +131,7 @@ export function UsageWidget() {
       inFlight = true;
       try {
         const snap = await tauriApi.loadUsageSnapshot();
-        if (!cancelled) setUsage(mergeUsageSnapshot(useAppStore.getState().usage, snap));
+        if (!cancelled) applyUsageSnapshot(snap);
       } catch (err) {
         // 실패는 콘솔 경고로만 — 다음 폴링이 재시도한다(이전 값 유지).
         console.warn("usage: failed to load snapshot", err);
@@ -142,15 +145,13 @@ export function UsageWidget() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [setUsage]);
+  }, [applyUsageSnapshot]);
 
   // 숨김 판정은 렌더 시각 기준이다. 별도 tick을 두지 않는 이유: 폴링이
   // 60초마다 새 스냅샷 객체를 스토어에 넣어 어차피 다시 그려지고, 임계값이
   // 24시간이라 60초 해상도로 충분하다.
-  const now = Date.now();
-  const visible = visibleUsageProviders(usage, now);
-  const showOpenRouter = !isOpenRouterGone(usage, now);
-  if (visible.length === 0 && !showOpenRouter) return null;
+  const badges = pickBadges(usage, activity, Date.now());
+  if (badges.length === 0) return null;
 
   return (
     <button
@@ -160,20 +161,22 @@ export function UsageWidget() {
       title={t("usage.widget.tooltip")}
       onClick={() => openModal({ kind: "usage" })}
     >
-      {visible.map((p) => (
-        <ProviderBadge
-          key={p}
-          provider={p}
-          usage={providerUsage(usage, p)}
-          note={describeProviderLive(usage, p)}
-        />
-      ))}
-      {showOpenRouter && (
-        <OpenRouterBadge
-          className="usage-badge"
-          usage={usage?.openrouter ?? null}
-          note={describeOpenRouterLiveStatus(usage?.openrouterLive)}
-        />
+      {badges.map((id) =>
+        id === "openrouter" ? (
+          <OpenRouterBadge
+            key={id}
+            className="usage-badge"
+            usage={usage?.openrouter ?? null}
+            note={describeApiKeyLiveStatus(usage?.openrouterLive, "OpenRouter")}
+          />
+        ) : (
+          <ProviderBadge
+            key={id}
+            provider={id}
+            usage={providerUsage(usage, id)}
+            note={describeProviderLive(usage, id)}
+          />
+        ),
       )}
     </button>
   );

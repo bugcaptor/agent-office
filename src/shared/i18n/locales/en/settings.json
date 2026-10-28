@@ -120,7 +120,10 @@
     "terminalThemeHelp": "Pins only the terminal colors to a separate palette. On the default (follow theme) the terminal changes with the app theme.",
     "terminalThemeAuto": "Follow theme",
     "terminalThemeAppGroup": "App theme palettes",
-    "terminalThemeOwnGroup": "Terminal palettes"
+    "terminalThemeOwnGroup": "Terminal palettes",
+    "opencodeKeyState": "OpenCode key {{state}}",
+    "opencodeKeyTitle": "OpenCode API key (usage display)",
+    "opencodeKeyHelp": "Shows your OpenCode Go subscription's 5h, weekly and monthly usage in the bottom usage badge and details (or set the <code>OPENCODE_API_KEY</code> environment variable). Once saved it stays in the app and is never shown again."
   },
   "control": {
     "title": "CLI control (external)",
