@@ -87,7 +87,8 @@
       "close": "닫기",
       "empty": {
         "claude": "사용량 데이터가 없습니다. Claude Code에서 /usage를 한 번 열면 로컬 캐시가 생깁니다.",
-        "codex": "사용량 데이터가 없습니다. codex login 후 앱이 직접 조회하거나, Codex CLI를 한 번 실행하면 로컬 기록이 생깁니다."
+        "codex": "사용량 데이터가 없습니다. codex login 후 앱이 직접 조회하거나, Codex CLI를 한 번 실행하면 로컬 기록이 생깁니다.",
+        "openrouter": "아직 OpenRouter 사용액을 받아오지 못했습니다."
       },
       "allHidden": "표시할 사용량이 없습니다. 어떤 CLI에서도 하루 넘게 사용량을 가져오지 못했습니다."
     },
@@ -98,6 +99,29 @@
       "title": "{{short}}: {{windows}}{{suffix}}",
       "windowPct": "{{label}} {{pct}}%",
       "noteSuffix": " ({{note}})"
+    },
+    "openrouter": {
+      "today": "오늘",
+      "week": "이번 주",
+      "month": "이번 달",
+      "total": "누적",
+      "amount": "{{label}} {{amount}}",
+      "limitUsed": "{{used}} / {{limit}}",
+      "limit": {
+        "daily": "키 한도(일)",
+        "weekly": "키 한도(주)",
+        "monthly": "키 한도(월)",
+        "none": "키 한도"
+      },
+      "freeTier": "무료 등급"
+    },
+    "openrouterLive": {
+      "ok": "앱이 OpenRouter에서 이 키의 사용액을 직접 조회 중 (5분 간격, 이 창을 열면 바로 갱신)",
+      "neverAttempted": "OpenRouter 사용액을 아직 조회하지 않음",
+      "unauthorized": "OpenRouter 조회 실패: 키가 거부됐습니다({{detail}}) — 설정의 OpenRouter API 키를 확인하세요. 표시값은 마지막으로 받아온 값입니다",
+      "httpError": "OpenRouter 조회 실패: 서버 오류({{detail}}). 표시값은 마지막으로 받아온 값입니다",
+      "networkError": "OpenRouter 조회 실패: 네트워크 {{detail}}. 표시값은 마지막으로 받아온 값입니다",
+      "unexpected": "OpenRouter 조회 실패: 응답 형태가 바뀌었습니다({{detail}}). 표시값은 마지막으로 받아온 값입니다"
     }
   },
   "timeline": {

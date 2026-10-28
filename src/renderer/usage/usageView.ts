@@ -15,6 +15,8 @@ import type {
   ClaudeLiveStatus,
   CodexLiveStatus,
   FetchTransport,
+  OpenRouterLiveStatus,
+  OpenRouterUsage,
   ProviderUsage,
   UsageSnapshot,
   UsageWindow,
@@ -26,7 +28,7 @@ export const USAGE_PROVIDERS = ["claude", "codex"] as const;
 export type UsageProvider = (typeof USAGE_PROVIDERS)[number];
 
 /** provider별 실시간 조회 진단의 합집합. 공통 필드만 읽는 자리에서 쓴다. */
-export type AnyLiveStatus = ClaudeLiveStatus | CodexLiveStatus;
+export type AnyLiveStatus = ClaudeLiveStatus | CodexLiveStatus | OpenRouterLiveStatus;
 
 /** 신선도가 이보다 오래되면(ms) stale로 보고 흐리게 표시한다. */
 export const STALE_THRESHOLD_MS = 30 * 60 * 1000;
@@ -448,6 +450,122 @@ export function describeProviderLive(
   }
 }
 
+// ── OpenRouter 키 사용액 ─────────────────────────────────────────────
+//
+// Claude/Codex는 구독 한도의 사용률(%)이지만 OpenRouter는 선불 크레딧을 쓰는
+// API 키라 금액(USD)을 보여준다. 그래서 USAGE_PROVIDERS(윈도 배열을 가진
+// provider)에 넣지 않고 함수를 따로 둔다. 색 경고는 키에 한도를 걸어 둔
+// 경우에만 그 한도 대비 사용률로 매긴다(한도 없는 키는 색 없음).
+
+/** BottomBar 뱃지 접두. */
+export const OPENROUTER_SHORT = "OR";
+
+/** 금액 표기. 0보다 크지만 1센트 미만이면 `<$0.01`, 값이 없으면 `—`. */
+export function formatUsd(amount: number | null): string {
+  if (amount === null) return "—";
+  if (amount > 0 && amount < 0.01) return "<$0.01";
+  return `$${amount.toFixed(2)}`;
+}
+
+/** 키 한도 대비 사용률(0~100). 한도가 없는 키면 null. */
+export function openRouterLimitPercent(usage: OpenRouterUsage): number | null {
+  const { limit, limitRemaining } = usage;
+  if (limit === null || limit <= 0 || limitRemaining === null) return null;
+  return Math.min(100, Math.max(0, ((limit - limitRemaining) / limit) * 100));
+}
+
+/** 키 한도 라벨 키(리셋 주기가 있으면 주기를 붙인다). */
+export function openRouterLimitLabel(usage: OpenRouterUsage): TextKey {
+  switch (usage.limitReset) {
+    case "daily":
+    case "weekly":
+    case "monthly":
+      return { key: `usage.openrouter.limit.${usage.limitReset}` };
+    default:
+      return { key: "usage.openrouter.limit.none" };
+  }
+}
+
+/**
+ * OpenRouter를 화면에서 빼야 하는지. 값이 있으면 Claude/Codex와 같은 하루
+ * 기준이다. 값이 없으면 **조회 전(`never_attempted`)일 때만** 남긴다 — 키가
+ * 없는 사용자가 대부분이라, 진단이 아직 없을 때(첫 폴링 전·구버전 응답)
+ * `OR —`가 잠깐 비치지 않게 기본을 숨김으로 둔다.
+ */
+export function isOpenRouterGone(
+  snapshot: UsageSnapshot | null | undefined,
+  now: number,
+): boolean {
+  const usage = snapshot?.openrouter ?? null;
+  if (usage) return now - usage.fetchedAtMs > DEAD_THRESHOLD_MS;
+  return snapshot?.openrouterLive?.outcome !== "never_attempted";
+}
+
+/**
+ * OpenRouter 조회 상태 → 표시 문구 키. 키가 없으면(`no_key`) 표시할 게 없어
+ * null — 그때는 OpenRouter 칸 자체가 빠진다.
+ */
+export function describeOpenRouterLiveStatus(
+  status: OpenRouterLiveStatus | null | undefined,
+): LiveStatusNote | null {
+  if (!status) return null;
+  switch (status.outcome) {
+    case "no_key":
+      return null;
+    case "ok":
+      return {
+        level: "ok",
+        text: { key: "usage.openrouterLive.ok" },
+        short: { key: "usage.live.okDirectShort" },
+      };
+    case "never_attempted":
+      return {
+        level: "warn",
+        text: { key: "usage.openrouterLive.neverAttempted" },
+        short: { key: "usage.live.waitingShort" },
+      };
+    case "unauthorized":
+      return {
+        level: "error",
+        text: {
+          key: "usage.openrouterLive.unauthorized",
+          params: { detail: status.detail ?? "HTTP 401" },
+        },
+        short: { key: "usage.live.unauthorizedShort" },
+      };
+    case "http_error":
+      return {
+        level: "error",
+        text: {
+          key: "usage.openrouterLive.httpError",
+          params: { detail: status.detail ?? { key: "usage.live.detailHttpError" } },
+        },
+        short: {
+          key: "usage.live.httpErrorShort",
+          params: { detail: status.detail ?? { key: "usage.live.detailHttpError" } },
+        },
+      };
+    case "network_error":
+      return {
+        level: "warn",
+        text: {
+          key: "usage.openrouterLive.networkError",
+          params: { detail: status.detail ?? { key: "usage.live.detailError" } },
+        },
+        short: { key: "usage.live.networkErrorShort" },
+      };
+    case "unexpected_response":
+      return {
+        level: "warn",
+        text: {
+          key: "usage.openrouterLive.unexpected",
+          params: { detail: status.detail ?? { key: "usage.live.detailUnknown" } },
+        },
+        short: { key: "usage.live.unexpectedShort" },
+      };
+  }
+}
+
 /**
  * 진단 문구 뒤에 붙일 "마지막 시도 N분 전 · 마지막 성공 N분 전"의 **조각들**.
  * 잇는 건(가운뎃점) 렌더 쪽 몫이다 — 조각 수가 0~2개로 달라지는 자리라
@@ -508,5 +626,10 @@ export function mergeUsageSnapshot(
     // 상태"라서 이전 것을 살려두면 이미 복구된 실패가 남는다.
     claudeLive: next.claudeLive ?? prev?.claudeLive,
     codexLive: next.codexLive ?? prev?.codexLive,
+    // OpenRouter는 파일 캐시가 없고 백엔드가 마지막 성공 값을 메모리에 쥐고
+    // 있다 — 응답의 null은 "일시 실패"가 아니라 "키 없음·키 바뀜"이라 그대로
+    // 따른다. 필드 자체가 없는(구버전) 응답일 때만 이전 값을 둔다.
+    openrouter: next.openrouter !== undefined ? next.openrouter : (prev?.openrouter ?? null),
+    openrouterLive: next.openrouterLive ?? prev?.openrouterLive,
   };
 }

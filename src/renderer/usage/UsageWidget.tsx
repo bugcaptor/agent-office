@@ -5,7 +5,8 @@
 // 가운뎃점으로 병기한다(이슈 #36 — 주간 창이 더 절박해도 5시간 창 변동이
 // 보이게). Codex의 Spark 같은 모델별 특수 한도는 대표값에서 제외한다.
 // 퍼센트마다 자기 usedPercent 기준 색(임계 70/90, tokens.css 토큰),
-// 데이터 없으면 dim `—`. 클릭하면 상세 모달을 연다.
+// 데이터 없으면 dim `—`. 클릭하면 상세 모달을 연다. OpenRouter 키가 설정돼
+// 있으면 그 뒤에 오늘 사용액 뱃지(`OR $0.29`, OpenRouterBadge)가 붙는다.
 //
 // 하루 넘게 갱신되지 못한 provider(또는 시도했는데 값이 하나도 없는
 // provider)는 흐리게가 아니라 **뱃지에서 통째로 빠진다**(kbm #2j4,
@@ -35,7 +36,9 @@ import type { ProviderUsage } from "@shared/types";
 import {
   PROVIDER_SHORT,
   badgeWindows,
+  describeOpenRouterLiveStatus,
   describeProviderLive,
+  isOpenRouterGone,
   mergeUsageSnapshot,
   providerUsage,
   usageLevel,
@@ -44,6 +47,7 @@ import {
   type LiveStatusNote,
   type UsageProvider,
 } from "./usageView";
+import { OpenRouterBadge } from "./OpenRouterBadge";
 
 /** 폴링 주기(ms). */
 const POLL_INTERVAL_MS = 60_000;
@@ -143,8 +147,10 @@ export function UsageWidget() {
   // 숨김 판정은 렌더 시각 기준이다. 별도 tick을 두지 않는 이유: 폴링이
   // 60초마다 새 스냅샷 객체를 스토어에 넣어 어차피 다시 그려지고, 임계값이
   // 24시간이라 60초 해상도로 충분하다.
-  const visible = visibleUsageProviders(usage, Date.now());
-  if (visible.length === 0) return null;
+  const now = Date.now();
+  const visible = visibleUsageProviders(usage, now);
+  const showOpenRouter = !isOpenRouterGone(usage, now);
+  if (visible.length === 0 && !showOpenRouter) return null;
 
   return (
     <button
@@ -162,6 +168,13 @@ export function UsageWidget() {
           note={describeProviderLive(usage, p)}
         />
       ))}
+      {showOpenRouter && (
+        <OpenRouterBadge
+          className="usage-badge"
+          usage={usage?.openrouter ?? null}
+          note={describeOpenRouterLiveStatus(usage?.openrouterLive)}
+        />
+      )}
     </button>
   );
 }

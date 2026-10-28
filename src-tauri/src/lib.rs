@@ -700,6 +700,7 @@ pub fn run() {
                 app_data_dir: data_dir.clone(),
                 gate: inject_gate.clone(),
                 live_usage: live_usage.clone(),
+                key_store: key_store.clone(),
                 portrait_store: portrait_store.clone(),
                 sprite_store: sprite_store.clone(),
                 focus_agent: {

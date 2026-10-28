@@ -399,8 +399,10 @@ export const tauriApi: AgentOfficeApi = {
     return await invoke(Commands.listClaudeResumeSessions);
   },
 
-  async loadUsageSnapshot() {
-    return await invoke(Commands.loadUsageSnapshot);
+  async loadUsageSnapshot(opts) {
+    return await invoke(Commands.loadUsageSnapshot, {
+      forceOpenrouter: opts?.forceOpenrouter ?? false,
+    });
   },
 
   async markdownListFiles(root) {

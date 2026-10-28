@@ -13,6 +13,8 @@ import { renderText } from "@renderer/shared/textKey";
 import type {
   ClaudeLiveStatus,
   CodexLiveStatus,
+  OpenRouterLiveStatus,
+  OpenRouterUsage,
   ProviderUsage,
   UsageSnapshot,
   UsageWindow,
@@ -23,7 +25,12 @@ import {
   badgeWindows,
   describeCodexLiveStatus,
   describeLiveStatus,
+  describeOpenRouterLiveStatus,
+  formatUsd,
+  isOpenRouterGone,
   isProviderGone,
+  openRouterLimitLabel,
+  openRouterLimitPercent,
   visibleUsageProviders,
   formatAgo,
   formatCountdown,
@@ -93,6 +100,29 @@ function snap(
     codex,
     claudeLive,
     codexLive,
+    openrouter: null,
+    openrouterLive: orLive({ outcome: "no_key" }),
+  };
+}
+
+function orLive(partial: Partial<OpenRouterLiveStatus> = {}): OpenRouterLiveStatus {
+  return { outcome: "ok", detail: null, lastAttemptMs: null, lastSuccessMs: null, ...partial };
+}
+
+function orUsage(partial: Partial<OpenRouterUsage> = {}): OpenRouterUsage {
+  return {
+    fetchedAtMs: 0,
+    label: null,
+    usageDaily: 0,
+    usageWeekly: 0,
+    usageMonthly: 0,
+    usageTotal: 0,
+    limit: null,
+    limitRemaining: null,
+    limitReset: null,
+    limitResetsAtMs: null,
+    isFreeTier: false,
+    ...partial,
   };
 }
 
@@ -634,6 +664,86 @@ describe("mergeUsageSnapshot codexLive", () => {
     const prev = snap(null, null, live(), codexLiveStatus({ outcome: "cli_missing" }));
     const next = snap(null, null, live(), codexLiveStatus({ outcome: "ok" }));
     expect(mergeUsageSnapshot(prev, next).codexLive.outcome).toBe("ok");
+  });
+});
+
+describe("OpenRouter", () => {
+  const now = 1_784_000_000_000;
+
+  it("금액 표기: 센트 단위, 1센트 미만, 값 없음", () => {
+    expect(formatUsd(0)).toBe("$0.00");
+    expect(formatUsd(0.2937)).toBe("$0.29");
+    expect(formatUsd(12.4)).toBe("$12.40");
+    expect(formatUsd(0.004)).toBe("<$0.01");
+    expect(formatUsd(null)).toBe("—");
+  });
+
+  it("한도 대비 사용률은 한도를 건 키에만 있다", () => {
+    expect(openRouterLimitPercent(orUsage({ limit: 20, limitRemaining: 15 }))).toBe(25);
+    expect(openRouterLimitPercent(orUsage({ limit: 20, limitRemaining: -1 }))).toBe(100);
+    expect(openRouterLimitPercent(orUsage({ limit: null }))).toBeNull();
+    expect(openRouterLimitPercent(orUsage({ limit: 0, limitRemaining: 0 }))).toBeNull();
+    expect(openRouterLimitPercent(orUsage({ limit: 20, limitRemaining: null }))).toBeNull();
+  });
+
+  it("한도 라벨은 리셋 주기를 따른다", () => {
+    expect(openRouterLimitLabel(orUsage({ limitReset: "weekly" }))).toEqual({
+      key: "usage.openrouter.limit.weekly",
+    });
+    expect(openRouterLimitLabel(orUsage({ limitReset: null }))).toEqual({
+      key: "usage.openrouter.limit.none",
+    });
+    expect(openRouterLimitLabel(orUsage({ limitReset: "yearly" }))).toEqual({
+      key: "usage.openrouter.limit.none",
+    });
+  });
+
+  it("숨김: 키 없음·진단 없음은 숨기고, 조회 전이면 남기고, 값은 하루 기준", () => {
+    const base = snap(null, null);
+    expect(isOpenRouterGone(null, now)).toBe(true);
+    expect(isOpenRouterGone(base, now)).toBe(true); // no_key
+    expect(
+      isOpenRouterGone({ ...base, openrouterLive: orLive({ outcome: "never_attempted" }) }, now),
+    ).toBe(false);
+    expect(
+      isOpenRouterGone({ ...base, openrouterLive: orLive({ outcome: "http_error" }) }, now),
+    ).toBe(true);
+    const withValue = { ...base, openrouter: orUsage({ fetchedAtMs: now - 60_000 }), openrouterLive: orLive() };
+    expect(isOpenRouterGone(withValue, now)).toBe(false);
+    expect(isOpenRouterGone(withValue, now + DEAD_THRESHOLD_MS)).toBe(true);
+  });
+
+  it("진단: 키 없음은 null, 실패는 사유별 키", () => {
+    expect(describeOpenRouterLiveStatus(orLive({ outcome: "no_key" }))).toBeNull();
+    expect(describeOpenRouterLiveStatus(undefined)).toBeNull();
+    expect(describeOpenRouterLiveStatus(orLive())!.level).toBe("ok");
+    const denied = describeOpenRouterLiveStatus(orLive({ outcome: "unauthorized", detail: "HTTP 401" }))!;
+    expect(denied.level).toBe("error");
+    expect(denied.text).toEqual({
+      key: "usage.openrouterLive.unauthorized",
+      params: { detail: "HTTP 401" },
+    });
+    expect(describeOpenRouterLiveStatus(orLive({ outcome: "network_error" }))!.level).toBe("warn");
+  });
+
+  it("병합: 응답의 null(키 없음·키 바뀜)은 그대로 따르고, 필드가 없는 구버전 응답만 이전 값을 둔다", () => {
+    const prev = { ...snap(null, null), openrouter: orUsage({ usageDaily: 1 }) };
+    expect(mergeUsageSnapshot(prev, snap(null, null)).openrouter).toBeNull();
+    const legacy = { ...snap(null, null) } as Partial<UsageSnapshot>;
+    delete legacy.openrouter;
+    delete legacy.openrouterLive;
+    const merged = mergeUsageSnapshot(prev, legacy as UsageSnapshot);
+    expect(merged.openrouter?.usageDaily).toBe(1);
+    expect(merged.openrouterLive.outcome).toBe("no_key");
+  });
+
+  it("카탈로그 렌더(ko 정본)", () => {
+    expect(render(openRouterLimitLabel(orUsage({ limitReset: "monthly" })))).toBe("키 한도(월)");
+    const note = describeOpenRouterLiveStatus(orLive({ outcome: "http_error", detail: "HTTP 502" }))!;
+    expect(render(note.text)).toBe(
+      "OpenRouter 조회 실패: 서버 오류(HTTP 502). 표시값은 마지막으로 받아온 값입니다",
+    );
+    expect(render(note.short)).toBe("실시간 조회 실패(HTTP 502)");
   });
 });
 

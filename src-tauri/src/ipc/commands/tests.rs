@@ -381,6 +381,7 @@
             app_data_dir: profile_dir.clone(),
             gate: inject_gate.clone(),
             live_usage: Arc::new(crate::usage::LiveUsageState::new()),
+            key_store: Arc::new(crate::key_store::ApiKeyStore::in_app_data(&profile_dir)),
             portrait_store: portrait_store.clone(),
             sprite_store: sprite_store.clone(),
             focus_agent: Arc::new(|_| Ok(())),
@@ -1173,6 +1174,12 @@
         // 따로라 하나만 막으면 나머지가 그대로 밖으로 나간다.
         live.preempt_all_attempts(now - 1);
         // 두 번 호출해도(폴링 흉내) 패닉/에러 없이 스냅샷을 돌려준다.
-        let _snap = load_usage_snapshot_body(&live, now).await;
-        let _snap2 = load_usage_snapshot_body(&live, now + 60_000).await;
+        // OpenRouter 키는 넘기지 않는다(None → 네트워크 없이 NoKey).
+        let _snap = load_usage_snapshot_body(&live, None, false, now).await;
+        let snap2 = load_usage_snapshot_body(&live, None, true, now + 60_000).await;
+        assert!(snap2.openrouter.is_none());
+        assert_eq!(
+            snap2.openrouter_live.outcome,
+            crate::usage::OpenRouterLiveOutcome::NoKey
+        );
     }

@@ -58,5 +58,24 @@
     "detail": "not logged in",
     "lastAttemptMs": 1784281400000,
     "lastSuccessMs": null
+  },
+  "openrouter": {
+    "fetchedAtMs": 1784281000000,
+    "label": "sk-or-v1-abc...1cc",
+    "usageDaily": 0.29,
+    "usageWeekly": 0.3,
+    "usageMonthly": 0.35,
+    "usageTotal": 9.54,
+    "limit": 20.0,
+    "limitRemaining": 19.7,
+    "limitReset": "weekly",
+    "limitResetsAtMs": 1784592000000,
+    "isFreeTier": false
+  },
+  "openrouterLive": {
+    "outcome": "http_error",
+    "detail": "HTTP 502",
+    "lastAttemptMs": 1784281400000,
+    "lastSuccessMs": 1784281000000
   }
 }

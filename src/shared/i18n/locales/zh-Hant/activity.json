@@ -87,7 +87,8 @@
       "close": "關閉",
       "empty": {
         "claude": "沒有用量資料。在 Claude Code 開啟一次 /usage 就會建立本機快取。",
-        "codex": "沒有用量資料。執行 codex login 讓程式直接查詢，或執行一次 Codex CLI 建立本機紀錄。"
+        "codex": "沒有用量資料。執行 codex login 讓程式直接查詢，或執行一次 Codex CLI 建立本機紀錄。",
+        "openrouter": "尚未取得 OpenRouter 花費。"
       },
       "allHidden": "沒有可顯示的用量。超過一天沒能從任何 CLI 取得用量。"
     },
@@ -98,6 +99,29 @@
       "title": "{{short}}：{{windows}}{{suffix}}",
       "windowPct": "{{label}} {{pct}}%",
       "noteSuffix": " ({{note}})"
+    },
+    "openrouter": {
+      "today": "今天",
+      "week": "本週",
+      "month": "本月",
+      "total": "累計",
+      "amount": "{{label}} {{amount}}",
+      "limitUsed": "{{used}} / {{limit}}",
+      "limit": {
+        "daily": "金鑰限額(日)",
+        "weekly": "金鑰限額(週)",
+        "monthly": "金鑰限額(月)",
+        "none": "金鑰限額"
+      },
+      "freeTier": "免費方案"
+    },
+    "openrouterLive": {
+      "ok": "應用程式正直接從 OpenRouter 取得此金鑰的花費(每 5 分鐘;開啟此視窗會立即更新)",
+      "neverAttempted": "尚未取得 OpenRouter 花費",
+      "unauthorized": "OpenRouter 取得失敗:金鑰被拒絕({{detail}})— 請檢查設定中的 OpenRouter API 金鑰。顯示的是上次取得的值",
+      "httpError": "OpenRouter 取得失敗:伺服器錯誤({{detail}})。顯示的是上次取得的值",
+      "networkError": "OpenRouter 取得失敗:網路{{detail}}。顯示的是上次取得的值",
+      "unexpected": "OpenRouter 取得失敗:回應格式已變更({{detail}})。顯示的是上次取得的值"
     }
   },
   "timeline": {

@@ -6,11 +6,16 @@
 // 실제로 문구로 푸는지**를 언어별로 확인한다. 순수 함수 테스트는 키만 보므로
 // 이 파일이 "화면에 뭐가 찍히는가" 쪽을 맡는다. self-gate·닫기도 함께.
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SOURCE_LANGUAGE, initI18nForTest } from "@renderer/i18n";
 import type { UsageSnapshot } from "@shared/types";
 import { useAppStore } from "../../store/appStore";
 import { UsageDialog } from "../UsageDialog";
+
+// 모달은 열릴 때 OpenRouter 즉시 조회를 한 번 건다. 지금 스토어 값을 그대로
+// 돌려줘 화면을 바꾸지 않게 하고, 호출 인자만 본다.
+const { loadUsageSnapshot } = vi.hoisted(() => ({ loadUsageSnapshot: vi.fn() }));
+vi.mock("../../ipc/tauriApi", () => ({ tauriApi: { loadUsageSnapshot } }));
 
 const initialState = useAppStore.getState();
 const NOW = Date.now();
@@ -51,6 +56,8 @@ function snapshot(): UsageSnapshot {
       lastAttemptMs: null,
       lastSuccessMs: null,
     },
+    openrouter: null,
+    openrouterLive: { outcome: "no_key", detail: null, lastAttemptMs: null, lastSuccessMs: null },
   };
 }
 
@@ -58,6 +65,8 @@ beforeEach(async () => {
   // 앞 테스트가 언어를 바꿔 놓았을 수 있다 — 매번 정본으로 되돌린다.
   await initI18nForTest(SOURCE_LANGUAGE);
   useAppStore.setState(initialState, true);
+  loadUsageSnapshot.mockReset();
+  loadUsageSnapshot.mockImplementation(async () => useAppStore.getState().usage);
 });
 afterEach(() => cleanup());
 afterAll(async () => {
@@ -162,6 +171,8 @@ describe("UsageDialog", () => {
           via: null,
         },
         codexLive: gone,
+        openrouter: null,
+        openrouterLive: { outcome: "no_key", detail: null, lastAttemptMs: null, lastSuccessMs: null },
       },
     });
     useAppStore.getState().openModal({ kind: "usage" });
@@ -169,6 +180,57 @@ describe("UsageDialog", () => {
 
     expect(screen.getByText(/표시할 사용량이 없습니다/)).toBeTruthy();
     expect(container.querySelector(".usage-provider")).toBeNull();
+  });
+
+  it("열릴 때 OpenRouter를 스로틀 없이 한 번 조회하고, 키가 없으면 OpenRouter 칸이 없다", () => {
+    useAppStore.setState({ usage: snapshot() });
+    useAppStore.getState().openModal({ kind: "usage" });
+    const { container } = render(<UsageDialog />);
+    expect(loadUsageSnapshot).toHaveBeenCalledTimes(1);
+    expect(loadUsageSnapshot).toHaveBeenCalledWith({ forceOpenrouter: true });
+    expect(container.textContent).not.toContain("OpenRouter");
+  });
+
+  it("OpenRouter 키 사용액: 기간별 금액·키 한도·리셋·진단을 그린다", () => {
+    const snap = snapshot();
+    useAppStore.setState({
+      usage: {
+        ...snap,
+        openrouter: {
+          fetchedAtMs: NOW,
+          label: "sk-or-v1-abc...1cc",
+          usageDaily: 0.2937,
+          usageWeekly: 0.2987,
+          usageMonthly: 0.3539,
+          usageTotal: 9.5439,
+          limit: 20,
+          limitRemaining: 15,
+          limitReset: "weekly",
+          limitResetsAtMs: NOW + (2 * 24 * 60 + 5 * 60) * 60_000 + 30_000,
+          isFreeTier: false,
+        },
+        openrouterLive: { outcome: "ok", detail: null, lastAttemptMs: NOW, lastSuccessMs: NOW },
+      },
+    });
+    useAppStore.getState().openModal({ kind: "usage" });
+    const { container } = render(<UsageDialog />);
+
+    const block = [...container.querySelectorAll(".usage-provider-block")].find((b) =>
+      b.textContent!.includes("OpenRouter"),
+    )!;
+    expect(block).toBeTruthy();
+    expect(block.querySelector(".usage-plan")?.textContent).toBe("sk-or-v1-abc...1cc");
+    const rows = [...block.querySelectorAll(".usage-window-row")].map((r) => r.textContent);
+    expect(rows).toEqual([
+      "오늘$0.29",
+      "이번 주$0.30",
+      "이번 달$0.35",
+      "누적$9.54",
+      "키 한도(주)$5.00 / $20.00",
+    ]);
+    expect(block.querySelector(".usage-bar")?.getAttribute("aria-valuenow")).toBe("25");
+    expect(block.querySelector(".usage-countdown")?.textContent).toBe("2일 5시간 후 리셋");
+    expect(block.querySelector(".usage-live-note")?.textContent).toContain("5분 간격");
   });
 
   it("닫기 버튼이 모달을 닫는다", () => {

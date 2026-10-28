@@ -49,17 +49,29 @@ pub(crate) fn resolve_claude_config_dir(
 /// 이슈 #33: 실시간 조회를 얹었다. 스로틀 상태(`AppState::live_usage`)를
 /// 넘겨 렌더러 60초 폴링에 얹혀 리셋 경계 후 실제 값을 빠르게 반영한다.
 /// 실시간 경로가 실패하면 현행과 동일하게 파일 캐시 미러만 반환한다.
+///
+/// OpenRouter 키가 설정돼 있으면 그 키의 사용액도 싣는다(5분 스로틀).
+/// `force_openrouter`는 상세 창을 열 때 스로틀을 건너뛰는 요청이다(생략=false).
 #[tauri::command(rename_all = "camelCase")]
 pub async fn load_usage_snapshot(
     app_state: State<'_, AppState>,
+    force_openrouter: Option<bool>,
 ) -> Result<crate::usage::UsageSnapshot, String> {
-    Ok(load_usage_snapshot_body(&app_state.live_usage, chrono::Utc::now().timestamp_millis()).await)
+    Ok(load_usage_snapshot_body(
+        &app_state.live_usage,
+        app_state.key_store.openrouter_key().as_deref(),
+        force_openrouter.unwrap_or(false),
+        chrono::Utc::now().timestamp_millis(),
+    )
+    .await)
 }
 
 /// 커맨드 본체(AppState 없이 호출 가능 — 기존 커맨드 테스트 관례). 전역 env를
 /// 여기서만 읽고 순수 리졸버로 경로를 유도한 뒤 usage 모듈에 위임한다.
 pub(crate) async fn load_usage_snapshot_body(
     live: &crate::usage::LiveUsageState,
+    openrouter_key: Option<&str>,
+    force_openrouter: bool,
     now_ms: i64,
 ) -> crate::usage::UsageSnapshot {
     let home = std::path::PathBuf::from(crate::session::manager::home_dir());
@@ -76,6 +88,8 @@ pub(crate) async fn load_usage_snapshot_body(
         &claude_root,
         &claude_config_dir,
         &codex_root,
+        openrouter_key,
+        force_openrouter,
         now_ms,
     )
     .await

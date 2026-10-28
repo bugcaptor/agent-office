@@ -159,6 +159,48 @@ export interface CodexLiveStatus {
 }
 
 /**
+ * OpenRouter 키 사용액(`GET /api/v1/key`). Rust `OpenRouterUsage`(camelCase)
+ * 미러. Claude/Codex의 한도 사용률(%)과 달리 금액(USD)이다. 응답에 없던 값은
+ * null(0과 구분).
+ */
+export interface OpenRouterUsage {
+  fetchedAtMs: number;
+  /** 키 이름(OpenRouter의 마스킹 표기 또는 사용자가 정한 이름). */
+  label: string | null;
+  usageDaily: number | null;
+  usageWeekly: number | null;
+  usageMonthly: number | null;
+  /** 키 생성 이후 누적. */
+  usageTotal: number;
+  /** 키 한도. 한도를 걸지 않은 키는 null. */
+  limit: number | null;
+  limitRemaining: number | null;
+  /** 한도 리셋 주기(`daily`/`weekly`/`monthly` 원문). 리셋 없는 한도는 null. */
+  limitReset: string | null;
+  limitResetsAtMs: number | null;
+  isFreeTier: boolean;
+}
+
+/** OpenRouter 조회의 마지막 시도 결과. Rust `OpenRouterLiveOutcome` 미러. */
+export type OpenRouterLiveOutcome =
+  | "never_attempted"
+  | "ok"
+  /** 키가 저장돼 있지 않고 `OPENROUTER_API_KEY`도 없음. */
+  | "no_key"
+  | "unauthorized"
+  | "http_error"
+  | "network_error"
+  | "unexpected_response";
+
+/** OpenRouter 조회 진단. Rust `OpenRouterLiveStatus` 미러. 항상 존재한다. */
+export interface OpenRouterLiveStatus {
+  outcome: OpenRouterLiveOutcome;
+  detail: string | null;
+  lastAttemptMs: number | null;
+  lastSuccessMs: number | null;
+}
+
+/**
  * `load_usage_snapshot` 응답. Rust `UsageSnapshot` 미러. 파싱에 실패한 소스는
  * 해당 provider가 null이며, 커맨드 자체는 항상 성공한다.
  */
@@ -167,4 +209,7 @@ export interface UsageSnapshot {
   codex: ProviderUsage | null;
   claudeLive: ClaudeLiveStatus;
   codexLive: CodexLiveStatus;
+  /** OpenRouter 키 사용액. 키가 없거나 아직 못 받아왔으면 null. */
+  openrouter: OpenRouterUsage | null;
+  openrouterLive: OpenRouterLiveStatus;
 }

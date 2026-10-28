@@ -19,12 +19,30 @@ import type {
   SessionState,
   SessionStateEvent,
   TaskChatRequest,
+  UsageSnapshot,
 } from "@shared/types";
 import memoFixture from "@shared/contract-fixtures/memo-sheet.current.json";
 import { emitTauriEvent } from "./tauriStub";
 import { loadScenario } from "./scenarios";
 
 const harness = window.__guiHarness!;
+
+/**
+ * 계약 픽스처의 시각(2026-07)을 지금 기준으로 옮긴다. 그대로 두면 하루 넘게
+ * 낡은 값이라 사용량 뱃지가 통째로 숨는다(usageView.isProviderGone).
+ * 픽스처의 마지막 시도 시각을 "1분 전"에 맞추고 `*Ms` 필드를 모두 같은 만큼 민다.
+ */
+function rebaseUsage(snapshot: UsageSnapshot): UsageSnapshot {
+  const offset = Date.now() - 60_000 - (snapshot.claudeLive.lastAttemptMs ?? Date.now());
+  const shift = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(shift);
+    if (!v || typeof v !== "object") return v;
+    return Object.fromEntries(
+      Object.entries(v).map(([k, x]) => [k, k.endsWith("Ms") && typeof x === "number" ? x + offset : shift(x)]),
+    );
+  };
+  return shift(snapshot) as UsageSnapshot;
+}
 const params = new URLSearchParams(location.search);
 const scenario = loadScenario(String(harness.scenario), params.get("lang") ?? "ko");
 let settings: AppSettings = scenario.settings.settings;
@@ -112,7 +130,7 @@ const impl: Partial<AgentOfficeApi> = {
   },
   async handoffSupported() { return false; },
   async listAvailableShells() { return []; },
-  async loadUsageSnapshot() { return scenario.usage; },
+  async loadUsageSnapshot() { return rebaseUsage(scenario.usage); },
   async loadAwards() { return scenario.awards; },
   async finalizeAward() { return scenario.awards; },
   async loadAwardPortrait() { return null; },

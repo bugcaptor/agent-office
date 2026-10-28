@@ -21,7 +21,9 @@ import type { ProviderUsage } from "@shared/types";
 import {
   PROVIDER_SHORT,
   badgeWindows,
+  describeOpenRouterLiveStatus,
   describeProviderLive,
+  isOpenRouterGone,
   providerUsage,
   usageLevel,
   visibleUsageProviders,
@@ -29,6 +31,7 @@ import {
   type LiveStatusNote,
   type UsageProvider,
 } from "./usageView";
+import { OpenRouterBadge } from "./OpenRouterBadge";
 import "./usage.css";
 
 function FloatBadge({
@@ -105,8 +108,10 @@ export function UsageFloat() {
 
   // 숨김 판정은 렌더 시각 기준(UsageWidget과 동일 근거 — 60초 폴링 해상도로
   // 24시간 임계값을 재는 데 충분해 별도 tick을 두지 않는다).
-  const visible = visibleUsageProviders(usage, Date.now());
-  if (visible.length === 0) return null;
+  const now = Date.now();
+  const visible = visibleUsageProviders(usage, now);
+  const showOpenRouter = !isOpenRouterGone(usage, now);
+  if (visible.length === 0 && !showOpenRouter) return null;
 
   return (
     <button
@@ -124,6 +129,13 @@ export function UsageFloat() {
           note={describeProviderLive(usage, p)}
         />
       ))}
+      {showOpenRouter && (
+        <OpenRouterBadge
+          className="usage-float-badge"
+          usage={usage?.openrouter ?? null}
+          note={describeOpenRouterLiveStatus(usage?.openrouterLive)}
+        />
+      )}
     </button>
   );
 }

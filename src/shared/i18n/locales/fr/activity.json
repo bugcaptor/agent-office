@@ -87,7 +87,8 @@
       "close": "Fermer",
       "empty": {
         "claude": "Aucune donnée d'utilisation. Ouvrez /usage une fois dans Claude Code pour créer le cache local.",
-        "codex": "Aucune donnée d'utilisation. Lancez codex login pour que l'app la relève, ou exécutez Codex CLI une fois pour créer les enregistrements locaux."
+        "codex": "Aucune donnée d'utilisation. Lancez codex login pour que l'app la relève, ou exécutez Codex CLI une fois pour créer les enregistrements locaux.",
+        "openrouter": "Aucune dépense OpenRouter récupérée pour l'instant."
       },
       "allHidden": "Aucune utilisation à afficher — rien n'a pu être relevé depuis plus d'un jour, quel que soit le CLI."
     },
@@ -98,6 +99,29 @@
       "title": "{{short}} : {{windows}}{{suffix}}",
       "windowPct": "{{label}} {{pct}} %",
       "noteSuffix": " ({{note}})"
+    },
+    "openrouter": {
+      "today": "Aujourd'hui",
+      "week": "Cette semaine",
+      "month": "Ce mois-ci",
+      "total": "Total",
+      "amount": "{{label}} {{amount}}",
+      "limitUsed": "{{used}} / {{limit}}",
+      "limit": {
+        "daily": "Limite de la clé (jour)",
+        "weekly": "Limite de la clé (semaine)",
+        "monthly": "Limite de la clé (mois)",
+        "none": "Limite de la clé"
+      },
+      "freeTier": "Offre gratuite"
+    },
+    "openrouterLive": {
+      "ok": "L'application récupère directement les dépenses de cette clé auprès d'OpenRouter (toutes les 5 min ; ouvrir cette fenêtre actualise)",
+      "neverAttempted": "Dépenses OpenRouter pas encore récupérées",
+      "unauthorized": "Échec de la récupération OpenRouter : clé refusée ({{detail}}) — vérifiez la clé API OpenRouter dans les réglages. Valeurs affichées : dernière récupération",
+      "httpError": "Échec de la récupération OpenRouter : erreur serveur ({{detail}}). Valeurs affichées : dernière récupération",
+      "networkError": "Échec de la récupération OpenRouter : réseau {{detail}}. Valeurs affichées : dernière récupération",
+      "unexpected": "Échec de la récupération OpenRouter : le format de réponse a changé ({{detail}}). Valeurs affichées : dernière récupération"
     }
   },
   "timeline": {

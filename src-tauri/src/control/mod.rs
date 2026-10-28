@@ -66,6 +66,8 @@ pub struct ControlContext {
     pub gate: Arc<crate::session::inject::InjectGate>,
     /// 네이티브 커맨드와 같은 사용량 스로틀/캐시 상태.
     pub live_usage: Arc<crate::usage::LiveUsageState>,
+    /// 사용량 스냅샷에 OpenRouter 키 사용액을 싣기 위한 키 저장소(앱과 공유).
+    pub key_store: Arc<crate::key_store::ApiKeyStore>,
     /// 커스텀 초상 저장소. 읽기 API도 앱과 같은 바이트 상한을 쓴다.
     pub portrait_store: Arc<crate::persistence::png_store::PngStore>,
     /// 커스텀 스프라이트 저장소. 읽기 API도 앱과 같은 바이트 상한을 쓴다.
@@ -309,6 +311,7 @@ mod tests {
             app_data_dir: dir.clone(),
             gate,
             live_usage: Arc::new(crate::usage::LiveUsageState::new()),
+            key_store: Arc::new(crate::key_store::ApiKeyStore::in_app_data(&dir)),
             portrait_store: Arc::new(crate::persistence::png_store::PngStore::new(
                 dir.join("portraits"),
                 crate::persistence::png_store::MAX_PORTRAIT_BYTES,

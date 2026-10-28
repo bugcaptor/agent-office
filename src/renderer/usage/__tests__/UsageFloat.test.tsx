@@ -47,6 +47,8 @@ function snapshot(): UsageSnapshot {
       lastAttemptMs: null,
       lastSuccessMs: null,
     },
+    openrouter: null,
+    openrouterLive: { outcome: "no_key", detail: null, lastAttemptMs: null, lastSuccessMs: null },
   };
 }
 
@@ -68,6 +70,36 @@ describe("UsageFloat", () => {
     });
     render(<UsageFloat />);
     expect(screen.getByText("61%")).toBeTruthy();
+  });
+
+  it("OpenRouter 키가 있으면 오늘 사용액 뱃지가 붙고, 한도 대비 사용률로 색을 매긴다", () => {
+    useAppStore.setState({
+      usage: {
+        ...snapshot(),
+        openrouter: {
+          fetchedAtMs: NOW,
+          label: null,
+          usageDaily: 0.2937,
+          usageWeekly: 1.5,
+          usageMonthly: 3,
+          usageTotal: 9,
+          limit: 20,
+          limitRemaining: 3,
+          limitReset: "weekly",
+          limitResetsAtMs: null,
+          isFreeTier: false,
+        },
+        openrouterLive: { outcome: "ok", detail: null, lastAttemptMs: NOW, lastSuccessMs: NOW },
+      },
+      terminalViewMode: "filled",
+      activeTerminalAgentId: "agent-1",
+    });
+    render(<UsageFloat />);
+    const badge = screen.getByText("$0.29").closest(".usage-badge-or")!;
+    expect(badge.className).toContain("usage-level-warn"); // 17/20 = 85%
+    expect(badge.getAttribute("title")).toBe(
+      "OR: 오늘 $0.29 · 이번 주 $1.50 · 이번 달 $3.00 · 키 한도(주) 85%",
+    );
   });
 
   it("windowed 모드면 렌더하지 않는다", () => {

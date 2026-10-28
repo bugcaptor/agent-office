@@ -14,6 +14,7 @@ mod claude_live;
 mod claude_live_fallback;
 mod codex;
 mod codex_live;
+mod openrouter;
 
 use std::path::Path;
 
@@ -21,6 +22,7 @@ use serde::Serialize;
 
 pub use claude_live::LiveUsageState;
 pub use codex_live::{CodexLiveOutcome, CodexLiveStatus};
+pub use openrouter::{OpenRouterLiveOutcome, OpenRouterLiveStatus, OpenRouterUsage};
 
 /// Claude 실시간 조회의 마지막 시도 결과. TS `LiveFetchOutcome` 미러
 /// (serde snake_case). 왜 표시값이 낡았는지를 UI가 사용자에게 설명하기 위한
@@ -160,6 +162,10 @@ pub struct UsageSnapshot {
     /// Codex 실시간 조회 진단(항상 존재). 같은 규칙 — 동기 경로에서는
     /// `NeverAttempted`.
     pub codex_live: CodexLiveStatus,
+    /// OpenRouter 키 사용액. 키가 없거나 아직 한 번도 못 받아왔으면 null.
+    pub openrouter: Option<OpenRouterUsage>,
+    /// OpenRouter 조회 진단(항상 존재). 키가 없으면 `NoKey`.
+    pub openrouter_live: OpenRouterLiveStatus,
 }
 
 /// `claude_root`(홈, `.claude.json`이 이 아래)와 `codex_root`(`~/.codex`,
@@ -171,6 +177,8 @@ pub fn load_usage_snapshot(claude_root: &Path, codex_root: &Path) -> UsageSnapsh
         codex: codex::load(codex_root),
         claude_live: ClaudeLiveStatus::default(),
         codex_live: CodexLiveStatus::default(),
+        openrouter: None,
+        openrouter_live: OpenRouterLiveStatus::default(),
     }
 }
 
@@ -194,26 +202,34 @@ pub fn load_usage_snapshot(claude_root: &Path, codex_root: &Path) -> UsageSnapsh
 /// `claude_config_dir`은 자격증명(.credentials.json)·스코프 Keychain의 기준
 /// 디렉터리로, `.claude.json`을 읽는 `claude_root`와 다를 수 있다
 /// (CLAUDE_CONFIG_DIR 미설정 시 claude_root=홈, config_dir=~/.claude).
+///
+/// `openrouter_key`는 키 저장소에서 방금 읽은 값(없으면 None — 상태를 비운다),
+/// `force_openrouter`는 상세 창을 열 때의 즉시 조회 요청이다.
 pub async fn load_usage_snapshot_with_live(
     live: &LiveUsageState,
     claude_root: &Path,
     claude_config_dir: &Path,
     codex_root: &Path,
+    openrouter_key: Option<&str>,
+    force_openrouter: bool,
     now_ms: i64,
 ) -> UsageSnapshot {
     let mut snapshot = load_usage_snapshot(claude_root, codex_root);
 
-    // 두 provider의 실시간 조회는 자원도 실패 모드도 겹치지 않는다 —
-    // 동시에 돌려 폴링 1회의 지연이 둘의 합이 되지 않게 한다.
+    // provider들의 실시간 조회는 자원도 실패 모드도 겹치지 않는다 —
+    // 동시에 돌려 폴링 1회의 지연이 합이 되지 않게 한다.
     tokio::join!(
         refresh_claude_live(live, claude_config_dir, now_ms),
         refresh_codex_live(&live.codex, now_ms),
+        refresh_openrouter(&live.openrouter, openrouter_key, force_openrouter, now_ms),
     );
 
     snapshot.claude = merge_provider(snapshot.claude.take(), live.last_success());
     snapshot.claude_live = live.status();
     snapshot.codex = merge_provider(snapshot.codex.take(), live.codex.last_success());
     snapshot.codex_live = live.codex.status();
+    snapshot.openrouter = live.openrouter.last_success();
+    snapshot.openrouter_live = live.openrouter.status();
     snapshot
 }
 
@@ -250,6 +266,27 @@ async fn refresh_codex_live(live: &codex_live::CodexLiveState, now_ms: i64) {
         return;
     }
     match codex_live::fetch_live(now_ms).await {
+        Ok(usage) => live.record_success(usage),
+        Err(failure) => live.record_failure(failure),
+    }
+}
+
+/// OpenRouter 키 사용액 조회 1회분(스로틀·키 변경 판단은 상태가 한다).
+async fn refresh_openrouter(
+    live: &openrouter::OpenRouterLiveState,
+    key: Option<&str>,
+    force: bool,
+    now_ms: i64,
+) {
+    if !live.begin_attempt_if_due(key, force, now_ms) {
+        return;
+    }
+    let Some(key) = key else { return };
+    let result = openrouter::fetch(key, now_ms).await;
+    if !live.same_key(key) {
+        return;
+    }
+    match result {
         Ok(usage) => live.record_success(usage),
         Err(failure) => live.record_failure(failure),
     }

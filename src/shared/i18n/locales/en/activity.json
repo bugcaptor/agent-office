@@ -87,7 +87,8 @@
       "close": "Close",
       "empty": {
         "claude": "No usage data. Open /usage once in Claude Code to create the local cache.",
-        "codex": "No usage data. Run codex login so the app can fetch it, or run Codex CLI once to create local records."
+        "codex": "No usage data. Run codex login so the app can fetch it, or run Codex CLI once to create local records.",
+        "openrouter": "No OpenRouter spend fetched yet."
       },
       "allHidden": "No usage to show — nothing could be fetched from any CLI for over a day."
     },
@@ -98,6 +99,29 @@
       "title": "{{short}}: {{windows}}{{suffix}}",
       "windowPct": "{{label}} {{pct}}%",
       "noteSuffix": " ({{note}})"
+    },
+    "openrouter": {
+      "today": "Today",
+      "week": "This week",
+      "month": "This month",
+      "total": "All time",
+      "amount": "{{label}} {{amount}}",
+      "limitUsed": "{{used}} / {{limit}}",
+      "limit": {
+        "daily": "Key limit (daily)",
+        "weekly": "Key limit (weekly)",
+        "monthly": "Key limit (monthly)",
+        "none": "Key limit"
+      },
+      "freeTier": "Free tier"
+    },
+    "openrouterLive": {
+      "ok": "The app fetches this key's spend from OpenRouter directly (every 5 min; opening this dialog refreshes it)",
+      "neverAttempted": "OpenRouter spend not fetched yet",
+      "unauthorized": "OpenRouter fetch failed: the key was rejected ({{detail}}) — check the OpenRouter API key in Settings. Showing the last fetched values",
+      "httpError": "OpenRouter fetch failed: server error ({{detail}}). Showing the last fetched values",
+      "networkError": "OpenRouter fetch failed: network {{detail}}. Showing the last fetched values",
+      "unexpected": "OpenRouter fetch failed: the response format changed ({{detail}}). Showing the last fetched values"
     }
   },
   "timeline": {

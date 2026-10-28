@@ -301,9 +301,10 @@ export interface AgentOfficeApi {
   /** Claude 세션 이어하기 후보 목록(agentId → 최신 1건). 메뉴를 열 때 조회한다.
    * 캡처된 적 없는 에이전트는 키가 없다(빈 객체 가능). */
   listClaudeResumeSessions(): Promise<Record<AgentId, ClaudeResumeEntry>>;
-  /** 구독 사용량(rate limit) 스냅샷을 홈 디렉터리 로컬 캐시에서 읽는다(인자 없음).
-   * 파싱 실패한 provider는 null이며 호출 자체는 항상 성공한다. */
-  loadUsageSnapshot(): Promise<UsageSnapshot>;
+  /** 구독 사용량(rate limit) 스냅샷을 홈 디렉터리 로컬 캐시에서 읽는다.
+   * 파싱 실패한 provider는 null이며 호출 자체는 항상 성공한다. OpenRouter 키가
+   * 설정돼 있으면 그 키의 사용액도 싣는다(5분 스로틀, `forceOpenrouter`면 즉시 조회). */
+  loadUsageSnapshot(opts?: { forceOpenrouter?: boolean }): Promise<UsageSnapshot>;
   /** `root` 하위의 마크다운(.md) 파일 목록(이슈 #10). 상한 초과 시 `truncated=true`. */
   markdownListFiles(root: string): Promise<MarkdownListResult>;
   /** `root` 기준 `relPath` 파일 내용과 버전을 읽는다. 부재/범위 밖이면 reject. */

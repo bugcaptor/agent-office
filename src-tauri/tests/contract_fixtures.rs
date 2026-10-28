@@ -33,6 +33,7 @@ use agent_office_lib::types::{
 };
 use agent_office_lib::usage::{
     ClaudeLiveStatus, CodexLiveOutcome, CodexLiveStatus, FetchTransport, LiveFetchOutcome,
+    OpenRouterLiveOutcome, OpenRouterLiveStatus, OpenRouterUsage,
     Provider, ProviderUsage, TokenSource, UsageSnapshot, UsageWindow, UsageWindowKind,
 };
 use agent_office_lib::workdir::{GitCommitEntry, GitFileHistoryResult, GitFileStatus, GitStatusResult};
@@ -269,6 +270,27 @@ fn usage_snapshot_matches_fixture() {
             detail: Some("not logged in".into()),
             last_attempt_ms: Some(1784281400000),
             last_success_ms: None,
+        },
+        // OpenRouter는 금액(USD)이다. 한도를 건 키라 limit·리셋 시각이 있고,
+        // 지금은 서버 오류지만 직전 성공 값이 그대로 실려 나간다.
+        openrouter: Some(OpenRouterUsage {
+            fetched_at_ms: 1784281000000,
+            label: Some("sk-or-v1-abc...1cc".into()),
+            usage_daily: Some(0.29),
+            usage_weekly: Some(0.3),
+            usage_monthly: Some(0.35),
+            usage_total: 9.54,
+            limit: Some(20.0),
+            limit_remaining: Some(19.7),
+            limit_reset: Some("weekly".into()),
+            limit_resets_at_ms: Some(1784592000000),
+            is_free_tier: false,
+        }),
+        openrouter_live: OpenRouterLiveStatus {
+            outcome: OpenRouterLiveOutcome::HttpError,
+            detail: Some("HTTP 502".into()),
+            last_attempt_ms: Some(1784281400000),
+            last_success_ms: Some(1784281000000),
         },
     };
     assert_value_eq(fixture_json, serde_json::to_value(&value).unwrap());
