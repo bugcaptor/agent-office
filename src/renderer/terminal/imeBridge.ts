@@ -85,8 +85,8 @@ export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
   };
 
   // xterm's onData merges keyboard input and replies that xterm itself emits
-  // (CPR, device/status attributes, palette queries and focus reports).  Only
-  // classify a *complete* reply after the PTY asked for it; an arbitrary ESC
+  // (CPR, device/status attributes, palette queries, focus and mouse reports).
+  // Only classify a *complete* reply after the PTY asked for it; an arbitrary ESC
   // sequence, including a pasted one, remains human input.  xterm emits its
   // replies as complete onData payloads, so never buffer incoming input here:
   // a partial escape sequence can be a real Escape/arrow key and must pass.
@@ -97,6 +97,10 @@ export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
   let pendingModeQuery = 0;
   let pendingUntil = 0;
   let focusReporting = false;
+  // 전체 화면 TUI(claude `/tui fullscreen` 등)는 ?1003까지 켜서 마우스를 움직이기만
+  // 해도 보고가 온다. 이를 사람 입력으로 세면 미제출 입력으로 잡혀 자동 제출이 멈춘다.
+  let mouseTracking = false;
+  const MOUSE_TRACKING_MODES = new Set(["9", "1000", "1002", "1003"]);
   let terminalOutputBuffer = "";
   let pasteInProgress = false;
   const PENDING_TTL_MS = 5_000;
@@ -155,8 +159,14 @@ export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
         else if (seq === "\x1b[5n") addPending("status");
         else if (/^\x1b\[(?:0|>|>0)?c$/.test(seq)) addPending("attributes");
         else if (/^\x1b\[\?\d+\$p$/.test(seq)) addPending("mode");
-        else if (seq === "\x1b[?1004h") focusReporting = true;
-        else if (seq === "\x1b[?1004l") focusReporting = false;
+        else {
+          const mode = /^\x1b\[\?([\d;]+)([hl])$/.exec(seq);
+          // xterm의 마우스 추적은 한 값이라 어느 모드를 끄든 추적 전체가 꺼진다.
+          if (mode) for (const param of mode[1].split(";")) {
+            if (param === "1004") focusReporting = mode[2] === "h";
+            else if (MOUSE_TRACKING_MODES.has(param)) mouseTracking = mode[2] === "h";
+          }
+        }
         continue;
       }
       if (terminalOutputBuffer.startsWith("\x1b]")) {
@@ -179,6 +189,7 @@ export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
       if (terminalOutputBuffer.startsWith("\x1bc")) {
         clearPending();
         focusReporting = false;
+        mouseTracking = false;
         terminalOutputBuffer = terminalOutputBuffer.slice(2);
         continue;
       }
@@ -212,6 +223,8 @@ export function createImeBridge(deps: ImeBridgeDeps): ImeBridge {
       return "terminalResponse";
     }
     if (focusReporting && (data === "\x1b[I" || data === "\x1b[O")) return "terminalResponse";
+    // SGR(?1006·?1016) 보고와 기본 X10 인코딩(ESC [ M + 3바이트).
+    if (mouseTracking && /^(?:\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[M[\s\S]{3})+$/.test(data)) return "terminalResponse";
     return "human";
   };
 

@@ -683,8 +683,8 @@ impl InjectGate {
         }
     }
 
-    /// xterm이 PTY의 질의에 답하는 제어 응답 경로다. 이 바이트는 프로그램에는
-    /// 즉시 전달해야 하지만, 사람이 편집하거나 자동화를 중단한 것은 아니다.
+    /// xterm이 PTY의 질의에 답하는 제어 응답과 포커스·마우스 보고 경로다. 이 바이트는
+    /// 프로그램에는 즉시 전달해야 하지만, 사람이 편집하거나 자동화를 중단한 것은 아니다.
     pub fn note_terminal_response(&self, agent_id: &str, data: &str) {
         if !data.is_empty() {
             self.sink.write(agent_id, data);

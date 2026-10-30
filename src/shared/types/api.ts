@@ -94,7 +94,7 @@ export interface AgentOfficeApi {
   repositoryAuditPush(path: string): Promise<RepositoryAuditItem>;
   createSession(agentId: string, opts?: CreateSessionOptions): Promise<CreateSessionResult>;
   disposeSession(agentId: string, expected?: { sessionId: string; humanInputRevision: number }): Promise<void>;
-  /** fire-and-forget. `terminalResponse` is an xterm protocol reply, not a user edit. */
+  /** fire-and-forget. `terminalResponse` is an xterm protocol reply or focus/mouse report, not a user edit. */
   writeInput(agentId: string, data: string, source?: TerminalInputSource): void;
   resize(agentId: string, cols: number, rows: number): void;
   clearNotifications(agentId: string, ids?: string[]): void;

@@ -297,6 +297,31 @@ describe("imeBridge · xterm 자동 제어 응답 출처", () => {
     expect(h.sources).toEqual([undefined, undefined]);
   });
 
+  it("마우스 추적을 켠 TUI의 마우스 보고는 미제출 입력으로 세지 않는다", () => {
+    const h = harness({ isMac: false });
+    // claude `/tui fullscreen`이 켜는 순서 그대로
+    h.bridge.observeTerminalOutput("\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h");
+    h.emitData("\x1b[<35;10;5M");
+    h.emitData("\x1b[<64;10;5M\x1b[<64;10;5M");
+    h.emitData("\x1b[<0;3;4m");
+    h.emitData("\x1b[M #!");
+    expect(h.sources).toEqual(["terminalResponse", "terminalResponse", "terminalResponse", "terminalResponse"]);
+  });
+
+  it("마우스 추적을 끄거나 켜기 전·RIS 뒤의 마우스 보고 모양은 사람 입력으로 둔다", () => {
+    const h = harness({ isMac: false });
+    h.emitData("\x1b[<35;10;5M");
+    h.bridge.observeTerminalOutput("\x1b[?1000;1006h");
+    h.emitData("\x1b[<35;10;5M");
+    h.bridge.observeTerminalOutput("\x1b[?1006l\x1b[?1003l");
+    h.emitData("\x1b[<35;10;5M");
+    h.bridge.observeTerminalOutput("\x1b[?1003h\x1bc");
+    h.emitData("\x1b[<35;10;5M");
+    h.bridge.observeTerminalOutput("\x1b[?1003h");
+    h.emitData("\x1b[<35;10;5Mx");
+    expect(h.sources).toEqual([undefined, "terminalResponse", undefined, undefined, undefined]);
+  });
+
   it("프로그램 방식 term.paste도 pending 응답과 닮은 텍스트를 사람 입력으로 보낸다", () => {
     const h = harness({ isMac: false });
     h.bridge.observeTerminalOutput("\x1b[6n");
