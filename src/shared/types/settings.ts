@@ -175,6 +175,12 @@ export interface AppSettings {
    * 없어 기본 true(opt-out). 표시되는 숫자는 추정치일 뿐 구독제 실제
    * 청구액이 아니다. */
   sessionCostEnabled: boolean;
+  /** 에이전트별 터미널 바로 열기 단축키(에이전트 id → 단축키). 단축키는
+   * `Ctrl+Alt+Shift+Meta+<KeyboardEvent.code>` 형식(`renderer/shortcuts/accelerator.ts`).
+   * 앱 창 안에서만 동작한다. 기본 빈 객체 — 설정 화면의 추천값은 placeholder일 뿐이다. */
+  agentShortcuts: Record<string, string>;
+  /** 가장 오래된 알림의 에이전트로 가는 단축키. 빈 문자열이면 없음. */
+  notifyJumpShortcut: string;
 }
 
 /** `get_app_settings` 응답. firstRun = settings.json 부재(첫 실행). */

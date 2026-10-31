@@ -715,6 +715,8 @@ describe("app settings slice", () => {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
+      agentShortcuts: {},
+      notifyJumpShortcut: "",
     });
     expect(s.settingsFirstRun).toBe(false);
   });
@@ -758,6 +760,8 @@ describe("app settings slice", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
+        agentShortcuts: {},
+        notifyJumpShortcut: "",
       },
       true
     );
@@ -799,6 +803,8 @@ describe("app settings slice", () => {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
+      agentShortcuts: {},
+      notifyJumpShortcut: "",
     });
     expect(s.settingsFirstRun).toBe(true);
     // A 리뷰 수정: hydrateSettings가 실제로 불렸음을 settingsHydrated로 표시

@@ -6,7 +6,7 @@
 // 달리 스토어 값을 직접 바인딩한다 — 토글 클릭이 즉시 updateAppSettings로
 // 반영되는지, 닫기 버튼/백드롭이 closeModal을 부르는지 확인한다.
 //
-// 탭 4개로 나뉜 뒤로 항목은 해당 탭을 먼저 눌러야 화면에 있다 — 각 테스트가
+// 탭 5개로 나뉜 뒤로 항목은 해당 탭을 먼저 눌러야 화면에 있다 — 각 테스트가
 // `openTab()`으로 자기 탭을 연다(기본은 첫 탭 "일반").
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -71,6 +71,8 @@ describe("SettingsDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
+        agentShortcuts: {},
+        notifyJumpShortcut: "",
       },
       false,
     );
@@ -119,6 +121,8 @@ describe("SettingsDialog", () => {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
+      agentShortcuts: {},
+      notifyJumpShortcut: "",
     });
   });
 
@@ -161,6 +165,8 @@ describe("SettingsDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
+        agentShortcuts: {},
+        notifyJumpShortcut: "",
       },
       false,
     );
@@ -215,6 +221,8 @@ describe("SettingsDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
+        agentShortcuts: {},
+        notifyJumpShortcut: "",
       },
       false,
     );
@@ -266,6 +274,8 @@ describe("SettingsDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
+        agentShortcuts: {},
+        notifyJumpShortcut: "",
       },
       false,
     );
@@ -317,6 +327,8 @@ describe("SettingsDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
+        agentShortcuts: {},
+        notifyJumpShortcut: "",
       },
       false,
     );
@@ -375,6 +387,7 @@ describe("SettingsDialog", () => {
     expect(screen.getAllByRole("tab").map(tabName)).toEqual([
       "일반",
       "소리",
+      "단축키",
       "시스템",
       "제어",
     ]);

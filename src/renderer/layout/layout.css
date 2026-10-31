@@ -612,6 +612,16 @@ body {
   box-sizing: border-box;
 }
 
+/* ── 단축키 탭(ShortcutsTab): 이름·설명 왼쪽, 키 칸과 버튼 오른쪽 ───────── */
+.settings-shortcut-row { align-items: center; cursor: default; }
+.settings-shortcut-row > span:first-child { flex: 1; min-width: 0; }
+.settings-shortcut-controls { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
+.settings-shortcut-key { min-width: 9em; text-align: center; }
+/* 빈 칸: 추천값을 흐린 글자로만 보여 준다(저장된 값이 아님). */
+.settings-shortcut-key.placeholder { color: var(--text-dim); font-style: italic; }
+.settings-shortcut-key.recording { outline: 2px solid var(--accent); outline-offset: 1px; }
+.settings-item small.settings-shortcut-error { color: var(--accent-error); opacity: 1; }
+
 /* ── 마스코트 신호등 프로젝트 폴더 목록(MascotLightsSection) ──────────── */
 .mascot-lights-project-list {
   list-style: none;

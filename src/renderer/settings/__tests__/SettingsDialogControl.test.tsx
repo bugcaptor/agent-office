@@ -72,6 +72,8 @@ function hydrate(cliEnabled: boolean) {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
+      agentShortcuts: {},
+      notifyJumpShortcut: "",
     },
     false,
   );

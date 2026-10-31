@@ -59,6 +59,8 @@ describe("FirstRunDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
+        agentShortcuts: {},
+        notifyJumpShortcut: "",
       },
       false,
     );
@@ -105,6 +107,8 @@ describe("FirstRunDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
+        agentShortcuts: {},
+        notifyJumpShortcut: "",
       },
       true,
     );
@@ -151,6 +155,8 @@ describe("FirstRunDialog", () => {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
+      agentShortcuts: {},
+      notifyJumpShortcut: "",
     });
   });
 
@@ -193,6 +199,8 @@ describe("FirstRunDialog", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
+        agentShortcuts: {},
+        notifyJumpShortcut: "",
       },
       true,
     );

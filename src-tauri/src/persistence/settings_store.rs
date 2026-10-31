@@ -332,6 +332,15 @@ pub struct AppSettings {
     /// 구독제 실제 청구액이 아니다.
     #[serde(default = "default_true")]
     pub session_cost_enabled: bool,
+    /// 에이전트별 터미널 바로 열기 단축키(에이전트 id → 단축키). 단축키는
+    /// 렌더러가 만드는 `Ctrl+Alt+Shift+Meta+<KeyboardEvent.code>` 문자열이고
+    /// 백엔드는 해석하지 않는다. 앱 창 안에서만 동작한다. 기본 비어 있음 —
+    /// 설정 화면의 추천값은 placeholder일 뿐 저장되지 않는다.
+    #[serde(default)]
+    pub agent_shortcuts: std::collections::BTreeMap<String, String>,
+    /// 가장 오래된 알림의 에이전트로 가는 단축키. 빈 문자열이면 없음.
+    #[serde(default)]
+    pub notify_jump_shortcut: String,
 }
 
 fn default_language() -> String {
@@ -370,6 +379,8 @@ impl Default for AppSettings {
             mascot_lights_label: MascotLightsLabel::Auto,
             usage_float_enabled: true,
             session_cost_enabled: true,
+            agent_shortcuts: Default::default(),
+            notify_jump_shortcut: String::new(),
         }
     }
 }
@@ -587,6 +598,8 @@ mod tests {
             mascot_lights_label: MascotLightsLabel::Auto,
             usage_float_enabled: true,
             session_cost_enabled: true,
+            agent_shortcuts: Default::default(),
+            notify_jump_shortcut: String::new(),
         };
         store.save(&s).expect("save succeeds");
         let (loaded, first_run) = store.load();
@@ -871,6 +884,8 @@ mod tests {
             mascot_lights_label: MascotLightsLabel::Auto,
             usage_float_enabled: true,
             session_cost_enabled: true,
+            agent_shortcuts: Default::default(),
+            notify_jump_shortcut: String::new(),
         };
         store.save(&settings).unwrap();
         let json = fs::read_to_string(&file).unwrap();

@@ -10,6 +10,7 @@
     "close": "닫기",
     "tabGeneral": "일반",
     "tabSound": "소리",
+    "tabShortcuts": "단축키",
     "tabSystem": "시스템",
     "tabControl": "제어"
   },
@@ -156,5 +157,25 @@
     "empty": "맞는 모델이 없습니다 — 그대로 써도 됩니다.",
     "groupPreset": "자주 쓰는 모델",
     "groupCatalog": "서비스 목록"
+  },
+  "shortcuts": {
+    "help": "키를 눌러 에이전트 터미널을 바로 엽니다. 앱 창 안에서만 동작합니다. 칸을 누른 뒤 키를 누르면 기록되고, Esc는 취소입니다. 흐린 글자는 추천값이며 '추천값'을 눌러야 저장됩니다.",
+    "notifyTitle": "알림 준 에이전트로 가기",
+    "notifyHelp": "남은 알림 중 가장 오래된 알림의 에이전트 터미널을 엽니다. 열면 그 알림이 지워져 다시 누르면 다음 알림으로 갑니다.",
+    "agentsTitle": "에이전트 터미널 열기",
+    "noAgents": "아직 에이전트가 없습니다.",
+    "clockedOut": "퇴근 중이라 단축키를 눌러도 열리지 않습니다.",
+    "pressKey": "키를 누르세요…",
+    "none": "없음",
+    "recordAria": "{{name}} 단축키 지정",
+    "clearAria": "{{name}} 단축키 지우기",
+    "useRecommended": "추천값",
+    "useRecommendedTitle": "{{key}}로 지정",
+    "problem": {
+      "needsModifier": "Ctrl·Alt·⌘ 중 하나 이상을 함께 눌러야 합니다.",
+      "terminalKey": "터미널의 셸·TUI가 쓰는 키입니다. ⌘ 또는 Ctrl+Alt 조합을 쓰세요.",
+      "reserved": "앱이나 OS가 이미 쓰는 키입니다.",
+      "taken": "이미 '{{name}}'에 지정된 키입니다."
+    }
   }
 }

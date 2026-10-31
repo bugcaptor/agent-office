@@ -21,6 +21,7 @@
 import { useAppStore } from "./store/appStore";
 import { applyLanguageSetting } from "./i18n";
 import { installSessionBridge } from "./ipc/sessionBridge";
+import { installAgentShortcuts } from "./shortcuts/agentShortcuts";
 import { installMascotBridge } from "./ipc/mascotBridge";
 import { installDisplayFocusBridge } from "./ipc/displayFocusBridge";
 import { installSettingsSync } from "./ipc/settingsSyncBridge";
@@ -162,6 +163,8 @@ export async function bootApp(): Promise<() => void> {
   // 데스크톱 마스코트(이슈 #72) — 세션 브리지 직후. officeBus(=emitAgentClicked)를
   // 쓰므로 그 뒤여야 하고, 설정 hydrate 이후라 mascotEnabled를 곧바로 읽는다.
   const offMascot = installMascotBridge();
+  // 설정에서 지정한 에이전트별·알림 단축키. officeBus(=emitAgentClicked)를 쓰므로 브리지 뒤.
+  const offShortcuts = installAgentShortcuts();
   const offDisplayFocus = installDisplayFocusBridge();
   // 창 포커스 추적(이슈 #39) — 브리지 직후. 비포커스면 알림 억제 해제 + OS 알림.
   const offFocus = installWindowFocusTracking();
@@ -209,6 +212,7 @@ export async function bootApp(): Promise<() => void> {
     offWorkInbox();
     void stopWorkInbox().then(() => useWorkItemStore.getState().flush());
     offMascot();
+    offShortcuts();
     offDisplayFocus();
     offFocus();
     offPersistence();

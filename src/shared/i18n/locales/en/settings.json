@@ -10,6 +10,7 @@
     "close": "Close",
     "tabGeneral": "General",
     "tabSound": "Sound",
+    "tabShortcuts": "Shortcuts",
     "tabSystem": "System",
     "tabControl": "Control"
   },
@@ -156,5 +157,25 @@
     "empty": "No matching model — you can use it as typed.",
     "groupPreset": "Frequently used",
     "groupCatalog": "Service list"
+  },
+  "shortcuts": {
+    "help": "Open an agent's terminal with a key. Works only while the app window is focused. Click a field, then press the keys to record them; Esc cancels. Dimmed text is the suggested key and is saved only when you click Suggested.",
+    "notifyTitle": "Go to notifying agent",
+    "notifyHelp": "Opens the terminal of the agent with the oldest pending notification. Opening it clears that notification, so pressing again moves to the next one.",
+    "agentsTitle": "Open agent terminal",
+    "noAgents": "No agents yet.",
+    "clockedOut": "Clocked out — the shortcut does nothing until the agent is back.",
+    "pressKey": "Press keys…",
+    "none": "None",
+    "recordAria": "Set shortcut for {{name}}",
+    "clearAria": "Clear shortcut for {{name}}",
+    "useRecommended": "Suggested",
+    "useRecommendedTitle": "Set to {{key}}",
+    "problem": {
+      "needsModifier": "Include at least one of Ctrl, Alt or ⌘.",
+      "terminalKey": "Shells and TUIs in the terminal use this key. Use ⌘ or Ctrl+Alt.",
+      "reserved": "The app or the OS already uses this key.",
+      "taken": "Already assigned to “{{name}}”."
+    }
   }
 }

@@ -59,6 +59,8 @@
     "mascotLightsLabel": "auto",
     "usageFloatEnabled": true,
     "sessionCostEnabled": true,
+    "agentShortcuts": { "agent-1": "Alt+Meta+Digit1" },
+    "notifyJumpShortcut": "Alt+Meta+KeyJ",
     "workPanelsEnabled": false
   },
   "firstRun": true

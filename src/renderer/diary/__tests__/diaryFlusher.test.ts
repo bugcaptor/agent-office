@@ -58,6 +58,8 @@ const SETTINGS_ON: AppSettings = {
   mascotLightsLabel: "auto",
   usageFloatEnabled: true,
   sessionCostEnabled: true,
+  agentShortcuts: {},
+  notifyJumpShortcut: "",
 };
 
 const NOW = 1_000_000_000_000;

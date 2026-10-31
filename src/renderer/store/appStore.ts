@@ -110,6 +110,8 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   mascotLightsLabel: "auto",
   usageFloatEnabled: true,
   sessionCostEnabled: true,
+  agentShortcuts: {},
+  notifyJumpShortcut: "",
 };
 
 /**
@@ -418,6 +420,8 @@ interface AppState {
         | "mascotLightsLabel"
         | "usageFloatEnabled"
         | "sessionCostEnabled"
+        | "agentShortcuts"
+        | "notifyJumpShortcut"
       >
     >,
   ): void;

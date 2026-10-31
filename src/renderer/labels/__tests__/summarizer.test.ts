@@ -98,6 +98,8 @@ beforeEach(() => {
       mascotLightsLabel: "auto",
       usageFloatEnabled: true,
       sessionCostEnabled: true,
+      agentShortcuts: {},
+      notifyJumpShortcut: "",
     },
     false
   );
@@ -188,6 +190,8 @@ describe("installTaskLabelSummarizer", () => {
           mascotLightsLabel: "auto",
           usageFloatEnabled: true,
           sessionCostEnabled: true,
+          agentShortcuts: {},
+          notifyJumpShortcut: "",
         },
         false,
       );
@@ -473,6 +477,8 @@ describe("installTaskLabelSummarizer", () => {
         mascotLightsLabel: "auto",
         usageFloatEnabled: true,
         sessionCostEnabled: true,
+        agentShortcuts: {},
+        notifyJumpShortcut: "",
       },
       false
     );

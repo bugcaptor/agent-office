@@ -10,6 +10,7 @@
     "close": "閉じる",
     "tabGeneral": "一般",
     "tabSound": "サウンド",
+    "tabShortcuts": "ショートカット",
     "tabSystem": "システム",
     "tabControl": "制御"
   },
@@ -156,5 +157,25 @@
     "empty": "一致するモデルがありません — そのまま使えます。",
     "groupPreset": "よく使うモデル",
     "groupCatalog": "サービス一覧"
+  },
+  "shortcuts": {
+    "help": "キーでエージェントのターミナルをすぐ開きます。アプリのウィンドウ内でのみ動作します。欄をクリックしてからキーを押すと記録され、Esc で取り消します。薄い文字は推奨キーで、「推奨」を押すと保存されます。",
+    "notifyTitle": "通知したエージェントへ移動",
+    "notifyHelp": "残っている通知のうち最も古い通知のエージェントのターミナルを開きます。開くとその通知が消えるので、もう一度押すと次の通知へ移ります。",
+    "agentsTitle": "エージェントのターミナルを開く",
+    "noAgents": "エージェントはまだいません。",
+    "clockedOut": "退勤中のため、ショートカットを押しても開きません。",
+    "pressKey": "キーを押してください…",
+    "none": "なし",
+    "recordAria": "{{name}} のショートカットを設定",
+    "clearAria": "{{name}} のショートカットを消去",
+    "useRecommended": "推奨",
+    "useRecommendedTitle": "{{key}} に設定",
+    "problem": {
+      "needsModifier": "Ctrl・Alt・⌘ のいずれかを一緒に押してください。",
+      "terminalKey": "ターミナルのシェルや TUI が使うキーです。⌘ または Ctrl+Alt の組み合わせを使ってください。",
+      "reserved": "アプリまたは OS がすでに使っているキーです。",
+      "taken": "すでに「{{name}}」に割り当てられています。"
+    }
   }
 }

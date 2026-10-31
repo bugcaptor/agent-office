@@ -10,6 +10,7 @@
     "close": "Fermer",
     "tabGeneral": "Général",
     "tabSound": "Son",
+    "tabShortcuts": "Raccourcis",
     "tabSystem": "Système",
     "tabControl": "Contrôle"
   },
@@ -156,5 +157,25 @@
     "empty": "Aucun modèle correspondant — vous pouvez l'utiliser tel quel.",
     "groupPreset": "Fréquemment utilisés",
     "groupCatalog": "Liste du service"
+  },
+  "shortcuts": {
+    "help": "Ouvrez le terminal d'un agent avec une touche. Fonctionne uniquement quand la fenêtre de l'app est active. Cliquez sur un champ puis appuyez sur les touches pour les enregistrer ; Échap annule. Le texte grisé est la touche suggérée, enregistrée seulement si vous cliquez sur Suggéré.",
+    "notifyTitle": "Aller à l'agent qui a notifié",
+    "notifyHelp": "Ouvre le terminal de l'agent ayant la plus ancienne notification en attente. L'ouvrir efface cette notification : appuyer de nouveau passe à la suivante.",
+    "agentsTitle": "Ouvrir le terminal d'un agent",
+    "noAgents": "Aucun agent pour l'instant.",
+    "clockedOut": "Agent parti : le raccourci n'a aucun effet jusqu'à son retour.",
+    "pressKey": "Appuyez sur les touches…",
+    "none": "Aucun",
+    "recordAria": "Définir le raccourci de {{name}}",
+    "clearAria": "Effacer le raccourci de {{name}}",
+    "useRecommended": "Suggéré",
+    "useRecommendedTitle": "Définir sur {{key}}",
+    "problem": {
+      "needsModifier": "Incluez au moins Ctrl, Alt ou ⌘.",
+      "terminalKey": "Les shells et TUI du terminal utilisent cette touche. Utilisez ⌘ ou Ctrl+Alt.",
+      "reserved": "L'app ou le système utilise déjà cette touche.",
+      "taken": "Déjà attribué à « {{name}} »."
+    }
   }
 }

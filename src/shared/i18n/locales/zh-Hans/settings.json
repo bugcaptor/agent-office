@@ -10,6 +10,7 @@
     "close": "关闭",
     "tabGeneral": "常规",
     "tabSound": "声音",
+    "tabShortcuts": "快捷键",
     "tabSystem": "系统",
     "tabControl": "控制"
   },
@@ -156,5 +157,25 @@
     "empty": "没有匹配的模型 —— 照原样使用也可以。",
     "groupPreset": "常用模型",
     "groupCatalog": "服务列表"
+  },
+  "shortcuts": {
+    "help": "按键即可直接打开代理的终端。仅在应用窗口内有效。点击输入框后按下按键即可记录，Esc 取消。灰色文字是推荐按键，点击“推荐”后才会保存。",
+    "notifyTitle": "前往发出通知的代理",
+    "notifyHelp": "打开剩余通知中最早一条通知所属代理的终端。打开后该通知会被清除，再按一次会前往下一条通知。",
+    "agentsTitle": "打开代理终端",
+    "noAgents": "还没有代理。",
+    "clockedOut": "已下班，按快捷键也不会打开。",
+    "pressKey": "请按键…",
+    "none": "无",
+    "recordAria": "设置 {{name}} 的快捷键",
+    "clearAria": "清除 {{name}} 的快捷键",
+    "useRecommended": "推荐",
+    "useRecommendedTitle": "设为 {{key}}",
+    "problem": {
+      "needsModifier": "需要同时按下 Ctrl、Alt 或 ⌘ 中的至少一个。",
+      "terminalKey": "终端中的 shell 或 TUI 会使用此键。请使用 ⌘ 或 Ctrl+Alt 组合。",
+      "reserved": "应用或系统已在使用此键。",
+      "taken": "已分配给“{{name}}”。"
+    }
   }
 }

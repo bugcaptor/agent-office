@@ -361,6 +361,10 @@ fn get_app_settings_result_matches_fixture() {
             mascot_lights_label: MascotLightsLabel::Auto,
             usage_float_enabled: true,
             session_cost_enabled: true,
+            agent_shortcuts: [("agent-1".to_string(), "Alt+Meta+Digit1".to_string())]
+                .into_iter()
+                .collect(),
+            notify_jump_shortcut: "Alt+Meta+KeyJ".into(),
         },
         first_run: true,
     };

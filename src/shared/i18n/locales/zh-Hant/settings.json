@@ -10,6 +10,7 @@
     "close": "關閉",
     "tabGeneral": "一般",
     "tabSound": "聲音",
+    "tabShortcuts": "快捷鍵",
     "tabSystem": "系統",
     "tabControl": "控制"
   },
@@ -156,5 +157,25 @@
     "empty": "沒有符合的模型 — 直接這樣用也可以。",
     "groupPreset": "常用模型",
     "groupCatalog": "服務清單"
+  },
+  "shortcuts": {
+    "help": "按鍵即可直接開啟代理的終端機。僅在應用程式視窗內有效。點選欄位後按下按鍵即可記錄，Esc 取消。灰色文字是建議按鍵，點選「建議」後才會儲存。",
+    "notifyTitle": "前往發出通知的代理",
+    "notifyHelp": "開啟剩餘通知中最早一則通知所屬代理的終端機。開啟後該通知會被清除，再按一次會前往下一則通知。",
+    "agentsTitle": "開啟代理終端機",
+    "noAgents": "還沒有代理。",
+    "clockedOut": "已下班，按快捷鍵也不會開啟。",
+    "pressKey": "請按鍵…",
+    "none": "無",
+    "recordAria": "設定 {{name}} 的快捷鍵",
+    "clearAria": "清除 {{name}} 的快捷鍵",
+    "useRecommended": "建議",
+    "useRecommendedTitle": "設為 {{key}}",
+    "problem": {
+      "needsModifier": "需要同時按下 Ctrl、Alt 或 ⌘ 中的至少一個。",
+      "terminalKey": "終端機中的 shell 或 TUI 會使用此鍵。請使用 ⌘ 或 Ctrl+Alt 組合。",
+      "reserved": "應用程式或系統已在使用此鍵。",
+      "taken": "已指派給「{{name}}」。"
+    }
   }
 }

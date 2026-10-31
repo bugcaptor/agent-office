@@ -109,6 +109,8 @@
             mascot_lights_label: Default::default(),
             usage_float_enabled: true,
             session_cost_enabled: true,
+            agent_shortcuts: Default::default(),
+            notify_jump_shortcut: String::new(),
         };
 
         // ON이면 게이트를 통과해 캡처된 provider로 위임된다 -- 빈 텍스트라서
@@ -175,6 +177,8 @@
             mascot_lights_label: Default::default(),
             usage_float_enabled: true,
             session_cost_enabled: true,
+            agent_shortcuts: Default::default(),
+            notify_jump_shortcut: String::new(),
         };
         // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
         // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.
@@ -231,6 +235,8 @@
             mascot_lights_label: Default::default(),
             usage_float_enabled: true,
             session_cost_enabled: true,
+            agent_shortcuts: Default::default(),
+            notify_jump_shortcut: String::new(),
         };
 
         assert!(set_app_settings_inner(&state, serde_json::to_value(&settings).unwrap())

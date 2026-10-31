@@ -1070,6 +1070,8 @@ mod tests {
             mascot_lights_label: Default::default(),
             usage_float_enabled: true,
             session_cost_enabled: true,
+            agent_shortcuts: Default::default(),
+            notify_jump_shortcut: String::new(),
         }));
         let registry = Arc::new(SessionRegistry::new());
         let events: Arc<dyn AppEvents> = Arc::new(crate::state::fake::RecordingEvents::default());

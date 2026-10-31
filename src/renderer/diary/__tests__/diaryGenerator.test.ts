@@ -56,6 +56,8 @@ const SETTINGS_ON: AppSettings = {
   mascotLightsLabel: "auto",
   usageFloatEnabled: true,
   sessionCostEnabled: true,
+  agentShortcuts: {},
+  notifyJumpShortcut: "",
 };
 
 function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
