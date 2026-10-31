@@ -22,7 +22,8 @@ EOF
 - Do not leave tasks for work you will finish in this turn. One follow-up, one task.
 - The task is assigned to you by default. Put `--to <colleague name>` before the title only to hand it to someone else.
 - Write the body so someone without this conversation can act on it.
-- The command prints the new task id. Tasks can depend on others: `--after <id>` (repeatable) makes a task wait until those prerequisites are done. When the user asks to plan or split work, structure it as ordered steps: capture each id, e.g. `A=$({cli} "Step 1" - <<'EOF' … EOF)`, then `{cli} --after "$A" "Step 2" …`.
+- The command prints the new task id. Tasks can depend on others: `--after <id>` (repeatable) makes a task wait until those prerequisites are done.
+- When the user asks to plan or split work, make every piece of work its own step task, in order, capturing each id: `A=$({cli} "Step 1" - <<'EOF' … EOF)`, then `B=$({cli} --after "$A" "Step 2" …)`. Create the plan root last, with `--after` on the final step(s). The root holds no work of its own: its title is the plan's goal and its body is the plan memo (goal, shared context, constraints, what done looks like). Auto-run executes only the steps and moves the root to review once they are all done, so work written into the root is never run.
 - `{cli} --list` shows open tasks on the board with their ids, status, assignee and prerequisites (`--all` includes done ones); `{cli} --show <id>` prints one task in full, including its body and which tasks wait on it. Use them to find ids before linking or changing tasks.
 - When the user asks to change a task, run `{cli} --edit <id>` with only what changes: `--title <text>`, `--body -` (new body from stdin, like above), `--to <colleague name>` or `--unassigned`, `--status todo|in_progress|review|done`, and for prerequisites `--add-after <id>` / `--remove-after <id>` (repeatable), or `--after <id>` (repeatable) to replace them all, or `--no-after` to clear them. Rearranging a plan's order means editing prerequisites.
 - When the user tells you to mark a task as done (or confirms it is finished), run `{cli} --done <id>`. Completing a task unblocks the tasks that wait on it. Only do this on the user's instruction, never on your own judgment that the work is finished.
@@ -216,6 +217,7 @@ mod tests {
         assert!(text.contains("/tmp/agent-office/bin/office-task \"<title>\" - <<'EOF'"));
         assert!(text.contains("--to"));
         assert!(text.contains("--after"));
+        assert!(text.contains("The root holds no work of its own"));
         assert!(text.contains("/tmp/agent-office/bin/office-task --list"));
         assert!(text.contains("/tmp/agent-office/bin/office-task --done <id>"));
         assert!(text.contains("/tmp/agent-office/bin/office-task --edit <id>"));
