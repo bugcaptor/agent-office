@@ -18,6 +18,9 @@ use std::{
     time::Duration,
 };
 
+/// 새 세션 셸이 시작 스크립트를 마치고 빈 프롬프트가 되기를 기다리는 최대 시간.
+const FRESH_SHELL_SETTLE: Duration = Duration::from_secs(10);
+
 #[derive(Default)]
 pub struct WorkSendRuntime {
     active: Mutex<HashMap<String, Arc<AtomicBool>>>,
@@ -195,13 +198,19 @@ impl WorkSendRuntime {
             return Err("work-send-restart-required".into());
         }
         // 조회 불가인 새 브로커 셸도 ACK 없이는 프롬프트를 절대 보내지 않는다.
-        let shell_prompt = sink.is_shell_prompt(&request.agent_id);
-        if shell_prompt != Some(true)
-            && !(shell_prompt.is_none()
-                && request.fresh_session
-                && request.human_input_revision == 0)
-        {
-            return Err("work-send-restart-required".into());
+        // 막 띄운 셸은 rc 파일을 실행하는 동안 자식이 foreground라 사용 중으로 보인다.
+        // 새 세션만 빈 프롬프트가 될 때까지 잠시 기다리고, 기존 세션은 바로 거절한다.
+        let settle = tokio::time::Instant::now() + FRESH_SHELL_SETTLE;
+        loop {
+            let shell_prompt = sink.is_shell_prompt(&request.agent_id);
+            if shell_prompt == Some(true) || (shell_prompt.is_none() && request.fresh_session) {
+                break;
+            }
+            if !request.fresh_session || tokio::time::Instant::now() >= settle {
+                return Err("work-send-restart-required".into());
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            check()?;
         }
         let owner = gate
             .try_acquire_transition_owner(&request.agent_id, &request.session_id, generation)
@@ -517,7 +526,8 @@ mod tests {
         launch: Mutex<Option<String>>,
         children: Mutex<Vec<std::process::Child>>,
         exit_immediately: bool,
-        known_busy: bool,
+        /// 남은 '사용 중' 응답 수. 0이면 조회 불가(None)로 답한다.
+        busy_polls: std::sync::atomic::AtomicUsize,
     }
     impl ExecutingSink {
         fn new(exit_immediately: bool) -> Arc<Self> {
@@ -526,7 +536,7 @@ mod tests {
                 launch: Mutex::new(None),
                 children: Mutex::new(vec![]),
                 exit_immediately,
-                known_busy: false,
+                busy_polls: Default::default(),
             })
         }
     }
@@ -585,19 +595,53 @@ mod tests {
             self.recorded.shell_path_for(agent)
         }
         fn is_shell_prompt(&self, _: &str) -> Option<bool> {
-            self.known_busy.then_some(false)
+            self.busy_polls
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                .is_ok()
+                .then_some(false)
         }
     }
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn fresh_session_cannot_override_a_known_busy_terminal() {
         let root = tempfile::tempdir().unwrap();
-        let mut sink = ExecutingSink::new(false);
-        Arc::get_mut(&mut sink).unwrap().known_busy = true;
+        let sink = ExecutingSink::new(false);
+        sink.busy_polls.store(usize::MAX, Ordering::SeqCst);
         let gate = InjectGate::new(sink.clone(), Arc::new(BotPromptArms::default()));
         let runtime = WorkSendRuntime::default();
         assert_eq!(
             runtime
                 .send_with_wait(&gate, root.path().into(), request(), Duration::ZERO)
+                .await
+                .unwrap_err(),
+            "work-send-restart-required"
+        );
+        assert!(sink.recorded.recorded_writes().is_empty());
+    }
+    #[tokio::test]
+    async fn fresh_session_waits_for_shell_startup_before_launch() {
+        let root = tempfile::tempdir().unwrap();
+        let sink = ExecutingSink::new(false);
+        sink.busy_polls.store(3, Ordering::SeqCst);
+        let gate = InjectGate::new(sink.clone(), Arc::new(BotPromptArms::default()));
+        let runtime = WorkSendRuntime::default();
+        runtime
+            .send_with_wait(&gate, root.path().into(), request(), Duration::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(sink.recorded.recorded_writes().len(), 4);
+    }
+    #[tokio::test]
+    async fn existing_session_busy_shell_is_rejected_without_waiting() {
+        let root = tempfile::tempdir().unwrap();
+        let sink = ExecutingSink::new(false);
+        sink.busy_polls.store(1, Ordering::SeqCst);
+        let gate = InjectGate::new(sink.clone(), Arc::new(BotPromptArms::default()));
+        let runtime = WorkSendRuntime::default();
+        let mut req = request();
+        req.fresh_session = false;
+        assert_eq!(
+            runtime
+                .send_with_wait(&gate, root.path().into(), req, Duration::ZERO)
                 .await
                 .unwrap_err(),
             "work-send-restart-required"
