@@ -20,6 +20,8 @@ pub struct Parsed {
     pub id: Option<String>,
     /// 선행 업무 id. 앱이 가져올 때 목록에 있는 것만 남기고 나머지는 경고로 남긴다.
     pub after: Vec<String>,
+    /// 플랜 루트(`plan: true`). 자동 진행이 실행하지 않는 플랜 메모 전용 업무다.
+    pub plan: bool,
     /// 완료 요청. 비어 있지 않으면 새 업무가 아니라 이 id들을 완료로 바꾸는 파일이다.
     pub done: Vec<String>,
     /// 삭제 요청. 비어 있지 않으면 이 id들을 지우는 파일이다.
@@ -48,11 +50,14 @@ pub struct Edit {
     pub remove_after: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    /// 플랜 루트 표시를 켜거나 끈다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan: Option<bool>,
 }
 impl Edit {
     fn is_empty(&self) -> bool {
         self.title.is_none() && self.body.is_none() && self.assignee.is_none() && self.after.is_none()
-            && self.add_after.is_empty() && self.remove_after.is_empty() && self.status.is_none()
+            && self.add_after.is_empty() && self.remove_after.is_empty() && self.status.is_none() && self.plan.is_none()
     }
 }
 /// 업무 상태 값. `office-task --edit --status`와 수신함 `status` 키가 받는 값이다.
@@ -89,6 +94,8 @@ pub struct InboxEntry {
     pub id: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub after: Vec<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub plan: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub done: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -100,6 +107,14 @@ pub struct InboxEntry {
 /// 수신함으로 지정할 수 있는 업무 id. 앱이 만든 id(nanoid)도 이 형식이다.
 pub fn valid_task_id(id: &str) -> bool {
     (1..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+/// `plan:` 값. 참·거짓으로 읽을 수 없으면 None(키가 없는 것과 같다).
+pub fn parse_flag(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "yes" | "1" => Some(true),
+        "false" | "no" | "0" => Some(false),
+        _ => None,
+    }
 }
 /// `after:` 값은 쉼표나 공백으로 나눈다. 형식이 틀린 id는 버리고 중복은 합친다.
 pub fn parse_after(value: &str) -> Vec<String> {
@@ -144,6 +159,7 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
                     "add-after" => edit.add_after = parse_after(value),
                     "remove-after" => edit.remove_after = parse_after(value),
                     "status" => edit.status = Some(value.trim().to_string()).filter(|v| STATUSES.contains(&v.as_str())),
+                    "plan" => edit.plan = parse_flag(value),
                     "body" => replace_body = true,
                     _ => {}
                 }
@@ -160,7 +176,7 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
     // 한 파일은 요청 하나다: 완료 → 삭제 → 수정 → 새 업무 순으로 먼저 있는 것으로 읽는다.
     if !done.is_empty() || !delete.is_empty() {
         if !done.is_empty() { delete.clear(); }
-        return Ok(Parsed { title: String::new(), body: String::new(), assignee: None, id: None, after: vec![], done, delete, edit: None });
+        return Ok(Parsed { title: String::new(), body: String::new(), assignee: None, id: None, after: vec![], plan: false, done, delete, edit: None });
     }
     if let Some(id) = edit_target {
         edit.id = id;
@@ -169,12 +185,13 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
         if edit.is_empty() { return Err(RejectReason::Empty); }
         let text = [edit.title.as_deref(), edit.body.as_deref(), edit.assignee.as_deref()];
         if let Some(c) = text.into_iter().flatten().find_map(forbidden_control) { return Err(RejectReason::ControlChar(c)); }
-        return Ok(Parsed { title: String::new(), body: String::new(), assignee: None, id: None, after: vec![], done, delete, edit: Some(edit) });
+        return Ok(Parsed { title: String::new(), body: String::new(), assignee: None, id: None, after: vec![], plan: false, done, delete, edit: Some(edit) });
     }
     if title.is_empty() && body.trim().is_empty() { return Err(RejectReason::Empty); }
     // ESC 등이 남으면 `office-task --list`·터미널에서 해석되고 업무 보내기도 거절하므로 받지 않는다.
     if let Some(c) = forbidden_control(&title).or_else(|| forbidden_control(&body)) { return Err(RejectReason::ControlChar(c)); }
-    Ok(Parsed { title, body, assignee, id, after, done, delete, edit: None })
+    let plan = edit.plan.unwrap_or(false);
+    Ok(Parsed { title, body, assignee, id, after, plan, done, delete, edit: None })
 }
 /// 본문의 들여쓰기와 trailing spaces는 보존하고 앞뒤 빈 줄만 다듬는다.
 fn trim_blank_lines(lines: &[&str]) -> String {
@@ -253,7 +270,7 @@ pub fn scan(root: &Path, now: SystemTime) -> Result<Vec<InboxEntry>, String> {
                 let mut hash = Sha256::new();
                 hash.update(name.as_bytes()); hash.update([0]); hash.update(&bytes);
                 let key = format!("{:x}", hash.finalize())[..16].to_string();
-                entries.push(InboxEntry { file_name: name, key, title: parsed.title, body: parsed.body, assignee: parsed.assignee, id: parsed.id, after: parsed.after, done: parsed.done, delete: parsed.delete, edit: parsed.edit });
+                entries.push(InboxEntry { file_name: name, key, title: parsed.title, body: parsed.body, assignee: parsed.assignee, id: parsed.id, after: parsed.after, plan: parsed.plan, done: parsed.done, delete: parsed.delete, edit: parsed.edit });
             }
             Err(reason) => reject(root, &name, reason.code(), reason.detail().as_deref()).map_err(|e| e.to_string())?,
         }
@@ -297,11 +314,11 @@ mod tests {
     use super::*;
     #[test]
     fn parses_plain_frontmatter_bom_crlf_and_preserves_body_indentation() {
-        assert_eq!(parse("x.md", b"\n# Title\n\n  code  \n\n").unwrap(), Parsed { title: "Title".into(), body: "  code  ".into(), assignee: None, id: None, after: vec![], done: vec![], delete: vec![], edit: None });
+        assert_eq!(parse("x.md", b"\n# Title\n\n  code  \n\n").unwrap(), Parsed { title: "Title".into(), body: "  code  ".into(), assignee: None, id: None, after: vec![], plan: false, done: vec![], delete: vec![], edit: None });
         let p = parse("x.md", "\u{feff}---\r\nfuture: ignored\r\nassignee: 하나 \r\n---\r\n# 제목\r\n본문\r\n".as_bytes()).unwrap();
-        assert_eq!(p, Parsed { title: "제목".into(), body: "본문".into(), assignee: Some("하나".into()), id: None, after: vec![], done: vec![], delete: vec![], edit: None });
+        assert_eq!(p, Parsed { title: "제목".into(), body: "본문".into(), assignee: Some("하나".into()), id: None, after: vec![], plan: false, done: vec![], delete: vec![], edit: None });
         assert_eq!(parse("x.md", b"Title").unwrap().body, "");
-        assert_eq!(parse("x.md", b"# \nBody").unwrap(), Parsed { title: "".into(), body: "Body".into(), assignee: None, id: None, after: vec![], done: vec![], delete: vec![], edit: None });
+        assert_eq!(parse("x.md", b"# \nBody").unwrap(), Parsed { title: "".into(), body: "Body".into(), assignee: None, id: None, after: vec![], plan: false, done: vec![], delete: vec![], edit: None });
     }
     #[test]
     fn parses_task_id_and_prerequisites() {
@@ -310,6 +327,8 @@ mod tests {
         assert_eq!((p.id.as_deref(), p.after), (Some("t-ab12"), vec!["t-1".to_string(), "t-2".to_string(), "t-ab12".to_string()]));
         let p = parse("x.md", b"---\nid: not valid\nafter:\n---\n# Step\n").unwrap();
         assert_eq!((p.id, p.after), (None, vec![]));
+        assert!(!parse("x.md", b"# Step\n").unwrap().plan);
+        assert!(parse("x.md", b"---\nplan: true\nafter: t-1\n---\n# Goal\n").unwrap().plan);
         assert!(valid_task_id("vLdkeylcT4Nb9W4IQVT4g") && valid_task_id("inbox-0123abcd"));
         assert!(!valid_task_id("") && !valid_task_id(&"a".repeat(65)) && !valid_task_id("a.b"));
     }
@@ -327,8 +346,10 @@ mod tests {
         let p = parse("x.md", b"---\nedit: t-1\ntitle:  New: title \nassignee:\nafter:\nadd-after: t-3\nremove-after: t-4,t-5\nstatus: review\nbody: replace\n---\n\n# not a title\n  kept\n\n").unwrap();
         assert_eq!(p.edit, Some(Edit {
             id: "t-1".into(), title: Some("New: title".into()), body: Some("# not a title\n  kept".into()), assignee: Some("".into()),
-            after: Some(vec![]), add_after: vec!["t-3".into()], remove_after: vec!["t-4".into(), "t-5".into()], status: Some("review".into()),
+            after: Some(vec![]), add_after: vec!["t-3".into()], remove_after: vec!["t-4".into(), "t-5".into()], status: Some("review".into()), plan: None,
         }));
+        assert_eq!(parse("x.md", b"---\nedit: t-1\nplan: no\n---\n").unwrap().edit.unwrap().plan, Some(false));
+        assert_eq!(parse("x.md", b"---\nedit: t-1\nplan: maybe\n---\n"), Err(RejectReason::Empty));
         let p = parse("x.md", b"---\nedit: t-1\nbody: replace\n---\n").unwrap();
         assert_eq!(p.edit.unwrap().body.as_deref(), Some(""));
         // 본문 키가 없으면 frontmatter 뒤는 무시한다.

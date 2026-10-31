@@ -108,7 +108,8 @@
     "effortInvalid": "Effort incompatible avec ce CLI.",
     "modelCatalog": "Le modèle agy est absent de son catalogue actuel.",
     "blocked": "Terminez tous les prérequis avant l’envoi.",
-    "autoRunActive": "Ce personnage exécute une exécution automatique. Mettez-la en pause avant d'envoyer."
+    "autoRunActive": "Ce personnage exécute une exécution automatique. Mettez-la en pause avant d'envoyer.",
+    "planRoot": "Une racine de plan n’est pas envoyée. Utilisez l’exécution auto pour lancer les tâches qu’elle attend."
   },
   "resumeNewWork": "Continuer la nouvelle tâche",
   "add": "Ajouter",
@@ -130,12 +131,17 @@
   "noDependencies": "Aucun prérequis",
   "addDependency": "Ajouter un prérequis…",
   "noDependencyCandidates": "Aucune tâche à ajouter",
+  "planRoot": "Racine de plan (mémo de plan seulement)",
+  "planRootOn": "L’exécution auto ne lance pas cette tâche ; elle lance seulement les tâches qu’elle attend. Mettez tout le travail dans ces tâches.",
+  "planRootOff": "L’exécution auto lance aussi cette tâche en dernière étape, après les tâches qu’elle attend.",
   "blockedBy": "En attente de : {{titles}}",
   "dependents_one": "{{count}} tâche attend celle-ci",
   "dependents_other": "{{count}} tâches attendent celle-ci",
   "plan": {
     "chip": "Plan",
-    "toggle": "Afficher ou masquer les tâches du plan"
+    "toggle": "Afficher ou masquer les tâches du plan",
+    "rootRuns": "racine avec travail",
+    "rootRunsHint": "Ce n’est pas une racine de plan : l’exécution auto lance aussi cette tâche en dernière étape."
   },
   "newWorkTitle": "Nouvelle tâche",
   "transfer": {
@@ -189,7 +195,7 @@
     "running": "En cours : {{title}}",
     "followUps": "relances {{count}}/{{max}}",
     "preparing": "Préparation de la tâche suivante…",
-    "finished": "Toutes les tâches du plan sont terminées. La tâche racine est passée en revue.",
+    "finished": "Toutes les étapes du plan sont terminées. La racine est un mémo de plan sans travail restant ; elle est passée en revue.",
     "finishedByRoot": "La tâche racine a été marquée terminée, l'exécution automatique s'est donc arrêtée.",
     "start": "Lancer l'exécution auto",
     "openBusy": "Ouvrir ce plan",
@@ -228,14 +234,17 @@
       "auto-run-no-plan": "Il ne reste aucune tâche préalable.",
       "auto-run-observer-off": "Activez l'observation des agents dans les paramètres. L'exécution a besoin des hooks pour savoir quand un tour se termine.",
       "auto-run-foreign-task": "Une tâche préalable est assignée à un autre personnage. Assignez-la à ce personnage ou laissez-la non assignée.",
-      "auto-run-runner-busy": "Ce personnage a une autre exécution automatique non terminée : « {{title}} ». Terminez-la d'abord."
+      "auto-run-runner-busy": "Ce personnage a une autre exécution automatique non terminée : « {{title}} ». Terminez-la d'abord.",
+      "auto-run-root-busy": "Il ne reste que la tâche racine, et elle est en cours ou en revue. Remettez-la à faire pour la relancer."
     },
     "worker": {
       "intro": "[Exécution auto] Cette tâche est la {{index}}/{{total}} du plan « {{plan}} ». Elle démarre dans une nouvelle session ; servez-vous du contexte ci-dessous.",
       "memo": "Notes du plan :",
       "notes": "Notes de passation des tâches précédentes :",
-      "report": "Ne faites que cette tâche. Personne ne surveille : à la fin de votre tour, un juge lit votre rapport et décide de la suite.\n- Faites vous-même les choix réversibles (noms, structure, petites décisions de périmètre) selon les notes du plan et la tâche, et listez-les sous decisions. Ne vous arrêtez pas pour les demander.\n- Ne faites ce qui est difficile à annuler ou sort de la machine (push, déploiement, suppression de données, publication) que si les notes du plan ou la tâche le demandent. Si c'est nécessaire sans être permis, écrivez status: blocked et arrêtez-vous.\n- Avant la fin de votre tour, laissez un rapport avec la commande office-task des instructions du tableau de tâches Agent Office (à défaut, le chemin de la variable d'environnement AGENT_OFFICE_TASK). Le réécrire le remplace.\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: ce que vous avez changé\nverified: vérifications lancées et leurs résultats\ndecisions: choix faits par vous-même\nneeds_human: (seulement si blocked) la seule chose qu'une personne doit décider, avec les options\nEOF\n\nReprenez brièvement les mêmes points dans votre dernière réponse et ne terminez pas par une offre ou une question comme « Voulez-vous que… ? »"
-    }
+      "report": "Ne faites que cette tâche. Personne ne surveille : à la fin de votre tour, un juge lit votre rapport et décide de la suite.\n- Faites vous-même les choix réversibles (noms, structure, petites décisions de périmètre) selon les notes du plan et la tâche, et listez-les sous decisions. Ne vous arrêtez pas pour les demander.\n- Ne faites ce qui est difficile à annuler ou sort de la machine (push, déploiement, suppression de données, publication) que si les notes du plan ou la tâche le demandent. Si c'est nécessaire sans être permis, écrivez status: blocked et arrêtez-vous.\n- Avant la fin de votre tour, laissez un rapport avec la commande office-task des instructions du tableau de tâches Agent Office (à défaut, le chemin de la variable d'environnement AGENT_OFFICE_TASK). Le réécrire le remplace.\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: ce que vous avez changé\nverified: vérifications lancées et leurs résultats\ndecisions: choix faits par vous-même\nneeds_human: (seulement si blocked) la seule chose qu'une personne doit décider, avec les options\nEOF\n\nReprenez brièvement les mêmes points dans votre dernière réponse et ne terminez pas par une offre ou une question comme « Voulez-vous que… ? »",
+      "rootLast": "Cette tâche est la dernière étape du plan (sa racine). Toutes les étapes précédentes sont terminées."
+    },
+    "finishedWithRoot": "Les tâches préalables et la tâche racine elle-même sont terminées. La racine est passée en revue."
   },
   "taskChat": {
     "open": "Discuter",

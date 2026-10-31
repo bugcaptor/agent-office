@@ -6,17 +6,19 @@ use crate::persistence::work_inbox::{forbidden_control, parse_after, valid_task_
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after <id>]... <title> [body | -]
+const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after <id>]... [--plan] <title> [body | -]
        office-task --list [--all]
        office-task --show <id>
        office-task --edit <id> [--title <title>] [--body <body | ->] [--to <name|id> | --unassigned]
-                   [--status todo|in_progress|review|done]
+                   [--status todo|in_progress|review|done] [--plan | --no-plan]
                    [--after <id>... | --no-after | --add-after <id>... --remove-after <id>...]
        office-task --done <id>...
        office-task --delete <id>...
        office-task --report <id> [text | -]
 Prints the new task id. Pass it to --after to make a later task wait for this one.
 --edit --after replaces all prerequisites; --add-after/--remove-after change them one by one.
+--plan makes the task a plan root: it holds only the plan memo, and auto-run runs the tasks it
+waits on, never the root itself. It needs --after. A root without --plan is run as the last step.
 --report leaves the auto-run report for a task; writing it again replaces it.
 ";
 
@@ -80,6 +82,7 @@ pub fn run_with(
     }
     let mut assignee = Assignee::Default;
     let mut after: Vec<String> = vec![];
+    let mut plan = false;
     let mut positional = vec![];
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
@@ -91,11 +94,14 @@ pub fn run_with(
             },
             "--unassigned" if positional.is_empty() => assignee = Assignee::Unassigned,
             "--after" if positional.is_empty() => if let Err(code) = push_ids(&mut after, iter.next(), "--after", err) { return code; },
+            "--plan" if positional.is_empty() => plan = true,
             "--" if positional.is_empty() => positional.extend(iter.by_ref().cloned()),
             _ => positional.push(arg.clone()),
         }
     }
     if positional.is_empty() || positional.len() > 2 { return usage_error(err, "expected <title> [body | -]"); }
+    // 플랜 루트는 단계를 먼저 만들고 그 단계를 기다리게 만든다. 기다릴 것이 없으면 플랜이 아니다.
+    if plan && after.is_empty() { return usage_error(err, "--plan needs --after: create the step tasks first, then the plan root that waits on them"); }
     let title = positional[0].split_whitespace().collect::<Vec<_>>().join(" ");
     let body = match positional.get(1) {
         Some(value) => match read_body(value, stdin, err) { Ok(body) => body, Err(code) => return code },
@@ -120,7 +126,7 @@ pub fn run_with(
     warn_unknown_references(env, assignee.as_deref().filter(|_| explicit), &after, err);
     let random = uuid::Uuid::new_v4().simple().to_string();
     let id = format!("t-{}", &random[..8]);
-    let content = render(&id, &title, body.trim_matches('\n'), assignee.as_deref(), &after);
+    let content = render(&id, &title, body.trim_matches('\n'), assignee.as_deref(), &after, plan);
     if content.len() > MAX_BYTES { return fail(err, &format!("task exceeds {MAX_BYTES} bytes")); }
     let Some(inbox) = env.inbox() else { return fail(err, "AGENT_OFFICE_WORK_INBOX and AGENT_OFFICE_APP_DATA are not set"); };
     let name = format!("{}-{}.md", now.format("%Y%m%dT%H%M%S%3fZ"), &random[8..16]);
@@ -154,10 +160,11 @@ fn read_body(value: &str, stdin: &mut dyn Read, err: &mut dyn Write) -> Result<S
 }
 
 /// 제목 줄은 항상 `# `로 시작해 본문이나 빈 제목이 frontmatter·제목으로 잘못 읽히지 않는다.
-fn render(id: &str, title: &str, body: &str, assignee: Option<&str>, after: &[String]) -> String {
+fn render(id: &str, title: &str, body: &str, assignee: Option<&str>, after: &[String], plan: bool) -> String {
     let mut text = format!("---\nid: {id}\n");
     if let Some(assignee) = assignee { text.push_str(&format!("assignee: {assignee}\n")); }
     if !after.is_empty() { text.push_str(&format!("after: {}\n", after.join(", "))); }
+    if plan { text.push_str("plan: true\n"); }
     text.push_str(&format!("---\n# {title}\n"));
     if !body.is_empty() { text.push_str(body); text.push('\n'); }
     text
@@ -317,6 +324,7 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
     let mut body: Option<String> = None;
     let mut assignee: Option<Option<String>> = None;
     let mut status: Option<String> = None;
+    let mut plan: Option<bool> = None;
     let (mut after, mut no_after) = (vec![], false);
     let (mut add, mut remove) = (vec![], vec![]);
     let mut iter = args.iter();
@@ -344,6 +352,9 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
             },
             "--after" => push_ids(&mut after, iter.next(), "--after", err),
             "--no-after" => { no_after = true; Ok(()) }
+            "--plan" | "--no-plan" if plan.is_some_and(|p| p != (arg == "--plan")) => Err(usage_error(err, "--plan cannot be combined with --no-plan")),
+            "--plan" => { plan = Some(true); Ok(()) }
+            "--no-plan" => { plan = Some(false); Ok(()) }
             "--add-after" => push_ids(&mut add, iter.next(), "--add-after", err),
             "--remove-after" => push_ids(&mut remove, iter.next(), "--remove-after", err),
             other => Err(usage_error(err, &format!("unknown argument for --edit: {other:?}"))),
@@ -356,7 +367,7 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
     if after.is_some() && !(add.is_empty() && remove.is_empty()) {
         return usage_error(err, "--after/--no-after replace all prerequisites; do not combine them with --add-after/--remove-after");
     }
-    if title.is_none() && body.is_none() && assignee.is_none() && status.is_none() && after.is_none() && add.is_empty() && remove.is_empty() {
+    if title.is_none() && body.is_none() && assignee.is_none() && status.is_none() && plan.is_none() && after.is_none() && add.is_empty() && remove.is_empty() {
         return usage_error(err, "--edit needs at least one change");
     }
     if let Some(c) = title.as_deref().and_then(forbidden_control).or_else(|| body.as_deref().and_then(forbidden_control)) {
@@ -377,6 +388,7 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
     if let Some(title) = &title { text.push_str(&format!("title: {title}\n")); }
     if let Some(assignee) = &assignee { text.push_str(&format!("assignee: {}\n", assignee.as_deref().unwrap_or(""))); }
     if let Some(status) = &status { text.push_str(&format!("status: {status}\n")); }
+    if let Some(plan) = plan { text.push_str(&format!("plan: {plan}\n")); }
     if let Some(after) = &after { text.push_str(&format!("after: {}\n", after.join(", "))); }
     if !add.is_empty() { text.push_str(&format!("add-after: {}\n", add.join(", "))); }
     if !remove.is_empty() { text.push_str(&format!("remove-after: {}\n", remove.join(", "))); }
@@ -407,6 +419,9 @@ fn show(id: &str, env: &TaskEnv, out: &mut dyn Write, err: &mut dyn Write) -> i3
     let after: Vec<String> = item.get("dependsOn").and_then(|v| v.as_array()).map(|ids| ids.iter().filter_map(|id| id.as_str())
         .map(|d| format!("{d} [{}]", board.status(d).unwrap_or_else(|| "deleted".into()))).collect()).unwrap_or_default();
     if !after.is_empty() { lines.push(format!("after: {}", after.join(", "))); }
+    if item.get("plan").and_then(|v| v.as_bool()) == Some(true) {
+        lines.push("plan root: yes (holds the plan memo; auto-run runs only the tasks it waits on)".into());
+    }
     let dependents = board.dependents(id);
     if !dependents.is_empty() { lines.push(format!("waited on by: {}", dependents.join(", "))); }
     for line in lines { let _ = writeln!(out, "{}", escape_controls(&line)); }
@@ -441,6 +456,7 @@ fn list(env: &TaskEnv, all: bool, out: &mut dyn Write, err: &mut dyn Write) -> i
             id => names.get(&id).cloned().unwrap_or(id),
         };
         let mut line = format!("{}  [{}]  @{}  {}", field(item, "id"), field(item, "status"), assignee, title);
+        if item.get("plan").and_then(|v| v.as_bool()) == Some(true) { line.push_str("  (plan root)"); }
         let after: Vec<String> = item.get("dependsOn").and_then(|v| v.as_array()).map(|ids| ids.iter().filter_map(|id| id.as_str().map(String::from)).collect()).unwrap_or_default();
         if !after.is_empty() {
             let waiting = after.iter().any(|id| status_of.get(id).is_some_and(|status| status != "done"));
@@ -673,6 +689,26 @@ mod tests {
     }
 
     #[test]
+    fn plan_marks_a_root_that_waits_on_steps() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = env(dir.path(), Some("a"));
+        let (code, err_out, err) = call(&["--plan", "Goal"], &env, "");
+        assert!(code == 2 && err_out.is_empty() && err.contains("--plan needs --after"), "{err}");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+        let (_, step, _) = call(&["Step"], &env, "");
+        let (code, root, _) = call(&["--after", step.trim(), "--plan", "Goal", "memo"], &env, "");
+        assert_eq!(code, 0);
+        let entries = scan(dir.path(), std::time::SystemTime::now()).unwrap();
+        let goal = entries.iter().find(|e| e.id.as_deref() == Some(root.trim())).unwrap();
+        assert!(goal.plan && goal.after == vec![step.trim().to_string()]);
+        assert!(!entries.iter().find(|e| e.title == "Step").unwrap().plan);
+        // 제목 뒤의 --plan은 본문 글자다.
+        assert_eq!(call(&["Title", "--plan"], &env, "").0, 0);
+        let entries = scan(dir.path(), std::time::SystemTime::now()).unwrap();
+        assert!(!entries.iter().find(|e| e.title == "Title").unwrap().plan);
+    }
+
+    #[test]
     fn list_shows_open_tasks_with_names_and_blocked_prerequisites() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("profiles.json"), r#"{"agents":[{"id":"a1","name":"하나"}]}"#).unwrap();
@@ -680,13 +716,13 @@ mod tests {
             {"id":"w1","title":"Design","body":"","status":"todo","order":0,"assigneeAgentId":"a1"},
             {"id":"w2","title":"","body":"Build   the\nthing","status":"todo","order":1,"dependsOn":["w1"]},
             {"id":"w0","title":"Old","body":"","status":"done","order":0},
-            {"id":"w3","title":"Ship","body":"","status":"review","order":0,"dependsOn":["w0"]}
+            {"id":"w3","title":"Ship","body":"","status":"review","order":0,"dependsOn":["w0"],"plan":true}
         ]"#).unwrap();
         let env = TaskEnv { work_inbox: Some(dir.path().join("work-inbox")), app_data: None, agent_id: None };
         assert_eq!(call(&["Pending"], &env, "").0, 0);
         let (code, out, _) = call(&["--list"], &env, "");
         assert_eq!(code, 0);
-        assert_eq!(out, "w3  [review]  @unassigned  Ship  after: w0\nw1  [todo]  @하나  Design\nw2  [todo]  @unassigned  Build the thing  after: w1 (blocked)\n(1 inbox request(s) are not applied to the board yet)\n");
+        assert_eq!(out, "w3  [review]  @unassigned  Ship  (plan root)  after: w0\nw1  [todo]  @하나  Design\nw2  [todo]  @unassigned  Build the thing  after: w1 (blocked)\n(1 inbox request(s) are not applied to the board yet)\n");
         assert!(call(&["--list", "--all"], &env, "").1.contains("w0  [done]"));
         assert_eq!(call(&["--list", "x"], &env, "").0, 2);
         let empty = tempfile::tempdir().unwrap();
@@ -791,18 +827,25 @@ mod tests {
         let edit = requests(dir.path()).remove(0).edit.unwrap();
         assert_eq!(edit, crate::persistence::work_inbox::Edit {
             id: "w1".into(), title: Some("New title".into()), body: Some("# heading\n  kept".into()), assignee: Some("하나".into()),
-            after: None, add_after: vec!["w3".into()], remove_after: vec!["w0".into()], status: Some("review".into()),
+            after: None, add_after: vec!["w3".into()], remove_after: vec!["w0".into()], status: Some("review".into()), plan: None,
         });
         std::fs::remove_dir_all(dir.path().join("work-inbox")).unwrap();
         assert_eq!(call(&["--edit", "w1", "--unassigned", "--no-after"], &env, "").0, 0);
         let edit = requests(dir.path()).remove(0).edit.unwrap();
         assert_eq!((edit.assignee.as_deref(), edit.after, edit.title, edit.body), (Some(""), Some(vec![]), None, None));
         std::fs::remove_dir_all(dir.path().join("work-inbox")).unwrap();
+        assert_eq!(call(&["--edit", "w1", "--plan"], &env, "").0, 0);
+        assert_eq!(requests(dir.path()).remove(0).edit.unwrap().plan, Some(true));
+        std::fs::remove_dir_all(dir.path().join("work-inbox")).unwrap();
+        assert_eq!(call(&["--edit", "w1", "--no-plan"], &env, "").0, 0);
+        assert_eq!(requests(dir.path()).remove(0).edit.unwrap().plan, Some(false));
+        std::fs::remove_dir_all(dir.path().join("work-inbox")).unwrap();
         // 잘못된 요청은 아무것도 쓰지 않는다.
         for (args, code) in [
             (vec!["--edit", "w1"], 2), (vec!["--edit"], 2), (vec!["--edit", "w1", "--status", "later"], 2),
             (vec!["--edit", "w1", "--after", "w0", "--no-after"], 2), (vec!["--edit", "w1", "--after", "w0", "--add-after", "w3"], 2),
             (vec!["--edit", "w1", "--after", "w1"], 2), (vec!["--edit", "w1", "--bogus"], 2), (vec!["--edit", "w1", "--to", " "], 2),
+            (vec!["--edit", "w1", "--plan", "--no-plan"], 2),
             (vec!["--edit", "nope", "--title", "x"], 1), (vec!["--edit", "w3", "--body", ""], 1), (vec!["--edit", "w1", "--title", "a\u{1b}b"], 1),
         ] {
             assert_eq!(call(&args, &env, "").0, code, "{args:?}");
@@ -819,11 +862,12 @@ mod tests {
         let (_dir, env) = board(r#"[
             {"id":"w1","title":"A","body":"line 1\n\tline 2\u001b[8m","status":"todo","order":0,"assigneeAgentId":"a1","dependsOn":["w0","gone"]},
             {"id":"w0","title":"Z","body":"","status":"done","order":0},
-            {"id":"w2","title":"B","body":"","status":"todo","order":1,"dependsOn":["w1"]}
+            {"id":"w2","title":"B","body":"","status":"todo","order":1,"dependsOn":["w1"],"plan":true}
         ]"#);
         let (code, out, _) = call(&["--show", "w1"], &env, "");
         assert_eq!(code, 0);
         assert_eq!(out, "id: w1\nstatus: todo\nassignee: 하나 (a1)\ntitle: A\nafter: w0 [done], gone [deleted]\nwaited on by: w2\n\nline 1\n\tline 2\\x1b[8m\n");
+        assert!(call(&["--show", "w2"], &env, "").1.contains("after: w1 [todo]\nplan root: yes"));
         assert_eq!(call(&["--show", "w0"], &env, "").1, "id: w0\nstatus: done\nassignee: unassigned\ntitle: Z\nwaited on by: w1\n");
         assert_eq!(call(&["--show", "nope"], &env, "").0, 1);
         let (_, pending, _) = call(&["Fresh"], &env, "");

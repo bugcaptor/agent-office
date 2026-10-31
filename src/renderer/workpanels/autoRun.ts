@@ -1,5 +1,6 @@
 // 자동 진행 루프. 루트 업무가 기다리는 선행 작업을 진행자 한 명이
-// 차례로 진행한다. 태스크마다 새 세션으로 보내고, 턴이 끝나면 판단자(claude -p 이어지는
+// 차례로 진행한다. 플랜 루트(`plan`)는 플랜 메모라 실행하지 않고, 아닌 루트는 마지막 단계로 진행한다.
+// 태스크마다 새 세션으로 보내고, 턴이 끝나면 판단자(claude -p 이어지는
 // 세션)에게 next·followup·stop 중 하나를 받아 적용한다. 루프와 상태는 여기만 쥔다.
 import type { AgentProfile, AutoRun, AutoRunJudgeResult, AutoRunLogEntry, AutoRunPauseReason, WorkItem } from "@shared/types";
 import { t } from "../i18n";
@@ -45,6 +46,15 @@ export function planItems(root: WorkItem, items: WorkItem[]): WorkItem[] {
   return ordered;
 }
 
+/**
+ * 자동 진행이 차례로 보낼 태스크. 플랜 루트(메모 전용)는 선행 작업만, 아닌 루트는 선행 작업 뒤에
+ * 루트 자신까지 넣는다. 루트에 적힌 작업이 실행되지 않은 채 검토 대기로 남지 않게 한다.
+ */
+export function runSteps(root: WorkItem, items: WorkItem[]): WorkItem[] {
+  const plan = planItems(root, items);
+  return root.plan || !plan.length ? plan : [...plan, root];
+}
+
 /** 진행자를 붙잡고 있는 다른 루트(끝나지 않은 자동 진행). 시작 차단 문구에서 이름과 열기로 보여 준다. */
 export function busyRunRoot(root: WorkItem, items: WorkItem[]): WorkItem | undefined {
   return items.find((item) => item.id !== root.id && item.autoRun && item.autoRun.state !== "finished" && item.assigneeAgentId === root.assigneeAgentId);
@@ -54,8 +64,10 @@ export function busyRunRoot(root: WorkItem, items: WorkItem[]): WorkItem | undef
 export function startBlockedReason(root: WorkItem, items: WorkItem[], agents: Readonly<Record<string, AgentProfile>>, observerEnabled: boolean): string | undefined {
   if (root.status === "done") return "auto-run-root-done";
   if (!root.assigneeAgentId || !agents[root.assigneeAgentId]) return "auto-run-no-assignee";
-  const open = planItems(root, items).filter((item) => item.status !== "done");
+  const open = runSteps(root, items).filter((item) => item.status !== "done");
   if (!open.length) return "auto-run-no-plan";
+  // 루트만 남았는데 진행 중·검토 대기면 보낼 수 없다. 다시 진행하려면 할 일로 되돌린다.
+  if (open.length === 1 && open[0].id === root.id && root.status !== "todo") return "auto-run-root-busy";
   // 진행자 한 명은 끝나지 않은 실행을 하나만 가진다. 멈춘 실행의 현재 태스크와 섞이지 않게 한다.
   if (busyRunRoot(root, items)) return "auto-run-runner-busy";
   const profile = workSendDisabledReason(agents[root.assigneeAgentId]);
@@ -83,7 +95,9 @@ export function workerContext(root: WorkItem, plan: WorkItem[], task: WorkItem, 
     "---",
     t("workpanels:autoRun.worker.intro", { plan: workItemTitle(root), index: plan.findIndex((item) => item.id === task.id) + 1, total: plan.length }),
   ];
-  if (root.body.trim()) parts.push(`${t("workpanels:autoRun.worker.memo")}\n${clip(root.body.trim(), MAX_MEMO_CHARS)}`);
+  // 루트를 진행할 때는 루트 본문이 곧 태스크 본문이라 메모로 다시 붙이지 않는다.
+  if (task.id === root.id) parts.push(t("workpanels:autoRun.worker.rootLast"));
+  else if (root.body.trim()) parts.push(`${t("workpanels:autoRun.worker.memo")}\n${clip(root.body.trim(), MAX_MEMO_CHARS)}`);
   if (notes.length) parts.push(`${t("workpanels:autoRun.worker.notes")}\n${notes.join("\n")}`);
   parts.push(t("workpanels:autoRun.worker.report", { id: task.id }));
   return parts.join("\n\n");
@@ -234,9 +248,11 @@ async function pickAndSend(rootId: string): Promise<void> {
   const root = find(rootId)!;
   const runner = root.assigneeAgentId!;
   const all = items();
-  const plan = planItems(root, all);
+  const plan = runSteps(root, all);
   const open = plan.filter((item) => item.status !== "done");
-  if (!open.length) {
+  // 플랜 루트가 아니면 이번 실행에서 루트까지 받아들여야 끝난다.
+  const rootRan = !root.plan && find(rootId)!.autoRun!.log.some((entry) => entry.kind === "next" && entry.taskId === rootId);
+  if (!open.length || rootRan) {
     update(rootId, (run) => withLog({ ...run, state: "finished", currentId: undefined, followUps: 0, sentAt: undefined }, { kind: "finish" }));
     if (root.status !== "done" && root.status !== "review") useWorkItemStore.getState().edit(rootId, { status: "review" });
     return;
@@ -275,7 +291,7 @@ async function judge(rootId: string, current: WorkItem): Promise<void> {
   const reply = await tauriApi.workLastReply(runner, cli, cwd).catch((error: unknown) => { console.warn("auto-run: reply read failed", error); return null; });
   // 이번 턴을 보낸 뒤에 쓰인 보고만 읽는다. 지난 턴의 보고가 새 턴의 증거로 쓰이지 않게 한다.
   const report = await tauriApi.autoRunReport(current.id, run.sentAt ?? 0).catch((error: unknown) => { console.warn("auto-run: report read failed", error); return null; });
-  const plan = planItems(root, items());
+  const plan = runSteps(root, items());
   const memoHash = hash(root.body.trim());
   const prompt = judgePrompt({ root, plan, task: current, followUps: run.followUps, reply, report, first: !run.judgeStarted, memoChanged: run.judgedBodyHash !== memoHash });
   const model = root.agent?.cli === "claude" ? root.agent.model : undefined;
@@ -295,6 +311,8 @@ async function judge(rootId: string, current: WorkItem): Promise<void> {
   if (!latest || latest.currentId !== current.id) return;
   if (result.decision === "next") {
     update(rootId, (r) => withLog({ ...r, currentId: undefined, followUps: 0, sentAt: undefined }, { kind: "next", taskId: current.id, text: result.note }));
+    // 루트 자신은 완료로 바꾸지 않는다(완료면 실행이 루트 완료로 끝난다). 검토 대기로 두고 실행을 마친다.
+    if (current.id === rootId) return pickAndSend(rootId);
     useWorkItemStore.getState().edit(current.id, { status: "done" });
     return pickAndSend(rootId);
   }

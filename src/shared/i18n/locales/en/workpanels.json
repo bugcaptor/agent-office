@@ -108,7 +108,8 @@
     "effortInvalid": "This CLI does not support the selected effort.",
     "modelCatalog": "The requested agy model is not in its live model catalog.",
     "blocked": "Finish all prerequisites before sending.",
-    "autoRunActive": "This character is running an auto run. Pause it before sending."
+    "autoRunActive": "This character is running an auto run. Pause it before sending.",
+    "planRoot": "A plan root is not sent. Use auto-run to run the tasks it waits on."
   },
   "resumeNewWork": "Resume new task",
   "add": "Add",
@@ -130,12 +131,17 @@
   "noDependencies": "No prerequisites",
   "addDependency": "Add prerequisite…",
   "noDependencyCandidates": "No tasks to add",
+  "planRoot": "Plan root (plan memo only)",
+  "planRootOn": "Auto-run does not run this task; it runs only the tasks this one waits on. Put all the work in those tasks.",
+  "planRootOff": "Auto-run runs this task as the last step after the tasks it waits on.",
   "blockedBy": "Waiting on: {{titles}}",
   "dependents_one": "{{count}} task waiting on this",
   "dependents_other": "{{count}} tasks waiting on this",
   "plan": {
     "chip": "Plan",
-    "toggle": "Show or hide plan tasks"
+    "toggle": "Show or hide plan tasks",
+    "rootRuns": "root has work",
+    "rootRunsHint": "Not a plan root, so auto-run also runs this task as the last step."
   },
   "newWorkTitle": "New task",
   "transfer": {
@@ -189,7 +195,7 @@
     "running": "Working on: {{title}}",
     "followUps": "follow-ups {{count}}/{{max}}",
     "preparing": "Preparing the next task…",
-    "finished": "All tasks in the plan are done. The root task moved to Review.",
+    "finished": "All steps of the plan are done. The root is a plan memo with no work left; it moved to Review.",
     "finishedByRoot": "The root task was marked done, so the auto run ended.",
     "start": "Start auto run",
     "openBusy": "Open that plan",
@@ -228,14 +234,17 @@
       "auto-run-no-plan": "No prerequisites are left.",
       "auto-run-observer-off": "Turn on Agent observation in Settings. The run needs hooks to know when a turn ends.",
       "auto-run-foreign-task": "A prerequisite is assigned to another character. Assign it to this character or leave it unassigned.",
-      "auto-run-runner-busy": "This character has another auto run that is not finished: \"{{title}}\". End it first."
+      "auto-run-runner-busy": "This character has another auto run that is not finished: \"{{title}}\". End it first.",
+      "auto-run-root-busy": "Only the root task is left, and it is In progress or in Review. Move it back to To do to run it again."
     },
     "worker": {
       "intro": "[Auto run] This task is {{index}}/{{total}} of the plan \"{{plan}}\". It starts in a fresh session, so use the context below.",
       "memo": "Plan notes:",
       "notes": "Hand-off notes from earlier tasks:",
-      "report": "Do only this task. Nobody is watching: when your turn ends, a judge reads your report and decides the next step.\n- Make reversible choices (names, structure, small scope calls) yourself, following the plan notes and the task, and list them under decisions. Do not stop to ask about them.\n- Do things that are hard to undo or leave the machine (push, deploy, deleting data, publishing) only when the plan notes or the task say so. If one is needed and not allowed, write status: blocked and stop.\n- Before your turn ends, leave a report with the office-task command from the Agent Office task board instructions (without them, the path in the AGENT_OFFICE_TASK environment variable). Writing it again replaces it.\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: what you changed\nverified: checks you ran and their results\ndecisions: choices you made yourself\nneeds_human: (only when blocked) the one thing a human must decide, with the options\nEOF\n\nPut the same points briefly in your last reply, and do not end with offers or questions such as \"Want me to…?\""
-    }
+      "report": "Do only this task. Nobody is watching: when your turn ends, a judge reads your report and decides the next step.\n- Make reversible choices (names, structure, small scope calls) yourself, following the plan notes and the task, and list them under decisions. Do not stop to ask about them.\n- Do things that are hard to undo or leave the machine (push, deploy, deleting data, publishing) only when the plan notes or the task say so. If one is needed and not allowed, write status: blocked and stop.\n- Before your turn ends, leave a report with the office-task command from the Agent Office task board instructions (without them, the path in the AGENT_OFFICE_TASK environment variable). Writing it again replaces it.\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: what you changed\nverified: checks you ran and their results\ndecisions: choices you made yourself\nneeds_human: (only when blocked) the one thing a human must decide, with the options\nEOF\n\nPut the same points briefly in your last reply, and do not end with offers or questions such as \"Want me to…?\"",
+      "rootLast": "This task is the last step of the plan (its root). All earlier steps are done."
+    },
+    "finishedWithRoot": "The prerequisite tasks and the root task itself are done. The root moved to Review."
   },
   "taskChat": {
     "open": "Chat",

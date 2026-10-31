@@ -6,7 +6,7 @@ import { useWorkItemStore } from "./workItemStore";
 import { workItemTitle } from "./workItemDraft";
 import { sendErrorText } from "./sendErrorText";
 import { TaskChatButton, useTaskChatButton } from "./TaskChatButton";
-import { busyRunRoot, endAutoRun, MAX_FOLLOW_UPS, pauseAutoRun, planItems, resumeAutoRun, startAutoRun, startBlockedReason } from "./autoRun";
+import { busyRunRoot, endAutoRun, MAX_FOLLOW_UPS, pauseAutoRun, planItems, resumeAutoRun, runSteps, startAutoRun, startBlockedReason } from "./autoRun";
 
 /** 시작 차단·일시정지 상세 코드를 화면 문장으로. 자동 진행 코드가 아니면 보내기 오류 문구를 쓴다. */
 export function codeText(t: (key: string, options?: Record<string, unknown>) => string, code: string, options?: Record<string, unknown>): string {
@@ -50,8 +50,8 @@ export function AutoRunSection({ root }: { root: WorkItem }) {
   const run = root.autoRun;
   // 일시정지 사유를 읽고 바로 묻는 흐름. 대화가 열리면 루트 팝업을 닫는다.
   const chat = useTaskChatButton(run?.currentId, () => { if (useWorkItemStore.getState().selectedId === root.id) select(null); });
-  const plan = planItems(root, items);
-  if (!run && !plan.length) return null;
+  if (!run && !planItems(root, items).length) return null;
+  const plan = runSteps(root, items);
   const titles = new Map(items.map((item) => [item.id, workItemTitle(item)]));
   const done = plan.filter((item) => item.status === "done").length;
   const runner = root.assigneeAgentId ? agents[root.assigneeAgentId]?.name : undefined;
@@ -66,7 +66,7 @@ export function AutoRunSection({ root }: { root: WorkItem }) {
       ? <>{t("autoRun.running", { title: workItemTitle(current) })} <small>{t("autoRun.followUps", { count: run.followUps, max: MAX_FOLLOW_UPS })}</small></>
       : t("autoRun.preparing")}</p>}
     {paused && <div role="status" className="work-auto-run-paused"><p>{paused.reason}</p>{paused.detail && <p className="work-auto-run-text">{paused.detail}</p>}</div>}
-    {run?.state === "finished" && <p>{t(run.log[run.log.length - 1]?.kind === "root-done" ? "autoRun.finishedByRoot" : "autoRun.finished")}</p>}
+    {run?.state === "finished" && <p>{t(run.log[run.log.length - 1]?.kind === "root-done" ? "autoRun.finishedByRoot" : root.plan ? "autoRun.finished" : "autoRun.finishedWithRoot")}</p>}
     <p className="work-muted">{t("autoRun.progress", { done, total: plan.length })}
       {run && costEnabled && run.costUsd > 0 && <> · {t("autoRun.cost", { cost: formatUsd(run.costUsd) })}</>}</p>
     <div className="work-dialog-actions">

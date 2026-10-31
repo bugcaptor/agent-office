@@ -1710,6 +1710,8 @@ pub struct WorkItem {
     #[serde(default, skip_serializing_if = "Option::is_none")] pub last_error: Option<String>,
     /// 선행 업무 id. 모두 완료돼야 이 업무를 보낼 수 있다.
     #[serde(default, skip_serializing_if = "Vec::is_empty")] pub depends_on: Vec<String>,
+    /// 플랜 루트(플랜 메모 전용). 자동 진행은 이 업무를 실행하지 않고 기다리는 업무만 진행한다.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")] pub plan: bool,
     /// 자동 진행 상태. 렌더러가 소유하고 네이티브는 보존만 한다.
     #[serde(default, skip_serializing_if = "Option::is_none")] pub auto_run: Option<serde_json::Value>,
     pub created_at: u64,

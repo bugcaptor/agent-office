@@ -18,6 +18,8 @@ export interface WorkItem {
   lastError?: string;
   /** 선행 업무 id. 모두 완료돼야 보낼 수 있다. 비면 생략한다. */
   dependsOn?: string[];
+  /** 플랜 루트(플랜 메모 전용). 자동 진행은 이 업무를 실행하지 않는다. 아니면 생략한다. */
+  plan?: boolean;
   /** 자동 진행 상태. 이 업무를 루트로 시작했을 때만 있다. */
   autoRun?: AutoRun;
   createdAt: number;
@@ -146,6 +148,8 @@ export interface InboxEntry {
   id?: string;
   /** 선행 업무 id. */
   after?: string[];
+  /** 플랜 루트(`office-task --plan`). */
+  plan?: boolean;
   /** 완료 요청 파일이면 완료로 바꿀 업무 id. 이때 제목·본문은 쓰지 않는다. */
   done?: string[];
   /** 삭제 요청 파일이면 지울 업무 id. */
@@ -165,4 +169,6 @@ export interface InboxEdit {
   addAfter?: string[];
   removeAfter?: string[];
   status?: WorkStatus;
+  /** 플랜 루트 표시를 켜거나 끈다. */
+  plan?: boolean;
 }

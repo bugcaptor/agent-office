@@ -108,7 +108,8 @@
     "effortInvalid": "此 CLI 不支援所選推理強度。",
     "modelCatalog": "所選 agy 模型不在目前模型清單中。",
     "blocked": "請先完成所有前置任務再傳送。",
-    "autoRunActive": "此角色正在自動推進中。請先暫停再傳送。"
+    "autoRunActive": "此角色正在自動推進中。請先暫停再傳送。",
+    "planRoot": "計畫根不會傳送。請用自動執行來執行它等待的任務。"
   },
   "resumeNewWork": "繼續編寫新任務",
   "add": "新增",
@@ -130,12 +131,17 @@
   "noDependencies": "無前置任務",
   "addDependency": "新增前置任務…",
   "noDependencyCandidates": "沒有可新增的任務",
+  "planRoot": "計畫根（僅計畫備忘）",
+  "planRootOn": "自動執行不會執行此任務，只執行它等待的任務。請把所有工作放在這些任務裡。",
+  "planRootOff": "自動執行會在它等待的任務之後，把此任務也作為最後一步執行。",
   "blockedBy": "等待前置任務：{{titles}}",
   "dependents_one": "{{count}} 個後續任務在等待",
   "dependents_other": "{{count}} 個後續任務在等待",
   "plan": {
     "chip": "計畫",
-    "toggle": "展開或收合計畫任務"
+    "toggle": "展開或收合計畫任務",
+    "rootRuns": "根含工作",
+    "rootRunsHint": "不是計畫根，自動執行會把此任務也作為最後一步執行。"
   },
   "newWorkTitle": "新任務",
   "transfer": {
@@ -189,7 +195,7 @@
     "running": "進行中：{{title}}",
     "followUps": "追加指令 {{count}}/{{max}}",
     "preparing": "正在準備下一個任務…",
-    "finished": "計畫中的任務已全部完成。根任務已移至待審核。",
+    "finished": "計畫的步驟已全部完成。根是計畫備忘，沒有剩餘工作，已移到待審核。",
     "finishedByRoot": "根任務已標記為完成，自動推進已結束。",
     "start": "開始自動推進",
     "openBusy": "開啟該計畫",
@@ -228,14 +234,17 @@
       "auto-run-no-plan": "沒有剩餘的前置任務。",
       "auto-run-observer-off": "請在設定中開啟代理觀察。需要透過掛鉤得知每輪何時結束。",
       "auto-run-foreign-task": "有前置任務指派給其他角色。請將其指派給推進角色或改為未指派。",
-      "auto-run-runner-busy": "此角色還有另一個尚未結束的自動推進「{{title}}」。請先結束它。"
+      "auto-run-runner-busy": "此角色還有另一個尚未結束的自動推進「{{title}}」。請先結束它。",
+      "auto-run-root-busy": "只剩根任務，但它正在進行或待審核。要再次執行，請把它改回待辦。"
     },
     "worker": {
       "intro": "[自動推進] 此任務是計畫「{{plan}}」的第 {{index}}/{{total}} 個。它在新的工作階段中開始，請參考以下脈絡。",
       "memo": "計畫備註：",
       "notes": "前面任務的交接備註：",
-      "report": "只做這個任務。沒有人在看：回合結束後，評審會讀你的報告並決定下一步。\n- 可復原的選擇(命名、結構、小範圍判斷)請依計畫備註和任務自行決定，並寫在報告的 decisions 裡。不要為此提問並停下。\n- 推送、部署、刪除資料、對外發布等難以復原或離開本機的操作，只在計畫備註或任務要求時才做。如果必須做卻沒有許可，請把 status 寫成 blocked 並停下。\n- 結束回合前，用 Agent Office 任務看板說明中的 office-task 命令(沒有說明時用環境變數 AGENT_OFFICE_TASK 的路徑)留下報告。重寫會覆蓋。\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: 改了什麼\nverified: 執行的檢查命令和結果\ndecisions: 自己做的決定\nneeds_human: (僅 blocked 時)需要由人決定的一件事和選項\nEOF\n\n最後的回覆裡也簡短寫同樣的內容，不要以「需要的話我可以……嗎？」這類提議或提問結尾。"
-    }
+      "report": "只做這個任務。沒有人在看：回合結束後，評審會讀你的報告並決定下一步。\n- 可復原的選擇(命名、結構、小範圍判斷)請依計畫備註和任務自行決定，並寫在報告的 decisions 裡。不要為此提問並停下。\n- 推送、部署、刪除資料、對外發布等難以復原或離開本機的操作，只在計畫備註或任務要求時才做。如果必須做卻沒有許可，請把 status 寫成 blocked 並停下。\n- 結束回合前，用 Agent Office 任務看板說明中的 office-task 命令(沒有說明時用環境變數 AGENT_OFFICE_TASK 的路徑)留下報告。重寫會覆蓋。\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: 改了什麼\nverified: 執行的檢查命令和結果\ndecisions: 自己做的決定\nneeds_human: (僅 blocked 時)需要由人決定的一件事和選項\nEOF\n\n最後的回覆裡也簡短寫同樣的內容，不要以「需要的話我可以……嗎？」這類提議或提問結尾。",
+      "rootLast": "此任務是計畫的最後一步（根）。前面的步驟都已完成。"
+    },
+    "finishedWithRoot": "前置任務和根任務本身都已完成。根已移到待審核。"
   },
   "taskChat": {
     "open": "對話",

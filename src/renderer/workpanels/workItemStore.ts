@@ -11,7 +11,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let saving: Promise<void> | undefined;
 let loading: Promise<void> | undefined;
 let revision = 0;
-export type InboxImport = Pick<WorkItem, "id" | "title" | "body" | "assigneeAgentId" | "dependsOn">;
+export type InboxImport = Pick<WorkItem, "id" | "title" | "body" | "assigneeAgentId" | "dependsOn" | "plan">;
 /**
  * 수신함 업무 하나의 처리 결과.
  * - added: 새로 넣음. `dropped`는 버린 선행 작업.
@@ -24,7 +24,7 @@ export type InboxImportResult = { kind: "added"; dropped: DroppedDependency[] } 
 export type InboxRequest =
   | { kind: "done"; ids: string[] }
   | { kind: "delete"; ids: string[] }
-  | { kind: "edit"; id: string; patch: Partial<Pick<WorkItem, "title" | "body" | "status">> & { assigneeAgentId?: string | null; dependsOn?: string[]; addDependsOn?: string[]; removeDependsOn?: string[] } };
+  | { kind: "edit"; id: string; patch: Partial<Pick<WorkItem, "title" | "body" | "status" | "plan">> & { assigneeAgentId?: string | null; dependsOn?: string[]; addDependsOn?: string[]; removeDependsOn?: string[] } };
 /**
  * 변경 요청 하나의 결과. `unknown`이 있거나 `empty`면 반영하지 않았다.
  * `dropped`는 수정에서 요청했지만 버린 선행 작업이다.
@@ -48,7 +48,7 @@ interface WorkItemState {
    * 로드 전·오류 중에는 빈 배열.
    */
   applyInbox(requests: InboxRequest[]): InboxRequestResult[];
-  edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status" | "dependsOn">>): void;
+  edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status" | "dependsOn" | "plan">>): void;
   recordSend(id: string, result: { sessionId?: string; error?: string }): void;
   /** 루트 업무의 자동 진행 상태를 바꾸거나(undefined면) 지운다. */
   setAutoRun(id: string, autoRun: AutoRun | undefined): void;
@@ -111,7 +111,7 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     const id = nanoid();
     const order = Math.max(-1, ...get().items.filter((i) => i.status === draft.status).map((i) => i.order)) + 1;
     const dependsOn = normalizeDependsOn(id, draft.dependsOn, get().items);
-    set({ items: [...get().items, { ...draft, id, title: draft.title.trim(), dependsOn, order, sessionIds: [], createdAt: at, updatedAt: at }], dirty: true, selectedId: id });
+    set({ items: [...get().items, { ...draft, id, title: draft.title.trim(), dependsOn, plan: draft.plan || undefined, order, sessionIds: [], createdAt: at, updatedAt: at }], dirty: true, selectedId: id });
     changed();
     return id;
   },
@@ -201,6 +201,7 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
       if (patch.body !== undefined) next.body = patch.body;
       if (patch.assigneeAgentId !== undefined) next.assigneeAgentId = patch.assigneeAgentId ?? undefined;
       if (patch.status && patch.status !== item.status) { next.status = patch.status; next.order = nextOrder(patch.status); }
+      if (patch.plan !== undefined) next.plan = patch.plan || undefined;
       if (!hasWorkContent(next)) return { unknown, empty: true, dropped: [] };
       let dropped: DroppedDependency[] = [];
       if (patch.dependsOn || patch.addDependsOn?.length || patch.removeDependsOn?.length) {
@@ -223,6 +224,8 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     if (!item || !hasWorkContent({ ...item, ...patch })) return;
     if (patch.title !== undefined) patch = { ...patch, title: patch.title.trim() };
     if ("dependsOn" in patch) patch = { ...patch, dependsOn: normalizeDependsOn(id, patch.dependsOn, get().items) };
+    // 플랜 루트 표시는 켜졌을 때만 저장한다.
+    if ("plan" in patch) patch = { ...patch, plan: patch.plan || undefined };
     const order = patch.status && patch.status !== item.status
       ? Math.max(-1, ...get().items.filter((i) => i.status === patch.status).map((i) => i.order)) + 1 : item.order;
     const at = Date.now();

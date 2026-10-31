@@ -58,6 +58,8 @@
 .work-dependencies li small { display: inline; margin: 0 0 0 4px; }
 .work-dependencies li .pixel-btn { flex: none; width: 28px; height: 28px; min-height: 0; padding: 0; }
 .work-dependencies p { margin: 4px 0; }
+.work-detail-dialog label.work-plan-root-toggle { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; }
+.work-plan-root-toggle + .work-muted { margin: 2px 0 6px; }
 
 .work-card.selected { border-color: var(--accent); }
 .work-detail-dialog { width: min(560px, 92vw); color: var(--text); font-size: 13px; overflow-wrap: anywhere; }

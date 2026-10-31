@@ -253,9 +253,36 @@ it("플랜 안에서도 아직 못 하는 업무만 대기 줄을 보이고, 접
   expect(within(document.getElementById(`work-item-${first}`)!).queryByText(/선행 작업 대기/)).toBeNull();
   expect(within(document.getElementById(`work-item-${second}`)!).getByText("선행 작업 대기: First")).toBeTruthy();
   expect(screen.queryByText(/후속 작업 \d+개가 기다림/)).toBeNull();
+  // 플랜 루트가 아니면 루트도 마지막 단계로 센다.
+  expect(within(document.getElementById(`work-item-${root}`)!).getByText("0/3 완료")).toBeTruthy();
+  expect(within(document.getElementById(`work-item-${root}`)!).getByText("루트 작업 포함")).toBeTruthy();
+  act(() => store.edit(root, { plan: true }));
   expect(within(document.getElementById(`work-item-${root}`)!).getByText("0/2 완료")).toBeTruthy();
+  expect(within(document.getElementById(`work-item-${root}`)!).queryByText("루트 작업 포함")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "플랜 태스크 펼치기·접기" }));
   expect(document.getElementById(`work-item-${first}`)).toBeNull();
+});
+
+it("기다리는 태스크가 있으면 플랜 루트로 표시할 수 있고, 플랜 루트는 보내지 않는다", async () => {
+  useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true }, agents: {
+    a: { id: "a", name: "Ada", role: "dev", seed: "s", createdAt: 1, deskIndex: 0 },
+  } });
+  useWorkItemStore.setState({ loaded: true });
+  const store = useWorkItemStore.getState();
+  const step = store.add("Step")!; const root = store.add("Goal")!;
+  store.edit(root, { assigneeAgentId: "a", dependsOn: [step], status: "todo" });
+  store.edit(step, { status: "done" });
+  store.select(step);
+  render(<UIChrome />);
+  // 기다리는 태스크가 없으면 표시를 보이지 않는다.
+  expect(screen.queryByLabelText("플랜 루트 (플랜 메모 전용)")).toBeNull();
+  act(() => useWorkItemStore.getState().select(root));
+  expect(screen.getByText("자동 진행은 기다리는 태스크를 마친 뒤 이 태스크도 마지막 단계로 실행합니다.")).toBeTruthy();
+  fireEvent.click(screen.getByLabelText("플랜 루트 (플랜 메모 전용)"));
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  expect(useWorkItemStore.getState().items.find((i) => i.id === root)?.plan).toBe(true);
+  expect(screen.getByText("플랜 루트는 보내지 않습니다. 자동 진행으로 선행 태스크를 진행하세요.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "보내기" }).hasAttribute("disabled")).toBe(true);
 });
 
 it("완료로 표시는 상태만 즉시 저장하고 나머지 초안은 남긴다", async () => {

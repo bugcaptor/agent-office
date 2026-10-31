@@ -16,7 +16,7 @@ import { useAppStore } from "../../store/appStore";
 import { useWorkItemStore } from "../workItemStore";
 import { requestWorkSend, settleWorkSends, useWorkSendStore } from "../workSendStore";
 import { useWorkMonitorStore } from "../workMonitor";
-import { busyRunRoot, installAutoRun, isAutoRunStepping, judgePrompt, pauseAutoRun, planItems, resumeAutoRun, startAutoRun, startBlockedReason } from "../autoRun";
+import { busyRunRoot, installAutoRun, isAutoRunStepping, judgePrompt, pauseAutoRun, planItems, resumeAutoRun, runSteps, startAutoRun, startBlockedReason } from "../autoRun";
 
 const initialApp = useAppStore.getState(); const initialWork = useWorkItemStore.getState();
 const profile: AgentProfile = { id: "a", name: "Ada", role: "dev", seed: "s", createdAt: 1, deskIndex: 0, cwd: "/work" };
@@ -31,10 +31,10 @@ function task(title: string, patch: Partial<WorkItem> = {}): string {
   return id;
 }
 function get(id: string): WorkItem { return useWorkItemStore.getState().items.find((i) => i.id === id)!; }
-/** 루트 R ← B ← A. 진행자는 a. */
-function plan() {
+/** 루트 R ← B ← A. 진행자는 a. 기본은 플랜 루트(메모 전용)다. */
+function plan(planRoot = true) {
   const a = task("Schema"); const b = task("API", { dependsOn: [a] });
-  const root = task("Ship feature", { assigneeAgentId: "a", dependsOn: [b] });
+  const root = task("Ship feature", { assigneeAgentId: "a", dependsOn: [b], plan: planRoot });
   useWorkItemStore.getState().edit(root, { body: "Use Postgres." });
   return { a, b, root };
 }
@@ -83,6 +83,21 @@ describe("자동 진행 계획", () => {
     expect(startBlockedReason(get(root), items(), agents, true)).toBe("auto-run-foreign-task");
     useWorkItemStore.getState().edit(a, { status: "done" }); useWorkItemStore.getState().edit(b, { status: "done" });
     expect(startBlockedReason(get(root), items(), agents, true)).toBe("auto-run-no-plan");
+    // 플랜 루트가 아니면 루트 자신이 남은 단계다. 진행 중·검토 대기면 보낼 수 없다.
+    useWorkItemStore.getState().edit(root, { plan: false });
+    expect(startBlockedReason(get(root), items(), agents, true)).toBeUndefined();
+    useWorkItemStore.getState().edit(root, { status: "review" });
+    expect(startBlockedReason(get(root), items(), agents, true)).toBe("auto-run-root-busy");
+  });
+  it("플랜 루트는 단계만, 아닌 루트는 단계 뒤에 루트 자신까지 진행 순서에 넣는다", () => {
+    const { a, b, root } = plan();
+    const items = () => useWorkItemStore.getState().items;
+    expect(runSteps(get(root), items()).map((i) => i.id)).toEqual([a, b]);
+    useWorkItemStore.getState().edit(root, { plan: false });
+    expect(get(root).plan).toBeUndefined();
+    expect(runSteps(get(root), items()).map((i) => i.id)).toEqual([a, b, root]);
+    // 기다리는 업무가 없으면 플랜이 아니다.
+    expect(runSteps(get(a), items())).toEqual([]);
   });
   it("판단자 첫 호출에만 규칙과 플랜을 넣고, 메모가 바뀌면 새 메모를 덧붙인다", () => {
     const { a, root } = plan();
@@ -143,6 +158,34 @@ describe("자동 진행 루프", () => {
     expect(get(root).status).toBe("review");
     expect(get(root).autoRun!.costUsd).toBeCloseTo(0.04);
     expect(get(root).autoRun!.log.map((e) => e.kind)).toEqual(["start", "send", "next", "send", "followup", "pause", "resume", "next", "finish"]);
+    // 플랜 루트 자체는 보내지 않는다.
+    expect(api.sendWorkItem).toHaveBeenCalledTimes(2);
+  });
+
+  it("플랜 루트가 아니면 단계를 마친 뒤 루트도 마지막 단계로 보내고, 받아들이면 검토 대기로 두고 마친다", async () => {
+    const { a, b, root } = plan(false);
+    api.autoRunJudge.mockResolvedValue(judged("next", "", "ok"));
+    startAutoRun(root);
+    await vi.waitFor(() => expect(api.sendWorkItem).toHaveBeenCalledTimes(1));
+    await settled(root);
+    turnEnded(a);
+    await vi.waitFor(() => expect(api.sendWorkItem).toHaveBeenCalledTimes(2));
+    await settled(root);
+    turnEnded(b);
+    await vi.waitFor(() => expect(api.sendWorkItem).toHaveBeenCalledTimes(3));
+    await settled(root);
+    expect(get(root)).toMatchObject({ status: "in_progress" });
+    expect(get(root).autoRun).toMatchObject({ state: "running", currentId: root });
+    const body = api.sendWorkItem.mock.calls[2][0].body as string;
+    expect(body).toContain("3/3");
+    expect(body).toContain(`--report ${root}`);
+    // 루트 본문은 곧 태스크 본문이라 플랜 메모로 다시 붙이지 않는다.
+    expect(body.split("Use Postgres.").length).toBe(2);
+    turnEnded(root);
+    await vi.waitFor(() => expect(get(root).autoRun?.state).toBe("finished"));
+    expect(get(root).status).toBe("review");
+    expect(get(root).autoRun!.log.map((e) => e.kind)).toEqual(["start", "send", "next", "send", "next", "send", "next", "finish"]);
+    expect(api.autoRunJudge.mock.calls[2][0].prompt).toContain("Task 3/3");
   });
 
   it("CLI가 돌고 있으면 확인 없이 재시작하되 미제출 입력이 있으면 건드리지 않고 멈춘다", async () => {

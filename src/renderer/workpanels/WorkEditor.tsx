@@ -55,6 +55,12 @@ export function WorkEditor({ itemId, value, busy = false, creating = false, dirt
           {candidates.map((item) => <option key={item.id} value={item.id}>{workItemTitle(item)}</option>)}
         </select>
       </div>
+      {/* 플랜 루트 표시는 기다리는 태스크가 있을 때만 뜻이 있다. 켜져 있으면 끌 수 있게 계속 보인다. */}
+      {(dependsOn.length > 0 || value.plan) && <label className="work-plan-root-toggle">
+        <input type="checkbox" checked={!!value.plan} onChange={(e) => onChange({ plan: e.target.checked || undefined })} />
+        {t("planRoot")}
+      </label>}
+      {(dependsOn.length > 0 || value.plan) && <p className="work-muted">{t(value.plan ? "planRootOn" : "planRootOff")}</p>}
     </fieldset>
     {/* 되돌리기는 저장과 떨어진 왼쪽 끝에 두고, 변경이 없을 때도 자리를 지켜 저장 버튼이 움직이지 않게 한다. */}
     <div className="work-dialog-actions">

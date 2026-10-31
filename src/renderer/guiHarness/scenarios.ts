@@ -99,6 +99,8 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
             { at: 1720001500000, kind: "pause", text: "judge-stop" },
           ],
         } }),
+        // 플랜 루트(메모 전용): w2를 마치면 끝나고 루트 자체는 실행하지 않는다.
+        work("w9", "Clean up logs", "todo", "p1", 8, { dependsOn: ["w2"], plan: true, body: "Goal: session logs stay readable. Keep the old filter names working." }),
       ],
     };
   },

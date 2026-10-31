@@ -16,6 +16,7 @@ interface ExportedWorkItem {
   assigneeName?: string;
   agent?: WorkAgent;
   dependsOn?: string[];
+  plan?: boolean;
   body: string[];
   order: number;
   sessionIds: string[];
@@ -25,7 +26,7 @@ interface ExportedWorkItem {
 }
 
 /** 가져올 때 쓰는 필드. id는 새로 만들고 파일 안 선행 작업 참조를 다시 잇는 데만 쓴다. */
-export type ImportedWorkItem = Pick<WorkItem, "title" | "body" | "status" | "assigneeAgentId" | "agent" | "dependsOn" | "createdAt"> & { sourceId?: string; assigneeName?: string };
+export type ImportedWorkItem = Pick<WorkItem, "title" | "body" | "status" | "assigneeAgentId" | "agent" | "dependsOn" | "plan" | "createdAt"> & { sourceId?: string; assigneeName?: string };
 export type WorkItemsFileError = "invalid" | "format" | "version" | "empty";
 export type WorkItemsFileParse = { ok: true; items: ImportedWorkItem[]; skipped: number } | { ok: false; error: WorkItemsFileError };
 
@@ -51,6 +52,7 @@ export function serializeWorkItems(items: WorkItem[], statuses: readonly WorkSta
     assigneeName: item.assigneeAgentId ? names[item.assigneeAgentId] : undefined,
     agent: item.agent,
     dependsOn: item.dependsOn,
+    plan: item.plan || undefined,
     body: item.body.split(/\r?\n/u),
     order: item.order,
     sessionIds: item.sessionIds,
@@ -103,6 +105,7 @@ function parseItem(raw: unknown): ImportedWorkItem | undefined {
     assigneeName: text(value.assigneeName)?.trim() || undefined,
     agent: parseAgent(value.agent),
     dependsOn: dependsOn?.length ? dependsOn : undefined,
+    plan: value.plan === true || undefined,
     createdAt: parseTime(value.createdAt) ?? Date.now(),
   };
 }

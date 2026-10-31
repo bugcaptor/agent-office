@@ -108,7 +108,8 @@
     "effortInvalid": "此 CLI 不支持所选推理强度。",
     "modelCatalog": "所选 agy 模型不在当前模型列表中。",
     "blocked": "请先完成所有前置任务再发送。",
-    "autoRunActive": "该角色正在自动推进中。请先暂停再发送。"
+    "autoRunActive": "该角色正在自动推进中。请先暂停再发送。",
+    "planRoot": "计划根不会发送。请用自动执行运行它等待的任务。"
   },
   "resumeNewWork": "继续编写新任务",
   "add": "添加",
@@ -130,12 +131,17 @@
   "noDependencies": "无前置任务",
   "addDependency": "添加前置任务…",
   "noDependencyCandidates": "没有可添加的任务",
+  "planRoot": "计划根（仅计划备忘）",
+  "planRootOn": "自动执行不会运行此任务，只运行它等待的任务。请把所有工作放在这些任务里。",
+  "planRootOff": "自动执行会在它等待的任务之后，把此任务也作为最后一步运行。",
   "blockedBy": "等待前置任务：{{titles}}",
   "dependents_one": "{{count}} 个后续任务在等待",
   "dependents_other": "{{count}} 个后续任务在等待",
   "plan": {
     "chip": "计划",
-    "toggle": "展开或收起计划任务"
+    "toggle": "展开或收起计划任务",
+    "rootRuns": "根含工作",
+    "rootRunsHint": "不是计划根，自动执行会把此任务也作为最后一步运行。"
   },
   "newWorkTitle": "新任务",
   "transfer": {
@@ -189,7 +195,7 @@
     "running": "进行中：{{title}}",
     "followUps": "追加指令 {{count}}/{{max}}",
     "preparing": "正在准备下一个任务…",
-    "finished": "计划中的任务已全部完成。根任务已移至待审核。",
+    "finished": "计划的步骤已全部完成。根是计划备忘，没有剩余工作，已移到待审核。",
     "finishedByRoot": "根任务已标记为完成，自动推进已结束。",
     "start": "开始自动推进",
     "openBusy": "打开该计划",
@@ -228,14 +234,17 @@
       "auto-run-no-plan": "没有剩余的前置任务。",
       "auto-run-observer-off": "请在设置中开启代理观察。需要通过钩子得知每轮何时结束。",
       "auto-run-foreign-task": "有前置任务分配给了其他角色。请将其分配给推进角色或改为未分配。",
-      "auto-run-runner-busy": "该角色还有另一个未结束的自动推进「{{title}}」。请先结束它。"
+      "auto-run-runner-busy": "该角色还有另一个未结束的自动推进「{{title}}」。请先结束它。",
+      "auto-run-root-busy": "只剩根任务，但它正在进行或待审核。要再次运行，请把它改回待办。"
     },
     "worker": {
       "intro": "[自动推进] 此任务是计划“{{plan}}”的第 {{index}}/{{total}} 个。它在新会话中开始，请参考以下上下文。",
       "memo": "计划备注：",
       "notes": "前面任务的交接备注：",
-      "report": "只做这个任务。没有人在看：回合结束后，评审会读你的报告并决定下一步。\n- 可撤销的选择(命名、结构、小范围判断)请按计划备注和任务自行决定，并写在报告的 decisions 里。不要为此提问并停下。\n- 推送、部署、删除数据、对外发布等难以撤销或离开本机的操作，只在计划备注或任务要求时才做。如果必须做却没有许可，请把 status 写成 blocked 并停下。\n- 结束回合前，用 Agent Office 任务板说明中的 office-task 命令(没有说明时用环境变量 AGENT_OFFICE_TASK 的路径)留下报告。重写会覆盖。\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: 改了什么\nverified: 运行的检查命令和结果\ndecisions: 自己做的决定\nneeds_human: (仅 blocked 时)需要人来决定的一件事和选项\nEOF\n\n最后的回复里也简要写同样的内容，不要以“需要的话我可以……吗？”这类提议或提问结尾。"
-    }
+      "report": "只做这个任务。没有人在看：回合结束后，评审会读你的报告并决定下一步。\n- 可撤销的选择(命名、结构、小范围判断)请按计划备注和任务自行决定，并写在报告的 decisions 里。不要为此提问并停下。\n- 推送、部署、删除数据、对外发布等难以撤销或离开本机的操作，只在计划备注或任务要求时才做。如果必须做却没有许可，请把 status 写成 blocked 并停下。\n- 结束回合前，用 Agent Office 任务板说明中的 office-task 命令(没有说明时用环境变量 AGENT_OFFICE_TASK 的路径)留下报告。重写会覆盖。\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: 改了什么\nverified: 运行的检查命令和结果\ndecisions: 自己做的决定\nneeds_human: (仅 blocked 时)需要人来决定的一件事和选项\nEOF\n\n最后的回复里也简要写同样的内容，不要以“需要的话我可以……吗？”这类提议或提问结尾。",
+      "rootLast": "此任务是计划的最后一步（根）。前面的步骤都已完成。"
+    },
+    "finishedWithRoot": "前置任务和根任务本身都已完成。根已移到待审核。"
   },
   "taskChat": {
     "open": "对话",

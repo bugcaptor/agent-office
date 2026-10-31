@@ -18,7 +18,7 @@ import { WorkDialog } from "./WorkDialog";
 import { TaskChatButton, useTaskChatButton } from "./TaskChatButton";
 import { WorkTransferDialog } from "./WorkTransferDialog";
 import { AutoRunSection, blockedText } from "./AutoRunSection";
-import { endAutoRun, planItems, startAutoRun, startBlockedReason } from "./autoRun";
+import { endAutoRun, runSteps, startAutoRun, startBlockedReason } from "./autoRun";
 import { planLayout } from "./workPlans";
 import { assigneeKey, MISSING_ASSIGNEE } from "./workItemFile";
 import { useWorkGroupStore } from "./panelLayoutStore";
@@ -71,7 +71,8 @@ export function WorkItemsPanel() {
     const waitingOn = value.status === "done" ? [] : pendingPrerequisites(value, items);
     const sending = !!busy[item.id];
     const agentBusy = !!assignee && Object.values(busy).includes(assignee);
-    const blockedReason = !hasWorkContent(value) ? undefined : waitingOn.length ? "work-send-blocked"
+    // 플랜 루트는 플랜 메모라 보내지 않는다. 자동 진행이 선행 태스크만 진행한다.
+    const blockedReason = !hasWorkContent(value) ? undefined : value.plan ? "work-send-plan-root" : waitingOn.length ? "work-send-blocked"
       : workSendDisabledReason(assignee ? agents[assignee] : undefined) ?? (agentBusy && !sending ? "work-send-busy" : undefined);
     const save = () => { edit(item.id, patch); clearEdit(item.id); void useWorkItemStore.getState().flush(); };
     // 보내기에 성공하면 팝업을 닫아 열린 터미널을 보여준다. 실패·확인 취소는 오류를 볼 수 있게 열어 둔다.
@@ -124,6 +125,7 @@ export function WorkItemsPanel() {
         {(!plan || item.status !== "todo") && <span className="work-status-chip">{t(`status.${item.status}`)}</span>}
         <strong className={!item.title.trim() ? "work-title-derived" : undefined}>{workItemTitle(item)}</strong>{dirty && <small>{t("unsavedChanges")}</small>}
         {run && <small className={`work-auto-chip ${run.state}`}>{t(`autoRun.chip.${run.state}`)}</small>}
+        {plan && !item.plan && <small title={t("plan.rootRunsHint")}>{t("plan.rootRuns")}</small>}
         {plan && <small className="work-plan-progress">{t("autoRun.progress", { done: plan.done, total: plan.total })}</small>}
         {role?.member?.unassigned && <small>{t("unassigned")}</small>}
         {!plan && waitingOn.length > 0 && <small className="work-blocked">{t("blockedBy", { titles: waitingOn.map(workItemTitle).join(", ") })}</small>}
@@ -150,7 +152,7 @@ export function WorkItemsPanel() {
   // 플랜 루트와 그 아래 들인 업무. 접힘은 캐릭터 묶음과 같은 저장소에 `plan:<id>`로 둔다.
   const planBlock = (root: WorkItem, groupKey: string) => {
     const members = plans.members.get(root.id) ?? [];
-    const all = planItems(root, items);
+    const all = runSteps(root, items);
     const key = `plan:${root.id}`;
     const expanded = !collapsedGroups.includes(key) || members.some((item) => item.id === selectedId);
     return <div className="work-plan" key={root.id}>
