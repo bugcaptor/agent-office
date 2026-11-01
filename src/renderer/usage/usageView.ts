@@ -192,10 +192,14 @@ export function windowLabel(w: UsageWindow): TextKey {
   }
 }
 
+const WEEKDAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+
 /**
- * 리셋까지 남은 시간("N시간 N분 후 리셋") 키. 이미 지났으면 "리셋 대기 중",
- * resetsAtMs가 null이면 null(표시 없음 — 예전의 빈 문자열 자리). 하루 이상은
- * "N일 N시간 후 리셋".
+ * 리셋 시각(로컬 시간대의 월·일·요일·24시간제 시:분)과 남은 시간을 함께 —
+ * "11월 3일(화) 14:00 리셋 · 2일 5시간 남음". 남은 시간은 하루 이상이면
+ * "N일 N시간", 한 시간 이상이면 "N시간 N분", 그 밖은 "N분". 이미 지났으면
+ * "리셋 대기 중", resetsAtMs가 null이면 null(표시 없음). 날짜 조각도 키로
+ * 돌려줘 언어를 바꾸면 요일·어순이 함께 바뀐다.
  */
 export function formatCountdown(resetsAtMs: number | null, now: number): TextKey | null {
   if (resetsAtMs === null) return null;
@@ -205,9 +209,24 @@ export function formatCountdown(resetsAtMs: number | null, now: number): TextKey
   const days = Math.floor(totalMin / (60 * 24));
   const hours = Math.floor((totalMin % (60 * 24)) / 60);
   const mins = totalMin % 60;
-  if (days > 0) return { key: "usage.countdown.days", params: { days, hours } };
-  if (hours > 0) return { key: "usage.countdown.hours", params: { hours, mins } };
-  return { key: "usage.countdown.mins", params: { mins } };
+  const left: TextKey =
+    days > 0
+      ? { key: "usage.countdown.left.days", params: { days, hours } }
+      : hours > 0
+        ? { key: "usage.countdown.left.hours", params: { hours, mins } }
+        : { key: "usage.countdown.left.mins", params: { mins } };
+  const at = new Date(resetsAtMs);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const when: TextKey = {
+    key: "usage.countdown.when",
+    params: {
+      month: at.getMonth() + 1,
+      day: at.getDate(),
+      weekday: { key: `usage.weekday.${WEEKDAY_KEYS[at.getDay()]}` },
+      time: `${pad(at.getHours())}:${pad(at.getMinutes())}`,
+    },
+  };
+  return { key: "usage.countdown.at", params: { when, left } };
 }
 
 /** 경과 시간 문구의 갈래. ago("N분 전")와 freshness("N분 전 기준")가 공유한다. */

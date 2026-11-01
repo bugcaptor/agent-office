@@ -14,9 +14,22 @@
     },
     "countdown": {
       "pending": "리셋 대기 중",
-      "days": "{{days}}일 {{hours}}시간 후 리셋",
-      "hours": "{{hours}}시간 {{mins}}분 후 리셋",
-      "mins": "{{mins}}분 후 리셋"
+      "at": "{{when}} 리셋 · {{left}} 남음",
+      "when": "{{month}}월 {{day}}일({{weekday}}) {{time}}",
+      "left": {
+        "days": "{{days}}일 {{hours}}시간",
+        "hours": "{{hours}}시간 {{mins}}분",
+        "mins": "{{mins}}분"
+      }
+    },
+    "weekday": {
+      "sun": "일",
+      "mon": "월",
+      "tue": "화",
+      "wed": "수",
+      "thu": "목",
+      "fri": "금",
+      "sat": "토"
     },
     "ago": {
       "justNow": "방금",

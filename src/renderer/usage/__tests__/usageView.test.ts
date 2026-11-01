@@ -278,7 +278,13 @@ describe("windowLabel", () => {
 });
 
 describe("formatCountdown", () => {
-  const NOW = 1_784_000_000_000;
+  // 로컬 시간대로 만든 시각이라 어느 TZ에서 돌려도 월·일·요일·시각이 같다.
+  // 2026-11-01(일) 09:00
+  const NOW = new Date(2026, 10, 1, 9, 0).getTime();
+  const when = (month: number, day: number, weekday: string, time: string) => ({
+    key: "usage.countdown.when",
+    params: { month, day, weekday: { key: `usage.weekday.${weekday}` }, time },
+  });
   it("resetsAtMs null이면 표시 없음(null)", () => {
     expect(formatCountdown(null, NOW)).toBeNull();
   });
@@ -288,20 +294,26 @@ describe("formatCountdown", () => {
   });
   it("분 단위", () => {
     expect(formatCountdown(NOW + 45 * 60000, NOW)).toEqual({
-      key: "usage.countdown.mins",
-      params: { mins: 45 },
+      key: "usage.countdown.at",
+      params: { when: when(11, 1, "sun", "09:45"), left: { key: "usage.countdown.left.mins", params: { mins: 45 } } },
     });
   });
   it("시간+분", () => {
     expect(formatCountdown(NOW + (3 * 60 + 12) * 60000, NOW)).toEqual({
-      key: "usage.countdown.hours",
-      params: { hours: 3, mins: 12 },
+      key: "usage.countdown.at",
+      params: {
+        when: when(11, 1, "sun", "12:12"),
+        left: { key: "usage.countdown.left.hours", params: { hours: 3, mins: 12 } },
+      },
     });
   });
-  it("하루 이상은 일+시간", () => {
+  it("하루 이상은 일+시간, 리셋 날짜·요일이 넘어간다", () => {
     expect(formatCountdown(NOW + (2 * 24 * 60 + 5 * 60) * 60000, NOW)).toEqual({
-      key: "usage.countdown.days",
-      params: { days: 2, hours: 5 },
+      key: "usage.countdown.at",
+      params: {
+        when: when(11, 3, "tue", "14:00"),
+        left: { key: "usage.countdown.left.days", params: { days: 2, hours: 5 } },
+      },
     });
   });
 });
@@ -877,12 +889,15 @@ describe("카탈로그 렌더(ko 정본)", () => {
     expect(render(windowLabel(win({ kind: "unknown", windowMinutes: null })))).toBe("기타");
   });
 
-  it("카운트다운", () => {
-    expect(render(formatCountdown(NOW - 1000, NOW)!)).toBe("리셋 대기 중");
-    expect(render(formatCountdown(NOW + 45 * 60000, NOW)!)).toBe("45분 후 리셋");
-    expect(render(formatCountdown(NOW + (3 * 60 + 12) * 60000, NOW)!)).toBe("3시간 12분 후 리셋");
-    expect(render(formatCountdown(NOW + (2 * 24 * 60 + 5 * 60) * 60000, NOW)!)).toBe(
-      "2일 5시간 후 리셋",
+  it("카운트다운: 리셋 날짜·요일·시각 뒤에 남은 시간", () => {
+    const at = new Date(2026, 10, 1, 9, 0).getTime(); // 2026-11-01(일) 09:00, 로컬 시간대
+    expect(render(formatCountdown(at - 1000, at)!)).toBe("리셋 대기 중");
+    expect(render(formatCountdown(at + 45 * 60000, at)!)).toBe("11월 1일(일) 09:45 리셋 · 45분 남음");
+    expect(render(formatCountdown(at + (3 * 60 + 12) * 60000, at)!)).toBe(
+      "11월 1일(일) 12:12 리셋 · 3시간 12분 남음",
+    );
+    expect(render(formatCountdown(at + (2 * 24 * 60 + 5 * 60) * 60000, at)!)).toBe(
+      "11월 3일(화) 14:00 리셋 · 2일 5시간 남음",
     );
   });
 
@@ -1000,7 +1015,10 @@ describe("카탈로그 렌더(en)", () => {
   it("영어로도 문구가 채워지고 키가 새지 않는다", async () => {
     await initI18nForTest("en");
     expect(render(windowLabel(win({ kind: "session" })))).toBe("5h");
-    expect(render(formatCountdown(NOW + (3 * 60 + 12) * 60000, NOW)!)).toBe("Resets in 3h 12m");
+    const at = new Date(2026, 10, 1, 9, 0).getTime(); // 2026-11-01(일) 09:00, 로컬 시간대
+    expect(render(formatCountdown(at + (2 * 24 * 60 + 5 * 60) * 60000, at)!)).toBe(
+      "Resets Tue 11/3 14:00 · 2d 5h left",
+    );
     expect(render(formatFreshness(NOW - 14 * 60000, NOW))).toBe("as of 14m ago");
     const s = live({ outcome: "ok", lastAttemptMs: NOW - 3 * 60000, lastSuccessMs: NOW - 3 * 60000 });
     expect(renderAttempts(formatLiveAttempts(s, NOW))).toBe("last try 3m ago · last success 3m ago");

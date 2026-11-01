@@ -14,9 +14,22 @@
     },
     "countdown": {
       "pending": "Réinit. en attente",
-      "days": "Réinit. dans {{days}} j {{hours}} h",
-      "hours": "Réinit. dans {{hours}} h {{mins}} min",
-      "mins": "Réinit. dans {{mins}} min"
+      "at": "Réinit. le {{when}} · reste {{left}}",
+      "when": "{{weekday}} {{day}}/{{month}} à {{time}}",
+      "left": {
+        "days": "{{days}} j {{hours}} h",
+        "hours": "{{hours}} h {{mins}} min",
+        "mins": "{{mins}} min"
+      }
+    },
+    "weekday": {
+      "sun": "dim.",
+      "mon": "lun.",
+      "tue": "mar.",
+      "wed": "mer.",
+      "thu": "jeu.",
+      "fri": "ven.",
+      "sat": "sam."
     },
     "ago": {
       "justNow": "à l'instant",

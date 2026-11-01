@@ -14,9 +14,22 @@
     },
     "countdown": {
       "pending": "リセット待ち",
-      "days": "{{days}}日{{hours}}時間後にリセット",
-      "hours": "{{hours}}時間{{mins}}分後にリセット",
-      "mins": "{{mins}}分後にリセット"
+      "at": "{{when}}にリセット · 残り{{left}}",
+      "when": "{{month}}月{{day}}日({{weekday}}) {{time}}",
+      "left": {
+        "days": "{{days}}日{{hours}}時間",
+        "hours": "{{hours}}時間{{mins}}分",
+        "mins": "{{mins}}分"
+      }
+    },
+    "weekday": {
+      "sun": "日",
+      "mon": "月",
+      "tue": "火",
+      "wed": "水",
+      "thu": "木",
+      "fri": "金",
+      "sat": "土"
     },
     "ago": {
       "justNow": "たった今",

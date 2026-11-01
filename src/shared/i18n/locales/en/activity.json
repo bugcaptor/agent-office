@@ -14,9 +14,22 @@
     },
     "countdown": {
       "pending": "Awaiting reset",
-      "days": "Resets in {{days}}d {{hours}}h",
-      "hours": "Resets in {{hours}}h {{mins}}m",
-      "mins": "Resets in {{mins}}m"
+      "at": "Resets {{when}} · {{left}} left",
+      "when": "{{weekday}} {{month}}/{{day}} {{time}}",
+      "left": {
+        "days": "{{days}}d {{hours}}h",
+        "hours": "{{hours}}h {{mins}}m",
+        "mins": "{{mins}}m"
+      }
+    },
+    "weekday": {
+      "sun": "Sun",
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat"
     },
     "ago": {
       "justNow": "just now",

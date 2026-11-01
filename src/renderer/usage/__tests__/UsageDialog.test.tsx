@@ -89,7 +89,9 @@ describe("UsageDialog", () => {
     expect(screen.getByText("사용량")).toBeTruthy();
     expect(container.querySelector(".usage-window-label")?.textContent).toBe("5시간지금 적용 중");
     expect(container.querySelector(".usage-window-pct")?.textContent).toBe("61%");
-    expect(container.querySelector(".usage-countdown")?.textContent).toBe("3시간 12분 후 리셋");
+    expect(container.querySelector(".usage-countdown")?.textContent).toMatch(
+      /^\d+월 \d+일\([일월화수목금토]\) \d\d:\d\d 리셋 · 3시간 12분 남음$/,
+    );
     expect(container.querySelector(".usage-freshness")?.textContent).toBe("방금 기준");
     expect(container.querySelector(".usage-bar")?.getAttribute("aria-label")).toBe("5시간 사용률");
 
@@ -111,7 +113,9 @@ describe("UsageDialog", () => {
 
     expect(screen.getByText("Usage")).toBeTruthy();
     expect(container.querySelector(".usage-window-label")?.textContent).toBe("5hin effect");
-    expect(container.querySelector(".usage-countdown")?.textContent).toBe("Resets in 3h 12m");
+    expect(container.querySelector(".usage-countdown")?.textContent).toMatch(
+      /^Resets (Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d+\/\d+ \d\d:\d\d · 3h 12m left$/,
+    );
     expect(container.querySelector(".usage-freshness")?.textContent).toBe("as of just now");
     const note = container.querySelector(".usage-live-note")!.textContent!;
     expect(note).toContain("Live fetch failed: network error.");
@@ -234,7 +238,9 @@ describe("UsageDialog", () => {
       "키 한도(주)$5.00 / $20.00",
     ]);
     expect(block.querySelector(".usage-bar")?.getAttribute("aria-valuenow")).toBe("25");
-    expect(block.querySelector(".usage-countdown")?.textContent).toBe("2일 5시간 후 리셋");
+    expect(block.querySelector(".usage-countdown")?.textContent).toMatch(
+      /^\d+월 \d+일\([일월화수목금토]\) \d\d:\d\d 리셋 · 2일 5시간 남음$/,
+    );
     expect(block.querySelector(".usage-live-note")?.textContent).toContain("5분 간격");
   });
 

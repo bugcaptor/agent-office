@@ -14,9 +14,22 @@
     },
     "countdown": {
       "pending": "等待重設",
-      "days": "{{days}} 天 {{hours}} 小時後重設",
-      "hours": "{{hours}} 小時 {{mins}} 分後重設",
-      "mins": "{{mins}} 分後重設"
+      "at": "{{when}}重設 · 還剩 {{left}}",
+      "when": "{{month}}月{{day}}日（{{weekday}}）{{time}}",
+      "left": {
+        "days": "{{days}} 天 {{hours}} 小時",
+        "hours": "{{hours}} 小時 {{mins}} 分",
+        "mins": "{{mins}} 分"
+      }
+    },
+    "weekday": {
+      "sun": "週日",
+      "mon": "週一",
+      "tue": "週二",
+      "wed": "週三",
+      "thu": "週四",
+      "fri": "週五",
+      "sat": "週六"
     },
     "ago": {
       "justNow": "剛剛",
