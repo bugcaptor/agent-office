@@ -187,7 +187,8 @@
     "chip": {
       "running": "Auto running",
       "paused": "Auto run paused",
-      "finished": "Auto run finished"
+      "finished": "Auto run finished",
+      "usageWait": "Waiting for usage"
     },
     "idle": "Runs the {{count}} remaining prerequisites one by one in {{name}}'s terminal. Each task gets a fresh session, and when a turn ends a judge (claude -p) decides what happens next.",
     "progress": "{{done}}/{{total}} done",
@@ -226,7 +227,8 @@
       "task-busy": "A ready task is already in progress or in review. Mark it done or move it back to To do, then resume.",
       "task-changed": "The current task changed (deleted, moved back to To do, or reassigned).",
       "app-restarted": "Paused because the app restarted.",
-      "user": "Paused."
+      "user": "Paused.",
+      "usage-wait": "Subscription usage looks too low to continue, so the run waits for the limit window to reset."
     },
     "blocked": {
       "auto-run-root-done": "You can't start from a finished task.",
@@ -244,7 +246,28 @@
       "report": "Do only this task. Nobody is watching: when your turn ends, a judge reads your report and decides the next step.\n- Make reversible choices (names, structure, small scope calls) yourself, following the plan notes and the task, and list them under decisions. Do not stop to ask about them.\n- Do things that are hard to undo or leave the machine (push, deploy, deleting data, publishing) only when the plan notes or the task say so. If one is needed and not allowed, write status: blocked and stop.\n- Before your turn ends, leave a report with the office-task command from the Agent Office task board instructions (without them, the path in the AGENT_OFFICE_TASK environment variable). Writing it again replaces it.\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: what you changed\nverified: checks you ran and their results\ndecisions: choices you made yourself\nneeds_human: (only when blocked) the one thing a human must decide, with the options\nEOF\n\nPut the same points briefly in your last reply, and do not end with offers or questions such as \"Want me to…?\"",
       "rootLast": "This task is the last step of the plan (its root). All earlier steps are done."
     },
-    "finishedWithRoot": "The prerequisite tasks and the root task itself are done. The root moved to Review."
+    "finishedWithRoot": "The prerequisite tasks and the root task itself are done. The root moved to Review.",
+    "usage": {
+      "guard": "Wait for the reset when usage looks too low",
+      "guardHint": "Before each send, the real token usage predicts how much of each limit window the next step will use. If it would go past {{limit}}%, the run waits until that window resets and then continues by itself.",
+      "provider": {
+        "claude": "Claude",
+        "codex": "Codex"
+      },
+      "stage": {
+        "task": "the next task",
+        "followup": "the follow-up",
+        "judge": "the judge call"
+      },
+      "waitPredicted": "The {{provider}} {{window}} window is at about {{now}}% now, and {{stage}} should use about {{add}} more points, which goes past the {{limit}}% limit.",
+      "waitExhausted": "The {{provider}} {{window}} window is at about {{now}}% now and has reached the {{limit}}% limit.",
+      "waitUntil": "{{reset}}. The run continues by itself after the reset.",
+      "waitRetry": "The reset time is unknown, so it checks again at {{time}}.",
+      "skip": "Continue without waiting",
+      "outlook": "Next task forecast: {{list}}",
+      "outlookItem": "{{provider}} {{window}} {{now}}% → {{after}}%",
+      "learning": "Collecting data for the usage forecast ({{min}} finished tasks and usage changes). Until then it only checks whether a limit ({{limit}}%) is already reached."
+    }
   },
   "taskChat": {
     "open": "Chat",

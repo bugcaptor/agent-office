@@ -2,7 +2,9 @@
 // 차례로 진행한다. 플랜 루트(`plan`)는 플랜 메모라 실행하지 않고, 아닌 루트는 마지막 단계로 진행한다.
 // 태스크마다 새 세션으로 보내고, 턴이 끝나면 판단자(claude -p 이어지는
 // 세션)에게 next·followup·stop 중 하나를 받아 적용한다. 루프와 상태는 여기만 쥔다.
-import type { AgentProfile, AutoRun, AutoRunJudgeResult, AutoRunLogEntry, AutoRunPauseReason, WorkItem } from "@shared/types";
+// 태스크·후속 지시·판단자를 보내기 전마다 구독 사용량을 예측해(usage/usageForecast.ts),
+// 모자랄 것 같으면 한도 창 리셋까지 기다렸다가 스스로 이어 간다.
+import type { AgentProfile, AutoRun, AutoRunJudgeResult, AutoRunLogEntry, AutoRunPauseReason, AutoRunUsageWait, WorkItem } from "@shared/types";
 import { t } from "../i18n";
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
@@ -13,6 +15,11 @@ import { useSessionSummaryStore } from "./sessionSummaryStore";
 import { pendingPrerequisites } from "./workDependencies";
 import { workItemTitle } from "./workItemDraft";
 import { requestWorkSend, workSendDisabledReason } from "./workSendStore";
+import type { ForecastProvider, UsageBlock } from "../usage/usageForecast";
+import {
+  assessFollowup, assessJudge, assessTask, costMark, costSinceMark, recordFollowupSample, recordJudgeCost,
+  recordTaskSample, refreshUsage, workerProvider,
+} from "../usage/usageForecastStore";
 
 export const MAX_FOLLOW_UPS = 3;
 const MAX_LOG = 200;
@@ -166,29 +173,70 @@ function running(rootId: string): AutoRun | undefined {
   return run?.state === "running" ? run : undefined;
 }
 
+/** 태스크를 맡을 CLI. 보내기(workSendStore)와 같은 규칙이다. */
+function taskCli(item: WorkItem, profile: AgentProfile | undefined) {
+  return normalizeWorkAgent(item.agent ?? profile?.defaultAgent ?? { cli: "claude" }).cli;
+}
+
+/** 다음에 보낼 태스크의 작업자 구독(화면의 사용량 예측용). 남은 단계가 없으면 루트 기준. */
+export function nextTaskWorker(root: WorkItem, all: WorkItem[], agents: Readonly<Record<string, AgentProfile>>): ForecastProvider | null {
+  const profile = root.assigneeAgentId ? agents[root.assigneeAgentId] : undefined;
+  const run = root.autoRun;
+  const next = (run?.currentId ? all.find((item) => item.id === run.currentId) : undefined)
+    ?? runSteps(root, all).find((item) => item.status !== "done" && !pendingPrerequisites(item, all).length) ?? root;
+  return workerProvider({ cli: taskCli(next, profile) });
+}
+
+/**
+ * 사용량이 모자랄 것 같으면 사용량 대기로 멈추고 true. 사람이 대기를 건너뛰었으면 한 번
+ * 통과시킨다. `patch`는 멈출 때 함께 남길 것(보내지 못한 후속 지시).
+ */
+function waitForUsage(rootId: string, stage: AutoRunUsageWait["stage"], worker: ForecastProvider | null, assess: () => UsageBlock | null, patch: Partial<AutoRun> = {}): boolean {
+  const run = running(rootId);
+  if (!run || run.usageGuard === false) return false;
+  if (run.usageOverride) { update(rootId, (latest) => ({ ...latest, usageOverride: undefined })); return false; }
+  const block = assess();
+  if (!block) return false;
+  const usageWait: AutoRunUsageWait = { ...block, stage, worker };
+  update(rootId, (latest) => withLog({ ...latest, ...patch, state: "paused", pauseReason: "usage-wait", pauseDetail: undefined, usageWait }, { kind: "pause", text: "usage-wait" }));
+  return true;
+}
+
 // ── 사람 조작 ──────────────────────────────────────────────────────────
 
-export function startAutoRun(rootId: string): string | undefined {
+export function startAutoRun(rootId: string, options: { usageGuard?: boolean } = {}): string | undefined {
   const root = find(rootId);
   if (!root) return "auto-run-no-plan";
   const state = useAppStore.getState();
   const blocked = startBlockedReason(root, items(), state.agents, state.appSettings.observerEnabled);
   if (blocked) return blocked;
-  const run: AutoRun = { state: "running", judgeSessionId: crypto.randomUUID(), judgeStarted: false, followUps: 0, costUsd: 0, log: [], startedAt: Date.now() };
+  const run: AutoRun = { state: "running", judgeSessionId: crypto.randomUUID(), judgeStarted: false, followUps: 0, costUsd: 0, log: [], startedAt: Date.now(), usageGuard: options.usageGuard ?? true };
   useWorkItemStore.getState().setAutoRun(rootId, withLog(run, { kind: "start" }));
   kick(rootId);
   return undefined;
 }
 export function pauseAutoRun(rootId: string): void {
-  if (running(rootId)) pause(rootId, "user");
+  // 사용량 대기도 사람이 멈추면 스스로 이어 가지 않는다.
+  if (running(rootId) || find(rootId)?.autoRun?.pauseReason === "usage-wait") pause(rootId, "user");
 }
-export function resumeAutoRun(rootId: string): void {
+/**
+ * 멈춘 실행을 이어 간다. 사람이 사용량 대기를 이어 가면 다음 사용량 검사 한 번을 건너뛴다.
+ * `auto`는 대기가 끝나 스스로 이어 가는 경우다(다시 검사한다).
+ */
+export function resumeAutoRun(rootId: string, options: { auto?: boolean } = {}): void {
   const run = find(rootId)?.autoRun;
   if (!run || run.state !== "paused") return;
+  if (options.auto && run.pauseReason !== "usage-wait") return;
   // 판단 직후 멈췄다면 같은 턴을 다시 판단한다. 후속 지시 한도에 걸렸다면 한 번 더 기회를 준다.
   const followUps = run.pauseReason === "followup-limit" ? MAX_FOLLOW_UPS - 1 : run.followUps;
-  useWorkItemStore.getState().setAutoRun(rootId, withLog({ ...run, state: "running", followUps, pauseReason: undefined, pauseDetail: undefined }, { kind: "resume" }));
+  const usageOverride = run.pauseReason === "usage-wait" && !options.auto ? true : undefined;
+  useWorkItemStore.getState().setAutoRun(rootId, withLog({ ...run, state: "running", followUps, pauseReason: undefined, pauseDetail: undefined, usageWait: undefined, usageOverride }, { kind: "resume" }));
   kick(rootId);
+}
+/** 사용량 대기를 켜고 끈다. 기다리는 중에 끄면 바로 이어 간다. */
+export function setAutoRunUsageGuard(rootId: string, on: boolean): void {
+  update(rootId, (run) => ({ ...run, usageGuard: on }));
+  if (!on) resumeAutoRun(rootId, { auto: true });
 }
 /** 실행 상태와 기록을 지운다. 업무 상태는 그대로 둔다. */
 export function endAutoRun(rootId: string): void {
@@ -236,10 +284,12 @@ export async function stepAutoRun(rootId: string): Promise<void> {
       // 후속 지시 전에 끝난 턴의 늦은 신호면 새 턴을 기다린다.
       const observed = useWorkMonitorStore.getState().sessions[lastSession(current) ?? ""];
       if (observed && run.sentAt && observed.at < run.sentAt) return;
+      // 판단은 끝났고 사용량 때문에 후속 지시만 미뤄 뒀다. 다시 판단하지 않고 보낸다.
+      if (run.pendingFollowUp) return sendFollowUp(rootId, current, run.pendingFollowUp);
       return judge(rootId, current);
     }
     // 사람이 완료로 바꿨다. 다음으로 넘어간다.
-    update(rootId, (latest) => withLog({ ...latest, currentId: undefined, followUps: 0, sentAt: undefined }, { kind: "human-done", taskId: current.id }));
+    update(rootId, (latest) => withLog({ ...latest, currentId: undefined, followUps: 0, sentAt: undefined, pendingFollowUp: undefined, taskMark: undefined, turnMark: undefined }, { kind: "human-done", taskId: current.id }));
   }
   return pickAndSend(rootId);
 }
@@ -263,9 +313,12 @@ async function pickAndSend(rootId: string): Promise<void> {
   const next = ready[0];
   if (!next) return pause(rootId, "task-changed");
   if (next.assigneeAgentId && next.assigneeAgentId !== runner) return pause(rootId, "task-changed", workItemTitle(next));
+  const worker = workerProvider({ cli: taskCli(next, useAppStore.getState().agents[runner]) });
+  if (waitForUsage(rootId, "task", worker, () => assessTask(worker))) return;
   if (!next.assigneeAgentId) useWorkItemStore.getState().edit(next.id, { assigneeAgentId: runner });
   const run = running(rootId)!;
-  update(rootId, (latest) => withLog({ ...latest, currentId: next.id, followUps: 0, sentAt: Date.now() }, { kind: "send", taskId: next.id }));
+  const mark = { ...costMark(runner), judgeCost: run.costUsd };
+  update(rootId, (latest) => withLog({ ...latest, currentId: next.id, followUps: 0, sentAt: Date.now(), pendingFollowUp: undefined, taskMark: mark, turnMark: mark }, { kind: "send", taskId: next.id }));
   const before = next.sessionIds.length;
   await requestWorkSend(next.id, { auto: true, appendBody: workerContext(root, plan, next, run.log) });
   const sent = find(next.id);
@@ -281,12 +334,16 @@ async function pickAndSend(rootId: string): Promise<void> {
 
 async function judge(rootId: string, current: WorkItem): Promise<void> {
   const root = find(rootId)!;
-  const run = running(rootId)!;
   const runner = root.assigneeAgentId!;
   const state = useAppStore.getState();
   const profile = state.agents[runner];
   const session = lastSession(current);
-  const cli = normalizeWorkAgent(current.agent ?? profile?.defaultAgent ?? { cli: "claude" }).cli;
+  const cli = taskCli(current, profile);
+  const worker = workerProvider({ cli });
+  // 판단자도 Claude 구독을 쓴다. 이미 한도에 닿았으면 부르지 않고 기다린다.
+  if (waitForUsage(rootId, "judge", worker, () => assessJudge())) return;
+  const run = running(rootId)!;
+  recordTurnSample(rootId, runner, worker);
   const cwd = (session ? useSessionSummaryStore.getState().summaries[session]?.cwd : undefined) ?? state.taskLabels[runner]?.cwd ?? profile?.cwd ?? "";
   const reply = await tauriApi.workLastReply(runner, cli, cwd).catch((error: unknown) => { console.warn("auto-run: reply read failed", error); return null; });
   // 이번 턴을 보낸 뒤에 쓰인 보고만 읽는다. 지난 턴의 보고가 새 턴의 증거로 쓰이지 않게 한다.
@@ -306,11 +363,13 @@ async function judge(rootId: string, current: WorkItem): Promise<void> {
     return;
   }
   // 판단자 대화에는 이번 턴이 이미 들어갔다. 멈췄더라도 그 사실과 비용은 남긴다.
+  recordJudgeCost(result.costUsd);
   update(rootId, (latest) => ({ ...latest, judgeStarted: true, judgedBodyHash: memoHash, costUsd: latest.costUsd + (result.costUsd ?? 0) }));
   const latest = running(rootId);
   if (!latest || latest.currentId !== current.id) return;
   if (result.decision === "next") {
-    update(rootId, (r) => withLog({ ...r, currentId: undefined, followUps: 0, sentAt: undefined }, { kind: "next", taskId: current.id, text: result.note }));
+    recordTaskUsage(latest, runner, worker);
+    update(rootId, (r) => withLog({ ...r, currentId: undefined, followUps: 0, sentAt: undefined, pendingFollowUp: undefined, taskMark: undefined, turnMark: undefined }, { kind: "next", taskId: current.id, text: result.note }));
     // 루트 자신은 완료로 바꾸지 않는다(완료면 실행이 루트 완료로 끝난다). 검토 대기로 두고 실행을 마친다.
     if (current.id === rootId) return pickAndSend(rootId);
     useWorkItemStore.getState().edit(current.id, { status: "done" });
@@ -319,17 +378,82 @@ async function judge(rootId: string, current: WorkItem): Promise<void> {
   if (result.decision === "stop") return pause(rootId, "judge-stop", result.message);
   if (latest.followUps >= MAX_FOLLOW_UPS) return pause(rootId, "followup-limit", result.message);
   if (!session || !result.message.trim()) return pause(rootId, "judge-failed", "auto-run-judge-output");
+  return sendFollowUp(rootId, current, result.message);
+}
+
+/** 판단자의 후속 지시를 같은 세션에 넣는다. 사용량이 모자라면 지시를 남겨 두고 기다린다. */
+async function sendFollowUp(rootId: string, current: WorkItem, message: string): Promise<void> {
+  const runner = find(rootId)!.assigneeAgentId!;
+  const session = lastSession(current);
+  const worker = workerProvider({ cli: taskCli(current, useAppStore.getState().agents[runner]) });
+  if (waitForUsage(rootId, "followup", worker, () => assessFollowup(worker), { pendingFollowUp: message })) return;
+  if (!session) return pause(rootId, "session-ended", workItemTitle(current));
+  const mark = { ...costMark(runner), judgeCost: running(rootId)?.costUsd ?? 0 };
   let submittedAt: number;
   try {
-    ({ submittedAt } = await tauriApi.sendWorkFollowUp({ agentId: runner, sessionId: session, text: result.message }));
+    ({ submittedAt } = await tauriApi.sendWorkFollowUp({ agentId: runner, sessionId: session, text: message }));
   } catch (error) {
     const code = error instanceof Error ? error.message : String(error);
-    if (running(rootId)) pause(rootId, code === "work-send-human-input" ? "human-input" : "send-failed", code);
+    // 계속을 누르면 같은 턴을 다시 판단한다.
+    if (running(rootId)) {
+      update(rootId, (r) => ({ ...r, pendingFollowUp: undefined }));
+      pause(rootId, code === "work-send-human-input" ? "human-input" : "send-failed", code);
+    }
     return;
   }
-  update(rootId, (r) => withLog({ ...r, followUps: r.followUps + 1, sentAt: submittedAt }, { kind: "followup", taskId: current.id, text: result.message }));
+  update(rootId, (r) => withLog({ ...r, followUps: r.followUps + 1, sentAt: submittedAt, pendingFollowUp: undefined, turnMark: mark }, { kind: "followup", taskId: current.id, text: message }));
   // 새 턴의 prompt 신호보다 먼저 판단이 다시 돌지 않게 바로 진행 중으로 돌린다.
   if (find(current.id)?.status === "review") useWorkItemStore.getState().edit(current.id, { status: "in_progress" });
+}
+
+// ── 사용량 표본 ────────────────────────────────────────────────────────
+
+/** 판단할 턴이 후속 지시였으면 그 한 턴의 비용을 남긴다. 같은 턴을 다시 판단해도 한 번만 센다. */
+function recordTurnSample(rootId: string, runner: string, worker: ForecastProvider | null): void {
+  const run = running(rootId);
+  const mark = run?.turnMark;
+  if (!run || !mark || run.followUps === 0) return;
+  const cost = costSinceMark(runner, mark);
+  if (cost !== null) recordFollowupSample({ provider: worker, cost, durationMs: Date.now() - mark.at, at: Date.now() });
+  update(rootId, (latest) => ({ ...latest, turnMark: undefined }));
+}
+
+/** 받아들인 태스크 하나의 작업자·판단자 비용과 소요 시간을 남긴다. */
+function recordTaskUsage(run: AutoRun, runner: string, worker: ForecastProvider | null): void {
+  const mark = run.taskMark;
+  const cost = costSinceMark(runner, mark);
+  if (!mark || cost === null) return;
+  recordTaskSample({ provider: worker, cost, judgeCost: Math.max(0, run.costUsd - mark.judgeCost), durationMs: Date.now() - mark.at, at: Date.now() });
+}
+
+// ── 사용량 대기 ────────────────────────────────────────────────────────
+
+const USAGE_CHECK_MS = 30_000;
+const waking = new Set<string>();
+
+function stillShort(wait: AutoRunUsageWait): boolean {
+  const worker = wait.worker ?? null;
+  return !!(wait.stage === "task" ? assessTask(worker) : wait.stage === "followup" ? assessFollowup(worker) : assessJudge());
+}
+
+/**
+ * 사용량 대기 중인 실행을 살핀다. 다시 볼 시각이 지났으면 사용량을 새로 받아 이어 가고(이어 간 단계가
+ * 다시 검사한다), 그 전이라도 새 조회값으로 보니 모자라지 않으면 일찍 이어 간다.
+ */
+export async function checkUsageWaits(now = Date.now()): Promise<void> {
+  for (const item of items()) {
+    const run = item.autoRun;
+    const wait = run?.state === "paused" && run.pauseReason === "usage-wait" ? run.usageWait : undefined;
+    if (!wait || waking.has(item.id)) continue;
+    if (now < wait.until && stillShort(wait)) continue;
+    waking.add(item.id);
+    try {
+      if (now >= wait.until) await refreshUsage();
+      // 그 사이 사람이 멈췄거나 끝냈으면 그대로 둔다.
+      const latest = find(item.id)?.autoRun;
+      if (latest?.state === "paused" && latest.pauseReason === "usage-wait") resumeAutoRun(item.id, { auto: true });
+    } finally { waking.delete(item.id); }
+  }
 }
 
 /** 업무·모니터 변화마다 돌고 있는 실행을 깨운다. 단계가 스스로 할 일이 없으면 바로 끝난다. */
@@ -337,5 +461,8 @@ export function installAutoRun(): () => void {
   const wake = () => { for (const item of items()) if (item.autoRun?.state === "running") kick(item.id); };
   const offItems = useWorkItemStore.subscribe((state, previous) => { if (state.items !== previous.items) wake(); });
   const offMonitor = useWorkMonitorStore.subscribe(wake);
-  return () => { offItems(); offMonitor(); };
+  const check = () => { void checkUsageWaits(); };
+  const offUsage = useAppStore.subscribe((state, previous) => { if (state.usage !== previous.usage) check(); });
+  const timer = setInterval(check, USAGE_CHECK_MS);
+  return () => { offItems(); offMonitor(); offUsage(); clearInterval(timer); };
 }

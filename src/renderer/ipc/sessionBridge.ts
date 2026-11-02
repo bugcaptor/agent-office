@@ -39,6 +39,7 @@ import { maybeSendOsNotification } from "./osNotify";
 import { computeAnyWorking, createKeepAwakeController } from "../power/keepAwake";
 import { isNotifySuppressed } from "../agent/summonSuppress";
 import { useRepositoryAuditStore } from "../repository-audit/repositoryAuditStore";
+import { recordTurnUsage } from "../usage/usageForecastStore";
 
 /** OS 알림 본문 길이 상한(제목 옆 본문은 짧게). */
 const OS_NOTIFY_BODY_MAX = 120;
@@ -328,6 +329,8 @@ export function installSessionBridge(): () => void {
   // 세션 사용량(터미널 요약 바): 알림과 분리된 채널이라 서브에이전트로 억제된
   // Stop에서도 온다.
   const offUsage = tauriApi.onTurnUsage((e) => {
+    // 사용량 예측 장부는 태스크 대화도 센다. 같은 구독 한도를 쓴다.
+    recordTurnUsage(e);
     if (isTaskChatId(e.agentId)) return;
     useAppStore.getState().applyTurnUsage(e);
   });

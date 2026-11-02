@@ -187,7 +187,8 @@
     "chip": {
       "running": "Exécution auto",
       "paused": "Exécution auto en pause",
-      "finished": "Exécution auto terminée"
+      "finished": "Exécution auto terminée",
+      "usageWait": "Attente d'utilisation"
     },
     "idle": "Exécute une à une les {{count}} tâches préalables restantes dans le terminal de {{name}}. Chaque tâche démarre une nouvelle session et, à la fin de chaque tour, un juge (claude -p) décide de la suite.",
     "progress": "{{done}}/{{total}} terminées",
@@ -226,7 +227,8 @@
       "task-busy": "Une tâche prête est déjà en cours ou en revue. Terminez-la ou remettez-la à faire, puis reprenez.",
       "task-changed": "La tâche en cours a changé (supprimée, remise à faire ou réassignée).",
       "app-restarted": "En pause car l'application a redémarré.",
-      "user": "En pause."
+      "user": "En pause.",
+      "usage-wait": "L'utilisation de l'abonnement semble insuffisante : l'exécution attend la réinitialisation de la fenêtre de limite."
     },
     "blocked": {
       "auto-run-root-done": "Impossible de démarrer depuis une tâche terminée.",
@@ -244,7 +246,28 @@
       "report": "Ne faites que cette tâche. Personne ne surveille : à la fin de votre tour, un juge lit votre rapport et décide de la suite.\n- Faites vous-même les choix réversibles (noms, structure, petites décisions de périmètre) selon les notes du plan et la tâche, et listez-les sous decisions. Ne vous arrêtez pas pour les demander.\n- Ne faites ce qui est difficile à annuler ou sort de la machine (push, déploiement, suppression de données, publication) que si les notes du plan ou la tâche le demandent. Si c'est nécessaire sans être permis, écrivez status: blocked et arrêtez-vous.\n- Avant la fin de votre tour, laissez un rapport avec la commande office-task des instructions du tableau de tâches Agent Office (à défaut, le chemin de la variable d'environnement AGENT_OFFICE_TASK). Le réécrire le remplace.\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: ce que vous avez changé\nverified: vérifications lancées et leurs résultats\ndecisions: choix faits par vous-même\nneeds_human: (seulement si blocked) la seule chose qu'une personne doit décider, avec les options\nEOF\n\nReprenez brièvement les mêmes points dans votre dernière réponse et ne terminez pas par une offre ou une question comme « Voulez-vous que… ? »",
       "rootLast": "Cette tâche est la dernière étape du plan (sa racine). Toutes les étapes précédentes sont terminées."
     },
-    "finishedWithRoot": "Les tâches préalables et la tâche racine elle-même sont terminées. La racine est passée en revue."
+    "finishedWithRoot": "Les tâches préalables et la tâche racine elle-même sont terminées. La racine est passée en revue.",
+    "usage": {
+      "guard": "Attendre la réinitialisation si l'utilisation semble insuffisante",
+      "guardHint": "Avant chaque envoi, l'utilisation réelle des jetons sert à prévoir la part de chaque fenêtre de limite que l'étape suivante consommera. Si elle dépasse {{limit}} %, l'exécution attend la réinitialisation de cette fenêtre puis reprend d'elle-même.",
+      "provider": {
+        "claude": "Claude",
+        "codex": "Codex"
+      },
+      "stage": {
+        "task": "la tâche suivante",
+        "followup": "la consigne de suivi",
+        "judge": "l'appel du juge"
+      },
+      "waitPredicted": "La fenêtre {{window}} de {{provider}} est à environ {{now}} % ; {{stage}} devrait consommer environ {{add}} points de plus, ce qui dépasse la limite de {{limit}} %.",
+      "waitExhausted": "La fenêtre {{window}} de {{provider}} est à environ {{now}} % et a atteint la limite de {{limit}} %.",
+      "waitUntil": "{{reset}}. L'exécution reprend d'elle-même après la réinitialisation.",
+      "waitRetry": "L'heure de réinitialisation est inconnue ; nouvelle vérification à {{time}}.",
+      "skip": "Continuer sans attendre",
+      "outlook": "Prévision pour la tâche suivante : {{list}}",
+      "outlookItem": "{{provider}} {{window}} {{now}}% → {{after}}%",
+      "learning": "Collecte des données de prévision ({{min}} tâches terminées et variations d'utilisation). En attendant, seule l'atteinte d'une limite ({{limit}} %) est vérifiée."
+    }
   },
   "taskChat": {
     "open": "Discuter",

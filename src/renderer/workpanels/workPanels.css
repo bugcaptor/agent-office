@@ -131,6 +131,8 @@
 .work-auto-run p { margin: 4px 0; }
 .work-auto-run-paused { color: var(--accent-warn); }
 .work-auto-run-text { display: block; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.work-auto-run-usage label { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; }
+.work-auto-run-usage .work-muted { margin: 2px 0 0; }
 .work-auto-run-log ol { margin: 6px 0 0; padding-left: 1.5em; max-height: 220px; overflow-y: auto; }
 .work-auto-run-log li { margin-bottom: 4px; }
 .work-auto-run-log time { color: var(--text-dim); }

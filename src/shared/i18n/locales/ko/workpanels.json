@@ -187,7 +187,8 @@
     "chip": {
       "running": "자동 진행 중",
       "paused": "자동 진행 멈춤",
-      "finished": "자동 진행 완료"
+      "finished": "자동 진행 완료",
+      "usageWait": "사용량 대기"
     },
     "idle": "{{name}}의 터미널에서 남은 선행 작업 {{count}}개를 차례로 진행합니다. 태스크마다 새 세션을 열고, 턴이 끝나면 판단자(claude -p)가 다음 할 일을 정합니다.",
     "progress": "{{done}}/{{total}} 완료",
@@ -226,7 +227,8 @@
       "task-busy": "준비된 태스크가 이미 진행 중이거나 검토 대기입니다. 완료하거나 할 일로 되돌린 뒤 계속하세요.",
       "task-changed": "진행 중이던 태스크가 바뀌었습니다(삭제·할 일로 되돌림·담당 변경).",
       "app-restarted": "앱을 다시 켜서 멈췄습니다.",
-      "user": "일시정지했습니다."
+      "user": "일시정지했습니다.",
+      "usage-wait": "구독 사용량이 모자랄 것 같아 한도 창이 리셋되기를 기다립니다."
     },
     "blocked": {
       "auto-run-root-done": "완료된 태스크에서는 시작할 수 없습니다.",
@@ -244,7 +246,28 @@
       "report": "이 태스크만 하세요. 지켜보는 사람은 없습니다. 턴이 끝나면 판단자가 보고를 읽고 다음 단계를 정합니다.\n- 되돌릴 수 있는 선택(이름, 구조, 작은 범위 판단)은 플랜 메모와 태스크에 맞춰 직접 정하고 보고의 decisions에 적으세요. 이런 일로 묻고 멈추지 마세요.\n- 푸시·배포·데이터 삭제·외부 게시처럼 되돌리기 어렵거나 밖으로 나가는 일은 플랜 메모나 태스크가 시킨 경우에만 하세요. 꼭 필요한데 허락이 없으면 status를 blocked로 쓰고 멈추세요.\n- 턴을 끝내기 전에 Agent Office 작업 보드 안내의 office-task 명령(안내가 없으면 환경 변수 AGENT_OFFICE_TASK의 경로)으로 보고를 남기세요. 다시 쓰면 바뀝니다.\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: 바꾼 것\nverified: 실행한 확인 명령과 결과\ndecisions: 스스로 정한 것\nneeds_human: (blocked일 때만) 사람이 정할 것 하나와 선택지\nEOF\n\n마지막 답변에도 같은 내용을 짧게 쓰고, \"원하시면 ~할까요?\" 같은 제안이나 질문으로 끝내지 마세요.",
       "rootLast": "이 태스크는 플랜의 마지막 단계(루트)입니다. 앞 단계는 모두 끝났습니다."
     },
-    "finishedWithRoot": "선행 태스크와 루트 태스크까지 모두 진행했습니다. 루트를 검토 대기로 옮겼습니다."
+    "finishedWithRoot": "선행 태스크와 루트 태스크까지 모두 진행했습니다. 루트를 검토 대기로 옮겼습니다.",
+    "usage": {
+      "guard": "사용량이 모자랄 것 같으면 리셋까지 기다리기",
+      "guardHint": "보내기 전마다 실제 토큰 사용량으로 다음 일이 한도 창을 얼마나 쓸지 예측합니다. 한도 {{limit}}%를 넘길 것 같으면 그 창이 리셋될 때까지 기다렸다가 스스로 이어 갑니다.",
+      "provider": {
+        "claude": "Claude",
+        "codex": "Codex"
+      },
+      "stage": {
+        "task": "다음 태스크",
+        "followup": "후속 지시",
+        "judge": "판단자 호출"
+      },
+      "waitPredicted": "{{provider}} {{window}} 창이 지금 약 {{now}}%인데, {{stage}}에 약 {{add}}%p가 더 들 것으로 보여 한도 {{limit}}%를 넘깁니다.",
+      "waitExhausted": "{{provider}} {{window}} 창이 지금 약 {{now}}%로 한도 {{limit}}%에 닿았습니다.",
+      "waitUntil": "{{reset}}. 리셋되면 스스로 이어 갑니다.",
+      "waitRetry": "리셋 시각을 몰라 {{time}}에 다시 확인합니다.",
+      "skip": "기다리지 않고 계속",
+      "outlook": "다음 태스크 예상: {{list}}",
+      "outlookItem": "{{provider}} {{window}} {{now}}% → {{after}}%",
+      "learning": "사용량 예측에 쓸 기록(끝난 태스크 {{min}}개와 사용량 변화)을 모으는 중입니다. 그동안은 이미 한도({{limit}}%)에 닿았는지만 봅니다."
+    }
   },
   "taskChat": {
     "open": "대화",

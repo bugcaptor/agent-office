@@ -67,6 +67,13 @@ function base(lang: string): Scenario {
   };
 }
 
+/** Claude 5시간 창을 96%로, 리셋을 95분 뒤로(가짜 백엔드가 시각을 지금으로 옮긴 뒤 기준). 사용량 대기 장면용. */
+function nearLimitClaude(usage: UsageSnapshot): UsageSnapshot {
+  const lastAttempt = usage.claudeLive.lastAttemptMs ?? 0;
+  const windows = (usage.claude?.windows ?? []).map((w) => (w.kind === "session" ? { ...w, usedPercent: 96, resetsAtMs: lastAttempt + 60_000 + 95 * 60_000 } : w));
+  return { ...usage, claude: usage.claude && { ...usage.claude, windows } };
+}
+
 const work = (id: string, title: string, status: WorkItem["status"], assigneeAgentId: string | undefined, order: number, extra: Partial<WorkItem> = {}): WorkItem => ({
   id, title, body: `${title} body`, status, assigneeAgentId, order, sessionIds: [], createdAt: 1720000000000 + order, updatedAt: 1720000000000 + order, ...extra,
 });
@@ -80,6 +87,7 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
       ...b,
       state: { ...b.state, agents: AGENTS.map((a, i) => ({ ...a, cwd: cwds[i] })) },
       settings: { ...b.settings, settings: { ...b.settings.settings, workPanelsEnabled: true } },
+      usage: nearLimitClaude(b.usage),
       workItems: [
         work("w1", "Show project in work panel", "in_progress", "p1", 0),
         work("w2", "Tidy session log filters", "todo", "p1", 1),
@@ -101,6 +109,20 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
         } }),
         // 플랜 루트(메모 전용): w2를 마치면 끝나고 루트 자체는 실행하지 않는다.
         work("w9", "Clean up logs", "todo", "p1", 8, { dependsOn: ["w2"], plan: true, body: "Goal: session logs stay readable. Keep the old filter names working." }),
+        // 사용량 대기: Cy의 플랜이 Claude 5시간 창이 모자랄 것 같아 리셋을 기다린다.
+        work("w10", "Write release notes", "done", "p3", 9),
+        work("w11", "Publish changelog page", "todo", "p3", 10, { dependsOn: ["w10"] }),
+        work("w12", "Release 2.0", "todo", "p3", 11, { dependsOn: ["w11"], plan: true, body: "Ship docs together with the release." , autoRun: {
+          state: "paused", judgeSessionId: "00000000-0000-4000-8000-000000000001", judgeStarted: true, followUps: 0, pauseReason: "usage-wait", costUsd: 0.018,
+          startedAt: Date.now() - 2 * 3600_000, usageGuard: true,
+          usageWait: { provider: "claude", kind: "session", label: null, nowPercent: 78.4, addPercent: 21.3, limit: 95, until: Date.now() + 95 * 60_000 + 120_000, resetsAtMs: Date.now() + 95 * 60_000, stage: "task", worker: "claude" },
+          log: [
+            { at: Date.now() - 2 * 3600_000, kind: "start" },
+            { at: Date.now() - 2 * 3600_000 + 60_000, kind: "send", taskId: "w10" },
+            { at: Date.now() - 20 * 60_000, kind: "next", taskId: "w10", text: "Notes live in docs/release-2.0.md." },
+            { at: Date.now() - 20 * 60_000, kind: "pause", text: "usage-wait" },
+          ],
+        } }),
       ],
     };
   },

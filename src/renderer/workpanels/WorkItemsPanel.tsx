@@ -124,7 +124,7 @@ export function WorkItemsPanel() {
       <span>{plan && <span className="work-status-chip work-plan-chip">{t("plan.chip")}</span>}
         {(!plan || item.status !== "todo") && <span className="work-status-chip">{t(`status.${item.status}`)}</span>}
         <strong className={!item.title.trim() ? "work-title-derived" : undefined}>{workItemTitle(item)}</strong>{dirty && <small>{t("unsavedChanges")}</small>}
-        {run && <small className={`work-auto-chip ${run.state}`}>{t(`autoRun.chip.${run.state}`)}</small>}
+        {run && <small className={`work-auto-chip ${run.state}`}>{t(run.pauseReason === "usage-wait" && run.state === "paused" ? "autoRun.chip.usageWait" : `autoRun.chip.${run.state}`)}</small>}
         {plan && !item.plan && <small title={t("plan.rootRunsHint")}>{t("plan.rootRuns")}</small>}
         {plan && <small className="work-plan-progress">{t("autoRun.progress", { done: plan.done, total: plan.total })}</small>}
         {role?.member?.unassigned && <small>{t("unassigned")}</small>}

@@ -187,7 +187,8 @@
     "chip": {
       "running": "自动推进中",
       "paused": "自动推进已暂停",
-      "finished": "自动推进已完成"
+      "finished": "自动推进已完成",
+      "usageWait": "等待用量"
     },
     "idle": "在{{name}}的终端中依次推进剩余的 {{count}} 个前置任务。每个任务开启新会话，每轮结束后由评审(claude -p)决定下一步。",
     "progress": "已完成 {{done}}/{{total}}",
@@ -226,7 +227,8 @@
       "task-busy": "有已就绪的任务正在进行或待审核。请将其完成或改回待办后再继续。",
       "task-changed": "当前任务发生了变化(被删除、改回待办或更换负责人)。",
       "app-restarted": "应用已重启，因此暂停。",
-      "user": "已暂停。"
+      "user": "已暂停。",
+      "usage-wait": "订阅用量看起来不够，正在等待限额窗口重置。"
     },
     "blocked": {
       "auto-run-root-done": "无法从已完成的任务开始。",
@@ -244,7 +246,28 @@
       "report": "只做这个任务。没有人在看：回合结束后，评审会读你的报告并决定下一步。\n- 可撤销的选择(命名、结构、小范围判断)请按计划备注和任务自行决定，并写在报告的 decisions 里。不要为此提问并停下。\n- 推送、部署、删除数据、对外发布等难以撤销或离开本机的操作，只在计划备注或任务要求时才做。如果必须做却没有许可，请把 status 写成 blocked 并停下。\n- 结束回合前，用 Agent Office 任务板说明中的 office-task 命令(没有说明时用环境变量 AGENT_OFFICE_TASK 的路径)留下报告。重写会覆盖。\n\noffice-task --report {{id}} - <<'EOF'\nstatus: done | blocked\nchanged: 改了什么\nverified: 运行的检查命令和结果\ndecisions: 自己做的决定\nneeds_human: (仅 blocked 时)需要人来决定的一件事和选项\nEOF\n\n最后的回复里也简要写同样的内容，不要以“需要的话我可以……吗？”这类提议或提问结尾。",
       "rootLast": "此任务是计划的最后一步（根）。前面的步骤都已完成。"
     },
-    "finishedWithRoot": "前置任务和根任务本身都已完成。根已移到待审核。"
+    "finishedWithRoot": "前置任务和根任务本身都已完成。根已移到待审核。",
+    "usage": {
+      "guard": "用量看起来不够时等待重置",
+      "guardHint": "每次发送前，按实际 token 用量预测下一步会占用各限额窗口多少。若会超过 {{limit}}%，就等到该窗口重置后自动继续。",
+      "provider": {
+        "claude": "Claude",
+        "codex": "Codex"
+      },
+      "stage": {
+        "task": "下一个任务",
+        "followup": "后续指令",
+        "judge": "评审调用"
+      },
+      "waitPredicted": "{{provider}} {{window}}窗口目前约为 {{now}}%，{{stage}}预计还需约 {{add}} 个百分点，会超过 {{limit}}% 的上限。",
+      "waitExhausted": "{{provider}} {{window}}窗口目前约为 {{now}}%，已达到 {{limit}}% 的上限。",
+      "waitUntil": "{{reset}}。重置后自动继续。",
+      "waitRetry": "不知道重置时间，将在 {{time}} 再次检查。",
+      "skip": "不等待，继续",
+      "outlook": "下一个任务预测：{{list}}",
+      "outlookItem": "{{provider}} {{window}} {{now}}% → {{after}}%",
+      "learning": "正在收集用量预测所需的记录（{{min}} 个已完成任务和用量变化）。在此之前只检查是否已达到上限（{{limit}}%）。"
+    }
   },
   "taskChat": {
     "open": "对话",

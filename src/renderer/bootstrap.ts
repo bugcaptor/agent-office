@@ -37,6 +37,7 @@ import { installSessionSummaryRecorder } from "./workpanels/sessionSummaryStore"
 import { installWorkMonitor } from "./workpanels/workMonitor";
 import { installTaskChatTracking } from "./workpanels/taskChatStore";
 import { installAutoRun } from "./workpanels/autoRun";
+import { installUsageForecast } from "./usage/usageForecastStore";
 import { installWorkInboxLifecycle } from "./workpanels/lifecycle";
 import { stopWorkInbox } from "./workpanels/workInbox";
 import { useWorkItemStore } from "./workpanels/workItemStore";
@@ -157,6 +158,8 @@ export async function bootApp(): Promise<() => void> {
   // 태스크 대화 탭의 세션 상태. 캐릭터 중심 스토어(브리지·모니터·요약)는 이 세션을 무시한다.
   const offTaskChats = installTaskChatTracking();
   // 자동 진행은 업무 상태 전이(모니터)를 신호로 쓰므로 그 뒤에 건다.
+  // 자동 진행의 사용량 대기가 쓰는 비율 학습. 사용량 조회값이 바뀔 때마다 배운다.
+  const offUsageForecast = installUsageForecast();
   const offAutoRun = installAutoRun();
   const offWorkInbox = installWorkInboxLifecycle();
   const offBridge = installSessionBridge();
@@ -209,6 +212,7 @@ export async function bootApp(): Promise<() => void> {
     offWorkMonitor();
     offTaskChats();
     offAutoRun();
+    offUsageForecast();
     offWorkInbox();
     void stopWorkInbox().then(() => useWorkItemStore.getState().flush());
     offMascot();

@@ -609,3 +609,28 @@ describe("태스크 대화 버튼", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
+
+it("사용량 대기 중이면 막는 창·예측·리셋 시각과 기다리지 않고 계속을 보이고, 누르면 한 번 건너뛴다", async () => {
+  useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true, observerEnabled: true }, agents: { a: { id: "a", name: "Ada", role: "dev", seed: "s", createdAt: 1, deskIndex: 0 } }, agentOrder: ["a"] });
+  useWorkItemStore.setState({ loaded: true });
+  const store = useWorkItemStore.getState();
+  const step = store.add({ title: "Step", body: "", status: "todo", assigneeAgentId: "a" })!;
+  const root = store.add({ title: "Usage plan", body: "", status: "todo", assigneeAgentId: "a", dependsOn: [step], plan: true })!;
+  const resetsAtMs = new Date(2026, 10, 3, 14, 0).getTime();
+  store.setAutoRun(root, {
+    state: "paused", judgeSessionId: "x", judgeStarted: false, followUps: 0, pauseReason: "usage-wait", costUsd: 0, log: [], startedAt: 1,
+    usageWait: { provider: "claude", kind: "session", label: null, nowPercent: 81.6, addPercent: 18.2, limit: 95, until: resetsAtMs + 120_000, resetsAtMs, stage: "task", worker: "claude" },
+  });
+  store.select(root);
+  render(<UIChrome />);
+  const dialog = screen.getByRole("dialog", { name: "Usage plan" });
+  expect(within(dialog).getByText(/Claude 5시간 창이 지금 약 82%인데, 다음 태스크에 약 18%p가 더 들 것으로/)).toBeTruthy();
+  expect(within(dialog).getByText(/11월 3일\(화\) 14:00 리셋/)).toBeTruthy();
+  expect((within(dialog).getByRole("checkbox", { name: /리셋까지 기다리기/ }) as HTMLInputElement).checked).toBe(true);
+  expect(within(dialog).queryByRole("button", { name: "계속" })).toBeNull();
+  fireEvent.click(within(dialog).getByRole("button", { name: "기다리지 않고 계속" }));
+  // 건너뛰기 자체(한 번만 통과)는 autoRunUsage.test.ts가 본다.
+  const run = useWorkItemStore.getState().items.find((i) => i.id === root)!.autoRun!;
+  expect(run).toMatchObject({ state: "running", usageWait: undefined });
+  expect(run.log.map((e) => e.kind)).toContain("resume");
+});

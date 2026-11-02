@@ -1,4 +1,5 @@
 /** 업무 패널의 영속 계약. Rust types.rs 미러. */
+import type { UsageWindowKind } from "./usage";
 export interface WorkAgent {
   cli: "claude" | "codex" | "agy" | "kilo" | "pi";
   model?: string;
@@ -28,7 +29,9 @@ export interface WorkItem {
 export type AutoRunState = "running" | "paused" | "finished";
 export type AutoRunPauseReason =
   | "human-input" | "session-ended" | "send-failed" | "judge-failed" | "followup-limit"
-  | "judge-stop" | "task-busy" | "task-changed" | "app-restarted" | "user";
+  | "judge-stop" | "task-busy" | "task-changed" | "app-restarted" | "user"
+  /** 구독 사용량이 모자랄 것으로 보여 한도 창 리셋을 기다린다. 때가 되면 스스로 이어 간다. */
+  | "usage-wait";
 export type AutoRunLogKind = "start" | "send" | "next" | "followup" | "pause" | "resume" | "finish" | "human-done" | "root-done";
 export interface AutoRunLogEntry { at: number; kind: AutoRunLogKind; taskId?: string; text?: string }
 /** 루트 업무 하나의 자동 진행. 렌더러가 소유하고 네이티브는 보존만 한다. */
@@ -52,6 +55,36 @@ export interface AutoRun {
   costUsd: number;
   log: AutoRunLogEntry[];
   startedAt: number;
+  /** false면 사용량이 모자라도 기다리지 않는다. 없으면 켜짐. */
+  usageGuard?: boolean;
+  /** 사용량 대기(`pauseReason: "usage-wait"`)의 이유와 다시 볼 시각. */
+  usageWait?: AutoRunUsageWait;
+  /** 사람이 기다림을 건너뛰었다. 다음 사용량 검사 한 번을 통과시킨다. */
+  usageOverride?: boolean;
+  /** 사용량 대기 때문에 아직 보내지 않은 판단자의 후속 지시. 이어 갈 때 다시 판단하지 않고 보낸다. */
+  pendingFollowUp?: string;
+  /** 현재 태스크를 보낼 때와 마지막 후속 지시를 넣을 때의 비용 표시. 끝나면 차이를 사용량 표본으로 남긴다. */
+  taskMark?: AutoRunCostMark;
+  turnMark?: AutoRunCostMark;
+}
+/** 진행자 캐릭터의 누적 비용 표시. `epoch`는 비용 장부를 연 시각(앱 실행마다 다르다). */
+export interface AutoRunCostMark { epoch: number; cost: number; at: number; judgeCost: number }
+export interface AutoRunUsageWait {
+  /** 기다리게 한 구독과 한도 창. */
+  provider: "claude" | "codex";
+  kind: UsageWindowKind;
+  label: string | null;
+  /** 판단 때의 지금 사용률 추정과 다음 일이 더할 것으로 본 양(%p, 모르면 null). */
+  nowPercent: number;
+  addPercent: number | null;
+  limit: number;
+  /** 다시 볼 시각(epoch ms). */
+  until: number;
+  resetsAtMs: number | null;
+  /** 무엇을 보내기 전이었나. */
+  stage: "task" | "followup" | "judge";
+  /** 작업자 CLI의 구독(사용량 창이 없는 CLI면 null). 대기 중 다시 검사할 때 쓴다. */
+  worker?: "claude" | "codex" | null;
 }
 export interface SessionSummary {
   sessionId: string;

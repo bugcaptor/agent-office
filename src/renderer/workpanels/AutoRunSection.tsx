@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AutoRun, AutoRunLogEntry, WorkItem } from "@shared/types";
 import { useAppStore } from "../store/appStore";
@@ -6,6 +7,7 @@ import { useWorkItemStore } from "./workItemStore";
 import { workItemTitle } from "./workItemDraft";
 import { sendErrorText } from "./sendErrorText";
 import { TaskChatButton, useTaskChatButton } from "./TaskChatButton";
+import { AutoRunUsage, UsageWaitDetail } from "./AutoRunUsage";
 import { busyRunRoot, endAutoRun, MAX_FOLLOW_UPS, pauseAutoRun, planItems, resumeAutoRun, runSteps, startAutoRun, startBlockedReason } from "./autoRun";
 
 /** 시작 차단·일시정지 상세 코드를 화면 문장으로. 자동 진행 코드가 아니면 보내기 오류 문구를 쓴다. */
@@ -48,6 +50,8 @@ export function AutoRunSection({ root }: { root: WorkItem }) {
   const observerEnabled = useAppStore((s) => s.appSettings.observerEnabled);
   const costEnabled = useAppStore((s) => s.appSettings.sessionCostEnabled);
   const run = root.autoRun;
+  // 시작 전의 사용량 대기 선택. 시작하면 실행이 이 값을 쥔다.
+  const [usageGuard, setUsageGuard] = useState(true);
   // 일시정지 사유를 읽고 바로 묻는 흐름. 대화가 열리면 루트 팝업을 닫는다.
   const chat = useTaskChatButton(run?.currentId, () => { if (useWorkItemStore.getState().selectedId === root.id) select(null); });
   if (!run && !planItems(root, items).length) return null;
@@ -58,6 +62,7 @@ export function AutoRunSection({ root }: { root: WorkItem }) {
   const blocked = run && run.state !== "finished" ? undefined : startBlockedReason(root, items, agents, observerEnabled);
   const current = run?.currentId ? items.find((item) => item.id === run.currentId) : undefined;
   const paused = run?.state === "paused" ? pauseText(t, run) : undefined;
+  const usageWaiting = run?.state === "paused" && run.pauseReason === "usage-wait";
   const busyRoot = blocked === "auto-run-runner-busy" ? busyRunRoot(root, items) : undefined;
   return <section className="work-auto-run" aria-labelledby={`auto-run-${root.id}`}>
     <h3 id={`auto-run-${root.id}`}>{t("autoRun.title")}</h3>
@@ -65,18 +70,20 @@ export function AutoRunSection({ root }: { root: WorkItem }) {
     {run?.state === "running" && <p>{current
       ? <>{t("autoRun.running", { title: workItemTitle(current) })} <small>{t("autoRun.followUps", { count: run.followUps, max: MAX_FOLLOW_UPS })}</small></>
       : t("autoRun.preparing")}</p>}
-    {paused && <div role="status" className="work-auto-run-paused"><p>{paused.reason}</p>{paused.detail && <p className="work-auto-run-text">{paused.detail}</p>}</div>}
+    {paused && <div role="status" className="work-auto-run-paused"><p>{paused.reason}</p>{paused.detail && <p className="work-auto-run-text">{paused.detail}</p>}
+      {run?.pauseReason === "usage-wait" && run.usageWait && <UsageWaitDetail wait={run.usageWait} />}</div>}
     {run?.state === "finished" && <p>{t(run.log[run.log.length - 1]?.kind === "root-done" ? "autoRun.finishedByRoot" : root.plan ? "autoRun.finished" : "autoRun.finishedWithRoot")}</p>}
     <p className="work-muted">{t("autoRun.progress", { done, total: plan.length })}
       {run && costEnabled && run.costUsd > 0 && <> · {t("autoRun.cost", { cost: formatUsd(run.costUsd) })}</>}</p>
+    <AutoRunUsage root={root} guard={usageGuard} onGuard={setUsageGuard} />
     <div className="work-dialog-actions">
       {run && run.state !== "running" && <button className="pixel-btn" onClick={() => endAutoRun(root.id)}>{t(run.state === "finished" ? "autoRun.clear" : "autoRun.end")}</button>}
       <span className="work-dialog-spacer" />
       {current && <TaskChatButton chat={chat} label={t("taskChat.openCurrent")} hintId={`auto-run-chat-hint-${root.id}`} />}
-      {run?.state === "running" && <button className="pixel-btn" onClick={() => pauseAutoRun(root.id)}>{t("autoRun.pause")}</button>}
-      {run?.state === "paused" && <button className="pixel-btn primary" onClick={() => resumeAutoRun(root.id)}>{t("autoRun.resume")}</button>}
+      {(run?.state === "running" || usageWaiting) && <button className="pixel-btn" onClick={() => pauseAutoRun(root.id)}>{t("autoRun.pause")}</button>}
+      {run?.state === "paused" && <button className="pixel-btn primary" onClick={() => resumeAutoRun(root.id)}>{t(usageWaiting ? "autoRun.usage.skip" : "autoRun.resume")}</button>}
       {(!run || run.state === "finished") && <button className="pixel-btn primary" disabled={!!blocked} aria-describedby={blocked ? `auto-run-hint-${root.id}` : undefined}
-        onClick={() => { if (run) endAutoRun(root.id); startAutoRun(root.id); }}>{t("autoRun.start")}</button>}
+        onClick={() => { if (run) endAutoRun(root.id); startAutoRun(root.id, { usageGuard }); }}>{t("autoRun.start")}</button>}
     </div>
     {current && chat.hint && <p id={`auto-run-chat-hint-${root.id}`} className="work-send-hint">{chat.hint}</p>}
     {blocked && <p id={`auto-run-hint-${root.id}`} className="work-send-hint">{blockedText(t, blocked, root, items)}

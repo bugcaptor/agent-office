@@ -67,7 +67,7 @@ function closeRunOfDone(item: WorkItem, at: number): WorkItem {
   if (item.status !== "done" || !run || run.state === "finished") return item;
   // 기록 상한은 autoRun.ts의 MAX_LOG와 같다.
   const log = [...run.log, { at, kind: "root-done" as const }].slice(-200);
-  return { ...item, autoRun: { ...run, state: "finished", currentId: undefined, followUps: 0, sentAt: undefined, pauseReason: undefined, pauseDetail: undefined, log } };
+  return { ...item, autoRun: { ...run, state: "finished", currentId: undefined, followUps: 0, sentAt: undefined, pauseReason: undefined, pauseDetail: undefined, usageWait: undefined, usageOverride: undefined, pendingFollowUp: undefined, log } };
 }
 function changed() {
   revision++;
