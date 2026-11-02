@@ -83,6 +83,54 @@ describe("비율 학습", () => {
     expect(model.windows[SESSION]).toBeUndefined();
     expect(anchors[SESSION]).toMatchObject({ percent: 3, resetsAtMs: T0 + 6 * HOUR });
   });
+  it("요금제 이름이 바뀌면 그 provider의 비율을 버리고 다시 배운다", () => {
+    const ledger = emptyLedger(T0);
+    const model = modelWith({ [SESSION]: 2, [WEEKLY]: 0.2, [windowKey("codex", { kind: "session", label: null })]: 1 });
+    for (const stat of Object.values(model.windows)) stat.plan = "max_5x";
+    const anchors: Record<string, Anchor> = {};
+    // 이름을 모르는 조회값으로는 버리지 않는다.
+    learnFromUsage(model, anchors, ledger, "claude", { ...provider(T0 + MIN, [win("session", 10, T0 + HOUR)]), planLabel: null }, T0 + MIN);
+    expect(windowRatio(model, SESSION, T0 + MIN)).toBe(2);
+    expect(learnFromUsage(model, anchors, ledger, "claude", { ...provider(T0 + 2 * MIN, [win("session", 10, T0 + HOUR)]), planLabel: "max_20x" }, T0 + 2 * MIN)).toBe(true);
+    expect(windowRatio(model, SESSION, T0 + 2 * MIN)).toBeNull();
+    expect(windowRatio(model, WEEKLY, T0 + 2 * MIN)).toBeNull();
+    // 다른 provider는 그대로다.
+    expect(windowRatio(model, windowKey("codex", { kind: "session", label: null }), T0 + 2 * MIN)).toBe(1);
+  });
+  it("이름이 그대로인데 한도가 바뀌면 큰 표본이 연달아 어긋날 때 새 비율로 빠르게 옮겨 간다", () => {
+    // 오래 배운 비율 2%p/달러. 한도가 4배로 늘어 실제는 0.5%p/달러.
+    const model = modelWith({ [SESSION]: 2 });
+    model.windows[SESSION] = { sumPercent: 2000, sumCost: 1000, at: T0 };
+    const ledger = emptyLedger(T0);
+    const anchors: Record<string, Anchor> = {};
+    const reset = T0 + 5 * HOUR;
+    let spent = 0;
+    const observe = (n: number) => {
+      const at = T0 + n * 10 * MIN;
+      if (n > 0) { addCost(ledger, "claude", "a", 12, at - MIN); spent += 12; }
+      learnFromUsage(model, anchors, ledger, "claude", provider(at, [win("session", Math.floor(spent * 0.5), reset)]), at);
+      return windowRatio(model, SESSION, at)!;
+    };
+    observe(0);
+    // 한 번 어긋난 것은 앱 밖 사용일 수 있어 아직 크게 움직이지 않는다.
+    expect(observe(1)).toBeGreaterThan(1.9);
+    // 두 번째로 같은 방향이면 옛 값을 버리고 새 표본으로 시작한다.
+    expect(observe(2)).toBeCloseTo(0.5, 0);
+    for (let n = 3; n <= 6; n++) observe(n);
+    expect(observe(7)).toBeCloseTo(0.5, 0);
+  });
+  it("앱이 거의 안 쓰는 사이 오른 사용률(앱 밖 사용)은 비율에 넣지 않는다", () => {
+    const ledger = emptyLedger(T0);
+    const model = emptyModel();
+    const anchors: Record<string, Anchor> = {};
+    learnFromUsage(model, anchors, ledger, "claude", provider(T0 + MIN, [win("session", 10, T0 + HOUR)]), T0 + MIN);
+    expect(learnFromUsage(model, anchors, ledger, "claude", provider(T0 + 20 * MIN, [win("session", 30, T0 + HOUR)]), T0 + 20 * MIN)).toBe(false);
+    expect(model.windows[SESSION]).toBeUndefined();
+    // 기준점은 옮겨서, 다음 표본에 앱 밖 사용분이 섞이지 않는다.
+    addCost(ledger, "claude", "a", 5, T0 + 30 * MIN);
+    learnFromUsage(model, anchors, ledger, "claude", provider(T0 + 40 * MIN, [win("session", 40, T0 + HOUR)]), T0 + 40 * MIN);
+    expect(model.windows[SESSION]).toMatchObject({ sumPercent: 10, sumCost: 5 });
+  });
   it("누적 비용이 모자라면 비율을 믿지 않는다", () => {
     const model = emptyModel();
     model.windows[SESSION] = { sumPercent: 3, sumCost: 0.5, at: T0 };

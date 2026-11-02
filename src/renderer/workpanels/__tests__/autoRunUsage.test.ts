@@ -102,6 +102,21 @@ describe("자동 진행의 사용량 대기", () => {
     expect(get(root).autoRun!.log.map((e) => e.kind)).toEqual(["start", "pause", "resume", "send"]);
   });
 
+  it("학습 전이라도 95%에 닿았으면 기다렸다가 리셋 뒤 이어 간다", async () => {
+    const { root } = plan();
+    resetUsageForecast(Date.now() - HOUR, emptyModel());
+    const reset = Date.now() + HOUR;
+    useAppStore.setState({ usage: usage(95, reset) });
+    startAutoRun(root);
+    await vi.waitFor(() => expect(get(root).autoRun?.pauseReason).toBe("usage-wait"));
+    expect(get(root).autoRun!.usageWait).toMatchObject({ addPercent: null, until: reset + WAKE_GRACE_MS });
+    expect(api.sendWorkItem).not.toHaveBeenCalled();
+    api.loadUsageSnapshot.mockResolvedValue(usage(0, reset + 5 * HOUR, Date.now() + 1));
+    await checkUsageWaits(reset + WAKE_GRACE_MS);
+    await vi.waitFor(() => expect(api.sendWorkItem).toHaveBeenCalledTimes(1));
+    await settled(root);
+  });
+
   it("리셋 전이라도 새 조회값으로 넉넉해지면 일찍 이어 간다", async () => {
     const { root } = plan();
     useAppStore.setState({ usage: usage(80, Date.now() + HOUR) });

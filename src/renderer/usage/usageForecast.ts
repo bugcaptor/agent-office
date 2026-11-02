@@ -13,8 +13,12 @@
 // (USD 상당, 이하 "비용")으로 바꿔 provider·캐릭터별로 누적하고(장부), 한도 창마다
 // "비용 1달러가 몇 %p인가"(비율)를 사용률 변화와 비용 변화의 짝에서 배운다.
 // 앵커를 보고된 값으로 옮겨 가며 차이를 더하므로 정수로 반올림된 사용률도 오래
-// 모으면 오차가 쌓이지 않는다. 앱 밖(다른 터미널·웹)에서 쓴 양은 비용 없이 사용률만
-// 올려 비율을 키운다 — 예측이 보수적으로(일찍 기다리는 쪽으로) 틀린다.
+// 모으면 오차가 쌓이지 않는다. 앱이 거의 안 쓰는 동안 오른 사용률(앱 밖 사용)은 비율에
+// 넣지 않는다. 앱과 앱 밖이 섞인 구간은 비율을 조금 키워 예측이 일찍 기다리는 쪽으로 틀린다.
+// 요금제가 바뀌면 같은 비용의 %p가 달라진다. 조회값의 요금제 이름(planLabel)이 바뀌면
+// 그 provider의 비율을 버리고 다시 배운다. 이름이 그대로인데 한도가 바뀐 경우는 큰 표본이
+// 같은 방향으로 두 번 연달아 비율과 2배 넘게 어긋나면 옛 학습값을 버린다.
+// 태스크 표본은 비용(달러) 단위라 요금제와 무관하게 그대로 쓴다.
 //
 // 예측: 지금 사용률 ≈ 보고값 + 비율 × 보고 뒤 쓴 비용. 다음 태스크 ≈ 최근 태스크
 // 비용의 상위 분위(75%) × 비율. 창이 태스크 도중 리셋되면 리셋 전까지 걸리는 몫만
@@ -37,6 +41,12 @@ const MIN_RATIO_COST = 1;
 /** 표본 하나로 묶는 최소 변화. 이보다 작으면 앵커를 그대로 두고 계속 모은다. */
 const MIN_SAMPLE_COST = 0.2;
 const MIN_SAMPLE_PERCENT = 2;
+/** 어긋남을 판단할 만큼 큰 표본(%p). 정수 반올림 오차가 20% 아래다. */
+const DRIFT_MIN_PERCENT = 5;
+/** 표본 비율이 학습값과 이 배수 넘게 다르면 어긋난 것이다. */
+const DRIFT_FACTOR = 2;
+/** 같은 방향으로 이만큼 연달아 어긋나면 옛 학습값을 버린다. 한 번은 앱 밖 사용일 수 있다. */
+const DRIFT_STREAK = 2;
 /** 같은 창으로 보는 리셋 시각 차이. Codex는 남은 초로 리셋 시각을 만들어 조금씩 흔들린다. */
 const RESET_TOLERANCE_MS = 10 * 60 * 1000;
 const BUCKET_MS = 60 * 1000;
@@ -120,7 +130,15 @@ export function costSince(ledger: CostLedger, provider: ForecastProvider, since:
 // ── 학습값 ────────────────────────────────────────────────────────────
 
 /** 한도 창 하나의 비율 학습값(감쇠 누적). */
-export interface WindowStat { sumPercent: number; sumCost: number; at: number }
+export interface WindowStat {
+  sumPercent: number;
+  sumCost: number;
+  at: number;
+  /** 배울 때의 요금제 이름. 바뀌면 이 학습값을 버린다. */
+  plan?: string | null;
+  /** 연달아 어긋난 표본 수. 양수는 비율이 커지는 쪽, 음수는 작아지는 쪽. */
+  drift?: number;
+}
 /** 끝난 태스크 하나. `provider`는 작업자의 구독(구독 사용량이 없는 CLI면 null). */
 export interface TaskSample { provider: ForecastProvider | null; cost: number; judgeCost: number; durationMs: number; at: number }
 /** 후속 지시 한 턴. */
@@ -151,14 +169,38 @@ export function windowRatio(model: ForecastModel, key: string, now: number): num
   return stat.sumPercent / stat.sumCost;
 }
 
-function addRatioSample(model: ForecastModel, key: string, percent: number, cost: number, now: number): void {
+function addRatioSample(model: ForecastModel, key: string, percent: number, cost: number, plan: string | null, now: number): void {
   const stat = model.windows[key];
-  const keep = stat ? decay(stat, now) : 0;
+  let keep = stat ? decay(stat, now) : 0;
+  // 큰 표본이 학습값과 같은 방향으로 연달아 크게 어긋나면 한도가 바뀐 것으로 보고 옛 값을 버린다.
+  const current = windowRatio(model, key, now);
+  let drift = 0;
+  if (current !== null && percent >= DRIFT_MIN_PERCENT) {
+    const sample = percent / cost;
+    const direction = sample > current * DRIFT_FACTOR ? 1 : sample < current / DRIFT_FACTOR ? -1 : 0;
+    const previous = stat?.drift ?? 0;
+    drift = direction === 0 ? 0 : Math.sign(previous) === direction ? previous + direction : direction;
+    if (Math.abs(drift) >= DRIFT_STREAK) { keep = 0; drift = 0; }
+  } else {
+    drift = stat?.drift ?? 0;
+  }
   model.windows[key] = {
     sumPercent: (stat?.sumPercent ?? 0) * keep + percent,
     sumCost: (stat?.sumCost ?? 0) * keep + cost,
     at: now,
+    plan,
+    ...(drift ? { drift } : {}),
   };
+}
+
+/** 요금제 이름이 바뀐 provider의 비율을 버린다. 이름을 모르는 조회값은 판단하지 않는다. */
+function forgetOtherPlan(model: ForecastModel, provider: ForecastProvider, plan: string | null): boolean {
+  if (!plan) return false;
+  let dropped = false;
+  for (const [key, stat] of Object.entries(model.windows)) {
+    if (key.startsWith(`${provider}:`) && stat.plan && stat.plan !== plan) { delete model.windows[key]; dropped = true; }
+  }
+  return dropped;
 }
 
 /**
@@ -174,10 +216,12 @@ export function learnFromUsage(
   usage: ProviderUsage,
   now: number,
 ): boolean {
+  const plan = usage.planLabel?.trim() || null;
+  const forgot = forgetOtherPlan(model, provider, plan);
   // 장부를 열기 전에 조회한 값은 그때까지의 비용을 모른다.
-  if (usage.fetchedAtMs < ledger.startedAt) return false;
+  if (usage.fetchedAtMs < ledger.startedAt) return forgot;
   const costAt = ledger.total[provider] - costSince(ledger, provider, usage.fetchedAtMs + BUCKET_MS);
-  let learned = false;
+  let learned = forgot;
   for (const w of usage.windows) {
     if (w.resetsAtMs === null) continue;
     const key = windowKey(provider, w);
@@ -190,7 +234,9 @@ export function learnFromUsage(
     const percent = Math.max(0, w.usedPercent - anchor.percent);
     const cost = Math.max(0, costAt - anchor.cost);
     if (cost < MIN_SAMPLE_COST && percent < MIN_SAMPLE_PERCENT) continue;
-    addRatioSample(model, key, percent, cost, now);
+    // 앱이 거의 안 쓰는 사이 오른 사용률은 앱 밖 사용이다. 비율에 넣지 않고 기준점만 옮긴다.
+    if (cost < MIN_SAMPLE_COST) { anchors[key] = fresh; continue; }
+    addRatioSample(model, key, percent, cost, plan, now);
     anchors[key] = fresh;
     learned = true;
   }
@@ -365,7 +411,11 @@ export function parseModel(raw: unknown): ForecastModel {
     for (const [key, stat] of Object.entries(value.windows as Record<string, unknown>)) {
       const s = stat as Partial<WindowStat> | null;
       if (s && finite(s.sumPercent) && finite(s.sumCost) && finite(s.at) && s.sumPercent >= 0 && s.sumCost >= 0) {
-        model.windows[key] = { sumPercent: s.sumPercent, sumCost: s.sumCost, at: s.at };
+        model.windows[key] = {
+          sumPercent: s.sumPercent, sumCost: s.sumCost, at: s.at,
+          ...(typeof s.plan === "string" ? { plan: s.plan } : {}),
+          ...(finite(s.drift) && s.drift !== 0 ? { drift: Math.trunc(s.drift) } : {}),
+        };
       }
     }
   }
