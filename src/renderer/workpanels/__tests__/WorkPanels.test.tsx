@@ -610,13 +610,15 @@ describe("태스크 대화 버튼", () => {
   });
 });
 
-it("사용량 대기 중이면 막는 창·예측·리셋 시각과 기다리지 않고 계속을 보이고, 누르면 한 번 건너뛴다", async () => {
+it("사용량 대기 중이면 막는 창·예측·리셋 시각과 기다리지 않고 계속을 보이고, 누르면 한 번 건너뛴다", async ({ onTestFinished }) => {
   useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true, observerEnabled: true }, agents: { a: { id: "a", name: "Ada", role: "dev", seed: "s", createdAt: 1, deskIndex: 0 } }, agentOrder: ["a"] });
   useWorkItemStore.setState({ loaded: true });
   const store = useWorkItemStore.getState();
   const step = store.add({ title: "Step", body: "", status: "todo", assigneeAgentId: "a" })!;
   const root = store.add({ title: "Usage plan", body: "", status: "todo", assigneeAgentId: "a", dependsOn: [step], plan: true })!;
   const resetsAtMs = new Date(2026, 10, 3, 14, 0).getTime();
+  const clock = vi.spyOn(Date, "now").mockReturnValue(resetsAtMs - 60_000);
+  onTestFinished(() => clock.mockRestore());
   store.setAutoRun(root, {
     state: "paused", judgeSessionId: "x", judgeStarted: false, followUps: 0, pauseReason: "usage-wait", costUsd: 0, log: [], startedAt: 1,
     usageWait: { provider: "claude", kind: "session", label: null, nowPercent: 81.6, addPercent: 18.2, limit: 95, until: resetsAtMs + 120_000, resetsAtMs, stage: "task", worker: "claude" },

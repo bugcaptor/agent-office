@@ -75,6 +75,14 @@ describe("acceleratorProblem", () => {
     expect(acceleratorProblem("Ctrl+F5", false)).toBeNull();
   });
 
+  it("플랫폼을 번갈아 검사해도 예약 키가 섞이지 않는다", () => {
+    for (const isMac of [true, false, true, false]) {
+      expect(acceleratorProblem("Alt+F4", isMac)).toBe(isMac ? null : "reserved");
+      expect(acceleratorProblem("Ctrl+Alt+Delete", isMac)).toBe(isMac ? null : "reserved");
+      expect(acceleratorProblem("Ctrl+Digit1", isMac)).toBe("reserved");
+    }
+  });
+
   it("앱 탭 키·OS 키는 reserved", () => {
     expect(acceleratorProblem("Meta+Digit3", true)).toBe("reserved");
     expect(acceleratorProblem("Meta+KeyW", true)).toBe("reserved");

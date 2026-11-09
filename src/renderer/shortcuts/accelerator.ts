@@ -162,7 +162,7 @@ export type AcceleratorProblem = "needsModifier" | "terminalKey" | "reserved";
 const FUNCTION_KEY = /^F\d{1,2}$/;
 
 /** 앱이 이미 쓰는 키와 OS가 가져가는 키. `acceleratorFromEvent` 형식. */
-function reservedSet(isMac: boolean): Set<string> {
+function buildReservedSet(isMac: boolean): ReadonlySet<string> {
   const set = new Set<string>();
   // 터미널 탭 키(AgentTabStrip·TerminalRegistry)는 두 OS 모두 Ctrl로도 받는다.
   for (let d = 1; d <= 9; d++) set.add(`Ctrl+Digit${d}`);
@@ -183,6 +183,9 @@ function reservedSet(isMac: boolean): Set<string> {
   return set;
 }
 
+const MAC_RESERVED = buildReservedSet(true);
+const OTHER_RESERVED = buildReservedSet(false);
+
 /**
  * 단축키로 쓸 수 없는 이유. 쓸 수 있으면 null.
  * - needsModifier: Ctrl·Alt·⌘ 중 하나도 없다.
@@ -195,7 +198,7 @@ export function acceleratorProblem(acc: string, isMac: boolean): AcceleratorProb
   const p = parse(acc);
   if (!p) return "needsModifier";
   if (!p.ctrl && !p.alt && !p.meta) return "needsModifier";
-  if (reservedSet(isMac).has(acc)) return "reserved";
+  if ((isMac ? MAC_RESERVED : OTHER_RESERVED).has(acc)) return "reserved";
   if (!isMac && p.meta) return "reserved";
   if (!p.meta && !(p.ctrl && p.alt) && !FUNCTION_KEY.test(p.code)) return "terminalKey";
   return null;
