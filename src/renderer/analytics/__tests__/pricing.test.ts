@@ -29,8 +29,11 @@ describe("rateFor", () => {
 
   it.each([
     ["claude-opus-5-5", { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 }],
-    ["claude-sonnet-5-5", { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }],
+    ["claude-sonnet-5-5", { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 }],
     ["claude-sonnet-5", { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }],
+    ["claude-fable-5-2", { input: 8, output: 40, cacheRead: 0.2, cacheWrite: 10 }],
+    ["claude-mythos-5-2", { input: 8, output: 40, cacheRead: 0.2, cacheWrite: 10 }],
+    ["claude-haiku-5-5", { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 }],
     ["claude-fable-5-1", { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 }],
     ["claude-mythos-5-1", { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 }],
     ["claude-opus-4-1", { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 }],
@@ -43,6 +46,7 @@ describe("rateFor", () => {
     expect(rateFor("claude-opus-4-8")?.input).toBe(5);
     expect(rateFor("claude-sonnet-4-6")?.input).toBe(3);
     expect(rateFor("claude-fable-5")?.cacheRead).toBe(1);
+    expect(rateFor("claude-fable-5-1")?.input).toBe(10);
     expect(rateFor("claude-mythos-5")?.cacheRead).toBe(1);
     expect(rateFor("claude-haiku-4-5")?.input).toBe(1);
   });
@@ -105,6 +109,7 @@ describe("rateFor", () => {
   it.each([
     ["gpt-6-sol", { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }],
     ["gpt-6.1-sol", { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 }],
+    ["gpt-6.1-terra", { input: 1, output: 5, cacheRead: 0.05, cacheWrite: 1.25 }],
     ["gpt-6-luna", { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 }],
   ])("Codex %s의 입력·출력·캐시 단가를 적용한다", (model, rate) => {
     expect(rateFor(model)).toEqual(rate);
@@ -175,8 +180,8 @@ describe("estimateCostUsd", () => {
         { model: "claude-fable-5", cacheRead: 1_000_000 },
       ],
     };
-    // 14.6 + 0.2 + 0.735 + 29.2 + 14.7 + 0.25 + 1
-    expect(estimateCostUsd(tokens)).toBeCloseTo(60.685, 10);
+    // 14.6 + 0.2 + 0.735 + 29.2 + 14.6 + 0.25 + 1
+    expect(estimateCostUsd(tokens)).toBeCloseTo(60.585, 10);
     expect(estimateCostBreakdown(tokens)?.hasUnknown).toBe(false);
   });
 
