@@ -52,8 +52,9 @@ describe("formatRelativeTime — 임계 경계(ko)", () => {
   });
 
   it("24시간부터는 일 단위", () => {
-    // numeric:"auto"라 ko는 하루/이틀 전을 관용 표현으로 부른다.
+    // numeric:"always"로 하루·이틀 전도 관용 표현 대신 경과 일수를 표시한다.
     expect(ago(1 * DAY)).toBe("1일 전");
+    expect(ago(2 * DAY)).toBe("2일 전");
     expect(ago(45 * DAY)).toBe("45일 전");
   });
 
@@ -75,6 +76,7 @@ describe("formatRelativeTime — 같은 임계값, 영어 문구", () => {
     expect(ago(1 * HOUR)).toBe("1 hour ago");
     expect(ago(23 * HOUR + 59 * MIN)).toBe("23 hours ago");
     expect(ago(1 * DAY)).toBe("1 day ago");
+    expect(ago(2 * DAY)).toBe("2 days ago");
     expect(ago(45 * DAY)).toBe("45 days ago");
   });
 });
