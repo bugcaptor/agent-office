@@ -20,6 +20,16 @@ describe("work dependencies", () => {
     });
     expect(explainDependsOn("d", undefined, items)).toEqual({ kept: undefined, dropped: [] });
   });
+  it("기존 순환은 멈추고 후보마다 목표로 이어지는 경로를 따로 판정한다", () => {
+    const cyclic = [
+      work("root"), work("a", "todo", ["b"]), work("b", "todo", ["a"]),
+      work("c", "todo", ["root"]), work("d", "todo", ["c"]),
+    ];
+    expect(explainDependsOn("root", ["a", "b", "c", "d"], cyclic)).toEqual({
+      kept: ["a", "b"], dropped: [{ id: "c", reason: "cycle" }, { id: "d", reason: "cycle" }],
+    });
+    expect(dependencyCandidates("root", [], cyclic).map((i) => i.id)).toEqual(["a", "b"]);
+  });
   it("완료되지 않은 선행 작업만 막고 지워진 업무는 무시한다", () => {
     expect(pendingPrerequisites(items[1], items)).toEqual([]);
     expect(pendingPrerequisites(items[2], items).map((i) => i.id)).toEqual(["b"]);
