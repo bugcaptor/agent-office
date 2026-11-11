@@ -1,3 +1,4 @@
+import type { WorkItem } from "@shared/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { load, save } = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn() }));
 vi.mock("../../ipc/tauriApi", () => ({ tauriApi: { loadWorkItems: load, saveWorkItems: save } }));
@@ -100,4 +101,122 @@ it("선행 작업을 다듬어 저장하고 지운 업무는 후속 업무의 �
   expect(useWorkItemStore.getState().items.find((i) => i.id === a)?.dependsOn).toBeUndefined();
   store.remove(a);
   expect(useWorkItemStore.getState().items.find((i) => i.id === b)?.dependsOn).toBeUndefined();
+});
+
+const work = (id: string, extra: Partial<WorkItem> = {}): WorkItem =>
+  ({ id, title: id, body: "", status: "todo", order: 0, sessionIds: [], createdAt: 1, updatedAt: 1, ...extra });
+function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((r) => { resolve = r; }); return { promise, resolve }; }
+
+describe("external work snapshots", () => {
+  it("동일 스냅샷은 참조를 유지하고 실행 중인 자동 진행을 일시정지시키지 않는다", async () => {
+    const store = useWorkItemStore.getState(); await store.load();
+    const id = store.add("Root")!;
+    store.setAutoRun(id, { state: "running", judgeSessionId: "judge", judgeStarted: false, followUps: 0, costUsd: 0, log: [], startedAt: 1 });
+    await store.flush();
+    const before = useWorkItemStore.getState().items;
+    load.mockResolvedValue(structuredClone(before));
+    await store.refresh(); await store.refresh();
+    expect(useWorkItemStore.getState().items).toBe(before);
+    expect(useWorkItemStore.getState().items[0].autoRun?.state).toBe("running");
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+  it("외부의 오래된 실행 상태가 현재 자동 진행을 되돌리거나 새 실행을 시작하지 않는다", async () => {
+    const store = useWorkItemStore.getState(); await store.load();
+    const id = store.add("Root")!;
+    const run = { state: "running" as const, judgeSessionId: "judge", judgeStarted: true, currentId: "step", followUps: 2, costUsd: 1, log: [], startedAt: 1 };
+    store.setAutoRun(id, run);
+    const inactive = store.add("Inactive")!; await store.flush();
+    const current = useWorkItemStore.getState().items[0];
+    const stale = { ...run, currentId: "old-step", followUps: 0 };
+    load.mockResolvedValueOnce([{ ...current, body: "External memo", autoRun: stale }, work(inactive, { autoRun: stale }), work("new-root", { autoRun: stale })]);
+    await store.refresh();
+    const state = useWorkItemStore.getState();
+    expect(state.items[0]).toMatchObject({ body: "External memo", autoRun: run });
+    expect(state.items[0].autoRun).toBe(run);
+    expect(state.items[1].autoRun).toBeUndefined();
+    expect(state.items[2].autoRun).toMatchObject({ state: "paused", pauseReason: "app-restarted" });
+    expect(state.dirty).toBe(true);
+    await store.flush();
+    expect(save.mock.lastCall![0][0].autoRun).toEqual(run);
+    load.mockResolvedValueOnce(state.items.map((item) => item.id === id ? { ...item, status: "done", autoRun: stale } : item));
+    await store.refresh();
+    expect(useWorkItemStore.getState().items[0].autoRun).toMatchObject({ state: "finished", currentId: undefined });
+  });
+  it("읽는 동안 편집한 필드는 보존하고 외부 태스크 추가·연결·삭제를 합친다", async () => {
+    const root = work("root", { body: "Old memo" });
+    const removed = work("removed");
+    load.mockResolvedValueOnce([root, removed]);
+    const store = useWorkItemStore.getState(); await store.load(); store.select(removed.id);
+    const read = deferred<WorkItem[]>();
+    load.mockReturnValueOnce(read.promise);
+    const refresh = store.refresh(); const duplicate = store.refresh();
+    store.edit(root.id, { title: "Local title" });
+    const external = [work(root.id, { body: "New memo", dependsOn: ["step"] }), work("step")];
+    read.resolve(external); await Promise.all([refresh, duplicate]);
+    expect(load).toHaveBeenCalledTimes(2);
+    const state = useWorkItemStore.getState();
+    expect(state.items.map((item) => item.id)).toEqual([root.id, "step"]);
+    expect(state.items[0]).toMatchObject({ title: "Local title", body: "New memo", dependsOn: ["step"] });
+    expect(state.selectedId).toBeNull(); expect(state.dirty).toBe(true);
+    await store.flush();
+    expect(save).toHaveBeenLastCalledWith(state.items, external);
+  });
+  it("외부에서 삭제하는 동안 앱에서 편집한 업무와 앱의 삭제·선택 필드 비우기를 보존한다", async () => {
+    const edited = work("edited"), deleted = work("deleted"), cleared = work("cleared", { dependsOn: ["edited"] });
+    load.mockResolvedValueOnce([edited, deleted, cleared]);
+    const store = useWorkItemStore.getState(); await store.load();
+    store.edit(edited.id, { body: "Keep local edit" }); store.remove(deleted.id);
+    store.edit(cleared.id, { dependsOn: undefined });
+    load.mockResolvedValueOnce([{ ...deleted, body: "External edit" }, { ...cleared, title: "External title" }]);
+    await store.refresh();
+    const items = useWorkItemStore.getState().items;
+    expect(items.find((item) => item.id === edited.id)?.body).toBe("Keep local edit");
+    expect(items.some((item) => item.id === deleted.id)).toBe(false);
+    expect(items.find((item) => item.id === cleared.id)).toMatchObject({ title: "External title", dependsOn: undefined });
+  });
+  it("poll 전에 외부 변경이 들어오면 오래된 저장을 거절한 뒤 병합해서 재시도한다", async () => {
+    const root = work("root");
+    load.mockResolvedValueOnce([root]);
+    const store = useWorkItemStore.getState(); await store.load(); store.edit(root.id, { title: "Local" });
+    save.mockRejectedValueOnce("work-items-changed");
+    const external = [work(root.id, { dependsOn: ["step"] }), work("step")];
+    const read = deferred<WorkItem[]>(); load.mockReturnValueOnce(read.promise);
+    const flush = store.flush(); await Promise.resolve();
+    store.edit(root.id, { body: "Edited during conflict" });
+    read.resolve(external); await flush;
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save.mock.calls[0][1]).toEqual([root]); expect(save.mock.calls[1][1]).toBe(external);
+    expect(save.mock.calls[1][0][0]).toMatchObject({ title: "Local", body: "Edited during conflict", dependsOn: ["step"] });
+    expect(useWorkItemStore.getState().items[1].id).toBe("step");
+    expect(useWorkItemStore.getState().dirty).toBe(false);
+  });
+  it("읽기와 저장이 겹쳐도 옛 스냅샷을 되살리지 않고 교착 없이 직렬화한다", async () => {
+    load.mockResolvedValueOnce([work("root")]);
+    const store = useWorkItemStore.getState(); await store.load(); store.edit("root", { title: "Local" });
+    const read = deferred<WorkItem[]>(); load.mockReturnValueOnce(read.promise);
+    const refresh = store.refresh(), flush = store.flush();
+    expect(save).not.toHaveBeenCalled();
+    read.resolve([work("root", { body: "External" })]); await Promise.all([refresh, flush]);
+    const written = deferred<void>(); save.mockReturnValueOnce(written.promise);
+    store.edit("root", { title: "Latest" });
+    const secondFlush = store.flush(); const latest = useWorkItemStore.getState().items;
+    load.mockResolvedValueOnce(structuredClone(latest));
+    const secondRefresh = store.refresh();
+    written.resolve(); await Promise.all([secondFlush, secondRefresh]);
+    expect(useWorkItemStore.getState().items).toBe(latest);
+    expect(useWorkItemStore.getState().items[0]).toMatchObject({ title: "Latest", body: "External" });
+  });
+  it("읽기 실패와 계속되는 충돌은 편집을 잃지 않고 다음 시도에서 복구한다", async () => {
+    load.mockResolvedValueOnce([work("root")]);
+    const store = useWorkItemStore.getState(); await store.load(); store.edit("root", { title: "Local" });
+    load.mockRejectedValueOnce(new Error("partial json"));
+    expect(await store.refresh()).toBe(false);
+    expect(useWorkItemStore.getState().items[0].title).toBe("Local");
+    save.mockRejectedValue("work-items-changed"); load.mockResolvedValue([work("root")]);
+    await store.flush();
+    expect(save).toHaveBeenCalledTimes(3);
+    expect(useWorkItemStore.getState()).toMatchObject({ dirty: true, error: "save" });
+    save.mockResolvedValue(undefined); await store.flush();
+    expect(useWorkItemStore.getState()).toMatchObject({ dirty: false, error: null });
+  });
 });

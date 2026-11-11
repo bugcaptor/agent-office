@@ -5,11 +5,13 @@ import { tauriApi } from "../ipc/tauriApi";
 import { hasWorkContent, type WorkItemDraft } from "./workItemDraft";
 import { explainDependsOn, normalizeDependsOn, type DroppedDependency } from "./workDependencies";
 import type { ImportedWorkItem } from "./workItemFile";
+import { mergeWorkItems, sameWorkValue } from "./workItemSync";
 
 export const WORK_STATUS_ORDER: WorkStatus[] = ["review", "in_progress", "todo", "done"];
 let timer: ReturnType<typeof setTimeout> | undefined;
 let saving: Promise<void> | undefined;
 let loading: Promise<void> | undefined;
+let refreshing: Promise<boolean> | undefined;
 let revision = 0;
 export type InboxImport = Pick<WorkItem, "id" | "title" | "body" | "assigneeAgentId" | "dependsOn" | "plan">;
 /**
@@ -32,11 +34,15 @@ export type InboxRequest =
 export interface InboxRequestResult { unknown: string[]; empty?: boolean; dropped: DroppedDependency[] }
 interface WorkItemState {
   items: WorkItem[];
+  /** 외부 변경 병합과 저장 충돌 검사에 쓰는 마지막 디스크 스냅샷. */
+  persistedItems: WorkItem[] | null;
   loaded: boolean;
   dirty: boolean;
   error: "load" | "save" | null;
   selectedId: string | null;
   load(): Promise<void>;
+  /** 실행 중 외부 파일 변경을 가져온다. 실패하면 현재 편집을 보존하고 다음 주기에 재시도한다. */
+  refresh(): Promise<boolean>;
   add(draft: string | WorkItemDraft): string | undefined;
   /** 입력 순서대로 결과를 돌려준다. 로드 전·오류 중에는 빈 배열. */
   importInbox(entries: InboxImport[]): InboxImportResult[];
@@ -75,7 +81,7 @@ function changed() {
   timer = setTimeout(() => void useWorkItemStore.getState().flush(), 1000);
 }
 export const useWorkItemStore = create<WorkItemState>((set, get) => ({
-  items: [], loaded: false, dirty: false, error: null, selectedId: null,
+  items: [], persistedItems: null, loaded: false, dirty: false, error: null, selectedId: null,
   async load() {
     if (get().loaded) return;
     if (loading) return loading;
@@ -93,7 +99,7 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
           restored = true;
           return { ...item, autoRun: { ...item.autoRun, state: "paused" as const, pauseReason: "app-restarted" as const, pauseDetail: undefined } };
         });
-        set({ items, loaded: true, error: null, dirty: restored || get().dirty });
+        set({ items, persistedItems: loadedItems, loaded: true, error: null, dirty: restored || get().dirty });
         if (restored) changed();
       } catch (err) {
         console.warn("work-items: load failed", err);
@@ -103,6 +109,26 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     })();
     await loading;
     loading = undefined;
+  },
+  async refresh() {
+    if (!get().loaded) return false;
+    if (refreshing) return refreshing;
+    // 저장 중 읽은 옛 스냅샷으로 되돌리지 않는다. flush도 진행 중인 읽기를 기다린다.
+    if (saving) { await saving; return get().refresh(); }
+    const base = get().persistedItems;
+    if (!base) return true;
+    refreshing = (async () => {
+      try {
+        const remote = await tauriApi.loadWorkItems();
+        if (get().persistedItems !== base) return false;
+        reconcile(remote);
+        return true;
+      } catch (err) {
+        console.warn("work-items: refresh failed", err);
+        return false;
+      }
+    })();
+    try { return await refreshing; } finally { refreshing = undefined; }
   },
   add(input) {
     const draft: WorkItemDraft = typeof input === "string" ? { title: input, body: "", status: "todo" } : input;
@@ -274,14 +300,25 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
   select(selectedId) { set({ selectedId }); if (selectedId === null) void get().flush(); },
   async flush() {
     clearTimeout(timer); timer = undefined;
+    if (refreshing) await refreshing;
     if (saving) { await saving; if (get().dirty && get().error !== "save") await get().flush(); return; }
     if (!get().loaded || !get().dirty) return;
-    const savedRevision = revision;
-    const items = get().items;
     saving = (async () => {
       try {
-        await tauriApi.saveWorkItems(items);
-        set({ dirty: revision !== savedRevision, error: null });
+        // 직접 수정이 poll보다 먼저 왔으면 저장 충돌로 다시 읽는다. 계속 바뀌는 파일에는
+        // 무한 재시도하지 않고 기존 저장 오류 UI와 dirty 상태로 편집을 보존한다.
+        for (let attempt = 0; ; attempt++) {
+          const savedRevision = revision;
+          const { items, persistedItems } = get();
+          try {
+            await tauriApi.saveWorkItems(items, persistedItems ?? undefined);
+            set({ persistedItems: items, dirty: revision !== savedRevision, error: null });
+            break;
+          } catch (err) {
+            if (String(err) !== "work-items-changed" || attempt >= 2) throw err;
+            reconcile(await tauriApi.loadWorkItems());
+          }
+        }
       } catch (err) {
         console.warn("work-items: save failed", err);
         set({ dirty: true, error: "save" });
@@ -291,3 +328,28 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     if (get().dirty && get().error === null) await get().flush();
   },
 }));
+
+/** 폴링과 충돌 재시도 모두 같은 3-way 병합을 쓴다. 시작 시의 running→paused 복원은 하지 않는다. */
+function reconcile(remote: WorkItem[]): void {
+  const state = useWorkItemStore.getState();
+  if (!state.persistedItems || sameWorkValue(remote, state.persistedItems)) return;
+  const at = Date.now();
+  let items = mergeWorkItems(state.persistedItems, state.items, remote);
+  const current = new Map(state.items.map((item) => [item.id, item]));
+  const closed = items.map((item) => {
+    const previous = current.get(item.id);
+    // 실행 상태는 렌더러 소유다. 외부 편집자가 들고 있던 옛 스냅샷이 현재 단계·판단 기록을
+    // 되돌리거나 실행을 새로 시작하게 하지 않는다. 처음 보는 실행은 부팅 복원처럼 멈춘다.
+    if (previous && !sameWorkValue(item.autoRun, previous.autoRun)) item = { ...item, autoRun: previous.autoRun };
+    else if (!previous && item.autoRun?.state === "running") {
+      item = { ...item, autoRun: { ...item.autoRun, state: "paused", pauseReason: "app-restarted", pauseDetail: undefined } };
+    }
+    return closeRunOfDone(item, at);
+  });
+  if (closed.some((item, index) => item !== items[index])) items = closed;
+  const dirty = !sameWorkValue(items, remote);
+  // 같은 스냅샷은 items 참조도 유지해 자동 진행·화면 구독을 불필요하게 깨우지 않는다.
+  useWorkItemStore.setState({ items, persistedItems: remote, dirty, error: dirty ? state.error : null,
+    selectedId: items.some((item) => item.id === state.selectedId) ? state.selectedId : null });
+  if (dirty) changed();
+}

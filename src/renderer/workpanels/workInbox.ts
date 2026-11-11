@@ -41,6 +41,8 @@ export function hasPendingWorkInbox(): boolean { return timer !== undefined || i
 async function receive(epoch: number): Promise<void> {
   if (!useWorkItemStore.getState().loaded || useWorkItemStore.getState().error === "load") return;
   try {
+    // office-task 수신함뿐 아니라 에이전트가 직접 고친 업무 스냅샷도 반영한다.
+    if (!await useWorkItemStore.getState().refresh() || epoch !== generation || !timer) return;
     const entries = await tauriApi.scanWorkInbox();
     // 패널을 끄거나 종료한 뒤 도착한 scan 응답은 그대로 수신함에 둔다.
     if (epoch !== generation || !timer) return;

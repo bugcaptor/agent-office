@@ -20,10 +20,12 @@ import type {
   SessionStateEvent,
   TaskChatRequest,
   UsageSnapshot,
+  WorkItem,
 } from "@shared/types";
 import memoFixture from "@shared/contract-fixtures/memo-sheet.current.json";
 import { emitTauriEvent } from "./tauriStub";
 import { loadScenario } from "./scenarios";
+import { sameWorkValue } from "../workpanels/workItemSync";
 
 const harness = window.__guiHarness!;
 
@@ -136,8 +138,11 @@ const impl: Partial<AgentOfficeApi> = {
   async loadAwardPortrait() { return null; },
   async loadSessionTurns() { return []; },
   async loadSessionEvents() { return []; },
-  async loadWorkItems() { return workItems; },
-  async saveWorkItems(next) { workItems = next; },
+  async loadWorkItems() { return structuredClone(workItems); },
+  async saveWorkItems(next, expectedItems) {
+    if (expectedItems && !sameWorkValue(expectedItems, workItems)) throw "work-items-changed";
+    workItems = structuredClone(next);
+  },
   async loadSessionSummaries() { return []; },
   async appendSessionSummaries() {},
   async loadWorkLogs() { return {}; },
@@ -267,4 +272,6 @@ Object.assign(harness, {
   /** 태스크 대화 스토어(예: `openTaskChat`). */
   taskChatStore: async () => await import("../workpanels/taskChatStore"),
   taskChatRequests,
+  /** 외부 파일 쓰기처럼 백엔드 스냅샷만 교체한다. 렌더러가 poll로 받아야 한다. */
+  replaceWorkItems: (items: WorkItem[]) => { workItems = structuredClone(items); },
 });

@@ -23,6 +23,10 @@ impl WorkPanelsStore {
     }
     pub fn load_work_items(&self) -> Result<Vec<WorkItem>, String> {
         let _guard = self.lock.lock().map_err(|e| e.to_string())?;
+        self.read_work_items()
+    }
+    // Caller holds the store lock; raw external writers do not participate in it.
+    fn read_work_items(&self) -> Result<Vec<WorkItem>, String> {
         match fs::read(self.root.join("work-items.json")) {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| e.to_string()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(vec![]),
@@ -30,6 +34,9 @@ impl WorkPanelsStore {
         }
     }
     pub fn save_work_items(&self, items: &[WorkItem]) -> Result<(), String> {
+        self.save_work_items_if_unchanged(items, None)
+    }
+    pub fn save_work_items_if_unchanged(&self, items: &[WorkItem], expected: Option<&[WorkItem]>) -> Result<(), String> {
         let mut ids = HashSet::new();
         if items.iter().any(|i| {
             i.id.is_empty()
@@ -41,6 +48,11 @@ impl WorkPanelsStore {
         }
         let bytes = serde_json::to_vec(items).map_err(|e| e.to_string())?;
         let _guard = self.lock.lock().map_err(|e| e.to_string())?;
+        if let Some(expected) = expected {
+            if self.read_work_items()?.as_slice() != expected {
+                return Err("work-items-changed".into());
+            }
+        }
         fs::create_dir_all(&self.root).map_err(|e| e.to_string())?;
         // tmp 이름은 저장마다 고유하게 — 락은 프로세스 안 Mutex뿐이라, 고정 이름이면
         // 같은 app_data를 쓰는 다른 프로세스와 tmp를 서로 덮어쓴다.
@@ -192,6 +204,58 @@ mod tests {
         invalid.body = " ".into();
         assert!(store.save_work_items(&[invalid]).is_err());
         assert_eq!(store.load_work_items().unwrap(), vec![item]);
+        fs::remove_dir_all(store.root).unwrap();
+    }
+    fn work(id: &str) -> WorkItem {
+        serde_json::from_value(serde_json::json!({"id":id,"title":id,"body":"","status":"todo","order":0,"sessionIds":[],"createdAt":1,"updatedAt":2})).unwrap()
+    }
+    #[test]
+    fn guarded_save_preserves_external_additions_and_edits() {
+        let store = store();
+        let baseline = vec![work("root")];
+        store.save_work_items(&baseline).unwrap();
+        let mut local = baseline.clone();
+        local[0].title = "Local edit".into();
+        let mut external = vec![work("root"), work("step")];
+        external[0].depends_on = vec!["step".into()];
+        fs::write(store.root.join("work-items.json"), serde_json::to_vec(&external).unwrap()).unwrap();
+        assert_eq!(store.save_work_items_if_unchanged(&local, Some(&baseline)), Err("work-items-changed".into()));
+        assert_eq!(store.load_work_items().unwrap(), external);
+        // A same-length snapshot with changed content must also be protected.
+        external = baseline.clone();
+        external[0].body = "External edit".into();
+        fs::write(store.root.join("work-items.json"), serde_json::to_vec(&external).unwrap()).unwrap();
+        assert_eq!(store.save_work_items_if_unchanged(&local, Some(&baseline)), Err("work-items-changed".into()));
+        assert_eq!(store.load_work_items().unwrap(), external);
+        store.save_work_items_if_unchanged(&local, Some(&external)).unwrap();
+        assert_eq!(store.load_work_items().unwrap(), local);
+        fs::remove_dir_all(store.root).unwrap();
+    }
+    #[test]
+    fn guarded_save_rejects_malformed_snapshot_without_overwriting() {
+        let store = store();
+        fs::create_dir_all(&store.root).unwrap();
+        let path = store.root.join("work-items.json");
+        let malformed = b"[{broken";
+        fs::write(&path, malformed).unwrap();
+        let error = store.save_work_items_if_unchanged(&[work("root")], Some(&[])).unwrap_err();
+        assert_ne!(error, "work-items-changed");
+        assert_eq!(fs::read(&path).unwrap(), malformed);
+        // The optional guard does not change legacy unconditional-save semantics.
+        store.save_work_items(&[]).unwrap();
+        assert!(store.load_work_items().unwrap().is_empty());
+        fs::remove_dir_all(store.root).unwrap();
+    }
+    #[test]
+    fn guarded_save_accepts_missing_or_empty_snapshot_with_empty_baseline() {
+        let store = store();
+        store.save_work_items_if_unchanged(&[], Some(&[])).unwrap();
+        let items = vec![work("root")];
+        store.save_work_items_if_unchanged(&items, Some(&[])).unwrap();
+        assert_eq!(store.load_work_items().unwrap(), items);
+        fs::remove_file(store.root.join("work-items.json")).unwrap();
+        assert_eq!(store.save_work_items_if_unchanged(&items, Some(&items)), Err("work-items-changed".into()));
+        assert!(!store.root.join("work-items.json").exists());
         fs::remove_dir_all(store.root).unwrap();
     }
     #[test]

@@ -368,8 +368,8 @@ pub async fn load_work_items(app_state: State<'_, AppState>) -> Result<Vec<WorkI
     app_state.work_panels_store.load_work_items()
 }
 #[tauri::command(rename_all = "camelCase")]
-pub async fn save_work_items(app_state: State<'_, AppState>, items: Vec<WorkItem>) -> Result<(), String> {
-    app_state.work_panels_store.save_work_items(&items)
+pub async fn save_work_items(app_state: State<'_, AppState>, items: Vec<WorkItem>, expected_items: Option<Vec<WorkItem>>) -> Result<(), String> {
+    app_state.work_panels_store.save_work_items_if_unchanged(&items, expected_items.as_deref())
 }
 #[tauri::command(rename_all = "camelCase")]
 pub async fn load_session_summaries(app_state: State<'_, AppState>) -> Result<Vec<SessionSummary>, String> {

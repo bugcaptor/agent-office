@@ -636,3 +636,22 @@ it("사용량 대기 중이면 막는 창·예측·리셋 시각과 기다리지
   expect(run).toMatchObject({ state: "running", usageWait: undefined });
   expect(run.log.map((e) => e.kind)).toContain("resume");
 });
+
+it("외부에서 추가한 플랜 단계가 재마운트 없이 보이고 편집 중 초안도 보존한다", async () => {
+  useAppStore.setState({ appSettings: { ...initial.appSettings, workPanelsEnabled: true } });
+  useWorkGroupStore.setState({ collapsed: [] });
+  const root = { id: "external-root", title: "External goal", body: "Old memo", status: "todo" as const, order: 0, sessionIds: [], createdAt: 1, updatedAt: 1, plan: true };
+  api.loadWorkItems.mockResolvedValueOnce([root]);
+  render(<UIChrome />);
+  await screen.findByText(root.title);
+  fireEvent.click(screen.getByText(root.title));
+  fireEvent.change(screen.getByLabelText("제목"), { target: { value: "Unsaved local title" } });
+  const step = { ...root, id: "external-step", title: "External step", plan: undefined, body: "", order: 1 };
+  api.loadWorkItems.mockResolvedValueOnce([{ ...root, body: "New external memo", dependsOn: [step.id] }, step]);
+  await act(async () => { await useWorkItemStore.getState().refresh(); });
+  expect(document.querySelector(".work-plan-members #work-item-external-step")).toBeTruthy();
+  expect((screen.getByLabelText("제목") as HTMLInputElement).value).toBe("Unsaved local title");
+  expect((screen.getByLabelText("본문") as HTMLTextAreaElement).value).toBe("New external memo");
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  expect(useWorkItemStore.getState().items[0]).toMatchObject({ title: "Unsaved local title", body: "New external memo", dependsOn: [step.id] });
+});

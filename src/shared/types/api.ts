@@ -85,7 +85,8 @@ export interface AgentOfficeApi {
   rejectWorkInbox(rejections: InboxRejection[]): Promise<void>;
   warnWorkInbox(warnings: InboxWarning[]): Promise<void>;
   loadWorkItems(): Promise<WorkItem[]>;
-  saveWorkItems(items: WorkItem[]): Promise<void>;
+  /** expectedItems가 있으면 디스크가 그 스냅샷일 때만 저장한다. 충돌은 work-items-changed. */
+  saveWorkItems(items: WorkItem[], expectedItems?: WorkItem[]): Promise<void>;
   loadSessionSummaries(): Promise<SessionSummary[]>;
   appendSessionSummaries(items: SessionSummary[]): Promise<void>;
   /** 작업 기록에서 발견한 저장소의 읽기 전용 git 점검 결과. */

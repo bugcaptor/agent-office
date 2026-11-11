@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentProfile, InboxEntry } from "@shared/types";
+import type { AgentProfile, InboxEntry, WorkItem } from "@shared/types";
 const { api } = vi.hoisted(() => ({
   api: { loadWorkItems: vi.fn(), saveWorkItems: vi.fn(), scanWorkInbox: vi.fn(), ackWorkInbox: vi.fn(), rejectWorkInbox: vi.fn(), warnWorkInbox: vi.fn() },
 }));
 vi.mock("../../ipc/tauriApi", () => ({ tauriApi: api }));
 import { useAppStore } from "../../store/appStore";
 import { useWorkItemStore } from "../workItemStore";
+import { planLayout } from "../workPlans";
 import { assigneeIssue, resolveAssignee, startWorkInbox, stopWorkInbox, hasPendingWorkInbox } from "../workInbox";
 const initialApp = useAppStore.getState(); const initialWork = useWorkItemStore.getState();
 const profile = (id: string, name: string): AgentProfile => ({ id, name, role: "dev", seed: id, createdAt: 1, deskIndex: 0 });
@@ -13,7 +14,9 @@ const entry = (fileName: string, title: string, extra: Partial<InboxEntry> = {})
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((r) => { resolve = r; }); return { promise, resolve }; }
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks();
-  api.loadWorkItems.mockResolvedValue([]); api.saveWorkItems.mockResolvedValue(undefined);
+  let disk: WorkItem[] = [];
+  api.loadWorkItems.mockReset().mockImplementation(async () => disk);
+  api.saveWorkItems.mockReset().mockImplementation(async (items: WorkItem[]) => { disk = items; });
   api.scanWorkInbox.mockResolvedValue([]); api.ackWorkInbox.mockResolvedValue(undefined);
   api.rejectWorkInbox.mockResolvedValue(undefined); api.warnWorkInbox.mockResolvedValue(undefined);
   useAppStore.setState(initialApp, true); useAppStore.setState({ agents: { a: profile("a", "하나"), b: profile("b", "둘"), c: profile("c", "둘") } });
@@ -83,6 +86,19 @@ describe("importInbox", () => {
 });
 
 describe("receive loop", () => {
+  it("실행 중 파일에 직접 추가·수정한 플랜을 재시작 없이 다시 읽는다", async () => {
+    const root = { id: "root", title: "Goal", body: "", status: "todo" as const, order: 0, sessionIds: [], createdAt: 1, updatedAt: 1, plan: true };
+    useWorkItemStore.setState({ loaded: false });
+    api.loadWorkItems.mockResolvedValueOnce([root]);
+    await useWorkItemStore.getState().load();
+    const step = { ...root, id: "step", title: "Step", plan: undefined, order: 1 };
+    api.loadWorkItems.mockResolvedValue([{ ...root, body: "New memo", dependsOn: [step.id] }, step]);
+    startWorkInbox(); await vi.advanceTimersByTimeAsync(3000);
+    const items = useWorkItemStore.getState().items;
+    expect(items.find((item) => item.id === root.id)?.body).toBe("New memo");
+    expect(planLayout(items, () => "").members.get(root.id)?.map((item) => item.id)).toEqual([step.id]);
+    expect(api.saveWorkItems).not.toHaveBeenCalled();
+  });
   it("완료 요청은 같은 주기의 추가 뒤에 적용해 후속 업무의 대기를 풀고 저장 실패 시 다시 받는다", async () => {
     const design = useWorkItemStore.getState().add("Design")!;
     useWorkItemStore.getState().importInbox([{ id: "t-build", title: "Build", body: "", dependsOn: [design] }]);
@@ -223,6 +239,20 @@ describe("receive loop", () => {
     expect(hasPendingWorkInbox()).toBe(false);
     expect(useWorkItemStore.getState().items).toEqual([]); expect(api.ackWorkInbox).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(9000); expect(api.scanWorkInbox).toHaveBeenCalledTimes(1);
+  });
+  it("스냅샷을 읽는 중 중지·재시작하면 옛 주기는 수신함을 가져오지 않는다", async () => {
+    useWorkItemStore.setState({ loaded: false });
+    await useWorkItemStore.getState().load();
+    const read = deferred<WorkItem[]>();
+    api.loadWorkItems.mockReturnValueOnce(read.promise);
+    startWorkInbox(); await vi.advanceTimersByTimeAsync(3000);
+    const stopped = stopWorkInbox(); startWorkInbox();
+    read.resolve([]); await stopped;
+    expect(api.scanWorkInbox).not.toHaveBeenCalled();
+    api.scanWorkInbox.mockResolvedValueOnce([entry("fresh.md", "Fresh")]);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(api.ackWorkInbox).toHaveBeenCalledWith(["fresh.md"]);
+    expect(useWorkItemStore.getState().items[0].title).toBe("Fresh");
   });
   it("업무 목록 로드에 실패했으면 수신함을 읽지 않는다", async () => {
     useWorkItemStore.setState({ loaded: false, error: "load" });
