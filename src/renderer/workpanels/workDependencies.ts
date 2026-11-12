@@ -23,8 +23,10 @@ export function explainDependsOn(id: string | undefined, dependsOn: readonly str
   const byId = new Map(items.map((item) => [item.id, item]));
   const kept: string[] = [];
   const dropped: DroppedDependency[] = [];
+  const seen = new Set<string>();
   for (const prerequisite of dependsOn ?? []) {
-    if (kept.includes(prerequisite) || dropped.some((d) => d.id === prerequisite)) continue;
+    if (seen.has(prerequisite)) continue;
+    seen.add(prerequisite);
     if (prerequisite === id) dropped.push({ id: prerequisite, reason: "self" });
     else if (!byId.has(prerequisite)) dropped.push({ id: prerequisite, reason: "unknown" });
     else if (id && reaches(prerequisite, id, byId)) dropped.push({ id: prerequisite, reason: "cycle" });

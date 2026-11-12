@@ -15,7 +15,7 @@ describe("work dependencies", () => {
     expect(normalizeDependsOn("d", [], items)).toBeUndefined();
   });
   it("뺀 선행 작업의 사유를 알려주고 중복은 조용히 합친다", () => {
-    expect(explainDependsOn("a", ["c", "d", "d", "a", "gone", "gone"], items)).toEqual({
+    expect(explainDependsOn("a", ["c", "d", "c", "d", "a", "gone", "a", "gone"], items)).toEqual({
       kept: ["d"], dropped: [{ id: "c", reason: "cycle" }, { id: "a", reason: "self" }, { id: "gone", reason: "unknown" }],
     });
     expect(explainDependsOn("d", undefined, items)).toEqual({ kept: undefined, dropped: [] });
