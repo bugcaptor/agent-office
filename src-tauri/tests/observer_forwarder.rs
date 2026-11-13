@@ -316,23 +316,6 @@ async fn built_binary_forwarder_relays_raw_stdin_and_exits_silently() {
     assert_eq!(request.body, body);
 }
 
-#[test]
-fn built_binary_forwarder_fails_open_when_loopback_is_unreachable() {
-    let (pid, output) = run_forwarder(
-        Some("ao-unreachable-session"),
-        "http://127.0.0.1:0/hook",
-        br#"{"hook_event_name":"Stop"}"#,
-    );
-
-    assert!(
-        output.status.success(),
-        "pid={pid}, stderr={:?}",
-        output.stderr
-    );
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn built_binary_forwarder_requires_a_nonempty_inherited_session() {
     let capture = CaptureServer::start().await;

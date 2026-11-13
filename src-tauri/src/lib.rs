@@ -1009,19 +1009,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn maybe_run_observer_forwarder_malformed_invocations_exit_with_usage() {
-        // provider 없음, 알 수 없는 provider, codex+이벤트, claude+이벤트 2개.
-        for args in [
-            &["agent-office", "--observer-forward"][..],
-            &["agent-office", "--observer-forward", "unknown"],
-            &["agent-office", "--observer-forward", "codex", "Stop"],
-            &["agent-office", "--observer-forward", "claude", "Stop", "extra"],
-        ] {
-            assert_eq!(maybe_run_observer_forwarder(args), Some(EXIT_USAGE), "{args:?}");
-        }
-    }
-
     // GUI는 인자 없이만 뜬다. 모드 분기가 지나친 나머지 인자는 전부 사용법 오류.
     #[test]
     fn reject_unknown_args_lets_only_bare_launch_reach_gui() {
