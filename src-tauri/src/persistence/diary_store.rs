@@ -110,26 +110,17 @@ mod tests {
     }
 
     #[test]
-    fn append_then_load_roundtrips_an_entry() {
-        let dir = scratch_dir();
-        let store = DiaryStore::new(dir.clone());
-        let entry = sample(1_000, "s1", "오늘은 버그를 잡았다.");
-
-        store.append("a1", &entry).expect("append succeeds");
-        let loaded = store.load("a1").unwrap();
-
-        assert_eq!(loaded, vec![entry]);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
     fn append_twice_then_load_returns_two_in_order() {
         let dir = scratch_dir();
         let store = DiaryStore::new(dir.clone());
+        assert!(!dir.exists());
         let first = sample(1_000, "s1", "첫째 날.");
         let second = sample(2_000, "s2", "둘째 날.");
 
         store.append("a1", &first).unwrap();
+        assert!(dir.exists());
+        assert!(dir.join("a1.jsonl").exists());
+        assert_eq!(store.load("a1").unwrap(), vec![first.clone()]);
         store.append("a1", &second).unwrap();
         let loaded = store.load("a1").unwrap();
 
@@ -172,19 +163,6 @@ mod tests {
         let loaded = store.load("a1").unwrap();
 
         assert_eq!(loaded, vec![good, good2]);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn append_creates_the_missing_parent_dir() {
-        let dir = scratch_dir();
-        assert!(!dir.exists());
-        let store = DiaryStore::new(dir.clone());
-
-        store.append("a1", &sample(1, "s1", "x")).expect("append succeeds");
-
-        assert!(dir.exists());
-        assert!(dir.join("a1.jsonl").exists());
         let _ = fs::remove_dir_all(&dir);
     }
 
