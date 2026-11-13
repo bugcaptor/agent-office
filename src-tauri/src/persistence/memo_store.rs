@@ -557,17 +557,10 @@ mod tests {
     }
 
     #[test]
-    fn load_current_returns_the_same_sheet_on_second_call() {
-        let s = Scratch::new();
-        let first = s.store.load_current("a1").unwrap();
-        let second = s.store.load_current("a1").unwrap();
-        assert_eq!(first.sheet_id, second.sheet_id);
-    }
-
-    #[test]
     fn save_then_load_current_roundtrips_content() {
         let s = Scratch::new();
         let sheet = s.store.load_current("a1").unwrap();
+        assert_eq!(s.store.load_current("a1").unwrap().sheet_id, sheet.sheet_id);
 
         s.store.save("a1", &sheet.sheet_id, "오늘 할 일\n- 이슈 #79").unwrap();
         let loaded = s.store.load_current("a1").unwrap();
@@ -627,6 +620,7 @@ mod tests {
         let s = Scratch::new();
         // 같은 초에 두 번 넘겨도 sheetId 접미사로 갈라져 둘 다 남는다.
         let first = s.store.load_current("a1").unwrap();
+        assert!(s.store.list_archive("a1").unwrap().is_empty());
         s.store.save("a1", &first.sheet_id, "1장").unwrap();
         let second = s.store.archive_current("a1").unwrap();
         s.store.save("a1", &second.sheet_id, "2장").unwrap();
@@ -639,13 +633,6 @@ mod tests {
         assert_eq!(archive[0].sheet_id, second.sheet_id);
         assert_eq!(archive[1].sheet_id, first.sheet_id);
         assert!(archive.iter().all(|m| !m.archived.is_empty()));
-    }
-
-    #[test]
-    fn list_archive_excludes_the_current_sheet() {
-        let s = Scratch::new();
-        s.store.load_current("a1").unwrap();
-        assert!(s.store.list_archive("a1").unwrap().is_empty());
     }
 
     #[test]
