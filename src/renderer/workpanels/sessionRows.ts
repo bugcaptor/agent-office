@@ -29,6 +29,7 @@ export function buildSessionRows(events: readonly SessionEventRecord[], summarie
     runLastAt.set(event.runId, Math.max(runLastAt.get(event.runId) ?? -Infinity, event.at));
     if (event.at > latestAt) { latestAt = event.at; currentRun = event.runId; }
   }
+  const liveSessions = new Set(liveIds);
   const ids = new Set([...groups.keys(), ...Object.keys(summaries)]);
   const rows: SessionRow[] = [];
   for (const sessionId of ids) {
@@ -39,7 +40,7 @@ export function buildSessionRows(events: readonly SessionEventRecord[], summarie
     const first = group[0];
     if (!stored && !first) continue;
     const agentId = started?.agentId ?? stored?.agentId ?? first.agentId;
-    const live = liveIds.includes(sessionId) && !ended;
+    const live = liveSessions.has(sessionId) && !ended;
     const run = first?.runId;
     const endedApprox = !live && !ended && stored?.endedAt === undefined && run !== undefined && run !== currentRun;
     const summary: SessionSummary = {
