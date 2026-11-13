@@ -70,26 +70,16 @@ mod tests {
     }
 
     #[test]
-    fn append_then_load_roundtrips_a_record() {
-        let file = scratch_file();
-        let store = SessionTimeStore::new(file.clone());
-        let rec = sample("a1", 1_000, 4_000);
-
-        store.append(&rec).expect("append succeeds");
-        let loaded = store.load();
-
-        assert_eq!(loaded, vec![rec]);
-        let _ = fs::remove_dir_all(file.parent().unwrap());
-    }
-
-    #[test]
     fn append_twice_then_load_returns_two_in_order() {
         let file = scratch_file();
         let store = SessionTimeStore::new(file.clone());
+        assert!(!file.parent().unwrap().exists());
         let first = sample("a1", 1_000, 2_000);
         let second = sample("a1", 3_000, 5_000);
 
         store.append(&first).unwrap();
+        assert!(file.parent().unwrap().exists());
+        assert!(file.exists());
         store.append(&second).unwrap();
         let loaded = store.load();
 
@@ -123,17 +113,4 @@ mod tests {
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
-    #[test]
-    fn append_creates_the_missing_parent_dir() {
-        let file = scratch_file();
-        let parent = file.parent().unwrap().to_path_buf();
-        assert!(!parent.exists());
-
-        let store = SessionTimeStore::new(file.clone());
-        store.append(&sample("a1", 1_000, 2_000)).expect("append succeeds");
-
-        assert!(parent.exists());
-        assert!(file.exists());
-        let _ = fs::remove_dir_all(&parent);
-    }
 }
