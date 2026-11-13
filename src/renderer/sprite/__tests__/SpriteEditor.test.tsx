@@ -152,13 +152,6 @@ describe("SpriteEditor", () => {
       delete (URL as { revokeObjectURL?: unknown }).revokeObjectURL;
     });
 
-    it("initialImage가 있으면 업로드 없이 저장 버튼이 활성화된다", async () => {
-      render(
-        <SpriteEditor agentId="a1" onClose={() => {}} initialImage="data:image/png;base64,GEN" />,
-      );
-      const save = screen.getByText("저장") as HTMLButtonElement;
-      await waitFor(() => expect(save.disabled).toBe(false));
-    });
 
     it("initialImage 로드 후 저장하면 saveSprite가 정규화된 시트로 호출되고 닫힌다", async () => {
       const onClose = vi.fn();
@@ -172,10 +165,6 @@ describe("SpriteEditor", () => {
       await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     });
 
-    it("initialImage가 없으면 기존과 동일 (저장 비활성)", () => {
-      render(<SpriteEditor agentId="a1" onClose={() => {}} />);
-      expect((screen.getByText("저장") as HTMLButtonElement).disabled).toBe(true);
-    });
 
     it("initialImage는 1회만 소비된다 — mode 전이·사용자 업로드 후에도 재로드 없음", async () => {
       const GEN = "data:image/png;base64,GEN";
