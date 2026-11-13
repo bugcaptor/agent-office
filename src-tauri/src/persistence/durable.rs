@@ -109,7 +109,10 @@ mod tests {
         let slot = CorruptBackup::default();
         let first = slot.backup(&file).expect("backup made");
         assert_eq!(fs::read(&first).unwrap(), b"{broken");
-        assert_eq!(slot.clone().backup(&file), Some(first));
+        fs::write(&file, b"{later damage").unwrap();
+        assert_eq!(slot.clone().backup(&file), Some(first.clone()));
+        assert_eq!(fs::read(&first).unwrap(), b"{broken", "first backup must not be overwritten");
+        assert_eq!(fs::read(&file).unwrap(), b"{later damage");
         assert_eq!(fs::read_dir(file.parent().unwrap()).unwrap().count(), 2);
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
