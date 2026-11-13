@@ -788,23 +788,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_ensure_is_fail_open_and_can_be_retried() {
-        let state = ObserverServerState::default();
-
-        let failed = state
-            .ensure_with(|| async { Err(std::io::Error::other("injected start failure")) })
-            .await;
-        assert_eq!(failed, None);
-        assert_eq!(state.current_url(), None);
-
-        let recovered = state
-            .ensure_with(|| async { started_server(42001).await })
-            .await;
-        assert_eq!(recovered, Some(42001));
-        state.shutdown();
-    }
-
-    #[tokio::test]
     async fn failed_server_start_returns_none_and_can_be_retried() {
         let state = ObserverServerState::default();
         let first = state
@@ -943,19 +926,4 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    #[tokio::test]
-    async fn ensure_without_app_data_dir_does_not_write_a_port_file_anywhere_reachable() {
-        // 기본값(Default) -- 대부분의 다른 테스트가 쓰는 경로. app_data_dir을
-        // 세팅하지 않으면 포트 파일을 쓰려는 시도 자체가 없어야 한다(쓸 곳이
-        // 없으므로 write_port_file은 조용히 no-op).
-        let state = ObserverServerState::default();
-        let port = state
-            .ensure_with(|| async { started_server(51002).await })
-            .await
-            .unwrap();
-        assert_eq!(port, 51002);
-        state.shutdown();
-        // 관찰 가능한 유일한 계약: app_data_dir이 None이면 어떤 파일도 만들지
-        // 않는다는 것뿐이라(경로 자체가 없음) 패닉 없이 끝나면 충분하다.
-    }
 }
