@@ -226,6 +226,7 @@ mod tests {
         let file = scratch_file();
         let store = ProfileStore::new(file.clone());
         let original = sample_state();
+        assert!(!file.parent().unwrap().exists());
 
         store.save(&original).expect("save succeeds");
         let loaded = store.load();
@@ -237,21 +238,6 @@ mod tests {
         assert_eq!(loaded.agents[0].desk_index, 2);
 
         let _ = fs::remove_dir_all(file.parent().unwrap());
-    }
-
-    #[test]
-    fn save_creates_missing_parent_directory() {
-        let file = scratch_file();
-        let parent = file.parent().unwrap().to_path_buf();
-        assert!(!parent.exists());
-
-        let store = ProfileStore::new(file.clone());
-        store.save(&sample_state()).expect("save succeeds");
-
-        assert!(parent.exists(), "parent dir should be created");
-        assert!(file.exists(), "profiles.json should exist");
-
-        let _ = fs::remove_dir_all(&parent);
     }
 
     /// 손상 파일을 써 두고 그 store를 돌려준다.
@@ -271,7 +257,7 @@ mod tests {
     }
 
     /// 손상 파일 회귀(수정 F2): Err + 원본 백업 + 저장 거부 + 원본 무손상.
-    fn assert_corrupt_is_preserved(bytes: &[u8]) {
+    fn assert_corrupt_is_preserved(bytes: &[u8]) -> ProfileLoadError {
         let (file, store) = store_with_raw(bytes);
 
         let err = store.try_load().expect_err("corrupt file must not load as empty");
@@ -289,11 +275,16 @@ mod tests {
         assert_eq!(corrupt_backups(&file), vec![backup]);
 
         let _ = fs::remove_dir_all(file.parent().unwrap());
+        err
     }
 
     #[test]
     fn unsupported_version_is_an_error_not_an_empty_state() {
-        assert_corrupt_is_preserved(br#"{"agents":[{"id":"p1"}],"version":2}"#);
+        let mut state = sample_state();
+        state.version = 2;
+        let bytes = serde_json::to_vec(&state).unwrap();
+        let err = assert_corrupt_is_preserved(&bytes);
+        assert_eq!(err.reason, "지원하지 않는 버전 2");
     }
 
     #[test]
