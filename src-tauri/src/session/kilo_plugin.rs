@@ -374,21 +374,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    #[test]
-    fn write_plugin_config_points_at_the_plugin_file_via_file_url() {
-        let base = scratch_dir();
-        let config_path = write_plugin(&base).expect("write_plugin succeeds");
-        let config: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
-        let plugins = config.get("plugin").and_then(|v| v.as_array()).expect("plugin array");
-        assert_eq!(plugins.len(), 1);
-        let url = plugins[0].as_str().unwrap();
-        assert!(url.starts_with("file://"), "{url}");
-        assert!(url.ends_with(PLUGIN_FILENAME), "{url}");
-
-        let _ = std::fs::remove_dir_all(&base);
-    }
-
     /// macOS app_data 경로의 공백이 file URL에서 %20으로 인코딩되는지 확인한다
     /// (문자열로 직접 `file://`를 이어 붙이면 이게 깨져 Kilo의 URL 파서가 실패한다).
     #[test]
@@ -400,7 +385,11 @@ mod tests {
         let config_path = write_plugin(&base).expect("write_plugin succeeds even with spaces");
         let config: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
-        let url = config["plugin"][0].as_str().unwrap();
+        let plugins = config.get("plugin").and_then(|v| v.as_array()).expect("plugin array");
+        assert_eq!(plugins.len(), 1);
+        let url = plugins[0].as_str().unwrap();
+        assert!(url.starts_with("file://"), "{url}");
+        assert!(url.ends_with(PLUGIN_FILENAME), "{url}");
         assert!(url.contains("%20"), "{url}");
         assert!(!url.contains(' '), "raw space must not survive encoding: {url}");
 
