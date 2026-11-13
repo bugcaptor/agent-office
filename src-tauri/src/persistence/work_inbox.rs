@@ -446,7 +446,14 @@ mod tests {
     fn ignores_symlinks() {
         let root = tempfile::tempdir().unwrap();
         let outside = tempfile::NamedTempFile::new().unwrap();
-        std::os::unix::fs::symlink(outside.path(), root.path().join("link.md")).unwrap();
+        let body = b"# External task\nMust not enter the inbox\n";
+        fs::write(outside.path(), body).unwrap();
+        assert!(parse("link.md", body).is_ok(), "target must otherwise be a valid task");
+        let link = root.path().join("link.md");
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
         assert!(scan(root.path(), SystemTime::now()).unwrap().is_empty());
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read(outside.path()).unwrap(), body);
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     }
 }
