@@ -260,6 +260,8 @@ mod tests {
         assert_eq!(sink.len(), 1);
         assert_eq!(sink.at(0).data, "한");
         assert_eq!(sink.at(0).seq, 0);
+        // #49: 완성 flush가 이전에 캐리한 바이트까지 raw 3바이트를 계수한다.
+        assert_eq!(sink.at(0).bytes, 3);
     }
 
     #[test]
@@ -434,25 +436,6 @@ mod tests {
         b.flush(&sink);
         let chunk = sink.at(0);
         assert_eq!(chunk.data, "한");
-        assert_eq!(chunk.bytes, 3);
-    }
-
-    #[test]
-    fn carried_incomplete_tail_counts_in_the_flush_that_completes_it() {
-        // 캐리된 불완전 tail은 그 flush의 bytes에 안 들어가고, 완성되는 flush에서
-        // 잡혀 누계가 raw와 일치한다. '한' = ED 95 9C를 두 push로 쪼갠다.
-        let sink = RecordingSink::default();
-        let mut b = batcher();
-        b.push(&[0xED, 0x95]); // 불완전 lead — 방출 없음
-        b.flush(&sink);
-        assert_eq!(sink.len(), 0);
-
-        b.push(&[0x9C]); // 완성
-        b.flush(&sink);
-        assert_eq!(sink.len(), 1);
-        let chunk = sink.at(0);
-        assert_eq!(chunk.data, "한");
-        // 첫 flush는 아무것도 안 실었고, 완성 flush가 raw 3바이트 전부를 계수.
         assert_eq!(chunk.bytes, 3);
     }
 
