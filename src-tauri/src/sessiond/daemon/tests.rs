@@ -161,6 +161,7 @@
         let _ = close(master_read);
         let (reply, _) = h.recv();
         assert!(matches!(reply, Message::HandoffOk));
+        assert_eq!(h.table.lock().unwrap().len(), 1);
 
         nix_write(master_write, b"buffered-before-adopt").unwrap();
         wait_until(|| h.table.lock().unwrap()["a1"].ring.lock().unwrap().len() > 0);
@@ -252,15 +253,43 @@
     }
 
     #[test]
-    fn kill_removes_from_table_and_closes_master_fd() {
+    fn kill_terminates_owned_process_group_and_removes_session() {
+        use std::os::unix::process::{CommandExt, ExitStatusExt};
+        use std::process::{Child, Command, Stdio};
+
+        // Only this fixture's child may receive a signal. Keep its PID reserved
+        // until it is reaped, and clean it up even when an assertion panics.
+        struct OwnedChild(Child);
+        impl Drop for OwnedChild {
+            fn drop(&mut self) {
+                if let Ok(Some(_)) = self.0.try_wait() {
+                    return;
+                }
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let mut command = Command::new("/bin/sleep");
+        command.arg("60").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        // SAFETY: setsid is async-signal-safe and performs no allocation.
+        // Successful spawn means the child has completed pre_exec and exec.
+        unsafe {
+            command.pre_exec(|| {
+                nix::unistd::setsid().map(|_| ()).map_err(std::io::Error::from)
+            });
+        }
+        let mut child = OwnedChild(command.spawn().expect("spawn isolated fixture child"));
+        let child_pid = child.0.id() as i32;
+        assert_eq!(nix::unistd::getpgid(Some(Pid::from_raw(child_pid))).unwrap().as_raw(), child_pid);
+
         let h = Harness::new();
         let (master_read, master_write) = pipe().unwrap();
         h.send(
             &Message::Handoff {
                 agent_id: "a1".into(),
                 session_id: "s1".into(),
-                pid: Some(333),
-                pgid: Some(333),
+                pid: Some(child_pid),
+                pgid: Some(child_pid),
                 rows: 24,
                 cols: 80,
                 cwd: "/tmp".into(),
@@ -276,6 +305,17 @@
         let (reply, _) = h.recv();
         assert!(matches!(reply, Message::KillOk));
         assert!(h.table.lock().unwrap().is_empty());
+
+        // Bound the wait so removing the production kill cannot hang the suite.
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let status = loop {
+            if let Some(status) = child.0.try_wait().unwrap() {
+                break status;
+            }
+            assert!(std::time::Instant::now() < deadline, "fixture child survived daemon Kill");
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        assert_eq!(status.signal(), Some(libc::SIGKILL));
 
         let _ = close(master_write);
         h.finish();
@@ -311,37 +351,6 @@
             matches!(&reply, Message::ListOk { sessions } if sessions[0].exited)
         });
 
-        h.finish();
-    }
-
-    #[test]
-    fn table_becomes_empty_after_adopting_the_only_session() {
-        let h = Harness::new();
-        let (master_read, master_write) = pipe().unwrap();
-        h.send(
-            &Message::Handoff {
-                agent_id: "solo".into(),
-                session_id: "s1".into(),
-                pid: Some(555),
-                pgid: Some(555),
-                rows: 24,
-                cols: 80,
-                cwd: "/tmp".into(),
-                cleanup_paths: vec![],
-                snapshot_b64: String::new(),
-            },
-            Some(master_read),
-        );
-        let _ = close(master_read);
-        h.recv();
-        assert_eq!(h.table.lock().unwrap().len(), 1);
-
-        h.send(&Message::Adopt { agent_id: "solo".into() }, None);
-        let (_, fd) = h.recv();
-        assert!(h.table.lock().unwrap().is_empty());
-
-        let _ = close(fd.unwrap());
-        let _ = close(master_write);
         h.finish();
     }
 
