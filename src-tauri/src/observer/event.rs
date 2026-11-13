@@ -1099,7 +1099,7 @@ fn assistant_content_text(value: &serde_json::Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        agent_id, hook_cwd, is_command_prompt, message, native_session_id, prompt_text,
+        agent_id, hook_cwd, message, native_session_id, prompt_text,
         running_subagents, tool_description, AdapterSessionPlan, CommandWrapperSpec,
         ObserverProvider, ObserverSessionContext,
     };
@@ -1226,6 +1226,9 @@ mod tests {
         );
         assert_eq!(prompt_text(br#"{"prompt":"!git status"}"#), None);
         assert_eq!(prompt_text(br##"{"prompt":"#remember"}"##), None);
+        assert_eq!(prompt_text(br#"{"prompt":"git status"}"#).as_deref(), Some("git status"));
+        // 절대경로도 슬래시 명령으로 취급하는 기존 계약.
+        assert_eq!(prompt_text(br#"{"prompt":"/home/x"}"#), None);
         assert_eq!(prompt_text(br#"{"session_id":"s1"}"#), None);
     }
 
@@ -2184,17 +2187,6 @@ mod tests {
         assert_eq!(newest_id.as_deref(), Some("msg-sub"));
 
         let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn is_command_prompt_flags_bash_slash_and_memory_prefixes() {
-        assert!(is_command_prompt("!git status"));
-        assert!(is_command_prompt("/clear"));
-        assert!(is_command_prompt("#remember"));
-        assert!(!is_command_prompt("버그 고쳐줘"));
-        assert!(!is_command_prompt("git status"));
-        // 절대경로 텍스트도 '/'로 시작하면 명령으로 취급된다 — 감수하는 트레이드오프.
-        assert!(is_command_prompt("/home/x"));
     }
 
     #[test]
