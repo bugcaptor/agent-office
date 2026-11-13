@@ -413,23 +413,6 @@ mod tests {
         assert!(judge_args(&bad).is_err());
     }
 
-    /// 실제 Claude 전사 파일 하나로 마지막 응답을 뽑는다.
-    /// `AO_TRANSCRIPT=<jsonl> cargo test ... real_transcript_last_reply -- --ignored --nocapture`
-    #[test]
-    #[ignore]
-    fn real_transcript_last_reply() {
-        use crate::session_log::agent_transcript::{AgentSessionLookup, AgentSessionSnapshot};
-        struct Fixed(String);
-        impl AgentSessionLookup for Fixed {
-            fn latest_session(&self, _: &str) -> Option<AgentSessionSnapshot> {
-                Some(AgentSessionSnapshot { session_id: "x".into(), cwd: None, transcript_path: Some(self.0.clone()) })
-            }
-        }
-        let path = std::env::var("AO_TRANSCRIPT").expect("AO_TRANSCRIPT");
-        let mut source = crate::session_log::agent_transcript::claude::source(std::sync::Arc::new(Fixed(path))).unwrap();
-        let reply = last_reply(source.as_mut(), "a", "/").expect("reply");
-        println!("--- last reply ({} chars) ---\n{}", reply.chars().count(), reply.chars().take(600).collect::<String>());
-    }
 
     /// 설치된 claude와 계정을 쓴다(작은 비용). `cargo test ... real_claude_judge -- --ignored`
     #[tokio::test]
