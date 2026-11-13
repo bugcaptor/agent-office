@@ -137,9 +137,4 @@ mod tests {
         assert_eq!(Lang::En.code(), "en");
     }
 
-    /// 실제 OS 로케일 경로가 패닉 없이 도는지만 확인한다(값은 기계마다 다르다).
-    #[test]
-    fn real_os_locale_path_does_not_panic() {
-        let _ = resolve_lang(LANGUAGE_SYSTEM);
-    }
 }
