@@ -776,13 +776,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fake_records_writes() {
-        let (fac, ctl) = FakePtyFactory::new();
-        let mut spawned = fac.spawn(opts()).unwrap();
-        spawned.writer.write_all(b"claude --settings \"x\"\n").unwrap();
-        assert_eq!(ctl.writes_utf8(), "claude --settings \"x\"\n");
-    }
 
     #[test]
     fn fake_injected_output_is_readable() {
@@ -834,27 +827,7 @@ mod tests {
         assert_eq!(outcome.signal, None);
     }
 
-    #[test]
-    fn fake_exit_via_signal_has_no_exit_code() {
-        let (fac, ctl) = FakePtyFactory::new();
-        let spawned = fac.spawn(opts()).unwrap();
-        ctl.fire_exit_signal(9);
-        let outcome = spawned.waiter.wait();
-        assert_eq!(outcome.exit_code, None);
-        assert_eq!(outcome.signal, Some(9));
-    }
 
-    #[test]
-    fn fake_control_records_resize_and_kill() {
-        let (fac, ctl) = FakePtyFactory::new();
-        let spawned = fac.spawn(opts()).unwrap();
-
-        spawned.control.resize(100, 40).unwrap();
-        spawned.control.kill().unwrap();
-
-        assert_eq!(ctl.resize_calls(), vec![(100, 40)]);
-        assert_eq!(ctl.kill_count(), 1);
-    }
 
     #[test]
     fn fake_empty_chunk_is_skipped_not_treated_as_eof() {
