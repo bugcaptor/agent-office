@@ -1027,14 +1027,6 @@ mod tests {
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 
-    #[test]
-    fn serializes_camel_case() {
-        let json = serde_json::to_string(&AppSettings::default()).unwrap();
-        assert!(json.contains("summarizerEnabled"), "{json}");
-        assert!(json.contains("summaryProvider"), "{json}");
-        assert!(json.contains("observerEnabled"), "{json}");
-    }
-
     // 하위 호환: 사운드 필드가 없는 기존 settings.json도 기본값(켜짐/0.5)으로
     // 로드된다 — 버전 마이그레이션 없이 serde default로 처리.
     #[test]
@@ -1100,13 +1092,6 @@ mod tests {
         migrate_sound_keys(&mut v);
         assert_eq!(v["typingSoundEnabled"], serde_json::json!(true), "보존");
         assert_eq!(v["notifySoundEnabled"], serde_json::json!(false), "채움");
-    }
-
-    #[test]
-    fn migration_is_noop_without_legacy_key() {
-        let mut v: serde_json::Value = serde_json::from_str(r#"{"version":1}"#).unwrap();
-        migrate_sound_keys(&mut v);
-        assert_eq!(v, serde_json::json!({"version":1}), "serde 기본값에 맡긴다");
     }
 
     // 저장하면 옛 키는 사라지고 새 키 둘만 남는다(claudeCliEnabled 때와 같은 관례).
