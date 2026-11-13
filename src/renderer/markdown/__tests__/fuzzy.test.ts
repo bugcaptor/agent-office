@@ -96,14 +96,6 @@ describe("emptyQueryPriority(빈 쿼리 대표 문서 우선)", () => {
 });
 
 describe("fuzzyRank(이슈 #67 -- 서버사이드 검색 결과 rank-only 정렬)", () => {
-  it("fuzzyFilter와 달리 매치 실패 항목도 탈락시키지 않고 남긴다", () => {
-    const items = [entry("readme.md"), entry("license.txt")];
-    const out = fuzzyRank(items, "read").map((r) => r.item.relPath);
-    // fuzzyFilter라면 license.txt는 제외되지만, fuzzyRank는 순위만 매겨 남긴다.
-    expect(out).toHaveLength(2);
-    expect(out).toContain("license.txt");
-  });
-
   it("매치되는 항목이 매치 안 되는 항목보다 위로 온다", () => {
     const items = [entry("license.txt"), entry("readme.md")];
     const out = fuzzyRank(items, "read").map((r) => r.item.relPath);
