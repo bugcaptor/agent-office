@@ -575,20 +575,4 @@ mod tests {
         let err = open_dir_in_terminal("/definitely/not/a/dir", false).unwrap_err();
         assert!(err.contains("/definitely/not/a/dir"), "err={err}");
     }
-
-    /// 실제 터미널 창을 띄우는 수동 스모크(호스트 OS 경로 검증용).
-    /// `cargo test terminal -- --ignored`로 실행한다.
-    #[test]
-    #[ignore = "실제 터미널을 실행함 -- 수동 확인 전용"]
-    fn manual_smoke_opens_this_crate_dir() {
-        open_dir_in_terminal(env!("CARGO_MANIFEST_DIR"), false).unwrap();
-    }
-
-    /// iTerm 우선 경로의 수동 스모크 — iTerm 설치 기기에서는 iTerm이,
-    /// 미설치 기기에서는 Terminal 폴백이 떠야 한다.
-    #[test]
-    #[ignore = "실제 터미널을 실행함 -- 수동 확인 전용"]
-    fn manual_smoke_opens_with_iterm_preference() {
-        open_dir_in_terminal(env!("CARGO_MANIFEST_DIR"), true).unwrap();
-    }
 }

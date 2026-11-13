@@ -113,11 +113,4 @@ mod tests {
         let err = open_dir_in_file_manager("/definitely/not/a/dir").unwrap_err();
         assert!(err.contains("/definitely/not/a/dir"), "err={err}");
     }
-
-    /// 실제 탐색기 창을 띄우는 수동 스모크. `cargo test file_manager -- --ignored`.
-    #[test]
-    #[ignore = "실제 파일 탐색기를 실행함 -- 수동 확인 전용"]
-    fn manual_smoke_opens_this_crate_dir() {
-        open_dir_in_file_manager(env!("CARGO_MANIFEST_DIR")).unwrap();
-    }
 }

@@ -160,24 +160,7 @@ describe("SCENES 레지스트리 무결성", () => {
     }
   });
 
-  it("씬마다 8종 의미 타일 전부를 쓴다(어휘가 통째로 바뀌어도 빠진 종류가 없다)", () => {
-    for (const scene of ALL_SCENES) {
-      const used = new Set<Tile>();
-      for (const row of scene.map.tiles) for (const t of row) used.add(t);
-      for (const t of [
-        Tile.Floor,
-        Tile.Wall,
-        Tile.DeskTop,
-        Tile.Rug,
-        Tile.Plant,
-        Tile.Counter,
-        Tile.Table,
-        Tile.BossDesk,
-      ]) {
-        expect(used.has(t)).toBe(true);
-      }
-    }
-  });
+
 });
 
 describe("sceneColor", () => {

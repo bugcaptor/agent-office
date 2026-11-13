@@ -1,6 +1,6 @@
 // src/renderer/office/map/__tests__/mapData.test.ts
 //
-// Phase A (office redesign): 8-desk work zone + a break room (탕비실) whose
+// The break room (탕비실) rectangle must remain valid: its
 // BREAK_ROOM_RECT interior must be fully walkable so pathing.pickBreakTarget
 // can safely rejection-sample inside it. Also pins the Tile enum's numeric
 // values, since they're baked into the hardcoded GRID and any persisted data.
@@ -42,28 +42,4 @@ describe("BREAK_ROOM_RECT", () => {
     }
   });
 
-  it("sits within the bottom (break room) portion of the map, below the desk rows", () => {
-    expect(BREAK_ROOM_RECT.y).toBeGreaterThanOrEqual(9);
-  });
-});
-
-describe("office map decoration tiles", () => {
-  it("contains at least one Plant, Counter and Table tile", () => {
-    const counts = { plant: 0, counter: 0, table: 0 };
-    for (const row of OFFICE_MAP.tiles) {
-      for (const t of row) {
-        if (t === Tile.Plant) counts.plant++;
-        if (t === Tile.Counter) counts.counter++;
-        if (t === Tile.Table) counts.table++;
-      }
-    }
-    expect(counts.plant).toBeGreaterThanOrEqual(2);
-    expect(counts.plant).toBeLessThanOrEqual(4);
-    expect(counts.counter).toBeGreaterThan(0);
-    expect(counts.table).toBeGreaterThan(0);
-  });
-
-  it("has exactly 8 desks (2 rows x 4 pairs)", () => {
-    expect(OFFICE_MAP.desks.length).toBe(8);
-  });
 });

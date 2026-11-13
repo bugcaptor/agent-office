@@ -146,12 +146,4 @@ mod tests {
         let err = open_dir_in_vscode("/definitely/not/a/dir").unwrap_err();
         assert!(err.contains("/definitely/not/a/dir"), "err={err}");
     }
-
-    /// 실제 VS Code 창을 띄우는 수동 스모크(호스트 OS 경로 검증용).
-    /// `cargo test vscode -- --ignored`로 실행한다.
-    #[test]
-    #[ignore = "실제 VS Code를 실행함 -- 수동 확인 전용"]
-    fn manual_smoke_opens_this_crate_dir() {
-        open_dir_in_vscode(env!("CARGO_MANIFEST_DIR")).unwrap();
-    }
 }

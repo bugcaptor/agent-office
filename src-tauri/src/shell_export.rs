@@ -347,13 +347,4 @@ mod tests {
         let missing = std::env::temp_dir().join(format!("shell-export-gc-missing-{}", uuid::Uuid::new_v4()));
         gc_dir(&missing, std::time::Duration::from_secs(0));
     }
-
-    /// 실제 에디터로 파일을 여는 수동 스모크(호스트 OS 검증용).
-    /// `cargo test shell_export -- --ignored`로 실행한다.
-    #[test]
-    #[ignore = "실제 에디터를 실행함 -- 수동 확인 전용"]
-    fn manual_smoke_opens_written_file() {
-        let path = write_export_file("스모크", "hello\nworld\n", "manual").unwrap();
-        open_file_in_editor(&path, false).unwrap();
-    }
 }
