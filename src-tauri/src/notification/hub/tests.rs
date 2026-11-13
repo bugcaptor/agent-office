@@ -944,15 +944,6 @@
     }
 
     #[test]
-    fn hold_zero_emits_hook_immediately() {
-        // 기본(hold=0)에서는 현행 동작 그대로 즉시 방출한다.
-        let (hub, events, _clock) = fixture();
-        hub.ingest_hook("s1", NotificationSource::Hook, &msg("q"));
-        assert_eq!(events.notifications().len(), 1);
-        assert_eq!(hub.pending("s1").len(), 1);
-    }
-
-    #[test]
     fn flush_discards_held_when_session_gone_from_registry() {
         let registry = Arc::new(SessionRegistry::new());
         registry.insert("s1", "a1", SessionState::Running);
@@ -988,6 +979,7 @@
         let (hub, events, clock) = fixture(); // hold=0
         hub.ingest_hook("s1", NotificationSource::Hook, &msg("first")); // 즉시 방출
         assert_eq!(events.notifications().len(), 1);
+        assert_eq!(hub.pending("s1").len(), 1);
 
         hub.set_hold_duration(Duration::from_millis(5000));
         hub.ingest_hook("s1", NotificationSource::Hook, &msg("second")); // 이제 보류
