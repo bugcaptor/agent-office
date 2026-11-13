@@ -294,18 +294,6 @@ mod tests {
     }
 
     #[test]
-    fn finalize_then_load_roundtrips() {
-        let dir = scratch_dir();
-        let store = AwardsStore::new(dir.clone());
-        let rec = record("2026-03", false);
-
-        let saved = store.finalize(rec.clone(), None).expect("finalize ok");
-        assert_eq!(saved.awards, vec![rec.clone()]);
-        assert_eq!(store.load().unwrap().awards, vec![rec]);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
     fn awards_are_sorted_by_month_ascending() {
         let dir = scratch_dir();
         let store = AwardsStore::new(dir.clone());
@@ -387,7 +375,9 @@ mod tests {
         let dir = scratch_dir();
         let store = AwardsStore::new(dir.clone());
         let first = record("2026-03", false);
-        store.finalize(first.clone(), None).unwrap();
+        let saved = store.finalize(first.clone(), None).unwrap();
+        assert_eq!(saved.awards, vec![first.clone()]);
+        assert_eq!(store.load().unwrap().awards, vec![first.clone()]);
 
         let mut second = record("2026-03", false);
         second.decided_at = 9_999_999_999_999;
