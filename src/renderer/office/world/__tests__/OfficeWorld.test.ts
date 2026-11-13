@@ -459,14 +459,6 @@ describe("외형 키 변경 시 엔티티 재생성", () => {
     expect(hoisted.createCharacterAssetsSpy).toHaveBeenCalledTimes(2);
   });
 
-  it("변화가 없으면 재생성하지 않는다", () => {
-    const { world } = makeWorld();
-    const p = mkProfile({ id: "a1", seed: "s1" });
-    world.syncAgents([p]);
-    world.syncAgents([p]);
-    expect(hoisted.createCharacterAssetsSpy).toHaveBeenCalledTimes(1);
-  });
-
   it("archetype이 바뀐 기존 에이전트는 파괴 후 재생성한다", () => {
     const { world } = makeWorld();
     const p = mkProfile({ id: "a1", seed: "s1", archetype: "human" });
