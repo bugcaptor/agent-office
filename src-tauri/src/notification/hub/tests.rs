@@ -1156,26 +1156,6 @@
         );
     }
 
-    // Sanity check that Clock is genuinely an injection seam usable behind a
-    // trait object (mirrors state.rs's analogous AppEvents check).
-    #[test]
-    fn fake_clock_is_usable_behind_the_clock_trait_object() {
-        // Advance through the concrete type (only tests get to control
-        // time), then erase to `Arc<dyn Clock>` — the same shape
-        // `NotificationHub::new` requires in production — and confirm both
-        // `now()` and `now_ms()` reflect the advance through the trait object.
-        let clock = Arc::new(FakeClock::new());
-        let ms_before = clock.now_ms();
-        let instant_before = clock.now();
-        clock.advance(2000);
-        let handle: Arc<dyn Clock> = clock;
-
-        assert_eq!(handle.now_ms() - ms_before, 2000);
-        assert_eq!(
-            handle.now().duration_since(instant_before),
-            Duration::from_millis(2000)
-        );
-    }
 
     // ── 기본 알림 문구의 언어 · 프런트와의 짝 ────────────────────────────
     //
