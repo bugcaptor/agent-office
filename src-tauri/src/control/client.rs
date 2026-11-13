@@ -594,6 +594,7 @@ mod tests {
                 "settings",
                 "set",
                 "typingSoundEnabled=false",
+                "keepAwakeEnabled=true",
                 "soundVolume=0.25",
                 "attentionHoldMs=3000",
                 "summaryProvider=codex",
@@ -603,6 +604,7 @@ mod tests {
         .unwrap();
         assert_eq!(path, "/v1/settings/set");
         assert_eq!(body["typingSoundEnabled"], false);
+        assert_eq!(body["keepAwakeEnabled"], true);
         assert_eq!(body["soundVolume"], 0.25);
         assert_eq!(body["attentionHoldMs"], 3000);
         assert_eq!(body["summaryProvider"], "codex");
@@ -637,14 +639,5 @@ mod tests {
             Some(PathBuf::from("/env"))
         );
         assert_eq!(resolve_app_data(Some(""), Some("")), default_app_data());
-    }
-
-    #[test]
-    fn infer_value_covers_bool_int_float_string() {
-        assert_eq!(infer_value("true"), Value::Bool(true));
-        assert_eq!(infer_value("false"), Value::Bool(false));
-        assert_eq!(infer_value("42"), json!(42));
-        assert_eq!(infer_value("0.5"), json!(0.5));
-        assert_eq!(infer_value("codex"), Value::String("codex".into()));
     }
 }
