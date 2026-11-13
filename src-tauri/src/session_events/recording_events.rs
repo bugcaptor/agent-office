@@ -485,6 +485,11 @@ mod tests {
             records.iter().map(|r| r.origin).collect::<Vec<_>>(),
             vec![Some(PromptOrigin::Bot), None]
         );
+        let raw = fs::read_to_string(root.join("2026-07-11.jsonl")).unwrap();
+        let lines = raw.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("\"origin\":\"bot\""));
+        assert!(!lines[1].contains("origin"));
         let _ = fs::remove_dir_all(root);
     }
 
@@ -551,39 +556,6 @@ mod tests {
                 ("a1".to_string(), Some(PromptOrigin::Bot))
             ]
         );
-        let _ = fs::remove_dir_all(root);
-    }
-
-    /// 사람 프롬프트에는 `origin` **키 자체가** 나가지 않는다(옵션 추가라
-    /// schemaVersion 1을 유지하는 근거 — 과거 파일과 바이트 모양이 같다).
-    #[test]
-    fn human_prompt_omits_the_origin_key_entirely() {
-        let root = scratch_root();
-        let inner = Arc::new(RecordingEvents::default());
-        let store = Arc::new(SessionEventStore::new(root.clone()));
-        let events = RecordingAppEvents::new(inner, store, Arc::new(BotPromptArms::new()));
-
-        events.activity_event(&prompt("a1", 1_783_728_000_000));
-
-        let raw = fs::read_to_string(root.join("2026-07-11.jsonl")).unwrap();
-        assert!(!raw.contains("origin"));
-        let _ = fs::remove_dir_all(root);
-    }
-
-    /// 봇 프롬프트는 `"origin":"bot"`으로 나간다(TS 미러 `origin?: "bot"`).
-    #[test]
-    fn bot_prompt_serializes_origin_as_snake_case_bot() {
-        let root = scratch_root();
-        let inner = Arc::new(RecordingEvents::default());
-        let store = Arc::new(SessionEventStore::new(root.clone()));
-        let arms = Arc::new(BotPromptArms::new());
-        let events = RecordingAppEvents::new(inner, store, arms.clone());
-
-        arms.arm("a1", 1_783_728_000_000);
-        events.activity_event(&prompt("a1", 1_783_728_000_000));
-
-        let raw = fs::read_to_string(root.join("2026-07-11.jsonl")).unwrap();
-        assert!(raw.contains("\"origin\":\"bot\""));
         let _ = fs::remove_dir_all(root);
     }
 
