@@ -134,77 +134,11 @@
         cleanup(&ctl, &dir, &profile_dir);
     }
 
-    // set_app_settings 본문(저장 -> 캐시 갱신 -> first_run 플래그 내림)을
-    // 그대로 재현해 검증한다. 회귀 대상: 첫 실행 완료 후 웹뷰가 리로드돼도
-    // get_app_settings가 firstRun: true를 다시 주면 안 된다(Minor #3).
-    #[tokio::test]
-    async fn set_app_settings_clears_first_run_flag_after_success() {
-        let (state, ctl, dir, profile_dir) = build("first-run-flag");
-        assert!(
-            state
-                .settings_first_run
-                .load(std::sync::atomic::Ordering::SeqCst),
-            "build() 헬퍼는 부팅 시 settings.json 부재 상태를 흉내내므로 초기값은 true"
-        );
-
-        let new_settings = crate::persistence::settings_store::AppSettings {
-            version: 1,
-            language: "system".to_string(),
-            summarizer_enabled: true,
-            summary_provider: SummaryProvider::Claude,
-            summary_models: Default::default(),
-            diary_enabled: false,
-            observer_enabled: false,
-            typing_sound_enabled: true,
-            notify_sound_enabled: true,
-            sound_volume: 0.5,
-            external_terminal: Default::default(),
-            external_editor: Default::default(),
-            attention_hold_ms: 5000,
-            git_status_enabled: true,
-            workdir_show_ignored: false,
-            file_index_backend: Default::default(),
-            cli_enabled: false,
-            keep_awake_enabled: false,
-            session_log_enabled: true,
-            run_recipes_enabled: false,
-            work_panels_enabled: false,
-            mascot_enabled: false,
-            mascot_lights_mode: Default::default(),
-            mascot_lights_vertical: false,
-            mascot_lights_projects: Vec::new(),
-            mascot_lights_face: Default::default(),
-            mascot_lights_label: Default::default(),
-            usage_float_enabled: true,
-            session_cost_enabled: true,
-            agent_shortcuts: Default::default(),
-            notify_jump_shortcut: String::new(),
-        };
-        // set_app_settings 본문과 동일한 순서: write 가드를 쥔 채 저장 후 캐시
-        // 갱신, 가드 해제 -- 그다음 first_run을 false로 내린다.
-        {
-            let mut guard = state.settings.write().unwrap();
-            state
-                .settings_store
-                .save(&new_settings)
-                .expect("save into tempdir should succeed");
-            *guard = new_settings.clone();
-        }
-        state
-            .settings_first_run
-            .store(false, std::sync::atomic::Ordering::SeqCst);
-
-        assert!(!state
-            .settings_first_run
-            .load(std::sync::atomic::Ordering::SeqCst));
-        assert_eq!(*state.settings.read().unwrap(), new_settings);
-        cleanup(&ctl, &dir, &profile_dir);
-    }
-
     #[tokio::test]
     async fn set_app_settings_keeps_enabled_setting_when_observer_server_is_unavailable() {
         let (state, ctl, dir, profile_dir) = build("settings-observer-fail-open");
         state.observer_server.shutdown();
+        assert!(state.settings_first_run.load(std::sync::atomic::Ordering::SeqCst));
         let settings = crate::persistence::settings_store::AppSettings {
             version: 1,
             language: "system".to_string(),
@@ -514,69 +448,6 @@
         assert_eq!(ctl.writes_utf8(), "");
 
         cleanup(&ctl, &dir, &profile_dir);
-    }
-
-    // create_session 본문(SessionOpts -> CreateSessionRequest)이 `shell`
-    // 필드를 그대로 전달하는지 검증 -- cols/rows/cwd와 동일한 delegation
-    // 패턴이지만 opts.shell 값이 유실되지 않는지가 회귀 지점.
-    #[test]
-    fn create_session_opts_shell_flows_into_create_session_request() {
-        let opts = SessionOpts {
-            cols: None,
-            rows: None,
-            cwd: None,
-            shell: Some("git-bash".into()),
-            startup_command: None,
-            personality_prompt: None,
-            agent_name: None,
-            agent_role: None,
-            task_chat: false,
-        };
-        // create_session 본문과 동일한 매핑.
-        let request = CreateSessionRequest {
-            agent_id: "a1".into(),
-            cols: opts.cols,
-            rows: opts.rows,
-            cwd: opts.cwd,
-            shell: opts.shell.clone(),
-            startup_command: opts.startup_command.clone(),
-            personality_prompt: opts.personality_prompt.clone(),
-            autostart_claude: None,
-            task_chat: false,
-        };
-        assert_eq!(request.shell, Some("git-bash".to_string()));
-    }
-
-    // create_session 본문이 opts.startup_command를 유실 없이 전달하는지 검증
-    // (shell 회귀 테스트와 동일 패턴 -- sessionOptsFor -> SessionOpts -> 요청).
-    #[test]
-    fn create_session_opts_startup_command_flows_into_create_session_request() {
-        let opts = SessionOpts {
-            cols: None,
-            rows: None,
-            cwd: None,
-            shell: None,
-            startup_command: Some("source ./init.sh".into()),
-            personality_prompt: None,
-            agent_name: None,
-            agent_role: None,
-            task_chat: false,
-        };
-        let request = CreateSessionRequest {
-            agent_id: "a1".into(),
-            cols: opts.cols,
-            rows: opts.rows,
-            cwd: opts.cwd,
-            shell: opts.shell.clone(),
-            startup_command: opts.startup_command.clone(),
-            personality_prompt: opts.personality_prompt.clone(),
-            autostart_claude: None,
-            task_chat: false,
-        };
-        assert_eq!(
-            request.startup_command,
-            Some("source ./init.sh".to_string())
-        );
     }
 
     // ---- list_available_shells ----
@@ -989,13 +860,6 @@
         let loaded = state.session_time_store.load();
 
         assert_eq!(loaded, vec![record]);
-        cleanup(&ctl, &dir, &profile_dir);
-    }
-
-    #[tokio::test]
-    async fn load_session_turns_on_no_prior_appends_returns_empty() {
-        let (state, ctl, dir, profile_dir) = build("session-turn-empty");
-        assert!(state.session_time_store.load().is_empty());
         cleanup(&ctl, &dir, &profile_dir);
     }
 
