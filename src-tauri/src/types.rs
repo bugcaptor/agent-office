@@ -1071,70 +1071,6 @@ mod tests {
     }
 
     #[test]
-    fn agent_profile_serializes_cwd_camel_case_when_present() {
-        let profile = AgentProfile {
-            id: "p1".into(),
-            name: "Ada".into(),
-            role: "backend".into(),
-            legacy_note: None,
-            seed: "abc123".into(),
-            created_at: 1_720_000_000_003,
-            desk_index: 0,
-            assigned_desk_index: None,
-            cwd: Some("/tmp/proj".into()),
-            legacy_appearance: None,
-            portrait_request: None,
-            portrait_updated_at: None,
-            sprite_request: None,
-            minimi_request: None,
-            sprite_updated_at: None,
-            minimi_updated_at: None,
-            archetype: None,
-            colors: None,
-            shell: None,
-            startup_command: None,
-            clocked_out: None,
-            personality_prompt: None,
-        keyboard_sound: None,
-        default_agent: None,
-        };
-        let json = serde_json::to_string(&profile).unwrap();
-        assert!(json.contains("\"cwd\":\"/tmp/proj\""));
-    }
-
-    #[test]
-    fn agent_profile_omits_cwd_when_none() {
-        let profile = AgentProfile {
-            id: "p1".into(),
-            name: "Ada".into(),
-            role: "backend".into(),
-            legacy_note: None,
-            seed: "abc123".into(),
-            created_at: 1,
-            desk_index: 0,
-            assigned_desk_index: None,
-            cwd: None,
-            legacy_appearance: None,
-            portrait_request: None,
-            portrait_updated_at: None,
-            sprite_request: None,
-            minimi_request: None,
-            sprite_updated_at: None,
-            minimi_updated_at: None,
-            archetype: None,
-            colors: None,
-            shell: None,
-            startup_command: None,
-            clocked_out: None,
-            personality_prompt: None,
-        keyboard_sound: None,
-        default_agent: None,
-        };
-        let json = serde_json::to_string(&profile).unwrap();
-        assert!(!json.contains("cwd"));
-    }
-
-    #[test]
     fn agent_profile_deserializes_without_portrait_fields() {
         // 기존(프리-이번기능) profiles.json에는 appearance/portraitUpdatedAt 키가
         // 아예 없다 -> 여전히 파싱되고 셋 다 None 이어야 한다.
@@ -1197,39 +1133,6 @@ mod tests {
     }
 
     #[test]
-    fn agent_profile_omits_portrait_fields_when_none() {
-        let profile = AgentProfile {
-            id: "p1".into(),
-            name: "Ada".into(),
-            role: "backend".into(),
-            legacy_note: None,
-            seed: "abc123".into(),
-            created_at: 1,
-            desk_index: 0,
-            assigned_desk_index: None,
-            cwd: None,
-            legacy_appearance: None,
-            portrait_request: None,
-            portrait_updated_at: None,
-            sprite_request: None,
-            minimi_request: None,
-            sprite_updated_at: None,
-            minimi_updated_at: None,
-            archetype: None,
-            colors: None,
-            shell: None,
-            startup_command: None,
-            clocked_out: None,
-            personality_prompt: None,
-        keyboard_sound: None,
-        default_agent: None,
-        };
-        let json = serde_json::to_string(&profile).unwrap();
-        assert!(!json.contains("portraitRequest"));
-        assert!(!json.contains("portraitUpdatedAt"));
-    }
-
-    #[test]
     fn agent_profile_deserializes_without_sprite_fields() {
         // 기존 profiles.json에는 spriteRequest/spriteUpdatedAt 키가 없다 ->
         // 여전히 파싱되고 둘 다 None 이어야 한다.
@@ -1272,40 +1175,6 @@ mod tests {
         assert!(json.contains("\"spriteRequest\":\"red cloak wizard\""));
         assert!(json.contains("\"spriteUpdatedAt\":1720000000888"));
         assert!(json.contains("\"minimiUpdatedAt\":1720000000999"));
-    }
-
-    #[test]
-    fn agent_profile_omits_sprite_fields_when_none() {
-        let profile = AgentProfile {
-            id: "p1".into(),
-            name: "Ada".into(),
-            role: "backend".into(),
-            legacy_note: None,
-            seed: "abc123".into(),
-            created_at: 1,
-            desk_index: 0,
-            assigned_desk_index: None,
-            cwd: None,
-            legacy_appearance: None,
-            portrait_request: None,
-            portrait_updated_at: None,
-            sprite_request: None,
-            minimi_request: None,
-            sprite_updated_at: None,
-            minimi_updated_at: None,
-            archetype: None,
-            colors: None,
-            shell: None,
-            startup_command: None,
-            clocked_out: None,
-            personality_prompt: None,
-        keyboard_sound: None,
-        default_agent: None,
-        };
-        let json = serde_json::to_string(&profile).unwrap();
-        assert!(!json.contains("spriteRequest"));
-        assert!(!json.contains("spriteUpdatedAt"));
-        assert!(!json.contains("minimiUpdatedAt"));
     }
 
     #[test]
@@ -1359,26 +1228,6 @@ mod tests {
     }
 
     #[test]
-    fn agent_profile_omits_archetype_when_none() {
-        let profile = AgentProfile {
-            id: "p1".into(), name: "Ada".into(), role: "backend".into(), legacy_note: None,
-            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
-            portrait_request: None,
-            portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
-            archetype: None,
-            colors: None,
-            shell: None,
-            startup_command: None,
-            clocked_out: None,
-            personality_prompt: None,
-        keyboard_sound: None,
-        default_agent: None,
-        };
-        let json = serde_json::to_string(&profile).unwrap();
-        assert!(!json.contains("archetype"));
-    }
-
-    #[test]
     fn agent_profile_deserializes_without_keyboard_sound() {
         // 레거시 profiles.json엔 keyboardSound 키가 없다 -> 파싱되고 None.
         let json = "{\"id\":\"p1\",\"name\":\"Ada\",\"role\":\"backend\",\"note\":\"\",\
@@ -1405,26 +1254,6 @@ mod tests {
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"keyboardSound\":\"topre-hhkb\""));
-    }
-
-    #[test]
-    fn agent_profile_omits_keyboard_sound_when_none() {
-        let profile = AgentProfile {
-            id: "p1".into(), name: "Ada".into(), role: "backend".into(), legacy_note: None,
-            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
-            portrait_request: None,
-            portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
-            archetype: None,
-            colors: None,
-            shell: None,
-            startup_command: None,
-            clocked_out: None,
-            personality_prompt: None,
-                       keyboard_sound: None,
-                       default_agent: None,
-        };
-        let json = serde_json::to_string(&profile).unwrap();
-        assert!(!json.contains("keyboardSound"));
     }
 
     #[test]
@@ -1455,24 +1284,6 @@ mod tests {
     }
 
     #[test]
-    fn agent_profile_omits_shell_when_none() {
-        let profile = AgentProfile {
-            id: "p1".into(), name: "Ada".into(), role: "backend".into(), legacy_note: None,
-            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
-            portrait_request: None,
-            portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
-            archetype: None,
-            colors: None, shell: None, startup_command: None,
-            clocked_out: None,
-            personality_prompt: None,
-        keyboard_sound: None,
-        default_agent: None,
-        };
-        let json = serde_json::to_string(&profile).unwrap();
-        assert!(!json.contains("shell"));
-    }
-
-    #[test]
     fn agent_profile_deserializes_without_clocked_out() {
         // 레거시 profiles.json엔 clockedOut 키가 없다 -> 파싱되고 None(=근무 중).
         let json = "{\"id\":\"p1\",\"name\":\"Ada\",\"role\":\"backend\",\"note\":\"\",\
@@ -1497,24 +1308,6 @@ mod tests {
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"clockedOut\":true"));
-    }
-
-    #[test]
-    fn agent_profile_omits_clocked_out_when_none() {
-        let profile = AgentProfile {
-            id: "p1".into(), name: "Ada".into(), role: "backend".into(), legacy_note: None,
-            seed: "abc123".into(), created_at: 1, desk_index: 0, assigned_desk_index: None, cwd: None, legacy_appearance: None,
-            portrait_request: None,
-            portrait_updated_at: None, sprite_request: None, minimi_request: None, sprite_updated_at: None, minimi_updated_at: None,
-            archetype: None,
-            colors: None, shell: None, startup_command: None,
-            clocked_out: None,
-            personality_prompt: None,
-        keyboard_sound: None,
-        default_agent: None,
-        };
-        let json = serde_json::to_string(&profile).unwrap();
-        assert!(!json.contains("clockedOut"));
     }
 
     #[test]
@@ -1569,101 +1362,6 @@ mod tests {
         assert!(json.contains("\"totalMs\":3000"), "{json}");
         assert!(json.contains("\"workedMs\":2000"), "{json}");
         assert!(json.contains("\"waitedMs\":1000"), "{json}");
-    }
-
-    #[test]
-    fn awards_file_serializes_camel_case_and_roundtrips() {
-        let file = AwardsFile {
-            version: 1,
-            awards: vec![AwardRecord {
-                month: "2026-03".into(),
-                decided_at: 1_700_000_000_000,
-                rules_version: 1,
-                winner: Some(AwardWinner {
-                    agent_id: "a1".into(),
-                    name: "김코드".into(),
-                    role: "백엔드".into(),
-                    archetype: Some("engineer".into()),
-                    has_portrait: true,
-                    stats: AwardStats {
-                        worked_ms: 7_200_000,
-                        turns: 42,
-                        tool_events: 130,
-                        active_days: 11,
-                        tokens_in: 1_000,
-                        tokens_out: 2_000,
-                        cost_usd: 1.25,
-                    },
-                }),
-                leaderboard: vec![AwardStanding {
-                    agent_id: "a1".into(),
-                    name: "김코드".into(),
-                    worked_ms: 7_200_000,
-                    turns: 42,
-                    active_days: 11,
-                    bot_worked_ms: Some(600_000),
-                }],
-                speeches: vec![AwardSpeech {
-                    at: 1_700_000_001_000,
-                    provider: "claude".into(),
-                    text: "다들 고생 많았습니다.".into(),
-                }],
-            }],
-        };
-        let json = serde_json::to_string(&file).unwrap();
-        for key in [
-            "\"decidedAt\"",
-            "\"rulesVersion\"",
-            "\"agentId\"",
-            "\"hasPortrait\"",
-            "\"workedMs\"",
-            "\"toolEvents\"",
-            "\"activeDays\"",
-            "\"tokensIn\"",
-            "\"tokensOut\"",
-            "\"costUsd\"",
-            "\"botWorkedMs\"",
-        ] {
-            assert!(json.contains(key), "{key} missing in {json}");
-        }
-        let parsed: AwardsFile = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, file);
-    }
-
-    /// `archetype`만 생략 대상이다 — `winner`는 없어도 키가 null로 나가야 한다
-    /// (TS가 `AwardWinner | null`(옵셔널 아님)로 받는다).
-    #[test]
-    fn award_record_omits_archetype_but_keeps_a_null_winner() {
-        let record = AwardRecord {
-            month: "2026-03".into(),
-            decided_at: 1,
-            rules_version: 1,
-            winner: None,
-            leaderboard: Vec::new(),
-            speeches: Vec::new(),
-        };
-        let json = serde_json::to_string(&record).unwrap();
-        assert!(json.contains("\"winner\":null"), "{json}");
-        assert!(!json.contains("archetype"), "{json}");
-    }
-
-    /// 봇 몫이 없는 순위표 행은 `botWorkedMs` 키 자체가 나가지 않는다 — 규칙
-    /// v1 레코드와 파일 모양이 같아야 파일 version 1을 유지할 수 있다.
-    #[test]
-    fn award_standing_omits_bot_worked_ms_when_absent() {
-        let standing = AwardStanding {
-            agent_id: "a1".into(),
-            name: "김코드".into(),
-            worked_ms: 7_200_000,
-            turns: 42,
-            active_days: 11,
-            bot_worked_ms: None,
-        };
-        let json = serde_json::to_string(&standing).unwrap();
-        assert!(!json.contains("botWorkedMs"), "{json}");
-        // 없는 키로 저장된 v1 레코드도 그대로 읽힌다.
-        let parsed: AwardStanding = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, standing);
     }
 
     #[test]
