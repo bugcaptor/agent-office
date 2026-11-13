@@ -333,13 +333,13 @@ mod tests {
     fn lists_only_markdown_extensions() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        for name in ["a.md", "b.mdx", "c.markdown", "d.MD", "e.txt", "f.mdown"] {
+        for name in ["a.md", "b.mdx", "c.markdown", "d.MD", "e.txt", "f.mdown", "g.MdX", "h.MARKDOWN", "noext"] {
             fs::write(root.join(name), "x").unwrap();
         }
 
         let result = list_markdown_files(root.to_str().unwrap()).unwrap();
         let names: Vec<_> = result.files.iter().map(|f| f.name.as_str()).collect();
-        assert_eq!(names, vec!["a.md", "b.mdx", "c.markdown", "d.MD"]);
+        assert_eq!(names, vec!["a.md", "b.mdx", "c.markdown", "d.MD", "g.MdX", "h.MARKDOWN"]);
         assert!(!result.truncated);
         // relPath는 root 기준 상대경로여야 한다.
         assert_eq!(result.files[0].rel_path, "a.md");
@@ -481,13 +481,4 @@ mod tests {
         assert!(err.starts_with("file-too-large:"), "err={err}");
     }
 
-    /// 확장자 판별 헬퍼 단위 검증.
-    #[test]
-    fn extension_matcher_is_case_insensitive() {
-        assert!(has_markdown_extension(Path::new("a.md")));
-        assert!(has_markdown_extension(Path::new("a.MdX")));
-        assert!(has_markdown_extension(Path::new("a.MARKDOWN")));
-        assert!(!has_markdown_extension(Path::new("a.txt")));
-        assert!(!has_markdown_extension(Path::new("noext")));
-    }
 }
