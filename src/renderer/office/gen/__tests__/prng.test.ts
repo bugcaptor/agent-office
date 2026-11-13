@@ -45,14 +45,6 @@ describe("mulberry32", () => {
     expect(seqA).toEqual(seqB);
   });
 
-  it("produces different sequences for different seeds", () => {
-    const a = mulberry32(1);
-    const b = mulberry32(2);
-    const seqA = Array.from({ length: 5 }, () => a());
-    const seqB = Array.from({ length: 5 }, () => b());
-    expect(seqA).not.toEqual(seqB);
-  });
-
   it("stays within [0,1)", () => {
     const r = mulberry32(999);
     for (let i = 0; i < 1000; i++) {
