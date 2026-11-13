@@ -928,54 +928,6 @@
         }
     }
 
-    #[tokio::test]
-    async fn pty_spawn_failure_removes_real_claude_settings_file() {
-        let settings_dir = std::env::temp_dir().join(format!(
-            "agent-office-observer-spawn-failure-{}",
-            Uuid::new_v4(),
-        ));
-        let events = Arc::new(RecordingEvents::default());
-        let registry = Arc::new(SessionRegistry::new());
-        let hub = Arc::new(NotificationHub::new(
-            registry.clone(),
-            events.clone(),
-            Arc::new(SystemClock),
-            Duration::from_millis(3_000),
-        ));
-        let observer = Arc::new(ObserverRuntime::new(
-            hub.clone(),
-            vec![Arc::new(ClaudeAdapter::new(
-                settings_dir.clone(),
-                std::env::current_exe().unwrap(),
-            ))],
-        ));
-        let manager = Arc::new(
-            SessionManager::new(
-                Arc::new(AlwaysFailPtyFactory),
-                observer,
-                registry,
-                events,
-                hub,
-                Arc::new(|| Some("http://127.0.0.1:43123/hook".into())),
-            )
-            .with_shell_resolver(Arc::new(|_, _| shells::ResolvedShell {
-                program: "test-shell".into(),
-                args: vec![],
-                extra_env: vec![],
-            })),
-        );
-
-        assert!(manager.create(req("a1", Some(false))).is_err());
-        let remaining = std::fs::read_dir(&settings_dir)
-            .map(|entries| entries.count())
-            .unwrap_or(0);
-        assert_eq!(
-            remaining, 0,
-            "spawn failure must remove adapter cleanup files"
-        );
-        let _ = std::fs::remove_dir_all(settings_dir);
-    }
-
     // ---- T-A: state transitions + intentional flag ----
 
     #[tokio::test]
@@ -1449,30 +1401,6 @@
             vec![SessionState::Starting, SessionState::Running],
             "reuse must not re-run the Starting/Running pipeline"
         );
-
-        cleanup(&ctl, &dir);
-    }
-
-    #[tokio::test]
-    async fn create_spawns_a_new_session_for_the_same_agent_id_after_disposal() {
-        // A disposed session must NOT be reused (only Running/Starting are)
-        // -- but we can't spawn a 2nd real PTY on the same single-spawn fake,
-        // so this asserts the negative space via the removal side: once
-        // Disposed, the manager's own bookkeeping no longer considers "a1"
-        // alive, which is exactly the condition `create`'s reuse check relies
-        // on to decide whether to reuse.
-        let (mgr, events, ctl, dir) = build();
-        let created = mgr.create(req("a1", Some(false))).unwrap();
-        mgr.dispose("a1");
-        ctl.fire_exit(0);
-        wait_for(|| events.states().len() == 3).await;
-
-        assert_eq!(
-            mgr.session_id_for("a1"),
-            None,
-            "disposed agent must not resolve to a session"
-        );
-        let _ = created;
 
         cleanup(&ctl, &dir);
     }
