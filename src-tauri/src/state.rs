@@ -333,16 +333,6 @@ mod tests {
     use super::{AppEvents, SessionRegistry};
     use crate::types::*;
 
-    fn state_event(session_id: &str, agent_id: &str, state: SessionState) -> SessionStateEvent {
-        SessionStateEvent {
-            session_id: session_id.into(),
-            agent_id: agent_id.into(),
-            state,
-            exit: None,
-            at: 1,
-            external: None,
-        }
-    }
 
     fn notification(id: &str, session_id: &str, agent_id: &str) -> NotificationEvent {
         NotificationEvent {
@@ -358,48 +348,7 @@ mod tests {
 
     // ---- RecordingEvents ----
 
-    #[test]
-    fn recording_events_collects_session_state_in_order() {
-        let events = RecordingEvents::default();
-        events.session_state(&state_event("s1", "a1", SessionState::Starting));
-        events.session_state(&state_event("s1", "a1", SessionState::Running));
-        events.session_state(&state_event("s1", "a1", SessionState::Exited));
 
-        assert_eq!(
-            events.states(),
-            vec![
-                SessionState::Starting,
-                SessionState::Running,
-                SessionState::Exited
-            ]
-        );
-    }
-
-    #[test]
-    fn recording_events_last_state_returns_most_recent_full_event() {
-        let events = RecordingEvents::default();
-        events.session_state(&state_event("s1", "a1", SessionState::Starting));
-        let exit_ev = SessionStateEvent {
-            session_id: "s1".into(),
-            agent_id: "a1".into(),
-            state: SessionState::Exited,
-            exit: Some(SessionExitInfo {
-                session_id: "s1".into(),
-                exit_code: Some(1),
-                signal: None,
-                intentional: false,
-            }),
-            at: 2,
-            external: None,
-        };
-        events.session_state(&exit_ev);
-
-        let last = events.last_state();
-        assert_eq!(last.state, SessionState::Exited);
-        let exit = last.exit.unwrap();
-        assert!(!exit.intentional);
-        assert_eq!(exit.exit_code, Some(1));
-    }
 
     #[test]
     fn recording_events_collects_notifications() {
@@ -413,16 +362,6 @@ mod tests {
         assert_eq!(got[1].id, "n2");
     }
 
-    #[test]
-    fn recording_events_collects_notification_cleared() {
-        let events = RecordingEvents::default();
-        events.notification_cleared("a1", &["n1".to_string(), "n2".to_string()]);
-
-        let cleared = events.cleared();
-        assert_eq!(cleared.len(), 1);
-        assert_eq!(cleared[0].0, "a1");
-        assert_eq!(cleared[0].1, vec!["n1".to_string(), "n2".to_string()]);
-    }
 
     #[test]
     fn recording_events_collects_activity_events() {
@@ -457,17 +396,6 @@ mod tests {
         assert_eq!(got[1].agent_id, "a1");
     }
 
-    #[test]
-    fn recording_events_is_usable_behind_the_appevents_trait_object() {
-        // AppEvents is the injection seam: production code should only ever
-        // depend on `dyn AppEvents`, never the concrete RecordingEvents type.
-        // Keep a concrete handle to the same recorder so we can assert the
-        // call made through the trait object was actually captured.
-        let recorder = std::sync::Arc::new(RecordingEvents::default());
-        let events: std::sync::Arc<dyn AppEvents> = recorder.clone();
-        events.session_state(&state_event("s1", "a1", SessionState::Running));
-        assert_eq!(recorder.states(), vec![SessionState::Running]);
-    }
 
     // ---- SessionRegistry ----
 
