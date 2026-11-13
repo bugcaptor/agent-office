@@ -93,11 +93,6 @@ describe("buildSpritePrompt", () => {
     for (const h of hexes) expect(sprite).toContain(h);
   });
 
-  it("spriteRequest가 있으면 Details로 포함한다", () => {
-    const p = buildSpritePrompt({ ...base, spriteRequest: "red cloak wizard" });
-    expect(p).toContain("Details: red cloak wizard.");
-  });
-
   it("spriteRequest가 비면 Details 줄이 없다(초상화 칸으로 폴백하지 않는다)", () => {
     const p = buildSpritePrompt({ ...base, spriteRequest: "  " });
     expect(p).not.toContain("Details:");
@@ -158,11 +153,6 @@ describe("buildSpritePrompt", () => {
     expect(p).toContain("Ada");
     expect(p).toContain("engineer");
     expect(p).toContain("Details: red cloak wizard.");
-  });
-
-  it("spriteRequest가 비면 Details 줄이 없다(초상화 칸으로 폴백하지 않는다)", () => {
-    const p = buildSpritePrompt({ ...base, spriteRequest: "  " });
-    expect(p).not.toContain("Details:");
   });
 
   it("같은 입력에 결정적이고 시드 팔레트 힌트를 포함한다", () => {
