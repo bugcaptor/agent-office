@@ -253,7 +253,8 @@ mod tests {
         let dir = scratch_dir();
         fs::create_dir_all(&dir).unwrap();
         let store = WorkLogStore::new(dir.clone());
-        fs::write(dir.join("a1.json.tmp"), b"[]").unwrap();
+        let pending = serde_json::to_vec(&vec![item(1, "s1", "prompt", "pending write")]).unwrap();
+        fs::write(dir.join("a1.json.tmp"), &pending).unwrap();
 
         assert!(store.load_all().is_empty());
         let _ = fs::remove_dir_all(&dir);
