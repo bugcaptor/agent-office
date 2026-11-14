@@ -36,12 +36,15 @@ export function formatDuration(startedAt: number, modifiedAt: number): TextKey |
     : { key: "sessionLog.durHoursMinutes", params: { hours, rest } };
 }
 
+const BYTES_PER_KB = 1024;
+const BYTES_PER_MB = BYTES_PER_KB * 1024;
+
 /** 사람이 읽는 파일 크기. */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "";
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  if (bytes < BYTES_PER_KB) return `${bytes}B`;
+  if (bytes < BYTES_PER_MB) return `${Math.round(bytes / BYTES_PER_KB)}KB`;
+  return `${(bytes / BYTES_PER_MB).toFixed(1)}MB`;
 }
 
 /** 작업 폴더는 뒤쪽(실제 프로젝트 이름)이 중요하므로 앞을 줄인다. */
