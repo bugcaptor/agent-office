@@ -97,6 +97,7 @@
             workdir_show_ignored: false,
             file_index_backend: Default::default(),
             cli_enabled: false,
+            cli_auto_run_enabled: false,
             keep_awake_enabled: false,
             session_log_enabled: true,
             run_recipes_enabled: false,
@@ -157,6 +158,7 @@
             workdir_show_ignored: false,
             file_index_backend: Default::default(),
             cli_enabled: false,
+            cli_auto_run_enabled: false,
             keep_awake_enabled: false,
             session_log_enabled: true,
             run_recipes_enabled: false,
@@ -326,6 +328,11 @@
             sprite_store: sprite_store.clone(),
             focus_agent: Arc::new(|_| Ok(())),
             settings_changed: Arc::new(|_| {}),
+            turns: Arc::new(crate::control::turns::TurnTracker::default()),
+            work_panels: crate::persistence::work_panels_store::WorkPanelsStore::new(profile_dir.clone()),
+            work_send: Arc::new(crate::work_send::WorkSendRuntime::default()),
+            autorun: Arc::new(crate::control::autorun::AutoRunBridge::new(|_: &serde_json::Value| Ok(()))),
+            agent_session_lookup: claude_resume_store.clone(),
         });
 
         let live_usage = std::sync::Arc::new(crate::usage::LiveUsageState::new());
@@ -341,7 +348,7 @@
             session_time_store,
             diary_store,
             work_log_store,
-            work_send_runtime: crate::work_send::WorkSendRuntime::default(),
+            work_send_runtime: Arc::new(crate::work_send::WorkSendRuntime::default()),
             work_panels_store: crate::persistence::work_panels_store::WorkPanelsStore::new(profile_dir.clone()),
             awards_store,
             memo_store,

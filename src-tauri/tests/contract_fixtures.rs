@@ -349,6 +349,7 @@ fn get_app_settings_result_matches_fixture() {
             workdir_show_ignored: false,
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
+            cli_auto_run_enabled: false,
             keep_awake_enabled: false,
             session_log_enabled: true,
             run_recipes_enabled: false,

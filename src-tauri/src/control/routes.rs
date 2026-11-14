@@ -171,6 +171,10 @@ pub(super) async fn settings_set(
     if obj.contains_key("cliEnabled") || obj.contains_key("cli_enabled") {
         return fail("cliEnabled는 앱 설정에서만 변경할 수 있습니다");
     }
+    // 자동 진행 허용도 같은 이유로 GUI에서만 바꾼다.
+    if obj.contains_key("cliAutoRunEnabled") || obj.contains_key("cli_auto_run_enabled") {
+        return fail("cliAutoRunEnabled는 앱 설정에서만 변경할 수 있습니다");
+    }
     // 병합·저장은 apply_settings_patch가 설정 write 가드 안에서 한다(수정 F6).
     match crate::ipc::commands::apply_settings_patch(
         &ctx.settings_store,

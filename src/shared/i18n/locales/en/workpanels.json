@@ -228,7 +228,10 @@
       "task-changed": "The current task changed (deleted, moved back to To do, or reassigned).",
       "app-restarted": "Paused because the app restarted.",
       "user": "Paused.",
-      "usage-wait": "Subscription usage looks too low to continue, so the run waits for the limit window to reset."
+      "usage-wait": "Subscription usage looks too low to continue, so the run waits for the limit window to reset.",
+      "ctl-pause": "Paused from the CLI.",
+      "escalated": "An external agent handed this to a person. Check it, then press Continue.",
+      "permission-timeout": "Waited too long for a permission or question to be answered. Answer it in the terminal, then press Continue."
     },
     "blocked": {
       "auto-run-root-done": "You can't start from a finished task.",
@@ -267,7 +270,9 @@
       "outlook": "Next task forecast: {{list}}",
       "outlookItem": "{{provider}} {{window}} {{now}}% → {{after}}%",
       "learning": "Collecting data for the usage forecast ({{min}} finished tasks and usage changes). Until then it only checks whether a limit ({{limit}}%) is already reached."
-    }
+    },
+    "escalatedTitle": "Auto-run needs you: {{title}}",
+    "viaCtl": "from CLI"
   },
   "taskChat": {
     "open": "Chat",

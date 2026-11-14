@@ -16,6 +16,7 @@ import type { ControlStatus } from "@shared/types";
 export function ControlSection({ enabled }: { enabled: boolean }) {
   const { t } = useTranslation("settings");
   const updateAppSettings = useAppStore((s) => s.updateAppSettings);
+  const autoRunEnabled = useAppStore((s) => s.appSettings.cliAutoRunEnabled);
   const [status, setStatus] = useState<ControlStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -91,6 +92,19 @@ export function ControlSection({ enabled }: { enabled: boolean }) {
               <button className="pixel-btn" disabled={busy} onClick={revoke}>
                 {t("control.revoke")}
               </button>
+              <label className="settings-item">
+                <input
+                  type="checkbox"
+                  checked={autoRunEnabled}
+                  onChange={(e) => updateAppSettings({ cliAutoRunEnabled: e.target.checked })}
+                />
+                <span>
+                  <strong>{t("control.autoRunTitle")}</strong>
+                  <small>
+                    <Trans t={t} i18nKey="control.autoRunHelp" components={{ code: <code /> }} />
+                  </small>
+                </span>
+              </label>
               <div style={{ fontSize: 12, opacity: 0.85 }}>
                 <div style={{ marginBottom: 4 }}>{t("control.usageIntro")}</div>
                 <code style={{ display: "block", whiteSpace: "pre-wrap" }}>

@@ -139,7 +139,9 @@
     "approve": "Approve (issue token)",
     "revoke": "Revoke (discard token)",
     "usageIntro": "Inside a session terminal you can use it right away:",
-    "appDataNote": "External scripts use app_data autodiscovery:"
+    "appDataNote": "External scripts use app_data autodiscovery:",
+    "autoRunTitle": "Allow CLI auto-run",
+    "autoRunHelp": "Lets the approved CLI start, resume, pause and end plan auto-runs and type into sessions with <code>ctl ask</code>. Reading status and handing over to a person (<code>autorun status</code>, <code>escalate</code>) work without this. The CLI cannot continue a run a person paused."
   },
   "firstRun": {
     "title": "Welcome to Agent Office",

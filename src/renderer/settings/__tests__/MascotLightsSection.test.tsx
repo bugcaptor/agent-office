@@ -72,6 +72,7 @@ function hydrate(
       workdirShowIgnored: false,
       fileIndexBackend: "walker",
       cliEnabled: false,
+      cliAutoRunEnabled: false,
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       runRecipesEnabled: false,

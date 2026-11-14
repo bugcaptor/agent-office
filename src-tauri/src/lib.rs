@@ -409,7 +409,12 @@ pub fn run() {
                     bot_arms.clone(),
                 ),
             );
-            let events: Arc<dyn AppEvents> = recording_events;
+            // 턴 상태 추적(`ctl state`·`ask`·`autorun status`)도 같은 신호를 본다.
+            let turn_tracker = Arc::new(crate::control::turns::TurnTracker::default());
+            let events: Arc<dyn AppEvents> = Arc::new(crate::control::turns::TrackingEvents::new(
+                recording_events,
+                turn_tracker.clone(),
+            ));
             let registry = Arc::new(SessionRegistry::new());
             let hub = Arc::new(NotificationHub::new(
                 registry.clone(),
@@ -688,6 +693,7 @@ pub fn run() {
             // control-port를 기록한다(토큰=승인은 별도, 기본 미승인).
             let control_server = Arc::new(crate::control::ControlServerState::default());
             control_server.set_app_data_dir(data_dir.clone());
+            let work_send_runtime = Arc::new(crate::work_send::WorkSendRuntime::default());
             let control_ctx = Arc::new(crate::control::ControlContext {
                 manager: manager.clone(),
                 observer: observer.clone(),
@@ -722,6 +728,16 @@ pub fn run() {
                         let _ = handle.emit_to("main", "app-settings-changed", settings);
                     })
                 },
+                turns: turn_tracker,
+                work_panels: crate::persistence::work_panels_store::WorkPanelsStore::new(data_dir.clone()),
+                work_send: work_send_runtime.clone(),
+                autorun: {
+                    let handle = handle.clone();
+                    Arc::new(crate::control::autorun::AutoRunBridge::new(move |request: &serde_json::Value| {
+                        handle.emit_to("main", "autorun-control", request).map_err(|e| e.to_string())
+                    }))
+                },
+                agent_session_lookup: claude_resume_store.clone(),
             });
             if settings_cache.read().unwrap().cli_enabled {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));
@@ -754,7 +770,7 @@ pub fn run() {
                 session_time_store,
                 diary_store,
                 work_log_store,
-                work_send_runtime: crate::work_send::WorkSendRuntime::default(),
+                work_send_runtime,
                 work_panels_store: crate::persistence::work_panels_store::WorkPanelsStore::new(data_dir.clone()),
                 awards_store,
                 memo_store,
@@ -851,6 +867,7 @@ pub fn run() {
             ipc::commands::send_work_follow_up,
             ipc::commands::work_last_reply,
             ipc::commands::auto_run_report,
+            ipc::commands::autorun_control_reply,
             ipc::commands::auto_run_judge,
             ipc::commands::load_work_items,
             ipc::commands::scan_work_inbox,
@@ -1045,6 +1062,7 @@ mod tests {
             workdir_show_ignored: false,
             file_index_backend: Default::default(),
             cli_enabled: false,
+            cli_auto_run_enabled: false,
             keep_awake_enabled: false,
             session_log_enabled: true,
             run_recipes_enabled: false,

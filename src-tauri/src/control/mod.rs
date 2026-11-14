@@ -13,6 +13,8 @@
 // 토큰 파일은 0600, 서버는 매 요청 시 `control-token` 파일 내용과 대조하므로
 // 승인(파일 생성)/취소(파일 삭제)가 서버 재시작 없이 즉시 반영된다.
 
+/// 플랜 위임(자동 진행 제어·상태)과 단발 질의.
+pub mod autorun;
 pub mod client;
 /// VS Code 연결 확장이 캐릭터·외형·사용량을 읽는 제한된 표시 API.
 mod display;
@@ -21,7 +23,8 @@ pub mod protocol;
 mod token;
 /// 세션·알림·설정 핸들러.
 mod routes;
-/// 동료 대화 라우트.
+/// 세션별 턴 상태 추적.
+pub mod turns;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
@@ -45,6 +48,7 @@ use protocol::*;
 pub use token::{issue_token_at, read_token_at, revoke_token_at};
 use routes::{clear, create, dispose, list, notifications, ping, send, settings_get, settings_set};
 use display::{appearance, capabilities, characters, focus, usage};
+use autorun::{ask, end as autorun_end, escalate, pause as autorun_pause, resume as autorun_resume, start as autorun_start, state as turn_state, status as autorun_status};
 use token::auth;
 
 /// control 핸들러가 기존 command 본문과 동일한 동작을 내기 위해 쥐는 앱
@@ -77,6 +81,16 @@ pub struct ControlContext {
     /// 설정이 저장될 때마다(GUI·CLI 공통) 새 설정 전체를 렌더러에 알린다(수정 F6).
     /// 설정 write 가드 안에서 불리므로 블로킹·재진입하지 않아야 한다.
     pub settings_changed: Arc<dyn Fn(&AppSettings) + Send + Sync>,
+    /// 세션별 턴 상태(`TrackingEvents`가 갱신).
+    pub turns: Arc<turns::TurnTracker>,
+    /// 업무 목록 읽기(자동 진행 상태 포함).
+    pub work_panels: crate::persistence::work_panels_store::WorkPanelsStore,
+    /// 후속 프롬프트 넣기(`ask`). 앱의 보내기와 같은 관문·바쁨 표시를 쓴다.
+    pub work_send: Arc<crate::work_send::WorkSendRuntime>,
+    /// 자동 진행 쓰기를 렌더러로 넘기는 다리.
+    pub autorun: Arc<autorun::AutoRunBridge>,
+    /// Claude 전사 위치(`ask`의 마지막 응답 읽기).
+    pub agent_session_lookup: Arc<dyn crate::session_log::agent_transcript::AgentSessionLookup>,
 }
 
 impl ControlContext {
@@ -101,6 +115,14 @@ fn router(ctx: Arc<ControlContext>) -> Router {
         .route("/v1/display/appearance", post(appearance))
         .route("/v1/display/usage", post(usage))
         .route("/v1/display/focus", post(focus))
+        .route("/v1/state", post(turn_state))
+        .route("/v1/ask", post(ask))
+        .route("/v1/autorun/status", post(autorun_status))
+        .route("/v1/autorun/start", post(autorun_start))
+        .route("/v1/autorun/resume", post(autorun_resume))
+        .route("/v1/autorun/pause", post(autorun_pause))
+        .route("/v1/autorun/end", post(autorun_end))
+        .route("/v1/autorun/escalate", post(escalate))
         .layer(axum::middleware::from_fn_with_state(ctx.clone(), auth))
         .with_state(ctx)
 }
@@ -252,6 +274,8 @@ mod tests {
         _observer_dir: PathBuf,
         /// `settings_changed` 통지로 받은 설정들(저장 순서).
         changed: Arc<std::sync::Mutex<Vec<AppSettings>>>,
+        /// 자동 진행 다리로 렌더러에 보낸 요청들.
+        bridged: Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
     }
 
     fn scratch(tag: &str) -> PathBuf {
@@ -299,6 +323,7 @@ mod tests {
             Arc::new(crate::state::BotPromptArms::new()),
         ));
         let changed = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let bridged: Arc<std::sync::Mutex<Vec<serde_json::Value>>> = Arc::default();
         let ctx = Arc::new(ControlContext {
             manager,
             observer,
@@ -325,6 +350,17 @@ mod tests {
                 let changed = changed.clone();
                 Arc::new(move |s: &AppSettings| changed.lock().unwrap().push(s.clone()))
             },
+            turns: Arc::new(turns::TurnTracker::default()),
+            work_panels: crate::persistence::work_panels_store::WorkPanelsStore::new(dir.clone()),
+            work_send: Arc::new(crate::work_send::WorkSendRuntime::default()),
+            autorun: {
+                let bridged = bridged.clone();
+                Arc::new(autorun::AutoRunBridge::new(move |v: &serde_json::Value| {
+                    bridged.lock().unwrap().push(v.clone());
+                    Ok(())
+                }))
+            },
+            agent_session_lookup: Arc::new(NoLookup),
         });
         let state = ControlServerState::default();
         state.set_app_data_dir(dir.clone());
@@ -335,6 +371,14 @@ mod tests {
             dir,
             _observer_dir: observer_dir,
             changed,
+            bridged,
+        }
+    }
+
+    struct NoLookup;
+    impl crate::session_log::agent_transcript::AgentSessionLookup for NoLookup {
+        fn latest_session(&self, _: &str) -> Option<crate::session_log::agent_transcript::AgentSessionSnapshot> {
+            None
         }
     }
 
@@ -805,6 +849,105 @@ mod tests {
             .send().await.unwrap().json().await.unwrap();
         assert_eq!(portrait_response["data"]["pngBase64"], portrait);
         assert_eq!(portrait_response["data"]["frameCount"], 1);
+        cleanup(&f);
+    }
+
+    /// 렌더러 역할: 다리로 온 요청에 순서대로 답한다(`error`면 거절).
+    fn answer_bridge(f: &Fixture, error: Option<&'static str>) -> tokio::task::JoinHandle<serde_json::Value> {
+        let bridged = f.bridged.clone();
+        let ctx = f.ctx.clone();
+        tokio::spawn(async move {
+            loop {
+                let request = bridged.lock().unwrap().pop();
+                if let Some(request) = request {
+                    let id = request["requestId"].as_str().unwrap().to_string();
+                    ctx.autorun.reply(&id, error.map(|e| Err(e.to_string())).unwrap_or(Ok(serde_json::Value::Null)));
+                    return request;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn autorun_writes_need_the_extra_opt_in_but_status_and_escalate_do_not() {
+        let f = build("autorun");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        let mut root = crate::types::WorkItem {
+            id: "t-root".into(),
+            title: "로그인 회귀 수정".into(),
+            body: String::new(),
+            assignee_agent_id: Some("a1".into()),
+            agent: None,
+            status: crate::types::WorkStatus::Todo,
+            order: 1.0,
+            session_ids: vec![],
+            last_error: None,
+            depends_on: vec![],
+            plan: false,
+            auto_run: None,
+            created_at: 0,
+            updated_at: 0,
+        };
+        root.auto_run = Some(serde_json::json!({ "state": "paused", "pauseReason": "judge-stop", "pauseDetail": "되돌릴까요?", "followUps": 0, "costUsd": 0, "log": [] }));
+        f.ctx.work_panels.save_work_items(&[root]).unwrap();
+
+        // 허용 전: 쓰기와 ask는 거절, 렌더러로 아무것도 가지 않는다.
+        for (path, body) in [
+            ("autorun/start", serde_json::json!({ "rootId": "t-root" })),
+            ("autorun/resume", serde_json::json!({ "rootId": "t-root" })),
+            ("ask", serde_json::json!({ "agentId": "a1", "prompt": "hi" })),
+        ] {
+            let r = post(port, &token, path, body).await;
+            assert_eq!(r["error"], "cli-auto-run-disabled", "{path}: {r}");
+        }
+        assert!(f.bridged.lock().unwrap().is_empty());
+
+        // 읽기는 열려 있다. 멈춘 실행이라 기다리지 않고 바로 답한다.
+        let status = post(port, &token, "autorun/status", serde_json::json!({ "rootId": "t-root", "waitSecs": 30 })).await;
+        assert_eq!(status["data"]["state"], "paused");
+        assert_eq!(status["data"]["timedOut"], false);
+        assert_eq!(status["data"]["attention"]["detail"], "되돌릴까요?");
+        // 같은 rev로 기다리면 바뀐 것이 없어 시간이 다 된다.
+        let rev = status["data"]["rev"].as_str().unwrap().to_string();
+        let same = post(port, &token, "autorun/status", serde_json::json!({ "rootId": "t-root", "waitSecs": 1, "since": rev })).await;
+        assert_eq!(same["data"]["timedOut"], true);
+
+        // 넘기기는 허용 없이도 렌더러에 닿는다. 메시지가 없으면 거절.
+        let empty = post(port, &token, "autorun/escalate", serde_json::json!({ "rootId": "t-root" })).await;
+        assert_eq!(empty["ok"], false);
+        let renderer = answer_bridge(&f, None);
+        let escalated = post(port, &token, "autorun/escalate", serde_json::json!({ "rootId": "t-root", "message": "제품 판단 필요" })).await;
+        assert_eq!(escalated["ok"], true, "{escalated}");
+        let request = renderer.await.unwrap();
+        assert_eq!(request["op"], "escalate");
+        assert_eq!(request["options"]["message"], "제품 판단 필요");
+
+        // 허용 후: 쓰기가 렌더러로 가고, 렌더러의 거절은 그대로 실패가 된다.
+        f.ctx.settings.write().unwrap().cli_auto_run_enabled = true;
+        let renderer = answer_bridge(&f, Some("auto-run-paused-by-human"));
+        let resumed = post(port, &token, "autorun/resume", serde_json::json!({ "rootId": "t-root" })).await;
+        assert_eq!(resumed["error"], "auto-run-paused-by-human");
+        assert_eq!(renderer.await.unwrap()["op"], "resume");
+
+        // 허용 설정은 CLI로 바꿀 수 없다.
+        let r = post(port, &token, "settings/set", serde_json::json!({ "cliAutoRunEnabled": false })).await;
+        assert_eq!(r["ok"], false);
+        assert!(f.ctx.settings.read().unwrap().cli_auto_run_enabled);
+        cleanup(&f);
+    }
+
+    #[tokio::test]
+    async fn state_reports_none_for_a_missing_session_and_ask_needs_a_running_one() {
+        let f = build("state");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        let state = post(port, &token, "state", serde_json::json!({ "agentId": "ghost" })).await;
+        assert_eq!(state["data"]["state"], "none");
+        f.ctx.settings.write().unwrap().cli_auto_run_enabled = true;
+        let ask = post(port, &token, "ask", serde_json::json!({ "agentId": "ghost", "prompt": "hi" })).await;
+        assert_eq!(ask["error"], "not-running");
         cleanup(&f);
     }
 

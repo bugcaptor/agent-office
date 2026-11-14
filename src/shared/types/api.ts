@@ -80,6 +80,8 @@ export interface AgentOfficeApi {
   /** 작업자가 `office-task --report`로 남긴 그 태스크의 보고. `since`(epoch ms) 전에 쓰였거나 없으면 null. */
   autoRunReport(taskId: string, since: number): Promise<string | null>;
   autoRunJudge(request: AutoRunJudgeRequest): Promise<AutoRunJudgeResult>;
+  /** CLI 자동 진행 요청(`autorun-control` 이벤트)에 답한다. `error`가 있으면 거절이다. */
+  autoRunControlReply(requestId: string, error?: string): Promise<boolean>;
   scanWorkInbox(): Promise<InboxEntry[]>;
   ackWorkInbox(fileNames: string[]): Promise<void>;
   rejectWorkInbox(rejections: InboxRejection[]): Promise<void>;

@@ -14,6 +14,7 @@ export const Commands = {
   openTaskChat: "open_task_chat",
   workLastReply: "work_last_reply",
   autoRunReport: "auto_run_report",
+  autoRunControlReply: "autorun_control_reply",
   autoRunJudge: "auto_run_judge",
   scanWorkInbox: "scan_work_inbox",
   ackWorkInbox: "ack_work_inbox",
@@ -198,4 +199,6 @@ export const Events = {
   // 한 턴의 토큰 사용량. notificationNew와 분리된 채널이라, 백그라운드
   // 서브에이전트가 남아 완료 알림이 억제된 Stop에서도 이 이벤트만은 온다.
   turnUsage: "turn-usage",
+  // CLI(`ctl autorun …`)의 자동 진행 쓰기 요청. 렌더러가 처리하고 autoRunControlReply로 답한다.
+  autoRunControl: "autorun-control",
 } as const;

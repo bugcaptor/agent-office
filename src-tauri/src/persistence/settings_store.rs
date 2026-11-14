@@ -273,6 +273,11 @@ pub struct AppSettings {
     /// 발급)이 있어야 한다 — 2단계 옵트인. 보안 표면이므로 기본 꺼짐.
     #[serde(default)]
     pub cli_enabled: bool,
+    /// CLI가 자동 진행을 시작·재개·멈춤·끝내고 `ask`로 입력할 수 있는지. CLI 제어
+    /// 승인 위에 한 겹 더 두는 옵트인이다(`send`보다 큰 권한). `cli_enabled`처럼
+    /// CLI로는 바꿀 수 없다. 기본 꺼짐.
+    #[serde(default)]
+    pub cli_auto_run_enabled: bool,
     /// 캐릭터가 작업 중일 때 시스템 유휴 잠자기를 막을지(이슈 #68). macOS는
     /// IOKit `PreventUserIdleSystemSleep`, Windows는 `ES_SYSTEM_REQUIRED` — 둘
     /// 다 **디스플레이 잠자기는 허용**한다(화면은 꺼져도 에이전트는 계속 돈다).
@@ -367,6 +372,7 @@ impl Default for AppSettings {
             workdir_show_ignored: false,
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
+            cli_auto_run_enabled: false,
             keep_awake_enabled: false,
             session_log_enabled: true,
             run_recipes_enabled: false,
@@ -586,6 +592,7 @@ mod tests {
             workdir_show_ignored: false,
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
+            cli_auto_run_enabled: false,
             keep_awake_enabled: false,
             session_log_enabled: true,
             run_recipes_enabled: false,
@@ -872,6 +879,7 @@ mod tests {
             workdir_show_ignored: false,
             file_index_backend: FileIndexBackend::Walker,
             cli_enabled: false,
+            cli_auto_run_enabled: false,
             keep_awake_enabled: false,
             session_log_enabled: true,
             run_recipes_enabled: false,

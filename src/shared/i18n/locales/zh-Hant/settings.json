@@ -139,7 +139,9 @@
     "approve": "核准 CLI 控制（發出權杖）",
     "revoke": "取消核准（作廢權杖）",
     "usageIntro": "在工作階段的終端機裡可以直接使用：",
-    "appDataNote": "外部指令碼使用 app_data 自動探索："
+    "appDataNote": "外部指令碼使用 app_data 自動探索：",
+    "autoRunTitle": "允許 CLI 自動推進",
+    "autoRunHelp": "允許已核准的 CLI 開始、繼續、暫停和結束計畫的自動推進，並用 <code>ctl ask</code> 向工作階段輸入。查看狀態和轉交給人（<code>autorun status</code>、<code>escalate</code>）不需此設定。人暫停的執行無法由 CLI 繼續。"
   },
   "firstRun": {
     "title": "開始使用 Agent Office",

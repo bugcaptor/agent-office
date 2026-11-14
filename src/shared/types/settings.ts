@@ -134,6 +134,9 @@ export interface AppSettings {
   /** 로컬 CLI 제어 서버(이슈 #55) 기동 여부. 켜도 앱에서 명시적 승인이 있어야
    * 명령이 실행된다(2단계 옵트인). 보안 표면이므로 기본 false. */
   cliEnabled: boolean;
+  /** CLI가 자동 진행을 시작·재개·멈춤·끝내고 `ctl ask`로 입력할 수 있는지. CLI 제어 승인 위의
+   * 한 겹 더 옵트인이며 CLI로는 바꿀 수 없다. 기본 false. */
+  cliAutoRunEnabled: boolean;
   /** 캐릭터가 작업 중일 때 시스템 유휴 잠자기를 막을지(이슈 #68). 디스플레이
    * 잠자기는 막지 않는다(화면은 꺼져도 에이전트는 계속 돈다). 기본 false. */
   keepAwakeEnabled: boolean;

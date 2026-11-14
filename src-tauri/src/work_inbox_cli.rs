@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after <id>]... [--plan] <title> [body | -]
        office-task --list [--all]
-       office-task --show <id>
+       office-task --show <id> [--json]
        office-task --edit <id> [--title <title>] [--body <body | ->] [--to <name|id> | --unassigned]
                    [--status todo|in_progress|review|done] [--plan | --no-plan]
                    [--after <id>... | --no-after | --add-after <id>... --remove-after <id>...]
@@ -20,6 +20,8 @@ Prints the new task id. Pass it to --after to make a later task wait for this on
 --plan makes the task a plan root: it holds only the plan memo, and auto-run runs the tasks it
 waits on, never the root itself. It needs --after. A root without --plan is run as the last step.
 --report leaves the auto-run report for a task; writing it again replaces it.
+--show --json prints the stored task as JSON, including its auto-run state.
+Outside an Agent Office session the default app data folder is used.
 ";
 
 /// 실행 환경. 테스트가 프로세스 env를 건드리지 않도록 값으로 받는다.
@@ -34,7 +36,9 @@ impl TaskEnv {
         let var = |name| std::env::var_os(name).filter(|v| !v.is_empty());
         Self {
             work_inbox: var("AGENT_OFFICE_WORK_INBOX").map(PathBuf::from),
-            app_data: var("AGENT_OFFICE_APP_DATA").map(PathBuf::from),
+            // 앱 밖(외부 에이전트·스크립트)에서는 앱의 기본 데이터 폴더를 쓴다.
+            app_data: var("AGENT_OFFICE_APP_DATA").map(PathBuf::from)
+                .or_else(|| var("AGENT_OFFICE_WORK_INBOX").is_none().then(crate::control::client::default_app_data).flatten()),
             agent_id: var("AGENT_OFFICE_AGENT_ID").map(|v| v.to_string_lossy().into_owned()),
         }
     }
@@ -75,8 +79,10 @@ pub fn run_with(
         Some("--edit") => return edit(&args[1..], env, stdin, out, err, now),
         Some("--report") => return report(&args[1..], env, stdin, err),
         Some("--show") => return match &args[1..] {
-            [id] => show(id, env, out, err),
-            _ => usage_error(err, "--show takes one task id"),
+            [id] => show(id, false, env, out, err),
+            [id, flag] if flag == "--json" => show(id, true, env, out, err),
+            [flag, id] if flag == "--json" => show(id, true, env, out, err),
+            _ => usage_error(err, "--show takes one task id (and optionally --json)"),
         },
         _ => {}
     }
@@ -402,12 +408,18 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
 }
 
 /// 업무 하나를 본문까지 모두 보여 준다. 수신함에만 있는 업무는 앱이 가져간 뒤에 볼 수 있다.
-fn show(id: &str, env: &TaskEnv, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+fn show(id: &str, json: bool, env: &TaskEnv, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     let board = match Board::load(env, err) { Ok(board) => board, Err(code) => return code };
     let Some(item) = board.item(id) else {
         if board.pending.iter().any(|p| p == id) { return fail(err, &format!("{id} is in the inbox and not on the board yet; try again in a few seconds")); }
         return fail(err, &format!("no such task: {id} (see office-task --list)"));
     };
+    if json {
+        let mut value = item.clone();
+        value["waitedOnBy"] = serde_json::json!(board.dependents(id));
+        let _ = writeln!(out, "{}", serde_json::to_string_pretty(&value).unwrap_or_default());
+        return 0;
+    }
     let dir = env.data_dir().unwrap_or_default();
     let names: std::collections::HashMap<String, String> = load_profiles(&dir).unwrap_or_default().into_iter().collect();
     let field = |key: &str| item.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -874,6 +886,11 @@ mod tests {
         let (code, _, err) = call(&["--show", pending.trim()], &env, "");
         assert!(code == 1 && err.contains("not on the board yet"), "{err}");
         assert_eq!(call(&["--show"], &env, "").0, 2);
+        let (code, json, _) = call(&["--show", "--json", "w0"], &env, "");
+        assert_eq!(code, 0);
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!((value["id"].as_str(), value["waitedOnBy"].clone()), (Some("w0"), serde_json::json!(["w1"])));
+        assert_eq!(call(&["--show", "w0", "--json"], &env, "").1, json);
         assert_eq!(call(&["--show", "w1", "w2"], &env, "").0, 2);
     }
 

@@ -46,6 +46,7 @@ const SETTINGS_ON: AppSettings = {
   workdirShowIgnored: false,
   fileIndexBackend: "walker",
   cliEnabled: false,
+  cliAutoRunEnabled: false,
   keepAwakeEnabled: false,
   sessionLogEnabled: true,
   runRecipesEnabled: false,

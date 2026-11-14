@@ -13,6 +13,7 @@ import { useWorkItemStore } from "./workItemStore";
 import { useWorkMonitorStore } from "./workMonitor";
 import { useSessionSummaryStore } from "./sessionSummaryStore";
 import { pendingPrerequisites } from "./workDependencies";
+import { maybeSendOsNotification } from "../ipc/osNotify";
 import { workItemTitle } from "./workItemDraft";
 import { requestWorkSend, workSendDisabledReason } from "./workSendStore";
 import type { ForecastProvider, UsageBlock } from "../usage/usageForecast";
@@ -22,6 +23,12 @@ import {
 } from "../usage/usageForecastStore";
 
 export const MAX_FOLLOW_UPS = 3;
+/** 같은 단계에서 CLI(`ctl autorun resume`)가 재개할 수 있는 횟수. 넘으면 사람에게 넘겨야 한다. Rust `MAX_CTL_RESUMES`와 같다. */
+export const MAX_CTL_RESUMES = 2;
+/** 권한 승인·질문을 이만큼 기다리면 멈춰서 알린다. 아무도 모르는 채 무한히 기다리지 않게 한다. */
+export const PERMISSION_TIMEOUT_MS = 10 * 60_000;
+/** CLI가 한 조작은 진행 기록에 이 표시를 남긴다. */
+const VIA_CTL = "ctl";
 const MAX_LOG = 200;
 const MAX_NOTES = 20;
 const MAX_MEMO_CHARS = 16_000;
@@ -204,33 +211,66 @@ function waitForUsage(rootId: string, stage: AutoRunUsageWait["stage"], worker: 
 
 // ── 사람 조작 ──────────────────────────────────────────────────────────
 
-export function startAutoRun(rootId: string, options: { usageGuard?: boolean } = {}): string | undefined {
+export function startAutoRun(rootId: string, options: { usageGuard?: boolean; viaCtl?: boolean } = {}): string | undefined {
   const root = find(rootId);
   if (!root) return "auto-run-no-plan";
   const state = useAppStore.getState();
   const blocked = startBlockedReason(root, items(), state.agents, state.appSettings.observerEnabled);
   if (blocked) return blocked;
   const run: AutoRun = { state: "running", judgeSessionId: crypto.randomUUID(), judgeStarted: false, followUps: 0, costUsd: 0, log: [], startedAt: Date.now(), usageGuard: options.usageGuard ?? true };
-  useWorkItemStore.getState().setAutoRun(rootId, withLog(run, { kind: "start" }));
+  useWorkItemStore.getState().setAutoRun(rootId, withLog(run, options.viaCtl ? { kind: "start", text: VIA_CTL } : { kind: "start" }));
   kick(rootId);
   return undefined;
 }
-export function pauseAutoRun(rootId: string): void {
+export function pauseAutoRun(rootId: string, options: { viaCtl?: boolean } = {}): void {
   // 사용량 대기도 사람이 멈추면 스스로 이어 가지 않는다.
-  if (running(rootId) || find(rootId)?.autoRun?.pauseReason === "usage-wait") pause(rootId, "user");
+  if (running(rootId) || find(rootId)?.autoRun?.pauseReason === "usage-wait") pause(rootId, options.viaCtl ? "ctl-pause" : "user");
+}
+/** 현재 단계를 보낸 뒤 CLI가 재개한 횟수. Rust `ctl_resumes_since_send`와 같은 방식으로 센다. */
+export function ctlResumesSinceSend(run: AutoRun): number {
+  let count = 0;
+  for (let i = run.log.length - 1; i >= 0; i--) {
+    const entry = run.log[i];
+    if (entry.kind === "send" || entry.kind === "next") break;
+    if (entry.kind === "resume" && entry.text === VIA_CTL) count++;
+  }
+  return count;
+}
+/**
+ * CLI의 재개. 사람이 멈췄거나 사람에게 넘긴 실행은 사람만 이어 가고, 같은 단계에서 CLI 재개는
+ * `MAX_CTL_RESUMES`번까지다. 막히면 그 이유 코드를 돌려준다.
+ */
+export function resumeAutoRunFromCtl(rootId: string): string | undefined {
+  const run = find(rootId)?.autoRun;
+  if (!run) return "auto-run-no-run";
+  if (run.state !== "paused") return "auto-run-not-paused";
+  if (run.pauseReason === "user" || run.pauseReason === "escalated" || run.pauseReason === "human-input") return "auto-run-paused-by-human";
+  if (run.pauseReason !== "usage-wait" && ctlResumesSinceSend(run) >= MAX_CTL_RESUMES) return "auto-run-recovery-limit";
+  resumeAutoRun(rootId, { viaCtl: true });
+  return undefined;
+}
+/** 멈추고 사람에게 넘긴다. 카드와 OS 알림으로 알린다. */
+export function escalateAutoRun(rootId: string, message: string): string | undefined {
+  const root = find(rootId);
+  const run = root?.autoRun;
+  if (!root || !run) return "auto-run-no-run";
+  if (run.state === "finished") return "auto-run-finished";
+  update(rootId, (latest) => withLog({ ...latest, state: "paused", pauseReason: "escalated", pauseDetail: message, usageWait: undefined }, { kind: "pause", text: "escalated" }));
+  void maybeSendOsNotification(t("workpanels:autoRun.escalatedTitle", { title: workItemTitle(root) }), message);
+  return undefined;
 }
 /**
  * 멈춘 실행을 이어 간다. 사람이 사용량 대기를 이어 가면 다음 사용량 검사 한 번을 건너뛴다.
  * `auto`는 대기가 끝나 스스로 이어 가는 경우다(다시 검사한다).
  */
-export function resumeAutoRun(rootId: string, options: { auto?: boolean } = {}): void {
+export function resumeAutoRun(rootId: string, options: { auto?: boolean; viaCtl?: boolean } = {}): void {
   const run = find(rootId)?.autoRun;
   if (!run || run.state !== "paused") return;
   if (options.auto && run.pauseReason !== "usage-wait") return;
   // 판단 직후 멈췄다면 같은 턴을 다시 판단한다. 후속 지시 한도에 걸렸다면 한 번 더 기회를 준다.
   const followUps = run.pauseReason === "followup-limit" ? MAX_FOLLOW_UPS - 1 : run.followUps;
   const usageOverride = run.pauseReason === "usage-wait" && !options.auto ? true : undefined;
-  useWorkItemStore.getState().setAutoRun(rootId, withLog({ ...run, state: "running", followUps, pauseReason: undefined, pauseDetail: undefined, usageWait: undefined, usageOverride }, { kind: "resume" }));
+  useWorkItemStore.getState().setAutoRun(rootId, withLog({ ...run, state: "running", followUps, pauseReason: undefined, pauseDetail: undefined, usageWait: undefined, usageOverride }, options.viaCtl ? { kind: "resume", text: VIA_CTL } : { kind: "resume" }));
   kick(rootId);
 }
 /** 사용량 대기를 켜고 끈다. 기다리는 중에 끄면 바로 이어 간다. */
@@ -456,12 +496,32 @@ export async function checkUsageWaits(now = Date.now()): Promise<void> {
   }
 }
 
+// ── 사람 대기 ──────────────────────────────────────────────────────────
+
+/**
+ * 진행 중인 단계가 권한 승인·질문을 `PERMISSION_TIMEOUT_MS` 넘게 기다리면 멈춘다. 계속을 누른
+ * 뒤로는 그때부터 다시 잰다(사람이 화면을 보러 간 사이 바로 다시 멈추지 않게).
+ */
+export function checkPermissionWaits(now = Date.now()): void {
+  const sessions = useWorkMonitorStore.getState().sessions;
+  for (const item of items()) {
+    const run = item.autoRun;
+    if (run?.state !== "running" || !run.currentId) continue;
+    const current = find(run.currentId);
+    const observed = current ? sessions[lastSession(current) ?? ""] : undefined;
+    if (!current || observed?.phase !== "waiting") continue;
+    const lastResume = [...run.log].reverse().find((entry) => entry.kind === "resume")?.at ?? 0;
+    if (now - Math.max(observed.at, lastResume) < PERMISSION_TIMEOUT_MS) continue;
+    pause(item.id, "permission-timeout", workItemTitle(current));
+  }
+}
+
 /** 업무·모니터 변화마다 돌고 있는 실행을 깨운다. 단계가 스스로 할 일이 없으면 바로 끝난다. */
 export function installAutoRun(): () => void {
   const wake = () => { for (const item of items()) if (item.autoRun?.state === "running") kick(item.id); };
   const offItems = useWorkItemStore.subscribe((state, previous) => { if (state.items !== previous.items) wake(); });
   const offMonitor = useWorkMonitorStore.subscribe(wake);
-  const check = () => { void checkUsageWaits(); };
+  const check = () => { void checkUsageWaits(); checkPermissionWaits(); };
   const offUsage = useAppStore.subscribe((state, previous) => { if (state.usage !== previous.usage) check(); });
   const timer = setInterval(check, USAGE_CHECK_MS);
   return () => { offItems(); offMonitor(); offUsage(); clearInterval(timer); };

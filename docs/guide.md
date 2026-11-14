@@ -61,6 +61,36 @@ agent-office ctl settings set typingSoundEnabled=false
 
 전체 명령은 `agent-office ctl help`로 봅니다.
 
+### 외부 에이전트에게 플랜 맡기기
+
+다른 에이전트(컴퓨터 활용 에이전트, 스크립트)가 플랜을 만들어 자동 진행으로 돌리고, 끝나면 단계별 결과를 받을 수 있습니다. 터미널 출력은 중계하지 않습니다. 시작·재개·멈춤·끝내기와 `ask`는 승인 뒤에 나타나는 **CLI 자동 진행 허용**을 한 번 더 켜야 합니다. 상태 조회와 사람에게 넘기기는 이 설정 없이도 됩니다.
+
+```bash
+A=$(agent-office task "원인 파악" - <<'EOF'
+로그인 세션 만료 뒤 재로그인이 실패한다.
+EOF
+)
+R=$(agent-office task --plan --after "$A" --to 하나 "로그인 회귀 수정" - <<'EOF'
+목표·제약·완료 기준
+EOF
+)
+agent-office ctl autorun start "$R"
+agent-office ctl autorun status "$R" --wait --timeout 3600 --json > status.json
+case $? in
+  0)  echo "끝남" ;;            # steps[].report 에 단계별 보고
+  10) echo "조치 필요" ;;        # attention.reason / attention.actions 를 본다
+  11) echo "아직 진행 중" ;;     # 다시 기다린다
+esac
+```
+
+- `task`는 앱 밖에서도 기본 데이터 폴더를 써서 동작합니다(CLI 제어가 꺼져 있어도 됨). 플랜이 업무 목록에 반영되기까지 몇 초 걸리므로 `ctl autorun start`가 `auto-run-no-plan`이면 잠시 뒤 다시 시도하세요. `task --show <id> --json`은 자동 진행 상태까지 JSON으로 보여 줍니다.
+- `status`의 `state`는 `none`·`running`·`waiting-usage`·`paused`·`needs-human`·`finished`입니다. `needs-human`은 진행 중인 단계가 권한 승인이나 질문에 답을 기다리는 상태이고, `attention.detail`에 훅이 준 설명(도구·명령)이 들어갑니다.
+- 멈추면 `attention.actions`가 다음 동작을 알려 줍니다. `answer`(`task --edit <root> --body -`로 플랜 메모에 답을 적기), `send`(`ctl send`로 직접 지시), `split`(단계를 더 잘게 나누기), `edit`(담당·상태 바로잡기), `create`(`ctl create`로 세션 다시 띄우기), `focus`(그 캐릭터를 앞으로 띄워 화면에서 처리), `resume`, `escalate`, `end`, `wait` 중에서 고릅니다.
+- CLI 재개는 같은 단계에서 2번까지입니다. 그 뒤에는 `resume`이 빠지고 `ctl autorun escalate <rootId> "<사람에게 전할 말>"`로 넘겨야 합니다. 넘기면 자동 진행이 멈추고 OS 알림이 뜹니다. 사람이 멈춘 실행과 넘긴 실행은 사람만 이어 갈 수 있습니다.
+- 권한 승인이나 질문을 10분 넘게 기다리면 자동 진행이 **승인 대기 시간 초과**로 멈춥니다. Agent Office는 승인을 대신 누르지 않습니다.
+- 플랜 없이 한 번만 물을 때는 `ctl ask <agentId> "<프롬프트>" --timeout 600`을 씁니다. 실행 중인 세션에 입력하고, 턴이 끝나면 마지막 응답을 출력합니다. 터미널에 쓰다 만 사람 입력이 있으면 끼어들지 않고 거절합니다.
+- 기다리는 명령(`autorun status --wait`, `ask`)의 종료 코드는 `0` 끝남, `10` 조치 필요, `11` 시간 초과입니다. `ctl state <agentId>`는 턴 상태(`working`·`needs-human`·`idle`·`ended`·`none`)만 바로 알려 줍니다.
+
 ## 사용 팁
 
 ### 저장소 일괄 점검

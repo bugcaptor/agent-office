@@ -21,7 +21,8 @@ function pauseText(t: (key: string, options?: Record<string, unknown>) => string
   const reason = t(`autoRun.reasons.${run.pauseReason ?? "user"}`, { max: MAX_FOLLOW_UPS });
   if (!run.pauseDetail) return { reason };
   // 판단자 메시지는 그대로, 오류 코드는 문장으로 보여 준다.
-  const message = run.pauseReason === "judge-stop" || run.pauseReason === "followup-limit" || run.pauseReason === "task-busy" || run.pauseReason === "task-changed" || run.pauseReason === "session-ended";
+  const message = run.pauseReason === "judge-stop" || run.pauseReason === "followup-limit" || run.pauseReason === "task-busy" || run.pauseReason === "task-changed"
+    || run.pauseReason === "session-ended" || run.pauseReason === "escalated" || run.pauseReason === "permission-timeout";
   return { reason, detail: message ? run.pauseDetail : codeText(t, run.pauseDetail) };
 }
 
@@ -31,7 +32,9 @@ function LogLine({ entry, titles }: { entry: AutoRunLogEntry; titles: Map<string
   const title = titles.get(entry.taskId ?? "") ?? t("missingWork");
   const head = t(`autoRun.logKinds.${entry.kind}`, { title });
   // 멈춤 기록의 text는 사유 코드다.
-  const text = entry.kind === "pause" ? t(`autoRun.reasons.${entry.text ?? "user"}`, { max: MAX_FOLLOW_UPS }) : entry.text?.trim();
+  // CLI가 한 조작은 text에 "ctl" 표시만 남는다.
+  const text = entry.kind === "pause" ? t(`autoRun.reasons.${entry.text ?? "user"}`, { max: MAX_FOLLOW_UPS })
+    : entry.text === "ctl" ? t("autoRun.viaCtl") : entry.text?.trim();
   return <li><time>{time}</time> <strong>{head}</strong>{text && <span className="work-auto-run-text">{text}</span>}</li>;
 }
 

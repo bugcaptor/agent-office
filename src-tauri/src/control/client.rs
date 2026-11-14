@@ -28,12 +28,18 @@ const EXIT_NO_APP: i32 = 3; // 포트 파일 없음(앱 미실행 또는 CLI 제
 const EXIT_NOT_APPROVED: i32 = 4; // 토큰 없음(미승인)
 const EXIT_UNAUTHORIZED: i32 = 5; // 401(토큰 무효/취소됨)
 const EXIT_USAGE: i32 = 64; // 잘못된 사용법
+const EXIT_ATTENTION: i32 = 10; // 기다린 끝에 사람·외부 에이전트의 조치가 필요(멈춤·승인 대기)
+const EXIT_TIMEOUT: i32 = 11; // 기다리는 시간이 다 됐다(아직 진행 중)
+/// `autorun status --wait`에 `--timeout`이 없을 때 기다리는 시간(초).
+const DEFAULT_WAIT_SECS: u64 = 600;
 
 /// 파싱된 CLI 호출. `positionals[0]`이 서브커맨드다.
 #[derive(Debug, Default, PartialEq)]
 struct Parsed {
     json: bool,
     enter: bool,
+    wait: bool,
+    no_usage_guard: bool,
     kv: BTreeMap<String, String>,
     positionals: Vec<String>,
 }
@@ -58,6 +64,8 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
             "--" => only_positional = true,
             "--json" => p.json = true,
             "--enter" => p.enter = true,
+            "--wait" => p.wait = true,
+            "--no-usage-guard" => p.no_usage_guard = true,
             // `--help`/`-h`는 값을 먹는 플래그로 오인되지 않게 help 위치인자로 흡수.
             "--help" | "-h" => p.positionals.push("help".to_string()),
             other if other.starts_with("--") => {
@@ -227,11 +235,90 @@ fn build_request(p: &Parsed) -> Result<(&'static str, Value), String> {
             }
             _ => Err("settings: get 또는 set 하위 명령이 필요합니다".into()),
         },
+        "state" => Ok(("/v1/state", json!({ "agentId": agent(1, "state")? }))),
+        "ask" => {
+            let agent = agent(1, "ask")?;
+            let prompt = pos.get(2).ok_or("ask: 보낼 프롬프트가 필요합니다")?;
+            let mut o = Map::new();
+            o.insert("agentId".into(), Value::String(agent));
+            o.insert("prompt".into(), Value::String(prompt.clone()));
+            o.insert("timeoutSecs".into(), json!(timeout_secs(p, 600)?));
+            if let Some(cli) = p.kv.get("cli") {
+                o.insert("cli".into(), Value::String(cli.clone()));
+            }
+            Ok(("/v1/ask", Value::Object(o)))
+        }
+        "autorun" => {
+            let op = pos.get(1).map(String::as_str).ok_or("autorun: status|start|resume|pause|end|escalate 하위 명령이 필요합니다")?;
+            let root = pos.get(2).cloned().ok_or_else(|| format!("autorun {op}: 루트 태스크 id가 필요합니다"))?;
+            let path = match op {
+                "status" => {
+                    let mut o = Map::new();
+                    o.insert("rootId".into(), Value::String(root));
+                    if let Some(since) = p.kv.get("since") {
+                        o.insert("since".into(), Value::String(since.clone()));
+                    }
+                    if p.wait {
+                        o.insert("waitSecs".into(), json!(timeout_secs(p, DEFAULT_WAIT_SECS)?.min(super::autorun::MAX_WAIT_SECS)));
+                    }
+                    return Ok(("/v1/autorun/status", Value::Object(o)));
+                }
+                "start" => "/v1/autorun/start",
+                "resume" => "/v1/autorun/resume",
+                "pause" => "/v1/autorun/pause",
+                "end" => "/v1/autorun/end",
+                "escalate" => {
+                    let message = pos.get(3).ok_or("autorun escalate: 사람에게 전할 메시지가 필요합니다")?;
+                    return Ok(("/v1/autorun/escalate", json!({ "rootId": root, "message": message })));
+                }
+                other => return Err(format!("autorun: 알 수 없는 하위 명령: {other}")),
+            };
+            let mut body = json!({ "rootId": root });
+            if op == "start" && p.no_usage_guard {
+                body["usageGuard"] = json!(false);
+            }
+            Ok((path, body))
+        }
         "" => Err("명령이 필요합니다 (help 참고)".into()),
         other => Err(format!("알 수 없는 명령: {other} (help 참고)")),
     }
 }
 
+fn timeout_secs(p: &Parsed, default: u64) -> Result<u64, String> {
+    match p.kv.get("timeout") {
+        None => Ok(default),
+        Some(v) => v.parse::<u64>().ok().filter(|n| *n > 0).ok_or_else(|| format!("--timeout은 1 이상의 초여야 합니다: {v}")),
+    }
+}
+
+/// 성공 응답의 종료 코드. 기다리는 명령만 결과에 따라 나뉜다(셸이 JSON 없이 분기하게).
+fn success_exit(parsed: &Parsed, data: &Value) -> i32 {
+    let waited = match parsed.sub() {
+        "ask" => true,
+        "autorun" => parsed.wait && parsed.positionals.get(1).map(String::as_str) == Some("status"),
+        _ => false,
+    };
+    if !waited {
+        return EXIT_OK;
+    }
+    if data.get("timedOut").and_then(Value::as_bool) == Some(true) {
+        return EXIT_TIMEOUT;
+    }
+    match data.get("state").and_then(Value::as_str) {
+        Some("finished" | "idle") => EXIT_OK,
+        _ => EXIT_ATTENTION,
+    }
+}
+
+/// 요청 하나가 서버에서 머무를 수 있는 시간 + 여유.
+fn request_timeout(path: &str, body: &Value) -> Duration {
+    let held = match path {
+        "/v1/ask" => body["timeoutSecs"].as_u64().unwrap_or(600),
+        "/v1/autorun/status" => body["waitSecs"].as_u64().unwrap_or(0),
+        _ => 0,
+    };
+    Duration::from_secs(10 + held)
+}
 
 const USAGE: &str = "\
 agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
@@ -250,7 +337,24 @@ agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
   notifications <agentId>         대기 중 알림을 나열한다
   clear <agentId> [id...]         알림을 지운다(id 없으면 전체)
   settings get                    현재 앱 설정을 출력한다
-  settings set <key=value>...     설정을 변경한다(cliEnabled 제외)
+  settings set <key=value>...     설정을 변경한다(cliEnabled·cliAutoRunEnabled 제외)
+  state <agentId>                 턴 상태: working | needs-human | idle | ended | none
+
+플랜 위임(앱 설정 'CLI 자동 진행 허용' 필요, status·escalate는 제외):
+  autorun start <rootId> [--no-usage-guard]
+                                  플랜 루트의 자동 진행을 시작한다(GUI ▶와 같다)
+  autorun status <rootId> [--wait] [--timeout S] [--since REV]
+                                  상태·단계별 보고·멈춘 이유(attention.actions)를 준다.
+                                  --wait: 끝나거나 조치가 필요할 때까지(기본 600초),
+                                  --since: 그 rev에서 무엇이든 바뀔 때까지 기다린다
+  autorun resume|pause|end <rootId>
+                                  재개(같은 단계에서 2회까지) / 멈춤 / 진행 기록 지우기
+  autorun escalate <rootId> <메시지>
+                                  멈추고 사람에게 넘긴다(OS 알림)
+  ask <agentId> <프롬프트> [--timeout S] [--cli claude|codex]
+                                  실행 중인 세션에 입력하고 턴이 끝나면 마지막 응답을 준다
+
+종료 코드(기다리는 명령): 0 끝남, 10 조치 필요(멈춤·승인 대기), 11 시간 초과.
 
 전역 옵션:
   --json                          응답 data를 JSON으로 출력(기계 파싱용)
@@ -329,7 +433,20 @@ pub fn run(args: Vec<String>) -> i32 {
         }
     };
 
-    match runtime.block_on(send(port, &token, path, &body)) {
+    // `status --wait`는 서버가 한 번에 50초까지만 붙잡으므로 남은 시간만큼 다시 묻는다.
+    let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs(&parsed, DEFAULT_WAIT_SECS).unwrap_or(DEFAULT_WAIT_SECS));
+    let mut body = body;
+    let result = loop {
+        let result = runtime.block_on(send(port, &token, path, &body));
+        let again = matches!(&result, Ok((200, v)) if path == "/v1/autorun/status"
+            && v["data"]["timedOut"].as_bool() == Some(true));
+        let left = deadline.saturating_duration_since(std::time::Instant::now()).as_secs();
+        if !again || left == 0 {
+            break result;
+        }
+        body["waitSecs"] = json!(left.min(super::autorun::MAX_WAIT_SECS));
+    };
+    match result {
         Err(e) => {
             eprintln!("ctl: {e}");
             EXIT_CONNECT
@@ -342,7 +459,7 @@ pub fn run(args: Vec<String>) -> i32 {
             if value.get("ok").and_then(Value::as_bool) == Some(true) {
                 let data = &value["data"];
                 print_success(&parsed, data);
-                EXIT_OK
+                success_exit(&parsed, data)
             } else {
                 let msg = value
                     .get("error")
@@ -361,7 +478,7 @@ async fn send(
     path: &str,
     body: &Value,
 ) -> Result<(u16, Value), String> {
-    let timeout = Duration::from_secs(10);
+    let timeout = request_timeout(path, body);
     let client = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -515,9 +632,74 @@ fn render_success(parsed: &Parsed, data: &Value) -> String {
                 serde_json::to_string_pretty(data).unwrap_or_else(|_| data.to_string())
             );
         }
+        "state" => {
+            let _ = writeln!(
+                out,
+                "{} {}{}",
+                data["agentId"].as_str().unwrap_or("?"),
+                data["state"].as_str().unwrap_or("?"),
+                data["message"].as_str().map(|m| format!(" — {m}")).unwrap_or_default()
+            );
+        }
+        "ask" => match data["reply"].as_str() {
+            Some(reply) => {
+                let _ = writeln!(out, "{reply}");
+            }
+            None => {
+                let _ = writeln!(
+                    out,
+                    "({}{})",
+                    data["state"].as_str().unwrap_or("?"),
+                    data["message"].as_str().map(|m| format!(": {m}")).unwrap_or_default()
+                );
+            }
+        },
+        "autorun" => render_autorun(&mut out, data),
         _ => out.push_str("ok\n"),
     }
     out
+}
+
+fn render_autorun(out: &mut String, data: &Value) {
+    use std::fmt::Write as _;
+    if data.is_null() {
+        out.push_str("ok\n");
+        return;
+    }
+    let _ = writeln!(
+        out,
+        "{} [{}] {}",
+        data["rootId"].as_str().unwrap_or("?"),
+        data["state"].as_str().unwrap_or("?"),
+        data["title"].as_str().unwrap_or("")
+    );
+    if let Some(a) = data.get("attention") {
+        let actions: Vec<&str> = a["actions"].as_array().map(|v| v.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+        let _ = writeln!(
+            out,
+            "  attention: {}{} → {}",
+            a["reason"].as_str().unwrap_or("?"),
+            a["detail"].as_str().map(|d| format!(" ({d})")).unwrap_or_default(),
+            actions.join(", ")
+        );
+    }
+    if let Some(steps) = data["steps"].as_array() {
+        let current = data["current"]["taskId"].as_str();
+        for s in steps {
+            let id = s["id"].as_str().unwrap_or("?");
+            let _ = writeln!(
+                out,
+                "  {} {:<11} {} {}",
+                if Some(id) == current { "▶" } else { "-" },
+                s["status"].as_str().unwrap_or("?"),
+                id,
+                s["title"].as_str().unwrap_or("")
+            );
+        }
+    }
+    if let Some(rev) = data["rev"].as_str() {
+        let _ = writeln!(out, "  rev: {rev}");
+    }
 }
 
 #[cfg(test)]
@@ -626,6 +808,45 @@ mod tests {
         assert!(build_request(&parse(&args(&["send", "a1"])).unwrap()).is_err());
         assert!(build_request(&parse(&args(&["dispose"])).unwrap()).is_err());
         assert!(build_request(&parse(&args(&["bogus"])).unwrap()).is_err());
+    }
+
+    #[test]
+    fn build_autorun_and_ask_requests() {
+        let (path, body) = build_request(&parse(&args(&["autorun", "status", "t-1", "--wait", "--timeout", "120", "--since", "abc"])).unwrap()).unwrap();
+        assert_eq!(path, "/v1/autorun/status");
+        assert_eq!(body, json!({ "rootId": "t-1", "since": "abc", "waitSecs": 50 }));
+        let (_, plain) = build_request(&parse(&args(&["autorun", "status", "t-1"])).unwrap()).unwrap();
+        assert!(plain.get("waitSecs").is_none());
+
+        let (path, body) = build_request(&parse(&args(&["autorun", "start", "t-1", "--no-usage-guard"])).unwrap()).unwrap();
+        assert_eq!((path, body), ("/v1/autorun/start", json!({ "rootId": "t-1", "usageGuard": false })));
+        let (path, body) = build_request(&parse(&args(&["autorun", "escalate", "t-1", "DB 마이그레이션 확인 필요"])).unwrap()).unwrap();
+        assert_eq!(path, "/v1/autorun/escalate");
+        assert_eq!(body["message"], "DB 마이그레이션 확인 필요");
+        assert!(build_request(&parse(&args(&["autorun", "escalate", "t-1"])).unwrap()).is_err());
+        assert!(build_request(&parse(&args(&["autorun", "start"])).unwrap()).is_err());
+        assert!(build_request(&parse(&args(&["autorun", "launch", "t-1"])).unwrap()).is_err());
+
+        let (path, body) = build_request(&parse(&args(&["ask", "a1", "테스트 돌려 줘", "--timeout", "30", "--cli", "codex"])).unwrap()).unwrap();
+        assert_eq!(path, "/v1/ask");
+        assert_eq!(body, json!({ "agentId": "a1", "prompt": "테스트 돌려 줘", "timeoutSecs": 30, "cli": "codex" }));
+        assert!(build_request(&parse(&args(&["ask", "a1", "x", "--timeout", "0"])).unwrap()).is_err());
+        assert_eq!(request_timeout("/v1/ask", &body), Duration::from_secs(40));
+    }
+
+    #[test]
+    fn waiting_commands_map_outcome_to_exit_code() {
+        let wait = parse(&args(&["autorun", "status", "t-1", "--wait"])).unwrap();
+        assert_eq!(success_exit(&wait, &json!({ "state": "finished", "timedOut": false })), EXIT_OK);
+        assert_eq!(success_exit(&wait, &json!({ "state": "paused", "timedOut": false })), EXIT_ATTENTION);
+        assert_eq!(success_exit(&wait, &json!({ "state": "needs-human", "timedOut": false })), EXIT_ATTENTION);
+        assert_eq!(success_exit(&wait, &json!({ "state": "running", "timedOut": true })), EXIT_TIMEOUT);
+        let peek = parse(&args(&["autorun", "status", "t-1"])).unwrap();
+        assert_eq!(success_exit(&peek, &json!({ "state": "paused" })), EXIT_OK);
+        let ask = parse(&args(&["ask", "a1", "hi"])).unwrap();
+        assert_eq!(success_exit(&ask, &json!({ "state": "idle", "reply": "done" })), EXIT_OK);
+        assert_eq!(success_exit(&ask, &json!({ "state": "needs-human" })), EXIT_ATTENTION);
+        assert_eq!(success_exit(&ask, &json!({ "state": "working", "timedOut": true })), EXIT_TIMEOUT);
     }
 
     #[test]

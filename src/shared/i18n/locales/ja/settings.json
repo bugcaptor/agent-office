@@ -139,7 +139,9 @@
     "approve": "CLI 制御を承認（トークン発行）",
     "revoke": "承認を取り消す（トークン破棄）",
     "usageIntro": "セッションのターミナル内ではそのまま使えます：",
-    "appDataNote": "外部スクリプトは app_data の自動検出を使います："
+    "appDataNote": "外部スクリプトは app_data の自動検出を使います：",
+    "autoRunTitle": "CLIの自動進行を許可",
+    "autoRunHelp": "承認済みのCLIがプランの自動進行を開始・再開・一時停止・終了し、<code>ctl ask</code>でセッションに入力できるようにします。状態の確認と人への引き渡し(<code>autorun status</code>・<code>escalate</code>)はこの設定なしで使えます。人が止めた実行はCLIから再開できません。"
   },
   "firstRun": {
     "title": "Agent Office をはじめる",

@@ -37,6 +37,7 @@ import { installSessionSummaryRecorder } from "./workpanels/sessionSummaryStore"
 import { installWorkMonitor } from "./workpanels/workMonitor";
 import { installTaskChatTracking } from "./workpanels/taskChatStore";
 import { installAutoRun } from "./workpanels/autoRun";
+import { installAutoRunControl } from "./workpanels/autoRunControl";
 import { installUsageForecast } from "./usage/usageForecastStore";
 import { installWorkInboxLifecycle } from "./workpanels/lifecycle";
 import { stopWorkInbox } from "./workpanels/workInbox";
@@ -161,6 +162,8 @@ export async function bootApp(): Promise<() => void> {
   // 자동 진행의 사용량 대기가 쓰는 비율 학습. 사용량 조회값이 바뀔 때마다 배운다.
   const offUsageForecast = installUsageForecast();
   const offAutoRun = installAutoRun();
+  // CLI의 자동 진행 요청(시작·재개·멈춤·끝내기·넘기기). 루프와 같은 함수를 부른다.
+  const offAutoRunControl = installAutoRunControl();
   const offWorkInbox = installWorkInboxLifecycle();
   const offBridge = installSessionBridge();
   // 데스크톱 마스코트(이슈 #72) — 세션 브리지 직후. officeBus(=emitAgentClicked)를
@@ -212,6 +215,7 @@ export async function bootApp(): Promise<() => void> {
     offWorkMonitor();
     offTaskChats();
     offAutoRun();
+    offAutoRunControl();
     offUsageForecast();
     offWorkInbox();
     void stopWorkInbox().then(() => useWorkItemStore.getState().flush());

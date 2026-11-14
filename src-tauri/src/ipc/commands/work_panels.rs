@@ -93,6 +93,15 @@ pub async fn work_last_reply(
 pub fn auto_run_report(task_id: String, since: u64, app_state: State<'_, AppState>) -> Option<String> {
     crate::auto_run::read_report(&app_state.app_data_dir.join("work-inbox"), &task_id, since, std::time::SystemTime::now())
 }
+/// CLI 자동 진행 요청(`autorun-control` 이벤트)에 대한 렌더러의 답. `error`가 있으면 거절이다.
+#[tauri::command(rename_all = "camelCase")]
+pub fn autorun_control_reply(request_id: String, error: Option<String>, app_state: State<'_, AppState>) -> bool {
+    let result = match error {
+        Some(e) => Err(e),
+        None => Ok(serde_json::Value::Null),
+    };
+    app_state.control_ctx.autorun.reply(&request_id, result)
+}
 /// 자동 진행 판단자 호출 1회. 실행 파일은 요약 설정의 Claude 명령을 따른다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn auto_run_judge(

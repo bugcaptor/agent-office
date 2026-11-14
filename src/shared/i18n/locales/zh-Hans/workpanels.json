@@ -228,7 +228,10 @@
       "task-changed": "当前任务发生了变化(被删除、改回待办或更换负责人)。",
       "app-restarted": "应用已重启，因此暂停。",
       "user": "已暂停。",
-      "usage-wait": "订阅用量看起来不够，正在等待限额窗口重置。"
+      "usage-wait": "订阅用量看起来不够，正在等待限额窗口重置。",
+      "ctl-pause": "已由 CLI 暂停。",
+      "escalated": "外部代理已转交给人。确认后请点击“继续”。",
+      "permission-timeout": "等待权限批准或问题回答过久，已暂停。请在终端中回答后点击“继续”。"
     },
     "blocked": {
       "auto-run-root-done": "无法从已完成的任务开始。",
@@ -267,7 +270,9 @@
       "outlook": "下一个任务预测：{{list}}",
       "outlookItem": "{{provider}} {{window}} {{now}}% → {{after}}%",
       "learning": "正在收集用量预测所需的记录（{{min}} 个已完成任务和用量变化）。在此之前只检查是否已达到上限（{{limit}}%）。"
-    }
+    },
+    "escalatedTitle": "自动推进需要确认：{{title}}",
+    "viaCtl": "来自 CLI"
   },
   "taskChat": {
     "open": "对话",

@@ -139,7 +139,9 @@
     "approve": "Approuver (émettre un jeton)",
     "revoke": "Révoquer (détruire le jeton)",
     "usageIntro": "Dans un terminal de session, vous pouvez l'utiliser tout de suite :",
-    "appDataNote": "Les scripts externes utilisent la découverte automatique app_data :"
+    "appDataNote": "Les scripts externes utilisent la découverte automatique app_data :",
+    "autoRunTitle": "Autoriser l'exécution auto par la CLI",
+    "autoRunHelp": "Permet à la CLI approuvée de démarrer, reprendre, mettre en pause et terminer l'exécution auto des plans, et d'écrire dans les sessions avec <code>ctl ask</code>. Lire l'état et passer la main à une personne (<code>autorun status</code>, <code>escalate</code>) fonctionnent sans ce réglage. La CLI ne peut pas reprendre une exécution mise en pause par une personne."
   },
   "firstRun": {
     "title": "Bienvenue dans Agent Office",

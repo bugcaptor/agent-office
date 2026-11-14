@@ -139,7 +139,9 @@
     "approve": "批准 CLI 控制（签发令牌）",
     "revoke": "撤销批准（作废令牌）",
     "usageIntro": "在会话终端中可以直接使用：",
-    "appDataNote": "外部脚本使用 app_data 自动发现："
+    "appDataNote": "外部脚本使用 app_data 自动发现：",
+    "autoRunTitle": "允许 CLI 自动推进",
+    "autoRunHelp": "允许已批准的 CLI 开始、继续、暂停和结束计划的自动推进，并用 <code>ctl ask</code> 向会话输入。查看状态和转交给人（<code>autorun status</code>、<code>escalate</code>）无需此设置。人暂停的运行无法由 CLI 继续。"
   },
   "firstRun": {
     "title": "开始使用 Agent Office",

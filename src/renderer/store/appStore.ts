@@ -98,6 +98,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   workdirShowIgnored: false,
   fileIndexBackend: "walker",
   cliEnabled: false,
+  cliAutoRunEnabled: false,
   keepAwakeEnabled: false,
   sessionLogEnabled: true,
   runRecipesEnabled: false,
@@ -408,6 +409,7 @@ interface AppState {
         | "workdirShowIgnored"
         | "fileIndexBackend"
         | "cliEnabled"
+        | "cliAutoRunEnabled"
         | "keepAwakeEnabled"
         | "sessionLogEnabled"
         | "runRecipesEnabled"

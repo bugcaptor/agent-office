@@ -39,7 +39,7 @@
 | 업무 보내기·자동 진행·태스크 대화 | `work_send.rs`, `work_send/`, `auto_run.rs`, `task_chat.rs` |
 | 업무 수신함 `office-task`, 공통 안내문 | `work_inbox_cli.rs`, `persistence/work_inbox.rs`, `office_instructions.rs` |
 | 문서 뷰어 `office-md` | `doc_view.rs`, `doc_view_cli.rs` |
-| 외부 CLI 제어 `ctl` | `control/` |
+| 외부 CLI 제어 `ctl`, 플랜 위임(`autorun`·`ask`·턴 상태) | `control/` (`autorun.rs`·`turns.rs`), 렌더러 쪽 `workpanels/autoRunControl.ts` |
 | 작업 폴더·Git·파일 색인 | `workdir/`, `file_index/`, `file_manager.rs` |
 | 실행 레시피 | `run_recipes/` |
 

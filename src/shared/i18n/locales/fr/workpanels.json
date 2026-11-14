@@ -228,7 +228,10 @@
       "task-changed": "La tâche en cours a changé (supprimée, remise à faire ou réassignée).",
       "app-restarted": "En pause car l'application a redémarré.",
       "user": "En pause.",
-      "usage-wait": "L'utilisation de l'abonnement semble insuffisante : l'exécution attend la réinitialisation de la fenêtre de limite."
+      "usage-wait": "L'utilisation de l'abonnement semble insuffisante : l'exécution attend la réinitialisation de la fenêtre de limite.",
+      "ctl-pause": "Mis en pause depuis la CLI.",
+      "escalated": "Un agent externe l'a confié à une personne. Vérifiez, puis appuyez sur Continuer.",
+      "permission-timeout": "Attente trop longue d'une autorisation ou d'une réponse. Répondez dans le terminal, puis appuyez sur Continuer."
     },
     "blocked": {
       "auto-run-root-done": "Impossible de démarrer depuis une tâche terminée.",
@@ -267,7 +270,9 @@
       "outlook": "Prévision pour la tâche suivante : {{list}}",
       "outlookItem": "{{provider}} {{window}} {{now}}% → {{after}}%",
       "learning": "Collecte des données de prévision ({{min}} tâches terminées et variations d'utilisation). En attendant, seule l'atteinte d'une limite ({{limit}} %) est vérifiée."
-    }
+    },
+    "escalatedTitle": "Exécution auto à vérifier : {{title}}",
+    "viaCtl": "depuis la CLI"
   },
   "taskChat": {
     "open": "Discuter",

@@ -33,7 +33,7 @@ function openTab(name: string) {
   fireEvent.click(screen.getByRole("tab", { name }));
 }
 
-function hydrate(cliEnabled: boolean) {
+function hydrate(cliEnabled: boolean, cliAutoRunEnabled = false) {
   useAppStore.getState().hydrateSettings(
     {
       version: 1,
@@ -60,6 +60,7 @@ function hydrate(cliEnabled: boolean) {
       workdirShowIgnored: false,
       fileIndexBackend: "walker",
       cliEnabled,
+      cliAutoRunEnabled,
       keepAwakeEnabled: false,
       sessionLogEnabled: true,
       runRecipesEnabled: false,
@@ -143,5 +144,23 @@ describe("SettingsDialog · CLI 제어", () => {
     ).toBeTruthy();
     fireEvent.click(revokeBtn);
     await waitFor(() => expect(controlRevoke).toHaveBeenCalledTimes(1));
+  });
+
+  it("자동 진행 허용은 승인된 뒤에만 보이고 토글이 설정에 반영된다", async () => {
+    controlStatus.mockResolvedValue({ enabled: true, running: true, approved: false, port: 1, appDataDir: "/data" });
+    hydrate(true);
+    const { unmount } = render(<SettingsDialog />);
+    openTab("제어");
+    await screen.findByRole("button", { name: /CLI 제어 승인/ });
+    expect(screen.queryByRole("checkbox", { name: /CLI 자동 진행 허용/ })).toBeNull();
+    unmount();
+
+    controlStatus.mockResolvedValue({ enabled: true, running: true, approved: true, port: 1, appDataDir: "/data" });
+    hydrate(true);
+    render(<SettingsDialog />);
+    openTab("제어");
+    const toggle = await screen.findByRole("checkbox", { name: /CLI 자동 진행 허용/ });
+    fireEvent.click(toggle);
+    expect(useAppStore.getState().appSettings.cliAutoRunEnabled).toBe(true);
   });
 });

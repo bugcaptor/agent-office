@@ -30,6 +30,12 @@ export type AutoRunState = "running" | "paused" | "finished";
 export type AutoRunPauseReason =
   | "human-input" | "session-ended" | "send-failed" | "judge-failed" | "followup-limit"
   | "judge-stop" | "task-busy" | "task-changed" | "app-restarted" | "user"
+  /** CLI(`ctl autorun pause`)가 멈췄다. 사람이 멈춘 것과 달리 CLI가 다시 이어 갈 수 있다. */
+  | "ctl-pause"
+  /** CLI가 사람에게 넘겼다(`ctl autorun escalate`). 사람만 이어 간다. */
+  | "escalated"
+  /** 권한 승인·질문을 너무 오래 기다렸다. */
+  | "permission-timeout"
   /** 구독 사용량이 모자랄 것으로 보여 한도 창 리셋을 기다린다. 때가 되면 스스로 이어 간다. */
   | "usage-wait";
 export type AutoRunLogKind = "start" | "send" | "next" | "followup" | "pause" | "resume" | "finish" | "human-done" | "root-done";
