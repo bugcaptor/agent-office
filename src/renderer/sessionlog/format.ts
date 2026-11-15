@@ -6,6 +6,7 @@
 // 돌려준다(표시 없음은 null). 그래야 언어를 바꿔도 목록이 따라 바뀌고, 이
 // 파일의 단위 테스트가 문구가 아니라 규칙(임계값·자릿수)을 검증하게 된다.
 import type { TextKey } from "../shared/textKey";
+import { formatLocalMinute } from "../shared/localDateTime";
 
 /**
  * `2026-07-25 14:03` — 목록의 시작 시각. 시각을 모르면 null(호출자가
@@ -17,9 +18,7 @@ import type { TextKey } from "../shared/textKey";
  */
 export function formatWhen(at: number): string | null {
   if (!Number.isFinite(at) || at <= 0) return null;
-  const d = new Date(at);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return formatLocalMinute(at);
 }
 
 /** 시작~마지막 기록 사이의 길이 키. 1분 미만은 "1분 미만", 값이 이상하면 null. */
