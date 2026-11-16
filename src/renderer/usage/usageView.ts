@@ -128,8 +128,13 @@ export function visibleUsageProviders(
  * 동률이면 먼저 나온 윈도를 유지한다(안정적).
  */
 export function mostUrgentWindow(usage: ProviderUsage | null): UsageWindow | null {
-  if (!usage || usage.windows.length === 0) return null;
-  return usage.windows.reduce((best, w) => (w.usedPercent > best.usedPercent ? w : best));
+  return usage ? highestUsedWindow(usage.windows) : null;
+}
+
+/** 동률의 순서를 유지하고 빈 후보는 null로 돌려준다. */
+function highestUsedWindow(windows: readonly UsageWindow[]): UsageWindow | null {
+  if (windows.length === 0) return null;
+  return windows.reduce((best, w) => (w.usedPercent > best.usedPercent ? w : best));
 }
 
 /**
@@ -156,11 +161,7 @@ export function badgeWindows(usage: ProviderUsage | null): UsageWindow[] {
   if (windows.length === 0) return [];
   const session = windows.find((w) => w.kind === "session") ?? null;
   const rest = windows.filter((w) => w.kind !== "session");
-  const second =
-    rest.length === 0
-      ? null
-      : (rest.find((w) => w.kind === "weekly") ??
-        rest.reduce((best, w) => (w.usedPercent > best.usedPercent ? w : best)));
+  const second = rest.find((w) => w.kind === "weekly") ?? highestUsedWindow(rest);
   if (!session) return second ? [second] : [];
   return second ? [session, second] : [session];
 }

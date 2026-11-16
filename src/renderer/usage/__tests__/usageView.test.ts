@@ -235,6 +235,14 @@ describe("badgeWindows", () => {
     expect(result[1].usedPercent).toBe(70);
   });
 
+  it("총 주간 창이 없는 동률에서는 먼저 나온 후보를 유지한다", () => {
+    const first = win({ kind: "weekly_model", label: "A", usedPercent: 70 });
+    const second = win({ kind: "weekly_model", label: "B", usedPercent: 70 });
+    const session = win({ kind: "session", usedPercent: 99 });
+    expect(badgeWindows(provider([first, second]))).toEqual([first]);
+    expect(badgeWindows(provider([first, session, second]))).toEqual([session, first]);
+  });
+
   it("Codex는 사용률이 더 높은 Spark 대신 계정 전체 주간 창을 대표로 고른다", () => {
     const u = provider(
       [
