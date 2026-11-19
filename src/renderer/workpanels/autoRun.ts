@@ -21,12 +21,10 @@ import {
   assessFollowup, assessJudge, assessTask, costMark, costSinceMark, recordFollowupSample, recordJudgeCost,
   recordTaskSample, refreshUsage, workerProvider,
 } from "../usage/usageForecastStore";
+import { effectiveLimit } from "./autoRunLimits";
 
-export const MAX_FOLLOW_UPS = 3;
 /** 같은 단계에서 CLI(`ctl autorun resume`)가 재개할 수 있는 횟수. 넘으면 사람에게 넘겨야 한다. Rust `MAX_CTL_RESUMES`와 같다. */
 export const MAX_CTL_RESUMES = 2;
-/** 권한 승인·질문을 이만큼 기다리면 멈춰서 알린다. 아무도 모르는 채 무한히 기다리지 않게 한다. */
-export const PERMISSION_TIMEOUT_MS = 10 * 60_000;
 /** CLI가 한 조작은 진행 기록에 이 표시를 남긴다. */
 const VIA_CTL = "ctl";
 const MAX_LOG = 200;
@@ -121,7 +119,7 @@ const JUDGE_RULES = `You supervise an automatic task run in Agent Office. A codi
 
 Decisions:
 - "next": the current task is done well enough. Accept it when the report or the reply says what changed and how it was verified (commands run and their results). For work with nothing to run (docs, notes, design), a clear account of what changed is enough. It is marked done and the next task starts in a fresh session. Put in "note" what later tasks must know (decisions, names of files or APIs, caveats); it is handed to them. Leave "message" empty.
-- "followup": the worker should keep going in the same session. Put the exact instruction for the worker in "message". Use it for unfinished work, missing or failed verification, a missing report (ask for it), a question that the plan notes, the task description or the hand-off notes answer, and a reversible choice the worker left open: pick the option that fits the plan best and tell the worker to go ahead and record it under decisions. You can send at most ${MAX_FOLLOW_UPS} follow-ups per task.
+- "followup": the worker should keep going in the same session. Put the exact instruction for the worker in "message". Use it for unfinished work, missing or failed verification, a missing report (ask for it), a question that the plan notes, the task description or the hand-off notes answer, and a reversible choice the worker left open: pick the option that fits the plan best and tell the worker to go ahead and record it under decisions. Each turn includes the follow-up limit for its task.
 - "stop": only when a human really must act: the next step is irreversible or leaves the machine (push, deploy, publish, delete data, spend money, use credentials) and neither the plan notes nor the task allows it; the requirements contradict each other and the plan notes do not settle it; the same failure repeats after follow-ups; or the worker needs something only a human has (access, secrets, an outside decision). In "message", ask the human one concrete question, with the options if there are any, and say briefly where the task stands.
 Not reasons to stop: offers of optional extra work ("If you want, I can…"; ignore them), asking whether to continue, asking to confirm a reversible choice, or doubts the worker can check by itself. A report with status "blocked" is the worker's claim: stop only if its needs_human meets the rules above, and otherwise answer it with "followup". Prefer "followup" over "stop" when the worker can fix it alone. Do not accept a task when neither the report nor the reply shows that it was done. Write "message" and "note" in the language the tasks are written in.`;
 
@@ -152,7 +150,7 @@ export function judgePrompt(turn: JudgeTurn): string {
     parts.push(`The human updated the plan notes:\n<<<\n${memo || "(empty)"}\n>>>`);
   }
   const index = plan.findIndex((item) => item.id === task.id) + 1;
-  parts.push(`Task ${index}/${plan.length}: "${workItemTitle(task)}" — the worker's turn ended. Follow-ups sent for this task so far: ${turn.followUps}/${MAX_FOLLOW_UPS}.`);
+  parts.push(`Task ${index}/${plan.length}: "${workItemTitle(task)}" — the worker's turn ended. Follow-ups sent for this task so far: ${turn.followUps}/${effectiveLimit("maxFollowUps", root, task)}.`);
   if (turn.followUps === 0 && task.body.trim()) parts.push(`Task description:\n<<<\n${task.body.trim()}\n>>>`);
   parts.push(turn.report?.trim() ? `Worker's report:\n<<<\n${turn.report.trim()}\n>>>` : "Worker's report: (none written this turn)");
   parts.push(`Worker's final reply:\n<<<\n${turn.reply?.trim() || "(the reply could not be read)"}\n>>>`);
@@ -172,8 +170,8 @@ function update(rootId: string, change: (run: AutoRun) => AutoRun): void {
   const run = find(rootId)?.autoRun;
   if (run) useWorkItemStore.getState().setAutoRun(rootId, change(run));
 }
-function pause(rootId: string, reason: AutoRunPauseReason, detail?: string): void {
-  update(rootId, (run) => withLog({ ...run, state: "paused", pauseReason: reason, pauseDetail: detail }, { kind: "pause", text: reason }));
+function pause(rootId: string, reason: AutoRunPauseReason, detail?: string, followUpLimit?: number): void {
+  update(rootId, (run) => withLog({ ...run, state: "paused", pauseReason: reason, pauseDetail: detail }, { kind: "pause", text: reason, followUpLimit }));
 }
 function running(rootId: string): AutoRun | undefined {
   const run = find(rootId)?.autoRun;
@@ -264,11 +262,13 @@ export function escalateAutoRun(rootId: string, message: string): string | undef
  * `auto`는 대기가 끝나 스스로 이어 가는 경우다(다시 검사한다).
  */
 export function resumeAutoRun(rootId: string, options: { auto?: boolean; viaCtl?: boolean } = {}): void {
-  const run = find(rootId)?.autoRun;
-  if (!run || run.state !== "paused") return;
+  const root = find(rootId);
+  const run = root?.autoRun;
+  if (!root || !run || run.state !== "paused") return;
   if (options.auto && run.pauseReason !== "usage-wait") return;
   // 판단 직후 멈췄다면 같은 턴을 다시 판단한다. 후속 지시 한도에 걸렸다면 한 번 더 기회를 준다.
-  const followUps = run.pauseReason === "followup-limit" ? MAX_FOLLOW_UPS - 1 : run.followUps;
+  const limit = effectiveLimit("maxFollowUps", root, find(run.currentId));
+  const followUps = run.pauseReason === "followup-limit" ? Math.min(run.followUps, Math.max(0, limit - 1)) : run.followUps;
   const usageOverride = run.pauseReason === "usage-wait" && !options.auto ? true : undefined;
   useWorkItemStore.getState().setAutoRun(rootId, withLog({ ...run, state: "running", followUps, pauseReason: undefined, pauseDetail: undefined, usageWait: undefined, usageOverride }, options.viaCtl ? { kind: "resume", text: VIA_CTL } : { kind: "resume" }));
   kick(rootId);
@@ -416,14 +416,16 @@ async function judge(rootId: string, current: WorkItem): Promise<void> {
     return pickAndSend(rootId);
   }
   if (result.decision === "stop") return pause(rootId, "judge-stop", result.message);
-  if (latest.followUps >= MAX_FOLLOW_UPS) return pause(rootId, "followup-limit", result.message);
   if (!session || !result.message.trim()) return pause(rootId, "judge-failed", "auto-run-judge-output");
   return sendFollowUp(rootId, current, result.message);
 }
 
 /** 판단자의 후속 지시를 같은 세션에 넣는다. 사용량이 모자라면 지시를 남겨 두고 기다린다. */
 async function sendFollowUp(rootId: string, current: WorkItem, message: string): Promise<void> {
-  const runner = find(rootId)!.assigneeAgentId!;
+  const root = find(rootId)!;
+  const limit = effectiveLimit("maxFollowUps", root, find(current.id));
+  if (root.autoRun!.followUps >= limit) return pause(rootId, "followup-limit", message, limit);
+  const runner = root.assigneeAgentId!;
   const session = lastSession(current);
   const worker = workerProvider({ cli: taskCli(current, useAppStore.getState().agents[runner]) });
   if (waitForUsage(rootId, "followup", worker, () => assessFollowup(worker), { pendingFollowUp: message })) return;
@@ -499,7 +501,7 @@ export async function checkUsageWaits(now = Date.now()): Promise<void> {
 // ── 사람 대기 ──────────────────────────────────────────────────────────
 
 /**
- * 진행 중인 단계가 권한 승인·질문을 `PERMISSION_TIMEOUT_MS` 넘게 기다리면 멈춘다. 계속을 누른
+ * 진행 중인 단계가 권한 승인·질문을 설정한 시간만큼 기다리면 멈춘다. 계속을 누른
  * 뒤로는 그때부터 다시 잰다(사람이 화면을 보러 간 사이 바로 다시 멈추지 않게).
  */
 export function checkPermissionWaits(now = Date.now()): void {
@@ -511,7 +513,7 @@ export function checkPermissionWaits(now = Date.now()): void {
     const observed = current ? sessions[lastSession(current) ?? ""] : undefined;
     if (!current || observed?.phase !== "waiting") continue;
     const lastResume = [...run.log].reverse().find((entry) => entry.kind === "resume")?.at ?? 0;
-    if (now - Math.max(observed.at, lastResume) < PERMISSION_TIMEOUT_MS) continue;
+    if (now - Math.max(observed.at, lastResume) < effectiveLimit("permissionWaitMinutes", item, current) * 60_000) continue;
     pause(item.id, "permission-timeout", workItemTitle(current));
   }
 }

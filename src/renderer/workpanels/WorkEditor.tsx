@@ -4,6 +4,7 @@ import { useAppStore } from "../store/appStore";
 import { useWorkItemStore, WORK_STATUS_ORDER } from "./workItemStore";
 import { dependencyCandidates } from "./workDependencies";
 import { WorkAgentFields } from "./WorkAgentFields";
+import { AUTO_RUN_LIMITS, validWorkLimits } from "./autoRunLimits";
 import { hasWorkContent, workItemTitle, type WorkItemDraft } from "./workItemDraft";
 
 export function WorkEditor({ itemId, value, busy = false, creating = false, dirty, onChange, onSave, onDiscard }: {
@@ -25,7 +26,7 @@ export function WorkEditor({ itemId, value, busy = false, creating = false, dirt
   const dependsOn = value.dependsOn ?? [];
   const candidates = dependencyCandidates(itemId, dependsOn, items);
   const setDependsOn = (next: string[]) => onChange({ dependsOn: next.length ? next : undefined });
-  const canSave = !busy && dirty && hasWorkContent(value);
+  const canSave = !busy && dirty && hasWorkContent(value) && validWorkLimits(value);
   return <form className="work-editor" onSubmit={(e) => { e.preventDefault(); if (canSave) onSave(); }}>
     <fieldset disabled={busy}>
       <label>{t("title")}<input value={value.title} maxLength={500} placeholder={workItemTitle({ title: "", body: value.body }) || t("titlePlaceholder")} onChange={(e) => onChange({ title: e.target.value })} /></label>
@@ -61,6 +62,17 @@ export function WorkEditor({ itemId, value, busy = false, creating = false, dirt
         {t("planRoot")}
       </label>}
       {(dependsOn.length > 0 || value.plan) && <p className="work-muted">{t(value.plan ? "planRootOn" : "planRootOff")}</p>}
+      <details className="work-run-limits">
+        <summary>{t("autoRun.limits.title")}</summary>
+        <p className="work-muted">{t("autoRun.limits.hint", { countDefault: AUTO_RUN_LIMITS.maxFollowUps.defaultValue, minutes: AUTO_RUN_LIMITS.permissionWaitMinutes.defaultValue })}</p>
+        {(["maxFollowUps", "permissionWaitMinutes"] as const).map((key) => {
+          const { min, max } = AUTO_RUN_LIMITS[key];
+          return <label key={key}>{t(`autoRun.limits.${key}`, { min, max })}
+            <input type="number" min={min} max={max} step={1} value={value[key] ?? ""} placeholder={t("autoRun.limits.inherit")}
+              onChange={(e) => onChange({ [key]: e.target.value === "" ? undefined : e.target.valueAsNumber })} />
+          </label>;
+        })}
+      </details>
     </fieldset>
     {/* 되돌리기는 저장과 떨어진 왼쪽 끝에 두고, 변경이 없을 때도 자리를 지켜 저장 버튼이 움직이지 않게 한다. */}
     <div className="work-dialog-actions">

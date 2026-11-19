@@ -183,6 +183,13 @@
     }
   },
   "autoRun": {
+    "limits": {
+      "title": "Auto-run settings",
+      "hint": "Leave a field blank to use the running plan’s value. If the plan also leaves it blank, the defaults are {{countDefault}} follow-ups and {{minutes}} minutes to wait for approval or an answer.",
+      "maxFollowUps": "Maximum follow-ups ({{min}}–{{max}})",
+      "permissionWaitMinutes": "Wait for approval or an answer ({{min}}–{{max}} minutes)",
+      "inherit": "Inherit"
+    },
     "title": "Auto run",
     "chip": {
       "running": "Auto running",

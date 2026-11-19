@@ -886,6 +886,8 @@ mod tests {
             last_error: None,
             depends_on: vec![],
             plan: false,
+            max_follow_ups: None,
+            permission_wait_minutes: None,
             auto_run: None,
             created_at: 0,
             updated_at: 0,

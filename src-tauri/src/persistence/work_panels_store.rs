@@ -177,8 +177,9 @@ mod tests {
     fn snapshots_roundtrip_and_invalid_writes_preserve_existing() {
         let store = store();
         assert!(store.load_work_items().unwrap().is_empty());
-        let item: WorkItem = serde_json::from_value(serde_json::json!({"id":"w1","title":"Review","body":"Details","status":"in_progress","order":0,"sessionIds":["s1"],"createdAt":1,"updatedAt":2,"agent":{"cli":"pi","model":"m"},"dependsOn":["w0"]})).unwrap();
+        let item: WorkItem = serde_json::from_value(serde_json::json!({"id":"w1","title":"Review","body":"Details","status":"in_progress","order":0,"sessionIds":["s1"],"createdAt":1,"updatedAt":2,"agent":{"cli":"pi","model":"m"},"dependsOn":["w0"],"maxFollowUps":0,"permissionWaitMinutes":45})).unwrap();
         assert_eq!(item.depends_on, vec!["w0".to_string()]);
+        assert_eq!((item.max_follow_ups, item.permission_wait_minutes), (Some(0), Some(45)));
         store.save_work_items(&[item.clone()]).unwrap();
         let mut invalid = item.clone();
         invalid.id = "".into();

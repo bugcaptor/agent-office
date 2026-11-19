@@ -183,6 +183,13 @@
     }
   },
   "autoRun": {
+    "limits": {
+      "title": "自動執行詳細設定",
+      "hint": "留空即可沿用目前計畫的值。若計畫中也未設定，預設最多追加 {{countDefault}} 次指令，等待核准或答覆的時間為 {{minutes}} 分鐘。",
+      "maxFollowUps": "最多追加指令次數（{{min}}–{{max}} 次）",
+      "permissionWaitMinutes": "等待核准或答覆（{{min}}–{{max}} 分鐘）",
+      "inherit": "繼承"
+    },
     "title": "自動推進",
     "chip": {
       "running": "自動推進中",

@@ -183,6 +183,13 @@
     }
   },
   "autoRun": {
+    "limits": {
+      "title": "自動進行の詳細設定",
+      "hint": "空欄の項目は実行中のプランの値を使います。プランでも空欄の場合、追加指示は {{countDefault}} 回、承認・回答の待ち時間は {{minutes}} 分です。",
+      "maxFollowUps": "追加指示の上限（{{min}}〜{{max}} 回）",
+      "permissionWaitMinutes": "承認・回答の待ち時間（{{min}}〜{{max}} 分）",
+      "inherit": "継承"
+    },
     "title": "自動進行",
     "chip": {
       "running": "自動進行中",

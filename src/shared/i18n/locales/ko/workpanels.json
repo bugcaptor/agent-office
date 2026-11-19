@@ -183,6 +183,13 @@
     }
   },
   "autoRun": {
+    "limits": {
+      "title": "자동 진행 상세 설정",
+      "hint": "빈칸은 실행 중인 플랜의 값을 따릅니다. 플랜에서도 비워 두면 후속 지시 {{countDefault}}회, 승인·질문 대기 {{minutes}}분을 사용합니다.",
+      "maxFollowUps": "최대 후속 지시 횟수 ({{min}}~{{max}}회)",
+      "permissionWaitMinutes": "승인·질문 대기 시간 ({{min}}~{{max}}분)",
+      "inherit": "상속"
+    },
     "title": "자동 진행",
     "chip": {
       "running": "자동 진행 중",

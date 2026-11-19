@@ -183,6 +183,13 @@
     }
   },
   "autoRun": {
+    "limits": {
+      "title": "Paramètres de l’exécution automatique",
+      "hint": "Un champ vide reprend la valeur du plan en cours. Les valeurs par défaut sont de {{countDefault}} relances et de {{minutes}} minutes d’attente d’une autorisation ou d’une réponse.",
+      "maxFollowUps": "Nombre maximal de relances ({{min}} à {{max}})",
+      "permissionWaitMinutes": "Attente d’une autorisation ou d’une réponse ({{min}} à {{max}} minutes)",
+      "inherit": "Hériter"
+    },
     "title": "Exécution automatique",
     "chip": {
       "running": "Exécution auto",

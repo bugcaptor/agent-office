@@ -13,7 +13,7 @@ let saving: Promise<void> | undefined;
 let loading: Promise<void> | undefined;
 let refreshing: Promise<boolean> | undefined;
 let revision = 0;
-export type InboxImport = Pick<WorkItem, "id" | "title" | "body" | "assigneeAgentId" | "dependsOn" | "plan">;
+export type InboxImport = Pick<WorkItem, "id" | "title" | "body" | "assigneeAgentId" | "dependsOn" | "plan" | "maxFollowUps" | "permissionWaitMinutes">;
 /**
  * 수신함 업무 하나의 처리 결과.
  * - added: 새로 넣음. `dropped`는 버린 선행 작업.
@@ -26,7 +26,7 @@ export type InboxImportResult = { kind: "added"; dropped: DroppedDependency[] } 
 export type InboxRequest =
   | { kind: "done"; ids: string[] }
   | { kind: "delete"; ids: string[] }
-  | { kind: "edit"; id: string; patch: Partial<Pick<WorkItem, "title" | "body" | "status" | "plan">> & { assigneeAgentId?: string | null; dependsOn?: string[]; addDependsOn?: string[]; removeDependsOn?: string[] } };
+  | { kind: "edit"; id: string; patch: Partial<Pick<WorkItem, "title" | "body" | "status" | "plan">> & { assigneeAgentId?: string | null; maxFollowUps?: number | null; permissionWaitMinutes?: number | null; dependsOn?: string[]; addDependsOn?: string[]; removeDependsOn?: string[] } };
 /**
  * 변경 요청 하나의 결과. `unknown`이 있거나 `empty`면 반영하지 않았다.
  * `dropped`는 수정에서 요청했지만 버린 선행 작업이다.
@@ -54,7 +54,7 @@ interface WorkItemState {
    * 로드 전·오류 중에는 빈 배열.
    */
   applyInbox(requests: InboxRequest[]): InboxRequestResult[];
-  edit(id: string, patch: Partial<Pick<WorkItem, "title" | "body" | "assigneeAgentId" | "agent" | "status" | "dependsOn" | "plan">>): void;
+  edit(id: string, patch: Partial<WorkItemDraft>): void;
   recordSend(id: string, result: { sessionId?: string; error?: string }): void;
   /** 루트 업무의 자동 진행 상태를 바꾸거나(undefined면) 지운다. */
   setAutoRun(id: string, autoRun: AutoRun | undefined): void;
@@ -227,6 +227,8 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
       if (patch.body !== undefined) next.body = patch.body;
       if (patch.assigneeAgentId !== undefined) next.assigneeAgentId = patch.assigneeAgentId ?? undefined;
       if (patch.status && patch.status !== item.status) { next.status = patch.status; next.order = nextOrder(patch.status); }
+      if (patch.maxFollowUps !== undefined) next.maxFollowUps = patch.maxFollowUps ?? undefined;
+      if (patch.permissionWaitMinutes !== undefined) next.permissionWaitMinutes = patch.permissionWaitMinutes ?? undefined;
       if (patch.plan !== undefined) next.plan = patch.plan || undefined;
       if (!hasWorkContent(next)) return { unknown, empty: true, dropped: [] };
       let dropped: DroppedDependency[] = [];

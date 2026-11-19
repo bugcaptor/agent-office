@@ -36,6 +36,8 @@
 .work-link-tag { color: var(--accent) !important; }
 .work-delete-dialog { width: min(420px, 85vw); padding: 16px; }
 
+.work-run-limits { margin-top: 10px; }
+.work-run-limits summary { cursor: pointer; }
 .work-editor fieldset { padding: 0; border: 0; min-width: 0; }
 .work-card.waiting { border-color: var(--accent-warn); }
 .work-card-monitor { margin-top: 6px; color: var(--text-dim); }

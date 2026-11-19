@@ -183,6 +183,13 @@
     }
   },
   "autoRun": {
+    "limits": {
+      "title": "自动运行详细设置",
+      "hint": "留空即可沿用当前计划的值。若计划中也未设置，默认最多追加 {{countDefault}} 次指令，等待批准或答复的时间为 {{minutes}} 分钟。",
+      "maxFollowUps": "最多追加指令次数（{{min}}–{{max}} 次）",
+      "permissionWaitMinutes": "等待批准或答复（{{min}}–{{max}} 分钟）",
+      "inherit": "继承"
+    },
     "title": "自动推进",
     "chip": {
       "running": "自动推进中",

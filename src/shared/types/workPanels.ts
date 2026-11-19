@@ -21,6 +21,9 @@ export interface WorkItem {
   dependsOn?: string[];
   /** 플랜 루트(플랜 메모 전용). 자동 진행은 이 업무를 실행하지 않는다. 아니면 생략한다. */
   plan?: boolean;
+  /** 자동 진행 단계별 한도. 생략한 값은 실행 중인 플랜 루트에서 상속한다. */
+  maxFollowUps?: number;
+  permissionWaitMinutes?: number;
   /** 자동 진행 상태. 이 업무를 루트로 시작했을 때만 있다. */
   autoRun?: AutoRun;
   createdAt: number;
@@ -39,7 +42,7 @@ export type AutoRunPauseReason =
   /** 구독 사용량이 모자랄 것으로 보여 한도 창 리셋을 기다린다. 때가 되면 스스로 이어 간다. */
   | "usage-wait";
 export type AutoRunLogKind = "start" | "send" | "next" | "followup" | "pause" | "resume" | "finish" | "human-done" | "root-done";
-export interface AutoRunLogEntry { at: number; kind: AutoRunLogKind; taskId?: string; text?: string }
+export interface AutoRunLogEntry { at: number; kind: AutoRunLogKind; taskId?: string; text?: string; followUpLimit?: number }
 /** 루트 업무 하나의 자동 진행. 렌더러가 소유하고 네이티브는 보존만 한다. */
 export interface AutoRun {
   state: AutoRunState;
@@ -189,6 +192,8 @@ export interface InboxEntry {
   after?: string[];
   /** 플랜 루트(`office-task --plan`). */
   plan?: boolean;
+  maxFollowUps?: number | null;
+  permissionWaitMinutes?: number | null;
   /** 완료 요청 파일이면 완료로 바꿀 업무 id. 이때 제목·본문은 쓰지 않는다. */
   done?: string[];
   /** 삭제 요청 파일이면 지울 업무 id. */
@@ -208,6 +213,8 @@ export interface InboxEdit {
   addAfter?: string[];
   removeAfter?: string[];
   status?: WorkStatus;
+  maxFollowUps?: number | null;
+  permissionWaitMinutes?: number | null;
   /** 플랜 루트 표시를 켜거나 끈다. */
   plan?: boolean;
 }

@@ -8,7 +8,8 @@ import { workItemTitle } from "./workItemDraft";
 import { sendErrorText } from "./sendErrorText";
 import { TaskChatButton, useTaskChatButton } from "./TaskChatButton";
 import { AutoRunUsage, UsageWaitDetail } from "./AutoRunUsage";
-import { busyRunRoot, endAutoRun, MAX_FOLLOW_UPS, pauseAutoRun, planItems, resumeAutoRun, runSteps, startAutoRun, startBlockedReason } from "./autoRun";
+import { AUTO_RUN_LIMITS, effectiveLimit } from "./autoRunLimits";
+import { busyRunRoot, endAutoRun, pauseAutoRun, planItems, resumeAutoRun, runSteps, startAutoRun, startBlockedReason } from "./autoRun";
 
 /** 시작 차단·일시정지 상세 코드를 화면 문장으로. 자동 진행 코드가 아니면 보내기 오류 문구를 쓴다. */
 export function codeText(t: (key: string, options?: Record<string, unknown>) => string, code: string, options?: Record<string, unknown>): string {
@@ -18,7 +19,7 @@ export function codeText(t: (key: string, options?: Record<string, unknown>) => 
 }
 
 function pauseText(t: (key: string, options?: Record<string, unknown>) => string, run: AutoRun): { reason: string; detail?: string } {
-  const reason = t(`autoRun.reasons.${run.pauseReason ?? "user"}`, { max: MAX_FOLLOW_UPS });
+  const reason = t(`autoRun.reasons.${run.pauseReason ?? "user"}`, { max: run.log[run.log.length - 1]?.followUpLimit ?? AUTO_RUN_LIMITS.maxFollowUps.defaultValue });
   if (!run.pauseDetail) return { reason };
   // 판단자 메시지는 그대로, 오류 코드는 문장으로 보여 준다.
   const message = run.pauseReason === "judge-stop" || run.pauseReason === "followup-limit" || run.pauseReason === "task-busy" || run.pauseReason === "task-changed"
@@ -33,7 +34,7 @@ function LogLine({ entry, titles }: { entry: AutoRunLogEntry; titles: Map<string
   const head = t(`autoRun.logKinds.${entry.kind}`, { title });
   // 멈춤 기록의 text는 사유 코드다.
   // CLI가 한 조작은 text에 "ctl" 표시만 남는다.
-  const text = entry.kind === "pause" ? t(`autoRun.reasons.${entry.text ?? "user"}`, { max: MAX_FOLLOW_UPS })
+  const text = entry.kind === "pause" ? t(`autoRun.reasons.${entry.text ?? "user"}`, { max: entry.followUpLimit ?? AUTO_RUN_LIMITS.maxFollowUps.defaultValue })
     : entry.text === "ctl" ? t("autoRun.viaCtl") : entry.text?.trim();
   return <li><time>{time}</time> <strong>{head}</strong>{text && <span className="work-auto-run-text">{text}</span>}</li>;
 }
@@ -71,7 +72,7 @@ export function AutoRunSection({ root }: { root: WorkItem }) {
     <h3 id={`auto-run-${root.id}`}>{t("autoRun.title")}</h3>
     {!run && <p className="work-muted">{t("autoRun.idle", { count: plan.length - done, name: runner ?? t("unassigned") })}</p>}
     {run?.state === "running" && <p>{current
-      ? <>{t("autoRun.running", { title: workItemTitle(current) })} <small>{t("autoRun.followUps", { count: run.followUps, max: MAX_FOLLOW_UPS })}</small></>
+      ? <>{t("autoRun.running", { title: workItemTitle(current) })} <small>{t("autoRun.followUps", { count: run.followUps, max: effectiveLimit("maxFollowUps", root, current) })}</small></>
       : t("autoRun.preparing")}</p>}
     {paused && <div role="status" className="work-auto-run-paused"><p>{paused.reason}</p>{paused.detail && <p className="work-auto-run-text">{paused.detail}</p>}
       {run?.pauseReason === "usage-wait" && run.usageWait && <UsageWaitDetail wait={run.usageWait} />}</div>}

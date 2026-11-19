@@ -2,7 +2,7 @@
 //! GUI·tokio 없이 수신함에 파일 하나를 원자적으로 쓰거나(`--list`) 저장된 업무 목록을
 //! 읽는다. control 서버와 토큰이 필요 없어 CLI 제어가 꺼져 있어도 동작한다.
 
-use crate::persistence::work_inbox::{forbidden_control, parse_after, valid_task_id, MAX_BYTES, STATUSES};
+use crate::persistence::work_inbox::{forbidden_control, parse_after, valid_task_id, RunLimitsPatch, MAX_BYTES, STATUSES};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
@@ -19,6 +19,8 @@ Prints the new task id. Pass it to --after to make a later task wait for this on
 --edit --after replaces all prerequisites; --add-after/--remove-after change them one by one.
 --plan makes the task a plan root: it holds only the plan memo, and auto-run runs the tasks it
 waits on, never the root itself. It needs --after. A root without --plan is run as the last step.
+On create or edit, --max-follow-ups <0..99|inherit> and --permission-wait-minutes <1..1440|inherit>
+set the auto-run limits. A task inherits unspecified limits from the running plan.
 --report leaves the auto-run report for a task; writing it again replaces it.
 --show --json prints the stored task as JSON, including its auto-run state.
 Outside an Agent Office session the default app data folder is used.
@@ -89,6 +91,7 @@ pub fn run_with(
     let mut assignee = Assignee::Default;
     let mut after: Vec<String> = vec![];
     let mut plan = false;
+    let mut limits = RunLimitsPatch::default();
     let mut positional = vec![];
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
@@ -100,6 +103,9 @@ pub fn run_with(
             },
             "--unassigned" if positional.is_empty() => assignee = Assignee::Unassigned,
             "--after" if positional.is_empty() => if let Err(code) = push_ids(&mut after, iter.next(), "--after", err) { return code; },
+            "--max-follow-ups" | "--permission-wait-minutes" if positional.is_empty() => {
+                if let Err(code) = set_limit(&mut limits, arg, iter.next(), err) { return code; }
+            }
             "--plan" if positional.is_empty() => plan = true,
             "--" if positional.is_empty() => positional.extend(iter.by_ref().cloned()),
             _ => positional.push(arg.clone()),
@@ -132,7 +138,7 @@ pub fn run_with(
     warn_unknown_references(env, assignee.as_deref().filter(|_| explicit), &after, err);
     let random = uuid::Uuid::new_v4().simple().to_string();
     let id = format!("t-{}", &random[..8]);
-    let content = render(&id, &title, body.trim_matches('\n'), assignee.as_deref(), &after, plan);
+    let content = render(&id, &title, body.trim_matches('\n'), assignee.as_deref(), &after, plan, &limits);
     if content.len() > MAX_BYTES { return fail(err, &format!("task exceeds {MAX_BYTES} bytes")); }
     let Some(inbox) = env.inbox() else { return fail(err, "AGENT_OFFICE_WORK_INBOX and AGENT_OFFICE_APP_DATA are not set"); };
     let name = format!("{}-{}.md", now.format("%Y%m%dT%H%M%S%3fZ"), &random[8..16]);
@@ -165,11 +171,26 @@ fn read_body(value: &str, stdin: &mut dyn Read, err: &mut dyn Write) -> Result<S
     Ok(body.replace("\r\n", "\n"))
 }
 
+fn set_limit(limits: &mut RunLimitsPatch, flag: &str, value: Option<&String>, err: &mut dyn Write) -> Result<(), i32> {
+    let value = value.ok_or_else(|| usage_error(err, &format!("{flag} requires a value")))?;
+    limits.set(flag.trim_start_matches("--"), value).map_err(|reason| usage_error(err, &reason))
+}
+
+fn write_limit_fields(text: &mut String, limits: &RunLimitsPatch) {
+    for (key, field) in [("max-follow-ups", limits.max_follow_ups), ("permission-wait-minutes", limits.permission_wait_minutes)] {
+        if let Some(value) = field {
+            let value = value.map_or_else(|| "inherit".to_string(), |n| n.to_string());
+            text.push_str(&format!("{key}: {value}\n"));
+        }
+    }
+}
+
 /// 제목 줄은 항상 `# `로 시작해 본문이나 빈 제목이 frontmatter·제목으로 잘못 읽히지 않는다.
-fn render(id: &str, title: &str, body: &str, assignee: Option<&str>, after: &[String], plan: bool) -> String {
+fn render(id: &str, title: &str, body: &str, assignee: Option<&str>, after: &[String], plan: bool, limits: &RunLimitsPatch) -> String {
     let mut text = format!("---\nid: {id}\n");
     if let Some(assignee) = assignee { text.push_str(&format!("assignee: {assignee}\n")); }
     if !after.is_empty() { text.push_str(&format!("after: {}\n", after.join(", "))); }
+    write_limit_fields(&mut text, limits);
     if plan { text.push_str("plan: true\n"); }
     text.push_str(&format!("---\n# {title}\n"));
     if !body.is_empty() { text.push_str(body); text.push('\n'); }
@@ -331,6 +352,7 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
     let mut assignee: Option<Option<String>> = None;
     let mut status: Option<String> = None;
     let mut plan: Option<bool> = None;
+    let mut limits = RunLimitsPatch::default();
     let (mut after, mut no_after) = (vec![], false);
     let (mut add, mut remove) = (vec![], vec![]);
     let mut iter = args.iter();
@@ -358,6 +380,7 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
             },
             "--after" => push_ids(&mut after, iter.next(), "--after", err),
             "--no-after" => { no_after = true; Ok(()) }
+            "--max-follow-ups" | "--permission-wait-minutes" => set_limit(&mut limits, arg, iter.next(), err),
             "--plan" | "--no-plan" if plan.is_some_and(|p| p != (arg == "--plan")) => Err(usage_error(err, "--plan cannot be combined with --no-plan")),
             "--plan" => { plan = Some(true); Ok(()) }
             "--no-plan" => { plan = Some(false); Ok(()) }
@@ -373,7 +396,7 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
     if after.is_some() && !(add.is_empty() && remove.is_empty()) {
         return usage_error(err, "--after/--no-after replace all prerequisites; do not combine them with --add-after/--remove-after");
     }
-    if title.is_none() && body.is_none() && assignee.is_none() && status.is_none() && plan.is_none() && after.is_none() && add.is_empty() && remove.is_empty() {
+    if title.is_none() && body.is_none() && assignee.is_none() && status.is_none() && plan.is_none() && limits == RunLimitsPatch::default() && after.is_none() && add.is_empty() && remove.is_empty() {
         return usage_error(err, "--edit needs at least one change");
     }
     if let Some(c) = title.as_deref().and_then(forbidden_control).or_else(|| body.as_deref().and_then(forbidden_control)) {
@@ -394,6 +417,7 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
     if let Some(title) = &title { text.push_str(&format!("title: {title}\n")); }
     if let Some(assignee) = &assignee { text.push_str(&format!("assignee: {}\n", assignee.as_deref().unwrap_or(""))); }
     if let Some(status) = &status { text.push_str(&format!("status: {status}\n")); }
+    write_limit_fields(&mut text, &limits);
     if let Some(plan) = plan { text.push_str(&format!("plan: {plan}\n")); }
     if let Some(after) = &after { text.push_str(&format!("after: {}\n", after.join(", "))); }
     if !add.is_empty() { text.push_str(&format!("add-after: {}\n", add.join(", "))); }
@@ -433,6 +457,9 @@ fn show(id: &str, json: bool, env: &TaskEnv, out: &mut dyn Write, err: &mut dyn 
     if !after.is_empty() { lines.push(format!("after: {}", after.join(", "))); }
     if item.get("plan").and_then(|v| v.as_bool()) == Some(true) {
         lines.push("plan root: yes (holds the plan memo; auto-run runs only the tasks it waits on)".into());
+    }
+    for (key, label) in [("maxFollowUps", "max-follow-ups"), ("permissionWaitMinutes", "permission-wait-minutes")] {
+        if let Some(n) = item.get(key).and_then(|value| value.as_u64()) { lines.push(format!("{label}: {n}")); }
     }
     let dependents = board.dependents(id);
     if !dependents.is_empty() { lines.push(format!("waited on by: {}", dependents.join(", "))); }
@@ -828,6 +855,22 @@ mod tests {
     }
 
     #[test]
+    fn run_limit_flags_roundtrip_through_inbox_and_distinguish_inherit_from_omitted() {
+        let (dir, env) = board(r#"[{"id":"w","title":"Existing","body":"","status":"todo","order":0}]"#);
+        assert_eq!(call(&["--permission-wait-minutes", "0", "Bad"], &env, "").0, 2);
+        assert_eq!(call(&["--edit", "w", "--max-follow-ups", "100"], &env, "").0, 2);
+        assert_eq!(call(&["--max-follow-ups", "0", "Step"], &env, "").0, 0);
+        assert_eq!(call(&["--edit", "w", "--max-follow-ups", "inherit", "--permission-wait-minutes", "42"], &env, "").0, 0);
+        let entries = scan(&dir.path().join("work-inbox"), std::time::SystemTime::now()).unwrap();
+        assert_eq!(entries.len(), 2);
+        let added = serde_json::to_value(entries.iter().find(|entry| entry.title == "Step").unwrap()).unwrap();
+        assert_eq!(added["maxFollowUps"], 0);
+        assert!(added.get("permissionWaitMinutes").is_none());
+        let edit = serde_json::to_value(entries.iter().find_map(|entry| entry.edit.as_ref()).unwrap()).unwrap();
+        assert_eq!(edit, serde_json::json!({"id":"w", "maxFollowUps":null, "permissionWaitMinutes":42}));
+    }
+
+    #[test]
     fn edit_writes_only_the_given_fields() {
         let (dir, env) = board(r#"[
             {"id":"w1","title":"A","body":"old","status":"todo","order":0,"dependsOn":["w0"]},
@@ -839,7 +882,7 @@ mod tests {
         let edit = requests(dir.path()).remove(0).edit.unwrap();
         assert_eq!(edit, crate::persistence::work_inbox::Edit {
             id: "w1".into(), title: Some("New title".into()), body: Some("# heading\n  kept".into()), assignee: Some("하나".into()),
-            after: None, add_after: vec!["w3".into()], remove_after: vec!["w0".into()], status: Some("review".into()), plan: None,
+            after: None, add_after: vec!["w3".into()], remove_after: vec!["w0".into()], status: Some("review".into()), plan: None, limits: Default::default(),
         });
         std::fs::remove_dir_all(dir.path().join("work-inbox")).unwrap();
         assert_eq!(call(&["--edit", "w1", "--unassigned", "--no-after"], &env, "").0, 0);

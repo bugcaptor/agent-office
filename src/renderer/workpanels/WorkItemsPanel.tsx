@@ -5,6 +5,7 @@ import type { WorkItem } from "@shared/types";
 import { useAppStore } from "../store/appStore";
 import { useWorkItemStore, WORK_STATUS_ORDER } from "./workItemStore";
 import { WorkPanelFrame } from "./WorkPanelFrame";
+import { validWorkLimits } from "./autoRunLimits";
 import { WorkEditor } from "./WorkEditor";
 import { EMPTY_WORK_DRAFT, hasWorkContent, hasWorkDraftChanges, workItemTitle, type WorkItemDraft } from "./workItemDraft";
 import { WorkCardMonitor } from "./WorkCardMonitor";
@@ -105,7 +106,7 @@ export function WorkItemsPanel() {
         {/* 대화는 저장된 태스크로 맥락을 만든다. 터미널은 팝업 뒤에 열리므로 둘 다 초안을 둔 채 팝업을 닫는다. */}
         <TaskChatButton chat={chat} label={t("taskChat.open")} title={dirty ? t("taskChat.savedOnly") : undefined} hintId="work-chat-hint" />
         {terminalAgent && agents[terminalAgent] && <button className="pixel-btn" onClick={() => { select(null); openTerminal(terminalAgent); }}>{t("terminal")}</button>}
-        <button className="pixel-btn primary work-send-btn" disabled={sending || !!blockedReason || !hasWorkContent(value)} aria-describedby={blockedReason ? "work-send-hint" : undefined}
+        <button className="pixel-btn primary work-send-btn" disabled={sending || !!blockedReason || !hasWorkContent(value) || !validWorkLimits(value)} aria-describedby={blockedReason ? "work-send-hint" : undefined}
           onClick={() => void send()}>{t(sending ? "sending" : dirty ? "saveAndSend" : "send")}</button>
       </div>
       {chat.hint && <p id="work-chat-hint" className="work-send-hint">{chat.hint}</p>}

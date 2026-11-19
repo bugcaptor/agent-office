@@ -31,6 +31,7 @@ function toRequest(entry: InboxEntry, profiles: Pick<AgentProfile, "id" | "name"
   return { kind: "edit", id: edit.id, patch: {
     title: edit.title, body: edit.body, status: edit.status, assigneeAgentId,
     dependsOn: edit.after, addDependsOn: edit.addAfter, removeDependsOn: edit.removeAfter, plan: edit.plan,
+    maxFollowUps: edit.maxFollowUps, permissionWaitMinutes: edit.permissionWaitMinutes,
   } };
 }
 
@@ -57,6 +58,7 @@ async function receive(epoch: number): Promise<void> {
     const imported = useWorkItemStore.getState().importInbox(additions.map((entry) => ({
       id: inboxItemId(entry), title: entry.title, body: entry.body,
       assigneeAgentId: resolveAssignee(entry.assignee, profiles), dependsOn: entry.after, plan: entry.plan || undefined,
+      maxFollowUps: entry.maxFollowUps ?? undefined, permissionWaitMinutes: entry.permissionWaitMinutes ?? undefined,
     })));
     const applied = requests.length ? useWorkItemStore.getState().applyInbox(requests.map((entry) => toRequest(entry, profiles))) : [];
     await useWorkItemStore.getState().flush();

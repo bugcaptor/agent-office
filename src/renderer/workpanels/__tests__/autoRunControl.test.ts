@@ -17,7 +17,7 @@ import { useAppStore } from "../../store/appStore";
 import { useWorkItemStore } from "../workItemStore";
 import { settleWorkSends, useWorkSendStore } from "../workSendStore";
 import { useWorkMonitorStore } from "../workMonitor";
-import { checkPermissionWaits, ctlResumesSinceSend, isAutoRunStepping, MAX_CTL_RESUMES, PERMISSION_TIMEOUT_MS } from "../autoRun";
+import { checkPermissionWaits, ctlResumesSinceSend, isAutoRunStepping, MAX_CTL_RESUMES } from "../autoRun";
 import { handleAutoRunControl } from "../autoRunControl";
 
 const initialApp = useAppStore.getState(); const initialWork = useWorkItemStore.getState();
@@ -117,10 +117,23 @@ describe("CLI 자동 진행 제어", () => {
 });
 
 describe("권한 승인 대기 시간 초과", () => {
+  it("태스크가 지정한 대기 시간을 우선하고 비우면 플랜 값을 적용한다", () => {
+    const { root, step } = inFlight();
+    const { edit } = useWorkItemStore.getState();
+    edit(root, { permissionWaitMinutes: 2 });
+    edit(step, { permissionWaitMinutes: 4 });
+    useWorkMonitorStore.setState({ sessions: { s1: { phase: "waiting", at: 1000, agentId: "a", transition: false } } });
+    checkPermissionWaits(121000);
+    expect(get(root).autoRun!.state).toBe("running");
+    edit(step, { permissionWaitMinutes: undefined });
+    checkPermissionWaits(121000);
+    expect(get(root).autoRun?.pauseReason).toBe("permission-timeout");
+  });
   it("승인 대기가 길어지면 멈추고, 계속을 누른 뒤로는 다시 잰다", () => {
     const now = 10_000_000;
+    const timeout = 10 * 60_000;
     const { root } = inFlight();
-    useWorkMonitorStore.setState({ sessions: { s1: { phase: "waiting", at: now - PERMISSION_TIMEOUT_MS + 1000, agentId: "a", transition: false } } });
+    useWorkMonitorStore.setState({ sessions: { s1: { phase: "waiting", at: now - timeout + 1000, agentId: "a", transition: false } } });
     checkPermissionWaits(now);
     expect(get(root).autoRun!.state).toBe("running");
     checkPermissionWaits(now + 1000);
@@ -129,11 +142,11 @@ describe("권한 승인 대기 시간 초과", () => {
     // CLI가 이어 가면 그때부터 다시 잰다.
     expect(control("resume", root)).toBeUndefined();
     const resumedAt = lastLog(root).at;
-    checkPermissionWaits(resumedAt + PERMISSION_TIMEOUT_MS - 1);
+    checkPermissionWaits(resumedAt + timeout - 1);
     expect(get(root).autoRun!.state).toBe("running");
     // 작업 중이면 재지 않는다.
     useWorkMonitorStore.setState({ sessions: { s1: { phase: "working", at: 1, agentId: "a", transition: false } } });
-    checkPermissionWaits(resumedAt + PERMISSION_TIMEOUT_MS * 3);
+    checkPermissionWaits(resumedAt + timeout * 3);
     expect(get(root).autoRun!.state).toBe("running");
   });
 });

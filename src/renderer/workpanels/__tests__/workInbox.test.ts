@@ -134,18 +134,20 @@ describe("receive loop", () => {
   it("플랜 루트 표시를 받아 저장하고 수정 요청으로 켜고 끈다", async () => {
     api.scanWorkInbox.mockResolvedValueOnce([
       entry("1.md", "Step", { id: "t-1" }),
-      entry("2.md", "Goal", { id: "t-2", after: ["t-1"], plan: true }),
+      entry("2.md", "Goal", { id: "t-2", after: ["t-1"], plan: true, permissionWaitMinutes: 30, maxFollowUps: 5 }),
     ]).mockResolvedValueOnce([
-      { fileName: "3.md", key: "3".padEnd(16, "0"), title: "", body: "", edit: { id: "t-2", plan: false } },
-      { fileName: "4.md", key: "4".padEnd(16, "0"), title: "", body: "", edit: { id: "t-1", plan: true } },
+      { fileName: "3.md", key: "3".padEnd(16, "0"), title: "", body: "", edit: { id: "t-2", plan: false, maxFollowUps: null } },
+      { fileName: "4.md", key: "4".padEnd(16, "0"), title: "", body: "", edit: { id: "t-1", plan: true, maxFollowUps: 0 } },
     ]);
     startWorkInbox(); await vi.advanceTimersByTimeAsync(3000);
     const find = (id: string) => useWorkItemStore.getState().items.find((i) => i.id === id);
-    expect(find("t-2")?.plan).toBe(true);
+    expect(find("t-2")).toMatchObject({ plan: true, maxFollowUps: 5, permissionWaitMinutes: 30 });
     expect(find("t-1")?.plan).toBeUndefined();
     await vi.advanceTimersByTimeAsync(3000);
     expect(find("t-2")?.plan).toBeUndefined();
-    expect(find("t-1")?.plan).toBe(true);
+    expect(find("t-2")?.maxFollowUps).toBeUndefined();
+    expect(find("t-2")?.permissionWaitMinutes).toBe(30);
+    expect(find("t-1")).toMatchObject({ plan: true, maxFollowUps: 0 });
   });
   it("저장 뒤 건너뛴 파일까지 ack하고 담당을 판정한다", async () => {
     useWorkItemStore.getState().importInbox([{ id: `inbox-${entry("old.md", "").key}`, title: "Old", body: "" }]);

@@ -113,6 +113,26 @@ describe("자동 진행 계획", () => {
 });
 
 describe("자동 진행 루프", () => {
+  it("플랜 한도를 상속하고 태스크의 0회 설정과 재개 전 한도 수정을 따른다", async () => {
+    const { root, a } = plan();
+    const { edit } = useWorkItemStore.getState();
+    edit(root, { maxFollowUps: 5 });
+    edit(a, { maxFollowUps: 0 });
+    api.autoRunJudge.mockResolvedValue(judged("followup", "Run tests"));
+    startAutoRun(root);
+    await settled(root);
+    turnEnded(a);
+    await settled(root);
+    expect(get(root).autoRun).toMatchObject({ state: "paused", pauseReason: "followup-limit", followUps: 0 });
+    expect(api.sendWorkFollowUp).not.toHaveBeenCalled();
+    expect(api.autoRunJudge.mock.calls[0][0].prompt).toContain("0/0");
+    edit(a, { maxFollowUps: undefined });
+    resumeAutoRun(root);
+    await settled(root);
+    expect(api.autoRunJudge.mock.calls[1][0].prompt).toContain("0/5");
+    expect(api.sendWorkFollowUp).toHaveBeenCalledTimes(1);
+    expect(get(root).autoRun?.followUps).toBe(1);
+  });
   it("태스크를 차례로 보내고 판단에 따라 완료·후속 지시·정지·마침을 적용한다", async () => {
     const { a, b, root } = plan();
     api.autoRunJudge
