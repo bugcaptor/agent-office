@@ -370,7 +370,7 @@
       "missed": "L’échéance a été manquée pendant que l’application était fermée ou en veille.",
       "previous-open": "L’exécution précédente n’est pas encore terminée.",
       "agent-working": "Le personnage assigné travaille ou attend une réponse.",
-      "agent-unknown": "Impossible de confirmer pour l’instant que la CLI du personnage assigné est inactive : sa session n’a pas été remplacée. Les exécutions reprennent dès qu’un tour se termine dans cette session.",
+      "agent-session": "Une CLI est ouverte dans le terminal du personnage assigné : rien n’a été envoyé pour ne pas couper la conversation. Quittez la CLI et les exécutions suivantes auront lieu.",
       "blocked": "Impossible de l’exécuter.",
       "failed": "Impossible de l’envoyer."
     },

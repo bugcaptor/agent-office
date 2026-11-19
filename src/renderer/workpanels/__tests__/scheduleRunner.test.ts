@@ -83,27 +83,28 @@ describe("반복 예약", () => {
     expect(notify).toHaveBeenCalledTimes(1);
     expect(api.sendWorkItem).not.toHaveBeenCalled();
   });
-  it("CLI가 떠 있는 세션은 턴이 끝난 것을 본 때만 새 세션으로 바꾼다", async () => {
+  it("CLI가 떠 있으면 쉬는 중이어도 대화를 끊지 않고 건너뛴다", async () => {
     const id = task("Daily check", {}, daily());
     const live: WorkSendTarget = { sessionId: "s0", humanInputRevision: 0, restartRequired: true, hasUncommitted: false };
     api.inspectWorkSendTarget.mockResolvedValue(live);
     const retry = async () => { useWorkItemStore.getState().setSchedule(id, daily()); await checkSchedules(NOW); return get(id).schedule!.lastSkip; };
-    // 앱을 다시 켠 뒤처럼 이 세션의 신호가 아직 없다.
-    expect(await retry()).toEqual({ at: NINE, reason: "agent-unknown" });
-    useWorkMonitorStore.setState({ sessions: { s0: { phase: "working", at: 1, agentId: "a", transition: true } } });
+    // 앱을 다시 켠 뒤처럼 이 세션의 신호가 없거나, 턴을 마치고 쉬는 중이다.
+    expect(await retry()).toEqual({ at: NINE, reason: "agent-session" });
+    useWorkMonitorStore.setState({ sessions: { s0: { phase: "review", at: 1, agentId: "a", transition: true } } });
+    expect(await retry()).toEqual({ at: NINE, reason: "agent-session" });
+    useWorkMonitorStore.setState({ sessions: { s0: { phase: "working", at: 2, agentId: "a", transition: true } } });
     expect(await retry()).toEqual({ at: NINE, reason: "agent-working" });
-    useWorkMonitorStore.setState({ sessions: { s0: { phase: "waiting", at: 2, agentId: "a", transition: false } } });
+    useWorkMonitorStore.setState({ sessions: { s0: { phase: "waiting", at: 3, agentId: "a", transition: false } } });
     expect(await retry()).toEqual({ at: NINE, reason: "agent-working" });
     api.inspectWorkSendTarget.mockResolvedValue({ ...live, hasUncommitted: true });
-    useWorkMonitorStore.setState({ sessions: { s0: { phase: "review", at: 3, agentId: "a", transition: true } } });
     expect(await retry()).toEqual({ at: NINE, reason: "blocked", detail: "work-send-human-input" });
     expect(restart).not.toHaveBeenCalled();
     expect(runsOf(id)).toEqual([]);
-    // 턴이 끝난 세션이면 자동 진행처럼 새 세션으로 바꿔 보낸다.
-    api.inspectWorkSendTarget.mockResolvedValueOnce(live).mockResolvedValueOnce(live).mockResolvedValueOnce(live).mockResolvedValue(shell);
+    // 셸 프롬프트면 그 세션에 보낸다.
+    api.inspectWorkSendTarget.mockResolvedValue(shell);
     useWorkItemStore.getState().setSchedule(id, daily());
     await checkSchedules(NOW);
-    expect(restart).toHaveBeenCalledTimes(1);
+    expect(restart).not.toHaveBeenCalled();
     expect(runsOf(id)[0]).toMatchObject({ status: "in_progress", sessionIds: ["s"] });
   });
   it("관찰이 꺼져 있으면 건너뛰고, 업무 패널이 꺼져 있으면 실행하지 않는다", async () => {

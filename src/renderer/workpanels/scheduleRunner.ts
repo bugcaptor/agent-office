@@ -27,9 +27,8 @@ const find = (id: string) => useWorkItemStore.getState().items.find((item) => it
 type Skip = { reason: WorkScheduleSkipReason; detail?: string };
 
 /**
- * 담당 캐릭터의 지금 세션을 바꿔도 되는가. CLI가 떠 있으면 보내기는 새 세션으로 재시작하므로,
- * 훅으로 턴이 끝난 것을 본 세션만 바꾼다. 턴 중·응답 대기는 물론, 상태를 모르는 세션(앱을 다시 켠 뒤
- * 아직 신호가 없는 입양 세션 등)도 바꾸지 않는다.
+ * 담당 캐릭터의 세션에 보내도 되는가. CLI가 떠 있으면 보내기는 새 세션으로 재시작해 나누던 대화를
+ * 끊으므로, 쉬는 중이어도 건너뛴다. 세션이 없거나 셸 프롬프트일 때만 보낸다.
  */
 async function sessionCheck(agentId: string): Promise<Skip | undefined> {
   let target;
@@ -39,9 +38,7 @@ async function sessionCheck(agentId: string): Promise<Skip | undefined> {
   if (!target.restartRequired || !target.sessionId) return undefined;
   if (target.hasUncommitted) return { reason: "blocked", detail: "work-send-human-input" };
   const phase = useWorkMonitorStore.getState().sessions[target.sessionId]?.phase;
-  if (phase === "working" || phase === "waiting") return { reason: "agent-working" };
-  if (phase !== "review" && phase !== "ended") return { reason: "agent-unknown" };
-  return undefined;
+  return { reason: phase === "working" || phase === "waiting" ? "agent-working" : "agent-session" };
 }
 
 /** 실행 전에 알 수 있는 막힘. 플랜의 나머지 조건은 `startAutoRun`이 복제본에서 다시 본다. */
