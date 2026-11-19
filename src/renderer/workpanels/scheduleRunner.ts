@@ -6,6 +6,7 @@ import type { WorkItem, WorkSchedule, WorkScheduleSkipReason } from "@shared/typ
 import { t } from "../i18n";
 import { useAppStore } from "../store/appStore";
 import { maybeSendOsNotification } from "../ipc/osNotify";
+import { tauriApi } from "../ipc/tauriApi";
 import { useWorkItemStore } from "./workItemStore";
 import { useWorkMonitorStore } from "./workMonitor";
 import { requestWorkSend, useWorkSendStore, workSendDisabledReason } from "./workSendStore";
@@ -14,6 +15,7 @@ import { workItemTitle } from "./workItemDraft";
 import { planItems, startAutoRun } from "./autoRun";
 import { codeText } from "./sendErrorText";
 import { hasOpenRun, isRecurring, nextOccurrence } from "./workSchedule";
+import { sameWorkValue } from "./workItemSync";
 
 /** 예정 시각을 이만큼 넘겨서 알아챘으면(앱 꺼짐·잠자기) 놓친 회차로 보고 건너뛴다. */
 export const MISSED_GRACE_MS = 5 * 60_000;
@@ -22,19 +24,28 @@ const CHECK_MS = 15_000;
 const firing = new Set<string>();
 const find = (id: string) => useWorkItemStore.getState().items.find((item) => item.id === id);
 
-/** 담당 캐릭터의 가장 최근 세션이 턴 중이거나 사람 응답을 기다리는가. 사람과 대화 중인 세션을 갈아 끼우지 않는다. */
-function agentWorking(agentId: string): boolean {
-  let latest: { phase: string; at: number } | undefined;
-  for (const observed of Object.values(useWorkMonitorStore.getState().sessions)) {
-    if (observed.agentId === agentId && (!latest || observed.at > latest.at)) latest = observed;
-  }
-  return latest?.phase === "working" || latest?.phase === "waiting";
-}
-
 type Skip = { reason: WorkScheduleSkipReason; detail?: string };
 
+/**
+ * 담당 캐릭터의 지금 세션을 바꿔도 되는가. CLI가 떠 있으면 보내기는 새 세션으로 재시작하므로,
+ * 훅으로 턴이 끝난 것을 본 세션만 바꾼다. 턴 중·응답 대기는 물론, 상태를 모르는 세션(앱을 다시 켠 뒤
+ * 아직 신호가 없는 입양 세션 등)도 바꾸지 않는다.
+ */
+async function sessionCheck(agentId: string): Promise<Skip | undefined> {
+  let target;
+  try { target = await tauriApi.inspectWorkSendTarget(agentId); } catch (error) {
+    return { reason: "blocked", detail: error instanceof Error ? error.message : String(error) };
+  }
+  if (!target.restartRequired || !target.sessionId) return undefined;
+  if (target.hasUncommitted) return { reason: "blocked", detail: "work-send-human-input" };
+  const phase = useWorkMonitorStore.getState().sessions[target.sessionId]?.phase;
+  if (phase === "working" || phase === "waiting") return { reason: "agent-working" };
+  if (phase !== "review" && phase !== "ended") return { reason: "agent-unknown" };
+  return undefined;
+}
+
 /** 실행 전에 알 수 있는 막힘. 플랜의 나머지 조건은 `startAutoRun`이 복제본에서 다시 본다. */
-function precheck(item: WorkItem, items: WorkItem[], recurring: boolean, plan: boolean): Skip | undefined {
+async function precheck(item: WorkItem, items: WorkItem[], recurring: boolean, plan: boolean): Promise<Skip | undefined> {
   if (!recurring && item.status !== "todo") return { reason: "blocked", detail: "schedule-not-todo" };
   if (recurring && hasOpenRun(item.id, items)) return { reason: "previous-open" };
   const agentId = item.assigneeAgentId;
@@ -43,9 +54,10 @@ function precheck(item: WorkItem, items: WorkItem[], recurring: boolean, plan: b
   const profile = workSendDisabledReason(agent);
   if (profile) return { reason: "blocked", detail: profile };
   if (Object.values(useWorkSendStore.getState().busy).includes(agent.id)) return { reason: "blocked", detail: "work-send-busy" };
-  if (agentWorking(agent.id)) return { reason: "agent-working" };
   if (!plan && pendingPrerequisites(item, items).length) return { reason: "blocked", detail: "work-send-blocked" };
-  return undefined;
+  // 턴 상태를 알아야 세션을 바꿀지 정할 수 있다. 자동 진행과 같은 조건이다.
+  if (!useAppStore.getState().appSettings.observerEnabled) return { reason: "blocked", detail: "auto-run-observer-off" };
+  return sessionCheck(agent.id);
 }
 
 export function skipText(skip: Skip): string {
@@ -56,7 +68,9 @@ export function skipText(skip: Skip): string {
   return `${reason} ${detail}`;
 }
 
-function notifySkip(item: WorkItem, skip: Skip): void {
+/** 같은 이유로 거듭 건너뛰면(짧은 간격 예약) 처음 한 번만 알린다. 이유는 예약 영역에 계속 남는다. */
+function notifySkip(item: WorkItem, skip: Skip, previous?: Skip): void {
+  if (previous && previous.reason === skip.reason && previous.detail === skip.detail) return;
   void maybeSendOsNotification(t("workpanels:schedule.skippedTitle", { title: workItemTitle(item) }), skipText(skip));
 }
 
@@ -70,7 +84,9 @@ async function fire(id: string, now: number): Promise<void> {
   const recurring = isRecurring(item);
   const items = store.items;
   const plan = planItems(item, items).length > 0;
-  const skip: Skip | undefined = now - due > MISSED_GRACE_MS ? { reason: "missed" } : precheck(item, items, recurring, plan);
+  const skip: Skip | undefined = now - due > MISSED_GRACE_MS ? { reason: "missed" } : await precheck(item, items, recurring, plan);
+  // 점검하는 동안 사람이 예약을 바꾸거나 껐으면 이번 판단을 버린다.
+  if (!sameWorkValue(find(id)?.schedule, schedule)) return;
   // 다음 회차를 먼저 저장한다. 한 번 예약은 실행하면 지우고, 건너뛰면 꺼서 이유를 남긴다.
   const lastSkip = skip ? { at: due, ...skip } : schedule.lastSkip;
   const advanced: WorkSchedule | undefined = recurring
@@ -80,7 +96,7 @@ async function fire(id: string, now: number): Promise<void> {
   await useWorkItemStore.getState().flush();
   // 저장하지 못했으면 실행하지 않는다. 다시 켜졌을 때 같은 회차를 또 실행할 수 있어서다.
   if (useWorkItemStore.getState().error) return;
-  if (skip) { notifySkip(item, skip); return; }
+  if (skip) { notifySkip(item, skip, schedule.lastSkip); return; }
 
   const members = plan ? planItems(item, items).map((member) => member.id) : [];
   const clones = recurring ? useWorkItemStore.getState().cloneScheduled(id, members) : [id];
@@ -93,7 +109,8 @@ async function fire(id: string, now: number): Promise<void> {
   } else {
     await requestWorkSend(runId, { auto: true });
     const sent = find(runId);
-    if (sent?.lastError && !sent.sessionIds.length) failure = { reason: "failed", detail: sent.lastError };
+    // 같은 캐릭터의 다른 보내기에 합류하면 오류 없이 끝난다. 세션이 없으면 보내지 못한 것이다.
+    if (!sent?.sessionIds.length) failure = { reason: "failed", detail: sent?.lastError ?? "work-send-busy" };
   }
   if (!failure) return;
   // 시작도 못 한 복제본은 지운다. 남기면 다음 회차가 "지난 회차가 안 끝남"으로 계속 막힌다.
@@ -103,13 +120,16 @@ async function fire(id: string, now: number): Promise<void> {
   useWorkItemStore.getState().setSchedule(id, recurring && latest ? { ...latest, lastRunAt: schedule.lastRunAt, lastSkip: failed }
     : { rule: schedule.rule, enabled: false, lastRunAt: schedule.lastRunAt, lastSkip: failed });
   void useWorkItemStore.getState().flush();
-  notifySkip(item, failure);
+  notifySkip(item, failure, schedule.lastSkip);
 }
 
 /** 때가 된 예약을 차례로 실행한다. 테스트가 직접 부른다. */
 export async function checkSchedules(now = Date.now()): Promise<void> {
   const state = useWorkItemStore.getState();
   if (!state.loaded || state.error) return;
+  // 업무 패널을 끈 동안이나 종료 확인 중에는 실행하지 않는다(수신함과 같은 수명). 그 사이 지난 회차는 놓친 것으로 건너뛴다.
+  const app = useAppStore.getState();
+  if (!app.appSettings.workPanelsEnabled || app.modal.kind === "confirm-quit") return;
   const due = state.items.filter((item) => item.schedule?.enabled && item.schedule.nextAt !== undefined && item.schedule.nextAt <= now && !firing.has(item.id));
   for (const item of due) {
     firing.add(item.id);

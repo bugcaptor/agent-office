@@ -370,6 +370,7 @@
       "missed": "The scheduled time was missed while the app was closed or asleep.",
       "previous-open": "The previous run has not finished yet.",
       "agent-working": "The assignee is working or waiting for a reply.",
+      "agent-unknown": "Could not yet confirm that the assignee's CLI is idle, so its session was not replaced. Runs resume once a turn ends in that session.",
       "blocked": "It could not run.",
       "failed": "It could not be sent."
     },

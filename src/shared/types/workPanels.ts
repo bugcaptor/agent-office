@@ -44,7 +44,8 @@ export type WorkScheduleRule =
   /** 매주 고른 요일(0=일요일)의 `time`(HH:MM). */
   | { kind: "weekly"; days: number[]; time: string };
 /** 예약 회차를 건너뛴 이유. `missed`는 앱이 꺼져 있거나 잠자기 중이라 예정 시각을 놓친 것이다. */
-export type WorkScheduleSkipReason = "missed" | "previous-open" | "agent-working" | "blocked" | "failed";
+/** `agent-unknown`은 담당 세션의 CLI가 쉬는 중인지 훅으로 확인하지 못해 세션을 바꾸지 않은 것이다. */
+export type WorkScheduleSkipReason = "missed" | "previous-open" | "agent-working" | "agent-unknown" | "blocked" | "failed";
 export interface WorkSchedule {
   rule: WorkScheduleRule;
   /** 켜져 있을 때만 실행한다. CLI·수신함·외부 편집이 만들거나 바꾼 예약은 꺼진 채로 둔다. */

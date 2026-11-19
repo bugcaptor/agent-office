@@ -44,7 +44,7 @@ beforeEach(() => {
   api.autoRunReport.mockResolvedValue(null);
   restart.mockResolvedValue({ sessionId: "s", state: "running" }); reserve.mockReturnValue(vi.fn()); flushProfile.mockResolvedValue(undefined);
   useAppStore.setState(initialApp, true);
-  useAppStore.setState({ agents: { a: profile }, agentOrder: ["a"], appSettings: { ...initialApp.appSettings, observerEnabled: true } });
+  useAppStore.setState({ agents: { a: profile }, agentOrder: ["a"], appSettings: { ...initialApp.appSettings, observerEnabled: true, workPanelsEnabled: true } });
   useWorkItemStore.setState({ ...initialWork, loaded: true }, true);
   useWorkSendStore.setState({ busy: {}, confirmation: null }); useWorkMonitorStore.setState({ sessions: {} });
 });
@@ -72,17 +72,64 @@ describe("반복 예약", () => {
     expect(get(id).schedule).toMatchObject({ enabled: true, nextAt: new Date(2026, 10, 20, 9).getTime(), lastSkip: { at: NINE, reason: "missed" } });
     expect(notify).toHaveBeenCalledTimes(1);
   });
-  it("지난 회차가 안 끝났거나 담당이 작업 중이면 건너뛴다", async () => {
+  it("지난 회차가 안 끝났으면 건너뛰고, 같은 이유가 이어지면 처음만 알린다", async () => {
     const id = task("Daily check", {}, daily());
     const open = task("old run"); useWorkItemStore.setState({ items: items().map((i) => i.id === open ? { ...i, scheduledFrom: id } : i) });
     await checkSchedules(NOW);
     expect(get(id).schedule!.lastSkip).toEqual({ at: NINE, reason: "previous-open" });
-    useWorkItemStore.getState().remove(open);
-    useWorkItemStore.getState().setSchedule(id, daily());
-    useWorkMonitorStore.setState({ sessions: { s0: { phase: "working", at: 1, agentId: "a", transition: true } } });
-    await checkSchedules(NOW);
-    expect(get(id).schedule!.lastSkip).toEqual({ at: NINE, reason: "agent-working" });
+    const next = get(id).schedule!.nextAt!;
+    await checkSchedules(next + 1000);
+    expect(get(id).schedule!.lastSkip).toEqual({ at: next, reason: "previous-open" });
+    expect(notify).toHaveBeenCalledTimes(1);
     expect(api.sendWorkItem).not.toHaveBeenCalled();
+  });
+  it("CLI가 떠 있는 세션은 턴이 끝난 것을 본 때만 새 세션으로 바꾼다", async () => {
+    const id = task("Daily check", {}, daily());
+    const live: WorkSendTarget = { sessionId: "s0", humanInputRevision: 0, restartRequired: true, hasUncommitted: false };
+    api.inspectWorkSendTarget.mockResolvedValue(live);
+    const retry = async () => { useWorkItemStore.getState().setSchedule(id, daily()); await checkSchedules(NOW); return get(id).schedule!.lastSkip; };
+    // 앱을 다시 켠 뒤처럼 이 세션의 신호가 아직 없다.
+    expect(await retry()).toEqual({ at: NINE, reason: "agent-unknown" });
+    useWorkMonitorStore.setState({ sessions: { s0: { phase: "working", at: 1, agentId: "a", transition: true } } });
+    expect(await retry()).toEqual({ at: NINE, reason: "agent-working" });
+    useWorkMonitorStore.setState({ sessions: { s0: { phase: "waiting", at: 2, agentId: "a", transition: false } } });
+    expect(await retry()).toEqual({ at: NINE, reason: "agent-working" });
+    api.inspectWorkSendTarget.mockResolvedValue({ ...live, hasUncommitted: true });
+    useWorkMonitorStore.setState({ sessions: { s0: { phase: "review", at: 3, agentId: "a", transition: true } } });
+    expect(await retry()).toEqual({ at: NINE, reason: "blocked", detail: "work-send-human-input" });
+    expect(restart).not.toHaveBeenCalled();
+    expect(runsOf(id)).toEqual([]);
+    // 턴이 끝난 세션이면 자동 진행처럼 새 세션으로 바꿔 보낸다.
+    api.inspectWorkSendTarget.mockResolvedValueOnce(live).mockResolvedValueOnce(live).mockResolvedValueOnce(live).mockResolvedValue(shell);
+    useWorkItemStore.getState().setSchedule(id, daily());
+    await checkSchedules(NOW);
+    expect(restart).toHaveBeenCalledTimes(1);
+    expect(runsOf(id)[0]).toMatchObject({ status: "in_progress", sessionIds: ["s"] });
+  });
+  it("관찰이 꺼져 있으면 건너뛰고, 업무 패널이 꺼져 있으면 실행하지 않는다", async () => {
+    const id = task("Daily check", {}, daily());
+    useAppStore.setState({ appSettings: { ...useAppStore.getState().appSettings, workPanelsEnabled: false } });
+    await checkSchedules(NOW);
+    expect(get(id).schedule).toEqual(daily());
+    useAppStore.setState({ appSettings: { ...useAppStore.getState().appSettings, workPanelsEnabled: true, observerEnabled: false } });
+    await checkSchedules(NOW);
+    expect(get(id).schedule!.lastSkip).toEqual({ at: NINE, reason: "blocked", detail: "auto-run-observer-off" });
+    expect(api.sendWorkItem).not.toHaveBeenCalled();
+  });
+  it("다른 보내기에 합류해 세션 없이 끝나도 실패로 보고 복제본을 지운다", async () => {
+    const id = task("Daily check", {}, daily());
+    const other = task("Manual");
+    let release: (value: unknown) => void = () => {};
+    api.sendWorkItem.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const manual = requestWorkSend(other);
+    await vi.waitFor(() => expect(api.sendWorkItem).toHaveBeenCalledTimes(1));
+    useWorkSendStore.setState({ busy: {} }); // 점검을 지나 합류 경로까지 가게 한다.
+    const fired = checkSchedules(NOW);
+    await vi.waitFor(() => expect(runsOf(id)).toHaveLength(1));
+    release({ sessionId: "s", submittedAt: 100 });
+    await manual; await fired;
+    expect(runsOf(id)).toEqual([]);
+    expect(get(id).schedule!.lastSkip).toMatchObject({ reason: "failed", detail: "work-send-busy" });
   });
   it("보내지 못한 복제본은 지우고 이유를 남긴다", async () => {
     const id = task("Daily check", {}, daily());
