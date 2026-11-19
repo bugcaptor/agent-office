@@ -53,8 +53,9 @@ export function addTurn(
   totals: SessionUsageTotals,
   tokens: SessionEventTokens,
   partial = false,
+  at = Date.now(),
 ): SessionUsageTotals {
-  const cost = estimateCostBreakdown(tokens);
+  const cost = estimateCostBreakdown(tokens, at);
   return {
     input: totals.input + (tokens.input ?? 0),
     output: totals.output + (tokens.output ?? 0),
@@ -108,7 +109,7 @@ export function aggregateSeed(
   for (const r of records) {
     if (!r.tokens || r.at > maxAt) continue;
     const prev = out[r.sessionId] ?? emptyTotals();
-    out[r.sessionId] = addTurn(prev, r.tokens, r.partial ?? false);
+    out[r.sessionId] = addTurn(prev, r.tokens, r.partial ?? false, r.at);
   }
   return out;
 }

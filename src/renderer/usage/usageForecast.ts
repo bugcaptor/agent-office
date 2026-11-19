@@ -92,8 +92,8 @@ function fallbackCost(tokens: SessionModelTokens): number {
 }
 
 /** 턴 하나의 비용. 요율을 모르는 모델이 섞이면 대표 요율로 센다. */
-export function tokensCost(tokens: SessionEventTokens): number {
-  const known = estimateCostBreakdown(tokens);
+export function tokensCost(tokens: SessionEventTokens, at = Date.now()): number {
+  const known = estimateCostBreakdown(tokens, at);
   if (known && !known.hasUnknown) return known.costUsd;
   return Math.max(known?.costUsd ?? 0, fallbackCost(tokens));
 }

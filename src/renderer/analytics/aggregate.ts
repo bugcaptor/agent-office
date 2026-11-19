@@ -330,7 +330,7 @@ export function dailySummary(
       cell.tokensOut += ev.tokens.output ?? 0;
       cell.tokensCacheRead += ev.tokens.cacheRead ?? 0;
       cell.tokensCacheWrite += ev.tokens.cacheWrite ?? 0;
-      const cost = estimateCostBreakdown(ev.tokens);
+      const cost = estimateCostBreakdown(ev.tokens, ev.at);
       cell.costUsd += cost?.costUsd ?? 0;
       if (cost === null || cost.hasUnknown) cell.costUnknownTurns += 1;
     }

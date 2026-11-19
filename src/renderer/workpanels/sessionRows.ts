@@ -61,7 +61,7 @@ export function buildSessionRows(events: readonly SessionEventRecord[], summarie
     for (const e of group) {
       if (!e.tokens) continue;
       for (const tokens of e.tokens.byModel?.length ? e.tokens.byModel : [e.tokens]) {
-        const cost = estimateCostBreakdown(tokens);
+        const cost = estimateCostBreakdown(tokens, e.at);
         const entry = usage.get(tokens.model ?? "") ?? { model: tokens.model, tokens: 0, costUsd: 0, unknown: false };
         entry.tokens += (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.cacheRead ?? 0) + (tokens.cacheWrite ?? 0);
         entry.costUsd += cost?.costUsd ?? 0; entry.unknown ||= cost?.hasUnknown ?? true;

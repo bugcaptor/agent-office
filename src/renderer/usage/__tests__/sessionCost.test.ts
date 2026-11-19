@@ -136,6 +136,18 @@ describe("mergeTotals", () => {
 });
 
 describe("aggregateSeed", () => {
+  it("다시 연 세션의 GPT-6.2와 Gemini 비용을 각 사용 시점의 단가로 복원한다", () => {
+    const december = Date.UTC(2026, 11, 1);
+    const tokens = { byModel: [
+      { model: "gpt-6.2-astra", input: 1_000_000, cacheRead: 1_000_000 },
+      { model: "gemini-4-carbon-high", output: 1_000_000 },
+    ] };
+    const records = [record({ at: december - 1, tokens }), record({ at: december, tokens })];
+    const { s1 } = aggregateSeed(records, december);
+    expect(s1.costUsd).toBeCloseTo(46.8);
+    expect(s1.costUnknownTurns).toBe(0);
+  });
+
   it("kind 불문 tokens 존재·at<=maxAt인 레코드만 sessionId별로 합산한다", () => {
     const records: SessionEventRecord[] = [
       // 과거 파일: 토큰이 kind=stop에 실려 있다.

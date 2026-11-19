@@ -4,11 +4,11 @@
 // aggregate.ts와 같은 결의 순수 모듈이라 vitest로 값싸게 경계를 검증한다.
 //
 // ⚠️ 여기 숫자는 **대표값**이며 실제 청구액이 아니다. 구간별 장문(long-context)
-// 할증, 배치/프로모션 할인, 계약 단가, 구독제(정액) 사용은 반영하지 않는다.
+// 할증, 배치 할인, 계약 단가, 구독제(정액) 사용은 반영하지 않는다.
 // 화면에도 "추정치"라고 못박아 표시한다. 요율이 바뀌면 아래 단가표만 고치면
 // 되고, 집계·표시 코드는 손댈 필요가 없다.
 //
-// OpenAI·Anthropic 표 기준: 2026-11-10 공식 API 기본 요율.
+// 2026-11-19 확인. 표준 텍스트 API의 짧은 컨텍스트를 기준으로 한다.
 // 캐시 할인율도 버전마다 다르므로 입력·출력·캐시 읽기·쓰기를 각각 기록한다.
 import type { SessionEventTokens, SessionModelTokens } from "@shared/types";
 
@@ -21,19 +21,8 @@ export interface ModelRate {
 }
 
 /**
- * 모델 ID 부분문자열 패턴 → 요율. **위에서 아래로 첫 일치**를 쓰므로 더
- * 구체적인 패턴을 위에 둔다(예: "gemini-2.5-pro"가 "gemini"보다 위).
- * 매칭은 소문자화한 모델 ID에 대한 `includes`다.
- */
-const RATES: ReadonlyArray<readonly [pattern: string, rate: ModelRate]> = [
-  ["gpt-4.1", { input: 2, output: 8, cacheRead: 0.5, cacheWrite: 2 }],
-  ["gemini-2.5-pro", { input: 1.25, output: 10, cacheRead: 0.31, cacheWrite: 1.25 }],
-  ["gemini", { input: 0.3, output: 2.5, cacheRead: 0.075, cacheWrite: 0.3 }],
-];
-
-/**
- * Claude도 계열명만으로 가격이 정해지지 않으므로 알려진 버전만 등록한다.
- * 출처: https://platform.claude.com/docs/en/about-claude/pricing (2026-11-10).
+ * Claude는 계열명만으로 가격이 정해지지 않으므로 알려진 버전만 등록한다.
+ * 출처: https://platform.claude.com/docs/en/about-claude/pricing (2026-11-19).
  * 캐시 쓰기는 기존 계약대로 5분 TTL 대표값이며 1시간 TTL은 구분하지 않는다.
  * Haiku 5.5는 프롬프트 100K 토큰 이하 요율이다. 그보다 긴 요청은 $0.50/$2.50이지만
  * 턴 토큰 합계로는 요청별 프롬프트 길이를 알 수 없어 구분하지 않는다.
@@ -69,39 +58,80 @@ function anthropicRateFor(model: string): ModelRate | null {
   const base = model
     .replace(/^anthropic\//, "")
     .replace(/^(?:[a-z]{2}\.)?anthropic\./, "")
+    .replace(/-(?:thinking|low|medium|high|max)$/, "")
     .replace(/-v1(?::0)?$/, "")
     .replace(/[-@]\d{8}$/, "")
     .replace(/(\d)\.(\d)/g, "$1-$2");
   return hasOwn(ANTHROPIC_RATES, base) ? ANTHROPIC_RATES[base] : null;
 }
 
-/**
- * Gemini 3.x 요율(Antigravity CLI(agy)의 훅 modelName, kbm #2se). 표준
- * (<=200K 컨텍스트) 요율, 출처: https://ai.google.dev/gemini-api/docs/pricing
- * (2026-09-07 확인, 서드파티 corroboration: devtk.ai/en/models/gemini-3-1-pro,
- * apidog.com/blog/gemini-3-8-flash-pricing). Flash는 2026-12-31까지 도입가이고
- * 이후 $1.5/$7.5로 오를 예정 — 인상 시점엔 이 값도 갱신해야 한다.
- */
-const GEMINI_3_PRO_RATE: ModelRate = { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2 };
-const GEMINI_3_FLASH_RATE: ModelRate = { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0.75 };
-
-/**
- * agy 훅 modelName은 "gemini-3.8-flash-medium"처럼 마이너 버전과 이펙트
- * 티어가 껴서(`gemini-3.1-pro-preview`도 마찬가지) 고정 패턴으로는 pro/flash를
- * 구분할 수 없다(패턴 하나를 늘릴 때마다 마이너 버전 조합이 새로 빠진다).
- * 그래서 "gemini-3"를 포함하는 id는 여기서 "pro" 포함 여부로 먼저 갈라 낸다
- * — RATES 순서 규칙(구체적인 패턴이 위)의 예외로, 이 함수가 RATES보다 먼저
- * 검사된다.
- */
-function geminiThreeRateFor(key: string): ModelRate | null {
-  if (!key.includes("gemini-3")) return null;
-  return key.includes("pro") ? GEMINI_3_PRO_RATE : GEMINI_3_FLASH_RATE;
+// Gemini 및 DeepSeek는 별도 캐시 쓰기 토큰 단가가 없어 일반 입력으로 환산한다.
+// 시간당 캐시 저장료는 턴 이벤트에 보관 시간이 없어 계산할 수 없다.
+function tokenRate(input: number, output: number, cacheRead: number): ModelRate {
+  return { input, output, cacheRead, cacheWrite: input };
 }
+
+// https://aistudio.google.com/docs/pricing — 표준 유료 텍스트 요율.
+// 공지된 변경일은 UTC 자정을 경계로 삼고 이벤트 시각으로 적용한다.
+const GEMINI_DECEMBER_CHANGE = Date.UTC(2026, 11, 1);
+const GEMINI_FLASH_PROMO_END = Date.UTC(2027, 0, 1);
+const GEMINI_RATES: Readonly<Record<string, ModelRate>> = {
+  "gemini-4-neon": tokenRate(3, 15, 0.15),
+  "gemini-4-hydrogen": tokenRate(1.5, 7.5, 0.075),
+  "gemini-3.8-flash-cyber": tokenRate(1.5, 7.5, 0.15), // Google Cloud 글로벌 요율
+  "gemini-3.5-flash": tokenRate(1.5, 9, 0.15),
+  "gemini-3.5-flash-lite": tokenRate(0.3, 2.5, 0.03),
+  "gemini-3.1-flash-lite": tokenRate(0.25, 1.5, 0.025),
+  "gemini-3.1-flash-lite-preview": tokenRate(0.25, 1.5, 0.025),
+  "gemini-3.1-pro": tokenRate(2, 12, 0.2),
+  "gemini-3.1-pro-preview": tokenRate(2, 12, 0.2),
+  "gemini-3.1-pro-preview-customtools": tokenRate(2, 12, 0.2),
+  "gemini-3-pro": tokenRate(2, 12, 0.2),
+  "gemini-3-pro-preview": tokenRate(2, 12, 0.2),
+  "gemini-3-flash": tokenRate(0.5, 3, 0.05),
+  "gemini-3-flash-preview": tokenRate(0.5, 3, 0.05),
+  "gemini-2.5-pro": tokenRate(1.25, 10, 0.125),
+  "gemini-2.5-flash": tokenRate(0.3, 2.5, 0.03),
+  "gemini-2.5-flash-lite": tokenRate(0.1, 0.4, 0.01),
+  "gemini-2.0-flash": tokenRate(0.1, 0.4, 0.025),
+  "gemini-2.0-flash-001": tokenRate(0.1, 0.4, 0.025),
+};
+
+function geminiRateFor(model: string, at: number): ModelRate | null {
+  const base = model
+    .replace(/^(?:projects\/[^/]+\/locations\/[^/]+\/)?publishers\/google\/models\//, "")
+    .replace(/^(?:google\/|models\/)/, "")
+    .replace(/-(?:low|medium|high|xhigh|tiered)$/, "");
+  // 12월부터 2.5 Pro API 요청은 3.8 Flash로 라우팅된다.
+  const billedModel = base === "gemini-2.5-pro" && at >= GEMINI_DECEMBER_CHANGE ? "gemini-3.8-flash" : base;
+  switch (billedModel) {
+    case "gemini-4-carbon":
+    case "gemini-4-argon":
+      return at < GEMINI_DECEMBER_CHANGE ? tokenRate(2, 10, 0.1) : tokenRate(4, 20, 0.2);
+    case "gemini-3.6-flash":
+    case "gemini-3.7-flash":
+    case "gemini-3.8-flash":
+      return at < GEMINI_FLASH_PROMO_END ? tokenRate(0.75, 3.75, 0.075) : tokenRate(1.5, 7.5, 0.15);
+    default:
+      return hasOwn(GEMINI_RATES, billedModel) ? GEMINI_RATES[billedModel] : null;
+  }
+}
+
+// https://api-docs.deepseek.com/quick_start/pricing/ — 대표값은 피크 시간대 요율.
+const DEEPSEEK_FLASH_RATE = tokenRate(0.3, 1.2, 0.006);
+const DEEPSEEK_RATES: Readonly<Record<string, ModelRate>> = {
+  "deepseek-flash": DEEPSEEK_FLASH_RATE,
+  "deepseek-v4-flash": DEEPSEEK_FLASH_RATE,
+  "deepseek-v4.1-flash": DEEPSEEK_FLASH_RATE,
+  "deepseek-v4.1-flash-1017": DEEPSEEK_FLASH_RATE,
+  "deepseek-v4-flash-vision-exp": DEEPSEEK_FLASH_RATE,
+  "deepseek-v4-pro": tokenRate(1.32, 3.96, 0.044),
+};
 
 /**
  * OpenAI GPT-5·6 계열은 이름만 비슷해도 모델별 단가가 다르다. 따라서 일반
  * `gpt-5` 부분문자열은 쓰지 않고, 공식 모델 ID(및 날짜 스냅샷)만 정확히
- * 허용한다. 출처(2026-09-30, gpt-6.1-terra는 2026-11-10):
+ * 허용한다. GPT-6.2는 Standard의 30분 캐시 쓰기 요율을 쓴다. 출처:
  * https://developers.openai.com/api/docs/pricing,
  * https://developers.openai.com/api/docs/models/gpt-6-sol,
  * https://developers.openai.com/api/docs/models/gpt-6.1-sol,
@@ -117,6 +147,9 @@ function geminiThreeRateFor(key: string): ModelRate | null {
  * 제공하지 않으므로 `cacheRead`도 입력 단가다.
  */
 const OPENAI_RATES: Readonly<Record<string, ModelRate>> = {
+  "gpt-4.1": tokenRate(2, 8, 0.5),
+  "gpt-4.1-mini": tokenRate(0.4, 1.6, 0.1),
+  "gpt-4.1-nano": tokenRate(0.1, 0.4, 0.025),
   "gpt-5": { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 },
   "gpt-5-codex": { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 },
   "gpt-5-pro": { input: 15, output: 120, cacheRead: 15, cacheWrite: 15 },
@@ -143,12 +176,17 @@ const OPENAI_RATES: Readonly<Record<string, ModelRate>> = {
   "gpt-6-astra": { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
   "gpt-6-sol": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
   "gpt-6.1-sol": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+  "gpt-6.2-astra": { input: 8, output: 40, cacheRead: 0.4, cacheWrite: 10 },
+  "gpt-6.2-sol": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
   "gpt-6.1-terra": { input: 1, output: 5, cacheRead: 0.05, cacheWrite: 1.25 },
   "gpt-6-luna": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
 };
 
 /** 공식 문서에 명시된 날짜 스냅샷만 위의 모델 단가에 연결한다. */
 const OPENAI_SNAPSHOT_BASES: Readonly<Record<string, keyof typeof OPENAI_RATES>> = {
+  "gpt-4.1-2025-04-14": "gpt-4.1",
+  "gpt-4.1-mini-2025-04-14": "gpt-4.1-mini",
+  "gpt-4.1-nano-2025-04-14": "gpt-4.1-nano",
   "gpt-5-2025-08-07": "gpt-5",
   "gpt-5-mini-2025-08-07": "gpt-5-mini",
   "gpt-5-nano-2025-08-07": "gpt-5-nano",
@@ -180,19 +218,14 @@ function openAiRateFor(model: string): ModelRate | null {
  * 모델 ID에 맞는 요율. 모델이 없거나 표에 없는 모델이면 `null`
  * (→ 비용 집계에서 제외하고 "단가를 모르는 사용량"으로 따로 센다).
  */
-export function rateFor(model: string | undefined): ModelRate | null {
+export function rateFor(model: string | undefined, at = Date.now()): ModelRate | null {
   if (!model) return null;
   const key = model.toLowerCase().trim();
-  const openAiRate = openAiRateFor(key);
-  if (openAiRate) return openAiRate;
-  const anthropicRate = anthropicRateFor(key);
-  if (anthropicRate) return anthropicRate;
-  const geminiThreeRate = geminiThreeRateFor(key);
-  if (geminiThreeRate) return geminiThreeRate;
-  for (const [pattern, rate] of RATES) {
-    if (key.includes(pattern)) return rate;
-  }
-  return null;
+  const deepseek = key.replace(/^deepseek\//, "");
+  return openAiRateFor(key.replace(/^openai\//, ""))
+    ?? anthropicRateFor(key)
+    ?? geminiRateFor(key, at)
+    ?? (hasOwn(DEEPSEEK_RATES, deepseek) ? DEEPSEEK_RATES[deepseek] : null);
 }
 
 /** 비용을 일부 계산할 수 있어도, 단가를 모르는 모델이 있었는지 함께 나타낸다. */
@@ -201,8 +234,8 @@ export interface CostBreakdown {
   hasUnknown: boolean;
 }
 
-function costForSingleModel(tokens: SessionModelTokens): number | null {
-  const r = rateFor(tokens.model);
+function costForSingleModel(tokens: SessionModelTokens, at: number): number | null {
+  const r = rateFor(tokens.model, at);
   if (!r) return null;
   const cost =
     (tokens.input ?? 0) * r.input +
@@ -219,6 +252,7 @@ function costForSingleModel(tokens: SessionModelTokens): number | null {
  */
 export function estimateCostBreakdown(
   tokens: SessionEventTokens | undefined,
+  at = Date.now(),
 ): CostBreakdown | null {
   if (!tokens) return null;
   const byModel = tokens.byModel;
@@ -226,13 +260,13 @@ export function estimateCostBreakdown(
     let costUsd = 0;
     let hasUnknown = false;
     for (const component of byModel) {
-      const cost = costForSingleModel(component);
+      const cost = costForSingleModel(component, at);
       if (cost === null) hasUnknown = true;
       else costUsd += cost;
     }
     return { costUsd, hasUnknown };
   }
-  const costUsd = costForSingleModel(tokens);
+  const costUsd = costForSingleModel(tokens, at);
   return costUsd === null ? { costUsd: 0, hasUnknown: true } : { costUsd, hasUnknown: false };
 }
 
@@ -240,8 +274,8 @@ export function estimateCostBreakdown(
  * 한 턴의 토큰 사용량 → 완전한 추정 비용(USD). 토큰이 없거나 하나라도 단가를
  * 모르면 `null`이다. 일부 비용이 필요하면 `estimateCostBreakdown`을 쓴다.
  */
-export function estimateCostUsd(tokens: SessionEventTokens | undefined): number | null {
-  const breakdown = estimateCostBreakdown(tokens);
+export function estimateCostUsd(tokens: SessionEventTokens | undefined, at = Date.now()): number | null {
+  const breakdown = estimateCostBreakdown(tokens, at);
   return !breakdown || breakdown.hasUnknown ? null : breakdown.costUsd;
 }
 

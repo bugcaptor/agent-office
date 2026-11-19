@@ -964,7 +964,7 @@ export const useAppStore = create<AppState>()(
             ...s.sessionUsage,
             [e.agentId]: {
               sessionId: e.sessionId,
-              totals: addTurn(entry.totals, e.tokens, e.partial),
+              totals: addTurn(entry.totals, e.tokens, e.partial, e.at),
             },
           },
           // 실시간이 실제로 반영한 첫 턴의 시각만 기록(이미 있으면 유지) — B의

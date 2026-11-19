@@ -1,6 +1,6 @@
 // src/renderer/analytics/__tests__/pricing.test.ts
 //
-// pricing.ts 순수 함수 검증: 패턴 매칭 우선순위(구체 패턴이 먼저), 미지/부재
+// pricing.ts 순수 함수 검증: 모델 ID·이벤트 시점별 단가, 미지/부재
 // 모델 → null, 캐시 단가가 반영된 총액, 표시 포맷 경계(자릿수·K/M 축약).
 import { describe, expect, it } from "vitest";
 import {
@@ -52,6 +52,8 @@ describe("rateFor", () => {
   });
 
   it("공급자 접두사와 점 버전도 같은 Claude 모델로 연결한다", () => {
+    expect(rateFor("claude-opus-4-6-thinking")).toEqual(rateFor("claude-opus-4-6"));
+    expect(rateFor("claude-sonnet-5-5-max")).toEqual(rateFor("claude-sonnet-5-5"));
     expect(rateFor("anthropic/claude-opus-5.5")).toEqual(rateFor("claude-opus-5-5"));
     expect(rateFor("us.anthropic.claude-sonnet-5-5")).toEqual(rateFor("claude-sonnet-5-5"));
     expect(rateFor("anthropic.claude-opus-4-6-v1:0")).toEqual(rateFor("claude-opus-4-6"));
@@ -107,41 +109,52 @@ describe("rateFor", () => {
   });
 
   it.each([
+    ["gpt-6.2-astra", { input: 8, output: 40, cacheRead: 0.4, cacheWrite: 10 }],
+    ["gpt-6.2-sol", { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 }],
     ["gpt-6-sol", { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }],
     ["gpt-6.1-sol", { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 }],
     ["gpt-6.1-terra", { input: 1, output: 5, cacheRead: 0.05, cacheWrite: 1.25 }],
     ["gpt-6-luna", { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 }],
   ])("Codex %s의 입력·출력·캐시 단가를 적용한다", (model, rate) => {
     expect(rateFor(model)).toEqual(rate);
-    expect(rateFor(` ${model.toUpperCase()} `)).toEqual(rate);
+    expect(rateFor(` openai/${model.toUpperCase()} `)).toEqual(rate);
   });
 
-  it("더 구체적인 패턴이 일반 패턴보다 먼저 잡힌다", () => {
-    // "gemini-2.5-pro"가 "gemini"보다 표에서 위에 있어야 한다.
-    expect(rateFor("gemini-2.5-pro")?.input).toBe(1.25);
-    expect(rateFor("gemini-2.0-flash")?.input).toBe(0.3);
+  it.each([
+    ["google/gemini-4-carbon-high", 2, 10, 0.1],
+    ["gemini-4-argon-medium", 2, 10, 0.1],
+    ["models/gemini-4-neon-xhigh", 3, 15, 0.15],
+    ["gemini-4-hydrogen-low", 1.5, 7.5, 0.075],
+    ["projects/demo/locations/global/publishers/google/models/gemini-4-neon", 3, 15, 0.15],
+    ["gemini-3.8-flash-cyber", 1.5, 7.5, 0.15],
+    ["gemini-3.8-flash-medium", 0.75, 3.75, 0.075],
+    ["gemini-3.5-flash-medium", 1.5, 9, 0.15],
+    ["gemini-3.5-flash-lite", 0.3, 2.5, 0.03],
+    ["gemini-3.1-flash-lite-preview", 0.25, 1.5, 0.025],
+    ["gemini-3-flash-preview", 0.5, 3, 0.05],
+    ["gemini-3.1-pro-preview", 2, 12, 0.2],
+    ["gemini-3-pro-high", 2, 12, 0.2],
+    ["gemini-2.5-pro", 1.25, 10, 0.125],
+    ["gemini-2.0-flash", 0.1, 0.4, 0.025],
+    ["deepseek-v4.1-flash", 0.3, 1.2, 0.006],
+    ["deepseek/deepseek-v4-pro", 1.32, 3.96, 0.044],
+  ])("%s의 텍스트·캐시 요율을 조회한다", (model, input, output, cacheRead) => {
+    expect(rateFor(model, Date.UTC(2026, 10, 19))).toEqual({ input, output, cacheRead, cacheWrite: input });
   });
 
-  it("agy 훅 modelName 꼴의 Gemini 3.x는 캐치올이 아닌 전용 요율을 쓴다", () => {
-    const flashRate = {
-      input: 0.75,
-      output: 3.75,
-      cacheRead: 0.075,
-      cacheWrite: 0.75,
-    };
-    const proRate = { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2 };
-
-    // 실측 modelName "gemini-3.8-flash-medium"(kbm #2se).
-    expect(rateFor("gemini-3.8-flash-medium")).toEqual(flashRate);
-    // 마이너 버전 없는 pro도, 마이너 버전이 낀 pro("gemini-3.1-pro-preview"
-    // 같은 꼴)도 고정 패턴이 아니라 "gemini-3" + "pro" 포함 여부로 갈라야
-    // 둘 다 잡힌다.
-    expect(rateFor("gemini-3-pro-high")).toEqual(proRate);
-    expect(rateFor("gemini-3.1-pro-preview")).toEqual(proRate);
-    expect(rateFor("gemini-3.5-pro-low")).toEqual(proRate);
-    // pro가 없는 나머지 3.x(마이너 버전 무관)는 전부 Flash 요율.
-    expect(rateFor("gemini-3.5-flash-medium")).toEqual(flashRate);
-    expect(rateFor("gemini-3-flash-high")).toEqual(flashRate);
+  it("Gemini 도입가와 2.5 Pro 라우팅 변경을 이벤트 시각에 맞춰 적용한다", () => {
+    const december = Date.UTC(2026, 11, 1);
+    const january = Date.UTC(2027, 0, 1);
+    for (const model of ["gemini-4-carbon", "gemini-4-argon"]) {
+      expect(rateFor(model, december - 1)?.output).toBe(10);
+      expect(rateFor(model, december)?.output).toBe(20);
+    }
+    expect(rateFor("gemini-2.5-pro", december - 1)?.output).toBe(10);
+    expect(rateFor("gemini-2.5-pro", december)?.output).toBe(3.75);
+    for (const model of ["gemini-2.5-pro", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"]) {
+      expect(rateFor(model, january - 1)?.output).toBe(3.75);
+      expect(rateFor(model, january)?.output).toBe(7.5);
+    }
   });
 
   it("모델 없음/미지 모델은 null", () => {
@@ -152,7 +165,11 @@ describe("rateFor", () => {
     expect(rateFor("gpt-6-astra-2026-08-01")).toBeNull();
     expect(rateFor("gpt-5.4-experimental")).toBeNull();
     expect(rateFor("my-gpt-5.4-wrapper")).toBeNull();
-    expect(rateFor("gpt-6.2-sol")).toBeNull();
+    expect(rateFor("gpt-6.2-terra")).toBeNull();
+    expect(rateFor("google/gemini-4-unknown-high")).toBeNull();
+    expect(rateFor("gemini-3.8-flash-tts")).toBeNull();
+    expect(rateFor("gemini-3.1-flash-lite-image")).toBeNull();
+    expect(rateFor("my-gemini-4-neon")).toBeNull();
     expect(rateFor("gpt-6.1-sol-experimental")).toBeNull();
     expect(rateFor("gpt-6-sol-2026-09-01")).toBeNull();
     expect(rateFor("claude-opus-5-6")).toBeNull();

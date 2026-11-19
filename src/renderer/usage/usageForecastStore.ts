@@ -45,7 +45,7 @@ export function workerProvider(agent: Pick<WorkAgent, "cli"> | undefined): Forec
 
 /** 훅이 준 턴 토큰을 장부에 더한다. 태스크 대화처럼 캐릭터가 없는 세션도 같은 구독을 쓰므로 센다. */
 export function recordTurnUsage(e: TurnUsageEvent): void {
-  addCost(ledger, providerOfTokens(e.tokens), e.agentId, tokensCost(e.tokens), e.at);
+  addCost(ledger, providerOfTokens(e.tokens), e.agentId, tokensCost(e.tokens, e.at), e.at);
 }
 
 /** 판단자(claude -p) 호출 비용. 훅을 타지 않으므로 따로 넣는다. */
