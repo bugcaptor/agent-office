@@ -109,7 +109,8 @@
     "modelCatalog": "선택한 agy 모델이 현재 모델 목록에 없습니다.",
     "blocked": "선행 작업을 모두 완료한 뒤 보내세요.",
     "autoRunActive": "이 캐릭터가 자동 진행 중입니다. 일시정지한 뒤 보내세요.",
-    "planRoot": "플랜 루트는 보내지 않습니다. 자동 진행으로 선행 태스크를 진행하세요."
+    "planRoot": "플랜 루트는 보내지 않습니다. 자동 진행으로 선행 태스크를 진행하세요.",
+    "scheduleTemplate": "반복 예약 템플릿은 직접 보내지 않습니다. 예약한 시각마다 복사본을 만들어 실행합니다."
   },
   "resumeNewWork": "새 태스크 작성 계속",
   "add": "추가",
@@ -247,7 +248,8 @@
       "auto-run-observer-off": "설정에서 에이전트 관찰을 켜세요. 턴 종료를 훅으로 알아야 합니다.",
       "auto-run-foreign-task": "다른 캐릭터에게 배정된 선행 작업이 있습니다. 진행자에게 배정하거나 미배정으로 바꾸세요.",
       "auto-run-runner-busy": "이 캐릭터에게 끝나지 않은 다른 자동 진행 \"{{title}}\"이 있습니다. 그쪽을 끝낸 뒤 시작하세요.",
-      "auto-run-root-busy": "남은 것은 루트 태스크뿐인데 진행 중이거나 검토 대기입니다. 다시 진행하려면 할 일로 되돌리세요."
+      "auto-run-root-busy": "남은 것은 루트 태스크뿐인데 진행 중이거나 검토 대기입니다. 다시 진행하려면 할 일로 되돌리세요.",
+      "auto-run-schedule-template": "반복 예약 템플릿(또는 그 단계)이라 직접 시작할 수 없습니다. 예약한 시각마다 복사본을 만들어 진행합니다."
     },
     "worker": {
       "intro": "[자동 진행] 이 태스크는 \"{{plan}}\" 플랜의 {{index}}/{{total}}번째입니다. 새 세션에서 시작하므로 아래 맥락을 참고하세요.",
@@ -302,5 +304,78 @@
     },
     "quitNotice_one": "열린 태스크 대화 {{count}}개도 함께 끝납니다.",
     "quitNotice_other": "열린 태스크 대화 {{count}}개도 함께 끝납니다."
+  },
+  "schedule": {
+    "title": "예약",
+    "none": "예약이 없습니다.",
+    "on": "켜짐",
+    "off": "꺼짐",
+    "next": "켜짐 · 다음 실행 {{when}}",
+    "offHint": "꺼져 있어 실행하지 않습니다. 에이전트나 스크립트가 만들거나 바꾼 예약은 사람이 켜야 실행됩니다.",
+    "offInvalid": "지난 시각이라 켤 수 없습니다. 예약을 바꾸세요.",
+    "offDone": "완료한 태스크라 예약이 꺼졌습니다.",
+    "lastRun": "마지막 실행 {{when}}",
+    "lastSkip": "마지막으로 건너뜀 {{when}}: {{reason}}",
+    "recurringHint": "반복 예약이면 이 태스크는 템플릿이 됩니다. 정한 시각마다 복사본을 만들어 담당 캐릭터에게 보냅니다.",
+    "recurringPlanHint": "반복 예약이면 이 플랜은 템플릿이 됩니다. 정한 시각마다 루트와 단계를 복사해 자동 진행으로 실행합니다.",
+    "onceHint": "정한 시각에 이 태스크를 담당 캐릭터에게 보냅니다.",
+    "oncePlanHint": "정한 시각에 이 플랜의 자동 진행을 시작합니다.",
+    "kind": "반복",
+    "kinds": {
+      "once": "한 번",
+      "interval": "일정 간격",
+      "daily": "매일",
+      "weekly": "매주"
+    },
+    "when": "일시",
+    "every": "간격",
+    "unit": "단위",
+    "units": {
+      "m": "분",
+      "h": "시간",
+      "d": "일"
+    },
+    "days": "요일",
+    "time": "시각",
+    "invalid": {
+      "past": "지금보다 뒤의 시각을 고르세요.",
+      "interval": "간격은 {{min}}분에서 {{maxDays}}일 사이로 정하세요.",
+      "days": "요일을 하나 이상 고르세요.",
+      "time": "시각을 HH:MM으로 정하세요."
+    },
+    "remove": "예약 지우기",
+    "change": "예약 바꾸기",
+    "add": "예약 추가",
+    "turnOff": "끄기",
+    "turnOn": "켜기",
+    "saveOn": "저장하고 켜기",
+    "rule": {
+      "once": "한 번 {{when}}",
+      "everyMinutes_one": "{{count}}분마다",
+      "everyMinutes_other": "{{count}}분마다",
+      "everyHours_one": "{{count}}시간마다",
+      "everyHours_other": "{{count}}시간마다",
+      "everyDays_one": "{{count}}일마다",
+      "everyDays_other": "{{count}}일마다",
+      "daily": "매일 {{time}}",
+      "weekly": "매주 {{days}} {{time}}"
+    },
+    "chip": {
+      "once": "예약 {{when}}",
+      "recurring": "반복 · 다음 {{when}}",
+      "off": "예약 꺼짐",
+      "run": "예약 회차"
+    },
+    "skip": {
+      "missed": "앱이 꺼져 있거나 잠자기 중이라 예정 시각을 놓쳤습니다.",
+      "previous-open": "지난 회차가 아직 끝나지 않았습니다.",
+      "agent-working": "담당 캐릭터가 작업 중이거나 응답을 기다리고 있습니다.",
+      "blocked": "실행할 수 없었습니다.",
+      "failed": "보내지 못했습니다."
+    },
+    "detail": {
+      "schedule-not-todo": "할 일 상태가 아닙니다."
+    },
+    "skippedTitle": "예약 건너뜀: {{title}}"
   }
 }

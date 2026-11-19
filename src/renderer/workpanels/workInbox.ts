@@ -2,6 +2,7 @@ import type { AgentProfile, InboxEntry, InboxRejection, InboxWarning } from "@sh
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
 import { useWorkItemStore, type InboxRequest } from "./workItemStore";
+import { parseScheduleSpec } from "./workSchedule";
 
 export function resolveAssignee(raw: string | undefined, profiles: Pick<AgentProfile, "id" | "name">[]): string | undefined {
   if (!raw) return;
@@ -32,6 +33,7 @@ function toRequest(entry: InboxEntry, profiles: Pick<AgentProfile, "id" | "name"
     title: edit.title, body: edit.body, status: edit.status, assigneeAgentId,
     dependsOn: edit.after, addDependsOn: edit.addAfter, removeDependsOn: edit.removeAfter, plan: edit.plan,
     maxFollowUps: edit.maxFollowUps, permissionWaitMinutes: edit.permissionWaitMinutes,
+    scheduleRule: edit.schedule === undefined ? undefined : parseScheduleSpec(edit.schedule) ?? (edit.schedule.trim() === "none" ? null : undefined),
   } };
 }
 
@@ -59,6 +61,7 @@ async function receive(epoch: number): Promise<void> {
       id: inboxItemId(entry), title: entry.title, body: entry.body,
       assigneeAgentId: resolveAssignee(entry.assignee, profiles), dependsOn: entry.after, plan: entry.plan || undefined,
       maxFollowUps: entry.maxFollowUps ?? undefined, permissionWaitMinutes: entry.permissionWaitMinutes ?? undefined,
+      scheduleRule: entry.schedule ? parseScheduleSpec(entry.schedule) ?? undefined : undefined,
     })));
     const applied = requests.length ? useWorkItemStore.getState().applyInbox(requests.map((entry) => toRequest(entry, profiles))) : [];
     await useWorkItemStore.getState().flush();

@@ -2,16 +2,17 @@
 //! GUI·tokio 없이 수신함에 파일 하나를 원자적으로 쓰거나(`--list`) 저장된 업무 목록을
 //! 읽는다. control 서버와 토큰이 필요 없어 CLI 제어가 꺼져 있어도 동작한다.
 
-use crate::persistence::work_inbox::{forbidden_control, parse_after, valid_task_id, RunLimitsPatch, MAX_BYTES, STATUSES};
+use crate::persistence::work_inbox::{forbidden_control, parse_after, schedule_at, schedule_every, valid_task_id, RunLimitsPatch, MAX_BYTES, STATUSES};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after <id>]... [--plan] <title> [body | -]
+const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after <id>]... [--plan] [--at <when> | --every <rule>] <title> [body | -]
        office-task --list [--all]
        office-task --show <id> [--json]
        office-task --edit <id> [--title <title>] [--body <body | ->] [--to <name|id> | --unassigned]
                    [--status todo|in_progress|review|done] [--plan | --no-plan]
                    [--after <id>... | --no-after | --add-after <id>... --remove-after <id>...]
+                   [--at <when> | --every <rule> | --no-schedule]
        office-task --done <id>...
        office-task --delete <id>...
        office-task --report <id> [text | -]
@@ -21,6 +22,10 @@ Prints the new task id. Pass it to --after to make a later task wait for this on
 waits on, never the root itself. It needs --after. A root without --plan is run as the last step.
 On create or edit, --max-follow-ups <0..99|inherit> and --permission-wait-minutes <1..1440|inherit>
 set the auto-run limits. A task inherits unspecified limits from the running plan.
+--at \"YYYY-MM-DD HH:MM\" schedules one run of the task at that local time. --every <rule> makes the
+task a recurring template that is copied and run each time: 30m, 2h or 1d (interval), daily@HH:MM, or
+mon,wed@HH:MM (also weekdays@HH:MM). A plan root template runs its whole plan with auto-run.
+Schedules made here start turned off; a person turns them on in the app. Changing one turns it off.
 --report leaves the auto-run report for a task; writing it again replaces it.
 --show --json prints the stored task as JSON, including its auto-run state.
 Outside an Agent Office session the default app data folder is used.
@@ -92,6 +97,7 @@ pub fn run_with(
     let mut after: Vec<String> = vec![];
     let mut plan = false;
     let mut limits = RunLimitsPatch::default();
+    let mut schedule: Option<String> = None;
     let mut positional = vec![];
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
@@ -107,6 +113,10 @@ pub fn run_with(
                 if let Err(code) = set_limit(&mut limits, arg, iter.next(), err) { return code; }
             }
             "--plan" if positional.is_empty() => plan = true,
+            "--at" | "--every" if positional.is_empty() => match set_schedule(&mut schedule, arg, iter.next(), err) {
+                Ok(()) => {}
+                Err(code) => return code,
+            },
             "--" if positional.is_empty() => positional.extend(iter.by_ref().cloned()),
             _ => positional.push(arg.clone()),
         }
@@ -138,13 +148,17 @@ pub fn run_with(
     warn_unknown_references(env, assignee.as_deref().filter(|_| explicit), &after, err);
     let random = uuid::Uuid::new_v4().simple().to_string();
     let id = format!("t-{}", &random[..8]);
-    let content = render(&id, &title, body.trim_matches('\n'), assignee.as_deref(), &after, plan, &limits);
+    let content = render(&id, &title, body.trim_matches('\n'), assignee.as_deref(), &after, plan, &limits, schedule.as_deref());
     if content.len() > MAX_BYTES { return fail(err, &format!("task exceeds {MAX_BYTES} bytes")); }
     let Some(inbox) = env.inbox() else { return fail(err, "AGENT_OFFICE_WORK_INBOX and AGENT_OFFICE_APP_DATA are not set"); };
     let name = format!("{}-{}.md", now.format("%Y%m%dT%H%M%S%3fZ"), &random[8..16]);
     match write(&inbox, &name, content.as_bytes()) {
         // 다음 명령의 `--after "$(…)"`에 그대로 쓰도록 id만 출력한다.
-        Ok(_) => { let _ = writeln!(out, "{id}"); 0 }
+        Ok(_) => {
+            if schedule.is_some() { let _ = writeln!(err, "office-task: the schedule starts turned off; a person must turn it on in the app"); }
+            let _ = writeln!(out, "{id}");
+            0
+        }
         Err(e) => fail(err, &format!("failed to write {}: {e}", inbox.display())),
     }
 }
@@ -171,6 +185,15 @@ fn read_body(value: &str, stdin: &mut dyn Read, err: &mut dyn Write) -> Result<S
     Ok(body.replace("\r\n", "\n"))
 }
 
+/// `--at`·`--every`를 예약 정규형으로. 둘은 한 번만, 함께 쓸 수 없다.
+fn set_schedule(schedule: &mut Option<String>, flag: &str, value: Option<&String>, err: &mut dyn Write) -> Result<(), i32> {
+    if schedule.is_some() { return Err(usage_error(err, "use only one of --at, --every and --no-schedule")); }
+    let value = value.ok_or_else(|| usage_error(err, &format!("{flag} requires a value")))?;
+    let spec = if flag == "--at" { schedule_at(value) } else { schedule_every(value) };
+    *schedule = Some(spec.map_err(|reason| usage_error(err, &format!("{flag}: {reason}")))?);
+    Ok(())
+}
+
 fn set_limit(limits: &mut RunLimitsPatch, flag: &str, value: Option<&String>, err: &mut dyn Write) -> Result<(), i32> {
     let value = value.ok_or_else(|| usage_error(err, &format!("{flag} requires a value")))?;
     limits.set(flag.trim_start_matches("--"), value).map_err(|reason| usage_error(err, &reason))
@@ -186,12 +209,14 @@ fn write_limit_fields(text: &mut String, limits: &RunLimitsPatch) {
 }
 
 /// 제목 줄은 항상 `# `로 시작해 본문이나 빈 제목이 frontmatter·제목으로 잘못 읽히지 않는다.
-fn render(id: &str, title: &str, body: &str, assignee: Option<&str>, after: &[String], plan: bool, limits: &RunLimitsPatch) -> String {
+#[allow(clippy::too_many_arguments)]
+fn render(id: &str, title: &str, body: &str, assignee: Option<&str>, after: &[String], plan: bool, limits: &RunLimitsPatch, schedule: Option<&str>) -> String {
     let mut text = format!("---\nid: {id}\n");
     if let Some(assignee) = assignee { text.push_str(&format!("assignee: {assignee}\n")); }
     if !after.is_empty() { text.push_str(&format!("after: {}\n", after.join(", "))); }
     write_limit_fields(&mut text, limits);
     if plan { text.push_str("plan: true\n"); }
+    if let Some(schedule) = schedule { text.push_str(&format!("schedule: {schedule}\n")); }
     text.push_str(&format!("---\n# {title}\n"));
     if !body.is_empty() { text.push_str(body); text.push('\n'); }
     text
@@ -353,6 +378,7 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
     let mut status: Option<String> = None;
     let mut plan: Option<bool> = None;
     let mut limits = RunLimitsPatch::default();
+    let mut schedule: Option<String> = None;
     let (mut after, mut no_after) = (vec![], false);
     let (mut add, mut remove) = (vec![], vec![]);
     let mut iter = args.iter();
@@ -384,6 +410,9 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
             "--plan" | "--no-plan" if plan.is_some_and(|p| p != (arg == "--plan")) => Err(usage_error(err, "--plan cannot be combined with --no-plan")),
             "--plan" => { plan = Some(true); Ok(()) }
             "--no-plan" => { plan = Some(false); Ok(()) }
+            "--at" | "--every" => set_schedule(&mut schedule, arg, iter.next(), err),
+            "--no-schedule" if schedule.is_some() => Err(usage_error(err, "use only one of --at, --every and --no-schedule")),
+            "--no-schedule" => { schedule = Some("none".into()); Ok(()) }
             "--add-after" => push_ids(&mut add, iter.next(), "--add-after", err),
             "--remove-after" => push_ids(&mut remove, iter.next(), "--remove-after", err),
             other => Err(usage_error(err, &format!("unknown argument for --edit: {other:?}"))),
@@ -396,7 +425,7 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
     if after.is_some() && !(add.is_empty() && remove.is_empty()) {
         return usage_error(err, "--after/--no-after replace all prerequisites; do not combine them with --add-after/--remove-after");
     }
-    if title.is_none() && body.is_none() && assignee.is_none() && status.is_none() && plan.is_none() && limits == RunLimitsPatch::default() && after.is_none() && add.is_empty() && remove.is_empty() {
+    if title.is_none() && body.is_none() && assignee.is_none() && status.is_none() && plan.is_none() && limits == RunLimitsPatch::default() && schedule.is_none() && after.is_none() && add.is_empty() && remove.is_empty() {
         return usage_error(err, "--edit needs at least one change");
     }
     if let Some(c) = title.as_deref().and_then(forbidden_control).or_else(|| body.as_deref().and_then(forbidden_control)) {
@@ -410,6 +439,14 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
         let next_body = body.clone().unwrap_or_else(|| field("body"));
         if next_title.trim().is_empty() && next_body.trim().is_empty() { return fail(err, "the task would have no title and no body"); }
     }
+    // 켜진 예약의 실행 내용을 바꾸면 앱이 예약을 끈다. 사람이 다시 켜야 하므로 미리 알린다.
+    let changes_run = title.is_some() || body.is_some() || assignee.is_some() || plan.is_some() || limits != RunLimitsPatch::default()
+        || schedule.as_deref().is_some_and(|s| s != "none") || after.is_some() || !add.is_empty() || !remove.is_empty();
+    if changes_run && board.item(id).is_some_and(|item| item.pointer("/schedule/enabled").and_then(|v| v.as_bool()) == Some(true)) {
+        let _ = writeln!(err, "office-task: this task's schedule will be turned off; a person must turn it on again in the app");
+    } else if schedule.as_deref().is_some_and(|s| s != "none") {
+        let _ = writeln!(err, "office-task: the schedule starts turned off; a person must turn it on in the app");
+    }
     let linked: Vec<String> = after.iter().flatten().chain(&add).cloned().collect();
     if linked.contains(id) { return usage_error(err, &format!("{id} cannot wait on itself")); }
     warn_unknown_references(env, assignee.as_ref().and_then(|a| a.as_deref()), &linked, err);
@@ -419,6 +456,7 @@ fn edit(args: &[String], env: &TaskEnv, stdin: &mut dyn Read, out: &mut dyn Writ
     if let Some(status) = &status { text.push_str(&format!("status: {status}\n")); }
     write_limit_fields(&mut text, &limits);
     if let Some(plan) = plan { text.push_str(&format!("plan: {plan}\n")); }
+    if let Some(schedule) = &schedule { text.push_str(&format!("schedule: {schedule}\n")); }
     if let Some(after) = &after { text.push_str(&format!("after: {}\n", after.join(", "))); }
     if !add.is_empty() { text.push_str(&format!("add-after: {}\n", add.join(", "))); }
     if !remove.is_empty() { text.push_str(&format!("remove-after: {}\n", remove.join(", "))); }
@@ -461,6 +499,8 @@ fn show(id: &str, json: bool, env: &TaskEnv, out: &mut dyn Write, err: &mut dyn 
     for (key, label) in [("maxFollowUps", "max-follow-ups"), ("permissionWaitMinutes", "permission-wait-minutes")] {
         if let Some(n) = item.get(key).and_then(|value| value.as_u64()) { lines.push(format!("{label}: {n}")); }
     }
+    if let Some(schedule) = describe_schedule(item) { lines.push(format!("schedule: {schedule}")); }
+    if let Some(from) = item.get("scheduledFrom").and_then(|v| v.as_str()) { lines.push(format!("scheduled run of: {from}")); }
     let dependents = board.dependents(id);
     if !dependents.is_empty() { lines.push(format!("waited on by: {}", dependents.join(", "))); }
     for line in lines { let _ = writeln!(out, "{}", escape_controls(&line)); }
@@ -496,6 +536,7 @@ fn list(env: &TaskEnv, all: bool, out: &mut dyn Write, err: &mut dyn Write) -> i
         };
         let mut line = format!("{}  [{}]  @{}  {}", field(item, "id"), field(item, "status"), assignee, title);
         if item.get("plan").and_then(|v| v.as_bool()) == Some(true) { line.push_str("  (plan root)"); }
+        if let Some(schedule) = describe_schedule(item) { line.push_str(&format!("  (schedule: {schedule})")); }
         let after: Vec<String> = item.get("dependsOn").and_then(|v| v.as_array()).map(|ids| ids.iter().filter_map(|id| id.as_str().map(String::from)).collect()).unwrap_or_default();
         if !after.is_empty() {
             let waiting = after.iter().any(|id| status_of.get(id).is_some_and(|status| status != "done"));
@@ -508,6 +549,29 @@ fn list(env: &TaskEnv, all: bool, out: &mut dyn Write, err: &mut dyn Write) -> i
         .filter(|entry| entry.file_name().to_str().is_some_and(|name| !name.starts_with('.') && name.ends_with(".md"))).count());
     if pending > 0 { let _ = writeln!(out, "({pending} inbox request(s) are not applied to the board yet)"); }
     0
+}
+
+/// 렌더러가 저장한 예약(`schedule`)을 수신함 명세와 같은 모양으로. 켜짐·다음 실행 시각을 붙인다.
+fn describe_schedule(item: &serde_json::Value) -> Option<String> {
+    let schedule = item.get("schedule")?;
+    let rule = schedule.get("rule")?;
+    let local = |ms: i64| chrono::DateTime::from_timestamp_millis(ms).map(|at| at.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string());
+    let time = || rule.get("time").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+    let spec = match rule.get("kind")?.as_str()? {
+        "once" => format!("at {}", local(rule.get("at")?.as_i64()?)?),
+        "interval" => format!("every {}m", rule.get("minutes")?.as_u64()?),
+        "daily" => format!("daily {}", time()),
+        "weekly" => {
+            const DAYS: [&str; 7] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+            let days: Vec<&str> = rule.get("days")?.as_array()?.iter().filter_map(|d| DAYS.get(d.as_u64()? as usize).copied()).collect();
+            format!("weekly {} {}", days.join(","), time())
+        }
+        _ => return None,
+    };
+    let state = if schedule.get("enabled").and_then(|v| v.as_bool()) == Some(true) {
+        match schedule.get("nextAt").and_then(|v| v.as_i64()).and_then(local) { Some(next) => format!("on, next {next}"), None => "on".into() }
+    } else { "off; a person turns it on in the app".into() };
+    Some(format!("{spec} ({state})"))
 }
 
 /// 저장된 값의 제어문자가 터미널에 해석되지 않게(ESC 시퀀스, OSC 52 등) `\x1b`처럼 적는다.
@@ -835,6 +899,38 @@ mod tests {
     }
 
     #[test]
+    fn schedules_start_off_and_show_their_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let inbox = env(dir.path(), Some("a"));
+        let (code, _, err) = call(&["--every", "mon,wed@9:00", "Weekly check"], &inbox, "");
+        assert_eq!(code, 0);
+        assert!(err.contains("turned off"), "{err}");
+        assert_eq!(written(dir.path())[0].1.schedule.as_deref(), Some("weekly mon,wed 09:00"));
+        assert_eq!(call(&["--at", "2026-11-20 25:00", "Bad"], &inbox, "").0, 2);
+        assert_eq!(call(&["--at", "2026-11-20 09:00", "--every", "30m", "Both"], &inbox, "").0, 2);
+        assert_eq!(call(&["--every", "1m", "Too often"], &inbox, "").0, 2);
+
+        let (dir, env) = board(r#"[
+            {"id":"w1","title":"A","body":"","status":"todo","order":0,"schedule":{"rule":{"kind":"daily","time":"09:00"},"enabled":true,"nextAt":1795000000000}},
+            {"id":"w2","title":"B","body":"","status":"todo","order":1,"scheduledFrom":"w1"}
+        ]"#);
+        let (code, out, _) = call(&["--list"], &env, "");
+        assert_eq!(code, 0);
+        assert!(out.contains("w1  [todo]  @unassigned  A  (schedule: daily 09:00 (on, next "), "{out}");
+        let (_, out, _) = call(&["--show", "w2"], &env, "");
+        assert!(out.contains("scheduled run of: w1"), "{out}");
+        // 켜진 예약의 실행 내용을 바꾸면 꺼진다고 알린다. 상태만 바꾸면 알리지 않는다.
+        let (code, _, err) = call(&["--edit", "w1", "--title", "New"], &env, "");
+        assert_eq!(code, 0);
+        assert!(err.contains("will be turned off"), "{err}");
+        assert!(!call(&["--edit", "w1", "--status", "review"], &env, "").2.contains("turned off"));
+        let (code, _, _) = call(&["--edit", "w1", "--no-schedule"], &env, "");
+        assert_eq!(code, 0);
+        assert!(requests(dir.path()).iter().any(|p| p.edit.as_ref().and_then(|e| e.schedule.as_deref()) == Some("none")));
+        assert_eq!(call(&["--edit", "w1", "--no-schedule", "--every", "2h"], &env, "").0, 2);
+    }
+
+    #[test]
     fn delete_writes_a_request_only_for_known_tasks_and_names_dependents() {
         let (dir, env) = board(r#"[
             {"id":"w1","title":"A","body":"","status":"todo","order":0},
@@ -882,7 +978,7 @@ mod tests {
         let edit = requests(dir.path()).remove(0).edit.unwrap();
         assert_eq!(edit, crate::persistence::work_inbox::Edit {
             id: "w1".into(), title: Some("New title".into()), body: Some("# heading\n  kept".into()), assignee: Some("하나".into()),
-            after: None, add_after: vec!["w3".into()], remove_after: vec!["w0".into()], status: Some("review".into()), plan: None, limits: Default::default(),
+            after: None, add_after: vec!["w3".into()], remove_after: vec!["w0".into()], status: Some("review".into()), plan: None, limits: Default::default(), schedule: None,
         });
         std::fs::remove_dir_all(dir.path().join("work-inbox")).unwrap();
         assert_eq!(call(&["--edit", "w1", "--unassigned", "--no-after"], &env, "").0, 0);

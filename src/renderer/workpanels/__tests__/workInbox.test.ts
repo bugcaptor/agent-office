@@ -149,6 +149,22 @@ describe("receive loop", () => {
     expect(find("t-2")?.permissionWaitMinutes).toBe(30);
     expect(find("t-1")).toMatchObject({ plan: true, maxFollowUps: 0 });
   });
+  it("예약 명세를 꺼진 예약으로 받고 수정 요청으로 바꾸거나 지운다", async () => {
+    api.scanWorkInbox.mockResolvedValueOnce([
+      entry("1.md", "Daily", { id: "t-1", schedule: "daily 09:00" }),
+    ]).mockResolvedValueOnce([
+      { fileName: "2.md", key: "2".padEnd(16, "0"), title: "", body: "", edit: { id: "t-1", schedule: "every 30m" } },
+    ]).mockResolvedValueOnce([
+      { fileName: "3.md", key: "3".padEnd(16, "0"), title: "", body: "", edit: { id: "t-1", schedule: "none" } },
+    ]);
+    startWorkInbox(); await vi.advanceTimersByTimeAsync(3000);
+    const find = (id: string) => useWorkItemStore.getState().items.find((i) => i.id === id);
+    expect(find("t-1")?.schedule).toEqual({ rule: { kind: "daily", time: "09:00" }, enabled: false });
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(find("t-1")?.schedule).toMatchObject({ rule: { kind: "interval", minutes: 30 }, enabled: false });
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(find("t-1")?.schedule).toBeUndefined();
+  });
   it("저장 뒤 건너뛴 파일까지 ack하고 담당을 판정한다", async () => {
     useWorkItemStore.getState().importInbox([{ id: `inbox-${entry("old.md", "").key}`, title: "Old", body: "" }]);
     api.scanWorkInbox.mockResolvedValueOnce([entry("new.md", "New", { assignee: "하나" }), entry("old.md", "Old"), entry("dup.md", "Dup", { assignee: "둘" })]);

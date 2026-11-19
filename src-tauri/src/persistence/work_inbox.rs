@@ -38,6 +38,83 @@ impl RunLimitsPatch {
     }
 }
 
+/// 반복 예약 간격의 하한·상한(분). 렌더러 `workSchedule.ts`와 같다.
+pub const SCHEDULE_MIN_MINUTES: u32 = 5;
+pub const SCHEDULE_MAX_MINUTES: u32 = 30 * 24 * 60;
+const WEEKDAYS: [&str; 7] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+fn schedule_time(value: &str) -> Result<String, String> {
+    let (h, m) = value.split_once(':').ok_or_else(|| format!("invalid time {value:?}; use HH:MM"))?;
+    let digits = |part: &str, len: std::ops::RangeInclusive<usize>| len.contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit());
+    let h: u32 = Some(h).filter(|h| digits(h, 1..=2)).and_then(|h| h.parse().ok()).filter(|h| *h < 24).ok_or_else(|| format!("invalid hour in {value:?}; use HH:MM"))?;
+    let m: u32 = Some(m).filter(|m| digits(m, 2..=2)).and_then(|m| m.parse().ok()).filter(|m| *m < 60).ok_or_else(|| format!("invalid minute in {value:?}; use HH:MM"))?;
+    Ok(format!("{h:02}:{m:02}"))
+}
+/// 요일 목록(`mon,wed`, `weekdays`, `weekends`, `daily`). 일요일부터 차례로, 중복 없이.
+fn schedule_days(value: &str) -> Result<Vec<usize>, String> {
+    let mut days = [false; 7];
+    for part in value.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+        match part.to_ascii_lowercase().as_str() {
+            "weekdays" => (1..=5).for_each(|d| days[d] = true),
+            "weekends" => { days[0] = true; days[6] = true; }
+            "daily" => days = [true; 7],
+            name => days[WEEKDAYS.iter().position(|d| d.eq_ignore_ascii_case(name) || name.starts_with(d) && name.len() <= 9)
+                .ok_or_else(|| format!("unknown weekday {part:?}; use mon,tue,wed,thu,fri,sat,sun, weekdays or weekends"))?] = true,
+        }
+    }
+    let days: Vec<usize> = (0..7).filter(|d| days[*d]).collect();
+    if days.is_empty() { return Err("pick at least one weekday".into()); }
+    Ok(days)
+}
+fn schedule_interval(value: &str) -> Result<u32, String> {
+    let value = value.trim();
+    let (number, unit) = value.split_at(value.find(|c: char| !c.is_ascii_digit()).unwrap_or(value.len()));
+    let n: u32 = number.parse().map_err(|_| format!("invalid interval {value:?}; use e.g. 30m, 2h or 1d"))?;
+    let minutes = match unit { "m" | "min" => Some(n), "h" => n.checked_mul(60), "d" => n.checked_mul(24 * 60), _ => None }
+        .ok_or_else(|| format!("invalid interval {value:?}; use e.g. 30m, 2h or 1d"))?;
+    if !(SCHEDULE_MIN_MINUTES..=SCHEDULE_MAX_MINUTES).contains(&minutes) {
+        return Err(format!("the interval must be from {SCHEDULE_MIN_MINUTES}m to {}d", SCHEDULE_MAX_MINUTES / 1440));
+    }
+    Ok(minutes)
+}
+/// `at` 일시. `2026-11-20 09:00` 또는 `2026-11-20T09:00`, 로컬 시간.
+pub fn schedule_at(value: &str) -> Result<String, String> {
+    let value = value.trim().replacen('T', " ", 1);
+    let (date, time) = value.split_once(' ').ok_or_else(|| format!("invalid date and time {value:?}; use YYYY-MM-DD HH:MM"))?;
+    let date = chrono::NaiveDate::parse_from_str(date.trim(), "%Y-%m-%d").map_err(|_| format!("invalid date {date:?}; use YYYY-MM-DD"))?;
+    Ok(format!("at {} {}", date.format("%Y-%m-%d"), schedule_time(time.trim())?))
+}
+/// `office-task --every` 값. `30m`·`2h`·`1d`는 간격, `daily@09:00`은 매일, `mon,wed@09:00`은 매주다.
+pub fn schedule_every(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    match value.split_once('@') {
+        None => Ok(format!("every {}m", schedule_interval(value)?)),
+        Some((days, time)) if days.trim().eq_ignore_ascii_case("daily") => Ok(format!("daily {}", schedule_time(time.trim())?)),
+        Some((days, time)) => {
+            let days = schedule_days(days)?;
+            let time = schedule_time(time.trim())?;
+            if days.len() == 7 { return Ok(format!("daily {time}")); }
+            Ok(format!("weekly {} {time}", days.iter().map(|d| WEEKDAYS[*d]).collect::<Vec<_>>().join(",")))
+        }
+    }
+}
+/// 수신함 `schedule:` 값을 정규형으로. `none`은 예약을 지우라는 뜻이다(수정 요청에서만 의미가 있다).
+pub fn normalize_schedule(spec: &str) -> Result<String, String> {
+    let spec = spec.trim();
+    let (kind, rest) = spec.split_once(char::is_whitespace).map_or((spec, ""), |(k, r)| (k, r.trim()));
+    match kind.to_ascii_lowercase().as_str() {
+        "none" if rest.is_empty() => Ok("none".into()),
+        "at" => schedule_at(rest),
+        "every" => Ok(format!("every {}m", schedule_interval(rest)?)),
+        "daily" => Ok(format!("daily {}", schedule_time(rest)?)),
+        "weekly" => {
+            let (days, time) = rest.rsplit_once(char::is_whitespace).ok_or_else(|| "weekly needs days and a time, e.g. weekly mon,wed 09:00".to_string())?;
+            schedule_every(&format!("{}@{}", days.trim(), time.trim()))
+        }
+        _ => Err(format!("invalid schedule {spec:?}; use at YYYY-MM-DD HH:MM, every 30m, daily HH:MM, weekly mon,wed HH:MM or none")),
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Parsed {
     pub title: String,
@@ -50,6 +127,8 @@ pub struct Parsed {
     /// 플랜 루트(`plan: true`). 자동 진행이 실행하지 않는 플랜 메모 전용 업무다.
     pub plan: bool,
     pub limits: RunLimitsPatch,
+    /// 예약 정규형(`normalize_schedule`). 앱은 꺼진 채로 받는다.
+    pub schedule: Option<String>,
     /// 완료 요청. 비어 있지 않으면 새 업무가 아니라 이 id들을 완료로 바꾸는 파일이다.
     pub done: Vec<String>,
     /// 삭제 요청. 비어 있지 않으면 이 id들을 지우는 파일이다.
@@ -82,28 +161,32 @@ pub struct Edit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan: Option<bool>,
     #[serde(flatten)] pub limits: RunLimitsPatch,
+    /// 예약 정규형. `none`이면 지운다. 바꾼 예약은 앱이 꺼 둔다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
 }
 impl Edit {
     fn is_empty(&self) -> bool {
         self.title.is_none() && self.body.is_none() && self.assignee.is_none() && self.after.is_none()
-            && self.add_after.is_empty() && self.remove_after.is_empty() && self.status.is_none() && self.plan.is_none() && self.limits == RunLimitsPatch::default()
+            && self.add_after.is_empty() && self.remove_after.is_empty() && self.status.is_none() && self.plan.is_none() && self.limits == RunLimitsPatch::default() && self.schedule.is_none()
     }
 }
 /// 업무 상태 값. `office-task --edit --status`와 수신함 `status` 키가 받는 값이다.
 pub const STATUSES: [&str; 4] = ["todo", "in_progress", "review", "done"];
 #[derive(Debug, PartialEq)]
-pub enum RejectReason { InvalidUtf8, TooLarge, UnclosedFrontmatter, Empty, InvalidLimit(String), ControlChar(char) }
+pub enum RejectReason { InvalidUtf8, TooLarge, UnclosedFrontmatter, Empty, InvalidLimit(String), InvalidSchedule(String), ControlChar(char) }
 impl RejectReason {
     pub fn code(&self) -> &'static str {
         match self {
             Self::InvalidUtf8 => "invalid-utf8", Self::TooLarge => "too-large",
             Self::UnclosedFrontmatter => "unclosed-frontmatter", Self::Empty => "empty",
             Self::ControlChar(_) => "control-char", Self::InvalidLimit(_) => "invalid-run-limit",
+            Self::InvalidSchedule(_) => "invalid-schedule",
         }
     }
     /// `.error` 둘째 줄. 제어문자 거부는 첫 문자를 `U+001B`처럼 적는다.
     pub fn detail(&self) -> Option<String> {
-        match self { Self::InvalidLimit(reason) => Some(reason.clone()), Self::ControlChar(c) => Some(format!("U+{:04X}", *c as u32)), _ => None }
+        match self { Self::InvalidLimit(reason) | Self::InvalidSchedule(reason) => Some(reason.clone()), Self::ControlChar(c) => Some(format!("U+{:04X}", *c as u32)), _ => None }
     }
 }
 /// 업무 제목·본문에 둘 수 없는 문자. 업무 보내기(`work_send`)와 같은 기준으로 탭·줄바꿈만 허용한다.
@@ -126,6 +209,8 @@ pub struct InboxEntry {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub plan: bool,
     #[serde(flatten)] pub limits: RunLimitsPatch,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub done: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -191,6 +276,7 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
                     "status" => edit.status = Some(value.trim().to_string()).filter(|v| STATUSES.contains(&v.as_str())),
                     key @ ("max-follow-ups" | "permission-wait-minutes") => edit.limits.set(key, value).map_err(RejectReason::InvalidLimit)?,
                     "plan" => edit.plan = parse_flag(value),
+                    "schedule" => edit.schedule = Some(normalize_schedule(value).map_err(RejectReason::InvalidSchedule)?),
                     "body" => replace_body = true,
                     _ => {}
                 }
@@ -207,7 +293,7 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
     // 한 파일은 요청 하나다: 완료 → 삭제 → 수정 → 새 업무 순으로 먼저 있는 것으로 읽는다.
     if !done.is_empty() || !delete.is_empty() {
         if !done.is_empty() { delete.clear(); }
-        return Ok(Parsed { title: String::new(), body: String::new(), assignee: None, id: None, after: vec![], plan: false, limits: Default::default(), done, delete, edit: None });
+        return Ok(Parsed { title: String::new(), body: String::new(), assignee: None, id: None, after: vec![], plan: false, limits: Default::default(), schedule: None, done, delete, edit: None });
     }
     if let Some(id) = edit_target {
         edit.id = id;
@@ -216,13 +302,15 @@ pub fn parse(_name: &str, bytes: &[u8]) -> Result<Parsed, RejectReason> {
         if edit.is_empty() { return Err(RejectReason::Empty); }
         let text = [edit.title.as_deref(), edit.body.as_deref(), edit.assignee.as_deref()];
         if let Some(c) = text.into_iter().flatten().find_map(forbidden_control) { return Err(RejectReason::ControlChar(c)); }
-        return Ok(Parsed { title: String::new(), body: String::new(), assignee: None, id: None, after: vec![], plan: false, limits: Default::default(), done, delete, edit: Some(edit) });
+        return Ok(Parsed { title: String::new(), body: String::new(), assignee: None, id: None, after: vec![], plan: false, limits: Default::default(), schedule: None, done, delete, edit: Some(edit) });
     }
     if title.is_empty() && body.trim().is_empty() { return Err(RejectReason::Empty); }
     // ESC 등이 남으면 `office-task --list`·터미널에서 해석되고 업무 보내기도 거절하므로 받지 않는다.
     if let Some(c) = forbidden_control(&title).or_else(|| forbidden_control(&body)) { return Err(RejectReason::ControlChar(c)); }
     let plan = edit.plan.unwrap_or(false);
-    Ok(Parsed { title, body, assignee, id, after, plan, limits: edit.limits, done, delete, edit: None })
+    // 새 업무에서 `none`은 예약이 없는 것과 같다.
+    let schedule = edit.schedule.filter(|spec| spec != "none");
+    Ok(Parsed { title, body, assignee, id, after, plan, limits: edit.limits, schedule, done, delete, edit: None })
 }
 /// 본문의 들여쓰기와 trailing spaces는 보존하고 앞뒤 빈 줄만 다듬는다.
 fn trim_blank_lines(lines: &[&str]) -> String {
@@ -301,7 +389,7 @@ pub fn scan(root: &Path, now: SystemTime) -> Result<Vec<InboxEntry>, String> {
                 let mut hash = Sha256::new();
                 hash.update(name.as_bytes()); hash.update([0]); hash.update(&bytes);
                 let key = format!("{:x}", hash.finalize())[..16].to_string();
-                entries.push(InboxEntry { file_name: name, key, title: parsed.title, body: parsed.body, assignee: parsed.assignee, id: parsed.id, after: parsed.after, plan: parsed.plan, limits: parsed.limits, done: parsed.done, delete: parsed.delete, edit: parsed.edit });
+                entries.push(InboxEntry { file_name: name, key, title: parsed.title, body: parsed.body, assignee: parsed.assignee, id: parsed.id, after: parsed.after, plan: parsed.plan, limits: parsed.limits, schedule: parsed.schedule, done: parsed.done, delete: parsed.delete, edit: parsed.edit });
             }
             Err(reason) => reject(root, &name, reason.code(), reason.detail().as_deref()).map_err(|e| e.to_string())?,
         }
@@ -345,11 +433,11 @@ mod tests {
     use super::*;
     #[test]
     fn parses_plain_frontmatter_bom_crlf_and_preserves_body_indentation() {
-        assert_eq!(parse("x.md", b"\n# Title\n\n  code  \n\n").unwrap(), Parsed { title: "Title".into(), body: "  code  ".into(), assignee: None, id: None, after: vec![], plan: false, limits: Default::default(), done: vec![], delete: vec![], edit: None });
+        assert_eq!(parse("x.md", b"\n# Title\n\n  code  \n\n").unwrap(), Parsed { title: "Title".into(), body: "  code  ".into(), assignee: None, id: None, after: vec![], plan: false, limits: Default::default(), schedule: None, done: vec![], delete: vec![], edit: None });
         let p = parse("x.md", "\u{feff}---\r\nfuture: ignored\r\nassignee: 하나 \r\n---\r\n# 제목\r\n본문\r\n".as_bytes()).unwrap();
-        assert_eq!(p, Parsed { title: "제목".into(), body: "본문".into(), assignee: Some("하나".into()), id: None, after: vec![], plan: false, limits: Default::default(), done: vec![], delete: vec![], edit: None });
+        assert_eq!(p, Parsed { title: "제목".into(), body: "본문".into(), assignee: Some("하나".into()), id: None, after: vec![], plan: false, limits: Default::default(), schedule: None, done: vec![], delete: vec![], edit: None });
         assert_eq!(parse("x.md", b"Title").unwrap().body, "");
-        assert_eq!(parse("x.md", b"# \nBody").unwrap(), Parsed { title: "".into(), body: "Body".into(), assignee: None, id: None, after: vec![], plan: false, limits: Default::default(), done: vec![], delete: vec![], edit: None });
+        assert_eq!(parse("x.md", b"# \nBody").unwrap(), Parsed { title: "".into(), body: "Body".into(), assignee: None, id: None, after: vec![], plan: false, limits: Default::default(), schedule: None, done: vec![], delete: vec![], edit: None });
     }
     #[test]
     fn parses_task_id_and_prerequisites() {
@@ -377,7 +465,7 @@ mod tests {
         let p = parse("x.md", b"---\nedit: t-1\ntitle:  New: title \nassignee:\nafter:\nadd-after: t-3\nremove-after: t-4,t-5\nstatus: review\nbody: replace\n---\n\n# not a title\n  kept\n\n").unwrap();
         assert_eq!(p.edit, Some(Edit {
             id: "t-1".into(), title: Some("New: title".into()), body: Some("# not a title\n  kept".into()), assignee: Some("".into()),
-            after: Some(vec![]), add_after: vec!["t-3".into()], remove_after: vec!["t-4".into(), "t-5".into()], status: Some("review".into()), plan: None, limits: Default::default(),
+            after: Some(vec![]), add_after: vec!["t-3".into()], remove_after: vec!["t-4".into(), "t-5".into()], status: Some("review".into()), plan: None, limits: Default::default(), schedule: None,
         }));
         assert_eq!(parse("x.md", b"---\nedit: t-1\nplan: no\n---\n").unwrap().edit.unwrap().plan, Some(false));
         assert_eq!(parse("x.md", b"---\nedit: t-1\nplan: maybe\n---\n"), Err(RejectReason::Empty));
@@ -389,6 +477,45 @@ mod tests {
         assert_eq!(parse("x.md", b"---\nedit: t-1\ntitle: a\x1bb\n---\n"), Err(RejectReason::ControlChar('\u{1b}')));
         // 형식이 틀린 대상이면 수정 요청이 아니라 일반 업무로 읽는다.
         assert_eq!(parse("x.md", b"---\nedit: bad id\n---\n# Task").unwrap().title, "Task");
+    }
+    #[test]
+    fn parses_and_normalizes_schedules() {
+        assert_eq!(normalize_schedule("at 2026-11-20 9:05").as_deref(), Ok("at 2026-11-20 09:05"));
+        assert_eq!(normalize_schedule("at 2026-11-20T09:05").as_deref(), Ok("at 2026-11-20 09:05"));
+        assert_eq!(normalize_schedule("every 2h").as_deref(), Ok("every 120m"));
+        assert_eq!(normalize_schedule("every 1d").as_deref(), Ok("every 1440m"));
+        assert_eq!(normalize_schedule("daily 7:30").as_deref(), Ok("daily 07:30"));
+        assert_eq!(normalize_schedule("weekly Wed,mon,wed 09:00").as_deref(), Ok("weekly mon,wed 09:00"));
+        assert_eq!(normalize_schedule("weekly weekdays 09:00").as_deref(), Ok("weekly mon,tue,wed,thu,fri 09:00"));
+        assert_eq!(normalize_schedule("NONE").as_deref(), Ok("none"));
+        for bad in ["", "every 4m", "every 31d", "every 5x", "daily 24:00", "daily 9:5", "at 2026-13-01 09:00", "at tomorrow", "weekly 09:00", "weekly funday 09:00", "hourly"] {
+            assert!(normalize_schedule(bad).is_err(), "{bad}");
+        }
+        assert_eq!(schedule_every("daily@9:00").as_deref(), Ok("daily 09:00"));
+        assert_eq!(schedule_every("sat,sun@10:00").as_deref(), Ok("weekly sun,sat 10:00"));
+        assert_eq!(schedule_every("mon,tue,wed,thu,fri,sat,sun@10:00").as_deref(), Ok("daily 10:00"));
+        assert_eq!(schedule_every("90m").as_deref(), Ok("every 90m"));
+        let p = parse("x.md", b"---
+schedule: daily 09:00
+---
+# Daily check
+").unwrap();
+        assert_eq!(p.schedule.as_deref(), Some("daily 09:00"));
+        assert_eq!(parse("x.md", b"---
+schedule: none
+---
+# Task
+").unwrap().schedule, None);
+        assert!(matches!(parse("x.md", b"---
+schedule: sometimes
+---
+# Task
+"), Err(RejectReason::InvalidSchedule(_))));
+        assert_eq!(parse("x.md", b"---
+edit: t-1
+schedule: none
+---
+").unwrap().edit.unwrap().schedule.as_deref(), Some("none"));
     }
     #[test]
     fn rejects_malformed_content_and_accepts_exact_size_limit() {

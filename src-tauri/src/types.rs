@@ -1414,6 +1414,10 @@ pub struct WorkItem {
     #[serde(default, skip_serializing_if = "Option::is_none")] pub permission_wait_minutes: Option<u32>,
     /// 자동 진행 상태. 렌더러가 소유하고 네이티브는 보존만 한다.
     #[serde(default, skip_serializing_if = "Option::is_none")] pub auto_run: Option<serde_json::Value>,
+    /// 예약. 렌더러가 소유하고 네이티브는 보존만 한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub schedule: Option<serde_json::Value>,
+    /// 반복 예약 회차로 복제된 업무의 원본 템플릿 id.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub scheduled_from: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
 }

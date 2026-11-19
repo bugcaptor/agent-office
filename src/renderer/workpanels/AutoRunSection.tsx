@@ -5,18 +5,12 @@ import { useAppStore } from "../store/appStore";
 import { formatUsd } from "../analytics/pricing";
 import { useWorkItemStore } from "./workItemStore";
 import { workItemTitle } from "./workItemDraft";
-import { sendErrorText } from "./sendErrorText";
+import { codeText } from "./sendErrorText";
 import { TaskChatButton, useTaskChatButton } from "./TaskChatButton";
 import { AutoRunUsage, UsageWaitDetail } from "./AutoRunUsage";
 import { AUTO_RUN_LIMITS, effectiveLimit } from "./autoRunLimits";
 import { busyRunRoot, endAutoRun, pauseAutoRun, planItems, resumeAutoRun, runSteps, startAutoRun, startBlockedReason } from "./autoRun";
 
-/** 시작 차단·일시정지 상세 코드를 화면 문장으로. 자동 진행 코드가 아니면 보내기 오류 문구를 쓴다. */
-export function codeText(t: (key: string, options?: Record<string, unknown>) => string, code: string, options?: Record<string, unknown>): string {
-  if (code.startsWith("auto-run-") && !code.startsWith("auto-run-judge")) return t(`autoRun.blocked.${code}`, options);
-  if (code.startsWith("work-send-") || code.startsWith("automation-")) return sendErrorText(code);
-  return code;
-}
 
 function pauseText(t: (key: string, options?: Record<string, unknown>) => string, run: AutoRun): { reason: string; detail?: string } {
   const reason = t(`autoRun.reasons.${run.pauseReason ?? "user"}`, { max: run.log[run.log.length - 1]?.followUpLimit ?? AUTO_RUN_LIMITS.maxFollowUps.defaultValue });

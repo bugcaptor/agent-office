@@ -109,7 +109,8 @@
     "modelCatalog": "Le modèle agy est absent de son catalogue actuel.",
     "blocked": "Terminez tous les prérequis avant l’envoi.",
     "autoRunActive": "Ce personnage exécute une exécution automatique. Mettez-la en pause avant d'envoyer.",
-    "planRoot": "Une racine de plan n’est pas envoyée. Utilisez l’exécution auto pour lancer les tâches qu’elle attend."
+    "planRoot": "Une racine de plan n’est pas envoyée. Utilisez l’exécution auto pour lancer les tâches qu’elle attend.",
+    "scheduleTemplate": "Un modèle de planification récurrente n’est pas envoyé directement. Une copie est créée et exécutée à chaque échéance."
   },
   "resumeNewWork": "Continuer la nouvelle tâche",
   "add": "Ajouter",
@@ -247,7 +248,8 @@
       "auto-run-observer-off": "Activez l'observation des agents dans les paramètres. L'exécution a besoin des hooks pour savoir quand un tour se termine.",
       "auto-run-foreign-task": "Une tâche préalable est assignée à un autre personnage. Assignez-la à ce personnage ou laissez-la non assignée.",
       "auto-run-runner-busy": "Ce personnage a une autre exécution automatique non terminée : « {{title}} ». Terminez-la d'abord.",
-      "auto-run-root-busy": "Il ne reste que la tâche racine, et elle est en cours ou en revue. Remettez-la à faire pour la relancer."
+      "auto-run-root-busy": "Il ne reste que la tâche racine, et elle est en cours ou en revue. Remettez-la à faire pour la relancer.",
+      "auto-run-schedule-template": "C’est un modèle de planification récurrente (ou l’une de ses étapes) : il ne peut pas être lancé directement. Une copie est créée et exécutée à chaque échéance."
     },
     "worker": {
       "intro": "[Exécution auto] Cette tâche est la {{index}}/{{total}} du plan « {{plan}} ». Elle démarre dans une nouvelle session ; servez-vous du contexte ci-dessous.",
@@ -302,5 +304,78 @@
     },
     "quitNotice_one": "{{count}} discussion de tâche ouverte se terminera aussi.",
     "quitNotice_other": "{{count}} discussions de tâche ouvertes se termineront aussi."
+  },
+  "schedule": {
+    "title": "Planification",
+    "none": "Aucune planification.",
+    "on": "Activée",
+    "off": "Désactivée",
+    "next": "Activée · prochaine exécution {{when}}",
+    "offHint": "Désactivée, elle ne s’exécute pas. Une planification créée ou modifiée par un agent ou un script ne s’exécute qu’après activation par une personne.",
+    "offInvalid": "L’heure est passée, impossible de l’activer. Modifiez la planification.",
+    "offDone": "La tâche est terminée, sa planification a été désactivée.",
+    "lastRun": "Dernière exécution {{when}}",
+    "lastSkip": "Dernier saut {{when}} : {{reason}}",
+    "recurringHint": "Avec une planification récurrente, cette tâche devient un modèle. À chaque échéance, une copie est créée et envoyée au personnage assigné.",
+    "recurringPlanHint": "Avec une planification récurrente, ce plan devient un modèle. À chaque échéance, la racine et ses étapes sont copiées et exécutées en avancement automatique.",
+    "onceHint": "À l’heure choisie, cette tâche est envoyée au personnage assigné.",
+    "oncePlanHint": "À l’heure choisie, l’avancement automatique de ce plan démarre.",
+    "kind": "Répétition",
+    "kinds": {
+      "once": "Une fois",
+      "interval": "À intervalle",
+      "daily": "Chaque jour",
+      "weekly": "Chaque semaine"
+    },
+    "when": "Date et heure",
+    "every": "Toutes les",
+    "unit": "Unité",
+    "units": {
+      "m": "minutes",
+      "h": "heures",
+      "d": "jours"
+    },
+    "days": "Jours",
+    "time": "Heure",
+    "invalid": {
+      "past": "Choisissez une heure postérieure à maintenant.",
+      "interval": "Choisissez un intervalle de {{min}} minutes à {{maxDays}} jours.",
+      "days": "Choisissez au moins un jour.",
+      "time": "Indiquez l’heure au format HH:MM."
+    },
+    "remove": "Supprimer la planification",
+    "change": "Modifier la planification",
+    "add": "Ajouter une planification",
+    "turnOff": "Désactiver",
+    "turnOn": "Activer",
+    "saveOn": "Enregistrer et activer",
+    "rule": {
+      "once": "Une fois le {{when}}",
+      "everyMinutes_one": "Toutes les {{count}} minute",
+      "everyMinutes_other": "Toutes les {{count}} minutes",
+      "everyHours_one": "Toutes les {{count}} heure",
+      "everyHours_other": "Toutes les {{count}} heures",
+      "everyDays_one": "Tous les {{count}} jour",
+      "everyDays_other": "Tous les {{count}} jours",
+      "daily": "Chaque jour à {{time}}",
+      "weekly": "Chaque semaine le {{days}} à {{time}}"
+    },
+    "chip": {
+      "once": "Planifiée {{when}}",
+      "recurring": "Récurrente · prochaine {{when}}",
+      "off": "Planification désactivée",
+      "run": "Exécution planifiée"
+    },
+    "skip": {
+      "missed": "L’échéance a été manquée pendant que l’application était fermée ou en veille.",
+      "previous-open": "L’exécution précédente n’est pas encore terminée.",
+      "agent-working": "Le personnage assigné travaille ou attend une réponse.",
+      "blocked": "Impossible de l’exécuter.",
+      "failed": "Impossible de l’envoyer."
+    },
+    "detail": {
+      "schedule-not-todo": "La tâche n’est pas à l’état À faire."
+    },
+    "skippedTitle": "Planification sautée : {{title}}"
   }
 }

@@ -26,8 +26,35 @@ export interface WorkItem {
   permissionWaitMinutes?: number;
   /** 자동 진행 상태. 이 업무를 루트로 시작했을 때만 있다. */
   autoRun?: AutoRun;
+  /** 예약. 반복 예약이면 이 업무는 템플릿이고 회차마다 복제본을 실행한다. 렌더러가 소유한다. */
+  schedule?: WorkSchedule;
+  /** 반복 예약 회차로 복제된 업무면 원본 템플릿 id. */
+  scheduledFrom?: string;
   createdAt: number;
   updatedAt: number;
+}
+/** 예약 규칙. 시각은 모두 로컬 시간 기준이다. */
+export type WorkScheduleRule =
+  /** 한 번. `at`은 epoch ms. 복제하지 않고 그 업무 자체를 실행한다. */
+  | { kind: "once"; at: number }
+  /** N분마다. */
+  | { kind: "interval"; minutes: number }
+  /** 매일 `time`(HH:MM). */
+  | { kind: "daily"; time: string }
+  /** 매주 고른 요일(0=일요일)의 `time`(HH:MM). */
+  | { kind: "weekly"; days: number[]; time: string };
+/** 예약 회차를 건너뛴 이유. `missed`는 앱이 꺼져 있거나 잠자기 중이라 예정 시각을 놓친 것이다. */
+export type WorkScheduleSkipReason = "missed" | "previous-open" | "agent-working" | "blocked" | "failed";
+export interface WorkSchedule {
+  rule: WorkScheduleRule;
+  /** 켜져 있을 때만 실행한다. CLI·수신함·외부 편집이 만들거나 바꾼 예약은 꺼진 채로 둔다. */
+  enabled: boolean;
+  /** 다음 실행 예정 시각(epoch ms). 켜져 있을 때만 있다. */
+  nextAt?: number;
+  /** 마지막으로 실행한 회차의 예정 시각. */
+  lastRunAt?: number;
+  /** 마지막으로 건너뛴 회차. `detail`은 막힌 이유 코드(`work-send-*`·`auto-run-*`)다. */
+  lastSkip?: { at: number; reason: WorkScheduleSkipReason; detail?: string };
 }
 export type AutoRunState = "running" | "paused" | "finished";
 export type AutoRunPauseReason =
@@ -194,6 +221,8 @@ export interface InboxEntry {
   plan?: boolean;
   maxFollowUps?: number | null;
   permissionWaitMinutes?: number | null;
+  /** 예약 명세(`at 2026-11-20 09:00`, `every 30m`, `daily 09:00`, `weekly mon,wed 09:00`). 꺼진 채로 만든다. */
+  schedule?: string;
   /** 완료 요청 파일이면 완료로 바꿀 업무 id. 이때 제목·본문은 쓰지 않는다. */
   done?: string[];
   /** 삭제 요청 파일이면 지울 업무 id. */
@@ -217,4 +246,6 @@ export interface InboxEdit {
   permissionWaitMinutes?: number | null;
   /** 플랜 루트 표시를 켜거나 끈다. */
   plan?: boolean;
+  /** 예약 명세. `none`이면 예약을 지운다. 바꾼 예약은 꺼진다. */
+  schedule?: string;
 }

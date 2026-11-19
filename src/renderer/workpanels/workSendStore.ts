@@ -10,6 +10,7 @@ import { workItemTitle } from "./workItemDraft";
 import { reconcileWorkMonitor } from "./workMonitor";
 import { linkWorkSession } from "./sessionSummaryStore";
 import { pendingPrerequisites } from "./workDependencies";
+import { scheduleTemplateOf } from "./workSchedule";
 
 interface Confirmation { itemId: string; title: string; agentName: string; target: WorkSendTarget }
 export const useWorkSendStore = create<{ busy: Record<string, string>; confirmation: Confirmation | null }>(() => ({ busy: {}, confirmation: null }));
@@ -50,7 +51,8 @@ export function requestWorkSend(itemId: string, options: WorkSendOptions = {}): 
   const item = useWorkItemStore.getState().items.find((i) => i.id === itemId);
   if (!item) return Promise.resolve();
   const agent = item.assigneeAgentId ? useAppStore.getState().agents[item.assigneeAgentId] : undefined;
-  const error = pendingPrerequisites(item, useWorkItemStore.getState().items).length ? "work-send-blocked" : profileError(agent, options.auto);
+  const all = useWorkItemStore.getState().items;
+  const error = scheduleTemplateOf(item, all) ? "work-send-schedule-template" : pendingPrerequisites(item, all).length ? "work-send-blocked" : profileError(agent, options.auto);
   if (error || !agent) { useWorkItemStore.getState().recordSend(itemId, { error }); return Promise.resolve(); }
   if (active.has(agent.id)) return active.get(agent.id)!.promise;
   const captured = snapshot(item, agent);

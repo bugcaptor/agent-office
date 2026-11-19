@@ -889,6 +889,8 @@ mod tests {
             max_follow_ups: None,
             permission_wait_minutes: None,
             auto_run: None,
+            schedule: None,
+            scheduled_from: None,
             created_at: 0,
             updated_at: 0,
         };

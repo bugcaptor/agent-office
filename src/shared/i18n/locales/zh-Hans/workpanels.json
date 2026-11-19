@@ -109,7 +109,8 @@
     "modelCatalog": "所选 agy 模型不在当前模型列表中。",
     "blocked": "请先完成所有前置任务再发送。",
     "autoRunActive": "该角色正在自动推进中。请先暂停再发送。",
-    "planRoot": "计划根不会发送。请用自动执行运行它等待的任务。"
+    "planRoot": "计划根不会发送。请用自动执行运行它等待的任务。",
+    "scheduleTemplate": "重复计划的模板不直接发送。每到计划时间会复制一份并执行。"
   },
   "resumeNewWork": "继续编写新任务",
   "add": "添加",
@@ -247,7 +248,8 @@
       "auto-run-observer-off": "请在设置中开启代理观察。需要通过钩子得知每轮何时结束。",
       "auto-run-foreign-task": "有前置任务分配给了其他角色。请将其分配给推进角色或改为未分配。",
       "auto-run-runner-busy": "该角色还有另一个未结束的自动推进「{{title}}」。请先结束它。",
-      "auto-run-root-busy": "只剩根任务，但它正在进行或待审核。要再次运行，请把它改回待办。"
+      "auto-run-root-busy": "只剩根任务，但它正在进行或待审核。要再次运行，请把它改回待办。",
+      "auto-run-schedule-template": "这是重复计划的模板(或其步骤)，不能直接开始。每到计划时间会复制一份并推进。"
     },
     "worker": {
       "intro": "[自动推进] 此任务是计划“{{plan}}”的第 {{index}}/{{total}} 个。它在新会话中开始，请参考以下上下文。",
@@ -302,5 +304,78 @@
     },
     "quitNotice_one": "打开的 {{count}} 个任务对话也会一并结束。",
     "quitNotice_other": "打开的 {{count}} 个任务对话也会一并结束。"
+  },
+  "schedule": {
+    "title": "计划",
+    "none": "没有计划。",
+    "on": "已开启",
+    "off": "已关闭",
+    "next": "已开启 · 下次运行 {{when}}",
+    "offHint": "已关闭，不会运行。由代理或脚本创建或修改的计划，需要有人开启后才会运行。",
+    "offInvalid": "时间已过，无法开启。请修改计划。",
+    "offDone": "任务已完成，计划已关闭。",
+    "lastRun": "上次运行 {{when}}",
+    "lastSkip": "上次跳过 {{when}}：{{reason}}",
+    "recurringHint": "设为重复计划后，此任务会成为模板。每到设定时间复制一份并发给负责的角色。",
+    "recurringPlanHint": "设为重复计划后，此计划会成为模板。每到设定时间复制根任务和步骤，并用自动推进运行。",
+    "onceHint": "到设定时间把此任务发给负责的角色。",
+    "oncePlanHint": "到设定时间开始此计划的自动推进。",
+    "kind": "重复",
+    "kinds": {
+      "once": "一次",
+      "interval": "固定间隔",
+      "daily": "每天",
+      "weekly": "每周"
+    },
+    "when": "日期时间",
+    "every": "间隔",
+    "unit": "单位",
+    "units": {
+      "m": "分钟",
+      "h": "小时",
+      "d": "天"
+    },
+    "days": "星期",
+    "time": "时间",
+    "invalid": {
+      "past": "请选择晚于现在的时间。",
+      "interval": "间隔请设在 {{min}} 分钟到 {{maxDays}} 天之间。",
+      "days": "请至少选择一天。",
+      "time": "请按 HH:MM 设置时间。"
+    },
+    "remove": "删除计划",
+    "change": "修改计划",
+    "add": "添加计划",
+    "turnOff": "关闭",
+    "turnOn": "开启",
+    "saveOn": "保存并开启",
+    "rule": {
+      "once": "一次 {{when}}",
+      "everyMinutes_one": "每 {{count}} 分钟",
+      "everyMinutes_other": "每 {{count}} 分钟",
+      "everyHours_one": "每 {{count}} 小时",
+      "everyHours_other": "每 {{count}} 小时",
+      "everyDays_one": "每 {{count}} 天",
+      "everyDays_other": "每 {{count}} 天",
+      "daily": "每天 {{time}}",
+      "weekly": "每周 {{days}} {{time}}"
+    },
+    "chip": {
+      "once": "计划 {{when}}",
+      "recurring": "重复 · 下次 {{when}}",
+      "off": "计划已关闭",
+      "run": "计划运行"
+    },
+    "skip": {
+      "missed": "应用关闭或休眠期间错过了计划时间。",
+      "previous-open": "上一次运行尚未结束。",
+      "agent-working": "负责的角色正在工作或等待回复。",
+      "blocked": "无法运行。",
+      "failed": "未能发送。"
+    },
+    "detail": {
+      "schedule-not-todo": "任务不在待办状态。"
+    },
+    "skippedTitle": "已跳过计划：{{title}}"
   }
 }

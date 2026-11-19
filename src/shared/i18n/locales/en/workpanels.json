@@ -109,7 +109,8 @@
     "modelCatalog": "The requested agy model is not in its live model catalog.",
     "blocked": "Finish all prerequisites before sending.",
     "autoRunActive": "This character is running an auto run. Pause it before sending.",
-    "planRoot": "A plan root is not sent. Use auto-run to run the tasks it waits on."
+    "planRoot": "A plan root is not sent. Use auto-run to run the tasks it waits on.",
+    "scheduleTemplate": "A recurring schedule template is not sent directly. A copy is made and run at each scheduled time."
   },
   "resumeNewWork": "Resume new task",
   "add": "Add",
@@ -247,7 +248,8 @@
       "auto-run-observer-off": "Turn on Agent observation in Settings. The run needs hooks to know when a turn ends.",
       "auto-run-foreign-task": "A prerequisite is assigned to another character. Assign it to this character or leave it unassigned.",
       "auto-run-runner-busy": "This character has another auto run that is not finished: \"{{title}}\". End it first.",
-      "auto-run-root-busy": "Only the root task is left, and it is In progress or in Review. Move it back to To do to run it again."
+      "auto-run-root-busy": "Only the root task is left, and it is In progress or in Review. Move it back to To do to run it again.",
+      "auto-run-schedule-template": "This is a recurring schedule template (or one of its steps), so it cannot be started directly. A copy is made and run at each scheduled time."
     },
     "worker": {
       "intro": "[Auto run] This task is {{index}}/{{total}} of the plan \"{{plan}}\". It starts in a fresh session, so use the context below.",
@@ -302,5 +304,78 @@
     },
     "quitNotice_one": "{{count}} open task chat will end too.",
     "quitNotice_other": "{{count}} open task chats will end too."
+  },
+  "schedule": {
+    "title": "Schedule",
+    "none": "No schedule.",
+    "on": "On",
+    "off": "Off",
+    "next": "On · next run {{when}}",
+    "offHint": "It is off and will not run. Schedules made or changed by an agent or script run only after a person turns them on.",
+    "offInvalid": "The time has passed, so it cannot be turned on. Change the schedule.",
+    "offDone": "The task is done, so its schedule was turned off.",
+    "lastRun": "Last run {{when}}",
+    "lastSkip": "Last skipped {{when}}: {{reason}}",
+    "recurringHint": "With a recurring schedule this task becomes a template. At each time a copy is made and sent to the assignee.",
+    "recurringPlanHint": "With a recurring schedule this plan becomes a template. At each time the root and its steps are copied and run with auto-run.",
+    "onceHint": "At the set time this task is sent to the assignee.",
+    "oncePlanHint": "At the set time auto-run starts for this plan.",
+    "kind": "Repeat",
+    "kinds": {
+      "once": "Once",
+      "interval": "At an interval",
+      "daily": "Daily",
+      "weekly": "Weekly"
+    },
+    "when": "Date and time",
+    "every": "Every",
+    "unit": "Unit",
+    "units": {
+      "m": "minutes",
+      "h": "hours",
+      "d": "days"
+    },
+    "days": "Days",
+    "time": "Time",
+    "invalid": {
+      "past": "Pick a time later than now.",
+      "interval": "Set an interval from {{min}} minutes to {{maxDays}} days.",
+      "days": "Pick at least one day.",
+      "time": "Set the time as HH:MM."
+    },
+    "remove": "Remove schedule",
+    "change": "Change schedule",
+    "add": "Add schedule",
+    "turnOff": "Turn off",
+    "turnOn": "Turn on",
+    "saveOn": "Save and turn on",
+    "rule": {
+      "once": "Once at {{when}}",
+      "everyMinutes_one": "Every {{count}} minute",
+      "everyMinutes_other": "Every {{count}} minutes",
+      "everyHours_one": "Every {{count}} hour",
+      "everyHours_other": "Every {{count}} hours",
+      "everyDays_one": "Every {{count}} day",
+      "everyDays_other": "Every {{count}} days",
+      "daily": "Daily at {{time}}",
+      "weekly": "Weekly on {{days}} at {{time}}"
+    },
+    "chip": {
+      "once": "Scheduled {{when}}",
+      "recurring": "Repeats · next {{when}}",
+      "off": "Schedule off",
+      "run": "Scheduled run"
+    },
+    "skip": {
+      "missed": "The scheduled time was missed while the app was closed or asleep.",
+      "previous-open": "The previous run has not finished yet.",
+      "agent-working": "The assignee is working or waiting for a reply.",
+      "blocked": "It could not run.",
+      "failed": "It could not be sent."
+    },
+    "detail": {
+      "schedule-not-todo": "The task is not in To do."
+    },
+    "skippedTitle": "Schedule skipped: {{title}}"
   }
 }

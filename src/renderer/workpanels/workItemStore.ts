@@ -1,11 +1,12 @@
 import { create } from "zustand";
 import { nanoid } from "nanoid";
-import type { AutoRun, WorkItem, WorkStatus } from "@shared/types";
+import type { AutoRun, WorkItem, WorkSchedule, WorkScheduleRule, WorkStatus } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { hasWorkContent, type WorkItemDraft } from "./workItemDraft";
 import { explainDependsOn, normalizeDependsOn, type DroppedDependency } from "./workDependencies";
 import type { ImportedWorkItem } from "./workItemFile";
 import { mergeWorkItems, sameWorkValue } from "./workItemSync";
+import { disabledSchedule, disableTouchedSchedules, RUN_CONTENT_KEYS } from "./workSchedule";
 
 export const WORK_STATUS_ORDER: WorkStatus[] = ["review", "in_progress", "todo", "done"];
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -13,7 +14,7 @@ let saving: Promise<void> | undefined;
 let loading: Promise<void> | undefined;
 let refreshing: Promise<boolean> | undefined;
 let revision = 0;
-export type InboxImport = Pick<WorkItem, "id" | "title" | "body" | "assigneeAgentId" | "dependsOn" | "plan" | "maxFollowUps" | "permissionWaitMinutes">;
+export type InboxImport = Pick<WorkItem, "id" | "title" | "body" | "assigneeAgentId" | "dependsOn" | "plan" | "maxFollowUps" | "permissionWaitMinutes"> & { scheduleRule?: WorkScheduleRule };
 /**
  * 수신함 업무 하나의 처리 결과.
  * - added: 새로 넣음. `dropped`는 버린 선행 작업.
@@ -26,7 +27,7 @@ export type InboxImportResult = { kind: "added"; dropped: DroppedDependency[] } 
 export type InboxRequest =
   | { kind: "done"; ids: string[] }
   | { kind: "delete"; ids: string[] }
-  | { kind: "edit"; id: string; patch: Partial<Pick<WorkItem, "title" | "body" | "status" | "plan">> & { assigneeAgentId?: string | null; maxFollowUps?: number | null; permissionWaitMinutes?: number | null; dependsOn?: string[]; addDependsOn?: string[]; removeDependsOn?: string[] } };
+  | { kind: "edit"; id: string; patch: Partial<Pick<WorkItem, "title" | "body" | "status" | "plan">> & { assigneeAgentId?: string | null; maxFollowUps?: number | null; permissionWaitMinutes?: number | null; dependsOn?: string[]; addDependsOn?: string[]; removeDependsOn?: string[]; scheduleRule?: WorkScheduleRule | null } };
 /**
  * 변경 요청 하나의 결과. `unknown`이 있거나 `empty`면 반영하지 않았다.
  * `dropped`는 수정에서 요청했지만 버린 선행 작업이다.
@@ -58,6 +59,13 @@ interface WorkItemState {
   recordSend(id: string, result: { sessionId?: string; error?: string }): void;
   /** 루트 업무의 자동 진행 상태를 바꾸거나(undefined면) 지운다. */
   setAutoRun(id: string, autoRun: AutoRun | undefined): void;
+  /** 업무의 예약을 바꾸거나(undefined면) 지운다. */
+  setSchedule(id: string, schedule: WorkSchedule | undefined): void;
+  /**
+   * 반복 예약 템플릿과 그 플랜 단계(`memberIds`)를 새 id의 할 일로 복제한다. 선행 작업은 복제본끼리 다시 잇고
+   * 복제본에는 `scheduledFrom`을 남긴다. 새 루트 id가 맨 앞인 새 id 목록을 돌려준다.
+   */
+  cloneScheduled(templateId: string, memberIds: string[]): string[] | undefined;
   remove(id: string): void;
   reorder(id: string, targetId: string, after?: boolean): void;
   select(id: string | null): void;
@@ -69,6 +77,8 @@ export function hasPendingWorkItems(): boolean { return useWorkItemStore.getStat
  * 진행자를 붙잡아 다른 플랜의 시작을 막지 않게 한다. 바뀔 것이 없으면 같은 객체를 돌려준다.
  */
 function closeRunOfDone(item: WorkItem, at: number): WorkItem {
+  // 완료한 업무의 예약도 끈다. 다시 할 일로 되돌려도 사람이 켜야 실행된다.
+  if (item.status === "done" && item.schedule?.enabled) item = { ...item, schedule: disabledSchedule(item.schedule) };
   const run = item.autoRun;
   if (item.status !== "done" || !run || run.state === "finished") return item;
   // 기록 상한은 autoRun.ts의 MAX_LOG와 같다.
@@ -151,7 +161,9 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
       if (!entry.id || !hasWorkContent(entry)) return { kind: "skipped" };
       const existing = byId.get(entry.id);
       if (existing) return { kind: existing.title === entry.title && existing.body === entry.body ? "replayed" : "duplicate" };
-      const item: WorkItem = { ...entry, status: "todo", order: order++, sessionIds: [], createdAt: at, updatedAt: at };
+      // 수신함(에이전트·스크립트)이 만든 예약은 꺼진 채로 둔다. 사람이 켜야 실행된다.
+      const { scheduleRule, ...fields } = entry;
+      const item: WorkItem = { ...fields, ...scheduleRule ? { schedule: { rule: scheduleRule, enabled: false } } : {}, status: "todo", order: order++, sessionIds: [], createdAt: at, updatedAt: at };
       byId.set(item.id, item);
       added.push(item);
       return { kind: "added", dropped: [] };
@@ -198,6 +210,8 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     let items = get().items;
     let selectedId = get().selectedId;
     const at = Date.now();
+    // 사람 없이 실행 내용이 바뀐 업무. 켜진 예약이 이 업무를 실행하면 끈다.
+    const touched = new Set<string>();
     const nextOrder = (status: WorkStatus) => Math.max(-1, ...items.filter((i) => i.status === status).map((i) => i.order)) + 1;
     const results = requests.map((request): InboxRequestResult => {
       const known = new Set(items.map((item) => item.id));
@@ -214,6 +228,7 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
         // 지운 업무를 기다리던 후속 업무는 그 선행 조건만 풀린다.
         items = items.filter((item) => !request.ids.includes(item.id)).map((item) => {
           if (!item.dependsOn?.some((d) => request.ids.includes(d))) return item;
+          touched.add(item.id);
           const dependsOn = item.dependsOn.filter((d) => !request.ids.includes(d));
           return { ...item, dependsOn: dependsOn.length ? dependsOn : undefined, updatedAt: at };
         });
@@ -230,6 +245,9 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
       if (patch.maxFollowUps !== undefined) next.maxFollowUps = patch.maxFollowUps ?? undefined;
       if (patch.permissionWaitMinutes !== undefined) next.permissionWaitMinutes = patch.permissionWaitMinutes ?? undefined;
       if (patch.plan !== undefined) next.plan = patch.plan || undefined;
+      // 수신함이 고친 예약은 꺼진 채로 둔다. null은 지우기다.
+      if (patch.scheduleRule === null) delete next.schedule;
+      else if (patch.scheduleRule) next.schedule = { ...item.schedule, rule: patch.scheduleRule, enabled: false, nextAt: undefined };
       if (!hasWorkContent(next)) return { unknown, empty: true, dropped: [] };
       let dropped: DroppedDependency[] = [];
       if (patch.dependsOn || patch.addDependsOn?.length || patch.removeDependsOn?.length) {
@@ -241,8 +259,10 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
         dropped = explained.dropped.filter((d) => requested.has(d.id));
       }
       items = items.map((i) => i.id === item.id ? closeRunOfDone(next, at) : i);
+      if (RUN_CONTENT_KEYS.some((key) => !sameWorkValue(item[key], next[key]))) touched.add(item.id);
       return { unknown, dropped };
     });
+    items = disableTouchedSchedules(items, touched);
     if (items !== get().items) { set({ items, selectedId, dirty: true }); changed(); }
     return results;
   },
@@ -276,6 +296,34 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
       return autoRun ? { ...rest, autoRun } : rest;
     }), dirty: true });
     changed();
+  },
+  setSchedule(id, schedule) {
+    if (!get().loaded || !get().items.some((i) => i.id === id)) return;
+    set({ items: get().items.map((i) => {
+      if (i.id !== id) return i;
+      const { schedule: _old, ...rest } = i;
+      return schedule ? { ...rest, schedule } : rest;
+    }), dirty: true });
+    changed();
+  },
+  cloneScheduled(templateId, memberIds) {
+    const all = get().items;
+    const template = all.find((i) => i.id === templateId);
+    if (!get().loaded || get().error || !template) return;
+    const sources = [template, ...memberIds.flatMap((id) => all.find((i) => i.id === id) ?? [])];
+    const ids = new Map(sources.map((item) => [item.id, nanoid()]));
+    let order = Math.max(-1, ...all.filter((i) => i.status === "todo").map((i) => i.order)) + 1;
+    const at = Date.now();
+    // 실행 기록(세션·오류·자동 진행)과 예약은 잇지 않는다. 플랜 밖 선행 작업은 그대로 둔다.
+    const clones: WorkItem[] = sources.map((item) => ({
+      id: ids.get(item.id)!, title: item.title, body: item.body, assigneeAgentId: item.assigneeAgentId, agent: item.agent,
+      dependsOn: item.dependsOn?.map((d) => ids.get(d) ?? d), plan: item.plan, maxFollowUps: item.maxFollowUps, permissionWaitMinutes: item.permissionWaitMinutes,
+      scheduledFrom: templateId, status: "todo", order: order++, sessionIds: [], createdAt: at, updatedAt: at,
+    }));
+    // 단계를 루트보다 앞에 둬 패널의 플랜 순서와 같게 한다.
+    set({ items: [...all, ...clones.slice(1), clones[0]], dirty: true });
+    changed();
+    return clones.map((clone) => clone.id);
   },
   remove(id) {
     if (!get().loaded) return;
@@ -338,8 +386,15 @@ function reconcile(remote: WorkItem[]): void {
   const at = Date.now();
   let items = mergeWorkItems(state.persistedItems, state.items, remote);
   const current = new Map(state.items.map((item) => [item.id, item]));
+  // 외부(에이전트가 직접 고친 파일 등)가 바꾼 실행 내용. 켜진 예약이 이 업무를 실행하면 끈다.
+  const touched = new Set<string>();
+  const merged = new Set(items.map((item) => item.id));
+  for (const item of state.items) if (!merged.has(item.id)) touched.add(item.id);
   const closed = items.map((item) => {
     const previous = current.get(item.id);
+    if (previous && RUN_CONTENT_KEYS.some((key) => !sameWorkValue(item[key], previous[key]))) touched.add(item.id);
+    // 예약을 켜는 것은 사람만 한다. 외부가 만들거나 바꾼 예약은 꺼진 채로 받는다(지우기·끄기는 그대로).
+    if (item.schedule?.enabled && !sameWorkValue(item.schedule, previous?.schedule)) item = { ...item, schedule: disabledSchedule(item.schedule) };
     // 실행 상태는 렌더러 소유다. 외부 편집자가 들고 있던 옛 스냅샷이 현재 단계·판단 기록을
     // 되돌리거나 실행을 새로 시작하게 하지 않는다. 처음 보는 실행은 부팅 복원처럼 멈춘다.
     if (previous && !sameWorkValue(item.autoRun, previous.autoRun)) item = { ...item, autoRun: previous.autoRun };
@@ -348,7 +403,8 @@ function reconcile(remote: WorkItem[]): void {
     }
     return closeRunOfDone(item, at);
   });
-  if (closed.some((item, index) => item !== items[index])) items = closed;
+  const guarded = disableTouchedSchedules(closed, touched);
+  if (guarded.some((item, index) => item !== items[index])) items = guarded;
   const dirty = !sameWorkValue(items, remote);
   // 같은 스냅샷은 items 참조도 유지해 자동 진행·화면 구독을 불필요하게 깨우지 않는다.
   useWorkItemStore.setState({ items, persistedItems: remote, dirty, error: dirty ? state.error : null,

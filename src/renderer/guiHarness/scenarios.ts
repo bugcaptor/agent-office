@@ -123,6 +123,14 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
             { at: Date.now() - 20 * 60_000, kind: "pause", text: "usage-wait" },
           ],
         } }),
+        // 예약: 매일 반복 템플릿(켜짐, 지난 회차 하나), CLI가 만든 꺼진 예약, 한 번 예약.
+        work("w13", "Morning dependency audit", "todo", "p1", 12, { body: "Run npm audit and cargo audit; leave a task for anything new.", schedule: {
+          rule: { kind: "weekly", days: [1, 2, 3, 4, 5], time: "09:00" }, enabled: true, nextAt: Date.now() + 14 * 3600_000, lastRunAt: Date.now() - 10 * 3600_000,
+          lastSkip: { at: Date.now() - 34 * 3600_000, reason: "missed" },
+        } }),
+        work("w14", "Morning dependency audit", "review", "p1", 13, { scheduledFrom: "w13", body: "Run npm audit and cargo audit; leave a task for anything new." }),
+        work("w15", "Clean build caches", "todo", "p2", 14, { schedule: { rule: { kind: "interval", minutes: 360 }, enabled: false } }),
+        work("w16", "Tag release candidate", "todo", "p3", 15, { schedule: { rule: { kind: "once", at: Date.now() + 26 * 3600_000 }, enabled: true, nextAt: Date.now() + 26 * 3600_000 } }),
       ],
     };
   },

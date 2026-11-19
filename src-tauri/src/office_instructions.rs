@@ -28,6 +28,7 @@ EOF
 - When the user asks to change a task, run `{cli} --edit <id>` with only what changes: `--title <text>`, `--body -` (new body from stdin, like above), `--to <colleague name>` or `--unassigned`, `--status todo|in_progress|review|done`, `--plan` / `--no-plan`, and for prerequisites `--add-after <id>` / `--remove-after <id>` (repeatable), or `--after <id>` (repeatable) to replace them all, or `--no-after` to clear them. Rearranging a plan's order means editing prerequisites. Use `--max-follow-ups <0..99|inherit>` and `--permission-wait-minutes <1..1440|inherit>` on create or edit to set auto-run limits.
 - When the user tells you to mark a task as done (or confirms it is finished), run `{cli} --done <id>`. Completing a task unblocks the tasks that wait on it. Only do this on the user's instruction, never on your own judgment that the work is finished.
 - When the user tells you to delete a task, run `{cli} --delete <id>` (several ids allowed). Tasks that waited on it lose that prerequisite. Only delete on the user's instruction.
+- When the user asks to run a task later or on a schedule, add `--at "YYYY-MM-DD HH:MM"` (once, local time) or `--every <rule>` (`30m`, `2h`, `1d`, `daily@09:00`, `mon,wed@09:00`, `weekdays@09:00`) on create or edit; `--no-schedule` removes it. A recurring task is a template that the app copies and runs each time (a `--plan` root runs its whole plan). Schedules you set start turned off, and changing a scheduled task turns it off; tell the user to turn it on in the task's Schedule section.
 - Changes are applied by the app within a few seconds, in the order you run them; you can target a task you just created.
 - After leaving tasks, tell the user in one line.
 - When an Agent Office auto-run prompt asks for a report, write it before your turn ends with `{cli} --report <task id> - <<'EOF'` … `EOF`, in the format the prompt gives. Writing it again replaces it."#
@@ -222,6 +223,7 @@ mod tests {
         assert!(text.contains("/tmp/agent-office/bin/office-task --list"));
         assert!(text.contains("/tmp/agent-office/bin/office-task --done <id>"));
         assert!(text.contains("/tmp/agent-office/bin/office-task --edit <id>"));
+        assert!(text.contains("--every <rule>") && text.contains("start turned off"));
         assert!(text.contains("/tmp/agent-office/bin/office-task --delete <id>"));
         assert!(text.contains("/tmp/agent-office/bin/office-task --show <id>"));
     }

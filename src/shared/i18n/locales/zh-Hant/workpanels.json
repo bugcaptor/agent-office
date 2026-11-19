@@ -109,7 +109,8 @@
     "modelCatalog": "所選 agy 模型不在目前模型清單中。",
     "blocked": "請先完成所有前置任務再傳送。",
     "autoRunActive": "此角色正在自動推進中。請先暫停再傳送。",
-    "planRoot": "計畫根不會傳送。請用自動執行來執行它等待的任務。"
+    "planRoot": "計畫根不會傳送。請用自動執行來執行它等待的任務。",
+    "scheduleTemplate": "重複排程的範本不直接傳送。每到排程時間會複製一份並執行。"
   },
   "resumeNewWork": "繼續編寫新任務",
   "add": "新增",
@@ -247,7 +248,8 @@
       "auto-run-observer-off": "請在設定中開啟代理觀察。需要透過掛鉤得知每輪何時結束。",
       "auto-run-foreign-task": "有前置任務指派給其他角色。請將其指派給推進角色或改為未指派。",
       "auto-run-runner-busy": "此角色還有另一個尚未結束的自動推進「{{title}}」。請先結束它。",
-      "auto-run-root-busy": "只剩根任務，但它正在進行或待審核。要再次執行，請把它改回待辦。"
+      "auto-run-root-busy": "只剩根任務，但它正在進行或待審核。要再次執行，請把它改回待辦。",
+      "auto-run-schedule-template": "這是重複排程的範本(或其步驟)，無法直接開始。每到排程時間會複製一份並推進。"
     },
     "worker": {
       "intro": "[自動推進] 此任務是計畫「{{plan}}」的第 {{index}}/{{total}} 個。它在新的工作階段中開始，請參考以下脈絡。",
@@ -302,5 +304,78 @@
     },
     "quitNotice_one": "開啟中的 {{count}} 個任務對話也會一併結束。",
     "quitNotice_other": "開啟中的 {{count}} 個任務對話也會一併結束。"
+  },
+  "schedule": {
+    "title": "排程",
+    "none": "沒有排程。",
+    "on": "已開啟",
+    "off": "已關閉",
+    "next": "已開啟 · 下次執行 {{when}}",
+    "offHint": "已關閉，不會執行。由代理或指令碼建立或修改的排程，需要有人開啟後才會執行。",
+    "offInvalid": "時間已過，無法開啟。請修改排程。",
+    "offDone": "任務已完成，排程已關閉。",
+    "lastRun": "上次執行 {{when}}",
+    "lastSkip": "上次略過 {{when}}：{{reason}}",
+    "recurringHint": "設為重複排程後，此任務會成為範本。每到設定時間複製一份並傳給負責的角色。",
+    "recurringPlanHint": "設為重複排程後，此計畫會成為範本。每到設定時間複製根任務和步驟，並用自動推進執行。",
+    "onceHint": "到設定時間把此任務傳給負責的角色。",
+    "oncePlanHint": "到設定時間開始此計畫的自動推進。",
+    "kind": "重複",
+    "kinds": {
+      "once": "一次",
+      "interval": "固定間隔",
+      "daily": "每天",
+      "weekly": "每週"
+    },
+    "when": "日期時間",
+    "every": "間隔",
+    "unit": "單位",
+    "units": {
+      "m": "分鐘",
+      "h": "小時",
+      "d": "天"
+    },
+    "days": "星期",
+    "time": "時間",
+    "invalid": {
+      "past": "請選擇晚於現在的時間。",
+      "interval": "間隔請設在 {{min}} 分鐘到 {{maxDays}} 天之間。",
+      "days": "請至少選擇一天。",
+      "time": "請以 HH:MM 設定時間。"
+    },
+    "remove": "刪除排程",
+    "change": "修改排程",
+    "add": "新增排程",
+    "turnOff": "關閉",
+    "turnOn": "開啟",
+    "saveOn": "儲存並開啟",
+    "rule": {
+      "once": "一次 {{when}}",
+      "everyMinutes_one": "每 {{count}} 分鐘",
+      "everyMinutes_other": "每 {{count}} 分鐘",
+      "everyHours_one": "每 {{count}} 小時",
+      "everyHours_other": "每 {{count}} 小時",
+      "everyDays_one": "每 {{count}} 天",
+      "everyDays_other": "每 {{count}} 天",
+      "daily": "每天 {{time}}",
+      "weekly": "每週 {{days}} {{time}}"
+    },
+    "chip": {
+      "once": "排程 {{when}}",
+      "recurring": "重複 · 下次 {{when}}",
+      "off": "排程已關閉",
+      "run": "排程執行"
+    },
+    "skip": {
+      "missed": "應用程式關閉或睡眠期間錯過了排程時間。",
+      "previous-open": "上一次執行尚未結束。",
+      "agent-working": "負責的角色正在工作或等待回覆。",
+      "blocked": "無法執行。",
+      "failed": "未能傳送。"
+    },
+    "detail": {
+      "schedule-not-todo": "任務不在待辦狀態。"
+    },
+    "skippedTitle": "已略過排程：{{title}}"
   }
 }

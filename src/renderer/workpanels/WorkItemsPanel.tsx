@@ -23,6 +23,9 @@ import { endAutoRun, runSteps, startAutoRun, startBlockedReason } from "./autoRu
 import { planLayout } from "./workPlans";
 import { assigneeKey, MISSING_ASSIGNEE } from "./workItemFile";
 import { useWorkGroupStore } from "./panelLayoutStore";
+import { WorkScheduleSection } from "./WorkScheduleSection";
+import { isRecurring, scheduleTemplateOf } from "./workSchedule";
+import { formatLocalMinute } from "../shared/localDateTime";
 import { projectAnchorCwd, projectNameFromCwd } from "../labels/labelText";
 
 export function WorkItemsPanel() {
@@ -73,7 +76,7 @@ export function WorkItemsPanel() {
     const sending = !!busy[item.id];
     const agentBusy = !!assignee && Object.values(busy).includes(assignee);
     // 플랜 루트는 플랜 메모라 보내지 않는다. 자동 진행이 선행 태스크만 진행한다.
-    const blockedReason = !hasWorkContent(value) ? undefined : value.plan ? "work-send-plan-root" : waitingOn.length ? "work-send-blocked"
+    const blockedReason = !hasWorkContent(value) ? undefined : scheduleTemplateOf(item, items) ? "work-send-schedule-template" : value.plan ? "work-send-plan-root" : waitingOn.length ? "work-send-blocked"
       : workSendDisabledReason(assignee ? agents[assignee] : undefined) ?? (agentBusy && !sending ? "work-send-busy" : undefined);
     const save = () => { edit(item.id, patch); clearEdit(item.id); void useWorkItemStore.getState().flush(); };
     // 보내기에 성공하면 팝업을 닫아 열린 터미널을 보여준다. 실패·확인 취소는 오류를 볼 수 있게 열어 둔다.
@@ -98,6 +101,7 @@ export function WorkItemsPanel() {
         onSave={save} onDiscard={() => clearEdit(item.id)} />
       {item.lastError && <p role="alert">{sendErrorText(item.lastError)}</p>}
       <AutoRunSection root={item} />
+      <WorkScheduleSection key={`schedule-${item.id}`} item={item} />
       {/* 실행 줄: 위험한 삭제는 왼쪽 끝에 떼어 두고 주 동작인 보내기를 오른쪽 끝에 둔다. */}
       <div className="work-dialog-actions work-dialog-run">
         <button className="pixel-btn danger" disabled={sending} onClick={() => setDeleting(item)}>{t("delete")}</button>
@@ -126,6 +130,10 @@ export function WorkItemsPanel() {
         {(!plan || item.status !== "todo") && <span className="work-status-chip">{t(`status.${item.status}`)}</span>}
         <strong className={!item.title.trim() ? "work-title-derived" : undefined}>{workItemTitle(item)}</strong>{dirty && <small>{t("unsavedChanges")}</small>}
         {run && <small className={`work-auto-chip ${run.state}`}>{t(run.pauseReason === "usage-wait" && run.state === "paused" ? "autoRun.chip.usageWait" : `autoRun.chip.${run.state}`)}</small>}
+        {item.schedule && <small className={`work-schedule-chip${item.schedule.enabled ? "" : " off"}`}>{item.schedule.enabled && item.schedule.nextAt !== undefined
+          ? t(isRecurring(item) ? "schedule.chip.recurring" : "schedule.chip.once", { when: formatLocalMinute(item.schedule.nextAt) })
+          : t("schedule.chip.off")}</small>}
+        {item.scheduledFrom && <small className="work-schedule-chip run">{t("schedule.chip.run")}</small>}
         {plan && !item.plan && <small title={t("plan.rootRunsHint")}>{t("plan.rootRuns")}</small>}
         {plan && <small className="work-plan-progress">{t("autoRun.progress", { done: plan.done, total: plan.total })}</small>}
         {role?.member?.unassigned && <small>{t("unassigned")}</small>}

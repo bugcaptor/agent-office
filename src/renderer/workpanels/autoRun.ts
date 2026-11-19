@@ -22,6 +22,7 @@ import {
   recordTaskSample, refreshUsage, workerProvider,
 } from "../usage/usageForecastStore";
 import { effectiveLimit } from "./autoRunLimits";
+import { scheduleTemplateOf } from "./workSchedule";
 
 /** 같은 단계에서 CLI(`ctl autorun resume`)가 재개할 수 있는 횟수. 넘으면 사람에게 넘겨야 한다. Rust `MAX_CTL_RESUMES`와 같다. */
 export const MAX_CTL_RESUMES = 2;
@@ -80,6 +81,8 @@ export function startBlockedReason(root: WorkItem, items: WorkItem[], agents: Re
   if (!open.length) return "auto-run-no-plan";
   // 루트만 남았는데 진행 중·검토 대기면 보낼 수 없다. 다시 진행하려면 할 일로 되돌린다.
   if (open.length === 1 && open[0].id === root.id && root.status !== "todo") return "auto-run-root-busy";
+  // 반복 예약 템플릿(과 그 단계)은 회차마다 복제해 실행한다. 원본을 쓰지 않는다.
+  if (open.some((item) => scheduleTemplateOf(item, items)) || scheduleTemplateOf(root, items)) return "auto-run-schedule-template";
   // 진행자 한 명은 끝나지 않은 실행을 하나만 가진다. 멈춘 실행의 현재 태스크와 섞이지 않게 한다.
   if (busyRunRoot(root, items)) return "auto-run-runner-busy";
   const profile = workSendDisabledReason(agents[root.assigneeAgentId]);

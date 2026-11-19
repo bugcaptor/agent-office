@@ -37,6 +37,7 @@
 | 라벨 요약·일기 생성(LLM 호출) | `summarizer/` |
 | 영속화(설정·프로필·업무 등) | `persistence/` |
 | 업무 보내기·자동 진행·태스크 대화 | `work_send.rs`, `work_send/`, `auto_run.rs`, `task_chat.rs` |
+| 예약 명세 파싱(`office-task --at`·`--every`, 수신함 `schedule:`) | `persistence/work_inbox.rs`의 `normalize_schedule` |
 | 업무 수신함 `office-task`, 공통 안내문 | `work_inbox_cli.rs`, `persistence/work_inbox.rs`, `office_instructions.rs` |
 | 문서 뷰어 `office-md` | `doc_view.rs`, `doc_view_cli.rs` |
 | 외부 CLI 제어 `ctl`, 플랜 위임(`autorun`·`ask`·턴 상태) | `control/` (`autorun.rs`·`turns.rs`), 렌더러 쪽 `workpanels/autoRunControl.ts` |
@@ -53,6 +54,7 @@
 | 오피스 씬(PixiJS)·캐릭터 생성 | `office/` (`OfficeScene.ts`, 생성기 `office/gen/`, 맵 `office/map/`) |
 | 터미널 탭·xterm | `terminal/` (`TerminalHost.tsx`, `TerminalRegistry.ts`, `AgentTabStrip.tsx`) |
 | 업무 패널·자동 진행·태스크 대화 | `workpanels/` |
+| 예약(규칙 계산·실행기·팝업 영역) | `workpanels/workSchedule.ts`, `scheduleRunner.ts`, `WorkScheduleSection.tsx` |
 | 마스코트 창·신호등 | `mascot/`, `store/mascotLights.ts`, `ipc/mascotBridge.ts` |
 | 그 밖의 기능 | 기능 이름의 폴더(`usage/`, `analytics/`, `sessionlog/`, `awards/`, `workdir/`, `markdown/`, `diary/`, `settings/` …) |
 | 다국어 | 카탈로그 `src/shared/i18n/locales/`, 하드코딩 검사 `__tests__/noHardcodedHangul.test.ts` |
