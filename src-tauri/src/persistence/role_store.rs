@@ -64,6 +64,19 @@ impl RoleStore {
         self.read()?;
         write_atomic(&self.file, &bytes).map_err(|e| e.to_string())
     }
+
+    /// 읽고 고쳐 쓰기를 잠금 하나로 묶는다(역할 수신함). 파일이 없으면 `f`를 부르지 않고 `Ok(None)` —
+    /// 프리셋은 렌더러가 시드한다. `f`가 false면 쓰지 않는다. 쓴 뒤의 목록을 돌려준다.
+    pub fn update(&self, f: impl FnOnce(&mut RolesFile) -> bool) -> Result<Option<RolesFile>, String> {
+        let _guard = self.lock.lock().map_err(|e| e.to_string())?;
+        let Some(mut file) = self.read()? else { return Ok(None) };
+        if !f(&mut file) {
+            return Ok(Some(file));
+        }
+        let bytes = serde_json::to_vec_pretty(&file).map_err(|e| e.to_string())?;
+        write_atomic(&self.file, &bytes).map_err(|e| e.to_string())?;
+        Ok(Some(file))
+    }
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@ import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
 import { useWorkItemStore, type InboxRequest } from "./workItemStore";
 import { parseScheduleSpec } from "./workSchedule";
-import { receiveDiscussionInbox } from "../discussion/discussionInbox";
+import { receiveDiscussionInbox, receiveRoleInbox } from "../discussion/discussionInbox";
 
 export function resolveAssignee(raw: string | undefined, profiles: Pick<AgentProfile, "id" | "name">[]): string | undefined {
   if (!raw) return;
@@ -43,7 +43,9 @@ let inFlight: Promise<void> | undefined;
 let generation = 0;
 export function hasPendingWorkInbox(): boolean { return timer !== undefined || inFlight !== undefined; }
 async function receive(epoch: number): Promise<void> {
-  // 에이전트가 만든 토의(준비 상태)도 같은 주기에 받는다. 업무 저장소 상태와 무관하다.
+  // 에이전트가 만든 역할 변경과 토의(준비 상태)도 같은 주기에 받는다. 업무 저장소 상태와 무관하다.
+  // 역할을 먼저 받아 같은 주기에 만든 역할을 쓰는 토의가 이름을 보이게 한다.
+  await receiveRoleInbox();
   await receiveDiscussionInbox();
   if (epoch !== generation || !timer) return;
   if (!useWorkItemStore.getState().loaded || useWorkItemStore.getState().error === "load") return;

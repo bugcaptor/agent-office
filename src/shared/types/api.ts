@@ -102,6 +102,8 @@ export interface AgentOfficeApi {
   loadRoles(): Promise<RolesFile | null>;
   /** 목록 전체를 바꾼다. id 중복·빈 이름은 invalid-roles. */
   saveRoles(file: RolesFile): Promise<void>;
+  /** 에이전트·CLI(`office-task --role-add` 등)가 남긴 역할 변경을 적용한다. 바뀌었으면 새 목록, 아니면 null. */
+  scanRoleInbox(): Promise<RolesFile | null>;
   /** 팀 토의 목록. 파일이 없으면 빈 목록. 손상·미래 버전 파일은 reject. */
   loadDiscussions(): Promise<Discussion[]>;
   /** 토의 하나를 id로 upsert한다. 구조가 틀리면 invalid-discussion. */

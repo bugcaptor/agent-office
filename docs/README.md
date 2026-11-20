@@ -68,8 +68,8 @@
 | 무엇 | 어디 |
 |---|---|
 | 타입(역할·토의·진행 상태·탭 세션) | TS `src/shared/types/role.ts`·`discussion.ts`(상한 범위 `DISCUSSION_LIMIT_RANGES`, 검사 `discussionProblem`), Rust `src-tauri/src/types.rs`, 대조 fixture `src/shared/contract-fixtures/`의 `roles-file.json`·`discussions-file.json`·`discussion-run.forced-wrap.json`·`*-discussion-*.json` |
-| Rust 커맨드 | 역할·토의 저장·메모·수신함 `ipc/commands/persistence.rs`(`load_roles`·`save_roles`·`load_discussions`·`save_discussion`·`delete_discussion`·`save_discussion_memo`·`load_discussion_memo`·`scan_discussion_inbox`), 탭 세션·ctl 회신 `ipc/commands/work_panels.rs`(`open_discussion_session`·`send_discussion_turn`·`collect_discussion_utterance`·`discussion_control_reply`), 메모 열기 `ipc/commands/doc_view.rs`(`open_discussion_memo`) |
-| 역할 목록·프리셋·프로필 기본 역할 | 렌더러 `discussion/roleStore.ts`·`RolesDialog.tsx`, 저장 `persistence/role_store.rs`(`roles.json`) |
+| Rust 커맨드 | 역할·토의 저장·메모·수신함 `ipc/commands/persistence.rs`(`load_roles`·`save_roles`·`load_discussions`·`save_discussion`·`delete_discussion`·`save_discussion_memo`·`load_discussion_memo`·`scan_discussion_inbox`·`scan_role_inbox`), 탭 세션·ctl 회신 `ipc/commands/work_panels.rs`(`open_discussion_session`·`send_discussion_turn`·`collect_discussion_utterance`·`discussion_control_reply`), 메모 열기 `ipc/commands/doc_view.rs`(`open_discussion_memo`) |
+| 역할 목록·프리셋·프로필 기본 역할 | 렌더러 `discussion/roleStore.ts`·`RolesDialog.tsx`, 저장 `persistence/role_store.rs`(`roles.json`), CLI `role_cli.rs`(`office-task --roles`·`--role-add`·`--role-edit`·`--role-delete`)와 수신함 `persistence/role_inbox.rs`·렌더러 `discussion/discussionInbox.ts`(`receiveRoleInbox`) |
 | 토의 저장·카드·열기 대화상자 | `discussion/discussionStore.ts`·`discussionModel.ts`·`DiscussionSection.tsx`·`DiscussionEditor.tsx`, 저장 `persistence/discussion_store.rs`(`discussions.json`, 상한 기본값 `DiscussionLimits::default`) |
 | 토의 탭 세션·첫 프롬프트(읽기 전용 규칙)·발언 수집 | Rust `discussion_session.rs`, 렌더러 `discussion/discussionSessionStore.ts`, 탭 표시 `terminal/AgentTabStrip.tsx` |
 | 발언 제출 `office-discuss say` | `discussion_cli.rs`(`say`), Codex 마지막 응답은 Stop 훅 → `observer/mod.rs`의 `StopReplySink` |

@@ -33,7 +33,8 @@ EOF
 - After leaving tasks, tell the user in one line.
 - When an Agent Office auto-run prompt asks for a report, write it before your turn ends with `{cli} --report <task id> - <<'EOF'` … `EOF`, in the format the prompt gives. Writing it again replaces it.
 - Only when the user asks for a team discussion (several colleagues debating a design or direction decision, or brainstorming), create one with `{cli} --discuss --moderator <colleague> --with <colleague> [--with <colleague>]... "<question to decide>" - <<'EOF'` … `EOF` (body: background, options, constraints). The moderator stays neutral; add 1 to 4 debaters. Optional: `--role <colleague>=<role name>`, `--cli <colleague>=<cli>[:<model>]`, `--rounds <1..12>`, `--minutes <5..240>`, `--cost <USD>`, `--cwd <folder>`; see `{cli} --discuss --help`. Participants only read code, docs and the web. It prints the discussion id.
-- A discussion you create waits in the ready state; tell the user in one line to start it from its card in the work panel. Do not start or join it yourself. When it concludes, its decision memo is saved as `$AGENT_OFFICE_APP_DATA/discussions/memos/<id>.md`; read it when the user asks about the outcome."#
+- A discussion you create waits in the ready state; tell the user in one line to start it from its card in the work panel. Do not start or join it yourself. When it concludes, its decision memo is saved as `$AGENT_OFFICE_APP_DATA/discussions/memos/<id>.md`; read it when the user asks about the outcome.
+- Only when the user asks to add or change a discussion role (the role card a colleague takes in discussions), run `{cli} --role-add "<role name>" --stance <stance> --perspective "<what this role looks at>" --criteria "<rules and things not to do>"` (stances: free, supportive, critical, devils_advocate, divergent, synthesizer, or moderator for a neutral moderator), `{cli} --role-edit <role> …` with only what changes, or `{cli} --role-delete <role>`. `{cli} --roles` lists them; see `{cli} --roles --help`. A role you just added can be used with `--discuss --role` right away."#
     )
 }
 
@@ -231,6 +232,8 @@ mod tests {
         assert!(text.contains("/tmp/agent-office/bin/office-task --discuss --moderator <colleague> --with <colleague>"));
         assert!(text.contains("/tmp/agent-office/bin/office-task --discuss --help"));
         assert!(text.contains("start it from its card") && text.contains("discussions/memos/<id>.md"));
+        assert!(text.contains("/tmp/agent-office/bin/office-task --role-add \"<role name>\" --stance <stance>"));
+        assert!(text.contains("/tmp/agent-office/bin/office-task --roles --help"));
     }
 
     #[test]

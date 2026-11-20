@@ -17,6 +17,7 @@ const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after
        office-task --delete <id>...
        office-task --report <id> [text | -]
        office-task --discuss --moderator <name|id> --with <name|id>... [options] <topic> [context | -]
+       office-task --roles | --role-add <name> --stance <stance> [options] | --role-edit <role> [options] | --role-delete <role>...
 Prints the new task id. Pass it to --after to make a later task wait for this one.
 --edit --after replaces all prerequisites; --add-after/--remove-after change them one by one.
 --plan makes the task a plan root: it holds only the plan memo, and auto-run runs the tasks it
@@ -30,6 +31,7 @@ Schedules made here start turned off; a person turns them on in the app. Changin
 --report leaves the auto-run report for a task; writing it again replaces it.
 --show --json prints the stored task as JSON, including its auto-run state.
 --discuss creates a ready team discussion that a person starts in the app (office-task --discuss --help).
+--roles lists the discussion roles; --role-add, --role-edit and --role-delete change them (office-task --roles --help).
 Outside an Agent Office session the default app data folder is used.
 ";
 
@@ -95,6 +97,10 @@ pub fn run_with(
                 cwd: std::env::current_dir().ok(),
             };
             return crate::discussion_cli::create(&args[1..], &create, stdin, out, err, now);
+        }
+        Some(command @ ("--roles" | "--role-add" | "--role-edit" | "--role-delete")) => {
+            let roles = crate::role_cli::RoleEnv { inbox: env.inbox(), data_dir: env.data_dir(), agent_id: env.agent_id.clone() };
+            return crate::role_cli::run(command, &args[1..], &roles, stdin, out, err, now);
         }
         Some("--show") => return match &args[1..] {
             [id] => show(id, false, env, out, err),

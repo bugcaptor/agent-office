@@ -118,6 +118,24 @@ esac
 - `discuss watch <id> [--timeout S]`는 상태가 바뀔 때마다(`rev`가 달라질 때마다) `status`와 같은 data를 한 줄 JSON으로 출력합니다. 다른 프로그램이 이 줄을 읽어 토의를 중계할 수 있습니다. 비용·`updatedAt`만 바뀌어도 한 줄이 나오므로, 받는 쪽은 필요한 필드만 비교하세요. 멈춤·질문 대기도 계속 보고, 결론이 나면(`review`·`finished`) 0, `--timeout`을 넘기면 11로 끝납니다. `--timeout`이 없으면 끝까지 봅니다. 발언 전문은 내보내지 않습니다.
 - 결론 확인(결론 확인 대기 → 끝남)은 사람이 카드에서 합니다.
 
+토의 역할(역할 카드)도 CLI로 보고 바꿀 수 있습니다. 앱이 띄운 에이전트 세션은 사용자가 역할을 추가·수정해 달라고 할 때만 씁니다.
+
+```bash
+agent-office task --roles                       # id·스탠스·이름·기본 CLI (--json도 됨)
+R=$(agent-office task --role-add "보안 검토자" --stance critical \
+      --perspective "공격 경로와 권한 경계를 본다" --criteria - --cli codex <<'EOF'
+근거 없는 "안전함" 판정을 하지 않는다.
+EOF
+)
+agent-office task --role-edit "보안 검토자" --stance devils_advocate --no-cli
+agent-office task --role-delete "$R"
+```
+
+- 스탠스는 `moderator`(사회자 칸 전용)·`free`·`supportive`·`critical`·`devils_advocate`·`divergent`·`synthesizer`입니다. 역할은 이름이나 id로 가리키고, 이름은 겹칠 수 없습니다.
+- 바꾸기는 수신함(`work-inbox/roles/`)에 요청을 남기고 앱이 몇 초 안에 역할 목록에 적용합니다. 그 전에도 `--roles`와 `task --discuss --role`은 남긴 요청을 반영해 보므로, 방금 만든 역할을 바로 토의에 쓸 수 있습니다. 규칙에 어긋난 요청은 `rejected/`로 옮겨집니다.
+- 역할 목록 파일이 아직 없으면(앱이 프리셋 역할을 만들기 전) 앱이 프리셋을 만든 뒤에 적용합니다.
+- 역할 목록 창이 열려 있는 동안에는 적용을 미루고, 창을 닫으면 저장된 목록 위에 적용합니다. 창에서 지운 역할을 고치는 요청은 거부됩니다.
+
 ## 사용 팁
 
 ### 저장소 일괄 점검

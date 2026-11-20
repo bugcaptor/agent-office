@@ -123,8 +123,8 @@ pub fn discussion_from_request(
     Ok(discussion)
 }
 
-/// 수신함의 요청 파일 이름. 파일 이름(시각) 순. 폴더가 없으면 빈 목록.
-fn request_names(dir: &Path) -> std::io::Result<Vec<String>> {
+/// 수신함의 요청 파일 이름. 파일 이름(시각) 순. 폴더가 없으면 빈 목록. 역할 수신함도 같은 규칙이다.
+pub(super) fn request_names(dir: &Path) -> std::io::Result<Vec<String>> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),

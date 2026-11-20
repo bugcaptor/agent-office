@@ -372,6 +372,12 @@ pub async fn load_roles(app_state: State<'_, AppState>) -> Result<Option<RolesFi
 pub async fn save_roles(app_state: State<'_, AppState>, file: RolesFile) -> Result<(), String> {
     app_state.role_store.save(&file)
 }
+/// 에이전트·CLI(`office-task --role-add` 등)가 남긴 역할 변경을 `roles.json`에 적용한다. 바뀌었으면 새 목록,
+/// 아니면 null. 파일이 아직 없으면(프리셋 시드 전) 적용하지 않는다. 어긋나는 요청은 `rejected/`로 옮긴다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn scan_role_inbox(app_state: State<'_, AppState>) -> Result<Option<RolesFile>, String> {
+    crate::persistence::role_inbox::import(&app_state.app_data_dir.join("work-inbox"), &app_state.role_store)
+}
 /// 팀 토의 목록. 파일이 없으면 빈 목록, 손상·미래 버전이면 Err.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn load_discussions(app_state: State<'_, AppState>) -> Result<Vec<Discussion>, String> {

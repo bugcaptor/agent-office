@@ -168,6 +168,7 @@ const impl: Partial<AgentOfficeApi> = {
   async loadSessionEvents() { return []; },
   async loadRoles() { return structuredClone(roles); },
   async saveRoles(file) { roles = structuredClone(file); },
+  async scanRoleInbox() { return null; },
   async loadDiscussions() { return structuredClone(discussions); },
   async saveDiscussion(next) {
     const copy = structuredClone(next);

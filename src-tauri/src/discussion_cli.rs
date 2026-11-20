@@ -196,8 +196,9 @@ pub fn create(
         },
         Err(e) => return create_fail(err, &format!("cannot read team members (profiles.json): {e}")),
     };
+    // 앱이 아직 적용하지 않은 역할 변경(`office-task --role-add` 등)도 겹쳐 본다. 방금 만든 역할을 바로 쓸 수 있다.
     let role_list = match crate::persistence::role_store::RoleStore::new(data_dir.to_path_buf()).load() {
-        Ok(file) => file.map(|f| f.roles),
+        Ok(file) => Some(crate::persistence::role_inbox::with_pending(inbox, file.map(|f| f.roles).unwrap_or_default())).filter(|r| !r.is_empty()),
         Err(e) => return create_fail(err, &format!("cannot read discussion roles (roles.json): {e}")),
     };
     // 사회자 먼저, 토론자는 받은 순서대로. 같은 팀원이 두 번 들어가면 거절한다.
@@ -295,7 +296,7 @@ fn split_pair(value: &str, flag: &str) -> Result<(String, String), String> {
     Ok((who.to_string(), rest.to_string()))
 }
 
-fn parse_agent(spec: &str) -> Result<crate::types::WorkAgent, String> {
+pub(crate) fn parse_agent(spec: &str) -> Result<crate::types::WorkAgent, String> {
     let (cli, model) = match spec.split_once(':') {
         Some((cli, model)) => (cli.trim(), Some(model.trim().to_string()).filter(|m| !m.is_empty())),
         None => (spec.trim(), None),
@@ -323,7 +324,7 @@ fn resolve_member(query: &str, profiles: &[crate::types::AgentProfile]) -> Resul
 
 /// stdin을 상한까지 읽는다. 넘으면 UTF-8로 풀기 전에 알린다 — 잘린 자리에서 글자가 갈라져
 /// "UTF-8이 아님"으로 보이지 않게.
-fn read_stdin(stdin: &mut dyn Read, what: &str) -> Result<String, String> {
+pub(crate) fn read_stdin(stdin: &mut dyn Read, what: &str) -> Result<String, String> {
     let mut bytes = vec![];
     stdin.take((MAX_BYTES + 1) as u64).read_to_end(&mut bytes).map_err(|e| format!("failed to read stdin: {e}"))?;
     if bytes.len() > MAX_BYTES {
@@ -337,7 +338,7 @@ fn position_of(query: &str, profiles: &[crate::types::AgentProfile], ids: &[Stri
     ids.iter().position(|i| *i == id)
 }
 
-fn resolve_role<'a>(query: &str, roles: &'a [crate::types::DiscussionRole]) -> Result<&'a crate::types::DiscussionRole, String> {
+pub(crate) fn resolve_role<'a>(query: &str, roles: &'a [crate::types::DiscussionRole]) -> Result<&'a crate::types::DiscussionRole, String> {
     let query = query.trim();
     if let Some(r) = roles.iter().find(|r| r.id == query) { return Ok(r); }
     let named: Vec<_> = roles.iter().filter(|r| r.name.trim() == query).collect();
@@ -593,6 +594,20 @@ mod tests {
         let empty = tempfile::tempdir().unwrap();
         assert_eq!(create_call(&["--moderator", "Mo", "--with", "Ada", "주제"], &create_env(empty.path()), "").0, 1);
         assert_eq!(create_call(&["--help"], &env, "").0, 0);
+    }
+
+    #[test]
+    fn a_role_added_but_not_yet_applied_can_be_used_right_away() {
+        let tmp = team(true);
+        let roles = crate::role_cli::RoleEnv { inbox: Some(tmp.path().join("work-inbox")), data_dir: Some(tmp.path().to_path_buf()), agent_id: None };
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let args: Vec<String> = ["보안 검토자", "--stance", "critical", "--cli", "codex"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(crate::role_cli::run("--role-add", &args, &roles, &mut "".as_bytes(), &mut out, &mut err, chrono::Utc::now()), 0);
+        let id = String::from_utf8(out).unwrap().trim().to_string();
+        let (code, _, err) = create_call(&["--moderator", "Mo", "--with", "Ada", "--role", "Ada=보안 검토자", "주제"], &create_env(tmp.path()), "");
+        assert_eq!(code, 0, "{err}");
+        let [r] = requests(tmp.path()).try_into().unwrap();
+        assert_eq!((r.participants[1].role_id.as_deref(), r.participants[1].agent.cli.clone()), (Some(id.as_str()), crate::types::WorkCli::Codex));
     }
 
     #[test]

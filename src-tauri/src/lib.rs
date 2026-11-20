@@ -12,6 +12,7 @@ mod work_send;
 mod task_chat;
 mod discussion_session;
 mod discussion_cli;
+mod role_cli;
 mod auto_run;
 // codex CLI 내장 이미지 생성으로 캐릭터 초상/스프라이트 원본을 만든다(kbm #2fa).
 pub mod codex_imagegen;
@@ -896,6 +897,7 @@ pub fn run() {
             ipc::commands::load_work_items,
             ipc::commands::load_roles,
             ipc::commands::save_roles,
+            ipc::commands::scan_role_inbox,
             ipc::commands::load_discussions,
             ipc::commands::save_discussion,
             ipc::commands::delete_discussion,

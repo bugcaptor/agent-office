@@ -33,6 +33,11 @@ function RolesEditor() {
   useEscapeToClose(true, closeModal);
 
   useEffect(() => { void useRoleStore.getState().ensureLoaded(); }, []);
+  // 창이 열린 동안 역할 수신함(CLI 변경)을 미룬다. 닫은 뒤 저장된 목록 위에 적용된다.
+  useEffect(() => {
+    useRoleStore.setState({ editing: true });
+    return () => useRoleStore.setState({ editing: false });
+  }, []);
   // 처음 불러온 목록으로 한 번만 사본을 만든다(이후 저장소 변화가 편집을 덮지 않게).
   useEffect(() => {
     if (status === "ready" && draft === null) {

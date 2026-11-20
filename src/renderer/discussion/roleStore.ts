@@ -60,6 +60,8 @@ interface RoleState {
   status: Status;
   /** 마지막 로드·저장 실패 메시지. */
   error?: string;
+  /** 역할 목록 창이 사본을 고치는 중. 그동안 역할 수신함을 적용하지 않는다(창 저장이 CLI 변경을 덮지 않게). */
+  editing: boolean;
   /** 아직 불러오지 않았거나 실패했으면 불러온다. 진행 중이면 같은 약속을 기다린다. */
   ensureLoaded(): Promise<void>;
   load(): Promise<void>;
@@ -71,6 +73,7 @@ let inflight: Promise<void> | null = null;
 export const useRoleStore = create<RoleState>((set, get) => ({
   roles: [],
   status: "idle",
+  editing: false,
   ensureLoaded: () => (get().status === "ready" ? Promise.resolve() : get().load()),
   load: () => {
     if (inflight) return inflight;
@@ -102,5 +105,5 @@ export const useRoleStore = create<RoleState>((set, get) => ({
 /** 테스트용 초기화. */
 export function resetRoleStoreForTest(): void {
   inflight = null;
-  useRoleStore.setState({ roles: [], status: "idle", error: undefined });
+  useRoleStore.setState({ roles: [], status: "idle", error: undefined, editing: false });
 }

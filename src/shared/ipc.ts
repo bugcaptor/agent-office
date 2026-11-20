@@ -27,6 +27,7 @@ export const Commands = {
   warnWorkInbox: "warn_work_inbox",
   loadRoles: "load_roles",
   saveRoles: "save_roles",
+  scanRoleInbox: "scan_role_inbox",
   loadDiscussions: "load_discussions",
   saveDiscussion: "save_discussion",
   deleteDiscussion: "delete_discussion",
