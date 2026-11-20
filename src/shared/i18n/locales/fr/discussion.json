@@ -192,7 +192,7 @@
     },
     "close": {
       "title": "Fermer l'onglet de discussion",
-      "body": "Fermer l'onglet de discussion « {{title}} » ? La CLI du terminal s'arrête aussi et ce participant quitte la discussion.",
+      "body": "Fermer l'onglet de discussion « {{title}} » ? La CLI du terminal s'arrête aussi. Si la discussion attendait ce participant, elle se met en pause, et la reprise ouvre un nouvel onglet.",
       "confirm": "Fermer"
     },
     "quitNotice_one": "{{count}} onglet de discussion ouvert se fermera aussi.",

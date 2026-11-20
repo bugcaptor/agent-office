@@ -192,7 +192,7 @@
     },
     "close": {
       "title": "Close discussion tab",
-      "body": "Close the \"{{title}}\" discussion tab? The CLI in the terminal ends too, and this participant leaves the discussion.",
+      "body": "Close the \"{{title}}\" discussion tab? The CLI in the terminal ends too. If the discussion was waiting on this participant it pauses, and resuming opens a new tab.",
       "confirm": "Close"
     },
     "quitNotice_one": "{{count}} open discussion tab will end too.",

@@ -19,7 +19,7 @@ import { maybeSendOsNotification } from "../ipc/osNotify";
 import { useAppStore } from "../store/appStore";
 import { useDiscussionStore } from "./discussionStore";
 import {
-  closeDiscussionSessions, collectDiscussionUtterance, liveDiscussionSessions, openDiscussionSession, sendDiscussionTurn,
+  closeDiscussionSession, closeDiscussionSessions, collectDiscussionUtterance, liveDiscussionSessions, openDiscussionSession, sendDiscussionTurn,
   useDiscussionSessionStore,
 } from "./discussionSessionStore";
 import { useRoleStore } from "./roleStore";
@@ -346,6 +346,12 @@ async function deliver(id: string, agentId: string): Promise<void> {
       error = await open();
     }
     const opened = sessionOf(d, agentId);
+    // 여는 사이(CLI 기동에 몇 초) 토의가 끝났으면 끝내기의 탭 정리를 지나쳤으므로 여기서 닫는다.
+    // 남겨 두면 다음 토의가 discussion-session-other로 막힌다.
+    if (!running(id) && !find(id)?.run) {
+      if (opened) await closeDiscussionSession(opened.agentId);
+      return;
+    }
     if (error || !opened) {
       if (running(id)) pause(id, error === "work-send-human-input" ? "human-input" : "open-failed", error ?? "discussion-session-missing");
       return;

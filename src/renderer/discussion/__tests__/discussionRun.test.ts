@@ -244,6 +244,21 @@ describe("종료", () => {
     expect(useDiscussionSessionStore.getState().order).toEqual([]);
   });
 
+  it("탭을 여는 사이에 끝내면 늦게 열린 탭도 닫는다", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const original = api.openDiscussionSession.getMockImplementation()!;
+    api.openDiscussionSession.mockImplementation(async (r: DiscussionSessionRequest) => { await gate; return original(r); });
+    startDiscussion("d1");
+    await settle();
+    await endDiscussion("d1");
+    expect(d1().state).toBe("finished");
+    release();
+    await settle();
+    await vi.waitFor(() => expect(useDiscussionSessionStore.getState().order).toEqual([]));
+    expect(api.disposeSession.mock.calls.map(([id]) => id).sort()).toEqual([sid("a"), sid("b")]);
+  });
+
   it("사람이 끝내면 어느 단계에서든 끝남이 되고 알림 항목을 남긴다", async () => {
     startDiscussion("d1");
     await settle();
@@ -355,6 +370,18 @@ describe("앱 재시작", () => {
     expect(b).toMatchObject({ state: "waiting_user", run: { phase: "user" } });
     await settle();
     expect(api.saveDiscussion).toHaveBeenCalledWith(expect.objectContaining({ id: "d1", state: "paused" }));
+  });
+
+  it("부팅하면 저장된 진행 중 토의를 읽어 세션 끝남이 아니라 restarted로 멈춘다", async () => {
+    off(); off = () => {};
+    const run = { phase: "opening" as const, turns: [{ agentId: "a", sessionId: "old", sentAt: now }, { agentId: "b" }], seen: {} };
+    api.loadDiscussions.mockResolvedValue([discussion({ state: "running", round: 1, run })]);
+    useDiscussionStore.setState({ discussions: [], status: "idle" });
+    off = installDiscussionRunner();
+    await vi.waitFor(() => expect(d1()?.state).toBe("paused"));
+    await settle();
+    expect(d1().run!.pauseReason).toBe("restarted");
+    expect(api.openDiscussionSession).not.toHaveBeenCalled();
   });
 
   it("계속하면 세션이 사라진 차례를 새 탭으로 다시 보낸다(기록은 처음부터)", async () => {
