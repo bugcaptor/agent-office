@@ -3,8 +3,10 @@
 // 웹 상태판의 HTTP 라우트. 읽기는 백엔드가 가진 것(프로필·세션·턴 상태·알림·
 // 전사·사용량·업무·토의 저장 파일)에서 바로 답하고, 렌더러가 주인인 쓰기는
 // `bridge`로 넘긴다. 응답 봉투는 `ctl`과 같은 `{ok,data}`/`{ok:false,error}`다.
+use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Json, Path, Query, Request, State};
@@ -33,10 +35,23 @@ const DONE_TASKS: usize = 20;
 const TRANSCRIPT_ITEMS: usize = 200;
 /// 웹에서 받는 글(업무 본문·토의 답)의 바이트 상한.
 const MAX_INPUT_BYTES: usize = 32 * 1024;
+/// 터미널 포그라운드 조회(ps·pgrep)를 다시 하기 전 간격. 여러 기기가 몇 초마다 물어도
+/// 캐릭터마다 이 간격에 한 번만 프로세스를 띄운다.
+const PROBE_TTL: Duration = Duration::from_secs(2);
 
 pub(super) struct Dash {
     pub ctl: Arc<ControlContext>,
     pub dash: Arc<WebDashState>,
+    probes: Mutex<HashMap<String, (Instant, ShellProbe)>>,
+}
+
+/// 터미널에서 지금 무엇이 도는가.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct ShellProbe {
+    /// 포그라운드에서 도는 에이전트 CLI(`claude`·`codex`).
+    cli: Option<&'static str>,
+    /// 셸 프롬프트인가. 모르면 None.
+    at_prompt: Option<bool>,
 }
 
 type Ctx = State<Arc<Dash>>;
@@ -48,7 +63,7 @@ pub(super) async fn serve(
     dash: Arc<WebDashState>,
 ) -> std::io::Result<oneshot::Sender<()>> {
     let listener = tokio::net::TcpListener::bind((ip, port)).await?;
-    let app = router(Arc::new(Dash { ctl, dash }));
+    let app = router(Arc::new(Dash { ctl, dash, probes: Mutex::new(HashMap::new()) }));
     let (tx, rx) = oneshot::channel::<()>();
     tokio::spawn(async move {
         let _ = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
@@ -136,18 +151,62 @@ fn clip(text: &str, max: usize) -> String {
     s
 }
 
+/// 명령줄 → 에이전트 CLI 이름. `claude …`, `node /…/bin/codex …`,
+/// `codex-aarch64-apple-darwin`처럼 앞 두 토큰의 실행 파일 이름으로 본다.
+fn cli_of_command(command: &str) -> Option<&'static str> {
+    for token in command.split_whitespace().take(2) {
+        let base = token.rsplit(['/', '\\']).next().unwrap_or(token);
+        let base = base.strip_suffix(".exe").unwrap_or(base).to_ascii_lowercase();
+        for cli in ["claude", "codex"] {
+            if base == cli || base.starts_with(&format!("{cli}-")) {
+                return Some(cli);
+            }
+        }
+    }
+    None
+}
+
+/// 캐릭터들의 터미널 포그라운드를 본다(블로킹 — ps·pgrep을 띄운다).
+fn probe_shells(ctx: &Dash, agents: &[String]) -> HashMap<String, ShellProbe> {
+    let mut out = HashMap::new();
+    for agent in agents {
+        let cached = ctx.probes.lock().unwrap().get(agent).filter(|(at, _)| at.elapsed() < PROBE_TTL).map(|(_, p)| *p);
+        let probe = cached.unwrap_or_else(|| {
+            let command = ctx.ctl.manager.foreground_command(agent);
+            let probe = ShellProbe {
+                cli: command.as_deref().and_then(cli_of_command),
+                at_prompt: if command.is_some() { Some(false) } else { ctx.ctl.manager.is_shell_prompt(agent) },
+            };
+            ctx.probes.lock().unwrap().insert(agent.clone(), (Instant::now(), probe));
+            probe
+        });
+        out.insert(agent.clone(), probe);
+    }
+    out
+}
+
 async fn state(State(ctx): Ctx) -> Json<Value> {
     let profiles = ctx.ctl.store.load();
     let mut live = std::collections::HashMap::new();
     for (sid, agent, st) in ctx.ctl.registry.snapshot() {
         live.insert(agent, (sid, st));
     }
+    let running: Vec<String> = live
+        .iter()
+        .filter(|(_, (_, st))| session_state_str(*st) == "running")
+        .map(|(agent, _)| agent.clone())
+        .collect();
+    let probes = {
+        let ctx = ctx.clone();
+        tokio::task::spawn_blocking(move || probe_shells(&ctx, &running)).await.unwrap_or_default()
+    };
     let characters: Vec<Value> = profiles
         .agents
         .iter()
         .map(|a| {
             let session = live.get(&a.id);
             let turn = session.and_then(|(sid, _)| ctx.ctl.turns.get(sid));
+            let probe = probes.get(&a.id).copied().unwrap_or_default();
             let waiting: Vec<Value> = ctx
                 .ctl
                 .manager
@@ -167,6 +226,8 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
                 "turn": turn,
                 "waiting": waiting,
                 "label": ctx.dash.label(&a.id),
+                "cli": probe.cli,
+                "atPrompt": probe.at_prompt,
             })
         })
         .collect();
@@ -422,6 +483,10 @@ struct NewTask {
     cli: Option<String>,
     #[serde(default)]
     send: bool,
+    /// 터미널에 CLI가 돌고 있어 재시작해야 보낼 수 있을 때, 웹에서 "이전 세션이
+    /// 끊긴다"는 경고를 보고 확인했다.
+    #[serde(default)]
+    restart: bool,
 }
 
 fn check_text(text: &str) -> Result<(), String> {
@@ -450,17 +515,33 @@ async fn create_task(State(ctx): Ctx, Json(t): Json<NewTask>) -> Json<Value> {
     if t.cli.as_deref().is_some_and(|c| c != "claude" && c != "codex") {
         return fail("unknown-cli");
     }
+    // 보내기가 터미널 재시작을 부르면(CLI가 돌고 있음) 웹에서 확인을 받은 뒤에만 한다.
+    // 앱 확인창은 띄우지 않는다 — 폰에서 보낸 일이 책상 앞 확인을 기다리며 멈추지 않게.
+    let send = t.send && t.assignee_agent_id.is_some();
+    if let (true, Some(id)) = (send, t.assignee_agent_id.as_deref()) {
+        let target = match ctx.ctl.work_send.inspect(&ctx.ctl.gate, id) {
+            Ok(target) => target,
+            Err(e) => return fail(e),
+        };
+        if target.has_uncommitted {
+            return fail("human-input-pending");
+        }
+        if target.restart_required && !t.restart {
+            return fail("restart-required");
+        }
+    }
     let payload = json!({
         "op": "work-create",
         "title": title,
         "body": t.body,
         "assigneeAgentId": t.assignee_agent_id,
         "cli": t.cli,
-        "send": t.send,
+        "send": send,
+        "restartConfirmed": send && t.restart,
     });
     match bridged(&ctx, payload).await {
         Ok(v) => {
-            activity(&ctx, if t.send { "work-create-send" } else { "work-create" }, t.assignee_agent_id.as_deref(), Some(title));
+            activity(&ctx, if send { "work-create-send" } else { "work-create" }, t.assignee_agent_id.as_deref(), Some(title));
             ok(v)
         }
         Err(e) => fail(e),
@@ -517,5 +598,22 @@ async fn answer_discussion(State(ctx): Ctx, Path(id): Path<String>, Json(a): Jso
             ok(v)
         }
         Err(e) => fail(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cli_of_command;
+
+    #[test]
+    fn agent_cli_is_recognized_from_the_foreground_command_line() {
+        assert_eq!(cli_of_command("claude --model opus"), Some("claude"));
+        assert_eq!(cli_of_command("/Users/me/.local/bin/claude"), Some("claude"));
+        assert_eq!(cli_of_command("node /opt/homebrew/bin/codex -m gpt-5"), Some("codex"));
+        assert_eq!(cli_of_command("/opt/codex/codex-aarch64-apple-darwin"), Some("codex"));
+        assert_eq!(cli_of_command("C:\\tools\\Codex.exe"), Some("codex"));
+        assert_eq!(cli_of_command("npm test"), None);
+        assert_eq!(cli_of_command("vim claude.md"), None);
+        assert_eq!(cli_of_command("node build.js claude"), None);
     }
 }

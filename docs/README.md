@@ -44,7 +44,7 @@
 | 팀 토의(저장·탭 세션·CLI) | 아래 [팀 토의](#팀-토의) 절 |
 | 작업 폴더·Git·파일 색인 | `workdir/`, `file_index/`, `file_manager.rs` |
 | 실행 레시피 | `run_recipes/` |
-| 웹 상태판(tailnet·LAN HTTP 서버, 토큰, 전사 tail, 간접 명령) | `webdash/` (`mod.rs` 수명·설정 `web-dash.json`·토큰 `web-dash-token`, `net.rs` 바인드 주소, `routes.rs` API, `log.rs` 대화 로그 버퍼), 페이지 `src-tauri/web/dash.html`, 커맨드 `ipc/commands/web_dash.rs` |
+| 웹 상태판(tailnet·LAN HTTP 서버, 토큰, 전사 tail, 간접 명령) | `webdash/` (`mod.rs` 수명·설정 `web-dash.json`·토큰 `web-dash-token`, `net.rs` 바인드 주소, `routes.rs` API, `log.rs` 대화 로그 버퍼), 페이지 `src-tauri/web/dash.html`(가짜 API로 폰 크기 스크린샷: `node scripts/dash-shot.mjs`), 커맨드 `ipc/commands/web_dash.rs` |
 
 ### 렌더러 (`src/renderer/`)
 

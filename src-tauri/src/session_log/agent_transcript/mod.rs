@@ -46,6 +46,8 @@ pub const MAX_WEB_VALUE_LINES: usize = 240;
 pub const BACKFILL_MAX_BYTES: u64 = 256 * 1024;
 /// 백필로 돌려주는 최대 항목 수(가장 최근 것부터 남긴다).
 pub const BACKFILL_MAX_ITEMS: usize = 100;
+/// 백필 창 안에 사람이 친 프롬프트가 없을 때 거슬러 읽는 최대 바이트.
+pub const BACKFILL_SEARCH_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
 // ── 구조화된 채팅 항목 ────────────────────────────────────────────────
 //
@@ -291,28 +293,41 @@ impl TranscriptTailer {
         v
     }
 
-    /// 붙어 있는 파일들의 **최근 항목**. 파일 끝에서 `max_bytes`만큼 거슬러
-    /// 읽어 파싱하고 마지막 `max_items`개만 남긴다. tick 계열이 파일을 찾은
-    /// 뒤에 부른다(그 전에는 붙은 파일이 없어 빈 결과다).
+    /// 지금 세션 전사의 **최근 항목**. 붙은 파일이 여럿이면(예: 같은 폴더의 옛 Codex
+    /// 스레드와 새 Claude 세션) 가장 최근에 쓰인 파일 하나만 본다 — 새 세션을 열면
+    /// 이전 세션 대화는 보이지 않는다. 파일 끝에서 `max_bytes`만큼 거슬러 읽어
+    /// 파싱하고 마지막 `max_items`개만 남긴다. 그 안에 사람이 친 프롬프트가 없으면
+    /// (도구 결과·요청 덩어리가 큰 세션) 창을 넓혀 `BACKFILL_SEARCH_MAX_BYTES`까지
+    /// 거슬러 읽고, 마지막 프롬프트는 항목 상한에 밀려도 맨 앞에 남긴다.
+    /// tick 계열이 파일을 찾은 뒤에 부른다(그 전에는 붙은 파일이 없어 빈 결과다).
     pub fn backfill(&mut self, max_bytes: u64, max_items: usize) -> Vec<TranscriptItem> {
-        let mut out = Vec::new();
-        let sources = std::mem::take(&mut self.sources);
-        for source in sources.iter() {
-            let Some(path) = self.current.get(source.label()) else {
-                continue;
-            };
-            let Some((chunk, from_start)) = read_tail(path, max_bytes) else {
-                continue;
+        let newest = self
+            .current
+            .iter()
+            .max_by_key(|(_, path)| std::fs::metadata(path).and_then(|m| m.modified()).ok())
+            .map(|(label, path)| (*label, path.clone()));
+        let Some((label, path)) = newest else {
+            return Vec::new();
+        };
+        let Some(source) = self.sources.iter().find(|s| s.label() == label) else {
+            return Vec::new();
+        };
+        let mut window = max_bytes.max(1);
+        let mut out;
+        loop {
+            out = Vec::new();
+            let Some((chunk, from_start)) = read_tail(&path, window) else {
+                return Vec::new();
             };
             for line in complete_lines(&chunk, from_start) {
                 out.extend(source.parse(line));
             }
+            if from_start || window >= BACKFILL_SEARCH_MAX_BYTES || last_prompt(&out).is_some() {
+                break;
+            }
+            window = window.saturating_mul(4).min(BACKFILL_SEARCH_MAX_BYTES);
         }
-        self.sources = sources;
-        if out.len() > max_items {
-            out.drain(..out.len() - max_items);
-        }
-        out
+        keep_recent(out, max_items)
     }
 
     fn tick_with<T>(
@@ -406,6 +421,30 @@ impl TranscriptTailer {
         }
         tail.offset += read;
     }
+}
+
+/// 사람이 친 마지막 프롬프트(서브에이전트가 아닌 사용자 발화)의 위치.
+fn last_prompt(items: &[TranscriptItem]) -> Option<usize> {
+    items
+        .iter()
+        .rposition(|i| i.role == ItemRole::User && i.kind == ItemKind::Text && !i.sidechain)
+}
+
+/// 마지막 `max_items`개를 남기되, 잘려 나갈 마지막 프롬프트는 맨 앞에 붙여 둔다.
+fn keep_recent(mut items: Vec<TranscriptItem>, max_items: usize) -> Vec<TranscriptItem> {
+    if items.len() <= max_items {
+        return items;
+    }
+    let cut = items.len() - max_items;
+    let prompt = last_prompt(&items).filter(|&i| i < cut).map(|i| items[i].clone());
+    items.drain(..cut);
+    if let Some(prompt) = prompt {
+        if max_items > 0 {
+            items.remove(0);
+        }
+        items.insert(0, prompt);
+    }
+    items
 }
 
 /// 파일 끝에서 최대 `max_bytes`를 거슬러 읽는다. 두 번째 값은 **파일 전체를
@@ -826,6 +865,67 @@ mod tests {
         let small = t.backfill(20, 100);
         assert!(small.len() < 10, "{small:?}");
         assert_eq!(small.last().unwrap().text, "line-9");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 사용자 발화는 `user:`로 시작하는 줄, 나머지는 에이전트 발화로 내는 가짜 소스.
+    struct RoleSource {
+        label: &'static str,
+        path: PathBuf,
+    }
+    impl TranscriptSource for RoleSource {
+        fn label(&self) -> &'static str {
+            self.label
+        }
+        fn locate(&mut self, _: &str, _: &str) -> Option<PathBuf> {
+            Some(self.path.clone())
+        }
+        fn parse(&self, raw: &str) -> Vec<TranscriptItem> {
+            match raw.strip_prefix("user:") {
+                Some(t) => vec![TranscriptItem::speech(ItemRole::User, t)],
+                None => vec![TranscriptItem::speech(ItemRole::Assistant, raw)],
+            }
+        }
+    }
+
+    #[test]
+    fn backfill_reaches_back_for_the_last_prompt_and_keeps_it_past_the_item_cap() {
+        let dir = scratch();
+        let path = dir.join("t.jsonl");
+        append(&path, "user:old prompt\n");
+        append(&path, "user:마지막 프롬프트\n");
+        for i in 0..50 {
+            append(&path, &format!("{}-{i}\n", "x".repeat(200)));
+        }
+        let mut t = TranscriptTailer::new("a1", "/tmp", vec![Box::new(RoleSource { label: "r", path: path.clone() })]);
+        t.tick_items();
+        // 작은 창에는 프롬프트가 없다 — 넓혀 읽어 찾고, 항목 상한에 밀려도 맨 앞에 둔다.
+        let items = t.backfill(1024, 5);
+        assert_eq!(items.len(), 5);
+        assert_eq!(items[0].text, "마지막 프롬프트");
+        assert!(items[4].text.ends_with("-49"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn backfill_shows_only_the_most_recently_written_transcript() {
+        let dir = scratch();
+        let old = dir.join("old.jsonl");
+        let new = dir.join("new.jsonl");
+        append(&old, "user:이전 세션\n");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        append(&new, "user:새 세션\n");
+        let mut t = TranscriptTailer::new(
+            "a1",
+            "/tmp",
+            vec![
+                Box::new(RoleSource { label: "old", path: old.clone() }),
+                Box::new(RoleSource { label: "new", path: new.clone() }),
+            ],
+        );
+        t.tick_items();
+        let items = t.backfill(BACKFILL_MAX_BYTES, 100);
+        assert_eq!(items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(), ["새 세션"]);
         std::fs::remove_dir_all(&dir).ok();
     }
 

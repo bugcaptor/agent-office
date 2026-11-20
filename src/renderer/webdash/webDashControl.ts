@@ -60,7 +60,7 @@ export async function handleWebDashControl(request: WebDashControlRequest): Prom
       if (request.send && assignee) {
         const blocked = workSendDisabledReason(app.agents[assignee]);
         if (blocked) return { error: blocked, data: { itemId: id } };
-        fireAndForget("work send", requestWorkSend(id));
+        fireAndForget("work send", requestWorkSend(id, { restartConfirmed: request.restartConfirmed === true }));
       }
       return { data: { itemId: id } };
     }

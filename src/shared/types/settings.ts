@@ -234,6 +234,8 @@ export interface WebDashControlRequest {
   assigneeAgentId?: string | null;
   cli?: "claude" | "codex" | null;
   send?: boolean;
+  /** 웹에서 "터미널을 재시작하면 이전 세션이 끊긴다"를 확인했다. 앱 확인창 없이 재시작해 보낸다. */
+  restartConfirmed?: boolean;
   text?: string;
 }
 

@@ -75,6 +75,20 @@ describe("업무 보내기", () => {
     expect(restart).toHaveBeenCalledWith("a", { cwd: "/current", expected: { sessionId: "s", humanInputRevision: 5 } });
     expect(api.sendWorkItem.mock.calls[0][0]).toMatchObject({ sessionId: "new", freshSession: true });
   });
+  it("웹에서 재시작을 확인했으면 앱 확인창 없이 재시작해 보내고, 쓰다 만 입력이 있으면 재시작하지 않는다", async () => {
+    const id = item(); const old = { ...shell, restartRequired: true };
+    api.inspectWorkSendTarget.mockResolvedValueOnce(old).mockResolvedValueOnce(old).mockResolvedValueOnce({ ...shell, sessionId: "new" });
+    api.sendWorkItem.mockResolvedValueOnce({ sessionId: "new", submittedAt: 100 });
+    await requestWorkSend(id, { restartConfirmed: true });
+    expect(useWorkSendStore.getState().confirmation).toBeNull();
+    expect(restart).toHaveBeenCalledTimes(1);
+    expect(api.sendWorkItem.mock.calls[0][0]).toMatchObject({ sessionId: "new", freshSession: true });
+
+    const typed = item("Typed"); api.inspectWorkSendTarget.mockResolvedValueOnce({ ...old, hasUncommitted: true });
+    await requestWorkSend(typed, { restartConfirmed: true });
+    expect(restart).toHaveBeenCalledTimes(1);
+    expect(useWorkItemStore.getState().items.find((i) => i.id === typed)?.lastError).toBe("work-send-human-input");
+  });
   it("확인 후 입력이 바뀌면 폐기하지 않고 상태를 유지한다", async () => {
     const id = item(); useWorkItemStore.getState().edit(id, { status: "review" });
     api.inspectWorkSendTarget.mockResolvedValueOnce({ ...shell, restartRequired: true }).mockResolvedValueOnce({ ...shell, humanInputRevision: 1 });

@@ -183,7 +183,7 @@ fn run_capture(program: &str, args: &[&str]) -> Option<String> {
 }
 
 /// 포그라운드 그룹 리더의 명령줄(라벨 텍스트). 그룹 리더의 pid == pgid다.
-fn foreground_command(pgid: i32) -> Option<String> {
+pub(crate) fn foreground_command(pgid: i32) -> Option<String> {
     let pid = pgid.to_string();
     parse_ps_command(&run_capture("ps", &["-o", "command=", "-p", &pid])?)
 }

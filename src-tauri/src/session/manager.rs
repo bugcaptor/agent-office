@@ -1068,6 +1068,27 @@ impl SessionManager {
         }
     }
 
+    /// 셸 위 포그라운드에서 도는 명령줄(그룹 리더). 셸 프롬프트이거나 조회할 수
+    /// 없으면(Windows·브로커·`set +m`으로 셸과 같은 그룹) None. 웹 상태판이
+    /// "Claude 실행 중" 표시에 쓴다.
+    pub fn foreground_command(&self, agent_id: &str) -> Option<String> {
+        #[cfg(unix)]
+        {
+            let session = self.find(agent_id)?;
+            let shell_pgid = session.handoff.lock().as_ref()?.pgid?;
+            let fg = session.control.foreground_sample()?.fg_pgid?;
+            if fg == shell_pgid {
+                return None;
+            }
+            crate::session::shell_activity::foreground_command(fg)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = agent_id;
+            None
+        }
+    }
+
     /// 직접 관리하는 PTY의 실제 셸 실행 경로. attach/입양/tmux는 None이다.
     pub fn shell_path_for(&self, agent_id: &str) -> Option<String> {
         self.find(agent_id)

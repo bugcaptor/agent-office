@@ -88,7 +88,11 @@ h2 { font-size: 14px; color: var(--muted); margin: 18px 0 8px; font-weight: 600;
 .utt .t { white-space: pre-wrap; word-break: break-word; }
 .login { max-width: 420px; margin: 18vh auto; text-align: center; }
 .login p { color: var(--muted); }
-.scrolldown { position: fixed; right: 16px; bottom: calc(24px + env(safe-area-inset-bottom)); border-radius: 999px; padding: 8px 12px; display: none; }
+.scrolltop { position: fixed; right: 16px; bottom: calc(24px + env(safe-area-inset-bottom)); border-radius: 999px; padding: 8px 12px; display: none; }
+.chips { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: 0 0 auto; }
+.chip.cli { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.warn { margin-top: 8px; font-size: 13px; background: color-mix(in srgb, var(--bad) 12%, transparent); border-radius: 8px; padding: 6px 8px; }
+.taskform h3 { font-size: 14px; margin: 0 0 4px; }
 </style>
 </head>
 <body>
@@ -97,45 +101,45 @@ h2 { font-size: 14px; color: var(--muted); margin: 18px 0 8px; font-weight: 600;
   <nav id="nav"></nav>
 </header>
 <main id="main"></main>
-<button id="down" class="b scrolldown">↓</button>
+<button id="up" class="b scrolltop">↑</button>
 <div id="toast" class="toast"></div>
 <script>
 "use strict";
 const L = (navigator.language || "ko").toLowerCase().startsWith("ko") ? "ko" : "en";
 const S = {
   ko: {
-    tabs: { chars: "캐릭터", tasks: "업무", talks: "토의", usage: "사용량" },
+    tabs: { chars: "캐릭터", talks: "토의", usage: "사용량" },
     phase: { working: "작업 중", "needs-human": "답을 기다림", idle: "입력 대기", ended: "종료됨", starting: "시작 중", off: "꺼짐", running: "켜짐" },
     clockedOut: "퇴근", back: "← 목록", log: "대화 로그", noLog: "이 터미널에는 읽을 대화 로그가 없습니다(Claude·Codex 전사가 없는 세션).", noItems: "아직 대화가 없습니다.",
     restart: "터미널 재시작", resume: "이어하기", terminate: "종료", interrupt: "작업 중단(Esc)", ctrlc: "Ctrl-C", launchClaude: "Claude 실행", launchCodex: "Codex 실행",
     again: "한 번 더 눌러 확인", done: "보냈습니다", result: "결과", lines: "줄",
-    newTask: "새 업무", title: "제목", body: "내용", assignee: "담당", none: "(없음)", cli: "CLI", sendNow: "만든 뒤 바로 보내기", create: "만들기",
-    send: "보내기", autorun: "자동 진행", open: "진행 중·대기", recent: "최근 완료", noTasks: "업무가 없습니다.", plan: "플랜",
-    status: { todo: "할 일", in_progress: "진행 중", review: "검토", done: "완료" },
+    sendTask: "업무 보내기", titlePh: "할 일(제목)", bodyPh: "자세한 내용(선택)", cli: "CLI", send: "보내기", restartSend: "재시작하고 보내기",
+    cliRunning: (n) => `${n} 실행 중`, cliBusy: "터미널에서 명령이 실행 중입니다", restartNeeded: "이 터미널은 재시작해야 업무를 보낼 수 있습니다",
+    restartWarn: (what) => `${what}. 보내면 터미널을 재시작하므로 지금 세션은 끊깁니다.`,
     talkState: { pending: "준비 중", ready: "준비됨", running: "진행 중", waiting_user: "답을 기다림", wrapping_up: "정리 중", review: "검토", finished: "끝남", paused: "멈춤", "waiting-usage": "사용량 대기" },
     start: "시작", answer: "답하기", answerPh: "사회자에게 보낼 답", noTalks: "토의가 없습니다.", question: "사회자 질문",
     win: { session: "5시간", weekly: "주간", session_model: "5시간", weekly_model: "주간", monthly: "월간", unknown: "기타" },
-    run: { running: "진행 중", paused: "멈춤", finished: "끝남" },
     usageNone: "사용량 정보가 없습니다.", resets: "초기화", login: "접속 토큰이 없습니다", loginHelp: "앱 설정 › 제어 › 웹 상태판에서 접속 주소를 복사해 이 기기에서 여세요.",
     unauthorized: "토큰이 맞지 않습니다. 앱에서 접속 주소를 다시 받아 오세요.", offline: "앱에 연결할 수 없습니다",
-    err: { "not-running": "터미널이 꺼져 있습니다", "not-at-shell-prompt": "셸 프롬프트가 아닙니다(CLI가 이미 실행 중이거나 입력 중)", "human-input-pending": "앱에 쓰다 만 입력이 있습니다", "renderer-unavailable": "앱 화면이 응답하지 않습니다", "busy": "다른 입력이 진행 중입니다", "shell-unsupported": "지원하지 않는 셸입니다", "empty": "내용이 비었습니다" },
+    err: { "not-running": "터미널이 꺼져 있습니다", "not-at-shell-prompt": "셸 프롬프트가 아닙니다(CLI가 이미 실행 중이거나 입력 중)", "human-input-pending": "앱에 쓰다 만 입력이 있습니다", "renderer-unavailable": "앱 화면이 응답하지 않습니다", "busy": "다른 입력이 진행 중입니다", "shell-unsupported": "지원하지 않는 셸입니다", "empty": "내용이 비었습니다",
+      "restart-required": "터미널에서 CLI가 실행 중입니다. 재시작 경고를 확인하고 다시 보내세요", "work-send-busy": "이 캐릭터에 보내는 중인 업무가 있습니다", "work-send-clocked-out": "퇴근한 캐릭터입니다", "work-send-auto-run": "자동 진행 중인 캐릭터입니다", "work-send-profile-unsupported": "시작 명령이 있는 캐릭터에는 보낼 수 없습니다", "work-not-loaded": "앱이 아직 업무를 불러오지 않았습니다" },
   },
   en: {
-    tabs: { chars: "Characters", tasks: "Tasks", talks: "Discussions", usage: "Usage" },
+    tabs: { chars: "Characters", talks: "Discussions", usage: "Usage" },
     phase: { working: "Working", "needs-human": "Waiting for answer", idle: "Waiting for input", ended: "Ended", starting: "Starting", off: "Off", running: "On" },
     clockedOut: "Clocked out", back: "← List", log: "Conversation", noLog: "No conversation log for this terminal (no Claude/Codex transcript).", noItems: "No messages yet.",
     restart: "Restart terminal", resume: "Resume", terminate: "Terminate", interrupt: "Interrupt (Esc)", ctrlc: "Ctrl-C", launchClaude: "Run Claude", launchCodex: "Run Codex",
     again: "Tap again to confirm", done: "Sent", result: "Result", lines: "lines",
-    newTask: "New task", title: "Title", body: "Body", assignee: "Assignee", none: "(none)", cli: "CLI", sendNow: "Send right after creating", create: "Create",
-    send: "Send", autorun: "Auto-run", open: "Open", recent: "Recently done", noTasks: "No tasks.", plan: "Plan",
-    status: { todo: "To do", in_progress: "In progress", review: "Review", done: "Done" },
+    sendTask: "Send a task", titlePh: "Task (title)", bodyPh: "Details (optional)", cli: "CLI", send: "Send", restartSend: "Restart and send",
+    cliRunning: (n) => `${n} running`, cliBusy: "A command is running in the terminal", restartNeeded: "This terminal must restart to receive the task",
+    restartWarn: (what) => `${what}. Sending restarts the terminal, so the current session ends.`,
     talkState: { pending: "Pending", ready: "Ready", running: "Running", waiting_user: "Waiting for you", wrapping_up: "Wrapping up", review: "Review", finished: "Finished", paused: "Paused", "waiting-usage": "Waiting for usage" },
     start: "Start", answer: "Answer", answerPh: "Your answer to the moderator", noTalks: "No discussions.", question: "Moderator question",
     win: { session: "5 hours", weekly: "Weekly", session_model: "5 hours", weekly_model: "Weekly", monthly: "Monthly", unknown: "Other" },
-    run: { running: "running", paused: "paused", finished: "finished" },
     usageNone: "No usage data.", resets: "resets", login: "No access token", loginHelp: "Copy the address from the app: Settings › Control › Web dashboard, and open it on this device.",
     unauthorized: "Token rejected. Get a fresh address from the app.", offline: "Cannot reach the app",
-    err: { "not-running": "Terminal is not running", "not-at-shell-prompt": "Not at a shell prompt (CLI running or input pending)", "human-input-pending": "Unsent input is pending in the app", "renderer-unavailable": "App window is not responding", "busy": "Another input is in progress", "shell-unsupported": "Unsupported shell", "empty": "Empty" },
+    err: { "not-running": "Terminal is not running", "not-at-shell-prompt": "Not at a shell prompt (CLI running or input pending)", "human-input-pending": "Unsent input is pending in the app", "renderer-unavailable": "App window is not responding", "busy": "Another input is in progress", "shell-unsupported": "Unsupported shell", "empty": "Empty",
+      "restart-required": "A CLI is running in the terminal. Confirm the restart warning and send again", "work-send-busy": "A task is already being sent to this character", "work-send-clocked-out": "This character has clocked out", "work-send-auto-run": "This character is running an auto-run", "work-send-profile-unsupported": "Characters with a startup command can't receive tasks", "work-not-loaded": "The app hasn't loaded tasks yet" },
   },
 }[L];
 document.documentElement.lang = L;
@@ -183,7 +187,7 @@ async function api(path, opts = {}) {
   if (res.status === 401) { setDot("off"); unauthorized = true; render(); throw new Error(S.unauthorized); }
   setDot("on");
   const j = await res.json();
-  if (!j.ok) throw new Error(errText(j.error));
+  if (!j.ok) { const err = new Error(errText(j.error)); err.code = j.error; throw err; }
   return j.data;
 }
 async function act(path, body) {
@@ -208,10 +212,10 @@ function fmtTime(ms) {
 }
 
 // ── 상태 ──
-const view = { tab: load("agent-office-web-dash-tab") || "chars", agent: null, talk: null };
+const view = { tab: S.tabs[load("agent-office-web-dash-tab")] ? load("agent-office-web-dash-tab") : "chars", agent: null, talk: null };
 let unauthorized = false;
 let chars = null, charsRev = null;
-let tasksData = null, talksData = null, talkDetail = null, usageData = null;
+let talksData = null, talkDetail = null, usageData = null;
 const logs = new Map(); // agentId -> {epoch,last,attached,items}
 
 function phaseOf(c) {
@@ -245,6 +249,25 @@ function goalOf(c) {
   const l = c.label || {};
   return l.goal || null;
 }
+function cwdOf(c) { return (c.label && c.label.cwd) || c.cwd || ""; }
+/** 경로의 말단 폴더 이름(`/a/b/app/` → `app`). */
+function leaf(path) {
+  const parts = (path || "").split(/[\\/]+/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : path || "";
+}
+function placeOf(c) {
+  const branch = c.label && c.label.branch;
+  return [leaf(cwdOf(c)), branch && "⎇ " + branch].filter(Boolean).join(" ");
+}
+const CLI_NAMES = { claude: "Claude", codex: "Codex" };
+/** 터미널에서 CLI(또는 다른 명령)가 돌고 있어 보내기가 터미널 재시작을 부르는가. */
+function busyShell(c) { return !!(c.session && c.session.state === "running" && (c.cli || c.atPrompt === false)); }
+function chips(c) {
+  const [cls, label] = phaseOf(c);
+  return el("div", { class: "chips" },
+    el("span", { class: "chip " + cls, text: label }),
+    c.cli && c.session && c.session.state === "running" && el("span", { class: "chip cli working", text: S.cliRunning(CLI_NAMES[c.cli] || c.cli) }));
+}
 
 // ── 화면 ──
 function renderNav() {
@@ -262,51 +285,107 @@ function render() {
   renderNav();
   if (view.tab === "chars") {
     main.replaceChildren(...(view.agent ? renderAgent() : renderChars()));
-    const box = document.getElementById("log");
-    const log = view.agent && logs.get(view.agent);
-    if (box && log) box.dataset.last = String(log.last);
+    markLog();
   }
-  else if (view.tab === "tasks") main.replaceChildren(...renderTasks());
   else if (view.tab === "talks") main.replaceChildren(...renderTalks());
   else main.replaceChildren(...renderUsage());
 }
 function renderChars() {
   if (!chars) return [el("div", { class: "empty", text: "…" })];
   return chars.map((c) => {
-    const [cls, label] = phaseOf(c);
+    const [cls] = phaseOf(c);
     const wait = cls === "human" ? waitingMessage(c) : null;
     const goal = goalOf(c);
     return el("div", { class: "card clickable", onclick: () => { view.agent = c.agentId; render(); refreshNow(); window.scrollTo(0, 0); } },
       el("div", { class: "row" }, avatar(c),
-        el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", text: [c.role, (c.label && c.label.cwd) || c.cwd].filter(Boolean).join(" · ") })),
-        el("span", { class: "chip " + cls, text: label })),
+        el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: [c.role, placeOf(c)].filter(Boolean).join(" · ") })),
+        chips(c)),
       goal && el("div", { class: "goal", text: goal }),
       wait && el("div", { class: "wait", text: wait }));
   });
 }
 function renderAgent() {
+  const back = el("button", { class: "back", text: S.back, onclick: () => { view.agent = null; render(); } });
   const c = (chars || []).find((x) => x.agentId === view.agent);
-  if (!c) return [el("button", { class: "back", text: S.back, onclick: () => { view.agent = null; render(); } })];
-  const [cls, label] = phaseOf(c);
+  if (!c) return [back];
+  return [back, renderHead(c), renderTaskForm(c), renderLog(c.agentId)];
+}
+function renderHead(c) {
+  const [cls] = phaseOf(c);
   const running = c.session && c.session.state === "running";
   const id = encodeURIComponent(c.agentId);
   const wait = cls === "human" ? waitingMessage(c) : null;
-  const head = el("div", { class: "card" },
+  return el("div", { class: "card", id: "head" },
     el("div", { class: "row" }, avatar(c),
-      el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", text: (c.label && c.label.cwd) || c.cwd || "" })),
-      el("span", { class: "chip " + cls, text: label })),
+      el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: placeOf(c) })),
+      chips(c)),
     goalOf(c) && el("div", { class: "goal", text: goalOf(c) }),
     wait && el("div", { class: "wait", text: wait }),
     el("div", { class: "btns" },
       el("button", { class: "b", disabled: !running, text: S.interrupt, onclick: () => act(`/agents/${id}/interrupt`) }),
       el("button", { class: "b", disabled: !running, text: S.ctrlc, onclick: () => act(`/agents/${id}/ctrl-c`) }),
-      el("button", { class: "b", disabled: !running, text: S.launchClaude, onclick: () => act(`/agents/${id}/launch`, { cli: "claude" }) }),
-      el("button", { class: "b", disabled: !running, text: S.launchCodex, onclick: () => act(`/agents/${id}/launch`, { cli: "codex" }) })),
+      el("button", { class: "b", disabled: !running || busyShell(c), text: S.launchClaude, onclick: () => act(`/agents/${id}/launch`, { cli: "claude" }) }),
+      el("button", { class: "b", disabled: !running || busyShell(c), text: S.launchCodex, onclick: () => act(`/agents/${id}/launch`, { cli: "codex" }) })),
     el("div", { class: "btns" },
       confirmBtn(S.restart, () => act(`/agents/${id}/restart`), "b"),
       confirmBtn(S.resume, () => act(`/agents/${id}/resume`), "b"),
       running && confirmBtn(S.terminate, () => act(`/agents/${id}/terminate`))));
-  return [el("button", { class: "back", text: S.back, onclick: () => { view.agent = null; render(); } }), head, renderLog(c.agentId)];
+}
+
+// ── 캐릭터별 업무 보내기 ──
+// 터미널에 CLI가 돌고 있으면 보내기는 터미널을 재시작해 새 세션으로 보낸다. 웹에서 경고를 보이고
+// 확인을 받은 뒤에만 `restart: true`로 보낸다(앱 확인창은 띄우지 않는다).
+const drafts = new Map(); // agentId -> {title, body, cli, needRestart, sending}
+function draftOf(c) {
+  let d = drafts.get(c.agentId);
+  if (!d) { d = { title: "", body: "", cli: c.cli || c.defaultCli || "claude", needRestart: false, sending: false }; drafts.set(c.agentId, d); }
+  return d;
+}
+function renderTaskForm(c) {
+  const d = draftOf(c);
+  const cli = el("select", { onchange: (e) => { d.cli = e.target.value; } },
+    ...["claude", "codex"].map((v) => el("option", { value: v, text: CLI_NAMES[v], selected: d.cli === v })));
+  return el("div", { class: "card taskform", id: "taskform" },
+    el("h3", { text: S.sendTask }),
+    el("input", { value: d.title, placeholder: S.titlePh, oninput: (e) => { d.title = e.target.value; } }),
+    el("textarea", { placeholder: S.bodyPh, style: "margin-top:6px", oninput: (e) => { d.body = e.target.value; } }, d.body),
+    el("div", { class: "row", style: "margin-top:6px" }, el("label", { class: "sub", text: S.cli }), el("div", { style: "width:130px" }, cli)),
+    renderTaskActions(c));
+}
+function renderTaskActions(c) {
+  const d = draftOf(c);
+  const restart = d.needRestart || busyShell(c);
+  const what = c.cli ? S.cliRunning(CLI_NAMES[c.cli] || c.cli) : busyShell(c) ? S.cliBusy : S.restartNeeded;
+  const key = JSON.stringify([restart, what, d.sending]);
+  const submit = async () => {
+    if (d.sending) return;
+    if (!d.title.trim() && !d.body.trim()) { toast(errText("empty")); return; }
+    d.sending = true; refreshTaskActions();
+    try {
+      await api("/tasks", { method: "POST", body: { title: d.title, body: d.body, assigneeAgentId: c.agentId, cli: d.cli, send: true, restart } });
+      toast(S.done);
+      drafts.delete(c.agentId);
+      const form = document.getElementById("taskform");
+      if (form) form.replaceWith(renderTaskForm(c));
+      setTimeout(refreshNow, 400);
+    } catch (e) {
+      if (e.code === "restart-required") d.needRestart = true;
+      toast(e.message);
+    } finally { d.sending = false; refreshTaskActions(); }
+  };
+  return el("div", { id: "taskact", "data-key": key },
+    restart && el("div", { class: "warn", text: "⚠ " + S.restartWarn(what) }),
+    el("div", { class: "btns" }, restart
+      ? confirmBtn(S.restartSend, submit, "b danger")
+      : el("button", { class: "b primary", disabled: d.sending, text: S.send, onclick: submit })));
+}
+/** 보내기 버튼 줄을 다시 그린다. 모양이 같으면 그대로 둔다 — 두 번 눌러 확인하는 중에 상태 갱신이 확인을 풀지 않게. */
+function refreshTaskActions() {
+  const c = (chars || []).find((x) => x.agentId === view.agent);
+  const box = document.getElementById("taskact");
+  if (!c || !box) return;
+  const next = renderTaskActions(c);
+  if (next.dataset.key !== box.dataset.key) box.replaceWith(next);
 }
 function firstLine(text, max = 90) {
   const line = (text || "").split("\n").find((l) => l.trim()) || "";
@@ -318,7 +397,8 @@ function renderLog(agentId) {
   if (!log) { box.append(el("div", { class: "empty", text: "…" })); return box; }
   if (!log.attached) { box.append(el("div", { class: "empty", text: S.noLog })); return box; }
   if (!log.items.length) { box.append(el("div", { class: "empty", text: S.noItems })); return box; }
-  for (const it of log.items) box.append(renderItem(it));
+  // 최신이 위로 온다.
+  for (let i = log.items.length - 1; i >= 0; i--) box.append(renderItem(log.items[i]));
   return box;
 }
 function renderItem(it) {
@@ -332,43 +412,6 @@ function renderItem(it) {
   const n = (it.text || "").split("\n").length;
   return el("details", { class: "tool" + (it.isError ? " err" : "") + side },
     el("summary", { text: `↳ ${S.result} · ${n}${L === "ko" ? "" : " "}${S.lines} · ${firstLine(it.text, 60)}` }), el("pre", { text: it.text }));
-}
-
-function renderTasks() {
-  const out = [];
-  out.push(renderTaskForm());
-  if (!tasksData) { out.push(el("div", { class: "empty", text: "…" })); return out; }
-  const card = (t) => el("div", { class: "card" },
-    el("div", { class: "row" }, el("div", { class: "grow" },
-      el("div", { class: "name", text: (t.plan ? `[${S.plan}] ` : "") + t.title }),
-      el("div", { class: "sub", text: [S.status[t.status] || t.status, t.assigneeName, t.cli, t.autoRun && `${S.autorun}: ${S.run[t.autoRun] || t.autoRun}`].filter(Boolean).join(" · ") }))),
-    t.lastError && el("div", { class: "wait", text: errText(t.lastError) }),
-    t.body && el("details", { class: "tool" }, el("summary", { text: firstLine(t.body) }), el("pre", { text: t.body })),
-    t.status !== "done" && el("div", { class: "btns" },
-      !t.plan && el("button", { class: "b", disabled: !t.assigneeAgentId, text: S.send, onclick: () => act(`/tasks/${encodeURIComponent(t.id)}/send`) }),
-      t.plan && (!t.autoRun || t.autoRun === "finished") && confirmBtn(S.autorun, () => act(`/tasks/${encodeURIComponent(t.id)}/autorun`), "b")));
-  out.push(el("h2", { text: S.open }));
-  out.push(...(tasksData.open.length ? tasksData.open.map(card) : [el("div", { class: "empty", text: S.noTasks })]));
-  if (tasksData.done.length) { out.push(el("h2", { text: S.recent })); out.push(...tasksData.done.map(card)); }
-  return out;
-}
-const draft = { title: "", body: "", assignee: "", cli: "claude", send: false, open: false };
-function renderTaskForm() {
-  if (!draft.open) return el("button", { class: "b primary", text: "+ " + S.newTask, onclick: () => { draft.open = true; render(); } });
-  const sel = el("select", { onchange: (e) => { draft.assignee = e.target.value; } },
-    el("option", { value: "", text: S.none }), ...(chars || []).map((c) => el("option", { value: c.agentId, text: c.name, selected: draft.assignee === c.agentId })));
-  const cli = el("select", { onchange: (e) => { draft.cli = e.target.value; } },
-    ...["claude", "codex"].map((v) => el("option", { value: v, text: v, selected: draft.cli === v })));
-  const submit = async () => {
-    const ok = await act("/tasks", { title: draft.title, body: draft.body, assigneeAgentId: draft.assignee || null, cli: draft.cli, send: draft.send && !!draft.assignee });
-    if (ok) { Object.assign(draft, { title: "", body: "", send: false, open: false }); render(); }
-  };
-  return el("div", { class: "card" },
-    el("label", { class: "f", text: S.title }), el("input", { value: draft.title, oninput: (e) => { draft.title = e.target.value; } }),
-    el("label", { class: "f", text: S.body }), el("textarea", { oninput: (e) => { draft.body = e.target.value; } }, draft.body),
-    el("div", { class: "row" }, el("div", { class: "grow" }, el("label", { class: "f", text: S.assignee }), sel), el("div", { class: "grow" }, el("label", { class: "f", text: S.cli }), cli)),
-    el("label", { class: "inline" }, el("input", { type: "checkbox", checked: draft.send, onchange: (e) => { draft.send = e.target.checked; } }), S.sendNow),
-    el("div", { class: "btns" }, el("button", { class: "b primary", text: S.create, onclick: submit }), el("button", { class: "b", text: "×", onclick: () => { draft.open = false; render(); } })));
 }
 
 function renderTalks() {
@@ -421,7 +464,7 @@ function renderUsage() {
 }
 
 // ── 갱신 ──
-function nearBottom() { return window.innerHeight + window.scrollY >= document.body.scrollHeight - 80; }
+const LOG_KEEP = 400;
 async function refreshChars() {
   const d = await api("/state");
   document.getElementById("ver").textContent = "v" + d.app;
@@ -429,17 +472,22 @@ async function refreshChars() {
   charsRev = d.rev; chars = d.characters;
   return true;
 }
+/** 로그를 받아 쌓는다. "same"(새 항목 없음)·"append"(같은 세션에 이어짐)·"reset"(처음·새 세션). */
 async function refreshLog(agentId) {
   const prev = logs.get(agentId);
   const q = prev ? `?after=${prev.last}&epoch=${prev.epoch}` : "";
   const d = await api(`/log/${encodeURIComponent(agentId)}${q}`);
   if (prev && prev.epoch === d.epoch) {
-    if (!d.items.length && prev.attached === d.attached) return false;
+    if (!d.items.length && prev.attached === d.attached) return "same";
+    const attachedChanged = prev.attached !== d.attached;
     prev.items.push(...d.items);
-    if (prev.items.length > 400) prev.items.splice(0, prev.items.length - 400);
+    if (prev.items.length > LOG_KEEP) prev.items.splice(0, prev.items.length - LOG_KEEP);
     prev.last = d.last; prev.attached = d.attached;
-  } else logs.set(agentId, d);
-  return true;
+    return attachedChanged ? "reset" : "append";
+  }
+  // 새 세션(epoch가 바뀜)이면 이전 세션 대화는 버린다.
+  logs.set(agentId, d);
+  return "reset";
 }
 let busy = false;
 async function tick() {
@@ -447,20 +495,13 @@ async function tick() {
   busy = true;
   try {
     let changed = false;
-    if (view.tab === "chars" || view.tab === "tasks") changed = (await refreshChars()) || changed;
+    if (view.tab === "chars") changed = await refreshChars();
     if (view.tab === "chars" && view.agent) {
-      const stick = nearBottom();
-      const first = !logs.has(view.agent);
-      const logChanged = await refreshLog(view.agent);
-      if (changed || logChanged) {
-        // 펼쳐 둔 도구 블록과 입력 중인 내용은 다시 그리면 사라지므로, 로그만 바뀌면 끝에 덧붙인다.
-        if (!changed && !first && document.getElementById("log")) appendLog(view.agent); else render();
-        if (stick || first) window.scrollTo(0, document.body.scrollHeight);
-      }
-      updateDown();
-    } else if (view.tab === "tasks") {
-      const d = await api("/tasks");
-      if (!tasksData || d.rev !== tasksData.rev || changed) { tasksData = d; if (!draft.open) render(); }
+      const agentId = view.agent;
+      // 보지 않는 캐릭터의 로그는 들고 있지 않는다.
+      for (const k of [...logs.keys()]) if (k !== agentId) logs.delete(k);
+      const logMode = await refreshLog(agentId);
+      if (view.agent === agentId) updateAgentView(changed, logMode);
     } else if (view.tab === "talks") {
       if (view.talk) {
         const d = await api(`/discussions/${encodeURIComponent(view.talk)}`);
@@ -475,26 +516,42 @@ async function tick() {
     } else if (view.tab === "usage") {
       if (!usageData || Date.now() - (usageData._at || 0) > 60000) { usageData = await api("/usage"); usageData._at = Date.now(); render(); }
     } else if (changed) render();
-    if (view.tab === "chars" && !view.agent && changed) render();
   } catch (e) {
     if (!unauthorized) console.warn(e);
   } finally { busy = false; }
 }
-function appendLog(agentId) {
+/**
+ * 캐릭터 화면은 통째로 다시 그리지 않는다 — 쓰고 있는 업무 입력과 펼쳐 둔 도구 블록이 사라지기 때문이다.
+ * 상태가 바뀌면 머리 카드와 보내기 버튼만, 로그는 새 항목만 맨 위에 붙인다.
+ */
+function updateAgentView(changed, logMode) {
+  const c = (chars || []).find((x) => x.agentId === view.agent);
+  const head = document.getElementById("head");
+  if (!c || !head || !document.getElementById("taskform")) { if (changed || logMode !== "same") render(); return; }
+  if (changed) { head.replaceWith(renderHead(c)); refreshTaskActions(); }
+  if (logMode === "reset") { document.getElementById("log").replaceWith(renderLog(c.agentId)); markLog(); }
+  else if (logMode === "append") prependLog(c.agentId);
+}
+function markLog() {
+  const box = document.getElementById("log");
+  const log = view.agent && logs.get(view.agent);
+  if (box && log) box.dataset.last = String(log.last);
+}
+function prependLog(agentId) {
   const box = document.getElementById("log");
   const log = logs.get(agentId);
-  if (!box || !log) return render();
-  const shown = Number(box.dataset.last || 0);
-  if (!box.dataset.last || box.querySelector(".empty")) { render(); return; }
-  for (const it of log.items) if (it.seq > shown) box.append(renderItem(it));
+  if (!box || !log) return;
+  if (!box.dataset.last || box.querySelector(".empty")) { box.replaceWith(renderLog(agentId)); markLog(); return; }
+  const shown = Number(box.dataset.last);
+  for (const it of log.items) if (it.seq > shown) box.prepend(renderItem(it));
+  while (box.childElementCount > LOG_KEEP) box.lastElementChild.remove();
   box.dataset.last = String(log.last);
 }
-function updateDown() {
-  const b = document.getElementById("down");
-  b.style.display = view.tab === "chars" && view.agent && !nearBottom() ? "block" : "none";
+function updateUp() {
+  document.getElementById("up").style.display = view.tab === "chars" && view.agent && window.scrollY > 600 ? "block" : "none";
 }
-document.getElementById("down").onclick = () => window.scrollTo(0, document.body.scrollHeight);
-window.addEventListener("scroll", updateDown, { passive: true });
+document.getElementById("up").onclick = () => window.scrollTo(0, 0);
+window.addEventListener("scroll", updateUp, { passive: true });
 function refreshNow() { setTimeout(tick, 0); }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshNow(); });
 setInterval(tick, 2500);

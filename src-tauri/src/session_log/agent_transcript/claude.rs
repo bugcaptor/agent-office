@@ -121,6 +121,9 @@ impl TranscriptSource for ClaudeSource {
 /// 메타 항목(mode, ai-title, attachment, file-history-snapshot …)은 버린다.
 fn parse_entry(v: &Value) -> Vec<TranscriptItem> {
     let kind = v.get("type").and_then(Value::as_str).unwrap_or("");
+    if kind == "attachment" {
+        return parse_queued_prompt(v);
+    }
     if !matches!(kind, "user" | "assistant") {
         return Vec::new();
     }
@@ -157,6 +160,36 @@ fn parse_entry(v: &Value) -> Vec<TranscriptItem> {
         _ => {}
     }
     out
+}
+
+/// 작업 중에 사람이 끼워 넣은 프롬프트. Claude Code는 이것을 `user` 항목이 아니라
+/// `attachment`(`queued_command`, `commandMode: "prompt"`)로 남긴다 — 그대로 두면
+/// 대화 로그에서 사람 입력이 빠진다. 다른 첨부(파일·훅 출력 등)는 버린다.
+fn parse_queued_prompt(v: &Value) -> Vec<TranscriptItem> {
+    let Some(a) = v.get("attachment") else {
+        return Vec::new();
+    };
+    if a.get("type").and_then(Value::as_str) != Some("queued_command") {
+        return Vec::new();
+    }
+    if a.get("commandMode").and_then(Value::as_str).is_some_and(|m| m != "prompt") {
+        return Vec::new();
+    }
+    let text = match a.get("prompt") {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Array(blocks)) => blocks
+            .iter()
+            .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+            .filter_map(|b| b.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    };
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
+    let side = v.get("isSidechain").and_then(Value::as_bool).unwrap_or(false);
+    vec![TranscriptItem::speech(ItemRole::User, text).with_sidechain(side)]
 }
 
 fn parse_block(b: &Value, role: ItemRole, side: bool) -> Vec<TranscriptItem> {
@@ -342,6 +375,19 @@ mod tests {
                 {"type":"text","text":"서브에이전트 응답"}]}}"#,
         );
         assert_eq!(out, vec!["⤷ ⏺ 에이전트: 서브에이전트 응답"]);
+    }
+
+    #[test]
+    fn mid_turn_queued_prompt_is_a_user_message_other_attachments_are_not() {
+        let items = parse(
+            r#"{"type":"attachment","isSidechain":false,"attachment":{"type":"queued_command","prompt":"사람 입력이 안 보여","commandMode":"prompt","origin":{"kind":"human"}}}"#,
+        );
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].role, ItemRole::User);
+        assert_eq!(items[0].kind, super::super::ItemKind::Text);
+        assert_eq!(items[0].text, "사람 입력이 안 보여");
+        assert!(parse(r#"{"type":"attachment","attachment":{"type":"queued_command","prompt":"/compact","commandMode":"bash"}}"#).is_empty());
+        assert!(parse(r#"{"type":"attachment","attachment":{"type":"file","content":"x"}}"#).is_empty());
     }
 
     #[test]

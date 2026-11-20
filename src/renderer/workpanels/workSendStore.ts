@@ -39,10 +39,12 @@ function profileError(agent: AgentProfile | undefined, auto = false): string | u
   return undefined;
 }
 export function workSendDisabledReason(agent: AgentProfile | undefined): string | undefined { return profileError(agent); }
-/** 자동 진행이 쓰는 보내기 옵션. 사람의 클릭에는 쓰지 않는다. */
+/** 자동 진행·웹 상태판이 쓰는 보내기 옵션. */
 export interface WorkSendOptions {
   /** 재시작이 필요하면 확인창 없이 재시작한다. 미제출 사람 입력이 있으면 재시작하지 않고 실패한다. 터미널을 열지 않는다. */
   auto?: boolean;
+  /** 사람이 다른 곳(웹 상태판)에서 이미 재시작 경고를 보고 확인했다. 확인창 없이 재시작하되 미제출 입력이 있으면 실패한다. */
+  restartConfirmed?: boolean;
   /** 프롬프트 본문 뒤에 붙일 자동 진행 맥락. 업무에는 저장하지 않는다. */
   appendBody?: string;
 }
@@ -75,8 +77,8 @@ export function requestWorkSend(itemId: string, options: WorkSendOptions = {}): 
       unchanged();
       let freshSession = false;
       if (target.restartRequired) {
-        if (options.auto) {
-          // 자동 진행은 확인 없이 새 세션으로 바꾸되, 사람이 쓰다 만 입력은 지우지 않는다.
+        if (options.auto || options.restartConfirmed) {
+          // 자동 진행·웹에서 확인한 보내기는 확인창 없이 새 세션으로 바꾸되, 사람이 쓰다 만 입력은 지우지 않는다.
           if (target.hasUncommitted) throw new Error("work-send-human-input");
         } else {
           // 다른 캐릭터의 확인창도 하나씩만 연다. 사용자가 다시 눌러 진행할 수 있다.
