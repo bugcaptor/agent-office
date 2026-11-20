@@ -2,8 +2,8 @@
 //! (역할 카드 + 토의 규칙 + 주제·맥락)를 넣는다. 태스크 대화와 달리 관찰 훅을 붙여 턴 종료를
 //! 받고(`control::turns::TurnTracker`, 렌더러의 알림·사용량 이벤트), 읽기 전용은 프롬프트 규칙으로만
 //! 지킨다. 권한 플래그로 막으면 제출 명령까지 막혀 진행이 멈추기 때문이다(아래 `session_args`).
-//! Claude·Codex는 턴의 마지막 응답(Stop 훅이 실어 온 것, 없으면 Claude 전사)을 발언으로 받고,
-//! 나머지는 `office-discuss say`로 제출받는다.
+//! 발언은 모두 `office-discuss say`로 제출받는다. Claude·Codex는 제출이 없으면 턴의 마지막 응답
+//! (Stop 훅이 실어 온 것, 없으면 Claude 전사)을 발언으로 받는다.
 //! 진행(누가 언제 말하나)은 실행기가 쥔다. 여기는 열기·차례 보내기·발언 수집까지다.
 
 use crate::i18n::Lang;
@@ -63,10 +63,9 @@ pub fn turn_file(app_data: &Path, agent_id: &str) -> Option<PathBuf> {
     Some(turns_dir(app_data).join(format!("{agent_id}.md")))
 }
 
-/// 발언을 어떻게 받는가. 마지막 응답을 읽을 수 있는 CLI는 그것을 쓴다. 제출 명령은 셸 호출이라
-/// 사용자 권한 설정에 걸릴 수 있다(실측: Claude `dontAsk`는 본문에 `{"`가 있는 heredoc을
-/// 허용 규칙과 무관하게 거절해 사회자 JSON 지시가 매번 막혔다). Codex 기본 workspace-write
-/// 샌드박스도 앱 데이터 쓰기를 막는다.
+/// 제출이 없을 때 마지막 응답으로 받을 수 있는가. 제출은 모든 CLI에서 먼저 본다(`collect`). 제출 명령은
+/// 셸 호출이라 사용자 권한 설정에 걸릴 수 있으므로(실측: Claude `dontAsk`는 본문에 `{"`가 있는 heredoc을
+/// 허용 규칙과 무관하게 거절했다) 마지막 응답을 읽을 수 있는 CLI는 그것을 대비책으로 둔다.
 pub fn collection_mode(cli: &WorkCli) -> DiscussionCollection {
     match cli {
         WorkCli::Claude | WorkCli::Codex => DiscussionCollection::LastReply,
@@ -75,14 +74,14 @@ pub fn collection_mode(cli: &WorkCli) -> DiscussionCollection {
 }
 
 /// 토의 세션 셸 래퍼에 붙일 인자(명령별). 권한·도구를 좁히는 플래그는 싣지 않는다. 읽기 전용은
-/// 첫 프롬프트 규칙으로 지킨다. Claude는 `auto`로 띄워 사람 없이 도는 차례가 승인 대기로 멈추지 않게 하고
-/// (`claude` 기본 모드는 웹 조사·셸마다 묻는다), Codex는 웹 조사만 연다. agy·kilo·pi는 업무 보내기
+/// 첫 프롬프트 규칙으로 지킨다. 사람 없이 도는 차례가 승인 대기로 멈추지 않고 제출 명령(앱 데이터 쓰기)이
+/// 막히지 않게, Claude는 `auto`로, Codex는 승인·샌드박스 없이(+웹 조사) 띄운다. agy·kilo·pi는 업무 보내기
 /// 명령(`launch_command_for`)이 이미 자동 승인 플래그를 붙인다.
 pub fn session_args() -> Vec<(&'static str, Vec<WrapperArg>)> {
     let lit = |s: &str| WrapperArg::Literal(s.to_string());
     vec![
         ("claude", vec![lit("--permission-mode"), lit("auto")]),
-        ("codex", vec![lit("--search")]),
+        ("codex", vec![lit("--search"), lit("--dangerously-bypass-approvals-and-sandbox")]),
     ]
 }
 
@@ -121,7 +120,8 @@ struct Text {
     debater_rules: &'static str,
     submit: &'static str,
     submit_placeholder: &'static str,
-    last_reply: &'static str,
+    submit_only: &'static str,
+    both_fallback: &'static str,
     topic: &'static str,
     context: &'static str,
     no_context: &'static str,
@@ -163,9 +163,10 @@ const KO: Text = Text {
     flow: "- **진행**: 사회자가 진행합니다. 첫 라운드는 토론자 모두가 서로의 의견을 보지 않고 동시에 발언합니다. 그다음부터는 사회자가 지목한 사람이 차례로 말합니다. 다른 참가자의 새 발언은 앱이 차례마다 전해 줍니다. 차례 지시가 오기 전에는 발언하지 마세요.",
     moderator_rules: "- **사회자**: 중립을 지키고 자기 의견을 내지 마세요. 차례마다 다음 발언자와 질문을 정하거나, 사람에게 물을 것을 정하거나, 토의를 정리합니다. 지시 형식은 차례 지시를 따르세요.",
     debater_rules: "- **토론자**: 역할 카드의 관점과 스탠스로 말하세요. 근거를 대고 짧게(대략 300단어 이내) 말하세요. 동의만 하지 말고 새 정보나 이유를 보태세요.",
-    submit: "## 발언 내는 법\n\n차례마다 발언(사회자는 지시)을 정한 뒤 아래 명령으로 제출하고 차례를 마치세요. 같은 차례에 다시 내면 바뀝니다. 제출한 내용만 다른 참가자에게 전해집니다.",
+    submit: "## 발언 내는 법\n\n차례마다 발언(사회자는 지시)을 정한 뒤 아래 명령으로 제출하고 차례를 마치세요. 같은 차례에 다시 내면 바뀝니다.",
     submit_placeholder: "<발언>",
-    last_reply: "## 발언 내는 법\n\n따로 제출하는 명령은 없습니다. 차례마다 마지막 답변 전체가 그대로 발언(사회자는 지시)으로 전해집니다. 조사는 도구로 하고, 마지막 답변에는 발언만 쓰세요. 작업 과정 설명, 인사, \"제출했습니다\" 같은 말은 붙이지 마세요.",
+    submit_only: "제출한 내용만 다른 참가자에게 전해집니다.",
+    both_fallback: "명령이 권한·샌드박스에 막히거나 승인을 물어야 한다면 다시 시도하거나 승인을 기다리지 말고 넘어가세요. 제출이 없으면 이번 차례의 마지막 답변 전체가 그대로 발언(사회자는 지시)으로 전해집니다. 그러니 제출하지 못했다면 마지막 답변에는 발언만 쓰고, 작업 과정 설명이나 인사는 붙이지 마세요.",
     topic: "## 주제",
     context: "### 맥락",
     no_context: "따로 적힌 맥락이 없습니다.",
@@ -207,9 +208,10 @@ const EN: Text = Text {
     flow: "- **Flow**: the moderator runs the discussion. In the first round every debater speaks at the same time without seeing the others. After that, people speak in turn when the moderator calls on them. The app passes on the other participants' new utterances each turn. Do not speak before a turn instruction arrives.",
     moderator_rules: "- **Moderator**: stay neutral and give no opinion of your own. Each turn, choose the next speaker and question, choose what to ask the person, or wrap up the discussion. Follow the format in the turn instruction.",
     debater_rules: "- **Debater**: speak from the perspective and stance on your role card. Give reasons and keep it short (about 300 words at most). Do not just agree; add new information or reasons.",
-    submit: "## How to speak\n\nEach turn, decide your utterance (the moderator: your instruction), submit it with the command below and end your turn. Submitting again in the same turn replaces it. Only what you submit reaches the other participants.",
+    submit: "## How to speak\n\nEach turn, decide your utterance (the moderator: your instruction), submit it with the command below and end your turn. Submitting again in the same turn replaces it.",
     submit_placeholder: "<utterance>",
-    last_reply: "## How to speak\n\nThere is no command to submit with. Each turn your whole final reply is passed on as it is as your utterance (the moderator: your instruction). Do your research with tools and write only the utterance in your final reply. Do not add notes about your work, greetings or remarks like \"submitted\".",
+    submit_only: "Only what you submit reaches the other participants.",
+    both_fallback: "If the command is blocked by permissions or a sandbox, or would need approval, do not retry it or wait for approval; move on. When nothing is submitted, your whole final reply of this turn is passed on as it is as your utterance (the moderator: your instruction). So if you could not submit, write only the utterance in your final reply, without notes about your work or greetings.",
     topic: "## Topic",
     context: "### Context",
     no_context: "No context was given.",
@@ -305,28 +307,27 @@ pub fn build_briefing(input: &Briefing, lang: Lang) -> String {
     }
     sections.push(card);
 
-    let collection = collection_mode(&cli);
-    let exception = match collection {
-        DiscussionCollection::Submit => format!("\n{}", t.submit_exception),
-        DiscussionCollection::LastReply => String::new(),
-    };
+    // 제출 명령은 모든 CLI에 안내한다. 마지막 응답을 읽을 수 있는 CLI는 명령이 막혀도 그 응답으로 받는다.
     sections.push(format!(
-        "{}\n\n{}{exception}\n{}\n{}",
+        "{}\n\n{}\n{}\n{}\n{}",
         t.rules,
         t.read_only,
+        t.submit_exception,
         t.flow,
         if moderator { t.moderator_rules } else { t.debater_rules },
     ));
 
-    sections.push(match collection {
-        DiscussionCollection::Submit => format!(
-            "{}\n\n```sh\n{} say - <<'EOF'\n{}\nEOF\n```",
-            t.submit,
-            input.shim.display(),
-            t.submit_placeholder,
-        ),
-        DiscussionCollection::LastReply => t.last_reply.to_string(),
-    });
+    let mut how = format!(
+        "{}\n\n```sh\n{} say - <<'EOF'\n{}\nEOF\n```",
+        t.submit,
+        input.shim.display(),
+        t.submit_placeholder,
+    );
+    how.push_str(&format!("\n\n{}", match collection_mode(&cli) {
+        DiscussionCollection::LastReply => t.both_fallback,
+        DiscussionCollection::Submit => t.submit_only,
+    }));
+    sections.push(how);
 
     let topic = format!(
         "{}\n\n{}\n\n- {}: {}\n\n{}\n\n",
@@ -794,9 +795,12 @@ mod tests {
         for cli in [WorkCli::Agy, WorkCli::Kilo, WorkCli::Pi] {
             assert_eq!(collection_mode(&cli), DiscussionCollection::Submit);
         }
-        // 권한·도구를 좁히는 플래그는 제출 명령까지 막는다. Claude auto와 Codex 웹 조사만 남는다.
+        // 권한·도구를 좁히는 플래그는 제출 명령까지 막는다. 무인 차례가 승인 대기로 멈추지 않게 연다.
         let lit = |s: &str| WrapperArg::Literal(s.into());
-        assert_eq!(session_args(), vec![("claude", vec![lit("--permission-mode"), lit("auto")]), ("codex", vec![lit("--search")])]);
+        assert_eq!(session_args(), vec![
+            ("claude", vec![lit("--permission-mode"), lit("auto")]),
+            ("codex", vec![lit("--search"), lit("--dangerously-bypass-approvals-and-sandbox")]),
+        ]);
     }
 
     #[test]
@@ -808,9 +812,9 @@ mod tests {
         assert!(out.contains("**Hana**") && out.contains("**debater**"));
         assert!(out.contains("- Role: Critic") && out.contains("Critical —") && out.contains("Find risks."));
         assert!(!out.contains("### Criteria"), "empty criteria is left out");
-        // Claude는 마지막 응답이 발언이라 제출 명령도, 그 예외 문구도 없다.
-        assert!(out.contains(EN.read_only) && out.contains(EN.last_reply));
-        assert!(!out.contains("office-discuss say") && !out.contains(EN.submit_exception));
+        // Claude도 제출 명령을 안내받고, 막히면 마지막 응답이 발언이라는 대비책을 함께 받는다.
+        assert!(out.contains(EN.read_only) && out.contains(EN.submit_exception));
+        assert!(out.contains("office-discuss say - <<'EOF'") && out.contains(EN.both_fallback));
         assert!(out.contains("Pick a storage format") && out.contains("We store tasks as JSON today.") && out.contains("/work/repo"));
         assert!(out.contains("- Mina (Moderator, moderator)") && out.contains("- Hana (Critic, you)") && out.contains("- Jun\n"));
         // 지워진 역할·삭제된 팀원은 이름 없이 표시한다.
@@ -827,11 +831,13 @@ mod tests {
         assert!(!out.contains("## Voice"));
 
         let codex = brief("jun", "Speak.", Lang::En);
-        assert!(codex.contains(EN.last_reply) && !codex.contains("office-discuss say"));
+        assert!(codex.contains("office-discuss say - <<'EOF'") && codex.contains(EN.both_fallback));
         assert!(codex.contains(EN.read_only) && codex.contains(EN.no_role));
-        // 마지막 응답을 못 읽는 CLI는 제출 명령으로 내고, 그 명령만 읽기 전용의 예외다.
+        // 마지막 응답을 못 읽는 CLI는 제출 명령으로만 내므로 대비책 문구가 없다. 명령은 읽기 전용의 예외다.
         let kilo = brief("gone", "Speak.", Lang::En);
         assert!(kilo.contains("/tmp/ao/office-discuss say - <<'EOF'") && kilo.contains(EN.submit_exception));
+        assert!(!kilo.contains(EN.both_fallback) && kilo.contains(EN.submit_only));
+        assert!(!out.contains(EN.submit_only), "with a fallback, the final reply also counts");
         assert!(kilo.contains(EN.no_role), "a deleted role reads as no role");
     }
 

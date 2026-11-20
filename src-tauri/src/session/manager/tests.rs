@@ -672,7 +672,8 @@
         let claude_wrapper = wrappers.iter().find(|w| w.command == "claude").unwrap();
         assert_eq!(claude_wrapper.skip_prefix_if_env_file_missing, None, "훅 설정이 없으면 조용히 훅 없이 뜨지 않는다");
         let codex = literals("codex");
-        assert!(codex.ends_with(&["--search".to_string()]), "{codex:?}");
+        // Codex도 승인·샌드박스 없이 띄워 무인 차례가 승인 대기로 멈추거나 제출 명령이 막히지 않게 한다.
+        assert!(codex.ends_with(&["--search".to_string(), "--dangerously-bypass-approvals-and-sandbox".to_string()]), "{codex:?}");
         assert!(!codex.iter().any(|a| a == "--sandbox" || a == "--ask-for-approval"), "{codex:?}");
         assert!(wrappers.iter().find(|w| w.command == "pi").is_none_or(|w| !w.prefix_args.contains(&WrapperArg::Literal("--exclude-tools".into()))));
         // Kilo·agy 관찰 배선은 그대로다.
