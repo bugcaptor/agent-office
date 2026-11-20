@@ -24,6 +24,8 @@ use super::ControlContext;
 /// 방금 만든 토의를 앱이 수신함에서 가져갈 때까지 시작·답하기가 기다리는 시간.
 const IMPORT_WAIT: Duration = Duration::from_secs(10);
 const LAST_TEXT_CHARS: usize = 400;
+/// 렌더러가 받아들인 시작·답이 `discussions.json`에 보일 때까지 기다리는 시간.
+const SAVE_WAIT: Duration = Duration::from_secs(2);
 
 // ── 상태 조립(순수) ───────────────────────────────────────────────────
 
@@ -314,13 +316,21 @@ async fn forward(ctx: &ControlContext, op: &str, id: &str, options: Value) -> Js
     if let Err(code) = await_imported(ctx, id).await {
         return fail(code);
     }
+    let before = if op == "start" { "ready" } else { "waiting_user" };
     let payload = json!({ "op": op, "discussionId": id, "options": options });
-    match ctx.discussion.send(payload).await {
-        Ok(_) => match current_status(ctx, id) {
-            Ok(s) => ok(s),
-            Err(_) => ok(Value::Null),
-        },
-        Err(e) => fail(e),
+    if let Err(e) = ctx.discussion.send(payload).await {
+        return fail(e);
+    }
+    // 렌더러는 스토어를 먼저 고치고 저장은 뒤따라 내보낸다. 곧바로 `status --wait`를 불러도 옛 상태(준비·질문 대기)로
+    // 끝나지 않게, 파일이 바뀔 때까지 잠깐 기다렸다가 답한다.
+    let deadline = Instant::now() + SAVE_WAIT;
+    loop {
+        let status = current_status(ctx, id);
+        let moved = status.as_ref().is_ok_and(|s| s["state"].as_str() != Some(before));
+        if moved || Instant::now() >= deadline {
+            return ok(status.unwrap_or(Value::Null));
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 

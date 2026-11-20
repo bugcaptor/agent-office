@@ -74,6 +74,11 @@ pub fn discussion_from_request(
     if request.participants.iter().any(|p| !known_agent(&p.agent_id)) {
         return Err("unknown-member");
     }
+    // CLI 실행 인자로 쓰일 칸(모델·추론 강도)과 역할 id는 한 줄짜리 짧은 값만 받는다.
+    let short = |v: &Option<String>| v.as_deref().is_none_or(|t| !t.is_empty() && t.len() <= 128 && !t.chars().any(char::is_control));
+    if request.participants.iter().any(|p| !short(&p.agent.model) || !short(&p.agent.effort) || !short(&p.role_id)) {
+        return Err("invalid-agent");
+    }
     let texts = [Some(request.topic.as_str()), Some(request.context.as_str()), request.cwd.as_deref()];
     if texts.into_iter().flatten().any(|t| forbidden_control(t).is_some()) {
         return Err("control-char");
@@ -293,6 +298,8 @@ mod tests {
         no_debaters.participants.retain(|p| p.agent_id == "mod");
         let mut control = request("disc-6");
         control.context = "a\x1b[2Jb".into();
+        let mut model = request("disc-7");
+        model.participants[0].agent.model = Some("x\ny".into());
         let cases = [
             ("1.json", "{not json".to_string(), "invalid-json"),
             ("2.json", serde_json::to_string(&ghost).unwrap(), "unknown-member"),
@@ -300,6 +307,7 @@ mod tests {
             ("4.json", serde_json::to_string(&no_debaters).unwrap(), "debaters"),
             ("5.json", serde_json::to_string(&control).unwrap(), "control-char"),
             ("6.json", "x".repeat(MAX_BYTES + 1), "too-large"),
+            ("7.json", serde_json::to_string(&model).unwrap(), "invalid-agent"),
         ];
         for (name, body, _) in &cases {
             write(tmp.path(), name, body);

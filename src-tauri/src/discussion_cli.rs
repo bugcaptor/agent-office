@@ -297,6 +297,9 @@ fn parse_agent(spec: &str) -> Result<crate::types::WorkAgent, String> {
         Some((cli, model)) => (cli.trim(), Some(model.trim().to_string()).filter(|m| !m.is_empty())),
         None => (spec.trim(), None),
     };
+    if model.as_deref().is_some_and(|m| m.len() > 128 || m.chars().any(char::is_control)) {
+        return Err("--cli: the model must be one short line".into());
+    }
     let cli: crate::types::WorkCli = serde_json::from_value(serde_json::Value::String(cli.to_ascii_lowercase()))
         .map_err(|_| format!("--cli: unknown CLI {cli:?} (claude, codex, agy, kilo or pi)"))?;
     Ok(crate::types::WorkAgent { cli, model, effort: None })
