@@ -126,3 +126,18 @@ describe("DiscussionSection", () => {
     expect(within(dialog()).queryByRole("button", { name: "삭제" })).toBeNull();
   });
 });
+
+describe("DiscussionEditor stray roles", () => {
+  it("keeps a saved role that no longer fits its seat visible by name", async () => {
+    // a2의 역할 critic이 나중에 사회자 스탠스로 바뀐 경우: 토론자 칸 선택지에는 없지만 값은 남는다.
+    api.loadRoles.mockResolvedValue({ version: 1, roles: [roles.roles[0], { ...roles.roles[1], stance: "moderator" }] });
+    api.loadDiscussions.mockResolvedValue([{ ...structuredClone(ready), participants: [ready.participants[0], { ...ready.participants[1], roleId: "critic" }] }]);
+    render(<DiscussionSection />);
+    await waitFor(() => expect(useDiscussionStore.getState().status).toBe("ready"));
+    act(() => useDiscussionStore.getState().openDialog({ kind: "edit", id: "d1" }));
+    await screen.findByDisplayValue("회의실 이름");
+    const roleSelects = within(dialog()).getAllByRole("combobox", { name: "역할" }) as HTMLSelectElement[];
+    expect(roleSelects[1].value).toBe("critic");
+    expect(roleSelects[1].selectedOptions[0].textContent).toBe("비판자");
+  });
+});

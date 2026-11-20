@@ -10,7 +10,16 @@ export default async ({ page, shot }) => {
   await page.locator(".work-discussion-btn").click();
   const dialog = page.getByRole("dialog");
   await dialog.locator("input").first().waitFor();
+  await page.waitForTimeout(100);
+  const focused = await page.evaluate(() => document.activeElement?.getAttribute("placeholder") ?? document.activeElement?.tagName);
+  console.log(`discussion dialog focus: ${focused}`);
   await shot("discussion-new-empty");
+  // Esc로 닫히고 다시 열린다.
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(100);
+  console.log(`dialog after Escape: ${await page.getByRole("dialog").count()}`);
+  await page.locator(".work-discussion-btn").click();
+  await dialog.locator("input").first().waitFor();
   await dialog.locator("input").first().fill("회의실을 맵 어디에 둘까");
   await dialog.locator("textarea").first().fill("본업이 쉬는 캐릭터만 회의실로 간다. 맵은 지금 사무실 한 칸뿐이다.");
   const add = dialog.getByRole("button", { name: /토론자 추가|Add debater/ });

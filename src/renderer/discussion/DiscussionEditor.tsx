@@ -37,7 +37,7 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
   const name = (id: string) => agents[id]?.name ?? t("board.missingAgent");
 
   if (!draft) {
-    return <WorkDialog title={t(base ? "editor.editTitle" : "editor.newTitle")} onClose={onClose} className="discussion-editor">
+    return <WorkDialog key="loading" title={t(base ? "editor.editTitle" : "editor.newTitle")} onClose={onClose} className="discussion-editor">
       <p className="form-hint">{t("editor.loading")}</p>
     </WorkDialog>;
   }
@@ -71,7 +71,8 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
   /** 한 사람 행: 팀원·역할 고르기와 CLI·모델. */
   const row = (value: ParticipantDraft, moderator: boolean, onChange: (row: ParticipantDraft) => void, onRemove?: () => void) => {
     const choices = roleChoices(roles, moderator);
-    const roleMissing = value.roleId && !roles.some((r) => r.id === value.roleId);
+    // 지워졌거나 스탠스가 바뀌어 이 칸에서 고를 수 없게 된 저장 역할도 그대로 보인다.
+    const stray = value.roleId && !choices.some((r) => r.id === value.roleId) ? value.roleId : undefined;
     const memberOptions = [value.agentId, ...free];
     return <fieldset className="discussion-row" key={value.agentId}>
       <label><span className="form-label-text">{t("editor.member")}</span>
@@ -81,7 +82,7 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
       <label><span className="form-label-text">{t("editor.role")}</span>
         <select value={value.roleId ?? ""} onChange={(e) => onChange(withRole(value, e.target.value || undefined, agents, roles))}>
           <option value="">{t(moderator ? "editor.noRoleModerator" : "editor.noRoleDebater")}</option>
-          {roleMissing && <option value={value.roleId}>{t("board.missingRole")}</option>}
+          {stray && <option value={stray}>{roles.find((r) => r.id === stray)?.name ?? t("board.missingRole")}</option>}
           {choices.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
         </select></label>
       {onRemove && <button type="button" className="pixel-btn discussion-row-remove" aria-label={t("editor.removeDebater", { name: name(value.agentId) })} title={t("editor.removeDebater", { name: name(value.agentId) })} onClick={onRemove}>×</button>}
@@ -102,7 +103,8 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
 
   const moderatorProfileCwd = draft.moderator ? agents[draft.moderator.agentId]?.cwd : undefined;
   const { maxRounds, maxMinutes, maxCostUsd } = DISCUSSION_LIMIT_RANGES;
-  return <WorkDialog title={t(base ? "editor.editTitle" : "editor.newTitle")} onClose={onClose} className="discussion-editor">
+  // 불러오는 중 화면과 key를 나눠 폼이 새로 마운트되게 한다(첫 입력란 포커스·Esc 닫기).
+  return <WorkDialog key="form" title={t(base ? "editor.editTitle" : "editor.newTitle")} onClose={onClose} className="discussion-editor">
     <label><span className="form-label-text">{t("editor.topic")}</span>
       <input value={draft.topic} placeholder={t("editor.topicPlaceholder")} onChange={(e) => update({ topic: e.target.value })} /></label>
     <label><span className="form-label-text">{t("editor.context")}</span>
