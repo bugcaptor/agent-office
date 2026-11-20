@@ -21,7 +21,7 @@ import { useRoleStore } from "../roleStore";
 import { applyDiscussionSessionState, applyDiscussionTurn, resetDiscussionSessionStoreForTest, useDiscussionSessionStore } from "../discussionSessionStore";
 import { resetUsageForecast } from "../../usage/usageForecastStore";
 import {
-  MODERATOR_FORMAT, WRAP_FORMAT, WRAP_GRACE_MS, addDiscussionTurnCost, checkDiscussionUsageWaits, discussionLimitReached, answerDiscussion, discussionStartBlockedReason, endDiscussion, installDiscussionRunner, isDiscussionStepping,
+  MODERATOR_FORMAT, WRAP_FORMAT, WRAP_GRACE_MS, addDiscussionTurnCost, handleDiscussionTurnUsage, checkDiscussionUsageWaits, discussionLimitReached, answerDiscussion, discussionStartBlockedReason, endDiscussion, installDiscussionRunner, isDiscussionStepping,
   parseModeratorDirective, pauseDiscussion, resetDiscussionRunForTest, restoreDiscussionsAfterRestart, resumeDiscussion, startDiscussion,
 } from "../discussionRun";
 
@@ -545,6 +545,22 @@ describe("비용 상한", () => {
     expect(sentTurns("m")).toHaveLength(sends);
     expect(d1()).toMatchObject({ state: "finished" });
     expect(notices().slice(-1)[0]).toBe(t("discussion:run.notice.wrapMissing"));
+  });
+
+  it("발언 차례를 끝낸 턴이 상한을 넘기면 그 발언을 받은 뒤에 정리한다", async () => {
+    await throughOpening();
+    await finishTurn("m", directive({ action: "next", speakers: [{ id: "a", question: "Why?" }, { id: "b", question: "And you?" }] }));
+    (replies.a ??= []).push("Because of the coffee.");
+    const s = session("a");
+    applyDiscussionTurn(s.agentId, s.sessionId, "working", ++clock);
+    // 턴 종료와 비용이 한 이벤트로 온다(관찰 훅의 Stop). idle 신호보다 먼저 처리돼도 발언을 잃지 않는다.
+    handleDiscussionTurnUsage({ agentId: s.agentId, sessionId: s.sessionId, at: ++clock, tokens, partial: false });
+    await settle();
+    const kinds = d1().transcript.slice(-2).map((e) => [e.kind, e.text]);
+    expect(kinds[0]).toEqual(["statement", "Because of the coffee."]);
+    expect(kinds[1][0]).toBe("notice");
+    expect(d1()).toMatchObject({ state: "wrapping_up", run: { forced: "cost" } });
+    expect(sentTurns("b")).toHaveLength(0);
   });
 
   it("상한 검사: 시간·비용", () => {

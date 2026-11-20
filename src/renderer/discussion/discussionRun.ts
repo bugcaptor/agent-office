@@ -23,7 +23,7 @@ import { maybeSendOsNotification } from "../ipc/osNotify";
 import { useAppStore } from "../store/appStore";
 import { useDiscussionStore } from "./discussionStore";
 import {
-  closeDiscussionSession, closeDiscussionSessions, collectDiscussionUtterance, liveDiscussionSessions, openDiscussionSession, sendDiscussionTurn,
+  applyDiscussionTurn, closeDiscussionSession, closeDiscussionSessions, collectDiscussionUtterance, liveDiscussionSessions, openDiscussionSession, sendDiscussionTurn,
   useDiscussionSessionStore,
 } from "./discussionSessionStore";
 import { useRoleStore } from "./roleStore";
@@ -329,7 +329,9 @@ export async function stepDiscussion(id: string): Promise<void> {
   if (!d?.run) return;
   if (d.run.phase === "opening" || d.run.phase === "moderator" || d.run.phase === "speakers") {
     const reason = discussionLimitReached(d);
-    if (reason) return forceWrap(id, reason);
+    // 이미 끝났지만 아직 받지 않은 차례가 있으면 먼저 받는다(그 턴이 상한을 넘긴 턴이어도 발언은 남긴다).
+    // 받은 뒤 다시 이 검사를 지나며 정리한다.
+    if (reason && !hasUnreceivedTurn(d)) return forceWrap(id, reason);
   }
   switch (d.run.phase) {
     case "opening": return stepOpening(id);
@@ -347,6 +349,16 @@ export function discussionLimitReached(d: Discussion, now = Date.now()): Exclude
   if (discussionElapsedMs(d, now) >= d.limits.maxMinutes * 60_000) return "time";
   if (d.costUsd >= d.limits.maxCostUsd) return "cost";
   return undefined;
+}
+
+/** 보낸 차례 중 턴은 끝났는데 발언을 아직 받지 않은 것이 있는가. */
+function hasUnreceivedTurn(d: Discussion): boolean {
+  return (d.run?.turns ?? []).some((turn) => {
+    if (turn.sentAt === undefined || turn.text !== undefined) return false;
+    const session = sessionOf(d, turn.agentId);
+    return !!session && session.sessionId === turn.sessionId && isLive(session.status)
+      && session.turn?.phase === "idle" && session.turn.at >= turn.sentAt;
+  });
 }
 
 function limitText(d: Discussion, reason: DiscussionLimitReason): string {
@@ -623,6 +635,16 @@ export function addDiscussionTurnCost(e: Pick<TurnUsageEvent, "agentId" | "token
   update(d.id, (x) => ({ ...x, costUsd: x.costUsd + cost }));
 }
 
+/**
+ * 토의 탭의 turn-usage 하나. 턴이 끝난 신호(partial 아님)면 비용보다 턴 종료를 먼저 반영한다: 이 턴으로 비용 상한을
+ * 넘겨도 방금 끝난 발언은 받은 뒤에 강제 정리하게 한다(리스너 등록 순서에 기대지 않는다. 같은 신호는 다시 반영해도 같다).
+ */
+export function handleDiscussionTurnUsage(e: TurnUsageEvent): void {
+  if (!parseDiscussionSessionAgentId(e.agentId)) return;
+  if (!e.partial) applyDiscussionTurn(e.agentId, e.sessionId, "idle", e.at);
+  addDiscussionTurnCost(e);
+}
+
 const waking = new Set<string>();
 /**
  * 사용량 대기 중인 토의를 살핀다. 다시 볼 시각이 지났으면 사용량을 새로 받아 이어 가고(이어 간 차례가 다시
@@ -677,7 +699,7 @@ export function installDiscussionRunner(): () => void {
   });
   const offSessions = useDiscussionSessionStore.subscribe((s, prev) => { if (s.sessions !== prev.sessions) wake(); });
   const offDiscussions = useDiscussionStore.subscribe((s, prev) => { if (s.discussions !== prev.discussions) wake(); });
-  const offCost = tauriApi.onTurnUsage(addDiscussionTurnCost);
+  const offCost = tauriApi.onTurnUsage(handleDiscussionTurnUsage);
   const check = () => { if (installed && restored) { wake(); void checkDiscussionUsageWaits(); } };
   const offUsage = useAppStore.subscribe((state, previous) => { if (state.usage !== previous.usage) check(); });
   const timer = setInterval(check, CHECK_MS);
