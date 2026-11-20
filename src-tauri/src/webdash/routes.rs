@@ -84,6 +84,7 @@ fn router(ctx: Arc<Dash>) -> Router {
         .route("/tasks", get(tasks).post(create_task))
         .route("/tasks/:id/send", post(send_task))
         .route("/tasks/:id/autorun", post(autorun_task))
+        .route("/tasks/:id/done", post(done_task))
         .route("/discussions", get(discussions))
         .route("/discussions/:id", get(discussion))
         .route("/discussions/:id/start", post(start_discussion))
@@ -554,6 +555,11 @@ async fn send_task(State(ctx): Ctx, Path(id): Path<String>) -> Json<Value> {
 
 async fn autorun_task(State(ctx): Ctx, Path(id): Path<String>) -> Json<Value> {
     task_op(&ctx, "autorun-start", &id).await
+}
+
+/// 끝난 업무를 완료로 옮기고, 담당 캐릭터에 떠 있는 알림(완료 카드·배지)도 내린다.
+async fn done_task(State(ctx): Ctx, Path(id): Path<String>) -> Json<Value> {
+    task_op(&ctx, "work-done", &id).await
 }
 
 async fn task_op(ctx: &Dash, op: &str, id: &str) -> Json<Value> {

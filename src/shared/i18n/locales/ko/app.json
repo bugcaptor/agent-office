@@ -98,6 +98,7 @@
       "work-create": "🌐 웹: 업무 만듦 — {{detail}}",
       "work-create-send": "🌐 웹: 업무 만들어 {{name}}에게 보냄 — {{detail}}",
       "work-send": "🌐 웹: {{name}}에게 업무 보냄 — {{detail}}",
+      "work-done": "🌐 웹: {{name}} 업무 완료 — {{detail}}",
       "autorun-start": "🌐 웹: 자동 진행 시작 — {{detail}}",
       "discuss-start": "🌐 웹: 토의 시작",
       "discuss-answer": "🌐 웹: 토의 사회자에게 답함",

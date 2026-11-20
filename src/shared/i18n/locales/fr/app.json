@@ -81,6 +81,7 @@
       "work-create": "🌐 Web : tâche créée — {{detail}}",
       "work-create-send": "🌐 Web : tâche créée et envoyée à {{name}} — {{detail}}",
       "work-send": "🌐 Web : tâche envoyée à {{name}} — {{detail}}",
+      "work-done": "🌐 Web : tâche de {{name}} terminée — {{detail}}",
       "autorun-start": "🌐 Web : exécution auto lancée — {{detail}}",
       "discuss-start": "🌐 Web : discussion lancée",
       "discuss-answer": "🌐 Web : réponse au modérateur",

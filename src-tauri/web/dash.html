@@ -113,6 +113,7 @@ const S = {
     clockedOut: "퇴근", back: "← 목록", log: "대화 로그", noLog: "이 터미널에는 읽을 대화 로그가 없습니다(Claude·Codex 전사가 없는 세션).", noItems: "아직 대화가 없습니다.",
     restart: "터미널 재시작", resume: "이어하기", terminate: "종료", interrupt: "작업 중단(Esc)", ctrlc: "Ctrl-C", launchClaude: "Claude 실행", launchCodex: "Codex 실행",
     again: "한 번 더 눌러 확인", done: "보냈습니다", result: "결과", lines: "줄",
+    sentTasks: "보낸 업무", taskState: { in_progress: "진행 중", review: "끝남 · 확인 대기" }, markDone: "완료", markedDone: "완료로 옮겼습니다",
     sendTask: "업무 보내기", titlePh: "할 일(제목)", bodyPh: "자세한 내용(선택)", cli: "CLI", send: "보내기", restartSend: "재시작하고 보내기",
     cliRunning: (n) => `${n} 실행 중`, cliBusy: "터미널에서 명령이 실행 중입니다", restartNeeded: "이 터미널은 재시작해야 업무를 보낼 수 있습니다",
     restartWarn: (what) => `${what}. 보내면 터미널을 재시작하므로 지금 세션은 끊깁니다.`,
@@ -122,7 +123,7 @@ const S = {
     usageNone: "사용량 정보가 없습니다.", resets: "초기화", login: "접속 토큰이 없습니다", loginHelp: "앱 설정 › 제어 › 웹 상태판에서 접속 주소를 복사해 이 기기에서 여세요.",
     unauthorized: "토큰이 맞지 않습니다. 앱에서 접속 주소를 다시 받아 오세요.", offline: "앱에 연결할 수 없습니다",
     err: { "not-running": "터미널이 꺼져 있습니다", "not-at-shell-prompt": "셸 프롬프트가 아닙니다(CLI가 이미 실행 중이거나 입력 중)", "human-input-pending": "앱에 쓰다 만 입력이 있습니다", "renderer-unavailable": "앱 화면이 응답하지 않습니다", "busy": "다른 입력이 진행 중입니다", "shell-unsupported": "지원하지 않는 셸입니다", "empty": "내용이 비었습니다",
-      "restart-required": "터미널에서 CLI가 실행 중입니다. 재시작 경고를 확인하고 다시 보내세요", "work-send-busy": "이 캐릭터에 보내는 중인 업무가 있습니다", "work-send-clocked-out": "퇴근한 캐릭터입니다", "work-send-auto-run": "자동 진행 중인 캐릭터입니다", "work-send-profile-unsupported": "시작 명령이 있는 캐릭터에는 보낼 수 없습니다", "work-not-loaded": "앱이 아직 업무를 불러오지 않았습니다" },
+      "restart-required": "터미널에서 CLI가 실행 중입니다. 재시작 경고를 확인하고 다시 보내세요", "work-send-busy": "이 캐릭터에 보내는 중인 업무가 있습니다", "work-send-clocked-out": "퇴근한 캐릭터입니다", "work-send-auto-run": "자동 진행 중인 캐릭터입니다", "work-send-profile-unsupported": "시작 명령이 있는 캐릭터에는 보낼 수 없습니다", "work-not-loaded": "앱이 아직 업무를 불러오지 않았습니다", "task-not-found": "업무를 찾을 수 없습니다" },
   },
   en: {
     tabs: { chars: "Characters", talks: "Discussions", usage: "Usage" },
@@ -130,6 +131,7 @@ const S = {
     clockedOut: "Clocked out", back: "← List", log: "Conversation", noLog: "No conversation log for this terminal (no Claude/Codex transcript).", noItems: "No messages yet.",
     restart: "Restart terminal", resume: "Resume", terminate: "Terminate", interrupt: "Interrupt (Esc)", ctrlc: "Ctrl-C", launchClaude: "Run Claude", launchCodex: "Run Codex",
     again: "Tap again to confirm", done: "Sent", result: "Result", lines: "lines",
+    sentTasks: "Sent tasks", taskState: { in_progress: "In progress", review: "Finished · to review" }, markDone: "Done", markedDone: "Marked done",
     sendTask: "Send a task", titlePh: "Task (title)", bodyPh: "Details (optional)", cli: "CLI", send: "Send", restartSend: "Restart and send",
     cliRunning: (n) => `${n} running`, cliBusy: "A command is running in the terminal", restartNeeded: "This terminal must restart to receive the task",
     restartWarn: (what) => `${what}. Sending restarts the terminal, so the current session ends.`,
@@ -139,7 +141,7 @@ const S = {
     usageNone: "No usage data.", resets: "resets", login: "No access token", loginHelp: "Copy the address from the app: Settings › Control › Web dashboard, and open it on this device.",
     unauthorized: "Token rejected. Get a fresh address from the app.", offline: "Cannot reach the app",
     err: { "not-running": "Terminal is not running", "not-at-shell-prompt": "Not at a shell prompt (CLI running or input pending)", "human-input-pending": "Unsent input is pending in the app", "renderer-unavailable": "App window is not responding", "busy": "Another input is in progress", "shell-unsupported": "Unsupported shell", "empty": "Empty",
-      "restart-required": "A CLI is running in the terminal. Confirm the restart warning and send again", "work-send-busy": "A task is already being sent to this character", "work-send-clocked-out": "This character has clocked out", "work-send-auto-run": "This character is running an auto-run", "work-send-profile-unsupported": "Characters with a startup command can't receive tasks", "work-not-loaded": "The app hasn't loaded tasks yet" },
+      "restart-required": "A CLI is running in the terminal. Confirm the restart warning and send again", "work-send-busy": "A task is already being sent to this character", "work-send-clocked-out": "This character has clocked out", "work-send-auto-run": "This character is running an auto-run", "work-send-profile-unsupported": "Characters with a startup command can't receive tasks", "work-not-loaded": "The app hasn't loaded tasks yet", "task-not-found": "Task not found" },
   },
 }[L];
 document.documentElement.lang = L;
@@ -216,6 +218,7 @@ const view = { tab: S.tabs[load("agent-office-web-dash-tab")] ? load("agent-offi
 let unauthorized = false;
 let chars = null, charsRev = null;
 let talksData = null, talkDetail = null, usageData = null;
+let tasksData = null;
 const logs = new Map(); // agentId -> {epoch,last,attached,items}
 
 function phaseOf(c) {
@@ -308,7 +311,7 @@ function renderAgent() {
   const back = el("button", { class: "back", text: S.back, onclick: () => { view.agent = null; render(); } });
   const c = (chars || []).find((x) => x.agentId === view.agent);
   if (!c) return [back];
-  return [back, renderHead(c), renderTaskForm(c), renderLog(c.agentId)];
+  return [back, renderHead(c), renderSent(c), renderTaskForm(c), renderLog(c.agentId)];
 }
 function renderHead(c) {
   const [cls] = phaseOf(c);
@@ -330,6 +333,43 @@ function renderHead(c) {
       confirmBtn(S.restart, () => act(`/agents/${id}/restart`), "b"),
       confirmBtn(S.resume, () => act(`/agents/${id}/resume`), "b"),
       running && confirmBtn(S.terminate, () => act(`/agents/${id}/terminate`))));
+}
+
+// ── 캐릭터에게 보낸 업무 ──
+// 보내서 진행 중이거나 끝나 확인을 기다리는 업무. 끝난 업무는 여기서 완료로 옮기면 앱의 업무 팝업·알림 카드도 내려간다.
+function sentOf(agentId) {
+  const open = (tasksData && tasksData.open) || [];
+  return open.filter((t) => t.assigneeAgentId === agentId && !t.plan && (t.status === "in_progress" || t.status === "review"))
+    .sort((a, b) => (a.status === "review" ? 0 : 1) - (b.status === "review" ? 0 : 1) || (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+const doneBusy = new Set();
+function renderSent(c) {
+  const rows = sentOf(c.agentId);
+  const box = el("div", { id: "sent", "data-key": JSON.stringify([rows.map((t) => [t.id, t.status, t.title]), [...doneBusy]]) });
+  if (!rows.length) return box;
+  box.append(el("div", { class: "card" }, el("h3", { text: S.sentTasks, style: "font-size:14px;margin:0 0 4px" }),
+    ...rows.map((t) => el("div", { class: "row", style: "margin-top:6px" },
+      el("div", { class: "grow" }, el("div", { text: t.title || firstLine(t.body, 60) }), el("div", { class: "sub", text: fmtTime(t.updatedAt) })),
+      el("span", { class: "chip " + (t.status === "review" ? "idle" : "working"), text: S.taskState[t.status] || t.status }),
+      el("button", { class: "b" + (t.status === "review" ? " primary" : ""), disabled: doneBusy.has(t.id), text: S.markDone, onclick: () => markDone(t.id) })))));
+  return box;
+}
+async function markDone(id) {
+  if (doneBusy.has(id)) return;
+  doneBusy.add(id); refreshSent();
+  try {
+    await api(`/tasks/${encodeURIComponent(id)}/done`, { method: "POST", body: {} });
+    toast(S.markedDone);
+    if (tasksData) tasksData.open = tasksData.open.filter((t) => t.id !== id);
+  } catch (e) { toast(e.message); }
+  finally { doneBusy.delete(id); refreshSent(); setTimeout(refreshNow, 400); }
+}
+function refreshSent() {
+  const c = (chars || []).find((x) => x.agentId === view.agent);
+  const box = document.getElementById("sent");
+  if (!c || !box) return;
+  const next = renderSent(c);
+  if (next.dataset.key !== box.dataset.key) box.replaceWith(next);
 }
 
 // ── 캐릭터별 업무 보내기 ──
@@ -501,7 +541,9 @@ async function tick() {
       // 보지 않는 캐릭터의 로그는 들고 있지 않는다.
       for (const k of [...logs.keys()]) if (k !== agentId) logs.delete(k);
       const logMode = await refreshLog(agentId);
-      if (view.agent === agentId) updateAgentView(changed, logMode);
+      // 업무 목록을 못 받아도 상태·로그 갱신은 이어 간다.
+      tasksData = await api("/tasks").catch(() => tasksData);
+      if (view.agent === agentId) { updateAgentView(changed, logMode); refreshSent(); }
     } else if (view.tab === "talks") {
       if (view.talk) {
         const d = await api(`/discussions/${encodeURIComponent(view.talk)}`);

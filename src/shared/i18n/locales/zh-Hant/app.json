@@ -81,6 +81,7 @@
       "work-create": "🌐 網頁:建立任務 — {{detail}}",
       "work-create-send": "🌐 網頁:建立任務並送給 {{name}} — {{detail}}",
       "work-send": "🌐 網頁:向 {{name}} 送出任務 — {{detail}}",
+      "work-done": "🌐 網頁:完成 {{name}} 的任務 — {{detail}}",
       "autorun-start": "🌐 網頁:開始自動推進 — {{detail}}",
       "discuss-start": "🌐 網頁:開始討論",
       "discuss-answer": "🌐 網頁:回答了主持人",

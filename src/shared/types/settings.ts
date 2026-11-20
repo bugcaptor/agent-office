@@ -225,7 +225,7 @@ export interface WebDashActivity {
 /** 웹 명령(`web-dash-control` 이벤트). 렌더러가 처리하고 webDashControlReply로 답한다. */
 export interface WebDashControlRequest {
   requestId: string;
-  op: "restart" | "terminate" | "resume" | "work-create" | "work-send" | "autorun-start" | "discuss-start" | "discuss-answer";
+  op: "restart" | "terminate" | "resume" | "work-create" | "work-send" | "work-done" | "autorun-start" | "discuss-start" | "discuss-answer";
   agentId?: string;
   itemId?: string;
   discussionId?: string;

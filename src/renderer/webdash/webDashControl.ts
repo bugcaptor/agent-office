@@ -73,6 +73,23 @@ export async function handleWebDashControl(request: WebDashControlRequest): Prom
       fireAndForget("work send", requestWorkSend(item.id));
       return {};
     }
+    case "work-done": {
+      const work = useWorkItemStore.getState();
+      const item = work.items.find((i) => i.id === request.itemId);
+      if (!item) return { error: "task-not-found" };
+      if (item.status !== "done") {
+        work.edit(item.id, { status: "done" });
+        await useWorkItemStore.getState().flush();
+      }
+      // 앱에 떠 있는 것도 내린다: 이 업무 팝업, 담당 캐릭터의 알림 카드·배지.
+      if (useWorkItemStore.getState().selectedId === item.id) useWorkItemStore.getState().select(null);
+      const agentId = item.assigneeAgentId;
+      if (agentId) {
+        useAppStore.getState().clearNotificationsFor(agentId);
+        tauriApi.clearNotifications(agentId);
+      }
+      return {};
+    }
     case "autorun-start": {
       const root = useWorkItemStore.getState().items.find((i) => i.id === request.itemId);
       if (!root) return { error: "auto-run-no-plan" };

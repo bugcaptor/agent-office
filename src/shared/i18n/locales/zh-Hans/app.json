@@ -81,6 +81,7 @@
       "work-create": "🌐 网页:创建任务 — {{detail}}",
       "work-create-send": "🌐 网页:创建任务并发送给 {{name}} — {{detail}}",
       "work-send": "🌐 网页:向 {{name}} 发送任务 — {{detail}}",
+      "work-done": "🌐 网页:完成 {{name}} 的任务 — {{detail}}",
       "autorun-start": "🌐 网页:开始自动推进 — {{detail}}",
       "discuss-start": "🌐 网页:开始讨论",
       "discuss-answer": "🌐 网页:回答了主持人",

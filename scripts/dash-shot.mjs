@@ -2,7 +2,7 @@
 //
 // 웹 상태판(src-tauri/web/dash.html)을 가짜 API로 띄워 폰 크기로 찍는다. 앱·Tauri 없이 화면만 본다.
 //   node scripts/dash-shot.mjs [출력 폴더(기본 /tmp/dash-shot)]
-// 찍는 것: 캐릭터 목록, 캐릭터 화면(대화 로그 최신순·업무 보내기), CLI 실행 중 재시작 경고.
+// 찍는 것: 캐릭터 목록, 캐릭터 화면(보낸 업무·대화 로그 최신순·업무 보내기), CLI 실행 중 재시작 경고, 끝난 업무 완료.
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -31,6 +31,14 @@ const items = [
   { seq: 5, role: "user", kind: "text", text: "사람이 입력한 게 안 보이는 거 같다." },
   { seq: 6, role: "assistant", kind: "text", text: "원인을 찾았습니다." },
 ];
+const tasks = {
+  open: [
+    { id: "w1", title: "로그 정렬 고치기", body: "", status: "review", assigneeAgentId: "a", plan: false, updatedAt: now - 60000 },
+    { id: "w2", title: "", body: "토큰 갱신 버튼 문구 바꾸기\n자세히", status: "in_progress", assigneeAgentId: "a", plan: false, updatedAt: now },
+    { id: "w3", title: "남의 업무", body: "", status: "review", assigneeAgentId: "b", plan: false, updatedAt: now },
+  ],
+  done: [],
+};
 const posts = [];
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
@@ -38,9 +46,12 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/") { res.setHeader("content-type", "text/html; charset=utf-8"); return res.end(page); }
   if (url.pathname === "/api/state") return send({ app: "0.0.0", rev: "r1", characters });
   if (url.pathname.startsWith("/api/log/")) return send({ epoch: 1, last: 6, attached: true, items: url.searchParams.get("after") ? [] : items });
+  if (url.pathname === "/api/tasks" && req.method === "GET") return send(tasks);
   if (req.method === "POST") {
     let body = ""; for await (const chunk of req) body += chunk;
     posts.push({ path: url.pathname, body: JSON.parse(body || "{}") });
+    const done = url.pathname.match(/^\/api\/tasks\/([^/]+)\/done$/);
+    if (done) tasks.open = tasks.open.filter((t) => t.id !== decodeURIComponent(done[1]));
     return send(null);
   }
   res.statusCode = 404; res.end();
@@ -59,7 +70,11 @@ await p.waitForSelector(".card");
 await p.screenshot({ path: `${outDir}/list.png` });
 await p.locator(".card.clickable").first().click();
 await p.waitForSelector("#log .msg");
+await p.waitForSelector("#sent .card");
 await p.screenshot({ path: `${outDir}/agent-claude.png`, fullPage: true });
+await p.locator("#sent button", { hasText: "완료" }).first().click();
+await p.waitForFunction(() => document.querySelectorAll("#sent .row").length === 1);
+await p.screenshot({ path: `${outDir}/agent-done.png` });
 await p.fill("#taskform input", "로그 정렬 고치기");
 await p.getByRole("button", { name: "재시작하고 보내기" }).click();
 await p.getByRole("button", { name: "한 번 더 눌러 확인" }).click();
