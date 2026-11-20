@@ -143,6 +143,11 @@ fn profile(ctx: &Dash, agent_id: &str) -> Option<AgentProfile> {
     ctx.ctl.store.load().agents.into_iter().find(|a| a.id == agent_id)
 }
 
+/// 캐릭터 id → 이름.
+fn agent_names(ctx: &Dash) -> HashMap<String, String> {
+    ctx.ctl.store.load().agents.into_iter().map(|a| (a.id, a.name)).collect()
+}
+
 fn clip(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         return text.to_string();
@@ -188,7 +193,7 @@ fn probe_shells(ctx: &Dash, agents: &[String]) -> HashMap<String, ShellProbe> {
 
 async fn state(State(ctx): Ctx) -> Json<Value> {
     let profiles = ctx.ctl.store.load();
-    let mut live = std::collections::HashMap::new();
+    let mut live = HashMap::new();
     for (sid, agent, st) in ctx.ctl.registry.snapshot() {
         live.insert(agent, (sid, st));
     }
@@ -262,17 +267,12 @@ async fn log(State(ctx): Ctx, Path(agent): Path<String>, Query(q): Query<LogQuer
         .sink()
         .cwd_of(&agent)
         .or(p.cwd)
-        .or_else(|| dirs_home().map(|h| h.to_string_lossy().into_owned()))
-        .unwrap_or_default();
+        .unwrap_or_else(crate::session::manager::home_dir);
     let dash = ctx.dash.clone();
     match tokio::task::spawn_blocking(move || dash.logs.read(&agent, &cwd, q.after, q.epoch)).await {
         Ok(page) => ok(page),
         Err(e) => fail(e.to_string()),
     }
-}
-
-fn dirs_home() -> Option<std::path::PathBuf> {
-    std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(Into::into)
 }
 
 async fn portrait(State(ctx): Ctx, Path(agent): Path<String>) -> Response {
@@ -309,8 +309,7 @@ async fn tasks(State(ctx): Ctx) -> Json<Value> {
         Ok(items) => items,
         Err(e) => return fail(e),
     };
-    let names: std::collections::HashMap<String, String> =
-        ctx.ctl.store.load().agents.into_iter().map(|a| (a.id, a.name)).collect();
+    let names = agent_names(&ctx);
     let mut open: Vec<_> = items.iter().filter(|i| !is_done(i)).collect();
     open.sort_by(|a, b| a.order.partial_cmp(&b.order).unwrap_or(std::cmp::Ordering::Equal));
     let mut done: Vec<_> = items.iter().filter(|i| is_done(i)).collect();
@@ -355,8 +354,7 @@ async fn discussion(State(ctx): Ctx, Path(id): Path<String>) -> Json<Value> {
         Ok(s) => s,
         Err(e) => return fail(e),
     };
-    let names: std::collections::HashMap<String, String> =
-        ctx.ctl.store.load().agents.into_iter().map(|a| (a.id, a.name)).collect();
+    let names = agent_names(&ctx);
     let transcript = crate::control::discussion::transcript(&ctx.ctl, &id).unwrap_or_default();
     let skip = transcript.len().saturating_sub(TRANSCRIPT_ITEMS);
     let rows: Vec<Value> = transcript

@@ -9,7 +9,7 @@ import type { WebDashActivity, WebDashLabel, WebDashStatus } from "@shared/types
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
 
-export interface WebDashNotice extends WebDashActivity {
+interface WebDashNotice extends WebDashActivity {
   id: number;
   at: number;
 }
@@ -22,11 +22,11 @@ interface WebDashState {
 export const useWebDashStore = create<WebDashState>(() => ({ status: null, notices: [] }));
 
 /** 알림이 화면에 머무는 시간. */
-export const NOTICE_MS = 5000;
+const NOTICE_MS = 5000;
 const LABEL_DEBOUNCE_MS = 1000;
 let noticeSeq = 0;
 
-export function pushWebDashNotice(activity: WebDashActivity, now = Date.now()): void {
+function pushWebDashNotice(activity: WebDashActivity, now = Date.now()): void {
   const notice = { ...activity, id: ++noticeSeq, at: now };
   useWebDashStore.setState((s) => ({ notices: [...s.notices, notice].slice(-3) }));
   setTimeout(() => {
@@ -39,7 +39,7 @@ export function setWebDashStatus(status: WebDashStatus): void {
 }
 
 /** 스토어의 작업 라벨 → 웹에 보일 라벨. */
-export function webDashLabels(): Record<string, WebDashLabel> {
+function webDashLabels(): Record<string, WebDashLabel> {
   const { taskLabels, gitBranches, agents } = useAppStore.getState();
   const out: Record<string, WebDashLabel> = {};
   for (const agentId of Object.keys(agents)) {

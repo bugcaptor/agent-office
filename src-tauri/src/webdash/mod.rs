@@ -212,10 +212,6 @@ impl WebDashState {
         self.labels.read().unwrap().get(agent_id).cloned()
     }
 
-    pub fn is_running(&self) -> bool {
-        self.installed.lock().unwrap().is_some()
-    }
-
     pub fn status(&self) -> WebDashStatus {
         let config = self.config();
         let (running, mut addrs, port) = match self.installed.lock().unwrap().as_ref() {
