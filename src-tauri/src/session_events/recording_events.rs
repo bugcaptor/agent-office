@@ -314,6 +314,7 @@ mod tests {
             at: 1_783_728_000_000,
             tokens: tokens.clone(),
             partial: false,
+            subagents_running: false,
         };
         events.turn_usage(&usage_event);
         assert_eq!(read(&root)[0].partial, Some(false));
@@ -365,6 +366,7 @@ mod tests {
                 ..Default::default()
             },
             partial: true,
+            subagents_running: false,
         });
         assert_eq!(read(&root)[0].partial, Some(true));
         let _ = fs::remove_dir_all(root);

@@ -8,6 +8,7 @@ import {
   isDiscussionSessionId,
   notificationType,
   parseDiscussionSessionAgentId,
+  turnUsageEndsTurn,
 } from "@shared/types";
 import type {
   CollectedUtterance,
@@ -277,7 +278,7 @@ export function installDiscussionSessionTracking(): () => void {
     else if (type === "done") applyDiscussionTurn(e.agentId, e.sessionId, "idle", e.at);
   });
   const offUsage = tauriApi.onTurnUsage((e) => {
-    if (isDiscussionSessionId(e.agentId) && !e.partial) applyDiscussionTurn(e.agentId, e.sessionId, "idle", e.at);
+    if (isDiscussionSessionId(e.agentId) && turnUsageEndsTurn(e)) applyDiscussionTurn(e.agentId, e.sessionId, "idle", e.at);
   });
   return () => { offState(); offActivity(); offNotification(); offUsage(); };
 }

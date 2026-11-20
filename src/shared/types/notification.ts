@@ -66,6 +66,13 @@ export interface TurnUsageEvent {
   at: number;
   tokens: SessionEventTokens;
   partial: boolean;
+  /** Stop이 왔지만 백그라운드 서브에이전트가 아직 돈다. 턴 경계일 뿐 끝이 아니다(서브가 끝나면 턴이 다시 열린다). */
+  subagentsRunning?: boolean;
+}
+
+/** 턴이 정말 끝났다는 사용량 신호인가(중간 관측도, 서브에이전트가 남은 경계도 아니다). Rust `TurnUsageEvent::ends_turn`과 같다. */
+export function turnUsageEndsTurn(e: Pick<TurnUsageEvent, "partial" | "subagentsRunning">): boolean {
+  return !e.partial && !e.subagentsRunning;
 }
 
 /**

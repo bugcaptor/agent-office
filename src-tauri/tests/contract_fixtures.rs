@@ -143,6 +143,7 @@ fn turn_usage_event_matches_fixture() {
             ]),
         },
         partial: false,
+        subagents_running: false,
     };
     assert_value_eq(fixture_json, serde_json::to_value(&value).unwrap());
 }

@@ -369,6 +369,21 @@ describe("멈춤·계속", () => {
 });
 
 describe("실패", () => {
+  it("백그라운드 서브에이전트가 남은 Stop은 턴 끝으로 보지 않고, 서브가 끝난 뒤의 Stop에서 발언을 받는다", async () => {
+    startDiscussion("d1");
+    await settle();
+    (replies.a ??= []).push("Waited for the scout, then: pantry.");
+    const s = session("a");
+    applyDiscussionTurn(s.agentId, s.sessionId, "working", ++clock);
+    handleDiscussionTurnUsage({ agentId: s.agentId, sessionId: s.sessionId, at: ++clock, tokens: {}, partial: false, subagentsRunning: true });
+    await settle();
+    expect(api.collectDiscussionUtterance).not.toHaveBeenCalled();
+    expect(sentTurns("a")).toHaveLength(0);
+    handleDiscussionTurnUsage({ agentId: s.agentId, sessionId: s.sessionId, at: ++clock, tokens: {}, partial: false });
+    await settle();
+    expect(d1().run!.turns.find((x) => x.agentId === "a")!.text).toBe("Waited for the scout, then: pantry.");
+  });
+
   it("발언이 없으면 한 번 재촉하고, 또 없으면 멈춘다. 계속하면 다시 한 번 재촉한다", async () => {
     startDiscussion("d1");
     await settle();

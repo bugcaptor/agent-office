@@ -238,6 +238,8 @@
         assert_eq!(usages[0].at, _clock.now_ms());
         assert_eq!(usages[0].tokens, tokens_fixture());
         assert!(!usages[0].partial, "Stop의 turn-usage는 partial이 아니어야 한다");
+        // 서브에이전트가 남은 경계라 턴 종료로 세면 안 된다(토의·자동 진행이 덜 끝난 응답을 읽는다).
+        assert!(usages[0].subagents_running && !usages[0].ends_turn());
     }
 
     /// 죽은/미지 세션의 Stop은 agentId를 못 찾으므로 사용량도 폐기된다(알림
@@ -280,6 +282,7 @@
         assert_eq!(usages[0].tokens, tokens_fixture());
         // Stop이 낸 사용량은 "이 턴이 끝났다"는 확정치다 — partial: false.
         assert!(!usages[0].partial, "Stop의 turn-usage는 partial이 아니어야 한다");
+        assert!(usages[0].ends_turn());
     }
 
     /// 턴 중간 갱신: PostToolUse가 tokens를 실으면(claude 어댑터의 5초

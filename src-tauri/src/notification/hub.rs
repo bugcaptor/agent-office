@@ -247,7 +247,7 @@ impl NotificationHub {
                 // 알게 한다(이 턴의 최종 Stop이 다시 partial:false로 정산한다
                 // — 워터마크 델타라 이중 계산이 없다).
                 if let Some(tokens) = tokens.clone() {
-                    self.emit_turn_usage(session_id, tokens, true);
+                    self.emit_turn_usage(session_id, tokens, true, false);
                 }
                 self.ingest_activity_inner(session_id, ActivityKind::Tool, text, assistant, None)
             }
@@ -277,7 +277,7 @@ impl NotificationHub {
                 // 서브 완료 후 claude가 task-notification을 새 프롬프트로 주입해
                 // 새 턴을 열어버린다).
                 if let Some(tokens) = tokens.clone() {
-                    self.emit_turn_usage(session_id, tokens, false);
+                    self.emit_turn_usage(session_id, tokens, false, running > 0);
                 }
                 self.ingest_subagent_count(session_id, running);
                 // 백그라운드 서브에이전트가 아직 도는 중의 Stop은 턴 경계일 뿐
@@ -335,7 +335,7 @@ impl NotificationHub {
     /// 완전히 끝난 시점, `partial: false`)과 PostToolUse(턴 중간 갱신,
     /// `partial: true`)가 공유하는 공통 경로다 — 죽은/미지 세션은 붙일 곳이
     /// 없으므로 조용히 폐기한다(알림 경로와 같은 원칙).
-    fn emit_turn_usage(&self, session_id: &str, tokens: SessionEventTokens, partial: bool) {
+    fn emit_turn_usage(&self, session_id: &str, tokens: SessionEventTokens, partial: bool, subagents_running: bool) {
         if let Some(agent_id) = self.registry.resolve_agent(session_id) {
             self.events.turn_usage(&TurnUsageEvent {
                 agent_id,
@@ -343,6 +343,7 @@ impl NotificationHub {
                 at: self.clock.now_ms(),
                 tokens,
                 partial,
+                subagents_running,
             });
         }
     }

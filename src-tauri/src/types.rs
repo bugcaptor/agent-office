@@ -269,6 +269,10 @@ pub struct NotificationEvent {
 /// (`sessionCost.addTurn`)는 partial인 방출로 턴 수를 올리면 안 된다 — 한
 /// 턴 안에서 도구를 여러 번 부르면 그만큼 partial 이벤트가 여러 번 나가기
 /// 때문이다.
+///
+/// `subagents_running`: Stop(partial=false)이 왔지만 백그라운드 서브에이전트가 아직 돈다. 턴 경계일
+/// 뿐 완료가 아니다 — 서브가 끝나면 CLI가 결과를 새 프롬프트로 넣어 턴을 다시 연다. 이 사용량도 그
+/// 턴의 몫이라 비용은 세되, 턴 종료로 보면 안 된다(완료 알림도 이때는 나가지 않는다).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnUsageEvent {
@@ -277,6 +281,14 @@ pub struct TurnUsageEvent {
     pub at: u64,
     pub tokens: SessionEventTokens,
     pub partial: bool,
+    pub subagents_running: bool,
+}
+
+impl TurnUsageEvent {
+    /// 턴이 정말 끝났다는 신호인가(중간 관측도, 서브에이전트가 남은 경계도 아니다).
+    pub fn ends_turn(&self) -> bool {
+        !self.partial && !self.subagents_running
+    }
 }
 
 /// activity 신호 종류. TS ActivityKind와 동일.
@@ -953,6 +965,7 @@ mod tests {
                 ..Default::default()
             },
             partial: true,
+            subagents_running: false,
         };
         let json = serde_json::to_string(&ev).unwrap();
         assert!(json.contains("\"partial\":true"), "{json}");

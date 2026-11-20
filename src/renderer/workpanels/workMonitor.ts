@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { isSideSessionId, notificationType } from "@shared/types";
+import { isSideSessionId, notificationType, turnUsageEndsTurn } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { useWorkItemStore } from "./workItemStore";
 export type WorkPhase = "working" | "waiting" | "review" | "ended";
@@ -39,7 +39,7 @@ export function installWorkMonitor(): () => void {
     else if (type === "done") observe(e.sessionId, e.agentId, "review", e.at, true);
   });
   const offUsage = tauriApi.onTurnUsage((e) => {
-    if (!e.partial) observe(e.sessionId, e.agentId, "review", e.at, true);
+    if (turnUsageEndsTurn(e)) observe(e.sessionId, e.agentId, "review", e.at, true);
   });
   const offSession = tauriApi.onSessionState((e) => {
     if (e.state === "exited" || e.state === "disposed") observe(e.sessionId, e.agentId, "ended", e.at, false);

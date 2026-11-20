@@ -18,7 +18,7 @@ import type {
   AgentProfile, Discussion, DiscussionLimitReason, DiscussionPauseReason, DiscussionRun, DiscussionTurn, DiscussionUsageWait,
   DiscussionUtterance, TurnUsageEvent,
 } from "@shared/types";
-import { discussionProblem, discussionSessionAgentId, parseDiscussionSessionAgentId } from "@shared/types";
+import { discussionProblem, discussionSessionAgentId, parseDiscussionSessionAgentId, turnUsageEndsTurn } from "@shared/types";
 import { currentLocale, i18n, t } from "../i18n";
 import { tauriApi } from "../ipc/tauriApi";
 import { maybeSendOsNotification } from "../ipc/osNotify";
@@ -779,7 +779,7 @@ export function addDiscussionTurnCost(e: Pick<TurnUsageEvent, "agentId" | "token
  */
 export function handleDiscussionTurnUsage(e: TurnUsageEvent): void {
   if (!parseDiscussionSessionAgentId(e.agentId)) return;
-  if (!e.partial) applyDiscussionTurn(e.agentId, e.sessionId, "idle", e.at);
+  if (turnUsageEndsTurn(e)) applyDiscussionTurn(e.agentId, e.sessionId, "idle", e.at);
   addDiscussionTurnCost(e);
 }
 

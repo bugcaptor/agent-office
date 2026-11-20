@@ -133,7 +133,7 @@ impl AppEvents for TrackingEvents {
         self.inner.activity_event(ev);
     }
     fn turn_usage(&self, ev: &TurnUsageEvent) {
-        if !ev.partial {
+        if ev.ends_turn() {
             self.tracker.observe(&ev.session_id, &ev.agent_id, TurnPhase::Idle, ev.at, None);
         }
         self.inner.turn_usage(ev);
@@ -213,6 +213,7 @@ mod tests {
             at: 15,
             tokens: Default::default(),
             partial: true,
+            subagents_running: false,
         });
         assert_eq!(tracker.get("s1").unwrap().phase, TurnPhase::Working);
         events.turn_usage(&TurnUsageEvent {
@@ -221,6 +222,17 @@ mod tests {
             at: 20,
             tokens: Default::default(),
             partial: false,
+            subagents_running: true,
+        });
+        // 백그라운드 서브에이전트가 남은 Stop은 턴 끝이 아니다.
+        assert_eq!(tracker.get("s1").unwrap().phase, TurnPhase::Working);
+        events.turn_usage(&TurnUsageEvent {
+            agent_id: "a1".into(),
+            session_id: "s1".into(),
+            at: 20,
+            tokens: Default::default(),
+            partial: false,
+            subagents_running: false,
         });
         assert_eq!(tracker.get("s1").unwrap().phase, TurnPhase::Idle);
         assert!(rx.has_changed().unwrap());
