@@ -1138,6 +1138,7 @@ mod tests {
         assert_eq!(maybe_run_cli(["agent-office", "ctl", "help"]), Some(0));
         assert_eq!(maybe_run_cli(["agent-office", "ctl"]), Some(0));
         assert_eq!(maybe_run_cli(["agent-office", "task", "--help"]), Some(0));
+        assert_eq!(maybe_run_cli(["agent-office", "discuss", "--help"]), Some(0));
     }
 
     #[cfg(unix)]

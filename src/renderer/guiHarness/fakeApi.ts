@@ -222,7 +222,7 @@ const impl: Partial<AgentOfficeApi> = {
     discussionSessionRequests.push(request);
     emitSessionState(agentId, "running");
     pushOutput(agentId, `\x1b[1;35m# ${discussion?.topic ?? request.discussionId}\x1b[0m\r\n${discussion?.cwd ?? "~"} · ${cli}\r\n`);
-    return { agentId, sessionId, readOnly: discussionReadOnlyMode(cli), collection: discussionCollectionMode(cli), observed: true };
+    return { agentId, sessionId, submittedAt: Date.now(), readOnly: discussionReadOnlyMode(cli), collection: discussionCollectionMode(cli), observed: true };
   },
   async sendDiscussionTurn(request) {
     pushOutput(request.agentId, `\r\n> ${request.text}\r\n`);

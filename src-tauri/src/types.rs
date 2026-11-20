@@ -1719,6 +1719,8 @@ pub struct DiscussionSessionResult {
     /// 토의 세션 agentId(`discuss-<토의 id>.<참가자>`).
     pub agent_id: String,
     pub session_id: String,
+    /// 첫 프롬프트를 넣은 시각(epoch ms). 첫 프롬프트에 차례 지시를 실었다면 그 발언 수집의 `since`다.
+    pub submitted_at: u64,
     pub read_only: DiscussionReadOnly,
     pub collection: DiscussionCollection,
     /// 관찰 훅이 붙었는가. 거짓이면 턴 종료 신호가 오지 않는다.

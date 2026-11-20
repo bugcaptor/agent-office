@@ -96,13 +96,14 @@ export function discussionSessionErrorText(error: string): string {
   return key ? t(`discussion:session.errors.${key}`) : sendErrorText(error);
 }
 
-/** 탭 이름: 캐릭터 이름 · 역할 이름(역할이 없으면 이름만). */
+/** 탭 이름: 캐릭터 이름 · 역할 이름. 역할이 없으면 사회자는 "사회자", 토론자는 "역할 없음"을 쓴다. */
 export function discussionSessionTitle(session: Pick<DiscussionSession, "discussionId" | "participantAgentId">): string {
   const name = useAppStore.getState().agents[session.participantAgentId]?.name || t("discussion:board.missingAgent");
   const discussion = useDiscussionStore.getState().discussions.find((d) => d.id === session.discussionId);
   const roleId = discussion?.participants.find((p) => p.agentId === session.participantAgentId)?.roleId;
   const role = roleId ? useRoleStore.getState().roles.find((r) => r.id === roleId)?.name.trim() : undefined;
-  return role ? `${name} · ${role}` : name;
+  const fallback = discussion?.moderatorAgentId === session.participantAgentId ? t("discussion:detail.moderator") : t("discussion:board.noRole");
+  return `${name} · ${role || fallback}`;
 }
 /** 탭 툴팁: 주제와 사회자 여부. */
 export function discussionSessionTooltip(session: Pick<DiscussionSession, "discussionId" | "participantAgentId">): string {

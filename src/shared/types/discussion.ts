@@ -132,10 +132,10 @@ export type DiscussionReadOnly = "flags" | "partial" | "prompt";
 /** 발언을 받는 길. submit = `office-discuss say`, last-reply = 턴의 마지막 응답. */
 export type DiscussionCollection = "submit" | "last-reply";
 
-/** Rust `read_only_mode` 미러. 근거는 그쪽 주석(CLI `--help` 실측). */
+/** Rust `read_only_mode` 미러. 근거는 그쪽 주석(CLI `--help`·실측). */
 export function discussionReadOnlyMode(cli: WorkCli): DiscussionReadOnly {
-  if (cli === "claude" || cli === "codex") return "flags";
-  if (cli === "pi") return "partial";
+  if (cli === "codex") return "flags";
+  if (cli === "claude" || cli === "pi") return "partial";
   return "prompt";
 }
 /** Rust `collection_mode` 미러. Codex 읽기 전용 샌드박스는 제출 명령의 쓰기도 막는다. */
@@ -156,6 +156,8 @@ export interface DiscussionSessionResult {
   /** 토의 세션 agentId. */
   agentId: string;
   sessionId: string;
+  /** 첫 프롬프트를 넣은 시각(epoch ms). 첫 프롬프트에 차례 지시를 실었다면 그 발언 수집의 since다. */
+  submittedAt: number;
   readOnly: DiscussionReadOnly;
   collection: DiscussionCollection;
   /** 관찰 훅이 붙었는가. 거짓이면 턴 종료 신호가 오지 않는다. */

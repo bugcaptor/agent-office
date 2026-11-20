@@ -63,17 +63,21 @@ pub fn turn_file(app_data: &Path, agent_id: &str) -> Option<PathBuf> {
 }
 
 /// 읽기 전용을 어떻게 지키는가. 근거는 각 CLI의 `--help`(2026-11-20, claude 2.1.329 ·
-/// codex-cli 0.170.0 · agy · kilo 7.8.3 · pi 1.5.0)와 claude·codex 실측이다.
+/// codex-cli 0.170.0 · agy · kilo 7.8.3 · pi 1.5.0)와 `-p`·`exec` 실측이다.
 pub fn read_only_mode(cli: &WorkCli) -> DiscussionReadOnly {
     match cli {
-        // `--permission-mode dontAsk` + 허용 목록: 목록 밖 도구는 묻지 않고 거절한다.
-        WorkCli::Claude => DiscussionReadOnly::Flags,
-        // `--sandbox read-only`: 셸 명령의 파일 쓰기를 OS 샌드박스가 막는다.
+        // `--disallowed-tools Edit Write NotebookEdit`(거절이 허용보다 앞선다) + `dontAsk`(허용 안 된
+        // 도구는 묻지 않고 거절). 다만 사용자·프로젝트 설정과 `--settings`의 allow 규칙은 dontAsk를
+        // 통과한다(실측: `Bash(touch:*)` 허용 시 touch 성공). 그래서 셸 명령은 완전히 막히지 않는다.
+        WorkCli::Claude => DiscussionReadOnly::Partial,
+        // `--sandbox read-only`: 셸 명령의 파일 쓰기를 OS 샌드박스가 막는다(실측: Operation not permitted).
         WorkCli::Codex => DiscussionReadOnly::Flags,
-        // `--exclude-tools edit,write`: 편집 도구만 뺀다. bash(제출 명령에 필요)는 남는다.
+        // `--exclude-tools edit,write`: 편집 도구만 뺀다(실측: 대신 bash로 파일을 만들었다). bash는
+        // 제출 명령에 필요해 남긴다.
         WorkCli::Pi => DiscussionReadOnly::Partial,
-        // agy `--mode plan`은 계획 뒤 승인을 묻는 실행 방식이라 쓰기 차단이 아니다. kilo의 `ask`
-        // 에이전트는 bash가 승인 대기라 제출 명령에서 멈춘다. 둘 다 프롬프트로만 제한한다.
+        // agy는 업무 보내기가 `--dangerously-skip-permissions`로 띄우고 `--mode plan`은 쓰기 차단이
+        // 아니다. kilo는 `--auto`로 띄우며 `--agent ask`(edit·write 거절)는 이 환경에서 실행 검증을
+        // 못 했다. 둘 다 프롬프트로만 제한한다.
         WorkCli::Agy | WorkCli::Kilo => DiscussionReadOnly::Prompt,
     }
 }
@@ -99,13 +103,14 @@ pub fn read_only_args(shim: Option<&Path>) -> Vec<(&'static str, Vec<WrapperArg>
         (
             "claude",
             vec![
-                lit("--permission-mode"),
-                lit("dontAsk"),
                 lit("--allowed-tools"),
                 WrapperArg::Literal(allowed),
                 // 사용자 설정의 allow 규칙이 편집 도구를 열어 두었어도 막는다.
                 lit("--disallowed-tools"),
                 lit("Edit Write NotebookEdit"),
+                // 값 하나짜리 옵션을 끝에 둔다. 앞의 두 옵션은 값을 여럿 받으므로 뒤에 위치 인자가 오면 삼킨다.
+                lit("--permission-mode"),
+                lit("dontAsk"),
             ],
         ),
         // 승인 프롬프트에서 멈추지 않고(`never`), 웹 조사는 `--search`로 연다.
@@ -191,7 +196,7 @@ const KO: Text = Text {
     read_only: "- **읽기 전용**: 코드·문서를 읽고 웹을 조사할 수 있지만, 파일을 만들거나 고치거나 지우지 마세요. 커밋·푸시·패키지 설치를 하지 말고, `office-task`로 업무를 만들거나 바꾸지 마세요.",
     enforced: [
         "  이 세션은 CLI 설정으로 수정 도구가 막혀 있습니다.",
-        "  이 세션은 편집 도구만 CLI 설정으로 막혀 있습니다. 셸 명령으로도 아무것도 고치지 마세요.",
+        "  이 세션은 CLI 설정으로 편집 도구만 막혀 있고 셸 명령은 다 막히지 않습니다. 셸 명령으로도 아무것도 고치지 마세요.",
         "  이 세션은 CLI 설정으로 막혀 있지 않습니다. 이 규칙을 스스로 지켜야 합니다.",
     ],
     flow: "- **진행**: 사회자가 진행합니다. 첫 라운드는 토론자 모두가 서로의 의견을 보지 않고 동시에 발언합니다. 그다음부터는 사회자가 지목한 사람이 차례로 말합니다. 다른 참가자의 새 발언은 앱이 차례마다 전해 줍니다. 차례 지시가 오기 전에는 발언하지 마세요.",
@@ -241,7 +246,7 @@ const EN: Text = Text {
     read_only: "- **Read only**: you may read code and documents and research the web, but do not create, edit or delete files. Do not commit, push or install packages, and do not create or change tasks with `office-task`.",
     enforced: [
         "  In this session the CLI settings block editing tools.",
-        "  In this session the CLI settings block only the editing tools. Do not change anything with shell commands either.",
+        "  In this session the CLI settings block only the editing tools; shell commands are not fully blocked. Do not change anything with shell commands either.",
         "  In this session the CLI settings do not block anything. You must keep this rule yourself.",
     ],
     flow: "- **Flow**: the moderator runs the discussion. In the first round every debater speaks at the same time without seeing the others. After that, people speak in turn when the moderator calls on them. The app passes on the other participants' new utterances each turn. Do not speak before a turn instruction arrives.",
@@ -650,13 +655,17 @@ pub async fn open(app_state: &crate::state::AppState, request: DiscussionSession
             },
         )
         .await;
-    if let Err(error) = sent {
-        let _ = manager.dispose_matching(&agent_id, Some(&session_id));
-        return Err(error);
-    }
+    let submitted_at = match sent {
+        Ok(sent) => sent.submitted_at,
+        Err(error) => {
+            let _ = manager.dispose_matching(&agent_id, Some(&session_id));
+            return Err(error);
+        }
+    };
     Ok(DiscussionSessionResult {
         agent_id,
         session_id,
+        submitted_at,
         read_only: read_only_mode(&participant.agent.cli),
         collection: collection_mode(&participant.agent.cli),
         observed,
@@ -786,7 +795,7 @@ mod tests {
 
     #[test]
     fn read_only_and_collection_follow_the_cli() {
-        assert_eq!(read_only_mode(&WorkCli::Claude), DiscussionReadOnly::Flags);
+        assert_eq!(read_only_mode(&WorkCli::Claude), DiscussionReadOnly::Partial);
         assert_eq!(read_only_mode(&WorkCli::Codex), DiscussionReadOnly::Flags);
         assert_eq!(read_only_mode(&WorkCli::Pi), DiscussionReadOnly::Partial);
         assert_eq!(read_only_mode(&WorkCli::Agy), DiscussionReadOnly::Prompt);
@@ -799,9 +808,9 @@ mod tests {
         let literal = |cmd: &str| -> Vec<String> {
             args.iter().find(|(c, _)| *c == cmd).unwrap().1.iter().map(|a| match a { WrapperArg::Literal(s) | WrapperArg::Env(s) => s.clone() }).collect()
         };
-        assert_eq!(literal("claude")[..2], ["--permission-mode", "dontAsk"]);
-        assert!(literal("claude")[3].ends_with("Bash(/tmp/ao/office-discuss:*)"));
-        assert!(literal("claude").contains(&"Edit Write NotebookEdit".to_string()));
+        assert_eq!(literal("claude")[4..], ["--permission-mode", "dontAsk"], "값 하나짜리 옵션이 끝");
+        assert!(literal("claude")[1].ends_with("Bash(/tmp/ao/office-discuss:*)"));
+        assert_eq!(literal("claude")[2..4], ["--disallowed-tools", "Edit Write NotebookEdit"]);
         assert_eq!(literal("codex")[..4], ["--sandbox", "read-only", "--ask-for-approval", "never"]);
         assert_eq!(literal("pi"), ["--exclude-tools", "edit,write"]);
         assert!(args.iter().all(|(c, _)| !matches!(*c, "agy" | "kilo")));
@@ -816,7 +825,7 @@ mod tests {
         assert!(out.contains("**Hana**") && out.contains("**debater**"));
         assert!(out.contains("- Role: Critic") && out.contains("Critical —") && out.contains("Find risks."));
         assert!(!out.contains("### Criteria"), "empty criteria is left out");
-        assert!(out.contains(EN.enforced[0]));
+        assert!(out.contains(EN.enforced[1]), "claude blocks only the editing tools");
         assert!(out.contains("/tmp/ao/office-discuss say - <<'EOF'"));
         assert!(out.contains("Pick a storage format") && out.contains("We store tasks as JSON today.") && out.contains("/work/repo"));
         assert!(out.contains("- Mina (Moderator, moderator)") && out.contains("- Hana (Critic, you)") && out.contains("- Jun\n"));
@@ -835,6 +844,7 @@ mod tests {
 
         let codex = brief("jun", None, Lang::En);
         assert!(codex.contains(EN.last_reply) && !codex.contains("office-discuss say"));
+        assert!(codex.contains(EN.enforced[0]), "codex sandbox blocks writes");
         assert!(codex.contains(EN.no_role));
         let kilo = brief("gone", None, Lang::En);
         assert!(kilo.contains(EN.enforced[2]), "kilo is prompt-only");

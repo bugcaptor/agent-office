@@ -476,6 +476,7 @@ fn open_discussion_session_result_serializes_to_fixture() {
     let value = DiscussionSessionResult {
         agent_id: "discuss-Xk3pQ9aB.V1StGXR8_Z5jdHi6B-myT".into(),
         session_id: "0f0e0d0c-0000".into(),
+        submitted_at: 1_798_000_000_000,
         read_only: DiscussionReadOnly::Partial,
         collection: DiscussionCollection::LastReply,
         observed: true,

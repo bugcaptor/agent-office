@@ -169,7 +169,7 @@
     },
     "hint": {
       "flags": "Every participant's CLI settings block file-editing tools and commands.",
-      "partial": "For some participants the CLI blocks only the editing tools; shell commands are limited by the prompt only.",
+      "partial": "For some participants the CLI blocks only the editing tools and cannot block every shell command, so those are limited by the prompt (Claude can still run commands your settings already allow).",
       "prompt": "Some participants' CLIs cannot be locked down, so editing is forbidden by the prompt only."
     },
     "mode": {

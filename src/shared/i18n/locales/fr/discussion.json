@@ -169,7 +169,7 @@
     },
     "hint": {
       "flags": "Les réglages CLI de chaque participant bloquent les outils et commandes de modification.",
-      "partial": "Pour certains participants, la CLI ne bloque que les outils d'édition ; les commandes shell ne sont limitées que par la consigne.",
+      "partial": "Pour certains participants, la CLI ne bloque que les outils d'édition et pas toutes les commandes shell, limitées par la consigne (Claude peut encore lancer les commandes déjà autorisées dans vos réglages).",
       "prompt": "Certaines CLI ne peuvent pas être verrouillées : la modification n'est interdite que par la consigne."
     },
     "mode": {
