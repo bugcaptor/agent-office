@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "discussions": [
+    {
+      "id": "disc-full",
+      "topic": "Store discussions per file or in one file?",
+      "context": "The CLI and the renderer both write discussions.",
+      "cwd": "/Users/me/dev/agent-office",
+      "participants": [
+        { "agentId": "p1", "roleId": "preset-moderator", "agent": { "cli": "claude", "model": "opus", "effort": "high" } },
+        { "agentId": "p2", "roleId": "preset-critic", "agent": { "cli": "codex", "model": "gpt-5.5" } },
+        { "agentId": "p3", "agent": { "cli": "claude" } }
+      ],
+      "moderatorAgentId": "p1",
+      "limits": { "maxRounds": 4, "maxMinutes": 45, "maxCostUsd": 2.5, "usageGuard": false },
+      "state": "finished",
+      "round": 3,
+      "transcript": [
+        { "at": 1720000100000, "round": 1, "kind": "opening", "agentId": "p2", "text": "One file keeps it simple." },
+        { "at": 1720000200000, "round": 2, "kind": "moderator", "agentId": "p1", "text": "p3, what breaks with one file?" },
+        { "at": 1720000300000, "round": 2, "kind": "question", "agentId": "p1", "text": "Will the CLI run outside the app?" },
+        { "at": 1720000400000, "round": 2, "kind": "answer", "text": "No, it always goes through the app." },
+        { "at": 1720000500000, "round": 3, "kind": "statement", "agentId": "p3", "text": "Then one file under a lock is enough." },
+        { "at": 1720000600000, "round": 3, "kind": "notice", "text": "round-limit" }
+      ],
+      "decisionMemoPath": "/Users/me/Library/Application Support/agent-office/discussions/disc-full/decision.md",
+      "costUsd": 0.4125,
+      "createdAt": 1720000000000,
+      "updatedAt": 1720000700000,
+      "startedAt": 1720000050000,
+      "endedAt": 1720000700000
+    },
+    {
+      "id": "disc-ready",
+      "topic": "Name the meeting room",
+      "context": "",
+      "participants": [
+        { "agentId": "p2", "agent": { "cli": "claude" } },
+        { "agentId": "p1", "roleId": "preset-ideation", "agent": { "cli": "agy" } }
+      ],
+      "moderatorAgentId": "p2",
+      "limits": { "maxRounds": 4, "maxMinutes": 30, "maxCostUsd": 5.5, "usageGuard": true },
+      "state": "ready",
+      "round": 0,
+      "transcript": [],
+      "costUsd": 0.5,
+      "createdAt": 1720000800000,
+      "updatedAt": 1720000800000
+    }
+  ]
+}

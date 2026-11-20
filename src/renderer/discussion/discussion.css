@@ -56,3 +56,50 @@
 @media (max-width: 720px) {
   .roles-body { grid-template-columns: 1fr; }
 }
+
+/* 업무 패널의 토의 카드. .work-card와 클래스를 나눠 업무 카드 셀렉터에 걸리지 않게 한다. */
+.discussion-group > summary { display: flex; align-items: center; gap: 6px; }
+.discussion-group > summary::-webkit-details-marker { display: none; }
+.discussion-group > summary::before { content: "▸"; flex: none; width: 1em; }
+.discussion-group[open] > summary::before { content: "▾"; }
+.discussion-card { border: 1px solid var(--border-dark); border-left-width: 4px; margin: 6px 0 6px 1em; padding: 6px; background: var(--bg-panel-hi); overflow-wrap: anywhere; }
+.discussion-card.state-running, .discussion-card.state-wrapping_up { border-left-color: var(--accent); }
+.discussion-card.state-waiting_user, .discussion-card.state-paused { border-left-color: var(--accent-warn); }
+.discussion-card.state-finished { border-left-color: var(--text-dim); }
+.discussion-card.selected { border-color: var(--accent); }
+.discussion-card-heading { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 0; width: 100%; text-align: left; cursor: pointer; color: inherit; background: transparent; border: 0; font: inherit; }
+.discussion-card-heading small { color: var(--text-dim); }
+.discussion-card-faces { display: flex; align-items: center; gap: 2px; }
+.discussion-card-faces .work-agent-face { width: 24px; height: 24px; }
+/* 사회자 얼굴은 테두리로 구분하고 토론자와 조금 띄운다. */
+.discussion-card-moderator { margin-right: 6px; outline: 2px solid var(--accent); outline-offset: 1px; display: inline-flex; }
+.discussion-state-chip.state-running, .discussion-state-chip.state-wrapping_up { color: var(--accent); }
+.discussion-state-chip.state-waiting_user, .discussion-state-chip.state-paused { color: var(--accent-warn); }
+
+/* 토의 열기 대화상자: 5명 × (팀원·역할·CLI·모델·노력)이 들어가게 넓힌다. */
+.work-detail-dialog.discussion-editor { width: min(720px, 94vw); max-height: calc(100vh - 48px); overflow-y: auto; box-sizing: border-box; }
+.discussion-section { margin-top: 12px; padding-top: 8px; border-top: 1px dashed var(--text-dim); }
+.discussion-section h3, .discussion-subtitle { margin: 0 0 4px; font-size: inherit; }
+.discussion-section > .form-hint { margin: 0 0 6px; }
+.discussion-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 0 8px; margin: 6px 0; padding: 4px 8px; border: 1px solid var(--border-dark); min-width: 0; }
+.work-detail-dialog .discussion-row > label { margin: 4px 0; }
+.discussion-row-remove { align-self: end; margin-bottom: 4px; width: 32px; padding: 0; }
+.discussion-row .work-agent-fields { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 8px; margin: 0; }
+.discussion-row .work-agent-fields > label { margin: 4px 0; }
+.discussion-row .work-agent-fields > small { grid-column: 1 / -1; order: 1; }
+.discussion-limits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 8px; }
+.work-detail-dialog label.discussion-check { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 560px) {
+  .discussion-row .work-agent-fields, .discussion-limits { grid-template-columns: 1fr; }
+}
+
+/* 토의 보기 */
+.discussion-context { white-space: pre-wrap; margin: 6px 0; }
+.discussion-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 8px 0; }
+.discussion-facts dt { color: var(--text-dim); }
+.discussion-facts dd { margin: 0; overflow-wrap: anywhere; }
+.discussion-people { list-style: none; padding: 0; margin: 4px 0; display: flex; flex-direction: column; gap: 4px; }
+.discussion-people li { display: flex; align-items: center; gap: 8px; }
+.discussion-people li > span { min-width: 0; display: flex; flex-direction: column; }
+.discussion-people small { color: var(--text-dim); }
+.discussion-people small.discussion-moderator-badge { color: var(--accent); }

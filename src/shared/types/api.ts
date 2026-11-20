@@ -6,6 +6,7 @@
 import type { InboxEntry, InboxRejection, InboxWarning, WorkItem, SessionSummary, WorkSendTarget, WorkSendRequest, WorkSendResult, WorkFollowUpRequest, AutoRunJudgeRequest, AutoRunJudgeResult, TaskChatRequest, TaskChatResult } from './workPanels';
 import type { AgentId } from './common';
 import type { RolesFile } from './role';
+import type { Discussion } from './discussion';
 import type {
   CreateSessionOptions,
   CreateSessionResult,
@@ -91,6 +92,12 @@ export interface AgentOfficeApi {
   loadRoles(): Promise<RolesFile | null>;
   /** 목록 전체를 바꾼다. id 중복·빈 이름은 invalid-roles. */
   saveRoles(file: RolesFile): Promise<void>;
+  /** 팀 토의 목록. 파일이 없으면 빈 목록. 손상·미래 버전 파일은 reject. */
+  loadDiscussions(): Promise<Discussion[]>;
+  /** 토의 하나를 id로 upsert한다. 구조가 틀리면 invalid-discussion. */
+  saveDiscussion(discussion: Discussion): Promise<void>;
+  /** 없는 id면 아무것도 하지 않는다. */
+  deleteDiscussion(id: string): Promise<void>;
   loadWorkItems(): Promise<WorkItem[]>;
   /** expectedItems가 있으면 디스크가 그 스냅샷일 때만 저장한다. 충돌은 work-items-changed. */
   saveWorkItems(items: WorkItem[], expectedItems?: WorkItem[]): Promise<void>;

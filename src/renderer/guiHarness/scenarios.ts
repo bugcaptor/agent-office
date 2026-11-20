@@ -8,6 +8,8 @@ import type {
   AdoptedSessionInfo,
   AgentProfile,
   AwardsFile,
+  Discussion,
+  DiscussionsFile,
   GetAppSettingsResult,
   NotificationEvent,
   PersistedState,
@@ -16,6 +18,7 @@ import type {
 } from "@shared/types";
 import settingsFixture from "@shared/contract-fixtures/get-app-settings-result.json";
 import awardsFixture from "@shared/contract-fixtures/awards-file.json";
+import discussionsFixture from "@shared/contract-fixtures/discussions-file.json";
 import usageFixture from "@shared/contract-fixtures/usage-snapshot.json";
 
 export interface Scenario {
@@ -31,6 +34,8 @@ export interface Scenario {
   notifications: NotificationEvent[];
   /** 업무 패널의 저장된 업무 목록. */
   workItems: WorkItem[];
+  /** 저장된 팀 토의. */
+  discussions: Discussion[];
 }
 
 const profile = (id: string, name: string, seed: string, deskIndex: number): AgentProfile => ({
@@ -64,6 +69,7 @@ function base(lang: string): Scenario {
     output: {},
     notifications: [],
     workItems: [],
+    discussions: [],
   };
 }
 
@@ -88,6 +94,8 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
       state: { ...b.state, agents: AGENTS.map((a, i) => ({ ...a, cwd: cwds[i] })) },
       settings: { ...b.settings, settings: { ...b.settings.settings, workPanelsEnabled: true } },
       usage: nearLimitClaude(b.usage),
+      // 끝난 토의(결정 메모 있음)와 준비 상태 토의. 참가자 p1~p3은 AGENTS와 같다.
+      discussions: (discussionsFixture as DiscussionsFile).discussions,
       workItems: [
         work("w1", "Show project in work panel", "in_progress", "p1", 0),
         work("w2", "Tidy session log filters", "todo", "p1", 1),
@@ -133,6 +141,11 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
         work("w16", "Tag release candidate", "todo", "p3", 15, { schedule: { rule: { kind: "once", at: Date.now() + 26 * 3600_000 }, enabled: true, nextAt: Date.now() + 26 * 3600_000 } }),
       ],
     };
+  },
+  /** 업무 패널 + 팀원 다섯 명. 토의 열기 대화상자를 사회자 1 + 토론자 4로 꽉 채워 보는 장면. */
+  discussions: (lang) => {
+    const w = SCENARIOS.workpanels(lang);
+    return { ...w, state: { ...w.state, agents: [...w.state.agents, profile("p4", "Dee", "m4", 3), profile("p5", "Eun", "k5", 4)] } };
   },
   /** 첫 실행: 캐릭터 없음, 온보딩 다이얼로그. */
   fresh: (lang) => ({ ...base(lang), state: { version: 1, agents: [] }, settings: settings(true, lang) }),

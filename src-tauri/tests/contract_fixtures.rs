@@ -27,7 +27,7 @@ use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
     ActivityEvent, ActivityKind, AdoptedSessionInfo, AwardsFile,
     CreateSessionRequest, CreateSessionResult, MemoSheet, MemoSheetMeta,
-    DiscussionStance, NotificationEvent, NotificationSource, OutputChunk, PersistedState, RolesFile, SessionEventTokens,
+    DiscussionStance, DiscussionState, DiscussionUtteranceKind, DiscussionsFile, NotificationEvent, NotificationSource, OutputChunk, PersistedState, RolesFile, SessionEventTokens,
     SessionExitInfo, SessionState, SessionStateEvent, TaskChatRequest, TaskChatResult, TurnUsageEvent,
     WorkCli, WorkStatus,
 };
@@ -483,6 +483,21 @@ fn roles_file_roundtrips() {
     assert_eq!(parsed.roles[0].stance, DiscussionStance::Moderator);
     assert_eq!(parsed.roles[1].stance, DiscussionStance::DevilsAdvocate);
     assert!(parsed.roles[0].agent.is_none());
+}
+
+#[test]
+fn discussions_file_roundtrips() {
+    assert_roundtrip::<DiscussionsFile>(fixture!("discussions-file.json"));
+    let parsed: DiscussionsFile = serde_json::from_str(fixture!("discussions-file.json")).unwrap();
+    let [full, ready] = &parsed.discussions[..] else { panic!("two discussions") };
+    assert_eq!((full.state, ready.state), (DiscussionState::Finished, DiscussionState::Ready));
+    assert_eq!(full.participants[1].agent.cli, WorkCli::Codex);
+    assert_eq!(full.transcript[3].kind, DiscussionUtteranceKind::Answer);
+    assert!(full.transcript[3].agent_id.is_none());
+    assert!(ready.cwd.is_none() && ready.decision_memo_path.is_none() && ready.started_at.is_none());
+    for d in &parsed.discussions {
+        assert_eq!(agent_office_lib::persistence::discussion_store::discussion_problem(d), None);
+    }
 }
 
 #[test]

@@ -167,6 +167,8 @@ pub struct AppState {
     pub work_panels_store: crate::persistence::work_panels_store::WorkPanelsStore,
     /// 토의 역할 목록(`roles.json`).
     pub role_store: crate::persistence::role_store::RoleStore,
+    /// 팀 토의(`discussions.json`). 토의 하나씩 upsert·삭제한다.
+    pub discussion_store: crate::persistence::discussion_store::DiscussionStore,
     pub work_log_store: crate::persistence::work_log_store::WorkLogStore,
     /// 이 달의 우수사원 시상 저장소(`awards/awards.json` + `awards/portraits/<YYYY-MM>.png`).
     /// 확정은 write-once라 같은 달을 다시 확정해도 첫 레코드가 남는다.

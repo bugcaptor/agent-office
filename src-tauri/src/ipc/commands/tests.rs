@@ -351,6 +351,7 @@
             work_send_runtime: Arc::new(crate::work_send::WorkSendRuntime::default()),
             work_panels_store: crate::persistence::work_panels_store::WorkPanelsStore::new(profile_dir.clone()),
             role_store: crate::persistence::role_store::RoleStore::new(profile_dir.clone()),
+            discussion_store: crate::persistence::discussion_store::DiscussionStore::new(profile_dir.clone()),
             awards_store,
             memo_store,
             claude_resume_store,

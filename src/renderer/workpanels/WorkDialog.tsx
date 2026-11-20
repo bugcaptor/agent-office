@@ -38,14 +38,14 @@ function WorkDialogId({ id }: { id: string }) {
 }
 
 /** 상세·편집 팝업. 헤더 ×, Esc, 배경 클릭은 초안을 유지한 채 닫는다. `id`가 있으면(기존 업무) 제목 옆에 ID와 복사 버튼을 둔다. */
-export function WorkDialog({ title, id, onClose, children }: { title: string; id?: string; onClose(): void; children: ReactNode }) {
+export function WorkDialog({ title, id, onClose, className, children }: { title: string; id?: string; onClose(): void; className?: string; children: ReactNode }) {
   const { t } = useTranslation("workpanels");
   const ref = useRef<HTMLElement>(null);
   // 헤더의 ×가 아니라 첫 입력란에 포커스를 둔다.
   useEffect(() => { ref.current?.querySelector<HTMLElement>("input, textarea, select")?.focus(); }, []);
   return createPortal(<div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
-    <section ref={ref} className="pixel-panel work-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="work-detail-title">
+    <section ref={ref} className={`pixel-panel work-detail-dialog${className ? ` ${className}` : ""}`} role="dialog" aria-modal="true" aria-labelledby="work-detail-title">
       <header className="work-dialog-header">
         <h2 id="work-detail-title">{title}</h2>
         {id && <WorkDialogId id={id} />}

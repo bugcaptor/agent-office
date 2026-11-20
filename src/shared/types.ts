@@ -34,3 +34,4 @@ export * from './types/api';
 
 export * from './types/workPanels';
 export * from './types/role';
+export * from './types/discussion';

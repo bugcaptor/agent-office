@@ -372,6 +372,20 @@ pub async fn load_roles(app_state: State<'_, AppState>) -> Result<Option<RolesFi
 pub async fn save_roles(app_state: State<'_, AppState>, file: RolesFile) -> Result<(), String> {
     app_state.role_store.save(&file)
 }
+/// 팀 토의 목록. 파일이 없으면 빈 목록, 손상·미래 버전이면 Err.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_discussions(app_state: State<'_, AppState>) -> Result<Vec<Discussion>, String> {
+    app_state.discussion_store.load()
+}
+/// 토의 하나를 id로 upsert한다. 구조가 틀리면 `invalid-discussion`.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn save_discussion(app_state: State<'_, AppState>, discussion: Discussion) -> Result<(), String> {
+    app_state.discussion_store.save(&discussion)
+}
+#[tauri::command(rename_all = "camelCase")]
+pub async fn delete_discussion(app_state: State<'_, AppState>, id: String) -> Result<(), String> {
+    app_state.discussion_store.delete(&id)
+}
 #[tauri::command(rename_all = "camelCase")]
 pub async fn load_work_items(app_state: State<'_, AppState>) -> Result<Vec<WorkItem>, String> {
     app_state.work_panels_store.load_work_items()

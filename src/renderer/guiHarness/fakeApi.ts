@@ -17,6 +17,7 @@ import type {
   NotificationEvent,
   RepositoryAuditItem,
   RolesFile,
+  Discussion,
   SessionState,
   SessionStateEvent,
   TaskChatRequest,
@@ -52,6 +53,7 @@ let settings: AppSettings = scenario.settings.settings;
 let state = scenario.state;
 let workItems = scenario.workItems;
 let roles: RolesFile | null = null;
+let discussions: Discussion[] = structuredClone(scenario.discussions);
 const auditRepo = (name: string, extra: Partial<RepositoryAuditItem>): RepositoryAuditItem => ({
   path: `/work/${name}`, name, lastWorkedAt: 0, branch: "main", upstream: "origin/main", hasRemote: true,
   ahead: 0, behind: 0, changedCount: 0, conflictCount: 0, timedOut: false, unavailable: false, ...extra,
@@ -142,6 +144,12 @@ const impl: Partial<AgentOfficeApi> = {
   async loadSessionEvents() { return []; },
   async loadRoles() { return structuredClone(roles); },
   async saveRoles(file) { roles = structuredClone(file); },
+  async loadDiscussions() { return structuredClone(discussions); },
+  async saveDiscussion(next) {
+    const copy = structuredClone(next);
+    discussions = discussions.some((d) => d.id === next.id) ? discussions.map((d) => (d.id === next.id ? copy : d)) : [...discussions, copy];
+  },
+  async deleteDiscussion(id) { discussions = discussions.filter((d) => d.id !== id); },
   async loadWorkItems() { return structuredClone(workItems); },
   async saveWorkItems(next, expectedItems) {
     if (expectedItems && !sameWorkValue(expectedItems, workItems)) throw "work-items-changed";

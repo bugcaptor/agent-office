@@ -1426,6 +1426,82 @@ pub struct RolesFile {
     pub version: u32,
     pub roles: Vec<DiscussionRole>,
 }
+// 팀 토의 — src/shared/types/discussion.ts 미러. `discussions.json`에 저장한다.
+// 렌더러(실행기)와 CLI가 함께 쓰므로 저장은 토의 하나씩 upsert·삭제한다.
+/// 토의 진행 상태. 준비(`Ready`)에서만 내용을 고칠 수 있다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscussionState { Ready, Running, WaitingUser, WrappingUp, Finished, Paused }
+/// 참가자 한 명. 사회자도 참가자 목록에 들어 있다(`Discussion.moderator_agent_id`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscussionParticipant {
+    pub agent_id: String,
+    /// 이 토의에서 맡은 역할(`roles.json` id). 없거나 지워진 역할이면 역할 없음.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub role_id: Option<String>,
+    /// 토의용 CLI·모델. 열 때 역할 → 프로필 기본값 순으로 채워 확정한다.
+    pub agent: WorkAgent,
+}
+/// 안전장치. 닿으면 사회자가 강제 정리한다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscussionLimits {
+    pub max_rounds: u32,
+    pub max_minutes: u32,
+    pub max_cost_usd: f64,
+    /// 구독 사용량이 모자라면 한도 창 리셋을 기다린다.
+    pub usage_guard: bool,
+}
+impl Default for DiscussionLimits {
+    fn default() -> Self {
+        Self { max_rounds: 4, max_minutes: 30, max_cost_usd: 5.0, usage_guard: true }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscussionUtteranceKind { Opening, Statement, Moderator, Question, Answer, Notice }
+/// 발언 하나. 실행용 기록이다(전체 회의록 열람은 기능 범위 밖).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscussionUtterance {
+    pub at: i64,
+    pub round: u32,
+    pub kind: DiscussionUtteranceKind,
+    /// 말한 참가자. 사용자 답·시스템 알림이면 없다.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub agent_id: Option<String>,
+    pub text: String,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Discussion {
+    pub id: String,
+    pub topic: String,
+    /// 맥락(본문).
+    #[serde(default)] pub context: String,
+    /// 작업 폴더. 없으면 홈 폴더.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub cwd: Option<String>,
+    pub participants: Vec<DiscussionParticipant>,
+    pub moderator_agent_id: String,
+    #[serde(default)] pub limits: DiscussionLimits,
+    pub state: DiscussionState,
+    /// 지금 라운드. 시작 전 0.
+    #[serde(default)] pub round: u32,
+    #[serde(default)] pub transcript: Vec<DiscussionUtterance>,
+    /// 결정 메모 파일(절대 경로). 쓰기 전에는 없다.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub decision_memo_path: Option<String>,
+    /// 참가자 CLI 비용 누계(USD).
+    #[serde(default)] pub cost_usd: f64,
+    pub created_at: i64,
+    pub updated_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub started_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub ended_at: Option<i64>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscussionsFile {
+    pub version: u32,
+    pub discussions: Vec<Discussion>,
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkStatus { Todo, InProgress, Review, Done }
