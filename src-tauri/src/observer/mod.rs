@@ -74,9 +74,10 @@ pub trait AgySessionSink: Send + Sync {
     );
 }
 
-/// Codex Stop 훅의 `last_assistant_message`(자르지 않은 원문)를 받는 주입점. 토의 발언
-/// 수집이 쓴다(`discussion_session::DiscussionReplies`) — Codex 전사 찾기는 cwd의 최신
-/// 스레드를 고르므로 같은 폴더의 다른 Codex 세션과 섞이지만, 훅은 세션별로 온다.
+/// 메인 세션 Stop 훅의 `last_assistant_message`(자르지 않은 원문)를 받는 주입점(Codex·Claude).
+/// 토의 발언 수집이 쓴다(`discussion_session::DiscussionReplies`). 훅은 세션별로 오고 턴 종료
+/// 신호보다 먼저 기록되므로, 전사 파일 찾기(Codex는 cwd의 최신 스레드라 섞인다)나 전사가 아직
+/// 덜 써진 때(Claude)에 기대지 않는다.
 pub trait StopReplySink: Send + Sync {
     fn record(&self, ao_session_id: &str, text: &str);
 }
@@ -227,8 +228,10 @@ impl ObserverRuntime {
         let Some(event) = adapter.map_hook(&raw) else {
             return;
         };
-        if provider == ObserverProvider::Codex && matches!(event, ObserverEvent::Stop { .. }) {
-            if let (Some(sink), Some(text)) = (&self.stop_reply_sink, event::codex_last_assistant_message(raw.body)) {
+        // map_hook이 서브에이전트 Stop(agent_id 있음)을 걸렀으므로 여기 오는 Stop은 메인 세션 것이다.
+        // 턴 종료 신호(hub)보다 먼저 기록해야 그 신호를 받고 바로 모으는 수집이 놓치지 않는다.
+        if matches!(provider, ObserverProvider::Codex | ObserverProvider::Claude) && matches!(event, ObserverEvent::Stop { .. }) {
+            if let (Some(sink), Some(text)) = (&self.stop_reply_sink, event::last_assistant_message(raw.body)) {
                 sink.record(session_id, &text);
             }
         }
@@ -889,7 +892,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_stop_passes_the_untruncated_last_message_to_the_reply_sink() {
+    fn main_session_stop_passes_the_untruncated_last_message_to_the_reply_sink() {
         let replies = Arc::new(FakeReplies::default());
         let runtime_for = |provider, mapped| {
             ObserverRuntime::new(
@@ -902,11 +905,28 @@ mod tests {
         let long = "x".repeat(10_000);
         let body = serde_json::json!({ "last_assistant_message": long }).to_string();
         runtime_for(ObserverProvider::Codex, stop()).ingest(ObserverProvider::Codex, "s1", RawObserverHook { event_name: "Stop", body: body.as_bytes() });
-        // Stop이 아닌 이벤트·Claude Stop·빈 응답은 넘기지 않는다.
+        // Claude도 Stop 훅에 마지막 응답을 싣는다. 전사가 덜 써졌어도 이것으로 받는다.
+        runtime_for(ObserverProvider::Claude, stop()).ingest(ObserverProvider::Claude, "s3", RawObserverHook { event_name: "Stop", body: br#"{"last_assistant_message":"claude reply"}"# });
+        // Stop이 아닌 이벤트·빈 응답은 넘기지 않는다.
         runtime_for(ObserverProvider::Codex, Some(ObserverEvent::SubStart)).ingest(ObserverProvider::Codex, "s2", RawObserverHook { event_name: "SubagentStart", body: body.as_bytes() });
-        runtime_for(ObserverProvider::Claude, stop()).ingest(ObserverProvider::Claude, "s3", RawObserverHook { event_name: "Stop", body: body.as_bytes() });
         runtime_for(ObserverProvider::Codex, stop()).ingest(ObserverProvider::Codex, "s4", RawObserverHook { event_name: "Stop", body: br#"{"last_assistant_message":"  "}"# });
-        assert_eq!(*replies.0.lock().unwrap(), vec![("s1".to_string(), long)]);
+        assert_eq!(*replies.0.lock().unwrap(), vec![("s1".to_string(), long), ("s3".to_string(), "claude reply".to_string())]);
+    }
+
+    #[test]
+    fn claude_subagent_stops_do_not_reach_the_reply_sink() {
+        let dir = std::env::temp_dir().join(format!("agent-office-observer-reply-sink-{}", uuid::Uuid::new_v4()));
+        let replies = Arc::new(FakeReplies::default());
+        let runtime = ObserverRuntime::new(test_hub(), vec![Arc::new(ClaudeAdapter::new(dir.clone(), std::env::current_exe().unwrap()))])
+            .with_stop_reply_sink(replies.clone());
+        let ingest = |event_name, body: &[u8]| runtime.ingest(ObserverProvider::Claude, "s1", RawObserverHook { event_name, body });
+        // 서브에이전트가 끝날 때의 응답이 메인 세션 발언을 덮으면 안 된다.
+        ingest("SubagentStop", br#"{"agent_id":"sub-1","last_assistant_message":"sub reply"}"#);
+        ingest("Stop", br#"{"agent_id":"sub-1","last_assistant_message":"sub reply"}"#);
+        assert!(replies.0.lock().unwrap().is_empty());
+        ingest("Stop", br#"{"last_assistant_message":"main reply"}"#);
+        assert_eq!(*replies.0.lock().unwrap(), vec![("s1".to_string(), "main reply".to_string())]);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

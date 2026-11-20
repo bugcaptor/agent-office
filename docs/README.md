@@ -72,7 +72,7 @@
 | 역할 목록·프리셋·프로필 기본 역할 | 렌더러 `discussion/roleStore.ts`·`RolesDialog.tsx`, 저장 `persistence/role_store.rs`(`roles.json`), CLI `role_cli.rs`(`office-task --roles`·`--role-add`·`--role-edit`·`--role-delete`)와 수신함 `persistence/role_inbox.rs`·렌더러 `discussion/discussionInbox.ts`(`receiveRoleInbox`) |
 | 토의 저장·카드·열기 대화상자 | `discussion/discussionStore.ts`·`discussionModel.ts`·`DiscussionSection.tsx`·`DiscussionEditor.tsx`, 저장 `persistence/discussion_store.rs`(`discussions.json`, 상한 기본값 `DiscussionLimits::default`) |
 | 토의 탭 세션·첫 프롬프트(읽기 전용 규칙)·발언 수집 | Rust `discussion_session.rs`, 렌더러 `discussion/discussionSessionStore.ts`, 탭 표시 `terminal/AgentTabStrip.tsx` |
-| 발언 제출 `office-discuss say` | `discussion_cli.rs`(`say`), Codex 마지막 응답은 Stop 훅 → `observer/mod.rs`의 `StopReplySink` |
+| 발언 제출 `office-discuss say` | `discussion_cli.rs`(`say`), Codex·Claude 마지막 응답은 Stop 훅 `last_assistant_message` → `observer/mod.rs`의 `StopReplySink`(Claude는 없으면 전사) |
 | 사회자 주도 진행·상한·사용량 대기·마무리 | `discussion/discussionRun.ts`(부팅 배선 `bootstrap.ts`의 `installDiscussionRunner`) |
 | 결정 메모 | 작성 `discussion/discussionMemo.ts`, 저장 `discussions/memos/<id>.md`(`persistence/discussion_store.rs`), 브라우저 열기 `ipc/commands/doc_view.rs`, 렌더링 `markdown/renderMarkdown.ts` |
 | CLI에서 만들기 `office-task --discuss` | `discussion_cli.rs`(`create`) → 수신함 `persistence/discussion_inbox.rs` → 렌더러 `discussion/discussionInbox.ts`, 에이전트 안내 `office_instructions.rs` |

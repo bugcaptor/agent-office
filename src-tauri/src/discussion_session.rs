@@ -2,7 +2,8 @@
 //! (역할 카드 + 토의 규칙 + 주제·맥락)를 넣는다. 태스크 대화와 달리 관찰 훅을 붙여 턴 종료를
 //! 받고(`control::turns::TurnTracker`, 렌더러의 알림·사용량 이벤트), 읽기 전용은 프롬프트 규칙으로만
 //! 지킨다. 권한 플래그로 막으면 제출 명령까지 막혀 진행이 멈추기 때문이다(아래 `session_args`).
-//! Claude·Codex는 턴의 마지막 응답을 발언으로 받고, 나머지는 `office-discuss say`로 제출받는다.
+//! Claude·Codex는 턴의 마지막 응답(Stop 훅이 실어 온 것, 없으면 Claude 전사)을 발언으로 받고,
+//! 나머지는 `office-discuss say`로 제출받는다.
 //! 진행(누가 언제 말하나)은 실행기가 쥔다. 여기는 열기·차례 보내기·발언 수집까지다.
 
 use crate::i18n::Lang;
@@ -28,7 +29,7 @@ const MAX_PROMPT_BYTES: usize = 256 * 1024;
 const MAX_CONTEXT_CHARS: usize = 64 * 1024;
 /// 발언 상한(문자). 넘으면 앞을 자른다 — 결론은 끝에 있다.
 pub const MAX_UTTERANCE_CHARS: usize = crate::auto_run::MAX_REPLY_CHARS;
-/// 기억해 둘 Codex 마지막 응답 수. 넘으면 오래된 것부터 버린다.
+/// 기억해 둘 Stop 훅 마지막 응답 수. 넘으면 오래된 것부터 버린다.
 const MAX_REPLIES: usize = 64;
 
 /// 토의 id·참가자 id. 파일 이름과 agentId 경계(`.`)에 쓰므로 `[A-Za-z0-9_-]{1,64}`만 받는다.
@@ -432,7 +433,7 @@ pub fn read_submitted(app_data: &Path, agent_id: &str, since_ms: u64) -> Option<
 }
 
 /// 한 차례의 발언: 제출 → 마지막 응답 순. `last_reply`는 그 CLI의 마지막 응답을 `since` 이후의
-/// 것만 돌려준다(Codex는 Stop 훅, Claude는 전사).
+/// 것만 돌려준다(Stop 훅, Claude는 훅에 없으면 전사).
 pub fn collect(
     app_data: &Path,
     agent_id: &str,
@@ -450,8 +451,9 @@ pub fn collect(
     })
 }
 
-/// 토의 세션의 Codex Stop 훅 마지막 응답(세션 id별 최신 1건). Codex 전사 찾기는 cwd의
-/// 최신 스레드를 고르므로 같은 폴더의 다른 Codex와 섞인다. 훅은 세션별로 온다.
+/// 토의 세션의 Stop 훅 마지막 응답(세션 id별 최신 1건, Codex·Claude). 훅은 세션별로 오고 턴 종료
+/// 신호보다 먼저 기록된다. 전사로 읽으면 Codex는 cwd의 최신 스레드라 같은 폴더의 다른 Codex와 섞이고,
+/// Claude는 턴 종료 신호 직후 전사에 마지막 응답이 아직 안 써져 있을 수 있다.
 pub struct DiscussionReplies {
     registry: Arc<crate::state::SessionRegistry>,
     replies: Mutex<HashMap<String, (u64, String)>>,
@@ -489,7 +491,8 @@ impl crate::observer::StopReplySink for DiscussionReplies {
     }
 }
 
-/// Claude 전사의 마지막 응답. 전사가 `since` 전에 마지막으로 쓰였으면 이번 차례 응답이 없다.
+/// Claude 전사의 마지막 응답(Stop 훅에 응답이 없을 때 — 필드가 없는 옛 CLI). 전사가 `since` 전에
+/// 마지막으로 쓰였으면 이번 차례 응답이 없다.
 fn claude_reply_since(
     lookup: Arc<dyn crate::session_log::agent_transcript::AgentSessionLookup>,
     agent_id: &str,
@@ -660,7 +663,11 @@ pub async fn send_turn(
     app_state.work_send_runtime.follow_up(&app_state.gate, request).await
 }
 
-/// 한 차례의 발언을 모은다. 없으면 None(아직 말하지 않았거나 응답을 못 읽었다).
+/// 비었을 때 다시 모으기 전 기다림. 전사·제출 파일이 턴 종료 신호보다 늦게 써지는 경우를 넘긴다.
+const RECOLLECT_DELAY: std::time::Duration = std::time::Duration::from_millis(1_500);
+
+/// 한 차례의 발언을 모은다. 없으면 잠깐 기다려 한 번 더 본다. 그래도 없으면 None(아직 말하지 않았거나
+/// 응답을 못 읽었다). 실행기는 None이면 재촉하고, 또 None이면 멈추므로 여기서 한 번 더 보는 값이 크다.
 pub async fn collect_utterance(
     app_state: &crate::state::AppState,
     request: crate::types::DiscussionCollectRequest,
@@ -673,18 +680,24 @@ pub async fn collect_utterance(
         .find(|d| d.id == discussion_id)
         .and_then(|d| d.cwd)
         .unwrap_or_default();
-    let app_data = app_state.app_data_dir.clone();
-    let replies = app_state.discussion_replies.clone();
-    let lookup: Arc<dyn crate::session_log::agent_transcript::AgentSessionLookup> = app_state.claude_resume_store.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        collect(&app_data, &request.agent_id, request.since, || match request.cli {
-            WorkCli::Codex => replies.since(&request.session_id, request.since),
-            WorkCli::Claude => claude_reply_since(lookup, &request.agent_id, &cwd, request.since),
-            _ => None,
+    let attempt = || {
+        let (app_data, replies, request, cwd) = (app_state.app_data_dir.clone(), app_state.discussion_replies.clone(), request.clone(), cwd.clone());
+        let lookup: Arc<dyn crate::session_log::agent_transcript::AgentSessionLookup> = app_state.claude_resume_store.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            collect(&app_data, &request.agent_id, request.since, || match request.cli {
+                WorkCli::Codex => replies.since(&request.session_id, request.since),
+                WorkCli::Claude => replies
+                    .since(&request.session_id, request.since)
+                    .or_else(|| claude_reply_since(lookup, &request.agent_id, &cwd, request.since)),
+                _ => None,
+            })
         })
-    })
-    .await
-    .map_err(|e| e.to_string())
+    };
+    if let Some(got) = attempt().await.map_err(|e| e.to_string())? {
+        return Ok(Some(got));
+    }
+    tokio::time::sleep(RECOLLECT_DELAY).await;
+    attempt().await.map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
