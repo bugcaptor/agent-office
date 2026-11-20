@@ -723,7 +723,7 @@ mod tests {
             id: "d1".into(),
             topic: "Pick a storage format".into(),
             context: "We store tasks as JSON today.".into(),
-            cwd: Some("/work/repo".into()),
+            cwd: Some("//office/work/repo".into()),
             participants: vec![
                 participant("mod", Some("preset-moderator"), WorkCli::Claude),
                 participant("hana", Some("critic"), WorkCli::Claude),

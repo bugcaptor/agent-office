@@ -12,7 +12,7 @@ import { WorkAgentFields } from "../workpanels/WorkAgentFields";
 import { useRoleStore } from "./roleStore";
 import { useDiscussionStore } from "./discussionStore";
 import {
-  defaultAgent, discussionFromDraft, draftFromDiscussion, newDiscussionDraft, participantDraft, roleChoices, withRole,
+  defaultAgent, discussionFromDraft, draftFromDiscussion, newDiscussionDraft, participantDraft, roleChoices, validDiscussionCwd, withRole,
   type DiscussionDraft, type ParticipantDraft,
 } from "./discussionModel";
 import "./discussion.css";
@@ -48,6 +48,7 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
   const free = order.filter((id) => !used.has(id));
   const preview = discussionFromDraft(draft, 0, base);
   const problem = discussionProblem(preview);
+  const invalidCwd = !validDiscussionCwd(preview.cwd);
 
   const setModerator = (moderator: ParticipantDraft | null) => update({ moderator });
   const setDebater = (index: number, row: ParticipantDraft) => update({ debaters: draft.debaters.map((r, i) => (i === index ? row : r)) });
@@ -56,7 +57,7 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
   const setLimit = (key: keyof DiscussionLimits, value: number | boolean) => update({ limits: { ...draft.limits, [key]: value } });
 
   const save = async () => {
-    if (problem) return;
+    if (problem || invalidCwd) return;
     setSaving(true); setSaveError(false);
     try {
       await useDiscussionStore.getState().save(discussionFromDraft(draft, Date.now(), base));
@@ -86,10 +87,13 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
           {choices.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
         </select></label>
       {onRemove && <button type="button" className="pixel-btn discussion-row-remove" aria-label={t("editor.removeDebater", { name: name(value.agentId) })} title={t("editor.removeDebater", { name: name(value.agentId) })} onClick={onRemove}>×</button>}
-      <WorkAgentFields value={value.agent} labels={{ field: t("editor.agent"), empty: t("editor.agentDefault") }}
-        onChange={(agent) => onChange(agent
-          ? { ...value, agent, agentTouched: true }
-          : { ...value, agent: defaultAgent(value.roleId, agents[value.agentId], roles), agentTouched: false })} />
+      <details className="discussion-agent-options">
+        <summary>{[value.agent.cli, value.agent.model, value.agent.effort].filter(Boolean).join(" · ")}</summary>
+        <WorkAgentFields value={value.agent} labels={{ field: t("editor.agent"), empty: t("editor.agentDefault") }}
+          onChange={(agent) => onChange(agent
+            ? { ...value, agent, agentTouched: true }
+            : { ...value, agent: defaultAgent(value.roleId, agents[value.agentId], roles), agentTouched: false })} />
+      </details>
     </fieldset>;
   };
 
@@ -101,7 +105,6 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
         onChange={(e) => setLimit(key, e.target.value === "" ? NaN : Number(e.target.value))} /></label>;
   };
 
-  const moderatorProfileCwd = draft.moderator ? agents[draft.moderator.agentId]?.cwd : undefined;
   const { maxRounds, maxMinutes, maxCostUsd } = DISCUSSION_LIMIT_RANGES;
   // 불러오는 중 화면과 key를 나눠 폼이 새로 마운트되게 한다(첫 입력란 포커스·Esc 닫기).
   return <WorkDialog key="form" title={t(base ? "editor.editTitle" : "editor.newTitle")} onClose={onClose} className="discussion-editor">
@@ -110,7 +113,9 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
     <label><span className="form-label-text">{t("editor.context")}</span>
       <textarea rows={4} value={draft.context} placeholder={t("editor.contextPlaceholder")} onChange={(e) => update({ context: e.target.value })} /></label>
     <label><span className="form-label-text">{t("editor.cwd")}</span>
-      <input value={draft.cwd} placeholder={moderatorProfileCwd || t("editor.cwdPlaceholder")} onChange={(e) => update({ cwd: e.target.value })} /></label>
+      <input value={draft.cwd} aria-invalid={invalidCwd} aria-describedby={invalidCwd ? "discussion-cwd-error" : undefined} placeholder={t("editor.cwdPlaceholder")} onChange={(e) => update({ cwd: e.target.value })} /></label>
+
+    {invalidCwd && <p id="discussion-cwd-error" className="work-send-hint" role="alert">{t("session.errors.invalidCwd")}</p>}
 
     <section className="discussion-section">
       <h3>{t("editor.moderator")}</h3>
@@ -126,8 +131,10 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
       <button type="button" className="pixel-btn" disabled={!free.length || draft.debaters.length >= DISCUSSION_MAX_DEBATERS || !draft.moderator} onClick={addDebater}>{t("editor.addDebater")}</button>
     </section>
 
-    <section className="discussion-section">
-      <h3>{t("editor.limits")}</h3>
+    <details className="discussion-section discussion-limit-options">
+      <summary>{t("board.limits", {
+        rounds: draft.limits.maxRounds || "–", minutes: draft.limits.maxMinutes || "–", cost: draft.limits.maxCostUsd || "–",
+      })}</summary>
       <div className="discussion-limits">
         {limitInput("maxRounds", 1)}
         {limitInput("maxMinutes", 5)}
@@ -135,13 +142,13 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
       </div>
       <label className="discussion-check"><input type="checkbox" checked={draft.limits.usageGuard} onChange={(e) => setLimit("usageGuard", e.target.checked)} /> {t("editor.usageGuard")}</label>
       <p className="form-hint">{t("editor.limitsHint")}</p>
-    </section>
+    </details>
     <p className="form-hint">{t("editor.readOnlyHint")}</p>
 
     <div className="work-dialog-actions work-dialog-run">
       <button type="button" className="pixel-btn" onClick={onClose}>{t("editor.cancel")}</button>
       <span className="work-dialog-spacer" />
-      <button type="button" className="pixel-btn primary" disabled={!!problem || saving} aria-describedby={problem ? "discussion-problem" : undefined} onClick={() => void save()}>{t(base ? "editor.save" : "editor.create")}</button>
+      <button type="button" className="pixel-btn primary" disabled={!!problem || invalidCwd || saving} aria-describedby={problem ? "discussion-problem" : undefined} onClick={() => void save()}>{t(base ? "editor.save" : "editor.create")}</button>
     </div>
     {problem && <p id="discussion-problem" className="work-send-hint">{t(`editor.problems.${problem}`, {
       rounds: `${maxRounds.min}–${maxRounds.max}`, minutes: `${maxMinutes.min}–${maxMinutes.max}`, cost: `${maxCostUsd.min}–${maxCostUsd.max}`, max: DISCUSSION_MAX_DEBATERS,

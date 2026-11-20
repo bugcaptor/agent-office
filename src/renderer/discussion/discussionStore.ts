@@ -37,6 +37,9 @@ interface DiscussionStoreState {
 let inflight: Promise<void> | null = null;
 let saving: Promise<void> = Promise.resolve();
 
+/** 현재까지 예약된 마지막 스냅샷의 저장 결과. CLI가 상태 변경을 확인할 때 쓴다. */
+export function waitForDiscussionSave(): Promise<void> { return saving; }
+
 export const useDiscussionStore = create<DiscussionStoreState>((set, get) => ({
   discussions: [],
   status: "idle",
@@ -65,15 +68,19 @@ export const useDiscussionStore = create<DiscussionStoreState>((set, get) => ({
     }));
   },
   commit: (discussion) => {
+    // set은 리스너를 동기 호출하므로 중첩 commit이 생기기 전에 저장 순서를 잡는다.
+    const write = saving.catch(() => {}).then(() => tauriApi.saveDiscussion(discussion));
+    saving = write;
+    void write.catch((error: unknown) => console.warn("discussion: save failed", error));
     set((s) => ({
       discussions: s.discussions.some((d) => d.id === discussion.id)
         ? s.discussions.map((d) => (d.id === discussion.id ? discussion : d))
         : [...s.discussions, discussion],
     }));
-    saving = saving.then(() => tauriApi.saveDiscussion(discussion)).catch((e: unknown) => { console.warn("discussion: save failed", e); });
-    return saving;
+    return write;
   },
   remove: async (id) => {
+    await saving.catch(() => {});
     await tauriApi.deleteDiscussion(id);
     set((s) => ({ discussions: s.discussions.filter((d) => d.id !== id), dialog: null }));
   },

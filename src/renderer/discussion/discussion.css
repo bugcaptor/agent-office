@@ -84,6 +84,8 @@
 .discussion-section > .form-hint { margin: 0 0 6px; }
 .discussion-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 0 8px; margin: 6px 0; padding: 4px 8px; border: 1px solid var(--border-dark); min-width: 0; }
 .work-detail-dialog .discussion-row > label { margin: 4px 0; }
+.discussion-agent-options { grid-column: 1 / -1; min-width: 0; }
+.discussion-editor summary { cursor: pointer; overflow-wrap: anywhere; }
 .discussion-row-remove { align-self: end; margin-bottom: 4px; width: 32px; padding: 0; }
 .discussion-row .work-agent-fields { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 8px; margin: 0; }
 .discussion-row .work-agent-fields > label { margin: 4px 0; }

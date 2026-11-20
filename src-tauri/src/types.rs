@@ -1554,6 +1554,7 @@ pub struct DiscussionRun {
     #[serde(default, skip_serializing_if = "Option::is_none")] pub usage_wait: Option<DiscussionUsageWait>,
     /// 사람이 사용량 대기를 건너뛰었다. 다음 차례 하나를 검사 없이 보낸다.
     #[serde(default, skip_serializing_if = "Option::is_none")] pub usage_override: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub pending_memo: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

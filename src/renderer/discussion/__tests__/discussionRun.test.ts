@@ -35,7 +35,7 @@ let off: () => void;
 
 function discussion(patch: Partial<Discussion> = {}): Discussion {
   return {
-    id: "d1", topic: "Where does the meeting room go?", context: "", cwd: "/repo", moderatorAgentId: "m",
+    id: "d1", topic: "Where does the meeting room go?", context: "", moderatorAgentId: "m",
     participants: [
       { agentId: "m", roleId: "preset-moderator", agent: { cli: "claude" } },
       { agentId: "a", roleId: "preset-critic", agent: { cli: "claude" } },
@@ -278,6 +278,32 @@ describe("종료", () => {
     expect(confirmDiscussion("d1")).toBe(true);
     expect(d1()).toMatchObject({ state: "finished", decisionMemoPath: "/data/discussions/memos/d1.md" });
     expect(confirmDiscussion("d1")).toBe(false);
+  });
+
+  it("메모 저장이 끝날 때까지 결론 확인을 공개하지 않는다", async () => {
+    let release!: (path: string) => void;
+    api.saveDiscussionMemo.mockImplementation(() => new Promise<string>((resolve) => { release = resolve; }));
+    await throughOpening();
+    const turn = finishTurn("m", directive({ action: "wrap", summary: "Done." }));
+    await vi.waitFor(() => expect(api.saveDiscussionMemo).toHaveBeenCalled());
+    expect(d1().state).toBe("wrapping_up");
+    expect(d1().run?.pendingMemo).toContain("Done.");
+    expect(confirmDiscussion("d1")).toBe(false);
+    release("/memo.md");
+    await turn;
+    await settle();
+    expect(d1()).toMatchObject({ state: "review", decisionMemoPath: "/memo.md" });
+  });
+
+  it("다시 열면 정리 중이던 메모 저장만 마친다", async () => {
+    off();
+    useDiscussionStore.setState({ discussions: [discussion({ state: "wrapping_up",
+      run: { phase: "wrap_up", turns: [], seen: {}, pendingMemo: "# Memo" } })] });
+    off = installDiscussionRunner();
+    await settle();
+    expect(api.saveDiscussionMemo).toHaveBeenCalledWith("d1", "# Memo");
+    expect(api.openDiscussionSession).not.toHaveBeenCalled();
+    expect(d1().state).toBe("review");
   });
 
   it("메모를 저장하지 못해도 탭은 닫고 결론 확인으로 둔다", async () => {
@@ -617,6 +643,17 @@ describe("비용 상한", () => {
     expect(sentTurns("b")).toHaveLength(0);
   });
 
+  it.each(["ask_user", "next", "wrap"])("상한을 넘긴 사회자 지시 %s를 마무리한다", async (action) => {
+    await throughOpening();
+    replies.m = [directive({ action, question: "Budget?", speakers: [{ id: "a", question: "Why?" }], summary: "Done." })];
+    const s = session("m");
+    handleDiscussionTurnUsage({ agentId: s.agentId, sessionId: s.sessionId, at: ++clock, tokens, partial: false });
+    await settle();
+    expect(d1().costUsd).toBeGreaterThanOrEqual(d1().limits.maxCostUsd);
+    if (action === "wrap") expect(d1().state).toBe("review");
+    else expect(d1()).toMatchObject({ state: "wrapping_up", round: 1, run: { forced: "cost" } });
+  });
+
   it("상한 검사: 시간·비용", () => {
     const base = discussion({ state: "running", activeMs: 0 });
     expect(discussionLimitReached(base)).toBeUndefined();
@@ -634,6 +671,7 @@ describe("사용량 대기", () => {
     await settle();
     expect(api.openDiscussionSession).not.toHaveBeenCalled();
     expect(d1()).toMatchObject({ state: "paused", activeSince: undefined, run: { pauseReason: "usage-wait", pauseDetail: "Ari", usageWait: { agentId: "a", provider: "claude", kind: "session", limit: 95 } } });
+    expect(api.saveDiscussion.mock.calls.slice(-1)[0][0]).toEqual(d1());
     // 아직 모자라면 그대로 기다린다.
     await checkDiscussionUsageWaits();
     expect(d1().state).toBe("paused");

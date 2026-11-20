@@ -6,7 +6,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { Events } from "@shared/ipc";
 import { tauriApi } from "../ipc/tauriApi";
-import { useDiscussionStore } from "./discussionStore";
+import { useDiscussionStore, waitForDiscussionSave } from "./discussionStore";
 import { answerDiscussion, startDiscussion } from "./discussionRun";
 
 export interface DiscussionControlRequest {
@@ -30,16 +30,22 @@ async function findDiscussion(id: string, waitMs: number): Promise<boolean> {
 export async function handleDiscussionControl(request: DiscussionControlRequest, waitMs = ADOPT_WAIT_MS): Promise<string | undefined> {
   if (!(await findDiscussion(request.discussionId, waitMs))) return "discussion-not-found";
   switch (request.op) {
-    case "start":
-      return startDiscussion(request.discussionId);
+    case "start": {
+      const blocked = startDiscussion(request.discussionId);
+      if (blocked) return blocked;
+      break;
+    }
     case "answer": {
       const text = request.options?.text?.trim() ?? "";
       if (!text) return "discussion-answer-empty";
-      return answerDiscussion(request.discussionId, text) ? undefined : "discussion-not-waiting";
+      if (!answerDiscussion(request.discussionId, text)) return "discussion-not-waiting";
+      break;
     }
     default:
       return "discussion-unknown-op";
   }
+  await waitForDiscussionSave();
+  return undefined;
 }
 
 export function installDiscussionControl(): () => void {

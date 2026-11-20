@@ -27,6 +27,7 @@ import { resetRoleStoreForTest } from "../roleStore";
 import { resetDiscussionStoreForTest, useDiscussionStore } from "../discussionStore";
 import { DiscussionSection } from "../DiscussionSection";
 
+const adaCwd = "//office/share/ada";
 const roles: RolesFile = {
   version: 1,
   roles: [
@@ -53,7 +54,7 @@ beforeEach(() => {
   api.deleteDiscussion.mockReset().mockResolvedValue(undefined);
   useAppStore.setState({
     agents: {
-      a1: agent("a1", "Ada", { defaultRoleId: "mod", cwd: "/work/ada" }),
+      a1: agent("a1", "Ada", { defaultRoleId: "mod", cwd: adaCwd }),
       a2: agent("a2", "Bo", { defaultRoleId: "critic" }),
       a3: agent("a3", "Cy", { defaultAgent: { cli: "agy" } }),
     },
@@ -72,7 +73,7 @@ describe("DiscussionSection", () => {
     act(() => useDiscussionStore.getState().openDialog({ kind: "new" }));
     const topic = await screen.findByPlaceholderText(/무엇을 정하거나/);
     // 사회자는 기본 역할이 사회자인 Ada, 작업 폴더는 Ada의 폴더.
-    expect((screen.getByDisplayValue("/work/ada") as HTMLInputElement).value).toBe("/work/ada");
+    expect((screen.getByDisplayValue(adaCwd) as HTMLInputElement).value).toBe(adaCwd);
     const create = within(dialog()).getByRole("button", { name: "만들기" }) as HTMLButtonElement;
     expect(create.disabled).toBe(true);
     expect(screen.getByText("주제를 적으세요.")).toBeTruthy();
@@ -83,13 +84,21 @@ describe("DiscussionSection", () => {
     expect(screen.getByText("토론자 (2/4)")).toBeTruthy();
     // 세 명이 다 들어가 더 넣을 팀원이 없다.
     expect((screen.getByRole("button", { name: "토론자 추가" }) as HTMLButtonElement).disabled).toBe(true);
+    const cwd = screen.getByDisplayValue(adaCwd);
+    fireEvent.change(cwd, { target: { value: "./repo" } });
+    expect(create.disabled).toBe(true);
+    expect(cwd.getAttribute("aria-invalid")).toBe("true");
+    fireEvent.change(cwd, { target: { value: adaCwd } });
+    const limitSummary = within(dialog()).getByText("최대 4라운드 · 30분 · $5");
+    expect(limitSummary.closest("details")!.open).toBe(false);
+    fireEvent.click(limitSummary);
     fireEvent.change(within(dialog()).getByRole("spinbutton", { name: "최대 라운드" }), { target: { value: "20" } });
     expect(create.disabled).toBe(true);
     fireEvent.change(within(dialog()).getByRole("spinbutton", { name: "최대 라운드" }), { target: { value: "3" } });
     fireEvent.click(create);
     await waitFor(() => expect(api.saveDiscussion).toHaveBeenCalledTimes(1));
     const saved = api.saveDiscussion.mock.calls[0][0];
-    expect(saved).toMatchObject({ topic: "저장 방식", state: "ready", moderatorAgentId: "a1", cwd: "/work/ada", limits: { maxRounds: 3, maxMinutes: 30, maxCostUsd: 5, usageGuard: true } });
+    expect(saved).toMatchObject({ topic: "저장 방식", state: "ready", moderatorAgentId: "a1", cwd: adaCwd, limits: { maxRounds: 3, maxMinutes: 30, maxCostUsd: 5, usageGuard: true } });
     expect(saved.participants).toEqual([
       { agentId: "a1", roleId: "mod", agent: { cli: "claude" } },
       { agentId: "a2", roleId: "critic", agent: { cli: "codex", model: "gpt" } },

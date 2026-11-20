@@ -910,7 +910,7 @@ mod tests {
         let mut asking = discussion("disc-ask", DiscussionState::WaitingUser);
         asking.run = Some(crate::types::DiscussionRun {
             phase: crate::types::DiscussionPhase::User, turns: vec![], seen: Default::default(), question: Some("예산은?".into()),
-            pause_reason: None, pause_detail: None, forced: None, forced_at_ms: None, usage_wait: None, usage_override: None,
+            pause_reason: None, pause_detail: None, forced: None, forced_at_ms: None, usage_wait: None, usage_override: None, pending_memo: None,
         });
         store.save(&asking).unwrap();
         store.save(&discussion("disc-done", DiscussionState::Review)).unwrap();

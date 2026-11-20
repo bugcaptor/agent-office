@@ -180,7 +180,7 @@ function RunPanel({ discussion: d }: { discussion: Discussion }) {
   const run = d.run;
   const blocked = d.state === "ready" ? discussionStartBlockedReason(d, discussions, agents, observerEnabled) : undefined;
   const fail = (code: string | undefined) => setError(code);
-  const active = isActiveDiscussion(d);
+  const active = isActiveDiscussion(d) && !run?.pendingMemo;
   const usageWaiting = d.state === "paused" && run?.pauseReason === "usage-wait";
   return <div className="discussion-run">
     {d.state === "paused" && run?.pauseReason && <p className="discussion-run-paused" role="status">

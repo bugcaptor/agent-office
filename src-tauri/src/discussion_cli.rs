@@ -6,7 +6,7 @@
 
 use crate::persistence::work_inbox::{forbidden_control, MAX_BYTES};
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const USAGE: &str = "usage: office-discuss say [text | -]
 Submits your utterance for the current discussion turn. Use - to read it from stdin.
@@ -255,6 +255,9 @@ pub fn create(
     }
     let cwd = cwd.map(|c| c.trim().to_string()).filter(|c| !c.is_empty())
         .or_else(|| env.cwd.as_ref().map(|c| c.to_string_lossy().into_owned()));
+    if cwd.as_deref().is_some_and(|c| !Path::new(c).is_absolute()) {
+        return create_fail(err, "--cwd must be an absolute path");
+    }
     if let Some(c) = cwd.as_deref().and_then(forbidden_control) {
         return create_fail(err, &format!("--cwd contains control character U+{:04X}", c as u32));
     }
@@ -448,7 +451,7 @@ mod tests {
         tmp
     }
     fn create_env(dir: &std::path::Path) -> CreateEnv {
-        CreateEnv { inbox: Some(dir.join("work-inbox")), data_dir: Some(dir.to_path_buf()), agent_id: Some("p-ada".into()), cwd: Some("/work/proj".into()) }
+        CreateEnv { inbox: Some(dir.join("work-inbox")), data_dir: Some(dir.to_path_buf()), agent_id: Some("p-ada".into()), cwd: Some(dir.to_path_buf()) }
     }
     fn create_call(args: &[&str], env: &CreateEnv, stdin: &str) -> (i32, String, String) {
         let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
@@ -473,7 +476,7 @@ mod tests {
         assert_eq!(out, format!("{}\n", request.id));
         assert!(request.id.starts_with("disc-") && crate::persistence::work_inbox::valid_task_id(&request.id));
         assert_eq!((request.topic.as_str(), request.context.as_str()), ("저장 형식을 바꿀까", "맥락\n둘째 줄"));
-        assert_eq!(request.cwd.as_deref(), Some("/work/proj"));
+        assert_eq!(request.cwd.as_deref(), tmp.path().to_str());
         assert_eq!(request.moderator_agent_id, "p-mod");
         assert_eq!(request.requested_by.as_deref(), Some("p-ada"));
         assert_eq!(request.limits, crate::types::DiscussionLimits::default());
@@ -493,13 +496,13 @@ mod tests {
         let (code, _, err) = create_call(&[
             "--moderator", "p-mod", "--with", "Ada", "--with", "p-bo2",
             "--role", "Ada=none", "--role", "p-bo2=비판자", "--cli", "Ada=codex:gpt-5.5", "--cli", "p-bo2=claude",
-            "--rounds", "2", "--minutes", "15", "--cost", "$1.5", "--no-usage-guard", "--cwd", "/elsewhere",
+            "--rounds", "2", "--minutes", "15", "--cost", "$1.5", "--no-usage-guard", "--cwd", tmp.path().to_str().unwrap(),
             "주제", "짧은 맥락",
         ], &create_env(tmp.path()), "");
         assert_eq!(code, 0, "{err}");
         let [r] = requests(tmp.path()).try_into().unwrap();
         assert_eq!((r.limits.max_rounds, r.limits.max_minutes, r.limits.max_cost_usd, r.limits.usage_guard), (2, 15, 1.5, false));
-        assert_eq!(r.cwd.as_deref(), Some("/elsewhere"));
+        assert_eq!(r.cwd.as_deref(), tmp.path().to_str());
         assert_eq!(r.context, "짧은 맥락");
         let ada = &r.participants[1];
         assert_eq!((ada.role_id.as_deref(), ada.agent.cli.clone(), ada.agent.model.as_deref()), (None, crate::types::WorkCli::Codex, Some("gpt-5.5")));
@@ -532,6 +535,7 @@ mod tests {
             assert_eq!(create_call(args, &env, "").0, 2, "{args:?}");
         }
         let failures: &[(&[&str], &str)] = &[
+            (&["--moderator", "Mo", "--with", "Ada", "--cwd", "./repo", "주제"], "absolute path"),
             (&["--moderator", "Mo", "--with", "Bo", "주제"], "several team members"),
             (&["--moderator", "Mo", "--with", "Zed", "주제"], "no team member"),
             (&["--moderator", "Mo", "--with", "Ada", "--role", "Ada=없는역할", "주제"], "no discussion role"),

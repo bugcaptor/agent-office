@@ -29,7 +29,7 @@ import {
   useDiscussionSessionStore,
 } from "./discussionSessionStore";
 import { useRoleStore } from "./roleStore";
-import { discussionElapsedMs, discussionTicking } from "./discussionModel";
+import { discussionElapsedMs, discussionTicking, validDiscussionCwd } from "./discussionModel";
 import { tokensCost } from "../usage/usageForecast";
 import { assessTurn, refreshUsage, workerProvider } from "../usage/usageForecastStore";
 import { composeDecisionMemo, parseWrapMemo, wrapMemoEmpty, type MemoInput, type WrapMemo } from "./discussionMemo";
@@ -249,7 +249,7 @@ export function discussionStartBlockedReason(
   observerEnabled: boolean,
 ): string | undefined {
   if (d.state !== "ready") return "discussion-not-ready";
-  if (discussionProblem(d)) return "discussion-invalid";
+  if (discussionProblem(d) || !validDiscussionCwd(d.cwd)) return "discussion-invalid";
   if (all.some((other) => other.id !== d.id && isActiveDiscussion(other))) return "discussion-busy";
   if (liveDiscussionSessions().some((s) => s.discussionId !== d.id)) return "discussion-busy";
   if (d.participants.some((p) => !agents[p.agentId])) return "discussion-missing-member";
@@ -273,6 +273,7 @@ export function startDiscussion(id: string): string | undefined {
 
 /** 멈춤. 돌고 있는 턴은 끝까지 두고, 다음 차례를 넣지 않는다. 사용량 대기 중이면 스스로 이어 가지 않게 바꾼다. */
 export function pauseDiscussion(id: string): void {
+  if (find(id)?.run?.pendingMemo) return;
   if (running(id) || find(id)?.run?.pauseReason === "usage-wait") pause(id, "user");
 }
 
@@ -317,7 +318,7 @@ export function answerDiscussion(id: string, text: string): boolean {
 /** 끝내기. 어느 단계에서든 토의를 끝남으로 바꾸고 참가자 세션을 모두 닫는다. 결정 메모는 쓰지 않는다. */
 export async function endDiscussion(id: string): Promise<void> {
   const d = find(id);
-  if (!d || !isActiveDiscussion(d)) return;
+  if (!d || d.run?.pendingMemo || !isActiveDiscussion(d)) return;
   await finish(id, "ended-by-user");
 }
 
@@ -328,33 +329,36 @@ export function confirmDiscussion(id: string): boolean {
   return true;
 }
 
-/**
- * 정리를 마친다. 결론 확인(review)으로 바꿔 루프·시계를 멈추고, 결정 메모를 써 경로를 남긴 뒤, 토의 탭을 모두 닫고
- * OS 알림을 보낸다. 메모를 쓰지 못해도 탭은 닫는다(안 닫으면 다음 토의가 막힌다).
- */
+/** 결정 메모 본문을 진행 상태에 보관한다. 앱을 다시 열어도 같은 본문을 저장할 수 있다. */
 async function conclude(id: string, input: Omit<MemoInput, "forced">): Promise<void> {
-  const before = find(id);
-  if (!before || !isActiveDiscussion(before)) return;
-  const forced = before.run?.forced;
-  const d = update(id, (x) => ({
-    ...x, state: "review", endedAt: Date.now(), run: undefined,
-    transcript: input.notice ? [...x.transcript, utterance(x, "notice", input.notice)] : x.transcript,
-  }))!;
-  let memoPath: string | undefined;
+  const d = running(id);
+  if (!d?.run) return;
+  const endedAt = Date.now();
+  const activeMs = discussionElapsedMs(d, endedAt);
+  const transcript = [...d.transcript];
+  if (input.notice) transcript.push(utterance(d, "notice", input.notice));
+  else if (input.summary && d.run.turns.length) transcript.push(utterance(d, "moderator", input.summary, d.moderatorAgentId));
+  const pendingMemo = composeDecisionMemo({ ...d, endedAt, activeMs }, { ...input, forced: d.run.forced });
+  update(id, (x) => ({
+    ...x, state: "wrapping_up", endedAt, activeMs, activeSince: undefined,
+    transcript,
+    run: { ...x.run!, phase: "wrap_up", turns: [], pendingMemo },
+  }));
+  return publishMemo(id, pendingMemo);
+}
+
+async function publishMemo(id: string, markdown: string): Promise<void> {
+  let decisionMemoPath: string | undefined;
   try {
-    memoPath = await tauriApi.saveDiscussionMemo(id, composeDecisionMemo(d, { ...input, forced }));
+    decisionMemoPath = await tauriApi.saveDiscussionMemo(id, markdown);
   } catch (error) {
     console.warn("discussion: memo save failed", error);
   }
-  try {
-    // 그 사이 지워졌으면 경로를 남길 곳이 없다.
-    if (memoPath && find(id)) update(id, (x) => ({ ...x, decisionMemoPath: memoPath }));
-  } finally {
-    await closeDiscussionSessions(id);
-  }
-  void maybeSendOsNotification(
+  await closeDiscussionSessions(id);
+  const d = update(id, (x) => ({ ...x, state: "review", decisionMemoPath, run: undefined }));
+  if (d) void maybeSendOsNotification(
     t("discussion:run.notify.concluded", { topic: d.topic }),
-    t(memoPath ? "discussion:run.notify.concludedBody" : "discussion:run.notify.concludedNoMemo"),
+    t(decisionMemoPath ? "discussion:run.notify.concludedBody" : "discussion:run.notify.concludedNoMemo"),
   );
 }
 
@@ -438,7 +442,7 @@ function forceWrap(id: string, reason: DiscussionLimitReason): Promise<void> {
   update(id, (x) => {
     const run = x.run!;
     const opening = run.phase === "opening"
-      ? run.turns.filter((turn) => turn.text !== undefined).map((turn) => utterance(x, "opening", turn.text!, turn.agentId)) : [];
+      ? run.turns.filter((turn) => turn.text).map((turn) => utterance(x, "opening", turn.text!, turn.agentId)) : [];
     return {
       ...x, state: "wrapping_up",
       transcript: [...x.transcript, ...opening, utterance(x, "notice", t("discussion:run.notice.limit", { reason: limitText(x, reason) }))],
@@ -455,6 +459,7 @@ function forceWrap(id: string, reason: DiscussionLimitReason): Promise<void> {
 async function stepWrapUp(id: string): Promise<void> {
   const d = running(id)!;
   const run = d.run!;
+  if (run.pendingMemo) return publishMemo(id, run.pendingMemo);
   const turn = run.forced ? run.turns[0] : undefined;
   // 사회자가 스스로 정리하던 중 멈췄다 이어 가면(정리는 바로 끝나므로 드물다) 마지막 사회자 기록을 요약으로 쓴다.
   if (!turn) return conclude(id, { summary: [...d.transcript].reverse().find((e) => e.kind === "moderator")?.text });
@@ -468,10 +473,6 @@ async function stepWrapUp(id: string): Promise<void> {
   const wrap = "directive" in parsed && parsed.directive.action === "wrap" ? parsed.directive : undefined;
   const summary = wrap ? wrap.summary : "problem" in parsed && parsed.problem === "no-json" ? text : "";
   if (!summary) return conclude(id, { notice: t("discussion:run.notice.wrapMissing") });
-  update(id, (x) => ({
-    ...x, transcript: [...x.transcript, utterance(x, "moderator", summary, x.moderatorAgentId)],
-    run: { ...x.run!, turns: x.run!.turns.map((y) => (y.agentId === turn.agentId ? { ...y, text: summary } : y)) },
-  }));
   return conclude(id, { summary, memo: wrap?.memo });
 }
 
@@ -567,11 +568,12 @@ async function receive(id: string, agentId: string, options: { nudge?: boolean }
     console.warn("discussion: collect failed", error);
     return null;
   });
-  if (!running(id)) return null;
+  const latest = running(id);
+  if (!latest) return null;
   const text = got?.text.trim();
   if (text) return text;
   // 재촉하지 않는 차례(강제 정리)는 빈 발언을 그대로 돌려준다.
-  if (options.nudge === false) return "";
+  if (options.nudge === false || discussionLimitReached(latest)) return "";
   await nudge(id, agentId, t("discussion:run.prompt.nudge"), "no-utterance");
   return null;
 }
@@ -605,11 +607,14 @@ async function stepOpening(id: string): Promise<void> {
   for (const turn of running(id)?.run?.turns ?? []) {
     if (turn.sentAt === undefined || turn.text !== undefined) continue;
     const text = await receive(id, turn.agentId);
-    if (!running(id)) return;
+    if (running(id)?.run?.phase !== "opening") return;
     if (text !== null) patchTurn(id, turn.agentId, { text });
   }
   const latest = running(id);
-  if (!latest?.run || latest.run.phase !== "opening" || latest.run.turns.some((x) => x.text === undefined)) return;
+  if (!latest?.run || latest.run.phase !== "opening") return;
+  const limit = discussionLimitReached(latest);
+  if (limit && !hasUnreceivedTurn(latest)) return forceWrap(id, limit);
+  if (latest.run.turns.some((x) => x.text === undefined)) return;
   update(id, (x) => ({
     ...x,
     transcript: [...x.transcript, ...x.run!.turns.map((turn) => utterance(x, "opening", turn.text!, turn.agentId))],
@@ -631,6 +636,8 @@ async function stepModerator(id: string): Promise<void> {
   if (text === null) return;
   const latest = running(id)!;
   const parsed = parseModeratorDirective(text, latest, names(latest));
+  const limit = discussionLimitReached(latest);
+  if (limit && (!("directive" in parsed) || parsed.directive.action !== "wrap")) return forceWrap(id, limit);
   if ("problem" in parsed) {
     const problem = t(`discussion:run.problems.${parsed.problem}`);
     return nudge(id, moderator, t("discussion:run.prompt.invalid", { problem, format: MODERATOR_FORMAT }), "moderator-invalid", parsed.problem);
@@ -657,11 +664,6 @@ async function stepModerator(id: string): Promise<void> {
     void maybeSendOsNotification(t("discussion:run.notify.question", { topic: latest.topic }), directive.question);
     return;
   }
-  update(id, (x) => ({
-    ...x, state: "wrapping_up",
-    transcript: [...x.transcript, utterance(x, "moderator", directive.summary, moderator)],
-    run: { ...x.run!, phase: "wrap_up", turns: [] },
-  }));
   return conclude(id, { summary: directive.summary, memo: directive.memo });
 }
 
@@ -676,6 +678,10 @@ async function stepSpeakers(id: string): Promise<void> {
   if (turn.sentAt === undefined) return deliver(id, turn.agentId);
   const text = await receive(id, turn.agentId);
   if (text === null) return;
+  if (!text) {
+    patchTurn(id, turn.agentId, { text });
+    return stepDiscussion(id);
+  }
   update(id, (x) => ({
     ...x,
     transcript: [...x.transcript, utterance(x, "statement", text, turn.agentId)],
@@ -740,7 +746,7 @@ const CHECK_MS = 15_000;
  */
 export function restoreDiscussionsAfterRestart(): void {
   for (const d of useDiscussionStore.getState().discussions) {
-    if (!d.run || (d.state !== "running" && d.state !== "wrapping_up")) continue;
+    if (!d.run || d.run.pendingMemo || (d.state !== "running" && d.state !== "wrapping_up")) continue;
     // 앱이 꺼져 있던 동안은 진행 시간에 넣지 않는다. 마지막으로 쓴 시각에서 구간을 닫는다.
     update(d.id, (x) => ({ ...x, state: "paused", run: { ...x.run!, pauseReason: "restarted", pauseDetail: undefined } }), d.updatedAt);
   }
@@ -759,6 +765,7 @@ export function installDiscussionRunner(): () => void {
     if (!installed) return;
     restoreDiscussionsAfterRestart();
     restored = true;
+    wake();
     // 차례 지시의 역할 이름에 쓴다. 없어도 진행은 된다.
     if (useDiscussionStore.getState().discussions.length) void useRoleStore.getState().ensureLoaded();
   });

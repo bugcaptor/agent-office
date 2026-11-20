@@ -4,6 +4,7 @@
 // Rust serde 출력과 대조되는 `@shared/contract-fixtures`를 바탕으로 만든다
 // (손으로 쓴 모양이 백엔드와 어긋나 화면이 거짓으로 깨지거나 멀쩡해 보이지 않게).
 // URL `?scenario=<id>&lang=<code>`로 고른다.
+import { IS_WINDOWS } from "../shared/platform";
 import type {
   AdoptedSessionInfo,
   AgentProfile,
@@ -38,6 +39,8 @@ export interface Scenario {
   discussions: Discussion[];
 }
 
+const harnessCwd = IS_WINDOWS ? "C:/tmp/gui-harness" : "/tmp/gui-harness";
+
 const profile = (id: string, name: string, seed: string, deskIndex: number): AgentProfile => ({
   id,
   name,
@@ -45,7 +48,7 @@ const profile = (id: string, name: string, seed: string, deskIndex: number): Age
   seed,
   createdAt: 1720000000000 + deskIndex,
   deskIndex,
-  cwd: "/tmp/gui-harness",
+  cwd: harnessCwd,
 });
 
 const AGENTS = [
@@ -88,7 +91,8 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
   /** 업무 패널을 켜고 캐릭터마다 다른 프로젝트 폴더와 업무를 둔 사무실. */
   workpanels: (lang) => {
     const b = base(lang);
-    const cwds = ["/Users/me/dev/agent-office", "/Users/me/dev/kbm-server", undefined];
+    const dev = IS_WINDOWS ? "C:/Users/me/dev" : "/Users/me/dev";
+    const cwds = [`${dev}/agent-office`, `${dev}/kbm-server`, undefined];
     return {
       ...b,
       state: { ...b.state, agents: AGENTS.map((a, i) => ({ ...a, cwd: cwds[i] })) },
@@ -155,7 +159,7 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
     const b = base(lang);
     const now = Date.now();
     const meeting: Discussion = {
-      id: "disc-meeting", topic: "Where should the release notes live?", context: "", cwd: "/tmp/gui-harness",
+      id: "disc-meeting", topic: "Where should the release notes live?", context: "", cwd: harnessCwd,
       moderatorAgentId: "p1",
       participants: [
         { agentId: "p1", agent: { cli: "claude" } },

@@ -6,6 +6,7 @@
 //   토론자 칸은 moderator가 아닌 역할만 고른다(사회자는 중립).
 // - CLI·모델 기본값: 역할 `agent` → 프로필 `defaultAgent` → claude.
 //   역할을 바꾸면 사용자가 CLI 칸을 직접 고치지 않은 행만 다시 채운다.
+import { IS_WINDOWS } from "../shared/platform";
 import { nanoid } from "nanoid";
 import {
   DISCUSSION_LIMIT_RANGES,
@@ -124,6 +125,13 @@ export function discussionFromDraft(draft: DiscussionDraft, now: number, base?: 
     limits: { ...draft.limits },
     updatedAt: now,
   };
+}
+
+/** 빈 작업 폴더는 홈을 사용한다. Windows에서는 드라이브 루트 또는 UNC 경로가 필요하다. */
+export function validDiscussionCwd(cwd?: string, windows = IS_WINDOWS): boolean {
+  if (!cwd) return true;
+  if (!windows) return cwd.startsWith("/");
+  return /^[A-Za-z]:[\\/]/.test(cwd) || /^[\\/]{2}[^\\/]+[\\/][^\\/]+/.test(cwd);
 }
 
 /** 사람이 고칠 수 있는 상태. 실행 중인 토의는 3·4단계 실행기가 쥐고 있다. */

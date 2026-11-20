@@ -90,6 +90,9 @@ pub fn discussion_from_request(
         participants.insert(0, moderator);
     }
     let cwd = request.cwd.map(|c| c.trim().to_string()).filter(|c| !c.is_empty());
+    if cwd.as_deref().is_some_and(|c| !Path::new(c).is_absolute()) {
+        return Err("invalid-cwd");
+    }
     let discussion = Discussion {
         id: request.id,
         topic: request.topic.trim().to_string(),
@@ -223,7 +226,7 @@ mod tests {
             id: id.into(),
             topic: " 저장 형식 ".into(),
             context: "맥락\n".into(),
-            cwd: Some("/proj".into()),
+            cwd: None,
             moderator_agent_id: "mod".into(),
             participants: vec![participant("a1"), participant("mod")],
             limits: DiscussionLimits::default(),

@@ -29,7 +29,7 @@ export default async ({ page, shot }) => {
   await rows.nth(2).locator("select").nth(1).selectOption({ label: "악마의 대변인" });
   await page.waitForTimeout(200);
   await shot("discussion-new-filled");
-  await dialog.locator(".discussion-limits").scrollIntoViewIfNeeded();
+  await dialog.locator(".discussion-limit-options > summary").click();
   await shot("discussion-new-limits");
   await dialog.getByRole("button", { name: /^(만들기|Create)$/ }).click();
   await page.waitForTimeout(200);

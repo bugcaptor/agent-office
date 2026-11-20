@@ -140,6 +140,8 @@ export interface DiscussionRun {
   usageWait?: DiscussionUsageWait;
   /** 사람이 사용량 대기를 건너뛰었다. 다음 차례 하나를 검사 없이 보낸다. */
   usageOverride?: boolean;
+  /** 메모 저장 중 재시작해도 같은 본문으로 마무리한다. */
+  pendingMemo?: string;
 }
 
 export interface Discussion {

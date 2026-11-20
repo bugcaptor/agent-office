@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fixture from "@shared/contract-fixtures/discussions-file.json";
 import { discussionProblem, type AgentProfile, type Discussion, type DiscussionRole, type DiscussionsFile } from "@shared/types";
 import {
-  defaultDiscussionLimits, discussionFromDraft, draftFromDiscussion, newDiscussionDraft, participantDraft, withRole,
+  defaultDiscussionLimits, discussionFromDraft, draftFromDiscussion, newDiscussionDraft, participantDraft, validDiscussionCwd, withRole,
 } from "../discussionModel";
 
 const file = fixture as DiscussionsFile;
@@ -86,5 +86,18 @@ describe("discussion model", () => {
       { agentId: "c", roleId: "free", agent: { cli: "pi", effort: "high" } },
     ]);
     expect(discussionProblem(d)).toBeNull();
+  });
+});
+
+describe("작업 폴더", () => {
+  it("현재 플랫폼에서 절대 경로와 빈 값만 받는다", () => {
+    for (const windows of [true, false]) {
+      expect(validDiscussionCwd(undefined, windows)).toBe(true);
+      expect(validDiscussionCwd("./repo", windows)).toBe(false);
+      expect(validDiscussionCwd("/work/repo", windows)).toBe(!windows);
+      expect(validDiscussionCwd("C:\\work", windows)).toBe(windows);
+      expect(validDiscussionCwd("C:work", windows)).toBe(false);
+    }
+    expect(validDiscussionCwd("\\\\server\\share", true)).toBe(true);
   });
 });

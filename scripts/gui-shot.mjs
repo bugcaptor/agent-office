@@ -10,7 +10,7 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createServer } from "vite";
+import { createServer, normalizePath } from "vite";
 
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {
@@ -25,8 +25,8 @@ const scriptPath = opt("script");
 const serveOnly = args.includes("--serve");
 
 const root = process.cwd();
-const harnessDir = resolve(root, "src/renderer/guiHarness");
-const realApi = resolve(root, "src/renderer/ipc/tauriApi.ts");
+const harnessDir = normalizePath(resolve(root, "src/renderer/guiHarness"));
+const realApi = normalizePath(resolve(root, "src/renderer/ipc/tauriApi.ts"));
 
 const harnessPlugin = {
   name: "gui-harness",
@@ -34,7 +34,7 @@ const harnessPlugin = {
   async resolveId(source, importer, options) {
     if (!importer || importer.startsWith(harnessDir) || !source.includes("tauriApi")) return null;
     const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
-    return resolved?.id === realApi ? resolve(harnessDir, "fakeApi.ts") : null;
+    return resolved?.id === realApi ? normalizePath(resolve(harnessDir, "fakeApi.ts")) : null;
   },
   transformIndexHtml: () => [
     { tag: "script", attrs: { type: "module", src: "/src/renderer/guiHarness/tauriStub.ts" }, injectTo: "head-prepend" },

@@ -45,6 +45,17 @@ describe("CLI 토의 요청", () => {
     expect(run.answerDiscussion).toHaveBeenCalledTimes(2);
   });
 
+  it.each(["start", "answer"] as const)("%s 요청의 저장 실패를 호출자에게 알린다", async (op) => {
+    const d = discussion("d1", { state: "running" });
+    useDiscussionStore.setState({ discussions: [d], status: "ready" });
+    api.saveDiscussion.mockRejectedValueOnce(new Error("disk full"));
+    const commit = () => { void useDiscussionStore.getState().commit(d); };
+    run.startDiscussion.mockImplementation(commit);
+    run.answerDiscussion.mockImplementation(() => { commit(); return true; });
+    await expect(handleDiscussionControl({ requestId: "r", op, discussionId: "d1", options: { text: "Yes" } }))
+      .rejects.toThrow("disk full");
+  });
+
   it("방금 가져온 토의가 스토어에 붙을 때까지 기다리고, 끝내 없으면 거절한다", async () => {
     useDiscussionStore.setState({ discussions: [], status: "ready" });
     setTimeout(() => useDiscussionStore.getState().adopt([discussion("d2")]), 150);
