@@ -200,5 +200,72 @@
     "tooltip": "Discussion : {{topic}}",
     "tooltipModerator": "Animation de la discussion : {{topic}}",
     "unknownTopic": "(discussion supprimée)"
+  },
+  "run": {
+    "prompt": {
+      "opening": "C'est le premier tour. Tous les débatteurs parlent en même temps sans voir l'avis des autres. Donnez votre avis sur le sujet selon la perspective de votre carte de rôle. Vous pouvez d'abord lire le code et les documents si besoin.",
+      "speaker": "Le modérateur vous donne la parole.\n\nQuestion : {{question}}\n\nRépondez en réfutant ou en complétant ce qui a été dit. Ne répétez pas les points déjà faits.",
+      "moderator": "C'est au tour du modérateur (tour {{round}}, au plus {{max}}). Lisez ce qui a été dit, choisissez l'une des options suivantes et soumettez un seul objet JSON comme consigne. N'ajoutez aucun autre texte.\n\n```json\n{{format}}\n```\n\n- next : donnez la parole à un ou plusieurs débatteurs, dans l'ordre, avec une question pour chacun. Les suivants voient ce que les précédents ont dit. Un appel correspond à un tour.\n- ask_user : interrogez la personne seulement si la discussion ne peut pas avancer sans sa décision ou ses informations. Quand la réponse arrive, c'est de nouveau votre tour.\n- wrap : concluez quand les avis ont convergé ou que poursuivre n'apportera rien. Dans summary, écrivez la conclusion, les raisons, les alternatives rejetées et les questions ouvertes.\n\nDébatteurs (utilisez ces valeurs pour id) :\n{{roster}}",
+      "nudge": "Votre intervention pour ce tour n'est pas arrivée. Soumettez-la de nouveau avec la commande de soumission. Si vous ne pouvez pas l'exécuter, écrivez uniquement votre intervention dans votre dernière réponse.",
+      "invalid": "Votre consigne n'a pas pu être lue : {{problem}} Soumettez de nouveau un seul objet JSON au bon format.\n\n```json\n{{format}}\n```",
+      "newHeader": "### Dit depuis votre dernier tour",
+      "allHeader": "### Dit jusqu'ici",
+      "noNew": "(Rien de nouveau depuis votre dernier tour.)"
+    },
+    "label": {
+      "answer": "Réponse de la personne",
+      "notice": "Avis",
+      "question": "{{name}} (modérateur) a demandé à la personne",
+      "moderator": "{{name}} (modérateur)"
+    },
+    "problems": {
+      "no-json": "Aucun objet JSON avec action.",
+      "bad-action": "action doit valoir next, ask_user ou wrap.",
+      "no-speakers": "next demande au moins une entrée dans speakers.",
+      "unknown-speaker": "Un id de speakers n'est pas l'id d'un débatteur.",
+      "moderator-speaker": "Vous ne pouvez pas vous donner la parole. Choisissez seulement des débatteurs.",
+      "duplicate-speaker": "Le même débatteur est appelé deux fois dans une consigne.",
+      "empty-question": "question est vide.",
+      "empty-summary": "summary est vide."
+    },
+    "notify": {
+      "question": "Question de la discussion : {{topic}}"
+    },
+    "blocked": {
+      "discussion-not-ready": "Seule une discussion prête peut être lancée.",
+      "discussion-invalid": "La discussion a un problème et ne peut pas démarrer. Vérifiez-la dans Modifier.",
+      "discussion-busy": "Une autre discussion est en cours. Une seule discussion peut avoir lieu à la fois.",
+      "discussion-missing-member": "Un membre supprimé fait partie des participants. Retirez-le dans Modifier.",
+      "discussion-observer-off": "Les hooks d'observation sont désactivés : la fin d'un tour ne peut pas être détectée. Activez l'observation dans les réglages."
+    },
+    "pause": {
+      "user": "Mise en pause par une personne.",
+      "restarted": "L'app a été rouverte et les onglets de discussion ont été fermés. Reprenez pour les rouvrir.",
+      "human-input": "Un onglet de discussion contient une saisie non envoyée : aucun tour n'a été envoyé. Envoyez-la ou effacez-la, puis reprenez.",
+      "open-failed": "Impossible d'ouvrir un onglet de discussion.",
+      "send-failed": "Impossible d'envoyer un tour.",
+      "session-ended": "Un onglet de discussion qui prenait son tour s'est terminé. Reprenez pour le rouvrir.",
+      "no-utterance": "Aucune intervention reçue même après une relance. Vérifiez l'onglet, puis reprenez.",
+      "moderator-invalid": "La consigne du modérateur reste illisible après une relance. Vérifiez l'onglet, puis reprenez."
+    },
+    "phase": {
+      "opening": "Premier tour simultané · {{done}}/{{total}} ont parlé",
+      "moderator": "Tour du modérateur {{name}}",
+      "speakers": "Tour de {{name}} ({{index}}/{{total}})",
+      "user": "Le modérateur a posé une question",
+      "wrap_up": "Conclusion en cours"
+    },
+    "actions": {
+      "start": "Démarrer",
+      "pause": "Pause",
+      "resume": "Reprendre",
+      "end": "Terminer",
+      "confirmEnd": "Vraiment terminer",
+      "answer": "Répondre"
+    },
+    "question": "Question du modérateur",
+    "answerLabel": "Réponse",
+    "answerPlaceholder": "Écrivez une réponse pour poursuivre la discussion",
+    "pausedBecause": "Raison de la pause"
   }
 }

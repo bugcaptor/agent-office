@@ -46,6 +46,42 @@
       "costUsd": 0.5,
       "createdAt": 1720000800000,
       "updatedAt": 1720000800000
+    },
+    {
+      "id": "disc-running",
+      "topic": "Where should the meeting room go?",
+      "context": "",
+      "participants": [
+        { "agentId": "p1", "roleId": "preset-moderator", "agent": { "cli": "claude" } },
+        { "agentId": "p2", "agent": { "cli": "codex" } },
+        { "agentId": "p3", "agent": { "cli": "pi" } }
+      ],
+      "moderatorAgentId": "p1",
+      "limits": { "maxRounds": 4, "maxMinutes": 30, "maxCostUsd": 7.5, "usageGuard": true },
+      "state": "paused",
+      "round": 2,
+      "transcript": [
+        { "at": 1720001000000, "round": 1, "kind": "opening", "agentId": "p2", "text": "Next to the pantry." },
+        { "at": 1720001000001, "round": 1, "kind": "opening", "agentId": "p3", "text": "In the north corner." },
+        { "at": 1720001100000, "round": 2, "kind": "moderator", "agentId": "p1", "text": "p3: why the corner?" }
+      ],
+      "costUsd": 0.75,
+      "createdAt": 1720000900000,
+      "updatedAt": 1720001200000,
+      "startedAt": 1720000950000,
+      "run": {
+        "phase": "speakers",
+        "turns": [
+          { "agentId": "p3", "question": "Why the corner?", "sessionId": "sess-3", "sentAt": 1720001100500, "nudged": true },
+          { "agentId": "p2", "question": "Reply to p3." }
+        ],
+        "seen": {
+          "p1": { "sessionId": "sess-1", "count": 2 },
+          "p3": { "sessionId": "sess-3", "count": 3 }
+        },
+        "pauseReason": "human-input",
+        "pauseDetail": "work-send-human-input"
+      }
     }
   ]
 }

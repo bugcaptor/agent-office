@@ -54,6 +54,62 @@ export interface DiscussionUtterance {
   text: string;
 }
 
+/**
+ * 진행 단계. opening = 토론자 전원 동시·비공개 발언, moderator = 사회자 지시, speakers = 사회자가 지목한 순서대로 발언,
+ * user = 사회자가 사람에게 물었다(답을 기다림), wrap_up = 정리(5·6단계가 강제 정리·결정 메모를 붙인다).
+ */
+export type DiscussionPhase = "opening" | "moderator" | "speakers" | "user" | "wrap_up";
+export const DISCUSSION_PHASES: readonly DiscussionPhase[] = ["opening", "moderator", "speakers", "user", "wrap_up"];
+
+/**
+ * 멈춘 이유. user = 사람이 멈춤, restarted = 앱을 다시 열었다(토의 세션은 재시작 때 버려진다),
+ * human-input = 탭에 쓰다 만 사람 입력이 있다, open-failed·send-failed = 세션 열기·차례 보내기 실패,
+ * session-ended = 차례를 기다리던 세션이 끝났다, no-utterance = 재촉해도 발언이 없다,
+ * moderator-invalid = 재촉해도 사회자 지시를 읽을 수 없다.
+ */
+export type DiscussionPauseReason =
+  | "user" | "restarted" | "human-input" | "open-failed" | "send-failed" | "session-ended" | "no-utterance" | "moderator-invalid";
+export const DISCUSSION_PAUSE_REASONS: readonly DiscussionPauseReason[] = [
+  "user", "restarted", "human-input", "open-failed", "send-failed", "session-ended", "no-utterance", "moderator-invalid",
+];
+
+/** 이번 단계의 차례 하나. 보내기 전에는 `sentAt`이 없고, 발언을 받으면 `text`가 생긴다. */
+export interface DiscussionTurn {
+  /** 말할 참가자(캐릭터) agentId. */
+  agentId: string;
+  /** 사회자가 이 사람에게 던진 질문(speakers 단계). */
+  question?: string;
+  /** 차례를 넣은 세션. */
+  sessionId?: string;
+  /** 차례를 넣은 시각(epoch ms). 발언 수집의 since이자 턴 종료 신호의 기준이다. */
+  sentAt?: number;
+  /** 발언이 없거나 지시를 못 읽어 재촉을 한 번 보냈다. */
+  nudged?: boolean;
+  /** 받은 발언. 동시 라운드는 전원이 낼 때까지 여기에만 두고 공개하지 않는다. */
+  text?: string;
+}
+
+/** 참가자 세션이 지금까지 받은 기록 길이. 세션이 바뀌면(다시 열면) 처음부터 다시 전한다. */
+export interface DiscussionSeen {
+  sessionId: string;
+  /** 이 세션에 전한 `transcript` 항목 수. */
+  count: number;
+}
+
+/** 실행기 상태. 시작 전과 끝난 뒤에는 없다. 앱을 다시 열어도 이어 가도록 토의에 함께 저장한다. */
+export interface DiscussionRun {
+  phase: DiscussionPhase;
+  /** opening = 토론자 전원, moderator = 사회자 한 명, speakers = 지목 순서. user·wrap_up은 비어 있다. */
+  turns: DiscussionTurn[];
+  /** 참가자 agentId → 그 세션이 본 기록. */
+  seen: Record<string, DiscussionSeen>;
+  /** user 단계에서 사회자가 사람에게 한 질문. */
+  question?: string;
+  pauseReason?: DiscussionPauseReason;
+  /** 멈춘 이유의 덧붙임(오류 코드·참가자 이름 등). */
+  pauseDetail?: string;
+}
+
 export interface Discussion {
   id: string;
   topic: string;
@@ -76,6 +132,8 @@ export interface Discussion {
   updatedAt: number;
   startedAt?: number;
   endedAt?: number;
+  /** 실행기 상태. 시작 전·끝난 뒤에는 없다. */
+  run?: DiscussionRun;
 }
 
 export interface DiscussionsFile {

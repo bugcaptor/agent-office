@@ -163,6 +163,7 @@ mod tests {
             updated_at: 1,
             started_at: None,
             ended_at: None,
+            run: None,
         }
     }
 

@@ -10,8 +10,11 @@ const api = vi.hoisted(() => ({
   saveDiscussion: vi.fn<(d: Discussion) => Promise<void>>(),
   deleteDiscussion: vi.fn<(id: string) => Promise<void>>(),
   workAgentModels: vi.fn().mockResolvedValue([]),
+  // 답한 뒤 실행기가 사회자 탭을 열려고 한다. 이 테스트는 열기 실패(멈춤)까지만 본다.
+  openDiscussionSession: vi.fn().mockRejectedValue(new Error("work-send-create-failed")),
 }));
 vi.mock("../../ipc/tauriApi", () => ({ tauriApi: api }));
+vi.mock("../../terminal/TerminalRegistry", () => ({ terminalRegistry: { ensure: vi.fn(), destroy: vi.fn(), get: vi.fn(), has: vi.fn() } }));
 vi.mock("../../workpanels/AgentFace", () => ({ AgentFace: () => null }));
 
 import { useAppStore } from "../../store/appStore";
@@ -124,6 +127,49 @@ describe("DiscussionSection", () => {
     expect(within(dialog()).getAllByText("2/4 라운드").length).toBeGreaterThan(0);
     expect(within(dialog()).queryByRole("button", { name: "고치기" })).toBeNull();
     expect(within(dialog()).queryByRole("button", { name: "삭제" })).toBeNull();
+  });
+});
+
+describe("DiscussionSection run controls", () => {
+  const open = async () => fireEvent.click(await screen.findByRole("button", { name: /회의실 이름/ }));
+
+  it("offers start for a ready discussion and explains why it is blocked", async () => {
+    api.loadDiscussions.mockResolvedValue([structuredClone(ready)]);
+    useAppStore.setState((s) => ({ appSettings: { ...s.appSettings, observerEnabled: false } }));
+    render(<DiscussionSection />);
+    await open();
+    expect((within(dialog()).getByRole("button", { name: "시작" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(within(dialog()).getByText(/관찰 훅이 꺼져/)).toBeTruthy();
+    act(() => useAppStore.setState((s) => ({ appSettings: { ...s.appSettings, observerEnabled: true } })));
+    expect((within(dialog()).getByRole("button", { name: "시작" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("highlights a card whose moderator asked the person and takes the answer from the detail", async () => {
+    const waiting: Discussion = { ...structuredClone(ready), state: "waiting_user", round: 2, run: { phase: "user", turns: [], seen: {}, question: "예산은 얼마인가요?" } };
+    api.loadDiscussions.mockResolvedValue([waiting]);
+    render(<DiscussionSection />);
+    const card = (await screen.findByRole("button", { name: /회의실 이름/ })).closest("article")!;
+    expect(card.classList.contains("attention")).toBe(true);
+    fireEvent.click(within(card).getByRole("button", { name: /회의실 이름/ }));
+    expect(within(dialog()).getByText("예산은 얼마인가요?")).toBeTruthy();
+    const submit = within(dialog()).getByRole("button", { name: "답하기" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    fireEvent.change(within(dialog()).getByRole("textbox", { name: "답" }), { target: { value: "10만 원" } });
+    fireEvent.click(submit);
+    const d = useDiscussionStore.getState().discussions[0];
+    expect(d.transcript.slice(-1)[0]).toMatchObject({ kind: "answer", text: "10만 원" });
+    expect(d.run?.phase).toBe("moderator");
+  });
+
+  it("shows why a discussion paused and offers resume and end", async () => {
+    const paused: Discussion = { ...structuredClone(ready), state: "paused", round: 1, run: { phase: "opening", turns: [], seen: {}, pauseReason: "human-input" } };
+    api.loadDiscussions.mockResolvedValue([paused]);
+    render(<DiscussionSection />);
+    await open();
+    expect(within(dialog()).getByText(/쓰다 만 입력/)).toBeTruthy();
+    expect(within(dialog()).getByRole("button", { name: "계속" })).toBeTruthy();
+    fireEvent.click(within(dialog()).getByRole("button", { name: "끝내기" }));
+    expect(within(dialog()).getByRole("button", { name: "정말 끝내기" })).toBeTruthy();
   });
 });
 

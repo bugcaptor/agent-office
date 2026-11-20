@@ -1486,6 +1486,45 @@ pub struct DiscussionUtterance {
     #[serde(default, skip_serializing_if = "Option::is_none")] pub agent_id: Option<String>,
     pub text: String,
 }
+/// 진행 단계. TS `DiscussionPhase` 미러.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscussionPhase { Opening, Moderator, Speakers, User, WrapUp }
+/// 멈춘 이유. TS `DiscussionPauseReason` 미러.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiscussionPauseReason { User, Restarted, HumanInput, OpenFailed, SendFailed, SessionEnded, NoUtterance, ModeratorInvalid }
+/// 이번 단계의 차례 하나. 보내기 전에는 `sent_at`이 없고, 발언을 받으면 `text`가 생긴다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscussionTurn {
+    pub agent_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub question: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub sent_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub nudged: Option<bool>,
+    /// 동시 라운드는 전원이 낼 때까지 여기에만 두고 공개하지 않는다.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub text: Option<String>,
+}
+/// 참가자 세션이 지금까지 받은 기록 길이. 세션이 바뀌면 처음부터 다시 전한다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscussionSeen {
+    pub session_id: String,
+    pub count: u32,
+}
+/// 실행기 상태. 시작 전·끝난 뒤에는 없다. 앱을 다시 열어도 이어 가도록 함께 저장한다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscussionRun {
+    pub phase: DiscussionPhase,
+    #[serde(default)] pub turns: Vec<DiscussionTurn>,
+    /// 참가자 agentId → 그 세션이 본 기록.
+    #[serde(default)] pub seen: std::collections::BTreeMap<String, DiscussionSeen>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub question: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub pause_reason: Option<DiscussionPauseReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub pause_detail: Option<String>,
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Discussion {
@@ -1510,6 +1549,8 @@ pub struct Discussion {
     pub updated_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub started_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub ended_at: Option<i64>,
+    /// 실행기 상태(렌더러 실행기가 쓴다). 시작 전·끝난 뒤에는 없다.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub run: Option<DiscussionRun>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

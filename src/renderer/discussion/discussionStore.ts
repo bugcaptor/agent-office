@@ -20,11 +20,17 @@ interface DiscussionStoreState {
   ensureLoaded(): Promise<void>;
   load(): Promise<void>;
   save(discussion: Discussion): Promise<void>;
+  /**
+   * 실행기용 저장. 스토어를 먼저 바로 고치고 저장은 순서대로 내보낸다. 동시 라운드에서 여러 발언을
+   * 거의 한꺼번에 받아도 옛 스냅샷이 새 것을 덮지 않는다. 저장 실패는 다음 저장이 통째로 바로잡는다.
+   */
+  commit(discussion: Discussion): Promise<void>;
   remove(id: string): Promise<void>;
   openDialog(dialog: DiscussionDialog): void;
 }
 
 let inflight: Promise<void> | null = null;
+let saving: Promise<void> = Promise.resolve();
 
 export const useDiscussionStore = create<DiscussionStoreState>((set, get) => ({
   discussions: [],
@@ -53,6 +59,15 @@ export const useDiscussionStore = create<DiscussionStoreState>((set, get) => ({
         : [...s.discussions, discussion],
     }));
   },
+  commit: (discussion) => {
+    set((s) => ({
+      discussions: s.discussions.some((d) => d.id === discussion.id)
+        ? s.discussions.map((d) => (d.id === discussion.id ? discussion : d))
+        : [...s.discussions, discussion],
+    }));
+    saving = saving.then(() => tauriApi.saveDiscussion(discussion)).catch((e: unknown) => { console.warn("discussion: save failed", e); });
+    return saving;
+  },
   remove: async (id) => {
     await tauriApi.deleteDiscussion(id);
     set((s) => ({ discussions: s.discussions.filter((d) => d.id !== id), dialog: null }));
@@ -68,5 +83,6 @@ export function sortDiscussions(list: readonly Discussion[]): Discussion[] {
 /** 테스트용 초기화. */
 export function resetDiscussionStoreForTest(): void {
   inflight = null;
+  saving = Promise.resolve();
   useDiscussionStore.setState({ discussions: [], status: "idle", error: undefined, dialog: null });
 }

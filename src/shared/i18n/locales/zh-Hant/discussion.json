@@ -200,5 +200,72 @@
     "tooltip": "討論：{{topic}}",
     "tooltipModerator": "討論主持：{{topic}}",
     "unknownTopic": "（已刪除的討論）"
+  },
+  "run": {
+    "prompt": {
+      "opening": "這是第一輪。所有辯論者在看不到彼此意見的情況下同時發言。請從角色卡的觀點就主題發表你的意見。如有需要，可以先閱讀程式碼和文件。",
+      "speaker": "主持人點名請你發言。\n\n問題：{{question}}\n\n請反駁或補充前面的發言。不要重複已經說過的內容。",
+      "moderator": "輪到主持人（目前第 {{round}} 輪，最多 {{max}} 輪）。根據已有發言，從下列選項中選一個，只提交一個 JSON 作為指示，不要加其他文字。\n\n```json\n{{format}}\n```\n\n- next：依序點名一位或多位辯論者反駁或補充，並給每人一個問題。後發言的人能看到前面的人說了什麼。點名一次算一輪。\n- ask_user：只有在沒有人的決定或資訊就無法繼續時才向人提問。收到答覆後又輪到你。\n- wrap：意見已經收斂或繼續討論也不會更好時進行總結。在 summary 中寫出結論、依據、被否決的方案和遺留問題。\n\n辯論者（id 請使用以下值）：\n{{roster}}",
+      "nudge": "沒有收到你這一輪的發言。請用提交命令重新提交。如果無法使用該命令，請在最後的回覆中只寫發言內容。",
+      "invalid": "無法讀取指示：{{problem}} 請重新提交一個格式正確的 JSON。\n\n```json\n{{format}}\n```",
+      "newHeader": "### 你上一輪之後的發言",
+      "allHeader": "### 到目前為止的發言",
+      "noNew": "（你上一輪之後沒有新的發言。）"
+    },
+    "label": {
+      "answer": "人的答覆",
+      "notice": "通知",
+      "question": "{{name}}（主持人）向人提的問題",
+      "moderator": "{{name}}（主持人）"
+    },
+    "problems": {
+      "no-json": "沒有包含 action 的 JSON 物件。",
+      "bad-action": "action 必須是 next、ask_user 或 wrap 之一。",
+      "no-speakers": "next 至少需要一個 speakers 項目。",
+      "unknown-speaker": "speakers 中的 id 不是辯論者的 id。",
+      "moderator-speaker": "不能點名主持人。只能點名辯論者。",
+      "duplicate-speaker": "一次指示中重複點名了同一位辯論者。",
+      "empty-question": "question 是空的。",
+      "empty-summary": "summary 是空的。"
+    },
+    "notify": {
+      "question": "討論提問：{{topic}}"
+    },
+    "blocked": {
+      "discussion-not-ready": "只能開始處於準備狀態的討論。",
+      "discussion-invalid": "討論內容有問題，無法開始。請在編輯中檢查。",
+      "discussion-busy": "另一個討論正在進行。一次只能進行一個討論。",
+      "discussion-missing-member": "參與者中有已刪除的成員。請在編輯中移除。",
+      "discussion-observer-off": "觀察鉤子已關閉，無法得知一輪何時結束。請在設定中開啟觀察。"
+    },
+    "pause": {
+      "user": "已被人暫停。",
+      "restarted": "應用程式重新開啟，討論分頁已關閉。繼續時會重新開啟。",
+      "human-input": "討論分頁裡有未送出的輸入，所以沒有送出這一輪。送出或清除後再繼續。",
+      "open-failed": "無法開啟討論分頁。",
+      "send-failed": "無法送出這一輪。",
+      "session-ended": "正在進行這一輪的討論分頁已結束。繼續時會重新開啟。",
+      "no-utterance": "再次請求後仍未收到發言。請檢查分頁後再繼續。",
+      "moderator-invalid": "再次請求後仍無法讀取主持人的指示。請檢查分頁後再繼續。"
+    },
+    "phase": {
+      "opening": "同時進行的第一輪 · {{done}}/{{total}} 人已發言",
+      "moderator": "輪到主持人 {{name}}",
+      "speakers": "輪到 {{name}} 發言（{{index}}/{{total}}）",
+      "user": "主持人提出了問題",
+      "wrap_up": "正在總結"
+    },
+    "actions": {
+      "start": "開始",
+      "pause": "暫停",
+      "resume": "繼續",
+      "end": "結束",
+      "confirmEnd": "確認結束",
+      "answer": "回答"
+    },
+    "question": "主持人的問題",
+    "answerLabel": "答覆",
+    "answerPlaceholder": "寫下答覆後討論會繼續",
+    "pausedBecause": "暫停原因"
   }
 }

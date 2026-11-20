@@ -200,5 +200,72 @@
     "tooltip": "Discussion: {{topic}}",
     "tooltipModerator": "Discussion moderator: {{topic}}",
     "unknownTopic": "(deleted discussion)"
+  },
+  "run": {
+    "prompt": {
+      "opening": "This is the first round. Every debater speaks at the same time without seeing the others. Give your opinion on the topic from the perspective on your role card. You may read code and documents first if you need to.",
+      "speaker": "The moderator has called on you.\n\nQuestion: {{question}}\n\nAnswer by rebutting or building on what was said before. Do not repeat points already made.",
+      "moderator": "It is the moderator's turn (round {{round}} of at most {{max}}). Look at what was said, choose one of the following and submit a single JSON object as your instruction. Do not add any other text.\n\n```json\n{{format}}\n```\n\n- next: call on one or more debaters in order to rebut or build on the discussion, with a question for each. Later speakers see what the earlier ones said. One call is one round.\n- ask_user: ask the person only when the discussion cannot go on without their decision or information. When the answer comes, it is your turn again.\n- wrap: wrap up when views have converged or more talk will not help. In summary, write the conclusion, the reasons, the rejected alternatives and the open issues.\n\nDebaters (use these values for id):\n{{roster}}",
+      "nudge": "Your utterance for this turn did not arrive. Submit it again with the submit command. If you cannot run the command, write only your utterance in your final reply.",
+      "invalid": "Your instruction could not be read: {{problem}} Submit a single JSON object in the right format again.\n\n```json\n{{format}}\n```",
+      "newHeader": "### Said since your last turn",
+      "allHeader": "### Said so far",
+      "noNew": "(Nothing new has been said since your last turn.)"
+    },
+    "label": {
+      "answer": "The person's answer",
+      "notice": "Notice",
+      "question": "{{name}} (moderator) asked the person",
+      "moderator": "{{name}} (moderator)"
+    },
+    "problems": {
+      "no-json": "There is no JSON object with an action.",
+      "bad-action": "action must be one of next, ask_user and wrap.",
+      "no-speakers": "next needs at least one entry in speakers.",
+      "unknown-speaker": "An id in speakers is not a debater id.",
+      "moderator-speaker": "You cannot call on the moderator. Call on debaters only.",
+      "duplicate-speaker": "The same debater was called twice in one instruction.",
+      "empty-question": "question is empty.",
+      "empty-summary": "summary is empty."
+    },
+    "notify": {
+      "question": "Discussion question: {{topic}}"
+    },
+    "blocked": {
+      "discussion-not-ready": "Only a discussion that is ready can be started.",
+      "discussion-invalid": "The discussion has a problem and cannot start. Check it in Edit.",
+      "discussion-busy": "Another discussion is in progress. Only one discussion can run at a time.",
+      "discussion-missing-member": "A deleted member is among the participants. Remove them in Edit.",
+      "discussion-observer-off": "Observation hooks are off, so the end of a turn cannot be detected. Turn observation on in Settings."
+    },
+    "pause": {
+      "user": "Paused by a person.",
+      "restarted": "The app was reopened and the discussion tabs were closed. Resume to open them again.",
+      "human-input": "A discussion tab has unsent input, so no turn was sent. Send or clear it, then resume.",
+      "open-failed": "A discussion tab could not be opened.",
+      "send-failed": "A turn could not be sent.",
+      "session-ended": "A discussion tab that was taking its turn has ended. Resume to open it again.",
+      "no-utterance": "No utterance arrived even after asking again. Check the tab, then resume.",
+      "moderator-invalid": "The moderator's instruction could not be read even after asking again. Check the tab, then resume."
+    },
+    "phase": {
+      "opening": "Simultaneous first round · {{done}}/{{total}} spoke",
+      "moderator": "Moderator {{name}}'s turn",
+      "speakers": "{{name}}'s turn ({{index}}/{{total}})",
+      "user": "The moderator asked a question",
+      "wrap_up": "Wrapping up"
+    },
+    "actions": {
+      "start": "Start",
+      "pause": "Pause",
+      "resume": "Resume",
+      "end": "End",
+      "confirmEnd": "Really end",
+      "answer": "Answer"
+    },
+    "question": "Moderator's question",
+    "answerLabel": "Answer",
+    "answerPlaceholder": "Write an answer and the discussion goes on",
+    "pausedBecause": "Paused because"
   }
 }

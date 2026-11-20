@@ -37,6 +37,7 @@ import { installSessionSummaryRecorder } from "./workpanels/sessionSummaryStore"
 import { installWorkMonitor } from "./workpanels/workMonitor";
 import { installTaskChatTracking } from "./workpanels/taskChatStore";
 import { installDiscussionSessionTracking } from "./discussion/discussionSessionStore";
+import { installDiscussionRunner } from "./discussion/discussionRun";
 import { installAutoRun } from "./workpanels/autoRun";
 import { installAutoRunControl } from "./workpanels/autoRunControl";
 import { installScheduleRunner } from "./workpanels/scheduleRunner";
@@ -162,6 +163,8 @@ export async function bootApp(): Promise<() => void> {
   const offTaskChats = installTaskChatTracking();
   // 토의 참가자 탭의 세션 상태·턴 단계.
   const offDiscussionSessions = installDiscussionSessionTracking();
+  // 토의 실행기. 토의 세션의 턴 단계를 신호로 쓰므로 그 뒤에 건다. 재시작 전 진행 중이던 토의는 멈춤이 된다.
+  const offDiscussionRunner = installDiscussionRunner();
   // 자동 진행은 업무 상태 전이(모니터)를 신호로 쓰므로 그 뒤에 건다.
   // 자동 진행의 사용량 대기가 쓰는 비율 학습. 사용량 조회값이 바뀔 때마다 배운다.
   const offUsageForecast = installUsageForecast();
@@ -220,6 +223,7 @@ export async function bootApp(): Promise<() => void> {
     offSessionSummaries();
     offWorkMonitor();
     offTaskChats();
+    offDiscussionRunner();
     offDiscussionSessions();
     offAutoRun();
     offAutoRunControl();

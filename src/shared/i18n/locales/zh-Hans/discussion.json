@@ -200,5 +200,72 @@
     "tooltip": "讨论：{{topic}}",
     "tooltipModerator": "讨论主持：{{topic}}",
     "unknownTopic": "（已删除的讨论）"
+  },
+  "run": {
+    "prompt": {
+      "opening": "这是第一轮。所有辩论者在看不到彼此意见的情况下同时发言。请从角色卡的视角就主题发表你的意见。如有需要，可以先阅读代码和文档。",
+      "speaker": "主持人点名请你发言。\n\n问题：{{question}}\n\n请反驳或补充前面的发言。不要重复已经说过的内容。",
+      "moderator": "轮到主持人（当前第 {{round}} 轮，最多 {{max}} 轮）。根据已有发言，从下列选项中选一个，只提交一个 JSON 作为指示，不要加其他文字。\n\n```json\n{{format}}\n```\n\n- next：按顺序点名一位或多位辩论者反驳或补充，并给每人一个问题。后发言的人能看到前面的人说了什么。点名一次算一轮。\n- ask_user：只有在没有人的决定或信息就无法继续时才向人提问。收到答复后又轮到你。\n- wrap：意见已经收敛或继续讨论也不会更好时进行总结。在 summary 中写出结论、依据、被否决的方案和遗留问题。\n\n辩论者（id 请使用以下值）：\n{{roster}}",
+      "nudge": "没有收到你这一轮的发言。请用提交命令重新提交。如果无法使用该命令，请在最后的回复中只写发言内容。",
+      "invalid": "无法读取指示：{{problem}} 请重新提交一个格式正确的 JSON。\n\n```json\n{{format}}\n```",
+      "newHeader": "### 你上一轮之后的发言",
+      "allHeader": "### 到目前为止的发言",
+      "noNew": "（你上一轮之后没有新的发言。）"
+    },
+    "label": {
+      "answer": "人的答复",
+      "notice": "通知",
+      "question": "{{name}}（主持人）向人提的问题",
+      "moderator": "{{name}}（主持人）"
+    },
+    "problems": {
+      "no-json": "没有包含 action 的 JSON 对象。",
+      "bad-action": "action 必须是 next、ask_user 或 wrap 之一。",
+      "no-speakers": "next 至少需要一个 speakers 项。",
+      "unknown-speaker": "speakers 中的 id 不是辩论者的 id。",
+      "moderator-speaker": "不能点名主持人。只能点名辩论者。",
+      "duplicate-speaker": "一次指示中重复点名了同一位辩论者。",
+      "empty-question": "question 为空。",
+      "empty-summary": "summary 为空。"
+    },
+    "notify": {
+      "question": "讨论提问：{{topic}}"
+    },
+    "blocked": {
+      "discussion-not-ready": "只能开始处于准备状态的讨论。",
+      "discussion-invalid": "讨论内容有问题，无法开始。请在编辑中检查。",
+      "discussion-busy": "另一个讨论正在进行。一次只能进行一个讨论。",
+      "discussion-missing-member": "参与者中有已删除的成员。请在编辑中移除。",
+      "discussion-observer-off": "观察钩子已关闭，无法得知一轮何时结束。请在设置中开启观察。"
+    },
+    "pause": {
+      "user": "已被人暂停。",
+      "restarted": "应用重新打开，讨论标签页已关闭。继续时会重新打开。",
+      "human-input": "讨论标签页里有未发送的输入，所以没有发送这一轮。发送或清除后再继续。",
+      "open-failed": "无法打开讨论标签页。",
+      "send-failed": "无法发送这一轮。",
+      "session-ended": "正在进行这一轮的讨论标签页已结束。继续时会重新打开。",
+      "no-utterance": "再次请求后仍未收到发言。请检查标签页后再继续。",
+      "moderator-invalid": "再次请求后仍无法读取主持人的指示。请检查标签页后再继续。"
+    },
+    "phase": {
+      "opening": "同时进行的第一轮 · {{done}}/{{total}} 人已发言",
+      "moderator": "轮到主持人 {{name}}",
+      "speakers": "轮到 {{name}} 发言（{{index}}/{{total}}）",
+      "user": "主持人提出了问题",
+      "wrap_up": "正在总结"
+    },
+    "actions": {
+      "start": "开始",
+      "pause": "暂停",
+      "resume": "继续",
+      "end": "结束",
+      "confirmEnd": "确认结束",
+      "answer": "回答"
+    },
+    "question": "主持人的问题",
+    "answerLabel": "答复",
+    "answerPlaceholder": "写下答复后讨论会继续",
+    "pausedBecause": "暂停原因"
   }
 }

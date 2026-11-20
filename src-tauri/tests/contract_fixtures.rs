@@ -28,7 +28,7 @@ use agent_office_lib::types::{
     ActivityEvent, ActivityKind, AdoptedSessionInfo, AwardsFile,
     CollectedUtterance, CreateSessionRequest, CreateSessionResult, DiscussionCollectRequest, DiscussionCollection,
     DiscussionReadOnly, DiscussionSessionRequest, DiscussionSessionResult, DiscussionUtteranceSource, MemoSheet, MemoSheetMeta,
-    DiscussionStance, DiscussionState, DiscussionUtteranceKind, DiscussionsFile, NotificationEvent, NotificationSource, OutputChunk, PersistedState, RolesFile, SessionEventTokens,
+    DiscussionPauseReason, DiscussionPhase, DiscussionStance, DiscussionState, DiscussionUtteranceKind, DiscussionsFile, NotificationEvent, NotificationSource, OutputChunk, PersistedState, RolesFile, SessionEventTokens,
     SessionExitInfo, SessionState, SessionStateEvent, TaskChatRequest, TaskChatResult, TurnUsageEvent,
     WorkCli, WorkStatus,
 };
@@ -526,12 +526,18 @@ fn roles_file_roundtrips() {
 fn discussions_file_roundtrips() {
     assert_roundtrip::<DiscussionsFile>(fixture!("discussions-file.json"));
     let parsed: DiscussionsFile = serde_json::from_str(fixture!("discussions-file.json")).unwrap();
-    let [full, ready] = &parsed.discussions[..] else { panic!("two discussions") };
+    let [full, ready, running] = &parsed.discussions[..] else { panic!("three discussions") };
     assert_eq!((full.state, ready.state), (DiscussionState::Finished, DiscussionState::Ready));
     assert_eq!(full.participants[1].agent.cli, WorkCli::Codex);
     assert_eq!(full.transcript[3].kind, DiscussionUtteranceKind::Answer);
     assert!(full.transcript[3].agent_id.is_none());
     assert!(ready.cwd.is_none() && ready.decision_memo_path.is_none() && ready.started_at.is_none());
+    assert!(full.run.is_none() && ready.run.is_none());
+    let run = running.run.as_ref().expect("running discussion keeps its run state");
+    assert_eq!(run.phase, DiscussionPhase::Speakers);
+    assert_eq!(run.pause_reason, Some(DiscussionPauseReason::HumanInput));
+    assert_eq!((run.turns[0].sent_at, run.turns[1].sent_at), (Some(1720001100500), None));
+    assert_eq!(run.seen["p3"].count, 3);
     for d in &parsed.discussions {
         assert_eq!(agent_office_lib::persistence::discussion_store::discussion_problem(d), None);
     }

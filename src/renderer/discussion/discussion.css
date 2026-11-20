@@ -108,3 +108,16 @@
 .discussion-card .discussion-readonly { display: block; color: var(--text-dim); }
 .discussion-readonly.readonly-partial,
 .discussion-readonly.readonly-prompt { color: var(--accent-warn); }
+
+/* 진행 조작·사회자 질문. 사람의 답을 기다리는 카드는 눈에 띄게 한다. */
+.discussion-card.attention { border-color: var(--accent-warn); box-shadow: 0 0 0 2px var(--accent-warn); }
+.discussion-card-heading small.discussion-run-status, .discussion-run-status { display: block; color: var(--accent); }
+.discussion-card.attention .discussion-run-status { color: var(--accent-warn); font-weight: bold; }
+.discussion-run { margin: 8px 0; }
+.discussion-run-paused { margin: 6px 0; color: var(--accent-warn); overflow-wrap: anywhere; }
+.discussion-run-question { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; padding: 8px; border: 2px solid var(--accent-warn); }
+.discussion-run-question p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.discussion-run-question label { display: flex; flex-direction: column; gap: 4px; }
+.discussion-run-question textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; }
+.discussion-run-question button { align-self: flex-end; }
+.discussion-run-actions { justify-content: flex-end; }

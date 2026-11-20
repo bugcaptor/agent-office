@@ -45,6 +45,8 @@ export interface DiscussionSession {
   /** 관찰 훅이 붙었는가. 거짓이면 턴 단계가 바뀌지 않는다. */
   observed: boolean;
   openedAt: number;
+  /** 첫 프롬프트를 넣은 시각(네이티브 epoch ms). 첫 프롬프트에 차례를 실었다면 그 수집의 since다. */
+  submittedAt: number;
   /** 마지막 턴 단계와 그 시각(관찰 신호의 at). 첫 신호 전에는 없다. */
   turn?: { phase: DiscussionTurnPhase; at: number };
 }
@@ -176,7 +178,7 @@ export async function openDiscussionSession(
     const status = seen?.sessionId === result.sessionId ? seen.status : "running";
     const session: DiscussionSession = {
       agentId, discussionId, participantAgentId, sessionId: result.sessionId, cli: participant.agent.cli, status,
-      readOnly: result.readOnly, collection: result.collection, observed: result.observed, openedAt: Date.now(),
+      readOnly: result.readOnly, collection: result.collection, observed: result.observed, openedAt: Date.now(), submittedAt: result.submittedAt,
       ...(seen?.sessionId === result.sessionId && seen.turn ? { turn: seen.turn } : {}),
     };
     useDiscussionSessionStore.setState((s) => ({

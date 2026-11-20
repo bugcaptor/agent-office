@@ -308,6 +308,9 @@ Object.assign(harness, {
   taskChatRequests,
   /** 토의 참가자 세션 스토어(예: `openDiscussionSession`). */
   discussionSessionStore: async () => await import("../discussion/discussionSessionStore"),
+  /** 토의 목록 스토어와 실행기(예: 상태를 바꿔 질문 대기 장면 만들기, `startDiscussion`). */
+  discussionStore: async () => await import("../discussion/discussionStore"),
+  discussionRun: async () => await import("../discussion/discussionRun"),
   discussionSessionRequests,
   /** 외부 파일 쓰기처럼 백엔드 스냅샷만 교체한다. 렌더러가 poll로 받아야 한다. */
   replaceWorkItems: (items: WorkItem[]) => { workItems = structuredClone(items); },

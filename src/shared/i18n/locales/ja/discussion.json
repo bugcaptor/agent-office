@@ -200,5 +200,72 @@
     "tooltip": "議論: {{topic}}",
     "tooltipModerator": "議論の司会: {{topic}}",
     "unknownTopic": "(削除された議論)"
+  },
+  "run": {
+    "prompt": {
+      "opening": "第1ラウンドです。討論者全員が互いの意見を見ずに同時に発言します。役割カードの観点から、テーマについてのあなたの意見を述べてください。必要なら先にコードや文書を読んでもかまいません。",
+      "speaker": "司会者があなたを指名しました。\n\n質問: {{question}}\n\nこれまでの発言に反論するか補って答えてください。すでに出た内容は繰り返さないでください。",
+      "moderator": "司会者の番です(現在 {{round}} ラウンド、最大 {{max}} ラウンド)。出た発言を見て次のいずれかを決め、JSON を1つだけ指示として提出してください。ほかの文章は入れないでください。\n\n```json\n{{format}}\n```\n\n- next: 反論・補足させる討論者を順に1人以上指名し、それぞれに質問を出します。後の人は前の人の発言を見てから話します。指名1回が1ラウンドです。\n- ask_user: 人の判断や情報がないと先に進めないときだけ人に質問します。答えが来たら再びあなたの番です。\n- wrap: 意見がまとまったか、これ以上話しても進まないときにまとめます。summary に結論、根拠、退けた案、残った論点を書いてください。\n\n討論者(id には次の値を使ってください):\n{{roster}}",
+      "nudge": "この番の発言を受け取れませんでした。提出コマンドで発言をもう一度出してください。コマンドを使えない場合は、最後の回答に発言だけを書いてください。",
+      "invalid": "指示を読み取れませんでした: {{problem}} 形式に合った JSON を1つだけもう一度提出してください。\n\n```json\n{{format}}\n```",
+      "newHeader": "### 前回の番以降の発言",
+      "allHeader": "### これまでの発言",
+      "noNew": "(前回の番以降、新しい発言はありません。)"
+    },
+    "label": {
+      "answer": "人の答え",
+      "notice": "お知らせ",
+      "question": "{{name}}(司会者)から人への質問",
+      "moderator": "{{name}}(司会者)"
+    },
+    "problems": {
+      "no-json": "action を含む JSON オブジェクトがありません。",
+      "bad-action": "action は next・ask_user・wrap のいずれかにしてください。",
+      "no-speakers": "next には speakers が1人以上必要です。",
+      "unknown-speaker": "speakers の id が討論者の id ではありません。",
+      "moderator-speaker": "司会者は指名できません。討論者だけを指名してください。",
+      "duplicate-speaker": "1回の指示で同じ討論者を2回指名しました。",
+      "empty-question": "question が空です。",
+      "empty-summary": "summary が空です。"
+    },
+    "notify": {
+      "question": "討議の質問: {{topic}}"
+    },
+    "blocked": {
+      "discussion-not-ready": "準備中の討議だけを開始できます。",
+      "discussion-invalid": "討議の内容に問題があり開始できません。編集で確認してください。",
+      "discussion-busy": "ほかの討議が進行中です。討議は一度に1つだけ進められます。",
+      "discussion-missing-member": "削除されたメンバーが参加者にいます。編集で外してください。",
+      "discussion-observer-off": "観察フックがオフのため、番の終わりがわかりません。設定で観察をオンにしてください。"
+    },
+    "pause": {
+      "user": "人が一時停止しました。",
+      "restarted": "アプリを開き直したため討議タブが閉じました。続けるとタブを開き直します。",
+      "human-input": "討議タブに書きかけの入力があるため番を送りませんでした。入力を送るか消してから続けてください。",
+      "open-failed": "討議タブを開けませんでした。",
+      "send-failed": "番を送れませんでした。",
+      "session-ended": "番を待っていた討議タブが終了しました。続けると開き直します。",
+      "no-utterance": "もう一度頼んでも発言を受け取れませんでした。タブを確認してから続けてください。",
+      "moderator-invalid": "もう一度頼んでも司会者の指示を読み取れませんでした。タブを確認してから続けてください。"
+    },
+    "phase": {
+      "opening": "同時の第1ラウンド · {{done}}/{{total}} 人が発言",
+      "moderator": "司会者 {{name}} の番",
+      "speakers": "{{name}} の発言の番 ({{index}}/{{total}})",
+      "user": "司会者が質問しました",
+      "wrap_up": "まとめ中"
+    },
+    "actions": {
+      "start": "開始",
+      "pause": "一時停止",
+      "resume": "続ける",
+      "end": "終了",
+      "confirmEnd": "本当に終了",
+      "answer": "答える"
+    },
+    "question": "司会者の質問",
+    "answerLabel": "答え",
+    "answerPlaceholder": "答えを書くと討議が続きます",
+    "pausedBecause": "停止の理由"
   }
 }

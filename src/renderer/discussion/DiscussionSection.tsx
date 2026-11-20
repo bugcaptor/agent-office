@@ -1,7 +1,8 @@
 // src/renderer/discussion/DiscussionSection.tsx
 //
 // 업무 패널의 토의 카드 묶음과 토의 대화상자(열기·보기·고치기).
-// 토의가 하나도 없으면 묶음은 숨기고 대화상자만 띄운다. 실행(시작)은 3·4단계에서 붙는다.
+// 토의가 하나도 없으면 묶음은 숨기고 대화상자만 띄운다. 시작·멈춤·계속·끝내기와 사회자 질문의 답은
+// 보기 대화상자에서 한다(진행은 discussionRun.ts).
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -15,6 +16,9 @@ import { sortDiscussions, useDiscussionStore } from "./discussionStore";
 import { discussionDeletable, discussionEditable, discussionReadOnlySummary } from "./discussionModel";
 import { discussionReadOnlyMode } from "@shared/types";
 import { DiscussionEditor } from "./DiscussionEditor";
+import {
+  answerDiscussion, discussionStartBlockedReason, endDiscussion, pauseDiscussion, resumeDiscussion, startDiscussion,
+} from "./discussionRun";
 import "./discussion.css";
 
 /** 접힘 상태 키(캐릭터 묶음과 같은 저장소). */
@@ -51,11 +55,29 @@ function limitsText(t: (key: string, options?: Record<string, unknown>) => strin
   return t("board.limits", { rounds: d.limits.maxRounds, minutes: d.limits.maxMinutes, cost: d.limits.maxCostUsd });
 }
 
+/** 진행 중인 단계 한 줄. 시작 전·끝난 뒤에는 없다. */
+function RunStatus({ discussion: d }: { discussion: Discussion }) {
+  const { t } = useTranslation("discussion");
+  const agents = useAppStore((s) => s.agents);
+  const run = d.run;
+  if (!run) return null;
+  const name = (id: string | undefined) => (id && agents[id]?.name) || t("board.missingAgent");
+  let text: string;
+  if (run.phase === "opening") text = t("run.phase.opening", { done: run.turns.filter((x) => x.text !== undefined).length, total: run.turns.length });
+  else if (run.phase === "speakers") {
+    const index = run.turns.findIndex((x) => x.text === undefined);
+    text = t("run.phase.speakers", { name: name(run.turns[index]?.agentId), index: index + 1, total: run.turns.length });
+  } else if (run.phase === "moderator") text = t("run.phase.moderator", { name: name(d.moderatorAgentId) });
+  else text = t(`run.phase.${run.phase}`);
+  return <small className="discussion-run-status">{text}</small>;
+}
+
 function DiscussionCard({ discussion: d, selected, onOpen }: { discussion: Discussion; selected: boolean; onOpen(): void }) {
   const { t } = useTranslation("discussion");
   const agents = useAppStore((s) => s.agents);
   const debaters = d.participants.filter((p) => p.agentId !== d.moderatorAgentId);
-  return <article className={`discussion-card state-${d.state}${selected ? " selected" : ""}`}>
+  // 사회자가 사람에게 물으면 카드를 강조한다.
+  return <article className={`discussion-card state-${d.state}${d.state === "waiting_user" ? " attention" : ""}${selected ? " selected" : ""}`}>
     <button type="button" className="discussion-card-heading" aria-haspopup="dialog" onClick={onOpen}>
       <span className="discussion-card-title">
         <span className={`work-status-chip discussion-state-chip state-${d.state}`}>{t(`states.${d.state}`)}</span>
@@ -66,6 +88,7 @@ function DiscussionCard({ discussion: d, selected, onOpen }: { discussion: Discu
         {debaters.map((p) => <span key={p.agentId} title={agents[p.agentId]?.name ?? t("board.missingAgent")}><AgentFace agentId={p.agentId} /></span>)}
       </span>
       <small>{d.state === "ready" ? limitsText(t, d) : t("board.progress", { round: d.round, max: d.limits.maxRounds })}</small>
+      <RunStatus discussion={d} />
       <ReadOnlyBadge discussion={d} />
     </button>
   </article>;
@@ -94,7 +117,9 @@ function DiscussionDetail({ discussion: d, onClose }: { discussion: Discussion; 
   return <WorkDialog title={d.topic} id={d.id} onClose={onClose} className="discussion-detail">
     <p><span className={`work-status-chip discussion-state-chip state-${d.state}`}>{t(`states.${d.state}`)}</span>
       {d.state !== "ready" && t("board.progress", { round: d.round, max: d.limits.maxRounds })}</p>
+    <RunStatus discussion={d} />
     {d.context && <p className="discussion-context">{d.context}</p>}
+    <RunPanel discussion={d} />
     <dl className="discussion-facts">
       <dt>{t("detail.cwd")}</dt><dd>{d.cwd ?? t("detail.homeFolder")}</dd>
       <dt>{t("detail.limits")}</dt><dd>{limitsText(t, d)}{d.limits.usageGuard ? ` · ${t("detail.usageGuard")}` : ""}</dd>
@@ -121,4 +146,46 @@ function DiscussionDetail({ discussion: d, onClose }: { discussion: Discussion; 
     </div>
     {failed && <p className="work-send-hint" role="alert">{t("detail.deleteError")}</p>}
   </WorkDialog>;
+}
+
+/** 진행 조작(시작·멈춤·계속·끝내기), 멈춘 이유, 사회자 질문과 답 입력. */
+function RunPanel({ discussion: d }: { discussion: Discussion }) {
+  const { t } = useTranslation("discussion");
+  const agents = useAppStore((s) => s.agents);
+  const observerEnabled = useAppStore((s) => s.appSettings.observerEnabled);
+  const discussions = useDiscussionStore((s) => s.discussions);
+  const [answer, setAnswer] = useState("");
+  const [ending, setEnding] = useState(false);
+  const [error, setError] = useState<string>();
+  const run = d.run;
+  const blocked = d.state === "ready" ? discussionStartBlockedReason(d, discussions, agents, observerEnabled) : undefined;
+  const fail = (code: string | undefined) => setError(code);
+  const active = d.state !== "ready" && d.state !== "finished";
+  return <div className="discussion-run">
+    {d.state === "paused" && run?.pauseReason && <p className="discussion-run-paused" role="status">
+      <strong>{t("run.pausedBecause")}</strong> {t(`run.pause.${run.pauseReason}`)}{run.pauseDetail ? ` (${run.pauseDetail})` : ""}
+    </p>}
+    {d.state === "waiting_user" && run?.question && <form className="discussion-run-question" onSubmit={(e) => {
+      e.preventDefault();
+      if (answerDiscussion(d.id, answer)) setAnswer("");
+    }}>
+      <strong>{t("run.question")}</strong>
+      <p>{run.question}</p>
+      <label>{t("run.answerLabel")}
+        <textarea value={answer} rows={3} placeholder={t("run.answerPlaceholder")} onChange={(e) => setAnswer(e.target.value)} />
+      </label>
+      <button type="submit" className="pixel-btn primary" disabled={!answer.trim()}>{t("run.actions.answer")}</button>
+    </form>}
+    {(d.state === "ready" || active) && <div className="work-dialog-actions discussion-run-actions">
+      {d.state === "ready" && <button type="button" className="pixel-btn primary" disabled={!!blocked} title={blocked ? t(`run.blocked.${blocked}`) : undefined}
+        onClick={() => fail(startDiscussion(d.id))}>{t("run.actions.start")}</button>}
+      {(d.state === "running" || d.state === "wrapping_up") && <button type="button" className="pixel-btn" onClick={() => pauseDiscussion(d.id)}>{t("run.actions.pause")}</button>}
+      {d.state === "paused" && <button type="button" className="pixel-btn primary" onClick={() => fail(resumeDiscussion(d.id))}>{t("run.actions.resume")}</button>}
+      {active && (ending
+        ? <button type="button" className="pixel-btn danger" onClick={() => { setEnding(false); void endDiscussion(d.id); }}>{t("run.actions.confirmEnd")}</button>
+        : <button type="button" className="pixel-btn danger" onClick={() => setEnding(true)}>{t("run.actions.end")}</button>)}
+    </div>}
+    {d.state === "ready" && blocked && <p className="work-send-hint">{t(`run.blocked.${blocked}`)}</p>}
+    {error && <p className="work-send-hint" role="alert">{t(`run.blocked.${error}`)}</p>}
+  </div>;
 }

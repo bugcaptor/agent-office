@@ -200,5 +200,72 @@
     "tooltip": "토의: {{topic}}",
     "tooltipModerator": "토의 사회자: {{topic}}",
     "unknownTopic": "(지워진 토의)"
+  },
+  "run": {
+    "prompt": {
+      "opening": "첫 라운드입니다. 토론자 모두가 서로의 의견을 보지 않고 동시에 발언합니다. 역할 카드의 관점으로 주제에 대한 당신의 의견을 내세요. 필요하면 먼저 코드·문서를 읽어도 됩니다.",
+      "speaker": "사회자가 당신을 지목했습니다.\n\n질문: {{question}}\n\n앞 발언을 반박하거나 보완해 답하세요. 이미 나온 말을 되풀이하지 마세요.",
+      "moderator": "사회자 차례입니다(지금 {{round}}라운드, 최대 {{max}}라운드). 나온 발언을 보고 다음 중 하나를 정해 JSON 하나만 지시로 제출하세요. 다른 글은 넣지 마세요.\n\n```json\n{{format}}\n```\n\n- next: 반박·보완할 토론자를 순서대로 한 명 이상 지목하고 각자에게 질문을 줍니다. 뒤 사람은 앞 사람의 발언을 보고 말합니다. 지목 한 번이 한 라운드입니다.\n- ask_user: 사람의 결정이나 정보 없이는 더 나아갈 수 없을 때만 사람에게 묻습니다. 답이 오면 다시 당신 차례입니다.\n- wrap: 의견이 모였거나 더 이야기해도 나아지지 않으면 정리합니다. summary에 결론, 근거, 기각한 대안, 남은 쟁점을 적으세요.\n\n토론자(id에는 아래 값을 쓰세요):\n{{roster}}",
+      "nudge": "이번 차례의 발언을 받지 못했습니다. 발언을 제출 명령으로 다시 내세요. 제출 명령을 쓸 수 없으면 마지막 답변에 발언만 쓰세요.",
+      "invalid": "지시를 읽지 못했습니다: {{problem}} 형식에 맞는 JSON 하나만 다시 제출하세요.\n\n```json\n{{format}}\n```",
+      "newHeader": "### 지난 차례 이후 나온 발언",
+      "allHeader": "### 지금까지 나온 발언",
+      "noNew": "(지난 차례 이후 새 발언이 없습니다.)"
+    },
+    "label": {
+      "answer": "사람의 답",
+      "notice": "알림",
+      "question": "{{name}}(사회자)이 사람에게 한 질문",
+      "moderator": "{{name}}(사회자)"
+    },
+    "problems": {
+      "no-json": "action이 있는 JSON 객체가 없습니다.",
+      "bad-action": "action은 next, ask_user, wrap 중 하나여야 합니다.",
+      "no-speakers": "next에는 speakers가 한 명 이상 있어야 합니다.",
+      "unknown-speaker": "speakers의 id가 토론자 id가 아닙니다.",
+      "moderator-speaker": "사회자는 지목할 수 없습니다. 토론자만 지목하세요.",
+      "duplicate-speaker": "같은 토론자를 한 번의 지시에서 두 번 지목했습니다.",
+      "empty-question": "question이 비어 있습니다.",
+      "empty-summary": "summary가 비어 있습니다."
+    },
+    "notify": {
+      "question": "토의 질문: {{topic}}"
+    },
+    "blocked": {
+      "discussion-not-ready": "준비 상태인 토의만 시작할 수 있습니다.",
+      "discussion-invalid": "토의 내용에 문제가 있어 시작할 수 없습니다. 고치기에서 확인하세요.",
+      "discussion-busy": "다른 토의가 진행 중입니다. 토의는 한 번에 하나만 진행할 수 있습니다.",
+      "discussion-missing-member": "삭제된 팀원이 참가자에 있습니다. 고치기에서 빼세요.",
+      "discussion-observer-off": "관찰 훅이 꺼져 있어 차례가 끝났는지 알 수 없습니다. 설정에서 관찰을 켜세요."
+    },
+    "pause": {
+      "user": "사람이 멈췄습니다.",
+      "restarted": "앱을 다시 열어 토의 탭이 닫혔습니다. 계속하면 탭을 다시 엽니다.",
+      "human-input": "토의 탭에 쓰다 만 입력이 있어 차례를 넣지 않았습니다. 입력을 보내거나 지운 뒤 계속하세요.",
+      "open-failed": "토의 탭을 열지 못했습니다.",
+      "send-failed": "차례를 보내지 못했습니다.",
+      "session-ended": "차례를 기다리던 토의 탭이 끝났습니다. 계속하면 다시 엽니다.",
+      "no-utterance": "다시 요청해도 발언을 받지 못했습니다. 탭을 확인한 뒤 계속하세요.",
+      "moderator-invalid": "다시 요청해도 사회자 지시를 읽지 못했습니다. 탭을 확인한 뒤 계속하세요."
+    },
+    "phase": {
+      "opening": "동시 첫 라운드 · {{done}}/{{total}}명 발언",
+      "moderator": "{{name}} 사회자 차례",
+      "speakers": "{{name}} 발언 차례 ({{index}}/{{total}})",
+      "user": "사회자가 질문했습니다",
+      "wrap_up": "정리 중"
+    },
+    "actions": {
+      "start": "시작",
+      "pause": "멈춤",
+      "resume": "계속",
+      "end": "끝내기",
+      "confirmEnd": "정말 끝내기",
+      "answer": "답하기"
+    },
+    "question": "사회자의 질문",
+    "answerLabel": "답",
+    "answerPlaceholder": "답을 적으면 토의가 이어집니다",
+    "pausedBecause": "멈춘 이유"
   }
 }
