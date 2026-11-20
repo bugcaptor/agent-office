@@ -69,6 +69,7 @@ button.b.confirm { background: var(--bad); color: #fff; border-color: transparen
 .tool summary::before { content: "▸ "; }
 .tool[open] summary::before { content: "▾ "; }
 .tool.err summary { color: var(--bad); }
+.blk > .tool ~ .tool { margin-left: 24px; }
 .tool pre { margin: 4px 0 0; padding: 8px; background: var(--code); border-radius: 8px; white-space: pre-wrap; word-break: break-word; font: 12px/1.4 ui-monospace, Menlo, monospace; max-height: 50vh; overflow: auto; }
 .empty { color: var(--muted); text-align: center; padding: 24px 0; }
 .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
@@ -437,9 +438,32 @@ function renderLog(agentId) {
   if (!log) { box.append(el("div", { class: "empty", text: "…" })); return box; }
   if (!log.attached) { box.append(el("div", { class: "empty", text: S.noLog })); return box; }
   if (!log.items.length) { box.append(el("div", { class: "empty", text: S.noItems })); return box; }
-  // 최신이 위로 온다.
-  for (let i = log.items.length - 1; i >= 0; i--) box.append(renderItem(log.items[i]));
+  // 최신이 위로 오되, 도구 호출에 딸린 결과는 그 호출 블록 안에서 아래로 붙는다.
+  for (const it of log.items) placeItem(box, it);
   return box;
+}
+/**
+ * 항목 하나를 로그에 놓는다. 새 블록은 맨 위에 붙고, 도구 결과는 아직 결과를 못 받은
+ * 같은 쪽(본/서브에이전트) 도구 호출 블록에 들어온 순서대로 짝지어 그 아래에 붙인다
+ * (병렬 호출은 호출 순서대로 결과가 온다). 사람·어시스턴트 말이 끼면 그쪽 대기 짝은 끊는다.
+ */
+function placeItem(box, it) {
+  const st = box._st || (box._st = { pending: [], last: null });
+  const side = !!it.sidechain;
+  if (it.kind === "tool_result") {
+    const i = st.pending.findIndex((p) => p.side === side);
+    const host = i >= 0 ? st.pending.splice(i, 1)[0].el : st.last && st.last.side === side ? st.last.el : null;
+    if (host && host.parentNode === box) { host.append(renderItem(it)); return; }
+  }
+  const blk = el("div", { class: "blk" }, renderItem(it));
+  box.prepend(blk);
+  if (it.kind === "text") {
+    st.pending = st.pending.filter((p) => p.side !== side);
+    if (st.last && st.last.side === side) st.last = null;
+  } else if (it.kind === "tool_use" && it.toolName) {
+    st.pending.push({ el: blk, side });
+    st.last = { el: blk, side };
+  }
 }
 function renderItem(it) {
   const side = it.sidechain ? " side" : "";
@@ -585,7 +609,7 @@ function prependLog(agentId) {
   if (!box || !log) return;
   if (!box.dataset.last || box.querySelector(".empty")) { box.replaceWith(renderLog(agentId)); markLog(); return; }
   const shown = Number(box.dataset.last);
-  for (const it of log.items) if (it.seq > shown) box.prepend(renderItem(it));
+  for (const it of log.items) if (it.seq > shown) placeItem(box, it);
   while (box.childElementCount > LOG_KEEP) box.lastElementChild.remove();
   box.dataset.last = String(log.last);
 }

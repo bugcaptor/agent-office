@@ -29,7 +29,11 @@ const items = [
   { seq: 3, role: "assistant", kind: "tool_use", toolName: "Read", text: "src-tauri/web/dash.html" },
   { seq: 4, role: "user", kind: "tool_result", text: "1\t<!doctype html>\n2\t<html>" },
   { seq: 5, role: "user", kind: "text", text: "사람이 입력한 게 안 보이는 거 같다." },
-  { seq: 6, role: "assistant", kind: "text", text: "원인을 찾았습니다." },
+  { seq: 6, role: "assistant", kind: "tool_use", toolName: "Grep", text: "queued_command" },
+  { seq: 7, role: "assistant", kind: "tool_use", toolName: "Bash", text: "git log --oneline -3" },
+  { seq: 8, role: "user", kind: "tool_result", text: "claude.rs:120: queued_command" },
+  { seq: 9, role: "user", kind: "tool_result", text: "fatal: not a git repository", isError: true },
+  { seq: 10, role: "assistant", kind: "text", text: "원인을 찾았습니다." },
 ];
 const tasks = {
   open: [
@@ -45,7 +49,7 @@ const server = createServer(async (req, res) => {
   const send = (data) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: true, data })); };
   if (url.pathname === "/") { res.setHeader("content-type", "text/html; charset=utf-8"); return res.end(page); }
   if (url.pathname === "/api/state") return send({ app: "0.0.0", rev: "r1", characters });
-  if (url.pathname.startsWith("/api/log/")) return send({ epoch: 1, last: 6, attached: true, items: url.searchParams.get("after") ? [] : items });
+  if (url.pathname.startsWith("/api/log/")) return send({ epoch: 1, last: 10, attached: true, items: url.searchParams.get("after") ? [] : items });
   if (url.pathname === "/api/tasks" && req.method === "GET") return send(tasks);
   if (req.method === "POST") {
     let body = ""; for await (const chunk of req) body += chunk;
