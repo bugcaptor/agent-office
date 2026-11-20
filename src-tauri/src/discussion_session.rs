@@ -74,9 +74,15 @@ pub fn collection_mode(cli: &WorkCli) -> DiscussionCollection {
 }
 
 /// 토의 세션 셸 래퍼에 붙일 인자(명령별). 권한·도구를 좁히는 플래그는 싣지 않는다. 읽기 전용은
-/// 첫 프롬프트 규칙으로 지키고, CLI는 사용자의 평소 권한 설정으로 돈다. Codex는 웹 조사만 연다.
+/// 첫 프롬프트 규칙으로 지킨다. Claude는 `auto`로 띄워 사람 없이 도는 차례가 승인 대기로 멈추지 않게 하고
+/// (`claude` 기본 모드는 웹 조사·셸마다 묻는다), Codex는 웹 조사만 연다. agy·kilo·pi는 업무 보내기
+/// 명령(`launch_command_for`)이 이미 자동 승인 플래그를 붙인다.
 pub fn session_args() -> Vec<(&'static str, Vec<WrapperArg>)> {
-    vec![("codex", vec![WrapperArg::Literal("--search".into())])]
+    let lit = |s: &str| WrapperArg::Literal(s.to_string());
+    vec![
+        ("claude", vec![lit("--permission-mode"), lit("auto")]),
+        ("codex", vec![lit("--search")]),
+    ]
 }
 
 /// 열기 상한. `live`는 살아 있는 토의 세션 agentId들이다. 다른 토의의 세션이 남아 있으면
@@ -775,10 +781,9 @@ mod tests {
         for cli in [WorkCli::Agy, WorkCli::Kilo, WorkCli::Pi] {
             assert_eq!(collection_mode(&cli), DiscussionCollection::Submit);
         }
-        // 권한·도구를 좁히는 플래그는 제출 명령까지 막는다. 웹 조사 여는 것만 남는다.
-        let args = session_args();
-        assert_eq!(args.len(), 1);
-        assert_eq!(args[0], ("codex", vec![WrapperArg::Literal("--search".into())]));
+        // 권한·도구를 좁히는 플래그는 제출 명령까지 막는다. Claude auto와 Codex 웹 조사만 남는다.
+        let lit = |s: &str| WrapperArg::Literal(s.into());
+        assert_eq!(session_args(), vec![("claude", vec![lit("--permission-mode"), lit("auto")]), ("codex", vec![lit("--search")])]);
     }
 
     #[test]

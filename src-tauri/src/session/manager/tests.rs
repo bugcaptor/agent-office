@@ -663,9 +663,10 @@
             let wrapper = wrappers.iter().find(|w| w.command == command).unwrap_or_else(|| panic!("{command} wrapper"));
             wrapper.prefix_args.iter().filter_map(|a| match a { WrapperArg::Literal(s) => Some(s.clone()), _ => None }).collect()
         };
-        // 권한·도구를 좁히는 플래그는 붙이지 않는다(읽기 전용은 프롬프트 규칙). 제출 명령이 막히면 진행이 멈춘다.
+        // 권한·도구를 좁히는 플래그는 붙이지 않는다(읽기 전용은 프롬프트 규칙). Claude는 승인 대기로 멈추지 않게 auto다.
         let claude = literals("claude");
-        for flag in ["--permission-mode", "--allowed-tools", "--disallowed-tools", "--append-system-prompt"] {
+        assert!(claude.ends_with(&["--permission-mode".to_string(), "auto".to_string()]), "{claude:?}");
+        for flag in ["--allowed-tools", "--disallowed-tools", "--append-system-prompt"] {
             assert!(!claude.contains(&flag.to_string()), "{flag}: {claude:?}");
         }
         let claude_wrapper = wrappers.iter().find(|w| w.command == "claude").unwrap();

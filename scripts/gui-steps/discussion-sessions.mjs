@@ -7,7 +7,7 @@ export default async ({ page, shot, harness }) => {
     (await (await window.__guiHarness.discussionSessionStore()).openDiscussionSession("disc-ready", p, { focus: f })) ?? "ok", [participant, focus]);
   console.log(`open moderator: ${await open("p2", false)}`);
   console.log(`open debater: ${await open("p1", true)}`);
-  console.log(`other discussion: ${await page.evaluate(async () => (await (await window.__guiHarness.discussionSessionStore()).openDiscussionSession("disc-full", "p3")) ?? "ok")}`);
+  console.log(`other discussion: ${await page.evaluate(async () => (await (await window.__guiHarness.discussionSessionStore()).openDiscussionSession("disc-full", "p3", { focus: false })) ?? "ok")}`);
   await page.locator(".agent-tab-chat", { hasText: "🗣" }).first().waitFor();
   await page.waitForTimeout(300);
   console.log(`tabs: ${await page.locator(".agent-tab-chat-name").allInnerTexts()}`);
