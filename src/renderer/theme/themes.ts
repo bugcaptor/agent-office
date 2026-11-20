@@ -68,6 +68,10 @@ export const TILE_PALETTE_KEYS = [
   "frameBorder", // 벽 폴라로이드: 그림자·압정·인물 실루엣(짙은 축)
   "frameMat", // 벽 폴라로이드: 카드 종이(밝은 축)
   "frameSilhouette", // 벽 폴라로이드: 사진칸 바탕 + 아래 턱의 별(중간 축)
+  // 토의 회의실.
+  "meetingFloor", // 회의실 카펫(바닥 체커와 다른 한색 계열 — 구역이 한눈에 갈린다)
+  "meetingFloorEdge", // 회의실 카펫 테두리·결
+  "meetingChair", // 빈 의자(앉으면 캐릭터가 덮는다)
 ] as const;
 type TilePaletteKey = (typeof TILE_PALETTE_KEYS)[number];
 
@@ -150,6 +154,9 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       frameBorder: 0x96682f, // deskEdge와 같은 계열의 짙은 액자 테두리
       frameMat: 0xf7f0dd, // 밝은 매트
       frameSilhouette: 0xb7a98a,
+      meetingFloor: 0xc9d3df, // 회의실: 차분한 블루그레이 카펫
+      meetingFloorEdge: 0xaebccc,
+      meetingChair: 0x6d7a8c,
     },
     // 밝은 배경의 터미널 — ANSI 16색은 "밝을수록 잘 보인다"가 뒤집히므로
     // 흰색 계열을 어둡게 보정하고, bright는 더 진하게(대비 강화) 간다.
@@ -231,6 +238,9 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       frameBorder: 0x6b5a2e, // 짙은 황동 액자 테두리
       frameMat: 0x33384a, // 벽보다 살짝 밝은 매트
       frameSilhouette: 0x5a6178,
+      meetingFloor: 0x35405c, // 회의실: 짙은 인디고 카펫
+      meetingFloorEdge: 0x2a334b,
+      meetingChair: 0x5d6a8c,
     },
     // 터미널 테마 도입 이전의 유일한 팔레트(구 XTERM_THEME)를 값 그대로 이관.
     // "green-CRT meets modern dark" — 가독성 유지한 레트로.
@@ -307,6 +317,9 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       frameBorder: 0xa2685a, // deskEdge와 같은 계열의 로즈브라운 테두리
       frameMat: 0xfbeef4, // counterTop과 같은 계열의 밝은 매트
       frameSilhouette: 0xc48a9a,
+      meetingFloor: 0xe0d6f0, // 회의실: 라벤더 카펫
+      meetingFloorEdge: 0xc9bce2,
+      meetingChair: 0x9884b8,
     },
     // 밝은 블러시 배경 + 플럼 전경. 유채색 6색은 daylight와 같은 이유로
     // 전경·배경 겸용 균형 휘도에 맞춘다(이 배경/black에서는 양방향 약 3.5:1).
@@ -389,6 +402,9 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       frameBorder: 0x2e8a55,
       frameMat: 0x0f2a16,
       frameSilhouette: 0x1f6b35,
+      meetingFloor: 0x173f2a, // 회의실: 짙은 청록 카펫
+      meetingFloorEdge: 0x10301f,
+      meetingChair: 0x2f8048,
     },
     // 완전 단색은 로그 가독성을 죽인다(빨강 에러/노랑 경고 구분 불가) —
     // 색상(hue) 정체성은 남기되 채도를 낮추고 전부 초록 쪽으로 기울인다.

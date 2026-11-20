@@ -27,10 +27,12 @@
 // the instant the BottomBar mute toggle flips, instead of waiting for the
 // next notification event.
 import { isSideSessionId, type SessionState } from "@shared/types";
-import type { LabelAnchor, OfficeAwardee, OfficeBus } from "../office/bus";
+import type { LabelAnchor, OfficeAwardee, OfficeBus, OfficeDiscussionStage } from "../office/bus";
 import { awardeeEquals, latestAwardee } from "../office/awardee";
 import { useAppStore } from "../store/appStore";
 import { useAwardsStore } from "../awards/awardsStore";
+import { useDiscussionStore } from "../discussion/discussionStore";
+import { discussionStageEquals, officeDiscussionStage } from "../discussion/officeStage";
 import { pendingAgentIds } from "../store/selectors";
 import { tauriApi } from "./tauriApi";
 import { sessionOptsFor } from "./sessionOpts";
@@ -59,6 +61,7 @@ const labelAnchorCbs = new Set<LabelAnchorCb>();
 const deskClickCbs = new Set<DeskClickCb>();
 const vacationModeCbs = new Set<VacationModeCb>();
 const awardeeCbs = new Set<AwardeeCb>();
+const discussionStageCbs = new Set<(stage: OfficeDiscussionStage | null) => void>();
 const subagentCounts = new SubagentCountTracker();
 
 // vacationMode -> officeBus relay. 모듈 스코프라 부팅 순서(hydrate ↔ 씬 마운트
@@ -81,6 +84,16 @@ useAwardsStore.subscribe((state) => {
   if (awardeeEquals(lastAwardee, next)) return;
   lastAwardee = next;
   awardeeCbs.forEach((cb) => cb(next));
+});
+
+// discussions -> officeBus 토의 연출 relay(같은 이유로 모듈 스코프). 토의 스토어도 셀렉터 미들웨어가
+// 없고 실행기가 commit을 자주 하므로, 파생값(참가자·사회자·말하는 사람)이 실제로 바뀔 때만 발화한다.
+let lastDiscussionStage: OfficeDiscussionStage | null = officeDiscussionStage(useDiscussionStore.getState().discussions);
+useDiscussionStore.subscribe((state) => {
+  const next = officeDiscussionStage(state.discussions);
+  if (discussionStageEquals(lastDiscussionStage, next)) return;
+  lastDiscussionStage = next;
+  discussionStageCbs.forEach((cb) => cb(next));
 });
 
 // Agents with an in-flight createSession, so a double-click (two
@@ -246,6 +259,11 @@ export const officeBus: OfficeBus = {
     // useAwardsStore.getState().awards의 최신 파생값과 일치하게 유지된다).
     cb(lastAwardee);
     return () => awardeeCbs.delete(cb);
+  },
+  onDiscussionStageChanged(cb) {
+    discussionStageCbs.add(cb);
+    cb(lastDiscussionStage);
+    return () => discussionStageCbs.delete(cb);
   },
   emitBossDeskClicked() {
     useAppStore.getState().toggleVacationMode();

@@ -147,6 +147,34 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
     const w = SCENARIOS.workpanels(lang);
     return { ...w, state: { ...w.state, agents: [...w.state.agents, profile("p4", "Dee", "m4", 3), profile("p5", "Eun", "k5", 4)] } };
   },
+  /**
+   * 회의실 연출: 팀원 다섯 명, Bo(p2)만 본업 세션이 돈다. Ada가 사회자이고 Bo·Cy·Dee가 토론자인 준비 상태 토의
+   * 하나 — 스크립트가 관찰을 켜고 시작하면 쉬는 Ada·Cy·Dee는 회의실로, 일하는 Bo는 자리에서 말풍선만 띄운다.
+   */
+  meeting: (lang) => {
+    const b = base(lang);
+    const now = Date.now();
+    const meeting: Discussion = {
+      id: "disc-meeting", topic: "Where should the release notes live?", context: "", cwd: "/tmp/gui-harness",
+      moderatorAgentId: "p1",
+      participants: [
+        { agentId: "p1", agent: { cli: "claude" } },
+        { agentId: "p2", agent: { cli: "claude" } },
+        { agentId: "p3", agent: { cli: "codex" } },
+        { agentId: "p4", agent: { cli: "claude" } },
+      ],
+      limits: { maxRounds: 4, maxMinutes: 30, maxCostUsd: 5, usageGuard: false },
+      state: "ready", round: 0, transcript: [], costUsd: 0, createdAt: now, updatedAt: now,
+    };
+    return {
+      ...b,
+      state: { ...b.state, agents: [...AGENTS, profile("p4", "Dee", "m4", 3), profile("p5", "Eun", "k5", 4)] },
+      settings: { ...b.settings, settings: { ...b.settings.settings, observerEnabled: true } },
+      adopted: [{ agentId: "p2", sessionId: "s2", cols: 100, rows: 30 }],
+      output: { p2: "\x1b[1;32m$\x1b[0m cargo build\r\n   Compiling agent-office v0.1.0\r\n" },
+      discussions: [meeting],
+    };
+  },
   /** 첫 실행: 캐릭터 없음, 온보딩 다이얼로그. */
   fresh: (lang) => ({ ...base(lang), state: { version: 1, agents: [] }, settings: settings(true, lang) }),
   /** 온보딩을 마친 사무실, 세션 없음. */

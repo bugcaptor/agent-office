@@ -31,9 +31,11 @@ import { Container, Rectangle, Sprite } from "pixi.js";
 import type { CharacterAssets } from "../gen/characterFactory";
 import type { MinimiAssets } from "../gen/minimiFactory";
 import { OfficeMap, QUEUE_SLOTS, TILE_SIZE } from "../map/mapData";
+import type { MeetingSeat } from "../map/mapData";
 import { GridPos, pickBreakTarget, tileCenterPx, tileKey } from "../world/pathing";
 import { BehaviorState, stepBehavior } from "./behaviorFsm";
 import { ExclamationOverlay } from "./ExclamationOverlay";
+import { MODERATOR_BADGE_POS, ModeratorBadge, SPEECH_BUBBLE_POS, SpeechOverlay } from "./DiscussionOverlay";
 import { MiniAgentsOverlay } from "./MiniAgentsOverlay";
 import { ThinkingOverlay } from "./ThinkingOverlay";
 
@@ -54,7 +56,14 @@ const THINK_HIDDEN_MAX_MS = 7000;
 const THINK_VISIBLE_MIN_MS = 2000;
 const THINK_VISIBLE_MAX_MS = 2500;
 
-type TargetKind = "seat" | "break" | "queue";
+type TargetKind = "seat" | "break" | "queue" | "meeting";
+
+/** 토의 참가 표시. 회의실 의자는 맵에 회의실이 있을 때만 있다(없으면 제자리에서 말풍선만). */
+export interface CharacterDiscussionRole {
+  seat: MeetingSeat | null;
+  moderator: boolean;
+  speaking: boolean;
+}
 
 export class CharacterEntity {
   readonly root = new Container(); // added to the scene's sortable layer; zIndex = worldY
@@ -62,6 +71,8 @@ export class CharacterEntity {
   private overlay: ExclamationOverlay;
   private thinkOverlay: ThinkingOverlay;
   private miniOverlay: MiniAgentsOverlay;
+  private speechOverlay: SpeechOverlay;
+  private moderatorBadge: ModeratorBadge;
   private state: BehaviorState = "sitting";
   private stateTimer = 0;
   private animTimer = 0;
@@ -75,6 +86,9 @@ export class CharacterEntity {
   private reservedBreakKey: string | null = null;
   // 보스 책상 줄 슬롯(월드가 배정). null = 줄에 서 있지 않음.
   private queueSlot: number | null = null;
+  // 토의 회의실 의자(월드가 배정). null = 진행 중인 토의에 없거나 이 맵에 회의실이 없음.
+  private meetingSeat: MeetingSeat | null = null;
+  private speaking = false;
 
   // "..." 말풍선 점멸 사이클 상태 (dt 누적 기반, Date.now 사용 안 함).
   private thinkHidden = true;
@@ -114,6 +128,13 @@ export class CharacterEntity {
     if (this.minimi) this.miniOverlay.setCustomBase(this.minimi.texture, this.minimi.scale);
     this.miniOverlay.root.position.set(0, -TILE_SIZE); // 머리 위(기존 오버레이와 동일 높이)
     this.root.addChild(this.miniOverlay.root);
+
+    this.speechOverlay = new SpeechOverlay();
+    this.speechOverlay.root.position.set(SPEECH_BUBBLE_POS.x, SPEECH_BUBBLE_POS.y);
+    this.root.addChild(this.speechOverlay.root);
+    this.moderatorBadge = new ModeratorBadge();
+    this.moderatorBadge.root.position.set(MODERATOR_BADGE_POS.x, MODERATOR_BADGE_POS.y);
+    this.root.addChild(this.moderatorBadge.root);
 
     // Seated placement (feet sunk toward the desk so it overlaps the legs).
     const p = tileCenterPx(seat);
@@ -200,6 +221,7 @@ export class CharacterEntity {
     this.overlay.setVisible(v);
     // Priority: the exclamation badge always wins over the thinking bubble.
     if (v) this.thinkOverlay.setVisible(false);
+    this.syncSpeech();
   }
 
   setSessionActive(v: boolean): void {
@@ -240,6 +262,39 @@ export class CharacterEntity {
     }
   }
 
+  /**
+   * 토의 참가 반영(월드가 호출). null = 토의에 없음. 의자가 생기면 쉬는 중(탕비실·탕비실로 가는 길)인
+   * 캐릭터만 곧장 회의실로 간다. 앉아 있는 캐릭터는 FSM이 본업이 쉴 때 데려가고, 일하는 중이면 제자리에서
+   * 말풍선만 띄운다. 의자가 풀리면 회의실에 있거나 가던 캐릭터가 탕비실로 돌아간다.
+   */
+  setDiscussionRole(role: CharacterDiscussionRole | null): void {
+    this.speaking = role?.speaking ?? false;
+    this.moderatorBadge.setVisible(role?.moderator ?? false);
+    this.syncSpeech();
+    const seat = role?.seat ?? null;
+    if (sameSeat(seat, this.meetingSeat)) return;
+    this.meetingSeat = seat;
+    const toMeeting = this.state === "meeting" || (this.state === "walking" && this.targetKind === "meeting");
+    if (seat === null) {
+      if (!toMeeting) return;
+      if (!this.setBreakTarget()) this.setSeatTarget();
+      this.state = "walking";
+      this.stateTimer = 0;
+      return;
+    }
+    const resting = this.state === "breakIdle" || (this.state === "walking" && this.targetKind === "break");
+    if (toMeeting || (resting && !this.sessionActive && !this.hasPending && this.queueSlot === null)) {
+      this.setMeetingTarget();
+      this.state = "walking";
+      this.stateTimer = 0;
+    }
+  }
+
+  /** 발언 말풍선: 알림 "!"가 이긴다. 생각 말풍선은 발언 중에는 쉰다(updateThinkingOverlay의 게이트). */
+  private syncSpeech(): void {
+    this.speechOverlay.setVisible(this.speaking && !this.hasPending);
+  }
+
   /** dt: ms, ticker-supplied (never a real timer / Date.now internally). */
   update(dt: number): void {
     this.stateTimer += dt;
@@ -250,6 +305,7 @@ export class CharacterEntity {
         hasPending: this.hasPending,
         sessionActive: this.sessionActive,
         shouldQueue: this.queueSlot !== null,
+        shouldMeet: this.meetingSeat !== null,
         timerMs: this.stateTimer,
         rand: r,
       },
@@ -264,6 +320,8 @@ export class CharacterEntity {
         this.setSeatTarget();
       } else if (res.requestQueueSlot) {
         this.setQueueTarget(this.queueSlot!); // shouldQueue=true일 때만 오므로 non-null
+      } else if (res.requestMeetingSeat) {
+        this.setMeetingTarget(); // shouldMeet=true일 때만 오므로 의자가 있다
       }
       if (accepted) {
         this.state = res.next;
@@ -277,7 +335,11 @@ export class CharacterEntity {
     // mid-stroll toward the break room pre-empts the stroll — retarget to
     // the seat (or the queue slot, if one is assigned) immediately rather
     // than finishing the walk.
-    if (this.state === "walking" && this.targetKind === "break" && (this.sessionActive || this.hasPending)) {
+    if (
+      this.state === "walking" &&
+      (this.targetKind === "break" || this.targetKind === "meeting") &&
+      (this.sessionActive || this.hasPending)
+    ) {
       if (this.queueSlot !== null) this.setQueueTarget(this.queueSlot);
       else this.setSeatTarget();
     }
@@ -288,6 +350,7 @@ export class CharacterEntity {
     this.root.zIndex = this.root.y; // y-sort refresh
     this.overlay.update(dt);
     this.miniOverlay.update(dt);
+    this.speechOverlay.update(dt);
 
     // Belt-and-suspenders: never let a character leave the map rect.
     const mapPxW = this.map.width * TILE_SIZE;
@@ -301,6 +364,8 @@ export class CharacterEntity {
     this.overlay.destroy();
     this.thinkOverlay.destroy();
     this.miniOverlay.destroy();
+    this.speechOverlay.destroy();
+    this.moderatorBadge.destroy();
     this.root.destroy({ children: true });
     this.assets.dispose?.(); // 커스텀 다운스케일 프레임 텍스처/소스 해제(누수 방지)
     this.minimi?.dispose?.(); // 커스텀 미니미도 같은 이유로 해제
@@ -335,6 +400,15 @@ export class CharacterEntity {
     this.targetKind = "queue";
   }
 
+  /** 회의실 의자로. 테이블 북쪽 자리(아래를 봄)는 책상 좌석처럼 발을 테이블 쪽으로 내려 다리가 가려진다. */
+  private setMeetingTarget(): void {
+    const seat = this.meetingSeat!;
+    this.releaseBreakTile();
+    const p = tileCenterPx(seat);
+    this.targetPx = { x: p.x, y: p.y + TILE_SIZE / 2 + (seat.facing === "down" ? SEAT_SINK_PX : 0) };
+    this.targetKind = "meeting";
+  }
+
   private releaseBreakTile(): void {
     if (this.reservedBreakKey === null) return;
     this.breakReservations?.delete(this.reservedBreakKey);
@@ -353,7 +427,18 @@ export class CharacterEntity {
       // Arrival: walking ends -> sitting for the seat leg, queueing for the
       // boss-desk queue leg, breakIdle for a break-room leg (initial or a
       // stroll).
-      this.state = this.targetKind === "seat" ? "sitting" : this.targetKind === "queue" ? "queueing" : "breakIdle";
+      this.state =
+        this.targetKind === "seat"
+          ? "sitting"
+          : this.targetKind === "queue"
+            ? "queueing"
+            : this.targetKind === "meeting"
+              ? "meeting"
+              : "breakIdle";
+      // 회의실에서는 테이블 쪽을 본다(걸어온 방향 그대로 두면 사회자가 벽을 보고 앉기도 한다).
+      if (this.state === "meeting" && this.meetingSeat) {
+        this.sprite.scale.x = this.meetingSeat.facing === "left" ? -this.spriteScale : this.spriteScale;
+      }
       this.targetKind = null;
       this.stateTimer = 0;
       return;
@@ -365,7 +450,7 @@ export class CharacterEntity {
 
   /** dt-accumulator driven "..." bubble cadence: hidden ~4-7s, visible ~2-2.5s, while sitting+active+!pending. */
   private updateThinkingOverlay(dt: number): void {
-    const gate = this.state === "sitting" && this.sessionActive && !this.hasPending;
+    const gate = this.state === "sitting" && this.sessionActive && !this.hasPending && !this.speaking;
     if (!gate) {
       this.thinkOverlay.setVisible(false);
       this.thinkHidden = true;
@@ -404,4 +489,8 @@ export class CharacterEntity {
     }
     this.sprite.texture = frames[this.frameIdx % frames.length];
   }
+}
+
+function sameSeat(a: MeetingSeat | null, b: MeetingSeat | null): boolean {
+  return a === b || (a !== null && b !== null && a.tx === b.tx && a.ty === b.ty && a.facing === b.facing);
 }

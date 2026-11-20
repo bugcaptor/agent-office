@@ -133,6 +133,32 @@ export function officeTileDraw(pal: OfficeTilePalette): TileDrawFn {
         g.rect(0, s - 2, s, 2).fill(pal.table); // bottom shadow (legs)
         g.rect(2, 6, s - 4, 1).fill(pal.tableTop); // 1px wood grain
         break;
+      case Tile.MeetingFloor: {
+        // 한 장짜리 카펫: 회의실 바깥과 맞닿은 변에만 테두리를 긋고(러그와 같은 규칙), 안쪽에는
+        // 가로 결을 넣어 탕비실 러그와 다른 재질로 읽히게 한다.
+        g.rect(0, 0, s, s).fill(pal.meetingFloor);
+        const room = (x: number, y: number) => {
+          const n = map.tiles[y]?.[x];
+          return n === Tile.MeetingFloor || n === Tile.Table;
+        };
+        if (!room(tx, ty - 1)) g.rect(0, 0, s, 1).fill(pal.meetingFloorEdge);
+        if (!room(tx, ty + 1)) g.rect(0, s - 1, s, 1).fill(pal.meetingFloorEdge);
+        if (!room(tx - 1, ty)) g.rect(0, 0, 1, s).fill(pal.meetingFloorEdge);
+        if (!room(tx + 1, ty)) g.rect(s - 1, 0, 1, s).fill(pal.meetingFloorEdge);
+        g.rect(3, 5, s - 6, 1).fill(pal.meetingFloorEdge);
+        g.rect(3, 11, s - 6, 1).fill(pal.meetingFloorEdge);
+        // 빈 의자. 앉은 캐릭터가 대부분을 덮고 등받이만 머리 뒤로 비친다.
+        const seat = map.meetingRoom?.seats.find((x) => x.tx === tx && x.ty === ty);
+        if (seat?.facing === "down") {
+          g.rect(3, 1, s - 6, 4).fill(pal.meetingChair); // 높은 등받이(테이블 반대편 = 북쪽)
+          g.rect(4, 8, s - 8, 3).fill(pal.meetingChair); // 좌석
+        } else if (seat) {
+          const back = seat.facing === "right" ? 1 : s - 4; // 등받이는 테이블 반대쪽 변
+          g.rect(back, 3, 3, s - 5).fill(pal.meetingChair);
+          g.rect(seat.facing === "right" ? 4 : 3, 9, s - 7, 3).fill(pal.meetingChair);
+        }
+        break;
+      }
       case Tile.BossDesk: {
         // 세로 책상(우측 벽 등짐) = 일반 책상의 90° 회전 — 가로 배치로
         // 되돌리면 이 케이스도 다시 눕혀야 한다.

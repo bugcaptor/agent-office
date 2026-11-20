@@ -19,7 +19,7 @@
 // `Math.random` anywhere in this file.
 import type { Container } from "pixi.js";
 
-import type { LabelAnchor, OfficeBus } from "../bus";
+import type { LabelAnchor, OfficeBus, OfficeDiscussionStage } from "../bus";
 import type { AgentProfile } from "../types";
 import type { SessionState } from "../../../shared/types";
 import { QUEUE_SLOTS } from "../map/mapData";
@@ -33,6 +33,7 @@ import { getSpriteOverride } from "../gen/spriteOverrides";
 import { getMinimiOverride } from "../gen/minimiOverrides";
 import { createMinimiAssets } from "../gen/minimiFactory";
 import { CharacterEntity } from "../entities/CharacterEntity";
+import type { CharacterDiscussionRole } from "../entities/CharacterEntity";
 import { mulberry32, hashStringToSeed } from "../gen/prng";
 
 export interface OfficeWorldOptions {
@@ -102,6 +103,8 @@ export class OfficeWorld {
   // 순서는 매번 여기서 유도한다(recomputeQueue) — 동기화할 사본이 없다.
   private pendingIds = new Set<string>();
   private vacationMode = false;
+  // 진행 중인 토의(없으면 null). 엔티티를 다시 만들 때(외형 변경·풍경 교체) 재주입한다.
+  private discussionStage: OfficeDiscussionStage | null = null;
   private unsub: Array<() => void> = [];
 
   constructor(private o: OfficeWorldOptions) {
@@ -128,6 +131,12 @@ export class OfficeWorld {
       }),
     );
     this.unsub.push(
+      o.bus.onDiscussionStageChanged((stage) => {
+        this.discussionStage = stage;
+        for (const [id, e] of this.entities) e.setDiscussionRole(this.discussionRoleFor(id));
+      }),
+    );
+    this.unsub.push(
       o.bus.onVacationModeChanged((on) => {
         this.vacationMode = on;
         this.recomputeQueue();
@@ -148,6 +157,18 @@ export class OfficeWorld {
       const i = order.indexOf(id);
       e.setQueueSlot(i === -1 || i >= slots.length ? null : i);
     }
+  }
+
+  /**
+   * 토의 참가자의 연출 역할. 회의실 의자는 `members` 순서(0번 = 사회자)로 고정 배정해, 본업이 쉬었다
+   * 일했다 해도 같은 의자로 돌아온다. 회의실이 없는 풍경이면 의자 없이 말풍선·사회자 표시만 한다.
+   */
+  private discussionRoleFor(agentId: string): CharacterDiscussionRole | null {
+    const members = this.discussionStage?.members ?? [];
+    const i = members.findIndex((m) => m.agentId === agentId);
+    if (i === -1) return null;
+    const seat = this.o.map.meetingRoom?.seats[i] ?? null;
+    return { seat, moderator: members[i].moderator, speaking: members[i].speaking };
   }
 
   /** Diff the live entity set against `profiles`: destroy dropped agents, create new ones,
@@ -226,6 +247,7 @@ export class OfficeWorld {
       entity.setSessionActive(this.sessionActive.get(p.id) ?? false);
       entity.setSubagentCount(this.subagentCounts.get(p.id) ?? 0);
       entity.setPending(this.pendingIds.has(p.id));
+      entity.setDiscussionRole(this.discussionRoleFor(p.id));
       entity.onClicked((id) => this.o.bus.emitAgentClicked(id));
       entity.onHover((id, x, y) => this.o.bus.emitAgentHoverChanged(id, x, y));
       this.o.characterLayer.addChild(entity.root);

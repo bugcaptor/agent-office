@@ -15,6 +15,7 @@ export const enum Tile {
   Counter = 5, // 탕비실 카운터 (장식, 통행 불가)
   Table = 6, // 탕비실 테이블 (장식, 통행 불가) — DeskTop과 구분되어 deriveDesks가 무시함
   BossDesk = 7, // 보스 책상 (통행 불가, 전용 렌더링) — deriveDesks가 무시함
+  MeetingFloor = 8, // 회의실 바닥(걸을 수 있음) — 회의 테이블은 Table을 그대로 쓴다
 }
 
 export interface DeskSlot {
@@ -41,7 +42,28 @@ export interface OfficeMap {
   bossDesk?: TileRect;
   /** 줄서기 슬롯(0 = 맨 앞). 미지정 시 QUEUE_SLOTS 폴백. */
   queueSlots?: readonly { tx: number; ty: number }[];
+  /**
+   * 토의 회의실. 오피스 씬에만 있다 — 다른 풍경은 폴백 없이 비워 두고, 토의 참가자는 제자리에서
+   * 말풍선만 띄운다(새 풍경 아트가 없는 곳에 회의실을 억지로 끼우지 않는다).
+   */
+  meetingRoom?: MeetingRoom;
 }
+
+/** 회의실 의자 하나. 캐릭터가 서는(앉는) 타일과 테이블 쪽을 보는 방향. */
+export interface MeetingSeat {
+  tx: number;
+  ty: number;
+  facing: 'down' | 'left' | 'right';
+}
+
+/** 토의 회의실: 바닥 사각형 + 의자(0번 = 사회자 자리, 나머지 = 토론자 순서). */
+export interface MeetingRoom {
+  rect: TileRect;
+  seats: readonly MeetingSeat[];
+}
+
+/** 회의실 의자 상한 = 토의 인원 상한(사회자 포함 5명). */
+export const MEETING_MAX_SEATS = 5;
 
 /** 타일 좌표계 사각형(폭/높이는 타일 단위). */
 export interface TileRect {
@@ -51,7 +73,7 @@ export interface TileRect {
   h: number;
 }
 
-// F=Floor, W=Wall, D=DeskTop, R=Rug, P=Plant, C=Counter, T=Table, B=BossDesk 로 읽기 쉽게
+// F=Floor, W=Wall, D=DeskTop, R=Rug, P=Plant, C=Counter, T=Table, B=BossDesk, M=MeetingFloor 로 읽기 쉽게
 // 구성 후 숫자로 변환. 씬(scenes/*)들도 자기 GRID를 이 함수로 읽는다 —
 // 의미 타일(Tile) 계약은 씬 전체가 공유하고, 각 칸을 무엇으로 *그릴지*만
 // 씬이 정한다(scenes/sceneTypes.ts의 TileDrawFn).
@@ -67,11 +89,13 @@ export const L = (row: string): Tile[] =>
         C: Tile.Counter,
         T: Tile.Table,
         B: Tile.BossDesk,
+        M: Tile.MeetingFloor,
       })[ch] ?? Tile.Floor,
   );
 
-// 위쪽: 데스크 2행 x 4쌍 = 8개. 아래쪽(ty=9..12): 탕비실(휴게 공간) —
-// 러그 라운지 + 테이블 + 카운터(하단 벽 쪽) + 화분 장식.
+// 위쪽: 데스크 2행 x 4쌍 = 8개. 가운데 왼쪽(tx3..7, ty7..9): 회의실 — 바닥 마감(M) 위
+// 3칸 테이블(T). 줄서기 레인(ty8, tx9..16)과 탕비실 사이를 비켜 앉힌다. 아래쪽(ty=10..12):
+// 탕비실(휴게 공간) — 러그 라운지 + 테이블 + 카운터(하단 벽 쪽) + 화분 장식.
 const GRID: Tile[][] = [
   L('WWWWWWWWWWWWWWWWWWWW'), // ty0
   L('WFFFFFFFFFFFFFFFFFFW'), // ty1
@@ -80,9 +104,9 @@ const GRID: Tile[][] = [
   L('WFFFFFFFFFFFFFFFFFFW'), // ty4
   L('WFDDFFDDFFDDFFDDFFFW'), // ty5 - 데스크 상판 행 2
   L('WFFFFFFFFFFFFFFFFFFW'), // ty6 - 의자(seat) 행 2
-  L('WFFFFFFFFFFFFFFFFBFW'), // ty7  - 보스 책상 상단(tx17) — 우측 벽에서 한 칸(tx18) 띄움
-  L('WFFFFFFFFFFFFFFFFBFW'), // ty8  - 보스 책상 하단(tx17) + 줄서기 레인
-  L('WFPFFFFFFFFFFFFFFPFW'), // ty9  - 탕비실 진입부 + 화분(모서리)
+  L('WFFMMMMMFFFFFFFFFBFW'), // ty7  - 회의실 북쪽 의자 행 + 보스 책상 상단(tx17) — 우측 벽에서 한 칸(tx18) 띄움
+  L('WFFMTTTMFFFFFFFFFBFW'), // ty8  - 회의 테이블(tx4..6) + 양 끝 의자 + 보스 책상 하단(tx17) + 줄서기 레인
+  L('WFPMMMMMFFFFFFFFFPFW'), // ty9  - 회의실 남쪽 + 탕비실 진입부 + 화분(모서리)
   L('WFRRRRRRRRRRRRRRRRFW'), // ty10 - 러그 라운지
   L('WFRRRRRRRTTRRRRRRRFW'), // ty11 - 러그 라운지 + 테이블(2칸)
   L('WFFCCCCCCFFFFFFFFFFW'), // ty12 - 카운터(하단 벽 쪽)
@@ -157,7 +181,25 @@ export function buildSceneMap(grid: Tile[][], breakRoom: TileRect): OfficeMap {
   };
 }
 
-export const OFFICE_MAP: OfficeMap = buildSceneMap(GRID, { x: 11, y: 10, w: 5, h: 2 });
+/**
+ * 오피스 회의실. 0번(사회자)은 테이블 서쪽 끝에서 동쪽을 보고, 토론자는 북쪽 세 자리(정면이 보이게
+ * 아래를 본다 — 책상 좌석과 같은 구도) 다음 동쪽 끝 순서다. 남쪽 줄은 비워 등만 보이는 자리를 피한다.
+ */
+const OFFICE_MEETING_ROOM: MeetingRoom = {
+  rect: { x: 3, y: 7, w: 5, h: 3 },
+  seats: [
+    { tx: 3, ty: 8, facing: 'right' },
+    { tx: 4, ty: 7, facing: 'down' },
+    { tx: 5, ty: 7, facing: 'down' },
+    { tx: 6, ty: 7, facing: 'down' },
+    { tx: 7, ty: 8, facing: 'left' },
+  ],
+};
+
+export const OFFICE_MAP: OfficeMap = {
+  ...buildSceneMap(GRID, { x: 11, y: 10, w: 5, h: 2 }),
+  meetingRoom: OFFICE_MEETING_ROOM,
+};
 
 /** 휴게 공간(탕비실) 내부의 걸을 수 있는 러그 라운지 사각형(타일 좌표).
  * `map.breakRoom`이 없는 맵(구 테스트 픽스처)의 폴백 겸 오피스 씬의 값. */

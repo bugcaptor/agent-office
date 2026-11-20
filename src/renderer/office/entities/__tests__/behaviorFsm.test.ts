@@ -27,6 +27,7 @@ const ctx = (overrides: Partial<FsmContext> = {}): FsmContext => ({
   hasPending: false,
   sessionActive: false,
   shouldQueue: false,
+  shouldMeet: false,
   timerMs: 0,
   rand: 0.999, // 기본값: "전이 안 함" 쪽으로 치우친 난수
   ...overrides,
@@ -131,5 +132,38 @@ describe("queueing (보스 책상 줄서기)", () => {
 
   it("sitting: 휴가 모드(shouldQueue=false) + hasPending → 기존처럼 자리 고정", () => {
     expect(stepBehavior("sitting", ctx({ hasPending: true, timerMs: 99999 }), 16)).toEqual({ next: "sitting" });
+  });
+});
+
+describe("stepBehavior: 토의 회의실", () => {
+  it("sitting: 본업이 쉬고 의자가 있으면 여유 시간 뒤 탕비실 대신 회의실로 간다", () => {
+    expect(stepBehavior("sitting", ctx({ shouldMeet: true, timerMs: 0 }), 16)).toEqual({ next: "sitting" });
+    expect(stepBehavior("sitting", ctx({ shouldMeet: true, timerMs: 99999 }), 16)).toEqual({ next: "walking", requestMeetingSeat: true });
+  });
+
+  it("sitting: 본업이 일하는 중이면 의자가 있어도 자리를 지킨다(제자리 말풍선)", () => {
+    expect(stepBehavior("sitting", ctx({ shouldMeet: true, sessionActive: true, timerMs: 99999 }), 16)).toEqual({ next: "sitting" });
+  });
+
+  it("breakIdle: 의자가 생기면 산책보다 먼저 회의실로 간다", () => {
+    expect(stepBehavior("breakIdle", ctx({ shouldMeet: true, rand: 0 }), 16)).toEqual({ next: "walking", requestMeetingSeat: true });
+  });
+
+  it("breakIdle: 세션 활성은 회의실보다 우선한다", () => {
+    expect(stepBehavior("breakIdle", ctx({ shouldMeet: true, sessionActive: true }), 16)).toEqual({ next: "walking", requestReturnToDesk: true });
+  });
+
+  it("meeting: 의자가 있는 동안엔 그대로 앉아 있다", () => {
+    expect(stepBehavior("meeting", ctx({ shouldMeet: true, timerMs: 99999, rand: 0 }), 16)).toEqual({ next: "meeting" });
+  });
+
+  it("meeting: 본업이 다시 돌면 자리로, 알림 줄이 먼저면 줄로", () => {
+    expect(stepBehavior("meeting", ctx({ shouldMeet: true, sessionActive: true }), 16)).toEqual({ next: "walking", requestReturnToDesk: true });
+    expect(stepBehavior("meeting", ctx({ shouldMeet: true, hasPending: true }), 16)).toEqual({ next: "walking", requestReturnToDesk: true });
+    expect(stepBehavior("meeting", ctx({ shouldMeet: true, hasPending: true, shouldQueue: true }), 16)).toEqual({ next: "walking", requestQueueSlot: true });
+  });
+
+  it("meeting: 토의가 끝나 의자가 풀리면 탕비실로 돌아간다", () => {
+    expect(stepBehavior("meeting", ctx({ shouldMeet: false }), 16)).toEqual({ next: "walking", requestBreakTarget: true });
   });
 });

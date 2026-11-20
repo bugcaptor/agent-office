@@ -770,3 +770,63 @@ describe("boss desk queue orchestration", () => {
   });
 });
 
+
+describe("OfficeWorld: 토의 연출(onDiscussionStageChanged)", () => {
+  const room = OFFICE_MAP.meetingRoom!;
+  const seatPos = (i: number) => {
+    const seat = room.seats[i];
+    const p = tileCenterPx(seat);
+    return { x: Math.round(p.x), y: Math.round(p.y + TILE_SIZE / 2 + (seat.facing === "down" ? 6 : 0)) };
+  };
+  const stage = (ids: string[]) => ({
+    discussionId: "d1",
+    members: ids.map((agentId, i) => ({ agentId, moderator: i === 0, speaking: false })),
+  });
+
+  it("참가자를 members 순서대로 회의실 의자에 앉힌다(0번 = 사회자)", () => {
+    const { bus, world } = makeWorld(OFFICE_MAP);
+    world.syncAgents([profile("m"), profile("a"), profile("b")]);
+    bus.triggerDiscussionStageChanged(stage(["m", "a"]));
+    settle(world);
+    expect(posOf(world, "m")).toEqual(seatPos(0));
+    expect(posOf(world, "a")).toEqual(seatPos(1));
+    // 참가하지 않은 b는 회의실에 오지 않는다.
+    const b = posOf(world, "b");
+    expect([seatPos(0), seatPos(1), seatPos(2), seatPos(3), seatPos(4)]).not.toContainEqual(b);
+  });
+
+  it("본업이 일하는 참가자는 제자리에 있다가, 쉬면 회의실로 온다", () => {
+    const { bus, world } = makeWorld(OFFICE_MAP);
+    world.syncAgents([profile("m"), profile("a")]);
+    bus.triggerSessionStateChanged("a", "running");
+    bus.triggerDiscussionStageChanged(stage(["m", "a"]));
+    settle(world);
+    expect(posOf(world, "a")).not.toEqual(seatPos(1));
+    bus.triggerSessionStateChanged("a", "exited");
+    settle(world);
+    expect(posOf(world, "a")).toEqual(seatPos(1));
+  });
+
+  it("토의가 끝나면(null) 회의실을 비운다", () => {
+    const { bus, world } = makeWorld(OFFICE_MAP);
+    world.syncAgents([profile("m")]);
+    bus.triggerDiscussionStageChanged(stage(["m"]));
+    settle(world);
+    expect(posOf(world, "m")).toEqual(seatPos(0));
+    bus.triggerDiscussionStageChanged(null);
+    settle(world);
+    expect(posOf(world, "m")).not.toEqual(seatPos(0));
+  });
+
+  it("풍경 교체로 엔티티를 다시 만들어도 토의 자리가 되살아난다", () => {
+    const { bus, world } = makeWorld(OFFICE_MAP);
+    world.syncAgents([profile("m")]);
+    bus.triggerDiscussionStageChanged(stage(["m"]));
+    settle(world);
+    world.setMap(makeMap(2)); // 회의실 없는 맵 — 의자 없음
+    settle(world);
+    world.setMap({ ...OFFICE_MAP });
+    settle(world);
+    expect(posOf(world, "m")).toEqual(seatPos(0));
+  });
+});

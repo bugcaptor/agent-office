@@ -766,3 +766,89 @@ describe("CharacterEntity: destroy", () => {
     expect(sprite.destroyed).toBe(true);
   });
 });
+
+describe("CharacterEntity: 토의 연출", () => {
+  const room = OFFICE_MAP.meetingRoom!;
+  const speechRootOf = (e: CharacterEntity) => e.root.children[4];
+  const moderatorRootOf = (e: CharacterEntity) => e.root.children[5];
+  const meetingPx = (i: number) => {
+    const seat = room.seats[i];
+    const p = tileCenterPx(seat);
+    return { x: Math.round(p.x), y: Math.round(p.y + TILE_SIZE / 2 + (seat.facing === "down" ? SEAT_SINK_PX : 0)) };
+  };
+  const settle = (e: CharacterEntity) => {
+    for (let i = 0; i < 1500; i++) e.update(16);
+  };
+
+  it("본업이 쉬면 회의실 의자로 가서 테이블 쪽을 보고 앉는다", () => {
+    const e = new CharacterEntity("a", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.999);
+    e.setDiscussionRole({ seat: room.seats[4], moderator: false, speaking: false });
+    settle(e);
+    expect({ x: e.root.x, y: e.root.y }).toEqual(meetingPx(4));
+    expect(spriteOf(e).scale.x).toBeLessThan(0); // 동쪽 끝 자리 = 왼쪽(테이블)을 본다
+  });
+
+  it("일하는 중이면 자리를 지키고, 본업이 쉬면 회의실로, 다시 돌면 자리로 돌아온다", () => {
+    const e = new CharacterEntity("a", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.999);
+    const seatPx = { x: e.root.x, y: e.root.y };
+    e.setSessionActive(true);
+    e.setDiscussionRole({ seat: room.seats[1], moderator: false, speaking: true });
+    settle(e);
+    expect({ x: e.root.x, y: e.root.y }).toEqual(seatPx);
+    expect(speechRootOf(e).visible).toBe(true); // 제자리 말풍선
+    e.setSessionActive(false);
+    settle(e);
+    expect({ x: e.root.x, y: e.root.y }).toEqual(meetingPx(1));
+    e.setSessionActive(true);
+    settle(e);
+    expect({ x: e.root.x, y: e.root.y }).toEqual(seatPx);
+  });
+
+  it("토의가 끝나면(역할 해제) 회의실을 떠나 탕비실로 간다", () => {
+    const e = new CharacterEntity("a", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.5);
+    e.setDiscussionRole({ seat: room.seats[0], moderator: true, speaking: false });
+    settle(e);
+    expect({ x: e.root.x, y: e.root.y }).toEqual(meetingPx(0));
+    e.setDiscussionRole(null);
+    settle(e);
+    const br = OFFICE_MAP.breakRoom!;
+    const tx = Math.floor(e.root.x / TILE_SIZE);
+    const ty = Math.floor((e.root.y - 1) / TILE_SIZE);
+    expect(tx >= br.x && tx < br.x + br.w && ty >= br.y && ty < br.y + br.h).toBe(true);
+    expect(moderatorRootOf(e).visible).toBe(false);
+  });
+
+  it("탕비실에서 쉬던 캐릭터는 의자가 생기면 곧장 회의실로 간다", () => {
+    const e = new CharacterEntity("a", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.5);
+    settle(e); // 탕비실 도착
+    e.setDiscussionRole({ seat: room.seats[2], moderator: false, speaking: false });
+    settle(e);
+    expect({ x: e.root.x, y: e.root.y }).toEqual(meetingPx(2));
+  });
+
+  it("말풍선: 발언 중에만 보이고, 알림 '!'가 이기며, 발언 중엔 생각 말풍선이 쉰다", () => {
+    const e = new CharacterEntity("a", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.999);
+    e.setSessionActive(true);
+    e.setDiscussionRole({ seat: null, moderator: true, speaking: true });
+    expect(speechRootOf(e).visible).toBe(true);
+    expect(moderatorRootOf(e).visible).toBe(true);
+    for (let i = 0; i < 1000; i++) e.update(16); // 생각 말풍선 주기를 여러 번 지나도
+    expect(thinkOverlayRootOf(e).visible).toBe(false);
+    e.setPending(true);
+    expect(speechRootOf(e).visible).toBe(false);
+    e.setPending(false);
+    expect(speechRootOf(e).visible).toBe(true);
+    e.setDiscussionRole({ seat: null, moderator: true, speaking: false });
+    expect(speechRootOf(e).visible).toBe(false);
+  });
+
+  it("회의실이 없는 맵(의자 없음)에서는 움직이지 않고 표시만 한다", () => {
+    const e = new CharacterEntity("a", makeTestCharacterAssets(), SEAT, makeMap(), () => 0.999);
+    e.setSessionActive(true);
+    const start = { x: e.root.x, y: e.root.y };
+    e.setDiscussionRole({ seat: null, moderator: false, speaking: true });
+    for (let i = 0; i < 500; i++) e.update(16);
+    expect({ x: e.root.x, y: e.root.y }).toEqual(start);
+    expect(speechRootOf(e).visible).toBe(true);
+  });
+});

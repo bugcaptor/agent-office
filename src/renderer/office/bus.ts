@@ -32,6 +32,23 @@ export interface OfficeAwardee {
   hasPortrait: boolean;
 }
 
+/** 진행 중인 토의 참가자 한 명(씬 연출용). */
+export interface OfficeDiscussionMember {
+  agentId: string;
+  moderator: boolean;
+  /** 지금 차례를 받아 말하는 중(차례를 보냈고 발언을 아직 받지 않음). */
+  speaking: boolean;
+}
+
+/**
+ * 진행 중인 토의(동시에 하나뿐)를 씬에 전하는 최소 정보. `members` 순서가 회의실 의자 순서다 —
+ * 0번 = 사회자, 이어서 토론자. 끝났거나(결론 확인·끝남) 시작 전이면 null.
+ */
+export interface OfficeDiscussionStage {
+  discussionId: string;
+  members: readonly OfficeDiscussionMember[];
+}
+
 export interface OfficeBus {
   // B subscribes (A -> B, relayed through C). 구독 즉시 현재 상태를 1회
   // replay한다(기본값 상태 false/idle은 생략) — 재마운트된 씬도 상태를 받는다.
@@ -65,6 +82,9 @@ export interface OfficeBus {
   /** B가 "이 달의 우수사원" 확정 수상자를 구독 — 자격 수상자가 없으면 null.
    * 구독 즉시 현재값을 1회 재생(replay)한다 — 늦게 마운트된 씬도 초기값 수신. */
   onAwardeeChanged(cb: (awardee: OfficeAwardee | null) => void): () => void;
+  /** B가 진행 중인 토의를 구독 — 회의실 이동·발언 말풍선·사회자 표시. 없으면 null.
+   * 구독 즉시 현재값을 1회 재생(replay)한다 — 늦게 마운트된 씬도 초기값 수신. */
+  onDiscussionStageChanged(cb: (stage: OfficeDiscussionStage | null) => void): () => void;
 }
 
 type NotificationListener = (agentId: string, hasPending: boolean) => void;
@@ -86,6 +106,8 @@ export interface MockOfficeBus extends OfficeBus {
   readonly repositoryServerClickCount: number;
   /** Drives the C -> B direction for the current awardee from a test/manual harness. */
   triggerAwardeeChanged(awardee: OfficeAwardee | null): void;
+  /** Drives the C -> B direction for the running discussion from a test/manual harness. */
+  triggerDiscussionStageChanged(stage: OfficeDiscussionStage | null): void;
 }
 
 /** In-memory pub/sub `OfficeBus` implementation. No Pixi/DOM/IPC dependency. */
@@ -100,6 +122,8 @@ export function createMockOfficeBus(): MockOfficeBus {
   const subagentCountListeners = new Set<(agentId: string, count: number) => void>();
   const vacationModeListeners = new Set<(on: boolean) => void>();
   const awardeeListeners = new Set<(a: OfficeAwardee | null) => void>();
+  const stageListeners = new Set<(s: OfficeDiscussionStage | null) => void>();
+  let stage: OfficeDiscussionStage | null = null;
   const clickedAgentIds: string[] = [];
   let bossDeskClickCount = 0;
   let repositoryServerClickCount = 0;
@@ -185,6 +209,15 @@ export function createMockOfficeBus(): MockOfficeBus {
     triggerAwardeeChanged(next) {
       awardee = next;
       for (const cb of awardeeListeners) cb(next);
+    },
+    onDiscussionStageChanged(cb) {
+      stageListeners.add(cb);
+      cb(stage);
+      return () => stageListeners.delete(cb);
+    },
+    triggerDiscussionStageChanged(next) {
+      stage = next;
+      for (const cb of stageListeners) cb(next);
     },
   };
 }

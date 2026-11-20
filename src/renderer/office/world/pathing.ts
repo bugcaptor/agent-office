@@ -20,14 +20,14 @@ export const tileCenterPx = (p: GridPos) => ({
 /** 타일 점유 집합(Set<string>)에서 쓰는 키. */
 export const tileKey = (tx: number, ty: number): string => `${tx},${ty}`;
 
-// Floor와 Rug(러그 = 바닥 마감재)는 걸을 수 있고, 그 외(벽/데스크/화분/
+// Floor와 Rug(러그 = 바닥 마감재), 회의실 바닥은 걸을 수 있고, 그 외(벽/데스크/화분/
 // 카운터/테이블)는 통행 불가.
 export const isWalkable = (m: OfficeMap, tx: number, ty: number): boolean =>
   ty >= 0 &&
   ty < m.height &&
   tx >= 0 &&
   tx < m.width &&
-  (m.tiles[ty][tx] === Tile.Floor || m.tiles[ty][tx] === Tile.Rug);
+  (m.tiles[ty][tx] === Tile.Floor || m.tiles[ty][tx] === Tile.Rug || m.tiles[ty][tx] === Tile.MeetingFloor);
 
 /** seat 주변 걷기 가능한 임의 타일(배회 목적지) 선택. 결정성 불필요(런타임). */
 export function pickWanderTarget(m: OfficeMap, near: GridPos, rand: () => number, radius = 3): GridPos {
