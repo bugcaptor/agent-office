@@ -216,6 +216,8 @@
       "newHeader": "### Dit depuis votre dernier tour",
       "allHeader": "### Dit jusqu'ici",
       "noNew": "(Rien de nouveau depuis votre dernier tour.)",
+      "omitted": "({{count}} entrées antérieures omises pour respecter la limite de longueur.)",
+      "trimmed": "(Pour respecter la limite de longueur, les longues interventions ne gardent que leur fin.)",
       "forcedWrap": "{{reason}} : la discussion s'arrête ici. Rédigez la note de décision à partir des interventions déjà faites. C'est votre dernier tour : vous ne pouvez plus donner la parole ni interroger la personne. Soumettez un seul objet JSON au format ci-dessous. Mettez la conclusion dans summary, les raisons dans reasons, les alternatives écartées et pourquoi dans rejected, les points en suspens dans open_issues et ce que la personne doit valider dans user_checks ; pour une discussion d'idéation, regroupez les idées par thème dans ideas. Laissez les champs vides en listes vides.\n\n```json\n{{format}}\n```"
     },
     "label": {

@@ -1768,6 +1768,8 @@ pub struct DiscussionSessionRequest {
     #[serde(default)] pub rows: Option<u16>,
     /// 첫 프롬프트 끝에 붙일 이번 차례 지시(실행기가 만든다). 세션은 늘 차례와 함께 연다.
     pub turn: String,
+    /// 첫 프롬프트 언어(`ko`·`en`). 실행기가 차례 지시와 같은 언어를 싣는다. 없으면 화면 언어 설정을 따른다.
+    #[serde(default)] pub lang: Option<String>,
 }
 /// 읽기 전용을 어떻게 지키는가. CLI에서 정해진다(`discussion_session::read_only_mode`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

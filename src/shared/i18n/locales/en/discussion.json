@@ -216,6 +216,8 @@
       "newHeader": "### Said since your last turn",
       "allHeader": "### Said so far",
       "noNew": "(Nothing new has been said since your last turn.)",
+      "omitted": "(Left out {{count}} earlier entries to stay within the length limit.)",
+      "trimmed": "(To stay within the length limit, long entries keep only their ending.)",
       "forcedWrap": "{{reason}}, the discussion ends here. Write the decision memo from the statements so far. This is your last turn: you can no longer call on debaters or ask the person. Submit only one JSON object in the format below. Put the conclusion in summary, the reasons in reasons, the rejected alternatives and why in rejected, the open issues in open_issues and what the person must confirm in user_checks; for an ideation discussion, group the ideas by theme in ideas. Leave empty fields as empty lists.\n\n```json\n{{format}}\n```"
     },
     "label": {

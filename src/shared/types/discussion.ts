@@ -247,6 +247,8 @@ export interface DiscussionSessionRequest {
   rows?: number;
   /** 첫 프롬프트 끝에 붙일 이번 차례 지시. 차례를 받을 때만 세션을 연다. */
   turn: string;
+  /** 첫 프롬프트 언어(차례 지시와 같게). 없으면 화면 언어 설정으로 정한다. */
+  lang?: "ko" | "en";
 }
 export interface DiscussionSessionResult {
   /** 토의 세션 agentId. */

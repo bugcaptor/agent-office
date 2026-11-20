@@ -216,6 +216,8 @@
       "newHeader": "### 你上一轮之后的发言",
       "allHeader": "### 到目前为止的发言",
       "noNew": "（你上一轮之后没有新的发言。）",
+      "omitted": "（因长度限制，省略了前面 {{count}} 条记录。）",
+      "trimmed": "（因长度限制，较长的发言只保留了结尾部分。）",
       "forcedWrap": "{{reason}}，讨论到此结束。请只根据目前的发言整理决策备忘。这是你的最后一次发言，不能再点名或向人提问。请只提交一个下面格式的 JSON。在 summary 写结论，reasons 写依据，rejected 写被否决的方案及原因，open_issues 写遗留问题，user_checks 写需要人确认的事项；若是发散创意的讨论，请在 ideas 中按主题归类方案。没有内容的字段留空列表。\n\n```json\n{{format}}\n```"
     },
     "label": {

@@ -14,14 +14,14 @@ vi.mock("../../ipc/tauriApi", () => ({
 }));
 vi.mock("../../terminal/TerminalRegistry", () => ({ terminalRegistry: { ensure: vi.fn(), destroy: vi.fn(), get: vi.fn(), has: vi.fn() } }));
 vi.mock("../../ipc/osNotify", () => ({ maybeSendOsNotification: notify }));
-import { t } from "../../i18n";
+import { i18n, initI18nForTest, t } from "../../i18n";
 import { useAppStore } from "../../store/appStore";
-import { useDiscussionStore } from "../discussionStore";
+import { DEFERRED_SAVE_MS, useDiscussionStore } from "../discussionStore";
 import { useRoleStore } from "../roleStore";
 import { applyDiscussionSessionState, applyDiscussionTurn, resetDiscussionSessionStoreForTest, useDiscussionSessionStore } from "../discussionSessionStore";
 import { resetUsageForecast } from "../../usage/usageForecastStore";
 import {
-  MODERATOR_FORMAT, WRAP_FORMAT, WRAP_GRACE_MS, addDiscussionTurnCost, confirmDiscussion, handleDiscussionTurnUsage, checkDiscussionUsageWaits, discussionLimitReached, answerDiscussion, discussionStartBlockedReason, endDiscussion, installDiscussionRunner, isDiscussionStepping,
+  MODERATOR_FORMAT, TURN_BUDGET_BYTES, WRAP_FORMAT, WRAP_GRACE_MS, addDiscussionTurnCost, deltaText, discussionPromptLang, confirmDiscussion, handleDiscussionTurnUsage, checkDiscussionUsageWaits, discussionLimitReached, answerDiscussion, discussionStartBlockedReason, endDiscussion, installDiscussionRunner, isDiscussionStepping,
   parseModeratorDirective, pauseDiscussion, resetDiscussionRunForTest, restoreDiscussionsAfterRestart, resumeDiscussion, startDiscussion,
 } from "../discussionRun";
 
@@ -662,6 +662,95 @@ describe("비용 상한", () => {
     expect(discussionLimitReached({ ...base, activeMs: 10 * 60_000, activeSince: now }, now + 20 * 60_000)).toBe("time");
     expect(discussionLimitReached({ ...base, activeMs: 10 * 60_000, activeSince: now, state: "paused" }, now + 20 * 60_000)).toBeUndefined();
     expect(discussionLimitReached({ ...base, costUsd: 5 })).toBe("cost");
+  });
+});
+
+describe("차례 크기", () => {
+  const size = (text: string) => new TextEncoder().encode(text).length;
+
+  it("기록이 길면 발언마다 끝부분을 남겨 고르게 줄이고, 지시는 온전히 둔다", async () => {
+    // 한글 32k자 ≈ 96KB. 두 사람이면 사회자의 첫 차례가 예산을 넘는다.
+    const long = (tag: string) => `${tag}-start ${"가".repeat(40_000)} ${tag}-end`;
+    expect(startDiscussion("d1")).toBeUndefined();
+    await settle();
+    await finishTurn("a", long("ari"));
+    await finishTurn("b", long("bo"));
+    const turn = openedTurn("m");
+    expect(size(turn)).toBeLessThanOrEqual(TURN_BUDGET_BYTES);
+    expect(turn.endsWith(t("discussion:run.prompt.moderator", { round: 1, max: 4, format: MODERATOR_FORMAT, roster: "- Ari (Critic): `a`\n- Bo: `b`" }))).toBe(true);
+    expect(turn).toContain(t("discussion:run.prompt.trimmed"));
+    expect(turn).toContain("ari-end");
+    expect(turn).toContain("bo-end");
+    expect(turn).not.toContain("ari-start");
+  });
+
+  it("발언마다 최소분만 남겨도 넘치면 오래된 기록부터 빼고 그 수를 알린다", () => {
+    const transcript = Array.from({ length: 20 }, (_, i) => ({ at: now + i, round: 1, kind: "statement" as const, agentId: "a", text: `#${i} ${"x".repeat(1000)}` }));
+    const d = discussion({ state: "running", transcript, run: { phase: "moderator", turns: [{ agentId: "m" }], seen: {} } });
+    const out = deltaText(d, "m", undefined, 10_000);
+    expect(size(out)).toBeLessThanOrEqual(10_000);
+    expect(out).toContain("#19 ");
+    expect(out).not.toContain("#0 ");
+    const omitted = 20 - (out.match(/#### /g) ?? []).length;
+    expect(omitted).toBeGreaterThan(0);
+    expect(out).toContain(t("discussion:run.prompt.omitted", { count: omitted }));
+    // 넉넉하면 그대로 싣는다.
+    expect(deltaText(d, "m", undefined)).not.toContain(t("discussion:run.prompt.trimmed"));
+  });
+});
+
+describe("프롬프트 언어", () => {
+  afterEach(async () => { await initI18nForTest(); });
+
+  it("첫 프롬프트(ko·en)와 같은 언어로 차례를 쓰고 그 언어를 열기 요청에 싣는다", async () => {
+    expect(discussionPromptLang("ko-KR")).toBe("ko");
+    expect(discussionPromptLang("ja")).toBe("en");
+    expect(discussionPromptLang("zh-Hant")).toBe("en");
+    await initI18nForTest("ja");
+    expect(startDiscussion("d1")).toBeUndefined();
+    await settle();
+    const [request] = (api.openDiscussionSession.mock.calls as [DiscussionSessionRequest][]).find(([r]) => r.agentId === "a")!;
+    expect(request.lang).toBe("en");
+    expect(request.turn).toBe(i18n.getFixedT("en")("discussion:run.prompt.opening"));
+  });
+});
+
+describe("비용 저장", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("턴 중간 비용은 스토어만 바로 고치고 저장은 미루며, 턴이 끝나면 바로 저장한다", async () => {
+    startDiscussion("d1");
+    await settle();
+    vi.useFakeTimers();
+    api.saveDiscussion.mockClear();
+    const tokens = { model: "claude-opus-5-5", input: 100_000 };
+    addDiscussionTurnCost({ agentId: sid("a"), tokens, at: now, partial: true });
+    addDiscussionTurnCost({ agentId: sid("a"), tokens, at: now, partial: true });
+    expect(d1().costUsd).toBeCloseTo(0.8, 6);
+    expect(api.saveDiscussion).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(DEFERRED_SAVE_MS);
+    expect(api.saveDiscussion).toHaveBeenCalledTimes(1);
+    expect(api.saveDiscussion.mock.calls[0][0]).toMatchObject({ id: "d1", costUsd: d1().costUsd });
+
+    // 미룬 저장이 남은 채 다른 저장이 나가면 그 저장에 실리고 타이머는 버린다.
+    addDiscussionTurnCost({ agentId: sid("a"), tokens, at: now, partial: true });
+    addDiscussionTurnCost({ agentId: sid("a"), tokens, at: now, partial: false });
+    await vi.advanceTimersByTimeAsync(0);  // 저장은 앞 저장 뒤에 이어 나간다.
+    expect(api.saveDiscussion).toHaveBeenCalledTimes(2);
+    expect(api.saveDiscussion.mock.calls[1][0]).toMatchObject({ costUsd: d1().costUsd });
+    await vi.advanceTimersByTimeAsync(DEFERRED_SAVE_MS * 2);
+    expect(api.saveDiscussion).toHaveBeenCalledTimes(2);
+  });
+
+  it("미룬 저장이 나가기 전에 토의를 지우면 되살리지 않는다", async () => {
+    startDiscussion("d1");
+    await settle();
+    vi.useFakeTimers();
+    addDiscussionTurnCost({ agentId: sid("a"), tokens: { model: "claude-opus-5-5", input: 100_000 }, at: now, partial: true });
+    api.saveDiscussion.mockClear();
+    useDiscussionStore.setState({ discussions: [] });
+    await vi.advanceTimersByTimeAsync(DEFERRED_SAVE_MS);
+    expect(api.saveDiscussion).not.toHaveBeenCalled();
   });
 });
 

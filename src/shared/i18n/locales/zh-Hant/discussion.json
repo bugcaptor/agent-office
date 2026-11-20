@@ -216,6 +216,8 @@
       "newHeader": "### 你上一輪之後的發言",
       "allHeader": "### 到目前為止的發言",
       "noNew": "（你上一輪之後沒有新的發言。）",
+      "omitted": "（因長度限制，省略了前面 {{count}} 筆紀錄。）",
+      "trimmed": "（因長度限制，較長的發言只保留了結尾部分。）",
       "forcedWrap": "{{reason}}，討論到此結束。請只根據目前的發言整理決策備忘。這是你的最後一次發言，不能再點名或向人提問。請只提交一個下面格式的 JSON。在 summary 寫結論，reasons 寫依據，rejected 寫被否決的方案及原因，open_issues 寫遺留問題，user_checks 寫需要人確認的事項；若是發散創意的討論，請在 ideas 中按主題歸類方案。沒有內容的欄位留空列表。\n\n```json\n{{format}}\n```"
     },
     "label": {

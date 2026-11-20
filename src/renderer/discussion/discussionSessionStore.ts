@@ -131,6 +131,8 @@ function forget(agentId: string): void {
 export interface OpenDiscussionSessionOptions {
   /** 첫 프롬프트 끝에 붙일 이번 차례 지시. */
   turn: string;
+  /** 첫 프롬프트 언어. 차례 지시와 같은 언어(실행기의 `discussionPromptLang`). 없으면 Rust가 화면 언어로 정한다. */
+  lang?: "ko" | "en";
   /** 연 뒤 그 탭을 보여 줄지. 실행기가 여러 명을 한꺼번에 열 때는 끈다. 기본 true. */
   focus?: boolean;
 }
@@ -166,6 +168,7 @@ export async function openDiscussionSession(
     const result = await tauriApi.openDiscussionSession({
       discussionId, agentId: participantAgentId, ...sideTabInitialSize(),
       turn: options.turn,
+      ...(options.lang ? { lang: options.lang } : {}),
     });
     const seen = latest.get(agentId);
     const status = seen?.sessionId === result.sessionId ? seen.status : "running";

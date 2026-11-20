@@ -187,7 +187,22 @@ impl DiscussionStore {
         if let Ok(path) = memo_path(&self.dir, id) {
             let _ = fs::remove_file(path);
         }
+        remove_turn_files(&self.dir, id);
         Ok(())
+    }
+}
+
+/// 그 토의 참가자들의 발언 제출 파일(`discussions/turns/discuss-<id>.<참가자>.md`)을 지운다. 실패는 무시한다.
+fn remove_turn_files(app_data: &Path, id: &str) {
+    let Ok(entries) = fs::read_dir(crate::discussion_session::turns_dir(app_data)) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(agent_id) = name.to_str().and_then(|n| n.strip_suffix(".md")) else { continue };
+        if crate::discussion_session::parse_session_agent_id(agent_id).is_some_and(|(discussion, _)| discussion == id)
+            && entry.file_type().is_ok_and(|t| t.is_file())
+        {
+            let _ = fs::remove_file(entry.path());
+        }
     }
 }
 
@@ -317,6 +332,23 @@ mod tests {
 
         store.delete("d1").unwrap();
         assert!(!path.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn deleting_a_discussion_removes_only_its_turn_files() {
+        let (store, dir) = store();
+        store.save(&discussion("d1", 1)).unwrap();
+        let turns = crate::discussion_session::turns_dir(&dir);
+        fs::create_dir_all(&turns).unwrap();
+        let mine = [turns.join("discuss-d1.hana.md"), turns.join("discuss-d1.jun.md")];
+        let others = [turns.join("discuss-d10.hana.md"), turns.join("discuss-d1x.md"), turns.join("notes.md")];
+        for path in mine.iter().chain(&others) {
+            fs::write(path, "say").unwrap();
+        }
+        store.delete("d1").unwrap();
+        assert!(mine.iter().all(|p| !p.exists()));
+        assert!(others.iter().all(|p| p.exists()));
         fs::remove_dir_all(dir).unwrap();
     }
 

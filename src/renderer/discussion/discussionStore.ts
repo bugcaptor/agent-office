@@ -23,8 +23,10 @@ interface DiscussionStoreState {
   /**
    * 실행기용 저장. 스토어를 먼저 바로 고치고 저장은 순서대로 내보낸다. 동시 라운드에서 여러 발언을
    * 거의 한꺼번에 받아도 옛 스냅샷이 새 것을 덮지 않는다. 저장 실패는 다음 저장이 통째로 바로잡는다.
+   * `defer`면 스토어만 고치고 저장은 미룬다(턴 중간 비용처럼 잦은 갱신). 미룬 저장은 그 토의의 다음 저장에
+   * 실리고, 그 전에 다른 저장이 없으면 `DEFERRED_SAVE_MS` 뒤에 그때의 값을 저장한다.
    */
-  commit(discussion: Discussion): Promise<void>;
+  commit(discussion: Discussion, options?: { defer?: boolean }): Promise<void>;
   remove(id: string): Promise<void>;
   /**
    * 백엔드가 수신함에서 가져와 이미 저장한 토의를 붙인다. 아는 id는 건드리지 않는다 — 다시 읽으면(`load`) 실행기가
@@ -36,6 +38,14 @@ interface DiscussionStoreState {
 
 let inflight: Promise<void> | null = null;
 let saving: Promise<void> = Promise.resolve();
+/** 미룬 저장을 내보낼 때까지의 시간. */
+export const DEFERRED_SAVE_MS = 10_000;
+const deferred = new Map<string, ReturnType<typeof setTimeout>>();
+function cancelDeferred(id: string): void {
+  const timer = deferred.get(id);
+  if (timer !== undefined) clearTimeout(timer);
+  deferred.delete(id);
+}
 
 /** 현재까지 예약된 마지막 스냅샷의 저장 결과. CLI가 상태 변경을 확인할 때 쓴다. */
 export function waitForDiscussionSave(): Promise<void> { return saving; }
@@ -73,19 +83,34 @@ export const useDiscussionStore = create<DiscussionStoreState>((set, get) => ({
         : [...s.discussions, discussion],
     }));
   },
-  commit: (discussion) => {
+  commit: (discussion, options) => {
+    const replace = (s: DiscussionStoreState) => ({
+      discussions: s.discussions.some((d) => d.id === discussion.id)
+        ? s.discussions.map((d) => (d.id === discussion.id ? discussion : d))
+        : [...s.discussions, discussion],
+    });
+    if (options?.defer) {
+      if (!deferred.has(discussion.id)) {
+        deferred.set(discussion.id, setTimeout(() => {
+          deferred.delete(discussion.id);
+          // 그 사이 지워졌으면 저장하지 않는다(저장은 upsert라 되살아난다).
+          const latest = get().discussions.find((d) => d.id === discussion.id);
+          if (latest) void get().commit(latest);
+        }, DEFERRED_SAVE_MS));
+      }
+      set(replace);
+      return Promise.resolve();
+    }
+    cancelDeferred(discussion.id);
     // set은 리스너를 동기 호출하므로 중첩 commit이 생기기 전에 저장 순서를 잡는다.
     const write = saving.catch(() => {}).then(() => tauriApi.saveDiscussion(discussion));
     saving = write;
     void write.catch((error: unknown) => console.warn("discussion: save failed", error));
-    set((s) => ({
-      discussions: s.discussions.some((d) => d.id === discussion.id)
-        ? s.discussions.map((d) => (d.id === discussion.id ? discussion : d))
-        : [...s.discussions, discussion],
-    }));
+    set(replace);
     return write;
   },
   remove: async (id) => {
+    cancelDeferred(id);
     await saving.catch(() => {});
     await tauriApi.deleteDiscussion(id);
     set((s) => ({ discussions: s.discussions.filter((d) => d.id !== id), dialog: null }));
@@ -106,5 +131,6 @@ export function sortDiscussions(list: readonly Discussion[]): Discussion[] {
 export function resetDiscussionStoreForTest(): void {
   inflight = null;
   saving = Promise.resolve();
+  for (const id of [...deferred.keys()]) cancelDeferred(id);
   useDiscussionStore.setState({ discussions: [], status: "idle", error: undefined, dialog: null });
 }

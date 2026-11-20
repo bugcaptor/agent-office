@@ -373,22 +373,17 @@ pub fn build_briefing(input: &Briefing, lang: Lang) -> String {
         DiscussionCollection::LastReply => t.last_reply.to_string(),
     });
 
-    let context = d.context.trim();
-    let context = if context.is_empty() {
-        t.no_context.to_string()
-    } else if context.chars().count() > MAX_CONTEXT_CHARS {
-        format!("{}\n{}", context.chars().take(MAX_CONTEXT_CHARS).collect::<String>(), t.truncated)
-    } else {
-        context.to_string()
-    };
-    sections.push(format!(
-        "{}\n\n{}\n\n- {}: {}\n\n{}\n\n{context}",
+    let topic = format!(
+        "{}\n\n{}\n\n- {}: {}\n\n{}\n\n",
         t.topic,
         d.topic.trim(),
         t.cwd,
         d.cwd.as_deref().unwrap_or(t.home),
         t.context,
-    ));
+    );
+    // 맥락은 나머지 칸이 다 정해진 뒤에 남는 자리만큼 싣는다(아래).
+    let context_at = sections.len();
+    sections.push(topic);
 
     let mut list = t.participants.to_string();
     list.push('\n');
@@ -414,7 +409,40 @@ pub fn build_briefing(input: &Briefing, lang: Lang) -> String {
 
     sections.push(format!("{}\n\n{}", t.turn, input.turn.trim()));
 
-    let out = crate::task_chat::sanitize(&sections.join("\n\n"));
+    // 상한을 넘으면 맥락을 줄인다. 이번 차례(기록·지시)는 맨 끝 칸이라 뒤를 자르면 지시가 사라진다.
+    let sanitized: Vec<String> = sections.iter().map(|s| crate::task_chat::sanitize(s)).collect();
+    let fixed = sanitized.iter().map(String::len).sum::<usize>() + 2 * (sanitized.len() - 1);
+    let context = crate::task_chat::sanitize(d.context.trim());
+    let room = MAX_PROMPT_BYTES.saturating_sub(fixed);
+    let context = if context.is_empty() {
+        t.no_context.to_string()
+    } else if context.chars().count() <= MAX_CONTEXT_CHARS && context.len() <= room {
+        context
+    } else {
+        let budget = room.saturating_sub(t.truncated.len() + 1);
+        let mut kept = String::new();
+        for c in context.chars().take(MAX_CONTEXT_CHARS) {
+            if kept.len() + c.len_utf8() > budget {
+                break;
+            }
+            kept.push(c);
+        }
+        format!("{kept}\n{}", t.truncated)
+    };
+    let mut sanitized = sanitized;
+    sanitized[context_at].push_str(&context);
+    let out = sanitized.join("\n\n");
+    if out.len() <= MAX_PROMPT_BYTES {
+        return out;
+    }
+    // 맥락을 비워도 넘치면(실행기가 차례를 예산 안에 맞추므로 드물다) 차례 칸은 두고 그 앞을 자른다.
+    let turn = sanitized.pop().unwrap_or_default();
+    let head = sanitized.join("\n\n");
+    let mut cut = MAX_PROMPT_BYTES.saturating_sub(turn.len() + 2).min(head.len());
+    while !head.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let out = format!("{}\n\n{turn}", &head[..cut]);
     if out.len() <= MAX_PROMPT_BYTES {
         return out;
     }
@@ -588,7 +616,9 @@ pub async fn open(app_state: &crate::state::AppState, request: DiscussionSession
     let roles = app_state.role_store.load().ok().flatten().map(|f| f.roles).unwrap_or_default();
     let (lang, observed) = {
         let settings = app_state.settings.read().unwrap();
-        (crate::i18n::ui_lang(&settings), settings.observer_enabled)
+        // 실행기가 차례 지시와 같은 언어를 실어 보낸다. 없으면(옛 렌더러) 화면 언어.
+        let lang = request.lang.as_deref().map(crate::i18n::resolve_lang).unwrap_or_else(|| crate::i18n::ui_lang(&settings));
+        (lang, settings.observer_enabled)
     };
     let shim = crate::discussion_cli::shim_path();
     let prompt = build_briefing(
@@ -868,6 +898,23 @@ mod tests {
         let out = build_briefing(&Briefing { discussion: &d, participant: "hana", members: &m, roles: &r, shim: Path::new("/s"), turn: "Speak." }, Lang::En);
         assert!(out.len() <= MAX_PROMPT_BYTES);
         assert!(out.contains(EN.truncated) && out.contains("## Participants"));
+    }
+
+    #[test]
+    fn a_long_turn_shrinks_the_context_and_keeps_the_turn_whole() {
+        let mut d = discussion();
+        d.context = "가".repeat(MAX_CONTEXT_CHARS);
+        let (m, r) = (members(), roles());
+        // 기록이 긴 새 세션 차례(렌더러 예산 192KB). 끝은 차례 지시다.
+        let turn = format!("{}\n\nNOW SPEAK", "나".repeat(64 * 1024));
+        let out = build_briefing(&Briefing { discussion: &d, participant: "hana", members: &m, roles: &r, shim: Path::new("/s"), turn: &turn }, Lang::En);
+        assert!(out.len() <= MAX_PROMPT_BYTES);
+        assert!(out.ends_with("NOW SPEAK"));
+        assert!(out.contains(EN.truncated) && out.contains("## Participants") && out.contains(&turn));
+        // 차례만으로 상한을 넘어도 차례 칸은 끝까지 남긴다.
+        let huge = format!("{}NOW", "x".repeat(MAX_PROMPT_BYTES - 1024));
+        let out = build_briefing(&Briefing { discussion: &d, participant: "hana", members: &m, roles: &r, shim: Path::new("/s"), turn: &huge }, Lang::En);
+        assert!(out.len() <= MAX_PROMPT_BYTES && out.ends_with("NOW"));
     }
 
     fn set_mtime(path: &Path, ms: u64) {

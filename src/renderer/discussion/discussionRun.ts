@@ -19,7 +19,7 @@ import type {
   DiscussionUtterance, TurnUsageEvent,
 } from "@shared/types";
 import { discussionProblem, discussionSessionAgentId, parseDiscussionSessionAgentId } from "@shared/types";
-import { t } from "../i18n";
+import { currentLocale, i18n, t } from "../i18n";
 import { tauriApi } from "../ipc/tauriApi";
 import { maybeSendOsNotification } from "../ipc/osNotify";
 import { useAppStore } from "../store/appStore";
@@ -140,9 +140,43 @@ export function parseModeratorDirective(
 }
 
 // ── 차례 지시 ──────────────────────────────────────────────────────────
+//
+// 모델에 가는 글(차례 지시·기록 머리말·이름표·지시 문제·상한 사유)은 첫 프롬프트(Rust `build_briefing`)와 같은
+// 언어로 쓴다. 첫 프롬프트는 ko·en만 있으므로 화면 언어가 한국어면 ko, 아니면 en이다(`promptProfiles.ts`의 en
+// 폴백과 같은 판단). 그 언어를 열기 요청(`lang`)에 실어 Rust도 같은 값을 쓴다. 화면(알림·멈춤 사유·기록)은 화면 언어 그대로다.
 
-function memberName(agentId: string | undefined): string {
-  return (agentId && useAppStore.getState().agents[agentId]?.name.trim()) || t("discussion:board.missingAgent");
+export type DiscussionPromptLang = "ko" | "en";
+export function discussionPromptLang(locale = currentLocale()): DiscussionPromptLang {
+  return locale.toLowerCase().split(/[-_.]/)[0] === "ko" ? "ko" : "en";
+}
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+function promptT(): Translate {
+  const fixed = i18n.getFixedT(discussionPromptLang());
+  return (key, options) => fixed(key, options);
+}
+
+/**
+ * 차례 하나(기록 + 지시)의 UTF-8 상한. 보내기(`work_prompt`)의 256KB보다 작게 잡아, 새 세션의 첫 프롬프트에서도
+ * Rust가 역할 카드·규칙·맥락을 붙일 자리를 남긴다(넘치면 Rust가 맥락을 줄인다).
+ */
+export const TURN_BUDGET_BYTES = 192 * 1024;
+/** 고르게 줄일 때 발언 하나에 남기는 최소 바이트. 이것으로도 넘치면 오래된 기록부터 뺀다. */
+const MIN_ENTRY_BYTES = 2 * 1024;
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+const bytes = (text: string) => encoder.encode(text).length;
+const ELLIPSIS = "…";
+/** 끝에서 `max`바이트 안쪽만 남긴다(UTF-8 경계, 앞에 `…`). 결과는 `max`바이트를 넘지 않는다. */
+function keepTailBytes(text: string, max: number): string {
+  const raw = encoder.encode(text);
+  if (raw.length <= max) return text;
+  let start = raw.length - Math.max(0, max - bytes(ELLIPSIS));
+  while (start < raw.length && (raw[start] & 0xc0) === 0x80) start += 1;
+  return ELLIPSIS + decoder.decode(raw.subarray(start));
+}
+
+function memberName(agentId: string | undefined, tr: Translate = t): string {
+  return (agentId && useAppStore.getState().agents[agentId]?.name.trim()) || tr("discussion:board.missingAgent");
 }
 function roleName(d: Discussion, agentId: string): string | undefined {
   const roleId = d.participants.find((p) => p.agentId === agentId)?.roleId;
@@ -152,12 +186,12 @@ function names(d: Discussion): Record<string, string> {
   return Object.fromEntries(d.participants.map((p) => [p.agentId, memberName(p.agentId)]));
 }
 
-function entryLabel(d: Discussion, e: DiscussionUtterance): string {
-  if (e.kind === "answer") return t("discussion:run.label.answer");
-  if (e.kind === "notice") return t("discussion:run.label.notice");
-  const name = memberName(e.agentId);
-  if (e.kind === "question") return t("discussion:run.label.question", { name });
-  if (e.kind === "moderator") return t("discussion:run.label.moderator", { name });
+function entryLabel(d: Discussion, e: DiscussionUtterance, tr: Translate): string {
+  if (e.kind === "answer") return tr("discussion:run.label.answer");
+  if (e.kind === "notice") return tr("discussion:run.label.notice");
+  const name = memberName(e.agentId, tr);
+  if (e.kind === "question") return tr("discussion:run.label.question", { name });
+  if (e.kind === "moderator") return tr("discussion:run.label.moderator", { name });
   const role = e.agentId ? roleName(d, e.agentId) : undefined;
   return role ? `${name} · ${role}` : name;
 }
@@ -169,31 +203,66 @@ export function deltaEntries(d: Discussion, agentId: string, sessionId: string |
   return d.transcript.slice(same ? seen.count : 0).filter((e) => !same || e.agentId !== agentId);
 }
 
-export function deltaText(d: Discussion, agentId: string, sessionId: string | undefined): string {
-  const entries = deltaEntries(d, agentId, sessionId);
-  const fresh = !sessionId || d.run?.seen[agentId]?.sessionId !== sessionId;
-  if (!entries.length) return fresh ? "" : t("discussion:run.prompt.noNew");
-  const head = t(fresh ? "discussion:run.prompt.allHeader" : "discussion:run.prompt.newHeader");
-  const body = entries.map((e) => `#### ${entryLabel(d, e)} (R${e.round})\n\n${e.text.trim()}`).join("\n\n");
-  return `${head}\n\n${body}`;
+/**
+ * 기록을 `budget`바이트 안에 담는다. 넘치면 먼저 긴 발언을 고르게 줄이고(끝부분을 남긴다 — 결론은 끝에 있다),
+ * 발언마다 최소분만 남겨도 넘치면 오래된 기록부터 뺀다. 한 라운드의 발언이 한 사람 몫으로 사라지지 않게 한다.
+ */
+function fitEntries(head: string, blocks: { label: string; text: string }[], budget: number, tr: Translate): string {
+  const SEP = "\n\n";
+  const render = (b: { label: string; text: string }, cap = Infinity) =>
+    `#### ${b.label}${SEP}${cap === Infinity ? b.text : keepTailBytes(b.text, cap)}`;
+  const full = [head, ...blocks.map((b) => render(b))].join(SEP);
+  if (bytes(full) <= budget) return full;
+  // 크기는 한 번만 재고 탐색은 산술로 한다. 줄인 발언은 상한을 넘지 않으므로 이 셈은 실제 크기 이상이다.
+  const sep = bytes(SEP);
+  const sizes = blocks.map((b) => ({ head: bytes(`#### ${b.label}`) + sep, body: bytes(b.text) }));
+  const trimmed = tr("discussion:run.prompt.trimmed");
+  const notes = (omitted: number) => (omitted ? [tr("discussion:run.prompt.omitted", { count: omitted }), trimmed] : [trimmed]);
+  const fixed = (omitted: number) => [head, ...notes(omitted)].reduce((n, x) => n + bytes(x) + sep, 0);
+  const sizeAt = (from: number, cap: number) => {
+    let n = fixed(from);
+    for (let i = from; i < sizes.length; i++) n += sizes[i].head + Math.min(sizes[i].body, cap) + sep;
+    return n - sep;
+  };
+  // 최소분으로도 넘치면 오래된 것부터 뺀다(가장 최근 하나는 남긴다).
+  let from = 0;
+  while (from < blocks.length - 1 && sizeAt(from, MIN_ENTRY_BYTES) > budget) from += 1;
+  // 넘지 않는 가장 큰 발언당 상한을 찾는다.
+  let lo = 0, hi = Math.max(...sizes.slice(from).map((x) => x.body));
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (sizeAt(from, mid) <= budget) lo = mid; else hi = mid - 1;
+  }
+  return [head, ...notes(from), ...blocks.slice(from).map((b) => render(b, lo))].join(SEP);
 }
 
-function roster(d: Discussion): string {
+export function deltaText(d: Discussion, agentId: string, sessionId: string | undefined, budget = TURN_BUDGET_BYTES, tr: Translate = promptT()): string {
+  const entries = deltaEntries(d, agentId, sessionId);
+  const fresh = !sessionId || d.run?.seen[agentId]?.sessionId !== sessionId;
+  if (!entries.length) return fresh ? "" : tr("discussion:run.prompt.noNew");
+  const head = tr(fresh ? "discussion:run.prompt.allHeader" : "discussion:run.prompt.newHeader");
+  const blocks = entries.map((e) => ({ label: `${entryLabel(d, e, tr)} (R${e.round})`, text: e.text.trim() }));
+  return fitEntries(head, blocks, budget, tr);
+}
+
+function roster(d: Discussion, tr: Translate): string {
   return d.participants.filter((p) => p.agentId !== d.moderatorAgentId).map((p) => {
     const role = roleName(d, p.agentId);
-    return `- ${memberName(p.agentId)}${role ? ` (${role})` : ""}: \`${p.agentId}\``;
+    return `- ${memberName(p.agentId, tr)}${role ? ` (${role})` : ""}: \`${p.agentId}\``;
   }).join("\n");
 }
 
-/** 차례 하나의 지시. 앞에 델타, 뒤에 이번 차례에 할 일. */
+/** 차례 하나의 지시. 앞에 델타, 뒤에 이번 차례에 할 일. 지시는 자르지 않고 남는 만큼만 기록을 싣는다. */
 export function turnText(d: Discussion, turn: DiscussionTurn, sessionId: string | undefined): string {
   const run = d.run!;
+  const tr = promptT();
   let instruction: string;
-  if (run.phase === "opening") instruction = t("discussion:run.prompt.opening");
-  else if (run.phase === "speakers") instruction = t("discussion:run.prompt.speaker", { question: turn.question ?? "" });
-  else if (run.phase === "wrap_up") instruction = t("discussion:run.prompt.forcedWrap", { reason: limitText(d, run.forced ?? "rounds"), format: WRAP_FORMAT });
-  else instruction = t("discussion:run.prompt.moderator", { round: d.round, max: d.limits.maxRounds, format: MODERATOR_FORMAT, roster: roster(d) });
-  return [deltaText(d, turn.agentId, sessionId), instruction].filter(Boolean).join("\n\n");
+  if (run.phase === "opening") instruction = tr("discussion:run.prompt.opening");
+  else if (run.phase === "speakers") instruction = tr("discussion:run.prompt.speaker", { question: turn.question ?? "" });
+  else if (run.phase === "wrap_up") instruction = tr("discussion:run.prompt.forcedWrap", { reason: limitText(d, run.forced ?? "rounds", tr), format: WRAP_FORMAT });
+  else instruction = tr("discussion:run.prompt.moderator", { round: d.round, max: d.limits.maxRounds, format: MODERATOR_FORMAT, roster: roster(d, tr) });
+  const budget = Math.max(0, TURN_BUDGET_BYTES - bytes(instruction) - 2);
+  return [deltaText(d, turn.agentId, sessionId, budget, tr), instruction].filter(Boolean).join("\n\n");
 }
 
 // ── 상태 쓰기 ──────────────────────────────────────────────────────────
@@ -207,7 +276,7 @@ function running(id: string): Discussion | undefined {
  * 최신 토의를 읽어 고친다. 없으면 아무것도 하지 않는다. 진행 시간 시계도 여기서 맞춘다: 진행 중·정리 중으로
  * 들어가면 구간을 열고, 나가면 `clockAt`(기본 지금)에서 닫아 누계에 더한다.
  */
-function update(id: string, change: (d: Discussion) => Discussion, clockAt?: number): Discussion | undefined {
+function update(id: string, change: (d: Discussion) => Discussion, clockAt?: number, options?: { defer?: boolean }): Discussion | undefined {
   const d = find(id);
   if (!d) return undefined;
   const now = Date.now();
@@ -218,7 +287,7 @@ function update(id: string, change: (d: Discussion) => Discussion, clockAt?: num
     const since = d.activeSince ?? now;
     next = { ...next, activeMs: (next.activeMs ?? 0) + Math.max(0, (clockAt ?? now) - since), activeSince: undefined };
   }
-  void useDiscussionStore.getState().commit(next);
+  void useDiscussionStore.getState().commit(next, options);
   return next;
 }
 function updateRun(id: string, change: (run: DiscussionRun, d: Discussion) => DiscussionRun): void {
@@ -426,9 +495,9 @@ function hasUnreceivedTurn(d: Discussion): boolean {
   });
 }
 
-function limitText(d: Discussion, reason: DiscussionLimitReason): string {
+function limitText(d: Discussion, reason: DiscussionLimitReason, tr: Translate = t): string {
   const max = reason === "rounds" ? d.limits.maxRounds : reason === "time" ? d.limits.maxMinutes : d.limits.maxCostUsd;
-  return t(`discussion:run.limit.${reason}`, { max });
+  return tr(`discussion:run.limit.${reason}`, { max });
 }
 
 /**
@@ -519,7 +588,7 @@ async function deliver(id: string, agentId: string): Promise<void> {
     }
     sessionId = session.sessionId;
   } else {
-    const open = () => openDiscussionSession(d.id, agentId, { turn: turnText(d, turn, undefined), focus: false });
+    const open = () => openDiscussionSession(d.id, agentId, { turn: turnText(d, turn, undefined), lang: discussionPromptLang(), focus: false });
     let error = await open();
     // 렌더러만 다시 읽혀 네이티브 세션이 남아 있으면 버리고 다시 연다.
     if (error === "discussion-session-running") {
@@ -570,7 +639,7 @@ async function receive(id: string, agentId: string, options: { nudge?: boolean }
   if (text) return text;
   // 재촉하지 않는 차례(강제 정리)는 빈 발언을 그대로 돌려준다.
   if (options.nudge === false || discussionLimitReached(latest)) return "";
-  await nudge(id, agentId, t("discussion:run.prompt.nudge"), "no-utterance");
+  await nudge(id, agentId, promptT()("discussion:run.prompt.nudge"), "no-utterance");
   return null;
 }
 
@@ -635,8 +704,9 @@ async function stepModerator(id: string): Promise<void> {
   const limit = discussionLimitReached(latest);
   if (limit && (!("directive" in parsed) || parsed.directive.action !== "wrap")) return forceWrap(id, limit);
   if ("problem" in parsed) {
-    const problem = t(`discussion:run.problems.${parsed.problem}`);
-    return nudge(id, moderator, t("discussion:run.prompt.invalid", { problem, format: MODERATOR_FORMAT }), "moderator-invalid", parsed.problem);
+    const tr = promptT();
+    const problem = tr(`discussion:run.problems.${parsed.problem}`);
+    return nudge(id, moderator, tr("discussion:run.prompt.invalid", { problem, format: MODERATOR_FORMAT }), "moderator-invalid", parsed.problem);
   }
   const directive = parsed.directive;
   if (directive.action === "next") {
@@ -690,16 +760,17 @@ async function stepSpeakers(id: string): Promise<void> {
 
 /**
  * 토의 세션의 턴 토큰을 API 요율로 셈해 그 토의의 비용 누계에 더한다. 중간 갱신(partial)도 증분이므로 더한다.
+ * 중간 갱신은 스토어만 바로 고치고(상한 검사는 스토어를 본다) 저장은 미룬다. 턴이 끝난 신호는 바로 저장한다.
  * 사용량 예측 장부는 sessionBridge가 따로 센다. 시작 전이거나 없는 토의는 무시한다.
  */
-export function addDiscussionTurnCost(e: Pick<TurnUsageEvent, "agentId" | "tokens" | "at">): void {
+export function addDiscussionTurnCost(e: Pick<TurnUsageEvent, "agentId" | "tokens" | "at"> & { partial?: boolean }): void {
   const parsed = parseDiscussionSessionAgentId(e.agentId);
   if (!parsed) return;
   const d = find(parsed.discussionId);
   if (!d || d.state === "ready") return;
   const cost = tokensCost(e.tokens, e.at);
   if (!(cost > 0)) return;
-  update(d.id, (x) => ({ ...x, costUsd: x.costUsd + cost }));
+  update(d.id, (x) => ({ ...x, costUsd: x.costUsd + cost }), undefined, { defer: !!e.partial });
 }
 
 /**
